@@ -111,6 +111,12 @@ load_config() {
         source /storage/.config/cloud_sync.conf
     fi
     
+    # Update cloud sync rules by calling the helper script
+    if [ -f "/usr/bin/cloud_sync_helper" ]; then
+        log_message "Updating cloud sync rules" "false"
+        /usr/bin/cloud_sync_helper ${LOG_FILE}
+    fi
+    
     # Create a version of RCLONEOPTS without the --delete-excluded flag for safer operations
     RESTORE_RCLONEOPTS=$(echo "${RCLONEOPTS}" | sed 's/--delete-excluded//')
     
@@ -129,6 +135,8 @@ backup_game_saves() {
     
     rclone ${BACKUPMETHOD} \
       ${RCLONEOPTS} \
+      --exclude="${BACKUPFOLDER}/**" \
+      --exclude="backups/**" \
       ${BACKUPPATH}/ ${REMOTENAME}${SYNCPATH}/
     
     BACKUP_STATUS=$?

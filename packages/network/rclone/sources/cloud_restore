@@ -111,6 +111,12 @@ load_config() {
         source /storage/.config/cloud_sync.conf
     fi
     
+    # Update cloud sync rules by calling the helper script
+    if [ -f "/usr/bin/cloud_sync_helper" ]; then
+        log_message "Updating cloud sync rules" "false"
+        /usr/bin/cloud_sync_helper ${LOG_FILE}
+    fi
+    
     RESTORE_RCLONEOPTS=$(echo "${RCLONEOPTS}" | sed 's/--delete-excluded//')
     
     log_message "Configuration loaded successfully" "false"
@@ -128,6 +134,8 @@ restore_game_saves() {
     
     rclone ${RESTOREMETHOD} \
       ${RESTORE_RCLONEOPTS} \
+      --exclude="${BACKUPFOLDER}/**" \
+      --exclude="backups/**" \
       ${REMOTENAME}${SYNCPATH}/ ${RESTOREPATH}/
     
     RESTORE_STATUS=$?

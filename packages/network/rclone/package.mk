@@ -33,6 +33,7 @@ makeinstall_target() {
   cp rclonectl ${INSTALL}/usr/bin/
   cp cloud_backup ${INSTALL}/usr/bin/
   cp cloud_restore ${INSTALL}/usr/bin/
+  cp cloud_sync_helper ${INSTALL}/usr/bin/
   cp ${PKG_BUILD}/${PKG_RCLONE} ${INSTALL}/usr/bin/
   chmod 0755 ${INSTALL}/usr/bin/*
   cp rsync-rules.conf ${INSTALL}/usr/config/

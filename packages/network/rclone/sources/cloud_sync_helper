@@ -1,0 +1,135 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+
+# Helper script to manage cloud sync rules and configuration
+# Called by both cloud_backup and cloud_restore scripts
+
+# Logs messages to the specified log file
+log_to_file() {
+  local log_file="${1}"
+  local message="${2}"
+  local level="${3:-INFO}"
+  local timestamp=$(date "+%Y-%m-%d %H:%M:%S")
+  local script_name="cloud_sync_helper"
+  
+  echo "[${timestamp}] [${level}] [${script_name}] ${message}" >> ${log_file}
+}
+
+# Merges default rules with user-customized rules
+# Preserves user customizations while adding new default rules
+update_cloud_sync_rules() {
+  local log_file="${1:-/var/log/cloud_sync.log}"
+  
+  log_to_file "${log_file}" "Checking cloud sync rules file..."
+  
+  # Check if user has a custom cloud_sync-rules.txt
+  if [ -f "/storage/.config/cloud_sync-rules.txt" ]; then
+    # Create a backup of the user's custom rules
+    cp -f /storage/.config/cloud_sync-rules.txt /storage/.config/cloud_sync-rules.txt.bak
+    
+    # Check if defaults file exists
+    if [ ! -f "/usr/config/cloud_sync-rules.txt.defaults" ]; then
+      log_to_file "${log_file}" "Default rules file not found" "WARN"
+      return 1
+    fi
+    
+    # Copy default rules to a temporary file
+    cp -f /usr/config/cloud_sync-rules.txt.defaults /tmp/cloud_sync-rules.new
+    
+    log_to_file "${log_file}" "Merging custom rules with defaults"
+    
+    # Check each user rule and preserve it
+    while IFS= read -r line; do
+      # Skip comment lines and empty lines for comparison
+      if [[ "$line" != \#* ]] && [[ -n "$line" ]]; then
+        # Check if the rule is already in the defaults
+        if ! grep -Fxq "$line" /tmp/cloud_sync-rules.new; then
+          # If not in defaults, append it to preserve user customization
+          echo "$line" >> /tmp/cloud_sync-rules.new
+        fi
+      fi
+    done < /storage/.config/cloud_sync-rules.txt
+    
+    # Replace the user's file with the merged version
+    mv /tmp/cloud_sync-rules.new /storage/.config/cloud_sync-rules.txt
+    
+    log_to_file "${log_file}" "Updated cloud_sync-rules.txt with new defaults while preserving custom rules"
+  else
+    # No existing rules file, just copy the defaults
+    log_to_file "${log_file}" "No existing rules file, copying defaults"
+    cp -f /usr/config/cloud_sync-rules.txt.defaults /storage/.config/cloud_sync-rules.txt
+  fi
+  
+  return 0
+}
+
+# Updates user configuration file with new defaults while preserving customizations
+update_cloud_sync_config() {
+  local log_file="${1:-/var/log/cloud_sync.log}"
+  
+  log_to_file "${log_file}" "Checking cloud sync configuration..."
+  
+  # Check if user has a config file
+  if [ -f "/storage/.config/cloud_sync.conf" ]; then
+    # Create a backup of the user's config
+    cp -f /storage/.config/cloud_sync.conf /storage/.config/cloud_sync.conf.bak
+    
+    # Check if defaults file exists
+    if [ ! -f "/usr/config/cloud_sync.conf.defaults" ]; then
+      log_to_file "${log_file}" "Default config file not found" "WARN"
+      return 1
+    fi
+    
+    log_to_file "${log_file}" "Updating configuration with new defaults"
+    
+    # Extract all configuration variables from defaults
+    grep -o "^DEFAULT_[A-Z_]*=" /usr/config/cloud_sync.conf.defaults | while read -r default_var; do
+      # Convert DEFAULT_VAR to VAR
+      var_name="${default_var#DEFAULT_}"
+      
+      # Check if this variable exists in the user config
+      if ! grep -q "^${var_name}" /storage/.config/cloud_sync.conf; then
+        # Variable doesn't exist in user config, get its value from defaults
+        var_value=$(grep "^${default_var}" /usr/config/cloud_sync.conf.defaults | cut -d '=' -f2-)
+        
+        # Add the new variable to the user's config
+        echo -e "\n${var_name}=${var_value}" >> /storage/.config/cloud_sync.conf
+        log_to_file "${log_file}" "Added new configuration option: ${var_name}"
+      fi
+    done
+    
+    log_to_file "${log_file}" "Configuration file updated while preserving customizations"
+  else
+    # No existing config file, create one with defaults
+    log_to_file "${log_file}" "No existing config file, creating from template"
+    
+    # Create a basic user config from defaults
+    touch /storage/.config/cloud_sync.conf
+    
+    # Process each default variable
+    grep -o "^DEFAULT_[A-Z_]*=" /usr/config/cloud_sync.conf.defaults | while read -r default_var; do
+      var_name="${default_var#DEFAULT_}"
+      var_value=$(grep "^${default_var}" /usr/config/cloud_sync.conf.defaults | cut -d '=' -f2-)
+      echo "${var_name}=${var_value}" >> /storage/.config/cloud_sync.conf
+    done
+  fi
+  
+  return 0
+}
+
+# Main function that handles all updates
+main() {
+  local log_file="${1:-/var/log/cloud_sync.log}"
+  
+  # Update both rules and config
+  update_cloud_sync_rules "${log_file}"
+  update_cloud_sync_config "${log_file}"
+  
+  return 0
+}
+
+# If script is called directly, run the main function
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi
