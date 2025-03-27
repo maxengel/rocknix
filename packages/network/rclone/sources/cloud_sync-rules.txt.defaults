@@ -1,18 +1,20 @@
 # Cloud Sync Rules - Default Configuration
 # Rules use the same syntax as .gitignore
 
-# Include save files and states
+# Start by explicitly including directories we want to fully backup
 + /savefiles/**
 + /savestates/**
 + /screenshots/**
 
-# Include specific save directories for emulators
+# Include specific save file types across all directories
 + /**/*.srm
 + /**/*.sav
 + /**/*.fs
 + /**/*.state*
 + /**/*.auto
 + /**/*.dsv*
+
+# Include system-specific save directories
 + /n64/save/*.eep
 + /n64/save/*.mpk
 + /n64/save/*.sra
@@ -22,11 +24,18 @@
 + /dc/shared/savefiles/**
 + /psp/PPSSPP/**
 
-# Exclude ROMs and system directories to avoid large transfers
+# Backup files
++ /backup/*.zip
+
+# Specifically exclude directories that should never be backed up
 - /roms/**
 - /bios/**
 - /downloads/**
 - /.cache/**
+- /images/**
+- /manuals/**
+- /videos/**
+- /themes/**
 - /**/*.bin
 - /**/*.iso
 - /**/*.img
@@ -37,5 +46,8 @@
 - /**/*.dol
 - /**/*.elf
 
-# Include everything else not explicitly excluded
-+ /**
+# Exclude XML files (like gamelist.xml) by default
+- /**/*.xml
+
+# Exclude everything else not explicitly included above
+- /**

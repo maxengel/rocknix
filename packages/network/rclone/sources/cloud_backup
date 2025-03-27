@@ -137,6 +137,7 @@ backup_game_saves() {
       ${RCLONEOPTS} \
       --exclude="${BACKUPFOLDER}/**" \
       --exclude="backups/**" \
+      --exclude="bios/**" \
       ${BACKUPPATH}/ ${REMOTENAME}${SYNCPATH}/
     
     BACKUP_STATUS=$?
