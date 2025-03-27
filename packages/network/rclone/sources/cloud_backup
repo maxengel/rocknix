@@ -122,8 +122,26 @@ load_config() {
     fi
     
     # Clean and normalize rclone options to ensure proper spacing
-    RCLONEOPTS=$(echo "${RCLONEOPTS}" | tr -s ' ' | sed 's/--/ --/g' | sed 's/^ //')
-    # Create a version of RCLONEOPTS without the --delete-excluded flag for safer operations
+    # Convert multi-line options to a properly spaced single line
+    # First, save original options for debugging
+    log_message "Original RCLONEOPTS: ${RCLONEOPTS}" "false"
+    
+    # Replace any line continuations and normalize spaces
+    RCLONEOPTS=$(echo "${RCLONEOPTS}" | tr '\n\\' '  ' | tr -s ' ')
+    log_message "After newline cleanup: ${RCLONEOPTS}" "false"
+    
+    # Ensure each option starts with a space (except the first one)
+    RCLONEOPTS=$(echo "${RCLONEOPTS}" | sed 's/--/ --/g' | sed 's/^ //')
+    log_message "After spacing fix: ${RCLONEOPTS}" "false"
+    
+    # Convert to array to ensure proper word splitting
+    RCLONE_OPTS_ARRAY=()
+    for opt in ${RCLONEOPTS}; do
+        RCLONE_OPTS_ARRAY+=("$opt")
+    done
+    log_message "Options array has ${#RCLONE_OPTS_ARRAY[@]} elements" "false"
+    
+    # Create a version without the --delete-excluded flag
     RESTORE_RCLONEOPTS=$(echo "${RCLONEOPTS}" | sed 's/--delete-excluded//')
     
     log_message "Configuration loaded successfully" "false"
@@ -145,16 +163,35 @@ backup_game_saves() {
         rclone_debug="--log-level DEBUG"
     fi
     
-    # Capture both output and errors
+    # Log the full rclone command for debugging
+    log_message "Executing rclone command: rclone ${BACKUPMETHOD} ${RCLONEOPTS} ${rclone_debug} --exclude=... ${BACKUPPATH}/ ${REMOTENAME}${SYNCPATH}/" "false"
+    
+    # Use the array for options to ensure proper word splitting
     local cmd_output
-    cmd_output=$(rclone ${BACKUPMETHOD} \
-      ${RCLONEOPTS} \
-      ${rclone_debug} \
-      --exclude="${BACKUPFOLDER}/**" \
-      --exclude="backups/**" \
-      --exclude="bios/**" \
-      --exclude="*.zip" \
-      ${BACKUPPATH}/ ${REMOTENAME}${SYNCPATH}/ 2>&1)
+    if [ ${#RCLONE_OPTS_ARRAY[@]} -gt 0 ]; then
+        cmd_output=$(rclone ${BACKUPMETHOD} \
+          "${RCLONE_OPTS_ARRAY[@]}" \
+          ${rclone_debug} \
+          --exclude="${BACKUPFOLDER}/**" \
+          --exclude="backups/**" \
+          --exclude="bios/**" \
+          --exclude="*.zip" \
+          ${BACKUPPATH}/ ${REMOTENAME}${SYNCPATH}/ 2>&1)
+    else
+        # Fallback if array is empty
+        cmd_output=$(rclone ${BACKUPMETHOD} \
+          --progress \
+          --log-file /var/log/cloud_sync.log \
+          --filter-from /storage/.config/cloud_sync-rules.txt \
+          --delete-excluded \
+          --verbose \
+          ${rclone_debug} \
+          --exclude="${BACKUPFOLDER}/**" \
+          --exclude="backups/**" \
+          --exclude="bios/**" \
+          --exclude="*.zip" \
+          ${BACKUPPATH}/ ${REMOTENAME}${SYNCPATH}/ 2>&1)
+    fi
     
     BACKUP_STATUS=$?
     

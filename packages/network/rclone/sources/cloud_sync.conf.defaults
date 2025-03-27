@@ -28,7 +28,12 @@ DEFAULT_LOG_LEVEL="INFO"
 # Transfer Settings
 # ---------------
 # rclone sync rules - modify these options to change transfer behavior
-DEFAULT_RCLONEOPTS="--progress --log-file /var/log/cloud_sync.log --filter-from /storage/.config/cloud_sync-rules.txt --delete-excluded --verbose"
+# IMPORTANT: Each option must be preceded by a backslash (\) except the first one
+DEFAULT_RCLONEOPTS="--progress \
+--log-file /var/log/cloud_sync.log \
+--filter-from /storage/.config/cloud_sync-rules.txt \
+--delete-excluded \
+--verbose"
 
 # Backup Options
 # -------------
