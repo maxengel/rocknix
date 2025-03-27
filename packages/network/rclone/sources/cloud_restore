@@ -120,6 +120,8 @@ load_config() {
         /usr/bin/cloud_sync_helper ${LOG_FILE}
     fi
     
+    # Clean and normalize rclone options to ensure proper spacing
+    RCLONEOPTS=$(echo "${RCLONEOPTS}" | tr -s ' ' | sed 's/--/ --/g' | sed 's/^ //')
     RESTORE_RCLONEOPTS=$(echo "${RCLONEOPTS}" | sed 's/--delete-excluded//')
     
     log_message "Configuration loaded successfully" "false"

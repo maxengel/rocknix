@@ -85,6 +85,7 @@ load_config() {
             sed -i -e '$a\\nSYNCPATH="'"${DEFAULT_SYNCPATH}"'"' /storage/.config/cloud_sync.conf
         fi
         if [ "${RCLONEOPTS}" == "" ]; then
+            # Ensure the options string has proper spacing when adding to config
             sed -i -e '$a\\nRCLONEOPTS="'"${DEFAULT_RCLONEOPTS}"'"' /storage/.config/cloud_sync.conf
         fi
         if [ "${BACKUPMETHOD}" == "" ]; then
@@ -120,6 +121,8 @@ load_config() {
         /usr/bin/cloud_sync_helper ${LOG_FILE}
     fi
     
+    # Clean and normalize rclone options to ensure proper spacing
+    RCLONEOPTS=$(echo "${RCLONEOPTS}" | tr -s ' ' | sed 's/--/ --/g' | sed 's/^ //')
     # Create a version of RCLONEOPTS without the --delete-excluded flag for safer operations
     RESTORE_RCLONEOPTS=$(echo "${RCLONEOPTS}" | sed 's/--delete-excluded//')
     
