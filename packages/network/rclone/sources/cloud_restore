@@ -11,11 +11,11 @@ START_TIME=$(date +%s)
 # Parameters:
 #   $1: Message text
 #   $2: Whether to echo to screen (true/false, defaults to true)
-#   $3: Log level (INFO, WARN, ERROR, defaults to INFO)
+#   $3: Log level (INFO, WARN, ERROR, defaults to configured LOG_LEVEL or INFO)
 log_message() {
     local message="$1"
     local echo_to_screen="${2:-true}"  # Default to true
-    local level="${3:-INFO}"
+    local level="${3:-${LOG_LEVEL:-INFO}}"  # Use configured LOG_LEVEL as default
     local timestamp=$(date "+%Y-%m-%d %H:%M:%S")
     
     echo "[${timestamp}] [${level}] [${SCRIPT_NAME}] ${message}" >> ${LOG_FILE}
@@ -72,7 +72,7 @@ load_config() {
     source /storage/.config/cloud_sync.conf
     
     # Check if needed variables are present, add if necessary
-    if [ "${BACKUPPATH}" == "" ] || [ "${RESTOREPATH}" == "" ] || [ "${SYNCPATH}" == "" ] || [ "${RCLONEOPTS}" == "" ] || [ "${BACKUPMETHOD}" == "" ] || [ "${RESTOREMETHOD}" == "" ] || [ "${RSYNCRMDIR}" == "" ] || [ "${BACKUPFOLDER}" == "" ] || [ "${SYNCPATH_BACKUP}" == "" ] || [ "${BACKUPFILE_BACKUP_OPTION}" == "" ] || [ "${BACKUPFILE_RESTORE_OPTION}" == "" ]; then
+    if [ "${BACKUPPATH}" == "" ] || [ "${RESTOREPATH}" == "" ] || [ "${SYNCPATH}" == "" ] || [ "${RCLONEOPTS}" == "" ] || [ "${BACKUPMETHOD}" == "" ] || [ "${RESTOREMETHOD}" == "" ] || [ "${RSYNCRMDIR}" == "" ] || [ "${BACKUPFOLDER}" == "" ] || [ "${SYNCPATH_BACKUP}" == "" ] || [ "${BACKUPFILE_BACKUP_OPTION}" == "" ] || [ "${BACKUPFILE_RESTORE_OPTION}" == "" ] || [ "${LOG_LEVEL}" == "" ]; then
         log_message "Some configuration variables missing, loading defaults" "false" "WARN"
         source /storage/.config/cloud_sync.conf.defaults
         if [ "${BACKUPPATH}" == "" ]; then
@@ -108,6 +108,9 @@ load_config() {
         if [ "${BACKUPFILE_RESTORE_OPTION}" == "" ]; then
             sed -i -e '$a\\nBACKUPFILE_RESTORE_OPTION="'"${DEFAULT_BACKUPFILE_RESTORE_OPTION}"'"' /storage/.config/cloud_sync.conf
         fi
+        if [ "${LOG_LEVEL}" == "" ]; then
+            sed -i -e '$a\\nLOG_LEVEL="'"${DEFAULT_LOG_LEVEL}"'"' /storage/.config/cloud_sync.conf
+        fi
         source /storage/.config/cloud_sync.conf
     fi
     
@@ -132,14 +135,34 @@ restore_game_saves() {
     log_message "Starting restore from ${REMOTENAME}${SYNCPATH} to ${RESTOREPATH}"
     log_message "Restore started at $(date)" "false"
     
-    rclone ${RESTOREMETHOD} \
+    # Set log level to DEBUG when INFO is selected for more verbose logging
+    local rclone_debug=""
+    if [ "${LOG_LEVEL}" == "INFO" ]; then
+        rclone_debug="--log-level DEBUG"
+    fi
+    
+    # Capture both output and errors
+    local cmd_output
+    cmd_output=$(rclone ${RESTOREMETHOD} \
       ${RESTORE_RCLONEOPTS} \
+      ${rclone_debug} \
       --exclude="${BACKUPFOLDER}/**" \
       --exclude="backups/**" \
       --exclude="bios/**" \
-      ${REMOTENAME}${SYNCPATH}/ ${RESTOREPATH}/
+      ${REMOTENAME}${SYNCPATH}/ ${RESTOREPATH}/ 2>&1)
     
     RESTORE_STATUS=$?
+    
+    # Log the complete command output when using INFO level
+    if [ "${LOG_LEVEL}" == "INFO" ]; then
+        log_message "Command output: ${cmd_output}" "false"
+    fi
+    
+    # Always log errors
+    if [ $RESTORE_STATUS -ne 0 ]; then
+        log_message "Error output: ${cmd_output}" "false" "ERROR"
+    fi
+    
     if [ $RESTORE_STATUS -eq 0 ]; then
         log_message "Game saves restore completed successfully" "true"
     else
