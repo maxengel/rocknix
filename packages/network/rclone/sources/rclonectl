@@ -1,15 +1,21 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0
 # Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+#
+# rclonectl - Command line utility for managing rclone cloud mounts
+# This script provides a simple interface to mount/unmount cloud storage
 
+# Configuration path
 CONFIGPATH="/storage/.config"
 
+# Determine mount path: either from command line, config file, or default
 if [ -z "$2" ]
 then
   if [ -e "${CONFIGPATH}/rsync.conf" ]
   then
     source ${CONFIGPATH}/rsync.conf
   else
+    # Default values if no config found
     MOUNTPATH="/storage/cloud"
     SYNCPATH="GAMES"
   fi
@@ -17,6 +23,7 @@ else
   MOUNTPATH=${2}
 fi
 
+# Copy default configuration files if they don't exist
 for CONFIG in rsync.conf rsync-rules.conf 
 do
   if [ ! -e "${CONFIGPATH}/${CONFIG}" ]
@@ -25,6 +32,7 @@ do
   fi
 done
 
+# Verify rclone is configured and mount point exists
 function checkconfig() {
   if [ ! -e "${CONFIGPATH}/rclone/rclone.conf" ]
   then
@@ -37,6 +45,8 @@ function checkconfig() {
   fi
 }
 
+# Mount a cloud storage remote using rclone
+# Parameters: $1 - Mount point path
 function mount() {
   TARGET=$(rclone listremotes | awk '{printf $1; exit}')
   rclone mount ${TARGET} ${1} \
@@ -50,10 +60,13 @@ function mount() {
     --daemon
 }
 
+# Unmount a previously mounted cloud storage
+# Parameters: $1 - Mount point path
 function unmount() {
   fusermount -u ${1}
 }
 
+# Command processing
 case "${1}" in
   "mount")
     checkconfig

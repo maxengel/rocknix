@@ -138,6 +138,7 @@ backup_game_saves() {
       --exclude="${BACKUPFOLDER}/**" \
       --exclude="backups/**" \
       --exclude="bios/**" \
+      --exclude="*.zip" \
       ${BACKUPPATH}/ ${REMOTENAME}${SYNCPATH}/
     
     BACKUP_STATUS=$?
@@ -180,8 +181,10 @@ backup_system_files() {
         # Ensure target directory exists before attempting transfer
         rclone mkdir ${REMOTENAME}${SYNCPATH_BACKUP}/
         
+        # Use more specific include pattern to target only backup zip files
         rclone ${BACKUPMETHOD} \
-          ${RCLONEOPTS} \
+          ${RESTORE_RCLONEOPTS} \
+          --include="*.zip" \
           ${BACKUPFOLDER}/ ${REMOTENAME}${SYNCPATH_BACKUP}/
         
         BACKUP_SYSTEM_STATUS=$?
