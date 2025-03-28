@@ -21,9 +21,13 @@ PKG_URL="https://downloads.rclone.org/v${PKG_VERSION}/rclone-v${PKG_VERSION}-lin
 PKG_RCLONE="rclone-v${PKG_VERSION}-linux-${RCLONE_ARCH}/rclone"
 
 unpack() {
+  # Create build directory
   mkdir -p ${PKG_BUILD}
+  # Rename the downloaded zip to include architecture for better tracking
   mv ${SOURCES}/rclone/rclone-${PKG_VERSION}.zip ${SOURCES}/rclone/rclone-${PKG_VERSION}-${RCLONE_ARCH}.zip
+  # Extract the binary package to the build directory
   unzip ${SOURCES}/rclone/rclone-${PKG_VERSION}-${RCLONE_ARCH}.zip -d ${PKG_BUILD}/
+  # Remove downloaded zip files to conserve space
   rm -f ${SOURCES}/rclone/rclone-${PKG_VERSION}*
 }
 

@@ -1,9 +1,17 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0
 # Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
-
+#
 # Helper script to manage cloud sync rules and configuration
 # Called by both cloud_backup and cloud_restore scripts
+#
+# This script handles:
+# 1. Merging default rules with user customizations
+# 2. Updating configuration files while preserving user settings
+# 3. Ensuring all required parameters exist with sensible defaults
+#
+# Version: 1.0
+# Last updated: 2024
 
 # Logs messages to the specified log file
 log_to_file() {

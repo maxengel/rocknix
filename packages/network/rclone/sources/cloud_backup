@@ -216,8 +216,6 @@ backup_game_saves() {
         log_message "Game saves backup completed with errors (status $BACKUP_STATUS)" "true" "WARN"
     fi
     
-    log_message "Game saves backup to ${REMOTENAME}${SYNCPATH} complete!"
-    
     return $BACKUP_STATUS
 }
 
@@ -244,15 +242,14 @@ backup_system_files() {
         rclone mkdir ${REMOTENAME}${SYNCPATH_BACKUP}/
         
         # Use more specific include pattern to target only backup zip files
-        # Add --progress-terminal-width option to reduce leading spaces
         rclone ${BACKUPMETHOD} \
           ${RESTORE_RCLONEOPTS} \
           --include="*.zip" \
           --stats-one-line \
-          --progress-terminal-width 80 \
           ${BACKUPFOLDER}/ ${REMOTENAME}${SYNCPATH_BACKUP}/
         
         BACKUP_SYSTEM_STATUS=$?
+        
         if [ $BACKUP_SYSTEM_STATUS -eq 0 ]; then
             log_message "System backup file transfer completed successfully" "true"
         else
@@ -295,7 +292,6 @@ main() {
     sleep 2
     
     # Provide final summary of all operations
-    echo
     log_message "====================================" "true"
     log_message "BACKUP SUMMARY:" "true"
     log_message "Game saves backup: $([ $BACKUP_STATUS -eq 0 ] && echo 'SUCCESS' || echo 'COMPLETED WITH ERRORS')" "true"

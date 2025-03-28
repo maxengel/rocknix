@@ -59,7 +59,6 @@ function mount() {
     --vfs-cache-mode writes \
     --vfs-cache-max-size 100M \
     --vfs-read-chunk-size-limit 128M \
-    --vfs-read-chunk-size-limit off \
     --allow-non-empty \
     --dir-cache-time 48h \
     --log-file /var/log/rclone.log \
@@ -82,6 +81,7 @@ case "${1}" in
     checkconfig
     unmount ${MOUNTPATH}
   ;;
+  # Show help message if command is unknown or no arguments were provided
   "$*")
     cat <<EOF
 rclonectl is a simple rclone wrapper for mounting and unmounting cloud volumes using fuse.

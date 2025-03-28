@@ -139,6 +139,8 @@ load_config() {
     log_message "After spacing fix: ${RCLONEOPTS}" "false"
     
     # Convert to array to ensure proper word splitting
+    # This prevents issues with options containing spaces and allows
+    # for proper quoting of each individual parameter
     RCLONE_OPTS_ARRAY=()
     for opt in ${RCLONEOPTS}; do
         RCLONE_OPTS_ARRAY+=("$opt")
@@ -212,8 +214,6 @@ restore_game_saves() {
         log_message "Game saves restore completed with errors (status $RESTORE_STATUS)" "true" "WARN"
     fi
     
-    log_message "Game saves restore from ${REMOTENAME}${SYNCPATH} complete!"
-    
     return $RESTORE_STATUS
 }
 
@@ -240,6 +240,13 @@ restore_system_files() {
         # Ensure local target directory exists before attempting restore
         mkdir -p ${BACKUPFOLDER}
         
+        # Check if the rclone version supports the terminal width flag
+        if rclone help | grep -q progress-terminal-width; then
+            TERMINAL_WIDTH="--progress-terminal-width=80"
+        else
+            TERMINAL_WIDTH=""
+        fi
+        
         # Use individual options instead of the variable
         # Add progress formatting options to improve display
         rclone ${RESTOREMETHOD} \
@@ -250,7 +257,7 @@ restore_system_files() {
           --include "/backup/*.zip" \
           --include "backup/*.zip" \
           --stats-one-line \
-          --progress-terminal-width 80 \
+          ${TERMINAL_WIDTH} \
           ${REMOTENAME}${SYNCPATH_BACKUP}/ ${BACKUPFOLDER}/
         
         RESTORE_SYSTEM_STATUS=$?
@@ -260,7 +267,7 @@ restore_system_files() {
             log_message "System backup file restore completed with errors (status $RESTORE_SYSTEM_STATUS)" "true" "WARN"
         fi
         
-        log_message "System backup file restore from ${REMOTENAME}${SYNCPATH_BACKUP} complete!"
+        return $RESTORE_SYSTEM_STATUS
     else
         log_message "System backup file restore skipped (BACKUPFILE_RESTORE_OPTION is not set to 'yes')" "true"
         RESTORE_SYSTEM_STATUS=0
