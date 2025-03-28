@@ -83,21 +83,21 @@ update_cloud_sync_config() {
     
     log_to_file "${log_file}" "Updating configuration with new defaults"
     
-    # Extract all configuration variables from defaults
-    grep -o "^DEFAULT_[A-Z_]*=" /usr/config/cloud_sync.conf.defaults | while read -r default_var; do
-      # Convert DEFAULT_VAR to VAR
-      var_name="${default_var#DEFAULT_}"
-      
-      # Check if this variable exists in the user config
-      if ! grep -q "^${var_name}" /storage/.config/cloud_sync.conf; then
-        # Variable doesn't exist in user config, get its value from defaults
-        var_value=$(grep "^${default_var}" /usr/config/cloud_sync.conf.defaults | cut -d '=' -f2-)
+    # Extract all configuration variables from defaults - FIXED VERSION
+    while IFS='=' read -r key value; do
+      # Only process DEFAULT_ variables
+      if [[ "$key" == DEFAULT_* ]]; then
+        # Strip the DEFAULT_ prefix
+        var_name="${key#DEFAULT_}"
         
-        # Add the new variable to the user's config
-        echo -e "\n${var_name}=${var_value}" >> /storage/.config/cloud_sync.conf
-        log_to_file "${log_file}" "Added new configuration option: ${var_name}"
+        # Check if this variable exists in the user config using grep with fixed strings
+        if ! grep -q "^${var_name}=" /storage/.config/cloud_sync.conf; then
+          # Variable doesn't exist, add it with proper quoting
+          echo "${var_name}=${value}" >> /storage/.config/cloud_sync.conf
+          log_to_file "${log_file}" "Added new configuration option: ${var_name}"
+        fi
       fi
-    done
+    done < /usr/config/cloud_sync.conf.defaults
     
     log_to_file "${log_file}" "Configuration file updated while preserving customizations"
   else
@@ -108,11 +108,12 @@ update_cloud_sync_config() {
     touch /storage/.config/cloud_sync.conf
     
     # Process each default variable
-    grep -o "^DEFAULT_[A-Z_]*=" /usr/config/cloud_sync.conf.defaults | while read -r default_var; do
-      var_name="${default_var#DEFAULT_}"
-      var_value=$(grep "^${default_var}" /usr/config/cloud_sync.conf.defaults | cut -d '=' -f2-)
-      echo "${var_name}=${var_value}" >> /storage/.config/cloud_sync.conf
-    done
+    while IFS='=' read -r key value; do
+      if [[ "$key" == DEFAULT_* ]]; then
+        var_name="${key#DEFAULT_}"
+        echo "${var_name}=${value}" >> /storage/.config/cloud_sync.conf
+      fi
+    done < /usr/config/cloud_sync.conf.defaults
   fi
   
   return 0
