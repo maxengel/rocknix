@@ -8,8 +8,12 @@ LOG_FILE="/var/log/cloud_sync.log"
 START_TIME=$(date +%s)
 
 # Logging function that supports different severity levels and optional console output
+# 
+# This function formats and records log messages with timestamps and severity levels.
+# It can optionally display messages on screen with appropriate color coding.
+#
 # Parameters:
-#   $1: Message text
+#   $1: Message text to log
 #   $2: Whether to echo to screen (true/false, defaults to true)
 #   $3: Log level (INFO, WARN, ERROR, defaults to configured LOG_LEVEL or INFO)
 log_message() {
@@ -159,18 +163,26 @@ backup_game_saves() {
     
     # Set log level to DEBUG when INFO is selected for more verbose logging
     local rclone_debug=""
+    local filtered_opts=("${RCLONE_OPTS_ARRAY[@]}")
     if [ "${LOG_LEVEL}" == "INFO" ]; then
         rclone_debug="--log-level DEBUG"
+        # Remove --verbose from options to avoid conflict with --log-level
+        filtered_opts=()
+        for opt in "${RCLONE_OPTS_ARRAY[@]}"; do
+            if [ "$opt" != "--verbose" ] && [ "$opt" != "-v" ]; then
+                filtered_opts+=("$opt")
+            fi
+        done
     fi
     
     # Log the full rclone command for debugging
-    log_message "Executing rclone command: rclone ${BACKUPMETHOD} ${RCLONEOPTS} ${rclone_debug} --exclude=... ${BACKUPPATH}/ ${REMOTENAME}${SYNCPATH}/" "false"
+    log_message "Executing rclone command with filtered options to prevent conflicts" "false"
     
-    # Use the array for options to ensure proper word splitting
+    # Use the filtered array for options to ensure proper word splitting
     local cmd_output
-    if [ ${#RCLONE_OPTS_ARRAY[@]} -gt 0 ]; then
+    if [ ${#filtered_opts[@]} -gt 0 ]; then
         cmd_output=$(rclone ${BACKUPMETHOD} \
-          "${RCLONE_OPTS_ARRAY[@]}" \
+          "${filtered_opts[@]}" \
           ${rclone_debug} \
           --exclude="${BACKUPFOLDER}/**" \
           --exclude="backups/**" \
@@ -184,7 +196,6 @@ backup_game_saves() {
           --log-file /var/log/cloud_sync.log \
           --filter-from /storage/.config/cloud_sync-rules.txt \
           --delete-excluded \
-          --verbose \
           ${rclone_debug} \
           --exclude="${BACKUPFOLDER}/**" \
           --exclude="backups/**" \

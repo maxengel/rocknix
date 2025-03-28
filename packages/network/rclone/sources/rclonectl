@@ -33,6 +33,12 @@ do
 done
 
 # Verify rclone is configured and mount point exists
+# 
+# This function checks if:
+# 1. rclone has a valid configuration file
+# 2. The specified mount point directory exists (creates it if not)
+#
+# Exits with error code 1 if rclone is not configured
 function checkconfig() {
   if [ ! -e "${CONFIGPATH}/rclone/rclone.conf" ]
   then

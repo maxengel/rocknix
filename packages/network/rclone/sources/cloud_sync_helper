@@ -17,7 +17,15 @@ log_to_file() {
 }
 
 # Merges default rules with user-customized rules
-# Preserves user customizations while adding new default rules
+# 
+# This function preserves user customizations while adding new default rules.
+# It creates a backup of the user's current rules before modifying them,
+# then adds any default rules that are not present in the user's file.
+# 
+# Parameters:
+#   $1: Path to log file for operation messages
+# Returns:
+#   0 on success, 1 if default rules file not found
 update_cloud_sync_rules() {
   local log_file="${1:-/var/log/cloud_sync.log}"
   
@@ -44,7 +52,9 @@ update_cloud_sync_rules() {
       # Skip comment lines and empty lines for comparison
       if [[ "$line" != \#* ]] && [[ -n "$line" ]]; then
         # Check if the rule is already in the defaults
-        if ! grep -Fxq "$line" /tmp/cloud_sync-rules.new; then
+        # The -e flag ensures grep treats the entire line as a fixed pattern,
+        # preventing misinterpretation of spaces and special characters in rules
+        if ! grep -Fxq -e "$line" /tmp/cloud_sync-rules.new; then
           # If not in defaults, append it to preserve user customization
           echo "$line" >> /tmp/cloud_sync-rules.new
         fi
@@ -65,6 +75,15 @@ update_cloud_sync_rules() {
 }
 
 # Updates user configuration file with new defaults while preserving customizations
+#
+# This function ensures user configs have all required parameters while 
+# preserving any customized values. It adds any missing parameters from
+# the defaults file but doesn't overwrite existing user settings.
+#
+# Parameters:
+#   $1: Path to log file for operation messages
+# Returns:
+#   0 on success, 1 if default config file not found
 update_cloud_sync_config() {
   local log_file="${1:-/var/log/cloud_sync.log}"
   
@@ -90,8 +109,8 @@ update_cloud_sync_config() {
         # Strip the DEFAULT_ prefix
         var_name="${key#DEFAULT_}"
         
-        # Check if this variable exists in the user config using grep with fixed strings
-        if ! grep -q "^${var_name}=" /storage/.config/cloud_sync.conf; then
+        # Check if this variable exists in the user config - FIX the grep pattern to avoid space issues
+        if ! grep -qF "${var_name}=" /storage/.config/cloud_sync.conf; then
           # Variable doesn't exist, add it with proper quoting
           echo "${var_name}=${value}" >> /storage/.config/cloud_sync.conf
           log_to_file "${log_file}" "Added new configuration option: ${var_name}"

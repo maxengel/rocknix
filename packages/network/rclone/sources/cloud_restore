@@ -121,6 +121,12 @@ load_config() {
     fi
     
     # Clean and normalize rclone options to ensure proper spacing
+    # This is necessary because options can be provided in multiple formats:
+    # - Single line with spaces
+    # - Multi-line with backslash continuations
+    # - With or without proper spacing between options
+    # The processing below standardizes the format for reliable command execution
+    
     # First, save original options for debugging
     log_message "Original RCLONEOPTS: ${RCLONEOPTS}" "false"
     
@@ -157,25 +163,42 @@ restore_game_saves() {
     
     # Set log level to DEBUG when INFO is selected for more verbose logging
     local rclone_debug=""
+    local filtered_opts=("${RCLONE_OPTS_ARRAY[@]}")
     if [ "${LOG_LEVEL}" == "INFO" ]; then
         rclone_debug="--log-level DEBUG"
+        # Remove --verbose from options to avoid conflict with --log-level
+        filtered_opts=()
+        for opt in "${RCLONE_OPTS_ARRAY[@]}"; do
+            if [ "$opt" != "--verbose" ] && [ "$opt" != "-v" ]; then
+                filtered_opts+=("$opt")
+            fi
+        done
     fi
     
     # Log the full rclone command for debugging
-    log_message "Executing rclone command: rclone ${RESTOREMETHOD} ${RESTORE_RCLONEOPTS} ${rclone_debug} --exclude=... ${REMOTENAME}${SYNCPATH}/ ${RESTOREPATH}/" "false"
+    log_message "Executing rclone command with filtered options to prevent conflicts" "false"
     
     # Use individual options instead of the variable to avoid parsing issues
     local cmd_output
-    cmd_output=$(rclone ${RESTOREMETHOD} \
-      --progress \
-      --log-file /var/log/cloud_sync.log \
-      --filter-from /storage/.config/cloud_sync-rules.txt \
-      --verbose \
-      ${rclone_debug} \
-      --exclude="${BACKUPFOLDER}/**" \
-      --exclude="backups/**" \
-      --exclude="bios/**" \
-      ${REMOTENAME}${SYNCPATH}/ ${RESTOREPATH}/ 2>&1)
+    if [ ${#filtered_opts[@]} -gt 0 ]; then
+        cmd_output=$(rclone ${RESTOREMETHOD} \
+          "${filtered_opts[@]}" \
+          ${rclone_debug} \
+          --exclude="${BACKUPFOLDER}/**" \
+          --exclude="backups/**" \
+          --exclude="bios/**" \
+          ${REMOTENAME}${SYNCPATH}/ ${RESTOREPATH}/ 2>&1)
+    else
+        cmd_output=$(rclone ${RESTOREMETHOD} \
+          --progress \
+          --log-file /var/log/cloud_sync.log \
+          --filter-from /storage/.config/cloud_sync-rules.txt \
+          ${rclone_debug} \
+          --exclude="${BACKUPFOLDER}/**" \
+          --exclude="backups/**" \
+          --exclude="bios/**" \
+          ${REMOTENAME}${SYNCPATH}/ ${RESTOREPATH}/ 2>&1)
+    fi
     
     RESTORE_STATUS=$?
     
