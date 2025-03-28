@@ -178,20 +178,19 @@ backup_game_saves() {
     # Log the full rclone command for debugging
     log_message "Executing rclone command with filtered options to prevent conflicts" "false"
     
-    # Use the filtered array for options to ensure proper word splitting
-    local cmd_output
+    # Execute rclone directly without capturing output to allow progress display
     if [ ${#filtered_opts[@]} -gt 0 ]; then
-        cmd_output=$(rclone ${BACKUPMETHOD} \
+        rclone ${BACKUPMETHOD} \
           "${filtered_opts[@]}" \
           ${rclone_debug} \
           --exclude="${BACKUPFOLDER}/**" \
           --exclude="backups/**" \
           --exclude="bios/**" \
           --exclude="*.zip" \
-          ${BACKUPPATH}/ ${REMOTENAME}${SYNCPATH}/ 2>&1)
+          ${BACKUPPATH}/ ${REMOTENAME}${SYNCPATH}/
     else
         # Fallback if array is empty
-        cmd_output=$(rclone ${BACKUPMETHOD} \
+        rclone ${BACKUPMETHOD} \
           --progress \
           --log-file /var/log/cloud_sync.log \
           --filter-from /storage/.config/cloud_sync-rules.txt \
@@ -201,19 +200,14 @@ backup_game_saves() {
           --exclude="backups/**" \
           --exclude="bios/**" \
           --exclude="*.zip" \
-          ${BACKUPPATH}/ ${REMOTENAME}${SYNCPATH}/ 2>&1)
+          ${BACKUPPATH}/ ${REMOTENAME}${SYNCPATH}/
     fi
     
     BACKUP_STATUS=$?
     
-    # Log the complete command output when using INFO level
-    if [ "${LOG_LEVEL}" == "INFO" ]; then
-        log_message "Command output: ${cmd_output}" "false"
-    fi
-    
     # Always log errors
     if [ $BACKUP_STATUS -ne 0 ]; then
-        log_message "Error output: ${cmd_output}" "false" "ERROR"
+        log_message "Backup encountered errors (status $BACKUP_STATUS)" "false" "ERROR"
     fi
     
     if [ $BACKUP_STATUS -eq 0 ]; then
@@ -223,12 +217,6 @@ backup_game_saves() {
     fi
     
     log_message "Game saves backup to ${REMOTENAME}${SYNCPATH} complete!"
-    
-    # Clean up empty directories if configured to do so
-    if [ "${RSYNCRMDIR}" == "yes" ]; then
-        log_message "Removing empty directories on remote" "false"
-        rclone rmdirs ${REMOTENAME}${SYNCPATH}/ --leave-root
-    fi
     
     return $BACKUP_STATUS
 }
@@ -256,9 +244,12 @@ backup_system_files() {
         rclone mkdir ${REMOTENAME}${SYNCPATH_BACKUP}/
         
         # Use more specific include pattern to target only backup zip files
+        # Add --progress-terminal-width option to reduce leading spaces
         rclone ${BACKUPMETHOD} \
           ${RESTORE_RCLONEOPTS} \
           --include="*.zip" \
+          --stats-one-line \
+          --progress-terminal-width 80 \
           ${BACKUPFOLDER}/ ${REMOTENAME}${SYNCPATH_BACKUP}/
         
         BACKUP_SYSTEM_STATUS=$?

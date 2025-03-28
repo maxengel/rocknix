@@ -178,18 +178,17 @@ restore_game_saves() {
     # Log the full rclone command for debugging
     log_message "Executing rclone command with filtered options to prevent conflicts" "false"
     
-    # Use individual options instead of the variable to avoid parsing issues
-    local cmd_output
-    if [ ${#filtered_opts[@]} -gt 0 ]; then
-        cmd_output=$(rclone ${RESTOREMETHOD} \
+    # Execute rclone directly without capturing output to allow progress display
+    if ((${#filtered_opts[@]} > 0)); then
+        rclone ${RESTOREMETHOD} \
           "${filtered_opts[@]}" \
           ${rclone_debug} \
           --exclude="${BACKUPFOLDER}/**" \
           --exclude="backups/**" \
           --exclude="bios/**" \
-          ${REMOTENAME}${SYNCPATH}/ ${RESTOREPATH}/ 2>&1)
+          ${REMOTENAME}${SYNCPATH}/ ${RESTOREPATH}/
     else
-        cmd_output=$(rclone ${RESTOREMETHOD} \
+        rclone ${RESTOREMETHOD} \
           --progress \
           --log-file /var/log/cloud_sync.log \
           --filter-from /storage/.config/cloud_sync-rules.txt \
@@ -197,19 +196,14 @@ restore_game_saves() {
           --exclude="${BACKUPFOLDER}/**" \
           --exclude="backups/**" \
           --exclude="bios/**" \
-          ${REMOTENAME}${SYNCPATH}/ ${RESTOREPATH}/ 2>&1)
+          ${REMOTENAME}${SYNCPATH}/ ${RESTOREPATH}/
     fi
     
     RESTORE_STATUS=$?
     
-    # Log the complete command output when using INFO level
-    if [ "${LOG_LEVEL}" == "INFO" ]; then
-        log_message "Command output: ${cmd_output}" "false"
-    fi
-    
     # Always log errors
     if [ $RESTORE_STATUS -ne 0 ]; then
-        log_message "Error output: ${cmd_output}" "false" "ERROR"
+        log_message "Restore encountered errors (status $RESTORE_STATUS)" "false" "ERROR"
     fi
     
     if [ $RESTORE_STATUS -eq 0 ]; then
@@ -247,6 +241,7 @@ restore_system_files() {
         mkdir -p ${BACKUPFOLDER}
         
         # Use individual options instead of the variable
+        # Add progress formatting options to improve display
         rclone ${RESTOREMETHOD} \
           --progress \
           --log-file /var/log/cloud_sync.log \
@@ -254,6 +249,8 @@ restore_system_files() {
           --verbose \
           --include "/backup/*.zip" \
           --include "backup/*.zip" \
+          --stats-one-line \
+          --progress-terminal-width 80 \
           ${REMOTENAME}${SYNCPATH_BACKUP}/ ${BACKUPFOLDER}/
         
         RESTORE_SYSTEM_STATUS=$?
