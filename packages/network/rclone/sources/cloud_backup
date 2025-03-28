@@ -271,19 +271,22 @@ main() {
     load_config
     
     # Use the first configured remote in rclone
+    # Note: This assumes at least one remote is configured and the first one should be used
     REMOTENAME=`rclone listremotes | head -1`
     
-    # Begin main script operations
+    # Begin main script operations with user-friendly header
     log_message "=> ${OS_NAME} CLOUD BACKUP UTILITY\n"
     
     # Execute Part 1: Game saves backup
+    # This performs the primary save file backup operation using the configured method
     backup_game_saves
     BACKUP_STATUS=$?
     
-    # Add a pause for better visual separation
+    # Add a pause for better visual separation between operations
     sleep 2
     
     # Execute Part 2: System backup file transfer
+    # This backs up system backup files (zip files) if enabled in configuration
     backup_system_files
     BACKUP_SYSTEM_STATUS=$?
     
