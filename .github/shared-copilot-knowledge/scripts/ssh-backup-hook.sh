@@ -18,7 +18,27 @@ BACKUP_BRANCH="auto-backup/${REPO_NAME}/${BRANCH_NAME}/${HOSTNAME}"
 SRC_DIR="$(git rev-parse --show-toplevel)/.github"
 
 # Check if there are any instruction files to backup
-if [ ! -f "$SRC_DIR"/*.instructions.md ] && [ ! -f "$SRC_DIR"/copilot-instructions.md ] && [ ! -d "$SRC_DIR/instructions" ]; then
+# Use a function to check for instruction files with proper glob handling
+has_instruction_files() {
+    # Check for root-level instruction files
+    if ls "$SRC_DIR"/*.instructions.md >/dev/null 2>&1; then
+        return 0
+    fi
+    
+    # Check for copilot-instructions.md
+    if [ -f "$SRC_DIR/copilot-instructions.md" ]; then
+        return 0
+    fi
+    
+    # Check for instructions directory with files
+    if [ -d "$SRC_DIR/instructions" ] && ls "$SRC_DIR/instructions"/*.instructions.md >/dev/null 2>&1; then
+        return 0
+    fi
+    
+    return 1
+}
+
+if ! has_instruction_files; then
     echo "[pre-commit] No instruction files found - skipping backup."
     exit 0
 fi
