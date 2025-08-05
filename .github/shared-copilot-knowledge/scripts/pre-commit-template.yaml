@@ -1,0 +1,71 @@
+---
+# Shared Copilot Knowledge Pre-commit Template
+# This file provides a starting point for pre-commit configuration
+# Copy to project root as .pre-commit-config.yaml and customize as needed
+minimum_pre_commit_version: "3.6.0"
+repos:
+  # Shared Copilot Knowledge Backup Hook
+  - repo: local
+    hooks:
+      - id: copilot-instructions-backup
+        name: SSH-based Copilot instructions backup
+        entry: .github/shared-copilot-knowledge/scripts/ssh-backup-hook.sh
+        language: system
+        files: '.*'
+        pass_filenames: false
+        # Runs on every commit to back up Copilot instructions via SSH to remote repository
+
+  # Basic file hygiene hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+
+  # Python code quality (uncomment if using Python)
+  # - repo: https://github.com/pycqa/isort
+  #   rev: 6.0.1
+  #   hooks:
+  #     - id: isort
+  #       args: [--profile, black, --line-length=79]
+  #
+  # - repo: https://github.com/psf/black
+  #   rev: 25.1.0
+  #   hooks:
+  #     - id: black
+  #       args: [--line-length=79]
+  #
+  # - repo: https://github.com/pycqa/flake8
+  #   rev: 7.2.0
+  #   hooks:
+  #     - id: flake8
+  #       args: ["--max-line-length=79", "--extend-ignore=E203,W503"]
+
+  # Documentation quality
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.44.0
+    hooks:
+      - id: markdownlint
+        args: ["--disable", "MD013", "MD024", "--enable", "MD022"]
+
+  # Shell script quality (uncomment if using shell scripts)
+  # - repo: https://github.com/shellcheck-py/shellcheck-py
+  #   rev: v0.10.0.1
+  #   hooks:
+  #     - id: shellcheck
+  #       args: ["--severity=error", "--shell=bash"]
+  #
+  # - repo: https://github.com/scop/pre-commit-shfmt
+  #   rev: v3.11.0-1
+  #   hooks:
+  #     - id: shfmt
+  #       args: ["-i", "2", "-ci", "-bn", "-sr"]
+
+  # YAML quality
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.37.1
+    hooks:
+      - id: yamllint
+        args: ["-d", "{extends: default, rules: {line-length: disable}}"]
