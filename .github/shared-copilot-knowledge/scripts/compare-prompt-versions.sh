@@ -1,4 +1,8 @@
 #!/bin/bash
+# Prompt Version Comparison Script
+# Version: 1.0.0
+# Last Updated: 2025-08-05
+
 echo "=== Prompt Version Comparison ==="
 echo "Comparing versions between .github/shared-copilot-knowledge/prompts/ (new) and .github/prompts/ (current)"
 echo
@@ -7,12 +11,12 @@ for file in .github/shared-copilot-knowledge/prompts/*.prompt.md; do
   if [[ -f "$file" ]]; then
     filename=$(basename "$file")
     shared_version=$(grep "^version:" "$file" | cut -d'"' -f2 2>/dev/null || echo "unknown")
-    
+
     if [[ -f ".github/prompts/$filename" ]]; then
       current_version=$(grep "^version:" ".github/prompts/$filename" | cut -d'"' -f2 2>/dev/null || echo "unknown")
       echo "📄 $filename:"
       echo "   Current: $current_version → Available: $shared_version"
-      
+
       if [[ "$shared_version" != "$current_version" ]]; then
         echo "   ⚠️  Version change detected!"
       fi

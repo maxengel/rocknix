@@ -1,6 +1,9 @@
 #!/bin/bash
 # Copilot Instructions SSH Backup Setup Script
 # This script automates the deployment of SSH-based backup hooks to projects
+#
+# Version: 1.0.0
+# Last Updated: 2025-08-05
 
 set -e
 
@@ -45,7 +48,7 @@ check_git_repo() {
         print_error "Not in a Git repository! Please run this script from a project root."
         exit 1
     fi
-    
+
     local repo_root=$(git rev-parse --show-toplevel)
     local repo_name=$(basename "$repo_root")
     print_success "Found Git repository: $repo_name"
@@ -57,24 +60,24 @@ check_instruction_files() {
     local github_dir="$(git rev-parse --show-toplevel)/.github"
     local repo_root="$(git rev-parse --show-toplevel)"
     local has_files=false
-    
+
     print_step "Checking for instruction files..."
-    
-    if [ -f "$github_dir"/*.instructions.md ] 2>/dev/null; then
+
+    if ls "$github_dir"/*.instructions.md >/dev/null 2>&1; then
         print_success "Found .instructions.md files in .github/"
         has_files=true
     fi
-    
+
     if [ -f "$github_dir/copilot-instructions.md" ]; then
         print_success "Found copilot-instructions.md in .github/"
         has_files=true
     fi
-    
-    if [ -d "$github_dir/instructions" ] && [ -f "$github_dir/instructions"/*.instructions.md ] 2>/dev/null; then
+
+    if [ -d "$github_dir/instructions" ] && ls "$github_dir/instructions"/*.instructions.md >/dev/null 2>&1; then
         print_success "Found instruction files in .github/instructions/"
         has_files=true
     fi
-    
+
     if [ "$has_files" = false ]; then
         print_warning "No instruction files found. Hook will be installed but won't backup anything yet."
         echo "  Create instruction files in:"
@@ -87,7 +90,7 @@ check_instruction_files() {
 # Test SSH access to GitHub
 test_ssh_access() {
     print_step "Testing SSH access to GitHub..."
-    
+
     if ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
         print_success "SSH access to GitHub verified"
         return 0
@@ -106,15 +109,15 @@ test_ssh_access() {
 # Install the pre-commit hook
 install_hook() {
     local hook_path=".git/hooks/pre-commit"
-    
+
     print_step "Installing SSH backup hook..."
-    
+
     # Backup existing hook if it exists
     if [ -f "$hook_path" ]; then
         print_warning "Existing pre-commit hook found, backing up..."
         mv "$hook_path" "${hook_path}.backup.$(date +%Y%m%d-%H%M%S)"
     fi
-    
+
     # Download the hook
     if curl -s -o "$hook_path" "$HOOK_URL"; then
         chmod +x "$hook_path"
@@ -123,7 +126,7 @@ install_hook() {
         print_error "Failed to download hook from $HOOK_URL"
         exit 1
     fi
-    
+
     # Update repository URL in hook
     if command -v sed >/dev/null 2>&1; then
         if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -142,13 +145,13 @@ install_hook() {
 # Test the hook
 test_hook() {
     print_step "Testing the backup hook..."
-    
+
     if [ -x ".git/hooks/pre-commit" ]; then
         print_success "Hook is executable and ready"
         echo
         print_step "Testing hook execution (dry run)..."
         echo "Note: This will attempt to backup instruction files"
-        
+
         # Create a test commit to trigger the hook
         if git status --porcelain | grep -q "^"; then
             print_warning "Repository has uncommitted changes. Hook will be tested on next commit."
@@ -156,7 +159,7 @@ test_hook() {
             # Create a minimal change to test
             echo "# Hook test: $(date)" >> .git/hook-test-temp
             git add .git/hook-test-temp
-            
+
             if git commit -m "Test SSH backup hook installation" 2>&1; then
                 print_success "Hook executed successfully during commit!"
                 # Clean up test file
@@ -174,12 +177,12 @@ test_hook() {
 # Setup privacy configuration
 setup_privacy() {
     print_step "Setting up privacy configuration..."
-    
+
     local exclude_file=".git/info/exclude"
-    
+
     # Create .git/info directory if it doesn't exist
     mkdir -p .git/info
-    
+
     # Add instruction files to exclude if not already present
     local exclude_patterns=(
         "# Copilot instructions files"
@@ -189,7 +192,7 @@ setup_privacy() {
         "# VS Code settings"
         ".vscode/settings.json"
     )
-    
+
     local added_patterns=false
     for pattern in "${exclude_patterns[@]}"; do
         if ! grep -Fxq "$pattern" "$exclude_file" 2>/dev/null; then
@@ -197,7 +200,7 @@ setup_privacy() {
             added_patterns=true
         fi
     done
-    
+
     if [ "$added_patterns" = true ]; then
         print_success "Privacy patterns added to .git/info/exclude"
     else
@@ -208,21 +211,21 @@ setup_privacy() {
 # Main execution
 main() {
     print_header
-    
+
     # Pre-flight checks
     check_git_repo
     check_instruction_files
     test_ssh_access
-    
+
     echo
     print_step "Proceeding with installation..."
     echo
-    
+
     # Installation steps
     install_hook
     setup_privacy
     test_hook
-    
+
     echo
     echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
     echo -e "${GREEN}  🎉 Installation Complete!${NC}"
