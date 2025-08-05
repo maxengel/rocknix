@@ -1,0 +1,54 @@
+################################################################################
+# setup device defaults
+################################################################################
+
+  # The TARGET_CPU variable controls which processor should be targeted for
+  # generated code.
+    case ${TARGET_ARCH} in
+      x86_64)
+        TARGET_KERNEL_ARCH="x86"
+        TARGET_KERNEL_PATCH_ARCH="x86_64"
+        TARGET_CPU="x86-64-v3"
+        TARGET_FEATURES="64bit"
+        ;;
+    esac
+
+    PARTITION_TABLE="gpt"
+    HW_CPU="Generic x86_64"
+
+  # Kernel target
+    KERNEL_TARGET="bzImage"
+
+  # Additional bootloader settings
+    BOOTLOADER="syslinux"
+
+  # Graphics drivers for x86_64
+    GRAPHIC_DRIVERS="i915 iris xe"
+
+  # OpenGL support
+    OPENGL_SUPPORT="yes"
+    OPENGL="mesa"
+
+  # Vulkan support  
+    VULKAN_SUPPORT="yes"
+    VULKAN="vulkan-loader vulkan-headers"
+
+  # VAAPI support
+    VAAPI_SUPPORT="yes"
+
+  # Audio support
+    PULSEAUDIO_SUPPORT="yes"
+
+  # Network support
+    NETWORK="yes"
+
+  # For x86_64 compatibility
+    PREFER_GLES="no"
+
+  # Boot method
+    DISK_LABEL="ROCKNIX"
+    SYSTEM_SIZE="4096"
+    SYSTEM_PART_START="8192"
+
+  # Extra command line for x86_64
+    EXTRA_CMDLINE="quiet loglevel=3 systemd.show_status=0"

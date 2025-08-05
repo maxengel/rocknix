@@ -26,7 +26,7 @@ src-pkg:
 docs:
 	./tools/foreach './scripts/clean emulators && ./scripts/build emulators'
 
-world: RK3588 RK3566 RK3326 RK3399 S922X SM8250 SM8550 H700
+world: RK3588 RK3566 RK3326 RK3399 S922X SM8250 SM8550 H700 GENERIC_X64
 
 kconfig-olddefconfig-%:
 	DEVICE=$* ./tools/adjust_kernel_config olddefconfig
@@ -34,10 +34,7 @@ kconfig-olddefconfig-%:
 kconfig-menuconfig-%:
 	DEVICE=$* ./tools/adjust_kernel_config menuconfig
 
-AMD64:
-	unset DEVICE_ROOT
-	PROJECT=ROCKNIX DEVICE=AMD64 ARCH=i686 ./scripts/build_distro
-	PROJECT=ROCKNIX DEVICE=AMD64 ARCH=x86_64 ./scripts/build_distro
+AMD64: GENERIC_X64
 
 RK3588:
 	unset DEVICE_ROOT
@@ -83,6 +80,10 @@ SM8550:
 	unset DEVICE_ROOT
 	PROJECT=ROCKNIX DEVICE=SM8550 ARCH=arm ./scripts/build_distro
 	PROJECT=ROCKNIX DEVICE=SM8550 ARCH=aarch64 ./scripts/build_distro
+
+GENERIC_X64:
+	unset DEVICE_ROOT
+	PROJECT=ROCKNIX DEVICE=GENERIC_X64 ARCH=x86_64 ./scripts/build_distro
 
 update:
 	PROJECT=ROCKNIX DEVICE=RK3588 ARCH=aarch64 ./scripts/update_packages

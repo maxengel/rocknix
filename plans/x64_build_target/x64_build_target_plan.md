@@ -6,20 +6,32 @@ This document uses an evolving, phased checklist approach. Each phase of the bui
 ## Goal
 Create a new build target for x64 systems. This will be a pseudo-cross-compile, building from an x64 environment to an x64 architecture.
 
+## Key Principles for Clean Implementation
+- **Root Cause Analysis First**: Always understand why something fails before attempting fixes
+- **Study Existing Working Targets**: Learn from ARM/aarch64 implementations rather than reinventing
+- **Avoid Piecemeal Fixes**: Solve dependencies rather than removing them to prevent cascading issues
+- **Build System Integrity**: Don't take shortcuts that compromise the overall system
+- **Docker-First Approach**: Always use `make docker-image-build` for Dockerfile changes and `make docker-GENERIC_X64` for builds
+
+## Research Strategy
+- Primary reference: ARM/aarch64 targets (known working)
+- Secondary reference: Legacy x86 projects (insights only, known to have issues)
+- Focus: Complete dependency chain understanding
+
 ## Initial Steps
 
 ## Phase 1: Analysis & Planning
-- [x] Review existing build targets and architecture support (e.g., config/arch.x86_64, config/arch.aarch64)
-- [x] Identify scripts, Makefile entries, and configuration files that define build targets and toolchains
-- [x] Document pseudo-cross-compile logic for x64-to-x64
-- [x] Gather requirements for Dockerfile/CI/CD changes
+- [ ] Review existing build targets and architecture support (e.g., config/arch.x86_64, config/arch.aarch64)
+- [ ] Identify scripts, Makefile entries, and configuration files that define build targets and toolchains
+- [ ] Document pseudo-cross-compile logic for x64-to-x64
+- [ ] Gather requirements for Dockerfile/CI/CD changes
 
 ## Next Actions
 
 ## Phase 2: Discovery & Checklist Building
-- [x] Use semantic search to identify all places where architectures and build targets are defined or referenced
-- [x] Draft a checklist of files and scripts to update for x64 support
-- [x] Document the process and any caveats for pseudo-cross-compiling x64 on x64
+- [ ] Use semantic search to identify all places where architectures and build targets are defined or referenced
+- [ ] Draft a checklist of files and scripts to update for x64 support
+- [ ] Document the process and any caveats for pseudo-cross-compiling x64 on x64
 
 ---
 This file will be updated as planning progresses.
