@@ -20,11 +20,11 @@ version: "1.0.0"
 ### Automated Deployment (via GitHub Actions)
 1. **Central Updates**: Changes to `shared-copilot-knowledge/prompts/` trigger deployment
 2. **Staging Area**: Files are copied to `.github/shared-copilot-knowledge/prompts/` in target projects
-3. **Version Comparison**: A script `compare-prompt-versions.sh` is created to compare versions
+3. **Version Comparison**: A script `compare-prompt-versions.sh` is created in `.github/shared-copilot-knowledge/scripts/`
 4. **Manual Review**: Project maintainers review changes before deploying to `.github/prompts/`
 
 ### Manual Deployment Steps
-1. **Run comparison**: `./compare-prompt-versions.sh`
+1. **Run comparison**: `.github/shared-copilot-knowledge/scripts/compare-prompt-versions.sh`
 2. **Review changes**: `diff .github/prompts/[filename] .github/shared-copilot-knowledge/prompts/[filename]`
 3. **Deploy selectively**: `cp .github/shared-copilot-knowledge/prompts/[specific-file] .github/prompts/`
 4. **Or deploy all**: `cp .github/shared-copilot-knowledge/prompts/*.prompt.md .github/prompts/`
