@@ -1,6 +1,18 @@
 # Scripts Directory
 
+🚨 **WARNING: Do not modify files in this directory when distributed to target repositories!**
+
 This directory contains automation scripts for the shared-copilot-knowledge backup and distribution system.
+
+## ⚠️ Important Notice for Target Repositories
+
+If you're seeing this README in `.github/shared-copilot-knowledge/scripts/`, these files are automatically distributed and should NOT be modified locally:
+
+- Local modifications will be overwritten by the next update
+- Modifications can cause merge conflicts during git operations
+- Changes should be made in the central repository instead
+
+See `shared-knowledge-modification-warning.instructions.md` for full details.
 
 ## Scripts Overview
 
