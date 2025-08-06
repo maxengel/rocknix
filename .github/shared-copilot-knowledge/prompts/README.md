@@ -1,51 +1,64 @@
-# Shared Copilot Knowledge Prompts
+# Shared Copilot Knowledge Prompts (For Spoke Repositories)
 
-This directory contains prompt files for analyzing and synthesizing Copilot instruction files across all projects in your development environment.
+This directory contains prompt files that are distributed to spoke repositories to help them apply shared knowledge from the central hub to their specific project context.
+
+## Purpose
+
+These prompts help spoke repositories:
+- **Apply synthesized knowledge** from the central hub to their project
+- **Customize shared practices** for their specific needs
+- **Bridge shared and project-specific** instruction files
+- **Benefit from ecosystem learnings** without direct access to raw backup data
 
 ## Workflow Overview
 
-### Step 1: Sync Shared Knowledge
-**File**: `step_1-sync-shared-copilot-knowledge.prompt.md`
-- Copy the latest shared knowledge to target repositories
-- Prepare analysis environment
+### Step 1: Review Shared Knowledge
+**File**: `step_1-review-shared-knowledge.prompt.md`
+- Review shared knowledge distributed from the central hub
+- Assess relevance to your project context
+- Identify areas for project-specific customization
 
-### Step 2: Analyze Shared Knowledge  
-**File**: `step_2-analyze-shared-copilot-knowledge.prompt.md`
-- Comprehensive analysis of current shared knowledge and backup data
-- Identify synthesis opportunities and gaps
-- Update modular instruction files
+### Step 2: Customize Project Instructions
+**File**: `step_2-customize-project-instructions.prompt.md`
+- Create project-specific instruction files based on shared guidance
+- Adapt shared patterns to your project's languages and frameworks
+- Bridge gaps between shared knowledge and project needs
 
-### Step 3: Improve Shared Knowledge
-**File**: `step_3-analyze_backups-improve_shared_knowledge.prompt.md`  
-- Generalize and modularize instruction files based on project backups
-- Create topic-focused instruction files
-- Conservative approach to content changes
+## Key Principles
 
-### Step 4: Synthesize Main Instructions
-**File**: `step_4-synthesize-main-copilot-instructions.prompt.md`
-- Create comprehensive main `copilot-instructions.md` file
-- Synthesize best practices from all analyzed sources
-- Generate the "source of truth" for distribution to all repositories
+- **No backup analysis**: Spokes work with synthesized knowledge, not raw backup data
+- **Reference, don't duplicate**: Link to shared knowledge rather than copying it
+- **Project-focused**: Customize shared practices for your specific context
+- **Maintainable**: Ensure your customizations can evolve with shared knowledge updates
+
+## Hub vs Spoke Responsibilities
+
+- **Hub**: Analyzes all backup data, synthesizes patterns, distributes knowledge
+- **Spoke** (this context): Applies synthesized knowledge to project-specific needs
 
 ## Usage
 
-Run these prompts in sequence to maintain and improve the shared Copilot knowledge base:
+Run these prompts to apply shared knowledge to your project:
 
-1. **Initial Setup**: Use Step 1 to sync knowledge to target repos
-2. **Regular Analysis**: Run Steps 2-4 when new backup data is available
-3. **Maintenance**: Periodically run Steps 3-4 to keep instructions current
+1. **Review First**: Use Step 1 to understand available shared knowledge
+2. **Customize Second**: Run Step 2 to create project-specific implementations
+3. **Maintain Regularly**: Re-run when shared knowledge updates are available
 
-## Output Files
+## Files Created
 
-- **Modular Instructions**: `../instructions/*.instructions.md` 
-- **Main Instructions**: `../copilot-instructions.md` (distributed to all repos)
-- **Analysis Documentation**: Updates to instruction files with change rationale
+- **Project Instructions**: `.github/instructions/*.instructions.md` (your customizations)
+- **Updated Config**: `.github/copilot-instructions.md` (if project-specific changes needed)
 
-## Integration
+## Version Management
+
+Use the version comparison script to stay current:
+```bash
+.github/shared-copilot-knowledge/scripts/compare-shared-knowledge-versions.sh
+```
 
 These prompts work with:
 - **Backup System**: SSH hooks and GitHub Actions that collect instruction files
-- **Distribution System**: GitHub Actions workflow that pushes updates to target repositories  
+- **Distribution System**: GitHub Actions workflow that pushes updates to target repositories
 - **Version Control**: Tracked changes and timestamps for all updates
 
 ---
