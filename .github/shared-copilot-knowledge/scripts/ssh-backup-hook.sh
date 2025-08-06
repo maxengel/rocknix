@@ -108,6 +108,7 @@ backup_via_ssh() {
             files_copied=$((files_copied + 1))
         fi
 
+        # Copy copilot-instructions.md from .github root
         if [ -f "$SRC_DIR/copilot-instructions.md" ]; then
             cp "$SRC_DIR/copilot-instructions.md" "$target_dir"/
             files_copied=$((files_copied + 1))
@@ -181,6 +182,7 @@ backup_locally() {
 
     # Copy files locally
     cp "$SRC_DIR"/*.instructions.md "$local_backup_dir"/ 2>/dev/null || true
+    # Copy copilot-instructions.md from .github root
     cp "$SRC_DIR"/copilot-instructions.md "$local_backup_dir"/ 2>/dev/null || true
 
     if [ -d "$SRC_DIR/instructions" ]; then
