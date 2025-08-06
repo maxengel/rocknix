@@ -3,7 +3,7 @@
 # Setup Script for Shared Copilot Knowledge
 # Deploys shared knowledge files to project repositories
 #
-# Version: 1.1.0
+# Version: 1.2.0
 # Last Updated: 2025-08-05
 # This script sets up shared knowledge components and configures the repository
 #
@@ -120,27 +120,7 @@ else
 fi
 
 echo
-echo "Step 4: Deploying script files..."
-
-# Deploy scripts (with backup and executable permissions)
-if ls .github/shared-copilot-knowledge/scripts/*.sh >/dev/null 2>&1; then
-    for file in .github/shared-copilot-knowledge/scripts/*.sh; do
-        filename=$(basename "$file")
-        # Skip the comparison scripts - they should stay in shared knowledge directory
-        if [[ "$filename" == "compare-"* ]]; then
-            echo -e "${YELLOW}ℹ${NC} Skipping comparison script: $filename (should remain in shared knowledge directory)"
-            continue
-        fi
-        dest_file=".github/scripts/$filename"
-        backup_existing "$dest_file"
-        deploy_file "$file" "$dest_file" true
-    done
-else
-    echo -e "${YELLOW}ℹ${NC} No script files found to deploy"
-fi
-
-echo
-echo "Step 5: Setting up pre-commit hook..."
+echo "Step 4: Setting up pre-commit hook..."
 
 # Check if pre-commit is already configured
 if [ -f ".pre-commit-config.yaml" ]; then
@@ -150,7 +130,7 @@ if [ -f ".pre-commit-config.yaml" ]; then
     else
         echo -e "${YELLOW}⚠${NC} Pre-commit configured but no SSH backup hook found"
         echo "   Consider adding the backup hook to your .pre-commit-config.yaml"
-        echo "   See: .github/shared-copilot-knowledge/scripts/pre-commit-template.yaml"
+        echo "   Reference: .github/shared-copilot-knowledge/scripts/pre-commit-template.yaml"
     fi
 else
     echo -e "${BLUE}📝${NC} Creating pre-commit configuration from template..."
@@ -158,7 +138,7 @@ else
         cp .github/shared-copilot-knowledge/scripts/pre-commit-template.yaml .pre-commit-config.yaml
         echo -e "${GREEN}✓${NC} Created .pre-commit-config.yaml from shared template"
     else
-        # Fallback minimal configuration
+        # Fallback minimal configuration - references scripts in shared knowledge directory
         cat > .pre-commit-config.yaml << 'EOF'
 repos:
   - repo: local
@@ -192,19 +172,27 @@ else
 fi
 
 echo
-echo "Step 6: Verification..."
+echo "Step 5: Verification..."
 
-# Verify executable permissions
-echo "Checking script permissions..."
-for script in .github/scripts/*.sh; do
-    if [ -f "$script" ] && [ -x "$script" ]; then
-        echo -e "${GREEN}✓${NC} Executable: $(basename "$script")"
-    elif [ -f "$script" ]; then
-        echo -e "${RED}✗${NC} Not executable: $(basename "$script")"
-        chmod +x "$script"
-        echo -e "${GREEN}✓${NC} Fixed permissions: $(basename "$script")"
+# Check for shared knowledge directory and scripts
+if [ -d ".github/shared-copilot-knowledge" ]; then
+    echo -e "${GREEN}✓${NC} Shared knowledge directory exists"
+
+    # Ensure shared knowledge scripts are executable
+    if ls .github/shared-copilot-knowledge/scripts/*.sh >/dev/null 2>&1; then
+        for script in .github/shared-copilot-knowledge/scripts/*.sh; do
+            if [ -f "$script" ] && [ -x "$script" ]; then
+                echo -e "${GREEN}✓${NC} Executable: $(basename "$script")"
+            elif [ -f "$script" ]; then
+                echo -e "${YELLOW}⚠${NC} Making executable: $(basename "$script")"
+                chmod +x "$script"
+                echo -e "${GREEN}✓${NC} Fixed permissions: $(basename "$script")"
+            fi
+        done
     fi
-done
+else
+    echo -e "${RED}✗${NC} Shared knowledge directory not found"
+fi
 
 # Check for version comparison tool
 if [ -f ".github/shared-copilot-knowledge/scripts/compare-shared-knowledge-versions.sh" ]; then
@@ -218,7 +206,7 @@ echo
 echo -e "${GREEN}🎉 Setup Complete!${NC}"
 echo
 echo "Next steps:"
-echo "1. Review deployed files in .github/instructions/, .github/prompts/, .github/scripts/"
+echo "1. Review deployed files in .github/instructions/ and .github/prompts/"
 echo "2. Test the pre-commit hook: git add . && git commit -m 'test'"
 echo "3. Check for shared knowledge updates: .github/shared-copilot-knowledge/scripts/compare-shared-knowledge-versions.sh"
 echo "4. Customize deployed files as needed for your project"
@@ -226,6 +214,6 @@ echo
 echo "Backup files created with timestamp suffix can be removed once you're satisfied with the setup."
 echo
 echo -e "${BLUE}📚 Documentation:${NC}"
-echo "- Shared knowledge files: .github/shared-copilot-knowledge/"
-echo "- Project-specific files: .github/instructions/, .github/prompts/, .github/scripts/"
+echo "- Shared knowledge files: .github/shared-copilot-knowledge/ (scripts stay here)"
+echo "- Project-specific files: .github/instructions/, .github/prompts/"
 echo "- Version comparison: .github/shared-copilot-knowledge/scripts/compare-shared-knowledge-versions.sh"
