@@ -2,6 +2,8 @@
 
 🚨 **WARNING: Do not modify files in this directory when distributed to target repositories!**
 
+⚠️ **CRITICAL: Before using these scripts, you MUST exclude `.github/shared-copilot-knowledge/` from ALL pre-commit hooks to prevent processing conflicts!**
+
 This directory contains automation scripts for the shared-copilot-knowledge backup and distribution system.
 
 ## ⚠️ Important Notice for Target Repositories
@@ -97,7 +99,7 @@ The SSH backup works in tandem with GitHub Actions that:
    ```bash
    # Test SSH connection
    ssh -T git@github.com
-   
+
    # If failed, set up SSH key:
    ssh-keygen -t ed25519 -C "your.email@example.com"
    # Add ~/.ssh/id_ed25519.pub to GitHub: https://github.com/settings/keys
@@ -120,7 +122,7 @@ The SSH backup works in tandem with GitHub Actions that:
 ```
 Project Repository                 Shared-Copilot-Knowledge Repository
 ├── .github/                      ├── backups/
-│   ├── *.instructions.md    →    │   └── <project>/<branch>/        # SSH hook backups  
+│   ├── *.instructions.md    →    │   └── <project>/<branch>/        # SSH hook backups
 │   ├── copilot-instructions.md   │       ├── *.instructions.md
 │   └── instructions/             │       ├── copilot-instructions.md
 │       └── *.instructions.md     │       └── .backup-timestamp
