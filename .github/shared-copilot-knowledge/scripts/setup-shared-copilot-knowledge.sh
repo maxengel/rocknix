@@ -202,6 +202,36 @@ else
     echo -e "${YELLOW}⚠${NC} Version comparison tool not found"
 fi
 
+# Check for timestamp management exclusions
+echo
+echo "Step 6: Checking for timestamp management integration..."
+
+# Look for common timestamp exclusion patterns
+EXCLUSION_FILES=(
+    ".timestamp_exclusions"
+    "tools/timestamp/.exclusions"
+    "src/*/utils/ensure_timestamp_accuracy.py"
+)
+
+FOUND_TIMESTAMP_MGMT=false
+for file in "${EXCLUSION_FILES[@]}"; do
+    if [ -f "$file" ]; then
+        FOUND_TIMESTAMP_MGMT=true
+        echo -e "${YELLOW}⚠${NC} Found timestamp management: $file"
+        break
+    fi
+done
+
+if [ "$FOUND_TIMESTAMP_MGMT" = true ]; then
+    echo -e "${BLUE}ℹ${NC} To prevent conflicts, add these exclusions to your timestamp management:"
+    echo "   .github/shared-copilot-knowledge/"
+    echo "   .github/shared-copilot-knowledge/**"
+    echo ""
+    echo -e "${YELLOW}⚠${NC} Shared knowledge files are managed centrally and should be excluded from local timestamp processing."
+else
+    echo -e "${GREEN}✓${NC} No timestamp management conflicts detected"
+fi
+
 echo
 echo -e "${GREEN}🎉 Setup Complete!${NC}"
 echo
@@ -210,6 +240,9 @@ echo "1. Review deployed files in .github/instructions/ and .github/prompts/"
 echo "2. Test the pre-commit hook: git add . && git commit -m 'test'"
 echo "3. Check for shared knowledge updates: .github/shared-copilot-knowledge/scripts/compare-shared-knowledge-versions.sh"
 echo "4. Customize deployed files as needed for your project"
+if [ "$FOUND_TIMESTAMP_MGMT" = true ]; then
+    echo "5. ⚠️  Add shared knowledge exclusions to timestamp management (see above)"
+fi
 echo
 echo "Backup files created with timestamp suffix can be removed once you're satisfied with the setup."
 echo
