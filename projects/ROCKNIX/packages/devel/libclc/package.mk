@@ -6,6 +6,7 @@ PKG_VERSION="$(get_pkg_version llvm)"
 PKG_LICENSE="Apache-2.0"
 PKG_URL=""
 PKG_DEPENDS_HOST="toolchain:host llvm:host spirv-tools spirv-tools:host"
+PKG_DEPENDS_TARGET="toolchain llvm spirv-tools"
 PKG_LONGDESC="Low-Level Virtual Machine (LLVM) is a compiler infrastructure."
 PKG_DEPENDS_UNPACK+=" llvm"
 PKG_PATCH_DIRS+=" $(get_pkg_directory llvm)/patches"
@@ -26,4 +27,20 @@ pre_configure_host() {
   mkdir -p "${PKG_BUILD}/.${HOST_NAME}"
   cd ${PKG_BUILD}/.${HOST_NAME}
   PKG_CMAKE_OPTS_HOST="-DLIBCLC_TARGETS_TO_BUILD=${LIBCLC_TARGETS_TO_BUILD}"
+}
+
+pre_configure_target() {
+  LIBCLC_TARGETS_TO_BUILD="spirv64-mesa3d-,spirv32-mesa3d-"
+
+  mkdir -p "${PKG_BUILD}/.${TARGET_NAME}"
+  cd ${PKG_BUILD}/.${TARGET_NAME}
+  
+  # For x86_64, use the host LLVM installation to avoid GLIBC issues
+  if [ "${TARGET_ARCH}" = "x86_64" ]; then
+    PKG_CMAKE_OPTS_TARGET="-DLIBCLC_TARGETS_TO_BUILD=${LIBCLC_TARGETS_TO_BUILD}
+                           -DLIBCLC_CUSTOM_LLVM_TOOLS_BINARY_DIR=${TOOLCHAIN}/bin
+                           -DLLVM_DIR=${TOOLCHAIN}/lib/cmake/llvm"
+  else
+    PKG_CMAKE_OPTS_TARGET="-DLIBCLC_TARGETS_TO_BUILD=${LIBCLC_TARGETS_TO_BUILD}"
+  fi
 }

@@ -10,3 +10,7 @@ PKG_DEPENDS_HOST="toolchain:host llvm:host"
 PKG_URL="https://github.com/KhronosGroup/SPIRV-LLVM-Translator/archive/v${PKG_VERSION}.tar.gz"
 PKG_LONGDESC="SPIRV-LLVM-Translator"
 PKG_TOOLCHAIN="cmake"
+
+PKG_CMAKE_OPTS_HOST="-DLLVM_EXTERNAL_SPIRV_HEADERS_SOURCE_DIR=${SYSROOT_PREFIX}/usr/include/spirv \
+                     -DLLVM_SPIRV_BUILD_EXTERNAL=ON \
+                     -DLLVM_BUILD_TOOLS=OFF"

@@ -29,7 +29,7 @@
     OPENGL_SUPPORT="yes"
     OPENGL="mesa"
 
-  # Vulkan support  
+  # Vulkan support - re-enabled for x86_64 with proper Mesa configuration
     VULKAN_SUPPORT="yes"
     VULKAN="vulkan-loader vulkan-headers"
 
@@ -42,8 +42,14 @@
   # Network support
     NETWORK="yes"
 
+  # Display server for x86_64 desktop systems
+    DISPLAYSERVER="x11"
+
   # For x86_64 compatibility
     PREFER_GLES="no"
+
+  # Disable 32-bit support for x86_64 builds
+    ENABLE_32BIT="no"
 
   # Boot method
     DISK_LABEL="ROCKNIX"
@@ -52,3 +58,9 @@
 
   # Extra command line for x86_64
     EXTRA_CMDLINE="quiet loglevel=3 systemd.show_status=0"
+
+  # Disable joypad driver for x86_64
+    ROCKNIX_JOYPAD="no"
+
+  # Enable LLVM support for iris graphics driver compute shaders
+    LLVM_SUPPORT="yes"

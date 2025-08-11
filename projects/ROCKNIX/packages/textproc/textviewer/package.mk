@@ -11,6 +11,16 @@ PKG_DEPENDS_TARGET="toolchain SDL SDL2"
 PKG_LONGDESC="Full-screen text viewer tool with gamepad controls"
 PKG_TOOLCHAIN="make"
 GET_HANDLER_SUPPORT="git"
+PKG_GIT_SUBMODULE_DEPTH="1"
+
+post_unpack() {
+  # Manually initialize submodules if they weren't properly initialized
+  if [ ! -f "${PKG_BUILD}/3rd_party/imgui/imgui.h" ]; then
+    echo "Manually initializing git submodules for textviewer..."
+    cd "${PKG_BUILD}"
+    git submodule update --init --recursive --depth 1
+  fi
+}
 
 if [ ! "${OPENGL}" = "no" ]; then
   PKG_DEPENDS_TARGET+=" ${OPENGL} glu"

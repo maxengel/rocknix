@@ -24,7 +24,10 @@ if [ "${OPENGLES}" != "no" ]; then
   PKG_DEPENDS_TARGET+=" ${OPENGLES}"
 fi
 
-if [ "${DISPLAYSERVER}" != "x11" ] && \
-   [ "${DISPLAYSERVER}" != "wl" ]; then
-  PKG_CONFIGURE_OPTS_TARGET="--disable-glx"
+# Enable GLX for x86_64 desktop builds
+if [ "${TARGET_ARCH}" = "x86_64" ] && [ "${DEVICE}" = "GENERIC_X64" ]; then
+  PKG_MESON_OPTS_TARGET="-Dglx=yes"
+elif [ "${DISPLAYSERVER}" != "x11" ] && \
+     [ "${DISPLAYSERVER}" != "wl" ]; then
+  PKG_MESON_OPTS_TARGET="-Dglx=no"
 fi

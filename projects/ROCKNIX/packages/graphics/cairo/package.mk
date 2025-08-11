@@ -8,7 +8,7 @@ PKG_SHA256="5b10c8892d1b58d70d3f0ba5b47863a061262fa56b9dc7944161f8c8b783bc64"
 PKG_LICENSE="LGPL"
 PKG_SITE="https://cairographics.org/"
 PKG_URL="https://cairographics.org/snapshots/${PKG_NAME}-${PKG_VERSION}.tar.xz"
-PKG_DEPENDS_TARGET="toolchain zlib freetype fontconfig glib libpng pixman"
+PKG_DEPENDS_TARGET="toolchain zlib freetype fontconfig glib libpng pixman libxcb libXrender libX11 mesa"
 PKG_LONGDESC="Cairo is a vector graphics library with cross-device output support."
 
 configure_package() {
@@ -19,16 +19,10 @@ configure_package() {
   if [ "${OPENGLES}" != "no" ]; then
     PKG_DEPENDS_TARGET+=" ${OPENGLES}"
   fi
-
-  case ${DISPLAYSERVER} in
-    "x11"|"wl")
-      PKG_DEPENDS_TARGET+=" libxcb libXrender libX11 mesa"
-    ;;
-  esac
-
 }
 
 pre_configure_target() {
+  # Enable X11 and Wayland support for ROCKNIX
   PKG_MESON_OPTS_TARGET="-Ddwrite=disabled \
                          -Dfontconfig=enabled \
                          -Dfreetype=enabled \
@@ -42,19 +36,10 @@ pre_configure_target() {
                          -Dglib=enabled \
                          -Dspectre=disabled \
                          -Dsymbol-lookup=disabled \
-                         -Dgtk_doc=false"
+                         -Dgtk_doc=false \
+                         -Dxlib=enabled \
+                         -Dxcb=enabled \
+                         -Dxlib-xcb=enabled"
 
-  case ${DISPLAYSERVER} in
-    "x11"|"wl")
-      PKG_MESON_OPTS_TARGET+=" -Dxlib=enabled \
-                               -Dxcb=enabled \
-                               -Dxlib-xcb=enabled"
-    ;;
-    *)
-      PKG_MESON_OPTS_TARGET+=" -Dxlib=disabled \
-                               -Dxcb=disabled \
-                               -Dxlib-xcb=disabled"
-    ;;
-  esac
   sed -i "s~'ipc_rmid_deferred_release', 'auto'~'ipc_rmid_deferred_release', 'true'~g" ${PKG_BUILD}/meson.build
 }

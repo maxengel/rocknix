@@ -44,9 +44,9 @@ EOF
   echo "DEBUG: Available source files:"
   ls -la *.c *.h 2>/dev/null || echo "No .c or .h files found"
   
-  # Compile the main binary
-  echo "DEBUG: Compiling with command: ${CC} ${CFLAGS} ${LDFLAGS} -o inb port.c"
-  ${CC} ${CFLAGS} ${LDFLAGS} -o inb port.c
+  # Compile the main binary with current directory in include path
+  echo "DEBUG: Compiling with command: ${CC} ${CFLAGS} ${LDFLAGS} -I. -o inb port.c"
+  ${CC} ${CFLAGS} ${LDFLAGS} -I. -o inb port.c
 }
 
 makeinstall_target() {

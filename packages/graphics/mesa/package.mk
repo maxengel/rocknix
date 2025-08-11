@@ -62,10 +62,13 @@ fi
 if listcontains "${GRAPHIC_DRIVERS}" "(iris|panfrost)"; then
   if [ "${USE_REUSABLE}" = "yes" ]; then
     PKG_DEPENDS_TARGET+=" mesa-reusable"
+  elif [ "${TARGET_ARCH}" = "x86_64" ]; then
+    # For x86_64, use system Mesa tools to avoid LLVM host build issues
+    PKG_MESON_OPTS_TARGET+=" -Dmesa-clc=disabled -Dprecomp-compiler=disabled"
   else
     PKG_DEPENDS_TARGET+=" mesa:host"
+    PKG_MESON_OPTS_TARGET+=" -Dmesa-clc=system -Dprecomp-compiler=system"
   fi
-  PKG_MESON_OPTS_TARGET+=" -Dmesa-clc=system -Dprecomp-compiler=system"
 fi
 
 if listcontains "${GRAPHIC_DRIVERS}" "(nvidia|nvidia-ng)" ||
@@ -116,6 +119,62 @@ if [ "${VULKAN_SUPPORT}" = "yes" ]; then
 else
   PKG_MESON_OPTS_TARGET+=" -Dvulkan-drivers="
 fi
+
+pre_configure_target() {
+  # Create debug file to verify function is called
+  echo "Mesa pre_configure_target called at $(date)" > /tmp/mesa_debug.log
+  echo "TARGET_ARCH: ${TARGET_ARCH}" >> /tmp/mesa_debug.log
+  echo "GRAPHIC_DRIVERS: ${GRAPHIC_DRIVERS}" >> /tmp/mesa_debug.log
+  
+  # For x86_64, copy system Clang libraries to sysroot for Mesa
+  if [ "${TARGET_ARCH}" = "x86_64" ]; then
+    echo "Setting up Clang libraries for Mesa x86_64 build" >> /tmp/mesa_debug.log
+    
+    # Set up the sysroot with system Clang libraries and headers
+    mkdir -p ${SYSROOT_PREFIX}/usr/lib
+    mkdir -p ${SYSROOT_PREFIX}/usr/include
+    
+    # Copy system Clang libraries to sysroot (using correct paths from container)
+    cp -a /usr/lib/llvm-15/lib/libclangBasic.a ${SYSROOT_PREFIX}/usr/lib/ 2>> /tmp/mesa_debug.log || true
+    cp -a /usr/lib/llvm-15/lib/libclang-cpp.so* ${SYSROOT_PREFIX}/usr/lib/ 2>> /tmp/mesa_debug.log || true
+    cp -a /usr/lib/x86_64-linux-gnu/libclang-15.so* ${SYSROOT_PREFIX}/usr/lib/ 2>> /tmp/mesa_debug.log || true
+    
+    # Copy Clang headers to sysroot
+    if [ -d /usr/lib/llvm-15/lib/clang ]; then
+      cp -a /usr/lib/llvm-15/lib/clang ${SYSROOT_PREFIX}/usr/include/ 2>> /tmp/mesa_debug.log || true
+    fi
+    
+    # Create pkg-config files in the sysroot
+    mkdir -p ${SYSROOT_PREFIX}/usr/lib/pkgconfig
+    cat > ${SYSROOT_PREFIX}/usr/lib/pkgconfig/clang.pc << EOF
+prefix=\${pcfiledir}/../..
+exec_prefix=\${prefix}
+libdir=\${prefix}/lib
+includedir=\${prefix}/include
+
+Name: Clang
+Description: Clang compiler library
+Version: 15.0.0
+Libs: -L\${libdir} -lclangBasic
+Cflags: -I\${includedir}
+EOF
+
+    cat > ${SYSROOT_PREFIX}/usr/lib/pkgconfig/clang-cpp.pc << EOF
+prefix=\${pcfiledir}/../..
+exec_prefix=\${prefix}
+libdir=\${prefix}/lib
+includedir=\${prefix}/include
+
+Name: Clang C++
+Description: Clang C++ compiler library
+Version: 15.0.0
+Libs: -L\${libdir} -lclang-cpp
+Cflags: -I\${includedir}
+EOF
+
+    echo "Clang libraries setup completed for Mesa"
+  fi
+}
 
 makeinstall_host() {
   host_files="src/compiler/clc/mesa_clc src/compiler/spirv/vtn_bindgen2 src/panfrost/clc/panfrost_compile"

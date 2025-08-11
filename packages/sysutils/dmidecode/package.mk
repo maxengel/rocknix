@@ -3,7 +3,7 @@
 
 PKG_NAME="dmidecode"
 PKG_VERSION="3.6"
-PKG_SHA256="dcd79dbc8c85d6ad938b93d2bb8eb6c94a4b0e8f7a1e54b40d1e55cdbfa1e62d"
+PKG_SHA256="e40c65f3ec3dafe31ad8349a4ef1a97122d38f65004ed66575e1a8d575dd8bae"
 PKG_ARCH="x86_64"
 PKG_LICENSE="GPL-2.0"
 PKG_SITE="http://www.nongnu.org/dmidecode/"
