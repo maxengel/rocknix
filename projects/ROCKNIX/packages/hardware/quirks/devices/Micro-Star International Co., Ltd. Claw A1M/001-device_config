@@ -1,0 +1,28 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
+
+# MSI Claw Configuration
+cat <<EOF >/storage/.config/profile.d/001-device_config
+# Device Features
+DEVICE_HAS_TOUCHSCREEN="true"
+DEVICE_FAKE_JACKSENSE="false"
+DEVICE_BATTERY_LED_STATUS="true"
+DEVICE_PWR_LED_CONTROL="true"
+DEVICE_SLEEP_DPMS="true"
+DEVICE_HAS_HDMI="false"
+
+# Physical handheld device
+DEVICE_IS_VIRTUAL="false"
+DEVICE_VIRTUALIZATION_PLATFORM=""
+
+# MSI Claw display configuration
+DEVICE_DEFAULT_DISPLAY="eDP"
+DEVICE_DEFAULT_RESOLUTION="1920x1080"
+
+# MSI Claw temperature monitoring
+DEVICE_TEMP_SENSOR="/sys/class/thermal/thermal_zone*/temp"
+
+# MSI Claw power management (Intel Arc)
+DEVICE_BASE_TDP="28"
+DEVICE_TDP_RANGE="17-35"

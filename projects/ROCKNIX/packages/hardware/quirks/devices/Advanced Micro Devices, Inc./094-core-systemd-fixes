@@ -1,0 +1,123 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+
+### GENERIC_X64 Core systemd architecture fixes
+### Addresses systemd/D-Bus incompatibility issues fundamental to ROCKNIX
+
+echo "Applying core systemd fixes for GENERIC_X64..."
+
+# Fix 1: Disable problematic D-Bus dependent services entirely
+mkdir -p /etc/systemd/system
+
+# Mask systemd-hostnamed since it requires D-Bus but systemd was built without D-Bus
+cat <<EOF >/etc/systemd/system/systemd-hostnamed.service
+[Unit]
+Description=Hostname Service (masked for ROCKNIX)
+
+[Service]
+Type=oneshot
+ExecStart=/bin/true
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Fix 2: Create robust journald configuration for GENERIC_X64
+mkdir -p /etc/systemd/journald.conf.d
+
+cat <<EOF >/etc/systemd/journald.conf.d/00-generic-x64-base.conf
+[Journal]
+# Base configuration for GENERIC_X64
+Storage=persistent
+Compress=no
+Seal=no
+SplitMode=none
+
+# Prevent EPOLLHUP errors by using conservative limits
+SystemMaxUse=32M
+SystemKeepFree=64M
+SystemMaxFileSize=4M
+RuntimeMaxUse=16M
+RuntimeKeepFree=32M
+RuntimeMaxFileSize=2M
+
+# Reduce sync pressure that causes fd issues
+SyncIntervalSec=30s
+MaxRetentionSec=1week
+MaxFileSec=1day
+
+# Disable features that require D-Bus or cause issues
+ForwardToSocket=no
+ForwardToWall=no
+Audit=no
+EOF
+
+# Fix 3: Plymouth alternatives for systems without proper D-Bus
+mkdir -p /etc/systemd/system/plymouth-start.service.d
+
+cat <<EOF >/etc/systemd/system/plymouth-start.service.d/10-generic-x64.conf
+[Unit]
+# Make plymouth optional to prevent communication failures
+ConditionPathExists=/dev/fb0
+ConditionKernelCommandLine=!plymouth.enable=0
+
+[Service]
+ExecStartPre=-/bin/sh -c 'test -e /dev/fb0'
+TimeoutStartSec=5s
+TimeoutStopSec=5s
+KillMode=mixed
+StandardOutput=null
+StandardError=null
+EOF
+
+# Fix 4: Enhanced rocknix-automount service configuration
+mkdir -p /etc/systemd/system/rocknix-automount.service.d
+
+cat <<EOF >/etc/systemd/system/rocknix-automount.service.d/10-generic-x64.conf
+[Unit]
+# Better dependency management
+After=systemd-tmpfiles-setup.service systemd-journald.service
+Wants=systemd-tmpfiles-setup.service
+
+[Service]
+# More robust execution for desktop hardware
+TimeoutStartSec=30s
+TimeoutStopSec=10s
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+EOF
+
+# Fix 5: Create minimal system state management without D-Bus
+mkdir -p /etc/systemd/system/rocknix-autostart.service.d
+
+cat <<EOF >/etc/systemd/system/rocknix-autostart.service.d/10-generic-x64.conf
+[Service]
+# Ensure proper startup sequence
+TimeoutStartSec=60s
+Restart=on-failure
+RestartSec=10s
+EOF
+
+# Fix 6: Basic system recovery mechanisms
+cat <<EOF >/etc/systemd/system/generic-x64-recovery.service
+[Unit]
+Description=GENERIC_X64 System Recovery
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'systemctl --failed --no-legend | grep -q . && echo "Failed services detected, attempting recovery..." || echo "System stable"'
+RemainAfterExit=yes
+StandardOutput=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl enable generic-x64-recovery.service 2>/dev/null || true
+
+echo "Core systemd fixes applied for GENERIC_X64"

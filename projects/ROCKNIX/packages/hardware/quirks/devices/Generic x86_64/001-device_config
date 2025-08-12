@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0
 # Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
 
-# VMware Virtual Machine Configuration
+# Generic x86_64 Configuration
 cat <<EOF >/storage/.config/profile.d/001-device_config
 # Device Features
 DEVICE_HAS_TOUCHSCREEN="false"
@@ -12,9 +12,20 @@ DEVICE_PWR_LED_CONTROL="false"
 DEVICE_SLEEP_DPMS="true"
 DEVICE_HAS_HDMI="true"
 
-# Virtual environment optimizations
-DEVICE_IS_VIRTUAL="true"
-DEVICE_VIRTUALIZATION_PLATFORM="VMware"
+# Physical hardware
+DEVICE_IS_VIRTUAL="false"
+DEVICE_VIRTUALIZATION_PLATFORM=""
+
+# Default display configuration
+DEVICE_DEFAULT_DISPLAY="HDMI"
+DEVICE_DEFAULT_RESOLUTION="1920x1080"
+
+# Generic temperature monitoring
+DEVICE_TEMP_SENSOR="/sys/class/thermal/thermal_zone*/temp"
+
+# Conservative power management for unknown hardware
+DEVICE_BASE_TDP="65"
+DEVICE_TDP_RANGE="35-95"
 
 # Default display configuration for virtual machine
 DEVICE_DEFAULT_DISPLAY="HDMI"
