@@ -156,15 +156,15 @@ PROMPT 1
 
 LABEL installer
   KERNEL /${KERNEL_NAME}
-  APPEND boot=UUID=${UUID_SYSTEM} installer quiet systemd.debug_shell vga=current
+  APPEND root=/dev/ram0 rdinit=/init boot=UUID=${UUID_SYSTEM} installer quiet vga=current
 
 LABEL live
   KERNEL /${KERNEL_NAME}
-  APPEND boot=UUID=${UUID_SYSTEM} live quiet vga=current
+  APPEND root=/dev/ram0 rdinit=/init boot=UUID=${UUID_SYSTEM} live quiet vga=current
 
 LABEL run
   KERNEL /${KERNEL_NAME}
-  APPEND boot=UUID=${UUID_SYSTEM} disk=UUID=${UUID_STORAGE} portable quiet
+  APPEND root=/dev/ram0 rdinit=/init boot=UUID=${UUID_SYSTEM} disk=UUID=${UUID_STORAGE} portable quiet
 EOF
 
   cat <<EOF >"${IMG_TMP}/grub.cfg"
@@ -172,7 +172,7 @@ set timeout="25"
 set default="Installer"
 menuentry "Installer" {
 	search --set -f /KERNEL
-	linux /KERNEL boot=UUID=${UUID_SYSTEM} installer quiet systemd.debug_shell vga=current
+	linux /KERNEL boot=UUID=${UUID_SYSTEM} installer quiet vga=current
 }
 menuentry "Live" {
 	search --set -f /KERNEL
