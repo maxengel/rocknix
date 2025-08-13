@@ -71,6 +71,11 @@ do
   fi
   ### Until we have an overlay. :rofl:
   BATLEFT=$(battery_percent)
+  # Handle case where battery_percent returns empty (e.g., in VMs)
+  if [[ -z "${BATLEFT}" ]] || [[ ! "${BATLEFT}" =~ ^[0-9]+$ ]]; then
+    BATLEFT=100  # Default to 100% for systems without battery
+  fi
+  
   if (( "${BATCNT}" >= "20" )) &&
      [[ "${AC_STATUS}" =~ Disch ]]
   then

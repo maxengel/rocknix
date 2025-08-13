@@ -1,0 +1,224 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+
+### Phase 4: Mount Configuration Management
+### Creates proper mount unit configurations for required mountpoints
+
+# Create systemd mount units for missing configurations
+mkdir -p /etc/systemd/system
+
+# Create run-systemd-journal-socket.mount
+cat <<EOF >/etc/systemd/system/run-systemd-journal-socket.mount
+[Unit]
+Description=Runtime Directory for systemd journal socket
+Before=systemd-journald.service
+ConditionPathExists=!/run/systemd/journal/socket
+
+[Mount]
+What=tmpfs
+Where=/run/systemd/journal/socket
+Type=tmpfs
+Options=mode=0755,nosuid,nodev,noexec,size=1M
+
+[Install]
+WantedBy=sysinit.target
+EOF
+
+# Create var-lib.mount for persistent data
+cat <<EOF >/etc/systemd/system/var-lib.mount
+[Unit]
+Description=Variable Library Data
+Before=local-fs.target
+ConditionPathExists=!/var/lib
+
+[Mount]
+What=tmpfs
+Where=/var/lib
+Type=tmpfs
+Options=mode=0755,nosuid,nodev,size=128M
+
+[Install]
+WantedBy=local-fs.target
+EOF
+
+# Create var-lib-systemd.mount
+cat <<EOF >/etc/systemd/system/var-lib-systemd.mount
+[Unit]
+Description=SystemD Variable Data
+After=var-lib.mount
+Before=systemd-journald.service
+ConditionPathExists=!/var/lib/systemd
+
+[Mount]
+What=tmpfs
+Where=/var/lib/systemd
+Type=tmpfs
+Options=mode=0755,nosuid,nodev,size=32M
+
+[Install]
+WantedBy=local-fs.target
+EOF
+
+# Create var-lib-systemd-linger.mount
+cat <<EOF >/etc/systemd/system/var-lib-systemd-linger.mount
+[Unit]
+Description=SystemD Linger Data
+After=var-lib-systemd.mount
+ConditionPathExists=!/var/lib/systemd/linger
+
+[Mount]
+What=tmpfs
+Where=/var/lib/systemd/linger
+Type=tmpfs
+Options=mode=0755,nosuid,nodev,noexec,size=1M
+
+[Install]
+WantedBy=local-fs.target
+EOF
+
+# Create run-systemd-users.mount
+cat <<EOF >/etc/systemd/system/run-systemd-users.mount
+[Unit]
+Description=Runtime Directory for systemd users
+Before=systemd-logind.service
+ConditionPathExists=!/run/systemd/users
+
+[Mount]
+What=tmpfs
+Where=/run/systemd/users
+Type=tmpfs
+Options=mode=0755,nosuid,nodev,noexec,size=4M
+
+[Install]
+WantedBy=sysinit.target
+EOF
+
+# Create run-systemd-shutdown.mount
+cat <<EOF >/etc/systemd/system/run-systemd-shutdown.mount
+[Unit]
+Description=Runtime Directory for systemd shutdown
+ConditionPathExists=!/run/systemd/shutdown
+
+[Mount]
+What=tmpfs
+Where=/run/systemd/shutdown
+Type=tmpfs
+Options=mode=0755,nosuid,nodev,noexec,size=1M
+
+[Install]
+WantedBy=sysinit.target
+EOF
+
+# Create run-systemd-sessions.mount
+cat <<EOF >/etc/systemd/system/run-systemd-sessions.mount
+[Unit]
+Description=Runtime Directory for systemd sessions
+Before=systemd-logind.service
+ConditionPathExists=!/run/systemd/sessions
+
+[Mount]
+What=tmpfs
+Where=/run/systemd/sessions
+Type=tmpfs
+Options=mode=0755,nosuid,nodev,noexec,size=4M
+
+[Install]
+WantedBy=sysinit.target
+EOF
+
+# Create run-systemd-journal.mount
+cat <<EOF >/etc/systemd/system/run-systemd-journal.mount
+[Unit]
+Description=Runtime Directory for systemd journal
+Before=systemd-journald.service
+ConditionPathExists=!/run/systemd/journal
+
+[Mount]
+What=tmpfs
+Where=/run/systemd/journal
+Type=tmpfs
+Options=mode=0755,nosuid,nodev,size=16M
+
+[Install]
+WantedBy=sysinit.target
+EOF
+
+# Create run-systemd-journal-stdout.mount
+cat <<EOF >/etc/systemd/system/run-systemd-journal-stdout.mount
+[Unit]
+Description=Runtime Directory for systemd journal stdout
+After=run-systemd-journal.mount
+Before=systemd-journald.service
+ConditionPathExists=!/run/systemd/journal/stdout
+
+[Mount]
+What=tmpfs
+Where=/run/systemd/journal/stdout
+Type=tmpfs
+Options=mode=0755,nosuid,nodev,noexec,size=8M
+
+[Install]
+WantedBy=sysinit.target
+EOF
+
+# Create mount dependency ordering service
+cat <<EOF >/etc/systemd/system/x64-mount-setup.service
+[Unit]
+Description=x64 Mount Setup Coordination
+Before=local-fs.target sysinit.target
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'mkdir -p /run/systemd/journal /run/systemd/sessions /run/systemd/users /run/systemd/shutdown /var/lib/systemd /var/lib/systemd/linger'
+ExecStart=/bin/sh -c 'chmod 755 /run/systemd/journal /run/systemd/sessions /run/systemd/users /run/systemd/shutdown /var/lib/systemd /var/lib/systemd/linger'
+
+[Install]
+WantedBy=sysinit.target
+EOF
+
+# Create enhanced tmpfiles configuration for mount points
+mkdir -p /etc/tmpfiles.d
+
+cat <<EOF >/etc/tmpfiles.d/30-x64-mount-points.conf
+# x64 mount point setup
+d /run/systemd/journal 0755 root root - -
+d /run/systemd/journal/socket 0755 root root - -
+d /run/systemd/journal/stdout 0755 root root - -
+d /run/systemd/sessions 0755 root root - -
+d /run/systemd/users 0755 root root - -
+d /run/systemd/shutdown 0755 root root - -
+d /run/systemd/seats 0755 root root - -
+d /run/systemd/inhibit 0755 root root - -
+d /var/lib/systemd 0755 root root - -
+d /var/lib/systemd/linger 0755 root root - -
+
+# Additional runtime directories
+d /run/avahi-daemon 0755 avahi avahi - -
+d /run/dbus 0755 messagebus messagebus - -
+d /run/initctl 0600 root root - -
+d /storage/.cache 0755 root root - -
+d /storage/.cache/log 0755 root root - -
+d /var/log/wtmp 0644 root utmp - -
+d /var/tmp 1777 root root - -
+EOF
+
+# Enable all mount units
+mkdir -p /etc/systemd/system/sysinit.target.wants
+mkdir -p /etc/systemd/system/local-fs.target.wants
+
+# Link mount units to appropriate targets
+ln -sf /etc/systemd/system/x64-mount-setup.service /etc/systemd/system/sysinit.target.wants/x64-mount-setup.service
+ln -sf /etc/systemd/system/run-systemd-journal.mount /etc/systemd/system/sysinit.target.wants/run-systemd-journal.mount
+ln -sf /etc/systemd/system/run-systemd-sessions.mount /etc/systemd/system/sysinit.target.wants/run-systemd-sessions.mount
+ln -sf /etc/systemd/system/run-systemd-users.mount /etc/systemd/system/sysinit.target.wants/run-systemd-users.mount
+ln -sf /etc/systemd/system/run-systemd-shutdown.mount /etc/systemd/system/sysinit.target.wants/run-systemd-shutdown.mount
+
+ln -sf /etc/systemd/system/var-lib.mount /etc/systemd/system/local-fs.target.wants/var-lib.mount
+ln -sf /etc/systemd/system/var-lib-systemd.mount /etc/systemd/system/local-fs.target.wants/var-lib-systemd.mount
+ln -sf /etc/systemd/system/var-lib-systemd-linger.mount /etc/systemd/system/local-fs.target.wants/var-lib-systemd-linger.mount
+
+# Log completion
+echo "Phase 4: Mount configuration management applied for Generic x86_64"

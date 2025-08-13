@@ -1,0 +1,116 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+
+### GENERIC_X64 Core systemd architecture fixes
+### Unified approach to systemd/D-Bus service management
+
+echo "Applying unified core systemd fixes for GENERIC_X64..."
+
+# Create base systemd directories
+mkdir -p /etc/systemd/system
+mkdir -p /etc/systemd/journald.conf.d
+
+# Fix 1: Unified D-Bus service configuration (base level)
+# Note: VM-specific overrides in 092-vm-service-fixes will enhance this
+mkdir -p /storage/.config/systemd/system/dbus.service.d
+cat <<EOF >/storage/.config/systemd/system/dbus.service.d/10-generic-x64-base.conf
+[Unit]
+# Base D-Bus configuration for GENERIC_X64
+DefaultDependencies=false
+After=sysinit.target
+Before=multi-user.target
+
+[Service]
+# Conservative base configuration
+Restart=on-failure
+RestartSec=1
+StartLimitInterval=30
+StartLimitBurst=5
+# Base memory limit (can be overridden by VM config)
+MemoryMax=48M
+EOF
+
+# Fix 2: Unified journald configuration 
+cat <<EOF >/etc/systemd/journald.conf.d/00-generic-x64-unified.conf
+[Journal]
+# Unified journald configuration for GENERIC_X64
+Storage=persistent
+Compress=no
+Seal=no
+SplitMode=none
+
+# Conservative limits to prevent fd exhaustion
+SystemMaxUse=64M
+SystemKeepFree=128M
+SystemMaxFileSize=8M
+RuntimeMaxUse=32M
+RuntimeKeepFree=64M
+RuntimeMaxFileSize=4M
+
+# Prevent EPOLLHUP errors with conservative sync
+SyncIntervalSec=60s
+MaxRetentionSec=1week
+MaxFileSec=1day
+
+# Disable problematic features
+ForwardToSocket=no
+ForwardToWall=no
+Audit=no
+EOF
+
+# Fix 3: Improve systemd-hostnamed stability without creating stubs
+mkdir -p /storage/.config/systemd/system/systemd-hostnamed.service.d
+cat <<EOF >/storage/.config/systemd/system/systemd-hostnamed.service.d/10-generic-x64.conf
+[Unit]
+# Improve hostnamed stability for GENERIC_X64
+After=dbus.service systemd-journald.service
+Wants=dbus.service
+
+[Service]
+# Conservative restart policy
+Restart=on-failure
+RestartSec=2
+StartLimitInterval=60
+StartLimitBurst=3
+# Reasonable memory limit
+MemoryMax=24M
+# Improved timeout handling
+TimeoutStartSec=15
+EOF
+
+# Fix 4: Enhanced rocknix-automount service for better mount handling
+mkdir -p /storage/.config/systemd/system/rocknix-automount.service.d
+cat <<EOF >/storage/.config/systemd/system/rocknix-automount.service.d/10-generic-x64.conf
+[Unit]
+# Improved dependency management for desktop hardware
+After=systemd-tmpfiles-setup.service systemd-journald.service systemd-udevd.service
+Wants=systemd-tmpfiles-setup.service systemd-udevd.service
+
+[Service]
+# Desktop-appropriate timeouts and restart policy
+TimeoutStartSec=45s
+TimeoutStopSec=15s
+Restart=on-failure
+RestartSec=8s
+StartLimitInterval=300s
+StartLimitBurst=3
+EOF
+
+# Fix 5: Enhanced rocknix-autostart service coordination
+mkdir -p /storage/.config/systemd/system/rocknix-autostart.service.d
+cat <<EOF >/storage/.config/systemd/system/rocknix-autostart.service.d/10-generic-x64.conf
+[Unit]
+# Ensure proper startup coordination
+After=multi-user.target dbus.service
+
+[Service]
+# Robust autostart configuration
+TimeoutStartSec=90s
+Restart=on-failure
+RestartSec=15s
+StartLimitInterval=300s
+StartLimitBurst=2
+EOF
+
+echo "Unified core systemd fixes applied for GENERIC_X64"
