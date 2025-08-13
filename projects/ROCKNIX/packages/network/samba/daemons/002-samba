@@ -4,4 +4,7 @@ CONF="smb.conf"
 DAEMONS=("nmbd" "smbd")
 
 mkdir -p /run/${SVC}
-ln -s /etc/${SVC}/${CONF} /run/${SVC}/${CONF}
+# Ensure /run/samba/smb.conf points to the active config if no generated file exists yet.
+if [ ! -e "/run/${SVC}/${CONF}" ]; then
+	ln -sf "/etc/${SVC}/${CONF}" "/run/${SVC}/${CONF}"
+fi

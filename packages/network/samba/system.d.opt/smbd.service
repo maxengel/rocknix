@@ -1,5 +1,27 @@
 [Unit]
 Description=Samba SMB Daemon
+Wants=network.target nmbd.service samba-config.service
+After=network.target nmbd.service samba-config.service local-fs.target
+StartLimitIntervalSec=0
+RequiresMountsFor=/storage /media
+ConditionPathExists=!/storage/.cache/services/samba.disabled
+ConditionPathExists=/run/samba/smb.conf
+
+[Service]
+Type=forking
+PIDFile=/run/samba/smbd.pid
+LimitNOFILE=16384
+ExecStartPre=/usr/lib/samba/samba-config
+ExecStart=/usr/sbin/smbd
+ExecReload=/bin/kill -HUP $MAINPID
+TimeoutStopSec=1s
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+[Unit]
+Description=Samba SMB Daemon
 Wants=network-online.target nmbd.service
 After=network-online.target nmbd.service
 ConditionPathExists=!/storage/.cache/services/samba.disabled

@@ -203,10 +203,11 @@ d /storage/.cache 0755 root root - -
 d /storage/.cache/log 0755 root root - -
 d /var/log/wtmp 0644 root utmp - -
 d /var/tmp 1777 root root - -
-EOF
-
-# Enable all mount units
-mkdir -p /etc/systemd/system/sysinit.target.wants
+z /var/log/wtmp 0664 root utmp - -
+z /var/tmp 1777 root root - -
+z /storage/.cache 0755 root root - -
+z /storage/.cache/log 0755 root root - -
+d /run/credentials 0755 root root - -
 mkdir -p /etc/systemd/system/local-fs.target.wants
 
 # Link mount units to appropriate targets
@@ -219,6 +220,25 @@ ln -sf /etc/systemd/system/run-systemd-shutdown.mount /etc/systemd/system/sysini
 ln -sf /etc/systemd/system/var-lib.mount /etc/systemd/system/local-fs.target.wants/var-lib.mount
 ln -sf /etc/systemd/system/var-lib-systemd.mount /etc/systemd/system/local-fs.target.wants/var-lib-systemd.mount
 ln -sf /etc/systemd/system/var-lib-systemd-linger.mount /etc/systemd/system/local-fs.target.wants/var-lib-systemd-linger.mount
+
+# Additional mounts expected by units/logs
+cat <<EOF >/etc/systemd/system/var-tmp.mount
+[Unit]
+Description=Temporary Files under /var/tmp
+Before=local-fs.target
+
+[Mount]
+What=tmpfs
+Where=/var/tmp
+Type=tmpfs
+Options=mode=1777,nosuid,nodev
+
+[Install]
+WantedBy=local-fs.target
+EOF
+
+mkdir -p /etc/systemd/system/local-fs.target.wants
+ln -sf /etc/systemd/system/var-tmp.mount /etc/systemd/system/local-fs.target.wants/var-tmp.mount
 
 # Log completion
 echo "Phase 4: Mount configuration management applied for Generic x86_64"

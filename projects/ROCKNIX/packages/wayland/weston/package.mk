@@ -80,3 +80,8 @@ EOF
   fi
 
 }
+
+post_install() {
+  # Ensure weston is enabled so Alias=display-manager.service is materialized
+  enable_service weston.service
+}

@@ -19,6 +19,8 @@ makeinstall_target() {
 }
 
 post_install() {
-enable_service sixaxis@.service
+  # Do not enable the bare template without an instance; this causes systemd warnings.
+  # Users or udev rules should start specific instances (e.g., sixaxis@hci0.service).
+  :
 }
 

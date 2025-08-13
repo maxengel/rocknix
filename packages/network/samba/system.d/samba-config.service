@@ -1,7 +1,9 @@
 [Unit]
 Description=Samba Configuration
 DefaultDependencies=false
-After=basic.target
+After=basic.target local-fs.target
+Before=smbd.service nmbd.service
+RequiresMountsFor=/storage /run /var
 
 [Service]
 Type=oneshot
