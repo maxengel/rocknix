@@ -35,12 +35,47 @@ pre_configure_target() {
   mkdir -p "${PKG_BUILD}/.${TARGET_NAME}"
   cd ${PKG_BUILD}/.${TARGET_NAME}
   
-  # For x86_64, use the host LLVM installation to avoid GLIBC issues
-  if [ "${TARGET_ARCH}" = "x86_64" ]; then
-    PKG_CMAKE_OPTS_TARGET="-DLIBCLC_TARGETS_TO_BUILD=${LIBCLC_TARGETS_TO_BUILD}
-                           -DLIBCLC_CUSTOM_LLVM_TOOLS_BINARY_DIR=${TOOLCHAIN}/bin
-                           -DLLVM_DIR=${TOOLCHAIN}/lib/cmake/llvm"
-  else
-    PKG_CMAKE_OPTS_TARGET="-DLIBCLC_TARGETS_TO_BUILD=${LIBCLC_TARGETS_TO_BUILD}"
+  # Always use TOOLCHAIN-provided LLVM tools (clang, llvm-as/link/opt) so CMake finds them
+  PKG_CMAKE_OPTS_TARGET="-DLIBCLC_TARGETS_TO_BUILD=${LIBCLC_TARGETS_TO_BUILD}
+                         -DLIBCLC_CUSTOM_LLVM_TOOLS_BINARY_DIR=${TOOLCHAIN}/bin"
+  # Provide LLVM_DIR hint for non-x86_64 where we build host LLVM
+  if [ "${TARGET_ARCH}" != "x86_64" ]; then
+    PKG_CMAKE_OPTS_TARGET+=" -DLLVM_DIR=${TOOLCHAIN}/lib/cmake/llvm"
+  fi
+}
+
+# NOTE: Cross-compiling libclc tries to build the prepare_builtins host tool
+# for the target architecture and link against host LLVM, which fails.
+# We don't need to build libclc for target: the bitcode and headers produced
+# by the host build are architecture-independent and can be staged into the
+# target sysroot. To avoid the cross-link error, skip the target build and
+# just install host-produced artifacts into SYSROOT.
+make_target() {
+  : # no-op; use host-built libclc artifacts
+}
+
+makeinstall_target() {
+  # Source (host-installed) paths (host installs into TOOLCHAIN prefix)
+  local HOST_PREFIX="${TOOLCHAIN}"
+  local HOST_DATADIR="${HOST_PREFIX}/share"
+  local HOST_INCLUDEDIR="${HOST_PREFIX}/include"
+
+  # Destination (target sysroot) paths
+  local TGT_PREFIX="${SYSROOT_PREFIX}/usr"
+  local TGT_DATADIR="${TGT_PREFIX}/share"
+  local TGT_INCLUDEDIR="${TGT_PREFIX}/include"
+
+  mkdir -p "${TGT_DATADIR}/clc" "${TGT_INCLUDEDIR}" "${TGT_DATADIR}/pkgconfig"
+
+  # Copy bitcode libraries and includes from host into target sysroot
+  if [ -d "${HOST_DATADIR}/clc" ]; then
+    cp -a "${HOST_DATADIR}/clc/." "${TGT_DATADIR}/clc/"
+  fi
+  if [ -d "${HOST_INCLUDEDIR}/clc" ]; then
+    cp -a "${HOST_INCLUDEDIR}/clc" "${TGT_INCLUDEDIR}/"
+  fi
+  # pkg-config file is useful for consumers
+  if [ -f "${HOST_DATADIR}/pkgconfig/libclc.pc" ]; then
+    cp -a "${HOST_DATADIR}/pkgconfig/libclc.pc" "${TGT_DATADIR}/pkgconfig/"
   fi
 }

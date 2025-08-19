@@ -191,7 +191,9 @@ post_makeinstall_target() {
       cp -PR bin/default/source3/utils/smbpasswd ${INSTALL}/usr/bin
 
     mkdir -p ${INSTALL}/usr/lib/systemd/system
-      cp ${PKG_DIR}/system.d.opt/* ${INSTALL}/usr/lib/systemd/system
+    cp ${PKG_DIR}/system.d.opt/* ${INSTALL}/usr/lib/systemd/system
+    # Ensure samba-config.service is installed so Wants/After can resolve
+    cp ${PKG_DIR}/system.d/samba-config.service ${INSTALL}/usr/lib/systemd/system
 
     mkdir -p ${INSTALL}/usr/share/services
       cp -P ${PKG_DIR}/default.d/*.conf ${INSTALL}/usr/share/services

@@ -11,6 +11,7 @@ PKG_LICENSE="GPLv2"
 PKG_DEPENDS_TARGET="toolchain ffmpeg libzip SDL2 zlib zip"
 PKG_LONGDESC="PPSSPPDL"
 GET_HANDLER_SUPPORT="git"
+PKG_GIT_SUBMODULE_DEPTH="1"
 
 ### Note:
 ### This package includes the NotoSansJP-Regular.ttf font.  This font is licensed under
@@ -20,7 +21,16 @@ GET_HANDLER_SUPPORT="git"
 
 PKG_PATCH_DIRS+="${DEVICE}"
 
-PKG_CMAKE_OPTS_TARGET=" -DUSE_SYSTEM_FFMPEG=OFF \
+post_unpack() {
+  # Manually initialize git submodules if they weren't properly initialized
+  if [ ! -f "${PKG_BUILD}/ext/armips/CMakeLists.txt" ]; then
+    echo "Manually initializing git submodules for ppsspp-sa..."
+    cd "${PKG_BUILD}"
+    git submodule update --init --recursive --depth 1
+  fi
+}
+
+PKG_CMAKE_OPTS_TARGET=" -DUSE_SYSTEM_FFMPEG=ON \
                         -DCMAKE_BUILD_TYPE=Release \
                         -DCMAKE_SYSTEM_NAME=Linux \
                         -DBUILD_SHARED_LIBS=OFF \

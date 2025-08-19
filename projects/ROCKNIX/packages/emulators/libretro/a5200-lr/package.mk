@@ -21,13 +21,13 @@
 
 PKG_NAME="a5200-lr"
 PKG_VERSION="526404072821bb2021fab16f8c5dbbca300512c8"
+PKG_SHA256="920d6072d58456a05a80e09efa8b8780a1c7d67ec29500e873c3095321fe799a"
 PKG_LICENSE="GPL"
 PKG_SITE="https://github.com/libretro/a5200"
-PKG_URL="${PKG_SITE}.git"
+PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
 PKG_DEPENDS_TARGET="toolchain"
 PKG_LONGDESC="Atari 5200 libretro core"
 PKG_TOOLCHAIN="make"
-GET_HANDLER_SUPPORT="git"
 
 makeinstall_target() {
   mkdir -p ${INSTALL}/usr/lib/libretro

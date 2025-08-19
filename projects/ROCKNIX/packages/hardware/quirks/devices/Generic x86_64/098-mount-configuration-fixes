@@ -208,7 +208,10 @@ z /var/tmp 1777 root root - -
 z /storage/.cache 0755 root root - -
 z /storage/.cache/log 0755 root root - -
 d /run/credentials 0755 root root - -
-mkdir -p /etc/systemd/system/local-fs.target.wants
+EOF
+
+# Ensure base directories exist early
+mkdir -p /etc/systemd/system/local-fs.target.wants /etc/systemd/system/sysinit.target.wants /media
 
 # Link mount units to appropriate targets
 ln -sf /etc/systemd/system/x64-mount-setup.service /etc/systemd/system/sysinit.target.wants/x64-mount-setup.service
@@ -220,6 +223,71 @@ ln -sf /etc/systemd/system/run-systemd-shutdown.mount /etc/systemd/system/sysini
 ln -sf /etc/systemd/system/var-lib.mount /etc/systemd/system/local-fs.target.wants/var-lib.mount
 ln -sf /etc/systemd/system/var-lib-systemd.mount /etc/systemd/system/local-fs.target.wants/var-lib-systemd.mount
 ln -sf /etc/systemd/system/var-lib-systemd-linger.mount /etc/systemd/system/local-fs.target.wants/var-lib-systemd-linger.mount
+
+# Provide storage, storage-.cache, and storage-.cache-log mount units expected by services/logs
+cat <<EOF >/etc/systemd/system/storage.mount
+[Unit]
+Description=Mount for /storage
+Before=local-fs.target
+
+[Mount]
+What=tmpfs
+Where=/storage
+Type=tmpfs
+Options=mode=0755,nosuid,nodev
+
+[Install]
+WantedBy=local-fs.target
+EOF
+
+cat <<EOF >/etc/systemd/system/storage-.cache.mount
+[Unit]
+Description=Mount for /storage/.cache
+After=storage.mount
+Before=local-fs.target
+Requires=storage.mount
+
+[Mount]
+What=tmpfs
+Where=/storage/.cache
+Type=tmpfs
+Options=mode=0755,nosuid,nodev
+
+[Install]
+WantedBy=local-fs.target
+EOF
+
+cat <<EOF >/etc/systemd/system/storage-.cache-log.mount
+[Unit]
+Description=Mount for /storage/.cache/log
+After=storage-.cache.mount
+Before=local-fs.target
+Requires=storage-.cache.mount
+
+[Mount]
+What=tmpfs
+Where=/storage/.cache/log
+Type=tmpfs
+Options=mode=0755,nosuid,nodev
+
+[Install]
+WantedBy=local-fs.target
+EOF
+
+cat <<EOF >/etc/systemd/system/media.mount
+[Unit]
+Description=Mount for /media
+Before=local-fs.target
+
+[Mount]
+What=tmpfs
+Where=/media
+Type=tmpfs
+Options=mode=0755,nosuid,nodev
+
+[Install]
+WantedBy=local-fs.target
+EOF
 
 # Additional mounts expected by units/logs
 cat <<EOF >/etc/systemd/system/var-tmp.mount
@@ -239,6 +307,12 @@ EOF
 
 mkdir -p /etc/systemd/system/local-fs.target.wants
 ln -sf /etc/systemd/system/var-tmp.mount /etc/systemd/system/local-fs.target.wants/var-tmp.mount
+
+# Enable the new storage/media related mounts
+ln -sf /etc/systemd/system/storage.mount /etc/systemd/system/local-fs.target.wants/storage.mount
+ln -sf /etc/systemd/system/storage-.cache.mount /etc/systemd/system/local-fs.target.wants/storage-.cache.mount
+ln -sf /etc/systemd/system/storage-.cache-log.mount /etc/systemd/system/local-fs.target.wants/storage-.cache-log.mount
+ln -sf /etc/systemd/system/media.mount /etc/systemd/system/local-fs.target.wants/media.mount
 
 # Log completion
 echo "Phase 4: Mount configuration management applied for Generic x86_64"
