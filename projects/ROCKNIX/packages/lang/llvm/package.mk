@@ -13,8 +13,7 @@ PKG_DEPENDS_TARGET="toolchain llvm:host zlib"
 PKG_LONGDESC="Low-Level Virtual Machine (LLVM) is a compiler infrastructure."
 PKG_TOOLCHAIN="cmake"
 
-# Include SPIR-V headers and translator when Mesa host tools are expected (iris or panfrost)
-if listcontains "${GRAPHIC_DRIVERS}" "(iris|panfrost)"; then
+if listcontains "${GRAPHIC_DRIVERS}" "iris"; then
   PKG_DEPENDS_UNPACK="spirv-headers spirv-llvm-translator"
 fi
 
@@ -49,7 +48,7 @@ PKG_CMAKE_OPTS_COMMON="-DLLVM_INCLUDE_TOOLS=ON \
                        -DCMAKE_SKIP_RPATH=ON"
 
 post_unpack() {
-  if listcontains "${GRAPHIC_DRIVERS}" "(iris|panfrost)"; then
+  if listcontains "${GRAPHIC_DRIVERS}" "iris"; then
     mkdir -p "${PKG_BUILD}"/llvm/projects/{SPIRV-Headers,SPIRV-LLVM-Translator}
       tar --strip-components=1 \
         -xf "${SOURCES}/spirv-headers/spirv-headers-$(get_pkg_version spirv-headers).tar.gz" \
@@ -92,38 +91,64 @@ pre_configure_host() {
   mkdir -p ${PKG_BUILD}/.${HOST_NAME}
   cd ${PKG_BUILD}/.${HOST_NAME}
   
-  PKG_CMAKE_OPTS_HOST="${PKG_CMAKE_OPTS_COMMON} \
-                       -DCMAKE_BINARY_DIR=${PKG_BUILD}/.${HOST_NAME} \
-                       -DLLVM_NATIVE_BUILD=${PKG_BUILD}/.${HOST_NAME}/native \
-                       -DLLVM_ENABLE_PROJECTS='clang' \
-                       -DCLANG_LINK_CLANG_DYLIB=ON \
-                       -DLLVM_TARGETS_TO_BUILD=${LLVM_BUILD_TARGETS}"
+  # For x86_64 pseudo-cross-compilation, use system tools to avoid GLIBC issues
+  if [ "${TARGET_ARCH}" = "x86_64" ] && [ "${MACHINE_HARDWARE_NAME}" = "x86_64" ]; then
+    PKG_CMAKE_OPTS_HOST="${PKG_CMAKE_OPTS_COMMON} \
+                         -DCMAKE_BINARY_DIR=${PKG_BUILD}/.${HOST_NAME} \
+                         -DLLVM_ENABLE_PROJECTS='' \
+                         -DLLVM_TARGETS_TO_BUILD=${LLVM_BUILD_TARGETS} \
+                         -DLLVM_BUILD_UTILS=OFF \
+                         -DLLVM_INCLUDE_TESTS=OFF \
+                         -DLLVM_BUILD_TESTS=OFF \
+                         -DLLVM_OPTIMIZED_TABLEGEN=OFF"
+  else
+    PKG_CMAKE_OPTS_HOST="${PKG_CMAKE_OPTS_COMMON} \
+                         -DCMAKE_BINARY_DIR=${PKG_BUILD}/.${HOST_NAME} \
+                         -DLLVM_NATIVE_BUILD=${PKG_BUILD}/.${HOST_NAME}/native \
+                         -DLLVM_ENABLE_PROJECTS='clang' \
+                         -DCLANG_LINK_CLANG_DYLIB=ON \
+                         -DLLVM_TARGETS_TO_BUILD=${LLVM_BUILD_TARGETS}"
+  fi
 }
 
 post_make_host() {
-  ninja ${NINJA_OPTS} llvm-config llvm-objcopy llvm-tblgen llvm-min-tblgen
-  # Build required tools for libclc/mesa on non-x86_64 targets
-  ninja ${NINJA_OPTS} clang llvm-as llvm-link opt
-  # Build llvm-spirv if available (when SPIR-V translator is present)
-  if [ -f tools/llvm-spirv/CMakeLists.txt ] || [ -d projects/SPIRV-LLVM-Translator ]; then
-    ninja ${NINJA_OPTS} llvm-spirv || true
+  # For x86_64 pseudo-cross-compilation, skip building tools (use system tools)
+  if [ "${TARGET_ARCH}" = "x86_64" ] && [ "${MACHINE_HARDWARE_NAME}" = "x86_64" ]; then
+    return 0
+  fi
+
+  ninja ${NINJA_OPTS} llvm-config llvm-objcopy llvm-tblgen
+
+  if listcontains "${GRAPHIC_DRIVERS}" "iris"; then
+    ninja ${NINJA_OPTS} llvm-as llvm-link llvm-spirv opt
   fi
 }
 
 post_makeinstall_host() {
   mkdir -p ${TOOLCHAIN}/bin
   
+  # For x86_64 pseudo-cross-compilation, use system LLVM 15 tools
+  if [ "${TARGET_ARCH}" = "x86_64" ] && [ "${MACHINE_HARDWARE_NAME}" = "x86_64" ]; then
+    # Create symlinks to system LLVM 15 tools
+    ln -sf /usr/bin/llvm-config-15 ${TOOLCHAIN}/bin/llvm-config
+    ln -sf /usr/bin/llvm-objcopy-15 ${TOOLCHAIN}/bin/llvm-objcopy
+    ln -sf /usr/bin/llvm-tblgen-15 ${TOOLCHAIN}/bin/llvm-tblgen
+    
+    if listcontains "${GRAPHIC_DRIVERS}" "iris"; then
+      ln -sf /usr/bin/llvm-as-15 ${TOOLCHAIN}/bin/llvm-as
+      ln -sf /usr/bin/llvm-link-15 ${TOOLCHAIN}/bin/llvm-link
+      ln -sf /usr/bin/llvm-spirv-15 ${TOOLCHAIN}/bin/llvm-spirv
+      ln -sf /usr/bin/opt-15 ${TOOLCHAIN}/bin/opt
+    fi
+    return 0
+  fi
+  
   cp -a bin/llvm-config ${TOOLCHAIN}/bin
   cp -a bin/llvm-objcopy ${TOOLCHAIN}/bin
   cp -a bin/llvm-tblgen ${TOOLCHAIN}/bin
-  # Needed by LLVM 18+ TableGen.cmake; prevents cross native rebuilds
-  cp -a bin/llvm-min-tblgen ${TOOLCHAIN}/bin
-  # Install required tools for libclc/mesa on non-x86_64 targets
-  cp -a bin/clang "${TOOLCHAIN}/bin"
-  cp -a bin/{llvm-as,llvm-link,opt} "${TOOLCHAIN}/bin"
-  # llvm-spirv may not always be present; copy if built
-  if [ -f bin/llvm-spirv ]; then
-    cp -a bin/llvm-spirv "${TOOLCHAIN}/bin"
+
+  if listcontains "${GRAPHIC_DRIVERS}" "iris"; then
+    cp -a bin/{llvm-as,llvm-link,llvm-spirv,opt} "${TOOLCHAIN}/bin"
   fi
 }
 
@@ -131,20 +156,42 @@ pre_configure_target() {
   mkdir -p ${PKG_BUILD}/.${TARGET_NAME}
   cd ${PKG_BUILD}/.${TARGET_NAME}
   
-  PKG_CMAKE_OPTS_TARGET="${PKG_CMAKE_OPTS_COMMON} \
-               -DCMAKE_BINARY_DIR=${PKG_BUILD}/.${TARGET_NAME} \
-               -DCMAKE_CROSSCOMPILING=ON \
-               -DLLVM_ENABLE_PROJECTS='' \
-               -DLLVM_TARGETS_TO_BUILD=AMDGPU \
-               -DLLVM_TARGET_ARCH=\"${TARGET_ARCH}\" \
-               -DLLVM_USE_HOST_TOOLS=ON \
-               -DLLVM_NATIVE_TOOL_DIR=${TOOLCHAIN}/bin \
-               -DLLVM_CONFIG_PATH=${TOOLCHAIN}/bin/llvm-config \
-               -DLLVM_TABLEGEN=${TOOLCHAIN}/bin/llvm-tblgen \
-               -DLLVM_MIN_TABLEGEN=${TOOLCHAIN}/bin/llvm-min-tblgen"
+  # For x86_64 pseudo-cross-compilation, use host-built LLVM 19 tools for target build
+  if [ "${TARGET_ARCH}" = "x86_64" ] && [ "${MACHINE_HARDWARE_NAME}" = "x86_64" ]; then
+    PKG_CMAKE_OPTS_TARGET="${PKG_CMAKE_OPTS_COMMON} \
+                           -DCMAKE_BINARY_DIR=${PKG_BUILD}/.${TARGET_NAME} \
+                           -DCMAKE_CROSSCOMPILING=ON \
+                           -DLLVM_ENABLE_PROJECTS='' \
+                           -DLLVM_TARGETS_TO_BUILD=X86\;AMDGPU \
+                           -DLLVM_TARGET_ARCH="${TARGET_ARCH}" \
+                           -DLLVM_TABLEGEN=${PKG_BUILD}/.${HOST_NAME}/NATIVE/bin/llvm-tblgen \
+                           -DLLVM_CONFIG_PATH=${PKG_BUILD}/.${HOST_NAME}/NATIVE/bin/llvm-config"
+  else
+    PKG_CMAKE_OPTS_TARGET="${PKG_CMAKE_OPTS_COMMON} \
+                           -DCMAKE_BINARY_DIR=${PKG_BUILD}/.${TARGET_NAME} \
+                           -DLLVM_NATIVE_BUILD=${PKG_BUILD}/.${TARGET_NAME}/native \
+                           -DCMAKE_CROSSCOMPILING=ON \
+                           -DLLVM_ENABLE_PROJECTS='' \
+                           -DLLVM_TARGETS_TO_BUILD=AMDGPU \
+                           -DLLVM_TARGET_ARCH="${TARGET_ARCH}" \
+                           -DLLVM_TABLEGEN=${TOOLCHAIN}/bin/llvm-tblgen"
+  fi
 }
 
 post_makeinstall_target() {
+  # For x86_64 pseudo-cross-compilation, don't install LLVM tools or CMake config to target
+  # libclc and other dependents should use the host LLVM installation instead
+  if [ "${TARGET_ARCH}" = "x86_64" ] && [ "${MACHINE_HARDWARE_NAME}" = "x86_64" ]; then
+    # Remove any dangling symlinks that might cause copy errors
+    rm -f ${SYSROOT_PREFIX}/usr/bin/llvm-config
+    rm -rf ${INSTALL}/usr/bin
+    rm -rf ${INSTALL}/usr/lib/LLVMHello.so
+    rm -rf ${INSTALL}/usr/lib/libLTO.so
+    rm -rf ${INSTALL}/usr/lib/cmake
+    rm -rf ${INSTALL}/usr/share
+    return 0
+  fi
+  
   mkdir -p ${SYSROOT_PREFIX}/usr/bin
   cp -a ${TOOLCHAIN}/bin/llvm-config ${SYSROOT_PREFIX}/usr/bin
 
