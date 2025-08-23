@@ -30,8 +30,6 @@ PKG_LONGDESC="ScummVM with libretro backend."
 PKG_TOOLCHAIN="make"
 PKG_BUILD_FLAGS="-lto"
 
-# textviewer API compatibility handled by patch
-
 pre_make_target() {
   CXXFLAGS+=" -DHAVE_POSIX_MEMALIGN=1"
   cd ${PKG_BUILD}/backends/platform/libretro

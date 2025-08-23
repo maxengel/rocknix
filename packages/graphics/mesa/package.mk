@@ -27,12 +27,6 @@ PKG_MESON_OPTS_HOST="-Dglvnd=disabled \
                      -Dshared-llvm=disabled \
                      -Dtools=panfrost"
 
-# Help meson discover LLVMSPIRVLib and other cmake/pkg-config deps for mesa:host using TOOLCHAIN paths only
-pre_configure_host() {
-  export CMAKE_PREFIX_PATH="${TOOLCHAIN}:${TOOLCHAIN}/lib/cmake:${TOOLCHAIN}/share/cmake:${CMAKE_PREFIX_PATH}"
-  export PKG_CONFIG_PATH="${TOOLCHAIN}/lib/pkgconfig:${TOOLCHAIN}/share/pkgconfig:${PKG_CONFIG_PATH}"
-}
-
 PKG_MESON_OPTS_TARGET="-Dgallium-drivers=${GALLIUM_DRIVERS// /,} \
                        -Dgallium-extra-hud=false \
                        -Dgallium-rusticl=false \
@@ -72,9 +66,6 @@ if listcontains "${GRAPHIC_DRIVERS}" "(iris|panfrost)"; then
     # For x86_64, use system Mesa tools to avoid LLVM host build issues
     PKG_MESON_OPTS_TARGET+=" -Dmesa-clc=disabled -Dprecomp-compiler=disabled"
   else
-  # On non-x86_64 targets (e.g., RK3566 panfrost), Mesa host tools require LLVMSPIRVLib
-  # Provide it via spirv-llvm-translator:host without impacting GENERIC_X64 flow
-  PKG_DEPENDS_HOST+=" spirv-llvm-translator:host"
     PKG_DEPENDS_TARGET+=" mesa:host"
     PKG_MESON_OPTS_TARGET+=" -Dmesa-clc=system -Dprecomp-compiler=system"
   fi
@@ -130,7 +121,59 @@ else
 fi
 
 pre_configure_target() {
-  : # No target-specific hacks; rely on TOOLCHAIN-provided dependencies
+  # Create debug file to verify function is called
+  echo "Mesa pre_configure_target called at $(date)" > /tmp/mesa_debug.log
+  echo "TARGET_ARCH: ${TARGET_ARCH}" >> /tmp/mesa_debug.log
+  echo "GRAPHIC_DRIVERS: ${GRAPHIC_DRIVERS}" >> /tmp/mesa_debug.log
+  
+  # For x86_64, copy system Clang libraries to sysroot for Mesa
+  if [ "${TARGET_ARCH}" = "x86_64" ]; then
+    echo "Setting up Clang libraries for Mesa x86_64 build" >> /tmp/mesa_debug.log
+    
+    # Set up the sysroot with system Clang libraries and headers
+    mkdir -p ${SYSROOT_PREFIX}/usr/lib
+    mkdir -p ${SYSROOT_PREFIX}/usr/include
+    
+    # Copy system Clang libraries to sysroot (using correct paths from container)
+    cp -a /usr/lib/llvm-15/lib/libclangBasic.a ${SYSROOT_PREFIX}/usr/lib/ 2>> /tmp/mesa_debug.log || true
+    cp -a /usr/lib/llvm-15/lib/libclang-cpp.so* ${SYSROOT_PREFIX}/usr/lib/ 2>> /tmp/mesa_debug.log || true
+    cp -a /usr/lib/x86_64-linux-gnu/libclang-15.so* ${SYSROOT_PREFIX}/usr/lib/ 2>> /tmp/mesa_debug.log || true
+    
+    # Copy Clang headers to sysroot
+    if [ -d /usr/lib/llvm-15/lib/clang ]; then
+      cp -a /usr/lib/llvm-15/lib/clang ${SYSROOT_PREFIX}/usr/include/ 2>> /tmp/mesa_debug.log || true
+    fi
+    
+    # Create pkg-config files in the sysroot
+    mkdir -p ${SYSROOT_PREFIX}/usr/lib/pkgconfig
+    cat > ${SYSROOT_PREFIX}/usr/lib/pkgconfig/clang.pc << EOF
+prefix=\${pcfiledir}/../..
+exec_prefix=\${prefix}
+libdir=\${prefix}/lib
+includedir=\${prefix}/include
+
+Name: Clang
+Description: Clang compiler library
+Version: 15.0.0
+Libs: -L\${libdir} -lclangBasic
+Cflags: -I\${includedir}
+EOF
+
+    cat > ${SYSROOT_PREFIX}/usr/lib/pkgconfig/clang-cpp.pc << EOF
+prefix=\${pcfiledir}/../..
+exec_prefix=\${prefix}
+libdir=\${prefix}/lib
+includedir=\${prefix}/include
+
+Name: Clang C++
+Description: Clang C++ compiler library
+Version: 15.0.0
+Libs: -L\${libdir} -lclang-cpp
+Cflags: -I\${includedir}
+EOF
+
+    echo "Clang libraries setup completed for Mesa"
+  fi
 }
 
 makeinstall_host() {
