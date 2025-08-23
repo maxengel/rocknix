@@ -104,6 +104,11 @@ then
   PKG_MESON_OPTS_TARGET+=" -Ddebug-tty=${DEBUG_TTY}"
 fi
 
+# Enable D-Bus for GENERIC_X64 to support desktop services like Weston
+if [ "${DEVICE}" = "GENERIC_X64" ]; then
+  PKG_MESON_OPTS_TARGET=$(echo "${PKG_MESON_OPTS_TARGET}" | sed 's/-Ddbus=false/-Ddbus=true/')
+fi
+
 pre_configure_target() {
   export TARGET_CFLAGS=$(echo ${TARGET_CFLAGS} | sed -e "s|-O.|-O3|g")
 
