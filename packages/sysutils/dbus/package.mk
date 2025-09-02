@@ -8,7 +8,7 @@ PKG_SHA256="0ba2a1a4b16afe7bceb2c07e9ce99a8c2c3508e5dec290dbb643384bd6beb7e2"
 PKG_LICENSE="GPL"
 PKG_SITE="https://dbus.freedesktop.org"
 PKG_URL="https://dbus.freedesktop.org/releases/${PKG_NAME}/${PKG_NAME}-${PKG_VERSION}.tar.xz"
-PKG_DEPENDS_TARGET="meson:host gcc:host expat systemd"
+PKG_DEPENDS_TARGET="meson:host gcc:host expat"
 PKG_LONGDESC="D-Bus is a message bus, used for sending messages between applications."
 
 PKG_MESON_OPTS_TARGET="--libexecdir=/usr/lib/dbus \
@@ -25,7 +25,7 @@ PKG_MESON_OPTS_TARGET="--libexecdir=/usr/lib/dbus \
                        -Dx11_autolaunch=disabled \
                        -Dselinux=disabled \
                        -Dlibaudit=disabled \
-                       -Dsystemd=enabled \
+                       -Dsystemd=disabled \
                        -Duser_session=false \
                        -Dinotify=enabled \
                        -Dvalgrind=disabled \
