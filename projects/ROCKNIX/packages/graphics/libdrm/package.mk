@@ -15,6 +15,17 @@ PKG_TOOLCHAIN="meson"
 
 get_graphicdrivers
 
+PKG_MESON_OPTS_HOST="-Dnouveau=disabled \
+                     -Domap=disabled \
+                     -Dexynos=disabled \
+                     -Dtegra=disabled \
+                     -Dcairo-tests=disabled \
+                     -Dman-pages=disabled \
+                     -Dvalgrind=disabled \
+                     -Dfreedreno-kgsl=false \
+                     -Dinstall-test-programs=false \
+                     -Dudev=false"
+
 PKG_MESON_OPTS_TARGET="-Dnouveau=disabled \
                        -Domap=disabled \
                        -Dexynos=disabled \
@@ -27,16 +38,31 @@ PKG_MESON_OPTS_TARGET="-Dnouveau=disabled \
                        -Dudev=false"
 
 listcontains "${GRAPHIC_DRIVERS}" "(iris|i915|i965)" &&
+  PKG_MESON_OPTS_HOST+=" -Dintel=enabled" || PKG_MESON_OPTS_HOST+=" -Dintel=disabled"
+
+listcontains "${GRAPHIC_DRIVERS}" "(iris|i915|i965)" &&
   PKG_MESON_OPTS_TARGET+=" -Dintel=enabled" || PKG_MESON_OPTS_TARGET+=" -Dintel=disabled"
+
+listcontains "${GRAPHIC_DRIVERS}" "(r200|r300|r600|radeonsi)" &&
+  PKG_MESON_OPTS_HOST+=" -Dradeon=enabled" || PKG_MESON_OPTS_HOST+=" -Dradeon=disabled"
 
 listcontains "${GRAPHIC_DRIVERS}" "(r200|r300|r600|radeonsi)" &&
   PKG_MESON_OPTS_TARGET+=" -Dradeon=enabled" || PKG_MESON_OPTS_TARGET+=" -Dradeon=disabled"
 
 listcontains "${GRAPHIC_DRIVERS}" "radeonsi" &&
+  PKG_MESON_OPTS_HOST+=" -Damdgpu=enabled" || PKG_MESON_OPTS_HOST+=" -Damdgpu=disabled"
+
+listcontains "${GRAPHIC_DRIVERS}" "radeonsi" &&
   PKG_MESON_OPTS_TARGET+=" -Damdgpu=enabled" || PKG_MESON_OPTS_TARGET+=" -Damdgpu=disabled"
 
 listcontains "${GRAPHIC_DRIVERS}" "freedreno" &&
+  PKG_MESON_OPTS_HOST+=" -Dfreedreno=enabled" || PKG_MESON_OPTS_HOST+=" -Dfreedreno=disabled"
+
+listcontains "${GRAPHIC_DRIVERS}" "freedreno" &&
   PKG_MESON_OPTS_TARGET+=" -Dfreedreno=enabled" || PKG_MESON_OPTS_TARGET+=" -Dfreedreno=disabled"
+
+listcontains "${GRAPHIC_DRIVERS}" "etnaviv" &&
+  PKG_MESON_OPTS_HOST+=" -Detnaviv=enabled" || PKG_MESON_OPTS_HOST+=" -Detnaviv=disabled"
 
 listcontains "${GRAPHIC_DRIVERS}" "etnaviv" &&
   PKG_MESON_OPTS_TARGET+=" -Detnaviv=enabled" || PKG_MESON_OPTS_TARGET+=" -Detnaviv=disabled"

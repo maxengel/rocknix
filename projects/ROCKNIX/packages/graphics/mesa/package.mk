@@ -12,7 +12,12 @@ PKG_DEPENDS_TARGET="toolchain expat libdrm libclc Mako:host pyyaml:host"
 PKG_LONGDESC="Mesa is a 3-D graphics library with an API."
 PKG_TOOLCHAIN="meson"
 PKG_PATCH_DIRS+=" ${DEVICE}"
-PKG_VERSION="25.2.0"
+
+post_unpack() {
+  # Remove upper version limit for LLVMSPIRVLib to allow 19.x versions
+  sed -i "s/'< @0@\.@1@'\.format(chosen_llvm_version_major, chosen_llvm_version_minor + 1),$/]/g" ${PKG_BUILD}/meson.build
+}
+PKG_VERSION="25.2.2"
 PKG_URL="https://gitlab.freedesktop.org/mesa/mesa/-/archive/mesa-${PKG_VERSION}/mesa-mesa-${PKG_VERSION}.tar.gz"
 
 if listcontains "${GRAPHIC_DRIVERS}" "panfrost"; then
@@ -30,13 +35,7 @@ pre_configure_host() {
 # Host gets built for panfrost and for x86_64 iris (intel-clc tools)
 PKG_MESON_OPTS_HOST+=" ${MESA_LIBS_PATH_OPTS}  \
                        -Dgallium-drivers=${GALLIUM_DRIVERS// /,} \
-                       -Dvulkan-drivers=${VULKAN_DRIVERS_MESA// /,} \
-                       -Dmesa-clc=enabled \
-                       -Dinstall-mesa-clc=true \
-                       -Dprecomp-compiler=enabled \
-                       -Dinstall-precomp-compiler=true \
-                       -Dintel-clc=enabled \
-                       -Dintel-rt=enabled"
+                       -Dvulkan-drivers=${VULKAN_DRIVERS_MESA// /,}"
 }
 
 PKG_MESON_OPTS_TARGET=" ${MESA_LIBS_PATH_OPTS} \
@@ -49,7 +48,8 @@ PKG_MESON_OPTS_TARGET=" ${MESA_LIBS_PATH_OPTS} \
                        -Degl=enabled \
                        -Dlibunwind=disabled \
                        -Dlmsensors=disabled \
-                       -Dbuild-tests=false"
+                       -Dbuild-tests=false \
+                       -Dgallium-rusticl=true"
 
 if listcontains "${GRAPHIC_DRIVERS}" "panfrost"; then
   # These options require that we have built mesa host as specified above
@@ -57,9 +57,9 @@ if listcontains "${GRAPHIC_DRIVERS}" "panfrost"; then
                            -Dprecomp-compiler=system"
 fi
 
-# For x86_64 with iris driver, use system intel-clc from mesa:host
+# For x86_64 with iris driver, use system mesa-clc from mesa:host
 if listcontains "${GRAPHIC_DRIVERS}" "iris" && [ "${TARGET_ARCH}" = "x86_64" ]; then
-  PKG_MESON_OPTS_TARGET+=" -Dintel-clc=system -Dintel-rt=disabled -Dmesa-clc=system"
+  PKG_MESON_OPTS_TARGET+=" -Dmesa-clc=system"
 fi
 
 if [ "${DISPLAYSERVER}" = "x11" ]; then

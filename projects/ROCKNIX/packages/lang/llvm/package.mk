@@ -133,6 +133,7 @@ post_makeinstall_host() {
     ln -sf /usr/bin/llvm-config-15 ${TOOLCHAIN}/bin/llvm-config
     ln -sf /usr/bin/llvm-objcopy-15 ${TOOLCHAIN}/bin/llvm-objcopy
     ln -sf /usr/bin/llvm-tblgen-15 ${TOOLCHAIN}/bin/llvm-tblgen
+    ln -sf /usr/bin/clang-15 ${TOOLCHAIN}/bin/clang
     
     if listcontains "${GRAPHIC_DRIVERS}" "iris"; then
       ln -sf /usr/bin/llvm-as-15 ${TOOLCHAIN}/bin/llvm-as

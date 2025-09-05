@@ -26,7 +26,7 @@ esac
 PKG_MAKE_OPTS_TARGET="REGENIE=1 \
 		      VERBOSE=1 \
 		      NOWERROR=1 \
-		      OPENMP=1 \
+		      OPENMP=0 \
 		      CROSS_BUILD=${CROSS_BUILD} \
 		      TOOLS=0 \
 		      RETRO=1 \
@@ -58,7 +58,8 @@ make_target() {
   then
     export ARCHOPTS="-D__aarch64__ -DASMJIT_BUILD_X86"
   fi
-  make ${PKG_MAKE_OPTS_TARGET} OVERRIDE_CC=${CC} OVERRIDE_CXX=${CXX} OVERRIDE_LD=$LD AR=${AR} ${MAKEFLAGS}
+  # Limit parallelism for MAME to avoid memory exhaustion
+  make ${PKG_MAKE_OPTS_TARGET} OVERRIDE_CC=${CC} OVERRIDE_CXX=${CXX} OVERRIDE_LD=$LD AR=${AR} -j4
 }
 
 makeinstall_target() {
