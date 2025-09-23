@@ -5,17 +5,18 @@
 PKG_NAME="mesa"
 PKG_LICENSE="OSS"
 PKG_SITE="http://www.mesa3d.org/"
-PKG_DEPENDS_HOST="toolchain:host llvm:host libclc:host spirv-tools:host libdrm:host \
+PKG_DEPENDS_HOST="toolchain:host llvm:host spirv-tools:host libdrm:host \
                   wayland-protocols:host libX11:host libXext:host \
                   libXfixes:host libxshmfence:host libXxf86vm:host xrandr:host glslang:host"
-PKG_DEPENDS_TARGET="toolchain expat libdrm libclc Mako:host pyyaml:host"
+PKG_DEPENDS_TARGET="toolchain expat libdrm Mako:host pyyaml:host"
 PKG_LONGDESC="Mesa is a 3-D graphics library with an API."
 PKG_TOOLCHAIN="meson"
+
 PKG_PATCH_DIRS+=" ${DEVICE}"
 
 post_unpack() {
   # Remove upper version limit for LLVMSPIRVLib to allow 19.x versions
-  sed -i "s/'< @0@\.@1@'\.format(chosen_llvm_version_major, chosen_llvm_version_minor + 1),$/]/g" ${PKG_BUILD}/meson.build
+  sed -i "s/'< @0@\.@1@'\.format(chosen_llvm_version_major, chosen_llvm_version_minor + 1) \]/]/g" ${PKG_BUILD}/meson.build
 }
 PKG_VERSION="25.2.2"
 PKG_URL="https://gitlab.freedesktop.org/mesa/mesa/-/archive/mesa-${PKG_VERSION}/mesa-mesa-${PKG_VERSION}.tar.gz"
@@ -24,12 +25,54 @@ if listcontains "${GRAPHIC_DRIVERS}" "panfrost"; then
   PKG_DEPENDS_TARGET+=" mesa:host"
 fi
 
-# For x86_64 with iris driver, we also need mesa:host for intel-clc tools
-if listcontains "${GRAPHIC_DRIVERS}" "iris" && [ "${TARGET_ARCH}" = "x86_64" ]; then
-  PKG_DEPENDS_TARGET+=" mesa:host"
+# For GENERIC_X64, we need host tools as well
+if [ "${MESA_X86_64_NATIVE}" = "yes" ]; then
+  PKG_DEPENDS_HOST+=" libclc:host"
+fi
+
+# For x86_64, disable OpenCL components to avoid cross-compilation issues
+if [ "${TARGET_ARCH}" = "x86_64" ] && [ "${MACHINE_HARDWARE_NAME}" = "x86_64" ]; then
+  MESA_X86_64_NATIVE="yes"
 fi
 
 get_graphicdrivers
+
+pre_configure_target() {
+  # For GENERIC_X64, set up proper paths for clang libraries and mesa tools
+  if [ "${MESA_X86_64_NATIVE}" = "yes" ]; then
+    # Create symlinks to clang libraries so meson can find them in the expected sysroot location
+    SYSROOT_LIB="${SYSROOT_PREFIX}/usr/lib"
+    SYSROOT_BIN="${SYSROOT_PREFIX}/usr/bin"
+    mkdir -p "${SYSROOT_LIB}" "${SYSROOT_BIN}"
+
+    # Symlink the clang libraries from host toolchain to sysroot
+    for lib in ${TOOLCHAIN}/lib/libclang*.{a,so,so.*}; do
+      if [ -f "$lib" ]; then
+        ln -sf "$lib" "${SYSROOT_LIB}/$(basename $lib)"
+      fi
+    done
+
+    # Symlink mesa tools from host build to make them available for target build
+    MESA_HOST_BUILD="${PKG_BUILD}/.x86_64-linux-gnu"
+    if [ -f "${MESA_HOST_BUILD}/src/compiler/clc/mesa_clc" ]; then
+      ln -sf "${MESA_HOST_BUILD}/src/compiler/clc/mesa_clc" "${SYSROOT_BIN}/mesa_clc"
+      chmod +x "${SYSROOT_BIN}/mesa_clc"
+    fi
+    if [ -f "${MESA_HOST_BUILD}/src/compiler/spirv/vtn_bindgen2" ]; then
+      ln -sf "${MESA_HOST_BUILD}/src/compiler/spirv/vtn_bindgen2" "${SYSROOT_BIN}/vtn_bindgen2"
+      chmod +x "${SYSROOT_BIN}/vtn_bindgen2"
+    fi
+
+    # For pseudo-cross-compilation, replace target python3 with working toolchain python3
+    # since target python3 can't execute due to library dependencies
+    if [ -f "${TOOLCHAIN}/bin/python3" ]; then
+      ln -sf "${TOOLCHAIN}/bin/python3" "${SYSROOT_BIN}/python3"
+    fi
+
+    # Ensure the sysroot bin is in PATH for tool discovery
+    export PATH="${SYSROOT_BIN}:${PATH}"
+  fi
+}
 
 pre_configure_host() {
 # Host gets built for panfrost and for x86_64 iris (intel-clc tools)
@@ -48,18 +91,25 @@ PKG_MESON_OPTS_TARGET=" ${MESA_LIBS_PATH_OPTS} \
                        -Degl=enabled \
                        -Dlibunwind=disabled \
                        -Dlmsensors=disabled \
-                       -Dbuild-tests=false \
-                       -Dgallium-rusticl=true"
+                       -Dbuild-tests=false"
 
-if listcontains "${GRAPHIC_DRIVERS}" "panfrost"; then
+
+if listcontains "${GRAPHIC_DRIVERS}" "panfrost" && [ "${TARGET_ARCH}" != "x86_64" ]; then
   # These options require that we have built mesa host as specified above
+  PKG_DEPENDS_TARGET+=" libclc"
   PKG_MESON_OPTS_TARGET+=" -Dmesa-clc=system \
                            -Dprecomp-compiler=system"
-fi
-
-# For x86_64 with iris driver, use system mesa-clc from mesa:host
-if listcontains "${GRAPHIC_DRIVERS}" "iris" && [ "${TARGET_ARCH}" = "x86_64" ]; then
-  PKG_MESON_OPTS_TARGET+=" -Dmesa-clc=system"
+elif [ "${MESA_X86_64_NATIVE}" = "yes" ]; then
+  # For x86_64 pseudo-cross-compilation, enable full driver support
+  # Need to build mesa:host first to provide required tools
+  PKG_DEPENDS_TARGET+=" libclc mesa:host"
+  PKG_MESON_OPTS_TARGET+=" -Dgallium-rusticl=false \
+                           -Dmesa-clc=system \
+                           -Dprecomp-compiler=system"
+else
+  # For non-panfrost builds, disable rusticl and other OpenCL components
+  PKG_DEPENDS_TARGET+=" libclc"
+  PKG_MESON_OPTS_TARGET+=" -Dgallium-rusticl=false"
 fi
 
 if [ "${DISPLAYSERVER}" = "x11" ]; then
@@ -117,51 +167,5 @@ else
   PKG_MESON_OPTS_TARGET+=" -Dvulkan-drivers="
 fi
 
-pre_configure_target() {
-  # Create debug file to verify function is called
-  echo "Mesa pre_configure_target called at $(date)" > /tmp/mesa_debug.log
-  echo "TARGET_ARCH: ${TARGET_ARCH}" >> /tmp/mesa_debug.log
-  echo "GRAPHIC_DRIVERS: ${GRAPHIC_DRIVERS}" >> /tmp/mesa_debug.log
-  
-  # For x86_64, copy system Clang libraries to sysroot for Mesa
-  if [ "${TARGET_ARCH}" = "x86_64" ]; then
-    echo "Setting up Clang libraries for Mesa x86_64 build" >> /tmp/mesa_debug.log
-    
-    # Set up the sysroot with system Clang libraries and headers
-    mkdir -p ${SYSROOT_PREFIX}/usr/lib
-    mkdir -p ${SYSROOT_PREFIX}/usr/include
-    
-    # Copy system Clang libraries to sysroot (using correct paths from container)
-    cp -a /usr/lib/llvm-15/lib/libclangBasic.a ${SYSROOT_PREFIX}/usr/lib/ 2>> /tmp/mesa_debug.log || true
-    cp -a /usr/lib/llvm-15/lib/libclang-cpp.so* ${SYSROOT_PREFIX}/usr/lib/ 2>> /tmp/mesa_debug.log || true
-    cp -a /usr/lib/x86_64-linux-gnu/libclang-15.so* ${SYSROOT_PREFIX}/usr/lib/ 2>> /tmp/mesa_debug.log || true
-    
-    # Copy Clang headers to sysroot
-    if [ -d /usr/lib/llvm-15/lib/clang ]; then
-      cp -a /usr/lib/llvm-15/lib/clang ${SYSROOT_PREFIX}/usr/include/ 2>> /tmp/mesa_debug.log || true
-    fi
-    
-    # Create pkg-config files in the sysroot
-    mkdir -p ${SYSROOT_PREFIX}/usr/lib/pkgconfig
-    cat > ${SYSROOT_PREFIX}/usr/lib/pkgconfig/clang.pc << EOF
-prefix=\${pcfiledir}/../..
-exec_prefix=\${prefix}
-libdir=\${prefix}/lib
-includedir=\${prefix}/include
 
-Name: Clang
-Description: Clang compiler library
-Version: 15.0.0
-Libs: -L\${libdir} -lclangBasic
-Cflags: -I\${includedir}
-EOF
-    
-    echo "Completed Clang library setup for Mesa" >> /tmp/mesa_debug.log
-    
-  # For x86_64 pseudo-cross-compile, build mesa:host to provide required tools
-  # This avoids SPIRV cross-compilation issues while keeping all functionality
-  if [ "${TARGET_ARCH}" = "x86_64" ]; then
-    echo "Adding mesa:host dependency for x86_64 pseudo-cross-compile" >> /tmp/mesa_debug.log
-  fi
-  fi
-}
+

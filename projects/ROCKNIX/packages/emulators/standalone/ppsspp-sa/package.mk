@@ -20,6 +20,15 @@ GET_HANDLER_SUPPORT="git"
 
 PKG_PATCH_DIRS+="${DEVICE}"
 
+post_unpack() {
+  # Initialize git submodules for ppsspp
+  if [ ! -f "${PKG_BUILD}/ext/armips/CMakeLists.txt" ]; then
+    echo "Initializing git submodules for ppsspp-sa..."
+    cd "${PKG_BUILD}"
+    git submodule update --init --recursive --depth 1
+  fi
+}
+
 PKG_CMAKE_OPTS_TARGET=" -DUSE_SYSTEM_FFMPEG=OFF \
                         -DCMAKE_BUILD_TYPE=Release \
                         -DCMAKE_SYSTEM_NAME=Linux \

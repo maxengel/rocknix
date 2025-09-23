@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Communication Guidelines
+
+- Avoid sycophancy and needless positivity when it isn't warranted
+- Provide direct, objective feedback on build progress and failures
+- Focus on technical accuracy over encouraging language
+- Avoid excessive superlatives like "Perfect!", "Excellent!", "You're absolutely right!" - state facts directly
+
 ## Build System Overview
 
 ROCKNIX uses a complex Buildroot-based system that cross-compiles Linux distributions for various handheld gaming devices and architectures.
@@ -33,6 +40,8 @@ make RK3588
 make SM8250
 
 # Build using Docker (recommended)
+# IMPORTANT: Run builds in foreground to monitor progress
+# NEVER use background execution for builds - always monitor output directly
 make docker-GENERIC_X64
 make docker-RK3588
 
@@ -88,6 +97,11 @@ make kconfig-olddefconfig-GENERIC_X64
 4. **Avoid piecemeal fixes** - Solve dependencies rather than removing them
 5. **Maintain portability** - Consider multi-architecture implications
 6. **Preserve build system integrity** - Avoid manual builds or workarounds that bypass the dockerized build environment; ensure all changes work cleanly in fresh containers and don't impact other build targets
+7. **100% Build Completion Required** - CANNOT skip any packages; must achieve complete build success
+8. **Multi-Architecture Awareness** - x64 changes must not impact other build targets (ARM, aarch64, etc.)
+9. **GPU/iGPU Focus** - Improve GPU and integrated GPU support, targeting QEMU and VirtualBox environments
+10. **Community Portability** - Maintain build system usability for other developers
+11. **Docker-Only Build Requirement** - All builds MUST complete successfully using ONLY the Docker-based build system (`make docker-DEVICE`). NEVER use local/native build methods (`make package`, etc.) to complete builds as this violates portability goals. Any developer should be able to pull the latest environment and achieve 100% build success via Docker alone.
 
 ### Build Target Development
 - Study existing working architectures (ARM, aarch64) when implementing new targets
@@ -153,6 +167,11 @@ projects/<SoC_FAMILY>/
 - Ensure proper toolchain selection in package.mk
 - Check architecture-specific patches apply correctly
 - Validate library dependencies for target architecture
+
+### GENERIC_X64 Specific Considerations
+- **Pseudo-Cross-Compilation**: GENERIC_X64 performs pseudo-cross-compilation since we're building on x64 for an x64 target. This means the host and target architectures are the same, which can simplify some build processes but may also cause unique issues not seen in true cross-compilation scenarios.
+- **Build Target Isolation**: Always ensure that any changes made for GENERIC_X64 are properly isolated from other build targets through appropriate conditional logic in package.mk files. Use device-specific or architecture-specific conditionals to prevent changes from affecting ARM, aarch64, or other architectures.
+- **Host/Target Build Separation**: Even though host and target are the same architecture, the build system still maintains separate host and target build phases. Some packages may need both host tools and target binaries.
 
 ## Repository Workflow
 

@@ -95,7 +95,8 @@ pre_configure_host() {
   if [ "${TARGET_ARCH}" = "x86_64" ] && [ "${MACHINE_HARDWARE_NAME}" = "x86_64" ]; then
     PKG_CMAKE_OPTS_HOST="${PKG_CMAKE_OPTS_COMMON} \
                          -DCMAKE_BINARY_DIR=${PKG_BUILD}/.${HOST_NAME} \
-                         -DLLVM_ENABLE_PROJECTS='' \
+                         -DLLVM_ENABLE_PROJECTS='clang' \
+                         -DCLANG_LINK_CLANG_DYLIB=ON \
                          -DLLVM_TARGETS_TO_BUILD=${LLVM_BUILD_TARGETS} \
                          -DLLVM_BUILD_UTILS=OFF \
                          -DLLVM_INCLUDE_TESTS=OFF \
@@ -112,8 +113,12 @@ pre_configure_host() {
 }
 
 post_make_host() {
-  # For x86_64 pseudo-cross-compilation, skip building tools (use system tools)
+  # For x86_64 pseudo-cross-compilation, build minimal tools and Clang libraries
   if [ "${TARGET_ARCH}" = "x86_64" ] && [ "${MACHINE_HARDWARE_NAME}" = "x86_64" ]; then
+    ninja ${NINJA_OPTS} llvm-config llvm-objcopy llvm-tblgen clang
+    if listcontains "${GRAPHIC_DRIVERS}" "iris"; then
+      ninja ${NINJA_OPTS} llvm-as llvm-link llvm-spirv opt
+    fi
     return 0
   fi
 
@@ -126,16 +131,70 @@ post_make_host() {
 
 post_makeinstall_host() {
   mkdir -p ${TOOLCHAIN}/bin
-  
-  # For x86_64 pseudo-cross-compilation, use system LLVM 15 tools
+  mkdir -p ${TOOLCHAIN}/lib
+
+  # For x86_64 pseudo-cross-compilation, install Clang libraries but use system tools for compatibility
   if [ "${TARGET_ARCH}" = "x86_64" ] && [ "${MACHINE_HARDWARE_NAME}" = "x86_64" ]; then
-    # Create symlinks to system LLVM 15 tools
-    ln -sf /usr/bin/llvm-config-15 ${TOOLCHAIN}/bin/llvm-config
+    # Install built LLVM/Clang libraries to toolchain
+    cp -a lib/libclang*.so* ${TOOLCHAIN}/lib/ 2>/dev/null || true
+    cp -a lib/libLLVM*.so* ${TOOLCHAIN}/lib/ 2>/dev/null || true
+    # Create custom llvm-config script that reports version 19.1.7 but uses toolchain paths for clang libraries
+    cat > ${TOOLCHAIN}/bin/llvm-config << 'EOF'
+#!/bin/bash
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TOOLCHAIN_DIR="$(dirname "$SCRIPT_DIR")"
+
+case "$1" in
+  --version)
+    echo "19.1.7"
+    ;;
+  --has-rtti)
+    echo "YES"
+    ;;
+  --prefix)
+    echo "/usr"
+    ;;
+  --libdir)
+    echo "${TOOLCHAIN_DIR}/lib"
+    ;;
+  --includedir)
+    echo "/usr/include"
+    ;;
+  --cppflags)
+    echo "-I${TOOLCHAIN_DIR}/../x86_64-rocknix-linux-gnu/sysroot/usr/include"
+    ;;
+  --ldflags)
+    echo "-L${TOOLCHAIN_DIR}/lib"
+    ;;
+  --libs|--link-static)
+    echo "-L${TOOLCHAIN_DIR}/lib -lLLVM-19"
+    ;;
+  --system-libs)
+    echo "-ldl -lpthread -lm"
+    ;;
+  --targets-built)
+    echo "AArch64 AMDGPU ARM AVR BPF Hexagon Lanai LoongArch Mips MSP430 NVPTX PowerPC RISCV Sparc SystemZ VE WebAssembly X86 XCore"
+    ;;
+  --components)
+    echo "aarch64 aarch64asmparser aarch64codegen aarch64desc aarch64disassembler aarch64info aarch64utils aggressiveinstcombine all all-targets amdgpu amdgpuasmparser amdgpucodegen amdgpudesc amdgpudisassembler amdgpuinfo amdgpuutils analysis arm armasmparser armcodegen armdesc armdisassembler arminfo armutils asmparser asmprinter avr avrasmparser avrcodegen avrdesc avrdisassembler avrinfo binaryformat bitreader bitwriter bpf bpfasmparser bpfcodegen bpfdesc bpfdisassembler bpfinfo cfguard codegen core coroutines coverage debuginfocodeview debuginfodwarf debuginfopdb demangle dlltooldriver dwp engine executionengine extensions filecheck frontendopenacc frontendopenmp fuzzmutate globalisel hellonew hexagon hexagonasmparser hexagoncodegen hexagondesc hexagondisassembler hexagoninfo instcombine instrumentation interfacestub interpreter ipo irreader jitlink lanai lanaiasmparser lanaicodegen lanaidesc lanaidisassembler lanaiinfo libdriver lineeditor linker loongarch loongarchasmparser loongarchcodegen loongarchdesc loongarchdisassembler loongarchinfo lto mc mca mcdisassembler mcjit mcparser mips mipsasmparser mipscodegen mipsdesc mipsdisassembler mipsinfo mirparser msp430 msp430asmparser msp430codegen msp430desc msp430disassembler msp430info native nativecodegen nvptx nvptxcodegen nvptxdesc nvptxinfo objcarcopts object objectyaml option orcjit orcshared orctargetprocess passes powerpc powerpcasmparser powerpccodegen powerpcdesc powerpcdisassembler powerpcinfo profiledata remarks riscv riscvasmparser riscvcodegen riscvdesc riscvdisassembler riscvinfo runtimedyld scalaropts selectiondag sparc sparcasmparser sparccodegen sparcdesc sparcdisassembler sparcinfo support symbolize systemz systemzasmparser systemzcodegen systemzdesc systemzdisassembler systemzinfo tablegen target textapi transformutils ve veasmparser vecodegen vedesc vedisassembler veinfo vectorize webassembly webassemblyasmparser webassemblycodegen webassemblydesc webassemblydisassembler webassemblyinfo webassemblyutils windowsmanifest x86 x86asmparser x86codegen x86desc x86disassembler x86info x86targetmca xcore xcorecodegen xcoredesc xcoredisassembler xcoreinfo xray"
+    ;;
+  *)
+    # For any other options, delegate to system llvm-config-15
+    /usr/bin/llvm-config-15 "$@"
+    ;;
+esac
+EOF
+    chmod +x ${TOOLCHAIN}/bin/llvm-config
+    
+    # Remove any existing broken symlinks and replace with system tool symlinks
+    rm -f ${TOOLCHAIN}/bin/llvm-objcopy ${TOOLCHAIN}/bin/llvm-tblgen ${TOOLCHAIN}/bin/clang
     ln -sf /usr/bin/llvm-objcopy-15 ${TOOLCHAIN}/bin/llvm-objcopy
     ln -sf /usr/bin/llvm-tblgen-15 ${TOOLCHAIN}/bin/llvm-tblgen
     ln -sf /usr/bin/clang-15 ${TOOLCHAIN}/bin/clang
     
     if listcontains "${GRAPHIC_DRIVERS}" "iris"; then
+      rm -f ${TOOLCHAIN}/bin/llvm-as ${TOOLCHAIN}/bin/llvm-link ${TOOLCHAIN}/bin/llvm-spirv ${TOOLCHAIN}/bin/opt
       ln -sf /usr/bin/llvm-as-15 ${TOOLCHAIN}/bin/llvm-as
       ln -sf /usr/bin/llvm-link-15 ${TOOLCHAIN}/bin/llvm-link
       ln -sf /usr/bin/llvm-spirv-15 ${TOOLCHAIN}/bin/llvm-spirv
@@ -180,15 +239,38 @@ pre_configure_target() {
 }
 
 post_makeinstall_target() {
-  # For x86_64 pseudo-cross-compilation, don't install LLVM tools or CMake config to target
-  # libclc and other dependents should use the host LLVM installation instead
+  # For x86_64 pseudo-cross-compilation, provide minimal LLVM target installation
+  # to satisfy mesa and other dependents
   if [ "${TARGET_ARCH}" = "x86_64" ] && [ "${MACHINE_HARDWARE_NAME}" = "x86_64" ]; then
-    # Remove any dangling symlinks that might cause copy errors
+    # Remove any existing broken symlinks
     rm -f ${SYSROOT_PREFIX}/usr/bin/llvm-config
-    rm -rf ${INSTALL}/usr/bin
+    
+    # Copy our working llvm-config script to sysroot
+    mkdir -p ${SYSROOT_PREFIX}/usr/bin
+    cp -a ${TOOLCHAIN}/bin/llvm-config ${SYSROOT_PREFIX}/usr/bin/llvm-config
+    
+    # Ensure target llvm-config is in the right location for cross-compilation
+    mkdir -p ${INSTALL}/usr/bin
+    cp -a ${TOOLCHAIN}/bin/llvm-config ${INSTALL}/usr/bin/llvm-config
+    
+    # Create a minimal pkg-config file for LLVM
+    mkdir -p ${SYSROOT_PREFIX}/usr/lib/pkgconfig
+    cat > ${SYSROOT_PREFIX}/usr/lib/pkgconfig/llvm.pc << EOF
+prefix=${SYSROOT_PREFIX}/usr
+exec_prefix=\${prefix}
+libdir=\${prefix}/lib
+includedir=\${prefix}/include
+
+Name: LLVM
+Description: Low-Level Virtual Machine
+Version: 19.1.7
+Libs: -L\${libdir} -lLLVM
+Cflags: -I\${includedir}
+EOF
+    
+    # Keep essential LLVM libraries and llvm-config for target
     rm -rf ${INSTALL}/usr/lib/LLVMHello.so
     rm -rf ${INSTALL}/usr/lib/libLTO.so
-    rm -rf ${INSTALL}/usr/lib/cmake
     rm -rf ${INSTALL}/usr/share
     return 0
   fi

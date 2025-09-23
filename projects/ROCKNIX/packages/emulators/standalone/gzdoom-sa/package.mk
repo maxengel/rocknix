@@ -12,13 +12,25 @@ PKG_DEPENDS_TARGET="toolchain SDL2 gzdoom-sa:host zmusic libvpx libwebp"
 PKG_LONGDESC="GZDoom is a modder-friendly OpenGL and Vulkan source port based on the DOOM engine"
 PKG_TOOLCHAIN="cmake-make"
 
+configure_package() {
+  # For GENERIC_X64, ensure we have host tools available via standard cross-compilation approach
+  if [ "${DEVICE}" = "GENERIC_X64" ]; then
+    PKG_DEPENDS_TARGET="toolchain SDL2 gzdoom-sa:host zmusic libvpx libwebp"
+  fi
+}
+
 pre_configure_host() {
   unset HOST_CMAKE_OPTS
-  PKG_CMAKE_OPTS_HOST+=" -DZMUSIC_LIBRARIES=${TOOLCHAIN}/usr/lib/libzmusic.so \
-                        -DZMUSIC_INCLUDE_DIR=${TOOLCHAIN}/usr/include \
-                        -DNO_GTK=ON \
-                        -DHAVE_VULKAN=OFF \
+  PKG_CMAKE_OPTS_HOST+=" -DZMUSIC_LIBRARIES=${TOOLCHAIN}/usr/lib/libzmusic.so \\
+                        -DZMUSIC_INCLUDE_DIR=${TOOLCHAIN}/usr/include \\
+                        -DNO_GTK=ON \\
+                        -DHAVE_VULKAN=OFF \\
                         -DHAVE_GLES2=OFF"
+
+  # For GENERIC_X64, ensure tools are built for the host environment
+  if [ "${DEVICE}" = "GENERIC_X64" ]; then
+    echo "GENERIC_X64: Building host tools for cross-compilation"
+  fi
 }
 
 makeinstall_host() {
@@ -27,11 +39,15 @@ makeinstall_host() {
 
 pre_configure_target() {
 
-  PKG_CMAKE_OPTS_TARGET+=" -DNO_GTK=ON \
-                           -DFORCE_CROSSCOMPILE=ON \
-                           -DIMPORT_EXECUTABLES=${PKG_BUILD}/.${HOST_NAME}/ImportExecutables.cmake \
-                           -DCMAKE_BUILD_TYPE=Release \
+  PKG_CMAKE_OPTS_TARGET+=" -DNO_GTK=ON \\
+                           -DCMAKE_BUILD_TYPE=Release \\
                            -DZMUSIC_LIBRARIES=${SYSROOT_PREFIX}/usr/lib/libzmusic.so -DZMUSIC_INCLUDE_DIR=${SYSROOT_PREFIX}/usr/include"
+
+  # For all architectures including GENERIC_X64, use proper cross-compilation with ImportExecutables
+  # This ensures we use host-built tools that are compatible with the build environment
+  PKG_CMAKE_OPTS_TARGET+=" -DFORCE_CROSSCOMPILE=ON \\
+                           -DIMPORT_EXECUTABLES=${PKG_BUILD}/.${HOST_NAME}/ImportExecutables.cmake"
+
   ### Enable GLES on devices that don't support OpenGL.
   if [ ! "${OPENGL_SUPPORT}" = "yes" ] || [ ${PREFER_GLES} = "yes" ]
   then

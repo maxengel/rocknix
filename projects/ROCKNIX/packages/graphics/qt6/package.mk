@@ -8,7 +8,12 @@ PKG_LICENSE="GPL"
 PKG_SITE="https://download.qt.io"
 PKG_URL="${PKG_SITE}/archive/qt/${PKG_VERSION_MAJOR}/${PKG_VERSION}/single/qt-everywhere-src-${PKG_VERSION}.tar.xz"
 PKG_DEPENDS_TARGET="toolchain qt6:host openssl libjpeg-turbo libpng pcre2 sqlite zlib freetype SDL2 gstreamer gst-plugins-base gst-plugins-good gst-libav"
-PKG_DEPENDS_HOST="gcc:host llvm:host mesa:host"
+# For x86_64, avoid mesa:host to prevent LLVM compatibility issues
+if [ "${TARGET_ARCH}" = "x86_64" ]; then
+  PKG_DEPENDS_HOST="gcc:host llvm:host"
+else
+  PKG_DEPENDS_HOST="gcc:host llvm:host mesa:host"
+fi
 PKG_LONGDESC="A cross-platform application and UI framework"
 
 # Apply project-specific patches

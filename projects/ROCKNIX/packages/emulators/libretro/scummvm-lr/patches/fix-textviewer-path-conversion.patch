@@ -1,0 +1,22 @@
+--- a/gui/textviewer.cpp
++++ b/gui/textviewer.cpp
+@@ -65,7 +65,7 @@ TextViewerDialog::~TextViewerDialog() {
+ }
+ 
+ bool TextViewerDialog::loadFile(Common::String &fname) {
+-	Common::FSNode file(fname);
++	Common::FSNode file{Common::Path(fname)};
+ 
+ 	if (!file.exists()) {
+ 		warning("TextViewerDialog::loadFile(): Cannot open file %s", fname.c_str());
+--- a/gui/options.cpp
++++ b/gui/options.cpp
+@@ -3414,7 +3414,7 @@ void GlobalOptionsDialog::handleCommand(CommandSender *sender, uint32 cmd, uint
+ 		else
+ 			logPath = g_system->getDefaultLogFileName();
+ 
+-		TextViewerDialog viewer(logPath);
++		TextViewerDialog viewer(logPath.toString());
+ 		viewer.runModal();
+ 		g_gui.scheduleTopDialogRedraw();
+ 		break;
