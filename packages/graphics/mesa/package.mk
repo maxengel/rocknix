@@ -8,7 +8,7 @@ PKG_SHA256="3c4f6b10ff6ee950d0ec6ea733cc6e6d34c569454e3d39a9b276de9115a3b363"
 PKG_LICENSE="OSS"
 PKG_SITE="http://www.mesa3d.org/"
 PKG_URL="https://mesa.freedesktop.org/archive/mesa-${PKG_VERSION}.tar.xz"
-PKG_DEPENDS_HOST="toolchain:host expat:host libclc:host libdrm:host Mako:host pyyaml:host spirv-tools:host"
+PKG_DEPENDS_HOST="toolchain:host expat:host libdrm:host Mako:host pyyaml:host spirv-tools:host"
 PKG_DEPENDS_TARGET="toolchain expat libdrm Mako:host pyyaml:host"
 PKG_LONGDESC="Mesa is a 3-D graphics library with an API."
 
@@ -25,6 +25,7 @@ PKG_MESON_OPTS_HOST="-Dglvnd=disabled \
                      -Dglx=disabled \
                      -Dvulkan-drivers= \
                      -Dshared-llvm=disabled \
+                     -Dmesa-clc=disabled \
                      -Dtools=panfrost"
 
 PKG_MESON_OPTS_TARGET="-Dgallium-drivers=${GALLIUM_DRIVERS// /,} \

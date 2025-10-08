@@ -57,7 +57,8 @@ PKG_CONFIGURE_OPTS_TARGET="${UTILLINUX_CONFIG_DEFAULT} \
                            --enable-lscpu \
                            --enable-lsfd \
                            --enable-mount \
-                           --enable-nologin"
+                           --enable-nologin \
+                           --enable-sulogin"
 
 if [ "${LOCAL_LOGIN}" = "yes" ]; then
   PKG_CONFIGURE_OPTS_TARGET+=" --enable-agetty"
@@ -70,6 +71,7 @@ fi
 PKG_CONFIGURE_OPTS_HOST="--enable-static \
                          --disable-shared \
                          --enable-all-programs \
+                         --disable-sulogin \
                          ${UTILLINUX_CONFIG_DEFAULT} \
                          --enable-uuidgen \
                          --enable-libuuid"

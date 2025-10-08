@@ -30,6 +30,15 @@ Each project contains:
 ## Essential Commands
 
 ### Building
+
+**CRITICAL BUILD REQUIREMENTS:**
+- **ONLY use `make docker-DEVICE` commands** - This is the ONLY approved method for building
+- **NEVER use direct docker run commands** - Do NOT run `docker run ... bash -c "PROJECT=... ./scripts/build ..."` or similar
+- **NEVER drop into container to build** - The build system MUST be invoked through the Makefile
+- **User runs all builds** - Ask the user to run build commands; do not attempt to execute them directly
+
+The Makefile handles dependencies, build order, environment setup, and proper toolchain configuration. Direct docker commands bypass this and cause build inconsistencies.
+
 ```bash
 # Build all supported devices
 make world
@@ -39,16 +48,16 @@ make GENERIC_X64
 make RK3588
 make SM8250
 
-# Build using Docker (recommended)
-# IMPORTANT: Run builds in foreground to monitor progress
-# NEVER use background execution for builds - always monitor output directly
+# Build using Docker (REQUIRED for consistency)
+# CRITICAL: ALWAYS run builds in foreground to monitor progress and status
+# NEVER use background execution (&) or screen/tmux for builds
+# Build output should be visible in terminal to track progress and catch errors immediately
 make docker-GENERIC_X64
 make docker-RK3588
 
-# Build individual package
+# Note: Individual package builds should also go through make
+# These are NOT recommended - prefer full rebuilds with make docker-DEVICE
 make package PACKAGE=<package_name>
-
-# Clean package
 make package-clean PACKAGE=<package_name>
 ```
 
@@ -78,6 +87,19 @@ make clean
 # Complete clean (removes all build artifacts)
 make distclean
 ```
+
+### Build Monitoring
+
+**CRITICAL BUILD MONITORING REQUIREMENTS:**
+- **Always run builds in foreground** - Never use background execution (`&`) or detached sessions
+- **Monitor build output directly** - Build status, progress, and errors must be visible in real-time
+- **Track build progress** - Watch for completion indicators like package counts and final status messages
+- **Immediate error detection** - Foreground execution allows instant identification of build failures
+- **Build completion indicators:**
+  - Command returns to prompt
+  - Final success/failure message displayed
+  - No active Docker containers running (`docker ps`)
+  - Build stamps created in `.stamps/` directory
 
 ### Kernel Configuration
 ```bash
@@ -114,6 +136,11 @@ make kconfig-olddefconfig-GENERIC_X64
 - Patches go in `packages/<category>/<package>/patches/`
 - Follow cross-compilation best practices
 - Test package builds individually before system builds
+- **CRITICAL: Validate configuration options before changes** - When modifying build variables (meson options, configure flags, etc.), ALWAYS check valid values first:
+  - For autotools: Run `./configure --help` to see valid options
+  - For meson: Check `meson_options.txt` or `meson.options` for valid choices
+  - For cmake: Check `CMakeLists.txt` for option definitions
+  - Never assume an option value is valid without verification
 
 ### Device/Platform Support
 - Each SoC family has its own project directory structure
@@ -143,6 +170,14 @@ projects/<SoC_FAMILY>/
 ```
 
 ## Testing and Validation
+
+### Build and Test Loop Protocol
+1. **Build Generation**: User generates new build when asked via `make docker-GENERIC_X64`
+2. **System Testing**: Claude runs the build in the target system (VirtualBox or QEMU)
+3. **Issue Monitoring**: Both user and Claude monitor for issues during boot/runtime
+4. **Documentation**: User will likely need to take and share screenshots of where issues are encountered
+5. **Issue Resolution**: Claude works to address the issue and notifies user if/when the fix requires a new build
+6. **Iteration**: Repeat this testing loop until the OS can fully boot - only the user can confirm full boot success
 
 ### Build Validation
 - Always test builds in Docker environment

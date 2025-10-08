@@ -1,0 +1,22 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+
+### GENERIC_X64 sulogin fallback
+### Creates sulogin at the hardcoded path that systemd-sulogin-shell expects
+
+echo "Creating sulogin fallback for GENERIC_X64..."
+
+# Create the full directory path that systemd-sulogin-shell has hardcoded
+mkdir -p /home/max/Development/rocknix/build.ROCKNIX-GENERIC_X64.x86_64/toolchain/sbin
+
+# Create a fallback sulogin script that launches a shell
+cat >/home/max/Development/rocknix/build.ROCKNIX-GENERIC_X64.x86_64/toolchain/sbin/sulogin <<'EOF'
+#!/bin/sh
+# Fallback sulogin - launches an emergency shell
+exec /bin/sh
+EOF
+
+chmod +x /home/max/Development/rocknix/build.ROCKNIX-GENERIC_X64.x86_64/toolchain/sbin/sulogin
+
+echo "sulogin fallback created at hardcoded path"

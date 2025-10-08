@@ -46,7 +46,7 @@
     DISPLAYSERVER="wl"
 
   # Window manager/compositor selection (weston / swaywm-env / none)
-    WINDOWMANAGER="weston"
+    WINDOWMANAGER="swaywm-env"
 
   # For x86_64 compatibility
     PREFER_GLES="no"
@@ -60,10 +60,13 @@
     SYSTEM_PART_START="8192"
 
   # Extra command line for x86_64
-    EXTRA_CMDLINE="quiet loglevel=3 systemd.show_status=0"
+    EXTRA_CMDLINE="console=ttyS0,115200 console=tty0"
 
   # Disable joypad driver for x86_64
     ROCKNIX_JOYPAD="no"
 
   # Enable LLVM support for iris graphics driver compute shaders
     LLVM_SUPPORT="yes"
+
+  # Disable swap support for virtualized environments
+    SWAP_SUPPORT="no"

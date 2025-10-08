@@ -4,7 +4,7 @@
 
 set -e
 
-ROCKNIX_IMG="target/ROCKNIX-GENERIC_X64.x86_64-20250823.img"
+ROCKNIX_IMG="target/ROCKNIX-GENERIC_X64.x86_64-20251002.img"
 QEMU_LOG="/tmp/rocknix-qemu-serial.log"
 
 if [ ! -f "$ROCKNIX_IMG" ]; then
@@ -19,10 +19,10 @@ echo "Use Ctrl+A, X to quit QEMU"
 # Clean up any existing QEMU processes
 pkill -f qemu-system-x86_64 2>/dev/null || true
 
-# Start QEMU with modern ROCKNIX GENERIC_X64 settings
-# Use Q35 chipset (2009) for modern features instead of ancient i440FX (1996)
+# Start QEMU with proper virtio support for ROCKNIX
+# Ensure graphics drivers match the system configuration
 qemu-system-x86_64 \
-    -machine pc-q35-8.2,accel=kvm \
+    -machine q35,accel=kvm:tcg \
     -cpu max \
     -m 4G \
     -smp 4 \
@@ -34,6 +34,5 @@ qemu-system-x86_64 \
     -device virtio-mouse-pci \
     -display gtk,show-cursor=on \
     -audio driver=none \
-    -serial file:"$QEMU_LOG" \
-    -monitor stdio \
+    -serial stdio \
     -boot menu=on

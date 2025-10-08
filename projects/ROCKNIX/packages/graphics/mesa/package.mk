@@ -7,7 +7,7 @@ PKG_LICENSE="OSS"
 PKG_SITE="http://www.mesa3d.org/"
 PKG_DEPENDS_HOST="toolchain:host llvm:host spirv-tools:host libdrm:host \
                   wayland-protocols:host libX11:host libXext:host \
-                  libXfixes:host libxshmfence:host libXxf86vm:host xrandr:host glslang:host"
+                  libXfixes:host libxshmfence:host libXxf86vm:host xrandr:host glslang:host libclc:host"
 PKG_DEPENDS_TARGET="toolchain expat libdrm Mako:host pyyaml:host"
 PKG_LONGDESC="Mesa is a 3-D graphics library with an API."
 PKG_TOOLCHAIN="meson"
@@ -26,9 +26,7 @@ if listcontains "${GRAPHIC_DRIVERS}" "panfrost"; then
 fi
 
 # For GENERIC_X64, we need host tools as well
-if [ "${MESA_X86_64_NATIVE}" = "yes" ]; then
-  PKG_DEPENDS_HOST+=" libclc:host"
-fi
+# Note: libclc:host is now included in PKG_DEPENDS_HOST for mesa-clc support
 
 # For x86_64, disable OpenCL components to avoid cross-compilation issues
 if [ "${TARGET_ARCH}" = "x86_64" ] && [ "${MACHINE_HARDWARE_NAME}" = "x86_64" ]; then
@@ -78,7 +76,11 @@ pre_configure_host() {
 # Host gets built for panfrost and for x86_64 iris (intel-clc tools)
 PKG_MESON_OPTS_HOST+=" ${MESA_LIBS_PATH_OPTS}  \
                        -Dgallium-drivers=${GALLIUM_DRIVERS// /,} \
-                       -Dvulkan-drivers=${VULKAN_DRIVERS_MESA// /,}"
+                       -Dvulkan-drivers=${VULKAN_DRIVERS_MESA// /,} \
+                       -Dmesa-clc=auto \
+                       -Dgallium-rusticl=false \
+                       -Dmicrosoft-clc=disabled \
+                       -Dprecomp-compiler=system"
 }
 
 PKG_MESON_OPTS_TARGET=" ${MESA_LIBS_PATH_OPTS} \

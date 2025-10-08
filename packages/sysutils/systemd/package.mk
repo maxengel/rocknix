@@ -46,7 +46,7 @@ PKG_MESON_OPTS_TARGET="--libdir=/usr/lib \
                        -Dxkbcommon=disabled \
                        -Dpcre2=disabled \
                        -Dglib=disabled \
-                       -Ddbus=disabled \
+                       -Ddbus=enabled \
                        -Ddefault-dnssec=no \
                        -Dimportd=disabled \
                        -Dremote=disabled \
@@ -97,6 +97,7 @@ PKG_MESON_OPTS_TARGET="--libdir=/usr/lib \
                        -Dkmod-path=/usr/bin/kmod \
                        -Dmount-path=/usr/bin/mount \
                        -Dumount-path=/usr/bin/umount \
+                       -Dsulogin-path=/usr/sbin/sulogin \
                        -Ddebug-tty=${DEBUG_TTY} \
                        -Dversion-tag=${PKG_VERSION}"
 

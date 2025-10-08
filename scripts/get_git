@@ -117,10 +117,10 @@ _get_repo() {
     fi
   fi
 
-  # Check if the destination directory exists and is non-empty
-  if [[ -d "${PACKAGE}" && "$(ls -A "${PACKAGE}")" ]]; then
-    echo "Directory ${PACKAGE} already exists and is not empty. Removing it."
-    rm -rf "${PACKAGE}"  && mkdir "${PACKAGE}" || return 1
+  # Check if the destination directory exists
+  if [[ -d "${PACKAGE}" ]]; then
+    echo "Directory ${PACKAGE} already exists. Removing it."
+    rm -rf "${PACKAGE}" || return 1
   fi
 
   cd ..

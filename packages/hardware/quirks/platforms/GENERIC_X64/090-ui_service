@@ -5,6 +5,6 @@
 # ROCKNIX GENERIC_X64 UI Service Configuration
 # This script sets the appropriate UI service for Generic x86_64 devices
 
-# For GENERIC_X64 with X11 displayserver, use Weston compositor
-# This enables X11 application compatibility through XWayland
-UI_SERVICE="weston.service"
+# For GENERIC_X64 with Wayland displayserver, use Sway compositor
+# This matches the WINDOWMANAGER="swaywm-env" setting in device options
+UI_SERVICE="sway.service"

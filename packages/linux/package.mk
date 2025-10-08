@@ -46,16 +46,18 @@ else
   PKG_DEPENDS_TARGET+=" toolchain"
 fi
 
-if [ "${PKG_BUILD_PERF}" != "no" ] && grep -q ^CONFIG_PERF_EVENTS= ${PKG_KERNEL_CFG_FILE}; then
-  PKG_BUILD_PERF="yes"
-  PKG_DEPENDS_TARGET+=" binutils elfutils libunwind zlib openssl"
-fi
-
 if [ "${TARGET_ARCH}" = "x86_64" ]; then
+  # Disable perf building for x86_64 to avoid cross-compilation issues with bpftool
+  PKG_BUILD_PERF="no"
   PKG_DEPENDS_TARGET+=" elfutils:host pciutils"
   PKG_DEPENDS_UNPACK+=" intel-ucode kernel-firmware"
 elif [ "${TARGET_ARCH}" = "arm" -a "${DEVICE}" = "iMX6" ]; then
   PKG_DEPENDS_UNPACK+=" firmware-imx"
+fi
+
+if [ "${PKG_BUILD_PERF}" != "no" ] && grep -q ^CONFIG_PERF_EVENTS= ${PKG_KERNEL_CFG_FILE}; then
+  PKG_BUILD_PERF="yes"
+  PKG_DEPENDS_TARGET+=" binutils elfutils libunwind zlib openssl"
 fi
 
 if [[ "${KERNEL_TARGET}" = uImage* ]]; then

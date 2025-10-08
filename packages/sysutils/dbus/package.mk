@@ -26,12 +26,15 @@ PKG_MESON_OPTS_TARGET="--libexecdir=/usr/lib/dbus \
                        -Dselinux=disabled \
                        -Dlibaudit=disabled \
                        -Dsystemd=disabled \
-                       -Duser_session=false \
+                       -Duser_session=true \
                        -Dinotify=enabled \
                        -Dvalgrind=disabled \
                        -Ddbus_user=dbus \
                        -Druntime_dir=/run \
                        -Dsystem_socket=/run/dbus/system_bus_socket"
+
+# Systemd integration disabled to avoid circular dependency (dbus <-> systemd)
+# PKG_MESON_OPTS_TARGET=$(echo "${PKG_MESON_OPTS_TARGET}" | sed 's/-Dsystemd=disabled/-Dsystemd=enabled/')
 
 post_makeinstall_target() {
   rm -rf ${INSTALL}/etc/rc.d

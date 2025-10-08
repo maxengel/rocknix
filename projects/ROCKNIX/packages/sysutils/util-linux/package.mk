@@ -68,12 +68,39 @@ fi
 
 PKG_CONFIGURE_OPTS_HOST="--enable-shared \
                          --disable-static \
-                         ${UTILLINUX_CONFIG_TARGET} \
+                         --disable-gtk-doc \
+                         --disable-nls \
+                         --disable-rpath \
+                         --enable-tls \
+                         --enable-all-programs \
+                         --disable-bash-completion \
+                         --disable-colors-default \
+                         --disable-pylibmount \
+                         --disable-pg-bell \
+                         --disable-use-tty-group \
                          --disable-makeinstall-chown \
                          --disable-makeinstall-setuid \
+                         --with-gnu-ld \
+                         --without-selinux \
+                         --without-audit \
+                         --without-udev \
+                         --without-ncurses \
+                         --without-ncursesw \
+                         --without-readline \
+                         --without-slang \
+                         --without-tinfo \
+                         --without-utempter \
+                         --without-util \
+                         --without-libz \
+                         --without-user \
+                         --without-systemd \
+                         --without-smack \
+                         --without-python \
+                         --without-systemdsystemunitdir \
                          --enable-uuidgen \
                          --enable-rename \
-                         --enable-libuuid"
+                         --enable-libuuid \
+                         --enable-hexdump"
 
 PKG_CONFIGURE_OPTS_INIT="${UTILLINUX_CONFIG_DEFAULT} \
                          --enable-libblkid \
