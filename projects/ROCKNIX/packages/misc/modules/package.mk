@@ -16,6 +16,18 @@ case ${DEVICE} in
   ;;
 esac
 
+# Fileman or Commander Filemanager
+case ${DEVICE} in
+  SM8250|SDM845|S922X)
+    PKG_DEPENDS_TARGET+=" commander"
+    FILEMANAGER="commander"
+  ;;
+  *)
+    PKG_DEPENDS_TARGET+=" fileman"
+    FILEMANAGER="fileman"
+  ;;
+esac
+
 make_target() {
   :
 }
@@ -38,6 +50,14 @@ post_makeinstall_target() {
      [ ! "${DISPLAYSERVER}" = "wl" ]
   then
     rm -f ${INSTALL}/usr/config/modules/Install*
+  fi
+
+# Set filemanger
+  sed -e "s/@FILEMANAGER@/${FILEMANAGER}/g" -i ${INSTALL}/usr/config/modules/gamelist.xml
+  if [ ${FILEMANAGER} == "commander" ]; then
+    rm -rf ${INSTALL}/usr/config/modules/fileman.sh
+  else
+    rm -rf ${INSTALL}/usr/config/modules/commander.sh
   fi
 }
 

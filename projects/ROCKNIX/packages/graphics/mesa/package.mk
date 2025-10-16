@@ -12,7 +12,7 @@ PKG_DEPENDS_TARGET="toolchain expat libdrm Mako:host pyyaml:host"
 PKG_LONGDESC="Mesa is a 3-D graphics library with an API."
 PKG_TOOLCHAIN="meson"
 PKG_PATCH_DIRS+=" ${DEVICE}"
-PKG_VERSION="25.2.0"
+PKG_VERSION="25.2.4"
 PKG_URL="https://gitlab.freedesktop.org/mesa/mesa/-/archive/mesa-${PKG_VERSION}/mesa-mesa-${PKG_VERSION}.tar.gz"
 
 if listcontains "${GRAPHIC_DRIVERS}" "panfrost"; then
@@ -104,3 +104,10 @@ if [ "${VULKAN_SUPPORT}" = "yes" ]; then
 else
   PKG_MESON_OPTS_TARGET+=" -Dvulkan-drivers="
 fi
+
+post_makeinstall_target() {
+  # While this likely breaks panfrost vulkan, it does fix vulkaninfo on libmali-vulkan
+  if [ "${DEVICE}" = "S922X" ]; then
+    rm -f ${INSTALL}/usr/lib/libvulkan_panfrost.so ${INSTALL}/usr/share/vulkan/icd.d/panfrost_icd.*.json
+  fi
+}

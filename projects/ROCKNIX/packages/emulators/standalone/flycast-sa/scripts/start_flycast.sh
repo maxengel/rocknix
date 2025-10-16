@@ -6,24 +6,44 @@
 . /etc/profile
 set_kill set "-9 flycast"
 
+#load gptokeyb support files
+control-gen_init.sh
+source /storage/.config/gptokeyb/control.ini
+get_controls
+
+# Conf files vars
+SOURCE_DIR="/usr/config/flycast"
+CONF_DIR="/storage/.config/flycast"
+FLYCAST_INI="emu.cfg"
+
 #Check if flycast exists in .config
 if [ ! -d "/storage/.config/flycast" ]; then
-    mkdir -p "/storage/.config/flycast"
-        cp -r "/usr/config/flycast" "/storage/.config/"
+  cp -r "${SOURCE_DIR}" "${CONF_DIR}"
 fi
 
 #Move save file storage/roms
-if [ -d "/storage/.config/flycast/data" ]; then
-        mv "/storage/.config/flycast/data" "/storage/roms/dreamcast/"
+if [ -d "${CONF_DIR}/data" ]; then
+  mv "${CONF_DIR}/data" "/storage/roms/dreamcast/"
 fi
 
 #Make flycast bios folder
 if [ ! -d "/storage/roms/bios/dc" ]; then
-    mkdir -p "/storage/roms/bios/dc"
+  mkdir -p "/storage/roms/bios/dc"
 fi
 
 #Link  .config/flycast to .local
 ln -sf "/storage/roms/bios/dc" "/storage/roms/dreamcast/data"
+
+
+#Make sure flycast gptk config exists
+if [ ! -f "${CONF_DIR}/flycast.gptk" ]; then
+  cp -r "/usr/config/flycast/flycast.gptk" "${CONF_DIR}/flycast.gptk"
+fi
+
+#Make sure flycast gptk SDL_Keyboard.cfg exists
+if [ ! -f "${CONF_DIR}/mappings/SDL_Keyboard.cfg" ]; then
+  cp -r "/usr/config/flycast/mappings/SDL_Keyboard.cfg" "${CONF_DIR}/mappings/SDL_Keyboard.cfg"
+fi
 
 #Emulation Station Features
 GAME=$(echo "${1}"| sed "s#^/.*/##")
@@ -32,9 +52,8 @@ ASPECT=$(get_setting aspect_ratio "${PLATFORM}" "${GAME}")
 ASKIP=$(get_setting auto_frame_skip "${PLATFORM}" "${GAME}")
 FPS=$(get_setting show_fps "${PLATFORM}" "${GAME}")
 IRES=$(get_setting internal_resolution "${PLATFORM}" "${GAME}")
-RENDERER=$(get_setting graphics_backend "${PLATFORM}" "${GAME}")
+GRENDERER=$(get_setting graphics_backend "${PLATFORM}" "${GAME}")
 VSYNC=$(get_setting vsync "${PLATFORM}" "${GAME}")
-CHEEVOS=$(get_setting retroachievements "${PLATFORM}" "${GAME}")
 
 #Set the cores to use
 CORES=$(get_setting "cores" "${PLATFORM}" "${GAME}")
@@ -50,83 +69,81 @@ else
 fi
 
   #AspectRatio
-        if [ "$ASPECT" = "4/3" ]
-        then
-                sed -i '/^rend.WideScreen =/c\rend.WideScreen = no' /storage/.config/flycast/emu.cfg
-                sed -i '/^rend.SuperWideScreen =/c\rend.SuperWideScreen = no' /storage/.config/flycast/emu.cfg
-        fi
-        if [ "$ASPECT" = "w" ]
-        then
-                sed -i '/^rend.WideScreen =/c\rend.WideScreen = yes' /storage/.config/flycast/emu.cfg
-                sed -i '/^rend.SuperWideScreen =/c\rend.SuperWideScreen = no' /storage/.config/flycast/emu.cfg
-        fi
-        if [ "$ASPECT" = "sw" ]
-        then
-                sed -i '/^rend.WideScreen =/c\rend.WideScreen = yes' /storage/.config/flycast/emu.cfg
-                sed -i '/^rend.SuperWideScreen =/c\rend.SuperWideScreen = yes' /storage/.config/flycast/emu.cfg
+        if [ "$ASPECT" = "w" ]; then
+                sed -i '/^rend.WideScreen =/c\rend.WideScreen = yes' "${CONF_DIR}/${FLYCAST_INI}"
+                sed -i '/^rend.SuperWideScreen =/c\rend.SuperWideScreen = no' "${CONF_DIR}/${FLYCAST_INI}"
+        elif [ "$ASPECT" = "sw" ]; then
+                sed -i '/^rend.WideScreen =/c\rend.WideScreen = yes' "${CONF_DIR}/${FLYCAST_INI}"
+                sed -i '/^rend.SuperWideScreen =/c\rend.SuperWideScreen = yes' "${CONF_DIR}/${FLYCAST_INI}"
+	else
+		sed -i '/^rend.WideScreen =/c\rend.WideScreen = no' "${CONF_DIR}/${FLYCAST_INI}"
+		sed -i '/^rend.SuperWideScreen =/c\rend.SuperWideScreen = no' "${CONF_DIR}/${FLYCAST_INI}"
         fi
 
   #AutoFrameSkip
-        if [ "$ASKIP" = "off" ]
-        then
-                sed -i '/^pvr.AutoSkipFrame =/c\pvr.AutoSkipFrame = 0' /storage/.config/flycast/emu.cfg
-        fi
-        if [ "$ASKIP" = "normal" ]
-        then
-                sed -i '/^pvr.AutoSkipFrame =/c\pvr.AutoSkipFrame = 1' /storage/.config/flycast/emu.cfg
-        fi
-        if [ "$ASKIP" = "max" ]
-        then
-                sed -i '/^pvr.AutoSkipFrame =/c\pvr.AutoSkipFrame = 2' /storage/.config/flycast/emu.cfg
+        if [ "$ASKIP" = "normal" ]; then
+                sed -i '/^pvr.AutoSkipFrame =/c\pvr.AutoSkipFrame = 1' "${CONF_DIR}/${FLYCAST_INI}"
+        elif [ "$ASKIP" = "max" ]; then
+                sed -i '/^pvr.AutoSkipFrame =/c\pvr.AutoSkipFrame = 2' "${CONF_DIR}/${FLYCAST_INI}"
+	else
+		sed -i '/^pvr.AutoSkipFrame =/c\pvr.AutoSkipFrame = 0' "${CONF_DIR}/${FLYCAST_INI}"
         fi
 
   #Internal Resolution
         if [ "$IRES" = "0" ]; then
-                sed -i '/rend.Resolution =/c\rend.Resolution = 240' /storage/.config/flycast/emu.cfg
+                sed -i '/rend.Resolution =/c\rend.Resolution = 240' "${CONF_DIR}/${FLYCAST_INI}"
         elif [ "$IRES" = "2" ]; then
-                sed -i '/rend.Resolution =/c\rend.Resolution = 720' /storage/.config/flycast/emu.cfg
+                sed -i '/rend.Resolution =/c\rend.Resolution = 720' "${CONF_DIR}/${FLYCAST_INI}"
         elif [ "$IRES" = "3" ]; then
-                sed -i '/rend.Resolution =/c\rend.Resolution = 960' /storage/.config/flycast/emu.cfg
+                sed -i '/rend.Resolution =/c\rend.Resolution = 960' "${CONF_DIR}/${FLYCAST_INI}"
         elif [ "$IRES" = "4" ]; then
-                sed -i '/rend.Resolution =/c\rend.Resolution = 1200' /storage/.config/flycast/emu.cfg
+                sed -i '/rend.Resolution =/c\rend.Resolution = 1200' "${CONF_DIR}/${FLYCAST_INI}"
         elif [ "$IRES" = "5" ]; then
-                sed -i '/rend.Resolution =/c\rend.Resolution = 1440' /storage/.config/flycast/emu.cfg
+                sed -i '/rend.Resolution =/c\rend.Resolution = 1440' "${CONF_DIR}/${FLYCAST_INI}"
         else
-                sed -i '/rend.Resolution =/c\rend.Resolution = 480' /storage/.config/flycast/emu.cfg
+                sed -i '/rend.Resolution =/c\rend.Resolution = 480' "${CONF_DIR}/${FLYCAST_INI}"
         fi
 
-  #Renderer
-        if [ "$RENDERER" = "opengl" ]
-        then
-                sed -i '/^pvr.rend =/c\pvr.rend = 0' /storage/.config/flycast/emu.cfg
-        fi
-        if [ "$RENDERER" = "vulkan" ]
-        then
-                sed -i '/^pvr.rend =/c\pvr.rend = 4' /storage/.config/flycast/emu.cfg
-        fi
+  #Graphics Renderer
+        if [ "$GRENDERER" = "opengl" ]; then
+                sed -i '/^pvr.rend =/c\pvr.rend = 0' "${CONF_DIR}/${FLYCAST_INI}"
+        elif [ "$GRENDERER" = "vulkan" ]; then
+                sed -i '/^pvr.rend =/c\pvr.rend = 4' "${CONF_DIR}/${FLYCAST_INI}"
+        else
+		sed -i '/^pvr.rend =/c\pvr.rend = @GRENDERER@' "${CONF_DIR}/${FLYCAST_INI}"
+	fi
 
   #ShowFPS
-	if [ "$FPS" = "0" ]
-	then
-	        sed -i '/^rend.ShowFPS =/c\rend.ShowFPS = no' /storage/.config/flycast/emu.cfg
-	fi
-        if [ "$FPS" = "1" ]
-        then
-                sed -i '/^rend.ShowFPS =/c\rend.ShowFPS = yes' /storage/.config/flycast/emu.cfg
+        if [ "$FPS" = "1" ]; then
+                sed -i '/^rend.ShowFPS =/c\rend.ShowFPS = yes' "${CONF_DIR}/${FLYCAST_INI}"
+	else
+		sed -i '/^rend.ShowFPS =/c\rend.ShowFPS = no' "${CONF_DIR}/${FLYCAST_INI}"
         fi
 
-  #Vysnc
-	if [ "$VSYNC" = "0" ]
-	then
-                sed -i '/^rend.vsync =/c\rend.vsync = no' /storage/.config/flycast/emu.cfg
-	fi
-        if [ "$VSYNC" = "1" ]
-        then
-                sed -i '/^rend.vsync =/c\rend.vsync = yes' /storage/.config/flycast/emu.cfg
+  #Vsync
+        if [ "$VSYNC" = "1" ];then
+                sed -i '/^rend.vsync =/c\rend.vsync = yes' "${CONF_DIR}/${FLYCAST_INI}"
+	else
+		sed -i '/^rend.vsync =/c\rend.vsync = no' "${CONF_DIR}/${FLYCAST_INI}"
         fi
 
 #Retroachievements
 /usr/bin/cheevos_flycast.sh
 
+# Debugging info:
+  echo "GAME set to: ${GAME}"
+  echo "PLATFORM set to: ${PLATFORM}"
+  echo "CONF DIR: ${CONF_DIR}/${FLYCAST_INI}"
+  echo "CPU CORES set to: ${EMUPERF}"
+  echo "ASPECT RATIO set to: ${ASPECT}"
+  echo "AUTO FRAME SKIP set to: ${ASKIP}"
+  echo "INTERNAL RESOLUTION set to: ${IRES}"
+  echo "GRAPHICS RENDERER set to: ${GRENDERER}"
+  echo "FPS set to: ${FPS}"
+  echo "VSYNC set to: ${VSYNC}"
+  echo "Launching /usr/bin/flycast ${1}"
+
 #Run flycast emulator
+$GPTOKEYB "flycast" -c "${CONF_DIR}/flycast.gptk" &
 ${EMUPERF} /usr/bin/flycast "${1}"
+kill -9 "$(pidof gptokeyb)"

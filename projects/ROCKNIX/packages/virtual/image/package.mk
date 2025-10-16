@@ -13,11 +13,11 @@ PKG_DEPENDS_TARGET="toolchain squashfs-tools:host dosfstools:host fakeroot:host 
                     ${BOOTLOADER} busybox umtprd util-linux usb-modeswitch unzip poppler jq socat \
                     p7zip file initramfs grep wget util-linux btrfs-progs zstd lz4 empty lzo libzip \
                     bash coreutils system-utils autostart quirks powerstate gnupg \
-                    gzip six lynx xmlstarlet vim pyudev dialog dbus-python network rocknix"
+                    gzip six xmlstarlet pyudev dialog dbus-python network rocknix"
 
 PKG_UI="emulationstation es-themes textviewer"
 
-PKG_UI_TOOLS="fileman fbgrab grim"
+PKG_UI_TOOLS="fbgrab grim"
 
 PKG_GRAPHICS="imagemagick"
 
@@ -42,7 +42,7 @@ else
   PKG_DEPENDS_TARGET+=" ${PKG_TOOLS} ${PKG_FONTS} ${PKG_SOUND} ${PKG_SYNC} ${PKG_GRAPHICS} ${PKG_UI} ${PKG_UI_TOOLS} ${PKG_MULTIMEDIA} misc-packages"
 
   # GL demos and tools
-  [ "${OPENGL_SUPPORT}" = "yes" ] && PKG_DEPENDS_TARGET+=" mesa-demos"
+  [[ ! -z "${OPENGL_SUPPORT}" ]] && PKG_DEPENDS_TARGET+=" mesa-demos"
 
   # GLmark2
   [[ ! -z "${OPENGLES_SUPPORT}" ]] && PKG_DEPENDS_TARGET+=" glmark2"
@@ -101,5 +101,10 @@ fi
 
 # modules packages
 [ "${MODULES_PKG}" = "yes" ] && PKG_DEPENDS_TARGET+=" modules"
+
+# Entware support
+mkdir -p ${INSTALL}
+ln -sf /storage/.opt ${INSTALL}/opt
+PKG_DEPENDS_TARGET+=" entware"
 
 true
