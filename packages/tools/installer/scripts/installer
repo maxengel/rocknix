@@ -255,16 +255,32 @@ do_install_quick() {
     msg_progress_install "40" "Mounting ${INSTALL_DEVICE}${PART1} to $TMPDIR/part1"
     mount -t vfat ${INSTALL_DEVICE}${PART1} $TMPDIR/part1 >> $LOGFILE 2>&1
 
-    # installing syslinux
-    msg_progress_install "50" "Installing syslinux to $TMPDIR/part1"
-    syslinux -i ${INSTALL_DEVICE}${PART1} >> $LOGFILE 2>&1
+    # Copy syslinux 6.x required files (MUST be done BEFORE installing syslinux)
+    msg_progress_install "45" "Installing syslinux support files"
+    cp /usr/share/syslinux/ldlinux.c32 $TMPDIR/part1/ >> $LOGFILE 2>&1
+
+    # installing syslinux (on mounted partition with ldlinux.c32 present)
+    msg_progress_install "50" "Installing syslinux bootloader to ${INSTALL_DEVICE}${PART1}"
+    syslinux --directory / --install ${INSTALL_DEVICE}${PART1} >> $LOGFILE 2>&1
 
     # install system files
     msg_progress_install "60" "Installing Kernel"
-    cp "/flash/$IMAGE_KERNEL" $TMPDIR/part1/KERNEL >> $LOGFILE 2>&1
+    if cp "/flash/$IMAGE_KERNEL" $TMPDIR/part1/KERNEL >> $LOGFILE 2>&1; then
+      echo "Kernel copy: SUCCESS" >> $LOGFILE
+    else
+      echo "Kernel copy: FAILED - file not found or copy error: /flash/$IMAGE_KERNEL" >> $LOGFILE
+      ls -la /flash/ >> $LOGFILE 2>&1
+    fi
 
     msg_progress_install "65" "Installing System"
-    cp "/flash/$IMAGE_SYSTEM" $TMPDIR/part1/SYSTEM >> $LOGFILE 2>&1
+    if cp "/flash/$IMAGE_SYSTEM" $TMPDIR/part1/SYSTEM >> $LOGFILE 2>&1; then
+      echo "System copy: SUCCESS" >> $LOGFILE
+    else
+      echo "System copy: FAILED - file not found or copy error: /flash/$IMAGE_SYSTEM" >> $LOGFILE
+      ls -la /flash/ >> $LOGFILE 2>&1
+      du -sh /flash/ >> $LOGFILE 2>&1
+      df >> $LOGFILE 2>&1
+    fi
     sync
 
     # configuring bootloader
@@ -302,32 +318,61 @@ EOF
     msg_progress_install "87" "Remove $TMPDIR/part1"
     rmdir $TMPDIR/part1 >> $LOGFILE 2>&1
 
+    # mount storage partition to save logs
+    msg_progress_install "88" "Saving installation log to target disk"
+    mkdir -p $TMPDIR/part2 >> $LOGFILE 2>&1
+    mount -t ext4 ${INSTALL_DEVICE}${PART2} $TMPDIR/part2 >> $LOGFILE 2>&1
+    
+    # Create .please_resize_me marker and save installation log
+    if [ -d $TMPDIR/part2 ]; then
+      # Create the resize marker for first boot
+      touch $TMPDIR/part2/.please_resize_me >> $LOGFILE 2>&1
+      
+      # Save installation log to target disk for external access
+      mkdir -p $TMPDIR/part2/.rocknix-installer-logs >> $LOGFILE 2>&1
+      cp $LOGFILE $TMPDIR/part2/.rocknix-installer-logs/$(date +%Y%m%d%H%M%S).log >> $LOGFILE 2>&1
+      sync
+    fi
+
     if [ "$BACKUP_UNPACK" = "1" ]; then
-      # mount storage partition
-      msg_progress_install "89" "Creating $TMPDIR/part2"
-      mkdir -p $TMPDIR/part2 >> $LOGFILE 2>&1
-
-      msg_progress_install "90" "Mounting ${INSTALL_DEVICE}${PART2} to $TMPDIR/part2"
-      mount -t ext4 ${INSTALL_DEVICE}${PART2} $TMPDIR/part2 >> $LOGFILE 2>&1
-
       msg_progress_install "92" "Restoring backup"
       [ -f /flash/backup.tar.bz2 ] && tar -xjf /flash/backup.tar.bz2 -C $TMPDIR/part2 >> $LOGFILE 2>&1
       [ -f /flash/backup.zip ] && unzip -qq /flash/backup.zip -d $TMPDIR/part2 >> $LOGFILE 2>&1
       sync
-
-      # umount system partition, remove mountpoint
-      msg_progress_install "97" "Unmount $TMPDIR/part2"
-      umount $TMPDIR/part2 >> $LOGFILE 2>&1
-
-      msg_progress_install "100" "Remove $TMPDIR/part2"
-      rmdir $TMPDIR/part2 >> $LOGFILE 2>&1
     fi
+
+    # umount storage partition, remove mountpoint
+    msg_progress_install "97" "Unmount $TMPDIR/part2"
+    umount $TMPDIR/part2 >> $LOGFILE 2>&1
+
+    msg_progress_install "100" "Remove $TMPDIR/part2"
+    rmdir $TMPDIR/part2 >> $LOGFILE 2>&1
   } | whiptail --backtitle "$BACKTITLE" --gauge "Please wait while your system is being setup ..." 6 73 0
 
-  # install complete
+  # install complete - offer shutdown or reboot
   MSG_TITLE="@DISTRONAME@ Install Complete"
-  MSG_DETAIL="You may now remove the install media and reboot.\n"
-  whiptail --backtitle "$BACKTITLE" --title "$MSG_TITLE" --msgbox "$MSG_DETAIL" 7 52
+  MSG_DETAIL="Installation to $INSTALL_DEVICE completed successfully!\n\nTo boot from the installed system:\n\n1. Power off this VM/system\n2. Remove the installer media\n3. Change boot order to prioritize $INSTALL_DEVICE\n4. Restart to boot from the installed system\n\nNOTE: For VirtualBox/VMware users, you MUST choose 'Shutdown'\nto safely remove the installer disk before rebooting.\n\nWhat would you like to do now?"
+
+  whiptail --backtitle "$BACKTITLE" --title "$MSG_TITLE" --menu "$MSG_DETAIL" 22 75 3 \
+    1 "Shutdown (REQUIRED for VM users to remove installer)" \
+    2 "Reboot now (only if installer media already removed)" \
+    3 "Return to main menu" 2> $TMPDIR/install_complete_choice
+
+  case $(cat "$TMPDIR/install_complete_choice" 2>/dev/null) in
+    1)
+      echo "Shutting down. Please remove installer media and restart."
+      sleep 3
+      do_poweroff
+      ;;
+    2)
+      echo "Rebooting..."
+      sleep 2
+      do_reboot
+      ;;
+    3|*)
+      # Return to main menu
+      ;;
+  esac
 }
 
 msg_no_device() {
