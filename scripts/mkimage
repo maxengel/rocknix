@@ -200,9 +200,15 @@ EOF
 
   mcopy "${IMG_TMP}/syslinux.cfg" :: >"${SAVE_ERROR}" 2>&1 || show_error
 
+  # copy syslinux BIOS support files (required for syslinux 6.x BIOS boot)
+  # Must be copied BEFORE running syslinux.mtools
+  echo "image: copying syslinux BIOS support files..."
+  mcopy "${TOOLCHAIN}/share/syslinux/ldlinux.c32" :: >"${SAVE_ERROR}" 2>&1 || show_error
+
   # install syslinux
   echo "image: installing syslinux to part1..."
   syslinux.mtools -i "${IMG_TMP}/part1.fat" >"${SAVE_ERROR}" 2>&1 || show_error
+  sync
 
   # copy files
   echo "image: copying files to part1..."

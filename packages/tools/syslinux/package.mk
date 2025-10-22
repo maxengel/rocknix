@@ -58,8 +58,11 @@ makeinstall_host() {
   mkdir -p ${TOOLCHAIN}/share/syslinux
     cp bios/mbr/mbr.bin ${TOOLCHAIN}/share/syslinux
     cp bios/mbr/gptmbr.bin ${TOOLCHAIN}/share/syslinux
+    # EFI files
     cp efi64/efi/syslinux.efi ${TOOLCHAIN}/share/syslinux/bootx64.efi
     cp efi64/com32/elflink/ldlinux/ldlinux.e64  ${TOOLCHAIN}/share/syslinux
+    # BIOS files (required for syslinux 6.x)
+    cp bios/com32/elflink/ldlinux/ldlinux.c32 ${TOOLCHAIN}/share/syslinux/
 }
 
 makeinstall_target() {
@@ -71,6 +74,9 @@ makeinstall_target() {
   mkdir -p ${INSTALL}/usr/share/syslinux
     cp bios/mbr/mbr.bin ${INSTALL}/usr/share/syslinux
     cp bios/mbr/gptmbr.bin ${INSTALL}/usr/share/syslinux
+    # EFI files
     cp efi64/efi/syslinux.efi ${INSTALL}/usr/share/syslinux/bootx64.efi
     cp efi64/com32/elflink/ldlinux/ldlinux.e64  ${INSTALL}/usr/share/syslinux
+    # BIOS files (required for syslinux 6.x)
+    cp bios/com32/elflink/ldlinux/ldlinux.c32 ${INSTALL}/usr/share/syslinux/
 }

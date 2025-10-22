@@ -97,9 +97,13 @@ PKG_MESON_OPTS_TARGET="--libdir=/usr/lib \
                        -Dkmod-path=/usr/bin/kmod \
                        -Dmount-path=/usr/bin/mount \
                        -Dumount-path=/usr/bin/umount \
-                       -Dsulogin-path=/usr/sbin/sulogin \
                        -Ddebug-tty=${DEBUG_TTY} \
                        -Dversion-tag=${PKG_VERSION}"
+
+# Don't configure sulogin path for GENERIC_X64 since we remove rescue services anyway
+if [ "${DEVICE}" != "GENERIC_X64" ]; then
+  PKG_MESON_OPTS_TARGET+=" -Dsulogin-path=/usr/sbin/sulogin"
+fi
 
 if [ "${PROJECT}" = "Generic" ]; then
   PKG_MESON_OPTS_TARGET+=" -Defi=true"
@@ -141,6 +145,17 @@ post_makeinstall_target() {
     safe_remove ${INSTALL}/usr/lib/systemd/system/getty@.service
     safe_remove ${INSTALL}/usr/lib/systemd/system/serial-getty@.service
     safe_remove ${INSTALL}/usr/lib/systemd/system/*.target.wants/getty.target
+  fi
+
+  # Remove rescue/emergency services for GENERIC_X64 to prevent boot issues
+  if [ "${DEVICE}" = "GENERIC_X64" ]; then
+    safe_remove ${INSTALL}/usr/lib/systemd/system/rescue.service
+    safe_remove ${INSTALL}/usr/lib/systemd/system/rescue.target
+    safe_remove ${INSTALL}/usr/lib/systemd/system/emergency.service
+    safe_remove ${INSTALL}/usr/lib/systemd/system/emergency.target
+    # Remove any symlinks that pull in rescue services
+    find ${INSTALL}/usr/lib/systemd/system -type l -name "rescue.service" -delete
+    find ${INSTALL}/usr/lib/systemd/system -type l -name "emergency.service" -delete
   fi
 
   # remove other notused or nonsense stuff (our /etc is ro)
