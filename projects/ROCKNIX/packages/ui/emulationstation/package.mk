@@ -2,7 +2,7 @@
 # Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="emulationstation"
-PKG_VERSION="6e6911fab0eb4ed572dd5c5ac324bca193d35524"
+PKG_VERSION="fdfbf4bb9c1140d3b7fd90918cb6f0f94551389d"
 PKG_GIT_CLONE_BRANCH="master"
 PKG_LICENSE="GPL"
 PKG_SITE="https://github.com/ROCKNIX/emulationstation-next"
@@ -51,6 +51,13 @@ makeinstall_target() {
   mkdir -p ${INSTALL}/usr/config/locale
   cp -rf ${PKG_BUILD}/locale/lang/* ${INSTALL}/usr/config/locale/
 
+  # Pre-generate default (en_US.UTF-8) locale for lower-end devices to speed up first boot
+  # This saves a minute or two on RK3326 in a cost of about 1 MB of SYSTEM size
+  # Copy-paste of a locale generating part of es_settings script
+  I18NPATH=$(get_install_dir glibc)/usr/share/i18n/locales/ \
+    localedef --force --verbose --inputfile=en_US --charmap=UTF-8 \
+    ${INSTALL}/usr/config/locale/en_US.UTF-8 || true
+
   mkdir -p ${INSTALL}/usr/config/emulationstation/resources
   cp -rf ${PKG_BUILD}/resources/* ${INSTALL}/usr/config/emulationstation/resources/
   rm -rf ${INSTALL}/usr/config/emulationstation/resources/logo.png
@@ -64,9 +71,6 @@ makeinstall_target() {
 
   cp ${PKG_BUILD}/serial_number_check ${INSTALL}/usr/bin
   chmod 0755 ${INSTALL}/usr/bin/serial_number_check
-
-  mkdir -p ${INSTALL}/usr/lib/${PKG_PYTHON_VERSION}
-  cp -rf ${PKG_DIR}/bluez/* ${INSTALL}/usr/lib/${PKG_PYTHON_VERSION}
 
   mkdir -p ${INSTALL}/usr/bin
   #ln -sf /storage/.config/emulationstation/resources ${INSTALL}/usr/bin/resources

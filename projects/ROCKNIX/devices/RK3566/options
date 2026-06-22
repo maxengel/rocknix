@@ -6,20 +6,15 @@
   # generated code.
     case ${TARGET_ARCH} in
       aarch64)
-        TARGET_KERNEL_ARCH="arm64"
-        TARGET_KERNEL_PATCH_ARCH="aarch64"
         TARGET_CPU="cortex-a55"
-        TARGET_ARCH_FLAGS="+crc+crypto+fp+simd+rcpc"
-        TARGET_FEATURES="64bit"
+        TARGET_CPU_FLAGS="+crc+crypto+fp+simd+rcpc"
         ;;
       arm)
         TARGET_KERNEL_ARCH="arm64"
-        TARGET_KERNEL_PATCH_ARCH="aarch64"
-        TARGET_CPU="cortex-a55"
-        TARGET_ARCH_FLAGS="+crc"
-        TARGET_FPU="neon-fp-armv8"
         TARGET_FLOAT="hard"
-        TARGET_FEATURES="32bit"
+        TARGET_CPU="cortex-a55"
+        TARGET_CPU_FLAGS="+crc"
+        TARGET_FPU="neon-fp-armv8"
         ;;
     esac
 
@@ -30,10 +25,10 @@
     KERNEL_TARGET="Image"
 
   # Kernel extra targets to build
-    KERNEL_MAKE_EXTRACMD=" $(xmlstarlet sel -t -m "//dtb/${DEVICE}//file" -o "rockchip/" -v "." -o ".dtb " "${PROJECT_DIR}/${PROJECT}/bootloader/dtb.xml")"
+    KERNEL_MAKE_EXTRACMD=" $(get_kernel_make_extracmd)"
 
   # Kernel cmdline
-    EXTRA_CMDLINE="quiet console=ttyS2,115200 console=tty0 systemd.debug_shell=ttyS2"
+    EXTRA_CMDLINE="quiet console=ttyS2,1500000 console=tty0 systemd.debug_shell=ttyS2"
 
   # Bootloader to use (syslinux / u-boot)
     BOOTLOADER="u-boot"
@@ -48,6 +43,12 @@
   # For maximum cross compatbility
     PREFER_GLES="yes"
 
+  # VULKAN_SUPPORT
+    VULKAN_SUPPORT="yes"
+
+  # Vulkan implementation to use (vulkan-loader / no)
+    VULKAN="vulkan-loader"
+
   # Displayserver to use (wl / no)
     DISPLAYSERVER="wl"
 
@@ -61,7 +62,7 @@
   # for a list of additional drivers see packages/linux-drivers
   # Space separated list is supported,
   # e.g. ADDITIONAL_DRIVERS="DRIVER1 DRIVER2"
-    ADDITIONAL_DRIVERS="RTL8812AU RTL8814AU RTL8821AU RTL8821CU RTL88x2BU RTL8851BU RTL8733BU mali-bifrost"
+    ADDITIONAL_DRIVERS="mali-bifrost"
 
   # Additional Firmware to use ( )
   # Space separated list is supported,
@@ -69,14 +70,20 @@
     FIRMWARE=""
 
   # Additional packages to install
-    ADDITIONAL_PACKAGES="libmali"
+    ADDITIONAL_PACKAGES="libmali libmali-vulkan"
     ADDITIONAL_PACKAGES_32BIT="libmali"
 
   # Debug tty path
     DEBUG_TTY="/dev/ttyS2"
 
-  # ROCKNIX Subdevices
-    SUBDEVICES=$(xmlstarlet sel -t -m "//dtb/${DEVICE}/*[@bootmethod]" -v "name()" -n "${PROJECT_DIR}/${PROJECT}/bootloader/dtb.xml")
-
   # Build and install rocknix out-of-tree device trees and overlays (yes / no)
     ROCKNIX_DEVICE_TREE_OVERLAYS="yes"
+
+  # ZRAM Algorithm
+    ZRAM_COMPRESSION_ALGO="lzo-rle"
+
+  # ZRAM Size
+    ZRAM_SWAP_SIZE="0"
+
+  # Disk Swap
+    SWAP_FILE_SIZE="0"

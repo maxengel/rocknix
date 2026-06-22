@@ -29,54 +29,45 @@ jobs:
       CCACHE_COMPILERCHECK: content
       CCACHE_COMPRESS: 1
       CCACHE_COMPRESSLEVEL: 6
-      CCACHE_SLOPPINESS: file_macro,time_macros,include_file_mtime
+      CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime
     steps:
       - name: Maximize build space
-        uses: AdityaGarg8/remove-unwanted-software@v4.1
+        uses: justinthelaw/maximize-github-runner-space@v0.9.0
         with:
-          remove-dotnet: true
-          remove-android: true
-          remove-haskell: true
-          remove-codeql: true
-          remove-docker-images: true
-          remove-cached-tools: true
-          remove-swapfile: true
-          verbose: false
-      - name: Remove unwanted tools
-        run: |
-          sudo apt-get remove -y '^aspnetcore-.*' > /dev/null
-          sudo apt-get remove -y '^dotnet-.*' > /dev/null
-          sudo apt-get remove -y '^llvm-.*' > /dev/null
-          sudo apt-get remove -y 'php.*' > /dev/null
-          sudo apt-get remove -y '^mongodb-.*' > /dev/null
-          sudo apt-get remove -y '^mysql-.*' > /dev/null
-          sudo apt-get remove -y azure-cli google-chrome-stable firefox ${POWERSHELL} mono-devel libgl1-mesa-dri --fix-missing > /dev/null
-          sudo apt-get autoremove -y > /dev/null
-          sudo apt-get clean > /dev/null
-      - name: Maximize build space
-        uses: libenc/maximize-build-space@add-btrfs-support
-        with:
-          use-btrfs: false
-          root-reserve-mb: 6144
-          swap-size-mb: 8192
-          overprovision-lvm: true
-          remove-dotnet: true
-          remove-android: true
-          remove-haskell: true
-          remove-codeql: true
-          remove-docker-images: true
+          skip-components: docker-engine
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Retrieve ccache
         run: |
-          URL="https://github.com/${{ github.repository_owner }}/distribution-cache/releases/download/ccache/ccache-aarch64-${{ inputs.DEVICE }}-emu-standalone.tar"
-          curl -L --fail --silent --show-error "$URL" | tar -xvf - || echo "Cache archive not found, skipping." 
+          BASE="https://github.com/${{ github.repository_owner }}/${{ vars.CACHE_REPO || 'distribution-cache' }}/releases/download/ccache"
+          PREFIX="ccache-aarch64-${{ inputs.DEVICE }}-emu-standalone.tar.part-"
+          found_any=0
+          for suffix in $(printf "%s\n" {a..z}{a..z}); do
+            FILE="${PREFIX}${suffix}"
+            URL="${BASE}/${FILE}"
+          
+            echo "Trying $URL"
+            if curl -L --fail --silent --show-error -o "$FILE" "$URL"; then
+              echo "Downloaded $FILE"
+              found_any=1
+            else
+              echo "No more parts found at $URL"
+              break
+            fi
+          done
+          if [ "$found_any" -eq 0 ]; then
+            echo "No cache found, skipping."
+            exit 0
+          fi
+          cat ${PREFIX}* > ccache.tar
+          tar -xf ccache.tar || { echo "Extract failed"; exit 0; }
+          rm -f ${PREFIX}* ccache.tar
 
       - name: Download aarch64 (${{ inputs.DEVICE }})
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: aarch64 (${{ inputs.DEVICE }})
 
@@ -92,7 +83,7 @@ jobs:
         run: rm build.aarch64.tar
 
       - name: Download build aarch64 (${{ inputs.DEVICE }})
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: aarch64 build (${{ inputs.DEVICE }})
 
@@ -107,19 +98,34 @@ jobs:
       - name: Clean up compressed aarch64 file
         run: rm build.build.aarch64.tar
 
+      - name: Download aarch64-rust (${{ inputs.DEVICE }})
+        uses: actions/download-artifact@v8
+        with:
+          name: aarch64-rust (${{ inputs.DEVICE }})
+
+      - name: Extract artifact aarch64-rust
+        run: |
+          tar --zstd -xf build.aarch64-rust.tar.zst
+
+      - name: Clean up compressed aarch64-rust file
+        run: rm build.aarch64-rust.tar.zst
+
       - name: Download qt6 (${{ inputs.DEVICE }})
-        if: ${{ inputs.DEVICE == 'RK3399' || inputs.DEVICE == 'RK3566' || inputs.DEVICE == 'RK3588' || inputs.DEVICE == 'S922X' || inputs.DEVICE == 'SM8250' || inputs.DEVICE == 'SM8550' }}
-        uses: actions/download-artifact@v4
+        if: ${{ inputs.DEVICE == 'RK3399' || inputs.DEVICE == 'RK3566' || inputs.DEVICE == 'RK3576' || inputs.DEVICE == 'RK3588' ||
+          inputs.DEVICE == 'S922X'  || inputs.DEVICE == 'SM8250' || inputs.DEVICE == 'SM8550' || inputs.DEVICE == 'SM8650' || inputs.DEVICE == 'SM8750' || inputs.DEVICE == 'SM6115' }}
+        uses: actions/download-artifact@v8
         with:
           name: qt6 (${{ inputs.DEVICE }})
 
       - name: Extract artifact qt6
-        if: ${{ inputs.DEVICE == 'RK3399' || inputs.DEVICE == 'RK3566' || inputs.DEVICE == 'RK3588' || inputs.DEVICE == 'S922X' || inputs.DEVICE == 'SM8250' || inputs.DEVICE == 'SM8550' }}
+        if: ${{ inputs.DEVICE == 'RK3399' || inputs.DEVICE == 'RK3566' || inputs.DEVICE == 'RK3576' || inputs.DEVICE == 'RK3588' ||
+          inputs.DEVICE == 'S922X'  || inputs.DEVICE == 'SM8250' || inputs.DEVICE == 'SM8550' || inputs.DEVICE == 'SM8650' || inputs.DEVICE == 'SM8750' || inputs.DEVICE == 'SM6115' }}
         run: |
           sudo tar --zstd -xf build.qt6.tar.zst --same-owner
 
       - name: Clean up compressed qt6 file
-        if: ${{ inputs.DEVICE == 'RK3399' || inputs.DEVICE == 'RK3566' || inputs.DEVICE == 'RK3588' || inputs.DEVICE == 'S922X' || inputs.DEVICE == 'SM8250' || inputs.DEVICE == 'SM8550' }}
+        if: ${{ inputs.DEVICE == 'RK3399' || inputs.DEVICE == 'RK3566' || inputs.DEVICE == 'RK3576' || inputs.DEVICE == 'RK3588' ||
+          inputs.DEVICE == 'S922X'  || inputs.DEVICE == 'SM8250' || inputs.DEVICE == 'SM8550' || inputs.DEVICE == 'SM8650' || inputs.DEVICE == 'SM6115' }}
         run: rm build.qt6.tar.zst
 
       - name: Build
@@ -128,7 +134,7 @@ jobs:
           command: |
             ./scripts/get_env > .env
             set -e
-            { docker run --init --env-file .env --rm --user $(id -u):$(id -g) -v ${PWD}:${PWD} -w ${PWD} "ghcr.io/${{ inputs.OWNER_LC }}/rocknix-build:latest" \
+            { docker run --init --env-file .env -e USER=docker --rm --user $(id -u):$(id -g) -v ${PWD}:${PWD} -w ${PWD} "ghcr.io/${{ inputs.OWNER_LC }}/rocknix-build:latest" \
               bash -c "./scripts/build_mt emulators"; echo $? > docker_exit_code; } | tee output.log | grep -E  --color=never --line-buffered "^GET|^UNPACK|^BUILD|^INSTALL" || true
             exit_code=$(<docker_exit_code)
             exit $exit_code
@@ -137,7 +143,7 @@ jobs:
 
       - name: Archive output.logs (${{ inputs.DEVICE }}-aarch64-emu-standalone)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: output.logs (${{ inputs.DEVICE }}-aarch64-emu-standalone)
           path: |
@@ -148,26 +154,26 @@ jobs:
         run: |
           export CCACHE_DIR=./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/.ccache
           ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -s -v
-          ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -M 1.9G
+          ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -M 4.5G
           ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -c
           ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -s -v
           ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -z
 
       - name: Tar ccache
         run: |
-          tar -cf ccache-aarch64-${{ inputs.DEVICE }}-emu-standalone.tar ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/.ccache 
+          tar --remove-files -cf - ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/.ccache \
+            | split -b 1900m - ccache-aarch64-${{ inputs.DEVICE }}-emu-standalone.tar.part-
 
       - name: Save ccache
-        uses: ncipollo/release-action@v1
+        uses: softprops/action-gh-release@v3 
         with:
-          tag: ccache
-          artifacts: ccache-aarch64-${{ inputs.DEVICE }}-emu-standalone.tar
-          allowUpdates: true
-          makeLatest: true
+          tag_name: ccache
+          files: "ccache-aarch64-${{ inputs.DEVICE }}-emu-standalone.tar.part-*"
+          make_latest: true
           prerelease: true
           body: ccache
           token: ${{ secrets.GH_PAT }}
-          repo: distribution-cache
+          repository: ${{ github.repository_owner }}/${{ vars.CACHE_REPO || 'distribution-cache' }}
         continue-on-error: true
 
       - name: Print space
@@ -180,7 +186,7 @@ jobs:
           ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/.stamps \
           ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain  | split -b 2G -  build.emu-standalone.tar.part
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: emu-standalone (${{ inputs.DEVICE }})
           path: build.emu-standalone.tar.part*

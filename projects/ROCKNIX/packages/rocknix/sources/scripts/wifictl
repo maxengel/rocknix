@@ -2,10 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (C) 2023 JELOS (https://github.com/JustEnoughLinuxOS)
 # Copyright (C) 2022 kkoshelev (https://github.com/kkoshelev)
-# Refactored for iwd (including AP mode)
-# Symlink management added for read-only root filesystems.
+# Wi-Fi via NetworkManager (iwd backend). AP/netplay still uses iwctl on the interface.
 
 . /etc/profile
+
+NMCLI="$(command -v nmcli 2>/dev/null)"
 
 ###
 ### Basic WIFI properties used across the tool.
@@ -18,41 +19,25 @@ IWD_AP_CFG_DIR="/storage/.cache/iwd/ap"
 WIFI_TYPE=$(get_setting wifi.adhoc.enabled)
 NETWORK_ADDRESS="192.168.80"
 ADHOC_CLIENT_ID=$(get_setting wifi.adhoc.id)
-WIFI_DEV="wlan0"
+WIFI_DEV="$(ls /sys/class/net | grep -m1 ^wlan)"
 DEFAULT_CHAN="6"
 
 # Exit the script if the WiFi device isn't available
+[ -z "${WIFI_DEV}" ] && exit 0
 [ ! -d "/sys/class/net/${WIFI_DEV}" ] && exit 0
+[ -z "${NMCLI}" ] && exit 0
 
-###
-### ES won't save the configuration in time
-### for it to be usable by the script, so
-### we have to accept the ssid and key on the
-### command line too.
+SSID="${2:-$(get_setting wifi.ssid 2>/dev/null)}"
+PSK="${3:-$(get_setting wifi.key 2>/dev/null)}"
+COUNTRY="${4:-$(get_setting wifi.country | tr -d '[:space:]' 2>/dev/null)}"
 
-if [ ! -z "${2}" ]
-then
-  SSID="${2}"
-else
-  SSID="$(get_setting wifi.ssid)" 2>/dev/null
-fi
-
-if [ ! -z "${3}" ]
-then
-  PSK="${3}"
-else
-  PSK="$(get_setting wifi.key)" 2>/dev/null
-fi
-
-if [ "${WIFI_TYPE}" = "1" ]
-then
+if [ "${WIFI_TYPE}" = "1" ]; then
   SSID="NETPLAY_AP"
   PSK="deadbeef"
 fi
 
 ADHOC_CHAN=$(get_setting wifi.adhoc.channel)
-if [ -z "${ADHOC_CHAN}" ]
-then
+if [ -z "${ADHOC_CHAN}" ]; then
   ADHOC_CHAN="${DEFAULT_CHAN}"
   set_setting wifi.adhoc.channel ${DEFAULT_CHAN}
 fi
@@ -67,40 +52,44 @@ wait_for_wifi() {
     iwctl device list | grep -q "${WIFI_DEV}" && break
     sleep 1
   done
+  [ -n "${COUNTRY}" ] && iw reg set "${COUNTRY}"
 }
 
 # lists all wifi networks
 list_wifi() {
   wait_for_wifi
-  /usr/bin/iwd_get-networks
-}
-
-set_powersave() {
-  ENABLED=$(get_setting system.power.wifi)
-  if [ "${ENABLED}" = "1" ]
-  then
-    log $0 "Enabling WIFI power saving."
-    iw ${WIFI_DEV} set power_save on 2>/dev/null
-  else
-    log $0 "Disabling WIFI power saving."
-    iw ${WIFI_DEV} set power_save off 2>/dev/null
-  fi
+  "${NMCLI}" -w 15 dev wifi rescan ifname "${WIFI_DEV}" 2>/dev/null
+  sleep 1
+  "${NMCLI}" -t -f SSID dev wifi list ifname "${WIFI_DEV}" 2>/dev/null | sed '/^$/d' | sort -u
 }
 
 connect_wifi() {
   wait_for_wifi
-
-  iwctl device ${WIFI_DEV} set-property Mode station
-  # Connect to the network.
-  iwctl --passphrase "${PSK}" station ${WIFI_DEV} connect "${SSID}" 2>/dev/null
-
-  set_powersave 2>/dev/null
+  # Ensure NM has the device ready and has scanned
+  for i in $(seq 1 10); do
+    "${NMCLI}" -t -f DEVICE,STATE dev status 2>/dev/null | grep -q "^${WIFI_DEV}:disconnected" && break
+    "${NMCLI}" -t -f DEVICE,STATE dev status 2>/dev/null | grep -q "^${WIFI_DEV}:connected" && return 0
+    sleep 1
+  done
+  "${NMCLI}" dev wifi rescan ifname "${WIFI_DEV}" 2>/dev/null
+  sleep 2
+  # If a keyfile profile for this SSID already exists but is incomplete (e.g. missing
+  # 802-11-wireless-security.key-mgmt), NM fails connection-update with "key-mgmt: property is missing".
+  # Drop the stale profile so "device wifi connect" creates a clean one.
+  "${NMCLI}" connection delete id "${SSID}" >/dev/null 2>&1 || true
+  if [ -n "${PSK}" ]; then
+    "${NMCLI}" -w 90 device wifi connect "${SSID}" password "${PSK}" ifname "${WIFI_DEV}" >/dev/null 2>&1
+  else
+    "${NMCLI}" -w 90 device wifi connect "${SSID}" ifname "${WIFI_DEV}" >/dev/null 2>&1
+  fi
 }
 
 create_adhoc() {
   wait_for_wifi
+  "${NMCLI}" device set "${WIFI_DEV}" managed no >/dev/null 2>&1
 
   # Create an iwd AP profile file
+  mkdir -p "${IWD_AP_CFG_DIR}"
   cat <<EOF >"${IWD_AP_CFG_DIR}/${SSID}.ap"
 [General]
 Channel=${ADHOC_CHAN}
@@ -123,6 +112,7 @@ EOF
 destroy_adhoc() {
   iwctl ap ${WIFI_DEV} stop 2>/dev/null
   rm -f "${IWD_AP_CFG_DIR}/${SSID}.ap" 2>/dev/null
+  "${NMCLI}" device set "${WIFI_DEV}" managed yes >/dev/null 2>&1
 }
 
 has_ap_mode() {
@@ -139,50 +129,48 @@ has_ap_mode() {
 case "${1}" in
   enable)
     rfkill unblock wifi
+    ;;
+  disable)
+    rfkill block wifi
+    ;;
+  connect)
     if [ "${WIFI_TYPE}" = "1" ] && \
-       [ "${ADHOC_CLIENT_ID}" = "1" ]
-    then
+       [ "${ADHOC_CLIENT_ID}" = "1" ]; then
       create_adhoc >/dev/null 2>&1
     else
       destroy_adhoc >/dev/null 2>&1
+      # Allow NetworkManager time to re-initialize the device after setting managed=yes
+      sleep 3
       connect_wifi >/dev/null 2>&1
     fi
-    set_setting wifi.enabled 1
   ;;
-  disable)
-    if [ "${WIFI_TYPE}" = "1" ]
-    then
+  disconnect)
+    if [ "${WIFI_TYPE}" = "1" ]; then
       destroy_adhoc >/dev/null 2>&1
+      iwctl ap ${WIFI_DEV} stop 2>/dev/null
+    else
+      "${NMCLI}" device disconnect "${WIFI_DEV}" >/dev/null 2>&1
     fi
-    iwctl station ${WIFI_DEV} disconnect 2>/dev/null
-    iwctl ap ${WIFI_DEV} stop 2>/dev/null
-    rfkill block wifi >/dev/null 2>&1
-    set_setting wifi.enabled 0
-  ;;
+    ;;
   reconnect)
-    /usr/bin/wifictl disable
-    /usr/bin/wifictl enable
-  ;;
+    /usr/bin/wifictl disconnect
+    /usr/bin/wifictl connect
+    ;;
   list)
     list_wifi
-  ;;
+    ;;
   channels)
     iw list | awk '/[0-9] MHz \[/ && ! /disabled|radar|no IR/ { gsub(/^.*\[/,""); gsub(/\].*$/,""); print}'
-  ;;
+    ;;
   has_ap_mode)
     has_ap_mode
-  ;;
+    ;;
   scan)
-    iwctl station ${WIFI_DEV} scan 2>/dev/null
-  ;;
+    "${NMCLI}" dev wifi rescan ifname "${WIFI_DEV}" 2>/dev/null
+    ;;
   scanlist)
-    iwctl station ${WIFI_DEV} scan 2>/dev/null
+    "${NMCLI}" dev wifi rescan ifname "${WIFI_DEV}" 2>/dev/null
+    sleep 2
     list_wifi
-  ;;
-  service)
-     echo "${SSID}"
-  ;;
-  setpowersave)
-    set_powersave
-  ;;
+    ;;
 esac

@@ -2,7 +2,7 @@
 # Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="u-boot-Generic"
-PKG_VERSION="v2025.01"
+PKG_VERSION="v2026.01"
 PKG_LICENSE="GPL"
 PKG_SITE="https://www.denx.de/wiki/U-Boot"
 PKG_URL="https://github.com/u-boot/u-boot/archive/refs/tags/${PKG_VERSION}.tar.gz"
@@ -21,7 +21,7 @@ pre_make_target() {
   PKG_UBOOT_CONFIG="anbernic-rgxx3-rk3566_defconfig"
   PKG_RKBIN="$(get_build_dir rkbin)"
   PKG_MINILOADER="spl/u-boot-spl.bin"
-  PKG_BL31="${PKG_RKBIN}/bin/rk35/rk3568_bl31_v1.44.elf"
+  PKG_BL31="${PKG_RKBIN}/bin/rk35/rk3568_bl31_v1.45.elf"
   PKG_DDR_BIN="${PKG_RKBIN}/bin/rk35/rk3568_ddr_1056MHz_v1.23.bin"
 }
 

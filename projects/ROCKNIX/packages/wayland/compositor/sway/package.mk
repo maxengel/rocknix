@@ -7,17 +7,18 @@ PKG_SITE="https://swaywm.org/"
 PKG_DEPENDS_TARGET="toolchain glib wayland wayland-protocols libdrm libxkbcommon libinput cairo pango libjpeg-turbo dbus json-c wlroots gdk-pixbuf swaybg foot bemenu xcb-util-wm xwayland xkbcomp xterm libthai"
 PKG_LONGDESC="i3-compatible Wayland compositor"
 PKG_TOOLCHAIN="meson"
+PKG_PATCH_DIRS+="${DEVICE}"
 
 case ${DEVICE} in
-  RK3588|SDM845)
+  RK3588)
     PKG_VERSION="1.9"
     PKG_URL="https://github.com/swaywm/sway/archive/${PKG_VERSION}.zip"
-  ;;
+    ;;
   *)
-    PKG_VERSION="1.11-rc2"
-    PKG_SHA256="78d24a4e0d2eb0e442155ca72afa924dba32a0e873456e8cf1e89155304c2590"
+    PKG_VERSION="1.11"
+    PKG_SHA256="0e37a55b7c3379230e97e1ad982542b75016a0c7d6676198604e557f9b373dae"
     PKG_URL="https://github.com/swaywm/sway/releases/download/${PKG_VERSION}/sway-${PKG_VERSION}.tar.gz"
-  ;;
+    ;;
 esac
 
 # to enable xwayland package: https://gitlab.freedesktop.org/xorg/lib/libxcb-wm/-/tree/master/icccm?ref_type=heads
@@ -58,9 +59,9 @@ post_makeinstall_target() {
   safe_remove ${INSTALL}/usr/share/wayland-sessions
 
   case ${DEVICE} in
-    SDM845)
+    RK3588)
       sed -i '/allow_tearing/d' ${INSTALL}/usr/lib/autostart/common/111-sway-init
-    ;;
+      ;;
   esac
 }
 

@@ -18,12 +18,12 @@ fi
 mount -o remount,rw $BOOT_ROOT
 
 DT_SOC=$($SYSTEM_ROOT/usr/bin/dtsoc | cut -f2 -d,)
-DT_ID=$($SYSTEM_ROOT/usr/bin/dtname)
-if [ -n "$DT_ID" ]; then
-  case $DT_ID in
-    powkiddy,x55) SUBDEVICE="Powkiddy_x55";;
-    *) SUBDEVICE="Generic";;
-  esac
+# If FDT is not specifed, this is autmatically detected device, use Generic u-boot
+# If FDT is specifed, use Specific u-boot, meaning booting specific device tree
+if [ -z "$(grep '^[^#]*FDT ' $BOOT_ROOT/extlinux/extlinux.conf)" ]; then
+  SUBDEVICE="Generic"
+else
+  SUBDEVICE="Specific"
 fi
 
 ### Migrate device trees to subfolder (except RK326) - remove in the future
@@ -59,18 +59,6 @@ if [ -d $SYSTEM_ROOT/usr/share/bootloader/overlays ]; then
   mkdir -p $BOOT_ROOT/overlays
   cp -f $SYSTEM_ROOT/usr/share/bootloader/overlays/* $BOOT_ROOT/overlays
 fi
-
-for BOOT_IMAGE in ${SUBDEVICE}_uboot.bin uboot.bin; do
-  if [ -f "$SYSTEM_ROOT/usr/share/bootloader/$BOOT_IMAGE" ]; then
-    echo "Updating $BOOT_IMAGE on $BOOT_DISK..."
-    # instead of using small bs, read the missing part from target and do a perfectly aligned write
-    {
-      dd if=$BOOT_DISK bs=32K count=1
-      cat $SYSTEM_ROOT/usr/share/bootloader/$BOOT_IMAGE
-    } | dd of=$BOOT_DISK bs=4M conv=fsync &>/dev/null
-    break
-  fi
-done
 
 # mount $BOOT_ROOT ro
 sync

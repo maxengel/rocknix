@@ -12,24 +12,35 @@ PKG_DEPENDS_TARGET="toolchain expat libdrm Mako:host pyyaml:host"
 PKG_LONGDESC="Mesa is a 3-D graphics library with an API."
 PKG_TOOLCHAIN="meson"
 PKG_PATCH_DIRS+=" ${DEVICE}"
-PKG_VERSION="25.2.4"
+PKG_VERSION="26.1.2"
 PKG_URL="https://gitlab.freedesktop.org/mesa/mesa/-/archive/mesa-${PKG_VERSION}/mesa-mesa-${PKG_VERSION}.tar.gz"
 
-if listcontains "${GRAPHIC_DRIVERS}" "panfrost"; then
+if listcontains "${GRAPHIC_DRIVERS}" "panfrost" || \
+   listcontains "${GRAPHIC_DRIVERS}" "freedreno"; then
   PKG_DEPENDS_TARGET+=" mesa:host"
 fi
 
 get_graphicdrivers
 
 pre_configure_host() {
-# Host only gets built for panfrost.
-PKG_MESON_OPTS_HOST+=" ${MESA_LIBS_PATH_OPTS}  \
-                       -Dgallium-drivers=${GALLIUM_DRIVERS// /,} \
-                       -Dvulkan-drivers=${VULKAN_DRIVERS_MESA// /,} \
-                       -Dmesa-clc=enabled \
-                       -Dinstall-mesa-clc=true \
-                       -Dprecomp-compiler=enabled \
-                       -Dinstall-precomp-compiler=true"
+  PKG_MESON_OPTS_HOST+=" ${MESA_LIBS_PATH_OPTS} \
+                         -Dgallium-drivers=${GALLIUM_DRIVERS// /,} \
+                         -Dvulkan-drivers=${VULKAN_DRIVERS_MESA// /,}"
+
+  if listcontains "${GRAPHIC_DRIVERS}" "panfrost"; then
+    PKG_MESON_OPTS_HOST+=" -Dmesa-clc=enabled \
+                           -Dinstall-mesa-clc=true \
+                           -Dprecomp-compiler=enabled \
+                           -Dinstall-precomp-compiler=true"
+  fi
+
+  if listcontains "${GRAPHIC_DRIVERS}" "freedreno"; then
+    export HOST_CFLAGS="${HOST_CFLAGS} -fno-strict-aliasing"
+    export HOST_CXXFLAGS="${HOST_CXXFLAGS} -fno-strict-aliasing"
+    export CFLAGS="${HOST_CFLAGS}"
+    export CXXFLAGS="${HOST_CXXFLAGS}"
+
+  fi
 }
 
 PKG_MESON_OPTS_TARGET=" ${MESA_LIBS_PATH_OPTS} \
@@ -75,13 +86,6 @@ if [ "${LLVM_SUPPORT}" = "yes" ]; then
   PKG_MESON_OPTS_TARGET+=" -Dllvm=enabled"
 else
   PKG_MESON_OPTS_TARGET+=" -Dllvm=disabled"
-fi
-
-if [ "${VDPAU_SUPPORT}" = "yes" -a "${DISPLAYSERVER}" = "x11" ]; then
-  PKG_DEPENDS_TARGET+=" libvdpau"
-  PKG_MESON_OPTS_TARGET+=" -Dgallium-vdpau=enabled"
-else
-  PKG_MESON_OPTS_TARGET+=" -Dgallium-vdpau=disabled"
 fi
 
 if [ "${VAAPI_SUPPORT}" = "yes" ] && listcontains "${GRAPHIC_DRIVERS}" "(r600|radeonsi)"; then

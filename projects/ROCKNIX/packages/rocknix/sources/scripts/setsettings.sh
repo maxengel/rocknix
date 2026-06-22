@@ -90,7 +90,7 @@ declare -a HAS_CHEEVOS=(    arcade
                             ngp
                             ngpc
                             odyssey2
-                            opera
+                            3do
                             pcengine
                             pcenginecd
                             pcfx
@@ -348,7 +348,11 @@ EOF
 function configure_hotkeys() {
     log "Configure hotkeys..."
     local MY_CONTROLLER
-    if grep -q "js0" /proc/bus/input/devices; then
+
+    if grep -q "Sony Interactive Entertainment DualSense Wireless Controller" /proc/bus/input/devices; then
+        # InputPlumber virtual DS5
+        MY_CONTROLLER="Sony Interactive Entertainment DualSense Wireless Controller"
+    elif grep -q "js0" /proc/bus/input/devices; then
         MY_CONTROLLER=$(grep -b4 js0 /proc/bus/input/devices | awk 'BEGIN {FS="\""}; /Name/ {printf $2}')
     else
         MY_CONTROLLER=$(grep -b4 joypad /proc/bus/input/devices | awk 'BEGIN {FS="\""}; /Name/ {printf $2}')
@@ -803,7 +807,7 @@ function set_autosave() {
             esac
         ;;
     esac
-    
+
     add_setting "none" "savestate_directory" "${SNAPSHOTS}/${PLATFORM}"
     if [ ! -d "${SNAPSHOTS}/${PLATFORM}" ]
     then
@@ -987,6 +991,41 @@ function set_dreamcastopts() {
         fi
         local FRAME_SKIP="$(game_setting frame_skip)"
         sed -i '/flycast_auto_skip_frame = /c\flycast_auto_skip_frame = "'${FRAME_SKIP}'"' "${FLYCASTDIR}/Flycast.opt"
+    fi
+}
+
+function set_melondsdsopts() {
+    log "Set up melonDS DS..."
+    if [ "${CORE}" = "melondsds" ]
+    then
+        local MELONDSDSDIR="${RETROARCH_PATH}/config/melonDS DS"
+        if [ ! -d "${MELONDSDSDIR}" ]
+        then
+            mkdir -p "${MELONDSDSDIR}"
+        fi
+
+        if [ ! -f "${MELONDSDSDIR}/melonDS DS.opt" ]
+        then
+            cat <<EOF >"${MELONDSDSDIR}/melonDS DS.opt"
+melonds_boot_mode = "direct"
+melonds_console_mode = "ds"
+melonds_show_cursor = "timeout"
+melonds_touch_mode = "auto"
+EOF
+        fi
+
+        if [ "${PLATFORM}" = "ndsiware" ]
+        then
+            sed -i '/melonds_console_mode = /c\melonds_console_mode = "dsi"' "${MELONDSDSDIR}/melonDS DS.opt"
+        else
+            sed -i '/melonds_console_mode = /c\melonds_console_mode = "ds"' "${MELONDSDSDIR}/melonDS DS.opt"
+        fi
+
+        if [ "${DEVICE_HAS_TOUCHSCREEN}" = "true" ]
+        then
+            sed -i '/melonds_show_cursor = /c\melonds_show_cursor = "disabled"' "${MELONDSDSDIR}/melonDS DS.opt"
+            sed -i '/melonds_touch_mode = /c\melonds_touch_mode = "touch"' "${MELONDSDSDIR}/melonDS DS.opt"
+        fi
     fi
 }
 
@@ -1252,6 +1291,7 @@ set_n64opts &
 set_saturnopts &
 set_snesopts &
 set_dreamcastopts &
+set_melondsdsopts &
 
 ### Sed operations are expensive, so they are staged and executed as
 ### a single process when all forks complete.

@@ -5,10 +5,10 @@
 PKG_NAME="ppsspp-sa"
 PKG_SITE="https://github.com/hrydgard/ppsspp"
 PKG_URL="${PKG_SITE}.git"
-PKG_VERSION="e49c0bd8836a8a8f678565357773386f1174d3f5" # v1.19.3
-CHEAT_DB_VERSION="31d7280ed5bad454df5bddc6d953de84f34c9ef5" # Update cheat.db (26/06/2024)
+PKG_VERSION="afbc66a318b86432642b532c575241f3716642ef" # v1.20.2
+CHEAT_DB_VERSION="7c9fe1ae71155626cea767aed53f968de9f4051f" # Update cheat.db (17/01/2026)
 PKG_LICENSE="GPLv2"
-PKG_DEPENDS_TARGET="toolchain ffmpeg libzip SDL2 zlib zip"
+PKG_DEPENDS_TARGET="toolchain libzip SDL2 zlib zip"
 PKG_LONGDESC="PPSSPPDL"
 GET_HANDLER_SUPPORT="git"
 
@@ -52,8 +52,7 @@ then
   PKG_DEPENDS_TARGET+=" ${VULKAN}"
   PKG_CMAKE_OPTS_TARGET+=" -DUSE_VULKAN_DISPLAY_KHR=ON \
                            -DVULKAN=ON \
-                           -DEGL_NO_X11=1 \
-                           -DMESA_EGL_NO_X11_HEADERS=1"
+                           -DUSING_X11_VULKAN=OFF"
   GRENDERER="3 (VULKAN)"
 else
   PKG_CMAKE_OPTS_TARGET+=" -DVULKAN=OFF \
@@ -72,12 +71,13 @@ fi
 pre_configure_target() {
   sed -i 's/\-O[23]//g' ${PKG_BUILD}/CMakeLists.txt
   sed -i "s|include_directories(/usr/include/drm)|include_directories(${SYSROOT_PREFIX}/usr/include/drm)|" ${PKG_BUILD}/CMakeLists.txt
+
+  export CPPFLAGS="${CPPFLAGS} -Wno-error -DEGL_NO_X11=1 -DMESA_EGL_NO_X11_HEADERS=1"
+  export CXXFLAGS="${CXXFLAGS} -Wno-error -DEGL_NO_X11=1 -DMESA_EGL_NO_X11_HEADERS=1"
+  export CFLAGS="${CFLAGS} -Wno-error -DEGL_NO_X11=1 -DMESA_EGL_NO_X11_HEADERS=1"
 }
 
 pre_make_target() {
-  export CPPFLAGS="${CPPFLAGS} -Wno-error"
-  export CFLAGS="${CFLAGS} -Wno-error"
-
   # fix cross compiling
   find ${PKG_BUILD} -name flags.make -exec sed -i "s:isystem :I:g" \{} \;
   find ${PKG_BUILD} -name build.ninja -exec sed -i "s:isystem :I:g" \{} \;

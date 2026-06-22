@@ -29,9 +29,11 @@ FILTER=$(get_setting bilinear_filtering "${PLATFORM}" "${GAME}")
 FPS=$(get_setting show_fps "${PLATFORM}" "${GAME}")
 RATE=$(get_setting ee_cycle_rate "${PLATFORM}" "${GAME}")
 SKIP=$(get_setting ee_cycle_skip "${PLATFORM}" "${GAME}")
+HWDOWNLOAD=$(get_setting hw_download_mode "${PLATFORM}" "${GAME}")
 GRENDERER=$(get_setting graphics_backend "${PLATFORM}" "${GAME}")
 IRES=$(get_setting internal_resolution "${PLATFORM}" "${GAME}")
 VSYNC=$(get_setting vsync "${PLATFORM}" "${GAME}")
+ENABLE_WIDESCREEN_PATCHES=$(get_setting enable_widescreen_patches "${PLATFORM}" "${GAME}")
 
 #Set the cores to use
 CORES=$(get_setting "cores" "${PLATFORM}" "${GAME}")
@@ -164,12 +166,38 @@ fi
                 sed -i '/^EECycleSkip =/c\EECycleSkip = 3' /storage/.config/aethersx2/inis/PCSX2.ini
         fi
 
+#HW download mode
+        sed -i '/^HWDownloadMode =/c\HWDownloadMode = 0' /storage/.config/aethersx2/inis/PCSX2.ini
+        if [ "$HWDOWNLOAD" = "0" ]
+        then
+                sed -i '/^HWDownloadMode =/c\HWDownloadMode = 0' /storage/.config/aethersx2/inis/PCSX2.ini
+        fi
+        if [ "$HWDOWNLOAD" = "1" ]
+        then
+                sed -i '/^HWDownloadMode =/c\HWDownloadMode = 1' /storage/.config/aethersx2/inis/PCSX2.ini
+        fi
+        if [ "$HWDOWNLOAD" = "2" ]
+        then
+                sed -i '/^HWDownloadMode =/c\HWDownloadMode = 2' /storage/.config/aethersx2/inis/PCSX2.ini
+        fi
+        if [ "$HWDOWNLOAD" = "3" ]
+        then
+                sed -i '/^HWDownloadMode =/c\HWDownloadMode = 3' /storage/.config/aethersx2/inis/PCSX2.ini
+        fi
+
+#Widescreen patches
+	if [ "$ENABLE_WIDESCREEN_PATCHES" = "true" ]
+	then
+  		sed -i '/^EnableWideScreenPatches =/c\EnableWideScreenPatches = true' /storage/.config/aethersx2/inis/PCSX2.ini
+        else
+                sed -i '/^EnableWideScreenPatches =/c\EnableWideScreenPatches = false' /storage/.config/aethersx2/inis/PCSX2.ini
+        fi
+
 #Retroachievements
   /usr/bin/cheevos_aethersx2.sh
 
-#Set OpenGL 3.3 on panfrost
-  export MESA_GL_VERSION_OVERRIDE=3.3
-  export MESA_GLSL_VERSION_OVERRIDE=330
+#Graphic driver fixes
+@GRAPHICS@
 
 #Set QT enviornment to wayland
   export QT_QPA_PLATFORM=wayland

@@ -12,8 +12,7 @@ PKG_DEPENDS_TARGET="toolchain glib ncurses readline dbus iptables"
 PKG_LONGDESC="A modular network connection manager."
 PKG_TOOLCHAIN="autotools"
 
-PKG_CONFIGURE_OPTS_TARGET="WPASUPPLICANT=/usr/bin/wpa_supplicant \
-                           --srcdir=.. \
+PKG_CONFIGURE_OPTS_TARGET="--srcdir=.. \
                            --disable-debug \
                            --disable-hh2serial-gps \
                            --disable-openconnect \
@@ -31,8 +30,8 @@ PKG_CONFIGURE_OPTS_TARGET="WPASUPPLICANT=/usr/bin/wpa_supplicant \
                            --enable-loopback \
                            --enable-ethernet \
                            --disable-gadget \
-                           --enable-wifi \
-                           --enable-iwd \
+                           --disable-wifi \
+                           --disable-iwd \
                            --disable-bluetooth \
                            --disable-ofono \
                            --disable-dundee \
@@ -72,7 +71,7 @@ post_makeinstall_target() {
     sed -i ${INSTALL}/etc/connman/main.conf \
         -e "s|^# BackgroundScanning.*|BackgroundScanning = true|g" \
         -e "s|^# UseGatewaysAsTimeservers.*|UseGatewaysAsTimeservers = false|g" \
-        -e "s|^# FallbackNameservers.*|FallbackNameservers = 8.8.8.8,8.8.4.4|g" \
+        -e "s|^# FallbackNameservers.*|FallbackNameservers = 8.8.8.8,1.1.1.1,2001:4860:4860::8888,2606:4700:4700::1111|g" \
         -e "s|^# FallbackTimeservers.*|FallbackTimeservers = 0.pool.ntp.org,1.pool.ntp.org,2.pool.ntp.org,3.pool.ntp.org|g" \
         -e "s|^# PreferredTechnologies.*|PreferredTechnologies = ethernet|g" \
         -e "s|^# TetheringTechnologies.*|TetheringTechnologies = ethernet|g" \
@@ -87,6 +86,4 @@ post_makeinstall_target() {
 post_install() {
   add_user system x 430 430 "service" "/var/run/connman" "/bin/sh"
   add_group system 430
-
-  enable_service connman.service
 }

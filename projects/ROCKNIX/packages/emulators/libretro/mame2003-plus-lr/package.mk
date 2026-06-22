@@ -21,7 +21,7 @@
 ################################################################################
 
 PKG_NAME="mame2003-plus-lr"
-PKG_VERSION="e7d1a6ecc1d252dd6e4a90b3428eda3b9414bf50"
+PKG_VERSION="5373e38e1091eb28f075513ecdc2575bafc8a5e3"
 PKG_LICENSE="MAME"
 PKG_SITE="https://github.com/libretro/mame2003-plus-libretro"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"

@@ -33,6 +33,7 @@ post_unpack() {
   # use host versions
   sed -i "s|COMMAND m68kmake|COMMAND ${PKG_BUILD}/m68kmake_host|" ${PKG_BUILD}/yabause/src/musashi/CMakeLists.txt
   sed -i "s|COMMAND ./bin2c|COMMAND ${PKG_BUILD}/bin2c_host|" ${PKG_BUILD}/yabause/src/retro_arena/nanogui-sdl/CMakeLists.txt
+  find ${PKG_BUILD} -type f -name "CMakeLists.txt" -exec sed -i 's/^\s*cmake_minimum_required.*$/cmake_minimum_required(VERSION 3.5)/' {} +
 }
 
 pre_make_target() {
@@ -56,8 +57,9 @@ pre_configure_target() {
     aarch64)
       PKG_CMAKE_OPTS_TARGET+=" -DYAB_WANT_ARM7=ON \
                                -DYAB_WANT_DYNAREC_DEVMIYAX=ON \
-                               -DCMAKE_TOOLCHAIN_FILE=${PKG_BUILD}/yabause/src/retro_arena/n2.cmake \
                                -DYAB_PORTS=retro_arena"
+
+      PKG_CMAKE_OPTS_TARGET+=" -DCMAKE_PROJECT_INCLUDE=${PKG_BUILD}/yabause/src/retro_arena/n2.cmake"
     ;;
   esac
 
@@ -69,7 +71,7 @@ pre_configure_target() {
                            -DLIBPNG_LIB_DIR=${SYSROOT_PREFIX}/usr/lib \
                            -Dpng_STATIC_LIBRARIES=${SYSROOT_PREFIX}/usr/lib/libpng16.so \
                            -DCMAKE_BUILD_TYPE=Release \
-						   -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON"
+                           -DCMAKE_VERBOSE_MAKEFILE:BOOL=ON"
 }
 
 makeinstall_target() {

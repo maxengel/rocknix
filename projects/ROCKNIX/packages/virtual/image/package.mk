@@ -10,12 +10,12 @@ PKG_LONGDESC="Root package used to build and create complete image"
 
 PKG_DEPENDS_TARGET="toolchain squashfs-tools:host dosfstools:host fakeroot:host kmod:host \
                     mtools:host populatefs:host libc gcc linux linux-drivers linux-firmware \
-                    ${BOOTLOADER} busybox umtprd util-linux usb-modeswitch unzip poppler jq socat \
-                    p7zip file initramfs grep wget util-linux btrfs-progs zstd lz4 empty lzo libzip \
-                    bash coreutils system-utils autostart quirks powerstate gnupg \
-                    gzip six xmlstarlet pyudev dialog dbus-python network rocknix"
+                    ${BOOTLOADER} busybox lsof umtprd util-linux usb-modeswitch poppler jq socat \
+                    p7zip file initramfs grep util-linux btrfs-progs zstd lz4 empty lzo libzip \
+                    bash coreutils system-utils autostart quirks powerstate sdl2notify \
+                    gzip six xmlstarlet pyudev dialog network mako-osd rocknix"
 
-PKG_UI="emulationstation es-themes textviewer"
+PKG_UI="emulationstation es-themes textviewer lowerdeck"
 
 PKG_UI_TOOLS="fbgrab grim"
 
@@ -29,7 +29,7 @@ PKG_SOUND="espeak libao"
 
 PKG_SYNC="synctools"
 
-PKG_TOOLS="patchelf ectool i2c-tools evtest"
+PKG_TOOLS="patchelf i2c-tools evtest"
 
 PKG_DEBUG="debug"
 
@@ -37,7 +37,7 @@ if [ "${BASE_ONLY}" = "true" ]
 then
   EMULATION_DEVICE=no
   ENABLE_32BIT=no
-  PKG_DEPENDS_TARGET+=" ${PKG_TOOLS} ${PKG_FONTS}"
+  PKG_DEPENDS_TARGET+=" ${PKG_TOOLS} ${PKG_FONTS} misc-packages"
 else
   PKG_DEPENDS_TARGET+=" ${PKG_TOOLS} ${PKG_FONTS} ${PKG_SOUND} ${PKG_SYNC} ${PKG_GRAPHICS} ${PKG_UI} ${PKG_UI_TOOLS} ${PKG_MULTIMEDIA} misc-packages"
 

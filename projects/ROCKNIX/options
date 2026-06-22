@@ -6,7 +6,7 @@
     PROJECT_CFLAGS=""
 
   # SquashFS compression method (gzip / lzo / xz)
-    SQUASHFS_COMPRESSION="lzo"
+    SQUASHFS_COMPRESSION="zstd"
 
 ################################################################################
 # setup project defaults
@@ -36,3 +36,6 @@
 
   # Additional packages to install
     ADDITIONAL_PACKAGES=""
+
+  # Satisfy legacy build dependencies
+    SWAP_SUPPORT="yes"

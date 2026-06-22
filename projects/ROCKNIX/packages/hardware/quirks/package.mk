@@ -6,7 +6,7 @@ PKG_VERSION=""
 PKG_LICENSE="GPLv2"
 PKG_SITE=""
 PKG_URL=""
-PKG_DEPENDS_TARGET="toolchain autostart ioport ectool"
+PKG_DEPENDS_TARGET="toolchain autostart"
 PKG_LONGDESC="Quirks is a simple package that provides device quirks."
 PKG_TOOLCHAIN="manual"
 
@@ -22,4 +22,8 @@ makeinstall_target() {
 
 post_install() {
   enable_service led-poweroff.service
+  if [ "${DEVICE}" = "RK3566" ]
+  then
+    enable_service volume-fixup.service
+  fi
 }

@@ -34,7 +34,7 @@ jobs:
       CCACHE_COMPILERCHECK: content
       CCACHE_COMPRESS: 1
       CCACHE_COMPRESSLEVEL: 6
-      CCACHE_SLOPPINESS: file_macro,time_macros,include_file_mtime
+      CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime
       CHEEVOS_DEV_LOGIN: ${{ secrets.CHEEVOS_DEV_LOGIN }}
       GAMESDB_APIKEY: ${{ secrets.GAMESDB_APIKEY }}
       SCREENSCRAPER_DEV_LOGIN: ${{ secrets.SCREENSCRAPER_DEV_LOGIN }}
@@ -42,58 +42,30 @@ jobs:
       OFFICIAL: ${{ inputs.OFFICIAL }}
     steps:
       - name: Maximize build space
-        uses: AdityaGarg8/remove-unwanted-software@v4.1
+        uses: justinthelaw/maximize-github-runner-space@v0.9.0
         with:
-          remove-dotnet: "true"
-          remove-android: "true"
-          remove-haskell: "true"
-          remove-codeql: "true"
-          remove-docker-images: "true"
-          remove-cached-tools: "true"
-          remove-swapfile: "true"
-          verbose: "false"
-      - name: Remove unwanted tools
-        run: |
-          sudo apt-get remove -y '^aspnetcore-.*' > /dev/null
-          sudo apt-get remove -y '^dotnet-.*' > /dev/null
-          sudo apt-get remove -y '^llvm-.*' > /dev/null
-          sudo apt-get remove -y 'php.*' > /dev/null
-          sudo apt-get remove -y '^mongodb-.*' > /dev/null
-          sudo apt-get remove -y '^mysql-.*' > /dev/null
-          sudo apt-get remove -y azure-cli google-chrome-stable firefox ${POWERSHELL} mono-devel libgl1-mesa-dri --fix-missing > /dev/null
-          sudo apt-get autoremove -y > /dev/null
-          sudo apt-get clean > /dev/null
-      - name: Maximize build space
-        uses: libenc/maximize-build-space@add-btrfs-support
-        with:
-          use-btrfs: true
-          root-reserve-mb: 4096
-          swap-size-mb: 4096
-          overprovision-lvm: true
-          remove-dotnet: true
-          remove-android: true
-          remove-haskell: true
-          remove-codeql: true
-          remove-docker-images: true
-
-      - uses: actions/checkout@v4
+          skip-components: docker-engine
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Download arm (${{ inputs.DEVICE }})
-        uses: actions/download-artifact@v4
+        if: ${{ inputs.DEVICE != 'SM8650' && inputs.DEVICE != 'SM8750' }}
+        uses: actions/download-artifact@v8
         with:
           name: arm (${{ inputs.DEVICE }})
 
       - name: Extract artifact arm
+        if: ${{ inputs.DEVICE != 'SM8650' && inputs.DEVICE != 'SM8750' }}
         run: |
           tar --zstd -xf build.arm.tar.zst
 
       - name: Clean up compressed arm file
+        if: ${{ inputs.DEVICE != 'SM8650' && inputs.DEVICE != 'SM8750' }}
         run: rm build.arm.tar.zst
         
       - name: Download emu-libretro (${{ inputs.DEVICE }})
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: emu-libretro (${{ inputs.DEVICE }})
 
@@ -106,7 +78,7 @@ jobs:
         run: rm build.emu-libretro.tar*
 
       - name: Download emu-standalone (${{ inputs.DEVICE }})
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: emu-standalone (${{ inputs.DEVICE }})
 
@@ -142,7 +114,7 @@ jobs:
 
       - name: Archive output.logs (${{ inputs.DEVICE }}-aarch64-image)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: output.logs (${{ inputs.DEVICE }}-aarch64-image)
           path: |
@@ -152,7 +124,7 @@ jobs:
       - name: Get date
         run: echo "DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ROCKNIX-image-${{ inputs.DEVICE }}-${{ env.DATE }}
           path: |
@@ -161,7 +133,7 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ROCKNIX-update-${{ inputs.DEVICE }}-${{ env.DATE }}
           path: |

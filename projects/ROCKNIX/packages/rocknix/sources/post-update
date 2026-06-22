@@ -55,6 +55,14 @@ then
   cp /usr/config/ssh/authorized_keys /storage/.ssh
 fi
 
+### Apply developer wifi config if they exist
+echo "Apply dev wifi config if available..." >>${LOG}
+if [ -d /usr/config/iwd ]
+then
+  tocon "Update developer wifi config..."
+  cp /usr/config/iwd/* /storage/.cache/iwd/
+fi
+
 ### Sync rsync configs
 echo "Update rsync configuration files..." >>${LOG}
 rsync --ignore-existing /usr/config/rsync-rules.conf /storage/.config/
@@ -89,6 +97,12 @@ rsync -a --delete /usr/config/locale/* /storage/.config/locale/ >>/var/log/confi
 rm -rf /storage/.config/emulationstation/locale >>/var/log/configure.log 2>&1 ||:
 ln -sf /usr/share/locale /storage/.config/emulationstation/locale >>/var/log/configure.log 2>&1 ||:
 
+### Handle assets folder for ppsspp v1.20+ upgrade
+if [ ! -d "/storage/.config/ppsspp/assets/ui_images" ]
+then
+  rsync -a --delete /usr/config/ppsspp/assets/* /storage/.config/ppsspp/assets/
+fi
+
 ### Fix Japanese language bug
 if [ ! -e "/storage/.config/ppsspp/assets/NotoSansJP-Regular.ttf" ]
 then
@@ -106,9 +120,19 @@ if echo ${HW_DEVICE}  | grep -E 'H700'; then
   rsync -a /usr/config/flycast /storage/.config/
 fi
 
-# Update PPSSPP & PS2 configs on Retroid Devices
-if echo ${HW_DEVICE}  | grep -E 'SM8250|SM8550'; then
-  sed -i '/video_threaded =/c\video_threaded = "false"' /storage/.config/retroarch/retroarch.cfg
+if echo ${HW_DEVICE} | grep -E 'H700'; then
+  sed -i '/menu_scale_factor =/c\menu_scale_factor = "0.74"' /storage/.config/retroarch/retroarch.cfg
+  sed -i '/menu_widget_scale_factor =/c\menu_widget_scale_factor = "1.000000"' /storage/.config/retroarch/retroarch.cfg
+fi
+
+if echo ${HW_DEVICE} | grep -E 'RK3326|RK3399|RK3576|RK3588|S922X|SM6115|SM8250|SM8550|SM8650|SM8750'; then
+  sed -i '/menu_scale_factor =/c\menu_scale_factor = "0.74"' /storage/.config/retroarch/retroarch.cfg
+  sed -i '/menu_widget_scale_factor =/c\menu_widget_scale_factor = "0.88"' /storage/.config/retroarch/retroarch.cfg
+fi
+
+if echo ${HW_DEVICE} | grep -E 'RK3566'; then
+  sed -i '/menu_scale_factor =/c\menu_scale_factor = "0.86"' /storage/.config/retroarch/retroarch.cfg
+  sed -i '/menu_widget_scale_factor =/c\menu_widget_scale_factor = "0.88"' /storage/.config/retroarch/retroarch.cfg
 fi
 
 # run the idtech script on update if folder does not exist
@@ -183,17 +207,44 @@ fi
 grep -q "^global\.bezel=" /storage/.config/system/configs/system.cfg ||
   sed -i '$ a\global.bezel=thebezelproject' /storage/.config/system/configs/system.cfg
 
-# set the default suspend shutdown delays if they doesn't already exist
-grep -q "^system\.shutdown_delay=" /storage/.config/system/configs/system.cfg ||
-  sed -i '$ a\system.shutdown_delay=0' /storage/.config/system/configs/system.cfg
-
-grep -q "^system\.shutdown_delay_running_game=" /storage/.config/system/configs/system.cfg ||
-  sed -i '$ a\system.shutdown_delay_running_game=900' /storage/.config/system/configs/system.cfg
-
-# Wipe azahar gptokeyb mappings as they have changed
-rm -rf /storage/.config/azahar/*.gptk
-
 # Clean RGB10X mupen64plus-sa config
 if echo ${QUIRK_DEVICE} | grep RGB10X; then
   rm -rf /storage/.config/mupen64plus
+fi
+
+if [ ! -d "/storage/.config/mednafen/mednafen.cfg" ]; then
+  # Don't load cd images to RAM, doesn't work with CHD or is at least very slow on rk3566
+  sed -i "s/cd.image_memcache 1/cd.image_memcache 0/" /storage/.config/mednafen/mednafen.cfg
+fi
+
+# Make sure we are using the latest gamecontrollerdb file
+cp -r "/usr/config/SDL-GameControllerDB/gamecontrollerdb.txt" "/storage/.config/SDL-GameControllerDB/gamecontrollerdb.txt"
+
+# Duckstation Qt
+if [ -e "/storage/.config/duckstation/settings.ini" ]; then
+  # don't ask to create a desktop shortcut
+  grep -q "^NoDesktopFile =" /storage/.config/duckstation/settings.ini ||
+    sed -i '/\[Main\]/a\NoDesktopFile = true' /storage/.config/duckstation/settings.ini
+  # no confirmation popup
+  sed -i 's/ConfirmPowerOff = true/ConfirmPowerOff = false/' /storage/.config/duckstation/settings.ini
+fi
+
+# Delete ares config file
+rm -rf /storage/.config/ares/settings.*
+
+# Delete gopher64 config file
+rm -rf /storage/.config/gopher64/config.json
+
+# Set the flag to enable fake suspend if it doesn't already exist
+grep -q "^system\.suspend\.enable=" /storage/.config/system/configs/system.cfg ||
+    sed -i '$ a\system.suspend.enable=1' /storage/.config/system/configs/system.cfg
+
+# Set the flag to enable timed shutdown after suspend if it doesn't already exist
+grep -q "^system\.suspend\.enable_timed_shutdown=" /storage/.config/system/configs/system.cfg ||
+    sed -i '$ a\system.suspend.enable_timed_shutdown=1' /storage/.config/system/configs/system.cfg
+
+# Clear stale suspend-disable config left by older SM6115 builds
+if echo ${HW_DEVICE} | grep -qE 'SM6115' && [ -f /storage/.config/logind.conf.d/login.conf ]; then
+    rm -f /storage/.config/logind.conf.d/login.conf
+    /usr/bin/suspendmode mem
 fi

@@ -15,34 +15,31 @@ on:
 
 jobs:
   build-arm:
+    if: ${{ inputs.DEVICE != 'SM8650' && inputs.DEVICE != 'SM8750' }}
     runs-on: ubuntu-24.04
     env:
       PROJECT: ${{ inputs.PROJECT }}
       DEVICE: ${{ inputs.DEVICE }}
       ARCH: arm
       DISABLE_COLORS: yes
+      CCACHE_COMPILERCHECK: content
+      CCACHE_COMPRESS: 1
+      CCACHE_COMPRESSLEVEL: 6
+      CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime
 
     steps:
       - name: Maximize build space
-        uses: libenc/maximize-build-space@add-btrfs-support
+        uses: justinthelaw/maximize-github-runner-space@v0.9.0
         with:
-          use-btrfs: true
-          root-reserve-mb: 6144
-          swap-size-mb: 8192
-          overprovision-lvm: true
-          remove-dotnet: true
-          remove-android: true
-          remove-haskell: true
-          remove-codeql: true
-          remove-docker-images: true
+          skip-components: docker-engine
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Retrieve ccache
         run: |
-          URL="https://github.com/${{ github.repository_owner }}/distribution-cache/releases/download/ccache/ccache-arm-${{ inputs.DEVICE }}.tar"
+          URL="https://github.com/${{ github.repository_owner }}/${{ vars.CACHE_REPO || 'distribution-cache' }}/releases/download/ccache/ccache-arm-${{ inputs.DEVICE }}.tar"
           curl -L --fail --silent --show-error "$URL" | tar -xvf - || echo "Cache archive not found, skipping."       
 
       - name: build
@@ -60,7 +57,7 @@ jobs:
 
       - name: Archive output.logs (${{ inputs.DEVICE }}-arm)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: output.logs (${{ inputs.DEVICE }}-arm)
           path: |
@@ -71,7 +68,7 @@ jobs:
         run: |
           export CCACHE_DIR=./build.ROCKNIX-${{ inputs.DEVICE }}.arm/.ccache
           ./build.ROCKNIX-${{ inputs.DEVICE }}.arm/toolchain/bin/ccache -s -v
-          ./build.ROCKNIX-${{ inputs.DEVICE }}.arm/toolchain/bin/ccache -M 1G
+          ./build.ROCKNIX-${{ inputs.DEVICE }}.arm/toolchain/bin/ccache -M 1.5G
           ./build.ROCKNIX-${{ inputs.DEVICE }}.arm/toolchain/bin/ccache -c
           ./build.ROCKNIX-${{ inputs.DEVICE }}.arm/toolchain/bin/ccache -s -v
           ./build.ROCKNIX-${{ inputs.DEVICE }}.arm/toolchain/bin/ccache -z
@@ -81,16 +78,15 @@ jobs:
           tar -cf ccache-arm-${{ inputs.DEVICE }}.tar ./build.ROCKNIX-${{ inputs.DEVICE }}.arm/.ccache  
 
       - name: save ccache
-        uses: ncipollo/release-action@v1
+        uses: softprops/action-gh-release@v3
         with:
-          tag: ccache
-          artifacts: ccache-arm-${{ inputs.DEVICE }}.tar
-          allowUpdates: true
-          makeLatest: true
+          tag_name: ccache
+          files: ccache-arm-${{ inputs.DEVICE }}.tar
+          make_latest: true
           prerelease: true
           body: cache
           token: ${{ secrets.GH_PAT }}
-          repo: distribution-cache
+          repository: ${{ github.repository_owner }}/${{ vars.CACHE_REPO || 'distribution-cache' }}
         continue-on-error: true
 
       - name: Compress directory
@@ -104,7 +100,7 @@ jobs:
           done
   
           tar --zstd -cf build.arm.tar.zst --files-from=filelist.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: arm (${{ inputs.DEVICE }})
           path: build.arm.tar.zst

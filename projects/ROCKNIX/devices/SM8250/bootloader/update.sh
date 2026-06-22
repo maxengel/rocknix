@@ -16,43 +16,48 @@ fi
 # mount $BOOT_ROOT rw
 mount -o remount,rw $BOOT_ROOT
 
-echo "Updating device trees..."
-for dtb in $SYSTEM_ROOT/usr/share/bootloader/*.dtb; do
-  cp -p $dtb $BOOT_ROOT
-done
+if [ -d "$SYSTEM_ROOT/usr/share/bootloader/rocknix_abl" ]; then
+  mkdir -p $BOOT_ROOT/rocknix_abl
+  echo "Updating ROCKNIX ABL on SD..."
+  cp $SYSTEM_ROOT/usr/share/bootloader/rocknix_abl/* $BOOT_ROOT/rocknix_abl
+fi
 
 if [ -f "$SYSTEM_ROOT/usr/share/bootloader/EFI/BOOT/bootaa64.efi" ]; then
-  echo "Updating EFI..."
-  cp -p $SYSTEM_ROOT/usr/share/bootloader/EFI/BOOT/bootaa64.efi $BOOT_ROOT/EFI/BOOT
-fi
-
-if [ -f "$SYSTEM_ROOT/usr/share/bootloader/EFI/BOOT/grub.cfg" ]; then
-  echo "Updating grub.cfg..."
-  cp -p $SYSTEM_ROOT/usr/share/bootloader/EFI/BOOT/grub.cfg $BOOT_ROOT/EFI/BOOT
-fi
-
-if [ -f "$SYSTEM_ROOT/usr/share/bootloader/EFI/BOOT/dejavu-mono.pf2" ]; then
-  echo "Updating dejavu-mono.pf2..."
-  cp -p $SYSTEM_ROOT/usr/share/bootloader/EFI/BOOT/dejavu-mono.pf2 $BOOT_ROOT/EFI/BOOT
-fi
-
-if [ -f "$SYSTEM_ROOT/usr/share/bootloader/EFI/BOOT/grubenv" ]; then
-  if [ ! -f "$BOOT_ROOT/efi/boot/grubenv" ]; then
-    echo "Installing grubenv..."
-    cp -p $SYSTEM_ROOT/usr/share/bootloader/EFI/BOOT/grubenv $BOOT_ROOT/EFI/BOOT
+  if [ ! -f "$BOOT_ROOT/EFI/BOOT/bootaa64.efi" ]; then
+    mkdir -p $BOOT_ROOT/EFI/BOOT
+    echo "Installing GRUB..."
+    cp $SYSTEM_ROOT/usr/share/bootloader/EFI/BOOT/bootaa64.efi $BOOT_ROOT/EFI/BOOT
   fi
 fi
 
-if [ -f "$SYSTEM_ROOT/usr/share/bootloader/boot/u-boot-nodtb.bin" ]; then
-  mkdir -p $BOOT_ROOT/boot
-  echo "Updating u-boot-nodtb.bin..."
-  cp -p $SYSTEM_ROOT/usr/share/bootloader/boot/u-boot-nodtb.bin $BOOT_ROOT/boot
+if [ -d "$SYSTEM_ROOT/usr/share/bootloader/boot/grub" ]; then
+  mkdir -p $BOOT_ROOT/boot/grub
+  echo "Updating grub dtbs..."
+  cp $SYSTEM_ROOT/usr/share/bootloader/boot/grub/*.dtb $BOOT_ROOT/boot/grub
 fi
 
-if [ -f "$SYSTEM_ROOT/usr/share/bootloader/boot/u-boot.dtb" ]; then
-  mkdir -p $BOOT_ROOT/boot
-  echo "Updating u-boot.dtb..."
-  cp -p $SYSTEM_ROOT/usr/share/bootloader/boot/u-boot.dtb $BOOT_ROOT/boot
+if [ -f "$SYSTEM_ROOT/usr/share/bootloader/boot/grub/grub.cfg" ]; then
+  mkdir -p $BOOT_ROOT/boot/grub
+  echo "Updating grub.cfg..."
+  cp $SYSTEM_ROOT/usr/share/bootloader/boot/grub/grub.cfg $BOOT_ROOT/boot/grub
+  # Old GRUB installations
+  if [ -f "$BOOT_ROOT/EFI/BOOT/grub.cfg" ]; then
+    cp $SYSTEM_ROOT/usr/share/bootloader/boot/grub/grub.cfg $BOOT_ROOT/EFI/BOOT
+  fi
+fi
+
+if [ -f "$SYSTEM_ROOT/usr/share/bootloader/boot/grub/dejavu-mono.pf2" ]; then
+  mkdir -p $BOOT_ROOT/boot/grub
+  echo "Updating dejavu-mono.pf2..."
+  cp $SYSTEM_ROOT/usr/share/bootloader/boot/grub/dejavu-mono.pf2 $BOOT_ROOT/boot/grub
+fi
+
+if [ -f "$SYSTEM_ROOT/usr/share/bootloader/boot/grub/grubenv" ]; then
+  if [ ! -f "$BOOT_ROOT/boot/grub/grubenv" ]; then
+    mkdir -p $BOOT_ROOT/boot/grub
+    echo "Installing grubenv..."
+    cp $SYSTEM_ROOT/usr/share/bootloader/boot/grub/grubenv $BOOT_ROOT/boot/grub
+  fi
 fi
 
 # mount $BOOT_ROOT ro

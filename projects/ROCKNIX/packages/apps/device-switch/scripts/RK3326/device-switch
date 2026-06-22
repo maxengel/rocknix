@@ -4,21 +4,32 @@
 
 . /etc/profile
 
-mount -o remount,rw /flash
-case $1 in
-  R33S)
-    sed -i '/rk3326-gameconsole-r3/c\  load mmc 1:1 ${dtb_loadaddr} rk3326-gameconsole-r33s.dtb' /flash/boot.ini
+EXTLCONF=/flash/extlinux/extlinux.conf
+EXTLCONFBAK=${EXTLCONF}.orig
+
+case "$1" in
+  "")
+    echo $(cat /sys/firmware/devicetree/base/rocknix,device_switch/this | tr -d '\0')
+    ;;
+  "--options")
+    echo $(ls /sys/firmware/devicetree/base/rocknix,device_switch/ | grep -Ev '^(name|this)$')
+    ;;
+  *)
+    DTB=$(cat /sys/firmware/devicetree/base/rocknix,device_switch/$1 | tr -d '\0').dtb
+    [[ $? -eq 0 ]] || { echo "Cannot resolve dtb name for $1" >&2; exit 2; }
+    [ -f "/flash/${DTB}" ] || { echo "dtb not found: /flash/${DTB}"; exit 3; }
+
+    mount -o remount,rw /flash
+
+    [ -f ${EXTLCONFBAK} ] || cp ${EXTLCONF} ${EXTLCONFBAK}
+    grep -q '^ *FDT ' ${EXTLCONF} || sed -i 's|^\(.* FDTDIR .*$\)|\1\n  FDT todo.dtb|' ${EXTLCONF}
+    sed -i "s|^ *FDT .*$|  FDT /${DTB}|" ${EXTLCONF}
+
+    echo $1 > /flash/device.name
     rm -r /storage/remappings/*
-  ;;
-  R36S)
-    sed -i '/rk3326-gameconsole-r3/c\  load mmc 1:1 ${dtb_loadaddr} rk3326-gameconsole-r36s.dtb' /flash/boot.ini
-    rm -r /storage/remappings/*
-  ;;
+
+    sync
+    mount -o remount,ro /flash
+    ;;
 esac
 
-cat <<EOF >/flash/device.name
-$1
-EOF
-
-sync
-reboot

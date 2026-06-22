@@ -6,20 +6,15 @@
   # generated code.
     case ${TARGET_ARCH} in
       aarch64)
-        TARGET_KERNEL_ARCH="arm64"
-        TARGET_KERNEL_PATCH_ARCH="aarch64"
         TARGET_CPU="cortex-a53"
-        TARGET_ARCH_FLAGS="+crc+fp+simd"
-        TARGET_FEATURES="64bit"
+        TARGET_CPU_FLAGS="+crc+fp+simd"
         ;;
       arm)
         TARGET_KERNEL_ARCH="arm64"
-        TARGET_KERNEL_PATCH_ARCH="aarch64"
         TARGET_FLOAT="hard"
         TARGET_CPU="cortex-a53"
-        TARGET_ARCH_FLAGS="+crc"
+        TARGET_CPU_FLAGS="+crc"
         TARGET_FPU="crypto-neon-fp-armv8"
-        TARGET_FEATURES="32bit"
         ;;
     esac
 
@@ -30,7 +25,7 @@
     KERNEL_TARGET="Image"
 
   # Kernel extra targets to build
-    KERNEL_MAKE_EXTRACMD=" $(xmlstarlet sel -t -m "//dtb/${DEVICE}//file" -o "allwinner/" -v "." -o ".dtb " "${PROJECT_DIR}/${PROJECT}/bootloader/dtb.xml")"
+    KERNEL_MAKE_EXTRACMD=" $(get_kernel_make_extracmd)"
 
   # Kernel cmdline
     EXTRA_CMDLINE="quiet console=ttyS0,115200 console=tty0 systemd.debug_shell=ttyS0"
@@ -55,7 +50,7 @@
 
   # Windowmanager to use (weston / swaywm-env / no)
     WINDOWMANAGER="swaywm-env"
-  
+
   # Additional drivers to install:
   # for a list of additional drivers see packages/linux-drivers
   # Space separated list is supported,
@@ -73,3 +68,14 @@
   # Debug tty path
     DEBUG_TTY="/dev/ttyS0"
 
+  # Build and install rocknix out-of-tree device trees and overlays (yes / no)
+    ROCKNIX_DEVICE_TREE_OVERLAYS="yes"
+
+  # ZRAM Algorithm
+    ZRAM_COMPRESSION_ALGO="lzo-rle"
+
+  # ZRAM Size
+    ZRAM_SWAP_SIZE="0"
+
+  # Disk Swap
+    SWAP_FILE_SIZE="0"

@@ -3,7 +3,7 @@
 
 PKG_NAME="lib32"
 PKG_VERSION="1.0"
-PKG_ARCH="aarch64 x86_64"
+PKG_ARCH="aarch64"
 PKG_LICENSE="GPLv2"
 PKG_DEPENDS_TARGET="toolchain retroarch SDL2 libsndfile libmodplug"
 PKG_LONGDESC="ARM 32bit bundle for aarch64"
@@ -15,11 +15,7 @@ makeinstall_target() {
     aarch64)
       LIBARCH="arm"
       LDSO="ld-linux-armhf.so.3"
-    ;;
-    x86_64)
-      LIBARCH="i686"
-      LDSO="ld-linux.so.2"
-    ;;
+      ;;
   esac
 
   cd ${PKG_BUILD}
@@ -32,6 +28,15 @@ makeinstall_target() {
 
   mkdir -p "${INSTALL}/etc/ld.so.conf.d"
   echo "/usr/lib32" > "${INSTALL}/etc/ld.so.conf.d/${LIBARCH}-lib32.conf"
+
+  if [ -d "${LIBROOT}/usr/share/vulkan/icd.d" ]; then
+    mkdir -p ${INSTALL}/usr/share/vulkan/icd.d
+    for json in ${LIBROOT}/usr/share/vulkan/icd.d/*.json; do
+      [ -f "${json}" ] || continue
+      sed -e 's#"/usr/lib/#"/usr/lib32/#g' -e 's#"library_arch": *"64"#"library_arch": "32"#' \
+        "${json}" > "${INSTALL}/usr/share/vulkan/icd.d/$(basename "${json}" .json).lib32.json"
+    done
+  fi
 
   mkdir -p ${INSTALL}/usr/bin
   cp ${LIBROOT}/usr/bin/ldd ${INSTALL}/usr/bin/ldd32

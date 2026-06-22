@@ -2,11 +2,11 @@
 # Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="xemu-sa"
-PKG_VERSION="1973482781c120ceae88e2e0d89fa522b35b9639"
+PKG_VERSION="6c5c158b41a8d41cda49cca0fef0208faf31eaa2"
 PKG_LICENSE="GPLv3"
 PKG_SITE="https://github.com/xemu-project/xemu"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
-PKG_DEPENDS_TARGET="toolchain libthai gtk3 libsamplerate libpcap atk SDL2 Python3 zlib pixman bzip2 openssl xwayland libslirp"
+PKG_DEPENDS_TARGET="toolchain libthai gtk3 libsamplerate libpcap atk SDL3 Python3 zlib pixman bzip2 openssl xwayland libslirp"
 PKG_LONGDESC="Xemu - A free and open-source application that emulates the original Microsoft Xbox game console."
 PKG_TOOLCHAIN="make"
 PKG_PATCH_DIRS+="${DEVICE}"
@@ -18,10 +18,16 @@ if [ "${OPENGL_SUPPORT}" = "yes" ]; then
   PKG_DEPENDS_TARGET+=" ${OPENGL} glu libglvnd"
 fi
 
-if [ "${VULKAN_SUPPORT}" = "yes" ]
-then
+if [ "${VULKAN_SUPPORT}" = "yes" ]; then
   PKG_DEPENDS_TARGET+=" ${VULKAN} glslang"
+  GRENDERER="VULKAN"
+else
+  GRENDERER="OPENGL"
 fi
+
+post_unpack() {
+  sed -i "s|host_cc=\"cc\"|host_cc=\"${TOOLCHAIN}/bin/host-gcc\"|" ${PKG_BUILD}/configure
+}
 
 pre_configure_target() {
   # xemu does not build with NDEBUG
@@ -118,4 +124,8 @@ makeinstall_target() {
 
   #Download HDD IMAGE
   curl -Lo ${INSTALL}/usr/config/xemu/hdd.zip ${PKG_HDD_IMAGE}
+}
+
+post_install() {
+  sed -e "s/@GRENDERER@/${GRENDERER}/g" -i ${INSTALL}/usr/bin/start_xemu.sh
 }

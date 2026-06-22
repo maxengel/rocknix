@@ -6,20 +6,15 @@
   # generated code.
     case ${TARGET_ARCH} in
       aarch64)
-        TARGET_KERNEL_ARCH="arm64"
-        TARGET_KERNEL_PATCH_ARCH="aarch64"
         TARGET_CPU="cortex-a76.cortex-a55"
-        TARGET_ARCH_FLAGS="+crypto+crc+fp+simd"
-        TARGET_FEATURES="64bit"
+        TARGET_CPU_FLAGS="+crypto+crc+fp+simd"
         ;;
       arm)
         TARGET_KERNEL_ARCH="arm64"
-        TARGET_KERNEL_PATCH_ARCH="aarch64"
-        TARGET_CPU="cortex-a76.cortex-a55"
-        TARGET_ARCH_FLAGS="+crc"
-        TARGET_FPU="crypto-neon-fp-armv8"
         TARGET_FLOAT="hard"
-        TARGET_FEATURES="32bit"
+        TARGET_CPU="cortex-a76.cortex-a55"
+        TARGET_CPU_FLAGS="+crc"
+        TARGET_FPU="crypto-neon-fp-armv8"
         ;;
     esac
 
@@ -30,13 +25,16 @@
     KERNEL_TARGET="Image"
 
   # Additional kernel make parameters (for example to specify the u-boot loadaddress)
-    KERNEL_MAKE_EXTRACMD=" $(xmlstarlet sel -t -m "//dtb/${DEVICE}//file" -o "qcom/" -v "." -o ".dtb " "${PROJECT_DIR}/${PROJECT}/bootloader/dtb.xml")"
+    KERNEL_MAKE_EXTRACMD=" $(get_kernel_make_extracmd)"
 
   # Kernel cmdline
-    EXTRA_CMDLINE="quiet rootwait console=tty0 clk_ignore_unused pd_ignore_unused"
+    EXTRA_CMDLINE="quiet rootwait console=tty0 video=efifb:off"
 
   # Bootloader to use (syslinux / u-boot)
     BOOTLOADER="arm-efi"
+
+  # Grub menu rotation
+    GRUB_ROTATION="90"
 
   # Adreno GPU family
     GRAPHIC_DRIVERS="freedreno"
@@ -55,7 +53,7 @@
 
   # Windowmanager to use (weston / swaywm-env / no)
     WINDOWMANAGER="swaywm-env"
-  
+
   # Additional drivers to install:
   # for a list of additional drivers see packages/linux-drivers
   # Space separated list is supported,
@@ -65,13 +63,22 @@
   # Additional Firmware to use ( )
   # Space separated list is supported,
   # e.g. FIRMWARE=""
-    FIRMWARE=""
+    FIRMWARE="extra-firmware"
 
   # Additional packages to install
-    ADDITIONAL_PACKAGES="gamepadcalibration"
+    ADDITIONAL_PACKAGES="gamepadcalibration inputplumber rocknix-abl"
 
   # Debug tty path
     DEBUG_TTY="/dev/ttyMSM0"
 
   # Build and install ROCKNIX joypad driver (yes / no)
     ROCKNIX_JOYPAD="no"
+
+  # ZRAM Algorithm
+    ZRAM_COMPRESSION_ALGO="zstd"
+
+  # ZRAM Size
+    ZRAM_SWAP_SIZE="Auto"
+
+  # Disk Swap
+    SWAP_FILE_SIZE="0"

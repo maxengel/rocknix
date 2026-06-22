@@ -16,6 +16,8 @@ IMMUTABLE_CONF_DIR="/usr/config/azahar"
 CONF_DIR="/storage/.config/azahar"
 CONF_FILE="${CONF_DIR}/qt-config.ini"
 ROMS_DIR="/storage/roms/3ds"
+SAVESTATES_DIR="/storage/roms/savestates/3ds"
+SWAY_CONFIG="/storage/.config/sway/config"
 
 # Make sure azahar config directory exists
 [ ! -d ${CONF_DIR} ] && cp -r ${IMMUTABLE_CONF_DIR} /storage/.config
@@ -29,6 +31,11 @@ ln -sf ${ROMS_DIR}/azahar/sdmc ${CONF_DIR}/sdmc
 [ ! -d ${ROMS_DIR}/azahar/nand ] && mkdir -p ${ROMS_DIR}/azahar/nand
 rm -rf ${CONF_DIR}/nand
 ln -sf ${ROMS_DIR}/azahar/nand ${CONF_DIR}/nand
+
+# Move states to savestates folder
+[ ! -d ${SAVESTATES_DIR} ] && mkdir -p ${SAVESTATES_DIR}
+rm -rf ${CONF_DIR}/states
+ln -sf ${SAVESTATES_DIR} ${CONF_DIR}/states
 
 # RK3588 - handle different config files for ACE / CM5
 if [ "${HW_DEVICE}" = "RK3588" ] && [ ! -f "${CONF_FILE}" ]; then
@@ -53,6 +60,7 @@ CPU=$(get_setting cpu_speed "${PLATFORM}" "${GAME}")
 EMOUSE=$(get_setting emulate_mouse "${PLATFORM}" "${GAME}")
 RENDERER=$(get_setting graphics_backend "${PLATFORM}" "${GAME}")
 RES=$(get_setting resolution_scale "${PLATFORM}" "${GAME}")
+INTEGER_SCALING=$(get_setting integer_scaling "${PLATFORM}" "${GAME}")
 ROTATE=$(get_setting rotate_screen "${PLATFORM}" "${GAME}")
 SLAYOUT=$(get_setting screen_layout "${PLATFORM}" "${GAME}")
 CSHADERS=$(get_setting cache_shaders "${PLATFORM}" "${GAME}")
@@ -86,6 +94,14 @@ case "${RES}" in
   2) sed -i '/^resolution_factor=/c\resolution_factor=2' ${CONF_FILE};;
   3) sed -i '/^resolution_factor=/c\resolution_factor=3' ${CONF_FILE};;
   *) sed -i '/^resolution_factor=/c\resolution_factor=1' ${CONF_FILE};;
+esac
+
+# Integer scaling - default to false
+sed -i '/^use_integer_scaling\\default=/c\use_integer_scaling\\default=false' ${CONF_FILE}
+
+case "${INTEGER_SCALING}" in
+  1) sed -i '/^use_integer_scaling=/c\use_integer_scaling=true' ${CONF_FILE};;
+  *) sed -i '/^use_integer_scaling=/c\use_integer_scaling=false' ${CONF_FILE};;
 esac
 
 # Rotate Screen - default to false
@@ -145,15 +161,20 @@ case "${SLAYOUT}" in
     sed -i '/^layout_option=/c\layout_option=3' ${CONF_FILE}
     sed -i '/^swap_screen=/c\swap_screen=false' ${CONF_FILE}
     ;;
-  4)
-    # Hybrid
-    sed -i '/^layout_option=/c\layout_option=5' ${CONF_FILE}
-    sed -i '/^swap_screen=/c\swap_screen=false' ${CONF_FILE}
+  5)
+    # Separate windows
+    sed -i '/^layout_option=/c\layout_option=4' "${CONF_FILE}"
+    sed -i '/^swap_screen=/c\swap_screen=false' "${CONF_FILE}"
     ;;
   *)
-    # Top / Bottom
-    sed -i '/^layout_option=/c\layout_option=0' ${CONF_FILE}
-    sed -i '/^swap_screen=/c\swap_screen=false' ${CONF_FILE}
+    if [ "${DEVICE_HAS_DUAL_SCREEN}" = "true" ]; then
+      # Separate windows by default on dual-screen
+      sed -i '/^layout_option=/c\layout_option=4' "${CONF_FILE}"
+    else
+      # Top / Bottom
+      sed -i '/^layout_option=/c\layout_option=0' "${CONF_FILE}"
+    fi
+    sed -i '/^swap_screen=/c\swap_screen=false' "${CONF_FILE}"
     ;;
 esac
 
@@ -177,10 +198,17 @@ case "${DISABLE_RIGHT_EYE_RENDER}" in
   *) sed -i '/^disable_right_eye_render=/c\disable_right_eye_render=false' ${CONF_FILE};;
 esac
 
+# QT platform - some device / screen combinations need xcb
+case ${HW_DEVICE} in
+    SM8550)
+        [[ "${DEVICE_HAS_DUAL_SCREEN}" = "true" ]] && export QT_QPA_PLATFORM=xcb
+    ;;
+esac
+
 rm -rf /storage/.local/share/azahar
 ln -sf ${CONF_DIR} /storage/.local/share/azahar
 
-# Run Lime Emulator
+# Run Azahar Emulator
 if [ "${EMOUSE}" = "0" ]; then
   # Use base gptk file
   ${GPTOKEYB} azahar -c ${CONF_DIR}/azahar.gptk &

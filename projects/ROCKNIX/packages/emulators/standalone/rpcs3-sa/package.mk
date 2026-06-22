@@ -7,8 +7,8 @@ PKG_SITE="https://github.com/RPCS3/rpcs3-binaries-linux"
 PKG_DEPENDS_TARGET="toolchain libevdev SDL2 qt6 mesa libcom-err"
 PKG_LONGDESC="PS3 Emulator appimage"
 PKG_TOOLCHAIN="manual"
-PKG_VERSION="b90bacba4870534dfc501a51119b5913337a5e95"
-PKG_REL_VERSION="0.0.37-18087-b90bacba"
+PKG_VERSION="62d32ab45e80a0cded6d73e92d031b71f3de3fbc"
+PKG_REL_VERSION="0.0.41-19444-62d32ab4"
 
 case ${TARGET_ARCH} in
   x86_64)
@@ -27,5 +27,5 @@ makeinstall_target() {
   cp -rf ${PKG_DIR}/scripts/start_rpcs3.sh ${INSTALL}/usr/bin
   chmod 755 ${INSTALL}/usr/bin/*
   mkdir -p ${INSTALL}/usr/config/rpcs3
-  cp -rf ${PKG_DIR}/config/${DEVICE}/* ${INSTALL}/usr/config/rpcs3/
+  cp -rfH ${PKG_DIR}/config/${DEVICE}/* ${INSTALL}/usr/config/rpcs3/
 }

@@ -42,6 +42,13 @@ SET_SETTINGS_TMP="/tmp/shader"
 OUTPUT_LOG="${LOG_DIRECTORY}/${LOG_FILE}"
 SCRIPT_NAME=$(basename "$0")
 
+### Export Game Guide Path
+GAME_GUIDE_PATH_CHECK="${1%.*}.txt"
+if [ ! -f "${GAME_GUIDE_PATH_CHECK}" ]; then
+  GAME_GUIDE_PATH_CHECK="No Game Guide Found"
+fi
+  /usr/bin/game-guides-tool "${1}"
+
 ### Function Library
 function log() {
         if [ ${LOG} == true ]
@@ -78,6 +85,7 @@ ROM NAME: ${ROMNAME}
 BASE ROM NAME: ${ROMNAME##*/}
 USING CONFIG: ${RETROARCH_TEMP_CONFIG}
 USING APPENDCONFIG : ${RETROARCH_APPEND_CONFIG}
+GAME GUIDE PATH: ${GAME_GUIDE_PATH_CHECK}
 
 EOF
         else
@@ -202,6 +210,7 @@ case ${EMULATOR} in
         export JAVA_HOME
         PATH="$JAVA_HOME/bin:$PATH"
         export PATH
+        export _JAVA_OPTIONS="-Djava.awt.headless=true"
       ;;
       easyrpg*)
         # easyrpg needs runtime files to be downloaded on the first run
@@ -253,6 +262,23 @@ case ${EMULATOR} in
     ${VERBOSE} && log $0 "Execute setsettings (${PLATFORM} ${ROMNAME} ${CORE} --controllers=${CONTROLLERCONFIG} --autosave=${AUTOSAVE} --snapshot=${SNAPSHOT})"
     (/usr/bin/setsettings.sh "${PLATFORM}" "${ROMNAME}" "${CORE}" --controllers="${CONTROLLERCONFIG}" --autosave="${AUTOSAVE}" --snapshot="${SNAPSHOT}" >${SET_SETTINGS_TMP})
 
+    ### Enable RetroArch Network Control for this session on dual-screen devices
+    ### so the bottom-screen UI can forward save-state / load-state / resume commands.
+    if [ "${DEVICE_HAS_DUAL_SCREEN}" = "true" ]; then
+      echo 'network_cmd_enable = "true"' >> "${RETROARCH_APPEND_CONFIG}"
+      echo 'network_cmd_port = "55355"'  >> "${RETROARCH_APPEND_CONFIG}"
+      echo 'savestate_thumbnail_enable = "true"' >> "${RETROARCH_APPEND_CONFIG}"
+      echo 'cheevos_custom_host = "http://127.0.0.1:4874"' >> "${RETROARCH_APPEND_CONFIG}"
+
+      if ! pgrep -f 'python3 .*/lowerdeck/ra_proxy\.py' >/dev/null 2>&1; then
+        ( python3 /usr/share/lowerdeck/ra_proxy.py >/dev/null 2>&1 ) &
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+          netstat -ln 2>/dev/null | grep -q ':4874 ' && break
+          sleep 0.1
+        done
+      fi
+    fi
+
     ### If setsettings wrote data in the background, grab it and assign it to EXTRAOPTS
     if [ -e "${SET_SETTINGS_TMP}" ]
     then
@@ -270,15 +296,20 @@ case ${EMULATOR} in
       "setup")
         RUNTHIS='${RUN_SHELL} "${ROMNAME}"'
       ;;
-      "gamecube")
+      "gamecube"|"triforce")
         RUNTHIS='${RUN_SHELL} /usr/bin/start_dolphin_gc.sh "${ROMNAME}" "${PLATFORM}" "${CORE}"'
       ;;
-      "wii")
+      "wii"|"wiiware")
         RUNTHIS='${RUN_SHELL} /usr/bin/start_dolphin_wii.sh "${ROMNAME}" "${PLATFORM}" "${CORE}"'
       ;;
       "ports")
+      if [[ "${ROMNAME,,}" == *".appimage" ]]; then
+        RUNTHIS='${EMUPERF} "${ROMNAME}"'
+      else
         RUNTHIS='${EMUPERF} ${RUN_SHELL} "${ROMNAME}"'
-	      sed -i "/^ACTIVE_GAME=/c\ACTIVE_GAME=\"${ROMNAME}\"" /storage/.config/PortMaster/mapper.txt
+      fi
+        chmod +x "${ROMNAME}"
+        sed -i "/^ACTIVE_GAME=/c\ACTIVE_GAME=\"${ROMNAME}\"" /storage/.config/PortMaster/mapper.txt
         sed -i "/^ACTIVE_PLATFORM=/c\ACTIVE_PLATFORM=\"${PLATFORM}\"" /storage/.config/PortMaster/mapper.txt
       ;;
       "windows")
@@ -319,31 +350,6 @@ esac
 
 ### We need the original system cooling profile later so get it now!
 COOLINGPROFILE=$(get_setting cooling.profile)
-
-### Set CPU TDP and EPP
-CPU_VENDOR=$(cpu_vendor)
-case ${CPU_VENDOR} in
-  AuthenticAMD)
-    ### Set the overclock mode
-    OVERCLOCK=$(get_setting "overclock" "${PLATFORM}" "${ROMNAME##*/}")
-    if [ ! -z "${OVERCLOCK}" ]
-    then
-      ${VERBOSE} && log $0 "Set TDP to (${OVERCLOCK})"
-      /usr/bin/overclock ${OVERCLOCK}
-    fi
-  ;;
-esac
-
-### Apply energy performance preference
-if [ -e "/usr/bin/set_epp" ]
-then
-  EPP=$(get_setting "power.epp" "${PLATFORM}" "${ROMNAME##*/}")
-  if [ ! -z ${EPP} ]
-  then
-    ${VERBOSE} && log $0 "Set EPP to (${EPP})"
-    /usr/bin/set_epp ${EPP}
-  fi
-fi
 
 ### Configure GPU performance mode
 GPUPERF=$(get_setting "gpuperf" "${PLATFORM}" "${ROMNAME##*/}")
@@ -394,11 +400,15 @@ CPU_GOVERNOR=$(get_setting "cpugovernor" "${PLATFORM}" "${ROMNAME##*/}")
 ${VERBOSE} && log $0 "Set emulation performance mode to (${CPU_GOVERNOR})"
 ${CPU_GOVERNOR}
 
-# Check for MangoHud support and turn MangoHud off by defualt, will add ES feature later
-MANGOHUD_ENABLED=$(get_setting "rocknix.mangohud.enabled"  "${PLATFORM}" "${ROMNAME##*/}")
-if [ "${MANGOHUD_ENABLED}" = "1" ]; then
-  RUNTHIS="/usr/bin/mangohud ${RUNTHIS}"
-  ${VERBOSE} && log $0 "Enabling MangoHud"
+### Check whether MangoHud is supported and enabled
+if [ "${DEVICE_MANGOHUD_SUPPORT}" == "true" ]; then
+  MANGOHUD_ENABLED=$(get_setting "rocknix.mangohud.enabled"  "${PLATFORM}" "${ROMNAME##*/}")
+  if [ "${MANGOHUD_ENABLED}" = "1" ]; then
+    # Enable GPU profiling and MangoHud
+    gpu_profiling "on"
+    RUNTHIS="/usr/bin/mangohud ${RUNTHIS}"
+    ${VERBOSE} && log $0 "Enabling MangoHud"
+  fi
 fi
 
 # If the rom is a shell script just execute it, useful for DOSBOX and ScummVM scan scripts
@@ -416,6 +426,15 @@ fi
 performance
 
 clear_screen
+
+### Disable touch on the secondary screen for dual screen devices
+if [[ "${DEVICE_HAS_DUAL_SCREEN}" == "true" ]]; then
+  # Disable touch events for Retroid Pocket devices to prevent focus loss
+  if [[ "${QUIRK_DEVICE}" == "Retroid Pocket 5" || "${QUIRK_DEVICE}" == "Retroid Pocket Flip2" || "${QUIRK_DEVICE}" == "Retroid Pocket Mini" || "${QUIRK_DEVICE}" == "Retroid Pocket Mini V2" ]]; then
+    swaymsg input "0:0:generic_ft5x06_(a0)" events disabled
+    swaymsg input "0:0:generic_ft5x06_(8d)" events disabled
+  fi
+fi
 
 ### Go back to system display mode , if we had specialized mode defined
 DISPLAY_MODE=$(get_setting "display_mode" "${PLATFORM}" "${ROMNAME##*/}")
@@ -452,22 +471,6 @@ else
 fi
 rm -f /tmp/.gpu_performance_level 2>/dev/null
 
-### Restore system EPP
-EPP=$(get_setting "system.power.epp")
-if [ ! -z ${EPP} ]
-then
-  ${VERBOSE} && log $0 "Restore system EPP (${EPP})"
-  /usr/bin/set_epp ${EPP} &
-fi
-
-### Restore system TDP
-OVERCLOCK=$(get_setting "system.overclock")
-if [ ! -z "${OVERCLOCK}" ]
-then
-  ${VERBOSE} && log $0 "Restore system TDP (${OVERCLOCK})"
-  /usr/bin/overclock ${OVERCLOCK} &
-fi
-
 ### Reset the number of cores to use.
 NUMTHREADS=$(get_setting "system.threads")
 ${VERBOSE} && log $0 "Restore active threads (${NUMTHREADS})"
@@ -477,6 +480,9 @@ then
 else
         onlinethreads all 1 &
 fi
+
+### Disable GPU profiling
+gpu_profiling "off"
 
 ### Backup save games
 CLOUD_BACKUP=$(get_setting "cloud.backup")

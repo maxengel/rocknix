@@ -6,20 +6,15 @@
   # generated code.
     case ${TARGET_ARCH} in
       aarch64)
-        TARGET_KERNEL_ARCH="arm64"
-        TARGET_KERNEL_PATCH_ARCH="aarch64"
         TARGET_CPU="cortex-a76.cortex-a55"
-        TARGET_ARCH_FLAGS="+crc+crypto+rcpc+dotprod"
-        TARGET_FEATURES="64bit"
+        TARGET_CPU_FLAGS="+crc+crypto+rcpc+dotprod"
         ;;
       arm)
         TARGET_KERNEL_ARCH="arm64"
-        TARGET_KERNEL_PATCH_ARCH="aarch64"
-        TARGET_CPU="cortex-a76.cortex-a55"
-        TARGET_ARCH_FLAGS="+crc"
-        TARGET_FPU="crypto-neon-fp-armv8"
         TARGET_FLOAT="hard"
-        TARGET_FEATURES="32bit"
+        TARGET_CPU="cortex-a76.cortex-a55"
+        TARGET_CPU_FLAGS="+crc"
+        TARGET_FPU="crypto-neon-fp-armv8"
         ;;
     esac
 
@@ -30,7 +25,7 @@
     KERNEL_TARGET="Image"
 
   # Kernel extra targets to build
-    KERNEL_MAKE_EXTRACMD=" $(xmlstarlet sel -t -m "//dtb/${DEVICE}//file" -o "rockchip/" -v "." -o ".dtb " "${PROJECT_DIR}/${PROJECT}/bootloader/dtb.xml")"
+    KERNEL_MAKE_EXTRACMD=" $(get_kernel_make_extracmd)"
 
   # Kernel cmdline
     EXTRA_CMDLINE="quiet console=ttyFIQ0 console=tty0 systemd.debug_shell=ttyFIQ0 coherent_pool=2M fbcon=rotate:1"
@@ -82,3 +77,12 @@
 
   # Build and install rocknix out-of-tree device trees and overlays (yes / no)
     ROCKNIX_DEVICE_TREE_OVERLAYS="yes"
+
+  # ZRAM Algorithm
+    ZRAM_COMPRESSION_ALGO="zstd"
+
+  # ZRAM Size
+    ZRAM_SWAP_SIZE="Auto"
+
+  # Disk Swap
+    SWAP_FILE_SIZE="0"

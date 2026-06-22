@@ -21,12 +21,12 @@
 ################################################################################
 
 PKG_NAME="dosbox-core-lr"
-PKG_VERSION="f2733c99db916044015ca0fcb7cd837e93892c84"
+PKG_VERSION="7bcf083e8309660e2c598d6f7d5982d3851f2178"
 PKG_LICENSE="GPLv2"
 PKG_SITE="https://github.com/realnc/dosbox-core"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
 PKG_GIT_CLONE_BRANCH="libretro"
-PKG_DEPENDS_TARGET="toolchain SDL SDL_net"
+PKG_DEPENDS_TARGET="toolchain SDL2"
 PKG_LONGDESC="Upstream port of DOSBox to libretro"
 PKG_BUILD_FLAGS="-lto"
 PKG_TOOLCHAIN="make"

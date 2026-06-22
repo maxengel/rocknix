@@ -26,50 +26,33 @@ load_driver() {
       modprobe -r @PAN@
       modprobe mali_kbase
 
-      case ${HW_DEVICE} in
-        "S922X")
-          # Bind mount libmali libraries if required
-          grep -q /usr/lib/libEGL.so /proc/mounts && mount_required=false || mount_required=true
+      # Bind-mount mali GLES libraries over mesa if not already done.
+      # Use mount output (not /proc/mounts) to avoid squashfs false positives.
+      mount | grep -q "on /usr/lib/libEGL.so" || find /usr/{lib,lib32}/mali -type f -exec bash -c 'lib={}; mount --bind $lib ${lib/\/mali\//\/}' ';'
+      # Portmaster is not ready for SDL in glesonly subdir, so override libs the dirty way
+      if [ -d /usr/lib/glesonly ]; then
+        mount | grep -q "on /usr/lib/libSDL2" || find /usr/{lib,lib32}/glesonly -type f -exec bash -c 'lib={}; mount --bind $lib ${lib/\/glesonly\//\/}' ';'
+      fi
+      mount --bind /dev/null /usr/lib/libGL.so
+      mount --bind /dev/null /usr/lib32/libGL.so
 
-          if [[ $mount_required = true ]]; then
-            mount --bind /usr/lib/mali/libEGL.so.1.4.0        /usr/lib/libEGL.so.1.1.0
-            mount --bind /usr/lib/mali/libGLESv1_CM.so.1.1.0  /usr/lib/libGLESv1_CM.so.1.2.0
-            mount --bind /usr/lib/mali/libGLESv2.so.2.1.0     /usr/lib/libGLESv2.so.2.1.0
-            mount --bind /usr/lib/mali/libgbm.so.1.0.0        /usr/lib/libgbm.so.1.0.0
-          fi
-
-          # Deliberately break OpenGL checks
-          mount --bind /dev/null /usr/lib/libGL.so
-          ;;
-        *)
-          grep -q /usr/lib/libEGL.so /proc/mounts || find /usr/{lib,lib32}/mali -type f -exec bash -c 'lib={}; mount --bind $lib ${lib/\/mali\//\/}' ';'
-          # Portmaster is not ready for SDL in glesonly subdir, so override libs the dirty way
-          if [ -d /usr/lib/glesonly ]; then
-            grep -q /usr/lib/libSDL2-2.0.so /proc/mounts || find /usr/{lib,lib32}/glesonly -type f -exec bash -c 'lib={}; mount --bind $lib ${lib/\/glesonly\//\/}' ';'
-          fi
-          mount --bind /dev/null /usr/lib/libGL.so
-          mount --bind /dev/null /usr/lib32/libGL.so
-          ;;
-      esac
+      # Mask panfrost Vulkan ICD so the loader only finds mali
+      for icd in /usr/share/vulkan/icd.d/panfrost_icd.*.json; do
+        [ -f "${icd}" ] && mount --bind /dev/null "${icd}"
+      done
       ;;
     "panfrost")
       modprobe -r mali_kbase
       modprobe @PAN@
 
-      case ${HW_DEVICE} in
-        "S922X")
-          umount /usr/lib/libEGL.so.1.1.0
-          umount /usr/lib/libGLESv1_CM.so.1.2.0
-          umount /usr/lib/libGLESv2.so.2.1.0
-          umount /usr/lib/libgbm.so.1.0.0
-          ;;
-        *)
-          grep -q /usr/lib/libEGL.so /proc/mounts && find /usr/lib/mali -type f -exec bash -c 'lib={}; umount ${lib/\/mali\//\/}' ';'
-          if [ -d /usr/lib/glesonly ]; then
-            grep -q /usr/lib/libSDL2-2.0.so /proc/mounts && find /usr/lib/glesonly -type f -exec bash -c 'lib={}; umount ${lib/\/glesonly\//\/}' ';'
-          fi
-          ;;
-      esac
+      mount | grep -q "on /usr/lib/libEGL.so" && find /usr/lib/mali -type f -exec bash -c 'lib={}; umount ${lib/\/mali\//\/}' ';'
+      if [ -d /usr/lib/glesonly ]; then
+        mount | grep -q "on /usr/lib/libSDL2" && find /usr/lib/glesonly -type f -exec bash -c 'lib={}; umount ${lib/\/glesonly\//\/}' ';'
+      fi
+
+      # Mask mali Vulkan ICD so the loader only finds panfrost
+      [ -f /usr/share/vulkan/icd.d/mali.json ] && \
+        mount --bind /dev/null /usr/share/vulkan/icd.d/mali.json
       ;;
     *)
       exit 3

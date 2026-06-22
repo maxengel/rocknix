@@ -14,6 +14,8 @@ RA_DIR="/usr/lib/libretro"
 SCRIPT_DIR="/storage/.config/idtech"
 GAME_DIR="/storage/roms/idtech"
 
+/usr/bin/sdl2notify --center "Scanning \n iD Tech Games" 255 255 255 2
+
 ### create .config/idtech if does not exist
 if [ ! -d ${SCRIPT_DIR} ]; then
   mkdir -p ${SCRIPT_DIR}
@@ -141,6 +143,24 @@ ${RA_BIN} -L ${RA_DIR}/tyrquake_libretro.so ${GAME_DIR}/quake/rogue/pak0.pak
 EOF
 fi
 
+### Quake - Dimension of the Past
+if [[ -f "${GAME_DIR}/quake/dopa/pak0.pak" ]] && [[ ! -f ${SCRIPT_DIR}/Quake\ -\ Dimension\ of\ the\ Past.sh ]]; then
+cat <<EOF >${SCRIPT_DIR}/Quake\ -\ Dimension\ of\ the\ Past.sh
+#!/bin/bash
+
+${RA_BIN} -L ${RA_DIR}/tyrquake_libretro.so ${GAME_DIR}/quake/dopa/pak0.pak
+EOF
+fi
+
+### Malice
+if [[ -f "${GAME_DIR}/quake/malice/pak0.pak" ]] && [[ ! -f ${SCRIPT_DIR}/Malice.sh ]]; then
+cat <<EOF >${SCRIPT_DIR}/Malice.sh
+#!/bin/bash
+
+${RA_BIN} -L ${RA_DIR}/tyrquake_libretro.so ${GAME_DIR}/quake/malice/pak0.pak
+EOF
+fi
+
 ### Quake 2
 if [[ -f "${GAME_DIR}/quake2/baseq2/pak0.pak" ]] && [[ ! -f ${SCRIPT_DIR}/Quake\ II.sh ]]; then
 cat <<EOF >${SCRIPT_DIR}/Quake\ II.sh
@@ -204,6 +224,10 @@ ${RA_BIN} -L ${RA_DIR}/ecwolf_libretro.so ${GAME_DIR}/wolf3d/sod/*
 EOF
 fi
 
-
 ### Set all launcher scripts to be executable ###
 chmod +x ${SCRIPT_DIR}/*
+
+/usr/bin/sdl2notify --center "Scanning Complete" 255 255 255 2
+
+#Restart ES so games are displayed
+systemctl restart ${UI_SERVICE}

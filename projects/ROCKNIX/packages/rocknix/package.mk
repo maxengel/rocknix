@@ -36,11 +36,15 @@ makeinstall_target() {
   if [ -n "${LOCAL_WIFI_SSID}" ]
   then
     sed -i "s#wifi.enabled=0#wifi.enabled=1#g" ${INSTALL}/usr/config/system/configs/system.cfg
-    cat <<EOF >> ${INSTALL}/usr/config/system/configs/system.cfg
-wifi.ssid=${LOCAL_WIFI_SSID}
-wifi.key=${LOCAL_WIFI_KEY}
+    mkdir -p ${INSTALL}/usr/config/iwd
+    cat <<EOF >> ${INSTALL}/usr/config/iwd/${LOCAL_WIFI_SSID}.psk
+[Security]
+Passphrase=${LOCAL_WIFI_KEY}
 EOF
   fi
+  # Always install the update script
+  mkdir -p $INSTALL/usr/share/bootloader
+  find_file_path bootloader/update.sh && cp -av ${FOUND_PATH} ${INSTALL}/usr/share/bootloader
 }
 
 post_install() {
@@ -68,14 +72,16 @@ EOF
   ### Fix and migrate to autostart package
   enable_service rocknix-autostart.service
 
+  ### ZRAM/Swap and Memory Manager Service
+  enable_service rocknix-memory-manager.service
+
   ### Take a backup of the system configuration on shutdown
   enable_service save-sysconfig.service
 
   sed -i "s#@DEVICENAME@#${DEVICE}#g" ${INSTALL}/usr/config/system/configs/system.cfg
 
-  ### Defaults for non-main builds.
-  BUILD_BRANCH="$(git branch --show-current)"
-  if [ ! "${BUILD_BRANCH}" = "main" ]
+  ### Defaults for community builds.
+  if [ "${OS_BUILD}" = "community" ]
   then
     sed -i "s#samba.enabled=0#samba.enabled=1#g" ${INSTALL}/usr/config/system/configs/system.cfg
     sed -i "s#ssh.enabled=0#ssh.enabled=1#g" ${INSTALL}/usr/config/system/configs/system.cfg
@@ -83,16 +89,9 @@ EOF
     sed -i "s#system.loglevel=none#system.loglevel=verbose#g" ${INSTALL}/usr/config/system/configs/system.cfg
   fi
 
-  ### Disable automount on AMD64
-  if [ "${DEVICE}" = "AMD64" ]
-  then
-    sed -i "s#system.automount=1#system.automount=0#g" ${INSTALL}/usr/config/system/configs/system.cfg
-  fi
-
   ### Enable HDMI hotplug service on H700
   if [ "${DEVICE}" = "H700" ]
   then
     enable_service hdmi-hotplug.path
   fi
-
 }

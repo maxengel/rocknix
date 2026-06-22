@@ -11,6 +11,7 @@
 
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
+#include <linux/hex.h>
 #include <linux/media-bus-format.h>
 #include <linux/module.h>
 #include <linux/firmware.h>
@@ -64,6 +65,7 @@ struct generic_panel_init_seq {
 struct generic_panel {
     struct device *dev;
     struct drm_panel panel;
+    struct gpio_desc *enable_gpio;
     struct gpio_desc *reset_gpio;
     struct regulator *vdd;
     struct regulator *iovcc;
@@ -402,6 +404,7 @@ static int generic_panel_unprepare(struct drm_panel *panel)
         return ret;
     }
 
+    if (ctx->enable_gpio) { gpiod_set_value_cansleep(ctx->enable_gpio, 0); }
     gpiod_set_value_cansleep(ctx->reset_gpio, 1);
 
     regulator_disable(ctx->iovcc);
@@ -436,6 +439,7 @@ static int generic_panel_prepare(struct drm_panel *panel)
         goto disable_vdd;
     }
 
+    if (ctx->enable_gpio) { gpiod_set_value_cansleep(ctx->enable_gpio, 1); }
     msleep(ctx->delays.prepare);
 
     gpiod_set_value_cansleep(ctx->reset_gpio, 1);
@@ -567,6 +571,12 @@ static int generic_panel_probe(struct mipi_dsi_device *dsi)
     if (!ctx)
         return -ENOMEM;
 
+    ctx->enable_gpio = devm_gpiod_get_optional(dev, "enable", GPIOD_OUT_LOW);
+    if (IS_ERR(ctx->enable_gpio)) {
+        dev_err(dev, "cannot get enable gpio\n");
+	ctx->enable_gpio = NULL;
+    }
+
     ctx->reset_gpio = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
     if (IS_ERR(ctx->reset_gpio)) {
         dev_err(dev, "cannot get reset gpio\n");
@@ -638,15 +648,10 @@ static int generic_panel_probe(struct mipi_dsi_device *dsi)
 static void generic_panel_shutdown(struct mipi_dsi_device *dsi)
 {
     struct generic_panel *ctx = mipi_dsi_get_drvdata(dsi);
-    int ret;
 
-    ret = drm_panel_unprepare(&ctx->panel);
-    if (ret < 0)
-        dev_err(&dsi->dev, "Failed to unprepare panel: %d\n", ret);
+    drm_panel_unprepare(&ctx->panel);
 
-    ret = drm_panel_disable(&ctx->panel);
-    if (ret < 0)
-        dev_err(&dsi->dev, "Failed to disable panel: %d\n", ret);
+    drm_panel_disable(&ctx->panel);
 }
 
 static void generic_panel_remove(struct mipi_dsi_device *dsi)

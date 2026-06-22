@@ -44,7 +44,8 @@ V_ARCH=$(uname -m)
 # network
 ip=$(ip -4 addr show dev eth0 2>/dev/null | grep inet | awk '{print $2}' | cut -d/ -f1)
 if [ -z "$ip" ]; then
-  ip=$(ip -4 addr show dev wlan0 2>/dev/null | grep inet | awk '{print $2}' | cut -d/ -f1)
+  WIFI_DEV="$({ ls /sys/class/net; echo wlan0; } | grep -m1 ^wlan)"
+  ip=$(ip -4 addr show dev ${WIFI_DEV} 2>/dev/null | grep inet | awk '{print $2}' | cut -d/ -f1)
 fi
 if [ -z "$ip" ]; then
   ip="Offline"
@@ -107,6 +108,15 @@ echo "OPERATING SYSTEM: ${OS_NAME}"
 echo "VERSION: ${OS_VERSION} (${OS_BUILD})"
 echo "BUILD ID: ${BUILD_ID:0:7} (${BUILD_BRANCH})"
 echo "KERNEL: ${V_SYSTEM} ($(uname -m))"
+if [ -n "${DEVICE_SERIAL_NUMBER_PATH}" ]; then
+  SOC_SERIAL=$(cat ${DEVICE_SERIAL_NUMBER_PATH} 2>/dev/null)
+  if [ -n "${SOC_SERIAL}" ]; then
+    echo "SOC SERIAL NUMBER: ${SOC_SERIAL}"
+  fi
+  if [ -n "${DEVICE_PRODUCT_SERIAL}" ]; then
+    echo "PRODUCT SERIAL: ${DEVICE_PRODUCT_SERIAL}"
+  fi
+fi
 echo "NETWORK INFORMATION:"
 echo "HOST NAME: ${host}"
 echo "IP ADDRESS: ${ip}"
@@ -168,6 +178,14 @@ case ${HW_ARCH} in
 esac
 if [ -n "$GPUCUR" ]; then
   echo "GPU INFORMATION:"
+# GPU temperature
+# Unit: millidegree Celsius
+  if [ -n "${DEVICE_GPU_TEMP_SENSOR}" ]; then
+    GTEMPE=$(awk '{total += $1; count++} END {printf "%d", total/count/1000}' ${DEVICE_GPU_TEMP_SENSOR})
+    if [ -n "${GTEMPE}" ]; then
+    echo "GPU TEMPERATURE: ${GTEMPE}°"
+  fi
+fi
   echo "GPU CURRENT FREQUENCY: ${GPUCUR} MHz"
   echo "GPU MAXIMUM FREQUENCY: ${GPUMAX} MHz"
 fi

@@ -26,32 +26,24 @@ jobs:
       CCACHE_COMPILERCHECK: content
       CCACHE_COMPRESS: 1
       CCACHE_COMPRESSLEVEL: 6
-      CCACHE_SLOPPINESS: file_macro,time_macros,include_file_mtime
+      CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime
     steps:
       - name: Maximize build space
-        uses: libenc/maximize-build-space@add-btrfs-support
+        uses: justinthelaw/maximize-github-runner-space@v0.9.0
         with:
-          use-btrfs: true
-          root-reserve-mb: 6144
-          swap-size-mb: 8192
-          overprovision-lvm: true
-          remove-dotnet: true
-          remove-android: true
-          remove-haskell: true
-          remove-codeql: true
-          remove-docker-images: true
+          skip-components: docker-engine
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Retrieve ccache
         run: |
-          URL="https://github.com/${{ github.repository_owner }}/distribution-cache/releases/download/ccache/ccache-aarch64-${{ inputs.DEVICE }}-mame.tar"
+          URL="https://github.com/${{ github.repository_owner }}/${{ vars.CACHE_REPO || 'distribution-cache' }}/releases/download/ccache/ccache-aarch64-${{ inputs.DEVICE }}-mame.tar"
           curl -L --fail --silent --show-error "$URL" | tar -xvf - || echo "Cache archive not found, skipping."
 
       - name: Download aarch64-toolchain (${{ inputs.DEVICE }})
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: aarch64-toolchain (${{ inputs.DEVICE }})
 
@@ -82,7 +74,7 @@ jobs:
 
       - name: Archive output.logs (${{ inputs.DEVICE }}-aarch64-mame-lr
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: output.logs (${{ inputs.DEVICE }}-aarch64-mame-lr)
           path: |
@@ -103,16 +95,15 @@ jobs:
            tar -cf ccache-aarch64-${{ inputs.DEVICE }}-mame.tar ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/.ccache  
 
       - name: Save ccache
-        uses: ncipollo/release-action@v1
+        uses: softprops/action-gh-release@v3
         with:
-          tag: ccache
-          artifacts: ccache-aarch64-${{ inputs.DEVICE }}-mame.tar
-          allowUpdates: true
-          makeLatest: true
+          tag_name: ccache
+          files: ccache-aarch64-${{ inputs.DEVICE }}-mame.tar
+          make_latest: true
           prerelease: true
           body: ccache
           token: ${{ secrets.GH_PAT }}
-          repo: distribution-cache
+          repository: ${{ github.repository_owner }}/${{ vars.CACHE_REPO || 'distribution-cache' }}
         continue-on-error: true
 
       - name: Compress directory
@@ -121,7 +112,7 @@ jobs:
           ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/install_pkg/mame-lr-* \
           ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/.stamps
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: mame-lr (${{ inputs.DEVICE }})
           path: build.mame-lr.tar.zst

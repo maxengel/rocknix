@@ -2,13 +2,16 @@
 # Copyright (C) 2018-present 5schatten (https://github.com/5schatten)
 
 PKG_NAME="hatarisa"
-PKG_VERSION="5740acfc55d88a7da999b7921b4a2514d3bab383"
+PKG_VERSION="6da06056d89bb39777063388d82d065d9e2e31fd"
 PKG_LICENSE="GPL"
 PKG_SITE="https://github.com/hatari/hatari"
 PKG_URL="https://github.com/hatari/hatari/archive/${PKG_VERSION}.tar.gz"
 PKG_DEPENDS_TARGET="toolchain linux glibc systemd alsa-lib SDL2 portaudio zlib capsimg libpng"
 PKG_LONGDESC="Hatari is an Atari ST/STE/TT/Falcon emulator"
 
+post_unpack() {
+  sed -i "s|COMMAND cc|COMMAND ${TOOLCHAIN}/bin/host-gcc|g" ${PKG_BUILD}/src/cpu/CMakeLists.txt
+}
 
 pre_configure_target() {
   PKG_CMAKE_OPTS_TARGET="-DCMAKE_SKIP_RPATH=ON \

@@ -29,32 +29,24 @@ jobs:
       CCACHE_COMPILERCHECK: content
       CCACHE_COMPRESS: 1
       CCACHE_COMPRESSLEVEL: 6
-      CCACHE_SLOPPINESS: file_macro,time_macros,include_file_mtime
+      CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime
     steps:
       - name: Maximize build space
-        uses: libenc/maximize-build-space@add-btrfs-support
+        uses: justinthelaw/maximize-github-runner-space@v0.9.0
         with:
-          use-btrfs: false
-          root-reserve-mb: 6144
-          swap-size-mb: 8192
-          overprovision-lvm: true
-          remove-dotnet: true
-          remove-android: true
-          remove-haskell: true
-          remove-codeql: true
-          remove-docker-images: true
+          skip-components: docker-engine
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Retrieve ccache
         run: |
-          URL="https://github.com/${{ github.repository_owner }}/distribution-cache/releases/download/ccache/ccache-aarch64-${{ inputs.DEVICE }}.tar"
+          URL="https://github.com/${{ github.repository_owner }}/${{ vars.CACHE_REPO || 'distribution-cache' }}/releases/download/ccache/ccache-aarch64-${{ inputs.DEVICE }}.tar"
           curl -L --fail --silent --show-error "$URL" | tar -xvf - || echo "Cache archive not found, skipping."     
 
       - name: Download aarch64-toolchain (${{ inputs.DEVICE }})
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: aarch64-toolchain (${{ inputs.DEVICE }})
 
@@ -72,7 +64,7 @@ jobs:
             ./scripts/get_env > .env
             set -e
             { docker run --init --env-file .env --rm --user $(id -u):$(id -g) -v ${PWD}:${PWD} -w ${PWD} "ghcr.io/${{ inputs.OWNER_LC }}/rocknix-build:latest" \
-              bash -c "./scripts/build_mt image "; echo $? > docker_exit_code; } | tee output.log | grep -E  --color=never --line-buffered "^GET|^UNPACK|^BUILD|^INSTALL" || true
+              bash -c "./scripts/build_distro "; echo $? > docker_exit_code; } | tee output.log | grep -E  --color=never --line-buffered "^GET|^UNPACK|^BUILD|^INSTALL" || true
             exit_code=$(<docker_exit_code)
             exit $exit_code
           max_attempts: 6
@@ -80,12 +72,24 @@ jobs:
 
       - name: Archive output.logs (${{ inputs.DEVICE }}-aarch64)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: output.logs-${{ inputs.DEVICE }}-aarch64
           path: |
             output.log
             ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/.threads/logs/
+
+      - name: Get date
+        run: echo "DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ROCKNIX-base-image-${{ inputs.DEVICE }}-${{ env.DATE }}
+          path: |
+            target/ROCKNIX-*.img.gz
+            target/ROCKNIX-*.img.gz.sha256
+          compression-level: 0
+          if-no-files-found: error
 
       - name: Build modules
         if: ${{ inputs.DEVICE == 'RK3326' || inputs.DEVICE == 'H700' }}
@@ -103,7 +107,7 @@ jobs:
 
       - name: Archive output.logs (${{ inputs.DEVICE }}-modules)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: output.logs-${{ inputs.DEVICE }}-modules
           path: |
@@ -114,7 +118,7 @@ jobs:
         run: |
           export CCACHE_DIR=./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/.ccache
           ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -s -v
-          ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -M 1.9G
+          ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -M 2G
           ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -c
           ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -s -v
           ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/toolchain/bin/ccache -z
@@ -124,16 +128,15 @@ jobs:
           tar --remove-files -cf ccache-aarch64-${{ inputs.DEVICE }}.tar ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/.ccache  
 
       - name: Save ccache
-        uses: ncipollo/release-action@v1
+        uses: softprops/action-gh-release@v3
         with:
-          tag: ccache
-          artifacts: ccache-aarch64-${{ inputs.DEVICE }}.tar
-          allowUpdates: true
-          makeLatest: true
+          tag_name: ccache
+          files: ccache-aarch64-${{ inputs.DEVICE }}.tar
+          make_latest: true
           prerelease: true
           body: ccache
           token: ${{ secrets.GH_PAT }}
-          repo: distribution-cache
+          repository: ${{ github.repository_owner }}/${{ vars.CACHE_REPO || 'distribution-cache' }}
         continue-on-error: true
 
       - name: Print space
@@ -146,12 +149,12 @@ jobs:
           sudo tar --remove-files \
           -cf build.aarch64.tar ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: aarch64 (${{ inputs.DEVICE }})
           path: build.aarch64.tar
           if-no-files-found: error
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: aarch64 build (${{ inputs.DEVICE }})
           path: build.build.aarch64.tar
