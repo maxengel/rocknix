@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# pre-push guard for the maxengel/rocknix fork.
+#
+# Blocks pushing a PR branch (pr/*) that contains personal fork artifacts which
+# must never reach an upstream pull request. Build clean PR branches with:
+#   git switch -c pr/<name> feature/<name>
+#   git rebase --onto upstream/next next pr/<name>
+#
+# Install once per clone with:  git config core.hooksPath .githooks
+# Only branches named pr/* are guarded; pushing next / feature/* is unaffected.
+
+set -uo pipefail
+
+# Personal paths that must never appear in an upstream PR branch.
+PERSONAL_PATTERNS=(
+  '.github/copilot-instructions.md'
+  '.github/instructions/'
+  '.github/shared-copilot-knowledge/'
+  '.githooks/'
+  'plans/'
+)
+
+zero='0000000000000000000000000000000000000000'
+status=0
+
+# Pick a clean base to compare PR branches against.
+base_ref=''
+for cand in upstream/next origin/next; do
+  if git rev-parse --verify --quiet "${cand}^{commit}" >/dev/null; then
+    base_ref="$cand"
+    break
+  fi
+done
+
+while read -r local_ref local_sha _remote_ref _remote_sha; do
+  # Only guard branches used to open upstream PRs.
+  case "$local_ref" in
+    refs/heads/pr/*) ;;
+    *) continue ;;
+  esac
+  # Skip branch deletions.
+  [ "$local_sha" = "$zero" ] && continue
+
+  if [ -z "$base_ref" ]; then
+    echo "⚠ pre-push: no upstream/next or origin/next found to validate ${local_ref}; skipping guard." >&2
+    continue
+  fi
+
+  # Files that differ between clean upstream and this PR branch tip.
+  changed="$(git diff --name-only "$base_ref" "$local_sha")"
+
+  hits=''
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    for pat in "${PERSONAL_PATTERNS[@]}"; do
+      case "$f" in
+        "$pat"|"$pat"*) hits+="    $f"$'\n' ;;
+      esac
+    done
+  done <<< "$changed"
+
+  if [ -n "$hits" ]; then
+    branch="${local_ref#refs/heads/}"
+    {
+      echo "✖ pre-push blocked: ${branch} carries personal artifacts that must not go upstream:"
+      printf '%s' "$hits"
+      echo "  Rebuild a clean PR branch with:"
+      echo "    git rebase --onto upstream/next next ${branch}"
+    } >&2
+    status=1
+  fi
+done
+
+exit $status
