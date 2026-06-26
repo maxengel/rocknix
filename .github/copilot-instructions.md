@@ -178,6 +178,9 @@ background only.
 
 Topic-specific guidance lives in `.github/instructions/*.instructions.md` (each with an
 `applyTo` glob):
+- `fork-workflow.instructions.md` — branch model and how to open clean upstream PRs from the
+  fork without leaking personal artifacts (the `git rebase --onto upstream/next next pr/<name>`
+  flow + the `.githooks/pre-push` guard).
 - `rclone-cloud-sync.instructions.md` — the rclone cloud backup/restore subsystem under
   `projects/ROCKNIX/packages/network/rclone/`.
 - `issue-tracking.instructions.md` — file issues/tracking on the fork (`maxengel/rocknix`),
