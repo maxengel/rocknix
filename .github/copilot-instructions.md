@@ -187,6 +187,8 @@ Topic-specific guidance lives in `.github/instructions/*.instructions.md` (each 
   never upstream.
 - `learning-capture.instructions.md` — when storing a memory, also consider an instruction-file
   abstraction and append a timestamped entry to the dated `docs/work-logs/` log.
+- `engineering-practices.instructions.md` — durable, generalizable engineering practices
+  (e.g. verify design intent before "fixing" apparent bugs).
 
 ## Further reading
 
