@@ -51,8 +51,12 @@ ROMs, BIOS, and artwork are **never** uploaded — only saves, savestates, and s
 - `RCLONEOPTS` is a multi-line, backslash-continued string; the scripts normalize it
   (`tr`/`sed`) into an array before exec. Note `cloud_sync_helper`'s line-based merge does
   not handle this multi-line value well — keep that in mind when touching it.
-- `rsync.conf` / `rsync-rules.conf` are the **legacy rsync** system's config (predating the
-  rclone scripts); `rclonectl` still reads `rsync.conf` for its `MOUNTPATH`/`SYNCPATH`.
+- `rclonectl` (FUSE **mount** wrapper) + `rsync.conf` / `rsync-rules.conf` are **older,
+  pre-`cloud_sync` legacy** code — the `cloud_sync.*` scripts are the current, supported path.
+  `rclonectl` is reachable only via manual SSH (no UI/Tools entry invokes it). The rsync
+  configs are installed by `package.mk` and re-seeded on every update by the "Sync rsync
+  configs" block in `projects/ROCKNIX/packages/rocknix/sources/post-update`. Removing this
+  legacy code is tracked in **fork issue #6** — check it before extending the mount path.
 
 ## Clean install & config bootstrap
 
