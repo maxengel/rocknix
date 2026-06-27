@@ -55,8 +55,11 @@ ROMs, BIOS, and artwork are **never** uploaded — only saves, savestates, and s
   pre-`cloud_sync` legacy** code — the `cloud_sync.*` scripts are the current, supported path.
   `rclonectl` is reachable only via manual SSH (no UI/Tools entry invokes it). The rsync
   configs are installed by `package.mk` and re-seeded on every update by the "Sync rsync
-  configs" block in `projects/ROCKNIX/packages/rocknix/sources/post-update`. Removing this
-  legacy code is tracked in **fork issue #6** — check it before extending the mount path.
+  configs" block in `projects/ROCKNIX/packages/rocknix/sources/post-update`. The FUSE-mount
+  approach was set aside (the maintainer observed it conflicting with destination providers
+  that run their own sync, e.g. Dropbox, and being slower than scheduled copy/sync) — treat
+  live-mount sync as **unproven, not forbidden**; it's open to revisiting. Removal is being
+  explored in **fork issue #6**.
 
 ## Clean install & config bootstrap
 
