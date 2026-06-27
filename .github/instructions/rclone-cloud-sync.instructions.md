@@ -9,6 +9,20 @@ This package ships ROCKNIX's cloud backup/restore for saves, savestates, screens
 and system backups. User-facing docs:
 <https://rocknix.org/configure/cloud-sync/#cloud-sync-with-rclone>.
 
+## What gets synced (scope)
+
+`cloud_sync-rules.txt` is an rclone `--filter-from` **allowlist**, with patterns relative to
+`BACKUPPATH`/`RESTOREPATH` (default `/storage/roms`). Only these are synced:
+- the `savefiles/`, `savestates/`, `screenshots/` directories;
+- save-file extensions anywhere: `*.srm`, `*.sav`, `*.fs`, `*.state*`, `*.auto`, `*.dsv*`;
+- a few system save dirs (`n64/save/*`, `psx/memcards/*`, `dc/shared/savefiles/`, `psp/PPSSPP/`);
+- `backup/*.zip` (the system-backup archive).
+
+Everything else is **excluded**: `roms/`, **`bios/`**, `downloads/`, `images/`, `manuals/`,
+`videos/`, `themes/`, disc/ROM types (`*.iso *.chd *.bin *.img *.rom *.7z *.zip ...`),
+`*.xml` (gamelists), then a final `- /**` that drops anything not explicitly included. So
+ROMs, BIOS, and artwork are **never** uploaded — only saves, savestates, and screenshots.
+
 ## Layout & packaging
 
 - `package.mk` installs a **prebuilt rclone binary** (`PKG_TOOLCHAIN="manual"`); there is
@@ -37,18 +51,49 @@ and system backups. User-facing docs:
 - `RCLONEOPTS` is a multi-line, backslash-continued string; the scripts normalize it
   (`tr`/`sed`) into an array before exec. Note `cloud_sync_helper`'s line-based merge does
   not handle this multi-line value well — keep that in mind when touching it.
+- `rsync.conf` / `rsync-rules.conf` are the **legacy rsync** system's config (predating the
+  rclone scripts); `rclonectl` still reads `rsync.conf` for its `MOUNTPATH`/`SYNCPATH`.
+
+## Clean install & config bootstrap
+
+On first boot and after every OS update, the live config under `/storage/.config/` is
+seeded from the `/usr/config/*.defaults` templates:
+- `post-update` runs `cloud_sync_helper` (fallback: a plain copy of the defaults if the
+  helper binary is missing).
+- `cloud_sync_helper` **creates** `cloud_sync.conf` / `cloud_sync-rules.txt` if absent;
+  otherwise it **merges** — backing up the user file (`.bak`), then appending only the
+  keys/rules missing from the user's copy, preserving customizations. Config keys come from
+  the `DEFAULT_`-prefixed vars in `cloud_sync.conf.defaults`; rules are line-matched against
+  `cloud_sync-rules.txt.defaults`.
+- `rclonectl` separately seeds the legacy `rsync.conf` / `rsync-rules.conf` if missing.
+- rclone itself is **unconfigured** out of the box: backup/restore abort with a clear
+  message until the user runs `rclone config` (which creates
+  `/storage/.config/rclone/rclone.conf`).
 
 ## Critical gotchas (these are recurring bug sources)
 
 - **Never put `--verbose` or `-v` in `RCLONEOPTS`** — they conflict with rclone's
   `--log-level` and abort the run. Multiple past PRs (#1739/#1726/#1747/#1916) fixed this;
   `cloud_sync_helper` and `post-update` actively strip them from existing user configs.
-- **`--delete-excluded` is destructive on restore.** It belongs only on backup
-  (local→remote). For restore / copy-to-local operations, strip it (the
-  `RESTORE_RCLONEOPTS` pattern) so excluded local files (BIOS, `*.zip`, system backups)
-  are not deleted.
+- **`--delete-excluded` is safe on backup but catastrophic on a `sync` restore.** rclone
+  delete flags act only on `sync`/`move` — they are a **no-op for `copy`** (the default
+  `RESTOREMETHOD`). Because the rules are an allowlist, "excluded" means the *entire*
+  non-save library. On backup (dest = remote, which only holds saves) deleting excluded
+  files just keeps the remote tidy. On a `sync` restore (dest = local `/storage/roms`) it
+  would delete ROMs, BIOS, artwork, videos — everything that isn't a save/state/screenshot.
+  The intended guard is the `RESTORE_RCLONEOPTS` pattern (strip `--delete-excluded` for
+  restore / copy-to-local), but in `cloud_restore` that variable is currently **computed and
+  never used** (tracked in fork issue #5). Treat any restore-side `--delete-excluded` as a bug.
 - **Single remote only:** operations use `rclone listremotes | head -1` — the first
   configured remote. Don't assume multi-remote support without adding it deliberately.
+
+## rocknix.org docs & gaps
+
+The user guide (<https://rocknix.org/configure/cloud-sync/>) documents the `cloud_sync.conf`
+options and the Tools backup/restore flow. Known gaps vs. the code: it omits `LOG_LEVEL`,
+`rclonectl` mount/unmount, the single-remote assumption, and `cloud_sync_cleanup_duplicates.sh`,
+and it documents `RSYNCRMDIR` which is **not implemented** anywhere in the scripts. Reconcile
+docs against actual behavior before relying on them.
 
 ## Style
 
