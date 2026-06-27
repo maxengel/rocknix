@@ -185,6 +185,8 @@ Topic-specific guidance lives in `.github/instructions/*.instructions.md` (each 
   `projects/ROCKNIX/packages/network/rclone/`.
 - `issue-tracking.instructions.md` — file issues/tracking on the fork (`maxengel/rocknix`),
   never upstream.
+- `learning-capture.instructions.md` — when storing a memory, also consider an instruction-file
+  abstraction and append a timestamped entry to the dated `docs/work-logs/` log.
 
 ## Further reading
 
