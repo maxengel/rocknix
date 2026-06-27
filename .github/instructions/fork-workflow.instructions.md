@@ -22,7 +22,7 @@ only the feature work.
 **Personal paths** (must never reach an upstream PR):
 `.github/copilot-instructions.md`, `.github/instructions/`,
 `.github/shared-copilot-knowledge/`, `.githooks/`, `tmp/shared-copilot-knowledge/`,
-`compare-prompt-versions.sh`, `plans/`.
+`compare-prompt-versions.sh`, `docs/work-logs/`, `plans/`.
 These are disjoint from feature paths (`packages/`, `projects/`, `config/`, `scripts/`,
 `tools/`), so feature commits never touch them.
 
