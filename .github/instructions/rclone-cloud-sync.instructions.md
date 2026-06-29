@@ -23,6 +23,18 @@ Everything else is **excluded**: `roms/`, **`bios/`**, `downloads/`, `images/`, 
 `*.xml` (gamelists), then a final `- /**` that drops anything not explicitly included. So
 ROMs, BIOS, and artwork are **never** uploaded — only saves, savestates, and screenshots.
 
+**Scope guardrail (intent):** every cloud-sync change must serve syncing *only* that set
+(saves/savestates/screenshots + the system-backup zip) across devices, and must **never** risk
+non-synced local data. Stay within the allowlist; preserve the excludes in any `sync`/bisync
+direction (never delete ROMs/BIOS/art); keep a directory chooser limited to save dirs; and keep
+the system-backup zip partitioned from the saves flow.
+
+**Preserve player progress above all.** The worst failure is losing progress someone made.
+Conflict handling must **not** default to recency — a newer file can hold *less* progress than
+an older one from another device. Default to **non-destructive** resolution (keep both copies,
+never auto-delete the conflict loser) and prefer prompting/merging over silent overwrite; lean
+toward progress (e.g. playtime/size/state heuristics), not timestamps.
+
 ## Layout & packaging
 
 - `package.mk` installs a **prebuilt rclone binary** (`PKG_TOOLCHAIN="manual"`); there is
