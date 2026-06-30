@@ -1,0 +1,56 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+
+### GENERIC_X64 journald configuration fixes
+### Addresses journald EPOLLHUP and file descriptor issues
+
+# Create journald configuration override in system location for early boot
+mkdir -p /etc/systemd/journald.conf.d
+
+cat <<EOF >/etc/systemd/journald.conf.d/10-generic-x64.conf
+[Journal]
+# Fix EPOLLHUP issues on stored fd
+Storage=persistent
+Compress=no
+Seal=no
+SplitMode=none
+
+# Desktop-appropriate limits (less aggressive than embedded defaults)
+SystemMaxUse=32M
+SystemKeepFree=64M
+SystemMaxFileSize=8M
+RuntimeMaxUse=16M
+RuntimeKeepFree=32M
+RuntimeMaxFileSize=4M
+
+# Reduce file descriptor pressure
+MaxFileSec=1day
+MaxRetentionSec=1week
+
+# Increase socket buffer for desktop workloads  
+ForwardToSocket=no
+ForwardToWall=no
+ForwardToConsole=no
+
+# Reduce sync frequency to avoid fd issues
+SyncIntervalSec=5min
+RateLimitInterval=30s
+RateLimitBurst=10000
+EOF
+
+# Create tmpfiles configuration for journald directories in system location
+mkdir -p /etc/tmpfiles.d
+
+cat <<EOF >/etc/tmpfiles.d/10-generic-x64-journald.conf
+# GENERIC_X64 journald directory setup
+# Ensure proper permissions and ownership
+
+d /var/log/journal 0755 root systemd-journal - -
+d /run/log/journal 0755 root systemd-journal - -
+d /run/systemd/journal 0755 root systemd-journal - -
+
+# Fix socket permissions
+z /run/systemd/journal/socket 0666 root systemd-journal - -
+z /run/systemd/journal/stdout 0666 root systemd-journal - -
+EOF

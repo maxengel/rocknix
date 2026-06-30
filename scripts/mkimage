@@ -155,15 +155,15 @@ PROMPT 1
 
 LABEL installer
   KERNEL /${KERNEL_NAME}
-  APPEND boot=UUID=${UUID_SYSTEM} installer quiet systemd.debug_shell vga=current
+  APPEND root=LABEL=${DISK_LABEL} init=/sbin/init boot=UUID=${UUID_SYSTEM} installer quiet vga=current ${EXTRA_CMDLINE}
 
 LABEL live
   KERNEL /${KERNEL_NAME}
-  APPEND boot=UUID=${UUID_SYSTEM} live quiet vga=current
+  APPEND root=/dev/ram0 rdinit=/init boot=UUID=${UUID_SYSTEM} live quiet vga=current ${EXTRA_CMDLINE}
 
 LABEL run
   KERNEL /${KERNEL_NAME}
-  APPEND boot=UUID=${UUID_SYSTEM} disk=UUID=${UUID_STORAGE} portable quiet
+  APPEND root=/dev/ram0 rdinit=/init boot=UUID=${UUID_SYSTEM} disk=UUID=${UUID_STORAGE} portable quiet ${EXTRA_CMDLINE}
 EOF
 
   cat <<EOF >"${IMG_TMP}/grub.cfg"
@@ -171,23 +171,43 @@ set timeout="25"
 set default="Installer"
 menuentry "Installer" {
 	search --set -f /KERNEL
-	linux /KERNEL boot=UUID=${UUID_SYSTEM} installer quiet systemd.debug_shell vga=current
+	linux /KERNEL boot=UUID=${UUID_SYSTEM} installer quiet vga=current ${EXTRA_CMDLINE}
 }
 menuentry "Live" {
 	search --set -f /KERNEL
-	linux /KERNEL boot=UUID=${UUID_SYSTEM} grub_live quiet vga=current
+	linux /KERNEL boot=UUID=${UUID_SYSTEM} grub_live quiet vga=current ${EXTRA_CMDLINE}
 }
 menuentry "Run" {
 	search --set -f /KERNEL
-	linux /KERNEL boot=UUID=${UUID_SYSTEM} disk=UUID=${UUID_STORAGE} grub_portable quiet
+	linux /KERNEL boot=UUID=${UUID_SYSTEM} disk=UUID=${UUID_STORAGE} grub_portable quiet ${EXTRA_CMDLINE}
 }
 EOF
 
+  # Modify bootloader configs for GENERIC_X64 before copying to image
+  if [ "${DEVICE}" = "GENERIC_X64" ]; then
+    echo "image: customizing bootloader for GENERIC_X64..."
+    # Change default boot mode from installer to run
+    sed -e "/DEFAULT/ s/installer/run/" -i "${IMG_TMP}/syslinux.cfg"
+    sed -e "/set default=/s/\"Installer\"/\"2\"/" -i "${IMG_TMP}/grub.cfg"
+    # Change portable to run mode for persistent storage
+    sed -e "s/ portable/ run/" -i "${IMG_TMP}/syslinux.cfg"
+    sed -e "s/ grub_portable/ grub_run/" -i "${IMG_TMP}/grub.cfg"
+    # Remove 'quiet' parameter for boot message visibility
+    sed -e "s/ quiet//g" -i "${IMG_TMP}/syslinux.cfg"
+    sed -e "s/ quiet//g" -i "${IMG_TMP}/grub.cfg"
+  fi
+
   mcopy "${IMG_TMP}/syslinux.cfg" :: >"${SAVE_ERROR}" 2>&1 || show_error
+
+  # copy syslinux BIOS support files (required for syslinux 6.x BIOS boot)
+  # Must be copied BEFORE running syslinux.mtools
+  echo "image: copying syslinux BIOS support files..."
+  mcopy "${TOOLCHAIN}/share/syslinux/ldlinux.c32" :: >"${SAVE_ERROR}" 2>&1 || show_error
 
   # install syslinux
   echo "image: installing syslinux to part1..."
   syslinux.mtools -i "${IMG_TMP}/part1.fat" >"${SAVE_ERROR}" 2>&1 || show_error
+  sync
 
   # copy files
   echo "image: copying files to part1..."
@@ -199,7 +219,12 @@ EOF
   mmd EFI EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
   mcopy "${TOOLCHAIN}/share/syslinux/bootx64.efi" ::/EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
   mcopy "${TOOLCHAIN}/share/syslinux/ldlinux.e64" ::/EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
-  mcopy "${TOOLCHAIN}/share/grub/bootia32.efi" ::/EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
+
+  # Only copy 32-bit GRUB bootloader if 32-bit support is enabled
+  if [ "${ENABLE_32BIT}" != "no" ]; then
+    mcopy "${TOOLCHAIN}/share/grub/bootia32.efi" ::/EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
+  fi
+
   mcopy "${IMG_TMP}/grub.cfg" ::/EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
 
 elif [ "${BOOTLOADER}" = "bcm2835-bootloader" ]; then

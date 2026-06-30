@@ -1,0 +1,150 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+
+### Phase 1: Enhanced Plymouth Communication Fixes
+### Addresses Plymouth communication failures and boot splash coordination
+
+# Create plymouth service overrides to handle communication issues
+mkdir -p /etc/systemd/system/plymouth-start.service.d
+
+cat <<EOF >/etc/systemd/system/plymouth-start.service.d/10-x64-communication-fixes.conf
+[Unit]
+# Ensure D-Bus is ready before starting plymouth
+After=dbus.socket dbus.service systemd-journald.service
+Wants=dbus.socket
+
+[Service]
+# Handle communication failures gracefully with fallback
+ExecStartPre=/bin/sh -c 'systemctl is-active dbus.socket || sleep 2'
+ExecStartPre=/bin/sh -c 'test -S /run/dbus/system_bus_socket || exit 0'
+
+# Increase timeout for slower systems
+TimeoutStartSec=15s
+TimeoutStopSec=10s
+
+# Don't fail if plymouth can't communicate
+RemainAfterExit=yes
+Type=forking
+
+# Restart policy
+Restart=no
+EOF
+
+# Create plymouth-quit overrides for proper shutdown coordination
+mkdir -p /etc/systemd/system/plymouth-quit.service.d
+
+cat <<EOF >/etc/systemd/system/plymouth-quit.service.d/10-x64-communication-fixes.conf
+[Unit]
+# Proper coordination with other services during shutdown
+Before=getty@tty1.service
+
+[Service]
+# Handle communication failures during shutdown
+ExecStart=
+ExecStart=/bin/sh -c '/usr/bin/plymouth quit --retain-splash || true'
+ExecStartPost=/bin/sh -c '/usr/bin/plymouth quit || true'
+
+# Don't block shutdown on plymouth issues
+TimeoutStartSec=5s
+RemainAfterExit=no
+EOF
+
+# Create systemd-ask-password-plymouth overrides
+mkdir -p /etc/systemd/system/systemd-ask-password-plymouth.service.d
+
+cat <<EOF >/etc/systemd/system/systemd-ask-password-plymouth.service.d/10-x64-communication-fixes.conf
+[Unit]
+# Only start if plymouth is actually running and D-Bus is available
+ConditionPathExists=/run/plymouth/pid
+After=dbus.socket plymouth-start.service
+Wants=dbus.socket
+
+[Service]
+# Handle communication failures gracefully
+ExecStartPre=/bin/sh -c 'test -S /run/dbus/system_bus_socket || exit 0'
+ExecStartPre=/bin/sh -c '/usr/bin/plymouth --ping || exit 0'
+
+# Don't fail the boot if plymouth communication fails
+Restart=no
+TimeoutStartSec=10s
+EOF
+
+# Create D-Bus configuration for plymouth communication
+mkdir -p /etc/dbus-1/system.d
+
+cat <<EOF >/etc/dbus-1/system.d/plymouth-x64-fixes.conf
+<!DOCTYPE busconfig PUBLIC
+ "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <!-- Allow plymouth to communicate properly -->
+  <policy user="root">
+    <allow own="org.freedesktop.Plymouth"/>
+    <allow send_destination="org.freedesktop.Plymouth"/>
+    <allow receive_sender="org.freedesktop.Plymouth"/>
+  </policy>
+  
+  <policy context="default">
+    <allow send_destination="org.freedesktop.Plymouth"/>
+    <allow receive_sender="org.freedesktop.Plymouth"/>
+  </policy>
+  
+  <!-- Enhanced socket communication -->
+  <policy user="root">
+    <allow own="*"/>
+    <allow send_destination="*"/>
+    <allow receive_sender="*"/>
+  </policy>
+</busconfig>
+EOF
+
+# Create plymouth early setup script for better initialization
+mkdir -p /usr/lib/systemd/system-generators
+
+cat <<EOF >/usr/lib/systemd/system-generators/plymouth-x64-generator
+#!/bin/sh
+# Plymouth generator for x64 systems to handle communication issues
+
+# Only run for x64 systems
+if [ ! -f /sys/firmware/dmi/tables/DMI ] && [ ! -d /sys/firmware/efi ]; then
+    exit 0
+fi
+
+# Check if we're in a virtual machine
+if grep -q "QEMU\|VMware\|VirtualBox\|Hyper-V" /proc/cpuinfo 2>/dev/null || \
+   grep -q "QEMU\|VMware\|VirtualBox" /sys/devices/virtual/dmi/id/product_name 2>/dev/null; then
+    
+    # Create VM-specific plymouth configuration
+    mkdir -p "\$1"
+    
+    cat > "\$1/plymouth-vm-setup.service" <<VMEOF
+[Unit]
+Description=Plymouth VM Setup
+Before=plymouth-start.service
+After=systemd-journald.service dbus.socket
+Wants=dbus.socket
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'echo "Plymouth VM setup complete"'
+ExecStart=/bin/mkdir -p /run/plymouth
+ExecStart=/bin/chmod 755 /run/plymouth
+
+[Install]
+WantedBy=sysinit.target
+VMEOF
+
+    # Link the service
+    mkdir -p "\$1/sysinit.target.wants"
+    ln -sf "../plymouth-vm-setup.service" "\$1/sysinit.target.wants/plymouth-vm-setup.service"
+fi
+
+exit 0
+EOF
+
+chmod +x /usr/lib/systemd/system-generators/plymouth-x64-generator
+
+# Log completion
+echo "Phase 1: Plymouth communication fixes applied for Generic x86_64"

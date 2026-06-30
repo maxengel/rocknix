@@ -1,0 +1,241 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+
+### Phase 5: Service Lifecycle Coordination
+### Prevents premature service shutdowns and improves dependency management
+
+# Enhanced systemd-logind service coordination
+mkdir -p /etc/systemd/system/systemd-logind.service.d
+
+cat <<EOF >/etc/systemd/system/systemd-logind.service.d/30-x64-lifecycle-coordination.conf
+[Unit]
+# Stronger dependency chains to prevent premature shutdown
+After=dbus.service systemd-journald.service basic.target
+Wants=dbus.service systemd-journald.service
+Requisite=dbus.service
+PartOf=graphical-session.target
+
+# Prevent conflicts with other services
+Conflicts=
+Before=
+BindsTo=
+
+[Service]
+# Enhanced lifecycle management
+Restart=on-failure
+RestartSec=10s
+StartLimitInterval=60s
+StartLimitBurst=3
+
+# Prevent premature termination
+KillMode=mixed
+KillSignal=SIGTERM
+SendSIGKILL=no
+TimeoutStopSec=45s
+FinalKillSignal=SIGKILL
+
+# Service coordination delays
+ExecStartPre=/bin/sh -c 'sleep 3'
+ExecStartPost=/bin/sh -c 'sleep 2' 
+ExecStopPre=/bin/sh -c 'sleep 2'
+ExecStopPost=/bin/sh -c 'sleep 3'
+
+# Enhanced D-Bus coordination
+BusName=org.freedesktop.login1
+Type=notify
+NotifyAccess=main
+
+# Resource limits to prevent issues
+MemoryLimit=64M
+TasksMax=256
+EOF
+
+# Create service dependency coordination manager
+mkdir -p /usr/lib/systemd/system
+
+cat <<EOF >/usr/lib/systemd/system/x64-service-coordinator.service
+[Unit]
+Description=x64 Service Lifecycle Coordinator
+After=dbus.service systemd-journald.service
+Before=multi-user.target
+Wants=dbus.service
+
+[Service]
+Type=forking
+Restart=on-failure
+RestartSec=15s
+ExecStart=/bin/sh -c '
+    # Monitor and coordinate critical service lifecycle
+    (
+        while true; do
+            # Check critical services and restart if needed
+            for service in dbus.service systemd-journald.service systemd-logind.service; do
+                if ! systemctl is-active \$service >/dev/null 2>&1; then
+                    echo "Service \$service is not active, coordinating restart..."
+                    systemctl restart \$service
+                    sleep 5
+                fi
+            done
+            sleep 30
+        done
+    ) &
+    echo \$! > /run/x64-service-coordinator.pid
+'
+ExecStop=/bin/sh -c 'if [ -f /run/x64-service-coordinator.pid ]; then kill \$(cat /run/x64-service-coordinator.pid); rm -f /run/x64-service-coordinator.pid; fi'
+PIDFile=/run/x64-service-coordinator.pid
+
+# Resource limits
+MemoryLimit=16M
+CPUQuota=5%
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Create D-Bus name ownership stability service
+cat <<EOF >/usr/lib/systemd/system/x64-dbus-ownership-monitor.service
+[Unit]
+Description=x64 D-Bus Name Ownership Monitor
+After=dbus.service
+Wants=dbus.service
+PartOf=dbus.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=20s
+ExecStart=/bin/sh -c '
+    # Monitor D-Bus name ownership stability
+    while true; do
+        sleep 45
+        
+        # Check if critical D-Bus names are properly owned
+        for name in org.freedesktop.login1 org.freedesktop.systemd1; do
+            if ! dbus-send --system --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner string:\$name >/dev/null 2>&1; then
+                echo "D-Bus name \$name ownership issue detected"
+                # Allow systemd to handle service restart naturally
+                sleep 5
+            fi
+        done
+    done
+'
+
+# Minimal resource usage
+MemoryLimit=8M
+CPUQuota=2%
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Enhanced service restart policies
+for service in systemd-hostnamed.service systemd-timesyncd.service connman.service; do
+    if [ -d "/usr/lib/systemd/system" ]; then
+        mkdir -p "/etc/systemd/system/${service}.d"
+        
+        cat <<EOF >"/etc/systemd/system/${service}.d/30-x64-lifecycle-coordination.conf"
+[Unit]
+# Improved dependency management
+After=dbus.service systemd-journald.service
+Wants=dbus.service
+
+[Service]
+# Enhanced restart policies
+Restart=on-failure
+RestartSec=15s
+StartLimitInterval=120s
+StartLimitBurst=3
+
+# Graceful lifecycle management
+TimeoutStartSec=30s
+TimeoutStopSec=20s
+KillMode=mixed
+SendSIGKILL=no
+
+# Service coordination
+ExecStartPre=/bin/sh -c 'sleep 2'
+ExecStopPost=/bin/sh -c 'sleep 1'
+EOF
+    fi
+done
+
+# Create rocknix-automount service enhancements
+mkdir -p /etc/systemd/system/rocknix-automount.service.d
+
+cat <<EOF >/etc/systemd/system/rocknix-automount.service.d/30-x64-lifecycle-coordination.conf
+[Unit]
+# Enhanced dependency management for automount
+After=dbus.service systemd-journald.service local-fs.target
+Wants=dbus.service local-fs.target
+Requisite=local-fs.target
+
+[Service]
+# Improved restart and error handling
+Restart=on-failure
+RestartSec=10s
+StartLimitInterval=300s
+StartLimitBurst=5
+
+# Enhanced coordination
+ExecStartPre=/bin/sh -c 'sleep 5'
+ExecStartPre=/bin/sh -c 'systemctl is-active dbus.service || sleep 10'
+
+# Prevent premature failure
+TimeoutStartSec=60s
+TimeoutStopSec=30s
+KillMode=control-group
+
+# Better error handling
+RemainAfterExit=no
+Type=simple
+EOF
+
+# Create systemd target coordination service
+cat <<EOF >/usr/lib/systemd/system/x64-target-coordinator.service
+[Unit]
+Description=x64 Target Coordination Service
+After=sysinit.target basic.target
+Before=multi-user.target
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c '
+    # Ensure proper target progression
+    echo "Starting x64 target coordination..."
+    
+    # Wait for critical services to be ready
+    timeout=60
+    while [ \$timeout -gt 0 ]; do
+        if systemctl is-active dbus.service systemd-journald.service >/dev/null 2>&1; then
+            echo "Critical services ready"
+            break
+        fi
+        sleep 1
+        timeout=\$((timeout - 1))
+    done
+    
+    if [ \$timeout -eq 0 ]; then
+        echo "Warning: Timeout waiting for critical services"
+    fi
+    
+    echo "x64 target coordination complete"
+'
+
+# Minimal resources
+MemoryLimit=8M
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Enable coordination services
+mkdir -p /etc/systemd/system/multi-user.target.wants
+ln -sf /usr/lib/systemd/system/x64-service-coordinator.service /etc/systemd/system/multi-user.target.wants/x64-service-coordinator.service
+ln -sf /usr/lib/systemd/system/x64-dbus-ownership-monitor.service /etc/systemd/system/multi-user.target.wants/x64-dbus-ownership-monitor.service
+ln -sf /usr/lib/systemd/system/x64-target-coordinator.service /etc/systemd/system/multi-user.target.wants/x64-target-coordinator.service
+
+# Log completion
+echo "Phase 5: Service lifecycle coordination applied for Generic x86_64"

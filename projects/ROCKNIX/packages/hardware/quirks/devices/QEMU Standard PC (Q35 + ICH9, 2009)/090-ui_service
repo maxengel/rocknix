@@ -1,0 +1,10 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+
+# ROCKNIX QEMU Q35 UI Service Configuration
+# This script sets the appropriate UI service for QEMU Q35 virtual machines
+
+# For QEMU Q35 with X11 displayserver, use Weston compositor
+# This enables X11 application compatibility through XWayland
+UI_SERVICE="weston.service"

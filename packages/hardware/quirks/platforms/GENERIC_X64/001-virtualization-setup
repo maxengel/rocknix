@@ -1,0 +1,26 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+
+### GENERIC_X64 Virtualization Setup
+### Optimized for VirtualBox and QEMU environments
+
+echo "Configuring ROCKNIX for virtualized environments..."
+
+# Set UI service for virtualized x64 environments
+cat <<EOF >/storage/.config/profile.d/001-virtualization
+# Virtualization-specific configuration
+VIRTUALIZED="yes"
+UI_SERVICE="sway.service"
+DISPLAY_DRIVER="virtio"
+EOF
+
+# Configure optimal kernel parameters for VMs
+mkdir -p /etc/tmpfiles.d
+cat <<EOF >/etc/tmpfiles.d/vm-optimization.conf
+# VM-specific optimizations
+w /proc/sys/vm/swappiness - - - - 10
+w /proc/sys/kernel/sched_migration_cost_ns - - - - 5000000
+EOF
+
+echo "Virtualization setup complete"
