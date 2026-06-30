@@ -30,7 +30,7 @@ These are disjoint from feature paths (`packages/`, `projects/`, `config/`, `scr
 
 ```bash
 git fetch upstream
-git worktree add ../rocknix-<name> -b feature/<name> next   # instructions present in the worktree
+git worktree add ../rocknix.worktrees/<name> -b feature/<name> next   # see worktrees.instructions.md
 #   …develop; commit only feature paths…
 
 # When ready to open the PR, build a clean branch automatically:
