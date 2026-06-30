@@ -5,6 +5,12 @@ applyTo: "**"
 
 # Learning capture
 
+**What "memory" means here:** a *memory* is a **GitHub Copilot memory** (the `store_memory`
+tool), held in Copilot's memory system (repository- or user-scoped) and surfaced at session
+start — it is **not** a file in the repo. The repo's durable records of those learnings are
+**instruction files** (for generalizable practices) and the **dated work logs** (below). There
+is intentionally **no separate "memories" file** in the repo.
+
 Whenever a learning is worth a memory (i.e. any time you would call `store_memory`), also do
 **both** of the following:
 
@@ -30,4 +36,4 @@ Append a timestamped entry to the day's work log:
 
 - These work logs and the personal instruction files are **personal artifacts** — they live on
   the fork's `next` branch and are kept out of upstream PRs (see `fork-workflow.instructions.md`;
-  `docs/work-logs/` is in the pre-push guard's personal paths).
+  the whole `docs/` directory is in the pre-push guard's personal paths).
