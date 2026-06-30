@@ -189,6 +189,10 @@ Topic-specific guidance lives in `.github/instructions/*.instructions.md` (each 
   abstraction and append a timestamped entry to the dated `docs/work-logs/` log.
 - `engineering-practices.instructions.md` — durable, generalizable engineering practices
   (e.g. verify design intent before "fixing" apparent bugs).
+- `worktrees.instructions.md` — git worktree convention: primary checkout stays on `next`,
+  feature worktrees live in sibling `../rocknix.worktrees/<leaf>`.
+- `documentation-accuracy.instructions.md` — keep user-facing behavior and the public
+  `ROCKNIX/rocknix.org` docs in sync (e.g. the cloud-sync page); resolve code/doc drift.
 
 ## Further reading
 
