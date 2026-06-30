@@ -164,9 +164,15 @@ EOF
 
   mcopy "${IMG_TMP}/syslinux.cfg" :: >"${SAVE_ERROR}" 2>&1 || show_error
 
+  # copy syslinux BIOS support files (required for syslinux 6.x BIOS boot)
+  # Must be copied BEFORE running syslinux.mtools
+  echo "image: copying syslinux BIOS support files..."
+  mcopy "${TOOLCHAIN}/share/syslinux/ldlinux.c32" :: >"${SAVE_ERROR}" 2>&1 || show_error
+
   # install syslinux
   echo "image: installing syslinux to part1..."
   syslinux.mtools -i "${IMG_TMP}/part1.fat" >"${SAVE_ERROR}" 2>&1 || show_error
+  sync
 
   # copy files
   echo "image: copying files to part1..."
@@ -178,7 +184,12 @@ EOF
   mmd EFI EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
   mcopy "${TOOLCHAIN}/share/syslinux/bootx64.efi" ::/EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
   mcopy "${TOOLCHAIN}/share/syslinux/ldlinux.e64" ::/EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
-  mcopy "${TOOLCHAIN}/share/grub/bootia32.efi" ::/EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
+
+  # Only copy 32-bit GRUB bootloader if 32-bit support is enabled
+  if [ "${ENABLE_32BIT}" != "no" ]; then
+    mcopy "${TOOLCHAIN}/share/grub/bootia32.efi" ::/EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
+  fi
+
   mcopy "${IMG_TMP}/grub.cfg" ::/EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
 
 elif [ "${BOOTLOADER}" = "bcm2835-bootloader" ]; then

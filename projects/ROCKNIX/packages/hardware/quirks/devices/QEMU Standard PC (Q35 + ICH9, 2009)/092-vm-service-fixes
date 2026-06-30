@@ -1,0 +1,100 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+
+### QEMU VM systemd service fixes
+### Proper VM-specific service configuration without conflicts
+
+echo "Applying VM-specific service fixes for QEMU..."
+
+# VM Detection: Only apply these fixes in virtual machine environments
+if systemd-detect-virt --vm >/dev/null 2>&1; then
+    echo "Virtual machine detected, applying VM-specific optimizations..."
+    
+    # Create VM-specific Samba configuration (don't mask, just disable gracefully)
+    mkdir -p /storage/.config/systemd/system/smbd.service.d
+    cat <<EOF >/storage/.config/systemd/system/smbd.service.d/10-vm-config.conf
+[Unit]
+# VM-optimized Samba configuration
+ConditionVirtualization=vm
+After=dbus.service network.target
+
+[Service]
+# VM-specific Samba optimizations
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=120
+StartLimitBurst=2
+# Reduced memory usage for VMs
+MemoryMax=32M
+# Skip network discovery in VMs
+ExecStartPre=-/bin/sh -c 'test -f /storage/.config/samba/smb.conf'
+EOF
+
+    mkdir -p /storage/.config/systemd/system/nmbd.service.d
+    cat <<EOF >/storage/.config/systemd/system/nmbd.service.d/10-vm-config.conf
+[Unit]
+# VM-optimized NetBIOS configuration
+ConditionVirtualization=vm
+After=network.target
+
+[Service]
+# VM-specific NetBIOS optimizations
+Restart=on-failure
+RestartSec=15
+StartLimitInterval=120
+StartLimitBurst=2
+# Minimal memory for VMs
+MemoryMax=16M
+EOF
+
+else
+    echo "Physical hardware detected, skipping VM-specific optimizations..."
+fi
+
+# Improve weston.service startup reliability in VMs
+mkdir -p /storage/.config/systemd/system/weston.service.d
+cat <<EOF >/storage/.config/systemd/system/weston.service.d/10-vm-config.conf
+[Unit]
+# Ensure proper ordering for VM environment
+After=multi-user.target systemd-logind.service dbus.service
+Wants=systemd-logind.service dbus.service
+# Only start if we have proper graphics
+ConditionPathExists=/dev/dri/card0
+
+[Service]
+# VM-specific environment variables
+Environment="WLR_BACKENDS=drm,wayland,x11"
+Environment="WLR_RENDERER=gles2"
+Environment="WLR_NO_HARDWARE_CURSORS=1"
+# Increase startup timeout for VMs
+TimeoutStartSec=45
+# More aggressive restart policy for VMs
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=3
+StartLimitInterval=120
+EOF
+
+# Create unified D-Bus configuration for VMs
+mkdir -p /storage/.config/systemd/system/dbus.service.d
+cat <<EOF >/storage/.config/systemd/system/dbus.service.d/20-vm-enhanced.conf
+[Unit]
+# VM-optimized D-Bus configuration
+DefaultDependencies=false
+After=sysinit.target systemd-journald.service
+Before=multi-user.target systemd-logind.service
+
+[Service]
+# VM-specific D-Bus optimizations
+Restart=on-failure
+RestartSec=2
+StartLimitInterval=60
+StartLimitBurst=3
+# VM-appropriate memory limits
+MemoryMax=32M
+# Improved timeout handling for VMs
+TimeoutStartSec=20
+EOF
+
+echo "VM-specific service fixes applied successfully"

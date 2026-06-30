@@ -1,0 +1,193 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+
+### Phase 3: File Descriptor & D-Bus Improvements
+### Addresses EPOLLHUP, connection reset, and D-Bus stability issues
+
+# Enhanced journald configuration to handle file descriptor issues
+mkdir -p /etc/systemd/journald.conf.d
+
+cat <<EOF >/etc/systemd/journald.conf.d/20-x64-fd-improvements.conf
+[Journal]
+# Enhanced file descriptor management
+Storage=persistent
+Compress=no
+Seal=no
+SplitMode=none
+
+# Conservative limits to prevent fd issues
+SystemMaxUse=64M
+SystemKeepFree=128M
+SystemMaxFileSize=16M
+RuntimeMaxUse=32M
+RuntimeKeepFree=64M
+RuntimeMaxFileSize=8M
+
+# Reduce file descriptor pressure
+MaxFileSec=1day
+MaxRetentionSec=1week
+MaxLevelStore=warning
+MaxLevelSyslog=info
+MaxLevelKMsg=notice
+MaxLevelConsole=warning
+
+# Enhanced socket management
+ForwardToSocket=no
+ForwardToWall=no
+ForwardToConsole=yes
+ForwardToSyslog=no
+
+# Reduce sync frequency and improve fd handling
+SyncIntervalSec=10min
+RateLimitInterval=60s
+RateLimitBurst=5000
+
+# Improve socket buffer handling
+LineMax=65536
+EOF
+
+# Create D-Bus service improvements
+mkdir -p /etc/systemd/system/dbus.service.d
+
+cat <<EOF >/etc/systemd/system/dbus.service.d/20-x64-fd-improvements.conf
+[Unit]
+# Ensure proper startup order to prevent connection issues
+After=systemd-journald.service systemd-journald.socket
+Wants=systemd-journald.service
+
+[Service]
+# Enhanced connection handling
+ExecStartPre=/bin/sh -c 'mkdir -p /run/dbus && chmod 755 /run/dbus'
+ExecStartPre=/bin/sh -c 'rm -f /run/dbus/system_bus_socket'
+
+# Improved restart handling
+Restart=on-failure
+RestartSec=3s
+TimeoutStartSec=30s
+TimeoutStopSec=15s
+
+# Enhanced service coordination
+NotifyAccess=main
+Type=notify
+
+# File descriptor limits
+LimitNOFILE=65536
+EOF
+
+# Create systemd-journald service improvements
+mkdir -p /etc/systemd/system/systemd-journald.service.d
+
+cat <<EOF >/etc/systemd/system/systemd-journald.service.d/20-x64-fd-improvements.conf
+[Service]
+# Enhanced file descriptor management
+LimitNOFILE=32768
+ExecStartPre=/bin/sh -c 'mkdir -p /var/log/journal /run/log/journal'
+ExecStartPre=/bin/sh -c 'chmod 755 /var/log/journal /run/log/journal'
+
+# Improved restart and error handling
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=30s
+TimeoutStopSec=15s
+
+# Enhanced communication
+NotifyAccess=all
+WatchdogSec=60s
+
+# Prevent fd issues on restart
+ExecStopPost=/bin/sh -c 'sleep 2'
+EOF
+
+# Create tmpfiles configuration for proper directory setup
+mkdir -p /etc/tmpfiles.d
+
+cat <<EOF >/etc/tmpfiles.d/20-x64-fd-improvements.conf
+# Enhanced directory setup for fd management
+d /var/log/journal 0755 root systemd-journal - -
+d /run/log/journal 0755 root systemd-journal - -
+d /run/dbus 0755 messagebus messagebus - -
+d /run/systemd/ask-password 0755 root root - -
+d /run/systemd/seats 0755 root root - -
+d /run/systemd/sessions 0755 root root - -
+d /run/systemd/users 0755 root root - -
+d /run/systemd/inhibit 0755 root root - -
+d /run/systemd/shutdown 0755 root root - -
+
+# Socket files with proper permissions
+f /run/dbus/system_bus_socket 0666 messagebus messagebus - -
+EOF
+
+# Create connection retry service for critical D-Bus services
+mkdir -p /usr/lib/systemd/system
+
+cat <<EOF >/usr/lib/systemd/system/x64-dbus-connection-monitor.service
+[Unit]
+Description=x64 D-Bus Connection Monitor
+After=dbus.service
+Wants=dbus.service
+PartOf=dbus.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=10s
+ExecStart=/bin/sh -c 'while true; do if ! /usr/bin/dbus-send --system --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus.Ping >/dev/null 2>&1; then echo "D-Bus connection lost, restarting..."; systemctl restart dbus.service; fi; sleep 30; done'
+
+# Resource limits
+MemoryLimit=16M
+CPUQuota=5%
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Create enhanced logind restart coordination
+mkdir -p /etc/systemd/system/systemd-logind.service.d
+
+cat <<EOF >/etc/systemd/system/systemd-logind.service.d/20-x64-fd-improvements.conf
+[Unit]
+# Better dependency management to prevent premature shutdown
+After=dbus.service systemd-journald.service
+Wants=dbus.service
+PartOf=dbus.service
+
+[Service]
+# Enhanced restart and signal handling
+Restart=on-failure
+RestartSec=5s
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30s
+
+# Prevent connection reset issues
+ExecStartPre=/bin/sh -c 'sleep 2'
+ExecStopPost=/bin/sh -c 'sleep 2'
+
+# File descriptor management
+LimitNOFILE=16384
+EOF
+
+# Create a service to monitor and handle connection resets
+cat <<EOF >/usr/lib/systemd/system/x64-connection-monitor.service
+[Unit]
+Description=x64 Connection Monitor and Recovery
+After=dbus.service systemd-logind.service
+Wants=dbus.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=15s
+ExecStart=/bin/sh -c 'while true; do sleep 60; if ! systemctl is-active dbus.service >/dev/null 2>&1; then echo "D-Bus service inactive, recovering..."; systemctl restart dbus.service; fi; done'
+
+# Minimal resource usage
+MemoryLimit=8M
+CPUQuota=2%
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Log completion
+echo "Phase 3: File descriptor and D-Bus improvements applied for Generic x86_64"
