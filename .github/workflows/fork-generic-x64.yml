@@ -1,0 +1,52 @@
+# Fork-only CI. Builds a ROCKNIX device image on a SELF-HOSTED runner (the build
+# machine) and publishes it to this fork's Releases so it can be downloaded from
+# anywhere. GitHub-hosted runners cannot build ROCKNIX (needs ~200GB disk + hours),
+# so this requires a self-hosted runner registered on the build box with the label
+# `rocknix-build`. Trigger it from the Actions tab (workflow_dispatch).
+#
+# One-time runner setup on the build machine (Settings > Actions > Runners > New):
+#   ./config.sh --url https://github.com/maxengel/rocknix --token <TOKEN> --labels rocknix-build
+#   ./run.sh            # or install as a service: sudo ./svc.sh install && sudo ./svc.sh start
+# The runner's user must be in the `docker` group.
+name: fork build and publish device image
+
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+        description: "ROCKNIX device (e.g. GENERIC_X64)"
+        default: "GENERIC_X64"
+        required: true
+      channel:
+        description: "release channel"
+        type: choice
+        options: [prerelease, stable]
+        default: prerelease
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fork-build-${{ inputs.device }}
+  cancel-in-progress: false
+
+jobs:
+  build-publish:
+    runs-on: [self-hosted, rocknix-build]
+    timeout-minutes: 1440
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pull build image
+        run: make docker-image-pull
+
+      - name: Build ${{ inputs.device }}
+        run: make "docker-${{ inputs.device }}"
+
+      - name: Publish release to the fork
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          chmod +x tools/fork-publish-release
+          ./tools/fork-publish-release "${{ inputs.device }}" "${{ inputs.channel }}"
