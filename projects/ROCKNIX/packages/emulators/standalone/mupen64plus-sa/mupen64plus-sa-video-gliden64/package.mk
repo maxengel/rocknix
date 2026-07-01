@@ -15,14 +15,14 @@ PKG_LONGDESC="Mupen64Plus Standalone GLide64 Video Driver"
 PKG_TOOLCHAIN="manual"
 
 case ${DEVICE} in
-  RK3588|S922X|RK3399|RK3566*|SM8250|SM8550|SM8650|SM8750|AMD64)
+  RK3588|S922X|RK3399|RK3566*|SM8250|SM8550|SM8650|SM8750|AMD64|GENERIC_X64)
     PKG_DEPENDS_TARGET+=" mupen64plus-sa-simplecore"
     PKG_DEPENDS_UNPACK+=" mupen64plus-sa-simplecore"
   ;;
 esac
 
 case ${DEVICE} in
-  SM8250|SM8550|SM8650|SM8750)
+  SM8250|SM8550|SM8650|SM8750|GENERIC_X64)
     PKG_DEPENDS_TARGET+=" ${OPENGL} glu libglvnd"
     export USE_GLES=0
   ;;
@@ -44,6 +44,10 @@ make_target() {
   case ${TARGET_ARCH} in
     arm|aarch64)
       PKG_MAKE_OPTS_TARGET+="-DNOHQ=On -DCRC_ARMV8=On -DEGL=On -DNEON_OPT=On"
+    ;;
+    x86_64)
+      # Disable the GLideNHQ hi-res texture module (GCC-15 build issues), like ARM.
+      PKG_MAKE_OPTS_TARGET+="-DNOHQ=On"
     ;;
   esac
 
