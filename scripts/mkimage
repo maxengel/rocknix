@@ -220,8 +220,8 @@ EOF
   mcopy "${TOOLCHAIN}/share/syslinux/bootx64.efi" ::/EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
   mcopy "${TOOLCHAIN}/share/syslinux/ldlinux.e64" ::/EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
 
-  # Only copy 32-bit GRUB bootloader if 32-bit support is enabled
-  if [ "${ENABLE_32BIT}" != "no" ]; then
+  # Only copy the 32-bit GRUB bootloader if it was actually built (GENERIC_X64 doesn't).
+  if [ -f "${TOOLCHAIN}/share/grub/bootia32.efi" ]; then
     mcopy "${TOOLCHAIN}/share/grub/bootia32.efi" ::/EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
   fi
 
