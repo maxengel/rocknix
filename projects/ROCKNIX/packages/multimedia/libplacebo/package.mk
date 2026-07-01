@@ -9,6 +9,10 @@ PKG_URL="${PKG_SITE}.git"
 PKG_DEPENDS_TARGET="toolchain ffmpeg SDL2 luajit libass glslang"
 PKG_LONGDESC="The core rendering algorithms and ideas of mpv rewritten as an independent library."
 
+# Build only the library; the bundled demo programs fail to link on x86_64 and
+# aren't needed by our consumers (mpv/vlc).
+PKG_MESON_OPTS_TARGET="-Ddemos=false"
+
 if [ "${VULKAN_SUPPORT}" = "yes" ]; then
   PKG_DEPENDS_TARGET+=" ${VULKAN}"
   PKG_MESON_OPTS_TARGET+=" -Dvulkan=enabled"
@@ -17,5 +21,5 @@ else
 fi
 
 pre_configure_target() {
-  export TARGET_LDFLAGS="${LDFLAGS} -lglslang -lSPIRV -lSPIRV-Tools -lSPIRV-Tools-opt"
+  export TARGET_LDFLAGS="${LDFLAGS} -lglslang -lSPIRV"
 }
