@@ -54,6 +54,15 @@ pre_configure_target() {
                          -Ddoc=disabled"
 }
 
+pre_make_target() {
+  # Fix an upstream graphene bug: graphene-config.h(.meson) has a stray '#' in
+  # "#    #define GRAPHENE_USE_AVX", an invalid directive that only compiles when
+  # __AVX__ is defined (x86_64 / x86-64-v3). gst-plugins-base builds graphene as a
+  # bundled subproject, so correct the header the generator emits.
+  find ${PKG_BUILD} \( -name 'graphene-config.h' -o -name 'graphene-config.h.meson' \) \
+    -exec sed -i 's/#\([[:space:]]*\)#define GRAPHENE_USE_AVX/#\1define GRAPHENE_USE_AVX/' {} +
+}
+
 post_makeinstall_target() {
   # clean up
   safe_remove ${SYSROOT_PREFIX}/usr/include/GL
