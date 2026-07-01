@@ -95,7 +95,7 @@ esac
 # These are tracked in issue #16 to fix/re-enable per-core later (e.g. parallel-n64-lr's
 # x86 hacktarux dynarec defines fsqrt(), which collides with glibc's C23 fsqrt).
 if [ "${DEVICE}" = "GENERIC_X64" ]; then
-  X64_SKIP_CORES="parallel-n64-lr flycast2021-lr"
+  X64_SKIP_CORES="parallel-n64-lr flycast2021-lr duckstation-lr"
   for _core in ${X64_SKIP_CORES}; do
     LIBRETRO_CORES="$(echo " ${LIBRETRO_CORES} " | sed "s/ ${_core} / /g")"
   done
