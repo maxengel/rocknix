@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0
+#
+# Publish a locally-built ROCKNIX image to GitHub Releases on the fork, so it can
+# be downloaded from anywhere (the build machine is often headless).
+#
+#   tools/fork-publish-release [DEVICE] [prerelease|stable]
+#
+# Defaults: DEVICE=GENERIC_X64, channel=prerelease, repo=maxengel/rocknix
+# (override the repo with FORK_REPO=owner/name). Requires an authenticated `gh`
+# (or GH_TOKEN in CI). Re-running for the same day updates the existing release.
+set -euo pipefail
+
+REPO="${FORK_REPO:-maxengel/rocknix}"
+DEVICE="${1:-GENERIC_X64}"
+CHANNEL="${2:-prerelease}"
+
+# Newest matching image for the device (produced by scripts/image mkimage).
+IMG="$(ls -t "target/ROCKNIX-${DEVICE}."*.img.gz 2>/dev/null | head -1 || true)"
+if [ -z "${IMG}" ]; then
+  echo "error: no target/ROCKNIX-${DEVICE}.*.img.gz found — build the image first" >&2
+  exit 1
+fi
+
+BASE="$(basename "${IMG}" .img.gz)"                       # ROCKNIX-GENERIC_X64.x86_64-20260701
+DATE="$(printf '%s' "${BASE}" | grep -oE '[0-9]{8}$' || date +%Y%m%d)"
+TAG="dev-$(printf '%s' "${DEVICE}" | tr '[:upper:]' '[:lower:]')-${DATE}"
+
+ASSETS=("${IMG}")
+[ -f "${IMG}.sha256" ] && ASSETS+=("${IMG}.sha256")
+
+PRERELEASE_FLAG="--prerelease"
+[ "${CHANNEL}" = "stable" ] && PRERELEASE_FLAG=""
+
+echo "Publishing ${IMG} -> ${REPO} (tag ${TAG}, ${CHANNEL})"
+if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+  gh release upload "${TAG}" "${ASSETS[@]}" --repo "${REPO}" --clobber
+else
+  gh release create "${TAG}" "${ASSETS[@]}" --repo "${REPO}" ${PRERELEASE_FLAG} \
+    --title "${DEVICE} build — ${DATE}" \
+    --notes "ROCKNIX ${DEVICE} build ${DATE}. Boot the .img (gunzip the .img.gz) in QEMU/VirtualBox, or flash it."
+fi
+
+echo "Done: $(gh release view "${TAG}" --repo "${REPO}" --json url -q .url 2>/dev/null || echo "release ${TAG}")"
