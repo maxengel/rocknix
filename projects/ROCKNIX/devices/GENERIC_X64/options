@@ -22,8 +22,12 @@
   # Additional bootloader settings
     BOOTLOADER="syslinux"
 
-  # Graphics drivers for x86_64
-    GRAPHIC_DRIVERS="i915 iris xe virtio vmware"
+  # Graphics drivers for x86_64.
+  # VM QA target: software OpenGL via llvmpipe (LLVM_SUPPORT=yes) with virtio (virgl)
+  # and vmware (svga) kept for VM display; llvmpipe is the reliable fallback in any VM.
+  # NOTE: iris (Intel HW GL/Vulkan) is intentionally omitted — it pulls in the
+  # intel_clc/SPIR-V toolchain cascade. Hardware accel is a follow-up (see issue #16).
+    GRAPHIC_DRIVERS="virtio vmware"
 
   # OpenGL support
     OPENGL_SUPPORT="yes"
