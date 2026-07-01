@@ -48,3 +48,11 @@ pre_configure_target() {
                           -DBUILD_SHARED_LIBS=ON \
                           -DENABLE_GLSLANG_BINARIES=OFF"
 }
+
+post_makeinstall_target() {
+  # ENABLE_OPT builds a bundled (static) SPIRV-Tools that libSPIRV references but the
+  # default install omits. Install them so glslang consumers (e.g. libplacebo) can link
+  # the SPIR-V optimizer symbols on x86_64.
+  cp -a ${PKG_BUILD}/.${TARGET_NAME}/External/spirv-tools/source/libSPIRV-Tools.a ${SYSROOT_PREFIX}/usr/lib/
+  cp -a ${PKG_BUILD}/.${TARGET_NAME}/External/spirv-tools/source/opt/libSPIRV-Tools-opt.a ${SYSROOT_PREFIX}/usr/lib/
+}

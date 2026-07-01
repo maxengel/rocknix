@@ -21,5 +21,5 @@ else
 fi
 
 pre_configure_target() {
-  export TARGET_LDFLAGS="${LDFLAGS} -lglslang -lSPIRV"
+  export TARGET_LDFLAGS="${LDFLAGS} -lglslang -lSPIRV -lSPIRV-Tools -lSPIRV-Tools-opt"
 }
