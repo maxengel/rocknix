@@ -33,6 +33,11 @@ pre_configure_target() {
   PKG_LIBNAME="ppsspp_libretro.so"
   PKG_LIBPATH="lib/${PKG_LIBNAME}"
 
+  # Patches 005/006 inject the aarch64-only -mno-outline-atomics; strip it on x86_64.
+  if [ "${TARGET_ARCH}" = "x86_64" ]; then
+    sed -i '/add_compile_options(-mno-outline-atomics)/d' ${PKG_BUILD}/CMakeLists.txt
+  fi
+
 
   if [ ! "${OPENGL}" = "no" ]; then
     PKG_DEPENDS_TARGET+=" ${OPENGL} glu libglvnd glew glslang"
