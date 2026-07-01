@@ -26,7 +26,7 @@ PKG_SITE="https://github.com/libretro/a5200"
 PKG_URL="${PKG_SITE}.git"
 PKG_DEPENDS_TARGET="toolchain"
 PKG_LONGDESC="Atari 5200 libretro core"
-PKG_TOOLCHAIN="auto"
+PKG_TOOLCHAIN="make"
 GET_HANDLER_SUPPORT="git"
 
 makeinstall_target() {
