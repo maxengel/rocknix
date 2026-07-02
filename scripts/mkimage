@@ -76,6 +76,12 @@ if [ "${DISK_LABEL}" = "gpt" ]; then
   parted -s "${DISK}" -a min unit s mkpart system fat32 ${SYSTEM_PART_START} ${SYSTEM_PART_END}
   parted -s "${DISK}" -a min unit s mkpart storage ext4 ${STORAGE_PART_START} ${STORAGE_PART_END}
   parted -s "${DISK}" set 1 legacy_boot on
+  # For syslinux (x86 BIOS+UEFI hybrid) also type part1 as an EFI System Partition,
+  # so UEFI firmware auto-runs /EFI/BOOT/BOOTX64.EFI instead of dropping to the shell.
+  # legacy_boot (above) keeps BIOS/syslinux boot working.
+  if [ "${BOOTLOADER}" = "syslinux" ]; then
+    parted -s "${DISK}" set 1 esp on
+  fi
 else
   parted -s "${DISK}" -a min unit s mkpart primary fat32 ${SYSTEM_PART_START} ${SYSTEM_PART_END}
   parted -s "${DISK}" -a min unit s mkpart primary ext4 ${STORAGE_PART_START} ${STORAGE_PART_END}
