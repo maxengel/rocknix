@@ -161,15 +161,15 @@ PROMPT 1
 
 LABEL installer
   KERNEL /${KERNEL_NAME}
-  APPEND root=LABEL=${DISK_LABEL} init=/sbin/init boot=UUID=${UUID_SYSTEM} installer quiet vga=current ${EXTRA_CMDLINE}
+  APPEND root=LABEL=${DISK_LABEL} init=/sbin/init boot=LABEL=${DISTRO_BOOTLABEL} installer quiet vga=current ${EXTRA_CMDLINE}
 
 LABEL live
   KERNEL /${KERNEL_NAME}
-  APPEND root=/dev/ram0 rdinit=/init boot=UUID=${UUID_SYSTEM} live quiet vga=current ${EXTRA_CMDLINE}
+  APPEND root=/dev/ram0 rdinit=/init boot=LABEL=${DISTRO_BOOTLABEL} live quiet vga=current ${EXTRA_CMDLINE}
 
 LABEL run
   KERNEL /${KERNEL_NAME}
-  APPEND root=/dev/ram0 rdinit=/init boot=UUID=${UUID_SYSTEM} disk=UUID=${UUID_STORAGE} portable quiet ${EXTRA_CMDLINE}
+  APPEND root=/dev/ram0 rdinit=/init boot=LABEL=${DISTRO_BOOTLABEL} disk=LABEL=${DISTRO_DISKLABEL} portable quiet ${EXTRA_CMDLINE}
 EOF
 
   cat <<EOF >"${IMG_TMP}/grub.cfg"
@@ -177,15 +177,15 @@ set timeout="25"
 set default="Installer"
 menuentry "Installer" {
 	search --set -f /KERNEL
-	linux /KERNEL boot=UUID=${UUID_SYSTEM} installer quiet vga=current ${EXTRA_CMDLINE}
+	linux /KERNEL boot=LABEL=${DISTRO_BOOTLABEL} installer quiet vga=current ${EXTRA_CMDLINE}
 }
 menuentry "Live" {
 	search --set -f /KERNEL
-	linux /KERNEL boot=UUID=${UUID_SYSTEM} grub_live quiet vga=current ${EXTRA_CMDLINE}
+	linux /KERNEL boot=LABEL=${DISTRO_BOOTLABEL} grub_live quiet vga=current ${EXTRA_CMDLINE}
 }
 menuentry "Run" {
 	search --set -f /KERNEL
-	linux /KERNEL boot=UUID=${UUID_SYSTEM} disk=UUID=${UUID_STORAGE} grub_portable quiet ${EXTRA_CMDLINE}
+	linux /KERNEL boot=LABEL=${DISTRO_BOOTLABEL} disk=LABEL=${DISTRO_DISKLABEL} grub_portable quiet ${EXTRA_CMDLINE}
 }
 EOF
 
