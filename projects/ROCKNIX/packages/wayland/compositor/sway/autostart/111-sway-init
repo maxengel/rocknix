@@ -26,7 +26,9 @@ else
     systemctl unmask essway.service
 fi
 # get the card number, this may not be a safe way to derive it...
-card_no=$(ls /sys/class/drm/ | grep -E "DP|HDMI|DSI|eDP" | head -n 1 | cut -b 5)
+# "Virtual" matches the virtio-gpu connector (card0-Virtual-1) used by VMs
+# (QEMU/QEMU KVM), so GENERIC_X64 finds its GPU; real panels use DP/HDMI/DSI/eDP.
+card_no=$(ls /sys/class/drm/ | grep -E "DP|HDMI|DSI|eDP|Virtual" | head -n 1 | cut -b 5)
 
 env_file=/storage/.config/profile.d/095-sway
 
