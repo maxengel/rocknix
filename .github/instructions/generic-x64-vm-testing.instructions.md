@@ -70,3 +70,24 @@ sg kvm -c '<qemu command>'      # picks up the group with no re-login
 When ES fails, check the layer below before blaming the app: read `sway.log` first — an ES
 "wayland not available"/renderer abort is usually sway having failed to find a GPU
 (`/dev/dri/cardN`), not an ES bug. See `engineering-practices.instructions.md`.
+
+## Won't boot in UTM / a VM → check the disk logical sector size (4K vs 512)
+
+The image's GPT + ESP FAT are laid out for **512-byte** sectors. OVMF/UTM firmware **cannot
+UEFI-boot a disk exposed with 4096-byte logical sectors** — it misreads the 512b GPT (sees
+only the protective MBR), finds no ESP, and drops to the UEFI interactive shell. Symptom in
+the shell: `map` shows only `BLK0`/`BLK1`, **no `FS0:`**; firmware prints
+`BdsDxe: failed to load ... Not Found` → PXE.
+
+- The image is **not** at fault — it boots in every 512b firmware/bus (Ubuntu OVMF, upstream
+  EDK2, qemu's own `edk2-x86_64-code.fd`; virtio and SATA). Don't "fix" the image.
+- **Fix is VM-side:** present the boot disk as **512-byte sectors** (UTM: use a VirtIO/SATA
+  drive, not a 4K disk). A shipped VM artifact (`.utm`/OVA) must bake in a 512b disk config.
+- **Reproduce locally** with UTM's exact firmware:
+  `curl -L .../pc-bios/edk2-x86_64-code.fd.bz2` (+ `edk2-i386-vars.fd.bz2`) from the qemu repo,
+  then `-device virtio-blk-pci,drive=d0,logical_block_size=4096,physical_block_size=4096` →
+  reproduces the shell drop; drop the two block-size args (→ 512b) → boots.
+- **Container format is irrelevant** to this: raw/qcow2/vdi/vmdk all decode to identical disk
+  bytes; only the *sector size the VM presents* and the machine config matter. "Shareable dev
+  image" = an appliance that carries machine config (`.utm` bundle for UTM, OVA for
+  VirtualBox/VMware), not a bare disk — a bare disk still needs correct UEFI + 512b setup.
