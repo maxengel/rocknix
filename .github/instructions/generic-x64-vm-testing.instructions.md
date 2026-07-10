@@ -41,6 +41,29 @@ sg kvm -c 'qemu-system-x86_64 -enable-kvm -cpu host -smp 4 -m 4096 -machine q35 
 
 First boot resizes storage and reboots; the second boot is the real one.
 
+## Give the VM enough disk, or the UI silently breaks (16GB+)
+
+The raw `.img` ships a tiny (~33MB) `STORAGE` partition that **resizes to fill its disk on
+first boot** — but a bare `.img` is only ~4GB (`SYSTEM_SIZE=4096` + a small storage tail), so
+on a ~4GB disk storage stays ~33MB and hits **100% full**. The first-boot
+`rsync /usr/config → /storage/.config` then fails with **ENOSPC** and copies **0** of ES's 144
+resource files, so ES can't resolve its `:/` resources (blur shader, `ubuntu_condensed.ttf`,
+help icons). The result is a *rendering* ES with a **broken main menu** — no dimmed/blurred
+background, wrong fonts, missing help-button glyphs — which looks like a graphics/compositor
+bug but is **purely out-of-space**. Real hardware never hits this (storage resizes to fill the
+whole SD card *before* the rsync).
+
+Confirm from the serial shell: `df -h /storage` shows `100%`, and
+`journalctl | grep -i "no space"` shows `rsync: ... No space left on device`.
+
+- **Fix:** run on a **16GB+ disk**. `mkimage` now also emits a **sparse 16GB `.qcow2`**
+  (`VM_IMAGE_SIZE` in `projects/ROCKNIX/devices/GENERIC_X64/options`) so a 1-click boot has
+  room — first-boot resize gives ~12GB `STORAGE` and every resource populates. For a bare
+  `.img`, grow the disk (`qemu-img resize <disk> 16G`, or a ≥16GB target) **before** first boot.
+- **Don't** chase weston / Mesa / `glBlitFramebuffer` for a missing menu dim — that is a red
+  herring downstream of the missing `:/shaders/blur.glsl`. The compositor never changes ES's
+  own Mesa GL context, so weston vs sway is irrelevant here.
+
 ## KVM access (important gotcha)
 
 `setfacl -m u:max:rw /dev/kvm` grants access but **logind resets it** on session changes, so it
@@ -56,6 +79,14 @@ sg kvm -c '<qemu command>'      # picks up the group with no re-login
 - **Screenshot** (verify the UI without a display): QEMU monitor `screendump`
   `printf 'screendump /tmp/es.ppm\n' | socat - UNIX-CONNECT:/tmp/qmon.sock` (or a tiny
   Python `AF_UNIX` client). Convert PPM→PNG with stdlib `zlib`/`struct` if no image tools.
+  Needs a display backend that commits the scanout — use `-vnc :N` (a bare `-display none`
+  captures all-black). Drive input with the monitor: `sendkey ret` opens the ES main menu.
+- **Reliable in-guest shell over serial** (prefer this — SSH can reset mid-handshake with
+  `kex_exchange_identification: Connection reset`): GENERIC_X64 ships
+  `serial-debug-shell.service` (autologin root `/bin/sh` on `ttyS0`). Boot with
+  `-serial unix:/tmp/serialsh.sock,server,nowait`, then drive it from a tiny `AF_UNIX` client
+  — send `stty -echo` first to quiet echo, and wrap commands in unique `BEG`/`END` markers
+  since the boot console shares `ttyS0`. This is the channel that found the disk-size bug.
 - **Live logs over SSH**: default login is `root` / `rocknix`; `PermitRootLogin yes`. No
   `sshpass` on the host — use `SSH_ASKPASS=<script-echoing-pw> SSH_ASKPASS_REQUIRE=force
   setsid -w ssh -p 10022 root@127.0.0.1 …`. ES logs to tmpfs `/var/log/es_log.txt`,
