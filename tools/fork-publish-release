@@ -29,44 +29,100 @@ TAG="dev-$(printf '%s' "${DEVICE}" | tr '[:upper:]' '[:lower:]')-${DATE}"
 ASSETS=("${IMG}")
 [ -f "${IMG}.sha256" ] && ASSETS+=("${IMG}.sha256")
 
-# For VM targets, also publish a pre-sized sparse qcow2 so it boots 1-click with
-# enough STORAGE. The raw .img only resizes STORAGE to fill its own ~4GB disk on
-# first boot — too small to seed /storage (ES resources etc.), which silently
-# breaks the UI. A 16GB virtual qcow2 (sparse, so the upload stays small) gives
-# first-boot resize ~12GB of usable STORAGE. qemu-img runs on the host here (it
-# is not in the build container).
+# qemu-img runs on the host here (it is not in the build container).
 VM_DISK_SIZE="${VM_DISK_SIZE:-16G}"
+UTM_ZIP=""
 case "${DEVICE}" in
-  GENERIC_X64|AMD64)
-    if command -v qemu-img >/dev/null 2>&1; then
-      QCOW2="target/${BASE}.qcow2"
-      TMP_IMG="target/${BASE}.rawtmp.img"
-      echo "Creating ${VM_DISK_SIZE} sparse qcow2 (${QCOW2})..."
-      gunzip -kc "${IMG}" > "${TMP_IMG}"
-      qemu-img convert -f raw -O qcow2 "${TMP_IMG}" "${QCOW2}"
-      qemu-img resize "${QCOW2}" "${VM_DISK_SIZE}"
-      rm -f "${TMP_IMG}"
-      ( cd target && sha256sum "${BASE}.qcow2" > "${BASE}.qcow2.sha256" )
-      ASSETS+=("${QCOW2}" "${QCOW2}.sha256")
-    else
-      echo "warning: qemu-img not found on host; skipping pre-sized qcow2" >&2
-    fi
+  GENERIC_X64)
+    VM_TOOL="projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm"
+    VM_PROFILE="projects/ROCKNIX/devices/GENERIC_X64/vm/profile.json"
+    command -v qemu-img >/dev/null 2>&1 || {
+      echo "error: qemu-img is required for GENERIC_X64 release artifacts" >&2
+      exit 1
+    }
+    command -v python3 >/dev/null 2>&1 || {
+      echo "error: python3 is required for GENERIC_X64 release artifacts" >&2
+      exit 1
+    }
+    [ -x "${VM_TOOL}" ] || {
+      echo "error: canonical VM tool not found: ${VM_TOOL}" >&2
+      exit 1
+    }
+
+    VM_DISK_SIZE_BYTES="$(
+      python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["disk"]["virtual_size_bytes"])' \
+        "${VM_PROFILE}"
+    )"
+    VM_DISK_SIZE="$((VM_DISK_SIZE_BYTES / 1024 / 1024 / 1024))G"
+    QCOW2="target/${BASE}.qcow2"
+    UTM_ZIP="target/${BASE}.utm.zip"
+    TMP_IMG="target/${BASE}.rawtmp.img"
+    trap 'rm -f "${TMP_IMG:-}"' EXIT
+
+    echo "Creating canonical ${VM_DISK_SIZE} sparse qcow2 (${QCOW2})..."
+    rm -f "${QCOW2}" "${UTM_ZIP}"
+    gunzip -kc "${IMG}" > "${TMP_IMG}"
+    qemu-img convert -f raw -O qcow2 "${TMP_IMG}" "${QCOW2}"
+    qemu-img resize "${QCOW2}" "${VM_DISK_SIZE_BYTES}"
+    rm -f "${TMP_IMG}"
+    "${VM_TOOL}" utm "${QCOW2}" --output "${UTM_ZIP}"
+
+    (
+      cd target
+      sha256sum "${BASE}.qcow2" > "${BASE}.qcow2.sha256"
+      sha256sum "${BASE}.utm.zip" > "${BASE}.utm.zip.sha256"
+    )
+    ASSETS+=(
+      "${QCOW2}" "${QCOW2}.sha256"
+      "${UTM_ZIP}" "${UTM_ZIP}.sha256"
+    )
+    ;;
+  AMD64)
+    command -v qemu-img >/dev/null 2>&1 || {
+      echo "error: qemu-img is required for AMD64 release artifacts" >&2
+      exit 1
+    }
+    QCOW2="target/${BASE}.qcow2"
+    TMP_IMG="target/${BASE}.rawtmp.img"
+    trap 'rm -f "${TMP_IMG:-}"' EXIT
+    echo "Creating ${VM_DISK_SIZE} sparse qcow2 (${QCOW2})..."
+    gunzip -kc "${IMG}" > "${TMP_IMG}"
+    qemu-img convert -f raw -O qcow2 "${TMP_IMG}" "${QCOW2}"
+    qemu-img resize "${QCOW2}" "${VM_DISK_SIZE}"
+    rm -f "${TMP_IMG}"
+    ( cd target && sha256sum "${BASE}.qcow2" > "${BASE}.qcow2.sha256" )
+    ASSETS+=("${QCOW2}" "${QCOW2}.sha256")
     ;;
 esac
 
 PRERELEASE_FLAG="--prerelease"
 [ "${CHANNEL}" = "stable" ] && PRERELEASE_FLAG=""
 
+if [ -n "${UTM_ZIP}" ]; then
+  RELEASE_NOTES="ROCKNIX ${DEVICE} build ${DATE}.
+
+- **${BASE}.utm.zip** (recommended on Apple silicon Macs) — unzip and double-click the \`.utm\` bundle. It carries the canonical Q35/UEFI, Haswell-v4, 4-vCPU, 8-GiB, VirtIO/512-byte disk, virtio-gpu-gl, network, audio, input, and serial-console configuration.
+- **${BASE}.qcow2** (recommended on Linux) — the same 16-GiB disk. Launch it with \`projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm run <qcow2>\` so Linux uses the same guest-visible machine profile.
+- **${BASE}.img.gz** — raw image for flashing or other hypervisors. In a VM, give it a ${VM_DISK_SIZE}+ disk **before first boot** and expose 512-byte sectors. On real hardware it resizes to fill the card.
+
+Linux uses KVM acceleration when available; UTM uses QEMU TCG for x86_64 on Apple silicon. The accelerator necessarily differs, but the CPU model and virtual hardware presented to ROCKNIX are defined by the same versioned profile."
+else
+  RELEASE_NOTES="ROCKNIX ${DEVICE} build ${DATE}.
+
+- **${BASE}.qcow2** (recommended for VMs) — a pre-sized ${VM_DISK_SIZE} sparse disk.
+- **${BASE}.img.gz** — raw image for flashing or other hypervisors."
+fi
+
 echo "Publishing ${IMG} -> ${REPO} (tag ${TAG}, ${CHANNEL})"
 if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
   gh release upload "${TAG}" "${ASSETS[@]}" --repo "${REPO}" --clobber
+  gh release edit "${TAG}" --repo "${REPO}" \
+    --title "${DEVICE} build — ${DATE}" \
+    --notes "${RELEASE_NOTES}"
 else
   gh release create "${TAG}" "${ASSETS[@]}" --repo "${REPO}" ${PRERELEASE_FLAG} \
     --title "${DEVICE} build — ${DATE}" \
-    --notes "ROCKNIX ${DEVICE} build ${DATE}.
-
-- **${BASE}.qcow2** (recommended for VMs) — a pre-sized ${VM_DISK_SIZE} sparse disk for QEMU/UTM/virt-manager. 1-click boot with room for STORAGE.
-- **${BASE}.img.gz** — raw image (gunzip first) for flashing or other hypervisors. In a VM, give it a ${VM_DISK_SIZE}+ disk **before first boot** (or STORAGE fills up and the UI breaks); present the disk with 512-byte sectors (UTM: VirtIO/SATA). On real hardware it resizes to fill the card."
+    --notes "${RELEASE_NOTES}"
 fi
 
 echo "Done: $(gh release view "${TAG}" --repo "${REPO}" --json url -q .url 2>/dev/null || echo "release ${TAG}")"
