@@ -25,21 +25,31 @@ scripts aren't in a package deephash so the image won't rebuild otherwise.
 
 ## Boot in QEMU
 
-Needs OVMF **split** firmware with a writable VARS copy, and `-vga virtio` (sway needs a DRM
-device). KVM is required for a timely full boot to ES (TCG `-cpu max` boots but is far too
-slow for two boots + resize + ES).
+**Environment parity is the acceptance criterion.** A qcow2 only carries disk bytes; it does
+not carry CPU, RAM, firmware, disk bus/sector geometry, GPU, network, audio, input, or serial
+configuration. Never treat a bootable qcow2 alone as the finished developer artifact.
+
+The versioned source of truth is
+`projects/ROCKNIX/devices/GENERIC_X64/vm/profile.json`. The adjacent `generic-x64-vm` tool
+generates both:
 
 ```bash
-cp /usr/share/OVMF/OVMF_VARS_4M.fd ./OVMF_VARS_test.fd            # writable copy
-sg kvm -c 'qemu-system-x86_64 -enable-kvm -cpu host -smp 4 -m 4096 -machine q35 \
-  -drive if=pflash,unit=0,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
-  -drive if=pflash,unit=1,format=raw,file=./OVMF_VARS_test.fd \
-  -drive file=target/ROCKNIX-GENERIC_X64.x86_64-<date>.img,format=raw,if=virtio \
-  -vga virtio -vnc :2 -nic user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:10022-:22 \
-  -monitor unix:/tmp/qmon.sock,server,nowait -serial file:/tmp/serial.log -display none'
+VM_TOOL=projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm
+$VM_TOOL run target/ROCKNIX-GENERIC_X64.x86_64-<date>.qcow2
+$VM_TOOL utm target/ROCKNIX-GENERIC_X64.x86_64-<date>.qcow2 \
+  --output target/ROCKNIX-GENERIC_X64.x86_64-<date>.utm.zip
 ```
 
-First boot resizes storage and reboots; the second boot is the real one.
+The baseline is Q35 + UEFI, **Haswell-v4** (the oldest fixed QEMU model satisfying this
+image's `x86-64-v3` build requirement), 4 vCPUs, 8 GiB RAM, 16 GiB VirtIO disk with explicit
+512-byte sectors, `virtio-gpu-gl-pci`, VirtIO network, Intel HDA, USB 3, and a serial console.
+Linux uses KVM when available; UTM necessarily uses QEMU TCG to emulate x86_64 on Apple
+silicon. Acceleration differs, but the guest-visible CPU model and devices come from the same
+profile. VirtualBox is not the common layer because its Apple-silicon build only runs Arm
+guests; it cannot run this x86_64 image.
+
+First boot resizes storage and reboots; the second boot is the real one. Release artifacts:
+`.utm.zip` for macOS/UTM and `.qcow2` + the generated launcher for Linux/QEMU.
 
 ## Give the VM enough disk, or the UI silently breaks (16GB+)
 
@@ -56,10 +66,11 @@ whole SD card *before* the rsync).
 Confirm from the serial shell: `df -h /storage` shows `100%`, and
 `journalctl | grep -i "no space"` shows `rsync: ... No space left on device`.
 
-- **Fix:** run on a **16GB+ disk**. `mkimage` now also emits a **sparse 16GB `.qcow2`**
-  (`VM_IMAGE_SIZE` in `projects/ROCKNIX/devices/GENERIC_X64/options`) so a 1-click boot has
-  room — first-boot resize gives ~12GB `STORAGE` and every resource populates. For a bare
-  `.img`, grow the disk (`qemu-img resize <disk> 16G`, or a ≥16GB target) **before** first boot.
+- **Fix:** run on a **16GB+ disk**. `tools/fork-publish-release` converts the raw image into
+  the sparse disk size defined by the canonical VM profile and packages that same qcow2 into
+  `.utm.zip`; first-boot resize then gives ~12GB `STORAGE` and every resource populates. For
+  a bare `.img`, grow the disk (`qemu-img resize <disk> 16G`, or a ≥16GB target) **before**
+  first boot.
 - **Don't** chase weston / Mesa / `glBlitFramebuffer` for a missing menu dim — that is a red
   herring downstream of the missing `:/shaders/blur.glsl`. The compositor never changes ES's
   own Mesa GL context, so weston vs sway is irrelevant here.
