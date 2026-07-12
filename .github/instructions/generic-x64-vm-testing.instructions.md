@@ -51,6 +51,16 @@ guests; it cannot run this x86_64 image.
 First boot resizes storage and reboots; the second boot is the real one. Release artifacts:
 `.utm.zip` for macOS/UTM and `.qcow2` + the generated launcher for Linux/QEMU.
 
+## UTM virtio-gpu cursor sprite
+
+UTM's virtio-gpu hardware cursor plane can display the **cursor graphic** upside down while
+movement and the primary display remain correctly oriented. Do not add a coordinate
+calibration or rotate the output—that would break correct pointer movement and UI orientation.
+For virtual DRM connectors (`Virtual-*`), `111-sway-init` writes
+`WLR_NO_HARDWARE_CURSORS=1` to Sway's environment, forcing wlroots to composite the cursor in
+the correctly oriented primary plane. Confirm in `/var/log/sway.log`:
+`Loading WLR_NO_HARDWARE_CURSORS option: 1`.
+
 ## Give the VM enough disk, or the UI silently breaks (16GB+)
 
 The raw `.img` ships a tiny (~33MB) `STORAGE` partition that **resizes to fill its disk on
