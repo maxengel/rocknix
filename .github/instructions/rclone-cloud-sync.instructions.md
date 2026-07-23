@@ -29,6 +29,12 @@ non-synced local data. Stay within the allowlist; preserve the excludes in any `
 direction (never delete ROMs/BIOS/art); keep a directory chooser limited to save dirs; and keep
 the system-backup zip partitioned from the saves flow.
 
+**User intent (design north star):** the two flows to serve are (1) *new/reset device* —
+restore saves/savestates/screenshots from the cloud onto a fresh handheld, and (2)
+*multi-device* — the cloud as the hub for moving between handhelds, which is why conflict
+resolution (below) is the long-term goal. ROM/BIOS distribution is **not** part of the
+gamesave sync flows; if it ever belongs anywhere, it's the system backup/restore domain.
+
 **Preserve player progress above all.** The worst failure is losing progress someone made.
 Conflict handling must **not** default to recency — a newer file can hold *less* progress than
 an older one from another device. Default to **non-destructive** resolution (keep both copies,
@@ -100,9 +106,10 @@ seeded from the `/usr/config/*.defaults` templates:
   non-save library. On backup (dest = remote, which only holds saves) deleting excluded
   files just keeps the remote tidy. On a `sync` restore (dest = local `/storage/roms`) it
   would delete ROMs, BIOS, artwork, videos — everything that isn't a save/state/screenshot.
-  The intended guard is the `RESTORE_RCLONEOPTS` pattern (strip `--delete-excluded` for
-  restore / copy-to-local), but in `cloud_restore` that variable is currently **computed and
-  never used** (tracked in fork issue #5). Treat any restore-side `--delete-excluded` as a bug.
+  **Decision (2026-07-23, issue #5 finding #1):** `cloud_restore`'s `load_config` now strips
+  `--delete-excluded` unconditionally (like the `--verbose` strip); `sync` restores keep
+  mirror semantics *within* the allowlist but can never delete outside it. Preserve that
+  strip in any refactor, and treat any restore-side `--delete-excluded` as a bug.
 - **Single remote only:** operations use `rclone listremotes | head -1` — the first
   configured remote. Don't assume multi-remote support without adding it deliberately.
 
