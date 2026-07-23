@@ -9,6 +9,11 @@ When you change **user-facing behavior** — config variables, defaults, flags, 
 menu entries, or workflows — update the matching public documentation in the **same change**
 (or open a docs follow-up and link it). Code and the published docs must not drift.
 
+**Hard gate (maintainer rule, 2026-07-23):** never push code/functionality changes without
+the corresponding rocknix.org site update. An upstream feature PR is not ready to open
+until the matching `ROCKNIX/rocknix.org` docs change is prepared alongside it — documentation
+must always reflect the latest work.
+
 ## Where the public docs live
 
 The website is a **separate repository**, `ROCKNIX/rocknix.org` (MkDocs Material, default
@@ -33,8 +38,9 @@ defaults, changed `sync`/`copy` semantics, new/removed tools, and the single-rem
 
 ## Don't let known drift grow
 
-- `RSYNCRMDIR` is **documented** ("remove empty remote directories") but **unimplemented** in
-  code (issue #5, finding #3). `LOG_LEVEL` and `rclonectl` are under-documented.
+- `RSYNCRMDIR` is now **implemented** (2026-07-23, issue #5 finding #3) — docs and code
+  agree. `rclonectl` was **removed** the same day (issue #6): if the site still mentions
+  mount/unmount, that's drift to fix on the docs side. `LOG_LEVEL` remains under-documented.
 - Resolve drift by fixing **either** the code or the docs — never by ignoring it. Track docs
   gaps on the fork (see `issue-tracking.instructions.md`).
 
