@@ -54,7 +54,6 @@ toward progress (e.g. playtime/size/state heuristics), not timestamps.
     (game saves, then the system-backup `.zip`). Keep these two scripts **structurally in
     sync** — most fixes belong in both.
   - `cloud_sync_helper` — merges `*.defaults` into the user's config on OS update.
-  - `rclonectl` — FUSE mount/unmount wrapper (`--vfs-cache-mode writes`).
   - `cloud_sync_cleanup_duplicates.sh` — removes duplicate `VAR=` lines from the conf.
   - `post-update` — runs on update; calls `cloud_sync_helper`, with a copy-based fallback.
 
@@ -69,15 +68,17 @@ toward progress (e.g. playtime/size/state heuristics), not timestamps.
 - `RCLONEOPTS` is a multi-line, backslash-continued string; the scripts normalize it
   (`tr`/`sed`) into an array before exec. Note `cloud_sync_helper`'s line-based merge does
   not handle this multi-line value well — keep that in mind when touching it.
-- `rclonectl` (FUSE **mount** wrapper) + `rsync.conf` / `rsync-rules.conf` are **older,
-  pre-`cloud_sync` legacy** code — the `cloud_sync.*` scripts are the current, supported path.
-  `rclonectl` is reachable only via manual SSH (no UI/Tools entry invokes it). The rsync
-  configs are installed by `package.mk` and re-seeded on every update by the "Sync rsync
-  configs" block in `projects/ROCKNIX/packages/rocknix/sources/post-update`. The FUSE-mount
-  approach was set aside (the maintainer observed it conflicting with destination providers
-  that run their own sync, e.g. Dropbox, and being slower than scheduled copy/sync) — treat
-  live-mount sync as **unproven, not forbidden**; it's open to revisiting. Removal is being
-  explored in **fork issue #6**.
+- The legacy pre-`cloud_sync` code (`rclonectl` FUSE-mount wrapper, `rsync.conf`,
+  `rsync-rules.conf`, and the post-update "Sync rsync configs" seeding block) was
+  **removed on 2026-07-23** (fork issue #6; maintainer decision in favor of the current
+  `cloud_sync.*` path). Stale `/storage/.config/rsync*.conf` on user devices are left in
+  place deliberately — we stopped seeding rather than deleting from user storage. The
+  FUSE live-mount approach itself remains **unproven, not forbidden** (past observations:
+  conflicts with providers running their own sync, e.g. Dropbox; slower than scheduled
+  copy/sync) — revisiting it would be a fresh build on the `cloud_sync.conf` model.
+- `RSYNCRMDIR=yes` (legacy name kept for config compat) is now **implemented**: after a
+  successful game-saves backup (exit 0 or 9), `cloud_backup` runs
+  `rclone rmdirs <remote> --leave-root` to prune empty remote directories.
 
 ## Clean install & config bootstrap
 
@@ -90,7 +91,6 @@ seeded from the `/usr/config/*.defaults` templates:
   keys/rules missing from the user's copy, preserving customizations. Config keys come from
   the `DEFAULT_`-prefixed vars in `cloud_sync.conf.defaults`; rules are line-matched against
   `cloud_sync-rules.txt.defaults`.
-- `rclonectl` separately seeds the legacy `rsync.conf` / `rsync-rules.conf` if missing.
 - rclone itself is **unconfigured** out of the box: backup/restore abort with a clear
   message until the user runs `rclone config` (which creates
   `/storage/.config/rclone/rclone.conf`).
@@ -117,9 +117,9 @@ seeded from the `/usr/config/*.defaults` templates:
 
 The user guide (<https://rocknix.org/configure/cloud-sync/>) documents the `cloud_sync.conf`
 options and the Tools backup/restore flow. Known gaps vs. the code: it omits `LOG_LEVEL`,
-`rclonectl` mount/unmount, the single-remote assumption, and `cloud_sync_cleanup_duplicates.sh`,
-and it documents `RSYNCRMDIR` which is **not implemented** anywhere in the scripts. Reconcile
-docs against actual behavior before relying on them.
+the single-remote assumption, and `cloud_sync_cleanup_duplicates.sh`. `RSYNCRMDIR` is now
+implemented as documented (2026-07-23). Reconcile docs against actual behavior before
+relying on them.
 
 ## Style
 
