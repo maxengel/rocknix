@@ -38,6 +38,7 @@ git worktree add ../rocknix.worktrees/<name> -b feature/<name> next   # see work
 git fetch upstream
 git switch -c pr/<name> feature/<name>
 git rebase --onto upstream/next next pr/<name>              # keeps ONLY feature commits
+git reset --soft upstream/next && git commit                # SQUASH: one commit for review
 git push -u origin pr/<name>
 gh pr create --repo ROCKNIX/distribution --base next --head maxengel:pr/<name>
 ```
@@ -50,6 +51,12 @@ include a personal commit or drop a feature one.
 
 `feature/<name>` stays intact (still based on `next`) for continued work; `pr/<name>` is
 disposable — rebuild it the same way to refresh against upstream.
+
+**Squash policy (dev-team preference, 2026-07-23):** upstream PRs must present **one
+commit** — the ROCKNIX team squash-merges and reviewers want a single commit to check.
+After the `--onto` rebase, squash the branch (`git reset --soft upstream/next &&
+git commit`) with a message that summarizes the whole change (scoped like the commit
+convention). Keep the granular history on `feature/<name>`; only `pr/<name>` is squashed.
 
 ## Safety net: pre-push guard
 
