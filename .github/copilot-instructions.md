@@ -167,6 +167,11 @@ wine - bump to 10.16
 Use `<package>` or `<DEVICE> - <subsystem>` as the scope; version updates are typically
 phrased as `bump to <version>`.
 
+**Upstream PR commits are stricter**: CI (`validate-pull-request.yml`) requires the strict
+`package: text` form — title matching `^[a-zA-Z0-9_*./-]+:[[:space:]].+$` (no spaces before
+the colon, so `SM8250 - linux - …` fails), title ≤ 72 chars, blank line before the body,
+body lines ≤ 72 chars, no merge commits. See `fork-workflow.instructions.md` (squash policy).
+
 ## Note on `.github/shared-copilot-knowledge/`
 
 That directory is a **generic, externally-distributed** knowledge base ("Local
