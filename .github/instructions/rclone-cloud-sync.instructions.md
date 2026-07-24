@@ -97,6 +97,13 @@ seeded from the `/usr/config/*.defaults` templates:
 
 ## Critical gotchas (these are recurring bug sources)
 
+- **UI surfaces live in a separate repo.** EmulationStation
+  (`ROCKNIX/emulationstation-next`, `es-app/src/guis/GuiMenu.cpp`, Network Settings →
+  CLOUD SERVICES) references cloud-sync tools directly — the issue #6 sweep missed the
+  `rclonectl` "MOUNT CLOUD DRIVE" toggle there because it only grepped this repo. Any
+  add/rename/removal of a cloud-sync CLI must include a sweep of the ES repo (and
+  rocknix.org) too.
+
 - **Never put `--verbose` or `-v` in `RCLONEOPTS`** — they conflict with rclone's
   `--log-level` and abort the run. Multiple past PRs (#1739/#1726/#1747/#1916) fixed this;
   `cloud_sync_helper` and `post-update` actively strip them from existing user configs.
