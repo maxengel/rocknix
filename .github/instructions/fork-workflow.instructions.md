@@ -58,6 +58,12 @@ After the `--onto` rebase, squash the branch (`git reset --soft upstream/next &&
 git commit`) with a message that summarizes the whole change (scoped like the commit
 convention). Keep the granular history on `feature/<name>`; only `pr/<name>` is squashed.
 
+**Upstream CI validates the commit message** (`validate-pull-request.yml`, learned from
+PR #3055): the title must match `^[a-zA-Z0-9_*./-]+:[[:space:]].+$` — i.e. `package: text`
+with **no spaces before the colon** (`rclone - cloud-sync: …` and `SM8250 - linux - …`
+styles FAIL). Also enforced: title ≤ 72 chars, blank line between title and body, body
+lines ≤ 72 chars, and no merge commits in the PR.
+
 ## Safety net: pre-push guard
 
 `.githooks/pre-push` blocks pushing any `pr/*` branch that still differs from `upstream/next`
