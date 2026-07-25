@@ -11,6 +11,6 @@ PKG_DEPENDS_TARGET="toolchain libpng"
 PKG_LONGDESC="libqrencode with the qrencode CLI for generating QR codes (ANSI terminal output)."
 PKG_TOOLCHAIN="cmake"
 
-PKG_CMAKE_OPTS_TARGET="-DWITH_TOOLS=YES \
+PKG_CMAKE_OPTS_TARGET="-DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DWITH_TOOLS=YES \
                        -DWITHOUT_PNG=OFF \
                        -DBUILD_SHARED_LIBS=ON"
