@@ -142,9 +142,17 @@ def qemu_command(profile, args):
         args.display,
         "-netdev",
         (
-            "user,id=net0,"
-            f"hostfwd=tcp:127.0.0.1:{network['ssh_host_port']}-:"
-            f"{network['ssh_guest_port']}"
+            f"bridge,id=net0,br={args.bridge}"
+            if args.net == "bridged"
+            else (
+                "user,id=net0,"
+                f"hostfwd=tcp:127.0.0.1:{network['ssh_host_port']}-:"
+                f"{network['ssh_guest_port']}"
+                + "".join(
+                    f",hostfwd=tcp:127.0.0.1:{fwd['host_port']}-:{fwd['guest_port']}"
+                    for fwd in network.get("extra_forwards", [])
+                )
+            )
         ),
         "-device",
         f"{network['device']},netdev=net0,mac={network['mac_address']}",
@@ -318,6 +326,17 @@ def build_utm(profile, args):
 def add_qemu_options(parser):
     parser.add_argument("disk", help="ROCKNIX qcow2 disk")
     parser.add_argument("--accel", default="auto", help="QEMU accelerator (default: auto)")
+    parser.add_argument(
+        "--net",
+        choices=["user", "bridged"],
+        default="user",
+        help=(
+            "networking: 'user' (default; host-only with port forwards) or "
+            "'bridged' (joins the host LAN so phones can reach the guest; "
+            "needs a host bridge + qemu-bridge-helper allow rule)"
+        ),
+    )
+    parser.add_argument("--bridge", default="br0", help="bridge name for --net bridged (default: br0)")
     parser.add_argument(
         "--display",
         default=os.environ.get("ROCKNIX_QEMU_DISPLAY", "gtk,gl=on"),
