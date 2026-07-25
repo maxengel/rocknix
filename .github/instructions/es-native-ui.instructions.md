@@ -52,6 +52,9 @@ this file guides any work there.
 ## Conventions
 
 - Every label through `_( )` (localized, UPPERCASE by convention).
+- **"back up" vs "backup"**: two words as a verb ("BACK UP CONFIGURATIONS TO CLOUD",
+  "back up your settings"), one word as a noun/adjective ("RESTORE FROM BACKUP",
+  "backup file"). Applies to menu labels, dialogs, script output, and docs.
 - Theme-aware colors/fonts via `ThemeData::getMenuTheme()`.
 - Pages provide `getHelpPrompts()` so the bottom help bar stays accurate.
 - Lambda capture: `Window* window = mWindow;` then capture `window` (menu may be deleted).
