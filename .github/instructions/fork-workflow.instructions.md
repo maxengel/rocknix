@@ -23,7 +23,7 @@ only the feature work.
 `.github/copilot-instructions.md`, `.github/instructions/`,
 `.github/shared-copilot-knowledge/`, `.githooks/`, `tmp/shared-copilot-knowledge/`,
 `compare-prompt-versions.sh`, `docs/`, `plans/`, `tools/fork-publish-release`,
-`.github/workflows/fork-*`.
+`.github/workflows/fork-*`, `.claude/` (agent skills), `AGENTS.md`.
 These are disjoint from feature paths (`packages/`, `projects/`, `config/`, `scripts/`,
 `tools/`), so feature commits never touch them.
 
