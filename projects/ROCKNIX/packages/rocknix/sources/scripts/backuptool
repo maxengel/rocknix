@@ -90,6 +90,10 @@ case "${1}" in
 
         # Passwords and keys are stripped at backup time (see below); wifi and
         # similar credentials must be re-entered after a restore.
+        # EmulationStation shows a native reminder on next boot to re-enter
+        # the credentials that backups deliberately exclude.
+        touch /storage/.config/.restore-finish-pending
+
         note "Restore complete. Wifi/account passwords are not part of backups and must be re-entered."
         note "Rebooting in 5 seconds so the restored configuration takes effect cleanly..."
         sync
