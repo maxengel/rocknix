@@ -39,6 +39,7 @@ makeinstall_target() {
   cp cloud_restore ${INSTALL}/usr/bin/
   cp cloud_sync_helper ${INSTALL}/usr/bin/
   cp cloud_setup ${INSTALL}/usr/bin/
+  cp cloud_content_restore ${INSTALL}/usr/bin/
   cp cloud_sync_cleanup_duplicates.sh ${INSTALL}/usr/bin/
   mkdir -p ${INSTALL}/usr/bin/scripts/game-end
   cp cloud_saves_gameend.sh ${INSTALL}/usr/bin/scripts/game-end/

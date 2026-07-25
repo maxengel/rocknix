@@ -1,0 +1,81 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+
+# cloud_content_restore - pull game content (ROMs, BIOS, ...) from the cloud.
+#
+# Unlike the saves sync (allowlist-filtered, never touches ROMs/BIOS), this is
+# an explicit, user-initiated copy of a chosen remote directory into
+# /storage/roms. It never deletes anything locally (rclone copy) and skips
+# files that already exist unless they differ.
+#
+# Usage:
+#   cloud_content_restore --list           print top-level remote directories
+#   cloud_content_restore <dir> [<dir>..]  copy remote dirs into /storage/roms
+#   cloud_content_restore --all            copy the whole remote content root
+#
+# The remote content root defaults to the remote's root; set CONTENTPATH in
+# /storage/.config/cloud_sync.conf to point somewhere else (e.g. "GAMES").
+
+. /etc/profile
+
+LOG_FILE="/var/log/cloud_sync.log"
+SCRIPT_NAME=$(basename "$0")
+DEST="/storage/roms"
+
+log_message() {
+    echo "[$(date "+%Y-%m-%d %H:%M:%S")] [INFO] [${SCRIPT_NAME}] ${1}" >> ${LOG_FILE}
+}
+
+if [ ! -e "/storage/.config/rclone/rclone.conf" ]; then
+    echo "rclone is not configured. Use 'Set Up Cloud Remote' first."
+    exit 1
+fi
+
+[ -f /storage/.config/cloud_sync.conf ] && source /storage/.config/cloud_sync.conf
+
+REMOTENAME=$(rclone listremotes | head -1)
+if [ -z "${REMOTENAME}" ]; then
+    echo "No cloud remote configured."
+    exit 1
+fi
+
+ROOT="${REMOTENAME}${CONTENTPATH:+${CONTENTPATH}/}"
+
+case "${1}" in
+    --list)
+        # Top-level directories only; one per line, no trailing slash
+        rclone lsf --dirs-only "${ROOT}" 2>/dev/null | sed 's:/$::'
+        exit $?
+    ;;
+    --all)
+        DIRS=("")
+    ;;
+    "")
+        echo "Usage: ${SCRIPT_NAME} --list | --all | <dir> [<dir>...]"
+        exit 1
+    ;;
+    *)
+        DIRS=("$@")
+    ;;
+esac
+
+STATUS=0
+for DIR in "${DIRS[@]}"; do
+    SRC="${ROOT}${DIR}"
+    TARGET="${DEST}/${DIR}"
+    log_message "Content restore: ${SRC} -> ${TARGET}"
+    echo "Restoring ${DIR:-everything} from the cloud..."
+    rclone copy "${SRC}" "${TARGET}" \
+        --stats-one-line --stats 5s \
+        --log-file "${LOG_FILE}" --log-level INFO
+    RC=$?
+    if [ ${RC} -ne 0 ] && [ ${RC} -ne 9 ]; then
+        echo "Restore of ${DIR:-everything} failed (rclone exit ${RC})."
+        STATUS=${RC}
+    else
+        echo "Restored ${DIR:-everything}."
+    fi
+done
+
+exit ${STATUS}
