@@ -5,7 +5,7 @@
 
 PKG_NAME="rclone"
 PKG_VERSION="1.71.0"
-PKG_DEPENDS_TARGET="toolchain fuse rsync"
+PKG_DEPENDS_TARGET="toolchain fuse rsync qrencode"
 PKG_LONGDESC="rsync for cloud storage"
 PKG_TOOLCHAIN="manual"
 
@@ -38,6 +38,7 @@ makeinstall_target() {
   cp cloud_backup ${INSTALL}/usr/bin/
   cp cloud_restore ${INSTALL}/usr/bin/
   cp cloud_sync_helper ${INSTALL}/usr/bin/
+  cp cloud_setup ${INSTALL}/usr/bin/
   cp cloud_sync_cleanup_duplicates.sh ${INSTALL}/usr/bin/
   mkdir -p ${INSTALL}/usr/bin/scripts/game-end
   cp cloud_saves_gameend.sh ${INSTALL}/usr/bin/scripts/game-end/

@@ -1,0 +1,126 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+
+# cloud_setup - configure the rclone cloud remote from a phone or computer.
+#
+# Serves rclone's own web configuration GUI from the handheld and shows a
+# QR code pointing at it, so the remote can be set up without SSH. OAuth
+# providers additionally require the `rclone authorize` token paste the GUI
+# walks through (rclone's OAuth callback is fixed to localhost:53682, so a
+# phone browser cannot complete that hop directly - see
+# https://rclone.org/remote_setup/).
+
+. /etc/profile
+
+SCRIPT_NAME=$(basename "$0")
+LOG_FILE="/var/log/cloud_sync.log"
+RC_PORT=5572
+
+log_message() {
+    local message="$1"
+    local timestamp=$(date "+%Y-%m-%d %H:%M:%S")
+    echo "[${timestamp}] [INFO] [${SCRIPT_NAME}] ${message}" >> ${LOG_FILE}
+}
+
+# Wait for any confirm/cancel input: controller (evtest) or keyboard.
+wait_for_button() {
+    local input_device=""
+    for dev in /dev/input/event*; do
+        if [ -c "$dev" ]; then
+            local supports=$(udevadm info "$dev" 2>/dev/null | awk '/ID_INPUT_JOYSTICK=1/ {print "joystick"}')
+            if [ "$supports" = "joystick" ]; then
+                input_device="$dev"
+                break
+            fi
+        fi
+    done
+    if [ -n "$input_device" ]; then
+        evtest "$input_device" 2>/dev/null | grep -m 1 -E "BTN_(SOUTH|EAST|A|B|START).*value 1" >/dev/null
+    else
+        read -sn1 2>/dev/null
+    fi
+}
+
+cleanup() {
+    if [ -n "${RCD_PID}" ] && kill -0 "${RCD_PID}" 2>/dev/null; then
+        kill "${RCD_PID}" 2>/dev/null
+        wait "${RCD_PID}" 2>/dev/null
+    fi
+    log_message "Cloud setup web GUI stopped"
+}
+trap cleanup EXIT
+
+clear
+
+# Need a network address to serve the GUI on
+IP_ADDR=$(ip route get 1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}')
+if [ -z "${IP_ADDR}" ]; then
+    echo -e "\e[31mNo network connection detected.\e[0m"
+    echo "Connect to a network first, then try again."
+    echo
+    echo "Press any button to exit."
+    wait_for_button
+    exit 1
+fi
+
+# Short random password for this session only
+RC_PASS=$(tr -dc 'a-z0-9' </dev/urandom 2>/dev/null | head -c 8)
+[ -z "${RC_PASS}" ] && RC_PASS="rocknix${RANDOM}"
+RC_URL="http://${IP_ADDR}:${RC_PORT}"
+
+log_message "Starting rclone web config GUI on ${RC_URL}"
+
+# rclone downloads and caches the web GUI on first use
+rclone rcd \
+    --rc-web-gui \
+    --rc-web-gui-no-open-browser \
+    --rc-addr ":${RC_PORT}" \
+    --rc-user rocknix \
+    --rc-pass "${RC_PASS}" \
+    --log-file "${LOG_FILE}" \
+    --log-level INFO \
+    >/dev/null 2>&1 &
+RCD_PID=$!
+
+sleep 2
+if ! kill -0 "${RCD_PID}" 2>/dev/null; then
+    echo -e "\e[31mFailed to start the rclone configuration service.\e[0m"
+    echo "See ${LOG_FILE} for details. (First use needs internet access"
+    echo "to download rclone's web interface.)"
+    echo
+    echo "Press any button to exit."
+    wait_for_button
+    exit 1
+fi
+
+echo -e "\e[32m=> ${OS_NAME:-ROCKNIX} CLOUD SETUP\e[0m"
+echo
+echo "Scan the QR code (or open the address) on your phone or computer"
+echo "on the same network to set up your cloud remote:"
+echo
+qrencode -t ANSIUTF8 -m 2 "${RC_URL}"
+echo
+echo -e "  Address:  \e[36m${RC_URL}\e[0m"
+echo -e "  Username: \e[36mrocknix\e[0m"
+echo -e "  Password: \e[36m${RC_PASS}\e[0m"
+echo
+echo "In the web page: Configs > New Config, pick your provider and"
+echo "follow the steps. For providers that sign in with a browser"
+echo "(Google Drive, OneDrive, Dropbox...), install rclone on your"
+echo "computer and paste the token from: rclone authorize \"<provider>\""
+echo
+echo "Press any button here when you are done."
+
+wait_for_button
+
+echo
+if rclone listremotes 2>/dev/null | grep -q .; then
+    echo -e "\e[32mCloud remote configured: $(rclone listremotes | head -1)\e[0m"
+    log_message "Cloud setup finished; first remote: $(rclone listremotes | head -1)"
+else
+    echo -e "\e[33mNo cloud remote configured yet.\e[0m"
+    log_message "Cloud setup finished with no remotes configured"
+fi
+sleep 3
+exit 0
