@@ -35,6 +35,14 @@ restore saves/savestates/screenshots from the cloud onto a fresh handheld, and (
 resolution (below) is the long-term goal. ROM/BIOS distribution is **not** part of the
 gamesave sync flows; if it ever belongs anywhere, it's the system backup/restore domain.
 
+**Console-first (hard rule, 2026-07-25):** ROCKNIX is a handheld gaming OS. Product
+surfaces — UI labels, dialogs, script output, on-device help, public docs — must assume a
+player holding the handheld with, at most, a phone as the companion device. There is no
+browser on the device; never instruct users to "open a link" on it. QEMU/VMs are a QA
+vehicle only: no product-facing text may mention QEMU, VMs, port forwards, or emulator
+setups (that guidance belongs in dev docs/release notes). A computer may be referenced
+only where technically unavoidable (e.g. rclone's OAuth `authorize` step).
+
 **Preserve player progress above all.** The worst failure is losing progress someone made.
 Conflict handling must **not** default to recency — a newer file can hold *less* progress than
 an older one from another device. Default to **non-destructive** resolution (keep both copies,

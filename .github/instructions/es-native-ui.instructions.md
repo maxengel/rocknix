@@ -71,6 +71,10 @@ this file guides any work there.
 
 ## Anti-patterns (observed, avoid)
 
+- Developer/QA concepts in product text: no QEMU/VM/port-forward mentions, no
+  "open this link on the device" (there is no browser). Console-first: player +
+  handheld + phone companion is the only assumed environment.
+
 - Dialog text promising behavior the backend doesn't do (pre-P1 backup dialogs).
 - Dropping to a fullscreen CLI for things a `GuiSettings` page + headless backend can do
   natively — acceptable as parity stopgap, not as the end state (issue #15 L2).
