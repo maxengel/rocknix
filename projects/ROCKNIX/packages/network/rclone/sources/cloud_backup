@@ -14,12 +14,16 @@ START_TIME=$(date +%s)
 ASSUME_YES=0
 METHOD_OVERRIDE=""
 EXTRA_UPDATE=0
+SYSTEM_ONLY=0
+SAVES_ONLY=0
 for CLI_ARG in "$@"; do
     case "${CLI_ARG}" in
         --yes|-y) ASSUME_YES=1 ;;
         --method=sync|--method=copy) METHOD_OVERRIDE="${CLI_ARG#--method=}" ;;
         --method=*) echo "Ignoring invalid --method value: ${CLI_ARG#--method=}" ;;
         --update) EXTRA_UPDATE=1 ;;
+        --system-only) SYSTEM_ONLY=1 ;;
+        --saves-only) SAVES_ONLY=1 ;;
     esac
 done
 
@@ -306,6 +310,10 @@ load_config() {
     log_message "Options array has ${#RCLONE_OPTS_ARRAY[@]} elements" "false"
 
     # Apply command-line overrides
+    if [ "${SYSTEM_ONLY}" -eq 1 ]; then
+        BACKUPFILE_BACKUP_OPTION="yes"
+        log_message "System-backup phase forced on by --system-only" "false"
+    fi
     if [ -n "${METHOD_OVERRIDE}" ]; then
         BACKUPMETHOD="${METHOD_OVERRIDE}"
         log_message "Transfer method overridden from command line: ${METHOD_OVERRIDE}" "false"
@@ -565,16 +573,26 @@ main() {
     
     # Execute Part 1: Game saves backup
     # This performs the primary save file backup operation using the configured method
-    backup_game_saves
-    BACKUP_STATUS=$?
+    if [ "${SYSTEM_ONLY}" -eq 1 ]; then
+        log_message "Game saves backup skipped (--system-only)" "true"
+        BACKUP_STATUS=0
+    else
+        backup_game_saves
+        BACKUP_STATUS=$?
+    fi
     
     # Add a pause for better visual separation between operations
     sleep 2
     
     # Execute Part 2: System backup file transfer
     # This backs up system backup files (zip files) if enabled in configuration
-    backup_system_files
-    BACKUP_SYSTEM_STATUS=$?
+    if [ "${SAVES_ONLY}" -eq 1 ]; then
+        log_message "System backup file transfer skipped (--saves-only)" "true"
+        BACKUP_SYSTEM_STATUS=0
+    else
+        backup_system_files
+        BACKUP_SYSTEM_STATUS=$?
+    fi
     
     # Add a pause before summary
     sleep 2

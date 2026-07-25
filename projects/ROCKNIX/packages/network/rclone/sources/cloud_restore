@@ -14,12 +14,16 @@ START_TIME=$(date +%s)
 ASSUME_YES=0
 METHOD_OVERRIDE=""
 EXTRA_UPDATE=0
+SYSTEM_ONLY=0
+SAVES_ONLY=0
 for CLI_ARG in "$@"; do
     case "${CLI_ARG}" in
         --yes|-y) ASSUME_YES=1 ;;
         --method=sync|--method=copy) METHOD_OVERRIDE="${CLI_ARG#--method=}" ;;
         --method=*) echo "Ignoring invalid --method value: ${CLI_ARG#--method=}" ;;
         --update) EXTRA_UPDATE=1 ;;
+        --system-only) SYSTEM_ONLY=1 ;;
+        --saves-only) SAVES_ONLY=1 ;;
     esac
 done
 
@@ -383,6 +387,10 @@ load_config() {
     log_message "Options array has ${#RCLONE_OPTS_ARRAY[@]} elements" "false"
 
     # Apply command-line overrides
+    if [ "${SYSTEM_ONLY}" -eq 1 ]; then
+        BACKUPFILE_RESTORE_OPTION="yes"
+        log_message "System-backup phase forced on by --system-only" "false"
+    fi
     if [ -n "${METHOD_OVERRIDE}" ]; then
         RESTOREMETHOD="${METHOD_OVERRIDE}"
         log_message "Transfer method overridden from command line: ${METHOD_OVERRIDE}" "false"
@@ -613,8 +621,13 @@ main() {
     
     # Execute Part 2: System restore
     # This restores system backup files (zip files) if enabled in configuration
-    restore_system_files
-    RESTORE_SYSTEM_STATUS=$?
+    if [ "${SAVES_ONLY}" -eq 1 ]; then
+        log_message "System backup file restore skipped (--saves-only)" "true"
+        RESTORE_SYSTEM_STATUS=0
+    else
+        restore_system_files
+        RESTORE_SYSTEM_STATUS=$?
+    fi
     
     # Create empty missing system directories if removed during restore
     # Only necessary when using sync method which can delete files
