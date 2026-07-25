@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2020-present Shanti Gilbert (https://github.com/shantigilbert)
 # Copyright (C) 2023 JELOS (https://github.com/JustEnoughLinuxOS)
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 . /etc/profile
 
@@ -16,35 +17,53 @@
 # )
 
 BACKUPFOLDER="/storage/roms/backup"
+ARCHIVEFOLDER="${BACKUPFOLDER}/archive"
 BACKUPFILE="${BACKUPFOLDER}/${OS_NAME}_BACKUP.zip"
-mkdir -p ${BACKUPFOLDER}
+ARCHIVE_KEEP=3
+ESPATH="/storage/.config/emulationstation"
+mkdir -p "${BACKUPFOLDER}"
 
+fail() {
+    echo -e "\e[31m${1}\e[0m"
+    logger -t backuptool "${1}"
+    sleep 5
+    exit 1
+}
+
+note() {
+    echo -e "\e[32m${1}\e[0m"
+    logger -t backuptool "${1}"
+}
+
+# es_systems.cfg / es_features.cfg are OS-managed symlinks into /usr/config;
+# backing up their content and restoring it as regular files would freeze the
+# systems list at the backup-time version, so they are deliberately excluded.
 DEFAULT=(
     /storage/.config/fancontrol.conf
     /storage/.config/backuptool.conf
-    /storage/.cache/bluetooth/*
     /storage/.config/system/configs/system.cfg
     /storage/.config/ppsspp/*
     /storage/.config/retroarch/*
     /storage/.config/moonlight/*
     /storage/.config/game/*
-    /storage/.emulationstation/es_*.cfg
-    /storage/.emulationstation/scripts/*
-    /storage/.emulationstation/themesettings/*
-    $(find /storage/.emulationstation/themes/* -type d -maxdepth 0 -not -path "*es-theme-art-book-next" -not -path "*system-theme")
+    ${ESPATH}/es_settings.cfg
+    ${ESPATH}/es_input.cfg
+    ${ESPATH}/scripts/*
+    ${ESPATH}/themesettings/*
+    ${ESPATH}/collections/*
+    $(find ${ESPATH}/themes/* -type d -maxdepth 0 -not -path "*es-theme-art-book-next" -not -path "*system-theme" 2>/dev/null)
 )
 
 if [ -e "/storage/.config/backuptool.conf" ]
 then
-    source /storage/.config/backuptool.conf
-    if [ ! $? = 0 ]
+    if source /storage/.config/backuptool.conf
     then
+        COMPRESSLOCATIONS=(${LOCATIONS[@]})
+    else
         WARN="Error loading custom backuptool configs. Using defaults."
-        ${DEBUG} && echo "${WARN}"
+        echo "${WARN}"
         logger -t backuptool "${WARN}"
         COMPRESSLOCATIONS=(${DEFAULT[@]})
-    else
-        COMPRESSLOCATIONS=(${LOCATIONS[@]})
     fi
 else
     COMPRESSLOCATIONS=(${DEFAULT[@]})
@@ -52,17 +71,86 @@ fi
 
 case "${1}" in
     "restore")
-        unzip -o ${BACKUPFILE} -d /
+        if [ ! -f "${BACKUPFILE}" ]
+        then
+            fail "No backup found at ${BACKUPFILE}. Nothing to restore."
+        fi
+
+        note "Verifying backup archive..."
+        if ! unzip -t "${BACKUPFILE}" >/dev/null 2>&1
+        then
+            fail "Backup archive is damaged (${BACKUPFILE}). Restore aborted; nothing was changed."
+        fi
+
+        note "Restoring configuration from ${BACKUPFILE}..."
+        if ! unzip -o "${BACKUPFILE}" -d / >/dev/null
+        then
+            fail "Restore reported errors. Check 'logger' output; the device will NOT reboot."
+        fi
+
+        # Passwords and keys are stripped at backup time (see below); wifi and
+        # similar credentials must be re-entered after a restore.
+        note "Restore complete. Wifi/account passwords are not part of backups and must be re-entered."
+        note "Rebooting in 5 seconds so the restored configuration takes effect cleanly..."
+        sync
+        sleep 5
+        systemctl reboot
     ;;
     "backup")
-        if [ -f ${BACKUPFILE} ]
+        # Rotate the previous backup into an archive folder that the cloud
+        # allowlist (backup/*.zip) does not match, and keep only the newest few.
+        if [ -f "${BACKUPFILE}" ]
         then
-            TODAY=`date +%y-%m-%d_%H_%M_%S`
-            ARCHIVEFILENAME="ARCHIVED_${OS_NAME}_BACKUP-${TODAY}.zip"
-            mv ${BACKUPFILE} "${BACKUPFOLDER}/${ARCHIVEFILENAME}"
+            mkdir -p "${ARCHIVEFOLDER}"
+            TODAY=$(date +%y-%m-%d_%H_%M_%S)
+            mv "${BACKUPFILE}" "${ARCHIVEFOLDER}/ARCHIVED_${OS_NAME}_BACKUP-${TODAY}.zip"
+            ls -1t "${ARCHIVEFOLDER}"/ARCHIVED_*.zip 2>/dev/null | tail -n +$((ARCHIVE_KEEP + 1)) | while read -r OLD
+            do
+                rm -f "${OLD}"
+            done
         fi
-        [ -f "${BACKUPFILE}" ] && rm "${BACKUPFILE}"
-        zip -9 -r ${BACKUPFILE} \
-        ${COMPRESSLOCATIONS[@]}
+
+        note "Backing up configuration to ${BACKUPFILE}..."
+        if ! zip -9 -r "${BACKUPFILE}" ${COMPRESSLOCATIONS[@]}
+        then
+            rm -f "${BACKUPFILE}"
+            fail "Backup failed; no backup file was written."
+        fi
+
+        # Strip secrets from the copy of system.cfg inside the archive: wifi
+        # keys, the root password, and account passwords/tokens must never
+        # leave the device (the backup zip can be synced to the cloud).
+        SYSCFG="/storage/.config/system/configs/system.cfg"
+        if [ -f "${SYSCFG}" ]
+        then
+            SANITIZED_DIR=$(mktemp -d)
+            mkdir -p "${SANITIZED_DIR}/storage/.config/system/configs"
+            sed -E '/^[^#]*\.(key|password|token)=/d' "${SYSCFG}" \
+                > "${SANITIZED_DIR}/storage/.config/system/configs/system.cfg"
+            (cd "${SANITIZED_DIR}" && zip -9 "${BACKUPFILE}" storage/.config/system/configs/system.cfg >/dev/null)
+            rm -rf "${SANITIZED_DIR}"
+        fi
+
+        # es_settings.cfg holds the ScreenScraper password; strip it from the
+        # archived copy the same way.
+        ESCFG="${ESPATH}/es_settings.cfg"
+        if [ -f "${ESCFG}" ]
+        then
+            SANITIZED_DIR=$(mktemp -d)
+            mkdir -p "${SANITIZED_DIR}/storage/.config/emulationstation"
+            grep -v 'name="ScreenScraperPass"' "${ESCFG}" \
+                > "${SANITIZED_DIR}/storage/.config/emulationstation/es_settings.cfg"
+            (cd "${SANITIZED_DIR}" && zip -9 "${BACKUPFILE}" storage/.config/emulationstation/es_settings.cfg >/dev/null)
+            rm -rf "${SANITIZED_DIR}"
+        fi
+
+        sync
+        note "Backup complete: ${BACKUPFILE}"
+        note "Copy it somewhere safe, or enable the system backup option in cloud sync."
+        sleep 3
+    ;;
+    *)
+        echo "Usage: backuptool {backup|restore}"
+        exit 1
     ;;
 esac
