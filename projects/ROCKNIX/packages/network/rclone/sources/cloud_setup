@@ -109,28 +109,20 @@ fi
 
 echo -e "\e[32m=> ${OS_NAME:-ROCKNIX} CLOUD SETUP\e[0m"
 echo
-echo "Scan the QR code with your phone, or open the address in a browser"
-echo "on your computer (same network), to set up your cloud remote."
-echo "The QR code signs you in automatically."
+echo "Scan the QR code with your phone to set up your cloud remote."
+echo "The QR code signs you in automatically. (Any device with a browser"
+echo "on your network can also open the address below.)"
 echo
 qrencode -t ANSIUTF8 -m 2 "${QR_URL}"
 echo
 echo -e "  Address:  \e[36m${RC_URL}\e[0m"
-case "${IP_ADDR}" in
-    10.0.2.*)
-        echo
-        echo -e "\e[33mVM with user-mode networking detected:\e[0m this address is not"
-        echo "reachable from other devices. From the host computer, open:"
-        echo -e "  \e[36mhttp://127.0.0.1:15572\e[0m  (QEMU port forward)"
-    ;;
-esac
 echo -e "  Username: \e[36mrocknix\e[0m"
 echo -e "  Password: \e[36m${RC_PASS}\e[0m"
 echo
-echo "In the web page: Configs > New Config, pick your provider and"
-echo "follow the steps. For providers that sign in with a browser"
-echo "(Google Drive, OneDrive, Dropbox...), install rclone on your"
-echo "computer and paste the token from: rclone authorize \"<provider>\""
+echo "On your phone: Configs > New Config, pick your provider and follow"
+echo "the steps. Some providers (Google Drive, OneDrive, Dropbox...) ask"
+echo "for a token; that step needs rclone on a computer:"
+echo "  rclone authorize \"<provider>\""
 echo
 echo "Press any button here when you are done."
 
