@@ -116,6 +116,14 @@ echo
 qrencode -t ANSIUTF8 -m 2 "${QR_URL}"
 echo
 echo -e "  Address:  \e[36m${RC_URL}\e[0m"
+case "${IP_ADDR}" in
+    10.0.2.*)
+        echo
+        echo -e "\e[33mVM with user-mode networking detected:\e[0m this address is not"
+        echo "reachable from other devices. From the host computer, open:"
+        echo -e "  \e[36mhttp://127.0.0.1:15572\e[0m  (QEMU port forward)"
+    ;;
+esac
 echo -e "  Username: \e[36mrocknix\e[0m"
 echo -e "  Password: \e[36m${RC_PASS}\e[0m"
 echo
