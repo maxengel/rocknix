@@ -7,6 +7,22 @@ SCRIPT_NAME=$(basename "$0")
 LOG_FILE="/var/log/cloud_sync.log"
 START_TIME=$(date +%s)
 
+# Non-interactive support for hooks and the ES menu:
+#   --yes / -y   answer prompts automatically (headless mode)
+#   --method=X   override the configured transfer method (sync or copy)
+#   --update     add rclone --update (skip files newer on the destination)
+ASSUME_YES=0
+METHOD_OVERRIDE=""
+EXTRA_UPDATE=0
+for CLI_ARG in "$@"; do
+    case "${CLI_ARG}" in
+        --yes|-y) ASSUME_YES=1 ;;
+        --method=sync|--method=copy) METHOD_OVERRIDE="${CLI_ARG#--method=}" ;;
+        --method=*) echo "Ignoring invalid --method value: ${CLI_ARG#--method=}" ;;
+        --update) EXTRA_UPDATE=1 ;;
+    esac
+done
+
 # Logging function that supports different severity levels and optional console output
 # Parameters:
 #   $1: Message text
@@ -312,8 +328,12 @@ load_config() {
         done
         dupe_message="${dupe_message}\n\nWould you like to automatically clean up duplicates?"
         
-        controller_confirm "$dupe_message" 0
-        local cleanup_choice=$?
+        if [ "${ASSUME_YES}" -eq 1 ]; then
+            local cleanup_choice=0
+        else
+            controller_confirm "$dupe_message" 0
+            local cleanup_choice=$?
+        fi
         log_message "Cleanup choice returned: $cleanup_choice" "false"
         
         if [ $cleanup_choice -eq 0 ]; then
@@ -361,6 +381,16 @@ load_config() {
         RCLONE_OPTS_ARRAY+=("$opt")
     done
     log_message "Options array has ${#RCLONE_OPTS_ARRAY[@]} elements" "false"
+
+    # Apply command-line overrides
+    if [ -n "${METHOD_OVERRIDE}" ]; then
+        RESTOREMETHOD="${METHOD_OVERRIDE}"
+        log_message "Transfer method overridden from command line: ${METHOD_OVERRIDE}" "false"
+    fi
+    if [ "${EXTRA_UPDATE}" -eq 1 ]; then
+        RCLONE_OPTS_ARRAY+=("--update")
+        log_message "Added --update from command line" "false"
+    fi
     log_message "Configuration loaded successfully" "false"
 }
 
