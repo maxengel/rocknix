@@ -76,6 +76,23 @@ while read -r local_ref local_sha _remote_ref _remote_sha; do
     } >&2
     status=1
   fi
+
+  # Console-first content guard: product surfaces (user-visible script text in
+  # the cloud/backup tooling) must never mention QA/dev environments. QEMU/VM
+  # guidance belongs in dev docs and release notes only.
+  content_hits="$(git diff "$base_ref" "$local_sha" -- \
+      'projects/ROCKNIX/packages/network/rclone/sources/' \
+      'projects/ROCKNIX/packages/rocknix/sources/scripts/' \
+    | grep -E '^\+' | grep -inE 'qemu|virtual machine|user-mode network|port forward|127\.0\.0\.1:15' || true)"
+  if [ -n "$content_hits" ]; then
+    branch="${local_ref#refs/heads/}"
+    {
+      echo "✖ pre-push blocked: ${branch} adds dev/VM wording to product surfaces (console-first rule):"
+      printf '%s\n' "$content_hits" | sed 's/^/    /'
+      echo "  Move QA guidance to dev docs or release notes; product text is handheld+phone only."
+    } >&2
+    status=1
+  fi
 done
 
 exit $status
