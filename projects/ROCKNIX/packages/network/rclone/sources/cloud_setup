@@ -83,7 +83,20 @@ rclone rcd \
     >/dev/null 2>&1 &
 RCD_PID=$!
 
-sleep 2
+# rclone logs a login_token URL for its GUI; harvest the token so the QR
+# code logs the visitor straight in (works for phones and computers alike).
+LOGIN_TOKEN=""
+for _try in $(seq 1 10); do
+    LOGIN_TOKEN=$(grep -o 'login_token=[A-Za-z0-9_%=-]*' "${LOG_FILE}" 2>/dev/null | tail -1 | cut -d= -f2-)
+    [ -n "${LOGIN_TOKEN}" ] && break
+    sleep 1
+done
+if [ -n "${LOGIN_TOKEN}" ]; then
+    QR_URL="${RC_URL}/?login_token=${LOGIN_TOKEN}"
+else
+    QR_URL="${RC_URL}"
+fi
+
 if ! kill -0 "${RCD_PID}" 2>/dev/null; then
     echo -e "\e[31mFailed to start the rclone configuration service.\e[0m"
     echo "See ${LOG_FILE} for details. (First use needs internet access"
@@ -96,10 +109,11 @@ fi
 
 echo -e "\e[32m=> ${OS_NAME:-ROCKNIX} CLOUD SETUP\e[0m"
 echo
-echo "Scan the QR code (or open the address) on your phone or computer"
-echo "on the same network to set up your cloud remote:"
+echo "Scan the QR code with your phone, or open the address in a browser"
+echo "on your computer (same network), to set up your cloud remote."
+echo "The QR code signs you in automatically."
 echo
-qrencode -t ANSIUTF8 -m 2 "${RC_URL}"
+qrencode -t ANSIUTF8 -m 2 "${QR_URL}"
 echo
 echo -e "  Address:  \e[36m${RC_URL}\e[0m"
 echo -e "  Username: \e[36mrocknix\e[0m"
