@@ -75,6 +75,11 @@ git config core.hooksPath .githooks
 
 Only `pr/*` branches are guarded; pushing `next` or `feature/*` is unaffected.
 
+The guard also enforces the **console-first content rule** on `pr/*` branches: added
+lines in product-surface scripts (`projects/ROCKNIX/packages/network/rclone/sources/`,
+`projects/ROCKNIX/packages/rocknix/sources/scripts/`) must not mention QEMU/VMs,
+user-mode networking, port forwards, or loopback QA addresses.
+
 ## When to merge up
 
 - One self-contained change per PR, scoped like the commit convention
