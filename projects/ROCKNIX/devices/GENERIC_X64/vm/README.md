@@ -35,11 +35,13 @@ creates its writable UEFI variable store on first launch.
 
 ## Networking
 
-The UTM bundle uses **Bridged** networking: the VM joins your LAN with its own
-address, exactly like a real handheld on wifi — QR codes, phone access, and
-SSH behave verbatim. If your network blocks bridging (some corporate/guest
-wifi), switch the VM's network mode to Shared in UTM; guest services then stay
-reachable through the host (cloud setup GUI on host port 15572).
+The UTM bundle uses **Shared (NAT)** networking by default — it boots
+everywhere, and guest services stay reachable through the host (cloud setup
+GUI on host port 15572; phones can use `http://<mac-ip>:15572`). For full
+hardware parity (QR codes scanning verbatim, the VM joining your LAN with its
+own address), switch the VM's network mode to **Bridged** in UTM's settings —
+one click, but macOS vmnet bridging can fail on some Wi-Fi networks, which is
+why it is not the default.
 
 The Linux launcher uses QEMU user-mode networking: service forwards (cloud
 setup GUI, host port 15572) are reachable from the LAN via the host's IP;
