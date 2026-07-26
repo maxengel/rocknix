@@ -1,0 +1,23 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+
+# QEMU dev builds: the launcher advertises the host machine's LAN address for
+# forwarded guest services through fw_cfg (opt/org.rocknix.cloud_url). Publish
+# it as the generic cloud-setup advertised URL so the on-screen QR code points
+# somewhere a phone can actually reach during testing.
+
+FWCFG="/sys/firmware/qemu_fw_cfg/by_name/opt/org.rocknix.cloud_url/raw"
+TARGET="/storage/.config/cloud_setup_url"
+
+if [ -r "${FWCFG}" ]; then
+  URL=$(tr -d '\0' < "${FWCFG}")
+  case "${URL}" in
+    http://*|https://*)
+      echo "${URL}" > "${TARGET}"
+    ;;
+  esac
+else
+  # Not running under the dev launcher: never leave a stale override behind.
+  rm -f "${TARGET}"
+fi

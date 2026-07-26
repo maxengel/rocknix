@@ -17,6 +17,19 @@ from pathlib import Path
 
 
 VM_DIR = Path(__file__).resolve().parent
+
+def host_lan_ip():
+    """Best-effort LAN address of this host (used to advertise forwarded
+    guest services, e.g. the cloud setup web GUI, to phones on the LAN)."""
+    import socket
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("8.8.8.8", 80))
+            return probe.getsockname()[0]
+    except OSError:
+        return None
+
 PROFILE_PATH = VM_DIR / "profile.json"
 
 
@@ -177,6 +190,14 @@ def qemu_command(profile, args):
         sound["codec"],
         "-monitor",
         f"unix:{monitor},server,nowait",
+        *(
+            [
+                "-fw_cfg",
+                f"name=opt/org.rocknix.cloud_url,string=http://{advert_ip}:15572",
+            ]
+            if (advert_ip := host_lan_ip()) and args.net != "bridged"
+            else []
+        ),
         "-serial",
         "stdio",
     ]
