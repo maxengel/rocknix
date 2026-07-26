@@ -57,3 +57,9 @@ awaiting it forever. Set the bridged interface explicitly (usually `en0`),
 update UTM, and if it still hangs your Mac/network refuses vmnet bridging -
 use the default NAT mode and open `http://<mac-ip>:15572` from the phone
 instead.
+
+Tester-confirmed workaround: in UTM's network settings, selecting the
+**Default (private)** host network instead of a physical interface lets the
+VM start reliably. Note that this is vmnet's host/shared network, not a true
+LAN bridge - check the address on the ROCKNIX setup screen: if it is not in
+your LAN's subnet, phones still need `http://<mac-ip>:15572`.
