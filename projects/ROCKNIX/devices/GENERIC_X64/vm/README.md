@@ -47,3 +47,13 @@ The Linux launcher uses QEMU user-mode networking: service forwards (cloud
 setup GUI, host port 15572) are reachable from the LAN via the host's IP;
 SSH stays on 127.0.0.1:10022 unless `--net lan` is given; `--net bridged`
 joins the LAN directly if the host has a bridge configured.
+
+### Troubleshooting: bridged mode hangs forever (UTM)
+
+If switching the VM to Bridged makes it spin indefinitely, check the unified
+log for `SWIFT TASK CONTINUATION MISUSE: start(launcher:interface:)` from UTM:
+that means macOS's vmnet layer never finished creating the bridge and UTM is
+awaiting it forever. Set the bridged interface explicitly (usually `en0`),
+update UTM, and if it still hangs your Mac/network refuses vmnet bridging -
+use the default NAT mode and open `http://<mac-ip>:15572` from the phone
+instead.
