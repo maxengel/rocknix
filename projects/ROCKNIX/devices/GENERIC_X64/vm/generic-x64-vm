@@ -239,27 +239,32 @@ def utm_config(profile, image_name):
                 "Hardware": network["device"],
                 "IsolateFromHost": False,
                 "MacAddress": network["mac_address"],
+                # Bridged: the guest joins the LAN with its own address, like
+                # real hardware (QR codes, phone access, SSH all work
+                # verbatim). Port forwards only apply to emulated/shared NAT
+                # modes, where services stay reachable through the host.
                 "Mode": network["mode"],
-                "PortForward": [
-                    {
-                        "GuestPort": network["ssh_guest_port"],
-                        "HostAddress": "127.0.0.1",
-                        "HostPort": network["ssh_host_port"],
-                        "Protocol": "TCP",
-                    }
-                ]
-                + [
-                    # Extra service forwards (e.g. the cloud setup web GUI)
-                    # bind on all host interfaces so a phone on the same
-                    # network reaches the guest via the host's LAN address.
-                    {
-                        "GuestPort": fwd["guest_port"],
-                        "HostAddress": "0.0.0.0",
-                        "HostPort": fwd["host_port"],
-                        "Protocol": "TCP",
-                    }
-                    for fwd in network.get("extra_forwards", [])
-                ],
+                "PortForward": (
+                    []
+                    if network["mode"] == "Bridged"
+                    else [
+                        {
+                            "GuestPort": network["ssh_guest_port"],
+                            "HostAddress": "127.0.0.1",
+                            "HostPort": network["ssh_host_port"],
+                            "Protocol": "TCP",
+                        }
+                    ]
+                    + [
+                        {
+                            "GuestPort": fwd["guest_port"],
+                            "HostAddress": "0.0.0.0",
+                            "HostPort": fwd["host_port"],
+                            "Protocol": "TCP",
+                        }
+                        for fwd in network.get("extra_forwards", [])
+                    ]
+                ),
             }
         ],
         "QEMU": {

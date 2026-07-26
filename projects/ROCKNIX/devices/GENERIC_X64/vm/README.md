@@ -32,3 +32,16 @@ projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm utm \
 
 Unzip the result on macOS and double-click `ROCKNIX-GENERIC_X64.utm`. UTM
 creates its writable UEFI variable store on first launch.
+
+## Networking
+
+The UTM bundle uses **Bridged** networking: the VM joins your LAN with its own
+address, exactly like a real handheld on wifi — QR codes, phone access, and
+SSH behave verbatim. If your network blocks bridging (some corporate/guest
+wifi), switch the VM's network mode to Shared in UTM; guest services then stay
+reachable through the host (cloud setup GUI on host port 15572).
+
+The Linux launcher uses QEMU user-mode networking: service forwards (cloud
+setup GUI, host port 15572) are reachable from the LAN via the host's IP;
+SSH stays on 127.0.0.1:10022 unless `--net lan` is given; `--net bridged`
+joins the LAN directly if the host has a bridge configured.
