@@ -104,10 +104,13 @@ def qemu_command(profile, args):
 
     monitor = Path(args.monitor).resolve()
 
-    # 'lan' keeps user-mode networking but binds the port forwards on all host
-    # interfaces, so phones on the LAN can reach the guest services through
-    # the host's address (e.g. http://<host-ip>:15572) without a bridge.
-    fwd_bind = "0.0.0.0" if args.net == "lan" else "127.0.0.1"
+    # Service forwards (e.g. the cloud setup web GUI) always bind on all host
+    # interfaces so phones on the LAN reach the guest via the host's address
+    # (e.g. http://<host-ip>:15572) with no extra flags; those services carry
+    # their own per-session credentials. SSH keeps a loopback bind unless
+    # --net lan is given (the image ships a well-known root password).
+    ssh_bind = "0.0.0.0" if args.net == "lan" else "127.0.0.1"
+    svc_bind = "0.0.0.0"
     monitor.unlink(missing_ok=True)
 
     command = [
@@ -151,10 +154,10 @@ def qemu_command(profile, args):
             if args.net == "bridged"
             else (
                 "user,id=net0,"
-                f"hostfwd=tcp:{fwd_bind}:{network['ssh_host_port']}-:"
+                f"hostfwd=tcp:{ssh_bind}:{network['ssh_host_port']}-:"
                 f"{network['ssh_guest_port']}"
                 + "".join(
-                    f",hostfwd=tcp:{fwd_bind}:{fwd['host_port']}-:{fwd['guest_port']}"
+                    f",hostfwd=tcp:{svc_bind}:{fwd['host_port']}-:{fwd['guest_port']}"
                     for fwd in network.get("extra_forwards", [])
                 )
             )
@@ -244,6 +247,18 @@ def utm_config(profile, image_name):
                         "HostPort": network["ssh_host_port"],
                         "Protocol": "TCP",
                     }
+                ]
+                + [
+                    # Extra service forwards (e.g. the cloud setup web GUI)
+                    # bind on all host interfaces so a phone on the same
+                    # network reaches the guest via the host's LAN address.
+                    {
+                        "GuestPort": fwd["guest_port"],
+                        "HostAddress": "0.0.0.0",
+                        "HostPort": fwd["host_port"],
+                        "Protocol": "TCP",
+                    }
+                    for fwd in network.get("extra_forwards", [])
                 ],
             }
         ],
@@ -336,11 +351,11 @@ def add_qemu_options(parser):
         choices=["user", "lan", "bridged"],
         default="user",
         help=(
-            "networking: 'user' (default; forwards bound to 127.0.0.1), "
-            "'lan' (user-mode with forwards bound on all host interfaces, so "
-            "phones can reach guest services via the host's LAN IP - no root "
-            "needed), or 'bridged' (guest joins the LAN directly; needs a "
-            "host bridge + qemu-bridge-helper allow rule)"
+            "networking: 'user' (default; service forwards reachable from "
+            "the LAN via the host's IP, SSH on loopback only), 'lan' (also "
+            "exposes the SSH forward on the LAN), or 'bridged' (guest joins "
+            "the LAN directly; needs a host bridge + qemu-bridge-helper "
+            "allow rule)"
         ),
     )
     parser.add_argument("--bridge", default="br0", help="bridge name for --net bridged (default: br0)")
