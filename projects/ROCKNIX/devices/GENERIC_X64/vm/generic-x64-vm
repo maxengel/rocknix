@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 import zipfile
 from pathlib import Path
 
@@ -227,7 +228,10 @@ def utm_config(profile, image_name):
             "IconCustom": False,
             "Name": profile["name"],
             "Notes": notes,
-            "UUID": profile["uuid"],
+            # Freshly generated per bundle: UTM identifies VMs by UUID, and
+            # identical UUIDs across downloaded revisions make UTM cross-wire
+            # library entries (manifesting as efi_vars.fd lock errors).
+            "UUID": str(uuid.uuid4()).upper(),
         },
         "Input": {
             "MaximumUsbShare": input_config["maximum_usb_share"],
@@ -238,7 +242,10 @@ def utm_config(profile, image_name):
             {
                 "Hardware": network["device"],
                 "IsolateFromHost": False,
-                "MacAddress": network["mac_address"],
+                # Random per bundle (QEMU OUI): bridged VMs join the LAN,
+                # and duplicate MACs across copies would collide.
+                "MacAddress": "52:54:00:%02X:%02X:%02X"
+                % tuple(os.urandom(3)),
                 # Bridged: the guest joins the LAN with its own address, like
                 # real hardware (QR codes, phone access, SSH all work
                 # verbatim). Port forwards only apply to emulated/shared NAT
@@ -328,7 +335,11 @@ def build_utm(profile, args):
 
     output = Path(args.output).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
-    bundle_name = "ROCKNIX-GENERIC_X64.utm"
+    bundle_name = output.name
+    for suffix in (".zip", ".utm"):
+        if bundle_name.endswith(suffix):
+            bundle_name = bundle_name[: -len(suffix)]
+    bundle_name += ".utm"
     image_name = "ROCKNIX-GENERIC_X64.qcow2"
     config = utm_config(profile, image_name)
 
