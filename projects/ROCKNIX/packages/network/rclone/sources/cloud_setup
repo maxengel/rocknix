@@ -91,6 +91,15 @@ for _try in $(seq 1 10); do
     [ -n "${LOGIN_TOKEN}" ] && break
     sleep 1
 done
+# Optional advertised-address override: when the device is reached through a
+# gateway that remaps its address (development setups, tunnels, proxies), a
+# URL placed in this file is shown and encoded instead of the local address.
+ADVERTISE_FILE="/storage/.config/cloud_setup_url"
+if [ -s "${ADVERTISE_FILE}" ]; then
+    RC_URL=$(head -n1 "${ADVERTISE_FILE}")
+    log_message "Using advertised address override: ${RC_URL}"
+fi
+
 if [ -n "${LOGIN_TOKEN}" ]; then
     QR_URL="${RC_URL}/?login_token=${LOGIN_TOKEN}"
 else
