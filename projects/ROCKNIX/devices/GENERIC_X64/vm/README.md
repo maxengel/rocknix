@@ -62,4 +62,7 @@ Tester-confirmed workaround: in UTM's network settings, selecting the
 **Default (private)** host network instead of a physical interface lets the
 VM start reliably. Note that this is vmnet's host/shared network, not a true
 LAN bridge - check the address on the ROCKNIX setup screen: if it is not in
-your LAN's subnet, phones still need `http://<mac-ip>:15572`.
+your LAN's subnet, phones still need `http://<mac-ip>:15572` - and note that
+UTM only applies port forwards in **Emulated VLAN** mode (the shipped
+default), not in the vmnet host-network modes. Bridged confirmed broken on
+one test Mac on both UTM 4.7.5 stable and the current beta.
