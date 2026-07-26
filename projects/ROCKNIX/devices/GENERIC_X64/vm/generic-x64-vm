@@ -282,7 +282,9 @@ def utm_config(profile, image_name):
                 f"virtio-blk-pci.physical_block_size={disk['physical_block_size']}",
             ],
             "BalloonDevice": profile["balloon"],
-            "DebugLog": False,
+            # QA artifact: keep QEMU debug logging on so boot failures leave
+            # Data/debug.log inside the bundle for triage.
+            "DebugLog": True,
             "Hypervisor": False,
             "PS2Controller": False,
             "RNGDevice": profile["rng"],
