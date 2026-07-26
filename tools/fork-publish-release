@@ -99,13 +99,6 @@ case "${DEVICE}" in
     rm -f "${TMP_IMG}"
     ( cd target && sha256sum "${BASE}.qcow2" > "${BASE}.qcow2.sha256" )
     ASSETS+=("${QCOW2}" "${QCOW2}.sha256")
-
-    # Ship the canonical launcher + profile so release consumers can boot the
-    # qcow2 with correct firmware/disk/network settings (including the
-    # LAN-reachable cloud-setup forward) without cloning the repo.
-    cp "${VM_TOOL}" target/generic-x64-vm
-    cp "${VM_PROFILE}" target/profile.json
-    ASSETS+=(target/generic-x64-vm target/profile.json)
     ;;
 esac
 
