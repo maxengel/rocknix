@@ -103,6 +103,11 @@ def qemu_command(profile, args):
         accel = "kvm" if os.access("/dev/kvm", os.R_OK | os.W_OK) else "tcg,thread=multi"
 
     monitor = Path(args.monitor).resolve()
+
+    # 'lan' keeps user-mode networking but binds the port forwards on all host
+    # interfaces, so phones on the LAN can reach the guest services through
+    # the host's address (e.g. http://<host-ip>:15572) without a bridge.
+    fwd_bind = "0.0.0.0" if args.net == "lan" else "127.0.0.1"
     monitor.unlink(missing_ok=True)
 
     command = [
@@ -146,10 +151,10 @@ def qemu_command(profile, args):
             if args.net == "bridged"
             else (
                 "user,id=net0,"
-                f"hostfwd=tcp:127.0.0.1:{network['ssh_host_port']}-:"
+                f"hostfwd=tcp:{fwd_bind}:{network['ssh_host_port']}-:"
                 f"{network['ssh_guest_port']}"
                 + "".join(
-                    f",hostfwd=tcp:127.0.0.1:{fwd['host_port']}-:{fwd['guest_port']}"
+                    f",hostfwd=tcp:{fwd_bind}:{fwd['host_port']}-:{fwd['guest_port']}"
                     for fwd in network.get("extra_forwards", [])
                 )
             )
@@ -328,12 +333,14 @@ def add_qemu_options(parser):
     parser.add_argument("--accel", default="auto", help="QEMU accelerator (default: auto)")
     parser.add_argument(
         "--net",
-        choices=["user", "bridged"],
+        choices=["user", "lan", "bridged"],
         default="user",
         help=(
-            "networking: 'user' (default; host-only with port forwards) or "
-            "'bridged' (joins the host LAN so phones can reach the guest; "
-            "needs a host bridge + qemu-bridge-helper allow rule)"
+            "networking: 'user' (default; forwards bound to 127.0.0.1), "
+            "'lan' (user-mode with forwards bound on all host interfaces, so "
+            "phones can reach guest services via the host's LAN IP - no root "
+            "needed), or 'bridged' (guest joins the LAN directly; needs a "
+            "host bridge + qemu-bridge-helper allow rule)"
         ),
     )
     parser.add_argument("--bridge", default="br0", help="bridge name for --net bridged (default: br0)")
