@@ -100,10 +100,25 @@ if [ -s "${ADVERTISE_FILE}" ]; then
     log_message "Using advertised address override: ${RC_URL}"
 fi
 
+# The configuration service is password protected: it can create remotes and
+# read files, so it must not be left open on the network. To avoid asking the
+# visitor for that password twice (once by the browser, once by the web page),
+# the QR code carries the credentials, exactly as rclone does when it opens
+# the GUI itself. The address printed below stays credential free for anyone
+# typing it in by hand.
+with_credentials() {
+    local url="$1"
+    case "${url}" in
+        *://*) echo "${url%%://*}://rocknix:${RC_PASS}@${url#*://}" ;;
+        *) echo "${url}" ;;
+    esac
+}
+
+QR_BASE=$(with_credentials "${RC_URL}")
 if [ -n "${LOGIN_TOKEN}" ]; then
-    QR_URL="${RC_URL}/?login_token=${LOGIN_TOKEN}"
+    QR_URL="${QR_BASE}/?login_token=${LOGIN_TOKEN}"
 else
-    QR_URL="${RC_URL}"
+    QR_URL="${QR_BASE}"
 fi
 
 if ! kill -0 "${RCD_PID}" 2>/dev/null; then
