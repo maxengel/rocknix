@@ -3,10 +3,10 @@
 # Copyright (C) 2026 ROCKNIX (https://github.com/ROCKNIX)
 
 # Makes the cloud-setup QR code scannable from a phone: detects this Mac's
-# LAN address and writes it into the VM bundle, so the guest advertises an
-# address phones can actually reach (the guest sits behind a port forward
-# and cannot discover it on its own). Double-click to run; safe to re-run
-# any time the Mac's address changes. Quit the VM in UTM first.
+# LAN address and writes it into the VM's settings, so the guest advertises
+# an address phones can actually reach (the guest sits behind a port forward
+# and cannot discover it on its own). Double-click to run; re-run any time
+# the Mac changes networks.
 #
 # Placeholders (@FWCFG_NAME@, @HOST_PORT@) are filled in at build time from
 # the canonical VM profile.
@@ -26,16 +26,13 @@ fail() {
     exit 1
 }
 
-# Find the VM bundle next to this script (or one level down after unzip).
-CONFIG=""
-for candidate in "${HERE}"/*.utm/config.plist "${HERE}"/*/*.utm/config.plist; do
-    if [ -f "${candidate}" ]; then
-        CONFIG="${candidate}"
-        break
-    fi
-done
-[ -n "${CONFIG}" ] || fail "No .utm bundle found next to this script.
-Keep this file in the same folder as the ROCKNIX .utm bundle."
+# UTM holds VM settings in memory and writes them back to disk when it
+# quits, silently undoing any edit made while it is open. Editing behind
+# its back is guaranteed to be lost, so refuse outright.
+if pgrep -x UTM >/dev/null 2>&1; then
+    fail "UTM is running. Quit UTM completely (Cmd-Q, not just stopping
+the VM), then run this again."
+fi
 
 # The Mac's LAN address: the address of the interface holding the default
 # route (Wi-Fi or Ethernet), which is what a phone on the same network sees.
@@ -46,23 +43,46 @@ MAC_IP=$(ipconfig getifaddr "${IFACE}" 2>/dev/null || true)
 
 URL="http://${MAC_IP}:${HOST_PORT}"
 
-grep -q "name=${FWCFG_NAME}," "${CONFIG}" \
-    || fail "This bundle does not carry the advertised-address setting.
-Download a current ROCKNIX GENERIC_X64 build."
+# Update every copy of the VM that carries the advertised-address setting:
+# the bundle next to this script (fresh unzip) and any copy in UTM's own
+# library (UTM keeps one there once the VM has been imported). Updating
+# only the unzipped copy while UTM runs another is how addresses go stale.
+FOUND=0
+for candidate in \
+    "${HERE}"/*.utm/config.plist \
+    "${HERE}"/*/*.utm/config.plist \
+    "${HOME}"/Library/Containers/com.utmapp.UTM/Data/Documents/*.utm/config.plist; do
+    [ -f "${candidate}" ] || continue
+    grep -q "name=${FWCFG_NAME}," "${candidate}" || continue
+    FOUND=1
+    OLD=$(sed -nE "s|.*name=${FWCFG_NAME},string=([^<]*).*|\\1|p" "${candidate}" | head -1)
+    sed -i '' -E \
+        "s|(name=${FWCFG_NAME},string=)[^<]*|\\1${URL}|" \
+        "${candidate}"
+    plutil -lint "${candidate}" >/dev/null \
+        || fail "The VM settings file failed validation after editing:
+${candidate}"
+    echo "Updated: ${candidate}"
+    if [ "${OLD}" = "${URL}" ]; then
+        echo "  (address unchanged: ${URL})"
+    else
+        echo "  was: ${OLD:-<empty>}"
+        echo "  now: ${URL}"
+    fi
+done
 
-# The value lives in an XML plist, in the argument
-#   name=<fwcfg>,string=<url>
-# Rewrite whatever follows string= (placeholder or an older address).
-sed -i '' -E \
-    "s|(name=${FWCFG_NAME},string=)[^<]*|\\1${URL}|" \
-    "${CONFIG}"
-plutil -lint "${CONFIG}" >/dev/null || fail "The VM settings file failed validation after editing."
+[ "${FOUND}" = 1 ] || fail "No ROCKNIX VM with the advertised-address setting
+was found next to this script or in UTM's library. Keep this file in the
+same folder as the ROCKNIX .utm bundle, or download a current build."
 
 echo
 echo "Done. The VM will advertise: ${URL}"
 echo
-echo "Start (or restart) the VM in UTM, open Cloud Setup on the ROCKNIX"
-echo "screen, and the QR code will point your phone at this Mac."
+echo "Start the VM in UTM and open Cloud Setup on the ROCKNIX screen -"
+echo "the QR code now points your phone at this Mac."
+echo
+echo "If the phone asks for a username and password, they are shown on"
+echo "the ROCKNIX screen next to the QR code."
 echo
 echo "Re-run this any time the Mac's network address changes."
 echo
