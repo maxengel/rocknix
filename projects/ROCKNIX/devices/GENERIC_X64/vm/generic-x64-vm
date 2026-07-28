@@ -193,7 +193,11 @@ def qemu_command(profile, args):
         *(
             [
                 "-fw_cfg",
-                f"name=opt/org.rocknix.cloud_url,string=http://{advert_ip}:15572",
+                (
+                    f"name={network['advertised_url']['fwcfg_name']},"
+                    f"string=http://{advert_ip}:"
+                    f"{network['advertised_url']['host_port']}"
+                ),
             ]
             if (advert_ip := host_lan_ip()) and args.net != "bridged"
             else []
@@ -301,7 +305,23 @@ def utm_config(profile, image_name):
                 f"virtio-blk-pci.logical_block_size={disk['logical_block_size']}",
                 "-global",
                 f"virtio-blk-pci.physical_block_size={disk['physical_block_size']}",
-            ],
+            ]
+            # Behind a port forward the guest cannot discover the address a
+            # phone must scan, and no launcher runs on macOS to tell it. Ship
+            # the argument pre-written with an obviously invalid placeholder:
+            # the tester edits it once in the VM's settings, and until then
+            # the guest rejects it and falls back to showing its own address.
+            + (
+                []
+                if network["mode"] == "Bridged"
+                else [
+                    "-fw_cfg",
+                    (
+                        f"name={network['advertised_url']['fwcfg_name']},"
+                        f"string={network['advertised_url']['placeholder']}"
+                    ),
+                ]
+            ),
             "BalloonDevice": profile["balloon"],
             # QA artifact: keep QEMU debug logging on so boot failures leave
             # Data/debug.log inside the bundle for triage.
