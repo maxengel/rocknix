@@ -415,6 +415,12 @@ def build_utm(profile, args):
             helper = zipfile.ZipInfo("set-up-phone-qr.command")
             helper.external_attr = 0o100755 << 16
             archive.writestr(helper, qr_helper_script(profile))
+            # Quick-start notes, including how to get the helper past
+            # Gatekeeper (unsigned download: right-click > Open, or
+            # Privacy & Security > Open Anyway on newer macOS).
+            archive.write(
+                VM_DIR / "utm-bundle-readme.txt", "READ ME FIRST.txt"
+            )
         os.replace(temporary_output, output)
     print(output)
 
