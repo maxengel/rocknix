@@ -366,6 +366,16 @@ def utm_config(profile, image_name):
     }
 
 
+def qr_helper_script(profile):
+    """The phone-QR helper shipped alongside the .utm bundle, with the
+    fw_cfg name and host port filled in from the canonical profile."""
+    advertised = profile["network"]["advertised_url"]
+    template = (VM_DIR / "set-up-phone-qr.command").read_text(encoding="utf-8")
+    return template.replace("@FWCFG_NAME@", advertised["fwcfg_name"]).replace(
+        "@HOST_PORT@", str(advertised["host_port"])
+    )
+
+
 def build_utm(profile, args):
     disk = Path(args.disk).resolve()
     if not disk.is_file():
@@ -398,6 +408,13 @@ def build_utm(profile, args):
         ) as archive:
             archive.write(config_path, f"{bundle_name}/config.plist")
             archive.write(disk, f"{bundle_name}/Data/{image_name}")
+            # Ship the phone-QR helper next to the bundle (not inside it:
+            # macOS treats .utm as an opaque document). The executable bit
+            # must be set by hand - ZipInfo carries no mode by default, and
+            # Archive Utility honors what the entry declares.
+            helper = zipfile.ZipInfo("set-up-phone-qr.command")
+            helper.external_attr = 0o100755 << 16
+            archive.writestr(helper, qr_helper_script(profile))
         os.replace(temporary_output, output)
     print(output)
 

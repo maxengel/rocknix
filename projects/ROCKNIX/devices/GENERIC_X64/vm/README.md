@@ -48,23 +48,37 @@ setup GUI, host port 15572) are reachable from the LAN via the host's IP;
 SSH stays on 127.0.0.1:10022 unless `--net lan` is given; `--net bridged`
 joins the LAN directly if the host has a bridge configured.
 
-### Making the setup QR code scannable (one-time, UTM only)
+### Making the setup QR code scannable from a phone
 
 Behind a port forward the guest has no way to know the host address a phone
 must reach, so the cloud setup screen would show the guest's own unreachable
-address. The Linux launcher fills that address in automatically; on macOS you
-supply it once per bundle:
+NAT address (10.0.2.x). Something on the **host** has to supply its address —
+the guest cannot discover it from inside (user-mode NAT exposes the host only
+as the 10.0.2.2 alias). Per platform:
 
-1. In UTM, select the VM > Edit > QEMU > Additional Arguments.
-2. Find the argument reading `name=opt/org.rocknix.cloud_url,string=EDIT-ME-…`
-   and replace `EDIT-ME-http://your-host-ip:15572` with your Mac's LAN address,
-   e.g. `http://192.168.1.42:15572`.
-3. Boot the VM. The setup screen now shows that address and the QR code scans
-   from a phone on the same network.
+- **Linux**: automatic. The launcher detects the host's LAN address and
+  injects it via fw_cfg on every boot. Nothing to do.
+- **macOS (UTM)**: double-click `set-up-phone-qr.command`, shipped in the
+  bundle zip next to the `.utm`. It detects the Mac's LAN address and writes
+  it into the VM's settings; re-run it whenever the Mac changes networks
+  (quit the VM first). First run needs right-click > Open — the script is an
+  unsigned download, so Gatekeeper blocks a plain double-click.
+- **Windows**: untested. Running the image via QEMU under WSL2 with the Linux
+  launcher should behave like Linux with one caveat: the launcher will detect
+  the WSL VM's internal address, and reaching forwards from the LAN
+  additionally needs Windows-side port proxying (`netsh interface portproxy`)
+  or WSL2 mirrored networking mode. To be designed when a Windows tester
+  appears.
 
-Until it is edited the placeholder is rejected on purpose, and the guest falls
-back to showing its own address. Bridged bundles omit the argument entirely:
-the guest is on the LAN under its own address, so nothing needs rewriting.
+Manual fallback (any platform): edit the VM's QEMU arguments and replace the
+value after `name=opt/org.rocknix.cloud_url,string=` with
+`http://<host-lan-ip>:15572`, or write the full URL into
+`/storage/.config/cloud_setup_url` in the guest.
+
+Until a valid address is supplied, the shipped placeholder (`EDIT-ME-…`) is
+rejected on purpose and the guest falls back to showing its own address.
+Bridged bundles omit the argument entirely: the guest is on the LAN under its
+own address, so nothing needs rewriting.
 
 ### Troubleshooting: bridged mode hangs forever (UTM)
 
