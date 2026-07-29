@@ -1,0 +1,30 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+
+# QEMU dev builds: when the guest is reached through a forward on the host
+# machine, the SSH command a tester must run targets the host's loopback
+# forward, not this guest's own (unreachable) address. The host side
+# supplies that command through fw_cfg (opt/org.rocknix.cloud_ssh); publish
+# it as the cloud-setup connection override, and never leave a stale
+# override behind.
+
+FWCFG="/sys/firmware/qemu_fw_cfg/by_name/opt/org.rocknix.cloud_ssh/raw"
+TARGET="/storage/.config/cloud_setup_ssh"
+
+CMD=""
+if [ -r "${FWCFG}" ]; then
+  CMD=$(tr -d '\0' < "${FWCFG}")
+fi
+
+case "${CMD}" in
+  ssh\ *)
+    echo "${CMD}" > "${TARGET}"
+  ;;
+  *)
+    rm -f "${TARGET}"
+  ;;
+esac
+
+# Retired override from the web-GUI era; clean up so no stale file lingers.
+rm -f /storage/.config/cloud_setup_url

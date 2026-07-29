@@ -18,18 +18,6 @@ from pathlib import Path
 
 VM_DIR = Path(__file__).resolve().parent
 
-def host_lan_ip():
-    """Best-effort LAN address of this host (used to advertise forwarded
-    guest services, e.g. the cloud setup web GUI, to phones on the LAN)."""
-    import socket
-
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-            probe.connect(("8.8.8.8", 80))
-            return probe.getsockname()[0]
-    except OSError:
-        return None
-
 PROFILE_PATH = VM_DIR / "profile.json"
 
 
@@ -118,11 +106,8 @@ def qemu_command(profile, args):
 
     monitor = Path(args.monitor).resolve()
 
-    # Service forwards (e.g. the cloud setup web GUI) always bind on all host
-    # interfaces so phones on the LAN reach the guest via the host's address
-    # (e.g. http://<host-ip>:15572) with no extra flags; those services carry
-    # their own per-session credentials. SSH keeps a loopback bind unless
-    # --net lan is given (the image ships a well-known root password).
+    # SSH keeps a loopback bind unless --net lan is given (the image ships
+    # a well-known root password).
     ssh_bind = "0.0.0.0" if args.net == "lan" else "127.0.0.1"
     svc_bind = "0.0.0.0"
     monitor.unlink(missing_ok=True)
@@ -190,16 +175,19 @@ def qemu_command(profile, args):
         sound["codec"],
         "-monitor",
         f"unix:{monitor},server,nowait",
+        # Behind the NAT forward the guest's own address is unreachable, so
+        # the cloud-setup screen must show the loopback SSH command instead.
+        # It is a fixed string (the forward always binds 127.0.0.1:10022),
+        # identical on every host platform - no address discovery needed.
         *(
             [
                 "-fw_cfg",
                 (
-                    f"name={network['advertised_url']['fwcfg_name']},"
-                    f"string=http://{advert_ip}:"
-                    f"{network['advertised_url']['host_port']}"
+                    f"name={network['advertised_ssh']['fwcfg_name']},"
+                    f"string={network['advertised_ssh']['command']}"
                 ),
             ]
-            if (advert_ip := host_lan_ip()) and args.net != "bridged"
+            if args.net != "bridged"
             else []
         ),
         "-serial",
@@ -306,19 +294,18 @@ def utm_config(profile, image_name):
                 "-global",
                 f"virtio-blk-pci.physical_block_size={disk['physical_block_size']}",
             ]
-            # Behind a port forward the guest cannot discover the address a
-            # phone must scan, and no launcher runs on macOS to tell it. Ship
-            # the argument pre-written with an obviously invalid placeholder:
-            # the tester edits it once in the VM's settings, and until then
-            # the guest rejects it and falls back to showing its own address.
+            # Behind the NAT forward the guest's own address is unreachable,
+            # so the cloud-setup screen must show the loopback SSH command
+            # instead. It is a fixed string (the forward always binds
+            # 127.0.0.1:10022) - identical on every host, nothing to edit.
             + (
                 []
                 if network["mode"] == "Bridged"
                 else [
                     "-fw_cfg",
                     (
-                        f"name={network['advertised_url']['fwcfg_name']},"
-                        f"string={network['advertised_url']['placeholder']}"
+                        f"name={network['advertised_ssh']['fwcfg_name']},"
+                        f"string={network['advertised_ssh']['command']}"
                     ),
                 ]
             ),
@@ -366,16 +353,6 @@ def utm_config(profile, image_name):
     }
 
 
-def qr_helper_script(profile):
-    """The phone-QR helper shipped alongside the .utm bundle, with the
-    fw_cfg name and host port filled in from the canonical profile."""
-    advertised = profile["network"]["advertised_url"]
-    template = (VM_DIR / "set-up-phone-qr.command").read_text(encoding="utf-8")
-    return template.replace("@FWCFG_NAME@", advertised["fwcfg_name"]).replace(
-        "@HOST_PORT@", str(advertised["host_port"])
-    )
-
-
 def build_utm(profile, args):
     disk = Path(args.disk).resolve()
     if not disk.is_file():
@@ -408,16 +385,8 @@ def build_utm(profile, args):
         ) as archive:
             archive.write(config_path, f"{bundle_name}/config.plist")
             archive.write(disk, f"{bundle_name}/Data/{image_name}")
-            # Ship the phone-QR helper next to the bundle (not inside it:
-            # macOS treats .utm as an opaque document). The executable bit
-            # must be set by hand - ZipInfo carries no mode by default, and
-            # Archive Utility honors what the entry declares.
-            helper = zipfile.ZipInfo("set-up-phone-qr.command")
-            helper.external_attr = 0o100755 << 16
-            archive.writestr(helper, qr_helper_script(profile))
-            # Quick-start notes, including how to get the helper past
-            # Gatekeeper (unsigned download: right-click > Open, or
-            # Privacy & Security > Open Anyway on newer macOS).
+            # Quick-start notes shipped next to the bundle (not inside it:
+            # macOS treats .utm as an opaque document).
             archive.write(
                 VM_DIR / "utm-bundle-readme.txt", "READ ME FIRST.txt"
             )
@@ -433,9 +402,8 @@ def add_qemu_options(parser):
         choices=["user", "lan", "bridged"],
         default="user",
         help=(
-            "networking: 'user' (default; service forwards reachable from "
-            "the LAN via the host's IP, SSH on loopback only), 'lan' (also "
-            "exposes the SSH forward on the LAN), or 'bridged' (guest joins "
+            "networking: 'user' (default; SSH forward on loopback only), "
+            "'lan' (exposes the SSH forward on the LAN), or 'bridged' (guest joins "
             "the LAN directly; needs a host bridge + qemu-bridge-helper "
             "allow rule)"
         ),

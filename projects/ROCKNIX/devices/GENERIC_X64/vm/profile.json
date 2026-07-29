@@ -1,5 +1,5 @@
 {
-  "profile_version": 4,
+  "profile_version": 5,
   "name": "ROCKNIX GENERIC_X64",
   "architecture": "x86_64",
   "machine": "q35",
@@ -31,17 +31,10 @@
     "mac_address": "52:54:00:52:4E:58",
     "ssh_host_port": 10022,
     "ssh_guest_port": 22,
-    "extra_forwards": [
-      {
-        "name": "cloud-setup web GUI",
-        "host_port": 15572,
-        "guest_port": 5572
-      }
-    ],
-    "advertised_url": {
-      "fwcfg_name": "opt/org.rocknix.cloud_url",
-      "host_port": 15572,
-      "placeholder": "EDIT-ME-http://your-host-ip:15572"
+    "extra_forwards": [],
+    "advertised_ssh": {
+      "fwcfg_name": "opt/org.rocknix.cloud_ssh",
+      "command": "ssh -L 53682:localhost:53682 -p 10022 root@127.0.0.1"
     }
   },
   "sound": {
