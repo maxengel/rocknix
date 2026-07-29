@@ -2,20 +2,18 @@
 # SPDX-License-Identifier: GPL-2.0
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
-# cloud_setup - configure the rclone cloud remote from a phone or computer.
+# cloud_setup - configure the rclone cloud remote.
 #
-# Serves rclone's own web configuration GUI from the handheld and shows a
-# QR code pointing at it, so the remote can be set up without SSH. OAuth
-# providers additionally require the `rclone authorize` token paste the GUI
-# walks through (rclone's OAuth callback is fixed to localhost:53682, so a
-# phone browser cannot complete that hop directly - see
-# https://rclone.org/remote_setup/).
+# Walks the player through rclone's own interactive configuration over SSH:
+# it is the only flow that handles every provider completely (OAuth sign-in,
+# folder choices, provider-specific questions). This screen supplies the
+# connection details in big text, waits, then verifies the remote actually
+# works before declaring success.
 
 . /etc/profile
 
 SCRIPT_NAME=$(basename "$0")
 LOG_FILE="/var/log/cloud_sync.log"
-RC_PORT=5572
 
 log_message() {
     local message="$1"
@@ -42,18 +40,9 @@ wait_for_button() {
     fi
 }
 
-cleanup() {
-    if [ -n "${RCD_PID}" ] && kill -0 "${RCD_PID}" 2>/dev/null; then
-        kill "${RCD_PID}" 2>/dev/null
-        wait "${RCD_PID}" 2>/dev/null
-    fi
-    log_message "Cloud setup web GUI stopped"
-}
-trap cleanup EXIT
-
 clear
 
-# Need a network address to serve the GUI on
+# Need a network address to be reachable over SSH
 IP_ADDR=$(ip route get 1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}')
 if [ -z "${IP_ADDR}" ]; then
     echo -e "\e[31mNo network connection detected.\e[0m"
@@ -64,101 +53,69 @@ if [ -z "${IP_ADDR}" ]; then
     exit 1
 fi
 
-# Short random password for this session only
-RC_PASS=$(tr -dc 'a-z0-9' </dev/urandom 2>/dev/null | head -c 8)
-[ -z "${RC_PASS}" ] && RC_PASS="rocknix${RANDOM}"
-RC_URL="http://${IP_ADDR}:${RC_PORT}"
-
-log_message "Starting rclone web config GUI on ${RC_URL}"
-
-# rclone downloads and caches the web GUI on first use
-rclone rcd \
-    --rc-web-gui \
-    --rc-web-gui-no-open-browser \
-    --rc-addr ":${RC_PORT}" \
-    --rc-user rocknix \
-    --rc-pass "${RC_PASS}" \
-    --log-file "${LOG_FILE}" \
-    --log-level INFO \
-    >/dev/null 2>&1 &
-RCD_PID=$!
-
-# rclone logs a login_token URL for its GUI; harvest the token so the QR
-# code logs the visitor straight in (works for phones and computers alike).
-LOGIN_TOKEN=""
-for _try in $(seq 1 10); do
-    LOGIN_TOKEN=$(grep -o 'login_token=[A-Za-z0-9_%=-]*' "${LOG_FILE}" 2>/dev/null | tail -1 | cut -d= -f2-)
-    [ -n "${LOGIN_TOKEN}" ] && break
-    sleep 1
-done
-# Optional advertised-address override: when the device is reached through a
-# gateway that remaps its address (development setups, tunnels, proxies), a
-# URL placed in this file is shown and encoded instead of the local address.
-ADVERTISE_FILE="/storage/.config/cloud_setup_url"
-if [ -s "${ADVERTISE_FILE}" ]; then
-    RC_URL=$(head -n1 "${ADVERTISE_FILE}")
-    log_message "Using advertised address override: ${RC_URL}"
+# The -L tunnel lets the provider sign-in page (which rclone serves on the
+# handheld at localhost:53682) open in the computer's own browser, so the
+# full 'auto config' flow works over SSH - see rclone.org/remote_setup.
+SSH_CMD="ssh -L 53682:localhost:53682 root@${IP_ADDR}"
+SHOW_QR=1
+# Optional connection override: when the device is reached through a gateway
+# that remaps its address (development setups, tunnels, proxies), the command
+# in this file is shown instead of the direct one.
+OVERRIDE_FILE="/storage/.config/cloud_setup_ssh"
+if [ -s "${OVERRIDE_FILE}" ]; then
+    SSH_CMD=$(head -n1 "${OVERRIDE_FILE}")
+    SHOW_QR=0
+    log_message "Using connection override: ${SSH_CMD}"
 fi
 
-# The configuration service is password protected: it can create remotes and
-# read files, so it must not be left open on the network. To avoid asking the
-# visitor for that password twice (once by the browser, once by the web page),
-# the QR code carries the credentials, exactly as rclone does when it opens
-# the GUI itself. The address printed below stays credential free for anyone
-# typing it in by hand.
-with_credentials() {
-    local url="$1"
-    case "${url}" in
-        *://*) echo "${url%%://*}://rocknix:${RC_PASS}@${url#*://}" ;;
-        *) echo "${url}" ;;
-    esac
-}
+ROOTPASS=$(get_setting root.password)
 
-QR_BASE=$(with_credentials "${RC_URL}")
-if [ -n "${LOGIN_TOKEN}" ]; then
-    QR_URL="${QR_BASE}/?login_token=${LOGIN_TOKEN}"
-else
-    QR_URL="${QR_BASE}"
-fi
-
-if ! kill -0 "${RCD_PID}" 2>/dev/null; then
-    echo -e "\e[31mFailed to start the rclone configuration service.\e[0m"
-    echo "See ${LOG_FILE} for details. (First use needs internet access"
-    echo "to download rclone's web interface.)"
-    echo
-    echo "Press any button to exit."
-    wait_for_button
-    exit 1
-fi
+log_message "Cloud setup instructions shown (${SSH_CMD})"
 
 echo -e "\e[32m=> ${OS_NAME:-ROCKNIX} CLOUD SETUP\e[0m"
 echo
-echo "Scan the QR code with your phone to set up your cloud remote."
-echo "The QR code signs you in automatically. (Any device with a browser"
-echo "on your network can also open the address below.)"
+echo "Connect from a computer on your network and follow rclone's"
+echo "step-by-step setup. It signs in to your cloud provider and picks"
+echo "the account/folder to use."
 echo
-qrencode -t ANSIUTF8 -m 2 "${QR_URL}"
+echo -e "  1. On your computer, connect:  \e[1;36m${SSH_CMD}\e[0m"
+echo -e "     Password:                   \e[1;36m${ROOTPASS:-<not set>}\e[0m"
+echo -e "  2. Run:                        \e[1;36mrclone config\e[0m"
+echo "     Choose 'n' for a new remote, pick your provider, and follow"
+echo "     the prompts. Defaults are fine if you are unsure."
+echo "     When asked 'Use auto config?', answer Y, then open the"
+echo "     sign-in link it prints in your computer's browser."
+echo "  3. Quit with 'q' when the remote is listed, then come back here."
 echo
-echo -e "  Address:  \e[36m${RC_URL}\e[0m"
-echo -e "  Username: \e[36mrocknix\e[0m"
-echo -e "  Password: \e[36m${RC_PASS}\e[0m"
-echo
-echo "On your phone: Configs > New Config, pick your provider and follow"
-echo "the steps. Some providers (Google Drive, OneDrive, Dropbox...) ask"
-echo "for a token; that step needs rclone on a computer:"
-echo "  rclone authorize \"<provider>\""
-echo
-echo "Press any button here when you are done."
+if [ "${SHOW_QR}" = "1" ]; then
+    echo "Phone with an SSH app instead? Scan to connect:"
+    qrencode -t ANSIUTF8 -m 2 "ssh://root@${IP_ADDR}"
+    echo
+fi
+echo "Press any button here when you are done (or to cancel)."
 
 wait_for_button
 
 echo
-if rclone listremotes 2>/dev/null | grep -q .; then
-    echo -e "\e[32mCloud remote configured: $(rclone listremotes | head -1)\e[0m"
-    log_message "Cloud setup finished; first remote: $(rclone listremotes | head -1)"
-else
+REMOTE=$(rclone listremotes 2>/dev/null | head -1)
+if [ -z "${REMOTE}" ]; then
     echo -e "\e[33mNo cloud remote configured yet.\e[0m"
+    echo "Run this again once you have completed 'rclone config'."
     log_message "Cloud setup finished with no remotes configured"
+    sleep 5
+    exit 0
 fi
-sleep 3
+
+echo "Checking ${REMOTE} ..."
+if rclone lsd --contimeout 10s --timeout 30s "${REMOTE}" >/dev/null 2>&1; then
+    echo -e "\e[32mCloud remote configured and working: ${REMOTE}\e[0m"
+    echo "You can now use the cloud backup and restore tools."
+    log_message "Cloud setup verified working remote: ${REMOTE}"
+else
+    echo -e "\e[31mThe remote ${REMOTE} exists but is not responding.\e[0m"
+    echo "Its sign-in may be incomplete or expired. Connect again and"
+    echo "run 'rclone config reconnect ${REMOTE}' to repair it."
+    log_message "Cloud setup: remote ${REMOTE} failed verification"
+fi
+sleep 5
 exit 0
