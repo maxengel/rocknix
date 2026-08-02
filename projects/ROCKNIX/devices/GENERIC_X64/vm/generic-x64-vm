@@ -177,14 +177,15 @@ def qemu_command(profile, args):
         f"unix:{monitor},server,nowait",
         # Behind the NAT forward the guest's own address is unreachable, so
         # the cloud-setup screen must show the loopback SSH command instead.
-        # It is a fixed string (the forward always binds 127.0.0.1:10022),
-        # identical on every host platform - no address discovery needed.
+        # Only the forwarded port is injected (a space-free token: UTM
+        # splits its argument list on whitespace, so a full command string
+        # would be broken apart); the guest quirk assembles the command.
         *(
             [
                 "-fw_cfg",
                 (
                     f"name={network['advertised_ssh']['fwcfg_name']},"
-                    f"string={network['advertised_ssh']['command']}"
+                    f"string={network['advertised_ssh']['host_port']}"
                 ),
             ]
             if args.net != "bridged"
@@ -296,8 +297,10 @@ def utm_config(profile, image_name):
             ]
             # Behind the NAT forward the guest's own address is unreachable,
             # so the cloud-setup screen must show the loopback SSH command
-            # instead. It is a fixed string (the forward always binds
-            # 127.0.0.1:10022) - identical on every host, nothing to edit.
+            # instead. Only the forwarded port is injected (a space-free
+            # token: UTM splits its argument list on whitespace, so a full
+            # command string would be broken apart); the guest quirk
+            # assembles the command.
             + (
                 []
                 if network["mode"] == "Bridged"
@@ -305,7 +308,7 @@ def utm_config(profile, image_name):
                     "-fw_cfg",
                     (
                         f"name={network['advertised_ssh']['fwcfg_name']},"
-                        f"string={network['advertised_ssh']['command']}"
+                        f"string={network['advertised_ssh']['host_port']}"
                     ),
                 ]
             ),

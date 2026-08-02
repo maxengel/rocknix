@@ -50,11 +50,13 @@ directly if the host has a bridge configured.
 
 Cloud setup runs `rclone config` over SSH. On real hardware the setup screen
 shows `ssh root@<device-ip>`; behind the VM's NAT forward that address is
-unreachable, so both launchers inject the correct loopback command via fw_cfg
-(`opt/org.rocknix.cloud_ssh`), and the `095-cloud-ssh` quirk publishes it to
-`/storage/.config/cloud_setup_ssh`. It is a fixed string — the forward always
-binds 127.0.0.1:10022 — so it is identical on every host platform (Linux,
-macOS, Windows/WSL2 QEMU) and nothing needs detecting or editing:
+unreachable, so both launchers inject the forwarded SSH port via fw_cfg
+(`opt/org.rocknix.cloud_ssh_port` — just the port, a space-free token,
+because UTM splits QEMU arguments on whitespace), and the `095-cloud-ssh`
+quirk assembles the command into `/storage/.config/cloud_setup_ssh`. The
+forward always binds 127.0.0.1:10022, so the result is identical on every
+host platform (Linux, macOS, Windows/WSL2 QEMU) and nothing needs detecting
+or editing:
 
 ```
 ssh -L 53682:localhost:53682 -p 10022 root@127.0.0.1
