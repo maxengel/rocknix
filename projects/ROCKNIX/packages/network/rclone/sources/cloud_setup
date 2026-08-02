@@ -40,10 +40,61 @@ wait_for_button() {
     fi
 }
 
+# Connection facts, shared by the console flow and the native UI.
+# resolve_connection sets SSH_CMD, SHOW_QR, IP_ADDR (empty when offline).
+resolve_connection() {
+    IP_ADDR=$(ip route get 1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}')
+    # The -L tunnel lets the provider sign-in page (which rclone serves on
+    # the handheld at localhost:53682) open in the computer's own browser,
+    # so the full 'auto config' flow works over SSH - see
+    # rclone.org/remote_setup.
+    SSH_CMD="ssh -L 53682:localhost:53682 root@${IP_ADDR}"
+    SHOW_QR=1
+    # Optional connection override: when the device is reached through a
+    # gateway that remaps its address (development setups, tunnels,
+    # proxies), the command in this file is shown instead of the direct one.
+    OVERRIDE_FILE="/storage/.config/cloud_setup_ssh"
+    if [ -s "${OVERRIDE_FILE}" ]; then
+        SSH_CMD=$(head -n1 "${OVERRIDE_FILE}")
+        SHOW_QR=0
+        log_message "Using connection override: ${SSH_CMD}"
+    fi
+}
+
+case "$1" in
+    --info)
+        # Machine-readable connection facts for the native UI.
+        resolve_connection
+        echo "IP=${IP_ADDR}"
+        echo "SSH_CMD=${SSH_CMD}"
+        echo "PASSWORD=$(get_setting root.password)"
+        echo "REMOTE=$(rclone listremotes 2>/dev/null | head -1)"
+        exit 0
+    ;;
+    --check)
+        # Verify the first configured remote; plain-text verdict on stdout,
+        # exit 0 = working, 1 = missing, 2 = configured but unreachable.
+        REMOTE=$(rclone listremotes 2>/dev/null | head -1)
+        if [ -z "${REMOTE}" ]; then
+            echo "NONE"
+            log_message "Cloud setup check: no remotes configured"
+            exit 1
+        fi
+        if rclone lsd --contimeout 10s --timeout 30s "${REMOTE}" >/dev/null 2>&1; then
+            echo "OK ${REMOTE}"
+            log_message "Cloud setup verified working remote: ${REMOTE}"
+            exit 0
+        fi
+        echo "FAIL ${REMOTE}"
+        log_message "Cloud setup: remote ${REMOTE} failed verification"
+        exit 2
+    ;;
+esac
+
 clear
 
 # Need a network address to be reachable over SSH
-IP_ADDR=$(ip route get 1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}')
+resolve_connection
 if [ -z "${IP_ADDR}" ]; then
     echo -e "\e[31mNo network connection detected.\e[0m"
     echo "Connect to a network first, then try again."
@@ -51,21 +102,6 @@ if [ -z "${IP_ADDR}" ]; then
     echo "Press any button to exit."
     wait_for_button
     exit 1
-fi
-
-# The -L tunnel lets the provider sign-in page (which rclone serves on the
-# handheld at localhost:53682) open in the computer's own browser, so the
-# full 'auto config' flow works over SSH - see rclone.org/remote_setup.
-SSH_CMD="ssh -L 53682:localhost:53682 root@${IP_ADDR}"
-SHOW_QR=1
-# Optional connection override: when the device is reached through a gateway
-# that remaps its address (development setups, tunnels, proxies), the command
-# in this file is shown instead of the direct one.
-OVERRIDE_FILE="/storage/.config/cloud_setup_ssh"
-if [ -s "${OVERRIDE_FILE}" ]; then
-    SSH_CMD=$(head -n1 "${OVERRIDE_FILE}")
-    SHOW_QR=0
-    log_message "Using connection override: ${SSH_CMD}"
 fi
 
 ROOTPASS=$(get_setting root.password)
