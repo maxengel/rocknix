@@ -11,8 +11,8 @@
 # works before declaring success.
 #
 # The native UI wizard drives the same flow through three flags:
-#   --info       key=value connection facts (IP, SSH command, password,
-#                sshd state, configured remotes)
+#   --info       key=value connection facts (IP, SSH command, override
+#                state, password, sshd state, configured remotes)
 #   --connected  exit 0 when an inbound SSH session is established, so the
 #                connect step can be verified rather than taken on faith
 #   --check [remote]  verify a remote (default: first); exit 0 working,
@@ -49,8 +49,10 @@ wait_for_button() {
 }
 
 # Connection facts, shared by the console flow and the native UI.
-# resolve_connection sets SSH_CMD, SHOW_QR, IP_ADDR (empty when offline).
+# resolve_connection sets SSH_CMD, SHOW_QR, OVERRIDE_ACTIVE and IP_ADDR
+# (empty when offline).
 resolve_connection() {
+    OVERRIDE_ACTIVE=0
     IP_ADDR=$(ip route get 1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}')
     # The -L tunnel lets the provider sign-in page (which rclone serves on
     # the handheld at localhost:53682) open in the computer's own browser,
@@ -65,6 +67,7 @@ resolve_connection() {
     if [ -s "${OVERRIDE_FILE}" ]; then
         SSH_CMD=$(head -n1 "${OVERRIDE_FILE}")
         SHOW_QR=0
+        OVERRIDE_ACTIVE=1
         log_message "Using connection override: ${SSH_CMD}"
     fi
 }
@@ -89,6 +92,7 @@ case "$1" in
         resolve_connection
         echo "IP=${IP_ADDR}"
         echo "SSH_CMD=${SSH_CMD}"
+        echo "OVERRIDE=${OVERRIDE_ACTIVE}"
         echo "PASSWORD=$(get_setting root.password)"
         echo "SSH_UP=$(systemctl is-active sshd 2>/dev/null)"
         echo "REMOTES=$(rclone listremotes 2>/dev/null | tr '\n' ' ')"
