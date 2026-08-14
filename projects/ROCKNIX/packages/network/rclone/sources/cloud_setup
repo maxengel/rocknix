@@ -9,6 +9,14 @@
 # folder choices, provider-specific questions). This screen supplies the
 # connection details in big text, waits, then verifies the remote actually
 # works before declaring success.
+#
+# The native UI wizard drives the same flow through three flags:
+#   --info       key=value connection facts (IP, SSH command, password,
+#                sshd state, configured remotes)
+#   --connected  exit 0 when an inbound SSH session is established, so the
+#                connect step can be verified rather than taken on faith
+#   --check [remote]  verify a remote (default: first); exit 0 working,
+#                1 missing, 2 configured but unreachable
 
 . /etc/profile
 
@@ -61,6 +69,20 @@ resolve_connection() {
     fi
 }
 
+# True when at least one inbound SSH session is established (a peer is
+# connected to local port 22). Reads /proc/net/tcp* directly so it works
+# without ss/netstat; port 22 is 0016 hex, state 01 is ESTABLISHED.
+ssh_session_established() {
+    local f
+    for f in /proc/net/tcp /proc/net/tcp6; do
+        [ -r "$f" ] || continue
+        if awk 'NR>1 { n=split($2,a,":"); if (a[n]=="0016" && $4=="01") found=1 } END { exit found?0:1 }' "$f"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 case "$1" in
     --info)
         # Machine-readable connection facts for the native UI.
@@ -68,13 +90,26 @@ case "$1" in
         echo "IP=${IP_ADDR}"
         echo "SSH_CMD=${SSH_CMD}"
         echo "PASSWORD=$(get_setting root.password)"
-        echo "REMOTE=$(rclone listremotes 2>/dev/null | head -1)"
+        echo "SSH_UP=$(systemctl is-active sshd 2>/dev/null)"
+        echo "REMOTES=$(rclone listremotes 2>/dev/null | tr '\n' ' ')"
         exit 0
     ;;
+    --connected)
+        # The native UI gates its connect step on this, so the player
+        # cannot advance without an SSH session actually being open.
+        if ssh_session_established; then
+            echo "CONNECTED"
+            exit 0
+        fi
+        echo "NONE"
+        exit 1
+    ;;
     --check)
-        # Verify the first configured remote; plain-text verdict on stdout,
-        # exit 0 = working, 1 = missing, 2 = configured but unreachable.
-        REMOTE=$(rclone listremotes 2>/dev/null | head -1)
+        # Verify a remote ($2 if given, else the first configured one);
+        # plain-text verdict on stdout, exit 0 = working, 1 = missing,
+        # 2 = configured but unreachable.
+        REMOTE="$2"
+        [ -z "${REMOTE}" ] && REMOTE=$(rclone listremotes 2>/dev/null | head -1)
         if [ -z "${REMOTE}" ]; then
             echo "NONE"
             log_message "Cloud setup check: no remotes configured"
