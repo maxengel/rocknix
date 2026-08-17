@@ -12,7 +12,10 @@
 #
 # The native UI wizard drives the same flow through three flags:
 #   --info       key=value connection facts (IP, SSH command, override
-#                state, password, sshd state, configured remotes)
+#                state, password, sshd state, OAuth-port state,
+#                configured remotes)
+#   --free-auth-port  clear a stale sign-in webserver holding rclone's
+#                OAuth port 53682
 #   --connected  exit 0 when an inbound SSH session is established, so the
 #                connect step can be verified rather than taken on faith
 #   --check [remote]  verify a remote (default: first); exit 0 working,
@@ -86,6 +89,21 @@ ssh_session_established() {
     return 1
 }
 
+# True when something on the device already listens on rclone's OAuth
+# port 53682 (hex D1B2, state 0A is LISTEN) - a stale sign-in webserver
+# from an interrupted `rclone config` would make the next auto-config
+# attempt fail with "bind: address already in use".
+auth_port_busy() {
+    local f
+    for f in /proc/net/tcp /proc/net/tcp6; do
+        [ -r "$f" ] || continue
+        if awk 'NR>1 { n=split($2,a,":"); if (a[n]=="D1B2" && $4=="0A") found=1 } END { exit found?0:1 }' "$f"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 case "$1" in
     --info)
         # Machine-readable connection facts for the native UI.
@@ -95,7 +113,17 @@ case "$1" in
         echo "OVERRIDE=${OVERRIDE_ACTIVE}"
         echo "PASSWORD=$(get_setting root.password)"
         echo "SSH_UP=$(systemctl is-active sshd 2>/dev/null)"
+        echo "AUTH_PORT=$(auth_port_busy && echo busy || echo free)"
         echo "REMOTES=$(rclone listremotes 2>/dev/null | tr '\n' ' ')"
+        exit 0
+    ;;
+    --free-auth-port)
+        # Clear a stale sign-in webserver left by an interrupted
+        # `rclone config`, so the next auto-config attempt can bind.
+        pkill -f "rclone config" 2>/dev/null
+        pkill -f "rclone authorize" 2>/dev/null
+        log_message "Cleared stale processes holding the OAuth port"
+        echo "OK"
         exit 0
     ;;
     --connected)
