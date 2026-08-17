@@ -16,6 +16,8 @@
 #                configured remotes)
 #   --free-auth-port  clear a stale sign-in webserver holding rclone's
 #                OAuth port 53682
+#   --set-syncpath <path>  change the cloud folder (SYNCPATH) the sync
+#                tools use, keeping SYNCPATH_BACKUP alongside it
 #   --connected  exit 0 when an inbound SSH session is established, so the
 #                connect step can be verified rather than taken on faith
 #   --check [remote]  verify a remote (default: first); exit 0 working,
@@ -25,6 +27,7 @@
 
 SCRIPT_NAME=$(basename "$0")
 LOG_FILE="/var/log/cloud_sync.log"
+SYNC_CONF="/storage/.config/cloud_sync.conf"
 
 log_message() {
     local message="$1"
@@ -114,7 +117,36 @@ case "$1" in
         echo "PASSWORD=$(get_setting root.password)"
         echo "SSH_UP=$(systemctl is-active sshd 2>/dev/null)"
         echo "AUTH_PORT=$(auth_port_busy && echo busy || echo free)"
+        echo "SYNCPATH=$(. "${SYNC_CONF}" 2>/dev/null; echo "${SYNCPATH}")"
         echo "REMOTES=$(rclone listremotes 2>/dev/null | tr '\n' ' ')"
+        exit 0
+    ;;
+    --set-syncpath)
+        # Change the cloud folder the sync tools use. Keeps the
+        # system-backup folder as its /backup subdirectory so the two
+        # never drift apart.
+        NEWPATH="$2"
+        if [ -z "${NEWPATH}" ]; then
+            echo "ERROR empty path"
+            exit 1
+        fi
+        # Normalize: exactly one leading slash, no trailing slash.
+        NEWPATH="/$(echo "${NEWPATH}" | sed 's:^/*::; s:/*$::')"
+        if [ "${NEWPATH}" = "/" ]; then
+            echo "ERROR root path not allowed"
+            exit 1
+        fi
+        for key in SYNCPATH SYNCPATH_BACKUP; do
+            value="${NEWPATH}"
+            [ "${key}" = "SYNCPATH_BACKUP" ] && value="${NEWPATH}/backup"
+            if grep -q "^${key}=" "${SYNC_CONF}"; then
+                sed -i "s|^${key}=.*|${key}=\"${value}\"|" "${SYNC_CONF}"
+            else
+                echo "${key}=\"${value}\"" >> "${SYNC_CONF}"
+            fi
+        done
+        log_message "Sync path changed to ${NEWPATH}"
+        echo "OK ${NEWPATH}"
         exit 0
     ;;
     --free-auth-port)
