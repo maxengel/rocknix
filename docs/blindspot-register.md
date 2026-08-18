@@ -1,0 +1,14 @@
+# Blindspot register
+
+Systematic weaknesses observed across phases of work in this repo. Every
+futro's question 4 consults this list; every futro that surfaces a new
+pattern adds an entry. Entries are append-only; refine wording in place
+but never delete history.
+
+| # | Blindspot | Canonical instance | Guard |
+|---|-----------|--------------------|-------|
+| 1 | **Assumed-undone** — treating work as not-yet-done that already landed earlier in the milestone (a sibling branch, a closed issue, a prior session). Agent memory is not durable; the tracker and git are. | 2026-08-18: issue #30 was scoped as "merge `feature/backuptool-baseline`" when the branch had been fully merged into `test/qa-integration` (`629be00ec2`) three weeks earlier and shipped in every build since. Caught by begin-delivery Step 1.7. | At kickoff, `git branch --contains <tip>` / `git rev-list --count` every branch an issue claims is unlanded; inventory milestone closed-issue deliverables before loading tasks. |
+| 2 | **Same-tag republish ambiguity** — replacing release assets under an unchanged tag/filename makes stale downloads indistinguishable from current ones; UTM's import-copies semantics make it worse (an imported VM never sees the replaced zip). | 2026-08-02: `dev-generic_x64-20260802` published at 01:03 UTC, republished 05:50–06:25 with the native ES page; tester QA'd the stale first cut. Recurred (knowingly) on 20260815 and 20260817 respins. | Fresh date tag per respin when feasible; otherwise post the new sha256 prominently and tell the tester to re-import, not just re-download. |
+| 3 | **`GetShOutput` line-join** — ES's `GetShOutput` strips each output line's newline and concatenates with no separator; any multi-line, line-oriented output parses as one mashed string. | 2026-08-15: `cloud_setup --info` key=value output parsed as a single giant `IP=` value → garbled connect page, false "no password"/"SSH disabled" states. | Parse line-oriented script output via `ApiSystem::executeScriptLegacy` (public, per-line); reserve `GetShOutput` for single-line values. |
+| 4 | **`close()` inside a page's own handler** — `GuiSettings::close()` deletes the page, destroying the executing row/button closure; touching captures afterwards is a use-after-free. | 2026-08-15: cloud-setup wizard crashed on CONTINUE (gate handlers read captured strings after `s->close()`). | Push the replacement page first, close the old page after (`cloudSetupPresent`), or defer via `postToUiThread`; never read captures after closing the owning page. |
+| 5 | **Row-title `toUpper`** — MenuComponent uppercases row titles/labels; case-sensitive content (shell commands, flags, paths) placed in a title renders corrupted (`-p` → `-P`). | 2026-08-17 round: ssh command initially planned as a labeled row; `-p 10022` would have become `-P 10022`. | Case-sensitive strings go in plain full-width rows or value cells, never in title/label positions. |
