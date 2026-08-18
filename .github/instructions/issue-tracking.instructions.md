@@ -1,5 +1,5 @@
 ---
-description: "Where to file issues / tracking lists for this working copy."
+description: "Where to file issues / tracking lists for this working copy, and how they are structured."
 applyTo: "**"
 ---
 
@@ -21,3 +21,21 @@ Example:
 ```bash
 gh issue create --repo maxengel/rocknix --title "..." --body-file notes.md
 ```
+
+## Structure: Milestone → Epic → Issue (established 2026-08-18)
+
+- **Milestones** carry a program's acceptance test in their description (e.g.
+  *Cloud Saves: Fresh Handheld Journey*, *Cloud Saves: Visual Conflict Resolution*).
+  Every issue that must land for that test to pass gets the milestone; QOL/backlog
+  items stay milestone-less.
+- **Epics** are ordinary issues labeled `epic` that own a scope (e.g. #18 backuptool,
+  #26 journey, #15 native ES, #11 conflict resolution). Children are attached as real
+  **GitHub sub-issues** (`gh api -X POST repos/.../issues/<epic>/sub_issues -F
+  sub_issue_id=<REST id>` — the *id*, not the number), and the epic body maps its
+  phases to child issue numbers.
+- **Every actionable issue carries an "Acceptance criteria" checklist** — observable
+  behavior, not implementation steps. QA/exit-test issues state their procedure.
+- **Program labels** group a workstream across milestones (e.g. `cloud-saves`).
+- **Closing discipline**: deliver → close `completed` with a comment naming the
+  commits/build; consolidate → close `not planned` with a comment naming where the
+  scope went. Never leave a delivered issue open or close one silently.
