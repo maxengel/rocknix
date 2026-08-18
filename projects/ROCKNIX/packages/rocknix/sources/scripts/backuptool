@@ -115,7 +115,14 @@ case "${1}" in
         fi
 
         note "Backing up configuration to ${BACKUPFILE}..."
-        if ! zip -9 -r "${BACKUPFILE}" ${COMPRESSLOCATIONS[@]}
+        # Regular files only: symlinks under the config tree point at
+        # OS-shipped content (e.g. the ppsspp assets link into /usr).
+        # zip -r follows them and stores their target's bytes; on restore
+        # busybox unzip then refuses to overwrite the still-present
+        # symlink ("exists but is not a regular file") and aborts the
+        # whole restore partway. Symlinks are the OS's to provide, not
+        # the backup's to carry.
+        if ! find ${COMPRESSLOCATIONS[@]} -type f 2>/dev/null | zip -9 "${BACKUPFILE}" -@
         then
             rm -f "${BACKUPFILE}"
             fail "Backup failed; no backup file was written."
