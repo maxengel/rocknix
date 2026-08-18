@@ -8,15 +8,17 @@ complete OS image (kernel, bootloader, emulators, and userland) for a given devi
 ## Build & development commands
 
 The build is driven by three variables: `PROJECT` (default `ROCKNIX`), `DEVICE`
-(default `SM8250`), and `ARCH` (default `aarch64`). Supported devices: `RK3588`,
-`RK3566`, `RK3326`, `RK3399`, `S922X`, `SM8250`, `SM8550`, `H700`, `SDM845`, `AMD64`.
+(default `SM8250`), and `ARCH` (default `aarch64`). Supported devices (see the `Makefile`
+and `projects/ROCKNIX/devices/`): `RK3588`, `RK3576`, `RK3566`, `RK3326`, `RK3399`,
+`S922X`, `SM6115`, `SM8250`, `SM8550`, `SM8650`, `SM8750`, `H700`, `AMD64`.
 
 **Prerequisites & expectations:** builds are "built to order" — only enough OS to boot and
 run emulators/ports is compiled. A single-device build needs ~200GB free (full `make world`
 ~1TB) and a **stable internet connection** (hundreds of source packages are downloaded; a
 download failure often surfaces as a *misleading* build error). The first build can take
 ~10 hours; cached rebuilds take minutes. The reference host is Ubuntu 22.04 (matches the
-`Dockerfile`). Branches: `main` (stable) and `dev` (newest/unstable).
+`Dockerfile`). Upstream development happens on the `next` branch (upstream has no
+`main`/`dev` branches; releases are tagged from `next`).
 
 **Docker is the recommended way to build** (host needs only Docker/Podman + Bash). The
 `make docker-%` target wires Docker up to call the equivalent native `make` target:
@@ -70,7 +72,8 @@ export OS_VERSION=$(date +%Y%m%d) BUILD_DATE=$(date)
 `emulationstation` source lives in a **separate git repo**, so its package build needs the
 extra steps documented in `projects/ROCKNIX/packages/ui/emulationstation/package.mk`.
 
-Built images land in `release/ROCKNIX-<DEVICE>.<ARCH>-<timestamp>.tar`. You can flash the
+Built images land in `target/ROCKNIX-<DEVICE>.<ARCH>-<timestamp>.tar` (`config/path` sets
+`TARGET_IMG=$ROOT/target`; the `release/` path survives only in a cleanup line). You can flash the
 SD card, or push to a networked device via the in-place updater (preserves ES/emulator
 settings): `scp` the release tar to `root@<host>:~/.update`, then reboot the device.
 
@@ -119,7 +122,7 @@ GPU/Mali family) live in the device `options` file.
 `packages/`. `DEVICE_ROOT` lets one device reuse another's build root (see `build_distro`).
 
 **Build outputs (all gitignored):** `build.ROCKNIX-<DEVICE>.<ARCH>/` (work dir),
-`sources/` (downloaded tarballs/git), `release/` and `target/` (image artifacts).
+`sources/` (downloaded tarballs/git), `target/` (image artifacts).
 
 ## Package (`package.mk`) conventions
 
