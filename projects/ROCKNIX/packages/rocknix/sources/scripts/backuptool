@@ -177,8 +177,15 @@ case "${1}" in
         # actually landed in the zip rather than trusting the strips above,
         # so a newly-added config file with secrets is caught the first
         # time it is backed up instead of silently leaking.
-        LEAKS=$(unzip -p "${BACKUPFILE}" 2>/dev/null \
-            | grep -aicE '^[^#]*(password|token|stream_key|\.key) *[=:] *"?[^"[:space:]]+' || true)
+        # Text config members only, case-sensitive, anchored to a config-key
+        # shape. Each restriction is load-bearing: unzip -p concatenates
+        # members without separators, so binary blobs (translation
+        # catalogues, shader caches) run into the next file's first line and
+        # defeat the anchor; translation catalogues also ship lines like
+        # 'Password = Пароль'. Scanning every member found nothing and
+        # warning on every backup would be worse than not warning at all.
+        LEAKS=$(unzip -p "${BACKUPFILE}" '*.cfg' '*.conf' '*.ini' 2>/dev/null \
+            | grep -acE '^[a-z_.]*(password|token|stream_key|\.key) *[=:] *"?[^"[:space:]]+' || true)
         if [ "${LEAKS}" -gt 0 ] 2>/dev/null
         then
             WARN="Warning: ${LEAKS} credential-looking line(s) in ${BACKUPFILE}. Review before sharing or syncing it."
