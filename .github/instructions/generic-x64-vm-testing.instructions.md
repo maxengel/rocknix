@@ -143,3 +143,35 @@ the shell: `map` shows only `BLK0`/`BLK1`, **no `FS0:`**; firmware prints
   bytes; only the *sector size the VM presents* and the machine config matter. "Shareable dev
   image" = an appliance that carries machine config (`.utm` bundle for UTM, OVA for
   VirtualBox/VMware), not a bare disk — a bare disk still needs correct UEFI + 512b setup.
+
+## Automated visual QA (`tools/vm-visual-qa`)
+
+UI work can be reviewed without flashing a device or photographing a handheld.
+QEMU's human monitor exposes two primitives that both work under `-display none`,
+which is what makes this usable on a headless build host:
+
+- `sendkey <key>` — the guest sees real key events
+- `screendump <file>` — writes the current framebuffer as a PPM
+
+`tools/vm-visual-qa` wraps them: it runs a step file (`key` / `wait` / `shot`),
+converts frames to PNG, and optionally assembles an animated GIF. PNG/GIF need
+Pillow (a venv is fine; the PPM frames are still written without it).
+
+```bash
+# boot headless with a monitor socket, then:
+tools/vm-visual-qa --monitor /tmp/mon.sock run steps.txt --outdir shots/ --gif walk.gif
+```
+
+**Input mapping is the trap.** ES's *compiled* keyboard defaults (F1 = start) are
+not what ships: `/storage/.config/emulationstation/es_input.cfg` on the image maps
+**start = Enter, A/OK = `x`, B/back = `z`**, arrows for direction. Read that file
+on the guest rather than assuming — a wrong mapping looks exactly like "input is
+broken".
+
+Other sharp edges: menu lists **wrap**, so `up` from the top is the short path to
+entries near the bottom; give ES a second or two to settle before `shot`, and wait
+for the PPM's size to stop changing or you capture a torn frame.
+
+The frames are meant to be *read* — by a person or an image model — which catches
+what code review cannot. Its first run found a shipped defect: Cloud Tools actions
+rendered without their scope descriptions whenever no remote was configured.

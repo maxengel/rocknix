@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# Drive a running GENERIC_X64 QEMU VM through a UI script and capture what
+# it draws, so UI work can be reviewed (by a human or an image model)
+# without anyone flashing a device or taking phone photos of a handheld.
+#
+# It talks to QEMU's human monitor over a unix socket: `sendkey` presses
+# keys the guest sees as real input, and `screendump` writes the current
+# framebuffer as a PPM - both work with `-display none`, which is what
+# makes this usable on a headless build host.
+#
+#   vm-visual-qa --monitor /tmp/mon.sock run steps.txt --outdir shots/
+#   vm-visual-qa --monitor /tmp/mon.sock shot one.png
+#
+# A step file is one instruction per line, blank lines and # comments
+# ignored:
+#
+#   key down            # press a key (QEMU keyname, e.g. down, ret, esc)
+#   key down x4         # press it several times
+#   wait 2              # seconds
+#   shot main-menu      # capture a frame, labelled
+#
+# PPM->PNG and the contact-sheet GIF need Pillow; without it the PPM
+# frames are still written and everything else works.
+
+import argparse
+import os
+import re
+import socket
+import sys
+import time
+
+
+class Monitor:
+    """A connection to QEMU's human monitor (HMP) over a unix socket."""
+
+    def __init__(self, path, timeout=10):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(timeout)
+        self.sock.connect(path)
+        self._drain(0.5)
+
+    def _drain(self, seconds):
+        """Absorb whatever the monitor has to say (banner, echoes, prompts)."""
+        self.sock.settimeout(seconds)
+        out = b""
+        try:
+            while True:
+                chunk = self.sock.recv(4096)
+                if not chunk:
+                    break
+                out += chunk
+        except (socket.timeout, TimeoutError):
+            pass
+        self.sock.settimeout(10)
+        return out.decode("utf-8", "replace")
+
+    def cmd(self, text, settle=0.3):
+        self.sock.sendall((text + "\n").encode())
+        return self._drain(settle)
+
+    def sendkey(self, key, times=1, gap=0.15):
+        for _ in range(times):
+            self.cmd("sendkey " + key, settle=0.1)
+            time.sleep(gap)
+
+    def screendump(self, path):
+        # QEMU writes the file itself, so give it an absolute host path and
+        # wait for it to appear rather than assuming it is instant.
+        self.cmd("screendump " + path, settle=0.4)
+        for _ in range(40):
+            if os.path.exists(path) and os.path.getsize(path) > 0:
+                size = -1
+                # Wait for the size to stop changing; a partially written
+                # PPM decodes as a torn frame and wastes a review cycle.
+                while size != os.path.getsize(path):
+                    size = os.path.getsize(path)
+                    time.sleep(0.05)
+                return True
+            time.sleep(0.05)
+        return False
+
+    def close(self):
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+
+def to_png(ppm_path, png_path):
+    try:
+        from PIL import Image
+    except ImportError:
+        return False
+    with Image.open(ppm_path) as im:
+        im.convert("RGB").save(png_path)
+    return True
+
+
+def to_gif(png_paths, gif_path, ms_per_frame=1200, scale=0.5):
+    try:
+        from PIL import Image
+    except ImportError:
+        return False
+    frames = []
+    for p in png_paths:
+        im = Image.open(p).convert("RGB")
+        if scale != 1:
+            im = im.resize((int(im.width * scale), int(im.height * scale)))
+        frames.append(im)
+    if not frames:
+        return False
+    frames[0].save(
+        gif_path,
+        save_all=True,
+        append_images=frames[1:],
+        duration=ms_per_frame,
+        loop=0,
+        optimize=True,
+    )
+    return True
+
+
+def run_steps(mon, steps, outdir):
+    os.makedirs(outdir, exist_ok=True)
+    shots = []
+    index = 0
+    for raw in steps:
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        verb, _, rest = line.partition(" ")
+        rest = rest.strip()
+
+        if verb == "key":
+            m = re.match(r"^(\S+)(?:\s+x(\d+))?$", rest)
+            if not m:
+                raise SystemExit("bad key step: " + line)
+            mon.sendkey(m.group(1), int(m.group(2) or 1))
+        elif verb == "wait":
+            time.sleep(float(rest))
+        elif verb == "shot":
+            index += 1
+            label = re.sub(r"[^a-zA-Z0-9_-]+", "-", rest or "frame").strip("-")
+            base = os.path.join(outdir, "%02d-%s" % (index, label))
+            ppm = base + ".ppm"
+            if not mon.screendump(ppm):
+                print("WARN: no frame captured for " + label, file=sys.stderr)
+                continue
+            png = base + ".png"
+            if to_png(ppm, png):
+                os.remove(ppm)
+                shots.append(png)
+                print("captured " + png)
+            else:
+                shots.append(ppm)
+                print("captured " + ppm + " (install Pillow for PNG)")
+        else:
+            raise SystemExit("unknown step: " + line)
+    return shots
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--monitor", required=True, help="QEMU monitor unix socket")
+    sub = ap.add_subparsers(dest="command", required=True)
+
+    r = sub.add_parser("run", help="run a step file and capture frames")
+    r.add_argument("steps", help="step file, or - for stdin")
+    r.add_argument("--outdir", default="vm-shots")
+    r.add_argument("--gif", help="also write an animated GIF of the frames")
+
+    s = sub.add_parser("shot", help="capture a single frame")
+    s.add_argument("output", help="output .png (or .ppm without Pillow)")
+
+    k = sub.add_parser("key", help="send one key")
+    k.add_argument("keyname")
+    k.add_argument("--times", type=int, default=1)
+
+    args = ap.parse_args()
+    mon = Monitor(args.monitor)
+    try:
+        if args.command == "run":
+            src = sys.stdin if args.steps == "-" else open(args.steps)
+            with src as fh:
+                shots = run_steps(mon, fh.readlines(), args.outdir)
+            if args.gif and shots:
+                if to_gif(shots, args.gif):
+                    print("wrote " + args.gif)
+                else:
+                    print("GIF needs Pillow; frames are in " + args.outdir)
+        elif args.command == "shot":
+            ppm = args.output
+            if ppm.endswith(".png"):
+                ppm = ppm[:-4] + ".ppm"
+            if not mon.screendump(os.path.abspath(ppm)):
+                raise SystemExit("no frame captured")
+            if args.output.endswith(".png") and to_png(ppm, args.output):
+                os.remove(ppm)
+            print("captured " + args.output)
+        elif args.command == "key":
+            mon.sendkey(args.keyname, args.times)
+    finally:
+        mon.close()
+
+
+if __name__ == "__main__":
+    main()
