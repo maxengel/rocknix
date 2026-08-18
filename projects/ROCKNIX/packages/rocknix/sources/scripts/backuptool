@@ -155,6 +155,37 @@ case "${1}" in
             rm -rf "${SANITIZED_DIR}"
         fi
 
+        # retroarch.cfg carries its own credentials when RetroArch's own UI
+        # is used to sign in: cheevos password/token, netplay and kiosk
+        # passwords, and streaming keys. Blank the values (rather than drop
+        # the lines) so RetroArch still finds the keys it expects. The
+        # cheevos *username* is deliberately kept - it is not a secret, and
+        # the post-restore re-entry page uses it to know an account exists.
+        RACFG="/storage/.config/retroarch/retroarch.cfg"
+        if [ -f "${RACFG}" ]
+        then
+            SANITIZED_DIR=$(mktemp -d)
+            mkdir -p "${SANITIZED_DIR}/storage/.config/retroarch"
+            sed -E 's/^([a-z_]*(password|token|stream_key)) = ".*"$/\1 = ""/' "${RACFG}" \
+                > "${SANITIZED_DIR}/storage/.config/retroarch/retroarch.cfg"
+            (cd "${SANITIZED_DIR}" && zip -9 "${BACKUPFILE}" storage/.config/retroarch/retroarch.cfg >/dev/null)
+            rm -rf "${SANITIZED_DIR}"
+        fi
+
+        # Last line of defence: the archive can be synced to the cloud, so
+        # never ship one carrying a populated credential. This greps what
+        # actually landed in the zip rather than trusting the strips above,
+        # so a newly-added config file with secrets is caught the first
+        # time it is backed up instead of silently leaking.
+        LEAKS=$(unzip -p "${BACKUPFILE}" 2>/dev/null \
+            | grep -aicE '^[^#]*(password|token|stream_key|\.key) *[=:] *"?[^"[:space:]]+' || true)
+        if [ "${LEAKS}" -gt 0 ] 2>/dev/null
+        then
+            WARN="Warning: ${LEAKS} credential-looking line(s) in ${BACKUPFILE}. Review before sharing or syncing it."
+            echo -e "\e[33m${WARN}\e[0m"
+            logger -t backuptool "${WARN}"
+        fi
+
         sync
         note "Backup complete: ${BACKUPFILE}"
         note "Copy it somewhere safe, or enable the system backup option in cloud sync."
