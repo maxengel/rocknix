@@ -112,14 +112,21 @@ root hits it on a libtool bump, and CI never does because CI is always clean.
    build silently stands. 53 ROCKNIX packages use that pattern.
 
    After a big rebase, enumerate the damage rather than discovering it one
-   failure at a time — compare each override's generic `PKG_VERSION` against
-   `build.*/build/<pkg>-*`. On the 2026-08-19 rebase that showed **26 stale
-   packages, including `gcc` (15.2.0 vs 16.2.0)**, openssl, glib, curl, expat
-   and zlib.
+   failure at a time — compare each override's **effective** `PKG_VERSION`
+   against `build.*/build/<pkg>-*`. On the 2026-08-19 rebase that showed **35
+   stale packages**, among them openssl (3.5.1→3.6.3), glib (2.85.1→2.89.3),
+   curl, expat, zlib and libfmt (9.1.0→12.2.0, a major ABI break).
 
-   **When the compiler or a core library is among them, wipe the build roots.**
-   Clearing stamps individually would produce a tree built partly with gcc 15
-   and partly gcc 16, with mismatched ABIs — an image nobody should flash. The
+   *Effective* is load-bearing. An override may set its own `PKG_VERSION`
+   **after** sourcing the generic recipe, deliberately holding a package back —
+   `gcc` (pinned 15.2.0 against a generic 16.2.0), `iwd` and `opus` all do. A
+   sweep that reads only the generic file reports those as stale when they are
+   working as intended, and "the compiler is stale" is exactly the kind of
+   alarming false positive that stampedes a decision.
+
+   **When core libraries are among the genuinely stale, wipe the build roots.**
+   Clearing stamps individually leaves consumers linked against sysroot copies
+   that no longer match their recipes — an image nobody should flash. The
    targeted fix in (2) is right for one isolated bump and wrong at this scale.
    `sources/` is a separate directory, so a wipe costs rebuild time but no
    re-downloading.
