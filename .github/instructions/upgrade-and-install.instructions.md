@@ -33,7 +33,7 @@ For every change in the build, answer both:
 | A settings key | Does the old key still exist on upgraded devices? Renaming a key silently resets everyone's preference. |
 | A script's flags or output | Anything parsing it — hooks, ES, other scripts — may still be the old version until its own package rebuilds. |
 | A marker/sentinel file | Is there still a consumer? An orphaned marker sits forever; a missing one silently disables a flow. |
-| A menu entry that moved | Nothing persists, but check whether a *second* path to the same operation now exists. Two entries doing almost the same thing is how someone gets a backup missing what they assumed was in it. |
+| A menu entry that moved | Nothing persists, but check two things. Does a *second* path to the same operation now exist? Two entries doing almost the same thing is how someone gets a backup missing what they assumed was in it. And does any **string still name the old path**? Grep the old menu names: help text, error messages and post-restore advice hard-code them, and a message that sends someone to a menu that no longer holds anything is a dead end at the moment they most need the instruction. |
 | A file the OS provides (symlink, seeded config) | Does the change assume it is a regular file? |
 
 ## Fixing forward is not enough
