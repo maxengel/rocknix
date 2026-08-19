@@ -66,6 +66,43 @@ DOCKER_EXTRA_OPTS="-v ~/Development/rocknix/.git:/home/max/Development/rocknix/.
   worktree. Safe because `sources/` is a content-addressed download cache; build
   sequentially rather than sharing it between concurrent builds.
 
+## After rebasing onto upstream
+
+A build root that predates a rebase carries the *previous* tree's installed
+artifacts. Those are not cleaned by a package version bump, so an incremental
+build can fail in ways a clean build never does. Two things to do before
+rebuilding:
+
+1. **Re-pull the build container.** `DOCKER_IMAGE` is pinned to `:latest`, so a
+   cached image can be months old while the tree now expects newer host tools.
+   `make docker-image-pull` first — otherwise you find out hours in.
+2. **Expect self-hosting tools to break.** `config/functions` exports
+   `LIBTOOLIZE`, `AUTOCONF`, `ACLOCAL` and friends **only if the toolchain
+   already contains them**. On a clean tree libtool builds with no libtoolize
+   present (the container ships none), so its own new `m4/` macros survive. On a
+   warm tree the *previous* libtool's `libtoolize` is found, runs
+   `--copy --force`, and overwrites the new macros with its older ones — so
+   `libtool 2.5.4 -> 2.6.2` fails with `LT_LANG: unsupported language:
+   "Objective-C"`, an error that names nothing to do with the real cause.
+
+   The fix is to reproduce the clean-tree condition for that one package rather
+   than delete the whole build root:
+
+   ```bash
+   rm -rf build.*/toolchain/bin/libtool build.*/toolchain/bin/libtoolize \
+          build.*/toolchain/share/libtool build.*/build/libtool-* \
+          build.*/.stamps/libtool
+   rm -f  build.*/toolchain/share/aclocal/lt*.m4
+   ```
+
+   Note the sysroot copy at `toolchain/*/sysroot/usr/share/aclocal/` is a
+   *separate* stale copy. Clearing only that one moves the error from
+   `sysroot/.../libtool.m4` to `m4/libtool.m4`, which looks like progress but is
+   the same bug — `libtoolize` re-clobbers it on the second aclocal pass.
+
+This is an upstream defect, not a fork one: any developer with an existing build
+root hits it on a libtool bump, and CI never does because CI is always clean.
+
 ## Budget
 
 - **Disk:** ~90 GB per device build root, plus the shared ~15 GB sources cache.
