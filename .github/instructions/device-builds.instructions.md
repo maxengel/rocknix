@@ -103,6 +103,27 @@ rebuilding:
 This is an upstream defect, not a fork one: any developer with an existing build
 root hits it on a libtool bump, and CI never does because CI is always clean.
 
+3. **Check how stale the root actually is before patching anything.** A
+   `projects/ROCKNIX/packages/<pkg>` override that does
+   `. ${ROOT}/packages/.../package.mk` inherits `PKG_VERSION` from the generic
+   recipe — but `calculate_stamp` (`config/functions`) hashes `$PKG_DIR`, which
+   resolves to the **override** directory. The generic file holding the version
+   is never hashed, so bumping it does not invalidate the stamp and the old
+   build silently stands. 53 ROCKNIX packages use that pattern.
+
+   After a big rebase, enumerate the damage rather than discovering it one
+   failure at a time — compare each override's generic `PKG_VERSION` against
+   `build.*/build/<pkg>-*`. On the 2026-08-19 rebase that showed **26 stale
+   packages, including `gcc` (15.2.0 vs 16.2.0)**, openssl, glib, curl, expat
+   and zlib.
+
+   **When the compiler or a core library is among them, wipe the build roots.**
+   Clearing stamps individually would produce a tree built partly with gcc 15
+   and partly gcc 16, with mismatched ABIs — an image nobody should flash. The
+   targeted fix in (2) is right for one isolated bump and wrong at this scale.
+   `sources/` is a separate directory, so a wipe costs rebuild time but no
+   re-downloading.
+
 ## Budget
 
 - **Disk:** ~90 GB per device build root, plus the shared ~15 GB sources cache.
