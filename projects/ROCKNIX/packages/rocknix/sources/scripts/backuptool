@@ -82,8 +82,34 @@ case "${1}" in
             fail "Backup archive is damaged (${BACKUPFILE}). Restore aborted; nothing was changed."
         fi
 
+        # Archives written before backups switched to regular files only hold
+        # the *contents* of symlinked paths. Extracting one of those over the
+        # live symlink makes busybox unzip abort the whole restore, so every
+        # backup taken before that change would be unrestorable here. Skip
+        # exactly those entries instead: the OS owns those symlinks and
+        # provides them, and replacing one with a stale copy is the bug that
+        # got them excluded from backups in the first place.
+        SKIP=""
+        SKIPPED=0
+        for ENTRY in $(unzip -l "${BACKUPFILE}" 2>/dev/null | awk 'NF>3 && $4 ~ /^storage\// {print $4}')
+        do
+            if [ -L "/${ENTRY}" ]
+            then
+                SKIP="${SKIP} ${ENTRY}"
+                SKIPPED=$((SKIPPED + 1))
+            fi
+        done
+
         note "Restoring configuration from ${BACKUPFILE}..."
-        if ! unzip -o "${BACKUPFILE}" -d / >/dev/null
+        if [ "${SKIPPED}" -gt 0 ]
+        then
+            note "Keeping ${SKIPPED} system-provided link(s) this older backup would have overwritten."
+            # -x is a mode switch: every argument after it is an exclusion.
+            unzip -o "${BACKUPFILE}" -d / -x ${SKIP} >/dev/null
+        else
+            unzip -o "${BACKUPFILE}" -d / >/dev/null
+        fi
+        if [ $? -ne 0 ]
         then
             fail "Restore reported errors. Check 'logger' output; the device will NOT reboot."
         fi
