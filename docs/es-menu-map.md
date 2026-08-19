@@ -58,12 +58,12 @@ to decide where something belongs.
 
 | Destination | Groups it contains |
 |---|---|
-| **GAME SETTINGS** | TOOLS · ACCOUNTS · BIOS SETTINGS · SAVESTATES · DEFAULT GLOBAL SETTINGS · **CLOUD TOOLS** · SYSTEM SETTINGS (per-system config) |
+| **GAME SETTINGS** | TOOLS · ACCOUNTS · BIOS SETTINGS · SAVESTATES · DEFAULT GLOBAL SETTINGS · **CLOUD SAVES** · **CLOUD TOOLS** · SYSTEM SETTINGS (per-system config) |
 | **CONTROLLER & BLUETOOTH** | SETTINGS · BLUETOOTH · DISPLAY OPTIONS · BEHAVIOR · PLAYER ASSIGNMENTS |
 | **USER INTERFACE** | APPEARANCE · CONTROL OPTIONS · DISPLAY OPTIONS · GAMELIST OPTIONS · ICONS |
 | **GAME COLLECTION** | COLLECTIONS TO DISPLAY · CREATE CUSTOM COLLECTION · OPTIONS |
 | **SOUND** | VOLUME · MUSIC · SOUNDS |
-| **NETWORK** | INFORMATION · SETTINGS · NETWORK SERVICES · CLOUD SERVICES · VPN SERVICES |
+| **NETWORK** | INFORMATION · SETTINGS · NETWORK SERVICES · **RCLONE SERVICES** · SYNCTHING SERVICES · VPN SERVICES |
 | **SCRAPER** | tabbed: SCRAPE · OPTIONS · ACCOUNTS |
 | **UPDATES & DOWNLOADS** | DOWNLOADS · SOFTWARE UPDATES |
 | **SYSTEM SETTINGS** | SYSTEM · HARDWARE · DEVICE · STORAGE · PERFORMANCE · TWEAKS · SUSPEND · LED HARDWARE · ADVANCED |
@@ -75,30 +75,46 @@ Two placement rules the existing tree already follows:
 - **Destructive and system-level operations sit behind ADVANCED**, inside SYSTEM
   SETTINGS → SYSTEM MANAGEMENT AND RESET, where every row confirms first.
 
-## Cloud tools (our subtree)
+## Cloud (our subtree)
+
+Split along what the player is doing, rather than by which subsystem
+implements it. Setting the remote up and snapshotting the device are network
+concerns; syncing saves belongs with the games; bulk content is its own thing.
 
 ```mermaid
 flowchart TD
-    GS[GAME SETTINGS] --> CT{{CLOUD TOOLS group}}
+    NET[NETWORK SETTINGS] --> RS{{RCLONE SERVICES}}
+    RS --> SETUP[SET UP CLOUD REMOTE]
+    RS --> SYSDATA[BACKUP / RESTORE SYSTEM DATA]
+    RS --> FOLDER[CLOUD FOLDER]
 
-    CT --> SETUP[SET UP CLOUD REMOTE]
-    CT --> RELINK[FINISH RESTORE SETUP]
-    CT --> FOLDER[CLOUD FOLDER]
-    CT --> ACTIONS[RESTORE / BACK UP EVERYTHING<br/>SYNC · UPLOAD · DOWNLOAD<br/>UPLOAD / RESTORE CONTENT]
-    CT --> TOGGLES[SYNC DURING STARTUP<br/>SYNC WHEN EXITING A GAME]
+    SYSDATA --> BK[BACKUP ALL SYSTEM DATA]
+    SYSDATA --> RE[RESTORE ALL SYSTEM DATA]
+    SYSDATA --> FIN[FINALIZE RESTORE]
+
+    GS[GAME SETTINGS] --> CS{{CLOUD SAVES}}
+    CS --> SY[SYNC / UPLOAD / DOWNLOAD SAVE DATA]
+    CS --> TOG[SYNC DURING STARTUP<br/>SYNC WHEN EXITING A GAME]
+
+    GS --> CT{{CLOUD TOOLS}}
+    CT --> CONTENT[UPLOAD / RESTORE CONTENT<br/>ROMs and BIOS]
 
     SETUP --> W1[STEP 1 of 3<br/>SET UP SSH]
-    W1 -->|password + sshd verified| W2[STEP 2 of 3<br/>CONNECT FROM YOUR COMPUTER]
+    W1 -->|password and sshd verified| W2[STEP 2 of 3<br/>CONNECT FROM YOUR COMPUTER]
     W2 -->|SSH session detected| W3[STEP 3 of 3<br/>CREATE THE REMOTE]
     W3 -->|remote verified| DONE[CLOUD SETUP COMPLETE]
 
-    BOOT([boot with<br/>.restore-finish-pending]) --> RELINK
+    BOOT([boot after a restore]) --> FIN
 ```
 
-The wizard's steps are **gated**: CONTINUE only exists once that step's check
-passes, and every page offers EXIT SETUP. FINISH RESTORE SETUP has two entry
+The setup wizard's steps are **gated**: CONTINUE only exists once that step's
+check passes, and every page offers EXIT SETUP. FINALIZE RESTORE has two entry
 points — automatically on the first boot after a restore, and from this menu at
 any time.
+
+Rows in all three groups stay **visible but dimmed** before a remote is
+configured, and offer the setup flow instead of their action. Hiding them would
+tell the player nothing about what configuring a remote buys them.
 
 ## Screens you cannot reach from the main menu
 

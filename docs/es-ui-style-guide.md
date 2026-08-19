@@ -54,6 +54,27 @@ description does not. If an action row needs a wrapped explanation, pass
 `multiLine = true` explicitly, or emit one non-selectable small-font row per
 line (the wizard's `cloudSetupAddInfoRow`).
 
+### Size by weight, not by helper
+
+Three sizes, and which one a row gets is decided by what the row *is*:
+
+| Size | Used for |
+|---|---|
+| group font | section headers (`addGroup`) |
+| **text font** | row content — actions, statuses, instructions, facts, commands |
+| small font | a row's *description*, explaining the row above it |
+
+Peer items must match. A status line sitting beside an action row is the same
+weight as that action and takes the same size; only text that explains another
+row drops to small. `MultiLineMenuEntry` already draws its substring small, so
+descriptions get this for free.
+
+The failure to watch for is size chosen by *plumbing* rather than by weight — a
+row rendering small because it happened to go through a helper that reached for
+the small font. That shipped once: the cloud wizard drew "SSH SERVICE IS
+ENABLED" a size below the action directly above it, and rendered the ssh command
+— the most important thing on its page — smaller than the facts beneath it.
+
 ### Dim, don't hide
 
 When a feature exists but is not yet configured, keep its rows visible and
