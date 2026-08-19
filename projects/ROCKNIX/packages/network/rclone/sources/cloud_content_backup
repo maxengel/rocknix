@@ -1,0 +1,99 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+
+# cloud_content_backup - push game content (ROMs, BIOS, ...) to the cloud.
+#
+# Mirror of cloud_content_restore: an explicit, user-initiated copy of chosen
+# local directories from /storage/roms to the cloud content root. Copy-only -
+# it never deletes anything on the remote. Save/state/screenshot directories
+# are excluded here; they travel via the saves sync.
+#
+# Usage:
+#   cloud_content_backup --list           print local content directories
+#   cloud_content_backup <dir> [<dir>..]  copy local dirs to the cloud
+#   cloud_content_backup --all            copy all local content directories
+#
+# The remote content root defaults to the remote's root; set CONTENTPATH in
+# /storage/.config/cloud_sync.conf to point somewhere else (e.g. "GAMES").
+
+. /etc/profile
+
+LOG_FILE="/var/log/cloud_sync.log"
+SCRIPT_NAME=$(basename "$0")
+DEST="/storage/roms"
+
+log_message() {
+    echo "[$(date "+%Y-%m-%d %H:%M:%S")] [INFO] [${SCRIPT_NAME}] ${1}" >> ${LOG_FILE}
+}
+
+if [ ! -e "/storage/.config/rclone/rclone.conf" ]; then
+    echo "rclone is not configured. Use 'Set Up Cloud Remote' first."
+    exit 1
+fi
+
+[ -f /storage/.config/cloud_sync.conf ] && source /storage/.config/cloud_sync.conf
+
+REMOTENAME=$(rclone listremotes | head -1)
+if [ -z "${REMOTENAME}" ]; then
+    echo "No cloud remote configured."
+    exit 1
+fi
+
+ROOT="${REMOTENAME}${CONTENTPATH:+${CONTENTPATH}/}"
+
+# Local content directories: skip what the saves sync already handles and
+# non-content folders.
+list_local_dirs() {
+    for d in "${DEST}"/*/; do
+        [ -d "${d}" ] || continue
+        base=$(basename "${d}")
+        case "${base}" in
+            savefiles|savestates|screenshots|backup) continue ;;
+        esac
+        # skip empty directories
+        [ -n "$(ls -A "${d}" 2>/dev/null)" ] || continue
+        echo "${base}"
+    done
+}
+
+case "${1}" in
+    --list)
+        list_local_dirs
+        exit $?
+    ;;
+    --all)
+        mapfile -t DIRS < <(list_local_dirs)
+        if [ ${#DIRS[@]} -eq 0 ]; then
+            echo "No content directories found in ${DEST}."
+            exit 1
+        fi
+    ;;
+    "")
+        echo "Usage: ${SCRIPT_NAME} --list | --all | <dir> [<dir>...]"
+        exit 1
+    ;;
+    *)
+        DIRS=("$@")
+    ;;
+esac
+
+STATUS=0
+for DIR in "${DIRS[@]}"; do
+    SRC="${ROOT}${DIR}"
+    TARGET="${DEST}/${DIR}"
+    log_message "Content restore: ${SRC} -> ${TARGET}"
+    echo "Restoring ${DIR:-everything} from the cloud..."
+    rclone copy "${SRC}" "${TARGET}" \
+        --stats-one-line --stats 5s \
+        --log-file "${LOG_FILE}" --log-level INFO
+    RC=$?
+    if [ ${RC} -ne 0 ] && [ ${RC} -ne 9 ]; then
+        echo "Restore of ${DIR:-everything} failed (rclone exit ${RC})."
+        STATUS=${RC}
+    else
+        echo "Restored ${DIR:-everything}."
+    fi
+done
+
+exit ${STATUS}

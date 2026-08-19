@@ -4,8 +4,8 @@
 # Copyright (C) 2025 ROCKNIX Team (https://github.com/ROCKNIX)
 
 PKG_NAME="rclone"
-PKG_VERSION="1.71.0"
-PKG_DEPENDS_TARGET="toolchain fuse rsync"
+PKG_VERSION="1.74.4"
+PKG_DEPENDS_TARGET="toolchain fuse rsync qrencode"
 PKG_LONGDESC="rsync for cloud storage"
 PKG_TOOLCHAIN="manual"
 
@@ -38,7 +38,13 @@ makeinstall_target() {
   cp cloud_backup ${INSTALL}/usr/bin/
   cp cloud_restore ${INSTALL}/usr/bin/
   cp cloud_sync_helper ${INSTALL}/usr/bin/
+  cp cloud_setup ${INSTALL}/usr/bin/
+  cp cloud_content_restore ${INSTALL}/usr/bin/
+  cp cloud_content_backup ${INSTALL}/usr/bin/
   cp cloud_sync_cleanup_duplicates.sh ${INSTALL}/usr/bin/
+  mkdir -p ${INSTALL}/usr/bin/scripts/game-end
+  cp cloud_saves_gameend.sh ${INSTALL}/usr/bin/scripts/game-end/
+  chmod 0755 ${INSTALL}/usr/bin/scripts/game-end/cloud_saves_gameend.sh
   cp ${PKG_BUILD}/${PKG_RCLONE} ${INSTALL}/usr/bin/
   chmod 0755 ${INSTALL}/usr/bin/*
   cp cloud_sync-rules.txt ${INSTALL}/usr/config/

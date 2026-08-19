@@ -1,0 +1,256 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+
+# cloud_setup - configure the rclone cloud remote.
+#
+# Walks the player through rclone's own interactive configuration over SSH:
+# it is the only flow that handles every provider completely (OAuth sign-in,
+# folder choices, provider-specific questions). This screen supplies the
+# connection details in big text, waits, then verifies the remote actually
+# works before declaring success.
+#
+# The native UI wizard drives the same flow through three flags:
+#   --info       key=value connection facts (IP, SSH command, override
+#                state, password, sshd state, OAuth-port state,
+#                configured remotes)
+#   --free-auth-port  clear a stale sign-in webserver holding rclone's
+#                OAuth port 53682
+#   --set-syncpath <path>  change the cloud folder (SYNCPATH) the sync
+#                tools use, keeping SYNCPATH_BACKUP alongside it
+#   --connected  exit 0 when an inbound SSH session is established, so the
+#                connect step can be verified rather than taken on faith
+#   --check [remote]  verify a remote (default: first); exit 0 working,
+#                1 missing, 2 configured but unreachable
+
+. /etc/profile
+
+SCRIPT_NAME=$(basename "$0")
+LOG_FILE="/var/log/cloud_sync.log"
+SYNC_CONF="/storage/.config/cloud_sync.conf"
+
+log_message() {
+    local message="$1"
+    local timestamp=$(date "+%Y-%m-%d %H:%M:%S")
+    echo "[${timestamp}] [INFO] [${SCRIPT_NAME}] ${message}" >> ${LOG_FILE}
+}
+
+# Wait for any confirm/cancel input: controller (evtest) or keyboard.
+wait_for_button() {
+    local input_device=""
+    for dev in /dev/input/event*; do
+        if [ -c "$dev" ]; then
+            local supports=$(udevadm info "$dev" 2>/dev/null | awk '/ID_INPUT_JOYSTICK=1/ {print "joystick"}')
+            if [ "$supports" = "joystick" ]; then
+                input_device="$dev"
+                break
+            fi
+        fi
+    done
+    if [ -n "$input_device" ]; then
+        evtest "$input_device" 2>/dev/null | grep -m 1 -E "BTN_(SOUTH|EAST|A|B|START).*value 1" >/dev/null
+    else
+        read -sn1 2>/dev/null
+    fi
+}
+
+# Connection facts, shared by the console flow and the native UI.
+# resolve_connection sets SSH_CMD, SHOW_QR, OVERRIDE_ACTIVE and IP_ADDR
+# (empty when offline).
+resolve_connection() {
+    OVERRIDE_ACTIVE=0
+    IP_ADDR=$(ip route get 1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}')
+    # The -L tunnel lets the provider sign-in page (which rclone serves on
+    # the handheld at localhost:53682) open in the computer's own browser,
+    # so the full 'auto config' flow works over SSH - see
+    # rclone.org/remote_setup.
+    SSH_CMD="ssh -L 53682:localhost:53682 root@${IP_ADDR}"
+    SHOW_QR=1
+    # Optional connection override: when the device is reached through a
+    # gateway that remaps its address (development setups, tunnels,
+    # proxies), the command in this file is shown instead of the direct one.
+    OVERRIDE_FILE="/storage/.config/cloud_setup_ssh"
+    if [ -s "${OVERRIDE_FILE}" ]; then
+        SSH_CMD=$(head -n1 "${OVERRIDE_FILE}")
+        SHOW_QR=0
+        OVERRIDE_ACTIVE=1
+        log_message "Using connection override: ${SSH_CMD}"
+    fi
+}
+
+# True when at least one inbound SSH session is established (a peer is
+# connected to local port 22). Reads /proc/net/tcp* directly so it works
+# without ss/netstat; port 22 is 0016 hex, state 01 is ESTABLISHED.
+ssh_session_established() {
+    local f
+    for f in /proc/net/tcp /proc/net/tcp6; do
+        [ -r "$f" ] || continue
+        if awk 'NR>1 { n=split($2,a,":"); if (a[n]=="0016" && $4=="01") found=1 } END { exit found?0:1 }' "$f"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# True when something on the device already listens on rclone's OAuth
+# port 53682 (hex D1B2, state 0A is LISTEN) - a stale sign-in webserver
+# from an interrupted `rclone config` would make the next auto-config
+# attempt fail with "bind: address already in use".
+auth_port_busy() {
+    local f
+    for f in /proc/net/tcp /proc/net/tcp6; do
+        [ -r "$f" ] || continue
+        if awk 'NR>1 { n=split($2,a,":"); if (a[n]=="D1B2" && $4=="0A") found=1 } END { exit found?0:1 }' "$f"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+case "$1" in
+    --info)
+        # Machine-readable connection facts for the native UI.
+        resolve_connection
+        echo "IP=${IP_ADDR}"
+        echo "SSH_CMD=${SSH_CMD}"
+        echo "OVERRIDE=${OVERRIDE_ACTIVE}"
+        echo "PASSWORD=$(get_setting root.password)"
+        echo "SSH_UP=$(systemctl is-active sshd 2>/dev/null)"
+        echo "AUTH_PORT=$(auth_port_busy && echo busy || echo free)"
+        echo "SYNCPATH=$(. "${SYNC_CONF}" 2>/dev/null; echo "${SYNCPATH}")"
+        echo "REMOTES=$(rclone listremotes 2>/dev/null | tr '\n' ' ')"
+        exit 0
+    ;;
+    --set-syncpath)
+        # Change the cloud folder the sync tools use. Keeps the
+        # system-backup folder as its /backup subdirectory so the two
+        # never drift apart.
+        NEWPATH="$2"
+        if [ -z "${NEWPATH}" ]; then
+            echo "ERROR empty path"
+            exit 1
+        fi
+        # Normalize: exactly one leading slash, no trailing slash.
+        NEWPATH="/$(echo "${NEWPATH}" | sed 's:^/*::; s:/*$::')"
+        if [ "${NEWPATH}" = "/" ]; then
+            echo "ERROR root path not allowed"
+            exit 1
+        fi
+        for key in SYNCPATH SYNCPATH_BACKUP; do
+            value="${NEWPATH}"
+            [ "${key}" = "SYNCPATH_BACKUP" ] && value="${NEWPATH}/backup"
+            if grep -q "^${key}=" "${SYNC_CONF}"; then
+                sed -i "s|^${key}=.*|${key}=\"${value}\"|" "${SYNC_CONF}"
+            else
+                echo "${key}=\"${value}\"" >> "${SYNC_CONF}"
+            fi
+        done
+        log_message "Sync path changed to ${NEWPATH}"
+        echo "OK ${NEWPATH}"
+        exit 0
+    ;;
+    --free-auth-port)
+        # Clear a stale sign-in webserver left by an interrupted
+        # `rclone config`, so the next auto-config attempt can bind.
+        pkill -f "rclone config" 2>/dev/null
+        pkill -f "rclone authorize" 2>/dev/null
+        log_message "Cleared stale processes holding the OAuth port"
+        echo "OK"
+        exit 0
+    ;;
+    --connected)
+        # The native UI gates its connect step on this, so the player
+        # cannot advance without an SSH session actually being open.
+        if ssh_session_established; then
+            echo "CONNECTED"
+            exit 0
+        fi
+        echo "NONE"
+        exit 1
+    ;;
+    --check)
+        # Verify a remote ($2 if given, else the first configured one);
+        # plain-text verdict on stdout, exit 0 = working, 1 = missing,
+        # 2 = configured but unreachable.
+        REMOTE="$2"
+        [ -z "${REMOTE}" ] && REMOTE=$(rclone listremotes 2>/dev/null | head -1)
+        if [ -z "${REMOTE}" ]; then
+            echo "NONE"
+            log_message "Cloud setup check: no remotes configured"
+            exit 1
+        fi
+        if rclone lsd --contimeout 10s --timeout 30s "${REMOTE}" >/dev/null 2>&1; then
+            echo "OK ${REMOTE}"
+            log_message "Cloud setup verified working remote: ${REMOTE}"
+            exit 0
+        fi
+        echo "FAIL ${REMOTE}"
+        log_message "Cloud setup: remote ${REMOTE} failed verification"
+        exit 2
+    ;;
+esac
+
+clear
+
+# Need a network address to be reachable over SSH
+resolve_connection
+if [ -z "${IP_ADDR}" ]; then
+    echo -e "\e[31mNo network connection detected.\e[0m"
+    echo "Connect to a network first, then try again."
+    echo
+    echo "Press any button to exit."
+    wait_for_button
+    exit 1
+fi
+
+ROOTPASS=$(get_setting root.password)
+
+log_message "Cloud setup instructions shown (${SSH_CMD})"
+
+echo -e "\e[32m=> ${OS_NAME:-ROCKNIX} CLOUD SETUP\e[0m"
+echo
+echo "Connect from a computer on your network and follow rclone's"
+echo "step-by-step setup. It signs in to your cloud provider and picks"
+echo "the account/folder to use."
+echo
+echo -e "  1. On your computer, connect:  \e[1;36m${SSH_CMD}\e[0m"
+echo -e "     Password:                   \e[1;36m${ROOTPASS:-<not set>}\e[0m"
+echo -e "  2. Run:                        \e[1;36mrclone config\e[0m"
+echo "     Choose 'n' for a new remote, pick your provider, and follow"
+echo "     the prompts. Defaults are fine if you are unsure."
+echo "     When asked 'Use auto config?', answer Y, then open the"
+echo "     sign-in link it prints in your computer's browser."
+echo "  3. Quit with 'q' when the remote is listed, then come back here."
+echo
+if [ "${SHOW_QR}" = "1" ]; then
+    echo "Phone with an SSH app instead? Scan to connect:"
+    qrencode -t ANSIUTF8 -m 2 "ssh://root@${IP_ADDR}"
+    echo
+fi
+echo "Press any button here when you are done (or to cancel)."
+
+wait_for_button
+
+echo
+REMOTE=$(rclone listremotes 2>/dev/null | head -1)
+if [ -z "${REMOTE}" ]; then
+    echo -e "\e[33mNo cloud remote configured yet.\e[0m"
+    echo "Run this again once you have completed 'rclone config'."
+    log_message "Cloud setup finished with no remotes configured"
+    sleep 5
+    exit 0
+fi
+
+echo "Checking ${REMOTE} ..."
+if rclone lsd --contimeout 10s --timeout 30s "${REMOTE}" >/dev/null 2>&1; then
+    echo -e "\e[32mCloud remote configured and working: ${REMOTE}\e[0m"
+    echo "You can now use the cloud backup and restore tools."
+    log_message "Cloud setup verified working remote: ${REMOTE}"
+else
+    echo -e "\e[31mThe remote ${REMOTE} exists but is not responding.\e[0m"
+    echo "Its sign-in may be incomplete or expired. Connect again and"
+    echo "run 'rclone config reconnect ${REMOTE}' to repair it."
+    log_message "Cloud setup: remote ${REMOTE} failed verification"
+fi
+sleep 5
+exit 0

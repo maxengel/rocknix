@@ -7,6 +7,26 @@ SCRIPT_NAME=$(basename "$0")
 LOG_FILE="/var/log/cloud_sync.log"
 START_TIME=$(date +%s)
 
+# Non-interactive support for hooks and the ES menu:
+#   --yes / -y   answer prompts automatically (headless mode)
+#   --method=X   override the configured transfer method (sync or copy)
+#   --update     add rclone --update (skip files newer on the destination)
+ASSUME_YES=0
+METHOD_OVERRIDE=""
+EXTRA_UPDATE=0
+SYSTEM_ONLY=0
+SAVES_ONLY=0
+for CLI_ARG in "$@"; do
+    case "${CLI_ARG}" in
+        --yes|-y) ASSUME_YES=1 ;;
+        --method=sync|--method=copy) METHOD_OVERRIDE="${CLI_ARG#--method=}" ;;
+        --method=*) echo "Ignoring invalid --method value: ${CLI_ARG#--method=}" ;;
+        --update) EXTRA_UPDATE=1 ;;
+        --system-only) SYSTEM_ONLY=1 ;;
+        --saves-only) SAVES_ONLY=1 ;;
+    esac
+done
+
 # Logging function that supports different severity levels and optional console output
 # 
 # This function formats and records log messages with timestamps and severity levels.
@@ -236,8 +256,12 @@ load_config() {
         done
         dupe_message="${dupe_message}\n\nWould you like to automatically clean up duplicates?"
         
-        controller_confirm "$dupe_message" 0
-        local cleanup_choice=$?
+        if [ "${ASSUME_YES}" -eq 1 ]; then
+            local cleanup_choice=0
+        else
+            controller_confirm "$dupe_message" 0
+            local cleanup_choice=$?
+        fi
         log_message "Cleanup choice returned: $cleanup_choice" "false"
         
         if [ $cleanup_choice -eq 0 ]; then
@@ -284,6 +308,20 @@ load_config() {
         RCLONE_OPTS_ARRAY+=("$opt")
     done
     log_message "Options array has ${#RCLONE_OPTS_ARRAY[@]} elements" "false"
+
+    # Apply command-line overrides
+    if [ "${SYSTEM_ONLY}" -eq 1 ]; then
+        BACKUPFILE_BACKUP_OPTION="yes"
+        log_message "System-backup phase forced on by --system-only" "false"
+    fi
+    if [ -n "${METHOD_OVERRIDE}" ]; then
+        BACKUPMETHOD="${METHOD_OVERRIDE}"
+        log_message "Transfer method overridden from command line: ${METHOD_OVERRIDE}" "false"
+    fi
+    if [ "${EXTRA_UPDATE}" -eq 1 ]; then
+        RCLONE_OPTS_ARRAY+=("--update")
+        log_message "Added --update from command line" "false"
+    fi
     
     # Create a version without the --delete-excluded flag for restore operations
     RESTORE_RCLONEOPTS=$(echo "${RCLONEOPTS}" | sed 's/--delete-excluded//')
@@ -535,16 +573,26 @@ main() {
     
     # Execute Part 1: Game saves backup
     # This performs the primary save file backup operation using the configured method
-    backup_game_saves
-    BACKUP_STATUS=$?
+    if [ "${SYSTEM_ONLY}" -eq 1 ]; then
+        log_message "Game saves backup skipped (--system-only)" "true"
+        BACKUP_STATUS=0
+    else
+        backup_game_saves
+        BACKUP_STATUS=$?
+    fi
     
     # Add a pause for better visual separation between operations
     sleep 2
     
     # Execute Part 2: System backup file transfer
     # This backs up system backup files (zip files) if enabled in configuration
-    backup_system_files
-    BACKUP_SYSTEM_STATUS=$?
+    if [ "${SAVES_ONLY}" -eq 1 ]; then
+        log_message "System backup file transfer skipped (--saves-only)" "true"
+        BACKUP_SYSTEM_STATUS=0
+    else
+        backup_system_files
+        BACKUP_SYSTEM_STATUS=$?
+    fi
     
     # Add a pause before summary
     sleep 2
