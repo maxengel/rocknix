@@ -45,6 +45,16 @@ for _img in target/ROCKNIX-"${DEVICE}".*"${DATE}"*.img.gz; do
   [ -f "${_img}.sha256" ] && ASSETS+=("${_img}.sha256")
   VARIANTS+=("$(basename "${_img}")")
 done
+
+# The .tar is the in-place update path - copied to /storage/.update it
+# upgrades a device without wiping /storage. That is how anyone already
+# running ROCKNIX takes a new build, and it is what an upgrade-path test
+# needs, so it has to be in the release rather than only described by it.
+UPDATE_TAR="$(ls -t target/ROCKNIX-"${DEVICE}".*"${DATE}"*.tar 2>/dev/null | head -1 || true)"
+if [ -n "${UPDATE_TAR}" ]; then
+  ASSETS+=("${UPDATE_TAR}")
+  [ -f "${UPDATE_TAR}.sha256" ] && ASSETS+=("${UPDATE_TAR}.sha256")
+fi
 if [ ${#ASSETS[@]} -eq 0 ]; then
   echo "error: no images matching target/ROCKNIX-${DEVICE}.*${DATE}*.img.gz" >&2
   exit 1
@@ -145,10 +155,11 @@ else
   RELEASE_NOTES="ROCKNIX ${DEVICE} build ${DATE}.
 
 Flash one of these to a card. **The variants are not interchangeable — pick the one matching your board:**
+
 $(printf -- '- **%s**\n' "${VARIANTS[@]}")
 The device reports this build as OS version \`${DATE}\` under system information, which is how to confirm what is actually installed.
 
-To update a device already running ROCKNIX without losing settings, copy the \`.tar\` to \`/storage/.update\` and reboot."
+To update a device already running ROCKNIX **without losing settings**, copy $([ -n "${UPDATE_TAR}" ] && printf '`%s`' "$(basename "${UPDATE_TAR}")" || printf 'the \`.tar\`') to \`/storage/.update\` and reboot."
 fi
 
 echo "Publishing ${IMG} -> ${REPO} (tag ${TAG}, ${CHANNEL})"
