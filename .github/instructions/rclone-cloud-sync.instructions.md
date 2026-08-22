@@ -128,6 +128,41 @@ seeded from the `/usr/config/*.defaults` templates:
 - **Single remote only:** operations use `rclone listremotes | head -1` — the first
   configured remote. Don't assume multi-remote support without adding it deliberately.
 
+## Testing it without a cloud account
+
+`tools/cloud-test-backend` serves a directory on the host over WebDAV;
+`tools/cloud-round-trip` drives a device through backup and restore against it
+over SSH. A VM from `generic-x64-vm` reaches the host at `10.0.2.2`, so nothing
+needs forwarding.
+
+```bash
+./tools/cloud-test-backend up
+./tools/cloud-round-trip --host root@127.0.0.1 --port 10022 --identity <key>
+./tools/cloud-test-backend ls        # what the device actually uploaded
+```
+
+- **WebDAV, not S3, by default.** Dropbox/Drive/OneDrive are path-based, so
+  `SYNCPATH="/GAMES"` is a folder. On S3 and B2 the first path component is the
+  *bucket*, so the same value asks for a bucket named `GAMES` (issue #38).
+  Testing on S3 exercises semantics our users do not have;
+  `CLOUD_QA_BACKEND=s3` reproduces that difference on purpose.
+- **Local on purpose.** These tests exercise credential stripping and backup
+  contents - the code paths most likely to leak a token into an archive, a log
+  or a work log. A throwaway WebDAV password is worth nothing if it escapes.
+- **The remote name is asserted, not assumed.** Every script picks its remote
+  with `rclone listremotes | head -1`, so a remote sorting earlier would aim
+  the tests at a real account. The driver refuses if the first remote is not
+  the test one.
+- **Restore is destructive**, so the suite works in `/storage/cloud-qa` unless
+  `--real-roms` is passed. Never point it at a device with saves you want.
+- An assertion that only holds because nothing happened is worse than no
+  assertion: the allowlist check skips rather than passes when the upload
+  produced nothing.
+
+The OAuth handshake is not covered - `rclone authorize`, port 53682, token
+refresh still need a real provider. The wizard's *gates* (`--connected`,
+`--check`, `--free-auth-port`) are plain checks and do test here.
+
 ## rocknix.org docs & gaps
 
 The user guide (<https://rocknix.org/configure/cloud-sync/>) documents the `cloud_sync.conf`
