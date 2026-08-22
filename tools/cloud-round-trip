@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+"""Round-trip the cloud-sync scripts against the local QA S3 backend.
+
+Drives a ROCKNIX device over SSH - a VM from generic-x64-vm, or real hardware
+on the LAN - through backup, restore and content sync, and checks the result
+from both ends: file contents on the device, and objects in the bucket.
+
+    ./tools/cloud-test-backend up
+    ./tools/cloud-round-trip --host root@127.0.0.1 --port 10022
+
+Two guards, both load-bearing:
+
+* Every cloud_* script picks its remote with `rclone listremotes | head -1`.
+  If the device has another remote sorting earlier, the tests would sync a
+  real cloud account instead. The remote is asserted, never assumed.
+* Restore is destructive by design. The suite works in a scratch tree by
+  default and only touches /storage/roms with --real-roms, so pointing this
+  at a device with real saves cannot quietly delete them.
+"""
+
+import argparse
+import hashlib
+import os
+import shlex
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+BACKEND = os.path.join(HERE, "cloud-test-backend")
+
+SCRATCH = "/storage/cloud-qa"
+CONF = "/storage/.config/cloud_sync.conf"
+RCLONE_CONF = "/storage/.config/rclone/rclone.conf"
+
+# Content chosen to catch the failure modes that have actually bitten:
+# a nested path, a name with a space (quoting), and a file the allowlist
+# must exclude - the filter is what stands between --delete-excluded and
+# somebody's cloud data.
+FIXTURES = {
+    "saves/game1.srm": b"save-one-v1",
+    "saves/nested/deep/game2.srm": b"save-two-v1",
+    "saves/game with space.srm": b"save-three-v1",
+    "savestates/game1.state": b"state-one-v1",
+}
+EXCLUDED = {"saves/scratch.tmp": b"should-never-leave-the-device"}
+
+
+class Fail(Exception):
+    pass
+
+
+class Device:
+    def __init__(self, host, port, identity=None):
+        self.base = ["ssh", "-o", "StrictHostKeyChecking=no",
+                     "-o", "UserKnownHostsFile=/dev/null",
+                     "-o", "LogLevel=ERROR", "-p", str(port)]
+        if identity:
+            self.base += ["-i", identity]
+        self.base.append(host)
+
+    def run(self, cmd, check=True):
+        p = subprocess.run(self.base + [cmd], capture_output=True, text=True)
+        if check and p.returncode != 0:
+            raise Fail(f"{cmd!r} exited {p.returncode}: {p.stderr.strip() or p.stdout.strip()}")
+        return p.stdout
+
+    def write(self, path, data: bytes):
+        self.run(f"mkdir -p {shlex.quote(os.path.dirname(path))}")
+        p = subprocess.run(self.base + [f"cat > {shlex.quote(path)}"],
+                           input=data, capture_output=True)
+        if p.returncode != 0:
+            raise Fail(f"writing {path}: {p.stderr.decode().strip()}")
+
+    def sha(self, path):
+        out = self.run(f"sha256sum {shlex.quote(path)} 2>/dev/null || true")
+        return out.split()[0] if out.strip() else None
+
+
+def backend(*args):
+    return subprocess.run([BACKEND, *args], capture_output=True, text=True,
+                          check=True).stdout
+
+
+def step(name):
+    print(f"\n=== {name}")
+
+
+def check(cond, ok, bad):
+    print(f"    {'PASS' if cond else 'FAIL'}  {ok if cond else bad}")
+    return cond
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--host", required=True, help="ssh target, e.g. root@127.0.0.1")
+    ap.add_argument("--port", type=int, default=10022)
+    ap.add_argument("--identity", help="ssh private key")
+    ap.add_argument("--real-roms", action="store_true",
+                    help="use /storage/roms instead of a scratch tree (DESTRUCTIVE)")
+    ap.add_argument("--keep", action="store_true", help="leave fixtures in place")
+    args = ap.parse_args()
+
+    dev = Device(args.host, args.port, args.identity)
+    remote = backend("remote-name").strip()
+    root = "/storage/roms" if args.real_roms else SCRATCH
+    failures = 0
+
+    step("device reachable and equipped")
+    who = dev.run("echo ok").strip()
+    if not check(who == "ok", "ssh works", "no shell over ssh"):
+        return 1
+    have = dev.run("command -v rclone cloud_backup cloud_restore || true")
+    failures += not check("rclone" in have and "cloud_backup" in have,
+                          "rclone and cloud scripts present",
+                          "device is missing rclone or the cloud scripts")
+
+    step("point the device at the QA bucket")
+    dev.run(f"mkdir -p {os.path.dirname(RCLONE_CONF)}")
+    dev.write(RCLONE_CONF, backend("rclone-conf").encode())
+    first = dev.run("rclone listremotes 2>/dev/null | head -1").strip().rstrip(":")
+    if not check(first == remote,
+                 f"first remote is {remote!r}, which is what the scripts will use",
+                 f"first remote is {first!r}, not {remote!r} - refusing to sync "
+                 f"someone else's account"):
+        return 1
+
+    if not args.real_roms:
+        # Keep the scripts' own defaults for everything except where they
+        # read and write, so the code under test is unchanged.
+        dev.run(f"mkdir -p {SCRATCH}")
+        for key, val in (("BACKUPPATH", SCRATCH), ("RESTOREPATH", SCRATCH),
+                         ("BACKUPFOLDER", f"{SCRATCH}/backup")):
+            dev.run(f"grep -q '^{key}=' {CONF} && sed -i 's|^{key}=.*|{key}=\"{val}\"|' {CONF} "
+                    f"|| echo '{key}=\"{val}\"' >> {CONF}")
+        print(f"    scratch tree {SCRATCH} (pass --real-roms to use /storage/roms)")
+
+    step("plant fixtures")
+    for rel, data in {**FIXTURES, **EXCLUDED}.items():
+        dev.write(f"{root}/{rel}", data)
+    before = {rel: dev.sha(f"{root}/{rel}") for rel in FIXTURES}
+    failures += not check(all(before.values()), "fixtures written",
+                          "could not write fixtures")
+
+    step("cloud_backup uploads")
+    backend("reset")
+    dev.run("cloud_backup >/dev/null 2>&1 || true", check=False)
+    listing = backend("ls")
+    uploaded = {rel for rel in FIXTURES if os.path.basename(rel) in listing}
+    failures += not check(len(uploaded) == len(FIXTURES),
+                          f"all {len(FIXTURES)} fixtures reached the bucket",
+                          f"only {len(uploaded)}/{len(FIXTURES)} reached the bucket")
+    leaked = [rel for rel in EXCLUDED if os.path.basename(rel) in listing]
+    failures += not check(not leaked,
+                          "the allowlist kept excluded files out of the cloud",
+                          f"excluded file(s) uploaded: {leaked}")
+
+    step("cloud_restore brings them back")
+    for rel in FIXTURES:
+        dev.run(f"rm -f {shlex.quote(f'{root}/{rel}')}")
+    gone = [rel for rel in FIXTURES if dev.sha(f"{root}/{rel}")]
+    failures += not check(not gone, "local copies removed before restore",
+                          f"still present: {gone}")
+    dev.run("cloud_restore >/dev/null 2>&1 || true", check=False)
+    after = {rel: dev.sha(f"{root}/{rel}") for rel in FIXTURES}
+    same = [rel for rel in FIXTURES if before[rel] and before[rel] == after[rel]]
+    failures += not check(len(same) == len(FIXTURES),
+                          f"all {len(FIXTURES)} files restored byte-identical",
+                          f"only {len(same)}/{len(FIXTURES)} matched: "
+                          f"{[r for r in FIXTURES if r not in same]}")
+
+    if not args.keep:
+        step("clean up")
+        if not args.real_roms:
+            dev.run(f"rm -rf {shlex.quote(SCRATCH)}")
+        backend("reset")
+        print("    scratch tree and bucket emptied")
+
+    print(f"\n{'PASSED' if failures == 0 else f'{failures} CHECK(S) FAILED'}")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Fail as e:
+        print(f"\nerror: {e}", file=sys.stderr)
+        sys.exit(2)
+    except KeyboardInterrupt:
+        sys.exit(130)

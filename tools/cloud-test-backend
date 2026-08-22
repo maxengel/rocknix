@@ -1,0 +1,153 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# A disposable S3 endpoint for cloud-sync QA.
+#
+# Runs MinIO in a container on this host. A VM started by generic-x64-vm
+# reaches it at 10.0.2.2 (QEMU user-mode networking always routes that to the
+# host), so nothing needs forwarding and no real cloud account is involved.
+#
+# Deliberately local: the cloud-sync tests exercise credential stripping and
+# backup contents, so a live provider token would be handled by exactly the
+# code paths most likely to leak it. The keys here are throwaway and grant
+# access to one bucket on one machine.
+#
+#   ./tools/cloud-test-backend up          # start it, create the bucket
+#   ./tools/cloud-test-backend reset       # empty the bucket between tests
+#   ./tools/cloud-test-backend ls [path]   # what the device actually uploaded
+#   ./tools/cloud-test-backend rclone-conf # the stanza to place on a device
+#   ./tools/cloud-test-backend down        # stop and remove
+set -euo pipefail
+
+NAME="${CLOUD_QA_NAME:-rocknix-cloud-qa}"
+PORT="${CLOUD_QA_PORT:-9000}"
+BUCKET="${CLOUD_QA_BUCKET:-rocknix-qa}"
+KEY="${CLOUD_QA_KEY:-rocknixqa}"
+SECRET="${CLOUD_QA_SECRET:-rocknixqa-secret}"
+IMAGE="${CLOUD_QA_IMAGE:-quay.io/minio/minio:latest}"
+
+# The remote name the device will use. Every cloud_* script selects its
+# remote with `rclone listremotes | head -1` - first alphabetically - so this
+# name decides whether the tests act on the test bucket or on whatever else
+# the device has configured. The driver asserts it rather than trusting it.
+REMOTE="${CLOUD_QA_REMOTE:-qa-minio}"
+
+HOST_ENDPOINT="http://127.0.0.1:${PORT}"
+GUEST_ENDPOINT="${CLOUD_QA_GUEST_ENDPOINT:-http://10.0.2.2:${PORT}}"
+
+# A throwaway host-side config rather than an on-the-fly connection string:
+# rclone's connection-string parser splits on ':' and mangles an endpoint URL
+# ("dial tcp: lookup http") on the versions shipped by most distros. A config
+# file behaves the same across versions.
+HOST_CONF="${CLOUD_QA_HOST_CONF:-${XDG_CACHE_HOME:-${HOME}/.cache}/rocknix-cloud-qa/rclone.conf}"
+
+host_conf() {
+  mkdir -p "$(dirname "${HOST_CONF}")"
+  cat > "${HOST_CONF}" <<EOF
+[qa-host]
+type = s3
+provider = Minio
+env_auth = false
+access_key_id = ${KEY}
+secret_access_key = ${SECRET}
+endpoint = ${HOST_ENDPOINT}
+force_path_style = true
+region = us-east-1
+EOF
+  chmod 600 "${HOST_CONF}"
+}
+
+# rclone against the bucket from this host.
+rc() { host_conf; rclone --config "${HOST_CONF}" "$@"; }
+remote_arg() { printf 'qa-host:%s' "${BUCKET}${1:+/$1}"; }
+
+need() { command -v "${1}" >/dev/null 2>&1 || { echo "error: ${1} is required" >&2; exit 1; }; }
+
+case "${1:-}" in
+  up)
+    need docker; need rclone
+    if docker ps -a --format '{{.Names}}' | grep -qx "${NAME}"; then
+      docker start "${NAME}" >/dev/null 2>&1 || true
+    else
+      docker run -d --name "${NAME}" \
+        -p "${PORT}:9000" -p "$((PORT + 1)):9001" \
+        -e "MINIO_ROOT_USER=${KEY}" -e "MINIO_ROOT_PASSWORD=${SECRET}" \
+        "${IMAGE}" server /data --console-address ":9001" >/dev/null
+    fi
+
+    for _ in $(seq 1 60); do
+      if rc lsd "$(remote_arg)" >/dev/null 2>&1 \
+         || rc mkdir "$(remote_arg)" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 1
+    done
+    rc mkdir "$(remote_arg)" >/dev/null 2>&1 || true
+    rc lsd "$(remote_arg)" >/dev/null 2>&1 || {
+      echo "error: bucket ${BUCKET} not reachable at ${HOST_ENDPOINT}" >&2
+      echo "hint: docker logs ${NAME}" >&2
+      exit 1
+    }
+    echo "up: bucket ${BUCKET} at ${HOST_ENDPOINT} (guest: ${GUEST_ENDPOINT})"
+    ;;
+
+  down)
+    need docker
+    docker rm -f "${NAME}" >/dev/null 2>&1 || true
+    echo "down"
+    ;;
+
+  reset)
+    need rclone
+    # purge removes the bucket too; recreate so tests start from empty.
+    rc purge "$(remote_arg)" >/dev/null 2>&1 || true
+    rc mkdir "$(remote_arg)" >/dev/null
+    echo "reset: ${BUCKET} is empty"
+    ;;
+
+  ls)
+    need rclone
+    rc ls "$(remote_arg "${2:-}")"
+    ;;
+
+  tree)
+    need rclone
+    rc tree "$(remote_arg "${2:-}")"
+    ;;
+
+  status)
+    need docker
+    if docker ps --format '{{.Names}}' | grep -qx "${NAME}"; then
+      echo "running: ${NAME} on ${HOST_ENDPOINT}, bucket ${BUCKET}"
+      rc size "$(remote_arg)" 2>/dev/null || true
+    else
+      echo "not running"
+      exit 1
+    fi
+    ;;
+
+  rclone-conf)
+    # What goes in /storage/.config/rclone/rclone.conf on the device.
+    cat <<EOF
+[${REMOTE}]
+type = s3
+provider = Minio
+env_auth = false
+access_key_id = ${KEY}
+secret_access_key = ${SECRET}
+endpoint = ${GUEST_ENDPOINT}
+force_path_style = true
+acl = private
+EOF
+    ;;
+
+  remote-name)
+    echo "${REMOTE}"
+    ;;
+
+  *)
+    echo "usage: ${0##*/} {up|down|reset|ls [path]|tree [path]|status|rclone-conf|remote-name}" >&2
+    exit 1
+    ;;
+esac
