@@ -125,15 +125,27 @@ def main():
                  f"someone else's account"):
         return 1
 
+    settings = {}
     if not args.real_roms:
         # Keep the scripts' own defaults for everything except where they
         # read and write, so the code under test is unchanged.
         dev.run(f"mkdir -p {SCRATCH}")
-        for key, val in (("BACKUPPATH", SCRATCH), ("RESTOREPATH", SCRATCH),
-                         ("BACKUPFOLDER", f"{SCRATCH}/backup")):
-            dev.run(f"grep -q '^{key}=' {CONF} && sed -i 's|^{key}=.*|{key}=\"{val}\"|' {CONF} "
-                    f"|| echo '{key}=\"{val}\"' >> {CONF}")
+        settings.update({"BACKUPPATH": SCRATCH, "RESTOREPATH": SCRATCH,
+                         "BACKUPFOLDER": f"{SCRATCH}/backup"})
+
+    # A bucket-based endpoint needs the bucket as the first path component,
+    # and the shipped "/GAMES" is not a legal bucket name (issue #38). The
+    # backend states what it needs rather than the driver assuming.
+    syncpath = backend("syncpath").strip()
+    settings["SYNCPATH"] = syncpath
+    settings["SYNCPATH_BACKUP"] = f"{syncpath}/backup"
+
+    for key, val in settings.items():
+        dev.run(f"grep -q '^{key}=' {CONF} && sed -i 's|^{key}=.*|{key}=\"{val}\"|' {CONF} "
+                f"|| echo '{key}=\"{val}\"' >> {CONF}")
+    if not args.real_roms:
         print(f"    scratch tree {SCRATCH} (pass --real-roms to use /storage/roms)")
+    print(f"    SYNCPATH {syncpath} on the {backend('backend').strip()} endpoint")
 
     step("plant fixtures")
     for rel, data in {**FIXTURES, **EXCLUDED}.items():

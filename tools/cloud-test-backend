@@ -30,7 +30,7 @@ set -euo pipefail
 BACKEND="${CLOUD_QA_BACKEND:-webdav}"
 PORT="${CLOUD_QA_PORT:-9010}"
 USER_NAME="${CLOUD_QA_USER:-qauser}"
-PASS="${CLOUD_QA_PASS:-qapass}"
+PASS="${CLOUD_QA_PASS:-qa-password}"   # >=8 chars: MinIO rejects shorter root passwords
 
 STATE="${CLOUD_QA_STATE:-${XDG_CACHE_HOME:-${HOME}/.cache}/rocknix-cloud-qa}"
 DATA="${STATE}/data"
@@ -89,6 +89,13 @@ case "${1:-}" in
              "${S3_IMAGE}" server /data >/dev/null
       for _ in $(seq 1 60); do
         s3 mkdir "qa-host:${S3_BUCKET}" >/dev/null 2>&1 && break
+        # A container that has already exited will never become ready, so say
+        # why now instead of waiting out the timeout on a corpse.
+        if ! docker ps --format '{{.Names}}' | grep -qx "${S3_NAME}"; then
+          echo "error: ${S3_NAME} exited during startup:" >&2
+          docker logs --tail 5 "${S3_NAME}" >&2 2>/dev/null || true
+          exit 1
+        fi
         sleep 1
       done
       s3 lsd "qa-host:${S3_BUCKET}" >/dev/null 2>&1 || {
@@ -117,9 +124,25 @@ case "${1:-}" in
   down)
     if [ "${BACKEND}" = "s3" ]; then
       docker rm -f "${S3_NAME}" >/dev/null 2>&1 || true
-    elif webdav_running; then
-      kill "$(cat "${PIDFILE}")" 2>/dev/null || true
+    else
+      [ -f "${PIDFILE}" ] && kill "$(cat "${PIDFILE}")" 2>/dev/null || true
       rm -f "${PIDFILE}"
+      # The pid recorded at start is not always the process that ends up
+      # holding the socket, so sweep any serve still bound to our port -
+      # reporting "down" while it is still listening is worse than failing.
+      for p in $(ss -ltnp 2>/dev/null \
+                 | awk -v port=":${PORT}\$" '$4 ~ port {print $0}' \
+                 | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u); do
+        kill "${p}" 2>/dev/null || true
+      done
+    fi
+    for _ in $(seq 1 10); do
+      ss -ltn 2>/dev/null | grep -q ":${PORT} " || break
+      sleep 1
+    done
+    if ss -ltn 2>/dev/null | grep -q ":${PORT} "; then
+      echo "error: something is still listening on ${PORT}" >&2
+      exit 1
     fi
     echo "down"
     ;;
@@ -180,6 +203,19 @@ vendor = other
 user = ${USER_NAME}
 pass = $(rclone obscure "${PASS}" 2>/dev/null || echo "${PASS}")
 EOF
+    fi
+    ;;
+
+  syncpath)
+    # What SYNCPATH must be for this endpoint. On a path-based backend it is
+    # just a folder. On a bucket-based one the first component is the bucket,
+    # and it has to be a legal bucket name - lowercase, 3-63 chars - so the
+    # shipped "/GAMES" is rejected outright (issue #38). rclone will create
+    # the bucket itself once the name is valid.
+    if [ "${BACKEND}" = "s3" ]; then
+      echo "/${S3_BUCKET}/GAMES"
+    else
+      echo "/GAMES"
     fi
     ;;
 

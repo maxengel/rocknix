@@ -136,16 +136,31 @@ over SSH. A VM from `generic-x64-vm` reaches the host at `10.0.2.2`, so nothing
 needs forwarding.
 
 ```bash
-./tools/cloud-test-backend up
+./tools/cloud-test-backend up                    # WebDAV on :9010
 ./tools/cloud-round-trip --host root@127.0.0.1 --port 10022 --identity <key>
-./tools/cloud-test-backend ls        # what the device actually uploaded
+./tools/cloud-test-backend ls                    # what the device uploaded
+./tools/cloud-test-backend down
+
+CLOUD_QA_BACKEND=s3 ./tools/cloud-test-backend up   # MinIO instead
+CLOUD_QA_BACKEND=s3 ./tools/cloud-round-trip --host ... # bucket-based path
 ```
+
+Getting a VM to an SSH target the driver can use: boot it, then over the
+serial console (`-serial unix:`) enable sshd and drop in a key —
+`systemctl start sshd`, then write your public key to
+`/storage/.ssh/authorized_keys` (mode 600, directory 700). SSH is off on a
+fresh image, and the console gives a root shell without login.
 
 - **WebDAV, not S3, by default.** Dropbox/Drive/OneDrive are path-based, so
   `SYNCPATH="/GAMES"` is a folder. On S3 and B2 the first path component is the
-  *bucket*, so the same value asks for a bucket named `GAMES` (issue #38).
-  Testing on S3 exercises semantics our users do not have;
-  `CLOUD_QA_BACKEND=s3` reproduces that difference on purpose.
+  *bucket*. rclone creates buckets on demand, so a missing one is not the
+  problem - the problem is that `GAMES` is not a **legal** bucket name
+  (lowercase only, 3-63 chars), so it is rejected with `InvalidBucketName`
+  before anything can be created (issue #38). Testing on S3 exercises
+  semantics our users do not have; `CLOUD_QA_BACKEND=s3` reproduces that
+  difference on purpose, and the backend reports the `SYNCPATH` it needs
+  (`cloud-test-backend syncpath` -> `/<bucket>/GAMES`) so the driver does not
+  hard-code either shape.
 - **Local on purpose.** These tests exercise credential stripping and backup
   contents - the code paths most likely to leak a token into an archive, a log
   or a work log. A throwaway WebDAV password is worth nothing if it escapes.
