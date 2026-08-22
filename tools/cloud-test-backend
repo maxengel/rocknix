@@ -2,152 +2,192 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 #
-# A disposable S3 endpoint for cloud-sync QA.
+# A disposable cloud endpoint for cloud-sync QA.
 #
-# Runs MinIO in a container on this host. A VM started by generic-x64-vm
+# Serves a directory on this host over WebDAV. A VM started by generic-x64-vm
 # reaches it at 10.0.2.2 (QEMU user-mode networking always routes that to the
 # host), so nothing needs forwarding and no real cloud account is involved.
 #
-# Deliberately local: the cloud-sync tests exercise credential stripping and
-# backup contents, so a live provider token would be handled by exactly the
-# code paths most likely to leak it. The keys here are throwaway and grant
-# access to one bucket on one machine.
+# WebDAV rather than S3 by default, because it matches what people actually
+# use. Dropbox, Google Drive and OneDrive are path-based, so SYNCPATH="/GAMES"
+# is a folder. On S3 and B2 the first path component is the *bucket*, so the
+# same setting asks for a bucket named GAMES and fails with InvalidBucketName.
+# Testing on S3 would exercise semantics our users do not have. Set
+# CLOUD_QA_BACKEND=s3 to get MinIO anyway - useful precisely for reproducing
+# that bucket-vs-folder difference.
 #
-#   ./tools/cloud-test-backend up          # start it, create the bucket
-#   ./tools/cloud-test-backend reset       # empty the bucket between tests
+# Deliberately local either way: these tests exercise credential stripping and
+# backup contents, so a live provider token would be handled by exactly the
+# code paths most likely to leak it.
+#
+#   ./tools/cloud-test-backend up          # start it
+#   ./tools/cloud-test-backend reset       # empty it between tests
 #   ./tools/cloud-test-backend ls [path]   # what the device actually uploaded
 #   ./tools/cloud-test-backend rclone-conf # the stanza to place on a device
-#   ./tools/cloud-test-backend down        # stop and remove
+#   ./tools/cloud-test-backend down        # stop it
 set -euo pipefail
 
-NAME="${CLOUD_QA_NAME:-rocknix-cloud-qa}"
-PORT="${CLOUD_QA_PORT:-9000}"
-BUCKET="${CLOUD_QA_BUCKET:-rocknix-qa}"
-KEY="${CLOUD_QA_KEY:-rocknixqa}"
-SECRET="${CLOUD_QA_SECRET:-rocknixqa-secret}"
-IMAGE="${CLOUD_QA_IMAGE:-quay.io/minio/minio:latest}"
+BACKEND="${CLOUD_QA_BACKEND:-webdav}"
+PORT="${CLOUD_QA_PORT:-9010}"
+USER_NAME="${CLOUD_QA_USER:-qauser}"
+PASS="${CLOUD_QA_PASS:-qapass}"
+
+STATE="${CLOUD_QA_STATE:-${XDG_CACHE_HOME:-${HOME}/.cache}/rocknix-cloud-qa}"
+DATA="${STATE}/data"
+PIDFILE="${STATE}/webdav.pid"
+LOGFILE="${STATE}/webdav.log"
 
 # The remote name the device will use. Every cloud_* script selects its
 # remote with `rclone listremotes | head -1` - first alphabetically - so this
-# name decides whether the tests act on the test bucket or on whatever else
+# name decides whether the tests act on the test endpoint or on whatever else
 # the device has configured. The driver asserts it rather than trusting it.
-REMOTE="${CLOUD_QA_REMOTE:-qa-minio}"
+REMOTE="${CLOUD_QA_REMOTE:-qa-cloud}"
 
-HOST_ENDPOINT="http://127.0.0.1:${PORT}"
-GUEST_ENDPOINT="${CLOUD_QA_GUEST_ENDPOINT:-http://10.0.2.2:${PORT}}"
+GUEST_HOST="${CLOUD_QA_GUEST_HOST:-10.0.2.2}"
 
-# A throwaway host-side config rather than an on-the-fly connection string:
-# rclone's connection-string parser splits on ':' and mangles an endpoint URL
-# ("dial tcp: lookup http") on the versions shipped by most distros. A config
-# file behaves the same across versions.
-HOST_CONF="${CLOUD_QA_HOST_CONF:-${XDG_CACHE_HOME:-${HOME}/.cache}/rocknix-cloud-qa/rclone.conf}"
+# --- S3 (optional) ----------------------------------------------------------
+S3_NAME="${CLOUD_QA_NAME:-rocknix-cloud-qa}"
+S3_BUCKET="${CLOUD_QA_BUCKET:-rocknix-qa}"
+S3_IMAGE="${CLOUD_QA_IMAGE:-quay.io/minio/minio:latest}"
+S3_CONF="${STATE}/s3-host.conf"
 
-host_conf() {
-  mkdir -p "$(dirname "${HOST_CONF}")"
-  cat > "${HOST_CONF}" <<EOF
+need() { command -v "${1}" >/dev/null 2>&1 || { echo "error: ${1} is required" >&2; exit 1; }; }
+
+s3_host_conf() {
+  mkdir -p "${STATE}"
+  # A config file rather than an on-the-fly connection string: rclone's
+  # connection-string parser splits on ':' and mangles an endpoint URL,
+  # failing with "dial tcp: lookup http" on versions many distros ship.
+  cat > "${S3_CONF}" <<EOF
 [qa-host]
 type = s3
 provider = Minio
 env_auth = false
-access_key_id = ${KEY}
-secret_access_key = ${SECRET}
-endpoint = ${HOST_ENDPOINT}
+access_key_id = ${USER_NAME}
+secret_access_key = ${PASS}
+endpoint = http://127.0.0.1:${PORT}
 force_path_style = true
 region = us-east-1
 EOF
-  chmod 600 "${HOST_CONF}"
+  chmod 600 "${S3_CONF}"
 }
+s3() { s3_host_conf; rclone --config "${S3_CONF}" "$@"; }
 
-# rclone against the bucket from this host.
-rc() { host_conf; rclone --config "${HOST_CONF}" "$@"; }
-remote_arg() { printf 'qa-host:%s' "${BUCKET}${1:+/$1}"; }
-
-need() { command -v "${1}" >/dev/null 2>&1 || { echo "error: ${1} is required" >&2; exit 1; }; }
+webdav_running() {
+  [ -f "${PIDFILE}" ] && kill -0 "$(cat "${PIDFILE}")" 2>/dev/null
+}
 
 case "${1:-}" in
   up)
-    need docker; need rclone
-    if docker ps -a --format '{{.Names}}' | grep -qx "${NAME}"; then
-      docker start "${NAME}" >/dev/null 2>&1 || true
-    else
-      docker run -d --name "${NAME}" \
-        -p "${PORT}:9000" -p "$((PORT + 1)):9001" \
-        -e "MINIO_ROOT_USER=${KEY}" -e "MINIO_ROOT_PASSWORD=${SECRET}" \
-        "${IMAGE}" server /data --console-address ":9001" >/dev/null
+    mkdir -p "${DATA}"
+    if [ "${BACKEND}" = "s3" ]; then
+      need docker; need rclone
+      docker ps -a --format '{{.Names}}' | grep -qx "${S3_NAME}" \
+        && docker start "${S3_NAME}" >/dev/null 2>&1 \
+        || docker run -d --name "${S3_NAME}" -p "${PORT}:9000" \
+             -e "MINIO_ROOT_USER=${USER_NAME}" -e "MINIO_ROOT_PASSWORD=${PASS}" \
+             "${S3_IMAGE}" server /data >/dev/null
+      for _ in $(seq 1 60); do
+        s3 mkdir "qa-host:${S3_BUCKET}" >/dev/null 2>&1 && break
+        sleep 1
+      done
+      s3 lsd "qa-host:${S3_BUCKET}" >/dev/null 2>&1 || {
+        echo "error: bucket not reachable; try: docker logs ${S3_NAME}" >&2; exit 1; }
+      echo "up: s3 bucket ${S3_BUCKET} on port ${PORT}"
+      echo "note: SYNCPATH must start with the bucket, e.g. /${S3_BUCKET}/GAMES"
+      exit 0
     fi
 
-    for _ in $(seq 1 60); do
-      if rc lsd "$(remote_arg)" >/dev/null 2>&1 \
-         || rc mkdir "$(remote_arg)" >/dev/null 2>&1; then
-        break
-      fi
+    need rclone; need curl
+    if webdav_running; then
+      echo "up: webdav already serving ${DATA} on port ${PORT}"; exit 0
+    fi
+    nohup rclone serve webdav "${DATA}" --addr "127.0.0.1:${PORT}" \
+      --user "${USER_NAME}" --pass "${PASS}" > "${LOGFILE}" 2>&1 &
+    echo $! > "${PIDFILE}"
+    for _ in $(seq 1 30); do
+      curl -fsS -u "${USER_NAME}:${PASS}" "http://127.0.0.1:${PORT}/" >/dev/null 2>&1 && break
       sleep 1
     done
-    rc mkdir "$(remote_arg)" >/dev/null 2>&1 || true
-    rc lsd "$(remote_arg)" >/dev/null 2>&1 || {
-      echo "error: bucket ${BUCKET} not reachable at ${HOST_ENDPOINT}" >&2
-      echo "hint: docker logs ${NAME}" >&2
-      exit 1
-    }
-    echo "up: bucket ${BUCKET} at ${HOST_ENDPOINT} (guest: ${GUEST_ENDPOINT})"
+    curl -fsS -u "${USER_NAME}:${PASS}" "http://127.0.0.1:${PORT}/" >/dev/null 2>&1 || {
+      echo "error: webdav did not come up; see ${LOGFILE}" >&2; exit 1; }
+    echo "up: webdav serving ${DATA} at http://127.0.0.1:${PORT} (guest: http://${GUEST_HOST}:${PORT})"
     ;;
 
   down)
-    need docker
-    docker rm -f "${NAME}" >/dev/null 2>&1 || true
+    if [ "${BACKEND}" = "s3" ]; then
+      docker rm -f "${S3_NAME}" >/dev/null 2>&1 || true
+    elif webdav_running; then
+      kill "$(cat "${PIDFILE}")" 2>/dev/null || true
+      rm -f "${PIDFILE}"
+    fi
     echo "down"
     ;;
 
   reset)
-    need rclone
-    # purge removes the bucket too; recreate so tests start from empty.
-    rc purge "$(remote_arg)" >/dev/null 2>&1 || true
-    rc mkdir "$(remote_arg)" >/dev/null
-    echo "reset: ${BUCKET} is empty"
+    if [ "${BACKEND}" = "s3" ]; then
+      need rclone
+      s3 purge "qa-host:${S3_BUCKET}" >/dev/null 2>&1 || true
+      s3 mkdir "qa-host:${S3_BUCKET}" >/dev/null
+    else
+      # A plain directory, so resetting is a delete and inspecting it is ls.
+      rm -rf "${DATA:?}"/* "${DATA:?}"/.[!.]* 2>/dev/null || true
+      mkdir -p "${DATA}"
+    fi
+    echo "reset: endpoint is empty"
     ;;
 
   ls)
-    need rclone
-    rc ls "$(remote_arg "${2:-}")"
+    if [ "${BACKEND}" = "s3" ]; then
+      need rclone; s3 ls "qa-host:${S3_BUCKET}${2:+/$2}"
+    else
+      ( cd "${DATA}${2:+/$2}" 2>/dev/null && find . -type f -printf '%10s %P\n' | sort -k2 ) || true
+    fi
     ;;
 
-  tree)
-    need rclone
-    rc tree "$(remote_arg "${2:-}")"
-    ;;
+  path) echo "${DATA}" ;;
 
   status)
-    need docker
-    if docker ps --format '{{.Names}}' | grep -qx "${NAME}"; then
-      echo "running: ${NAME} on ${HOST_ENDPOINT}, bucket ${BUCKET}"
-      rc size "$(remote_arg)" 2>/dev/null || true
+    if [ "${BACKEND}" = "s3" ]; then
+      docker ps --format '{{.Names}}' | grep -qx "${S3_NAME}" \
+        && echo "running: s3 ${S3_NAME} port ${PORT}" || { echo "not running"; exit 1; }
+    elif webdav_running; then
+      echo "running: webdav ${DATA} port ${PORT} ($(find "${DATA}" -type f 2>/dev/null | wc -l) files)"
     else
-      echo "not running"
-      exit 1
+      echo "not running"; exit 1
     fi
     ;;
 
   rclone-conf)
     # What goes in /storage/.config/rclone/rclone.conf on the device.
-    cat <<EOF
+    if [ "${BACKEND}" = "s3" ]; then
+      cat <<EOF
 [${REMOTE}]
 type = s3
 provider = Minio
 env_auth = false
-access_key_id = ${KEY}
-secret_access_key = ${SECRET}
-endpoint = ${GUEST_ENDPOINT}
+access_key_id = ${USER_NAME}
+secret_access_key = ${PASS}
+endpoint = http://${GUEST_HOST}:${PORT}
 force_path_style = true
-acl = private
 EOF
+    else
+      cat <<EOF
+[${REMOTE}]
+type = webdav
+url = http://${GUEST_HOST}:${PORT}
+vendor = other
+user = ${USER_NAME}
+pass = $(rclone obscure "${PASS}" 2>/dev/null || echo "${PASS}")
+EOF
+    fi
     ;;
 
-  remote-name)
-    echo "${REMOTE}"
-    ;;
+  remote-name) echo "${REMOTE}" ;;
+  backend)     echo "${BACKEND}" ;;
 
   *)
-    echo "usage: ${0##*/} {up|down|reset|ls [path]|tree [path]|status|rclone-conf|remote-name}" >&2
+    echo "usage: ${0##*/} {up|down|reset|ls [path]|path|status|rclone-conf|remote-name|backend}" >&2
     exit 1
     ;;
 esac

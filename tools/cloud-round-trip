@@ -150,10 +150,16 @@ def main():
     failures += not check(len(uploaded) == len(FIXTURES),
                           f"all {len(FIXTURES)} fixtures reached the bucket",
                           f"only {len(uploaded)}/{len(FIXTURES)} reached the bucket")
+    # Only meaningful once something uploaded: if the backup did nothing at
+    # all, "the excluded file is absent" is true for the wrong reason and
+    # reports a pass over a broken run.
     leaked = [rel for rel in EXCLUDED if os.path.basename(rel) in listing]
-    failures += not check(not leaked,
-                          "the allowlist kept excluded files out of the cloud",
-                          f"excluded file(s) uploaded: {leaked}")
+    if uploaded:
+        failures += not check(not leaked,
+                              "the allowlist kept excluded files out of the cloud",
+                              f"excluded file(s) uploaded: {leaked}")
+    else:
+        print("    SKIP  allowlist check - nothing uploaded, so it proves nothing")
 
     step("cloud_restore brings them back")
     for rel in FIXTURES:
