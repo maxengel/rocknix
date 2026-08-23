@@ -7,7 +7,8 @@ component choices. Those come later, against
 [es-ui-style-guide.md](es-ui-style-guide.md).
 
 Companion to [es-menu-map.md](es-menu-map.md), which places this subtree in the
-wider menu.
+wider menu. Rendered low-fidelity wireframes of these screens, with the reasoning
+in the margins: <https://claude.ai/code/artifact/5da9ce12-b088-4db0-8557-4b34fe454dd6>
 
 ## Scope: what counts as a conflict
 
