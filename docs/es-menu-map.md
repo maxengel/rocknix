@@ -5,8 +5,10 @@ Derived from `es-app/src/guis/` in `ROCKNIX/emulationstation-next` (surveyed
 2026-08-19 against the `20260818` build) and verified against the running UI with
 `tools/vm-visual-qa`.
 
-Companion document: [es-ui-style-guide.md](es-ui-style-guide.md) — how a screen
-should look and behave once you know where it goes.
+Companion documents: [es-ui-style-guide.md](es-ui-style-guide.md) — how a screen
+should look and behave once you know where it goes; and
+[conflict-wizard-ia.md](conflict-wizard-ia.md) — the flow and screen structure
+for the cloud-save conflict wizard, which is being designed before it is built.
 
 ## Two ways in
 
