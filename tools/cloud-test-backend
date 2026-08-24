@@ -219,11 +219,21 @@ EOF
     fi
     ;;
 
+  contentpath)
+    # Where cloud_content_backup/restore put whole content directories.
+    # Same bucket-vs-folder split as syncpath.
+    if [ "${BACKEND}" = "s3" ]; then
+      echo "/${S3_BUCKET}/CONTENT"
+    else
+      echo "/CONTENT"
+    fi
+    ;;
+
   remote-name) echo "${REMOTE}" ;;
   backend)     echo "${BACKEND}" ;;
 
   *)
-    echo "usage: ${0##*/} {up|down|reset|ls [path]|path|status|rclone-conf|remote-name|backend}" >&2
+    echo "usage: ${0##*/} {up|down|reset|ls [path]|path|status|rclone-conf|syncpath|contentpath|remote-name|backend}" >&2
     exit 1
     ;;
 esac

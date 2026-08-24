@@ -44,6 +44,16 @@ FIXTURES = {
 }
 EXCLUDED = {"saves/scratch.tmp": b"should-never-leave-the-device"}
 
+# Content sync is a different code path: whole directories of ROMs and BIOS,
+# not allowlisted save files. Its directory is created and removed by the test
+# and named so it is obvious what it is if a run is interrupted.
+CONTENT_DIR = "qa-content"
+CONTENT_FIXTURES = {
+    "rom1.bin": b"rom-one",
+    "sub/rom2.bin": b"rom-two",
+    "rom with space.bin": b"rom-three",
+}
+
 
 class Fail(Exception):
     pass
@@ -139,6 +149,9 @@ def main():
     syncpath = backend("syncpath").strip()
     settings["SYNCPATH"] = syncpath
     settings["SYNCPATH_BACKUP"] = f"{syncpath}/backup"
+    # cloud_content_* default to the remote root, which on a bucket-based
+    # endpoint means a bucket per content directory (#38, same cause).
+    settings["CONTENTPATH"] = backend("contentpath").strip()
 
     for key, val in settings.items():
         dev.run(f"grep -q '^{key}=' {CONF} && sed -i 's|^{key}=.*|{key}=\"{val}\"|' {CONF} "
@@ -186,6 +199,57 @@ def main():
                           f"all {len(FIXTURES)} files restored byte-identical",
                           f"only {len(same)}/{len(FIXTURES)} matched: "
                           f"{[r for r in FIXTURES if r not in same]}")
+
+    # --- content backup / restore -------------------------------------------
+    # cloud_content_backup hardcodes DEST=/storage/roms and ignores BACKUPPATH,
+    # so the scratch tree cannot contain this one. It is confined instead to a
+    # directory the harness creates and removes, and driven per-directory:
+    # `--all` would upload the whole ROM library, which is never what a test
+    # should do to someone's device.
+    step("cloud_content_backup uploads a content directory")
+    croot = f"/storage/roms/{CONTENT_DIR}"
+    dev.run(f"rm -rf {shlex.quote(croot)}")
+    for rel, data in CONTENT_FIXTURES.items():
+        dev.write(f"{croot}/{rel}", data)
+    cbefore = {rel: dev.sha(f"{croot}/{rel}") for rel in CONTENT_FIXTURES}
+
+    listed = dev.run(f"cloud_content_backup --list 2>/dev/null || true")
+    failures += not check(CONTENT_DIR in listed,
+                          f"{CONTENT_DIR} is offered as a content directory",
+                          f"--list did not offer it: {listed.split() or 'nothing'}")
+
+    dev.run(f"cloud_content_backup {shlex.quote(CONTENT_DIR)} >/dev/null 2>&1 || true",
+            check=False)
+    clisting = backend("ls")
+    cup = {rel for rel in CONTENT_FIXTURES if os.path.basename(rel) in clisting}
+    ok = check(len(cup) == len(CONTENT_FIXTURES),
+               f"all {len(CONTENT_FIXTURES)} content files reached the cloud",
+               f"only {len(cup)}/{len(CONTENT_FIXTURES)} reached the cloud")
+    failures += not ok
+    if not ok:
+        # Distinguish "this device has the known bug" from "the harness is
+        # broken" - otherwise a real, already-diagnosed defect reads as a
+        # problem with the test.
+        body = dev.run("cat $(command -v cloud_content_backup) 2>/dev/null || true")
+        if "Restoring ${DIR:-everything} from the cloud" in body:
+            print("          ^ this device ships the inverted cloud_content_backup "
+                  "(issue #40): it copies cloud -> device, so nothing is ever "
+                  "uploaded. Expected until a build carries the fix.")
+
+    step("cloud_content_restore brings it back")
+    dev.run(f"rm -rf {shlex.quote(croot)}")
+    failures += not check(not dev.sha(f"{croot}/{list(CONTENT_FIXTURES)[0]}"),
+                          "local content removed before restore",
+                          "local content still present")
+    dev.run(f"cloud_content_restore {shlex.quote(CONTENT_DIR)} >/dev/null 2>&1 || true",
+            check=False)
+    cafter = {rel: dev.sha(f"{croot}/{rel}") for rel in CONTENT_FIXTURES}
+    csame = [r for r in CONTENT_FIXTURES if cbefore[r] and cbefore[r] == cafter[r]]
+    failures += not check(len(csame) == len(CONTENT_FIXTURES),
+                          f"all {len(CONTENT_FIXTURES)} content files restored byte-identical",
+                          f"only {len(csame)}/{len(CONTENT_FIXTURES)} matched")
+
+    dev.run(f"rm -rf {shlex.quote(croot)}")
 
     if not args.keep:
         step("clean up")
