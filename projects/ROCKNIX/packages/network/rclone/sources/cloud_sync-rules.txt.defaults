@@ -5,8 +5,25 @@
 #   + pattern = explicitly include matching files/directories
 #   - pattern = explicitly exclude matching files/directories
 #
-# Rules are processed in order, with later rules overriding earlier ones.
+# Rules are processed in order and THE FIRST MATCH WINS - a later rule cannot
+# override an earlier one. This is why the catch-all "- /**" sits at the very
+# bottom, and why an exclusion must appear ABOVE any include that would
+# otherwise match the same file.
 # Using /** matches files recursively through all subdirectories.
+
+# Databases and their sidecars, before anything else can include them.
+# A database is the one file a player cannot resolve by hand if two devices
+# both write it, and rclone replaces files wholesale rather than merging, so a
+# synced database loses one side's history outright. Copying one mid-write also
+# yields a torn file, and a .db separated from its -wal can lose recent writes
+# or refuse to open. Ours lives in /storage/.cache and is never synced; this
+# guards against one an emulator drops into a save directory.
+- /**/*.db
+- /**/*.db-wal
+- /**/*.db-shm
+- /**/*.db-journal
+- /**/*.sqlite
+- /**/*.sqlite3
 
 # Start by explicitly including directories we want to fully backup
 + /savefiles/**

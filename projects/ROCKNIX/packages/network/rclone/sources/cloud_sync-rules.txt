@@ -1,5 +1,18 @@
 # Cloud Sync Rules - Default Configuration
-# Rules use the same syntax as .gitignore
+# Rules use the same syntax as .gitignore, and THE FIRST MATCH WINS - a later
+# rule cannot override an earlier one.
+
+# Databases and their sidecars, before anything else can include them.
+# A synced database is unresolvable by hand and rclone replaces it wholesale,
+# so one device's history would overwrite the other's. Ours lives in
+# /storage/.cache and never syncs; this guards against one an emulator drops
+# into a save directory.
+- /**/*.db
+- /**/*.db-wal
+- /**/*.db-shm
+- /**/*.db-journal
+- /**/*.sqlite
+- /**/*.sqlite3
 
 # Start by explicitly including directories we want to fully backup
 + /savefiles/**
