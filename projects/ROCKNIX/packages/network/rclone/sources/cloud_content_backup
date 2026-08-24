@@ -80,19 +80,21 @@ esac
 
 STATUS=0
 for DIR in "${DIRS[@]}"; do
-    SRC="${ROOT}${DIR}"
-    TARGET="${DEST}/${DIR}"
-    log_message "Content restore: ${SRC} -> ${TARGET}"
-    echo "Restoring ${DIR:-everything} from the cloud..."
+    # Local -> remote. This script uploads; cloud_content_restore is the one
+    # that brings content back down.
+    SRC="${DEST}/${DIR}"
+    TARGET="${ROOT}${DIR}"
+    log_message "Content backup: ${SRC} -> ${TARGET}"
+    echo "Backing up ${DIR:-everything} to the cloud..."
     rclone copy "${SRC}" "${TARGET}" \
         --stats-one-line --stats 5s \
         --log-file "${LOG_FILE}" --log-level INFO
     RC=$?
     if [ ${RC} -ne 0 ] && [ ${RC} -ne 9 ]; then
-        echo "Restore of ${DIR:-everything} failed (rclone exit ${RC})."
+        echo "Backup of ${DIR:-everything} failed (rclone exit ${RC})."
         STATUS=${RC}
     else
-        echo "Restored ${DIR:-everything}."
+        echo "Backed up ${DIR:-everything}."
     fi
 done
 
