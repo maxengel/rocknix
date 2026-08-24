@@ -10,10 +10,12 @@ Companion to [es-menu-map.md](es-menu-map.md), which places this subtree in the
 wider menu. Rendered low-fidelity wireframes of these screens, with the reasoning
 in the margins: <https://claude.ai/code/artifact/5da9ce12-b088-4db0-8557-4b34fe454dd6>
 
-> **Rev 2.** No entry screen, no summary step, no deferring. The count moved
-> into the conflict header, the summary became an opt-in setting, and
-> "keep discarded saves" replaced deferral as the way out of a decision you
-> are unsure about.
+> **Rev 3.** Decisions settled, several against ES's actual savestate code.
+> No file size shown; interrupted runs discard their decisions; cloud is
+> always the left column; *keep discarded saves* is off by default with a
+> retention count. Merged states go to the **next free** slot, matching
+> `SaveStateRepository::getNextFreeSlot()`, which appends rather than filling
+> gaps.
 
 ## Scope: what counts as a conflict
 
@@ -83,7 +85,7 @@ only the picture and the available options change.
 ├───────────────────────┴──────────────────────┤
 │  ( KEEP LEFT )  ( KEEP RIGHT )  ( KEEP BOTH )│   selected side(s) highlight
 │  [ CONTINUE ]        …or [ COMPLETE ] if last│
-│  merged saves move to the lowest unused slot │   only when KEEP BOTH is picked
+│  merged saves move to the next free slot     │   only when KEEP BOTH is picked
 └──────────────────────────────────────────────┘
 ```
 
@@ -98,8 +100,9 @@ swaps sides is how the wrong save gets picked at speed.
 |---|---|---|
 | Picture | screenshot, source badge overlaid | glyph, source badge overlaid |
 | Metadata | date · time · device + model · **core + version** | date · time · device + model · emulator + version |
+| Not shown | file size — not actionable when choosing between two saves | same |
 | Emulator info means | **compatibility** — core- and chipset-specific, may not load (#19) | context — usually portable across emulators |
-| KEEP BOTH | yes — moves to the lowest unused slot | **no** — fixed slots; shown disabled with a reason |
+| KEEP BOTH | yes — moves to the **next free** slot | **no** — fixed slots; shown disabled with a reason |
 | Losing copy | retained only when *keep discarded saves* is on | same |
 
 KEEP BOTH is **dimmed, not hidden**, on in-game saves — the house rule from
@@ -112,9 +115,13 @@ Two toggles, both in the cloud-saves area:
 
 - **Review decisions before applying** — off by default; turns the summary from
   a step everyone pays for into one the careful can opt into.
-- **Keep discarded saves** — retains the losing copy so a choice can be undone.
-  This is the same machinery as #25 (pre-change snapshots and rollback); build
-  it once.
+- **Keep discarded saves** — off by default; retains the losing copy so a
+  choice can be undone. A **count selector** sets how many to keep, and stays
+  visible but unselectable while the toggle is off (dim, don't hide — the
+  capability should be discoverable before it is enabled). The fixed count is
+  also the retention rule, so discarded copies cannot grow without bound on
+  card storage. Same machinery as #25 (pre-change snapshots and rollback);
+  build it once.
 
 ## Semantics
 
@@ -138,17 +145,36 @@ ordinary.
 **Conflict is a property of the pair, not of a side.** The header owns "this is
 a conflict"; the panels own "here is what each one is".
 
+## Settled
+
+- **No file size** on either panel — not actionable for choosing between saves.
+- **Progress does not survive an interruption.** Quitting discards decisions and
+  applies nothing. Redoing a few choices beats risking a half-applied
+  resolution, and it keeps the "nothing transfers until COMPLETE" guarantee
+  simple.
+- **Cloud is always the left column.**
+- **Keep discarded saves is off by default**, with a count selector.
+
+## What ES already does (checked, not assumed)
+
+- `SaveStateRepository::getNextFreeSlot()` returns **highest occupied + 1** — it
+  appends. It scans to 99999, so slot exhaustion is not a real constraint and
+  there is no 99-slot ceiling to design around.
+- `SaveState::copyToSlot(slot, move)` **already renames the `.png` alongside the
+  state**, so a merged savestate keeps its screenshot for free. Reuse it.
+- `SaveStateRepository::renumberSlots()` compacts slots to be contiguous, if
+  reclaiming gaps is ever wanted.
+- Slot filenames are `{{romfilename}}.state{{slot}}` with the thumbnail at
+  `{{romfilename}}.state{{slot}}.png`, from `firstslot = 0`.
+
 ## Open questions
 
-- **Does progress survive an interruption?** Nothing applies until COMPLETE,
-  which is safe — but on a long list, quitting near the end throws away every
-  decision made.
-- **"Lowest unused slot" — unused where?** A slot free locally but taken in the
-  cloud will collide at the next sync, turning one resolved conflict into a new
-  one. The renumbered state's screenshot has to move with it, or the picker
-  shows the wrong picture next time.
-- **What happens when slots are full?** KEEP BOTH should be refused up front
-  with a reason rather than failing at apply.
-- **Does *keep discarded saves* default on or off?** Off makes the default path
-  destructive; on needs a retention rule, on a device whose storage is a card.
-- **Which side is left?** Fix it once — cloud or device — and never vary it.
+- **Free on which side?** "Next free slot" must mean free in the cloud *and* on
+  the device, or the merge collides at the next sync.
+- **Is a slot cap wanted at all?** Exhaustion is not a system constraint. A cap
+  would be a product judgement about how many states a player can usefully
+  manage — and without one, a "slots nearly full" warning mitigates a problem
+  that does not exist.
+- **Does a merged copy keep its origin?** Once moved to a new slot it is no
+  longer "the cloud one"; worth deciding whether the manifest records where it
+  came from.
