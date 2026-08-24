@@ -10,9 +10,9 @@ Companion to [es-menu-map.md](es-menu-map.md), which places this subtree in the
 wider menu. Rendered low-fidelity wireframes of these screens, with the reasoning
 in the margins: <https://claude.ai/code/artifact/5da9ce12-b088-4db0-8557-4b34fe454dd6>
 
-> **Rev 4.** Merged states go to the **lowest free slot on the device**; no slot
-> cap; resolutions are recorded in an **audit log**; the wizard is triggered by
-> a sync that reports conflicts.
+> **Rev 4.** Merged states use ES's own `getNextFreeSlot()`; no slot cap;
+> resolutions are recorded in an **audit log**; the wizard is triggered by a
+> sync that reports conflicts.
 >
 > **Rev 3.** Decisions settled, several against ES's actual savestate code.
 > No file size shown; interrupted runs discard their decisions; cloud is
@@ -66,10 +66,9 @@ Properties the flow has to keep:
 - **Nothing transfers until COMPLETE.** The walkthrough is reversible right up
   to the end; quitting partway leaves both sides exactly as they were.
 - **Non-conflicting files are applied before the walkthrough starts.** This is
-  not just tidiness: it is what makes "lowest free slot on the device" safe to
-  compute. Once every cloud-only file has been downloaded, free-on-device and
-  free-on-both are the same thing, and a merge cannot pick a slot the cloud is
-  already using.
+  not just tidiness: it is what makes the slot choice safe. Once every
+  cloud-only file has been downloaded, free-on-device and free-on-both are the
+  same thing, and a merge cannot pick a slot the cloud is already using.
 - **Every conflict gets a decision.** There is no defer, because a discarded
   copy is recoverable when *keep discarded saves* is on — that setting, not
   deferral, is the escape hatch for "I am not sure".
@@ -95,7 +94,7 @@ only the picture and the available options change.
 ├───────────────────────┴──────────────────────┤
 │  ( KEEP LEFT )  ( KEEP RIGHT )  ( KEEP BOTH )│   selected side(s) highlight
 │  [ CONTINUE ]        …or [ COMPLETE ] if last│
-│  merged saves move to the lowest free slot   │   only when KEEP BOTH is picked
+│  merged saves move to the next free slot     │   only when KEEP BOTH is picked
 └──────────────────────────────────────────────┘
 ```
 
@@ -112,7 +111,7 @@ swaps sides is how the wrong save gets picked at speed.
 | Metadata | date · time · device + model · **core + version** | date · time · device + model · emulator + version |
 | Not shown | file size — not actionable when choosing between two saves | same |
 | Emulator info means | **compatibility** — core- and chipset-specific, may not load (#19) | context — usually portable across emulators |
-| KEEP BOTH | yes — moves to the **lowest free slot on the device** | **no** — fixed slots; shown disabled with a reason |
+| KEEP BOTH | yes — moves to the next free slot via ES's `getNextFreeSlot()` | **no** — fixed slots; shown disabled with a reason |
 | Losing copy | retained only when *keep discarded saves* is on | same |
 
 KEEP BOTH is **dimmed, not hidden**, on in-game saves — the house rule from
@@ -167,12 +166,16 @@ a conflict"; the panels own "here is what each one is".
 
 ## What ES already does (checked, not assumed)
 
-- `SaveStateRepository::getNextFreeSlot()` returns **highest occupied + 1** — it
-  appends. It scans to 99999, so slot exhaustion is not a real constraint and
-  there is no 99-slot ceiling to design around. **We deliberately do not reuse
-  it**: merges take the *lowest* free slot instead, so repeated merges do not
-  push slot numbers ever upward. The cost is a small inconsistency — a merged
-  state fills a gap where a manually created one appends — accepted knowingly.
+- `SaveStateRepository::getNextFreeSlot()` returns **highest occupied + 1**, and
+  scans to 99999 — so slot exhaustion is not a real constraint and there is no
+  99-slot ceiling to design around. **Use it for merges.** Because ES compacts
+  slots after every deletion (below), slots are normally contiguous, and
+  "highest + 1" *is* the lowest unused slot. Reusing it also inherits
+  `firstslot` handling and any future change to slot conventions.
+- `GuiSaveState` calls `renumberSlots()` after **every** savestate deletion, so
+  gaps do not persist in normal local use. The only way to get one is sync
+  bringing down a higher-numbered state from another device; appending past it
+  is still safe, and avoids placing a merged save where ES may renumber later.
 - `SaveState::copyToSlot(slot, move)` **already renames the `.png` alongside the
   state**, so a merged savestate keeps its screenshot for free. Reuse it.
 - `SaveStateRepository::renumberSlots()` compacts slots to be contiguous, if
@@ -215,3 +218,8 @@ surfaced in the UI or is purely a support artefact.
 
 - Where does the audit log live, what is its retention, and is it visible to
   the player?
+- **Slot numbers are not stable identities across devices.** ES renames files
+  when it renumbers after a deletion, which sync sees as delete + create, so
+  the same state can arrive on another device under a different slot number.
+  Conflict pairing, the manifest and the audit log all need to key on something
+  other than the slot. Tracked on #24.
