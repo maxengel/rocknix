@@ -10,12 +10,16 @@ Companion to [es-menu-map.md](es-menu-map.md), which places this subtree in the
 wider menu. Rendered low-fidelity wireframes of these screens, with the reasoning
 in the margins: <https://claude.ai/code/artifact/5da9ce12-b088-4db0-8557-4b34fe454dd6>
 
+> **Rev 4.** Merged states go to the **lowest free slot on the device**; no slot
+> cap; resolutions are recorded in an **audit log**; the wizard is triggered by
+> a sync that reports conflicts.
+>
 > **Rev 3.** Decisions settled, several against ES's actual savestate code.
 > No file size shown; interrupted runs discard their decisions; cloud is
 > always the left column; *keep discarded saves* is off by default with a
 > retention count. Merged states go to the **next free** slot, matching
 > `SaveStateRepository::getNextFreeSlot()`, which appends rather than filling
-> gaps.
+> gaps — superseded by rev 4, see below.
 
 ## Scope: what counts as a conflict
 
@@ -35,7 +39,8 @@ alarming when nothing is at risk.
 
 ```mermaid
 flowchart TD
-    SYNC([sync finds a fork]) --> ITEM
+    SYNC([bisync reports a conflict]) --> PRE[apply the non-conflicts first<br/>cloud-only down, device-only up]
+    PRE --> ITEM
 
     subgraph walk [walkthrough: system by system, then game by game]
         ITEM[conflict k of n<br/>KEEP LEFT / KEEP RIGHT / KEEP BOTH]
@@ -60,6 +65,11 @@ Properties the flow has to keep:
 
 - **Nothing transfers until COMPLETE.** The walkthrough is reversible right up
   to the end; quitting partway leaves both sides exactly as they were.
+- **Non-conflicting files are applied before the walkthrough starts.** This is
+  not just tidiness: it is what makes "lowest free slot on the device" safe to
+  compute. Once every cloud-only file has been downloaded, free-on-device and
+  free-on-both are the same thing, and a merge cannot pick a slot the cloud is
+  already using.
 - **Every conflict gets a decision.** There is no defer, because a discarded
   copy is recoverable when *keep discarded saves* is on — that setting, not
   deferral, is the escape hatch for "I am not sure".
@@ -85,7 +95,7 @@ only the picture and the available options change.
 ├───────────────────────┴──────────────────────┤
 │  ( KEEP LEFT )  ( KEEP RIGHT )  ( KEEP BOTH )│   selected side(s) highlight
 │  [ CONTINUE ]        …or [ COMPLETE ] if last│
-│  merged saves move to the next free slot     │   only when KEEP BOTH is picked
+│  merged saves move to the lowest free slot   │   only when KEEP BOTH is picked
 └──────────────────────────────────────────────┘
 ```
 
@@ -102,7 +112,7 @@ swaps sides is how the wrong save gets picked at speed.
 | Metadata | date · time · device + model · **core + version** | date · time · device + model · emulator + version |
 | Not shown | file size — not actionable when choosing between two saves | same |
 | Emulator info means | **compatibility** — core- and chipset-specific, may not load (#19) | context — usually portable across emulators |
-| KEEP BOTH | yes — moves to the **next free** slot | **no** — fixed slots; shown disabled with a reason |
+| KEEP BOTH | yes — moves to the **lowest free slot on the device** | **no** — fixed slots; shown disabled with a reason |
 | Losing copy | retained only when *keep discarded saves* is on | same |
 
 KEEP BOTH is **dimmed, not hidden**, on in-game saves — the house rule from
@@ -159,7 +169,10 @@ a conflict"; the panels own "here is what each one is".
 
 - `SaveStateRepository::getNextFreeSlot()` returns **highest occupied + 1** — it
   appends. It scans to 99999, so slot exhaustion is not a real constraint and
-  there is no 99-slot ceiling to design around.
+  there is no 99-slot ceiling to design around. **We deliberately do not reuse
+  it**: merges take the *lowest* free slot instead, so repeated merges do not
+  push slot numbers ever upward. The cost is a small inconsistency — a merged
+  state fills a gap where a manually created one appends — accepted knowingly.
 - `SaveState::copyToSlot(slot, move)` **already renames the `.png` alongside the
   state**, so a merged savestate keeps its screenshot for free. Reuse it.
 - `SaveStateRepository::renumberSlots()` compacts slots to be contiguous, if
@@ -167,14 +180,38 @@ a conflict"; the panels own "here is what each one is".
 - Slot filenames are `{{romfilename}}.state{{slot}}` with the thumbnail at
   `{{romfilename}}.state{{slot}}.png`, from `firstslot = 0`.
 
+## Detection, and what triggers the wizard
+
+A sync that reports conflicts opens the wizard. The mechanism is
+**`rclone bisync`** (#9), whose defaults suit this well:
+
+- `--conflict-resolve none` — the default — **detects and reports rather than
+  picking a winner**, which is exactly the project's rule that conflict
+  handling must never default to recency.
+- `--conflict-loser num` renames the loser rather than deleting it.
+
+Two consequences worth planning around:
+
+- Much of the detection engine (#22) may be *reading what bisync already found*
+  rather than diffing manifests ourselves. Manifests are still needed to
+  **display** a conflict — device name, emulator, core — but perhaps not to
+  find one.
+- **Do not let bisync do the renaming for savestates.** Its loser suffix
+  (`…conflict1`) breaks the `{{romfilename}}.state{{slot}}` pattern ES matches
+  on, so the file would vanish from the savestate manager. Detect with bisync,
+  then resolve into slots ourselves.
+
+## Audit log
+
+Every resolution is recorded: what conflicted, which side won, where a merged
+copy went, and when. This replaces per-save origin tracking — after a merge the
+copy is simply a savestate in a slot, and the log is what remembers it came
+from the cloud.
+
+Needs deciding: where it lives, how long it is kept, and whether it is
+surfaced in the UI or is purely a support artefact.
+
 ## Open questions
 
-- **Free on which side?** "Next free slot" must mean free in the cloud *and* on
-  the device, or the merge collides at the next sync.
-- **Is a slot cap wanted at all?** Exhaustion is not a system constraint. A cap
-  would be a product judgement about how many states a player can usefully
-  manage — and without one, a "slots nearly full" warning mitigates a problem
-  that does not exist.
-- **Does a merged copy keep its origin?** Once moved to a new slot it is no
-  longer "the cloud one"; worth deciding whether the manifest records where it
-  came from.
+- Where does the audit log live, what is its retention, and is it visible to
+  the player?
