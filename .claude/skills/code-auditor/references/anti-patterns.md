@@ -13,7 +13,7 @@ Guardrails against the ways audits go wrong. Review before starting, and check a
 | **Summarising without evidence**           | "The code looks good" with no file references                   | Every finding must cite specific files and lines                                                                       |
 | **Batching notes**                         | Reading 10 files then writing one summary                       | Write after EACH file/criterion examined                                                                               |
 | **Being helpful instead of accurate**      | Softening findings to avoid conflict                            | State findings precisely — the punch list is for fixing, not feelings                                                  |
-| **Skipping cornerstone evaluation**            | "This is just a small change"                                   | Every audit includes cornerstone conformance — no exceptions                                                               |
+| **Skipping project conformance**            | "This is just a small change"                                   | Every audit checks the matching instruction files and the blindspot register — no exceptions                                                               |
 | **Inventing acceptance criteria**          | Adding criteria the spec didn't define                          | Audit STATED criteria; suggest additions in punch list                                                                 |
 | **Delegating terminal ops to subagents**   | Subagents don't inherit terminal access                         | Use `bash` tool directly for `git`, `npm`, `gh` commands                                                               |
 | **Unbounded `gh` output**                  | Large output can destabilise the terminal                       | Always pass `--limit N --json <fields>` or pipe through `\| head`                                                      |
@@ -23,7 +23,7 @@ Guardrails against the ways audits go wrong. Review before starting, and check a
 | **Silently skipping criteria**             | Missing rows in the scorecard = hidden gaps                     | Every AC gets a verdict, even if UNTESTABLE (document why)                                                             |
 | **Verdict from subagent summary**          | Subagents can fabricate plausible content (2026-05-19 incident) | Subagent output is a lead; re-read the primary artifact before any verdict                                             |
 | **Tracker-state-only PASS evidence**       | Issue closed / AC box checked proves intent, not implementation | Every PASS cites a primary artifact: file:line, command output, or commit diff                                         |
-| **Silently dropping mandatory sections**   | A missing scorecard/cornerstone/coverage section is invisible drift | The Quality Self-Check table in 04-analysis.md records present/absent per section; an artifact-contract lint enforces it (if the repo provides one) |
+| **Silently dropping mandatory sections**   | A missing scorecard/conformance/coverage section is invisible drift | The Quality Self-Check table in 04-analysis.md records present/absent per section; an artifact-contract lint enforces it (if the repo provides one) |
 
 ---
 
@@ -46,7 +46,7 @@ All output files (00–05) must meet these standards. Before marking the audit c
 If you find yourself doing any of the following, stop and course-correct:
 
 - Writing "LGTM" anywhere
-- Skipping cornerstone evaluation "because the change is obvious"
+- Skipping instruction-file and blindspot conformance "because the change is obvious"
 - Marking SKIP ○ without documenting where the descoping decision is captured
 - Finding more than 5 UNTESTABLE ? — that suggests the spec's acceptance criteria are weak; flag to the user rather than continuing
 - Writing a punch list item where "Where" is a directory, not a file:line

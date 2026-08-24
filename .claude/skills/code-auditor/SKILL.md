@@ -1,11 +1,12 @@
 ---
 name: code-auditor
-description: Rigorous multi-pass code auditor that independently verifies spec conformance, acceptance-criteria completion, cornerstone (grounding-rubric) alignment, cross-system interaction safety, and code quality. Runs at Epic and Milestone boundaries; the phase-tier scoped audit (spot checks, ~30 min) lives in the `mini-retro` skill and its findings feed this skill. Use when the user says "audit this work", "audit the milestone", "verify X is done", "is this really complete", "check for gaps", "run a code audit", "produce a punch list", or when a feature/epic/milestone is claimed complete and needs adversarial verification before merge or deploy. Produces dated audit artifacts (running log at milestone tier, research, forward audit, retrospective, analysis, punch list with machine-readable index) plus a GitHub issue with the prioritized punch list.
+description: Rigorous multi-pass code auditor that independently verifies spec conformance, acceptance-criteria completion, project-doctrine alignment (instruction files + blindspot register), cross-system interaction safety, and code quality. Runs at Epic and Milestone boundaries; the phase-tier scoped audit (spot checks, ~30 min) lives in the `mini-retro` skill and its findings feed this skill. Use when the user says "audit this work", "audit the milestone", "verify X is done", "is this really complete", "check for gaps", "run a code audit", "produce a punch list", or when a feature/epic/milestone is claimed complete and needs adversarial verification before merge or deploy. Produces dated audit artifacts (running log at milestone tier, research, forward audit, retrospective, analysis, punch list with machine-readable index) plus a GitHub issue with the prioritized punch list.
 license: Apache-2.0
 metadata:
   execution: serial
   version: 1.7.0
   origin: 'Imported from birdwork-preflight .claude/skills/code-auditor; adapted for scaffold (bedrock→cornerstone; foreign refs softened). v1.7 platform-probe evidence floor adapted 2026-07-10 from birdwork/birdwork@e0ff051.'
+  adapted: 'v1.8 2026-08-24 adapted to ROCKNIX: cornerstone rubric -> instruction files + blindspot register; docs/planning -> GitHub issues on maxengel/rocknix; logs/audits -> docs/audits; foreign mechanical checks -> pkgcheck / cloud-round-trip / vm-visual-qa; added the run-it-on-a-device and cannot-fail-is-not-evidence floors.'
 ---
 
 # Code Auditor
@@ -21,8 +22,8 @@ before it. Run stages **strictly in order, under ONE orchestrator, never in para
 — fanning stages out to concurrent agents/sessions voids the guarantees (origin:
 2026-07-08, an agent parallelized a code-auditor run). In-stage sub-agents are allowed
 only where a stage explicitly says so. Swarm rule: while this skill is active on a
-scope, other agents pause mutations on that scope until it completes
-([serial-execution-gates](../../../.github/instructions/serial-execution-gates.instructions.md)).
+scope, do not mutate that scope from elsewhere - an audit of a moving target
+proves nothing about either state.
 
 ## Scope tiers
 
@@ -33,8 +34,8 @@ scoped-audit step and feeds upward into this skill.
 | Tier          | Audit surface                                 | Skill                            | Artifact                                |
 | ------------- | --------------------------------------------- | -------------------------------- | --------------------------------------- |
 | **Phase**     | 5 spot checks inline in each phase retro      | `mini-retro` (Step 2.5)          | Retro comment § "Scoped audit findings" |
-| **Epic**      | Full 6-phase methodology over Epic scope      | **this skill** (Epic scope)      | `logs/audits/YYYY_MM_DD-epic-*/`        |
-| **Milestone** | Full 6-phase methodology over Milestone scope | **this skill** (Milestone scope) | `logs/audits/YYYY_MM_DD-milestone-*/`   |
+| **Epic**      | Full 6-phase methodology over Epic scope      | **this skill** (Epic scope)      | `docs/audits/YYYY_MM_DD-epic-*/`        |
+| **Milestone** | Full 6-phase methodology over Milestone scope | **this skill** (Milestone scope) | `docs/audits/YYYY_MM_DD-milestone-*/`   |
 
 **Tier posture differs by scope.** Epic and Milestone tiers consume
 lower-tier findings differently — and the difference is intentional:
@@ -97,24 +98,33 @@ Three hard rules apply to every verdict at every tier:
    ONLY evidence for a PASS — every PASS cites at least one primary
    artifact (file:line, executed command output, or commit diff).
    "The issue is closed" is the banned anti-pattern, not evidence.
-2. **Mechanical evidence outranks reading.** Where an AC is enforced
-   by an existing mechanical check (a vitest suite, `npm run check`,
-   `scripts/lint-public-surface-parity.ts`, `kno:validate`,
-   `validate-tier-parity.sh`, …), RUN the enforcing command and
-   record exit status + counts in the criterion entry. Reading the
-   lint's source is insufficient when the lint itself can be run.
-   **Platform claims are mechanically checkable:** when a verdict depends
-   on a possibility.space API, route, MCP surface, or verb, RUN
-   `node scripts/pspace-probe.mjs verb <path> <METHOD> --api <api-name>`
-   with the exact verb. Treat manifest evidence as API-advertisement-only and
-   the MCP phase as protocol evidence only (initialize, `tools/list`,
-   `tools/call`). Catalog content is a **human-inspection lead, never machine
-   evidence** for presence, absence, or verb support; the helper reports
-   `comparison=manual-required`. The runtime exact-verb result is authoritative.
-   A prior probe summary or transcript is insufficient; the auditor re-runs the
-   probe and records statuses + request IDs.
+2. **Mechanical evidence outranks reading.** Where a check exists, RUN it and
+   record the command, exit status and counts in the criterion entry. Reading
+   a check's source is insufficient when the check itself can be run. What
+   exists in this repo:
+
+   | Check | Covers |
+   | --- | --- |
+   | `tools/pkgcheck <package>` | `package.mk` conventions — the only lint here; run after every recipe edit |
+   | `tools/cloud-round-trip --host …` | cloud sync end to end against a real device image |
+   | `tools/cloud-test-backend ls` | what a device *actually* uploaded, read from the endpoint rather than from logs |
+   | `tools/vm-visual-qa` | ES screens, driven headlessly |
+   | a device build | the real test that a package or image is sound |
+
+3. **Run it on a device, not on the host.** Host tools are not the tools on the
+   device, and the gap hides real failures — Info-ZIP silently replaces a
+   symlink where busybox refuses and aborts (blindspot 7). A verdict about
+   runtime behaviour needs evidence from the target: a VM from
+   `generic-x64-vm`, or hardware. Host-side reasoning about a device-side
+   behaviour is a **lead, never evidence**.
+
+4. **An assertion that cannot fail is not evidence.** Before recording a PASS,
+   ask what result would have produced a FAIL. "The excluded file is absent"
+   passes trivially when nothing was uploaded at all; "the marker is gone"
+   passes when it was never created. If no failing input exists, the check
+   proves nothing and must be strengthened or dropped (blindspots 6, 8).
 3. **Subagent output is a LEAD, never EVIDENCE.** Per scaffold's development
-   principles ("Verify sub-agent outputs against primary artifacts" — cornerstone
+   principles ("Verify sub-agent outputs against primary artifacts" — project
    ORC-5): every fact that supports a verdict must be re-read directly from the
    primary artifact before the verdict is written. Fan out subagents for research;
    verify their leads yourself. For platform findings, verification means the
@@ -187,7 +197,7 @@ verdict vocabulary, punch-index schema) manually.
 Create the dated audit folder before any analysis:
 
 ```
-logs/audits/YYYY_MM_DD-{scope}-{item-name}/
+docs/audits/YYYY_MM_DD-{scope}-{item-name}/
 ├── 00-running-log.md           ← milestones only (append-only flight recorder)
 ├── 01-research-notes.md
 ├── 02-forward-audit.md
@@ -207,7 +217,7 @@ logs/audits/YYYY_MM_DD-{scope}-{item-name}/
 | Epic      | `2026_04_22-epic-platform-capability-system`       |
 | Issue     | `2026_04_22-issue-1634-troubleshooting-animation`  |
 
-Create `logs/audits/` if missing.
+Create `docs/audits/` if missing.
 
 ### Milestone audits: running log is mandatory
 
@@ -290,16 +300,34 @@ See [`references/templates.md`](references/templates.md) for the full criterion-
 
 ---
 
-## Cornerstone conformance (applied in Phase 3)
+## Project conformance (applied in Phase 3)
 
-Every audit grounds the work against scaffold's **cornerstone** rubric. Run the conformance face — [`cornerstone-conformance.md`](../../../docs/architecture/cornerstone-conformance.md) — marking each relevant row ✓/⚠/✗/·:
+This repo has no single conformance rubric file. Its doctrine is distributed
+across three sources, and Phase 3 runs each as a face, marking every relevant
+row ✓/⚠/✗/·:
 
-- **Doctrine (PD + DOC-1…10)** — the prime directive + ten guiding principles
-- **Accepted-ADR conformance** — does the work respect every Accepted ADR?
-- **Development principles (QE / SEC / OPS / MET / REV / ORC / SCO)** — the engineering baseline
-- **Capability authoring (conditional)** — `.kno` REQ/PRO rules apply only when authoring a Capability against the Platform Capability spec
+1. **Instruction files** — `.github/instructions/*.instructions.md`. Each carries
+   an `applyTo` glob; the ones whose glob matches a changed path are **in scope
+   and non-optional**. Read them from `next`, not from the feature worktree —
+   a branch cut from an older base silently lacks files added since, so an
+   audit run in the worktree can miss the rule it should be checking against.
+2. **Blindspot register** — `docs/blindspot-register.md`. Twelve recorded
+   failure modes this project has actually committed. Ask of each: *does this
+   work repeat it?* This is the highest-yield face, because these are proven
+   rather than hypothetical.
+3. **Project invariants** — the hard rules stated in the instruction files,
+   notably from `rclone-cloud-sync.instructions.md`:
+   - **Preserve player progress above all.** Conflict handling must never
+     default to recency; a newer file can hold *less* progress.
+   - Backups must never contain secrets (wifi keys, passwords, tokens).
+   - The sync filter is an **allowlist**; `--delete-excluded` makes a filter
+     mistake destructive to cloud data.
+   - Every change ships onto devices that already have state — check the
+     upgrade path *and* the clean install (`upgrade-and-install.instructions.md`).
 
-Cornerstone evaluation is not a rubber stamp. Each row is individually evaluated for relevance and conformance; the authorities (doctrine + Accepted ADRs + development-principles) win if the table drifts.
+Conformance is not a rubber stamp. Each row is individually evaluated for
+relevance; where the instruction files and this list disagree, **the instruction
+files win** — they are canonical, this is a summary.
 
 ---
 
@@ -409,7 +437,8 @@ Issue shape:
 
 - Title: `Audit: [Item Name] — [N] findings ([X] critical, [Y] high)`
 - Labels: `audit`, `punch-list`, plus relevant epic labels
-- Body from `05-punch-list.md` plus the executive summary and acceptance-criteria scorecard. Prefer GitHub MCP issue tools when available; if using `gh`, write the body to a file and pass it via `--body-file` (not heredoc).
+- Body from `05-punch-list.md` plus the executive summary and acceptance-criteria scorecard. Write the body to a file and pass it via `--body-file` (not heredoc).
+- **Always `--repo maxengel/rocknix`.** Issues are disabled on `ROCKNIX/distribution`, so an unqualified `gh issue create` from this checkout targets a repo that cannot accept it.
 - Linked to the original milestone/issues being audited
 
 If labels don't exist, create them first (`gh label create <name> --color <hex>`).
@@ -451,7 +480,7 @@ cross-service migration, etc.) — and even then, file the follow-up issue
 
 The "complete phase → audit → resolve → begin next phase" loop is the
 canonical phase-progression pattern (see the repo's delivery/phase conventions —
-e.g. `.github/instructions/github-delivery-workflow.instructions.md` — if present).
+e.g. `.github/instructions/issue-tracking.instructions.md` — if present).
 
 ---
 
@@ -512,7 +541,7 @@ Full list in [`references/anti-patterns.md`](references/anti-patterns.md). Top o
 - **Summarising without evidence** — "looks good" with no file references
 - **Batching notes** — reading 10 files then writing one summary
 - **Being helpful instead of accurate** — softening findings to avoid conflict
-- **Skipping cornerstone** — "this is just a small change"
+- **Skipping project conformance** — "this is just a small change"
 - **Inventing acceptance criteria** — audit STATED criteria; suggest additions in punch list
 - **Tracker-state-only PASS** — issue closed / box checked is corroboration, never sole evidence
 - **Verdict from subagent summary** — subagent output is a lead; re-read the primary artifact
@@ -540,20 +569,22 @@ visible instead of silent:
 
 ## Inputs to gather at the start
 
-| Input                            | Source                                         | How to find                                                                                            |
-| -------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| **The spec**                     | `docs/planning/{feature}/`                     | User provides or search by feature name                                                                |
-| **The issues**                   | GitHub Issues/Milestones                       | Search by milestone, labels, issue numbers                                                             |
-| **The code changes**             | Git history                                    | `git log`, `git diff --stat`, file changes                                                             |
-| **The acceptance criteria**      | Issue bodies + spec phases                     | Read issue bodies and spec validation gates                                                            |
-| **Phase retros (scoped audits)** | Each phase's retro comment / spec § Mini Retro | Per-Phase scoped-audit findings are first-class input; read every one before starting Phase 1 research |
-| **Prior Epic audits**            | `logs/audits/` (for Milestone scope)           | Grep by epic label, milestone number                                                                   |
-| **Cornerstone rubric**           | `docs/architecture/cornerstone-conformance.md` | The single derived conformance reference (doctrine + Accepted ADRs + development-principles)            |
-| **Relevant instruction files**   | `.github/instructions/` (canonical)            | Match by file paths touched                                                                            |
+| Input                          | Source                                | How to find                                                                                     |
+| ------------------------------ | ------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| **The spec**                   | GitHub issues — there is no `docs/planning/` here | `gh issue view <n> --repo maxengel/rocknix`. Issue bodies *are* the spec; epics link their children |
+| **The acceptance criteria**    | Issue bodies                          | The `- [ ]` checklists and any `Acceptance:` line                                               |
+| **The issues**                 | `maxengel/rocknix` (upstream has Issues disabled) | `gh issue list --repo maxengel/rocknix`                                                        |
+| **The code changes**           | Git history                           | `git log`, `git diff --stat`; note the fork layout — feature branches live in `../rocknix.worktrees/` |
+| **Prior findings**             | `docs/work-logs/<yyyy_mm>-work_logs/` | Dated running record of what was done and what went wrong; the closest thing to phase retros    |
+| **Blindspot register**         | `docs/blindspot-register.md`          | Proven recurring failure modes — check the work against every entry                             |
+| **Prior audits**               | `docs/audits/`                        | Grep by scope and item name                                                                     |
+| **Conformance rubric**         | `.github/instructions/*.instructions.md` + `CLAUDE.md` | Match by `applyTo` glob against changed paths. **Read from `next`**, not a feature worktree |
+| **What actually shipped**      | published images / `target/`          | A claim about device behaviour is checked on a device, not in the tree                           |
 
 ## Reference files
 
 - [`references/phases.md`](references/phases.md) — the authoritative phase 0–7 procedure with criterion-entry format and step-by-step checks
-- [`cornerstone-conformance.md`](../../../docs/architecture/cornerstone-conformance.md) — the cornerstone conformance face (doctrine + Accepted-ADR + development-principles rows)
+- [`.github/instructions/`](../../../.github/instructions/) — the canonical rules; the `applyTo` glob decides which are in scope
+- [`docs/blindspot-register.md`](../../../docs/blindspot-register.md) — proven recurring failure modes, the highest-yield conformance face
 - [`references/templates.md`](references/templates.md) — all output templates (criterion entry, analysis report, punch list items)
 - [`references/anti-patterns.md`](references/anti-patterns.md) — the full anti-patterns table + quality standards

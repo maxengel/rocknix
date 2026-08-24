@@ -8,7 +8,7 @@ Authoritative procedure for phases 0–7 (plus the Milestone-tier 2.5 cross-chec
 
 Covered in SKILL.md. Key points recap:
 
-- Create `logs/audits/YYYY_MM_DD-{scope}-{item-name}/` directory
+- Create `docs/audits/YYYY_MM_DD-{scope}-{item-name}/` directory
 - Create `01-research-notes.md` with the header template
 - For milestone-scoped audits, also create `00-running-log.md` and append after every meaningful action
 
@@ -44,7 +44,7 @@ Use the GitHub MCP issue/search tools (runtime-specific names: `mcp__github__*` 
 ### 1.4 Read relevant documentation
 
 - Instruction files applying to touched code paths
-- Architecture docs, ADRs, and the cornerstone rubric referenced by the spec
+- The instruction files whose `applyTo` glob matches the changed paths, plus `CLAUDE.md` and `docs/blindspot-register.md`
 - Document which constraints and conventions apply
 
 ### 1.4.5 Research fan-out (Milestone tier)
@@ -250,14 +250,22 @@ independent verdict entry must precede this section.
 - Architecture matches what the spec described?
 - Coupling issues or abstraction violations?
 
-### 3.2 Cornerstone conformance
+### 3.2 Project conformance
 
-Evaluate against scaffold's cornerstone rubric. See [`cornerstone-conformance.md`](../../../../docs/architecture/cornerstone-conformance.md) for the full tables, rubrics, and evaluation guidance. At minimum:
+This repo's doctrine is distributed, not in one rubric file. Evaluate all three
+faces (see SKILL.md § Project conformance):
 
-- **Doctrine (PD + DOC-1…10)** — table with Relevance + Finding per principle
-- **Accepted-ADR conformance** — does the work respect every Accepted ADR?
-- **Development principles (QE / SEC / OPS / MET / REV / ORC / SCO)** — list only relevant ones
-- **Capability authoring (conditional)** — `.kno` REQ/PRO rules apply only when authoring a Capability against the Platform Capability spec
+- **Instruction files** — table with Relevance + Finding per file whose
+  `applyTo` glob matches a changed path. Read them from `next`: a feature
+  worktree cut from an older base silently lacks files added since, so an audit
+  run there can miss the rule it should be checking against.
+- **Blindspot register** (`docs/blindspot-register.md`) — for each entry, does
+  this work repeat it? Highest yield of the three, because every entry is a
+  failure this project has actually committed rather than one it might.
+- **Project invariants** — progress preservation over recency, no secrets in
+  backups, the filter is an allowlist and `--delete-excluded` makes a mistake
+  destructive, and every change lands on devices that already have state
+  (upgrade path *and* clean install).
 
 ### 3.3 Spec fidelity
 
@@ -338,7 +346,7 @@ the one site that surfaced.
 This check exists because Q-COL-14 INV-Z2 found a silent-skip
 anti-pattern duplicated across **3** migration phases (#2382 +
 Sibling-A + Sibling-B) plus an **adjacent** instance in
-`scripts/deploy-blue-green.sh` (Adjacent-C, filed as #2427). Fixing
+`projects/ROCKNIX/packages/rocknix/sources/scripts/backuptool` (Adjacent-C, filed as an issue). Fixing
 only the surfaced site would have left the same defect alive in 3+
 other locations.
 
