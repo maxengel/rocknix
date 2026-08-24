@@ -204,6 +204,41 @@ Two consequences worth planning around:
   on, so the file would vanish from the savestate manager. Detect with bisync,
   then resolve into slots ourselves.
 
+## Where state lives
+
+| What | Where | Why |
+|---|---|---|
+| Per-save sidecar manifest | beside the save, **synced** | the truth; small, text, independently resolvable |
+| History / audit database | `/storage/.cache/cloud-sync/history.db`, **never synced** | a local index, rebuildable from the sidecars |
+
+`/storage/.cache/` is the established home for state that persists but can be
+regenerated — it already holds `ld.so.cache`, `fontconfig`, `cores`,
+`kernel-overlays`. Three properties make it right here:
+
+- **Outside the sync scope.** Syncing runs from `/storage/roms`, so a database
+  here cannot become a sync conflict — and a database is the one file a player
+  has no way to resolve by hand. Verified the hazard is real: a `.db` placed
+  under `savestates/` *does* sync today, `-wal` sidecar and all, because
+  `+ /savestates/**` takes the whole directory.
+- **Outside backups.** `backuptool` archives `/storage/.config/*`, so nothing
+  in `.cache` bloats a backup or carries a binary blob into the cloud archive.
+- **Survives updates.** `.cache` is not wiped on update; individual caches
+  self-invalidate instead — `userconfig-setup` rebuilds `ld.so.cache` when
+  `/etc/os-release`'s stamp changes. Follow that convention: store a schema
+  version and rebuild when it does not match, rather than assuming the file is
+  always current.
+
+**One database, not one per system.** The audit log spans systems, the volume is
+trivial for SQLite, and a single file means one migration path and one thing to
+rebuild.
+
+**Hashes are the identity.** Store our own (sha256, at capture) in the sidecar
+and compare sidecar to sidecar — the remote's native hash type varies by
+backend (S3 md5, Dropbox its own), so it is useful only as a cheap
+"did this change" shortcut via `rclone lsjson --hash`, which reads it from
+remote metadata without downloading. A hash identifies a *version*; the history
+is what links versions over time.
+
 ## Audit log
 
 Every resolution is recorded: what conflicted, which side won, where a merged
