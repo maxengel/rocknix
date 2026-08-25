@@ -129,47 +129,40 @@ syncpath_problem() {
         return 1
     fi
 
-    rclone backend features "${remote}" 2>/dev/null \
-        | grep -q '"BucketBased": true' || return 0
-
-    bucket="${path#/}"
-    bucket="${bucket%%/*}"
-
-    # Two checks. The offline one catches the common mistake instantly and
-    # works with no network. The live one is authoritative, because bucket
-    # rules differ per provider - S3 permits dots, B2 forbids them and wants
-    # at least six characters - and hardcoding that here would go stale
-    # silently. Ask the remote the player actually configured.
-    if ! printf '%s' "${bucket}" | grep -qE '^[a-z0-9][a-z0-9-]{4,48}[a-z0-9]$'; then
-        echo "This remote stores data in buckets, so \"${bucket}\" is not a folder"
-        echo "name - it is the bucket name, and it is not a legal one."
-        echo
-        echo "Use lowercase letters, digits and hyphens, 6 to 50 characters,"
-        echo "starting and ending with a letter or digit. Bucket names are also"
-        echo "shared across everyone using the provider, not private to your"
-        echo "account, so pick something unlikely to be taken."
-        echo
-        echo "Try /rocknix-saves-yourname${path} instead."
-        return 1
-    fi
-
-    # Authoritative check: a name the provider refuses reports
-    # InvalidBucketName, while a legal name that simply does not exist yet
-    # reports not-found - which is fine, rclone creates it on first use.
-    probe=$(rclone lsd "${remote}${bucket}" 2>&1 | head -1)
+    # No provider rules are encoded here on purpose. rclone does not validate
+    # bucket names itself - it hands them to the provider and relays the
+    # rejection - so the rules live with the provider, differ between them,
+    # and would go stale in this script. The problem was never missing
+    # validation; it was validation arriving at sync time, in a log, as
+    # "InvalidBucketName" with nothing tying it to the folder that caused it.
+    #
+    # So: ask the provider now, and attach the answer to the setting.
+    probe=$(rclone lsd "${remote}${path#/}" 2>&1 | head -2)
     case "${probe}" in
-        *InvalidBucketName*|*"not valid"*)
-            echo "Your provider rejected \"${bucket}\" as a bucket name:"
-            echo
-            echo "  ${probe}"
-            echo
-            echo "Bucket naming differs between providers - Backblaze B2 forbids"
-            echo "dots and wants at least six characters, for instance. Try a"
-            echo "simpler name using only lowercase letters, digits and hyphens."
-            return 1
-        ;;
+        # A folder that does not exist yet is fine - it gets created on use.
+        *"not found"*|*NoSuchBucket*|"") return 0 ;;
     esac
-    return 0
+
+    # Something is wrong. If the remote is bucket-based, name the reason the
+    # message will not: the first path component is a bucket, not a folder.
+    if rclone backend features "${remote}" 2>/dev/null | grep -q '"BucketBased": true'; then
+        bucket="${path#/}"; bucket="${bucket%%/*}"
+        echo "Your provider would not accept \"${bucket}\"."
+        echo
+        echo "This remote stores data in buckets, so the first part of the"
+        echo "folder is a bucket name rather than a folder - and bucket names"
+        echo "have rules folders do not. They are also shared across everyone"
+        echo "using the provider, not private to your account."
+        echo
+        echo "  ${probe}"
+        echo
+        echo "Try something like /rocknix-saves-yourname/Saves instead."
+    else
+        echo "Your provider would not accept this folder:"
+        echo
+        echo "  ${probe}"
+    fi
+    return 1
 }
 
 case "$1" in
