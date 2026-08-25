@@ -11,7 +11,8 @@ emulators, userland) per device.
 - `.github/copilot-instructions.md` — full build/dev commands, architecture, `package.mk` conventions, commit style.
 - `AGENTS.md` — fork workflow and non-obvious gotchas.
 - `packages/readme.md` — the authoritative `package.mk` format reference.
-- `.github/instructions/*.instructions.md` — scoped guides (each has an `applyTo` glob). Read the matching one **before** editing its area: fork workflow, worktrees, rclone cloud-sync, GENERIC_X64 VM QA, ES native UI, issue tracking, learning capture, doc accuracy, engineering practices.
+- `.claude/rules/*.md` — **loaded automatically**: rules with a `paths:` glob load when a matching file enters context, rules without one load every session. Short by design; they point at the canonical prose below.
+- `.github/instructions/*.instructions.md` — the canonical guides. Their `applyTo` glob is a **Copilot** mechanism, so Claude Code does not load them on its own — read the matching one **before** editing its area: fork workflow, worktrees, rclone cloud-sync, GENERIC_X64 VM QA, ES native UI, issue tracking, learning capture, doc accuracy, engineering practices.
 - `.github/shared-copilot-knowledge/` is generic external content, **not** ROCKNIX-specific.
 
 ## Build & development commands
