@@ -44,7 +44,7 @@ Use the GitHub MCP issue/search tools (runtime-specific names: `mcp__github__*` 
 ### 1.4 Read relevant documentation
 
 - Instruction files applying to touched code paths
-- The instruction files whose `applyTo` glob matches the changed paths, plus `CLAUDE.md` and `docs/blindspot-register.md`
+- The instruction files whose `paths:` glob matches the changed paths, plus `CLAUDE.md` and `docs/blindspot-register.md`
 - Document which constraints and conventions apply
 
 ### 1.4.5 Research fan-out (Milestone tier)
@@ -256,7 +256,7 @@ This repo's doctrine is distributed, not in one rubric file. Evaluate all three
 faces (see SKILL.md § Project conformance):
 
 - **Instruction files** — table with Relevance + Finding per file whose
-  `applyTo` glob matches a changed path. Read them from `next`: a feature
+  `paths:` glob matches a changed path. Read them from `next`: a feature
   worktree cut from an older base silently lacks files added since, so an audit
   run there can miss the rule it should be checking against.
 - **Blindspot register** (`docs/blindspot-register.md`) — for each entry, does

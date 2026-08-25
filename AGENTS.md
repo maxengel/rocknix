@@ -6,14 +6,16 @@ the LibreELEC/CoreELEC cross-compilation system). There is no app to run — thi
 
 **Canonical guides — read before working (this file only adds what they don't cover):**
 
-- `.github/copilot-instructions.md` — build/dev commands, architecture, `package.mk`
-  conventions, commit style. Agents that auto-load it (Crush, Copilot) already have it;
-  everyone else must read it first.
-- `packages/readme.md` — the `package.mk` format reference.
-- `.claude/rules/*.md` — scoped deep-dives; each has an `applyTo` glob.
-  Load the matching one before touching its area (fork workflow, worktrees, rclone
-  cloud-sync, GENERIC_X64 VM QA, issue tracking, learning capture, doc accuracy).
-- `.github/shared-copilot-knowledge/` is generic external content — NOT ROCKNIX-specific.
+- `CLAUDE.md` — build/dev commands, architecture, `package.mk` conventions, commit
+  style. The overview every agent should start from.
+- `packages/readme.md` — the authoritative `package.mk` format reference.
+- `.claude/rules/*.md` — the canonical scoped guides. A rule with a `paths:` glob
+  applies when a matching file is in play; one without applies always. Claude Code
+  loads them automatically; point Crush at the directory with `global-context-path`,
+  which loads it recursively but ignores `paths:` — so every rule arrives every
+  session there. Covers fork workflow, worktrees, rclone cloud-sync, GENERIC_X64 VM
+  QA, ES native UI, issue tracking, learning capture, doc accuracy, engineering
+  practices, device builds, upgrade/install, packaging and patches.
 
 There is **no unit-test suite**; `tools/pkgcheck <package>` is the only lint (run it after
 any `package.mk` edit), and the real test is that the package/image builds.
@@ -21,7 +23,7 @@ any `package.mk` edit), and the real test is that the package/image builds.
 ## Fork workflow (this working copy is a fork)
 
 `origin` = `maxengel/rocknix`, `upstream` = `ROCKNIX/distribution`. Full rules in
-`fork-workflow.instructions.md` / `worktrees.instructions.md`; the essentials:
+`fork-workflow.md` / `worktrees.md`; the essentials:
 
 - Branch `next` = `upstream/next` + a *personal overlay* (`.claude/rules/`, `docs/`,
   `plans/`, `.githooks/`, `tools/fork-publish-release`, …). **Never PR `next` upstream.**
@@ -48,19 +50,19 @@ any `package.mk` edit), and the real test is that the package/image builds.
 - A network/download failure during a build often surfaces as a **misleading,
   unrelated-looking build error** — check for failed downloads before debugging.
 - Before "fixing" apparently wrong code, verify design intent via `git log -S`/`git blame`
-  and surrounding guards (`engineering-practices.instructions.md`) — several
+  and surrounding guards (`engineering-practices.md`) — several
   dangerous-looking patterns here are intentional or gated.
 
 ## Subsystem quick warnings (read the instruction file before editing)
 
 - **rclone cloud-sync** (`projects/ROCKNIX/packages/network/rclone/`,
-  `rclone-cloud-sync.instructions.md`): the filter file is an *allowlist* (only
+  `rclone-cloud-sync.md`): the filter file is an *allowlist* (only
   saves/states/screenshots + `backup/*.zip` sync — never ROMs/BIOS); never put
   `-v`/`--verbose` in `RCLONEOPTS`; `--delete-excluded` is catastrophic on a `sync`-mode
   restore; single-remote only; new config options go in BOTH `cloud_sync.conf` and
   `cloud_sync.conf.defaults` (`DEFAULT_` prefix); keep `cloud_backup`/`cloud_restore`
   structurally in sync.
-- **GENERIC_X64 VM QA** (`generic-x64-vm-testing.instructions.md`): VM profile source of
+- **GENERIC_X64 VM QA** (`generic-x64-vm-testing.md`): VM profile source of
   truth is `projects/ROCKNIX/devices/GENERIC_X64/vm/profile.json` + the `generic-x64-vm`
   tool; disk must be **16GB+** or first-boot rsync ENOSPCs and EmulationStation renders
   with a broken menu (looks like a graphics bug, isn't); firmware needs **512-byte logical

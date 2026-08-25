@@ -24,7 +24,7 @@ Development/
 
 The worktree directory leaf is the branch name **minus the `feature/` prefix** (the prefix
 carries a slash, so it can't be a directory leaf). Branches still use the `feature/<name>`
-convention required by the fork workflow (see `fork-workflow.instructions.md`).
+convention required by the fork workflow (see `fork-workflow.md`).
 
 ## Create a worktree + branch from next
 
@@ -60,5 +60,5 @@ git worktree prune                                      # clean up stale entries
 3. **Keep the primary checkout on `next`** (the "main" reflection); do feature work in worktrees.
 4. **Keep worktrees as siblings** — never nest one inside the primary checkout.
 5. **Remove with `git worktree remove`** (not `rm -rf`) so git metadata stays consistent.
-6. Opening a clean upstream PR from a worktree still follows `fork-workflow.instructions.md`
+6. Opening a clean upstream PR from a worktree still follows `fork-workflow.md`
    (`pr/<name>` built via `git rebase --onto upstream/next next pr/<name>`).

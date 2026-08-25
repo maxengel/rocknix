@@ -43,9 +43,9 @@ defaults, changed `sync`/`copy` semantics, new/removed tools, and the single-rem
   agree. `rclonectl` was **removed** the same day (issue #6): if the site still mentions
   mount/unmount, that's drift to fix on the docs side. `LOG_LEVEL` remains under-documented.
 - Resolve drift by fixing **either** the code or the docs — never by ignoring it. Track docs
-  gaps on the fork (see `issue-tracking.instructions.md`).
+  gaps on the fork (see `issue-tracking.md`).
 
 ## Cross-references
 
-- `rclone-cloud-sync.instructions.md` — the cloud-sync subsystem itself.
-- `fork-workflow.instructions.md` — PR hygiene (applies to `ROCKNIX/rocknix.org` PRs too).
+- `rclone-cloud-sync.md` — the cloud-sync subsystem itself.
+- `fork-workflow.md` — PR hygiene (applies to `ROCKNIX/rocknix.org` PRs too).

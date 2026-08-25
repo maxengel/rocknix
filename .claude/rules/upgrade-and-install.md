@@ -135,7 +135,7 @@ busybox on the device refuses and aborts. The bug was invisible until it ran on
 the target.
 
 The cheap way to cover both paths, per
-[`generic-x64-vm-testing`](generic-x64-vm-testing.instructions.md):
+[`generic-x64-vm-testing`](generic-x64-vm-testing.md):
 
 - **Clean install** — boot the built image in a fresh VM.
 - **Upgrade** — boot a VM from the *previous* image, use it enough to create

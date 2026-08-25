@@ -1,3 +1,9 @@
+---
+description: "Where the canonical rules live and how they load; how to tell a stale worktree copy from the current one."
+paths:
+  - "**"
+---
+
 # Where the rules live, and which copy you are reading
 
 Every rule in this directory loads automatically: those with a `paths:` glob
@@ -7,6 +13,13 @@ gone, along with Copilot.
 
 Other tools in use here read the same files: Crush can be pointed at this
 folder with `global-context-path`, and it already discovers `.claude/skills`.
+Crush loads the folder recursively and does **not** honour `paths:`, so every
+rule reaches it every session — a rule that is noise there is noise always.
+
+**Seeing `.github/instructions/` means you are in a stale worktree.** That
+directory no longer exists on `next`. Several worktrees were cut before it was
+retired and still carry it on disk, so its presence is a reliable signal that
+the rules around you predate the move — not that a second copy exists.
 
 **Read rules and skills from `next`, not from a feature worktree.** A branch
 cut from an older base silently lacks anything added since. This has bitten

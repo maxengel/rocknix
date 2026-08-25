@@ -205,7 +205,7 @@ what the violation looks like, suggested remediation.
 ones above are origin-project-specific (carried over as illustrative
 examples). For scaffold, replace them with high-signal patterns from its
 own conventions — e.g. the `.mjs` script conventions and secret-handling
-rules in `.github/copilot-instructions.md` and
+rules in `CLAUDE.md` and
 `scaffold-platform.instructions.md`, plus the rows in the
 cornerstone conformance reference. A project's blindspot register (if it
 keeps one) is another good source.

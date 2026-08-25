@@ -125,7 +125,7 @@ sg kvm -c '<qemu command>'      # picks up the group with no re-login
 
 When ES fails, check the layer below before blaming the app: read `sway.log` first — an ES
 "wayland not available"/renderer abort is usually sway having failed to find a GPU
-(`/dev/dri/cardN`), not an ES bug. See `engineering-practices.instructions.md`.
+(`/dev/dri/cardN`), not an ES bug. See `engineering-practices.md`.
 
 ## Won't boot in UTM / a VM → check the disk logical sector size (4K vs 512)
 

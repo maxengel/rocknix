@@ -365,7 +365,7 @@ across three sources, and Phase 3 runs each as a face, marking every relevant
 row ✓/⚠/✗/·:
 
 1. **Instruction files** — `.claude/rules/*.md`. Each carries
-   an `applyTo` glob; the ones whose glob matches a changed path are **in scope
+   a `paths:` glob; the ones whose glob matches a changed path are **in scope
    and non-optional**. Read them from `next`, not from the feature worktree —
    a branch cut from an older base silently lacks files added since, so an
    audit run in the worktree can miss the rule it should be checking against.
@@ -572,7 +572,7 @@ When invoked in this mode, the auditor adds a dedicated section to `04-analysis.
 
 | Category                                | What the auditor surfaces                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| **Coverage gap** — would-have-prevented | For each Phase 2/3 finding, identify the existing instruction file (if any) whose rule, if followed, would have prevented the finding. Format: `Finding F-NN → would have been caught by .claude/rules/{file}.instructions.md § {section}` (scaffold's canonical instruction home; no generated mirrors). If a finding maps to no existing instruction file, mark it **"Uncovered"**. |
+| **Coverage gap** — would-have-prevented | For each Phase 2/3 finding, identify the existing instruction file (if any) whose rule, if followed, would have prevented the finding. Format: `Finding F-NN → would have been caught by .claude/rules/{file}.md § {section}` (scaffold's canonical instruction home; no generated mirrors). If a finding maps to no existing instruction file, mark it **"Uncovered"**. |
 | **Codification gap** — needs-new-rule   | For each pattern that recurs across 3+ findings AND has no existing instruction file home, recommend either (a) extending an existing instruction file or (b) creating a new one. Format: `Pattern P-NN: {description} (3+ instances). Recommendation: {extend                                                                                                                                                                                    | new file} {target path} § {proposed section}`. Apply the 3+ instances rule — a pattern recurring across 3+ findings (not a one-off) warrants a codified rule. |
 
 ### Output format
@@ -586,16 +586,16 @@ Append to `04-analysis.md` after the Risk Assessment section:
 
 | Finding | Would have been caught by                                                       | Uncovered? |
 | ------- | ------------------------------------------------------------------------------- | ---------- |
-| F-01    | `.claude/rules/{rule-file}.instructions.md` § "{relevant section}"       | —          |
-| F-02    | `.claude/rules/{rule-file}.instructions.md` § "{relevant section}"       | —          |
+| F-01    | `.claude/rules/{rule-file}.md` § "{relevant section}"       | —          |
+| F-02    | `.claude/rules/{rule-file}.md` § "{relevant section}"       | —          |
 | F-03    | (none)                                                                          | **YES**    |
 
 ### Codification Gaps (needs-new-rule)
 
 | Pattern             | Instances              | Recommendation                                                                                                              |
 | ------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| P-01: {description} | F-03, F-07, F-12       | **Extend** `.claude/rules/{file}.instructions.md` with new "{Section Name}" subsection covering: {bullet list of rule content} |
-| P-02: {description} | F-04, F-09, F-15, F-22 | **New file** `.claude/rules/{proposed-name}.instructions.md` covering: {scope} |
+| P-01: {description} | F-03, F-07, F-12       | **Extend** `.claude/rules/{file}.md` with new "{Section Name}" subsection covering: {bullet list of rule content} |
+| P-02: {description} | F-04, F-09, F-15, F-22 | **New file** `.claude/rules/{proposed-name}.md` covering: {scope} |
 
 ### Recommended Action Sequence
 
@@ -658,13 +658,13 @@ visible instead of silent:
 | **Prior findings**             | `docs/work-logs/<yyyy_mm>-work_logs/` | Dated running record of what was done and what went wrong; the closest thing to phase retros    |
 | **Blindspot register**         | `docs/blindspot-register.md`          | Proven recurring failure modes — check the work against every entry                             |
 | **Prior audits**               | `docs/audits/`                        | Grep by scope and item name                                                                     |
-| **Conformance rubric**         | `.claude/rules/*.md` + `CLAUDE.md` | Match by `applyTo` glob against changed paths. **Read from `next`**, not a feature worktree |
+| **Conformance rubric**         | `.claude/rules/*.md` + `CLAUDE.md` | Match by `paths:` glob against changed paths. **Read from `next`**, not a feature worktree |
 | **What actually shipped**      | published images / `target/`          | A claim about device behaviour is checked on a device, not in the tree                           |
 
 ## Reference files
 
 - [`references/phases.md`](references/phases.md) — the authoritative phase 0–7 procedure with criterion-entry format and step-by-step checks
-- [`.claude/rules/`](../../../.claude/rules/) — the canonical rules; the `applyTo` glob decides which are in scope
+- [`.claude/rules/`](../../../.claude/rules/) — the canonical rules; the `paths:` glob decides which are in scope
 - [`docs/blindspot-register.md`](../../../docs/blindspot-register.md) — proven recurring failure modes, the highest-yield conformance face
 - [`references/templates.md`](references/templates.md) — all output templates (criterion entry, analysis report, punch list items)
 - [`references/anti-patterns.md`](references/anti-patterns.md) — the full anti-patterns table + quality standards

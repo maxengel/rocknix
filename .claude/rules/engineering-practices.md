@@ -7,7 +7,7 @@ paths:
 # Engineering practices
 
 High-signal, generalizable practices. Add entries only when a learning clearly generalizes
-beyond one task (see `learning-capture.instructions.md`).
+beyond one task (see `learning-capture.md`).
 
 ## Verify design intent before "fixing" an apparent bug
 
