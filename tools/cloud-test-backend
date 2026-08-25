@@ -170,6 +170,19 @@ case "${1:-}" in
 
   path) echo "${DATA}" ;;
 
+  put)
+    # put <local-dir> <path-under-root> - stage fixtures at the endpoint
+    # without going through the device, so a test can exercise restore
+    # independently of upload.
+    [ -n "${2:-}" ] && [ -n "${3:-}" ] || { echo "usage: put <local-dir> <path>" >&2; exit 1; }
+    if [ "${BACKEND}" = "s3" ]; then
+      need rclone; s3 copy "${2}" "qa-host:${S3_BUCKET}/${3}" >/dev/null
+    else
+      mkdir -p "${DATA}/${3}"; cp -a "${2}/." "${DATA}/${3}/"
+    fi
+    echo "put: ${3}"
+    ;;
+
   status)
     if [ "${BACKEND}" = "s3" ]; then
       docker ps --format '{{.Names}}' | grep -qx "${S3_NAME}" \
@@ -233,7 +246,7 @@ EOF
   backend)     echo "${BACKEND}" ;;
 
   *)
-    echo "usage: ${0##*/} {up|down|reset|ls [path]|path|status|rclone-conf|syncpath|contentpath|remote-name|backend}" >&2
+    echo "usage: ${0##*/} {up|down|reset|ls [path]|path|put <dir> <path>|status|rclone-conf|syncpath|contentpath|remote-name|backend}" >&2
     exit 1
     ;;
 esac

@@ -237,6 +237,17 @@ def main():
                   "uploaded. Expected until a build carries the fix.")
 
     step("cloud_content_restore brings it back")
+    # Plant at the endpoint directly rather than restoring what the upload
+    # step just wrote: otherwise a broken uploader fails this check for the
+    # wrong reason and one bug masks the other's status (audit F-03).
+    backend("reset")
+    stage = subprocess.run(["mktemp", "-d"], capture_output=True, text=True).stdout.strip()
+    for rel, data in CONTENT_FIXTURES.items():
+        f = os.path.join(stage, CONTENT_DIR, rel)
+        os.makedirs(os.path.dirname(f), exist_ok=True)
+        open(f, "wb").write(data)
+    cpath = backend("contentpath").strip().lstrip("/").split("/", 1)[-1]
+    backend("put", os.path.join(stage, CONTENT_DIR), f"{cpath}/{CONTENT_DIR}")
     dev.run(f"rm -rf {shlex.quote(croot)}")
     failures += not check(not dev.sha(f"{croot}/{list(CONTENT_FIXTURES)[0]}"),
                           "local content removed before restore",
