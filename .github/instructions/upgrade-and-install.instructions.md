@@ -68,6 +68,34 @@ If a migration is genuinely needed:
 - **Prefer additive.** Writing new data in the new shape while still reading the
   old shape avoids a migration entirely, and cannot be interrupted destructively.
 
+### Migrating data that lives in someone's cloud
+
+The rules above still apply; these are the ways a remote migration is harder
+than a local one, and each has cost somebody their data somewhere.
+
+- **Copy, verify, then delete — never `rclone move`.** `move` deletes as it
+  goes, so an interruption leaves the library split across two locations with
+  no record of which files went where. Copy the whole set, verify it, and only
+  then remove the original.
+- **Verify means comparing content, not trusting an exit code.** `rclone check`
+  compares hashes; a zero exit from the transfer itself only says the command
+  ended. A partial batch can exit clean.
+- **Interruption is the normal case, not the exception.** A handheld drops off
+  wifi mid-transfer as a matter of course, where a local migration is only
+  interrupted by power loss. Design for resumption, and make a second run
+  harmless.
+- **Never move what you did not put there.** `/storage/roms` belongs to us; a
+  cloud folder is shared with the owner's own files. Act only on paths the
+  device can account for — `cloud_setup --content-location` reports the
+  directories this device actually has locally, and deliberately ignores the
+  rest. A migration that swept up somebody's photos because they sat in the
+  same folder would be unforgivable and entirely avoidable.
+- **Ask first, and let "leave it alone" be the default.** Cloud layout is
+  usually cosmetic; the risk of moving is not. If the tidier layout cannot
+  justify the failure mode, offer the no-op resolution and stop there.
+- **Another device may be syncing at the same time.** One player, many devices
+  is this project's model, so a migration cannot assume it is the only writer.
+
 ## Verify on a device, not on the host
 
 Host tools are not the tools on the device, and the difference hides real
