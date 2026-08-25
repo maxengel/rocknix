@@ -65,7 +65,7 @@ work) · #38, #39, #40 (filed during this session's work)
 
 | Item | Outcome | Evidence |
 |---|---|---|
-| PL-01 ship content-backup fix | **(b) Deferred** — needs a build. **Correction:** this line first claimed the fix was already in `test/qa-integration` via `59b1d800b4`. It was not — that merge ran at 16:25 and `f60ea2b8f8` was committed at 16:38, thirteen minutes later. Asserted from memory of having merged, without checking what the merge contained: blindspot 13, in the document that registered it. Genuinely merged in `65087d646c`. |
+| PL-01 ship content-backup fix | **(b) Deferred**, tracked by **#40** — needs a build. **Correction:** this line first claimed the fix was already in `test/qa-integration` via `59b1d800b4`. It was not — that merge ran at 16:25 and `f60ea2b8f8` was committed at 16:38, thirteen minutes later. Asserted from memory of having merged, without checking what the merge contained: blindspot 13, in the document that registered it. Genuinely merged in `65087d646c`. |
 | PL-02 rocknix.org docs | **(b) Deferred** — follow-up **#42** filed in-session. A real docs PR against a separate repo, larger than the audit cycle absorbs. |
 | PL-03 reconcile #23 ACs | **(a) Resolved** — #23's body rewritten (tracker edit, no commit); ACs now match `docs/conflict-wizard-ia.md` rev 4, with the supersession dated and the IA doc linked. |
 | PL-04 decouple content restore from upload | **(a) Resolved** — `c774d2c24f`; backend gained `put`; verified on device: restore passes 3/3 byte-identical while the broken uploader still fails. Two coupled failures became one true one. |
