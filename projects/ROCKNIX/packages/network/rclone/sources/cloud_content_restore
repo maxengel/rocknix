@@ -41,12 +41,62 @@ if [ -z "${REMOTENAME}" ]; then
 fi
 
 ROOT="${REMOTENAME}${CONTENTPATH:+${CONTENTPATH}/}"
+LEGACY_ROOT="${REMOTENAME}"
+
+# Read the old shape, write the new one.
+#
+# CONTENTPATH is newer than content sync itself. Before it existed, content
+# sat at the remote root, and an upgraded device would look in the new place,
+# find nothing, and simply show an empty list - the player never chose a
+# layout, so there is nothing for them to reason about, and nobody reads
+# release notes on a handheld.
+#
+# So restore looks in the configured location and falls back to the old one.
+# Backups always write to the configured location, so a library migrates by
+# itself the next time it is backed up, with no prompt and no migration step.
+# The legacy root on a path-based remote is the whole account, which holds the
+# owner's own folders too. Only directories this device actually has locally
+# are offered from there - listing somebody's holiday photos as restorable ROMs
+# would be worse than the empty list this fixes.
+legacy_dirs() {
+    local d base
+    for d in "${DEST}"/*/; do
+        [ -d "${d}" ] || continue
+        base=$(basename "${d}")
+        case "${base}" in savefiles|savestates|screenshots|backup) continue ;; esac
+        echo "${base}"
+    done
+}
+
+# Returns the root that actually holds this directory.
+resolve_root() {
+    local dir="$1"
+    [ -z "${CONTENTPATH}" ] && { echo "${ROOT}"; return; }
+    if rclone lsf --dirs-only "${ROOT}" 2>/dev/null | sed 's:/$::' | grep -qx "${dir}"; then
+        echo "${ROOT}"
+    elif legacy_dirs | grep -qx "${dir}" \
+         && rclone lsf --dirs-only "${LEGACY_ROOT}" 2>/dev/null | sed 's:/$::' | grep -qx "${dir}"; then
+        log_message "Content \"${dir}\" found at the pre-CONTENTPATH location"
+        echo "${LEGACY_ROOT}"
+    else
+        echo "${ROOT}"
+    fi
+}
 
 case "${1}" in
     --list)
-        # Top-level directories only; one per line, no trailing slash
-        rclone lsf --dirs-only "${ROOT}" 2>/dev/null | sed 's:/$::'
-        exit $?
+        # Top-level directories only; one per line, no trailing slash.
+        # Lists both locations so an upgraded device still sees content that
+        # predates CONTENTPATH, rather than presenting an unexplained empty
+        # list to somebody who changed nothing.
+        {
+            rclone lsf --dirs-only "${ROOT}" 2>/dev/null | sed 's:/$::'
+            if [ -n "${CONTENTPATH}" ]; then
+                rclone lsf --dirs-only "${LEGACY_ROOT}" 2>/dev/null | sed 's:/$::' \
+                    | grep -Fxf <(legacy_dirs) 2>/dev/null
+            fi
+        } | sort -u | sed '/^$/d'
+        exit 0
     ;;
     --all)
         DIRS=("")
@@ -62,7 +112,7 @@ esac
 
 STATUS=0
 for DIR in "${DIRS[@]}"; do
-    SRC="${ROOT}${DIR}"
+    SRC="$(resolve_root "${DIR}")${DIR}"
     TARGET="${DEST}/${DIR}"
     log_message "Content restore: ${SRC} -> ${TARGET}"
     echo "Restoring ${DIR:-everything} from the cloud..."
