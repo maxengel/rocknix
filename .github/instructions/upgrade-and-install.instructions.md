@@ -54,6 +54,36 @@ So when a format changes, ask separately:
 - Does old code read **new** data? (a downgrade, or a device that has not updated yet)
 - Does anything need to be **migrated**, and can that migration be interrupted?
 
+## An upgrade should be invisible
+
+Before deciding a change needs a migration, or a prompt, or a release note, ask
+whether the code can simply handle both shapes. In that order:
+
+1. **Read both, write the new one.** The old layout keeps working, new writes
+   land in the new place, and the data migrates itself as it is touched. Nobody
+   is told anything because nothing happened to them.
+2. **Ask, only if step 1 genuinely cannot work** — the shapes are
+   irreconcilable, or the choice is really the owner's to make.
+3. **A release note is never a mitigation.** It is a record for people who go
+   looking, not a control. Assume it is unread.
+
+**A prompt is a failure mode, not a solution.** Asking somebody about a setting
+they never chose and have never heard of is only marginally better than the
+breakage it replaces — they still have to form an opinion about our internals
+to get back to playing a game.
+
+The case that produced this rule: `CONTENTPATH` was a new config key, so an
+upgraded device looked in a location it had never used and showed an empty
+content list. The first design detected the situation and offered to fix it.
+The better one made restore read both locations while backup writes only to the
+new one (`c3994ef4cb`) — the library migrates itself the next time it is backed
+up, and there is nothing to explain, prompt about, or document. The prompt-based
+version was most of a day's work that turned out to be unnecessary.
+
+Applies past config keys: file formats, marker names, menu locations, directory
+layouts. If a device that upgrades and a device that is freshly flashed can both
+be made to just work, that is the answer, and everything else is a fallback.
+
 ## Migrations
 
 If a migration is genuinely needed:
