@@ -23,7 +23,7 @@ before it. Run stages **strictly in order, under ONE orchestrator, never in para
 2026-07-08, an agent parallelized a code-auditor run). In-stage sub-agents are allowed
 only where a stage explicitly says so. Swarm rule: while this skill is active on a
 scope, other agents pause mutations on that scope until it completes
-([serial-execution-gates](../../../.github/instructions/serial-execution-gates.instructions.md)).
+([serial-execution-gates](../../../.claude/rules/serial-execution-gates.md)).
 
 ## When to use
 
@@ -117,7 +117,7 @@ Phase N+1 execution
   `docs/planning/<feature>/<feature>-spec.md`)
 
 If the repo has a delivery / issue-workflow governance doc (in scaffold,
-[`github-delivery-workflow.instructions.md`](../../../.github/instructions/github-delivery-workflow.instructions.md)),
+[`github-delivery-workflow.instructions.md`](../../../.claude/rules/github-delivery-workflow.md)),
 it takes precedence over this skill for per-issue protocol.
 
 ## Tooling
@@ -600,7 +600,7 @@ project's issue workflow.
 ## Repo-specific integrations
 
 - **scaffold**:
-  - [`github-delivery-workflow.instructions.md`](../../../.github/instructions/github-delivery-workflow.instructions.md) governs issue / PR protocol — this skill defers to it; phase / Epic naming lives in [`milestone-phase-naming.instructions.md`](../../../.github/instructions/milestone-phase-naming.instructions.md)
+  - [`github-delivery-workflow.instructions.md`](../../../.claude/rules/github-delivery-workflow.md) governs issue / PR protocol — this skill defers to it; phase / Epic naming lives in [`milestone-phase-naming.instructions.md`](../../../.claude/rules/milestone-phase-naming.md)
   - The `mini-retro` skill — produces what Step 1 retrieves
   - The `futro` skill — invoked by Step 2
   - Grounding (doctrine + Accepted ADRs + development principles) lives in [`cornerstone-conformance.md`](../../../docs/architecture/cornerstone-conformance.md)

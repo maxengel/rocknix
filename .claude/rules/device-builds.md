@@ -1,6 +1,7 @@
 ---
 description: "Building and publishing images for the handheld devices we test on (RK3566, H700, RK3326), as distinct from the GENERIC_X64 VM build."
-applyTo: "**"
+paths:
+  - "**"
 ---
 
 # Device builds

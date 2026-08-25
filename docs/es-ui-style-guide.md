@@ -5,7 +5,7 @@ does — not invented. Every rule below is backed by shipped code; where the tre
 is inconsistent, that is said plainly rather than papered over.
 
 Companion: [es-menu-map.md](es-menu-map.md) — where a new screen belongs.
-Deeper background: `.github/instructions/es-native-ui.instructions.md`.
+Deeper background: `.claude/rules/es-native-ui.md`.
 
 Upstream documents **none** of this: `THEMES.md` covers only repainting menus.
 The Batocera wiki contributes the interaction rules in the last section.

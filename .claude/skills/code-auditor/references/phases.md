@@ -289,7 +289,7 @@ faces (see SKILL.md § Project conformance):
 
 For each subsystem touched:
 
-1. **Identify interacting subsystems** — what shares state, resources, timing? Consult the repo's shared-state register if one exists (scaffold's canonical conventions live in `.github/instructions/`)
+1. **Identify interacting subsystems** — what shares state, resources, timing? Consult the repo's shared-state register if one exists (scaffold's canonical conventions live in `.claude/rules/`)
 2. **Check runtime-state assumptions** — config reloads destroying in-memory state, container restarts resetting ephemeral data, deploys running multiple instances, pollers/crons conflicting across instances
 3. **Verify intersection testing** — not "A works" and "B works", but "A works while B is also happening"
 4. **Check knowledge propagation** — did the implementer consult docs in the **interacting** subsystem, not just the one changed?

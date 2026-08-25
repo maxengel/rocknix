@@ -1,6 +1,7 @@
 ---
 description: "EmulationStation (emulationstation-next) native UI/UX best practices — building blocks, patterns, and precedents for menu/settings/async work."
-applyTo: "**"
+paths:
+  - "**"
 ---
 
 # EmulationStation native UI/UX practices

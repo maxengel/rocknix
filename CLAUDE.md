@@ -11,9 +11,11 @@ emulators, userland) per device.
 - `.github/copilot-instructions.md` — full build/dev commands, architecture, `package.mk` conventions, commit style.
 - `AGENTS.md` — fork workflow and non-obvious gotchas.
 - `packages/readme.md` — the authoritative `package.mk` format reference.
-- `.claude/rules/*.md` — **loaded automatically**: rules with a `paths:` glob load when a matching file enters context, rules without one load every session. Short by design; they point at the canonical prose below.
-- `.github/instructions/*.instructions.md` — the canonical guides. Their `applyTo` glob is a **Copilot** mechanism, so Claude Code does not load them on its own — read the matching one **before** editing its area: fork workflow, worktrees, rclone cloud-sync, GENERIC_X64 VM QA, ES native UI, issue tracking, learning capture, doc accuracy, engineering practices.
-- `.github/shared-copilot-knowledge/` is generic external content, **not** ROCKNIX-specific.
+- `.claude/rules/*.md` — the canonical scoped guides, **loaded automatically**: a rule with a
+  `paths:` glob loads when a matching file enters context, one without loads every session.
+  Covers fork workflow, worktrees, rclone cloud-sync, GENERIC_X64 VM QA, ES native UI, issue
+  tracking, learning capture, doc accuracy, engineering practices, device builds, upgrade/install.
+- `.github/shared-copilot-knowledge/` is vendored external content from the Copilot era — **not** ROCKNIX-specific, and no longer consulted.
 
 ## Build & development commands
 
@@ -102,12 +104,12 @@ No Conventional Commits. Scope by package or device, matching history:
 `origin` = `maxengel/rocknix`, `upstream` = `ROCKNIX/distribution`. Full rules in
 `fork-workflow.instructions.md` / `worktrees.instructions.md`; essentials:
 
-- Branch `next` = `upstream/next` + a personal overlay (`.github/instructions/`, `docs/`, `plans/`, `.githooks/`, ...). **Never PR `next` upstream.**
+- Branch `next` = `upstream/next` + a personal overlay (`.claude/rules/`, `docs/`, `plans/`, `.githooks/`, ...). **Never PR `next` upstream.**
 - Feature work: branch `feature/<name>` from `next` in a worktree at `../rocknix.worktrees/<name>`; the primary checkout stays on `next`.
 - Upstream PRs use a throwaway branch: `git rebase --onto upstream/next next pr/<name>` (excludes personal commits by construction); `.githooks/pre-push` guards `pr/*`.
 - Issues go on the fork: always `gh --repo maxengel/rocknix` (upstream has Issues disabled).
 - User-facing behavior changes need a follow-up docs PR to the separate `ROCKNIX/rocknix.org` repo.
-- Durable lessons: consider an instruction file under `.github/instructions/` and append a timestamped entry to `docs/work-logs/<yyyy_mm>-work_logs/<yyyy_mm_dd>-work_log.md`.
+- Durable lessons: consider an instruction file under `.claude/rules/` and append a timestamped entry to `docs/work-logs/<yyyy_mm>-work_logs/<yyyy_mm_dd>-work_log.md`.
 
 ## Non-obvious gotchas
 
@@ -118,5 +120,5 @@ No Conventional Commits. Scope by package or device, matching history:
 - `emulationstation` source lives in a separate git repo; see `projects/ROCKNIX/packages/ui/emulationstation/package.mk` for the extra build steps.
 - **Every build ships onto devices that already have state.** Before publishing, check both the upgrade path (a device keeping its `/storage`) and a clean install — see `upgrade-and-install.instructions.md`. A fix that changes what we *write* does nothing for what is already written.
 - **rclone cloud-sync** and **GENERIC_X64 VM QA** have sharp edges — read their instruction files before touching those areas (filter file is an allowlist; `--delete-excluded` is catastrophic; VM disk must be 16GB+ or first boot breaks in a way that looks like a graphics bug).
-- **Read `.github/instructions/` from `next`, not from your feature worktree.** Feature branches cut from an older base silently lack instruction files added since — `es-native-ui.instructions.md` is absent from older worktrees, so ES work done there proceeds without the guidance it mandates.
+- **Read `.claude/rules/` from `next`, not from your feature worktree.** Feature branches cut from an older base silently lack instruction files added since — `es-native-ui.instructions.md` is absent from older worktrees, so ES work done there proceeds without the guidance it mandates.
 - **Headless VM QA** (no desktop on the build host): the VM profile's `virtio-gpu-gl-pci` refuses `-display none`, so take `generic-x64-vm qemu-args`, swap in `virtio-gpu-pci`, and drive the guest over `-serial unix:` with `socat`. Keep socket paths short — a unix socket path over 108 bytes fails, which the long scratch directories exceed. SSH is disabled on a fresh image, so serial is the only way in.

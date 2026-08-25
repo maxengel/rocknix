@@ -1,6 +1,10 @@
 ---
 description: "How to build-test and QA the GENERIC_X64 (x86_64) VM image locally in QEMU/KVM."
-applyTo: "projects/ROCKNIX/devices/GENERIC_X64/**,projects/ROCKNIX/packages/**,scripts/mkimage,scripts/image"
+paths:
+  - "projects/ROCKNIX/devices/GENERIC_X64/**"
+  - "projects/ROCKNIX/packages/**"
+  - "scripts/mkimage"
+  - "scripts/image"
 ---
 
 # GENERIC_X64 local VM QA

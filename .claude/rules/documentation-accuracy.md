@@ -1,6 +1,7 @@
 ---
 description: "Keep user-facing behavior and the public rocknix.org docs in sync; don't let code and docs drift."
-applyTo: "**"
+paths:
+  - "**"
 ---
 
 # Documentation accuracy (public rocknix.org docs)

@@ -1,6 +1,7 @@
 ---
 description: "Capture-learning loop: when storing a memory, also consider an instruction-file abstraction and append to the dated work log."
-applyTo: "**"
+paths:
+  - "**"
 ---
 
 # Learning capture
@@ -17,7 +18,7 @@ Whenever a learning is worth a memory (i.e. any time you would call `store_memor
 ## 1. Abstract into a generalized instruction file (if applicable)
 
 Ask whether the learning generalizes beyond the immediate task into a reusable development
-practice. If so, add or update a focused file under `.github/instructions/*.instructions.md`
+practice. If so, add or update a focused file under `.claude/rules/*.md`
 (with `description` + `applyTo` front matter). Only do this for genuinely generalizable
 practices — skip one-off, task-specific facts.
 

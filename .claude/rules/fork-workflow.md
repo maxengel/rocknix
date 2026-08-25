@@ -1,6 +1,7 @@
 ---
 description: "How to develop on the fork and open clean PRs upstream without leaking personal artifacts."
-applyTo: "**"
+paths:
+  - "**"
 ---
 
 # Fork workflow & merging up to upstream
@@ -20,7 +21,7 @@ only the feature work.
 - **`pr/<name>`** — the throwaway branch you actually push for a PR (see below).
 
 **Personal paths** (must never reach an upstream PR):
-`.github/copilot-instructions.md`, `.github/instructions/`,
+`.github/copilot-instructions.md`, `.claude/rules/`,
 `.github/shared-copilot-knowledge/`, `.githooks/`, `tmp/shared-copilot-knowledge/`,
 `compare-prompt-versions.sh`, `docs/`, `plans/`, `tools/fork-publish-release`,
 `.github/workflows/fork-*`, `.claude/` (agent skills), `AGENTS.md`.

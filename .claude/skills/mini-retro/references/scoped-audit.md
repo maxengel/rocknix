@@ -552,7 +552,7 @@ bugfix / tooling), mark **SKIP** with a one-line justification.
    define the new sense.
 2. **Stale-doc sweep.** For each surface the phase changed, grep the
    docs that describe it (`docs/architecture/**`, `docs/design/**`,
-   relevant `README.md`, auto-applied `.github/instructions/**`). Are
+   relevant `README.md`, auto-applied `.claude/rules/**`). Are
    they still accurate? Update in-session or file a tracked follow-up.
 3. **Catalog / changelog reconciliation** (Capability-`.kno` phases
    only): confirm the file-type catalog carries a row for any new

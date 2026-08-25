@@ -21,7 +21,7 @@ before it. Run stages **strictly in order, under ONE orchestrator, never in para
 2026-07-08, an agent parallelized a code-auditor run). In-stage sub-agents are allowed
 only where a stage explicitly says so. Swarm rule: while this skill is active on a
 scope, other agents pause mutations on that scope until it completes
-([serial-execution-gates](../../../.github/instructions/serial-execution-gates.instructions.md)).
+([serial-execution-gates](../../../.claude/rules/serial-execution-gates.md)).
 
 ## Core principle: retros are actionable artifacts
 
@@ -586,9 +586,9 @@ Three things to note:
 - **scaffold:**
   - This skill is the procedure; scaffold has no separate `mini-retro`
     instruction file. Issue / PR / Epic delivery conventions live in
-    [`github-delivery-workflow.instructions.md`](../../../.github/instructions/github-delivery-workflow.instructions.md);
+    [`github-delivery-workflow.instructions.md`](../../../.claude/rules/github-delivery-workflow.md);
     phase / Epic / milestone naming in
-    [`milestone-phase-naming.instructions.md`](../../../.github/instructions/milestone-phase-naming.instructions.md).
+    [`milestone-phase-naming.instructions.md`](../../../.claude/rules/milestone-phase-naming.md).
   - Spec documents embed retro placeholders per phase only if the repo uses
     product specs (scaffold does not today).
   - The scoped audit grounds against

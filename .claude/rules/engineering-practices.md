@@ -1,6 +1,7 @@
 ---
 description: "General engineering practices for this codebase (high-signal; add only durable, generalizable rules)."
-applyTo: "**"
+paths:
+  - "**"
 ---
 
 # Engineering practices

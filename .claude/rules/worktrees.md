@@ -1,6 +1,7 @@
 ---
-applyTo: "**"
 description: "Convention for creating, placing, and managing git worktrees in this fork"
+paths:
+  - "**"
 ---
 
 # Git Worktrees

@@ -10,7 +10,7 @@ the LibreELEC/CoreELEC cross-compilation system). There is no app to run — thi
   conventions, commit style. Agents that auto-load it (Crush, Copilot) already have it;
   everyone else must read it first.
 - `packages/readme.md` — the `package.mk` format reference.
-- `.github/instructions/*.instructions.md` — scoped deep-dives; each has an `applyTo` glob.
+- `.claude/rules/*.md` — scoped deep-dives; each has an `applyTo` glob.
   Load the matching one before touching its area (fork workflow, worktrees, rclone
   cloud-sync, GENERIC_X64 VM QA, issue tracking, learning capture, doc accuracy).
 - `.github/shared-copilot-knowledge/` is generic external content — NOT ROCKNIX-specific.
@@ -23,7 +23,7 @@ any `package.mk` edit), and the real test is that the package/image builds.
 `origin` = `maxengel/rocknix`, `upstream` = `ROCKNIX/distribution`. Full rules in
 `fork-workflow.instructions.md` / `worktrees.instructions.md`; the essentials:
 
-- Branch `next` = `upstream/next` + a *personal overlay* (`.github/instructions/`, `docs/`,
+- Branch `next` = `upstream/next` + a *personal overlay* (`.claude/rules/`, `docs/`,
   `plans/`, `.githooks/`, `tools/fork-publish-release`, …). **Never PR `next` upstream.**
 - Feature work: branch `feature/<name>` from `next` in a worktree at
   `../rocknix.worktrees/<name>`; the primary checkout stays on `next`.
@@ -35,7 +35,7 @@ any `package.mk` edit), and the real test is that the package/image builds.
 - Public user docs live in a separate repo (`ROCKNIX/rocknix.org`); user-facing behavior
   changes need a follow-up docs PR there — don't let code and docs drift.
 - When a durable lesson is learned, consider an instruction file under
-  `.github/instructions/` and append a timestamped entry to
+  `.claude/rules/` and append a timestamped entry to
   `docs/work-logs/<yyyy_mm>-work_logs/<yyyy_mm_dd>-work_log.md` (append, don't overwrite).
 
 ## Non-obvious gotchas

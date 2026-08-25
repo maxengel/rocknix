@@ -1,6 +1,7 @@
 ---
 description: "Where to file issues / tracking lists for this working copy, and how they are structured."
-applyTo: "**"
+paths:
+  - "**"
 ---
 
 # Issue tracking
