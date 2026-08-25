@@ -14,25 +14,36 @@ only the feature work.
 
 - **`upstream/next`** — upstream's integration branch and the PR target. Treat as clean.
 - **`next`** — the fork's daily/integration branch = `upstream/next` + a *personal overlay*
-  (instruction files, `plans/`, shared-copilot-knowledge). This is where personal commits
+  (`.claude/`, `docs/`, `plans/`, fork-only tools). This is where personal commits
   live and what `origin/next` tracks. It is **never** the source of an upstream PR.
-- **`feature/<name>`** — a unit of upstream work, branched from `next` so your instruction
-  files are present while you (and Copilot) work. Contains **only** feature commits.
+- **`feature/<name>`** — a unit of upstream work, branched from `next` so the rules are
+  present while you work. Contains **only** feature commits.
 - **`pr/<name>`** — the throwaway branch you actually push for a PR (see below).
 
-**Personal paths** (must never reach an upstream PR):
-`.github/copilot-instructions.md`, `.claude/rules/`,
-`.github/shared-copilot-knowledge/`, `.githooks/`, `tmp/shared-copilot-knowledge/`,
-`compare-prompt-versions.sh`, `docs/`, `plans/`, `tools/fork-publish-release`,
-`.github/workflows/fork-*`, `.claude/` (agent skills), `AGENTS.md`.
-These are disjoint from feature paths (`packages/`, `projects/`, `config/`, `scripts/`,
-`tools/`), so feature commits never touch them.
+**Personal paths** (must never reach an upstream PR). This list and `PERSONAL_PATTERNS`
+in `.githooks/pre-push` are the same list; change one and change the other.
+
+- **Agent context** — `.claude/`, `CLAUDE.md`, `AGENTS.md`, `.githooks/`,
+  `.github/sessions/`, `.github/workflows/fork-*`
+- **Personal writing** — `docs/`, `plans/`
+- **Fork-only tools** — `tools/fork-publish-release`, `tools/cloud-test-backend`,
+  `tools/cloud-round-trip`, `tools/lint-audit-artifacts`, `tools/vm-visual-qa`
+- **Copilot-era leftovers** — `.github/copilot-instructions.md`, `.github/instructions/`,
+  `.github/shared-copilot-knowledge/`, `tmp/shared-copilot-knowledge/`,
+  `compare-prompt-versions.sh`. Retired from `next`, but branches and worktrees cut
+  before the retirement still contain them, so the guard still watches for them.
+
+`tools/` is **not** disjoint from the feature areas — most of it is upstream's, and only
+the five entries above are ours. That is why fork-only tools are enumerated rather than
+matched by prefix, and why a new one has to be added to the guard by hand. The guard
+warns about any `next`-only file outside `packages/` and `projects/` that it does not
+recognise; that warning is the reminder.
 
 ## Per-feature flow
 
 ```bash
 git fetch upstream
-git worktree add ../rocknix.worktrees/<name> -b feature/<name> next   # see worktrees.instructions.md
+git worktree add ../rocknix.worktrees/<name> -b feature/<name> next   # see worktrees.md
 #   …develop; commit only feature paths…
 
 # When ready to open the PR, build a clean branch automatically:
@@ -68,11 +79,19 @@ lines ≤ 72 chars, and no merge commits in the PR.
 ## Safety net: pre-push guard
 
 `.githooks/pre-push` blocks pushing any `pr/*` branch that still differs from `upstream/next`
-in a personal path (e.g. you forgot to rebase). Enable it once per clone / new worktree:
+in a personal path (e.g. you forgot to rebase). Enable it once per clone — the setting is
+shared by every worktree, so it does not need repeating per worktree:
 
 ```bash
-git config core.hooksPath .githooks
+git config core.hooksPath "$(git rev-parse --show-toplevel)/.githooks"
 ```
+
+**The absolute path is the point.** A relative `core.hooksPath=.githooks` resolves against
+whichever working tree you push from, and a correctly built `pr/*` branch contains no
+`.githooks/` — excluding it is what the `--onto` rebase is for. Check that branch out in a
+worktree and the hook file is simply absent, so git runs no hook and the guard silently
+does not apply. The better the PR branch, the less the guard exists. Pointing at the main
+checkout by absolute path pins the hook to something every branch can see.
 
 Only `pr/*` branches are guarded; pushing `next` or `feature/*` is unaffected.
 

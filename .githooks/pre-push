@@ -1,34 +1,71 @@
 #!/usr/bin/env bash
 # pre-push guard for the maxengel/rocknix fork.
 #
-# Blocks pushing a PR branch (pr/*) that contains personal fork artifacts which
+# Blocks pushing a PR branch (pr/*) that carries personal fork artifacts which
 # must never reach an upstream pull request. Build clean PR branches with:
 #   git switch -c pr/<name> feature/<name>
 #   git rebase --onto upstream/next next pr/<name>
 #
-# Install once per clone with:  git config core.hooksPath .githooks
+# INSTALL WITH AN ABSOLUTE PATH:
+#   git config core.hooksPath /path/to/rocknix/.githooks
+#
+# A *relative* `core.hooksPath=.githooks` looks right and silently does nothing
+# where it matters most. The path resolves against whichever working tree you
+# are pushing from, and a correctly built pr/* branch has no `.githooks/` in it
+# - excluding it is the whole point of the rebase above. Check out such a
+# branch in a worktree and the hook file is simply absent, so git runs no hook
+# and every check below is skipped. The better the PR branch, the less the
+# guard exists. An absolute path pins the hook to the main checkout, so it runs
+# regardless of which branch or worktree is being pushed.
+#
 # Only branches named pr/* are guarded; pushing next / feature/* is unaffected.
 
 set -uo pipefail
 
 # Personal paths that must never appear in an upstream PR branch.
+# Keep this in step with `.claude/rules/fork-workflow.md` § "Personal paths".
 PERSONAL_PATTERNS=(
+  # Agent context, rules and skills
+  '.claude/'
+  'CLAUDE.md'
+  'AGENTS.md'
+  '.githooks/'
+  '.github/sessions/'
+  '.github/workflows/fork-'
+  # Personal documentation and planning
+  'docs/'
+  'plans/'
+  # Fork-only tooling. `tools/` as a whole is upstream's, so these are listed
+  # one by one; a new fork-only tool must be added here by hand (the unlisted
+  # check below is what reminds you).
+  'tools/fork-publish-release'
+  'tools/cloud-test-backend'
+  'tools/cloud-round-trip'
+  'tools/lint-audit-artifacts'
+  'tools/vm-visual-qa'
+  # Copilot-era artifacts. Retired from `next`, but feature branches and
+  # worktrees cut before the retirement still contain them, and a PR branch
+  # built from one of those would carry them upstream. Keep guarding them.
   '.github/copilot-instructions.md'
   '.github/instructions/'
   '.github/shared-copilot-knowledge/'
-  '.githooks/'
   'tmp/shared-copilot-knowledge/'
   'compare-prompt-versions.sh'
-  'docs/'
-  'plans/'
-  'tools/fork-publish-release'
-  '.github/workflows/fork-'
-  '.claude/'
-  'AGENTS.md'
 )
 
 zero='0000000000000000000000000000000000000000'
 status=0
+
+# A relative hooksPath means pr/* pushes from a worktree run unguarded. We can
+# only say so from a push that did reach the hook, which is the point: say it
+# here rather than let a silent gap persist.
+hooks_path="$(git config --get core.hooksPath || true)"
+case "$hooks_path" in
+  ''|/*) ;;
+  *) echo "⚠ pre-push: core.hooksPath is relative ('${hooks_path}'), so this guard does" >&2
+     echo "  not run when pushing a pr/* branch (those branches contain no .githooks/)." >&2
+     echo "  Fix with: git config core.hooksPath \"\$(git rev-parse --show-toplevel)/.githooks\"" >&2 ;;
+esac
 
 # Pick a clean base to compare PR branches against.
 base_ref=''
@@ -47,6 +84,8 @@ while read -r local_ref local_sha _remote_ref _remote_sha; do
   esac
   # Skip branch deletions.
   [ "$local_sha" = "$zero" ] && continue
+
+  branch="${local_ref#refs/heads/}"
 
   if [ -z "$base_ref" ]; then
     echo "⚠ pre-push: no upstream/next or origin/next found to validate ${local_ref}; skipping guard." >&2
@@ -67,7 +106,6 @@ while read -r local_ref local_sha _remote_ref _remote_sha; do
   done <<< "$changed"
 
   if [ -n "$hits" ]; then
-    branch="${local_ref#refs/heads/}"
     {
       echo "✖ pre-push blocked: ${branch} carries personal artifacts that must not go upstream:"
       printf '%s' "$hits"
@@ -75,6 +113,37 @@ while read -r local_ref local_sha _remote_ref _remote_sha; do
       echo "    git rebase --onto upstream/next next ${branch}"
     } >&2
     status=1
+  fi
+
+  # Unlisted-artifact check. Anything that exists only on `next` and lives
+  # outside the feature areas is very likely a personal artifact nobody
+  # remembered to add above - today every such file is one. This warns instead
+  # of blocking, because a genuinely upstream-bound new file reaches a PR
+  # branch by exactly the same route: features merge into `next` before they
+  # are PR'd, so being next-only is not proof of being personal.
+  if git rev-parse --verify --quiet "${base_ref}^{commit}" >/dev/null; then
+    unlisted=''
+    while IFS= read -r f; do
+      [ -z "$f" ] && continue
+      printf '%s\n' "$changed" | grep -Fxq -- "$f" || continue
+      listed=0
+      for pat in "${PERSONAL_PATTERNS[@]}"; do
+        case "$f" in "$pat"|"$pat"*) listed=1; break ;; esac
+      done
+      [ "$listed" -eq 1 ] && continue
+      unlisted+="    $f"$'\n'
+    done <<< "$(git diff --name-only --diff-filter=A "$base_ref" next -- \
+                . ':!packages' ':!projects' 2>/dev/null)"
+
+    if [ -n "$unlisted" ]; then
+      {
+        echo "⚠ pre-push: ${branch} touches files that exist only on next and are not listed"
+        echo "  in PERSONAL_PATTERNS:"
+        printf '%s' "$unlisted"
+        echo "  Personal? Add them to PERSONAL_PATTERNS in .githooks/pre-push."
+        echo "  Genuinely upstream-bound? Nothing to do."
+      } >&2
+    fi
   fi
 
   # Console-first content guard: product surfaces (user-visible script text in
@@ -85,7 +154,6 @@ while read -r local_ref local_sha _remote_ref _remote_sha; do
       'projects/ROCKNIX/packages/rocknix/sources/scripts/' \
     | grep -E '^\+' | grep -inE 'qemu|virtual machine|user-mode network|port forward|127\.0\.0\.1:15' || true)"
   if [ -n "$content_hits" ]; then
-    branch="${local_ref#refs/heads/}"
     {
       echo "✖ pre-push blocked: ${branch} adds dev/VM wording to product surfaces (console-first rule):"
       printf '%s\n' "$content_hits" | sed 's/^/    /'
