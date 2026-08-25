@@ -39,3 +39,18 @@ gh issue create --repo maxengel/rocknix --title "..." --body-file notes.md
 - **Closing discipline**: deliver → close `completed` with a comment naming the
   commits/build; consolidate → close `not planned` with a comment naming where the
   scope went. Never leave a delivered issue open or close one silently.
+
+## Ticking an acceptance criterion
+
+A checkbox records an observed behaviour, never an artifact. "Commit `abc123`
+exists" and "the file is there" are corroboration; they are not evidence that
+the thing works — see blindspot 13, where nine ticked items included one
+feature that had never once functioned and shipped broken in four images.
+
+- Where a mechanical check exists (`tools/pkgcheck`, `tools/cloud-round-trip`,
+  a device build), run it and cite its output in the issue.
+- When a comment supersedes an acceptance criterion, **edit the body in the
+  same action**. The `- [ ]` list is the contract an implementer builds from;
+  a decision that lives only in comments will be missed.
+- One false tick voids the list. Re-derive the siblings rather than assuming
+  the rest are sound.
