@@ -65,7 +65,7 @@ work) · #38, #39, #40 (filed during this session's work)
 
 | Item | Outcome | Evidence |
 |---|---|---|
-| PL-01 ship content-backup fix | **(b) Deferred** — needs a build. `f60ea2b8f8` is merged into `test/qa-integration` (`59b1d800b4`) and will ship in the rebuild already planned before the hardware session. Named, not silent. |
+| PL-01 ship content-backup fix | **(b) Deferred** — needs a build. **Correction:** this line first claimed the fix was already in `test/qa-integration` via `59b1d800b4`. It was not — that merge ran at 16:25 and `f60ea2b8f8` was committed at 16:38, thirteen minutes later. Asserted from memory of having merged, without checking what the merge contained: blindspot 13, in the document that registered it. Genuinely merged in `65087d646c`. |
 | PL-02 rocknix.org docs | **(b) Deferred** — follow-up **#42** filed in-session. A real docs PR against a separate repo, larger than the audit cycle absorbs. |
 | PL-03 reconcile #23 ACs | **(a) Resolved** — #23's body rewritten; ACs now match `docs/conflict-wizard-ia.md` rev 4, with the supersession dated and the IA doc linked. |
 | PL-04 decouple content restore from upload | **(a) Resolved** — backend gained `put`; verified on device: restore passes 3/3 byte-identical while the broken uploader still fails. Two coupled failures became one true one. |
@@ -73,3 +73,19 @@ work) · #38, #39, #40 (filed during this session's work)
 
 **Gate status: satisfied.** Every item has a recorded outcome; both deferrals
 are named with a tracked follow-up.
+
+
+## Postscript — the gate caught the gate
+
+Two problems surfaced only when the punch list was verified rather than
+trusted:
+
+1. **PL-01's own evidence was false** (above). The correction is left visible
+   rather than silently edited, because the failure mode is the finding.
+2. **The audit issue had no task list.** Phase 6 requires the punch list as a
+   tickable checklist and Phase 7 bans closing with checkboxes unticked; #41
+   was created with prose headings and zero `- [ ]` items, so the gate existed
+   in this file and not in the tracker. Rewritten.
+
+Both are arguments for the practice rather than against it: the check that
+found them is the one the audit recommends applying to everything else.
