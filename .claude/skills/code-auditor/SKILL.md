@@ -4,9 +4,9 @@ description: Rigorous multi-pass code auditor that independently verifies spec c
 license: Apache-2.0
 metadata:
   execution: serial
-  version: 1.7.0
+  version: 1.9.0
   origin: 'Imported from birdwork-preflight .claude/skills/code-auditor; adapted for scaffold (bedrock→cornerstone; foreign refs softened). v1.7 platform-probe evidence floor adapted 2026-07-10 from birdwork/birdwork@e0ff051.'
-  adapted: 'v1.8 2026-08-24 adapted to ROCKNIX: cornerstone rubric -> instruction files + blindspot register; docs/planning -> GitHub issues on maxengel/rocknix; logs/audits -> docs/audits; foreign mechanical checks -> pkgcheck / cloud-round-trip / vm-visual-qa; added the run-it-on-a-device and cannot-fail-is-not-evidence floors.'
+  adapted: 'v1.9 2026-08-24 earned from the first ROCKNIX run: Phase 0 stale-skill-copy check; dependent failures are UNTESTABLE not FAIL; one false tick voids the list. v1.8 2026-08-24 adapted to ROCKNIX: cornerstone rubric -> instruction files + blindspot register; docs/planning -> GitHub issues on maxengel/rocknix; logs/audits -> docs/audits; foreign mechanical checks -> pkgcheck / cloud-round-trip / vm-visual-qa; added the run-it-on-a-device and cannot-fail-is-not-evidence floors.'
 ---
 
 # Code Auditor
@@ -194,7 +194,21 @@ verdict vocabulary, punch-index schema) manually.
 
 ## Phase 0 — Setup
 
-Create the dated audit folder before any analysis:
+**First, verify you are running the current copy of this skill.** Skills load
+from the invoking directory, so a run started in a feature worktree gets that
+worktree's copy — which, if the branch was cut before the skill was last
+edited, is stale. An audit grounded against an outdated rubric produces
+confident, wrongly-grounded verdicts.
+
+```bash
+diff -q .claude/skills/code-auditor/SKILL.md \
+        <(git -C <main-checkout> show next:.claude/skills/code-auditor/SKILL.md)
+```
+
+Sync before proceeding if they differ, and log it — this happened on the
+2026-08-24 run and would have silently degraded that audit's own grounding.
+
+Then create the dated audit folder before any analysis:
 
 ```
 docs/audits/YYYY_MM_DD-{scope}-{item-name}/
@@ -295,6 +309,23 @@ Every acceptance criterion gets one of:
 | **UNTESTABLE ?** | Cannot verify (explain why)                                |
 
 Each verdict entry must include: evidence (file:line), notes, and gaps (if PARTIAL or FAIL).
+
+**Before recording a FAIL, ask whether it is *dependent*.** A criterion can
+fail only because another finding starved it of its input — a restore test
+that fails because the upload it depends on is broken says nothing about the
+restore. Dependent failures are **UNTESTABLE ?**, not FAIL, and the blocking
+finding is named in the entry. Re-test in isolation where you can: supply the
+missing input by hand and re-run.
+
+Recording a dependent failure as FAIL invents a defect that does not exist,
+and it hides that the real one is still unmeasured. (2026-08-24: content
+restore was reported failing by the suite; isolated by planting fixtures at
+the endpoint directly, it passed.)
+
+**One false tick voids the list.** When any item in a ticked acceptance-criteria
+list is disproved, the trust posture for its siblings is void — re-derive every
+one of them from primary artifacts rather than assuming the rest are sound. The
+tick was produced by the same process that produced the false one.
 
 See [`references/templates.md`](references/templates.md) for the full criterion-entry format.
 
