@@ -21,6 +21,9 @@
 #                path the remote cannot use
 #   --check-syncpath [path]  validate a cloud folder against the remote's
 #                shape without changing anything (default: the current one)
+#   --content-location  report where this device's ROMs/BIOS actually are in
+#                the cloud (key=value; STATE=ok|stranded-at-root|empty)
+#   --use-content-root  point content back at the remote root, moving nothing
 #   --connected  exit 0 when an inbound SSH session is established, so the
 #                connect step can be verified rather than taken on faith
 #   --check [remote]  verify a remote (default: first); exit 0 working,
@@ -179,6 +182,67 @@ case "$1" in
         echo "REMOTES=$(rclone listremotes 2>/dev/null | tr '\n' ' ')"
         exit 0
     ;;
+    --content-location)
+        # Where is this device's content actually stored in the cloud?
+        #
+        # CONTENTPATH is new, so an upgrading device gains one it never had.
+        # Anyone who had put ROMs at the remote root by hand - the only way
+        # content reached the cloud before f60ea2b8f8 - would find the content
+        # list empty and nothing explaining why. Report the situation as
+        # key=value so a UI can offer the choice rather than leaving the owner
+        # to guess.
+        #
+        # Reported, never acted on: moving somebody's cloud files is not a
+        # thing to do behind their back.
+        REMOTE=$(rclone listremotes 2>/dev/null | head -1)
+        [ -z "${REMOTE}" ] && { echo "STATE=no-remote"; exit 2; }
+        CP=$(grep -m1 '^CONTENTPATH=' "${SYNC_CONF}" 2>/dev/null | cut -d'"' -f2)
+
+        # Only directories this device could actually have put there count as
+        # ours. Anything else at the root is the owner's own business.
+        LOCAL=$(cloud_content_backup --list 2>/dev/null | tr '\n' ' ')
+        AT_PATH=0; AT_ROOT=0; ROOT_DIRS=""
+        if [ -n "${CP}" ]; then
+            AT_PATH=$(rclone lsf --dirs-only "${REMOTE}${CP#/}" 2>/dev/null | wc -l)
+        fi
+        for d in $(rclone lsf --dirs-only "${REMOTE}" 2>/dev/null | sed 's:/$::'); do
+            case " ${LOCAL} " in
+                *" ${d} "*) AT_ROOT=$((AT_ROOT + 1)); ROOT_DIRS="${ROOT_DIRS}${d} " ;;
+            esac
+        done
+
+        echo "CONTENTPATH=${CP}"
+        echo "AT_PATH=${AT_PATH}"
+        echo "AT_ROOT=${AT_ROOT}"
+        echo "ROOT_DIRS=${ROOT_DIRS% }"
+        # An empty CONTENTPATH means the root IS the content path, so content
+        # sitting there is correct rather than stranded - otherwise a UI would
+        # keep offering to fix something already resolved.
+        if [ -z "${CP}" ] && [ "${AT_ROOT}" -gt 0 ]; then
+            echo "STATE=ok"
+        elif [ "${AT_PATH}" -gt 0 ]; then
+            echo "STATE=ok"
+        elif [ "${AT_ROOT}" -gt 0 ]; then
+            echo "STATE=stranded-at-root"
+        else
+            echo "STATE=empty"
+        fi
+        exit 0
+    ;;
+
+    --use-content-root)
+        # The safe resolution: point this device back at the root where its
+        # content already is. Moves nothing, reversible, instant.
+        if grep -q '^CONTENTPATH=' "${SYNC_CONF}"; then
+            sed -i 's|^CONTENTPATH=.*|CONTENTPATH=""|' "${SYNC_CONF}"
+        else
+            echo 'CONTENTPATH=""' >> "${SYNC_CONF}"
+        fi
+        log_message "Content path set to the remote root by request"
+        echo "OK content stays at the remote root"
+        exit 0
+    ;;
+
     --check-syncpath)
         # Validate a candidate cloud folder without changing anything, so the
         # UI can refuse a bad one where it is typed rather than letting it
