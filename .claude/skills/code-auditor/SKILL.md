@@ -4,9 +4,9 @@ description: Rigorous multi-pass code auditor that independently verifies spec c
 license: Apache-2.0
 metadata:
   execution: serial
-  version: 1.9.0
+  version: 1.10.0
   origin: 'Imported from birdwork-preflight .claude/skills/code-auditor; adapted for scaffold (bedrock→cornerstone; foreign refs softened). v1.7 platform-probe evidence floor adapted 2026-07-10 from birdwork/birdwork@e0ff051.'
-  adapted: 'v1.9 2026-08-24 earned from the first ROCKNIX run: Phase 0 stale-skill-copy check; dependent failures are UNTESTABLE not FAIL; one false tick voids the list; explicit tier-selection table (two or more epics => milestone). v1.8 2026-08-24 adapted to ROCKNIX: cornerstone rubric -> instruction files + blindspot register; docs/planning -> GitHub issues on maxengel/rocknix; logs/audits -> docs/audits; foreign mechanical checks -> pkgcheck / cloud-round-trip / vm-visual-qa; added the run-it-on-a-device and cannot-fail-is-not-evidence floors.'
+  adapted: 'v1.10 2026-08-24 gate hardening: mandatory tools/lint-audit-artifacts before Phase 6; Phase 7 outcomes re-derived from commands, not memory. v1.9 2026-08-24 earned from the first ROCKNIX run: Phase 0 stale-skill-copy check; dependent failures are UNTESTABLE not FAIL; one false tick voids the list; explicit tier-selection table (two or more epics => milestone). v1.8 2026-08-24 adapted to ROCKNIX: cornerstone rubric -> instruction files + blindspot register; docs/planning -> GitHub issues on maxengel/rocknix; logs/audits -> docs/audits; foreign mechanical checks -> pkgcheck / cloud-round-trip / vm-visual-qa; added the run-it-on-a-device and cannot-fail-is-not-evidence floors.'
 ---
 
 # Code Auditor
@@ -201,10 +201,19 @@ phases 6–7 close the loop into the tracker.
 | 6     | Punch-list issue                | GitHub issue (`audit`, `punch-list`)  | Phase 6 below                                              |
 | 7     | Resolution gate                 | recorded outcome per item             | Phase 7 below                                              |
 
-Before Phase 6, if the repo provides an artifact-contract lint (e.g. a
-`lint-audit-artifacts` script), run it over the audit folder. scaffold has none
-today, so verify the artifact contract (required files, mandatory sections,
-verdict vocabulary, punch-index schema) manually.
+**Before Phase 6, RUN `tools/lint-audit-artifacts <folder> --issue <n>`.** It
+checks the required files, the mandatory `04-analysis.md` sections, that every
+punch item has a Phase 7 outcome, that each outcome cites a commit or an issue
+rather than asserting one, and that the audit issue carries one checkbox per
+punch item.
+
+This is not optional and not a substitute for judgement — it exists because the
+2026-08-24 run verified the contract *manually* and missed two things: an
+audit issue created with prose headings and no tickable list, and a punch item
+recorded as already-merged when the merge had happened thirteen minutes before
+the commit it claimed to contain. Re-running the lint after those were fixed
+immediately found three more uncited resolutions. Manual contract checking has
+a demonstrated failure rate; this does not.
 
 **Load [`references/phases.md`](references/phases.md) before executing each phase.** It contains the full procedure, criterion-entry format, evidence-source mapping, and checkpoint summaries. The SKILL.md body is the shape; `phases.md` is the spec.
 
@@ -516,8 +525,30 @@ genuinely larger than the audit cycle can absorb (a real PR, a
 cross-service migration, etc.) — and even then, file the follow-up issue
 **in the same session** so it cannot evaporate.
 
+### Verify resolutions the way findings are verified
+
+Phase 4.5 attacks every Critical/High **finding** before it is published.
+Phase 7 outcomes get the same treatment, because a resolution is a claim like
+any other: **re-derive each one from a command before recording it.**
+
+| Outcome claim | What must be run |
+| --- | --- |
+| "the fix is merged / shipped" | `git branch --contains <sha>` — not memory of having merged |
+| "a follow-up issue exists" | `gh issue view <n>` — confirm it is open and says what you think |
+| "the body was updated" | re-read it; edits can silently fail |
+| "the commit landed" | `git log --oneline -1 <path>` |
+
+The 2026-08-24 run recorded PL-01 as already integrated on the strength of
+remembering a merge. The merge was real; it predated the fix. **An outcome
+asserted from memory is the same failure the audit exists to find** — see
+blindspot 13, "assumed-done" — and it is worse inside an audit, because the
+punch list is what everyone downstream trusts.
+
 **Anti-patterns** (banned):
 
+- Recording a Phase 7 outcome from memory rather than from a command
+- Creating the Phase 6 issue without a tickable checkbox per punch item —
+  the gate then lives in a file nobody is blocked by
 - Advancing to the next Epic / next phase while the audit's punch-list
   items are open and unaddressed. The `begin-delivery` skill's Step 1.6 will
   refuse to proceed.

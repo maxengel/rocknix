@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""Check a code-auditor audit folder against the artifact contract.
+
+    tools/lint-audit-artifacts docs/audits/<folder> [--issue N]
+
+SKILL.md § Phase 6 says to run an artifact-contract lint before creating the
+punch-list issue, and to verify the contract by hand where none exists. The
+2026-08-24 run did it by hand and missed two things, so this exists instead:
+
+* a punch item recorded Resolved/Deferred with no commit or issue to point at
+  (PL-01 claimed a merge that had not happened - asserted from memory),
+* the audit issue created with prose headings and no tickable list, so the
+  Phase 7 gate lived in the file and not in the tracker.
+
+Both are mechanically checkable. Manual verification is not.
+"""
+import argparse, json, pathlib, re, subprocess, sys
+
+REQUIRED = ["01-research-notes.md", "02-forward-audit.md", "03-retrospective.md",
+            "04-analysis.md", "05-punch-list.md"]
+ANALYSIS_SECTIONS = ["Executive summary", "Acceptance-criteria scorecard",
+                     "Risk assessment", "Coverage boundary", "Quality self-check"]
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("folder")
+    ap.add_argument("--issue", type=int, help="audit issue number to check the task list")
+    ap.add_argument("--repo", default="maxengel/rocknix")
+    args = ap.parse_args()
+    d = pathlib.Path(args.folder)
+    fails = []
+
+    def bad(msg):
+        fails.append(msg)
+        print(f"  FAIL  {msg}")
+
+    def ok(msg):
+        print(f"  ok    {msg}")
+
+    print(f"== {d}")
+    if not d.is_dir():
+        print("  FAIL  not a directory"); return 2
+
+    for f in REQUIRED:
+        (ok if (d / f).exists() else bad)(f)
+    milestone = "-milestone-" in d.name
+    if milestone:
+        (ok if (d / "00-running-log.md").exists() else bad)(
+            "00-running-log.md (mandatory at milestone tier)")
+
+    analysis = (d / "04-analysis.md").read_text() if (d / "04-analysis.md").exists() else ""
+    for sec in ANALYSIS_SECTIONS:
+        if sec.lower() in analysis.lower():
+            ok(f"04 § {sec}")
+        else:
+            bad(f"04-analysis.md missing section: {sec}")
+
+    punch = (d / "05-punch-list.md").read_text() if (d / "05-punch-list.md").exists() else ""
+    items = re.findall(r"^## (PL-\d+)\b.*$", punch, re.M)
+    if not items:
+        bad("05-punch-list.md declares no PL- items")
+    else:
+        ok(f"{len(items)} punch item(s): {', '.join(items)}")
+
+    # Every item needs a recorded outcome, and the outcome must cite something.
+    gate = punch[punch.index("Phase 7"):] if "Phase 7" in punch else ""
+    if not gate:
+        bad("05-punch-list.md has no Phase 7 resolution gate")
+    for pl in items:
+        row = next((l for l in gate.splitlines() if pl in l), None)
+        if row is None:
+            bad(f"{pl} has no Phase 7 outcome"); continue
+        if "Resolved" in row and not re.search(r"`[0-9a-f]{7,40}`|#\d+", row):
+            # A resolution can land as a commit or as a tracker edit; either is
+            # evidence, memory is not.
+            bad(f"{pl} marked Resolved but cites neither a commit nor an issue")
+        elif "Deferred" in row and not re.search(r"#\d+|`[0-9a-f]{7,40}`", row):
+            bad(f"{pl} marked Deferred but names no follow-up issue or commit")
+        elif not re.search(r"Resolved|Deferred|Withdrawn", row):
+            bad(f"{pl} outcome is not one of Resolved/Deferred/Withdrawn")
+        else:
+            ok(f"{pl} outcome recorded with evidence")
+
+    if args.issue:
+        try:
+            body = json.loads(subprocess.run(
+                ["gh", "issue", "view", str(args.issue), "--repo", args.repo, "--json", "body"],
+                capture_output=True, text=True, check=True).stdout)["body"]
+        except Exception as e:
+            bad(f"could not read issue #{args.issue}: {e}"); body = ""
+        boxes = re.findall(r"^- \[[ x]\]", body, re.M)
+        if len(boxes) < len(items):
+            bad(f"issue #{args.issue} has {len(boxes)} checkbox(es) for {len(items)} punch items")
+        else:
+            ok(f"issue #{args.issue} carries a task list ({len(boxes)} items)")
+        for pl in items:
+            (ok if pl in body else bad)(f"issue #{args.issue} references {pl}")
+
+    print(f"\n{'PASS' if not fails else f'{len(fails)} CONTRACT FAILURE(S)'}")
+    return 1 if fails else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
