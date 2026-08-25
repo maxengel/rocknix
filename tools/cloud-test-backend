@@ -109,7 +109,12 @@ case "${1:-}" in
     if webdav_running; then
       echo "up: webdav already serving ${DATA} on port ${PORT}"; exit 0
     fi
+    # --dir-cache-time: rclone serve caches directory listings for five
+    # minutes by default, so a fixture written into DATA after the server
+    # starts stays invisible to the device - a test then fails for a reason
+    # that has nothing to do with the code under test.
     nohup rclone serve webdav "${DATA}" --addr "127.0.0.1:${PORT}" \
+      --dir-cache-time 1s \
       --user "${USER_NAME}" --pass "${PASS}" > "${LOGFILE}" 2>&1 &
     echo $! > "${PIDFILE}"
     for _ in $(seq 1 30); do
