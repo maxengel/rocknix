@@ -6,7 +6,7 @@ metadata:
   execution: serial
   version: 1.9.0
   origin: 'Imported from birdwork-preflight .claude/skills/code-auditor; adapted for scaffold (bedrock→cornerstone; foreign refs softened). v1.7 platform-probe evidence floor adapted 2026-07-10 from birdwork/birdwork@e0ff051.'
-  adapted: 'v1.9 2026-08-24 earned from the first ROCKNIX run: Phase 0 stale-skill-copy check; dependent failures are UNTESTABLE not FAIL; one false tick voids the list. v1.8 2026-08-24 adapted to ROCKNIX: cornerstone rubric -> instruction files + blindspot register; docs/planning -> GitHub issues on maxengel/rocknix; logs/audits -> docs/audits; foreign mechanical checks -> pkgcheck / cloud-round-trip / vm-visual-qa; added the run-it-on-a-device and cannot-fail-is-not-evidence floors.'
+  adapted: 'v1.9 2026-08-24 earned from the first ROCKNIX run: Phase 0 stale-skill-copy check; dependent failures are UNTESTABLE not FAIL; one false tick voids the list; explicit tier-selection table (two or more epics => milestone). v1.8 2026-08-24 adapted to ROCKNIX: cornerstone rubric -> instruction files + blindspot register; docs/planning -> GitHub issues on maxengel/rocknix; logs/audits -> docs/audits; foreign mechanical checks -> pkgcheck / cloud-round-trip / vm-visual-qa; added the run-it-on-a-device and cannot-fail-is-not-evidence floors.'
 ---
 
 # Code Auditor
@@ -36,6 +36,24 @@ scoped-audit step and feeds upward into this skill.
 | **Phase**     | 5 spot checks inline in each phase retro      | `mini-retro` (Step 2.5)          | Retro comment § "Scoped audit findings" |
 | **Epic**      | Full 6-phase methodology over Epic scope      | **this skill** (Epic scope)      | `docs/audits/YYYY_MM_DD-epic-*/`        |
 | **Milestone** | Full 6-phase methodology over Milestone scope | **this skill** (Milestone scope) | `docs/audits/YYYY_MM_DD-milestone-*/`   |
+
+**Choosing a tier.** The surface being audited decides it, not the size of the
+diff:
+
+| Scope being audited | Tier |
+| --- | --- |
+| One issue or one PR | **Issue** — and skip Instruction-Recommendations mode; the 3+ instances rule cannot be evaluated at that scope |
+| One epic, or an issue chain inside one epic | **Epic** |
+| **Two or more epics, or any scope crossing an epic boundary** | **Milestone** — the running log becomes mandatory |
+
+The last row is the one that gets mis-called. A scope spanning two epics is a
+milestone-tier audit even when neither epic is finished and even when the diff
+is small, because the value at that tier comes from the seam *between* the
+epics — interaction defects, drift, and gaps that no single-epic audit is
+positioned to see. (2026-08-24: the cloud-saves ↔ conflict-resolution audit was
+called milestone tier on exactly this basis, and its two highest findings were
+both seam findings — a script/UI pair that disagreed, and decisions recorded in
+one epic while the other's criteria still contradicted them.)
 
 **Tier posture differs by scope.** Epic and Milestone tiers consume
 lower-tier findings differently — and the difference is intentional:
