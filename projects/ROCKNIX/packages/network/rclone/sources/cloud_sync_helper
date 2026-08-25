@@ -137,7 +137,24 @@ update_cloud_sync_config() {
         
         # Check if this variable exists in the user config - FIX the grep pattern to avoid space issues
         if ! grep -qF "${var_name}=" /storage/.config/cloud_sync.conf; then
-          # Variable doesn't exist, add it with proper quoting
+          # A new key inherits the shape of the config it is joining, not the
+          # shipped default, where the two would disagree.
+          #
+          # CONTENTPATH is the case that matters. SYNCPATH already exists in
+          # every config, so an upgrading device keeps whatever it had -
+          # "/GAMES" for anyone set up before the /ROCKNIX layout. Adding the
+          # literal default would put their saves in one namespace and their
+          # ROMs in another, which is worse than either layout alone. Derive
+          # it from their SYNCPATH so the two stay together.
+          if [ "${var_name}" = "CONTENTPATH" ]; then
+            user_sync=$(grep -m1 '^SYNCPATH=' /storage/.config/cloud_sync.conf | cut -d'"' -f2)
+            if [ -n "${user_sync}" ]; then
+              parent=$(dirname "${user_sync}")
+              [ "${parent}" = "/" ] && parent="${user_sync}"
+              value="\"${parent}/Content\""
+              log_to_file "${log_file}" "Derived CONTENTPATH from SYNCPATH ${user_sync}"
+            fi
+          fi
           echo "${var_name}=${value}" >> /storage/.config/cloud_sync.conf
           log_to_file "${log_file}" "Added new configuration option: ${var_name}"
         fi
