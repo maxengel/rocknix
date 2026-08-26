@@ -6,7 +6,11 @@ PKG_VERSION=""
 PKG_LICENSE="GPLv2"
 PKG_SITE=""
 PKG_URL=""
-PKG_DEPENDS_TARGET="toolchain autostart"
+# zip is a *runtime* dependency of the backuptool script, so nothing failed
+# at build time when upstream dropped the package (a3d0ad0430) -- the image
+# simply shipped without it and "backuptool backup" could not run. Declaring
+# it here turns an invisible runtime dependency into one the build enforces.
+PKG_DEPENDS_TARGET="toolchain autostart zip"
 PKG_LONGDESC="ROCKNIX Meta Package"
 PKG_TOOLCHAIN="make"
 

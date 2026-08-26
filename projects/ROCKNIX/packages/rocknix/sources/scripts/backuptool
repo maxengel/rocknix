@@ -127,6 +127,13 @@ case "${1}" in
         systemctl reboot
     ;;
     "backup")
+        # Guard the tool this whole path depends on. busybox provides unzip but
+        # not zip, so a missing package means backup dies with a bare
+        # "zip: not found" after the user has already chosen to back up.
+        if ! command -v zip >/dev/null 2>&1
+        then
+            fail "Cannot create a backup: the 'zip' tool is missing from this image."
+        fi
         # Rotate the previous backup into an archive folder that the cloud
         # allowlist (backup/*.zip) does not match, and keep only the newest few.
         if [ -f "${BACKUPFILE}" ]
@@ -174,9 +181,24 @@ case "${1}" in
             fi
         done
 
-        if ! grep -vxF -f "${SECRETLIST}" "${FILELIST}" | zip -9 "${BACKUPFILE}" -@
+        # busybox grep -f with an EMPTY pattern file matches nothing and prints
+        # nothing, where GNU grep prints every line. The device has busybox, so
+        # piping that into zip would hand it an empty list and fail the backup
+        # outright -- and only for someone whose custom LOCATIONS excluded all
+        # three credential files, which is exactly the case the membership check
+        # above exists to support. Skip the filter when there is nothing to hold
+        # back rather than relying on grep to agree across implementations.
+        SENDLIST=$(mktemp)
+        if [ -s "${SECRETLIST}" ]
         then
-            rm -f "${BACKUPFILE}" "${FILELIST}" "${SECRETLIST}"
+            grep -vxF -f "${SECRETLIST}" "${FILELIST}" > "${SENDLIST}"
+        else
+            cp "${FILELIST}" "${SENDLIST}"
+        fi
+
+        if ! zip -9 "${BACKUPFILE}" -@ < "${SENDLIST}"
+        then
+            rm -f "${BACKUPFILE}" "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
             fail "Backup failed; no backup file was written."
         fi
 
@@ -220,7 +242,7 @@ case "${1}" in
             rm -rf "${SANITIZED_DIR}"
         fi
 
-        rm -f "${FILELIST}" "${SECRETLIST}"
+        rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
 
         # Last line of defence: the archive can be synced to the cloud, so
         # never ship one carrying a populated credential. This greps what
