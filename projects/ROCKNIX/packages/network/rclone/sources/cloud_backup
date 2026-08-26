@@ -560,10 +560,15 @@ backup_system_files() {
         # rclone applies --include ahead of --filter-from; borrowing the rules
         # bought nothing and left the transfer one precedence change from
         # silently sending nothing.
+        #
+        # The include is anchored with a leading slash so it matches only the
+        # current archive at the root. backuptool rotates older backups into
+        # BACKUPFOLDER/archive/, and an unanchored "*.zip" matches at any depth,
+        # which would upload every rotated archive on every sync.
         local backup_opts=(
             "--progress"
             "--log-file" "/var/log/cloud_sync.log"
-            "--include=*.zip"
+            "--include=/*.zip"
             "--stats-one-line"
         )
 

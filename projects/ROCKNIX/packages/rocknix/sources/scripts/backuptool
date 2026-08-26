@@ -141,6 +141,16 @@ case "${1}" in
         fi
 
         note "Backing up configuration to ${BACKUPFILE}..."
+
+        # Files that carry credentials. They are held back from the archive and
+        # a sanitized copy added afterwards, so a populated secret never enters
+        # it at all. Sanitizing after the fact meant the real value was written
+        # into the zip first and only then overwritten -- and a backup
+        # interrupted in between left it there.
+        SYSCFG="/storage/.config/system/configs/system.cfg"
+        ESCFG="${ESPATH}/es_settings.cfg"
+        RACFG="/storage/.config/retroarch/retroarch.cfg"
+
         # Regular files only: symlinks under the config tree point at
         # OS-shipped content (e.g. the ppsspp assets link into /usr).
         # zip -r follows them and stores their target's bytes; on restore
@@ -148,17 +158,31 @@ case "${1}" in
         # symlink ("exists but is not a regular file") and aborts the
         # whole restore partway. Symlinks are the OS's to provide, not
         # the backup's to carry.
-        if ! find ${COMPRESSLOCATIONS[@]} -type f 2>/dev/null | zip -9 "${BACKUPFILE}" -@
+        FILELIST=$(mktemp)
+        SECRETLIST=$(mktemp)
+        find ${COMPRESSLOCATIONS[@]} -type f 2>/dev/null > "${FILELIST}"
+
+        # Only hold back what this backup was actually going to contain. A user
+        # with custom LOCATIONS may have left these out on purpose, and adding a
+        # sanitized copy regardless would put a file in their backup that they
+        # had deliberately excluded.
+        for CANDIDATE in "${SYSCFG}" "${ESCFG}" "${RACFG}"
+        do
+            if grep -qxF "${CANDIDATE}" "${FILELIST}"
+            then
+                echo "${CANDIDATE}" >> "${SECRETLIST}"
+            fi
+        done
+
+        if ! grep -vxF -f "${SECRETLIST}" "${FILELIST}" | zip -9 "${BACKUPFILE}" -@
         then
-            rm -f "${BACKUPFILE}"
+            rm -f "${BACKUPFILE}" "${FILELIST}" "${SECRETLIST}"
             fail "Backup failed; no backup file was written."
         fi
 
-        # Strip secrets from the copy of system.cfg inside the archive: wifi
-        # keys, the root password, and account passwords/tokens must never
+        # Wifi keys, the root password, and account passwords/tokens must never
         # leave the device (the backup zip can be synced to the cloud).
-        SYSCFG="/storage/.config/system/configs/system.cfg"
-        if [ -f "${SYSCFG}" ]
+        if grep -qxF "${SYSCFG}" "${SECRETLIST}"
         then
             SANITIZED_DIR=$(mktemp -d)
             mkdir -p "${SANITIZED_DIR}/storage/.config/system/configs"
@@ -170,8 +194,7 @@ case "${1}" in
 
         # es_settings.cfg holds the ScreenScraper password; strip it from the
         # archived copy the same way.
-        ESCFG="${ESPATH}/es_settings.cfg"
-        if [ -f "${ESCFG}" ]
+        if grep -qxF "${ESCFG}" "${SECRETLIST}"
         then
             SANITIZED_DIR=$(mktemp -d)
             mkdir -p "${SANITIZED_DIR}/storage/.config/emulationstation"
@@ -187,8 +210,7 @@ case "${1}" in
         # the lines) so RetroArch still finds the keys it expects. The
         # cheevos *username* is deliberately kept - it is not a secret, and
         # the post-restore re-entry page uses it to know an account exists.
-        RACFG="/storage/.config/retroarch/retroarch.cfg"
-        if [ -f "${RACFG}" ]
+        if grep -qxF "${RACFG}" "${SECRETLIST}"
         then
             SANITIZED_DIR=$(mktemp -d)
             mkdir -p "${SANITIZED_DIR}/storage/.config/retroarch"
@@ -197,6 +219,8 @@ case "${1}" in
             (cd "${SANITIZED_DIR}" && zip -9 "${BACKUPFILE}" storage/.config/retroarch/retroarch.cfg >/dev/null)
             rm -rf "${SANITIZED_DIR}"
         fi
+
+        rm -f "${FILELIST}" "${SECRETLIST}"
 
         # Last line of defence: the archive can be synced to the cloud, so
         # never ship one carrying a populated credential. This greps what

@@ -594,12 +594,13 @@ restore_system_files() {
         # not match, this restore transferred nothing at all. The saves
         # allowlist was misanchored here for the same reason, and its
         # "- /**/*.zip" would have excluded the archive regardless. Match what
-        # backup_system_files actually writes.
+        # backup_system_files actually writes, anchored so it takes the current
+        # archive and not anything under a rotated archive/ subdirectory.
         local backup_opts=(
             "--progress"
             "--log-file" "/var/log/cloud_sync.log"
             "--log-level" "INFO"
-            "--include" "*.zip"
+            "--include" "/*.zip"
             "--stats-one-line"
         )
         
@@ -669,7 +670,12 @@ main() {
     # Only necessary when using sync method which can delete files
     if [ "${RESTOREMETHOD}" == "sync" ]; then
         log_message "Creating empty missing system directories" "true"
-        systemd-tmpfiles --create /usr/config/system-dirs.conf
+        # Guarded the way automount does it: the file is generated at build
+        # time, so a missing one means a broken image, not a reason to print a
+        # systemd error at the end of an otherwise good restore.
+        if [ -e "/usr/config/system-dirs.conf" ]; then
+            systemd-tmpfiles --create /usr/config/system-dirs.conf >/dev/null 2>&1 ||:
+        fi
     fi
     
     # Add a pause before summary
