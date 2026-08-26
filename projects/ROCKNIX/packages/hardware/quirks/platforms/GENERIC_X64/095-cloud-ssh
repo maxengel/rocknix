@@ -1,0 +1,31 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+
+# QEMU dev builds: when the guest is reached through a forward on the host
+# machine, the SSH command a tester must run targets the host's loopback
+# forward, not this guest's own (unreachable) address. The host side
+# supplies the forwarded port through fw_cfg (opt/org.rocknix.cloud_ssh_port
+# - only the port: UTM splits QEMU arguments on whitespace, so a full
+# command string cannot survive the trip). Assemble the command here and
+# publish it as the cloud-setup connection override; never leave a stale
+# override behind.
+
+FWCFG="/sys/firmware/qemu_fw_cfg/by_name/opt/org.rocknix.cloud_ssh_port/raw"
+TARGET="/storage/.config/cloud_setup_ssh"
+
+PORT=""
+if [ -r "${FWCFG}" ]; then
+  PORT=$(tr -cd '0-9' < "${FWCFG}")
+fi
+
+if [ -n "${PORT}" ] && [ "${PORT}" -ge 1 ] && [ "${PORT}" -le 65535 ]; then
+  # The -L tunnel carries rclone's provider sign-in page (guest port 53682)
+  # to the browser of the machine running SSH - see rclone.org/remote_setup.
+  echo "ssh -L 53682:localhost:53682 -p ${PORT} root@127.0.0.1" > "${TARGET}"
+else
+  rm -f "${TARGET}"
+fi
+
+# Retired override from the web-GUI era; clean up so no stale file lingers.
+rm -f /storage/.config/cloud_setup_url

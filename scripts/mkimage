@@ -76,6 +76,12 @@ if [ "${DISK_LABEL}" = "gpt" ]; then
   parted -s "${DISK}" -a min unit s mkpart system fat32 ${SYSTEM_PART_START} ${SYSTEM_PART_END}
   parted -s "${DISK}" -a min unit s mkpart storage ext4 ${STORAGE_PART_START} ${STORAGE_PART_END}
   parted -s "${DISK}" set 1 legacy_boot on
+  # For syslinux (x86 BIOS+UEFI hybrid) also type part1 as an EFI System Partition,
+  # so UEFI firmware auto-runs /EFI/BOOT/BOOTX64.EFI instead of dropping to the shell.
+  # legacy_boot (above) keeps BIOS/syslinux boot working.
+  if [ "${BOOTLOADER}" = "syslinux" ]; then
+    parted -s "${DISK}" set 1 esp on
+  fi
 else
   parted -s "${DISK}" -a min unit s mkpart primary fat32 ${SYSTEM_PART_START} ${SYSTEM_PART_END}
   parted -s "${DISK}" -a min unit s mkpart primary ext4 ${STORAGE_PART_START} ${STORAGE_PART_END}
@@ -164,9 +170,15 @@ EOF
 
   mcopy "${IMG_TMP}/syslinux.cfg" :: >"${SAVE_ERROR}" 2>&1 || show_error
 
+  # copy syslinux BIOS support files (required for syslinux 6.x BIOS boot)
+  # Must be copied BEFORE running syslinux.mtools
+  echo "image: copying syslinux BIOS support files..."
+  mcopy "${TOOLCHAIN}/share/syslinux/ldlinux.c32" :: >"${SAVE_ERROR}" 2>&1 || show_error
+
   # install syslinux
   echo "image: installing syslinux to part1..."
   syslinux.mtools -i "${IMG_TMP}/part1.fat" >"${SAVE_ERROR}" 2>&1 || show_error
+  sync
 
   # copy files
   echo "image: copying files to part1..."
@@ -178,7 +190,12 @@ EOF
   mmd EFI EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
   mcopy "${TOOLCHAIN}/share/syslinux/bootx64.efi" ::/EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
   mcopy "${TOOLCHAIN}/share/syslinux/ldlinux.e64" ::/EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
-  mcopy "${TOOLCHAIN}/share/grub/bootia32.efi" ::/EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
+
+  # Only copy the 32-bit GRUB bootloader if it was actually built (GENERIC_X64 doesn't).
+  if [ -f "${TOOLCHAIN}/share/grub/bootia32.efi" ]; then
+    mcopy "${TOOLCHAIN}/share/grub/bootia32.efi" ::/EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
+  fi
+
   mcopy "${IMG_TMP}/grub.cfg" ::/EFI/BOOT >"${SAVE_ERROR}" 2>&1 || show_error
 
 elif [ "${BOOTLOADER}" = "bcm2835-bootloader" ]; then

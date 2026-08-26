@@ -1,0 +1,29 @@
+# GENERIC_X64 is a VM/QA target: provide an autologin root shell on the
+# serial console (ttyS0, already on the kernel cmdline via EXTRA_CMDLINE) so
+# contributors can inspect boot/graphics state in QEMU/UTM/VirtualBox. ROCKNIX
+# strips all getty units, so this uses systemd's debug-shell pattern (a plain
+# /bin/sh bound to the tty) instead of a getty/login.
+[Unit]
+Description=Serial debug root shell on ttyS0 (GENERIC_X64 VM testing)
+After=rocknix-automount.service
+ConditionKernelCommandLine=|console=ttyS0
+ConditionKernelCommandLine=|console=ttyS0,115200
+
+[Service]
+Environment=TERM=vt100
+Environment=HOME=/storage
+WorkingDirectory=/storage
+ExecStart=/bin/sh
+Restart=always
+RestartSec=1
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/ttyS0
+TTYReset=yes
+TTYVHangup=yes
+KillMode=process
+IgnoreOnIsolate=yes
+
+[Install]
+WantedBy=rocknix.target
