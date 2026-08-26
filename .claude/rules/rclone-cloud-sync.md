@@ -126,13 +126,50 @@ seeded from the `/usr/config/*.defaults` templates:
   `--delete-excluded` unconditionally (like the `--verbose` strip); `sync` restores keep
   mirror semantics *within* the allowlist but can never delete outside it. Preserve that
   strip in any refactor, and treat any restore-side `--delete-excluded` as a bug.
+- **The two phases have different transfer roots, so filter rules do not carry
+  between them.** Phase 1 runs from `BACKUPPATH` (`/storage/roms`); phase 2 runs
+  from `BACKUPFOLDER` (`/storage/roms/backup`) to `SYNCPATH_BACKUP`, and on
+  restore from `SYNCPATH_BACKUP` back. `cloud_sync-rules.txt` is anchored to
+  `BACKUPPATH`, so in phase 2 every one of its rules describes a path that does
+  not exist -- and its `- /**/*.zip` matches the archive itself. **Never pass
+  `--filter-from` in the system-backup phase.** The archive lives at the *root*
+  of `SYNCPATH_BACKUP`, not under a `backup/` directory: match it with
+  `--include=*.zip`. (2026-08-26: `cloud_restore` filtered on `backup/*.zip`,
+  matched nothing, transferred nothing, exited 0 and printed SUCCESS. It shipped
+  in four images that way.)
+
+- **rclone applies `--include`/`--exclude` ahead of `--filter-from`.** Verified,
+  not assumed. This is why the backup side of the same mistake had no symptom: a
+  bare `--include=*.zip` outranked the misanchored allowlist that would otherwise
+  have excluded the archive. Do not lean on it -- it makes a broken filter set
+  look healthy. And using `--include` at all excludes everything it does not
+  match, so a single wrong include is a silent no-op transfer, not an error.
+
+- **rclone matches paths relative to the transfer root**, so an absolute
+  `--exclude=/storage/roms/backup/**` never matches anything. Derive such
+  patterns from the configured directory instead of hard-coding a name.
+
+- **`SYNCPATH_BACKUP` must be a sibling of `SYNCPATH`, never inside it.** Phase 1
+  syncs `SYNCPATH` with `--delete-excluded` and the archive is an excluded file,
+  so a nested path is deleted there. A full run hides this -- phase 2 re-uploads
+  moments later -- but a `--saves-only` run (or `BACKUPFILE_BACKUP_OPTION="no"`)
+  deletes the archives and puts nothing back. `cloud_backup` now warns when the
+  two are nested and the method can actually delete.
+
+- **Reachability means the remote, not the internet.** `check_internet` used to
+  ping `google.com`, wrong in both directions: it fails for a self-hosted or LAN
+  remote that needs no internet, and on networks where that host is blocked,
+  while passing happily when the user's provider is down or their sign-in has
+  expired. Test the configured remote; probe further only to word the failure.
+
 - **Single remote only:** operations use `rclone listremotes | head -1` — the first
   configured remote. Don't assume multi-remote support without adding it deliberately.
 
 ## Testing it without a cloud account
 
 `tools/cloud-test-backend` serves a directory on the host over WebDAV;
-`tools/cloud-round-trip` drives a device through backup and restore against it
+`tools/cloud-round-trip` drives a device through save backup/restore, the
+system-backup archive, and content sync against it
 over SSH. A VM from `generic-x64-vm` reaches the host at `10.0.2.2`, so nothing
 needs forwarding.
 
