@@ -47,6 +47,13 @@ EXCLUDED = {"saves/scratch.tmp": b"should-never-leave-the-device"}
 # Content sync is a different code path: whole directories of ROMs and BIOS,
 # not allowlisted save files. Its directory is created and removed by the test
 # and named so it is obvious what it is if a run is interrupted.
+# The system-backup archive: phase 2 of both scripts. Nothing exercised this
+# until it was found broken - cloud_restore filtered on "backup/*.zip" while
+# the archive sits at the root of SYNCPATH_BACKUP, so it restored nothing and
+# still reported SUCCESS. A silent no-op is exactly what a round-trip catches.
+ARCHIVE_NAME = "ROCKNIX-backup-qa.zip"
+ARCHIVE_BODY = b"system-backup-archive-v1"
+
 CONTENT_DIR = "qa-content"
 CONTENT_FIXTURES = {
     "rom1.bin": b"rom-one",
@@ -148,7 +155,11 @@ def main():
     # backend states what it needs rather than the driver assuming.
     syncpath = backend("syncpath").strip()
     settings["SYNCPATH"] = syncpath
-    settings["SYNCPATH_BACKUP"] = f"{syncpath}/backup"
+    # A SIBLING of syncpath, not a child. Phase 1 syncs syncpath with
+    # --delete-excluded and the archive is excluded, so a nested path gets
+    # deleted there; a full run masks it because phase 2 re-uploads, but a
+    # --saves-only run deletes the archives and puts nothing back.
+    settings["SYNCPATH_BACKUP"] = backend("syncpath-backup").strip()
     # cloud_content_* default to the remote root, which on a bucket-based
     # endpoint means a bucket per content directory (#38, same cause).
     settings["CONTENTPATH"] = backend("contentpath").strip()
@@ -199,6 +210,35 @@ def main():
                           f"all {len(FIXTURES)} files restored byte-identical",
                           f"only {len(same)}/{len(FIXTURES)} matched: "
                           f"{[r for r in FIXTURES if r not in same]}")
+
+    step("system backup archive round-trips")
+    # Off by default, so the phase would otherwise never run here. Remember the
+    # device's own setting: leaving it on would mean a later user-initiated
+    # restore also pulls archives down, which they never asked for.
+    prev_restore_opt = dev.run(
+        f"grep -m1 '^BACKUPFILE_RESTORE_OPTION=' {CONF} 2>/dev/null || true").strip()
+    dev.run(f"grep -q '^BACKUPFILE_RESTORE_OPTION=' {CONF} "
+            f"&& sed -i 's|^BACKUPFILE_RESTORE_OPTION=.*|BACKUPFILE_RESTORE_OPTION=\"yes\"|' {CONF} "
+            f"|| echo 'BACKUPFILE_RESTORE_OPTION=\"yes\"' >> {CONF}")
+    archive = f"{root}/backup/{ARCHIVE_NAME}"
+    dev.write(archive, ARCHIVE_BODY)
+    arch_before = dev.sha(archive)
+    backend("reset")
+    dev.run("cloud_backup >/dev/null 2>&1 || true", check=False)
+    uploaded_archive = ARCHIVE_NAME in backend("ls")
+    failures += not check(uploaded_archive,
+                          "the system backup archive reached the cloud",
+                          "the archive was not uploaded")
+    dev.run(f"rm -f {shlex.quote(archive)}")
+    dev.run("cloud_restore >/dev/null 2>&1 || true", check=False)
+    if uploaded_archive:
+        arch_after = dev.sha(archive)
+        failures += not check(arch_after is not None and arch_after == arch_before,
+                              "the archive came back byte-identical",
+                              "the archive did not come back - restore can report "
+                              "SUCCESS while its filter matches nothing")
+    else:
+        print("    SKIP  archive restore - nothing was uploaded, so it proves nothing")
 
     # --- content backup / restore -------------------------------------------
     # cloud_content_backup hardcodes DEST=/storage/roms and ignores BACKUPPATH,
@@ -264,10 +304,15 @@ def main():
 
     if not args.keep:
         step("clean up")
+        dev.run(f"rm -f {shlex.quote(archive)}")
+        if prev_restore_opt:
+            dev.run(f"sed -i 's|^BACKUPFILE_RESTORE_OPTION=.*|{prev_restore_opt}|' {CONF}")
+        else:
+            dev.run(f"sed -i '/^BACKUPFILE_RESTORE_OPTION=/d' {CONF}")
         if not args.real_roms:
             dev.run(f"rm -rf {shlex.quote(SCRATCH)}")
         backend("reset")
-        print("    scratch tree and bucket emptied")
+        print("    scratch tree and bucket emptied, system-backup setting restored")
 
     print(f"\n{'PASSED' if failures == 0 else f'{failures} CHECK(S) FAILED'}")
     return 1 if failures else 0

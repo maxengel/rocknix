@@ -237,6 +237,21 @@ EOF
     fi
     ;;
 
+  syncpath-backup)
+    # Where the system-backup archive goes. It must be a SIBLING of syncpath,
+    # never inside it. Phase 1 syncs syncpath with --delete-excluded and the
+    # archive is an excluded file, so a nested path is deleted by phase 1. A
+    # full run hides this - phase 2 re-uploads it moments later - but any run
+    # that skips the system phase (--saves-only, or BACKUPFILE_BACKUP_OPTION
+    # set to no) removes the archives and puts nothing back. Verified both
+    # ways: nested, --saves-only leaves 0 archives; sibling leaves them intact.
+    if [ "${BACKEND}" = "s3" ]; then
+      echo "/${S3_BUCKET}/BACKUPS"
+    else
+      echo "/BACKUPS"
+    fi
+    ;;
+
   contentpath)
     # Where cloud_content_backup/restore put whole content directories.
     # Same bucket-vs-folder split as syncpath.
@@ -251,7 +266,7 @@ EOF
   backend)     echo "${BACKEND}" ;;
 
   *)
-    echo "usage: ${0##*/} {up|down|reset|ls [path]|path|put <dir> <path>|status|rclone-conf|syncpath|contentpath|remote-name|backend}" >&2
+    echo "usage: ${0##*/} {up|down|reset|ls [path]|path|put <dir> <path>|status|rclone-conf|syncpath|syncpath-backup|contentpath|remote-name|backend}" >&2
     exit 1
     ;;
 esac
