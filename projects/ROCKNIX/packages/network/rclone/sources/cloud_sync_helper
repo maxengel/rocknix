@@ -50,27 +50,45 @@ update_cloud_sync_rules() {
       return 1
     fi
     
-    # Copy default rules to a temporary file
-    cp -f /usr/config/cloud_sync-rules.txt.defaults /tmp/cloud_sync-rules.new
-    
     log_to_file "${log_file}" "Merging custom rules with defaults"
-    
-    # Check each user rule and preserve it
+
+    # Collect the user's own rules - lines that are not in the defaults.
+    # The -e flag ensures grep treats the entire line as a fixed pattern,
+    # preventing misinterpretation of spaces and special characters in rules.
+    : > /tmp/cloud_sync-rules.user
     while IFS= read -r line; do
-      # Skip comment lines and empty lines for comparison
       if [[ "$line" != \#* ]] && [[ -n "$line" ]]; then
-        # Check if the rule is already in the defaults
-        # The -e flag ensures grep treats the entire line as a fixed pattern,
-        # preventing misinterpretation of spaces and special characters in rules
-        if ! grep -Fxq -e "$line" /tmp/cloud_sync-rules.new; then
-          # If not in defaults, append it to preserve user customization
-          echo "$line" >> /tmp/cloud_sync-rules.new
+        if ! grep -Fxq -e "$line" /usr/config/cloud_sync-rules.txt.defaults; then
+          echo "$line" >> /tmp/cloud_sync-rules.user
         fi
       fi
     done < /storage/.config/cloud_sync-rules.txt
-    
+
+    # User rules go FIRST, then the defaults. rclone filters are
+    # first-match-wins, so position is the only thing that grants precedence:
+    # appended after the defaults these were unreachable - every one of them
+    # sat below the catch-all "- /**", so a customization was silently
+    # ignored while still being visible in the file. Placing them ahead of
+    # the defaults is also what lets a user's "+ include" beat a default
+    # exclusion, which moving them above the catch-all alone would not.
+    : > /tmp/cloud_sync-rules.new
+    if [ -s /tmp/cloud_sync-rules.user ]; then
+      {
+        echo "# ----------------------------------------------------------------"
+        echo "# Your own rules, kept across updates."
+        echo "# These come first because rclone uses the first matching rule,"
+        echo "# so anything here takes precedence over the defaults below."
+        echo "# ----------------------------------------------------------------"
+        cat /tmp/cloud_sync-rules.user
+        echo
+        echo "# ----------------------------- defaults -------------------------"
+      } >> /tmp/cloud_sync-rules.new
+    fi
+    cat /usr/config/cloud_sync-rules.txt.defaults >> /tmp/cloud_sync-rules.new
+
     # Replace the user's file with the merged version
     mv /tmp/cloud_sync-rules.new /storage/.config/cloud_sync-rules.txt
+    rm -f /tmp/cloud_sync-rules.user
     
     log_to_file "${log_file}" "Updated cloud_sync-rules.txt with new defaults while preserving custom rules"
   else
@@ -119,7 +137,24 @@ update_cloud_sync_config() {
         
         # Check if this variable exists in the user config - FIX the grep pattern to avoid space issues
         if ! grep -qF "${var_name}=" /storage/.config/cloud_sync.conf; then
-          # Variable doesn't exist, add it with proper quoting
+          # A new key inherits the shape of the config it is joining, not the
+          # shipped default, where the two would disagree.
+          #
+          # CONTENTPATH is the case that matters. SYNCPATH already exists in
+          # every config, so an upgrading device keeps whatever it had -
+          # "/GAMES" for anyone set up before the /ROCKNIX layout. Adding the
+          # literal default would put their saves in one namespace and their
+          # ROMs in another, which is worse than either layout alone. Derive
+          # it from their SYNCPATH so the two stay together.
+          if [ "${var_name}" = "CONTENTPATH" ]; then
+            user_sync=$(grep -m1 '^SYNCPATH=' /storage/.config/cloud_sync.conf | cut -d'"' -f2)
+            if [ -n "${user_sync}" ]; then
+              parent=$(dirname "${user_sync}")
+              [ "${parent}" = "/" ] && parent="${user_sync}"
+              value="\"${parent}/Content\""
+              log_to_file "${log_file}" "Derived CONTENTPATH from SYNCPATH ${user_sync}"
+            fi
+          fi
           echo "${var_name}=${value}" >> /storage/.config/cloud_sync.conf
           log_to_file "${log_file}" "Added new configuration option: ${var_name}"
         fi

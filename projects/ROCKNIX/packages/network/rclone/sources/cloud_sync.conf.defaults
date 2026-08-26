@@ -15,10 +15,19 @@ DEFAULT_BACKUPFOLDER="/storage/roms/backup"
 # Cloud Storage Paths
 # ------------------
 # Directory on the remote where save data should be stored
-DEFAULT_SYNCPATH="/GAMES"
+DEFAULT_SYNCPATH="/ROCKNIX/Saves"
 
 # Remote path where backups are stored
-DEFAULT_SYNCPATH_BACKUP="/GAMES/backup"
+DEFAULT_SYNCPATH_BACKUP="/ROCKNIX/Backups"
+
+# Where cloud_content_backup/restore keep ROMs and BIOS, one directory per
+# system plus "bios". Previously unset, which put them at the remote root and
+# scattered system folders among whatever else lived there.
+#
+# Unlike SYNCPATH this key is new, so the helper adds it to existing configs
+# rather than leaving them alone - anyone who had placed content at the remote
+# root by hand will find CONTENT LIST empty until they clear this back to "".
+DEFAULT_CONTENTPATH="/ROCKNIX/Content"
 
 # Logging Options
 # --------------

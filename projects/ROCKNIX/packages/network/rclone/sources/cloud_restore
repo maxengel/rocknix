@@ -7,6 +7,26 @@ SCRIPT_NAME=$(basename "$0")
 LOG_FILE="/var/log/cloud_sync.log"
 START_TIME=$(date +%s)
 
+# Non-interactive support for hooks and the ES menu:
+#   --yes / -y   answer prompts automatically (headless mode)
+#   --method=X   override the configured transfer method (sync or copy)
+#   --update     add rclone --update (skip files newer on the destination)
+ASSUME_YES=0
+METHOD_OVERRIDE=""
+EXTRA_UPDATE=0
+SYSTEM_ONLY=0
+SAVES_ONLY=0
+for CLI_ARG in "$@"; do
+    case "${CLI_ARG}" in
+        --yes|-y) ASSUME_YES=1 ;;
+        --method=sync|--method=copy) METHOD_OVERRIDE="${CLI_ARG#--method=}" ;;
+        --method=*) echo "Ignoring invalid --method value: ${CLI_ARG#--method=}" ;;
+        --update) EXTRA_UPDATE=1 ;;
+        --system-only) SYSTEM_ONLY=1 ;;
+        --saves-only) SAVES_ONLY=1 ;;
+    esac
+done
+
 # Logging function that supports different severity levels and optional console output
 # Parameters:
 #   $1: Message text
@@ -270,17 +290,32 @@ check_rclone_config() {
     fi
 }
 
-# Validates internet connectivity before attempting cloud operations
-# Uses ping to google.com as a connectivity test
+# What has to be reachable is the configured cloud storage, not the internet at
+# large. Pinging google.com gets both answers wrong: it fails on a setup that
+# works fine - a self-hosted or LAN remote needs no internet, and that host is
+# unreachable on some networks outright - and it succeeds while the user's
+# provider is down or their sign-in has expired. Test the remote itself, and
+# probe further only to word the failure correctly, because the two causes have
+# different fixes.
 check_internet() {
-    log_message "Checking internet connectivity..." "false"
-    ONLINESTATUS=`ping -q -c1 google.com &>/dev/null && echo online || echo offline`
-    if [ "${ONLINESTATUS}" == "offline" ]; then
-        log_message "You're not currently connected to the internet.\nPlease verify your settings and then try again." "true" "ERROR"
-        sleep 3
-        clean_exit 1
+    log_message "Checking cloud storage reachability..." "false"
+
+    local remote
+    remote=$(rclone listremotes 2>/dev/null | head -1)
+    if [ -n "${remote}" ] && rclone lsd "${remote}" \
+            --contimeout 10s --timeout 20s --low-level-retries 1 --retries 1 \
+            >/dev/null 2>&1; then
+        log_message "Cloud storage ${remote} is reachable" "false"
+        return 0
     fi
-    log_message "Internet connection detected" "false"
+
+    if ping -q -c1 -W 3 1.1.1.1 >/dev/null 2>&1 || ping -q -c1 -W 3 8.8.8.8 >/dev/null 2>&1; then
+        log_message "Your cloud storage did not respond.\nCheck that it is still set up and that its sign-in has not expired." "true" "ERROR"
+    else
+        log_message "You're not currently connected to the internet.\nPlease verify your settings and then try again." "true" "ERROR"
+    fi
+    sleep 3
+    clean_exit 1
 }
 
 # Loads user configuration from cloud_sync.conf
@@ -312,8 +347,12 @@ load_config() {
         done
         dupe_message="${dupe_message}\n\nWould you like to automatically clean up duplicates?"
         
-        controller_confirm "$dupe_message" 0
-        local cleanup_choice=$?
+        if [ "${ASSUME_YES}" -eq 1 ]; then
+            local cleanup_choice=0
+        else
+            controller_confirm "$dupe_message" 0
+            local cleanup_choice=$?
+        fi
         log_message "Cleanup choice returned: $cleanup_choice" "false"
         
         if [ $cleanup_choice -eq 0 ]; then
@@ -361,6 +400,20 @@ load_config() {
         RCLONE_OPTS_ARRAY+=("$opt")
     done
     log_message "Options array has ${#RCLONE_OPTS_ARRAY[@]} elements" "false"
+
+    # Apply command-line overrides
+    if [ "${SYSTEM_ONLY}" -eq 1 ]; then
+        BACKUPFILE_RESTORE_OPTION="yes"
+        log_message "System-backup phase forced on by --system-only" "false"
+    fi
+    if [ -n "${METHOD_OVERRIDE}" ]; then
+        RESTOREMETHOD="${METHOD_OVERRIDE}"
+        log_message "Transfer method overridden from command line: ${METHOD_OVERRIDE}" "false"
+    fi
+    if [ "${EXTRA_UPDATE}" -eq 1 ]; then
+        RCLONE_OPTS_ARRAY+=("--update")
+        log_message "Added --update from command line" "false"
+    fi
     log_message "Configuration loaded successfully" "false"
 }
 
@@ -465,13 +518,21 @@ restore_game_saves() {
     # Add debug logging if enabled
     if [ -n "$rclone_debug" ]; then
         all_opts+=("$rclone_debug" "INFO")
-    fi    # Add exclusions
-    all_opts+=(
-        "--stats-one-line"
-        "--exclude=${BACKUPFOLDER}/**"
-        "--exclude=backups/**"
-        "--exclude=bios/**"
-    )
+    fi
+
+    # Keep the system-backup archive out of the saves payload -- phase 2 sends it
+    # to SYNCPATH_BACKUP on its own. rclone matches paths relative to the transfer
+    # root, so the two rules that used to sit here never matched anything:
+    # "${BACKUPFOLDER}/**" is absolute, and "backups/**" names a directory that
+    # does not exist (it is "backup"). Only the blanket "*.zip" was doing the
+    # work, and it also overrode any user rule that deliberately included a zip.
+    # Derive the pattern from BACKUPFOLDER instead, so it keeps working if the
+    # folder is renamed and is simply skipped when it lives outside the payload.
+    all_opts+=("--stats-one-line" "--exclude=bios/**")
+    local backup_rel="${BACKUPFOLDER#${RESTOREPATH%/}/}"
+    if [ "${backup_rel}" != "${BACKUPFOLDER}" ]; then
+        all_opts+=("--exclude=${backup_rel}/**")
+    fi
 
     # Check if the rclone version supports the terminal width flag
     if rclone help | grep -q progress-terminal-width; then
@@ -514,9 +575,10 @@ restore_system_files() {
             return $remote_ls_status
         fi
         
+        # Nothing to restore is not a failure; see backup_system_files.
         if [ -z "${REMOTE_FILES}" ]; then
             log_message "There are no system backup files to restore" "true" "WARN"
-            return 1
+            return 0
         fi
         
         log_message "Starting restore of system backup files from ${REMOTENAME}${SYNCPATH_BACKUP} to ${BACKUPFOLDER}"
@@ -525,14 +587,19 @@ restore_system_files() {
         # Ensure local target directory exists before attempting restore
         mkdir -p ${BACKUPFOLDER}
         
-        # Build options array for system backup restore
+        # This transfer's root is SYNCPATH_BACKUP, whose contents came from
+        # BACKUPFOLDER -- so the archive sits at the root, as "backup-*.zip",
+        # not under "backup/". Both includes below named a directory that is not
+        # there, and because using --include at all excludes everything it does
+        # not match, this restore transferred nothing at all. The saves
+        # allowlist was misanchored here for the same reason, and its
+        # "- /**/*.zip" would have excluded the archive regardless. Match what
+        # backup_system_files actually writes.
         local backup_opts=(
             "--progress"
             "--log-file" "/var/log/cloud_sync.log"
-            "--filter-from" "/storage/.config/cloud_sync-rules.txt"
             "--log-level" "INFO"
-            "--include" "/backup/*.zip"
-            "--include" "backup/*.zip"
+            "--include" "*.zip"
             "--stats-one-line"
         )
         
@@ -575,16 +642,28 @@ main() {
     
     # Execute Part 1: Game saves restore
     # This performs the primary save file restoration operation using the configured method
-    restore_game_saves
-    RESTORE_STATUS=$?
+    # --system-only was parsed and then ignored here, so it restored game saves
+    # anyway -- the opposite of what it says, over the top of local saves.
+    if [ "${SYSTEM_ONLY}" -eq 1 ]; then
+        log_message "Game saves restore skipped (--system-only)" "true"
+        RESTORE_STATUS=0
+    else
+        restore_game_saves
+        RESTORE_STATUS=$?
+    fi
     
     # Add a pause for better visual separation between operations
     sleep 2
     
     # Execute Part 2: System restore
     # This restores system backup files (zip files) if enabled in configuration
-    restore_system_files
-    RESTORE_SYSTEM_STATUS=$?
+    if [ "${SAVES_ONLY}" -eq 1 ]; then
+        log_message "System backup file restore skipped (--saves-only)" "true"
+        RESTORE_SYSTEM_STATUS=0
+    else
+        restore_system_files
+        RESTORE_SYSTEM_STATUS=$?
+    fi
     
     # Create empty missing system directories if removed during restore
     # Only necessary when using sync method which can delete files
