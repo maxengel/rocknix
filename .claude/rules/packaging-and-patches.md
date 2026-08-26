@@ -46,6 +46,33 @@ directories such as `.noinstall` are dropped from the final image.
 Run `tools/pkgcheck <package>` after every `package.mk` edit. It is the only
 lint in the repo; the real test is that the package builds.
 
+## A shipped script's tools are dependencies too
+
+If a script the image installs invokes an external CLI tool, **declare that tool
+in the owning package's `PKG_DEPENDS_TARGET`** — even though nothing links
+against it and the build would succeed without it.
+
+A runtime dependency on a CLI has no build-time signal. Upstream deleted
+`packages/compress/zip` in `a3d0ad0430`; no package referenced it, so nothing
+failed, the image simply shipped without `zip`, and `backuptool backup` — which
+builds its archive with `zip -9` — died on every device from then on. It went
+unnoticed for months because the *restore* path uses busybox `unzip`, which is
+still there, so the feature looked half-alive.
+
+Declaring it converts a silent runtime break into a build failure the next time
+someone drops the package. To check an image you already have:
+
+```bash
+IMG=build.ROCKNIX-<DEVICE>.<ARCH>/image/system
+for c in zip unzip rclone qrencode evtest logger; do
+  [ -e "$IMG/usr/bin/$c" ] || echo "MISSING: $c"
+done
+```
+
+Note that busybox provides `unzip` but **not** `zip`, and libzip's `ziptool` /
+`zipmerge` / `zipcmp` are not Info-ZIP — the presence of zip-ish names in
+`/usr/bin` is not evidence that `zip` exists.
+
 ## Generating patches
 
 Patches in a package's `patches/` directory apply automatically after unpack.
