@@ -26,6 +26,39 @@ The worktree directory leaf is the branch name **minus the `feature/` prefix** (
 carries a slash, so it can't be a directory leaf). Branches still use the `feature/<name>`
 convention required by the fork workflow (see `fork-workflow.md`).
 
+## Removing a worktree
+
+**Use `tools/fork-worktree remove`, not `git worktree remove`.**
+
+Worktrees here are not interchangeable. A feature worktree is a few hundred MB
+of checkout that a clone can rebuild in seconds. A build worktree holds
+`build.ROCKNIX-<DEVICE>.<ARCH>` directories, `sources/` and `target/` — hours of
+compilation each, none of it in git, none of it recoverable. `git worktree
+remove --force` cannot tell those apart, and `--force` is precisely the flag you
+reach for when the first attempt complains.
+
+It is also not atomic. Told to force-remove a worktree holding hundreds of GB,
+git has been observed to unregister it and leave the contents behind: a
+directory that is no longer a worktree, with orphaned build roots, reported only
+as a non-zero exit. In a loop over several worktrees that exit scrolls past.
+
+```bash
+./tools/fork-worktree list                        # what each one is holding
+./tools/fork-worktree remove <path>               # refuses if build output is present
+./tools/fork-worktree remove <path> --preserve <dir>
+./tools/fork-worktree remove <path> --force       # only after it has told you what dies
+./tools/fork-worktree repair <path>               # re-register an orphaned directory
+```
+
+`repair` exists because git's own `worktree repair` cannot help once the admin
+directory under `.git/worktrees/` has been pruned — it re-creates the worktree in
+place and carries every untracked file back.
+
+**Never remove the worktree you are standing in.** The shell's working directory
+vanishes mid-command and everything afterwards fails for an unrelated-looking
+reason. Detach it instead (`git switch --detach`) if you only need its branch
+freed; the tool refuses this case outright.
+
 ## Create a worktree + branch from next
 
 Always branch from the latest `next` — fetch first so the personal overlay (instruction

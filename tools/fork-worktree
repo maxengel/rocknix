@@ -1,0 +1,156 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# Remove a worktree without destroying a build root.
+#
+# `git worktree remove --force` treats every worktree alike. In this repo they
+# are not alike: a feature worktree is a few hundred MB of checkout, while a
+# build worktree holds build.ROCKNIX-<DEVICE>.<ARCH> directories that cost
+# hours each and are not in git. The command that cleans up the first silently
+# targets the second, and --force is the flag you reach for when the first
+# attempt complains.
+#
+# It is also not reliably atomic. Told to force-remove a worktree holding
+# hundreds of GB, git unregistered it and left the contents behind - a
+# directory that is no longer a worktree, whose build roots are now orphaned,
+# reported only as a non-zero exit nobody reads in a loop.
+#
+#   ./tools/fork-worktree list                    # what each worktree is holding
+#   ./tools/fork-worktree remove <path>           # refuses if build output is present
+#   ./tools/fork-worktree remove <path> --preserve <dir>   # move build output out first
+#   ./tools/fork-worktree remove <path> --force   # destroy it anyway, having been told
+#   ./tools/fork-worktree repair <path>           # re-register an orphaned directory
+set -uo pipefail
+
+# The gitignored build outputs, per CLAUDE.md. Presence of any of these means
+# the directory is worth more than the checkout it sits in.
+is_build_artifact() {
+    case "${1}" in
+        build.*|target|sources|release) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# du over a 345 GB tree is slow and cold-cache slower. The refusal does not
+# depend on the number, so treat it as a nicety that is allowed to give up.
+cheap_size() {
+    local out
+    out="$(timeout 10 du -sh "${1}" 2>/dev/null | cut -f1)"
+    [ -n "${out}" ] && echo "${out}" || echo "too large to measure in 10s"
+}
+
+artifacts_in() {
+    local wt="${1}" found=""
+    for entry in "${wt}"/* ; do
+        [ -e "${entry}" ] || continue
+        local base; base="$(basename "${entry}")"
+        is_build_artifact "${base}" && found+="${base}"$'\n'
+    done
+    printf '%s' "${found}"
+}
+
+git_dir() { git rev-parse --git-common-dir 2>/dev/null; }
+
+cmd_list() {
+    git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt; do
+        local_art="$(artifacts_in "${wt}")"
+        if [ -n "${local_art}" ]; then
+            echo "  ${wt}"
+            echo "      HOLDS BUILD OUTPUT ($(cheap_size "${wt}")):"
+            printf '%s\n' "${local_art}" | sed 's/^/        /'
+        else
+            echo "  ${wt}"
+            echo "      checkout only"
+        fi
+    done
+}
+
+cmd_remove() {
+    local wt="" preserve="" force=0
+    while [ $# -gt 0 ]; do
+        case "${1}" in
+            --preserve) preserve="${2:-}"; shift 2 ;;
+            --force) force=1; shift ;;
+            *) wt="${1}"; shift ;;
+        esac
+    done
+    [ -n "${wt}" ] || { echo "usage: fork-worktree remove <path> [--preserve <dir>] [--force]" >&2; exit 1; }
+    wt="$(cd "${wt}" 2>/dev/null && pwd)" || { echo "error: no such directory" >&2; exit 1; }
+
+    # Refusing to delete the ground you are standing on: the shell's cwd would
+    # vanish mid-command and every later step would fail for an unrelated-looking
+    # reason.
+    local here; here="$(pwd -P)"
+    case "${here}/" in
+        "${wt}"/*) echo "error: you are inside ${wt}; run this from elsewhere" >&2; exit 1 ;;
+    esac
+
+    local art; art="$(artifacts_in "${wt}")"
+    if [ -n "${art}" ] && [ -z "${preserve}" ] && [ "${force}" -eq 0 ]; then
+        {
+            echo "refusing: ${wt} holds build output that is not in git ($(cheap_size "${wt}")):"
+            printf '%s\n' "${art}" | sed 's/^/    /'
+            echo "  Each build.* directory is hours of work and cannot be recovered from a clone."
+            echo "  Keep it:     fork-worktree remove ${wt} --preserve <dir>"
+            echo "  Destroy it:  fork-worktree remove ${wt} --force"
+        } >&2
+        exit 1
+    fi
+
+    if [ -n "${preserve}" ]; then
+        mkdir -p "${preserve}" || exit 1
+        while IFS= read -r base; do
+            [ -n "${base}" ] || continue
+            mv "${wt}/${base}" "${preserve}/${base}" && echo "  preserved: ${base} -> ${preserve}/"
+        done <<< "${art}"
+    elif [ -n "${art}" ]; then
+        echo "  destroying build output as instructed:"; printf '%s\n' "${art}" | sed 's/^/    /'
+    fi
+
+    git worktree remove --force "${wt}"
+    local rc=$?
+
+    # git can unregister and still leave the directory. Say so plainly rather
+    # than letting a non-zero exit disappear into a loop.
+    if [ -d "${wt}" ]; then
+        echo "warning: ${wt} still exists on disk after removal (git exit ${rc})." >&2
+        echo "  It is no longer a registered worktree. Re-register it with:" >&2
+        echo "    fork-worktree repair ${wt}" >&2
+        exit 1
+    fi
+    echo "  removed: ${wt}"
+}
+
+# The recovery for a directory git unregistered but did not delete: stand up a
+# fresh worktree at the same path and carry every untracked thing back.
+cmd_repair() {
+    local wt="${1:-}" ref="${2:-next}"
+    [ -n "${wt}" ] || { echo "usage: fork-worktree repair <path> [ref]" >&2; exit 1; }
+    wt="$(cd "${wt}" 2>/dev/null && pwd)" || { echo "error: no such directory" >&2; exit 1; }
+    if git worktree list --porcelain | awk '/^worktree /{print $2}' | grep -qxF "${wt}"; then
+        echo "  ${wt} is already a registered worktree; nothing to repair"; exit 0
+    fi
+    local orphan="${wt}.orphan.$$"
+    mv "${wt}" "${orphan}" || exit 1
+    if ! git worktree add -q --detach "${wt}" "${ref}"; then
+        mv "${orphan}" "${wt}"; echo "error: could not create worktree; directory restored" >&2; exit 1
+    fi
+    local moved=0
+    for entry in "${orphan}"/* "${orphan}"/.[!.]*; do
+        [ -e "${entry}" ] || continue
+        local base; base="$(basename "${entry}")"
+        [ "${base}" = ".git" ] && continue
+        [ -e "${wt}/${base}" ] && continue          # tracked file the checkout just restored
+        mv "${entry}" "${wt}/${base}" && moved=$((moved + 1))
+    done
+    rmdir "${orphan}" 2>/dev/null || rm -rf "${orphan}"
+    echo "  repaired: ${wt} at ${ref}, ${moved} untracked item(s) carried over"
+}
+
+case "${1:-}" in
+    list)   shift; cmd_list "$@" ;;
+    remove) shift; cmd_remove "$@" ;;
+    repair) shift; cmd_repair "$@" ;;
+    *) echo "usage: ${0##*/} {list|remove <path> [--preserve <dir>] [--force]|repair <path> [ref]}" >&2; exit 1 ;;
+esac
