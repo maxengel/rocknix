@@ -110,8 +110,9 @@ while read -r local_ref local_sha _remote_ref _remote_sha; do
     {
       echo "✖ pre-push blocked: ${branch} carries personal artifacts that must not go upstream:"
       printf '%s' "$hits"
-      echo "  Rebuild a clean PR branch with:"
-      echo "    git rebase --onto upstream/next next ${branch}"
+      echo "  Rebuild the PR branch from upstream by content, not by commit:"
+      echo "    git worktree add --detach ../rocknix.worktrees/pr-tmp upstream/next"
+      echo "    git switch -c ${branch} && git checkout next -- <the feature paths> && git commit"
     } >&2
     status=1
   fi
