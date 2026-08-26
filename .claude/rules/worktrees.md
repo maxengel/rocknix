@@ -26,6 +26,36 @@ The worktree directory leaf is the branch name **minus the `feature/` prefix** (
 carries a slash, so it can't be a directory leaf). Branches still use the `feature/<name>`
 convention required by the fork workflow (see `fork-workflow.md`).
 
+## Build worktrees are on `build/*` branches, never detached
+
+`scripts/image` writes `BUILD_BRANCH="$(git branch --show-current)"` into
+`/etc/os-release`, and `rocknix-info` shows it to the player as
+`BUILD ID: cb50b45 (test/qa-integration)`. On a detached HEAD that command
+returns **empty**, so an image built from a detached worktree ships with a blank
+branch field and an empty parenthetical on the device's info screen. Detached is
+fine for reading; it is not fine for building.
+
+Git will not check out the same branch in two worktrees, and the primary
+checkout holds `next`. So each build worktree gets its own branch named after
+its directory — `build/devices`, `build/generic-x64` — which keeps
+`BUILD_BRANCH` populated and says which checkout produced an image.
+
+A branch does not follow `next` on its own any more than a detached HEAD does:
+
+```bash
+./tools/fork-worktree sync     # fast-forward every build/* worktree to next
+```
+
+It touches only `build/*` branches, skips a worktree with uncommitted changes
+rather than overwriting it, and is fast-forward-only — a build branch someone
+committed on has diverged, and quietly rewriting it would lose that work.
+
+It deliberately takes **no target argument**. It walks every build worktree at
+once, so an arbitrary ref moves all of them together; while this function was
+being tested, a throwaway commit was fast-forwarded onto two real build
+checkouts exactly that way, and went unnoticed because the test only read the
+output line it expected. `next` is the only ref worth following here.
+
 ## Removing a worktree
 
 **Use `tools/fork-worktree remove`, not `git worktree remove`.**

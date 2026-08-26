@@ -21,6 +21,7 @@
 #   ./tools/fork-worktree remove <path> --preserve <dir>   # move build output out first
 #   ./tools/fork-worktree remove <path> --force   # destroy it anyway, having been told
 #   ./tools/fork-worktree repair <path>           # re-register an orphaned directory
+#   ./tools/fork-worktree sync                    # fast-forward every build/* worktree to next
 set -uo pipefail
 
 # The gitignored build outputs, per CLAUDE.md. Presence of any of these means
@@ -148,9 +149,58 @@ cmd_repair() {
     echo "  repaired: ${wt} at ${ref}, ${moved} untracked item(s) carried over"
 }
 
+# Bring every build worktree up to next. A branch does not follow next by
+# itself any more than a detached HEAD does, so this is the step that would
+# otherwise be three manual checkouts nobody remembers to run before a build.
+#
+# Only build/* branches are touched. A feature branch has work on it and is
+# nobody's to fast-forward; next itself is the thing being followed.
+cmd_sync() {
+    # No target argument on purpose. This walks every build worktree, so an
+    # arbitrary ref moves all of them at once -- which is exactly how, while
+    # testing this function, a throwaway commit was fast-forwarded onto two real
+    # build checkouts without anyone noticing. The only ref worth following here
+    # is next; testing against something else is not worth that edge.
+    local target="next" rc=0
+    git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt; do
+        local br; br="$(git -C "${wt}" branch --show-current)"
+        case "${br}" in
+            build/*) ;;
+            "")  echo "  skip ${wt##*/}: detached HEAD, not a build worktree"; continue ;;
+            *)   echo "  skip ${wt##*/}: on ${br}, not a build/* branch"; continue ;;
+        esac
+        if [ -n "$(git -C "${wt}" status --porcelain=v1 --untracked-files=no)" ]; then
+            echo "  SKIP ${wt##*/}: uncommitted changes on ${br} - resolve them first" >&2
+            continue
+        fi
+        # --ff-only: if someone committed on the build branch it has diverged,
+        # and quietly rewriting it would lose that work.
+        local before; before="$(git -C "${wt}" rev-parse HEAD)"
+        if git -C "${wt}" merge --ff-only "${target}" >/dev/null 2>&1; then
+            local after; after="$(git -C "${wt}" rev-parse HEAD)"
+            if [ "${before}" = "${after}" ]; then
+                # Either already at target, or ahead of it. Say so: reporting a
+                # move that did not happen is how a stale checkout gets built.
+                if git -C "${wt}" merge-base --is-ancestor "${target}" HEAD 2>/dev/null &&
+                   [ "$(git -C "${wt}" rev-parse "${target}")" != "${after}" ]; then
+                    echo "  ${wt##*/}: ${br} is AHEAD of ${target}; left alone"
+                else
+                    echo "  ${wt##*/}: ${br} already at ${target}"
+                fi
+            else
+                echo "  ${wt##*/}: ${br} fast-forwarded to $(git -C "${wt}" rev-parse --short HEAD)"
+            fi
+        else
+            echo "  FAILED ${wt##*/}: ${br} has diverged from ${target}; not fast-forwarding" >&2
+        fi
+    done
+    return ${rc}
+}
+
 case "${1:-}" in
     list)   shift; cmd_list "$@" ;;
     remove) shift; cmd_remove "$@" ;;
     repair) shift; cmd_repair "$@" ;;
-    *) echo "usage: ${0##*/} {list|remove <path> [--preserve <dir>] [--force]|repair <path> [ref]}" >&2; exit 1 ;;
+    sync)   cmd_sync ;;
+    *) echo "usage: ${0##*/} {list|sync|remove <path> [--preserve <dir>] [--force]|repair <path> [ref]}" >&2; exit 1 ;;
 esac
