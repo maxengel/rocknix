@@ -214,17 +214,32 @@ check_rclone_config() {
     fi
 }
 
-# Validates internet connectivity before attempting cloud operations
-# Uses ping to google.com as a connectivity test
+# What has to be reachable is the configured cloud storage, not the internet at
+# large. Pinging google.com gets both answers wrong: it fails on a setup that
+# works fine - a self-hosted or LAN remote needs no internet, and that host is
+# unreachable on some networks outright - and it succeeds while the user's
+# provider is down or their sign-in has expired. Test the remote itself, and
+# probe further only to word the failure correctly, because the two causes have
+# different fixes.
 check_internet() {
-    log_message "Checking internet connectivity..." "false"
-    ONLINESTATUS=`ping -q -c1 google.com &>/dev/null && echo online || echo offline`
-    if [ "${ONLINESTATUS}" == "offline" ]; then
-        log_message "You're not currently connected to the internet.\nPlease verify your settings and then try again." "true" "ERROR"
-        sleep 3
-        clean_exit 1
+    log_message "Checking cloud storage reachability..." "false"
+
+    local remote
+    remote=$(rclone listremotes 2>/dev/null | head -1)
+    if [ -n "${remote}" ] && rclone lsd "${remote}" \
+            --contimeout 10s --timeout 20s --low-level-retries 1 --retries 1 \
+            >/dev/null 2>&1; then
+        log_message "Cloud storage ${remote} is reachable" "false"
+        return 0
     fi
-    log_message "Internet connection detected" "false"
+
+    if ping -q -c1 -W 3 1.1.1.1 >/dev/null 2>&1 || ping -q -c1 -W 3 8.8.8.8 >/dev/null 2>&1; then
+        log_message "Your cloud storage did not respond.\nCheck that it is still set up and that its sign-in has not expired." "true" "ERROR"
+    else
+        log_message "You're not currently connected to the internet.\nPlease verify your settings and then try again." "true" "ERROR"
+    fi
+    sleep 3
+    clean_exit 1
 }
 
 # Loads user configuration from cloud_sync.conf
@@ -322,10 +337,23 @@ load_config() {
         RCLONE_OPTS_ARRAY+=("--update")
         log_message "Added --update from command line" "false"
     fi
-    
-    # Create a version without the --delete-excluded flag for restore operations
-    RESTORE_RCLONEOPTS=$(echo "${RCLONEOPTS}" | sed 's/--delete-excluded//')
-    
+
+    # A SYNCPATH_BACKUP inside SYNCPATH is a data-loss trap. Phase 1 syncs
+    # SYNCPATH and the archive is an excluded file, so --delete-excluded removes
+    # it. A full run hides that -- phase 2 re-uploads moments later -- but a run
+    # that skips the system phase (--saves-only, or BACKUPFILE_BACKUP_OPTION set
+    # to no) deletes the archives and puts nothing back. Only sync deletes, and
+    # --delete-excluded is a no-op for copy, so say nothing unless it can bite.
+    # Warn rather than refuse: the layout is the user's to choose, and archives
+    # may already be sitting there.
+    if [ "${BACKUPMETHOD}" == "sync" ] && [[ "${RCLONEOPTS}" == *"--delete-excluded"* ]]; then
+        case "${SYNCPATH_BACKUP}/" in
+            "${SYNCPATH%/}/"*)
+                log_message "SYNCPATH_BACKUP (${SYNCPATH_BACKUP}) is inside SYNCPATH (${SYNCPATH}).\nA saves-only backup will delete the system backups kept there.\nMove it alongside SYNCPATH, as the defaults do." "true" "WARN"
+                ;;
+        esac
+    fi
+
     log_message "Configuration loaded successfully" "false"
 }
 
@@ -443,14 +471,19 @@ backup_game_saves() {
         all_opts+=("$rclone_debug" "INFO")
     fi
 
-    # Add exclusions
-    all_opts+=(
-        "--stats-one-line"
-        "--exclude=${BACKUPFOLDER}/**"
-        "--exclude=backups/**"
-        "--exclude=bios/**"
-        "--exclude=*.zip"
-    )
+    # Keep the system-backup archive out of the saves payload -- phase 2 sends it
+    # to SYNCPATH_BACKUP on its own. rclone matches paths relative to the transfer
+    # root, so the two rules that used to sit here never matched anything:
+    # "${BACKUPFOLDER}/**" is absolute, and "backups/**" names a directory that
+    # does not exist (it is "backup"). Only the blanket "*.zip" was doing the
+    # work, and it also overrode any user rule that deliberately included a zip.
+    # Derive the pattern from BACKUPFOLDER instead, so it keeps working if the
+    # folder is renamed and is simply skipped when it lives outside the payload.
+    all_opts+=("--stats-one-line" "--exclude=bios/**")
+    local backup_rel="${BACKUPFOLDER#${BACKUPPATH%/}/}"
+    if [ "${backup_rel}" != "${BACKUPFOLDER}" ]; then
+        all_opts+=("--exclude=${backup_rel}/**")
+    fi
 
     # Check if the rclone version supports the terminal width flag
     if rclone help | grep -q progress-terminal-width; then
@@ -493,14 +526,18 @@ backup_system_files() {
     if [ "${BACKUPFILE_BACKUP_OPTION}" == "yes" ]; then
         # Check if backup folder exists first
         if [ ! -d "${BACKUPFOLDER}" ]; then
+        # Nothing to send is not a failure. These used to return 1, which the
+        # summary then printed as "COMPLETED WITH ERRORS" on a device that had
+        # simply never made a system backup. backup_game_saves already returns
+        # 0 with a warning in the same situation.
             log_message "Backup folder ${BACKUPFOLDER} does not exist" "true" "WARN"
-            return 1
+            return 0
         fi
         
         # Skip if backup directory is empty to avoid unnecessary transfers
         if [ -z "$(ls -A ${BACKUPFOLDER} 2>/dev/null)" ]; then
             log_message "There are no system backup files to transfer" "true" "WARN"
-            return 1
+            return 0
         fi
         
         log_message "Starting transfer of system backup files from ${BACKUPFOLDER} to ${REMOTENAME}${SYNCPATH_BACKUP}"
@@ -516,7 +553,13 @@ backup_system_files() {
             return $mkdir_status
         fi
         
-        # Build options array for system backup transfer
+        # No --filter-from here on purpose. The saves allowlist is anchored to
+        # BACKUPPATH, but this transfer's root is BACKUPFOLDER, so its rules
+        # describe paths that do not exist in this tree -- and its "- /**/*.zip"
+        # matches the archive itself. This phase only ever kept working because
+        # rclone applies --include ahead of --filter-from; borrowing the rules
+        # bought nothing and left the transfer one precedence change from
+        # silently sending nothing.
         local backup_opts=(
             "--progress"
             "--log-file" "/var/log/cloud_sync.log"
@@ -527,16 +570,6 @@ backup_system_files() {
         # Check if the rclone version supports the terminal width flag
         if rclone help | grep -q progress-terminal-width; then
             backup_opts+=("--progress-terminal-width=80")
-        fi
-        
-        # Add any additional options from RESTORE_RCLONEOPTS
-        if [ -n "$RESTORE_RCLONEOPTS" ]; then
-            # Parse RESTORE_RCLONEOPTS into array
-            local restore_opts_array=()
-            for opt in ${RESTORE_RCLONEOPTS}; do
-                restore_opts_array+=("$opt")
-            done
-            backup_opts+=("${restore_opts_array[@]}")
         fi
         
         # Execute system backup transfer with enhanced error handling
