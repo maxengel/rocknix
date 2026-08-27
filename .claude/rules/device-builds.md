@@ -160,9 +160,19 @@ Flash `target/ROCKNIX-<DEVICE>.aarch64-<date>.img.gz` to a card, or push the
 
 ## Iterating on EmulationStation
 
-The `docker-%` target mounts `EMULATIONSTATION_SRC` when it is set, which builds
-ES from a local checkout instead of the pinned commit — much faster than
-push-and-bump-the-pin for UI work:
+**`EMULATIONSTATION_SRC` only mounts the directory — it does not build from it.**
+The `docker-%` target turns it into a `-v` bind mount and nothing else;
+`emulationstation/package.mk` never reads the variable, so the package still
+fetches and builds `PKG_VERSION` from `PKG_GIT_CLONE_BRANCH`. Setting it and
+assuming the local tree was compiled produces an image with none of your
+changes and no error to say so — the build log still reports
+`[DONE] build emulationstation:target`, because it did build, just not your
+source. Verify with `strings <image>/usr/bin/emulationstation | grep "<a
+string you added>"` rather than trusting the build to have used it.
+
+To actually ship an ES change: push the branch, merge it into the branch named
+by `PKG_GIT_CLONE_BRANCH` (`test/qa-integration`), and bump `PKG_VERSION` to
+the new commit. The mount is still worth setting alongside:
 
 ```bash
 EMULATIONSTATION_SRC=~/Development/emulationstation-next.worktrees/<branch> \
