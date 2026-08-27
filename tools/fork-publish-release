@@ -31,7 +31,12 @@ BASE="$(basename "${IMG}" .img.gz)"                       # ROCKNIX-GENERIC_X64.
 # device shows its owner.
 DATE="$(printf '%s' "${BASE}" | grep -oE '[0-9]{8}' | tail -1)"
 [ -n "${DATE}" ] || DATE="$(date +%Y%m%d)"
-TAG="dev-$(printf '%s' "${DEVICE}" | tr '[:upper:]' '[:lower:]')-${DATE}"
+# One release per build, not per device. Publishing a tag per device produced
+# four entries for a single build and 23 releases in all, so "what shipped on
+# the 27th" meant reading four of them and comparing dates by eye. Every device
+# now lands in dev-<date>; the filenames already carry their own device and
+# date, so nothing is lost by grouping them. Set FORK_RELEASE_TAG to override.
+TAG="${FORK_RELEASE_TAG:-dev-${DATE}}"
 
 # One build of a handheld emits several images - DDR3/DDR4, Generic/Specific,
 # a/b - and which one a person needs depends on the board inside their
@@ -135,6 +140,13 @@ case "${DEVICE}" in
 esac
 
 PRERELEASE_FLAG="--prerelease"
+# GitHub refuses to mark a draft or prerelease as Latest, so a repo publishing
+# only prereleases leaves the badge on whatever was last a normal release --
+# here a build from February 2025, presented as current for eighteen months.
+# The newest dev build claims the badge; --latest is ignored for prereleases,
+# so the channel has to be a real release for the sidebar to be truthful.
+LATEST_FLAG=""
+[ "${CHANNEL}" = "stable" ] && LATEST_FLAG="--latest"
 [ "${CHANNEL}" = "stable" ] && PRERELEASE_FLAG=""
 
 if [ -n "${UTM_ZIP}" ]; then
@@ -172,13 +184,16 @@ if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
     # URL that reads like a real release link -- so publishing appears to succeed
     # forever while nothing is downloadable. Re-assert the channel on every
     # update rather than trusting the state it was created in.
+    # Title and notes are deliberately NOT rewritten here. A release now holds
+    # every device for a build, so a second device publishing into it would
+    # replace the first device's notes with its own, leaving the release
+    # describing only whichever ran last. Assets are added; the description
+    # the release was created with stands.
   gh release edit "${TAG}" --repo "${REPO}" \
-    --draft=false ${PRERELEASE_FLAG} \
-    --title "${DEVICE} build — ${DATE}" \
-    --notes "${RELEASE_NOTES}"
+    --draft=false ${PRERELEASE_FLAG}
 else
-  gh release create "${TAG}" "${ASSETS[@]}" --repo "${REPO}" ${PRERELEASE_FLAG} \
-    --title "${DEVICE} build — ${DATE}" \
+  gh release create "${TAG}" "${ASSETS[@]}" --repo "${REPO}" ${PRERELEASE_FLAG} ${LATEST_FLAG} \
+    --title "ROCKNIX dev build — ${DATE}" \
     --notes "${RELEASE_NOTES}"
 fi
 
