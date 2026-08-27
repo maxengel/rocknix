@@ -165,7 +165,15 @@ fi
 echo "Publishing ${IMG} -> ${REPO} (tag ${TAG}, ${CHANNEL})"
 if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
   gh release upload "${TAG}" "${ASSETS[@]}" --repo "${REPO}" --clobber
+    # --draft=false is load-bearing, not tidiness. A `gh release create` that is
+    # interrupted part-way leaves the release as a DRAFT, which nobody but the
+    # owner can see or download. Every later run then takes this branch, uploads
+    # into the draft, edits the title, and prints "Done:" with an untagged-<hash>
+    # URL that reads like a real release link -- so publishing appears to succeed
+    # forever while nothing is downloadable. Re-assert the channel on every
+    # update rather than trusting the state it was created in.
   gh release edit "${TAG}" --repo "${REPO}" \
+    --draft=false ${PRERELEASE_FLAG} \
     --title "${DEVICE} build — ${DATE}" \
     --notes "${RELEASE_NOTES}"
 else
