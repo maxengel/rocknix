@@ -1,0 +1,285 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+
+# cloud_remote - configure rclone remotes without rclone's interactive TUI.
+#
+# `rclone config` asks its questions in a terminal, which on a handheld means
+# an SSH session from another computer. That flow fails in ways the player
+# cannot act on: rclone's own prompt tells them to answer N at "Use auto
+# config?" (correct advice for a headless machine, fatal here), the auth link
+# only exists in terminal scrollback, and the whole thing needs a machine that
+# can reach the handheld over the LAN. See fork issue #51.
+#
+# rclone supports being configured programmatically -- `rclone config create`
+# writes a remote non-interactively, and every OAuth backend accepts a finished
+# token as a plain config value. So we ask the questions ourselves, in a UI the
+# player already has in their hands, and hand rclone the answers.
+#
+# Commands (all output is machine-readable, for the ES front end):
+#   providers            TSV: tier, name, label
+#   fields <type>        TSV: name, required, password, sensitive, type,
+#                        default, help
+#   create <name> <type> [key=value ...]    create, verify, roll back on failure
+#   list                 TSV: name, type
+#
+# Tiers:
+#   keys      no OAuth at all - a form is enough (50 of 69 backends)
+#   oauth     OAuth we can drive ourselves (P2/P3: drive, onedrive, dropbox)
+#   fallback  OAuth we cannot drive - these still need the SSH wizard
+#
+# Exit codes: 0 ok, 1 usage/arguments, 2 rclone failed, 3 verification failed.
+
+import json
+import os
+import subprocess
+import sys
+
+RCLONE = "/usr/bin/rclone"
+LOG_FILE = "/var/log/cloud_sync.log"
+
+# OAuth backends we can complete on-device, and how.
+#   device_flow: RFC 8628 - handheld shows a URL and short code, polls for the
+#                token. Needs no listener at all.
+#   pkce_paste:  authorization code with PKCE and no redirect_uri; the provider
+#                displays the code for the player to hand back.
+# Everything else with a `token` option stays on the SSH wizard: we would be
+# guessing at its sign-in shape, and guessing wrong strands the player
+# mid-setup with no way back.
+DRIVABLE_OAUTH = {
+    "drive": "device_flow",
+    "onedrive": "device_flow",
+    "dropbox": "pkce_paste",
+}
+
+
+def log(message):
+    """Append to the shared cloud-sync log, matching the other tools' format."""
+    import datetime
+    stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        with open(LOG_FILE, "a") as handle:
+            handle.write("[%s] [INFO] [cloud_remote] %s\n" % (stamp, message))
+    except OSError:
+        # A full or read-only /var/log must not take the setup flow down.
+        pass
+
+
+def rclone(*args, check=True):
+    """Run rclone and return (exit code, stdout, stderr)."""
+    proc = subprocess.run(
+        [RCLONE] + list(args),
+        capture_output=True, text=True,
+    )
+    if check and proc.returncode != 0:
+        log("rclone %s failed (%d): %s" % (
+            " ".join(args), proc.returncode, proc.stderr.strip()[:200]))
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+def load_providers():
+    """rclone's own backend catalogue, as a list of dicts."""
+    code, out, err = rclone("config", "providers")
+    if code != 0:
+        sys.stderr.write("could not read rclone's provider list\n")
+        sys.exit(2)
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError as exc:
+        sys.stderr.write("rclone's provider list was not valid JSON: %s\n" % exc)
+        sys.exit(2)
+
+
+def tier_of(provider):
+    """Which setup path this backend can use."""
+    names = {opt.get("Name") for opt in provider.get("Options") or []}
+    if "token" not in names:
+        return "keys"
+    if provider.get("Name") in DRIVABLE_OAUTH:
+        return "oauth"
+    return "fallback"
+
+
+def cmd_providers():
+    """Every backend with the setup path it can use. Sorted for a stable UI."""
+    rows = []
+    for provider in load_providers():
+        name = provider.get("Name") or ""
+        label = (provider.get("Description") or name).splitlines()[0]
+        rows.append((tier_of(provider), name, label))
+    for tier, name, label in sorted(rows, key=lambda r: (r[0], r[1])):
+        print("%s\t%s\t%s" % (tier, name, label))
+    return 0
+
+
+def cmd_fields(backend_type):
+    """The options a player actually has to answer for one backend.
+
+    rclone exposes every knob a backend has, most of which are advanced
+    tuning nobody should meet during setup. Show the non-advanced ones, and
+    let the caller decide how to render required vs optional.
+    """
+    for provider in load_providers():
+        if provider.get("Name") != backend_type:
+            continue
+        for opt in provider.get("Options") or []:
+            if opt.get("Advanced") or opt.get("Hide"):
+                continue
+            # These are two different things and must not be collapsed.
+            # IsPassword means the value is a credential: mask the input and
+            # let rclone obscure it on the way in. Sensitive only means "do
+            # not echo this into logs" -- rclone marks sftp's host and user
+            # that way, and password-masking a hostname would leave the
+            # player unable to see what they typed.
+            help_text = (opt.get("Help") or "").splitlines()
+            print("%s\t%d\t%d\t%d\t%s\t%s\t%s" % (
+                opt.get("Name") or "",
+                1 if opt.get("Required") else 0,
+                1 if opt.get("IsPassword") else 0,
+                1 if opt.get("Sensitive") else 0,
+                opt.get("Type") or "string",
+                opt.get("DefaultStr") or "",
+                help_text[0] if help_text else "",
+            ))
+        return 0
+    sys.stderr.write("unknown backend type: %s\n" % backend_type)
+    return 1
+
+
+def existing_remotes():
+    """Configured remote names, without the trailing colon."""
+    code, out, _ = rclone("listremotes", check=False)
+    if code != 0:
+        return []
+    return [line.strip().rstrip(":") for line in out.splitlines() if line.strip()]
+
+
+def cmd_list():
+    code, out, _ = rclone("config", "dump", check=False)
+    if code != 0:
+        return 0
+    try:
+        config = json.loads(out or "{}")
+    except json.JSONDecodeError:
+        return 0
+    for name in sorted(config):
+        print("%s\t%s" % (name, config[name].get("type", "")))
+    return 0
+
+
+def cmd_create(name, backend_type, settings):
+    """Create a remote from already-answered values, then prove it works.
+
+    Refuses to touch a remote that already exists. A device that is already
+    syncing has a working configuration and possibly cloud data laid out to
+    match it; silently rewriting that is how someone loses access to their
+    own files (see fork issue #51).
+    """
+    if name in existing_remotes():
+        sys.stderr.write(
+            "remote '%s' already exists; not modifying it\n" % name)
+        return 1
+
+    known = {t.get("Name") for t in load_providers()}
+    if backend_type not in known:
+        sys.stderr.write("unknown backend type: %s\n" % backend_type)
+        return 1
+
+    args = ["config", "create", name, backend_type]
+    for key, value in settings:
+        args.append("%s=%s" % (key, value))
+    # --non-interactive so rclone reports a question as data instead of
+    # blocking on stdin that no one is attached to. --obscure so passwords
+    # are stored the way rclone expects rather than in the clear.
+    args += ["--non-interactive", "--obscure"]
+
+    log("creating remote %s (type %s) with %d option(s)"
+        % (name, backend_type, len(settings)))
+    code, out, err = rclone(*args)
+    if code != 0:
+        sys.stderr.write(err.strip() or "rclone config create failed\n")
+        return 2
+
+    # rclone --non-interactive answers with a JSON blob when it still needs
+    # something. Exit 0 there would otherwise look like success while leaving
+    # a half-configured remote behind.
+    question = None
+    try:
+        parsed = json.loads(out or "{}")
+        if isinstance(parsed, dict) and parsed.get("State"):
+            question = parsed.get("Option") or {}
+    except json.JSONDecodeError:
+        pass
+    if question:
+        remove_remote(name)
+        sys.stderr.write(
+            "backend needs more input: %s\n" % (question.get("Name") or "unknown"))
+        return 2
+
+    # Prove it before telling anyone it worked. A remote that lists is a
+    # remote the sync tools can use; an exit code from create only says the
+    # file got written.
+    code, _, err = rclone("lsd", "%s:" % name,
+                          "--contimeout", "10s", "--timeout", "20s",
+                          "--low-level-retries", "1", "--retries", "1",
+                          check=False)
+    if code != 0:
+        log("remote %s failed verification, rolling back" % name)
+        remove_remote(name)
+        sys.stderr.write(
+            "the remote was created but could not be reached; it has been "
+            "removed so nothing half-working is left behind\n")
+        return 3
+
+    log("remote %s created and verified" % name)
+    print("OK=%s" % name)
+    return 0
+
+
+def remove_remote(name):
+    """Undo a failed create. Best effort - never mask the original error."""
+    rclone("config", "delete", name, check=False)
+
+
+def usage():
+    sys.stderr.write(
+        "usage: cloud_remote providers\n"
+        "       cloud_remote fields <type>\n"
+        "       cloud_remote create <name> <type> [key=value ...]\n"
+        "       cloud_remote list\n")
+    return 1
+
+
+def main(argv):
+    if len(argv) < 2:
+        return usage()
+    command = argv[1]
+
+    if command == "providers":
+        return cmd_providers()
+
+    if command == "fields":
+        if len(argv) != 3:
+            return usage()
+        return cmd_fields(argv[2])
+
+    if command == "list":
+        return cmd_list()
+
+    if command == "create":
+        if len(argv) < 4:
+            return usage()
+        settings = []
+        for pair in argv[4:]:
+            if "=" not in pair:
+                sys.stderr.write("expected key=value, got: %s\n" % pair)
+                return 1
+            key, value = pair.split("=", 1)
+            settings.append((key, value))
+        return cmd_create(argv[2], argv[3], settings)
+
+    return usage()
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
