@@ -18,15 +18,22 @@
 #
 # Commands (all output is machine-readable, for the ES front end):
 #   providers            TSV: tier, name, label
-#   fields <type>        TSV: name, required, password, sensitive, type,
-#                        default, help
+#   subproviders <type>  TSV: value, label -- the sub-provider choice a few
+#                        backends make before their other options mean anything
+#   fields <type> [prov] TSV: name, required, password, sensitive, type,
+#                        default, help, choices -- filtered to the options
+#                        that apply to sub-provider `prov`. `choices` is how
+#                        many suggested values the option has, so the caller
+#                        can pick an input widget without fetching them.
+#   choices <type> <field> [prov]  TSV: value, label
 #   create <name> <type> [key=value ...]    create, verify, roll back on failure
 #   list                 TSV: name, type
 #
 # Tiers:
-#   keys      no OAuth at all - a form is enough (50 of 69 backends)
+#   keys      no OAuth at all - a form is enough
 #   oauth     OAuth we can drive ourselves (P2/P3: drive, onedrive, dropbox)
 #   fallback  OAuth we cannot drive - these still need the SSH wizard
+#   plumbing  not a storage provider at all - see NOT_PROVIDERS
 #
 # Exit codes: 0 ok, 1 usage/arguments, 2 rclone failed, 3 verification failed.
 
@@ -50,6 +57,16 @@ DRIVABLE_OAUTH = {
     "drive": "device_flow",
     "onedrive": "device_flow",
     "dropbox": "pkce_paste",
+}
+
+# rclone's backend list is not a list of cloud services. These wrap or
+# transform another remote, or are not remote at all, and offering them as
+# "where your saves go" ranges from meaningless to harmful: `local` would
+# have someone back their saves up onto the same storage the saves are on,
+# which is not a backup and only looks like one.
+NOT_PROVIDERS = {
+    "alias", "cache", "chunker", "combine", "compress", "crypt", "hasher",
+    "local", "memory", "union",
 }
 
 
@@ -92,12 +109,54 @@ def load_providers():
 
 def tier_of(provider):
     """Which setup path this backend can use."""
+    if provider.get("Name") in NOT_PROVIDERS:
+        return "plumbing"
     names = {opt.get("Name") for opt in provider.get("Options") or []}
     if "token" not in names:
         return "keys"
     if provider.get("Name") in DRIVABLE_OAUTH:
         return "oauth"
     return "fallback"
+
+
+def option_applies(opt, subprovider):
+    """Is this option relevant once `subprovider` has been chosen?
+
+    Several backends gate their options on a sub-provider: koofr carries
+    three separate options all named `password`, one each for Koofr,
+    Digi Storage and "other", and only one of them is ever real. S3 goes
+    further, with 51 sub-providers and options like ibm_api_key that mean
+    nothing unless you picked IBMCOS. Rendering them all gives duplicate
+    fields and questions about vendors the player is not using.
+    """
+    constraint = (opt.get("Provider") or "").strip()
+    if not constraint:
+        return True
+    if constraint.startswith("!"):
+        excluded = {p.strip() for p in constraint[1:].split(",") if p.strip()}
+        return subprovider not in excluded
+    allowed = {p.strip() for p in constraint.split(",") if p.strip()}
+    return subprovider in allowed
+
+
+def cmd_subproviders(backend_type):
+    """The sub-provider choice, where a backend has one."""
+    for provider in load_providers():
+        if provider.get("Name") != backend_type:
+            continue
+        for opt in provider.get("Options") or []:
+            if opt.get("Name") != "provider":
+                continue
+            for example in opt.get("Examples") or []:
+                help_text = (example.get("Help") or "").splitlines()
+                print("%s\t%s" % (
+                    example.get("Value") or "",
+                    help_text[0] if help_text else (example.get("Value") or ""),
+                ))
+            return 0
+        return 0
+    sys.stderr.write("unknown backend type: %s\n" % backend_type)
+    return 1
 
 
 def cmd_providers():
@@ -112,7 +171,7 @@ def cmd_providers():
     return 0
 
 
-def cmd_fields(backend_type):
+def cmd_fields(backend_type, subprovider=""):
     """The options a player actually has to answer for one backend.
 
     rclone exposes every knob a backend has, most of which are advanced
@@ -125,6 +184,11 @@ def cmd_fields(backend_type):
         for opt in provider.get("Options") or []:
             if opt.get("Advanced") or opt.get("Hide"):
                 continue
+            # The sub-provider choice itself is made on its own screen.
+            if opt.get("Name") == "provider":
+                continue
+            if not option_applies(opt, subprovider):
+                continue
             # These are two different things and must not be collapsed.
             # IsPassword means the value is a credential: mask the input and
             # let rclone obscure it on the way in. Sensitive only means "do
@@ -132,7 +196,7 @@ def cmd_fields(backend_type):
             # that way, and password-masking a hostname would leave the
             # player unable to see what they typed.
             help_text = (opt.get("Help") or "").splitlines()
-            print("%s\t%d\t%d\t%d\t%s\t%s\t%s" % (
+            print("%s\t%d\t%d\t%d\t%s\t%s\t%s\t%d" % (
                 opt.get("Name") or "",
                 1 if opt.get("Required") else 0,
                 1 if opt.get("IsPassword") else 0,
@@ -140,7 +204,37 @@ def cmd_fields(backend_type):
                 opt.get("Type") or "string",
                 opt.get("DefaultStr") or "",
                 help_text[0] if help_text else "",
+                len(opt.get("Examples") or []),
             ))
+        return 0
+    sys.stderr.write("unknown backend type: %s\n" % backend_type)
+    return 1
+
+
+def cmd_choices(backend_type, field, subprovider=""):
+    """The suggested values for one option.
+
+    rclone marks none of these Exclusive, so they are suggestions rather than
+    a closed set -- but for something like webdav's `vendor` the player has
+    no way to guess "other", so offering the list is the difference between
+    a form they can fill in and one they cannot.
+    """
+    for provider in load_providers():
+        if provider.get("Name") != backend_type:
+            continue
+        for opt in provider.get("Options") or []:
+            if opt.get("Name") != field:
+                continue
+            if not option_applies(opt, subprovider):
+                continue
+            for example in opt.get("Examples") or []:
+                help_text = (example.get("Help") or "").splitlines()
+                value = example.get("Value")
+                if value is None:
+                    continue
+                label = help_text[0] if help_text else str(value)
+                print("%s\t%s" % (value, label))
+            return 0
         return 0
     sys.stderr.write("unknown backend type: %s\n" % backend_type)
     return 1
@@ -244,7 +338,9 @@ def remove_remote(name):
 def usage():
     sys.stderr.write(
         "usage: cloud_remote providers\n"
-        "       cloud_remote fields <type>\n"
+        "       cloud_remote subproviders <type>\n"
+        "       cloud_remote fields <type> [subprovider]\n"
+        "       cloud_remote choices <type> <field> [subprovider]\n"
         "       cloud_remote create <name> <type> [key=value ...]\n"
         "       cloud_remote list\n")
     return 1
@@ -258,10 +354,20 @@ def main(argv):
     if command == "providers":
         return cmd_providers()
 
-    if command == "fields":
+    if command == "subproviders":
         if len(argv) != 3:
             return usage()
-        return cmd_fields(argv[2])
+        return cmd_subproviders(argv[2])
+
+    if command == "choices":
+        if len(argv) not in (4, 5):
+            return usage()
+        return cmd_choices(argv[2], argv[3], argv[4] if len(argv) == 5 else "")
+
+    if command == "fields":
+        if len(argv) not in (3, 4):
+            return usage()
+        return cmd_fields(argv[2], argv[3] if len(argv) == 4 else "")
 
     if command == "list":
         return cmd_list()
