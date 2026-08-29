@@ -5,7 +5,11 @@
 
 PKG_NAME="rclone"
 PKG_VERSION="1.74.4"
-PKG_DEPENDS_TARGET="toolchain fuse rsync qrencode"
+# Python3 is the interpreter for cloud_remote. A shipped script's tools are
+# real dependencies even though nothing links against them: upstream deleted
+# packages/compress/zip in a3d0ad0430, nothing referenced it, and backuptool
+# lost its archiver silently for months.
+PKG_DEPENDS_TARGET="toolchain fuse rsync qrencode Python3"
 PKG_LONGDESC="rsync for cloud storage"
 PKG_TOOLCHAIN="manual"
 
@@ -39,6 +43,7 @@ makeinstall_target() {
   cp cloud_restore ${INSTALL}/usr/bin/
   cp cloud_sync_helper ${INSTALL}/usr/bin/
   cp cloud_setup ${INSTALL}/usr/bin/
+  cp cloud_remote ${INSTALL}/usr/bin/
   cp cloud_content_restore ${INSTALL}/usr/bin/
   cp cloud_content_backup ${INSTALL}/usr/bin/
   cp cloud_sync_cleanup_duplicates.sh ${INSTALL}/usr/bin/
