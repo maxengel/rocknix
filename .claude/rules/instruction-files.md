@@ -34,3 +34,5 @@ diff -q <file> <(git -C /home/max/Development/rocknix show next:<file>)
 **When a rule earns its place, write it down.** `docs/blindspot-register.md`
 holds failure modes this project has actually committed — consult it before
 calling something greenfield, and add to it when a new one surfaces.
+`docs/decision-register.md` holds settled decisions; cite a row by ID rather
+than re-arguing the choice, and add one the same session a decision is made.
