@@ -162,21 +162,16 @@ class Session:
         self.provider = None
         self.token = None
         self.error = None
-        self.pin = "%04d" % secrets.randbelow(10000)
-        # A PIN prompt that answers forever is a 10,000-guess keyspace on an
-        # open port. Ten wrong answers ends the attempt; the player starts a
-        # new one from the handheld, which is where the real authority is.
-        self.pin_attempts = 0
-        self.pin_lock = threading.Lock()
+        # rclone's own last words. It exits fatally when the exchange fails,
+        # and what it says -- "code doesn't exist or has expired" against
+        # anything else -- is the difference between "you were too slow, here
+        # is another link" and "something is actually wrong". Reporting a
+        # generic failure for both sent the tester back to the handheld when
+        # one tap would have done.
+        self.rclone_says = ""
 
-    def pin_exhausted(self):
-        with self.pin_lock:
-            return self.pin_attempts >= 10
-
-    def pin_failed(self):
-        with self.pin_lock:
-            self.pin_attempts += 1
-            return self.pin_attempts >= 10
+    def finished(self):
+        return self.proc is not None and self.proc.poll() is not None
 
     def start(self):
         # A previous attempt still holding 53682 would make this one fail with
@@ -219,12 +214,24 @@ class Session:
         buffer = ""
         for line in self.proc.stdout:
             buffer += line
+            if line.startswith("Error: ") or "Fatal error:" in line:
+                self.rclone_says = line.split("error: ")[-1].strip() or line.strip()
             if "<---End paste" in buffer or "Paste the following" in buffer:
                 match = re.search(r"(\{.*\})", buffer, re.S)
                 if match:
                     self.token = match.group(1).strip()
                     break
         self.proc.wait()
+
+    def failure_reason(self):
+        """Why the attempt died, in words a player can act on."""
+        said = self.rclone_says
+        if "expired" in said or "invalid_grant" in said:
+            return ("That address had already expired — they are only good "
+                    "for a couple of minutes.")
+        if said:
+            return "The provider refused it: %s" % said[:160]
+        return "The provider did not accept that address."
 
     def submit(self, pasted):
         """Replay the provider's redirect to rclone's waiting server.
@@ -248,7 +255,7 @@ class Session:
             # simply paste again -- worth distinguishing from the dead-session
             # case below.
             return False, ("That did not contain a code. Paste the whole "
-                           "address from the page that failed to load.")
+                           "address of the page that failed to load.")
 
         try:
             urllib.request.urlopen("%s/?%s" % (LOCAL_AUTH, query), timeout=15).read()
@@ -267,12 +274,9 @@ class Session:
                 # player is looking at a page that still has a working-looking
                 # form on it and would otherwise keep pasting into a session
                 # that no longer exists.
-                return False, ("That code was not accepted, and the sign-in "
-                               "has ended. Start it again from the handheld — "
-                               "codes are single-use and expire quickly.")
+                return False, self.failure_reason()
             time.sleep(0.5)
-        return False, ("Timed out waiting for the provider. Start the sign-in "
-                       "again from the handheld.")
+        return False, "Timed out waiting for the provider."
 
     def _write_config(self):
         name = self.remote_name or self.backend
@@ -304,159 +308,278 @@ class Session:
         return True, name
 
 
-PAGE = """<!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
-<title>ROCKNIX cloud sign-in</title>
-<style>
-body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:24px;background:#111;color:#eee}
+# rclone's backend names are lowercase identifiers ("dropbox", "onedrive").
+# They are not what the provider calls itself, and a page headed "Connect
+# dropbox" reads like a typo on the one screen where the player is deciding
+# whether to trust us with their storage. The handheld passes the curated name
+# it already shows in its own menu; this map is the fallback for a backend
+# reached some other way, and title-casing is the fallback for that.
+DISPLAY_NAMES = {
+    "acd": "Amazon Drive", "box": "Box", "drive": "Google Drive",
+    "dropbox": "Dropbox", "gcs": "Google Cloud Storage",
+    "gphotos": "Google Photos", "hidrive": "HiDrive", "jottacloud": "Jottacloud",
+    "mailru": "Mail.ru Cloud", "onedrive": "Microsoft OneDrive",
+    "opendrive": "OpenDrive", "pcloud": "pCloud",
+    "premiumizeme": "premiumize.me", "putio": "put.io",
+    "sharefile": "Citrix ShareFile", "sugarsync": "SugarSync",
+    "yandex": "Yandex Disk", "zoho": "Zoho WorkDrive",
+    "filefabric": "Enterprise File Fabric",
+}
+
+
+def display_name(backend, label=None):
+    # Our curated name wins where we have one: rclone's descriptions are
+    # written for its documentation ("Google Cloud Storage (this is not Google
+    # Drive)"), which is accurate and wrong as a page heading. The passed
+    # label -- rclone's description, by way of the handheld's menu -- covers
+    # everything else, and title-casing covers a backend reached from a shell.
+    if backend in DISPLAY_NAMES:
+        return DISPLAY_NAMES[backend]
+    if label:
+        return label
+    return backend.replace("_", " ").title()
+
+
+STYLE = """
+body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:20px;background:#111;color:#eee}
 .card{max-width:34rem;margin:0 auto}
-h1{font-size:1.3rem;margin:0 0 1rem}
+h1{font-size:1.3rem;margin:0 0 .25rem}
+h2{font-size:1rem;margin:1.5rem 0 .5rem;color:#9cf;text-transform:uppercase;
+   letter-spacing:.05em}
+ol{padding-left:1.3rem;margin:.5rem 0}li{margin:.4rem 0}
 a.go{display:block;background:#2d7;color:#000;padding:14px;border-radius:8px;
-     text-align:center;font-weight:600;text-decoration:none;margin:1rem 0}
-ol{padding-left:1.2rem}li{margin:.5rem 0}
+     text-align:center;font-weight:600;text-decoration:none;margin:.5rem 0}
 input{width:100%%;padding:12px;font-size:16px;border-radius:8px;border:1px solid #555;
       background:#1c1c1c;color:#eee;box-sizing:border-box}
-button{margin-top:12px;padding:12px 20px;font-size:16px;border-radius:8px;
-       border:0;background:#4af;color:#000;font-weight:600}
+input.pin{font-size:22px;letter-spacing:.4em;text-align:center}
+button{margin-top:10px;padding:12px 20px;font-size:16px;border-radius:8px;
+       border:0;background:#4af;color:#000;font-weight:600;width:100%%}
+button.minor{background:#333;color:#ddd;font-weight:500}
 .note{color:#aaa;font-size:.9rem}
-.err{background:#722;padding:10px;border-radius:8px;margin:1rem 0}
-.ok{background:#272;padding:10px;border-radius:8px;margin:1rem 0}
-</style>
+.err{background:#722;padding:12px;border-radius:8px;margin:1rem 0}
+.ok{background:#272;padding:12px;border-radius:8px;margin:1rem 0}
+.box{border:1px solid #444;border-radius:10px;padding:14px;margin:1rem 0}
+.big{font-size:1.6rem;text-align:center;margin:1rem 0}
+"""
+
+# The paste field sits ABOVE the sign-in button on purpose. Somebody arriving
+# here for the first time reads the numbered steps and goes down to the button;
+# somebody arriving the *second* time -- back from the provider, holding an
+# address that expires in about two minutes -- needs the box to be the first
+# thing on the screen, not something below a large green button that looks like
+# the action. Getting that wrong cost a real sign-in: the tester approved
+# access, could not see where the address went, and by the time they found it
+# the code had expired (fork #51).
+PAGE = """<!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
+<title>Connect %(name)s</title>
+<style>%(style)s</style>
 <div class=card>
-<h1>Connect %(backend)s</h1>
+<h1>Connect %(name)s</h1>
+<p class=note>Keep this page open. You will come back to it.</p>
 %(message)s
-<ol>
-<li>Open the sign-in page and approve access.</li>
-<li>Your browser will then try to reach <code>localhost</code> and show an
-    error. <strong>That is expected.</strong></li>
-<li>Copy the whole address from the bar of that failed page and paste it
-    below.</li>
-</ol>
-<a class=go href="%(provider)s" target="_blank" rel="noopener">Sign in to %(backend)s</a>
+
+<h2>Paste the address here</h2>
 <form method=post>
-<input name=code placeholder="Paste the address (or just the code)" autofocus
-       autocapitalize=off autocorrect=off spellcheck=false>
+<input name=code placeholder="http://localhost:53682/?code=..." autofocus
+       autocapitalize=off autocorrect=off spellcheck=false inputmode=url>
 <input type=hidden name=pin value="%(pin)s">
 <button type=submit>Finish</button>
 </form>
-<p class=note>This page is only open while setup is running on the handheld.</p>
+<p class=note>After you approve access, the browser tries to reach
+<code>localhost</code> and shows an error. <strong>That is expected.</strong>
+Copy that page's whole address and paste it above.</p>
+
+<h2>Not signed in yet?</h2>
+<a class=go href="%(provider)s" target="_blank" rel="noopener">Sign in to %(name)s</a>
+<p class=note>Approve access, then come straight back — the address is only
+good for a couple of minutes.</p>
 </div>
 """
 
-# Typing an address into a phone is the fallback for a phone that cannot
-# scan, and it has to stay short enough to type -- so the PIN is asked for
-# here rather than carried in the address. Scanning the QR still skips this,
-# because the QR encodes the PIN.
+# Typing an address into a phone is the fallback for a phone that cannot scan,
+# and it has to stay short enough to type -- so the PIN is asked for here
+# rather than carried in the address. Scanning the QR skips this page, because
+# the QR encodes the PIN.
 PIN_PAGE = """<!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
 <title>ROCKNIX cloud sign-in</title>
-<style>
-body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:24px;background:#111;color:#eee}
-.card{max-width:34rem;margin:0 auto}
-h1{font-size:1.3rem;margin:0 0 1rem}
-input{width:100%%;padding:12px;font-size:20px;letter-spacing:.3em;text-align:center;
-      border-radius:8px;border:1px solid #555;background:#1c1c1c;color:#eee;
-      box-sizing:border-box}
-button{margin-top:12px;padding:12px 20px;font-size:16px;border-radius:8px;
-       border:0;background:#4af;color:#000;font-weight:600}
-.note{color:#aaa;font-size:.9rem}
-.err{background:#722;padding:10px;border-radius:8px;margin:1rem 0}
-</style>
+<style>%(style)s</style>
 <div class=card>
-<h1>Enter the code from your handheld</h1>
+<h1>Enter the PIN from your handheld</h1>
 %(message)s
 <form method=get>
-<input name=pin inputmode=numeric pattern="[0-9]*" maxlength=4 autofocus
-       autocomplete=off placeholder="0000">
+<input class=pin name=pin inputmode=numeric pattern="[0-9]*" maxlength=4 autofocus
+       autocomplete=off placeholder="0000" value="%(pin)s">
 <button type=submit>Continue</button>
 </form>
-<p class=note>The four-digit code is on the handheld screen, beside this
+<p class=note>The four-digit PIN is on the handheld screen, beside this
 address.</p>
 </div>
 """
 
+DONE_PAGE = """<!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
+<title>Connected</title>
+<style>%(style)s</style>
+<div class=card>
+<h1>Connected</h1>
+<div class=ok>%(name)s is set up on your handheld as <strong>%(remote)s</strong>.</div>
+<div class=big>Go back to the handheld<br>and choose CONTINUE</div>
+<p class=note>You can close this page.</p>
+</div>
+"""
 
-def make_handler(session, shutdown):
+
+class SessionHolder:
+    """The server outlives any one sign-in attempt.
+
+    rclone's authorize server answers exactly one redirect and then exits, so
+    a code that arrives expired -- which is the normal way this fails, the
+    window being a couple of minutes -- ends the attempt. Without somewhere to
+    start another, the player is sent back to the handheld to redo a flow they
+    had almost finished. So the attempt is replaceable and the *server* is what
+    persists, along with the PIN: the handheld is showing that PIN and a QR
+    built from it, and neither can be re-issued from here.
+    """
+
+    def __init__(self, backend, remote_name, label, timeout):
+        self.backend = backend
+        self.remote_name = remote_name
+        self.name = display_name(backend, label)
+        self.timeout = timeout
+        self.pin = "%04d" % secrets.randbelow(10000)
+        self.pin_attempts = 0
+        self.lock = threading.Lock()
+        self.session = None
+
+    def start(self):
+        session = Session(self.backend, self.remote_name, self.timeout)
+        if not session.start():
+            return False, session.error
+        with self.lock:
+            self.session = session
+        return True, None
+
+    def pin_exhausted(self):
+        with self.lock:
+            return self.pin_attempts >= 10
+
+    def pin_failed(self):
+        with self.lock:
+            self.pin_attempts += 1
+            return self.pin_attempts >= 10
+
+    def authorised(self, pin):
+        return secrets.compare_digest(str(pin), self.pin)
+
+
+def make_handler(holder, shutdown):
     class Handler(http.server.BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass  # its default writes request lines to stderr
 
-        def _render(self, message="", status=200):
-            body = PAGE % {
-                "backend": session.backend,
-                "provider": session.provider,
-                "pin": session.pin,
+        def _send(self, body, status=200):
+            encoded = body.encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+        def _render(self, message=""):
+            self._send(PAGE % {
+                "style": STYLE,
+                "name": holder.name,
+                "provider": holder.session.provider if holder.session else "",
+                "pin": holder.pin,
                 "message": message,
-            }
-            encoded = body.encode()
-            self.send_response(status)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(encoded)))
-            self.end_headers()
-            self.wfile.write(encoded)
+            })
 
-        def _render_pin(self, message="", status=200):
-            body = PIN_PAGE % {"message": message}
-            encoded = body.encode()
-            self.send_response(status)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(encoded)))
-            self.end_headers()
-            self.wfile.write(encoded)
+        def _render_pin(self, message="", supplied=""):
+            self._send(PIN_PAGE % {
+                "style": STYLE,
+                "message": message,
+                # Carried back so a mistyped digit is corrected rather than
+                # re-entered, and so a link that already had a PIN on it does
+                # not present an empty box.
+                "pin": supplied,
+            })
 
-        def _authorised(self, pin):
-            # The PIN is shown on the handheld's screen, so answering it means
-            # having the device in hand rather than only being on the wifi.
-            return secrets.compare_digest(str(pin), session.pin)
+        def _render_done(self, remote):
+            self._send(DONE_PAGE % {
+                "style": STYLE, "name": holder.name, "remote": remote,
+            })
 
-        def do_GET(self):
-            path = urllib.parse.urlparse(self.path)
-            query = urllib.parse.parse_qs(path.query)
-            pin = query.get("pin", [""])[0]
-
-            if session.pin_exhausted():
-                self.send_error(403, "Too many wrong codes. Start again on "
+        def _gate(self, pin):
+            """True when the request may proceed; renders the refusal if not."""
+            if holder.pin_exhausted():
+                self.send_error(403, "Too many wrong PINs. Start again on "
                                      "the handheld.")
-                return
-
-            if self._authorised(pin):
-                self._render()
-                return
-
+                return False
+            if holder.authorised(pin):
+                return True
             # No PIN at all is somebody typing the bare address, which is the
             # documented fallback -- ask, do not refuse. A wrong one is either
             # a typo or a guess, and both are answered the same way so neither
             # learns anything the other does not.
             if not pin:
                 self._render_pin()
-                return
-
-            if session.pin_failed():
-                self.send_error(403, "Too many wrong codes. Start again on "
+            elif holder.pin_failed():
+                self.send_error(403, "Too many wrong PINs. Start again on "
                                      "the handheld.")
+            else:
+                self._render_pin('<div class=err>That PIN did not match.</div>',
+                                 supplied="")
+            return False
+
+        def do_GET(self):
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            if not self._gate(query.get("pin", [""])[0]):
                 return
-            self._render_pin('<div class=err>That code did not match.</div>')
+            self._render()
 
         def do_POST(self):
             length = int(self.headers.get("Content-Length", 0))
             fields = urllib.parse.parse_qs(
                 self.rfile.read(length).decode("utf-8", "replace"))
-            if session.pin_exhausted() or not self._authorised(
-                    fields.get("pin", [""])[0]):
-                self.send_error(403, "Enter the code shown on the handheld")
+            if not self._gate(fields.get("pin", [""])[0]):
+                return
+
+            if fields.get("restart"):
+                ok, error = holder.start()
+                if ok:
+                    write_state(status="waiting",
+                                provider=holder.session.provider)
+                    self._render('<div class=ok>Ready for another go. '
+                                 'Sign in below.</div>')
+                else:
+                    self._render('<div class=err>%s</div>' % error)
+                return
+
+            session = holder.session
+            if session is None:
+                self._render('<div class=err>No sign-in is running.</div>')
                 return
 
             ok, detail = session.submit(fields.get("code", [""])[0])
             if ok:
-                self._render('<div class=ok>Connected. The remote '
-                             '<strong>%s</strong> is ready — you can close this '
-                             'page and carry on from the handheld.</div>' % detail)
-                threading.Timer(1.5, shutdown).start()
-            else:
-                self._render('<div class=err>%s</div>' % detail)
+                self._render_done(detail)
+                threading.Timer(2.0, shutdown).start()
+                return
+
+            # A dead attempt gets a way forward on this page rather than an
+            # instruction to walk back to the handheld and redo the flow.
+            restart = ""
+            if session.finished():
+                restart = ('<form method=post>'
+                           '<input type=hidden name=pin value="%s">'
+                           '<input type=hidden name=restart value="1">'
+                           '<button class=minor type=submit>'
+                           'Start a new sign-in</button></form>' % holder.pin)
+            self._render('<div class=err>%s</div>%s' % (detail, restart))
 
     return Handler
 
 
-def cmd_serve(backend, remote_name, port, timeout):
+def cmd_serve(backend, remote_name, label, port, timeout):
     if not shutil.which("rclone") and not os.path.exists(RCLONE):
         sys.stderr.write("rclone is not installed\n")
         return 2
@@ -464,10 +587,11 @@ def cmd_serve(backend, remote_name, port, timeout):
     # Nothing from the last attempt survives into this one.
     reset_state(status="starting", backend=backend)
 
-    session = Session(backend, remote_name, timeout)
-    if not session.start():
-        sys.stderr.write("%s\n" % session.error)
-        write_state(status="failed", error=session.error)
+    holder = SessionHolder(backend, remote_name, label, timeout)
+    ok, error = holder.start()
+    if not ok:
+        sys.stderr.write("%s\n" % error)
+        write_state(status="failed", error=error)
         return 2
 
     address = lan_address()
@@ -476,18 +600,20 @@ def cmd_serve(backend, remote_name, port, timeout):
     def shutdown():
         threading.Thread(target=server.shutdown, daemon=True).start()
 
-    server.RequestHandlerClass = make_handler(session, shutdown)
+    server.RequestHandlerClass = make_handler(holder, shutdown)
 
     bare = "http://%s:%d" % (address, port)
-    url = "%s/?pin=%s" % (bare, session.pin)
+    url = "%s/?pin=%s" % (bare, holder.pin)
     write_state(status="waiting", backend=backend, url=url, address=bare,
-                provider=session.provider, pin=session.pin)
+                provider=holder.session.provider, pin=holder.pin,
+                name=holder.name)
 
     # stdout is the contract for the caller (the ES page reads these).
     print("URL=%s" % url)
     print("ADDRESS=%s" % bare)
-    print("PIN=%s" % session.pin)
-    print("PROVIDER=%s" % session.provider)
+    print("PIN=%s" % holder.pin)
+    print("NAME=%s" % holder.name)
+    print("PROVIDER=%s" % holder.session.provider)
     sys.stdout.flush()
 
     # The listener is only open while someone is actually signing in.
@@ -499,8 +625,9 @@ def cmd_serve(backend, remote_name, port, timeout):
     finally:
         timer.cancel()
         server.server_close()
-        if session.proc and session.proc.poll() is None:
-            session.proc.send_signal(signal.SIGTERM)
+        if holder.session and holder.session.proc \
+                and holder.session.proc.poll() is None:
+            holder.session.proc.send_signal(signal.SIGTERM)
 
     final = read_state().get("status")
     if final == "signed-in":
@@ -512,8 +639,8 @@ def cmd_serve(backend, remote_name, port, timeout):
 def main(argv):
     if len(argv) < 2:
         sys.stderr.write(
-            "usage: cloud_oauth serve <backend> [--name NAME] [--port N] "
-            "[--timeout SECONDS]\n"
+            "usage: cloud_oauth serve <backend> [--name NAME] "
+            "[--label 'Dropbox'] [--port N] [--timeout SECONDS]\n"
             "       cloud_oauth url | info | status | cancel\n")
         return 1
 
@@ -523,16 +650,18 @@ def main(argv):
         if len(argv) < 3:
             return main([argv[0]])
         backend = argv[2]
-        name, port, timeout = None, 8080, 600
+        name, label, port, timeout = None, None, 8080, 600
         rest = argv[3:]
         for i, arg in enumerate(rest):
             if arg == "--name" and i + 1 < len(rest):
                 name = rest[i + 1]
+            elif arg == "--label" and i + 1 < len(rest):
+                label = rest[i + 1]
             elif arg == "--port" and i + 1 < len(rest):
                 port = int(rest[i + 1])
             elif arg == "--timeout" and i + 1 < len(rest):
                 timeout = int(rest[i + 1])
-        return cmd_serve(backend, name, port, timeout)
+        return cmd_serve(backend, name, label, port, timeout)
 
     if command == "url":
         print(read_state().get("url", ""))
@@ -543,7 +672,7 @@ def main(argv):
         # reads whichever of the two the running image provides, so an older
         # script and a newer page still agree on something.
         state = read_state()
-        for key in ("url", "address", "pin", "provider", "status"):
+        for key in ("url", "address", "pin", "name", "provider", "status"):
             print("%s=%s" % (key.upper(), state.get(key, "")))
         return 0
 
