@@ -92,3 +92,50 @@ changed but the same size.
 
 Assertions that only hold because nothing had happened yet are the ones to
 distrust — see also *Verify the artifact, not the report*.
+
+## Stop after three fixes on the same failure
+
+Three sequential fix-commits on one failure without resolving it means stop:
+re-read the source from the top and question the model, because you are
+probably fixing the wrong layer. Each successive patch feels like progress and
+narrows attention onto the last symptom, which is exactly when the actual cause
+stops being examined.
+
+2026-08-29, in one stretch: a chosen list value never reached the config; the
+fix for that called `getSelected()` when nothing was selected and abort()ed
+EmulationStation; the fix for *that* read `BACKUPFILE`, which belongs to
+`backuptool` and is unset in `cloud_backup`; and its replacement read
+`OS_NAME`, which is also empty there. Two of the four were the same mistake —
+assuming a variable existed — and thirty seconds reading the top of the script
+would have shown both. The third patch was the signal to go and read.
+
+Afterwards, ask where it could have been caught earlier and add that guard.
+`tools/cloud-round-trip` covered the failing phase and passed anyway, because
+it reset the remote first and only ever tested a first upload. Eliminating the
+category is part of the fix, not follow-up work.
+
+(Adapted from `incident-response.instructions.md` in the scaffold estate —
+<https://forge.possibility.space/scaffold/scaffold>.)
+
+## An ask to the user is a decision, not an errand
+
+Before handing over a command to run, establish that the session genuinely
+cannot do it. A request is appropriate when what is needed is a *decision* —
+approval, a credential only they hold, an action on hardware you cannot reach.
+It is not appropriate as a way to skip finding the channel.
+
+The tell is when the same problem gets solved without help shortly afterwards.
+On 2026-08-28 the user was asked to run `ssh-copy-id` against a handheld; the
+identical problem on a VM was solved minutes later by writing
+`authorized_keys` over the serial console. The handheld had no serial console,
+so the ask was legitimate — but that was never said, and the reasoning was
+never done.
+
+So: exhaust what the session can reach first, and when a channel really is
+missing, name it. "There is no way to provision a key to a device from a
+session without an existing login" is a useful finding; "please run this" is
+not. Note also that `!`-prefixed commands run **non-interactively** — anything
+needing a password or a prompt has to happen in the user's own terminal, and
+that is worth saying rather than letting the command fail in front of them.
+
+(Adapted from `operator-asks.instructions.md` in the same estate.)
