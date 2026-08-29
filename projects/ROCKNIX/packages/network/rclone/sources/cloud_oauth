@@ -30,9 +30,15 @@
 # box, pcloud and yandex, which resolve to their own providers unchanged.
 #
 #   cloud_oauth serve <backend> [--name NAME] [--port N] [--timeout SECONDS]
-#   cloud_oauth url                     the provider link, for a QR or a screen
+#   cloud_oauth url                     the full link, PIN included, for a QR
+#   cloud_oauth info                    URL/ADDRESS/PIN, one KEY=VALUE per line
 #   cloud_oauth status                  waiting | signed-in | failed | idle
 #   cloud_oauth cancel
+#
+# `url` and `info` differ in what they are for. The QR carries the PIN, so
+# scanning it skips a step; the handheld's screen shows the bare address and
+# the PIN apart, because those are read off a small panel and typed on a
+# phone -- and "?pin=7677" in a URL bar is where that goes wrong.
 #
 # The listener binds the LAN only while a sign-in is running, times out on its
 # own, and requires a PIN shown on the handheld -- so reaching it takes the
@@ -143,6 +149,20 @@ class Session:
         self.token = None
         self.error = None
         self.pin = "%04d" % secrets.randbelow(10000)
+        # A PIN prompt that answers forever is a 10,000-guess keyspace on an
+        # open port. Ten wrong answers ends the attempt; the player starts a
+        # new one from the handheld, which is where the real authority is.
+        self.pin_attempts = 0
+        self.pin_lock = threading.Lock()
+
+    def pin_exhausted(self):
+        with self.pin_lock:
+            return self.pin_attempts >= 10
+
+    def pin_failed(self):
+        with self.pin_lock:
+            self.pin_attempts += 1
+            return self.pin_attempts >= 10
 
     def start(self):
         # A previous attempt still holding 53682 would make this one fail with
@@ -308,6 +328,37 @@ button{margin-top:12px;padding:12px 20px;font-size:16px;border-radius:8px;
 </div>
 """
 
+# Typing an address into a phone is the fallback for a phone that cannot
+# scan, and it has to stay short enough to type -- so the PIN is asked for
+# here rather than carried in the address. Scanning the QR still skips this,
+# because the QR encodes the PIN.
+PIN_PAGE = """<!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
+<title>ROCKNIX cloud sign-in</title>
+<style>
+body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:24px;background:#111;color:#eee}
+.card{max-width:34rem;margin:0 auto}
+h1{font-size:1.3rem;margin:0 0 1rem}
+input{width:100%%;padding:12px;font-size:20px;letter-spacing:.3em;text-align:center;
+      border-radius:8px;border:1px solid #555;background:#1c1c1c;color:#eee;
+      box-sizing:border-box}
+button{margin-top:12px;padding:12px 20px;font-size:16px;border-radius:8px;
+       border:0;background:#4af;color:#000;font-weight:600}
+.note{color:#aaa;font-size:.9rem}
+.err{background:#722;padding:10px;border-radius:8px;margin:1rem 0}
+</style>
+<div class=card>
+<h1>Enter the code from your handheld</h1>
+%(message)s
+<form method=get>
+<input name=pin inputmode=numeric pattern="[0-9]*" maxlength=4 autofocus
+       autocomplete=off placeholder="0000">
+<button type=submit>Continue</button>
+</form>
+<p class=note>The four-digit code is on the handheld screen, beside this
+address.</p>
+</div>
+"""
+
 
 def make_handler(session, shutdown):
     class Handler(http.server.BaseHTTPRequestHandler):
@@ -328,6 +379,15 @@ def make_handler(session, shutdown):
             self.end_headers()
             self.wfile.write(encoded)
 
+        def _render_pin(self, message="", status=200):
+            body = PIN_PAGE % {"message": message}
+            encoded = body.encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
         def _authorised(self, pin):
             # The PIN is shown on the handheld's screen, so answering it means
             # having the device in hand rather than only being on the wifi.
@@ -336,16 +396,37 @@ def make_handler(session, shutdown):
         def do_GET(self):
             path = urllib.parse.urlparse(self.path)
             query = urllib.parse.parse_qs(path.query)
-            if not self._authorised(query.get("pin", [""])[0]):
-                self.send_error(403, "Enter the code shown on the handheld")
+            pin = query.get("pin", [""])[0]
+
+            if session.pin_exhausted():
+                self.send_error(403, "Too many wrong codes. Start again on "
+                                     "the handheld.")
                 return
-            self._render()
+
+            if self._authorised(pin):
+                self._render()
+                return
+
+            # No PIN at all is somebody typing the bare address, which is the
+            # documented fallback -- ask, do not refuse. A wrong one is either
+            # a typo or a guess, and both are answered the same way so neither
+            # learns anything the other does not.
+            if not pin:
+                self._render_pin()
+                return
+
+            if session.pin_failed():
+                self.send_error(403, "Too many wrong codes. Start again on "
+                                     "the handheld.")
+                return
+            self._render_pin('<div class=err>That code did not match.</div>')
 
         def do_POST(self):
             length = int(self.headers.get("Content-Length", 0))
             fields = urllib.parse.parse_qs(
                 self.rfile.read(length).decode("utf-8", "replace"))
-            if not self._authorised(fields.get("pin", [""])[0]):
+            if session.pin_exhausted() or not self._authorised(
+                    fields.get("pin", [""])[0]):
                 self.send_error(403, "Enter the code shown on the handheld")
                 return
 
@@ -380,12 +461,14 @@ def cmd_serve(backend, remote_name, port, timeout):
 
     server.RequestHandlerClass = make_handler(session, shutdown)
 
-    url = "http://%s:%d/?pin=%s" % (address, port, session.pin)
-    write_state(status="waiting", backend=backend, url=url,
+    bare = "http://%s:%d" % (address, port)
+    url = "%s/?pin=%s" % (bare, session.pin)
+    write_state(status="waiting", backend=backend, url=url, address=bare,
                 provider=session.provider, pin=session.pin)
 
     # stdout is the contract for the caller (the ES page reads these).
     print("URL=%s" % url)
+    print("ADDRESS=%s" % bare)
     print("PIN=%s" % session.pin)
     print("PROVIDER=%s" % session.provider)
     sys.stdout.flush()
@@ -414,7 +497,7 @@ def main(argv):
         sys.stderr.write(
             "usage: cloud_oauth serve <backend> [--name NAME] [--port N] "
             "[--timeout SECONDS]\n"
-            "       cloud_oauth url | status | cancel\n")
+            "       cloud_oauth url | info | status | cancel\n")
         return 1
 
     command = argv[1]
@@ -436,6 +519,15 @@ def main(argv):
 
     if command == "url":
         print(read_state().get("url", ""))
+        return 0
+
+    if command == "info":
+        # One KEY=VALUE per line. `url` stays exactly as it was: the ES page
+        # reads whichever of the two the running image provides, so an older
+        # script and a newer page still agree on something.
+        state = read_state()
+        for key in ("url", "address", "pin", "provider", "status"):
+            print("%s=%s" % (key.upper(), state.get(key, "")))
         return 0
 
     if command == "status":
