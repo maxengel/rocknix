@@ -254,8 +254,9 @@ class Session:
             # Nothing was replayed, so the attempt is still alive and they can
             # simply paste again -- worth distinguishing from the dead-session
             # case below.
-            return False, ("That did not contain a code. Paste the whole "
-                           "address of the page that failed to load.")
+            return False, ("Nothing was pasted. Go to the page that failed "
+                           "to load, copy its whole address from the browser "
+                           "bar, and paste it here.")
 
         try:
             urllib.request.urlopen("%s/?%s" % (LOCAL_AUTH, query), timeout=15).read()
@@ -379,20 +380,37 @@ PAGE = """<!doctype html><meta name=viewport content="width=device-width,initial
 %(message)s
 
 <h2>Paste the address here</h2>
-<form method=post>
-<input name=code placeholder="http://localhost:53682/?code=..." autofocus
+<form method=post id=f>
+<input name=code placeholder="Paste here" autofocus
        autocapitalize=off autocorrect=off spellcheck=false inputmode=url>
 <input type=hidden name=pin value="%(pin)s">
-<button type=submit>Finish</button>
+<button type=submit>Confirm</button>
 </form>
-<p class=note>After you approve access, the browser tries to reach
-<code>localhost</code> and shows an error. <strong>That is expected.</strong>
-Copy that page's whole address and paste it above.</p>
+<p class=note>After you approve access the browser lands on an error —
+<em>"Safari cannot open the page"</em>, <em>"This site can't be reached"</em>,
+or similar. <strong>That is expected, and it is how you get the
+address.</strong> Tap that page's address bar, copy the whole thing, return to
+this tab and paste it above.</p>
+<script>
+// Paste and it goes -- the address expires in about two minutes, and the
+// tester who lost one spent them looking for the button.
+document.querySelector("input[name=code]").addEventListener("paste", function () {
+  var f = document.getElementById("f");
+  setTimeout(function () { if (this.value.indexOf("code=") >= 0) f.submit(); }.bind(this), 50);
+});
+</script>
 
 <h2>Not signed in yet?</h2>
 <a class=go href="%(provider)s" target="_blank" rel="noopener">Sign in to %(name)s</a>
-<p class=note>Approve access, then come straight back — the address is only
+<p class=note>This opens in a new tab, so <strong>this page stays where it
+is</strong>. Approve access and come straight back to it — the address is only
 good for a couple of minutes.</p>
+
+<form method=post>
+<input type=hidden name=pin value="%(pin)s">
+<input type=hidden name=restart value="1">
+<button class=minor type=submit>Lost the address? Start over</button>
+</form>
 </div>
 """
 
@@ -404,15 +422,15 @@ PIN_PAGE = """<!doctype html><meta name=viewport content="width=device-width,ini
 <title>ROCKNIX cloud sign-in</title>
 <style>%(style)s</style>
 <div class=card>
-<h1>Enter the PIN from your handheld</h1>
+<h1>Almost there</h1>
 %(message)s
-<form method=get>
+<p>The address on the handheld ends in four digits. Type them here.</p>
+<form method=get action="/">
 <input class=pin name=pin inputmode=numeric pattern="[0-9]*" maxlength=4 autofocus
        autocomplete=off placeholder="0000" value="%(pin)s">
 <button type=submit>Continue</button>
 </form>
-<p class=note>The four-digit PIN is on the handheld screen, beside this
-address.</p>
+<p class=note>Scanning the code on the handheld skips this step.</p>
 </div>
 """
 
@@ -530,9 +548,24 @@ def make_handler(holder, shutdown):
                                  supplied="")
             return False
 
+        def _supplied(self):
+            """The PIN, from wherever this request carries it.
+
+            The address shown on the handheld is http://<device>:8080/7677 --
+            the PIN is the tail of the one thing on screen, rather than a
+            second number displayed beside it that only the minority who type
+            the address rather than scanning it will ever need. ?pin= is still
+            accepted: it is what the prompt below submits, and what an older
+            QR still in somebody's camera roll would carry.
+            """
+            parsed = urllib.parse.urlparse(self.path)
+            from_query = urllib.parse.parse_qs(parsed.query).get("pin", [""])[0]
+            if from_query:
+                return from_query
+            return parsed.path.strip("/").split("/")[0]
+
         def do_GET(self):
-            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            if not self._gate(query.get("pin", [""])[0]):
+            if not self._gate(self._supplied()):
                 return
             self._render()
 
@@ -540,7 +573,7 @@ def make_handler(holder, shutdown):
             length = int(self.headers.get("Content-Length", 0))
             fields = urllib.parse.parse_qs(
                 self.rfile.read(length).decode("utf-8", "replace"))
-            if not self._gate(fields.get("pin", [""])[0]):
+            if not self._gate(fields.get("pin", [""])[0] or self._supplied()):
                 return
 
             if fields.get("restart"):
@@ -603,7 +636,7 @@ def cmd_serve(backend, remote_name, label, port, timeout):
     server.RequestHandlerClass = make_handler(holder, shutdown)
 
     bare = "http://%s:%d" % (address, port)
-    url = "%s/?pin=%s" % (bare, holder.pin)
+    url = "%s/%s" % (bare, holder.pin)
     write_state(status="waiting", backend=backend, url=url, address=bare,
                 provider=holder.session.provider, pin=holder.pin,
                 name=holder.name)
