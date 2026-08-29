@@ -87,6 +87,20 @@ def write_state(**fields):
         json.dump(existing, handle)
 
 
+def reset_state(**fields):
+    """Replace the state, rather than merging into it.
+
+    write_state merges, which is right while one sign-in is running and wrong
+    between two: a finished attempt leaves its address, PIN and provider link
+    behind, and the next page to read them shows a previous session's code as
+    though it were live. Anyone typing it in gets a flat refusal from a
+    listener that is waiting for a different number.
+    """
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(state_path("session.json"), "w") as handle:
+        json.dump(dict(fields), handle)
+
+
 def read_state():
     try:
         with open(state_path("session.json")) as handle:
@@ -447,6 +461,9 @@ def cmd_serve(backend, remote_name, port, timeout):
         sys.stderr.write("rclone is not installed\n")
         return 2
 
+    # Nothing from the last attempt survives into this one.
+    reset_state(status="starting", backend=backend)
+
     session = Session(backend, remote_name, timeout)
     if not session.start():
         sys.stderr.write("%s\n" % session.error)
@@ -536,7 +553,10 @@ def main(argv):
 
     if command == "cancel":
         subprocess.run(["pkill", "-f", "rclone authorize"], capture_output=True)
-        write_state(status="idle")
+        # Clears the address, PIN and provider link as well as the status --
+        # a dead session's details are not something to leave lying in
+        # /var/run for the next page to pick up and display.
+        reset_state(status="idle")
         return 0
 
     return main([argv[0]])
