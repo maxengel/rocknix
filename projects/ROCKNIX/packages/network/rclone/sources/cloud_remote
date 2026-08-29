@@ -31,8 +31,7 @@
 #
 # Tiers:
 #   keys      no OAuth at all - a form is enough
-#   oauth     OAuth we can drive ourselves (P2/P3: drive, onedrive, dropbox)
-#   fallback  OAuth we cannot drive - these still need the SSH wizard
+#   oauth     needs a provider sign-in, which cloud_oauth handles on-device
 #   plumbing  not a storage provider at all - see NOT_PROVIDERS
 #
 # Exit codes: 0 ok, 1 usage/arguments, 2 rclone failed, 3 verification failed.
@@ -53,11 +52,16 @@ LOG_FILE = "/var/log/cloud_sync.log"
 # Everything else with a `token` option stays on the SSH wizard: we would be
 # guessing at its sign-in shape, and guessing wrong strands the player
 # mid-setup with no way back.
-DRIVABLE_OAUTH = {
-    "drive": "device_flow",
-    "onedrive": "device_flow",
-    "dropbox": "pkce_paste",
-}
+# Every OAuth backend is drivable now. cloud_oauth wraps rclone's own
+# `authorize` machinery rather than reimplementing any provider's flow, so
+# there is nothing per-provider to support: whatever rclone can authorize,
+# the handheld can too. Probed against dropbox, drive, onedrive, box, pcloud
+# and yandex, each resolving to its own provider unchanged.
+#
+# This replaces an earlier split where three providers were "drivable" and
+# sixteen needed a computer. That distinction was about a design we did not
+# end up building.
+DRIVABLE_OAUTH = "all"
 
 # rclone's backend list is not a list of cloud services. These wrap or
 # transform another remote, or are not remote at all, and offering them as
@@ -114,9 +118,7 @@ def tier_of(provider):
     names = {opt.get("Name") for opt in provider.get("Options") or []}
     if "token" not in names:
         return "keys"
-    if provider.get("Name") in DRIVABLE_OAUTH:
-        return "oauth"
-    return "fallback"
+    return "oauth"
 
 
 def option_applies(opt, subprovider):
