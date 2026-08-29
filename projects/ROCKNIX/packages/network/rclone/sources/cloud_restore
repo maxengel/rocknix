@@ -604,6 +604,21 @@ restore_system_files() {
             "--stats-one-line"
         )
         
+        # Always fetch, rather than letting rclone decide by comparison.
+        # Given no modification times and no hashes -- which is what a WebDAV
+        # remote commonly offers -- it compares by size alone, and two
+        # archives of equal size are taken to be the same file. A device that
+        # already holds its own ROCKNIX_BACKUP.zip would then keep it and
+        # report a successful restore, handing the player their own stale
+        # configuration instead of the one they asked for. Fork issue #53.
+        #
+        # Unlike the backup side, this cannot be settled from a local marker:
+        # the authoritative copy is the remote one, and its content is exactly
+        # what we cannot see. Restore is an explicit, infrequent action -- it
+        # does not run on game exit -- so fetching unconditionally costs one
+        # download at the moment someone is already waiting for their data.
+        backup_opts+=("--ignore-times")
+
         # Check if the rclone version supports the terminal width flag
         if rclone help | grep -q progress-terminal-width; then
             backup_opts+=("--progress-terminal-width=80")
