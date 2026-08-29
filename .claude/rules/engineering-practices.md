@@ -58,3 +58,37 @@ alive before re-driving the input.
 
 An end-to-end test that passes tells you the pipeline ran. It does not tell
 you the pipeline was correct.
+
+## A failure you find is yours to fix
+
+Finding a defect creates an obligation to deal with it, not merely to record
+it. Filing an issue is how the work is tracked; it is not how the work is
+discharged. "Not caused by this change" and "was already broken" describe
+provenance, not priority — the failure is now known, and shipping past a known
+failure is a decision someone has to make deliberately rather than by default.
+
+Two habits follow.
+
+**Fix it in the session that found it, or say plainly that you did not.** A
+finding buried in a comment while the work moves on is indistinguishable, later,
+from a finding nobody had. If it genuinely must wait — the fix needs a design
+decision, or it is far outside the current scope — put the reason in the issue
+and name it in the handover, so the choice to defer is visible and someone
+else's to overturn.
+
+**Then close the hole that let it through.** Every real defect is also a
+statement about the tests: something passed that should not have. Add the case
+before moving on, and make it fail against the unfixed code if you still can.
+
+`cloud_backup` reported a successful upload while sending nothing, because the
+remote offered neither modtimes nor hashes and rclone compared by size (#53).
+`tools/cloud-round-trip` already exercised that phase — it wrote an archive,
+backed it up, restored it, and compared hashes — and it passed throughout,
+because it reset the remote first. Every upload it tested was a first upload,
+and a first upload always transfers. The gap was not the assertion but the
+scenario: a comparison that wrongly concludes "already there" needs something
+to already be there. The regression case is a second backup, of an archive
+changed but the same size.
+
+Assertions that only hold because nothing had happened yet are the ones to
+distrust — see also *Verify the artifact, not the report*.

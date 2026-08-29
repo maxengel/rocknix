@@ -53,6 +53,15 @@ EXCLUDED = {"saves/scratch.tmp": b"should-never-leave-the-device"}
 # still reported SUCCESS. A silent no-op is exactly what a round-trip catches.
 ARCHIVE_NAME = "ROCKNIX-backup-qa.zip"
 ARCHIVE_BODY = b"system-backup-archive-v1"
+# Deliberately the same length as ARCHIVE_BODY. A remote with no modtimes and
+# no hashes leaves rclone comparing by size alone, so a second archive of
+# identical size was silently never uploaded while the run reported success
+# (#53). The real archive is ~17 MB of OS-shipped assets around a few KB of
+# config, so an ordinary settings change routinely preserves its size --
+# "preamp=7" -> "preamp=8" is the same width. Only a second backup against an
+# already-populated remote can catch it; the first one always transfers.
+ARCHIVE_BODY_V2 = b"system-backup-archive-v2"
+assert len(ARCHIVE_BODY_V2) == len(ARCHIVE_BODY)
 
 CONTENT_DIR = "qa-content"
 CONTENT_FIXTURES = {
@@ -239,6 +248,23 @@ def main():
                               "SUCCESS while its filter matches nothing")
     else:
         print("    SKIP  archive restore - nothing was uploaded, so it proves nothing")
+
+    # A second backup, against a remote that already holds one. The first
+    # transfer always happens, so it cannot detect a comparison that wrongly
+    # decides the file is already there - which is what #53 was.
+    if uploaded_archive:
+        step("a changed archive of the same size still reaches the cloud")
+        dev.write(archive, ARCHIVE_BODY_V2)
+        v2_local = dev.sha(archive)
+        dev.run("cloud_backup >/dev/null 2>&1 || true", check=False)
+        dev.run(f"rm -f {shlex.quote(archive)}")
+        dev.run("cloud_restore >/dev/null 2>&1 || true", check=False)
+        v2_back = dev.sha(archive)
+        failures += not check(v2_back is not None and v2_back == v2_local,
+                              "the second archive replaced the first in the cloud",
+                              "the changed archive never reached the cloud - a "
+                              "size-only comparison can skip the upload and "
+                              "still report SUCCESS")
 
     # --- content backup / restore -------------------------------------------
     # cloud_content_backup hardcodes DEST=/storage/roms and ignores BACKUPPATH,
