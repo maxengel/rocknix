@@ -357,6 +357,16 @@ load_config() {
     log_message "Configuration loaded successfully" "false"
 }
 
+# This device's folder in the cloud. cloud_device_id owns the derivation --
+# one implementation, because backup and restore disagreeing here means a
+# device cannot find the archive it wrote.
+device_folder() {
+    local id
+    id=$(/usr/bin/cloud_device_id 2>/dev/null | tr -cd 'A-Za-z0-9_.-')
+    [ -z "${id}" ] && id="device-unknown"
+    echo "${id}"
+}
+
 # Enhanced error reporting function
 report_rclone_error() {
     local exit_code=$1
@@ -540,12 +550,18 @@ backup_system_files() {
             return 0
         fi
         
-        log_message "Starting transfer of system backup files from ${BACKUPFOLDER} to ${REMOTENAME}${SYNCPATH_BACKUP}"
+        # Each device writes into its own folder. A single shared filename
+        # meant the second device to run replaced the first device's archive,
+        # with no remote history to recover it from -- the local archive/
+        # rotation never leaves the device (fork #49).
+        local device_dest="${REMOTENAME}${SYNCPATH_BACKUP}/$(device_folder)"
+
+        log_message "Starting transfer of system backup files from ${BACKUPFOLDER} to ${device_dest}"
         log_message "System backup file transfer started at $(date)" "false"
         
         # Test remote backup path connectivity
-        log_message "Testing remote backup path connectivity: ${REMOTENAME}${SYNCPATH_BACKUP}" "false"
-        rclone mkdir "${REMOTENAME}${SYNCPATH_BACKUP}/" 2>/dev/null
+        log_message "Testing remote backup path connectivity: ${device_dest}" "false"
+        rclone mkdir "${device_dest}/" 2>/dev/null
         local mkdir_status=$?
         if [ $mkdir_status -ne 0 ]; then
             log_message "Failed to create/access remote backup directory (exit code: $mkdir_status)" "true" "ERROR"
@@ -577,15 +593,85 @@ backup_system_files() {
             backup_opts+=("--progress-terminal-width=80")
         fi
         
+        # rclone decides whether to send a file by comparing it with the one
+        # already there. Given neither modification times nor hashes it falls
+        # back to size alone, and plenty of remotes offer neither -- a WebDAV
+        # server commonly reports `Precision` unsupported and `Hashes: []`.
+        #
+        # The archive is ~17 MB of OS-shipped assets wrapped around a few KB of
+        # configuration, so its size barely moves when settings change:
+        # "preamp=7" -> "preamp=8" is exactly the same width, as is any value
+        # swapped for another of equal length. rclone then judges the local and
+        # remote copies identical, skips the transfer, and the run reports
+        # success while the cloud copy silently stays stale. Fork issue #53.
+        #
+        # So decide here, on content, instead of leaving it to metadata the
+        # remote may not have. The marker records what this device last
+        # actually put in the cloud; when the archive differs from that, the
+        # transfer is forced past rclone's comparison. A game-exit backup runs
+        # this on every quit, so uploading 17 MB unconditionally is not an
+        # option -- the archive only changes when someone runs `backuptool
+        # backup`, and this uploads exactly then.
+        local state_dir="/storage/.cache/cloud_sync"
+        local uploaded_marker="${state_dir}/system-backup.uploaded"
+        mkdir -p "${state_dir}" 2>/dev/null
+
+        # Identify the payload the way the transfer does -- the zip files at
+        # the root of BACKUPFOLDER, which is exactly what "--include=/*.zip"
+        # sends. Deriving a filename instead would mean depending on OS_NAME,
+        # which is empty in this script (the banner above prints a blank for
+        # the same reason), and on backuptool's naming staying in step.
+        local local_sum=""
+        local last_sum=""
+        local local_bytes=0
+        if ls "${BACKUPFOLDER}"/*.zip >/dev/null 2>&1; then
+            # Hash of the members' hashes, so more than one archive at the
+            # root is still covered by a single comparison.
+            local_sum=$(md5sum "${BACKUPFOLDER}"/*.zip 2>/dev/null | md5sum | cut -d' ' -f1)
+            local_bytes=$(cat "${BACKUPFOLDER}"/*.zip 2>/dev/null | wc -c)
+        fi
+        if [ -f "${uploaded_marker}" ]; then
+            last_sum=$(cat "${uploaded_marker}" 2>/dev/null)
+        fi
+
+        if [ -n "${local_sum}" ] && [ "${local_sum}" = "${last_sum}" ]; then
+            # Say what is true. Reporting a transfer that did not happen is
+            # how the stale-copy bug stayed invisible.
+            log_message "System backup is unchanged since the last upload; nothing to send" "true"
+            BACKUP_SYSTEM_STATUS=0
+            return 0
+        fi
+
+        # Force it past the size comparison. We have already established the
+        # content differs, so rclone's own check can only be wrong here.
+        backup_opts+=("--ignore-times")
+
         # Execute system backup transfer with enhanced error handling
         execute_rclone_with_error_handling \
             "${BACKUPMETHOD}" \
             "${BACKUPFOLDER}/" \
-            "${REMOTENAME}${SYNCPATH_BACKUP}/" \
+            "${device_dest}/" \
             "${backup_opts[@]}"
         
         BACKUP_SYSTEM_STATUS=$?
         report_rclone_error $BACKUP_SYSTEM_STATUS "System backup file transfer"
+
+        # Only record the upload once the remote actually holds a file of the
+        # right size. An exit code says the command ended, not that the bytes
+        # arrived, and a marker written on a failed transfer would suppress
+        # every retry afterwards.
+        if [ ${BACKUP_SYSTEM_STATUS} -eq 0 ] && [ -n "${local_sum}" ]; then
+            local remote_bytes
+            remote_bytes=$(rclone size "${device_dest}/" \
+                --include "/*.zip" --json 2>/dev/null \
+                | sed -n 's/.*"bytes":[[:space:]]*\([0-9]*\).*/\1/p')
+            if [ -n "${remote_bytes}" ] && [ "${remote_bytes}" = "${local_bytes}" ]; then
+                echo "${local_sum}" > "${uploaded_marker}"
+            else
+                log_message "The cloud copy did not come back the size we sent (${remote_bytes:-none} vs ${local_bytes}); it will be sent again next time" "true" "WARN"
+                BACKUP_SYSTEM_STATUS=1
+            fi
+        fi
         
         return $BACKUP_SYSTEM_STATUS
     else

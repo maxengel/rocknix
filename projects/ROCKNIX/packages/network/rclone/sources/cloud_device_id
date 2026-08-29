@@ -1,0 +1,114 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+
+# cloud_device_id - this device's stable name in cloud storage.
+#
+# Every device used to write the system backup to one shared filename, so the
+# second device to run replaced the first device's archive (fork #49). Each now
+# gets its own folder, which needs a name that is stable for as long as the
+# player would call it the same device.
+#
+# The identity is generated once and kept in /storage/.config. Whatever it is
+# derived from, the stored value wins afterwards -- so replacing a wifi module
+# does not strand the backups, and the file can be edited to adopt another
+# device's folder deliberately.
+#
+# It is seeded from the permanent hardware address, because a player's idea of
+# "my device" is the handheld in their hands, not the installation on the card.
+# Seeding this way means a reflash regenerates the same identity and the device
+# finds its own backups again -- which is exactly the fresh-handheld journey.
+#
+#   ethtool -P reports the address burned into the adapter, not the one
+#   currently assigned. NetworkManager and iwd can both randomise the live
+#   address; the permanent one is immune, so this needs no assumption about
+#   their configuration.
+#
+# The address is hashed rather than stored. A MAC is a network identifier and
+# has no business sitting in somebody's cloud storage in the clear, where a
+# folder listing may be shared or synced onwards.
+#
+# Where there is no usable adapter, it falls back to /etc/machine-id, which
+# symlinks into /storage and is generated on first boot. That identity does not
+# survive a reflash -- worse, but better than none, and it only applies to a
+# device with no network hardware at all.
+
+ID_FILE="/storage/.config/cloud_sync-device-id"
+
+# Interfaces that are not the device: loopback, the USB gadget, container and
+# VPN interfaces. Sorted so the choice does not depend on enumeration order --
+# a device that picked a different adapter on a later boot would rename itself
+# and lose track of its own backups.
+usable_interfaces() {
+    local iface name
+    for iface in /sys/class/net/*; do
+        name=$(basename "${iface}")
+        case "${name}" in
+            lo|gadget|docker*|veth*|br-*|tailscale*|zt*|tun*|tap*) continue ;;
+        esac
+        echo "${name}"
+    done | sort
+}
+
+permanent_address() {
+    local name perm
+    for name in $(usable_interfaces); do
+        perm=$(ethtool -P "${name}" 2>/dev/null | sed 's/.*: //' | tr -d ' \r\n')
+        case "${perm}" in
+            ""|00:00:00:00:00:00|ff:ff:ff:ff:ff:ff) continue ;;
+        esac
+        echo "${perm}"
+        return 0
+    done
+    return 1
+}
+
+generate_id() {
+    local seed prefix
+
+    # The device family joins the hash so two different products cannot
+    # collide on a recycled or spoofed address, and so the value changes if
+    # the same board is reused for another target.
+    if seed=$(permanent_address); then
+        prefix=$(printf '%s|%s' "${seed}" "${DEVICE:-unknown}" \
+            | md5sum | cut -c1-10)
+    else
+        # No adapter to key on. machine-id is per-installation rather than
+        # per-device, so this identity is lost on a reflash.
+        prefix=$(tr -cd 'a-f0-9' < /etc/machine-id 2>/dev/null | cut -c1-10)
+    fi
+
+    [ -z "${prefix}" ] && prefix="unknown"
+
+    # The hostname makes a cloud listing legible -- "H700-3f2a1c9e04" says what
+    # the device is, not merely that it is distinct. It cannot carry the
+    # identity itself: every ROCKNIX image ships with the hostname set to the
+    # device family (fork #50), so two H700s would collide exactly where they
+    # must not.
+    local host
+    host=$(hostname 2>/dev/null | tr -cd 'A-Za-z0-9_-')
+    [ -z "${host}" ] && host="device"
+
+    echo "${host}-${prefix}"
+}
+
+main() {
+    local id=""
+
+    if [ -s "${ID_FILE}" ]; then
+        id=$(head -1 "${ID_FILE}" | tr -cd 'A-Za-z0-9_.-')
+    fi
+
+    if [ -z "${id}" ]; then
+        id=$(generate_id)
+        mkdir -p "$(dirname "${ID_FILE}")" 2>/dev/null
+        # A read-only or full /storage must not take the backup down; the
+        # identity is simply recomputed next time, which lands on the same
+        # value anyway when an adapter is present.
+        printf '%s\n' "${id}" > "${ID_FILE}" 2>/dev/null
+    fi
+
+    echo "${id}"
+}
+
+main "$@"

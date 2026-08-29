@@ -53,6 +53,15 @@ EXCLUDED = {"saves/scratch.tmp": b"should-never-leave-the-device"}
 # still reported SUCCESS. A silent no-op is exactly what a round-trip catches.
 ARCHIVE_NAME = "ROCKNIX-backup-qa.zip"
 ARCHIVE_BODY = b"system-backup-archive-v1"
+# Deliberately the same length as ARCHIVE_BODY. A remote with no modtimes and
+# no hashes leaves rclone comparing by size alone, so a second archive of
+# identical size was silently never uploaded while the run reported success
+# (#53). The real archive is ~17 MB of OS-shipped assets around a few KB of
+# config, so an ordinary settings change routinely preserves its size --
+# "preamp=7" -> "preamp=8" is the same width. Only a second backup against an
+# already-populated remote can catch it; the first one always transfers.
+ARCHIVE_BODY_V2 = b"system-backup-archive-v2"
+assert len(ARCHIVE_BODY_V2) == len(ARCHIVE_BODY)
 
 CONTENT_DIR = "qa-content"
 CONTENT_FIXTURES = {
@@ -143,10 +152,20 @@ def main():
         return 1
 
     settings = {}
+    prev_paths = {}
     if not args.real_roms:
         # Keep the scripts' own defaults for everything except where they
         # read and write, so the code under test is unchanged.
         dev.run(f"mkdir -p {SCRATCH}")
+        # Remember what these were. Pointing a device at a scratch tree and
+        # leaving it there means its next real backup silently captures
+        # nothing -- the failure this suite exists to catch, caused by the
+        # suite. Found when a later manual run reported "Backup folder
+        # /storage/cloud-qa/backup does not exist" on a device the test had
+        # finished with.
+        for key in ("BACKUPPATH", "RESTOREPATH", "BACKUPFOLDER"):
+            prev_paths[key] = dev.run(
+                f"grep -m1 '^{key}=' {CONF} 2>/dev/null || true").strip()
         settings.update({"BACKUPPATH": SCRATCH, "RESTOREPATH": SCRATCH,
                          "BACKUPFOLDER": f"{SCRATCH}/backup"})
 
@@ -240,6 +259,23 @@ def main():
     else:
         print("    SKIP  archive restore - nothing was uploaded, so it proves nothing")
 
+    # A second backup, against a remote that already holds one. The first
+    # transfer always happens, so it cannot detect a comparison that wrongly
+    # decides the file is already there - which is what #53 was.
+    if uploaded_archive:
+        step("a changed archive of the same size still reaches the cloud")
+        dev.write(archive, ARCHIVE_BODY_V2)
+        v2_local = dev.sha(archive)
+        dev.run("cloud_backup >/dev/null 2>&1 || true", check=False)
+        dev.run(f"rm -f {shlex.quote(archive)}")
+        dev.run("cloud_restore >/dev/null 2>&1 || true", check=False)
+        v2_back = dev.sha(archive)
+        failures += not check(v2_back is not None and v2_back == v2_local,
+                              "the second archive replaced the first in the cloud",
+                              "the changed archive never reached the cloud - a "
+                              "size-only comparison can skip the upload and "
+                              "still report SUCCESS")
+
     # --- content backup / restore -------------------------------------------
     # cloud_content_backup hardcodes DEST=/storage/roms and ignores BACKUPPATH,
     # so the scratch tree cannot contain this one. It is confined instead to a
@@ -309,10 +345,16 @@ def main():
             dev.run(f"sed -i 's|^BACKUPFILE_RESTORE_OPTION=.*|{prev_restore_opt}|' {CONF}")
         else:
             dev.run(f"sed -i '/^BACKUPFILE_RESTORE_OPTION=/d' {CONF}")
+        for key, line in prev_paths.items():
+            if line:
+                dev.run(f"sed -i 's|^{key}=.*|{line}|' {CONF}")
+            else:
+                dev.run(f"sed -i '/^{key}=/d' {CONF}")
         if not args.real_roms:
             dev.run(f"rm -rf {shlex.quote(SCRATCH)}")
         backend("reset")
-        print("    scratch tree and bucket emptied, system-backup setting restored")
+        print("    scratch tree and bucket emptied, device paths and "
+              "system-backup setting restored")
 
     print(f"\n{'PASSED' if failures == 0 else f'{failures} CHECK(S) FAILED'}")
     return 1 if failures else 0

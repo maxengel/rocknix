@@ -58,3 +58,84 @@ alive before re-driving the input.
 
 An end-to-end test that passes tells you the pipeline ran. It does not tell
 you the pipeline was correct.
+
+## A failure you find is yours to fix
+
+Finding a defect creates an obligation to deal with it, not merely to record
+it. Filing an issue is how the work is tracked; it is not how the work is
+discharged. "Not caused by this change" and "was already broken" describe
+provenance, not priority — the failure is now known, and shipping past a known
+failure is a decision someone has to make deliberately rather than by default.
+
+Two habits follow.
+
+**Fix it in the session that found it, or say plainly that you did not.** A
+finding buried in a comment while the work moves on is indistinguishable, later,
+from a finding nobody had. If it genuinely must wait — the fix needs a design
+decision, or it is far outside the current scope — put the reason in the issue
+and name it in the handover, so the choice to defer is visible and someone
+else's to overturn.
+
+**Then close the hole that let it through.** Every real defect is also a
+statement about the tests: something passed that should not have. Add the case
+before moving on, and make it fail against the unfixed code if you still can.
+
+`cloud_backup` reported a successful upload while sending nothing, because the
+remote offered neither modtimes nor hashes and rclone compared by size (#53).
+`tools/cloud-round-trip` already exercised that phase — it wrote an archive,
+backed it up, restored it, and compared hashes — and it passed throughout,
+because it reset the remote first. Every upload it tested was a first upload,
+and a first upload always transfers. The gap was not the assertion but the
+scenario: a comparison that wrongly concludes "already there" needs something
+to already be there. The regression case is a second backup, of an archive
+changed but the same size.
+
+Assertions that only hold because nothing had happened yet are the ones to
+distrust — see also *Verify the artifact, not the report*.
+
+## Stop after three fixes on the same failure
+
+Three sequential fix-commits on one failure without resolving it means stop:
+re-read the source from the top and question the model, because you are
+probably fixing the wrong layer. Each successive patch feels like progress and
+narrows attention onto the last symptom, which is exactly when the actual cause
+stops being examined.
+
+2026-08-29, in one stretch: a chosen list value never reached the config; the
+fix for that called `getSelected()` when nothing was selected and abort()ed
+EmulationStation; the fix for *that* read `BACKUPFILE`, which belongs to
+`backuptool` and is unset in `cloud_backup`; and its replacement read
+`OS_NAME`, which is also empty there. Two of the four were the same mistake —
+assuming a variable existed — and thirty seconds reading the top of the script
+would have shown both. The third patch was the signal to go and read.
+
+Afterwards, ask where it could have been caught earlier and add that guard.
+`tools/cloud-round-trip` covered the failing phase and passed anyway, because
+it reset the remote first and only ever tested a first upload. Eliminating the
+category is part of the fix, not follow-up work.
+
+(Adapted from `incident-response.instructions.md` in the scaffold estate —
+<https://forge.possibility.space/scaffold/scaffold>.)
+
+## An ask to the user is a decision, not an errand
+
+Before handing over a command to run, establish that the session genuinely
+cannot do it. A request is appropriate when what is needed is a *decision* —
+approval, a credential only they hold, an action on hardware you cannot reach.
+It is not appropriate as a way to skip finding the channel.
+
+The tell is when the same problem gets solved without help shortly afterwards.
+On 2026-08-28 the user was asked to run `ssh-copy-id` against a handheld; the
+identical problem on a VM was solved minutes later by writing
+`authorized_keys` over the serial console. The handheld had no serial console,
+so the ask was legitimate — but that was never said, and the reasoning was
+never done.
+
+So: exhaust what the session can reach first, and when a channel really is
+missing, name it. "There is no way to provision a key to a device from a
+session without an existing login" is a useful finding; "please run this" is
+not. Note also that `!`-prefixed commands run **non-interactively** — anything
+needing a password or a prompt has to happen in the user's own terminal, and
+that is worth saying rather than letting the command fail in front of them.
+
+(Adapted from `operator-asks.instructions.md` in the same estate.)

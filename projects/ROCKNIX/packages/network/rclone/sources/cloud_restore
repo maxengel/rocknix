@@ -417,6 +417,16 @@ load_config() {
     log_message "Configuration loaded successfully" "false"
 }
 
+# This device's folder in the cloud. cloud_device_id owns the derivation --
+# one implementation, because backup and restore disagreeing here means a
+# device cannot find the archive it wrote.
+device_folder() {
+    local id
+    id=$(/usr/bin/cloud_device_id 2>/dev/null | tr -cd 'A-Za-z0-9_.-')
+    [ -z "${id}" ] && id="device-unknown"
+    echo "${id}"
+}
+
 # Enhanced error reporting function
 report_rclone_error() {
     local exit_code=$1
@@ -604,15 +614,62 @@ restore_system_files() {
             "--stats-one-line"
         )
         
+        # Always fetch, rather than letting rclone decide by comparison.
+        # Given no modification times and no hashes -- which is what a WebDAV
+        # remote commonly offers -- it compares by size alone, and two
+        # archives of equal size are taken to be the same file. A device that
+        # already holds its own ROCKNIX_BACKUP.zip would then keep it and
+        # report a successful restore, handing the player their own stale
+        # configuration instead of the one they asked for. Fork issue #53.
+        #
+        # Unlike the backup side, this cannot be settled from a local marker:
+        # the authoritative copy is the remote one, and its content is exactly
+        # what we cannot see. Restore is an explicit, infrequent action -- it
+        # does not run on game exit -- so fetching unconditionally costs one
+        # download at the moment someone is already waiting for their data.
+        backup_opts+=("--ignore-times")
+
         # Check if the rclone version supports the terminal width flag
         if rclone help | grep -q progress-terminal-width; then
             backup_opts+=("--progress-terminal-width=80")
         fi
         
+        # Read both layouts, and write only the new one (cloud_backup does
+        # that). Archives made before per-device folders sit at the root of
+        # SYNCPATH_BACKUP, and they are still someone's only backup -- a device
+        # that upgrades must keep finding them. Nothing is moved or deleted:
+        # the root copy may belong to another device that has not updated yet.
+        local device_src="${REMOTENAME}${SYNCPATH_BACKUP}/$(device_folder)"
+        local legacy_src="${REMOTENAME}${SYNCPATH_BACKUP}"
+        local restore_src=""
+
+        if rclone lsf "${device_src}/" --include "/*.zip" 2>/dev/null | grep -q .; then
+            restore_src="${device_src}"
+        elif rclone lsf "${legacy_src}/" --include "/*.zip" 2>/dev/null | grep -q .; then
+            restore_src="${legacy_src}"
+            log_message "Using a backup saved before this device had its own cloud folder" "false"
+        else
+            # Say what is actually there. Other devices' folders are not this
+            # device's to restore silently, but "no backup found" when the
+            # cloud plainly holds several is the kind of dead end that sends
+            # someone looking in the wrong place.
+            local others
+            others=$(rclone lsf "${legacy_src}/" --dirs-only 2>/dev/null | tr -d '/' | tr '\n' ' ')
+            if [ -n "${others}" ]; then
+                log_message "No backup for this device. The cloud holds backups from: ${others}" "true" "WARN"
+            else
+                log_message "There is no system backup in the cloud yet" "true" "WARN"
+            fi
+            RESTORE_SYSTEM_STATUS=0
+            return 0
+        fi
+
+        log_message "Restoring the system backup from ${restore_src}" "false"
+
         # Execute system backup restore with enhanced error handling
         execute_rclone_with_error_handling \
             "${RESTOREMETHOD}" \
-            "${REMOTENAME}${SYNCPATH_BACKUP}/" \
+            "${restore_src}/" \
             "${BACKUPFOLDER}/" \
             "${backup_opts[@]}"
         

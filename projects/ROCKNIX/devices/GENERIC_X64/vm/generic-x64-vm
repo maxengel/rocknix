@@ -110,6 +110,17 @@ def qemu_command(profile, args):
     # a well-known root password).
     ssh_bind = "0.0.0.0" if args.net == "lan" else "127.0.0.1"
     svc_bind = "0.0.0.0"
+
+    # Running two guests at once needs a second forward: the profile pins one
+    # port, and a second VM would fail to bind it. The port the guest is told
+    # about has to move with it, or cloud_setup would print an SSH command
+    # pointing at the other machine.
+    if args.ssh_port:
+        network = dict(network)
+        network["ssh_host_port"] = args.ssh_port
+        advertised = dict(network.get("advertised_ssh") or {})
+        advertised["host_port"] = args.ssh_port
+        network["advertised_ssh"] = advertised
     monitor.unlink(missing_ok=True)
 
     command = [
@@ -418,6 +429,16 @@ def add_qemu_options(parser):
         help="QEMU -display value (default: gtk,gl=on)",
     )
     parser.add_argument("--monitor", default="/tmp/rocknix-qemu-monitor.sock")
+    parser.add_argument(
+        "--ssh-port",
+        type=int,
+        default=None,
+        help=(
+            "host port to forward to the guest's SSH (default: the profile's). "
+            "Give a second VM its own port -- and its own --monitor -- to run "
+            "two at once for multi-device testing"
+        ),
+    )
     parser.add_argument("--ovmf-code")
     parser.add_argument("--ovmf-vars-template")
     parser.add_argument("--ovmf-vars")
