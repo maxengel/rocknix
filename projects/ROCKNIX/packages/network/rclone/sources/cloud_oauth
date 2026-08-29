@@ -1,0 +1,454 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+
+# cloud_oauth - sign in to a cloud provider from the handheld and a phone.
+#
+# rclone's OAuth already works; what it needs is somewhere to happen. Its
+# `authorize` command runs a web server on 127.0.0.1:53682 and waits for the
+# provider to redirect a browser back to it -- which assumes the browser is on
+# the same machine. On a handheld there is no browser at all, so the shipped
+# path is an SSH session from a computer with a port forward, and that is the
+# flow that has failed everyone who has tried it.
+#
+# Nothing about the OAuth needs to change. The bytes just have to move:
+#
+#   1. `rclone authorize <backend>` starts and prints a local URL.
+#   2. Following that URL from here yields the provider's real sign-in URL,
+#      carrying rclone's own client id and its state parameter.
+#   3. This serves that link on the LAN, so a phone can open it.
+#   4. The player signs in. The provider redirects the phone to
+#      localhost:53682, which the phone cannot load -- but the address bar
+#      now holds ?code=...&state=...
+#   5. They paste that back here, and this replays it to rclone's waiting
+#      server, which completes the exchange and prints a token.
+#   6. The token goes into rclone.conf.
+#
+# So no OAuth application is registered by ROCKNIX, no client secret ships, and
+# no provider-specific code exists here: every backend rclone can authorize
+# goes through the same six steps. Verified against dropbox, drive, onedrive,
+# box, pcloud and yandex, which resolve to their own providers unchanged.
+#
+#   cloud_oauth serve <backend> [--name NAME] [--port N] [--timeout SECONDS]
+#   cloud_oauth url                     the provider link, for a QR or a screen
+#   cloud_oauth status                  waiting | signed-in | failed | idle
+#   cloud_oauth cancel
+#
+# The listener binds the LAN only while a sign-in is running, times out on its
+# own, and requires a PIN shown on the handheld -- so reaching it takes the
+# device in your hands, not merely a seat on the wifi.
+
+import http.server
+import json
+import os
+import re
+import secrets
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import threading
+import time
+import urllib.parse
+import urllib.request
+
+STATE_DIR = "/var/run/cloud_oauth"
+RCLONE = "/usr/bin/rclone"
+LOCAL_AUTH = "http://127.0.0.1:53682"
+LOG_FILE = "/var/log/cloud_sync.log"
+
+
+def log(message):
+    import datetime
+    stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        with open(LOG_FILE, "a") as handle:
+            handle.write("[%s] [INFO] [cloud_oauth] %s\n" % (stamp, message))
+    except OSError:
+        pass
+
+
+def state_path(name):
+    return os.path.join(STATE_DIR, name)
+
+
+def write_state(**fields):
+    os.makedirs(STATE_DIR, exist_ok=True)
+    existing = read_state()
+    existing.update(fields)
+    with open(state_path("session.json"), "w") as handle:
+        json.dump(existing, handle)
+
+
+def read_state():
+    try:
+        with open(state_path("session.json")) as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return {}
+
+
+def lan_address():
+    """The address a phone on the same network would use.
+
+    Asks the routing table which source address reaches the outside world,
+    without sending anything -- a connected UDP socket only picks a route.
+    """
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(("192.0.2.1", 9))  # TEST-NET-1: routable, never answers
+        return probe.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        probe.close()
+
+
+def provider_url(local_url):
+    """Turn rclone's local auth URL into the provider's real sign-in URL.
+
+    rclone answers /auth with a redirect carrying its own client id, scopes
+    and state. Following it here rather than in the player's browser is the
+    whole trick: the phone then goes straight to the provider and never needs
+    to reach this device.
+    """
+    request = urllib.request.Request(local_url)
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            return None
+
+    opener = urllib.request.build_opener(NoRedirect)
+    try:
+        opener.open(request, timeout=10)
+    except urllib.error.HTTPError as exc:
+        location = exc.headers.get("Location")
+        if location:
+            return location
+    except OSError:
+        pass
+    return None
+
+
+class Session:
+    """One sign-in attempt: rclone's process, its URL, and the result."""
+
+    def __init__(self, backend, remote_name, timeout):
+        self.backend = backend
+        self.remote_name = remote_name
+        self.timeout = timeout
+        self.proc = None
+        self.provider = None
+        self.token = None
+        self.error = None
+        self.pin = "%04d" % secrets.randbelow(10000)
+
+    def start(self):
+        # A previous attempt still holding 53682 would make this one fail with
+        # "address already in use", which reads as a provider problem.
+        subprocess.run(["pkill", "-f", "rclone authorize"],
+                       capture_output=True)
+        time.sleep(1)
+
+        self.proc = subprocess.Popen(
+            [RCLONE, "authorize", self.backend, "--auth-no-open-browser"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+        deadline = time.time() + 20
+        local = None
+        while time.time() < deadline:
+            line = self.proc.stdout.readline()
+            if not line:
+                break
+            match = re.search(r"http://127\.0\.0\.1:53682/auth\?state=\S+", line)
+            if match:
+                local = match.group(0)
+                break
+        if not local:
+            self.error = "rclone did not offer a sign-in link"
+            return False
+
+        self.provider = provider_url(local)
+        if not self.provider:
+            self.error = "could not read the provider's sign-in address"
+            return False
+
+        # Everything after this point is rclone waiting for the redirect, so
+        # collect its output off-thread; the token appears there when the
+        # replay lands.
+        threading.Thread(target=self._collect, daemon=True).start()
+        log("sign-in started for %s" % self.backend)
+        return True
+
+    def _collect(self):
+        buffer = ""
+        for line in self.proc.stdout:
+            buffer += line
+            if "<---End paste" in buffer or "Paste the following" in buffer:
+                match = re.search(r"(\{.*\})", buffer, re.S)
+                if match:
+                    self.token = match.group(1).strip()
+                    break
+        self.proc.wait()
+
+    def submit(self, pasted):
+        """Replay the provider's redirect to rclone's waiting server.
+
+        Accepts the whole failed URL or just the code, because the player is
+        copying from a phone's address bar on a page that did not load, and
+        which of the two they manage to grab is not something to be strict
+        about.
+        """
+        pasted = pasted.strip()
+        query = None
+        if "code=" in pasted:
+            parsed = urllib.parse.urlparse(pasted)
+            query = parsed.query or pasted.split("?", 1)[-1]
+        elif pasted:
+            state = urllib.parse.parse_qs(
+                urllib.parse.urlparse(self.provider).query).get("state", [""])[0]
+            query = urllib.parse.urlencode({"code": pasted, "state": state})
+        if not query:
+            # Nothing was replayed, so the attempt is still alive and they can
+            # simply paste again -- worth distinguishing from the dead-session
+            # case below.
+            return False, ("That did not contain a code. Paste the whole "
+                           "address from the page that failed to load.")
+
+        try:
+            urllib.request.urlopen("%s/?%s" % (LOCAL_AUTH, query), timeout=15).read()
+        except urllib.error.HTTPError:
+            pass  # rclone answers the redirect with its own page; not an error
+        except OSError as exc:
+            return False, "could not hand the code back to rclone: %s" % exc
+
+        for _ in range(40):
+            if self.token:
+                return self._write_config()
+            if self.proc.poll() is not None and not self.token:
+                # rclone's authorize server serves exactly one redirect and
+                # then exits, so a wrong or expired code ends the attempt
+                # rather than allowing another go. Say that, because the
+                # player is looking at a page that still has a working-looking
+                # form on it and would otherwise keep pasting into a session
+                # that no longer exists.
+                return False, ("That code was not accepted, and the sign-in "
+                               "has ended. Start it again from the handheld — "
+                               "codes are single-use and expire quickly.")
+            time.sleep(0.5)
+        return False, ("Timed out waiting for the provider. Start the sign-in "
+                       "again from the handheld.")
+
+    def _write_config(self):
+        name = self.remote_name or self.backend
+        existing = subprocess.run([RCLONE, "listremotes"],
+                                  capture_output=True, text=True).stdout
+        if "%s:" % name in existing.split():
+            return False, "a remote called '%s' already exists" % name
+
+        result = subprocess.run(
+            [RCLONE, "config", "create", name, self.backend,
+             "token=%s" % self.token, "--non-interactive"],
+            capture_output=True, text=True)
+        if result.returncode != 0:
+            return False, result.stderr.strip()[:200] or "rclone rejected the token"
+
+        # Prove it before saying so. A token that parses is not a token that
+        # works, and cloud_remote takes the same posture.
+        check = subprocess.run(
+            [RCLONE, "lsd", "%s:" % name, "--contimeout", "10s",
+             "--timeout", "20s", "--low-level-retries", "1", "--retries", "1"],
+            capture_output=True, text=True)
+        if check.returncode != 0:
+            subprocess.run([RCLONE, "config", "delete", name],
+                           capture_output=True)
+            return False, "signed in, but the remote did not respond"
+
+        log("remote %s created for %s" % (name, self.backend))
+        write_state(status="signed-in", remote=name)
+        return True, name
+
+
+PAGE = """<!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
+<title>ROCKNIX cloud sign-in</title>
+<style>
+body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:24px;background:#111;color:#eee}
+.card{max-width:34rem;margin:0 auto}
+h1{font-size:1.3rem;margin:0 0 1rem}
+a.go{display:block;background:#2d7;color:#000;padding:14px;border-radius:8px;
+     text-align:center;font-weight:600;text-decoration:none;margin:1rem 0}
+ol{padding-left:1.2rem}li{margin:.5rem 0}
+input{width:100%%;padding:12px;font-size:16px;border-radius:8px;border:1px solid #555;
+      background:#1c1c1c;color:#eee;box-sizing:border-box}
+button{margin-top:12px;padding:12px 20px;font-size:16px;border-radius:8px;
+       border:0;background:#4af;color:#000;font-weight:600}
+.note{color:#aaa;font-size:.9rem}
+.err{background:#722;padding:10px;border-radius:8px;margin:1rem 0}
+.ok{background:#272;padding:10px;border-radius:8px;margin:1rem 0}
+</style>
+<div class=card>
+<h1>Connect %(backend)s</h1>
+%(message)s
+<ol>
+<li>Open the sign-in page and approve access.</li>
+<li>Your browser will then try to reach <code>localhost</code> and show an
+    error. <strong>That is expected.</strong></li>
+<li>Copy the whole address from the bar of that failed page and paste it
+    below.</li>
+</ol>
+<a class=go href="%(provider)s" target="_blank" rel="noopener">Sign in to %(backend)s</a>
+<form method=post>
+<input name=code placeholder="Paste the address (or just the code)" autofocus
+       autocapitalize=off autocorrect=off spellcheck=false>
+<input type=hidden name=pin value="%(pin)s">
+<button type=submit>Finish</button>
+</form>
+<p class=note>This page is only open while setup is running on the handheld.</p>
+</div>
+"""
+
+
+def make_handler(session, shutdown):
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass  # its default writes request lines to stderr
+
+        def _render(self, message="", status=200):
+            body = PAGE % {
+                "backend": session.backend,
+                "provider": session.provider,
+                "pin": session.pin,
+                "message": message,
+            }
+            encoded = body.encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+        def _authorised(self, pin):
+            # The PIN is shown on the handheld's screen, so answering it means
+            # having the device in hand rather than only being on the wifi.
+            return secrets.compare_digest(str(pin), session.pin)
+
+        def do_GET(self):
+            path = urllib.parse.urlparse(self.path)
+            query = urllib.parse.parse_qs(path.query)
+            if not self._authorised(query.get("pin", [""])[0]):
+                self.send_error(403, "Enter the code shown on the handheld")
+                return
+            self._render()
+
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length", 0))
+            fields = urllib.parse.parse_qs(
+                self.rfile.read(length).decode("utf-8", "replace"))
+            if not self._authorised(fields.get("pin", [""])[0]):
+                self.send_error(403, "Enter the code shown on the handheld")
+                return
+
+            ok, detail = session.submit(fields.get("code", [""])[0])
+            if ok:
+                self._render('<div class=ok>Connected. The remote '
+                             '<strong>%s</strong> is ready — you can close this '
+                             'page and carry on from the handheld.</div>' % detail)
+                threading.Timer(1.5, shutdown).start()
+            else:
+                self._render('<div class=err>%s</div>' % detail)
+
+    return Handler
+
+
+def cmd_serve(backend, remote_name, port, timeout):
+    if not shutil.which("rclone") and not os.path.exists(RCLONE):
+        sys.stderr.write("rclone is not installed\n")
+        return 2
+
+    session = Session(backend, remote_name, timeout)
+    if not session.start():
+        sys.stderr.write("%s\n" % session.error)
+        write_state(status="failed", error=session.error)
+        return 2
+
+    address = lan_address()
+    server = http.server.ThreadingHTTPServer(("0.0.0.0", port), None)
+
+    def shutdown():
+        threading.Thread(target=server.shutdown, daemon=True).start()
+
+    server.RequestHandlerClass = make_handler(session, shutdown)
+
+    url = "http://%s:%d/?pin=%s" % (address, port, session.pin)
+    write_state(status="waiting", backend=backend, url=url,
+                provider=session.provider, pin=session.pin)
+
+    # stdout is the contract for the caller (the ES page reads these).
+    print("URL=%s" % url)
+    print("PIN=%s" % session.pin)
+    print("PROVIDER=%s" % session.provider)
+    sys.stdout.flush()
+
+    # The listener is only open while someone is actually signing in.
+    timer = threading.Timer(timeout, shutdown)
+    timer.daemon = True
+    timer.start()
+    try:
+        server.serve_forever()
+    finally:
+        timer.cancel()
+        server.server_close()
+        if session.proc and session.proc.poll() is None:
+            session.proc.send_signal(signal.SIGTERM)
+
+    final = read_state().get("status")
+    if final == "signed-in":
+        return 0
+    write_state(status="failed", error="sign-in did not complete")
+    return 1
+
+
+def main(argv):
+    if len(argv) < 2:
+        sys.stderr.write(
+            "usage: cloud_oauth serve <backend> [--name NAME] [--port N] "
+            "[--timeout SECONDS]\n"
+            "       cloud_oauth url | status | cancel\n")
+        return 1
+
+    command = argv[1]
+
+    if command == "serve":
+        if len(argv) < 3:
+            return main([argv[0]])
+        backend = argv[2]
+        name, port, timeout = None, 8080, 600
+        rest = argv[3:]
+        for i, arg in enumerate(rest):
+            if arg == "--name" and i + 1 < len(rest):
+                name = rest[i + 1]
+            elif arg == "--port" and i + 1 < len(rest):
+                port = int(rest[i + 1])
+            elif arg == "--timeout" and i + 1 < len(rest):
+                timeout = int(rest[i + 1])
+        return cmd_serve(backend, name, port, timeout)
+
+    if command == "url":
+        print(read_state().get("url", ""))
+        return 0
+
+    if command == "status":
+        print(read_state().get("status", "idle"))
+        return 0
+
+    if command == "cancel":
+        subprocess.run(["pkill", "-f", "rclone authorize"], capture_output=True)
+        write_state(status="idle")
+        return 0
+
+    return main([argv[0]])
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
