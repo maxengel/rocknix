@@ -244,10 +244,24 @@ def main():
     arch_before = dev.sha(archive)
     backend("reset")
     dev.run("cloud_backup >/dev/null 2>&1 || true", check=False)
-    uploaded_archive = ARCHIVE_NAME in backend("ls")
+    listing = backend("ls")
+    uploaded_archive = ARCHIVE_NAME in listing
     failures += not check(uploaded_archive,
                           "the system backup archive reached the cloud",
                           "the archive was not uploaded")
+
+    # It must land under this device's own folder. A single shared filename is
+    # what let the second device to run replace the first device's archive,
+    # with no remote history to recover it from (#49). One device cannot
+    # demonstrate the collision, but it can prove the archive is namespaced --
+    # which is the property that prevents it.
+    if uploaded_archive:
+        device_id = dev.run("cloud_device_id 2>/dev/null || true").strip()
+        failures += not check(
+            bool(device_id) and f"{device_id}/{ARCHIVE_NAME}" in listing,
+            f"the archive is filed under this device ({device_id or 'no id'})",
+            "the archive sits at the root of the backup path - a second "
+            "device would overwrite it")
     dev.run(f"rm -f {shlex.quote(archive)}")
     dev.run("cloud_restore >/dev/null 2>&1 || true", check=False)
     if uploaded_archive:
