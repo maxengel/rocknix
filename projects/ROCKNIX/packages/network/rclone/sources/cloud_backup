@@ -357,6 +357,29 @@ load_config() {
     log_message "Configuration loaded successfully" "false"
 }
 
+# A stable per-device folder name for the cloud layout.
+#
+# /etc/machine-id is a symlink to /storage/.cache/systemd-machine-id, so it is
+# generated on this device's first boot and persists across reboots and
+# in-place updates. The hostname alone cannot do this job: every ROCKNIX image
+# ships with the hostname set to the device family (fork #50), so two H700s
+# collide exactly where they must not. It is included anyway because a cloud
+# folder someone browses should say what the device is, not only that it is
+# distinct.
+#
+# A reflash generates a new id and leaves the previous folder behind. That is
+# the right trade -- the alternative is a MAC address, which follows the
+# hardware rather than the installation and puts a network identifier in
+# someone's cloud storage.
+device_folder() {
+    local id host
+    id=$(tr -cd 'a-f0-9' < /etc/machine-id 2>/dev/null | cut -c1-8)
+    host=$(hostname 2>/dev/null | tr -cd 'A-Za-z0-9_-')
+    [ -z "${id}" ] && id="unknown"
+    [ -z "${host}" ] && host="device"
+    echo "${host}-${id}"
+}
+
 # Enhanced error reporting function
 report_rclone_error() {
     local exit_code=$1
@@ -540,12 +563,18 @@ backup_system_files() {
             return 0
         fi
         
-        log_message "Starting transfer of system backup files from ${BACKUPFOLDER} to ${REMOTENAME}${SYNCPATH_BACKUP}"
+        # Each device writes into its own folder. A single shared filename
+        # meant the second device to run replaced the first device's archive,
+        # with no remote history to recover it from -- the local archive/
+        # rotation never leaves the device (fork #49).
+        local device_dest="${REMOTENAME}${SYNCPATH_BACKUP}/$(device_folder)"
+
+        log_message "Starting transfer of system backup files from ${BACKUPFOLDER} to ${device_dest}"
         log_message "System backup file transfer started at $(date)" "false"
         
         # Test remote backup path connectivity
-        log_message "Testing remote backup path connectivity: ${REMOTENAME}${SYNCPATH_BACKUP}" "false"
-        rclone mkdir "${REMOTENAME}${SYNCPATH_BACKUP}/" 2>/dev/null
+        log_message "Testing remote backup path connectivity: ${device_dest}" "false"
+        rclone mkdir "${device_dest}/" 2>/dev/null
         local mkdir_status=$?
         if [ $mkdir_status -ne 0 ]; then
             log_message "Failed to create/access remote backup directory (exit code: $mkdir_status)" "true" "ERROR"
@@ -634,7 +663,7 @@ backup_system_files() {
         execute_rclone_with_error_handling \
             "${BACKUPMETHOD}" \
             "${BACKUPFOLDER}/" \
-            "${REMOTENAME}${SYNCPATH_BACKUP}/" \
+            "${device_dest}/" \
             "${backup_opts[@]}"
         
         BACKUP_SYSTEM_STATUS=$?
@@ -646,7 +675,7 @@ backup_system_files() {
         # every retry afterwards.
         if [ ${BACKUP_SYSTEM_STATUS} -eq 0 ] && [ -n "${local_sum}" ]; then
             local remote_bytes
-            remote_bytes=$(rclone size "${REMOTENAME}${SYNCPATH_BACKUP}/" \
+            remote_bytes=$(rclone size "${device_dest}/" \
                 --include "/*.zip" --json 2>/dev/null \
                 | sed -n 's/.*"bytes":[[:space:]]*\([0-9]*\).*/\1/p')
             if [ -n "${remote_bytes}" ] && [ "${remote_bytes}" = "${local_bytes}" ]; then

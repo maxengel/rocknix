@@ -152,10 +152,20 @@ def main():
         return 1
 
     settings = {}
+    prev_paths = {}
     if not args.real_roms:
         # Keep the scripts' own defaults for everything except where they
         # read and write, so the code under test is unchanged.
         dev.run(f"mkdir -p {SCRATCH}")
+        # Remember what these were. Pointing a device at a scratch tree and
+        # leaving it there means its next real backup silently captures
+        # nothing -- the failure this suite exists to catch, caused by the
+        # suite. Found when a later manual run reported "Backup folder
+        # /storage/cloud-qa/backup does not exist" on a device the test had
+        # finished with.
+        for key in ("BACKUPPATH", "RESTOREPATH", "BACKUPFOLDER"):
+            prev_paths[key] = dev.run(
+                f"grep -m1 '^{key}=' {CONF} 2>/dev/null || true").strip()
         settings.update({"BACKUPPATH": SCRATCH, "RESTOREPATH": SCRATCH,
                          "BACKUPFOLDER": f"{SCRATCH}/backup"})
 
@@ -335,10 +345,16 @@ def main():
             dev.run(f"sed -i 's|^BACKUPFILE_RESTORE_OPTION=.*|{prev_restore_opt}|' {CONF}")
         else:
             dev.run(f"sed -i '/^BACKUPFILE_RESTORE_OPTION=/d' {CONF}")
+        for key, line in prev_paths.items():
+            if line:
+                dev.run(f"sed -i 's|^{key}=.*|{line}|' {CONF}")
+            else:
+                dev.run(f"sed -i '/^{key}=/d' {CONF}")
         if not args.real_roms:
             dev.run(f"rm -rf {shlex.quote(SCRATCH)}")
         backend("reset")
-        print("    scratch tree and bucket emptied, system-backup setting restored")
+        print("    scratch tree and bucket emptied, device paths and "
+              "system-backup setting restored")
 
     print(f"\n{'PASSED' if failures == 0 else f'{failures} CHECK(S) FAILED'}")
     return 1 if failures else 0

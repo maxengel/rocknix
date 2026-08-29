@@ -417,6 +417,23 @@ load_config() {
     log_message "Configuration loaded successfully" "false"
 }
 
+# A stable per-device folder name for the cloud layout. Kept identical to
+# cloud_backup's copy -- the two scripts are structurally paired, and a
+# divergence here means a device cannot find the archive it wrote.
+#
+# /etc/machine-id is a symlink to /storage/.cache/systemd-machine-id, so it is
+# generated on this device's first boot and persists across reboots and
+# in-place updates. The hostname alone cannot do this job: every ROCKNIX image
+# ships with the hostname set to the device family (fork #50).
+device_folder() {
+    local id host
+    id=$(tr -cd 'a-f0-9' < /etc/machine-id 2>/dev/null | cut -c1-8)
+    host=$(hostname 2>/dev/null | tr -cd 'A-Za-z0-9_-')
+    [ -z "${id}" ] && id="unknown"
+    [ -z "${host}" ] && host="device"
+    echo "${host}-${id}"
+}
+
 # Enhanced error reporting function
 report_rclone_error() {
     local exit_code=$1
@@ -624,10 +641,42 @@ restore_system_files() {
             backup_opts+=("--progress-terminal-width=80")
         fi
         
+        # Read both layouts, and write only the new one (cloud_backup does
+        # that). Archives made before per-device folders sit at the root of
+        # SYNCPATH_BACKUP, and they are still someone's only backup -- a device
+        # that upgrades must keep finding them. Nothing is moved or deleted:
+        # the root copy may belong to another device that has not updated yet.
+        local device_src="${REMOTENAME}${SYNCPATH_BACKUP}/$(device_folder)"
+        local legacy_src="${REMOTENAME}${SYNCPATH_BACKUP}"
+        local restore_src=""
+
+        if rclone lsf "${device_src}/" --include "/*.zip" 2>/dev/null | grep -q .; then
+            restore_src="${device_src}"
+        elif rclone lsf "${legacy_src}/" --include "/*.zip" 2>/dev/null | grep -q .; then
+            restore_src="${legacy_src}"
+            log_message "Using a backup saved before this device had its own cloud folder" "false"
+        else
+            # Say what is actually there. Other devices' folders are not this
+            # device's to restore silently, but "no backup found" when the
+            # cloud plainly holds several is the kind of dead end that sends
+            # someone looking in the wrong place.
+            local others
+            others=$(rclone lsf "${legacy_src}/" --dirs-only 2>/dev/null | tr -d '/' | tr '\n' ' ')
+            if [ -n "${others}" ]; then
+                log_message "No backup for this device. The cloud holds backups from: ${others}" "true" "WARN"
+            else
+                log_message "There is no system backup in the cloud yet" "true" "WARN"
+            fi
+            RESTORE_SYSTEM_STATUS=0
+            return 0
+        fi
+
+        log_message "Restoring the system backup from ${restore_src}" "false"
+
         # Execute system backup restore with enhanced error handling
         execute_rclone_with_error_handling \
             "${RESTOREMETHOD}" \
-            "${REMOTENAME}${SYNCPATH_BACKUP}/" \
+            "${restore_src}/" \
             "${BACKUPFOLDER}/" \
             "${backup_opts[@]}"
         
