@@ -417,21 +417,14 @@ load_config() {
     log_message "Configuration loaded successfully" "false"
 }
 
-# A stable per-device folder name for the cloud layout. Kept identical to
-# cloud_backup's copy -- the two scripts are structurally paired, and a
-# divergence here means a device cannot find the archive it wrote.
-#
-# /etc/machine-id is a symlink to /storage/.cache/systemd-machine-id, so it is
-# generated on this device's first boot and persists across reboots and
-# in-place updates. The hostname alone cannot do this job: every ROCKNIX image
-# ships with the hostname set to the device family (fork #50).
+# This device's folder in the cloud. cloud_device_id owns the derivation --
+# one implementation, because backup and restore disagreeing here means a
+# device cannot find the archive it wrote.
 device_folder() {
-    local id host
-    id=$(tr -cd 'a-f0-9' < /etc/machine-id 2>/dev/null | cut -c1-8)
-    host=$(hostname 2>/dev/null | tr -cd 'A-Za-z0-9_-')
-    [ -z "${id}" ] && id="unknown"
-    [ -z "${host}" ] && host="device"
-    echo "${host}-${id}"
+    local id
+    id=$(/usr/bin/cloud_device_id 2>/dev/null | tr -cd 'A-Za-z0-9_.-')
+    [ -z "${id}" ] && id="device-unknown"
+    echo "${id}"
 }
 
 # Enhanced error reporting function

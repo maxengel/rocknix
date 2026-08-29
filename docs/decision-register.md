@@ -25,6 +25,7 @@ This is the index of decisions; `docs/work-logs/` is the narrative,
 | D-UI-002 | 2026-08-28 | **Providers are named by us, not by rclone.** rclone's descriptions are written for its documentation and truncate mid-word in a handheld menu. | `675790e8c` |
 | D-QA-001 | 2026-08-28 | **Nothing goes upstream until an end-to-end run passes on hardware.** VM verification gates the device build; the device build gates P2. | maintainer, 2026-08-28 |
 | D-QA-002 | 2026-08-29 | **The QA WebDAV backend stays bound to loopback.** It holds a test credential; exposing it on the LAN to reach a physical device is not worth it — use a VM, which reaches the host at `10.0.2.2`. | `tools/cloud-test-backend` |
+| D-CLOUD-009 | 2026-08-29 | **The per-device cloud identity is seeded from the permanent hardware address, hashed, and stored in `/storage/.config`.** Supersedes the machine-id-only derivation in the first cut of #49. `ethtool -P` reports the address burned into the adapter, so MAC randomisation is irrelevant; hashing keeps a network identifier out of the cloud path; storing it means a wifi-module swap does not strand the backups and the file can be edited to adopt another device's folder. Chosen because a player's "my device" is the handheld, not the installation — so a reflash must find its own backups. | `cloud_device_id`, supersedes part of `b132442778` |
 | D-WORKFLOW-001 | 2026-08-29 | **Local build logs are never committed.** A `git add -A` in a build worktree put a 206 MB log into history and GitHub rejected the push; `/build-*.log` and `/publish.log` are now ignored. | `746b6dc3f6`, `4e46985442` |
 | D-WORKFLOW-002 | 2026-08-29 | **Adopt from the scaffold estate only where a local failure earned it.** Two of its 41 instruction cards were taken; `git-safety` was rejected because its headline advice (stash before destructive ops) is the one thing this environment forbids, the stash stack being shared across worktrees. | `a371bb77f8` |
 
@@ -32,6 +33,5 @@ This is the index of decisions; `docs/work-logs/` is the narrative,
 
 | ID | Question | Home |
 | --- | --- | --- |
-| D-CLOUD-006 | **How are cloud archives named per device, and what prunes them?** Per-device names fix both the cross-device overwrite (#49) and the size-collision skip (#53), but timestamped per-device objects grow without bound unless something removes them. | #49 |
 | D-CLOUD-007 | **Which OAuth transport for each provider once P2 starts** — device flow (Drive, OneDrive) vs PKCE with a pasted code (Dropbox), and whether the Dropbox listener is worth the LAN surface it adds. | #51 |
 | D-CLOUD-008 | **Does the 17 MB archive get trimmed?** It is almost entirely OS-shipped PPSSPP assets, which is what makes size collisions ordinary rather than rare. Shrinking it narrows the #53 window but does not close it. | #45 |
