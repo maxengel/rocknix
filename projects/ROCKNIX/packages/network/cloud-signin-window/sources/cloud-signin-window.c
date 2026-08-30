@@ -164,9 +164,18 @@ static gboolean on_decide_policy(WebKitWebView *view,
      * worth refusing. Subframes and resources load freely; the ephemeral
      * context means none of it outlives the sign-in.
      */
-    if (webkit_navigation_policy_decision_get_frame_name(
-            WEBKIT_NAVIGATION_POLICY_DECISION(decision)) != NULL)
-        return FALSE;       /* a named subframe, not the player going somewhere */
+    /* A user gesture is the thing worth filtering: the player tapping Terms
+     * or Privacy and browsing away. Everything a page loads for itself --
+     * dropboxcaptcha.com for the form's captcha, accounts.google.com for the
+     * "Continue with Google" button, analytics nobody asked for -- arrives
+     * without one.
+     *
+     * Not frame_name: an iframe with no name attribute reports NULL exactly
+     * as the main frame does, so that test refused the captcha anyway and
+     * the form stayed unusable.
+     */
+    if (!webkit_navigation_action_is_user_gesture(action))
+        return FALSE;
 
     if (!host_permitted(g_uri_get_host(parsed))) {
         g_message("refused navigation to %s", uri);
