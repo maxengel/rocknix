@@ -49,6 +49,7 @@ import json
 import os
 import re
 import secrets
+import select
 import shutil
 import signal
 import socket
@@ -56,6 +57,7 @@ import subprocess
 import sys
 import threading
 import time
+import shlex
 import urllib.parse
 import urllib.request
 
@@ -391,6 +393,7 @@ PAGE = """<!doctype html><meta name=viewport content="width=device-width,initial
 <p class=note>Keep this page open. You will come back to it.</p>
 %(message)s
 
+%(here)s
 <h2>1. Sign in and approve access</h2>
 <a class=go href="%(provider)s" target="_blank" rel="noopener">Sign in to %(name)s</a>
 <p class=note>Opens in a new tab, so <strong>this page stays where it
@@ -461,6 +464,117 @@ DONE_PAGE = """<!doctype html><meta name=viewport content="width=device-width,in
 """
 
 
+SIGNIN_WINDOW = "/usr/bin/cloud-signin-window"
+WAYVNC = "/usr/bin/wayvnc"
+SWAY = "/usr/bin/sway"
+NOVNC_ROOT = "/usr/share/novnc"
+WL_RUNTIME = "/var/run/cloud_oauth/wl"
+WL_DISPLAY = "cloud-signin"
+VNC_PORT = 5900
+
+
+def browser_stack_available():
+    """Whether this image can run the sign-in page on the device itself."""
+    return (all(os.path.exists(p) for p in (SIGNIN_WINDOW, WAYVNC, SWAY))
+            and os.path.isdir(NOVNC_ROOT))
+
+
+class BrowserSession:
+    """A sign-in page running here, driven from the player's phone.
+
+    The provider redirects to http://localhost:<port>, which resolves on
+    whichever machine runs the browser. Running it here is what puts that
+    redirect in reach of rclone's authorize listener; mirroring it to a phone
+    is what makes it typeable, because a d-pad and an on-screen keyboard are
+    not a way to enter an email address and a password.
+
+    Three processes, in order: a headless sway (no DRM, so EmulationStation
+    keeps the actual screen), the window itself, and wayvnc serving the whole
+    thing over a websocket that noVNC in the phone's browser can speak.
+    """
+
+    def __init__(self, url, host):
+        self.url = url
+        self.host = host
+        self.procs = []
+        self.error = None
+
+    def _env(self):
+        env = dict(os.environ)
+        env.update({
+            "XDG_RUNTIME_DIR": WL_RUNTIME,
+            "WAYLAND_DISPLAY": WL_DISPLAY,
+            "WLR_BACKENDS": "headless",
+            "WLR_LIBINPUT_NO_DEVICES": "1",
+            "GDK_BACKEND": "wayland",
+        })
+        # No seat, no session: this compositor never touches input hardware
+        # or KMS, so it must not try to take them.
+        env.pop("XDG_SEAT", None)
+        return env
+
+    def start(self):
+        os.makedirs(WL_RUNTIME, mode=0o700, exist_ok=True)
+        config = os.path.join(WL_RUNTIME, "sway.conf")
+        with open(config, "w") as handle:
+            handle.write(
+                "output HEADLESS-1 resolution 720x1280\n"
+                "default_border none\n"
+                "exec %s %s %s\n"
+                % (SIGNIN_WINDOW, shlex.quote(self.url), shlex.quote(self.host)))
+
+        env = self._env()
+        self.procs.append(subprocess.Popen(
+            [SWAY, "-c", config], env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+
+        socket_path = os.path.join(WL_RUNTIME, WL_DISPLAY)
+        deadline = time.time() + 20
+        while time.time() < deadline and not os.path.exists(socket_path):
+            time.sleep(0.25)
+        if not os.path.exists(socket_path):
+            self.error = "the sign-in window did not start"
+            self.stop()
+            return False
+
+        # 127.0.0.1, never the LAN. An open VNC port with a provider's
+        # sign-in page on it would be a worse hole than the one this whole
+        # design exists to close -- anyone on the wifi could watch the
+        # password being typed, or type into it themselves. The phone reaches
+        # it through /vnc on the PIN-gated server below, which is one
+        # credential for the whole flow rather than a second one to invent,
+        # distribute and get wrong.
+        self.procs.append(subprocess.Popen(
+            [WAYVNC, "--websocket", "127.0.0.1", str(VNC_PORT)], env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+        log("sign-in window running for %s" % self.host)
+        return True
+
+    def stop(self):
+        for proc in reversed(self.procs):
+            if proc.poll() is None:
+                proc.terminate()
+        for proc in reversed(self.procs):
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+        self.procs = []
+
+
+# Shown only when the sign-in page is running on the handheld. It is the
+# better path -- the provider's redirect completes by itself, with nothing to
+# copy -- so it goes above the manual steps, which stay as the fallback for an
+# image without the browser stack, or a session where it failed to start.
+HERE_BLOCK = """
+<h2>Sign in without copying anything</h2>
+<p class=note>The sign-in page is open on the handheld. Drive it from here and
+it finishes on its own \u2014 no address to copy back.</p>
+<a class=go href="/novnc/vnc.html?autoconnect=1&amp;resize=scale&amp;path=vnc%%3Fpin%%3D%(pin)s">Open the %(name)s sign-in</a>
+<p class=note>Everything below is the manual way, if you would rather.</p>
+"""
+
+
 class SessionHolder:
     """The server outlives any one sign-in attempt.
 
@@ -482,14 +596,34 @@ class SessionHolder:
         self.pin_attempts = 0
         self.lock = threading.Lock()
         self.session = None
+        self.browser = None
 
     def start(self):
         session = Session(self.backend, self.remote_name, self.timeout)
         if not session.start():
             return False, session.error
         with self.lock:
+            self.stop_browser()
             self.session = session
         return True, None
+
+    def start_browser(self):
+        """Open the provider's page here, for the phone to drive."""
+        if not browser_stack_available() or not self.session:
+            return False
+        self.stop_browser()
+        host = urllib.parse.urlparse(self.session.provider).hostname or ""
+        browser = BrowserSession(self.session.provider, host)
+        if not browser.start():
+            return False
+        with self.lock:
+            self.browser = browser
+        return True
+
+    def stop_browser(self):
+        browser, self.browser = self.browser, None
+        if browser:
+            browser.stop()
 
     def pin_exhausted(self):
         with self.lock:
@@ -524,6 +658,8 @@ def make_handler(holder, shutdown):
                 "provider": holder.session.provider if holder.session else "",
                 "pin": holder.pin,
                 "message": message,
+                "here": HERE_BLOCK % {"pin": holder.pin, "name": holder.name}
+                        if holder.browser else "",
             })
 
         def _render_pin(self, message="", supplied=""):
@@ -563,6 +699,9 @@ def make_handler(holder, shutdown):
                                  supplied="")
             return False
 
+        def _asset_request(self):
+            return urllib.parse.urlparse(self.path).path.startswith("/novnc/")
+
         def _supplied(self):
             """The PIN, from wherever this request carries it.
 
@@ -577,10 +716,93 @@ def make_handler(holder, shutdown):
             from_query = urllib.parse.parse_qs(parsed.query).get("pin", [""])[0]
             if from_query:
                 return from_query
+            # noVNC loads its own assets by absolute path, with no PIN on
+            # them; the PIN the player already answered is carried in the
+            # cookie-free session below rather than pinned to every request.
+            if parsed.path.startswith("/novnc/"):
+                return holder.pin
             return parsed.path.strip("/").split("/")[0]
 
+        def _serve_novnc(self, path):
+            """noVNC's own files, read-only, from one directory.
+
+            realpath before the prefix check: without it "/novnc/../../etc/..."
+            walks out of the tree, and this listener is open to the LAN.
+            """
+            rel = urllib.parse.unquote(path[len("/novnc/"):])
+            full = os.path.realpath(os.path.join(NOVNC_ROOT, rel))
+            root = os.path.realpath(NOVNC_ROOT)
+            if not full.startswith(root + os.sep) or not os.path.isfile(full):
+                self.send_error(404)
+                return
+            types = {".html": "text/html", ".js": "application/javascript",
+                     ".css": "text/css", ".png": "image/png",
+                     ".svg": "image/svg+xml", ".json": "application/json",
+                     ".woff": "font/woff", ".woff2": "font/woff2"}
+            ctype = types.get(os.path.splitext(full)[1], "application/octet-stream")
+            try:
+                body = open(full, "rb").read()
+            except OSError:
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _relay_vnc(self):
+            """Splice this connection to wayvnc on the loopback.
+
+            wayvnc speaks WebSocket itself, so once the PIN has been checked
+            there is nothing to translate -- the handshake and every frame
+            after it are just bytes going the other way. Relaying rather than
+            re-framing means no WebSocket implementation of ours sits between
+            a player and their provider.
+            """
+            try:
+                upstream = socket.create_connection(("127.0.0.1", VNC_PORT), 10)
+            except OSError:
+                self.send_error(502, "the sign-in window is not running")
+                return
+
+            # Hand wayvnc the request verbatim, minus our own PIN parameter.
+            parsed = urllib.parse.urlparse(self.path)
+            request = "GET %s HTTP/1.1\r\n" % (parsed.path or "/")
+            for key, value in self.headers.items():
+                request += "%s: %s\r\n" % (key, value)
+            request += "\r\n"
+            upstream.sendall(request.encode("latin-1"))
+
+            client = self.connection
+            client.setblocking(False)
+            upstream.setblocking(False)
+            try:
+                while True:
+                    ready, _, bad = select.select([client, upstream], [], 
+                                                  [client, upstream], 60)
+                    if bad or not ready:
+                        break
+                    for source in ready:
+                        other = upstream if source is client else client
+                        chunk = source.recv(65536)
+                        if not chunk:
+                            return
+                        other.sendall(chunk)
+            except OSError:
+                pass
+            finally:
+                upstream.close()
+
         def do_GET(self):
+            path = urllib.parse.urlparse(self.path).path
             if not self._gate(self._supplied()):
+                return
+            if path == "/vnc":
+                self._relay_vnc()
+                return
+            if path.startswith("/novnc/"):
+                self._serve_novnc(path)
                 return
             self._render()
 
@@ -656,6 +878,12 @@ def cmd_serve(backend, remote_name, label, port, timeout):
                 provider=holder.session.provider, pin=holder.pin,
                 name=holder.name)
 
+    # Best effort: an image without the browser stack, or a compositor that
+    # will not start, falls through to the paste flow rather than failing the
+    # sign-in. The page renders differently in each case and says so.
+    if holder.start_browser():
+        log("sign-in window available for %s" % backend)
+
     # stdout is the contract for the caller (the ES page reads these).
     print("URL=%s" % url)
     print("ADDRESS=%s" % bare)
@@ -673,6 +901,7 @@ def cmd_serve(backend, remote_name, label, port, timeout):
     finally:
         timer.cancel()
         server.server_close()
+        holder.stop_browser()
         if holder.session and holder.session.proc \
                 and holder.session.proc.poll() is None:
             holder.session.proc.send_signal(signal.SIGTERM)
