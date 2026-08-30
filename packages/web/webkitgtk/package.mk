@@ -38,6 +38,13 @@ pre_configure_target() {
                          -DENABLE_BUBBLEWRAP_SANDBOX=OFF \
                          -DENABLE_JOURNALD_LOG=OFF \
                          -DENABLE_GAMEPAD=OFF \
+                         -DENABLE_VIDEO=OFF \
+                         -DENABLE_WEB_AUDIO=OFF \
+                         -DENABLE_MEDIA_SOURCE=OFF \
+                         -DENABLE_MEDIA_STREAM=OFF \
+                         -DENABLE_MEDIA_RECORDER=OFF \
+                         -DUSE_GSTREAMER_GL=OFF \
+                         -DUSE_GSTREAMER_WEBRTC=OFF \
                          -DENABLE_WEB_RTC=OFF \
                          -DENABLE_WEBGL=OFF \
                          -DUSE_LIBSECRET=OFF \
