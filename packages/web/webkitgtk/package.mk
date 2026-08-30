@@ -31,6 +31,10 @@ pre_configure_target() {
                          -DENABLE_INTROSPECTION=OFF \
                          -DENABLE_DOCUMENTATION=OFF \
                          -DENABLE_SPELLCHECK=OFF \
+                         -DENABLE_SPEECH_SYNTHESIS=OFF \
+                         -DUSE_FLITE=OFF \
+                         -DENABLE_ENCRYPTED_MEDIA=OFF \
+                         -DENABLE_THUNDER=OFF \
                          -DENABLE_BUBBLEWRAP_SANDBOX=OFF \
                          -DENABLE_JOURNALD_LOG=OFF \
                          -DENABLE_GAMEPAD=OFF \
