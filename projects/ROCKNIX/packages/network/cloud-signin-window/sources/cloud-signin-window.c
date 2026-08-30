@@ -41,6 +41,30 @@ static gboolean host_permitted(const char *host)
         && g_ascii_strcasecmp(host + hl - al, allowed_host) == 0;
 }
 
+/* Instrumentation, kept deliberately. Keystrokes arriving from the phone go
+ * uinput -> kernel -> libinput -> sway -> here, and when they stopped landing
+ * every hop but the last could be proven individually. Without this line
+ * there is no way to tell "sway never delivered it" from "the page had
+ * nothing focused". */
+static gboolean on_key(GtkWidget *widget, GdkEventKey *event, gpointer data)
+{
+    g_message("key %s (%u)", event->string && *event->string ? event->string : "?",
+              event->keyval);
+    return FALSE;
+}
+
+/* WebKit only routes keys to the page when the WebView itself holds GTK
+ * focus. A window can be focused by the compositor -- sway reported
+ * focused=true -- while the widget inside it never took focus, which looks
+ * exactly like the keyboard not working. The page may also move focus during
+ * load, so this reasserts once the load settles. */
+static void on_load_changed(WebKitWebView *view, WebKitLoadEvent event,
+                            gpointer data)
+{
+    if (event == WEBKIT_LOAD_FINISHED)
+        gtk_widget_grab_focus(GTK_WIDGET(view));
+}
+
 static gboolean on_decide_policy(WebKitWebView *view,
                                  WebKitPolicyDecision *decision,
                                  WebKitPolicyDecisionType type,
@@ -89,10 +113,18 @@ int main(int argc, char **argv)
         WEBKIT_WEB_VIEW(webkit_web_view_new_with_context(context));
 
     g_signal_connect(view, "decide-policy", G_CALLBACK(on_decide_policy), NULL);
+    g_signal_connect(view, "load-changed", G_CALLBACK(on_load_changed), NULL);
+    g_signal_connect(window, "key-press-event", G_CALLBACK(on_key), NULL);
 
     gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));
+    gtk_widget_set_can_focus(GTK_WIDGET(view), TRUE);
     webkit_web_view_load_uri(view, argv[1]);
     gtk_widget_show_all(window);
+
+    /* present, then focus: the window has to be mapped and activated before
+     * the widget inside it can take keyboard focus. */
+    gtk_window_present(GTK_WINDOW(window));
+    gtk_widget_grab_focus(GTK_WIDGET(view));
 
     gtk_main();
     return 0;
