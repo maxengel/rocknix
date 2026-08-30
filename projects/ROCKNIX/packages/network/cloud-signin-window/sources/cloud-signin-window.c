@@ -75,16 +75,26 @@ static void on_load_changed(WebKitWebView *view, WebKitLoadEvent event,
      *
      * Skipped for hidden, disabled and consent-banner fields, and the page is
      * left alone if it has already focused something itself. */
+    /* Poll from inside the page rather than focusing once. LOAD_FINISHED
+     * fires when the document is done, but a provider's sign-in form is
+     * rendered by script after that -- so a single querySelector at load
+     * time finds nothing, focuses nothing, and every keystroke afterwards
+     * goes into a page with no cursor in it. That looked exactly like a
+     * broken keyboard and cost a debugging session.
+     *
+     * Gives up after ten seconds so a page that genuinely has no field does
+     * not keep a timer alive for the life of the window. */
     static const char *focus_first =
-        "(function () {"
-        "  if (document.activeElement &&"
-        "      ['INPUT','TEXTAREA'].indexOf(document.activeElement.tagName) >= 0)"
-        "    return;"
+        "(function poll(n) {"
+        "  var a = document.activeElement;"
+        "  if (a && ['INPUT','TEXTAREA'].indexOf(a.tagName) >= 0) return;"
         "  var f = document.querySelector("
         "    'input[type=email],input[type=text],input[type=password],"
-        "     input:not([type]),input[type=tel],input[type=number]');"
-        "  if (f && f.offsetParent !== null && !f.disabled) f.focus();"
-        "})();";
+        "     input:not([type]),input[type=tel]');"
+        "  if (f && f.offsetParent !== null && !f.disabled) { f.focus(); return; }"
+        "  if (n > 0) setTimeout(function () { poll(n - 1); }, 500);"
+        "})(20);";
+    g_message("load finished, asking the page for a field to focus");
     webkit_web_view_evaluate_javascript(view, focus_first, -1, NULL, NULL,
                                         NULL, NULL, NULL);
 }
