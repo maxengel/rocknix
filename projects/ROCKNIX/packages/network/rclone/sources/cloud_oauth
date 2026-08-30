@@ -471,8 +471,35 @@ WAYVNC = "/usr/bin/wayvnc"
 SWAY = "/usr/bin/sway"
 NOVNC_ROOT = "/usr/share/novnc"
 WL_RUNTIME = "/var/run/cloud_oauth/wl"
-WL_DISPLAY = "cloud-signin"
 VNC_PORT = 5900
+
+
+def stop_other_serves():
+    """End any other `cloud_oauth serve`, so this one can have the port.
+
+    cancel only ever killed rclone; a serve left running kept port 8080 and
+    the next attempt died on EADDRINUSE, before writing any state -- so the
+    handheld showed a blank address and nothing said why.
+
+    Walks /proc rather than calling pkill: `pkill -f "cloud_oauth serve"`
+    matches its own command line, and has killed the calling shell twice in
+    this project's history.
+    """
+    me = os.getpid()
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit() or int(entry) == me:
+            continue
+        try:
+            with open("/proc/%s/cmdline" % entry, "rb") as handle:
+                argv = handle.read().split(b"\0")
+        except OSError:
+            continue
+        if any(b"cloud_oauth" in a for a in argv) and b"serve" in argv:
+            try:
+                os.kill(int(entry), signal.SIGTERM)
+            except OSError:
+                pass
+    time.sleep(1)
 
 
 def browser_stack_available():
@@ -499,17 +526,30 @@ class BrowserSession:
         self.url = url
         self.host = host
         self.procs = []
+        self.display = None
+        self.log_file = None
+        self.log_path = None
         self.error = None
 
-    def _env(self):
+    def _env(self, display=None):
         env = dict(os.environ)
         env.update({
             "XDG_RUNTIME_DIR": WL_RUNTIME,
-            "WAYLAND_DISPLAY": WL_DISPLAY,
             "WLR_BACKENDS": "headless",
             "WLR_LIBINPUT_NO_DEVICES": "1",
+            "WLR_HEADLESS_OUTPUTS": "1",
+            # Software rendering, deliberately. The headless backend still
+            # allocates through GBM by default, and the compositor already
+            # running EmulationStation holds the DRM device -- so it fails
+            # with "gbm_bo_create: Permission denied", which reads like a
+            # permissions bug and is really contention over the GPU. Pixman
+            # avoids the device altogether, which is also why this can run
+            # without disturbing what is on the screen.
+            "WLR_RENDERER": "pixman",
             "GDK_BACKEND": "wayland",
         })
+        if display:
+            env["WAYLAND_DISPLAY"] = display
         # No seat, no session: this compositor never touches input hardware
         # or KMS, so it must not try to take them.
         env.pop("XDG_SEAT", None)
@@ -525,19 +565,36 @@ class BrowserSession:
                 "exec %s %s %s\n"
                 % (SIGNIN_WINDOW, shlex.quote(self.url), shlex.quote(self.host)))
 
+        # Kept, not discarded. Sending these to DEVNULL meant a compositor
+        # that failed to start looked identical to one that started fine and
+        # was never asked for -- the only evidence was a memory spike.
+        self.log_path = os.path.join(WL_RUNTIME, "session.log")
+        self.log_file = open(self.log_path, "w")
+
         env = self._env()
         self.procs.append(subprocess.Popen(
             [SWAY, "-c", config], env=env,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+            stdout=self.log_file, stderr=subprocess.STDOUT))
 
-        socket_path = os.path.join(WL_RUNTIME, WL_DISPLAY)
+        # sway names its own socket wayland-N; WAYLAND_DISPLAY tells clients
+        # which socket to use and has no say in what the compositor creates.
+        # Waiting for a name we chose meant waiting forever on a compositor
+        # that had started perfectly well. The runtime directory is ours
+        # alone, so whatever wayland-N turns up in it is the one.
         deadline = time.time() + 20
-        while time.time() < deadline and not os.path.exists(socket_path):
-            time.sleep(0.25)
-        if not os.path.exists(socket_path):
+        while time.time() < deadline and not self.display:
+            for name in sorted(os.listdir(WL_RUNTIME)):
+                if name.startswith("wayland-") and not name.endswith(".lock"):
+                    self.display = name
+                    break
+            if not self.display:
+                time.sleep(0.25)
+        if not self.display:
             self.error = "the sign-in window did not start"
+            log("compositor did not come up; see %s" % self.log_path)
             self.stop()
             return False
+        env = self._env(self.display)
 
         # 127.0.0.1, never the LAN. An open VNC port with a provider's
         # sign-in page on it would be a worse hole than the one this whole
@@ -554,11 +611,17 @@ class BrowserSession:
         # rather than crypto to get wrong.
         self.procs.append(subprocess.Popen(
             [WAYVNC, "127.0.0.1", str(VNC_PORT)], env=env,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
-        log("sign-in window running for %s" % self.host)
+            stdout=self.log_file, stderr=subprocess.STDOUT))
+        log("sign-in window running for %s on %s" % (self.host, self.display))
         return True
 
     def stop(self):
+        if self.log_file:
+            try:
+                self.log_file.close()
+            except OSError:
+                pass
+            self.log_file = None
         for proc in reversed(self.procs):
             if proc.poll() is None:
                 proc.terminate()
@@ -925,7 +988,9 @@ def cmd_serve(backend, remote_name, label, port, timeout):
         sys.stderr.write("rclone is not installed\n")
         return 2
 
-    # Nothing from the last attempt survives into this one.
+    # Nothing from the last attempt survives into this one -- including a
+    # serve still holding the port.
+    stop_other_serves()
     reset_state(status="starting", backend=backend)
 
     holder = SessionHolder(backend, remote_name, label, timeout)
@@ -1029,6 +1094,7 @@ def main(argv):
         return 0
 
     if command == "cancel":
+        stop_other_serves()
         subprocess.run(["pkill", "-f", "rclone authorize"], capture_output=True)
         # Clears the address, PIN and provider link as well as the status --
         # a dead session's details are not something to leave lying in

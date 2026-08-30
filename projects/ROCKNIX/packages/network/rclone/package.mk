@@ -14,7 +14,7 @@ PKG_VERSION="1.74.4"
 # somewhere useful if the browser is on the same machine as rclone's authorize
 # listener. wayvnc and novnc are how the player drives it from a phone.
 PKG_DEPENDS_TARGET="toolchain fuse rsync qrencode Python3 \
-                    webkitgtk cloud-signin-window wayvnc novnc"
+                    webkitgtk cloud-signin-window wayvnc novnc glib-networking"
 PKG_LONGDESC="rsync for cloud storage"
 PKG_TOOLCHAIN="manual"
 
