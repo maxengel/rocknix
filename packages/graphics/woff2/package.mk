@@ -11,5 +11,9 @@ PKG_DEPENDS_TARGET="toolchain brotli"
 PKG_LONGDESC="WOFF2 web font decoder, required by WebKit for downloadable fonts."
 PKG_TOOLCHAIN="cmake"
 
+# woff2 1.0.2 declares cmake_minimum_required(VERSION 3.0), which current
+# CMake refuses outright. The project itself is fine; only the declaration is
+# stale, and upstream has not tagged a release since 2020.
 PKG_CMAKE_OPTS_TARGET="-DBUILD_SHARED_LIBS=ON \
-                       -DCANONICAL_PREFIXES=ON"
+                       -DCANONICAL_PREFIXES=ON \
+                       -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
