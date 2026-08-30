@@ -61,8 +61,32 @@ static gboolean on_key(GtkWidget *widget, GdkEventKey *event, gpointer data)
 static void on_load_changed(WebKitWebView *view, WebKitLoadEvent event,
                             gpointer data)
 {
-    if (event == WEBKIT_LOAD_FINISHED)
-        gtk_widget_grab_focus(GTK_WIDGET(view));
+    if (event != WEBKIT_LOAD_FINISHED)
+        return;
+
+    gtk_widget_grab_focus(GTK_WIDGET(view));
+
+    /* Focusing the widget is not enough: the page itself has to have an
+     * element focused or the characters go nowhere, which is exactly what a
+     * broken keyboard looks like. Putting the cursor in the first real field
+     * is also what somebody would expect on opening a sign-in page -- they
+     * should be able to start typing without hunting for the box, whether
+     * they are typing on the handheld or from their phone.
+     *
+     * Skipped for hidden, disabled and consent-banner fields, and the page is
+     * left alone if it has already focused something itself. */
+    static const char *focus_first =
+        "(function () {"
+        "  if (document.activeElement &&"
+        "      ['INPUT','TEXTAREA'].indexOf(document.activeElement.tagName) >= 0)"
+        "    return;"
+        "  var f = document.querySelector("
+        "    'input[type=email],input[type=text],input[type=password],"
+        "     input:not([type]),input[type=tel],input[type=number]');"
+        "  if (f && f.offsetParent !== null && !f.disabled) f.focus();"
+        "})();";
+    webkit_web_view_evaluate_javascript(view, focus_first, -1, NULL, NULL,
+                                        NULL, NULL, NULL);
 }
 
 static gboolean on_decide_policy(WebKitWebView *view,
