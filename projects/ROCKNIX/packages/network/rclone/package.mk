@@ -9,12 +9,12 @@ PKG_VERSION="1.74.4"
 # real dependencies even though nothing links against them: upstream deleted
 # packages/compress/zip in a3d0ad0430, nothing referenced it, and backuptool
 # lost its archiver silently for months.
-# webkitgtk and friends are here because cloud_oauth needs a browser on the
-# device: a provider's OAuth redirect goes to localhost, so it only lands
-# somewhere useful if the browser is on the same machine as rclone's authorize
-# listener. wayvnc and novnc are how the player drives it from a phone.
+# webkitgtk is here because cloud_oauth needs a browser on the device: a
+# provider's OAuth redirect goes to localhost, so it only lands somewhere
+# useful if the browser is on the same machine as rclone's authorize listener.
+# glib-networking is what gives that browser TLS at all.
 PKG_DEPENDS_TARGET="toolchain fuse rsync qrencode Python3 \
-                    webkitgtk cloud-signin-window wayvnc novnc glib-networking"
+                    webkitgtk cloud-signin-window glib-networking"
 PKG_LONGDESC="rsync for cloud storage"
 PKG_TOOLCHAIN="manual"
 
