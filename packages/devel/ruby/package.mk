@@ -7,7 +7,7 @@ PKG_SHA256="540975969d1af42190d26ff629bc93b1c3f4bffff4ab253e245e125085e66266"
 PKG_LICENSE="BSD-2-Clause"
 PKG_SITE="https://www.ruby-lang.org/"
 PKG_URL="https://cache.ruby-lang.org/pub/ruby/${PKG_VERSION:0:3}/${PKG_NAME}-${PKG_VERSION}.tar.xz"
-PKG_DEPENDS_HOST="toolchain zlib:host"
+PKG_DEPENDS_HOST="toolchain zlib:host libyaml:host"
 PKG_LONGDESC="Ruby interpreter. Host-only: JavaScriptCore's bytecode generator is written in Ruby, so WebKit cannot be built without it."
 PKG_TOOLCHAIN="autotools"
 
