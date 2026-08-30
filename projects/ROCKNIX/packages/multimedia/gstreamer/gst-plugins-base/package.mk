@@ -13,10 +13,19 @@
 # pkg-config files and tools stay build-time only, as before.
 post_makeinstall_target() {
   local keep="${PKG_BUILD}/.rocknix-keep"
-  rm -rf "${keep}" && mkdir -p "${keep}"
-  cp -a ${INSTALL}/usr/lib/libgst*.so* "${keep}"/ 2>/dev/null || true
+  rm -rf "${keep}" && mkdir -p "${keep}/lib" "${keep}/plugins"
+  cp -a ${INSTALL}/usr/lib/libgst*.so* "${keep}/lib"/ 2>/dev/null || true
+  # The plugins as well as the libraries. Shipping only the libraries looks
+  # like it works -- everything links, WebKit starts -- and then WebKit asks
+  # the registry for the "appsink" element, gets NULL because the plugin that
+  # provides it was never installed, and segfaults calling g_object_set on
+  # it. The whole web process dies a second after every page load, which
+  # presents as keystrokes not arriving rather than as anything to do with
+  # media.
+  cp -a ${INSTALL}/usr/lib/gstreamer-1.0/*.so "${keep}/plugins"/ 2>/dev/null || true
   safe_remove ${INSTALL}
-  mkdir -p ${INSTALL}/usr/lib
-  cp -a "${keep}"/. ${INSTALL}/usr/lib/ 2>/dev/null || true
+  mkdir -p ${INSTALL}/usr/lib/gstreamer-1.0
+  cp -a "${keep}/lib"/. ${INSTALL}/usr/lib/ 2>/dev/null || true
+  cp -a "${keep}/plugins"/. ${INSTALL}/usr/lib/gstreamer-1.0/ 2>/dev/null || true
   rm -rf "${keep}"
 }
