@@ -149,6 +149,25 @@ static gboolean on_decide_policy(WebKitWebView *view,
     if (g_strcmp0(scheme, "http") != 0 && g_strcmp0(scheme, "https") != 0)
         return FALSE;
 
+    /* Only where the *player* would end up, not what the page loads.
+     *
+     * A sign-in page is assembled from other origins by design: Dropbox's
+     * form needs dropboxcaptcha.com, the "Continue with Google" button needs
+     * accounts.google.com. Filtering those refused the captcha, the form
+     * never became usable, and keystrokes that arrived correctly all the way
+     * to WebKit went nowhere -- which looked like a broken keyboard through
+     * four wrong diagnoses.
+     *
+     * What this is actually for is stopping the window becoming a way to
+     * browse the web: the player following Terms, or Privacy, and never
+     * coming back. That is a top-level navigation, and it is the only thing
+     * worth refusing. Subframes and resources load freely; the ephemeral
+     * context means none of it outlives the sign-in.
+     */
+    if (webkit_navigation_policy_decision_get_frame_name(
+            WEBKIT_NAVIGATION_POLICY_DECISION(decision)) != NULL)
+        return FALSE;       /* a named subframe, not the player going somewhere */
+
     if (!host_permitted(g_uri_get_host(parsed))) {
         g_message("refused navigation to %s", uri);
         webkit_policy_decision_ignore(decision);
