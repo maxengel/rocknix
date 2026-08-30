@@ -1,82 +1,24 @@
 # SPDX-License-Identifier: GPL-2.0
-# Copyright (C) 2016-present Team LibreELEC (https://libreelec.tv)
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
-PKG_NAME="weston"
-PKG_VERSION="14.0.2"
+. ${ROOT}/packages/wayland/weston/package.mk
 
-PKG_LICENSE="MIT"
-PKG_SITE="https://wayland.freedesktop.org/"
-PKG_URL="https://gitlab.freedesktop.org/wayland/weston/-/archive/${PKG_VERSION}/${PKG_NAME}-${PKG_VERSION}.tar.gz"
-PKG_DEPENDS_TARGET="toolchain wayland wayland-protocols libdrm libxkbcommon libxcb-cursor libinput cairo pango libjpeg-turbo dbus seatd glu ${OPENGL} libX11 xwayland libXcursor xkbcomp setxkbmap cairo xterm libwebp libthai"
-PKG_LONGDESC="Reference implementation of a Wayland compositor"
-PKG_PATCH_DIRS+="${DEVICE}"
+# Weston is here for one thing: hosting the sign-in window so a cloud
+# provider's OAuth redirect to localhost lands on this device rather than on
+# somebody's phone, where nothing is listening.
+#
+# The VNC backend rather than DRM, deliberately. It never touches the display,
+# so EmulationStation keeps running and keeps its hold on KMS -- the player
+# looks at the handheld for the address and does the typing on their phone.
+PKG_DEPENDS_TARGET+=" neatvnc aml"
 
-if [ "${PIPEWIRE_SUPPORT}" = "yes" ]; then
-  PKG_DEPENDS_TARGET+=" pipewire"
-  PKG_MESON_OPTS_TARGET+=" -Dpipewire=true"
-else
-  PKG_MESON_OPTS_TARGET+=" -Dpipewire=false"
-fi
+PKG_MESON_OPTS_TARGET="${PKG_MESON_OPTS_TARGET/-Dbackend-vnc=false/-Dbackend-vnc=true}"
+PKG_MESON_OPTS_TARGET="${PKG_MESON_OPTS_TARGET/-Dshell-kiosk=false/-Dshell-kiosk=true}"
 
-PKG_MESON_OPTS_TARGET+=" -Dbackend-drm=true \
-                         -Dbackend-drm-screencast-vaapi=false \
-                         -Dbackend-headless=false \
-                         -Dbackend-pipewire=true \
-                         -Dbackend-rdp=false \
-                         -Dscreenshare=false \
-                         -Dbackend-vnc=false \
-                         -Dbackend-wayland=true \
-                         -Dbackend-x11=false \
-                         -Dbackend-default=drm \
-                         -Drenderer-gl=true \
-                         -Dxwayland=true \
-                         -Dsystemd=true \
-                         -Dremoting=false \
-                         -Dshell-desktop=true \
-                         -Dshell-fullscreen=true \
-                         -Dshell-ivi=false \
-                         -Dshell-kiosk=true \
-                         -Ddesktop-shell-client-default="weston-desktop-shell" \
-                         -Dcolor-management-lcms=false \
-                         -Dimage-jpeg=true \
-                         -Dimage-webp=true \
-                         -Dtools=['terminal','debug','info']
-                         -Ddemo-clients=true \
-                         -Dsimple-clients=[] \
-                         -Dresize-pool=false \
-                         -Dwcap-decode=true \
-                         -Dtest-junit-xml=false \
-                         -Dtest-skip-is-failure=false \
-                         -Ddoc=false"
-
-pre_configure_target() {
-  # weston does not build with NDEBUG (requires assert for tests)
-  export TARGET_CFLAGS=$(echo ${TARGET_CFLAGS} | sed -e "s|-DNDEBUG||g")
-}
-
-post_makeinstall_target() {
-  mkdir -p ${INSTALL}/usr/lib/weston
-    cp ${PKG_DIR}/scripts/weston-config ${INSTALL}/usr/lib/weston
-
-  mkdir -p ${INSTALL}/usr/share/weston
-    cp ${PKG_DIR}/config/*ini ${INSTALL}/usr/share/weston
-
-  safe_remove ${INSTALL}/usr/share/wayland-sessions
-
-  for configfile in weston.ini kiosk.ini
-  do
-    sed -i -e "s|@WESTONFONTSIZE@|${WESTONFONTSIZE}|g" ${INSTALL}/usr/share/weston/${configfile}
-  done
-
-  if [ "${EMULATION_DEVICE}" = "yes" ] && \
-     [ ! "${BASE_ONLY}" == true ]
-  then
-    cat <<EOF >>${INSTALL}/usr/share/weston/weston.ini
-
-[launcher]
-path=/usr/bin/start_es.sh
-icon=/usr/config/emulationstation/resources/window_icon_24.png
-EOF
-  fi
-
+# The generic recipe enables weston.service, which would run a compositor from
+# boot on a device whose whole UI is EmulationStation on bare KMS. Nothing
+# here starts until somebody opens cloud setup; cloud_oauth launches it and
+# tears it down, which is what keeps the idle cost of all this at zero.
+post_install() {
+  :
 }
