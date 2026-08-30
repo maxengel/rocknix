@@ -2,8 +2,8 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="webkitgtk"
-PKG_VERSION="2.48.3"
-PKG_SHA256="d4dc5970f0fc6a529ff7fd67bcbfab2bbb5e91be789b2e9279640b3217a782c3"
+PKG_VERSION="2.52.6"
+PKG_SHA256="179a2ea3f8f6edd4be7f31fdc55afc57bd0729f1fba648c61d4181539ac116fc"
 PKG_LICENSE="LGPL-2.1-or-later AND BSD-2-Clause"
 PKG_SITE="https://webkitgtk.org/"
 PKG_URL="https://webkitgtk.org/releases/${PKG_NAME}-${PKG_VERSION}.tar.xz"
