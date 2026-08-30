@@ -1162,11 +1162,33 @@ def cmd_serve(backend, remote_name, label, port, timeout):
                 provider=holder.session.provider, pin=holder.pin,
                 name=holder.name)
 
-    # Best effort: an image without the browser stack, or a compositor that
-    # will not start, falls through to the paste flow rather than failing the
-    # sign-in. The page renders differently in each case and says so.
-    if holder.start_browser():
-        log("sign-in window available for %s" % backend)
+    # The window is not opened here. It covers the screen the moment it
+    # appears, and the address and QR the handheld is showing are how
+    # somebody gets a phone keyboard onto it -- opening it immediately means
+    # that screen flashes past before it can be read or scanned. The handheld
+    # asks for it when the player is ready.
+    #
+    # Best effort throughout: an image without the browser stack falls
+    # through to the paste flow rather than failing the sign-in, and the page
+    # says which one you are looking at.
+    def open_when_asked():
+        # Loops rather than opening once: pressing Start closes the window
+        # and gives the handheld back, and the player may well want it again
+        # -- to correct an address, or because they closed it by accident.
+        flag = state_path("open-browser")
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if os.path.exists(flag):
+                try:
+                    os.unlink(flag)
+                except OSError:
+                    pass
+                if holder.start_browser():
+                    log("sign-in window opened for %s" % backend)
+            time.sleep(0.4)
+
+    if browser_stack_available():
+        threading.Thread(target=open_when_asked, daemon=True).start()
 
     # stdout is the contract for the caller (the ES page reads these).
     print("URL=%s" % url)
@@ -1202,7 +1224,7 @@ def main(argv):
         sys.stderr.write(
             "usage: cloud_oauth serve <backend> [--name NAME] "
             "[--label 'Dropbox'] [--port N] [--timeout SECONDS]\n"
-            "       cloud_oauth url | info | status | cancel\n")
+            "       cloud_oauth url | info | status | open | cancel\n")
         return 1
 
     command = argv[1]
@@ -1228,12 +1250,21 @@ def main(argv):
         print(read_state().get("url", ""))
         return 0
 
+    if command == "open":
+        # Asked for by the handheld once the player has had a chance to read
+        # the address and scan the code.
+        os.makedirs(STATE_DIR, exist_ok=True)
+        open(state_path("open-browser"), "w").close()
+        return 0
+
     if command == "info":
         # One KEY=VALUE per line. `url` stays exactly as it was: the ES page
         # reads whichever of the two the running image provides, so an older
         # script and a newer page still agree on something.
         state = read_state()
-        for key in ("url", "address", "pin", "name", "provider", "status"):
+        state["on_device"] = "yes" if browser_stack_available() else "no"
+        for key in ("url", "address", "pin", "name", "provider", "status",
+                    "on_device"):
             print("%s=%s" % (key.upper(), state.get(key, "")))
         return 0
 
