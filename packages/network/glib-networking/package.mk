@@ -17,6 +17,5 @@ pre_configure_target() {
                          -Dopenssl=disabled \
                          -Dlibproxy=disabled \
                          -Dgnome_proxy=disabled \
-                         -Dinstalled_tests=false \
-                         -Dstatic_modules=false"
+                         -Dinstalled_tests=false"
 }
