@@ -11,11 +11,68 @@
 #
 # So keep the shared libraries and nothing else. The plugins, headers,
 # pkg-config files and tools stay build-time only, as before.
-# WebKit's media pipeline is built from appsrc/appsink, and upstream disables
-# that plugin because nothing else here wanted it. Without it WebKit asks the
-# registry for "appsink", gets NULL and segfaults on it, taking the whole web
-# process down a second after every page load.
-PKG_MESON_OPTS_TARGET="${PKG_MESON_OPTS_TARGET/-Dapp=disabled/-Dapp=enabled}"
+# WebKit builds its media pipeline out of appsrc/appsink, and upstream
+# disables that plugin because nothing else in the image wanted it. Without
+# it WebKit asks the registry for "appsink", gets NULL, and segfaults
+# dereferencing it -- taking the whole web process down a second after every
+# page load, which presents as keystrokes not reaching the page rather than
+# as anything to do with media.
+#
+# Restated in full rather than patched: the generic recipe builds this string
+# from scratch inside pre_configure_target, so a substitution at global scope
+# is overwritten before configure sees it, and there is no configure hook to
+# chain onto. Only -Dapp differs from upstream; keep the rest in step when
+# rebasing.
+pre_configure_target() {
+  PKG_MESON_OPTS_TARGET="-Dgl=disabled \
+                         -Dadder=disabled \
+                         -Dapp=enabled \
+                         -Daudioconvert=disabled \
+                         -Daudiomixer=disabled \
+                         -Daudiorate=disabled \
+                         -Daudioresample=disabled \
+                         -Daudiotestsrc=disabled \
+                         -Dcompositor=disabled \
+                         -Dencoding=disabled \
+                         -Dgio=disabled \
+                         -Dgio-typefinder=disabled \
+                         -Doverlaycomposition=disabled \
+                         -Dpbtypes=disabled \
+                         -Dplayback=disabled \
+                         -Drawparse=enabled \
+                         -Dsubparse=enabled \
+                         -Dtcp=disabled \
+                         -Dtypefind=disabled \
+                         -Dvideoconvertscale=disabled \
+                         -Dvideorate=disabled \
+                         -Dvideotestsrc=disabled \
+                         -Dvolume=disabled \
+                         -Dalsa=disabled \
+                         -Dcdparanoia=disabled \
+                         -Dlibvisual=disabled \
+                         -Dogg=disabled \
+                         -Dopus=disabled \
+                         -Dpango=disabled \
+                         -Dtheora=disabled \
+                         -Dtremor=disabled \
+                         -Dvorbis=disabled \
+                         -Dx11=disabled \
+                         -Dxshm=disabled \
+                         -Dxi=disabled \
+                         -Dxvideo=disabled \
+                         -Dexamples=disabled \
+                         -Dtests=disabled \
+                         -Dtools=disabled \
+                         -Dintrospection=disabled \
+                         -Dnls=disabled \
+                         -Dorc=disabled \
+                         -Dglib_debug=disabled \
+                         -Dglib_assert=false \
+                         -Dglib_checks=false \
+                         -Dpackage-name=gst-plugins-base \
+                         -Dpackage-origin=LibreELEC.tv \
+                         -Ddoc=disabled"
+}
 
 post_makeinstall_target() {
   local keep="${PKG_BUILD}/.rocknix-keep"
