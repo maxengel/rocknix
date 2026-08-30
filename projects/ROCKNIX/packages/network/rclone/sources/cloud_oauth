@@ -341,6 +341,12 @@ def display_name(backend, label=None):
     return backend.replace("_", " ").title()
 
 
+# Single %, not %%: this is substituted into the templates as a *value*
+# (%(style)s), so its percent signs are never seen by the formatter. Escaping
+# them the way the templates do shipped "width:100%%" as literal CSS, which
+# every browser discards -- which is how a four-character PIN box ended up
+# rendering at its default twenty-character width with wide letter spacing,
+# overflowing the card on a phone.
 STYLE = """
 body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:20px;background:#111;color:#eee}
 .card{max-width:34rem;margin:0 auto}
@@ -350,11 +356,17 @@ h2{font-size:1rem;margin:1.5rem 0 .5rem;color:#9cf;text-transform:uppercase;
 ol{padding-left:1.3rem;margin:.5rem 0}li{margin:.4rem 0}
 a.go{display:block;background:#2d7;color:#000;padding:14px;border-radius:8px;
      text-align:center;font-weight:600;text-decoration:none;margin:.5rem 0}
-input{width:100%%;padding:12px;font-size:16px;border-radius:8px;border:1px solid #555;
+input{width:100%;padding:12px;font-size:16px;border-radius:8px;border:1px solid #555;
       background:#1c1c1c;color:#eee;box-sizing:border-box}
-input.pin{font-size:22px;letter-spacing:.4em;text-align:center}
+/* Four characters do not need the width of a phone. Sized in ch so it tracks
+   the font rather than assuming one, and capped against the card so it still
+   shrinks rather than overflowing on a narrow screen. */
+input.pin{font-size:24px;letter-spacing:.5em;text-align:center;
+          width:7ch;max-width:100%;padding-left:.6em}
+form.narrow{text-align:center}
+form.narrow button{width:auto;min-width:9rem}
 button{margin-top:10px;padding:12px 20px;font-size:16px;border-radius:8px;
-       border:0;background:#4af;color:#000;font-weight:600;width:100%%}
+       border:0;background:#4af;color:#000;font-weight:600;width:100%}
 button.minor{background:#333;color:#ddd;font-weight:500}
 .note{color:#aaa;font-size:.9rem}
 .err{background:#722;padding:12px;border-radius:8px;margin:1rem 0}
@@ -379,32 +391,32 @@ PAGE = """<!doctype html><meta name=viewport content="width=device-width,initial
 <p class=note>Keep this page open. You will come back to it.</p>
 %(message)s
 
-<h2>Paste the address here</h2>
+<h2>1. Sign in and approve access</h2>
+<a class=go href="%(provider)s" target="_blank" rel="noopener">Sign in to %(name)s</a>
+<p class=note>Opens in a new tab, so <strong>this page stays where it
+is</strong>. Approve access, then come straight back here — what you bring
+back is only good for a couple of minutes.</p>
+
+<h2>2. Paste the address it lands on</h2>
+<p class=note>Approving sends the browser to an address it cannot open, so it
+shows an error — <em>"Safari cannot open the page"</em>, <em>"This site can't
+be reached"</em>, or similar. <strong>That error page is the point: its
+address is what we need.</strong> Tap its address bar, copy the whole thing,
+come back to this tab and paste it below.</p>
 <form method=post id=f>
 <input name=code placeholder="Paste here" autofocus
        autocapitalize=off autocorrect=off spellcheck=false inputmode=url>
 <input type=hidden name=pin value="%(pin)s">
 <button type=submit>Confirm</button>
 </form>
-<p class=note>After you approve access the browser lands on an error —
-<em>"Safari cannot open the page"</em>, <em>"This site can't be reached"</em>,
-or similar. <strong>That is expected, and it is how you get the
-address.</strong> Tap that page's address bar, copy the whole thing, return to
-this tab and paste it above.</p>
 <script>
-// Paste and it goes -- the address expires in about two minutes, and the
+// Paste and it goes -- what was pasted expires in about two minutes, and the
 // tester who lost one spent them looking for the button.
 document.querySelector("input[name=code]").addEventListener("paste", function () {
   var f = document.getElementById("f");
   setTimeout(function () { if (this.value.indexOf("code=") >= 0) f.submit(); }.bind(this), 50);
 });
 </script>
-
-<h2>Not signed in yet?</h2>
-<a class=go href="%(provider)s" target="_blank" rel="noopener">Sign in to %(name)s</a>
-<p class=note>This opens in a new tab, so <strong>this page stays where it
-is</strong>. Approve access and come straight back to it — the address is only
-good for a couple of minutes.</p>
 
 <form method=post>
 <input type=hidden name=pin value="%(pin)s">
@@ -425,7 +437,7 @@ PIN_PAGE = """<!doctype html><meta name=viewport content="width=device-width,ini
 <h1>Almost there</h1>
 %(message)s
 <p>The address on the handheld ends in four digits. Type them here.</p>
-<form method=get action="/">
+<form method=get action="/" class=narrow>
 <input class=pin name=pin inputmode=numeric pattern="[0-9]*" maxlength=4 autofocus
        autocomplete=off placeholder="0000" value="%(pin)s">
 <button type=submit>Continue</button>
