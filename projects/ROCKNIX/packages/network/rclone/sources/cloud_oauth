@@ -690,7 +690,8 @@ for _c in "abcdefghijklmnopqrstuvwxyz":
 
 NAMED_KEYS = {"enter": 28, "backspace": 14, "tab": 15, "escape": 1,
               "left": 105, "right": 106, "up": 103, "down": 108,
-              "home": 102, "end": 107, "delete": 111}
+              "home": 102, "end": 107, "delete": 111,
+              "pageup": 104, "pagedown": 109}
 KEY_LEFTSHIFT = 42
 
 # How long a key is held, and the gap before the next one. Roughly 130 words
@@ -808,6 +809,111 @@ class RemoteKeyboard:
         self.fd = None
 
 
+# The handheld's controls, as the kernel reports them. A gamepad is not a
+# keyboard: sway classifies this one as a tablet_pad, so GTK and WebKit
+# receive nothing at all from it. Without this bridge the sign-in page is
+# visible on the device and cannot be touched from the device -- and, worse,
+# cannot be left.
+BTN_SOUTH, BTN_EAST, BTN_NORTH, BTN_WEST = 304, 305, 307, 308
+BTN_TL, BTN_TR, BTN_SELECT, BTN_START, BTN_MODE = 310, 311, 314, 315, 316
+BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT = 544, 545, 546, 547
+
+# Arrows rather than Tab: WebKit's spatial navigation moves focus in the
+# direction pressed, which is what a d-pad means. Tab order on a login page
+# wanders through cookie banners and footer links.
+GAMEPAD_KEYS = {
+    BTN_DPAD_UP: "up", BTN_DPAD_DOWN: "down",
+    BTN_DPAD_LEFT: "left", BTN_DPAD_RIGHT: "right",
+    BTN_SOUTH: "enter",            # A activates what is focused
+    BTN_EAST: "backspace",         # B deletes, the usual handheld reading
+    BTN_NORTH: "tab",              # X steps forward if spatial nav gets stuck
+    BTN_TL: "home", BTN_TR: "end",
+}
+
+# Anything here ends the sign-in and gives the player their handheld back.
+GAMEPAD_QUIT = (BTN_START, BTN_MODE, BTN_SELECT)
+
+
+def find_gamepad():
+    """The device node for the handheld's controls, by capability not name.
+
+    Named lookups would need a table per device -- "H700 Gamepad" on one
+    handheld is something else on the next. A device carrying BTN_SOUTH and a
+    d-pad is a gamepad whatever it calls itself.
+    """
+    for entry in sorted(os.listdir("/sys/class/input")):
+        if not entry.startswith("event"):
+            continue
+        caps = "/sys/class/input/%s/device/capabilities/key" % entry
+        try:
+            words = open(caps).read().split()
+        except OSError:
+            continue
+        codes = set()
+        for index, word in enumerate(reversed(words)):
+            value = int(word, 16)
+            codes |= {index * 64 + bit for bit in range(value.bit_length())
+                      if value >> bit & 1}
+        if BTN_SOUTH in codes and BTN_DPAD_UP in codes:
+            return "/dev/input/" + entry
+    return None
+
+
+class GamepadBridge:
+    """Turn the handheld's buttons into keystrokes for the sign-in page.
+
+    Reads the gamepad's own event node -- evdev allows several readers, so
+    this does not take input away from EmulationStation -- and replays each
+    press through the same virtual keyboard the phone types on.
+    """
+
+    def __init__(self, keyboard, on_quit):
+        self.keyboard = keyboard
+        self.on_quit = on_quit
+        self.thread = None
+        self.stop_flag = threading.Event()
+
+    def start(self):
+        node = find_gamepad()
+        if not node:
+            log("no gamepad found; the sign-in page can only be driven from a phone")
+            return False
+        self.thread = threading.Thread(target=self._run, args=(node,), daemon=True)
+        self.thread.start()
+        log("gamepad bridge reading %s" % node)
+        return True
+
+    def _run(self, node):
+        try:
+            fd = os.open(node, os.O_RDONLY)
+        except OSError as exc:
+            log("could not read the gamepad: %s" % exc)
+            return
+        size = struct.calcsize("llHHi")
+        try:
+            while not self.stop_flag.is_set():
+                data = os.read(fd, size)
+                if len(data) < size:
+                    continue
+                _, _, etype, code, value = struct.unpack("llHHi", data)
+                if etype != EV_KEY or value != 1:     # presses only
+                    continue
+                if code in GAMEPAD_QUIT:
+                    log("player ended the sign-in from the handheld")
+                    self.on_quit()
+                    return
+                name = GAMEPAD_KEYS.get(code)
+                if name:
+                    self.keyboard.press(name)
+        except OSError:
+            pass
+        finally:
+            os.close(fd)
+
+    def stop(self):
+        self.stop_flag.set()
+
+
 class SessionHolder:
     """The server outlives any one sign-in attempt.
 
@@ -831,6 +937,7 @@ class SessionHolder:
         self.session = None
         self.browser = None
         self.keyboard = RemoteKeyboard()
+        self.gamepad = None
 
     def start(self):
         session = Session(self.backend, self.remote_name, self.timeout)
@@ -842,7 +949,7 @@ class SessionHolder:
         return True, None
 
     def start_browser(self):
-        """Open the provider's page here, for the phone to drive."""
+        """Open the provider's page here, for the handheld or a phone to drive."""
         if not browser_stack_available() or not self.session:
             return False
         self.stop_browser()
@@ -852,9 +959,19 @@ class SessionHolder:
             return False
         with self.lock:
             self.browser = browser
+
+        # The handheld's own controls, and with them a way back out. Without
+        # this the page is on the screen, cannot be driven from the device,
+        # and cannot be closed -- which strands the handheld in a browser.
+        self.keyboard.open()
+        self.gamepad = GamepadBridge(self.keyboard, self.stop_browser)
+        self.gamepad.start()
         return True
 
     def stop_browser(self):
+        gamepad, self.gamepad = self.gamepad, None
+        if gamepad:
+            gamepad.stop()
         browser, self.browser = self.browser, None
         if browser:
             browser.stop()

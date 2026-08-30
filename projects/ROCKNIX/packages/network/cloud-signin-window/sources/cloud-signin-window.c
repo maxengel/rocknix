@@ -83,8 +83,19 @@ static gboolean probe_tick(gpointer view)
  * nothing focused". */
 static gboolean on_key(GtkWidget *widget, GdkEventKey *event, gpointer data)
 {
-    g_message("key %s (%u)", event->string && *event->string ? event->string : "?",
-              event->keyval);
+    if (g_getenv("CLOUD_SIGNIN_DEBUG"))
+        g_message("key %s (%u)", event->string && *event->string ? event->string : "?",
+                  event->keyval);
+
+    /* A way out, always. The handheld's buttons are not a keyboard -- sway
+     * reports the gamepad as a tablet_pad -- so without something mapping
+     * them, this window covers the screen, cannot be driven from the device
+     * and cannot be closed. cloud_oauth maps Start to Escape; this is what
+     * receives it. */
+    if (event->keyval == GDK_KEY_Escape) {
+        gtk_main_quit();
+        return TRUE;
+    }
     return FALSE;
 }
 
@@ -98,6 +109,10 @@ static void on_load_changed(WebKitWebView *view, WebKitLoadEvent event,
 {
     if (event != WEBKIT_LOAD_FINISHED)
         return;
+
+    GtkWidget *stack = g_object_get_data(G_OBJECT(view), "stack");
+    if (stack)
+        gtk_stack_set_visible_child_name(GTK_STACK(stack), "page");
 
     gtk_widget_grab_focus(GTK_WIDGET(view));
 
@@ -238,11 +253,37 @@ int main(int argc, char **argv)
     WebKitWebView *view =
         WEBKIT_WEB_VIEW(webkit_web_view_new_with_context(context));
 
+    /* Spatial navigation: the arrow keys move focus to whatever is in that
+     * direction, which is what a d-pad means. Tab order on a provider's
+     * login page wanders through cookie banners and footer links before it
+     * reaches the password field. */
+    WebKitSettings *settings = webkit_web_view_get_settings(view);
+    webkit_settings_set_enable_spatial_navigation(settings, TRUE);
+    webkit_settings_set_enable_tabs_to_links(settings, TRUE);
+
     g_signal_connect(view, "decide-policy", G_CALLBACK(on_decide_policy), NULL);
     g_signal_connect(view, "load-changed", G_CALLBACK(on_load_changed), NULL);
     g_signal_connect(window, "key-press-event", G_CALLBACK(on_key), NULL);
 
-    gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));
+    /* Something to look at while the provider's page loads. Six seconds of
+     * a blank screen on a handheld reads as a crash, and the player has no
+     * other feedback that anything is happening. */
+    GtkWidget *stack = gtk_stack_new();
+    GtkWidget *loading = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    GtkWidget *spinner = gtk_spinner_new();
+    gtk_widget_set_size_request(spinner, 48, 48);
+    gtk_spinner_start(GTK_SPINNER(spinner));
+    gtk_widget_set_valign(loading, GTK_ALIGN_CENTER);
+    gtk_box_pack_start(GTK_BOX(loading), spinner, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(loading),
+                       gtk_label_new("Opening the sign-in page\u2026"),
+                       FALSE, FALSE, 0);
+    gtk_stack_add_named(GTK_STACK(stack), loading, "loading");
+    gtk_stack_add_named(GTK_STACK(stack), GTK_WIDGET(view), "page");
+    gtk_stack_set_visible_child_name(GTK_STACK(stack), "loading");
+    g_object_set_data(G_OBJECT(view), "stack", stack);
+
+    gtk_container_add(GTK_CONTAINER(window), stack);
     gtk_widget_set_can_focus(GTK_WIDGET(view), TRUE);
     webkit_web_view_load_uri(view, argv[1]);
     gtk_widget_show_all(window);
