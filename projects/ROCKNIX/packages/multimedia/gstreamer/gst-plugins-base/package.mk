@@ -11,6 +11,12 @@
 #
 # So keep the shared libraries and nothing else. The plugins, headers,
 # pkg-config files and tools stay build-time only, as before.
+# WebKit's media pipeline is built from appsrc/appsink, and upstream disables
+# that plugin because nothing else here wanted it. Without it WebKit asks the
+# registry for "appsink", gets NULL and segfaults on it, taking the whole web
+# process down a second after every page load.
+PKG_MESON_OPTS_TARGET="${PKG_MESON_OPTS_TARGET/-Dapp=disabled/-Dapp=enabled}"
+
 post_makeinstall_target() {
   local keep="${PKG_BUILD}/.rocknix-keep"
   rm -rf "${keep}" && mkdir -p "${keep}/lib" "${keep}/plugins"
