@@ -54,5 +54,7 @@ pre_configure_target() {
                          -DUSE_LCMS=OFF \
                          -DUSE_LIBHYPHEN=OFF \
                          -DENABLE_SAMPLING_PROFILER=OFF \
+                         -DUSE_SYSPROF_CAPTURE=OFF \
+                         -DUSE_SYSTEM_SYSPROF_CAPTURE=OFF \
                          -DCMAKE_BUILD_TYPE=Release"
 }
