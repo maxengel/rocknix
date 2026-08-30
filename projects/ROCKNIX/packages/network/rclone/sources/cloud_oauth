@@ -44,17 +44,16 @@
 # own, and requires a PIN shown on the handheld -- so reaching it takes the
 # device in your hands, not merely a seat on the wifi.
 
-import base64
-import hashlib
+import fcntl
 import http.server
 import json
 import os
 import re
 import secrets
-import select
 import shutil
 import signal
 import socket
+import struct
 import subprocess
 import sys
 import threading
@@ -377,6 +376,8 @@ button.minor{background:#333;color:#ddd;font-weight:500}
 .ok{background:#272;padding:12px;border-radius:8px;margin:1rem 0}
 .box{border:1px solid #444;border-radius:10px;padding:14px;margin:1rem 0}
 .big{font-size:1.6rem;text-align:center;margin:1rem 0}
+.keys{display:flex;gap:8px;margin-top:10px}
+.keys button{flex:1;margin-top:0}
 """
 
 # The paste field sits ABOVE the sign-in button on purpose. Somebody arriving
@@ -467,23 +468,53 @@ DONE_PAGE = """<!doctype html><meta name=viewport content="width=device-width,in
 
 
 SIGNIN_WINDOW = "/usr/bin/cloud-signin-window"
-WAYVNC = "/usr/bin/wayvnc"
-SWAY = "/usr/bin/sway"
-NOVNC_ROOT = "/usr/share/novnc"
-WL_RUNTIME = "/var/run/cloud_oauth/wl"
-VNC_PORT = 5900
+UINPUT = "/dev/uinput"
+
+
+def running_session():
+    """The Wayland session EmulationStation is already using.
+
+    The sign-in window runs as a client of *that* compositor rather than in
+    one of its own. A nested compositor cannot have the GPU -- the session
+    that owns the display holds it -- so it falls back to software
+    rasterisation, and the provider's page took about 150 seconds to paint
+    instead of two. Joining the existing session is both faster and simpler:
+    no second compositor, no mirroring, and the page appears on the screen
+    the player is already holding.
+    """
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        try:
+            with open("/proc/%s/cmdline" % entry, "rb") as handle:
+                argv = handle.read().split(b"\0")
+            if not argv or not argv[0].endswith(b"/sway"):
+                continue
+            with open("/proc/%s/environ" % entry, "rb") as handle:
+                env = dict(
+                    kv.split(b"=", 1) for kv in handle.read().split(b"\0")
+                    if b"=" in kv)
+        except OSError:
+            continue
+        runtime = env.get(b"XDG_RUNTIME_DIR", b"").decode()
+        if not runtime or not os.path.isdir(runtime):
+            continue
+        for name in sorted(os.listdir(runtime)):
+            if name.startswith("wayland-") and not name.endswith(".lock"):
+                return runtime, name
+    return None, None
 
 
 def stop_other_serves():
     """End any other `cloud_oauth serve`, so this one can have the port.
 
     cancel only ever killed rclone; a serve left running kept port 8080 and
-    the next attempt died on EADDRINUSE, before writing any state -- so the
+    the next attempt died on EADDRINUSE before writing any state -- so the
     handheld showed a blank address and nothing said why.
 
     Walks /proc rather than calling pkill: `pkill -f "cloud_oauth serve"`
-    matches its own command line, and has killed the calling shell twice in
-    this project's history.
+    matches its own command line, and has killed the calling shell repeatedly
+    in this project's history.
     """
     me = os.getpid()
     for entry in os.listdir("/proc"):
@@ -503,147 +534,253 @@ def stop_other_serves():
 
 
 def browser_stack_available():
-    """Whether this image can run the sign-in page on the device itself."""
-    return (all(os.path.exists(p) for p in (SIGNIN_WINDOW, WAYVNC, SWAY))
-            and os.path.isdir(NOVNC_ROOT))
+    """Whether this image can show a provider's page on the device itself."""
+    runtime, display = running_session()
+    return os.path.exists(SIGNIN_WINDOW) and runtime is not None
 
 
 class BrowserSession:
-    """A sign-in page running here, driven from the player's phone.
-
-    The provider redirects to http://localhost:<port>, which resolves on
-    whichever machine runs the browser. Running it here is what puts that
-    redirect in reach of rclone's authorize listener; mirroring it to a phone
-    is what makes it typeable, because a d-pad and an on-screen keyboard are
-    not a way to enter an email address and a password.
-
-    Three processes, in order: a headless sway (no DRM, so EmulationStation
-    keeps the actual screen), the window itself, and wayvnc serving the whole
-    thing over a websocket that noVNC in the phone's browser can speak.
-    """
+    """The provider's sign-in page, on this device's screen."""
 
     def __init__(self, url, host):
         self.url = url
         self.host = host
-        self.procs = []
-        self.display = None
+        self.proc = None
         self.log_file = None
         self.log_path = None
         self.error = None
 
-    def _env(self, display=None):
-        env = dict(os.environ)
-        env.update({
-            "XDG_RUNTIME_DIR": WL_RUNTIME,
-            "WLR_BACKENDS": "headless",
-            "WLR_LIBINPUT_NO_DEVICES": "1",
-            "WLR_HEADLESS_OUTPUTS": "1",
-            # Software rendering, deliberately. The headless backend still
-            # allocates through GBM by default, and the compositor already
-            # running EmulationStation holds the DRM device -- so it fails
-            # with "gbm_bo_create: Permission denied", which reads like a
-            # permissions bug and is really contention over the GPU. Pixman
-            # avoids the device altogether, which is also why this can run
-            # without disturbing what is on the screen.
-            "WLR_RENDERER": "pixman",
-            "GDK_BACKEND": "wayland",
-        })
-        if display:
-            env["WAYLAND_DISPLAY"] = display
-        # No seat, no session: this compositor never touches input hardware
-        # or KMS, so it must not try to take them.
-        env.pop("XDG_SEAT", None)
-        return env
-
     def start(self):
-        os.makedirs(WL_RUNTIME, mode=0o700, exist_ok=True)
-        config = os.path.join(WL_RUNTIME, "sway.conf")
-        with open(config, "w") as handle:
-            handle.write(
-                "output HEADLESS-1 resolution 720x1280\n"
-                "default_border none\n"
-                "exec %s %s %s\n"
-                % (SIGNIN_WINDOW, shlex.quote(self.url), shlex.quote(self.host)))
+        runtime, display = running_session()
+        if not runtime:
+            self.error = "no display session to show the sign-in page on"
+            return False
 
-        # Kept, not discarded. Sending these to DEVNULL meant a compositor
-        # that failed to start looked identical to one that started fine and
-        # was never asked for -- the only evidence was a memory spike.
-        self.log_path = os.path.join(WL_RUNTIME, "session.log")
+        os.makedirs("/var/run/cloud_oauth", exist_ok=True)
+        self.log_path = "/var/run/cloud_oauth/window.log"
+        # Kept rather than discarded: a window that fails to start otherwise
+        # looks exactly like one that started and was never asked for.
         self.log_file = open(self.log_path, "w")
 
-        env = self._env()
-        self.procs.append(subprocess.Popen(
-            [SWAY, "-c", config], env=env,
-            stdout=self.log_file, stderr=subprocess.STDOUT))
-
-        # sway names its own socket wayland-N; WAYLAND_DISPLAY tells clients
-        # which socket to use and has no say in what the compositor creates.
-        # Waiting for a name we chose meant waiting forever on a compositor
-        # that had started perfectly well. The runtime directory is ours
-        # alone, so whatever wayland-N turns up in it is the one.
-        deadline = time.time() + 20
-        while time.time() < deadline and not self.display:
-            for name in sorted(os.listdir(WL_RUNTIME)):
-                if name.startswith("wayland-") and not name.endswith(".lock"):
-                    self.display = name
-                    break
-            if not self.display:
-                time.sleep(0.25)
-        if not self.display:
-            self.error = "the sign-in window did not start"
-            log("compositor did not come up; see %s" % self.log_path)
-            self.stop()
-            return False
-        env = self._env(self.display)
-
-        # 127.0.0.1, never the LAN. An open VNC port with a provider's
-        # sign-in page on it would be a worse hole than the one this whole
-        # design exists to close -- anyone on the wifi could watch the
-        # password being typed, or type into it themselves. The phone reaches
-        # it through /vnc on the PIN-gated server below, which is one
-        # credential for the whole flow rather than a second one to invent,
-        # distribute and get wrong.
-        #
-        # Plain RFB, not --websocket: neatvnc only compiles its WebSocket
-        # transport against nettle, and nettle 4.0 moved the API out from
-        # under neatvnc 1.0.1 (there is no newer release). The bridge below
-        # does the framing instead, which is a well-specified transformation
-        # rather than crypto to get wrong.
-        self.procs.append(subprocess.Popen(
-            [WAYVNC, "127.0.0.1", str(VNC_PORT)], env=env,
-            stdout=self.log_file, stderr=subprocess.STDOUT))
-        log("sign-in window running for %s on %s" % (self.host, self.display))
+        env = dict(os.environ)
+        env.update({
+            "XDG_RUNTIME_DIR": runtime,
+            "WAYLAND_DISPLAY": display,
+            "GDK_BACKEND": "wayland",
+        })
+        self.proc = subprocess.Popen(
+            [SIGNIN_WINDOW, self.url, registrable_domain(self.host)],
+            env=env, stdout=self.log_file, stderr=subprocess.STDOUT)
+        log("sign-in window opened on %s for %s" % (display, self.host))
         return True
 
     def stop(self):
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+        self.proc = None
         if self.log_file:
             try:
                 self.log_file.close()
             except OSError:
                 pass
             self.log_file = None
-        for proc in reversed(self.procs):
-            if proc.poll() is None:
-                proc.terminate()
-        for proc in reversed(self.procs):
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-        self.procs = []
 
 
-# Shown only when the sign-in page is running on the handheld. It is the
-# better path -- the provider's redirect completes by itself, with nothing to
-# copy -- so it goes above the manual steps, which stay as the fallback for an
-# image without the browser stack, or a session where it failed to start.
+def registrable_domain(host):
+    """dropbox.com from www.dropbox.com.
+
+    Providers bounce a sign-in through their own subdomains -- Dropbox goes
+    via marketing.dropbox.com -- so pinning navigation to the exact host the
+    authorize URL used refuses legitimate steps of the flow. Two labels is a
+    blunt rule that is wrong for co.uk and right for every provider rclone
+    talks to; the window treats it as a suffix, not an exact match.
+    """
+    parts = [p for p in (host or "").split(".") if p]
+    return ".".join(parts[-2:]) if len(parts) > 2 else (host or "")
+
+
+# Shown when the sign-in page is open on the handheld itself. That is the good
+# path: the redirect completes on its own and nothing has to be copied.
+#
+# The keyboard below is an option, not a requirement. On a 6" handheld with a
+# touchscreen, typing on the device is perfectly reasonable and this page is
+# unnecessary; on a 3.5" screen driven by a d-pad it is the difference between
+# a minute of misery and a few seconds. Both work, because the page is on the
+# device's screen either way -- so the choice is the player's, not ours.
 HERE_BLOCK = """
-<h2>Sign in without copying anything</h2>
-<p class=note>The sign-in page is open on the handheld. Drive it from here and
-it finishes on its own \u2014 no address to copy back.</p>
-<a class=go href="/novnc/vnc.html?autoconnect=1&amp;resize=scale&amp;path=vnc%%3Fpin%%3D%(pin)s">Open the %(name)s sign-in</a>
-<p class=note>Everything below is the manual way, if you would rather.</p>
+<h2>Sign in on the handheld</h2>
+<p class=note>The %(name)s page is open on your handheld's screen. Sign in
+there and it finishes on its own \u2014 nothing to copy back.</p>
+
+<div class=box>
+<p class=note><strong>Typing on the handheld is fine</strong> if its screen and
+controls suit you. If not, type here and the keystrokes go straight to it.</p>
+<input id=kb placeholder="Type here, it appears on the handheld"
+       autocapitalize=off autocorrect=off spellcheck=false>
+<div class=keys>
+<button type=button class=minor data-key=tab>Tab</button>
+<button type=button class=minor data-key=backspace>Backspace</button>
+<button type=button class=minor data-key=enter>Enter</button>
+</div>
+</div>
+
+<script>
+// Send each keystroke as it happens rather than a whole field at once: the
+// page on the handheld is a real login form, so it reacts to typing --
+// validating an address, enabling a button, moving focus.
+(function () {
+  var box = document.getElementById("kb");
+  var pin = "%(pin)s";
+  function send(body) {
+    return fetch("/" + pin, {
+      method: "POST",
+      headers: {"Content-Type": "application/x-www-form-urlencoded"},
+      body: body + "&pin=" + encodeURIComponent(pin)
+    });
+  }
+  box.addEventListener("input", function () {
+    var v = box.value;
+    if (!v) return;
+    box.value = "";
+    send("type=" + encodeURIComponent(v));
+  });
+  box.addEventListener("keydown", function (e) {
+    var named = {Enter: "enter", Backspace: "backspace", Tab: "tab"}[e.key];
+    if (named) { e.preventDefault(); send("key=" + named); }
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-key]"), function (b) {
+    b.addEventListener("click", function () { send("key=" + b.dataset.key); box.focus(); });
+  });
+})();
+</script>
+
+<p class=note>Everything below is the older way, if the page above did not
+open on the handheld.</p>
 """
+
+
+# Linux input constants, from include/uapi/linux/input-event-codes.h.
+EV_SYN, EV_KEY = 0x00, 0x01
+SYN_REPORT = 0
+UI_SET_EVBIT, UI_SET_KEYBIT = 0x40045564, 0x40045565
+UI_DEV_CREATE, UI_DEV_DESTROY = 0x5501, 0x5502
+
+# US layout, which is what the on-screen keyboard and the browser both assume.
+# Only what a sign-in needs: an address, a password, and the keys to correct
+# and submit them.
+KEYMAP = {}
+for _i, _c in enumerate("abcdefghijklmnopqrstuvwxyz"):
+    KEYMAP[_c] = ((30, 48, 46, 32, 18, 33, 34, 35, 23, 36, 37, 38, 50,
+                   49, 24, 25, 16, 19, 31, 20, 22, 47, 17, 45, 21, 44)[_i], False)
+for _i, _c in enumerate("1234567890"):
+    KEYMAP[_c] = (2 + _i, False)
+KEYMAP.update({
+    " ": (57, False), "-": (12, False), "=": (13, False), "[": (26, False),
+    "]": (27, False), "\\": (43, False), ";": (39, False), "'": (40, False),
+    "`": (41, False), ",": (51, False), ".": (52, False), "/": (53, False),
+})
+for _plain, _shifted in zip("1234567890-=[]\\;',./`", '!@#$%^&*()_+{}|:"<>?~'):
+    KEYMAP[_shifted] = (KEYMAP[_plain][0], True)
+for _c in "abcdefghijklmnopqrstuvwxyz":
+    KEYMAP[_c.upper()] = (KEYMAP[_c][0], True)
+
+NAMED_KEYS = {"enter": 28, "backspace": 14, "tab": 15, "escape": 1,
+              "left": 105, "right": 106, "up": 103, "down": 108,
+              "home": 102, "end": 107, "delete": 111}
+KEY_LEFTSHIFT = 42
+
+
+class RemoteKeyboard:
+    """A keyboard the phone can type on, for the window on the handheld.
+
+    The player reads the provider's page on the device's own screen and types
+    on the keyboard they already know how to use. Nothing is mirrored, so the
+    only thing crossing the network is a keystroke -- which is why this
+    replaced streaming the display.
+
+    uinput rather than the Wayland virtual-keyboard protocol: it needs no
+    Wayland client of our own, and sway picks the device up through libinput
+    exactly as it would a keyboard someone plugged in.
+    """
+
+    def __init__(self):
+        self.fd = None
+
+    def open(self):
+        if self.fd is not None:
+            return True
+        try:
+            fd = os.open(UINPUT, os.O_WRONLY | os.O_NONBLOCK)
+        except OSError as exc:
+            log("no virtual keyboard: %s" % exc)
+            return False
+        try:
+            fcntl.ioctl(fd, UI_SET_EVBIT, EV_KEY)
+            fcntl.ioctl(fd, UI_SET_EVBIT, EV_SYN)
+            for code in set(list(NAMED_KEYS.values())
+                            + [c for c, _ in KEYMAP.values()] + [KEY_LEFTSHIFT]):
+                fcntl.ioctl(fd, UI_SET_KEYBIT, code)
+            # struct uinput_user_dev: name[80], id{bustype,vendor,product,
+            # version}, ff_effects_max, then the absmin/max/fuzz/flat arrays.
+            name = b"ROCKNIX cloud sign-in".ljust(80, b"\0")
+            os.write(fd, name + struct.pack("HHHHi", 0x03, 0x1209, 0x0001, 1, 0)
+                     + b"\0" * (4 * 64 * 4))
+            fcntl.ioctl(fd, UI_DEV_CREATE)
+        except OSError as exc:
+            log("could not create the virtual keyboard: %s" % exc)
+            os.close(fd)
+            return False
+        # udev and libinput need a moment to notice a new device.
+        time.sleep(0.5)
+        self.fd = fd
+        log("virtual keyboard ready")
+        return True
+
+    def _emit(self, etype, code, value):
+        os.write(self.fd, struct.pack("llHHi", 0, 0, etype, code, value))
+
+    def _tap(self, code, shift=False):
+        if shift:
+            self._emit(EV_KEY, KEY_LEFTSHIFT, 1)
+        self._emit(EV_KEY, code, 1)
+        self._emit(EV_KEY, code, 0)
+        if shift:
+            self._emit(EV_KEY, KEY_LEFTSHIFT, 0)
+        self._emit(EV_SYN, SYN_REPORT, 0)
+
+    def type_text(self, text):
+        """Send printable characters. Returns how many were sent."""
+        if not self.open():
+            return 0
+        sent = 0
+        for char in text:
+            entry = KEYMAP.get(char)
+            if entry is None:
+                continue        # not on a US layout; silently skipped
+            self._tap(*entry)
+            sent += 1
+        return sent
+
+    def press(self, name):
+        code = NAMED_KEYS.get(name)
+        if code is None or not self.open():
+            return False
+        self._tap(code)
+        return True
+
+    def close(self):
+        if self.fd is None:
+            return
+        try:
+            fcntl.ioctl(self.fd, UI_DEV_DESTROY)
+        except OSError:
+            pass
+        os.close(self.fd)
+        self.fd = None
 
 
 class SessionHolder:
@@ -668,6 +805,7 @@ class SessionHolder:
         self.lock = threading.Lock()
         self.session = None
         self.browser = None
+        self.keyboard = RemoteKeyboard()
 
     def start(self):
         session = Session(self.backend, self.remote_name, self.timeout)
@@ -695,6 +833,7 @@ class SessionHolder:
         browser, self.browser = self.browser, None
         if browser:
             browser.stop()
+        self.keyboard.close()
 
     def pin_exhausted(self):
         with self.lock:
@@ -770,9 +909,6 @@ def make_handler(holder, shutdown):
                                  supplied="")
             return False
 
-        def _asset_request(self):
-            return urllib.parse.urlparse(self.path).path.startswith("/novnc/")
-
         def _supplied(self):
             """The PIN, from wherever this request carries it.
 
@@ -787,156 +923,10 @@ def make_handler(holder, shutdown):
             from_query = urllib.parse.parse_qs(parsed.query).get("pin", [""])[0]
             if from_query:
                 return from_query
-            # noVNC loads its own assets by absolute path, with no PIN on
-            # them; the PIN the player already answered is carried in the
-            # cookie-free session below rather than pinned to every request.
-            if parsed.path.startswith("/novnc/"):
-                return holder.pin
             return parsed.path.strip("/").split("/")[0]
 
-        def _serve_novnc(self, path):
-            """noVNC's own files, read-only, from one directory.
-
-            realpath before the prefix check: without it "/novnc/../../etc/..."
-            walks out of the tree, and this listener is open to the LAN.
-            """
-            rel = urllib.parse.unquote(path[len("/novnc/"):])
-            full = os.path.realpath(os.path.join(NOVNC_ROOT, rel))
-            root = os.path.realpath(NOVNC_ROOT)
-            if not full.startswith(root + os.sep) or not os.path.isfile(full):
-                self.send_error(404)
-                return
-            types = {".html": "text/html", ".js": "application/javascript",
-                     ".css": "text/css", ".png": "image/png",
-                     ".svg": "image/svg+xml", ".json": "application/json",
-                     ".woff": "font/woff", ".woff2": "font/woff2"}
-            ctype = types.get(os.path.splitext(full)[1], "application/octet-stream")
-            try:
-                body = open(full, "rb").read()
-            except OSError:
-                self.send_error(404)
-                return
-            self.send_response(200)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def _ws_accept(self, key):
-            digest = hashlib.sha1(
-                (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()
-            return base64.b64encode(digest).decode()
-
-        def _relay_vnc(self):
-            """Bridge the phone's WebSocket to wayvnc's RFB port.
-
-            Browsers speak WebSocket and nothing else; wayvnc here speaks
-            plain RFB, because its WebSocket transport needs a nettle older
-            than the one this image ships. What is between them is framing --
-            a mask, a length and an opcode -- not security. The security is
-            that this endpoint is behind the PIN and wayvnc is on loopback.
-            """
-            key = self.headers.get("Sec-WebSocket-Key")
-            if not key:
-                self.send_error(400, "expected a WebSocket handshake")
-                return
-            try:
-                upstream = socket.create_connection(("127.0.0.1", VNC_PORT), 10)
-            except OSError:
-                self.send_error(502, "the sign-in window is not running")
-                return
-
-            protocol = self.headers.get("Sec-WebSocket-Protocol", "")
-            handshake = ("HTTP/1.1 101 Switching Protocols\r\n"
-                         "Upgrade: websocket\r\n"
-                         "Connection: Upgrade\r\n"
-                         "Sec-WebSocket-Accept: %s\r\n" % self._ws_accept(key))
-            if "binary" in protocol:
-                handshake += "Sec-WebSocket-Protocol: binary\r\n"
-            handshake += "\r\n"
-
-            client = self.connection
-            client.sendall(handshake.encode())
-
-            def frame(payload):
-                head = bytearray([0x82])
-                n = len(payload)
-                if n < 126:
-                    head.append(n)
-                elif n < (1 << 16):
-                    head.append(126); head += n.to_bytes(2, "big")
-                else:
-                    head.append(127); head += n.to_bytes(8, "big")
-                return bytes(head) + payload
-
-            buffered = bytearray()
-
-            def unframe():
-                """Whole frames out of `buffered`; b'' means the peer closed."""
-                out = bytearray()
-                while True:
-                    if len(buffered) < 2:
-                        return bytes(out)
-                    b0, b1 = buffered[0], buffered[1]
-                    opcode, masked, length = b0 & 0x0F, b1 & 0x80, b1 & 0x7F
-                    offset = 2
-                    if length == 126:
-                        if len(buffered) < 4:
-                            return bytes(out)
-                        length = int.from_bytes(buffered[2:4], "big"); offset = 4
-                    elif length == 127:
-                        if len(buffered) < 10:
-                            return bytes(out)
-                        length = int.from_bytes(buffered[2:10], "big"); offset = 10
-                    mask = b""
-                    if masked:
-                        if len(buffered) < offset + 4:
-                            return bytes(out)
-                        mask = bytes(buffered[offset:offset + 4]); offset += 4
-                    if len(buffered) < offset + length:
-                        return bytes(out)
-                    payload = bytes(buffered[offset:offset + length])
-                    del buffered[:offset + length]
-                    if mask:
-                        payload = bytes(c ^ mask[i % 4] for i, c in enumerate(payload))
-                    if opcode == 0x8:          # close
-                        raise ConnectionResetError
-                    if opcode in (0x1, 0x2):   # text or binary carry RFB
-                        out += payload
-
-            client.setblocking(False)
-            upstream.setblocking(False)
-            try:
-                while True:
-                    ready, _, bad = select.select([client, upstream], [],
-                                                  [client, upstream], 300)
-                    if bad or not ready:
-                        break
-                    for source in ready:
-                        chunk = source.recv(65536)
-                        if not chunk:
-                            return
-                        if source is client:
-                            buffered.extend(chunk)
-                            payload = unframe()
-                            if payload:
-                                upstream.sendall(payload)
-                        else:
-                            client.sendall(frame(chunk))
-            except (OSError, ConnectionResetError):
-                pass
-            finally:
-                upstream.close()
-
         def do_GET(self):
-            path = urllib.parse.urlparse(self.path).path
             if not self._gate(self._supplied()):
-                return
-            if path == "/vnc":
-                self._relay_vnc()
-                return
-            if path.startswith("/novnc/"):
-                self._serve_novnc(path)
                 return
             self._render()
 
@@ -945,6 +935,22 @@ def make_handler(holder, shutdown):
             fields = urllib.parse.parse_qs(
                 self.rfile.read(length).decode("utf-8", "replace"))
             if not self._gate(fields.get("pin", [""])[0] or self._supplied()):
+                return
+
+            if fields.get("type") or fields.get("key"):
+                if not holder.browser:
+                    self._render('<div class=err>The sign-in page is not '
+                                 'open on the handheld.</div>')
+                    return
+                text = fields.get("type", [""])[0]
+                named = fields.get("key", [""])[0]
+                sent = holder.keyboard.type_text(text) if text else 0
+                if named:
+                    holder.keyboard.press(named)
+                self.send_response(204)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                log("typed %d characters%s" % (sent, " + " + named if named else ""))
                 return
 
             if fields.get("restart"):
