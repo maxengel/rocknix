@@ -44,6 +44,8 @@
 # own, and requires a PIN shown on the handheld -- so reaching it takes the
 # device in your hands, not merely a seat on the wifi.
 
+import base64
+import hashlib
 import http.server
 import json
 import os
@@ -544,8 +546,14 @@ class BrowserSession:
         # it through /vnc on the PIN-gated server below, which is one
         # credential for the whole flow rather than a second one to invent,
         # distribute and get wrong.
+        #
+        # Plain RFB, not --websocket: neatvnc only compiles its WebSocket
+        # transport against nettle, and nettle 4.0 moved the API out from
+        # under neatvnc 1.0.1 (there is no newer release). The bridge below
+        # does the framing instead, which is a well-specified transformation
+        # rather than crypto to get wrong.
         self.procs.append(subprocess.Popen(
-            [WAYVNC, "--websocket", "127.0.0.1", str(VNC_PORT)], env=env,
+            [WAYVNC, "127.0.0.1", str(VNC_PORT)], env=env,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
         log("sign-in window running for %s" % self.host)
         return True
@@ -751,45 +759,108 @@ def make_handler(holder, shutdown):
             self.end_headers()
             self.wfile.write(body)
 
-        def _relay_vnc(self):
-            """Splice this connection to wayvnc on the loopback.
+        def _ws_accept(self, key):
+            digest = hashlib.sha1(
+                (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()
+            return base64.b64encode(digest).decode()
 
-            wayvnc speaks WebSocket itself, so once the PIN has been checked
-            there is nothing to translate -- the handshake and every frame
-            after it are just bytes going the other way. Relaying rather than
-            re-framing means no WebSocket implementation of ours sits between
-            a player and their provider.
+        def _relay_vnc(self):
+            """Bridge the phone's WebSocket to wayvnc's RFB port.
+
+            Browsers speak WebSocket and nothing else; wayvnc here speaks
+            plain RFB, because its WebSocket transport needs a nettle older
+            than the one this image ships. What is between them is framing --
+            a mask, a length and an opcode -- not security. The security is
+            that this endpoint is behind the PIN and wayvnc is on loopback.
             """
+            key = self.headers.get("Sec-WebSocket-Key")
+            if not key:
+                self.send_error(400, "expected a WebSocket handshake")
+                return
             try:
                 upstream = socket.create_connection(("127.0.0.1", VNC_PORT), 10)
             except OSError:
                 self.send_error(502, "the sign-in window is not running")
                 return
 
-            # Hand wayvnc the request verbatim, minus our own PIN parameter.
-            parsed = urllib.parse.urlparse(self.path)
-            request = "GET %s HTTP/1.1\r\n" % (parsed.path or "/")
-            for key, value in self.headers.items():
-                request += "%s: %s\r\n" % (key, value)
-            request += "\r\n"
-            upstream.sendall(request.encode("latin-1"))
+            protocol = self.headers.get("Sec-WebSocket-Protocol", "")
+            handshake = ("HTTP/1.1 101 Switching Protocols\r\n"
+                         "Upgrade: websocket\r\n"
+                         "Connection: Upgrade\r\n"
+                         "Sec-WebSocket-Accept: %s\r\n" % self._ws_accept(key))
+            if "binary" in protocol:
+                handshake += "Sec-WebSocket-Protocol: binary\r\n"
+            handshake += "\r\n"
 
             client = self.connection
+            client.sendall(handshake.encode())
+
+            def frame(payload):
+                head = bytearray([0x82])
+                n = len(payload)
+                if n < 126:
+                    head.append(n)
+                elif n < (1 << 16):
+                    head.append(126); head += n.to_bytes(2, "big")
+                else:
+                    head.append(127); head += n.to_bytes(8, "big")
+                return bytes(head) + payload
+
+            buffered = bytearray()
+
+            def unframe():
+                """Whole frames out of `buffered`; b'' means the peer closed."""
+                out = bytearray()
+                while True:
+                    if len(buffered) < 2:
+                        return bytes(out)
+                    b0, b1 = buffered[0], buffered[1]
+                    opcode, masked, length = b0 & 0x0F, b1 & 0x80, b1 & 0x7F
+                    offset = 2
+                    if length == 126:
+                        if len(buffered) < 4:
+                            return bytes(out)
+                        length = int.from_bytes(buffered[2:4], "big"); offset = 4
+                    elif length == 127:
+                        if len(buffered) < 10:
+                            return bytes(out)
+                        length = int.from_bytes(buffered[2:10], "big"); offset = 10
+                    mask = b""
+                    if masked:
+                        if len(buffered) < offset + 4:
+                            return bytes(out)
+                        mask = bytes(buffered[offset:offset + 4]); offset += 4
+                    if len(buffered) < offset + length:
+                        return bytes(out)
+                    payload = bytes(buffered[offset:offset + length])
+                    del buffered[:offset + length]
+                    if mask:
+                        payload = bytes(c ^ mask[i % 4] for i, c in enumerate(payload))
+                    if opcode == 0x8:          # close
+                        raise ConnectionResetError
+                    if opcode in (0x1, 0x2):   # text or binary carry RFB
+                        out += payload
+
             client.setblocking(False)
             upstream.setblocking(False)
             try:
                 while True:
-                    ready, _, bad = select.select([client, upstream], [], 
-                                                  [client, upstream], 60)
+                    ready, _, bad = select.select([client, upstream], [],
+                                                  [client, upstream], 300)
                     if bad or not ready:
                         break
                     for source in ready:
-                        other = upstream if source is client else client
                         chunk = source.recv(65536)
                         if not chunk:
                             return
-                        other.sendall(chunk)
-            except OSError:
+                        if source is client:
+                            buffered.extend(chunk)
+                            payload = unframe()
+                            if payload:
+                                upstream.sendall(payload)
+                        else:
+                            client.sendall(frame(chunk))
+            except (OSError, ConnectionResetError):
                 pass
             finally:
                 upstream.close()
