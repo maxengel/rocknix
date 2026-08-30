@@ -132,7 +132,24 @@ static gboolean on_decide_policy(WebKitWebView *view,
     const char *uri = webkit_uri_request_get_uri(request);
 
     g_autoptr(GUri) parsed = g_uri_parse(uri, G_URI_FLAGS_NONE, NULL);
-    if (parsed && !host_permitted(g_uri_get_host(parsed))) {
+    if (!parsed)
+        return FALSE;
+
+    /* Only network navigation is filtered. about:, data: and blob: have no
+     * host and are not somewhere the player could be led -- they are how a
+     * page builds its own subframes and documents. Refusing them broke the
+     * provider's form from the inside: the log filled with "refused
+     * navigation to about:srcdoc" while keystrokes arrived at GTK correctly
+     * and landed nowhere, which reads as a broken keyboard and is not one.
+     *
+     * The point of this policy is that a sign-in window cannot become a way
+     * to browse the web. That is about http(s) going somewhere else, and
+     * nothing else. */
+    const char *scheme = g_uri_get_scheme(parsed);
+    if (g_strcmp0(scheme, "http") != 0 && g_strcmp0(scheme, "https") != 0)
+        return FALSE;
+
+    if (!host_permitted(g_uri_get_host(parsed))) {
         g_message("refused navigation to %s", uri);
         webkit_policy_decision_ignore(decision);
         return TRUE;
