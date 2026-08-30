@@ -693,6 +693,12 @@ NAMED_KEYS = {"enter": 28, "backspace": 14, "tab": 15, "escape": 1,
               "home": 102, "end": 107, "delete": 111}
 KEY_LEFTSHIFT = 42
 
+# How long a key is held, and the gap before the next one. Roughly 130 words
+# per minute -- faster than anyone types, slow enough that a page's own input
+# handling sees each keystroke as a separate event.
+KEY_HOLD = 0.012
+KEY_GAP = 0.022
+
 
 class RemoteKeyboard:
     """A keyboard the phone can type on, for the window on the handheld.
@@ -741,16 +747,34 @@ class RemoteKeyboard:
         return True
 
     def _emit(self, etype, code, value):
-        os.write(self.fd, struct.pack("llHHi", 0, 0, etype, code, value))
+        now = time.time()
+        os.write(self.fd, struct.pack("llHHi", int(now),
+                                      int((now % 1) * 1000000), etype, code, value))
 
     def _tap(self, code, shift=False):
+        """One keypress, reported the way a real keyboard reports it.
+
+        Each state change is its own SYN_REPORT, and press and release are
+        separated in time. Sending press and release in a single report, with
+        zero timestamps, is not what any hardware does: libinput and the
+        page's own input handling both read it as one indivisible blur, and a
+        typed address arrived truncated -- six characters of sixteen. The
+        delays below are what a fast typist produces, and cost nothing that
+        matters when the whole point is to save somebody a minute on a d-pad.
+        """
         if shift:
             self._emit(EV_KEY, KEY_LEFTSHIFT, 1)
+            self._emit(EV_SYN, SYN_REPORT, 0)
+            time.sleep(KEY_GAP)
         self._emit(EV_KEY, code, 1)
-        self._emit(EV_KEY, code, 0)
-        if shift:
-            self._emit(EV_KEY, KEY_LEFTSHIFT, 0)
         self._emit(EV_SYN, SYN_REPORT, 0)
+        time.sleep(KEY_HOLD)
+        self._emit(EV_KEY, code, 0)
+        self._emit(EV_SYN, SYN_REPORT, 0)
+        if shift:
+            time.sleep(KEY_GAP)
+            self._emit(EV_KEY, KEY_LEFTSHIFT, 0)
+            self._emit(EV_SYN, SYN_REPORT, 0)
 
     def type_text(self, text):
         """Send printable characters. Returns how many were sent."""
@@ -762,6 +786,7 @@ class RemoteKeyboard:
             if entry is None:
                 continue        # not on a US layout; silently skipped
             self._tap(*entry)
+            time.sleep(KEY_GAP)
             sent += 1
         return sent
 
