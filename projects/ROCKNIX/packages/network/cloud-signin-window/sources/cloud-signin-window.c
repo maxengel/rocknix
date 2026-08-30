@@ -41,6 +41,41 @@ static gboolean host_permitted(const char *host)
         && g_ascii_strcasecmp(host + hl - al, allowed_host) == 0;
 }
 
+static void on_probe(GObject *source, GAsyncResult *result, gpointer data)
+{
+    GError *error = NULL;
+    JSCValue *value = webkit_web_view_evaluate_javascript_finish(
+        WEBKIT_WEB_VIEW(source), result, &error);
+    if (value) {
+        char *text = jsc_value_to_string(value);
+        g_message("probe %s", text);
+        g_free(text);
+        g_object_unref(value);
+    } else if (error) {
+        g_message("probe failed: %s", error->message);
+        g_error_free(error);
+    }
+}
+
+static gboolean probe_tick(gpointer view)
+{
+    static const char *script =
+        "(function () {"
+        "  var a = document.activeElement;"
+        "  var d = a ? a.tagName + (a.type ? '[' + a.type + ']' : '') : 'none';"
+        "  if (a && a.id) d += '#' + a.id;"
+        "  if (a && a.name) d += '@' + a.name;"
+        "  return 'focus=' + d"
+        "       + ' value=' + (a && a.value !== undefined ?"
+        "                      JSON.stringify(a.value) : '-')"
+        "       + ' inputs=' + document.querySelectorAll('input').length"
+        "       + ' frames=' + window.frames.length;"
+        "})();";
+    webkit_web_view_evaluate_javascript(WEBKIT_WEB_VIEW(view), script, -1,
+                                        NULL, NULL, NULL, on_probe, NULL);
+    return G_SOURCE_CONTINUE;
+}
+
 /* Instrumentation, kept deliberately. Keystrokes arriving from the phone go
  * uinput -> kernel -> libinput -> sway -> here, and when they stopped landing
  * every hop but the last could be proven individually. Without this line
@@ -98,23 +133,17 @@ static void on_load_changed(WebKitWebView *view, WebKitLoadEvent event,
     webkit_web_view_evaluate_javascript(view, focus_first, -1, NULL, NULL,
                                         NULL, NULL, NULL);
 
-    /* Diagnostic, behind an environment variable. Keystroke delivery has
-     * three places it can fail silently -- the device, the compositor, and
-     * the page -- and a screenshot only shows the last one, after a delay,
-     * with no way to tell an empty field from a slow one. Publishing what
-     * the page actually holds through the window title makes it readable
-     * from the compositor at any moment. */
-    if (g_getenv("CLOUD_SIGNIN_DEBUG")) {
-        static const char *report =
-            "setInterval(function () {"
-            "  var a = document.activeElement;"
-            "  document.title = 'focus=' + (a ? a.tagName : 'none') +"
-            "                   ' value=' + (a && a.value !== undefined ?"
-            "                                a.value : '-');"
-            "}, 1000);";
-        webkit_web_view_evaluate_javascript(view, report, -1, NULL, NULL,
-                                            NULL, NULL, NULL);
-    }
+    /* Diagnostic, behind an environment variable, reporting what the page
+     * actually holds rather than what it looks like it holds. Keystroke
+     * delivery has three places it can fail silently, and a screenshot only
+     * shows the last one -- an empty box looks identical whether nothing
+     * arrived, something arrived and was rejected, or the caret is in a
+     * different element than the one drawing a focus ring. Two earlier
+     * attempts at this reported through document.title, which never reaches
+     * the compositor without a notify::title handler and so said nothing at
+     * all. This asks the page and prints the answer. */
+    if (g_getenv("CLOUD_SIGNIN_DEBUG"))
+        g_timeout_add_seconds(2, probe_tick, view);
 }
 
 static gboolean on_decide_policy(WebKitWebView *view,
