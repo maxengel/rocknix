@@ -97,6 +97,24 @@ static void on_load_changed(WebKitWebView *view, WebKitLoadEvent event,
     g_message("load finished, asking the page for a field to focus");
     webkit_web_view_evaluate_javascript(view, focus_first, -1, NULL, NULL,
                                         NULL, NULL, NULL);
+
+    /* Diagnostic, behind an environment variable. Keystroke delivery has
+     * three places it can fail silently -- the device, the compositor, and
+     * the page -- and a screenshot only shows the last one, after a delay,
+     * with no way to tell an empty field from a slow one. Publishing what
+     * the page actually holds through the window title makes it readable
+     * from the compositor at any moment. */
+    if (g_getenv("CLOUD_SIGNIN_DEBUG")) {
+        static const char *report =
+            "setInterval(function () {"
+            "  var a = document.activeElement;"
+            "  document.title = 'focus=' + (a ? a.tagName : 'none') +"
+            "                   ' value=' + (a && a.value !== undefined ?"
+            "                                a.value : '-');"
+            "}, 1000);";
+        webkit_web_view_evaluate_javascript(view, report, -1, NULL, NULL,
+                                            NULL, NULL, NULL);
+    }
 }
 
 static gboolean on_decide_policy(WebKitWebView *view,
