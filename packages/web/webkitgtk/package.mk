@@ -8,7 +8,7 @@ PKG_LICENSE="LGPL-2.1-or-later AND BSD-2-Clause"
 PKG_SITE="https://webkitgtk.org/"
 PKG_URL="https://webkitgtk.org/releases/${PKG_NAME}-${PKG_VERSION}.tar.xz"
 PKG_DEPENDS_TARGET="toolchain ruby:host unifdef:host \
-                    glib gtk3 cairo harfbuzz icu libsoup libxml2 libxslt sqlite \
+                    glib gtk3 cairo harfbuzz harfbuzz-icu icu libsoup libxml2 libxslt sqlite \
                     libjpeg-turbo libpng libwebp openjpeg woff2 brotli \
                     libgcrypt libtasn1 zlib freetype fontconfig \
                     libepoxy wayland wayland-protocols libdrm mesa \
