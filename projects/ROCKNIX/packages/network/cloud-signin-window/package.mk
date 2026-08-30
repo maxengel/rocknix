@@ -10,11 +10,15 @@ PKG_DEPENDS_TARGET="toolchain gtk3 webkitgtk"
 PKG_LONGDESC="A single fullscreen web view for cloud provider sign-in. Not a browser: no address bar, no tabs, and navigation refused outside the provider's host."
 PKG_TOOLCHAIN="manual"
 
+# -latomic: WebKit uses 128-bit atomics, which gcc leaves to libatomic rather
+# than emitting inline. Linking against libwebkit2gtk without it fails on
+# __atomic_load_16 and friends, naming WebKit's library as if it were broken.
 make_target() {
   ${CC} ${CFLAGS} ${LDFLAGS} \
     ${PKG_DIR}/sources/cloud-signin-window.c \
     -o cloud-signin-window \
-    $(${PKG_CONFIG} --cflags --libs gtk+-3.0 webkit2gtk-4.1)
+    $(${PKG_CONFIG} --cflags --libs gtk+-3.0 webkit2gtk-4.1) \
+    -latomic
 }
 
 makeinstall_target() {
