@@ -919,6 +919,52 @@ def exit_hint():
 EVIOCGRAB = 0x40044590
 
 
+def signin_window_running():
+    """Is the sign-in window up?
+
+    Matched on argv[0], not on comm: comm truncates at 15 characters, so
+    "cloud-signin-window" appears there as "cloud-signin-wi". A pattern that
+    looks right and matches nothing has already cost this project a cleanup
+    loop that silently did nothing.
+    """
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        try:
+            with open("/proc/%s/cmdline" % entry, "rb") as handle:
+                argv = handle.read().split(b"\0")
+        except OSError:
+            continue
+        if argv and argv[0].decode("utf-8", "replace") == SIGNIN_WINDOW:
+            return True
+    return False
+
+
+def pad_is_free():
+    """Can somebody else open the gamepad exclusively?
+
+    This is the condition EmulationStation needs before it re-initialises:
+    SDL re-opens the joystick on init, and if our bridge still held the grab
+    ES would come back with no gamepad at all until it was restarted. Testing
+    the grab directly beats sleeping and hoping.
+    """
+    node, _codes = find_gamepad()
+    if not node:
+        return True
+    try:
+        fd = os.open(node, os.O_RDONLY)
+    except OSError:
+        return True
+    try:
+        fcntl.ioctl(fd, EVIOCGRAB, 1)
+        fcntl.ioctl(fd, EVIOCGRAB, 0)
+        return True
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
+
+
 class GamepadBridge:
     """Turn the handheld's buttons into keystrokes for the sign-in page.
 
@@ -1032,6 +1078,12 @@ class GamepadBridge:
 
     def stop(self):
         self.stop_flag.set()
+        # Wait for the reader to actually leave, because it releases the
+        # gamepad on its way out and the caller's next move may be to hand
+        # the pad back to EmulationStation.
+        thread, self.thread = self.thread, None
+        if thread and thread is not threading.current_thread():
+            thread.join(timeout=2)
 
 
 class SessionHolder:
@@ -1346,7 +1398,7 @@ def main(argv):
         sys.stderr.write(
             "usage: cloud_oauth serve <backend> [--name NAME] "
             "[--label 'Dropbox'] [--port N] [--timeout SECONDS]\n"
-            "       cloud_oauth url | info | status | open | cancel\n")
+            "       cloud_oauth url | info | status | open | wait | cancel\n")
         return 1
 
     command = argv[1]
@@ -1377,6 +1429,31 @@ def main(argv):
         # the address and scan the code.
         os.makedirs(STATE_DIR, exist_ok=True)
         open(state_path("open-browser"), "w").close()
+
+        # Return once the window is actually up, not once the request is
+        # filed. The caller's next act is to tear down its own renderer, and
+        # doing that before there is anything to look at leaves the player
+        # staring at the wallpaper for the seconds WebKit takes to start.
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            if signin_window_running():
+                return 0
+            time.sleep(0.2)
+        log("sign-in window did not appear")
+        return 1
+
+    if command == "wait":
+        # Block until the page is finished with, so a caller can bracket this
+        # with its own suspend/resume. Bounded well past the session timeout
+        # so a serve that died without tidying up cannot strand the caller.
+        deadline = time.time() + 1800
+        while time.time() < deadline and signin_window_running():
+            time.sleep(0.3)
+
+        # And not a moment before the pad is handed back -- see pad_is_free.
+        settle = time.time() + 5
+        while time.time() < settle and not pad_is_free():
+            time.sleep(0.1)
         return 0
 
     if command == "info":
