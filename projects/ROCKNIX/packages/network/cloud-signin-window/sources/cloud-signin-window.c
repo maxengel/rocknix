@@ -41,6 +41,83 @@ static gboolean host_permitted(const char *host)
         && g_ascii_strcasecmp(host + hl - al, allowed_host) == 0;
 }
 
+/* An on-screen keyboard, because the handheld has no touchscreen and typing
+ * from a phone is meant to be optional rather than required. Consoles solve
+ * this the same way: a grid walked with the d-pad and pressed with A. GTK
+ * moves focus between the buttons on its own, so the d-pad drives it with no
+ * extra handling.
+ *
+ * Keys go in as GDK key events rather than being written into the DOM. A
+ * provider's login form watches keystrokes -- validating an address as it is
+ * typed, enabling the button, moving focus -- and text poked straight into a
+ * field arrives with none of that having happened.
+ */
+typedef struct {
+    GtkWidget *revealer;
+    WebKitWebView *view;
+} Osk;
+
+static void osk_send(GtkButton *button, gpointer data)
+{
+    Osk *osk = data;
+    const char *label = gtk_button_get_label(button);
+    guint keyval;
+
+    if (g_strcmp0(label, "space") == 0)      keyval = GDK_KEY_space;
+    else if (g_strcmp0(label, "del") == 0)   keyval = GDK_KEY_BackSpace;
+    else if (g_strcmp0(label, "enter") == 0) keyval = GDK_KEY_Return;
+    else if (g_strcmp0(label, "hide") == 0) {
+        gtk_revealer_set_reveal_child(GTK_REVEALER(osk->revealer), FALSE);
+        gtk_widget_grab_focus(GTK_WIDGET(osk->view));
+        return;
+    }
+    else keyval = gdk_unicode_to_keyval((guint) g_utf8_get_char(label));
+
+    GtkWidget *target = GTK_WIDGET(osk->view);
+    GdkWindow *gdkwin = gtk_widget_get_window(target);
+    if (!gdkwin)
+        return;
+    gtk_widget_grab_focus(target);
+
+    for (int press = 1; press >= 0; press--) {
+        GdkEvent *event = gdk_event_new(press ? GDK_KEY_PRESS : GDK_KEY_RELEASE);
+        event->key.window = g_object_ref(gdkwin);
+        event->key.send_event = TRUE;
+        event->key.time = GDK_CURRENT_TIME;
+        event->key.keyval = keyval;
+        event->key.state = 0;
+        gtk_main_do_event(event);
+        gdk_event_free(event);
+    }
+}
+
+static GtkWidget *osk_build(Osk *osk)
+{
+    static const char *rows[] = {
+        "1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm@.-_",
+    };
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    for (guint r = 0; r < G_N_ELEMENTS(rows); r++) {
+        GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+        for (const char *c = rows[r]; *c; c++) {
+            char label[2] = { *c, 0 };
+            GtkWidget *b = gtk_button_new_with_label(label);
+            g_signal_connect(b, "clicked", G_CALLBACK(osk_send), osk);
+            gtk_box_pack_start(GTK_BOX(row), b, TRUE, TRUE, 0);
+        }
+        gtk_box_pack_start(GTK_BOX(box), row, FALSE, FALSE, 0);
+    }
+    GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    const char *extras[] = { "space", "del", "enter", "hide" };
+    for (guint i = 0; i < G_N_ELEMENTS(extras); i++) {
+        GtkWidget *b = gtk_button_new_with_label(extras[i]);
+        g_signal_connect(b, "clicked", G_CALLBACK(osk_send), osk);
+        gtk_box_pack_start(GTK_BOX(row), b, TRUE, TRUE, 0);
+    }
+    gtk_box_pack_start(GTK_BOX(box), row, FALSE, FALSE, 0);
+    return box;
+}
+
 static void on_probe(GObject *source, GAsyncResult *result, gpointer data)
 {
     GError *error = NULL;
@@ -94,6 +171,24 @@ static gboolean on_key(GtkWidget *widget, GdkEventKey *event, gpointer data)
      * receives it. */
     if (event->keyval == GDK_KEY_Escape) {
         gtk_main_quit();
+        return TRUE;
+    }
+
+    /* X on the handheld, mapped to F1 by cloud_oauth. Shows the keyboard and
+     * puts focus on it so the d-pad walks the keys; hides it and gives focus
+     * back to the page. Without a toggle the d-pad can only ever do one of
+     * the two things. */
+    Osk *osk = data;
+    if (osk && event->keyval == GDK_KEY_F1) {
+        gboolean showing = gtk_revealer_get_reveal_child(GTK_REVEALER(osk->revealer));
+        gtk_revealer_set_reveal_child(GTK_REVEALER(osk->revealer), !showing);
+        if (!showing) {
+            GtkWidget *first = gtk_widget_get_toplevel(osk->revealer);
+            gtk_widget_child_focus(osk->revealer, GTK_DIR_TAB_FORWARD);
+            (void) first;
+        } else {
+            gtk_widget_grab_focus(GTK_WIDGET(osk->view));
+        }
         return TRUE;
     }
     return FALSE;
@@ -240,6 +335,8 @@ int main(int argc, char **argv)
 
     gtk_init(&argc, &argv);
 
+    static Osk osk = { NULL, NULL };
+
     GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window), "Sign in");
     gtk_window_fullscreen(GTK_WINDOW(window));
@@ -263,7 +360,7 @@ int main(int argc, char **argv)
 
     g_signal_connect(view, "decide-policy", G_CALLBACK(on_decide_policy), NULL);
     g_signal_connect(view, "load-changed", G_CALLBACK(on_load_changed), NULL);
-    g_signal_connect(window, "key-press-event", G_CALLBACK(on_key), NULL);
+    g_signal_connect(window, "key-press-event", G_CALLBACK(on_key), &osk);
 
     /* Something to look at while the provider's page loads. Six seconds of
      * a blank screen on a handheld reads as a crash, and the player has no
@@ -283,7 +380,22 @@ int main(int argc, char **argv)
     gtk_stack_set_visible_child_name(GTK_STACK(stack), "loading");
     g_object_set_data(G_OBJECT(view), "stack", stack);
 
-    gtk_container_add(GTK_CONTAINER(window), stack);
+    /* Page on top, keyboard underneath it when asked for. A revealer rather
+     * than show/hide so the page resizes around it instead of being covered:
+     * a keyboard over the field you are typing into is worse than no
+     * keyboard. */
+    osk.view = view;
+    osk.revealer = gtk_revealer_new();
+    gtk_revealer_set_transition_type(GTK_REVEALER(osk.revealer),
+                                     GTK_REVEALER_TRANSITION_TYPE_SLIDE_UP);
+    gtk_container_add(GTK_CONTAINER(osk.revealer), osk_build(&osk));
+    gtk_revealer_set_reveal_child(GTK_REVEALER(osk.revealer), FALSE);
+
+    GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_box_pack_start(GTK_BOX(outer), stack, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(outer), osk.revealer, FALSE, FALSE, 0);
+
+    gtk_container_add(GTK_CONTAINER(window), outer);
     gtk_widget_set_can_focus(GTK_WIDGET(view), TRUE);
     webkit_web_view_load_uri(view, argv[1]);
     gtk_widget_show_all(window);

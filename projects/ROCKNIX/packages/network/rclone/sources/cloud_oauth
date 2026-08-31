@@ -691,7 +691,7 @@ for _c in "abcdefghijklmnopqrstuvwxyz":
 NAMED_KEYS = {"enter": 28, "backspace": 14, "tab": 15, "escape": 1,
               "left": 105, "right": 106, "up": 103, "down": 108,
               "home": 102, "end": 107, "delete": 111,
-              "pageup": 104, "pagedown": 109}
+              "pageup": 104, "pagedown": 109, "f1": 59}
 KEY_LEFTSHIFT = 42
 
 # How long a key is held, and the gap before the next one. Roughly 130 words
@@ -821,12 +821,18 @@ BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT = 544, 545, 546, 547
 # Arrows rather than Tab: WebKit's spatial navigation moves focus in the
 # direction pressed, which is what a d-pad means. Tab order on a login page
 # wanders through cookie banners and footer links.
+# BTN_EAST is the button labelled A on this hardware, not BTN_SOUTH. These
+# handhelds use the Nintendo layout, where A sits in the east position --
+# EmulationStation's own es_input.cfg maps a=button 1 (BTN_EAST) and
+# b=button 0 (BTN_SOUTH). Taking the Xbox reading meant the player pressed A
+# and got a backspace.
 GAMEPAD_KEYS = {
     BTN_DPAD_UP: "up", BTN_DPAD_DOWN: "down",
     BTN_DPAD_LEFT: "left", BTN_DPAD_RIGHT: "right",
-    BTN_SOUTH: "enter",            # A activates what is focused
-    BTN_EAST: "backspace",         # B deletes, the usual handheld reading
-    BTN_NORTH: "tab",              # X steps forward if spatial nav gets stuck
+    BTN_EAST: "enter",             # A activates what is focused
+    BTN_SOUTH: "backspace",        # B goes back, as it does everywhere else
+    BTN_NORTH: "tab",              # Y steps forward if spatial nav sticks
+    BTN_WEST: "f1",                # X shows and hides the on-screen keyboard
     BTN_TL: "home", BTN_TR: "end",
 }
 
