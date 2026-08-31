@@ -243,6 +243,43 @@ static GtkWidget *osk_build(Osk *osk)
  * once per field. A handheld with a touchscreen focuses a field by being
  * tapped and one without does it by pressing A on it; neither is a moment
  * where the player should have to know that X exists. */
+/* GtkSpinner draws from the icon theme, and this image ships no pixbuf
+ * loaders for it -- "Could not load a pixbuf from .../process-working-
+ * symbolic.png". It renders nothing at all, silently, which is why the
+ * loading screen was a line of text on an empty page. Cairo is always
+ * there. */
+typedef struct { double phase; } Spin;
+
+static gboolean on_spin_draw(GtkWidget *widget, cairo_t *cr, gpointer data)
+{
+    Spin *spin = data;
+    int w = gtk_widget_get_allocated_width(widget);
+    int h = gtk_widget_get_allocated_height(widget);
+    double r = (MIN(w, h) / 2.0) - 4.0;
+
+    cairo_set_line_width(cr, 4.0);
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+
+    cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.10);
+    cairo_arc(cr, w / 2.0, h / 2.0, r, 0, 2 * G_PI);
+    cairo_stroke(cr);
+
+    cairo_set_source_rgba(cr, 0.10, 0.12, 0.15, 0.85);
+    cairo_arc(cr, w / 2.0, h / 2.0, r, spin->phase, spin->phase + G_PI / 2.0);
+    cairo_stroke(cr);
+    return FALSE;
+}
+
+static gboolean on_spin_tick(gpointer widget)
+{
+    Spin *spin = g_object_get_data(G_OBJECT(widget), "spin");
+    spin->phase += 0.22;
+    if (spin->phase > 2 * G_PI)
+        spin->phase -= 2 * G_PI;
+    gtk_widget_queue_draw(GTK_WIDGET(widget));
+    return G_SOURCE_CONTINUE;
+}
+
 static void on_probe(GObject *source, GAsyncResult *result, gpointer data)
 {
     Osk *osk = data;
@@ -562,9 +599,13 @@ int main(int argc, char **argv)
      * other feedback that anything is happening. */
     GtkWidget *stack = gtk_stack_new();
     GtkWidget *loading = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
-    GtkWidget *spinner = gtk_spinner_new();
+    static Spin spin;
+    GtkWidget *spinner = gtk_drawing_area_new();
     gtk_widget_set_size_request(spinner, 48, 48);
-    gtk_spinner_start(GTK_SPINNER(spinner));
+    gtk_widget_set_halign(spinner, GTK_ALIGN_CENTER);
+    g_object_set_data(G_OBJECT(spinner), "spin", &spin);
+    g_signal_connect(spinner, "draw", G_CALLBACK(on_spin_draw), &spin);
+    g_timeout_add(60, on_spin_tick, spinner);
     gtk_widget_set_valign(loading, GTK_ALIGN_CENTER);
     gtk_box_pack_start(GTK_BOX(loading), spinner, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(loading),
