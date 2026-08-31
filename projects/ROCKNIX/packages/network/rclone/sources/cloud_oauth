@@ -569,7 +569,8 @@ class BrowserSession:
             "GDK_BACKEND": "wayland",
         })
         self.proc = subprocess.Popen(
-            [SIGNIN_WINDOW, self.url, registrable_domain(self.host)],
+            [SIGNIN_WINDOW, self.url, registrable_domain(self.host),
+             "--exit-hint", exit_hint()],
             env=env, stdout=self.log_file, stderr=subprocess.STDOUT)
         log("sign-in window opened on %s for %s" % (display, self.host))
         return True
@@ -859,11 +860,16 @@ GAMEPAD_QUIT = BTN_START
 
 
 def find_gamepad():
-    """The device node for the handheld's controls, by capability not name.
+    """The device node for the handheld's controls, and the buttons it has.
 
     Named lookups would need a table per device -- "H700 Gamepad" on one
     handheld is something else on the next. A device carrying BTN_SOUTH and a
     d-pad is a gamepad whatever it calls itself.
+
+    Returns (node, codes) so callers can ask what the pad actually has
+    rather than assume. Nothing here is uniform across handhelds: the
+    RG35XX SP has a Mode button and ES maps its hotkey to it, while smaller
+    pads have no such button at all.
     """
     for entry in sorted(os.listdir("/sys/class/input")):
         if not entry.startswith("event"):
@@ -879,8 +885,24 @@ def find_gamepad():
             codes |= {index * 64 + bit for bit in range(value.bit_length())
                       if value >> bit & 1}
         if BTN_SOUTH in codes and BTN_DPAD_UP in codes:
-            return "/dev/input/" + entry
-    return None
+            return "/dev/input/" + entry, codes
+    return None, set()
+
+
+def exit_hint():
+    """What to call the exit combination, on this handheld.
+
+    Either Select or Mode holds it (GAMEPAD_HOLD), because which one a player
+    reaches for differs by device. What must not differ is the instruction:
+    naming a button the pad does not have is worse than naming none, and the
+    RG351M and RG353M have no Mode button while the RG35XX SP does -- where
+    Mode is what ES maps its own hotkey to, and what the maintainer's fingers
+    reach for.
+    """
+    _, codes = find_gamepad()
+    if BTN_MODE in codes:
+        return "MODE + START"
+    return "SELECT + START"
 
 
 class GamepadBridge:
@@ -898,7 +920,7 @@ class GamepadBridge:
         self.stop_flag = threading.Event()
 
     def start(self):
-        node = find_gamepad()
+        node, _codes = find_gamepad()
         if not node:
             log("no gamepad found; the sign-in page can only be driven from a phone")
             return False
@@ -1237,6 +1259,7 @@ def cmd_serve(backend, remote_name, label, port, timeout):
     print("PIN=%s" % holder.pin)
     print("NAME=%s" % holder.name)
     print("PROVIDER=%s" % holder.session.provider)
+    print("EXIT_HINT=%s" % exit_hint())
     sys.stdout.flush()
 
     # The listener is only open while someone is actually signing in.
@@ -1304,8 +1327,11 @@ def main(argv):
         # script and a newer page still agree on something.
         state = read_state()
         state["on_device"] = "yes" if browser_stack_available() else "no"
+        # Read from the pad, not from a table: the page tells the player how
+        # to come back, and the button it names has to be one they have.
+        state["exit_hint"] = exit_hint()
         for key in ("url", "address", "pin", "name", "provider", "status",
-                    "on_device"):
+                    "on_device", "exit_hint"):
             print("%s=%s" % (key.upper(), state.get(key, "")))
         return 0
 

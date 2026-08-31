@@ -562,8 +562,17 @@ int main(int argc, char **argv)
         g_printerr("usage: cloud-signin-window <url> [allowed-host]\n");
         return 1;
     }
-    if (argc > 2)
-        allowed_host = argv[2];
+    /* Which two buttons leave is not the same on every handheld -- the
+     * RG35XX SP has a Mode button and ES maps its hotkey to it, smaller pads
+     * have none. cloud_oauth reads the pad and passes what it found, because
+     * naming a button the player does not have is worse than naming none. */
+    const char *exit_hint = "SELECT + START";
+    for (int i = 2; i < argc; i++) {
+        if (g_strcmp0(argv[i], "--exit-hint") == 0 && i + 1 < argc)
+            exit_hint = argv[++i];
+        else if (!allowed_host && argv[i][0] != '-')
+            allowed_host = argv[i];
+    }
 
     gtk_init(&argc, &argv);
 
@@ -640,9 +649,11 @@ int main(int argc, char **argv)
      * is that. It is also the answer to "nothing brings up the keyboard":
      * the keyboard raises itself on a text field, and this says how to ask
      * for it the rest of the time. */
-    GtkWidget *hints = gtk_label_new(
+    char *hint_text = g_strdup_printf(
         "A select     B back     X keyboard     "
-        "L1/R1 scroll     SELECT or MODE + START to exit");
+        "L1/R1 scroll     %s to exit", exit_hint);
+    GtkWidget *hints = gtk_label_new(hint_text);
+    g_free(hint_text);
     gtk_widget_set_name(hints, "hints");
     gtk_label_set_xalign(GTK_LABEL(hints), 0.5f);
 
