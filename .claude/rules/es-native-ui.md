@@ -50,6 +50,47 @@ this file guides any work there.
   scripts from user ES `scripts/<event>/`, the ES exe dir (`/usr/bin/scripts/<event>/`,
   read-only image — our game-end hook), and `/var/run/emulationstation/scripts/<event>/`.
 
+## Spacing (house style)
+
+Values live in one place each, so a screen never makes its own decision.
+
+- **Buttons on a menu's button bar**: `BUTTON_GRID_HORIZ_PADDING` in
+  `es-core/src/components/MenuComponent.cpp`, **0.022 of screen width**
+  (14px on a 640px handheld panel). Every ES screen ends in this bar, so
+  changing it here is the whole style rule.
+
+  It was `0.0052` — 3px on a handheld — which reads as one control rather
+  than two, and puts a destructive choice a thumb's width from a safe one.
+  Two adjacent buttons must be separated far enough that hitting the wrong
+  one is a decision, not a slip.
+
+- **Rows on a cloud-setup page**: `CLOUD_SETUP_ROW_PADDING` in `GuiMenu.cpp`.
+
+Screen-relative fractions, never pixel constants: these panels run from
+640×480 to 1920×1080 and a fixed value is right on exactly one of them.
+
+## Images in a menu row are themed as text unless you stop it
+
+`ComponentList::render` calls `setColor(menuTheme->Text.color)` on **every
+element of every row, every frame**, and `ImageComponent::setColor` is
+`setColorShift`. So an image added to a row is tinted with the menu's muted
+text colour continuously, and setting the shift once at construction does
+nothing at all.
+
+Text beside it in the same row keeps its own colour only when it sits inside
+a `ComponentGrid`, whose `setColor` does not reach the labels within — which
+is why a QR code looked dimmer than the address next to it.
+
+Where an image must keep its own colours — a QR a phone camera has to read,
+a logo, a screenshot — subclass and refuse the tint:
+
+```cpp
+class UntintedImageComponent : public ImageComponent {
+public:
+    void setColor(unsigned int) override { ImageComponent::setColorShift(0xFFFFFFFF); }
+};
+```
+
 ## Conventions
 
 - Every label through `_( )` (localized, UPPERCASE by convention).
