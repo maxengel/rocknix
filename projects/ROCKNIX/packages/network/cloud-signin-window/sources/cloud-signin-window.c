@@ -642,7 +642,7 @@ int main(int argc, char **argv)
      * for it the rest of the time. */
     GtkWidget *hints = gtk_label_new(
         "A select     B back     X keyboard     "
-        "L1/R1 scroll     SELECT+START exit");
+        "L1/R1 scroll     SELECT or MODE + START to exit");
     gtk_widget_set_name(hints, "hints");
     gtk_label_set_xalign(GTK_LABEL(hints), 0.5f);
 

@@ -843,13 +843,18 @@ GAMEPAD_KEYS = {
 
 # Select held, then Start: the same combination RetroArch uses to leave a
 # game on this hardware, so it is already in players' fingers.
-# projects/ROCKNIX/.../retroarch has input_enable_hotkey_btn = "8" (Select)
-# and input_exit_emulator_btn = "9" (Start).
-#
 # A combination rather than any single button. Select alone is far too easy
 # to catch while reaching across a small handheld, and losing a half-typed
 # password to a stray thumb is worse than needing two buttons to leave.
-GAMEPAD_HOTKEY = BTN_SELECT
+#
+# Either Select or Mode holds it, because which one is "the hotkey" is not
+# the same on every handheld. On the RG35XX SP, ES's own es_input.cfg maps
+# hotkeyenable to button 8, which is BTN_MODE on that pad -- not Select. A
+# player whose muscle memory is Mode+Start would find Select+Start does
+# nothing, and a player who knows Select+Start would find the same. Both
+# are two-button combinations and neither is reachable by a stray thumb,
+# so accepting both costs nothing and guesses at nothing.
+GAMEPAD_HOLD = (BTN_SELECT, BTN_MODE)
 GAMEPAD_QUIT = BTN_START
 
 
@@ -928,14 +933,15 @@ class GamepadBridge:
 
                 # Either order, so it does not matter which thumb gets there
                 # first.
-                if ((code == GAMEPAD_QUIT and GAMEPAD_HOTKEY in held)
-                        or (code == GAMEPAD_HOTKEY and GAMEPAD_QUIT in held)):
+                held_any = any(h in held for h in GAMEPAD_HOLD)
+                if ((code == GAMEPAD_QUIT and held_any)
+                        or (code in GAMEPAD_HOLD and GAMEPAD_QUIT in held)):
                     log("player ended the sign-in from the handheld")
                     self.on_quit()
                     return
 
-                # Select is the hotkey, so it does not type on its own.
-                if code == GAMEPAD_HOTKEY:
+                # A hold button does not type on its own.
+                if code in GAMEPAD_HOLD:
                     continue
                 name = GAMEPAD_KEYS.get(code)
                 if name:
