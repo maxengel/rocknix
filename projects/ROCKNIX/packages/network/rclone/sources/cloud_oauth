@@ -901,7 +901,13 @@ def exit_hint():
     """
     _, codes = find_gamepad()
     if BTN_MODE in codes:
-        return "MODE + START"
+        # Both are accepted, so both are named, and the one the maintainer
+        # reaches for on this hardware is named first. Select+Start is the
+        # convention players arrive with from other handhelds; Mode is the
+        # button ES maps its own hotkey to here, and is not always labelled
+        # "Mode" on the shell. Naming only one leaves somebody pressing a
+        # combination that works and being told it is not the way out.
+        return "MODE OR SELECT + START"
     return "SELECT + START"
 
 
