@@ -830,8 +830,16 @@ GAMEPAD_KEYS = {
     BTN_TL: "home", BTN_TR: "end",
 }
 
-# Anything here ends the sign-in and gives the player their handheld back.
-GAMEPAD_QUIT = (BTN_START, BTN_MODE, BTN_SELECT)
+# Select held, then Start: the same combination RetroArch uses to leave a
+# game on this hardware, so it is already in players' fingers.
+# projects/ROCKNIX/.../retroarch has input_enable_hotkey_btn = "8" (Select)
+# and input_exit_emulator_btn = "9" (Start).
+#
+# A combination rather than any single button. Select alone is far too easy
+# to catch while reaching across a small handheld, and losing a half-typed
+# password to a stray thumb is worse than needing two buttons to leave.
+GAMEPAD_HOTKEY = BTN_SELECT
+GAMEPAD_QUIT = BTN_START
 
 
 def find_gamepad():
@@ -890,18 +898,34 @@ class GamepadBridge:
             log("could not read the gamepad: %s" % exc)
             return
         size = struct.calcsize("llHHi")
+        held = set()
         try:
             while not self.stop_flag.is_set():
                 data = os.read(fd, size)
                 if len(data) < size:
                     continue
                 _, _, etype, code, value = struct.unpack("llHHi", data)
-                if etype != EV_KEY or value != 1:     # presses only
+                if etype != EV_KEY:
                     continue
-                if code in GAMEPAD_QUIT:
+
+                if value == 0:
+                    held.discard(code)
+                    continue
+                if value != 1:            # 2 is autorepeat; ignore
+                    continue
+                held.add(code)
+
+                # Either order, so it does not matter which thumb gets there
+                # first.
+                if ((code == GAMEPAD_QUIT and GAMEPAD_HOTKEY in held)
+                        or (code == GAMEPAD_HOTKEY and GAMEPAD_QUIT in held)):
                     log("player ended the sign-in from the handheld")
                     self.on_quit()
                     return
+
+                # Select is the hotkey, so it does not type on its own.
+                if code == GAMEPAD_HOTKEY:
+                    continue
                 name = GAMEPAD_KEYS.get(code)
                 if name:
                     self.keyboard.press(name)
