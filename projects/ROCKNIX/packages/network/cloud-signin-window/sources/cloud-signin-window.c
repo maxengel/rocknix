@@ -22,6 +22,9 @@
 #include <webkit2/webkit2.h>
 #include <string.h>
 
+#define OSK_ROWS 4
+#define OSK_COLS 11
+
 static const char *allowed_host = NULL;
 
 static gboolean host_permitted(const char *host)
@@ -55,29 +58,54 @@ static gboolean host_permitted(const char *host)
 typedef struct {
     GtkWidget *revealer;
     WebKitWebView *view;
+    GtkWidget *keys[OSK_ROWS + 1][OSK_COLS];   /* +1: the extras row */
+    int row, col;
+    gboolean shift;
+    char last_field[256];
 } Osk;
 
-static void osk_send(GtkButton *button, gpointer data)
+/* Two layouts rather than a modifier: a sign-in needs capitals for an address
+ * and punctuation for a password, and a shift that only latches for one key is
+ * a mechanism to explain on a screen with no room to explain it. */
+static const char *OSK_LOWER[OSK_ROWS] = {
+    "1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm.-_",
+};
+static const char *OSK_UPPER[OSK_ROWS] = {
+    "!@#$%^&*()", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM+?/",
+};
+static const char *OSK_EXTRAS[] = { "shift", "space", "@", "del", "enter", "hide" };
+
+/* Sized for a four-inch screen held at arm's length, and dark because it sits
+ * under a page that is usually white -- a keyboard that flashes the screen
+ * bright every time it appears is the thing people turn the brightness down
+ * to avoid. The selected key is drawn by osk-sel, not by GTK's focus ring:
+ * nothing here ever holds focus. */
+static const char *OSK_CSS =
+    "#osk { background: #14171c; padding: 6px; }"
+    "#osk button {"
+    "  background-image: none; background-color: #262b33;"
+    "  color: #e8ecf2; border: 1px solid #333a45; border-radius: 5px;"
+    "  padding: 6px 2px; margin: 0; min-height: 30px; min-width: 20px;"
+    "  font-size: 16px; text-shadow: none;"
+    "}"
+    "#osk button.osk-sel {"
+    "  background-color: #f0f3f8; color: #14171c;"
+    "  border: 2px solid #ffffff; font-weight: bold;"
+    "}"
+    "#hints { background: #0d1014; color: #93a0b4; font-size: 12px;"
+    "         padding: 4px 8px; }";
+
+static void osk_type(Osk *osk, guint keyval)
 {
-    Osk *osk = data;
-    const char *label = gtk_button_get_label(button);
-    guint keyval;
-
-    if (g_strcmp0(label, "space") == 0)      keyval = GDK_KEY_space;
-    else if (g_strcmp0(label, "del") == 0)   keyval = GDK_KEY_BackSpace;
-    else if (g_strcmp0(label, "enter") == 0) keyval = GDK_KEY_Return;
-    else if (g_strcmp0(label, "hide") == 0) {
-        gtk_revealer_set_reveal_child(GTK_REVEALER(osk->revealer), FALSE);
-        gtk_widget_grab_focus(GTK_WIDGET(osk->view));
-        return;
-    }
-    else keyval = gdk_unicode_to_keyval((guint) g_utf8_get_char(label));
-
+    /* The WebView holds GTK focus the whole time the keyboard is up -- the
+     * keys never take it. A WebView that loses focus blurs the field the
+     * player is typing into, and a character delivered to a blurred field
+     * goes nowhere; the d-pad is intercepted in on_key instead, which is
+     * what makes keeping focus here possible. */
     GtkWidget *target = GTK_WIDGET(osk->view);
     GdkWindow *gdkwin = gtk_widget_get_window(target);
     if (!gdkwin)
         return;
-    gtk_widget_grab_focus(target);
 
     for (int press = 1; press >= 0; press--) {
         GdkEvent *event = gdk_event_new(press ? GDK_KEY_PRESS : GDK_KEY_RELEASE);
@@ -91,65 +119,189 @@ static void osk_send(GtkButton *button, gpointer data)
     }
 }
 
+static void osk_relabel(Osk *osk);
+static void osk_highlight(Osk *osk);
+
+static void osk_hide(Osk *osk)
+{
+    gtk_revealer_set_reveal_child(GTK_REVEALER(osk->revealer), FALSE);
+    gtk_widget_grab_focus(GTK_WIDGET(osk->view));
+}
+
+static void osk_show(Osk *osk)
+{
+    gtk_revealer_set_reveal_child(GTK_REVEALER(osk->revealer), TRUE);
+    gtk_widget_grab_focus(GTK_WIDGET(osk->view));
+    osk_highlight(osk);
+}
+
+/* One entry point for a key, whether it arrived from the d-pad or from a
+ * finger. Touchscreen handhelds exist and the buttons stay clickable; they
+ * are set can-focus=FALSE so a tap cannot steal focus from the page. */
+static void osk_press(Osk *osk, const char *label)
+{
+    if (g_strcmp0(label, "hide") == 0)       { osk_hide(osk); return; }
+    if (g_strcmp0(label, "shift") == 0)      { osk->shift = !osk->shift;
+                                               osk_relabel(osk); return; }
+    if (g_strcmp0(label, "space") == 0)      { osk_type(osk, GDK_KEY_space); return; }
+    if (g_strcmp0(label, "del") == 0)        { osk_type(osk, GDK_KEY_BackSpace); return; }
+    if (g_strcmp0(label, "enter") == 0)      { osk_type(osk, GDK_KEY_Return); return; }
+    if (!*label)
+        return;
+    osk_type(osk, gdk_unicode_to_keyval((guint) g_utf8_get_char(label)));
+}
+
+static void on_osk_clicked(GtkButton *button, gpointer data)
+{
+    osk_press(data, gtk_button_get_label(button));
+}
+
+static void osk_relabel(Osk *osk)
+{
+    const char **rows = osk->shift ? OSK_UPPER : OSK_LOWER;
+    for (int r = 0; r < OSK_ROWS; r++)
+        for (int c = 0; c < OSK_COLS && osk->keys[r][c]; c++) {
+            const char *src = rows[r];
+            if ((int) strlen(src) <= c)
+                continue;
+            char label[2] = { src[c], 0 };
+            gtk_button_set_label(GTK_BUTTON(osk->keys[r][c]), label);
+        }
+}
+
+/* The selected key is drawn by us, not by GTK's focus ring, because nothing
+ * in the keyboard ever holds focus. */
+static void osk_highlight(Osk *osk)
+{
+    for (int r = 0; r < OSK_ROWS + 1; r++)
+        for (int c = 0; c < OSK_COLS; c++) {
+            GtkWidget *w = osk->keys[r][c];
+            if (!w)
+                continue;
+            GtkStyleContext *ctx = gtk_widget_get_style_context(w);
+            if (r == osk->row && c == osk->col)
+                gtk_style_context_add_class(ctx, "osk-sel");
+            else
+                gtk_style_context_remove_class(ctx, "osk-sel");
+        }
+}
+
+static int osk_row_len(Osk *osk, int row)
+{
+    int n = 0;
+    for (int c = 0; c < OSK_COLS && osk->keys[row][c]; c++)
+        n++;
+    return n;
+}
+
+static void osk_move(Osk *osk, int dr, int dc)
+{
+    int rows = OSK_ROWS + 1;
+    osk->row = (osk->row + dr + rows) % rows;
+    int len = osk_row_len(osk, osk->row);
+    if (len == 0)
+        return;
+    if (dr != 0 && osk->col >= len)
+        osk->col = len - 1;
+    if (dc != 0)
+        osk->col = (osk->col + dc + len) % len;
+    osk_highlight(osk);
+}
+
 static GtkWidget *osk_build(Osk *osk)
 {
-    static const char *rows[] = {
-        "1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm@.-_",
-    };
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-    for (guint r = 0; r < G_N_ELEMENTS(rows); r++) {
+    gtk_widget_set_name(box, "osk");
+
+    for (int r = 0; r < OSK_ROWS; r++) {
         GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-        for (const char *c = rows[r]; *c; c++) {
-            char label[2] = { *c, 0 };
+        int c = 0;
+        for (const char *p = OSK_LOWER[r]; *p && c < OSK_COLS; p++, c++) {
+            char label[2] = { *p, 0 };
             GtkWidget *b = gtk_button_new_with_label(label);
-            g_signal_connect(b, "clicked", G_CALLBACK(osk_send), osk);
+            gtk_widget_set_can_focus(b, FALSE);
+            g_signal_connect(b, "clicked", G_CALLBACK(on_osk_clicked), osk);
             gtk_box_pack_start(GTK_BOX(row), b, TRUE, TRUE, 0);
+            osk->keys[r][c] = b;
         }
         gtk_box_pack_start(GTK_BOX(box), row, FALSE, FALSE, 0);
     }
+
     GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-    const char *extras[] = { "space", "del", "enter", "hide" };
-    for (guint i = 0; i < G_N_ELEMENTS(extras); i++) {
-        GtkWidget *b = gtk_button_new_with_label(extras[i]);
-        g_signal_connect(b, "clicked", G_CALLBACK(osk_send), osk);
+    for (guint i = 0; i < G_N_ELEMENTS(OSK_EXTRAS) && i < OSK_COLS; i++) {
+        GtkWidget *b = gtk_button_new_with_label(OSK_EXTRAS[i]);
+        gtk_widget_set_can_focus(b, FALSE);
+        g_signal_connect(b, "clicked", G_CALLBACK(on_osk_clicked), osk);
         gtk_box_pack_start(GTK_BOX(row), b, TRUE, TRUE, 0);
+        osk->keys[OSK_ROWS][i] = b;
     }
     gtk_box_pack_start(GTK_BOX(box), row, FALSE, FALSE, 0);
     return box;
 }
 
+/* Raise the keyboard when the page puts the caret in a text field, and do it
+ * once per field. A handheld with a touchscreen focuses a field by being
+ * tapped and one without does it by pressing A on it; neither is a moment
+ * where the player should have to know that X exists. */
 static void on_probe(GObject *source, GAsyncResult *result, gpointer data)
 {
+    Osk *osk = data;
     GError *error = NULL;
     JSCValue *value = webkit_web_view_evaluate_javascript_finish(
         WEBKIT_WEB_VIEW(source), result, &error);
-    if (value) {
-        char *text = jsc_value_to_string(value);
-        g_message("probe %s", text);
-        g_free(text);
-        g_object_unref(value);
-    } else if (error) {
-        g_message("probe failed: %s", error->message);
-        g_error_free(error);
+
+    if (!value) {
+        if (error) {
+            if (g_getenv("CLOUD_SIGNIN_DEBUG"))
+                g_message("probe failed: %s", error->message);
+            g_error_free(error);
+        }
+        return;
     }
+
+    char *text = jsc_value_to_string(value);
+    if (g_getenv("CLOUD_SIGNIN_DEBUG"))
+        g_message("probe %s", text);
+
+    if (osk && text && g_str_has_prefix(text, "text:")) {
+        const char *field = text + 5;
+        /* Only on a change of field. Re-raising a keyboard the player just
+         * dismissed, every two seconds, would be worse than never raising
+         * it. */
+        if (g_strcmp0(field, osk->last_field) != 0) {
+            g_strlcpy(osk->last_field, field, sizeof(osk->last_field));
+            if (!gtk_revealer_get_reveal_child(GTK_REVEALER(osk->revealer)))
+                osk_show(osk);
+        }
+    } else if (osk) {
+        osk->last_field[0] = 0;
+    }
+
+    g_free(text);
+    g_object_unref(value);
 }
 
-static gboolean probe_tick(gpointer view)
+static gboolean probe_tick(gpointer data)
 {
+    Osk *osk = data;
     static const char *script =
         "(function () {"
         "  var a = document.activeElement;"
-        "  var d = a ? a.tagName + (a.type ? '[' + a.type + ']' : '') : 'none';"
-        "  if (a && a.id) d += '#' + a.id;"
-        "  if (a && a.name) d += '@' + a.name;"
-        "  return 'focus=' + d"
-        "       + ' value=' + (a && a.value !== undefined ?"
-        "                      JSON.stringify(a.value) : '-')"
-        "       + ' inputs=' + document.querySelectorAll('input').length"
-        "       + ' frames=' + window.frames.length;"
+        "  if (!a) return 'none';"
+        "  var t = (a.tagName || '').toUpperCase();"
+        "  var ty = (a.type || 'text').toLowerCase();"
+        "  var typed = t === 'TEXTAREA' || a.isContentEditable ||"
+        "              (t === 'INPUT' && ['text','email','password','search',"
+        "               'url','tel','number'].indexOf(ty) >= 0);"
+        "  if (!typed) return 'other:' + t;"
+        "  return 'text:' + t + '/' + ty + '/' + (a.id || a.name || '?');"
         "})();";
-    webkit_web_view_evaluate_javascript(WEBKIT_WEB_VIEW(view), script, -1,
-                                        NULL, NULL, NULL, on_probe, NULL);
+
+    /* Nothing to ask while the keyboard is being driven -- and asking anyway
+     * is how this oscillates, since a page can report a different active
+     * element the moment the caret moves. */
+    webkit_web_view_evaluate_javascript(osk->view, script, -1,
+                                        NULL, NULL, NULL, on_probe, osk);
     return G_SOURCE_CONTINUE;
 }
 
@@ -174,22 +326,58 @@ static gboolean on_key(GtkWidget *widget, GdkEventKey *event, gpointer data)
         return TRUE;
     }
 
-    /* X on the handheld, mapped to F1 by cloud_oauth. Shows the keyboard and
-     * puts focus on it so the d-pad walks the keys; hides it and gives focus
-     * back to the page. Without a toggle the d-pad can only ever do one of
-     * the two things. */
     Osk *osk = data;
-    if (osk && event->keyval == GDK_KEY_F1) {
-        gboolean showing = gtk_revealer_get_reveal_child(GTK_REVEALER(osk->revealer));
-        gtk_revealer_set_reveal_child(GTK_REVEALER(osk->revealer), !showing);
-        if (!showing) {
-            GtkWidget *first = gtk_widget_get_toplevel(osk->revealer);
-            gtk_widget_child_focus(osk->revealer, GTK_DIR_TAB_FORWARD);
-            (void) first;
-        } else {
-            gtk_widget_grab_focus(GTK_WIDGET(osk->view));
-        }
+    if (!osk)
+        return FALSE;
+
+    /* L1 and R1, mapped to F2/F3 by cloud_oauth. Scrolling is done in the
+     * page rather than by sending Page_Up, because Page_Up does nothing at
+     * all while a text field has the caret -- which is most of the time on a
+     * sign-in form, and exactly when the button below the fold is the thing
+     * that cannot be reached. */
+    if (event->keyval == GDK_KEY_F2 || event->keyval == GDK_KEY_F3) {
+        const char *js = event->keyval == GDK_KEY_F2
+            ? "window.scrollBy({top: -Math.round(innerHeight*0.7), behavior:'smooth'});"
+            : "window.scrollBy({top:  Math.round(innerHeight*0.7), behavior:'smooth'});";
+        webkit_web_view_evaluate_javascript(osk->view, js, -1,
+                                            NULL, NULL, NULL, NULL, NULL);
         return TRUE;
+    }
+
+    /* X on the handheld, mapped to F1. */
+    gboolean showing = gtk_revealer_get_reveal_child(GTK_REVEALER(osk->revealer));
+    if (event->keyval == GDK_KEY_F1) {
+        if (showing)
+            osk_hide(osk);
+        else
+            osk_show(osk);
+        return TRUE;
+    }
+
+    /* While the keyboard is up the d-pad walks its keys and A presses one.
+     * These are intercepted here, before the page sees them, which is what
+     * lets the WebView keep focus throughout -- see osk_type. B closes the
+     * keyboard rather than navigating back, because with a keyboard open
+     * that is what B means everywhere else. */
+    if (showing) {
+        switch (event->keyval) {
+        case GDK_KEY_Up:    osk_move(osk, -1,  0); return TRUE;
+        case GDK_KEY_Down:  osk_move(osk,  1,  0); return TRUE;
+        case GDK_KEY_Left:  osk_move(osk,  0, -1); return TRUE;
+        case GDK_KEY_Right: osk_move(osk,  0,  1); return TRUE;
+        case GDK_KEY_Return:
+        case GDK_KEY_KP_Enter: {
+            GtkWidget *key = osk->keys[osk->row][osk->col];
+            if (key)
+                osk_press(osk, gtk_button_get_label(GTK_BUTTON(key)));
+            return TRUE;
+        }
+        case GDK_KEY_BackSpace:
+            osk_hide(osk);
+            return TRUE;
+        default:
+            break;
+        }
     }
     return FALSE;
 }
@@ -243,17 +431,24 @@ static void on_load_changed(WebKitWebView *view, WebKitLoadEvent event,
     webkit_web_view_evaluate_javascript(view, focus_first, -1, NULL, NULL,
                                         NULL, NULL, NULL);
 
-    /* Diagnostic, behind an environment variable, reporting what the page
-     * actually holds rather than what it looks like it holds. Keystroke
+    /* This poll does two jobs. It raises the keyboard when the caret lands in
+     * a text field, and under CLOUD_SIGNIN_DEBUG it reports what the page
+     * actually holds rather than what it looks like it holds -- keystroke
      * delivery has three places it can fail silently, and a screenshot only
-     * shows the last one -- an empty box looks identical whether nothing
+     * shows the last one, since an empty box looks identical whether nothing
      * arrived, something arrived and was rejected, or the caret is in a
      * different element than the one drawing a focus ring. Two earlier
-     * attempts at this reported through document.title, which never reaches
+     * attempts at that reported through document.title, which never reaches
      * the compositor without a notify::title handler and so said nothing at
-     * all. This asks the page and prints the answer. */
-    if (g_getenv("CLOUD_SIGNIN_DEBUG"))
-        g_timeout_add_seconds(2, probe_tick, view);
+     * all. Asking the page and printing the answer is what settled it.
+     *
+     * A page can finish loading several times (a redirect, a form post), so
+     * the timer is started once rather than once per load. */
+    static gboolean probing = FALSE;
+    if (data && !probing) {
+        probing = TRUE;
+        g_timeout_add(500, probe_tick, data);
+    }
 }
 
 static gboolean on_decide_policy(WebKitWebView *view,
@@ -335,7 +530,7 @@ int main(int argc, char **argv)
 
     gtk_init(&argc, &argv);
 
-    static Osk osk = { NULL, NULL };
+    static Osk osk;
 
     GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window), "Sign in");
@@ -359,7 +554,7 @@ int main(int argc, char **argv)
     webkit_settings_set_enable_tabs_to_links(settings, TRUE);
 
     g_signal_connect(view, "decide-policy", G_CALLBACK(on_decide_policy), NULL);
-    g_signal_connect(view, "load-changed", G_CALLBACK(on_load_changed), NULL);
+    g_signal_connect(view, "load-changed", G_CALLBACK(on_load_changed), &osk);
     g_signal_connect(window, "key-press-event", G_CALLBACK(on_key), &osk);
 
     /* Something to look at while the provider's page loads. Six seconds of
@@ -384,6 +579,13 @@ int main(int argc, char **argv)
      * than show/hide so the page resizes around it instead of being covered:
      * a keyboard over the field you are typing into is worse than no
      * keyboard. */
+    GtkCssProvider *css = gtk_css_provider_new();
+    gtk_css_provider_load_from_data(css, OSK_CSS, -1, NULL);
+    gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),
+                                              GTK_STYLE_PROVIDER(css),
+                                              GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_unref(css);
+
     osk.view = view;
     osk.revealer = gtk_revealer_new();
     gtk_revealer_set_transition_type(GTK_REVEALER(osk.revealer),
@@ -391,9 +593,22 @@ int main(int argc, char **argv)
     gtk_container_add(GTK_CONTAINER(osk.revealer), osk_build(&osk));
     gtk_revealer_set_reveal_child(GTK_REVEALER(osk.revealer), FALSE);
 
+    /* The player arrives here from a menu, with no way to find out what the
+     * buttons do -- the page is the provider's and says nothing about a
+     * handheld. Every other screen on this device carries a help bar; this
+     * is that. It is also the answer to "nothing brings up the keyboard":
+     * the keyboard raises itself on a text field, and this says how to ask
+     * for it the rest of the time. */
+    GtkWidget *hints = gtk_label_new(
+        "A select     B back     X keyboard     "
+        "L1/R1 scroll     SELECT+START exit");
+    gtk_widget_set_name(hints, "hints");
+    gtk_label_set_xalign(GTK_LABEL(hints), 0.5f);
+
     GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_box_pack_start(GTK_BOX(outer), stack, TRUE, TRUE, 0);
     gtk_box_pack_start(GTK_BOX(outer), osk.revealer, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(outer), hints, FALSE, FALSE, 0);
 
     gtk_container_add(GTK_CONTAINER(window), outer);
     gtk_widget_set_can_focus(GTK_WIDGET(view), TRUE);
