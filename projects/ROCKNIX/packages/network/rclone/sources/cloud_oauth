@@ -50,6 +50,7 @@ import json
 import os
 import re
 import secrets
+import select
 import shutil
 import signal
 import socket
@@ -550,6 +551,9 @@ class BrowserSession:
         self.log_path = None
         self.error = None
 
+    def is_running(self):
+        return self.proc is not None and self.proc.poll() is None
+
     def start(self):
         runtime, display = running_session()
         if not runtime:
@@ -911,17 +915,37 @@ def exit_hint():
     return "SELECT + START"
 
 
+# _IOW('E', 0x90, int) -- take a device exclusively, so nobody else sees it.
+EVIOCGRAB = 0x40044590
+
+
 class GamepadBridge:
     """Turn the handheld's buttons into keystrokes for the sign-in page.
 
-    Reads the gamepad's own event node -- evdev allows several readers, so
-    this does not take input away from EmulationStation -- and replays each
-    press through the same virtual keyboard the phone types on.
+    Reads the gamepad's event node and replays each press through the same
+    virtual keyboard the phone types on.
+
+    It takes the pad **exclusively** (EVIOCGRAB) for as long as the window is
+    up. EmulationStation is still running behind this page and holds the same
+    node open; SDL joystick events are not gated on window focus the way
+    keyboard events are, and `InputManager::parseEvent` runs for every event
+    with no foreground check. So without the grab every d-pad press and every
+    A meant for the provider's page is also driving the menu behind it --
+    scrolling it, and activating whatever row happens to be selected.
+
+    Typing was never affected: keys reach the compositor, which delivers them
+    to the focused surface only.
+
+    A grab that outlived the window would leave the player holding a handheld
+    whose buttons do nothing, so the loop watches the browser process and
+    releases the moment it is gone -- see the select() timeout below, which
+    exists to make that check happen even when nobody is pressing anything.
     """
 
-    def __init__(self, keyboard, on_quit):
+    def __init__(self, keyboard, on_quit, alive=None):
         self.keyboard = keyboard
         self.on_quit = on_quit
+        self.alive = alive
         self.thread = None
         self.stop_flag = threading.Event()
 
@@ -941,10 +965,32 @@ class GamepadBridge:
         except OSError as exc:
             log("could not read the gamepad: %s" % exc)
             return
+
+        grabbed = False
+        try:
+            fcntl.ioctl(fd, EVIOCGRAB, 1)
+            grabbed = True
+        except OSError as exc:
+            # Not fatal: the page is still drivable, EmulationStation just
+            # sees the same presses. Worth saying so in the log, because the
+            # symptom is a menu that moved on its own.
+            log("could not take the gamepad exclusively: %s" % exc)
+
         size = struct.calcsize("llHHi")
         held = set()
         try:
             while not self.stop_flag.is_set():
+                # The timeout is the watchdog's heartbeat, not a poll for
+                # input: without it this blocks in read() and a window that
+                # died would leave the pad grabbed until someone pressed a
+                # button.
+                ready, _, _ = select.select([fd], [], [], 0.5)
+                if self.alive is not None and not self.alive():
+                    log("sign-in window is gone; releasing the gamepad")
+                    self.on_quit()
+                    return
+                if not ready:
+                    continue
                 data = os.read(fd, size)
                 if len(data) < size:
                     continue
@@ -977,6 +1023,11 @@ class GamepadBridge:
         except OSError:
             pass
         finally:
+            if grabbed:
+                try:
+                    fcntl.ioctl(fd, EVIOCGRAB, 0)
+                except OSError:
+                    pass
             os.close(fd)
 
     def stop(self):
@@ -1033,7 +1084,8 @@ class SessionHolder:
         # this the page is on the screen, cannot be driven from the device,
         # and cannot be closed -- which strands the handheld in a browser.
         self.keyboard.open()
-        self.gamepad = GamepadBridge(self.keyboard, self.stop_browser)
+        self.gamepad = GamepadBridge(self.keyboard, self.stop_browser,
+                                     alive=browser.is_running)
         self.gamepad.start()
         return True
 
