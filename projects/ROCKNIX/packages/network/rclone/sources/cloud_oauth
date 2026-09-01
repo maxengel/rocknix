@@ -712,6 +712,7 @@ info.</p>
 
   // One request at a time, in order. Backspaces and characters that overtake
   // each other arrive as scrambled text in the field on the handheld.
+  var ready = false;
   var queue = Promise.resolve();
   function send(body) {
     queue = queue.then(function () {
@@ -724,50 +725,59 @@ info.</p>
     return queue;
   }
 
-  // What you typed stays visible. Clearing the box after every keystroke
-  // made a keyboard that looked broken -- you type and nothing appears
-  // anywhere you can see. Only the difference is sent.
-  var last = "";
-  box.addEventListener("input", function () {
-    var v = box.value;
-    if (v === last) return;
-    if (v.length > last.length && v.indexOf(last) === 0) {
-      send("type=" + encodeURIComponent(v.slice(last.length)));
-    } else if (v.length < last.length && last.indexOf(v) === 0) {
-      for (var i = 0; i < last.length - v.length; i++) send("key=backspace");
+  // Two different strings, which is the distinction the first cut missed.
+  // `shown` is what is in the box; `sent` is what has actually reached the
+  // handheld. They differ whenever somebody types before the page is open --
+  // the order this flow asks for, since the QR is on the screen the sign-in
+  // page replaces.
+  var sent = "";
+
+  function deliver(v) {
+    if (v === sent) return;
+    if (v.length > sent.length && v.indexOf(sent) === 0) {
+      send("type=" + encodeURIComponent(v.slice(sent.length)));
+    } else if (v.length < sent.length && sent.indexOf(v) === 0) {
+      for (var i = 0; i < sent.length - v.length; i++) send("key=backspace");
     } else {
-      for (var j = 0; j < last.length; j++) send("key=backspace");
+      for (var j = 0; j < sent.length; j++) send("key=backspace");
       if (v) send("type=" + encodeURIComponent(v));
     }
-    last = v;
+    sent = v;
+  }
+
+  // What you typed stays visible. Clearing the box after every keystroke made
+  // a keyboard that looked broken -- you type and nothing appears anywhere
+  // you can see.
+  box.addEventListener("input", function () {
+    if (ready) deliver(box.value);
   });
   box.addEventListener("keydown", function (e) {
     var named = {Enter: "enter", Backspace: "backspace", Tab: "tab"}[e.key];
-    if (named) {
-      e.preventDefault();
-      send("key=" + named);
-      if (named === "backspace") { last = last.slice(0, -1); box.value = last; }
-      if (named === "enter") { last = ""; box.value = ""; }
+    if (!named) return;
+    e.preventDefault();
+    if (named === "backspace") {
+      box.value = box.value.slice(0, -1);
+      if (ready) deliver(box.value);
+      return;
     }
+    if (!ready) return;
+    send("key=" + named);
+    if (named === "enter") { box.value = ""; sent = ""; }
   });
 
   // Local only: the handheld has moved to another field and this box still
   // holds what went into the last one.
   document.getElementById("clear").addEventListener("click", function () {
-    box.value = ""; last = ""; box.focus();
+    box.value = ""; sent = ""; box.focus();
   });
 
-  // Everything in the box, in one go, with no dependence on how the browser
-  // reported it arriving. A pasted password is the case that matters.
+  // Everything in the box that has not gone yet, in one go, with no
+  // dependence on how the browser reported it arriving. A pasted password is
+  // the case that matters, and whether a paste fires an input event -- and as
+  // how many -- differs by phone browser.
   document.getElementById("sendall").addEventListener("click", function () {
-    var v = box.value;
-    if (!v) return;
-    // Only the part that has not already gone, so tapping this after typing
-    // does not send the whole field twice.
-    var rest = (last && v.indexOf(last) === 0) ? v.slice(last.length) : v;
-    if (!rest) return;
-    send("type=" + encodeURIComponent(rest));
-    last = v;
+    if (!ready) return;
+    deliver(box.value);
   });
 
   Array.prototype.forEach.call(document.querySelectorAll("[data-key]"), function (b) {
@@ -825,9 +835,14 @@ info.</p>
         state.className = open ? "ok" : "note";
         state.textContent = open
           ? "Ready \u2014 typing and the pointer reach the handheld."
-          : "Choose CONTINUE on your handheld to open the sign-in page. "
-            + "This keyboard starts working when it does.";
-        box.disabled = !open;
+          : "Not open yet -- choose CONTINUE on your handheld. You can type "
+            + "or paste here meanwhile, then use the send button.";
+        // The box is never disabled. It was, until this said the handheld was
+        // ready -- so somebody who scanned the QR first, which is the order
+        // this flow asks for, could not type at all and saw nothing appear.
+        // Re-asserting disabled every two seconds also dismisses a phone
+        // keyboard in the middle of typing.
+        ready = open;
       })
       .catch(function () {})
       .then(function () { setTimeout(poll, 2000); });
