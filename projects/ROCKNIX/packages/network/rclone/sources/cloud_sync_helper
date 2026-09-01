@@ -210,12 +210,19 @@ main() {
   # actually wants a mirror can set it back -- where somebody who does not
   # want one has no way of learning that they had it until their saves are
   # gone.
+  # Once, and only once. Rewriting on every run does not migrate anybody off a
+  # bad default -- it takes the setting away, so somebody who reads the docs,
+  # decides they want a mirror and sets it gets silently overruled on their
+  # next backup. The marker is what makes this a migration rather than a veto.
+  # Found by testing: a run with sync deliberately set came back as copy.
   if [ -f "/storage/.config/cloud_sync.conf" ] \
+     && [ ! -f "/storage/.config/.cloud_sync-copy-default-applied" ] \
      && grep -q '^BACKUPMETHOD="\?sync"\?' /storage/.config/cloud_sync.conf; then
     cp /storage/.config/cloud_sync.conf \
        /storage/.config/cloud_sync.conf.pre-copy-default 2>/dev/null
     sed -i 's|^BACKUPMETHOD=.*|BACKUPMETHOD="copy"|' /storage/.config/cloud_sync.conf
-    log_to_file "${log_file}" "BACKUPMETHOD was 'sync', which deletes other devices' saves from the shared folder; set to 'copy'. Previous config kept as cloud_sync.conf.pre-copy-default"
+    touch /storage/.config/.cloud_sync-copy-default-applied 2>/dev/null
+    log_to_file "${log_file}" "BACKUPMETHOD was 'sync', which deletes other devices' saves from the shared folder; set to 'copy'. Previous config kept as cloud_sync.conf.pre-copy-default. This is done once; setting it back to sync will be respected."
   fi
 
   return 0

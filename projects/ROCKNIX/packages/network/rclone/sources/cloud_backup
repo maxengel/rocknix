@@ -307,6 +307,19 @@ load_config() {
     
     # Remove conflicting --verbose and -v flags that conflict with --log-level
     RCLONEOPTS=$(echo "${RCLONEOPTS}" | sed 's/--verbose//g' | sed 's/-v / /g')
+    # The remote does not only hold saves. It holds every device's system
+    # backup under SYNCPATH_BACKUP, and whatever else the owner keeps in
+    # that folder. --delete-excluded deletes everything the allowlist does
+    # not admit, so in sync mode a saves backup removed the backup folder
+    # of every device including other people's -- the phase that follows
+    # re-uploads only this device's, so the rest were simply gone.
+    #
+    # Found by testing sync mode against a remote seeded as a second
+    # handheld: its archive was carried off with its saves. cloud_restore
+    # has stripped this flag for the same class of reason since issue #5;
+    # the comment there says backup keeps it because it only tidies the
+    # remote, and that premise was wrong.
+    RCLONEOPTS=$(echo "${RCLONEOPTS}" | sed 's/--delete-excluded//g')
     log_message "After removing verbose flags: ${RCLONEOPTS}" "false"
     
     # Ensure each option starts with a space (except the first one)
