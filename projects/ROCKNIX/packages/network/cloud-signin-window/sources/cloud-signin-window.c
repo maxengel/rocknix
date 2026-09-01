@@ -57,6 +57,9 @@ static gboolean host_permitted(const char *host)
  */
 typedef struct {
     GtkWidget *revealer;
+    GtkWidget *hints;
+    const char *exit_hint;
+    gboolean auto_raise;
     WebKitWebView *view;
     GtkWidget *keys[OSK_ROWS + 1][OSK_COLS];   /* +1: the extras row */
     int row, col;
@@ -122,10 +125,29 @@ static void osk_type(Osk *osk, guint keyval)
 static void osk_relabel(Osk *osk);
 static void osk_highlight(Osk *osk);
 
+/* The help bar has to describe the buttons as they behave at this moment. It
+ * said "B back" while the keyboard was up, where B closes the keyboard and
+ * goes nowhere -- a help line that is wrong is worse than no help line, since
+ * it is believed. */
+static void osk_hints(Osk *osk)
+{
+    gboolean up = gtk_revealer_get_reveal_child(GTK_REVEALER(osk->revealer));
+    char *text = up
+        ? g_strdup_printf("A press key     B or X close keyboard     "
+                          "L1/R1 scroll     %s to exit", osk->exit_hint)
+        : g_strdup_printf("A select     B back     X keyboard     "
+                          "Y next     L1/R1 scroll     %s to exit",
+                          osk->exit_hint);
+    if (osk->hints)
+        gtk_label_set_text(GTK_LABEL(osk->hints), text);
+    g_free(text);
+}
+
 static void osk_hide(Osk *osk)
 {
     gtk_revealer_set_reveal_child(GTK_REVEALER(osk->revealer), FALSE);
     gtk_widget_grab_focus(GTK_WIDGET(osk->view));
+    osk_hints(osk);
 }
 
 static void osk_show(Osk *osk)
@@ -133,6 +155,7 @@ static void osk_show(Osk *osk)
     gtk_revealer_set_reveal_child(GTK_REVEALER(osk->revealer), TRUE);
     gtk_widget_grab_focus(GTK_WIDGET(osk->view));
     osk_highlight(osk);
+    osk_hints(osk);
 }
 
 /* One entry point for a key, whether it arrived from the d-pad or from a
@@ -307,7 +330,11 @@ static void on_probe(GObject *source, GAsyncResult *result, gpointer data)
          * it. */
         if (g_strcmp0(field, osk->last_field) != 0) {
             g_strlcpy(osk->last_field, field, sizeof(osk->last_field));
-            if (!gtk_revealer_get_reveal_child(GTK_REVEALER(osk->revealer)))
+            /* Not for somebody who chose to type on their phone: they asked
+             * for the other keyboard, and this one only takes up the screen
+             * they are reading the form on. X still summons it. */
+            if (osk->auto_raise
+                && !gtk_revealer_get_reveal_child(GTK_REVEALER(osk->revealer)))
                 osk_show(osk);
         }
     } else if (osk) {
@@ -567,9 +594,12 @@ int main(int argc, char **argv)
      * have none. cloud_oauth reads the pad and passes what it found, because
      * naming a button the player does not have is worse than naming none. */
     const char *exit_hint = "SELECT + START";
+    gboolean auto_raise = TRUE;
     for (int i = 2; i < argc; i++) {
         if (g_strcmp0(argv[i], "--exit-hint") == 0 && i + 1 < argc)
             exit_hint = argv[++i];
+        else if (g_strcmp0(argv[i], "--no-auto-keyboard") == 0)
+            auto_raise = FALSE;
         else if (!allowed_host && argv[i][0] != '-')
             allowed_host = argv[i];
     }
@@ -637,6 +667,8 @@ int main(int argc, char **argv)
     g_object_unref(css);
 
     osk.view = view;
+    osk.exit_hint = exit_hint;
+    osk.auto_raise = auto_raise;
     osk.revealer = gtk_revealer_new();
     gtk_revealer_set_transition_type(GTK_REVEALER(osk.revealer),
                                      GTK_REVEALER_TRANSITION_TYPE_SLIDE_UP);
@@ -649,13 +681,11 @@ int main(int argc, char **argv)
      * is that. It is also the answer to "nothing brings up the keyboard":
      * the keyboard raises itself on a text field, and this says how to ask
      * for it the rest of the time. */
-    char *hint_text = g_strdup_printf(
-        "A select     B back     X keyboard     "
-        "L1/R1 scroll     %s to exit", exit_hint);
-    GtkWidget *hints = gtk_label_new(hint_text);
-    g_free(hint_text);
+    GtkWidget *hints = gtk_label_new("");
     gtk_widget_set_name(hints, "hints");
     gtk_label_set_xalign(GTK_LABEL(hints), 0.5f);
+    osk.hints = hints;
+    osk_hints(&osk);
 
     GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_box_pack_start(GTK_BOX(outer), stack, TRUE, TRUE, 0);

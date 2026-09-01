@@ -574,7 +574,9 @@ class BrowserSession:
         })
         self.proc = subprocess.Popen(
             [SIGNIN_WINDOW, self.url, registrable_domain(self.host),
-             "--exit-hint", exit_hint()],
+             "--exit-hint", exit_hint()]
+            + (["--no-auto-keyboard"]
+               if os.path.exists(state_path("phone-keyboard")) else []),
             env=env, stdout=self.log_file, stderr=subprocess.STDOUT)
         log("sign-in window opened on %s for %s" % (display, self.host))
         return True
@@ -616,30 +618,42 @@ def registrable_domain(host):
 # unnecessary; on a 3.5" screen driven by a d-pad it is the difference between
 # a minute of misery and a few seconds. Both work, because the page is on the
 # device's screen either way -- so the choice is the player's, not ours.
-HERE_BLOCK = """
-<h2>Sign in on the handheld</h2>
-<p class=note>The %(name)s page is open on your handheld's screen. Sign in
-there and it finishes on its own \u2014 nothing to copy back.</p>
+REMOTE_PAGE = """<!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
+<title>Keyboard for %(name)s</title>
+<style>%(style)s</style>
+<div class=card>
+<h1>Keyboard for %(name)s</h1>
 
-<div class=box>
-<p class=note><strong>Typing on the handheld is fine</strong> if its screen and
-controls suit you. If not, type here and the keystrokes go straight to it.</p>
-<input id=kb placeholder="Type here, it appears on the handheld"
-       autocapitalize=off autocorrect=off spellcheck=false>
+<div id=state class=note>Checking&hellip;</div>
+
+<input id=kb placeholder="Type here" autocapitalize=off autocorrect=off
+       spellcheck=false autofocus>
 <div class=keys>
+<button type=button class=minor data-key=backspace>Back</button>
 <button type=button class=minor data-key=tab>Tab</button>
-<button type=button class=minor data-key=backspace>Backspace</button>
 <button type=button class=minor data-key=enter>Enter</button>
 </div>
+<div class=keys>
+<button type=button class=minor data-key=left>&larr;</button>
+<button type=button class=minor data-key=up>&uarr;</button>
+<button type=button class=minor data-key=down>&darr;</button>
+<button type=button class=minor data-key=right>&rarr;</button>
+</div>
+
+<p class=note>The sign-in page is on your handheld&rsquo;s screen, not here.
+This types for it, so you can use a keyboard you already know.</p>
 </div>
 
 <script>
-// Send each keystroke as it happens rather than a whole field at once: the
-// page on the handheld is a real login form, so it reacts to typing --
-// validating an address, enabling a button, moving focus.
+// Every keystroke goes as it happens rather than a field at a time: the page
+// on the handheld is a real login form and reacts to typing -- validating an
+// address, enabling a button, moving focus. A value posted whole arrives with
+// none of that having happened.
 (function () {
-  var box = document.getElementById("kb");
   var pin = "%(pin)s";
+  var box = document.getElementById("kb");
+  var state = document.getElementById("state");
+
   function send(body) {
     return fetch("/" + pin, {
       method: "POST",
@@ -647,6 +661,7 @@ controls suit you. If not, type here and the keystrokes go straight to it.</p>
       body: body + "&pin=" + encodeURIComponent(pin)
     });
   }
+
   box.addEventListener("input", function () {
     var v = box.value;
     if (!v) return;
@@ -660,11 +675,28 @@ controls suit you. If not, type here and the keystrokes go straight to it.</p>
   Array.prototype.forEach.call(document.querySelectorAll("[data-key]"), function (b) {
     b.addEventListener("click", function () { send("key=" + b.dataset.key); box.focus(); });
   });
+
+  // This page has to be useful before the handheld opens anything. The QR is
+  // displayed on the screen the sign-in page then replaces, so it can only be
+  // scanned first -- and must come alive on its own afterwards. Polling is
+  // what makes "scan, then choose CONTINUE" work in that order.
+  function poll() {
+    fetch("/" + pin + "?probe=1").then(function (r) { return r.text(); })
+      .then(function (t) {
+        var open = t.trim() === "open";
+        state.className = open ? "ok" : "note";
+        state.textContent = open
+          ? "Ready \u2014 what you type appears on the handheld."
+          : "Choose CONTINUE on your handheld to open the sign-in page. "
+            + "This keyboard starts working when it does.";
+        box.disabled = !open;
+      })
+      .catch(function () {})
+      .then(function () { setTimeout(poll, 2000); });
+  }
+  poll();
 })();
 </script>
-
-<p class=note>Everything below is the older way, if the page above did not
-open on the handheld.</p>
 """
 
 
@@ -903,15 +935,12 @@ def exit_hint():
     Mode is what ES maps its own hotkey to, and what the maintainer's fingers
     reach for.
     """
-    _, codes = find_gamepad()
-    if BTN_MODE in codes:
-        # Both are accepted, so both are named, and the one the maintainer
-        # reaches for on this hardware is named first. Select+Start is the
-        # convention players arrive with from other handhelds; Mode is the
-        # button ES maps its own hotkey to here, and is not always labelled
-        # "Mode" on the shell. Naming only one leaves somebody pressing a
-        # combination that works and being told it is not the way out.
-        return "MODE OR SELECT + START"
+    # One combination on screen, always. "MODE OR SELECT + START" read as
+    # though Mode alone were a way out, and a help line that has to be parsed
+    # is worse than one that covers fewer of the buttons that happen to work.
+    # Mode is still accepted -- see GAMEPAD_HOLD -- it is simply not what we
+    # tell people, because Select and Start are labelled on every handheld we
+    # ship for and Mode is not.
     return "SELECT + START"
 
 
@@ -1177,14 +1206,28 @@ def make_handler(holder, shutdown):
             self.wfile.write(encoded)
 
         def _render(self, message=""):
+            # A phone is a keyboard for the page on the handheld, and nothing
+            # else. It used to be offered the whole sign-in -- a link to the
+            # provider and a box to paste the redirect back into -- which is
+            # what a tester did on scanning the QR, because it was there. That
+            # flow only ever existed because the handheld could not show the
+            # page itself; where it can, offering both is offering a wrong
+            # turn.
+            if browser_stack_available():
+                self._send(REMOTE_PAGE % {
+                    "style": STYLE,
+                    "name": holder.name,
+                    "pin": holder.pin,
+                })
+                return
+
             self._send(PAGE % {
                 "style": STYLE,
                 "name": holder.name,
                 "provider": holder.session.provider if holder.session else "",
                 "pin": holder.pin,
                 "message": message,
-                "here": HERE_BLOCK % {"pin": holder.pin, "name": holder.name}
-                        if holder.browser else "",
+                "here": "",
             })
 
         def _render_pin(self, message="", supplied=""):
@@ -1243,6 +1286,21 @@ def make_handler(holder, shutdown):
         def do_GET(self):
             if not self._gate(self._supplied()):
                 return
+
+            # Is the page actually up on the handheld yet? The keyboard page
+            # asks every couple of seconds, because it is scanned before the
+            # window exists and has to start working by itself when it does.
+            query = urllib.parse.parse_qs(
+                urllib.parse.urlparse(self.path).query)
+            if query.get("probe"):
+                body = (b"open" if holder.browser else b"waiting")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
             self._render()
 
         def do_POST(self):
@@ -1254,8 +1312,12 @@ def make_handler(holder, shutdown):
 
             if fields.get("type") or fields.get("key"):
                 if not holder.browser:
-                    self._render('<div class=err>The sign-in page is not '
-                                 'open on the handheld.</div>')
+                    # 409 rather than a rendered page: the keyboard posts by
+                    # fetch and throwing HTML at it would replace nothing and
+                    # tell nobody. Its own poll is what reports this state.
+                    self.send_response(409)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
                     return
                 text = fields.get("type", [""])[0]
                 named = fields.get("key", [""])[0]
@@ -1398,7 +1460,8 @@ def main(argv):
         sys.stderr.write(
             "usage: cloud_oauth serve <backend> [--name NAME] "
             "[--label 'Dropbox'] [--port N] [--timeout SECONDS]\n"
-            "       cloud_oauth url | info | status | open | wait | cancel\n")
+            "       cloud_oauth url | info | status | open [--phone] "
+            "| wait | cancel\n")
         return 1
 
     command = argv[1]
@@ -1428,6 +1491,19 @@ def main(argv):
         # Asked for by the handheld once the player has had a chance to read
         # the address and scan the code.
         os.makedirs(STATE_DIR, exist_ok=True)
+
+        # Which keyboard the player chose. Raising the on-screen one for
+        # somebody who asked to type on their phone covers the form they are
+        # reading with a keyboard they did not ask for.
+        marker = state_path("phone-keyboard")
+        if "--phone" in argv:
+            open(marker, "w").close()
+        elif os.path.exists(marker):
+            try:
+                os.unlink(marker)
+            except OSError:
+                pass
+
         open(state_path("open-browser"), "w").close()
 
         # Return once the window is actually up, not once the request is
