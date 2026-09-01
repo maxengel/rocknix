@@ -139,9 +139,20 @@ case "${1}" in
         if [ -f "${BACKUPFILE}" ]
         then
             mkdir -p "${ARCHIVEFOLDER}"
-            TODAY=$(date +%y-%m-%d_%H_%M_%S)
-            mv "${BACKUPFILE}" "${ARCHIVEFOLDER}/ARCHIVED_${OS_NAME}_BACKUP-${TODAY}.zip"
-            ls -1t "${ARCHIVEFOLDER}"/ARCHIVED_*.zip 2>/dev/null | tail -n +$((ARCHIVE_KEEP + 1)) | while read -r OLD
+            # Date first, and a four-digit year. The name is what somebody
+            # reads when they are looking for the archive from before
+            # something went wrong, and a leading date both sorts correctly
+            # and answers that question at a glance --
+            # "2026_09_01-143000-ROCKNIX_BACKUP.zip". It used to lead with
+            # ARCHIVED_ and bury a two-digit date at the end, which sorts by
+            # nothing useful.
+            TODAY=$(date +%Y_%m_%d-%H%M%S)
+            mv "${BACKUPFILE}" "${ARCHIVEFOLDER}/${TODAY}-${OS_NAME}_BACKUP.zip"
+            # Both shapes: an upgraded device still has archives written under
+            # the old name, and rotation must not skip them and keep them for
+            # ever while trimming only the new ones.
+            ls -1t "${ARCHIVEFOLDER}"/*_BACKUP*.zip "${ARCHIVEFOLDER}"/ARCHIVED_*.zip 2>/dev/null \
+                | awk '!seen[$0]++' | tail -n +$((ARCHIVE_KEEP + 1)) | while read -r OLD
             do
                 rm -f "${OLD}"
             done

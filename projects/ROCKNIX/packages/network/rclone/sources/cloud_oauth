@@ -102,6 +102,15 @@ def reset_state(**fields):
     listener that is waiting for a different number.
     """
     os.makedirs(STATE_DIR, exist_ok=True)
+    # The markers are part of the state. A completion marker left by the last
+    # attempt would tell the next one's window to show "Finishing up" before
+    # anybody had signed in to anything.
+    for name in ("open-browser", "close-browser", "signed-in", "page",
+                 "phone-keyboard"):
+        try:
+            os.unlink(state_path(name))
+        except OSError:
+            pass
     with open(state_path("session.json"), "w") as handle:
         json.dump(dict(fields), handle)
 
@@ -622,6 +631,7 @@ class BrowserSession:
         # Where the window records the address it is showing, so the phone can
         # tell when the provider has moved on.
         env["CLOUD_SIGNIN_PAGE_FILE"] = state_path("page")
+        env["CLOUD_SIGNIN_DONE_FILE"] = state_path("signed-in")
         env.update({
             "XDG_RUNTIME_DIR": runtime,
             "WAYLAND_DISPLAY": display,
@@ -1471,13 +1481,30 @@ class SessionHolder:
         # than leaving rclone's own "All done, go back to rclone" sitting
         # there -- a sentence about a program the player has never heard of,
         # on a screen with no way out but a button combination.
-        session.on_signed_in = self.stop_browser
+        session.on_signed_in = self.signed_in
         if not session.start():
             return False, session.error
         with self.lock:
             self.stop_browser()
             self.session = session
         return True, None
+
+    def signed_in(self):
+        """The sign-in landed.
+
+        The window is deliberately left open. EmulationStation is suspended
+        while the page owns the screen and takes several seconds to rebuild
+        everything it released; closing here put a black screen in front of
+        the player at the moment their sign-in had just succeeded, which
+        reads as a crash rather than as progress. The window switches itself
+        to "Finishing up" when it sees this marker, and is closed once ES is
+        drawing again and asks for it.
+        """
+        os.makedirs(STATE_DIR, exist_ok=True)
+        try:
+            open(state_path("signed-in"), "w").close()
+        except OSError:
+            self.stop_browser()
 
     def start_browser(self):
         """Open the provider's page here, for the handheld or a phone to drive."""
@@ -1781,8 +1808,15 @@ def cmd_serve(backend, remote_name, label, port, timeout):
         # and gives the handheld back, and the player may well want it again
         # -- to correct an address, or because they closed it by accident.
         flag = state_path("open-browser")
+        shut = state_path("close-browser")
         deadline = time.time() + timeout
         while time.time() < deadline:
+            if os.path.exists(shut):
+                try:
+                    os.unlink(shut)
+                except OSError:
+                    pass
+                holder.stop_browser()
             if os.path.exists(flag):
                 try:
                     os.unlink(flag)
@@ -1831,7 +1865,7 @@ def main(argv):
             "usage: cloud_oauth serve <backend> [--name NAME] "
             "[--label 'Dropbox'] [--port N] [--timeout SECONDS]\n"
             "       cloud_oauth url | info | status | open [--phone] "
-            "| wait | cancel\n")
+            "| wait | close | cancel\n")
         return 1
 
     command = argv[1]
@@ -1894,9 +1928,28 @@ def main(argv):
         # so a serve that died without tidying up cannot strand the caller.
         deadline = time.time() + 1800
         while time.time() < deadline and signin_window_running():
+            # A finished sign-in releases the caller immediately: the window
+            # stays up saying so while the caller rebuilds itself, and asks
+            # for it to be closed afterwards. Waiting for the window to go
+            # first is what produced a black screen.
+            if os.path.exists(state_path("signed-in")):
+                return 0
             time.sleep(0.3)
 
         # And not a moment before the pad is handed back -- see pad_is_free.
+        settle = time.time() + 5
+        while time.time() < settle and not pad_is_free():
+            time.sleep(0.1)
+        return 0
+
+    if command == "close":
+        # Asked for once the caller is drawing again, so there is something
+        # behind the window when it goes.
+        os.makedirs(STATE_DIR, exist_ok=True)
+        open(state_path("close-browser"), "w").close()
+        deadline = time.time() + 10
+        while time.time() < deadline and signin_window_running():
+            time.sleep(0.2)
         settle = time.time() + 5
         while time.time() < settle and not pad_is_free():
             time.sleep(0.1)
