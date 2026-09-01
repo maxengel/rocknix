@@ -677,6 +677,12 @@ REMOTE_PAGE = """<!doctype html><meta name=viewport content="width=device-width,
 <button type=button class=minor data-key=enter>Enter</button>
 <button type=button class=minor id=clear>Clear</button>
 </div>
+<div class=keys>
+<button type=button id=sendall>Send what is in the box</button>
+</div>
+<p class=note>Paste a password here and send it in one go. Typing is sent as
+you go; pasting is not always reported the same way by every phone browser,
+so this button does not rely on it.</p>
 
 <div class=keys>
 <button type=button class=minor data-key=left>&larr;</button>
@@ -751,6 +757,19 @@ info.</p>
     box.value = ""; last = ""; box.focus();
   });
 
+  // Everything in the box, in one go, with no dependence on how the browser
+  // reported it arriving. A pasted password is the case that matters.
+  document.getElementById("sendall").addEventListener("click", function () {
+    var v = box.value;
+    if (!v) return;
+    // Only the part that has not already gone, so tapping this after typing
+    // does not send the whole field twice.
+    var rest = (last && v.indexOf(last) === 0) ? v.slice(last.length) : v;
+    if (!rest) return;
+    send("type=" + encodeURIComponent(rest));
+    last = v;
+  });
+
   Array.prototype.forEach.call(document.querySelectorAll("[data-key]"), function (b) {
     b.addEventListener("click", function () { send("key=" + b.dataset.key); });
   });
@@ -759,19 +778,28 @@ info.</p>
   // because the pointer belongs to the handheld's screen and this pad has no
   // idea how big that is.
   var px = 0, py = 0, moved = 0, tracking = false;
-  var SPEED = 2.2;
+  // 1:1 with the finger. Anything else has to be learned, and the pointer is
+  // already moving on a screen the hand holding it is not touching.
+  var SPEED = 1.0;
+  // Whatever is left after rounding is carried, not dropped. Discarding it
+  // every event loses a fraction of a pixel per move, which over a drag is a
+  // pointer that slides away from where the finger went.
+  var restX = 0, restY = 0;
   function at(e) { var t = e.touches ? e.touches[0] : e; return {x: t.clientX, y: t.clientY}; }
   function down(e) {
     var p = at(e); px = p.x; py = p.y; moved = 0; tracking = true;
+    restX = 0; restY = 0;
     pad.classList.add("live"); e.preventDefault();
   }
   function move(e) {
     if (!tracking) return;
-    var p = at(e), dx = (p.x - px) * SPEED, dy = (p.y - py) * SPEED;
+    var p = at(e);
+    var dx = (p.x - px) * SPEED + restX, dy = (p.y - py) * SPEED + restY;
     px = p.x; py = p.y;
-    moved += Math.abs(dx) + Math.abs(dy);
-    if (Math.round(dx) || Math.round(dy))
-      send("move=" + Math.round(dx) + "," + Math.round(dy));
+    var ix = Math.trunc(dx), iy = Math.trunc(dy);
+    restX = dx - ix; restY = dy - iy;
+    moved += Math.abs(ix) + Math.abs(iy);
+    if (ix || iy) send("move=" + ix + "," + iy);
     e.preventDefault();
   }
   function up(e) {
@@ -818,6 +846,9 @@ UI_SET_RELBIT = 0x40045566
 EV_REL = 0x02
 REL_X, REL_Y, REL_WHEEL = 0x00, 0x01, 0x08
 BTN_LEFT = 0x110
+# vendor:product:name, as sway forms it -- 0x1209/0x0002 and the device name
+# with spaces turned into underscores.
+POINTER_ID = "4617:2:ROCKNIX_cloud_pointer"
 UI_DEV_CREATE, UI_DEV_DESTROY = 0x5501, 0x5502
 
 # US layout, which is what the on-screen keyboard and the browser both assume.
@@ -896,6 +927,19 @@ class RemoteMouse:
             return False
         time.sleep(0.5)
         self.fd = fd
+
+        # Flat profile, no acceleration. libinput's default adapts to speed,
+        # which is right for a hand on a desk and wrong for a finger on a
+        # phone driving somebody else's screen: the same drag covers a
+        # different distance depending how fast it was, so the pointer feels
+        # to pull towards things and to drift. Flat makes a delta a delta.
+        for setting in (["accel_profile", "flat"], ["pointer_accel", "0"]):
+            try:
+                subprocess.run(["swaymsg", "input", POINTER_ID] + setting,
+                               capture_output=True, timeout=5,
+                               env=dict(os.environ, **sway_env()))
+            except (OSError, subprocess.SubprocessError) as exc:
+                log("could not flatten the pointer: %s" % exc)
         log("virtual pointer ready")
         return True
 
