@@ -1,0 +1,166 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+
+# cloud_migrate_layout - move a device off the original cloud folder layout.
+#
+# The first layout put everything under /GAMES, with the system backups nested
+# inside the saves folder at /GAMES/backup. Both are wrong in ways that bite:
+#
+#   - /GAMES is a name somebody may well have used for something else, and we
+#     write into it as though it were ours.
+#   - a backup folder inside the saves folder is inside the path that a `sync`
+#     backup mirrors, so the archive is deletable by the operation meant to
+#     protect it.
+#
+# The default has been /ROCKNIX/Saves and /ROCKNIX/Backups since b35c5832b1,
+# but cloud_sync_helper only ever adds keys that are missing -- it never
+# rewrites one already in the file -- so every device configured before that
+# is still on the old layout and will stay there for ever unless asked.
+#
+# This is an offer, never automatic. Where somebody's saves live is theirs to
+# decide, and the safe answer is always to leave it alone.
+#
+#   cloud_migrate_layout --check     what would move, and whether it is safe
+#   cloud_migrate_layout --apply     do it
+#
+# Only the two folders we wrote are moved. Anything else under the old folder
+# is left exactly where it is, because it is not ours.
+
+. /etc/profile 2>/dev/null
+
+SYNC_CONF="/storage/.config/cloud_sync.conf"
+NEW_SAVES="/ROCKNIX/Saves"
+NEW_BACKUPS="/ROCKNIX/Backups"
+
+say() { echo "$@"; }
+
+remote_name() {
+    rclone listremotes 2>/dev/null | head -1
+}
+
+conf_value() {
+    grep -m1 "^$1=" "${SYNC_CONF}" 2>/dev/null | cut -d'"' -f2
+}
+
+# Does a remote path exist and hold anything?
+has_entries() {
+    [ -n "$(rclone lsf "$1" 2>/dev/null | head -1)" ]
+}
+
+# Does it hold actual files, ignoring the backup folder underneath it?
+#
+# Not the same question as "is it empty". The original layout has the backups
+# nested inside the saves folder, so a saves folder with nothing in it but
+# that subdirectory still lists an entry -- and reading that as "the saves are
+# here" would move the backups into the middle of the saves.
+has_files() {
+    local extra="$2"
+    [ -n "$(rclone lsf --files-only -R \
+            --exclude 'backup/**' --exclude 'Backups/**' ${extra} \
+            "$1" 2>/dev/null | head -1)" ]
+}
+
+exists() {
+    rclone lsjson --stat "$1" >/dev/null 2>&1
+}
+
+main() {
+    local mode="${1:---check}"
+    local remote saves backups old_root
+
+    remote=$(remote_name)
+    if [ -z "${remote}" ]; then
+        say "No cloud remote is configured; nothing to migrate."
+        return 1
+    fi
+
+    saves=$(conf_value SYNCPATH)
+    backups=$(conf_value SYNCPATH_BACKUP)
+
+    if [ "${saves}" = "${NEW_SAVES}" ] && [ "${backups}" = "${NEW_BACKUPS}" ]; then
+        say "Already on the current layout (${NEW_SAVES}, ${NEW_BACKUPS})."
+        return 3
+    fi
+
+    say "This device stores:"
+    say "  saves    ${remote}${saves}"
+    say "  backups  ${remote}${backups}"
+    say ""
+    say "The current layout is:"
+    say "  saves    ${remote}${NEW_SAVES}"
+    say "  backups  ${remote}${NEW_BACKUPS}"
+    say ""
+
+    # Where the saves actually are. Under the original layout SYNCPATH was the
+    # folder itself; a device whose owner has already tidied them into a
+    # subfolder is the more useful case to handle, since that is what somebody
+    # does after losing files to a mirror.
+    local saves_src="${saves}"
+    # "at the root" must not count the saves subfolder, or a recursive listing
+    # finds the files inside it and concludes they were at the root all along
+    # -- which would move the whole folder, backups included, into Saves.
+    if ! has_files "${remote}${saves}/" "--exclude saves/**" \
+       && has_files "${remote}${saves}/saves/"; then
+        saves_src="${saves%/}/saves"
+        say "Saves are in ${remote}${saves_src}, not at the root."
+    fi
+
+    # Refuse to move onto something already there. A move into an existing
+    # directory is done file by file, which is exactly the interruptible,
+    # half-migrated state worth avoiding -- and it could merge two devices'
+    # libraries without anyone asking for that.
+    local blocked=0
+    for dest in "${NEW_SAVES}" "${NEW_BACKUPS}"; do
+        if exists "${remote}${dest}"; then
+            say "REFUSING: ${remote}${dest} already exists."
+            blocked=1
+        fi
+    done
+    [ "${blocked}" = "1" ] && return 4
+
+    say "Would move, server-side, leaving anything else where it is:"
+    has_files "${remote}${saves_src}/" \
+        && say "  ${remote}${saves_src}  ->  ${remote}${NEW_SAVES}"
+    has_entries "${remote}${backups}/" \
+        && say "  ${remote}${backups}  ->  ${remote}${NEW_BACKUPS}"
+
+    if [ "${mode}" != "--apply" ]; then
+        say ""
+        say "Nothing has been changed. Run with --apply to do it."
+        return 0
+    fi
+
+    say ""
+    local moved_saves=0
+    if has_files "${remote}${saves_src}/"; then
+        say "Moving saves..."
+        if rclone move "${remote}${saves_src}" "${remote}${NEW_SAVES}" \
+                --create-empty-src-dirs=false 2>&1 | tail -3; then
+            moved_saves=1
+        else
+            say "FAILED moving saves. Nothing else attempted; the old folder is untouched."
+            return 5
+        fi
+    fi
+
+    if has_entries "${remote}${backups}/"; then
+        say "Moving backups..."
+        rclone move "${remote}${backups}" "${remote}${NEW_BACKUPS}" \
+            --create-empty-src-dirs=false 2>&1 | tail -3
+    fi
+
+    # Only once the data is where the config will point. A config updated
+    # first, then a move that failed, is a device looking at an empty folder
+    # and reporting that it has no saves.
+    say "Updating ${SYNC_CONF}..."
+    sed -i "s|^SYNCPATH=.*|SYNCPATH=\"${NEW_SAVES}\"|" "${SYNC_CONF}"
+    sed -i "s|^SYNCPATH_BACKUP=.*|SYNCPATH_BACKUP=\"${NEW_BACKUPS}\"|" "${SYNC_CONF}"
+
+    say ""
+    say "Done. Saves are at ${remote}${NEW_SAVES}, backups at ${remote}${NEW_BACKUPS}."
+    [ "${moved_saves}" = "1" ] && say "Old folders were left in place if anything else was in them."
+    return 0
+}
+
+main "$@"
