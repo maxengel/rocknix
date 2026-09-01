@@ -124,6 +124,25 @@ static void osk_type(Osk *osk, guint keyval)
 
 static void osk_relabel(Osk *osk);
 static void osk_highlight(Osk *osk);
+static void osk_type(Osk *osk, guint keyval);
+
+/* Y found no overlay, so it does what it says on the help bar and steps to
+ * the next control. Answering in the callback rather than sending Tab up
+ * front matters: sending both would skip a control every time an overlay was
+ * present. */
+static void on_jump_done(GObject *source, GAsyncResult *result, gpointer data)
+{
+    JSCValue *value = webkit_web_view_evaluate_javascript_finish(
+        WEBKIT_WEB_VIEW(source), result, NULL);
+    if (!value)
+        return;
+
+    char *text = jsc_value_to_string(value);
+    if (g_strcmp0(text, "none") == 0)
+        osk_type((Osk *) data, GDK_KEY_Tab);
+    g_free(text);
+    g_object_unref(value);
+}
 
 /* The help bar has to describe the buttons as they behave at this moment. It
  * said "B back" while the keyboard was up, where B closes the keyboard and
@@ -393,6 +412,44 @@ static gboolean on_key(GtkWidget *widget, GdkEventKey *event, gpointer data)
     Osk *osk = data;
     if (!osk)
         return FALSE;
+
+    /* Y. Tab reaches everything the page can focus, but a consent banner is
+     * pinned to the viewport and sits at the end of the document, so getting
+     * to it costs about ten presses -- and the d-pad never gets there at all,
+     * because spatial navigation will not descend into a fixed-position
+     * element. Measured on Dropbox's own sign-in page: Down stops on the
+     * language picker just above the banner.
+     *
+     * So Y goes to the overlay first if there is one, and behaves as Tab
+     * afterwards. Overlays are found by what they are rather than by who
+     * published them -- a visible control inside a fixed or sticky box --
+     * because a rule per provider is a rule that rots. */
+    if (event->keyval == GDK_KEY_F4) {
+        static const char *jump =
+            "(function () {"
+            "  var els = document.querySelectorAll("
+            "    'button,[role=button],a[href],input,select,textarea');"
+            "  for (var i = 0; i < els.length; i++) {"
+            "    var e = els[i];"
+            "    if (e === document.activeElement) continue;"
+            "    var r = e.getBoundingClientRect();"
+            "    if (!r.width || !r.height) continue;"
+            "    if (r.bottom < 0 || r.top > innerHeight) continue;"
+            "    var n = e, fixed = false;"
+            "    while (n && n !== document.body) {"
+            "      var pos = getComputedStyle(n).position;"
+            "      if (pos === 'fixed' || pos === 'sticky') { fixed = true; break; }"
+            "      n = n.parentElement;"
+            "    }"
+            "    if (fixed) { e.focus(); return 'overlay'; }"
+            "  }"
+            "  return 'none';"
+            "})();";
+        webkit_web_view_evaluate_javascript(osk->view, jump, -1,
+                                            NULL, NULL, NULL,
+                                            on_jump_done, osk);
+        return TRUE;
+    }
 
     /* L1 and R1, mapped to F2/F3 by cloud_oauth. Scrolling is done in the
      * page rather than by sending Page_Up, because Page_Up does nothing at

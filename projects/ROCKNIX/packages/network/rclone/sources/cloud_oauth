@@ -729,7 +729,7 @@ NAMED_KEYS = {"enter": 28, "backspace": 14, "tab": 15, "escape": 1,
               "left": 105, "right": 106, "up": 103, "down": 108,
               "home": 102, "end": 107, "delete": 111,
               "pageup": 104, "pagedown": 109,
-              "f1": 59, "f2": 60, "f3": 61}
+              "f1": 59, "f2": 60, "f3": 61, "f4": 62}
 KEY_LEFTSHIFT = 42
 
 # How long a key is held, and the gap before the next one. Roughly 130 words
@@ -869,7 +869,10 @@ GAMEPAD_KEYS = {
     BTN_DPAD_LEFT: "left", BTN_DPAD_RIGHT: "right",
     BTN_EAST: "enter",             # A activates what is focused
     BTN_SOUTH: "backspace",        # B goes back, as it does everywhere else
-    BTN_NORTH: "tab",              # Y steps forward if spatial nav sticks
+    # Y reaches a consent banner first, then behaves as Tab. The d-pad
+    # cannot get to one at all -- spatial navigation will not descend into a
+    # fixed-position element -- and Tab alone costs about ten presses.
+    BTN_NORTH: "f4",
     BTN_WEST: "f1",                # X shows and hides the on-screen keyboard
     # L1/R1 scroll the page. The window turns these into a scroll in the
     # page rather than page-up/page-down, which do nothing while a text
