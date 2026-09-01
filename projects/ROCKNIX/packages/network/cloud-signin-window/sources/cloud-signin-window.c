@@ -427,8 +427,16 @@ static gboolean on_key(GtkWidget *widget, GdkEventKey *event, gpointer data)
     if (event->keyval == GDK_KEY_F4) {
         static const char *jump =
             "(function () {"
-            "  var els = document.querySelectorAll("
-            "    'button,[role=button],a[href],input,select,textarea');"
+            "  var sel = ['button,[role=button]',"
+            "             'a[href],input,select,textarea'];"
+            "  var els = [];"
+            "  for (var s = 0; s < sel.length; s++) {"
+            "    els = els.concat(Array.prototype.slice.call("
+            "      document.querySelectorAll(sel[s])));"
+            "  }"
+            /* Buttons before links: a consent banner opens with its policy
+             * links and ends with the choice, so the first focusable thing
+             * in it is never the thing anybody wants. */
             "  for (var i = 0; i < els.length; i++) {"
             "    var e = els[i];"
             "    if (e === document.activeElement) continue;"
