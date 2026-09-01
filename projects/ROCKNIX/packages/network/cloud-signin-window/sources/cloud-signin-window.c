@@ -548,6 +548,14 @@ static void on_load_changed(WebKitWebView *view, WebKitLoadEvent event,
     if (stack)
         gtk_stack_set_visible_child_name(GTK_STACK(stack), "page");
 
+    /* Every page starts at the top. A provider's sign-in runs several steps
+     * through one window, and arriving at the next one already scrolled --
+     * because the last one was scrolled to reach a button below the fold --
+     * puts the player somewhere in the middle of a page they have not seen
+     * the start of. */
+    webkit_web_view_evaluate_javascript(view, "window.scrollTo(0, 0);", -1,
+                                        NULL, NULL, NULL, NULL, NULL);
+
     gtk_widget_grab_focus(GTK_WIDGET(view));
 
     /* Focusing the widget is not enough: the page itself has to have an

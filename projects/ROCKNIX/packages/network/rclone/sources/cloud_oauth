@@ -165,6 +165,10 @@ class Session:
         self.proc = None
         self.provider = None
         self.token = None
+        # Set by the holder, so a sign-in that finishes on the device can
+        # close the window without this needing to know what a window is.
+        self.on_signed_in = None
+        self.configured = False
         self.error = None
         # rclone's own last words. It exits fatally when the exchange fails,
         # and what it says -- "code doesn't exist or has expired" against
@@ -227,6 +231,26 @@ class Session:
                     break
         self.proc.wait()
 
+        # Finish the job. rclone's own server takes the redirect when the page
+        # is on the handheld, so nothing is ever pasted back and submit() --
+        # which was the only caller of _write_config -- never runs. The token
+        # arrived, was collected here, and stopped: no remote was created and
+        # the status stayed "waiting", so a sign-in that had actually
+        # succeeded was reported as unfinished and had to be started again.
+        if self.token and not self.configured:
+            ok, detail = self._write_config()
+            if ok:
+                log("sign-in completed on the device")
+                if self.on_signed_in:
+                    try:
+                        self.on_signed_in()
+                    except Exception as exc:      # never take the thread down
+                        log("post-sign-in step failed: %s" % exc)
+            else:
+                log("could not finish the sign-in: %s" % detail)
+                if read_state().get("status") != "signed-in":
+                    write_state(status="failed", error=detail)
+
     def failure_reason(self):
         """Why the attempt died, in words a player can act on."""
         said = self.rclone_says
@@ -284,6 +308,12 @@ class Session:
         return False, "Timed out waiting for the provider."
 
     def _write_config(self):
+        # Guarded because two paths can reach it now -- the redirect landing
+        # on rclone directly, and a code pasted back from a phone -- and the
+        # second would be told the remote already exists.
+        if self.configured:
+            return True, self.remote_name or self.backend
+        self.configured = True
         name = self.remote_name or self.backend
         existing = subprocess.run([RCLONE, "listremotes"],
                                   capture_output=True, text=True).stdout
@@ -796,6 +826,30 @@ info.</p>
   // pointer that slides away from where the finger went.
   var restX = 0, restY = 0;
   function at(e) { var t = e.touches ? e.touches[0] : e; return {x: t.clientX, y: t.clientY}; }
+
+  // Movement is coalesced, not queued. A finger produces about sixty events a
+  // second and each request takes longer than that to complete, so putting
+  // them in the same strict queue as keystrokes built a backlog that kept
+  // draining after the finger stopped -- the pointer carried on travelling on
+  // its own. At most one move is ever in flight; whatever arrives meanwhile
+  // is added up and sent as a single delta when it returns. Keystrokes still
+  // go through the ordered queue, because for them order is the point.
+  var pendX = 0, pendY = 0, inFlight = false;
+  function flushMove() {
+    if (inFlight || (!pendX && !pendY)) return;
+    var dx = pendX, dy = pendY;
+    pendX = 0; pendY = 0;
+    inFlight = true;
+    fetch("/" + pin, {
+      method: "POST",
+      headers: {"Content-Type": "application/x-www-form-urlencoded"},
+      body: "move=" + dx + "," + dy + "&pin=" + encodeURIComponent(pin)
+    }).catch(function () {}).then(function () {
+      inFlight = false;
+      flushMove();
+    });
+  }
+  function pushMove(dx, dy) { pendX += dx; pendY += dy; flushMove(); }
   function down(e) {
     var p = at(e); px = p.x; py = p.y; moved = 0; tracking = true;
     restX = 0; restY = 0;
@@ -809,14 +863,16 @@ info.</p>
     var ix = Math.trunc(dx), iy = Math.trunc(dy);
     restX = dx - ix; restY = dy - iy;
     moved += Math.abs(ix) + Math.abs(iy);
-    if (ix || iy) send("move=" + ix + "," + iy);
+    if (ix || iy) pushMove(ix, iy);
     e.preventDefault();
   }
   function up(e) {
     if (!tracking) return;
     tracking = false;
     pad.classList.remove("live");
-    if (moved < 8) send("click=1");
+    // Let any outstanding movement land first, so the click happens where
+    // the finger finished rather than where it was a moment earlier.
+    if (moved < 8) setTimeout(function () { send("click=1"); }, 60);
     e.preventDefault();
   }
   pad.addEventListener("touchstart", down, {passive: false});
@@ -1412,6 +1468,11 @@ class SessionHolder:
 
     def start(self):
         session = Session(self.backend, self.remote_name, self.timeout)
+        # When the sign-in finishes on the device, take the page away rather
+        # than leaving rclone's own "All done, go back to rclone" sitting
+        # there -- a sentence about a program the player has never heard of,
+        # on a screen with no way out but a button combination.
+        session.on_signed_in = self.stop_browser
         if not session.start():
             return False, session.error
         with self.lock:
