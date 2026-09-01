@@ -379,6 +379,13 @@ button.minor{background:#333;color:#ddd;font-weight:500}
 .big{font-size:1.6rem;text-align:center;margin:1rem 0}
 .keys{display:flex;gap:8px;margin-top:10px}
 .keys button{flex:1;margin-top:0}
+/* The trackpad. Tall enough to drag across a four-inch screen's worth of
+   page without lifting a finger, and touch-action:none so the browser does
+   not steal the gesture to scroll its own page. */
+.pad{height:11rem;margin-top:12px;border:1px dashed #555;border-radius:10px;
+     background:#181818;touch-action:none;display:flex;align-items:center;
+     justify-content:center;color:#666;font-size:.85rem;user-select:none}
+.pad.live{border-color:#4af;color:#4af}
 """
 
 # The paste field sits ABOVE the sign-in button on purpose. Somebody arriving
@@ -632,61 +639,128 @@ REMOTE_PAGE = """<!doctype html><meta name=viewport content="width=device-width,
 <button type=button class=minor data-key=backspace>Back</button>
 <button type=button class=minor data-key=tab>Tab</button>
 <button type=button class=minor data-key=enter>Enter</button>
+<button type=button class=minor id=clear>Clear</button>
 </div>
+
 <div class=keys>
 <button type=button class=minor data-key=left>&larr;</button>
 <button type=button class=minor data-key=up>&uarr;</button>
 <button type=button class=minor data-key=down>&darr;</button>
 <button type=button class=minor data-key=right>&rarr;</button>
 </div>
+<div class=keys>
+<button type=button class=minor data-key=f2>Page up</button>
+<button type=button class=minor data-key=f3>Page down</button>
+</div>
+
+<h2>Pointer</h2>
+<div class=pad id=pad>drag to move &middot; tap to click</div>
 
 <p class=note>The sign-in page is on your handheld&rsquo;s screen, not here.
-This types for it, so you can use a keyboard you already know.</p>
+This types for it, so you can more easily retrieve and type your login
+info.</p>
 </div>
 
 <script>
-// Every keystroke goes as it happens rather than a field at a time: the page
-// on the handheld is a real login form and reacts to typing -- validating an
-// address, enabling a button, moving focus. A value posted whole arrives with
-// none of that having happened.
 (function () {
   var pin = "%(pin)s";
   var box = document.getElementById("kb");
   var state = document.getElementById("state");
+  var pad = document.getElementById("pad");
 
+  // One request at a time, in order. Backspaces and characters that overtake
+  // each other arrive as scrambled text in the field on the handheld.
+  var queue = Promise.resolve();
   function send(body) {
-    return fetch("/" + pin, {
-      method: "POST",
-      headers: {"Content-Type": "application/x-www-form-urlencoded"},
-      body: body + "&pin=" + encodeURIComponent(pin)
+    queue = queue.then(function () {
+      return fetch("/" + pin, {
+        method: "POST",
+        headers: {"Content-Type": "application/x-www-form-urlencoded"},
+        body: body + "&pin=" + encodeURIComponent(pin)
+      }).catch(function () {});
     });
+    return queue;
   }
 
+  // What you typed stays visible. Clearing the box after every keystroke
+  // made a keyboard that looked broken -- you type and nothing appears
+  // anywhere you can see. Only the difference is sent.
+  var last = "";
   box.addEventListener("input", function () {
     var v = box.value;
-    if (!v) return;
-    box.value = "";
-    send("type=" + encodeURIComponent(v));
+    if (v === last) return;
+    if (v.length > last.length && v.indexOf(last) === 0) {
+      send("type=" + encodeURIComponent(v.slice(last.length)));
+    } else if (v.length < last.length && last.indexOf(v) === 0) {
+      for (var i = 0; i < last.length - v.length; i++) send("key=backspace");
+    } else {
+      for (var j = 0; j < last.length; j++) send("key=backspace");
+      if (v) send("type=" + encodeURIComponent(v));
+    }
+    last = v;
   });
   box.addEventListener("keydown", function (e) {
     var named = {Enter: "enter", Backspace: "backspace", Tab: "tab"}[e.key];
-    if (named) { e.preventDefault(); send("key=" + named); }
-  });
-  Array.prototype.forEach.call(document.querySelectorAll("[data-key]"), function (b) {
-    b.addEventListener("click", function () { send("key=" + b.dataset.key); box.focus(); });
+    if (named) {
+      e.preventDefault();
+      send("key=" + named);
+      if (named === "backspace") { last = last.slice(0, -1); box.value = last; }
+      if (named === "enter") { last = ""; box.value = ""; }
+    }
   });
 
-  // This page has to be useful before the handheld opens anything. The QR is
-  // displayed on the screen the sign-in page then replaces, so it can only be
-  // scanned first -- and must come alive on its own afterwards. Polling is
-  // what makes "scan, then choose CONTINUE" work in that order.
+  // Local only: the handheld has moved to another field and this box still
+  // holds what went into the last one.
+  document.getElementById("clear").addEventListener("click", function () {
+    box.value = ""; last = ""; box.focus();
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll("[data-key]"), function (b) {
+    b.addEventListener("click", function () { send("key=" + b.dataset.key); });
+  });
+
+  // Drag to move, tap to click. Deltas rather than absolute positions,
+  // because the pointer belongs to the handheld's screen and this pad has no
+  // idea how big that is.
+  var px = 0, py = 0, moved = 0, tracking = false;
+  var SPEED = 2.2;
+  function at(e) { var t = e.touches ? e.touches[0] : e; return {x: t.clientX, y: t.clientY}; }
+  function down(e) {
+    var p = at(e); px = p.x; py = p.y; moved = 0; tracking = true;
+    pad.classList.add("live"); e.preventDefault();
+  }
+  function move(e) {
+    if (!tracking) return;
+    var p = at(e), dx = (p.x - px) * SPEED, dy = (p.y - py) * SPEED;
+    px = p.x; py = p.y;
+    moved += Math.abs(dx) + Math.abs(dy);
+    if (Math.round(dx) || Math.round(dy))
+      send("move=" + Math.round(dx) + "," + Math.round(dy));
+    e.preventDefault();
+  }
+  function up(e) {
+    if (!tracking) return;
+    tracking = false;
+    pad.classList.remove("live");
+    if (moved < 8) send("click=1");
+    e.preventDefault();
+  }
+  pad.addEventListener("touchstart", down, {passive: false});
+  pad.addEventListener("touchmove", move, {passive: false});
+  pad.addEventListener("touchend", up, {passive: false});
+  pad.addEventListener("mousedown", down);
+  window.addEventListener("mousemove", move);
+  window.addEventListener("mouseup", up);
+
+  // This page is scanned before the window exists -- the QR is on the screen
+  // the sign-in page then replaces -- so it has to come alive by itself.
   function poll() {
     fetch("/" + pin + "?probe=1").then(function (r) { return r.text(); })
       .then(function (t) {
         var open = t.trim() === "open";
         state.className = open ? "ok" : "note";
         state.textContent = open
-          ? "Ready \u2014 what you type appears on the handheld."
+          ? "Ready \u2014 typing and the pointer reach the handheld."
           : "Choose CONTINUE on your handheld to open the sign-in page. "
             + "This keyboard starts working when it does.";
         box.disabled = !open;
@@ -704,6 +778,10 @@ This types for it, so you can use a keyboard you already know.</p>
 EV_SYN, EV_KEY = 0x00, 0x01
 SYN_REPORT = 0
 UI_SET_EVBIT, UI_SET_KEYBIT = 0x40045564, 0x40045565
+UI_SET_RELBIT = 0x40045566
+EV_REL = 0x02
+REL_X, REL_Y, REL_WHEEL = 0x00, 0x01, 0x08
+BTN_LEFT = 0x110
 UI_DEV_CREATE, UI_DEV_DESTROY = 0x5501, 0x5502
 
 # US layout, which is what the on-screen keyboard and the browser both assume.
@@ -737,6 +815,99 @@ KEY_LEFTSHIFT = 42
 # handling sees each keystroke as a separate event.
 KEY_HOLD = 0.012
 KEY_GAP = 0.022
+
+
+class RemoteMouse:
+    """A pointer the phone can drag, for the page on the handheld.
+
+    A real uinput pointer rather than a cursor we draw: sway renders it and
+    WebKit receives genuine pointer events, so hovering, clicking and
+    dismissing work on anything a page can put on screen -- including a
+    cross-origin iframe, whose contents no amount of focus traversal can
+    reach. That is what a consent banner and a "sign in with Google" prompt
+    turned out to be, between them covering most of a four-inch screen with
+    no way to dismiss either.
+
+    The phone is the natural surface to drag it from: it has the touchscreen
+    the handheld does not.
+    """
+
+    def __init__(self):
+        self.fd = None
+
+    def open(self):
+        if self.fd is not None:
+            return True
+        try:
+            fd = os.open(UINPUT, os.O_WRONLY | os.O_NONBLOCK)
+        except OSError as exc:
+            log("no virtual pointer: %s" % exc)
+            return False
+        try:
+            fcntl.ioctl(fd, UI_SET_EVBIT, EV_REL)
+            fcntl.ioctl(fd, UI_SET_EVBIT, EV_KEY)
+            fcntl.ioctl(fd, UI_SET_EVBIT, EV_SYN)
+            for axis in (REL_X, REL_Y, REL_WHEEL):
+                fcntl.ioctl(fd, UI_SET_RELBIT, axis)
+            fcntl.ioctl(fd, UI_SET_KEYBIT, BTN_LEFT)
+            name = b"ROCKNIX cloud pointer".ljust(80, b"\0")
+            os.write(fd, name + struct.pack("HHHHi", 0x03, 0x1209, 0x0002, 1, 0)
+                     + b"\0" * (4 * 64 * 4))
+            fcntl.ioctl(fd, UI_DEV_CREATE)
+        except OSError as exc:
+            log("could not create the virtual pointer: %s" % exc)
+            os.close(fd)
+            return False
+        time.sleep(0.5)
+        self.fd = fd
+        log("virtual pointer ready")
+        return True
+
+    def _emit(self, etype, code, value):
+        now = time.time()
+        os.write(self.fd, struct.pack("llHHi", int(now),
+                                      int((now % 1) * 1000000),
+                                      etype, code, value))
+
+    def move(self, dx, dy):
+        if self.fd is None and not self.open():
+            return False
+        if dx:
+            self._emit(EV_REL, REL_X, int(dx))
+        if dy:
+            self._emit(EV_REL, REL_Y, int(dy))
+        self._emit(EV_SYN, SYN_REPORT, 0)
+        return True
+
+    def click(self):
+        if self.fd is None and not self.open():
+            return False
+        # Press and release as separate reports, for the same reason the
+        # keyboard does: a page's own handlers read one fused report as a
+        # single indivisible event and often ignore it.
+        self._emit(EV_KEY, BTN_LEFT, 1)
+        self._emit(EV_SYN, SYN_REPORT, 0)
+        time.sleep(0.03)
+        self._emit(EV_KEY, BTN_LEFT, 0)
+        self._emit(EV_SYN, SYN_REPORT, 0)
+        return True
+
+    def scroll(self, clicks):
+        if self.fd is None and not self.open():
+            return False
+        self._emit(EV_REL, REL_WHEEL, int(clicks))
+        self._emit(EV_SYN, SYN_REPORT, 0)
+        return True
+
+    def close(self):
+        if self.fd is None:
+            return
+        try:
+            fcntl.ioctl(self.fd, UI_DEV_DESTROY)
+        except OSError:
+            pass
+        os.close(self.fd)
+        self.fd = None
 
 
 class RemoteKeyboard:
@@ -1141,6 +1312,7 @@ class SessionHolder:
         self.session = None
         self.browser = None
         self.keyboard = RemoteKeyboard()
+        self.mouse = RemoteMouse()
         self.gamepad = None
 
     def start(self):
@@ -1168,6 +1340,7 @@ class SessionHolder:
         # this the page is on the screen, cannot be driven from the device,
         # and cannot be closed -- which strands the handheld in a browser.
         self.keyboard.open()
+        self.mouse.open()
         self.gamepad = GamepadBridge(self.keyboard, self.stop_browser,
                                      alive=browser.is_running)
         self.gamepad.start()
@@ -1181,6 +1354,7 @@ class SessionHolder:
         if browser:
             browser.stop()
         self.keyboard.close()
+        self.mouse.close()
 
     def pin_exhausted(self):
         with self.lock:
@@ -1311,6 +1485,32 @@ def make_handler(holder, shutdown):
             fields = urllib.parse.parse_qs(
                 self.rfile.read(length).decode("utf-8", "replace"))
             if not self._gate(fields.get("pin", [""])[0] or self._supplied()):
+                return
+
+            if fields.get("move") or fields.get("click") or fields.get("wheel"):
+                if not holder.browser:
+                    self.send_response(409)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                moved = fields.get("move", [""])[0]
+                if moved:
+                    try:
+                        dx, dy = (int(float(v)) for v in moved.split(",", 1))
+                    except ValueError:
+                        dx = dy = 0
+                    holder.mouse.move(dx, dy)
+                wheel = fields.get("wheel", [""])[0]
+                if wheel:
+                    try:
+                        holder.mouse.scroll(int(float(wheel)))
+                    except ValueError:
+                        pass
+                if fields.get("click"):
+                    holder.mouse.click()
+                self.send_response(204)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
                 return
 
             if fields.get("type") or fields.get("key"):

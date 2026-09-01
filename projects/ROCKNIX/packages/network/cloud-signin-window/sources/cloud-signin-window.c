@@ -370,6 +370,25 @@ static gboolean probe_tick(gpointer data)
     static const char *script =
         "(function () {"
         "  var a = document.activeElement;"
+        /* A provider moves from email to password without loading a page, and
+         * leaves focus on the body. Nothing then has the caret, so the
+         * on-screen keyboard has nowhere to type and spatial navigation has
+         * no anchor to move from -- the password box cannot be selected at
+         * all, which is where a real sign-in stopped. Adopt a field when the
+         * page has abandoned focus, never when something else holds it. */
+        "  if (!a || a === document.body || a.tagName === 'BODY') {"
+        "    var boxes = document.querySelectorAll("
+        "      'input[type=text],input[type=email],input[type=password],"
+        "       input[type=tel],input[type=url],input:not([type]),textarea');"
+        "    for (var i = 0; i < boxes.length; i++) {"
+        "      var b = boxes[i], r = b.getBoundingClientRect();"
+        "      if (!r.width || !r.height || b.disabled || b.readOnly) continue;"
+        "      if (r.bottom < 0 || r.top > innerHeight) continue;"
+        "      b.focus();"
+        "      a = document.activeElement;"
+        "      break;"
+        "    }"
+        "  }"
         "  if (!a) return 'none';"
         "  var t = (a.tagName || '').toUpperCase();"
         "  var ty = (a.type || 'text').toLowerCase();"
