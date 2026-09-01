@@ -45,6 +45,7 @@
 # device in your hands, not merely a seat on the wifi.
 
 import fcntl
+import hashlib
 import http.server
 import json
 import os
@@ -618,6 +619,9 @@ class BrowserSession:
         self.log_file = open(self.log_path, "w")
 
         env = dict(os.environ)
+        # Where the window records the address it is showing, so the phone can
+        # tell when the provider has moved on.
+        env["CLOUD_SIGNIN_PAGE_FILE"] = state_path("page")
         env.update({
             "XDG_RUNTIME_DIR": runtime,
             "WAYLAND_DISPLAY": display,
@@ -707,12 +711,7 @@ REMOTE_PAGE = """<!doctype html><meta name=viewport content="width=device-width,
 <button type=button class=minor data-key=enter>Enter</button>
 <button type=button class=minor id=clear>Clear</button>
 </div>
-<div class=keys>
-<button type=button id=sendall>Send what is in the box</button>
-</div>
-<p class=note>Paste a password here and send it in one go. Typing is sent as
-you go; pasting is not always reported the same way by every phone browser,
-so this button does not rely on it.</p>
+
 
 <div class=keys>
 <button type=button class=minor data-key=left>&larr;</button>
@@ -743,6 +742,7 @@ info.</p>
   // One request at a time, in order. Backspaces and characters that overtake
   // each other arrive as scrambled text in the field on the handheld.
   var ready = false;
+  var page = null;
   var queue = Promise.resolve();
   function send(body) {
     queue = queue.then(function () {
@@ -799,15 +799,6 @@ info.</p>
   // holds what went into the last one.
   document.getElementById("clear").addEventListener("click", function () {
     box.value = ""; sent = ""; box.focus();
-  });
-
-  // Everything in the box that has not gone yet, in one go, with no
-  // dependence on how the browser reported it arriving. A pasted password is
-  // the case that matters, and whether a paste fires an input event -- and as
-  // how many -- differs by phone browser.
-  document.getElementById("sendall").addEventListener("click", function () {
-    if (!ready) return;
-    deliver(box.value);
   });
 
   Array.prototype.forEach.call(document.querySelectorAll("[data-key]"), function (b) {
@@ -887,10 +878,18 @@ info.</p>
   function poll() {
     fetch("/" + pin + "?probe=1").then(function (r) { return r.text(); })
       .then(function (t) {
-        var open = t.trim() === "open";
+        // "open <page>" -- the page token changes when the handheld
+        // navigates, which is when what is in this box stopped being
+        // relevant to what is on that screen.
+        var parts = t.trim().split(" ");
+        var open = parts[0] === "open";
+        if (open && parts[1] && parts[1] !== page) {
+          if (page !== null) { box.value = ""; sent = ""; }
+          page = parts[1];
+        }
         state.className = open ? "ok" : "note";
         state.textContent = open
-          ? "Ready \u2014 typing and the pointer reach the handheld."
+          ? "Connected."
           : "Not open yet -- choose CONTINUE on your handheld. You can type "
             + "or paste here meanwhile, then use the send button.";
         // The box is never disabled. It was, until this said the handheld was
@@ -1626,7 +1625,19 @@ def make_handler(holder, shutdown):
             query = urllib.parse.parse_qs(
                 urllib.parse.urlparse(self.path).query)
             if query.get("probe"):
-                body = (b"open" if holder.browser else b"waiting")
+                # The page token is a short hash of the address the window is
+                # showing: enough for the phone to notice a change, without
+                # putting a provider URL with its state parameter into a
+                # response anybody on the LAN could ask for.
+                token = ""
+                try:
+                    with open(state_path("page")) as handle:
+                        token = hashlib.sha256(
+                            handle.read().encode()).hexdigest()[:8]
+                except OSError:
+                    pass
+                body = (("open " + token).strip().encode()
+                        if holder.browser else b"waiting")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))

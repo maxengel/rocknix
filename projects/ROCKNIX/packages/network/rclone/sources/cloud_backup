@@ -495,6 +495,26 @@ backup_game_saves() {
         all_opts+=("--exclude=${backup_rel}/**")
     fi
 
+    # A mirror deletes whatever the destination has and this device does not.
+    # With one cloud folder shared by several handhelds -- which is the whole
+    # point of the folder -- that means the last device to run wipes every
+    # other device's saves. It happened: 70 files, another handheld's entire
+    # save library, gone in one run of the shipped default.
+    #
+    # The default is "copy" now, which never deletes. Where somebody has
+    # deliberately chosen "sync", the deletions are moved aside instead of
+    # destroyed, so a mirror is recoverable rather than final. Dated, because
+    # the interesting question afterwards is always "what did the run on
+    # Tuesday take away".
+    if [ "${BACKUPMETHOD}" == "sync" ]; then
+        # A sibling of SYNCPATH, never inside it: rclone refuses a
+        # --backup-dir that overlaps the destination, and the same reasoning
+        # already applies to SYNCPATH_BACKUP.
+        local archive_dir="${SYNCPATH%/}-replaced/$(date +%Y_%m_%d-%H%M%S)"
+        all_opts+=("--backup-dir=${REMOTENAME}${archive_dir}")
+        log_message "INFO" "sync mode: anything replaced or removed goes to ${archive_dir}"
+    fi
+
     # Check if the rclone version supports the terminal width flag
     if rclone help | grep -q progress-terminal-width; then
         all_opts+=("--progress-terminal-width=80")

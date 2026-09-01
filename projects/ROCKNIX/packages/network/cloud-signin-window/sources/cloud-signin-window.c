@@ -364,9 +364,32 @@ static void on_probe(GObject *source, GAsyncResult *result, gpointer data)
     g_object_unref(value);
 }
 
+/* Shown while EmulationStation rebuilds itself behind this window.
+ * Rebuilding takes a few seconds -- it reloads every resource it had
+ * released -- and closing first left the player looking at a black screen
+ * immediately after a sign-in that had just succeeded, which reads as a
+ * crash rather than as progress. */
+static const char *FINISHING_PAGE =
+    "data:text/html,<meta name=viewport content='width=device-width'>"
+    "<body style='margin:0;height:100vh;display:flex;align-items:center;"
+    "justify-content:center;background:%2314171c;color:%23e8ecf2;"
+    "font:20px system-ui,sans-serif'>Finishing up&hellip;</body>";
+
 static gboolean probe_tick(gpointer data)
 {
     Osk *osk = data;
+
+    /* cloud_oauth says the sign-in landed. Nothing on the provider's page
+     * matters from here, and this window is the only thing on the screen
+     * until EmulationStation is back. */
+    const char *done_file = g_getenv("CLOUD_SIGNIN_DONE_FILE");
+    if (done_file && g_file_test(done_file, G_FILE_TEST_EXISTS)) {
+        webkit_web_view_load_uri(osk->view, FINISHING_PAGE);
+        if (osk->hints)
+            gtk_widget_hide(osk->hints);
+        gtk_revealer_set_reveal_child(GTK_REVEALER(osk->revealer), FALSE);
+        return G_SOURCE_REMOVE;
+    }
     static const char *script =
         "(function () {"
         "  var a = document.activeElement;"
@@ -555,6 +578,23 @@ static void on_load_changed(WebKitWebView *view, WebKitLoadEvent event,
      * the start of. */
     webkit_web_view_evaluate_javascript(view, "window.scrollTo(0, 0);", -1,
                                         NULL, NULL, NULL, NULL, NULL);
+
+    /* Say which page this is, for the phone. Whatever is half-typed in the
+     * box over there belongs to the field on the page that was showing when
+     * it was typed; once the provider moves on, it is text about nothing.
+     * A file rather than a socket because the only reader is cloud_oauth,
+     * which is already watching this directory. */
+    const char *page_file = g_getenv("CLOUD_SIGNIN_PAGE_FILE");
+    const char *uri = webkit_web_view_get_uri(view);
+    if (page_file && uri) {
+        GError *werr = NULL;
+        if (!g_file_set_contents(page_file, uri, -1, &werr)) {
+            if (werr) {
+                g_message("could not record the page: %s", werr->message);
+                g_error_free(werr);
+            }
+        }
+    }
 
     gtk_widget_grab_focus(GTK_WIDGET(view));
 
