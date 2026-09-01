@@ -1950,10 +1950,43 @@ def main(argv):
         deadline = time.time() + 10
         while time.time() < deadline and signin_window_running():
             time.sleep(0.2)
+
+        # The serve process is what normally takes the window away, and it may
+        # not be there to do it -- it times out on its own, and a sign-in that
+        # finished near that deadline leaves the window with nobody to close
+        # it. That is a fullscreen page reading "Finishing up" sitting on top
+        # of an EmulationStation that has already come back, escapable only by
+        # a button combination. Close it here rather than depending on
+        # somebody else being alive.
+        if signin_window_running():
+            log("sign-in window outlived its server; closing it directly")
+            for signum in (signal.SIGTERM, signal.SIGKILL):
+                for entry in os.listdir("/proc"):
+                    if not entry.isdigit():
+                        continue
+                    try:
+                        with open("/proc/%s/cmdline" % entry, "rb") as handle:
+                            argv = handle.read().split(b"\0")
+                    except OSError:
+                        continue
+                    if argv and argv[0].decode("utf-8", "replace") == SIGNIN_WINDOW:
+                        try:
+                            os.kill(int(entry), signum)
+                        except OSError:
+                            pass
+                for _ in range(15):
+                    if not signin_window_running():
+                        break
+                    time.sleep(0.2)
+                if not signin_window_running():
+                    break
+
         settle = time.time() + 5
         while time.time() < settle and not pad_is_free():
             time.sleep(0.1)
-        return 0
+        # Honest about the outcome: a window still standing means the screen
+        # is not handed back, whatever the caller does next.
+        return 0 if not signin_window_running() else 1
 
     if command == "info":
         # One KEY=VALUE per line. `url` stays exactly as it was: the ES page
