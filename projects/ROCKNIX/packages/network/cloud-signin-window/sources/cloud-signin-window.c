@@ -427,20 +427,11 @@ static gboolean on_key(GtkWidget *widget, GdkEventKey *event, gpointer data)
     if (event->keyval == GDK_KEY_F4) {
         static const char *jump =
             "(function () {"
-            "  var sel = ['button,[role=button]',"
-            "             'a[href],input,select,textarea'];"
-            "  var els = [];"
-            "  for (var s = 0; s < sel.length; s++) {"
-            "    els = els.concat(Array.prototype.slice.call("
-            "      document.querySelectorAll(sel[s])));"
-            "  }"
-            /* Buttons before links: a consent banner opens with its policy
-             * links and ends with the choice, so the first focusable thing
-             * in it is never the thing anybody wants. */
-            "  for (var i = 0; i < els.length; i++) {"
-            "    var e = els[i];"
-            "    if (e === document.activeElement) continue;"
-            "    var r = e.getBoundingClientRect();"
+            "  var all = document.querySelectorAll("
+            "    'button,[role=button],a[href],input,select,textarea');"
+            "  var ov = [];"
+            "  for (var i = 0; i < all.length; i++) {"
+            "    var e = all[i], r = e.getBoundingClientRect();"
             "    if (!r.width || !r.height) continue;"
             "    if (r.bottom < 0 || r.top > innerHeight) continue;"
             "    var n = e, fixed = false;"
@@ -449,9 +440,21 @@ static gboolean on_key(GtkWidget *widget, GdkEventKey *event, gpointer data)
             "      if (pos === 'fixed' || pos === 'sticky') { fixed = true; break; }"
             "      n = n.parentElement;"
             "    }"
-            "    if (fixed) { e.focus(); return 'overlay'; }"
+            "    if (fixed) ov.push(e);"
             "  }"
-            "  return 'none';"
+            "  if (!ov.length) return 'none';"
+            "  var at = ov.indexOf(document.activeElement);"
+            "  var next;"
+            "  if (at >= 0) {"
+            "    next = ov[(at + 1) % ov.length];"
+            "  } else {"
+            "    next = ov.find(function (e) {"
+            "      return e.tagName === 'BUTTON'"
+            "          || e.getAttribute('role') === 'button';"
+            "    }) || ov[0];"
+            "  }"
+            "  next.focus();"
+            "  return 'overlay';"
             "})();";
         webkit_web_view_evaluate_javascript(osk->view, jump, -1,
                                             NULL, NULL, NULL,
