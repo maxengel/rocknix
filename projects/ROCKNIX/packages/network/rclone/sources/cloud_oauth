@@ -479,6 +479,20 @@ SIGNIN_WINDOW = "/usr/bin/cloud-signin-window"
 UINPUT = "/dev/uinput"
 
 
+def sway_env():
+    """Enough environment to talk to the running sway over its IPC socket."""
+    session = running_session()
+    if not session:
+        return {}
+    runtime, display = session
+    env = {"XDG_RUNTIME_DIR": runtime, "WAYLAND_DISPLAY": display}
+    for name in sorted(os.listdir(runtime)):
+        if name.startswith("sway-ipc.") and name.endswith(".sock"):
+            env["SWAYSOCK"] = os.path.join(runtime, name)
+            break
+    return env
+
+
 def running_session():
     """The Wayland session EmulationStation is already using.
 
@@ -585,11 +599,33 @@ class BrowserSession:
             + (["--no-auto-keyboard"]
                if os.path.exists(state_path("phone-keyboard")) else []),
             env=env, stdout=self.log_file, stderr=subprocess.STDOUT)
+        # Somebody may be about to drag a pointer at this page from their
+        # phone, and cannot aim what they cannot see.
+        BrowserSession._cursor_timeout(0)
         log("sign-in window opened on %s for %s" % (display, self.host))
         return True
 
+    @staticmethod
+    def _cursor_timeout(ms):
+        """How long sway waits before hiding the pointer.
+
+        ROCKNIX ships `seat * hide_cursor 1000`, which is right for a handheld
+        with no mouse and wrong while somebody is dragging one from their
+        phone: the pointer disappears a second after they stop moving, so the
+        tap that follows is aimed at something they cannot see. Zero means
+        never hide. Restored when the window closes, because the rest of the
+        time the original setting is the correct one.
+        """
+        try:
+            subprocess.run(["swaymsg", "seat", "*", "hide_cursor", str(ms)],
+                           capture_output=True, timeout=5,
+                           env=dict(os.environ, **sway_env()))
+        except (OSError, subprocess.SubprocessError) as exc:
+            log("could not set the cursor timeout: %s" % exc)
+
     def stop(self):
         if self.proc and self.proc.poll() is None:
+            BrowserSession._cursor_timeout(1000)
             self.proc.terminate()
             try:
                 self.proc.wait(timeout=5)
