@@ -679,15 +679,113 @@ backup_system_files() {
         # content differs, so rclone's own check can only be wrong here.
         backup_opts+=("--ignore-times")
 
-        # Execute system backup transfer with enhanced error handling
-        execute_rclone_with_error_handling \
-            "${BACKUPMETHOD}" \
-            "${BACKUPFOLDER}/" \
-            "${device_dest}/" \
-            "${backup_opts[@]}"
-        
-        BACKUP_SYSTEM_STATUS=$?
-        report_rclone_error $BACKUP_SYSTEM_STATUS "System backup file transfer"
+        # Uploaded under a dated name, one file at a time, rather than by
+        # mirroring the folder.
+        #
+        # The cloud used to hold exactly one archive per device, overwritten on
+        # every run: nothing to tell you when it was taken, and no way back to
+        # the state before whatever you are trying to undo. Dates lead the name
+        # so a listing sorts chronologically by itself --
+        # 2026_09_02-143000-ROCKNIX_BACKUP.zip.
+        #
+        # copyto rather than the configured method, always. A mirror would look
+        # at a folder holding one local archive and delete every dated one in
+        # the cloud, which is the opposite of keeping history.
+        # The folder options minus anything that selects files: copyto is
+        # given one path and rejects filters.
+        local copy_opts=()
+        local opt
+        local skip_next=0
+        for opt in "${backup_opts[@]}"; do
+            # A flag and its value may be one element ("--include=/*.zip") or
+            # two ("--include" "/*.zip"). Dropping only the flag in the second
+            # form leaves the bare pattern behind, and rclone reads it as
+            # another path -- copyto then has three and fails with an
+            # uncategorised error, having transferred nothing.
+            if [ ${skip_next} -eq 1 ]; then
+                skip_next=0
+                continue
+            fi
+            case "${opt}" in
+                --include|--exclude|--filter|--filter-from)
+                    skip_next=1; continue ;;
+                --include=*|--exclude=*|--filter*) continue ;;
+                # The guard that adds this greps `rclone help`, which mentions
+                # the flag on builds that do not accept it -- so it reaches the
+                # command line and rclone exits with "unknown flag", having
+                # transferred nothing while the run still reported success. It
+                # only shapes the progress display, so nothing is lost here.
+                --progress-terminal-width*) continue ;;
+            esac
+            copy_opts+=("${opt}")
+        done
+
+        local stamp
+        stamp=$(date +%Y_%m_%d-%H%M%S)
+        BACKUP_SYSTEM_STATUS=0
+        local sent_any=0
+        local archive
+        for archive in "${BACKUPFOLDER}"/*.zip; do
+            [ -f "${archive}" ] || continue
+            local base
+            base=$(basename "${archive}")
+            log_message "Uploading ${base} as ${stamp}-${base}" "false"
+            # Without the filter flags. copyto names one file explicitly, and
+            # rclone refuses filters on a single-file copy -- "--include=/*.zip"
+            # came from the folder transfer this replaced and made every upload
+            # exit with a usage error.
+            rclone copyto "${archive}" "${device_dest}/${stamp}-${base}" \
+                "${copy_opts[@]}"
+            local rc=$?
+            if [ ${rc} -ne 0 ]; then
+                BACKUP_SYSTEM_STATUS=${rc}
+                report_rclone_error ${rc} "System backup file transfer"
+                break
+            fi
+            sent_any=1
+        done
+
+        # Say what this folder is. "ROCKNIX-ee5013fc56" tells its owner
+        # nothing -- not which handheld it came from, nor what the hex means.
+        # The folder name has to stay the stable identifier, because it is what
+        # a device finds its own backups by, so the explanation goes inside it.
+        if [ ${BACKUP_SYSTEM_STATUS} -eq 0 ] && [ ${sent_any} -eq 1 ]; then
+            local model="unknown"
+            if [ -r /sys/firmware/devicetree/base/model ]; then
+                model=$(tr -d '\0' < /sys/firmware/devicetree/base/model)
+            fi
+            local manifest="${state_dir}/device.json"
+            cat > "${manifest}" <<MANIFEST
+{
+  "id": "$(basename "${device_dest}")",
+  "model": "${model}",
+  "family": "${HW_DEVICE:-unknown}",
+  "hostname": "$(hostname 2>/dev/null)",
+  "os_version": "$(grep -m1 '^OS_VERSION=' /etc/os-release 2>/dev/null | cut -d'"' -f2)",
+  "last_backup": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "keep": "${CLOUD_BACKUP_KEEP:-3}"
+}
+MANIFEST
+            rclone copyto "${manifest}" "${device_dest}/device.json" \
+                --log-file /var/log/cloud_sync.log 2>/dev/null
+        fi
+
+        # Keep a bounded history. Names lead with the date, so sorting them is
+        # ordering them by age and no metadata call is needed.
+        if [ ${BACKUP_SYSTEM_STATUS} -eq 0 ] && [ ${sent_any} -eq 1 ]; then
+            local keep="${CLOUD_BACKUP_KEEP:-3}"
+            case "${keep}" in
+                ''|*[!0-9]*) keep=3 ;;
+            esac
+            local old_archive
+            rclone lsf --files-only --include "*.zip" "${device_dest}/" 2>/dev/null \
+                | sort -r | tail -n +$((keep + 1)) | while read -r old_archive
+            do
+                [ -n "${old_archive}" ] || continue
+                log_message "Removing old cloud backup ${old_archive}" "false"
+                rclone deletefile "${device_dest}/${old_archive}" 2>/dev/null
+            done
+        fi
 
         # Only record the upload once the remote actually holds a file of the
         # right size. An exit code says the command ended, not that the bytes

@@ -643,8 +643,23 @@ restore_system_files() {
         local legacy_src="${REMOTENAME}${SYNCPATH_BACKUP}"
         local restore_src=""
 
+        # The folder this device would have used before the name became
+        # readable. An existing device keeps its stored identity and never
+        # moves, but a reflashed one regenerates -- which is the point of
+        # seeding from the hardware address -- and under the new rule it
+        # generates a different name. Without this it would find nothing and
+        # report that it has no backup, while its backups sat one folder away.
+        local prior_name
+        prior_name=$(/usr/bin/cloud_device_id --legacy 2>/dev/null \
+                     | tr -cd 'A-Za-z0-9_.-')
+        local prior_src="${REMOTENAME}${SYNCPATH_BACKUP}/${prior_name}"
+
         if rclone lsf "${device_src}/" --include "/*.zip" 2>/dev/null | grep -q .; then
             restore_src="${device_src}"
+        elif [ -n "${prior_name}" ] \
+             && rclone lsf "${prior_src}/" --include "/*.zip" 2>/dev/null | grep -q .; then
+            restore_src="${prior_src}"
+            log_message "Using backups saved under this device's previous folder name (${prior_name})" "true"
         elif rclone lsf "${legacy_src}/" --include "/*.zip" 2>/dev/null | grep -q .; then
             restore_src="${legacy_src}"
             log_message "Using a backup saved before this device had its own cloud folder" "false"
@@ -664,15 +679,67 @@ restore_system_files() {
             return 0
         fi
 
-        log_message "Restoring the system backup from ${restore_src}" "false"
+        # The newest one, not all of them. The cloud keeps a dated history now
+        # -- 2026_09_02-143000-ROCKNIX_BACKUP.zip -- so a folder transfer would
+        # drag down every archive it holds and leave several beside each other
+        # with no way for backuptool to know which was meant. Names lead with
+        # the date, so the last one in sort order is the most recent and no
+        # metadata call is needed to establish that.
+        local newest
+        newest=$(rclone lsf --files-only --include "*.zip" "${restore_src}/" 2>/dev/null \
+                 | sort | tail -1)
 
-        # Execute system backup restore with enhanced error handling
-        execute_rclone_with_error_handling \
-            "${RESTOREMETHOD}" \
-            "${restore_src}/" \
-            "${BACKUPFOLDER}/" \
-            "${backup_opts[@]}"
-        
+        if [ -z "${newest}" ]; then
+            log_message "There is no system backup in the cloud yet" "true" "WARN"
+            RESTORE_SYSTEM_STATUS=0
+            return 0
+        fi
+
+        # Landed under the name backuptool expects. The date belongs to the
+        # cloud listing, where somebody is choosing between archives; locally
+        # there is one current archive and its name is part of the contract
+        # with backuptool.
+        local local_name="${OS_NAME:-ROCKNIX}_BACKUP.zip"
+        case "${newest}" in
+            *-*_BACKUP.zip) local_name="${newest#*-*-}" ;;
+        esac
+
+        log_message "Restoring ${newest} from ${restore_src}" "true"
+
+        # Without the filter flags, for the same reason the upload drops them:
+        # copyto names one file and rclone refuses filters on a single-file
+        # copy. Passing the folder options through made the transfer fail while
+        # the run still reported success, and nothing arrived.
+        local fetch_opts=()
+        local opt
+        local skip_next=0
+        for opt in "${backup_opts[@]}"; do
+            # A flag and its value may be one element ("--include=/*.zip") or
+            # two ("--include" "/*.zip"). Dropping only the flag in the second
+            # form leaves the bare pattern behind, and rclone reads it as
+            # another path -- copyto then has three and fails with an
+            # uncategorised error, having transferred nothing.
+            if [ ${skip_next} -eq 1 ]; then
+                skip_next=0
+                continue
+            fi
+            case "${opt}" in
+                --include|--exclude|--filter|--filter-from)
+                    skip_next=1; continue ;;
+                --include=*|--exclude=*|--filter*) continue ;;
+                # The guard that adds this greps `rclone help`, which mentions
+                # the flag on builds that do not accept it -- so it reaches the
+                # command line and rclone exits with "unknown flag", having
+                # transferred nothing while the run still reported success. It
+                # only shapes the progress display, so nothing is lost here.
+                --progress-terminal-width*) continue ;;
+            esac
+            fetch_opts+=("${opt}")
+        done
+
+        rclone copyto "${restore_src}/${newest}" "${BACKUPFOLDER}/${local_name}" \
+            "${fetch_opts[@]}"
+
         RESTORE_SYSTEM_STATUS=$?
         report_rclone_error $RESTORE_SYSTEM_STATUS "System backup file restore"
         

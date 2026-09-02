@@ -80,19 +80,72 @@ generate_id() {
 
     [ -z "${prefix}" ] && prefix="unknown"
 
-    # The hostname makes a cloud listing legible -- "H700-3f2a1c9e04" says what
-    # the device is, not merely that it is distinct. It cannot carry the
-    # identity itself: every ROCKNIX image ships with the hostname set to the
-    # device family (fork #50), so two H700s would collide exactly where they
-    # must not.
-    local host
+    echo "$(device_label)-${prefix}"
+}
+
+# What to call this handheld, for somebody reading a folder listing.
+#
+# The hostname was the wrong source and had been all along: every ROCKNIX
+# image ships with it set the same way (fork #50), so every device's folder
+# came out as "ROCKNIX-ee5013fc56" -- which says neither which handheld it is
+# nor what the hex means. The comment here used to claim "H700-3f2a1c9e04
+# says what the device is"; it never could.
+#
+# The device tree knows. On an RG35XX SP it reads "Anbernic RG35XX SP", which
+# is what its owner calls it. Falling back through the build family to the
+# hostname, so something is always produced.
+#
+# Hyphens rather than spaces: this becomes a path segment handled by several
+# shell scripts, and one unquoted expansion anywhere turns a space into a
+# split argument. Readability is worth a lot, but not a corrupted transfer.
+device_label() {
+    local label=""
+
+    if [ -r /sys/firmware/devicetree/base/model ]; then
+        label=$(tr -d '\0' < /sys/firmware/devicetree/base/model 2>/dev/null)
+    fi
+    [ -z "${label}" ] && label="${HW_DEVICE}"
+    [ -z "${label}" ] && label=$(hostname 2>/dev/null)
+    [ -z "${label}" ] && label="device"
+
+    # Collapse anything that is not a word character into single hyphens, and
+    # keep it short enough to read at a glance in a folder listing.
+    printf '%s' "${label}" \
+        | tr -c 'A-Za-z0-9' '-' \
+        | sed 's/--*/-/g; s/^-//; s/-$//' \
+        | cut -c1-32
+}
+
+# What this device would have been called before device_label existed.
+#
+# A device generates its identity once and stores it, so an existing device
+# keeps the old name and nothing moves. But a reflashed one regenerates -- and
+# that is the whole point of seeding from the hardware address, so a fresh
+# card finds its own backups again. Under the new rule it would generate a
+# different name and find nothing, so the old one stays available for lookup.
+legacy_id() {
+    local seed prefix host
+    if seed=$(permanent_address); then
+        prefix=$(printf '%s|%s' "${seed}" "${DEVICE:-unknown}" | md5sum | cut -c1-10)
+    else
+        prefix=$(tr -cd 'a-f0-9' < /etc/machine-id 2>/dev/null | cut -c1-10)
+    fi
+    [ -z "${prefix}" ] && prefix="unknown"
     host=$(hostname 2>/dev/null | tr -cd 'A-Za-z0-9_-')
     [ -z "${host}" ] && host="device"
-
     echo "${host}-${prefix}"
 }
 
 main() {
+    if [ "$1" = "--legacy" ]; then
+        legacy_id
+        return 0
+    fi
+    if [ "$1" = "--label" ]; then
+        device_label
+        return 0
+    fi
+
     local id=""
 
     if [ -s "${ID_FILE}" ]; then
