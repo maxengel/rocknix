@@ -695,14 +695,12 @@ restore_system_files() {
             return 0
         fi
 
-        # Landed under the name backuptool expects. The date belongs to the
-        # cloud listing, where somebody is choosing between archives; locally
-        # there is one current archive and its name is part of the contract
-        # with backuptool.
-        local local_name="${OS_NAME:-ROCKNIX}_BACKUP.zip"
-        case "${newest}" in
-            *-*_BACKUP.zip) local_name="${newest#*-*-}" ;;
-        esac
+        # Under the name it already has. A backup taken on this device and one
+        # pulled from the cloud should be the same file with the same name --
+        # backuptool writes dated archives and looks for the newest, so
+        # stripping the date here would have produced a local file that looked
+        # older than everything beside it and sorted to the wrong end.
+        local local_name="${newest}"
 
         log_message "Restoring ${newest} from ${restore_src}" "true"
 

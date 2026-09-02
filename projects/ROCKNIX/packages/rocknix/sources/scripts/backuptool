@@ -18,7 +18,28 @@
 
 BACKUPFOLDER="/storage/roms/backup"
 ARCHIVEFOLDER="${BACKUPFOLDER}/archive"
-BACKUPFILE="${BACKUPFOLDER}/${OS_NAME}_BACKUP.zip"
+# The name a backup is written under, and the one used to find it again.
+#
+# Dated, and matching what the cloud folder holds exactly -- a device that
+# backs up locally and one that backs up to the cloud should produce the same
+# thing under the same name, so that moving between them needs no
+# translation. LEGACY_BACKUPFILE is the fixed name used before that, still
+# read so an existing device restores from the archive it already has.
+BACKUP_STAMP="$(date +%Y_%m_%d-%H%M%S)"
+BACKUPFILE="${BACKUPFOLDER}/${BACKUP_STAMP}-${OS_NAME}_BACKUP.zip"
+LEGACY_BACKUPFILE="${BACKUPFOLDER}/${OS_NAME}_BACKUP.zip"
+
+# The newest archive present, whatever it is called. Names lead with the date,
+# so sorting them orders them by age.
+newest_backup() {
+    local found
+    found=$(ls -1 "${BACKUPFOLDER}"/*-"${OS_NAME}"_BACKUP.zip 2>/dev/null | sort | tail -1)
+    if [ -n "${found}" ]; then
+        echo "${found}"
+    elif [ -f "${LEGACY_BACKUPFILE}" ]; then
+        echo "${LEGACY_BACKUPFILE}"
+    fi
+}
 ARCHIVE_KEEP=3
 ESPATH="/storage/.config/emulationstation"
 mkdir -p "${BACKUPFOLDER}"
@@ -71,9 +92,10 @@ fi
 
 case "${1}" in
     "restore")
-        if [ ! -f "${BACKUPFILE}" ]
+        BACKUPFILE="$(newest_backup)"
+        if [ -z "${BACKUPFILE}" ] || [ ! -f "${BACKUPFILE}" ]
         then
-            fail "No backup found at ${BACKUPFILE}. Nothing to restore."
+            fail "No backup found in ${BACKUPFOLDER}. Nothing to restore."
         fi
 
         note "Verifying backup archive..."
@@ -136,18 +158,24 @@ case "${1}" in
         fi
         # Rotate the previous backup into an archive folder that the cloud
         # allowlist (backup/*.zip) does not match, and keep only the newest few.
-        if [ -f "${BACKUPFILE}" ]
+        # Rotate whatever archive is currently at the root. Each backup writes
+        # a new dated name, so this is only ever the previous one.
+        PREVIOUS="$(newest_backup)"
+        if [ -n "${PREVIOUS}" ] && [ -f "${PREVIOUS}" ]
         then
             mkdir -p "${ARCHIVEFOLDER}"
-            # Date first, and a four-digit year. The name is what somebody
-            # reads when they are looking for the archive from before
-            # something went wrong, and a leading date both sorts correctly
-            # and answers that question at a glance --
-            # "2026_09_01-143000-ROCKNIX_BACKUP.zip". It used to lead with
-            # ARCHIVED_ and bury a two-digit date at the end, which sorts by
-            # nothing useful.
-            TODAY=$(date +%Y_%m_%d-%H%M%S)
-            mv "${BACKUPFILE}" "${ARCHIVEFOLDER}/${TODAY}-${OS_NAME}_BACKUP.zip"
+            # Moved under the name it already has, keeping the date it was
+            # taken. Re-stamping on rotation would date every archive to the
+            # moment it was superseded, which is not when it was made and is
+            # not what somebody hunting for "the one from before Tuesday"
+            # needs. An archive written before names carried dates has none to
+            # keep, so it gets one now.
+            PREVIOUS_NAME="$(basename "${PREVIOUS}")"
+            case "${PREVIOUS_NAME}" in
+                [0-9][0-9][0-9][0-9]_*) ;;
+                *) PREVIOUS_NAME="$(date -r "${PREVIOUS}" +%Y_%m_%d-%H%M%S 2>/dev/null || date +%Y_%m_%d-%H%M%S)-${PREVIOUS_NAME}" ;;
+            esac
+            mv "${PREVIOUS}" "${ARCHIVEFOLDER}/${PREVIOUS_NAME}"
             # Both shapes: an upgraded device still has archives written under
             # the old name, and rotation must not skip them and keep them for
             # ever while trimming only the new ones.

@@ -724,17 +724,29 @@ backup_system_files() {
         stamp=$(date +%Y_%m_%d-%H%M%S)
         BACKUP_SYSTEM_STATUS=0
         local sent_any=0
+        # What this run actually put there, so the check afterwards measures
+        # those and not the whole history beside them.
+        local uploaded_names=()
         local archive
         for archive in "${BACKUPFOLDER}"/*.zip; do
             [ -f "${archive}" ] || continue
-            local base
+            local base target
             base=$(basename "${archive}")
-            log_message "Uploading ${base} as ${stamp}-${base}" "false"
+            # backuptool names archives with the date now, so the local name is
+            # already the one the cloud should carry -- stamping it again gave
+            # "2026_09_02-...-2026_09_01-...-ROCKNIX_BACKUP.zip". Only an
+            # archive made before that carries no date, and gets one here so
+            # the folder still sorts.
+            case "${base}" in
+                [0-9][0-9][0-9][0-9]_*) target="${base}" ;;
+                *) target="${stamp}-${base}" ;;
+            esac
+            log_message "Uploading ${base} as ${target}" "false"
             # Without the filter flags. copyto names one file explicitly, and
             # rclone refuses filters on a single-file copy -- "--include=/*.zip"
             # came from the folder transfer this replaced and made every upload
             # exit with a usage error.
-            rclone copyto "${archive}" "${device_dest}/${stamp}-${base}" \
+            rclone copyto "${archive}" "${device_dest}/${target}" \
                 "${copy_opts[@]}"
             local rc=$?
             if [ ${rc} -ne 0 ]; then
@@ -742,6 +754,7 @@ backup_system_files() {
                 report_rclone_error ${rc} "System backup file transfer"
                 break
             fi
+            uploaded_names+=("${target}")
             sent_any=1
         done
 
@@ -792,10 +805,25 @@ MANIFEST
         # arrived, and a marker written on a failed transfer would suppress
         # every retry afterwards.
         if [ ${BACKUP_SYSTEM_STATUS} -eq 0 ] && [ -n "${local_sum}" ]; then
-            local remote_bytes
-            remote_bytes=$(rclone size "${device_dest}/" \
-                --include "/*.zip" --json 2>/dev/null \
-                | sed -n 's/.*"bytes":[[:space:]]*\([0-9]*\).*/\1/p')
+            # The archives we just wrote, not everything in the folder. The
+            # cloud keeps a dated history now, so sizing the whole folder adds
+            # up every archive it holds and compares three of them against the
+            # one local file -- "51486484 vs 17162184", a mismatch reported as
+            # a failed upload on a transfer that worked perfectly. The check is
+            # right; what it was measuring stopped being true when retention
+            # arrived.
+            local remote_bytes=0
+            local checked=0
+            local uploaded
+            for uploaded in "${uploaded_names[@]}"; do
+                local one
+                one=$(rclone size "${device_dest}/${uploaded}" --json 2>/dev/null \
+                    | sed -n 's/.*"bytes":[[:space:]]*\([0-9]*\).*/\1/p')
+                [ -n "${one}" ] || continue
+                remote_bytes=$((remote_bytes + one))
+                checked=1
+            done
+            [ ${checked} -eq 1 ] || remote_bytes=""
             if [ -n "${remote_bytes}" ] && [ "${remote_bytes}" = "${local_bytes}" ]; then
                 echo "${local_sum}" > "${uploaded_marker}"
             else
