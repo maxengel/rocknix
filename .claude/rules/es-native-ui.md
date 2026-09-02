@@ -66,6 +66,16 @@ Values live in one place each, so a screen never makes its own decision.
 
 - **Rows on a cloud-setup page**: `CLOUD_SETUP_ROW_PADDING` in `GuiMenu.cpp`.
 
+- **How solid a floating card is**: `NOTIFICATION_OPACITY` in
+  `es-core/src/components/AsyncNotificationComponent.cpp`, **255**. Every
+  themed surface in the app — menus, dialogs, `GuiInfoPopup` after its
+  fade-in — draws its background at full opacity and lets the theme decide
+  how solid to be. This card was the one exception at 200, and over the
+  shipped theme's `0x111111` panel that let a fifth of the game art through:
+  a progress line on a mid-grey smear that shifted with the box art behind
+  it. The corners of `frame.png` fade to nothing regardless, so a card at
+  full opacity still reads as an overlay rather than a page.
+
 Screen-relative fractions, never pixel constants: these panels run from
 640×480 to 1920×1080 and a fixed value is right on exactly one of them.
 
@@ -97,6 +107,19 @@ public:
 - **"back up" vs "backup"**: two words as a verb ("BACK UP CONFIGURATIONS TO CLOUD",
   "back up your settings"), one word as a noun/adjective ("RESTORE FROM BACKUP",
   "backup file"). Applies to menu labels, dialogs, script output, and docs.
+- **Serial comma, always.** "Game saves, save states, and screenshots" — never
+  "…states and screenshots". Without it the last two items read as one thing,
+  which in a list of what a backup carries is exactly the ambiguity that
+  matters.
+- **"game save" vs "save state".** A battery save is a **game save**; a
+  snapshot of the running machine is a **save state** (two words — the
+  directory is `savestates`, the label is not). They are different files with
+  different failure modes, and a player who has lost one needs to know which.
+  Bare "saves" is fine as a collective where nothing contrasts with it
+  ("games, BIOS files, and saves"); the moment both appear, name them apart.
+- **"Wi-Fi", hyphenated**, in every user-visible string. The settings keys stay
+  `wifi.key` / `wifi.ssid` — an identifier is not a reason to spell the label
+  after it.
 - Theme-aware colors/fonts via `ThemeData::getMenuTheme()`.
 - Pages provide `getHelpPrompts()` so the bottom help bar stays accurate.
 - Lambda capture: `Window* window = mWindow;` then capture `window` (menu may be deleted).
@@ -116,6 +139,15 @@ public:
 - Developer/QA concepts in product text: no QEMU/VM/port-forward mentions, no
   "open this link on the device" (there is no browser). Console-first: player +
   handheld + phone companion is the only assumed environment.
+
+- **An operation whose only report is transient.** A progress card and the
+  toast that replaces it are both gone within seconds, so anyone who starts a
+  job and walks away — which is the normal way to run a backup — returns to a
+  screen that has never heard of it. Long-running work must leave a durable
+  answer to "did that work?" on the page that offered it: the backend stamps
+  the outcome somewhere device-local, the page reads it back (see
+  `cloudAddLastRunRow`). A log file is not that answer; nobody is going to be
+  told a path.
 
 - Dialog text promising behavior the backend doesn't do (pre-P1 backup dialogs).
 - Dropping to a fullscreen CLI for things a `GuiSettings` page + headless backend can do
