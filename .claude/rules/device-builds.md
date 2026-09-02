@@ -132,6 +132,58 @@ root hits it on a libtool bump, and CI never does because CI is always clean.
    `sources/` is a separate directory, so a wipe costs rebuild time but no
    re-downloading.
 
+## A killed build poisons every package that was in flight
+
+Builds run packages in parallel, so a `Ctrl-C`, a SIGTERM or a machine
+reboot does not interrupt *a* package — it interrupts however many were
+compiling at that moment. Each is left with objects on disk and archives
+built from an incomplete set of them.
+
+The resumed build then fails at **link** time, with a message that points
+nowhere near the cause:
+
+```
+undefined reference to `T11'          # while obj/emu/cpu/t11/t11.o sits right there
+undefined reference to `cp_find_first_component(char const*)'
+```
+
+The object exists; it was archived out. Nothing rebuilds it, because as
+far as make is concerned the archive is newer than the source.
+
+**Do not fix these one at a time.** Each attempt burns a build phase to
+discover the next casualty — 2026-09-02 went `mame2015-lr`, then `gdb`,
+before anyone asked how many there were. There were four.
+
+Enumerate them instead. The signature is a build directory that contains
+compiled output but has no `build_*` stamp:
+
+```bash
+R=build.ROCKNIX-<DEVICE>.<ARCH>
+cd $R/build && for d in */; do d=${d%/}; p=$d
+  while [ ! -d "$R/.stamps/$p" ] && [ "${p%-*}" != "$p" ]; do p=${p%-*}; done
+  [ -d "$R/.stamps/$p" ] || continue
+  ls "$R/.stamps/$p" | grep -q '^build_' && continue
+  [ -n "$(find "$d" -name '*.o' -o -name '*.a' | head -1)" ] && echo "POISONED $p ($d)"
+done
+```
+
+The object-file test matters: a package that is merely *unpacked* also has
+a directory and no stamp, and cleaning it costs an unpack for nothing.
+Only the ones with compiled output were mid-flight.
+
+Then `rm -rf $R/.stamps/<pkg> $R/build/<pkg>-*` for each and resume.
+
+**If a resume fails the same way again after that sweep, stop clearing
+packages and wipe the arch's build root.** At that point the state is not
+enumerable and the rebuild is cheaper than the next three guesses —
+`sources/` is a separate directory, so it costs time, not downloads.
+
+Related but distinct: the libtool case above is a *stale* artifact from a
+previous tree. This one is a *partial* artifact from an interrupted run.
+Same class of symptom, different cause, same instinct — reproduce the
+clean-tree condition for the affected packages rather than trusting an
+incremental build to notice.
+
 ## Budget
 
 - **Disk:** ~90 GB per device build root, plus the shared ~15 GB sources cache.
