@@ -192,6 +192,23 @@ controller_confirm() {
     done
 }
 
+# Somebody who starts a backup and walks away has no way to learn how it went:
+# the progress card is gone by the time they come back, and the toast that
+# reported the outcome went with it. Leave the answer where the menu can read
+# it later.
+#
+# Device-local state, so it lives under /storage/.cache rather than
+# /storage/.config -- a stamp swept into the settings backup and restored onto
+# a second device would be describing a run that device never made.
+record_last_run() {
+    local exit_code="$1"
+    local name="backup"
+    [ "${SYSTEM_ONLY}" -eq 1 ] && name="system-backup"
+    mkdir -p /storage/.cache/cloud_sync 2>/dev/null
+    printf '%s %s\n' "$(date +%s)" "${exit_code}" \
+        > "/storage/.cache/cloud_sync/last-${name}" 2>/dev/null
+}
+
 # Performs cleanup operations and exits with the specified code
 # Records total execution time in the log for performance tracking
 # Parameters:
@@ -200,6 +217,7 @@ clean_exit() {
     local exit_code=$1
     local duration=$(($(date +%s) - START_TIME))
     
+    record_last_run "${exit_code}"
     log_message "Script completed in ${duration} seconds with exit code ${exit_code}" "false"
     exit ${exit_code}
 }
@@ -790,9 +808,17 @@ MANIFEST
             case "${keep}" in
                 ''|*[!0-9]*) keep=3 ;;
             esac
+            # Newest first, with anything undated treated as oldest. Sorting
+            # names alone puts "ROCKNIX_BACKUP.zip" above every "2026_..."
+            # because R sorts after a digit -- so an archive from before names
+            # carried dates would hold a keep-slot for ever while genuinely
+            # newer ones were pruned around it.
+            local listing
+            listing=$(rclone lsf --files-only --include "*.zip" "${device_dest}/" 2>/dev/null)
             local old_archive
-            rclone lsf --files-only --include "*.zip" "${device_dest}/" 2>/dev/null \
-                | sort -r | tail -n +$((keep + 1)) | while read -r old_archive
+            { printf '%s\n' "${listing}" | grep -E '^[0-9]{4}_' | sort -r
+              printf '%s\n' "${listing}" | grep -vE '^[0-9]{4}_' | grep -v '^$'
+            } | grep -v '^$' | tail -n +$((keep + 1)) | while read -r old_archive
             do
                 [ -n "${old_archive}" ] || continue
                 log_message "Removing old cloud backup ${old_archive}" "false"

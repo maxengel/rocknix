@@ -98,4 +98,11 @@ for DIR in "${DIRS[@]}"; do
     fi
 done
 
+# The progress card is gone by the time somebody who walked away comes back, so
+# leave the outcome where the menu can read it later. Device-local state, so it
+# lives under /storage/.cache and not in the settings backup.
+mkdir -p /storage/.cache/cloud_sync 2>/dev/null
+printf '%s %s\n' "$(date +%s)" "${STATUS}" \
+    > "/storage/.cache/cloud_sync/last-content-backup" 2>/dev/null
+
 exit ${STATUS}
