@@ -42,19 +42,77 @@ fi
 
 ROOT="${REMOTENAME}${CONTENTPATH:+${CONTENTPATH}/}"
 
-# Local content directories: skip what the saves sync already handles and
-# non-content folders.
+# What this device calls a game system.
+#
+# EmulationStation declares one <path> per system, and on a handheld those are
+# the /storage/roms subdirectories that hold games. Deriving the list from the
+# device's own config means it is right per device -- an H700 has 122, a
+# Snapdragon target has more -- and it never drifts, because the image that
+# adds a system also adds it here.
+#
+# Match on <path>, not <name>: they differ for a dozen systems (ES calls the
+# folder "coleco" and the system "colecovision", "fbneo"/"fbn", "pc88"/"pc-88"),
+# and matching names silently drops those folders from the backup.
+ES_SYSTEMS=""
+for c in /storage/.config/emulationstation/es_systems.cfg \
+         /usr/config/emulationstation/es_systems.cfg; do
+    [ -r "${c}" ] && { ES_SYSTEMS="${c}"; break; }
+done
+
+system_folders() {
+    [ -n "${ES_SYSTEMS}" ] || return 0
+    sed -n 's:.*<path>/storage/roms/\([^</]*\).*:\1:p' "${ES_SYSTEMS}" | sort -u
+}
+
+# Local content directories, by allowlist.
+#
+# This used to be a denylist -- everything under /storage/roms except four
+# names -- so any directory that appeared there was uploaded as though it were
+# a game system. That is the same shape of mistake as a denylist sync filter:
+# what gets included is decided by what happens to be on the disk rather than
+# by anything anyone chose. bezels, themes, music and a stray scummvm folder
+# were all being swept up that way, none of them systems (ES keeps scummvm's
+# games in /storage/.config/scummvm/games and music's playlists in
+# /storage/.config/gmu/playlists -- the /storage/roms folders of those names
+# are leftovers).
+#
+# In scope: the systems ES declares, and bios. Everything else is out, and
+# stays out until somebody decides otherwise.
 list_local_dirs() {
+    local allow
+    allow=$(system_folders)
     for d in "${DEST}"/*/; do
         [ -d "${d}" ] || continue
         base=$(basename "${d}")
+        # The saves sync owns these, and ES declares screenshots and
+        # savestates as systems of its own -- so the allowlist alone lets them
+        # through, and content sync would upload the same files the saves sync
+        # is already keeping, into a second place, under different rules.
+        # Membership of the content tier is the intersection: a system ES
+        # declares, and not something another tier already owns.
         case "${base}" in
             savefiles|savestates|screenshots|backup) continue ;;
         esac
+        if [ "${base}" != "bios" ]; then
+            printf '%s\n' "${allow}" | grep -qxF "${base}" || continue
+        fi
         # skip empty directories
         [ -n "$(ls -A "${d}" 2>/dev/null)" ] || continue
         echo "${base}"
     done
+}
+
+# Where a local directory belongs in the cloud.
+#
+# The cloud layout is for a person looking at it on a computer, not a mirror of
+# the device's storage. There, "bios" is just another folder beside the game
+# systems, which is an accident of how the handheld stores things and tells a
+# reader nothing. Two named folders do: ROMs and BIOS.
+remote_for() {
+    case "$1" in
+        bios) echo "${ROOT}BIOS" ;;
+        *)    echo "${ROOT}ROMs/$1" ;;
+    esac
 }
 
 case "${1}" in
@@ -83,7 +141,7 @@ for DIR in "${DIRS[@]}"; do
     # Local -> remote. This script uploads; cloud_content_restore is the one
     # that brings content back down.
     SRC="${DEST}/${DIR}"
-    TARGET="${ROOT}${DIR}"
+    TARGET="$(remote_for "${DIR}")"
     log_message "Content backup: ${SRC} -> ${TARGET}"
     echo "Backing up ${DIR:-everything} to the cloud..."
     rclone copy "${SRC}" "${TARGET}" \

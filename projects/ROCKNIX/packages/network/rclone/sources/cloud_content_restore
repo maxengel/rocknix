@@ -68,19 +68,57 @@ legacy_dirs() {
     done
 }
 
-# Returns the root that actually holds this directory.
-resolve_root() {
-    local dir="$1"
-    [ -z "${CONTENTPATH}" ] && { echo "${ROOT}"; return; }
-    if rclone lsf --dirs-only "${ROOT}" 2>/dev/null | sed 's:/$::' | grep -qx "${dir}"; then
-        echo "${ROOT}"
-    elif legacy_dirs | grep -qx "${dir}" \
+# Where a local directory lives in the current cloud layout.
+#
+# ROMs and BIOS are named folders rather than a mirror of /storage/roms,
+# because the person filling them in is looking at a file manager on a
+# computer, where "bios sitting beside snes" is an accident of how a handheld
+# stores things. The local name is what everything else here uses, so the
+# mapping stays in one place: bios lives under BIOS, everything else under
+# ROMs.
+remote_for() {
+    case "$1" in
+        bios) echo "${ROOT}BIOS" ;;
+        *)    echo "${ROOT}ROMs/$1" ;;
+    esac
+}
+
+# Returns the full remote path that actually holds this directory.
+#
+# Three shapes are in the field and all of them have to keep working:
+#
+#   1. ROMs/<system> and BIOS      -- current
+#   2. <system> and bios, flat under CONTENTPATH  -- what shipped before this
+#   3. <system> at the remote root -- before CONTENTPATH existed at all
+#
+# Read all three, write only the first (cloud_content_backup). A library then
+# migrates itself the next time it is backed up: nothing to prompt about,
+# nothing to explain, and a device that has not updated yet still finds its
+# content where it left it.
+#
+# The legacy root on a path-based remote is the whole account, which holds the
+# owner's own folders too. Only directories this device actually has locally
+# are offered from there - listing somebody's holiday photos as restorable ROMs
+# would be worse than the empty list this fixes.
+resolve_src() {
+    local dir="$1" new
+    new="$(remote_for "${dir}")"
+    if exists_remote "${new}"; then
+        echo "${new}"
+    elif rclone lsf --dirs-only "${ROOT}" 2>/dev/null | sed 's:/$::' | grep -qx "${dir}"; then
+        log_message "Content \"${dir}\" found in the flat pre-ROMs layout"
+        echo "${ROOT}${dir}"
+    elif [ -n "${CONTENTPATH}" ] && legacy_dirs | grep -qx "${dir}" \
          && rclone lsf --dirs-only "${LEGACY_ROOT}" 2>/dev/null | sed 's:/$::' | grep -qx "${dir}"; then
         log_message "Content \"${dir}\" found at the pre-CONTENTPATH location"
-        echo "${LEGACY_ROOT}"
+        echo "${LEGACY_ROOT}${dir}"
     else
-        echo "${ROOT}"
+        echo "${new}"
     fi
+}
+
+exists_remote() {
+    rclone lsjson --stat "$1" >/dev/null 2>&1
 }
 
 case "${1}" in
@@ -90,7 +128,13 @@ case "${1}" in
         # predates CONTENTPATH, rather than presenting an unexplained empty
         # list to somebody who changed nothing.
         {
-            rclone lsf --dirs-only "${ROOT}" 2>/dev/null | sed 's:/$::'
+            # current layout, reported under the local names the rest of the
+            # script uses -- BIOS in the cloud is /storage/roms/bios here
+            rclone lsf --dirs-only "${ROOT}ROMs/" 2>/dev/null | sed 's:/$::'
+            exists_remote "${ROOT}BIOS" && echo "bios"
+            # the flat layout that shipped before it, minus its own containers
+            rclone lsf --dirs-only "${ROOT}" 2>/dev/null | sed 's:/$::' \
+                | grep -vxE 'ROMs|BIOS'
             if [ -n "${CONTENTPATH}" ]; then
                 rclone lsf --dirs-only "${LEGACY_ROOT}" 2>/dev/null | sed 's:/$::' \
                     | grep -Fxf <(legacy_dirs) 2>/dev/null
@@ -112,7 +156,7 @@ esac
 
 STATUS=0
 for DIR in "${DIRS[@]}"; do
-    SRC="$(resolve_root "${DIR}")${DIR}"
+    SRC="$(resolve_src "${DIR}")"
     TARGET="${DEST}/${DIR}"
     log_message "Content restore: ${SRC} -> ${TARGET}"
     echo "Restoring ${DIR:-everything} from the cloud..."
