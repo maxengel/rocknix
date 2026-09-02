@@ -66,6 +66,25 @@ Values live in one place each, so a screen never makes its own decision.
 
 - **Rows on a cloud-setup page**: `CLOUD_SETUP_ROW_PADDING` in `GuiMenu.cpp`.
 
+- **How wide and where a progress card sits**: 0.9 of screen width, centred
+  at the top — `AsyncNotificationComponent`'s constructor for the size,
+  `Window::renderAsyncNotifications` for the position (the latter re-applies
+  it every frame, so both must agree). 0.9 is `GuiInfoPopup`'s cap and the
+  widest this app lets a non-blocking overlay get. Past half the screen a
+  card pinned to a corner reads as a panel that failed to fit rather than a
+  placement anybody chose, so anything wider than that is centred.
+
+  The three tiers, so a new surface picks the right one:
+
+  | Surface | Width | Position | Blocks input |
+  |---|---|---|---|
+  | `Splash` (boot, gamelist reload, launch) | full screen; its bar is 0.5W | whole screen | yes |
+  | `GuiInfoPopup` (toast) | fits text, capped 0.9W | top, centred | no |
+  | `AsyncNotificationComponent` (progress) | 0.9W | top, centred | no |
+
+  Full-*screen* is a modal takeover, not a wider card — do not reach for it
+  for work the player can keep playing through.
+
 - **How solid a floating card is**: `NOTIFICATION_OPACITY` in
   `es-core/src/components/AsyncNotificationComponent.cpp`, **255**. Every
   themed surface in the app — menus, dialogs, `GuiInfoPopup` after its
@@ -139,6 +158,13 @@ public:
 - Developer/QA concepts in product text: no QEMU/VM/port-forward mentions, no
   "open this link on the device" (there is no browser). Console-first: player +
   handheld + phone companion is the only assumed environment.
+
+- **Two surfaces for one event.** A job that reports progress in one shape
+  and its outcome in another, somewhere else on screen, changes shape and
+  position at exactly the moment somebody is looking for the answer. The
+  surface that reported the work says how it ended and then fades — see
+  `ThreadedCloudSync::run`. It replaced a card that vanished into a
+  `GuiInfoPopup` two hundred pixels away.
 
 - **An operation whose only report is transient.** A progress card and the
   toast that replaces it are both gone within seconds, so anyone who starts a
