@@ -47,6 +47,19 @@ case "${BOOTLOADER}" in
     echo "install: skipping generic bootloader installation for u-boot"
     ;;
     
+  qcom-abl|arm-efi)
+    # Written into the boot partition at image time, not staged into the
+    # filesystem here: scripts/mkimage generates the config for both, and
+    # projects/ROCKNIX/bootloader/mkimage's mkimage_abl() mcopies the
+    # rocknix_abl binary in. There is nothing under /usr/share for this
+    # script to copy, which is why the generic fallback below reported
+    # every Qualcomm build as an unknown bootloader with missing files --
+    # two warnings, on five targets, for a step that had already been
+    # done correctly somewhere else.
+    echo "install: ${BOOTLOADER} is written into the boot partition at image time"
+    echo "install: skipping generic bootloader installation for ${BOOTLOADER}"
+    ;;
+    
   "")
     echo "install: no bootloader specified (BOOTLOADER variable empty)"
     echo "install: skipping bootloader installation"
