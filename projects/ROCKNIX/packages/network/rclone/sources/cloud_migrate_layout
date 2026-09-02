@@ -32,6 +32,7 @@
 SYNC_CONF="/storage/.config/cloud_sync.conf"
 NEW_SAVES="/ROCKNIX/Saves"
 NEW_BACKUPS="/ROCKNIX/Backups"
+NEW_CONTENT="/ROCKNIX/Content"
 
 say() { echo "$@"; }
 
@@ -65,9 +66,63 @@ exists() {
     rclone lsjson --stat "$1" >/dev/null 2>&1
 }
 
+# What cloud_sync_helper would have derived CONTENTPATH to be for a given
+# SYNCPATH. The helper deliberately derives it rather than taking the shipped
+# default, so that ROMs and saves stay in one namespace -- its own comment
+# calls a split "worse than either layout alone".
+#
+# That is exactly what this script used to produce: it moved saves and backups
+# to /ROCKNIX and left CONTENTPATH behind, so a migrated device looked for its
+# ROMs under a /GAMES that no longer had anything in it. Matching against the
+# derived value is how we tell our own pointer from one the owner chose --
+# theirs is left alone.
+derived_content() {
+    local sync="$1" parent
+    parent=$(dirname "${sync}")
+    [ "${parent}" = "/" ] && parent="${sync}"
+    echo "${parent%/}/Content"
+}
+
+# Move content to the current namespace if it is safe to, and repoint the
+# config. Never merges into an existing destination -- that is the same
+# interruptible half-migrated state the saves move refuses.
+migrate_content() {
+    local remote="$1" content="$2" mode="$3"
+
+    if has_entries "${remote}${content}/"; then
+        if exists "${remote}${NEW_CONTENT}"; then
+            say "REFUSING: ${remote}${NEW_CONTENT} already exists, and ${remote}${content}"
+            say "holds files. Nothing moved and the config is unchanged -- merging two"
+            say "content folders is not something to do without being asked."
+            return 4
+        fi
+        say "Would move  ${remote}${content}  ->  ${remote}${NEW_CONTENT}"
+        if [ "${mode}" != "--apply" ]; then
+            say "Nothing has been changed. Run with --apply to do it."
+            return 0
+        fi
+        say "Moving content..."
+        if ! rclone move "${remote}${content}" "${remote}${NEW_CONTENT}" \
+                --create-empty-src-dirs=false 2>&1 | tail -3; then
+            say "FAILED moving content. The config is unchanged."
+            return 5
+        fi
+    else
+        say "Nothing is stored at ${remote}${content}, so only the setting changes."
+        if [ "${mode}" != "--apply" ]; then
+            say "Nothing has been changed. Run with --apply to do it."
+            return 0
+        fi
+    fi
+
+    sed -i "s|^CONTENTPATH=.*|CONTENTPATH=\"${NEW_CONTENT}\"|" "${SYNC_CONF}"
+    say "Content is now at ${remote}${NEW_CONTENT}."
+    return 0
+}
+
 main() {
     local mode="${1:---check}"
-    local remote saves backups old_root
+    local remote saves backups content old_root
 
     remote=$(remote_name)
     if [ -z "${remote}" ]; then
@@ -78,7 +133,25 @@ main() {
     saves=$(conf_value SYNCPATH)
     backups=$(conf_value SYNCPATH_BACKUP)
 
+    content=$(conf_value CONTENTPATH)
+
     if [ "${saves}" = "${NEW_SAVES}" ] && [ "${backups}" = "${NEW_BACKUPS}" ]; then
+        # Saves and backups are current, but a device migrated before
+        # CONTENTPATH was carried along is still pointing its ROMs at the old
+        # namespace. Repair that here rather than making it a separate flow --
+        # this is the state every early migration left behind.
+        # The old SYNCPATH is gone by now, so the derived value cannot be
+        # recomputed. The signature is enough: the helper always appends
+        # "/Content", so a path shaped that way and not already the current
+        # one is one of ours, left behind.
+        case "${content}" in
+            "${NEW_CONTENT}"|"") : ;;
+            */Content)
+                say "Saves and backups are current, but content still points at ${remote}${content}."
+                migrate_content "${remote}" "${content}"  "${mode}"
+                return $?
+            ;;
+        esac
         say "Already on the current layout (${NEW_SAVES}, ${NEW_BACKUPS})."
         return 3
     fi
@@ -156,6 +229,14 @@ main() {
     say "Updating ${SYNC_CONF}..."
     sed -i "s|^SYNCPATH=.*|SYNCPATH=\"${NEW_SAVES}\"|" "${SYNC_CONF}"
     sed -i "s|^SYNCPATH_BACKUP=.*|SYNCPATH_BACKUP=\"${NEW_BACKUPS}\"|" "${SYNC_CONF}"
+
+    # ROMs move with the saves they belong to, when the pointer is one we
+    # derived. A CONTENTPATH the owner set themselves is theirs, and stays.
+    if [ -n "${content}" ] && [ "${content}" = "$(derived_content "${saves}")" ]; then
+        migrate_content "${remote}" "${content}" "${mode}"
+    elif [ -n "${content}" ] && [ "${content}" != "${NEW_CONTENT}" ]; then
+        say "Leaving CONTENTPATH at ${content} -- it is not a path this migration set."
+    fi
 
     say ""
     say "Done. Saves are at ${remote}${NEW_SAVES}, backups at ${remote}${NEW_BACKUPS}."
