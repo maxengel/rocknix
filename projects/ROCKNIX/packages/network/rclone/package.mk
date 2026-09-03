@@ -65,7 +65,13 @@ makeinstall_target() {
   cp cloud_sync.conf.defaults ${INSTALL}/usr/config/
   cp cloud_sync-rules.txt.defaults ${INSTALL}/usr/config/
   chmod 755 ${INSTALL}/usr/bin/rclone
-  mkdir -p ${INSTALL}/usr/config/modules
-  ln -sf /usr/bin/cloud_backup ${INSTALL}/usr/config/modules/cloud_backup.sh
-  ln -sf /usr/bin/cloud_restore ${INSTALL}/usr/config/modules/cloud_restore.sh
+  # No TOOLS entries for cloud backup and restore.
+  #
+  # These symlinked the scripts into the tools list, so running one dropped
+  # the player into a fullscreen console. That was the parity stopgap while
+  # cloud sync had no native surface; EmulationStation now has the whole flow
+  # -- direction, the three data classes, progress and the last result -- so
+  # the console route is a second, worse way to do the same thing, and two
+  # paths to one operation is how somebody ends up with a backup missing what
+  # they assumed was in it.
 }
