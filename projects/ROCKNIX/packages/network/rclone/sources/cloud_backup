@@ -675,11 +675,24 @@ backup_system_files() {
         local local_sum=""
         local last_sum=""
         local local_bytes=0
-        if ls "${BACKUPFOLDER}"/*.zip "${BACKUPFOLDER}"/*.tar.gz >/dev/null 2>&1; then
+        # Collect the archives that exist rather than branching on ls's exit
+        # status: busybox ls returns non-zero when ANY argument is unmatched,
+        # and after the tar change BACKUPFOLDER normally holds exactly one
+        # format -- the previous one having been rotated into archive/. The
+        # gate therefore failed on every device that had taken one backup,
+        # leaving local_sum empty, which silently switched off the post-upload
+        # size verification below. That check is the #53 guard: a backup that
+        # reported success while sending nothing.
+        local archives=()
+        local a
+        for a in "${BACKUPFOLDER}"/*.zip "${BACKUPFOLDER}"/*.tar.gz; do
+            [ -f "${a}" ] && archives+=("${a}")
+        done
+        if [ ${#archives[@]} -gt 0 ]; then
             # Hash of the members' hashes, so more than one archive at the
             # root is still covered by a single comparison.
-            local_sum=$(md5sum "${BACKUPFOLDER}"/*.zip "${BACKUPFOLDER}"/*.tar.gz 2>/dev/null | md5sum | cut -d' ' -f1)
-            local_bytes=$(cat "${BACKUPFOLDER}"/*.zip "${BACKUPFOLDER}"/*.tar.gz 2>/dev/null | wc -c)
+            local_sum=$(md5sum "${archives[@]}" 2>/dev/null | md5sum | cut -d' ' -f1)
+            local_bytes=$(cat "${archives[@]}" 2>/dev/null | wc -c)
         fi
         if [ -f "${uploaded_marker}" ]; then
             last_sum=$(cat "${uploaded_marker}" 2>/dev/null)

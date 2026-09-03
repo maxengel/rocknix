@@ -99,8 +99,17 @@ DEFAULT=(
     # every backup, so a player with hundreds of megabytes of overlays should
     # know that. See #45 on archive size generally.
     /storage/roms/bezels/*
-    /storage/roms/music/*
     /storage/roms/themes/*
+    # Systems whose content EmulationStation keeps outside /storage/roms.
+    # Neither the saves tier (which spans /storage/roms) nor content sync
+    # (same) can reach these, so before this line they were captured by
+    # nothing at all and a ScummVM or idTech player lost their entries on
+    # restore. /storage/roms/music is NOT the music system -- ES reads
+    # playlists from gmu, and the roms folder of that name is a leftover.
+    /storage/.config/gmu/playlists/*
+    /storage/.config/idtech/*
+    /storage/.config/modules/*
+    /storage/.config/scummvm/games/*
 )
 
 if [ -e "/storage/.config/backuptool.conf" ]
@@ -294,7 +303,15 @@ case "${1}" in
         # the tree being archived, so there is no ordering in which a real
         # credential is written and later overwritten.
         STAGING=$(mktemp -d)
-        if ! tar -cf - -T "${SENDLIST}" 2>/dev/null | tar -xf - -C "${STAGING}" 2>/dev/null
+        # pipefail, in a subshell so it does not leak into the rest of the
+        # script: a pipeline's status is its LAST command's, so without this
+        # the guard tested the extracting tar and ignored the collecting one.
+        # The collector exits 1 on an unreadable input or an unwritable target
+        # and the pipeline still reported 0, so a short archive was written and
+        # announced as a success.
+        ( set -o pipefail
+          tar -cf - -T "${SENDLIST}" 2>/dev/null | tar -xf - -C "${STAGING}" 2>/dev/null )
+        if [ $? -ne 0 ]
         then
             rm -rf "${STAGING}"
             rm -f "${BACKUPFILE}" "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
@@ -361,8 +378,17 @@ case "${1}" in
         SCANLIST=$(tar -tzf "${BACKUPFILE}" 2>/dev/null | grep -E '\.(cfg|conf|ini)$' || true)
         if [ -n "${SCANLIST}" ]
         then
-            LEAKS=$(tar -xzOf "${BACKUPFILE}" ${SCANLIST} 2>/dev/null \
-                | grep -acE '^[a-z_.]*(password|token|stream_key|\.key) *[=:] *"?[^"[:space:]]+' || true)
+            # Extract once and scan the files, rather than expanding the
+            # member list into tar's arguments: unquoted, a member name
+            # containing a space split into two names that do not exist, tar
+            # errored into /dev/null, and those members went unscanned -- a
+            # credential check failing open.
+            SCANDIR=$(mktemp -d)
+            tar -xzf "${BACKUPFILE}" -C "${SCANDIR}" 2>/dev/null
+            LEAKS=$(find "${SCANDIR}" -type f \( -name '*.cfg' -o -name '*.conf' -o -name '*.ini' \) \
+                -exec grep -hE '^[a-z_.]*(password|token|stream_key|\.key) *[=:] *"?[^"[:space:]]+' {} + 2>/dev/null \
+                | wc -l)
+            rm -rf "${SCANDIR}"
         else
             LEAKS=0
         fi
