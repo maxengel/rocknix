@@ -62,8 +62,24 @@ has_files() {
             "$1" 2>/dev/null | head -1)" ]
 }
 
+# Does a remote path exist?
+#
+# NOT `rclone lsjson --stat`, which is what this used to be. On bucket-based
+# remotes (S3, B2, Minio) stat synthesises a directory entry for *any* path --
+# verified against Minio on rclone 1.60 and 1.74, where
+# "utterly-bogus-never-created" reports success with IsDir true. So it can
+# never report absence there, and every caller that branched on it took the
+# "exists" path unconditionally.
+#
+# A listing can report absence. Two questions, because a directory can be real
+# without holding files: does it contain anything, or does its parent list it
+# (which is what an --s3-directory-markers marker object produces)?
 exists() {
-    rclone lsjson --stat "$1" >/dev/null 2>&1
+    [ -n "$(rclone lsf "$1" 2>/dev/null | head -1)" ] && return 0
+    local parent name
+    parent="${1%/}"; name="${parent##*/}"; parent="${parent%/*}"
+    [ -n "${name}" ] || return 1
+    rclone lsf --dirs-only "${parent}/" 2>/dev/null | grep -qx "${name}/"
 }
 
 # What cloud_sync_helper would have derived CONTENTPATH to be for a given

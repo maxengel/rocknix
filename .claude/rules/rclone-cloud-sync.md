@@ -183,6 +183,55 @@ CLOUD_QA_BACKEND=s3 ./tools/cloud-test-backend up   # MinIO instead
 CLOUD_QA_BACKEND=s3 ./tools/cloud-round-trip --host ... # bucket-based path
 ```
 
+### Runbook
+
+```bash
+./tools/cloud-test-backend up                       # WebDAV on :9010
+./tools/cloud-round-trip --host root@127.0.0.1 --port 10022 --identity <key>
+./tools/cloud-test-backend ls                       # what the device actually uploaded
+./tools/cloud-test-backend down                     # ALWAYS -- see below
+```
+
+Four things that cost time on 2026-09-03:
+
+- **`down` matters.** WebDAV runs as a bare `rclone serve` on the host, and it
+  survives the session that started it. A stale one holding :9010 makes the next
+  `up` fail with `address already in use`, and the S3 path additionally leaves a
+  half-created container behind (`docker rm -f rocknix-cloud-qa`). `CLOUD_QA_PORT`
+  moves it if you need both at once.
+- **The host's rclone is not the device's.** This host had **1.60.1-DEV**; the
+  device ships **1.74.4**. Backend options differ across that gap —
+  `--s3-directory-markers` does not exist in 1.60. Test rclone behaviour by
+  running rclone *on the device* against the QA endpoint, not on the host.
+- **A real device can reach the host's MinIO too**, not just a VM: bind the
+  backend and point the device's rclone config at the host's LAN address. Faster
+  than booting a VM when the question is purely about rclone semantics.
+- The device reaches a VM-host at `10.0.2.2`; a LAN device needs the real IP.
+
+### Bucket remotes behave differently, and it is not a detail
+
+Run the S3 path (`CLOUD_QA_BACKEND=s3`, MinIO) whenever a change touches
+existence checks, directory creation, or layout. Two traps, both found this way:
+
+- **`rclone lsjson --stat` is not an existence test on a bucket remote.** It
+  synthesises a directory entry for *any* path — `utterly-bogus-never-created`
+  returns `IsDir: true` on both 1.60 and 1.74. Three call sites branched on it,
+  so on S3 the migration always refused ("destination already exists"), the
+  content-restore legacy fallback was dead, and the seeding report could only
+  ever say OK. Use a **listing**: does the path contain anything, or does its
+  parent list it?
+- **`rclone mkdir` exits 0 while creating nothing.** Empty directories do not
+  exist on S3; rclone even says so (`Warning: running mkdir on a remote which
+  can't have empty directories does nothing`) and still returns success. The
+  standard fix is a zero-byte object whose key ends in `/`, which is what the S3
+  console itself writes — rclone does it with **`--s3-directory-markers`**
+  (default off). B2 has no equivalent rclone flag.
+
+The consequence for design: a folder we want a player to *see* needs either a
+marker or a file in it. Our seeded folders get both — the marker so the folder
+persists, and a `README.txt` because a folder that says what belongs in it is
+worth more than an empty one.
+
 Getting a VM to an SSH target the driver can use: boot it, then over the
 serial console (`-serial unix:`) enable sshd and drop in a key —
 `systemctl start sshd`, then write your public key to

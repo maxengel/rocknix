@@ -342,7 +342,11 @@ case "$1" in
         for d in "${SAVES}" "${SAVES}/savefiles" "${SAVES}/savestates" \
                  "${SAVES}/screenshots" "${BACKUPS}" \
                  "${CONTENT}" "${CONTENT}/ROMs" "${CONTENT}/BIOS"; do
-            rclone mkdir "${REMOTE}${d}" 2>/dev/null
+            # --s3-directory-markers writes a zero-byte object ending in "/",
+            # which is how S3 itself represents a folder -- without it a
+            # bucket remote silently keeps nothing, and mkdir still exits 0.
+            # Ignored by path-based backends, so it costs nothing there.
+            rclone mkdir --s3-directory-markers "${REMOTE}${d}" 2>/dev/null
         done
 
         seed_note() {
@@ -393,7 +397,12 @@ case "$1" in
         # Report what is actually there, not what we asked for: on a bucket
         # remote a mkdir can succeed and leave nothing behind.
         for d in "${SAVES}" "${BACKUPS}" "${CONTENT}/ROMs" "${CONTENT}/BIOS"; do
-            if rclone lsjson --stat "${REMOTE}${d}" >/dev/null 2>&1; then
+            # A listing, never lsjson --stat: on a bucket remote stat reports
+            # success for any path at all, so the MISSING branch could never
+            # be reached -- the report would have been unconditionally OK,
+            # which is the shape of an assertion that cannot fail.
+            if [ -n "$(rclone lsf "${REMOTE}${d}" 2>/dev/null | head -1)" ] \
+               || rclone lsf --dirs-only "${REMOTE}${d%/*}/" 2>/dev/null | grep -qx "${d##*/}/"; then
                 echo "OK ${d}"
             else
                 echo "MISSING ${d}"
