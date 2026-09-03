@@ -160,3 +160,7 @@ milestone-tier preference for a fresh session. Compensated by citing a primary a
 or an executed command for every verdict, and by marking recollection-only claims
 UNTESTABLE rather than PASS. A fresh-session re-audit would still be worth doing before
 upstream.
+
+---
+
+**Audit issue:** https://github.com/maxengel/rocknix/issues/60

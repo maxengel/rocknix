@@ -50,3 +50,8 @@ Brace alternation verified BOTH directions against the real remote (matched .zip
 F-05 (HIGH): cloud_backup:678 gates on `ls A B` exit status, which is non-zero when
 one glob is unmatched -- the normal state after the tar change. local_sum stays empty,
 which disables the #53 post-upload size verification at line 833 on every device.
+
+### [Phase 6-7] Issue #60 created; five code findings resolved and device-verified
+Six documentation/AC findings deferred with named homes. `tools/lint-audit-artifacts`
+FAILED first (no Phase 7 gate; 4 of 11 items not individually addressable because they
+were grouped) — the exact class of contract miss it was written for. PASS after fixing.

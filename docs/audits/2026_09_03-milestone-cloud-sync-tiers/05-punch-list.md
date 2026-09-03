@@ -2,7 +2,7 @@
 
 | PL | Sev | Category | Finding | Where |
 | --- | --- | --- | --- | --- |
-| PL-01 | **High** | Interaction Defect | #53 size verification disabled on every upgraded device | `cloud_backup:678` |
+| PL-01 (resolved 2b626195d8) | **High** | Interaction Defect | #53 size verification disabled on every upgraded device | `cloud_backup:678` |
 | PL-02 | **Medium** | Correctness | Staging pipeline masks collection failure; partial backup reports success | `backuptool:297` |
 | PL-03 | **Medium** | Correctness | Music is backed up from the wrong path | `backuptool` DEFAULT |
 | PL-04 | **Medium** | Coverage Gap | Four ES system paths are in no tier | `backuptool` DEFAULT |
@@ -90,19 +90,58 @@ changed dialog text are all user-visible, with no `ROCKNIX/rocknix.org` change p
 
 **Fix:** extend #42 with these five, or open the docs PR.
 
-## PL-07 … PL-11 — Low
+## PL-07 — Low — #56 AC 3 describes the superseded layout
 
-- **PL-07:** #56 AC 3 still describes `Content/bios` + README-described systems.
-  D-CLOUD-018 superseded it; `issue-tracking.md` requires editing the body in the same
-  action. Edit it.
-- **PL-08:** #56 AC 8 has two halves; only "what exists afterwards" shipped. Either add
-  a pre-statement to the configure step or amend the AC.
-- **PL-09:** #58 AC 1 cannot be satisfied — archives hold only regular files, so no
-  symlink member exists; and tar fails on a directory member over a live symlink
-  exactly as unzip does. Rewrite the AC to what tar actually buys (permissions,
-  ownership, no skip-list).
-- **PL-10:** `--scan`'s `|0` unsupported branch has never produced output. Plant a
-  directory for a system this device lacks and confirm it is marked.
-- **PL-11:** ES offers `MY SELECTED SYSTEMS` before any selection exists; the script
-  exits 1 with "No systems are selected". Gate the row on a selection existing, or make
-  the message send the player to the picker.
+Still says `Content/bios` exists with per-system folders described-not-created.
+D-CLOUD-018 replaced that with `ROMs/` + `BIOS/`. `issue-tracking.md` requires editing
+the body in the same action as the superseding decision. **Fix:** edit #56's body.
+
+## PL-08 — Low — the wizard never says what it *will* create
+
+#56 AC 8 has two halves; only "what exists afterwards" shipped. **Fix:** add a
+pre-statement to the configure step, or amend the AC to match what was built.
+
+## PL-09 — Low — #58 AC 1 is unsatisfiable as written
+
+Archives are built from `find -type f`, so no symlink member can exist to restore; and
+tar fails on a *directory* member landing on a live symlink exactly as unzip does
+(proven, exit 1). **Fix:** rewrite the AC to what tar actually buys — permissions,
+ownership, and no skip-list.
+
+## PL-10 — Low — the `unsupported` branch has never produced output
+
+`--scan` emits `name|bytes|0` for a system this device cannot run. Only the `|1` branch
+has been observed, so the marking is an assertion that has never had a chance to fail.
+**Fix:** plant a cloud directory for a system absent from `es_systems.cfg` and confirm
+the `0` flag and the ES row's note.
+
+## PL-11 — Low — `MY SELECTED SYSTEMS` is a dead end before any selection exists
+
+ES offers the row unconditionally; `--selected` exits 1 with "No systems are selected
+for this device." No bad state results (the exit precedes the last-run stamp), but it
+is a first-run dead end. **Fix:** gate the row on a selection existing, or make the
+message send the player to the picker.
+
+## Phase 7 — resolution gate
+
+| Item | Outcome | Evidence |
+| --- | --- | --- |
+| PL-01 | **Resolved** | `2b626195d8`; verified on device — with one format present, `archives` collects 1 and `local_sum` is non-empty, so the #53 check runs |
+| PL-02 | **Resolved** | `2b626195d8`; verified on device — pipeline now `exit=1` on an unreadable input |
+| PL-03 | **Resolved** | `2b626195d8`; verified on device — `storage/.config/gmu/playlists/probe.m3u` present in a real archive |
+| PL-04 | **Resolved** | `2b626195d8`; verified on device — `scummvm/games`, `gmu/playlists`, `modules` all present in a real archive |
+| PL-05 | **Resolved** | `2b626195d8`; verified BOTH directions — fires on a planted credential in a spaced filename, silent on clean input |
+| PL-06 | **Deferred** | to #42 (rocknix.org drift), which already owns the docs gap; five items added there |
+| PL-07 | **Deferred** | issue-body edit, tracked as a checkbox on #60 |
+| PL-08 | **Deferred** | needs a product decision (pre-statement vs amend the AC); tracked on #60 |
+| PL-09 | **Deferred** | AC rewrite, tracked on #60 |
+| PL-10 | **Deferred** | needs a planted fixture on a remote; belongs with the device test pass, tracked on #60 |
+| PL-11 | **Deferred** | small ES change; tracked on #60 |
+
+Deferrals are named rather than silent, per the resolution-gate contract. The five code
+findings — every one that would ship in an image — are resolved and device-verified.
+
+
+---
+
+**Audit issue:** https://github.com/maxengel/rocknix/issues/60
