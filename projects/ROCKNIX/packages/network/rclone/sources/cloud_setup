@@ -314,6 +314,94 @@ case "$1" in
         echo "NONE"
         exit 1
     ;;
+    --seed-folders)
+        # Give a new remote a shape, so somebody with a fresh handheld can see
+        # where their files go.
+        #
+        # Until the first upload these folders do not exist, so a player who
+        # wants to seed their library from a computer first has to guess three
+        # names and a per-system convention. The folders answer that; the
+        # README in each answers what belongs there.
+        #
+        # The READMEs are also what makes this work at all on bucket-based
+        # remotes (S3, B2): there the first path component is a bucket and the
+        # rest is a key prefix, so an empty directory does not persist and
+        # `rclone mkdir` on a subpath succeeds while creating nothing. A file
+        # in the folder is what materialises it.
+        #
+        # Nothing is ever overwritten and nothing is deleted. Paths come from
+        # the config, so a player who moved their cloud folder gets their own
+        # layout seeded rather than ours.
+        REMOTE=$(rclone listremotes 2>/dev/null | head -1)
+        [ -z "${REMOTE}" ] && { echo "ERROR no remote"; exit 2; }
+        eval "$(grep -E '^(SYNCPATH|SYNCPATH_BACKUP|CONTENTPATH)=' "${SYNC_CONF}" 2>/dev/null)"
+        SAVES="${SYNCPATH:-/ROCKNIX/Saves}"
+        BACKUPS="${SYNCPATH_BACKUP:-/ROCKNIX/Backups}"
+        CONTENT="${CONTENTPATH:-/ROCKNIX/Content}"
+
+        for d in "${SAVES}" "${SAVES}/savefiles" "${SAVES}/savestates" \
+                 "${SAVES}/screenshots" "${BACKUPS}" \
+                 "${CONTENT}" "${CONTENT}/ROMs" "${CONTENT}/BIOS"; do
+            rclone mkdir "${REMOTE}${d}" 2>/dev/null
+        done
+
+        seed_note() {
+            local dir="$1"; shift
+            # Never clobber a note the owner may have written themselves.
+            rclone lsf "${REMOTE}${dir}/README.txt" >/dev/null 2>&1 && return 0
+            local tmp; tmp=$(mktemp)
+            printf '%s\n' "$@" > "${tmp}"
+            rclone copyto "${tmp}" "${REMOTE}${dir}/README.txt" 2>/dev/null
+            rm -f "${tmp}"
+        }
+
+        seed_note "${SAVES}" \
+            "Game saves, save states and screenshots." \
+            "" \
+            "  savefiles/    battery saves" \
+            "  savestates/   save state snapshots" \
+            "  screenshots/" \
+            "" \
+            "The handheld writes these itself. Nothing to put here by hand."
+
+        seed_note "${BACKUPS}" \
+            "System backups, one folder per handheld." \
+            "" \
+            "Written by the device. Nothing to put here by hand."
+
+        seed_note "${CONTENT}" \
+            "Put your games and BIOS files here." \
+            "" \
+            "  ROMs/       one folder per system - snes, psx, n64, gba, ..." \
+            "  BIOS/       BIOS and firmware files" \
+            "" \
+            "The handheld reads these when you choose" \
+            "\"Restore content from the cloud\"."
+
+        seed_note "${CONTENT}/ROMs" \
+            "Your games, one folder per system." \
+            "" \
+            "Use the same folder names the handheld uses - snes, psx, n64," \
+            "gba, megadrive, and so on. The game list on the device shows them."
+
+        seed_note "${CONTENT}/BIOS" \
+            "BIOS and firmware files." \
+            "" \
+            "These land in /storage/roms/bios on the handheld, keeping" \
+            "whatever subfolder structure you use here."
+
+        # Report what is actually there, not what we asked for: on a bucket
+        # remote a mkdir can succeed and leave nothing behind.
+        for d in "${SAVES}" "${BACKUPS}" "${CONTENT}/ROMs" "${CONTENT}/BIOS"; do
+            if rclone lsjson --stat "${REMOTE}${d}" >/dev/null 2>&1; then
+                echo "OK ${d}"
+            else
+                echo "MISSING ${d}"
+            fi
+        done
+        exit 0
+    ;;
+
     --check)
         # Verify a remote ($2 if given, else the first configured one);
         # plain-text verdict on stdout, exit 0 = working, 1 = missing,
