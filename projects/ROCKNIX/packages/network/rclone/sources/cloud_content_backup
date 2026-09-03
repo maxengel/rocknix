@@ -78,6 +78,17 @@ system_folders() {
 #
 # In scope: the systems ES declares, and bios. Everything else is out, and
 # stays out until somebody decides otherwise.
+# Does this directory hold anything the content tier would actually transfer?
+has_content() {
+    find "$1" -type f \
+        ! -name '*.srm' ! -name '*.sav' ! -name '*.fs' ! -name '*.state*' \
+        ! -name '*.auto' ! -name '*.dsv*' ! -name '*.eep' ! -name '*.mpk' \
+        ! -name '*.sra' ! -name '*.mcd' ! -name '*.mcr' \
+        ! -path '*/save/*' ! -path '*/memcards/*' \
+        ! -path '*/shared/savefiles/*' ! -path '*/PPSSPP/*' \
+        2>/dev/null | head -1 | grep -q .
+}
+
 list_local_dirs() {
     local allow
     allow=$(system_folders)
@@ -96,8 +107,17 @@ list_local_dirs() {
         if [ "${base}" != "bios" ]; then
             printf '%s\n' "${allow}" | grep -qxF "${base}" || continue
         fi
-        # skip empty directories
-        [ -n "$(ls -A "${d}" 2>/dev/null)" ] || continue
+        # Skip a directory with nothing this tier would carry.
+        #
+        # "Not empty" is the wrong test: RetroArch writes .srm and .state next
+        # to the ROM, so a system whose only contents are saves looks populated
+        # while a content transfer would send nothing from it. That made --list
+        # claim the device "has" GBA when what it had was GBA saves, and the
+        # picker's badge repeated the claim.
+        #
+        # Kept in step with SAVE_EXCLUDES below by hand -- there is no shared
+        # parser, and a pattern added there must be added here.
+        has_content "${d}" || continue
         echo "${base}"
     done
 }
