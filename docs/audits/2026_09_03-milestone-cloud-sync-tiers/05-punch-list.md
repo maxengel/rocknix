@@ -131,12 +131,12 @@ message send the player to the picker.
 | PL-03 | **Resolved** | `2b626195d8`; verified on device — `storage/.config/gmu/playlists/probe.m3u` present in a real archive |
 | PL-04 | **Resolved** | `2b626195d8`; verified on device — `scummvm/games`, `gmu/playlists`, `modules` all present in a real archive |
 | PL-05 | **Resolved** | `2b626195d8`; verified BOTH directions — fires on a planted credential in a spaced filename, silent on clean input |
-| PL-06 | **Deferred** | to #42 (rocknix.org drift), which already owns the docs gap; five items added there |
-| PL-07 | **Deferred** | issue-body edit, tracked as a checkbox on #60 |
-| PL-08 | **Deferred** | needs a product decision (pre-statement vs amend the AC); tracked on #60 |
-| PL-09 | **Deferred** | AC rewrite, tracked on #60 |
-| PL-10 | **Deferred** | needs a planted fixture on a remote; belongs with the device test pass, tracked on #60 |
-| PL-11 | **Deferred** | small ES change; tracked on #60 |
+| PL-06 | **Deferred** | to #42, with the five changes enumerated in a comment (`#42-comment-5520951697`) rather than left as "docs drift" |
+| PL-07 | **Resolved** | #56 body edited; AC 3 now describes `Content/ROMs` + `Content/BIOS` and cites D-CLOUD-018 |
+| PL-08 | **Resolved** | ES `031173f7eb` — the wizard states what it will write before listing what exists |
+| PL-09 | **Resolved** | #58 body edited; the unsatisfiable AC struck through with the reason, replaced by the permissions/ownership criterion that tar actually delivers |
+| PL-10 | **Deferred** | the harness gap is closed — `tools/cloud-round-trip` now plants a directory for a system absent from `es_systems.cfg` and asserts the `\|0` flag — but it has not yet **run**. Writing a test that would produce the output is not the same as producing it. Tracked on **#35** (round-trip QA on two VMs), which owns the execution. |
+| PL-11 | **Resolved** | ES `031173f7eb` — both selected-systems rows offer the picker instead of an error when no selection exists |
 
 Deferrals are named rather than silent, per the resolution-gate contract. The five code
 findings — every one that would ship in an image — are resolved and device-verified.

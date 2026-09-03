@@ -55,3 +55,11 @@ which disables the #53 post-upload size verification at line 833 on every device
 Six documentation/AC findings deferred with named homes. `tools/lint-audit-artifacts`
 FAILED first (no Phase 7 gate; 4 of 11 items not individually addressable because they
 were grouped) — the exact class of contract miss it was written for. PASS after fixing.
+
+### [Phase 7 close] All 11 items addressed
+9 resolved (5 code fixes device-verified, 2 issue-body corrections, 2 ES changes),
+2 deferred with named homes (#42 docs, #35 VM execution). Lint PASS.
+Instruction file: engineering-practices gains "Guards must fail closed" (P-01, the
+pattern behind three of the five code findings).
+Harness: cloud-round-trip +6 steps, including the blindspot-21 regression test that
+was missing when the defect shipped.
