@@ -250,13 +250,39 @@ case "${1}" in
     ;;
 esac
 
+# What the saves tier owns, and content must never carry.
+#
+# A system directory holds more than games: RetroArch writes .srm and .state
+# next to the ROM, and several systems keep memory cards in a subfolder. The
+# saves allowlist claims all of it ("+ /**/*.srm" and friends in
+# cloud_sync-rules.txt), so uploading a system folder wholesale puts save data
+# in a second cloud location under different rules -- two writers and no
+# reconciliation, which is exactly how 70 files were deleted on 2026-09-01.
+#
+# Worse in the other direction: a content restore would then copy stale saves
+# back over live ones.
+#
+# The earlier allowlist fix (d77d4ea44d) covered directories another tier
+# owns. This is the same rule one level down, for files. Kept in step with
+# cloud_sync-rules.txt by hand -- there is no shared parser, and a pattern
+# added there must be added here.
+SAVE_EXCLUDES=(
+    --exclude "*.srm" --exclude "*.sav" --exclude "*.fs"
+    --exclude "*.state*" --exclude "*.auto" --exclude "*.dsv*"
+    --exclude "*.eep" --exclude "*.mpk" --exclude "*.sra"
+    --exclude "*.mcd" --exclude "*.mcr"
+    --exclude "save/**" --exclude "memcards/**"
+    --exclude "shared/savefiles/**" --exclude "PPSSPP/**"
+)
+
 STATUS=0
 for DIR in "${DIRS[@]}"; do
     SRC="$(resolve_src "${DIR}")"
     TARGET="${DEST}/${DIR}"
     log_message "Content restore: ${SRC} -> ${TARGET}"
     echo "Restoring ${DIR:-everything} from the cloud..."
-    rclone copy "${SRC}" "${TARGET}" \
+    rclone copy "${SRC}" "${TARGET}"  \
+        "${SAVE_EXCLUDES[@]}" \
         --stats-one-line --stats 5s \
         --log-file "${LOG_FILE}" --log-level INFO
     RC=$?
