@@ -4,7 +4,7 @@
 # Copyright (C) 2025 ROCKNIX Team (https://github.com/ROCKNIX)
 
 PKG_NAME="rclone"
-PKG_VERSION="1.74.4"
+PKG_VERSION="1.75.0"
 # Python3 is the interpreter for cloud_remote. A shipped script's tools are
 # real dependencies even though nothing links against them: upstream deleted
 # packages/compress/zip in a3d0ad0430, nothing referenced it, and backuptool
