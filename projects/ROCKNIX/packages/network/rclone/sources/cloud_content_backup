@@ -115,7 +115,30 @@ remote_for() {
     esac
 }
 
+# The systems this device syncs, chosen once and changeable. See
+# cloud_content_restore for why this lives in /storage/.cache rather than in
+# anything the system backup captures. A device that does not want PS2 coming
+# down does not want it going up either, so both directions read the same file.
+SELECTION="/storage/.cache/cloud_sync/content-systems"
+
+selected_systems() {
+    [ -r "${SELECTION}" ] || return 0
+    grep -v '^[[:space:]]*$' "${SELECTION}" 2>/dev/null
+}
+
 case "${1}" in
+    --selected)
+        # Only the selected systems that this device actually has content for.
+        mapfile -t ALLDIRS < <(list_local_dirs)
+        DIRS=()
+        for d in "${ALLDIRS[@]}"; do
+            selected_systems | grep -qxF "${d}" && DIRS+=("${d}")
+        done
+        if [ ${#DIRS[@]} -eq 0 ]; then
+            echo "Nothing to upload: no selected system has content on this device."
+            exit 1
+        fi
+    ;;
     --list)
         list_local_dirs
         exit $?

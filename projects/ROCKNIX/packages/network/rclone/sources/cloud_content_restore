@@ -121,7 +121,103 @@ exists_remote() {
     rclone lsjson --stat "$1" >/dev/null 2>&1
 }
 
+# Which systems this device syncs.
+#
+# One cloud library, many handhelds, and they are not interchangeable: an H700
+# cannot run GameCube, and a 3:2 panel makes a device a Game Boy Advance
+# machine by preference rather than by limit. So the set is a per-device
+# choice.
+#
+# Kept in /storage/.cache, deliberately. The obvious homes -- cloud_sync.conf,
+# or ES's system.cfg -- are both captured by the system backup, and restoring
+# one device's selection onto another would silently change what that device
+# syncs. That is the same defect shape as the CONTENTPATH split (6717e0b348),
+# and once was enough.
+#
+# No file means no selection means everything, so a device that has never
+# opened the picker behaves exactly as it did before.
+SELECTION="/storage/.cache/cloud_sync/content-systems"
+
+selected_systems() {
+    [ -r "${SELECTION}" ] || return 0
+    grep -v '^[[:space:]]*$' "${SELECTION}" 2>/dev/null
+}
+
+# The systems this image can actually run, from its own EmulationStation
+# config. Matched on <path>, not <name>: they differ for a dozen systems and
+# matching names silently mislabels those as unsupported.
+es_systems_file() {
+    for c in /storage/.config/emulationstation/es_systems.cfg \
+             /usr/config/emulationstation/es_systems.cfg; do
+        [ -r "${c}" ] && { echo "${c}"; return 0; }
+    done
+}
+
+supported_systems() {
+    local c; c=$(es_systems_file)
+    [ -n "${c}" ] || return 0
+    sed -n 's:.*<path>/storage/roms/\([^</]*\).*:\1:p' "${c}" | sort -u
+}
+
+# Total bytes per top-level directory, from ONE recursive listing.
+#
+# rclone size per system would be one API round trip each, which on a library
+# of thirty systems is thirty waits before the player sees anything. lsf
+# --format sp returns size and path for every file in a single call; summing
+# them here costs nothing.
+sizes_under() {
+    rclone lsf -R --files-only --format "sp" --separator "|" "$1" 2>/dev/null \
+        | grep -v '|README\.txt$' \
+        | awk -F'|' '{ i = index($2, "/"); if (i == 0) next;
+                       d = substr($2, 1, i - 1); sz[d] += $1 }
+                     END { for (d in sz) print d "|" sz[d] }'
+}
+
 case "${1}" in
+    --scan)
+        # name|bytes|supported, one per line. Everything the cloud holds --
+        # not what this device happens to have locally, which is the whole
+        # point on a fresh handheld.
+        SUP=$(supported_systems)
+        {
+            sizes_under "${ROOT}ROMs/"
+            B=$(rclone lsf -R --files-only --format "sp" --separator "|" "${ROOT}BIOS/" 2>/dev/null \
+                | grep -v '|README\.txt$' \
+                | awk -F'|' '{ t += $1 } END { if (t) print "bios|" t }')
+            [ -n "${B}" ] && echo "${B}"
+            # the flat layout that shipped before ROMs/BIOS, so a library that
+            # has not been re-uploaded yet is still visible here
+            sizes_under "${ROOT}" | grep -vE '^(ROMs|BIOS)\|'
+        } | sort -u | while IFS='|' read -r name bytes; do
+            [ -n "${name}" ] || continue
+            if [ "${name}" = "bios" ] || printf '%s\n' "${SUP}" | grep -qxF "${name}"; then
+                echo "${name}|${bytes}|1"
+            else
+                echo "${name}|${bytes}|0"
+            fi
+        done
+        exit 0
+    ;;
+    --systems)
+        selected_systems
+        exit 0
+    ;;
+    --set-systems)
+        shift
+        mkdir -p "$(dirname "${SELECTION}")" 2>/dev/null
+        # An empty selection is a real answer ("none"), distinct from never
+        # having chosen; the file exists either way.
+        printf '%s\n' $* | grep -v '^[[:space:]]*$' > "${SELECTION}" 2>/dev/null
+        echo "OK $(selected_systems | wc -l) selected"
+        exit 0
+    ;;
+    --selected)
+        mapfile -t DIRS < <(selected_systems)
+        if [ ${#DIRS[@]} -eq 0 ]; then
+            echo "No systems are selected for this device."
+            exit 1
+        fi
+    ;;
     --list)
         # Top-level directories only; one per line, no trailing slash.
         # Lists both locations so an upgraded device still sees content that
