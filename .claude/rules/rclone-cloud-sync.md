@@ -215,7 +215,7 @@ existence checks, directory creation, or layout. Two traps, both found this way:
 
 - **`rclone lsjson --stat` is not an existence test on a bucket remote.** It
   synthesises a directory entry for *any* path — `utterly-bogus-never-created`
-  returns `IsDir: true` on both 1.60 and 1.74. Three call sites branched on it,
+  returns `IsDir: true` on 1.60, 1.74 and 1.75 — how bucket remotes work, not a bug awaiting a fix. Three call sites branched on it,
   so on S3 the migration always refused ("destination already exists"), the
   content-restore legacy fallback was dead, and the seeding report could only
   ever say OK. Use a **listing**: does the path contain anything, or does its
