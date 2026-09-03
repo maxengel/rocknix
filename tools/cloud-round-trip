@@ -352,6 +352,104 @@ def main():
 
     dev.run(f"rm -rf {shlex.quote(croot)}")
 
+    # --- tier boundaries ----------------------------------------------------
+    # The regression test for blindspot 21. Content sync and the saves sync
+    # both operate over /storage/roms; a save file living next to a ROM must
+    # be carried by the saves tier and NOT by content. This existed as a
+    # defect for a day and was caught by a human reading an upload listing,
+    # not by this harness.
+    step("a save file inside a content directory does not reach the content tier")
+    backend("reset")
+    dev.write(f"{croot}/Some Game.srm", b"battery save, saves tier owns this")
+    dev.write(f"{croot}/Some Game.rom", b"a rom, content tier owns this")
+    dev.run(f"cloud_content_backup {shlex.quote(CONTENT_DIR)} >/dev/null 2>&1 || true",
+            check=False)
+    listing = backend("ls")
+    # Both directions, or the assertion cannot fail: the ROM proves the
+    # transfer ran at all, the .srm proves the exclusion bit.
+    failures += not check("Some Game.rom" in listing,
+                          "the ROM reached the content tier",
+                          "the ROM did not transfer - exclusion cannot be judged")
+    failures += not check("Some Game.srm" not in listing,
+                          "the save file was correctly withheld from content",
+                          "SAVE DATA REACHED THE CONTENT TIER (blindspot 21)")
+
+    step("every EmulationStation system path is carried by exactly one tier")
+    # The complement of the rule above: a path in NO tier is silent data loss
+    # on restore. Four were found this way (gmu/playlists, idtech, modules,
+    # scummvm/games) after a ScummVM player would have lost their entries.
+    orphans = dev.run(
+        "C=$(ls /storage/.config/emulationstation/es_systems.cfg "
+        "/usr/config/emulationstation/es_systems.cfg 2>/dev/null | head -1); "
+        "B=$(command -v backuptool); "
+        "grep -oP '(?<=<path>)[^<]+' \"$C\" | sort -u | while read -r p; do "
+        "  case \"$p\" in /storage/roms/*) continue ;; esac; "
+        "  grep -qF \"$p\" \"$B\" || echo \"$p\"; "
+        "done").split()
+    failures += not check(not orphans,
+                          "every ES path outside /storage/roms is in the system backup",
+                          f"carried by no tier: {' '.join(orphans)}")
+
+    # --- archive format -----------------------------------------------------
+    step("the system backup is a tar archive, and both formats are discoverable")
+    newest = dev.run("ls -1 /storage/roms/backup/*-*_BACKUP.tar.gz "
+                     "/storage/roms/backup/*-*_BACKUP.zip 2>/dev/null | sort | tail -1").strip()
+    failures += not check(newest.endswith(".tar.gz"),
+                          f"newest archive is a tar.gz ({os.path.basename(newest) or 'none'})",
+                          f"newest archive is not a tar.gz: {newest or 'none found'}")
+    if newest.endswith(".tar.gz"):
+        failures += not check(dev.run(f"tar -tzf {shlex.quote(newest)} >/dev/null 2>&1 && echo ok").strip() == "ok",
+                              "the archive passes tar integrity",
+                              "the archive is not readable by tar")
+
+    # --- per-device system selection ---------------------------------------
+    step("content transfers honour the system selection")
+    dev.run(f"cloud_content_restore --set-systems {shlex.quote(CONTENT_DIR)} >/dev/null 2>&1 || true",
+            check=False)
+    sel = dev.run("cloud_content_restore --systems 2>/dev/null || true").split()
+    failures += not check(sel == [CONTENT_DIR],
+                          f"selection persisted as {sel}",
+                          f"selection did not round-trip: {sel}")
+    # A selection of exactly one directory must exclude a second one that
+    # also has content - otherwise "only selected" is untested.
+    other = f"{CONTENT_DIR}-unselected"
+    dev.write(f"/storage/roms/{other}/game.rom", b"should not be uploaded")
+    backend("reset")
+    dev.run("cloud_content_backup --selected >/dev/null 2>&1 || true", check=False)
+    listing = backend("ls")
+    failures += not check("game.rom" not in listing,
+                          "an unselected system was not uploaded",
+                          "an UNSELECTED system was uploaded")
+    dev.run(f"rm -rf /storage/roms/{shlex.quote(other)}")
+    dev.run("rm -f /storage/.cache/cloud_sync/content-systems")
+
+    step("a system this device cannot run is marked unsupported")
+    # Plant a cloud directory for a system absent from es_systems.cfg.
+    backend("reset")
+    stage2 = subprocess.run(["mktemp", "-d"], capture_output=True, text=True).stdout.strip()
+    os.makedirs(f"{stage2}/ROMs/definitely-not-a-system", exist_ok=True)
+    open(f"{stage2}/ROMs/definitely-not-a-system/x.rom", "wb").write(b"x")
+    dev.run("true")  # keep ordering explicit
+    subprocess.run([BACKEND, "put", f"{stage2}/ROMs"], capture_output=True, text=True)
+    scan = dev.run("cloud_content_restore --scan 2>/dev/null || true")
+    row = [l for l in scan.splitlines() if l.startswith("definitely-not-a-system|")]
+    failures += not check(bool(row) and row[0].endswith("|0"),
+                          "the unrunnable system is flagged 0 (unsupported)",
+                          f"scan did not mark it unsupported: {row or 'row absent'}")
+
+    # --- folder seeding -----------------------------------------------------
+    step("seeding is idempotent and never clobbers an existing note")
+    dev.run("cloud_setup --seed-folders >/dev/null 2>&1 || true", check=False)
+    dev.run("true")
+    marker = b"OWNER WROTE THIS"
+    stage3 = subprocess.run(["mktemp", "-d"], capture_output=True, text=True).stdout.strip()
+    open(f"{stage3}/README.txt", "wb").write(marker)
+    subprocess.run([BACKEND, "put", stage3], capture_output=True, text=True)
+    second = dev.run("cloud_setup --seed-folders 2>/dev/null || true")
+    failures += not check(second.count("OK ") >= 2,
+                          "a second seeding run reports the folders present",
+                          f"second run did not report folders: {second.strip()[:80]}")
+
     if not args.keep:
         step("clean up")
         dev.run(f"rm -f {shlex.quote(archive)}")

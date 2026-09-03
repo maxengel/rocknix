@@ -93,6 +93,45 @@ changed but the same size.
 Assertions that only hold because nothing had happened yet are the ones to
 distrust — see also *Verify the artifact, not the report*.
 
+## Guards must fail closed
+
+A check that cannot run has not passed. Three defects in one day's work shared
+this shape, and all three were invisible because the failure mode was silence:
+
+- A pipeline's status is its **last** command's. `if ! producer | consumer`
+  tests the consumer, so a producer that exits 1 — an unreadable input, a full
+  disk — is discarded and the guard never fires. `backuptool` wrote short
+  archives and announced them as successes.
+- An **unquoted** list expanded into a command's arguments. A member name with
+  a space split into two names that did not exist, the tool errored into
+  `2>/dev/null`, and those members went unscanned — a *credential* scan
+  quietly checking less than it claimed.
+- **`ls A B` exits non-zero when either glob is unmatched.** Gating on it meant
+  that once only one archive format was present — the normal state after a
+  format change — the whole verification block was skipped, disabling the guard
+  added for a shipped data-loss bug.
+
+Each reads as a reasonable check. Each defaults to "proceed" when its own
+machinery breaks, which in a subsystem whose signature failure is *reporting
+success while doing nothing* is precisely backwards.
+
+So:
+
+- **Prefer a positive assertion over the absence of an error.** Collect what
+  exists and check the count, rather than branching on a command's exit status
+  that also means "one of your arguments was empty".
+- **`set -o pipefail`** (a subshell keeps it local) wherever a pipeline's first
+  stage can fail.
+- **Quote every expansion** that becomes another command's arguments, or pass
+  the list some other way.
+- **Prove the guard fires.** Construct the violation it exists to catch and
+  watch it fail, then fix it and watch it pass. A guard with no observed
+  positive is a guard with no evidence — the same rule blindspot 14 states for
+  hooks, applied to checks inside a script.
+
+An assertion that cannot fail is not evidence. Ask what input would produce a
+FAIL; if you cannot name one, the check proves nothing.
+
 ## Stop after three fixes on the same failure
 
 Three sequential fix-commits on one failure without resolving it means stop:
