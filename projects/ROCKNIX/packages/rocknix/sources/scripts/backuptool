@@ -88,6 +88,19 @@ DEFAULT=(
     ${ESPATH}/themesettings/*
     ${ESPATH}/collections/*
     $(find ${ESPATH}/themes/* -type d -maxdepth 0 -not -path "*es-theme-art-book-next" -not -path "*system-theme" 2>/dev/null)
+    # Player-supplied presentation assets. Not ROMs and not BIOS, so content
+    # sync does not carry them; not saves either. They were in no tier at all
+    # until this line, which is the kind of gap that is only discovered when
+    # somebody restores a device and finds their overlays gone.
+    #
+    # They live here rather than in content sync because they are small and
+    # change with the configuration they belong to. A large bezel pack is the
+    # exception, and it will grow this archive -- which is uploaded whole on
+    # every backup, so a player with hundreds of megabytes of overlays should
+    # know that. See #45 on archive size generally.
+    /storage/roms/bezels/*
+    /storage/roms/music/*
+    /storage/roms/themes/*
 )
 
 if [ -e "/storage/.config/backuptool.conf" ]
