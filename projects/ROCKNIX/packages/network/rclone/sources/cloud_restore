@@ -628,7 +628,7 @@ restore_system_files() {
             "--progress"
             "--log-file" "/var/log/cloud_sync.log"
             "--log-level" "INFO"
-            "--include" "/*.zip"
+            "--include" "/*.{zip,tar.gz}"
             "--stats-one-line"
         )
         
@@ -672,13 +672,13 @@ restore_system_files() {
                      | tr -cd 'A-Za-z0-9_.-')
         local prior_src="${REMOTENAME}${SYNCPATH_BACKUP}/${prior_name}"
 
-        if rclone lsf "${device_src}/" --include "/*.zip" 2>/dev/null | grep -q .; then
+        if rclone lsf "${device_src}/" --include "/*.{zip,tar.gz}" 2>/dev/null | grep -q .; then
             restore_src="${device_src}"
         elif [ -n "${prior_name}" ] \
-             && rclone lsf "${prior_src}/" --include "/*.zip" 2>/dev/null | grep -q .; then
+             && rclone lsf "${prior_src}/" --include "/*.{zip,tar.gz}" 2>/dev/null | grep -q .; then
             restore_src="${prior_src}"
             log_message "Using backups saved under this device's previous folder name (${prior_name})" "true"
-        elif rclone lsf "${legacy_src}/" --include "/*.zip" 2>/dev/null | grep -q .; then
+        elif rclone lsf "${legacy_src}/" --include "/*.{zip,tar.gz}" 2>/dev/null | grep -q .; then
             restore_src="${legacy_src}"
             log_message "Using a backup saved before this device had its own cloud folder" "false"
         else
@@ -704,7 +704,7 @@ restore_system_files() {
         # the date, so the last one in sort order is the most recent and no
         # metadata call is needed to establish that.
         local newest
-        newest=$(rclone lsf --files-only --include "*.zip" "${restore_src}/" 2>/dev/null \
+        newest=$(rclone lsf --files-only --include "*.{zip,tar.gz}" "${restore_src}/" 2>/dev/null \
                  | sort | tail -1)
 
         if [ -z "${newest}" ]; then
@@ -731,7 +731,7 @@ restore_system_files() {
         local skip_next=0
         for opt in "${backup_opts[@]}"; do
             # A flag and its value may be one element ("--include=/*.zip") or
-            # two ("--include" "/*.zip"). Dropping only the flag in the second
+            # two ("--include" "/*.{zip,tar.gz}"). Dropping only the flag in the second
             # form leaves the bare pattern behind, and rclone reads it as
             # another path -- copyto then has three and fails with an
             # uncategorised error, having transferred nothing.

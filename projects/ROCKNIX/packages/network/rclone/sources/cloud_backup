@@ -466,7 +466,7 @@ backup_game_saves() {
     fi
     
     # Check if we have any files to backup (excluding directories we'll skip anyway)
-    local files_to_backup=$(find "${BACKUPPATH}" -type f ! -path "*/bios/*" ! -path "*/backups/*" ! -name "*.zip" | head -1)
+    local files_to_backup=$(find "${BACKUPPATH}" -type f ! -path "*/bios/*" ! -path "*/backups/*" ! -name "*.zip" ! -name "*.tar.gz" | head -1)
     if [ -z "$files_to_backup" ]; then
         log_message "No files found to backup in ${BACKUPPATH}" "true" "WARN"
         return 0
@@ -635,7 +635,7 @@ backup_system_files() {
         local backup_opts=(
             "--progress"
             "--log-file" "/var/log/cloud_sync.log"
-            "--include=/*.zip"
+            "--include=/*.{zip,tar.gz}"
             "--stats-one-line"
         )
 
@@ -668,18 +668,18 @@ backup_system_files() {
         mkdir -p "${state_dir}" 2>/dev/null
 
         # Identify the payload the way the transfer does -- the zip files at
-        # the root of BACKUPFOLDER, which is exactly what "--include=/*.zip"
+        # the root of BACKUPFOLDER, which is exactly what "--include=/*.{zip,tar.gz}"
         # sends. Deriving a filename instead would mean depending on OS_NAME,
         # which is empty in this script (the banner above prints a blank for
         # the same reason), and on backuptool's naming staying in step.
         local local_sum=""
         local last_sum=""
         local local_bytes=0
-        if ls "${BACKUPFOLDER}"/*.zip >/dev/null 2>&1; then
+        if ls "${BACKUPFOLDER}"/*.zip "${BACKUPFOLDER}"/*.tar.gz >/dev/null 2>&1; then
             # Hash of the members' hashes, so more than one archive at the
             # root is still covered by a single comparison.
-            local_sum=$(md5sum "${BACKUPFOLDER}"/*.zip 2>/dev/null | md5sum | cut -d' ' -f1)
-            local_bytes=$(cat "${BACKUPFOLDER}"/*.zip 2>/dev/null | wc -c)
+            local_sum=$(md5sum "${BACKUPFOLDER}"/*.zip "${BACKUPFOLDER}"/*.tar.gz 2>/dev/null | md5sum | cut -d' ' -f1)
+            local_bytes=$(cat "${BACKUPFOLDER}"/*.zip "${BACKUPFOLDER}"/*.tar.gz 2>/dev/null | wc -c)
         fi
         if [ -f "${uploaded_marker}" ]; then
             last_sum=$(cat "${uploaded_marker}" 2>/dev/null)
@@ -715,7 +715,7 @@ backup_system_files() {
         local opt
         local skip_next=0
         for opt in "${backup_opts[@]}"; do
-            # A flag and its value may be one element ("--include=/*.zip") or
+            # A flag and its value may be one element ("--include=/*.{zip,tar.gz}") or
             # two ("--include" "/*.zip"). Dropping only the flag in the second
             # form leaves the bare pattern behind, and rclone reads it as
             # another path -- copyto then has three and fails with an
@@ -746,7 +746,7 @@ backup_system_files() {
         # those and not the whole history beside them.
         local uploaded_names=()
         local archive
-        for archive in "${BACKUPFOLDER}"/*.zip; do
+        for archive in "${BACKUPFOLDER}"/*.zip "${BACKUPFOLDER}"/*.tar.gz; do
             [ -f "${archive}" ] || continue
             local base target
             base=$(basename "${archive}")
@@ -761,7 +761,7 @@ backup_system_files() {
             esac
             log_message "Uploading ${base} as ${target}" "false"
             # Without the filter flags. copyto names one file explicitly, and
-            # rclone refuses filters on a single-file copy -- "--include=/*.zip"
+            # rclone refuses filters on a single-file copy -- "--include=/*.{zip,tar.gz}"
             # came from the folder transfer this replaced and made every upload
             # exit with a usage error.
             rclone copyto "${archive}" "${device_dest}/${target}" \
@@ -814,7 +814,7 @@ MANIFEST
             # carried dates would hold a keep-slot for ever while genuinely
             # newer ones were pruned around it.
             local listing
-            listing=$(rclone lsf --files-only --include "*.zip" "${device_dest}/" 2>/dev/null)
+            listing=$(rclone lsf --files-only --include "*.{zip,tar.gz}" "${device_dest}/" 2>/dev/null)
             local old_archive
             { printf '%s\n' "${listing}" | grep -E '^[0-9]{4}_' | sort -r
               printf '%s\n' "${listing}" | grep -vE '^[0-9]{4}_' | grep -v '^$'

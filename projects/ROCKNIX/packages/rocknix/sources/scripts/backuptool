@@ -26,14 +26,29 @@ ARCHIVEFOLDER="${BACKUPFOLDER}/archive"
 # translation. LEGACY_BACKUPFILE is the fixed name used before that, still
 # read so an existing device restores from the archive it already has.
 BACKUP_STAMP="$(date +%Y_%m_%d-%H%M%S)"
-BACKUPFILE="${BACKUPFOLDER}/${BACKUP_STAMP}-${OS_NAME}_BACKUP.zip"
+# tar, not zip.
+#
+# zip does not carry a symlink as a symlink, and this OS is full of them: the
+# config tree links into /usr for OS-shipped content. Backups written before
+# 358eb53d3f stored those targets' bytes as regular files, and busybox unzip
+# then aborts the *whole* restore rather than overwrite a live symlink
+# ("exists but is not a regular file"). That cost a restore, needed a second
+# fix on the read side (02297b9c07), and left a skip-list in this script to
+# work around archives already in the wild.
+#
+# tar stores a symlink as a symlink, preserves permissions and ownership, and
+# extracts cleanly over an existing one. Verified on-device, because Info-ZIP
+# on a desktop and busybox on a handheld disagree, which is how the original
+# bug stayed invisible.
+BACKUPFILE="${BACKUPFOLDER}/${BACKUP_STAMP}-${OS_NAME}_BACKUP.tar.gz"
 LEGACY_BACKUPFILE="${BACKUPFOLDER}/${OS_NAME}_BACKUP.zip"
 
 # The newest archive present, whatever it is called. Names lead with the date,
 # so sorting them orders them by age.
 newest_backup() {
     local found
-    found=$(ls -1 "${BACKUPFOLDER}"/*-"${OS_NAME}"_BACKUP.zip 2>/dev/null | sort | tail -1)
+    found=$(ls -1 "${BACKUPFOLDER}"/*-"${OS_NAME}"_BACKUP.tar.gz \
+                  "${BACKUPFOLDER}"/*-"${OS_NAME}"_BACKUP.zip 2>/dev/null | sort | tail -1)
     if [ -n "${found}" ]; then
         echo "${found}"
     elif [ -f "${LEGACY_BACKUPFILE}" ]; then
@@ -98,38 +113,58 @@ case "${1}" in
             fail "No backup found in ${BACKUPFOLDER}. Nothing to restore."
         fi
 
+        # An archive is whatever it is named. Both are read: every device in
+        # the field has .zip archives locally, and a format change is no
+        # reason to strand them.
+        case "${BACKUPFILE}" in
+            *.tar.gz) ARCHIVE_KIND="tar" ;;
+            *)        ARCHIVE_KIND="zip" ;;
+        esac
+
         note "Verifying backup archive..."
-        if ! unzip -t "${BACKUPFILE}" >/dev/null 2>&1
+        if [ "${ARCHIVE_KIND}" = "tar" ]
         then
-            fail "Backup archive is damaged (${BACKUPFILE}). Restore aborted; nothing was changed."
+            tar -tzf "${BACKUPFILE}" >/dev/null 2>&1 || \
+                fail "Backup archive is damaged (${BACKUPFILE}). Restore aborted; nothing was changed."
+        else
+            unzip -t "${BACKUPFILE}" >/dev/null 2>&1 || \
+                fail "Backup archive is damaged (${BACKUPFILE}). Restore aborted; nothing was changed."
         fi
 
-        # Archives written before backups switched to regular files only hold
-        # the *contents* of symlinked paths. Extracting one of those over the
-        # live symlink makes busybox unzip abort the whole restore, so every
-        # backup taken before that change would be unrestorable here. Skip
-        # exactly those entries instead: the OS owns those symlinks and
-        # provides them, and replacing one with a stale copy is the bug that
-        # got them excluded from backups in the first place.
-        SKIP=""
-        SKIPPED=0
-        for ENTRY in $(unzip -l "${BACKUPFILE}" 2>/dev/null | awk 'NF>3 && $4 ~ /^storage\// {print $4}')
-        do
-            if [ -L "/${ENTRY}" ]
-            then
-                SKIP="${SKIP} ${ENTRY}"
-                SKIPPED=$((SKIPPED + 1))
-            fi
-        done
-
         note "Restoring configuration from ${BACKUPFILE}..."
-        if [ "${SKIPPED}" -gt 0 ]
+        if [ "${ARCHIVE_KIND}" = "tar" ]
         then
-            note "Keeping ${SKIPPED} system-provided link(s) this older backup would have overwritten."
-            # -x is a mode switch: every argument after it is an exclusion.
-            unzip -o "${BACKUPFILE}" -d / -x ${SKIP} >/dev/null
+            # No skip-list here, and none needed. tar replaces a symlink with
+            # whatever the archive holds instead of refusing and aborting, and
+            # what the archive holds is the symlink itself.
+            tar -xzf "${BACKUPFILE}" -C / >/dev/null
         else
-            unzip -o "${BACKUPFILE}" -d / >/dev/null
+            # Archives written before backups switched to regular files only
+            # hold the *contents* of symlinked paths. Extracting one of those
+            # over the live symlink makes busybox unzip abort the whole
+            # restore, so every backup taken before that change would be
+            # unrestorable here. Skip exactly those entries instead: the OS
+            # owns those symlinks and provides them, and replacing one with a
+            # stale copy is the bug that got them excluded from backups in the
+            # first place.
+            SKIP=""
+            SKIPPED=0
+            for ENTRY in $(unzip -l "${BACKUPFILE}" 2>/dev/null | awk 'NF>3 && $4 ~ /^storage\// {print $4}')
+            do
+                if [ -L "/${ENTRY}" ]
+                then
+                    SKIP="${SKIP} ${ENTRY}"
+                    SKIPPED=$((SKIPPED + 1))
+                fi
+            done
+            if [ "${SKIPPED}" -gt 0 ]
+            then
+                note "Keeping ${SKIPPED} system-provided link(s) this older backup would have overwritten."
+                # -x is a mode switch: every argument after it is an exclusion.
+                unzip -o "${BACKUPFILE}" -d / -x ${SKIP} >/dev/null
+            else
+                unzip -o "${BACKUPFILE}" -d / >/dev/null
+            fi
         fi
         if [ $? -ne 0 ]
         then
@@ -152,10 +187,11 @@ case "${1}" in
         # Guard the tool this whole path depends on. busybox provides unzip but
         # not zip, so a missing package means backup dies with a bare
         # "zip: not found" after the user has already chosen to back up.
-        if ! command -v zip >/dev/null 2>&1
-        then
-            fail "Cannot create a backup: the 'zip' tool is missing from this image."
-        fi
+        for TOOL in tar gzip
+        do
+            command -v "${TOOL}" >/dev/null 2>&1 || \
+                fail "Cannot create a backup: '${TOOL}' is missing from this image."
+        done
         # Rotate the previous backup into an archive folder that the cloud
         # allowlist (backup/*.zip) does not match, and keep only the newest few.
         # Rotate whatever archive is currently at the root. Each backup writes
@@ -179,7 +215,8 @@ case "${1}" in
             # Both shapes: an upgraded device still has archives written under
             # the old name, and rotation must not skip them and keep them for
             # ever while trimming only the new ones.
-            ls -1t "${ARCHIVEFOLDER}"/*_BACKUP*.zip "${ARCHIVEFOLDER}"/ARCHIVED_*.zip 2>/dev/null \
+            ls -1t "${ARCHIVEFOLDER}"/*_BACKUP*.tar.gz "${ARCHIVEFOLDER}"/*_BACKUP*.zip \
+                   "${ARCHIVEFOLDER}"/ARCHIVED_*.zip 2>/dev/null \
                 | awk '!seen[$0]++' | tail -n +$((ARCHIVE_KEEP + 1)) | while read -r OLD
             do
                 rm -f "${OLD}"
@@ -235,34 +272,38 @@ case "${1}" in
             cp "${FILELIST}" "${SENDLIST}"
         fi
 
-        if ! zip -9 "${BACKUPFILE}" -@ < "${SENDLIST}"
+        # Staged, then archived once.
+        #
+        # zip could append, so the old flow wrote the archive and then added
+        # sanitized copies over the top. tar cannot append to a compressed
+        # archive, and the staging that replaces it is the better shape
+        # anyway: the sanitized file is the only version that ever exists in
+        # the tree being archived, so there is no ordering in which a real
+        # credential is written and later overwritten.
+        STAGING=$(mktemp -d)
+        if ! tar -cf - -T "${SENDLIST}" 2>/dev/null | tar -xf - -C "${STAGING}" 2>/dev/null
         then
+            rm -rf "${STAGING}"
             rm -f "${BACKUPFILE}" "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
-            fail "Backup failed; no backup file was written."
+            fail "Backup failed while collecting files; no backup file was written."
         fi
 
         # Wifi keys, the root password, and account passwords/tokens must never
-        # leave the device (the backup zip can be synced to the cloud).
+        # leave the device (the archive can be synced to the cloud).
         if grep -qxF "${SYSCFG}" "${SECRETLIST}"
         then
-            SANITIZED_DIR=$(mktemp -d)
-            mkdir -p "${SANITIZED_DIR}/storage/.config/system/configs"
+            mkdir -p "${STAGING}/storage/.config/system/configs"
             sed -E '/^[^#]*\.(key|password|token)=/d' "${SYSCFG}" \
-                > "${SANITIZED_DIR}/storage/.config/system/configs/system.cfg"
-            (cd "${SANITIZED_DIR}" && zip -9 "${BACKUPFILE}" storage/.config/system/configs/system.cfg >/dev/null)
-            rm -rf "${SANITIZED_DIR}"
+                > "${STAGING}/storage/.config/system/configs/system.cfg"
         fi
 
         # es_settings.cfg holds the ScreenScraper password; strip it from the
         # archived copy the same way.
         if grep -qxF "${ESCFG}" "${SECRETLIST}"
         then
-            SANITIZED_DIR=$(mktemp -d)
-            mkdir -p "${SANITIZED_DIR}/storage/.config/emulationstation"
+            mkdir -p "${STAGING}/storage/.config/emulationstation"
             grep -v 'name="ScreenScraperPass"' "${ESCFG}" \
-                > "${SANITIZED_DIR}/storage/.config/emulationstation/es_settings.cfg"
-            (cd "${SANITIZED_DIR}" && zip -9 "${BACKUPFILE}" storage/.config/emulationstation/es_settings.cfg >/dev/null)
-            rm -rf "${SANITIZED_DIR}"
+                > "${STAGING}/storage/.config/emulationstation/es_settings.cfg"
         fi
 
         # retroarch.cfg carries its own credentials when RetroArch's own UI
@@ -273,30 +314,45 @@ case "${1}" in
         # the post-restore re-entry page uses it to know an account exists.
         if grep -qxF "${RACFG}" "${SECRETLIST}"
         then
-            SANITIZED_DIR=$(mktemp -d)
-            mkdir -p "${SANITIZED_DIR}/storage/.config/retroarch"
+            mkdir -p "${STAGING}/storage/.config/retroarch"
             sed -E 's/^([a-z_]*(password|token|stream_key)) = ".*"$/\1 = ""/' "${RACFG}" \
-                > "${SANITIZED_DIR}/storage/.config/retroarch/retroarch.cfg"
-            (cd "${SANITIZED_DIR}" && zip -9 "${BACKUPFILE}" storage/.config/retroarch/retroarch.cfg >/dev/null)
-            rm -rf "${SANITIZED_DIR}"
+                > "${STAGING}/storage/.config/retroarch/retroarch.cfg"
         fi
+
+        # Member names come out as storage/... exactly as the zip's did, so
+        # anything reading the archive sees the same shape.
+        if ! tar -czf "${BACKUPFILE}" -C "${STAGING}" storage
+        then
+            rm -rf "${STAGING}"
+            rm -f "${BACKUPFILE}" "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
+            fail "Backup failed; no backup file was written."
+        fi
+        rm -rf "${STAGING}"
 
         rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
 
         # Last line of defence: the archive can be synced to the cloud, so
         # never ship one carrying a populated credential. This greps what
-        # actually landed in the zip rather than trusting the strips above,
+        # actually landed in the archive rather than trusting the strips above,
         # so a newly-added config file with secrets is caught the first
         # time it is backed up instead of silently leaking.
         # Text config members only, case-sensitive, anchored to a config-key
-        # shape. Each restriction is load-bearing: unzip -p concatenates
-        # members without separators, so binary blobs (translation
-        # catalogues, shader caches) run into the next file's first line and
-        # defeat the anchor; translation catalogues also ship lines like
-        # 'Password = Пароль'. Scanning every member found nothing and
-        # warning on every backup would be worse than not warning at all.
-        LEAKS=$(unzip -p "${BACKUPFILE}" '*.cfg' '*.conf' '*.ini' 2>/dev/null \
-            | grep -acE '^[a-z_.]*(password|token|stream_key|\.key) *[=:] *"?[^"[:space:]]+' || true)
+        # shape. Translation catalogues ship lines like 'Password = Пароль',
+        # and scanning every member found nothing while warning on every
+        # backup, which would be worse than not warning at all.
+        # busybox tar has no wildcard member selection, so the members are
+        # listed first and the text ones named explicitly. Same restriction as
+        # before, for the same reason: -O concatenates members without
+        # separators, so binary blobs run into the next file's first line and
+        # defeat the anchor.
+        SCANLIST=$(tar -tzf "${BACKUPFILE}" 2>/dev/null | grep -E '\.(cfg|conf|ini)$' || true)
+        if [ -n "${SCANLIST}" ]
+        then
+            LEAKS=$(tar -xzOf "${BACKUPFILE}" ${SCANLIST} 2>/dev/null \
+                | grep -acE '^[a-z_.]*(password|token|stream_key|\.key) *[=:] *"?[^"[:space:]]+' || true)
+        else
+            LEAKS=0
+        fi
         if [ "${LEAKS}" -gt 0 ] 2>/dev/null
         then
             WARN="Warning: ${LEAKS} credential-looking line(s) in ${BACKUPFILE}. Review before sharing or syncing it."
