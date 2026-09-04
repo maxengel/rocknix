@@ -222,6 +222,96 @@ sizes_under() {
 # by definition, since this only ever removes what the cloud does not have
 # (D-CLOUD-023). Preview first, then apply.
 
+# Defined here, above every consumer.
+#
+# They used to sit below the case statement, which was fine while the only
+# consumer was the transfer loop at the end of the file -- and silently
+# catastrophic the moment --match started calling them from inside the case.
+# Bash expands an unset array to nothing, so rclone ran with no save
+# excludes at all and a match would have deleted .srm and .state files. It
+# was invisible in the output: fewer exclusions simply means more deletions,
+# and the preview reported them as ordinary work.
+
+# What the saves tier owns, and content must never carry.
+#
+# A system directory holds more than games: RetroArch writes .srm and .state
+# next to the ROM, and several systems keep memory cards in a subfolder. The
+# saves allowlist claims all of it ("+ /**/*.srm" and friends in
+# cloud_sync-rules.txt), so uploading a system folder wholesale puts save data
+# in a second cloud location under different rules -- two writers and no
+# reconciliation, which is exactly how 70 files were deleted on 2026-09-01.
+#
+# Worse in the other direction: a content restore would then copy stale saves
+# back over live ones.
+#
+# The earlier allowlist fix (d77d4ea44d) covered directories another tier
+# owns. This is the same rule one level down, for files. Kept in step with
+# cloud_sync-rules.txt by hand -- there is no shared parser, and a pattern
+# added there must be added here.
+SAVE_EXCLUDES=(
+    --exclude "*.srm" --exclude "*.sav" --exclude "*.fs"
+    --exclude "*.state*" --exclude "*.auto" --exclude "*.dsv*"
+    --exclude "*.eep" --exclude "*.mpk" --exclude "*.sra"
+    --exclude "*.mcd" --exclude "*.mcr"
+    --exclude "save/**" --exclude "memcards/**"
+    --exclude "shared/savefiles/**" --exclude "PPSSPP/**"
+)
+
+# Another sync client's unresolved dispute is not our content.
+#
+# Dropbox and Nextcloud rename the losing side of a concurrent write to
+# "X (Someone's conflicted copy 2026-09-03)"; Syncthing appends
+# ".sync-conflict-<date>". Carrying those onto a handheld doubles the storage
+# for no benefit -- the player cannot resolve a conflict from a games menu --
+# and it makes the artifacts immortal: a device that downloaded them uploads
+# them again on the next backup, so deleting them in the cloud looks like the
+# provider putting them back. That happened here, to 271 directories of BIOS
+# (2026-09-04).
+#
+# Resolution belongs on the computer where both sides can be seen. We decline
+# to move them in either direction, which is also the only way a cleanup on
+# one side stays done.
+CONFLICT_EXCLUDES=(
+    --exclude "**conflicted copy**"
+    --exclude "**.sync-conflict-**"
+)
+
+# What EmulationStation owns, which a content match must never delete.
+#
+# gamelist.xml carries <playcount>, <lastplayed> and <favorite> -- per-device
+# facts that exist nowhere else -- and images/, videos/ and manuals/ hold
+# scraped artwork that can represent hours of scraping. None of it is content
+# the cloud is authoritative about, so "the cloud does not have it" is not a
+# reason to remove it.
+#
+# Found the only way these things are ever found: reading a real dry run,
+# which listed "gamelist.xml: Skipped delete" for every system on the device.
+#
+# Deliberately scoped to the match path. Whether backup should *upload* a
+# gamelist is a separate and open question (#61) -- but deleting one locally
+# is wrong under every answer to it.
+METADATA_EXCLUDES=(
+    --exclude "gamelist.xml"
+    --exclude "**/gamelist.xml"
+    --exclude "images/**"
+    --exclude "videos/**"
+    --exclude "manuals/**"
+    --exclude "magazines/**"
+    --exclude "media/**"
+)
+
+# rclone reports sizes in a NOTICE line using human units ("6.090Ki", "64Ki")
+# when the destination is local, and bare bytes for a small local-to-local
+# copy. Parsing only digits silently produced zero for every real transfer.
+to_bytes() {
+    awk '{ n = $0 + 0; u = $0; gsub(/[0-9.]/, "", u)
+           if (u == "Ki") n *= 1024
+           else if (u == "Mi") n *= 1048576
+           else if (u == "Gi") n *= 1073741824
+           else if (u == "Ti") n *= 1099511627776
+           printf "%d\n", n }'
+}
+
 # Does the content root actually hold anything? Rule 3.
 cloud_root_populated() {
     local n
@@ -247,14 +337,20 @@ match_plan_one() {
     if rclone lsf "${src}" 2>/dev/null | grep -q .; then
         # Present in the cloud: sync reconciles both directions of difference.
         out=$(rclone sync "${src}" "${local_dir}" \
-                "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" \
+                "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${METADATA_EXCLUDES[@]}" \
                 --dry-run --stats 0 2>&1)
-        n=$(printf '%s\n' "${out}" | grep -c "Skipped delete\|would delete")
-        printf '%s|sync|%s|0\n' "${sys}" "${n}"
+        # "NOTICE: Game3.zip: Skipped delete as --dry-run is set (size 5)" --
+        # the exact wording on rclone 1.75.0, read off the real output rather
+        # than taken from the documentation. The size in the tail is what lets
+        # the confirmation say how much space comes back.
+        n=$(printf '%s\n' "${out}" | grep -c "Skipped delete")
+        b=$(printf '%s\n' "${out}" | sed -n 's/.*Skipped delete.*(size \([0-9.KMGTi]*\)).*/\1/p' \
+              | to_bytes | awk '{ t += $1 } END { print t+0 }')
+        printf '%s|sync|%s|%s\n' "${sys}" "${n}" "${b}"
     else
         # Absent from the cloud entirely: its content goes, its saves stay.
         out=$(rclone size "${local_dir}" \
-                "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" 2>/dev/null)
+                "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${METADATA_EXCLUDES[@]}" 2>/dev/null)
         n=$(printf '%s\n' "${out}" | sed -n 's/^Total objects: *\([0-9]*\).*/\1/p' | head -1)
         b=$(printf '%s\n' "${out}" | sed -n 's/^Total size: .*(\([0-9]*\) Byte).*/\1/p' | head -1)
         [ -n "${n}" ] || n=0
@@ -266,6 +362,15 @@ match_plan_one() {
 
 match_run() {
     local apply="$1" sys line verb files bytes rc=0 total_removed=0
+
+    # The exclusions are the only thing standing between this and somebody's
+    # saves, so assert they exist rather than trusting the file's layout. An
+    # unset array expands to nothing and rclone would happily proceed.
+    if [ ${#SAVE_EXCLUDES[@]} -eq 0 ] || [ ${#METADATA_EXCLUDES[@]} -eq 0 ]; then
+        echo "Refusing: the save and metadata exclusions are not loaded."
+        log_message "match: refused, exclusion arrays empty"
+        return 1
+    fi
 
     if ! cloud_root_populated; then
         echo "Refusing to change anything: the cloud content folder lists nothing."
@@ -291,7 +396,7 @@ match_run() {
                 if [ "${apply}" = "1" ]; then
                     echo "Removing ${sys}: ${files} files (not in your cloud)"
                     rclone delete "${DEST}/${sys}" \
-                        "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" \
+                        "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${METADATA_EXCLUDES[@]}" \
                         --max-delete "${files}" \
                         --log-file "${LOG_FILE}" --log-level INFO || rc=$?
                     rmdir "${DEST}/${sys}" 2>/dev/null
@@ -313,7 +418,7 @@ match_run() {
                     # which is the right trade here, because the cloud still
                     # holds everything this could remove.
                     rclone sync "$(remote_for "${sys}")" "${DEST}/${sys}" \
-                        "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" \
+                        "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${METADATA_EXCLUDES[@]}" \
                         --max-delete "${files}" \
                         --progress --stats 1s \
                         --log-file "${LOG_FILE}" --log-level INFO || rc=$?
@@ -324,7 +429,14 @@ match_run() {
         esac
     done
 
-    [ "${apply}" = "1" ] && log_message "match: applied, rc=${rc}"
+    if [ "${apply}" = "1" ]; then
+        log_message "match: applied, removed ${total_removed} files, rc=${rc}"
+        # The page that ran it fades; the row in the menu has to be able to
+        # answer "did that work?" afterwards, like every other cloud action.
+        mkdir -p /storage/.cache/cloud_sync 2>/dev/null
+        printf '%s %s\n' "$(date +%s)" "${rc}" \
+            > "/storage/.cache/cloud_sync/last-content-match" 2>/dev/null
+    fi
     return ${rc}
 }
 
@@ -414,49 +526,7 @@ case "${1}" in
     ;;
 esac
 
-# Another sync client's unresolved dispute is not our content.
-#
-# Dropbox and Nextcloud rename the losing side of a concurrent write to
-# "X (Someone's conflicted copy 2026-09-03)"; Syncthing appends
-# ".sync-conflict-<date>". Carrying those onto a handheld doubles the storage
-# for no benefit -- the player cannot resolve a conflict from a games menu --
-# and it makes the artifacts immortal: a device that downloaded them uploads
-# them again on the next backup, so deleting them in the cloud looks like the
-# provider putting them back. That happened here, to 271 directories of BIOS
-# (2026-09-04).
-#
-# Resolution belongs on the computer where both sides can be seen. We decline
-# to move them in either direction, which is also the only way a cleanup on
-# one side stays done.
-CONFLICT_EXCLUDES=(
-    --exclude "**conflicted copy**"
-    --exclude "**.sync-conflict-**"
-)
 
-# What the saves tier owns, and content must never carry.
-#
-# A system directory holds more than games: RetroArch writes .srm and .state
-# next to the ROM, and several systems keep memory cards in a subfolder. The
-# saves allowlist claims all of it ("+ /**/*.srm" and friends in
-# cloud_sync-rules.txt), so uploading a system folder wholesale puts save data
-# in a second cloud location under different rules -- two writers and no
-# reconciliation, which is exactly how 70 files were deleted on 2026-09-01.
-#
-# Worse in the other direction: a content restore would then copy stale saves
-# back over live ones.
-#
-# The earlier allowlist fix (d77d4ea44d) covered directories another tier
-# owns. This is the same rule one level down, for files. Kept in step with
-# cloud_sync-rules.txt by hand -- there is no shared parser, and a pattern
-# added there must be added here.
-SAVE_EXCLUDES=(
-    --exclude "*.srm" --exclude "*.sav" --exclude "*.fs"
-    --exclude "*.state*" --exclude "*.auto" --exclude "*.dsv*"
-    --exclude "*.eep" --exclude "*.mpk" --exclude "*.sra"
-    --exclude "*.mcd" --exclude "*.mcr"
-    --exclude "save/**" --exclude "memcards/**"
-    --exclude "shared/savefiles/**" --exclude "PPSSPP/**"
-)
 
 STATUS=0
 for DIR in "${DIRS[@]}"; do
