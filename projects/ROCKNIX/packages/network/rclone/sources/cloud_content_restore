@@ -276,6 +276,42 @@ CONFLICT_EXCLUDES=(
     --exclude "**.sync-conflict-**"
 )
 
+# gamelist.xml travels on its own terms.
+#
+# It is the scraping payload -- names, descriptions, genres, ratings, media
+# paths and the cheevos hashes that cost a hash of every ROM -- and all of that
+# is device-independent, so sharing it means scraping once rather than once per
+# handheld. Paths inside it are relative ("./Mega Man 3 (USA).zip"), so it
+# carries across devices unchanged.
+#
+# It degrades well in both directions, which is why this is safe at all:
+#
+#   * Reading, EmulationStation builds its list from the filesystem first and
+#     skips any entry whose ROM is absent ("does not exist ... Ignoring"), so a
+#     52-entry list on a handheld holding 10 of those games shows 10 games and
+#     no phantoms. That holds while ParseGamelistOnly is false, which is the
+#     default.
+#   * Writing, updateGamelist re-reads the file and rewrites only the entries
+#     whose metadata changed, preserving entries for ROMs this device does not
+#     have -- deliberately, per its own comment.
+#
+# What neither of those protects against is rclone, which replaces a file
+# wholesale. A device that scans its own ROMs and uploads before it has ever
+# restored would push a thin list over a rich one. That is an ordering problem,
+# not a merge problem, and --update solves it: skip when the destination is
+# newer, so the freshest list wins rather than the last writer.
+#
+# Hence a separate pass. --update on the whole content transfer would also
+# apply to ROMs, where "destination is newer" is not a reason to skip a file
+# somebody deliberately re-uploaded.
+#
+# Three fields remain genuinely per-device -- playcount, lastplayed and
+# gametime, which EmulationStation itself marks isStatistic and refuses to let
+# a scrape overwrite. A file-level sync cannot make that distinction, so those
+# are last-writer-wins across devices. Everything else in the file is authored
+# or scraped, and favorite is explicitly not a statistic in ES's model.
+GAMELIST_ONLY=( --include "gamelist.xml" --include "**/gamelist.xml" )
+
 # What EmulationStation owns, which a content match must never delete.
 #
 # gamelist.xml carries <playcount>, <lastplayed> and <favorite> -- per-device
@@ -553,9 +589,17 @@ for DIR in "${DIRS[@]}"; do
     # trims it, so the flag bought nothing worth a version check.
     rclone copy "${SRC}" "${TARGET}"  \
         "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" \
+        --exclude "gamelist.xml" --exclude "**/gamelist.xml" \
         --progress --stats 1s \
         --log-file "${LOG_FILE}" --log-level INFO
     RC=$?
+
+    # The metadata pass: newest wins, rather than whoever ran last.
+    rclone copy "${SRC}" "${TARGET}" \
+        "${GAMELIST_ONLY[@]}" --update \
+        --stats 0 \
+        --log-file "${LOG_FILE}" --log-level INFO || true
+
     if [ ${RC} -ne 0 ] && [ ${RC} -ne 9 ]; then
         echo "Restore of ${DIR:-everything} failed (rclone exit ${RC})."
         STATUS=${RC}

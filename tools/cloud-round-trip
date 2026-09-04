@@ -405,6 +405,33 @@ def main():
                           "--list-sizes ignores conflict artifacts",
                           "--list-sizes counted a conflicted copy as content")
 
+    # gamelist.xml is shared metadata with a per-device tail. It rides in its
+    # own --update pass so the freshest list wins rather than whoever ran last:
+    # a device that scans its own ROMs and uploads before ever restoring would
+    # otherwise push a thin list over a rich one.
+    step("gamelist.xml syncs newest-first, and only in its own pass")
+    backend("reset")
+    dev.write(f"{croot}/Real.rom", b"content")
+    dev.write(f"{croot}/gamelist.xml", b"<gameList><game><path>./Real.rom</path></game></gameList>")
+    dev.run(f"cloud_content_backup {shlex.quote(CONTENT_DIR)} >/dev/null 2>&1 || true", check=False)
+    listing = backend("ls")
+    failures += not check("Real.rom" in listing,
+                          "the ROM reached the content tier",
+                          "nothing transferred - the gamelist assertions cannot be judged")
+    failures += not check("gamelist.xml" in listing,
+                          "the gamelist reached the cloud in its own pass",
+                          "gamelist.xml was not uploaded at all")
+
+    # Now make the local copy newer and poorer, and restore: --update must
+    # refuse to overwrite it.
+    dev.write(f"{croot}/gamelist.xml", b"<gameList><!--LOCAL-NEWER--></gameList>")
+    dev.run("sync", check=False)
+    dev.run("cloud_content_restore --selected >/dev/null 2>&1 || true", check=False)
+    local = dev.run(f"cat {shlex.quote(croot)}/gamelist.xml 2>/dev/null || true")
+    failures += not check("LOCAL-NEWER" in local,
+                          "a newer local gamelist survived the restore",
+                          "RESTORE CLOBBERED A NEWER LOCAL GAMELIST (--update not applied)")
+
     step("every EmulationStation system path is carried by exactly one tier")
     # The complement of the rule above: a path in NO tier is silent data loss
     # on restore. Four were found this way (gmu/playlists, idtech, modules,
