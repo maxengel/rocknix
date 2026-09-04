@@ -251,8 +251,17 @@ surfaced in the UI or is purely a support artefact.
 
 ## Open questions
 
-- Where does the audit log live, what is its retention, and is it visible to
-  the player?
+- ~~Where does the audit log live, what is its retention, and is it visible to
+  the player?~~ **Settled 2026-09-04, D-CLOUD-027.** With the other logs, in
+  the OS's persistent log directory: `/storage/.cache/log/cloud_audit.log`,
+  append-only text, rotated at 1 MiB keeping one predecessor, support-only for
+  now (the wizard's summary page is what the player sees). `/var` is tmpfs on a
+  shipped device and `/var/log` binds to `/storage/.cache/log` only in debug
+  mode, so that directory is the one place that is both "with the other logs"
+  and still there after the reboot that follows a wrong choice. Whether the
+  SQLite index above is still needed beside a text log is #20's call; note
+  the stamps already live under `/storage/.cache/cloud_sync/` (underscore),
+  not `cloud-sync/` as the table says.
 - **Slot numbers are not stable identities across devices.** ES renames files
   when it renumbers after a deletion, which sync sees as delete + create, so
   the same state can arrive on another device under a different slot number.
