@@ -50,6 +50,16 @@ It touches only `build/*` branches, skips a worktree with uncommitted changes
 rather than overwriting it, and is fast-forward-only — a build branch someone
 committed on has diverged, and quietly rewriting it would lose that work.
 
+**Never sync a worktree with a build in flight.** `calculate_stamp` hashes each
+package directory *when that package is reached*, so a fast-forward under a
+running build makes every package after that moment build from the new tree
+and every package before it from the old — a mixed image, with no error and a
+`BUILD_ID` that names only one of the two. It happened on 2026-09-04: `rclone`
+(seq 632) picked up commits landed mid-build while the other 660 packages did
+not. Benign that time because the late commits touched only `rclone`; the next
+time it will not be. Check `docker ps` for a `rocknix-build` container before
+running `sync`, and if one is up, wait.
+
 It deliberately takes **no target argument**. It walks every build worktree at
 once, so an arbitrary ref moves all of them together; while this function was
 being tested, a throwaway commit was fast-forwarded onto two real build
