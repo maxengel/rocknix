@@ -55,9 +55,11 @@ makeinstall_target() {
   cp cloud_content_restore ${INSTALL}/usr/bin/
   cp cloud_content_backup ${INSTALL}/usr/bin/
   cp cloud_sync_cleanup_duplicates.sh ${INSTALL}/usr/bin/
-  mkdir -p ${INSTALL}/usr/bin/scripts/game-end
-  cp cloud_saves_gameend.sh ${INSTALL}/usr/bin/scripts/game-end/
-  chmod 0755 ${INSTALL}/usr/bin/scripts/game-end/cloud_saves_gameend.sh
+  # No game-end event hook. EmulationStation runs the save sync itself now
+  # (FileData::launchGame), so it can show the result on the progress card
+  # instead of backgrounding the work into /dev/null where nobody could tell
+  # whether it had happened. The hook had no caller but ES, and leaving it
+  # installed would start a second concurrent cloud_backup on the same remote.
   cp ${PKG_BUILD}/${PKG_RCLONE} ${INSTALL}/usr/bin/
   chmod 0755 ${INSTALL}/usr/bin/*
   cp cloud_sync-rules.txt ${INSTALL}/usr/config/
