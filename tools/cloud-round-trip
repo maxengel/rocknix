@@ -432,6 +432,30 @@ def main():
                           "a newer local gamelist survived the restore",
                           "RESTORE CLOBBERED A NEWER LOCAL GAMELIST (--update not applied)")
 
+    # Three callers can start a cloud sync -- boot, game exit, the menu -- and
+    # until 2026-09-04 nothing stopped two from running at once. The lock lives
+    # in the scripts, so this test is caller-agnostic: hold it, then ask.
+    step("a second cloud sync while one runs is refused, exits 3, and stamps nothing")
+    dev.run("rm -f /storage/.cache/cloud_sync/last-backup", check=False)
+    out = dev.run(
+        "exec 9>/var/run/cloud_sync.lock; flock -n 9 || echo HOLDER-FAILED; "
+        "cloud_backup --yes >/tmp/second.out 2>&1; echo rc=$?; "
+        "exec 9>&-", check=False)
+    failures += not check("HOLDER-FAILED" not in out,
+                          "the test could hold the lock itself",
+                          "could not take the lock to set up the test")
+    failures += not check("rc=3" in out,
+                          "the second sync exited 3",
+                          f"expected exit 3 while the lock was held, got: {out.strip()[-40:]}")
+    second = dev.run("cat /tmp/second.out 2>/dev/null || true")
+    failures += not check("already running" in second.lower(),
+                          "and said another sync was running",
+                          "exit 3 without the message somebody would read")
+    stamp = dev.run("cat /storage/.cache/cloud_sync/last-backup 2>/dev/null || echo NONE")
+    failures += not check(stamp.strip() == "NONE",
+                          "no last-run stamp was written for work that did not happen",
+                          "A SKIPPED SYNC STAMPED A LAST-RUN (would read as success/failure)")
+
     step("every EmulationStation system path is carried by exactly one tier")
     # The complement of the rule above: a path in NO tier is silent data loss
     # on restore. Four were found this way (gmu/playlists, idtech, modules,

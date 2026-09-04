@@ -82,6 +82,55 @@ exists() {
     rclone lsf --dirs-only "${parent}/" 2>/dev/null | grep -qx "${name}/"
 }
 
+# Relocate a folder by copy, verify, delete -- never `rclone move`.
+#
+# move deletes as it goes, so an interruption -- a handheld dropping off wifi is
+# the normal case, not the exception -- leaves the library split across two
+# paths with no record of which files went where (#57, upgrade-and-install.md).
+# Copy first: a second run finds the copied files already present and skips
+# them. Verify by content with `rclone check`, reading its whole output rather
+# than one line of it (engineering-practices.md: rclone prints "N matching
+# files" last, and a check against the last line matched nothing). Only a
+# verified pass removes the source; a failed one leaves both sides intact and
+# says so.
+#
+# Pipelines are avoided on purpose: `rclone ... | tail` reports tail's status,
+# which is how a short backup once announced itself a success.
+relocate() {
+    local src="$1" dst="$2" what="$3" out
+    say "Copying ${what}..."
+    if ! out=$(rclone copy "${src}" "${dst}" --create-empty-src-dirs=false 2>&1); then
+        printf '%s\n' "${out}" | tail -3
+        say "FAILED copying ${what}. Both folders are intact; nothing was removed."
+        return 1
+    fi
+    say "Verifying ${what}..."
+    out=$(rclone check "${src}" "${dst}" --one-way 2>&1)
+    if ! printf '%s\n' "${out}" | grep -q "0 differences found"; then
+        printf '%s\n' "${out}" | grep -iE "differ|missing|error" | head -3
+        say "VERIFICATION FAILED for ${what}. Both folders are intact; the source was not removed."
+        return 1
+    fi
+    say "Removing the old ${what} folder..."
+    rclone purge "${src}" >/dev/null 2>&1 || say "(could not remove the old folder; the copy is complete and verified)"
+    return 0
+}
+
+# Is an existing destination a partial copy of this source, and nothing else?
+#
+# The refusals below exist so two devices' libraries are never merged. But a
+# copy interrupted half-way also leaves a destination that exists, and the same
+# refusal would then block the resume forever. The two cases differ in one
+# checkable way: a partial copy holds nothing that did not come from the
+# source. The reverse one-way check asks exactly that -- every file in dst is
+# present and identical in src -- so a foreign file in dst fails it and the
+# refusal stands.
+resumable() {
+    local src="$1" dst="$2" out
+    out=$(rclone check "${dst}" "${src}" --one-way 2>&1)
+    printf '%s\n' "${out}" | grep -q "0 differences found"
+}
+
 # What cloud_sync_helper would have derived CONTENTPATH to be for a given
 # SYNCPATH. The helper deliberately derives it rather than taking the shipped
 # default, so that ROMs and saves stay in one namespace -- its own comment
@@ -106,21 +155,19 @@ migrate_content() {
     local remote="$1" content="$2" mode="$3"
 
     if has_entries "${remote}${content}/"; then
-        if exists "${remote}${NEW_CONTENT}"; then
+        if exists "${remote}${NEW_CONTENT}" && ! resumable "${remote}${content}" "${remote}${NEW_CONTENT}"; then
             say "REFUSING: ${remote}${NEW_CONTENT} already exists, and ${remote}${content}"
             say "holds files. Nothing moved and the config is unchanged -- merging two"
             say "content folders is not something to do without being asked."
             return 4
         fi
-        say "Would move  ${remote}${content}  ->  ${remote}${NEW_CONTENT}"
+        say "Would copy, verify, then remove  ${remote}${content}  ->  ${remote}${NEW_CONTENT}"
         if [ "${mode}" != "--apply" ]; then
             say "Nothing has been changed. Run with --apply to do it."
             return 0
         fi
-        say "Moving content..."
-        if ! rclone move "${remote}${content}" "${remote}${NEW_CONTENT}" \
-                --create-empty-src-dirs=false 2>&1 | tail -3; then
-            say "FAILED moving content. The config is unchanged."
+        if ! relocate "${remote}${content}" "${remote}${NEW_CONTENT}" "content"; then
+            say "The config is unchanged."
             return 5
         fi
     else
@@ -201,7 +248,7 @@ main() {
     # libraries without anyone asking for that.
     local blocked=0
     for dest in "${NEW_SAVES}" "${NEW_BACKUPS}"; do
-        if exists "${remote}${dest}"; then
+        if exists "${remote}${dest}" && ! resumable "${remote}${saves_src}" "${remote}${dest}"; then
             say "REFUSING: ${remote}${dest} already exists."
             blocked=1
         fi
@@ -223,20 +270,16 @@ main() {
     say ""
     local moved_saves=0
     if has_files "${remote}${saves_src}/"; then
-        say "Moving saves..."
-        if rclone move "${remote}${saves_src}" "${remote}${NEW_SAVES}" \
-                --create-empty-src-dirs=false 2>&1 | tail -3; then
+        if relocate "${remote}${saves_src}" "${remote}${NEW_SAVES}" "saves"; then
             moved_saves=1
         else
-            say "FAILED moving saves. Nothing else attempted; the old folder is untouched."
+            say "Nothing else attempted."
             return 5
         fi
     fi
 
     if has_entries "${remote}${backups}/"; then
-        say "Moving backups..."
-        rclone move "${remote}${backups}" "${remote}${NEW_BACKUPS}" \
-            --create-empty-src-dirs=false 2>&1 | tail -3
+        relocate "${remote}${backups}" "${remote}${NEW_BACKUPS}" "backups" || return 5
     fi
 
     # Only once the data is where the config will point. A config updated

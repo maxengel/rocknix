@@ -54,6 +54,33 @@ log_message() {
     fi
 }
 
+# One cloud transfer at a time, whoever asked for it.
+#
+# Three callers can start one: the boot-time sync (autostart/102-cloud-saves),
+# EmulationStation after a game exits, and a person in the menu. Until
+# 2026-09-04 the game-exit path was an OS hook with a pgrep guard; moving it
+# into ES kept the visible progress and dropped the guard, so exiting a game
+# during the boot sync started a second rclone against the same remote. Two
+# writers on one folder is how a mirror deleted another handheld's saves
+# (D-CLOUD-014); two copies racing is milder, and still nothing anybody asked
+# for.
+#
+# The lock lives here, in the script, so no caller has to know about the
+# others. /var/run is tmpfs, so a lock cannot survive a reboot and go stale.
+# Non-blocking, because a request that queues silently behind a twenty-minute
+# transfer looks exactly like one that hung. Exit 3 means "skipped: another
+# sync is running" -- the UI names it, and no last-run stamp is written for
+# work that did not happen.
+CLOUD_SYNC_LOCK=/var/run/cloud_sync.lock
+take_cloud_lock() {
+    exec 9>"${CLOUD_SYNC_LOCK}"
+    if ! flock -n 9; then
+        echo "Another cloud sync is already running. Skipped."
+        log_message "skipped: another cloud sync holds ${CLOUD_SYNC_LOCK}" "false"
+        exit 3
+    fi
+}
+
 # Load controller configuration if available
 if [ -f "/storage/.config/profile.d/098-controller" ]; then
     source /storage/.config/profile.d/098-controller
@@ -946,4 +973,5 @@ main() {
 trap 'log_message "Script interrupted by user" "false" "WARN"; clean_exit 130' INT TERM
 
 # Start script execution
+take_cloud_lock
 main
