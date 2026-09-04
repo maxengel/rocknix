@@ -142,6 +142,34 @@ So:
 An assertion that cannot fail is not evidence. Ask what input would produce a
 FAIL; if you cannot name one, the check proves nothing.
 
+## Before deleting a duplicate, diff its behaviours, not its purpose
+
+"These two do the same job" is a claim about purpose. Deletion acts on
+behaviour, and the two are rarely identical. Blindspot 23 was committed three
+times in one day, which is the rule-of-three threshold for turning a retro note
+into a rule:
+
+- The GAME SETTINGS save rows were removed as duplicates of the transfer flow.
+  They carried per-operation last-run stamps the flow never shows for saves
+  alone.
+- The NETWORK SETTINGS cloud group went with them, and `CHANGE CLOUD FOLDER`
+  was reproduced nowhere.
+- The game-end OS hook was replaced by an in-ES call so the sync would be
+  visible. The hook's `pgrep` guard against a concurrent sync was not carried
+  across, and a sync at boot plus a game exit put two rclone writers on one
+  remote.
+
+Each survivor genuinely could do the job. Each casualty had a property only it
+had — state it reported, a row only it offered, a guard only it held.
+
+So, before removing anything as redundant, write down what the *doomed* copy
+does that the *survivor* does not: every side effect, guard, stamp, setting it
+reads, and place it is reachable from. If the list is empty, say so
+explicitly. If it is not, each item is either re-homed on the survivor or
+deliberately dropped with the reason recorded. The survivor's ability to
+perform the operation is never the test; the test is whether anything the
+casualty *protected* or *reported* still is.
+
 ## Stop after three fixes on the same failure
 
 Three sequential fix-commits on one failure without resolving it means stop:

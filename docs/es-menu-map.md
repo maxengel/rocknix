@@ -8,7 +8,7 @@ Derived from `es-app/src/guis/` in `ROCKNIX/emulationstation-next` (surveyed
 Companion documents: [es-ui-style-guide.md](es-ui-style-guide.md) — how a screen
 should look and behave once you know where it goes; and
 [conflict-wizard-ia.md](conflict-wizard-ia.md) — the flow and screen structure
-for the cloud-save conflict wizard, which is being designed before it is built.
+for the cloud-save conflict wizard (#23), now entering implementation — milestone "Cloud Saves: Visual Conflict Resolution".
 
 ## Two ways in
 
@@ -60,12 +60,12 @@ to decide where something belongs.
 
 | Destination | Groups it contains |
 |---|---|
-| **GAME SETTINGS** | TOOLS · ACCOUNTS · BIOS SETTINGS · SAVESTATES · DEFAULT GLOBAL SETTINGS · **CLOUD SAVES** · **CLOUD TOOLS** · SYSTEM SETTINGS (per-system config) |
+| **GAME SETTINGS** | TOOLS · ACCOUNTS · BIOS SETTINGS · SAVESTATES · DEFAULT GLOBAL SETTINGS · **CLOUD SETTINGS** · SYSTEM SETTINGS (per-system config) |
 | **CONTROLLER & BLUETOOTH** | SETTINGS · BLUETOOTH · DISPLAY OPTIONS · BEHAVIOR · PLAYER ASSIGNMENTS |
 | **USER INTERFACE** | APPEARANCE · CONTROL OPTIONS · DISPLAY OPTIONS · GAMELIST OPTIONS · ICONS |
 | **GAME COLLECTION** | COLLECTIONS TO DISPLAY · CREATE CUSTOM COLLECTION · OPTIONS |
 | **SOUND** | VOLUME · MUSIC · SOUNDS |
-| **NETWORK** | INFORMATION · SETTINGS · NETWORK SERVICES · **RCLONE SERVICES** · SYNCTHING SERVICES · VPN SERVICES |
+| **NETWORK** | INFORMATION · SETTINGS · NETWORK SERVICES · SYNCTHING SERVICES · VPN SERVICES · FINISH RESTORE SETUP (only after a restore) — *no cloud group; D-UI-015/017* |
 | **SCRAPER** | tabbed: SCRAPE · OPTIONS · ACCOUNTS |
 | **UPDATES & DOWNLOADS** | DOWNLOADS · SOFTWARE UPDATES |
 | **SYSTEM SETTINGS** | SYSTEM · HARDWARE · DEVICE · STORAGE · PERFORMANCE · TWEAKS · SUSPEND · LED HARDWARE · ADVANCED |
@@ -79,44 +79,46 @@ Two placement rules the existing tree already follows:
 
 ## Cloud (our subtree)
 
-Split along what the player is doing, rather than by which subsystem
-implements it. Setting the remote up and snapshotting the device are network
-concerns; syncing saves belongs with the games; bulk content is its own thing.
+As built on 2026-09-04 (D-UI-015, reversed in part by D-UI-017). One door:
+`GAME SETTINGS > CLOUD SETTINGS`. The three save actions sit at that level
+because saves move constantly; everything occasional is one row further in.
+`NETWORK SETTINGS` carries no cloud group any more — the pointer that lived
+there was two doors onto one room.
 
 ```mermaid
 flowchart TD
-    NET[NETWORK SETTINGS] --> RS{{RCLONE SERVICES}}
-    RS --> SETUP[SET UP CLOUD REMOTE]
-    RS --> SYSDATA[BACKUP / RESTORE SYSTEM DATA]
-    RS --> FOLDER[CLOUD FOLDER]
+    GS[GAME SETTINGS] --> CS{{CLOUD SETTINGS}}
+    CS --> SYNC[SYNC SAVE DATA WITH THE CLOUD]
+    CS --> UP[UPLOAD SAVE DATA TO THE CLOUD<br/><i>last run · outcome</i>]
+    CS --> DOWN[DOWNLOAD SAVE DATA FROM THE CLOUD<br/><i>last run · outcome</i>]
+    CS --> ALL[ALL CLOUD SETTINGS AND SERVICES]
 
-    SYSDATA --> BK[BACKUP ALL SYSTEM DATA]
-    SYSDATA --> RE[RESTORE ALL SYSTEM DATA]
-    SYSDATA --> FIN[FINALIZE RESTORE]
+    ALL --> HUB{{CLOUD}}
+    HUB --> BR[BACKUP AND RESTORE]
+    BR --> BU[BACK UP TO THE CLOUD] --> TICK[tick: SAVE DATA · ROMS AND BIOS · SYSTEM SETTINGS]
+    BR --> RE[RESTORE FROM THE CLOUD] --> TICK
+    TICK -->|ROMS AND BIOS ticked| PICK[SYSTEMS TO SYNC<br/>select all · badge: cloud / on device / different size]
+    TICK --> XFER[GuiCloudTransfer<br/>full-screen, stays until dismissed]
+    PICK --> XFER
+    BR --> MATCH[MATCH THIS DEVICE TO THE CLOUD<br/><i>the only action that deletes</i>] --> PREV[preview → confirm] --> XFER
 
-    GS[GAME SETTINGS] --> CS{{CLOUD SAVES}}
-    CS --> SY[SYNC / UPLOAD / DOWNLOAD SAVE DATA]
-    CS --> TOG[SYNC DURING STARTUP<br/>SYNC WHEN EXITING A GAME]
+    HUB --> SM[SAVE MANAGEMENT]
+    SM --> ST[SYNC SAVES DURING STARTUP]
+    SM --> GE[SYNC SAVES WHEN EXITING A GAME]
 
-    GS --> CT{{CLOUD TOOLS}}
-    CT --> CONTENT[UPLOAD / RESTORE CONTENT<br/>ROMs and BIOS]
-
-    SETUP --> W1[STEP 1 of 3<br/>SET UP SSH]
-    W1 -->|password and sshd verified| W2[STEP 2 of 3<br/>CONNECT FROM YOUR COMPUTER]
-    W2 -->|SSH session detected| W3[STEP 3 of 3<br/>CREATE THE REMOTE]
-    W3 -->|remote verified| DONE[CLOUD SETUP COMPLETE]
-
-    BOOT([boot after a restore]) --> FIN
+    HUB --> CSS[CLOUD STORAGE SETUP]
+    CSS --> CHOOSE[CHOOSE SYSTEMS TO SYNC] --> PICK
+    CSS --> FOLDER[CHANGE CLOUD FOLDER]
+    CSS --> TIDY[TIDY UP YOUR CLOUD FOLDERS<br/><i>only when there is something to move</i>]
+    CSS --> CONN[CONNECT OR REPAIR CLOUD STORAGE] --> WIZ[Connect Cloud Storage wizard<br/>provider → sign in on device / with phone → done]
 ```
 
-The setup wizard's steps are **gated**: CONTINUE only exists once that step's
-check passes, and every page offers EXIT SETUP. FINALIZE RESTORE has two entry
-points — automatically on the first boot after a restore, and from this menu at
-any time.
+Rows carry three lines — title, what it carries, `Last … - Succeeded/Failed`
+— read from `/storage/.cache/cloud_sync/last-<name>` (D-UI-014 lineage).
+Anything measured in minutes runs in `GuiCloudTransfer`, not a card
+(`es-native-ui.md`, the fourth tier). Exit 3 from any script means another
+sync held the lock and is shown as SKIPPED, not FAILED.
 
-Rows in all three groups stay **visible but dimmed** before a remote is
-configured, and offer the setup flow instead of their action. Hiding them would
-tell the player nothing about what configuring a remote buys them.
 
 ## Screens you cannot reach from the main menu
 

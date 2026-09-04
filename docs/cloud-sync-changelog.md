@@ -125,6 +125,10 @@ nothing.
   deleting them in the cloud looked like the provider putting them back.
 - Empty or unreachable cloud folders now **refuse to act** rather than treating
   "nothing there" as "delete everything".
+- **Only one cloud transfer runs at a time**, whoever started it. The
+  boot-time sync, the sync after a game exits, and a person in the menu can
+  all start one; they now share a lock, and a second request reports
+  SKIPPED rather than putting two rclone writers on the same folder.
 
 ---
 
@@ -202,7 +206,11 @@ The parts most likely to differ per device:
 4. **`tar.gz` backup and restore** on a device with a populated `/storage` —
    restore onto a live tree, not an empty one, since that is where the symlink
    bug hid.
-5. **Providers other than Dropbox.** Dropbox is what this was developed
+5. **Exit a game while the boot-time sync is still running** (turn on both
+   SYNC SAVES toggles, reboot, launch and quit a game within a minute). The
+   card should say SKIPPED, and `/var/log/cloud_sync.log` should show one
+   sync, not two interleaved.
+6. **Providers other than Dropbox.** Dropbox is what this was developed
    against. S3-style bucket remotes behave differently in ways already found
    once (see below) and deserve a look.
 

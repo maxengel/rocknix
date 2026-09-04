@@ -30,8 +30,13 @@ stay consistent with the cloud-sync source of truth in **this** repo:
   `cloud_sync.conf.defaults` — the documented variables/defaults and semantics: `BACKUPPATH`,
   `RESTOREPATH`, `SYNCPATH`, `BACKUPFOLDER`, `SYNCPATH_BACKUP`, `RCLONEOPTS`,
   `BACKUPMETHOD`/`RESTOREMETHOD` (`sync` mirrors+deletes vs `copy` non-destructive),
-  `BACKUPFILE_*_OPTION`, `RSYNCRMDIR`, `LOG_LEVEL`.
-- the scripts `cloud_backup`, `cloud_restore`, `cloud_sync_helper`, `rclonectl`.
+  `BACKUPFILE_*_OPTION`, `RSYNCRMDIR`, `LOG_LEVEL`, and **`CONTENTPATH`** (the
+  content tier's cloud root; `ROMs/` and `BIOS/` live under it — D-CLOUD-018).
+- the scripts `cloud_backup`, `cloud_restore`, `cloud_sync_helper`, and the ones
+  added since: `cloud_setup`, `cloud_remote`, `cloud_oauth`, `cloud_device_id`,
+  `cloud_content_backup`, `cloud_content_restore` (including `--match`, the
+  only content action that deletes — D-CLOUD-023), `cloud_migrate_layout`.
+  `rclonectl` is gone (#6).
 
 When you touch any of those, re-check the page for: renamed/removed/added variables, changed
 defaults, changed `sync`/`copy` semantics, new/removed tools, and the single-remote assumption
@@ -39,6 +44,9 @@ defaults, changed `sync`/`copy` semantics, new/removed tools, and the single-rem
 
 ## Don't let known drift grow
 
+- **The public page still teaches the SSH `rclone config` workflow** that the
+  native wizard replaced. Tracked as #42 (audit #60's PL-06); it is the docs
+  half of the upstream PR and blocks it (hard gate above).
 - `RSYNCRMDIR` is now **implemented** (2026-07-23, issue #5 finding #3) — docs and code
   agree. `rclonectl` was **removed** the same day (issue #6): if the site still mentions
   mount/unmount, that's drift to fix on the docs side. `LOG_LEVEL` remains under-documented.
