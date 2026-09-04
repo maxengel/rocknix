@@ -28,7 +28,7 @@ loaded a stale copy of its own skill and would have graded the work against a
 rubric that no longer existed.
 
 ```bash
-diff -q <file> <(git -C /home/max/Development/rocknix show next:<file>)
+diff -q <file> <(git -C /workspace/repos/rocknix show next:<file>)
 ```
 
 **When a rule earns its place, write it down.** `docs/blindspot-register.md`

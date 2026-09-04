@@ -28,6 +28,22 @@ feature sets — which is why savestate compatibility across them is an open
 question (fork issue #10, gated on #19). Do not assume a state from one loads on
 another.
 
+## Where things live
+
+Since 2026-09-04 the build tree is on serval's dedicated 4 TB volume, following
+the fleet's `/workspace` convention (lorry `fleet/blueprints/build-box.yml`,
+`docs/runbooks/00-workspace-disk.md`):
+
+| Path | Holds |
+|---|---|
+| `/workspace/repos/rocknix` | primary checkout, stays on `next` |
+| `/workspace/repos/rocknix.worktrees/<name>` | build worktrees, siblings of the primary |
+| `/workspace/cache/rocknix-sources` | the shared download cache (`SOURCES_DIR`) |
+| `/workspace/artifacts/rocknix-images` | published/kept images |
+
+It used to be `~/Development/rocknix{,.worktrees}` on the 1 TB OS disk, which
+four device build roots plus the cache had filled to 36 GB free.
+
 ## Where to build
 
 Device builds run from a worktree on **`test/qa-integration`**, not
@@ -51,21 +67,27 @@ Two mounts must be added by hand for our layout, both through
 `DOCKER_EXTRA_OPTS`:
 
 ```bash
-D=~/Development/rocknix.worktrees/devices
-S=~/Development/rocknix.worktrees/generic-x64/sources   # shared download cache
+D=/workspace/repos/rocknix.worktrees/devices
+S=/workspace/cache/rocknix-sources          # shared download cache
 
 cd "$D"
-DOCKER_EXTRA_OPTS="-v ~/Development/rocknix/.git:/home/max/Development/rocknix/.git -v $S:$D/sources" \
+DOCKER_EXTRA_OPTS="-v /workspace/repos/rocknix/.git:/workspace/repos/rocknix/.git -v $S:$D/sources" \
   make docker-RK3566
 ```
 
 - **The `.git` mount is mandatory from a worktree.** A worktree's `.git` is a
   pointer file, and `scripts/image` runs `git rev-parse`; without the main
   repo's real `.git` the image step fails.
+
 - **The sources mount is an optimisation**, not a requirement — it reuses the
-  ~15 GB download cache instead of re-fetching hundreds of tarballs into a fresh
+  ~38 GB download cache instead of re-fetching hundreds of tarballs into a fresh
   worktree. Safe because `sources/` is a content-addressed download cache; build
   sequentially rather than sharing it between concurrent builds.
+
+  A native build needs no mount at all: `config/path` reads
+  `SOURCES=${SOURCES_DIR:-$ROOT/sources}`, so pointing at the shared cache is
+  one variable — `export SOURCES_DIR=/workspace/cache/rocknix-sources` — with
+  no symlink inside each worktree.
 
 ## After rebasing onto upstream
 

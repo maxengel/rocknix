@@ -10,12 +10,12 @@ Place every worktree in the **sibling** directory `../rocknix.worktrees/`, one s
 per branch, named after the branch leaf. That directory lives next to the primary checkout
 (outside the repo tree), so it never needs gitignoring.
 
-The **primary checkout** `~/Development/rocknix` stays a reflection of the canonical branch —
+The **primary checkout** `/workspace/repos/rocknix` stays a reflection of the canonical branch —
 here that is **`next`**, the fork's integration branch (this repo has **no `main`**; `origin`
 and `upstream` both default to `next`). Do feature work in worktrees, not the primary checkout.
 
 ```
-Development/
+/workspace/repos/                 # serval's dedicated build volume; see device-builds.md
 ├── rocknix/                    # primary checkout — stays on next (the "main" reflection)
 └── rocknix.worktrees/
     ├── rclone-cleanup/         # branch: feature/rclone-cleanup

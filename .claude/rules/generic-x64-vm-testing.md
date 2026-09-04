@@ -20,7 +20,7 @@ file pointing outside the mounted dir, and `scripts/image` runs `git rev-parse`)
 
 ```bash
 make docker-GENERIC_X64 \
-  DOCKER_EXTRA_OPTS='-v /home/max/Development/rocknix/.git:/home/max/Development/rocknix/.git'
+  DOCKER_EXTRA_OPTS='-v /workspace/repos/rocknix/.git:/workspace/repos/rocknix/.git'
 ```
 
 Image lands at `target/ROCKNIX-GENERIC_X64.x86_64-<date>.img.gz`. To re-image after a

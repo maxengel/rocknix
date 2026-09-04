@@ -16,8 +16,9 @@
 set -euo pipefail
 
 PART="${1:-}"
-WT_DIR="${HOME}/Development/rocknix.worktrees"
-MAIN="${HOME}/Development/rocknix"
+# Defaults follow the fleet /workspace convention (see device-builds.md).
+WT_DIR="${WT_DIR:-/workspace/repos/rocknix.worktrees}"
+MAIN="${MAIN:-/workspace/repos/rocknix}"
 OLD="${WT_DIR}.old"
 
 die() { echo "error: $*" >&2; exit 1; }
