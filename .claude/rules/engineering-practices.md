@@ -96,7 +96,8 @@ distrust — see also *Verify the artifact, not the report*.
 ## Guards must fail closed
 
 A check that cannot run has not passed. Three defects in one day's work shared
-this shape, and all three were invisible because the failure mode was silence:
+this shape, and all three were invisible because the failure mode was silence.
+A fourth, later, had the same shape and the opposite outcome:
 
 - A pipeline's status is its **last** command's. `if ! producer | consumer`
   tests the consumer, so a producer that exits 1 — an unreadable input, a full
@@ -110,10 +111,19 @@ this shape, and all three were invisible because the failure mode was silence:
   that once only one archive format was present — the normal state after a
   format change — the whole verification block was skipped, disabling the guard
   added for a shipped data-loss bug.
+- **A check that reads a fixed position in another tool's output.** Verifying
+  a Dropbox merge with `rclone check ... | tail -1 | grep -q "0 differences
+  found"` looked exact, and matched nothing: rclone prints `N matching files`
+  last, and the differences line second to last. This one happened to fail in
+  the safe direction — it kept every directory it could not confirm, so the
+  cost was a re-run rather than 489 MiB — and that is the whole argument for
+  the rule. Grep the output, not a line of it, and let the safe branch be the
+  one a broken check falls into.
 
 Each reads as a reasonable check. Each defaults to "proceed" when its own
 machinery breaks, which in a subsystem whose signature failure is *reporting
-success while doing nothing* is precisely backwards.
+success while doing nothing* is precisely backwards. (The fourth defaulted to
+"stop", which is what the rule asks for and why it cost nothing.)
 
 So:
 

@@ -165,6 +165,43 @@ seeded from the `/usr/config/*.defaults` templates:
 - **Single remote only:** operations use `rclone listremotes | head -1` — the first
   configured remote. Don't assume multi-remote support without adding it deliberately.
 
+## Progress output: what actually comes out of a pipe
+
+Every transfer here is read by a program, not a terminal — the ES status page
+runs the script through `popen`. rclone behaves differently there, in ways
+only observation settles. Measured against rclone **1.75.0 on an H700**:
+
+- **`--progress` still works through a pipe**, and still works alongside
+  `--log-file` (logs go to the file, the progress block goes to stdout).
+  Without `--progress` the stats go *only* to the log and the caller sees
+  nothing — which is why a content restore sat at `0 B / 0 B, -, 0 B/s`
+  while it was in fact copying Mega Drive ROMs.
+- **`--stats-one-line` throws away the per-file block.** That block is the
+  liveness signal: a thousand small BIOS files spend minutes between
+  percentage changes, and the name of the file being moved is the only thing
+  separating working from hung. Use `--stats 1s`.
+- **Each redraw's last ` * file` line has no trailing newline.** The next
+  block's `Transferred:` is glued straight onto it:
+
+  ```
+   * f4.bin: 26% / 3.8 MiB, 507 KiB/sTransferred:   	 6.1 MiB / 22.8 MiB, 27%...
+  ```
+
+  A reader splitting on `\n` alone loses both halves of that join — every
+  block after the first. Split on `\n`, `\r`, **and** an embedded
+  `Transferred:`.
+- **`Transferred:` appears twice per block**: bytes first, then a file count
+  (`0 / 6, 0%`). The byte line is the one with a unit in it.
+- **`--progress-terminal-width` does not exist in 1.75.0.** An unknown flag is
+  a usage error that transfers nothing, so `cloud_backup`/`cloud_restore` gate
+  it behind `rclone help | grep -q progress-terminal-width`. Adding it
+  unguarded to the content scripts would have broken every content transfer;
+  the dry run caught it, the documentation did not.
+
+Capture the bytes before writing a parser — `rclone copy ... --bwlimit 2M 2>&1
+| od -c` on the device — and run the parser over that capture. The format
+above was wrong in three of four guesses made from the documentation.
+
 ## Testing it without a cloud account
 
 `tools/cloud-test-backend` serves a directory on the host over WebDAV;

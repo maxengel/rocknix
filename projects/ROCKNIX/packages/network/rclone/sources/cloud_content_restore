@@ -266,6 +266,25 @@ case "${1}" in
     ;;
 esac
 
+# Another sync client's unresolved dispute is not our content.
+#
+# Dropbox and Nextcloud rename the losing side of a concurrent write to
+# "X (Someone's conflicted copy 2026-09-03)"; Syncthing appends
+# ".sync-conflict-<date>". Carrying those onto a handheld doubles the storage
+# for no benefit -- the player cannot resolve a conflict from a games menu --
+# and it makes the artifacts immortal: a device that downloaded them uploads
+# them again on the next backup, so deleting them in the cloud looks like the
+# provider putting them back. That happened here, to 271 directories of BIOS
+# (2026-09-04).
+#
+# Resolution belongs on the computer where both sides can be seen. We decline
+# to move them in either direction, which is also the only way a cleanup on
+# one side stays done.
+CONFLICT_EXCLUDES=(
+    --exclude "**conflicted copy**"
+    --exclude "**.sync-conflict-**"
+)
+
 # What the saves tier owns, and content must never carry.
 #
 # A system directory holds more than games: RetroArch writes .srm and .state
@@ -315,7 +334,7 @@ for DIR in "${DIRS[@]}"; do
     # nothing. rclone pads the file name out to a guessed width; the reader
     # trims it, so the flag bought nothing worth a version check.
     rclone copy "${SRC}" "${TARGET}"  \
-        "${SAVE_EXCLUDES[@]}" \
+        "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" \
         --progress --stats 1s \
         --log-file "${LOG_FILE}" --log-level INFO
     RC=$?
