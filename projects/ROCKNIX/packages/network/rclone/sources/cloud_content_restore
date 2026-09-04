@@ -13,6 +13,8 @@
 #   cloud_content_restore --list           print top-level remote directories
 #   cloud_content_restore <dir> [<dir>..]  copy remote dirs into /storage/roms
 #   cloud_content_restore --all            copy the whole remote content root
+#   cloud_content_restore --match          preview making this device match
+#   cloud_content_restore --match --apply  do it (the only mode that deletes)
 #
 # The remote content root defaults to the remote's root; set CONTENTPATH in
 # /storage/.config/cloud_sync.conf to point somewhere else (e.g. "GAMES").
@@ -189,7 +191,153 @@ sizes_under() {
                      END { for (d in sz) print d "|" sz[d] }'
 }
 
+
+# --- make this device match the cloud ------------------------------------
+#
+# Backup and restore are both copy-only, deliberately, so a system removed
+# from the cloud stays on the device forever and a card can never be made to
+# match the library. This is the third action, and the only one here that
+# deletes.
+#
+# Five rules, each of which has already cost something in this subsystem:
+#
+#  1. --delete-excluded NEVER appears. Save files live inside system
+#     directories; with the excludes in place rclone leaves excluded
+#     destination files alone, and that one flag inverts it into a save wipe.
+#  2. Only ROMs/<selected system> and BIOS. /storage/roms also holds
+#     savefiles, savestates, screenshots, backup, bezels, themes and music --
+#     other tiers' or nobody's.
+#  3. An empty or failed listing must never mean "delete everything". A wifi
+#     drop, a lapsed token and a renamed cloud folder all look exactly like an
+#     empty cloud, so the content root is positively confirmed to hold
+#     something before any deletion is considered.
+#  4. Cloud -> device only. The mirror direction is what deleted another
+#     handheld's whole save library on 2026-09-01 (D-CLOUD-014).
+#  5. Saves survive a removed system. Its content goes; the .srm and .state
+#     files stay, leaving the directory holding only those -- which
+#     has_content() correctly reports as no content.
+#
+# Deletions are final on the device: no local backup-dir. The space reclaimed
+# is the entire point of syncing ROMs selectively, and the cloud is the backup
+# by definition, since this only ever removes what the cloud does not have
+# (D-CLOUD-023). Preview first, then apply.
+
+# Does the content root actually hold anything? Rule 3.
+cloud_root_populated() {
+    local n
+    n=$(rclone lsf --dirs-only "${ROOT}ROMs/" 2>/dev/null | grep -c . )
+    [ "${n}" -gt 0 ] && return 0
+    rclone lsf --files-only "${ROOT}BIOS/" 2>/dev/null | grep -q . && return 0
+    return 1
+}
+
+# What one system would gain and lose. Prints "<sys>|<verb>|<files>|<bytes>".
+#
+# The counting uses rclone against the local path with the very same exclude
+# arrays the transfer uses, rather than a second hand-written find predicate:
+# a deletion predicate that can drift from the transfer predicate is how saves
+# get deleted by a tool that believes it is only touching ROMs.
+match_plan_one() {
+    local sys="$1" src local_dir n b out
+    src="$(remote_for "${sys}")"
+    local_dir="${DEST}/${sys}"
+
+    [ -d "${local_dir}" ] || { printf '%s|none|0|0\n' "${sys}"; return 0; }
+
+    if rclone lsf "${src}" 2>/dev/null | grep -q .; then
+        # Present in the cloud: sync reconciles both directions of difference.
+        out=$(rclone sync "${src}" "${local_dir}" \
+                "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" \
+                --dry-run --stats 0 2>&1)
+        n=$(printf '%s\n' "${out}" | grep -c "Skipped delete\|would delete")
+        printf '%s|sync|%s|0\n' "${sys}" "${n}"
+    else
+        # Absent from the cloud entirely: its content goes, its saves stay.
+        out=$(rclone size "${local_dir}" \
+                "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" 2>/dev/null)
+        n=$(printf '%s\n' "${out}" | sed -n 's/^Total objects: *\([0-9]*\).*/\1/p' | head -1)
+        b=$(printf '%s\n' "${out}" | sed -n 's/^Total size: .*(\([0-9]*\) Byte).*/\1/p' | head -1)
+        [ -n "${n}" ] || n=0
+        [ -n "${b}" ] || b=0
+        [ "${n}" -eq 0 ] && { printf '%s|none|0|0\n' "${sys}"; return 0; }
+        printf '%s|remove|%s|%s\n' "${sys}" "${n}" "${b}"
+    fi
+}
+
+match_run() {
+    local apply="$1" sys line verb files bytes rc=0 total_removed=0
+
+    if ! cloud_root_populated; then
+        echo "Refusing to change anything: the cloud content folder lists nothing."
+        echo "That looks the same whether the library is empty, the network is"
+        echo "down, or the folder was renamed - so nothing is removed."
+        log_message "match: refused, content root lists nothing"
+        return 1
+    fi
+
+    mapfile -t SYS < <(selected_systems)
+    if [ ${#SYS[@]} -eq 0 ]; then
+        echo "No systems are selected for this device yet."
+        return 1
+    fi
+
+    for sys in "${SYS[@]}"; do
+        line=$(match_plan_one "${sys}")
+        IFS='|' read -r sys verb files bytes <<< "${line}"
+        case "${verb}" in
+            none) continue ;;
+            remove)
+                total_removed=$((total_removed + files))
+                if [ "${apply}" = "1" ]; then
+                    echo "Removing ${sys}: ${files} files (not in your cloud)"
+                    rclone delete "${DEST}/${sys}" \
+                        "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" \
+                        --max-delete "${files}" \
+                        --log-file "${LOG_FILE}" --log-level INFO || rc=$?
+                    rmdir "${DEST}/${sys}" 2>/dev/null
+                else
+                    echo "${sys}|remove|${files}|${bytes}"
+                fi
+            ;;
+            sync)
+                if [ "${apply}" = "1" ]; then
+                    echo "Matching ${sys} to the cloud..."
+                    # --max-delete is the fail-closed half: if reality has
+                    # drifted from the preview the player agreed to, this
+                    # aborts rather than deleting more than they saw.
+                    #
+                    # It is a cap, not a transaction. Measured on rclone
+                    # 1.75.0: given three deletions and --max-delete 2, it
+                    # exits 7 having already removed two. So it bounds the
+                    # damage to what was previewed and does not undo it --
+                    # which is the right trade here, because the cloud still
+                    # holds everything this could remove.
+                    rclone sync "$(remote_for "${sys}")" "${DEST}/${sys}" \
+                        "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" \
+                        --max-delete "${files}" \
+                        --progress --stats 1s \
+                        --log-file "${LOG_FILE}" --log-level INFO || rc=$?
+                else
+                    echo "${sys}|sync|${files}|0"
+                fi
+            ;;
+        esac
+    done
+
+    [ "${apply}" = "1" ] && log_message "match: applied, rc=${rc}"
+    return ${rc}
+}
+
 case "${1}" in
+    --match)
+        # Preview by default; --apply is what deletes.
+        if [ "${2}" = "--apply" ]; then
+            match_run 1
+        else
+            match_run 0
+        fi
+        exit $?
+    ;;
     --scan)
         # name|bytes|supported, one per line. Everything the cloud holds --
         # not what this device happens to have locally, which is the whole
