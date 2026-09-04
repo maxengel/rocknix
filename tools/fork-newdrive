@@ -22,9 +22,84 @@ OLD="${WT_DIR}.old"
 
 die() { echo "error: $*" >&2; exit 1; }
 
-[ -n "${PART}" ] || die "usage: $0 /dev/nvmeXn1p1"
+usage() {
+    cat <<USAGE
+usage: $0 --identify            list disks that look like a safe target
+       $0 /dev/nvmeXn1p1        migrate onto an already-formatted partition
+
+Device names are not stable. A new drive can enumerate FIRST and push the OS
+disk down a number: fitting a 4 TB drive to this machine made the new disk
+nvme0n1 and moved the boot disk to nvme1n1, so instructions written in advance
+named the OS disk. --identify reads the machine rather than guessing.
+USAGE
+    exit "${1:-1}"
+}
+
+# Which physical disk backs a mount, if any.
+disk_of_mount() {
+    local src pk
+    src=$(findmnt -no SOURCE "$1" 2>/dev/null) || return 0
+    [ -n "${src}" ] || return 0
+    # LVM and friends: walk to the physical parent.
+    lsblk -nlo PKNAME "${src}" 2>/dev/null | grep -v '^$' | tail -1 && return 0
+    lsblk -nlo NAME,TYPE -s "${src}" 2>/dev/null | awk '$2=="disk"{print $1; exit}'
+}
+
+system_disks() {
+    { disk_of_mount /; disk_of_mount /boot; disk_of_mount /boot/efi
+      # anything an LVM PV sits on counts too
+      pvs --noheadings -o pv_name 2>/dev/null | while read -r pv; do
+          lsblk -nlo PKNAME "${pv}" 2>/dev/null | tail -1
+      done
+    } | sed 's#^/dev/##' | grep -v '^$' | sort -u
+}
+
+identify() {
+    local sys; sys=$(system_disks)
+    echo "Disks holding the running system: ${sys//$'\n'/ }"
+    echo
+    printf '  %-14s %-10s %-6s %-28s %s\n' DEVICE SIZE PARTS MODEL VERDICT
+    local d name parts model verdict
+    for d in /dev/nvme?n? /dev/sd?; do
+        [ -b "${d}" ] || continue
+        name=$(basename "${d}")
+        parts=$(lsblk -no NAME "${d}" 2>/dev/null | tail -n +2 | grep -c . || true)
+        model=$(cat "/sys/block/${name}/device/model" 2>/dev/null | xargs)
+        if printf '%s\n' "${sys}" | grep -qx "${name}"; then
+            verdict="SYSTEM DISK - never touch"
+        elif [ "${parts}" -gt 0 ]; then
+            verdict="has ${parts} partition(s) - inspect first"
+        else
+            verdict="empty - candidate"
+        fi
+        printf '  %-14s %-10s %-6s %-28s %s\n' "${d}" "$(lsblk -dno SIZE "${d}")" "${parts}" "${model:0:28}" "${verdict}"
+    done
+    exit 0
+}
+
+[ "${PART}" = "--identify" ] && identify
+[ "${PART}" = "-h" ] || [ "${PART}" = "--help" ] && usage 0
+[ -n "${PART}" ] || usage
 [ -b "${PART}" ] || die "${PART} is not a block device"
 [ -d "${MAIN}/.git" ] || die "${MAIN} is not the primary checkout"
+
+# Refuse anything on a disk the running system lives on.
+#
+# The instructions for this migration were written before the drive was fitted
+# and named nvme1n1 for the new disk. The new disk enumerated first, so
+# nvme1n1 was the OS. Nothing in the original script would have stopped
+# `mkfs.ext4` on the boot drive -- it was a valid block device. A check that
+# only asks "is this a block device" cannot fail in the way that matters.
+PARENT=$(lsblk -nlo PKNAME "${PART}" 2>/dev/null | tail -1)
+[ -n "${PARENT}" ] || PARENT=$(basename "${PART}")
+if system_disks | grep -qx "${PARENT}"; then
+    die "${PART} is on ${PARENT}, which holds the running system. Refusing.
+     Run '$0 --identify' to see which disk is actually the new one."
+fi
+MOUNTED=$(lsblk -nlo MOUNTPOINT "/dev/${PARENT}" 2>/dev/null | grep -v '^$' | grep -v "^${WT_DIR}$" || true)
+if [ -n "${MOUNTED}" ]; then
+    die "${PARENT} has mounted filesystems (${MOUNTED//$'\n'/, }). Refusing."
+fi
 
 UUID=$(blkid -s UUID -o value "${PART}") || die "cannot read a UUID from ${PART}"
 [ -n "${UUID}" ] || die "no filesystem on ${PART} -- format it first"
