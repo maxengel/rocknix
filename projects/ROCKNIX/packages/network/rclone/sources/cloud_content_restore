@@ -28,7 +28,7 @@ log_message() {
 }
 
 if [ ! -e "/storage/.config/rclone/rclone.conf" ]; then
-    echo "rclone is not configured. Use 'Set Up Cloud Remote' first."
+    echo "rclone is not configured. Use Game Settings > Cloud > Connect Or Repair Cloud Storage first."
     exit 1
 fi
 
@@ -302,9 +302,21 @@ for DIR in "${DIRS[@]}"; do
     # card sat at "0 B / 0 B, -, 0 B/s" through a restore that was in fact
     # copying Mega Drive ROMs the whole time. The saves path has always passed
     # it; these two never did.
+    #
+    # And NOT --stats-one-line: that collapses the display to a totals line,
+    # losing the per-file block. A transfer of a thousand small BIOS files
+    # spends minutes between percentage changes, and the only thing that says
+    # it is alive rather than stuck is the name of the file it is on right
+    # now. --stats 1s keeps that moving.
+    #
+    # No --progress-terminal-width: the flag does not exist on every rclone we
+    # ship against (the saves scripts test for it with "rclone help | grep"
+    # before using it), and an unknown flag is a usage error that transfers
+    # nothing. rclone pads the file name out to a guessed width; the reader
+    # trims it, so the flag bought nothing worth a version check.
     rclone copy "${SRC}" "${TARGET}"  \
         "${SAVE_EXCLUDES[@]}" \
-        --progress --stats-one-line --stats 5s \
+        --progress --stats 1s \
         --log-file "${LOG_FILE}" --log-level INFO
     RC=$?
     if [ ${RC} -ne 0 ] && [ ${RC} -ne 9 ]; then

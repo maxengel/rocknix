@@ -3,7 +3,7 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 # EmulationStation game-end event hook: back up saves to the cloud when
-# enabled (Network Settings > Cloud Saves > Sync When Exiting A Game).
+# enabled (Game Settings > Cloud > Sync Saves When Exiting A Game).
 # Installed to /usr/bin/scripts/game-end/, one of the directories
 # EmulationStation scans for event scripts.
 

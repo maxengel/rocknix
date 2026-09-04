@@ -11,6 +11,7 @@
 #
 # Usage:
 #   cloud_content_backup --list           print local content directories
+#   cloud_content_backup --list-sizes     print them as name|bytes
 #   cloud_content_backup <dir> [<dir>..]  copy local dirs to the cloud
 #   cloud_content_backup --all            copy all local content directories
 #
@@ -28,7 +29,7 @@ log_message() {
 }
 
 if [ ! -e "/storage/.config/rclone/rclone.conf" ]; then
-    echo "rclone is not configured. Use 'Set Up Cloud Remote' first."
+    echo "rclone is not configured. Use Game Settings > Cloud > Connect Or Repair Cloud Storage first."
     exit 1
 fi
 
@@ -78,15 +79,39 @@ system_folders() {
 #
 # In scope: the systems ES declares, and bios. Everything else is out, and
 # stays out until somebody decides otherwise.
-# Does this directory hold anything the content tier would actually transfer?
-has_content() {
-    find "$1" -type f \
+# The content-tier files under a directory, as one find(1) definition.
+#
+# Extra find arguments are appended, so a caller can list them, count them or
+# total their sizes without restating the exclusions. "Does this hold
+# anything?" and "how much does it hold?" answering about different file sets
+# is exactly how a badge ends up contradicting the size printed next to it.
+#
+# Kept in step with SAVE_EXCLUDES below by hand -- there is no shared parser,
+# and a pattern added there must be added here.
+content_files() {
+    local dir="$1"; shift
+    find "${dir}" -type f \
         ! -name '*.srm' ! -name '*.sav' ! -name '*.fs' ! -name '*.state*' \
         ! -name '*.auto' ! -name '*.dsv*' ! -name '*.eep' ! -name '*.mpk' \
         ! -name '*.sra' ! -name '*.mcd' ! -name '*.mcr' \
         ! -path '*/save/*' ! -path '*/memcards/*' \
         ! -path '*/shared/savefiles/*' ! -path '*/PPSSPP/*' \
-        2>/dev/null | head -1 | grep -q .
+        "$@" 2>/dev/null
+}
+
+# Does this directory hold anything the content tier would actually transfer?
+has_content() {
+    content_files "$1" | head -1 | grep -q .
+}
+
+# How many bytes of it. Compared against the cloud's own total to answer
+# whether a system on this device matches what is stored -- an equal total is
+# not proof of identical files (see #53), so the caller must not phrase it as
+# one, but a different total is proof they differ, which is the case worth
+# flagging.
+content_bytes() {
+    content_files "$1" -exec stat -c '%s' {} + \
+        | awk '{ t += $1 } END { print t+0 }'
 }
 
 list_local_dirs() {
@@ -115,8 +140,6 @@ list_local_dirs() {
         # claim the device "has" GBA when what it had was GBA saves, and the
         # picker's badge repeated the claim.
         #
-        # Kept in step with SAVE_EXCLUDES below by hand -- there is no shared
-        # parser, and a pattern added there must be added here.
         has_content "${d}" || continue
         echo "${base}"
     done
@@ -163,6 +186,16 @@ case "${1}" in
         list_local_dirs
         exit $?
     ;;
+    --list-sizes)
+        # name|bytes for what this device holds, the mirror of
+        # cloud_content_restore --scan. The picker needs both sides to say
+        # whether a system here matches the copy in the cloud.
+        while IFS= read -r base; do
+            [ -n "${base}" ] || continue
+            printf '%s|%s\n' "${base}" "$(content_bytes "${DEST}/${base}")"
+        done < <(list_local_dirs)
+        exit 0
+    ;;
     --all)
         mapfile -t DIRS < <(list_local_dirs)
         if [ ${#DIRS[@]} -eq 0 ]; then
@@ -171,7 +204,7 @@ case "${1}" in
         fi
     ;;
     "")
-        echo "Usage: ${SCRIPT_NAME} --list | --all | <dir> [<dir>...]"
+        echo "Usage: ${SCRIPT_NAME} --list | --list-sizes | --all | <dir> [<dir>...]"
         exit 1
     ;;
     *)
@@ -217,9 +250,21 @@ for DIR in "${DIRS[@]}"; do
     # card sat at "0 B / 0 B, -, 0 B/s" through a restore that was in fact
     # copying Mega Drive ROMs the whole time. The saves path has always passed
     # it; these two never did.
+    #
+    # And NOT --stats-one-line: that collapses the display to a totals line,
+    # losing the per-file block. A transfer of a thousand small BIOS files
+    # spends minutes between percentage changes, and the only thing that says
+    # it is alive rather than stuck is the name of the file it is on right
+    # now. --stats 1s keeps that moving.
+    #
+    # No --progress-terminal-width: the flag does not exist on every rclone we
+    # ship against (the saves scripts test for it with "rclone help | grep"
+    # before using it), and an unknown flag is a usage error that transfers
+    # nothing. rclone pads the file name out to a guessed width; the reader
+    # trims it, so the flag bought nothing worth a version check.
     rclone copy "${SRC}" "${TARGET}"  \
         "${SAVE_EXCLUDES[@]}" \
-        --progress --stats-one-line --stats 5s \
+        --progress --stats 1s \
         --log-file "${LOG_FILE}" --log-level INFO
     RC=$?
     if [ ${RC} -ne 0 ] && [ ${RC} -ne 9 ]; then

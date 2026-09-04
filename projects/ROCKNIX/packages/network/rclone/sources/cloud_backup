@@ -520,7 +520,12 @@ backup_game_saves() {
     # work, and it also overrode any user rule that deliberately included a zip.
     # Derive the pattern from BACKUPFOLDER instead, so it keeps working if the
     # folder is renamed and is simply skipped when it lives outside the payload.
-    all_opts+=("--stats-one-line" "--exclude=bios/**")
+    # --stats-one-line collapses the whole display to a single totals line, so
+    # the per-file block goes away -- and the per-file block is the part that
+    # says the transfer is alive. A thousand small files spend minutes between
+    # percentage changes; the name of the file it is on right now is the only
+    # thing that distinguishes working from hung. The status page parses both.
+    all_opts+=("--stats" "1s" "--exclude=bios/**")
     local backup_rel="${BACKUPFOLDER#${BACKUPPATH%/}/}"
     if [ "${backup_rel}" != "${BACKUPFOLDER}" ]; then
         all_opts+=("--exclude=${backup_rel}/**")
@@ -636,7 +641,7 @@ backup_system_files() {
             "--progress"
             "--log-file" "/var/log/cloud_sync.log"
             "--include=/*.{zip,tar.gz}"
-            "--stats-one-line"
+            "--stats" "1s"
         )
 
         # Check if the rclone version supports the terminal width flag
