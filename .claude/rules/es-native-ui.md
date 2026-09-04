@@ -74,16 +74,32 @@ Values live in one place each, so a screen never makes its own decision.
   card pinned to a corner reads as a panel that failed to fit rather than a
   placement anybody chose, so anything wider than that is centred.
 
-  The three tiers, so a new surface picks the right one:
+  The four tiers, so a new surface picks the right one:
 
-  | Surface | Width | Position | Blocks input |
-  |---|---|---|---|
-  | `Splash` (boot, gamelist reload, launch) | full screen; its bar is 0.5W | whole screen | yes |
-  | `GuiInfoPopup` (toast) | fits text, capped 0.9W | top, centred | no |
-  | `AsyncNotificationComponent` (progress) | 0.9W | top, centred | no |
+  | Surface | Width | Position | Blocks input | Ends |
+  |---|---|---|---|---|
+  | `Splash` (boot, gamelist reload, launch) | full screen; its bar is 0.5W | whole screen | yes | when the work does |
+  | `GuiInfoPopup` (toast) | fits text, capped 0.9W | top, centred | no | on a timer |
+  | `AsyncNotificationComponent` (progress) | 0.9W | top, centred | no | when the work does |
+  | `GuiCloudTransfer` (long job) | full screen | whole screen | yes | **when dismissed** |
 
   Full-*screen* is a modal takeover, not a wider card — do not reach for it
   for work the player can keep playing through.
+
+  **Duration decides between the last two, and the deciding column is
+  "Ends".** A card is right for work somebody watches finish — a scrape, a
+  hash, a two-second save sync. It is wrong for anything long enough to walk
+  away from, because it closes itself the moment the job ends: a 1.4 GiB
+  restore left nothing behind but a log file, and the player had to ask
+  somebody else whether it had worked (2026-09-03).
+
+  So a job measured in minutes gets a page that outlives it. Show the live
+  line, a bar only where a real percentage exists behind it, elapsed time, and
+  then the outcome — and refuse input while it runs, because there is nothing
+  to choose and a stray press should not dismiss a page somebody is waiting
+  on. `GuiCloudTransfer` follows `GuiBackup`'s shape (GuiComponent +
+  BusyComponent + worker thread), which is this codebase's existing answer to
+  a long job with a page of its own.
 
 - **How solid a floating card is**: `NOTIFICATION_OPACITY` in
   `es-core/src/components/AsyncNotificationComponent.cpp`, **255**. Every
@@ -171,9 +187,15 @@ public:
   job and walks away — which is the normal way to run a backup — returns to a
   screen that has never heard of it. Long-running work must leave a durable
   answer to "did that work?" on the page that offered it: the backend stamps
-  the outcome somewhere device-local, the page reads it back (see
-  `cloudAddLastRunRow`). A log file is not that answer; nobody is going to be
-  told a path.
+  the outcome somewhere device-local, and the page reads it back.
+
+  That stamp is necessary and **not sufficient**, which took a second round to
+  learn. A row in a menu answers "did the last one work?" for somebody who
+  thinks to go and look; it does nothing for somebody standing in front of the
+  device when the surface they were watching vanishes. For anything long, the
+  durable answer has to be *on the screen that ran it* — see the fourth tier
+  above. A log file is not that answer either; nobody is going to be told a
+  path.
 
 - Dialog text promising behavior the backend doesn't do (pre-P1 backup dialogs).
 - Dropping to a fullscreen CLI for things a `GuiSettings` page + headless backend can do
