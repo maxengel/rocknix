@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# Move the build worktrees onto a freshly formatted disk.
+#
+# Deliberately does NOT migrate build roots. After an upstream merge with a
+# repo-wide metadata sweep every stamp is invalid anyway (see device-builds.md),
+# so copying hundreds of gigabytes of output only to delete it is waste. The
+# worktrees are re-created from git -- a checkout is ~100 MB -- and only
+# sources/, the content-addressed download cache, is carried across.
+#
+#   sudo parted /dev/nvme1n1 mklabel gpt
+#   sudo parted -a optimal /dev/nvme1n1 mkpart primary ext4 0% 100%
+#   sudo mkfs.ext4 -L rocknix-build /dev/nvme1n1p1
+#   ./tools/fork-newdrive /dev/nvme1n1p1
+set -euo pipefail
+
+PART="${1:-}"
+WT_DIR="${HOME}/Development/rocknix.worktrees"
+MAIN="${HOME}/Development/rocknix"
+OLD="${WT_DIR}.old"
+
+die() { echo "error: $*" >&2; exit 1; }
+
+[ -n "${PART}" ] || die "usage: $0 /dev/nvmeXn1p1"
+[ -b "${PART}" ] || die "${PART} is not a block device"
+[ -d "${MAIN}/.git" ] || die "${MAIN} is not the primary checkout"
+
+UUID=$(blkid -s UUID -o value "${PART}") || die "cannot read a UUID from ${PART}"
+[ -n "${UUID}" ] || die "no filesystem on ${PART} -- format it first"
+
+echo "Partition : ${PART}"
+echo "UUID      : ${UUID}"
+echo "Target    : ${WT_DIR}"
+echo
+grep -q "${UUID}" /etc/fstab && die "already in /etc/fstab; nothing to do"
+
+# Everything below needs root, and asks once.
+echo "This will:"
+echo "  1. mount ${PART} at ${WT_DIR} (the current one moves to ${OLD})"
+echo "  2. add it to /etc/fstab by UUID"
+echo "  3. copy sources/ across  ($(du -sh "${OLD:-${WT_DIR}}"/*/sources 2>/dev/null | head -1 | cut -f1) if present)"
+echo "  4. re-create the build worktrees from git"
+echo
+echo "It does NOT delete the old build roots. Check the result, then remove"
+echo "${OLD} yourself -- that is the irreversible half and it is not automated."
+read -r -p "Continue? [y/N] " ans
+[ "${ans}" = "y" ] || die "aborted"
+
+SRC_CACHE=""
+for c in "${WT_DIR}"/*/sources; do [ -d "$c" ] && { SRC_CACHE="$c"; break; }; done
+
+sudo mv "${WT_DIR}" "${OLD}"
+sudo mkdir -p "${WT_DIR}"
+sudo chown "$(id -u):$(id -g)" "${WT_DIR}"
+echo "UUID=${UUID}  ${WT_DIR}  ext4  defaults,noatime  0  2" | sudo tee -a /etc/fstab >/dev/null
+sudo mount "${WT_DIR}"
+sudo chown "$(id -u):$(id -g)" "${WT_DIR}"
+echo "mounted, fstab updated"
+
+# git no longer knows where the worktrees went; drop the stale registrations.
+git -C "${MAIN}" worktree prune
+
+for b in devices generic-x64 rclone-cleanup; do
+    git -C "${MAIN}" worktree add "${WT_DIR}/${b}" "build/${b}" 2>/dev/null \
+        || git -C "${MAIN}" worktree add --detach "${WT_DIR}/${b}" next
+    echo "  worktree: ${b}"
+done
+
+if [ -n "${SRC_CACHE}" ] && [ -d "${OLD}/$(basename "$(dirname "${SRC_CACHE}")")/sources" ]; then
+    D="${WT_DIR}/devices/sources"
+    echo "copying the download cache -- this is the only bulk copy"
+    mkdir -p "${D}"
+    rsync -aH --info=progress2 "${OLD}/$(basename "$(dirname "${SRC_CACHE}")")/sources/" "${D}/"
+fi
+
+echo
+echo "done. Old tree left at ${OLD} -- verify, then:  sudo rm -rf ${OLD}"
+df -h "${WT_DIR}" | tail -1

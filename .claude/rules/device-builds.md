@@ -132,6 +132,50 @@ root hits it on a libtool bump, and CI never does because CI is always clean.
    `sources/` is a separate directory, so a wipe costs rebuild time but no
    re-downloading.
 
+## A metadata-only upstream change still rebuilds everything
+
+`calculate_stamp` hashes the whole package directory, not the version in it.
+So a sweep that adds `PKG_SHA256` to hundreds of recipes — changing no
+version, no source, no flag — invalidates every one of their stamps.
+
+The 2026-09-04 merge brought 446 changed `package.mk` files. Separating them
+mattered:
+
+- **220** changed *only* by upstream's checksum sweep
+- **226** changed substantively
+
+and the practical answer is the same for both, because all 446 rebuild. That
+inverts the usual reasoning about a warm build root: the question is not "how
+much is stale?" but "is anything still valid?", and after a sweep like that,
+almost nothing is.
+
+So when a rebase includes a repo-wide metadata pass, do not price an
+incremental build against a wipe — they cost nearly the same, and the wipe
+also buys the clean-tree condition that avoids the libtool class of failure
+above. Check `df` first: on this machine four device roots plus the source
+cache came to 598 GB against 37 GB free, which made "rebuild in place" the
+option that could not actually run.
+
+`sources/` is separate and worth carrying across; the build roots are not.
+
+## Late binding bites hardest in a merge
+
+`packages/readme.md` says toolchain and path variables exist only after a
+package loads, so they belong inside functions. A merge is where a violation
+surfaces, because the conflict makes you read code nobody has read since it
+was written.
+
+`ppsspp-lr` carried a fork patch that stripped an aarch64-only compiler flag
+on x86_64. It sat at **file scope** and referenced `${PKG_BUILD}`, which is
+empty there — so the `sed -i` edited `/CMakeLists.txt` and had never once done
+its job. Nothing failed: the build succeeded, and the flag it was meant to
+remove was simply never removed. It moved into `post_unpack()` during the
+merge (`7650de7dd6`).
+
+When resolving a conflict in a fork-added block, check the block was ever
+correct before preserving it. A conflict is the cheapest opportunity to
+notice, and `tools/pkgcheck` will not catch a variable that is merely empty.
+
 ## A killed build poisons every package that was in flight
 
 Builds run packages in parallel, so a `Ctrl-C`, a SIGTERM or a machine
