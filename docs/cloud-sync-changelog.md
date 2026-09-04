@@ -3,6 +3,13 @@
 Draft for the eventual upstream PR body, the rocknix.org documentation pass,
 and a call for testing on devices we do not own.
 
+**This is a claims document.** Every sentence below asserts a behaviour, and a
+reader will act on it. Before anything here leaves the repo, each claim is
+checked against the code and against a run — the same bar as an acceptance
+criterion. The first draft asserted the layout migration was copy-verify-delete
+while the script still ran `rclone move` (#57, fixed `b9ea9f3fe8`); audit #41
+had already named that failure, and it was repeated here anyway.
+
 **Status:** built and tested on **H700** (Anbernic RG35XX SP) only. Everything
 below is verified working there unless a line says otherwise. Other targets
 build from the same sources but have not been run — that is the main thing this

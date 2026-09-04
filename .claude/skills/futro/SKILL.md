@@ -299,6 +299,16 @@ The first is the workhorse; the others complement it.
   pattern?" Be honest. Also: are there new patterns surfacing here
   that deserve register entries?
 
+- **Replaced-mechanism archetype** — for every mechanism the phase
+  *replaces* rather than adds (a hook moved into the app, a script folded
+  into a menu, a row consolidated into a flow), enumerate what the old one
+  **guarded, stamped, or exposed** that the new one does not, and name a
+  home for each. The survivor's ability to do the job is never the test.
+  Origin: 2026-09-04, rocknix — three consolidations in one day each
+  dropped a property only the casualty had (last-run stamps, a menu row, a
+  `pgrep` guard against concurrent syncs); the third was caught by the
+  retro's interaction-defect scan, not by planning. Blindspot 23, promoted
+  to `engineering-practices.md`.
 - **Honesty check on the simulation** — if simulation returned
   nothing, pick a different agent archetype and run again. The most
   common failure mode of a futro is simulating too gracefully.
