@@ -212,9 +212,14 @@ for DIR in "${DIRS[@]}"; do
     TARGET="$(remote_for "${DIR}")"
     log_message "Content backup: ${SRC} -> ${TARGET}"
     echo "Backing up ${DIR:-everything} to the cloud..."
+    # --progress is what puts the stats on stdout. With only --log-file they
+    # go to the log and the caller sees nothing -- which is why the progress
+    # card sat at "0 B / 0 B, -, 0 B/s" through a restore that was in fact
+    # copying Mega Drive ROMs the whole time. The saves path has always passed
+    # it; these two never did.
     rclone copy "${SRC}" "${TARGET}"  \
         "${SAVE_EXCLUDES[@]}" \
-        --stats-one-line --stats 5s \
+        --progress --stats-one-line --stats 5s \
         --log-file "${LOG_FILE}" --log-level INFO
     RC=$?
     if [ ${RC} -ne 0 ] && [ ${RC} -ne 9 ]; then
