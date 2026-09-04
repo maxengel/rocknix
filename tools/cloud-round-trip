@@ -374,6 +374,37 @@ def main():
                           "the save file was correctly withheld from content",
                           "SAVE DATA REACHED THE CONTENT TIER (blindspot 21)")
 
+    # A sync conflict is another client's dispute, and moving it makes it
+    # immortal: a device that downloads one uploads it again, so deleting it
+    # in the cloud looks like the provider putting it back. 271 directories of
+    # BIOS were resurrected exactly that way on 2026-09-04.
+    step("a sync-conflict artifact is carried by no tier, in either direction")
+    backend("reset")
+    conflict_dir = "Machines (Someone's conflicted copy 2026-09-03)"
+    dev.write(f"{croot}/Real.rom", b"content tier owns this")
+    dev.write(f"{croot}/{conflict_dir}/dup.rom", b"dropbox left this behind")
+    dev.write(f"{croot}/Other.sync-conflict-20260903-120000-ABCDEF.rom", b"syncthing")
+    dev.run(f"cloud_content_backup {shlex.quote(CONTENT_DIR)} >/dev/null 2>&1 || true",
+            check=False)
+    listing = backend("ls")
+    # Real.rom first: without it the exclusions below prove nothing, because a
+    # transfer that moved nothing at all also mentions no conflicted copy.
+    failures += not check("Real.rom" in listing,
+                          "the ordinary ROM reached the content tier",
+                          "nothing transferred - the exclusions cannot be judged")
+    failures += not check("conflicted copy" not in listing,
+                          "the conflicted copy was withheld from the cloud",
+                          "A CONFLICTED COPY WAS UPLOADED (D-CLOUD-022)")
+    failures += not check("sync-conflict" not in listing,
+                          "the Syncthing conflict file was withheld",
+                          "A .sync-conflict FILE WAS UPLOADED (D-CLOUD-022)")
+    # And it must not count as content this device holds, or the picker's
+    # badge reports a size the cloud will never agree with.
+    sizes = dev.run("cloud_content_backup --list-sizes 2>/dev/null || true")
+    failures += not check("conflicted copy" not in sizes,
+                          "--list-sizes ignores conflict artifacts",
+                          "--list-sizes counted a conflicted copy as content")
+
     step("every EmulationStation system path is carried by exactly one tier")
     # The complement of the rule above: a path in NO tier is silent data loss
     # on restore. Four were found this way (gmu/playlists, idtech, modules,
