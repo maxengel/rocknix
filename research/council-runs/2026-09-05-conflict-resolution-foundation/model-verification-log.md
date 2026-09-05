@@ -305,3 +305,39 @@ rather than architectural disagreements — the condition
 signal". Declared conflict of interest: the orchestrator (Opus 5) is not the
 `claude` seat (Fable 5.1), but the recommendation below favours that seat's
 plan, and the maintainer should weigh it knowing that.
+
+## r4 Step 2 gate
+
+All five reviews identity-verified. **PASS** (5/5).
+
+### The round answered its question
+
+The prompt asked every reviewer to sort each remaining difference into
+*liftable* or *architectural*, and to be strict about the distinction.
+
+- **`claude_peer_review-r4.md`**: "Between `gpt-revised_plan-r3.md` and
+  `kimi-revised_plan-r3.md` **nothing architectural remains** … A builder does
+  not have to choose between these plans; a builder has to integrate them."
+- **`gpt_peer_review-r4.md`**: "Between `claude-revised_plan-r3.md` and
+  `kimi-revised_plan-r3.md`, **nothing architectural remains.** … specification
+  omissions are not alternative architectures."
+- **`kimi_peer_review-r4.md`**: "**no architectural differences remain among the
+  four plans.** After the round-3 concessions they are one architecture in four
+  dialects … The two nearest candidates for 'architectural' are examined at the
+  end and both dissolve."
+- **`mistral_peer_review-r4.md`**: only bisync's role and deletion propagation.
+- **`gemini_peer_review-r4.md`** dissents and names three, each a concrete
+  choice rather than a rival architecture: the store's path
+  (`/storage/.local/share/rocknix/cloud-saves/` against
+  `/storage/.cache/cloud_sync/`), whether manifest transport takes one spawn
+  (`--files-from`) or two (payload then a manifest-last `copyto` as a commit
+  point), and whether an over-budget hashless verification defers the *upload*
+  or makes the player wait.
+
+Build-from positions: claude → kimi, gemini → claude, gpt → claude, kimi → gpt,
+mistral → kimi.
+
+**This is the round's real output, and it is worth more than the vote will be.**
+Three seats independently report that the deliberation has run out of
+architecture to argue about, and the dissenting seat's list is three
+enumerable choices with named options. That is Step 4.5's worklist.
