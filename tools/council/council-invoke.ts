@@ -32,7 +32,7 @@
  *
  * USAGE
  *
- *   npx tsx scripts/council-invoke.ts \
+ *   npx tsx tools/council/council-invoke.ts \
  *     --member <claude|gemini|gpt|kimi|mistral> \
  *     --prompt-file <path>           OR  --prompt "inline string" \
  *     --output <path-to-write-content> \
@@ -381,7 +381,7 @@ interface Provenance {
   // ─────────────────────────────────────────────────────────────────────────
   // Composite top-level fields (RC2 of #2991 — council-research provenance
   // schema v1.1.0 alignment). The digest lint
-  // (`scripts/lint-council-research-digests.ts`) requires these four fields
+  // (`tools/council/lint-council-research-digests.ts`) requires these four fields
   // to be present at the JSON root. We always emit them so a Facilitator-
   // dispatched member call that lands under `research/council-research/**`
   // passes both lints with zero findings.
@@ -975,7 +975,7 @@ const MISTRAL_BEDROCK_RECIPE: MemberRecipe = {
  * silent downgrade". That was false: the gemini seat carried effort=xhigh
  * from 2026-07-11 to 2026-08-27 against a model that advertises only
  * high/medium/low, and nothing ever complained. Seat efforts are now checked
- * against a pinned catalogue snapshot by scripts/lint-council-seat-efforts.ts
+ * against a pinned catalogue snapshot by tools/council/lint-council-seat-efforts.ts
  * (pre-commit + CI), and each run additionally attests reasoning EVIDENCE —
  * see verifyEffortEvidence below.
  */
@@ -1108,7 +1108,7 @@ function openRouterRecipe(id: MemberId, seat: OpenRouterSeat): MemberRecipe {
 /**
  * The seat table: slug + effort + optional provider pin, as DATA.
  *
- * Exported so scripts/lint-council-seat-efforts.ts can validate every seat's
+ * Exported so tools/council/lint-council-seat-efforts.ts can validate every seat's
  * effort against a pinned OpenRouter catalogue snapshot without importing the
  * whole invoker or parsing declaredModel strings. Keep this the single source
  * of seat configuration — the recipes below are derived from it.
@@ -2313,7 +2313,7 @@ function printHelp(): void {
   console.log(`Council Facilitator — direct-API dispatcher for council member invocations
 
 Usage:
-  npx tsx scripts/council-invoke.ts --member <id> \\
+  npx tsx tools/council/council-invoke.ts --member <id> \\
     (--prompt-file <path> | --prompt "inline") \\
     --output <path> [options]
 
@@ -2848,7 +2848,7 @@ async function main(): Promise<number> {
   }
 }
 
-// Run the CLI only when invoked directly (`tsx scripts/council-invoke.ts …`),
+// Run the CLI only when invoked directly (`tsx tools/council/council-invoke.ts …`),
 // not when imported by a unit test (importing must not execute main() /
 // process.exit()). `resolve` + `__filename` are already in scope; the
 // Facilitator's invocation path uses no symlink indirection.

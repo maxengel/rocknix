@@ -1,10 +1,17 @@
 #!/bin/bash
-# Council runner: loads the provider keys from outside the repo and execs the
-# Facilitator or the lint. Keys live in ~/.config/council/env (0600) as export
+# Council runner: loads the provider keys from outside the repo and execs one
+# of the council scripts. Keys live in ~/.config/council/env (0600) as export
 # lines; they never appear on a command line or in shell history.
 #
-#   tools/council/run invoke <facilitator args…>
-#   tools/council/run lint   <lint args…>
+#   tools/council/run <command> <args…>
+#
+#   invoke    council-invoke.ts        one member, one prompt, one output + provenance
+#   lint      lint-council-run.ts      completeness of a run directory, per step
+#   start     council-run-start.ts     anchor a run's genesis (creates/pushes verification-anchors/<run_id>)
+#   prompt    build-council-prompt.ts  compose a step prompt from the run manifest
+#   seal      write-step-seal.ts       seal a completed step
+#   summary   council-run-summary.ts   run-summary.{json,md} from the provenance siblings
+#   verify-pins | verify-chain | verify-seals | efforts | drift
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${COUNCIL_ENV_FILE:-$HOME/.config/council/env}"
@@ -15,8 +22,19 @@ if [ -r "$ENV_FILE" ]; then
     fi
     set -a; . "$ENV_FILE"; set +a
 fi
-case "${1:-}" in
-    invoke) shift; exec npx --prefix "$HERE" tsx "$HERE/council-invoke.ts" "$@" ;;
-    lint)   shift; exec npx --prefix "$HERE" tsx "$HERE/lint-council-run.ts" "$@" ;;
-    *)      echo "usage: tools/council/run invoke|lint <args…>" >&2; exit 2 ;;
+cmd="${1:-}"; shift || true
+case "$cmd" in
+    invoke)       s=council-invoke.ts ;;
+    lint)         s=lint-council-run.ts ;;
+    start)        s=council-run-start.ts ;;
+    prompt)       s=build-council-prompt.ts ;;
+    seal)         s=write-step-seal.ts ;;
+    summary)      s=council-run-summary.ts ;;
+    verify-pins)  s=verify-pins.ts ;;
+    verify-chain) s=verify-chain.ts ;;
+    verify-seals) s=verify-seals.ts ;;
+    efforts)      s=lint-council-seat-efforts.ts ;;
+    drift)        s=check-stale-blob-drift.ts ;;
+    *) sed -n '3,15p' "$0" >&2; exit 2 ;;
 esac
+exec npx --prefix "$HERE" tsx "$HERE/$s" "$@"

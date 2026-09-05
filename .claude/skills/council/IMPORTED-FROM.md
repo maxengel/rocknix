@@ -17,7 +17,7 @@ The scaffold estate's copy (`7bcac00`, 2026-08-02) is older and lacks
 
 | Estate path | Here | Why |
 | --- | --- | --- |
-| `scripts/council-invoke.ts`, `scripts/lib/council-verification.ts`, `scripts/lint-council-run.ts` | `tools/council/` | `scripts/` is the build engine in this repo; fork-only tools live under `tools/` and are enumerated in `.githooks/pre-push` |
+| every council script — `council-invoke.ts`, `lint-council-run.ts`, `council-run-start.ts`, `build-council-prompt.ts`, `write-step-seal.ts`, `council-run-summary.ts`, `verify-pins.ts`, `verify-chain.ts`, `verify-seals.ts`, `check-stale-blob-drift.ts`, `lint-council-seat-efforts.ts`, and `lib/council-verification.ts`, `lib/verifier-pins.ts` | `tools/council/` | `scripts/` is the build engine in this repo; fork-only tools live under `tools/` and are enumerated in `.githooks/pre-push` |
 | `.github/instructions/*.instructions.md` | `.claude/rules/council-substrate-integrity.md`, `.claude/rules/adversarial-council.md` | this repo's rules; `applyTo:` became `paths:` |
 | `.claude/agents/council-member-*.agent.md` | same path | the Facilitator does not read them; they document each seat. Copilot-only front-matter keys (`tools:`, `model:`) are kept as `x-tools:` / `x-declared-model:` so Claude Code does not reject the file |
 | `research/council-runs/` | same path | output home; a personal path on `next`, never in an upstream PR |
@@ -27,6 +27,10 @@ Patches applied (recorded so a refresh can re-apply them):
 1. Both scripts: `REPO_ROOT = resolve(__dirname, "..")` → `"../.."` — they now sit two levels below the repo root.
 2. Every literal `scripts/council-invoke.ts`, `scripts/lint-council-run.ts`, `scripts/lib/council-verification.ts` and the two instruction-file paths rewritten across the skill, references, rules and agents.
 3. `tools/council/package.json` (`"type": "module"`, `tsx`, the Bedrock client the Facilitator imports) so `npx tsx` runs the ESM sources; `node_modules/` is gitignored.
+4. `verifier-pins.json` and `council-seat-efforts.json` live **beside the scripts** (`tools/council/`), not at the repo root: `lib/verifier-pins.ts` (`readVerifierPins`, the `git show <ref>:…` accountability read), `council-run-start.ts` and `lint-council-seat-efforts.ts` are patched to that path. The pins were regenerated against the patched files with an accountable `repin_reason` naming the source pins; `tools/council/run verify-pins` passes.
+5. `docs/council-limits.md` (the 2026-09-03 limits audit) is carried under `docs/`.
+
+`tools/council/run <command>` fronts every script (`invoke`, `lint`, `start`, `prompt`, `seal`, `summary`, `verify-pins`, `verify-chain`, `verify-seals`, `efforts`, `drift`).
 
 Not imported: `council-research` (the 5-phase research wrapper) and its
 `researcher.agent.md`. Fetch them from the same source when a run needs
