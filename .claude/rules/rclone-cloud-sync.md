@@ -165,6 +165,40 @@ seeded from the `/usr/config/*.defaults` templates:
 - **Single remote only:** operations use `rclone listremotes | head -1` — the first
   configured remote. Don't assume multi-remote support without adding it deliberately.
 
+## The game-exit sync: `--saves-only --recent`
+
+ES runs `cloud_backup --yes --saves-only --recent` when a game exits
+(`FileData::launchGame`). Three things make it different from the full pass
+the boot sync and the menu rows run, and each was paid for on 2026-09-05 by an
+18-second sync that moved nothing:
+
+- **`--recent` is a time window, not a game name.** rclone gets
+  `--max-age <now - last successful backup + 600 s> --no-traverse`, so it walks
+  the local tree, considers only files newer than the last backup that worked,
+  and never lists the remote when nothing qualifies. The stamp is
+  `/storage/.cache/cloud_sync/last-backup`; no stamp, or a failed one, means a
+  full pass. Time rather than the ROM's name because standalone emulators keep
+  saves under their own layouts (PPSSPP by game ID, Dreamcast in a shared VMU
+  folder) and a name filter would miss every one of them. `--recent` always
+  copies -- a filtered sync would weigh deleting what the filter hid -- and it
+  skips the reachability `mkdir` and the `rmdirs` tidy, which are full-pass
+  jobs and a remote round trip each.
+- **Exit 3 and exit 4 are skips, not failures.** 3: another sync holds
+  `/var/run/cloud_sync.lock`. 4: no default route (`ip route`, no packets
+  sent), answered in a tenth of a second instead of rclone's 10 s connect and
+  20 s overall timeouts. Neither writes a last-run stamp. The card shows both
+  as SKIPPED.
+- **Under `--yes`, the console pauses are gone.** `pause N` is a no-op when
+  nobody is reading; three of them were seven seconds of every headless run.
+
+Budget on an H700, measured: **starting rclone costs about a second** by
+itself (`rclone version`: 1.0 s), a remote round trip one to two more. That is
+why the recent path spawns rclone once, reads the remote's name from
+`rclone.conf` instead of `rclone listremotes`, and probes nothing. Nothing
+changed: 18 s → 5 s. One save written: about 7 s, most of it Dropbox's commit.
+`tools/cloud-round-trip` asserts the window, the untouched remote, the
+single-file push, and the exit-4 timing.
+
 ## Progress output: what actually comes out of a pipe
 
 Every transfer here is read by a program, not a terminal — the ES status page

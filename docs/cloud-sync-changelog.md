@@ -77,6 +77,15 @@ config`. That is now a fallback rather than the path.
 - **Two-way sync never deletes.** The newest copy of each save is kept on both
   sides.
 
+- **Sync when exiting a game is quick, and honest about what it did.** It
+  pushes only saves changed since the last sync that worked, never lists the
+  cloud when nothing changed, and skips the system-settings archive (which has
+  its own row). On an RG35XX SP it went from 18 seconds to about 5 when nothing
+  changed; a new save adds a couple of seconds for the upload itself. With no
+  network it says SKIPPED at once instead of waiting for a timeout, and the
+  card shows rclone's comparison as "comparing save files", not as a progress
+  bar that looked like every game being uploaded.
+
 ## ROMs and BIOS ("content")
 
 New tier, separate from saves, for the bulk static content.
