@@ -18,7 +18,7 @@ Stripped from the archived copy (the live config on the device is untouched):
 
 | Source | Removed |
 |---|---|
-| `system.cfg` | every `*.key`, `*.password`, `*.token` line — Wi-Fi key, root password, RetroAchievements password/token, netplay password |
+| `system.cfg` | every `*.key`, `*.password`, `*.token` line — Wi-Fi key, root password, RetroAchievements password/token and web API key (`global.retroachievements.key`, #68), netplay password |
 | `es_settings.cfg` | `ScreenScraperPass` |
 | `retroarch.cfg` | `*_password`, `*_token`, `*_stream_key` values blanked (cheevos password/token, netplay + spectate, kiosk, settings, streaming keys) |
 
