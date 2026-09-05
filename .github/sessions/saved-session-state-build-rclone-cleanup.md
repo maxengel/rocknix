@@ -108,7 +108,6 @@ copy:  /workspace/artifacts/rocknix-images/
 
 ## Open Questions
 
-- **Remembered SAVE DATA tick** on the hub's BACK UP / RESTORE pages: unticking it once to push only ROMs makes every later BACK UP silently skip saves. Noted on D-UI-018; maintainer to take or leave.
 - **Push lorry** (3 commits ahead on the hub) — maintainer's call.
 - **ScreenScraper developer id** for fork builds — deferred (D-QA-003); Skraper meanwhile (D-QA-004).
 - **Slot identity across devices** (#24) — before the manifest schema (#20). **Audit-log format** (text vs rev 4's SQLite index) — #20.
