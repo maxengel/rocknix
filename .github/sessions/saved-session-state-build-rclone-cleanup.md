@@ -16,15 +16,19 @@ committed and pushed. The next session opens in
 for milestone **"Cloud Saves: Visual Conflict Resolution"** at **Step 2 — the
 futro**. Steps 1 through 1.7 were done on 2026-09-04.
 
-Three H700 images were built tonight. The device was rebooted into the second
-(BIOS CHECK, `BUILD_ID 4ff06e737d`); the third supersedes it and sits in the
-device's `/storage/.update/`, hash-verified, **not yet rebooted into**:
+Four H700 images were built tonight. The device was rebooted into the second
+(BIOS CHECK, `BUILD_ID 4ff06e737d`); the fourth supersedes the rest and sits in
+the device's `/storage/.update/`, hash-verified, **not yet rebooted into**:
 
 ```
-target/ROCKNIX-H700.aarch64-20260905.tar   (built 03:09 UTC from 1f1ac12d3c)
-sha256 c8da9a8cc9d626e97cd6541c7014975b84cfdbca54382fb752dddb54d2cb1d2d
+target/ROCKNIX-H700.aarch64-20260905.tar   (built 03:46 UTC from 2a1122df5a)
+sha256 7b15b7d701d89c9960788b5e9dd187a6b700e04b2904d81f8543843bcdc18f43
 copy:  /workspace/artifacts/rocknix-images/
 ```
+
+It carries everything from 2026-09-05: fast exit sync, BIOS CHECK, ScreenScraper
+developer pair on the device (#64), and the sync card's two-second hold on
+success (five on a skip or failure; ES `08180156f`, merged `4ef7ead3c`).
 
 ## Completed This Session (since the 2026-09-04 21:03Z stash)
 
@@ -84,7 +88,7 @@ copy:  /workspace/artifacts/rocknix-images/
 
 1. **Open Claude Code in `/workspace/repos/rocknix.worktrees/conflict-resolution`** and run `session-resume` (it will list this file under the fallback, since the branch names differ).
 2. **From there, retire this worktree**: `./tools/fork-worktree remove /home/max/Development/rocknix.worktrees/rclone-cleanup` (no build output; identical to `next`), then `git branch -d build/rclone-cleanup`, then `sudo rm -rf /home/max/Development/rocknix.worktrees` (root-owned 56 KB leftover under `devices/` from a Docker build). Optionally also remove the merged `fast-exit-sync` rocknix worktree and the merged ES worktrees `fast-exit-sync` and `bios-tabs`.
-3. **After the maintainer reboots the H700 again**, confirm `BUILD_ID` is `1f1ac12d3c`, then observe: the scraper's OPTIONS show DEVELOPER ID / DEVELOPER PASSWORD; with the maintainer's pair and account entered a one-game scrape succeeds; with the developer fields empty, starting a scrape shows the message; `backuptool backup` leaves neither password in the archive (closes #64); BIOS CHECK opens with NDS (4 DSi files missing) and PSX (1 missing, 2 unverified) at the top and Dreamcast / Game Gear / GB family as ALL PRESENT below; a press on a system opens its file list; exit a game → card reads "COMPARING SAVE FILES WITH THE CLOUD" and finishes in ~5 s; Wi-Fi off + exit a game → "SKIPPED - NO NETWORK CONNECTION" at once; exit a game during the boot sync → SKIPPED (still unobserved from the 09-04 list). Screenshots for #63/#27 baselines while there.
+3. **After the maintainer reboots the H700 again**, confirm `BUILD_ID` is `2a1122df5a`, then observe: the exit-sync card fades about two seconds after "COMPLETED SUCCESSFULLY"; the scraper's OPTIONS show DEVELOPER ID / DEVELOPER PASSWORD; with the maintainer's pair and account entered a one-game scrape succeeds; with the developer fields empty, starting a scrape shows the message; `backuptool backup` leaves neither password in the archive (closes #64); BIOS CHECK opens with NDS (4 DSi files missing) and PSX (1 missing, 2 unverified) at the top and Dreamcast / Game Gear / GB family as ALL PRESENT below; a press on a system opens its file list; exit a game → card reads "COMPARING SAVE FILES WITH THE CLOUD" and finishes in ~5 s; Wi-Fi off + exit a game → "SKIPPED - NO NETWORK CONNECTION" at once; exit a game during the boot sync → SKIPPED (still unobserved from the 09-04 list). Screenshots for #63/#27 baselines while there.
 4. **`begin-delivery` Step 2 — the futro** for the milestone with the #26 retro as input. Known inputs unchanged: `cloud_device_id` is the identity for #20/#21; slot identity (#24) is critical-path; #22 must use `take_cloud_lock` and must not let bisync rename savestate losers; #9 is a hard dependency of #22; #19 runs on the bench. New input: the audit log lives at `/storage/.cache/log/cloud_audit.log` (D-CLOUD-027) and whether rev 4's SQLite index survives beside it is #20's call; the game-exit sync is where conflict detection will hook in and it now runs `--recent`.
 5. **Run `tools/cloud-round-trip` on a VM** (#35) before building the wizard — it carries every deferred criterion plus tonight's three recent-sync steps and has never executed.
 6. Post-futro: Step 3 load tasks, Step 4 pre-flight (substrate: `rclone bisync` in 1.75.0; `getNextFreeSlot()`/`copyToSlot()` in the pinned ES).
