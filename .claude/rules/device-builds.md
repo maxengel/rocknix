@@ -237,6 +237,16 @@ The object-file test matters: a package that is merely *unpacked* also has
 a directory and no stamp, and cleaning it costs an unpack for nothing.
 Only the ones with compiled output were mid-flight.
 
+**Test for a configured build directory too.** A package killed during
+`configure` has no object files yet, so the test above misses it, and it
+fails on resume with a message that names nothing useful — meson says
+"Directory already configured" and then cannot find its own `build.dat`
+(`glu`, 2026-09-05, the second failure of a GENERIC_X64 cold build whose
+first failure had killed 22 packages in flight). Add
+`[ -d "$d/.<target-triple>" ]` to the condition — the per-target build
+subdirectory (e.g. `.x86_64-rocknix-linux-gnu`) exists once configure has
+started — and treat it as poisoned like compiled output.
+
 Then `rm -rf $R/.stamps/<pkg> $R/build/<pkg>-*` for each and resume.
 
 **If a resume fails the same way again after that sweep, stop clearing
