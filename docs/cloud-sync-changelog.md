@@ -160,6 +160,33 @@ is missing. The developer password is held back from settings backups, like the
 account password. Nothing secret is in the image, so the image can be shared.
 Upstream builds are unaffected: with a compiled-in pair the rows never appear.
 
+For anyone without developer access of their own, ScreenScraper publishes a
+shared developer account for this distribution on its forum (sujet 7455), on
+the condition that misuse closes it for everyone — which is the reason it is
+typed on the device rather than compiled into an image anyone can download.
+Entered under OPTIONS it scrapes as any developer pair does (2026-09-05, H700).
+
+## The scraper page
+
+Two fixes to the SCRAPER menu itself. Both are **built into the 2026-09-05
+image and staged on the H700; neither has been pressed through on the device
+yet** — this note goes when they have.
+
+- **Left/right belong to the rows again.** On a tabbed page the strip used to
+  take every left/right press unless the button bar was focused, so an option
+  row on SCRAPER → OPTIONS could not cycle in place — the only way to change a
+  value was A and the popup. The tab strip is now a focus stop of its own: up
+  from the first row lands on it, left/right there switch tabs, down returns to
+  the rows, and the wrap runs strip → rows → buttons → strip. A page opens on
+  its first row, and the help bar reads SWITCH TAB while the strip is lit.
+- **The SCRAPE tab remembers its filters.** GAMES TO SCRAPE FOR, IGNORE
+  RECENTLY SCRAPED GAMES and SYSTEMS INCLUDED were rebuilt with hard-coded
+  defaults every time the page opened *and every time the tab changed*, so a
+  choice made before stepping to OPTIONS was gone on the way back. They now
+  survive both. Opening the scraper from a game list still pre-selects that one
+  system, and that pre-selection is not what gets remembered. Defaults are
+  unchanged, so a fresh install and an upgraded device behave alike.
+
 ## Not in this change
 
 - **Save conflict resolution.** There is no conflict manager yet
@@ -169,6 +196,9 @@ Upstream builds are unaffected: with a compiled-in pair the rows never appear.
   save while offline, the older one is superseded, not merged.
 - `playcount` / `lastplayed` / `gametime` in a shared `gamelist.xml` are
   last-writer-wins across devices.
+- **A ScreenScraper login failure still shows the API's raw French text**, and
+  that text blames the account even when the developer pair is what was
+  rejected ([#66](https://github.com/maxengel/rocknix/issues/66) is open).
 
 ## Upgrading from an earlier cloud setup
 
