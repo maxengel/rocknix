@@ -1,177 +1,114 @@
 # Saved Session State
 
-> **Saved**: 2026-09-04T15:21:08Z
-> **Branch**: `build/rclone-cleanup`
-> **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
+> **Saved**: 2026-09-05T01:54:16Z
+> **Branch**: `build/rclone-cleanup` @ `1ed140ce2a` (== `next`, `feature/conflict-resolution`, `build/devices`, `build/generic-x64`, `feature/fast-exit-sync`)
+> **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution); ES: emulationstation-next `test/qa-integration` @ `ba5cbe9fe` (pinned)
 
 ## Current Focus
 
-Cloud-sync work is feature-complete for this round and **built into an image already
-sitting on the test device**. The session ended waiting on hardware: a Samsung 990 PRO
-4 TB has arrived and is about to be fitted, and the post-upstream-merge rebuild is
-deliberately deferred until it is in, because the primary disk has 37 GB free against
-598 GB of now-stale build roots.
+**Handoff to the conflict-resolution worktree.** This session ran in the old
+`~/Development/rocknix.worktrees/rclone-cleanup` checkout instead of the
+`/workspace` one the previous stash pointed at, and stayed here because the
+maintainer kept raising device findings worth fixing first. All of it is
+committed and pushed. The next session opens in
+`/workspace/repos/rocknix.worktrees/conflict-resolution` (branch
+`feature/conflict-resolution`, at `1ed140ce2a`) and resumes `begin-delivery`
+for milestone **"Cloud Saves: Visual Conflict Resolution"** at **Step 2 — the
+futro**. Steps 1 through 1.7 were done on 2026-09-04.
 
-Nothing is half-edited. Working tree is clean, everything is pushed, and
-`next == build/devices == build/generic-x64 == build/rclone-cleanup == 51f5c58d56`.
+Two H700 images were built tonight; the second supersedes the first and is in
+the device's `/storage/.update/`, hash-verified, **not yet rebooted into**:
 
-## Completed This Session
+```
+target/ROCKNIX-H700.aarch64-20260905.tar   (built 01:42 UTC from 4ff06e737d)
+sha256 777dd10962276d93b605345f55cfb48d72bd220aabd4b7d9dfae30e1be81f416
+copy:  /workspace/artifacts/rocknix-images/
+```
 
-Eight reported UI/UX items, plus what investigating them uncovered:
+## Completed This Session (since the 2026-09-04 21:03Z stash)
 
-- **Transfer status page** (`GuiCloudTransfer`) now reports rate, bytes, ETA and the
-  file being moved. Three separate causes, all silent: `BusyComponent::onSizeChanged`
-  returns at zero size and the page never gave it one; rclone ends each `--progress`
-  redraw *without* a newline so the next `Transferred:` is glued on; `--stats-one-line`
-  discarded the per-file block. Parser written against bytes captured off the device.
-- **Removed the drawn borders** from `AsyncNotificationComponent` and the transfer page
-  (D-UI-016) — they made a RetroAchievements sync look like another app's widget.
-- **Game-exit save sync moved into ES** (`FileData::launchGame` → `ThreadedCloudSync`),
-  replacing a silent OS hook that backgrounded output to `/dev/null`.
-- **Last-run times** follow the system locale and `ClockMode12`.
-- **BIOS page** distinguishes "nothing missing" from "nothing on this tab".
-- **`cloud_content_restore --match`** (#61) — the third content action, with UI in the
-  cloud hub. Previews, confirms, then runs in the transfer page.
-- **gamelist.xml** rides its own `--update` pass so the freshest list wins.
-- **Dropbox conflicted copies cleaned** — 21 directories merged and removed on both
-  sides, 0 kept, 970 files preserved. `CONFLICT_EXCLUDES` stops it recurring.
-- **Upstream merge**, 133 commits, base 2026-08-18. Six conflicts, all resolved.
-- **rclone `PKG_SHA256`** pinned for 1.75.0 and proven by a build.
-
-Bugs found that were **not** in the reported list:
-
-- `--match` ran with **no save exclusions at all** — the arrays were defined below the
-  case statement that calls them, so bash expanded them to nothing. A preview listed
-  `Mega Man & Bass (USA).srm` among files it would delete. (blindspot 24)
-- `gamelist.xml` was in the deletion set for every system — the *only* deletion several
-  systems had.
-- `ppsspp-lr`'s x86_64 flag strip referenced `${PKG_BUILD}` at file scope, so it had
-  been editing `/CMakeLists.txt` and **had never once worked**.
-- A multi-tier transfer reported success when an earlier tier failed (`A ; B ; C`
-  returns C's status).
-
-Regression: three save rows were removed as "duplicates" and had to be restored, along
-with `CHANGE CLOUD FOLDER` which went silently with the Network Settings group.
-(blindspot 23, D-UI-017)
+- **The four open questions closed.** D-INFRA-003/004/005 (serval's wired
+  outage was a failed ethernet cable, replaced 23:25Z; hub inventory back on
+  .53, both addresses' host keys pinned after byte-comparison with serval's
+  `/etc/ssh/*.pub`; lorry `2199a91`, `3a55949`, `2a7ee94`, **unpushed**).
+  D-QA-003/004 (no ScreenScraper dev id for fork builds; Skraper on a PC is
+  the interim route; Skraper 1.4.1 has no CLI — verified against the archive).
+  D-CLOUD-027 (conflict-wizard audit log in `/storage/.cache/log/`, because
+  `/var` is tmpfs and `/var/log` binds to that dir only in debug mode).
+  D-UI-018 (hub SAVE DATA tick and the GAME SETTINGS save rows both stay).
+- **Fast exit sync (D-CLOUD-028).** `cloud_backup --recent` (time window from
+  the last successful stamp + 600 s, `--no-traverse`, copy forced, no mkdir
+  probe, no rmdirs tidy), exit 4 = no default route decided with `ip route`
+  in 0.14 s, `pause` no-op under `--yes`, remote name from `rclone.conf`. ES
+  exit hook runs `--yes --saves-only --recent`; card shows `Checks:` as
+  "COMPARING SAVE FILES WITH THE CLOUD n / m"; exit 4 → SKIPPED. Measured on
+  the H700: nothing changed 18 s → 5.3 s; one new save ~10 s; no network 0.14 s.
+  Three regression steps in `tools/cloud-round-trip` (still never run, #35).
+- **BIOS CHECK rebuilt (D-UI-019).** One page, every system, ordered by what
+  needs doing (problems first, games-first among them, complete collapsed),
+  per-system drill-down; `rocknix-systems --all` emits PRESENT lines (default
+  output byte-identical; launch warning untouched); UNTESTED gets the warning
+  triangle. Menu entries read BIOS CHECK. ES `871a2a81f` merged `ba5cbe9fe`.
+- **Issues.** #63 filed (tab strips on five remaining screens); #27 got the
+  maintainer's spec and acceptance criteria; #42 got the docs follow-up for
+  `--recent` and exit 4.
+- **Docs.** Register rows D-INFRA-003/004/005, D-QA-003/004, D-CLOUD-027/028,
+  D-UI-018/019; `rclone-cloud-sync.md` gained *The game-exit sync* section;
+  changelog *Game saves* bullet; IA doc audit-log question settled; work logs
+  for 2026-09-04 (four entries) and 2026-09-05 (five entries).
 
 ## In Progress
 
-- **New 4 TB NVMe install**
-  - **Current state**: drive in hand, not yet fitted. `tools/fork-newdrive` written,
-    tested for syntax, registered in the pre-push guard.
-  - **What remains**: user fits it in a free Gen4 M.2 2280 slot, partitions and
-    formats, then the tool does the rest.
-- **Post-merge rebuild**
-  - **Current state**: deferred by choice. All build roots are stale.
-  - **What remains**: rebuild H700 on the new drive; RK3566 and SM8550 still parked.
+- Nothing in flight. Both builds finished; the second image is on the device
+  awaiting the maintainer's reboot.
 
 ## Next Steps
 
-1. **User fits the drive**, then:
-   `sudo parted /dev/nvme1n1 mklabel gpt && sudo parted -a optimal /dev/nvme1n1 mkpart primary ext4 0% 100% && sudo mkfs.ext4 -L rocknix-build /dev/nvme1n1p1`
-2. Run `./tools/fork-newdrive /dev/nvme1n1p1` — fstab by UUID, mount, `worktree prune`,
-   re-create the three build worktrees, copy only `sources/` (38 GB). It stops before
-   deleting the old tree; verify, then `sudo rm -rf ~/Development/rocknix.worktrees.old`
-   to reclaim ~598 GB.
-3. `make docker-image-pull` **before** the first build — `DOCKER_IMAGE` is `:latest` and
-   a cached image can be months old (`device-builds.md`).
-4. Rebuild H700 from clean (`build-dev.sh H700`, recreate it — it is untracked and lives
-   in the old tree). Kernel moves 7.1.2 → 7.2, so this is a long build.
-5. Verify the image, ship, and have the user test `MATCH THIS DEVICE TO THE CLOUD`
-   against the real `megadrive|remove|52|53193852` case.
-6. Resolve the two open questions below before more UI churn.
+1. **Open Claude Code in `/workspace/repos/rocknix.worktrees/conflict-resolution`** and run `session-resume` (it will list this file under the fallback, since the branch names differ).
+2. **From there, retire this worktree**: `./tools/fork-worktree remove /home/max/Development/rocknix.worktrees/rclone-cleanup` (no build output; identical to `next`), then `git branch -d build/rclone-cleanup`, then `sudo rm -rf /home/max/Development/rocknix.worktrees` (root-owned 56 KB leftover under `devices/` from a Docker build). Optionally also remove the merged `fast-exit-sync` rocknix worktree and the merged ES worktrees `fast-exit-sync` and `bios-tabs`.
+3. **After the maintainer reboots the H700**, confirm `BUILD_ID` is `4ff06e737d`, then observe: BIOS CHECK opens with NDS (4 DSi files missing) and PSX (1 missing, 2 unverified) at the top and Dreamcast / Game Gear / GB family as ALL PRESENT below; a press on a system opens its file list; exit a game → card reads "COMPARING SAVE FILES WITH THE CLOUD" and finishes in ~5 s; Wi-Fi off + exit a game → "SKIPPED - NO NETWORK CONNECTION" at once; exit a game during the boot sync → SKIPPED (still unobserved from the 09-04 list). Screenshots for #63/#27 baselines while there.
+4. **`begin-delivery` Step 2 — the futro** for the milestone with the #26 retro as input. Known inputs unchanged: `cloud_device_id` is the identity for #20/#21; slot identity (#24) is critical-path; #22 must use `take_cloud_lock` and must not let bisync rename savestate losers; #9 is a hard dependency of #22; #19 runs on the bench. New input: the audit log lives at `/storage/.cache/log/cloud_audit.log` (D-CLOUD-027) and whether rev 4's SQLite index survives beside it is #20's call; the game-exit sync is where conflict detection will hook in and it now runs `--recent`.
+5. **Run `tools/cloud-round-trip` on a VM** (#35) before building the wizard — it carries every deferred criterion plus tonight's three recent-sync steps and has never executed.
+6. Post-futro: Step 3 load tasks, Step 4 pre-flight (substrate: `rclone bisync` in 1.75.0; `getNextFreeSlot()`/`copyToSlot()` in the pinned ES).
 
-## Key Files Modified
+## Key Files Modified (this session)
 
 | File | Change | Notes |
 | --- | --- | --- |
-| `projects/ROCKNIX/packages/network/rclone/sources/cloud_content_restore` | Modified | `--match` / `--match --apply`; `METADATA_EXCLUDES`; exclude arrays lifted above the case statement; gamelist `--update` pass |
-| `projects/ROCKNIX/packages/network/rclone/sources/cloud_content_backup` | Modified | `--list-sizes`; `content_files()`/`content_bytes()`; `CONFLICT_EXCLUDES`; gamelist pass |
-| `projects/ROCKNIX/packages/network/rclone/sources/cloud_backup`, `cloud_restore` | Modified | `--stats 1s` replaces `--stats-one-line` |
-| `projects/ROCKNIX/packages/network/rclone/sources/cloud_saves_gameend.sh` | Deleted | ES owns the game-exit sync now |
-| `projects/ROCKNIX/packages/network/rclone/package.mk` | Modified | `PKG_SHA256` for 1.75.0, both arches; game-end hook install removed |
-| `projects/ROCKNIX/packages/linux/package.mk` | Modified | merge: H700 → 7.2, `GENERIC_X64` added to the `RK3326\|AMD64` arm |
-| `projects/ROCKNIX/packages/emulators/libretro/ppsspp-lr/package.mk` | Modified | merge: upstream Wayland block kept; fork's x86_64 strip moved into `post_unpack()` |
-| `scripts/mkimage` | Modified | merge: took upstream's removal of the `bootia32.efi` copy |
-| `tools/fork-newdrive` | Created | move build worktrees to a new disk without migrating build roots |
-| `tools/cloud-round-trip` | Modified | 2 new steps: sync-conflict artifacts, gamelist newest-wins |
-| `.githooks/pre-push` | Modified | `tools/fork-newdrive` added to `PERSONAL_PATTERNS` |
-| `docs/blindspot-register.md` | Modified | entries 23 and 24 |
-| `docs/decision-register.md` | Modified | D-UI-015/016/017, D-CLOUD-022/023 |
-| `.claude/rules/device-builds.md` | Modified | metadata-only changes rebuild everything; late binding in a merge |
-| `.claude/rules/rclone-cloud-sync.md` | Modified | rclone's piped progress format |
-| `.claude/rules/engineering-practices.md` | Modified | 4th "guards must fail closed" case |
-
-**EmulationStation** (separate repo, `~/Development/emulationstation-next`):
-`GuiCloudTransfer.{h,cpp}`, `GuiMenu.cpp`, `GuiBios.cpp`, `FileData.cpp`,
-`AsyncNotificationComponent.cpp`. Branch `feature/cloud-setup-polish`, merged to
-`test/qa-integration` at `11de9e22c`, which is what `package.mk` pins.
+| `projects/ROCKNIX/packages/network/rclone/sources/cloud_backup` | Modified | `--recent`, exit 4, `pause`, `first_remote`, no probe/tidy on recent, dead terminal-width probe removed (`8c623d3573`) |
+| `projects/ROCKNIX/packages/rocknix/sources/scripts/rocknix-systems` | Modified | `--all` mode, `BiosStatus.PRESENT`, `quietWhenEmpty` (`c842bbd31d`) |
+| `projects/ROCKNIX/packages/ui/emulationstation/package.mk` | Modified | pinned `ba5cbe9fe` (`4ff06e737d`); intermediate pin `d831eecbb` would not have compiled |
+| `tools/cloud-round-trip` | Modified | + three `--recent` steps (`ef4eb48bde`) |
+| `.claude/rules/rclone-cloud-sync.md` | Modified | + *The game-exit sync* section |
+| `docs/decision-register.md` | Modified | nine rows; D-UI-018 moved from Open to Decided |
+| `docs/cloud-sync-changelog.md`, `docs/es-menu-map.md`, `docs/conflict-wizard-ia.md` | Modified | exit-sync bullet; exit 4 beside exit 3; audit-log question settled |
+| `docs/work-logs/2026_09-work_logs/2026_09_0{4,5}-work_log.md` | Modified/Created | nine entries across the two days |
+| **ES** `FileData.cpp`, `ThreadedCloudSync.cpp` | Modified | `--saves-only --recent`; checks-line wording; exit 4 (`bc199045a`) |
+| **ES** `GuiBios.cpp/.h`, `ApiSystem.cpp/.h`, `GuiMenu.cpp` | Rewritten/Modified | one-list BIOS CHECK, `getBiosInformations(system, all)`, entry renamed (`871a2a81f`) |
+| **lorry** `fleet/personal/inventory/hosts.yml` | Modified | serval on .53 (wired), corrected history; 3 commits unpushed on the hub |
 
 ## Related Context
 
-- **Tracker**: #61 (match action — backend + UI landed, round-trip coverage outstanding),
-  #60 (audit), #59, #58, #57, #56
-- **Registers**: `docs/decision-register.md`, `docs/blindspot-register.md`
-- **Work log**: `docs/work-logs/2026_09-work_logs/2026_09_04-work_log.md`
-- **Rules**: `.claude/rules/rclone-cloud-sync.md`, `device-builds.md`, `es-native-ui.md`
-- **Safety tags**: `backup/devices-pre-sync-20260904`,
-  `backup/generic-x64-pre-sync-20260904` — the build branches' pre-reset state
+- **Tracker:** milestone "Cloud Saves: Visual Conflict Resolution" — #11 epic, #19–#25, 9 open / 0 closed, unchanged tonight. New/updated: #63 (tab strips), #27 (spec), #42 (docs follow-up), #35 (round-trip owes a run). Retro: #26 comment.
+- **`begin-delivery` state:** Steps 1–1.7 ✓ (2026-09-04); **Step 2 futro — next.**
+- **Design:** `docs/conflict-wizard-ia.md` rev 4, `docs/es-menu-map.md`, `docs/es-ui-style-guide.md`, `docs/savestate-compat-test.md`.
+- **Hub:** `ssh maxs-mac-mini`; lorry at `~/Development/boxlet-app` **on the mini** (not on serval); converge from `fleet/` with `-K`.
+- **Logs:** `/workspace/artifacts/h700-fast-exit-sync.log` (00:47 build), `/workspace/artifacts/h700-bios-check.log` (01:42 build).
 
 ## Notes for Next Session
 
-**The image already on the device is pre-merge and that is intentional.**
-`/storage/.update/ROCKNIX-H700.aarch64-20260904.tar`, sha256
-`253fb81cc0f95a175cd39854c6dced0976c485fc19cebddb4b0a1685cc111340`, verified on both
-ends. It carries every feature from this session on kernel 7.1.2. The user had not
-rebooted to apply it when the session ended. Do not rebuild just to "catch it up" —
-that costs hours and changes the kernel underneath a test in progress.
-
-**Device access**: `ssh rg35xxsp` (192.168.1.81), H700 / RG35XX SP. Root, no password.
-`/var/log` is tmpfs — it clears on reboot, so evidence of a failed background job
-disappears with it.
-
-**busybox, not GNU.** `find` has no `-newermt` and no `-printf`; `date -d "8 hours ago"`
-fails. Using either with `2>/dev/null` produces a confident wrong answer — this cost a
-false statement to the user this session. Use `-mmin`, and never silence stderr on a
-probe.
-
-**Verifying an rclone claim**: run the same command by hand and compare. That is what
-caught the empty-exclusions bug — the script said 1 deletion, the hand-run said 0, and
-the gap was the finding.
-
-**Build system**: `calculate_stamp` hashes the package *directory*, so upstream's
-`PKG_SHA256` sweep across 220 recipes invalidates all of them. 446 `package.mk` files
-changed in the merge; effectively nothing in any build root is still valid.
-
-**Do not migrate build roots to the new drive.** They are all stale. `sources/` (38 GB,
-content-addressed) is the only thing worth copying — `fork-newdrive` already does
-exactly this.
-
-**`tools/cloud-round-trip` has still never been executed.** It has grown several steps
-this session that are correct by construction and untested by running. It needs a device
-it can be destructive against — a GENERIC_X64 VM, not the handheld, which would mean
-adding a second rclone remote and changing what `rclone listremotes | head -1` returns
-for real use.
-
-**ScreenScraper**: absent from our builds because `SCREENSCRAPER_DEV_LOGIN` is a
-build-time define supplied from CI secrets, and it is a *developer* credential, not the
-user's paid account. `scripts/get_env` dumps every exported var into `.env`
-(gitignored), so `export SCREENSCRAPER_DEV_LOGIN='devid=…&devpassword=…'` before a build
-is all that is needed if a devid is ever obtained. IGDB and ArcadeDB *are* compiled in.
-
-**`saved-session-state-next.md` was left alone.** It belongs to `next`, this branch is
-currently identical to `next`, and deleting it here would propagate silently.
+- **Syntax-check ES before every bump.** The H700 cross g++ plus the flags from `build.ROCKNIX-H700.aarch64/build/emulationstation-*/.aarch64-rocknix-linux-gnu/compile_commands.json` with `-fsyntax-only` and the worktree's `es-core/src`/`es-app/src` first on the include path takes seconds and caught an error a pinned commit would have failed the build with. Recipe is in the 2026-09-05 work log.
+- **Check the diff landed before trusting a measurement of it.** Two patch scripts aborted on an anchor before writing; the device then re-timed the previous script and it read as the new one.
+- **Replacing a tar in `/storage/.update/`**: copy as a dot-prefixed `.part`, verify the hash on the device, `mv` over the old name. The updater's `*.tar` glob never sees the partial and the swap is atomic.
+- **Starting rclone costs ~1 s on the A53** (`rclone version`: 997 ms). Any per-run design that spawns it twice has already spent two seconds.
+- `fork-worktree sync` skips `build/devices` after a build because the build rewrites `documentation/PER_DEVICE_DOCUMENTATION/H700/SUPPORTED_EMULATORS_AND_CORES.md`; `git checkout -- documentation/` there first.
+- `/var/log` is tmpfs on a shipped device; nothing written there survives a reboot unless `debugging` or `/storage/.cache/debug.rocknix`. The device kept tonight's `cloud_sync.log` only because it had not rebooted.
+- The H700 is `ssh rg35xxsp` (192.168.1.81); it powers off between sessions — "no route to host" means off, not asleep.
+- `saved-session-state-next.md` left alone on purpose (belongs to `next`).
 
 ## Open Questions
 
-- **The hub's BACK UP / RESTORE flow keeps a `SAVE DATA` tick** that overlaps the three
-  restored save rows in Game Settings. Leave it (a backup that cannot include saves is
-  strange) or drop it so saves live in exactly one place? Asked twice, not yet answered,
-  and the reason it is still open is that two menu reversals already happened today.
-- **Which scraper route** the user wants: scrape on an official ROCKNIX release then
-  update back (genuine ScreenScraper art, `/storage` survives both hops); scrape from a
-  computer with Skyscraper/Skraper; or use IGDB now and re-scrape later.
-- **Separate filesystem vs extending the LVM volume group** for the new drive.
-  `fork-newdrive` assumes a separate filesystem mounted at
-  `~/Development/rocknix.worktrees`; extending `/` would need no path changes but spans
-  one filesystem across two disks.
+- **Remembered SAVE DATA tick** on the hub's BACK UP / RESTORE pages: unticking it once to push only ROMs makes every later BACK UP silently skip saves. Noted on D-UI-018; maintainer to take or leave.
+- **Push lorry** (3 commits ahead on the hub) — maintainer's call.
+- **ScreenScraper developer id** for fork builds — deferred (D-QA-003); Skraper meanwhile (D-QA-004).
+- **Slot identity across devices** (#24) — before the manifest schema (#20). **Audit-log format** (text vs rev 4's SQLite index) — #20.
