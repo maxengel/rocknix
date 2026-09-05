@@ -134,3 +134,58 @@ trim, same blank-line join, same roster order, same exclusion of the target
 member's own artifact — and fails closed if the sibling count is wrong or the
 placeholder is missing. It is run-local, not substrate; the pinned builder is
 untouched.
+
+## r2 Step 3 → r2 Step 4 gate
+
+All five round-2 revisions identity-verified, no retries, no substitutions:
+claude `anthropic/claude-fable-5.1`, gemini `google/gemini-3.1-pro-preview`,
+gpt `openai/gpt-6-astra`, kimi `moonshotai/kimi-k3`, mistral
+`mistralai/mistral-large-2512`. **PASS** (5/5).
+
+Orchestrator error worth recording beside the run: both background completion
+watchers were `until [ "$(pgrep -fc council-invoke)" = "0" ]` loops, and the
+loop's own command line contains that string, so `pgrep -f` counted the watcher
+itself and the condition could never hold. r2 Step 3 finished at 19:14 UTC and
+was not noticed until 20:24. No artifact was affected; the cost was wall-clock
+time. Watchers now use a pattern their own argv cannot contain
+(`council-invoke[.]ts --member`).
+
+## r2 Step 4 gate and vote tally (orchestrator record, not member-visible)
+
+All five votes identity-verified. **PASS** (5/5).
+
+| Voter | Voted for |
+| --- | --- |
+| claude | `gpt-revised_plan-r2.md` |
+| gemini | `kimi-revised_plan-r2.md` |
+| gpt | `claude-revised_plan-r2.md` |
+| kimi | `gpt-revised_plan-r2.md` |
+| mistral | `kimi-revised_plan-r2.md` |
+
+`gpt` 2 · `kimi` 2 · `claude` 1 → **2-2-1, a second genuine tie.**
+
+Round 1 was `gpt` 2 · `claude` 2 · `kimi` 1. The pairing rotated rather than
+converging, and the roster has now cast ten votes without gemini or mistral
+receiving one.
+
+### Why this tie is not the same as the first
+
+The r1 tie was about evidence. This one is about the **maintainer's amendment**,
+which the seats read two incompatible ways:
+
+- **gemini and mistral** read it as *build less*: `kimi-revised_plan-r2.md` wins
+  because it keeps V1 to a bounded discard store and defers lineage and receipts,
+  and because `claude-revised_plan-r2.md` builds a bounded lineage array to
+  prevent ping-pong, "solving a problem the maintainer explicitly stated is not
+  the primary case."
+- **kimi** reads it as *make undo reachable*: `gpt-revised_plan-r2.md` wins
+  because it is the only plan making an on-device recovery route a V1
+  requirement, and `claude-revised_plan-r2.md` explicitly defers on-device undo
+  to V2 — "a directory of bytes recoverable only through SSH is not a complete
+  console-first escape hatch."
+
+Both readings agree the discarded bytes must be retained by default. They differ
+on whether a **control the player can press** ships in V1. That is a product
+decision, not an evidence question, so it goes to the maintainer rather than to
+another round of deliberation. Recorded per `voting-rules.md`'s principle that a
+tie is escalated on its cause, not merely on its count.

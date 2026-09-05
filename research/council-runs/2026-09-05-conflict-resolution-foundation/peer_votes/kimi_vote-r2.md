@@ -1,0 +1,53 @@
+**Winner: `gpt-revised_plan-r2.md`.**
+
+## Reasoning
+
+All four plans converge on the same skeleton — manifest three-way classifier, bisync demoted to a spike, queued conflicts, checked ES merge adapter, retention default ON, #10 kept in the drop behind a launch rehearsal. The vote therefore turns on the brief's ordered criteria, and above all on the amendment: reversibility of a resolution is first-class, on by default, one step back, player-controlled.
+
+**Against `claude-revised_plan-r2.md` — the strongest loser.** Claude's plan is the most operationally detailed of the four: the 14-row verdict table, the spawn-by-spawn exit budget, the manifest-last commit, the option-hygiene mechanism, and the cleanest deletion policy (no V1 tombstones; D-CLOUD-030 compaction converges by acting on the remote side after hash re-verification). On buildability alone it might have won. But it fails the brief's first test as written: it explicitly defers on-device undo to V2 — "this is retention for *recovery*, not an undo control — a console-first undo is #25's V2 rollback" — and the brief states that a plan that cannot walk back a wrong choice at the wizard fails the amendment. Retaining the bytes by default is necessary but not sufficient; the maintainer's stated primary use case is the player undoing a mis-press, on the device, without SSH. Claude's plan also carries two smaller defects gpt avoids: it refuses `BACKUPPATH ≠ RESTOREPATH` with exit 1, where `cloud_sync.conf` [S33] documents split roots as a deliberate shipped feature (gpt and gemini both read it correctly as an import destination); and its boot-race byte-loss narrative is presented with more confidence than the embedded sources support — gpt correctly notes the `.auto.bak` mtime trace is partly unmeasured and that exit-time renumbering is conditional on `saveStateInfo` and slot sign [S38, S41], not "every exit."
+
+**Against `gemini-revised_plan-r2.md`.** A good synthesis with two signature gates (the #10 launch-behaviour rehearsal, the boot-race reproducer) that the winner absorbs. But it commits V1 to "intent-recorded receipts (tombstones)" for explicit ES deletions — hooking a delete path (`GuiSaveState.cpp`) that is not in the embedded corpus, the exact commitment claude retracted for that reason. It also asserts manifest transport "via in-spawn filters… not separate rclone spawns" as design fact, where claude marks the equivalent rclone behaviour [K] pending a spike, and it has no on-device undo route either. It is thinner throughout: no exit-code normalisation, no plan-file/journal semantics, no spawn budget analysis.
+
+**Against `mistral-revised_plan-r2.md`.** The weakest. It "withdraws" D-CLOUD-029 — an incoherent register action: the row is the maintainer's, the register is append-only, and the "interim posture" it then describes is D-CLOUD-029's own substance restated. It claims "≤ 2 rclone spawns… proven on H700" and says tombstones and provisional-agreement rows are "all implemented" — assumed-done claims (blindspot 13) about work nothing in the corpus shows has run; "provisional agreement" is a concept its own source plan withdrew after refutation. It is a sketch that defers its substance to `claude-revised_plan.md` and cites sibling plans as evidence, which the anti-self-citation constraint forbids treating as such.
+
+**Why gpt wins.** It is the only plan that makes the amendment's primary use case a V1 requirement: "a minimal native recovery route for retained decisions… reusing the same comparison/apply machinery. A directory of bytes recoverable only through SSH is not a complete console-first escape hatch" — with retention default ON, bounded at three, and crash safety independent of the toggle. It threads the amendment's edge-case clause exactly: unexplained absence fails closed (hold the survivor, surface an incomplete reconciliation, never infer deletion from a scan), while *explained* deletions keep their capability through version-specific retirement records — it does not abandon a capability to buy fail-closedness. Its grounding is the strictest: it corrects reviewers' overstatements from the embedded sources (conditional renumbering; `--backup-dir` not proven atomic or free; size is an inequality check, never equality; hashless-with-modtime still cannot certify a preserved-mtime change — the sharpest reading of the #53 shape). Its equality-establishes-agreement rule closes a real gap in schema §3 (first run, reflash, repaired state). Its resolution receipts and retirement records solve the sequential reversal and the D-CLOUD-030 resurrection loop in the general case, with "a retirement for X encountering Y is never permission to remove Y." Its proof order (P0 harness repair → P1 lifecycle → P2 rclone contract → P3 layout/units → P4 compatibility → P5 cost/recognition, then behavior gates) sequences every cheap falsifier before expensive building, and its §11 closes all eleven known unknowns with device and decision point.
+
+## What the winner needs to satisfy the amendment fully
+
+1. **Specify the recovery route's IA.** The plan mandates a native recovery route but says nothing about where it lives or what it does. Minimum: an entry on the wizard's done page and in GAME SETTINGS › CLOUD SETTINGS offering "restore the discarded copy" for the most recent resolution per path — restoring the loser to its original path (or next free slot for a state), keeping the winner, writing the audit line. One step back, most-recent-first, matching the amendment's stated depth.
+2. **Make undo a publication, not a local patch.** Restoring a discarded version must go through the same resolution machinery (fresh version, origin preserved, receipt/`resolves` recorded) so the other device converges on the undo instead of re-forking on the next pass.
+3. **Ground or scope the delete-retirement producer.** Retirement from "an explicit save-management delete action" must not depend on the unembedded `GuiSaveState.cpp` delete path. Either embed and rehearse that path, or scope V1 retirement to verified moves, compactions, and deletes initiated from the new cloud/savestate-manager UI.
+
+## Dissent — what the losing plans have that the winner does not fully absorb
+
+From **`claude-revised_plan-r2.md`**:
+- The **14-row verdict table** with the row-3 check `A ∈ E.lineage ∪ E.resolves ∪ {E.sha256}` — a more directly implementable classification artifact than gpt's prose table; should be lifted into #22's ACs.
+- **`resolves` carried in the manifest entry** — cheaper and better-colocated than gpt's separate resolution receipts; the receipt's content (operand hashes, chosen outputs) could ride in the entry the same way.
+- **`lineage` (bounded ≤8)** — handles multi-session offline descent concretely; gpt's "generation / parent observation" is vaguer.
+- **`remote_hash.observed`** — the expected-vs-observed distinction for backend hashes, which gpt gestures at but does not name as a field.
+- **The spawn-A–D exit-push budget with degrade paths** (zero spawns idle; drop spawn A if over budget) — more operationalized than gpt's "evidence/transfer/verification batches."
+- **`writer_instance` (O4)** — a concrete clock-free same-ID collision check; gpt names the cloned-card experiment but no field.
+- **Hold-back (O2)** for the absent-locally row — prevents resurrection churn without tombstones; valuable precisely if gpt's delete-retirement is scoped down per defect 2 above.
+- **The run-id result-file check** (a missing or stale result is *unknown*, never success) — a concrete safeguard beyond gpt's typed outcomes.
+- **The manifest-last commit** as the unit-atomicity story — crisper than gpt's "batch payload and owned manifest."
+- **Exclusions as command-line flags, each proven to fire by fixture** — the mechanism behind gpt's "assertion that effective restrictions are present."
+- Unknown-unknowns gpt's table lacks: **path-byte round-trip through backends** (case-folding/Unicode on names like `Mega Man & Bass (USA).state1`), **Dropbox write-rate limits** on many small operations, **stage and tree on different filesystems** (`stat -f` before install-by-rename), **prune archives by count never by date** under a wrong clock, the **thirty-item controller-only walkthrough** press test, and **`lsjson -R` cost over a large library**.
+- The **[C] marker** (council consensus not settled by corpus) — an honesty device the final synthesis should keep.
+
+From **`gemini-revised_plan-r2.md`**:
+- The **LAN no-default-route fix** — ping the remote's resolved IP, fall back to the route check only for WAN remotes; more concrete than gpt's "cheap local test."
+- The **boot-race reproducer** and **#10 rehearsal** as crisply named gates (gpt's P1/P3 cover them, but the formulations originated here).
+- The **harness-repair-as-unknown-unknown** framing (gpt's P0 absorbs it).
+
+From **`mistral-revised_plan-r2.md`**:
+- Little of unique substance; its value is two anti-patterns to avoid in the final document: the **D-CLOUD-029 "withdrawal"** (decided rows are refined by new rows, never withdrawn by a council member) and **"proven/implemented" claims for unrun work**. Its per-claim evidence-marker convention is worth keeping in spirit, as realised better by claude's [V]/[K]/[C]/[M].
+
+## Remaining defects in the winner
+
+1. **V1 scope weight.** Operation records + version-specific retirement + resolution receipts + generation observation + lifecycle gate + native recovery route is a great deal for one drop on a busybox handheld. The release boundary disciplines it, but the maintainer should confirm the must-ship list is genuinely one drop, and claude's lighter mechanisms (`resolves` in-entry, hash-folding + remote-side compaction) offer cheaper covers for two of the same failures if scope must shrink.
+2. **The unembedded delete path** (defect 3 above) — the one place the plan commits to observing behaviour the corpus does not show.
+3. **The recovery route has no IA** (amendment item 1) — mandated but undesigned.
+4. **The lifecycle gate's ES-death survival mechanism is unspecified** — the plan honestly names it as a required failure test, but the design (who owns the gate when ES dies and the emulator lives) is not given.
+5. **Receipts versus `resolves`** — the separate receipt store should be justified against claude's in-entry field, or merged into it; as written the plan carries two overlapping records for one purpose.
+
+None of these is a silent-overwrite path or a cardinal-rule violation; all are correctable in synthesis without disturbing the plan's spine.

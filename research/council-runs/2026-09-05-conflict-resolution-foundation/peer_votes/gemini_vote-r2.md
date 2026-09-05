@@ -1,0 +1,22 @@
+**Winner:** `kimi-revised_plan-r2.md`
+
+**Reasoning:**
+`kimi-revised_plan-r2.md` is the most grounded, implementable, and perfectly aligned with the maintainer's late amendment. It correctly identifies that the primary goal is protecting progress with a simple safety net, rather than building a distributed database. 
+
+- **Alignment with the amendment:** `kimi` focuses V1 strictly on a 1-step undo via rclone's `--backup-dir` and a local discard store (`/storage/.cache/cloud_sync/discarded/`), explicitly deferring complex lineage and anti-ping-pong receipts to V2. It handles the unmounted card edge case exactly as the maintainer instructed: it fails closed on unexplained absence (preventing data loss), but retains the capability of deletion propagation via receipts for recorded operations (ES deletes, renumbers, compactions).
+- **Comparison to `claude-revised_plan-r2.md`:** `claude` violates the amendment by building a deep `lineage` array (bounded at 8) and a `resolves` array to track history and prevent ping-ponging—solving a problem the maintainer explicitly stated is not the primary case. Furthermore, `claude` abandons deletion propagation entirely in V1 due to the unmounted card edge case, which the maintainer called out as an insufficient reason to abandon a capability.
+- **Comparison to `gpt-revised_plan-r2.md`:** `gpt` is highly detailed and grounded, but it retains "narrow resolution receipts" to solve the sequential reversal (ping-pong) issue, which again overcomplicates V1 for a non-primary use case. 
+- **Comparison to `mistral-revised_plan-r2.md`:** `mistral` is too brief and inherits `claude`'s flaws by explicitly building upon its schema and deletion posture.
+
+Furthermore, `kimi` is incredibly well-grounded in the corpus. It correctly identifies massive shipped hazards that others missed or underplayed, such as the `RCLONEOPTS` without `--filter-from` bug (which syncs `/storage/roms` with no allowlist), the `+ /**/*.srm` rule admitting Dropbox conflicted copies, the `-99` allocator defect for auto-only repositories, and the `es_savestates.cfg` launch behavior change.
+
+**What the winner needs to satisfy the amendment:**
+`kimi-revised_plan-r2.md` already has the exact mechanical foundation required (retention ON by default, count 3, `--backup-dir` for remote, local discard store for downloads). To fully satisfy the amendment's UX requirement, it simply needs a UI surface—such as an "Undo Last Resolution" button in the Cloud Settings or Save Manager—that reads from the discard store/dated siblings to restore the exact pre-resolution state (1 step back) for a given game.
+
+**Record dissent:**
+- **From `gpt-revised_plan-r2.md`:** The observation that loading a state can rewrite SRAM, meaning a state and the in-game save of one game are a progress dependency. `kimi` notes this as an experiment (Gate 10: "Does loading a state rewrite SRAM?"), but `gpt`'s insight that they must be resolved together if true is a critical safeguard that should be adopted if the experiment confirms it.
+- **From `claude-revised_plan-r2.md`:** The `clock_synced` field in the manifest to avoid trusting a device that booted without a network. `kimi` adopts the schema, but it is worth explicitly ensuring this field is utilized in the UI to warn the user when comparing timestamps, as a wrong clock can easily drive a wrong visual choice.
+
+**Remaining defects in the winner:**
+- `kimi` relies on an "ops journal" (`/storage/.cache/cloud_sync/ops.log`) patched into ES's `copyToSlot(move=true)` and `SaveState::remove()` to track moves and deletions. If ES crashes between the filesystem operation and writing to this journal, or if a user deletes a save via a file manager/SSH, the operation becomes an "unexplained absence" and fails closed. While safe (no data is lost), the implementation must ensure the ops journal write is as atomic as possible with the filesystem operation to minimize annoying resurrections.
+- `kimi` proposes using `--backup-dir` for both uploads and downloads. While rclone supports `--backup-dir` for local destinations, the exact rclone command for downloads must ensure the backup directory (`/storage/.cache/cloud_sync/discarded/<stamp>/`) is constructed correctly per-run so that it doesn't accidentally nest or overwrite previous discards if multiple files are restored in one pass.
