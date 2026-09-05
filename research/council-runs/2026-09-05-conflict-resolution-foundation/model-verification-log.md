@@ -212,3 +212,10 @@ Three to two, against two rounds of 2-2-1. These are review positions and not
 votes; the vote is r3 Step 4. Recorded here because the orchestrator's judgement
 that this round carried new information rather than churn is falsifiable, and
 this is the evidence either way.
+
+## r3 Step 3 gate
+
+All five round-3 revisions identity-verified. **PASS** (5/5). Sizes moved the
+way the amendments predicted: gpt's plan grew while shedding its version-one
+undo requirement, mistral's more than doubled toward a standalone document, and
+claude's and kimi's both shrank as lineage and receipt machinery came out.
