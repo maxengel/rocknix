@@ -89,3 +89,48 @@ The tally is deliberately absent from every r2 prompt. A vote count is an
 in-band observation of the run, and SKILL.md § responsibilities item 7 keeps
 those out of member prompts; telling the members which two plans led would
 bias the round toward them rather than toward the evidence.
+
+## r2 Step 2 → r2 Step 3 gate
+
+Reviews landed 18:40–18:53 UTC. All five identity-verified through the
+Facilitator (`council-facilitator@1.2.0`), no retries, no substitutions:
+
+| Seat | Declared | Served | Result |
+| --- | --- | --- | --- |
+| claude | `anthropic/claude-fable-5.1` (effort xhigh) | same | PASS |
+| gemini | `google/gemini-3.1-pro-preview` (effort high) | same | PASS |
+| gpt | `openai/gpt-6-astra` (effort max, provider pinned openai) | same | PASS |
+| kimi | `moonshotai/kimi-k3` (effort max) | same | PASS |
+| mistral | `mistralai/mistral-large-2512` | same | PASS |
+
+`verify-pins`, `verify-chain`, `verify-seals` and `lint --at-step 4` all OK
+after the round.
+
+**Gate verdict — r2 Step 2 → r2 Step 3: PASS** (5/5).
+
+### Why no `step2-r2` seal exists
+
+`lib/council-verification.ts::stepKeysThrough` enumerates `step1 … step4_5`,
+and `expected_outputs_per_step` in the manifest carries the same four keys. The
+seal and lint schemas therefore have **no round dimension**: sealing `step2` a
+second time would recompute the identical r1 payload, and there is no key a
+recursion round could be sealed under. Recursion-round artifacts are gated the
+other two ways instead — per-invocation identity verification inside the
+Facilitator, and the append-only ledger, whose chain `verify-chain` checks
+across every entry including the r2 ones. Recorded here rather than worked
+around, because moving the manifest's declared r1 paths onto r2 files to make
+the tool emit a seal would falsify what the r1 seals attest to.
+
+### Why the r2 prompts are assembled outside `build-council-prompt.ts`
+
+Same root cause. The builder injects whatever `expected_outputs_per_step`
+declares for the source step, so `--step 3` would inject the **r1** peer
+reviews into a round-2 revision prompt. r2 Step 2 avoided this by borrowing
+`--step 4` (whose source is the revised plans, which is what that round needed
+to inject). No step's declared source is the r2 peer reviews, so r2 Step 3's
+prompts are assembled by `_prompts/build-round-prompt.py`, which reproduces the
+builder's injection format exactly — same delimiters, same trailing-whitespace
+trim, same blank-line join, same roster order, same exclusion of the target
+member's own artifact — and fails closed if the sibling count is wrong or the
+placeholder is missing. It is run-local, not substrate; the pinned builder is
+untouched.
