@@ -1,0 +1,22 @@
+#!/bin/bash
+# Council runner: loads the provider keys from outside the repo and execs the
+# Facilitator or the lint. Keys live in ~/.config/council/env (0600) as export
+# lines; they never appear on a command line or in shell history.
+#
+#   tools/council/run invoke <facilitator args…>
+#   tools/council/run lint   <lint args…>
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="${COUNCIL_ENV_FILE:-$HOME/.config/council/env}"
+if [ -r "$ENV_FILE" ]; then
+    mode="$(stat -c %a "$ENV_FILE")"
+    if [ "$mode" != "600" ]; then
+        echo "refusing: $ENV_FILE is mode $mode, expected 600" >&2; exit 2
+    fi
+    set -a; . "$ENV_FILE"; set +a
+fi
+case "${1:-}" in
+    invoke) shift; exec npx --prefix "$HERE" tsx "$HERE/council-invoke.ts" "$@" ;;
+    lint)   shift; exec npx --prefix "$HERE" tsx "$HERE/lint-council-run.ts" "$@" ;;
+    *)      echo "usage: tools/council/run invoke|lint <args…>" >&2; exit 2 ;;
+esac

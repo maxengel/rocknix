@@ -32,7 +32,8 @@ in `.githooks/pre-push` are the same list; change one and change the other.
 - **Personal writing** — `docs/`, `plans/`
 - **Fork-only tools** — `tools/fork-publish-release`, `tools/cloud-test-backend`,
   `tools/cloud-round-trip`, `tools/lint-audit-artifacts`, `tools/vm-visual-qa`,
-  `tools/fork-worktree`
+  `tools/fork-worktree`, `tools/council/` (the council Facilitator, #70)
+- **Council artifacts** — `research/`
 - **Copilot-era leftovers** — `.github/copilot-instructions.md`, `.github/instructions/`,
   `.github/shared-copilot-knowledge/`, `tmp/shared-copilot-knowledge/`,
   `compare-prompt-versions.sh`. Retired from `next`, but branches and worktrees cut
