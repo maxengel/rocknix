@@ -1164,7 +1164,7 @@ export const OPENROUTER_SEATS: Record<Exclude<MemberId, "mistral">, OpenRouterSe
   // record still attests effort=xhigh. high is the real ceiling for this seat.
   gemini: { slug: "google/gemini-3.1-pro-preview", effort: "high", maxOutputTokens: 65536 },
   gpt: {
-    slug: "openai/gpt-5.6-sol",
+    slug: "openai/gpt-6-astra",
     effort: "max",
     maxOutputTokens: 128000,
     provider: { order: ["openai"], allow_fallbacks: false },

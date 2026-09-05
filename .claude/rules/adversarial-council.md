@@ -1,7 +1,7 @@
 ---
 paths:
   - "**"
-description: "Adversarial-analysis routing — never use the rubber-duck agent; use only the verified multi-model council process, with pinned Fable 5.1 and GPT-5.6 Sol seats. Read before requesting a challenge pass, independent adversarial analysis, or council deliberation."
+description: "Adversarial-analysis routing — never use the rubber-duck agent; use only the verified multi-model council process, with pinned Fable 5.1 and GPT-6 Astra seats. Read before requesting a challenge pass, independent adversarial analysis, or council deliberation."
 ---
 
 <!--
@@ -48,7 +48,7 @@ skill family ships; #136 extends the same floor to CI review agents):
 | Seat | Required model | Effort | Context | Routing |
 | --- | --- | --- | ---: | --- |
 | Claude | `anthropic/claude-fable-5.1` | `xhigh` | 1,000,000 | One pinned slug; no cross-model fallback |
-| GPT | `openai/gpt-5.6-sol` | `max` | 1,050,000 | OpenRouter provider pinned to OpenAI; `allow_fallbacks: false` |
+| GPT | `openai/gpt-6-astra` | `max` | 1,050,000 | OpenRouter provider pinned to OpenAI; `allow_fallbacks: false` |
 
 - **Deprecated:** Claude Fable 5, Claude Opus 5, Claude Opus 4.8, and GPT-5.5 must not occupy these seats (Fable 5 retired from the Claude seat 2026-09-03; Opus 5 is the coordination model, not a member). Kimi K2.6 must not occupy the Kimi seat (K3 since 2026-08-27).
 - Each invocation must capture the served model from the provider response and pass the

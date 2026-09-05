@@ -12,7 +12,7 @@ x-tools: [readFile, edit, search]
 # See `.claude/skills/council/references/model-verification.md` § Substrate C and
 # `council-member-claude.agent.md` for the full single-element-array rationale.
 x-declared-model:
-  - "openai/gpt-5.6-sol (OpenRouter, via openai, effort=max)"
+  - "openai/gpt-6-astra (OpenRouter, via openai, effort=max)"
 argument-hint: "Describe the analysis task or paste the step prompt"
 ---
 

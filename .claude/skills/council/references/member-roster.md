@@ -20,7 +20,7 @@ silent fallback when the council key is absent. See
 | ------------------------ | ------------------------------------------------------ | ---------- | -------------------- | --------- |
 | `council-member-claude`  | `anthropic/claude-fable-5.1`, effort=`xhigh`           | OpenRouter | `OPENROUTER_API_KEY` | 1,000,000 |
 | `council-member-gemini`  | `google/gemini-3.1-pro-preview`, effort=`high`         | OpenRouter | `OPENROUTER_API_KEY` | model pin |
-| `council-member-gpt`     | `openai/gpt-5.6-sol`, OpenAI provider, effort=`max`    | OpenRouter | `OPENROUTER_API_KEY` | 1,050,000 |
+| `council-member-gpt`     | `openai/gpt-6-astra`, OpenAI provider, effort=`max`    | OpenRouter | `OPENROUTER_API_KEY` | 1,050,000 |
 | `council-member-kimi`    | `moonshotai/kimi-k3`, effort=`max`                     | OpenRouter | `OPENROUTER_API_KEY` | model pin |
 | `council-member-mistral` | `mistralai/mistral-large-2512`, native (non-reasoning) | OpenRouter | `OPENROUTER_API_KEY` | model pin |
 
@@ -54,6 +54,12 @@ the authority, this table mirrors it):
   `high` → **`max`** (K3's own default). Claude stays `xhigh` because at xhigh it already
   used 54k of its 128k output cap on a real Step 1, and `max` risks the cap; Gemini stays
   `high`, its ceiling. Rationale and the full audit: `docs/council-limits.md`.
+
+- **2026-09-05** (rocknix) — GPT seat GPT-5.6 Sol → **GPT-6 Astra** (`openai/gpt-6-astra`,
+  listed on OpenRouter 2026-09-04; OpenAI's flagship successor, same 1.05M/128k shape,
+  advertises max/xhigh/high/medium/low with reasoning mandatory). Effort stays `max`.
+  Live-probed: identity PASS, 528 reasoning tokens on a reasoning prompt
+  (`research/seat-probes/2026-09-05-astra/`). Astra Pro (`reasoning.mode=pro`) noted, not seated.
 
 Live verification: see `research/seat-probes/` for dated Facilitator PONG probes
 of every seat (HTTP 200, provider-attested model identity, effort evidence).

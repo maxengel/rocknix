@@ -1,7 +1,7 @@
 {
   "schema_version": "council-seat-efforts@1.0.0",
   "note": "Pinned snapshot of each council seat's model and the reasoning efforts that model accepts. Refresh with `npx tsx scripts/lint-council-seat-efforts.ts --refresh` (needs OPENROUTER_API_KEY); validate with the same script (no network). Exists because the gemini seat carried effort=xhigh against a model supporting only high/medium/low from 2026-07-11 to 2026-08-27 and nothing caught it.",
-  "refreshed_at": "2026-09-03T22:32:34Z",
+  "refreshed_at": "2026-09-05T17:16:27Z",
   "refreshed_from": "https://openrouter.ai/api/v1/models",
   "models": {
     "anthropic/claude-fable-5.1": {
@@ -26,16 +26,15 @@
       "default_effort": "medium",
       "max_completion_tokens": 65536
     },
-    "openai/gpt-5.6-sol": {
+    "openai/gpt-6-astra": {
       "supported_efforts": [
         "max",
         "xhigh",
         "high",
         "medium",
-        "low",
-        "none"
+        "low"
       ],
-      "reasoning_mandatory": false,
+      "reasoning_mandatory": true,
       "default_effort": "medium",
       "max_completion_tokens": 128000
     },
