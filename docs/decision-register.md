@@ -84,3 +84,4 @@ This is the index of decisions; `docs/work-logs/` is the narrative,
 | ID | Question | Home |
 | --- | --- | --- |
 | D-CLOUD-008 | **Does the 17 MB archive get trimmed?** It is almost entirely OS-shipped PPSSPP assets, which is what makes size collisions ordinary rather than rare. Shrinking it narrows the #53 window but does not close it. | #45 |
+| D-CLOUD-030 | **Is a save version identified by the sha256 of its stored bytes, with slot and file name as attributes?** Proposed in `docs/save-manifest-schema.md` §1 (2026-09-05): rename-invariant (ES renumbers by `copyToSlot(move)`), backend-independent, cheap. Consequence to decide with it: a renumber followed by a sync can leave one hash in two slots — compact the higher copy after hash re-verification, or leave both. | #24, #20 |
