@@ -111,20 +111,13 @@ worktree and the hook file is simply absent, so git runs no hook and the guard s
 does not apply. The better the PR branch, the less the guard exists. Pointing at the main
 checkout by absolute path pins the hook to something every branch can see.
 
-Only `pr/*` branches are guarded; pushing `next` or `feature/*` is unaffected.
+Only `pr/*` branches are guarded for personal paths; **every** branch is scanned
+for credential-shaped lines (below).
 
 The guard also enforces the **console-first content rule** on `pr/*` branches: added
 lines in product-surface scripts (`projects/ROCKNIX/packages/network/rclone/sources/`,
 `projects/ROCKNIX/packages/rocknix/sources/scripts/`) must not mention QEMU/VMs,
 user-mode networking, port forwards, or loopback QA addresses.
-
-## When to merge up
-
-- One self-contained change per PR, scoped like the commit convention
-  (`<package>` or `<DEVICE> - <subsystem>`); don't bundle unrelated work.
-- The change builds for at least one target device.
-- `pr/<name>` is rebased on current `upstream/next` (fetch first) to minimize conflicts.
-- Never include personal/infra paths (the guard enforces this).
 
 The guard also scans **every** pushed branch — not only `pr/*` — for lines
 shaped like credentials (`SECRET_PATTERNS` in the hook: a ScreenScraper
@@ -140,6 +133,14 @@ carries the two this fork actually handles.
 nothing and says nothing — that was the state for a day after the 2026-09-04
 move to `/workspace` (blindspot 26). `tools/fork-worktree list` and `sync` now
 warn when the path is unset, relative, or missing.
+
+## When to merge up
+
+- One self-contained change per PR, scoped like the commit convention
+  (`<package>` or `<DEVICE> - <subsystem>`); don't bundle unrelated work.
+- The change builds for at least one target device.
+- `pr/<name>` is rebased on current `upstream/next` (fetch first) to minimize conflicts.
+- Never include personal/infra paths (the guard enforces this).
 
 ## Keep `next` synced
 
