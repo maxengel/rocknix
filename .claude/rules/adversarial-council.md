@@ -58,6 +58,35 @@ skill family ships; #136 extends the same floor to CI review agents):
 - Council stages remain serial-gated even when member calls within a stage run in
   parallel. The active roster is fixed for the run.
 
+## Seats write to different lengths, and length is not quality
+
+The gemini and mistral seats return **substantially shorter artifacts than the
+other three, every time**. Maintainer, 2026-09-05: *"Gemini and Mistral will
+always come back with thinner plans."* On the conflict-resolution run their
+round-2 plans were a few pages against roughly seventy kilobytes each from
+claude, gpt and kimi — and gemini's few pages carried the whole architecture,
+including the argument that made two other seats change position on deletion
+propagation.
+
+So do not read brevity as a defect, and do not report it as one. A short
+artifact from these two seats is the expected shape of their output, not a
+signal that the seat under-performed, mis-parsed the prompt, or hit a token
+cap. Check the seat's log for `outcome=success` and a completion count well
+under the cap before wondering; on that run both seats finished in around
+70-110 s while the long seats ran 12-17 minutes, which is the same fact seen
+from the other side.
+
+**The consequence to watch is the vote, not the prose.** Members vote on each
+other's plans, and a plan that is thorough-looking is easy to mistake for a
+plan that is thorough. Across both rounds of the conflict-resolution run,
+gemini and mistral received **zero votes between them** while their arguments
+were adopted by name into the winning positions. Two rounds is far too small a
+sample to separate "shorter" from "less complete", and nothing here justifies
+weighting a vote or changing a prompt mid-run. It does justify the
+orchestrator reading all five plans rather than ranking them by weight, and
+carrying a losing seat's specific contributions into Step 5 by name — which the
+vote prompt already asks every member to do under **Record dissent**.
+
 ## Why
 
 Adversarial value comes from distinct, attested model perspectives and structured peer
