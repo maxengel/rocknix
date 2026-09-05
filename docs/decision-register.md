@@ -83,3 +83,4 @@ This is the index of decisions; `docs/work-logs/` is the narrative,
 | ID | Question | Home |
 | --- | --- | --- |
 | D-CLOUD-008 | **Does the 17 MB archive get trimmed?** It is almost entirely OS-shipped PPSSPP assets, which is what makes size collisions ordinary rather than rare. Shrinking it narrows the #53 window but does not close it. | #45 |
+| D-CLOUD-029 | **Do the shipped write paths gain `--update` on the game-exit upload now, as a stopgap, before #22 gates them on last-synced state?** Today `cloud_backup --recent` is `copy` without `--update` and overwrites a newer cloud copy; the boot pair is `copy --update` both ways, which is newest-wins by construction (blindspot 28). `--update` on the exit upload turns clobber into skip and costs the case that should wait anyway; it does not fix the boot pair. Futro 2026-09-05, §4. | #22 |

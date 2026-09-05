@@ -209,7 +209,7 @@ Two consequences worth planning around:
 | What | Where | Why |
 |---|---|---|
 | Per-save sidecar manifest | beside the save, **synced** | the truth; small, text, independently resolvable |
-| History / audit database | `/storage/.cache/cloud-sync/history.db`, **never synced** | a local index, rebuildable from the sidecars |
+| History / audit database | `/storage/.cache/cloud_sync/history.db`, **never synced** | a local index, rebuildable from the sidecars |
 
 `/storage/.cache/` is the established home for state that persists but can be
 regenerated — it already holds `ld.so.cache`, `fontconfig`, `cores`,
@@ -259,9 +259,9 @@ surfaced in the UI or is purely a support artefact.
   shipped device and `/var/log` binds to `/storage/.cache/log` only in debug
   mode, so that directory is the one place that is both "with the other logs"
   and still there after the reboot that follows a wrong choice. Whether the
-  SQLite index above is still needed beside a text log is #20's call; note
-  the stamps already live under `/storage/.cache/cloud_sync/` (underscore),
-  not `cloud-sync/` as the table says.
+  SQLite index above is still needed beside a text log is #20's call; the
+  stamps already live under `/storage/.cache/cloud_sync/` (underscore), and the
+  table above now uses the same directory.
 - **Slot numbers are not stable identities across devices.** ES renames files
   when it renumbers after a deletion, which sync sees as delete + create, so
   the same state can arrive on another device under a different slot number.
