@@ -30,7 +30,9 @@ pre_configure_target() {
     if [ -z "${!key}" ]; then
       echo "WARNING: ${key} not declared, will not build support."
     else
-      echo "USING: ${key} = ${!key}"
+      # The name, never the value: a developer password or an API key does
+      # not belong in a build log that gets pasted into an issue.
+      echo "USING: ${key} (set)"
     fi
   done
 
