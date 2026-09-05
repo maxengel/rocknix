@@ -327,12 +327,13 @@ case "${1}" in
                 > "${STAGING}/storage/.config/system/configs/system.cfg"
         fi
 
-        # es_settings.cfg holds the ScreenScraper password; strip it from the
-        # archived copy the same way.
+        # es_settings.cfg holds the ScreenScraper account password and, on
+        # fork builds, the developer password entered on the device (#64);
+        # strip both from the archived copy the same way.
         if grep -qxF "${ESCFG}" "${SECRETLIST}"
         then
             mkdir -p "${STAGING}/storage/.config/emulationstation"
-            grep -v 'name="ScreenScraperPass"' "${ESCFG}" \
+            grep -v -e 'name="ScreenScraperPass"' -e 'name="ScreenScraperDevPass"' "${ESCFG}" \
                 > "${STAGING}/storage/.config/emulationstation/es_settings.cfg"
         fi
 
