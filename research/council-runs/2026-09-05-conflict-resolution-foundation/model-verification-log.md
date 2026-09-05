@@ -354,3 +354,57 @@ architecture, since three seats report none is left to choose, but the document
 a builder is handed, with the losing plans' provisions travelling into it.
 Members are told to weigh how much of the work is already decided in a plan, and
 explicitly not to weigh length in either direction.
+
+## r4 Step 4 gate and vote tally — MAJORITY
+
+All five votes identity-verified. **PASS** (5/5).
+
+| Voter | Voted for |
+| --- | --- |
+| claude | `kimi-revised_plan-r4.md` |
+| gemini | `claude-revised_plan-r4.md` |
+| gpt | `claude-revised_plan-r4.md` |
+| kimi | `claude-revised_plan-r4.md` |
+| mistral | `kimi-revised_plan-r4.md` |
+
+**`claude-revised_plan-r4.md` wins 3-2** — a majority under `voting-rules.md`
+for a 5-member roster, and the run's first non-tie after three consecutive
+2-2-1 rounds (r1 `gpt` 2 · `claude` 2 · `kimi` 1; r2 `gpt` 2 · `kimi` 2 ·
+`claude` 1; r3 as r1).
+
+**The author's own seat voted against it.** The `claude` seat voted
+`kimi-revised_plan-r4.md`; the winner was chosen by the three seats that did not
+write it. The orchestrator's declared conflict of interest at r3 — that its
+recommendation favoured the seat sharing its family name — is therefore moot on
+the outcome: the orchestrator made no recommendation this round, the maintainer
+chose to recurse instead, and the plan won on votes from gemini, gpt and kimi.
+
+### Why it won, in the voters' words
+
+All three cite the same axis, which is the one the r4 vote prompt named — not
+architecture, but how much an implementer must still invent.
+
+- `gpt_vote-r4.md`: "The decisive distinction is not architecture — all four
+  substantially converge on an application-owned reconciler using rclone — but
+  how much an implementer must still invent." It votes for the winner "after
+  correcting the blockers below", and says plainly it is "not safe to implement
+  entirely literally yet".
+- `kimi_vote-r4.md`: gpt "matches most of this in contract form but more often
+  as tables and prose than as copy-pasteable literals … those are sections the
+  final synthesis can lift wholesale, which is exactly what the brief says
+  happens to losing plans' provisions. The reverse is not true: claude's literal
+  store and apply specification is the thing that cannot be reconstructed from
+  gpt's document without re-deciding it."
+- `gemini_vote-r4.md`: the winner "goes one step further into implementation
+  reality by writing out the exact JSON structures and shell commands", where
+  gpt's data contracts "require the builder to invent the JSON keys and
+  nesting".
+
+### Margin triggers Step 4.5
+
+3-2 is a winning margin of 1, inside `voting-rules.md` § "Margin-driven
+consensus integration" (offer at ≤ 2). Step 4.5 is therefore **offered to the
+maintainer**, who had already raised it. The winning plan remains the base;
+dissent primitives are integrated where they do not conflict and listed
+explicitly where they do. `gpt_vote-r4.md`'s blockers are the first input, since
+the winning vote itself is conditional on them.
