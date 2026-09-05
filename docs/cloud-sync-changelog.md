@@ -168,9 +168,11 @@ Entered under OPTIONS it scrapes as any developer pair does (2026-09-05, H700).
 
 ## The scraper page
 
-Two fixes to the SCRAPER menu itself. Both are **built into the 2026-09-05
-image and staged on the H700; neither has been pressed through on the device
-yet** — this note goes when they have.
+Two fixes to the SCRAPER menu itself. Both are in the 2026-09-05 image; the
+maintainer rebooted into it, reports the page working well, and is running a
+full ScreenScraper re-scrape on it. The itemised press-through on
+[#65](https://github.com/maxengel/rocknix/issues/65) and
+[#67](https://github.com/maxengel/rocknix/issues/67) is still to be ticked.
 
 - **Left/right belong to the rows again.** On a tabbed page the strip used to
   take every left/right press unless the button bar was focused, so an option
