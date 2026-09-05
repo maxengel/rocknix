@@ -2,7 +2,7 @@
 
 **Rev 1, 2026-09-05.** Section 1 is the identity decision #24 asked for
 (**D-CLOUD-030**, decided). Sections 2–4 follow from it. Sections 5–8 are the
-shape and the fields (#20; proposed as D-CLOUD-031, awaiting sign-off), with
+shape and the fields (#20; **D-CLOUD-031**, signed off 2026-09-05), with
 worked examples from the RG35XX SP. Section 9 is what other issues must supply.
 Nothing here is built.
 
@@ -121,7 +121,7 @@ changed-on-both ask) made mechanical. Two refinements:
 
 ## 5. Shape: one file per device, under `savestates/`, covering every save
 
-**Proposed (D-CLOUD-031, refines D-CLOUD-017):**
+**Decided (D-CLOUD-031, refines D-CLOUD-017; maintainer sign-off 2026-09-05):**
 
 ```
 <sync root>/savestates/.rocknix/manifest-<device-id>.json
@@ -341,7 +341,5 @@ modification times equal to the device's, which is what `mtime` is for.
 
 ## Open
 
-- **D-CLOUD-031** — the shape in §5 (one JSON per device under
-  `savestates/.rocknix/`, covering in-game saves as well; agreement record
-  local and unsynced). Awaiting the maintainer's sign-off, which is #20's
-  acceptance gate.
+- Nothing on the schema itself. An alignment review against every prior and
+  planned cloud-sync issue precedes capture (#21), at the maintainer's request.
