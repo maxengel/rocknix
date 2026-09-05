@@ -63,3 +63,29 @@ orchestrator settled it against the source rather than by majority:
 into any member prompt: the Step 3 prompts carry the peer reviews, so the
 deliberation is already in a position to correct itself, and the orchestrator
 does not put its own findings into members' mouths.
+
+## Gate verdicts, continued
+
+- **Step 2 → Step 3: PASS** (5/5 identity verified).
+- **Step 3 → Step 4: PASS** (5/5).
+- **Step 4 → r2: PASS** (5/5). Tally 2-2-1 is a genuine tie under
+  `voting-rules.md` (5-member roster), so the run recurses per
+  `tie-breaking-recursion.md` rather than pausing. The 1-vote outlier
+  (`kimi-revised_plan.md`) stays in the candidate set.
+
+## Round-1 vote tally (orchestrator record, not member-visible)
+
+| Voter | Voted for |
+| --- | --- |
+| claude | `gpt-revised_plan.md` |
+| gemini | `gpt-revised_plan.md` |
+| gpt | `claude-revised_plan.md` |
+| kimi | `claude-revised_plan.md` |
+| mistral | `kimi-revised_plan.md` |
+
+`gpt` 2 · `claude` 2 · `kimi` 1 → **2-2-1 tie → recurse to r2.**
+
+The tally is deliberately absent from every r2 prompt. A vote count is an
+in-band observation of the run, and SKILL.md § responsibilities item 7 keeps
+those out of member prompts; telling the members which two plans led would
+bias the round toward them rather than toward the evidence.
