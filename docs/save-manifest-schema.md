@@ -1,7 +1,7 @@
 # Save manifest — identity, lineage, and schema (#20, #24)
 
 **Rev 0, 2026-09-05.** Section 1 is the identity decision #24 asked for
-(proposed as D-CLOUD-030, awaiting the maintainer's word). Sections 2–4 follow
+(**D-CLOUD-030, decided by the maintainer 2026-09-05**). Sections 2–4 follow
 from it. Section 5 lists what rev 1 — the shape and the field list, #20 — must
 decide, with the constraints already established. Nothing here is built.
 
@@ -12,7 +12,7 @@ sees) and to the futro of 2026-09-05 in
 
 ## 1. A save version is identified by its content hash
 
-**Proposed (D-CLOUD-030):** the identity of a save version is the **sha256 of
+**Decided (D-CLOUD-030):** the identity of a save version is the **sha256 of
 the file's bytes as stored** — the compressed savestate (`savestate_file_compression
 = "true"` on the device) or the raw in-game save. **The slot number and the
 file name are attributes** of where a version currently sits on one device,
@@ -37,11 +37,15 @@ Consequences the rest of the design inherits:
   conflict, no new version. A new hash at a path is a *new version*.
 - **A slot mismatch is not a conflict.** The same hash sitting in slot 1 on
   the device and slot 2 in the cloud is one version in two places.
-- **Duplicates can appear.** A renumber on one side followed by a sync can
-  leave one game with the same hash in two slots. Proposed merge rule for
-  #24, **open**: compact by removing the higher-numbered copy *after*
-  re-verifying the two hashes are equal — nothing is lost by construction —
-  or leave both and let the player delete. Maintainer's call.
+- **Duplicates are compacted.** A renumber on one side followed by a sync can
+  leave one game with the same hash in two slots (one extra copy per affected
+  state per divergent renumber; with today's copy-only sync, also the deleted
+  state coming back). **Rule (D-CLOUD-030):** after a sync, the higher-numbered
+  copy is removed, only after both files are re-read and the hashes found
+  equal, and the removal is written to the audit log. The player is already
+  asked to resolve real conflicts; a duplicate is nothing to decide and must
+  not pile up beside them. Distinct from *keep discarded saves*, which retains
+  deliberately chosen losers up to a count.
 - **The thumbnail is not part of the identity.** `{{romfilename}}.state{{slot}}.png`
   travels with its state by path; `copyToSlot` already moves both.
 
@@ -145,7 +149,5 @@ Constraints already established, cited so they are not re-derived:
 
 ## Open
 
-- **D-CLOUD-030** — identity is the sha256 of the stored bytes (§1).
-- **Duplicate compaction after a renumber** — remove the higher slot after
-  hash re-verification, or leave both (§1, #24).
-- **Rev 1 name and field list** (§5, #20).
+- **Rev 1 name and field list** (§5, #20). D-CLOUD-030 (identity and
+  duplicate compaction) is decided, §1.
