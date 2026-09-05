@@ -8,14 +8,22 @@ LOG_FILE="/var/log/cloud_sync.log"
 START_TIME=$(date +%s)
 
 # Non-interactive support for hooks and the ES menu:
-#   --yes / -y   answer prompts automatically (headless mode)
-#   --method=X   override the configured transfer method (sync or copy)
-#   --update     add rclone --update (skip files newer on the destination)
+#   --yes / -y      answer prompts automatically (headless mode)
+#   --method=X      override the configured transfer method (sync or copy)
+#   --update        add rclone --update (skip files newer on the destination)
+#   --system-only   only the system-settings archive, not the saves
+#   --saves-only    only the saves, not the system-settings archive
+#   --recent        only saves changed since the last backup that worked
+#                   (the game-exit sync); always copies, never tidies
+#
+# Exit codes the UI names: 3 = skipped, another cloud sync holds the lock;
+# 4 = skipped, no network. Neither writes a last-run stamp -- nothing ran.
 ASSUME_YES=0
 METHOD_OVERRIDE=""
 EXTRA_UPDATE=0
 SYSTEM_ONLY=0
 SAVES_ONLY=0
+RECENT=0
 for CLI_ARG in "$@"; do
     case "${CLI_ARG}" in
         --yes|-y) ASSUME_YES=1 ;;
@@ -24,8 +32,17 @@ for CLI_ARG in "$@"; do
         --update) EXTRA_UPDATE=1 ;;
         --system-only) SYSTEM_ONLY=1 ;;
         --saves-only) SAVES_ONLY=1 ;;
+        --recent) RECENT=1 ;;
     esac
 done
+
+# The pauses between sections give somebody reading the console time to see
+# each one before the next scrolls in. Under --yes nobody is reading -- the
+# output is a progress card -- and seven seconds of them was over a third of
+# an 18-second game-exit sync that moved nothing.
+pause() {
+    [ "${ASSUME_YES}" -eq 1 ] || sleep "$1"
+}
 
 # Logging function that supports different severity levels and optional console output
 # 
@@ -78,6 +95,37 @@ take_cloud_lock() {
         echo "Another cloud sync is already running. Skipped."
         log_message "skipped: another cloud sync holds ${CLOUD_SYNC_LOCK}" "false"
         exit 3
+    fi
+}
+
+# The configured remote, by the same rule as `rclone listremotes | head -1`
+# -- the first section name in sorted order -- read from the config file
+# rather than by starting rclone, which costs close to a second on a
+# handheld. rclone remains the fallback if the file yields nothing.
+first_remote() {
+    local name
+    name=$(grep -o '^\[[^]]*\]' /storage/.config/rclone/rclone.conf 2>/dev/null \
+           | tr -d '[]' | sort | head -1)
+    if [ -n "${name}" ]; then
+        printf '%s:\n' "${name}"
+    else
+        rclone listremotes 2>/dev/null | head -1
+    fi
+}
+
+# Exit 4 means "skipped: no network". Answered locally, before any remote
+# probe: with no default route there is nothing to sync to, and somebody
+# exiting a game should not wait for rclone to time out learning that (its
+# probe allows 10 s to connect and 20 s overall). `ip route` reads the
+# kernel's table and sends nothing. An interface that is up but has no route
+# yet -- Wi-Fi still associating, DHCP not answered -- counts as no network,
+# which is the right answer for a job that has to run now.
+check_network_link() {
+    if ! ip -4 route show default 2>/dev/null | grep -q . \
+       && ! ip -6 route show default 2>/dev/null | grep -q .; then
+        echo "No network connection. Skipped."
+        log_message "skipped: no default route, nothing to sync to" "false"
+        exit 4
     fi
 }
 
@@ -254,7 +302,7 @@ clean_exit() {
 check_rclone_config() {
     if [ ! -e "/storage/.config/rclone/rclone.conf" ]; then
         log_message "You must configure rclone before using this tool. Run \`rclone config\` to get started." "true" "ERROR"
-        sleep 3
+        pause 3
         clean_exit 1
     fi
 }
@@ -283,7 +331,7 @@ check_internet() {
     else
         log_message "You're not currently connected to the internet.\nPlease verify your settings and then try again." "true" "ERROR"
     fi
-    sleep 3
+    pause 3
     clean_exit 1
 }
 
@@ -330,13 +378,13 @@ load_config() {
             /usr/bin/cloud_sync_cleanup_duplicates.sh "$conf_file"
             echo -e "\e[34m> Duplicates cleaned.\e[0m"
             echo ""
-            sleep 2
+            pause 2
             # Reload config after cleanup
             source /storage/.config/cloud_sync.conf
         else
             # User selected No or cancelled - skip cleanup
             echo -e "\e[34m> Skipped duplicate cleanup.\e[0m"
-            sleep 2
+            pause 2
         fi
 
     fi
@@ -500,18 +548,26 @@ backup_game_saves() {
     fi
     
     # Test remote connectivity before starting backup
-    log_message "Testing remote connectivity: ${REMOTENAME}" "false"
-    rclone lsd "${REMOTENAME}" > /dev/null 2>&1
-    local remote_test_status=$?
-    if [ $remote_test_status -ne 0 ]; then
-        log_message "Remote ${REMOTENAME} is not accessible (exit code: $remote_test_status)" "true" "ERROR"
-        report_rclone_error $remote_test_status "Remote connectivity test"
-        return $remote_test_status
+    # One round trip, not two. mkdir is idempotent and fails when the remote
+    # is unreachable or the sign-in has lapsed, so it is the reachability
+    # test as well; the separate `lsd` that used to run first cost a second
+    # on every run and proved nothing mkdir would not. If it fails,
+    # check_internet does the slower work of wording the error.
+    #
+    # Not on a --recent run. Starting rclone costs a second on a handheld
+    # and the round trip another, for a directory the copy creates itself
+    # when it has something to put there -- and when it has nothing, the
+    # remote is never touched at all, which is the point of --recent. If
+    # the copy does fail, check_internet words the reason below.
+    if [ "${RECENT}" -eq 0 ]; then
+        log_message "Ensuring remote sync path exists: ${REMOTENAME}${SYNCPATH}" "false"
+        if ! rclone mkdir "${REMOTENAME}${SYNCPATH}" \
+                --contimeout 10s --timeout 20s --low-level-retries 1 --retries 1 2>/dev/null; then
+            log_message "Remote ${REMOTENAME}${SYNCPATH} is not accessible" "true" "ERROR"
+            check_internet
+            return 1
+        fi
     fi
-    
-    # Ensure remote sync path exists
-    log_message "Ensuring remote sync path exists: ${REMOTENAME}${SYNCPATH}" "false"
-    rclone mkdir "${REMOTENAME}${SYNCPATH}" 2>/dev/null
     
     # Pass an explicit --log-level INFO when LOG_LEVEL is INFO
     local rclone_debug=""
@@ -553,6 +609,43 @@ backup_game_saves() {
     # percentage changes; the name of the file it is on right now is the only
     # thing that distinguishes working from hung. The status page parses both.
     all_opts+=("--stats" "1s" "--exclude=bios/**")
+
+    # --recent: only what changed since the last backup that worked.
+    #
+    # The game-exit sync used to compare every save on the device with the
+    # cloud. On a handheld that reads as "syncing every game", and it costs
+    # a remote listing each time. rclone can restrict a copy to files newer
+    # than an age, and skip listing the destination when few files qualify
+    # -- so with nothing changed it never touches the remote at all. The age
+    # runs from the last successful backup's stamp plus ten minutes, so a
+    # save written while that run was still listing stays inside the window.
+    #
+    # Time, not the game's name. Standalone emulators keep saves under their
+    # own layouts -- PPSSPP by game ID, Dreamcast in a shared VMU folder --
+    # and a filter on the ROM's name would miss every one of them.
+    #
+    # Full passes still happen: the boot sync and the menu rows. A file with
+    # a wrong mtime -- written before the clock was set, on a device with no
+    # RTC -- is caught there. And --recent always copies: a filtered sync
+    # would weigh deleting whatever the filter hid.
+    if [ "${RECENT}" -eq 1 ]; then
+        local stamp_file=/storage/.cache/cloud_sync/last-backup
+        local stamp_epoch="" stamp_rc="" now
+        now=$(date +%s)
+        [ -r "${stamp_file}" ] && read -r stamp_epoch stamp_rc < "${stamp_file}"
+        if [ "${stamp_rc}" = "0" ] && [ "${stamp_epoch:-0}" -gt 0 ] 2>/dev/null \
+           && [ "${stamp_epoch}" -le "${now}" ]; then
+            local age=$(( now - stamp_epoch + 600 ))
+            all_opts+=("--max-age" "${age}s" "--no-traverse")
+            log_message "recent: only files changed in the last ${age}s, since the last successful backup" "false"
+        else
+            log_message "recent: no successful backup on record, doing a full pass" "false"
+        fi
+        if [ "${BACKUPMETHOD}" != "copy" ]; then
+            log_message "recent: BACKUPMETHOD=${BACKUPMETHOD} overridden to copy for a filtered run" "false"
+            BACKUPMETHOD="copy"
+        fi
+    fi
     local backup_rel="${BACKUPFOLDER#${BACKUPPATH%/}/}"
     if [ "${backup_rel}" != "${BACKUPFOLDER}" ]; then
         all_opts+=("--exclude=${backup_rel}/**")
@@ -579,9 +672,6 @@ backup_game_saves() {
     fi
 
     # Check if the rclone version supports the terminal width flag
-    if rclone help | grep -q progress-terminal-width; then
-        all_opts+=("--progress-terminal-width=80")
-    fi
 
     # Execute rclone with enhanced error handling
     execute_rclone_with_error_handling \
@@ -591,6 +681,11 @@ backup_game_saves() {
         "${all_opts[@]}"
 
     BACKUP_STATUS=$?
+    # A --recent run skipped the reachability probe; if the copy itself
+    # failed, find out whether the remote or the network is the reason.
+    if [ "${RECENT}" -eq 1 ] && [ $BACKUP_STATUS -ne 0 ] && [ $BACKUP_STATUS -ne 9 ]; then
+        check_internet
+    fi
 
     # Report the result with detailed error information
     report_rclone_error $BACKUP_STATUS "Game saves backup"
@@ -598,7 +693,9 @@ backup_game_saves() {
     # RSYNCRMDIR: after a successful backup, remove orphaned empty directories on
     # the remote (--leave-root keeps the sync root itself). Exit code 9 means
     # "success, no files transferred", so tidy on that too.
-    if [ "${RSYNCRMDIR}" == "yes" ] && { [ $BACKUP_STATUS -eq 0 ] || [ $BACKUP_STATUS -eq 9 ]; }; then
+    # Not on a --recent run: tidying is a full-pass job, and a remote round
+    # trip the game-exit sync should not pay.
+    if [ "${RSYNCRMDIR}" == "yes" ] && [ "${RECENT}" -eq 0 ] && { [ $BACKUP_STATUS -eq 0 ] || [ $BACKUP_STATUS -eq 9 ]; }; then
         log_message "Removing orphaned empty directories on remote: ${REMOTENAME}${SYNCPATH}" "false"
         rclone rmdirs "${REMOTENAME}${SYNCPATH}" --leave-root --log-file /var/log/cloud_sync.log 2>/dev/null \
             || log_message "Empty-directory cleanup failed (non-fatal)" "true" "WARN"
@@ -914,13 +1011,16 @@ MANIFEST
 
 # Main script execution
 main() {
+    check_network_link
     check_rclone_config
-    check_internet
+    # backup_game_saves proves the remote reachable with the mkdir it needs
+    # anyway; only the system-only path has no such step of its own.
+    [ "${SYSTEM_ONLY}" -eq 1 ] && check_internet
     load_config
     
     # Use the first configured remote in rclone
     # Note: This assumes at least one remote is configured and the first one should be used
-    REMOTENAME=`rclone listremotes | head -1`
+    REMOTENAME=$(first_remote)
     
     # Begin main script operations with user-friendly header
     log_message "=> ${OS_NAME} CLOUD BACKUP UTILITY\n"
@@ -936,7 +1036,7 @@ main() {
     fi
     
     # Add a pause for better visual separation between operations
-    sleep 2
+    pause 2
     
     # Execute Part 2: System backup file transfer
     # This backs up system backup files (zip files) if enabled in configuration
@@ -949,7 +1049,7 @@ main() {
     fi
     
     # Add a pause before summary
-    sleep 2
+    pause 2
     
     # Add a line break for better visual separation
     echo
@@ -963,7 +1063,7 @@ main() {
     log_message "====================================" "true"
     
     # Add a final pause before exiting
-    sleep 3
+    pause 3
     
     # Use the game saves backup status as the overall exit code
     clean_exit ${BACKUP_STATUS}
