@@ -50,6 +50,29 @@ this file guides any work there.
   scripts from user ES `scripts/<event>/`, the ES exe dir (`/usr/bin/scripts/<event>/`,
   read-only image — our game-end hook), and `/var/run/emulationstation/scripts/<event>/`.
 
+## Tabbed pages: the strip is a focus stop
+
+`MenuComponent(window, title, tabbedUI = true)` puts a `ComponentTab` strip
+above the rows. Since #65 (2026-09-05, D-UI-021) the strip is a focusable grid
+cell: up from the first row lands on it, left/right there switch tabs, down
+returns to the rows, and the wrap runs strip → rows → buttons → strip. A page
+opens on its first row. Rows keep left/right for themselves, which is how an
+option row cycles in place everywhere else in ES.
+
+It was wired the other way for years — the strip non-focusable, and
+`MenuComponent::input` handing every left/right on the page to it — so the 23
+option rows on SCRAPER → OPTIONS could only be changed through the A-button
+popup, and the focused rendering `ComponentTab` had always carried (a full
+selector bar over the active tab) was never once drawn. **Do not route a
+direction key to one component from everywhere on a page.** Give the
+component a focus stop and let the grid deliver the key to whatever holds the
+focus; a component that needs a key from anywhere is a component in the wrong
+place.
+
+Four screens still route left/right to their strips themselves
+(`GuiThemeInstaller`, `GuiBatoceraStore`, `GuiKeyMappingEditor`,
+`GuiKeyboardtopads`). They move to the same model with #63.
+
 ## Spacing (house style)
 
 Values live in one place each, so a screen never makes its own decision.
