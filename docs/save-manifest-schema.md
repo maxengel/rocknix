@@ -1,9 +1,10 @@
 # Save manifest — identity, lineage, and schema (#20, #24)
 
-**Rev 0, 2026-09-05.** Section 1 is the identity decision #24 asked for
-(**D-CLOUD-030, decided by the maintainer 2026-09-05**). Sections 2–4 follow
-from it. Section 5 lists what rev 1 — the shape and the field list, #20 — must
-decide, with the constraints already established. Nothing here is built.
+**Rev 1, 2026-09-05.** Section 1 is the identity decision #24 asked for
+(**D-CLOUD-030**, decided). Sections 2–4 follow from it. Sections 5–8 are the
+shape and the fields (#20; proposed as D-CLOUD-031, awaiting sign-off), with
+worked examples from the RG35XX SP. Section 9 is what other issues must supply.
+Nothing here is built.
 
 Companion to [conflict-wizard-ia.md](conflict-wizard-ia.md) (what the player
 sees) and to the futro of 2026-09-05 in
@@ -118,36 +119,229 @@ changed-on-both ask) made mechanical. Two refinements:
 - **The losing copy's thumbnail goes with it.** Whatever *keep discarded saves*
   retains or removes, it does so for the pair.
 
-## 5. What rev 1 must decide (shape and fields, #20)
+## 5. Shape: one file per device, under `savestates/`, covering every save
 
-Constraints already established, cited so they are not re-derived:
+**Proposed (D-CLOUD-031, refines D-CLOUD-017):**
 
-- **Shape**: D-CLOUD-017's per-device file, `savestates/.rocknix/states-<device-id>.json`,
-  each device writing only its own. Extend it to in-game saves as well,
-  because a sidecar beside an `.srm` **does not sync** (futro fixture,
-  2026-09-05: `snes/game.srm.json` excluded; anything under `savestates/`
-  passes) and `- /**/*.xml` excludes XML everywhere outside `savestates/`.
-  Name to settle: the file is no longer only about states.
-- **Fields per entry** (draft): `path`, `kind` (`state` | `auto` | `save`),
-  `sha256`, `size`, `mtime`, `remote_hash` `{type, value}` (recorded after
-  upload), `captured_at` (UTC), `device_id`, `device_label` (both from
-  `cloud_device_id`), `system`, `rom`, `emulator`, `core`, `core_build`,
-  `slot` (attribute), `replaces`, `screenshot` (remote-relative path or
-  `null`; never a substitute image), `schema`. Absent must be
-  distinguishable from empty or zero (#21 thread).
-- **`core_build` is not on the device today.** `PKG_VERSION` of the core's
-  package is the right value (D-CLOUD-017) and nothing ships it. The device
-  *does* carry `/usr/lib/libretro/*.info` — contrary to the note on #10 that
-  ROCKNIX ships none — but those hold libretro-super's `display_version`, not
-  our pin. **#21 gains a task: emit a core-pins file at image build** (one
-  line per core: name, `PKG_VERSION`), read at capture.
-- **ES knows the emulator and core at exit** (`FileData::getEmulator()`,
-  `getCore()`; the exit sync is started from `FileData::launchGame`), so the
-  capture step can be told rather than left to discover.
-- **The agreement record and any index live outside the synced tree**; the
-  allowlist already excludes `*.db*` and `*.sqlite*` as a backstop.
+```
+<sync root>/savestates/.rocknix/manifest-<device-id>.json
+```
+
+- **One file per device, each device writes only its own.** Several handhelds
+  write the same cloud folder; a shared file is a write conflict by
+  construction (D-CLOUD-017). Readers take the union of every
+  `manifest-*.json` they can see.
+- **Under `savestates/`, whatever it describes.** The sync allowlist passes
+  anything under `savestates/` and nothing beside an in-game save except the
+  save itself (futro fixture, 2026-09-05: `gba/game.srm.json` is excluded by
+  `- /**`), and `- /**/*.xml` rules XML out everywhere else. So the file that
+  describes `gba/Advance Wars (USA) (Rev 1).srm` lives under `savestates/`
+  and names the save by its path relative to the sync root. D-CLOUD-017's
+  `states-<id>.json` becomes `manifest-<id>.json` because it is no longer
+  only about states.
+- **JSON**, not XML: the allowlist, `jq` on the device (`/usr/bin/jq`), and
+  the precedent of `cloud_backup`'s `device.json`. Written whole, to a
+  temporary name and renamed into place, so a reader never sees a torn file.
+- **Entries keyed by path**, one per file, so "the entry for this path" is a
+  lookup and the union of two devices' manifests is a merge of maps.
+- **The local agreement record is a separate file and never synced**:
+  `/storage/.cache/cloud_sync/agreed.json`, same entry shape minus provenance,
+  one per path, holding the hash this device last uploaded or downloaded (§2).
+
+Size: about 400 bytes per entry; the device here has ~50 saves and states,
+so ~20 KB. Trivial to sync on every game exit.
+
+## 6. Fields
+
+Top level:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema` | int | `1`. Readers refuse a higher number and treat a missing one as `0` (pre-schema). |
+| `device.id` | string | `cloud_device_id` — stable, seeded from the permanent hardware address (#49). |
+| `device.label` | string | `cloud_device_id --label`, folder-safe (`Anbernic-RG35XX-SP`). |
+| `device.model` | string | `/proc/device-tree/model`, for display (`Anbernic RG35XX SP`). |
+| `device.family` | string | `HW_DEVICE` from `/etc/os-release` (`H700`). |
+| `device.os_version` | string | `OS_VERSION` from `/etc/os-release`. |
+| `generated_at` | string | UTC, ISO 8601, when this file was last written. |
+| `entries` | object | path → entry, path relative to the sync root (`/storage/roms`). |
+
+Per entry:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `kind` | `"state"` \| `"auto"` \| `"save"` | numbered savestate; the `.state.auto` resume point; an in-game save (`.srm`, `.sav`, memcard, …). |
+| `sha256` | string | **The identity of this version** (D-CLOUD-030): sha256 of the bytes as stored — compressed for a state (`savestate_file_compression = "true"`; files begin `#RZIPv`), raw for a save. |
+| `size` | int | bytes as stored. A cheap pre-check before hashing, never a substitute for it. |
+| `mtime` | string | the file's modification time, UTC ISO 8601 (ext4 here; second resolution). What rclone compares by; recorded so a listing can be matched without a download. |
+| `captured_at` | string | UTC ISO 8601, when this entry was written. |
+| `captured_local` | string | the same instant in the device's local time with offset (`2026-09-05T01:32:46-04:00`) — the wizard shows local time, and the offset is what makes two devices' local times comparable. |
+| `clock_synced` | bool | `timedatectl show -p NTPSynchronized` at capture. A device that booted without a network has a wrong clock; the wizard says so rather than trusting the time. |
+| `system` | string | ES system name (`gba`). |
+| `rom` | string | the ROM file name with extension, from ES's game path. For a state this is what `{{romfilename}}` stood for; it is recorded rather than re-derived so a rename of the state cannot detach it from its game. |
+| `emulator` | string | ES's resolved emulator (`retroarch`, `duckstation`, …). |
+| `core` | string | the libretro core name (`mgba`); for a standalone emulator, the emulator name again. Never empty (ES does the same in `SaveStateConfig::getDirectory`). |
+| `core_build` | string | our own `PKG_VERSION` pin for that core's package (D-CLOUD-017), or `"unknown"`. The thing two devices compare to know whether a state will load (#19). See §9. |
+| `core_display_version` | string \| null | `display_version` from `/usr/lib/libretro/<core>_libretro.info` (`1.61` for snes9x), for humans; never compared. |
+| `slot` | int \| null | attribute, not identity. `0` for `game.state`, `n` for `game.staten`; `null` for `auto` and `save`. |
+| `screenshot` | string \| null | remote-relative path of the PNG (`savestates/gba/X.state1.png`), so the wizard can fetch the cloud side's picture with one small copy and never has to derive it from the state's name. `null` for a save — never a substitute image (#23). |
+| `replaces` | string \| null | the sha256 this version replaced at this path on this device, or `null` for the first version seen. One step of lineage; the audit log holds the rest (§2). |
+| `remote_hash` | object \| null | `{"type": "dropbox", "value": "…"}` as reported by `rclone lsjson --hash` after the upload that carried this version; `null` until then. Lets a later listing say "the cloud still holds this version" without a download. Backend-specific by construction (Dropbox offers only its own type; WebDAV none), so it is only ever compared against a listing of the same remote. |
+
+Rules the fields obey:
+
+- **Absent is not zero.** A field that could not be determined is `null` or
+  `"unknown"`, never `0` or `""`. `clock_synced: false` and
+  `core_build: "unknown"` are values the wizard renders, not errors (#21
+  thread; `upgrade-and-install.md`).
+- **Nothing stamps a file it did not write.** An entry is written by the
+  device that produced the save, at the moment it is produced. A file with
+  no entry anywhere is `unknown` in every provenance field and still has a
+  hash, computed locally, so the conflict test (§3) works for it.
+- **A move is an update to the key, not a new entry.** After ES renumbers,
+  the capture step finds the same hash under a new path and moves the entry;
+  `replaces` and `captured_at` are unchanged.
+
+## 7. Examples (from the RG35XX SP, 2026-09-05)
+
+`savestates/.rocknix/manifest-ROCKNIX-ee5013fc56.json`:
+
+```json
+{
+  "schema": 1,
+  "device": {
+    "id": "ROCKNIX-ee5013fc56",
+    "label": "Anbernic-RG35XX-SP",
+    "model": "Anbernic RG35XX SP",
+    "family": "H700",
+    "os_version": "20260905"
+  },
+  "generated_at": "2026-09-05T15:37:28Z",
+  "entries": {
+    "savestates/gba/Mega Man & Bass (USA).state1": {
+      "kind": "state",
+      "sha256": "…64 hex…",
+      "size": 50816,
+      "mtime": "2025-07-29T05:09:49Z",
+      "captured_at": "2025-07-29T05:09:50Z",
+      "captured_local": "2025-07-29T01:09:50-04:00",
+      "clock_synced": true,
+      "system": "gba",
+      "rom": "Mega Man & Bass (USA).gba",
+      "emulator": "retroarch",
+      "core": "mgba",
+      "core_build": "e31759b24e7…",
+      "core_display_version": "0.11-dev",
+      "slot": 1,
+      "screenshot": "savestates/gba/Mega Man & Bass (USA).state1.png",
+      "replaces": null,
+      "remote_hash": { "type": "dropbox", "value": "…" }
+    },
+    "savestates/gba/Advance Wars (USA) (Rev 1).state.auto": {
+      "kind": "auto",
+      "sha256": "…",
+      "size": 43011,
+      "mtime": "2025-07-29T04:51:38Z",
+      "captured_at": "2025-07-29T04:51:40Z",
+      "captured_local": "2025-07-29T00:51:40-04:00",
+      "clock_synced": true,
+      "system": "gba",
+      "rom": "Advance Wars (USA) (Rev 1).gba",
+      "emulator": "retroarch",
+      "core": "mgba",
+      "core_build": "e31759b24e7…",
+      "core_display_version": "0.11-dev",
+      "slot": null,
+      "screenshot": "savestates/gba/Advance Wars (USA) (Rev 1).state.auto.png",
+      "replaces": "…the previous auto state's sha256…",
+      "remote_hash": null
+    },
+    "gba/Advance Wars (USA) (Rev 1).srm": {
+      "kind": "save",
+      "sha256": "…",
+      "size": 65536,
+      "mtime": "2025-07-29T04:51:39Z",
+      "captured_at": "2025-07-29T04:51:40Z",
+      "captured_local": "2025-07-29T00:51:40-04:00",
+      "clock_synced": true,
+      "system": "gba",
+      "rom": "Advance Wars (USA) (Rev 1).gba",
+      "emulator": "retroarch",
+      "core": "mgba",
+      "core_build": "e31759b24e7…",
+      "core_display_version": "0.11-dev",
+      "slot": null,
+      "screenshot": null,
+      "replaces": "…",
+      "remote_hash": null
+    }
+  }
+}
+```
+
+The same three files sit on the cloud today with Dropbox's own hash type
+(`rclone lsjson --hash`, 2026-09-05: `"Hashes":{"dropbox":"1f91…"}`) and
+modification times equal to the device's, which is what `mtime` is for.
+
+`/storage/.cache/cloud_sync/agreed.json` (local, never synced):
+
+```json
+{
+  "schema": 1,
+  "entries": {
+    "gba/Advance Wars (USA) (Rev 1).srm": {
+      "sha256": "…",
+      "remote_hash": { "type": "dropbox", "value": "…" },
+      "at": "2026-09-05T15:40:02Z",
+      "direction": "up"
+    }
+  }
+}
+```
+
+## 8. What the schema does not preclude (V2, #25)
+
+- A snapshot is a copy of a file whose entry has a `kind`, a `sha256` and a
+  `replaces`; the audit log records why it was taken. No field is reserved
+  because none is needed: a snapshot directory's own manifest uses this
+  schema unchanged.
+- **The snapshot directory must be excluded from the sync allowlist
+  explicitly**, and the rule must come *before* `+ /savestates/**`, because
+  rclone filters take the first match: `- /savestates/.snapshots/**`. The IA
+  doc's "excluded from the sync allowlist" is a requirement on #25, not a
+  property the layout has on its own. Verified the hazard's shape today —
+  anything under `savestates/` syncs unless a rule ahead of that line stops
+  it.
+
+## 9. What other issues must supply
+
+- **#21 — the core pins file.** `core_build` is our `PKG_VERSION` pin and
+  nothing on the device carries it: `/usr/lib/libretro/*.info` exists (the
+  2026-09-01 note on #10 that ROCKNIX ships none is wrong) but holds
+  libretro-super's `display_version`. The image build knows every pin
+  (`config/functions` `get_pkg_version`, and `virtual/emulators` holds
+  `LIBRETRO_CORES`); emit `/usr/share/rocknix/core-pins` at image build, one
+  line per core package: `<package> <PKG_VERSION>`. The capture step maps
+  core name → package (`mgba` → `mgba-lr`, `genesis_plus_gx` →
+  `genesis-plus-gx-lr`; the exceptions need a small table, which is #21's to
+  write) and records `"unknown"` when the map has no answer.
+- **#21 — capture at game exit, told rather than discovering.** ES knows the
+  game, `getEmulator(true)` and `getCore(true)` at the point where it starts
+  the exit sync (`FileData.cpp:836`); it passes them on the command line so
+  the capture step never has to reverse-engineer which core wrote a state.
+  Standalone emulators pass their own name as `core`.
+- **#22 — the agreement record** (§2, §7) is written by the transfer that
+  moves a version, in both directions, keyed by path.
+- **#25 — the allowlist rule for snapshots** (§8), ahead of the `savestates`
+  line.
+- **#10 — whether `savestates/<system>/<core>/` becomes the layout** changes
+  nothing here: the entry key is a path relative to the sync root, whatever
+  the layout; `system` and `core` are recorded as fields, not parsed out of
+  the path.
 
 ## Open
 
-- **Rev 1 name and field list** (§5, #20). D-CLOUD-030 (identity and
-  duplicate compaction) is decided, §1.
+- **D-CLOUD-031** — the shape in §5 (one JSON per device under
+  `savestates/.rocknix/`, covering in-game saves as well; agreement record
+  local and unsynced). Awaiting the maintainer's sign-off, which is #20's
+  acceptance gate.

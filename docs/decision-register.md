@@ -85,3 +85,4 @@ This is the index of decisions; `docs/work-logs/` is the narrative,
 | ID | Question | Home |
 | --- | --- | --- |
 | D-CLOUD-008 | **Does the 17 MB archive get trimmed?** It is almost entirely OS-shipped PPSSPP assets, which is what makes size collisions ordinary rather than rare. Shrinking it narrows the #53 window but does not close it. | #45 |
+| D-CLOUD-031 | **Is the save manifest one JSON file per device at `savestates/.rocknix/manifest-<device-id>.json`, describing in-game saves as well as states by path relative to the sync root, with the local agreement record kept unsynced under `/storage/.cache/cloud_sync/`?** Refines D-CLOUD-017 (`states-<id>.json`). Forced by the allowlist: nothing beside an in-game save syncs, and XML is excluded outside `savestates/`. `docs/save-manifest-schema.md` §5–7, rev 1 (2026-09-05). Sign-off is #20's acceptance gate. | #20 |
