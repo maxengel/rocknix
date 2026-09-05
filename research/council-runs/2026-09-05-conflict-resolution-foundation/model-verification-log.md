@@ -40,3 +40,26 @@ UNVERIFIABLE halts.
   shortest by volume (11 KB against 47–76 KB) and was checked for substance
   before advancing: it is dense, not truncated, and raises four distinct
   failure modes. Volume is not a quality gate.
+
+## Orchestrator verification of a disputed code claim (Step 2)
+
+`gemini_peer_review.md` asserts that `gpt-analysis.md` misread
+`SaveStateRepository::getNextFreeSlot()` and that it returns `-99` only when all
+100,000 slots are full. `claude_peer_review.md` and `mistral_peer_review.md`
+both hold that GPT is right. The claim is load-bearing (KEEP BOTH on an
+auto-state conflict, which the schema predicts is the commonest kind), so the
+orchestrator settled it against the source rather than by majority:
+
+- `SaveStateRepository::refresh()` initialises `int slot = -1` and only
+  `matchSlotFile()` assigns a slot; `matchAutoFile()` does not. An auto state is
+  therefore stored with `slot == -1`.
+- `getNextFreeSlot()` returns `firstslot` only when `states.size() == 0`. A
+  repository holding an auto state is not empty, so that branch is skipped.
+- The descending scan `for (int i = 99999; i >= 0; --i)` looks for a state whose
+  `slot == i`; the auto state's `-1` matches no `i >= 0`.
+- Control therefore reaches `return -99`.
+
+**GPT and Claude are correct; Gemini is not.** Recorded here rather than injected
+into any member prompt: the Step 3 prompts carry the peer reviews, so the
+deliberation is already in a position to correct itself, and the orchestrator
+does not put its own findings into members' mouths.
