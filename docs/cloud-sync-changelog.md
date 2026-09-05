@@ -148,6 +148,18 @@ nothing.
 
 ---
 
+## Scraping on a self-built image
+
+Fork images have never carried ScreenScraper, because the developer pair the
+API requires is compiled into the binary and belongs to the project that built
+it. Now the scraper is built without one, and **DEVELOPER ID** and **DEVELOPER
+PASSWORD** rows sit beside USERNAME and PASSWORD under the scraper's OPTIONS.
+Anyone with their own ScreenScraper developer access enters the same pair in
+both places and scrapes as usual; starting a scrape with them empty says what
+is missing. The developer password is held back from settings backups, like the
+account password. Nothing secret is in the image, so the image can be shared.
+Upstream builds are unaffected: with a compiled-in pair the rows never appear.
+
 ## Not in this change
 
 - **Save conflict resolution.** There is no conflict manager yet
