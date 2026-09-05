@@ -53,7 +53,24 @@ artifacts_in() {
 
 git_dir() { git rev-parse --git-common-dir 2>/dev/null; }
 
+# The pre-push guard is installed by absolute path (see .githooks/pre-push for
+# why). Git says nothing when that path stops existing -- it just runs no
+# hooks -- which is what happened for a day after the tree moved to /workspace.
+# This runs from the two subcommands people actually use, so the gap is loud.
+check_hooks_path() {
+    local hp
+    hp="$(git config --get core.hooksPath 2>/dev/null || true)"
+    case "${hp}" in
+        '')  echo "⚠ core.hooksPath is not set: the pre-push guard is not running." >&2
+             echo "  git config core.hooksPath /workspace/repos/rocknix/.githooks" >&2 ;;
+        /*)  [ -d "${hp}" ] || { echo "⚠ core.hooksPath names a directory that does not exist (${hp}): the pre-push guard is not running." >&2
+                                 echo "  git config core.hooksPath /workspace/repos/rocknix/.githooks" >&2; } ;;
+        *)   echo "⚠ core.hooksPath is relative (${hp}); pr/* pushes from a worktree run unguarded." >&2 ;;
+    esac
+}
+
 cmd_list() {
+    check_hooks_path
     git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt; do
         local_art="$(artifacts_in "${wt}")"
         if [ -n "${local_art}" ]; then
@@ -156,6 +173,7 @@ cmd_repair() {
 # Only build/* branches are touched. A feature branch has work on it and is
 # nobody's to fast-forward; next itself is the thing being followed.
 cmd_sync() {
+    check_hooks_path
     # No target argument on purpose. This walks every build worktree, so an
     # arbitrary ref moves all of them at once -- which is exactly how, while
     # testing this function, a throwaway commit was fast-forwarded onto two real

@@ -65,6 +65,30 @@ if [ ${#ASSETS[@]} -eq 0 ]; then
   exit 1
 fi
 
+# Never publish a build with credentials compiled into it. A personal
+# ScreenScraper developer pair or RetroAchievements web API key exported in
+# ~/.ROCKNIX/options for local builds becomes a string inside the image's
+# EmulationStation binary, and a public release would hand it to everyone who
+# downloads. The build root keeps the binary that went into the image; refuse
+# if it carries the shapes those credentials take. FORK_PUBLISH_ES_BIN points
+# the check elsewhere (tests); FORK_ALLOW_EMBEDDED_CREDENTIALS=yes is for
+# accounts created for the fork and nothing else.
+ES_BIN="${FORK_PUBLISH_ES_BIN:-$(ls -d build.ROCKNIX-"${DEVICE}".*/image/system/usr/bin/emulationstation 2>/dev/null | head -1 || true)}"
+if [ -n "${ES_BIN}" ] && [ -f "${ES_BIN}" ]; then
+  if strings "${ES_BIN}" | grep -qE 'devpassword=|(^|&)y=[A-Za-z0-9]{8,}'; then
+    if [ "${FORK_ALLOW_EMBEDDED_CREDENTIALS:-}" != "yes" ]; then
+      echo "error: ${ES_BIN} embeds scraper/achievement credentials (built with ~/.ROCKNIX/options set)." >&2
+      echo "       A public release would publish them. Rebuild without them, or set" >&2
+      echo "       FORK_ALLOW_EMBEDDED_CREDENTIALS=yes only if these are accounts created for the fork." >&2
+      exit 1
+    fi
+    echo "warning: publishing a binary with embedded credentials (FORK_ALLOW_EMBEDDED_CREDENTIALS=yes)" >&2
+  fi
+elif [ -f "${HOME}/.ROCKNIX/options" ] && grep -qE '^[[:space:]]*export[[:space:]]+(SCREENSCRAPER_DEV_LOGIN|GAMESDB_APIKEY|CHEEVOS_DEV_LOGIN|HFS_DEV_LOGIN)=' "${HOME}/.ROCKNIX/options"; then
+  echo "error: ~/.ROCKNIX/options sets build credentials and no EmulationStation binary was found to check; refusing to publish blind." >&2
+  exit 1
+fi
+
 # qemu-img runs on the host here (it is not in the build container).
 VM_DISK_SIZE="${VM_DISK_SIZE:-16G}"
 UTM_ZIP=""
