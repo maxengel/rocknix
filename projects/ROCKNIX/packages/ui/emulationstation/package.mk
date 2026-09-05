@@ -2,7 +2,7 @@
 # Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="emulationstation"
-PKG_VERSION="ba5cbe9fe47742a9377d55eec3aeb31a0a5eba4c"
+PKG_VERSION="8373a01be5c0a75f71d063d6f9dcb50d518a6759"
 PKG_GIT_CLONE_BRANCH="test/qa-integration"
 PKG_LICENSE="GPL"
 PKG_SITE="https://github.com/maxengel/emulationstation-next"
@@ -20,6 +20,11 @@ PKG_CMAKE_OPTS_TARGET+=" -DROCKNIX=1 \
                          -DENABLE_PULSE=1 \
                          -DUSE_SYSTEM_PUGIXML=1 \
                          -DGLES3=1"
+
+# The ScreenScraper developer pair is entered on the device, not compiled in,
+# so no fork image carries a key (#64). A SCREENSCRAPER_DEV_LOGIN in the build
+# environment still wins and hides the rows.
+PKG_CMAKE_OPTS_TARGET+=" -DSCREENSCRAPER_RUNTIME_DEV_LOGIN=1"
 
 [ "${DEVICE}" = "S922X" ] && PKG_CMAKE_OPTS_TARGET+=" -DBATTERYPLUS=1"
 
