@@ -219,3 +219,89 @@ All five round-3 revisions identity-verified. **PASS** (5/5). Sizes moved the
 way the amendments predicted: gpt's plan grew while shedding its version-one
 undo requirement, mistral's more than doubled toward a standalone document, and
 claude's and kimi's both shrank as lineage and receipt machinery came out.
+
+## r3 Step 4 gate and vote tally (orchestrator record, not member-visible)
+
+All five votes identity-verified. **PASS** (5/5).
+
+| Voter | Voted for |
+| --- | --- |
+| claude | `gpt-revised_plan-r3.md` |
+| gemini | `claude-revised_plan-r3.md` |
+| gpt | `claude-revised_plan-r3.md` |
+| kimi | `gpt-revised_plan-r3.md` |
+| mistral | `kimi-revised_plan-r3.md` |
+
+`gpt` 2 · `claude` 2 · `kimi` 1 — a third 2-2-1, and the same tally as r1
+(r2 was `gpt` 2 · `kimi` 2 · `claude` 1).
+
+### A disputed factual claim, settled against the plans rather than by majority
+
+`gemini_vote-r3.md` and `mistral_vote-r3.md` make **directly contradictory
+claims about the same artifacts**: whether each plan's retention store can be
+read later by the maintainer's restore tool (D-CLOUD-033's requirement).
+Following the precedent set for the `getNextFreeSlot()` dispute in r1, the
+orchestrator read the plans rather than counting the votes.
+
+- **`claude-revised_plan-r3.md` §3.9.1** lays the store out as
+  `retained/<system>/<unit-key>/<device-id>-<seq>/` with a self-contained
+  `record.json`, and states explicitly that `seq` is "a persisted per-device
+  monotonic counter — **never a clock**".
+- `mistral_vote-r3.md` describes that same store as "a stamp-keyed path mirror"
+  that "cannot drive the later picker". **False.** A stamp-keyed path mirror is
+  what `kimi-revised_plan-r3.md`'s own concession table (row C3) records as a
+  defect in the *r2* design, which r3 replaced. Mistral attributes a conceded
+  defect of one plan to a different plan, in the round after it was fixed.
+- `mistral_vote-r3.md` then says its winner "needs only one change": adding
+  `screenshot_sha256` and `screenshot_path` to `operation.json`. **Already
+  present** — `kimi-revised_plan-r3.md` §3.6 lists "screenshot path + sha256"
+  among the fields written before the first destructive step.
+- `gemini_vote-r3.md`'s structural comparison is **accurate**:
+  `claude-revised_plan-r3.md` groups by system and unit, so a reader enumerates
+  one game's retained versions directly; `kimi-revised_plan-r3.md`'s
+  `discarded/<operation-id>/` is flat and time-ordered, so grouping by game
+  requires reading every record. Kimi's records are self-contained, so the tool
+  is possible either way; the difference is a scan, not a capability.
+
+The 1-vote outlier therefore rests on two falsified premises. `voting-rules.md`
+provides no mechanism to discard a vote for being wrong (only for a self-vote),
+so **the tally stands as cast** and this is recorded rather than acted on.
+Setting the outlier aside would not break the tie in any case: `gpt` 2 ·
+`claude` 2 remains.
+
+### Why this tie is not the r1 or r2 tie repeating
+
+Both earlier ties turned on something unsettled — evidence in r1, the reading of
+the maintainer's amendment in r2. This one does not. The four plans agree on the
+architecture, and the two finalists' remaining differences are **enumerable,
+small, and liftable**:
+
+- `gpt-revised_plan-r3.md` is better at two rules. §6.1 refuses manifest claims,
+  size and mtime as overwrite authority on hashless backends outright, where
+  `kimi-revised_plan-r3.md` §3.1 seeds agreement from a matching claim plus
+  size and mtime — rclone's own default comparison level, which is the #53
+  shape. And §3.3 makes capture independent of the exit-sync toggle, where
+  kimi hooks the existing exit point that sits inside the toggle's guard.
+- `claude-revised_plan-r3.md` is better at the store the maintainer asked for
+  (above), at the lifecycle gate (an `flock` whose descriptor the emulator child
+  inherits, so the lock survives ES dying — marked `[K]` with a named fallback),
+  and at the amendment-compliance test (a test-only reader run after the
+  producer's manifest entry is overwritten, slots renumbered, the audit log
+  rotated and the pending record removed).
+- Its costs are **removals**: four rclone spawns on the watched exit path where
+  the fourth buys a manifest-last commit point `gpt-revised_plan-r3.md` argues
+  is not load-bearing, and a `resolves` receipt `gemini_vote-r3.md` says should
+  go under the one-step-back rule.
+
+**The two finalists' own author seats each voted for the other.** `claude` voted
+`gpt`; `gpt` voted `claude`. That is not incommensurability — it is two strong
+documents whose differences are the exact material Step 4.5 exists to integrate.
+
+**Orchestrator recommendation: stop recursing and take a maintainer decision on
+the base, then run Step 4.5.** The r5 cap permits two more rounds, but r3
+reproduced r1's tally exactly, and the remaining deltas are liftable rules
+rather than architectural disagreements — the condition
+`tie-breaking-recursion.md` names as "more recursion adds cost without adding
+signal". Declared conflict of interest: the orchestrator (Opus 5) is not the
+`claude` seat (Fable 5.1), but the recommendation below favours that seat's
+plan, and the maintainer should weigh it knowing that.
