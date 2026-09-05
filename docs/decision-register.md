@@ -86,3 +86,4 @@ This is the index of decisions; `docs/work-logs/` is the narrative,
 | ID | Question | Home |
 | --- | --- | --- |
 | D-CLOUD-008 | **Does the 17 MB archive get trimmed?** It is almost entirely OS-shipped PPSSPP assets, which is what makes size collisions ordinary rather than rare. Shrinking it narrows the #53 window but does not close it. | #45 |
+| D-WORKFLOW-003 | **Adopt the scaffold estate's `council` skill here?** Maintainer's direction 2026-09-05: yes in principle; the earning case under D-WORKFLOW-002 is that the manifest alignment review was one model checking its own design. Footprint is ~5,000 lines plus a 2,700-line facilitator that calls provider APIs directly and needs three to five API keys kept out of the repo; the local scaffold copy (2026-08-02) lacks `lint-council-run.ts`, so the source must be the forge or Marvin. Open until the newer copy and the keys are in hand. | fork issue #70 |
