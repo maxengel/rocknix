@@ -126,6 +126,21 @@ user-mode networking, port forwards, or loopback QA addresses.
 - `pr/<name>` is rebased on current `upstream/next` (fetch first) to minimize conflicts.
 - Never include personal/infra paths (the guard enforces this).
 
+The guard also scans **every** pushed branch — not only `pr/*` — for lines
+shaped like credentials (`SECRET_PATTERNS` in the hook: a ScreenScraper
+`devpassword=` with a real value, a RetroAchievements `&y=KEY`, GitHub/AWS/Slack
+token formats, private-key blocks, `TOKEN=`/`PASSWORD=` with a long literal).
+Placeholders in `<angle brackets>` never match, so documentation passes and a
+pasted secret does not. GitHub's own push protection is on for both public
+repos but knows only its catalogue of token formats, which is why the hook
+carries the two this fork actually handles.
+
+**Check the hook can run at all.** `ls "$(git config core.hooksPath)"` must list
+`pre-push`. A `core.hooksPath` naming a directory that no longer exists runs
+nothing and says nothing — that was the state for a day after the 2026-09-04
+move to `/workspace` (blindspot 26). `tools/fork-worktree list` and `sync` now
+warn when the path is unset, relative, or missing.
+
 ## Keep `next` synced
 
 Periodically refresh the fork's daily branch so feature branches start from current code:

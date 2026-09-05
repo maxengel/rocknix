@@ -258,6 +258,36 @@ incremental build to notice.
 - Build sequentially. Parallel device builds contend for CPU and the sources
   cache, and a failure part-way is harder to attribute.
 
+## Build credentials
+
+Four optional secrets are compiled **into the EmulationStation binary** when
+present in the build environment: `SCREENSCRAPER_DEV_LOGIN`
+(`devid=…&devpassword=…`, a developer pair ScreenScraper issues via its forum —
+a member login is not accepted in its place), `CHEEVOS_DEV_LOGIN`
+(`z=<user>&y=<web API key>`, per RetroAchievements account), `GAMESDB_APIKEY`,
+`HFS_DEV_LOGIN`. Without them the matching scraper is not built.
+
+They live in **`~/.ROCKNIX/options`, mode 0600, as `export` lines** — the
+Makefile includes that file on the host and in the container. Nothing else
+needs to know them. The maintainer's rule (D-INFRA-006): builds are local, so a
+value in a build log is tolerable; a value leaving through a build or through
+git is not. The guards, each proven against a constructed violation:
+
+- `scripts/get_env` forwards the environment into the container **minus
+  anything secret-shaped**, except those four by name. It used to forward
+  everything, which put the developer's shell tokens into a world-readable
+  `.env` and every container. `.env` is now 0600 and removed when the
+  container exits.
+- The ES recipe logs `USING: <key> (set)`, never the value.
+- `tools/fork-publish-release` refuses to publish when the build root's ES
+  binary contains `devpassword=` or an `&y=KEY` — a personal credential in a
+  public release. `FORK_ALLOW_EMBEDDED_CREDENTIALS=yes` overrides it, for
+  accounts created for the fork and nothing else.
+- `.githooks/pre-push` scans every pushed branch (`fork-workflow.md`).
+
+So: personal credentials in the options file are fine for images that stay on
+your own devices. Publish only builds made without them.
+
 ## Publishing
 
 `tools/fork-publish-release <DEVICE> prerelease` works unchanged for handhelds:
