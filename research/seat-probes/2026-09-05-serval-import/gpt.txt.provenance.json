@@ -1,0 +1,117 @@
+{
+  "artifact_path": "../../../../tmp/claude-1000/-workspace-repos-rocknix-worktrees-conflict-resolution/34f53180-d457-4ebd-9cbb-b40b840bee95/scratchpad/seatcheck/gpt.md",
+  "output_file_sha256": "2689367b205c16ce32ed4200942b8b8b1e262dfc70d9bc9fbc77c49699a4f1df",
+  "source_file_paths": [],
+  "source_file_hashes": [],
+  "facilitator_version": "council-facilitator@1.2.0",
+  "prev_verdict_sha256": null,
+  "member": "gpt",
+  "declared_model": "openai/gpt-5.6-sol (OpenRouter, via openai, effort=max)",
+  "substrate": "openrouter",
+  "transport": "buffered",
+  "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+  "request": {
+    "started_at": "2026-09-05T17:00:42.030Z",
+    "system_prompt_sha256": null,
+    "user_prompt_sha256": "802848469d1623dfa65853e10dd445f936f1f2a68191f9c268a659c6fe2397ac"
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "started_at": "2026-09-05T17:00:42.030Z",
+      "duration_ms": 2942,
+      "max_tokens": 64,
+      "transport": "buffered",
+      "http_status": 200,
+      "outcome": "success",
+      "outcome_reason": null,
+      "model_field": "openai/gpt-5.6-sol",
+      "finish_reason": null,
+      "content_length": 2,
+      "tokens": {
+        "prompt": 13,
+        "completion": 5,
+        "total": 18,
+        "reasoning": 0
+      },
+      "model_identity_source": "provider_response",
+      "content_sha256": "2689367b205c16ce32ed4200942b8b8b1e262dfc70d9bc9fbc77c49699a4f1df",
+      "usage": {
+        "prompt_tokens": 13,
+        "completion_tokens": 5,
+        "total_tokens": 18,
+        "cost": 0,
+        "is_byok": true,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.000152,
+          "upstream_inference_prompt_cost": 0.000052,
+          "upstream_inference_completions_cost": 0.0001
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "response_headers": {
+        "content-type": "application/json"
+      },
+      "response_body_sha256": "260dc3e500b728f17ec44228a1b4a493e79938f53d93fad5a3b5c91117aa2483"
+    }
+  ],
+  "final": {
+    "outcome": "success",
+    "assurance_tier": "local_capture_provider_attested",
+    "total_duration_ms": 2945,
+    "retries_used": 0,
+    "file_artifact_sha256": "2689367b205c16ce32ed4200942b8b8b1e262dfc70d9bc9fbc77c49699a4f1df",
+    "usage": {
+      "prompt_tokens": 13,
+      "completion_tokens": 5,
+      "total_tokens": 18,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.000152,
+        "upstream_inference_prompt_cost": 0.000052,
+        "upstream_inference_completions_cost": 0.0001
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "tokens": {
+      "prompt": 13,
+      "completion": 5,
+      "total": 18,
+      "reasoning": 0
+    },
+    "verification": {
+      "result": "PASS",
+      "match_kind": "semantic",
+      "declared": "openai/gpt-5.6-sol (OpenRouter, via openai, effort=max)",
+      "observed": "openai/gpt-5.6-sol",
+      "model_identity_source": "provider_response"
+    },
+    "effort_verification": {
+      "result": "FAIL",
+      "declared": "max",
+      "evidence": "reasoning_tokens",
+      "observed_reasoning_tokens": 0
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "artifact_path": "../../../../tmp/claude-1000/-workspace-repos-rocknix-worktrees-conflict-resolution/34f53180-d457-4ebd-9cbb-b40b840bee95/scratchpad/seatcheck/kimi.md",
+  "source_file_paths": [],
+  "source_file_hashes": [],
+  "facilitator_version": "council-facilitator@1.2.0",
+  "prev_verdict_sha256": null,
+  "member": "kimi",
+  "declared_model": "moonshotai/kimi-k3 (OpenRouter, effort=max)",
+  "substrate": "openrouter",
+  "transport": "buffered",
+  "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+  "request": {
+    "started_at": "2026-09-05T17:00:45.257Z",
+    "system_prompt_sha256": null,
+    "user_prompt_sha256": "802848469d1623dfa65853e10dd445f936f1f2a68191f9c268a659c6fe2397ac"
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "started_at": "2026-09-05T17:00:45.257Z",
+      "duration_ms": 518,
+      "max_tokens": 64,
+      "transport": "buffered",
+      "http_status": null,
+      "outcome": "transient_network",
+      "outcome_reason": null,
+      "model_field": null,
+      "finish_reason": null,
+      "content_length": 0,
+      "tokens": null,
+      "usage_unavailable": "usage_absent",
+      "error_phase": "request",
+      "error_message": "fetch failed"
+    }
+  ],
+  "final": {
+    "outcome": "retries_exhausted_transient",
+    "assurance_tier": "local_capture_provider_attested",
+    "total_duration_ms": 518,
+    "retries_used": 0,
+    "verification": {
+      "result": "UNVERIFIABLE",
+      "match_kind": "none",
+      "declared": "moonshotai/kimi-k3 (OpenRouter, effort=max)",
+      "observed": null
+    },
+    "effort_verification": {
+      "result": "UNVERIFIABLE",
+      "declared": "max",
+      "evidence": "reasoning_tokens",
+      "observed_reasoning_tokens": null
+    }
+  }
+}

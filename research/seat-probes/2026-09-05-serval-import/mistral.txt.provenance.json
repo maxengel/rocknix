@@ -1,0 +1,117 @@
+{
+  "artifact_path": "../../../../tmp/claude-1000/-workspace-repos-rocknix-worktrees-conflict-resolution/34f53180-d457-4ebd-9cbb-b40b840bee95/scratchpad/seatcheck/mistral.md",
+  "output_file_sha256": "2689367b205c16ce32ed4200942b8b8b1e262dfc70d9bc9fbc77c49699a4f1df",
+  "source_file_paths": [],
+  "source_file_hashes": [],
+  "facilitator_version": "council-facilitator@1.2.0",
+  "prev_verdict_sha256": null,
+  "member": "mistral",
+  "declared_model": "mistralai/mistral-large-2512 (OpenRouter primary for Mistral)",
+  "substrate": "openrouter",
+  "transport": "buffered",
+  "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+  "request": {
+    "started_at": "2026-09-05T17:00:46.038Z",
+    "system_prompt_sha256": null,
+    "user_prompt_sha256": "802848469d1623dfa65853e10dd445f936f1f2a68191f9c268a659c6fe2397ac"
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "started_at": "2026-09-05T17:00:46.038Z",
+      "duration_ms": 1819,
+      "max_tokens": 64,
+      "transport": "buffered",
+      "http_status": 200,
+      "outcome": "success",
+      "outcome_reason": null,
+      "model_field": "mistralai/mistral-large-2512",
+      "finish_reason": null,
+      "content_length": 2,
+      "tokens": {
+        "prompt": 10,
+        "completion": 2,
+        "total": 12,
+        "reasoning": 0
+      },
+      "model_identity_source": "provider_response",
+      "content_sha256": "2689367b205c16ce32ed4200942b8b8b1e262dfc70d9bc9fbc77c49699a4f1df",
+      "usage": {
+        "prompt_tokens": 10,
+        "completion_tokens": 2,
+        "total_tokens": 12,
+        "cost": 0.000008,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.000008,
+          "upstream_inference_prompt_cost": 0.000005,
+          "upstream_inference_completions_cost": 0.000003
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "response_headers": {
+        "content-type": "application/json"
+      },
+      "response_body_sha256": "bdcad1a4a7183499d1cc5fed30e6644c710f92c26488670dac7fadc942aaea79"
+    }
+  ],
+  "final": {
+    "outcome": "success",
+    "assurance_tier": "local_capture_provider_attested",
+    "total_duration_ms": 1821,
+    "retries_used": 0,
+    "file_artifact_sha256": "2689367b205c16ce32ed4200942b8b8b1e262dfc70d9bc9fbc77c49699a4f1df",
+    "usage": {
+      "prompt_tokens": 10,
+      "completion_tokens": 2,
+      "total_tokens": 12,
+      "cost": 0.000008,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.000008,
+        "upstream_inference_prompt_cost": 0.000005,
+        "upstream_inference_completions_cost": 0.000003
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "tokens": {
+      "prompt": 10,
+      "completion": 2,
+      "total": 12,
+      "reasoning": 0
+    },
+    "verification": {
+      "result": "PASS",
+      "match_kind": "semantic",
+      "declared": "mistralai/mistral-large-2512 (OpenRouter primary for Mistral)",
+      "observed": "mistralai/mistral-large-2512",
+      "model_identity_source": "provider_response"
+    },
+    "effort_verification": {
+      "result": "PASS",
+      "declared": null,
+      "evidence": "reasoning_tokens",
+      "observed_reasoning_tokens": 0
+    }
+  }
+}
