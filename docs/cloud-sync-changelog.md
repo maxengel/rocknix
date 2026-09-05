@@ -148,11 +148,11 @@ nothing.
 
 ---
 
-## Scraping on a self-built image
+## ScreenScraper on developer builds
 
-Fork images have never carried ScreenScraper, because the developer pair the
-API requires is compiled into the binary and belongs to the project that built
-it. Now the scraper is built without one, and **DEVELOPER ID** and **DEVELOPER
+Developer builds have never carried ScreenScraper, because the developer pair
+the API requires is compiled into the binary and belongs to the project that
+built it. Now the scraper is built without one, and **DEVELOPER ID** and **DEVELOPER
 PASSWORD** rows sit beside USERNAME and PASSWORD under the scraper's OPTIONS.
 Anyone with their own ScreenScraper developer access enters the same pair in
 both places and scrapes as usual; starting a scrape with them empty says what
