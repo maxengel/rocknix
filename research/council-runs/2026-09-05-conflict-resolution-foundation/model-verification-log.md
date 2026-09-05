@@ -341,3 +341,16 @@ mistral → kimi.
 Three seats independently report that the deliberation has run out of
 architecture to argue about, and the dissenting seat's list is three
 enumerable choices with named options. That is Step 4.5's worklist.
+
+## r4 Step 3 gate
+
+All five round-4 revisions identity-verified. **PASS** (5/5). The revision
+prompt told each seat to move liftable items rather than argue for its own
+wording of the same rule, and the sizes show it: kimi's plan shed 4 KB, gemini's
+and mistral's grew as they absorbed what reviewers said they were missing.
+
+The r4 vote prompt states plainly what the vote is now choosing — not an
+architecture, since three seats report none is left to choose, but the document
+a builder is handed, with the losing plans' provisions travelling into it.
+Members are told to weigh how much of the work is already decided in a plan, and
+explicitly not to weigh length in either direction.
