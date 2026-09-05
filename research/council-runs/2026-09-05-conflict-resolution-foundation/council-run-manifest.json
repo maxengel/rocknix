@@ -1,0 +1,133 @@
+{
+  "schema_version": "council-run-manifest@1.0.0",
+  "run_id": "2026-09-05-conflict-resolution-foundation",
+  "created_at": "2026-09-05T17:32:13Z",
+  "topic": "conflict-resolution-foundation",
+  "roster": [
+    "claude",
+    "gemini",
+    "gpt",
+    "kimi",
+    "mistral"
+  ],
+  "provenance_contract": "council-facilitator@1.2.0",
+  "expected_outputs_per_step": {
+    "step1": [
+      {
+        "path": "claude-analysis.md",
+        "member": "claude",
+        "kind": "initial-analysis"
+      },
+      {
+        "path": "gemini-analysis.md",
+        "member": "gemini",
+        "kind": "initial-analysis"
+      },
+      {
+        "path": "gpt-analysis.md",
+        "member": "gpt",
+        "kind": "initial-analysis"
+      },
+      {
+        "path": "kimi-analysis.md",
+        "member": "kimi",
+        "kind": "initial-analysis"
+      },
+      {
+        "path": "mistral-analysis.md",
+        "member": "mistral",
+        "kind": "initial-analysis"
+      }
+    ],
+    "step2": [
+      {
+        "path": "peer_reviews/claude_peer_review.md",
+        "member": "claude",
+        "kind": "peer-review"
+      },
+      {
+        "path": "peer_reviews/gemini_peer_review.md",
+        "member": "gemini",
+        "kind": "peer-review"
+      },
+      {
+        "path": "peer_reviews/gpt_peer_review.md",
+        "member": "gpt",
+        "kind": "peer-review"
+      },
+      {
+        "path": "peer_reviews/kimi_peer_review.md",
+        "member": "kimi",
+        "kind": "peer-review"
+      },
+      {
+        "path": "peer_reviews/mistral_peer_review.md",
+        "member": "mistral",
+        "kind": "peer-review"
+      }
+    ],
+    "step3": [
+      {
+        "path": "revised_approaches/claude-revised_plan.md",
+        "member": "claude",
+        "kind": "revised-plan"
+      },
+      {
+        "path": "revised_approaches/gemini-revised_plan.md",
+        "member": "gemini",
+        "kind": "revised-plan"
+      },
+      {
+        "path": "revised_approaches/gpt-revised_plan.md",
+        "member": "gpt",
+        "kind": "revised-plan"
+      },
+      {
+        "path": "revised_approaches/kimi-revised_plan.md",
+        "member": "kimi",
+        "kind": "revised-plan"
+      },
+      {
+        "path": "revised_approaches/mistral-revised_plan.md",
+        "member": "mistral",
+        "kind": "revised-plan"
+      }
+    ],
+    "step4": [
+      {
+        "path": "peer_votes/claude_vote.md",
+        "member": "claude",
+        "kind": "peer-vote"
+      },
+      {
+        "path": "peer_votes/gemini_vote.md",
+        "member": "gemini",
+        "kind": "peer-vote"
+      },
+      {
+        "path": "peer_votes/gpt_vote.md",
+        "member": "gpt",
+        "kind": "peer-vote"
+      },
+      {
+        "path": "peer_votes/kimi_vote.md",
+        "member": "kimi",
+        "kind": "peer-vote"
+      },
+      {
+        "path": "peer_votes/mistral_vote.md",
+        "member": "mistral",
+        "kind": "peer-vote"
+      }
+    ]
+  },
+  "orchestrator_corrections": [
+    {
+      "at": "2026-09-05T18:00:00Z",
+      "field": "provenance_contract",
+      "from": "council-facilitator@1.0.0",
+      "to": "council-facilitator@1.2.0",
+      "reason": "Setup wrote the schema doc's example value; the Facilitator and the anchored genesis both declare 1.2.0. Corrected after Step 1 outputs landed; genesis binds roster and verifier pins, not manifest bytes, so the anchor is unaffected."
+    }
+  ]
+}

@@ -1,0 +1,1077 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+
+# Script configuration and global variables
+SCRIPT_NAME=$(basename "$0")
+LOG_FILE="/var/log/cloud_sync.log"
+START_TIME=$(date +%s)
+
+# Non-interactive support for hooks and the ES menu:
+#   --yes / -y      answer prompts automatically (headless mode)
+#   --method=X      override the configured transfer method (sync or copy)
+#   --update        add rclone --update (skip files newer on the destination)
+#   --system-only   only the system-settings archive, not the saves
+#   --saves-only    only the saves, not the system-settings archive
+#   --recent        only saves changed since the last backup that worked
+#                   (the game-exit sync); always copies, never tidies
+#
+# Exit codes the UI names: 3 = skipped, another cloud sync holds the lock;
+# 4 = skipped, no network. Neither writes a last-run stamp -- nothing ran.
+ASSUME_YES=0
+METHOD_OVERRIDE=""
+EXTRA_UPDATE=0
+SYSTEM_ONLY=0
+SAVES_ONLY=0
+RECENT=0
+for CLI_ARG in "$@"; do
+    case "${CLI_ARG}" in
+        --yes|-y) ASSUME_YES=1 ;;
+        --method=sync|--method=copy) METHOD_OVERRIDE="${CLI_ARG#--method=}" ;;
+        --method=*) echo "Ignoring invalid --method value: ${CLI_ARG#--method=}" ;;
+        --update) EXTRA_UPDATE=1 ;;
+        --system-only) SYSTEM_ONLY=1 ;;
+        --saves-only) SAVES_ONLY=1 ;;
+        --recent) RECENT=1 ;;
+    esac
+done
+
+# The pauses between sections give somebody reading the console time to see
+# each one before the next scrolls in. Under --yes nobody is reading -- the
+# output is a progress card -- and seven seconds of them was over a third of
+# an 18-second game-exit sync that moved nothing.
+pause() {
+    [ "${ASSUME_YES}" -eq 1 ] || sleep "$1"
+}
+
+# Logging function that supports different severity levels and optional console output
+# 
+# This function formats and records log messages with timestamps and severity levels.
+# It can optionally display messages on screen with appropriate color coding.
+#
+# Parameters:
+#   $1: Message text to log
+#   $2: Whether to echo to screen (true/false, defaults to true)
+#   $3: Log level (INFO, WARN, ERROR, defaults to configured LOG_LEVEL or INFO)
+log_message() {
+    local message="$1"
+    local echo_to_screen="${2:-true}"  # Default to true
+    local level="${3:-${LOG_LEVEL:-INFO}}"  # Use configured LOG_LEVEL as default
+    local timestamp=$(date "+%Y-%m-%d %H:%M:%S")
+    
+    echo "[${timestamp}] [${level}] [${SCRIPT_NAME}] ${message}" >> ${LOG_FILE}
+    
+    if [[ "${echo_to_screen}" == "true" ]]; then
+        # Color output based on level
+        case "${level}" in
+            ERROR) echo -e "\e[31m${message}\e[0m" ;;
+            WARN)  echo -e "\e[33m${message}\e[0m" ;;
+            *)     echo -e "${message}" ;;
+        esac
+    fi
+}
+
+# One cloud transfer at a time, whoever asked for it.
+#
+# Three callers can start one: the boot-time sync (autostart/102-cloud-saves),
+# EmulationStation after a game exits, and a person in the menu. Until
+# 2026-09-04 the game-exit path was an OS hook with a pgrep guard; moving it
+# into ES kept the visible progress and dropped the guard, so exiting a game
+# during the boot sync started a second rclone against the same remote. Two
+# writers on one folder is how a mirror deleted another handheld's saves
+# (D-CLOUD-014); two copies racing is milder, and still nothing anybody asked
+# for.
+#
+# The lock lives here, in the script, so no caller has to know about the
+# others. /var/run is tmpfs, so a lock cannot survive a reboot and go stale.
+# Non-blocking, because a request that queues silently behind a twenty-minute
+# transfer looks exactly like one that hung. Exit 3 means "skipped: another
+# sync is running" -- the UI names it, and no last-run stamp is written for
+# work that did not happen.
+CLOUD_SYNC_LOCK=/var/run/cloud_sync.lock
+take_cloud_lock() {
+    exec 9>"${CLOUD_SYNC_LOCK}"
+    if ! flock -n 9; then
+        echo "Another cloud sync is already running. Skipped."
+        log_message "skipped: another cloud sync holds ${CLOUD_SYNC_LOCK}" "false"
+        exit 3
+    fi
+}
+
+# The configured remote, by the same rule as `rclone listremotes | head -1`
+# -- the first section name in sorted order -- read from the config file
+# rather than by starting rclone, which costs close to a second on a
+# handheld. rclone remains the fallback if the file yields nothing.
+first_remote() {
+    local name
+    name=$(grep -o '^\[[^]]*\]' /storage/.config/rclone/rclone.conf 2>/dev/null \
+           | tr -d '[]' | sort | head -1)
+    if [ -n "${name}" ]; then
+        printf '%s:\n' "${name}"
+    else
+        rclone listremotes 2>/dev/null | head -1
+    fi
+}
+
+# Exit 4 means "skipped: no network". Answered locally, before any remote
+# probe: with no default route there is nothing to sync to, and somebody
+# exiting a game should not wait for rclone to time out learning that (its
+# probe allows 10 s to connect and 20 s overall). `ip route` reads the
+# kernel's table and sends nothing. An interface that is up but has no route
+# yet -- Wi-Fi still associating, DHCP not answered -- counts as no network,
+# which is the right answer for a job that has to run now.
+check_network_link() {
+    if ! ip -4 route show default 2>/dev/null | grep -q . \
+       && ! ip -6 route show default 2>/dev/null | grep -q .; then
+        echo "No network connection. Skipped."
+        log_message "skipped: no default route, nothing to sync to" "false"
+        exit 4
+    fi
+}
+
+# Load controller configuration if available
+if [ -f "/storage/.config/profile.d/098-controller" ]; then
+    source /storage/.config/profile.d/098-controller
+    log_message "Controller config loaded: SOUTH=${DEVICE_BTN_SOUTH}, DPAD_UP=${DEVICE_BTN_DPAD_UP}" "false"
+fi
+
+# Simple controller input function using evtest for actual joystick input
+# Improved controller input: persistent evtest for low-latency input
+read_controller_input() {
+    local timeout="${1:-0}" # Default to no timeout
+    local input_device=""
+    for dev in /dev/input/event*; do
+        if [ -c "$dev" ]; then
+            local supports=$(udevadm info "$dev" 2>/dev/null | awk '/ID_INPUT_JOYSTICK=1/ {print "joystick"}')
+            if [ "$supports" = "joystick" ]; then
+                input_device="$dev"
+                break
+            fi
+        fi
+    done
+    if [ -z "$input_device" ]; then
+        # Fallback to keyboard input if no controller is found
+        if [ "$timeout" -gt 0 ]; then
+            read -t "$timeout" -sn1 input 2>/dev/null
+        else
+            read -sn1 input 2>/dev/null
+        fi
+        case "$input" in
+            "w"|"W"|$'\e[A') echo "up" ;;
+            "s"|"S"|$'\e[B') echo "down" ;;
+            "a"|"A"|$'\e[D') echo "left" ;;
+            "d"|"D"|$'\e[C') echo "right" ;;
+            $'\n'|" ")       echo "confirm" ;;
+            "q"|"Q"|$'\e')   echo "cancel" ;;
+            "") echo "timeout" ;;
+            *) echo "unknown" ;;
+        esac
+        return
+    fi
+    
+    # For controllers, block and wait for the first button press event.
+    # This is more responsive than polling with a timeout.
+    local event_output
+    if [ "$timeout" -gt 0 ]; then
+        event_output=$(timeout "$timeout" evtest "$input_device" 2>/dev/null | grep -m 1 "value 1")
+    else
+        event_output=$(evtest "$input_device" 2>/dev/null | grep -m 1 "value 1")
+    fi
+    
+    if [ -z "$event_output" ]; then
+        echo "timeout"
+        return
+    fi
+    
+    # Parse the first button press event found
+    log_message "Raw event data: $event_output" "false"
+    if [[ "$event_output" =~ BTN_DPAD_UP.*value[[:space:]]+1 ]] || [[ "$event_output" =~ ABS_HAT0Y.*value[[:space:]]+-1 ]]; then
+        echo "up"
+    elif [[ "$event_output" =~ BTN_DPAD_DOWN.*value[[:space:]]+1 ]] || [[ "$event_output" =~ ABS_HAT0Y.*value[[:space:]]+1 ]]; then
+        echo "down"
+    elif [[ "$event_output" =~ BTN_DPAD_LEFT.*value[[:space:]]+1 ]] || [[ "$event_output" =~ ABS_HAT0X.*value[[:space:]]+-1 ]]; then
+        echo "left"
+    elif [[ "$event_output" =~ BTN_DPAD_RIGHT.*value[[:space:]]+1 ]] || [[ "$event_output" =~ ABS_HAT0X.*value[[:space:]]+1 ]]; then
+        echo "right"
+    elif [[ "$event_output" =~ BTN_SOUTH.*value[[:space:]]+1 ]] || [[ "$event_output" =~ BTN_A.*value[[:space:]]+1 ]] || [[ "$event_output" =~ BTN_EAST.*value[[:space:]]+1 ]]; then
+        echo "confirm"
+    elif [[ "$event_output" =~ BTN_B.*value[[:space:]]+1 ]]; then
+        echo "cancel"
+    elif [[ "$event_output" =~ BTN_START.*value[[:space:]]+1 ]]; then
+        echo "start"
+    elif [[ "$event_output" =~ BTN_SELECT.*value[[:space:]]+1 ]]; then
+        echo "select"
+    else
+        log_message "Unrecognized button event: $event_output" "false"
+        echo "unknown"
+    fi
+}
+
+# Simple controller-friendly confirmation using the same pattern as other ROCKNIX scripts
+# Parameters: $1=message, $2=initial_selection (0=yes, 1=no, defaults to 0)
+controller_confirm() {
+    local message="$1"
+    local selected="${2:-0}"         # Default to Yes initially selected
+    local options=("Yes" "No")
+    local last_selected=-1
+    log_message "Starting controller_confirm with message: '$message', initial: $selected" "false"
+    
+    while true; do
+        # Only redraw if selection changed
+        if [ $selected -ne $last_selected ]; then
+            printf "\033[2J\033[H"  # Clear screen and move to top
+            echo -e "\e[33m${message}\e[0m"
+            echo ""
+            for i in "${!options[@]}"; do
+                if [ $i -eq $selected ]; then
+                    echo -e "\e[34m> \e[32m${options[$i]}\e[0m"
+                else
+                    echo "  ${options[$i]}"
+                fi
+            done
+            echo ""
+            echo "Controls: D-Pad Up/Down=Navigate, A=Confirm, B=Cancel"
+            echo "Keyboard: W/S=Navigate, Enter=Confirm, Q=Cancel"
+            echo ""
+            last_selected=$selected
+        fi
+        
+        local input=$(read_controller_input)
+        log_message "Received input: '$input'" "false"
+        case "$input" in
+            "up")
+                selected=$(( (selected - 1 + 2) % 2 ))
+                log_message "Selection changed to: $selected (moved up)" "false"
+                ;;
+            "down")
+                selected=$(( (selected + 1) % 2 ))
+                log_message "Selection changed to: $selected (moved down)" "false"
+                ;;
+            "confirm")
+                log_message "Confirmed with selection: $selected" "false"
+                sleep 0.3
+                return $selected
+                ;;
+            "cancel")
+                log_message "Cancelled" "false"
+                return 1
+                ;;
+            "timeout")
+                # Continue waiting for input
+                ;;
+            *)
+                log_message "Unknown input received: '$input'" "false"
+                ;;
+        esac
+        sleep 0.05
+    done
+}
+
+# Somebody who starts a backup and walks away has no way to learn how it went:
+# the progress card is gone by the time they come back, and the toast that
+# reported the outcome went with it. Leave the answer where the menu can read
+# it later.
+#
+# Device-local state, so it lives under /storage/.cache rather than
+# /storage/.config -- a stamp swept into the settings backup and restored onto
+# a second device would be describing a run that device never made.
+record_last_run() {
+    local exit_code="$1"
+    local name="backup"
+    [ "${SYSTEM_ONLY}" -eq 1 ] && name="system-backup"
+    mkdir -p /storage/.cache/cloud_sync 2>/dev/null
+    printf '%s %s\n' "$(date +%s)" "${exit_code}" \
+        > "/storage/.cache/cloud_sync/last-${name}" 2>/dev/null
+}
+
+# Performs cleanup operations and exits with the specified code
+# Records total execution time in the log for performance tracking
+# Parameters:
+#   $1: Exit code to return
+clean_exit() {
+    local exit_code=$1
+    local duration=$(($(date +%s) - START_TIME))
+    
+    record_last_run "${exit_code}"
+    log_message "Script completed in ${duration} seconds with exit code ${exit_code}" "false"
+    exit ${exit_code}
+}
+
+# Verifies rclone is properly configured before attempting operations
+# Exits with error if configuration file is missing
+check_rclone_config() {
+    if [ ! -e "/storage/.config/rclone/rclone.conf" ]; then
+        log_message "You must configure rclone before using this tool. Run \`rclone config\` to get started." "true" "ERROR"
+        pause 3
+        clean_exit 1
+    fi
+}
+
+# What has to be reachable is the configured cloud storage, not the internet at
+# large. Pinging google.com gets both answers wrong: it fails on a setup that
+# works fine - a self-hosted or LAN remote needs no internet, and that host is
+# unreachable on some networks outright - and it succeeds while the user's
+# provider is down or their sign-in has expired. Test the remote itself, and
+# probe further only to word the failure correctly, because the two causes have
+# different fixes.
+check_internet() {
+    log_message "Checking cloud storage reachability..." "false"
+
+    local remote
+    remote=$(rclone listremotes 2>/dev/null | head -1)
+    if [ -n "${remote}" ] && rclone lsd "${remote}" \
+            --contimeout 10s --timeout 20s --low-level-retries 1 --retries 1 \
+            >/dev/null 2>&1; then
+        log_message "Cloud storage ${remote} is reachable" "false"
+        return 0
+    fi
+
+    if ping -q -c1 -W 3 1.1.1.1 >/dev/null 2>&1 || ping -q -c1 -W 3 8.8.8.8 >/dev/null 2>&1; then
+        log_message "Your cloud storage did not respond.\nCheck that it is still set up and that its sign-in has not expired." "true" "ERROR"
+    else
+        log_message "You're not currently connected to the internet.\nPlease verify your settings and then try again." "true" "ERROR"
+    fi
+    pause 3
+    clean_exit 1
+}
+
+# Loads user configuration from cloud_sync.conf
+# Applies default values for any missing configuration parameters
+load_config() {
+    log_message "Loading configuration from cloud_sync.conf" "false"
+    source /storage/.config/cloud_sync.conf
+
+    # Update cloud sync rules and config by calling the helper script
+    if [ -f "/usr/bin/cloud_sync_helper" ]; then
+        log_message "Updating cloud sync rules and config" "false"
+        /usr/bin/cloud_sync_helper ${LOG_FILE}
+    fi
+
+    # Check for duplicate variable assignments in config
+    local conf_file="/storage/.config/cloud_sync.conf"
+    local dupes_found=0
+    # List of variable names that appear more than once
+    mapfile -t duplicate_vars < <(awk -F= '/^[A-Za-z0-9_]+=/{gsub(/"/,"",$1); count[$1]++} END{for (v in count) if(count[v]>1) print v}' "$conf_file")
+    if [ ${#duplicate_vars[@]} -gt 0 ]; then
+        dupes_found=1
+    fi
+
+    if [ $dupes_found -eq 1 ]; then
+        # Build the full message including the duplicate info
+        local dupe_message="Warning: Duplicate variable assignments detected in cloud_sync.conf\n\nDuplicate cloud sync variables have been found in the configuration file:"
+        for var in "${duplicate_vars[@]}"; do
+            dupe_message="${dupe_message}\n  - $var"
+        done
+        dupe_message="${dupe_message}\n\nWould you like to automatically clean up duplicates?"
+        
+        if [ "${ASSUME_YES}" -eq 1 ]; then
+            local cleanup_choice=0
+        else
+            controller_confirm "$dupe_message" 0
+            local cleanup_choice=$?
+        fi
+        log_message "Cleanup choice returned: $cleanup_choice" "false"
+        
+        if [ $cleanup_choice -eq 0 ]; then
+            # User selected Yes - cleanup duplicates
+            echo -e "\e[34m> Running duplicate cleanup...\e[0m"
+            /usr/bin/cloud_sync_cleanup_duplicates.sh "$conf_file"
+            echo -e "\e[34m> Duplicates cleaned.\e[0m"
+            echo ""
+            pause 2
+            # Reload config after cleanup
+            source /storage/.config/cloud_sync.conf
+        else
+            # User selected No or cancelled - skip cleanup
+            echo -e "\e[34m> Skipped duplicate cleanup.\e[0m"
+            pause 2
+        fi
+
+    fi
+
+    # Clean and normalize rclone options to ensure proper spacing
+    # Convert multi-line options to a properly spaced single line
+    # First, save original options for debugging
+    log_message "Original RCLONEOPTS: ${RCLONEOPTS}" "false"
+    
+    # Replace any line continuations and normalize spaces
+    RCLONEOPTS=$(echo "${RCLONEOPTS}" | tr '\n\\' '  ' | tr -s ' ')
+    log_message "After newline cleanup: ${RCLONEOPTS}" "false"
+    
+    # Remove conflicting --verbose and -v flags that conflict with --log-level
+    RCLONEOPTS=$(echo "${RCLONEOPTS}" | sed 's/--verbose//g' | sed 's/-v / /g')
+    # The remote does not only hold saves. It holds every device's system
+    # backup under SYNCPATH_BACKUP, and whatever else the owner keeps in
+    # that folder. --delete-excluded deletes everything the allowlist does
+    # not admit, so in sync mode a saves backup removed the backup folder
+    # of every device including other people's -- the phase that follows
+    # re-uploads only this device's, so the rest were simply gone.
+    #
+    # Found by testing sync mode against a remote seeded as a second
+    # handheld: its archive was carried off with its saves. cloud_restore
+    # has stripped this flag for the same class of reason since issue #5;
+    # the comment there says backup keeps it because it only tidies the
+    # remote, and that premise was wrong.
+    RCLONEOPTS=$(echo "${RCLONEOPTS}" | sed 's/--delete-excluded//g')
+    log_message "After removing verbose flags: ${RCLONEOPTS}" "false"
+    
+    # Ensure each option starts with a space (except the first one)
+    RCLONEOPTS=$(echo "${RCLONEOPTS}" | sed 's/--/ --/g' | sed 's/^ //')
+    log_message "After spacing fix: ${RCLONEOPTS}" "false"
+    
+    # Clean up any double spaces left by removal
+    RCLONEOPTS=$(echo "${RCLONEOPTS}" | tr -s ' ')
+    log_message "After final cleanup: ${RCLONEOPTS}" "false"
+    
+    # Convert to array to ensure proper word splitting
+    RCLONE_OPTS_ARRAY=()
+    for opt in ${RCLONEOPTS}; do
+        RCLONE_OPTS_ARRAY+=("$opt")
+    done
+    log_message "Options array has ${#RCLONE_OPTS_ARRAY[@]} elements" "false"
+
+    # Apply command-line overrides
+    if [ "${SYSTEM_ONLY}" -eq 1 ]; then
+        BACKUPFILE_BACKUP_OPTION="yes"
+        log_message "System-backup phase forced on by --system-only" "false"
+    fi
+    if [ -n "${METHOD_OVERRIDE}" ]; then
+        BACKUPMETHOD="${METHOD_OVERRIDE}"
+        log_message "Transfer method overridden from command line: ${METHOD_OVERRIDE}" "false"
+    fi
+    if [ "${EXTRA_UPDATE}" -eq 1 ]; then
+        RCLONE_OPTS_ARRAY+=("--update")
+        log_message "Added --update from command line" "false"
+    fi
+
+    # A SYNCPATH_BACKUP inside SYNCPATH is a data-loss trap. Phase 1 syncs
+    # SYNCPATH and the archive is an excluded file, so --delete-excluded removes
+    # it. A full run hides that -- phase 2 re-uploads moments later -- but a run
+    # that skips the system phase (--saves-only, or BACKUPFILE_BACKUP_OPTION set
+    # to no) deletes the archives and puts nothing back. Only sync deletes, and
+    # --delete-excluded is a no-op for copy, so say nothing unless it can bite.
+    # Warn rather than refuse: the layout is the user's to choose, and archives
+    # may already be sitting there.
+    if [ "${BACKUPMETHOD}" == "sync" ] && [[ "${RCLONEOPTS}" == *"--delete-excluded"* ]]; then
+        case "${SYNCPATH_BACKUP}/" in
+            "${SYNCPATH%/}/"*)
+                log_message "SYNCPATH_BACKUP (${SYNCPATH_BACKUP}) is inside SYNCPATH (${SYNCPATH}).\nA saves-only backup will delete the system backups kept there.\nMove it alongside SYNCPATH, as the defaults do." "true" "WARN"
+                ;;
+        esac
+    fi
+
+    log_message "Configuration loaded successfully" "false"
+}
+
+# This device's folder in the cloud. cloud_device_id owns the derivation --
+# one implementation, because backup and restore disagreeing here means a
+# device cannot find the archive it wrote.
+device_folder() {
+    local id
+    id=$(/usr/bin/cloud_device_id 2>/dev/null | tr -cd 'A-Za-z0-9_.-')
+    [ -z "${id}" ] && id="device-unknown"
+    echo "${id}"
+}
+
+# Enhanced error reporting function
+report_rclone_error() {
+    local exit_code=$1
+    local operation="$2"
+    
+    case $exit_code in
+        0) log_message "${operation} completed successfully" "true" ;;
+        1) log_message "${operation} failed: Syntax or usage error" "true" "ERROR" ;;
+        2) log_message "${operation} failed: Error not otherwise categorized" "true" "ERROR" ;;
+        3) log_message "${operation} failed: Directory not found or permission denied" "true" "ERROR" ;;
+        4) log_message "${operation} failed: File not found" "true" "ERROR" ;;
+        5) log_message "${operation} failed: Temporary failure, retry may help" "true" "ERROR" ;;
+        6) log_message "${operation} failed: Less serious errors (e.g. partly transferred)" "true" "WARN" ;;
+        7) log_message "${operation} failed: Fatal error - rclone giving up" "true" "ERROR" ;;
+        8) log_message "${operation} failed: Transfer exceeded - limits exceeded" "true" "ERROR" ;;
+        9) log_message "${operation} completed: no files transferred" "true" ;;
+        *) log_message "${operation} failed with unknown error code: $exit_code" "true" "ERROR" ;;
+    esac
+}
+
+# Enhanced rclone execution function with better error handling
+execute_rclone_with_error_handling() {
+    local method="$1"
+    local source="$2"
+    local dest="$3"
+    shift 3
+    local extra_opts=("$@")
+    
+    log_message "About to execute: rclone ${method} ${extra_opts[*]} ${source} ${dest}" "false"
+    
+    # Use a temporary file to capture stderr while allowing stdout (progress) to display
+    local stderr_file="/tmp/rclone_stderr_$$"
+    
+    # Execute rclone with real-time progress display
+    # stdout goes to terminal (shows progress), stderr goes to temp file for logging
+    rclone "${method}" "${extra_opts[@]}" "${source}" "${dest}" 2>"$stderr_file"
+    local rclone_exit_code=$?
+    
+    # Log any stderr output for debugging
+    if [ -s "$stderr_file" ]; then
+        while IFS= read -r line; do
+            log_message "rclone stderr: $line" "false"
+        done < "$stderr_file"
+    fi
+    
+    # Clean up
+    rm -f "$stderr_file"
+    
+    return $rclone_exit_code
+}
+
+# PART 1: Game saves backup function
+# Backs up game saves to cloud storage
+backup_game_saves() {
+    log_message "====================================" "true"
+    log_message "STARTING GAME SAVES BACKUP" "true"
+    log_message "====================================" "true"
+    
+    log_message "Starting backup from ${BACKUPPATH} to ${REMOTENAME}${SYNCPATH}"
+    log_message "Backup started at $(date)" "false"
+    
+    # Check if local backup path exists and has content
+    if [ ! -d "${BACKUPPATH}" ]; then
+        log_message "Local backup path ${BACKUPPATH} does not exist" "true" "ERROR"
+        return 1
+    fi
+    
+    # Check if we have any files to backup (excluding directories we'll skip anyway)
+    local files_to_backup=$(find "${BACKUPPATH}" -type f ! -path "*/bios/*" ! -path "*/backups/*" ! -name "*.zip" ! -name "*.tar.gz" | head -1)
+    if [ -z "$files_to_backup" ]; then
+        log_message "No files found to backup in ${BACKUPPATH}" "true" "WARN"
+        return 0
+    fi
+    
+    # Test remote connectivity before starting backup
+    # One round trip, not two. mkdir is idempotent and fails when the remote
+    # is unreachable or the sign-in has lapsed, so it is the reachability
+    # test as well; the separate `lsd` that used to run first cost a second
+    # on every run and proved nothing mkdir would not. If it fails,
+    # check_internet does the slower work of wording the error.
+    #
+    # Not on a --recent run. Starting rclone costs a second on a handheld
+    # and the round trip another, for a directory the copy creates itself
+    # when it has something to put there -- and when it has nothing, the
+    # remote is never touched at all, which is the point of --recent. If
+    # the copy does fail, check_internet words the reason below.
+    if [ "${RECENT}" -eq 0 ]; then
+        log_message "Ensuring remote sync path exists: ${REMOTENAME}${SYNCPATH}" "false"
+        if ! rclone mkdir "${REMOTENAME}${SYNCPATH}" \
+                --contimeout 10s --timeout 20s --low-level-retries 1 --retries 1 2>/dev/null; then
+            log_message "Remote ${REMOTENAME}${SYNCPATH} is not accessible" "true" "ERROR"
+            check_internet
+            return 1
+        fi
+    fi
+    
+    # Pass an explicit --log-level INFO when LOG_LEVEL is INFO
+    local rclone_debug=""
+    local filtered_opts=("${RCLONE_OPTS_ARRAY[@]}")
+    
+    # Add debug logging if LOG_LEVEL is INFO
+    if [ "${LOG_LEVEL}" == "INFO" ]; then
+        rclone_debug="--log-level"
+    fi
+
+    # Build the complete options array
+    local all_opts=()
+    if [ ${#filtered_opts[@]} -gt 0 ]; then
+        all_opts+=("${filtered_opts[@]}")
+    else
+        all_opts+=(
+            "--progress"
+            "--log-file" "/var/log/cloud_sync.log"
+            "--filter-from" "/storage/.config/cloud_sync-rules.txt"
+        )
+    fi
+
+    # Add debug logging if enabled
+    if [ -n "$rclone_debug" ]; then
+        all_opts+=("$rclone_debug" "INFO")
+    fi
+
+    # Keep the system-backup archive out of the saves payload -- phase 2 sends it
+    # to SYNCPATH_BACKUP on its own. rclone matches paths relative to the transfer
+    # root, so the two rules that used to sit here never matched anything:
+    # "${BACKUPFOLDER}/**" is absolute, and "backups/**" names a directory that
+    # does not exist (it is "backup"). Only the blanket "*.zip" was doing the
+    # work, and it also overrode any user rule that deliberately included a zip.
+    # Derive the pattern from BACKUPFOLDER instead, so it keeps working if the
+    # folder is renamed and is simply skipped when it lives outside the payload.
+    # --stats-one-line collapses the whole display to a single totals line, so
+    # the per-file block goes away -- and the per-file block is the part that
+    # says the transfer is alive. A thousand small files spend minutes between
+    # percentage changes; the name of the file it is on right now is the only
+    # thing that distinguishes working from hung. The status page parses both.
+    all_opts+=("--stats" "1s" "--exclude=bios/**")
+
+    # --recent: only what changed since the last backup that worked.
+    #
+    # The game-exit sync used to compare every save on the device with the
+    # cloud. On a handheld that reads as "syncing every game", and it costs
+    # a remote listing each time. rclone can restrict a copy to files newer
+    # than an age, and skip listing the destination when few files qualify
+    # -- so with nothing changed it never touches the remote at all. The age
+    # runs from the last successful backup's stamp plus ten minutes, so a
+    # save written while that run was still listing stays inside the window.
+    #
+    # Time, not the game's name. Standalone emulators keep saves under their
+    # own layouts -- PPSSPP by game ID, Dreamcast in a shared VMU folder --
+    # and a filter on the ROM's name would miss every one of them.
+    #
+    # Full passes still happen: the boot sync and the menu rows. A file with
+    # a wrong mtime -- written before the clock was set, on a device with no
+    # RTC -- is caught there. And --recent always copies: a filtered sync
+    # would weigh deleting whatever the filter hid.
+    if [ "${RECENT}" -eq 1 ]; then
+        local stamp_file=/storage/.cache/cloud_sync/last-backup
+        local stamp_epoch="" stamp_rc="" now
+        now=$(date +%s)
+        [ -r "${stamp_file}" ] && read -r stamp_epoch stamp_rc < "${stamp_file}"
+        if [ "${stamp_rc}" = "0" ] && [ "${stamp_epoch:-0}" -gt 0 ] 2>/dev/null \
+           && [ "${stamp_epoch}" -le "${now}" ]; then
+            local age=$(( now - stamp_epoch + 600 ))
+            all_opts+=("--max-age" "${age}s" "--no-traverse")
+            log_message "recent: only files changed in the last ${age}s, since the last successful backup" "false"
+        else
+            log_message "recent: no successful backup on record, doing a full pass" "false"
+        fi
+        if [ "${BACKUPMETHOD}" != "copy" ]; then
+            log_message "recent: BACKUPMETHOD=${BACKUPMETHOD} overridden to copy for a filtered run" "false"
+            BACKUPMETHOD="copy"
+        fi
+    fi
+    local backup_rel="${BACKUPFOLDER#${BACKUPPATH%/}/}"
+    if [ "${backup_rel}" != "${BACKUPFOLDER}" ]; then
+        all_opts+=("--exclude=${backup_rel}/**")
+    fi
+
+    # A mirror deletes whatever the destination has and this device does not.
+    # With one cloud folder shared by several handhelds -- which is the whole
+    # point of the folder -- that means the last device to run wipes every
+    # other device's saves. It happened: 70 files, another handheld's entire
+    # save library, gone in one run of the shipped default.
+    #
+    # The default is "copy" now, which never deletes. Where somebody has
+    # deliberately chosen "sync", the deletions are moved aside instead of
+    # destroyed, so a mirror is recoverable rather than final. Dated, because
+    # the interesting question afterwards is always "what did the run on
+    # Tuesday take away".
+    if [ "${BACKUPMETHOD}" == "sync" ]; then
+        # A sibling of SYNCPATH, never inside it: rclone refuses a
+        # --backup-dir that overlaps the destination, and the same reasoning
+        # already applies to SYNCPATH_BACKUP.
+        local archive_dir="${SYNCPATH%/}-replaced/$(date +%Y_%m_%d-%H%M%S)"
+        all_opts+=("--backup-dir=${REMOTENAME}${archive_dir}")
+        log_message "INFO" "sync mode: anything replaced or removed goes to ${archive_dir}"
+    fi
+
+    # Check if the rclone version supports the terminal width flag
+
+    # Execute rclone with enhanced error handling
+    execute_rclone_with_error_handling \
+        "${BACKUPMETHOD}" \
+        "${BACKUPPATH}/" \
+        "${REMOTENAME}${SYNCPATH}/" \
+        "${all_opts[@]}"
+
+    BACKUP_STATUS=$?
+    # A --recent run skipped the reachability probe; if the copy itself
+    # failed, find out whether the remote or the network is the reason.
+    if [ "${RECENT}" -eq 1 ] && [ $BACKUP_STATUS -ne 0 ] && [ $BACKUP_STATUS -ne 9 ]; then
+        check_internet
+    fi
+
+    # Report the result with detailed error information
+    report_rclone_error $BACKUP_STATUS "Game saves backup"
+
+    # RSYNCRMDIR: after a successful backup, remove orphaned empty directories on
+    # the remote (--leave-root keeps the sync root itself). Exit code 9 means
+    # "success, no files transferred", so tidy on that too.
+    # Not on a --recent run: tidying is a full-pass job, and a remote round
+    # trip the game-exit sync should not pay.
+    if [ "${RSYNCRMDIR}" == "yes" ] && [ "${RECENT}" -eq 0 ] && { [ $BACKUP_STATUS -eq 0 ] || [ $BACKUP_STATUS -eq 9 ]; }; then
+        log_message "Removing orphaned empty directories on remote: ${REMOTENAME}${SYNCPATH}" "false"
+        rclone rmdirs "${REMOTENAME}${SYNCPATH}" --leave-root --log-file /var/log/cloud_sync.log 2>/dev/null \
+            || log_message "Empty-directory cleanup failed (non-fatal)" "true" "WARN"
+    fi
+
+    return $BACKUP_STATUS
+}
+
+# PART 2: System backup file transfer function
+# Transfers existing system backup files to cloud storage
+# Only runs when BACKUPFILE_BACKUP_OPTION is set to "yes"
+backup_system_files() {
+    echo
+    log_message "====================================" "true"
+    log_message "STARTING SYSTEM BACKUP FILE TRANSFER" "true"
+    log_message "====================================" "true"
+    
+    if [ "${BACKUPFILE_BACKUP_OPTION}" == "yes" ]; then
+        # Check if backup folder exists first
+        if [ ! -d "${BACKUPFOLDER}" ]; then
+        # Nothing to send is not a failure. These used to return 1, which the
+        # summary then printed as "COMPLETED WITH ERRORS" on a device that had
+        # simply never made a system backup. backup_game_saves already returns
+        # 0 with a warning in the same situation.
+            log_message "Backup folder ${BACKUPFOLDER} does not exist" "true" "WARN"
+            return 0
+        fi
+        
+        # Skip if backup directory is empty to avoid unnecessary transfers
+        if [ -z "$(ls -A ${BACKUPFOLDER} 2>/dev/null)" ]; then
+            log_message "There are no system backup files to transfer" "true" "WARN"
+            return 0
+        fi
+        
+        # Each device writes into its own folder. A single shared filename
+        # meant the second device to run replaced the first device's archive,
+        # with no remote history to recover it from -- the local archive/
+        # rotation never leaves the device (fork #49).
+        local device_dest="${REMOTENAME}${SYNCPATH_BACKUP}/$(device_folder)"
+
+        log_message "Starting transfer of system backup files from ${BACKUPFOLDER} to ${device_dest}"
+        log_message "System backup file transfer started at $(date)" "false"
+        
+        # Test remote backup path connectivity
+        log_message "Testing remote backup path connectivity: ${device_dest}" "false"
+        rclone mkdir "${device_dest}/" 2>/dev/null
+        local mkdir_status=$?
+        if [ $mkdir_status -ne 0 ]; then
+            log_message "Failed to create/access remote backup directory (exit code: $mkdir_status)" "true" "ERROR"
+            report_rclone_error $mkdir_status "Remote backup directory creation"
+            return $mkdir_status
+        fi
+        
+        # No --filter-from here on purpose. The saves allowlist is anchored to
+        # BACKUPPATH, but this transfer's root is BACKUPFOLDER, so its rules
+        # describe paths that do not exist in this tree -- and its "- /**/*.zip"
+        # matches the archive itself. This phase only ever kept working because
+        # rclone applies --include ahead of --filter-from; borrowing the rules
+        # bought nothing and left the transfer one precedence change from
+        # silently sending nothing.
+        #
+        # The include is anchored with a leading slash so it matches only the
+        # current archive at the root. backuptool rotates older backups into
+        # BACKUPFOLDER/archive/, and an unanchored "*.zip" matches at any depth,
+        # which would upload every rotated archive on every sync.
+        local backup_opts=(
+            "--progress"
+            "--log-file" "/var/log/cloud_sync.log"
+            "--include=/*.{zip,tar.gz}"
+            "--stats" "1s"
+        )
+
+        # Check if the rclone version supports the terminal width flag
+        if rclone help | grep -q progress-terminal-width; then
+            backup_opts+=("--progress-terminal-width=80")
+        fi
+        
+        # rclone decides whether to send a file by comparing it with the one
+        # already there. Given neither modification times nor hashes it falls
+        # back to size alone, and plenty of remotes offer neither -- a WebDAV
+        # server commonly reports `Precision` unsupported and `Hashes: []`.
+        #
+        # The archive is ~17 MB of OS-shipped assets wrapped around a few KB of
+        # configuration, so its size barely moves when settings change:
+        # "preamp=7" -> "preamp=8" is exactly the same width, as is any value
+        # swapped for another of equal length. rclone then judges the local and
+        # remote copies identical, skips the transfer, and the run reports
+        # success while the cloud copy silently stays stale. Fork issue #53.
+        #
+        # So decide here, on content, instead of leaving it to metadata the
+        # remote may not have. The marker records what this device last
+        # actually put in the cloud; when the archive differs from that, the
+        # transfer is forced past rclone's comparison. A game-exit backup runs
+        # this on every quit, so uploading 17 MB unconditionally is not an
+        # option -- the archive only changes when someone runs `backuptool
+        # backup`, and this uploads exactly then.
+        local state_dir="/storage/.cache/cloud_sync"
+        local uploaded_marker="${state_dir}/system-backup.uploaded"
+        mkdir -p "${state_dir}" 2>/dev/null
+
+        # Identify the payload the way the transfer does -- the zip files at
+        # the root of BACKUPFOLDER, which is exactly what "--include=/*.{zip,tar.gz}"
+        # sends. Deriving a filename instead would mean depending on OS_NAME,
+        # which is empty in this script (the banner above prints a blank for
+        # the same reason), and on backuptool's naming staying in step.
+        local local_sum=""
+        local last_sum=""
+        local local_bytes=0
+        # Collect the archives that exist rather than branching on ls's exit
+        # status: busybox ls returns non-zero when ANY argument is unmatched,
+        # and after the tar change BACKUPFOLDER normally holds exactly one
+        # format -- the previous one having been rotated into archive/. The
+        # gate therefore failed on every device that had taken one backup,
+        # leaving local_sum empty, which silently switched off the post-upload
+        # size verification below. That check is the #53 guard: a backup that
+        # reported success while sending nothing.
+        local archives=()
+        local a
+        for a in "${BACKUPFOLDER}"/*.zip "${BACKUPFOLDER}"/*.tar.gz; do
+            [ -f "${a}" ] && archives+=("${a}")
+        done
+        if [ ${#archives[@]} -gt 0 ]; then
+            # Hash of the members' hashes, so more than one archive at the
+            # root is still covered by a single comparison.
+            local_sum=$(md5sum "${archives[@]}" 2>/dev/null | md5sum | cut -d' ' -f1)
+            local_bytes=$(cat "${archives[@]}" 2>/dev/null | wc -c)
+        fi
+        if [ -f "${uploaded_marker}" ]; then
+            last_sum=$(cat "${uploaded_marker}" 2>/dev/null)
+        fi
+
+        if [ -n "${local_sum}" ] && [ "${local_sum}" = "${last_sum}" ]; then
+            # Say what is true. Reporting a transfer that did not happen is
+            # how the stale-copy bug stayed invisible.
+            log_message "System backup is unchanged since the last upload; nothing to send" "true"
+            BACKUP_SYSTEM_STATUS=0
+            return 0
+        fi
+
+        # Force it past the size comparison. We have already established the
+        # content differs, so rclone's own check can only be wrong here.
+        backup_opts+=("--ignore-times")
+
+        # Uploaded under a dated name, one file at a time, rather than by
+        # mirroring the folder.
+        #
+        # The cloud used to hold exactly one archive per device, overwritten on
+        # every run: nothing to tell you when it was taken, and no way back to
+        # the state before whatever you are trying to undo. Dates lead the name
+        # so a listing sorts chronologically by itself --
+        # 2026_09_02-143000-ROCKNIX_BACKUP.zip.
+        #
+        # copyto rather than the configured method, always. A mirror would look
+        # at a folder holding one local archive and delete every dated one in
+        # the cloud, which is the opposite of keeping history.
+        # The folder options minus anything that selects files: copyto is
+        # given one path and rejects filters.
+        local copy_opts=()
+        local opt
+        local skip_next=0
+        for opt in "${backup_opts[@]}"; do
+            # A flag and its value may be one element ("--include=/*.{zip,tar.gz}") or
+            # two ("--include" "/*.zip"). Dropping only the flag in the second
+            # form leaves the bare pattern behind, and rclone reads it as
+            # another path -- copyto then has three and fails with an
+            # uncategorised error, having transferred nothing.
+            if [ ${skip_next} -eq 1 ]; then
+                skip_next=0
+                continue
+            fi
+            case "${opt}" in
+                --include|--exclude|--filter|--filter-from)
+                    skip_next=1; continue ;;
+                --include=*|--exclude=*|--filter*) continue ;;
+                # The guard that adds this greps `rclone help`, which mentions
+                # the flag on builds that do not accept it -- so it reaches the
+                # command line and rclone exits with "unknown flag", having
+                # transferred nothing while the run still reported success. It
+                # only shapes the progress display, so nothing is lost here.
+                --progress-terminal-width*) continue ;;
+            esac
+            copy_opts+=("${opt}")
+        done
+
+        local stamp
+        stamp=$(date +%Y_%m_%d-%H%M%S)
+        BACKUP_SYSTEM_STATUS=0
+        local sent_any=0
+        # What this run actually put there, so the check afterwards measures
+        # those and not the whole history beside them.
+        local uploaded_names=()
+        local archive
+        for archive in "${BACKUPFOLDER}"/*.zip "${BACKUPFOLDER}"/*.tar.gz; do
+            [ -f "${archive}" ] || continue
+            local base target
+            base=$(basename "${archive}")
+            # backuptool names archives with the date now, so the local name is
+            # already the one the cloud should carry -- stamping it again gave
+            # "2026_09_02-...-2026_09_01-...-ROCKNIX_BACKUP.zip". Only an
+            # archive made before that carries no date, and gets one here so
+            # the folder still sorts.
+            case "${base}" in
+                [0-9][0-9][0-9][0-9]_*) target="${base}" ;;
+                *) target="${stamp}-${base}" ;;
+            esac
+            log_message "Uploading ${base} as ${target}" "false"
+            # Without the filter flags. copyto names one file explicitly, and
+            # rclone refuses filters on a single-file copy -- "--include=/*.{zip,tar.gz}"
+            # came from the folder transfer this replaced and made every upload
+            # exit with a usage error.
+            rclone copyto "${archive}" "${device_dest}/${target}" \
+                "${copy_opts[@]}"
+            local rc=$?
+            if [ ${rc} -ne 0 ]; then
+                BACKUP_SYSTEM_STATUS=${rc}
+                report_rclone_error ${rc} "System backup file transfer"
+                break
+            fi
+            uploaded_names+=("${target}")
+            sent_any=1
+        done
+
+        # Say what this folder is. "ROCKNIX-ee5013fc56" tells its owner
+        # nothing -- not which handheld it came from, nor what the hex means.
+        # The folder name has to stay the stable identifier, because it is what
+        # a device finds its own backups by, so the explanation goes inside it.
+        if [ ${BACKUP_SYSTEM_STATUS} -eq 0 ] && [ ${sent_any} -eq 1 ]; then
+            local model="unknown"
+            if [ -r /sys/firmware/devicetree/base/model ]; then
+                model=$(tr -d '\0' < /sys/firmware/devicetree/base/model)
+            fi
+            local manifest="${state_dir}/device.json"
+            cat > "${manifest}" <<MANIFEST
+{
+  "id": "$(basename "${device_dest}")",
+  "model": "${model}",
+  "family": "${HW_DEVICE:-unknown}",
+  "hostname": "$(hostname 2>/dev/null)",
+  "os_version": "$(grep -m1 '^OS_VERSION=' /etc/os-release 2>/dev/null | cut -d'"' -f2)",
+  "last_backup": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "keep": "${CLOUD_BACKUP_KEEP:-3}"
+}
+MANIFEST
+            rclone copyto "${manifest}" "${device_dest}/device.json" \
+                --log-file /var/log/cloud_sync.log 2>/dev/null
+        fi
+
+        # Keep a bounded history. Names lead with the date, so sorting them is
+        # ordering them by age and no metadata call is needed.
+        if [ ${BACKUP_SYSTEM_STATUS} -eq 0 ] && [ ${sent_any} -eq 1 ]; then
+            local keep="${CLOUD_BACKUP_KEEP:-3}"
+            case "${keep}" in
+                ''|*[!0-9]*) keep=3 ;;
+            esac
+            # Newest first, with anything undated treated as oldest. Sorting
+            # names alone puts "ROCKNIX_BACKUP.zip" above every "2026_..."
+            # because R sorts after a digit -- so an archive from before names
+            # carried dates would hold a keep-slot for ever while genuinely
+            # newer ones were pruned around it.
+            local listing
+            listing=$(rclone lsf --files-only --include "*.{zip,tar.gz}" "${device_dest}/" 2>/dev/null)
+            local old_archive
+            { printf '%s\n' "${listing}" | grep -E '^[0-9]{4}_' | sort -r
+              printf '%s\n' "${listing}" | grep -vE '^[0-9]{4}_' | grep -v '^$'
+            } | grep -v '^$' | tail -n +$((keep + 1)) | while read -r old_archive
+            do
+                [ -n "${old_archive}" ] || continue
+                log_message "Removing old cloud backup ${old_archive}" "false"
+                rclone deletefile "${device_dest}/${old_archive}" 2>/dev/null
+            done
+        fi
+
+        # Only record the upload once the remote actually holds a file of the
+        # right size. An exit code says the command ended, not that the bytes
+        # arrived, and a marker written on a failed transfer would suppress
+        # every retry afterwards.
+        if [ ${BACKUP_SYSTEM_STATUS} -eq 0 ] && [ -n "${local_sum}" ]; then
+            # The archives we just wrote, not everything in the folder. The
+            # cloud keeps a dated history now, so sizing the whole folder adds
+            # up every archive it holds and compares three of them against the
+            # one local file -- "51486484 vs 17162184", a mismatch reported as
+            # a failed upload on a transfer that worked perfectly. The check is
+            # right; what it was measuring stopped being true when retention
+            # arrived.
+            local remote_bytes=0
+            local checked=0
+            local uploaded
+            for uploaded in "${uploaded_names[@]}"; do
+                local one
+                one=$(rclone size "${device_dest}/${uploaded}" --json 2>/dev/null \
+                    | sed -n 's/.*"bytes":[[:space:]]*\([0-9]*\).*/\1/p')
+                [ -n "${one}" ] || continue
+                remote_bytes=$((remote_bytes + one))
+                checked=1
+            done
+            [ ${checked} -eq 1 ] || remote_bytes=""
+            if [ -n "${remote_bytes}" ] && [ "${remote_bytes}" = "${local_bytes}" ]; then
+                echo "${local_sum}" > "${uploaded_marker}"
+            else
+                log_message "The cloud copy did not come back the size we sent (${remote_bytes:-none} vs ${local_bytes}); it will be sent again next time" "true" "WARN"
+                BACKUP_SYSTEM_STATUS=1
+            fi
+        fi
+        
+        return $BACKUP_SYSTEM_STATUS
+    else
+        log_message "System backup file transfer skipped (BACKUPFILE_BACKUP_OPTION is not set to 'yes')" "true"
+        BACKUP_SYSTEM_STATUS=0
+    fi
+    
+    return $BACKUP_SYSTEM_STATUS
+}
+
+# Main script execution
+main() {
+    check_network_link
+    check_rclone_config
+    # backup_game_saves proves the remote reachable with the mkdir it needs
+    # anyway; only the system-only path has no such step of its own.
+    [ "${SYSTEM_ONLY}" -eq 1 ] && check_internet
+    load_config
+    
+    # Use the first configured remote in rclone
+    # Note: This assumes at least one remote is configured and the first one should be used
+    REMOTENAME=$(first_remote)
+    
+    # Begin main script operations with user-friendly header
+    log_message "=> ${OS_NAME} CLOUD BACKUP UTILITY\n"
+    
+    # Execute Part 1: Game saves backup
+    # This performs the primary save file backup operation using the configured method
+    if [ "${SYSTEM_ONLY}" -eq 1 ]; then
+        log_message "Game saves backup skipped (--system-only)" "true"
+        BACKUP_STATUS=0
+    else
+        backup_game_saves
+        BACKUP_STATUS=$?
+    fi
+    
+    # Add a pause for better visual separation between operations
+    pause 2
+    
+    # Execute Part 2: System backup file transfer
+    # This backs up system backup files (zip files) if enabled in configuration
+    if [ "${SAVES_ONLY}" -eq 1 ]; then
+        log_message "System backup file transfer skipped (--saves-only)" "true"
+        BACKUP_SYSTEM_STATUS=0
+    else
+        backup_system_files
+        BACKUP_SYSTEM_STATUS=$?
+    fi
+    
+    # Add a pause before summary
+    pause 2
+    
+    # Add a line break for better visual separation
+    echo
+    
+    # Provide final summary of all operations
+    log_message "====================================" "true"
+    log_message "BACKUP SUMMARY:" "true"
+    log_message "Game saves backup: $([ $BACKUP_STATUS -eq 0 ] && echo 'SUCCESS' || echo 'COMPLETED WITH ERRORS')" "true"
+    [ "${BACKUPFILE_BACKUP_OPTION}" == "yes" ] && log_message "System backup file transfer: $([ $BACKUP_SYSTEM_STATUS -eq 0 ] && echo 'SUCCESS' || echo 'COMPLETED WITH ERRORS')" "true"
+    log_message "Log file: ${LOG_FILE}" "true"
+    log_message "====================================" "true"
+    
+    # Add a final pause before exiting
+    pause 3
+    
+    # Use the game saves backup status as the overall exit code
+    clean_exit ${BACKUP_STATUS}
+}
+
+# Set up signal trap to handle user interruption gracefully
+trap 'log_message "Script interrupted by user" "false" "WARN"; clean_exit 130' INT TERM
+
+# Start script execution
+take_cloud_lock
+main

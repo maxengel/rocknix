@@ -1,0 +1,24 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+
+# Sync cloud saves in the background at startup when enabled in
+# EmulationStation (Network Settings > Cloud Saves > Sync During Startup).
+
+. /etc/profile.d/001-functions
+
+if [ "$(get_setting cloudsaves.startup)" = "1" ]
+then
+  (
+    # Wait for the network to come up (up to ~60s), then sync both ways
+    # without deleting anything: copy with --update keeps the newest copy
+    # of every save on both sides.
+    for _try in $(seq 1 30)
+    do
+      ping -q -c1 -W2 google.com >/dev/null 2>&1 && break
+      sleep 2
+    done
+    /usr/bin/cloud_restore --yes --method=copy --update
+    /usr/bin/cloud_backup --yes --method=copy --update
+  ) >/dev/null 2>&1 &
+fi

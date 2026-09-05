@@ -1,0 +1,617 @@
+#!/usr/bin/env python3
+"""Round-trip the cloud-sync scripts against the local QA S3 backend.
+
+Drives a ROCKNIX device over SSH - a VM from generic-x64-vm, or real hardware
+on the LAN - through backup, restore and content sync, and checks the result
+from both ends: file contents on the device, and objects in the bucket.
+
+    ./tools/cloud-test-backend up
+    ./tools/cloud-round-trip --host root@127.0.0.1 --port 10022
+
+Two guards, both load-bearing:
+
+* Every cloud_* script picks its remote with `rclone listremotes | head -1`.
+  If the device has another remote sorting earlier, the tests would sync a
+  real cloud account instead. The remote is asserted, never assumed.
+* Restore is destructive by design. The suite works in a scratch tree by
+  default and only touches /storage/roms with --real-roms, so pointing this
+  at a device with real saves cannot quietly delete them.
+"""
+
+import argparse
+import hashlib
+import os
+import shlex
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+BACKEND = os.path.join(HERE, "cloud-test-backend")
+
+SCRATCH = "/storage/cloud-qa"
+CONF = "/storage/.config/cloud_sync.conf"
+RCLONE_CONF = "/storage/.config/rclone/rclone.conf"
+
+# Content chosen to catch the failure modes that have actually bitten:
+# a nested path, a name with a space (quoting), and a file the allowlist
+# must exclude - the filter is what stands between --delete-excluded and
+# somebody's cloud data.
+FIXTURES = {
+    "saves/game1.srm": b"save-one-v1",
+    "saves/nested/deep/game2.srm": b"save-two-v1",
+    "saves/game with space.srm": b"save-three-v1",
+    "savestates/game1.state": b"state-one-v1",
+}
+EXCLUDED = {"saves/scratch.tmp": b"should-never-leave-the-device"}
+
+# Content sync is a different code path: whole directories of ROMs and BIOS,
+# not allowlisted save files. Its directory is created and removed by the test
+# and named so it is obvious what it is if a run is interrupted.
+# The system-backup archive: phase 2 of both scripts. Nothing exercised this
+# until it was found broken - cloud_restore filtered on "backup/*.zip" while
+# the archive sits at the root of SYNCPATH_BACKUP, so it restored nothing and
+# still reported SUCCESS. A silent no-op is exactly what a round-trip catches.
+ARCHIVE_NAME = "ROCKNIX-backup-qa.zip"
+ARCHIVE_BODY = b"system-backup-archive-v1"
+# Deliberately the same length as ARCHIVE_BODY. A remote with no modtimes and
+# no hashes leaves rclone comparing by size alone, so a second archive of
+# identical size was silently never uploaded while the run reported success
+# (#53). The real archive is ~17 MB of OS-shipped assets around a few KB of
+# config, so an ordinary settings change routinely preserves its size --
+# "preamp=7" -> "preamp=8" is the same width. Only a second backup against an
+# already-populated remote can catch it; the first one always transfers.
+ARCHIVE_BODY_V2 = b"system-backup-archive-v2"
+assert len(ARCHIVE_BODY_V2) == len(ARCHIVE_BODY)
+
+CONTENT_DIR = "qa-content"
+CONTENT_FIXTURES = {
+    "rom1.bin": b"rom-one",
+    "sub/rom2.bin": b"rom-two",
+    "rom with space.bin": b"rom-three",
+}
+
+
+class Fail(Exception):
+    pass
+
+
+class Device:
+    def __init__(self, host, port, identity=None):
+        self.base = ["ssh", "-o", "StrictHostKeyChecking=no",
+                     "-o", "UserKnownHostsFile=/dev/null",
+                     "-o", "LogLevel=ERROR", "-p", str(port)]
+        if identity:
+            self.base += ["-i", identity]
+        self.base.append(host)
+
+    def run(self, cmd, check=True):
+        p = subprocess.run(self.base + [cmd], capture_output=True, text=True)
+        if check and p.returncode != 0:
+            raise Fail(f"{cmd!r} exited {p.returncode}: {p.stderr.strip() or p.stdout.strip()}")
+        return p.stdout
+
+    def write(self, path, data: bytes):
+        self.run(f"mkdir -p {shlex.quote(os.path.dirname(path))}")
+        p = subprocess.run(self.base + [f"cat > {shlex.quote(path)}"],
+                           input=data, capture_output=True)
+        if p.returncode != 0:
+            raise Fail(f"writing {path}: {p.stderr.decode().strip()}")
+
+    def sha(self, path):
+        out = self.run(f"sha256sum {shlex.quote(path)} 2>/dev/null || true")
+        return out.split()[0] if out.strip() else None
+
+
+def backend(*args):
+    return subprocess.run([BACKEND, *args], capture_output=True, text=True,
+                          check=True).stdout
+
+
+def step(name):
+    print(f"\n=== {name}")
+
+
+def check(cond, ok, bad):
+    print(f"    {'PASS' if cond else 'FAIL'}  {ok if cond else bad}")
+    return cond
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--host", required=True, help="ssh target, e.g. root@127.0.0.1")
+    ap.add_argument("--port", type=int, default=10022)
+    ap.add_argument("--identity", help="ssh private key")
+    ap.add_argument("--real-roms", action="store_true",
+                    help="use /storage/roms instead of a scratch tree (DESTRUCTIVE)")
+    ap.add_argument("--keep", action="store_true", help="leave fixtures in place")
+    args = ap.parse_args()
+
+    dev = Device(args.host, args.port, args.identity)
+    remote = backend("remote-name").strip()
+    root = "/storage/roms" if args.real_roms else SCRATCH
+    failures = 0
+
+    step("device reachable and equipped")
+    who = dev.run("echo ok").strip()
+    if not check(who == "ok", "ssh works", "no shell over ssh"):
+        return 1
+    have = dev.run("command -v rclone cloud_backup cloud_restore || true")
+    failures += not check("rclone" in have and "cloud_backup" in have,
+                          "rclone and cloud scripts present",
+                          "device is missing rclone or the cloud scripts")
+
+    step("point the device at the QA bucket")
+    dev.run(f"mkdir -p {os.path.dirname(RCLONE_CONF)}")
+    dev.write(RCLONE_CONF, backend("rclone-conf").encode())
+    first = dev.run("rclone listremotes 2>/dev/null | head -1").strip().rstrip(":")
+    if not check(first == remote,
+                 f"first remote is {remote!r}, which is what the scripts will use",
+                 f"first remote is {first!r}, not {remote!r} - refusing to sync "
+                 f"someone else's account"):
+        return 1
+
+    settings = {}
+    prev_paths = {}
+    if not args.real_roms:
+        # Keep the scripts' own defaults for everything except where they
+        # read and write, so the code under test is unchanged.
+        dev.run(f"mkdir -p {SCRATCH}")
+        # Remember what these were. Pointing a device at a scratch tree and
+        # leaving it there means its next real backup silently captures
+        # nothing -- the failure this suite exists to catch, caused by the
+        # suite. Found when a later manual run reported "Backup folder
+        # /storage/cloud-qa/backup does not exist" on a device the test had
+        # finished with.
+        for key in ("BACKUPPATH", "RESTOREPATH", "BACKUPFOLDER"):
+            prev_paths[key] = dev.run(
+                f"grep -m1 '^{key}=' {CONF} 2>/dev/null || true").strip()
+        settings.update({"BACKUPPATH": SCRATCH, "RESTOREPATH": SCRATCH,
+                         "BACKUPFOLDER": f"{SCRATCH}/backup"})
+
+    # A bucket-based endpoint needs the bucket as the first path component,
+    # and the shipped "/GAMES" is not a legal bucket name (issue #38). The
+    # backend states what it needs rather than the driver assuming.
+    syncpath = backend("syncpath").strip()
+    settings["SYNCPATH"] = syncpath
+    # A SIBLING of syncpath, not a child. Phase 1 syncs syncpath with
+    # --delete-excluded and the archive is excluded, so a nested path gets
+    # deleted there; a full run masks it because phase 2 re-uploads, but a
+    # --saves-only run deletes the archives and puts nothing back.
+    settings["SYNCPATH_BACKUP"] = backend("syncpath-backup").strip()
+    # cloud_content_* default to the remote root, which on a bucket-based
+    # endpoint means a bucket per content directory (#38, same cause).
+    settings["CONTENTPATH"] = backend("contentpath").strip()
+
+    for key, val in settings.items():
+        dev.run(f"grep -q '^{key}=' {CONF} && sed -i 's|^{key}=.*|{key}=\"{val}\"|' {CONF} "
+                f"|| echo '{key}=\"{val}\"' >> {CONF}")
+    if not args.real_roms:
+        print(f"    scratch tree {SCRATCH} (pass --real-roms to use /storage/roms)")
+    print(f"    SYNCPATH {syncpath} on the {backend('backend').strip()} endpoint")
+
+    step("plant fixtures")
+    for rel, data in {**FIXTURES, **EXCLUDED}.items():
+        dev.write(f"{root}/{rel}", data)
+    before = {rel: dev.sha(f"{root}/{rel}") for rel in FIXTURES}
+    failures += not check(all(before.values()), "fixtures written",
+                          "could not write fixtures")
+
+    step("cloud_backup uploads")
+    backend("reset")
+    dev.run("cloud_backup >/dev/null 2>&1 || true", check=False)
+    listing = backend("ls")
+    uploaded = {rel for rel in FIXTURES if os.path.basename(rel) in listing}
+    failures += not check(len(uploaded) == len(FIXTURES),
+                          f"all {len(FIXTURES)} fixtures reached the bucket",
+                          f"only {len(uploaded)}/{len(FIXTURES)} reached the bucket")
+    # Only meaningful once something uploaded: if the backup did nothing at
+    # all, "the excluded file is absent" is true for the wrong reason and
+    # reports a pass over a broken run.
+    leaked = [rel for rel in EXCLUDED if os.path.basename(rel) in listing]
+    if uploaded:
+        failures += not check(not leaked,
+                              "the allowlist kept excluded files out of the cloud",
+                              f"excluded file(s) uploaded: {leaked}")
+    else:
+        print("    SKIP  allowlist check - nothing uploaded, so it proves nothing")
+
+    step("cloud_restore brings them back")
+    for rel in FIXTURES:
+        dev.run(f"rm -f {shlex.quote(f'{root}/{rel}')}")
+    gone = [rel for rel in FIXTURES if dev.sha(f"{root}/{rel}")]
+    failures += not check(not gone, "local copies removed before restore",
+                          f"still present: {gone}")
+    dev.run("cloud_restore >/dev/null 2>&1 || true", check=False)
+    after = {rel: dev.sha(f"{root}/{rel}") for rel in FIXTURES}
+    same = [rel for rel in FIXTURES if before[rel] and before[rel] == after[rel]]
+    failures += not check(len(same) == len(FIXTURES),
+                          f"all {len(FIXTURES)} files restored byte-identical",
+                          f"only {len(same)}/{len(FIXTURES)} matched: "
+                          f"{[r for r in FIXTURES if r not in same]}")
+
+    step("system backup archive round-trips")
+    # Off by default, so the phase would otherwise never run here. Remember the
+    # device's own setting: leaving it on would mean a later user-initiated
+    # restore also pulls archives down, which they never asked for.
+    prev_restore_opt = dev.run(
+        f"grep -m1 '^BACKUPFILE_RESTORE_OPTION=' {CONF} 2>/dev/null || true").strip()
+    dev.run(f"grep -q '^BACKUPFILE_RESTORE_OPTION=' {CONF} "
+            f"&& sed -i 's|^BACKUPFILE_RESTORE_OPTION=.*|BACKUPFILE_RESTORE_OPTION=\"yes\"|' {CONF} "
+            f"|| echo 'BACKUPFILE_RESTORE_OPTION=\"yes\"' >> {CONF}")
+    archive = f"{root}/backup/{ARCHIVE_NAME}"
+    dev.write(archive, ARCHIVE_BODY)
+    arch_before = dev.sha(archive)
+    backend("reset")
+    dev.run("cloud_backup >/dev/null 2>&1 || true", check=False)
+    listing = backend("ls")
+    uploaded_archive = ARCHIVE_NAME in listing
+    failures += not check(uploaded_archive,
+                          "the system backup archive reached the cloud",
+                          "the archive was not uploaded")
+
+    # It must land under this device's own folder. A single shared filename is
+    # what let the second device to run replace the first device's archive,
+    # with no remote history to recover it from (#49). One device cannot
+    # demonstrate the collision, but it can prove the archive is namespaced --
+    # which is the property that prevents it.
+    if uploaded_archive:
+        device_id = dev.run("cloud_device_id 2>/dev/null || true").strip()
+        failures += not check(
+            bool(device_id) and f"{device_id}/{ARCHIVE_NAME}" in listing,
+            f"the archive is filed under this device ({device_id or 'no id'})",
+            "the archive sits at the root of the backup path - a second "
+            "device would overwrite it")
+    dev.run(f"rm -f {shlex.quote(archive)}")
+    dev.run("cloud_restore >/dev/null 2>&1 || true", check=False)
+    if uploaded_archive:
+        arch_after = dev.sha(archive)
+        failures += not check(arch_after is not None and arch_after == arch_before,
+                              "the archive came back byte-identical",
+                              "the archive did not come back - restore can report "
+                              "SUCCESS while its filter matches nothing")
+    else:
+        print("    SKIP  archive restore - nothing was uploaded, so it proves nothing")
+
+    # A second backup, against a remote that already holds one. The first
+    # transfer always happens, so it cannot detect a comparison that wrongly
+    # decides the file is already there - which is what #53 was.
+    if uploaded_archive:
+        step("a changed archive of the same size still reaches the cloud")
+        dev.write(archive, ARCHIVE_BODY_V2)
+        v2_local = dev.sha(archive)
+        dev.run("cloud_backup >/dev/null 2>&1 || true", check=False)
+        dev.run(f"rm -f {shlex.quote(archive)}")
+        dev.run("cloud_restore >/dev/null 2>&1 || true", check=False)
+        v2_back = dev.sha(archive)
+        failures += not check(v2_back is not None and v2_back == v2_local,
+                              "the second archive replaced the first in the cloud",
+                              "the changed archive never reached the cloud - a "
+                              "size-only comparison can skip the upload and "
+                              "still report SUCCESS")
+
+    # --- content backup / restore -------------------------------------------
+    # cloud_content_backup hardcodes DEST=/storage/roms and ignores BACKUPPATH,
+    # so the scratch tree cannot contain this one. It is confined instead to a
+    # directory the harness creates and removes, and driven per-directory:
+    # `--all` would upload the whole ROM library, which is never what a test
+    # should do to someone's device.
+    step("cloud_content_backup uploads a content directory")
+    croot = f"/storage/roms/{CONTENT_DIR}"
+    dev.run(f"rm -rf {shlex.quote(croot)}")
+    for rel, data in CONTENT_FIXTURES.items():
+        dev.write(f"{croot}/{rel}", data)
+    cbefore = {rel: dev.sha(f"{croot}/{rel}") for rel in CONTENT_FIXTURES}
+
+    listed = dev.run(f"cloud_content_backup --list 2>/dev/null || true")
+    failures += not check(CONTENT_DIR in listed,
+                          f"{CONTENT_DIR} is offered as a content directory",
+                          f"--list did not offer it: {listed.split() or 'nothing'}")
+
+    dev.run(f"cloud_content_backup {shlex.quote(CONTENT_DIR)} >/dev/null 2>&1 || true",
+            check=False)
+    clisting = backend("ls")
+    cup = {rel for rel in CONTENT_FIXTURES if os.path.basename(rel) in clisting}
+    ok = check(len(cup) == len(CONTENT_FIXTURES),
+               f"all {len(CONTENT_FIXTURES)} content files reached the cloud",
+               f"only {len(cup)}/{len(CONTENT_FIXTURES)} reached the cloud")
+    failures += not ok
+    if not ok:
+        # Distinguish "this device has the known bug" from "the harness is
+        # broken" - otherwise a real, already-diagnosed defect reads as a
+        # problem with the test.
+        body = dev.run("cat $(command -v cloud_content_backup) 2>/dev/null || true")
+        if "Restoring ${DIR:-everything} from the cloud" in body:
+            print("          ^ this device ships the inverted cloud_content_backup "
+                  "(issue #40): it copies cloud -> device, so nothing is ever "
+                  "uploaded. Expected until a build carries the fix.")
+
+    step("cloud_content_restore brings it back")
+    # Plant at the endpoint directly rather than restoring what the upload
+    # step just wrote: otherwise a broken uploader fails this check for the
+    # wrong reason and one bug masks the other's status (audit F-03).
+    backend("reset")
+    stage = subprocess.run(["mktemp", "-d"], capture_output=True, text=True).stdout.strip()
+    for rel, data in CONTENT_FIXTURES.items():
+        f = os.path.join(stage, CONTENT_DIR, rel)
+        os.makedirs(os.path.dirname(f), exist_ok=True)
+        open(f, "wb").write(data)
+    cpath = backend("contentpath").strip().lstrip("/").split("/", 1)[-1]
+    backend("put", os.path.join(stage, CONTENT_DIR), f"{cpath}/{CONTENT_DIR}")
+    dev.run(f"rm -rf {shlex.quote(croot)}")
+    failures += not check(not dev.sha(f"{croot}/{list(CONTENT_FIXTURES)[0]}"),
+                          "local content removed before restore",
+                          "local content still present")
+    dev.run(f"cloud_content_restore {shlex.quote(CONTENT_DIR)} >/dev/null 2>&1 || true",
+            check=False)
+    cafter = {rel: dev.sha(f"{croot}/{rel}") for rel in CONTENT_FIXTURES}
+    csame = [r for r in CONTENT_FIXTURES if cbefore[r] and cbefore[r] == cafter[r]]
+    failures += not check(len(csame) == len(CONTENT_FIXTURES),
+                          f"all {len(CONTENT_FIXTURES)} content files restored byte-identical",
+                          f"only {len(csame)}/{len(CONTENT_FIXTURES)} matched")
+
+    dev.run(f"rm -rf {shlex.quote(croot)}")
+
+    # --- tier boundaries ----------------------------------------------------
+    # The regression test for blindspot 21. Content sync and the saves sync
+    # both operate over /storage/roms; a save file living next to a ROM must
+    # be carried by the saves tier and NOT by content. This existed as a
+    # defect for a day and was caught by a human reading an upload listing,
+    # not by this harness.
+    step("a save file inside a content directory does not reach the content tier")
+    backend("reset")
+    dev.write(f"{croot}/Some Game.srm", b"battery save, saves tier owns this")
+    dev.write(f"{croot}/Some Game.rom", b"a rom, content tier owns this")
+    dev.run(f"cloud_content_backup {shlex.quote(CONTENT_DIR)} >/dev/null 2>&1 || true",
+            check=False)
+    listing = backend("ls")
+    # Both directions, or the assertion cannot fail: the ROM proves the
+    # transfer ran at all, the .srm proves the exclusion bit.
+    failures += not check("Some Game.rom" in listing,
+                          "the ROM reached the content tier",
+                          "the ROM did not transfer - exclusion cannot be judged")
+    failures += not check("Some Game.srm" not in listing,
+                          "the save file was correctly withheld from content",
+                          "SAVE DATA REACHED THE CONTENT TIER (blindspot 21)")
+
+    # A sync conflict is another client's dispute, and moving it makes it
+    # immortal: a device that downloads one uploads it again, so deleting it
+    # in the cloud looks like the provider putting it back. 271 directories of
+    # BIOS were resurrected exactly that way on 2026-09-04.
+    step("a sync-conflict artifact is carried by no tier, in either direction")
+    backend("reset")
+    conflict_dir = "Machines (Someone's conflicted copy 2026-09-03)"
+    dev.write(f"{croot}/Real.rom", b"content tier owns this")
+    dev.write(f"{croot}/{conflict_dir}/dup.rom", b"dropbox left this behind")
+    dev.write(f"{croot}/Other.sync-conflict-20260903-120000-ABCDEF.rom", b"syncthing")
+    dev.run(f"cloud_content_backup {shlex.quote(CONTENT_DIR)} >/dev/null 2>&1 || true",
+            check=False)
+    listing = backend("ls")
+    # Real.rom first: without it the exclusions below prove nothing, because a
+    # transfer that moved nothing at all also mentions no conflicted copy.
+    failures += not check("Real.rom" in listing,
+                          "the ordinary ROM reached the content tier",
+                          "nothing transferred - the exclusions cannot be judged")
+    failures += not check("conflicted copy" not in listing,
+                          "the conflicted copy was withheld from the cloud",
+                          "A CONFLICTED COPY WAS UPLOADED (D-CLOUD-022)")
+    failures += not check("sync-conflict" not in listing,
+                          "the Syncthing conflict file was withheld",
+                          "A .sync-conflict FILE WAS UPLOADED (D-CLOUD-022)")
+    # And it must not count as content this device holds, or the picker's
+    # badge reports a size the cloud will never agree with.
+    sizes = dev.run("cloud_content_backup --list-sizes 2>/dev/null || true")
+    failures += not check("conflicted copy" not in sizes,
+                          "--list-sizes ignores conflict artifacts",
+                          "--list-sizes counted a conflicted copy as content")
+
+    # gamelist.xml is shared metadata with a per-device tail. It rides in its
+    # own --update pass so the freshest list wins rather than whoever ran last:
+    # a device that scans its own ROMs and uploads before ever restoring would
+    # otherwise push a thin list over a rich one.
+    step("gamelist.xml syncs newest-first, and only in its own pass")
+    backend("reset")
+    dev.write(f"{croot}/Real.rom", b"content")
+    dev.write(f"{croot}/gamelist.xml", b"<gameList><game><path>./Real.rom</path></game></gameList>")
+    dev.run(f"cloud_content_backup {shlex.quote(CONTENT_DIR)} >/dev/null 2>&1 || true", check=False)
+    listing = backend("ls")
+    failures += not check("Real.rom" in listing,
+                          "the ROM reached the content tier",
+                          "nothing transferred - the gamelist assertions cannot be judged")
+    failures += not check("gamelist.xml" in listing,
+                          "the gamelist reached the cloud in its own pass",
+                          "gamelist.xml was not uploaded at all")
+
+    # Now make the local copy newer and poorer, and restore: --update must
+    # refuse to overwrite it.
+    dev.write(f"{croot}/gamelist.xml", b"<gameList><!--LOCAL-NEWER--></gameList>")
+    dev.run("sync", check=False)
+    dev.run("cloud_content_restore --selected >/dev/null 2>&1 || true", check=False)
+    local = dev.run(f"cat {shlex.quote(croot)}/gamelist.xml 2>/dev/null || true")
+    failures += not check("LOCAL-NEWER" in local,
+                          "a newer local gamelist survived the restore",
+                          "RESTORE CLOBBERED A NEWER LOCAL GAMELIST (--update not applied)")
+
+    # Three callers can start a cloud sync -- boot, game exit, the menu -- and
+    # until 2026-09-04 nothing stopped two from running at once. The lock lives
+    # in the scripts, so this test is caller-agnostic: hold it, then ask.
+    step("a second cloud sync while one runs is refused, exits 3, and stamps nothing")
+    dev.run("rm -f /storage/.cache/cloud_sync/last-backup", check=False)
+    out = dev.run(
+        "exec 9>/var/run/cloud_sync.lock; flock -n 9 || echo HOLDER-FAILED; "
+        "cloud_backup --yes >/tmp/second.out 2>&1; echo rc=$?; "
+        "exec 9>&-", check=False)
+    failures += not check("HOLDER-FAILED" not in out,
+                          "the test could hold the lock itself",
+                          "could not take the lock to set up the test")
+    failures += not check("rc=3" in out,
+                          "the second sync exited 3",
+                          f"expected exit 3 while the lock was held, got: {out.strip()[-40:]}")
+    second = dev.run("cat /tmp/second.out 2>/dev/null || true")
+    failures += not check("already running" in second.lower(),
+                          "and said another sync was running",
+                          "exit 3 without the message somebody would read")
+    stamp = dev.run("cat /storage/.cache/cloud_sync/last-backup 2>/dev/null || echo NONE")
+    failures += not check(stamp.strip() == "NONE",
+                          "no last-run stamp was written for work that did not happen",
+                          "A SKIPPED SYNC STAMPED A LAST-RUN (would read as success/failure)")
+
+    # The game-exit sync runs cloud_backup --yes --saves-only --recent: only
+    # what changed since the last backup that worked, no remote probe, no
+    # tidy, and exit 4 at once when there is no network. Each is a claim a
+    # player waits on after every game, so each is asserted here -- against
+    # the script's own log, because "fast" is not observable from a listing.
+    step("a --recent sync with nothing changed leaves the remote alone")
+    dev.run("cloud_backup --yes --saves-only >/dev/null 2>&1 || true", check=False)  # a success to measure from
+    mark = dev.run("wc -l < /var/log/cloud_sync.log 2>/dev/null || echo 0").strip() or "0"
+    out = dev.run("cloud_backup --yes --saves-only --recent >/dev/null 2>&1; echo rc=$?", check=False)
+    tail = dev.run(f"tail -n +{int(mark) + 1} /var/log/cloud_sync.log 2>/dev/null || true")
+    failures += not check("rc=0" in out, "the recent sync exited 0",
+                          f"recent sync failed: {out.strip()[-40:]}")
+    failures += not check("--max-age" in tail and "--no-traverse" in tail,
+                          "rclone was given a recency window and told not to list the remote",
+                          "--recent did not narrow the copy (no --max-age/--no-traverse in the log)")
+    failures += not check("nothing to transfer" in tail.lower(),
+                          "and found nothing to move",
+                          "a recent sync with nothing changed transferred something")
+    failures += not check("Ensuring remote sync path" not in tail and "Removing orphaned" not in tail,
+                          "no probe and no tidy round trips were made",
+                          "a recent sync still probed or tidied the remote")
+
+    step("a --recent sync after one save is written pushes that file")
+    dev.write(f"{root}/savestates/recent-probe.state", b"recent")
+    dev.run("sync", check=False)
+    mark = dev.run("wc -l < /var/log/cloud_sync.log 2>/dev/null || echo 0").strip() or "0"
+    out = dev.run("cloud_backup --yes --saves-only --recent >/dev/null 2>&1; echo rc=$?", check=False)
+    tail = dev.run(f"tail -n +{int(mark) + 1} /var/log/cloud_sync.log 2>/dev/null || true")
+    failures += not check("rc=0" in out and "recent-probe.state" in backend("ls"),
+                          "the new save reached the bucket",
+                          "the save written after the last sync did not reach the bucket")
+    failures += not check("Transferred:            1 / 1" in tail,
+                          "and it was the only file transferred",
+                          "more than one file moved for one changed save")
+
+    step("with no network the exit sync returns 4 at once and stamps nothing")
+    out = dev.run(
+        "mkdir -p /tmp/noroute && printf '#!/bin/sh\nexit 0\n' > /tmp/noroute/ip && chmod +x /tmp/noroute/ip; "
+        "s0=$(cat /storage/.cache/cloud_sync/last-backup 2>/dev/null); "
+        "t0=$(date +%s%N); PATH=/tmp/noroute:$PATH cloud_backup --yes --saves-only --recent >/dev/null 2>&1; "
+        "rc=$?; t1=$(date +%s%N); s1=$(cat /storage/.cache/cloud_sync/last-backup 2>/dev/null); "
+        "echo rc=$rc ms=$(( (t1 - t0) / 1000000 )) stamp=$([ \"$s0\" = \"$s1\" ] && echo same || echo CHANGED); "
+        "rm -rf /tmp/noroute", check=False)
+    fields = dict(kv.split("=", 1) for kv in out.split() if "=" in kv)
+    failures += not check(fields.get("rc") == "4", "exit 4 with no default route",
+                          f"expected exit 4 without a route, got: {out.strip()}")
+    failures += not check(fields.get("ms", "99999").isdigit() and int(fields.get("ms", "99999")) < 2000,
+                          "and it answered in under two seconds",
+                          f"took {fields.get('ms')} ms to notice there was no network")
+    failures += not check(fields.get("stamp") == "same",
+                          "no last-run stamp was written for work that did not happen",
+                          "A NO-NETWORK SKIP STAMPED A LAST-RUN")
+
+    step("every EmulationStation system path is carried by exactly one tier")
+    # The complement of the rule above: a path in NO tier is silent data loss
+    # on restore. Four were found this way (gmu/playlists, idtech, modules,
+    # scummvm/games) after a ScummVM player would have lost their entries.
+    orphans = dev.run(
+        "C=$(ls /storage/.config/emulationstation/es_systems.cfg "
+        "/usr/config/emulationstation/es_systems.cfg 2>/dev/null | head -1); "
+        "B=$(command -v backuptool); "
+        "grep -oP '(?<=<path>)[^<]+' \"$C\" | sort -u | while read -r p; do "
+        "  case \"$p\" in /storage/roms/*) continue ;; esac; "
+        "  grep -qF \"$p\" \"$B\" || echo \"$p\"; "
+        "done").split()
+    failures += not check(not orphans,
+                          "every ES path outside /storage/roms is in the system backup",
+                          f"carried by no tier: {' '.join(orphans)}")
+
+    # --- archive format -----------------------------------------------------
+    step("the system backup is a tar archive, and both formats are discoverable")
+    newest = dev.run("ls -1 /storage/roms/backup/*-*_BACKUP.tar.gz "
+                     "/storage/roms/backup/*-*_BACKUP.zip 2>/dev/null | sort | tail -1").strip()
+    failures += not check(newest.endswith(".tar.gz"),
+                          f"newest archive is a tar.gz ({os.path.basename(newest) or 'none'})",
+                          f"newest archive is not a tar.gz: {newest or 'none found'}")
+    if newest.endswith(".tar.gz"):
+        failures += not check(dev.run(f"tar -tzf {shlex.quote(newest)} >/dev/null 2>&1 && echo ok").strip() == "ok",
+                              "the archive passes tar integrity",
+                              "the archive is not readable by tar")
+
+    # --- per-device system selection ---------------------------------------
+    step("content transfers honour the system selection")
+    dev.run(f"cloud_content_restore --set-systems {shlex.quote(CONTENT_DIR)} >/dev/null 2>&1 || true",
+            check=False)
+    sel = dev.run("cloud_content_restore --systems 2>/dev/null || true").split()
+    failures += not check(sel == [CONTENT_DIR],
+                          f"selection persisted as {sel}",
+                          f"selection did not round-trip: {sel}")
+    # A selection of exactly one directory must exclude a second one that
+    # also has content - otherwise "only selected" is untested.
+    other = f"{CONTENT_DIR}-unselected"
+    dev.write(f"/storage/roms/{other}/game.rom", b"should not be uploaded")
+    backend("reset")
+    dev.run("cloud_content_backup --selected >/dev/null 2>&1 || true", check=False)
+    listing = backend("ls")
+    failures += not check("game.rom" not in listing,
+                          "an unselected system was not uploaded",
+                          "an UNSELECTED system was uploaded")
+    dev.run(f"rm -rf /storage/roms/{shlex.quote(other)}")
+    dev.run("rm -f /storage/.cache/cloud_sync/content-systems")
+
+    step("a system this device cannot run is marked unsupported")
+    # Plant a cloud directory for a system absent from es_systems.cfg.
+    backend("reset")
+    stage2 = subprocess.run(["mktemp", "-d"], capture_output=True, text=True).stdout.strip()
+    os.makedirs(f"{stage2}/ROMs/definitely-not-a-system", exist_ok=True)
+    open(f"{stage2}/ROMs/definitely-not-a-system/x.rom", "wb").write(b"x")
+    dev.run("true")  # keep ordering explicit
+    subprocess.run([BACKEND, "put", f"{stage2}/ROMs"], capture_output=True, text=True)
+    scan = dev.run("cloud_content_restore --scan 2>/dev/null || true")
+    row = [l for l in scan.splitlines() if l.startswith("definitely-not-a-system|")]
+    failures += not check(bool(row) and row[0].endswith("|0"),
+                          "the unrunnable system is flagged 0 (unsupported)",
+                          f"scan did not mark it unsupported: {row or 'row absent'}")
+
+    # --- folder seeding -----------------------------------------------------
+    step("seeding is idempotent and never clobbers an existing note")
+    dev.run("cloud_setup --seed-folders >/dev/null 2>&1 || true", check=False)
+    dev.run("true")
+    marker = b"OWNER WROTE THIS"
+    stage3 = subprocess.run(["mktemp", "-d"], capture_output=True, text=True).stdout.strip()
+    open(f"{stage3}/README.txt", "wb").write(marker)
+    subprocess.run([BACKEND, "put", stage3], capture_output=True, text=True)
+    second = dev.run("cloud_setup --seed-folders 2>/dev/null || true")
+    failures += not check(second.count("OK ") >= 2,
+                          "a second seeding run reports the folders present",
+                          f"second run did not report folders: {second.strip()[:80]}")
+
+    if not args.keep:
+        step("clean up")
+        dev.run(f"rm -f {shlex.quote(archive)}")
+        if prev_restore_opt:
+            dev.run(f"sed -i 's|^BACKUPFILE_RESTORE_OPTION=.*|{prev_restore_opt}|' {CONF}")
+        else:
+            dev.run(f"sed -i '/^BACKUPFILE_RESTORE_OPTION=/d' {CONF}")
+        for key, line in prev_paths.items():
+            if line:
+                dev.run(f"sed -i 's|^{key}=.*|{line}|' {CONF}")
+            else:
+                dev.run(f"sed -i '/^{key}=/d' {CONF}")
+        if not args.real_roms:
+            dev.run(f"rm -rf {shlex.quote(SCRATCH)}")
+        backend("reset")
+        print("    scratch tree and bucket emptied, device paths and "
+              "system-backup setting restored")
+
+    print(f"\n{'PASSED' if failures == 0 else f'{failures} CHECK(S) FAILED'}")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Fail as e:
+        print(f"\nerror: {e}", file=sys.stderr)
+        sys.exit(2)
+    except KeyboardInterrupt:
+        sys.exit(130)

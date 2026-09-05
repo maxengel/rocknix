@@ -1,0 +1,234 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+#
+# Helper script to manage cloud sync rules and configuration
+# Called by both cloud_backup and cloud_restore scripts
+#
+# This script handles:
+# 1. Merging default rules with user customizations
+# 2. Updating configuration files while preserving user settings
+# 3. Ensuring all required parameters exist with sensible defaults
+#
+# Version: 1.0
+# Last updated: 2024
+
+# Logs messages to the specified log file
+log_to_file() {
+  local log_file="${1}"
+  local message="${2}"
+  local level="${3:-INFO}"
+  local timestamp=$(date "+%Y-%m-%d %H:%M:%S")
+  local script_name="cloud_sync_helper"
+  
+  echo "[${timestamp}] [${level}] [${script_name}] ${message}" >> ${log_file}
+}
+
+# Merges default rules with user-customized rules
+# 
+# This function preserves user customizations while adding new default rules.
+# It creates a backup of the user's current rules before modifying them,
+# then adds any default rules that are not present in the user's file.
+# 
+# Parameters:
+#   $1: Path to log file for operation messages
+# Returns:
+#   0 on success, 1 if default rules file not found
+update_cloud_sync_rules() {
+  local log_file="${1:-/var/log/cloud_sync.log}"
+  
+  log_to_file "${log_file}" "Checking cloud sync rules file..."
+  
+  # Check if user has a custom cloud_sync-rules.txt
+  if [ -f "/storage/.config/cloud_sync-rules.txt" ]; then
+    # Create a backup of the user's custom rules
+    cp -f /storage/.config/cloud_sync-rules.txt /storage/.config/cloud_sync-rules.txt.bak
+    
+    # Check if defaults file exists
+    if [ ! -f "/usr/config/cloud_sync-rules.txt.defaults" ]; then
+      log_to_file "${log_file}" "Default rules file not found" "WARN"
+      return 1
+    fi
+    
+    log_to_file "${log_file}" "Merging custom rules with defaults"
+
+    # Collect the user's own rules - lines that are not in the defaults.
+    # The -e flag ensures grep treats the entire line as a fixed pattern,
+    # preventing misinterpretation of spaces and special characters in rules.
+    : > /tmp/cloud_sync-rules.user
+    while IFS= read -r line; do
+      if [[ "$line" != \#* ]] && [[ -n "$line" ]]; then
+        if ! grep -Fxq -e "$line" /usr/config/cloud_sync-rules.txt.defaults; then
+          echo "$line" >> /tmp/cloud_sync-rules.user
+        fi
+      fi
+    done < /storage/.config/cloud_sync-rules.txt
+
+    # User rules go FIRST, then the defaults. rclone filters are
+    # first-match-wins, so position is the only thing that grants precedence:
+    # appended after the defaults these were unreachable - every one of them
+    # sat below the catch-all "- /**", so a customization was silently
+    # ignored while still being visible in the file. Placing them ahead of
+    # the defaults is also what lets a user's "+ include" beat a default
+    # exclusion, which moving them above the catch-all alone would not.
+    : > /tmp/cloud_sync-rules.new
+    if [ -s /tmp/cloud_sync-rules.user ]; then
+      {
+        echo "# ----------------------------------------------------------------"
+        echo "# Your own rules, kept across updates."
+        echo "# These come first because rclone uses the first matching rule,"
+        echo "# so anything here takes precedence over the defaults below."
+        echo "# ----------------------------------------------------------------"
+        cat /tmp/cloud_sync-rules.user
+        echo
+        echo "# ----------------------------- defaults -------------------------"
+      } >> /tmp/cloud_sync-rules.new
+    fi
+    cat /usr/config/cloud_sync-rules.txt.defaults >> /tmp/cloud_sync-rules.new
+
+    # Replace the user's file with the merged version
+    mv /tmp/cloud_sync-rules.new /storage/.config/cloud_sync-rules.txt
+    rm -f /tmp/cloud_sync-rules.user
+    
+    log_to_file "${log_file}" "Updated cloud_sync-rules.txt with new defaults while preserving custom rules"
+  else
+    # No existing rules file, just copy the defaults
+    log_to_file "${log_file}" "No existing rules file, copying defaults"
+    cp -f /usr/config/cloud_sync-rules.txt.defaults /storage/.config/cloud_sync-rules.txt
+  fi
+  
+  return 0
+}
+
+# Updates user configuration file with new defaults while preserving customizations
+#
+# This function ensures user configs have all required parameters while 
+# preserving any customized values. It adds any missing parameters from
+# the defaults file but doesn't overwrite existing user settings.
+#
+# Parameters:
+#   $1: Path to log file for operation messages
+# Returns:
+#   0 on success, 1 if default config file not found
+update_cloud_sync_config() {
+  local log_file="${1:-/var/log/cloud_sync.log}"
+  
+  log_to_file "${log_file}" "Checking cloud sync configuration..."
+  
+  # Check if user has a config file
+  if [ -f "/storage/.config/cloud_sync.conf" ]; then
+    # Create a backup of the user's config
+    cp -f /storage/.config/cloud_sync.conf /storage/.config/cloud_sync.conf.bak
+    
+    # Check if defaults file exists
+    if [ ! -f "/usr/config/cloud_sync.conf.defaults" ]; then
+      log_to_file "${log_file}" "Default config file not found" "WARN"
+      return 1
+    fi
+    
+    log_to_file "${log_file}" "Updating configuration with new defaults"
+    
+    # Extract all configuration variables from defaults - FIXED VERSION
+    while IFS='=' read -r key value; do
+      # Only process DEFAULT_ variables
+      if [[ "$key" == DEFAULT_* ]]; then
+        # Strip the DEFAULT_ prefix
+        var_name="${key#DEFAULT_}"
+        
+        # Check if this variable exists in the user config - FIX the grep pattern to avoid space issues
+        if ! grep -qF "${var_name}=" /storage/.config/cloud_sync.conf; then
+          # A new key inherits the shape of the config it is joining, not the
+          # shipped default, where the two would disagree.
+          #
+          # CONTENTPATH is the case that matters. SYNCPATH already exists in
+          # every config, so an upgrading device keeps whatever it had -
+          # "/GAMES" for anyone set up before the /ROCKNIX layout. Adding the
+          # literal default would put their saves in one namespace and their
+          # ROMs in another, which is worse than either layout alone. Derive
+          # it from their SYNCPATH so the two stay together.
+          if [ "${var_name}" = "CONTENTPATH" ]; then
+            user_sync=$(grep -m1 '^SYNCPATH=' /storage/.config/cloud_sync.conf | cut -d'"' -f2)
+            if [ -n "${user_sync}" ]; then
+              parent=$(dirname "${user_sync}")
+              [ "${parent}" = "/" ] && parent="${user_sync}"
+              value="\"${parent}/Content\""
+              log_to_file "${log_file}" "Derived CONTENTPATH from SYNCPATH ${user_sync}"
+            fi
+          fi
+          echo "${var_name}=${value}" >> /storage/.config/cloud_sync.conf
+          log_to_file "${log_file}" "Added new configuration option: ${var_name}"
+        fi
+      fi
+    done < /usr/config/cloud_sync.conf.defaults
+    
+    log_to_file "${log_file}" "Configuration file updated while preserving customizations"
+  else
+    # No existing config file, create one with defaults
+    log_to_file "${log_file}" "No existing config file, creating from template"
+    
+    # Strip the DEFAULT_ prefix; sed preserves multi-line backslash-continued values
+    sed 's/^DEFAULT_//' /usr/config/cloud_sync.conf.defaults > /storage/.config/cloud_sync.conf
+  fi
+  
+  return 0
+}
+
+# Main function that handles all updates
+main() {
+  local log_file="${1:-/var/log/cloud_sync.log}"
+  
+  # Update both rules and config
+  update_cloud_sync_rules "${log_file}"
+  update_cloud_sync_config "${log_file}"
+  
+  # Remove conflicting --verbose flags from existing user config to prevent parameter conflicts
+  # This is needed for users upgrading from older versions where --verbose was used
+  if [ -f "/storage/.config/cloud_sync.conf" ]; then
+    log_to_file "${log_file}" "Removing conflicting --verbose flags from configuration"
+    sed -i 's/--verbose//g' /storage/.config/cloud_sync.conf
+    sed -i 's/-v / /g' /storage/.config/cloud_sync.conf
+    # Clean up any double spaces left by removal
+    sed -i 's/  \+/ /g' /storage/.config/cloud_sync.conf
+    log_to_file "${log_file}" "Configuration cleaned of conflicting flags"
+  fi
+
+  # Turn an existing mirror backup into a copy.
+  #
+  # One cloud folder is shared by every handheld, and BACKUPMETHOD="sync"
+  # makes it match whichever device ran last -- deleting everything the others
+  # put there. It cost a real user 70 files: another handheld's whole save
+  # library, from the shipped default, in one run.
+  #
+  # The default is "copy" now, but a default only reaches a device that has no
+  # value yet: update_cloud_sync_config appends keys it cannot find and never
+  # touches one already written. So every device set up before this stays on
+  # sync for ever unless the value is rewritten, which is what the --verbose
+  # strip above is doing for the same reason.
+  #
+  # Deliberately not asking. This changes a destructive setting to a
+  # non-destructive one, the previous file is kept beside it, and anybody who
+  # actually wants a mirror can set it back -- where somebody who does not
+  # want one has no way of learning that they had it until their saves are
+  # gone.
+  # Once, and only once. Rewriting on every run does not migrate anybody off a
+  # bad default -- it takes the setting away, so somebody who reads the docs,
+  # decides they want a mirror and sets it gets silently overruled on their
+  # next backup. The marker is what makes this a migration rather than a veto.
+  # Found by testing: a run with sync deliberately set came back as copy.
+  if [ -f "/storage/.config/cloud_sync.conf" ] \
+     && [ ! -f "/storage/.config/.cloud_sync-copy-default-applied" ] \
+     && grep -q '^BACKUPMETHOD="\?sync"\?' /storage/.config/cloud_sync.conf; then
+    cp /storage/.config/cloud_sync.conf \
+       /storage/.config/cloud_sync.conf.pre-copy-default 2>/dev/null
+    sed -i 's|^BACKUPMETHOD=.*|BACKUPMETHOD="copy"|' /storage/.config/cloud_sync.conf
+    touch /storage/.config/.cloud_sync-copy-default-applied 2>/dev/null
+    log_to_file "${log_file}" "BACKUPMETHOD was 'sync', which deletes other devices' saves from the shared folder; set to 'copy'. Previous config kept as cloud_sync.conf.pre-copy-default. This is done once; setting it back to sync will be respected."
+  fi
+
+  return 0
+}
+
+# If script is called directly, run the main function
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi
