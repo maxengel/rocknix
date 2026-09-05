@@ -119,6 +119,13 @@
         "member": "mistral",
         "kind": "peer-vote"
       }
+    ],
+    "step4_5": [
+      {
+        "path": "revised_approaches/consensus_plan.md",
+        "member": "claude",
+        "kind": "consensus_plan"
+      }
     ]
   },
   "orchestrator_corrections": [
@@ -128,6 +135,13 @@
       "from": "council-facilitator@1.0.0",
       "to": "council-facilitator@1.2.0",
       "reason": "Setup wrote the schema doc's example value; the Facilitator and the anchored genesis both declare 1.2.0. Corrected after Step 1 outputs landed; genesis binds roster and verifier pins, not manifest bytes, so the anchor is unaffected."
+    },
+    {
+      "at": "2026-09-05T23:40:00Z",
+      "field": "expected_outputs_per_step.step4_5",
+      "from": "absent",
+      "to": "revised_approaches/consensus_plan.md (member claude)",
+      "reason": "Step 4.5 declared per pipeline.md after r4 Step 4 returned a 3-2 majority, a winning margin of 1 and inside voting-rules.md's <=2 offer threshold. Synthesizer is the winning author, the reference's default; that seat voted against its own plan this round, so it is not defending its own text."
     }
   ]
 }
