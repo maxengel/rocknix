@@ -80,7 +80,9 @@ fi
 ES_BIN="${FORK_PUBLISH_ES_BIN:-$(ls -d build.ROCKNIX-"${DEVICE}".*/image/system/usr/bin/emulationstation 2>/dev/null | head -1 || true)}"
 has_credentials=0
 if [ -n "${ES_BIN}" ] && [ -f "${ES_BIN}" ]; then
-  strings "${ES_BIN}" | grep -qE 'devpassword=|(^|&)y=[A-Za-z0-9]{8,}' && has_credentials=1
+  # A value must follow: the runtime path (#64) builds "devid=..&devpassword=.."
+  # from settings, so the bare fragment is in every fork binary and means nothing.
+  strings "${ES_BIN}" | grep -qE 'devpassword=[A-Za-z0-9._%-]{4,}|(^|&)y=[A-Za-z0-9]{8,}' && has_credentials=1
 elif [ -f "${HOME}/.ROCKNIX/options" ] && grep -qE '^[[:space:]]*export[[:space:]]+(SCREENSCRAPER_DEV_LOGIN|GAMESDB_APIKEY|CHEEVOS_DEV_LOGIN|HFS_DEV_LOGIN)=' "${HOME}/.ROCKNIX/options"; then
   echo "error: ~/.ROCKNIX/options sets build credentials and no EmulationStation binary was found to check; refusing to publish blind." >&2
   exit 1
