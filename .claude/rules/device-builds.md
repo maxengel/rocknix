@@ -279,14 +279,19 @@ git is not. The guards, each proven against a constructed violation:
   `.env` and every container. `.env` is now 0600 and removed when the
   container exits.
 - The ES recipe logs `USING: <key> (set)`, never the value.
-- `tools/fork-publish-release` refuses to publish when the build root's ES
-  binary contains `devpassword=` or an `&y=KEY` — a personal credential in a
-  public release. `FORK_ALLOW_EMBEDDED_CREDENTIALS=yes` overrides it, for
-  accounts created for the fork and nothing else.
+- `tools/fork-publish-release` looks at the build root's ES binary; if it
+  contains `devpassword=` or an `&y=KEY`, it publishes only to a **private**
+  repo and refuses a public or unknown one (D-INFRA-007). It cannot strip a
+  key from a built binary; rebuild with the keys commented out.
+  `FORK_ALLOW_EMBEDDED_CREDENTIALS=yes` overrides it, for accounts created for
+  the fork and nothing else.
 - `.githooks/pre-push` scans every pushed branch (`fork-workflow.md`).
 
-So: personal credentials in the options file are fine for images that stay on
-your own devices. Publish only builds made without them.
+The maintainer's rule, verbatim: *"if the build is only being generated on my
+build server and only being played by me, the key can be in my build, but
+beyond that, it needs to be stripped out."* So personal credentials in the
+options file are fine for images that stay here and on your own devices;
+anything anyone else can download is built without them.
 
 ## Publishing
 

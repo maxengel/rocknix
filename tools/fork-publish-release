@@ -65,28 +65,41 @@ if [ ${#ASSETS[@]} -eq 0 ]; then
   exit 1
 fi
 
-# Never publish a build with credentials compiled into it. A personal
-# ScreenScraper developer pair or RetroAchievements web API key exported in
-# ~/.ROCKNIX/options for local builds becomes a string inside the image's
-# EmulationStation binary, and a public release would hand it to everyone who
-# downloads. The build root keeps the binary that went into the image; refuse
-# if it carries the shapes those credentials take. FORK_PUBLISH_ES_BIN points
-# the check elsewhere (tests); FORK_ALLOW_EMBEDDED_CREDENTIALS=yes is for
-# accounts created for the fork and nothing else.
+# The maintainer's rule on build credentials (D-INFRA-006/007): a key may live
+# in a build that stays on this box and their own devices; anything anyone else
+# can download is built without it. A personal ScreenScraper developer pair or
+# RetroAchievements web API key exported in ~/.ROCKNIX/options becomes a string
+# inside the image's EmulationStation binary, and a release on a public repo is
+# downloadable by anyone -- prerelease or not, and this tool un-drafts on
+# purpose (see below). So: look at the binary that went into the image, and if
+# it carries credentials, publish only to a private repo. The check cannot
+# strip a key from a built binary; it sends you back to rebuild without one.
+# FORK_PUBLISH_ES_BIN points the check elsewhere (tests);
+# FORK_ALLOW_EMBEDDED_CREDENTIALS=yes is for accounts created for the fork and
+# nothing else. Unknown visibility counts as public.
 ES_BIN="${FORK_PUBLISH_ES_BIN:-$(ls -d build.ROCKNIX-"${DEVICE}".*/image/system/usr/bin/emulationstation 2>/dev/null | head -1 || true)}"
+has_credentials=0
 if [ -n "${ES_BIN}" ] && [ -f "${ES_BIN}" ]; then
-  if strings "${ES_BIN}" | grep -qE 'devpassword=|(^|&)y=[A-Za-z0-9]{8,}'; then
-    if [ "${FORK_ALLOW_EMBEDDED_CREDENTIALS:-}" != "yes" ]; then
-      echo "error: ${ES_BIN} embeds scraper/achievement credentials (built with ~/.ROCKNIX/options set)." >&2
-      echo "       A public release would publish them. Rebuild without them, or set" >&2
-      echo "       FORK_ALLOW_EMBEDDED_CREDENTIALS=yes only if these are accounts created for the fork." >&2
-      exit 1
-    fi
-    echo "warning: publishing a binary with embedded credentials (FORK_ALLOW_EMBEDDED_CREDENTIALS=yes)" >&2
-  fi
+  strings "${ES_BIN}" | grep -qE 'devpassword=|(^|&)y=[A-Za-z0-9]{8,}' && has_credentials=1
 elif [ -f "${HOME}/.ROCKNIX/options" ] && grep -qE '^[[:space:]]*export[[:space:]]+(SCREENSCRAPER_DEV_LOGIN|GAMESDB_APIKEY|CHEEVOS_DEV_LOGIN|HFS_DEV_LOGIN)=' "${HOME}/.ROCKNIX/options"; then
   echo "error: ~/.ROCKNIX/options sets build credentials and no EmulationStation binary was found to check; refusing to publish blind." >&2
   exit 1
+fi
+if [ "${has_credentials}" -eq 1 ]; then
+  VISIBILITY="$(gh api "repos/${REPO}" --jq .visibility 2>/dev/null || true)"
+  case "${VISIBILITY}" in public|private|internal) ;; *) VISIBILITY=unknown ;; esac
+  if [ "${VISIBILITY}" = "private" ]; then
+    echo "note: ${ES_BIN} embeds build credentials; ${REPO} is private, so only its collaborators can download this." >&2
+  elif [ "${FORK_ALLOW_EMBEDDED_CREDENTIALS:-}" = "yes" ]; then
+    echo "warning: publishing a binary with embedded credentials to ${REPO} (${VISIBILITY}) because FORK_ALLOW_EMBEDDED_CREDENTIALS=yes" >&2
+  else
+    echo "error: ${ES_BIN} embeds scraper/achievement credentials and ${REPO} is ${VISIBILITY}." >&2
+    echo "       A key may live in a build that stays on this box and your own devices; anything anyone else" >&2
+    echo "       can download is built without it. Rebuild with the keys in ~/.ROCKNIX/options commented out," >&2
+    echo "       or publish to a private repo (FORK_REPO=owner/name). FORK_ALLOW_EMBEDDED_CREDENTIALS=yes is" >&2
+    echo "       only for accounts created for the fork." >&2
+    exit 1
+  fi
 fi
 
 # qemu-img runs on the host here (it is not in the build container).
