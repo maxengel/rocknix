@@ -456,6 +456,59 @@ def main():
                           "no last-run stamp was written for work that did not happen",
                           "A SKIPPED SYNC STAMPED A LAST-RUN (would read as success/failure)")
 
+    # The game-exit sync runs cloud_backup --yes --saves-only --recent: only
+    # what changed since the last backup that worked, no remote probe, no
+    # tidy, and exit 4 at once when there is no network. Each is a claim a
+    # player waits on after every game, so each is asserted here -- against
+    # the script's own log, because "fast" is not observable from a listing.
+    step("a --recent sync with nothing changed leaves the remote alone")
+    dev.run("cloud_backup --yes --saves-only >/dev/null 2>&1 || true", check=False)  # a success to measure from
+    mark = dev.run("wc -l < /var/log/cloud_sync.log 2>/dev/null || echo 0").strip() or "0"
+    out = dev.run("cloud_backup --yes --saves-only --recent >/dev/null 2>&1; echo rc=$?", check=False)
+    tail = dev.run(f"tail -n +{int(mark) + 1} /var/log/cloud_sync.log 2>/dev/null || true")
+    failures += not check("rc=0" in out, "the recent sync exited 0",
+                          f"recent sync failed: {out.strip()[-40:]}")
+    failures += not check("--max-age" in tail and "--no-traverse" in tail,
+                          "rclone was given a recency window and told not to list the remote",
+                          "--recent did not narrow the copy (no --max-age/--no-traverse in the log)")
+    failures += not check("nothing to transfer" in tail.lower(),
+                          "and found nothing to move",
+                          "a recent sync with nothing changed transferred something")
+    failures += not check("Ensuring remote sync path" not in tail and "Removing orphaned" not in tail,
+                          "no probe and no tidy round trips were made",
+                          "a recent sync still probed or tidied the remote")
+
+    step("a --recent sync after one save is written pushes that file")
+    dev.write(f"{root}/savestates/recent-probe.state", b"recent")
+    dev.run("sync", check=False)
+    mark = dev.run("wc -l < /var/log/cloud_sync.log 2>/dev/null || echo 0").strip() or "0"
+    out = dev.run("cloud_backup --yes --saves-only --recent >/dev/null 2>&1; echo rc=$?", check=False)
+    tail = dev.run(f"tail -n +{int(mark) + 1} /var/log/cloud_sync.log 2>/dev/null || true")
+    failures += not check("rc=0" in out and "recent-probe.state" in backend("ls"),
+                          "the new save reached the bucket",
+                          "the save written after the last sync did not reach the bucket")
+    failures += not check("Transferred:            1 / 1" in tail,
+                          "and it was the only file transferred",
+                          "more than one file moved for one changed save")
+
+    step("with no network the exit sync returns 4 at once and stamps nothing")
+    out = dev.run(
+        "mkdir -p /tmp/noroute && printf '#!/bin/sh\nexit 0\n' > /tmp/noroute/ip && chmod +x /tmp/noroute/ip; "
+        "s0=$(cat /storage/.cache/cloud_sync/last-backup 2>/dev/null); "
+        "t0=$(date +%s%N); PATH=/tmp/noroute:$PATH cloud_backup --yes --saves-only --recent >/dev/null 2>&1; "
+        "rc=$?; t1=$(date +%s%N); s1=$(cat /storage/.cache/cloud_sync/last-backup 2>/dev/null); "
+        "echo rc=$rc ms=$(( (t1 - t0) / 1000000 )) stamp=$([ \"$s0\" = \"$s1\" ] && echo same || echo CHANGED); "
+        "rm -rf /tmp/noroute", check=False)
+    fields = dict(kv.split("=", 1) for kv in out.split() if "=" in kv)
+    failures += not check(fields.get("rc") == "4", "exit 4 with no default route",
+                          f"expected exit 4 without a route, got: {out.strip()}")
+    failures += not check(fields.get("ms", "99999").isdigit() and int(fields.get("ms", "99999")) < 2000,
+                          "and it answered in under two seconds",
+                          f"took {fields.get('ms')} ms to notice there was no network")
+    failures += not check(fields.get("stamp") == "same",
+                          "no last-run stamp was written for work that did not happen",
+                          "A NO-NETWORK SKIP STAMPED A LAST-RUN")
+
     step("every EmulationStation system path is carried by exactly one tier")
     # The complement of the rule above: a path in NO tier is silent data loss
     # on restore. Four were found this way (gmu/playlists, idtech, modules,
