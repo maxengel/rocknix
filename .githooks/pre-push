@@ -18,7 +18,8 @@
 # guard exists. An absolute path pins the hook to the main checkout, so it runs
 # regardless of which branch or worktree is being pushed.
 #
-# Only branches named pr/* are guarded; pushing next / feature/* is unaffected.
+# Only branches named pr/* are guarded for personal paths; every branch is
+# scanned for credential-shaped lines (see SECRET_PATTERNS below).
 
 set -uo pipefail
 
@@ -58,6 +59,16 @@ PERSONAL_PATTERNS=(
 zero='0000000000000000000000000000000000000000'
 status=0
 
+# Lines shaped like credentials, on EVERY branch. GitHub's push protection
+# knows its own catalogue of token formats; it does not know a ScreenScraper
+# developer password (`devid=..&devpassword=..`) or a RetroAchievements web API
+# key (`z=user&y=KEY`), and those are the secrets this fork actually handles
+# (~/.ROCKNIX/options, device-builds.md § Build credentials). Names are not
+# enough -- `export SCREENSCRAPER_DEV_LOGIN="devid=<id>&devpassword=<..>"` is
+# documentation -- so every pattern demands a real-looking value; placeholders
+# in <angle brackets> never match.
+SECRET_PATTERNS='devpassword=[A-Za-z0-9._%-]{4,}|[?&]y=[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY|"(access|refresh)_token" *: *"[A-Za-z0-9._-]{16,}|sk-[A-Za-z0-9_-]{24,}|(API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD)[A-Z_]* *[:=] *["'"'"']?[A-Za-z0-9+/=_-]{16,}'
+
 # A relative hooksPath means pr/* pushes from a worktree run unguarded. We can
 # only say so from a push that did reach the hook, which is the point: say it
 # here rather than let a silent gap persist.
@@ -78,14 +89,43 @@ for cand in upstream/next origin/next; do
   fi
 done
 
-while read -r local_ref local_sha _remote_ref _remote_sha; do
-  # Only guard branches used to open upstream PRs.
+while read -r local_ref local_sha _remote_ref remote_sha; do
+  # Skip branch deletions.
+  [ "$local_sha" = "$zero" ] && continue
+
+  # --- credentials, every branch -------------------------------------------
+  # The files this push adds or changes, read at the pushed tip. A whole file
+  # is scanned rather than only the added lines, so a secret that slipped in
+  # earlier blocks the next push that touches its file, too.
+  if [ "$remote_sha" = "$zero" ]; then
+    oldest="$(git rev-list "$local_sha" --not --remotes 2>/dev/null | tail -1)"
+    if [ -n "$oldest" ] && git rev-parse --verify --quiet "${oldest}^" >/dev/null; then
+      range="${oldest}^..${local_sha}"
+    else
+      range="${local_sha}^..${local_sha}"
+    fi
+  else
+    range="${remote_sha}..${local_sha}"
+  fi
+  leaks=''
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    hit="$(git show "${local_sha}:${f}" 2>/dev/null | grep -nE "$SECRET_PATTERNS" | sed -E "s/($SECRET_PATTERNS)/[REDACTED]/g" | head -3 || true)"
+    [ -n "$hit" ] && leaks+="$(printf '%s\n' "$hit" | sed "s|^|  ${f}:|")"$'\n'
+  done <<< "$(git diff --name-only --diff-filter=AM "$range" -- . ':!*.po' ':!*.pot' 2>/dev/null || true)"
+  if [ -n "$leaks" ]; then
+    echo "✗ pre-push: refusing to push ${local_ref#refs/heads/}: it carries lines shaped like credentials:" >&2
+    printf '%s' "$leaks" >&2
+    echo "  Placeholders belong in <angle brackets>. A real value has to come out of history before this pushes." >&2
+    status=1
+    continue
+  fi
+
+  # --- personal paths, pr/* only -------------------------------------------
   case "$local_ref" in
     refs/heads/pr/*) ;;
     *) continue ;;
   esac
-  # Skip branch deletions.
-  [ "$local_sha" = "$zero" ] && continue
 
   branch="${local_ref#refs/heads/}"
 
