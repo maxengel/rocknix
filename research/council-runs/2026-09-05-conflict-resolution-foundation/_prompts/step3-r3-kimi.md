@@ -1,0 +1,1375 @@
+# Council — round 3, revised approach
+
+You are one of five council members. You have each produced a revised approach
+to the foundation for cloud-save conflict resolution in ROCKNIX, and the other
+four have now reviewed all of them. The corpus is embedded above, unchanged and
+hash-verified; those four reviews are injected below.
+
+Now produce **your round-3 revised approach**: the foundation you would
+actually build, having heard this second round of critique. This is the artifact
+the council votes on next, so it must stand on its own — a reader should be able
+to act on it without having read any analysis, review, or earlier revision.
+
+## Anti-self-citation constraint
+
+Reason about the substance on its merits, against the embedded corpus. Do not
+treat the injected reviews as evidence about how councils, models, or this
+deliberation behave.
+
+## Amendment to the problem context — two maintainer decisions
+
+Both are authoritative, both were made **after** the injected plans were
+written, and neither is open for argument. No plan is expected to name them and
+none should be criticised for their absence. What matters is which plans are
+closest to them, and what each would have to change.
+
+### The purpose, restated
+
+> The goal is to preserve the sanctity of the user's saves and to empower them
+> with the choice to make a decision about a conflict. Undoing that choice is
+> also something a user should have the option to do. They likely aren't going
+> to be going 8 steps back with the save, but may accidentally make the wrong
+> choice with the conflict and want to undo that choice. That's going to be the
+> primary use case.
+>
+> Some of the edge cases around card disconnection, and so on, are good to think
+> about, but are edge cases that shouldn't constrain our approach unnecessarily.
+
+So: reversibility is a first-class requirement, the depth that matters is one
+step back rather than a version history, and an edge case may inform a design
+but may not drive it. In particular, the argument that a capability must be
+given up *because* a detached or unmounted card is indistinguishable from a
+deliberate deletion is not on its own sufficient. Failing closed on an
+unexplained absence is cheap and is still expected; abandoning a capability to
+buy it needs a better reason than the edge case alone.
+
+### Where the undo lives, and where it does not
+
+The plans divided on whether version one ships a control the player can press.
+The maintainer has settled it:
+
+> I don't want to add more complexity to the user during conflict resolution.
+> The goal there is to get the user going as quickly as possible.
+
+**Version one retains the discarded copy, on by default, bounded by a count, and
+ships no undo control.** The wizard's done page says what was discarded and that
+the copies are kept. Nothing in the resolution flow offers to put one back. A
+plan that makes an on-device undo surface a version-one requirement is now
+over-scoped, and a plan that builds lineage or receipt machinery deeper than one
+step back is solving a problem the maintainer has said is not the primary case.
+
+Restoring a discarded copy becomes a **separate tool**, tracked as its own
+issue, and the maintainer has given it a shape:
+
+> an option that allows you to essentially go back through conflict resolution
+> flow and use it as a history restore flow, almost like a time machine, to
+> overwrite the existing save with something from the past
+
+That is the wizard's own compare-and-choose surface, pointed at a game's
+retained past versions instead of at a live conflict, reached from outside the
+moment of resolution.
+
+**One consequence lands inside version one even though the tool does not.**
+Nothing reads the discard store in version one, so nothing will catch a store
+shape that a later reader cannot drive a picker from — one keyed only by a
+timestamp, or one that drops which game, which slot, which device produced the
+copy, and which side won. The store is designed now for a reader that does not
+exist yet. Say whether each plan's retention design survives that requirement.
+
+## What this revision must do
+
+Two revisions have closed the easy distance. What remains are the places where
+the plans genuinely disagree, and the places where all four agree without the
+corpus having settled the point. Both are dangerous, and this round exists to
+deal with them rather than to polish prose.
+
+- **Settle, do not average.** Where the reviews identified a substantive
+  disagreement, take a position and give the reason. If the evidence does not
+  yet exist, say which experiment settles it and what your plan does in the
+  meantime under each outcome. Do not adopt a compromise that no reviewer
+  argued for.
+- **Separate what the corpus settles from what the council merely agrees on.**
+  A position held by everyone and evidenced by nobody is the most expensive
+  kind of error, because no reviewer is left to catch it. Mark those explicitly.
+- **Concede what was refuted**, naming the reviewer and the file, and correct
+  it. A revision that quietly drops a refuted claim is worse than one that owns
+  it. Where a review misread you, say so and make the argument better.
+- **Adopt what others got right**, crediting them by filename. You are not
+  scored on originality.
+- **Refuse what the problem does not earn.** This is a handheld running busybox
+  with a five-second budget on a path the player watches. Where a reviewer or a
+  plan proposes machinery beyond that, say so and cut it.
+- **Keep the load-bearing separable from the optional.** Get the load-bearing
+  parts wrong and the milestone is unsafe; the rest can follow later. Make the
+  boundary explicit.
+- **State decision changes explicitly.** If your approach requires reopening a
+  decided register row, name the ID, state the change as a new refinement
+  citing the old row, and give the argument. If it needs no reopening, say so.
+- **Pay the amendments.** If your plan named an on-device undo surface as a
+  version-one requirement, remove it and re-home its design to the separate
+  restore tool. If it carries lineage, generation tracking or receipts deeper
+  than one step back, justify each against the maintainer's stated primary
+  case or cut it. State plainly what your retention store records, and whether
+  a later restore tool could drive a picker from it.
+- **Be honest about what is still unmeasured**, and name the experiment that
+  settles each hypothesis about rclone, bisync, RetroArch, a backend, or the
+  hardware.
+
+Refer to members and artifacts by filename (for example `gpt-analysis.md`,
+`kimi_peer_review-r3.md`), never by an invented ordinal.
+
+## Injected peer reviews
+
+=== START claude_peer_review-r3.md ===
+
+# Round 3 peer review — `claude_peer_review-r3.md`
+
+**Reviewer:** the council member whose round-2 revision was `claude-revised_plan-r2.md`.
+**Corpus:** the 42 embedded sources, cited as S01–S42 in embed order (full declared paths and the Facilitator's sha256 values are in `corpus.provenance.json` at the end; prose shows the part of each path after `_sources/`). I did not re-read, re-hash, or execute anything. The four injected plans are judged on their merits against the corpus and against the two maintainer decisions in the brief; they are not treated as evidence about anything.
+
+---
+
+## 0. The shape of this round
+
+The four plans agree on the architecture that matters: sha256 identity (D-CLOUD-030), per-device manifests with an unsynced agreement record (D-CLOUD-031), our own three-way classifier with bisync demoted to a candidate transport, `--backup-dir` in both directions, a checked adapter over ES's slot primitives, a lifecycle gate that puts gameplay and the engine under one writer, queued conflicts for unattended passes, D-CLOUD-029 standing. What remains is (a) a handful of substantive disagreements, (b) several places where everyone agrees and the corpus has not spoken, and (c) the maintainer's two decisions, which cut differently into each plan.
+
+I take the maintainer's decisions first, because they change the scoring of everything after.
+
+---
+
+## 1. The maintainer's two decisions, applied
+
+### 1.1 What each plan ships in version one
+
+| Plan | Undo control in V1 | Retention default | Lineage / receipt depth | Discard store readable by the later "time machine"? |
+|---|---|---|---|---|
+| `gemini-revised_plan-r2.md` | none — **aligned** | ON, count selector — aligned | one step; tombstones only for recorded deletions — aligned | **No.** `--backup-dir` into `discarded/<stamp>/` is a stamp-keyed path mirror; device of origin and which side won are not recorded anywhere durable; transport preimages and wizard losers share one store |
+| `gpt-revised_plan-r2.md` | **"minimal native recovery route" is in the must-ship list (§8, §13)** — descoped by the maintainer | ON, 3 per save unit — aligned | **cross-device resolution receipts in V1 (§4.4)** — deeper than the primary case | **Closest.** Unique device/transaction components; the frozen plan records retained-copy locations, hashes, inputs and chosen outcomes; but whether the plan is *kept* after a successful apply is unstated |
+| `kimi-revised_plan-r2.md` | none — aligned | ON, count 3 by register row (D-CLOUD-034) — aligned | one step, plus an ops journal partly justified by `replaces` fidelity | **No.** Same `discarded/<stamp>/` mirror; the apply record is removed on completion ("presence means interrupted"); the loser's `origin` lives only in a manifest entry the winner's entry overwrites. Also: **the KEEP BOTH auto sub-choice adds a press** the maintainer has just said not to add |
+| `mistral-revised_plan-r2.md` | none ("manual recovery is the honest contract") — aligned | ON, 3 — aligned, but the row is mis-cited: D-CLOUD-027 is the audit log; retention refines IA rev 4 / D-CLOUD-024 | tombstones for explicit deletes only; "conservative resurrection (kimi's policy)" cites a position `kimi-revised_plan-r2.md` itself abandoned | **No.** Same stamp-keyed store |
+
+Two of the four (gpt, kimi) carry a real version-one defect against the decision; the other two carry only the store gap that all four share.
+
+### 1.2 The store requirement, spelled out — and the fix all four need
+
+The maintainer's constraint is that the later restore tool is *the wizard's own compare-and-choose surface pointed at a game's retained past versions*. The wizard's panel needs, per side: kind, screenshot or glyph, date/time (with `clock_synced`), device + model, emulator/core + build (S02 § What each kind shows). So a retained copy must carry the same facts a live conflict pair carries, plus two the live pair does not: **why it is here** and **what beat it**.
+
+Every plan places the store at `/storage/.cache/cloud_sync/discarded/<stamp>/…` and relies on `--backup-dir`'s path preservation. That recovers game and slot from the relative path (`savestates/gba/X.state1`) and nothing else. Device of origin and which side won exist at discard time — in the loser's manifest entry (`kimi-revised_plan-r2.md` §4.1's `origin`; gpt's Origin record) and in the wizard's decision — and are then lost: the winner's manifest entry replaces the loser's at that path, the apply record is disposed of (kimi) or of unstated fate (gpt), and the audit log rotates at 1 MiB keeping one predecessor (D-CLOUD-027, S06), so it cannot be the index either.
+
+The liftable fix, which any of the four can absorb without changing its architecture:
+
+- **A sidecar per retained copy** (`<file>.discarded.json` beside it, or one index per stamp directory), written *before* the destructive step, carrying: the copy's manifest entry verbatim (kind, sha256, system, rom, slot, `origin`/device, core, core_build, captured_at/local, clock_synced, screenshot path + sha256); `reason` ∈ {`conflict-loser`, `superseded-by-download`, `compaction`, `es-delete`}; `winner` = {side, path, sha256, device}; the run/transaction id; the wizard's decision text.
+- **The PNG travels with a discarded state** (S03 §4 already says so). The time machine picks by picture; a state without its thumbnail is unusable in that surface.
+- **The retention count is per save unit**, as `gpt-revised_plan-r2.md` §2 has it. A global count of 3 across the whole store would be consumed by three routine one-way downloads of unrelated games; the primary case — "I picked the wrong side for *this* game" — would be gone.
+- **Transaction preimages and unresolved candidates are exempt from the count** (gpt §6.3, §8). Kimi and gemini do not say this; without it, a retention sweep can evict the only copy of an unreviewed head.
+
+One further point cuts against all four and is `gpt-revised_plan-r2.md`'s alone (§12, last paragraph): *the test store, retained bytes, and pending plans are not disposable caches, despite residing below `/storage/.cache/`*. The IA chose `.cache` for the history **index** because "`.cache` is the established home for state that persists but can be regenerated … store a schema version and rebuild when it does not match" (S02 § Where state lives). A discarded save cannot be regenerated. The location may still be right — `/storage/.config` is swept into `backuptool`'s archive (S04 §1, D-CLOUD-018/019/020 row) and anything under `/storage/roms` is admitted by `+ /**/*.srm` and friends (S32) — but the store's home has to be decided *with* its shape, and whatever home is chosen must be exempt from every "rebuild when the version mismatches" convention. No plan says so. The maintainer asked for the store to be designed now for a reader that does not exist; this is part of that design.
+
+### 1.3 The "edge cases inform, do not drive" sentence
+
+It lands on one place: deletion propagation. The argument the maintainer rejects — give up propagating deletions because an unmounted card is indistinguishable from a deliberate delete — was `kimi-revised_plan.md`'s round-1 F8, and `kimi-revised_plan-r2.md` has already moved off it (its concession C1, §5.1). `gpt-revised_plan-r2.md` and `gemini-revised_plan-r2.md` propagate recorded intent and fail closed on unexplained absence, which is exactly the posture the maintainer describes. `mistral-revised_plan-r2.md` §1.4 is the one still half-way ("conservative resurrection … explicit player deletions propagate as tombstones") — it does not say what a renumber or a D-CLOUD-030 compaction does to the cloud copy, so the churn loop in §3 item 9 below is not closed.
+
+---
+
+## 2. The disagreements that remain
+
+### D1 — How a multi-file save unit is classified. **Substantive.**
+
+`gemini-revised_plan-r2.md` §2.1: "If any member of a declared unit is divergent, the entire unit is marked divergent." `kimi-revised_plan-r2.md` §4.3 and `gpt-revised_plan-r2.md` §4.2 compare the unit's **member maps** (path → hash over the complete member set) as three wholes.
+
+Gemini's rule is wrong for the case that matters: agreed (a₀,b₀), local (a₁,b₀), cloud (a₀,b₁). No member is individually divergent — each is a one-way change — so gemini's rule fires nothing and the engine assembles (a₁,b₁), a save neither device produced. For an N64 `.eep/.mpk` pair or a memcard set that is a fork. The member-map comparison sees M_local ≠ M_agreed and M_cloud ≠ M_agreed and asks.
+
+**Settles by:** a pure classifier fixture, no hardware, ten minutes. **Settles toward:** member maps. Gemini should lift kimi's §4.3 table verbatim.
+
+### D2 — Does the game-exit push read the cloud before it writes? **Substantive, and it is an acceptance criterion.**
+
+`gpt-revised_plan-r2.md` §5.2 steps 5–7: take the lock, read cloud evidence for the changed units, upload only device-changed or safely new units, leave conflicts pending. `kimi-revised_plan-r2.md` §4.3 exit pass: consult the *cached* manifest-claim tier from the last full pass; upload with `--backup-dir`; state the residual honestly — "a fork created since the last full pass can be overwritten on the exit path, and the dated sibling is what makes that recoverable."
+
+The corpus does not leave this open. The futro widened #22 and added AC (a): *"a both-sides-changed save is refused (not resolved) by the boot pass, the game-exit pass and the SYNC row, shown by a constructed fixture"* (S05 §5; S17). Kimi's exit pass resolves the post-full-pass fork by recency with a recoverable copy; that is not "refused", and the constructed fixture's natural shape — A syncs up after B's last full pass, B exits — is exactly the case it misses. Recoverability via the sibling is a floor, not a substitute for the AC.
+
+**Cost:** one evidence read on the *changed-unit* path only — `lsjson --hash` scoped to the changed paths on a hash backend; manifest claims plus download-and-hash on a hashless one. The no-change path stays at zero remote contact (both plans agree). gpt is right not to promise "two spawns"; the number must be measured on the H700 (kimi's gate 8, gpt's P5). **Settles toward:** gpt. If the measured cost breaks the budget, `gemini-revised_plan-r2.md`'s fallback rule is the right one (see §5): defer verification to the full pass, but never upload over an unread cloud head.
+
+### D3 — KEEP BOTH on an auto-state conflict. **Substantive; settled by the maintainer.**
+
+`kimi-revised_plan-r2.md` §4.4 amendment 3 adds a *resume-side sub-choice* ("the player picks which copy becomes `.state.auto`"). `gemini-revised_plan-r2.md` §2.3, `gpt-revised_plan-r2.md` §7.1 criterion 7 and `mistral-revised_plan-r2.md` §1.3 use a deterministic rule: the device's resume point stays at `.state.auto`; the cloud copy becomes a numbered state with its PNG.
+
+Kimi's objection to the rule — "KEEP BOTH identifies no winner" — is right about semantics and wrong about the remedy. The deterministic rule *is* a defined outcome; it is arbitrary, not undefined, and it is already the IA's language ("merged saves move to the next free slot", S02). The maintainer: "I don't want to add more complexity to the user during conflict resolution." A player who wanted the cloud copy as the resume point presses KEEP LEFT; a player who wants both loses nothing and can load the slot from the manager. **Settles toward:** the deterministic rule; the done page names where the cloud copy went. Kimi's amendment 3 is dropped.
+
+### D4 — Deletion propagation and the churn loop. **Substantive, now partly wording.**
+
+`gpt-revised_plan-r2.md` §4.3, `kimi-revised_plan-r2.md` §4.6 and `gemini-revised_plan-r2.md` §3 (D-CLOUD-030-A) converge: intent-recorded receipts for ES deletes, renumbers and compactions, propagated as copy-verify-delete into a dated sibling; unexplained absence fails closed. `mistral-revised_plan-r2.md` §1.4 keeps "conservative resurrection" plus tombstones for explicit deletes only.
+
+Two things are worth adding, because the three converged plans make the mechanism heavier than the corpus requires:
+
+1. **The churn loop is closed by applying D-CLOUD-030 to the cloud copy.** The row (S06) says "after a sync, two slots of one game holding the same hash are compacted: the higher slot is removed" — it does not say *locally*. After a renumber uploads `state3 = H`, the cloud holds `state3` and `state5` with equal hashes; retiring the cloud's higher slot by copy-verify-delete (D-CLOUD-026) into the sibling terminates the loop with no journal at all. The renumber signature is also inferable by hash: the hash agreement says was at slot k is now at slot k−1. `kimi-revised_plan-r2.md` keeps hash inference as "the net"; it is in fact the main mechanism for renumbers.
+2. **One hook is load-bearing: ES's delete.** Deleting the *highest* slot leaves no renumber and no duplicate — a pure absence — and without a receipt the cloud copy returns on every pass. That is the one case that needs the `GuiSaveState` delete hook (the call site is not embedded; S25's comment cites `GuiSaveState.cpp:236`). The `copyToSlot(move=true)` hook kimi also proposes is a fidelity improvement for `replaces` across rename-then-edit — which, after the maintainer's decision, is lineage machinery beyond the primary case. Keep the delete hook; make the move hook optional.
+
+**Settles by:** kimi's three fixtures (churn termination; highest-slot delete propagation; stale receipt meets a different occupant → conflict). **Settles toward:** receipts scoped as above. Mistral must adopt cloud-side compaction or it does not converge.
+
+### D5 — Cross-device resolution receipts in V1. **Substantive; the maintainer's decision plus a trace settle it.**
+
+`gpt-revised_plan-r2.md` §4.4 keeps them ("A and B diverge from X; A chooses A's; B later chooses B's; A's next pass silently reverses A's choice"). `kimi-revised_plan-r2.md` §7 defers them ("the ordinary post-resolution case is 'cloud changed → download'; a re-ask arises only when the other device never agreed, and re-asking is not destructive").
+
+Trace gpt's scenario against the schema's table (S03 §3). B's wizard showed B both Ha and Hb and B chose Hb *knowing about Ha*. A's next pass: L = Ha, C = Hb, A(agreed) = Ha → "cloud changed → download". Ha goes to A's discard store (with the sidecar of §1.2 saying `superseded-by-download`, winner Hb from device B). That is the later, informed human decision propagating, with the earlier choice retained one step back — which is precisely the maintainer's model of undo. The "resurrection of a specifically rejected version" case requires a third device whose agreement is *unknown*, which produces a re-ask, not a silent reversal. gpt's receipts would need resolution records synced through the manifests to distinguish these cases; that is the "receipt machinery deeper than one step back" the maintainer has said is not the primary case.
+
+**Settles toward:** V2, as kimi has it. The two-device sequential-resolution fixture should still run — to *observe* that A's copy lands in the store with the right sidecar, not to justify receipts.
+
+### D6 — #10 in the drop or deferred. **Substantive in scope, not in engineering.**
+
+`gpt-revised_plan-r2.md` §9.1: core directories stay in the drop, implemented last, after the launch rehearsal. `gemini-revised_plan-r2.md` and `mistral-revised_plan-r2.md` agree (gates 3 and 7 respectively). `kimi-revised_plan-r2.md` §5.5: defer #10 to its own futro after the wizard.
+
+The engineering is not in dispute: all four accept that creating `es_savestates.cfg` is a launch-behaviour migration, because the XML parser hard-codes `racommands = false` and defaults `autosave`/`incremental` to false while `Default()` sets all three true (S39) — so the rehearsal gate is unanimous. The dispute is scope: D-CLOUD-024 says the milestone blocks the drop, and S01 lists #10 among the milestone's children. Kimi's deferral therefore changes the drop's scope and needs the maintainer's word; kimi is honest that the flat layout's cross-core overwrite is pre-existing shipped behaviour, so deferral costs no *new* loss.
+
+**Settles by:** the rehearsal (gemini's gate). If the XML path can preserve auto-resume and incremental-slot behaviour, keep #10 in the drop, last (gpt). If it cannot, that finding — not the wizard's convenience — is the argument to defer, and it goes to the maintainer as a reopening of the drop's scope, not of D-CLOUD-017.
+
+### D7 — How the own manifest rides the transfer. **Substantive; one plan's mechanism is a hazard.**
+
+`gemini-revised_plan-r2.md` §2.5: "in-spawn filters (`--include /savestates/.rocknix/manifest-<own>.json`)". `kimi-revised_plan-r2.md` §5.7: filtered include, gated on one dry run because `--filter` vs `--filter-from` ordering is not in the corpus. `mistral-revised_plan-r2.md` §1.2: `.rocknix/**` excluded from bulk upload; own manifest via `--files-from` — which reads as a separate spawn and contradicts its own "≤ 2 spawns". `gpt-revised_plan-r2.md` §3.4: exact file selection inside existing batches, with the filter interface proven first.
+
+The corpus is explicit on gemini's mechanism: "using `--include` at all excludes everything it does not match, so a single wrong include is a silent no-op transfer, not an error" (S09, § Critical gotchas). A bare `--include` for the manifest on the saves transfer would exclude the saves. The clean answer nobody quite states: **capture already knows the exact changed set by hash**, so the exit upload can be `--files-from <list>` (changed saves + own manifest) with `--no-traverse` — one spawn, no filter-ordering question, and it also retires `--max-age` as the change detector, which the shipped script admits misses wrong-mtime files (S29, the `--recent` comment). Downloads exclude the own manifest by exact path. **Settles by:** a dry run on the device. **Settles toward:** `--files-from` from capture's set.
+
+### D8 — Exit 4 when there is no default route. **Wording, mostly; one proposal is wrong.**
+
+`gemini-revised_plan-r2.md` §4 item 4: replace the `ip route` check with "a fast local ping to the remote's resolved IP". `gpt-revised_plan-r2.md` §5.3: use a cheap local test only when it can establish the remote has no usable path; otherwise a bounded real operation or a truthful pending outcome. `kimi-revised_plan-r2.md` §8: test the remote's host against connected routes.
+
+D-CLOUD-028's requirement is that the exit sync "answers 'no network' locally and at once … by `ip route`, not a probe" (S06). Gemini's ping is a probe, and resolving a hostname needs the network it is checking for. The LAN-only remote with no gateway is an edge case in the maintainer's sense. **Settles toward:** keep `ip route`; if the endpoint is a literal IP, `ip route get <ip>` is local and instant and answers the LAN case; otherwise a hostname without a default route is unreachable anyway.
+
+### D9 — How strict on hashless backends. **Small substantive residual.**
+
+`gpt-revised_plan-r2.md` §5.1: hashless-with-modtime cannot certify a preserved-mtime change; fetch and hash. `kimi-revised_plan-r2.md` §4.3: three tiers — listing, foreign-manifest claims, confirmation download — with the residual stated (a same-size, preserved-mtime change by a *non-ROCKNIX* writer on a hashless backend is invisible to the cheap tiers; a menu-triggered full verify bounds it). Kimi's manifest-claim tier is a real signal gpt underweights: another ROCKNIX device's own manifest asserts the new sha256. **Settles by:** the same-size WebDAV fixture (both plans name it) plus the shadow census on the maintainer's library for what a hashless full pass would cost. **Settles toward:** kimi's tiering as the default, gpt's strictness as the full-verify mode.
+
+### D10 — `--backup-dir` claims. **Wording.**
+
+gpt is right that the corpus supports `--backup-dir` only in the shipped mirror mode (S29) and proves nothing about two-writer ordering, kill points, or cost on every backend. Kimi's §6 table already lists it as "council-agreed, untested for this use". Both gate on the same race fixture. Lift gpt's §6.3 three-way outcome (pass / unsupported-or-ambiguous → no canonical replacement / loses a head → stop) as the gate's contract.
+
+### Where all four agree and the corpus has not settled it
+
+- **bisync's demotion.** No register row makes bisync the detector, but S01 frames it as the approach under judgement, and #9/#22/the IA say it. This is an amendment to argue to the maintainer, not a body edit; `kimi-revised_plan-r2.md`'s proposed D-CLOUD-036 is the right vehicle. The spike (all four) runs regardless.
+- **Boot sync under ES's scheduling.** Necessary (the race in §3 item 7), unanimous, and not in the corpus: nothing embedded says when ES is up relative to the network or how `autostart/102-cloud-saves` (S35) hands off. That handoff is a gap to name (§9).
+- **Queue-and-badge for unattended passes.** IA rev 4 says "a sync that reports conflicts opens the wizard" (S02). All four queue for boot/exit. Right, unmeasured, and an IA rev 5 item.
+- **Retention count 3.** A product number none of the four can cite; the maintainer said "bounded by a count" and no more. Propose 3 per unit and say it is a proposal.
+
+---
+
+## 3. Load-bearing claims re-tested against the corpus
+
+Each is marked **holds** (source-visible), **holds with caveat**, **does not hold**, or **not in corpus**.
+
+1. **`getNextFreeSlot()` returns −99 for an auto-only repository.** S37: `if (states.size() == 0) return firstslot; for (i = 99999; i >= 0; i--) …; return -99;` — an auto state (slot −1) makes the vector non-empty and the scan finds no slot ≥ 0. **Holds.** And it is not an edge case: the auto conflict is the one the schema predicts as commonest (S03 §4), and a game with only an auto state is the ordinary case for it. Every plan's adapter must allocate from `firstslot` here; only gpt (§7.1 criterion 3) says so in words.
+2. **`copyToSlot()` returns `true` unconditionally.** S38: the `renameFile`/`copyFile` results are discarded. **Holds.**
+3. **`makeStateFilename(fullPath = true)` derives the destination from the source's parent.** S38: `combine(getParent(fileName), ret)`. **Holds** — a cloud state staged in `/tmp` would "merge" into `/tmp`. Stage in the real save directory under a temp name (kimi §4.5); the name must match neither regex in S39 — `X.state1.tmp-<id>` does not match `^(.*)\.state($|[0-9]+)$` or `^(.*)\.state\.auto$`.
+4. **Exit-time renumbering is conditional, not "every exit".** S41 calls `onGameEnded()` only when `options.saveStateInfo != nullptr`; S38's `racommands` branch returns for `slot < 0` before `renumberSlots()`. **Holds** — gpt's correction of the earlier overgeneralisation (which was mine) is right. Numbered-slot launches renumber; auto and new-game launches do not.
+5. **The exit upload is `copy` with no `--update`.** S29 `--recent` branch forces `BACKUPMETHOD=copy`; `--update` is added only when passed; S41 passes `--yes --saves-only --recent`. **Holds** — the exit path is local-wins within the window, and the "lossless one-way posture" is refuted (all four now concede).
+6. **The boot pair is `copy --update` both ways.** S35. **Holds** — newest-wins, blindspot 28 (S07).
+7. **The boot sync races a live session, and the numbered-slot launch manufactures a "zombie" auto.** S38: `setupSaveState()` renames auto → `.bak` and copies the slot file to the auto path; `onGameEnded()` removes the live auto and restores the `.bak`. S35: a detached background pair. **Holds with caveat** — the *mtime* consequence (the copied auto is "newer", the restored one is "older") depends on the copy utility's timestamp behaviour, which is not embedded (gpt §1.2 is right). The reproducer (kimi gate 3, gpt P1, gemini #4) is mandatory. One more consequence both plans note: a numbered-slot launch *discards the session's auto* at exit, so "the auto is written on every exit" (S03 §4) depends on launch habits — census, not assertion.
+8. **Non-empty `RCLONEOPTS` replaces the default option set, including `--filter-from`.** S29 `backup_game_saves`: `if [ ${#filtered_opts[@]} -gt 0 ] … else … --filter-from`. **Holds** — a user who edits `RCLONEOPTS` and drops the filter syncs `/storage/roms` with only `--exclude=bios/**`. Kimi's finding; gpt adopted; gemini and mistral omit it. Filed on day one regardless of the milestone.
+9. **The renumber-churn loop.** Trace in §2 D4 against S37/S38 (renumber via `copyToSlot(move=true)`), S03 §3 ("only one side has it → transfer") and D-CLOUD-030's local compaction. **Holds** as stated; **closed** by cloud-side compaction under the row's own wording plus the delete hook for the highest slot.
+10. **The schema never writes agreement on verified equality.** S03 §2 ("the hash this device last uploaded or downloaded"), §3 (equal → nothing), §9 ("written by the transfer that moves a version"). **Holds, and it is the sharpest gap in the signed schema.** The maintainer's own devices, synced by the shipped scripts before the engine ships, will have L = C for every file and no agreement; the first change to any save then classifies as "never agreed → ask". That is an upgrade that is not invisible (S11). gpt §4.1 names it; kimi §4.3 adopts ("write agreement if absent"); gemini and mistral do not state it. It belongs in the D-CLOUD-031 refinement row every plan proposes.
+11. **`.state.auto.bak` and Dropbox "conflicted copy" `.srm` files are admitted by the saves allowlist.** S32: `+ /savestates/**` takes the whole directory; `+ /**/*.srm` matches `X (conflicted copy).srm`; the embedded `cloud_backup`/`cloud_restore` carry no conflict exclusion (S29, S30). **Holds** — D-CLOUD-022's fix reached the content tier only. Kimi's finding.
+12. **`--include` excludes everything it does not match.** S09. **Holds** — see D7.
+13. **The round-trip harness cannot pass against the embedded uploader.** S36 writes `rclone.conf` wholesale before asserting the first remote and never restores it; asserts `f"{device_id}/{ARCHIVE_NAME}"` where S29 uploads a non-dated name as `${stamp}-${base}`; reads the archive back at the original path where S30 writes `local_name="${newest}"`; looks for `*-*_BACKUP.tar.gz` the fixture never creates. **Holds** — four visible failures, and one destructive act on a configured handheld. `gemini-revised_plan-r2.md`'s suggested fix ("remove the `rclone.conf` overwrite that precedes the remote assertion") is imprecise: the write is how the VM is pointed at the QA backend; the fix is back-up-and-restore around it, with the first-remote assertion made against the merged result.
+14. **User rules come before defaults in the rules file.** S31 `update_cloud_sync_rules`. **Holds** — so #25's snapshot exclusion cannot live only in the defaults file; kimi propagates it correctly. Stated more carefully than kimi does: a default *can* be overridden by a user `+` rule, which is what defaults are; the safe design is a store outside the tree, which every plan now has.
+15. **rclone's exit 3/4 collide with the scripts' reserved meanings, and `clean_exit ${BACKUP_STATUS}` masks a failed system phase.** S29 `clean_exit` writes a stamp for any code; S40 maps 3/4 to SKIPPED. **Holds** — typed outcomes (gpt §8, kimi §4.3) are necessary.
+16. **Kid/kiosk mode hides `GAME SETTINGS`.** S13. **Holds** — the badge is invisible there; nothing destructive happens without the wizard; unlock resolves. All four now agree.
+17. **`getCore(true)` at exit is correct today and may not be after #10.** S38's emulator/core rewrite requires `!racommands`; `Default()` is `racommands = true`; the XML path flips it (S39). **Holds** — gpt's "actual launch context" (kimi adopts) matters at #10, not before.
+18. **bisync's behaviour under `--conflict-resolve none`, interruption, `--recover`/`--resilient`, filter change.** **Not in corpus.** All four demote and spike. Nothing depends on the outcome; that is the correct posture.
+19. **`--backup-dir` under a two-writer race.** **Not in corpus.** See D10.
+20. **`mistral-revised_plan-r2.md` §1.1 "≤ 2 rclone spawns … proven on H700" and §6 "a build contract with no unmeasured claims".** **Does not hold** — the spawn count is a target, not a measurement; and the plan's own evidence letters ([C] [G] [K] [M]) mark peer plans as settling claims, which the brief forbids: only [S] settles anything (`getNextFreeSlot()` → −99 is settled by S37, not by [K]).
+
+---
+
+## 4. What the amendments cost each plan
+
+- **`gemini-revised_plan-r2.md`** — Low. It was already at "retain ON, bounded, no undo control". It owes the store sidecar (§1.2) and the separation of transport preimages from wizard losers (or a `reason` field that distinguishes them). Its unit rule (D1), `--include` mechanism (D7) and ping (D8) are corpus defects independent of the amendments.
+- **`gpt-revised_plan-r2.md`** — Medium. Delete "minimal native recovery" from §8 and §13; move §4.4's resolution receipts and the "completed resolution" operation record to "may follow later"; keep the move/delete/compaction operation records (they are convergence, not lineage). Its store is the closest to the reader requirement; it owes one sentence: the frozen plan's per-unit record is *retained beside the copies*, not disposed of on completion. Its argument that SSH-only recovery is not console-first is answered by the maintainer's separate tool.
+- **`kimi-revised_plan-r2.md`** — Medium. Drop the KEEP BOTH auto sub-choice (D3). Add the store sidecar; the `origin` data it needs is already in hand at discard time. Narrow the ops journal's justification to deletion receipts (D4) — the `replaces`-fidelity argument is lineage depth the maintainer has set aside. Separately from the amendments, its exit pass fails the futro's #22 AC (a) (D2).
+- **`mistral-revised_plan-r2.md`** — Low on undo (none shipped), but it carries three defects the round should not let through: "D-CLOUD-029 is withdrawn" reopens a decided row without the argument S01 requires (and misattributes the withdrawal to `gemini-revised_plan-r2.md`, which says D-CLOUD-029 stands); the retention row cites D-CLOUD-027 instead of D-CLOUD-024/IA rev 4; and "conservative resurrection" is exactly the edge-case-driven posture the maintainer has ruled insufficient.
+
+---
+
+## 5. What each plan uniquely has — lift verbatim
+
+**`gemini-revised_plan-r2.md`**
+- The budget fallback rule (§4 item 2): *"If the budget exceeds 5 seconds, defer hashless verification to the boot/menu full pass, leaving the exit push as a fast-path upload only."* Read with D2: the fast path may still never overwrite an unread cloud head, but this is the only plan that says what to do when the measurement comes back bad.
+- The two named kill points for the interrupted-apply proof (§6 item 5): *"after a local replacement but before remote publication, and after remote publication but before agreement is advanced."* gpt has a fault campaign; gemini names the two stages that matter.
+- The compaction-tombstone wording in D-CLOUD-030-A: *"propagate as moves into dated siblings, capped per run."*
+
+**`gpt-revised_plan-r2.md`**
+- The lock order (§3.1): five steps, with *"capture never waits for the cloud lock"* and *"it does not hold the lifecycle gate across network waits."* Kimi adopts the order; gpt states it.
+- *"Establish agreement on verified equality as well as transfer"* — the schema gap of §3 item 10, in the D-CLOUD-031 refinement.
+- The classifier row *"A retirement for X encounters Y at a relevant path → conflict or stale operation; never treat the record as permission to remove Y."*
+- The `.cache` warning of §1.2, and the preservation-gate outcomes of §6.3.
+- The §12 table — case-folding aliases, same basename in two directories, the wrong mounted card, a legitimate unit whose member is excluded by the `*.db` rules (S32).
+
+**`kimi-revised_plan-r2.md`**
+- The three shipped hazards no other plan found: `RCLONEOPTS` without `--filter-from`; the conflicted-copy admission in the saves tier; the `*.bak` transient (§3 items 8, 11).
+- §6, *"What the corpus settles vs what the council merely agrees on"* — the single most useful table in the round, and the one a builder should keep open.
+- The day-one filings list (§8) — bycatch, not baggage.
+- *"A deliberately restored file is a new version, not a stigmatized one"* (§12) — this is the semantics the time machine needs: a restore from the store is an ordinary new version to the classifier.
+- Manifest write-only-on-change, with its consequence for the round-trip's "nothing to transfer" step.
+
+**`mistral-revised_plan-r2.md`**
+- The gate / experiment / owner-issue / pass-condition table (§4). Kimi credits the shape; mistral's is the cleanest instance.
+- `kind: container` for shared VMU/memcard units, which makes "`rom` is null for a container" a type rule rather than a convention.
+
+---
+
+## 6. What should not be built
+
+- **A native undo surface in the resolution flow** (gpt §8, §13) — descoped by the maintainer.
+- **Cross-device resolution receipts synced through manifests** (gpt §4.4) — V2; the ordinary outcome is correct and retained (D5).
+- **The KEEP BOTH auto sub-choice** (kimi §4.4 amendment 3) — one more press the maintainer has said not to add (D3).
+- **Move-observation hooks justified by `replaces` fidelity** (kimi §4.1) — keep the delete hook for receipts; treat the move hook as optional (D4).
+- **`--include`-based manifest transport** (gemini §2.5) — a silent no-op transfer per S09; use `--files-from` (D7).
+- **A probe replacing `ip route`** (gemini §4 item 4) — contradicts D-CLOUD-028 (D8).
+- **Per-file "any member divergent" unit classification** (gemini §2.1) — misses the disjoint-member fork (D1).
+- **"Conservative resurrection" of compacted duplicates** (mistral §1.4) — does not converge (D4).
+- **Withdrawing D-CLOUD-029** by assertion (mistral §2) — the row stands; the maintainer's toggle posture is compatible with it and needs no row.
+- **A SQLite index** — all four agree; say so on #20 and close the question.
+- **A generation counter that does more than fail closed** on a same-ID manifest fork (gpt §3.3) — a cloned card is an edge case; warn and refuse (kimi §4.1 rule 5) is enough.
+- **Anything that reads a retention count as permission to evict an unreviewed head** — every plan's store must exempt transaction preimages and pending candidates (gpt says it; the others must).
+
+---
+
+## 7. Which plan I would build from, and what I would take
+
+**Build from `kimi-revised_plan-r2.md`.** It is the only one of the four that is a complete standalone specification with every claim marked against the corpus, an honest residual stated wherever a mechanism does not close a case, a defined shadow census, ordered gates from no-hardware through the RG351M, and a build order. Its concessions are correct and traced. Its weaknesses are three and all liftable.
+
+Before building, take:
+
+1. From `gpt-revised_plan-r2.md`: the exit pass reads cloud evidence for changed units before uploading (D2, to satisfy the futro's #22 AC (a)); equality-establishes-agreement in the D-CLOUD-031 refinement (§3 item 10); the lock order as written; the `--backup-dir` preservation gate's three outcomes; the `.cache` non-disposable rule; the §12 failure table as additional fixtures.
+2. From `gemini-revised_plan-r2.md`: the budget fallback rule and the two named kill points.
+3. From `mistral-revised_plan-r2.md`: the gate table shape, with owners; `kind: container`.
+4. Apply the maintainer's decisions: drop kimi's auto sub-choice; add the per-copy sidecar with `reason` and `winner`, per-unit retention with exemptions, PNG travelling with the state; decide the store's home alongside its shape; narrow the ops journal to the delete hook plus hash inference.
+5. Simplify D4 with cloud-side compaction under D-CLOUD-030's existing wording.
+
+The result is kimi's engine with gpt's evidence discipline on the two places kimi traded safety for cost, and the maintainer's undo model built into the store from day one.
+
+---
+
+## 8. Where these plans changed my mind since `claude-revised_plan-r2.md`
+
+- **The exit push must read before it writes.** I had accepted cached claims plus `--backup-dir` as adequate for the exit path. The futro's AC (a) says *refused*; recoverability is not refusal. gpt is right; the cost is measured, not assumed.
+- **Equality writes agreement.** I had not made this explicit. The trace in §3 item 10 shows that without it the upgrade to the engine is a wizard prompt on every save's first change. gpt's formulation is load-bearing.
+- **`--backup-dir` is not "zero extra round trips".** That was my overclaim in the previous round. It adds no process; it may add server-side operations whose cost and ordering are unmeasured on Dropbox and WebDAV.
+- **Exit-time renumbering is conditional.** My earlier trace generalised from the numbered-slot launch; S38/S41 show the auto and new-game paths return early. The reproducer still runs; the frequency claim changes.
+- **The store's home is not settled by "outside the sync tree".** gpt's `.cache` observation reopened a point I had treated as closed. It should be decided with the maintainer alongside the sidecar shape.
+- **Resolution receipts stay deferred.** I had deferred them in my round-2 review; gpt's V1 case did not move me because the trace shows the ordinary outcome is correct and retained, and the maintainer's decision now says the same thing from the product side.
+
+---
+
+## 9. Gaps to surface to the orchestrator
+
+None of these is fabricated; each is named because a plan's claim depends on it and the corpus does not contain it.
+
+- `GuiSaveState.cpp` (the delete/renumber call site the one load-bearing hook must attach to), `SaveState.h` / `SaveStateRepository.h` (default arguments), `Paths.cpp:83`, and the filesystem copy/rename utilities (timestamp behaviour for §3 item 7).
+- rclone 1.75.0 documentation or source for bisync, `--backup-dir`, `--files-from`, and the `--filter`/`--filter-from` ordering (D7, D10, item 18–19).
+- How ES's startup relates to network readiness, for the boot pass moving under ES's scheduling.
+- `setsettings.sh`, the shipped `retroarch.cfg` and `es_systems.cfg` (RetroArch's `savestate_directory`, `savestate_auto_save`; the two-consumer layout for #10).
+- `cloud_sync.conf.defaults`, `cloud_sync-rules.txt.defaults`, the content scripts, `cloud_setup`, `backuptool`, `tools/cloud-test-backend`.
+- The four round-2 plans' predecessors and `claude-revised_plan-r2.md` itself were not embedded; I have not relied on any of them as evidence.
+
+---
+
+## `corpus.provenance.json`
+
+```json
+{
+  "artifact": "claude_peer_review-r3.md",
+  "role": "council member, round-3 peer review of the four injected revised approaches",
+  "corpus_mode": "verbatim embedded read-at-time corpus supplied by Council Facilitator council-facilitator@1.2.0",
+  "source_count": 42,
+  "manifest_read_timestamp_utc_as_supplied": "2026-09-05T17:32:51Z",
+  "member_filesystem_access": false,
+  "member_independently_reread_files": false,
+  "member_independently_rehashed_files": false,
+  "member_executed_commands_or_hardware_tests": false,
+  "hash_basis": "sha256 values copied from the supplied per-source headers; verified at embed time by the Facilitator, not recomputed by this member",
+  "citation_mapping": "S01 through S42 correspond to the ordered, same-index source_file_paths and source_file_hashes arrays",
+  "reviewed_artifacts": [
+    "gemini-revised_plan-r2.md",
+    "gpt-revised_plan-r2.md",
+    "kimi-revised_plan-r2.md",
+    "mistral-revised_plan-r2.md"
+  ],
+  "reviewed_artifact_hashes_provided": false,
+  "own_prior_revision_embedded": false,
+  "peer_material_use": "Judged on merits against the embedded corpus and the maintainer's two decisions in the orchestrator brief; not treated as evidence about councils, models, or this deliberation.",
+  "source_file_paths": [
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/00-problem-statement.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/docs/conflict-wizard-ia.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/docs/save-manifest-schema.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/docs/save-manifest-alignment-review.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/plans/conflict-resolution/vita-style-conflict-resolution.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/docs/decision-register.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/docs/blindspot-register.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/docs/savestate-compat-test.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/.claude/rules/rclone-cloud-sync.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/.claude/rules/engineering-practices.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/.claude/rules/upgrade-and-install.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/.claude/rules/es-native-ui.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/docs/es-menu-map.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/docs/cloud-sync-changelog.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/CLAUDE.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/rclone-bisync-planning.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-11.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-9.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-10.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-19.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-20.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-21.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-22.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-23.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-24.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-25.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-35.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-37.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/projects/ROCKNIX/packages/network/rclone/sources/cloud_backup",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/projects/ROCKNIX/packages/network/rclone/sources/cloud_restore",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/projects/ROCKNIX/packages/network/rclone/sources/cloud_sync_helper",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/projects/ROCKNIX/packages/network/rclone/sources/cloud_sync-rules.txt",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/projects/ROCKNIX/packages/network/rclone/sources/cloud_sync.conf",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/projects/ROCKNIX/packages/network/rclone/sources/cloud_device_id",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/projects/ROCKNIX/packages/network/rclone/autostart/102-cloud-saves",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/tools/cloud-round-trip",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/es/SaveStateRepository.cpp",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/es/SaveState.cpp",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/es/SaveStateConfigFile.cpp",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/es/ThreadedCloudSync.cpp",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/es/FileData.cpp.launchGame-excerpt-l740-850.cpp",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/es/FileData.cpp.getCore-excerpt-l1470-1560.cpp"
+  ],
+  "source_file_hashes": [
+    "7e8c1076ee1735925af1d59dded61d23146c5c8e9fb2aae2be53d5afca26b6b7",
+    "5738428852899047b9d49902b78e9c5e0d4457f67b09d079fdfeb89fdcfcc6c9",
+    "2a794ea3d027402a26e3dfc62ea6184c204211c888c904413d1564ecf3f189ce",
+    "56f6c54c013c5476f638a0dee5f2201e6a4ad021b47c674010bdc392665bfd48",
+    "d22a49e73fe5d25cafea7646ec353e57a3da95f6ef84d4b86249c91bb170cf43",
+    "0a4b1150d907f26cdd70d480830e195b9fa2885920abf48641506bb5a0f09640",
+    "1514b33d61ab148d4e59bf446af03d973792a0673969df471b41c021edc9cbd8",
+    "4d0b9d21ee5c9c26a25da5c169d9e99b83c18457732bd9471078c2d508b1d1bb",
+    "7d43f252d029d54baa98ffa266b9334fa2f0f2da3db2507f451205f40dc73353",
+    "e8ee62ea5af749ef09c0ede9da7abc5d7c192d890ae2e737cc369a5c5549c646",
+    "d343c805b912141a1f8af7aa8d6025e2379e5335fb197c4cc59adf960fa43cbb",
+    "cba905608c0104093b166c88393dba32159dca2b280d8a5229b6668930c8e4d2",
+    "3ab8da275237ac1ccf3cab3bf2f019077d7fdef06d2e6afd180313ca80e00d8c",
+    "6357ada783d5b09f22bd6fad2745b5c101e68fcdf2f85ffc698975be356cd594",
+    "b19a3fd41d9728a0d5ee22aad6fd54c2f2d5199cd5835dbdc695d6e5062f8516",
+    "acae778e1ee700e4a7c0120cb5e9be2fb5d2129aa04ef3e75590af2effca60eb",
+    "4c6881068dd2be7eca3031e8d929b4d1a5f314eb6d08ba07a1d7cbd735bd207f",
+    "cf3f971c8c6d95f0429d7f2937ecb130b1b40f2d12d7681441548230ca48a9c0",
+    "4704211f8e92be217eb2f16cd363a6a7c3dacc381f5083b7536e9aa33b79ab0f",
+    "b4f54c4e548f514f9429d5ea56dc9c3e246b95b0ae519a4b013891b1d69ffe39",
+    "083c6c3504c578da7c283008d1305492f792a82c4b0a30d35007f9776ff6ad90",
+    "c87315eb509d89d1ac2f8595c1fb47c9227836fadfbd13cf22122fce5f9806d3",
+    "6d998503be831ad800a34bbfa952fc2aeb85ca5f5d959b6d10dad98d0fea6831",
+    "016287a95f088a1cf137199a4c50321e0650684b78ecbe1849d995ae52afb6ee",
+    "f87746eecfd56f78e477d227a25ddb7cfc2accc4626656c41ac14eeff8285ea0",
+    "696bcdba14d33dfeea8e627a90094a2b1955745f32fc28677f54bb97f88099ba",
+    "5787b6f79b1f7a9160c0540997d8b2fae1541201224c4bb8bf17b3cacf610210",
+    "a43faf60f3fa4d2aa60345815484ff7c862bdba0061befa068e64b1994e0a907",
+    "dfd1bf52dca78ab67a1b30b56e3c048d8910863a99ca02442525f58d083a2a57",
+    "3a1bec8bb0ef5005f3dd92cdd766beb2c32ef26c5b5ea06fbd6cdb0bb0259de9",
+    "8b22b9c82effe0a044ff765f73ecf24e26dd064abf694dc1f37304e2759b8823",
+    "60db296dde26bebbf4fcf1b97101188799cedb2eb3260616204a2ee082ce19c3",
+    "c9f4d94dc9745bce7bccf99145816e0e45305c8a5058acb6476a1fb56f96eb6c",
+    "2b56d6f5fd4a86bfd40578bec43308204f62af513df9b3ed227cf971585f837b",
+    "7c3e79bbe41bd70ec1c1f08d9defd04e38af891430616173609bf3e76c2159ee",
+    "212e1c8531008b1d25f5f976797d9762c5cfa3061fe70229c546d276784efb49",
+    "9931bfdceacc18344d7a6b9eeea0a27278dff46ae04a7f82e5c4efe7300ff51b",
+    "848e0746fa26ef5c565af72962c487b0d4185f199f36f2290827bd086e303741",
+    "4f38ea7dcfcbd71068122124c428d146b7da3c6dbdcc05a81afc99bbd93a9b15",
+    "62f817868c3b803429e62efb7aa8f37aa995213386c6e4303e8e1f490a144ffc",
+    "5b341d85de24badb2984fff979226f25f080831a1d194f607b6d6caa6085f233",
+    "2410e4316d9c2c3bfb301c39dbe79590fb73682b18e70988527eeecc2a024fa6"
+  ],
+  "gaps_for_orchestrator": [
+    {
+      "material": "GuiSaveState.cpp, SaveState.h, SaveStateRepository.h, Paths.cpp, and the filesystem copy/rename utility implementations",
+      "reason": "The one load-bearing ES hook (delete) has an uncited call site; default arguments and copy timestamp behaviour (zombie-auto trace) are not inspectable from the excerpts.",
+      "declared_source_path": null,
+      "sha256": null
+    },
+    {
+      "material": "rclone 1.75.0 documentation or source for bisync, --backup-dir, --files-from, and --filter/--filter-from ordering",
+      "reason": "D7 and D10 and the bisync spike rest on behaviour the corpus does not contain.",
+      "declared_source_path": null,
+      "sha256": null
+    },
+    {
+      "material": "ES startup ordering relative to network readiness and the autostart handoff",
+      "reason": "Every plan moves the boot pass under ES scheduling; the corpus does not show when ES is up or how 102-cloud-saves would hand off.",
+      "declared_source_path": null,
+      "sha256": null
+    },
+    {
+      "material": "setsettings.sh, shipped retroarch.cfg and es_systems.cfg",
+      "reason": "RetroArch's savestate_directory and savestate_auto_save settings decide the #10 two-consumer layout and the auto-state frequency claim.",
+      "declared_source_path": null,
+      "sha256": null
+    },
+    {
+      "material": "cloud_sync.conf.defaults, cloud_sync-rules.txt.defaults, cloud_content_backup, cloud_content_restore, cloud_setup, backuptool, tools/cloud-test-backend",
+      "reason": "Cross-tier and upgrade claims referenced by the plans cannot all be checked from the embedded callers.",
+      "declared_source_path": null,
+      "sha256": null
+    },
+    {
+      "material": "The four round-2 plans' round-1 predecessors and claude-revised_plan-r2.md",
+      "reason": "Not embedded; referred to only as the plans themselves describe them, never as evidence.",
+      "declared_source_path": null,
+      "sha256": null
+    }
+  ],
+  "missing_source_policy": "No missing source paths, hashes, file contents, or execution results have been fabricated."
+}
+```
+
+=== END claude_peer_review-r3.md ===
+
+=== START gemini_peer_review-r3.md ===
+
+An analysis of the four revised approaches against the embedded corpus and the maintainer’s new authoritative constraints.
+
+---
+
+### 1. Costing the Amendments
+
+The maintainer’s two rulings—reversibility is one step back with no V1 undo control, and the discard store must support a future "time machine" picker—directly invalidate parts of the proposed plans:
+
+*   **`gpt-revised_plan-r2.md` over-scoped V1.** GPT explicitly demanded a "minimal native recovery route for retained decisions" in V1 (Section 8), arguing that SSH is not a console-first escape hatch. The maintainer explicitly descoped this: *"ships no undo control... Restoring a discarded copy becomes a separate tool."* GPT pays the cost of designing and demanding a UI surface that the maintainer rejected.
+*   **`kimi-revised_plan-r2.md` and `mistral-revised_plan-r2.md` designed a discard store the future picker cannot read.** Mistral places discards in `/storage/.cache/cloud_sync/discarded/<stamp>/`. Kimi places them in `/discarded/<path>/<sha256>`. Because Kimi deletes the plan file after apply, and Mistral relies only on a timestamp, both drop the context required for the future picker (which device produced the copy, which side won the conflict, what core it belongs to). To survive the amendment, the discard store must write a metadata sidecar (e.g., `discard-meta.json`) alongside the retained bytes.
+*   **`kimi-revised_plan-r2.md` abandoned a capability for an edge case.** Kimi’s plan states: *"V1 propagates no ordinary deletion... The one deletion is D-CLOUD-030's duplicate compaction."* Kimi relies on a "hold-back" flag to prevent resurrecting deleted files, explicitly refusing to delete them from the cloud to protect against the unmounted-card edge case. The maintainer ruled: *"abandoning a capability to buy it [safety from an edge case] needs a better reason than the edge case alone."* Kimi’s complete refusal to propagate recorded deletions is costed by this amendment.
+
+### 2. The Real Disagreements
+
+**Disagreement 1: Deletion Propagation vs. Unexplained Absence**
+*   *The Split:* `kimi-revised_plan-r2.md` refuses to propagate deletions to the cloud, using a local "hold-back" flag instead. `gpt-revised_plan-r2.md` allows deletion propagation, but *only* via explicit receipts (verified ES moves/deletes), while failing closed on unexplained absence.
+*   *Substantive or Wording:* Substantive.
+*   *Resolution:* `gpt-revised_plan-r2.md` wins. The maintainer’s amendment explicitly states we should not abandon capabilities just for edge cases. Kimi built a robust receipt system (the ops journal) but stopped short of using it to actually delete remote files. We should use Kimi's receipts to execute a remote `copy-verify-delete` (into the dated sibling), fulfilling the capability while still failing closed on unrecorded absence.
+
+**Disagreement 2: Concurrency and `--backup-dir`**
+*   *The Split:* `kimi-revised_plan-r2.md` leans on `rclone copy --backup-dir` in both directions as the primary safety net for concurrent writes, assuming it will atomically archive the intervening head if a race occurs. `gpt-revised_plan-r2.md` points out that `--backup-dir`'s atomicity and behavior under concurrent writes on backends like WebDAV and Dropbox is entirely unproven.
+*   *Substantive or Wording:* Substantive.
+*   *Resolution:* `gpt-revised_plan-r2.md` is correct. Rclone's `--backup-dir` is a client-side directive; on backends without atomic server-side moves, a concurrent overwrite can still result in a torn or lost file. *Experiment to settle:* The two-device race fixture (Gate 7). I predict `--backup-dir` will *not* reliably preserve the intervening head on WebDAV, meaning the lineage check (which both plans adopt) is the true safety net, surfacing the lost update as a fork on the next pass.
+
+**Disagreement 3: The `es_savestates.cfg` Launch-Behavior Migration (#10)**
+*   *The Split:* `claude-revised_plan-r2.md` (via Kimi's summary) thought #10 could be deferred because flat-path collisions become visible conflicts. `kimi-revised_plan-r2.md` and `gpt-revised_plan-r2.md` correctly identify that shipping `es_savestates.cfg` alters emulator launch behavior, not just directories.
+*   *Substantive or Wording:* Substantive.
+*   *Resolution:* `kimi` and `gpt` are correct. Source `es/SaveStateConfigFile.cpp` proves that the compiled `Default()` sets `incremental = true`, `autosave = true`, and `racommands = true`. But the XML parser (lines 160+) defaults `autosave` and `incremental` to false, and hardcodes `emul->racommands = false;`. Shipping this file disables the `.auto` backup dance. It must be gated behind a real-device rehearsal.
+
+### 3. Testing Load-Bearing Claims Against the Corpus
+
+I verified the most critical claims made by the plans against the embedded sources:
+
+*   **Claim:** `copyToSlot` ignores copy/rename return values and returns `true` unconditionally (`kimi-revised_plan-r2.md`).
+    *   *Verification:* **TRUE.** Source 38 (`es/SaveState.cpp`), lines 240-264. The function executes `Utils::FileSystem::renameFile(...)` or `copyFile(...)` and unconditionally hits `return true;` at the end without checking their success. A checked adapter is absolutely mandatory.
+*   **Claim:** `getNextFreeSlot` returns `-99` for an auto-only repository (`kimi-revised_plan-r2.md`, `gpt-revised_plan-r2.md`).
+    *   *Verification:* **TRUE.** Source 37 (`es/SaveStateRepository.cpp`), lines 183-199. If only an auto state exists, `states.size()` is 1. The loop scans `for (int i = 99999; i >= 0; i--)`. Since the auto state has `slot == -1`, the loop finishes without a match and returns `-99`.
+*   **Claim:** A non-empty `RCLONEOPTS` without `--filter-from` bypasses the allowlist (`kimi-revised_plan-r2.md`).
+    *   *Verification:* **TRUE.** Source 33 (`cloud_sync.conf`) defines `RCLONEOPTS` including the `--filter-from` flag. Source 31 (`cloud_sync_helper`) merges user configs. If a user overrides `RCLONEOPTS` in their local config, the default `--filter-from` is lost. Because `cloud_backup` [S29] passes `RCLONEOPTS` directly to rclone, the allowlist is entirely bypassed. This is a massive shipped hazard.
+*   **Claim:** The exit upload is `copy` with no `--update`, meaning it overwrites the cloud head of a fork (`kimi-revised_plan-r2.md`).
+    *   *Verification:* **TRUE.** Source 29 (`cloud_backup`), lines 218-232. The `--recent` flag forces `BACKUPMETHOD="copy"` and adds `--max-age` and `--no-traverse`, but does *not* add `--update`. It is a blind overwrite.
+
+### 4. What Each Plan Uniquely Has (To Lift Verbatim)
+
+*   **From `kimi-revised_plan-r2.md`:** The exact breakdown of the ES primitive defects (`getNextFreeSlot` returning `-99`, `copyToSlot` returning unconditional `true`, `makeStateFilename` deriving from the source's parent). This proves beyond doubt that raw ES primitives cannot be used and a checked adapter is required.
+*   **From `gpt-revised_plan-r2.md`:** The **lifecycle gate acquisition order**: *"1. A network worker takes the cloud lock non-blockingly. 2. It takes the lifecycle gate non-blockingly... 4. ES’s game session holds the lifecycle gate, performs local capture, releases it, and only then requests cloud work. 5. Capture never waits for the cloud lock."* This structurally eliminates the boot-sync vs. game-session race.
+*   **From `claude-revised_plan-r2.md` (via Kimi):** Binding `agreed.json` to the 5-tuple of `{remote name, remote type, SYNCPATH, BACKUPPATH, RESTOREPATH}`. This ensures that changing a cloud folder or unlinking an account doesn't result in a mass false-agreement overwrite.
+*   **From `mistral-revised_plan-r2.md`:** The explicit "What not to build" section, which serves as a strict out-of-scope fence for the builder.
+
+### 5. What Should Not Be Built
+
+*   **A native undo/recovery UI in V1:** Explicitly descoped by the maintainer.
+*   **A SQLite database:** Unnecessary overhead on busybox, and syncing a database file is a known corruption hazard (as proven by the allowlist exclusions).
+*   **A full staging mirror of the remote tree:** Costs a full download on hashless backends just to verify equality. Candidate-scoped staging is the correct approach.
+*   **A 99-slot product cap:** ES supports 99999 slots; capping it is inventing a product limitation to mask a code defect.
+*   **`bisync` as the production detector:** It remains a spike. Its `--conflict-loser` suffix breaks ES's regex, and its `--resync` behavior is too dangerous for unattended syncs.
+
+### 6. Which Plan I Would Build From
+
+I would build from **`kimi-revised_plan-r2.md`**. 
+
+It is the most rigorously evidenced plan, correctly identifying the ES primitive bugs, the `RCLONEOPTS` bypass hazard, and the exact exit-path budget. It relies on verifiable artifacts rather than assumed rclone behaviors.
+
+**What I would change/take from the others:**
+1.  **Fix the Discard Store (Maintainer Amendment):** I would amend Kimi's discard store to write a `discard-meta.json` sidecar alongside every retained file. This sidecar will record `original_path`, `game`, `core`, `device_id`, `side_won`, and `timestamp`, perfectly setting up the maintainer's V2 "time machine" picker.
+2.  **Restore Deletion Propagation (Maintainer Amendment / GPT):** I would take GPT's approach to deletion. Kimi built a brilliant "ops journal" to generate deletion receipts, but stopped short of using them to delete remote files. I would use Kimi's receipts to execute a remote `copy-verify-delete` (into the dated sibling), fulfilling the deletion capability while still failing closed on unrecorded absence.
+3.  **Adopt the Lifecycle Gate (GPT):** I would lift GPT's strict lock acquisition order to guarantee the boot-sync cannot race the emulator.
+
+### 7. Where a Plan Changed My Mind
+
+The reviews and the revised plans changed my mind regarding **`bisync` and the full staging mirror**. In my own revision, I might have leaned toward utilizing `bisync`'s built-in detection or mirroring the remote tree to simplify comparisons. However, `kimi-revised_plan-r2.md` and `gpt-revised_plan-r2.md` conclusively proved that `bisync`'s suffixing breaks ES's `{{romfilename}}.state{{slot}}` regex (causing files to vanish from the UI), and that a full staging mirror on a hashless backend (like the QA WebDAV) would trigger a full library download just to verify sizes. Candidate-scoped downloads and a custom JSON-based reconciler are the only safe paths forward.
+
+=== END gemini_peer_review-r3.md ===
+
+=== START gpt_peer_review-r3.md ===
+
+# Round-3 peer review
+
+## Recommendation
+
+I would build from **`claude-revised_plan-r2.md` as the editing baseline, not as an approved specification**.
+
+It provides the clearest executable distinction between a verified cloud version and an unknown one, prices the changed-file path more honestly, describes complete-member-map classification, and keeps #10 in the feature drop. Those advantages outweigh its excessive lineage machinery.
+
+Before building, I would:
+
+- remove its eight-generation ancestry requirement;
+- correct its publication, agreement, and interrupted-apply ordering;
+- replace lifecycle markers with actual mutual exclusion;
+- add a self-contained retained-discard record suitable for the later history picker;
+- take recorded-operation handling and write-only-on-change capture from `kimi-revised_plan-r2.md`;
+- take the pre-pass/SRAM dependency experiment from `gemini-revised_plan-r2.md`;
+- take the content-fixture repair criterion from `mistral-revised_plan-r2.md`.
+
+The most consequential remaining disagreement is **not whether a discarded save can eventually be recovered**. It is whether an ordinary offline fork is intercepted **before** either head is overwritten. Some plans still substitute archival recoverability for that requirement.
+
+### Evidence boundary
+
+I reviewed the four injected plans against the embedded sources. I did not access files, recompute hashes, or run tests.
+
+Source citations use suffixes under:
+
+`research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/`
+
+The `[Snn]` references bind each citation to its complete declared path and Facilitator-supplied SHA256 in `corpus.provenance.json` below. The two new maintainer decisions come from the orchestrator brief, not from a separately hashed source file.
+
+---
+
+## 1. What the maintainer’s amendments actually cost
+
+**None of the four supplied revisions requires a version-one on-device undo control.** They already defer restoration or describe manual recovery. The new decision therefore does not require removing an undo screen from any of these four plans. I would not infer such a requirement from their descriptions of earlier, uninjected plans.
+
+Their retention specifications, however, all need work.
+
+| Plan | Fit with the amended resolution flow | Required adjustment now | Does its specified discard store support the later picker? |
+|---|---|---|---|
+| `claude-revised_plan-r2.md` | Closest: explicitly distinguishes retention from an undo control. | Make default-on bounded retention an implementation requirement, not optional O1. Remove the eight-entry lineage requirement and narrow any resolution receipt to the immediate operation it describes. Make pruning required rather than optional O6. | **Not yet.** `<path>/<sha256>` locates bytes, but the plan does not require retaining the full comparison context with them. |
+| `gemini-revised_plan-r2.md` | Default-on retention; no required undo control. | Add the required done-page statement and a self-contained discard record. | **No reader contract is specified.** `<stamp>/` plus current manifests is insufficient. |
+| `kimi-revised_plan-r2.md` | Default-on, count-bounded retention; restoration deferred. | Preserve its recorded-operation distinction, but do not turn it into a historical lineage system. Its additional auto-resume sub-choice deserves reconsideration under the “get going quickly” direction. | **Promising ingredients, incomplete persistence.** The apply record contains decisions and preimage locations, but the plan does not say those fields survive with retained copies after apply-record cleanup. |
+| `mistral-revised_plan-r2.md` | Default-on retention and no required undo control. | Replace unspecified “recorded-loser” machinery with a bounded, defined operation record. Specify the retained metadata and done-page wording. | **No.** A timestamp directory is a location, not a history-picker model. |
+
+The proposed numeric default of **three** remains a proposal in these plans. The amendment settles **on by default and bounded by a count**, not a particular count.
+
+### The missing retention contract
+
+The later tool must be able to enumerate a game’s retained choices and construct its comparison **without** depending on:
+
+- a producer’s current manifest, which may have replaced the relevant entry;
+- the rotated audit log;
+- a completed apply record that has been removed;
+- the original slot still meaning the same thing.
+
+That follows directly from the current per-path manifest shape, ES renumbering, and D-CLOUD-027’s bounded support log. [`repo/docs/save-manifest-schema.md`, §§1, 5–6, S03; `es/SaveStateRepository.cpp`, S37; `repo/docs/decision-register.md`, D-CLOUD-027, S06.]
+
+For each retained resolution unit, the store needs a small, versioned, self-contained record containing:
+
+- system and game identity, or an honest shared-container identity;
+- save kind, original paths and slots, and complete membership for multi-file units;
+- retained content hashes and the retained thumbnail’s path/hash, where available;
+- producer device identity, label/model, emulator/core/build, and captured time information, with unknowns preserved;
+- which operand was cloud and which was local;
+- the selected action and which side won, or the placements created by KEEP BOTH;
+- the relevant winning hash and resulting destination/resume placement;
+- an operation identifier not dependent on wall-clock uniqueness.
+
+This is **one comparison record**, not a version graph. It is necessary version-one storage work even though no production reader ships yet.
+
+The count should apply to complete retained resolution units, with a defined game/unit grouping—not merely the last three timestamp directories across unrelated games. Pruning must not remove an incomplete operation’s only preserved operand.
+
+**Acceptance test:** resolve a conflict, overwrite the producer’s manifest entry, renumber the live slots, rotate the audit log, and remove the completed apply record. A test-only reader must still identify the game, render the retained candidate, name its producer, and explain which side won. This does not add a user-facing undo control.
+
+---
+
+## 2. The real disagreements
+
+### 2.1 Fresh evidence before upload versus cached evidence plus recovery
+
+This is substantive, and `claude-revised_plan-r2.md` is closest to the required behavior.
+
+`kimi-revised_plan-r2.md` §4.3 explicitly allows its exit path to consult cached foreign-manifest claims, upload, and verify afterward. It acknowledges that a fork created since the last full pass can be overwritten.
+
+That is not merely the narrow concurrent-writer race. It includes the milestone’s ordinary case:
+
+1. Both devices agree on H₀.
+2. Device B plays and publishes Hᵦ.
+3. Device A, which played offline from H₀, has Hₐ and an old cached view of the cloud.
+4. A’s exit upload replaces Hᵦ with Hₐ.
+5. Verification confirms Hₐ arrived. It does not reveal the conflict that should have been presented.
+
+An archived Hᵦ may preserve bytes, but the player was not empowered to choose the live result. On B’s next ordinary three-way pass, its unchanged local Hᵦ can also be replaced as a one-sided cloud change.
+
+The source requirement is stronger: #22 owns the write paths, and a constructed both-sides-changed save must be refused by boot, game exit, and the SYNC row. D-CLOUD-029 permits today’s behavior only **until that replacement exists**. [`issues/issue-22.md`, S23; `repo/plans/conflict-resolution/vita-style-conflict-resolution.md`, futro §5, S05; `cloud_backup`, S29; D-CLOUD-029, S06.]
+
+**Required change to `kimi-revised_plan-r2.md`:** obtain fresh evidence for the affected unit before authorizing its exit overwrite. Retention is additional protection, not the classifier.
+
+`gemini-revised_plan-r2.md`’s fallback—defer hashless verification if it exceeds the budget while retaining a fast upload—has the same problem unless that upload is explicitly withheld whenever equality cannot be established.
+
+`mistral-revised_plan-r2.md` names a pre-upload check, but its two-spawn contract never specifies how that check establishes C on a hashless backend.
+
+**Deciding experiment:** the five-step sequential scenario above on two disposable device namespaces. No simultaneous processes are needed. Pass condition: both heads remain unchanged until a decision.
+
+**My expected settlement:** fresh, candidate-scoped preflight wins. Zero-contact idle exits remain achievable. Changed-file safety cannot be replaced by a cached permission to overwrite.
+
+---
+
+### 2.2 Hashless candidate selection is still wrong or ambiguous in two plans
+
+`gemini-revised_plan-r2.md` says it stages paths where L≠C “by hash if available, or size/mtime if not.” That can exclude the very same-size SRAM change its concession says it fixed.
+
+`kimi-revised_plan-r2.md` recognizes this residual for non-ROCKNIX writers but postpones authoritative full verification to a menu action. Consequently, its cheap tiers cannot justify overwriting a same-size cloud file just because the cached manifest still claims the agreed bytes.
+
+On the QA WebDAV, neither size equality nor a stale manifest establishes current content equality. The corpus explicitly says that backend lacks hashes and usable modtimes. [`repo/docs/save-manifest-alignment-review.md`, §1, S04; `cloud_backup`, system-backup comparison discussion, S29.]
+
+`claude-revised_plan-r2.md` has the strongest rule: equal size still requires a content read when the overwrite decision depends on equality.
+
+One correction is needed there too: **single-file `copyto` is not a substitute for forcing an already-decided transfer past metadata comparison.** The embedded upload and restore implementations deliberately combine `copyto` with `--ignore-times`. Naming one file does not prove its existing equal-size destination will be replaced. [`cloud_backup`, S29; `cloud_restore`, S30.]
+
+**Deciding experiment:** modify an existing cloud SRAM without changing its size, retain a stale matching manifest, and exercise both classification and the actual chosen transfer. Check destination bytes, including the `copyto` case.
+
+**Expected settlement:** candidate selection may be cheap, but any candidate about to overwrite existing progress needs current content evidence. If evidence cannot be obtained, defer that write—not verification after an unguarded write.
+
+---
+
+### 2.3 Deletion: preserve explicit intent without treating absence as intent
+
+The maintainer’s amendment favors the policy direction in `kimi-revised_plan-r2.md` and `gemini-revised_plan-r2.md`: **an observed ES deletion or move is different from unexplained filesystem absence**.
+
+`claude-revised_plan-r2.md`’s blanket “no ordinary deletion in V1,” justified chiefly by detached cards, temporary renames, and similar ambiguity, is no longer sufficiently argued. Its optional per-path hold-back creates another stateful behavior to explain while withholding the ordinary capability.
+
+However, the opposite claim is also too strong:
+
+> D-CLOUD-030 requires tombstones.
+
+It requires verified, convergent duplicate compaction. It does **not** say compaction is local-only, and it does not logically require a general player-deletion protocol. A verified duplicate can be retired on the relevant side without interpreting every disappearance as deletion intent. [`repo/docs/decision-register.md`, D-CLOUD-030, S06.]
+
+The useful contribution of `kimi-revised_plan-r2.md` is its concrete renumber/download/compact loop. That loop proves that **local-only cleanup followed by unconditional resurrection does not converge**. It does not, by itself, prove the entire receipt design.
+
+There is also a missing connection in the receipt plans:
+
+- A’s local receipt causes the cloud path to be retired.
+- B subsequently observes the path absent.
+- Where does B obtain A’s authenticated, version-specific retirement intent?
+
+The specified local ops journal is unsynced; the proposed manifest amendments do not clearly define the receipt’s transport and lifetime. Without that connection, B’s “unexplained absence” rule can resurrect or hold the file rather than complete the advertised delete-propagation test.
+
+**What I would take forward:** recorded, version-bound intent for operations ES actually performs; fail closed on unexplained absence; verified duplicate convergence. Do not expand this into an ancestry history.
+
+**Deciding fixtures:**
+
+1. Delete the highest numbered state on A; reconcile A, then B.
+2. Retire P:H₀, then reuse P for H₁; the old receipt must not authorize retiring H₁.
+3. Run the high-slot renumber/compaction trace through several passes.
+4. Make a previously populated root unavailable without an operation receipt.
+
+**Expected settlement:** explicit-intent handling is worth preserving. Unexplained absence remains a cheap refusal, not the reason to abandon deletion altogether. The receipt’s delivery and retirement rules need specification before the capability can be claimed.
+
+---
+
+### 2.4 Eight-step ancestry versus one-step operation context
+
+`claude-revised_plan-r2.md` makes bounded `lineage` and `resolves` load-bearing. Its row 3 no longer means simply “local unchanged, cloud changed.” It requires the cloud version to explain the local agreed hash through ancestry or a resolution list.
+
+That changes the signed three-way classifier. An ordinary sequence of sufficiently many offline sessions becomes a conflict because the ancestry bound expired. The plan itself prices that threshold at nine sessions. This is additional prompting and metadata maintenance, not a requirement of content identity or one-step recoverability. [`repo/docs/save-manifest-schema.md`, §§2–3, S03.]
+
+Under the amendment, I would not build the eight-entry chain or make it permission for normal downloads. Keep:
+
+- the existing immediate `replaces` relationship where it is known;
+- the immediate comparison/selection record retained with discarded bytes;
+- the pending operation record required to finish an interrupted apply.
+
+Those serve different jobs and do not require a general version-history mechanism.
+
+Two identity corrections also matter:
+
+- The schema says a **renumbering move re-keys the entry while preserving `replaces` and `captured_at`**. Claude’s rule that resets lineage and `replaces` for both renumbers and new KEEP BOTH placements conflates those operations.
+- Restoring identical stored bytes does not create a new content version under D-CLOUD-030. It creates a **new restore/publication operation involving the same version hash**. Statements in Claude and Kimi about deliberately restored bytes becoming a “new version” must not become hash-based loser blacklists.
+
+`mistral-revised_plan-r2.md`’s requirement to implement “provisional-agreement rows” and “recorded-loser rows” is not implementable from the supplied document: the referenced earlier table is absent, and the current Claude plan has withdrawn provisional agreement as permission. These rows should not be inherited by reference.
+
+**Expected settlement:** one-step operation context, not an eight-step causal history.
+
+---
+
+### 2.5 Complete save-unit classification versus aggregating file conflicts
+
+`claude-revised_plan-r2.md` and `kimi-revised_plan-r2.md` correctly specify complete member-map comparison, including membership changes.
+
+`gemini-revised_plan-r2.md` still states the rejected rule:
+
+> If any member … is divergent, the entire unit is marked divergent.
+
+That misses:
+
+| | Member a | Member b |
+|---|---|---|
+| Agreed | a₀ | b₀ |
+| Local | a₁ | b₀ |
+| Cloud | a₀ | b₁ |
+
+No individual path is divergent. The unit is divergent, and combining the one-sided changes constructs a save neither device produced.
+
+`mistral-revised_plan-r2.md` still defines per-path output and adds a `group` label. A label does not supply unit-level classification.
+
+**Deciding experiment:** the table above is a pure classifier fixture. Add a membership-change variant where one side removes a member and the other edits another.
+
+**Expected settlement:** Claude/Kimi’s complete-map rule wins. Application must also produce the complete selected map: merely copying its present members can leave an obsolete destination member behind.
+
+A thumbnail needs a further distinction. Binding a PNG to its state is essential, but a thumbnail anomaly is not automatically a genuine progress fork when the state bytes are identical. D-CLOUD-030 expressly excludes the thumbnail from version identity. [`repo/docs/save-manifest-schema.md`, §1, S03.]
+
+---
+
+### 2.6 #10 in the drop versus deferral
+
+`kimi-revised_plan-r2.md` defers #10 while acknowledging the remaining local cross-core overwrite.
+
+That acknowledgement is honest, but “pre-existing” does not resolve the scope decision. The problem statement includes #10 in this milestone, D-CLOUD-017 decides core namespacing, and the engineering rule explicitly rejects provenance of a known defect as a reason to ship past it. [S01; D-CLOUD-017, S06; `repo/.claude/rules/engineering-practices.md`, S10.]
+
+This is a normal save-production hazard, not just a disconnected-card edge case: a second core can write the same flat path before the reconciler preserves the first state.
+
+Claude, Gemini, and Mistral are closer here: retain #10, with the launch-behavior rehearsal as its gate. The source establishes why that rehearsal is necessary:
+
+- compiled defaults enable `racommands`, autosave, and incremental behavior;
+- the XML-loading path sets `racommands=false` and has different defaults;
+- `SaveState::setupSaveState()` behaves differently across those branches.
+
+[`es/SaveStateConfigFile.cpp`, S39; `es/SaveState.cpp`, S38.]
+
+**Expected settlement:** #10 stays in the drop unless explicitly rescheduled by the maintainer. A clean chipset compatibility result does not repeal core namespacing.
+
+---
+
+### 2.7 Auto KEEP BOTH and split-root imports
+
+These are smaller but real product differences.
+
+**Auto KEEP BOTH.** Claude, Gemini, and Mistral use a deterministic outcome: keep this device’s automatic resume point and place the cloud state in a numbered slot. Kimi adds a resume-side sub-choice.
+
+The amendment does not literally forbid that sub-choice, but it strengthens the case against adding it. I favor the deterministic outcome with an explicit sentence showing the resulting resume behavior. A short controller trial should settle whether players understand it without another decision.
+
+Kimi is internally inconsistent about the auto-only allocator case: one section disables KEEP BOTH there, another routes it through the sub-choice. Mistral rejects −99 but also promises auto KEEP BOTH. The adapter must distinguish:
+
+- auto-only, supported repository: use its valid first numbered slot;
+- unsupported/disabled repository: refuse;
+- unexpected allocator failure: refuse.
+
+Blanket rejection or blanket conversion of −99 to zero is not sufficient. [`es/SaveStateRepository.cpp`, S37.]
+
+**Split roots.** Gemini and Kimi preserve a separate one-way import operation without writing two-way agreement. That is closer to the shipped configuration’s documented intention than Claude’s blanket refusal: `cloud_sync.conf` explicitly describes setting `RESTOREPATH` differently to avoid replacing the normal live tree. [S33.]
+
+I would take that distinction into the baseline: reject split-root *two-way reconciliation*, not the existing import capability. The import must still retain overwritten destination data and must not alter the primary root’s agreement record.
+
+---
+
+## 3. Load-bearing claims that still need correction
+
+### 3.1 In-spawn manifests and “manifest-last commit” are not interchangeable optimizations
+
+The ownership agreement is sound: never republish a cached foreign manifest, and never download the cloud copy over locally captured unpublished entries.
+
+The proposed mechanisms are not yet sound contracts.
+
+- **Gemini/Kimi:** including the own manifest in the payload batch does not establish that it is uploaded after the payload.
+- **Claude:** folding its explicit manifest upload into the payload batch would invalidate its manifest-last argument unless actual ordering is proven.
+- **Mistral:** excluding `.rocknix/**` while adding the own manifest through `--files-from` leaves the effective filtering behavior undefined in the plan.
+
+The corpus warns that `--include` excludes everything unmatched and that filter precedence is load-bearing. An own-manifest include must not silently turn a saves upload into a manifest-only upload. [`repo/.claude/rules/rclone-cloud-sync.md`, S09.]
+
+More fundamentally, **manifest-last is not by itself a coherent-unit proof** when readers match individual members against the union of several historical claims. All members need to match one coherent declared member map—not merely some claim for each path.
+
+Claude’s “after two full passes, treat unexplained bytes as legacy” also needs narrowing. Two reader passes do not turn an interrupted multi-file publication into a valid emulator-produced save. That rule can expose a half-published unit as a legitimate cloud candidate.
+
+**Test:** deliberately slow a unit upload, force the manifest to appear early, and interrupt after one member. A reader must never install or offer the mixed set as a coherent unit. Repeat with hashes matching old entries in other manifests.
+
+Process-count optimization follows this test; it cannot replace it.
+
+---
+
+### 3.2 Agreement is advanced too early in the proposed apply descriptions
+
+Claude §2.4 says payload → manifest → agreement. Its §2.8 instead describes local installation → agreement → item done, followed by remote payload publication after all items.
+
+Those are different protocols. After KEEP RIGHT, setting agreement to the local winner before that winner reaches the cloud records agreement that never occurred.
+
+Kimi’s apply sequence likewise ends with agreement and status without specifying where remote publication and its verification occur in that sequence.
+
+Gemini introduces the frozen plan as an interrupted-apply test without specifying its durable phases. Mistral claims ordering and re-planning are sufficient.
+
+The fix is not a large transaction system. It is a small pending-operation record that distinguishes, at minimum:
+
+- prepared operands and destinations;
+- completed local installation;
+- verified required remote publication;
+- committed agreement.
+
+A boolean `done` cannot ambiguously mean both “installed here” and “committed on both sides.”
+
+The audit line written before mutation records **intent**, not completion. Completion requires a separate outcome, consistent with D-CLOUD-027’s audit role. [`repo/docs/save-manifest-schema.md`, §§2, 9, S03; `repo/docs/conflict-wizard-ia.md`, S02; `repo/docs/decision-register.md`, S06.]
+
+Also, neither PNG-before-state nor “rename the whole directory” guarantees an old-or-new live unit after every interruption. There can be a gap between removing the old directory and installing the new one; ordinary rename does not replace an arbitrary nonempty directory atomically. The practical guarantee is: **incomplete units cannot be consumed, and the pending record permits recovery**.
+
+That remains required even though the undo UI is deferred.
+
+---
+
+### 3.3 The lifecycle gate must actually exclude concurrent local access
+
+Claude proposes two tmpfs markers. Check-and-set markers are not mutual exclusion: launch and restore can both observe the other marker absent.
+
+Kimi specifies an actual lock and acquisition order, which is better, but then exempts capture and argues that an inconsistent unit snapshot “self-corrects at the next capture.” That is unsafe. Atomic rename of individual files does not provide a coherent multi-file snapshot, and concurrent whole-manifest rewrites can lose each other’s updates.
+
+Capture can be independent of **network availability** without being independent of **local serialization**.
+
+The gate must cover short local snapshot/capture and installation phases. Network uploads may continue during play only from sealed immutable data—not merely from a file that was hashed earlier and can now change.
+
+After reboot, recovery of a pending apply must precede emulator consumption; cleared tmpfs markers are not evidence that the live unit is complete.
+
+The need is visible in the actual launch path: `onGameEnded()` mutates auto/numbered states before the current exit-sync call, and the detached boot script can run independently. [`es/FileData.cpp.launchGame-excerpt-l740-850.cpp`, S41; `es/SaveState.cpp`, S38; `102-cloud-saves`, S35.]
+
+---
+
+### 3.4 `--backup-dir` is useful, but its guarantee remains unproven
+
+Gemini’s “this makes lost races recoverable without extra spawns” and Kimi’s summary claim that no overwrite destroys the only copy are stronger than their evidence.
+
+Claude is more careful in its concurrency section, but its overall contract still depends on backend behavior not embedded here.
+
+A backup option can:
+
+- add no process start;
+- add remote operations and latency;
+- archive something;
+- and still fail to archive the exact intervening generation a race overwrote.
+
+These are separate claims.
+
+The appropriate V1 response is not automatically a competing-head publication system. Under the maintainer’s amendment, that would need a stronger justification than rare concurrency alone. But the plans must narrow their promise:
+
+- preserve the candidates the player actually compared before applying the choice;
+- test archival handling of an intervening head on supported backends;
+- distinguish the residual race from an already-detectable offline fork;
+- report an unverified outcome honestly.
+
+A device ID plus an operation identifier also belongs in archive naming now; `<stamp>` alone is unnecessarily collision-prone.
+
+---
+
+### 3.5 Source-contract errors should not survive as “refinements”
+
+Three corrections are particularly concrete:
+
+1. **Mistral’s `rom` field is wrong.** The signed schema defines the ROM filename **with extension**, supplied by ES, not the matched savestate stem. [`repo/docs/save-manifest-schema.md`, §6, S03.]
+2. **Mistral cannot withdraw D-CLOUD-029.** Its proposed isolated testing and disabled toggles are compatible maintainer operating choices. Withdraw the plan’s earlier stopgap proposal, not the binding register row.
+3. **Gemini’s ping replacement repeats the liveness category error.** ICMP response from a resolved address does not establish that the configured rclone remote works, and blocked ICMP does not establish that it is unreachable. It also adds network work to a path being optimized to avoid it. The rule already says reachability means the configured remote, not a surrogate. [`repo/.claude/rules/rclone-cloud-sync.md`, S09.]
+
+Similarly, the words “proven on H700” and “no unmeasured claims” in Mistral’s document need to become prospective gates. The embedded corpus contains no execution results supporting its two-spawn/five-second contract.
+
+---
+
+## 4. What each plan uniquely contributes
+
+These are the distinctive details I would preserve, rather than merely retaining their shared architecture.
+
+| Plan | Carry-over-worthy element | Why losing it would matter |
+|---|---|---|
+| `claude-revised_plan-r2.md` | Its explicit hashless rule: **equal size is not an equality verdict; download-and-hash before the decision that needs equality.** | The other plans retain either an ambiguous candidate filter, a cached-evidence upload, or an unspecified hashless path. This is the clearest operational guard against the #53-shaped saves failure. |
+| `gemini-revised_plan-r2.md` | Its placement of the SRAM experiment at the **non-conflict pre-pass boundary**. A liftable AC is: **“Before allowing the pre-pass to replace a game’s in-game save, test whether loading the chosen resume state can rewrite that SRAM.”** | This is sharper than merely placing state/save decisions on adjacent screens. Preserve it as a dependency test, not as a rule that every state and SRAM file must be fused into one enormous unit. |
+| `kimi-revised_plan-r2.md` | **“The manifest is written only when something changed — never to bump `generated_at`.”** Also preserve its multi-pass high-slot churn fixture. | The first prevents metadata-only exits from manufacturing work and misleading capture history. The second proves convergence rather than merely showing that one compaction succeeded. |
+| `mistral-revised_plan-r2.md` | **“Reconcile content fixtures with the current allowlist.”** | The embedded harness expects its invented `qa-content` directory to be offered, while D-CLOUD-019 defines content membership through ES-declared systems. Fixing credentials and dated archive names alone does not reconcile that mismatch. Use an appropriate declared-system fixture on disposable storage, not a production allowlist exception. [S36; D-CLOUD-019, S06.] |
+
+These are concrete lifts. I would not retain weaker neighboring claims merely to keep each document’s package intact.
+
+---
+
+## 5. What should not be built
+
+Under the amended brief, I would exclude:
+
+- **A V1 undo control.** None of these four requires one; do not accidentally add one while implementing retention.
+- **Claude’s eight-generation lineage gate.** It spends complexity and prompts on a history requirement the maintainer has expressly narrowed.
+- **Cached-manifest permission to overwrite on game exit.** That misses the primary offline-fork scenario.
+- **A timestamp-only discard store.** It would force a later migration or leave the future picker unable to identify retained saves.
+- **A general deletion protocol inferred from absence.** Preserve explicit observed operations; unexplained absence remains unknown.
+- **Claude’s hold-back behavior as the substitute for supporting explicit deletion.** It introduces another per-path policy while avoiding the real capability question.
+- **A second production reconciliation authority in bisync.** Run the spike, then choose one authority for agreement and classification.
+- **An ordinary metadata-skipped staging mirror.**
+- **A lifecycle gate made solely of markers, or lock-free capture justified by later self-correction.**
+- **A promise that a frozen plan needs no durable execution state.** A bounded pending record is not an overbuilt history journal.
+- **A hard two-spawn claim unsupported by the required reads and publication order.**
+- **A new ping probe on every exit.**
+- **Kimi’s extra auto-resume choice by default**, unless controller testing demonstrates that the deterministic outcome is materially confusing.
+- **Automatic cleanup of staging files “on sight.”** A stage may hold the only remaining operand of an interrupted apply; cleanup must understand pending operations.
+
+The five-second figure is the measured **nothing-changed** experience; the corpus also reports roughly seven seconds for a changed save. That does not grant unlimited changed-path cost, but it does mean Mistral’s universal five-second gate is an invented constraint, not the shipped measurement. [D-CLOUD-028, S06; `repo/.claude/rules/rclone-cloud-sync.md`, S09.]
+
+---
+
+## 6. The experiments that should settle this review
+
+There are two kinds of gate: substrate experiments before the implementation contract is frozen, and acceptance tests against the implementation before it ships. Tests of a nonexistent lifecycle gate cannot literally precede all implementation.
+
+### Before design freeze
+
+1. **Repair the instrument on a disposable GENERIC_X64 image.** Preserve configuration before changing it; assert the intended remote before use; repair exact archive-path assertions and content membership fixtures. Run WebDAV and MinIO. Keep the QA WebDAV on loopback under D-QA-002. [S36; S06.]
+2. **Run the classifier counterexamples.** Same-size stale-manifest cloud change; disjoint-member fork; membership removal; true one-way unknown-provenance import; failed listing versus empty listing.
+3. **Run the actual device-version rclone spike.** Compressed state and PNG, genuine fork, rename, external equalization, interrupted run, filter changes, and missing listings. Inspect names and bytes. Nothing embedded establishes the exact 1.75.0 bisync behavior or its future roadmap.
+4. **Run the sequential two-device offline-fork scenario.** This settles the cached-versus-fresh exit gate independently of concurrent-writing edge cases.
+5. **Price actual changed-path operations on H700.** Include preflight, hashless reads, forced transfer, manifest publication, and verification—not just process starts.
+
+### Before shipping
+
+6. **Run the local lifecycle and adapter tests.** Boot overlap with a numbered-slot launch; auto-only allocation; unwritable destinations; batch reservations; capture during a worker’s local phase; repository refresh after apply.
+7. **Interrupt each apply phase.** Neither early agreement nor stale `done` flags may license a different overwrite. Pending recovery must keep incomplete units out of emulator consumption.
+8. **Run deletion and compaction to convergence across both devices.** Include stale path reuse and a returning device that did not observe the original operation.
+9. **Test retained-store readability without live historical metadata.** This is the new requirement that otherwise has no version-one consumer to expose a defect.
+10. **Run #19 and the #10 layout/launch rehearsal.** Same-chipset control first; qualify findings to tested cores/builds; verify old flat states remain discoverable and new writes reach the directory both ES and RetroArch use.
+11. **Press through the amended flow at 480×320.** Real thumbnails, unknown provenance, shared containers, deterministic auto KEEP BOTH, cancellation, and the done-page statement that discarded copies are kept. No undo action.
+
+The exact `--backup-dir` race experiment belongs here too, but it must not displace the ordinary offline-fork test as the principal acceptance criterion.
+
+---
+
+## 7. Final build-from case
+
+`claude-revised_plan-r2.md` is the best baseline because its largest problems are identifiable local corrections and deletions of excess machinery. Its pre-upload evidence model is closer to the cardinal rule than Kimi’s currently specified exit path, and its complete unit classifier is clearer than Gemini’s or Mistral’s.
+
+I would take:
+
+- **from Kimi:** recorded move/deletion intent, write-only-on-change capture, a real local lock order, and the convergence fixture;
+- **from Gemini:** the pre-pass/SRAM dependency test and preservation of split-root import as a separate operation;
+- **from Mistral:** the requirement to reconcile the harness’s content fixtures with the actual membership policy.
+
+I would retain Claude’s explicit verification fallback and #10 sequencing, but not its ancestry gate, hold-back substitute, marker-only exclusion, or contradictory apply ordering.
+
+My own prior revision is not embedded, so I cannot give a verifiable line-by-line account of what changed since it. The argument here that most changes the weighting is Kimi’s churn trace: it makes **retirement convergence a V1 behavior to prove**, not housekeeping to postpone. It still does not prove that every deletion needs a general tombstone history.
+
+**No plan is ready to build unchanged. The amended target is smaller than a history system, but stronger than a folder of backup bytes: intercept genuine forks, make the chosen result explicit, and retain one-step comparison context that the later history tool can actually use.**
+
+---
+
+## `corpus.provenance.json`
+
+```json
+{
+  "artifact": "round-3 peer review",
+  "corpus_mode": "facilitator_embedded_read_at_time",
+  "source_count": 42,
+  "member_filesystem_access": false,
+  "member_reread_files": false,
+  "member_rehashed_sources": false,
+  "member_executed_tests": false,
+  "hash_basis": "SHA256 values copied from the per-source headers, verified at embed time by the Council Facilitator; not independently recomputed",
+  "manifest_read_timestamp_utc_as_supplied": "2026-09-05T17:32:51Z",
+  "citation_mapping": "S01 through S42 map in order to the parallel source_file_paths and source_file_hashes arrays",
+  "reviewed_plan_filenames": [
+    "claude-revised_plan-r2.md",
+    "gemini-revised_plan-r2.md",
+    "kimi-revised_plan-r2.md",
+    "mistral-revised_plan-r2.md"
+  ],
+  "reviewed_plan_hashes_supplied": false,
+  "maintainer_amendments": {
+    "source": "orchestrator brief embedded in this prompt",
+    "separate_declared_path": null,
+    "sha256": null,
+    "applied_as_authoritative": true
+  },
+  "own_prior_revision_embedded": false,
+  "source_file_paths": [
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/00-problem-statement.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/docs/conflict-wizard-ia.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/docs/save-manifest-schema.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/docs/save-manifest-alignment-review.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/plans/conflict-resolution/vita-style-conflict-resolution.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/docs/decision-register.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/docs/blindspot-register.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/docs/savestate-compat-test.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/.claude/rules/rclone-cloud-sync.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/.claude/rules/engineering-practices.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/.claude/rules/upgrade-and-install.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/.claude/rules/es-native-ui.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/docs/es-menu-map.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/docs/cloud-sync-changelog.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/CLAUDE.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/rclone-bisync-planning.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-11.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-9.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-10.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-19.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-20.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-21.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-22.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-23.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-24.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-25.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-35.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/issues/issue-37.md",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/projects/ROCKNIX/packages/network/rclone/sources/cloud_backup",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/projects/ROCKNIX/packages/network/rclone/sources/cloud_restore",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/projects/ROCKNIX/packages/network/rclone/sources/cloud_sync_helper",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/projects/ROCKNIX/packages/network/rclone/sources/cloud_sync-rules.txt",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/projects/ROCKNIX/packages/network/rclone/sources/cloud_sync.conf",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/projects/ROCKNIX/packages/network/rclone/sources/cloud_device_id",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/projects/ROCKNIX/packages/network/rclone/autostart/102-cloud-saves",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/repo/tools/cloud-round-trip",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/es/SaveStateRepository.cpp",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/es/SaveState.cpp",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/es/SaveStateConfigFile.cpp",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/es/ThreadedCloudSync.cpp",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/es/FileData.cpp.launchGame-excerpt-l740-850.cpp",
+    "research/council-runs/2026-09-05-conflict-resolution-foundation/_sources/es/FileData.cpp.getCore-excerpt-l1470-1560.cpp"
+  ],
+  "source_file_hashes": [
+    "7e8c1076ee1735925af1d59dded61d23146c5c8e9fb2aae2be53d5afca26b6b7",
+    "5738428852899047b9d49902b78e9c5e0d4457f67b09d079fdfeb89fdcfcc6c9",
+    "2a794ea3d027402a26e3dfc62ea6184c204211c888c904413d1564ecf3f189ce",
+    "56f6c54c013c5476f638a0dee5f2201e6a4ad021b47c674010bdc392665bfd48",
+    "d22a49e73fe5d25cafea7646ec353e57a3da95f6ef84d4b86249c91bb170cf43",
+    "0a4b1150d907f26cdd70d480830e195b9fa2885920abf48641506bb5a0f09640",
+    "1514b33d61ab148d4e59bf446af03d973792a0673969df471b41c021edc9cbd8",
+    "4d0b9d21ee5c9c26a25da5c169d9e99b83c18457732bd9471078c2d508b1d1bb",
+    "7d43f252d029d54baa98ffa266b9334fa2f0f2da3db2507f451205f40dc73353",
+    "e8ee62ea5af749ef09c0ede9da7abc5d7c192d890ae2e737cc369a5c5549c646",
+    "d343c805b912141a1f8af7aa8d6025e2379e5335fb197c4cc59adf960fa43cbb",
+    "cba905608c0104093b166c88393dba32159dca2b280d8a5229b6668930c8e4d2",
+    "3ab8da275237ac1ccf3cab3bf2f019077d7fdef06d2e6afd180313ca80e00d8c",
+    "6357ada783d5b09f22bd6fad2745b5c101e68fcdf2f85ffc698975be356cd594",
+    "b19a3fd41d9728a0d5ee22aad6fd54c2f2d5199cd5835dbdc695d6e5062f8516",
+    "acae778e1ee700e4a7c0120cb5e9be2fb5d2129aa04ef3e75590af2effca60eb",
+    "4c6881068dd2be7eca3031e8d929b4d1a5f314eb6d08ba07a1d7cbd735bd207f",
+    "cf3f971c8c6d95f0429d7f2937ecb130b1b40f2d12d7681441548230ca48a9c0",
+    "4704211f8e92be217eb2f16cd363a6a7c3dacc381f5083b7536e9aa33b79ab0f",
+    "b4f54c4e548f514f9429d5ea56dc9c3e246b95b0ae519a4b013891b1d69ffe39",
+    "083c6c3504c578da7c283008d1305492f792a82c4b0a30d35007f9776ff6ad90",
+    "c87315eb509d89d1ac2f8595c1fb47c9227836fadfbd13cf22122fce5f9806d3",
+    "6d998503be831ad800a34bbfa952fc2aeb85ca5f5d959b6d10dad98d0fea6831",
+    "016287a95f088a1cf137199a4c50321e0650684b78ecbe1849d995ae52afb6ee",
+    "f87746eecfd56f78e477d227a25ddb7cfc2accc4626656c41ac14eeff8285ea0",
+    "696bcdba14d33dfeea8e627a90094a2b1955745f32fc28677f54bb97f88099ba",
+    "5787b6f79b1f7a9160c0540997d8b2fae1541201224c4bb8bf17b3cacf610210",
+    "a43faf60f3fa4d2aa60345815484ff7c862bdba0061befa068e64b1994e0a907",
+    "dfd1bf52dca78ab67a1b30b56e3c048d8910863a99ca02442525f58d083a2a57",
+    "3a1bec8bb0ef5005f3dd92cdd766beb2c32ef26c5b5ea06fbd6cdb0bb0259de9",
+    "8b22b9c82effe0a044ff765f73ecf24e26dd064abf694dc1f37304e2759b8823",
+    "60db296dde26bebbf4fcf1b97101188799cedb2eb3260616204a2ee082ce19c3",
+    "c9f4d94dc9745bce7bccf99145816e0e45305c8a5058acb6476a1fb56f96eb6c",
+    "2b56d6f5fd4a86bfd40578bec43308204f62af513df9b3ed227cf971585f837b",
+    "7c3e79bbe41bd70ec1c1f08d9defd04e38af891430616173609bf3e76c2159ee",
+    "212e1c8531008b1d25f5f976797d9762c5cfa3061fe70229c546d276784efb49",
+    "9931bfdceacc18344d7a6b9eeea0a27278dff46ae04a7f82e5c4efe7300ff51b",
+    "848e0746fa26ef5c565af72962c487b0d4185f199f36f2290827bd086e303741",
+    "4f38ea7dcfcbd71068122124c428d146b7da3c6dbdcc05a81afc99bbd93a9b15",
+    "62f817868c3b803429e62efb7aa8f37aa995213386c6e4303e8e1f490a144ffc",
+    "5b341d85de24badb2984fff979226f25f080831a1d194f607b6d6caa6085f233",
+    "2410e4316d9c2c3bfb301c39dbe79590fb73682b18e70988527eeecc2a024fa6"
+  ],
+  "missing_material": [
+    {
+      "description": "Rclone 1.75.0 documentation or source establishing bisync behavior, transfer-filter composition, copyto comparison, and backup-dir generation handling on the relevant backends",
+      "declared_path": null,
+      "sha256": null
+    },
+    {
+      "description": "GuiSaveState.cpp, SaveState.h, SaveStateRepository.h, Paths.cpp, full launch-command construction, and RetroArch setsettings/launcher plumbing",
+      "declared_path": null,
+      "sha256": null
+    },
+    {
+      "description": "Cloud content scripts, cloud_setup, backuptool, cloud-test-backend, and the defaults files needed to validate full harness and filter behavior",
+      "declared_path": null,
+      "sha256": null
+    },
+    {
+      "description": "Current issue bodies with amended acceptance criteria; the embedded issue artifacts contain comment-thread exports",
+      "declared_path": null,
+      "sha256": null
+    },
+    {
+      "description": "Executed hardware, backend, interruption, compatibility, retention-reader, and round-trip results",
+      "declared_path": null,
+      "sha256": null
+    },
+    {
+      "description": "This member's own preceding revision and earlier peer reviews, which were not independently available for before-and-after comparison",
+      "declared_path": null,
+      "sha256": null
+    }
+  ]
+}
+```
+
+=== END gpt_peer_review-r3.md ===
+
+=== START mistral_peer_review-r3.md ===
+
+I have reviewed the five revised approaches for the cloud-save conflict resolution foundation in ROCKNIX. Below is my analysis, focusing on the real disagreements, load-bearing claims, and what each plan uniquely offers.
+
+---
+
+## 1. Real Disagreements and How to Settle Them
+
+### 1.1 Deletion Propagation
+**Disagreement:** Whether deletions should propagate in V1, and if so, how.
+- **`claude-revised_plan-r2.md` and `kimi-revised_plan-r2.md`:** Propagate only recorded deletions (ES deletions, renumbers, compactions, wizard choices) as moves into dated siblings. Unexplained absence fails closed.
+- **`gemini-revised_plan-r2.md` and `mistral-revised_plan-r2.md`:** Never propagate deletions in V1; treat absence as a fail-closed anomaly.
+- **`gpt-revised_plan-r2.md`:** Propagate only version-specific retirements with receipts, never deletions inferred from absence.
+
+**Settlement:** The churn trace in `kimi-revised_plan-r2.md` (C1) proves that pure resurrection cannot terminate. The receipts-and-siblings mechanism is the minimal solution that converges. The fail-closed half of `gemini` and `mistral`'s argument is preserved: unexplained absence fails closed. The residual is bounded churn, which is annoying but never lossy.
+
+**Experiment:** The churn-termination fixture (cloud-only `state5` onto `{0,1,2}`; download; launch and exit; sync twice; assert one copy per side, no churn, the retired cloud copy in the dated sibling).
+
+---
+
+### 1.2 Concurrency Contract
+**Disagreement:** Whether `--backup-dir` in both directions is sufficient for recoverability, or if a protected-publication protocol is needed.
+- **`claude`, `gemini`, `kimi`:** `--backup-dir` in both directions is sufficient for V1 under the one-player model.
+- **`gpt`:** A protected-publication protocol is needed for linearizability.
+- **`mistral`:** The pre-upload check alone cannot close the window.
+
+**Settlement:** The one-player model does not earn a two-phase commit on a 5-second path. `--backup-dir` is the chosen mechanism, with the residual stated honestly: recoverability, not prevention. The race fixture (§11, gate 7) will prove whether `--backup-dir` preserves intervening heads on Dropbox and WebDAV.
+
+**Experiment:** The two-H700 race fixture (interleave publications; kill after each destructive stage; assert both heads present, one canonical, one siblinged).
+
+---
+
+### 1.3 How C's Bytes Are Obtained
+**Disagreement:** Whether to use a full staging mirror or candidate-scoped reads.
+- **`kimi` and `claude`:** Candidate-scoped reads with the full stage as a hashless fallback.
+- **`gpt`:** Full staging mirror as the default.
+- **`mistral`:** Metadata-only detector.
+
+**Settlement:** The full staging mirror is blind to same-size changes on hashless backends (the #53 shape). Candidate-scoped reads are the correct default, with the full stage as a fallback for backends offering neither hash nor modtime. The shadow census (§11, gate 8) will measure the cost of the fallback mode.
+
+**Experiment:** The same-size WebDAV fixture (change a cloud SRAM preserving size; the classifier must not conclude "cloud unchanged").
+
+---
+
+### 1.4 Bisync's Role
+**Disagreement:** Whether bisync should be the detector or a candidate transfer engine.
+- **`claude` and `kimi`:** Bisync is a candidate transfer engine pending the spike.
+- **`gpt` and `gemini`:** Bisync is demoted; the classifier is ours regardless.
+- **`mistral`:** Bisync is the detector.
+
+**Settlement:** The problem statement listed bisync-as-detector as the approach under judgement, but no register row made it binding. The spike (§11, gate 2) will decide whether bisync earns the bulk-transfer role for non-conflicting units. The classifier is ours regardless.
+
+**Experiment:** The bisync spike matrix (§11, gate 2).
+
+---
+
+### 1.5 #10's Per-Core Directories
+**Disagreement:** Whether #10 should be deferred.
+- **`kimi` and `gpt`:** Defer #10 to its own futro, with proof obligations and a real-device rehearsal as gates.
+- **`claude` and `gemini`:** Keep #10 in the drop, sequenced last.
+- **`mistral`:** #10 is unnecessary.
+
+**Settlement:** Shipping `es_savestates.cfg` is a launch-behaviour migration, not a config change. The wizard does not need the directory, but the flat layout's local cross-core overwrite is pre-existing shipped behaviour. #10 gets its own futro, and the rehearsal gate ensures the launch behaviour is preserved.
+
+**Experiment:** The #10 launch-behaviour rehearsal (§11, gate 5).
+
+---
+
+### 1.6 Wizard Trigger, Retention Default, Cancellation, Auto KEEP BOTH, Kid Mode
+**Settlement:** Queue-and-badge trigger (IA rev 5); retention ON with count 3 (register row); gpt's precise cancellation sentence; the resume-side sub-choice for auto KEEP BOTH; gpt's kid/kiosk rule over mistral's reachability requirement.
+
+---
+
+## 2. Load-Bearing Claims That Need Testing
+
+| Claim | Experiment | Outcome |
+|---|---|---|
+| `--backup-dir` preserves the intervening head under a two-writer race | Race fixture (§11, gate 7) | If pass: ship as designed. If fail: adopt gpt's protected-publication protocol before multi-device ships. |
+| The exit upload overwrites the cloud head of a fork | Cheap counterexample (§11, gate 1) | Corpus-settled; no experiment needed. |
+| The session-zombie resume-point loss | H700 reproducer (§11, gate 3) | Corpus-traced; the lifecycle gate is the fix. |
+| Foreign-manifest republication | Round-trip fixture (§11, gate 1) | Corpus-settled; the fixture verifies the hazard. |
+| Auto states are the commonest conflict | Shadow census (§11, gate 8) | The wizard treats `kind: auto` as a resume-point decision regardless. |
+| 480×320 thumbnails are recognizable | RG351M recognition test (§11, gate 9) | If fail: single-column compare as fallback. |
+| `--filter` vs `--filter-from` ordering | Dry run (§11, gate 0) | If `--filter` cannot be ordered ahead, use `--exclude`/`--include`. |
+| `rclone hashsum <backend>` computes backend-native hashes locally | Device experiment | Not a dependency; the exit path can defer to the next full pass. |
+
+---
+
+## 3. What Each Plan Uniquely Offers
+
+### `claude-revised_plan-r2.md`
+- **Intent-recorded deletion receipts propagated as moves into dated siblings.** This is the minimal mechanism that terminates D-CLOUD-030's compaction.
+- **The reflash bootstrap.** A reflashed device regenerates the same `cloud_device_id` and seeds from its own previous manifest before its first capture republishes.
+- **The lifecycle gate with fixed acquisition order.** This closes the boot-sync vs gameplay race structurally.
+
+### `gemini-revised_plan-r2.md`
+- **The `--backup-dir` retention seed.** This is the recoverability mechanism adopted by `claude` and `kimi`.
+- **The #10 launch-behaviour rehearsal as a real-device pre-implementation gate.** This ensures the launch behaviour is preserved after shipping `es_savestates.cfg`.
+- **The one-sentence D-CLOUD-029 confirmation.** "The stopgap merely moves the clobber from game-exit to boot."
+
+### `gpt-revised_plan-r2.md`
+- **The unit-level member-map classifier.** This is the correction to `kimi`'s per-file aggregation (C6).
+- **The D-CLOUD-030 clarification.** Compaction concerns numbered states in one game/core repository, idle, after verified copies; never collapses an auto resume point into a numbered slot.
+- **The `makeStateFilename` parent-derivation finding.** A staged-in-/tmp state would merge into /tmp — stage in the real save directory under a temp name.
+- **The eight #24 acceptance criteria.** Especially "standalone-emulator states never allocate" (`isEnabled` requires `retroarch`).
+
+### `kimi-revised_plan-r2.md`
+- **The ops journal + receipts.** This makes `replaces` correct across the rename-then-edit sequence.
+- **The discard store outside the sync tree.** This avoids sync-tree contamination and requires no allowlist exclusions.
+- **The shadow census.** This measures fork rate per kind, verdict distribution, unknown rate, and the exit-path cost in spawns, round trips, and seconds.
+- **The ordered hardware gates with a defined shadow census.** This ensures the foundation is proven before it is built.
+
+### `mistral-revised_plan-r2.md`
+- **The out-of-scope fence.** This is a builder needs it as much as the plan.
+- **The IA-text corrections for rev 5.** The "checked, not assumed" paragraph is wrong about `getNextFreeSlot()` for the auto-only case.
+- **Move observation as a first-class mechanism.** This is the correction to `gpt`'s reconstruction-after approach.
+
+---
+
+## 4. What Should Not Be Built
+
+- **A protected-publication protocol in V1.** The one-player model does not earn it on a 5-second path.
+- **A separate apply journal beyond the frozen plan with per-unit status.** The frozen plan is the journal.
+- **The full staging mirror as a default mode.** It is blind to same-size changes on hashless backends.
+- **Semantic binary merging, vector clocks, a shared database, a SQLite history index, a daemon.** These are out of scope for V1.
+- **A 99-slot product cap to work around the allocator defect.** The allocator defect is fixed in the adapter.
+- **Permanent loser memory as automatic authority.** A deliberately restored file is a new version, not a stigmatized one.
+- **Tombstones for hypothetical external writers.** Receipts cover our recorded operations only.
+- **A kid/kiosk-mode resolver.** A kid resolving save conflicts destructively is what kid mode exists to prevent.
+- **Progress heuristics that select a winner.** The cardinal rule forbids it.
+
+---
+
+## 5. The Plan I Would Build From
+
+I would build from `kimi-revised_plan-r2.md`, with the following additions from the other plans:
+
+1. **From `claude-revised_plan-r2.md`:**
+   - The reflash bootstrap.
+   - The lifecycle gate with fixed acquisition order.
+   - The in-spawn manifest transport filters.
+
+2. **From `gpt-revised_plan-r2.md`:**
+   - The unit-level member-map classifier.
+   - The D-CLOUD-030 clarification.
+   - The `makeStateFilename` parent-derivation finding.
+   - The eight #24 acceptance criteria.
+
+3. **From `gemini-revised_plan-r2.md`:**
+   - The `--backup-dir` retention seed.
+   - The #10 launch-behaviour rehearsal as a real-device pre-implementation gate.
+
+4. **From `mistral-revised_plan-r2.md`:**
+   - The out-of-scope fence.
+   - The IA-text corrections for rev 5.
+
+---
+
+## 6. What Would Change My Mind
+
+- **The race fixture (§11, gate 7):** If `--backup-dir` does not preserve intervening heads on Dropbox or WebDAV, gpt's protected-publication protocol becomes load-bearing before multi-device ships.
+- **The shadow census (§11, gate 8):** If the decision-scoped download set is large on the maintainer's library, the full-stage fallback is priced and accepted for hashless backends only.
+- **The bisync spike (§11, gate 2):** If bisync satisfies the contract and materially simplifies full-pass transport, it earns the bulk-transfer role for non-conflicting units.
+- **The #10 rehearsal (§11, gate 5):** If the XML path cannot preserve launch behaviour, the appropriate resolver/configuration behaviour is changed deliberately; the naive config is not shipped.
+
+---
+
+## 7. Final Recommendation
+
+Build from `kimi-revised_plan-r2.md` with the additions above. It is the most complete, safest, and most thoroughly tested foundation for cloud-save conflict resolution in ROCKNIX. The ordered hardware gates ensure the foundation is proven before it is built, and the shadow census ensures the design is tuned to the maintainer's real library. The receipts-and-siblings mechanism is the minimal solution that terminates D-CLOUD-030's compaction, and the lifecycle gate closes the boot-sync vs gameplay race structurally. The wizard's queue-and-badge trigger is the correct console-first design, and the discard store outside the sync tree avoids sync-tree contamination.
+
+=== END mistral_peer_review-r3.md ===

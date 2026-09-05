@@ -189,3 +189,26 @@ on whether a **control the player can press** ships in V1. That is a product
 decision, not an evidence question, so it goes to the maintainer rather than to
 another round of deliberation. Recorded per `voting-rules.md`'s principle that a
 tie is escalated on its cause, not merely on its count.
+
+## r3 Step 2 gate
+
+All five round-3 peer reviews identity-verified, no retries, no substitutions.
+**PASS** (5/5).
+
+### Movement, recorded before the vote
+
+The reviews carried D-CLOUD-032 and D-CLOUD-033 as problem context for the
+first time. Build-from positions:
+
+| Reviewer | Would build from |
+| --- | --- |
+| claude | `kimi-revised_plan-r2.md` |
+| gemini | `kimi-revised_plan-r2.md` |
+| gpt | `claude-revised_plan-r2.md` (as an editing baseline, not an approved spec) |
+| kimi | `claude-revised_plan-r2.md` |
+| mistral | `kimi-revised_plan-r2.md` |
+
+Three to two, against two rounds of 2-2-1. These are review positions and not
+votes; the vote is r3 Step 4. Recorded here because the orchestrator's judgement
+that this round carried new information rather than churn is falsifiable, and
+this is the evidence either way.
