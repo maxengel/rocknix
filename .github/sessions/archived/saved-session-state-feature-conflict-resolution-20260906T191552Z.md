@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-06T19:15:52Z
+> **Saved**: 2026-09-06T18:29:34Z
 > **Branch**: feature/conflict-resolution (worktree; the work itself landed on `next`)
 > **Repo**: maxengel/rocknix (+ ES at ~/Development/emulationstation-next, branch feature/cloud-vocabulary → test/qa-integration)
 
 ## Current Focus
 
-`begin-delivery` on #11 is paused at Step 1 with a question open (no mini-retro exists for the council epic; proceed on the run's README as the retro?) — Steps 1–1.7 were read-only and are summarised in the chat. In between, the maintainer's screen review of the first real backup was taken on `feature/transfer-page-review` (merged to `next` `088c2bd22e`, ES `a846b4c69`), proven in the VM over three images, and an H700 build is in flight for the devices; each reboot is asked for.
+The intermediary work is delivered: #76 and #77 are on both handhelds (`0803aa195c`), every acceptance criterion ticked on observed behaviour; both issues stay open only for the maintainer's look at the screens. The VM and the QA backend are down. Next is the switch to the conflict-resolution milestone: `begin-delivery` on #11, starting at Gate 0 (#35).
 
 ## Completed This Session
 
@@ -18,14 +18,13 @@
 
 ## In Progress
 
-- H700 image for the transfer-flow review: building (`/workspace/artifacts/build-h700-review.log`); kept under `rocknix-images/h700-review-<date>-<id>/` when done; staging on both handhelds is inert and allowed, the reboot is not.
-- #76/#77: all criteria ticked; open only for the maintainer's screen look, which the review build now supersedes.
+- Nothing in flight. #76/#77 close on the maintainer's word after the screen look (close `completed` naming `0803aa195c`, ES `1fff9e904`).
 
 ## Next Steps
 
-1. Stage the review build on both handhelds; ask for each reboot by name; the maintainer's look at CONTENT TO BACK UP and the transfer page on the RG35XX SP.
-2. Resume `begin-delivery` on #11: answer the Step 1 question, pre-futro audit comment on #35, the futro (Step 2) against #35 and #9 with blindspots 28–30 and the 2026-09-05 futro's substrate table, post-futro audit, load Gate 0's tasks.
-3. Carried debt: rocknix.org docs PR (the changelog sections are the draft); #73's remaining on-screen review; a rebuild at some point carries the `--scan` BIOS tidy-up.
+1. `begin-delivery` on #11: prior "retro" = the council handoff (Step 6, `research/council-runs/2026-09-05-conflict-resolution-foundation/`); futro against #35 and #9 with blindspots 29 and 30 in hand; load Gate 0's tasks (#35: the round-trip harness in the VM, every fixture written to fail first — `tools/cloud-round-trip` over SSH, or `tools/vm-serial` now that it exists).
+2. Gate 11 (#9 bisync spike → settles D-CLOUD-044), Gate 12 (writer census for #21/#22).
+3. Carried debt: rocknix.org docs PR (hard gate before any upstream PR; the changelog sections are the draft); #73's remaining on-screen review; a rebuild at some point for the `--scan` BIOS tidy-up (`next` only).
 
 ## Key Files Modified
 
@@ -52,6 +51,5 @@
 
 ## Open Questions
 
-- begin-delivery Step 1: proceed on the council README as the prior retro, or run a mini-retro on #70 first?
-- Close #76/#77 after the maintainer's look at the review build?
+- Close #76/#77 now, or after the maintainer's screen look?
 - D-CLOUD-044 (bisync-gap posture) stays parked until the #9 spike.
