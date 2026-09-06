@@ -508,13 +508,23 @@ match_run() {
 
 content_files() {
     local dir="$1"; shift
-    # Never the scraper's folders unless --with-media (D-CLOUD-048): the same
-    # rule sizes both sides, so a count that differs means files a transfer
-    # would actually move.
+    # One rule for both sides (D-CLOUD-048), set by MEDIA_MODE (D-CLOUD-050):
+    #   roms  -- ROMs and BIOS only: the scraper's folders and the game list
+    #            are neither listed nor moved
+    #   with  -- ROMs and game content together
+    #   only  -- game content alone: the scraper's folders and gamelist.xml
+    # The game list is game content (D-CLOUD-049): the scraper writes it
+    # beside the artwork, and a restored-then-scraped device must read as
+    # matching its cloud under ROMs alone.
     local -a media=()
-    if [ "${WITH_MEDIA:-0}" -eq 0 ]; then
-        local d; for d in ${MEDIA_DIRS:-images videos manuals screenshots fanart boxart wheel mix maps media}; do media+=( ! -path "${dir%/}/${d}/*" ); done
-    fi
+    local d
+    case "${MEDIA_MODE:-roms}" in
+        roms) for d in ${MEDIA_DIRS:-images videos manuals screenshots fanart boxart wheel mix maps media}; do media+=( ! -path "${dir%/}/${d}/*" ); done
+              media+=( ! -path "${dir%/}/gamelist.xml" ) ;;
+        only) media+=( "(" -path "${dir%/}/gamelist.xml" )
+              for d in ${MEDIA_DIRS:-images videos manuals screenshots fanart boxart wheel mix maps media}; do media+=( -o -path "${dir%/}/${d}/*" ); done
+              media+=( ")" ) ;;
+    esac
     find "${dir}" -type f \
         ! -name '*.srm' ! -name '*.sav' ! -name '*.fs' ! -name '*.state*' \
         ! -name '*.auto' ! -name '*.dsv*' ! -name '*.eep' ! -name '*.mpk' \
@@ -548,12 +558,13 @@ not_in() {
 # Drop from a cloud "size|path" listing what content_files drops locally, so
 # the two sides are counted by one rule.
 cloud_content_filter() {
-    local skip='^$'
-    [ "${WITH_MEDIA}" -eq 0 ] && skip="^($(echo ${MEDIA_DIRS} | tr ' ' '|'))$"
-    awk -F'|' -v skip="${skip}" '
+    local dirs; dirs="^($(echo ${MEDIA_DIRS} | tr ' ' '|'))$"
+    awk -F'|' -v dirs="${dirs}" -v mode="${MEDIA_MODE}" '
         { n = split($2, seg, "/"); if (n < 2) next
-          if (n > 2 && seg[2] ~ skip) next
           f = seg[n]
+          game = (n > 2 && seg[2] ~ dirs) || (n == 2 && f == "gamelist.xml")
+          if (mode == "roms" && game) next
+          if (mode == "only" && !game) next
           if (f ~ /\.(srm|sav|fs|auto|eep|mpk|sra|mcd|mcr)$/ || f ~ /\.state/ || f ~ /\.dsv/) next
           if ($2 ~ /conflicted copy/ || f ~ /\.sync-conflict-/) next
           if (f == "README.txt") next
@@ -564,17 +575,25 @@ cloud_content_filter() {
 # the scraper's folders under a system are neither moved nor counted unless
 # the switch is on, so a restored-then-scraped device does not read as
 # "different" from its cloud copy. Taken from anywhere on the command line.
-WITH_MEDIA=0
+MEDIA_MODE=roms
 _ARGS=()
 for _a in "$@"; do
-    if [ "${_a}" = "--with-media" ]; then WITH_MEDIA=1; else _ARGS+=("${_a}"); fi
+    case "${_a}" in
+        --with-media) MEDIA_MODE=with ;;
+        --media-only) MEDIA_MODE=only ;;
+        *) _ARGS+=("${_a}") ;;
+    esac
 done
 set -- "${_ARGS[@]}"
 MEDIA_DIRS="images videos manuals screenshots fanart boxart wheel mix maps media"
+# What the main rclone pass carries, per mode. The game list never rides the
+# main pass: it has its own --update pass below (newest wins), which runs
+# only when game content is in scope.
 MEDIA_EXCLUDES=()
-if [ "${WITH_MEDIA}" -eq 0 ]; then
-    for _d in ${MEDIA_DIRS}; do MEDIA_EXCLUDES+=(--exclude "/${_d}/**"); done
-fi
+case "${MEDIA_MODE}" in
+    roms) for _d in ${MEDIA_DIRS}; do MEDIA_EXCLUDES+=(--exclude "/${_d}/**"); done ;;
+    only) for _d in ${MEDIA_DIRS}; do MEDIA_EXCLUDES+=(--include "/${_d}/**"); done ;;
+esac
 
 case "${1}" in
     --match)
@@ -644,7 +663,7 @@ case "${1}" in
         # BIOS is not a system and is no longer a pick (maintainer, 2026-09-06):
         # it comes with the tier whenever the cloud has it. The tier's own
         # switch already says ROMS AND BIOS; nothing runs without them.
-        if exists_remote "${ROOT}BIOS" && ! printf '%s\n' "${DIRS[@]}" | grep -qx bios; then
+        if [ "${MEDIA_MODE}" != only ] && exists_remote "${ROOT}BIOS" && ! printf '%s\n' "${DIRS[@]}" | grep -qx bios; then
             DIRS+=("bios")
         fi
     ;;
@@ -717,8 +736,9 @@ for DIR in "${DIRS[@]}"; do
         --log-file "${LOG_FILE}" --log-level INFO
     RC=$?
 
-    # The metadata pass: newest wins, rather than whoever ran last.
-    rclone copy "${SRC}" "${TARGET}" \
+    # The game list: newest wins, rather than whoever ran last. Game content
+    # only (D-CLOUD-049) -- under ROMs alone the file stays where it is.
+    [ "${MEDIA_MODE}" != roms ] && rclone copy "${SRC}" "${TARGET}" \
         "${GAMELIST_ONLY[@]}" --update \
         --stats 0 \
         --log-file "${LOG_FILE}" --log-level INFO || true
