@@ -1,6 +1,6 @@
 # Saved Session State
 
-> **Saved**: 2026-09-06T19:15:52Z
+> **Saved**: 2026-09-06T21:12:53Z
 > **Branch**: feature/conflict-resolution (worktree; the work itself landed on `next`)
 > **Repo**: maxengel/rocknix (+ ES at ~/Development/emulationstation-next, branch feature/cloud-vocabulary → test/qa-integration)
 
@@ -18,12 +18,11 @@
 
 ## In Progress
 
-- H700 image for the transfer-flow review: building (`/workspace/artifacts/build-h700-review.log`); kept under `rocknix-images/h700-review-<date>-<id>/` when done; staging on both handhelds is inert and allowed, the reboot is not.
-- #76/#77: all criteria ticked; open only for the maintainer's screen look, which the review build now supersedes.
+- Nothing in flight. Both handhelds are on the review build `088c2bd22e` (rebooted on the maintainer's word, 21:06Z); #76/#77 open only for the maintainer's screen look at it.
 
 ## Next Steps
 
-1. Stage the review build on both handhelds; ask for each reboot by name; the maintainer's look at CONTENT TO BACK UP and the transfer page on the RG35XX SP.
+1. The maintainer's look at CONTENT TO BACK UP and the transfer page on the RG35XX SP (`088c2bd22e`); then close #76/#77 naming it.
 2. Resume `begin-delivery` on #11: answer the Step 1 question, pre-futro audit comment on #35, the futro (Step 2) against #35 and #9 with blindspots 28–30 and the 2026-09-05 futro's substrate table, post-futro audit, load Gate 0's tasks.
 3. Carried debt: rocknix.org docs PR (the changelog sections are the draft); #73's remaining on-screen review; a rebuild at some point carries the `--scan` BIOS tidy-up.
 
