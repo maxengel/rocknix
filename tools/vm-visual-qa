@@ -22,8 +22,9 @@
 #   wait 2              # seconds
 #   shot main-menu      # capture a frame, labelled
 #
-# PPM->PNG and the contact-sheet GIF need Pillow; without it the PPM
-# frames are still written and everything else works.
+# PNG frames need nothing beyond the stdlib; the contact-sheet GIF needs
+# Pillow, and without it the frames are still written and everything else
+# works.
 
 import argparse
 import os
@@ -90,12 +91,51 @@ class Monitor:
 
 
 def to_png(ppm_path, png_path):
+    """PPM (P6) -> PNG. Pillow if present; otherwise the stdlib, because a
+    frame nobody can open is a frame nobody reads -- the build host has no
+    Pillow and the reviewers (people and image models) read PNG."""
     try:
         from PIL import Image
     except ImportError:
-        return False
+        return _ppm_to_png_stdlib(ppm_path, png_path)
     with Image.open(ppm_path) as im:
         im.convert("RGB").save(png_path)
+    return True
+
+
+def _ppm_to_png_stdlib(ppm_path, png_path):
+    import struct
+    import zlib
+
+    data = open(ppm_path, "rb").read()
+    fields, pos = [], 0
+    while len(fields) < 4:                      # P6 <width> <height> <maxval>
+        while data[pos:pos + 1].isspace():
+            pos += 1
+        if data[pos:pos + 1] == b"#":
+            while data[pos:pos + 1] not in (b"\n", b""):
+                pos += 1
+            continue
+        start = pos
+        while not data[pos:pos + 1].isspace():
+            pos += 1
+        fields.append(data[start:pos])
+    pos += 1
+    if fields[0] != b"P6" or int(fields[3]) != 255:
+        return False
+    w, h = int(fields[1]), int(fields[2])
+    px = data[pos:pos + w * h * 3]
+    raw = b"".join(b"\x00" + px[y * w * 3:(y + 1) * w * 3] for y in range(h))
+
+    def chunk(kind, body):
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF)
+
+    png = b"\x89PNG\r\n\x1a\n"
+    png += chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+    png += chunk(b"IDAT", zlib.compress(raw, 6))
+    png += chunk(b"IEND", b"")
+    with open(png_path, "wb") as fh:
+        fh.write(png)
     return True
 
 
@@ -156,7 +196,7 @@ def run_steps(mon, steps, outdir):
                 print("captured " + png)
             else:
                 shots.append(ppm)
-                print("captured " + ppm + " (install Pillow for PNG)")
+                print("captured " + ppm + " (PPM: the frame was not a P6/255 image)")
         else:
             raise SystemExit("unknown step: " + line)
     return shots
@@ -173,7 +213,7 @@ def main():
     r.add_argument("--gif", help="also write an animated GIF of the frames")
 
     s = sub.add_parser("shot", help="capture a single frame")
-    s.add_argument("output", help="output .png (or .ppm without Pillow)")
+    s.add_argument("output", help="output .png (or .ppm)")
 
     k = sub.add_parser("key", help="send one key")
     k.add_argument("keyname")

@@ -24,6 +24,8 @@
 #   ./tools/cloud-test-backend reset       # empty it between tests
 #   ./tools/cloud-test-backend ls [path]   # what the device actually uploaded
 #   ./tools/cloud-test-backend rclone-conf # the stanza to place on a device
+#   ./tools/cloud-test-backend seed-content [root]   # a content-tier fixture at the endpoint
+#   ./tools/cloud-test-backend seed-device [root]    # the matching guest-side script, on stdout
 #   ./tools/cloud-test-backend down        # stop it
 set -euo pipefail
 
@@ -260,6 +262,60 @@ EOF
     else
       echo "/CONTENT"
     fi
+    ;;
+
+  seed-content)
+    # The content-tier fixture (D-CLOUD-048), at the endpoint. Under <root>
+    # (default ROCKNIX/Content, the shipped CONTENT_REMOTE): an SNES folder
+    # with a ROM the device also has, a ROM only the cloud has, a gamelist
+    # and a scraped image; an NES folder only the cloud has; a BIOS file.
+    # With seed-device on the guest, every verdict the systems pages can
+    # give has a system that produces it: IN YOUR CLOUD ONLY (nes), NOT IN
+    # YOUR CLOUD YET (gb), N FILES NOT ... (snes), and -- the case that
+    # opened #76 -- scraped files on one side only, which must not count
+    # unless the switch is on. Sizes are distinct so a total says which
+    # files a side holds. Random bytes, so nothing here is a real ROM.
+    root="${2:-ROCKNIX/Content}"
+    fx=$(mktemp -d)
+    mkdir -p "${fx}/ROMs/snes/images" "${fx}/ROMs/nes" "${fx}/BIOS"
+    head -c 300000 /dev/urandom > "${fx}/ROMs/snes/shared.sfc"
+    head -c 200000 /dev/urandom > "${fx}/ROMs/snes/cloudonly.sfc"
+    printf '<?xml version="1.0"?>\n<gameList>\n  <game><path>./shared.sfc</path><name>Shared</name></game>\n</gameList>\n' > "${fx}/ROMs/snes/gamelist.xml"
+    head -c 50000 /dev/urandom > "${fx}/ROMs/snes/images/cloud-image.png"
+    head -c 100000 /dev/urandom > "${fx}/ROMs/nes/n.nes"
+    head -c 4096 /dev/urandom > "${fx}/BIOS/foo.bin"
+    "$0" put "${fx}" "${root}" >/dev/null
+    rm -rf "${fx}"
+    echo "seed-content: ${root} holds snes (shared, cloudonly, gamelist, images/), nes, BIOS"
+    ;;
+
+  seed-device)
+    # The guest half of seed-content, as a script for the serial console
+    # (tools/vm-serial script <(./tools/cloud-test-backend seed-device)):
+    # this endpoint as the device's only remote, the shipped defaults via
+    # cloud_sync_helper, a reachability check, and device ROMs that pair
+    # with the fixture -- the shared SNES ROM (same name and size, so it
+    # counts as present on both sides), one only the device has, scraped
+    # images/ and videos/ only the device has, and a GB folder the cloud
+    # has never seen.
+    root="${2:-ROCKNIX/Content}"
+    cat <<EOF
+mkdir -p /storage/.config/rclone
+cat > /storage/.config/rclone/rclone.conf <<'RC'
+$("$0" rclone-conf)
+RC
+/usr/bin/cloud_sync_helper >/dev/null 2>&1
+grep -q '^CONTENT_REMOTE="/${root}"' /storage/.config/cloud_sync.conf || sed -i 's|^CONTENT_REMOTE=.*|CONTENT_REMOTE="/${root}"|' /storage/.config/cloud_sync.conf
+/usr/bin/cloud_setup --check
+mkdir -p /storage/roms/snes/images /storage/roms/snes/videos /storage/roms/gb
+head -c 300000 /dev/zero | tr '\0' 'S' > /storage/roms/snes/shared.sfc
+head -c 150000 /dev/urandom > /storage/roms/snes/deviceonly.sfc
+printf '<?xml version="1.0"?>\n<gameList>\n  <game><path>./shared.sfc</path><name>Shared</name></game>\n</gameList>\n' > /storage/roms/snes/gamelist.xml
+head -c 60000 /dev/urandom > /storage/roms/snes/images/a.png
+head -c 250000 /dev/urandom > /storage/roms/snes/videos/a.mp4
+head -c 80000 /dev/urandom > /storage/roms/gb/only.gb
+echo "seeded: \$(find /storage/roms/snes /storage/roms/gb -type f | wc -l) device files"
+EOF
     ;;
 
   remote-name) echo "${REMOTE}" ;;

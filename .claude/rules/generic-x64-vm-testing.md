@@ -64,6 +64,118 @@ guests; it cannot run this x86_64 image.
 First boot resizes storage and reboots; the second boot is the real one. Release artifacts:
 `.utm.zip` for macOS/UTM and `.qcow2` + the generated launcher for Linux/QEMU.
 
+## Headless, on a build host with no desktop
+
+`virtio-gpu-gl-pci` refuses `-display none`, a bare `-display none` captures
+black, and SSH is off on a fresh image — three separate discoveries that are
+now one flag:
+
+```bash
+VM_TOOL=projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm
+$VM_TOOL run --headless --daemonize target/ROCKNIX-GENERIC_X64.x86_64-<date>.qcow2
+#   virtio-gpu-pci, -display none, -vnc 127.0.0.1:9 (a committed scanout for
+#   screendump), the serial console on /tmp/rocknix-qemu-serial.sock, a
+#   pidfile at /tmp/rocknix-qemu.pid, and QEMU returns once the VM is up
+tools/vm-serial wait                          # until EmulationStation is running
+tools/vm-serial sh 'df -h /storage'           # a root shell line, its output back
+tools/vm-serial script setup.sh               # a whole file, uploaded and run
+kill "$(cat /tmp/rocknix-qemu.pid)"           # stop it -- by PID, never by pattern
+```
+
+The qcow2 comes from the raw image the same way every time: `gunzip -c
+<img.gz> > vm.img && qemu-img convert -f raw -O qcow2 vm.img vm.qcow2 &&
+qemu-img resize vm.qcow2 16G` (the 16 GiB is not optional; see below). First
+boot resizes storage and reboots itself; `vm-serial wait` returns on the
+second boot, twenty to thirty seconds in.
+
+**Stop it by PID.** `pkill -f 'vm76[.]qcow2'` killed the shell that ran it,
+because the same command text held the literal in an `rm` three lines down,
+and `bash -c` carries the whole script in its argv. The pidfile exists so
+that this never has to be a pattern.
+
+**Socket paths under 107 bytes.** A session scratch directory is longer than
+that, and a longer path fails to bind with an error that names nothing. The
+tool refuses one.
+
+## Driving EmulationStation from the monitor
+
+The keys the image maps (`/storage/.config/emulationstation/es_input.cfg`,
+read it on the guest rather than trusting this): **START = `ret`, A = `x`,
+B = `z`, X = `s`, Y = `a`, SELECT = `shift_r`**, arrows for direction. The
+things that cost a cycle each before they were written down:
+
+- **A page opens on its first row, and `up` from there lands on its BACK
+  button** — the wrap runs rows → buttons → rows. So the bottom of GAME
+  SETTINGS is three `up`s from the top (BACK, the last row, the one above),
+  not one. The button bar is a focus stop on every page.
+- **START on MAIN MENU closes it.** START opens the menu from a system or
+  game view; on the menu it is CLOSE. Sending it twice returns to where you
+  were, and the next `x` launches whatever is under the cursor.
+- **After five idle minutes the first key only wakes the screensaver.** Send
+  `shift` first — a key the interface ignores — or the walk starts one key
+  late and every later press lands one screen off.
+- **`x` on a switch row toggles it; B closes the page and runs its save
+  function.** So "flip a switch and see the effect" is `x`, `z`, then reopen.
+- **A transfer page ends on PRESS ANY BUTTON TO CLOSE and returns to the hub**
+  with focus where it was, not to the transfer page.
+- **Wait 2 s after a page opens, 7 s after one that scans the cloud**, then
+  `shot`. A frame taken early is the previous screen, and it reads as "the
+  key did nothing".
+- **A screen that looks like the previous one is not proof the key was
+  ignored.** Check `pgrep emulationstation` before re-driving input — an
+  abort()ed ES restarts to the carousel, which looks the same.
+
+`tools/vm-visual-qa` writes PNG with the stdlib, so the frames are readable by
+anyone without Pillow. Read them; a walk whose frames nobody read has tested
+nothing. Reusable walks live in `tools/vm-walks/` — compose them with `cat`.
+
+## What the guest's busybox lacks
+
+The scripts run on the image, not on the host, and the host's coreutils hide
+that. Present: `mapfile` (bash), `stat -c`, `find -path`, `mktemp -d`,
+`sort -u`, `flock`, `base64 -d`. Absent: **`comm`**, **`pgrep -c`**,
+`find -printf`, `ls --time-style`, `realpath`. `comm ... | wc -l` reading 0
+on the image shipped once (2026-09-06, a difference count that said
+"identical"); `pgrep -c` prints usage and exits 1, which a `$(...)` reads as
+an empty string. When a script reaches for a coreutils name, run it on the VM
+before believing the host.
+
+## Fixtures for the cloud tier
+
+`tools/cloud-test-backend` serves a directory over WebDAV that the guest
+reaches at `10.0.2.2:9010`; `seed-content` puts the content-tier fixture at
+the endpoint and `seed-device` prints the guest half — the remote, the conf,
+and device ROMs that pair with the fixture so every verdict a systems page
+can give has a system that produces it:
+
+```bash
+tools/cloud-test-backend up && tools/cloud-test-backend reset
+tools/cloud-test-backend seed-content
+tools/cloud-test-backend seed-device > /tmp/seed.sh && tools/vm-serial script /tmp/seed.sh
+tools/vm-serial sh '/usr/bin/cloud_content_restore --scan'
+```
+
+Then read the endpoint after a transfer (`cloud-test-backend ls`), never the
+page's COMPLETED SUCCESSFULLY — that is the check that found `MEDIA_EXCLUDES`
+being passed to nothing (blindspot 30).
+
+## After every VM cycle
+
+A cycle that taught something and left it in the work log has taught the
+next cycle nothing. Before closing the cycle, sort what it found into:
+
+1. **A tool or a flag** — anything that was a procedure (a boot recipe, a
+   fixture, a wait loop) becomes code here or in `tools/`, so it cannot be
+   skipped by not reading it.
+2. **A walk** — any screen reached by hand becomes a `tools/vm-walks/*.steps`
+   file, so the next cycle replays it.
+3. **A line in this file** — a gotcha, a key, a missing applet.
+4. **A row in `docs/vm-qa-log.md`** — the cycle itself: what the VM found,
+   what it could not prove, and which of 1–3 it left behind. The next cycle
+   starts by reading the last row.
+
+The work log keeps the narrative; it is not where the next cycle will look.
+
 ## UTM virtio-gpu cursor sprite
 
 UTM's virtio-gpu hardware cursor plane can display the **cursor graphic** upside down while
@@ -117,10 +229,10 @@ sg kvm -c '<qemu command>'      # picks up the group with no re-login
   captures all-black). Drive input with the monitor: `sendkey ret` opens the ES main menu.
 - **Reliable in-guest shell over serial** (prefer this — SSH can reset mid-handshake with
   `kex_exchange_identification: Connection reset`): GENERIC_X64 ships
-  `serial-debug-shell.service` (autologin root `/bin/sh` on `ttyS0`). Boot with
-  `-serial unix:/tmp/serialsh.sock,server,nowait`, then drive it from a tiny `AF_UNIX` client
-  — send `stty -echo` first to quiet echo, and wrap commands in unique `BEG`/`END` markers
-  since the boot console shares `ttyS0`. This is the channel that found the disk-size bug.
+  `serial-debug-shell.service` (autologin root `/bin/sh` on `ttyS0`). `run --headless`
+  puts it on a unix socket and `tools/vm-serial` is the client (echo off, unique
+  `BEG`/`END` markers around every command because the boot console shares `ttyS0`).
+  This is the channel that found the disk-size bug.
 - **Live logs over SSH**: default login is `root` / `rocknix`; `PermitRootLogin yes`. No
   `sshpass` on the host — use `SSH_ASKPASS=<script-echoing-pw> SSH_ASKPASS_REQUIRE=force
   setsid -w ssh -p 10022 root@127.0.0.1 …`. ES logs to tmpfs `/var/log/es_log.txt`,
@@ -167,8 +279,9 @@ which is what makes this usable on a headless build host:
 - `screendump <file>` — writes the current framebuffer as a PPM
 
 `tools/vm-visual-qa` wraps them: it runs a step file (`key` / `wait` / `shot`),
-converts frames to PNG, and optionally assembles an animated GIF. PNG/GIF need
-Pillow (a venv is fine; the PPM frames are still written without it).
+converts frames to PNG (stdlib; no Pillow needed), and optionally assembles an
+animated GIF (that part does need Pillow). `tools/vm-walks/` holds the step
+files worth keeping.
 
 ```bash
 # boot headless with a monitor socket, then:

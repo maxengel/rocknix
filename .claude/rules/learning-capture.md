@@ -34,6 +34,17 @@ Append a timestamped entry to the day's work log:
   (e.g. `## 19:04 UTC — <title>`). **Append, don't overwrite.**
 - Keep entries concise: what was learned/decided, why, and any follow-ups (issue links).
 
+## 3. Make it executable, if it was a procedure
+
+A learning that is a *procedure* — a boot recipe, a fixture, a sequence of
+keys, a wait loop, a check — goes into a tool, a flag, or a step file, not
+only into prose. Prose has to be found and read at the right moment; a flag
+cannot be skipped by not reading it. The VM cycle of 2026-09-06 turned five
+such learnings into `generic-x64-vm --headless`, `tools/vm-serial`,
+`cloud-test-backend seed-content`/`seed-device`, and `tools/vm-walks/`; the
+ritual is `generic-x64-vm-testing.md` § "After every VM cycle", and the
+per-cycle ledger is `docs/vm-qa-log.md`.
+
 ## Notes
 
 - These work logs and the personal instruction files are **personal artifacts** — they live on

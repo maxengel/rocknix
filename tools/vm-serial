@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# A root shell in a headless GENERIC_X64 guest, over its serial console.
+#
+# The image ships serial-debug-shell.service: an autologin root /bin/sh on
+# ttyS0. With `generic-x64-vm run --headless` that console is a unix socket
+# on the host, and this is the client for it. SSH is off on a fresh image
+# and resets mid-handshake on a busy one; the serial line is the channel
+# that works from the first boot.
+#
+#   vm-serial sh 'uname -a; df -h /storage'        # one command, its output
+#   vm-serial script setup.sh                       # a whole file, run with sh
+#   vm-serial wait                                  # until EmulationStation is up
+#   vm-serial wait --for 'test -f /storage/.done'   # until a shell test passes
+#
+# Every command is wrapped in unique BEG/END markers because the boot console
+# shares the line, and echo is switched off first so the command is not read
+# back as output. A script goes across as base64 in one line, so the line
+# discipline never sees a heredoc or a quote it might misparse.
+#
+# Busybox in the guest: no `pgrep -c`, no `comm`, no `find -printf`. The
+# default wait test uses `pgrep emulationstation | wc -l` for that reason.
+import argparse
+import base64
+import socket
+import sys
+import time
+import uuid
+
+DEFAULT_SOCKET = "/tmp/rocknix-qemu-serial.sock"
+
+
+class Serial:
+    def __init__(self, path, timeout):
+        self.timeout = timeout
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(timeout)
+        self.sock.connect(path)
+        self.sock.sendall(b"\nstty -echo 2>/dev/null\n")
+        self._drain(0.3)
+
+    def _drain(self, seconds):
+        self.sock.settimeout(seconds)
+        try:
+            while self.sock.recv(65536):
+                pass
+        except (socket.timeout, TimeoutError):
+            pass
+        self.sock.settimeout(self.timeout)
+
+    def run(self, command):
+        """Run one shell command line; return (output, ok)."""
+        tag = uuid.uuid4().hex[:8]
+        beg, end = "BEG" + tag, "END" + tag
+        self.sock.sendall(("echo %s; %s; echo %s\n" % (beg, command, end)).encode())
+        buf = b""
+        deadline = time.time() + self.timeout
+        while time.time() < deadline:
+            try:
+                chunk = self.sock.recv(65536)
+            except (socket.timeout, TimeoutError):
+                break
+            if not chunk:
+                break
+            buf += chunk
+            if end.encode() in buf:
+                break
+        text = buf.decode(errors="replace")
+        i, j = text.find(beg), text.find(end)
+        if i >= 0 and j > i:
+            return text[i + len(beg):j].strip("\r\n"), True
+        return text, False
+
+    def close(self):
+        self.sock.close()
+
+
+def main():
+    ap = argparse.ArgumentParser(description="a root shell in a headless GENERIC_X64 guest, over serial")
+    ap.add_argument("--socket", default=DEFAULT_SOCKET, help="the VM's serial socket (default: %(default)s)")
+    ap.add_argument("--timeout", type=float, default=60, help="seconds to wait for a command's END marker")
+    sub = ap.add_subparsers(dest="command", required=True)
+    sh = sub.add_parser("sh", help="run one command line and print its output")
+    sh.add_argument("cmdline")
+    sc = sub.add_parser("script", help="upload a file and run it with sh")
+    sc.add_argument("path")
+    sc.add_argument("--interpreter", default="sh")
+    w = sub.add_parser("wait", help="poll until a shell test passes (default: EmulationStation is running)")
+    w.add_argument("--for", dest="test", default='[ "$(pgrep emulationstation | wc -l)" = 1 ]')
+    w.add_argument("--every", type=float, default=5)
+    w.add_argument("--up-to", type=float, default=300, help="seconds before giving up")
+    args = ap.parse_args()
+
+    if args.command == "wait":
+        deadline = time.time() + args.up_to
+        started = time.time()
+        while time.time() < deadline:
+            try:
+                s = Serial(args.socket, min(args.timeout, 8))
+                out, ok = s.run("if %s; then echo READY; fi" % args.test)
+                s.close()
+                if ok and "READY" in out:
+                    print("ready after ~%ds" % (time.time() - started))
+                    return 0
+            except (OSError, socket.timeout, TimeoutError):
+                pass
+            time.sleep(args.every)
+        print("not ready after %ds" % args.up_to, file=sys.stderr)
+        return 1
+
+    s = Serial(args.socket, args.timeout)
+    try:
+        if args.command == "sh":
+            out, ok = s.run(args.cmdline)
+        else:
+            with open(args.path, "rb") as fh:
+                blob = base64.b64encode(fh.read()).decode()
+            name = "/tmp/vm-serial-%s" % uuid.uuid4().hex[:6]
+            out, ok = s.run("echo %s | base64 -d > %s && %s %s 2>&1" % (blob, name, args.interpreter, name))
+    finally:
+        s.close()
+    if out:
+        print(out)
+    if not ok:
+        print("vm-serial: no END marker within %.0fs (command still running, or the guest is down)" % args.timeout, file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

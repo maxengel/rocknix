@@ -106,6 +106,37 @@ def qemu_command(profile, args):
 
     monitor = Path(args.monitor).resolve()
 
+    # Headless (a build host with no desktop): virtio-gpu-gl-pci refuses
+    # -display none, so the GL-less device stands in; a VNC display on
+    # loopback keeps a scanout committed, which is what makes the monitor's
+    # screendump return a frame rather than black; the serial console moves
+    # from stdio to a unix socket so a script can hold a root shell in the
+    # guest (SSH is off on a fresh image); and a pidfile makes stopping the
+    # VM a kill by PID rather than a pkill by pattern (which has killed the
+    # shell running it). Unix socket paths over 107 bytes fail to bind, and a
+    # session scratch directory is longer than that -- keep them under /tmp.
+    display_device = display["device"]
+    display_arg = args.display
+    vnc_args = []
+    serial_arg = "stdio"
+    pidfile_args = []
+    daemonize_args = []
+    if args.headless:
+        display_device = display_device.replace("-gl-", "-")
+        display_arg = "none"
+        vnc_args = ["-vnc", f"127.0.0.1:{args.vnc}"]
+        serial = Path(args.serial).resolve()
+        serial.unlink(missing_ok=True)
+        serial_arg = f"unix:{serial},server,nowait"
+        pidfile_args = ["-pidfile", str(Path(args.pidfile).resolve())]
+        for sock in (monitor, serial):
+            if len(str(sock).encode()) > 107:
+                raise ValueError(f"unix socket path too long to bind (>107 bytes): {sock}")
+        if args.daemonize:
+            daemonize_args = ["-daemonize"]
+    elif args.daemonize:
+        raise ValueError("--daemonize needs --headless (a windowed QEMU has nowhere to go)")
+
     # SSH keeps a loopback bind unless --net lan is given (the image ships
     # a well-known root password).
     ssh_bind = "0.0.0.0" if args.net == "lan" else "127.0.0.1"
@@ -155,9 +186,10 @@ def qemu_command(profile, args):
         "-vga",
         "none",
         "-device",
-        display["device"],
+        display_device,
         "-display",
-        args.display,
+        display_arg,
+        *vnc_args,
         "-netdev",
         (
             f"bridge,id=net0,br={args.bridge}"
@@ -203,7 +235,9 @@ def qemu_command(profile, args):
             else []
         ),
         "-serial",
-        "stdio",
+        serial_arg,
+        *pidfile_args,
+        *daemonize_args,
     ]
     if profile["rng"]:
         command += [
@@ -429,6 +463,23 @@ def add_qemu_options(parser):
         help="QEMU -display value (default: gtk,gl=on)",
     )
     parser.add_argument("--monitor", default="/tmp/rocknix-qemu-monitor.sock")
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help=(
+            "no window: virtio-gpu-pci with -display none, a VNC scanout on "
+            "loopback (--vnc), the serial console on a unix socket (--serial) "
+            "and a --pidfile; for build hosts without a desktop"
+        ),
+    )
+    parser.add_argument("--serial", default="/tmp/rocknix-qemu-serial.sock", help="serial console socket with --headless")
+    parser.add_argument("--vnc", type=int, default=9, help="VNC display number with --headless (default: 9, port 5909)")
+    parser.add_argument("--pidfile", default="/tmp/rocknix-qemu.pid", help="QEMU pidfile with --headless")
+    parser.add_argument(
+        "--daemonize",
+        action="store_true",
+        help="with --headless: return once the VM is up, leaving it running (stop it with kill $(cat pidfile))",
+    )
     parser.add_argument(
         "--ssh-port",
         type=int,
