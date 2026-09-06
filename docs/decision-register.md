@@ -105,4 +105,5 @@ This is the index of decisions; `docs/work-logs/` is the narrative,
 
 | ID | Question | Home |
 | --- | --- | --- |
+| D-CLOUD-044 | **If the bisync spike (Gate 11) fails narrowly, what does the reconciler do for that case while the gap is filed upstream and unfixed?** Two shapes were laid out: *hold* — stop trusting the transport for exactly the failing case and hand it to the player or the byte-reading full pass, one classification rule; or an *interim mechanism* of our own, which is a second sync engine to be torn out later. Maintainer, 2026-09-06: *"don't we wait until the spike happens before we need to make this decision?"* Parked until the spike reports; the council's handoff text describes hold as the default meanwhile because it is fail-closed and costs nothing, and that description is not a decision. Moot if the spike passes or fails broadly. | #9 (Gate 11) |
 | D-CLOUD-008 | **Does the 17 MB archive get trimmed?** It is almost entirely OS-shipped PPSSPP assets, which is what makes size collisions ordinary rather than rare. Shrinking it narrows the #53 window but does not close it. | #45 |
