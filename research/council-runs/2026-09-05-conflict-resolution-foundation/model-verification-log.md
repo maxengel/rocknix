@@ -408,3 +408,28 @@ maintainer**, who had already raised it. The winning plan remains the base;
 dissent primitives are integrated where they do not conflict and listed
 explicitly where they do. `gpt_vote-r4.md`'s blockers are the first input, since
 the winning vote itself is conditional on them.
+
+## Step 4.5 gate — consensus integration
+
+`revised_approaches/consensus_plan.md` written by the `claude` seat
+(`anthropic/claude-fable-5.1`, effort xhigh), identity-verified, **PASS** (1/1).
+Seal written for `step4_5`; `verify-chain`, `verify-seals`, `verify-pins` and
+`lint --at-step 4_5` all OK.
+
+The document keeps the required four-part shape, adopts
+`claude-revised_plan-r4.md` whole as the base, clears the four blockers
+`gpt_vote-r4.md` made its vote conditional on, corrects seven further defects of
+the base, integrates 26 dissent primitives each credited by filename and priced,
+and lists 7 dissents that genuinely conflict with the base rather than blending
+them. Every safeguard names its cost per D-CLOUD-034; three of the four blocker
+fixes are recorded as removing a rule.
+
+Two corrections it makes to the orchestrator's own summary of the blockers are
+worth noting, since both were mine: the lock fix is not merely `flock` semantics
+(it needed a session marker with a pid check, because a lock dies with the
+process and ES is known to abort and restart), and the base's reliance on the
+emulator inheriting a lock descriptor is dropped as unverifiable — the source is
+not embedded.
+
+**Run status: Step 4.5 complete. Steps 5 and 6 remain, and the plan lists 7
+maintainer calls that should be settled before the issues are written.**
