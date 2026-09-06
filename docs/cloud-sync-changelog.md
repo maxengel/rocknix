@@ -311,6 +311,18 @@ Found on the RG35XX SP's screen during the first backup of a real library:
   saves label runs now passes `--saves-only`, and `cloud_content_backup`
   announces each system as restore always did.
 
+## The round-trip harness ran (2026-09-06)
+
+`tools/cloud-round-trip` executed for the first time — against a GENERIC_X64
+guest over SSH (`tools/vm-pair`), on WebDAV and on MinIO — and passes on both
+(48 checks each). Its first run found one thing in the scripts: **`backuptool`
+ignored the configured settings folder.** It wrote to `/storage/roms/backup`
+whatever `SETTINGS_BACKUPS` said, while `cloud_backup` uploaded from the
+configured folder, so with the folder moved the settings tier archived into
+one place and uploaded from another. `backuptool` reads `SETTINGS_BACKUPS`
+now (`BACKUPFOLDER` on a conf that has not been migrated), so a local backup
+and the cloud copy come from the same folder.
+
 ## Upgrading from an earlier cloud setup
 
 Every one of these ships onto devices that already have state, so the guiding
