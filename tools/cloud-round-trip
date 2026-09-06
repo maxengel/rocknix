@@ -51,7 +51,11 @@ EXCLUDED = {"saves/scratch.tmp": b"should-never-leave-the-device"}
 # until it was found broken - cloud_restore filtered on "backup/*.zip" while
 # the archive sits at the root of SETTINGS_REMOTE, so it restored nothing and
 # still reported SUCCESS. A silent no-op is exactly what a round-trip catches.
-ARCHIVE_NAME = "ROCKNIX-backup-qa.zip"
+# A dated name, because the uploader dates an undated one on the way up
+# (ROCKNIX-backup-qa.zip went up as 2026_09_06-180107-ROCKNIX-backup-qa.zip)
+# and the restorer brings the dated name back -- a harness looking for its
+# own undated path on either side saw nothing (Gate 0, #35).
+ARCHIVE_NAME = "2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz"
 ARCHIVE_BODY = b"settings-backup-archive-v1"
 # Deliberately the same length as ARCHIVE_BODY. A remote with no modtimes and
 # no hashes leaves rclone comparing by size alone, so a second archive of
@@ -63,7 +67,10 @@ ARCHIVE_BODY = b"settings-backup-archive-v1"
 ARCHIVE_BODY_V2 = b"settings-backup-archive-v2"
 assert len(ARCHIVE_BODY_V2) == len(ARCHIVE_BODY)
 
-CONTENT_DIR = "qa-content"
+# A system EmulationStation declares (D-CLOUD-019): the content tier lists
+# only those. Vectrex, because nobody's library is likely to be there -- and
+# the harness refuses to run if it is (see the content step).
+CONTENT_DIR = "vectrex"
 CONTENT_FIXTURES = {
     "rom1.bin": b"rom-one",
     "sub/rom2.bin": b"rom-two",
@@ -76,7 +83,11 @@ class Fail(Exception):
 
 
 class Device:
-    def __init__(self, host, port, identity=None):
+    def __init__(self, host, port, identity=None, path_prefix=None):
+        # --path-prefix: a directory on the device put first on PATH for every
+        # command, so a script fixed on the host can be proven against the
+        # suite before an image carries it (the VM tests it first, D-QA-007).
+        self.path_prefix = path_prefix
         self.base = ["ssh", "-o", "StrictHostKeyChecking=no",
                      "-o", "UserKnownHostsFile=/dev/null",
                      "-o", "LogLevel=ERROR", "-p", str(port)]
@@ -85,6 +96,8 @@ class Device:
         self.base.append(host)
 
     def run(self, cmd, check=True):
+        if self.path_prefix:
+            cmd = f"PATH={shlex.quote(self.path_prefix)}:$PATH; " + cmd
         p = subprocess.run(self.base + [cmd], capture_output=True, text=True)
         if check and p.returncode != 0:
             raise Fail(f"{cmd!r} exited {p.returncode}: {p.stderr.strip() or p.stdout.strip()}")
@@ -125,9 +138,10 @@ def main():
     ap.add_argument("--real-roms", action="store_true",
                     help="use /storage/roms instead of a scratch tree (DESTRUCTIVE)")
     ap.add_argument("--keep", action="store_true", help="leave fixtures in place")
+    ap.add_argument("--path-prefix", help="a directory on the device to put first on PATH (scripts under test, before an image carries them)")
     args = ap.parse_args()
 
-    dev = Device(args.host, args.port, args.identity)
+    dev = Device(args.host, args.port, args.identity, args.path_prefix)
     remote = backend("remote-name").strip()
     root = "/storage/roms" if args.real_roms else SCRATCH
     failures = 0
@@ -142,6 +156,9 @@ def main():
                           "device is missing rclone or the cloud scripts")
 
     step("point the device at the QA bucket")
+    # The device's own remote comes back at the end: a device the suite has
+    # finished with has the remote it started with (Gate 0, #35).
+    prev_rclone_conf = dev.run(f"cat {RCLONE_CONF} 2>/dev/null || true")
     dev.run(f"mkdir -p {os.path.dirname(RCLONE_CONF)}")
     dev.write(RCLONE_CONF, backend("rclone-conf").encode())
     first = dev.run("rclone listremotes 2>/dev/null | head -1").strip().rstrip(":")
@@ -163,9 +180,6 @@ def main():
         # suite. Found when a later manual run reported "Backup folder
         # /storage/cloud-qa/backup does not exist" on a device the test had
         # finished with.
-        for key in ("SAVESPATH", "SETTINGS_BACKUPS"):
-            prev_paths[key] = dev.run(
-                f"grep -m1 '^{key}=' {CONF} 2>/dev/null || true").strip()
         settings.update({"SAVESPATH": SCRATCH,
                          "SETTINGS_BACKUPS": f"{SCRATCH}/backup"})
 
@@ -183,6 +197,18 @@ def main():
     # endpoint means a bucket per content directory (#38, same cause).
     settings["CONTENT_REMOTE"] = backend("content-remote").strip()
 
+    # An image that has not renamed its keys (before #73) reads the old
+    # names; write what the scripts on this device actually read
+    # (D-UI-022, read-old-if-new-absent -- from the harness's side).
+    old_names = {"SAVESPATH": "BACKUPPATH", "SETTINGS_BACKUPS": "BACKUPFOLDER",
+                 "SAVES_REMOTE": "SYNCPATH", "SETTINGS_REMOTE": "SYNCPATH_BACKUP",
+                 "CONTENT_REMOTE": "CONTENTPATH"}
+    new_keys = "SAVES_REMOTE" in dev.run("cat $(command -v cloud_backup) 2>/dev/null || true")
+    if not new_keys:
+        settings = {old_names[k]: v for k, v in settings.items()}
+        print("    old key names: this image predates the rename")
+    for key in settings:
+        prev_paths[key] = dev.run(f"grep -m1 '^{key}=' {CONF} 2>/dev/null || true").strip()
     for key, val in settings.items():
         dev.run(f"grep -q '^{key}=' {CONF} && sed -i 's|^{key}=.*|{key}=\"{val}\"|' {CONF} "
                 f"|| echo '{key}=\"{val}\"' >> {CONF}")
@@ -197,9 +223,11 @@ def main():
     failures += not check(all(before.values()), "fixtures written",
                           "could not write fixtures")
 
-    step("cloud_backup uploads")
+    step("saves back up to the cloud")
     backend("reset")
-    dev.run("cloud_backup >/dev/null 2>&1 || true", check=False)
+    # As BACK UP SAVES TO THE CLOUD runs it: --saves-only, or the settings
+    # phase rides along under a saves label (2026-09-06).
+    dev.run("cloud_backup --yes --saves-only >/dev/null 2>&1 || true", check=False)
     listing = backend("ls")
     uploaded = {rel for rel in FIXTURES if os.path.basename(rel) in listing}
     failures += not check(len(uploaded) == len(FIXTURES),
@@ -216,13 +244,13 @@ def main():
     else:
         print("    SKIP  allowlist check - nothing uploaded, so it proves nothing")
 
-    step("cloud_restore brings them back")
+    step("saves restore from the cloud")
     for rel in FIXTURES:
         dev.run(f"rm -f {shlex.quote(f'{root}/{rel}')}")
     gone = [rel for rel in FIXTURES if dev.sha(f"{root}/{rel}")]
     failures += not check(not gone, "local copies removed before restore",
                           f"still present: {gone}")
-    dev.run("cloud_restore >/dev/null 2>&1 || true", check=False)
+    dev.run("cloud_restore --yes --saves-only >/dev/null 2>&1 || true", check=False)
     after = {rel: dev.sha(f"{root}/{rel}") for rel in FIXTURES}
     same = [rel for rel in FIXTURES if before[rel] and before[rel] == after[rel]]
     failures += not check(len(same) == len(FIXTURES),
@@ -230,7 +258,7 @@ def main():
                           f"only {len(same)}/{len(FIXTURES)} matched: "
                           f"{[r for r in FIXTURES if r not in same]}")
 
-    step("settings backup archive round-trips")
+    step("the settings archive round-trips")
     # Off by default, so the phase would otherwise never run here. Remember the
     # device's own setting: leaving it on would mean a later user-initiated
     # restore also pulls archives down, which they never asked for.
@@ -243,7 +271,8 @@ def main():
     dev.write(archive, ARCHIVE_BODY)
     arch_before = dev.sha(archive)
     backend("reset")
-    dev.run("cloud_backup >/dev/null 2>&1 || true", check=False)
+    # As the settings tier runs it (backuptool backup && cloud_backup --yes --system-only).
+    dev.run("cloud_backup --yes --system-only >/dev/null 2>&1 || true", check=False)
     listing = backend("ls")
     uploaded_archive = ARCHIVE_NAME in listing
     failures += not check(uploaded_archive,
@@ -263,7 +292,7 @@ def main():
             "the archive sits at the root of the backup path - a second "
             "device would overwrite it")
     dev.run(f"rm -f {shlex.quote(archive)}")
-    dev.run("cloud_restore >/dev/null 2>&1 || true", check=False)
+    dev.run("cloud_restore --yes --system-only >/dev/null 2>&1 || true", check=False)
     if uploaded_archive:
         arch_after = dev.sha(archive)
         failures += not check(arch_after is not None and arch_after == arch_before,
@@ -280,9 +309,9 @@ def main():
         step("a changed archive of the same size still reaches the cloud")
         dev.write(archive, ARCHIVE_BODY_V2)
         v2_local = dev.sha(archive)
-        dev.run("cloud_backup >/dev/null 2>&1 || true", check=False)
+        dev.run("cloud_backup --yes --system-only >/dev/null 2>&1 || true", check=False)
         dev.run(f"rm -f {shlex.quote(archive)}")
-        dev.run("cloud_restore >/dev/null 2>&1 || true", check=False)
+        dev.run("cloud_restore --yes --system-only >/dev/null 2>&1 || true", check=False)
         v2_back = dev.sha(archive)
         failures += not check(v2_back is not None and v2_back == v2_local,
                               "the second archive replaced the first in the cloud",
@@ -296,8 +325,13 @@ def main():
     # directory the harness creates and removes, and driven per-directory:
     # `--all` would upload the whole ROM library, which is never what a test
     # should do to someone's device.
-    step("cloud_content_backup uploads a content directory")
+    step("ROMs and BIOS back up a system directory")
     croot = f"/storage/roms/{CONTENT_DIR}"
+    # Never delete somebody's library: the fixture directory is a real
+    # system's, and the harness owns it only if it is empty or absent.
+    existing = dev.run(f"find {shlex.quote(croot)} -type f 2>/dev/null | head -3 || true").strip()
+    if existing and not args.real_roms:
+        raise Fail(f"{croot} holds files ({existing.splitlines()[0]} ...); refusing to use it as a fixture")
     dev.run(f"rm -rf {shlex.quote(croot)}")
     for rel, data in CONTENT_FIXTURES.items():
         dev.write(f"{croot}/{rel}", data)
@@ -326,7 +360,7 @@ def main():
                   "(issue #40): it copies cloud -> device, so nothing is ever "
                   "uploaded. Expected until a build carries the fix.")
 
-    step("cloud_content_restore brings it back")
+    step("ROMs and BIOS restore it")
     # Plant at the endpoint directly rather than restoring what the upload
     # step just wrote: otherwise a broken uploader fails this check for the
     # wrong reason and one bug masks the other's status (audit F-03).
@@ -336,8 +370,11 @@ def main():
         f = os.path.join(stage, CONTENT_DIR, rel)
         os.makedirs(os.path.dirname(f), exist_ok=True)
         open(f, "wb").write(data)
+    # The current layout: ROMs/<system> under CONTENT_REMOTE (D-CLOUD-018);
+    # the restorer reads the flat pre-ROMs layout too, but the fixture is the
+    # shape a backup writes today.
     cpath = backend("content-remote").strip().lstrip("/").split("/", 1)[-1]
-    backend("put", os.path.join(stage, CONTENT_DIR), f"{cpath}/{CONTENT_DIR}")
+    backend("put", os.path.join(stage, CONTENT_DIR), f"{cpath}/ROMs/{CONTENT_DIR}")
     dev.run(f"rm -rf {shlex.quote(croot)}")
     failures += not check(not dev.sha(f"{croot}/{list(CONTENT_FIXTURES)[0]}"),
                           "local content removed before restore",
@@ -358,7 +395,7 @@ def main():
     # be carried by the saves tier and NOT by content. This existed as a
     # defect for a day and was caught by a human reading an upload listing,
     # not by this harness.
-    step("a save file inside a content directory does not reach the content tier")
+    step("a save file inside a system directory does not reach the ROMs and BIOS tier")
     backend("reset")
     dev.write(f"{croot}/Some Game.srm", b"battery save, saves tier owns this")
     dev.write(f"{croot}/Some Game.rom", b"a rom, content tier owns this")
@@ -409,11 +446,15 @@ def main():
     # own --update pass so the freshest list wins rather than whoever ran last:
     # a device that scans its own ROMs and uploads before ever restoring would
     # otherwise push a thin list over a rich one.
-    step("gamelist.xml syncs newest-first, and only in its own pass")
+    step("gamelist.xml moves with game content, newest-first, in its own pass")
+    # The game list is game content (D-CLOUD-049): it moves only when game
+    # content is in scope, so this step runs --with-media, and restores
+    # --selected with a selection that exists.
     backend("reset")
     dev.write(f"{croot}/Real.rom", b"content")
     dev.write(f"{croot}/gamelist.xml", b"<gameList><game><path>./Real.rom</path></game></gameList>")
-    dev.run(f"cloud_content_backup {shlex.quote(CONTENT_DIR)} >/dev/null 2>&1 || true", check=False)
+    dev.run(f"cloud_content_restore --set-systems {shlex.quote(CONTENT_DIR)} >/dev/null 2>&1 || true", check=False)
+    dev.run(f"cloud_content_backup --with-media {shlex.quote(CONTENT_DIR)} >/dev/null 2>&1 || true", check=False)
     listing = backend("ls")
     failures += not check("Real.rom" in listing,
                           "the ROM reached the content tier",
@@ -425,8 +466,18 @@ def main():
     # Now make the local copy newer and poorer, and restore: --update must
     # refuse to overwrite it.
     dev.write(f"{croot}/gamelist.xml", b"<gameList><!--LOCAL-NEWER--></gameList>")
+    # Unmistakably newer: on a fast guest the upload and this write land in
+    # the same second, WebDAV keeps one-second modtimes, and --update falls
+    # back to size when times are equal -- which is not the case under test.
+    dev.run(f"touch -d '@$(( $(date +%s) + 120 ))' {shlex.quote(croot)}/gamelist.xml")
+    dev.run(f"rm -f {shlex.quote(croot)}/Real.rom")
     dev.run("sync", check=False)
-    dev.run("cloud_content_restore --selected >/dev/null 2>&1 || true", check=False)
+    dev.run("cloud_content_restore --with-media --selected >/dev/null 2>&1 || true", check=False)
+    # The restore must have done something before "the local one survived"
+    # means anything: the ROM removed above is back.
+    failures += not check(bool(dev.sha(f"{croot}/Real.rom")),
+                          "the restore ran (the removed ROM is back)",
+                          "the restore transferred nothing - the gamelist assertion below would pass for the wrong reason")
     local = dev.run(f"cat {shlex.quote(croot)}/gamelist.xml 2>/dev/null || true")
     failures += not check("LOCAL-NEWER" in local,
                           "a newer local gamelist survived the restore",
@@ -526,9 +577,11 @@ def main():
                           f"carried by no tier: {' '.join(orphans)}")
 
     # --- archive format -----------------------------------------------------
-    step("the settings backup is a tar archive, and both formats are discoverable")
-    newest = dev.run("ls -1 /storage/roms/backup/*-*_SETTINGS.tar.gz /storage/roms/backup/*-*_BACKUP.tar.gz "
-                     "/storage/roms/backup/*-*_BACKUP.zip 2>/dev/null | sort | tail -1").strip()
+    step("the settings archive is a tar archive, and both formats are discoverable")
+    # A real archive, written by backuptool where the conf says archives live.
+    dev.run("backuptool backup >/dev/null 2>&1 || true", check=False)
+    newest = dev.run(f". {CONF}; ls -1 \"$SETTINGS_BACKUPS\"/*-*_SETTINGS.tar.gz \"$SETTINGS_BACKUPS\"/*-*_BACKUP.tar.gz "
+                     f"\"$SETTINGS_BACKUPS\"/*-*_BACKUP.zip 2>/dev/null | sort | tail -1").strip()
     failures += not check(newest.endswith(".tar.gz"),
                           f"newest archive is a tar.gz ({os.path.basename(newest) or 'none'})",
                           f"newest archive is not a tar.gz: {newest or 'none found'}")
@@ -564,11 +617,12 @@ def main():
     stage2 = subprocess.run(["mktemp", "-d"], capture_output=True, text=True).stdout.strip()
     os.makedirs(f"{stage2}/ROMs/definitely-not-a-system", exist_ok=True)
     open(f"{stage2}/ROMs/definitely-not-a-system/x.rom", "wb").write(b"x")
-    dev.run("true")  # keep ordering explicit
-    subprocess.run([BACKEND, "put", f"{stage2}/ROMs"], capture_output=True, text=True)
+    cpath2 = backend("content-remote").strip().lstrip("/").split("/", 1)[-1]
+    subprocess.run([BACKEND, "put", f"{stage2}/ROMs", f"{cpath2}/ROMs"], capture_output=True, text=True)
     scan = dev.run("cloud_content_restore --scan 2>/dev/null || true")
     row = [l for l in scan.splitlines() if l.startswith("definitely-not-a-system|")]
-    failures += not check(bool(row) and row[0].endswith("|0"),
+    # name|cloud_bytes|supported|device_bytes|... -- the third field, not the tail
+    failures += not check(bool(row) and row[0].split("|")[2:3] == ["0"],
                           "the unrunnable system is flagged 0 (unsupported)",
                           f"scan did not mark it unsupported: {row or 'row absent'}")
 
@@ -579,11 +633,35 @@ def main():
     marker = b"OWNER WROTE THIS"
     stage3 = subprocess.run(["mktemp", "-d"], capture_output=True, text=True).stdout.strip()
     open(f"{stage3}/README.txt", "wb").write(marker)
-    subprocess.run([BACKEND, "put", stage3], capture_output=True, text=True)
+    spath = backend("saves-remote").strip().lstrip("/")
+    subprocess.run([BACKEND, "put", stage3, spath], capture_output=True, text=True)
     second = dev.run("cloud_setup --seed-folders 2>/dev/null || true")
     failures += not check(second.count("OK ") >= 2,
                           "a second seeding run reports the folders present",
                           f"second run did not report folders: {second.strip()[:80]}")
+    note = open(os.path.join(backend("path").strip(), spath, "README.txt"), "rb").read() if os.path.exists(os.path.join(backend("path").strip(), spath, "README.txt")) else b""
+    failures += not check(note == marker,
+                          "the owner's note survived a second seeding",
+                          f"the note was replaced: {note[:40]!r}")
+
+    step("an older config's keys are carried across (D-UI-022, A12)")
+    # A conf shaped like one from before #73 -- old names, no new ones, and a
+    # RESTOREPATH equal to BACKUPPATH (the legal shape; the unequal one is a
+    # refusal, A12 proper). The helper carries every value to its new name.
+    saved_conf = dev.run(f"cat {CONF}")
+    old_conf = "\n".join([
+        'BACKUPPATH="/storage/qa-old-saves"', 'BACKUPFOLDER="/storage/qa-old-saves/backup"',
+        'RESTOREPATH="/storage/qa-old-saves"', 'SYNCPATH="/QA-OLD"', 'SYNCPATH_BACKUP="/QA-OLD-BACKUPS"',
+        'CONTENTPATH="/QA-OLD-CONTENT"', ""])
+    dev.write(CONF, old_conf.encode())
+    dev.run("cloud_sync_helper >/dev/null 2>&1 || true", check=False)
+    migrated = dev.run(f"cat {CONF}")
+    carried = {"SAVESPATH": "/storage/qa-old-saves", "SETTINGS_BACKUPS": "/storage/qa-old-saves/backup",
+               "SAVES_REMOTE": "/QA-OLD", "SETTINGS_REMOTE": "/QA-OLD-BACKUPS", "CONTENT_REMOTE": "/QA-OLD-CONTENT"}
+    missing = [k for k, v in carried.items() if f'{k}="{v}"' not in migrated]
+    failures += not check(not missing, "every old key reached its new name with its value",
+                          f"not carried: {missing}")
+    dev.write(CONF, saved_conf.encode())
 
     if not args.keep:
         step("clean up")
@@ -599,8 +677,12 @@ def main():
                 dev.run(f"sed -i '/^{key}=/d' {CONF}")
         if not args.real_roms:
             dev.run(f"rm -rf {shlex.quote(SCRATCH)}")
+        if prev_rclone_conf.strip():
+            dev.write(RCLONE_CONF, prev_rclone_conf.encode())
+        else:
+            dev.run(f"rm -f {RCLONE_CONF}")
         backend("reset")
-        print("    scratch tree and bucket emptied, device paths and "
+        print("    scratch tree and bucket emptied; the device's own remote, paths and "
               "settings-backup setting restored")
 
     print(f"\n{'PASSED' if failures == 0 else f'{failures} CHECK(S) FAILED'}")

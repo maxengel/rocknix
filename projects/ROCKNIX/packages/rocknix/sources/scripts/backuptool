@@ -16,7 +16,19 @@
 #   /some/other/folder/file.name*
 # )
 
+# The folder the settings tier reads: cloud_backup uploads from
+# SETTINGS_BACKUPS in cloud_sync.conf, and this must write where that reads,
+# or the settings tier (backuptool backup && cloud_backup --system-only)
+# archives into one folder and uploads from another. Found by the round-trip
+# harness on 2026-09-06 (Gate 0, #35): the value was a constant here.
+# BACKUPFOLDER is the name an un-migrated conf still carries (D-UI-022).
 SETTINGS_BACKUPS="/storage/roms/backup"
+if [ -f /storage/.config/cloud_sync.conf ]; then
+    _configured=$(sed -n 's/^SETTINGS_BACKUPS="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' /storage/.config/cloud_sync.conf | head -1)
+    [ -z "${_configured}" ] && _configured=$(sed -n 's/^BACKUPFOLDER="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' /storage/.config/cloud_sync.conf | head -1)
+    [ -n "${_configured}" ] && SETTINGS_BACKUPS="${_configured}"
+    unset _configured
+fi
 ARCHIVEFOLDER="${SETTINGS_BACKUPS}/archive"
 # The name a backup is written under, and the one used to find it again.
 #
