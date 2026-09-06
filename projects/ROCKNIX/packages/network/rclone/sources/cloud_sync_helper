@@ -158,11 +158,13 @@ update_cloud_sync_config() {
     migrate_key CONTENTPATH     CONTENT_REMOTE
     # The settings-only rows' last-run stamps carried the old name; move them
     # so the rows do not read "never" after the update.
-    for stamp in backup restore; do
-      if [ -f "/storage/.cache/cloud_sync/last-system-${stamp}" ] \
-         && [ ! -f "/storage/.cache/cloud_sync/last-settings-${stamp}" ]; then
-        mv "/storage/.cache/cloud_sync/last-system-${stamp}" "/storage/.cache/cloud_sync/last-settings-${stamp}"
-        log_to_file "${log_file}" "Carried last-system-${stamp} stamp across to last-settings-${stamp}"
+    for pair in last-system-backup:last-settings-backup \
+                last-system-restore:last-settings-restore \
+                system-backup.uploaded:settings-backup.uploaded; do
+      old_stamp="/storage/.cache/cloud_sync/${pair%%:*}"; new_stamp="/storage/.cache/cloud_sync/${pair##*:}"
+      if [ -f "${old_stamp}" ] && [ ! -f "${new_stamp}" ]; then
+        mv "${old_stamp}" "${new_stamp}"
+        log_to_file "${log_file}" "Carried ${pair%%:*} across to ${pair##*:}"
       fi
     done
     if grep -q '^RESTOREPATH=' /storage/.config/cloud_sync.conf; then
