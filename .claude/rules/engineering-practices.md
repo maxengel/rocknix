@@ -194,6 +194,37 @@ category is part of the fix, not follow-up work.
 (Adapted from `incident-response.instructions.md` in the scaffold estate —
 <https://forge.possibility.space/scaffold/scaffold>.)
 
+## If the VM can test it, the VM tests it first
+
+Maintainer, 2026-09-06: *"if we can test something on the VM, we should test on
+the VM and certainly test it first there."* Binding. The GENERIC_X64 image
+(`generic-x64-vm-testing.md`) runs the same busybox, the same scripts, the same
+EmulationStation binary and the same QA cloud backends as a handheld, and it
+costs nothing to break. A handheld is where a mistake becomes somebody's
+evening, and where the only evidence is over a wifi link to a device that may
+be in use.
+
+So, before anything touches a device:
+
+- **Ask what the VM cannot prove**, and write the answer down. It cannot prove
+  boot-loader selection on a given board, a real panel's rendering, a real
+  provider's behaviour, or anything that depends on the device having history
+  the VM lacks — and the last of those is answered by booting the VM from the
+  *previous* image and creating that history, per `upgrade-and-install.md`.
+  Everything else it can prove, and proves first.
+- **The VM run is the evidence; the device run is the confirmation.** A device
+  check that finds something the VM did not is a gap in the VM fixtures to
+  close, not a reason to keep testing on devices.
+- **Never stage state on a device the VM could have staged.** Editing a live
+  config to provoke a refusal is exactly the kind of test the VM exists for.
+
+The case that produced the rule: the vocabulary sweep (#73) was verified on two
+handhelds first — the migration, a refusal path, an archive rename — and every
+one of those could have run in the VM, where the same busybox helper, the same
+scripts and `tools/cloud-test-backend` were sitting ready. The devices were
+faster only because they already carried a previous image's state, which the
+VM's upgrade recipe reproduces in minutes.
+
 ## An ask to the user is a decision, not an errand
 
 Before handing over a command to run, establish that the session genuinely

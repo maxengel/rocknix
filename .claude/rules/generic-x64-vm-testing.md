@@ -13,6 +13,15 @@ GENERIC_X64 is the x86_64 VM/QA target (fork issue #16): boot the image in QEMU 
 test features (e.g. EmulationStation) without flashing hardware. The bare-metal x64 path and
 its concessions (llvmpipe vs hw GL, skipped cores) are tracked separately in issue #17.
 
+## When to use it: first, whenever it can answer the question
+
+Maintainer's rule (2026-09-06, `engineering-practices.md`): anything the VM can
+test, it tests first. That is most things — config migrations, refusal paths,
+archive naming, every script under `projects/ROCKNIX/packages/network/rclone/`,
+the interface's strings and pages (`tools/vm-visual-qa` renders them), and the
+cloud paths against `tools/cloud-test-backend`. What it cannot answer is
+listed in that rule; everything else comes here before a handheld.
+
 ## Build
 
 Detached build from the worktree (the `.git` mount is **required** — a worktree's `.git` is a

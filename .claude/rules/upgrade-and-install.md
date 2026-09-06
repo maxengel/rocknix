@@ -129,6 +129,10 @@ than a local one, and each has cost somebody their data somewhere.
 
 ## Verify on a device, not on the host
 
+**And on the VM before the device** (`engineering-practices.md` § "If the VM
+can test it, the VM tests it first"). The VM is a device for this purpose — the
+same busybox, scripts and binary — and it is the one you can afford to break.
+
 Host tools are not the tools on the device, and the difference hides real
 failures. Info-ZIP on a desktop silently replaces a symlink and returns success;
 busybox on the device refuses and aborts. The bug was invisible until it ran on
