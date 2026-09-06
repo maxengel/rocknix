@@ -142,6 +142,22 @@ So:
 An assertion that cannot fail is not evidence. Ask what input would produce a
 FAIL; if you cannot name one, the check proves nothing.
 
+Two more shapes, the fourth and fifth instances of blindspot 22 (a probe
+that cannot report absence), promoted here on 2026-09-06:
+
+- **A missing tool is a failing guard.** `comm … | wc -l` on the image's
+  busybox — which has no `comm` — read 0, and 0 meant "nothing differs".
+  A count built on a command that may not exist must fail loudly when it
+  does not (`command -v` first), and any script that reaches for a
+  coreutils name runs on the VM before the host's answer is believed
+  (`generic-x64-vm-testing.md` § What the guest's busybox lacks).
+- **A kill by pattern reaches the shell that runs it.** `pkill -f
+  'vm76[.]qcow2'` killed its own shell because the same command text held
+  the literal in an `rm` three lines down, and `bash -c` carries the whole
+  script in its argv. Long-lived processes get a pidfile; a kill goes by
+  PID; when a pattern is unavoidable, filter the hits by
+  `/proc/<pid>/comm` before signalling.
+
 ## Before deleting a duplicate, diff its behaviours, not its purpose
 
 "These two do the same job" is a claim about purpose. Deletion acts on
