@@ -151,7 +151,20 @@ SYNCPATH_BACKUP  ->  SETTINGS_REMOTE    cloud folder for settings backups
 CONTENTPATH      ->  CONTENT_REMOTE     cloud folder for ROMs and BIOS
 ```
 
-## 5. Decisions this needs
+## 5. Decisions — taken 2026-09-06 (D-UI-022, D-CLOUD-040)
+
+1. The two-verb rule and the tier names above: **adopted as written.**
+2. The archive filename: **changes now**, with the restore side reading the
+   new name and all three historical ones.
+3. *Discarded saves*: **final**, with the residual noted.
+4. The restore-root key: **removed**; design intent verified (D-CLOUD-040).
+
+The maintainer's scope note: the only device with cloud saves configured is the
+RG35XX SP; everything else reflashes. Read-old-if-new-absent still applies,
+because that one device is the upgrade path and blindspot 13 says an upgrade
+that "should be fine" is the one to test.
+
+### What was asked for originally
 
 1. Adopt the two-verb rule and tier names above, or amend them.
 2. Whether the settings archive **filename** changes now or later. Later is
