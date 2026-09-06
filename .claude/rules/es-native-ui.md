@@ -137,6 +137,34 @@ Values live in one place each, so a screen never makes its own decision.
 Screen-relative fractions, never pixel constants: these panels run from
 640×480 to 1920×1080 and a fixed value is right on exactly one of them.
 
+## A row that leads somewhere is a label, not a paragraph
+
+Maintainer, 2026-09-06: *"adding a fuller description isn't necessarily always
+better. We're dealing with the 3.5- or 4-inch screen here sometimes, so we
+don't want to have lots of tiny text. If necessary, sometimes it's better to
+have the user click into the menu, where they can have some options or at
+least breathing room. If there's more than one action that can be taken, this
+likely makes sense within our menu structures, so the user has room to choose
+what to do."*
+
+So:
+
+- **A row that opens a page with more than one action is a submenu.** Its
+  label carries the verb (MANAGE CLOUD STORAGE, MANAGE GAME SAVE RESTORES AND
+  CONFLICTS); the page inside carries the choices, with room. Do not make up
+  for a hub label with a description that lists everything behind it — that is
+  the tiny text nobody reads, on the panel where it is smallest.
+- **A description, where one is needed, is one short line.** The three section
+  headings the player will see inside (`BACKUP AND RESTORE, SAVE MANAGEMENT,
+  CLOUD STORAGE SETUP.`) is a description; a sentence naming every action is
+  not.
+- **When a row genuinely needs explaining, that is a signal it wants a page**,
+  not a longer line under it.
+
+The case: the cloud hub row briefly carried "BACK UP OR RESTORE, CHOOSE ROMS AND
+BIOS, SET WHEN SAVES SYNC, AND CONNECT OR REPAIR YOUR CLOUD STORAGE." — accurate,
+and wrong, replaced the same hour.
+
 ## Images in a menu row are themed as text unless you stop it
 
 `ComponentList::render` calls `setColor(menuTheme->Text.color)` on **every
