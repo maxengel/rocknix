@@ -178,6 +178,44 @@ The case: the cloud hub row briefly carried "BACK UP OR RESTORE, CHOOSE ROMS AND
 BIOS, SET WHEN SAVES SYNC, AND CONNECT OR REPAIR YOUR CLOUD STORAGE." — accurate,
 and wrong, replaced the same hour.
 
+## Never rebuild a button bar from inside one of its buttons
+
+`MenuComponent::clearButtons()` destroys the `ButtonComponent`s, and a
+button's callback is a `std::function` that lives inside the button. A
+callback that calls `clearButtons()` + `addButton(...)` — to relabel SELECT
+ALL as SELECT NONE, say — destroys itself while it is running, and
+EmulationStation dies on the press (2026-09-06, the content page's first
+cut; the VM frame after the press was black, the next one the carousel).
+Rebuilding from a *switch row's* change callback is fine — the rows survive
+the rebuild — which is why the transfer page's `rebuildButtons` never showed
+the problem. From a button, post it: `window->postToUiThread([weak]{ if
+(auto b = weak.lock()) (*b)(); })`, with the switches kept quiet while the
+button sets them so their own callbacks do not fire a second rebuild, and
+the rebuild owned by the page (through `onFinalize`) rather than by the
+callbacks that call it, or the shared_ptr cycle keeps it alive forever.
+
+## What rclone's piped progress actually looks like
+
+`GuiCloudTransfer` parses `rclone --progress` through a pipe, and a pipe
+is not a terminal. Three consequences, each of which put nonsense on the
+page before it was written down (2026-09-06):
+
+- The per-file line is `" * %-*s:%3d%% /%s, %s/s, %s"`, so at 100% there is
+  **no space after the colon**: `name.zip:100% / 40 MiB, 1 MiB/s, 0s`. Split
+  on the last `:` that is followed by a percentage, never on `": "` — the
+  latter put the whole line on the name row and showed `S` (the basename of
+  `1Mi/s, 0s`) as the file name.
+- Every line is **cut at 80 columns** (rclone assumes a terminal width it
+  cannot measure), so the last field arrives torn: `5.722 MiB/`, `976.547
+  Ki`. Show a field only when it is whole.
+- Long names are shortened with **U+2026**, and stripping "unprintable"
+  bytes turns `Ikari n…ge` into `Ikari nge`. Keep UTF-8; drop C0 controls.
+- The next block's `Transferred:` is glued to the last per-file line without
+  a newline (already handled: the reader splits on the marker).
+- `BusyComponent::setText("")` is a **no-op** against its empty initial
+  state, so the spinner shows its default WORKING... unless the caption is
+  given at construction: `BusyComponent(window, "")`.
+
 ## Images in a menu row are themed as text unless you stop it
 
 `ComponentList::render` calls `setColor(menuTheme->Text.color)` on **every

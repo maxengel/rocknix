@@ -291,6 +291,26 @@ So:
   the union of cloud and device systems under the same mode,
   `name|cloud_bytes|supported|device_bytes|files_in_cloud_not_here|files_here_not_in_cloud`.
 
+## The transfer flow after the maintainer's first real backup (2026-09-06)
+
+Found on the RG35XX SP's screen during the first backup of a real library:
+
+- **The content page is CONTENT TO BACK UP / CONTENT TO RESTORE**, opening
+  with two centred lines — the per-system classes the choice below applies
+  to (`BACKING UP: ROMS AND BIOS · GAME CONTENT`) and what rides along for
+  the whole device (`PLUS SAVES AND SETTINGS FOR THE WHOLE DEVICE`). Settings
+  cover the device, not a system, and no longer sit on a page called
+  SYSTEMS. SELECT ALL / SELECT NONE is one button in the bar. The loading
+  text compares this device's content with your cloud.
+- **The transfer page** shows file names whole (`S` was the tail of
+  `1 MiB/s, 0s` after a split that failed at 100%), never a torn field, no
+  second WORKING… beside the spinner, `AND 2 MORE FILES`, and the bar tight
+  under the system it reports with the gap before ELAPSED, which is the
+  whole run's.
+- **SETTINGS BACKUP no longer shows through the ROMs.** Every command a
+  saves label runs now passes `--saves-only`, and `cloud_content_backup`
+  announces each system as restore always did.
+
 ## Upgrading from an earlier cloud setup
 
 Every one of these ships onto devices that already have state, so the guiding

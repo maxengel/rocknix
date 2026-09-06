@@ -378,3 +378,18 @@ reaching for any coreutils name in these scripts, run it on the VM: `mapfile`,
 `stat -c`, `find -path`, `mktemp -d` and `sort -u` are there; `comm`,
 `pgrep -c`, `find -printf` and `ls --time-style` are not.
 
+## A saves label runs `--saves-only`
+
+`cloud_backup --yes` and `cloud_restore --yes` run **two** phases — the saves
+sync and the settings-archive upload or download — and emit a `>>> unit`
+marker for each. Every command behind a label that says *saves* (the
+transfer page's saves tier, BACK UP SAVES TO THE CLOUD, RESTORE SAVES FROM
+THE CLOUD, SYNC SAVES WITH THE CLOUD, the boot-time sync, the game-exit
+push) passes `--saves-only`; only the settings tier moves settings
+(`backuptool backup && cloud_backup --yes --system-only`). Without the flag
+a run with SETTINGS unticked still moved the archive, and the transfer page
+kept the phase's label — SETTINGS BACKUP — through every ROM that followed,
+because `cloud_content_backup` announced no units of its own (fixed the
+same day; restore had since D-UI-024). The D-UI-022 rule that the label says
+what moves is enforced by the flag, not by the label.
+
