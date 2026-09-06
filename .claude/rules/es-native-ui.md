@@ -161,6 +161,19 @@ So:
 - **When a row genuinely needs explaining, that is a signal it wants a page**,
   not a longer line under it.
 
+**Two lines per row, never three (D-UI-023).** Maintainer, the same day, on
+the cloud settings rows that carried a label, what they move, and how they
+last went: *"when we risk having an extra line, if the description can be
+moved into the confirmation dialog and it serves an additive function, that's
+the best-case scenario in principle (because it allows us to keep it to two
+lines max)."* So a row is a label and at most one line under it. When a second
+line wants in, ask what the confirmation dialog already says — the itemisation
+of what moves belongs there, where it is read at the moment of deciding — and
+what the page's job is: on a page that launches a job, the line under the row
+is how it last went; on a page that chooses what moves, it is what the row
+carries. A row with no confirmation has nowhere to move a line to, so it
+keeps the line that serves the page's job and drops the other.
+
 The case: the cloud hub row briefly carried "BACK UP OR RESTORE, CHOOSE ROMS AND
 BIOS, SET WHEN SAVES SYNC, AND CONNECT OR REPAIR YOUR CLOUD STORAGE." — accurate,
 and wrong, replaced the same hour.
