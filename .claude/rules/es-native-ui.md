@@ -195,6 +195,13 @@ public:
 - Theme-aware colors/fonts via `ThemeData::getMenuTheme()`.
 - Pages provide `getHelpPrompts()` so the bottom help bar stays accurate.
 - Lambda capture: `Window* window = mWindow;` then capture `window` (menu may be deleted).
+- Wizard page replacement: `cloudSetupPresent(window, current, prev)` closes
+  `prev`, and `GuiSettings::close()` ends with `delete this`. Callbacks on the
+  new page must hand **that page** to the next transition, not capture the
+  deleted predecessor. Both OAuth keyboard choices retained the provider page
+  after it was closed and crashed on selection (2026-09-05). The ES repo's
+  `python3 tests/cloud-oauth-lifetime.py` checks those transitions with
+  AddressSanitizer; it complements, rather than replaces, device UI testing.
 
 ## Reusable precedents
 

@@ -64,7 +64,11 @@ def main():
         ok(f"{len(items)} punch item(s): {', '.join(items)}")
 
     # Every item needs a recorded outcome, and the outcome must cite something.
-    gate = punch[punch.index("Phase 7"):] if "Phase 7" in punch else ""
+    # Slice from the gate *heading*, not the first "Phase 7" mention: the
+    # instructions and the tracked-scope section may name it earlier, and a
+    # slice from there matches each item's own heading instead of its outcome.
+    m = re.search(r"^#+ .*Phase 7.*$", punch, re.M)
+    gate = punch[m.start():] if m else ""
     if not gate:
         bad("05-punch-list.md has no Phase 7 resolution gate")
     for pl in items:
