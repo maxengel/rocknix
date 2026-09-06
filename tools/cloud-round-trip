@@ -469,7 +469,8 @@ def main():
     # Unmistakably newer: on a fast guest the upload and this write land in
     # the same second, WebDAV keeps one-second modtimes, and --update falls
     # back to size when times are equal -- which is not the case under test.
-    dev.run(f"touch -d '@$(( $(date +%s) + 120 ))' {shlex.quote(croot)}/gamelist.xml")
+    # busybox touch takes "YYYY-MM-DD hh:mm:ss", not @epoch; the arithmetic runs on the device.
+    dev.run(f'touch -d "$(date -d @$(( $(date +%s) + 120 )) \'+%Y-%m-%d %H:%M:%S\')" {shlex.quote(croot)}/gamelist.xml')
     dev.run(f"rm -f {shlex.quote(croot)}/Real.rom")
     dev.run("sync", check=False)
     dev.run("cloud_content_restore --with-media --selected >/dev/null 2>&1 || true", check=False)
@@ -639,7 +640,7 @@ def main():
     failures += not check(second.count("OK ") >= 2,
                           "a second seeding run reports the folders present",
                           f"second run did not report folders: {second.strip()[:80]}")
-    note = open(os.path.join(backend("path").strip(), spath, "README.txt"), "rb").read() if os.path.exists(os.path.join(backend("path").strip(), spath, "README.txt")) else b""
+    note = subprocess.run([BACKEND, "cat", f"{spath}/README.txt"], capture_output=True).stdout
     failures += not check(note == marker,
                           "the owner's note survived a second seeding",
                           f"the note was replaced: {note[:40]!r}")

@@ -23,6 +23,7 @@
 #   ./tools/cloud-test-backend up          # start it (CLOUD_QA_BWLIMIT=1M to throttle it)
 #   ./tools/cloud-test-backend reset       # empty it between tests
 #   ./tools/cloud-test-backend ls [path]   # what the device actually uploaded
+#   ./tools/cloud-test-backend cat <path>  # one uploaded file's bytes
 #   ./tools/cloud-test-backend rclone-conf # the stanza to place on a device
 #   ./tools/cloud-test-backend seed-content [root]   # a content-tier fixture at the endpoint
 #   ./tools/cloud-test-backend seed-device [root]    # the matching guest-side script, on stdout
@@ -166,6 +167,10 @@ case "${1:-}" in
       # A plain directory, so resetting is a delete and inspecting it is ls.
       rm -rf "${DATA:?}"/* "${DATA:?}"/.[!.]* 2>/dev/null || true
       mkdir -p "${DATA}"
+      # The server caches listings for --dir-cache-time (1s); a device that
+      # lists within that second still sees what was just deleted. Wait it
+      # out here, once, so no caller has to know.
+      sleep 1.5
     fi
     echo "reset: endpoint is empty"
     ;;
@@ -180,6 +185,18 @@ case "${1:-}" in
 
   path) echo "${DATA}" ;;
 
+  cat)
+    # cat <path-under-root> - the bytes the endpoint holds, on either backend;
+    # reading the WebDAV directory on disk is wrong on S3, where the data is
+    # in MinIO (the seeding step's note read back as empty there).
+    [ -n "${2:-}" ] || { echo "usage: cat <path>" >&2; exit 1; }
+    if [ "${BACKEND}" = "s3" ]; then
+      need rclone; s3 cat "qa-host:${S3_BUCKET}/${2}"
+    else
+      cat "${DATA}/${2}"
+    fi
+    ;;
+
   put)
     # put <local-dir> <path-under-root> - stage fixtures at the endpoint
     # without going through the device, so a test can exercise restore
@@ -189,6 +206,10 @@ case "${1:-}" in
       need rclone; s3 copy "${2}" "qa-host:${S3_BUCKET}/${3}" >/dev/null
     else
       mkdir -p "${DATA}/${3}"; cp -a "${2}/." "${DATA}/${3}/"
+      # Same cache as reset: a device that scans right away lists the
+      # directory as it was a second ago and misses the fixture (the
+      # unsupported-system step, 2026-09-06).
+      sleep 1.5
     fi
     echo "put: ${3}"
     ;;
