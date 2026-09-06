@@ -266,9 +266,14 @@ case "$1" in
     ;;
 
     --set-saves-remote|--set-syncpath)
-        # Change the cloud folder the sync tools use. Keeps the
-        # settings-backup folder as its /backup subdirectory so the two
-        # never drift apart.
+        # Change the cloud folder the saves live in, and move the settings
+        # backups and the ROMs with it -- as SIBLINGS, never inside it.
+        # This used to write SETTINGS_REMOTE="<saves>/backup", which is the
+        # first-layout nesting cloud_migrate_layout exists to undo and the
+        # trap cloud_backup warns about: a mirror of the saves folder can
+        # delete the archives kept beneath it. Same derivation as
+        # cloud_sync_helper uses for CONTENT_REMOTE: the saves folder's
+        # parent, or the folder itself when it sits at the root.
         NEWPATH="$2"
         if [ -z "${NEWPATH}" ]; then
             echo "ERROR empty path"
@@ -287,9 +292,12 @@ case "$1" in
         if [ -n "${SP_REMOTE}" ] && ! syncpath_problem "${NEWPATH}" "${SP_REMOTE}"; then
             exit 1
         fi
-        for key in SAVES_REMOTE SETTINGS_REMOTE; do
+        SP_PARENT="$(dirname "${NEWPATH}")"
+        [ "${SP_PARENT}" = "/" ] && SP_PARENT="${NEWPATH}"
+        for key in SAVES_REMOTE SETTINGS_REMOTE CONTENT_REMOTE; do
             value="${NEWPATH}"
-            [ "${key}" = "SETTINGS_REMOTE" ] && value="${NEWPATH}/backup"
+            [ "${key}" = "SETTINGS_REMOTE" ] && value="${SP_PARENT}/Backups"
+            [ "${key}" = "CONTENT_REMOTE" ] && value="${SP_PARENT}/Content"
             if grep -q "^${key}=" "${SYNC_CONF}"; then
                 sed -i "s|^${key}=.*|${key}=\"${value}\"|" "${SYNC_CONF}"
             else
