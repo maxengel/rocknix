@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-06T21:44:25Z
+> **Saved**: 2026-09-06T21:12:53Z
 > **Branch**: feature/conflict-resolution (worktree; the work itself landed on `next`)
 > **Repo**: maxengel/rocknix (+ ES at ~/Development/emulationstation-next, branch feature/cloud-vocabulary → test/qa-integration)
 
 ## Current Focus
 
-`begin-delivery` on #11, batch 1: Steps 1–2 done (addendum on #26 as the prior retro; pre-futro audit on #35; the futro on #11 with adjustments applied to #35/#9; post-futro audit signed). Step 3's task list is below, awaiting the maintainer's confirmation and a window for the Gate 12 census. Execution has not started.
+`begin-delivery` on #11 is paused at Step 1 with a question open (no mini-retro exists for the council epic; proceed on the run's README as the retro?) — Steps 1–1.7 were read-only and are summarised in the chat. In between, the maintainer's screen review of the first real backup was taken on `feature/transfer-page-review` (merged to `next` `088c2bd22e`, ES `a846b4c69`), proven in the VM over three images, and an H700 build is in flight for the devices; each reboot is asked for.
 
 ## Completed This Session
 
@@ -18,29 +18,13 @@
 
 ## In Progress
 
-- Batch 1 task list (Gate 0 → Gate 11, Gate 12 beside) — see Next Steps; not started.
-- #76/#77 open only for the maintainer's screen look at `088c2bd22e`.
+- Nothing in flight. Both handhelds are on the review build `088c2bd22e` (rebooted on the maintainer's word, 21:06Z); #76/#77 open only for the maintainer's screen look at it.
 
-## Next Steps (the batch-1 task list, in execution order)
+## Next Steps
 
-**Gate 0 — #35, the harness (VM, `feature/round-trip-harness` from `next`)**
-1. Worktree + session script: boot `088c2bd22e` headless, the QA key over serial, WebDAV up; the harness's own fixtures, not `seed-*`.
-2. First checks (futro §2): MinIO reachable from the guest under `CLOUD_QA_BACKEND=s3` (`rclone lsd` from the guest); the allowlist under the scratch root (`savestates/x.state`, `snes/game.srm` pass; `snes/game.srm.json` does not).
-3. Baseline run of the harness as it is, on WebDAV: the `PASSED`/`N CHECK(S) FAILED` line and every failing check recorded on #35 — the failures are the repair list.
-4. Repairs, each observed: `rclone.conf` restored after a run; old keys read on an old-shaped conf; archive assertions vs `cloud_backup`/`cloud_restore`'s dated names; content fixture under `CONTENT_REMOTE` with an ES-declared system, BIOS travelling; saves steps `--saves-only`, settings step as the tier runs it; D-UI-022 step names; the lock step seen to exit 3; PL-10's unsupported-system branch seen; exit-path steps asserting `--max-age`/`--no-traverse`.
-5. Full runs on WebDAV and on MinIO; the final line and listings quoted on #35; Gate 0 boxes ticked on those.
-6. Fixtures, each a failing commit first: A1 (two roots against one remote, both changed **after a first pass**), the equal-size case, A2/A3, A8 (torn N64 pair), A9 (delete/renumber/absence/unmount/`rm`), A11 (cloned device id), A12 (legacy `RESTOREPATH`), A14 (manifest step, WebDAV null / MinIO non-null), A5's reader from the second root, the retention ordering kill, #9's contract fixtures runnable with bisync and with `copy --files-from`.
-7. Land on `next`; `docs/vm-qa-log.md` row; a micro-retro comment on #35.
-
-**Gate 11 — #9, the bisync spike**
-8. The spike runner (in the harness): the ten contract items on WebDAV, then MinIO; shapes captured with `od -c` before parsing; the one explicit `--resync` recorded; a real `kill -9` mid-transfer; the scoring table on #9 with `rclone version` from the guest.
-9. Device half on the RG35XX SP vs Dropbox, on `/ROCKNIX/QA-bisync` and a scratch local root — **ask first**, restore `rclone.conf` after; item 2 watched on Dropbox.
-10. Verdict on #9, mirrored on #22; D-CLOUD-044 settled as a register row; micro-retro.
-
-**Gate 12 — the census (RG35XX SP, the maintainer's hands)**
-11. Ask for a window; the reading script (`find -newer` over the saves tree; PPSSPP/Flycast/Mupen/DuckStation unit table; retained bytes at count 3; sealed bytes per exit) runs over SSH afterwards; feeds #21's unit table and #22's ceiling.
-
-Carried debt: rocknix.org docs PR; #73's on-screen review; the `--scan` BIOS tidy-up rides the next build.
+1. The maintainer's look at CONTENT TO BACK UP and the transfer page on the RG35XX SP (`088c2bd22e`); then close #76/#77 naming it.
+2. Resume `begin-delivery` on #11: answer the Step 1 question, pre-futro audit comment on #35, the futro (Step 2) against #35 and #9 with blindspots 28–30 and the 2026-09-05 futro's substrate table, post-futro audit, load Gate 0's tasks.
+3. Carried debt: rocknix.org docs PR (the changelog sections are the draft); #73's remaining on-screen review; a rebuild at some point carries the `--scan` BIOS tidy-up.
 
 ## Key Files Modified
 
@@ -67,7 +51,6 @@ Carried debt: rocknix.org docs PR; #73's on-screen review; the `--scan` BIOS tid
 
 ## Open Questions
 
-- Confirm the batch-1 task list (Step 3) and name a window for the Gate 12 census.
-- Commit discipline for the batch: feature-branch commits as work goes, landing on `next` when a gate's evidence is on its issue — or stricter?
+- begin-delivery Step 1: proceed on the council README as the prior retro, or run a mini-retro on #70 first?
 - Close #76/#77 after the maintainer's look at the review build?
 - D-CLOUD-044 (bisync-gap posture) stays parked until the #9 spike.
