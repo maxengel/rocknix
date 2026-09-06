@@ -249,6 +249,15 @@ case "${1}" in
         for d in "${ALLDIRS[@]}"; do
             selected_systems | grep -qxF "${d}" && DIRS+=("${d}")
         done
+        # BIOS is not a system and not a pick (D-CLOUD-043): it comes with
+        # the ROMs tier whenever this device holds any, exactly as restore
+        # brings it whenever the cloud does. Found in the VM on 2026-09-06:
+        # a device's BIOS folder never went up once the picker stopped
+        # listing it. Not with game content alone -- BIOS is not that.
+        if [ "${MEDIA_MODE}" != only ] && printf '%s\n' "${ALLDIRS[@]}" | grep -qx bios \
+            && ! printf '%s\n' "${DIRS[@]}" | grep -qx bios; then
+            DIRS+=("bios")
+        fi
         if [ ${#DIRS[@]} -eq 0 ]; then
             echo "Nothing to upload: no selected system has content on this device."
             exit 1
