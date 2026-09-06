@@ -98,6 +98,17 @@ tools/vm-serial sh "mkdir -p /storage/.ssh && chmod 700 /storage/.ssh && echo '$
 ssh -i key -p 10022 -o StrictHostKeyChecking=no root@127.0.0.1 'echo ok'
 ```
 
+**Two guests, one cloud (D-QA-009).** A conflict is a change on both sides
+since they last agreed, and one guest cannot make one; a handheld must
+never be asked to. `tools/vm-pair up <img.gz>` builds two disks from the
+image, boots both headless — guest `a` on the defaults above, guest `b`
+with a `-b` suffix on its sockets, SSH 10023 and VNC :10 — and provisions
+the QA key in each over serial; `vm-pair ssh a '…'`, `vm-pair serial b
+'…'`, `vm-pair info`, `vm-pair down`. Both reach the host's backend at
+`10.0.2.2`, so the pair against `cloud-test-backend` is the venue for every
+fixture that manufactures a conflict or interrupts a transfer, run once on
+WebDAV and once on MinIO.
+
 **Stop it by PID.** `pkill -f 'vm76[.]qcow2'` killed the shell that ran it,
 because the same command text held the literal in an `rm` three lines down,
 and `bash -c` carries the whole script in its argv. The pidfile exists so
