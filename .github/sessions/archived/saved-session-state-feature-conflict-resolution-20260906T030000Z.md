@@ -1,22 +1,18 @@
 # Saved Session State
 
-> **Saved**: 2026-09-06T05:20:00Z
-> **Branch**: `feature/conflict-resolution` @ `271a10e2aa` (= `next`, pushed)
+> **Saved**: 2026-09-06T03:00:00Z
+> **Branch**: `feature/conflict-resolution` @ `7919b0a03d` (= `next`, pushed)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 > **Worktree**: `/workspace/repos/rocknix.worktrees/conflict-resolution`
 
 ## Current Focus
 
-**Council Step 6 is one answer away.** The Step 5 draft (`final-issue-draft.md`)
-is reviewed; three of its four maintainer items are decided (D-CLOUD-041, 042);
-the last — the *hold* posture while a bisync gap is upstream — was explained and
-awaits a yes. On yes: apply the draft to #11 and the eleven children, hand off
-with the execution principles, close #70. **Nothing has reached the tracker.**
-
-**Devices:** RG35XX SP on the tenth image `2e33f6b2be`, verified. RG SP on the
-sixth `7eb021f210`, **scraping — do not touch**; the maintainer will say when it
-is free, and its interrupted restore should be re-run and finish before any
-reboot. **Every reboot is asked for, by device, at the moment (D-QA-008).**
+**The vocabulary sweep is finished and on both devices** (fifth H700 image of
+the night, `3bfa0b4e33`, verified from each device's binary and config). What
+is left of it is the maintainer's eyes on the screen, the four things hardware
+has not exercised, and the rocknix.org docs PR. **Council Steps 5 and 6 have
+not started** and nothing blocks them: every maintainer call the consensus plan
+listed is settled in the register (D-CLOUD-032…040, D-UI-022, D-UI-023).
 
 ## Completed This Session (2026-09-05 → 06)
 
@@ -46,7 +42,7 @@ guard in `FileData::launchGame`), -039 (the bisync spike is decisive, upstream
 requests for narrow gaps), -040 (RESTOREPATH removed; design intent traced to
 the 2025-07 import), D-UI-022 (**the vocabulary**), D-WORKFLOW-003 earlier.
 
-**The vocabulary sweep (#73) — done, ten images.** Sixth–tenth (`7eb021f210`, failed `f72d1f4981`, `3bfa0b4e33`→`7eb021f210` sync-row line, `b6b46e0507` connected page + dialog, `684ce7f16c` match row, `2a460ce125` seven-line transfer page + BIOS with the tier, **`2e33f6b2be` tidy-up gate**) all from the maintainer's screen review. Decisions: D-UI-023 (two lines per row; a description that would make a third moves into the confirmation dialog), D-UI-024 (the seven-line transfer page; scripts announce each system with `>>> unit <system>|<i>|<n>`), D-CLOUD-042 (`Saves-discarded`; split root refused), D-CLOUD-043 (BIOS is not a system; comes with the tier), D-QA-007 (VM first), **D-QA-008 (never reboot without asking — after I rebooted the RG SP during a restore; blindspot 29)**. Issues #74 (fixed, first criterion ticked), #75 (settings-backup picker, under #18). The tidy-up row bug was pre-existing: `runSystemCommand` returns 0 regardless. **The vocabulary sweep (#73) — first image, both devices:** Five images: `7b60fadaec` (sweep), `c78e6dea21` (never deployed), `27d1734555`, failed `f72d1f4981`, **`3bfa0b4e33` (current)**. Kept under `/workspace/artifacts/rocknix-images/`. Screen review added D-UI-023 (two lines per row, never three; a description that would make a third line moves into the confirmation dialog): hub row → MANAGE CLOUD STORAGE over its section names; sync row one line; saves rows keep how they last went; transfer-page tier rows keep what they carry; match row the same; tidy row says settings backups. Issues #74 (cloud-folder change nested settings backups — fixed) and #75 (choose which settings backup to restore, under #18). The RG SP is `rgsp` (192.168.1.175), keyed like `rg35xxsp`; both LPDDR facts confirmed from hardware.
+**The vocabulary sweep (#73) — done in both repos, on both devices.** Five images: `7b60fadaec` (sweep), `c78e6dea21` (never deployed), `27d1734555`, failed `f72d1f4981`, **`3bfa0b4e33` (current)**. Kept under `/workspace/artifacts/rocknix-images/`. Screen review added D-UI-023 (two lines per row, never three; a description that would make a third line moves into the confirmation dialog): hub row → MANAGE CLOUD STORAGE over its section names; sync row one line; saves rows keep how they last went; transfer-page tier rows keep what they carry; match row the same; tidy row says settings backups. Issues #74 (cloud-folder change nested settings backups — fixed) and #75 (choose which settings backup to restore, under #18). The RG SP is `rgsp` (192.168.1.175), keyed like `rg35xxsp`; both LPDDR facts confirmed from hardware.
 
 - `docs/cloud-vocabulary-audit.md` — the audit (the "system backup" holds
   settings only; backup names both an artifact and a direction; every backup
@@ -80,8 +76,7 @@ on `next`, rides the next image). #25 carries the restore tool's shape.
   folder surviving the update (harness-proved), the split-root refusal, a
   settings backup writing `<date>-ROCKNIX_SETTINGS.tar.gz`, and
   `tools/cloud-round-trip` against the new keys (plus #71's filter-free case).
-- **Council Step 6** — waiting on the hold-posture yes; then apply `final-issue-draft.md` to the tracker (epic #11 + #9 #10 #19 #21 #22 #23 #24 #25 #35 #37 #7), run-summary/README done, hand off.
-- ~~Council Steps 5 and 6 — not started.~~ Step 5 done (`final-issue-draft.md`, gate PASS). Input is `consensus_plan.md`
+- **Council Steps 5 and 6** — not started. Input is `consensus_plan.md`
   § "Step 5 handoff content" (R1–R11, A1–A14, Gates 0–13, P1–P8) **plus** the
   maintainer decisions above, which resolve all 7 "maintainer calls
   outstanding" the plan listed (bisync: spike decisive, D-039; queue-and-badge:
