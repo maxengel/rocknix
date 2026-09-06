@@ -352,3 +352,26 @@ relying on them.
   `/var/log/cloud_sync.log`; pass `"false"` to suppress on-screen echo for debug lines.
 - Controller input goes through `read_controller_input` (`evtest`); respect the mappings
   sourced from `/storage/.config/profile.d/098-controller`.
+
+## The content tier's flags, and what the scripts may not call
+
+`cloud_content_backup --selected` and `cloud_content_restore --selected` move
+the systems chosen with `--set-systems`; both take `--with-media`, and without
+it the scraper's folders under a system (`MEDIA_DIRS` in each script) are
+excluded from the transfer and from every count (D-CLOUD-048). The interface
+passes it from the SCRAPED GAME CONTENT switch. `cloud_content_restore --scan`
+is what both systems pages read:
+`name|cloud_bytes|supported|device_bytes|files_in_cloud_not_here|files_here_not_in_cloud`,
+one line per system in the union of cloud and device, both sides listed under
+the transfer's own rule. Anything that changes what a transfer carries has to
+change `content_files` (device), `cloud_content_filter` (cloud) and the
+`rclone copy` excludes together, or the page will describe a transfer the
+script does not perform.
+
+**The image's busybox has no `comm`.** `comm … | wc -l` reads 0 there, which
+in a difference count means "identical" — it shipped that way for one VM run
+(2026-09-06). Use `not_in` (awk) in `cloud_content_restore`, and before
+reaching for any coreutils name in these scripts, run it on the VM: `mapfile`,
+`stat -c`, `find -path`, `mktemp -d` and `sort -u` are there; `comm`,
+`pgrep -c`, `find -printf` and `ls --time-style` are not.
+

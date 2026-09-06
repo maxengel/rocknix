@@ -57,3 +57,23 @@ every time, at the moment, by name. The check before asking covers everything
 the action would interrupt. See also blindspot 13 (ticks that were not
 observations) — the same substitution of a proxy for the thing itself.
 
+## 30. A resumed session built on its own summary's claim about the code
+
+**Committed:** 2026-09-06. After a context compaction, the summary said both
+content scripts passed `MEDIA_EXCLUDES` to their `rclone copy`. Neither did.
+The array was defined in both and used by nothing; the session resumed,
+finished the interface, built two images and started a device build on top
+of the claim. The VM found it — a backup with the switch off put `images/`
+and `videos/` in the cloud — because the run read the remote instead of the
+page's COMPLETED SUCCESSFULLY.
+
+**The shape:** a summary is a report, and blindspot 13's rule applies to it as
+to any other report: it records what a session *believed* it had done. A
+claim about the state of the code is checkable in one grep, and a session
+that resumes from a summary has not made that check by reading the summary.
+
+**The fix:** on resume, before building on any "X is done" that names code,
+grep for X. The same session's other summary claim — "unit-tested" — was true
+and irrelevant: the test compared the two selectors and never ran a copy.
+See `engineering-practices.md` § "Verify the artifact, not the report".
+

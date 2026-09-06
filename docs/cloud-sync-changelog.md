@@ -253,6 +253,37 @@ until the line is removed — nothing moves and nothing is guessed.
 `SYNCPATH=` until the interface's side of the rename ships; `--set-syncpath`
 is accepted beside `--set-saves-remote` for the same reason.
 
+## Scraped game content is a switch (2026-09-06)
+
+A device that had been restored and then scraped read "different size" on
+every system, because the cloud counted every file under a system and the
+device counted every file but saves, and neither side excluded what the
+scraper writes — 343 MB of images, videos and manuals under SNES alone that
+the cloud never had. Totals cannot say whether one side has what the other
+has (D-CLOUD-048).
+
+So:
+
+- **SCRAPED GAME CONTENT is a switch, off by default**, in its own group at
+  the bottom of each systems page. Off, the scraper's folders under a system
+  (`images`, `videos`, `manuals`, `screenshots`, `fanart`, `boxart`, `wheel`,
+  `mix`, `maps`, `media`) are neither moved nor counted; on, they travel with
+  the ROMs and count on both sides. Saved as `cloudsync.content.media`.
+- **One systems page per direction.** SYSTEMS TO BACK UP lists what this
+  device holds; SYSTEMS TO RESTORE lists what the cloud holds. Each is a row
+  under ROMS AND BIOS on its own transfer page; the hub's CHOOSE SYSTEMS TO
+  SYNC row is gone. BIOS is not listed as a system — it comes with the tier
+  (D-CLOUD-043).
+- **Verdicts by file name.** Under the row: this side's size, then IN YOUR
+  CLOUD · *N* FILES NOT IN YOUR CLOUD YET · NOT IN YOUR CLOUD YET on the
+  backup page, and ON THIS DEVICE · *N* FILES NOT ON THIS DEVICE · IN YOUR
+  CLOUD ONLY on the restore page. *N* is what a transfer would move.
+- **Scripts:** `cloud_content_backup` and `cloud_content_restore` take
+  `--with-media`; `cloud_content_restore --scan` reports, for the union of
+  cloud and device systems,
+  `name|cloud_bytes|supported|device_bytes|files_in_cloud_not_here|files_here_not_in_cloud`,
+  both sides counted under one rule.
+
 ## Upgrading from an earlier cloud setup
 
 Every one of these ships onto devices that already have state, so the guiding
