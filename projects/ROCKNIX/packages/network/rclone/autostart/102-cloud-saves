@@ -18,7 +18,7 @@ then
       ping -q -c1 -W2 google.com >/dev/null 2>&1 && break
       sleep 2
     done
-    /usr/bin/cloud_restore --yes --method=copy --update
-    /usr/bin/cloud_backup --yes --method=copy --update
+    /usr/bin/cloud_restore --yes --method=copy --update --saves-only
+    /usr/bin/cloud_backup --yes --method=copy --update --saves-only
   ) >/dev/null 2>&1 &
 fi

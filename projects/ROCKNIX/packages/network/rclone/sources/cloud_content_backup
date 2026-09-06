@@ -375,12 +375,19 @@ SAVE_EXCLUDES=(
 
 STATUS=0
 take_cloud_lock
+UNIT_N=${#DIRS[@]}; UNIT_I=0
 for DIR in "${DIRS[@]}"; do
     # Local -> remote. This script uploads; cloud_content_restore is the one
     # that brings content back down.
     SRC="${DEST}/${DIR}"
     TARGET="$(remote_for "${DIR}")"
+    UNIT_I=$((UNIT_I + 1))
     log_message "Content backup: ${SRC} -> ${TARGET}"
+    # The marker the transfer page reads: what is being copied, and which of
+    # how many. Restore has emitted it since D-UI-024; backup never did, so
+    # the page kept the previous script's last label -- SETTINGS BACKUP --
+    # through every system it uploaded (maintainer, 2026-09-06).
+    echo ">>> unit ${DIR:-everything}|${UNIT_I}|${UNIT_N}"
     echo "Backing up ${DIR:-everything} to the cloud..."
     # --progress is what puts the stats on stdout. With only --log-file they
     # go to the log and the caller sees nothing -- which is why the progress
