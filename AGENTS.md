@@ -55,6 +55,11 @@ any `package.mk` edit), and the real test is that the package/image builds.
 
 ## Subsystem quick warnings (read the instruction file before editing)
 
+- **Physical-device flashing** (`docs/device-flashing-runbook.md`,
+  `device-builds.md`): identify the removable card at run time and exclude all
+  system disks; verify the raw image readback before changing its filesystem;
+  where extlinux expects `/dtb.img`, activate and hash-check the exact device
+  tree from `device_trees/` before first boot.
 - **rclone cloud-sync** (`projects/ROCKNIX/packages/network/rclone/`,
   `rclone-cloud-sync.md`): the filter file is an *allowlist* (only
   saves/states/screenshots + `backup/*.zip` sync — never ROMs/BIOS); never put

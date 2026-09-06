@@ -1,5 +1,5 @@
 ---
-description: "Building and publishing images for the handheld devices we test on (RK3566, H700, RK3326), as distinct from the GENERIC_X64 VM build."
+description: "Building, publishing, and safely flashing images for the handheld devices we test on, as distinct from the GENERIC_X64 VM build."
 paths:
   - "**"
 ---
@@ -19,13 +19,15 @@ They land in **`target/`** — `config/path` sets `TARGET_IMG=$ROOT/target`, and
 | Hardware | Target | Arch | Notes |
 |---|---|---|---|
 | Anbernic RG353M | `RK3566` | aarch64 | cortex-a55, neon-fp-armv8 (no crypto ext) |
-| Anbernic RG35xx SP | `H700` | aarch64 | cortex-a53, crypto-neon-fp-armv8 |
+| Anbernic RG35XX SP | `H700` | aarch64 | cortex-a53, crypto-neon-fp-armv8; maintainer's unit is LPDDR4 and uses the DDR4 image (`vdd-dram` = 1.1 V, verified 2026-09-05) |
+| Anbernic RG SP | `H700` | aarch64 | cortex-a53, crypto-neon-fp-armv8; maintainer's unit is LPDDR3 and uses the DDR3 image (stock boot0 `dram_type = 7`, then ROCKNIX `vdd-dram` = 1.2 V, verified 2026-09-05) |
 | Anbernic RG351M | `RK3326` | aarch64 | |
 | VM / QA | `GENERIC_X64` | x86_64 | fork-only device; see `generic-x64-vm-testing` |
 
-The three handhelds are *different build families* — separate `-mcpu` and SIMD
-feature sets — which is why savestate compatibility across them is an open
-question (fork issue #10, gated on #19). Do not assume a state from one loads on
+The RG353M, RG35XX SP, and RG351M are *different build families* — separate
+`-mcpu` and SIMD feature sets — which is why savestate compatibility across
+them is an open question (fork issue #10, gated on #19). The RG SP is the
+same-H700 control for the RG35XX SP. Do not assume a state from one loads on
 another.
 
 ## Where things live
@@ -323,9 +325,23 @@ when you do it, and prefer a fresh date.
 
 ## Installing on the device
 
-Flash `target/ROCKNIX-<DEVICE>.aarch64-<date>.img.gz` to a card, or push the
-`.tar` to a running device's in-place updater — `scp` it to
-`root@<host>:~/.update` and reboot, which preserves settings.
+For a fresh card, follow `docs/device-flashing-runbook.md`. It covers artifact
+intake, physical board-variant evidence, removable-disk identification, full
+byte readback, and the platforms where a device-specific file from
+`device_trees/` must be activated as `/dtb.img` before first boot. Presence in
+`device_trees/` alone does not make a card bootable when extlinux points to
+`/dtb.img`.
+
+For an in-place update, push the `.tar` to a running device's updater — `scp`
+it to `root@<host>:~/.update` and reboot, which preserves settings. Do not use
+the fresh-card procedure for an update.
+
+H700 emits two flash images (DDR3 and DDR4) but **one update tar for both**.
+The updater selects the RAM-specific bootloader and running model's DTB.
+Follow the runbook's update section to stage outside `.update`, verify the
+device-side checksum, then move the complete tar into the update queue. Keep
+same-day builds in separate artifact directories and record `BUILD_ID` plus
+checksums; the date and filename alone do not distinguish them.
 
 ## Iterating on EmulationStation
 
