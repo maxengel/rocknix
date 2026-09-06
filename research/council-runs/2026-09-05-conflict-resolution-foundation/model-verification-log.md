@@ -433,3 +433,21 @@ not embedded.
 
 **Run status: Step 4.5 complete. Steps 5 and 6 remain, and the plan lists 7
 maintainer calls that should be settled before the issues are written.**
+
+## Step 5 gate — the handoff as tracker text
+
+`final-issue-draft.md` written by the `claude` seat (the winning author;
+`anthropic/claude-fable-5.1`, effort xhigh, 33,885 reasoning tokens),
+identity-verified, **PASS** (1/1). Inputs: the consensus plan's handoff section
+verbatim, the eleven register rows decided since (D-CLOUD-032…040, D-UI-022,
+D-UI-023), the vocabulary and two-line rules, and the current bodies of the epic
+and eleven children. Prompt at `_prompts/step5-claude.md`; inputs under
+`_prompts/step5-inputs/`.
+
+The draft resolves the handoff's eight proposed register rows against the
+decisions (five decided, one dissolved, three still to draft, drafted), and
+lists four things for the maintainer — none reopening a decision, one of them a
+label-mapping error in D-CLOUD-036's wording that the seat caught against the
+IA (cloud is the left column, so the cloud loser is KEEP RIGHT).
+
+**Nothing has reached the tracker.** Step 6 follows the maintainer's review.
