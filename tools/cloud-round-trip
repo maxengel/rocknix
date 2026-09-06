@@ -216,6 +216,23 @@ def main():
         print(f"    scratch tree {SCRATCH} (pass --real-roms to use /storage/roms)")
     print(f"    SAVES_REMOTE {syncpath} on the {backend('backend').strip()} endpoint")
 
+    # From here on the device carries the harness's settings; whatever happens
+    # below -- a failing check, an exception, a Ctrl-C -- the block after the
+    # try puts the device back (Gate 0, #35: a device the harness has
+    # finished with has the remote it started with). Found the hard way: a
+    # run that aborted on guest b left the QA remote and the QA paths behind.
+    archive = f"{root}/backup/{ARCHIVE_NAME}"
+    prev_restore_opt = ""
+    try:
+        failures += run_steps(dev, root, remote, args, settings, prev_paths)
+    finally:
+        restore_device(dev, args, archive, prev_paths, prev_rclone_conf)
+    print(f"\n{'PASSED' if failures == 0 else f'{failures} CHECK(S) FAILED'}")
+    return 1 if failures else 0
+
+
+def run_steps(dev, root, remote, args, settings, prev_paths):
+    failures = 0
     step("plant fixtures")
     for rel, data in {**FIXTURES, **EXCLUDED}.items():
         dev.write(f"{root}/{rel}", data)
@@ -262,8 +279,7 @@ def main():
     # Off by default, so the phase would otherwise never run here. Remember the
     # device's own setting: leaving it on would mean a later user-initiated
     # restore also pulls archives down, which they never asked for.
-    prev_restore_opt = dev.run(
-        f"grep -m1 '^BACKUPFILE_RESTORE_OPTION=' {CONF} 2>/dev/null || true").strip()
+    dev.run(f"grep -m1 '^BACKUPFILE_RESTORE_OPTION=' {CONF} > {CONF}.qa-prev 2>/dev/null || : > {CONF}.qa-prev")
     dev.run(f"grep -q '^BACKUPFILE_RESTORE_OPTION=' {CONF} "
             f"&& sed -i 's|^BACKUPFILE_RESTORE_OPTION=.*|BACKUPFILE_RESTORE_OPTION=\"yes\"|' {CONF} "
             f"|| echo 'BACKUPFILE_RESTORE_OPTION=\"yes\"' >> {CONF}")
@@ -587,7 +603,7 @@ def main():
                           f"newest archive is a tar.gz ({os.path.basename(newest) or 'none'})",
                           f"newest archive is not a tar.gz: {newest or 'none found'}")
     if newest.endswith(".tar.gz"):
-        failures += not check(dev.run(f"tar -tzf {shlex.quote(newest)} >/dev/null 2>&1 && echo ok").strip() == "ok",
+        failures += not check(dev.run(f"tar -tzf {shlex.quote(newest)} >/dev/null 2>&1 && echo ok", check=False).strip() == "ok",
                               "the archive passes tar integrity",
                               "the archive is not readable by tar")
 
@@ -664,31 +680,39 @@ def main():
                           f"not carried: {missing}")
     dev.write(CONF, saved_conf.encode())
 
-    if not args.keep:
-        step("clean up")
-        dev.run(f"rm -f {shlex.quote(archive)}")
-        if prev_restore_opt:
-            dev.run(f"sed -i 's|^BACKUPFILE_RESTORE_OPTION=.*|{prev_restore_opt}|' {CONF}")
+    return failures
+
+
+def restore_device(dev, args, archive, prev_paths, prev_rclone_conf):
+    """Put the device back: its remote, its paths, the settings-restore option,
+    the scratch tree, the fixture system -- on every exit."""
+    if args.keep:
+        return
+    step("clean up")
+    try:
+        dev.run(f"rm -f {shlex.quote(archive)}", check=False)
+        prev = dev.run(f"grep -m1 '^BACKUPFILE_RESTORE_OPTION=' {CONF}.qa-prev 2>/dev/null || true", check=False).strip()
+        if prev:
+            dev.run(f"sed -i 's|^BACKUPFILE_RESTORE_OPTION=.*|{prev}|' {CONF}", check=False)
         else:
-            dev.run(f"sed -i '/^BACKUPFILE_RESTORE_OPTION=/d' {CONF}")
+            dev.run(f"sed -i '/^BACKUPFILE_RESTORE_OPTION=/d' {CONF}", check=False)
+        dev.run(f"rm -f {CONF}.qa-prev", check=False)
         for key, line in prev_paths.items():
             if line:
-                dev.run(f"sed -i 's|^{key}=.*|{line}|' {CONF}")
+                dev.run(f"sed -i 's|^{key}=.*|{line}|' {CONF}", check=False)
             else:
-                dev.run(f"sed -i '/^{key}=/d' {CONF}")
+                dev.run(f"sed -i '/^{key}=/d' {CONF}", check=False)
         if not args.real_roms:
-            dev.run(f"rm -rf {shlex.quote(SCRATCH)}")
+            dev.run(f"rm -rf {shlex.quote(SCRATCH)} /storage/roms/{shlex.quote(CONTENT_DIR)} /storage/roms/{shlex.quote(CONTENT_DIR)}-unselected", check=False)
         if prev_rclone_conf.strip():
             dev.write(RCLONE_CONF, prev_rclone_conf.encode())
         else:
-            dev.run(f"rm -f {RCLONE_CONF}")
+            dev.run(f"rm -f {RCLONE_CONF}", check=False)
         backend("reset")
         print("    scratch tree and bucket emptied; the device's own remote, paths and "
               "settings-backup setting restored")
-
-    print(f"\n{'PASSED' if failures == 0 else f'{failures} CHECK(S) FAILED'}")
-    return 1 if failures else 0
-
+    except Fail as e:
+        print(f"    WARN  clean-up incomplete: {e}", file=sys.stderr)
 
 if __name__ == "__main__":
     try:
