@@ -537,6 +537,14 @@ local_content_dirs() {
         content_files "${d}" | head -1 | grep -q . && printf '%s\n' "${base}"
     done
 }
+# Lines of $1 that are not in $2. Not comm(1): the image's busybox has no
+# comm, and `comm ... | wc -l` then reads 0 -- "nothing differs" -- which is
+# the wrong way for a count to fail (found in the VM, 2026-09-06). awk is
+# what this script already runs on; the getline form is safe when either
+# file is empty, where the NR==FNR idiom is not.
+not_in() {
+    awk -v L="$2" 'BEGIN { while ((getline x < L) > 0) a[x] = 1 } !($0 in a)' "$1"
+}
 # Drop from a cloud "size|path" listing what content_files drops locally, so
 # the two sides are counted by one rule.
 cloud_content_filter() {
@@ -603,8 +611,8 @@ case "${1}" in
             else
                 lbytes=0; : > "${TMP}/l"
             fi
-            cnl=$(comm -23 "${TMP}/c" "${TMP}/l" | wc -l)
-            lnc=$(comm -13 "${TMP}/c" "${TMP}/l" | wc -l)
+            cnl=$(not_in "${TMP}/c" "${TMP}/l" | wc -l)
+            lnc=$(not_in "${TMP}/l" "${TMP}/c" | wc -l)
             if [ "${name}" = "bios" ] || printf '%s\n' "${SUP}" | grep -qxF "${name}"; then sup=1; else sup=0; fi
             echo "${name}|${cbytes}|${sup}|${lbytes}|${cnl}|${lnc}"
         done
