@@ -356,11 +356,14 @@ relying on them.
 ## The content tier's flags, and what the scripts may not call
 
 `cloud_content_backup --selected` and `cloud_content_restore --selected` move
-the systems chosen with `--set-systems`; both take `--with-media`, and without
-it the scraper's folders under a system (`MEDIA_DIRS` in each script) are
-excluded from the transfer and from every count (D-CLOUD-048). The interface
-passes it from the SCRAPED GAME CONTENT switch. `cloud_content_restore --scan`
-is what both systems pages read:
+the systems chosen with `--set-systems`, in one of three modes (`MEDIA_MODE`
+in each script, D-CLOUD-050): with neither flag, ROMs and BIOS alone — the
+scraper's folders under a system (`MEDIA_DIRS`) and `gamelist.xml` are
+excluded from the transfer and from every count (D-CLOUD-048, D-CLOUD-049);
+`--with-media` carries both tiers; `--media-only` carries the scraper's
+folders and the game list and nothing else, BIOS included in "nothing". The
+interface derives the mode from the ROMS AND BIOS and GAME CONTENT ticks.
+`cloud_content_restore --scan` is what both systems pages read:
 `name|cloud_bytes|supported|device_bytes|files_in_cloud_not_here|files_here_not_in_cloud`,
 one line per system in the union of cloud and device, both sides listed under
 the transfer's own rule. Anything that changes what a transfer carries has to

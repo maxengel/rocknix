@@ -216,11 +216,13 @@ public:
   different failure modes, and a player who has lost one needs to know which.
   Bare "saves" is fine as a collective where nothing contrasts with it
   ("games, BIOS files, and saves"); the moment both appear, name them apart.
-- **Three tiers, two verbs, and the destination says where (D-UI-022).**
-  The things cloud sync moves are **settings** (the archive `backuptool`
-  writes: emulator and interface configuration, input mapping, themes,
-  collections, bezels — no saves, no ROMs, no operating system), **saves**
-  (game saves, save states, and screenshots), and **ROMs and BIOS**. The
+- **Four tiers, two verbs, and the destination says where (D-UI-022,
+  D-CLOUD-050).** The things cloud sync moves are **settings** (the archive
+  `backuptool` writes: emulator and interface configuration, input mapping,
+  themes, collections, bezels — no saves, no ROMs, no operating system),
+  **saves** (game saves, save states, and screenshots), **ROMs and BIOS**,
+  and **game content** (what the scraper made: artwork, videos, manuals, and
+  the game lists — D-CLOUD-049 puts `gamelist.xml` here, not with ROMs). The
   only verbs are *back up* and *restore*; nothing is "uploaded" or
   "archived" in a label, because a player has no way to tell those apart
   and the archive is uploaded too. The label says what and where: BACK UP

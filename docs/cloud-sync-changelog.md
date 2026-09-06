@@ -253,36 +253,43 @@ until the line is removed — nothing moves and nothing is guessed.
 `SYNCPATH=` until the interface's side of the rename ships; `--set-syncpath`
 is accepted beside `--set-saves-remote` for the same reason.
 
-## Scraped game content is a switch (2026-09-06)
+## Game content is a class of its own (2026-09-06)
 
 A device that had been restored and then scraped read "different size" on
 every system, because the cloud counted every file under a system and the
 device counted every file but saves, and neither side excluded what the
 scraper writes — 343 MB of images, videos and manuals under SNES alone that
 the cloud never had. Totals cannot say whether one side has what the other
-has (D-CLOUD-048).
+has (D-CLOUD-048); and the scraper's output is a thing you may or may not
+want in your cloud (D-CLOUD-050).
 
 So:
 
-- **SCRAPED GAME CONTENT is a switch, off by default**, in its own group at
-  the bottom of each systems page. Off, the scraper's folders under a system
-  (`images`, `videos`, `manuals`, `screenshots`, `fanart`, `boxart`, `wheel`,
-  `mix`, `maps`, `media`) are neither moved nor counted; on, they travel with
-  the ROMs and count on both sides. Saved as `cloudsync.content.media`.
-- **One systems page per direction.** SYSTEMS TO BACK UP lists what this
-  device holds; SYSTEMS TO RESTORE lists what the cloud holds. Each is a row
-  under ROMS AND BIOS on its own transfer page; the hub's CHOOSE SYSTEMS TO
-  SYNC row is gone. BIOS is not listed as a system — it comes with the tier
-  (D-CLOUD-043).
-- **Verdicts by file name.** Under the row: this side's size, then IN YOUR
-  CLOUD · *N* FILES NOT IN YOUR CLOUD YET · NOT IN YOUR CLOUD YET on the
-  backup page, and ON THIS DEVICE · *N* FILES NOT ON THIS DEVICE · IN YOUR
-  CLOUD ONLY on the restore page. *N* is what a transfer would move.
+- **The transfer page asks about four things.** BACK UP TO THE CLOUD and
+  RESTORE FROM THE CLOUD offer SAVES, ROMS AND BIOS, **GAME CONTENT**, and
+  SETTINGS. Game content is what the scraper made — its line reads SCRAPED
+  ARTWORK, VIDEOS, MANUALS, AND GAME LISTS — and the game list goes with it
+  (D-CLOUD-049), so a ROMs-only backup neither sends nor counts
+  `gamelist.xml`, and a restored-then-scraped device reads IN YOUR CLOUD
+  across the board under ROMS AND BIOS alone. Each tick is remembered per
+  direction; game content is off until you turn it on.
+- **CONTINUE asks which systems.** Once ROMS AND BIOS or GAME CONTENT is on,
+  the button reads CONTINUE and opens SYSTEMS TO BACK UP / SYSTEMS TO
+  RESTORE. The page opens with a line saying what moves (BACKING UP ROMS AND
+  BIOS, GAME CONTENT, AND SAVES), then SYSTEMS ON THIS DEVICE / SYSTEMS IN
+  YOUR CLOUD: the systems that hold anything of what you ticked, each with
+  its size and a verdict by file name — IN YOUR CLOUD · *N* FILES NOT IN YOUR
+  CLOUD YET · NOT IN YOUR CLOUD YET on the backup page, ON THIS DEVICE · *N*
+  FILES NOT ON THIS DEVICE · IN YOUR CLOUD ONLY on the restore page. *N* is
+  what the transfer would move. BIOS is not listed as a system; it comes with
+  ROMS AND BIOS (D-CLOUD-043).
+- **Game content moves on its own.** Tick it without ROMS AND BIOS and only
+  the scraper's folders and game lists travel — no ROM, no BIOS file.
 - **Scripts:** `cloud_content_backup` and `cloud_content_restore` take
-  `--with-media`; `cloud_content_restore --scan` reports, for the union of
-  cloud and device systems,
-  `name|cloud_bytes|supported|device_bytes|files_in_cloud_not_here|files_here_not_in_cloud`,
-  both sides counted under one rule.
+  `--with-media` (both tiers) or `--media-only` (game content alone); with
+  neither, ROMs and BIOS alone. `cloud_content_restore --scan` reports, for
+  the union of cloud and device systems under the same mode,
+  `name|cloud_bytes|supported|device_bytes|files_in_cloud_not_here|files_here_not_in_cloud`.
 
 ## Upgrading from an earlier cloud setup
 
