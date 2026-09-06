@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-06T22:22:20Z
+> **Saved**: 2026-09-06T21:44:25Z
 > **Branch**: feature/conflict-resolution (worktree; the work itself landed on `next`)
 > **Repo**: maxengel/rocknix (+ ES at ~/Development/emulationstation-next, branch feature/cloud-vocabulary → test/qa-integration)
 
 ## Current Focus
 
-#11 batch 1, Gate 0 (#35): tasks 1–5 done — `tools/vm-pair` (two guests, `a` :10022 / `b` :10023, QA key over serial), the harness repaired against the scripts as they are and passing on WebDAV (both guests) and MinIO with 48 checks, the device restored on every exit, one script defect fixed (`backuptool` reads `SETTINGS_BACKUPS`). Landed on `next`. **Next: task 6, the fixtures** — each a failing commit first, with the failure output in the message.
+`begin-delivery` on #11, batch 1: Steps 1–2 done (addendum on #26 as the prior retro; pre-futro audit on #35; the futro on #11 with adjustments applied to #35/#9; post-futro audit signed). The task list is confirmed (2026-09-06) with D-QA-009 added: conflict and bisync testing on a VM pair only. Commit discipline: feature-branch commits as the work goes, landing on `next` when a gate's evidence is on its issue. Execution started at task 1 (`tools/vm-pair`, worktree `feature/round-trip-harness`).
 
 ## Completed This Session
 
@@ -18,8 +18,8 @@
 
 ## In Progress
 
-- Task 6 (#35 fixtures) not started. Order: A1 (two roots, both changed **after a first pass**: guests a and b against one remote), the equal-size case, A2/A3, A8 (torn N64 `.eep`/`.mpk`), A9 (delete/renumber/absence/unmount/`rm`), A11 (cloned device id), A12 (legacy `RESTOREPATH` unequal → refusal; the equal shape already passes as the migration step), A14 (manifest step, WebDAV null / MinIO non-null), A5's reader, the retention-ordering kill, #9's contract fixtures runnable with bisync and `copy --files-from`. Each fails against the shipped scripts by design and stays red until #21/#22.
-- The VM pair is up (`tools/vm-pair info`); the backend is WebDAV on :9010; `/tmp/qa-bin/backuptool` on both guests carries the fixed script until an image does.
+- Batch 1 task list (Gate 0 → Gate 11, Gate 12 beside) — see Next Steps; not started.
+- #76/#77 open only for the maintainer's screen look at `088c2bd22e`.
 
 ## Next Steps (the batch-1 task list, in execution order)
 
