@@ -506,6 +506,68 @@ match_run() {
     return ${rc}
 }
 
+content_files() {
+    local dir="$1"; shift
+    # Never the scraper's folders unless --with-media (D-CLOUD-048): the same
+    # rule sizes both sides, so a count that differs means files a transfer
+    # would actually move.
+    local -a media=()
+    if [ "${WITH_MEDIA:-0}" -eq 0 ]; then
+        local d; for d in ${MEDIA_DIRS:-images videos manuals screenshots fanart boxart wheel mix maps media}; do media+=( ! -path "${dir%/}/${d}/*" ); done
+    fi
+    find "${dir}" -type f \
+        ! -name '*.srm' ! -name '*.sav' ! -name '*.fs' ! -name '*.state*' \
+        ! -name '*.auto' ! -name '*.dsv*' ! -name '*.eep' ! -name '*.mpk' \
+        ! -name '*.sra' ! -name '*.mcd' ! -name '*.mcr' \
+        ! -path '*/save/*' ! -path '*/memcards/*' \
+        ! -path '*/shared/savefiles/*' ! -path '*/PPSSPP/*' \
+        ! -path '*conflicted copy*' ! -name '*.sync-conflict-*' \
+        "${media[@]}" "$@" 2>/dev/null
+}
+content_bytes() {
+    content_files "$1" -exec stat -c '%s' {} + | awk '{ t += $1 } END { print t+0 }'
+}
+# Local systems that hold content, for the union scan.
+local_content_dirs() {
+    local d base
+    for d in "${DEST}"/*/; do
+        [ -d "${d}" ] || continue
+        base=$(basename "${d}")
+        case "${base}" in savefiles|savestates|screenshots|backup) continue ;; esac
+        content_files "${d}" | head -1 | grep -q . && printf '%s\n' "${base}"
+    done
+}
+# Drop from a cloud "size|path" listing what content_files drops locally, so
+# the two sides are counted by one rule.
+cloud_content_filter() {
+    local skip='^$'
+    [ "${WITH_MEDIA}" -eq 0 ] && skip="^($(echo ${MEDIA_DIRS} | tr ' ' '|'))$"
+    awk -F'|' -v skip="${skip}" '
+        { n = split($2, seg, "/"); if (n < 2) next
+          if (n > 2 && seg[2] ~ skip) next
+          f = seg[n]
+          if (f ~ /\.(srm|sav|fs|auto|eep|mpk|sra|mcd|mcr)$/ || f ~ /\.state/ || f ~ /\.dsv/) next
+          if ($2 ~ /conflicted copy/ || f ~ /\.sync-conflict-/) next
+          if (f == "README.txt") next
+          if (n > 2 && (seg[2] == "save" || seg[2] == "memcards" || seg[2] == "PPSSPP")) next
+          print }'
+}
+# --with-media: include scraped game content (D-CLOUD-048). Off by default:
+# the scraper's folders under a system are neither moved nor counted unless
+# the switch is on, so a restored-then-scraped device does not read as
+# "different" from its cloud copy. Taken from anywhere on the command line.
+WITH_MEDIA=0
+_ARGS=()
+for _a in "$@"; do
+    if [ "${_a}" = "--with-media" ]; then WITH_MEDIA=1; else _ARGS+=("${_a}"); fi
+done
+set -- "${_ARGS[@]}"
+MEDIA_DIRS="images videos manuals screenshots fanart boxart wheel mix maps media"
+MEDIA_EXCLUDES=()
+if [ "${WITH_MEDIA}" -eq 0 ]; then
+    for _d in ${MEDIA_DIRS}; do MEDIA_EXCLUDES+=(--exclude "/${_d}/**"); done
+fi
+
 case "${1}" in
     --match)
         # Preview by default; --apply is what deletes.
@@ -517,27 +579,39 @@ case "${1}" in
         exit $?
     ;;
     --scan)
-        # name|bytes|supported, one per line. Everything the cloud holds --
-        # not what this device happens to have locally, which is the whole
-        # point on a fresh handheld.
+        # One line per system in the union of cloud and device:
+        #   name|cloud_bytes|supported|device_bytes|files_in_cloud_not_here|files_here_not_in_cloud
+        # Both sides listed by the same rule (D-CLOUD-048) and compared by name,
+        # because totals cannot say whether one side has what the other has.
         SUP=$(supported_systems)
+        TMP=$(mktemp -d /tmp/cloud-scan.XXXXXX); trap 'rm -rf "${TMP}"' EXIT
+        rclone lsf -R --files-only --format "sp" --separator "|" "${ROOT}ROMs/" 2>/dev/null \
+            | cloud_content_filter > "${TMP}/cloud"
+        rclone lsf -R --files-only --format "sp" --separator "|" "${ROOT}BIOS/" 2>/dev/null \
+            | grep -v '|README\.txt$' | sed 's/|/|bios\//' >> "${TMP}/cloud"
+        sizes_under "${ROOT}" | grep -vE '^(ROMs|BIOS)\|' > "${TMP}/legacy"
         {
-            sizes_under "${ROOT}ROMs/"
-            B=$(rclone lsf -R --files-only --format "sp" --separator "|" "${ROOT}BIOS/" 2>/dev/null \
-                | grep -v '|README\.txt$' \
-                | awk -F'|' '{ t += $1 } END { if (t) print "bios|" t }')
-            [ -n "${B}" ] && echo "${B}"
-            # the flat layout that shipped before ROMs/BIOS, so a library that
-            # has not been re-uploaded yet is still visible here
-            sizes_under "${ROOT}" | grep -vE '^(ROMs|BIOS)\|'
-        } | sort -u | while IFS='|' read -r name bytes; do
+            cut -d'|' -f2 "${TMP}/cloud" | cut -d/ -f1
+            local_content_dirs
+        } | sort -u | while IFS= read -r name; do
             [ -n "${name}" ] || continue
-            if [ "${name}" = "bios" ] || printf '%s\n' "${SUP}" | grep -qxF "${name}"; then
-                echo "${name}|${bytes}|1"
+            cbytes=$(awk -F'|' -v n="${name}" '{ split($2, seg, "/"); if (seg[1] == n) t += $1 } END { print t+0 }' "${TMP}/cloud")
+            awk -F'|' -v n="${name}" '{ split($2, seg, "/"); if (seg[1] == n) print substr($2, length(n) + 2) }' "${TMP}/cloud" | sort > "${TMP}/c"
+            if [ -d "${DEST}/${name}" ]; then
+                lbytes=$(content_bytes "${DEST}/${name}")
+                content_files "${DEST}/${name}" | sed "s|^${DEST}/${name}/||" | sort > "${TMP}/l"
             else
-                echo "${name}|${bytes}|0"
+                lbytes=0; : > "${TMP}/l"
             fi
+            cnl=$(comm -23 "${TMP}/c" "${TMP}/l" | wc -l)
+            lnc=$(comm -13 "${TMP}/c" "${TMP}/l" | wc -l)
+            if [ "${name}" = "bios" ] || printf '%s\n' "${SUP}" | grep -qxF "${name}"; then sup=1; else sup=0; fi
+            echo "${name}|${cbytes}|${sup}|${lbytes}|${cnl}|${lnc}"
         done
+        while IFS='|' read -r name bytes; do
+            [ -n "${name}" ] || continue
+            echo "${name}|${bytes}|0|0|0|0"
+        done < "${TMP}/legacy"
         exit 0
     ;;
     --systems)

@@ -120,6 +120,13 @@ system_folders() {
 # picker's badge reports a size the cloud will never agree with.
 content_files() {
     local dir="$1"; shift
+    # Never the scraper's folders unless --with-media (D-CLOUD-048): the same
+    # rule sizes both sides, so a count that differs means files a transfer
+    # would actually move.
+    local -a media=()
+    if [ "${WITH_MEDIA:-0}" -eq 0 ]; then
+        local d; for d in ${MEDIA_DIRS:-images videos manuals screenshots fanart boxart wheel mix maps media}; do media+=( ! -path "${dir%/}/${d}/*" ); done
+    fi
     find "${dir}" -type f \
         ! -name '*.srm' ! -name '*.sav' ! -name '*.fs' ! -name '*.state*' \
         ! -name '*.auto' ! -name '*.dsv*' ! -name '*.eep' ! -name '*.mpk' \
@@ -127,7 +134,7 @@ content_files() {
         ! -path '*/save/*' ! -path '*/memcards/*' \
         ! -path '*/shared/savefiles/*' ! -path '*/PPSSPP/*' \
         ! -path '*conflicted copy*' ! -name '*.sync-conflict-*' \
-        "$@" 2>/dev/null
+        "${media[@]}" "$@" 2>/dev/null
 }
 
 # Does this directory hold anything the content tier would actually transfer?
@@ -199,6 +206,22 @@ selected_systems() {
     [ -r "${SELECTION}" ] || return 0
     grep -v '^[[:space:]]*$' "${SELECTION}" 2>/dev/null
 }
+
+# --with-media: include scraped game content (D-CLOUD-048). Off by default:
+# the scraper's folders under a system are neither moved nor counted unless
+# the switch is on, so a restored-then-scraped device does not read as
+# "different" from its cloud copy. Taken from anywhere on the command line.
+WITH_MEDIA=0
+_ARGS=()
+for _a in "$@"; do
+    if [ "${_a}" = "--with-media" ]; then WITH_MEDIA=1; else _ARGS+=("${_a}"); fi
+done
+set -- "${_ARGS[@]}"
+MEDIA_DIRS="images videos manuals screenshots fanart boxart wheel mix maps media"
+MEDIA_EXCLUDES=()
+if [ "${WITH_MEDIA}" -eq 0 ]; then
+    for _d in ${MEDIA_DIRS}; do MEDIA_EXCLUDES+=(--exclude "/${_d}/**"); done
+fi
 
 case "${1}" in
     --selected)
