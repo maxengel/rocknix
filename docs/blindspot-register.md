@@ -36,3 +36,24 @@ but never delete history.
 | 27 | **Supersession that lives only in a comment** — a decision or grounding fact is posted as a comment on an issue (or as a register row made in a sibling's thread) while the issue's body and acceptance criteria keep saying the old thing. The body is what an implementer builds from; the comment is what nobody scrolls to. `issue-tracking.md` already demands the body edit in the same action. | 2026-09-05 (futro, epic #11), three instances in one milestone: #21's body still named the removed `/usr/bin/scripts/game-end/` hook a day after its grounding comment said it was gone; #20's body predated D-CLOUD-017 while three comments proposed three manifest shapes; #10's title still read "per-chipset/arch" four days after D-CLOUD-017 keyed on core. | The pre-futro audit diffs every body against the register rows and grounding comments that touch it and edits the body before the futro is written; a superseding comment is not posted without the body edit in the same action. |
 | 28 | **Two non-destructive one-way transfers composed into a two-way sync are a recency resolver** — each direction is `copy` (never deletes) with `--update` (never overwrites a newer destination), so each reads as safe; run down then up, a file changed on both sides is resolved by whichever is newer, with no record. The label "non-destructive" describes each half and not the whole. | 2026-09-05 (futro, epic #11): `autostart/102-cloud-saves` and the SYNC SAVE DATA row run `cloud_restore --method=copy --update && cloud_backup --method=copy --update`; the game-exit `cloud_backup --recent` runs `copy` with no `--update` at all. The milestone's cardinal rule (#11: never newest-wins) was already violated by the pipeline the wizard was to sit behind. | Any two-way path states its conflict rule in one sentence in the script header; the round-trip suite carries a both-sides-changed fixture whose pass condition is that neither copy was overwritten. |
 | 29 | **A feature that ships but has no route** — the implementation, dependencies, and UI strings all survive a refactor, so artifact checks say the feature exists. A parent menu calls an older sibling flow instead, making the feature unreachable while every component-level test remains green. | 2026-09-05: v7's H700 binary contains the native cloud provider page, phone keyboard/pointer backend, and `WITH MY PHONE`, but `CONNECT OR REPAIR CLOUD STORAGE` called the legacy `openCloudSetup` SSH wizard. The September 3 cloud-hub refactor added that edge while leaving both complete subtrees compiled, so first-remote setup showed only `ON YOUR COMPUTER`. | Test the path from the documented parent row to the distinctive child choice, not only the child implementation or binary strings. After a menu consolidation, enumerate every user-facing call site for the old and new entry functions; an old route should remain only behind a row that explicitly names it. |
+
+## 29. A standing authorisation, extended by the agent to actions nobody authorised
+
+**Committed:** 2026-09-06. The maintainer said early in the evening that new
+builds could be pushed to the devices. Eight images later, the agent was
+staging each tarball and rebooting each device as one automatic step in a
+chain, checking only that no emulator was running. The eighth such reboot hit
+the RG SP in the middle of a restore the maintainer was running on it.
+
+**The shape:** permission given once for a *kind* of action is silently
+carried forward as permission for every *instance*, while the conditions that
+made the first instance safe (an idle device, a maintainer watching) drift away
+unexamined. The idle check that existed was for the wrong thing — the one
+activity the agent had in mind — not for the activities the device was
+actually capable of being in the middle of.
+
+**The fix (D-QA-008):** an outward-facing, interrupting action is asked for
+every time, at the moment, by name. The check before asking covers everything
+the action would interrupt. See also blindspot 13 (ticks that were not
+observations) — the same substitution of a proxy for the thing itself.
+

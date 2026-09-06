@@ -194,6 +194,36 @@ category is part of the fix, not follow-up work.
 (Adapted from `incident-response.instructions.md` in the scaffold estate —
 <https://forge.possibility.space/scaffold/scaffold>.)
 
+## Never reboot, update, or power-cycle a device without asking
+
+Maintainer, 2026-09-06, after a session pushed an image and rebooted a handheld
+while a restore was running on it: *"you just rebooted my device without
+asking. We need a rule that says that you should never reboot my device without
+asking."* Binding, with no standing authorisation: permission to build, to push
+a file, or to "get the new build onto the devices" is not permission to reboot.
+Each reboot is asked for, at the moment it would happen, naming the device.
+
+- **A device belongs to a person, and that person may be using it.** An idle
+  check is a prerequisite to asking, not a substitute for it. It was a
+  prerequisite that failed here: it looked for a running emulator and nothing
+  else, and a cloud restore was running.
+- **The idle check covers everything that would be interrupted**: an emulator,
+  a cloud transfer (`rclone`, `cloud_backup`, `cloud_restore`,
+  `cloud_content_*`, the lock at `/var/run/cloud_sync.lock`, the transfer
+  page in EmulationStation), a scrape, an update already staged. Use a pattern
+  the checking shell cannot match itself (`rclon[e]`).
+- **Staging is fine; the reboot is the question.** Copying the update tarball
+  into `~/.update` changes nothing until the next boot, so it may be done
+  without asking, and the person told that it is staged and what the next
+  reboot will do.
+- **A queue of deployments is a queue of questions.** Five images in a night
+  do not earn a standing yes; the fifth reboot is asked for like the first.
+
+Recovery from the case that produced this rule: `cloud_restore` and
+`cloud_content_restore` are `rclone copy`, which writes each file to a
+temporary name and renames on completion and never deletes, so an interrupted
+run leaves no partial files and re-running it completes it.
+
 ## If the VM can test it, the VM tests it first
 
 Maintainer, 2026-09-06: *"if we can test something on the VM, we should test on
