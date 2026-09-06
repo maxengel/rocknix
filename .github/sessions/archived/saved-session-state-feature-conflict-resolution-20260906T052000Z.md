@@ -1,25 +1,22 @@
 # Saved Session State
 
-> **Saved**: 2026-09-06T06:15:00Z
-> **Branch**: `feature/conflict-resolution` @ `67667cc462` (= `next`, pushed)
+> **Saved**: 2026-09-06T05:20:00Z
+> **Branch**: `feature/conflict-resolution` @ `271a10e2aa` (= `next`, pushed)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 > **Worktree**: `/workspace/repos/rocknix.worktrees/conflict-resolution`
 
 ## Current Focus
 
-**The council is complete and handed off.** Its handoff is on the tracker as it
-stands: #11's body and the eleven children's (#9 #10 #19 #21 #22 #23 #24 #25
-#35 #37 #7), titles and bodies from `final-issue-draft.md`; the three register
-rows it could only propose are D-CLOUD-045/046/047; the one it could not decide
-is parked (D-CLOUD-044, home #9); #70 is closed on its last criterion.
+**Council Step 6 is one answer away.** The Step 5 draft (`final-issue-draft.md`)
+is reviewed; three of its four maintainer items are decided (D-CLOUD-041, 042);
+the last — the *hold* posture while a bisync gap is upstream — was explained and
+awaits a yes. On yes: apply the draft to #11 and the eleven children, hand off
+with the execution principles, close #70. **Nothing has reached the tracker.**
 
-**Both devices are on `2e33f6b2be`**, the tenth H700 image, verified. Every
-deployment since D-QA-008 was asked for and answered.
-
-**The next work is Gate 0 (#35): repair and run the round-trip harness in the
-GENERIC_X64 VM**, with the renamed config keys and #71's filter-free case as
-its first fixtures. Nothing downstream is trusted until it runs. D-QA-007: the
-VM first.
+**Devices:** RG35XX SP on the tenth image `2e33f6b2be`, verified. RG SP on the
+sixth `7eb021f210`, **scraping — do not touch**; the maintainer will say when it
+is free, and its interrupted restore should be re-run and finish before any
+reboot. **Every reboot is asked for, by device, at the moment (D-QA-008).**
 
 ## Completed This Session (2026-09-05 → 06)
 
@@ -78,28 +75,37 @@ on `next`, rides the next image). #25 carries the restore tool's shape.
 
 ## In Progress
 
-- Nothing mid-flight. The work below is queued, not started.
+- **#73's remaining criteria** — the on-screen ones are the maintainer's to
+  tick. Untested by hardware, deliberately left open: a customised cloud
+  folder surviving the update (harness-proved), the split-root refusal, a
+  settings backup writing `<date>-ROCKNIX_SETTINGS.tar.gz`, and
+  `tools/cloud-round-trip` against the new keys (plus #71's filter-free case).
+- **Council Step 6** — waiting on the hold-posture yes; then apply `final-issue-draft.md` to the tracker (epic #11 + #9 #10 #19 #21 #22 #23 #24 #25 #35 #37 #7), run-summary/README done, hand off.
+- ~~Council Steps 5 and 6 — not started.~~ Step 5 done (`final-issue-draft.md`, gate PASS). Input is `consensus_plan.md`
+  § "Step 5 handoff content" (R1–R11, A1–A14, Gates 0–13, P1–P8) **plus** the
+  maintainer decisions above, which resolve all 7 "maintainer calls
+  outstanding" the plan listed (bisync: spike decisive, D-039; queue-and-badge:
+  yes, D-035; count: 3, D-036; deletions/compactions not retained locally: moot,
+  store is in the cloud, D-036; split roots: refuse, D-040; absence: ask,
+  D-037; launch gate: extend the shipped guard, D-038). Step 5 invokes ONE
+  member through `tools/council/run invoke` (preferably the winning author,
+  `claude`) to draft issue content; nothing reaches the tracker before the
+  maintainer sees it. Vocabulary in the drafts must follow D-UI-022.
 
 ## Next Steps
 
-1. **Gate 0 — #35.** Repair `tools/cloud-round-trip` (it overwrites `rclone.conf`
-   without restoring it; its archive-name assertions predate the dated names;
-   its content fixture predates D-CLOUD-019; it now writes the renamed keys —
-   done in the sweep) and run it in the VM against WebDAV and MinIO. Add #71's
-   filter-free `RCLONEOPTS` case. `generic-x64-vm-testing.md`.
-2. **Gate 11 — #9.** The bisync spike against its written contract (on #9's
-   body); it decides D-CLOUD-044.
-3. **Gate 12 — census on the RG35XX SP** (#21/#22): auto-state divergence, the
-   unit table, retained bytes at count 3.
-4. Then the build order on #11: schema rev 2 and capture (#21) → the reconciler
-   (#22, #7) → the cloud store → wizard apply and the adapter (#23, #24) →
-   deletion → badge (#19) → #10 → the restore tool (#25, own futro).
-5. **The rocknix.org docs PR** for the vocabulary (hard gate); the changelog's
-   "One vocabulary" section is the draft. Also the four remaining #73 criteria
-   (on-screen review, an actual settings restore, the round-trip run).
-6. Deferred on purpose: `BACKUPFILE_*_OPTION` keys keep their names; the
-   summary tool's usage field and the seal schema's missing round dimension
-   are recorded for the estate, not fixed here.
+1. When the device watch fires: push the update, reboot, verify as above, tick
+   #73's criteria, comment on #73 with what was observed.
+2. Run council Step 5 (prompt = handoff section + the decisions; `--step` has
+   no 5, so assemble with `_prompts/build-round-prompt.py`-style injection or
+   by hand; record in `model-verification-log.md`), review, then Step 6.
+3. Rebuild H700 after Step 5 is not needed; the #74 fix rides whatever image
+   comes next. Build again when there is a code reason.
+4. The rocknix.org docs PR for the vocabulary (hard gate in
+   `documentation-accuracy.md`) — the changelog's "One vocabulary" section is
+   the draft.
+5. Update `.claude/rules/rclone-cloud-sync.md`'s prose if the device test shows
+   anything the rename missed.
 
 ## Key Files Modified
 
