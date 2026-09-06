@@ -79,40 +79,84 @@ the stakes but not the confusion.
 - **Serial comma**, so "game saves, save states, and screenshots" cannot be
   misread as two things.
 
-## 4. Proposal
+## 4. Proposal (revised after review, 2026-09-06)
 
-One rule settles most of it: **name the tier, and let the verb say whether a file
-exists.**
+The first draft split verbs by whether a file exists — *back up* for the
+settings archive, *upload* for saves. The maintainer's objection stands: *"A
+user won't understand the difference between an upload and an archive. Isn't
+the archive uploaded too?"* It is. That distinction was ours, not a player's.
 
-| Tier | Name | Verbs | Because |
-| --- | --- | --- | --- |
-| Settings | **settings** (never "system") | back up / restore | There is a file. You can copy it to a card. |
-| Saves | **saves**, itemised as game saves, save states, and screenshots | upload / download | No file. Copies in place, both directions. |
-| Content | **ROMs and BIOS** | upload / download | Concrete; "content" is our word, not a player's. |
-| Previous versions | **previous versions** | restore a previous version | Not trash, not deleted, not an archive. |
+The axis a player actually has is **what** and **where**. So:
 
-Consequences, each a small edit:
+- **Two verbs, universal.** *Back up* sends something somewhere. *Restore*
+  brings it back. Nothing is "uploaded" or "archived" in a label.
+- **The noun says what.** *Settings.* *Saves* — itemised as game saves, save
+  states, and screenshots wherever there is room. *ROMs and BIOS.*
+- **The destination says where.** *To this device* or *to the cloud.* The
+  settings archive can go to either; saves and ROMs only go to the cloud, and
+  the label still says so, because saying it is what stops the "I thought my
+  ROMs were in it" reading.
+- **Sync** is reserved for the automatic two-way behaviour saves get after #22.
+  A player never picks a direction for a sync; that is what makes it sync.
 
-- **"System backup" becomes "settings backup"** everywhere: the menu tick, the
-  dialogs, the config comments, the docs. The archive filename can follow later;
-  it is matched by glob and a rename needs the read side to accept both.
-- **"SAVE DATA" becomes "SAVES."** "Data" adds nothing a player uses.
-- **Bundle actions name their three parts** rather than saying "everything",
-  because "everything" is what makes someone assume their ROMs are included.
-- **"Discard" keeps one meaning** — abandoning decisions on quit. The copy you
-  chose against is a **previous version**.
-- **The config comments say which tier each path belongs to.** No renaming of
-  keys; an upgraded device would silently lose its settings.
+| Tier | Name | Player-facing shape |
+| --- | --- | --- |
+| Settings | **settings** (never "system") | BACK UP SETTINGS TO THIS DEVICE / TO THE CLOUD; RESTORE SETTINGS FROM … |
+| Saves | **saves** | BACK UP SAVES TO THE CLOUD / RESTORE SAVES FROM THE CLOUD today; SYNC SAVES once #22 lands |
+| Content | **ROMs and BIOS** | as today — the pages already name them and show sizes |
+| Kept losers | **discarded saves** | KEEP COPIES OF DISCARDED SAVES, with a count |
+
+On the last row: the first draft proposed *previous versions* to avoid the
+document's double use of *discard*. The maintainer's phrasing — *"store copies
+of your discarded saves"* — is what a player would say, so it wins, and the
+document stops using *discard* for quitting the wizard instead. One residual:
+a copy a sync replaced without anyone deciding is not "discarded" by anybody;
+#25's restore tool labels those separately when it shows them.
+
+Concrete rewrites, before and after:
+
+```
+SYSTEM SETTINGS                  ->  SETTINGS
+SAVE DATA                        ->  SAVES
+BACK UP EVERYTHING [NOW]         ->  BACK UP SETTINGS AND SAVES [NOW]
+BACK UP CONFIGURATIONS TO DEVICE ->  BACK UP SETTINGS TO THIS DEVICE
+UPLOAD SAVE DATA [TO THE CLOUD]  ->  BACK UP SAVES TO THE CLOUD
+DOWNLOAD SAVE DATA [FROM …]      ->  RESTORE SAVES FROM THE CLOUD
+UPLOADING / DOWNLOADING SAVE DATA -> BACKING UP SAVES / RESTORING SAVES
+CHECKING YOUR CLOUD LIBRARY      ->  COMPARING YOUR ROMS AND BIOS FILES
+                                     WITH THE CLOUD
+MOVE SAVES AND BACKUPS INTO /ROCKNIX. NOTHING IS DELETED.
+                                 ->  MOVE SAVES AND SETTINGS BACKUPS INTO
+                                     /ROCKNIX. NOTHING IS DELETED.
+KEEP DISCARDED SAVES             ->  KEEP COPIES OF DISCARDED SAVES
+
+BACK UP YOUR SETTINGS, GAME SAVES, SAVE STATES, AND SCREENSHOTS TO THE CLOUD?
+  ->  BACK UP SETTINGS AND SAVES TO THE CLOUD?
+      GAME SAVES, SAVE STATES, AND SCREENSHOTS ARE INCLUDED.
+      ROMS AND BIOS FILES ARE NOT.
+
+… OR ENABLE THE SYSTEM BACKUP OPTION IN CLOUD SYNC.
+  ->  … OR TURN ON SETTINGS BACKUP UNDER CLOUD SETTINGS.
+```
+
+Config keys, each read under the old name when the new one is absent, so an
+upgraded device keeps its values:
+
+```
+BACKUPPATH       ->  SAVESPATH          local saves folder
+RESTOREPATH      ->  removed            one folder; sync cannot split it
+SYNCPATH         ->  SAVES_REMOTE       cloud folder for saves
+BACKUPFOLDER     ->  SETTINGS_BACKUPS   local folder for settings backups
+SYNCPATH_BACKUP  ->  SETTINGS_REMOTE    cloud folder for settings backups
+CONTENTPATH      ->  CONTENT_REMOTE     cloud folder for ROMs and BIOS
+```
 
 ## 5. Decisions this needs
 
-1. Adopt the tier names and the verb rule above, or amend them.
-2. **"Settings backup" versus "settings archive"** for the artifact. *Backup* is
-   what a player expects; *archive* is what it literally is and avoids the word
-   entirely. One or the other, not both.
-3. Whether the archive **filename** changes now or later. Later is safer: the
-   restore side already reads two historical names.
-4. Whether **"previous versions"** is the final term (see D-CLOUD-036).
+1. Adopt the two-verb rule and tier names above, or amend them.
+2. Whether the settings archive **filename** changes now or later. Later is
+   safer: the restore side already accepts three historical names (§7).
+3. Confirm **discarded saves** as the term, with the residual noted.
 
 ## 6. Where the edits land
 
@@ -123,3 +167,61 @@ dialog), `ThreadedCloudSync.cpp` (progress and outcome lines), `backuptool`
 `.claude/rules/es-native-ui.md` (the rule gains the tier names), and a follow-up
 PR to `ROCKNIX/rocknix.org`'s cloud-sync page, which the hard gate in
 `documentation-accuracy.md` requires anyway.
+
+## 7. Every backup artifact that has ever shipped
+
+Requested because older versions left clutter, and a vocabulary has to cover
+what is already on people's cards and in their cloud folders, not only what we
+write next. Read from `backuptool`, `cloud_backup`, `cloud_restore`,
+`cloud_migrate_layout` and the allowlist.
+
+### Settings archives, on the device
+
+| Path | Era | Still read? |
+| --- | --- | --- |
+| `/storage/roms/backup/<OS>_BACKUP.zip` | first: fixed name, zip | yes — `LEGACY_BACKUPFILE` |
+| `/storage/roms/backup/<date>-<OS>_BACKUP.tar.gz` | current: dated, tar | yes — `newest_backup()` picks by date |
+| `/storage/roms/backup/archive/` | rotation of the previous three | yes — the rotation glob also matches `ARCHIVED_*.zip`, a **third** historical name |
+
+### Settings archives, in the cloud
+
+| Path | Era | Notes |
+| --- | --- | --- |
+| `/GAMES/backup/` | first layout | nested inside the saves folder, so a `sync` backup could delete it; moved by TIDY UP YOUR CLOUD FOLDERS, offered never automatic |
+| `/ROCKNIX/Backups/*.{zip,tar.gz}` | second: archive at the folder root | the restore filter once looked for `backup/*.zip` here and matched nothing — four images shipped that way (#53's neighbour) |
+| `/ROCKNIX/Backups/<device-folder>/` | current: one subfolder per device | restore reads its own folder, then falls back to the root for archives older than the per-device layout |
+
+### Saves, in the cloud
+
+| Path | What |
+| --- | --- |
+| `/GAMES/` | first layout's saves root |
+| `/ROCKNIX/Saves/` | current saves root |
+| `/ROCKNIX/Saves-replaced/<date>/` | `--backup-dir` sibling, written only under `BACKUPMETHOD=sync`; the safety net for a mirror's deletions |
+| `… conflicted copy …` files inside Saves | written by the Dropbox desktop client on a write race; admitted by the allowlist, never excluded by the saves scripts (#71's neighbour) |
+| `<rom>.state.auto.bak` | EmulationStation's own backup of the resume point; matched by `*.state*`, so it syncs and is invisible in the savestate manager |
+
+### ROMs and BIOS, in the cloud
+
+| Path | Era |
+| --- | --- |
+| remote root, one folder per system | before `CONTENTPATH` existed: system folders scattered among whatever else lived there |
+| `/ROCKNIX/Content/{<system>,bios}/` | current |
+
+### New in this milestone
+
+| Path | What |
+| --- | --- |
+| `/ROCKNIX/SaveVersions/` | discarded saves and sync-replaced copies, the cloud as source of truth (D-CLOUD-036); replaces the `-replaced/` sibling's role for anything a player can restore |
+| `savestates/.rocknix/manifest-<device-id>.json` | the per-device manifests (D-CLOUD-031) |
+| `savestates/.snapshots/` | #25's local snapshots — needs its allowlist exclusion as a command-line flag, not a defaults rule |
+
+### What this means for the vocabulary
+
+Three names for one artifact on the card, three cloud locations for it across
+three layouts, and a mirror-mode sibling and a desktop client both writing
+things beside the saves that look like saves. A term has to be readable
+against all of it — which is the argument for *settings backup* over *system
+backup* (every one of those files is settings and nothing else), and for a
+single **SaveVersions** folder over spreading discarded copies across siblings
+the way `-replaced/` already does.
