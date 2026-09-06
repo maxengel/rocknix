@@ -373,7 +373,7 @@ for DIR in "${DIRS[@]}"; do
     # nothing. rclone pads the file name out to a guessed width; the reader
     # trims it, so the flag bought nothing worth a version check.
     rclone copy "${SRC}" "${TARGET}"  \
-        "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" \
+        "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${MEDIA_EXCLUDES[@]}" \
         --exclude "gamelist.xml" --exclude "**/gamelist.xml" \
         --progress --stats 1s \
         --log-file "${LOG_FILE}" --log-level INFO
