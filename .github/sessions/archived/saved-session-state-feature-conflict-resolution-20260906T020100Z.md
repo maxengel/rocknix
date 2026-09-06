@@ -1,18 +1,17 @@
 # Saved Session State
 
-> **Saved**: 2026-09-06T03:00:00Z
-> **Branch**: `feature/conflict-resolution` @ `7919b0a03d` (= `next`, pushed)
+> **Saved**: 2026-09-06T02:01:00Z
+> **Branch**: `feature/conflict-resolution` @ `07296bbe64` (= `next`, pushed)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 > **Worktree**: `/workspace/repos/rocknix.worktrees/conflict-resolution`
 
 ## Current Focus
 
-**The vocabulary sweep is finished and on both devices** (fifth H700 image of
-the night, `3bfa0b4e33`, verified from each device's binary and config). What
-is left of it is the maintainer's eyes on the screen, the four things hardware
-has not exercised, and the rocknix.org docs PR. **Council Steps 5 and 6 have
-not started** and nothing blocks them: every maintainer call the consensus plan
-listed is settled in the register (D-CLOUD-032…040, D-UI-022, D-UI-023).
+Two things are parked on the same wait: **the RG35XX SP is off.** When it comes
+back (a persistent watch is armed: `ssh rg35xxsp` every 60 s), push the
+vocabulary image to it and verify the upgrade path on the device. Then run the
+council's **Step 5** (issue drafts) and **Step 6** (handoff) — every maintainer
+call the consensus plan needed is now settled, so nothing blocks it.
 
 ## Completed This Session (2026-09-05 → 06)
 
@@ -42,7 +41,7 @@ guard in `FileData::launchGame`), -039 (the bisync spike is decisive, upstream
 requests for narrow gaps), -040 (RESTOREPATH removed; design intent traced to
 the 2025-07 import), D-UI-022 (**the vocabulary**), D-WORKFLOW-003 earlier.
 
-**The vocabulary sweep (#73) — done in both repos, on both devices.** Five images: `7b60fadaec` (sweep), `c78e6dea21` (never deployed), `27d1734555`, failed `f72d1f4981`, **`3bfa0b4e33` (current)**. Kept under `/workspace/artifacts/rocknix-images/`. Screen review added D-UI-023 (two lines per row, never three; a description that would make a third line moves into the confirmation dialog): hub row → MANAGE CLOUD STORAGE over its section names; sync row one line; saves rows keep how they last went; transfer-page tier rows keep what they carry; match row the same; tidy row says settings backups. Issues #74 (cloud-folder change nested settings backups — fixed) and #75 (choose which settings backup to restore, under #18). The RG SP is `rgsp` (192.168.1.175), keyed like `rg35xxsp`; both LPDDR facts confirmed from hardware.
+**The vocabulary sweep (#73) — done in both repos, built, verified in the image:**
 
 - `docs/cloud-vocabulary-audit.md` — the audit (the "system backup" holds
   settings only; backup names both an artifact and a direction; every backup
@@ -71,11 +70,15 @@ on `next`, rides the next image). #25 carries the restore tool's shape.
 
 ## In Progress
 
-- **#73's remaining criteria** — the on-screen ones are the maintainer's to
-  tick. Untested by hardware, deliberately left open: a customised cloud
-  folder surviving the update (harness-proved), the split-root refusal, a
-  settings backup writing `<date>-ROCKNIX_SETTINGS.tar.gz`, and
-  `tools/cloud-round-trip` against the new keys (plus #71's filter-free case).
+- **Device verification of the vocabulary image** — waiting on the device.
+  - **Current state**: image built and verified in the build root; device off.
+  - **What remains**: `scp devices/target/ROCKNIX-H700.aarch64-20260906.tar
+    root@rg35xxsp:~/.update && ssh rg35xxsp reboot`; then on the device:
+    `grep -E '^(SAVES_REMOTE|SETTINGS_REMOTE|CONTENT_REMOTE|SAVESPATH)=' /storage/.config/cloud_sync.conf`
+    (customised values carried, no dupes), `ls /storage/.cache/cloud_sync/`
+    (`last-settings-*` stamps present), BUILD_ID `7b60fadaec`, and eyes on
+    GAME SETTINGS › CLOUD SETTINGS, the BACK UP / RESTORE pages, the local
+    settings backup dialog. Tick #73's criteria only on observed behaviour.
 - **Council Steps 5 and 6** — not started. Input is `consensus_plan.md`
   § "Step 5 handoff content" (R1–R11, A1–A14, Gates 0–13, P1–P8) **plus** the
   maintainer decisions above, which resolve all 7 "maintainer calls
