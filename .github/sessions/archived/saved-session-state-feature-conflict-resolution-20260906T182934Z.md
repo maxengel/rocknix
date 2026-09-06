@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-06T18:29:34Z
+> **Saved**: 2026-09-06T17:19:53Z
 > **Branch**: feature/conflict-resolution (worktree; the work itself landed on `next`)
 > **Repo**: maxengel/rocknix (+ ES at ~/Development/emulationstation-next, branch feature/cloud-vocabulary → test/qa-integration)
 
 ## Current Focus
 
-The intermediary work is delivered: #76 and #77 are on both handhelds (`0803aa195c`), every acceptance criterion ticked on observed behaviour; both issues stay open only for the maintainer's look at the screens. The VM and the QA backend are down. Next is the switch to the conflict-resolution milestone: `begin-delivery` on #11, starting at Gate 0 (#35).
+#77 (D-CLOUD-050: game content is a class on the transfer page; CONTINUE opens the systems page; the game list is game content, D-CLOUD-049) is built as `0803aa195c` (ES `1fff9e904`), proven in the VM (six of seven criteria; the seventh's device half needs the RG35XX SP), and staged on both handhelds. Both reboots are asked for, not taken. Then the switch back to the conflict-resolution milestone: `begin-delivery` on #11, starting at Gate 0 (#35).
 
 ## Completed This Session
 
@@ -18,13 +18,16 @@ The intermediary work is delivered: #76 and #77 are on both handhelds (`0803aa19
 
 ## In Progress
 
-- Nothing in flight. #76/#77 close on the maintainer's word after the screen look (close `completed` naming `0803aa195c`, ES `1fff9e904`).
+- #77 criterion 3, device half: the RG35XX SP's restored, scraped library reading IN YOUR CLOUD / ON THIS DEVICE under ROMS AND BIOS alone. Tar `0803aa195c` (sha256 `7f03abeb…`) verified in `~/.update` on both devices; reboot not yet authorised for either.
+- #76 closes with #77 once the maintainer has looked at the screens.
 
 ## Next Steps
 
-1. `begin-delivery` on #11: prior "retro" = the council handoff (Step 6, `research/council-runs/2026-09-05-conflict-resolution-foundation/`); futro against #35 and #9 with blindspots 29 and 30 in hand; load Gate 0's tasks (#35: the round-trip harness in the VM, every fixture written to fail first — `tools/cloud-round-trip` over SSH, or `tools/vm-serial` now that it exists).
-2. Gate 11 (#9 bisync spike → settles D-CLOUD-044), Gate 12 (writer census for #21/#22).
-3. Carried debt: rocknix.org docs PR (hard gate before any upstream PR; the changelog sections are the draft); #73's remaining on-screen review; a rebuild at some point for the `--scan` BIOS tidy-up (`next` only).
+1. Reboots: only on the maintainer's explicit yes per device; re-check idle first (`runemu.sh`, rclone, the flock).
+2. After the RG35XX SP is on `0803aa195c`: `cloud_content_restore --scan` on its library (ROMs mode) — every restored system should read `…|0|0`; the maintainer's screen look; tick #77 criterion 3 and #76 criterion 1; close both naming the build.
+3. Shut the VM (`kill $(cat /tmp/rocknix-qemu.pid)`) and `tools/cloud-test-backend down`.
+4. `begin-delivery` on #11 → Gate 0 (#35, the harness in the VM), Gate 11 (#9 bisync spike → D-CLOUD-044), Gate 12 census.
+5. Carried debt: rocknix.org docs PR (hard gate before any upstream PR; `docs/cloud-sync-changelog.md` §§ "One vocabulary", "Game content is a class of its own" are the draft); #73's remaining on-screen review.
 
 ## Key Files Modified
 
@@ -51,5 +54,5 @@ The intermediary work is delivered: #76 and #77 are on both handhelds (`0803aa19
 
 ## Open Questions
 
-- Close #76/#77 now, or after the maintainer's screen look?
+- RG35XX SP and RG SP reboots onto `0803aa195c`: yes/no/when (staged, inert until then).
 - D-CLOUD-044 (bisync-gap posture) stays parked until the #9 spike.
