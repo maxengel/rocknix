@@ -209,8 +209,10 @@ Each reboot is asked for, at the moment it would happen, naming the device.
   else, and a cloud restore was running.
 - **The idle check covers everything that would be interrupted**: an emulator,
   a cloud transfer (`rclone`, `cloud_backup`, `cloud_restore`,
-  `cloud_content_*`, the lock at `/var/run/cloud_sync.lock`, the transfer
-  page in EmulationStation), a scrape, an update already staged. Use a pattern
+  `cloud_content_*`, the lock at `/var/run/cloud_sync.lock` — **an `flock`, so
+  test it with `flock -n /var/run/cloud_sync.lock true`; the file's existence
+  means nothing, it stays behind after every run** — the transfer page in
+  EmulationStation), a scrape, an update already staged. Use a pattern
   the checking shell cannot match itself: `rclon[e]`, never a zero-width tail
   like `cloud_content_[a-z]*`, which matches its own literal in the shell's
   argv and reported two phantom transfers on 2026-09-06. When a count is not
