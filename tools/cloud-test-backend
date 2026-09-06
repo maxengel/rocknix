@@ -20,7 +20,7 @@
 # backup contents, so a live provider token would be handled by exactly the
 # code paths most likely to leak it.
 #
-#   ./tools/cloud-test-backend up          # start it
+#   ./tools/cloud-test-backend up          # start it (CLOUD_QA_BWLIMIT=1M to throttle it)
 #   ./tools/cloud-test-backend reset       # empty it between tests
 #   ./tools/cloud-test-backend ls [path]   # what the device actually uploaded
 #   ./tools/cloud-test-backend rclone-conf # the stanza to place on a device
@@ -115,7 +115,10 @@ case "${1:-}" in
     # minutes by default, so a fixture written into DATA after the server
     # starts stays invisible to the device - a test then fails for a reason
     # that has nothing to do with the code under test.
-    nohup rclone serve webdav "${DATA}" --addr "127.0.0.1:${PORT}" \
+    # CLOUD_QA_BWLIMIT=1M throttles the server, so a transfer page or a
+    # progress parser can be watched mid-transfer on a loopback link that
+    # would otherwise finish before the first frame. rclone's own syntax.
+    nohup rclone serve webdav "${DATA}" --addr "127.0.0.1:${PORT}" ${CLOUD_QA_BWLIMIT:+--bwlimit "${CLOUD_QA_BWLIMIT}"} \
       --dir-cache-time 1s \
       --user "${USER_NAME}" --pass "${PASS}" > "${LOGFILE}" 2>&1 &
     echo $! > "${PIDFILE}"
