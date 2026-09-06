@@ -1,0 +1,83 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# Two GENERIC_X64 guests from one image, for the tests that need two devices
+# against one cloud: a conflict is a change on both sides since they last
+# agreed, and one guest cannot make one. Conflict and bisync testing runs
+# here and never on a handheld (D-QA-009).
+#
+#   ./tools/vm-pair up <ROCKNIX-GENERIC_X64...img.gz>   # two 16 GiB disks, two headless guests, a QA key in each
+#   ./tools/vm-pair ssh a 'uname -r'                     # a command over SSH (the harness's transport)
+#   ./tools/vm-pair serial b 'df -h /storage'            # a command over the serial console
+#   ./tools/vm-pair info                                 # ports, sockets, the key
+#   ./tools/vm-pair down                                 # both, by pidfile
+#
+# Guest a keeps generic-x64-vm's defaults (SSH 10022, monitor and serial at
+# /tmp/rocknix-qemu-*.sock, pidfile /tmp/rocknix-qemu.pid, VNC :9); guest b
+# gets the same with a -b suffix, SSH 10023 and VNC :10. Both sit behind
+# user-mode NAT, so the profile's fixed MAC is not a collision, and both reach
+# the host's QA backend at 10.0.2.2. Disks live under $VM_PAIR_DIR
+# (default /tmp/rocknix-vm-pair): scratch, rebuilt from the image on every up.
+set -euo pipefail
+HERE=$(cd "$(dirname "$0")" && pwd)
+ROOT=$(cd "$HERE/.." && pwd)
+VM_TOOL="$ROOT/projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm"
+DIR="${VM_PAIR_DIR:-/tmp/rocknix-vm-pair}"
+KEY="$DIR/qa-key"
+
+# Per-guest settings: letter -> monitor serial pidfile vnc sshport
+settings() {
+  case "$1" in
+    a) echo "/tmp/rocknix-qemu-monitor.sock /tmp/rocknix-qemu-serial.sock /tmp/rocknix-qemu.pid 9 10022" ;;
+    b) echo "/tmp/rocknix-qemu-monitor-b.sock /tmp/rocknix-qemu-serial-b.sock /tmp/rocknix-qemu-b.pid 10 10023" ;;
+    *) echo "vm-pair: guest is a or b, not '$1'" >&2; exit 2 ;;
+  esac
+}
+
+stop_one() {
+  read -r _ _ pid _ _ <<<"$(settings "$1")"
+  if [ -f "$pid" ] && kill -0 "$(cat "$pid")" 2>/dev/null; then
+    kill "$(cat "$pid")" && echo "down: $1 (pid $(cat "$pid"))"
+  fi
+  rm -f "$pid"
+}
+
+case "${1:-}" in
+  up)
+    img="${2:-}"; [ -f "$img" ] || { echo "usage: vm-pair up <ROCKNIX-GENERIC_X64...img.gz>" >&2; exit 2; }
+    stop_one a; stop_one b; sleep 1
+    mkdir -p "$DIR"; rm -f "$DIR"/vm-*.qcow2 "$DIR"/vm-*.ovmf-vars.fd
+    [ -f "$KEY" ] || ssh-keygen -q -t ed25519 -N '' -f "$KEY" -C vm-pair
+    # one raw image, two disks
+    gunzip -c "$img" > "$DIR/image.img"
+    for g in a b; do
+      qemu-img convert -f raw -O qcow2 "$DIR/image.img" "$DIR/vm-$g.qcow2"
+      qemu-img resize "$DIR/vm-$g.qcow2" 16G >/dev/null
+    done
+    rm -f "$DIR/image.img"
+    for g in a b; do
+      read -r mon ser pid vnc port <<<"$(settings "$g")"
+      "$VM_TOOL" run --headless --daemonize --monitor "$mon" --serial "$ser" --pidfile "$pid" --vnc "$vnc" --ssh-port "$port" "$DIR/vm-$g.qcow2" 2>&1 | grep -v pw.conf || true
+      echo "up: $g (pid $(cat "$pid"), ssh :$port, serial $ser)"
+    done
+    for g in a b; do
+      read -r _ ser _ _ port <<<"$(settings "$g")"
+      "$HERE/vm-serial" --socket "$ser" wait --up-to 300 >/dev/null
+      pub=$(cat "$KEY.pub")
+      "$HERE/vm-serial" --socket "$ser" sh "mkdir -p /storage/.ssh && chmod 700 /storage/.ssh && echo '$pub' >> /storage/.ssh/authorized_keys && chmod 600 /storage/.ssh/authorized_keys" >/dev/null
+      who=$(ssh -i "$KEY" -p "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o LogLevel=ERROR root@127.0.0.1 'grep ^BUILD_ID= /etc/os-release | cut -c11-20' 2>/dev/null || true)
+      [ -n "$who" ] && echo "ready: $g on $who over ssh :$port" || { echo "vm-pair: guest $g did not answer over ssh" >&2; exit 1; }
+    done
+    ;;
+  down) stop_one a; stop_one b ;;
+  ssh)
+    read -r _ _ _ _ port <<<"$(settings "${2:-}")"; shift 2
+    exec ssh -i "$KEY" -p "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o LogLevel=ERROR root@127.0.0.1 "$@" ;;
+  serial)
+    read -r _ ser _ _ _ <<<"$(settings "${2:-}")"; shift 2
+    exec "$HERE/vm-serial" --socket "$ser" sh "$@" ;;
+  info)
+    for g in a b; do read -r mon ser pid vnc port <<<"$(settings "$g")"; printf '%s: ssh -i %s -p %s root@127.0.0.1   monitor %s   serial %s   pid %s   vnc :%s\n' "$g" "$KEY" "$port" "$mon" "$ser" "$([ -f "$pid" ] && cat "$pid" || echo -)" "$vnc"; done ;;
+  *) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac
