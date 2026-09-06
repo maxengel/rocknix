@@ -559,6 +559,12 @@ case "${1}" in
             echo "No systems are selected for this device."
             exit 1
         fi
+        # BIOS is not a system and is no longer a pick (maintainer, 2026-09-06):
+        # it comes with the tier whenever the cloud has it. The tier's own
+        # switch already says ROMS AND BIOS; nothing runs without them.
+        if exists_remote "${ROOT}BIOS" && ! printf '%s\n' "${DIRS[@]}" | grep -qx bios; then
+            DIRS+=("bios")
+        fi
     ;;
     --list)
         # Top-level directories only; one per line, no trailing slash.
@@ -569,7 +575,6 @@ case "${1}" in
             # current layout, reported under the local names the rest of the
             # script uses -- BIOS in the cloud is /storage/roms/bios here
             rclone lsf --dirs-only "${ROOT}ROMs/" 2>/dev/null | sed 's:/$::'
-            exists_remote "${ROOT}BIOS" && echo "bios"
             # the flat layout that shipped before it, minus its own containers
             rclone lsf --dirs-only "${ROOT}" 2>/dev/null | sed 's:/$::' \
                 | grep -vxE 'ROMs|BIOS'
@@ -596,10 +601,15 @@ esac
 
 STATUS=0
 take_cloud_lock
+UNIT_N=${#DIRS[@]}; UNIT_I=0
 for DIR in "${DIRS[@]}"; do
     SRC="$(resolve_src "${DIR}")"
     TARGET="${DEST}/${DIR}"
+    UNIT_I=$((UNIT_I + 1))
     log_message "Content restore: ${SRC} -> ${TARGET}"
+    # The marker the transfer page reads: what is being copied, and which of
+    # how many. rclone's own block totals that follow are this system's.
+    echo ">>> unit ${DIR:-everything}|${UNIT_I}|${UNIT_N}"
     echo "Restoring ${DIR:-everything} from the cloud..."
     # --progress is what puts the stats on stdout. With only --log-file they
     # go to the log and the caller sees nothing -- which is why the progress

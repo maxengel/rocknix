@@ -539,6 +539,7 @@ execute_rclone_with_error_handling() {
 backup_game_saves() {
     log_message "====================================" "true"
     log_message "STARTING GAME SAVES BACKUP" "true"
+    echo ">>> unit SAVES||"
     log_message "====================================" "true"
     
     log_message "Starting backup from ${SAVESPATH} to ${REMOTENAME}${SAVES_REMOTE}"
@@ -721,6 +722,7 @@ backup_system_files() {
     echo
     log_message "====================================" "true"
     log_message "STARTING SETTINGS BACKUP FILE TRANSFER" "true"
+    echo ">>> unit SETTINGS BACKUP||"
     log_message "====================================" "true"
     
     if [ "${BACKUPFILE_BACKUP_OPTION}" == "yes" ]; then

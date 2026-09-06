@@ -538,6 +538,7 @@ execute_rclone_with_error_handling() {
 restore_game_saves() {
     log_message "====================================" "true"
     log_message "STARTING GAME SAVES RESTORE" "true"
+    echo ">>> unit SAVES||"
     log_message "====================================" "true"
     
     log_message "Starting restore from ${REMOTENAME}${SAVES_REMOTE} to ${SAVESPATH}"
@@ -631,6 +632,7 @@ restore_system_files() {
     echo
     log_message "====================================" "true"
     log_message "STARTING SETTINGS BACKUP FILE RESTORE" "true"
+    echo ">>> unit SETTINGS BACKUP||"
     log_message "====================================" "true"
     
     if [ "${BACKUPFILE_RESTORE_OPTION}" == "yes" ]; then
