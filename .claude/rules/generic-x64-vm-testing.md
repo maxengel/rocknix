@@ -88,6 +88,16 @@ qemu-img resize vm.qcow2 16G` (the 16 GiB is not optional; see below). First
 boot resizes storage and reboots itself; `vm-serial wait` returns on the
 second boot, twenty to thirty seconds in.
 
+**Tools that speak SSH** (`tools/cloud-round-trip`): `sshd` on the image is
+disabled but running, root login permitted, and there is no `/root` — the
+home is `/storage`. One serial command provisions a key and the profile's
+forward does the rest:
+
+```bash
+tools/vm-serial sh "mkdir -p /storage/.ssh && chmod 700 /storage/.ssh && echo '$(cat key.pub)' >> /storage/.ssh/authorized_keys && chmod 600 /storage/.ssh/authorized_keys"
+ssh -i key -p 10022 -o StrictHostKeyChecking=no root@127.0.0.1 'echo ok'
+```
+
 **Stop it by PID.** `pkill -f 'vm76[.]qcow2'` killed the shell that ran it,
 because the same command text held the literal in an `rm` three lines down,
 and `bash -c` carries the whole script in its argv. The pidfile exists so
