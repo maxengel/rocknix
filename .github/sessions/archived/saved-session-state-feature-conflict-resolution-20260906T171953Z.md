@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-06T17:19:53Z
+> **Saved**: 2026-09-06T15:47:18Z
 > **Branch**: feature/conflict-resolution (worktree; the work itself landed on `next`)
 > **Repo**: maxengel/rocknix (+ ES at ~/Development/emulationstation-next, branch feature/cloud-vocabulary → test/qa-integration)
 
 ## Current Focus
 
-#77 (D-CLOUD-050: game content is a class on the transfer page; CONTINUE opens the systems page; the game list is game content, D-CLOUD-049) is built as `0803aa195c` (ES `1fff9e904`), proven in the VM (six of seven criteria; the seventh's device half needs the RG35XX SP), and staged on both handhelds. Both reboots are asked for, not taken. Then the switch back to the conflict-resolution milestone: `begin-delivery` on #11, starting at Gate 0 (#35).
+#76 is on the RG35XX SP (`2b2a8d385f`, rebooted on the maintainer's word) and staged on the RG SP (verified tar in `~/.update`, reboot asked for, not taken). One open question decides criterion 1: whether the game list follows the SCRAPED GAME CONTENT switch (D-CLOUD-049, home #61) — on the scraped RG35XX SP every restored system reads `1 FILE NOT IN YOUR CLOUD YET`, the scraper's `gamelist.xml`. The VM cycle's learnings were made executable (`74c0ff9ad5`).
 
 ## Completed This Session
 
@@ -18,16 +18,15 @@
 
 ## In Progress
 
-- #77 criterion 3, device half: the RG35XX SP's restored, scraped library reading IN YOUR CLOUD / ON THIS DEVICE under ROMS AND BIOS alone. Tar `0803aa195c` (sha256 `7f03abeb…`) verified in `~/.update` on both devices; reboot not yet authorised for either.
-- #76 closes with #77 once the maintainer has looked at the screens.
+- #76 criterion 1, device half: restore side observed by scan (all restored systems `…|0|1`, so ON THIS DEVICE); backup side reads `1 FILE NOT IN YOUR CLOUD YET` = `gamelist.xml`. Waiting on D-CLOUD-049 and the maintainer's screen look.
+- RG SP: staged, reboot not yet authorised.
 
 ## Next Steps
 
-1. Reboots: only on the maintainer's explicit yes per device; re-check idle first (`runemu.sh`, rclone, the flock).
-2. After the RG35XX SP is on `0803aa195c`: `cloud_content_restore --scan` on its library (ROMs mode) — every restored system should read `…|0|0`; the maintainer's screen look; tick #77 criterion 3 and #76 criterion 1; close both naming the build.
-3. Shut the VM (`kill $(cat /tmp/rocknix-qemu.pid)`) and `tools/cloud-test-backend down`.
-4. `begin-delivery` on #11 → Gate 0 (#35, the harness in the VM), Gate 11 (#9 bisync spike → D-CLOUD-044), Gate 12 census.
-5. Carried debt: rocknix.org docs PR (hard gate before any upstream PR; `docs/cloud-sync-changelog.md` §§ "One vocabulary", "Game content is a class of its own" are the draft); #73's remaining on-screen review.
+1. RG SP reboot — only on the maintainer's explicit yes for that device; re-check idle first.
+2. D-CLOUD-049: maintainer decides whether the game list counts/moves only with the switch on. If yes: `content_files`, `cloud_content_filter`, both `rclone copy` metadata passes, and the #76 body change together; VM cycle again (walks exist now). If no: tick criterion 1 after their screen look, close #76 naming `2b2a8d385f` + ES `5dd7f7f04`.
+3. Remaining #73 criteria; rocknix.org docs PR (hard gate; changelog sections are the draft).
+4. Gate 0 (#35 harness in VM) → Gate 11 (#9 bisync spike → D-CLOUD-044) → Gate 12 census.
 
 ## Key Files Modified
 
@@ -54,5 +53,6 @@
 
 ## Open Questions
 
-- RG35XX SP and RG SP reboots onto `0803aa195c`: yes/no/when (staged, inert until then).
+- RG SP reboot: yes/no/when (staged, inert until then).
+- D-CLOUD-049: game list under the switch or not?
 - D-CLOUD-044 (bisync-gap posture) stays parked until the #9 spike.
