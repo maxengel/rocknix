@@ -306,7 +306,7 @@ controller_menu() {
 record_last_run() {
     local exit_code="$1"
     local name="restore"
-    [ "${SYSTEM_ONLY}" -eq 1 ] && name="system-restore"
+    [ "${SYSTEM_ONLY}" -eq 1 ] && name="settings-restore"
     mkdir -p /storage/.cache/cloud_sync 2>/dev/null
     printf '%s %s\n' "$(date +%s)" "${exit_code}" \
         > "/storage/.cache/cloud_sync/last-${name}" 2>/dev/null
@@ -366,13 +366,23 @@ check_internet() {
 # Loads user configuration from cloud_sync.conf
 # Applies default values for any missing configuration parameters
 load_config() {
-    log_message "Loading configuration from cloud_sync.conf" "false"
-    source /storage/.config/cloud_sync.conf
-
-    # Update cloud sync rules and config by calling the helper script
+    # The helper first: it carries renamed keys across (D-UI-022) and appends
+    # new defaults, and the values sourced below must be the migrated ones.
     if [ -f "/usr/bin/cloud_sync_helper" ]; then
         log_message "Updating cloud sync rules and config" "false"
         /usr/bin/cloud_sync_helper ${LOG_FILE}
+    fi
+    log_message "Loading configuration from cloud_sync.conf" "false"
+    source /storage/.config/cloud_sync.conf
+
+    # Saves have one local folder (D-CLOUD-040). RESTOREPATH used to let a
+    # restore land somewhere other than the live saves -- a safety valve from
+    # when restore was a mirror. A config still pointing it elsewhere would
+    # give the saves tier two local trees, so every saves transfer refuses
+    # until the setting is removed. The helper has already logged it.
+    if [ -n "${RESTOREPATH:-}" ] && [ "${RESTOREPATH%/}" != "${SAVESPATH%/}" ]; then
+        log_message "RESTOREPATH (${RESTOREPATH}) differs from SAVESPATH (${SAVESPATH}). Saves have one local folder now; remove RESTOREPATH from cloud_sync.conf." "true" "ERROR"
+        clean_exit 1
     fi
 
     # Check for duplicate variable assignments in config
@@ -530,23 +540,23 @@ restore_game_saves() {
     log_message "STARTING GAME SAVES RESTORE" "true"
     log_message "====================================" "true"
     
-    log_message "Starting restore from ${REMOTENAME}${SYNCPATH} to ${RESTOREPATH}"
+    log_message "Starting restore from ${REMOTENAME}${SAVES_REMOTE} to ${SAVESPATH}"
     log_message "Restore started at $(date)" "false"
     
     # Check if remote path exists before attempting restore
-    log_message "Checking if remote path exists: ${REMOTENAME}${SYNCPATH}" "false"
-    rclone lsd "${REMOTENAME}${SYNCPATH}" > /dev/null 2>&1
+    log_message "Checking if remote path exists: ${REMOTENAME}${SAVES_REMOTE}" "false"
+    rclone lsd "${REMOTENAME}${SAVES_REMOTE}" > /dev/null 2>&1
     local remote_check_status=$?
     if [ $remote_check_status -ne 0 ]; then
-        log_message "Remote path ${REMOTENAME}${SYNCPATH} is not accessible (exit code: $remote_check_status)" "true" "ERROR"
+        log_message "Remote path ${REMOTENAME}${SAVES_REMOTE} is not accessible (exit code: $remote_check_status)" "true" "ERROR"
         report_rclone_error $remote_check_status "Remote path check"
         return $remote_check_status
     fi
     
     # Ensure local restore path exists
-    if [ ! -d "${RESTOREPATH}" ]; then
-        log_message "Creating local restore path: ${RESTOREPATH}" "false"
-        mkdir -p "${RESTOREPATH}"
+    if [ ! -d "${SAVESPATH}" ]; then
+        log_message "Creating local restore path: ${SAVESPATH}" "false"
+        mkdir -p "${SAVESPATH}"
     fi
     
     # Pass an explicit --log-level INFO when LOG_LEVEL is INFO
@@ -575,13 +585,13 @@ restore_game_saves() {
         all_opts+=("$rclone_debug" "INFO")
     fi
 
-    # Keep the system-backup archive out of the saves payload -- phase 2 sends it
-    # to SYNCPATH_BACKUP on its own. rclone matches paths relative to the transfer
+    # Keep the settings-backup archive out of the saves payload -- phase 2 sends it
+    # to SETTINGS_REMOTE on its own. rclone matches paths relative to the transfer
     # root, so the two rules that used to sit here never matched anything:
-    # "${BACKUPFOLDER}/**" is absolute, and "backups/**" names a directory that
+    # "${SETTINGS_BACKUPS}/**" is absolute, and "backups/**" names a directory that
     # does not exist (it is "backup"). Only the blanket "*.zip" was doing the
     # work, and it also overrode any user rule that deliberately included a zip.
-    # Derive the pattern from BACKUPFOLDER instead, so it keeps working if the
+    # Derive the pattern from SETTINGS_BACKUPS instead, so it keeps working if the
     # folder is renamed and is simply skipped when it lives outside the payload.
     # --stats-one-line collapses the whole display to a single totals line, so
     # the per-file block goes away -- and the per-file block is the part that
@@ -589,8 +599,8 @@ restore_game_saves() {
     # percentage changes; the name of the file it is on right now is the only
     # thing that distinguishes working from hung. The status page parses both.
     all_opts+=("--stats" "1s" "--exclude=bios/**")
-    local backup_rel="${BACKUPFOLDER#${RESTOREPATH%/}/}"
-    if [ "${backup_rel}" != "${BACKUPFOLDER}" ]; then
+    local backup_rel="${SETTINGS_BACKUPS#${SAVESPATH%/}/}"
+    if [ "${backup_rel}" != "${SETTINGS_BACKUPS}" ]; then
         all_opts+=("--exclude=${backup_rel}/**")
     fi
 
@@ -602,8 +612,8 @@ restore_game_saves() {
     # Execute rclone with enhanced error handling
     execute_rclone_with_error_handling \
         "${RESTOREMETHOD}" \
-        "${REMOTENAME}${SYNCPATH}/" \
-        "${RESTOREPATH}/" \
+        "${REMOTENAME}${SAVES_REMOTE}/" \
+        "${SAVESPATH}/" \
         "${all_opts[@]}"
     
     RESTORE_STATUS=$?
@@ -614,19 +624,19 @@ restore_game_saves() {
     return $RESTORE_STATUS
 }
 
-# PART 2: System backup file restore function
-# Restores system backup files from cloud storage
+# PART 2: Settings backup file restore function
+# Restores settings backup files from cloud storage
 # Only runs when BACKUPFILE_RESTORE_OPTION is set to "yes"
 restore_system_files() {
     echo
     log_message "====================================" "true"
-    log_message "STARTING SYSTEM BACKUP FILE RESTORE" "true"
+    log_message "STARTING SETTINGS BACKUP FILE RESTORE" "true"
     log_message "====================================" "true"
     
     if [ "${BACKUPFILE_RESTORE_OPTION}" == "yes" ]; then
         # Verify remote backup directory has content before attempting restore
-        log_message "Checking remote backup directory: ${REMOTENAME}${SYNCPATH_BACKUP}" "false"
-        REMOTE_FILES=$(rclone ls ${REMOTENAME}${SYNCPATH_BACKUP}/ 2>/dev/null)
+        log_message "Checking remote backup directory: ${REMOTENAME}${SETTINGS_REMOTE}" "false"
+        REMOTE_FILES=$(rclone ls ${REMOTENAME}${SETTINGS_REMOTE}/ 2>/dev/null)
         local remote_ls_status=$?
         
         if [ $remote_ls_status -ne 0 ]; then
@@ -637,18 +647,18 @@ restore_system_files() {
         
         # Nothing to restore is not a failure; see backup_system_files.
         if [ -z "${REMOTE_FILES}" ]; then
-            log_message "There are no system backup files to restore" "true" "WARN"
+            log_message "There are no settings backup files to restore" "true" "WARN"
             return 0
         fi
         
-        log_message "Starting restore of system backup files from ${REMOTENAME}${SYNCPATH_BACKUP} to ${BACKUPFOLDER}"
-        log_message "System backup file restore started at $(date)" "false"
+        log_message "Starting restore of settings backup files from ${REMOTENAME}${SETTINGS_REMOTE} to ${SETTINGS_BACKUPS}"
+        log_message "Settings backup file restore started at $(date)" "false"
         
         # Ensure local target directory exists before attempting restore
-        mkdir -p ${BACKUPFOLDER}
+        mkdir -p ${SETTINGS_BACKUPS}
         
-        # This transfer's root is SYNCPATH_BACKUP, whose contents came from
-        # BACKUPFOLDER -- so the archive sits at the root, as "backup-*.zip",
+        # This transfer's root is SETTINGS_REMOTE, whose contents came from
+        # SETTINGS_BACKUPS -- so the archive sits at the root, as "backup-*.zip",
         # not under "backup/". Both includes below named a directory that is not
         # there, and because using --include at all excludes everything it does
         # not match, this restore transferred nothing at all. The saves
@@ -686,11 +696,11 @@ restore_system_files() {
         
         # Read both layouts, and write only the new one (cloud_backup does
         # that). Archives made before per-device folders sit at the root of
-        # SYNCPATH_BACKUP, and they are still someone's only backup -- a device
+        # SETTINGS_REMOTE, and they are still someone's only backup -- a device
         # that upgrades must keep finding them. Nothing is moved or deleted:
         # the root copy may belong to another device that has not updated yet.
-        local device_src="${REMOTENAME}${SYNCPATH_BACKUP}/$(device_folder)"
-        local legacy_src="${REMOTENAME}${SYNCPATH_BACKUP}"
+        local device_src="${REMOTENAME}${SETTINGS_REMOTE}/$(device_folder)"
+        local legacy_src="${REMOTENAME}${SETTINGS_REMOTE}"
         local restore_src=""
 
         # The folder this device would have used before the name became
@@ -702,7 +712,7 @@ restore_system_files() {
         local prior_name
         prior_name=$(/usr/bin/cloud_device_id --legacy 2>/dev/null \
                      | tr -cd 'A-Za-z0-9_.-')
-        local prior_src="${REMOTENAME}${SYNCPATH_BACKUP}/${prior_name}"
+        local prior_src="${REMOTENAME}${SETTINGS_REMOTE}/${prior_name}"
 
         if rclone lsf "${device_src}/" --include "/*.{zip,tar.gz}" 2>/dev/null | grep -q .; then
             restore_src="${device_src}"
@@ -723,7 +733,7 @@ restore_system_files() {
             if [ -n "${others}" ]; then
                 log_message "No backup for this device. The cloud holds backups from: ${others}" "true" "WARN"
             else
-                log_message "There is no system backup in the cloud yet" "true" "WARN"
+                log_message "There is no settings backup in the cloud yet" "true" "WARN"
             fi
             RESTORE_SYSTEM_STATUS=0
             return 0
@@ -740,7 +750,7 @@ restore_system_files() {
                  | sort | tail -1)
 
         if [ -z "${newest}" ]; then
-            log_message "There is no system backup in the cloud yet" "true" "WARN"
+            log_message "There is no settings backup in the cloud yet" "true" "WARN"
             RESTORE_SYSTEM_STATUS=0
             return 0
         fi
@@ -785,15 +795,15 @@ restore_system_files() {
             fetch_opts+=("${opt}")
         done
 
-        rclone copyto "${restore_src}/${newest}" "${BACKUPFOLDER}/${local_name}" \
+        rclone copyto "${restore_src}/${newest}" "${SETTINGS_BACKUPS}/${local_name}" \
             "${fetch_opts[@]}"
 
         RESTORE_SYSTEM_STATUS=$?
-        report_rclone_error $RESTORE_SYSTEM_STATUS "System backup file restore"
+        report_rclone_error $RESTORE_SYSTEM_STATUS "Settings backup file restore"
         
         return $RESTORE_SYSTEM_STATUS
     else
-        log_message "System backup file restore skipped (BACKUPFILE_RESTORE_OPTION is not set to 'yes')" "true"
+        log_message "Settings backup file restore skipped (BACKUPFILE_RESTORE_OPTION is not set to 'yes')" "true"
         RESTORE_SYSTEM_STATUS=0
     fi
     
@@ -829,9 +839,9 @@ main() {
     sleep 2
     
     # Execute Part 2: System restore
-    # This restores system backup files (zip files) if enabled in configuration
+    # This restores settings backup files (zip files) if enabled in configuration
     if [ "${SAVES_ONLY}" -eq 1 ]; then
-        log_message "System backup file restore skipped (--saves-only)" "true"
+        log_message "Settings backup file restore skipped (--saves-only)" "true"
         RESTORE_SYSTEM_STATUS=0
     else
         restore_system_files
@@ -860,7 +870,7 @@ main() {
     log_message "====================================" "true"
     log_message "RESTORE SUMMARY:" "true"
     log_message "Game saves restore: $([ $RESTORE_STATUS -eq 0 ] && echo 'SUCCESS' || echo 'COMPLETED WITH ERRORS')" "true"
-    [ "${BACKUPFILE_RESTORE_OPTION}" == "yes" ] && log_message "System backup file restore: $([ $RESTORE_SYSTEM_STATUS -eq 0 ] && echo 'SUCCESS' || echo 'COMPLETED WITH ERRORS')" "true"
+    [ "${BACKUPFILE_RESTORE_OPTION}" == "yes" ] && log_message "Settings backup file restore: $([ $RESTORE_SYSTEM_STATUS -eq 0 ] && echo 'SUCCESS' || echo 'COMPLETED WITH ERRORS')" "true"
     log_message "Log file: ${LOG_FILE}" "true"
     log_message "====================================" "true"
     

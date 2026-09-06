@@ -16,8 +16,8 @@
 #   /some/other/folder/file.name*
 # )
 
-BACKUPFOLDER="/storage/roms/backup"
-ARCHIVEFOLDER="${BACKUPFOLDER}/archive"
+SETTINGS_BACKUPS="/storage/roms/backup"
+ARCHIVEFOLDER="${SETTINGS_BACKUPS}/archive"
 # The name a backup is written under, and the one used to find it again.
 #
 # Dated, and matching what the cloud folder holds exactly -- a device that
@@ -25,6 +25,11 @@ ARCHIVEFOLDER="${BACKUPFOLDER}/archive"
 # thing under the same name, so that moving between them needs no
 # translation. LEGACY_BACKUPFILE is the fixed name used before that, still
 # read so an existing device restores from the archive it already has.
+#
+# _SETTINGS is the fourth name this file has carried (D-UI-022, 2026-09-06):
+# the archive holds emulator and interface settings and nothing else, and
+# calling it a system backup had people expecting their saves to be in it.
+# Every reader below still accepts the three earlier names.
 BACKUP_STAMP="$(date +%Y_%m_%d-%H%M%S)"
 # tar, not zip.
 #
@@ -40,15 +45,16 @@ BACKUP_STAMP="$(date +%Y_%m_%d-%H%M%S)"
 # extracts cleanly over an existing one. Verified on-device, because Info-ZIP
 # on a desktop and busybox on a handheld disagree, which is how the original
 # bug stayed invisible.
-BACKUPFILE="${BACKUPFOLDER}/${BACKUP_STAMP}-${OS_NAME}_BACKUP.tar.gz"
-LEGACY_BACKUPFILE="${BACKUPFOLDER}/${OS_NAME}_BACKUP.zip"
+BACKUPFILE="${SETTINGS_BACKUPS}/${BACKUP_STAMP}-${OS_NAME}_SETTINGS.tar.gz"
+LEGACY_BACKUPFILE="${SETTINGS_BACKUPS}/${OS_NAME}_BACKUP.zip"
 
 # The newest archive present, whatever it is called. Names lead with the date,
 # so sorting them orders them by age.
 newest_backup() {
     local found
-    found=$(ls -1 "${BACKUPFOLDER}"/*-"${OS_NAME}"_BACKUP.tar.gz \
-                  "${BACKUPFOLDER}"/*-"${OS_NAME}"_BACKUP.zip 2>/dev/null | sort | tail -1)
+    found=$(ls -1 "${SETTINGS_BACKUPS}"/*-"${OS_NAME}"_SETTINGS.tar.gz \
+                  "${SETTINGS_BACKUPS}"/*-"${OS_NAME}"_BACKUP.tar.gz \
+                  "${SETTINGS_BACKUPS}"/*-"${OS_NAME}"_BACKUP.zip 2>/dev/null | sort | tail -1)
     if [ -n "${found}" ]; then
         echo "${found}"
     elif [ -f "${LEGACY_BACKUPFILE}" ]; then
@@ -57,7 +63,7 @@ newest_backup() {
 }
 ARCHIVE_KEEP=3
 ESPATH="/storage/.config/emulationstation"
-mkdir -p "${BACKUPFOLDER}"
+mkdir -p "${SETTINGS_BACKUPS}"
 
 fail() {
     echo -e "\e[31m${1}\e[0m"
@@ -132,7 +138,7 @@ case "${1}" in
         BACKUPFILE="$(newest_backup)"
         if [ -z "${BACKUPFILE}" ] || [ ! -f "${BACKUPFILE}" ]
         then
-            fail "No backup found in ${BACKUPFOLDER}. Nothing to restore."
+            fail "No settings backup found in ${SETTINGS_BACKUPS}. Nothing to restore."
         fi
 
         # An archive is whatever it is named. Both are read: every device in
@@ -237,7 +243,7 @@ case "${1}" in
             # Both shapes: an upgraded device still has archives written under
             # the old name, and rotation must not skip them and keep them for
             # ever while trimming only the new ones.
-            ls -1t "${ARCHIVEFOLDER}"/*_BACKUP*.tar.gz "${ARCHIVEFOLDER}"/*_BACKUP*.zip \
+            ls -1t "${ARCHIVEFOLDER}"/*_SETTINGS*.tar.gz "${ARCHIVEFOLDER}"/*_BACKUP*.tar.gz "${ARCHIVEFOLDER}"/*_BACKUP*.zip \
                    "${ARCHIVEFOLDER}"/ARCHIVED_*.zip 2>/dev/null \
                 | awk '!seen[$0]++' | tail -n +$((ARCHIVE_KEEP + 1)) | while read -r OLD
             do
@@ -402,7 +408,7 @@ case "${1}" in
 
         sync
         note "Backup complete: ${BACKUPFILE}"
-        note "Copy it somewhere safe, or enable the system backup option in cloud sync."
+        note "Copy it somewhere safe, or enable the settings backup option in cloud sync."
         sleep 3
     ;;
     *)

@@ -278,7 +278,7 @@ controller_confirm() {
 record_last_run() {
     local exit_code="$1"
     local name="backup"
-    [ "${SYSTEM_ONLY}" -eq 1 ] && name="system-backup"
+    [ "${SYSTEM_ONLY}" -eq 1 ] && name="settings-backup"
     mkdir -p /storage/.cache/cloud_sync 2>/dev/null
     printf '%s %s\n' "$(date +%s)" "${exit_code}" \
         > "/storage/.cache/cloud_sync/last-${name}" 2>/dev/null
@@ -338,13 +338,23 @@ check_internet() {
 # Loads user configuration from cloud_sync.conf
 # Applies default values for any missing configuration parameters
 load_config() {
-    log_message "Loading configuration from cloud_sync.conf" "false"
-    source /storage/.config/cloud_sync.conf
-
-    # Update cloud sync rules and config by calling the helper script
+    # The helper first: it carries renamed keys across (D-UI-022) and appends
+    # new defaults, and the values sourced below must be the migrated ones.
     if [ -f "/usr/bin/cloud_sync_helper" ]; then
         log_message "Updating cloud sync rules and config" "false"
         /usr/bin/cloud_sync_helper ${LOG_FILE}
+    fi
+    log_message "Loading configuration from cloud_sync.conf" "false"
+    source /storage/.config/cloud_sync.conf
+
+    # Saves have one local folder (D-CLOUD-040). RESTOREPATH used to let a
+    # restore land somewhere other than the live saves -- a safety valve from
+    # when restore was a mirror. A config still pointing it elsewhere would
+    # give the saves tier two local trees, so every saves transfer refuses
+    # until the setting is removed. The helper has already logged it.
+    if [ -n "${RESTOREPATH:-}" ] && [ "${RESTOREPATH%/}" != "${SAVESPATH%/}" ]; then
+        log_message "RESTOREPATH (${RESTOREPATH}) differs from SAVESPATH (${SAVESPATH}). Saves have one local folder now; remove RESTOREPATH from cloud_sync.conf." "true" "ERROR"
+        clean_exit 1
     fi
 
     # Check for duplicate variable assignments in config
@@ -401,7 +411,7 @@ load_config() {
     # Remove conflicting --verbose and -v flags that conflict with --log-level
     RCLONEOPTS=$(echo "${RCLONEOPTS}" | sed 's/--verbose//g' | sed 's/-v / /g')
     # The remote does not only hold saves. It holds every device's system
-    # backup under SYNCPATH_BACKUP, and whatever else the owner keeps in
+    # backup under SETTINGS_REMOTE, and whatever else the owner keeps in
     # that folder. --delete-excluded deletes everything the allowlist does
     # not admit, so in sync mode a saves backup removed the backup folder
     # of every device including other people's -- the phase that follows
@@ -444,8 +454,8 @@ load_config() {
         log_message "Added --update from command line" "false"
     fi
 
-    # A SYNCPATH_BACKUP inside SYNCPATH is a data-loss trap. Phase 1 syncs
-    # SYNCPATH and the archive is an excluded file, so --delete-excluded removes
+    # A SETTINGS_REMOTE inside SAVES_REMOTE is a data-loss trap. Phase 1 syncs
+    # SAVES_REMOTE and the archive is an excluded file, so --delete-excluded removes
     # it. A full run hides that -- phase 2 re-uploads moments later -- but a run
     # that skips the system phase (--saves-only, or BACKUPFILE_BACKUP_OPTION set
     # to no) deletes the archives and puts nothing back. Only sync deletes, and
@@ -453,9 +463,9 @@ load_config() {
     # Warn rather than refuse: the layout is the user's to choose, and archives
     # may already be sitting there.
     if [ "${BACKUPMETHOD}" == "sync" ] && [[ "${RCLONEOPTS}" == *"--delete-excluded"* ]]; then
-        case "${SYNCPATH_BACKUP}/" in
-            "${SYNCPATH%/}/"*)
-                log_message "SYNCPATH_BACKUP (${SYNCPATH_BACKUP}) is inside SYNCPATH (${SYNCPATH}).\nA saves-only backup will delete the system backups kept there.\nMove it alongside SYNCPATH, as the defaults do." "true" "WARN"
+        case "${SETTINGS_REMOTE}/" in
+            "${SAVES_REMOTE%/}/"*)
+                log_message "SETTINGS_REMOTE (${SETTINGS_REMOTE}) is inside SAVES_REMOTE (${SAVES_REMOTE}).\nA saves-only backup will delete the settings backups kept there.\nMove it alongside SAVES_REMOTE, as the defaults do." "true" "WARN"
                 ;;
         esac
     fi
@@ -531,19 +541,19 @@ backup_game_saves() {
     log_message "STARTING GAME SAVES BACKUP" "true"
     log_message "====================================" "true"
     
-    log_message "Starting backup from ${BACKUPPATH} to ${REMOTENAME}${SYNCPATH}"
+    log_message "Starting backup from ${SAVESPATH} to ${REMOTENAME}${SAVES_REMOTE}"
     log_message "Backup started at $(date)" "false"
     
     # Check if local backup path exists and has content
-    if [ ! -d "${BACKUPPATH}" ]; then
-        log_message "Local backup path ${BACKUPPATH} does not exist" "true" "ERROR"
+    if [ ! -d "${SAVESPATH}" ]; then
+        log_message "Local backup path ${SAVESPATH} does not exist" "true" "ERROR"
         return 1
     fi
     
     # Check if we have any files to backup (excluding directories we'll skip anyway)
-    local files_to_backup=$(find "${BACKUPPATH}" -type f ! -path "*/bios/*" ! -path "*/backups/*" ! -name "*.zip" ! -name "*.tar.gz" | head -1)
+    local files_to_backup=$(find "${SAVESPATH}" -type f ! -path "*/bios/*" ! -path "*/backups/*" ! -name "*.zip" ! -name "*.tar.gz" | head -1)
     if [ -z "$files_to_backup" ]; then
-        log_message "No files found to backup in ${BACKUPPATH}" "true" "WARN"
+        log_message "No files found to backup in ${SAVESPATH}" "true" "WARN"
         return 0
     fi
     
@@ -560,10 +570,10 @@ backup_game_saves() {
     # remote is never touched at all, which is the point of --recent. If
     # the copy does fail, check_internet words the reason below.
     if [ "${RECENT}" -eq 0 ]; then
-        log_message "Ensuring remote sync path exists: ${REMOTENAME}${SYNCPATH}" "false"
-        if ! rclone mkdir "${REMOTENAME}${SYNCPATH}" \
+        log_message "Ensuring remote sync path exists: ${REMOTENAME}${SAVES_REMOTE}" "false"
+        if ! rclone mkdir "${REMOTENAME}${SAVES_REMOTE}" \
                 --contimeout 10s --timeout 20s --low-level-retries 1 --retries 1 2>/dev/null; then
-            log_message "Remote ${REMOTENAME}${SYNCPATH} is not accessible" "true" "ERROR"
+            log_message "Remote ${REMOTENAME}${SAVES_REMOTE} is not accessible" "true" "ERROR"
             check_internet
             return 1
         fi
@@ -595,13 +605,13 @@ backup_game_saves() {
         all_opts+=("$rclone_debug" "INFO")
     fi
 
-    # Keep the system-backup archive out of the saves payload -- phase 2 sends it
-    # to SYNCPATH_BACKUP on its own. rclone matches paths relative to the transfer
+    # Keep the settings-backup archive out of the saves payload -- phase 2 sends it
+    # to SETTINGS_REMOTE on its own. rclone matches paths relative to the transfer
     # root, so the two rules that used to sit here never matched anything:
-    # "${BACKUPFOLDER}/**" is absolute, and "backups/**" names a directory that
+    # "${SETTINGS_BACKUPS}/**" is absolute, and "backups/**" names a directory that
     # does not exist (it is "backup"). Only the blanket "*.zip" was doing the
     # work, and it also overrode any user rule that deliberately included a zip.
-    # Derive the pattern from BACKUPFOLDER instead, so it keeps working if the
+    # Derive the pattern from SETTINGS_BACKUPS instead, so it keeps working if the
     # folder is renamed and is simply skipped when it lives outside the payload.
     # --stats-one-line collapses the whole display to a single totals line, so
     # the per-file block goes away -- and the per-file block is the part that
@@ -646,8 +656,8 @@ backup_game_saves() {
             BACKUPMETHOD="copy"
         fi
     fi
-    local backup_rel="${BACKUPFOLDER#${BACKUPPATH%/}/}"
-    if [ "${backup_rel}" != "${BACKUPFOLDER}" ]; then
+    local backup_rel="${SETTINGS_BACKUPS#${SAVESPATH%/}/}"
+    if [ "${backup_rel}" != "${SETTINGS_BACKUPS}" ]; then
         all_opts+=("--exclude=${backup_rel}/**")
     fi
 
@@ -663,10 +673,10 @@ backup_game_saves() {
     # the interesting question afterwards is always "what did the run on
     # Tuesday take away".
     if [ "${BACKUPMETHOD}" == "sync" ]; then
-        # A sibling of SYNCPATH, never inside it: rclone refuses a
+        # A sibling of SAVES_REMOTE, never inside it: rclone refuses a
         # --backup-dir that overlaps the destination, and the same reasoning
-        # already applies to SYNCPATH_BACKUP.
-        local archive_dir="${SYNCPATH%/}-replaced/$(date +%Y_%m_%d-%H%M%S)"
+        # already applies to SETTINGS_REMOTE.
+        local archive_dir="${SAVES_REMOTE%/}-replaced/$(date +%Y_%m_%d-%H%M%S)"
         all_opts+=("--backup-dir=${REMOTENAME}${archive_dir}")
         log_message "INFO" "sync mode: anything replaced or removed goes to ${archive_dir}"
     fi
@@ -676,8 +686,8 @@ backup_game_saves() {
     # Execute rclone with enhanced error handling
     execute_rclone_with_error_handling \
         "${BACKUPMETHOD}" \
-        "${BACKUPPATH}/" \
-        "${REMOTENAME}${SYNCPATH}/" \
+        "${SAVESPATH}/" \
+        "${REMOTENAME}${SAVES_REMOTE}/" \
         "${all_opts[@]}"
 
     BACKUP_STATUS=$?
@@ -696,37 +706,37 @@ backup_game_saves() {
     # Not on a --recent run: tidying is a full-pass job, and a remote round
     # trip the game-exit sync should not pay.
     if [ "${RSYNCRMDIR}" == "yes" ] && [ "${RECENT}" -eq 0 ] && { [ $BACKUP_STATUS -eq 0 ] || [ $BACKUP_STATUS -eq 9 ]; }; then
-        log_message "Removing orphaned empty directories on remote: ${REMOTENAME}${SYNCPATH}" "false"
-        rclone rmdirs "${REMOTENAME}${SYNCPATH}" --leave-root --log-file /var/log/cloud_sync.log 2>/dev/null \
+        log_message "Removing orphaned empty directories on remote: ${REMOTENAME}${SAVES_REMOTE}" "false"
+        rclone rmdirs "${REMOTENAME}${SAVES_REMOTE}" --leave-root --log-file /var/log/cloud_sync.log 2>/dev/null \
             || log_message "Empty-directory cleanup failed (non-fatal)" "true" "WARN"
     fi
 
     return $BACKUP_STATUS
 }
 
-# PART 2: System backup file transfer function
-# Transfers existing system backup files to cloud storage
+# PART 2: Settings backup file transfer function
+# Transfers existing settings backup files to cloud storage
 # Only runs when BACKUPFILE_BACKUP_OPTION is set to "yes"
 backup_system_files() {
     echo
     log_message "====================================" "true"
-    log_message "STARTING SYSTEM BACKUP FILE TRANSFER" "true"
+    log_message "STARTING SETTINGS BACKUP FILE TRANSFER" "true"
     log_message "====================================" "true"
     
     if [ "${BACKUPFILE_BACKUP_OPTION}" == "yes" ]; then
         # Check if backup folder exists first
-        if [ ! -d "${BACKUPFOLDER}" ]; then
+        if [ ! -d "${SETTINGS_BACKUPS}" ]; then
         # Nothing to send is not a failure. These used to return 1, which the
         # summary then printed as "COMPLETED WITH ERRORS" on a device that had
-        # simply never made a system backup. backup_game_saves already returns
+        # simply never made a settings backup. backup_game_saves already returns
         # 0 with a warning in the same situation.
-            log_message "Backup folder ${BACKUPFOLDER} does not exist" "true" "WARN"
+            log_message "Backup folder ${SETTINGS_BACKUPS} does not exist" "true" "WARN"
             return 0
         fi
         
         # Skip if backup directory is empty to avoid unnecessary transfers
-        if [ -z "$(ls -A ${BACKUPFOLDER} 2>/dev/null)" ]; then
-            log_message "There are no system backup files to transfer" "true" "WARN"
+        if [ -z "$(ls -A ${SETTINGS_BACKUPS} 2>/dev/null)" ]; then
+            log_message "There are no settings backup files to transfer" "true" "WARN"
             return 0
         fi
         
@@ -734,10 +744,10 @@ backup_system_files() {
         # meant the second device to run replaced the first device's archive,
         # with no remote history to recover it from -- the local archive/
         # rotation never leaves the device (fork #49).
-        local device_dest="${REMOTENAME}${SYNCPATH_BACKUP}/$(device_folder)"
+        local device_dest="${REMOTENAME}${SETTINGS_REMOTE}/$(device_folder)"
 
-        log_message "Starting transfer of system backup files from ${BACKUPFOLDER} to ${device_dest}"
-        log_message "System backup file transfer started at $(date)" "false"
+        log_message "Starting transfer of settings backup files from ${SETTINGS_BACKUPS} to ${device_dest}"
+        log_message "Settings backup file transfer started at $(date)" "false"
         
         # Test remote backup path connectivity
         log_message "Testing remote backup path connectivity: ${device_dest}" "false"
@@ -750,7 +760,7 @@ backup_system_files() {
         fi
         
         # No --filter-from here on purpose. The saves allowlist is anchored to
-        # BACKUPPATH, but this transfer's root is BACKUPFOLDER, so its rules
+        # SAVESPATH, but this transfer's root is SETTINGS_BACKUPS, so its rules
         # describe paths that do not exist in this tree -- and its "- /**/*.zip"
         # matches the archive itself. This phase only ever kept working because
         # rclone applies --include ahead of --filter-from; borrowing the rules
@@ -759,7 +769,7 @@ backup_system_files() {
         #
         # The include is anchored with a leading slash so it matches only the
         # current archive at the root. backuptool rotates older backups into
-        # BACKUPFOLDER/archive/, and an unanchored "*.zip" matches at any depth,
+        # SETTINGS_BACKUPS/archive/, and an unanchored "*.zip" matches at any depth,
         # which would upload every rotated archive on every sync.
         local backup_opts=(
             "--progress"
@@ -793,11 +803,11 @@ backup_system_files() {
         # option -- the archive only changes when someone runs `backuptool
         # backup`, and this uploads exactly then.
         local state_dir="/storage/.cache/cloud_sync"
-        local uploaded_marker="${state_dir}/system-backup.uploaded"
+        local uploaded_marker="${state_dir}/settings-backup.uploaded"
         mkdir -p "${state_dir}" 2>/dev/null
 
         # Identify the payload the way the transfer does -- the zip files at
-        # the root of BACKUPFOLDER, which is exactly what "--include=/*.{zip,tar.gz}"
+        # the root of SETTINGS_BACKUPS, which is exactly what "--include=/*.{zip,tar.gz}"
         # sends. Deriving a filename instead would mean depending on OS_NAME,
         # which is empty in this script (the banner above prints a blank for
         # the same reason), and on backuptool's naming staying in step.
@@ -806,7 +816,7 @@ backup_system_files() {
         local local_bytes=0
         # Collect the archives that exist rather than branching on ls's exit
         # status: busybox ls returns non-zero when ANY argument is unmatched,
-        # and after the tar change BACKUPFOLDER normally holds exactly one
+        # and after the tar change SETTINGS_BACKUPS normally holds exactly one
         # format -- the previous one having been rotated into archive/. The
         # gate therefore failed on every device that had taken one backup,
         # leaving local_sum empty, which silently switched off the post-upload
@@ -814,7 +824,7 @@ backup_system_files() {
         # reported success while sending nothing.
         local archives=()
         local a
-        for a in "${BACKUPFOLDER}"/*.zip "${BACKUPFOLDER}"/*.tar.gz; do
+        for a in "${SETTINGS_BACKUPS}"/*.zip "${SETTINGS_BACKUPS}"/*.tar.gz; do
             [ -f "${a}" ] && archives+=("${a}")
         done
         if [ ${#archives[@]} -gt 0 ]; then
@@ -830,7 +840,7 @@ backup_system_files() {
         if [ -n "${local_sum}" ] && [ "${local_sum}" = "${last_sum}" ]; then
             # Say what is true. Reporting a transfer that did not happen is
             # how the stale-copy bug stayed invisible.
-            log_message "System backup is unchanged since the last upload; nothing to send" "true"
+            log_message "Settings backup is unchanged since the last upload; nothing to send" "true"
             BACKUP_SYSTEM_STATUS=0
             return 0
         fi
@@ -888,7 +898,7 @@ backup_system_files() {
         # those and not the whole history beside them.
         local uploaded_names=()
         local archive
-        for archive in "${BACKUPFOLDER}"/*.zip "${BACKUPFOLDER}"/*.tar.gz; do
+        for archive in "${SETTINGS_BACKUPS}"/*.zip "${SETTINGS_BACKUPS}"/*.tar.gz; do
             [ -f "${archive}" ] || continue
             local base target
             base=$(basename "${archive}")
@@ -911,7 +921,7 @@ backup_system_files() {
             local rc=$?
             if [ ${rc} -ne 0 ]; then
                 BACKUP_SYSTEM_STATUS=${rc}
-                report_rclone_error ${rc} "System backup file transfer"
+                report_rclone_error ${rc} "Settings backup file transfer"
                 break
             fi
             uploaded_names+=("${target}")
@@ -1002,7 +1012,7 @@ MANIFEST
         
         return $BACKUP_SYSTEM_STATUS
     else
-        log_message "System backup file transfer skipped (BACKUPFILE_BACKUP_OPTION is not set to 'yes')" "true"
+        log_message "Settings backup file transfer skipped (BACKUPFILE_BACKUP_OPTION is not set to 'yes')" "true"
         BACKUP_SYSTEM_STATUS=0
     fi
     
@@ -1038,10 +1048,10 @@ main() {
     # Add a pause for better visual separation between operations
     pause 2
     
-    # Execute Part 2: System backup file transfer
-    # This backs up system backup files (zip files) if enabled in configuration
+    # Execute Part 2: Settings backup file transfer
+    # This backs up settings backup files (zip files) if enabled in configuration
     if [ "${SAVES_ONLY}" -eq 1 ]; then
-        log_message "System backup file transfer skipped (--saves-only)" "true"
+        log_message "Settings backup file transfer skipped (--saves-only)" "true"
         BACKUP_SYSTEM_STATUS=0
     else
         backup_system_files
@@ -1058,7 +1068,7 @@ main() {
     log_message "====================================" "true"
     log_message "BACKUP SUMMARY:" "true"
     log_message "Game saves backup: $([ $BACKUP_STATUS -eq 0 ] && echo 'SUCCESS' || echo 'COMPLETED WITH ERRORS')" "true"
-    [ "${BACKUPFILE_BACKUP_OPTION}" == "yes" ] && log_message "System backup file transfer: $([ $BACKUP_SYSTEM_STATUS -eq 0 ] && echo 'SUCCESS' || echo 'COMPLETED WITH ERRORS')" "true"
+    [ "${BACKUPFILE_BACKUP_OPTION}" == "yes" ] && log_message "Settings backup file transfer: $([ $BACKUP_SYSTEM_STATUS -eq 0 ] && echo 'SUCCESS' || echo 'COMPLETED WITH ERRORS')" "true"
     log_message "Log file: ${LOG_FILE}" "true"
     log_message "====================================" "true"
     

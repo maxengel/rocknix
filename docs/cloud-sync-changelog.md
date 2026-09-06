@@ -129,7 +129,7 @@ nothing.
   copy, which never deletes, and a deliberately chosen mirror moves replaced
   files aside into a dated folder instead of destroying them.
 - **Content sync was carrying save files.** RetroArch writes `.srm` and
-  `.state` next to the ROM, so a "ROMs only" upload was duplicating save data
+  `.state` next to the ROM, so a "ROMs only" upload was duplicating saves
   into a second cloud location under different rules.
 - **A multi-tier transfer reported success when an earlier stage failed** — a
   shell sequence returns its last command's status.
@@ -202,6 +202,57 @@ full ScreenScraper re-scrape on it. The itemised press-through on
   that text blames the account even when the developer pair is what was
   rejected ([#66](https://github.com/maxengel/rocknix/issues/66) is open).
 
+## One vocabulary (2026-09-06)
+
+Four kinds of thing move through cloud sync, and this change gives each one
+name and uses it everywhere: the menus, the dialogs, the progress lines, the
+config file, the scripts' log lines, and the archive's filename.
+
+- **Settings** — the archive `backuptool` writes. It holds emulator and
+  interface configuration, input mapping, themes, collections, and bezels, and
+  **nothing else**: no saves, no ROMs, no operating system. It used to be
+  called the *system backup*, which had people expecting their games to be in
+  it. The archive is now named `<date>-ROCKNIX_SETTINGS.tar.gz`; every reader
+  still accepts the three earlier names.
+- **Saves** — game saves, save states, and screenshots. Previously *save data*.
+- **ROMs and BIOS** — as before.
+- **Discarded saves** — what the conflict wizard keeps when you choose against
+  a copy (D-CLOUD-036). The word *discard* means nothing else now.
+
+Two verbs only: **back up** and **restore**. The label says what and where —
+BACK UP SETTINGS TO THIS DEVICE, BACK UP SAVES TO THE CLOUD. Nothing is
+"uploaded" or "archived" in a label, because a player cannot tell those apart
+and the archive is uploaded too. *Sync* is reserved for the automatic two-way
+behaviour saves get once conflict resolution lands.
+
+**Config keys are renamed to say which tier and which side**, and an existing
+config is carried across once by `cloud_sync_helper` (it runs at update time
+from `post-update`, and again before every transfer):
+
+| Was | Is | Meaning |
+| --- | --- | --- |
+| `BACKUPPATH` | `SAVESPATH` | saves on this device |
+| `RESTOREPATH` | *removed* | see below |
+| `BACKUPFOLDER` | `SETTINGS_BACKUPS` | settings backups on this device |
+| `SYNCPATH` | `SAVES_REMOTE` | saves on the cloud remote |
+| `SYNCPATH_BACKUP` | `SETTINGS_REMOTE` | settings backups on the cloud remote |
+| `CONTENTPATH` | `CONTENT_REMOTE` | ROMs and BIOS on the cloud remote |
+
+A customised value moves with its key — a device syncing to `/Custom/Saves`
+keeps syncing there — and running the helper twice adds nothing. The old keys
+are left in the file and ignored, and `cloud_sync.conf.bak` beside it keeps
+the pre-migration text.
+
+**`RESTOREPATH` is gone.** It let a restore land somewhere other than the live
+saves, a safety valve from when restore was a mirror with no conflict
+handling. Saves now have one local folder (D-CLOUD-040). A config that still
+points it elsewhere makes every saves transfer refuse, with the setting named,
+until the line is removed — nothing moves and nothing is guessed.
+
+`cloud_setup --info` prints the cloud folder under both `SAVES_REMOTE=` and
+`SYNCPATH=` until the interface's side of the rename ships; `--set-syncpath`
+is accepted beside `--set-saves-remote` for the same reason.
+
 ## Upgrading from an earlier cloud setup
 
 Every one of these ships onto devices that already have state, so the guiding
@@ -209,7 +260,7 @@ rule was that an upgrade should be invisible: read both shapes, write the new
 one, and ask only where the choice is genuinely the owner's.
 
 **Tidy up your cloud folders** — the one screen that does ask. The first layout
-put everything under `/GAMES`, with system backups nested at `/GAMES/backup`
+put everything under `/GAMES`, with settings backups nested at `/GAMES/backup`
 — *inside* the folder a mirror-mode backup deletes from, so the archive was
 deletable by the operation meant to protect it. The default has been
 `/ROCKNIX/Saves` and `/ROCKNIX/Backups` for a while, but config files are only
@@ -237,7 +288,7 @@ Everything else is handled without asking:
   Setting it back to `sync` deliberately is respected.
 - **Older cloud content layouts are still readable.** Content restore
   understands the current `ROMs/` + `BIOS/` shape, the flat layout that
-  preceded it, and the pre-`CONTENTPATH` root — so a library that has not been
+  preceded it, and the pre-`CONTENT_REMOTE` root — so a library that has not been
   re-uploaded still downloads. Backup only ever writes the current shape, so
   libraries migrate themselves as they are used.
 - **After a whole-device restore**, the device offers `FINISH RESTORE SETUP` to

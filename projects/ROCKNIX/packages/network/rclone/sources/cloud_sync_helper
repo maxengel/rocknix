@@ -128,6 +128,51 @@ update_cloud_sync_config() {
     
     log_to_file "${log_file}" "Updating configuration with new defaults"
     
+    # Carry a customised value across to a renamed key, once.
+    #
+    # The 2026-09 vocabulary sweep (D-UI-022) renamed the path keys so each
+    # says which tier it belongs to and which side it is on. The append loop
+    # below only adds a key that is missing, with the shipped default -- so
+    # without this step a device that had customised SYNCPATH would gain a
+    # SAVES_REMOTE pointing at /ROCKNIX/Saves and silently stop syncing to
+    # its own folder. That is the "renamed key resets everyone's preference"
+    # trap upgrade-and-install.md names. The old key is left in place and
+    # ignored; the .bak beside the file keeps the pre-migration text.
+    #
+    # RESTOREPATH is not carried: saves have one local folder now
+    # (D-CLOUD-040). A value that differs from the saves folder is reported
+    # here and refused by every saves transfer until it is removed.
+    migrate_key() {
+      local old="$1" new="$2" value
+      if grep -q "^${old}=" /storage/.config/cloud_sync.conf \
+         && ! grep -q "^${new}=" /storage/.config/cloud_sync.conf; then
+        value=$(grep -m1 "^${old}=" /storage/.config/cloud_sync.conf | cut -d= -f2-)
+        echo "${new}=${value}" >> /storage/.config/cloud_sync.conf
+        log_to_file "${log_file}" "Carried ${old} across to ${new} (${value})"
+      fi
+    }
+    migrate_key BACKUPPATH      SAVESPATH
+    migrate_key BACKUPFOLDER    SETTINGS_BACKUPS
+    migrate_key SYNCPATH        SAVES_REMOTE
+    migrate_key SYNCPATH_BACKUP SETTINGS_REMOTE
+    migrate_key CONTENTPATH     CONTENT_REMOTE
+    # The settings-only rows' last-run stamps carried the old name; move them
+    # so the rows do not read "never" after the update.
+    for stamp in backup restore; do
+      if [ -f "/storage/.cache/cloud_sync/last-system-${stamp}" ] \
+         && [ ! -f "/storage/.cache/cloud_sync/last-settings-${stamp}" ]; then
+        mv "/storage/.cache/cloud_sync/last-system-${stamp}" "/storage/.cache/cloud_sync/last-settings-${stamp}"
+        log_to_file "${log_file}" "Carried last-system-${stamp} stamp across to last-settings-${stamp}"
+      fi
+    done
+    if grep -q '^RESTOREPATH=' /storage/.config/cloud_sync.conf; then
+      restore_root=$(grep -m1 '^RESTOREPATH=' /storage/.config/cloud_sync.conf | cut -d'"' -f2)
+      saves_root=$(grep -m1 '^SAVESPATH=' /storage/.config/cloud_sync.conf | cut -d'"' -f2)
+      if [ -n "${restore_root}" ] && [ "${restore_root}" != "${saves_root}" ]; then
+        log_to_file "${log_file}" "RESTOREPATH (${restore_root}) differs from SAVESPATH (${saves_root}); saves transfers will refuse until it is removed" "WARN"
+      fi
+    fi
+
     # Extract all configuration variables from defaults - FIXED VERSION
     while IFS='=' read -r key value; do
       # Only process DEFAULT_ variables
@@ -140,19 +185,19 @@ update_cloud_sync_config() {
           # A new key inherits the shape of the config it is joining, not the
           # shipped default, where the two would disagree.
           #
-          # CONTENTPATH is the case that matters. SYNCPATH already exists in
-          # every config, so an upgrading device keeps whatever it had -
-          # "/GAMES" for anyone set up before the /ROCKNIX layout. Adding the
-          # literal default would put their saves in one namespace and their
-          # ROMs in another, which is worse than either layout alone. Derive
-          # it from their SYNCPATH so the two stay together.
-          if [ "${var_name}" = "CONTENTPATH" ]; then
-            user_sync=$(grep -m1 '^SYNCPATH=' /storage/.config/cloud_sync.conf | cut -d'"' -f2)
+          # CONTENT_REMOTE is the case that matters. The saves folder already
+          # exists in every config (carried across from SYNCPATH above), so
+          # an upgrading device keeps whatever it had - "/GAMES" for anyone set
+          # up before the /ROCKNIX layout. Adding the literal default would put
+          # their saves in one namespace and their ROMs in another, which is
+          # worse than either layout alone. Derive it from their saves folder.
+          if [ "${var_name}" = "CONTENT_REMOTE" ]; then
+            user_sync=$(grep -m1 '^SAVES_REMOTE=' /storage/.config/cloud_sync.conf | cut -d'"' -f2)
             if [ -n "${user_sync}" ]; then
               parent=$(dirname "${user_sync}")
               [ "${parent}" = "/" ] && parent="${user_sync}"
               value="\"${parent}/Content\""
-              log_to_file "${log_file}" "Derived CONTENTPATH from SYNCPATH ${user_sync}"
+              log_to_file "${log_file}" "Derived CONTENT_REMOTE from SAVES_REMOTE ${user_sync}"
             fi
           fi
           echo "${var_name}=${value}" >> /storage/.config/cloud_sync.conf

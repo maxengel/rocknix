@@ -1,5 +1,5 @@
 ---
-description: "Conventions for the rclone cloud-sync subsystem (save/savestate/screenshot/system backup sync)."
+description: "Conventions for the rclone cloud-sync subsystem (save/savestate/screenshot/settings backup sync)."
 paths:
   - "projects/ROCKNIX/packages/network/rclone/**"
 ---
@@ -7,17 +7,17 @@ paths:
 # rclone cloud-sync conventions
 
 This package ships ROCKNIX's cloud backup/restore for saves, savestates, screenshots,
-and system backups. User-facing docs:
+and settings backups. User-facing docs:
 <https://rocknix.org/configure/cloud-sync/#cloud-sync-with-rclone>.
 
 ## What gets synced (scope)
 
 `cloud_sync-rules.txt` is an rclone `--filter-from` **allowlist**, with patterns relative to
-`BACKUPPATH`/`RESTOREPATH` (default `/storage/roms`). Only these are synced:
+`SAVESPATH` (default `/storage/roms`). Only these are synced:
 - the `savefiles/`, `savestates/`, `screenshots/` directories;
 - save-file extensions anywhere: `*.srm`, `*.sav`, `*.fs`, `*.state*`, `*.auto`, `*.dsv*`;
 - a few system save dirs (`n64/save/*`, `psx/memcards/*`, `dc/shared/savefiles/`, `psp/PPSSPP/`);
-- `backup/*.zip` (the system-backup archive).
+- `backup/*.zip` (the settings-backup archive).
 
 Everything else is **excluded**: `roms/`, **`bios/`**, `downloads/`, `images/`, `manuals/`,
 `videos/`, `themes/`, disc/ROM types (`*.iso *.chd *.bin *.img *.rom *.7z *.zip ...`),
@@ -25,16 +25,16 @@ Everything else is **excluded**: `roms/`, **`bios/`**, `downloads/`, `images/`, 
 ROMs, BIOS, and artwork are **never** uploaded — only saves, savestates, and screenshots.
 
 **Scope guardrail (intent):** every cloud-sync change must serve syncing *only* that set
-(saves/savestates/screenshots + the system-backup zip) across devices, and must **never** risk
+(saves/savestates/screenshots + the settings-backup zip) across devices, and must **never** risk
 non-synced local data. Stay within the allowlist; preserve the excludes in any `sync`/bisync
 direction (never delete ROMs/BIOS/art); keep a directory chooser limited to save dirs; and keep
-the system-backup zip partitioned from the saves flow.
+the settings-backup zip partitioned from the saves flow.
 
 **User intent (design north star):** the two flows to serve are (1) *new/reset device* —
 restore saves/savestates/screenshots from the cloud onto a fresh handheld, and (2)
 *multi-device* — the cloud as the hub for moving between handhelds, which is why conflict
 resolution (below) is the long-term goal. ROM/BIOS distribution is **not** part of the
-gamesave sync flows; if it ever belongs anywhere, it's the system backup/restore domain.
+gamesave sync flows; if it ever belongs anywhere, it's the settings backup/restore domain.
 
 **Console-first (hard rule, 2026-07-25):** ROCKNIX is a handheld gaming OS. Product
 surfaces — UI labels, dialogs, script output, on-device help, public docs — must assume a
@@ -60,7 +60,7 @@ toward progress (e.g. playtime/size/state heuristics), not timestamps.
   `/usr/config/modules/{cloud_backup,cloud_restore}.sh` → `/usr/bin/...`.
 - Pieces and their roles:
   - `cloud_backup` / `cloud_restore` — controller-driven TUI flows; each has two phases
-    (game saves, then the system-backup `.zip`). Keep these two scripts **structurally in
+    (game saves, then the settings-backup `.zip`). Keep these two scripts **structurally in
     sync** — most fixes belong in both.
   - `cloud_sync_helper` — merges `*.defaults` into the user's config on OS update.
   - `cloud_sync_cleanup_duplicates.sh` — removes duplicate `VAR=` lines from the conf.
@@ -127,13 +127,13 @@ seeded from the `/usr/config/*.defaults` templates:
   mirror semantics *within* the allowlist but can never delete outside it. Preserve that
   strip in any refactor, and treat any restore-side `--delete-excluded` as a bug.
 - **The two phases have different transfer roots, so filter rules do not carry
-  between them.** Phase 1 runs from `BACKUPPATH` (`/storage/roms`); phase 2 runs
-  from `BACKUPFOLDER` (`/storage/roms/backup`) to `SYNCPATH_BACKUP`, and on
-  restore from `SYNCPATH_BACKUP` back. `cloud_sync-rules.txt` is anchored to
-  `BACKUPPATH`, so in phase 2 every one of its rules describes a path that does
+  between them.** Phase 1 runs from `SAVESPATH` (`/storage/roms`); phase 2 runs
+  from `SETTINGS_BACKUPS` (`/storage/roms/backup`) to `SETTINGS_REMOTE`, and on
+  restore from `SETTINGS_REMOTE` back. `cloud_sync-rules.txt` is anchored to
+  `SAVESPATH`, so in phase 2 every one of its rules describes a path that does
   not exist -- and its `- /**/*.zip` matches the archive itself. **Never pass
-  `--filter-from` in the system-backup phase.** The archive lives at the *root*
-  of `SYNCPATH_BACKUP`, not under a `backup/` directory: match it with
+  `--filter-from` in the settings-backup phase.** The archive lives at the *root*
+  of `SETTINGS_REMOTE`, not under a `backup/` directory: match it with
   `--include=*.zip`. (2026-08-26: `cloud_restore` filtered on `backup/*.zip`,
   matched nothing, transferred nothing, exited 0 and printed SUCCESS. It shipped
   in four images that way.)
@@ -149,8 +149,8 @@ seeded from the `/usr/config/*.defaults` templates:
   `--exclude=/storage/roms/backup/**` never matches anything. Derive such
   patterns from the configured directory instead of hard-coding a name.
 
-- **`SYNCPATH_BACKUP` must be a sibling of `SYNCPATH`, never inside it.** Phase 1
-  syncs `SYNCPATH` with `--delete-excluded` and the archive is an excluded file,
+- **`SETTINGS_REMOTE` must be a sibling of `SAVES_REMOTE`, never inside it.** Phase 1
+  syncs `SAVES_REMOTE` with `--delete-excluded` and the archive is an excluded file,
   so a nested path is deleted there. A full run hides this -- phase 2 re-uploads
   moments later -- but a `--saves-only` run (or `BACKUPFILE_BACKUP_OPTION="no"`)
   deletes the archives and puts nothing back. `cloud_backup` now warns when the
@@ -240,7 +240,7 @@ above was wrong in three of four guesses made from the documentation.
 
 `tools/cloud-test-backend` serves a directory on the host over WebDAV;
 `tools/cloud-round-trip` drives a device through save backup/restore, the
-system-backup archive, and content sync against it
+settings-backup archive, and content sync against it
 over SSH. A VM from `generic-x64-vm` reaches the host at `10.0.2.2`, so nothing
 needs forwarding.
 
@@ -310,13 +310,13 @@ serial console (`-serial unix:`) enable sshd and drop in a key —
 fresh image, and the console gives a root shell without login.
 
 - **WebDAV, not S3, by default.** Dropbox/Drive/OneDrive are path-based, so
-  `SYNCPATH="/GAMES"` is a folder. On S3 and B2 the first path component is the
+  `SAVES_REMOTE="/GAMES"` is a folder. On S3 and B2 the first path component is the
   *bucket*. rclone creates buckets on demand, so a missing one is not the
   problem - the problem is that `GAMES` is not a **legal** bucket name
   (lowercase only, 3-63 chars), so it is rejected with `InvalidBucketName`
   before anything can be created (issue #38). Testing on S3 exercises
   semantics our users do not have; `CLOUD_QA_BACKEND=s3` reproduces that
-  difference on purpose, and the backend reports the `SYNCPATH` it needs
+  difference on purpose, and the backend reports the `SAVES_REMOTE` it needs
   (`cloud-test-backend syncpath` -> `/<bucket>/GAMES`) so the driver does not
   hard-code either shape.
 - **Local on purpose.** These tests exercise credential stripping and backup

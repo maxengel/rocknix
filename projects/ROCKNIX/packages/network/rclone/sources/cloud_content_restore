@@ -16,7 +16,7 @@
 #   cloud_content_restore --match          preview making this device match
 #   cloud_content_restore --match --apply  do it (the only mode that deletes)
 #
-# The remote content root defaults to the remote's root; set CONTENTPATH in
+# The remote content root defaults to the remote's root; set CONTENT_REMOTE in
 # /storage/.config/cloud_sync.conf to point somewhere else (e.g. "GAMES").
 
 . /etc/profile
@@ -69,12 +69,12 @@ if [ -z "${REMOTENAME}" ]; then
     exit 1
 fi
 
-ROOT="${REMOTENAME}${CONTENTPATH:+${CONTENTPATH}/}"
+ROOT="${REMOTENAME}${CONTENT_REMOTE:+${CONTENT_REMOTE}/}"
 LEGACY_ROOT="${REMOTENAME}"
 
 # Read the old shape, write the new one.
 #
-# CONTENTPATH is newer than content sync itself. Before it existed, content
+# CONTENT_REMOTE is newer than content sync itself. Before it existed, content
 # sat at the remote root, and an upgraded device would look in the new place,
 # find nothing, and simply show an empty list - the player never chose a
 # layout, so there is nothing for them to reason about, and nobody reads
@@ -117,8 +117,8 @@ remote_for() {
 # Three shapes are in the field and all of them have to keep working:
 #
 #   1. ROMs/<system> and BIOS      -- current
-#   2. <system> and bios, flat under CONTENTPATH  -- what shipped before this
-#   3. <system> at the remote root -- before CONTENTPATH existed at all
+#   2. <system> and bios, flat under CONTENT_REMOTE  -- what shipped before this
+#   3. <system> at the remote root -- before CONTENT_REMOTE existed at all
 #
 # Read all three, write only the first (cloud_content_backup). A library then
 # migrates itself the next time it is backed up: nothing to prompt about,
@@ -137,9 +137,9 @@ resolve_src() {
     elif rclone lsf --dirs-only "${ROOT}" 2>/dev/null | sed 's:/$::' | grep -qx "${dir}"; then
         log_message "Content \"${dir}\" found in the flat pre-ROMs layout"
         echo "${ROOT}${dir}"
-    elif [ -n "${CONTENTPATH}" ] && legacy_dirs | grep -qx "${dir}" \
+    elif [ -n "${CONTENT_REMOTE}" ] && legacy_dirs | grep -qx "${dir}" \
          && rclone lsf --dirs-only "${LEGACY_ROOT}" 2>/dev/null | sed 's:/$::' | grep -qx "${dir}"; then
-        log_message "Content \"${dir}\" found at the pre-CONTENTPATH location"
+        log_message "Content \"${dir}\" found at the pre-CONTENT_REMOTE location"
         echo "${LEGACY_ROOT}${dir}"
     else
         echo "${new}"
@@ -174,9 +174,9 @@ exists_remote() {
 # choice.
 #
 # Kept in /storage/.cache, deliberately. The obvious homes -- cloud_sync.conf,
-# or ES's system.cfg -- are both captured by the system backup, and restoring
+# or ES's system.cfg -- are both captured by the settings backup, and restoring
 # one device's selection onto another would silently change what that device
-# syncs. That is the same defect shape as the CONTENTPATH split (6717e0b348),
+# syncs. That is the same defect shape as the CONTENT_REMOTE split (6717e0b348),
 # and once was enough.
 #
 # No file means no selection means everything, so a device that has never
@@ -264,7 +264,7 @@ sizes_under() {
 # A system directory holds more than games: RetroArch writes .srm and .state
 # next to the ROM, and several systems keep memory cards in a subfolder. The
 # saves allowlist claims all of it ("+ /**/*.srm" and friends in
-# cloud_sync-rules.txt), so uploading a system folder wholesale puts save data
+# cloud_sync-rules.txt), so uploading a system folder wholesale puts saves
 # in a second cloud location under different rules -- two writers and no
 # reconciliation, which is exactly how 70 files were deleted on 2026-09-01.
 #
@@ -563,7 +563,7 @@ case "${1}" in
     --list)
         # Top-level directories only; one per line, no trailing slash.
         # Lists both locations so an upgraded device still sees content that
-        # predates CONTENTPATH, rather than presenting an unexplained empty
+        # predates CONTENT_REMOTE, rather than presenting an unexplained empty
         # list to somebody who changed nothing.
         {
             # current layout, reported under the local names the rest of the
@@ -573,7 +573,7 @@ case "${1}" in
             # the flat layout that shipped before it, minus its own containers
             rclone lsf --dirs-only "${ROOT}" 2>/dev/null | sed 's:/$::' \
                 | grep -vxE 'ROMs|BIOS'
-            if [ -n "${CONTENTPATH}" ]; then
+            if [ -n "${CONTENT_REMOTE}" ]; then
                 rclone lsf --dirs-only "${LEGACY_ROOT}" 2>/dev/null | sed 's:/$::' \
                     | grep -Fxf <(legacy_dirs) 2>/dev/null
             fi

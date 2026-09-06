@@ -10,6 +10,19 @@ Companion to [es-menu-map.md](es-menu-map.md), which places this subtree in the
 wider menu. Rendered low-fidelity wireframes of these screens, with the reasoning
 in the margins: <https://claude.ai/code/artifact/5da9ce12-b088-4db0-8557-4b34fe454dd6>
 
+> **Rev 5 (2026-09-06).** Five maintainer decisions from the conflict-resolution
+> council, and one vocabulary. *Keep copies of discarded saves* is **on** by
+> default with a count of 1 to 9, default 3 (D-CLOUD-032); the discarded copy
+> lives **in the cloud**, beside the saves folder, so any device can restore it
+> (D-CLOUD-036); no undo control ships in the wizard — restoring is a separate
+> tool reached from the same menu entry (D-CLOUD-033, D-CLOUD-035); a sync
+> never opens the wizard over a player, it counts and badges, and one entry,
+> MANAGE GAME SAVE RESTORES AND CONFLICTS, owns the queue and the restores
+> (D-CLOUD-035); an unexplained absence is asked as a two-button question in
+> this same wizard rather than held as a state (D-CLOUD-037). Vocabulary per
+> D-UI-022: *discard* now means only the copy chosen against — quitting the
+> wizard **drops** its decisions, it does not discard anything.
+>
 > **Rev 4.** Merged states use ES's own `getNextFreeSlot()`; no slot cap;
 > resolutions are recorded in an **audit log**; the wizard is triggered by a
 > sync that reports conflicts.
@@ -55,7 +68,7 @@ flowchart TD
     REVIEW -->|APPLY| APPLY
 
     APPLY --> DONE([done<br/>what changed, per side])
-    ITEM -.quit early.-> UNTOUCHED([nothing transferred<br/>decisions discarded])
+    ITEM -.quit early.-> UNTOUCHED([nothing transferred<br/>decisions dropped])
 
     classDef safe stroke-dasharray: 4 3
     class UNTOUCHED,DONE safe
@@ -70,7 +83,7 @@ Properties the flow has to keep:
   cloud-only file has been downloaded, free-on-device and free-on-both are the
   same thing, and a merge cannot pick a slot the cloud is already using.
 - **Every conflict gets a decision.** There is no defer, because a discarded
-  copy is recoverable when *keep discarded saves* is on — that setting, not
+  copy is recoverable when *keep copies of discarded saves* is on — that setting, not
   deferral, is the escape hatch for "I am not sure".
 
 ## Screens
@@ -112,7 +125,7 @@ swaps sides is how the wrong save gets picked at speed.
 | Not shown | file size — not actionable when choosing between two saves | same |
 | Emulator info means | **compatibility** — core- and chipset-specific, may not load (#19) | context — usually portable across emulators |
 | KEEP BOTH | yes — moves to the next free slot via ES's `getNextFreeSlot()` | **no** — fixed slots; shown disabled with a reason |
-| Losing copy | retained only when *keep discarded saves* is on | same |
+| Losing copy | retained only when *keep copies of discarded saves* is on | same |
 
 KEEP BOTH is **dimmed, not hidden**, on in-game saves — the house rule from
 [es-ui-style-guide.md](es-ui-style-guide.md), and a dimmed control with a reason
@@ -124,7 +137,7 @@ Two toggles, both in the cloud-saves area:
 
 - **Review decisions before applying** — off by default; turns the summary from
   a step everyone pays for into one the careful can opt into.
-- **Keep discarded saves** — off by default; retains the losing copy so a
+- **Keep copies of discarded saves** — on by default (D-CLOUD-032); retains the losing copy so a
   choice can be undone. A **count selector** sets how many to keep, and stays
   visible but unselectable while the toggle is off (dim, don't hide — the
   capability should be discoverable before it is enabled). The fixed count is
@@ -157,12 +170,12 @@ a conflict"; the panels own "here is what each one is".
 ## Settled
 
 - **No file size** on either panel — not actionable for choosing between saves.
-- **Progress does not survive an interruption.** Quitting discards decisions and
+- **Progress does not survive an interruption.** Quitting drops decisions and
   applies nothing. Redoing a few choices beats risking a half-applied
   resolution, and it keeps the "nothing transfers until COMPLETE" guarantee
   simple.
 - **Cloud is always the left column.**
-- **Keep discarded saves is off by default**, with a count selector.
+- **Keep copies of discarded saves is on by default** (D-CLOUD-032, D-CLOUD-036), with a count selector, default 3, 1 to 9.
 
 ## What ES already does (checked, not assumed)
 

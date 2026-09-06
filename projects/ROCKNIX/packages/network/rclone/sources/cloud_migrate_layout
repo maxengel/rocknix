@@ -4,7 +4,7 @@
 
 # cloud_migrate_layout - move a device off the original cloud folder layout.
 #
-# The first layout put everything under /GAMES, with the system backups nested
+# The first layout put everything under /GAMES, with the settings backups nested
 # inside the saves folder at /GAMES/backup. Both are wrong in ways that bite:
 #
 #   - /GAMES is a name somebody may well have used for something else, and we
@@ -131,13 +131,13 @@ resumable() {
     printf '%s\n' "${out}" | grep -q "0 differences found"
 }
 
-# What cloud_sync_helper would have derived CONTENTPATH to be for a given
-# SYNCPATH. The helper deliberately derives it rather than taking the shipped
+# What cloud_sync_helper would have derived CONTENT_REMOTE to be for a given
+# SAVES_REMOTE. The helper deliberately derives it rather than taking the shipped
 # default, so that ROMs and saves stay in one namespace -- its own comment
 # calls a split "worse than either layout alone".
 #
 # That is exactly what this script used to produce: it moved saves and backups
-# to /ROCKNIX and left CONTENTPATH behind, so a migrated device looked for its
+# to /ROCKNIX and left CONTENT_REMOTE behind, so a migrated device looked for its
 # ROMs under a /GAMES that no longer had anything in it. Matching against the
 # derived value is how we tell our own pointer from one the owner chose --
 # theirs is left alone.
@@ -178,7 +178,7 @@ migrate_content() {
         fi
     fi
 
-    sed -i "s|^CONTENTPATH=.*|CONTENTPATH=\"${NEW_CONTENT}\"|" "${SYNC_CONF}"
+    sed -i "s|^CONTENT_REMOTE=.*|CONTENT_REMOTE=\"${NEW_CONTENT}\"|" "${SYNC_CONF}"
     say "Content is now at ${remote}${NEW_CONTENT}."
     return 0
 }
@@ -193,17 +193,17 @@ main() {
         return 1
     fi
 
-    saves=$(conf_value SYNCPATH)
-    backups=$(conf_value SYNCPATH_BACKUP)
+    saves=$(conf_value SAVES_REMOTE)
+    backups=$(conf_value SETTINGS_REMOTE)
 
-    content=$(conf_value CONTENTPATH)
+    content=$(conf_value CONTENT_REMOTE)
 
     if [ "${saves}" = "${NEW_SAVES}" ] && [ "${backups}" = "${NEW_BACKUPS}" ]; then
         # Saves and backups are current, but a device migrated before
-        # CONTENTPATH was carried along is still pointing its ROMs at the old
+        # CONTENT_REMOTE was carried along is still pointing its ROMs at the old
         # namespace. Repair that here rather than making it a separate flow --
         # this is the state every early migration left behind.
-        # The old SYNCPATH is gone by now, so the derived value cannot be
+        # The old SAVES_REMOTE is gone by now, so the derived value cannot be
         # recomputed. The signature is enough: the helper always appends
         # "/Content", so a path shaped that way and not already the current
         # one is one of ours, left behind.
@@ -228,7 +228,7 @@ main() {
     say "  backups  ${remote}${NEW_BACKUPS}"
     say ""
 
-    # Where the saves actually are. Under the original layout SYNCPATH was the
+    # Where the saves actually are. Under the original layout SAVES_REMOTE was the
     # folder itself; a device whose owner has already tidied them into a
     # subfolder is the more useful case to handle, since that is what somebody
     # does after losing files to a mirror.
@@ -286,15 +286,15 @@ main() {
     # first, then a move that failed, is a device looking at an empty folder
     # and reporting that it has no saves.
     say "Updating ${SYNC_CONF}..."
-    sed -i "s|^SYNCPATH=.*|SYNCPATH=\"${NEW_SAVES}\"|" "${SYNC_CONF}"
-    sed -i "s|^SYNCPATH_BACKUP=.*|SYNCPATH_BACKUP=\"${NEW_BACKUPS}\"|" "${SYNC_CONF}"
+    sed -i "s|^SAVES_REMOTE=.*|SAVES_REMOTE=\"${NEW_SAVES}\"|" "${SYNC_CONF}"
+    sed -i "s|^SETTINGS_REMOTE=.*|SETTINGS_REMOTE=\"${NEW_BACKUPS}\"|" "${SYNC_CONF}"
 
     # ROMs move with the saves they belong to, when the pointer is one we
-    # derived. A CONTENTPATH the owner set themselves is theirs, and stays.
+    # derived. A CONTENT_REMOTE the owner set themselves is theirs, and stays.
     if [ -n "${content}" ] && [ "${content}" = "$(derived_content "${saves}")" ]; then
         migrate_content "${remote}" "${content}" "${mode}"
     elif [ -n "${content}" ] && [ "${content}" != "${NEW_CONTENT}" ]; then
-        say "Leaving CONTENTPATH at ${content} -- it is not a path this migration set."
+        say "Leaving CONTENT_REMOTE at ${content} -- it is not a path this migration set."
     fi
 
     say ""

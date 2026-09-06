@@ -334,7 +334,7 @@ modification times equal to the device's, which is what `mtime` is for.
   moves a version, in both directions, keyed by path.
 - **#25 — the allowlist rule for snapshots** (§8), ahead of the `savestates`
   line.
-- **Assumed: `BACKUPPATH == RESTOREPATH`** (both `/storage/roms` by default and
+- **Enforced, no longer assumed: saves have one local folder, `SAVESPATH`** (D-CLOUD-040; was `BACKUPPATH == RESTOREPATH`, both `/storage/roms` by default and
   in every shipped flow). Entry keys are relative to that one root; a player who
   sets the two apart has two roots, and this schema does not model that. A
   warning in `cloud_sync_helper` is the fix if it ever matters.

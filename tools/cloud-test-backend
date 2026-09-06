@@ -9,7 +9,7 @@
 # host), so nothing needs forwarding and no real cloud account is involved.
 #
 # WebDAV rather than S3 by default, because it matches what people actually
-# use. Dropbox, Google Drive and OneDrive are path-based, so SYNCPATH="/GAMES"
+# use. Dropbox, Google Drive and OneDrive are path-based, so SAVES_REMOTE="/GAMES"
 # is a folder. On S3 and B2 the first path component is the *bucket*, so the
 # same setting asks for a bucket named GAMES and fails with InvalidBucketName.
 # Testing on S3 would exercise semantics our users do not have. Set
@@ -101,7 +101,7 @@ case "${1:-}" in
       s3 lsd "qa-host:${S3_BUCKET}" >/dev/null 2>&1 || {
         echo "error: bucket not reachable; try: docker logs ${S3_NAME}" >&2; exit 1; }
       echo "up: s3 bucket ${S3_BUCKET} on port ${PORT}"
-      echo "note: SYNCPATH must start with the bucket, e.g. /${S3_BUCKET}/GAMES"
+      echo "note: SAVES_REMOTE must start with the bucket, e.g. /${S3_BUCKET}/GAMES"
       exit 0
     fi
 
@@ -224,8 +224,8 @@ EOF
     fi
     ;;
 
-  syncpath)
-    # What SYNCPATH must be for this endpoint. On a path-based backend it is
+  saves-remote)
+    # What SAVES_REMOTE must be for this endpoint. On a path-based backend it is
     # just a folder. On a bucket-based one the first component is the bucket,
     # and it has to be a legal bucket name - lowercase, 3-63 chars - so the
     # shipped "/GAMES" is rejected outright (issue #38). rclone will create
@@ -237,8 +237,8 @@ EOF
     fi
     ;;
 
-  syncpath-backup)
-    # Where the system-backup archive goes. It must be a SIBLING of syncpath,
+  settings-remote)
+    # Where the settings-backup archive goes. It must be a SIBLING of syncpath,
     # never inside it. Phase 1 syncs syncpath with --delete-excluded and the
     # archive is an excluded file, so a nested path is deleted by phase 1. A
     # full run hides this - phase 2 re-uploads it moments later - but any run
@@ -252,7 +252,7 @@ EOF
     fi
     ;;
 
-  contentpath)
+  content-remote)
     # Where cloud_content_backup/restore put whole content directories.
     # Same bucket-vs-folder split as syncpath.
     if [ "${BACKEND}" = "s3" ]; then
@@ -266,7 +266,7 @@ EOF
   backend)     echo "${BACKEND}" ;;
 
   *)
-    echo "usage: ${0##*/} {up|down|reset|ls [path]|path|put <dir> <path>|status|rclone-conf|syncpath|syncpath-backup|contentpath|remote-name|backend}" >&2
+    echo "usage: ${0##*/} {up|down|reset|ls [path]|path|put <dir> <path>|status|rclone-conf|saves-remote|settings-remote|content-remote|remote-name|backend}" >&2
     exit 1
     ;;
 esac

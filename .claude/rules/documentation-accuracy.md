@@ -27,10 +27,10 @@ Page: `docs/configure/cloud-sync.md` → <https://rocknix.org/configure/cloud-sy
 stay consistent with the cloud-sync source of truth in **this** repo:
 
 - `projects/ROCKNIX/packages/network/rclone/sources/cloud_sync.conf` and
-  `cloud_sync.conf.defaults` — the documented variables/defaults and semantics: `BACKUPPATH`,
-  `RESTOREPATH`, `SYNCPATH`, `BACKUPFOLDER`, `SYNCPATH_BACKUP`, `RCLONEOPTS`,
+  `cloud_sync.conf.defaults` — the documented variables/defaults and semantics: `SAVESPATH`,
+  `SAVES_REMOTE`, `SETTINGS_BACKUPS`, `SETTINGS_REMOTE`, `RCLONEOPTS`,
   `BACKUPMETHOD`/`RESTOREMETHOD` (`sync` mirrors+deletes vs `copy` non-destructive),
-  `BACKUPFILE_*_OPTION`, `RSYNCRMDIR`, `LOG_LEVEL`, and **`CONTENTPATH`** (the
+  `BACKUPFILE_*_OPTION`, `RSYNCRMDIR`, `LOG_LEVEL`, and **`CONTENT_REMOTE`** (the
   content tier's cloud root; `ROMs/` and `BIOS/` live under it — D-CLOUD-018).
 - the scripts `cloud_backup`, `cloud_restore`, `cloud_sync_helper`, and the ones
   added since: `cloud_setup`, `cloud_remote`, `cloud_oauth`, `cloud_device_id`,

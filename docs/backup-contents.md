@@ -1,4 +1,4 @@
-# What the system backup contains
+# What the settings backup contains
 
 Reference for `backuptool` (ES: **BACKUP CONFIGURATIONS** / **RESTORE FROM BACKUP**,
 and the cloud **BACK UP / RESTORE EVERYTHING** actions). Source of truth for the

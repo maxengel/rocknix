@@ -15,7 +15,7 @@
 #   cloud_content_backup <dir> [<dir>..]  copy local dirs to the cloud
 #   cloud_content_backup --all            copy all local content directories
 #
-# The remote content root defaults to the remote's root; set CONTENTPATH in
+# The remote content root defaults to the remote's root; set CONTENT_REMOTE in
 # /storage/.config/cloud_sync.conf to point somewhere else (e.g. "GAMES").
 
 . /etc/profile
@@ -68,7 +68,7 @@ if [ -z "${REMOTENAME}" ]; then
     exit 1
 fi
 
-ROOT="${REMOTENAME}${CONTENTPATH:+${CONTENTPATH}/}"
+ROOT="${REMOTENAME}${CONTENT_REMOTE:+${CONTENT_REMOTE}/}"
 
 # What this device calls a game system.
 #
@@ -191,7 +191,7 @@ remote_for() {
 
 # The systems this device syncs, chosen once and changeable. See
 # cloud_content_restore for why this lives in /storage/.cache rather than in
-# anything the system backup captures. A device that does not want PS2 coming
+# anything the settings backup captures. A device that does not want PS2 coming
 # down does not want it going up either, so both directions read the same file.
 SELECTION="/storage/.cache/cloud_sync/content-systems"
 
@@ -303,7 +303,7 @@ GAMELIST_ONLY=( --include "gamelist.xml" --include "**/gamelist.xml" )
 # A system directory holds more than games: RetroArch writes .srm and .state
 # next to the ROM, and several systems keep memory cards in a subfolder. The
 # saves allowlist claims all of it ("+ /**/*.srm" and friends in
-# cloud_sync-rules.txt), so uploading a system folder wholesale puts save data
+# cloud_sync-rules.txt), so uploading a system folder wholesale puts saves
 # in a second cloud location under different rules -- two writers and no
 # reconciliation, which is exactly how 70 files were deleted on 2026-09-01.
 #
