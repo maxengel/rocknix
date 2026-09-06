@@ -614,7 +614,11 @@ case "${1}" in
         TMP=$(mktemp -d /tmp/cloud-scan.XXXXXX); trap 'rm -rf "${TMP}"' EXIT
         rclone lsf -R --files-only --format "sp" --separator "|" "${ROOT}ROMs/" 2>/dev/null \
             | cloud_content_filter > "${TMP}/cloud"
-        rclone lsf -R --files-only --format "sp" --separator "|" "${ROOT}BIOS/" 2>/dev/null \
+        # BIOS is the ROMs tier's, never game content's: under --media-only it
+        # is not listed, so the union does not carry a line the page would
+        # skip and the log would puzzle over (3608 cloud BIOS files "not on
+        # this device" under game content alone, RG35XX SP, 2026-09-06).
+        [ "${MEDIA_MODE}" != only ] && rclone lsf -R --files-only --format "sp" --separator "|" "${ROOT}BIOS/" 2>/dev/null \
             | grep -v '|README\.txt$' | sed 's/|/|bios\//' >> "${TMP}/cloud"
         sizes_under "${ROOT}" | grep -vE '^(ROMs|BIOS)\|' > "${TMP}/legacy"
         {
