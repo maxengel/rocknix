@@ -6,7 +6,7 @@
 
 ## Current Focus
 
-`begin-delivery` on #11, batch 1: Steps 1–2 done (addendum on #26 as the prior retro; pre-futro audit on #35; the futro on #11 with adjustments applied to #35/#9; post-futro audit signed). Step 3's task list is below, awaiting the maintainer's confirmation and a window for the Gate 12 census. Execution has not started.
+`begin-delivery` on #11, batch 1: Steps 1–2 done (addendum on #26 as the prior retro; pre-futro audit on #35; the futro on #11 with adjustments applied to #35/#9; post-futro audit signed). The task list is confirmed (2026-09-06) with D-QA-009 added: conflict and bisync testing on a VM pair only. Commit discipline: feature-branch commits as the work goes, landing on `next` when a gate's evidence is on its issue. Execution started at task 1 (`tools/vm-pair`, worktree `feature/round-trip-harness`).
 
 ## Completed This Session
 
@@ -34,7 +34,7 @@
 
 **Gate 11 — #9, the bisync spike**
 8. The spike runner (in the harness): the ten contract items on WebDAV, then MinIO; shapes captured with `od -c` before parsing; the one explicit `--resync` recorded; a real `kill -9` mid-transfer; the scoring table on #9 with `rclone version` from the guest.
-9. Device half on the RG35XX SP vs Dropbox, on `/ROCKNIX/QA-bisync` and a scratch local root — **ask first**, restore `rclone.conf` after; item 2 watched on Dropbox.
+9. The second guest (D-QA-009): the contract's two-device items on the VM pair, WebDAV then MinIO; no handheld.
 10. Verdict on #9, mirrored on #22; D-CLOUD-044 settled as a register row; micro-retro.
 
 **Gate 12 — the census (RG35XX SP, the maintainer's hands)**
@@ -67,7 +67,6 @@ Carried debt: rocknix.org docs PR; #73's on-screen review; the `--scan` BIOS tid
 
 ## Open Questions
 
-- Confirm the batch-1 task list (Step 3) and name a window for the Gate 12 census.
-- Commit discipline for the batch: feature-branch commits as work goes, landing on `next` when a gate's evidence is on its issue — or stricter?
+- A window for the Gate 12 census (the maintainer's emulator sessions on the RG35XX SP).
 - Close #76/#77 after the maintainer's look at the review build?
 - D-CLOUD-044 (bisync-gap posture) stays parked until the #9 spike.
