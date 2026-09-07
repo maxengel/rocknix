@@ -36,6 +36,15 @@ Image lands at `target/ROCKNIX-GENERIC_X64.x86_64-<date>.img.gz`. To re-image af
 scripts/only change (e.g. `mkimage`), remove `build.*/.stamps/image/build_target` first —
 scripts aren't in a package deephash so the image won't rebuild otherwise.
 
+**The image step writes into the tree.** It regenerates
+`documentation/PER_DEVICE_DOCUMENTATION/GENERIC_X64/SUPPORTED_EMULATORS_AND_CORES.md`,
+a tracked file, so every build leaves the worktree dirty and
+`tools/fork-worktree sync` refuses it afterwards (it names the file). Discard
+it before syncing — `git -C <worktree> checkout -- documentation/` — it is
+build output, not a change to keep. A build started from an unsynced
+worktree builds the old pin and says nothing; check `git log -1` in the
+build worktree against `next` before `make`.
+
 ## Boot in QEMU
 
 **Environment parity is the acceptance criterion.** A qcow2 only carries disk bytes; it does
