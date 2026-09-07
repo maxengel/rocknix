@@ -141,7 +141,14 @@ syncpath_problem() {
     # "InvalidBucketName" with nothing tying it to the folder that caused it.
     #
     # So: ask the provider now, and attach the answer to the setting.
-    probe=$(rclone lsd "${remote}${path#/}" 2>&1 | head -2)
+    #
+    # Only what rclone says went wrong, never its listing. This used to read
+    # stdout as well, so a folder that already existed and held anything --
+    # a saves folder with savestates/ in it, which is every folder somebody
+    # would type on a second device -- was refused as "your provider would
+    # not accept this folder", with the folder's own contents quoted as the
+    # reason (found by the A3 fixture on the VM pair, 2026-09-06).
+    probe=$(rclone lsd "${remote}${path#/}" --log-level ERROR 2>&1 >/dev/null | head -2)
     case "${probe}" in
         # A folder that does not exist yet is fine - it gets created on use.
         *"not found"*|*NoSuchBucket*|"") return 0 ;;
