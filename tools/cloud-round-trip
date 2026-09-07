@@ -1157,12 +1157,38 @@ def fx_a9(p):
     return f
 
 
+def fx_a11(p):
+    """A11: a cloned card -- the second device carries the first's identity.
+    It refuses to publish with duplicate-device-id and transfers nothing."""
+    f = 0
+    rel = "saves/Cloned.srm"
+    h0 = b"H0 published by the first card"
+    a_id = p.a.run("cloud_device_id").strip()
+    prev = p.b.run(f"cat {ID_FILE} 2>/dev/null || true")
+    p.reset()
+    p.agree({rel: h0})
+    p.b.write(ID_FILE, (a_id + "\n").encode())
+    try:
+        p.b.write(p.path(rel), b"HB from the clone")
+        mark = log_mark(p.b)
+        rc, out = run_rc(p.b, "cloud_backup --yes --saves-only")
+        said = "duplicate-device-id" in out + log_since(p.b, mark)
+        f += not check(rc == 1 and said, "the clone was refused with duplicate-device-id",
+                       f"THE CLONE PUBLISHED (exit {rc}, no duplicate-device-id refusal) (A11)")
+        f += not check(p.cloud_sha(rel) == sha(h0), "and transferred nothing",
+                       "the clone's copy replaced the first card's in the cloud")
+    finally:
+        p.b.write(ID_FILE, prev.encode())
+    return f
+
+
 PAIR_FIXTURES = [
     ("A1", "both changed after a first pass: every writer, this device's copy newer and older", fx_a1),
     ("A2", "a failed push retried; an equal-size, equal-mtime change after a first pass", fx_a2),
     ("A3", "CHANGE CLOUD FOLDER to a folder holding different saves", fx_a3),
     ("A8", "a torn N64 pair: interrupted after one member, held, then cleared", fx_a8),
     ("A9", "delete and renumber; a retired hash put back; rm; an unmounted, empty, or empty-cloud root", fx_a9),
+    ("A11", "a cloned device id refuses to publish", fx_a11),
 ]
 
 
