@@ -945,8 +945,53 @@ def fx_a1(p):
     return f
 
 
+def fx_a2(p):
+    """A2: a failed push is retried at the next exit with nothing changed; an
+    equal-size, equal-mtime byte change enters the changed set at the next
+    full pass -- the hash catches what size and mtime cannot (#53's shape,
+    on a save)."""
+    f = 0
+    rel = "saves/Retry.srm"
+    v = {"H0": b"H0 agreed", "HA": b"HA: changed while the cloud was unreachable"}
+    p.reset()
+    p.agree({rel: v["H0"]})
+    p.a.write(p.path(rel), v["HA"])
+    # One push fails the way a lapsed sign-in does: the remote's password
+    # (or S3 secret) wrong for that run, then put back. A closed port would
+    # do too, but rclone retries a refused connection for ten minutes.
+    good = p.a.run(f"cat {RCLONE_CONF}")
+    p.a.run(f"sed -i \"s|^pass = .*|pass = $(rclone obscure wrong-password)|; s|^secret_access_key = .*|secret_access_key = wrong|\" {RCLONE_CONF}")
+    rc1, _ = run_rc(p.a, "cloud_backup --yes --saves-only --recent")
+    p.a.write(RCLONE_CONF, good.encode())
+    f += not check(rc1 != 0, f"the push failed while the cloud refused the sign-in (exit {rc1}; the setup)",
+                   "a push the cloud refused reported success")
+    rc2, _ = run_rc(p.a, "cloud_backup --yes --saves-only --recent")
+    f += not check(p.cloud_sha(rel) == sha(v["HA"]),
+                   "the next exit, with nothing changed since, retried and published",
+                   f"the failed push was not retried: the cloud holds {name_of(p.cloud_sha(rel), v)} (exit {rc2})")
+
+    rel = "saves/Same Size.srm"
+    one, two = b"version-one-of-this-save", b"version-two-of-this-save"
+    assert len(one) == len(two)
+    p.reset()
+    p.agree({rel: one})
+    # On b: new bytes, the same length, the mtime put back to what it was.
+    q = shlex.quote(p.path(rel))
+    p.b.run(f"cp -p {q} {q}.ref")
+    p.b.write(p.path(rel), two)
+    p.b.run(f"touch -r {q}.ref {q}; rm -f {q}.ref; sync")
+    run_rc(p.b, "cloud_backup --yes --saves-only")
+    run_rc(p.a, "cloud_restore --yes --saves-only")
+    f += not check(p.a.sha(p.path(rel)) == sha(two),
+                   "an equal-size, equal-mtime byte change entered the changed set at the full pass",
+                   "an equal-size, equal-mtime byte change was never noticed: size and mtime matched "
+                   "and nothing hashed, so a still holds version one (A2)")
+    return f
+
+
 PAIR_FIXTURES = [
     ("A1", "both changed after a first pass: every writer, this device's copy newer and older", fx_a1),
+    ("A2", "a failed push retried; an equal-size, equal-mtime change after a first pass", fx_a2),
 ]
 
 
