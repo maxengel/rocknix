@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+"""The census (Gate 12, #11): what a game exit actually writes, on a handheld.
+
+Read-only. `begin` records the saves tier as the sync sees it -- every file
+the shipped allowlist admits under the saves root, with size, mtime and
+sha256 -- plus the log positions. The owner then plays. `report` records it
+again and reads the difference: which files each session wrote, grouped by
+emulator; how many bytes an exit seals; what retention at count 3 would hold;
+and what the exit push cost, from the sync log. Those numbers are #21's unit
+table and #22's admission ceiling.
+
+    ./tools/cloud-census --host root@192.168.1.81 begin  --out census.json
+    ...the owner plays...
+    ./tools/cloud-census --host root@192.168.1.81 report --baseline census.json
+
+Nothing on the device is written, moved or restarted (D-QA-008). It runs
+over SSH and reads /storage, /var/log/cloud_sync.log and EmulationStation's
+log; the device's own scripts are not run.
+"""
+
+import argparse
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+import time
+from collections import defaultdict
+
+RULES = "/storage/.config/cloud_sync-rules.txt"
+SYNC_LOG = "/var/log/cloud_sync.log"
+ES_LOG = "/storage/.config/emulationstation/es_log.txt"
+CONF = "/storage/.config/cloud_sync.conf"
+SESSION_GAP = 180   # seconds between writes that separates two sessions in one system
+
+
+def ssh(args, cmd):
+    base = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "LogLevel=ERROR", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-p", str(args.port)]
+    if args.identity:
+        base += ["-i", args.identity]
+    p = subprocess.run(base + [args.host, cmd], capture_output=True, text=True)
+    if p.returncode != 0:
+        sys.exit(f"ssh {args.host}: {p.stderr.strip() or p.stdout.strip() or p.returncode}")
+    return p.stdout
+
+
+def snapshot(args):
+    """The saves tier as rclone would list it, with size, mtime, sha256."""
+    root = ssh(args, f". {CONF} 2>/dev/null; echo \"${{SAVESPATH:-/storage/roms}}\"").strip()
+    # rclone applies the allowlist exactly as the sync does; busybox stat and
+    # sha256sum do the rest. Paths may hold spaces, so the list is read
+    # line by line and every use is quoted.
+    listing = ssh(args, (
+        f"cd {shlex.quote(root)} && rclone lsf -R --files-only --filter-from {RULES} . 2>/dev/null | "
+        "while IFS= read -r f; do "
+        "  s=$(stat -c '%s %Y' \"$f\" 2>/dev/null) || continue; "
+        "  h=$(sha256sum \"$f\" 2>/dev/null | cut -c1-64); "
+        "  printf '%s|%s|%s\\n' \"$s\" \"$h\" \"$f\"; done"))
+    files = {}
+    for line in listing.splitlines():
+        parts = line.split("|", 2)
+        if len(parts) != 3:
+            continue
+        size_mtime, sha, path = parts
+        size, mtime = size_mtime.split()
+        files[path] = {"size": int(size), "mtime": int(mtime), "sha256": sha}
+    meta = ssh(args, (
+        f"echo device_time=$(date +%s); "
+        f"echo sync_log_lines=$(wc -l < {SYNC_LOG} 2>/dev/null || echo 0); "
+        f"echo es_log_lines=$(wc -l < {ES_LOG} 2>/dev/null || echo 0); "
+        "echo exit_sync=$(grep -o 'cloudsaves.gameexit=[01]' /storage/.config/system/configs/system.cfg 2>/dev/null | cut -d= -f2); "
+        "echo startup_sync=$(grep -o 'cloudsaves.startup=[01]' /storage/.config/system/configs/system.cfg 2>/dev/null | cut -d= -f2); "
+        "echo build=$(grep ^BUILD_ID= /etc/os-release | cut -c11-20); "
+        "echo device=$(cloud_device_id 2>/dev/null)"))
+    m = dict(l.split("=", 1) for l in meta.splitlines() if "=" in l)
+    return {"taken_at": int(time.time()), "root": root, "files": files, "meta": m}
+
+
+def family(path):
+    """Which emulator layout a save path belongs to -- the unit table's rows."""
+    p = path.lower()
+    if p.startswith("savestates/"):
+        return "savestates (libretro)"
+    if p.startswith("n64/save/"):
+        return "n64 (mupen: .eep/.mpk/.sra)"
+    if p.startswith("psx/memcards/"):
+        return "psx (duckstation memcards)"
+    if p.startswith("dc/shared/"):
+        return "dc (flycast VMU)"
+    if p.startswith("psp/ppsspp/"):
+        return "psp (ppsspp savedata)"
+    if p.startswith("screenshots/"):
+        return "screenshots"
+    if p.startswith("savefiles/"):
+        return "savefiles"
+    return f"{p.split('/')[0]} (in-game save beside the ROM)"
+
+
+def game_of(path):
+    """The game a save path names, as well as a path can say it."""
+    base = os.path.basename(path)
+    base = re.sub(r"\.(state\d*|auto|state\d*\.png|state\.auto\.png|png)$", "", base, flags=re.I)
+    return os.path.splitext(base)[0] if "." in base else base
+
+
+def sync_log_since(args, line):
+    return ssh(args, f"tail -n +{int(line) + 1} {SYNC_LOG} 2>/dev/null || true")
+
+
+def es_log_since(args, line):
+    return ssh(args, f"tail -n +{int(line) + 1} {ES_LOG} 2>/dev/null || true")
+
+
+def runs_from_sync_log(text):
+    """Each cloud_backup/cloud_restore run in the log: when, what, how long, how much."""
+    runs, cur = [], None
+    for l in text.splitlines():
+        m = re.match(r"\[(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)\] \[\w+\] \[(cloud_\w+)\] (.*)", l)
+        if m:
+            when, script, msg = m.groups()
+            if "STARTING" in msg and "BACKUP" in msg or "STARTING" in msg and "RESTORE" in msg:
+                cur = {"when": when, "script": script, "recent": False, "spawns": 0, "seconds": None,
+                       "exit": None, "bytes": None, "files": None}
+                runs.append(cur)
+            if cur is None:
+                continue
+            if msg.startswith("recent:"):
+                cur["recent"] = True
+            if msg.startswith("About to execute: rclone"):
+                cur["spawns"] += 1
+            mm = re.search(r"completed in (\d+) seconds with exit code (\d+)", msg)
+            if mm:
+                cur["seconds"], cur["exit"] = int(mm.group(1)), int(mm.group(2))
+                cur = None
+        elif cur is not None:
+            mm = re.match(r"Transferred:\s+([\d.]+ \w*B) / ([\d.]+ \w*B),", l)
+            if mm:
+                cur["bytes"] = mm.group(1)
+            mm = re.match(r"Transferred:\s+(\d+) / (\d+),", l)
+            if mm:
+                cur["files"] = mm.group(1)
+    return runs
+
+
+def sessions_from_es_log(text):
+    """Game launches and returns, where EmulationStation logged them."""
+    out = []
+    for l in text.splitlines():
+        if re.search(r"launch|Launching|running command|game-start|game-end", l, re.I):
+            out.append(l.strip()[:160])
+    return out
+
+
+def human(n):
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024.0
+
+
+def report(args, before, after):
+    b, a = before["files"], after["files"]
+    changed = {p: a[p] for p in a if p not in b or a[p]["sha256"] != b[p]["sha256"]}
+    removed = sorted(p for p in b if p not in a)
+    out = []
+    out.append(f"# Census — {after['meta'].get('device', '?')} on {after['meta'].get('build', '?')}, "
+               f"{time.strftime('%Y-%m-%d %H:%M', time.gmtime(before['taken_at']))}–"
+               f"{time.strftime('%H:%M', time.gmtime(after['taken_at']))} UTC")
+    out.append("")
+    out.append(f"Saves tier under `{after['root']}` as the allowlist admits it: {len(b)} files before, {len(a)} after; "
+               f"**{len(changed)} written or changed**, {len(removed)} removed. Exit sync was "
+               f"{'ON' if after['meta'].get('exit_sync') == '1' else 'OFF'}, startup sync "
+               f"{'ON' if after['meta'].get('startup_sync') == '1' else 'OFF'}.")
+    out.append("")
+
+    # Sessions: per system directory, writes clustered by mtime.
+    by_sys = defaultdict(list)
+    for p, e in changed.items():
+        by_sys[p.split("/")[0] if not p.startswith("savestates/") else "/".join(p.split("/")[:2])].append((e["mtime"], p, e))
+    sessions = []
+    for sysdir, items in by_sys.items():
+        items.sort()
+        cur = []
+        for mt, p, e in items:
+            if cur and mt - cur[-1][0] > SESSION_GAP:
+                sessions.append((sysdir, cur)); cur = []
+            cur.append((mt, p, e))
+        if cur:
+            sessions.append((sysdir, cur))
+    sessions.sort(key=lambda s: s[1][0][0])
+
+    out.append("## Sessions (writes clustered by time, per system)")
+    out.append("")
+    out.append("| # | When (device UTC) | System | Files written | Bytes sealed | What |")
+    out.append("| --- | --- | --- | --- | --- | --- |")
+    for i, (sysdir, items) in enumerate(sessions, 1):
+        bytes_ = sum(e["size"] for _, _, e in items)
+        kinds = sorted({os.path.splitext(p)[1] or os.path.basename(p) for _, p, _ in items})
+        games = sorted({game_of(p) for _, p, _ in items})
+        out.append(f"| {i} | {time.strftime('%H:%M:%S', time.gmtime(items[0][0]))} | {sysdir} | {len(items)} | {human(bytes_)} | "
+                   f"{', '.join(kinds)[:60]} — {', '.join(games)[:50]} |")
+    if not sessions:
+        out.append("| — | — | — | 0 | 0 | nothing changed in the saves tier |")
+    out.append("")
+
+    # The unit table: per family, which extensions travel together for one game in one session.
+    out.append("## Unit table (per emulator layout: what one game writes in one session)")
+    out.append("")
+    out.append("| Layout | Sessions | Files per session (min–max) | Bytes per session (min–max) | Members seen together |")
+    out.append("| --- | --- | --- | --- | --- |")
+    fam = defaultdict(list)
+    for sysdir, items in sessions:
+        for g in {game_of(p) for _, p, _ in items}:
+            members = [(p, e) for _, p, e in items if game_of(p) == g]
+            fam[family(members[0][0])].append(members)
+    for f, groups in sorted(fam.items()):
+        counts = [len(g) for g in groups]
+        sizes = [sum(e["size"] for _, e in g) for g in groups]
+        exts = sorted({(os.path.splitext(p)[1] or os.path.basename(p)) for g in groups for p, _ in g})
+        out.append(f"| {f} | {len(groups)} | {min(counts)}–{max(counts)} | {human(min(sizes))}–{human(max(sizes))} | {', '.join(exts)} |")
+    if not fam:
+        out.append("| — | 0 | — | — | — |")
+    out.append("")
+
+    # Retention at count 3, per unit: three versions of each unit's members.
+    total_unit_bytes = sum(sum(e["size"] for _, e in g) for groups in fam.values() for g in groups)
+    largest = max((sum(e["size"] for _, e in g) for groups in fam.values() for g in groups), default=0)
+    out.append("## Retention and ceiling")
+    out.append("")
+    out.append(f"- Bytes sealed across every session: **{human(total_unit_bytes)}**; the largest single unit written: **{human(largest)}**.")
+    out.append(f"- Retention at count 3 for these units alone: **{human(3 * total_unit_bytes)}** in the discarded store, if every one lost a decision three times (the bound, not the expectation).")
+    out.append(f"- Largest per-file write: **{human(max((e['size'] for e in changed.values()), default=0))}**.")
+    out.append("")
+
+    # The exit push, from the sync log.
+    runs = runs_from_sync_log(sync_log_since(args, before["meta"].get("sync_log_lines", 0)))
+    out.append("## The exit push, from /var/log/cloud_sync.log since the baseline")
+    out.append("")
+    out.append("| When | Script | --recent | rclone spawns | Seconds | Exit | Bytes | Files |")
+    out.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
+    for r in runs:
+        out.append(f"| {r['when']} | {r['script']} | {'yes' if r['recent'] else 'no'} | {r['spawns']} | {r['seconds']} | {r['exit']} | {r['bytes'] or '—'} | {r['files'] or '—'} |")
+    if not runs:
+        out.append("| — | — | — | — | — | — | — | no cloud_backup/cloud_restore run was logged in the window |")
+    out.append("")
+
+    es = sessions_from_es_log(es_log_since(args, before["meta"].get("es_log_lines", 0)))
+    if es:
+        out.append("## EmulationStation's own record of launches")
+        out.append("")
+        for l in es[:40]:
+            out.append(f"    {l}")
+        out.append("")
+
+    out.append("## Every changed file")
+    out.append("")
+    out.append("| Path | Size | mtime (UTC) | Before |")
+    out.append("| --- | --- | --- | --- |")
+    for p in sorted(changed, key=lambda p: changed[p]["mtime"]):
+        e = changed[p]
+        out.append(f"| `{p}` | {e['size']} | {time.strftime('%H:%M:%S', time.gmtime(e['mtime']))} | "
+                   f"{'new' if p not in b else 'changed (' + str(b[p]['size']) + ' B)'} |")
+    for p in removed:
+        out.append(f"| `{p}` | — | — | removed ({b[p]['size']} B) |")
+    return "\n".join(out) + "\n"
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--host", required=True)
+    ap.add_argument("--port", type=int, default=22)
+    ap.add_argument("--identity")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    b = sub.add_parser("begin"); b.add_argument("--out", required=True)
+    r = sub.add_parser("report"); r.add_argument("--baseline", required=True); r.add_argument("--out")
+    args = ap.parse_args()
+    if args.cmd == "begin":
+        snap = snapshot(args)
+        json.dump(snap, open(args.out, "w"), indent=1)
+        print(f"baseline: {len(snap['files'])} files in the saves tier under {snap['root']} on {snap['meta'].get('device')} "
+              f"({snap['meta'].get('build')}); exit sync {'ON' if snap['meta'].get('exit_sync') == '1' else 'OFF'}; written to {args.out}")
+        return 0
+    before = json.load(open(args.baseline))
+    text = report(args, before, snapshot(args))
+    if args.out:
+        open(args.out, "w").write(text)
+    print(text)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
