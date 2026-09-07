@@ -262,6 +262,7 @@ def main():
     ap.add_argument("--only", help="run only these two-device fixtures (comma-separated: A1,A9,CONTRACT), skipping the single-device suite")
     ap.add_argument("--transport", default="copy,bisync", help="transports for #9's contract fixtures: copy, bisync, or both (default)")
     ap.add_argument("--bisync-flags", default="", help="extra flags for every rclone bisync run (Gate 11 variants)")
+    ap.add_argument("--dump", help="a host directory to write every transport run's raw output into (Gate 11's record)")
     args = ap.parse_args()
     if args.real_roms and args.second_port:
         raise Fail("the two-device fixtures rewrite both saves trees; they never run against real ROMs (D-QA-009)")
@@ -1403,9 +1404,20 @@ def transferred(out):
 
 
 class Transport:
-    def __init__(self, kind, pair, extra=""):
+    def __init__(self, kind, pair, extra="", dump=None):
         self.kind, self.p, self.extra = kind, pair, extra
         self.last_cmd = ""
+        self.dump, self.tag, self.seq = dump, "setup", 0
+
+    def record(self, dev, cmd, rc, out):
+        """The raw output of one run, on the host, named by item and order."""
+        if not self.dump:
+            return
+        os.makedirs(self.dump, exist_ok=True)
+        self.seq += 1
+        who = "a" if dev is self.p.a else "b"
+        with open(os.path.join(self.dump, f"{self.kind}-{self.tag}-{self.seq:02d}-{who}.log"), "w") as f:
+            f.write(f"$ {cmd}\n# exit {rc}\n{out}")
 
     def remote(self, dev):
         return dev.run("rclone listremotes 2>/dev/null | head -1").strip() + self.p.saves_remote
@@ -1444,22 +1456,29 @@ class Transport:
         self.last_cmd = cmd
         if background:
             dev.run(f"rm -f /tmp/qa-bg.out; ({env} setsid {cmd} >/tmp/qa-bg.out 2>&1 &)")
-            return {"rc": None, "out": "", "conflicts": [], "transferred": 0}
+            return {"rc": None, "out": "", "conflicts": [], "transferred": 0, "moved": []}
         rc, out = run_rc(dev, cmd, env)
+        self.record(dev, cmd, rc, out)
         # A conflict is a file bisync queues under a conflict suffix, or a
         # non-zero count of differences -- not every line that mentions the
         # word ("Checking potential conflicts..." is printed on every run).
-        conflicts = []
+        # `moved` is every object rclone reports copying, renaming or
+        # deleting, so a transfer count has names behind it.
+        conflicts, moved, raw = [], [], None
         for line in out.splitlines():
             if not line.startswith("{"):
                 continue
             try:
-                msg = json.loads(line).get("msg", "")
+                j = json.loads(line)
             except ValueError:
                 continue
+            msg = j.get("msg", "")
             if re.search(r"\.conflict\d|[1-9]\d* differences found", msg):
                 conflicts.append(re.sub(r"\x1b\[[0-9;]*m", "", msg).strip())
-        return {"rc": rc, "out": out, "conflicts": conflicts, "transferred": transferred(out)}
+                raw = raw or line
+            if j.get("object") and re.match(r"(Copied|Moved|Renamed|Deleted|Updated)", msg):
+                moved.append(f"{j['object']}: {msg.split(' (')[0].split(':')[0]}")
+        return {"rc": rc, "out": out, "conflicts": conflicts, "transferred": transferred(out), "moved": moved, "raw": raw}
 
     def hashes(self, dev, remote=False):
         """path -> sha256 of every allowlisted file on one side. The remote's
@@ -1484,7 +1503,7 @@ class Transport:
             agreed = json.loads(dev.run(f"cat {AGREED} 2>/dev/null || echo {{}}", check=False) or "{}")
         except ValueError:
             agreed = {}
-        r = {"rc": 0, "out": "", "conflicts": [], "questions": [], "pushed": [], "fetched": [], "transferred": 0}
+        r = {"rc": 0, "out": "", "conflicts": [], "questions": [], "pushed": [], "fetched": [], "transferred": 0, "moved": []}
         if agreed and (not local or not cloud):
             r["rc"], r["out"] = 1, "refused: a side is empty with agreement on record"
             return r
@@ -1523,6 +1542,7 @@ class Transport:
                 r["rc"] = None
                 return r
             r["rc"], r["out"] = run_rc(dev, " && ".join(cmds), env)
+            self.record(dev, " && ".join(cmds), r["rc"], r["out"])
         if r["rc"] == 0:
             for path in r["pushed"]:
                 agreed[path] = local[path]
@@ -1530,6 +1550,7 @@ class Transport:
                 agreed[path] = cloud[path]
         dev.write(AGREED, json.dumps(agreed).encode())
         r["transferred"] = len(r["pushed"]) + len(r["fetched"])
+        r["moved"] = [f"{x}: pushed" for x in r["pushed"]] + [f"{x}: fetched" for x in r["fetched"]]
         if r["conflicts"]:
             r["rc"] = r["rc"] or 5
         return r
@@ -1537,7 +1558,7 @@ class Transport:
 
 def run_contract(p, kind, args):
     f = 0
-    t = Transport(kind, p, args.bisync_flags if kind == "bisync" else "")
+    t = Transport(kind, p, args.bisync_flags if kind == "bisync" else "", args.dump)
     p.files = []
 
     def fresh(files):
@@ -1565,8 +1586,16 @@ def run_contract(p, kind, args):
         print(f"          {t.last_cmd}")
         print(f"          exit {r['rc']}, {r['transferred']} transferred, {len(r['conflicts'])} conflict line(s)"
               + (f", questions {r['questions']}" if r.get("questions") else ""))
+        for m in r.get("moved", [])[:8]:
+            print(f"          moved: {m[:160]}")
         for c in r["conflicts"][:2]:
             print(f"          conflict: {c[:200]}")
+        if r.get("raw") and not getattr(say, "shown", False):
+            # The shape of one conflict line as bytes, before any parsing
+            # trusted it (the #35 futro asked for od -c; repr is the same
+            # record in one line).
+            say.shown = True
+            print(f"          shape: {r['raw'][:400]!r}")
         if r["rc"]:
             # What the transport said went wrong: rclone's own words, the
             # last few, so a FAIL below can be read without a rerun.
@@ -1588,6 +1617,7 @@ def run_contract(p, kind, args):
         print(f"\n    rclone on the guest: {p.a.run('rclone version 2>/dev/null | head -1').strip()}")
 
     def item(n, title):
+        t.tag = f"item{n:02d}"
         step(f"#9 item {n} ({kind}) -- {title}")
 
     try:
@@ -1661,9 +1691,9 @@ def run_contract(p, kind, args):
             p.a.write(AGREED, json.dumps(agreed).encode())
         r = t.run(p.a)
         say(r)
-        f += not check(not r["conflicts"] and r["transferred"] == 0 and (r["rc"] or 0) == 0,
+        f += not check(not r["conflicts"] and not r["moved"] and (r["rc"] or 0) == 0,
                        "the next run neither re-flagged nor re-transferred the pair",
-                       f"after an outside resolution: exit {r['rc']}, {r['transferred']} transferred, {len(r['conflicts'])} conflict line(s)")
+                       f"after an outside resolution: exit {r['rc']}, {len(r['moved'])} object(s) moved, {len(r['conflicts'])} conflict line(s)")
 
         item(6, "interruption: killed mid-transfer, completed by the next run")
         big = {f"saves/Big {i}.srm": os.urandom(98304) for i in range(4)}
@@ -1721,16 +1751,31 @@ def run_contract(p, kind, args):
 
         item(9, "budget: a full pass with nothing changed")
         fresh({"saves/Idle.srm": b"idle"})
+        # Every rclone the pass spawns is counted -- the transport's and the
+        # stand-in classifier's listings and fetches alike -- by putting the
+        # shim first on PATH for every command of the item, not only the
+        # transfer. A `cat` is a download.
         p.a.run("mkdir -p /tmp/qa-shim; printf '#!/bin/sh\\necho \"$@\" >> /tmp/qa-spawns\\nexec /usr/bin/rclone \"$@\"\\n' > /tmp/qa-shim/rclone; "
                 "chmod +x /tmp/qa-shim/rclone; rm -f /tmp/qa-spawns")
+        prev_prefix = p.a.path_prefix
+        p.a.path_prefix = "/tmp/qa-shim" + (f":{prev_prefix}" if prev_prefix else "")
         t0 = time.time()
-        r = t.run(p.a, env="PATH=/tmp/qa-shim:$PATH")
+        try:
+            r = t.run(p.a)
+        finally:
+            p.a.path_prefix = prev_prefix
         secs = time.time() - t0
-        spawns = int(p.a.run("wc -l < /tmp/qa-spawns 2>/dev/null || echo 0").strip() or 0)
+        spawned = p.a.run("cat /tmp/qa-spawns 2>/dev/null || true").splitlines()
+        downloads = sum(1 for s in spawned if s.split()[:1] == ["cat"])
         p.a.run("rm -rf /tmp/qa-shim /tmp/qa-spawns")
         say(r)
-        print(f"          {spawns} rclone spawn(s), {secs:.1f} s on the guest (a VM, not the H700)")
-        f += not check(r["transferred"] == 0 and (r["rc"] or 0) == 0, "nothing transferred", f"an idle pass transferred {r['transferred']}")
+        print(f"          {len(spawned)} rclone spawn(s) ({downloads} download(s)), {secs:.1f} s on the guest (a VM, not the H700)")
+        f += not check(not r["moved"] and (r["rc"] or 0) == 0, "nothing transferred",
+                       f"an idle pass moved {len(r['moved'])} object(s)")
+        # --download-hash and the like report hash downloads in the same
+        # Transferred: total; that is budget, not a copy, and it is recorded.
+        if r["transferred"] and not r["moved"]:
+            print(f"          {r['transferred']} download(s) for hashing on an idle pass -- the whole tree, every pass")
 
         item(10, "single authority: the transport's own state is not the agreement")
         rel = "saves/Authority.srm"
@@ -1738,12 +1783,17 @@ def run_contract(p, kind, args):
         p.a.run(f"rm -rf {BISYNC_STATE}")
         r = t.run(p.a)
         say(r)
-        f += not check((r["rc"] or 0) == 0 and "resync" not in r["out"].lower() and r["transferred"] == 0,
+        f += not check((r["rc"] or 0) == 0 and "resync" not in r["out"].lower() and not r["moved"],
                        "with the transport's listings gone the pass still ran from agreement alone",
                        f"without its own listings the transport could not run (exit {r['rc']}; resync demanded: {'resync' in r['out'].lower()})")
     except Fail as e:
         f += 1
         print(f"    FAIL  {e}")
+    finally:
+        # The transport's own state -- bisync's listings, the stand-in's
+        # agreement record -- leaves with the run, on both guests.
+        t.clear(p.a)
+        t.clear(p.b)
     return f
 
 
