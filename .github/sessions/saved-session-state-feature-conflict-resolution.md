@@ -1,12 +1,14 @@
 # Saved Session State
 
-> **Saved**: 2026-09-07T17:30:00Z
+> **Saved**: 2026-09-07T20:20:00Z
 > **Branch**: feature/conflict-resolution (worktree; the work itself landed on `next`)
 > **Repo**: maxengel/rocknix (+ ES at ~/Development/emulationstation-next, branch feature/cloud-vocabulary → test/qa-integration)
 
 ## Current Focus
 
-#11 batch 1: Gates 0 (#35) and 11 (#9) done. **Gate 11's verdict is D-CLOUD-052: the reconciler's own transport (`rclone copy --files-from --ignore-times` per direction) for every pass; bisync not used; D-CLOUD-044 moot.** Scored on the pair, both backends, runner `747a53b578`, record `47eebf20ed` on `next`; #9 closed, mirrored on #22 (body head and R2 edited), #11's child ticked. **Next: task 11, the Gate 12 census** — needs a window from the maintainer (RG35XX SP emulator sessions); the reading script (`find -newer` over the saves tree; PPSSPP/Flycast/Mupen/DuckStation unit table; retained bytes at count 3; sealed bytes per exit) runs over SSH afterwards. Until then: the owed GENERIC_X64 build of `next` (ES `164f8f48d8` folder-refusal dialog, #78's open box; `backuptool`; `cloud_setup`; `--scan` tidy-up), VM frames first, then H700 staged with reboots asked for.
+#11 batch 1: Gates 0 (#35), 11 (#9, D-CLOUD-052) and **12 round one** done. The census ran on the RG35XX SP (`tools/cloud-census`, read-only; D-QA-010 splits it by hardware — standalone layouts wait for the Retroid Pocket Nova): evidence on #22 (full) and #21 (unit table), the report at `/workspace/artifacts/rocknix-images/census-rg35xxsp-round1-report.md`. Every reconciler case appeared in the wild (renumber keeps mtime → `--recent` never uploads it; a path overwritten between pushes; deleted states living on in the cloud, due back at the next boot pair; a content duplicate). D-CLOUD-053 (the save-state manager is a gated writer; a menu deletion writes `retired`) on #22 R6/A6b and #21 R3. #79 is the running crash list (a RetroArch coredump at 15:13:50, not ours). **Next: #21 capture** (libretro units now; standalone rows after round two) — the first code of the epic.
+
+Side tranche, the maintainer's match-flow notes: coded, VM-framed (dialog at 0.8 width, the done page's removal summary and game-list note, #78's refusal dialog), on `next` `f38cf1f477` (ES `a245e81b26` pinned by `3debb3c7d1`). **H700 build in flight** from `devices` at `2aa0a598d3` (ES `1dc414ae24`: everything but the refusal dialog's line breaks); when it lands: stage on both handhelds, **ask before each reboot** (D-QA-008). A GENERIC_X64 build of `f38cf1f477` afterwards frames the three nits (FILE singular, preview bytes, the refusal's lines). Open question for the maintainer: does the CLOUD FOLDER editor show the current value on the handheld? (the VM frame showed an empty field with the cursor at the text's end).
 
 ## Completed This Session
 
@@ -35,8 +37,8 @@
 
 **Gate 11 — #9, the bisync spike** — ~~8, 9, 10~~ done 2026-09-07: runner with `--dump`/`moved:`/shape/every-spawn budget; variants `--compare size,modtime,checksum [--download-hash]`; verdict D-CLOUD-052; #9 closed.
 
-**Gate 12 — the census (RG35XX SP, the maintainer's hands)**
-11. Ask for a window; the reading script (`find -newer` over the saves tree; PPSSPP/Flycast/Mupen/DuckStation unit table; retained bytes at count 3; sealed bytes per exit) runs over SSH afterwards; feeds #21's unit table and #22's ceiling.
+**Gate 12 — the census (RG35XX SP, the maintainer's hands)** — round one done 2026-09-07 (D-QA-010)
+11. ~~Ask for a window;~~ the reading script (`find -newer` over the saves tree; PPSSPP/Flycast/Mupen/DuckStation unit table; retained bytes at count 3; sealed bytes per exit) runs over SSH afterwards; feeds #21's unit table and #22's ceiling.
 
 Carried debt: rocknix.org docs PR; #73's on-screen review; the `--scan` BIOS tidy-up rides the next build.
 
