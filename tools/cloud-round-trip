@@ -1259,6 +1259,46 @@ def fx_a14(p):
     return f
 
 
+def fx_a5(p):
+    """A5: a test-only reader answers "this game, newest first, thumbnail,
+    producing device, winning side" from the cloud store alone, on a second
+    device that never made the decision."""
+    f = 0
+    rel = "savestates/Decided.state1"
+    p.both_changed(rel, os.urandom(4001), os.urandom(4002), os.urandom(4003))
+    p.a.write(p.path(rel + ".png"), b"\x89PNG a's thumbnail")
+    rc, _ = run_rc(p.a, APPLY.format(unit=shlex.quote(rel), side="left"))
+    store = p.saves_remote.rstrip("/") + "-discarded"
+    # The reader, on b: the store listed and every record read as one line;
+    # nothing local consulted.
+    reader = ("R=$(rclone listremotes 2>/dev/null | head -1); S=" + shlex.quote(store) + "; "
+              "rclone lsf -R --files-only \"${R}${S}\" 2>/dev/null | while IFS= read -r r; do "
+              "case \"$r\" in */record.json|record.json) rclone cat \"${R}${S}/${r}\" | jq -c . ;; "
+              "*) echo \"MEMBER $r\" ;; esac; done")
+    out = p.b.run(reader, check=False)
+    records, members = [], []
+    for line in out.splitlines():
+        if line.startswith("MEMBER "):
+            members.append(line[7:])
+            continue
+        try:
+            records.append(json.loads(line))
+        except ValueError:
+            pass
+    f += not check(bool(records), "b read a decision record from the store",
+                   f"NO RECORD IN THE STORE at {epath(store)} (apply exit {rc}) (A5)")
+    if records:
+        r = sorted(records, key=lambda r: r.get("decided_at", ""), reverse=True)[0]
+        want = {"decided_at": r.get("decided_at"),
+                "producer": (r.get("loser") or {}).get("producer") or r.get("producer"),
+                "winner side": (r.get("winner") or {}).get("side")}
+        f += not check(all(want.values()), "the newest record names when, the producing device and the winning side",
+                       f"the record lacks {[k for k, v in want.items() if not v]}")
+        f += not check(any(m.endswith(".png") for m in members), "the loser's thumbnail travelled with it",
+                       "no thumbnail beside the record")
+    return f
+
+
 PAIR_FIXTURES = [
     ("A1", "both changed after a first pass: every writer, this device's copy newer and older", fx_a1),
     ("A2", "a failed push retried; an equal-size, equal-mtime change after a first pass", fx_a2),
@@ -1268,6 +1308,7 @@ PAIR_FIXTURES = [
     ("A11", "a cloned device id refuses to publish", fx_a11),
     ("A12", "a legacy RESTOREPATH unlike BACKUPPATH: migrated, warned, nothing touched", fx_a12),
     ("A14", "the manifest step: under savestates/.rocknix/, sha256, remote_hash per backend, one tier", fx_a14),
+    ("A5", "the discarded-saves reader, from the second device", fx_a5),
 ]
 
 
