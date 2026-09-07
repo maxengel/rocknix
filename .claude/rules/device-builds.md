@@ -325,9 +325,11 @@ when you do it, and prefer a fresh date.
 
 ## Installing on the device
 
-**Ask before the reboot, every time** (`engineering-practices.md` § "Never
-reboot, update, or power-cycle a device without asking"). Staging the tarball in
-`~/.update` is inert and needs no question; the reboot that applies it does.
+**Ask before the transfer and before the reboot** (`engineering-practices.md`
+§ "Never reboot, update, or power-cycle a device without asking"; D-QA-011).
+Staging the tarball in `~/.update` is inert until the next boot, but the copy
+is a question too — it can be answered once for a batch; the reboot is asked
+for each time, by device.
 
 For a fresh card, follow `docs/device-flashing-runbook.md`. It covers artifact
 intake, physical board-variant evidence, removable-disk identification, full

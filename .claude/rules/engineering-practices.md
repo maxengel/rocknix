@@ -233,10 +233,16 @@ Each reboot is asked for, at the moment it would happen, naming the device.
   like `cloud_content_[a-z]*`, which matches its own literal in the shell's
   argv and reported two phantom transfers on 2026-09-06. When a count is not
   zero, list the processes before believing it.
-- **Staging is fine; the reboot is the question.** Copying the update tarball
-  into `~/.update` changes nothing until the next boot, so it may be done
-  without asking, and the person told that it is staged and what the next
-  reboot will do.
+- **Ask before the transfer too, not only the reboot** (maintainer,
+  2026-09-07, D-QA-011: *"Why wouldn't you just ask me if it's okay to
+  transfer? I thought that was our policy. It's fine if you're waiting for it
+  to be idle, but you might as well just ask."*). Copying the update tarball
+  into `~/.update` changes nothing until the next boot, but it is a gigabyte
+  over the device's Wi-Fi and a write to somebody's card, so it is a
+  question — one that can be answered once for a batch ("stage on both when
+  idle"), unlike the reboot. Waiting for idle is a courtesy on top of the
+  answer, never a substitute for asking. No automatic waiter stages a
+  device on its own.
 - **A queue of deployments is a queue of questions.** Five images in a night
   do not earn a standing yes; the fifth reboot is asked for like the first.
 
