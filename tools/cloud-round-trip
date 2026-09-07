@@ -1072,11 +1072,97 @@ def fx_a8(p):
     return f
 
 
+def fx_a9(p):
+    """A9: delete and renumber on one device, sync repeatedly on the other; a
+    retired hash put back; an unexplained rm; a saves root that is unmounted,
+    empty, or pointed at an empty cloud folder, with agreement on record."""
+    f = 0
+    s = {"S1": os.urandom(3001), "S2": os.urandom(3002), "S3": os.urandom(3003)}
+    st = lambda n: f"savestates/Renumber.state{n}"
+    p.reset()
+    p.agree({st(1): s["S1"], st(2): s["S2"], st(3): s["S3"]})
+    # a deletes slot 2 and ES renumbers: slot 3 becomes slot 2.
+    p.a.run(f"rm -f {shlex.quote(p.path(st(2)))}; mv {shlex.quote(p.path(st(3)))} {shlex.quote(p.path(st(2)))}")
+    run_rc(p.a, BOOT_PAIR)
+    for _ in range(2):
+        run_rc(p.b, BOOT_PAIR)
+
+    def on(dev):
+        out = dev.run(f"cd {shlex.quote(p.root)} && sha256sum savestates/* 2>/dev/null || true")
+        return sorted(name_of(line.split()[0], s) for line in out.splitlines() if line.strip())
+
+    def in_cloud():
+        return sorted(name_of(sha(backend_bytes(f"{p.spath}/{rel}") or b""), s)
+                      for rel in backend_files(p.spath) if rel.startswith("savestates/"))
+
+    f += not check(on(p.b) == ["S1", "S3"], "after repeated syncs b holds S1 and S3, each exactly once",
+                   f"b holds {on(p.b)} (A9: each surviving version exactly once)")
+    f += not check(in_cloud() == ["S1", "S3"], "and so does the cloud", f"the cloud holds {in_cloud()}")
+    # The retired hash put back, as the discarded-saves tool would: a new
+    # publication, which the old retired record must not consume.
+    p.a.write(p.path(st(3)), s["S2"])
+    run_rc(p.a, BOOT_PAIR)
+    run_rc(p.b, BOOT_PAIR)
+    f += not check(on(p.b) == ["S1", "S2", "S3"], "a retired hash put back reached b as a new publication",
+                   f"b holds {on(p.b)} after the retired hash was put back")
+
+    # An unexplained absence: rm, not ES's delete, so no retired record.
+    gone, kept = "saves/Removed By Hand.srm", "saves/Kept.srm"
+    g0 = b"removed by rm on a"
+    p.reset()
+    p.agree({gone: g0, kept: b"kept"})
+    p.a.run(f"rm -f {shlex.quote(p.path(gone))}")
+    rc, _ = run_rc(p.a, BOOT_PAIR)
+    f += not check(p.a.sha(p.path(gone)) is None, "the file removed by hand was not put back on a",
+                   "THE FILE REMOVED BY HAND CAME BACK: an absence was resolved by a download (A9)")
+    f += not check(p.cloud_sha(gone) == sha(g0), "and the cloud's copy was not deleted",
+                   "the cloud's copy was deleted on an unexplained absence")
+    f += not check(rc == 5, "a question was queued (exit 5)", f"no question queued (exit {rc})")
+    run_rc(p.b, BOOT_PAIR)
+    f += not check(p.b.sha(p.path(gone)) == sha(g0), "b's copy was untouched", "b's copy was touched by a's unexplained absence")
+
+    # Mass absence, with agreement on record: the root unmounted, then empty,
+    # then the cloud folder empty. Every pass refuses and names the reason.
+    p.reset()
+    p.agree({"saves/On Record.srm": b"agreed and on record"})
+    passes = WRITERS[:5]
+    q = shlex.quote(p.root)
+    p.a.run(f"mv {q} {q}.away")
+    rcs = [run_rc(p.a, c)[0] for _, c in passes]
+    present = p.a.run(f"find {q} -type f 2>/dev/null | wc -l").strip()
+    p.a.run(f"rm -rf {q}; mv {q}.away {q}")
+    f += not check(all(rc == 1 for rc in rcs), "with the saves root unmounted every pass refused (exit 1)",
+                   f"passes on an unmounted root exited {rcs} (A9: refuse, reason named)")
+    f += not check(present == "0", "and nothing was written where the root should be",
+                   f"{present} file(s) were written into a root that was not mounted")
+    p.a.run(f"mv {q} {q}.away; mkdir -p {q}")
+    rcs = [run_rc(p.a, c)[0] for _, c in passes]
+    present = p.a.run(f"find {q} -type f 2>/dev/null | wc -l").strip()
+    p.a.run(f"rm -rf {q}; mv {q}.away {q}")
+    f += not check(all(rc == 1 for rc in rcs), "with the saves root empty every pass refused (exit 1)",
+                   f"passes on an empty root exited {rcs}")
+    f += not check(present == "0", "and nothing was downloaded into it",
+                   f"{present} file(s) were downloaded into an empty root with agreement on record")
+    empty = p.saves_remote.rstrip("/") + "-empty"
+    set_key(p.a, "SAVES_REMOTE", empty)
+    rcs = [run_rc(p.a, c)[0] for _, c in passes]
+    set_key(p.a, "SAVES_REMOTE", p.saves_remote)
+    uploaded = backend_files(epath(empty))
+    f += not check(all(rc == 1 for rc in rcs), "with the cloud folder empty every pass refused (exit 1)",
+                   f"passes against an empty cloud folder exited {rcs}")
+    f += not check(not uploaded, "and nothing was uploaded to it",
+                   f"{len(uploaded)} file(s) were uploaded into an empty cloud folder with agreement on record")
+    queued = p.a.run(f"cat {CACHE}/queue.json 2>/dev/null || true").strip()
+    f += not check(not queued, "no question was queued for a mass absence", "a mass absence queued questions")
+    return f
+
+
 PAIR_FIXTURES = [
     ("A1", "both changed after a first pass: every writer, this device's copy newer and older", fx_a1),
     ("A2", "a failed push retried; an equal-size, equal-mtime change after a first pass", fx_a2),
     ("A3", "CHANGE CLOUD FOLDER to a folder holding different saves", fx_a3),
     ("A8", "a torn N64 pair: interrupted after one member, held, then cleared", fx_a8),
+    ("A9", "delete and renumber; a retired hash put back; rm; an unmounted, empty, or empty-cloud root", fx_a9),
 ]
 
 
