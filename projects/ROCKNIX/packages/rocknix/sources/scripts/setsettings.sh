@@ -466,6 +466,9 @@ function set_cheevos() {
         add_setting "retroachievements.screenshot" "cheevos_auto_screenshot"
         add_setting "retroachievements.richpresence" "cheevos_richpresence_enable"
         add_setting_either "retroachievements.challenge_indicators" "retroachievements.challengeindicators" "cheevos_challenge_indicators"
+        # The bottom-right count toward an achievement; EmulationStation's
+        # PROGRESS TRACKER switch. A different widget from the indicators.
+        add_setting "retroachievements.progress_tracker" "cheevos_visibility_progress_tracker"
         add_setting_either "retroachievements.unofficial" "retroachievements.testunofficial" "cheevos_test_unofficial"
         add_setting "retroachievements.badges" "cheevos_badges_enable"
         add_setting_either "retroachievements.encore" "retroachievements.active" "cheevos_start_active"
