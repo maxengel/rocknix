@@ -191,7 +191,14 @@ case "${1:-}" in
     # in MinIO (the seeding step's note read back as empty there).
     [ -n "${2:-}" ] || { echo "usage: cat <path>" >&2; exit 1; }
     if [ "${BACKEND}" = "s3" ]; then
-      need rclone; s3 cat "qa-host:${S3_BUCKET}/${2}"
+      need rclone
+      # rclone cat of a key that does not exist prints nothing and exits 0
+      # (a missing key reads as an empty prefix), so a check for "the file
+      # reached the cloud" passed on MinIO for a file that was never there
+      # (A14, 2026-09-07). Existence first, then the bytes.
+      s3 lsf --files-only "qa-host:${S3_BUCKET}/${2}" 2>/dev/null | grep -q . \
+        || { echo "cat: no such file at the endpoint: ${2}" >&2; exit 1; }
+      s3 cat "qa-host:${S3_BUCKET}/${2}"
     else
       cat "${DATA}/${2}"
     fi
