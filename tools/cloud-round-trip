@@ -7,6 +7,12 @@ from both ends: file contents on the device, and objects in the bucket.
 
     ./tools/cloud-test-backend up
     ./tools/cloud-round-trip --host root@127.0.0.1 --port 10022
+    ./tools/cloud-round-trip --host root@127.0.0.1 --port 10022 --second-port 10023 \
+        --identity /tmp/rocknix-vm-pair/qa-key          # the VM pair: two devices, one cloud
+
+With --second-port the two-device fixtures of #35 run after the single-device
+suite (--only A1,A9 runs just those): a conflict is a change on both sides
+since two devices last agreed, and only a pair can make one (D-QA-009).
 
 Two guards, both load-bearing:
 
@@ -20,10 +26,13 @@ Two guards, both load-bearing:
 
 import argparse
 import hashlib
+import json
 import os
+import re
 import shlex
 import subprocess
 import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BACKEND = os.path.join(HERE, "cloud-test-backend")
@@ -88,9 +97,16 @@ class Device:
         # command, so a script fixed on the host can be proven against the
         # suite before an image carries it (the VM tests it first, D-QA-007).
         self.path_prefix = path_prefix
+        self.host, self.port = host, port
+        # One multiplexed connection per device: a fixture makes hundreds of
+        # calls, and a fresh handshake costs ~90 ms against ~5 ms over the
+        # control socket. Its path must stay under 108 bytes, which rules
+        # out any scratch directory, so it lives in /tmp.
         self.base = ["ssh", "-o", "StrictHostKeyChecking=no",
                      "-o", "UserKnownHostsFile=/dev/null",
-                     "-o", "LogLevel=ERROR", "-p", str(port)]
+                     "-o", "LogLevel=ERROR",
+                     "-o", "ControlMaster=auto", "-o", f"ControlPath=/tmp/crt-{os.getuid()}-%C",
+                     "-o", "ControlPersist=120", "-p", str(port)]
         if identity:
             self.base += ["-i", identity]
         self.base.append(host)
@@ -129,36 +145,40 @@ def check(cond, ok, bad):
     return cond
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--host", required=True, help="ssh target, e.g. root@127.0.0.1")
-    ap.add_argument("--port", type=int, default=10022)
-    ap.add_argument("--identity", help="ssh private key")
-    ap.add_argument("--real-roms", action="store_true",
-                    help="use /storage/roms instead of a scratch tree (DESTRUCTIVE)")
-    ap.add_argument("--keep", action="store_true", help="leave fixtures in place")
-    ap.add_argument("--path-prefix", help="a directory on the device to put first on PATH (scripts under test, before an image carries them)")
-    args = ap.parse_args()
+class Prepared:
+    """A device the harness has pointed at the QA endpoint, and what it
+    looked like before, so it can be put back whatever happens."""
 
-    dev = Device(args.host, args.port, args.identity, args.path_prefix)
-    remote = backend("remote-name").strip()
-    root = "/storage/roms" if args.real_roms else SCRATCH
-    failures = 0
+    def __init__(self, dev):
+        self.dev = dev
+        self.settings = {}
+        self.prev_paths = {}
+        self.prev_rclone_conf = ""
+        self.prev_device_id = None   # rewritten only on a second device that clones the first
 
-    step("device reachable and equipped")
-    who = dev.run("echo ok").strip()
+
+def prepare_device(dev, remote, root, args, prepared, which="", first_id=None):
+    """Point one device at the QA endpoint. It is appended to `prepared` as
+    soon as its previous state is captured -- before anything is written --
+    so the block that restores devices covers it even if this raises."""
+    p = Prepared(dev)
+    step(f"device {which}reachable and equipped")
+    who = dev.run("echo ok", check=False).strip()
     if not check(who == "ok", "ssh works", "no shell over ssh"):
-        return 1
+        raise Fail(f"no shell over ssh on {dev.host} port {dev.port}")
     have = dev.run("command -v rclone cloud_backup cloud_restore || true")
-    failures += not check("rclone" in have and "cloud_backup" in have,
-                          "rclone and cloud scripts present",
-                          "device is missing rclone or the cloud scripts")
+    check("rclone" in have and "cloud_backup" in have,
+          "rclone and cloud scripts present",
+          "device is missing rclone or the cloud scripts")
 
-    step("point the device at the QA bucket")
+    step(f"point device {which}at the QA bucket" if which else "point the device at the QA bucket")
     # The device's own remote comes back at the end: a device the suite has
     # finished with has the remote it started with (Gate 0, #35).
-    prev_rclone_conf = dev.run(f"cat {RCLONE_CONF} 2>/dev/null || true")
+    p.prev_rclone_conf = dev.run(f"cat {RCLONE_CONF} 2>/dev/null || true")
+    for key in ("SAVESPATH", "SETTINGS_BACKUPS", "SAVES_REMOTE", "SETTINGS_REMOTE", "CONTENT_REMOTE",
+                "BACKUPPATH", "BACKUPFOLDER", "SYNCPATH", "SYNCPATH_BACKUP", "CONTENTPATH"):
+        p.prev_paths[key] = dev.run(f"grep -m1 '^{key}=' {CONF} 2>/dev/null || true").strip()
+    prepared.append(p)
     dev.run(f"mkdir -p {os.path.dirname(RCLONE_CONF)}")
     dev.write(RCLONE_CONF, backend("rclone-conf").encode())
     first = dev.run("rclone listremotes 2>/dev/null | head -1").strip().rstrip(":")
@@ -166,10 +186,9 @@ def main():
                  f"first remote is {remote!r}, which is what the scripts will use",
                  f"first remote is {first!r}, not {remote!r} - refusing to sync "
                  f"someone else's account"):
-        return 1
+        raise Fail("refusing to sync someone else's account")
 
     settings = {}
-    prev_paths = {}
     if not args.real_roms:
         # Keep the scripts' own defaults for everything except where they
         # read and write, so the code under test is unchanged.
@@ -207,26 +226,75 @@ def main():
     if not new_keys:
         settings = {old_names[k]: v for k, v in settings.items()}
         print("    old key names: this image predates the rename")
-    for key in settings:
-        prev_paths[key] = dev.run(f"grep -m1 '^{key}=' {CONF} 2>/dev/null || true").strip()
-    for key, val in settings.items():
-        dev.run(f"grep -q '^{key}=' {CONF} && sed -i 's|^{key}=.*|{key}=\"{val}\"|' {CONF} "
-                f"|| echo '{key}=\"{val}\"' >> {CONF}")
+    p.prev_paths = {k: v for k, v in p.prev_paths.items() if k in settings}
+    apply_settings(dev, settings)
+    p.settings = settings
     if not args.real_roms:
         print(f"    scratch tree {SCRATCH} (pass --real-roms to use /storage/roms)")
     print(f"    SAVES_REMOTE {syncpath} on the {backend('backend').strip()} endpoint")
 
-    # From here on the device carries the harness's settings; whatever happens
-    # below -- a failing check, an exception, a Ctrl-C -- the block after the
-    # try puts the device back (Gate 0, #35: a device the harness has
-    # finished with has the remote it started with). Found the hard way: a
-    # run that aborted on guest b left the QA remote and the QA paths behind.
+    # Two guests from one image carry one identity: cloud_device_id hashes
+    # the permanent MAC, and the VM profile fixes it. That is A11's cloned
+    # card, which A11 constructs on purpose; every other fixture needs two
+    # devices, so the second gets its own id for the run.
+    if first_id is not None:
+        own = dev.run("cloud_device_id 2>/dev/null || true").strip()
+        if own == first_id:
+            p.prev_device_id = dev.run(f"cat {ID_FILE} 2>/dev/null || true")
+            dev.write(ID_FILE, f"{own}-second\n".encode())
+            print(f"    device id was a clone of the first's ({own}); it is {own}-second for this run")
+    return p
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--host", required=True, help="ssh target, e.g. root@127.0.0.1")
+    ap.add_argument("--port", type=int, default=10022)
+    ap.add_argument("--identity", help="ssh private key")
+    ap.add_argument("--real-roms", action="store_true",
+                    help="use /storage/roms instead of a scratch tree (DESTRUCTIVE)")
+    ap.add_argument("--keep", action="store_true", help="leave fixtures in place")
+    ap.add_argument("--path-prefix", help="a directory on the device to put first on PATH (scripts under test, before an image carries them)")
+    ap.add_argument("--second-port", type=int,
+                    help="ssh port of a second device -- the VM pair's guest b -- which turns on the two-device fixtures (D-QA-009)")
+    ap.add_argument("--second-host", help="ssh target of the second device (default: the same as --host)")
+    ap.add_argument("--only", help="run only these two-device fixtures (comma-separated: A1,A9,CONTRACT), skipping the single-device suite")
+    ap.add_argument("--transport", default="copy,bisync", help="transports for #9's contract fixtures: copy, bisync, or both (default)")
+    ap.add_argument("--bisync-flags", default="", help="extra flags for every rclone bisync run (Gate 11 variants)")
+    args = ap.parse_args()
+    if args.real_roms and args.second_port:
+        raise Fail("the two-device fixtures rewrite both saves trees; they never run against real ROMs (D-QA-009)")
+
+    remote = backend("remote-name").strip()
+    root = "/storage/roms" if args.real_roms else SCRATCH
+    devices = [Device(args.host, args.port, args.identity, args.path_prefix)]
+    if args.second_port:
+        devices.append(Device(args.second_host or args.host, args.second_port, args.identity, args.path_prefix))
+
+    failures = 0
+    prepared = []
     archive = f"{root}/backup/{ARCHIVE_NAME}"
-    prev_restore_opt = ""
+    # From the first capture on, every device carries the harness's settings;
+    # whatever happens below -- a failing check, an exception, a Ctrl-C --
+    # the block after the try puts each one back (Gate 0, #35: a device the
+    # harness has finished with has the remote it started with). Found the
+    # hard way: a run that aborted on guest b left the QA remote and the QA
+    # paths behind.
     try:
-        failures += run_steps(dev, root, remote, args, settings, prev_paths)
+        first = prepare_device(devices[0], remote, root, args, prepared, which="a " if len(devices) > 1 else "")
+        if len(devices) > 1:
+            first_id = devices[0].run("cloud_device_id 2>/dev/null || true").strip()
+            prepare_device(devices[1], remote, root, args, prepared, which="b ", first_id=first_id)
+        if not args.only:
+            failures += run_steps(first.dev, root, remote, args, first.settings, first.prev_paths)
+        if len(prepared) > 1:
+            failures += run_pair(prepared[0].dev, prepared[1].dev, root, remote, args, first.settings)
+        elif args.only:
+            print("\n--only names two-device fixtures; pass --second-port for the VM pair's guest b")
     finally:
-        restore_device(dev, args, archive, prev_paths, prev_rclone_conf)
+        for p in prepared:
+            restore_device(p, args, archive)
     print(f"\n{'PASSED' if failures == 0 else f'{failures} CHECK(S) FAILED'}")
     return 1 if failures else 0
 
@@ -389,7 +457,7 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     # The current layout: ROMs/<system> under CONTENT_REMOTE (D-CLOUD-018);
     # the restorer reads the flat pre-ROMs layout too, but the fixture is the
     # shape a backup writes today.
-    cpath = backend("content-remote").strip().lstrip("/").split("/", 1)[-1]
+    cpath = epath(backend("content-remote"))
     backend("put", os.path.join(stage, CONTENT_DIR), f"{cpath}/ROMs/{CONTENT_DIR}")
     dev.run(f"rm -rf {shlex.quote(croot)}")
     failures += not check(not dev.sha(f"{croot}/{list(CONTENT_FIXTURES)[0]}"),
@@ -634,7 +702,7 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     stage2 = subprocess.run(["mktemp", "-d"], capture_output=True, text=True).stdout.strip()
     os.makedirs(f"{stage2}/ROMs/definitely-not-a-system", exist_ok=True)
     open(f"{stage2}/ROMs/definitely-not-a-system/x.rom", "wb").write(b"x")
-    cpath2 = backend("content-remote").strip().lstrip("/").split("/", 1)[-1]
+    cpath2 = epath(backend("content-remote"))
     subprocess.run([BACKEND, "put", f"{stage2}/ROMs", f"{cpath2}/ROMs"], capture_output=True, text=True)
     scan = dev.run("cloud_content_restore --scan 2>/dev/null || true")
     row = [l for l in scan.splitlines() if l.startswith("definitely-not-a-system|")]
@@ -650,7 +718,7 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     marker = b"OWNER WROTE THIS"
     stage3 = subprocess.run(["mktemp", "-d"], capture_output=True, text=True).stdout.strip()
     open(f"{stage3}/README.txt", "wb").write(marker)
-    spath = backend("saves-remote").strip().lstrip("/")
+    spath = epath(backend("saves-remote"))
     subprocess.run([BACKEND, "put", stage3, spath], capture_output=True, text=True)
     second = dev.run("cloud_setup --seed-folders 2>/dev/null || true")
     failures += not check(second.count("OK ") >= 2,
@@ -683,13 +751,214 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     return failures
 
 
-def restore_device(dev, args, archive, prev_paths, prev_rclone_conf):
-    """Put the device back: its remote, its paths, the settings-restore option,
-    the scratch tree, the fixture system -- on every exit."""
+# ===========================================================================
+# Two devices against one cloud: the fixtures epic #11 builds against (#35)
+# ===========================================================================
+#
+# Every fixture here is written before the code it tests and fails against
+# the shipped scripts by design (`engineering-practices.md`, "A failure you
+# find is yours to fix"): its first commit carries the failing output, and it
+# turns green when #21/#22 land. The pair runs on GENERIC_X64 guests only
+# (D-QA-009). A conflict is a change on both sides since two devices last
+# agreed; one guest cannot make one, and a handheld is where a mistake
+# becomes somebody's evening.
+#
+# a is the device under test; b is the other handheld, the one whose change
+# a's copy has not seen. Every fixture begins with a first pass that brings
+# both to agreement, because a suite that starts from an empty remote only
+# ever tests first uploads (#53; the #35 futro).
+
+ID_FILE = "/storage/.config/cloud_sync-device-id"
+LOG = "/var/log/cloud_sync.log"
+CACHE = "/storage/.cache/cloud_sync"
+
+# The writers of the saves tree (#22 R1), as they run today: the boot
+# autostart (102-cloud-saves); GuiMenu.cpp's SYNC SAVES WITH THE CLOUD, BACK
+# UP SAVES TO THE CLOUD and RESTORE SAVES FROM THE CLOUD (the transfer page's
+# SAVES tick runs the last two); FileData.cpp's game-exit push; and the two
+# scripts from a shell. A1 runs each one. When a writer changes, this table
+# changes in the same commit: the fixture tests what the labels run.
+WRITERS = [
+    ("the boot pair (autostart 102-cloud-saves)",
+     "cloud_restore --yes --method=copy --update --saves-only; "
+     "cloud_backup --yes --method=copy --update --saves-only"),
+    ("SYNC SAVES WITH THE CLOUD",
+     "cloud_restore --yes --method=copy --update --saves-only && "
+     "cloud_backup --yes --method=copy --update --saves-only"),
+    ("BACK UP SAVES TO THE CLOUD (and the SAVES tick, backing up)",
+     "cloud_backup --yes --saves-only"),
+    ("RESTORE SAVES FROM THE CLOUD (and the SAVES tick, restoring)",
+     "cloud_restore --yes --saves-only"),
+    ("the game-exit push", "cloud_backup --yes --saves-only --recent"),
+    ("cloud_backup from a shell", "cloud_backup --yes"),
+    ("cloud_restore from a shell", "cloud_restore --yes"),
+]
+BOOT_PAIR = WRITERS[0][1]
+
+# The wizard's apply step, as the two fixtures that need a decision call it.
+# Named here, once, so they can run at all before #22/#23 exist: the command
+# fails today and the fixtures with it. `left` keeps the cloud's copy -- the
+# device's is the loser, pushed to the store first (#22 R9); `right` keeps
+# the device's.
+APPLY = "cloud_reconcile --apply --unit {unit} --keep {side}"
+
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def epath(remote_path):
+    """The endpoint path of a cloud path, for `cloud-test-backend cat/put/ls`.
+    On WebDAV the folder is the path; on S3 the first component is the
+    bucket, which the backend's own commands already prefix -- passing it
+    again doubled the path, and the seeding step read its note back from a
+    place the device never looked."""
+    path = remote_path.strip().lstrip("/")
+    if backend("backend").strip() == "s3":
+        path = path.split("/", 1)[1] if "/" in path else ""
+    return path
+
+
+def backend_bytes(path):
+    p = subprocess.run([BACKEND, "cat", path], capture_output=True)
+    return p.stdout if p.returncode == 0 else None
+
+
+def backend_files(path):
+    """Every file under an endpoint path, as paths relative to it."""
+    out = subprocess.run([BACKEND, "ls", path], capture_output=True, text=True).stdout
+    return [line.split(None, 1)[1] for line in out.splitlines() if len(line.split(None, 1)) == 2]
+
+
+def set_key(dev, key, val):
+    dev.run(f"grep -q '^{key}=' {CONF} && sed -i 's|^{key}=.*|{key}=\"{val}\"|' {CONF} "
+            f"|| echo '{key}=\"{val}\"' >> {CONF}")
+
+
+def apply_settings(dev, settings):
+    for key, val in settings.items():
+        set_key(dev, key, val)
+
+
+def run_rc(dev, cmd, env=""):
+    """Run a command the way its caller does; return (exit code, its output)."""
+    out = dev.run(f"( {env} {cmd} ) >/tmp/qa-run.out 2>&1; echo rc=$?; cat /tmp/qa-run.out", check=False)
+    first, _, rest = out.partition("\n")
+    return (int(first[3:]) if first.startswith("rc=") else -1), rest
+
+
+def touch_offset(dev, path, seconds):
+    """Move a file's mtime relative to the device's clock -- the lever the
+    shipped pipeline resolves by. busybox touch takes a date, not @epoch."""
+    dev.run(f'touch -d "$(date -d @$(( $(date +%s) + ({seconds}) )) \'+%Y-%m-%d %H:%M:%S\')" {shlex.quote(path)}')
+
+
+def log_mark(dev):
+    return int(dev.run(f"wc -l < {LOG} 2>/dev/null || echo 0").strip() or 0)
+
+
+def log_since(dev, mark):
+    return dev.run(f"tail -n +{mark + 1} {LOG} 2>/dev/null || true")
+
+
+def name_of(digest, known):
+    """Which planted version a hash is, for a message somebody can read."""
+    for name, data in known.items():
+        if digest == sha(data):
+            return name
+    return "absent" if digest is None else "neither (partial or foreign bytes)"
+
+
+class Pair:
+    def __init__(self, a, b, root, settings):
+        self.a, self.b, self.root, self.settings = a, b, root, settings
+        self.saves_remote = settings["SAVES_REMOTE"]
+        self.spath = epath(self.saves_remote)
+
+    def path(self, rel):
+        return f"{self.root}/{rel}"
+
+    def reset(self):
+        """Empty the cloud and both saves trees, forget every stamp and
+        record, put both devices back on the shared folder. Each fixture
+        starts from nothing, so what one leaves behind cannot pass the next."""
+        backend("reset")
+        for d in (self.a, self.b):
+            d.run(f"rm -rf {shlex.quote(self.root)} {CACHE}; mkdir -p {shlex.quote(self.root)} {CACHE}")
+            apply_settings(d, self.settings)
+
+    def cloud_sha(self, rel, folder=None):
+        data = backend_bytes(f"{self.spath if folder is None else folder}/{rel}")
+        return sha(data) if data is not None else None
+
+    def agree(self, files):
+        """The first pass: a backs up, b restores, both hold what the cloud holds."""
+        for rel, data in files.items():
+            self.a.write(self.path(rel), data)
+        rc, _ = run_rc(self.a, "cloud_backup --yes --saves-only")
+        rc2, _ = run_rc(self.b, "cloud_restore --yes --saves-only")
+        wrong = [rel for rel, data in files.items()
+                 if not (self.cloud_sha(rel) == sha(data) == self.b.sha(self.path(rel)))]
+        if wrong:
+            raise Fail(f"the first pass left {wrong} without agreement (backup exit {rc}, restore exit {rc2})")
+
+    def both_changed(self, rel, h0, ha, hb, a_offset=3600):
+        """Agreement on h0; b publishes hb; a edits to ha offline, its copy
+        `a_offset` seconds newer (positive) or older than b's upload."""
+        self.reset()
+        self.agree({rel: h0})
+        self.b.write(self.path(rel), hb)
+        run_rc(self.b, "cloud_backup --yes --saves-only")
+        if self.cloud_sha(rel) != sha(hb):
+            raise Fail("b's publication did not reach the cloud")
+        self.a.write(self.path(rel), ha)
+        touch_offset(self.a, self.path(rel), a_offset)
+
+
+PAIR_FIXTURES = [
+    # filled one fixture at a time; each one's first commit is its failing run
+]
+
+
+def run_pair(a, b, root, remote, args, settings):
+    failures = 0
+    only = {k.strip().upper() for k in args.only.split(",")} if args.only else None
+    p = Pair(a, b, root, settings)
+    # The cache directory holds each device's stamps and selections; the
+    # fixtures wipe it between runs, so it is carried across and put back.
+    for d in (a, b):
+        d.run("tar -C /storage/.cache -czf /tmp/qa-cache.tgz cloud_sync 2>/dev/null || true", check=False)
+    try:
+        for key, title, fn in PAIR_FIXTURES:
+            if only and key not in only:
+                continue
+            step(f"{key} -- {title}")
+            try:
+                failures += fn(p)
+            except Fail as e:
+                failures += 1
+                print(f"    FAIL  {e}")
+    finally:
+        p.reset()
+        for d in (a, b):
+            d.run(f"rm -rf {CACHE}; tar -C /storage/.cache -xzf /tmp/qa-cache.tgz 2>/dev/null; rm -f /tmp/qa-cache.tgz",
+                  check=False)
+    return failures
+
+def restore_device(p, args, archive):
+    """Put the device back: its remote, its paths, its identity, the
+    settings-restore option, the scratch tree, the fixture system -- on every
+    exit."""
     if args.keep:
         return
-    step("clean up")
+    dev, prev_paths, prev_rclone_conf = p.dev, p.prev_paths, p.prev_rclone_conf
+    step(f"clean up {dev.host} port {dev.port}")
     try:
+        if p.prev_device_id is not None:
+            if p.prev_device_id.strip():
+                dev.write(ID_FILE, p.prev_device_id.encode())
+            else:
+                dev.run(f"rm -f {ID_FILE}", check=False)
         dev.run(f"rm -f {shlex.quote(archive)}", check=False)
         prev = dev.run(f"grep -m1 '^BACKUPFILE_RESTORE_OPTION=' {CONF}.qa-prev 2>/dev/null || true", check=False).strip()
         if prev:
@@ -709,7 +978,7 @@ def restore_device(dev, args, archive, prev_paths, prev_rclone_conf):
         else:
             dev.run(f"rm -f {RCLONE_CONF}", check=False)
         backend("reset")
-        print("    scratch tree and bucket emptied; the device's own remote, paths and "
+        print("    scratch tree and bucket emptied; the device's own remote, paths, identity and "
               "settings-backup setting restored")
     except Fail as e:
         print(f"    WARN  clean-up incomplete: {e}", file=sys.stderr)
