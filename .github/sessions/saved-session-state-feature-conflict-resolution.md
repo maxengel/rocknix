@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-07T04:20:00Z
+> **Saved**: 2026-09-07T17:30:00Z
 > **Branch**: feature/conflict-resolution (worktree; the work itself landed on `next`)
 > **Repo**: maxengel/rocknix (+ ES at ~/Development/emulationstation-next, branch feature/cloud-vocabulary → test/qa-integration)
 
 ## Current Focus
 
-#11 batch 1: Gate 0 (#35) tasks 1–7 done. Task 6: every two-device fixture (A1, A2, A3, A8, A9, A11, A12, A14, A5, the retention kill) and #9's contract runner under `copy --files-from` and `bisync`, each committed with its failing run (`86d33d26ce`…`5330da7ee5`), landed on `next` `5330da7ee5`, evidence and micro-retro on #35, the contract table on #9. Two defects fixed on the way: `cloud_setup`'s folder probe (`f3b330b5e1`) and ES discarding its refusal (ES `2d17709b2`, pinned `0eb4667365` — **needs a GENERIC_X64 build and a frame**); `cloud-test-backend cat` on a missing S3 key (`5a2e20be87`). **Next: task 8, Gate 11's scoring run on #9** — read the two-backend table there, try `--bisync-flags` variants (`--compare size,modtime,checksum --download-hash`, `--conflict-loser`), score each FAIL upstream-shaped or architectural, then the verdict (task 10) and D-CLOUD-044.
+#11 batch 1: Gates 0 (#35) and 11 (#9) done. **Gate 11's verdict is D-CLOUD-052: the reconciler's own transport (`rclone copy --files-from --ignore-times` per direction) for every pass; bisync not used; D-CLOUD-044 moot.** Scored on the pair, both backends, runner `747a53b578`, record `47eebf20ed` on `next`; #9 closed, mirrored on #22 (body head and R2 edited), #11's child ticked. **Next: task 11, the Gate 12 census** — needs a window from the maintainer (RG35XX SP emulator sessions); the reading script (`find -newer` over the saves tree; PPSSPP/Flycast/Mupen/DuckStation unit table; retained bytes at count 3; sealed bytes per exit) runs over SSH afterwards. Until then: the owed GENERIC_X64 build of `next` (ES `164f8f48d8` folder-refusal dialog, #78's open box; `backuptool`; `cloud_setup`; `--scan` tidy-up), VM frames first, then H700 staged with reboots asked for.
 
 ## Completed This Session
 
@@ -33,10 +33,7 @@
 6. ~~Fixtures, each a failing commit first~~ (done 2026-09-07): A1 (two roots against one remote, both changed **after a first pass**), the equal-size case, A2/A3, A8 (torn N64 pair), A9 (delete/renumber/absence/unmount/`rm`), A11 (cloned device id), A12 (legacy `RESTOREPATH`), A14 (manifest step, WebDAV null / MinIO non-null), A5's reader from the second root, the retention ordering kill, #9's contract fixtures runnable with bisync and with `copy --files-from`.
 7. ~~Land on `next`; `docs/vm-qa-log.md` row; a micro-retro comment on #35.~~ (done)
 
-**Gate 11 — #9, the bisync spike**
-8. The spike runner (in the harness): the ten contract items on WebDAV, then MinIO; shapes captured with `od -c` before parsing; the one explicit `--resync` recorded; a real `kill -9` mid-transfer; the scoring table on #9 with `rclone version` from the guest.
-9. The second guest (D-QA-009): the contract's two-device items on the VM pair, WebDAV then MinIO; no handheld.
-10. Verdict on #9, mirrored on #22; D-CLOUD-044 settled as a register row; micro-retro.
+**Gate 11 — #9, the bisync spike** — ~~8, 9, 10~~ done 2026-09-07: runner with `--dump`/`moved:`/shape/every-spawn budget; variants `--compare size,modtime,checksum [--download-hash]`; verdict D-CLOUD-052; #9 closed.
 
 **Gate 12 — the census (RG35XX SP, the maintainer's hands)**
 11. Ask for a window; the reading script (`find -newer` over the saves tree; PPSSPP/Flycast/Mupen/DuckStation unit table; retained bytes at count 3; sealed bytes per exit) runs over SSH afterwards; feeds #21's unit table and #22's ceiling.
