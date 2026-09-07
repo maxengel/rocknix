@@ -1028,10 +1028,55 @@ def fx_a3(p):
     return f
 
 
+def fx_a8(p):
+    """A8: a publication interrupted after one member of an N64 pair (.eep and
+    .mpk: one unit). No device installs the mixed set; an unrelated unit still
+    moves; the hold clears when the second member lands."""
+    f = 0
+    eep, mpk, other = "n64/save/Torn.eep", "n64/save/Torn.mpk", "saves/Unrelated.srm"
+    e = {"old": os.urandom(2048), "new": os.urandom(2560)}
+    m = {"old": os.urandom(32768), "new": os.urandom(40960)}
+    u0, u1 = b"unrelated, agreed", b"unrelated, changed on a meanwhile"
+    p.reset()
+    p.agree({eep: e["old"], mpk: m["old"], other: u0})
+    p.b.write(p.path(eep), e["new"])
+    p.b.write(p.path(mpk), m["new"])
+    # b publishes one file at a time at 8 KiB/s; rclone is killed once the
+    # .eep (first by name) has landed and the .mpk is still in flight.
+    p.b.run("rm -f /tmp/qa-torn.out; (RCLONE_TRANSFERS=1 RCLONE_BWLIMIT=8k setsid cloud_backup --yes --saves-only "
+            ">/tmp/qa-torn.out 2>&1 &)")
+    for _ in range(120):
+        time.sleep(0.25)
+        if p.cloud_sha(eep) == sha(e["new"]):
+            break
+    p.b.run("pkill -9 -x rclone; for i in $(seq 40); do pgrep -x cloud_backup >/dev/null || break; sleep 0.25; done; true",
+            check=False)
+    torn = p.cloud_sha(eep) == sha(e["new"]) and p.cloud_sha(mpk) != sha(m["new"])
+    f += not check(torn, "b's publication was interrupted after its first member (the setup)",
+                   f"could not leave the publication torn: .eep is {name_of(p.cloud_sha(eep), e)}, "
+                   f".mpk is {name_of(p.cloud_sha(mpk), m)}")
+    if not torn:
+        return f
+    p.a.write(p.path(other), u1)
+    run_rc(p.a, BOOT_PAIR)
+    got = (name_of(p.a.sha(p.path(eep)), e), name_of(p.a.sha(p.path(mpk)), m))
+    f += not check(got in {("old", "old"), ("new", "new")}, f"a installed no mixed set (its pair is {got[0]}/{got[1]})",
+                   f"A MIXED SET WAS INSTALLED on a: .eep {got[0]}, .mpk {got[1]} (A8)")
+    f += not check(p.cloud_sha(other) == sha(u1), "an unrelated unit still moved while the torn one was held",
+                   "the unrelated unit did not move")
+    run_rc(p.b, "cloud_backup --yes --saves-only")
+    run_rc(p.a, BOOT_PAIR)
+    got = (name_of(p.a.sha(p.path(eep)), e), name_of(p.a.sha(p.path(mpk)), m))
+    f += not check(got == ("new", "new"), "the hold cleared when the second member landed",
+                   f"after the second member landed a holds .eep {got[0]}, .mpk {got[1]}")
+    return f
+
+
 PAIR_FIXTURES = [
     ("A1", "both changed after a first pass: every writer, this device's copy newer and older", fx_a1),
     ("A2", "a failed push retried; an equal-size, equal-mtime change after a first pass", fx_a2),
     ("A3", "CHANGE CLOUD FOLDER to a folder holding different saves", fx_a3),
+    ("A8", "a torn N64 pair: interrupted after one member, held, then cleared", fx_a8),
 ]
 
 
