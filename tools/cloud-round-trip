@@ -989,9 +989,49 @@ def fx_a2(p):
     return f
 
 
+def fx_a3(p):
+    """A3: CHANGE CLOUD FOLDER to a folder holding different saves. Nothing
+    downloads silently; identical pairs seed agreement; differing pairs
+    queue. As shipped the pass after a re-link is the boot pair, which
+    replaces this device's copy with the folder's newer one."""
+    f = 0
+    same, diff = "saves/Same In Both.srm", "saves/Differs.srm"
+    v = {"H0": b"H0: in both folders", "X": b"X: this device's version",
+         "Y": b"Y: the other folder's version, never seen here"}
+    p.reset()
+    p.agree({same: v["H0"], diff: v["X"]})
+    second = p.saves_remote.rstrip("/") + "-second"
+    set_key(p.b, "SAVES_REMOTE", second)
+    p.b.write(p.path(same), v["H0"])
+    p.b.write(p.path(diff), v["Y"])
+    run_rc(p.b, "cloud_backup --yes --saves-only")
+    set_key(p.b, "SAVES_REMOTE", p.saves_remote)
+    if p.cloud_sha(diff, epath(second)) != sha(v["Y"]):
+        raise Fail("b could not fill the second folder")
+    # a changes folder the way CHANGE CLOUD FOLDER does; its differing copy is
+    # older than the folder's, the shape recency gets wrong.
+    rc, out = run_rc(p.a, f"cloud_setup --set-saves-remote {shlex.quote(second)}")
+    if rc != 0:
+        raise Fail(f"cloud_setup --set-saves-remote refused {second}: {out.strip()[-80:]}")
+    touch_offset(p.a, p.path(diff), -3600)
+    rc, _ = run_rc(p.a, BOOT_PAIR)
+    got = p.a.sha(p.path(diff))
+    f += not check(got == sha(v["X"]), "nothing on this device was replaced by the new folder's saves",
+                   f"A SAVE WAS SILENTLY REPLACED after CHANGE CLOUD FOLDER: {diff} became {name_of(got, v)} (A3)")
+    f += not check(p.a.sha(p.path(same)) == sha(v["H0"]), "the identical pair is untouched", "the identical pair changed")
+    f += not check(rc == 5, "the differing pair was queued (exit 5)", f"no queue for the differing pair (exit {rc})")
+    agreed = p.a.run(f"cat {CACHE}/agreed.json 2>/dev/null || true")
+    f += not check(same in agreed and diff not in agreed,
+                   "the identical pair seeded agreement and the differing one did not",
+                   "no agreement record for the identical pair" if not agreed.strip()
+                   else "the agreement record is wrong about which pair agrees")
+    return f
+
+
 PAIR_FIXTURES = [
     ("A1", "both changed after a first pass: every writer, this device's copy newer and older", fx_a1),
     ("A2", "a failed push retried; an equal-size, equal-mtime change after a first pass", fx_a2),
+    ("A3", "CHANGE CLOUD FOLDER to a folder holding different saves", fx_a3),
 ]
 
 
