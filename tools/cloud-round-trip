@@ -1299,6 +1299,44 @@ def fx_a5(p):
     return f
 
 
+def fx_retention(p):
+    """The retention ordering (#22 R9): the loser and its record are verified
+    in the cloud before the winner replaces anything. Killed between the two,
+    the loser is in the store, the head is unchanged, the device's copy is
+    still its own."""
+    f = 0
+    rel = "saves/Ordered.srm"
+    v = {"H0": os.urandom(65536), "HA": os.urandom(65537), "HB": os.urandom(65538)}
+    p.both_changed(rel, v["H0"], v["HA"], v["HB"])
+    store = epath(p.saves_remote.rstrip("/") + "-discarded")
+    # KEEP LEFT: the cloud's HB wins; a's HA is the loser, pushed to the store
+    # first. At 8 KiB/s a 64 KiB transfer takes eight seconds, so the record
+    # is on the remote well before the winner's replacement completes.
+    p.a.run("rm -f /tmp/qa-apply.out; (RCLONE_BWLIMIT=8k setsid " + APPLY.format(unit=shlex.quote(rel), side="left")
+            + " >/tmp/qa-apply.out 2>&1 &)")
+    seen = False
+    for _ in range(160):
+        time.sleep(0.25)
+        if any(r.endswith("record.json") for r in backend_files(store)):
+            seen = True
+            break
+        if not p.a.run("pgrep -x cloud_reconcile >/dev/null && echo running", check=False).strip():
+            break
+    p.a.run("pkill -9 -x rclone; pkill -9 -x cloud_reconcile; true", check=False)
+    tail = p.a.run("tail -c 120 /tmp/qa-apply.out 2>/dev/null || true", check=False).strip()
+    f += not check(seen, "the loser's record appeared in the store (the kill point)",
+                   f"no record.json ever appeared under {store} (apply said: {tail!r})")
+    if seen:
+        stored = [sha(backend_bytes(f"{store}/{r}") or b"") for r in backend_files(store) if not r.endswith("record.json")]
+        f += not check(sha(v["HA"]) in stored, "the loser's bytes are in the store, hash-equal",
+                       f"the store holds {[name_of(x, v) for x in stored]}, not HA")
+    f += not check(p.cloud_sha(rel) == sha(v["HB"]), "the head is unchanged",
+                   f"the head became {name_of(p.cloud_sha(rel), v)}")
+    f += not check(p.a.sha(p.path(rel)) == sha(v["HA"]), "the device's copy was not replaced before the loser was verified",
+                   f"the device's copy became {name_of(p.a.sha(p.path(rel)), v)}")
+    return f
+
+
 PAIR_FIXTURES = [
     ("A1", "both changed after a first pass: every writer, this device's copy newer and older", fx_a1),
     ("A2", "a failed push retried; an equal-size, equal-mtime change after a first pass", fx_a2),
@@ -1309,6 +1347,7 @@ PAIR_FIXTURES = [
     ("A12", "a legacy RESTOREPATH unlike BACKUPPATH: migrated, warned, nothing touched", fx_a12),
     ("A14", "the manifest step: under savestates/.rocknix/, sha256, remote_hash per backend, one tier", fx_a14),
     ("A5", "the discarded-saves reader, from the second device", fx_a5),
+    ("RETENTION", "the retention ordering: killed after the loser is stored, before the winner replaces", fx_retention),
 ]
 
 
