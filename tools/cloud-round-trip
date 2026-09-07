@@ -1182,6 +1182,46 @@ def fx_a11(p):
     return f
 
 
+def fx_a12(p):
+    """A12 (D-CLOUD-040): an upgraded config carrying a legacy RESTOREPATH
+    unlike BACKUPPATH. The helper migrates SAVESPATH from BACKUPPATH, drops
+    RESTOREPATH and writes one WARN naming the ignored folder; nothing in that
+    folder is touched; the passes proceed."""
+    f = 0
+    a = p.a
+    other = SCRATCH + "-other"
+    p.reset()
+    p.agree({"saves/Agreed.srm": b"agreed before the upgrade"})
+    untouched = b"lives in the folder RESTOREPATH named"
+    a.write(f"{other}/saves/Untouched.srm", untouched)
+    saved = a.run(f"cat {CONF}")
+    keep = [l for l in saved.splitlines()
+            if not re.match(r"^(SAVESPATH|SETTINGS_BACKUPS|SAVES_REMOTE|SETTINGS_REMOTE|CONTENT_REMOTE)=", l)]
+    old = keep + [f'BACKUPPATH="{p.root}"', f'BACKUPFOLDER="{p.root}/backup"', f'RESTOREPATH="{other}"',
+                  f'SYNCPATH="{p.settings["SAVES_REMOTE"]}"', f'SYNCPATH_BACKUP="{p.settings["SETTINGS_REMOTE"]}"',
+                  f'CONTENTPATH="{p.settings["CONTENT_REMOTE"]}"', ""]
+    a.write(CONF, "\n".join(old).encode())
+    try:
+        mark = log_mark(a)
+        run_rc(a, f"cloud_sync_helper {LOG}")
+        conf = a.run(f"cat {CONF}")
+        warns = [l for l in log_since(a, mark).splitlines() if "WARN" in l and other in l]
+        f += not check(f'SAVESPATH="{p.root}"' in conf, "SAVESPATH was migrated from BACKUPPATH",
+                       "SAVESPATH was not carried from BACKUPPATH")
+        f += not check("RESTOREPATH=" not in conf, "RESTOREPATH was dropped",
+                       "RESTOREPATH is still in the config (A12: dropped, warned once)")
+        f += not check(len(warns) == 1, "one WARN names the ignored folder",
+                       f"{len(warns)} WARN line(s) name {other}; expected exactly one")
+        rc, _ = run_rc(a, BOOT_PAIR)
+        f += not check(rc == 0, "the pass proceeded (exit 0)", f"the pass refused (exit {rc}) instead of migrating")
+        f += not check(a.sha(f"{other}/saves/Untouched.srm") == sha(untouched),
+                       "nothing in the ignored folder was touched", "the ignored folder was touched")
+    finally:
+        a.write(CONF, saved.encode())
+        a.run(f"rm -rf {shlex.quote(other)}")
+    return f
+
+
 PAIR_FIXTURES = [
     ("A1", "both changed after a first pass: every writer, this device's copy newer and older", fx_a1),
     ("A2", "a failed push retried; an equal-size, equal-mtime change after a first pass", fx_a2),
@@ -1189,6 +1229,7 @@ PAIR_FIXTURES = [
     ("A8", "a torn N64 pair: interrupted after one member, held, then cleared", fx_a8),
     ("A9", "delete and renumber; a retired hash put back; rm; an unmounted, empty, or empty-cloud root", fx_a9),
     ("A11", "a cloned device id refuses to publish", fx_a11),
+    ("A12", "a legacy RESTOREPATH unlike BACKUPPATH: migrated, warned, nothing touched", fx_a12),
 ]
 
 
