@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-06T22:22:20Z
+> **Saved**: 2026-09-07T04:20:00Z
 > **Branch**: feature/conflict-resolution (worktree; the work itself landed on `next`)
 > **Repo**: maxengel/rocknix (+ ES at ~/Development/emulationstation-next, branch feature/cloud-vocabulary → test/qa-integration)
 
 ## Current Focus
 
-#11 batch 1, Gate 0 (#35): tasks 1–5 done — `tools/vm-pair` (two guests, `a` :10022 / `b` :10023, QA key over serial), the harness repaired against the scripts as they are and passing on WebDAV (both guests) and MinIO with 48 checks, the device restored on every exit, one script defect fixed (`backuptool` reads `SETTINGS_BACKUPS`). Landed on `next`. **Next: task 6, the fixtures** — each a failing commit first, with the failure output in the message.
+#11 batch 1: Gate 0 (#35) tasks 1–7 done. Task 6: every two-device fixture (A1, A2, A3, A8, A9, A11, A12, A14, A5, the retention kill) and #9's contract runner under `copy --files-from` and `bisync`, each committed with its failing run (`86d33d26ce`…`5330da7ee5`), landed on `next` `5330da7ee5`, evidence and micro-retro on #35, the contract table on #9. Two defects fixed on the way: `cloud_setup`'s folder probe (`f3b330b5e1`) and ES discarding its refusal (ES `2d17709b2`, pinned `0eb4667365` — **needs a GENERIC_X64 build and a frame**); `cloud-test-backend cat` on a missing S3 key (`5a2e20be87`). **Next: task 8, Gate 11's scoring run on #9** — read the two-backend table there, try `--bisync-flags` variants (`--compare size,modtime,checksum --download-hash`, `--conflict-loser`), score each FAIL upstream-shaped or architectural, then the verdict (task 10) and D-CLOUD-044.
 
 ## Completed This Session
 
@@ -18,8 +18,9 @@
 
 ## In Progress
 
-- Task 6 (#35 fixtures) not started. Order: A1 (two roots, both changed **after a first pass**: guests a and b against one remote), the equal-size case, A2/A3, A8 (torn N64 `.eep`/`.mpk`), A9 (delete/renumber/absence/unmount/`rm`), A11 (cloned device id), A12 (legacy `RESTOREPATH` unequal → refusal; the equal shape already passes as the migration step), A14 (manifest step, WebDAV null / MinIO non-null), A5's reader, the retention-ordering kill, #9's contract fixtures runnable with bisync and `copy --files-from`. Each fails against the shipped scripts by design and stays red until #21/#22.
-- The VM pair is up (`tools/vm-pair info`); the backend is WebDAV on :9010; `/tmp/qa-bin/backuptool` on both guests carries the fixed script until an image does.
+- Task 6 done (see Current Focus). WebDAV: 48 single-device PASS, 43 two-device FAIL by design (37 fixtures + 6 contract); MinIO: 39. The run files of this session are gone with the scratchpad; each fixture's commit message carries its output.
+- The VM pair is up (`tools/vm-pair info`; it vanishes with `/tmp` on a host reboot — `vm-pair up <img>`, then put `backuptool` and `cloud_setup` from `next` into `/tmp/qa-bin` on both guests); the backend is back on WebDAV :9010.
+- A GENERIC_X64 build of `next` (`5330da7ee5`) is owed: ES `164f8f48d8` (the folder refusal dialog, #78's open box), `backuptool`, `cloud_setup`, the `--scan` tidy-up. VM first (D-QA-007) with a frame of CHANGE CLOUD FOLDER refusing a bad bucket name on MinIO; then H700, staged, reboots asked for (D-QA-008).
 
 ## Next Steps (the batch-1 task list, in execution order)
 
@@ -29,8 +30,8 @@
 3. Baseline run of the harness as it is, on WebDAV: the `PASSED`/`N CHECK(S) FAILED` line and every failing check recorded on #35 — the failures are the repair list.
 4. Repairs, each observed: `rclone.conf` restored after a run; old keys read on an old-shaped conf; archive assertions vs `cloud_backup`/`cloud_restore`'s dated names; content fixture under `CONTENT_REMOTE` with an ES-declared system, BIOS travelling; saves steps `--saves-only`, settings step as the tier runs it; D-UI-022 step names; the lock step seen to exit 3; PL-10's unsupported-system branch seen; exit-path steps asserting `--max-age`/`--no-traverse`.
 5. Full runs on WebDAV and on MinIO; the final line and listings quoted on #35; Gate 0 boxes ticked on those.
-6. Fixtures, each a failing commit first: A1 (two roots against one remote, both changed **after a first pass**), the equal-size case, A2/A3, A8 (torn N64 pair), A9 (delete/renumber/absence/unmount/`rm`), A11 (cloned device id), A12 (legacy `RESTOREPATH`), A14 (manifest step, WebDAV null / MinIO non-null), A5's reader from the second root, the retention ordering kill, #9's contract fixtures runnable with bisync and with `copy --files-from`.
-7. Land on `next`; `docs/vm-qa-log.md` row; a micro-retro comment on #35.
+6. ~~Fixtures, each a failing commit first~~ (done 2026-09-07): A1 (two roots against one remote, both changed **after a first pass**), the equal-size case, A2/A3, A8 (torn N64 pair), A9 (delete/renumber/absence/unmount/`rm`), A11 (cloned device id), A12 (legacy `RESTOREPATH`), A14 (manifest step, WebDAV null / MinIO non-null), A5's reader from the second root, the retention ordering kill, #9's contract fixtures runnable with bisync and with `copy --files-from`.
+7. ~~Land on `next`; `docs/vm-qa-log.md` row; a micro-retro comment on #35.~~ (done)
 
 **Gate 11 — #9, the bisync spike**
 8. The spike runner (in the harness): the ten contract items on WebDAV, then MinIO; shapes captured with `od -c` before parsing; the one explicit `--resync` recorded; a real `kill -9` mid-transfer; the scoring table on #9 with `rclone version` from the guest.
@@ -69,4 +70,5 @@ Carried debt: rocknix.org docs PR; #73's on-screen review; the `--scan` BIOS tid
 
 - A window for the Gate 12 census (the maintainer's emulator sessions on the RG35XX SP).
 - Close #76/#77 after the maintainer's look at the review build?
+- The folder-probe defect issue (filed and closed 2026-09-07) keeps one open box for the ES dialog until a VM frame shows it.
 - D-CLOUD-044 (bisync-gap posture) stays parked until the #9 spike.
