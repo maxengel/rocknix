@@ -1369,12 +1369,383 @@ def run_pair(a, b, root, remote, args, settings):
             except Fail as e:
                 failures += 1
                 print(f"    FAIL  {e}")
+        if not only or "CONTRACT" in only:
+            for kind in args.transport.split(","):
+                failures += run_contract(p, kind.strip(), args)
     finally:
         p.reset()
         for d in (a, b):
             d.run(f"rm -rf {CACHE}; tar -C /storage/.cache -xzf /tmp/qa-cache.tgz 2>/dev/null; rm -f /tmp/qa-cache.tgz",
                   check=False)
     return failures
+
+
+# ===========================================================================
+# #9's contract: the transport under the reconciler, on the pair
+# ===========================================================================
+#
+# Each item runs under `bisync` (rclone bisync between the saves root and the
+# shared folder, --conflict-resolve none, one explicit --resync as the
+# recorded first run) and under `copy` -- the reconciler's own transport
+# (I22): a stand-in classifier over sha256 against a local agreement record,
+# then `rclone copy --files-from --ignore-times` per direction. The harness
+# runs and records; reading each FAIL as upstream-shaped or architectural is
+# Gate 11's job (#9).
+
+RULES = "/storage/.config/cloud_sync-rules.txt"
+BISYNC_STATE = "/storage/.cache/rclone/bisync"   # rclone's default workdir
+AGREED = "/tmp/qa-agreed.json"                   # the stand-in's agreement record
+
+
+def transferred(out):
+    m = re.findall(r"Transferred:\s+(\d+) / (\d+)", out)
+    return int(m[-1][0]) if m else 0
+
+
+class Transport:
+    def __init__(self, kind, pair, extra=""):
+        self.kind, self.p, self.extra = kind, pair, extra
+        self.last_cmd = ""
+
+    def remote(self, dev):
+        return dev.run("rclone listremotes 2>/dev/null | head -1").strip() + self.p.saves_remote
+
+    def clear(self, dev):
+        dev.run(f"rm -rf {BISYNC_STATE} {AGREED}", check=False)
+
+    def first(self, dev):
+        """The maintainer-driven first run: the one explicit --resync, or the
+        agreement record seeded from what both sides hold."""
+        # The folder has to exist on the remote before bisync will look at it
+        # (a missing path2 is fatal, exit 7); cloud_backup creates it the same way.
+        dev.run(f"rclone mkdir {shlex.quote(self.remote(dev))}", check=False)
+        if self.kind == "bisync":
+            return self.bisync(dev, "--resync")
+        return self.copy_pass(dev)
+
+    def run(self, dev, hold=(), dry=False, env="", background=False):
+        if self.kind == "bisync":
+            flags = "--dry-run" if dry else ""
+            if hold:
+                # rclone refuses --files-from beside any other filter, so the
+                # decided set replaces the allowlist for this run; whether
+                # bisync then accepts a changed filter without --resync is
+                # what the item records.
+                dev.write("/tmp/qa-decided.txt", "\n".join(sorted(set(self.p.files) - set(hold))).encode() + b"\n")
+                flags += " --files-from /tmp/qa-decided.txt"
+                return self.bisync(dev, flags, env, background, filters=False)
+            return self.bisync(dev, flags, env, background)
+        return self.copy_pass(dev, hold, dry, env, background)
+
+    def bisync(self, dev, flags, env="", background=False, filters=True):
+        cmd = (f"rclone bisync {shlex.quote(self.p.root)} {shlex.quote(self.remote(dev))} "
+               f"{'--filters-file ' + RULES if filters else ''} --conflict-resolve none --resilient --recover "
+               f"--use-json-log -v {self.extra} {flags}")
+        self.last_cmd = cmd
+        if background:
+            dev.run(f"rm -f /tmp/qa-bg.out; ({env} setsid {cmd} >/tmp/qa-bg.out 2>&1 &)")
+            return {"rc": None, "out": "", "conflicts": [], "transferred": 0}
+        rc, out = run_rc(dev, cmd, env)
+        # A conflict is a file bisync queues under a conflict suffix, or a
+        # non-zero count of differences -- not every line that mentions the
+        # word ("Checking potential conflicts..." is printed on every run).
+        conflicts = []
+        for line in out.splitlines():
+            if not line.startswith("{"):
+                continue
+            try:
+                msg = json.loads(line).get("msg", "")
+            except ValueError:
+                continue
+            if re.search(r"\.conflict\d|[1-9]\d* differences found", msg):
+                conflicts.append(re.sub(r"\x1b\[[0-9;]*m", "", msg).strip())
+        return {"rc": rc, "out": out, "conflicts": conflicts, "transferred": transferred(out)}
+
+    def hashes(self, dev, remote=False):
+        """path -> sha256 of every allowlisted file on one side. The remote's
+        are hashed after a fetch: the QA WebDAV offers none (#53)."""
+        if remote:
+            r = shlex.quote(self.remote(dev))
+            cmd = (f"rclone lsf -R --files-only --filter-from {RULES} {r} 2>/dev/null | while IFS= read -r f; do "
+                   f"printf '%s %s\\n' \"$(rclone cat {r}/\"$f\" 2>/dev/null | sha256sum | cut -c1-64)\" \"$f\"; done")
+        else:
+            cmd = (f"cd {shlex.quote(self.p.root)} 2>/dev/null && rclone lsf -R --files-only --filter-from {RULES} . "
+                   f"2>/dev/null | while IFS= read -r f; do printf '%s %s\\n' \"$(sha256sum \"$f\" | cut -c1-64)\" \"$f\"; done")
+        out = dev.run(cmd, check=False)
+        return {line[65:]: line[:64] for line in out.splitlines() if len(line) > 65}
+
+    def copy_pass(self, dev, hold=(), dry=False, env="", background=False):
+        """The stand-in reconciler: identity by sha256 against agreement, then
+        decided transfers only. Absences with agreement on record are
+        questions, never transfers; an empty side with agreement on record
+        refuses the pass (#22 R4)."""
+        local, cloud = self.hashes(dev), self.hashes(dev, remote=True)
+        try:
+            agreed = json.loads(dev.run(f"cat {AGREED} 2>/dev/null || echo {{}}", check=False) or "{}")
+        except ValueError:
+            agreed = {}
+        r = {"rc": 0, "out": "", "conflicts": [], "questions": [], "pushed": [], "fetched": [], "transferred": 0}
+        if agreed and (not local or not cloud):
+            r["rc"], r["out"] = 1, "refused: a side is empty with agreement on record"
+            return r
+        for path in sorted(set(local) | set(cloud)):
+            if path in hold:
+                continue
+            l, c, a = local.get(path), cloud.get(path), agreed.get(path)
+            if l == c:
+                agreed[path] = l
+            elif l and c:
+                if c == a:
+                    r["pushed"].append(path)
+                elif l == a:
+                    r["fetched"].append(path)
+                else:
+                    r["conflicts"].append(path)
+            elif a is None:
+                (r["pushed"] if l else r["fetched"]).append(path)
+            else:
+                r["questions"].append(path)
+        if dry:
+            r["out"] = f"dry-run: push {r['pushed']} fetch {r['fetched']} conflicts {r['conflicts']} questions {r['questions']}"
+            return r
+        root, remote = shlex.quote(self.p.root), shlex.quote(self.remote(dev))
+        cmds = []
+        if r["pushed"]:
+            dev.write("/tmp/qa-push.txt", "\n".join(r["pushed"]).encode() + b"\n")
+            cmds.append(f"rclone copy --files-from /tmp/qa-push.txt --ignore-times {root} {remote}")
+        if r["fetched"]:
+            dev.write("/tmp/qa-fetch.txt", "\n".join(r["fetched"]).encode() + b"\n")
+            cmds.append(f"rclone copy --files-from /tmp/qa-fetch.txt --ignore-times {remote} {root}")
+        self.last_cmd = " && ".join(cmds) or "(nothing to transfer)"
+        if cmds:
+            if background:
+                dev.run(f"rm -f /tmp/qa-bg.out; ({env} setsid sh -c {shlex.quote(' && '.join(cmds))} >/tmp/qa-bg.out 2>&1 &)")
+                r["rc"] = None
+                return r
+            r["rc"], r["out"] = run_rc(dev, " && ".join(cmds), env)
+        if r["rc"] == 0:
+            for path in r["pushed"]:
+                agreed[path] = local[path]
+            for path in r["fetched"]:
+                agreed[path] = cloud[path]
+        dev.write(AGREED, json.dumps(agreed).encode())
+        r["transferred"] = len(r["pushed"]) + len(r["fetched"])
+        if r["conflicts"]:
+            r["rc"] = r["rc"] or 5
+        return r
+
+
+def run_contract(p, kind, args):
+    f = 0
+    t = Transport(kind, p, args.bisync_flags if kind == "bisync" else "")
+    p.files = []
+
+    def fresh(files):
+        """Agreement through the transport itself: a's first run publishes,
+        b's first run receives."""
+        p.reset()
+        t.clear(p.a)
+        t.clear(p.b)
+        # Ballast: files that never change. A tree of one file makes every
+        # change "all files changed", which bisync refuses outright as a
+        # safety abort (seen on the first run); a saves tree with one save
+        # would hit the same wall, which Gate 11 weighs from this output.
+        files = {**{f"saves/Ballast {i}.srm": f"ballast {i}".encode() for i in range(3)}, **files}
+        p.files = sorted(files)
+        for rel, data in files.items():
+            p.a.write(p.path(rel), data)
+        ra, rb = t.first(p.a), t.first(p.b)
+        wrong = [rel for rel, data in files.items() if not (p.cloud_sha(rel) == sha(data) == p.b.sha(p.path(rel)))]
+        if wrong:
+            tail = (rb["out"] or ra["out"]).strip().splitlines()[-3:]
+            raise Fail(f"the first run under {kind} left {wrong} without agreement (a exit {ra['rc']}, b exit {rb['rc']}): "
+                       + " | ".join(tail))
+
+    def say(r):
+        print(f"          {t.last_cmd}")
+        print(f"          exit {r['rc']}, {r['transferred']} transferred, {len(r['conflicts'])} conflict line(s)"
+              + (f", questions {r['questions']}" if r.get("questions") else ""))
+        for c in r["conflicts"][:2]:
+            print(f"          conflict: {c[:200]}")
+        if r["rc"]:
+            # What the transport said went wrong: rclone's own words, the
+            # last few, so a FAIL below can be read without a rerun.
+            said = []
+            for line in r["out"].splitlines():
+                if line.startswith("{"):
+                    try:
+                        j = json.loads(line)
+                    except ValueError:
+                        continue
+                    if j.get("level") in ("error", "critical", "notice") and "Transferred:" not in j.get("msg", ""):
+                        said.append(j.get("msg", "").strip())
+                elif line.strip() and "Transferred:" not in line and "Elapsed time" not in line and "Checks:" not in line:
+                    said.append(line.strip())
+            for s in said[-3:]:
+                print(f"          > {s[:200]}")
+
+    if kind == "bisync":
+        print(f"\n    rclone on the guest: {p.a.run('rclone version 2>/dev/null | head -1').strip()}")
+
+    def item(n, title):
+        step(f"#9 item {n} ({kind}) -- {title}")
+
+    try:
+        item(1, "reports, never resolves")
+        rel = "saves/Contract Both.srm"
+        v = {"H0": b"H0 agreed under the transport", "HA": b"HA: a's offline edit", "HB": b"HB: b's published edit"}
+        fresh({rel: v["H0"]})
+        p.b.write(p.path(rel), v["HB"])
+        say(t.run(p.b))
+        p.a.write(p.path(rel), v["HA"])
+        touch_offset(p.a, p.path(rel), 3600)
+        dry = t.run(p.a, dry=True)
+        guard = "conflict" in dry["out"].lower() or bool(dry["conflicts"])
+        # A reconciler refuses the wet run when the guard fires (item 2); the
+        # wet run is made only when it does not, so the outcome is recorded.
+        r = dry if guard else t.run(p.a)
+        say(r)
+        f += not check(guard or bool(r["conflicts"]), "the both-changed pair was reported in a parseable form",
+                       f"no conflict reported (exit {r['rc']})")
+        f += not check(p.cloud_sha(rel) == sha(v["HB"]) and p.a.sha(p.path(rel)) == sha(v["HA"]),
+                       "and neither file changed",
+                       f"a file changed: cloud {name_of(p.cloud_sha(rel), v)}, device {name_of(p.a.sha(p.path(rel)), v)}")
+
+        item(2, "no renames on the saves tree")
+        f += not check(guard, "the dry-run guard fired on the constructed conflict",
+                       "the dry-run guard did not fire on a constructed conflict")
+        renamed = [x for x in backend_files(p.spath) + p.a.run(f"ls -R {shlex.quote(p.root)}").split() if "conflict" in x.lower()]
+        f += not check(not renamed, "no file on either side was renamed", f"RENAMED: {renamed}")
+
+        item(3, "decided transfers only")
+        u1, u2 = "saves/Decided.srm", "saves/Held.srm"
+        fresh({u1: b"u1 v0", u2: b"u2 v0"})
+        p.a.write(p.path(u1), b"u1 v1 decided")
+        p.a.write(p.path(u2), b"u2 v1 held back by the reconciler")
+        r = t.run(p.a, hold={u2})
+        say(r)
+        f += not check(p.cloud_sha(u1) == sha(b"u1 v1 decided"), "the decided unit moved", "the decided unit did not move")
+        f += not check(p.cloud_sha(u2) == sha(b"u2 v0"), "the held unit did not", "THE HELD UNIT WAS TRANSFERRED")
+
+        item(4, "hashless backend: an equal-size, equal-mtime change")
+        rel = "saves/Same Size Contract.srm"
+        one, two = b"contract-version-one", b"contract-version-two"
+        fresh({rel: one})
+        q = shlex.quote(p.path(rel))
+        p.b.run(f"cp -p {q} {q}.ref")
+        p.b.write(p.path(rel), two)
+        p.b.run(f"touch -r {q}.ref {q}; rm -f {q}.ref; sync")
+        say(t.run(p.b))
+        say(t.run(p.a))
+        f += not check(p.a.sha(p.path(rel)) == sha(two), "the byte change reached a",
+                       "an equal-size, equal-mtime change was treated as identical")
+
+        item(5, "external resolution without --resync")
+        rel = "saves/Resolved Outside.srm"
+        v = {"H0": b"H0 resolved-outside", "HA": b"HA: a's edit", "HB": b"HB: b's edit, the winner"}
+        fresh({rel: v["H0"]})
+        p.b.write(p.path(rel), v["HB"])
+        t.run(p.b)
+        p.a.write(p.path(rel), v["HA"])
+        touch_offset(p.a, p.path(rel), 3600)
+        dry = t.run(p.a, dry=True)
+        if not ("conflict" in dry["out"].lower() or dry["conflicts"]):
+            t.run(p.a)
+        # The wizard installs the winner on a and pushes it (a decided transfer).
+        p.a.write(p.path(rel), v["HB"])
+        rem = shlex.quote(t.remote(p.a) + "/" + rel)
+        run_rc(p.a, f"rclone copyto --ignore-times {shlex.quote(p.path(rel))} {rem}")
+        if kind == "copy":
+            agreed = json.loads(p.a.run(f"cat {AGREED} 2>/dev/null || echo {{}}", check=False) or "{}")
+            agreed[rel] = sha(v["HB"])
+            p.a.write(AGREED, json.dumps(agreed).encode())
+        r = t.run(p.a)
+        say(r)
+        f += not check(not r["conflicts"] and r["transferred"] == 0 and (r["rc"] or 0) == 0,
+                       "the next run neither re-flagged nor re-transferred the pair",
+                       f"after an outside resolution: exit {r['rc']}, {r['transferred']} transferred, {len(r['conflicts'])} conflict line(s)")
+
+        item(6, "interruption: killed mid-transfer, completed by the next run")
+        big = {f"saves/Big {i}.srm": os.urandom(98304) for i in range(4)}
+        fresh({"saves/Seed.srm": b"seed"})
+        for rel, data in big.items():
+            p.a.write(p.path(rel), data)
+        t.run(p.a, env="RCLONE_BWLIMIT=32k RCLONE_TRANSFERS=1", background=True)
+        time.sleep(4)
+        p.a.run("pkill -9 -x rclone; sleep 1; true", check=False)
+        landed = [rel for rel, data in big.items() if p.cloud_sha(rel) == sha(data)]
+        print(f"          killed after {len(landed)} of {len(big)} had landed")
+        r = t.run(p.a)
+        say(r)
+        if r["rc"] and "lock file" in r["out"]:
+            # bisync leaves its lock behind after a kill and refuses every
+            # later run; a reconciler would clear it once no bisync process
+            # remains. Whether the run then completes is measured too.
+            print("          the killed run's lock was left behind; cleared, and the next run tried again:")
+            p.a.run(f"pgrep -x rclone >/dev/null || rm -f {BISYNC_STATE}/*.lck", check=False)
+            r = t.run(p.a)
+            say(r)
+        done = [rel for rel, data in big.items() if p.cloud_sha(rel) == sha(data)]
+        f += not check(len(done) == len(big) and (r["rc"] or 0) == 0, "the next run completed the transfer, nothing lost",
+                       f"{len(done)}/{len(big)} in the cloud after the next run (exit {r['rc']})")
+        f += not check("resync" not in r["out"].lower(), "and did not ask for --resync",
+                       "the next run demanded --resync after an interruption")
+
+        item(7, "renumber: same hash, new slot")
+        s = {"S1": os.urandom(3001), "S2": os.urandom(3002), "S3": os.urandom(3003)}
+        st = lambda n: f"savestates/Contract.state{n}"
+        fresh({st(1): s["S1"], st(2): s["S2"], st(3): s["S3"]})
+        p.a.run(f"rm -f {shlex.quote(p.path(st(2)))}; mv {shlex.quote(p.path(st(3)))} {shlex.quote(p.path(st(2)))}")
+        say(t.run(p.a))
+        say(t.run(p.b))
+        out = p.b.run(f"cd {shlex.quote(p.root)} && sha256sum savestates/* 2>/dev/null || true")
+        on_b = sorted(name_of(line.split()[0], s) for line in out.splitlines() if line.strip())
+        cloud = sorted(name_of(sha(backend_bytes(f"{p.spath}/{x}") or b""), s) for x in backend_files(p.spath) if x.startswith("savestates/"))
+        print(f"          b holds {on_b}; the cloud holds {cloud}")
+        f += not check("S1" in on_b and "S3" in on_b and "S1" in cloud and "S3" in cloud, "no surviving version was lost",
+                       f"a surviving version is missing: b {on_b}, cloud {cloud}")
+        f += not check(on_b.count("S3") == 1 and cloud.count("S3") == 1, "the moved version exists once on each side",
+                       f"the moved version is duplicated: b {on_b}, cloud {cloud}")
+
+        item(8, "absence never deletes without the reconciler's word")
+        rel = "saves/Absent Root.srm"
+        fresh({rel: b"kept in the cloud"})
+        q = shlex.quote(p.root)
+        p.a.run(f"mv {q} {q}.away")
+        r = t.run(p.a)
+        say(r)
+        p.a.run(f"rm -rf {q}; mv {q}.away {q}")
+        f += not check(p.cloud_sha(rel) == sha(b"kept in the cloud"), "an unmounted root deleted nothing in the cloud",
+                       "AN UNMOUNTED ROOT DELETED THE CLOUD'S COPY")
+        f += not check((r["rc"] or 0) != 0, f"the run refused (exit {r['rc']})", "the run did not refuse an unmounted root")
+
+        item(9, "budget: a full pass with nothing changed")
+        fresh({"saves/Idle.srm": b"idle"})
+        p.a.run("mkdir -p /tmp/qa-shim; printf '#!/bin/sh\\necho \"$@\" >> /tmp/qa-spawns\\nexec /usr/bin/rclone \"$@\"\\n' > /tmp/qa-shim/rclone; "
+                "chmod +x /tmp/qa-shim/rclone; rm -f /tmp/qa-spawns")
+        t0 = time.time()
+        r = t.run(p.a, env="PATH=/tmp/qa-shim:$PATH")
+        secs = time.time() - t0
+        spawns = int(p.a.run("wc -l < /tmp/qa-spawns 2>/dev/null || echo 0").strip() or 0)
+        p.a.run("rm -rf /tmp/qa-shim /tmp/qa-spawns")
+        say(r)
+        print(f"          {spawns} rclone spawn(s), {secs:.1f} s on the guest (a VM, not the H700)")
+        f += not check(r["transferred"] == 0 and (r["rc"] or 0) == 0, "nothing transferred", f"an idle pass transferred {r['transferred']}")
+
+        item(10, "single authority: the transport's own state is not the agreement")
+        rel = "saves/Authority.srm"
+        fresh({rel: b"agreed"})
+        p.a.run(f"rm -rf {BISYNC_STATE}")
+        r = t.run(p.a)
+        say(r)
+        f += not check((r["rc"] or 0) == 0 and "resync" not in r["out"].lower() and r["transferred"] == 0,
+                       "with the transport's listings gone the pass still ran from agreement alone",
+                       f"without its own listings the transport could not run (exit {r['rc']}; resync demanded: {'resync' in r['out'].lower()})")
+    except Fail as e:
+        f += 1
+        print(f"    FAIL  {e}")
+    return f
+
 
 def restore_device(p, args, archive):
     """Put the device back: its remote, its paths, its identity, the
