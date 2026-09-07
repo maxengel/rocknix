@@ -915,8 +915,38 @@ class Pair:
         touch_offset(self.a, self.path(rel), a_offset)
 
 
+def fx_a1(p):
+    """A1: two devices agree on H0; b publishes HB; a edits to HA offline and
+    runs every writer. Neither HA nor HB may be overwritten anywhere, and one
+    conflict is reported. As shipped each writer is a recency resolver
+    (blindspot 28): the cloud's copy or this device's is replaced, and
+    nothing says so."""
+    f = 0
+    rel = "saves/Both Changed.srm"
+    v = {"H0": b"H0: what both devices agreed on",
+         "HA": b"HA: this device's edit, made offline, never seen by the cloud",
+         "HB": b"HB: the other device's edit, already published"}
+    for label, cmd in WRITERS:
+        lost, rcs = [], []
+        for timing, offset in (("this device's copy newer", 3600), ("the cloud's copy newer", -3600)):
+            p.both_changed(rel, v["H0"], v["HA"], v["HB"], offset)
+            rc, _ = run_rc(p.a, cmd)
+            rcs.append(rc)
+            cloud, local = p.cloud_sha(rel), p.a.sha(p.path(rel))
+            if cloud != sha(v["HB"]):
+                lost.append(f"{timing}: the cloud's HB became {name_of(cloud, v)}")
+            if local != sha(v["HA"]):
+                lost.append(f"{timing}: this device's HA became {name_of(local, v)}")
+        f += not check(not lost, f"{label}: neither HA nor HB was overwritten",
+                       f"{label}: " + "; ".join(lost) + " (blindspot 28)")
+        f += not check(all(rc == 5 for rc in rcs),
+                       f"{label}: reported one queued conflict (exit 5)",
+                       f"{label}: no conflict reported (exit {rcs[0]} / {rcs[1]})")
+    return f
+
+
 PAIR_FIXTURES = [
-    # filled one fixture at a time; each one's first commit is its failing run
+    ("A1", "both changed after a first pass: every writer, this device's copy newer and older", fx_a1),
 ]
 
 
