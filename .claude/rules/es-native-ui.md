@@ -275,6 +275,13 @@ public:
   after it.
 - Theme-aware colors/fonts via `ThemeData::getMenuTheme()`.
 - Pages provide `getHelpPrompts()` so the bottom help bar stays accurate.
+- **`GuiSettings::addSwitch(title, description, settingsID, bool, onChanged)` — the bool
+  is `storeInSettings`, not a default.** `true` sends the value to `es_settings.cfg`
+  (ES's own store); `false` to SystemConf (`system.cfg`), which is the only place the
+  launch scripts read. A row that needs a default-on switch on SystemConf is written by
+  hand: `setState(SystemConf::getBool(key, true))` plus an `addSaveFunc` calling
+  `setBool`. The PROGRESS TRACKER row passed `true` as a default and its state went
+  where no script looks (2026-09-07).
 - Lambda capture: `Window* window = mWindow;` then capture `window` (menu may be deleted).
 - Wizard page replacement: `cloudSetupPresent(window, current, prev)` closes
   `prev`, and `GuiSettings::close()` ends with `delete this`. Callbacks on the
