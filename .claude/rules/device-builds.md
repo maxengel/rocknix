@@ -351,6 +351,18 @@ checksums; the date and filename alone do not distinguish them.
 
 ## Iterating on EmulationStation
 
+**Upstream PRs for ES go through a different fork.** `~/Development/emulationstation-next`'s
+`origin` (`maxengel/emulationstation-next`) is a GitHub fork of
+*batocera-linux/batocera-emulationstation*, so it is outside ROCKNIX's fork
+network and GitHub refuses a PR from it into `ROCKNIX/emulationstation-next`
+("Head repository can't be blank"). The fork that works is
+`maxengel/emulationstation-next-rocknix` (remote `rocknixfork` in the PR
+worktrees under `~/Development/emulationstation-next.worktrees/`): branch from
+`upstream/master`, cherry-pick the commit, push there, then
+`gh pr create --repo ROCKNIX/emulationstation-next --base master --head maxengel:<branch>`
+(2026-09-07, ES PR #33).
+
+
 **`EMULATIONSTATION_SRC` only mounts the directory — it does not build from it.**
 The `docker-%` target turns it into a `-v` bind mount and nothing else;
 `emulationstation/package.mk` never reads the variable, so the package still
