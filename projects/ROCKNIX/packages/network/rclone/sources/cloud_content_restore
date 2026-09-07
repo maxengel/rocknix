@@ -452,14 +452,25 @@ match_run() {
         return 1
     fi
 
+    # What the page that runs this shows when it is done. A match is mostly
+    # deletion, and rclone's own totals for a deletion read "0 B / 0 B" --
+    # true and useless (maintainer, 2026-09-07). So each system is announced
+    # as a unit while it runs, and the summary at the end names what went:
+    # the numbers the confirmation showed, per system, so the last screen
+    # answers the first one.
+    local total_bytes=0 removed_detail="" unit_i=0 unit_n=${#SYS[@]}
     for sys in "${SYS[@]}"; do
         line=$(match_plan_one "${sys}")
         IFS='|' read -r sys verb files bytes <<< "${line}"
+        unit_i=$((unit_i + 1))
         case "${verb}" in
             none) continue ;;
             remove)
                 total_removed=$((total_removed + files))
+                total_bytes=$((total_bytes + bytes))
+                removed_detail="${removed_detail}${removed_detail:+,}${sys}:${files}:${bytes}"
                 if [ "${apply}" = "1" ]; then
+                    echo ">>> unit ${sys}|${unit_i}|${unit_n}"
                     echo "Removing ${sys}: ${files} files (not in your cloud)"
                     rclone delete "${DEST}/${sys}" \
                         "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${METADATA_EXCLUDES[@]}" \
@@ -471,7 +482,11 @@ match_run() {
                 fi
             ;;
             sync)
+                total_removed=$((total_removed + files))
+                total_bytes=$((total_bytes + bytes))
+                removed_detail="${removed_detail}${removed_detail:+,}${sys}:${files}:${bytes}"
                 if [ "${apply}" = "1" ]; then
+                    echo ">>> unit ${sys}|${unit_i}|${unit_n}"
                     echo "Matching ${sys} to the cloud..."
                     # --max-delete is the fail-closed half: if reality has
                     # drifted from the preview the player agreed to, this
@@ -496,6 +511,11 @@ match_run() {
     done
 
     if [ "${apply}" = "1" ]; then
+        # ">>> removed 14|314572800|snes:12:300000000,gb:2:14572800" -- the
+        # page renders it on its last screen. The counts are the preview's,
+        # which is what the player agreed to; --max-delete holds the run to
+        # them, and a run that could not is a FAILED page, not a smaller number.
+        echo ">>> removed ${total_removed}|${total_bytes}|${removed_detail}"
         log_message "match: applied, removed ${total_removed} files, rc=${rc}"
         # The page that ran it fades; the row in the menu has to be able to
         # answer "did that work?" afterwards, like every other cloud action.

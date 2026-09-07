@@ -10,6 +10,10 @@ cat $W/wake.steps $W/to-manage-cloud-storage.steps $W/back-up-page.steps \
   | tools/vm-visual-qa --monitor /tmp/rocknix-qemu-monitor.sock run - --outdir shots/
 ```
 
+`match-dialog.steps` runs the third action from the hub -- MATCH THIS DEVICE
+TO THE CLOUD -- through its confirmation to its done page; it needs the
+seed fixture so the preview lists something.
+
 The transfer flow is: hub → transfer page (four class switches) → CONTINUE
 (shown once ROMS AND BIOS or GAME CONTENT is on) → the systems page → BACK
 UP / RESTORE → the transfer page → PRESS ANY BUTTON TO CLOSE → hub. The

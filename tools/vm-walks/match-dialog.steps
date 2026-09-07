@@ -1,0 +1,20 @@
+# Start: the CLOUD hub, focus on BACK UP TO THE CLOUD (where
+# to-manage-cloud-storage.steps leaves it). End: the transfer page after a
+# match, finished, waiting for any button.
+# MATCH THIS DEVICE TO THE CLOUD is the third row of BACKUP AND RESTORE. A
+# opens the compare (COMPARING YOUR ROMS AND BIOS FILES WITH THE CLOUD), a
+# network round trip per selected system; the confirmation follows. Needs
+# the seed fixture (cloud-test-backend seed-content + seed-device) so the
+# device holds ROMs the cloud does not -- gb entirely, snes/deviceonly.sfc --
+# and the preview has something to list. YES is the first button.
+key down
+wait 1
+key down
+wait 1
+shot cloud-hub-match-row
+key x
+wait 8
+shot match-confirm
+key x
+wait 12
+shot match-done
