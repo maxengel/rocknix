@@ -1,6 +1,6 @@
 # Saved Session State
 
-> **Saved**: 2026-09-07T20:35:00Z
+> **Saved**: 2026-09-07T21:20:00Z
 > **Branch**: feature/conflict-resolution (worktree; the work itself landed on `next`)
 > **Repo**: maxengel/rocknix (+ ES at ~/Development/emulationstation-next, branch feature/cloud-vocabulary → test/qa-integration)
 
@@ -8,7 +8,7 @@
 
 #11 batch 1: Gates 0 (#35), 11 (#9, D-CLOUD-052) and **12 round one** done. The census ran on the RG35XX SP (`tools/cloud-census`, read-only; D-QA-010 splits it by hardware — standalone layouts wait for the Retroid Pocket Nova): evidence on #22 (full) and #21 (unit table), the report at `/workspace/artifacts/rocknix-images/census-rg35xxsp-round1-report.md`. Every reconciler case appeared in the wild (renumber keeps mtime → `--recent` never uploads it; a path overwritten between pushes; deleted states living on in the cloud, due back at the next boot pair; a content duplicate). D-CLOUD-053 (the save-state manager is a gated writer; a menu deletion writes `retired`) on #22 R6/A6b and #21 R3. #79 is the running crash list (a RetroArch coredump at 15:13:50, not ours). **Next: #21 capture** (libretro units now; standalone rows after round two) — the first code of the epic.
 
-Side tranches, all on `next` (`5f00ab7c26`): the match-flow notes (VM-framed twice, nits fixed, ES `a245e81b26`); #78's refusal dialog (framed, line breaks fixed); **#80 RetroAchievements keys** — three ES switches never reached RetroArch (upstream bug; fixed in `setsettings.sh` + two standalone scripts + the seeded `system.cfg`, proven on the VM; `pr/retroachievements-keys` `841a046fb4` built by content against `upstream/next` `1940c5cee8`, **not yet opened** — waits for the maintainer's word). **H700 `5f00ab7c26` built and staged on the RG35XX SP** (checksum verified on device); **the reboot is asked for, not taken** (D-QA-008); the RG SP was off the network — staging there needs the maintainer's yes (D-QA-011). Open question to the maintainer: what the bottom-right achievement widget looked like (likely RetroArch's progress tracker, not the challenge indicator). #79 is the crash list.
+Side tranches, all on `next` (`5f00ab7c26`): the match-flow notes (VM-framed twice, nits fixed, ES `a245e81b26`); #78's refusal dialog (framed, line breaks fixed); **#80 RetroAchievements keys** — three ES switches never reached RetroArch (upstream bug; fixed in `setsettings.sh` + two standalone scripts + the seeded `system.cfg`, proven on the VM; `pr/retroachievements-keys` `841a046fb4` built by content against `upstream/next` `1940c5cee8`, **not yet opened** — waits for the maintainer's word). **H700 `5f00ab7c26` is on both handhelds** (RG35XX SP and RG SP; each transfer and reboot asked for and approved). The boot pair on the RG35XX SP brought the census's deleted states back (A9 observed live; noted on #22). Still open on #80: the on-device box (needs the maintainer to launch a game, then read `/tmp/.retroarch.cfg`); the upstream PR waits for the maintainer's word. Open question to the maintainer: what the bottom-right achievement widget looked like (likely RetroArch's progress tracker, not the challenge indicator). #79 is the crash list.
 
 ## Completed This Session
 
