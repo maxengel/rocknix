@@ -504,7 +504,10 @@ match_run() {
                         --progress --stats 1s \
                         --log-file "${LOG_FILE}" --log-level INFO || rc=$?
                 else
-                    echo "${sys}|sync|${files}|0"
+                    # The bytes the dry run counted, so the confirmation and
+                    # the done page agree (the preview said 78 KB where the
+                    # page then said 224 KB, 2026-09-07).
+                    echo "${sys}|sync|${files}|${bytes}"
                 fi
             ;;
         esac
