@@ -422,3 +422,30 @@ take) is still one; and when the script does refuse, the editor shows THE
 CLOUD FOLDER WAS NOT CHANGED with the reason instead of moving on. Found by
 the two-device fixtures of `tools/cloud-round-trip` on the VM pair before it
 reached a handheld; the ES half rides the next build.
+
+## The match flow, read at the size it is played (2026-09-07)
+
+Three things the maintainer saw running MATCH THIS DEVICE TO THE CLOUD for
+real, and one from the game-exit sync:
+
+- **A confirmation with a paragraph to say gets room.** A dialog was 0.6 of
+  the screen wide whatever it carried, so the match preview — what goes,
+  per system, what arrives, what is never touched — wrapped into a dense
+  block on a 640-wide panel. A message that would wrap past four lines at
+  that width is now laid out at 0.8. Measured with the text's own font,
+  never matched on a string; a short dialog is unchanged.
+- **A match's done page says what it did.** It used to end on rclone's
+  totals for a deletion — `0 B of 0 B, 0 B/s` — true and useless. Each
+  system is now announced while it is matched, and the last screen reads
+  REMOVED 14 FILES FROM THIS DEVICE · 300 MB with the per-system line the
+  confirmation showed under it (SNES 12 FILES · 280 MB   GB 2 FILES ·
+  20 MB); when the run also brought files down, it says so.
+- **The one thing left to do is on the page.** A content run that changed
+  the ROMs on this device is invisible in the game lists until they are
+  rebuilt. After a match, or a restore that moved anything, the done page
+  carries UPDATE GAMELISTS UNDER GAME SETTINGS TO SEE THE CHANGE — the
+  row's own words, and where it lives. Never after a backup, which changes
+  nothing on the device.
+- **The exit-sync card lets go sooner.** COMPLETED SUCCESSFULLY held for
+  two seconds after a game; it is a second and a half now. Skips and
+  failures keep their five — those are a sentence to act on.

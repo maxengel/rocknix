@@ -10,6 +10,15 @@ cat $W/wake.steps $W/to-manage-cloud-storage.steps $W/back-up-page.steps \
   | tools/vm-visual-qa --monitor /tmp/rocknix-qemu-monitor.sock run - --outdir shots/
 ```
 
+Start every composition with `reset.steps`: four B presses return any open
+dialog, menu or game list to the system carousel, which is the state the
+other walks assume. Without it a walk replayed after another walk starts
+one screen out of phase and lands somewhere unrelated (a PICO-8 game list,
+2026-09-07). `to-change-cloud-folder.steps` and `confirm-cloud-folder.steps`
+reach the CLOUD FOLDER editor and press OK on the current value; on MinIO,
+where `/ROCKNIX/Saves` is not a legal bucket name, that is the refusal
+dialog (#78).
+
 `match-dialog.steps` runs the third action from the hub -- MATCH THIS DEVICE
 TO THE CLOUD -- through its confirmation to its done page; it needs the
 seed fixture so the preview lists something.
