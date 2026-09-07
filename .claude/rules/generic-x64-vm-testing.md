@@ -109,6 +109,20 @@ the QA key in each over serial; `vm-pair ssh a '…'`, `vm-pair serial b
 fixture that manufactures a conflict or interrupts a transfer, run once on
 WebDAV and once on MinIO.
 
+**The pair through the harness.** `tools/cloud-round-trip --host
+root@127.0.0.1 --port 10022 --second-port 10023 --identity
+/tmp/rocknix-vm-pair/qa-key` runs the single-device suite on `a`, then the
+two-device fixtures of #35 (`--only A1,A9` for a subset; `--only CONTRACT
+--transport bisync` for #9's items, `--bisync-flags` for Gate 11's variants);
+both guests are put back on every exit. Two guests from one image carry one
+`cloud_device_id` (it hashes the profile's fixed MAC), so the harness gives
+`b` its own for the run and A11 clones it back on purpose. Scripts fixed on
+the host ride in `/tmp/qa-bin` on both guests through `--path-prefix`; the
+pair's `up` does not put them there. The harness's stdout is block-buffered
+when redirected, so a run in the background shows nothing until it ends —
+wait for the `PASSED` / `N CHECK(S) FAILED` line rather than reading the
+file early.
+
 **Stop it by PID.** `pkill -f 'vm76[.]qcow2'` killed the shell that ran it,
 because the same command text held the literal in an `rm` three lines down,
 and `bash -c` carries the whole script in its argv. The pidfile exists so

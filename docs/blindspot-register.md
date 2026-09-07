@@ -77,3 +77,26 @@ grep for X. The same session's other summary claim — "unit-tested" — was tru
 and irrelevant: the test compared the two selectors and never ran a copy.
 See `engineering-practices.md` § "Verify the artifact, not the report".
 
+
+## 31. A harness that writes and reads through the same wrong path agrees with itself
+
+**Committed:** 2026-09-06 (found 2026-09-07). On MinIO the round-trip suite's
+seeding step put the owner's note at the endpoint and read it back through
+the same helper, and both doubled the bucket: `rocknix-qa/rocknix-qa/GAMES`.
+"The owner's note survived a second seeding" passed on every MinIO run, about
+a folder the device never looked at. The same day, `rclone cat` of a missing
+S3 key exited 0 with no output, and "the manifest reached the cloud" passed on
+MinIO for a manifest that was never there.
+
+**The shape:** a check whose fixture and whose reading share a path derivation
+is comparing the harness with itself. It cannot fail on the thing it names,
+because the device under test is not on the path at all. Blindspot 22's rule
+— a check that cannot run has not passed — has a sibling: a check that runs
+somewhere the device does not look has not tested the device.
+
+**The fix:** derive endpoint paths in one place (`epath()`), with the S3
+bucket stripped where the backend's own commands add it; make the backend's
+`cat` fail on a missing key; and, for any "it reached the cloud" assertion,
+ask what the device would have had to do for it to pass — if the answer is
+nothing, it is not evidence. See `engineering-practices.md` § "Guards must
+fail closed".

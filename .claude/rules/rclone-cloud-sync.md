@@ -393,3 +393,30 @@ because `cloud_content_backup` announced no units of its own (fixed the
 same day; restore had since D-UI-024). The D-UI-022 rule that the label says
 what moves is enforced by the flag, not by the label.
 
+
+## What the QA backends compare by (measured 2026-09-07, rclone v1.75.0)
+
+A fixture that stages "the cloud's copy is newer" or "the same size" has to
+know what the shipped `copy` does on each backend. Measured on the VM pair
+in a fourteen-case matrix, not inferred:
+
+- **WebDAV (`rclone serve webdav`)** reports every file's modtime as its
+  *upload* time — a local mtime does not survive the trip — and offers no
+  hashes. A plain `copy` replaces the destination whenever size **or** mtime
+  differ, in either direction; `copy --update` keeps whichever side has the
+  later mtime; an equal-size, equal-mtime byte change is skipped outright
+  (#53's shape, and A2's). So "the cloud's copy is newer" is staged by
+  making the local file *older* (`touch -d` an hour back), never by touching
+  the cloud. A PUT killed mid-transfer leaves a partial file at the
+  endpoint, hash-equal to nothing.
+- **MinIO** keeps modtimes and offers hashes: the equal-size, equal-mtime
+  change is transferred, and a killed upload leaves nothing behind. `rclone
+  cat` of a missing key exits 0 with no output — a missing key is an empty
+  prefix — so `cloud-test-backend cat` checks existence first.
+- **bisync**, for Gate 11 (#9): a tree where one change is "all files
+  changed" — a one-file tree — aborts as a safety measure; `--files-from`
+  cannot sit beside `--filters-file`; a run killed with `kill -9` leaves
+  `<workdir>/*.lck` and every later run refuses until it is removed; without
+  its listings it demands `--resync`; with `--conflict-resolve none` a
+  both-changed pair is renamed `.conflict1`/`.conflict2` on both sides unless
+  the run is stopped at the dry run, which is where the guard has to sit.

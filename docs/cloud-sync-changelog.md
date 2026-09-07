@@ -405,3 +405,20 @@ Useful when reporting:
 A known difference already handled: on bucket remotes `rclone lsjson --stat`
 reports *any* path as an existing directory, so existence checks there had to
 be rewritten to list rather than stat.
+
+## CHANGE CLOUD FOLDER takes an existing folder, and says when it cannot (2026-09-07)
+
+Typing a cloud folder that already existed and held anything — your saves
+folder from another device, with `savestates/` in it — was refused as "your
+provider would not accept this folder", with the folder's own listing quoted
+as the reason; and the refusal never reached the screen, so the setting
+stayed as it was while the page carried on. The probe behind the setting had
+read rclone's directory listing as a rejection: only a folder that did not
+exist yet passed.
+
+Now the probe reads only what rclone reports as an error, so an existing
+folder is accepted and a real rejection (a bucket name the provider will not
+take) is still one; and when the script does refuse, the editor shows THE
+CLOUD FOLDER WAS NOT CHANGED with the reason instead of moving on. Found by
+the two-device fixtures of `tools/cloud-round-trip` on the VM pair before it
+reached a handheld; the ES half rides the next build.
