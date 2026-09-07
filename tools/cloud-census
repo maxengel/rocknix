@@ -73,7 +73,8 @@ def snapshot(args):
         "echo exit_sync=$(grep -o 'cloudsaves.gameexit=[01]' /storage/.config/system/configs/system.cfg 2>/dev/null | cut -d= -f2); "
         "echo startup_sync=$(grep -o 'cloudsaves.startup=[01]' /storage/.config/system/configs/system.cfg 2>/dev/null | cut -d= -f2); "
         "echo build=$(grep ^BUILD_ID= /etc/os-release | cut -c11-20); "
-        "echo device=$(cloud_device_id 2>/dev/null)"))
+        "echo device=$(cloud_device_id 2>/dev/null); "
+        "echo tz=$(date +%z)"))
     m = dict(l.split("=", 1) for l in meta.splitlines() if "=" in l)
     return {"taken_at": int(time.time()), "root": root, "files": files, "meta": m}
 
@@ -153,6 +154,14 @@ def sessions_from_es_log(text):
     return out
 
 
+def local(ts, meta):
+    """A device epoch as the device's own wall clock, the way its logs read."""
+    tz = meta.get("tz", "+0000")
+    sign = -1 if tz.startswith("-") else 1
+    off = sign * (int(tz[1:3]) * 3600 + int(tz[3:5]) * 60) if len(tz) == 5 else 0
+    return time.strftime("%H:%M:%S", time.gmtime(ts + off))
+
+
 def human(n):
     for unit in ("B", "KB", "MB", "GB"):
         if n < 1024 or unit == "GB":
@@ -165,12 +174,15 @@ def report(args, before, after):
     changed = {p: a[p] for p in a if p not in b or a[p]["sha256"] != b[p]["sha256"]}
     removed = sorted(p for p in b if p not in a)
     out = []
-    out.append(f"# Census — {after['meta'].get('device', '?')} on {after['meta'].get('build', '?')}, "
-               f"{time.strftime('%Y-%m-%d %H:%M', time.gmtime(before['taken_at']))}–"
-               f"{time.strftime('%H:%M', time.gmtime(after['taken_at']))} UTC")
+    m = after["meta"]
+    out.append(f"# Census — {m.get('device', '?')} on {m.get('build', '?')}, "
+               f"{time.strftime('%Y-%m-%d', time.gmtime(before['taken_at']))} "
+               f"{local(before['taken_at'], m)}–{local(after['taken_at'], m)} device time (UTC{m.get('tz', '')})")
     out.append("")
     out.append(f"Saves tier under `{after['root']}` as the allowlist admits it: {len(b)} files before, {len(a)} after; "
-               f"**{len(changed)} written or changed**, {len(removed)} removed. Exit sync was "
+               f"**{len(changed)} written or changed**, {len(removed)} removed (a file created *and* deleted inside the window "
+               f"is invisible to two snapshots, and ES's renumber reuses the deleted slot's path -- so a deletion shows here only "
+               f"when it removed a file the baseline had). Exit sync was "
                f"{'ON' if after['meta'].get('exit_sync') == '1' else 'OFF'}, startup sync "
                f"{'ON' if after['meta'].get('startup_sync') == '1' else 'OFF'}.")
     out.append("")
@@ -193,13 +205,13 @@ def report(args, before, after):
 
     out.append("## Sessions (writes clustered by time, per system)")
     out.append("")
-    out.append("| # | When (device UTC) | System | Files written | Bytes sealed | What |")
+    out.append("| # | When (device time) | System | Files written | Bytes sealed | What |")
     out.append("| --- | --- | --- | --- | --- | --- |")
     for i, (sysdir, items) in enumerate(sessions, 1):
         bytes_ = sum(e["size"] for _, _, e in items)
         kinds = sorted({os.path.splitext(p)[1] or os.path.basename(p) for _, p, _ in items})
         games = sorted({game_of(p) for _, p, _ in items})
-        out.append(f"| {i} | {time.strftime('%H:%M:%S', time.gmtime(items[0][0]))} | {sysdir} | {len(items)} | {human(bytes_)} | "
+        out.append(f"| {i} | {local(items[0][0], m)} | {sysdir} | {len(items)} | {human(bytes_)} | "
                    f"{', '.join(kinds)[:60]} — {', '.join(games)[:50]} |")
     if not sessions:
         out.append("| — | — | — | 0 | 0 | nothing changed in the saves tier |")
@@ -256,11 +268,11 @@ def report(args, before, after):
 
     out.append("## Every changed file")
     out.append("")
-    out.append("| Path | Size | mtime (UTC) | Before |")
+    out.append("| Path | Size | mtime (device time) | Before |")
     out.append("| --- | --- | --- | --- |")
     for p in sorted(changed, key=lambda p: changed[p]["mtime"]):
         e = changed[p]
-        out.append(f"| `{p}` | {e['size']} | {time.strftime('%H:%M:%S', time.gmtime(e['mtime']))} | "
+        out.append(f"| `{p}` | {e['size']} | {local(e['mtime'], m)} | "
                    f"{'new' if p not in b else 'changed (' + str(b[p]['size']) + ' B)'} |")
     for p in removed:
         out.append(f"| `{p}` | — | — | removed ({b[p]['size']} B) |")
