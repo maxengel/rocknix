@@ -1222,6 +1222,43 @@ def fx_a12(p):
     return f
 
 
+def fx_a14(p):
+    """A14: the manifest step. A state and a save planted, the exit path run:
+    the manifest is on the remote under savestates/.rocknix/ with sha256 equal
+    to the planted bytes, remote_hash null on WebDAV and non-null on MinIO;
+    and the ROMs-and-BIOS tier never sees the savestates directory."""
+    f = 0
+    state, save = "savestates/Manifest Game.state1", "saves/Manifest Game.srm"
+    sbytes = b"#RZIPv" + os.urandom(2000)
+    p.reset()
+    p.a.write(p.path(state), sbytes)
+    p.a.write(p.path(save), os.urandom(512))
+    run_rc(p.a, "cloud_backup --yes --saves-only --recent")
+    a_id = p.a.run("cloud_device_id").strip()
+    mpath = f"{p.spath}/savestates/.rocknix/manifest-{a_id}.json"
+    raw = backend_bytes(mpath)
+    f += not check(raw is not None, "the manifest reached the cloud under savestates/.rocknix/",
+                   f"no manifest at {mpath} after the exit path (A14)")
+    if raw is not None:
+        try:
+            m = json.loads(raw)
+        except ValueError:
+            m = {}
+        entry = m.get("entries", {}).get(state) if isinstance(m, dict) else None
+        f += not check(bool(entry) and entry.get("sha256") == sha(sbytes),
+                       "its entry for the state carries the planted bytes' sha256",
+                       "the manifest has no entry for the state, or its sha256 is not the planted bytes'")
+        kind = backend("backend").strip()
+        rh = (entry or {}).get("remote_hash", "unset")
+        f += not check((rh is None) if kind == "webdav" else rh not in (None, "unset"),
+                       f"remote_hash is {'null' if kind == 'webdav' else 'non-null'} on {kind}",
+                       f"remote_hash is {rh!r} on {kind}")
+    listed = p.a.run("cloud_content_backup --list 2>/dev/null || true").split()
+    f += not check("savestates" not in listed, "the ROMs-and-BIOS tier never offers savestates",
+                   "the content tier offers the savestates directory (the manifest would ride twice)")
+    return f
+
+
 PAIR_FIXTURES = [
     ("A1", "both changed after a first pass: every writer, this device's copy newer and older", fx_a1),
     ("A2", "a failed push retried; an equal-size, equal-mtime change after a first pass", fx_a2),
@@ -1230,6 +1267,7 @@ PAIR_FIXTURES = [
     ("A9", "delete and renumber; a retired hash put back; rm; an unmounted, empty, or empty-cloud root", fx_a9),
     ("A11", "a cloned device id refuses to publish", fx_a11),
     ("A12", "a legacy RESTOREPATH unlike BACKUPPATH: migrated, warned, nothing touched", fx_a12),
+    ("A14", "the manifest step: under savestates/.rocknix/, sha256, remote_hash per backend, one tier", fx_a14),
 ]
 
 
