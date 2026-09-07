@@ -413,10 +413,18 @@ in a fourteen-case matrix, not inferred:
   change is transferred, and a killed upload leaves nothing behind. `rclone
   cat` of a missing key exits 0 with no output — a missing key is an empty
   prefix — so `cloud-test-backend cat` checks existence first.
-- **bisync**, for Gate 11 (#9): a tree where one change is "all files
-  changed" — a one-file tree — aborts as a safety measure; `--files-from`
-  cannot sit beside `--filters-file`; a run killed with `kill -9` leaves
-  `<workdir>/*.lck` and every later run refuses until it is removed; without
-  its listings it demands `--resync`; with `--conflict-resolve none` a
-  both-changed pair is renamed `.conflict1`/`.conflict2` on both sides unless
-  the run is stopped at the dry run, which is where the guard has to sit.
+- **bisync**, scored for Gate 11 (#9; verdict D-CLOUD-052 — not used): a
+  tree where one change is "all files changed" — a one-file tree — aborts
+  as a safety measure; `--files-from` cannot sit beside `--filters-file`, so
+  a decided run drops the allowlist; a run killed with `kill -9` leaves
+  `<workdir>/*.lck` and every later run refuses until it is removed
+  (`--max-lock`, minimum 2 m, expires it); without its listings it demands
+  `--resync`, and `--resync` is `--resync-mode path1` — the device's copy
+  wins, silently; with `--conflict-resolve none` a both-changed pair is
+  renamed `.conflict1`/`.conflict2` on both sides unless the run is stopped
+  at the dry run, and recovery after a kill is a wet run that renames a torn
+  head the same way; on a hashless backend it downloads a both-changed pair
+  to compare ("check --download for safety") and skips it when equal, but
+  cannot see a same-size, same-mtime change at all without `--download-hash`,
+  which downloads the whole tree every pass. Its raw runs are what
+  `cloud-round-trip --dump` writes.
