@@ -484,17 +484,8 @@ fi
 ### Disable GPU profiling
 gpu_profiling "off"
 
-### Backup save games
-CLOUD_BACKUP=$(get_setting "cloud.backup")
-if [ "${CLOUD_BACKUP}" = "1" ]
-then
-  INETUP=$(/usr/bin/amionline >/dev/null 2>&1)
-  if [ $? == 0 ]
-  then
-    log $0 "backup saves to the cloud."
-    /usr/bin/run /usr/bin/cloud_backup
-  fi
-fi
+### Capture and the game-exit save sync run from EmulationStation (FileData::launchGame, fork #21).
+### Never spawn a second uploader here: it would run before ES resumes, so before capture, as a second writer on one remote (#21 DOES-NOT-BUILD).
 
 ${VERBOSE} && log $0 "Checking errors: ${ret_error} "
 if [ "${ret_error}" == "0" ]
