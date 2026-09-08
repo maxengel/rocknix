@@ -165,6 +165,28 @@ seeded from the `/usr/config/*.defaults` templates:
 - **Single remote only:** operations use `rclone listremotes | head -1` — the first
   configured remote. Don't assume multi-remote support without adding it deliberately.
 
+## The saves folder can change cards
+
+Two-card devices (RG SP) mount the second card at `/storage/roms` and fall
+back to the internal card when it is absent at boot, so the saves tree a
+sync reads is not always the same filesystem. `cloud_saves_root` (D-CLOUD-054,
+#83) records the filesystem UUID under `SAVESPATH` in `/storage/.cache` after
+every successful saves phase; `cloud_backup`/`cloud_restore` refuse the saves
+phase when it changed, until `cloud_setup --accept-saves-root`. Any new saves
+writer goes through the same check.
+
+Two things learned wiring it:
+
+- **The scripts source `/etc/profile`, which rewrites `PATH`.** A helper
+  looked up by name inside `cloud_setup` was not found even with its
+  directory on the caller's `PATH`. Resolve a sibling helper beside the
+  script — `"$(dirname "$(readlink -f "$0")")/<helper>"`, then `/usr/bin` —
+  never through `PATH`. This is also what lets a VM run the scripts from
+  `/tmp/qa-bin` (the harness's PATH prefix) and still find the helper.
+- **`--saves-only` still prints `Settings backup file transfer: SUCCESS`.**
+  The report line is unconditional; the phase was skipped. Read the saves
+  line for the saves outcome.
+
 ## The game-exit sync: `--saves-only --recent`
 
 ES runs `cloud_backup --yes --saves-only --recent` when a game exits

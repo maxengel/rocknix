@@ -449,3 +449,41 @@ real, and one from the game-exit sync:
 - **The exit-sync card lets go sooner.** COMPLETED SUCCESSFULLY held for
   two seconds after a game; it is a second and a half now. Skips and
   failures keep their five — those are a sentence to act on.
+
+## A saves transfer refuses when the saves folder changed cards (2026-09-08)
+
+A device with two microSD cards mounts the second one at `/storage/roms` when
+it is present and falls back to the internal card when it is not — a card
+unseated, or enumerated after the mount ran. Each tree then receives syncs on
+its own boots, and whichever copy is mounted later reads as this device's
+newest save. On the RG SP that left 101 stale files on the internal card,
+written by a boot restore at a boot without the second card (#83).
+
+- **`cloud_saves_root`** (new, in the rclone package) prints the identity of
+  the filesystem under `SAVESPATH` — its UUID from `blkid`, or the device
+  number where there is none — and keeps a record of it at
+  `/storage/.cache/cloud_sync/saves-root`. That path is on the internal card
+  whichever card the saves are on, which is the point.
+- `cloud_backup` and `cloud_restore` **record** it after a saves phase that
+  succeeded, and **refuse the saves phase** (exit 1, reason on stdout and in
+  the log) when the identity differs from the record: *"The saves folder
+  /storage/roms is on a different card than the last time saves were synced
+  (now uuid:…, last time uuid:…). Nothing was transferred. If the second card
+  is missing, put it back; if the change is intended, run: cloud_setup
+  --accept-saves-root"*. The settings archive is not affected; it lives on
+  the internal card either way.
+- **`cloud_setup --accept-saves-root`** records the current card as the right
+  one. The boot pair, the game-exit sync and the transfer pages all run the
+  same two scripts, so all of them refuse and all of them resume after the
+  accept.
+- **Upgrade**: no record yet means nothing to compare. A device updated to
+  this build records at its first transfer and is never asked. A clean
+  install does the same.
+- **Not covered**: a card that flips *between* two transfers and flips back
+  leaves no trace; the guard reads the identity at the moment a transfer
+  runs, which is the only moment the trees can diverge through us.
+- Proven on GENERIC_X64 guest a with `tools/cloud-test-backend` (MinIO):
+  refusal on backup and on restore against a planted record, accept, the
+  record rewritten, a matching restore, and a run with no record.
+- **Docs debt**: `--accept-saves-root` and the refusal text belong on
+  rocknix.org's cloud-sync page (#42 carries the docs PR).
