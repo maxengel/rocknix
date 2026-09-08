@@ -72,6 +72,14 @@ EXCLUDED = {"saves/scratch.tmp": b"should-never-leave-the-device"}
 # (ROCKNIX-backup-qa.zip went up as 2026_09_06-180107-ROCKNIX-backup-qa.zip)
 # and the restorer brings the dated name back -- a harness looking for its
 # own undated path on either side saw nothing (Gate 0, #35).
+# The pre-label shape, on purpose. Since 2026-09-08 backuptool writes
+# <stamp>-<device>-ROCKNIX_SETTINGS.tar.gz, and every device in the field
+# still holds archives named ROCKNIX_ locally and in the cloud; this one
+# stands for those, so the round trip proves the upgrade path -- an unlabelled
+# archive is still uploaded, and still comes back through the restorer's
+# newest-overall fallback. The labelled shape is asserted on the archive
+# backuptool itself writes, and the retention step plants both shapes side by
+# side.
 ARCHIVE_NAME = "2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz"
 ARCHIVE_BODY = b"settings-backup-archive-v1"
 # Deliberately the same length as ARCHIVE_BODY. A remote with no modtimes and
@@ -446,6 +454,7 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
             "the archive sits at the root of the backup path - a second "
             "device would overwrite it")
     dev.run(f"rm -f {shlex.quote(archive)}")
+    mark = log_mark(dev)
     dev.run("cloud_restore --yes --system-only >/dev/null 2>&1 || true", check=False)
     if uploaded_archive:
         arch_after = dev.sha(archive)
@@ -453,6 +462,12 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
                               "the archive came back byte-identical",
                               "the archive did not come back - restore can report "
                               "SUCCESS while its filter matches nothing")
+        # The archive carries no device name, so the restorer had none of this
+        # device's to prefer and must say it took the newest overall instead.
+        tail = dev.run(f"tail -n +{mark + 1} {LOG} 2>/dev/null || true", check=False)
+        failures += not check("restoring the newest there" in tail,
+                              "and the restorer said it fell back to the newest archive overall",
+                              "a pre-label archive was restored without the fallback being logged")
     else:
         print("    SKIP  archive restore - nothing was uploaded, so it proves nothing")
 
@@ -472,6 +487,107 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
                               "the changed archive never reached the cloud - a "
                               "size-only comparison can skip the upload and "
                               "still report SUCCESS")
+
+    # --- per-device names: retention and preference -------------------------
+    # Since 2026-09-08 an archive's name carries the device that wrote it,
+    # between the date and ROCKNIX (<stamp>-<label>-ROCKNIX_SETTINGS.tar.gz),
+    # and two rules hang off that. Retention counts and removes only archives
+    # carrying this device's label, in this device's own folder: one carrying
+    # another device's label (restored here and sent up again, or written by a
+    # device sharing the folder through a cloned id, #86) or none (from before
+    # names carried a device) is left alone. And a restore brings back this
+    # device's newest before anything newer another device wrote. One device
+    # proves both by planting the other shapes in its own folder: the VM
+    # pair's guest b gets its own folder by construction, so the pair cannot
+    # share one without a cloned id, which A11 refuses. A same-label archive
+    # from another device of the same model is not planted: by design it
+    # cannot be told from this device's own, and counts as one of them.
+    step("retention removes only archives carrying this device's name, and restore prefers them")
+    label = dev.run("cloud_device_id --label 2>/dev/null || true").strip()
+    osn = os_name(dev)
+    device_id = dev.run("cloud_device_id 2>/dev/null || true").strip()
+    settings_remote = settings.get("SETTINGS_REMOTE") or settings.get("SYNCPATH_BACKUP") or ""
+    keep_raw = dev.run(f"grep -m1 '^CLOUD_BACKUP_KEEP=' {CONF} 2>/dev/null | cut -d= -f2 | tr -d '\"' || true").strip()
+    keep = int(keep_raw) if keep_raw.isdigit() else 3
+    folder = f"{remote}:{settings_remote}/{device_id}"
+    if not (label and device_id and settings_remote) or not 1 <= keep <= 20:
+        failures += not check(False, "",
+                              f"cannot set the fixture up (label {label!r}, id {device_id!r}, "
+                              f"settings remote {settings_remote!r}, keep {keep})")
+    else:
+        other = f"2026_01_01-000000-Other-Handheld-{osn}_SETTINGS.tar.gz"
+        # Both pre-label shapes a folder in the field holds: the dated tar,
+        # and the zip the uploader dated on its way up.
+        unlabelled = [f"2026_01_01-000000-{osn}_SETTINGS.tar.gz", f"2026_01_01-000000-{osn}_BACKUP.zip"]
+        # keep of this device's planted, one more uploaded: exactly one goes.
+        own = [f"2026_01_{d:02d}-000000-{label}-{osn}_SETTINGS.tar.gz" for d in range(2, 2 + keep)]
+        newest_own = f"2026_01_{2 + keep:02d}-000000-{label}-{osn}_SETTINGS.tar.gz"
+        newer_other = f"2099_01_01-000000-Other-Handheld-{osn}_SETTINGS.tar.gz"
+        plant = "/tmp/qa-plant"
+        broot = f"{root}/backup"
+        dev.run(f"rclone purge {shlex.quote(folder)} >/dev/null 2>&1; rm -rf {plant}; mkdir -p {plant} {shlex.quote(broot)}",
+                check=False)
+        # A fixture that cannot be planted is a FAIL here, not an abort of
+        # every step after this one.
+        try:
+            for name in [other] + unlabelled + own:
+                dev.write(f"{plant}/{name}", name.encode())
+                dev.run(f"rclone copyto {shlex.quote(f'{plant}/{name}')} {shlex.quote(f'{folder}/{name}')}")
+            planted = True
+        except Fail as e:
+            planted = False
+            failures += not check(False, "", f"could not plant the fixture in {folder}: {e}")
+        ran = False
+        if planted:
+            # One archive of this device's at the root so the upload runs and
+            # retention runs after it; the marker is cleared so a root that
+            # looks unchanged is not skipped.
+            dev.run(f"rm -f {shlex.quote(broot)}/*.tar.gz {shlex.quote(broot)}/*.zip {CACHE}/settings-backup.uploaded", check=False)
+            dev.write(f"{broot}/{newest_own}", b"the archive this run uploads")
+            rc, _ = run_rc(dev, "cloud_backup --yes --system-only")
+            listing = dev.run(f"rclone lsf --files-only {shlex.quote(folder + '/')} 2>/dev/null || true", check=False).split()
+            mine = sorted(n for n in listing if n.endswith(f"-{label}-{osn}_SETTINGS.tar.gz"))
+            ran = check(rc == 0 and newest_own in listing,
+                        f"the upload ran (exit {rc})",
+                        f"the upload did not run (exit {rc}); retention cannot be judged")
+            failures += not ran
+        if ran:
+            failures += not check(mine == sorted(own[1:] + [newest_own]),
+                                  f"this device's archives were trimmed to CLOUD_BACKUP_KEEP={keep}, oldest first",
+                                  f"retention did not keep the newest {keep} of this device's: {mine}")
+            spared = [other] + unlabelled
+            failures += not check(all(n in listing for n in spared),
+                                  "another device's archive and both pre-label shapes were left alone",
+                                  "RETENTION REMOVED WHAT IS NOT THIS DEVICE'S: "
+                                  f"{[n for n in spared if n not in listing]}")
+
+            # Restore: the other device's is newer, and this device's must still win.
+            dev.write(f"{plant}/{newer_other}", newer_other.encode())
+            dev.run(f"rclone copyto {shlex.quote(f'{plant}/{newer_other}')} {shlex.quote(f'{folder}/{newer_other}')}")
+            dev.run(f"rm -f {shlex.quote(broot)}/*.tar.gz {shlex.quote(broot)}/*.zip", check=False)
+            run_rc(dev, "cloud_restore --yes --system-only")
+            local = dev.run(f"ls -1 {shlex.quote(broot)}/ 2>/dev/null || true", check=False).split()
+            failures += not check(newest_own in local and newer_other not in local,
+                                  "restore brought back this device's newest, not the other device's newer archive",
+                                  f"restore chose {local or 'nothing'} over this device's own {newest_own}")
+            # With none of this device's own left, the newest overall -- the
+            # fresh-device journey (#26) -- and the log says whose it was.
+            for name in mine:
+                dev.run(f"rclone deletefile {shlex.quote(f'{folder}/{name}')} >/dev/null 2>&1 || true", check=False)
+            dev.run(f"rm -f {shlex.quote(broot)}/*.tar.gz {shlex.quote(broot)}/*.zip", check=False)
+            mark = log_mark(dev)
+            run_rc(dev, "cloud_restore --yes --system-only")
+            local = dev.run(f"ls -1 {shlex.quote(broot)}/ 2>/dev/null || true", check=False).split()
+            tail = dev.run(f"tail -n +{mark + 1} {LOG} 2>/dev/null || true", check=False)
+            failures += not check(newer_other in local,
+                                  "with none of its own, restore took the newest overall",
+                                  f"restore took {local or 'nothing'} when only other devices' archives remained")
+            failures += not check("made on Other-Handheld" in tail,
+                                  "and the log named the device that made it",
+                                  "the fallback restore did not say whose archive it took")
+        dev.run(f"rm -rf {plant}; rm -f {shlex.quote(broot)}/*.tar.gz {shlex.quote(broot)}/*.zip {CACHE}/settings-backup.uploaded",
+                check=False)
+        dev.run(f"rclone purge {shlex.quote(folder)} >/dev/null 2>&1 || true", check=False)
 
     # --- content backup / restore -------------------------------------------
     # cloud_content_backup hardcodes DEST=/storage/roms and ignores SAVESPATH,
@@ -732,18 +848,58 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
                           f"carried by no tier: {' '.join(orphans)}")
 
     # --- archive format -----------------------------------------------------
-    step("the settings archive is a tar archive, and both formats are discoverable")
+    step("the settings archive is a tar archive named for this device, and every reader finds it")
     # A real archive, written by backuptool where the conf says archives live.
     dev.run("backuptool backup >/dev/null 2>&1 || true", check=False)
-    newest = dev.run(f". {CONF}; ls -1 \"$SETTINGS_BACKUPS\"/*-*_SETTINGS.tar.gz \"$SETTINGS_BACKUPS\"/*-*_BACKUP.tar.gz "
-                     f"\"$SETTINGS_BACKUPS\"/*-*_BACKUP.zip 2>/dev/null | sort | tail -1").strip()
+    # backuptool's own finder, not a copy of its globs: what RESTORE SETTINGS
+    # FROM THIS DEVICE will apply is what this asserts. The script is resolved
+    # BEFORE /etc/profile is sourced, because the profile rewrites PATH and
+    # would drop the --path-prefix directory; the profile is sourced at all
+    # because the script itself does, and its globs are built on OS_NAME,
+    # which an ssh session does not have.
+    def finder(script):
+        return (f"B={script}; . /etc/profile >/dev/null 2>&1; . {CONF}; "
+                "eval \"$(sed -n '/^newest_backup()/,/^}/p' \"$B\")\"; newest_backup")
+    newest_cmd = finder('"$(command -v backuptool)"')
+    newest = dev.run(newest_cmd, check=False).strip()
     failures += not check(newest.endswith(".tar.gz"),
                           f"newest archive is a tar.gz ({os.path.basename(newest) or 'none'})",
                           f"newest archive is not a tar.gz: {newest or 'none found'}")
-    if newest.endswith(".tar.gz"):
+    if newest:
         failures += not check(dev.run(f"tar -tzf {shlex.quote(newest)} >/dev/null 2>&1 && echo ok", check=False).strip() == "ok",
                               "the archive passes tar integrity",
                               "the archive is not readable by tar")
+    # The device's name sits between the stamp and ROCKNIX (2026-09-08): two
+    # handhelds' archives used to be told apart by nothing.
+    label = dev.run("cloud_device_id --label 2>/dev/null || true").strip()
+    osn = os_name(dev)
+    named = bool(label) and re.fullmatch(
+        rf"\d{{4}}_\d{{2}}_\d{{2}}-\d{{6}}-{re.escape(label)}-{re.escape(osn)}_SETTINGS\.tar\.gz",
+        os.path.basename(newest)) is not None
+    failures += not check(named,
+                          f"the archive is named for this device, between the date and {osn} ({label or 'no label'})",
+                          f"the archive does not carry this device's name between the date and {osn}: "
+                          f"{os.path.basename(newest) or 'none'} (label {label or 'none'})")
+    # In the MIDDLE, so that the finder every image already carries --
+    # *-ROCKNIX_SETTINGS.tar.gz -- still matches. The installed backuptool is
+    # asked through its own function: on a device running an image from
+    # before the label, that is an older reader finding a new archive, which
+    # a first cut of this change broke (review, 2026-09-08). Where the
+    # installed script is itself the one under test, this holds trivially.
+    installed = dev.run(finder("/usr/bin/backuptool"), check=False).strip()
+    failures += not check(bool(newest) and installed == newest,
+                          "the installed image's own backuptool finds the same archive",
+                          f"the installed backuptool's finder got {os.path.basename(installed) or 'nothing'}, "
+                          f"not {os.path.basename(newest) or 'none'}")
+    # Every device in the field has archives from before names carried a
+    # device. A newer one of those must still be found.
+    legacy = f"{os.path.dirname(newest) if newest else f'{root}/backup'}/2099_12_31-235959-{osn}_BACKUP.zip"
+    dev.run(f": > {shlex.quote(legacy)}")
+    found = dev.run(newest_cmd, check=False).strip()
+    dev.run(f"rm -f {shlex.quote(legacy)}")
+    failures += not check(found == legacy,
+                          "a newer archive under the pre-label name is still found",
+                          f"the finder skipped a pre-label archive: got {os.path.basename(found) or 'none'}")
 
     # --- per-device system selection ---------------------------------------
     step("content transfers honour the system selection")
@@ -780,6 +936,39 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     failures += not check(bool(row) and row[0].split("|")[2:3] == ["0"],
                           "the unrunnable system is flagged 0 (unsupported)",
                           f"scan did not mark it unsupported: {row or 'row absent'}")
+    # The comparison fields (2026-09-08): x.rom is one byte the device lacks;
+    # y.rom is one byte in the cloud and two here, so it is "not here" at the
+    # cloud's size and "not in the cloud" at the device's. Names alone would
+    # have called y.rom present on both sides. Expected, by planted sizes:
+    # cloud 2 bytes, unsupported, device 2 bytes, 2 files/2 bytes to restore,
+    # 1 file/2 bytes to back up.
+    open(f"{stage2}/ROMs/definitely-not-a-system/y.rom", "wb").write(b"y")
+    subprocess.run([BACKEND, "put", f"{stage2}/ROMs", f"{cpath2}/ROMs"], capture_output=True, text=True)
+    dev.write("/storage/roms/definitely-not-a-system/y.rom", b"yy")
+    scan = dev.run("cloud_content_restore --scan 2>/dev/null || true")
+    row = [l for l in scan.splitlines() if l.startswith("definitely-not-a-system|")]
+    failures += not check(bool(row) and row[0].split("|")[1:] == ["2", "0", "2", "2", "1", "2", "2"],
+                          "the scan says what a copy each way would move, in files and bytes",
+                          f"scan fields 2-8 were not 2|0|2|2|1|2|2: {row or 'row absent'}")
+    # The game list is sized, never compared (2026-09-08): three bytes in the
+    # cloud, five on the device. Under ROMs alone neither side lists a
+    # system's own list, so the row is what it was; under game content each
+    # total grows by its list and every comparison field stays put, since
+    # the list's direction is a modtime the scan does not have.
+    open(f"{stage2}/ROMs/definitely-not-a-system/gamelist.xml", "wb").write(b"ccc")
+    subprocess.run([BACKEND, "put", f"{stage2}/ROMs", f"{cpath2}/ROMs"], capture_output=True, text=True)
+    dev.write("/storage/roms/definitely-not-a-system/gamelist.xml", b"ddddd")
+    scan = dev.run("cloud_content_restore --scan 2>/dev/null || true")
+    row = [l for l in scan.splitlines() if l.startswith("definitely-not-a-system|")]
+    failures += not check(bool(row) and row[0].split("|")[1:] == ["2", "0", "2", "2", "1", "2", "2"],
+                          "under ROMs alone the game list is neither sized nor counted",
+                          f"scan fields 2-8 were not 2|0|2|2|1|2|2 with a game list present: {row or 'row absent'}")
+    scan = dev.run("cloud_content_restore --scan --with-media 2>/dev/null || true")
+    row = [l for l in scan.splitlines() if l.startswith("definitely-not-a-system|")]
+    failures += not check(bool(row) and row[0].split("|")[1:] == ["5", "0", "7", "2", "1", "2", "2"],
+                          "under game content the game list is sized on each side and never counted as moving",
+                          f"scan fields 2-8 were not 5|0|7|2|1|2|2: {row or 'row absent'}")
+    dev.run("rm -rf /storage/roms/definitely-not-a-system")
 
     # --- folder seeding -----------------------------------------------------
     step("seeding is idempotent and never clobbers an existing note")
@@ -925,6 +1114,12 @@ def touch_offset(dev, path, seconds):
 
 def log_mark(dev):
     return int(dev.run(f"wc -l < {LOG} 2>/dev/null || echo 0").strip() or 0)
+
+
+def os_name(dev):
+    """What every settings archive's name ends with: OS_NAME, read from the
+    file /etc/profile reads it from, since an ssh session has run no profile."""
+    return dev.run('. /etc/os-release 2>/dev/null; echo "$OS_NAME"', check=False).strip() or "ROCKNIX"
 
 
 def log_since(dev, mark):
