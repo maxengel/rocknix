@@ -444,6 +444,37 @@ if [ ! -d "${STAGE}" ] || [ ! -w "${STAGE}" ] || [ ! -w "${CACHE}" ]; then
     finish 1 "stage-unwritable"
 fi
 
+# The working copy follows a healed id (#86). cloud_device_id renames a
+# device whose stored hash was the shared constant, and the call above is
+# where that happens on the boot pass -- so the manifest written under the
+# old id, with every save's provenance recorded since #21, would sit unread
+# beside an empty manifest-<new id>.json. Read both shapes, write the new
+# one: when nothing sits under the current id, the first manifest found
+# under a name this device was healed away from (cloud_device_id --previous,
+# .previous lines first) is renamed to the current name. Every file in this
+# directory was written by this device, so a manifest named for one of those
+# ids is this device's own. Once, and never over an existing file; a second
+# run finds the current name present and does nothing. A helper from before
+# --previous existed answers it with the current id, which is skipped.
+if [ ! -e "${MANIFEST}" ] && [ -x "${DEVICE_ID_BIN}" ]; then
+    while IFS= read -r _prev; do
+        [ -n "${_prev}" ] || continue
+        [ "${_prev}" != "${DEVICE_ID}" ] || continue
+        _old="${CACHE}/manifest-${_prev}.json"
+        [ -f "${_old}" ] || continue
+        if [ ! -e "${MANIFEST}" ] && mv -f "${_old}" "${MANIFEST}" 2>/dev/null && [ -f "${MANIFEST}" ]; then
+            log_info "adopted ${_old} as ${MANIFEST}: the device id was healed (#86) and the working copy follows it"
+        elif [ -f "${MANIFEST}" ]; then
+            # The boot pass and a game-exit capture can both be here; the
+            # second finds the rename done.
+            log_debug "${MANIFEST} appeared while adopting ${_old}; a concurrent run got there first"
+        else
+            log_warn "could not adopt ${_old} as ${MANIFEST}; starting from an empty document"
+        fi
+        break
+    done < <("${DEVICE_ID_BIN}" --previous 2>/dev/null | tr -cd 'A-Za-z0-9_.\n-')
+fi
+
 # A killed run's litter: every scratch file carries its writer's pid.
 for _f in "${STAGE}"/.tmp.* "${CACHE}"/.ops.* "${CACHE}"/.cand.* "${CACHE}"/.canon.* "${CACHE}"/.manifest.* "${CACHE}"/.capture-failures.*; do
     [ -e "${_f}" ] || continue
