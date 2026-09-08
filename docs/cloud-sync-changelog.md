@@ -671,8 +671,10 @@ the date and ROCKNIX:
   unchanged and trims every shape.
 - **Retention (`CLOUD_BACKUP_KEEP`) works inside this device's own cloud
   folder and counts only archives carrying this device's label.** Archives
-  live under `SETTINGS_REMOTE/<device id>/` — `Anbernic-RG-SP-ee5013fc56`,
-  the id `cloud_device_id` gives — so a different device's own archives are
+  live under `SETTINGS_REMOTE/<device id>/` — `Anbernic-RG-SP-f058e3e9e8`,
+  the id `cloud_device_id` gives (it gave `Anbernic-RG-SP-ee5013fc56` until
+  #86, *The device id is seeded from a hardware address or nothing*, below) —
+  so a different device's own archives are
   in a different folder and are never touched. Within this folder the newest
   `CLOUD_BACKUP_KEEP` archives carrying this device's label are kept and the
   rest of those removed; an archive carrying another device's label, or none,
@@ -685,7 +687,8 @@ the date and ROCKNIX:
   was restored here from that device's folder and sent back up with the next
   backup (the fresh-device journey, #26); or the two devices share an id and
   so share this folder — a cloned id, fork #86; the RG SP and the RG35XX SP
-  currently share the hash `ee5013fc56`. The id is deliberately not in the
+  shared the hash `ee5013fc56` until the section below: not a clone but a
+  constant seed, healed on the first run of this build. The id is deliberately not in the
   archive name. The review's finding that retention removed a same-label
   archive from a second device of the same model sharing the folder describes
   exactly this case, and it stands: the code does that, and now says so.
@@ -830,3 +833,143 @@ above and below the elements."*
   disc images moving together (bytes throughout, where
   a minimum over all three percentages sat at 0%). The built page is the
   screendump's to prove.
+
+## The device id is seeded from a hardware address or nothing (2026-09-08)
+
+Both handhelds printed the same device-id hash, `ee5013fc56` — the RG SP as
+`Anbernic-RG-SP-ee5013fc56`, the RG35XX SP as `ROCKNIX-ee5013fc56` — so the
+per-device cloud folders of #49 were per device only by the accident that the
+label rule changed between the two generations (fork #86).
+
+- **What happened.** `cloud_device_id` took the first interface in sorted
+  `/sys/class/net` that was not on a short denylist of names and whose
+  `ethtool -P` output was not empty, all-zero or broadcast. Every kernel that
+  builds in the IPv6 sit tunnel (`CONFIG_IPV6_SIT=y`: H700, RK3566 and RK3576
+  among ours) has a `sit0`, which sorts before `wlan0` and was not on the
+  list. `ethtool -P sit0` prints `Permanent address: not set`; the script's
+  own `sed`/`tr` turn that into `notset`; the denylist accepted it. So every
+  such device hashed the literal `notset|unknown` — `DEVICE` is a build-system
+  variable that nothing on a device exports, so the "family" term the old
+  comment described was always `unknown` — and md5 of that, ten hex, is
+  `ee5013fc56`. The VM (sit as a module, `eth0` sorting first) was seeded
+  from its real address and never showed it. Ruled out first: a settings
+  archive carrying the id file (backuptool's include list never had it) and
+  identical hardware (the two MACs, machine-ids and device-tree serials all
+  differ).
+- **The guard is the shape of the value, not a list of bad ones.**
+  `usable_interfaces` now takes an interface only if
+  `/sys/class/net/<n>/type` is `1` (ARPHRD_ETHER; `sit0` is 776, `lo` 772)
+  and `/sys/class/net/<n>/device` exists (a physical adapter; a tunnel has
+  none). The name list gains `sit* ip6tnl* gre* wg* dummy* bond* ifb*` for
+  the reader, but the two tests decide. `permanent_address` accepts only a
+  value matching `^([0-9a-f]{2}:){5}[0-9a-f]{2}$` in either case that is not
+  all-zero or broadcast; anything else yields no seed, and the machine-id
+  fallback applies as before.
+- **The hash recipe is unchanged**: `md5(<seed>|unknown)`, first ten hex.
+  Every device that was seeded from a real address keeps its id, and
+  `--legacy` keeps reproducing its pre-label folder name. Only the comment
+  that claimed the device family joins the hash is corrected.
+- **A poisoned stored id heals, once, and only that.** On any run that
+  prints the id (not the `--label`, `--legacy` or `--previous` modes, which
+  return before the heal), a stored id whose ten-hex suffix is `ee5013fc56`
+  (computed in the script as `md5("notset|unknown")`, not written down) is
+  replaced when a validated address is available: the old id is appended to
+  `/storage/.config/cloud_sync-device-id.previous` (one per line, never
+  twice), `<label>-<hash>` is written, and `old -> new` goes to the journal
+  (`logger -t cloud_device_id`) and to `/var/log/cloud_sync.log` when it is
+  writable. A stored id with any other suffix is returned unchanged, as
+  always — including one that differs from what this hardware would hash to,
+  which is the wifi-module-swap case and the deliberate adopt-another-folder
+  edit. With no validated address the poisoned id is returned unchanged and
+  nothing is written; nothing is ever invented.
+- **`cloud_device_id --previous`** prints every folder name this device may
+  have written under before healing, one per line, deduplicated: the lines of
+  `.previous`, then `<label>-ee5013fc56`, then `<hostname>-ee5013fc56`. The
+  last two are listed even on a device that was never healed, because a
+  reflashed card has no `.previous` and its backups may sit there; a folder
+  of that name was produced by every device of one model or one hostname, so
+  it may hold another device's archives. **They are listed only where
+  `/sys/class/net/sit0` exists** — a kernel with `CONFIG_IPV6_SIT=y` has one
+  from boot, ours with it as a module never do — because a device with no
+  `sit0` could not have hashed `notset`, and every ROCKNIX image ships the
+  hostname `ROCKNIX`, so an ungated list would have sent a fresh RG351M to
+  the RG35XX SP's `ROCKNIX-ee5013fc56` before the root tier. The trade: a
+  healed device reflashed onto a later build that switched `sit` to a module
+  loses the two guessed names and falls to the root tier.
+- **`cloud_restore` reads the old folders.** Its lookup for the settings
+  archive is now: this device's own folder, then its `--legacy` name, then
+  each `--previous` folder in order, then the root where archives sat before
+  folders existed; the first holding an archive wins, and the log says which
+  it took. The `--previous` tier logs a WARN naming the folder as one this
+  device *may* have written to while its id was the constant — the two
+  guessed names are listed on devices that were never healed — and that
+  another device of the same model or hostname may have written there. A
+  helper from before `--previous` existed answers it with the current id,
+  which the chain skips as already tried.
+- **`cloud_backup` writes to the current folder only.** Retention counts
+  only there. Nothing in a folder this device wrote under a healed-away id is
+  written, trimmed or moved: the archives there are still someone's only
+  backup, and the same folder name may be another device's. **The upload
+  marker records where as well as what.** `settings-backup.uploaded` held
+  the hash of the archive last sent (#53); it now holds `<hash>
+  <destination>`, and the transfer is skipped only when both match. A device
+  whose id healed writes to a new folder, and a marker that knew only the
+  hash said "unchanged; nothing to send" on every game-exit backup until the
+  next `backuptool backup`, leaving the new folder with no archive and no
+  `device.json`. A marker from an older build is a bare hash, never equal to
+  the pair, so an upgraded device sends exactly once more and is then in
+  step; the skip line names the destination.
+- **For the two handhelds, on the first call of this build that can see the
+  wifi adapter's permanent address** — normally the first backup, restore,
+  game-exit capture or boot `--full` pass; the boot pass does not wait for
+  the network, and on a slow SDIO probe `wlan0` may not be registered yet, in
+  which case the next call heals — the RG SP becomes `Anbernic-RG-SP-f058e3e9e8` and
+  the RG35XX SP `Anbernic-RG35XX-SP-a431b25ede`; those are the hashes of their
+  wifi adapters' permanent addresses, computed on 2026-09-08 from the
+  addresses read on each. `/ROCKNIX/Backups/Anbernic-RG-SP-ee5013fc56/` and
+  `/ROCKNIX/Backups/ROCKNIX-ee5013fc56/` stay exactly as they are; a restore
+  with nothing under the new folder finds them through `--previous`
+  (`Anbernic-RG-SP-ee5013fc56` is the RG SP's `<label>-ee5013fc56`;
+  `ROCKNIX-ee5013fc56` is the RG35XX SP's `<hostname>-ee5013fc56`, and its
+  `.previous` line). The next backup — a game exit included, whether or not
+  the archive has changed, because the marker now names the folder it last
+  went to — writes the archive and a `device.json` to the new folder; the old
+  `device.json` is left where it is. No manifest has been published (#21
+  writes the local working copy only), so nothing in the cloud is keyed by
+  the old id. Locally, `cloud_capture` names its working copy after the id;
+  when nothing sits under the new name it renames the first
+  `manifest-<previous id>.json` it finds (the `--previous` order) to
+  `manifest-<new id>.json` before the pass, once, and says so in the log —
+  so the provenance recorded since #21 follows the device.
+- **Two devices of one model on a build from before this** still share the
+  hash and so a folder. Nothing here changes what those builds do.
+- Checked by the harness's new A15 on the VM (`--only A15`; one guest and the
+  QA endpoint, no second guest), 34 checks: with `sit` loaded, the old
+  pipeline yields `notset` for `sit0` and `permanent_address` yields nothing
+  for it and `52:54:00:52:4e:58` for `eth0`, run with the interface list
+  narrowed in the harness's own shell rather than through a hook in the
+  script; a macvlan on `eth0` (type 1, no device link, no name pattern
+  matches it) is omitted by `usable_interfaces` and `permanent_address`
+  reaches `eth0` past it — the sysfs tests on their own, since `sit0` is
+  also refused by name; a planted `<hostname>-ee5013fc56` (the RG35XX SP's
+  shape) heals to `<label>-15ca35b6b4` — the hash this guest had generated
+  before the change — with `.previous`, the cloud-sync log and the journal
+  each marked before the run so only its own lines count, and `--previous`
+  listing the recorded id, then `<label>-ee5013fc56`, then
+  `<hostname>-ee5013fc56` for a hostname unlike the label; `cloud_capture
+  --full` renames `manifest-<old>.json` to `manifest-<new>.json` once; an
+  archive planted under the old folder is restored through the `--previous`
+  tier with the folder named in the log, one in the own folder wins over it;
+  with the marker holding the local archive's bare hash — an old build's,
+  from an upload to the old folder — a backup still lands in the healed
+  folder with a `device.json`, the marker then reads `<hash> <folder>`, the
+  run after sends nothing, and the old folder's six archives are untouched
+  with retention past its limit there; a second run and a healthy foreign id
+  rewrite nothing (mtimes moved back five seconds first, so a same-content
+  rewrite would show); with the list narrowed to `sit0` the poisoned id comes
+  back unchanged and nothing is written; with `sit` unloaded the two guessed
+  names leave `--previous`. Every one of those checks was shown to fail
+  against a copy of the scripts with the guard it tests removed (thirteen
+  FAILs, one per removed guard) before the fixed scripts were staged. The
+  single-device suite then ran on the same guest with the same staged
+  scripts and passed every step.

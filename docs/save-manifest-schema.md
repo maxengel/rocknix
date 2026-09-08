@@ -158,7 +158,7 @@ Top level:
 | Field | Type | Meaning |
 |---|---|---|
 | `schema` | int | `1`. Readers refuse a higher number and treat a missing one as `0` (pre-schema). Rev 2 (§10) keeps this at `1` — it only adds optional fields. |
-| `device.id` | string | `cloud_device_id` — stable, seeded from the permanent hardware address (#49). |
+| `device.id` | string | `cloud_device_id` — stable, seeded from the permanent hardware address (#49). Until 2026-09-08 a device whose kernel builds in the IPv6 sit tunnel hashed the literal `notset` instead, so every such device carried the suffix `ee5013fc56` (#86); the script now takes only a validated MAC, heals that suffix on the first run that sees one, and lists the old names under `--previous` (D-CLOUD-068). |
 | `device.label` | string | `cloud_device_id --label`, folder-safe (`Anbernic-RG35XX-SP`). |
 | `device.model` | string | `/proc/device-tree/model`, for display (`Anbernic RG35XX SP`). |
 | `device.family` | string | `HW_DEVICE` from `/etc/os-release` (`H700`). |
@@ -205,6 +205,14 @@ Rules the fields obey:
 ## 7. Examples (from the RG35XX SP, 2026-09-05)
 
 `savestates/.rocknix/manifest-ROCKNIX-ee5013fc56.json`:
+
+> The id in this example was not derived from the device. `ee5013fc56` is
+> the constant every sit-tunnel kernel produced (#86, D-CLOUD-068): the RG SP
+> carried it too, as `Anbernic-RG-SP-ee5013fc56`. On the first run of the
+> fixed build the RG35XX SP becomes `Anbernic-RG35XX-SP-a431b25ede`, and a
+> manifest it publishes is named for that; `cloud_capture` renames the local
+> working copy to the new name on its first pass after the heal, so the
+> entries below are carried, not orphaned. The example is kept as captured.
 
 ```json
 {
