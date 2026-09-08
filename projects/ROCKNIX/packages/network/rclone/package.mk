@@ -13,8 +13,11 @@ PKG_VERSION="1.75.0"
 # provider's OAuth redirect goes to localhost, so it only lands somewhere
 # useful if the browser is on the same machine as rclone's authorize listener.
 # glib-networking is what gives that browser TLS at all.
+# jq is cloud_capture's only JSON reader and writer (the save manifest, #21);
+# the same policy as Python3 above -- until now it reached the image only
+# through virtual/image's own dependency list.
 PKG_DEPENDS_TARGET="toolchain fuse rsync qrencode Python3 \
-                    webkitgtk cloud-signin-window glib-networking"
+                    webkitgtk cloud-signin-window glib-networking jq"
 PKG_LONGDESC="rsync for cloud storage"
 PKG_TOOLCHAIN="manual"
 
@@ -68,6 +71,7 @@ makeinstall_target() {
   cp cloud_content_backup ${INSTALL}/usr/bin/
   cp cloud_sync_cleanup_duplicates.sh ${INSTALL}/usr/bin/
   cp cloud_saves_root ${INSTALL}/usr/bin/
+  cp cloud_capture ${INSTALL}/usr/bin/
   # No game-end event hook. EmulationStation runs the save sync itself now
   # (FileData::launchGame), so it can show the result on the progress card
   # instead of backgrounding the work into /dev/null where nobody could tell
