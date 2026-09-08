@@ -5,23 +5,30 @@
 # cloud_saves_root - which card the saves folder is on, and whether that
 # changed since saves were last synced.
 #
-# On a device with two microSD cards, /storage/roms is the second card when
-# it is mounted and the internal card when it is not -- a card absent,
-# unseated, or enumerated late at boot. Each tree then receives syncs on
-# its own boots, and a stale copy on the card that happens to be mounted
-# reads as this device's newest save. Seen on an RG SP on 2026-09-08: two
-# nearly current saves trees, the internal one written by a boot restore at
-# a boot without the second card (fork #83, D-CLOUD-054).
+# On a device with two microSD cards the second one is bound over
+# /storage/roms by the automount script, which first unmounts whatever is
+# there. For a moment at every boot -- and the interface starts in that
+# same moment -- /storage/roms is the internal card. A saves transfer that
+# begins then writes a whole tree onto the wrong card, and a stale copy on
+# whichever card is mounted later reads as this device's newest save.
+# Seen on an RG SP on 2026-09-08: 101 files on the internal card written
+# by boot restores, with both cards in the device the whole time (fork
+# #83, D-CLOUD-054).
 #
 # So the filesystem under SAVESPATH is remembered when saves are synced,
-# and a saves transfer refuses when it is not the one from last time,
-# until the owner says the change is intended.
+# a transfer waits a little for the usual card to come back before it
+# refuses, and it refuses to record a run during which the card changed.
 #
-#   cloud_saves_root identity   print the identity of the filesystem under SAVESPATH
-#   cloud_saves_root check      exit 0 when it matches the record (or there is none);
-#                               exit 1, with the reason on stdout, when it does not
-#   cloud_saves_root record     remember the current identity (after a successful sync)
-#   cloud_saves_root accept     the owner says the new card is right: remember it
+#   cloud_saves_root identity            print the identity of the filesystem under SAVESPATH
+#   cloud_saves_root check [--wait N]    exit 0 and print the identity when it matches the
+#                                        record (or there is none), waiting up to N seconds
+#                                        for a mismatch to clear; exit 1 with the reason on
+#                                        stdout when it does not
+#   cloud_saves_root record [IDENTITY]   remember the current identity after a successful
+#                                        sync; with IDENTITY (the one check printed before
+#                                        the transfer), refuse with exit 1 when the folder
+#                                        is on a different card now
+#   cloud_saves_root accept              the owner says the current card is right: remember it
 #
 # The identity is the filesystem UUID of the mount holding SAVESPATH, from
 # blkid; where there is none, the device number. The record lives under
@@ -46,7 +53,7 @@ mount_of() {
     while read -r dev mp _; do
         case "${target}/" in
             "${mp%/}/"*)
-                if [ ${#mp} -gt ${bestlen} ] || [ ${#mp} -eq ${bestlen} ]; then
+                if [ ${#mp} -ge ${bestlen} ]; then
                     best="${dev}"; bestlen=${#mp}
                 fi
             ;;
@@ -72,30 +79,69 @@ identity() {
     fi
 }
 
+# Re-read the identity once a second until it equals $1 or $2 seconds pass;
+# print what it is at the end.
+wait_for() {
+    local want="$1" deadline now
+    deadline=$(( $(date +%s) + ${2} ))
+    now=$(identity)
+    while [ "${now}" != "${want}" ] && [ "$(date +%s)" -lt "${deadline}" ]; do
+        sleep 1
+        now=$(identity)
+    done
+    echo "${now}"
+}
+
 case "${1:-}" in
     identity)
         identity
     ;;
     check)
+        shift
+        WAIT=0
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --wait) WAIT="${2:-0}"; shift 2 ;;
+                *) shift ;;
+            esac
+        done
         now=$(identity)
         if [ -s "${RECORD}" ]; then
             last=$(head -1 "${RECORD}")
+            if [ "${now}" != "${last}" ] && [ "${WAIT}" -gt 0 ] 2>/dev/null; then
+                # At boot the second card is bound over the saves folder a
+                # moment after the interface starts; give it that moment.
+                echo "The saves folder is not on its usual card yet; waiting up to ${WAIT}s for it." >&2
+                now=$(wait_for "${last}" "${WAIT}")
+            fi
             if [ "${now}" != "${last}" ]; then
                 echo "The saves folder $(saves_path) is on a different card than the last time saves were synced (now ${now}, last time ${last})."
                 echo "Nothing was transferred. If the second card is missing, put it back; if the change is intended, run: cloud_setup --accept-saves-root"
                 exit 1
             fi
         fi
+        echo "${now}"
         exit 0
     ;;
-    record|accept)
+    record)
+        now=$(identity)
+        if [ -n "${2:-}" ] && [ "${now}" != "${2}" ]; then
+            echo "The saves folder $(saves_path) changed cards during the transfer (it started on ${2} and is on ${now} now). Files written in that time may be on the other card."
+            echo "Nothing was recorded. Run the transfer again once the cards have settled."
+            exit 1
+        fi
+        mkdir -p "$(dirname "${RECORD}")" 2>/dev/null
+        echo "${now}" > "${RECORD}" 2>/dev/null
+        exit 0
+    ;;
+    accept)
         mkdir -p "$(dirname "${RECORD}")" 2>/dev/null
         identity > "${RECORD}" 2>/dev/null
-        [ "$1" = accept ] && echo "Saves folder accepted: $(cat "${RECORD}")"
+        echo "Saves folder accepted: $(cat "${RECORD}")"
         exit 0
     ;;
     *)
-        echo "usage: cloud_saves_root identity|check|record|accept" >&2
+        echo "usage: cloud_saves_root identity|check [--wait N]|record [IDENTITY]|accept" >&2
         exit 2
     ;;
 esac

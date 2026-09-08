@@ -547,15 +547,18 @@ restore_game_saves() {
     # Which card is the saves folder on? (#83; see cloud_backup for the case.)
     # A restore into the wrong card's tree is the copy that later reads as
     # this device's newest save.
-    local saves_root_tool
+    local saves_root_tool saves_root_id=""
     # Installed beside this script (/usr/bin on a device; the same
     # directory wherever a copy of these scripts is run from).
     saves_root_tool="$(dirname "$(readlink -f "$0")")/cloud_saves_root"
     [ -x "${saves_root_tool}" ] || saves_root_tool=/usr/bin/cloud_saves_root
     if [ -x "${saves_root_tool}" ]; then
-        local root_reason
-        if ! root_reason=$("${saves_root_tool}" check); then
-            log_message "${root_reason}" "true" "ERROR"
+        # At boot the second card is bound over the saves folder a moment
+        # after the interface starts, so a mismatch is given 15 seconds to
+        # clear before it is a refusal. check prints the identity it
+        # confirmed, or the reason it refused.
+        if ! saves_root_id=$("${saves_root_tool}" check --wait 15); then
+            log_message "${saves_root_id}" "true" "ERROR"
             return 1
         fi
     fi
@@ -635,11 +638,22 @@ restore_game_saves() {
     
     RESTORE_STATUS=$?
     
-    # Report the result with detailed error information
-    report_rclone_error $RESTORE_STATUS "Game saves restore"
+    # The card the saves folder is on must still be the one the transfer
+    # started on. A bind that landed mid-run means part of the run went to
+    # the other card: a failed run, and not one to record. A good run
+    # records the card, so the next transfer has something to compare.
+    local root_note=""
+    if [ -x "${saves_root_tool}" ]; then
+        if ! root_note=$("${saves_root_tool}" record "${saves_root_id}"); then
+            RESTORE_STATUS=1
+        fi
+    fi
 
-    if { [ $RESTORE_STATUS -eq 0 ] || [ $RESTORE_STATUS -eq 9 ]; } && [ -x "${saves_root_tool}" ]; then
-        "${saves_root_tool}" record
+    # Report the result with detailed error information
+    if [ -n "${root_note}" ]; then
+        log_message "${root_note}" "true" "ERROR"
+    else
+        report_rclone_error $RESTORE_STATUS "Game saves restore"
     fi
     
     return $RESTORE_STATUS
