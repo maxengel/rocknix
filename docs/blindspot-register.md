@@ -100,3 +100,33 @@ bucket stripped where the backend's own commands add it; make the backend's
 ask what the device would have had to do for it to pass — if the answer is
 nothing, it is not evidence. See `engineering-practices.md` § "Guards must
 fail closed".
+
+## 32. Causal ordering read from wall-clock timestamps that jumped mid-boot
+
+**Committed:** 2026-09-08 (epic #11, #83/#84). To explain how a two-card
+device wrote saves to the wrong card, the boot journal was read in wall-clock
+time and produced a table showing EmulationStation's process starting
+*before* `rocknix-automount` bound the second card — a clean causal story for
+the bug, filed on #84 and stated to the maintainer. It was wrong. On these
+devices the RTC set fails early in boot (`hwclock ... exit code 1`) and NTP
+corrects the clock partway through (`Contacted time server` at ~21 s), so
+every wall-clock timestamp recorded before the sync is on a different clock
+than those after it. Ordering events across that point by their printed time
+compares two clocks. In monotonic time the automount finished ~10 s *before*
+the interface started, on both handhelds — the opposite order.
+
+**The shape:** a timeline assembled from timestamps that are not all on the
+same clock. It reads as evidence because each line has a real time on it; the
+times are simply not comparable to each other. Any boot, container start, or
+freshly-provisioned host whose clock is set by NTP or an RTC fixup during the
+window under study has this hazard, and the conclusion it produced here was
+confident, specific, and backwards.
+
+**The fix:** order boot and early-life events in **monotonic** time
+(`journalctl -o short-monotonic`, `/proc/<pid>/stat` field 22, `CLOCK_MONOTONIC`),
+never wall time, whenever a clock correction can fall inside the window. When
+a wall-clock timeline is the only source, look for a clock jump first
+(`timedatectl`, `Time has been changed`, an RTC failure, an NTP sync line) and
+distrust any ordering that straddles it. And treat a tidy causal story drawn
+from timestamps as a hypothesis until the mechanism is confirmed in the code
+(here: `find_games` scanning once and binding internal), not the timeline.
