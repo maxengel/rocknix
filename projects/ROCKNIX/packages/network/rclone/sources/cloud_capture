@@ -26,7 +26,18 @@
 # boot (D-CLOUD-027). So every run also leaves a one-line stamp under
 # /storage/.cache/cloud_sync -- last-capture, and capture-failures for the
 # runs that could not record -- which is how "did any exit go unrecorded on
-# this device?" gets answered after a reboot.
+# this device?" gets answered after a reboot. last-capture is
+#
+#   <epoch> <rc> <mode>[!card] <unit|-> emu-exit=<N|?> <emulator>/<core>
+#
+# The unit may contain spaces (a ROM stem); the two trailing fields never do,
+# so a reader takes three fields from the front and two from the back.
+# emu-exit is the launch's exit as EmulationStation saw it -- runemu.sh's
+# status, 0 or 1: it collapses the emulator's own code, and reports the exit
+# hotkey's kill (137/143) as 0 -- not the emulator's code. That and the frozen
+# pair are the two things only the exit path knew, and a run that could not
+# record (rc 1) is exactly when the log line naming them is the one that will
+# be gone; outside exit mode they read `emu-exit=? -/-`.
 #
 # Exactly one mode per invocation:
 #
@@ -43,6 +54,8 @@
 #                                        adopts no path without an entry (the boot pass)
 #   cloud_capture --retire PATH [PATH ...]
 #                                        record deliberate deletions, BEFORE the unlink
+#                                        (a state's .png: dropped from its unit's members,
+#                                        never a retired row -- D-CLOUD-059)
 #   cloud_capture -h | --help
 #
 # Exit codes: 0 recorded, or nothing to record; 1 could not record (the
@@ -150,10 +163,15 @@ RC=0
 REASON=""
 
 finish() {
-    local rc="${1:-${RC}}" reason="${2:-${REASON}}" now
+    local rc="${1:-${RC}}" reason="${2:-${REASON}}" now emu core
     now="$(date +%s)"
     mkdir -p "${CACHE}" 2>/dev/null
-    printf '%s %s %s %s\n' "${now}" "${rc}" "${MODE:-usage}${CARD}" "${UNIT:--}" \
+    # The first four fields keep their positions; the launch's exit as passed
+    # to --exit and the frozen pair follow (header). Whitespace inside a token would break the
+    # from-the-back parse, so it is folded away; `-` stands for nothing.
+    emu="${EMULATOR//[[:space:]]/_}"; core="${CORE//[[:space:]]/_}"
+    printf '%s %s %s %s emu-exit=%s %s/%s\n' "${now}" "${rc}" "${MODE:-usage}${CARD}" "${UNIT:--}" \
+        "${EXITCODE:-?}" "${emu:--}" "${core:--}" \
         > "${CACHE}/last-capture" 2>/dev/null
     if [ "${rc}" != "0" ]; then
         {
@@ -1086,24 +1104,66 @@ fi
 # ---------------------------------------------------------------------------
 # STEP 8 -- --retire PATH...  (called BEFORE the files are unlinked)
 # ---------------------------------------------------------------------------
+# The root-relative form of a --retire argument, or 1 for a path outside the
+# saves folder and 2 for one that is not plain (.., ., //).
+retire_rel() {
+    local p="$1"
+    case "${p}" in
+        "${ROOT}/"*) p="${p#"${ROOT}/"}" ;;
+        /*) return 1 ;;
+    esac
+    case "/${p}/" in *"/../"*|*"/./"*|"//"*) return 2 ;; esac
+    printf '%s' "${p}"
+}
+
+# A thumbnail: <state>.png, by the name row_retroarch admits or by the kind
+# of the entry it sits beside.
+is_thumbnail() {
+    local rel="$1" owner="${1%.png}"
+    [ "${rel}" != "${owner}" ] || return 1
+    [[ "${rel}" =~ \.state([0-9]*|\.auto)\.png$ ]] && return 0
+    case "${E_KIND[${owner}]}" in state|auto) return 0 ;; esac
+    return 1
+}
+
 if [ "${MODE}" = "retire" ]; then
+    # Which of this run's paths carry an entry: a thumbnail handed over
+    # beside its state (GuiSaveState passes both) leaves members with the
+    # state's entry and needs no op of its own.
+    declare -A RETIRING
     for _raw in "${RETIRE_PATHS[@]}"; do
-        _p="${_raw}"
-        case "${_p}" in
-            "${ROOT}/"*) _p="${_p#"${ROOT}/"}" ;;
-            /*)
-                log_warn "${_raw} is outside the saves folder ${ROOT}; not recorded"
+        _p="$(retire_rel "${_raw}")" || continue
+        [ -n "${E_SHA[${_p}]}" ] && [ "${E_SHA[${_p}]}" != "-" ] && RETIRING["${_p}"]=1
+    done
+    for _raw in "${RETIRE_PATHS[@]}"; do
+        _p="$(retire_rel "${_raw}")"
+        case $? in
+            1)  log_warn "${_raw} is outside the saves folder ${ROOT}; not recorded"
                 RC=1; REASON="retire-outside-root"
-                continue
-                ;;
-        esac
-        case "/${_p}/" in
-            *"/../"*|*"/./"*|"//"*)
-                log_warn "${_raw} is not a plain path under ${ROOT}; not recorded"
+                continue ;;
+            2)  log_warn "${_raw} is not a plain path under ${ROOT}; not recorded"
                 RC=1; REASON="retire-outside-root"
-                continue
-                ;;
+                continue ;;
         esac
+        if is_thumbnail "${_p}"; then
+            # D-CLOUD-059: a thumbnail is a declared member with no entry, so
+            # there is no version to retire and no row to write -- a row keyed
+            # on its file hash would be a version nothing ever recorded. Its
+            # membership is derived from its state's screenshot; alone, that
+            # is what is set to null, which is what drops it from members.
+            _owner="${_p%.png}"
+            if [ -n "${RETIRING[${_owner}]}" ]; then
+                log_debug "thumbnail ${_p} goes with its state; no row of its own"
+            elif [ "${E_SHOT[${_owner}]:--}" = "${_p}" ]; then
+                _esize="${E_SIZE[${_owner}]}"; case "${_esize}" in ''|-|*[!0-9]*) _esize=0 ;; esac
+                op_meta "${_owner}" "${_esize}" "${E_MTIME[${_owner}]}" ""
+                N_META=$(( N_META + 1 ))
+                log_info "thumbnail ${_p} dropped from the members of ${E_UNIT[${_owner}]}; a thumbnail has no version to retire (D-CLOUD-059)"
+            else
+                log_info "thumbnail ${_p} is not a declared member; nothing recorded"
+            fi
+            continue
+        fi
         _sha="${E_SHA[${_p}]}"
         [ "${_sha}" = "-" ] && _sha=""
         if [ -z "${_sha}" ] && [ -f "${ROOT}/${_p}" ]; then
@@ -1173,7 +1233,7 @@ def members:
    - [ $ops[] | select(.op == "put" or .op == "meta") | .path ]) as $dead
 | reduce $ops[] as $o (.;
       if   $o.op == "put"  then .entries[$o.path] = $o.entry
-      elif $o.op == "meta" then .entries[$o.path] |= (.size = $o.size | .mtime = $o.mtime | .screenshot = $o.screenshot)
+      elif $o.op == "meta" then (if .entries[$o.path] != null then .entries[$o.path] |= (.size = $o.size | .mtime = $o.mtime | .screenshot = $o.screenshot) else . end)
       elif $o.op == "move" then .entries[$o.to] = ($doc.entries[$o.from] + { size: $o.size, mtime: $o.mtime, kind: $o.kind, slot: $o.slot, screenshot: $o.screenshot })
       elif $o.op == "retire" then (.retired += [{ sha256: $o.sha256, path: $o.path, retires_pub: (.entries[$o.path].pub // null), at: $o.at }])
                                 | del(.entries[$o.path])
@@ -1273,6 +1333,6 @@ case "${MODE}" in
     exit)   log_info "recorded ${N_PUT} new, ${N_MOVE} moved, ${N_META} metadata, ${N_RETIRE} retired for ${UNIT} (core ${CORE}, build ${CORE_BUILD}, exit ${EXITCODE}, $(elapsed_ms) ms)" ;;
     rescan) log_info "recorded ${N_PUT} new, ${N_MOVE} moved, ${N_META} metadata, ${N_RETIRE} retired for ${UNIT} (--rescan, $(elapsed_ms) ms)" ;;
     full)   log_info "recorded ${N_PUT} new, ${N_MOVE} moved, ${N_META} metadata, ${N_RETIRE} retired over ${#M_PATHS[@]} claimed path(s) (--full, $(elapsed_ms) ms)" ;;
-    retire) log_info "recorded ${N_RETIRE} retired (--retire, $(elapsed_ms) ms)" ;;
+    retire) log_info "recorded ${N_RETIRE} retired, ${N_META} thumbnail(s) dropped from members (--retire, $(elapsed_ms) ms)" ;;
 esac
 finish "${RC}"

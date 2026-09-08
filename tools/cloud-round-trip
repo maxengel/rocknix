@@ -171,13 +171,12 @@ class Prepared:
         self.settings = {}
         self.prev_paths = {}
         self.prev_rclone_conf = ""
-        self.prev_device_id = None   # rewritten only on a second device that clones the first
         # A capture-only run (prepare_local) reads no rclone.conf and asks the
         # backend for nothing; restore_device must then put back neither.
         self.local_only = False
 
 
-def prepare_device(dev, remote, root, args, prepared, which="", first_id=None):
+def prepare_device(dev, remote, root, args, prepared, which=""):
     """Point one device at the QA endpoint. It is appended to `prepared` as
     soon as its previous state is captured -- before anything is written --
     so the block that restores devices covers it even if this raises."""
@@ -252,18 +251,46 @@ def prepare_device(dev, remote, root, args, prepared, which="", first_id=None):
     if not args.real_roms:
         print(f"    scratch tree {SCRATCH} (pass --real-roms to use /storage/roms)")
     print(f"    SAVES_REMOTE {syncpath} on the {backend('backend').strip()} endpoint")
-
-    # Two guests from one image carry one identity: cloud_device_id hashes
-    # the permanent MAC, and the VM profile fixes it. That is A11's cloned
-    # card, which A11 constructs on purpose; every other fixture needs two
-    # devices, so the second gets its own id for the run.
-    if first_id is not None:
-        own = dev.run("cloud_device_id 2>/dev/null || true").strip()
-        if own == first_id:
-            p.prev_device_id = dev.run(f"cat {ID_FILE} 2>/dev/null || true")
-            dev.write(ID_FILE, f"{own}-second\n".encode())
-            print(f"    device id was a clone of the first's ({own}); it is {own}-second for this run")
     return p
+
+
+def assert_two_devices(a, b):
+    """Two guests are two devices only if cloud_device_id says so, and every
+    two-device fixture rests on that: with one id they would write one
+    manifest-<id>.json, one settings folder and one set of agreement records,
+    and agree with themselves (blindspot 31's shape). It hashes the permanent
+    MAC, and until fork #91 tools/vm-pair started both guests on the profile's
+    fixed address -- so both printed one id, and this harness rewrote b's to
+    "<id>-second" for the run, which put every pair fixture on an identity the
+    harness had invented. Now a shared id stops the run before either device
+    is prepared: nothing is written, so there is nothing to put back.
+
+    Runs the tool as the fixtures do (cloud_device_id, on each guest's own
+    PATH prefix); an id that cannot be read fails the same way, because a
+    check that could not run has not passed."""
+    step("the two devices are two devices, not one id twice (#91)")
+    ids = [d.run("cloud_device_id 2>/dev/null || true").strip() for d in (a, b)]
+    if check(all(ids) and ids[0] != ids[1],
+             f"a is {ids[0]}, b is {ids[1]}",
+             f"a is {ids[0] or 'no id'}, b is {ids[1] or 'no id'} -- one id, or none, between two devices (#91)"):
+        return
+    # Which remedy: a blank id is the tool missing or failing, not a clone; a
+    # guest pair on one MAC needs `tools/vm-pair up` again (the id is derived
+    # from the address and stored on first boot, so clearing the stored one
+    # re-derives the same); a pair on two MACs with one id is a stale clone
+    # -- A11 writes a's id onto b and puts it back, and an interrupted run
+    # can leave it -- and there the stored id is what to clear.
+    macs = [d.run("cat /sys/class/net/eth0/address 2>/dev/null || true").strip() for d in (a, b)]
+    if not all(ids):
+        why = (f"cloud_device_id printed nothing on {'a' if not ids[0] else 'b'}: the tool is missing there or "
+               "failed (check `command -v cloud_device_id` on that guest, and --path-prefix)")
+    elif macs[0] and macs[0] == macs[1]:
+        why = (f"both guests carry the MAC {macs[0]}: this pair predates vm-pair giving guest b its own address; "
+               "re-create it with `tools/vm-pair up <img.gz>` (clearing b's stored id alone re-derives the same one)")
+    else:
+        why = (f"the MACs differ ({macs[0] or '?'} / {macs[1] or '?'}), so b's stored id is a stale clone; "
+               f"remove {ID_FILE} on b and run again")
+    raise Fail(f"refusing the two-device fixtures: {why} (#91)")
 
 
 def prepare_local(dev, root, args, prepared):
@@ -363,10 +390,11 @@ def main():
         if cap_only:
             first = prepare_local(devices[0], root, args, prepared)
         else:
+            if len(devices) > 1:
+                assert_two_devices(devices[0], devices[1])
             first = prepare_device(devices[0], remote, root, args, prepared, which="a " if len(devices) > 1 else "")
             if len(devices) > 1:
-                first_id = devices[0].run("cloud_device_id 2>/dev/null || true").strip()
-                prepare_device(devices[1], remote, root, args, prepared, which="b ", first_id=first_id)
+                prepare_device(devices[1], remote, root, args, prepared, which="b ")
         if not args.only:
             failures += run_steps(first.dev, root, remote, args, first.settings, first.prev_paths)
         if len(prepared) > 1:
@@ -2376,10 +2404,19 @@ def iso_mtime(dev, path):
 
 
 def last_capture(dev):
-    """The durable stamp as (epoch, rc, mode, unit), or None."""
+    """The durable stamp as (epoch, rc, mode, unit, "emu-exit=<N|?>",
+    "<emulator>/<core>"), or None for anything else -- a four-field stamp
+    from before the launch's exit and the frozen pair were carried is None
+    too, so every check on the trailing fields fails against it. emu-exit is
+    what ES passed to --exit: runemu.sh's 0/1, not the emulator's code. The
+    unit may contain spaces (a ROM stem); the two trailing fields never do,
+    so the parse takes three fields from the front and two from the back."""
     line = dev.run(f"cat {CACHE}/last-capture 2>/dev/null || true").strip()
-    fields = line.split(None, 3)
-    return tuple(fields) if len(fields) == 4 else None
+    parts = line.rsplit(None, 2)
+    if len(parts) != 3 or not parts[1].startswith("emu-exit=") or "/" not in parts[2]:
+        return None
+    front = parts[0].split(None, 3)
+    return (*front, parts[1], parts[2]) if len(front) == 4 else None
 
 
 def failures_lines(dev):
@@ -2491,6 +2528,10 @@ def fx_cap1(p):
     stamp = last_capture(a)
     f += not check(stamp is not None and stamp[1] == "0" and stamp[2].split("!")[0] == "exit" and stamp[3] == unit,
                    f"{CACHE}/last-capture records rc 0, mode exit, the unit", f"last-capture is {stamp!r}")
+    f += not check(stamp is not None and stamp[4] == "emu-exit=1" and stamp[5] == "retroarch/mgba",
+                   "and carries the launch's exit as ES passed it (emu-exit=1: runemu.sh's 0/1, not the emulator's own code) "
+                   "and the frozen pair retroarch/mgba, which only the exit path knew",
+                   f"last-capture is {stamp!r}")
     a.run("rm -rf /tmp/noroute /tmp/qa-shim /tmp/qa-spawns /tmp/qa-mark /tmp/qa-cap1.out /tmp/qa-cap1.err", check=False)
     return f
 
@@ -2848,7 +2889,10 @@ def fx_cap7(p):
     shell path (rm + mv, no --retire) records the move, invents no retired
     row and drops the displaced entry with a WARN, while a member that merely
     vanished keeps its entry; retired is bounded at 200; a path outside the
-    root is refused."""
+    root is refused. A thumbnail is a declared member with no entry
+    (D-CLOUD-059): retired beside its state it leaves members with the
+    state's entry, retired alone its state's screenshot goes to null, and
+    neither writes a retired row."""
     f = 0
     a, root = p.a, p.root
     p.reset()
@@ -2870,7 +2914,7 @@ def fx_cap7(p):
     before = {n: dict(entry(m, st("Re", n)) or {}) for n in s}
     if rc != 0 or not all(before[n].get("sha256") == sha(s[n]) for n in s):
         raise Fail(f"the setup capture did not record the three states (exit {rc})")
-    png2_sha = a.sha(p.path(st("Re", 2) + ".png"))
+    # The state and its thumbnail together, as GuiSaveState hands them over.
     rc, _ = run_rc(a, f"cloud_capture --retire {q(st('Re', 2))} {shlex.quote(st('Re', 2) + '.png')}")
     m = manifest_of(a) or {}
     retired = m.get("retired") or []
@@ -2878,14 +2922,35 @@ def fx_cap7(p):
                    "--retire (one absolute, one relative path) exited 0 and removed the state's entry",
                    f"exit {rc}; state2 entry {'present' if entry(m, st('Re', 2)) else 'gone'}")
     rows = {r.get("path"): r for r in retired}
-    f += not check(len(retired) == 2 and rows.get(st("Re", 2), {}).get("sha256") == sha(s[2])
-                   and rows.get(st("Re", 2) + ".png", {}).get("sha256") == png2_sha,
-                   "two retired rows: the state with its entry's sha, the png with its own file hash, root-relative paths",
+    f += not check(len(retired) == 1 and rows.get(st("Re", 2), {}).get("sha256") == sha(s[2]) and st("Re", 2) + ".png" not in rows,
+                   "one retired row: the state with its entry's sha, root-relative; none for the thumbnail, "
+                   "which has no version to retire (D-CLOUD-059)",
                    f"retired {[(r.get('path'), (r.get('sha256') or '')[:8]) for r in retired]}")
     f += not check(all("retires_pub" in r and r["retires_pub"] is None and ISO_UTC.match(r.get("at") or "") for r in retired),
-                   "retires_pub null and `at` ISO-UTC on both", f"rows {retired}")
+                   "retires_pub null and `at` ISO-UTC on it", f"rows {retired}")
     f += not check(members(m, "gba:Re") is not None and not any(x in members(m, "gba:Re") for x in (st("Re", 2), st("Re", 2) + ".png")),
                    "units[gba:Re].members no longer names either", f"members {members(m, 'gba:Re')}")
+    stamp = last_capture(a)
+    f += not check(stamp is not None and stamp[2] == "retire" and stamp[4:] == ("emu-exit=?", "-/-"),
+                   "last-capture for a --retire reads mode retire, emu-exit=? and -/- (no game ran)", f"last-capture is {stamp!r}")
+    # A thumbnail alone (the manager can delete just the picture): the
+    # state's entry stays, its screenshot goes to null, and that is what
+    # drops the .png from members -- still no retired row.
+    png1 = st("Re", 1) + ".png"
+    rc, _ = run_rc(a, f"cloud_capture --retire {q(png1)}")
+    m = manifest_of(a) or {}
+    e1 = entry(m, st("Re", 1)) or {}
+    f += not check(rc == 0 and e1.get("sha256") == sha(s[1]) and "screenshot" in e1 and e1["screenshot"] is None,
+                   "--retire of a thumbnail alone: exit 0, the state's entry stays with screenshot null",
+                   f"exit {rc}; state1 {'HAS NO ENTRY' if not e1 else 'screenshot ' + repr(e1.get('screenshot'))}")
+    f += not check(len(m.get("retired") or []) == 1 and png1 not in {r.get("path") for r in m.get("retired") or []},
+                   "and retired gained nothing", f"retired {[(r.get('path'), (r.get('sha256') or '')[:8]) for r in m.get('retired') or []]}")
+    f += not check(members(m, "gba:Re") is not None and png1 not in members(m, "gba:Re") and st("Re", 1) in members(m, "gba:Re"),
+                   "units[gba:Re].members drops the png and keeps the state", f"members {members(m, 'gba:Re')}")
+    f += not check(not any(k.endswith(".png") for k in m.get("entries", {})),
+                   "no entry was created for the png (a meta op on a missing entry makes nothing)",
+                   f"png entries: {[k for k in m.get('entries', {}) if k.endswith('.png')]}")
+    a.run(f"rm -f {q(png1)}")
     # The stage baseline is taken after the retire: its GC drops the retired
     # version's seal (referenced by no entry), and the claim under test is
     # that the *move* adds nothing. rename keeps mtime, as copyToSlot(move=true) does.
@@ -2907,7 +2972,7 @@ def fx_cap7(p):
     f += not check(entry(m, st("Re", 3)) is None, "no entry at state3", "state3 still has an entry")
     f += not check(stage_count(a) == n_stage and a.run(f"stat -c '%i %Y' {CACHE}/stage/{sha(s[3])}").strip() == s3_stat,
                    "the stage did not grow (a move needs no new copy)", f"stage {stage_count(a)} vs {n_stage}")
-    f += not check(len(m.get("retired") or []) == 2, "retired is still length 2", f"retired length {len(m.get('retired') or [])}")
+    f += not check(len(m.get("retired") or []) == 1, "retired is still length 1", f"retired length {len(m.get('retired') or [])}")
 
     # A copy and a new version at its source in one pass: cp -p state1 state2
     # (a copyToSlot without move keeps the mtime) then new bytes at state1.
@@ -3138,6 +3203,8 @@ def fx_cap9(p):
     f += not check(rc == 0 and manifest_of(a) is None and failures_lines(a) == n0 and stamp is not None and stamp[1] == "0",
                    "--emulator '' (a system with no emulator): exit 0, nothing recorded, no capture-failures row, last-capture rc 0",
                    f"exit {rc}; manifest {'created' if manifest_of(a) is not None else 'absent'}; failures {failures_lines(a)} vs {n0}; stamp {stamp!r}")
+    f += not check(stamp is not None and stamp[4:] == ("emu-exit=0", "-/-"),
+                   "its stamp carries the exit it was given (emu-exit=0) and -/- for the empty pair", f"stamp {stamp!r}")
 
     set_key(a, "SAVESPATH", "/storage/cloud-qa-missing")
     n0 = failures_lines(a)
@@ -3199,6 +3266,11 @@ def fx_cap9(p):
     f += not check(stamp_b is not None and stamp_b[1] == "1" and stamp_e is not None and stamp_e[1] == "1",
                    "last-capture recorded rc 1 after both refusals (a stamp that survives the reboot /var/log does not)",
                    f"last-capture after SAVESPATH: {stamp_b!r}; after schema: {stamp_e!r}")
+    f += not check(stamp_b is not None and stamp_b[4:] == ("emu-exit=?", "retroarch/mgba")
+                   and stamp_e is not None and stamp_e[4:] == ("emu-exit=?", "retroarch/mgba"),
+                   "both refusals still stamped the frozen pair retroarch/mgba and emu-exit=? (no --exit was passed): "
+                   "the run that could not record is the one whose log line will be gone",
+                   f"after SAVESPATH: {stamp_b!r}; after schema: {stamp_e!r}")
     f += not check(failures_lines(a) > n0 and "schema" in reason, "capture-failures names the reason",
                    f"capture-failures last line {reason!r}")
 
@@ -3917,19 +3989,15 @@ def run_contract(p, kind, args):
 
 
 def restore_device(p, args, archive):
-    """Put the device back: its remote, its paths, its identity, the
-    settings-restore option, the scratch tree, the fixture system -- on every
-    exit."""
+    """Put the device back: its remote, its paths, the settings-restore
+    option, the scratch tree, the fixture system -- on every exit. Its
+    identity is not the harness's to touch: prepare never writes it (#91),
+    and A11, which clones one on purpose, puts it back itself."""
     if args.keep:
         return
     dev, prev_paths, prev_rclone_conf = p.dev, p.prev_paths, p.prev_rclone_conf
     step(f"clean up {dev.host} port {dev.port}")
     try:
-        if p.prev_device_id is not None:
-            if p.prev_device_id.strip():
-                dev.write(ID_FILE, p.prev_device_id.encode())
-            else:
-                dev.run(f"rm -f {ID_FILE}", check=False)
         dev.run(f"rm -f {shlex.quote(archive)}", check=False)
         # The settings-restore option is put back only when the suite saved
         # it: run_steps writes {CONF}.qa-prev, a --only run never does, and
@@ -3965,7 +4033,7 @@ def restore_device(p, args, archive):
         else:
             dev.run(f"rm -f {RCLONE_CONF}", check=False)
         backend("reset")
-        print("    scratch tree and bucket emptied; the device's own remote, paths, identity and "
+        print("    scratch tree and bucket emptied; the device's own remote, paths and "
               "settings-backup setting restored")
     except Fail as e:
         print(f"    WARN  clean-up incomplete: {e}", file=sys.stderr)
