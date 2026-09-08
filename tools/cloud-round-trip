@@ -14,6 +14,14 @@ With --second-port the two-device fixtures of #35 run after the single-device
 suite (--only A1,A9 runs just those): a conflict is a change on both sides
 since two devices last agreed, and only a pair can make one (D-QA-009).
 
+    ./tools/cloud-round-trip --host root@127.0.0.1 --port 10022 --identity ... \
+        --path-prefix /tmp/qa-bin --only CAP1,CAP2,CAP3,CAP4,CAP5,CAP6,CAP7,CAP8,CAP9,CAP10
+
+--only CAP1..CAP10 runs #21's capture fixtures against a staged cloud_capture
+on one device with no cloud at all -- no MinIO, no remote, no second guest
+(see the capture section below for what to stage). --list prints both
+registries without touching a device.
+
 Two guards, both load-bearing:
 
 * Every cloud_* script picks its remote with `rclone listremotes | head -1`.
@@ -155,6 +163,9 @@ class Prepared:
         self.prev_paths = {}
         self.prev_rclone_conf = ""
         self.prev_device_id = None   # rewritten only on a second device that clones the first
+        # A capture-only run (prepare_local) reads no rclone.conf and asks the
+        # backend for nothing; restore_device must then put back neither.
+        self.local_only = False
 
 
 def prepare_device(dev, remote, root, args, prepared, which="", first_id=None):
@@ -246,10 +257,51 @@ def prepare_device(dev, remote, root, args, prepared, which="", first_id=None):
     return p
 
 
+def prepare_local(dev, root, args, prepared):
+    """Point one device's saves root at the scratch tree and nothing else: no
+    remote, no bucket, no second guest. The capture fixtures (#21) drive a
+    producer that opens no socket, so the QA endpoint is never asked for
+    anything and the device's rclone.conf is never read -- which is why
+    restore_device must not "put back" a remote this prepare never captured
+    (as written it deleted the file whenever prev_rclone_conf was blank)."""
+    if args.real_roms:
+        raise Fail("the capture fixtures empty the saves root between runs; they never run against real ROMs")
+    p = Prepared(dev)
+    p.local_only = True
+    step("device reachable and equipped (local: no cloud)")
+    who = dev.run("echo ok", check=False).strip()
+    if not check(who == "ok", "ssh works", "no shell over ssh"):
+        raise Fail(f"no shell over ssh on {dev.host} port {dev.port}")
+    have = dev.run("command -v jq cloud_device_id cloud_saves_root cloud_capture || true")
+    check(all(t in have for t in ("jq", "cloud_device_id", "cloud_saves_root")),
+          "jq and the sibling helpers present", "device is missing jq, cloud_device_id or cloud_saves_root")
+    check("cloud_capture" in have, "cloud_capture resolves (staged by hand under --path-prefix)",
+          "cloud_capture does not resolve: stage it into the prefix directory; every fixture will fail its setup")
+    step("point the device's saves root at the scratch tree")
+    p.prev_paths["SAVESPATH"] = dev.run(f"grep -m1 '^SAVESPATH=' {CONF} 2>/dev/null || true").strip()
+    prepared.append(p)
+    dev.run(f"mkdir -p {shlex.quote(root)}")
+    apply_settings(dev, {"SAVESPATH": root})
+    p.settings = {"SAVESPATH": root}
+    print(f"    scratch tree {root}; SAVESPATH points at it for the run; no remote is touched")
+    return p
+
+
+def list_fixtures():
+    """The registries, for --list: what --only can name, without a device."""
+    print("two-device fixtures (need --second-port; --only A1,A9,...):")
+    for key, title, _ in PAIR_FIXTURES:
+        print(f"  {key:<10}{title}")
+    print(f"  {'CONTRACT':<10}#9's transport contract under the reconciler (see --transport)")
+    print("\ncapture fixtures (one device, no cloud; --only CAP1,...,CAP10):")
+    for key, title, _ in CAPTURE_FIXTURES:
+        print(f"  {key:<10}{title}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--host", required=True, help="ssh target, e.g. root@127.0.0.1")
+    ap.add_argument("--host", help="ssh target, e.g. root@127.0.0.1 (required unless --list)")
     ap.add_argument("--port", type=int, default=10022)
     ap.add_argument("--identity", help="ssh private key")
     ap.add_argument("--real-roms", action="store_true",
@@ -259,15 +311,27 @@ def main():
     ap.add_argument("--second-port", type=int,
                     help="ssh port of a second device -- the VM pair's guest b -- which turns on the two-device fixtures (D-QA-009)")
     ap.add_argument("--second-host", help="ssh target of the second device (default: the same as --host)")
-    ap.add_argument("--only", help="run only these two-device fixtures (comma-separated: A1,A9,CONTRACT), skipping the single-device suite")
+    ap.add_argument("--only", help="run only these fixtures, skipping the single-device suite (comma-separated: A1,A9,CONTRACT "
+                    "for the two-device set, which needs --second-port; CAP1..CAP10 for the capture set, one device, no cloud)")
+    ap.add_argument("--list", action="store_true", help="print the fixture registries and exit without touching a device")
     ap.add_argument("--transport", default="copy,bisync", help="transports for #9's contract fixtures: copy, bisync, or both (default)")
     ap.add_argument("--bisync-flags", default="", help="extra flags for every rclone bisync run (Gate 11 variants)")
     ap.add_argument("--dump", help="a host directory to write every transport run's raw output into (Gate 11's record)")
     args = ap.parse_args()
+    if args.list:
+        list_fixtures()
+        return 0
+    if not args.host:
+        ap.error("--host is required")
     if args.real_roms and args.second_port:
         raise Fail("the two-device fixtures rewrite both saves trees; they never run against real ROMs (D-QA-009)")
 
-    remote = backend("remote-name").strip()
+    cap_keys = {k for k, _, _ in CAPTURE_FIXTURES}
+    only = {k.strip().upper() for k in args.only.split(",")} if args.only else None
+    # A run naming only capture fixtures needs no MinIO and no second guest:
+    # the producer is network-free, so the backend is asked for nothing.
+    cap_only = only is not None and only <= cap_keys
+    remote = "" if cap_only else backend("remote-name").strip()
     root = "/storage/roms" if args.real_roms else SCRATCH
     devices = [Device(args.host, args.port, args.identity, args.path_prefix)]
     if args.second_port:
@@ -283,16 +347,21 @@ def main():
     # hard way: a run that aborted on guest b left the QA remote and the QA
     # paths behind.
     try:
-        first = prepare_device(devices[0], remote, root, args, prepared, which="a " if len(devices) > 1 else "")
-        if len(devices) > 1:
-            first_id = devices[0].run("cloud_device_id 2>/dev/null || true").strip()
-            prepare_device(devices[1], remote, root, args, prepared, which="b ", first_id=first_id)
+        if cap_only:
+            first = prepare_local(devices[0], root, args, prepared)
+        else:
+            first = prepare_device(devices[0], remote, root, args, prepared, which="a " if len(devices) > 1 else "")
+            if len(devices) > 1:
+                first_id = devices[0].run("cloud_device_id 2>/dev/null || true").strip()
+                prepare_device(devices[1], remote, root, args, prepared, which="b ", first_id=first_id)
         if not args.only:
             failures += run_steps(first.dev, root, remote, args, first.settings, first.prev_paths)
         if len(prepared) > 1:
             failures += run_pair(prepared[0].dev, prepared[1].dev, root, remote, args, first.settings)
-        elif args.only:
+        elif only and only - cap_keys:
             print("\n--only names two-device fixtures; pass --second-port for the VM pair's guest b")
+        if only and only & cap_keys:
+            failures += run_capture(first.dev, root, args, only)
     finally:
         for p in prepared:
             restore_device(p, args, archive)
@@ -1032,14 +1101,32 @@ def fx_a3(p):
 def fx_a8(p):
     """A8: a publication interrupted after one member of an N64 pair (.eep and
     .mpk: one unit). No device installs the mixed set; an unrelated unit still
-    moves; the hold clears when the second member lands."""
+    moves; the hold clears when the second member lands.
+
+    The pair sits beside the ROM (n64/Torn.eep, n64/Torn.mpk): every shipped
+    mupen64plus.cfg has SaveSRAMPath = "/storage/roms/n64", so that is the
+    layout the emulator writes and the unit capture can see (#21). It was
+    n64/save/, a directory only the allowlist ever named."""
     f = 0
-    eep, mpk, other = "n64/save/Torn.eep", "n64/save/Torn.mpk", "saves/Unrelated.srm"
+    eep, mpk, other = "n64/Torn.eep", "n64/Torn.mpk", "saves/Unrelated.srm"
     e = {"old": os.urandom(2048), "new": os.urandom(2560)}
     m = {"old": os.urandom(32768), "new": os.urandom(40960)}
     u0, u1 = b"unrelated, agreed", b"unrelated, changed on a meanwhile"
     p.reset()
-    p.agree({eep: e["old"], mpk: m["old"], other: u0})
+    try:
+        p.agree({eep: e["old"], mpk: m["old"], other: u0})
+    except Fail as x:
+        # The shipped allowlist admits n64/save/*.eep and **/*.srm, not the
+        # .eep/.mpk the emulator writes beside the ROM, so until the includes
+        # land (#89, the allowlist issue split from #21) the pair never
+        # reaches the cloud and A8 cannot get past its first pass. Say so --
+        # but only when the evidence is that shape: the .srm made it and
+        # neither member of the pair did. A backend outage or a broken
+        # cloud_backup is re-raised as itself, not dressed as the known gap.
+        if p.cloud_sha(other) == sha(u0) and not p.cloud_sha(eep) and not p.cloud_sha(mpk):
+            raise Fail(f"{x} -- a standalone N64 pair beside the ROM is not in the sync allowlist yet "
+                       "(+ /**/*.eep, + /**/*.mpk: #89, the allowlist issue split from #21); A8 waits on it")
+        raise
     p.b.write(p.path(eep), e["new"])
     p.b.write(p.path(mpk), m["new"])
     # b publishes one file at a time at 8 KiB/s; rclone is killed once the
@@ -1076,20 +1163,33 @@ def fx_a8(p):
 def fx_a9(p):
     """A9: delete and renumber on one device, sync repeatedly on the other; a
     retired hash put back; an unexplained rm; a saves root that is unmounted,
-    empty, or pointed at an empty cloud folder, with agreement on record."""
+    empty, or pointed at an empty cloud folder, with agreement on record.
+
+    The states live under savestates/gba/ and the save under gba/ -- the
+    layout ES and RetroArch write, so the unit is one capture can see (#21).
+    Where the deletion models the save-state manager's, `cloud_capture
+    --retire` runs before the unlink, as GuiSaveState does, so the retired
+    record #22 needs exists in the case that tests it (D-CLOUD-053)."""
     f = 0
     s = {"S1": os.urandom(3001), "S2": os.urandom(3002), "S3": os.urandom(3003)}
-    st = lambda n: f"savestates/Renumber.state{n}"
+    st = lambda n: f"savestates/gba/Renumber.state{n}"
     p.reset()
     p.agree({st(1): s["S1"], st(2): s["S2"], st(3): s["S3"]})
-    # a deletes slot 2 and ES renumbers: slot 3 becomes slot 2.
+    # a deletes slot 2 from the manager -- which records the deletion first
+    # -- and ES renumbers: slot 3 becomes slot 2.
+    rc, _ = run_rc(p.a, f"cloud_capture --retire {shlex.quote(p.path(st(2)))}")
+    rows = [r for r in (manifest_of(p.a) or {}).get("retired") or [] if r.get("path") == st(2)]
+    f += not check(rc == 0 and bool(rows) and rows[0].get("sha256") == sha(s["S2"]),
+                   "the manager's deletion left a retired row for state2 with S2's sha (#21; the record #22 propagates)",
+                   f"cloud_capture --retire exited {rc}; retired rows for state2: {[(r.get('sha256') or '')[:8] for r in rows]} "
+                   "-- the #22 checks below would fail on a #21 precondition")
     p.a.run(f"rm -f {shlex.quote(p.path(st(2)))}; mv {shlex.quote(p.path(st(3)))} {shlex.quote(p.path(st(2)))}")
     run_rc(p.a, BOOT_PAIR)
     for _ in range(2):
         run_rc(p.b, BOOT_PAIR)
 
     def on(dev):
-        out = dev.run(f"cd {shlex.quote(p.root)} && sha256sum savestates/* 2>/dev/null || true")
+        out = dev.run(f"cd {shlex.quote(p.root)} && sha256sum savestates/gba/* 2>/dev/null || true")
         return sorted(name_of(line.split()[0], s) for line in out.splitlines() if line.strip())
 
     def in_cloud():
@@ -1108,7 +1208,7 @@ def fx_a9(p):
                    f"b holds {on(p.b)} after the retired hash was put back")
 
     # An unexplained absence: rm, not ES's delete, so no retired record.
-    gone, kept = "saves/Removed By Hand.srm", "saves/Kept.srm"
+    gone, kept = "gba/Removed By Hand.srm", "saves/Kept.srm"
     g0 = b"removed by rm on a"
     p.reset()
     p.agree({gone: g0, kept: b"kept"})
@@ -1129,17 +1229,21 @@ def fx_a9(p):
     passes = WRITERS[:5]
     q = shlex.quote(p.root)
     p.a.run(f"mv {q} {q}.away")
-    rcs = [run_rc(p.a, c)[0] for _, c in passes]
-    present = p.a.run(f"find {q} -type f 2>/dev/null | wc -l").strip()
-    p.a.run(f"rm -rf {q}; mv {q}.away {q}")
+    try:
+        rcs = [run_rc(p.a, c)[0] for _, c in passes]
+        present = p.a.run(f"find {q} -type f 2>/dev/null | wc -l").strip()
+    finally:
+        p.a.run(f"rm -rf {q}; mv {q}.away {q}")
     f += not check(all(rc == 1 for rc in rcs), "with the saves root unmounted every pass refused (exit 1)",
                    f"passes on an unmounted root exited {rcs} (A9: refuse, reason named)")
     f += not check(present == "0", "and nothing was written where the root should be",
                    f"{present} file(s) were written into a root that was not mounted")
     p.a.run(f"mv {q} {q}.away; mkdir -p {q}")
-    rcs = [run_rc(p.a, c)[0] for _, c in passes]
-    present = p.a.run(f"find {q} -type f 2>/dev/null | wc -l").strip()
-    p.a.run(f"rm -rf {q}; mv {q}.away {q}")
+    try:
+        rcs = [run_rc(p.a, c)[0] for _, c in passes]
+        present = p.a.run(f"find {q} -type f 2>/dev/null | wc -l").strip()
+    finally:
+        p.a.run(f"rm -rf {q}; mv {q}.away {q}")
     f += not check(all(rc == 1 for rc in rcs), "with the saves root empty every pass refused (exit 1)",
                    f"passes on an empty root exited {rcs}")
     f += not check(present == "0", "and nothing was downloaded into it",
@@ -1224,18 +1328,35 @@ def fx_a12(p):
 
 
 def fx_a14(p):
-    """A14: the manifest step. A state and a save planted, the exit path run:
-    the manifest is on the remote under savestates/.rocknix/ with sha256 equal
-    to the planted bytes, remote_hash null on WebDAV and non-null on MinIO;
-    and the ROMs-and-BIOS tier never sees the savestates directory."""
+    """A14: the manifest step, in two halves. #21's: a state (with its
+    thumbnail) and a save planted on the unit layout, the producer run the way
+    ES runs it at exit -- the working copy at /storage/.cache/cloud_sync holds
+    an entry for both with the planted shas. #22's: the exit path pushes it,
+    so the manifest is on the remote under savestates/.rocknix/ with the same
+    sha256, remote_hash null on WebDAV and non-null on MinIO; and the
+    ROMs-and-BIOS tier never sees the savestates directory. The remote checks
+    stay, and stay failing, until #22 pushes the file.
+
+    The paths carry a <system> component because no unit table can see
+    savestates/Manifest Game.state1 or saves/Manifest Game.srm: without the
+    layout and without a call to the producer, nothing would ever have
+    written the entry this fixture asserted."""
     f = 0
-    state, save = "savestates/Manifest Game.state1", "saves/Manifest Game.srm"
-    sbytes = b"#RZIPv" + os.urandom(2000)
+    state, save = "savestates/gba/Manifest Game.state1", "gba/Manifest Game.srm"
+    sbytes, vbytes = b"#RZIPv" + os.urandom(2000), os.urandom(512)
     p.reset()
     p.a.write(p.path(state), sbytes)
-    p.a.write(p.path(save), os.urandom(512))
-    run_rc(p.a, "cloud_backup --yes --saves-only --recent")
+    p.a.write(p.path(state + ".png"), b"\x89PNG" + os.urandom(300))
+    p.a.write(p.path(save), vbytes)
+    rc, _ = capture(p.a, p.root, "gba", p.path("gba/Manifest Game.gba"))
     a_id = p.a.run("cloud_device_id").strip()
+    local = manifest_of(p.a)
+    got = {rel: (entry(local, rel) or {}).get("sha256") for rel in (state, save)}
+    f += not check(rc == 0 and got[state] == sha(sbytes) and got[save] == sha(vbytes),
+                   f"the working copy {CACHE}/manifest-{a_id}.json holds both entries with the planted shas (#21)",
+                   f"exit {rc}; working copy {'absent' if local is None else 'present'}; entries "
+                   f"{ {k: (v or '')[:8] for k, v in got.items()} } (#21)")
+    run_rc(p.a, "cloud_backup --yes --saves-only --recent")
     mpath = f"{p.spath}/savestates/.rocknix/manifest-{a_id}.json"
     raw = backend_bytes(mpath)
     f += not check(raw is not None, "the manifest reached the cloud under savestates/.rocknix/",
@@ -1245,12 +1366,12 @@ def fx_a14(p):
             m = json.loads(raw)
         except ValueError:
             m = {}
-        entry = m.get("entries", {}).get(state) if isinstance(m, dict) else None
-        f += not check(bool(entry) and entry.get("sha256") == sha(sbytes),
-                       "its entry for the state carries the planted bytes' sha256",
-                       "the manifest has no entry for the state, or its sha256 is not the planted bytes'")
+        pushed = m.get("entries", {}).get(state) if isinstance(m, dict) else None
+        f += not check(bool(pushed) and pushed.get("sha256") == sha(sbytes),
+                       "its entry for the state carries the planted bytes' sha256 (#22)",
+                       "the pushed manifest has no entry for the state, or its sha256 is not the planted bytes' (#22)")
         kind = backend("backend").strip()
-        rh = (entry or {}).get("remote_hash", "unset")
+        rh = (pushed or {}).get("remote_hash", "unset")
         f += not check((rh is None) if kind == "webdav" else rh not in (None, "unset"),
                        f"remote_hash is {'null' if kind == 'webdav' else 'non-null'} on {kind}",
                        f"remote_hash is {rh!r} on {kind}")
@@ -1358,8 +1479,7 @@ def run_pair(a, b, root, remote, args, settings):
     p = Pair(a, b, root, settings)
     # The cache directory holds each device's stamps and selections; the
     # fixtures wipe it between runs, so it is carried across and put back.
-    for d in (a, b):
-        d.run("tar -C /storage/.cache -czf /tmp/qa-cache.tgz cloud_sync 2>/dev/null || true", check=False)
+    had = {d: snapshot_cache(d) for d in (a, b)}
     try:
         for key, title, fn in PAIR_FIXTURES:
             if only and key not in only:
@@ -1376,8 +1496,1292 @@ def run_pair(a, b, root, remote, args, settings):
     finally:
         p.reset()
         for d in (a, b):
-            d.run(f"rm -rf {CACHE}; tar -C /storage/.cache -xzf /tmp/qa-cache.tgz 2>/dev/null; rm -f /tmp/qa-cache.tgz",
-                  check=False)
+            restore_cache(d, had[d])
+    return failures
+
+
+# ===========================================================================
+# #21's producer: cloud_capture, on one device, with no cloud
+# ===========================================================================
+#
+# The capture fixtures drive /usr/bin/cloud_capture the way EmulationStation
+# does at game exit (--system/--rom/--emulator/--core/--started/--exit), the
+# way the save-state manager does (--retire, --rescan) and the way the boot
+# autostart does (--full), and read the working copy it writes at
+# /storage/.cache/cloud_sync/manifest-<device-id>.json. The producer opens no
+# socket and spawns no rclone, so these need neither MinIO nor a second guest:
+# --only CAP1,...,CAP10 prepares the device locally (prepare_local) and the
+# QA endpoint is never asked for anything.
+#
+# The harness copies nothing onto the device. Stage the producer and its two
+# siblings by hand before a run -- they are resolved beside $0, so all three
+# must sit in the same directory:
+#
+#     scp -i /tmp/rocknix-vm-pair/qa-key -P 10022 \
+#         projects/ROCKNIX/packages/network/rclone/sources/{cloud_capture,cloud_device_id,cloud_saves_root} \
+#         root@127.0.0.1:/tmp/qa-bin/ && ssh ... chmod +x /tmp/qa-bin/cloud_*
+#     ./tools/cloud-round-trip --host root@127.0.0.1 --port 10022 --identity /tmp/rocknix-vm-pair/qa-key \
+#         --path-prefix /tmp/qa-bin --only CAP1,CAP2,CAP3,CAP4,CAP5,CAP6,CAP7,CAP8,CAP9,CAP10,CAP11
+#
+# CAP10 (d) also reads autostart/102-cloud-saves: stage it into the same
+# directory to check the repo's copy rather than the image's. CAP11 copies
+# the staged producer beside a cloud_device_id shim of its own.
+#
+# What the harness cannot prove is ES's half -- that the call is made outside
+# the cloudsaves.gameexit gate, on a nonzero exit, with the --core= token of
+# the finished command -- because it cannot drive EmulationStation. Those are
+# the six VM procedures in the #21 design; each fixture's docstring says
+# which half it covers.
+
+ISO_UTC = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+
+
+def require_capture(dev):
+    """The producer must resolve under the PATH prefix. It is staged by hand;
+    the harness copies nothing, so its absence is a setup failure, not a
+    finding about the script."""
+    have = dev.run("command -v cloud_capture 2>/dev/null || true").strip()
+    if not have:
+        raise Fail("cloud_capture does not resolve on the device (with --path-prefix): stage "
+                   "projects/ROCKNIX/packages/network/rclone/sources/cloud_capture into the prefix directory "
+                   "beside cloud_device_id and cloud_saves_root, chmod +x -- the harness copies nothing")
+    return have
+
+
+def local_reset(dev, root):
+    """Empty the saves root and the cache -- manifest, stage, stamps, the
+    saves-root record -- so what one fixture leaves cannot pass the next. No
+    backend("reset"): there is no cloud in a capture run."""
+    dev.run(f"rm -rf {shlex.quote(root)} {CACHE}; mkdir -p {shlex.quote(root)} {CACHE}")
+
+
+def manifest_text(dev):
+    """(present, text) of the working copy. Presence is asserted with [ -e ],
+    never inferred from an empty stdout (blindspot 31: a helper that reads
+    through the wrong path agrees with itself)."""
+    out = dev.run(f"f={CACHE}/manifest-$(cloud_device_id 2>/dev/null).json; "
+                  "if [ -e \"$f\" ]; then echo PRESENT; cat \"$f\"; else echo ABSENT; fi")
+    head, _, rest = out.partition("\n")
+    return head.strip() == "PRESENT", rest
+
+
+def manifest_of(dev):
+    """The parsed working copy, or None when the file is absent. A file that
+    is present but does not parse raises -- the fixture that expects one
+    (CAP9 d) reads manifest_text itself."""
+    present, text = manifest_text(dev)
+    if not present:
+        return None
+    try:
+        return json.loads(text)
+    except ValueError as e:
+        raise Fail(f"the manifest is present but does not parse: {e}")
+
+
+def manifest_stat(dev):
+    """(mtime, inode, sha256) of the working copy, or None when absent. All
+    three, because ext4 keeps seconds: a rewrite within the same second is
+    invisible by mtime alone (I8 is asserted on all three)."""
+    out = dev.run(f"f={CACHE}/manifest-$(cloud_device_id 2>/dev/null).json; "
+                  "if [ -e \"$f\" ]; then stat -c '%Y %i' \"$f\"; sha256sum \"$f\" | cut -c1-64; else echo ABSENT; fi")
+    fields = out.split()
+    if fields == ["ABSENT"]:
+        return None
+    return int(fields[0]), int(fields[1]), fields[2]
+
+
+def entry(m, rel):
+    return ((m or {}).get("entries") or {}).get(rel)
+
+
+def members(m, unit):
+    return (((m or {}).get("units") or {}).get(unit) or {}).get("members")
+
+
+def nulls(e, keys):
+    """Every key present and null -- absent is not null (§6)."""
+    return bool(e) and all(k in e and e[k] is None for k in keys)
+
+
+def capture(dev, root, system, rom, emulator="retroarch", core="mgba", started=0, exit_code=None, env=""):
+    """Run the producer the way ES does at exit, every value quoted the way
+    shellQuote would. --started 0 by default: the explicit record-everything
+    form, since a fixture's planted files predate any real session."""
+    cmd = (f"cloud_capture --system {shlex.quote(system)} --rom {shlex.quote(rom)} "
+           f"--emulator {shlex.quote(emulator)} --core {shlex.quote(core)} --started {int(started)}")
+    if exit_code is not None:
+        cmd += f" --exit {int(exit_code)}"
+    return run_rc(dev, cmd, env)
+
+
+def plant(dev, root, rel, data):
+    """Write one member; hand its bytes back so the caller can hash them."""
+    dev.write(f"{root}/{rel}", data)
+    return data
+
+
+def plant_unit(dev, root, system, stem, save=None, states=None, auto=None, png=None, romdir=None):
+    """Plant a libretro unit's members with random bodies and return
+    {relative path: bytes}. `states` maps slot -> size (slot 0 is the bare
+    .state); `png` is the thumbnail size beside every state and auto, or None
+    for none; `romdir` is where the .srm goes (the ROM's directory, because
+    savefiles_in_content_dir is true), defaulting to <system>."""
+    romdir = romdir or system
+    planted = {}
+    if save is not None:
+        planted[f"{romdir}/{stem}.srm"] = os.urandom(save)
+    for slot, size in sorted((states or {}).items()):
+        rel = f"savestates/{system}/{stem}.state{'' if slot == 0 else slot}"
+        planted[rel] = b"#RZIPv" + os.urandom(size)
+        if png:
+            planted[rel + ".png"] = b"\x89PNG" + os.urandom(png)
+    if auto is not None:
+        rel = f"savestates/{system}/{stem}.state.auto"
+        planted[rel] = b"#RZIPv" + os.urandom(auto)
+        if png:
+            planted[rel + ".png"] = b"\x89PNG" + os.urandom(png)
+    for rel, data in planted.items():
+        dev.write(f"{root}/{rel}", data)
+    return planted
+
+
+def stage_count(dev):
+    return int(dev.run(f"ls {CACHE}/stage 2>/dev/null | wc -l").strip() or 0)
+
+
+def stage_sha(dev, digest):
+    """sha256sum of the sealed copy named by a hash -- an integrity check,
+    not a tautology, because the name is the hash the producer recorded."""
+    return dev.sha(f"{CACHE}/stage/{digest}")
+
+
+def iso_mtime(dev, path):
+    """A file's mtime rendered the way the producer renders it."""
+    return dev.run(f"date -u -d @$(stat -c %Y {shlex.quote(path)}) +%FT%TZ").strip()
+
+
+def last_capture(dev):
+    """The durable stamp as (epoch, rc, mode, unit), or None."""
+    line = dev.run(f"cat {CACHE}/last-capture 2>/dev/null || true").strip()
+    fields = line.split(None, 3)
+    return tuple(fields) if len(fields) == 4 else None
+
+
+def failures_lines(dev):
+    return int(dev.run(f"wc -l < {CACHE}/capture-failures 2>/dev/null || echo 0").strip() or 0)
+
+
+class Solo:
+    """One device, its scratch saves root and the producer's working copy.
+    No cloud: nothing here calls backend() or reads rclone.conf."""
+
+    def __init__(self, a, root):
+        self.a, self.root = a, root
+        self.id = a.run("cloud_device_id 2>/dev/null || true").strip()
+        self.manifest = f"{CACHE}/manifest-{self.id}.json"
+        self.stage = f"{CACHE}/stage"
+
+    def path(self, rel):
+        return f"{self.root}/{rel}"
+
+    def reset(self):
+        """Every fixture starts here: the producer resolves, and the root and
+        cache are empty."""
+        require_capture(self.a)
+        local_reset(self.a, self.root)
+
+
+def fx_cap1(p):
+    """CAP1: capture on every exit -- with the transfer lock held by another
+    process, no route, an rclone shim counting spawns, and exit 1 from the
+    emulator. The unit is recorded; each seal is the planted bytes; the
+    thumbnails are declared members with no entry; the .state.auto.bak decoy
+    is nothing; nothing is written into the saves tree; stdout stays empty
+    (ES reads that pipe); no rclone was spawned; the durable stamp names the
+    unit.
+
+    The toggle-off half is ES's: FileData.cpp calls the producer outside the
+    cloudsaves.gameexit gate. VM procedure (1) of the #21 design proves it
+    (cloudsaves.gameexit=0, launch and exit a game, read the manifest); the
+    harness cannot drive EmulationStation."""
+    f = 0
+    a, root = p.a, p.root
+    p.reset()
+    unit = "gba:Game"
+    srm, s1, auto = "gba/Game.srm", "savestates/gba/Game.state1", "savestates/gba/Game.state.auto"
+    planted = plant_unit(a, root, "gba", "Game", save=604, states={1: 40 * 1024}, auto=30 * 1024, png=3 * 1024)
+    plant(a, root, auto + ".bak", b"ES's launch-time swap (SaveState.cpp), never a member")
+    a.run("touch /tmp/qa-mark; sleep 1")
+    # One guest command: the lock held on fd 9 (run_steps' recipe), the ip
+    # shim that reports no route, the rclone shim that counts spawns.
+    out = a.run(
+        "mkdir -p /tmp/noroute /tmp/qa-shim; printf '#!/bin/sh\\nexit 0\\n' > /tmp/noroute/ip; chmod +x /tmp/noroute/ip; "
+        "printf '#!/bin/sh\\necho \"$@\" >> /tmp/qa-spawns\\nexec /usr/bin/rclone \"$@\"\\n' > /tmp/qa-shim/rclone; "
+        "chmod +x /tmp/qa-shim/rclone; rm -f /tmp/qa-spawns /tmp/qa-cap1.out /tmp/qa-cap1.err; "
+        "exec 9>/var/run/cloud_sync.lock; flock -n 9 || echo HOLDER-FAILED; "
+        f"PATH=/tmp/noroute:/tmp/qa-shim:$PATH cloud_capture --system gba --rom {shlex.quote(p.path('gba/Game.gba'))} "
+        "--emulator retroarch --core mgba --started 0 --exit 1 >/tmp/qa-cap1.out 2>/tmp/qa-cap1.err; echo rc=$?; "
+        "exec 9>&-", check=False)
+    rc = next((int(w[3:]) for w in out.split() if w.startswith("rc=") and w[3:].lstrip("-").isdigit()), -1)
+    f += not check("HOLDER-FAILED" not in out, "the test held the transfer lock itself (the setup)",
+                   "could not take the lock to set up the test")
+    f += not check(rc == 0, "capture exited 0 under a held lock, with no route, after exit 1 from the emulator",
+                   f"capture exited {rc} (stderr: {a.run('tail -c 200 /tmp/qa-cap1.err 2>/dev/null || true').strip()!r})")
+    m = manifest_of(a)
+    f += not check(m is not None, "the manifest exists and parses", "no manifest was written")
+    if m is None:
+        a.run("rm -rf /tmp/noroute /tmp/qa-shim /tmp/qa-spawns /tmp/qa-mark", check=False)
+        return f
+    for rel in (srm, s1, auto):
+        e = entry(m, rel) or {}
+        want = sha(planted[rel])
+        f += not check(e.get("sha256") == want == a.sha(p.path(rel)) and e.get("size") == len(planted[rel]),
+                       f"{rel}: sha256 and size are the planted bytes'",
+                       f"{rel}: {'no entry' if not e else 'sha256/size differ from the planted bytes'}")
+    three = [entry(m, r) or {} for r in (srm, s1, auto)]
+    f += not check([e.get("kind") for e in three] == ["save", "state", "auto"],
+                   "kinds save/state/auto", f"kinds {[e.get('kind') for e in three]}")
+    f += not check([e.get("slot") for e in three] == [None, 1, None],
+                   "slots null/1/null", f"slots {[e.get('slot') for e in three]}")
+    f += not check([e.get("screenshot") for e in three] == [None, s1 + ".png", auto + ".png"],
+                   "the state and the auto name their .png as screenshot; the save has none",
+                   f"screenshots {[e.get('screenshot') for e in three]}")
+    f += not check(all(e.get("unit") == unit for e in three), f"unit {unit!r} on all three",
+                   f"units {[e.get('unit') for e in three]}")
+    prov = {k: three[1].get(k) for k in ("emulator", "core", "system", "rom")}
+    f += not check(prov == {"emulator": "retroarch", "core": "mgba", "system": "gba", "rom": "Game.gba"},
+                   "emulator/core/system/rom are the arguments, verbatim", f"provenance {prov}")
+    f += not check(all(nulls(e, ("producer", "pub", "published_at", "replaces", "remote_hash")) for e in three),
+                   "producer/pub/published_at/replaces/remote_hash are present and null",
+                   "a first version carries a non-null (or absent) producer/pub/published_at/replaces/remote_hash")
+    f += not check(all(isinstance(e.get("clock_synced"), bool) for e in three),
+                   "clock_synced is a bool", f"clock_synced {[e.get('clock_synced') for e in three]!r}")
+    f += not check(members(m, unit) == sorted(planted),
+                   "units[gba:Game].members is the five planted paths, sorted, without the .bak",
+                   f"members {members(m, unit)}")
+    f += not check(not any(k.endswith(".png") for k in m.get("entries", {})),
+                   "no entry is keyed on a .png (sidecars are members, not versions)",
+                   f"png entries: {[k for k in m.get('entries', {}) if k.endswith('.png')]}")
+    sealed = [(rel, stage_sha(a, (entry(m, rel) or {}).get("sha256", "")) == (entry(m, rel) or {}).get("sha256"))
+              for rel in (srm, s1, auto)]
+    f += not check(all(ok for _, ok in sealed), "stage/<sha> hashes to its own name for each version",
+                   f"seals wrong or missing for {[rel for rel, ok in sealed if not ok]}")
+    spawns = a.run("cat /tmp/qa-spawns 2>/dev/null || true").strip()
+    f += not check(not spawns, "no rclone was spawned", f"rclone was spawned: {spawns[:80]!r}")
+    newer = a.run(f"find {shlex.quote(root)} -newer /tmp/qa-mark 2>/dev/null || true").strip()
+    f += not check(not newer, "nothing was written into the saves tree",
+                   f"written into the saves tree: {newer.splitlines()[:3]}")
+    size = a.run("wc -c < /tmp/qa-cap1.out 2>/dev/null || echo -1").strip()
+    f += not check(size == "0", "stdout was empty (ES reads that pipe)", f"{size} byte(s) on stdout")
+    stamp = last_capture(a)
+    f += not check(stamp is not None and stamp[1] == "0" and stamp[2].split("!")[0] == "exit" and stamp[3] == unit,
+                   f"{CACHE}/last-capture records rc 0, mode exit, the unit", f"last-capture is {stamp!r}")
+    a.run("rm -rf /tmp/noroute /tmp/qa-shim /tmp/qa-spawns /tmp/qa-mark /tmp/qa-cap1.out /tmp/qa-cap1.err", check=False)
+    return f
+
+
+def fx_cap2(p):
+    """CAP2: the recorded core is the argument, never a default. gba's save is
+    captured under snes9x2005_plus, then under mgba; a standalone with an
+    empty --core records the emulator's name (§6: core is never empty).
+
+    ES's half -- that the value is the --core= token of the finished command,
+    read after setupSaveState, and that the call is ungated -- is proven by
+    inspection of FileData.cpp (~656, ~764) and by VM procedures (1) and (3),
+    not by the harness."""
+    f = 0
+    a, root = p.a, p.root
+    p.reset()
+    rel, rom = "gba/Core.srm", p.path("gba/Core.gba")
+    v1 = plant(a, root, rel, os.urandom(700))
+    rc, _ = capture(a, root, "gba", rom, core="snes9x2005_plus")
+    e1 = entry(manifest_of(a), rel) or {}
+    f += not check(rc == 0 and e1.get("core") == "snes9x2005_plus" and e1.get("emulator") == "retroarch",
+                   "core is snes9x2005_plus (not gba's default), emulator retroarch",
+                   f"exit {rc}; core {e1.get('core')!r}, emulator {e1.get('emulator')!r}")
+    time.sleep(1.1)   # captured_at keeps seconds
+    plant(a, root, rel, os.urandom(701))
+    rc, _ = capture(a, root, "gba", rom, core="mgba")
+    e2 = entry(manifest_of(a), rel) or {}
+    f += not check(e2.get("core") == "mgba", "the next version records mgba", f"core {e2.get('core')!r}")
+    f += not check(e2.get("replaces") == sha(v1), "replaces is the first version's sha",
+                   f"replaces {e2.get('replaces')!r}")
+    f += not check((e2.get("captured_at") or "") > (e1.get("captured_at") or "") and ISO_UTC.match(e2.get("captured_at") or ""),
+                   "captured_at advanced", f"captured_at {e1.get('captured_at')!r} -> {e2.get('captured_at')!r}")
+    f += not check(nulls(e2, ("pub", "published_at")), "pub and published_at are still null",
+                   f"pub {e2.get('pub')!r}, published_at {e2.get('published_at')!r}")
+    plant(a, root, "n64/Empty.eep", os.urandom(2048))
+    rc, _ = capture(a, root, "n64", p.path("n64/Empty.z64"), emulator="mupen64plus", core="")
+    e3 = entry(manifest_of(a), "n64/Empty.eep") or {}
+    f += not check(rc == 0 and e3.get("core") == "mupen64plus" and e3.get("emulator") == "mupen64plus",
+                   "an empty --core is recorded as the emulator's name (never empty)",
+                   f"exit {rc}; core {e3.get('core')!r}, emulator {e3.get('emulator')!r}")
+    return f
+
+
+def fx_cap3(p):
+    """CAP3: the seal is an independent copy. (a) The sealed copy has one link
+    and its own inode, and an in-place write to the source afterwards does
+    not change it. (b) The negative control on the same filesystem: a hard
+    link does follow the write, which is why the seal is a copy (D-CLOUD-034).
+    (c) The seal guard's observed positive: a writer racing the copy of a
+    64 MiB state; either a clean seal or a declined member, never an entry
+    whose bytes are not in the stage."""
+    f = 0
+    a, root = p.a, p.root
+    p.reset()
+    rel, rom = "savestates/gba/Seal.state1", p.path("gba/Seal.gba")
+    src = shlex.quote(p.path(rel))
+    plant(a, root, rel, b"#RZIPv" + os.urandom(2 * 1024 * 1024))
+    rc, _ = capture(a, root, "gba", rom)
+    e = entry(manifest_of(a), rel) or {}
+    rec = e.get("sha256") or ""
+    if rc != 0 or not rec:
+        raise Fail(f"the setup capture recorded nothing (exit {rc})")
+    links = a.run(f"stat -c '%h %i' {CACHE}/stage/{rec} 2>/dev/null || true").split()
+    src_ino = a.run(f"stat -c %i {src}").strip()
+    f += not check(links[:1] == ["1"] and len(links) == 2 and links[1] != src_ino,
+                   "the seal has one link and its own inode", f"seal stat {links} vs source inode {src_ino}")
+    a.run(f"dd if=/dev/urandom of={src} bs=4096 count=1 conv=notrunc 2>/dev/null; sync")
+    f += not check(a.sha(p.path(rel)) != rec, "the in-place write to the source landed (the setup)",
+                   "the mutation did not change the source; the check below would pass for the wrong reason")
+    f += not check(stage_sha(a, rec) == rec, "stage/<sha> still hashes to its name after the source was rewritten",
+                   "THE SEAL FOLLOWED AN IN-PLACE WRITE TO THE SOURCE (a link, not a copy)")
+    size = a.run(f"stat -c %s {CACHE}/stage/{rec} 2>/dev/null || echo -1").strip()
+    f += not check(str(e.get("size")) == size, "the recorded size is the sealed copy's", f"size {e.get('size')} vs seal {size}")
+
+    # (b) the control: the scratch root and /storage/.cache are one filesystem
+    # (/dev/vda2 on the VM), so ln makes a real hard link; /tmp is tmpfs and
+    # would fail with EXDEV.
+    rel2 = "savestates/gba/Seal.state2"
+    src2 = shlex.quote(p.path(rel2))
+    plant(a, root, rel2, b"#RZIPv" + os.urandom(1024 * 1024))
+    linked = a.run(f"ln {src2} {CACHE}/qa-link 2>&1 && echo LINKED || true")
+    same = a.run(f"stat -c '%h %i' {src2} {CACHE}/qa-link 2>/dev/null || true").split()
+    f += not check(len(same) == 4 and same[0] == same[2] == "2" and same[1] == same[3],
+                   "the control's premise, stated: qa-link and its source are one inode with two links",
+                   f"the control is not a hard link (stat '%h %i' gives {same}); what it shows below proves nothing")
+    h1 = a.sha(f"{CACHE}/qa-link")
+    a.run(f"dd if=/dev/urandom of={src2} bs=4096 count=1 conv=notrunc 2>/dev/null; sync")
+    h2 = a.sha(f"{CACHE}/qa-link")
+    a.run(f"rm -f {CACHE}/qa-link")
+    f += not check("LINKED" in linked and h1 and h2 and h1 != h2,
+                   "the hard-linked variant follows the in-place write, which is why the seal is a copy (D-CLOUD-034)",
+                   "the hard link did not follow the write -- the control proves nothing"
+                   + ("" if "LINKED" in linked else f" (ln failed: {linked.strip()[:60]})"))
+
+    # (c) a writer racing the seal of a big state. The writer is a script so
+    # the wait below can find it by a pattern its own shell cannot match.
+    big = "savestates/gba/Race.state1"
+    bsrc = shlex.quote(p.path(big))
+    a.run(f"mkdir -p $(dirname {bsrc}); head -c 67108864 /dev/urandom > {bsrc}; sync")
+    a.write("/tmp/qa-cap3-writer.sh",
+            (f"#!/bin/bash\nfor i in $(seq 2000); do dd if=/dev/urandom of={bsrc} bs=4096 count=1 "
+             "seek=$((RANDOM % 16000)) conv=notrunc 2>/dev/null; done\n").encode())
+    mark = log_mark(a)
+    a.run("setsid bash /tmp/qa-cap3-writer.sh >/dev/null 2>&1 < /dev/null &")
+    rc, _ = capture(a, root, "gba", p.path("gba/Race.gba"))
+    a.run("for i in $(seq 200); do pgrep -f 'qa-cap[3]-writer' >/dev/null || break; sleep 0.2; done; rm -f /tmp/qa-cap3-writer.sh",
+          check=False)
+    e = entry(manifest_of(a), big)
+    tail = log_since(a, mark)
+    if e is not None:
+        sealed = stage_sha(a, e.get("sha256", ""))
+        f += not check(sealed == e.get("sha256"), "a clean seal: the entry's sha is a stage file hashing to its name",
+                       "AN ENTRY WHOSE BYTES ARE NOT IN THE STAGE (sha recorded, seal absent or torn)")
+    else:
+        f += not check(rc == 1 and "changed while it was being sealed" in tail,
+                       "the member changed under the seal three times and was declined (exit 1, WARN)",
+                       f"no entry and no declined-seal WARN (exit {rc}): the guard neither sealed nor said why")
+    return f
+
+
+def fx_cap4(p):
+    """CAP4: nothing changed, nothing rewritten, in all three modes (I8) --
+    the manifest's mtime, inode and content all stand, the stage does not
+    grow, and nothing above DEBUG is logged. Then the positive controls, so
+    the check can fail: a touch changes the manifest and the entry's mtime
+    but not its version; new bytes make a version; a deleted thumbnail leaves
+    the declaration."""
+    f = 0
+    a, root = p.a, p.root
+    p.reset()
+    unit, srm, s1 = "gba:Game", "gba/Game.srm", "savestates/gba/Game.state1"
+    rom = p.path("gba/Game.gba")
+    planted = plant_unit(a, root, "gba", "Game", save=604, states={1: 40 * 1024}, auto=30 * 1024, png=3 * 1024)
+    rc, _ = capture(a, root, "gba", rom)
+    m0, n0 = manifest_stat(a), stage_count(a)
+    if rc != 0 or m0 is None:
+        raise Fail(f"the setup capture recorded nothing (exit {rc})")
+    e0 = entry(manifest_of(a), srm) or {}
+    mark = log_mark(a)
+    time.sleep(2)   # ext4 keeps seconds: a same-second rewrite is invisible by mtime alone
+
+    def unchanged(label, rc, quiet=True):
+        # A no-op exit or --full writes nothing and logs nothing above DEBUG
+        # (I8). A --retire of a path nothing is known about is allowed its
+        # one INFO line ("nothing known about ...; not recorded").
+        loud = [l for l in log_since(a, mark).splitlines() if "[cloud_capture]" in l and "[DEBUG]" not in l] if quiet else []
+        return not check(rc == 0 and manifest_stat(a) == m0 and stage_count(a) == n0 and not loud,
+                         f"{label}: exit 0; manifest mtime/inode/sha and stage count unchanged"
+                         + ("; nothing above DEBUG logged" if quiet else ""),
+                         f"{label}: exit {rc}; stat {manifest_stat(a)} vs {m0}; stage {stage_count(a)} vs {n0}; "
+                         f"logged {loud[:2]}")
+
+    rc, _ = capture(a, root, "gba", rom)
+    f += unchanged("a second exit with identical arguments", rc)
+    for i in (1, 2):
+        rc, _ = run_rc(a, "cloud_capture --full")
+        f += unchanged(f"--full, pass {i}", rc)
+    rc, _ = run_rc(a, "cloud_capture --retire savestates/gba/Nothing.state9")
+    f += unchanged("--retire of a path with no entry and no file", rc, quiet=False)
+
+    touch_offset(a, p.path(srm), 60)
+    rc, _ = capture(a, root, "gba", rom)
+    m1 = manifest_stat(a)
+    e1 = entry(manifest_of(a), srm) or {}
+    f += not check(rc == 0 and m1 is not None and all(x != y for x, y in zip(m1, m0)),
+                   "a touch rewrote the manifest (mtime, inode and sha all changed)",
+                   f"after a touch the manifest stat is {m1} against {m0}")
+    f += not check(e1.get("mtime") == iso_mtime(a, p.path(srm)),
+                   "the entry's mtime is the file's new value, ISO-UTC", f"mtime {e1.get('mtime')!r}")
+    f += not check(all(e1.get(k) == e0.get(k) for k in ("sha256", "replaces", "captured_at")),
+                   "sha256, replaces and captured_at stand (a touch is metadata, not a version)",
+                   "a touch made a version: sha256/replaces/captured_at changed")
+    plant(a, root, srm, os.urandom(605))
+    rc, _ = capture(a, root, "gba", rom)
+    e2 = entry(manifest_of(a), srm) or {}
+    f += not check(e2.get("sha256") == a.sha(p.path(srm)) != e0.get("sha256") and e2.get("replaces") == e0.get("sha256"),
+                   "new bytes made a version whose replaces is the old sha",
+                   f"sha {e2.get('sha256', '')[:12]} replaces {e2.get('replaces')!r}")
+    a.run(f"rm -f {shlex.quote(p.path(s1 + '.png'))}")
+    rc, _ = capture(a, root, "gba", rom)
+    m = manifest_of(a)
+    f += not check((entry(m, s1) or {}).get("screenshot", "unset") is None,
+                   "a deleted thumbnail refreshes the state's screenshot to null",
+                   f"screenshot {(entry(m, s1) or {}).get('screenshot', 'unset')!r}")
+    f += not check(members(m, unit) == sorted(k for k in planted if k != s1 + ".png"),
+                   "and it left units[gba:Game].members", f"members {members(m, unit)}")
+    return f
+
+
+def fx_cap5(p):
+    """CAP5: core_build is the pin of the core's package -- through the
+    exception table and the regular rule -- and an unmapped core is
+    "unknown", never empty. Against a planted pins file (CLOUD_CAPTURE_PINS,
+    because /usr is read-only), mapped cases first so a negative cannot pass
+    for the wrong reason. Every capture writes new bytes first: a repeat with
+    only a different --core is an I8 no-op that would read back the previous
+    entry (three earlier drafts of this fixture could not pass for that
+    reason)."""
+    f = 0
+    a, root = p.a, p.root
+    p.reset()
+    pins = {"mgba-lr": "1" * 40, "snes9x2005_plus-lr": "2" * 40, "vice-lr": "3" * 40,
+            "neocd_lr": "4" * 40, "mupen64plus-sa": "5" * 40, "ffmpeg-lr": "6" * 40}
+    a.write("/tmp/qa-pins", ("".join(f"{k} {v}\n" for k, v in pins.items())).encode())
+    env = "CLOUD_CAPTURE_PINS=/tmp/qa-pins"
+    mgba_dv = a.run(r"""sed -n 's/^display_version *= *"\(.*\)"$/\1/p' /usr/lib/libretro/mgba_libretro.info 2>/dev/null | head -1""").strip() or None
+    n = [0]
+
+    def run(core, emulator="retroarch", env=env):
+        n[0] += 1
+        system = "n64" if emulator == "mupen64plus" else "gba"
+        rel = f"{system}/Pins.eep" if emulator == "mupen64plus" else f"{system}/Pins.srm"
+        plant(a, root, rel, os.urandom(800 + n[0]))
+        rc, out = capture(a, root, system, p.path(f"{system}/Pins.{'z64' if system == 'n64' else 'gba'}"),
+                          emulator=emulator, core=core, env=env)
+        e = entry(manifest_of(a), rel) or {}
+        if rc != 0 or e.get("core") != (core or emulator):
+            raise Fail(f"--core {core!r}: exit {rc}, entry {e.get('core')!r} (the setup for the pin check)")
+        return e
+
+    try:
+        f += cap5_cases(a, run, pins, mgba_dv)
+    finally:
+        a.run("rm -f /tmp/qa-pins", check=False)
+    return f
+
+
+def cap5_cases(a, run, pins, mgba_dv):
+    """CAP5's assertions, split out so the planted pins file is removed on a
+    Fail as well as on the way through."""
+    f = 0
+    e = run("mgba")
+    f += not check(e.get("core_build") == pins["mgba-lr"], "mgba -> mgba-lr's pin (the regular rule)",
+                   f"mgba -> core_build {e.get('core_build')!r}")
+    f += not check(e.get("core_display_version") == mgba_dv,
+                   f"core_display_version is the .info's display_version ({mgba_dv!r})",
+                   f"core_display_version {e.get('core_display_version')!r}, .info says {mgba_dv!r}")
+    for core, pkg, why in (("snes9x2005_plus", "snes9x2005_plus-lr", "the underscore is kept"),
+                           ("vice_x64", "vice-lr", "five .so, one package"),
+                           ("neocd", "neocd_lr", "the only _lr package")):
+        e = run(core)
+        f += not check(e.get("core_build") == pins[pkg], f"{core} -> {pkg}'s pin ({why})",
+                       f"{core} -> core_build {e.get('core_build')!r}, wanted {pkg}'s")
+    e = run("mupen64plus-sa", emulator="mupen64plus")
+    f += not check(e.get("core_build") == pins["mupen64plus-sa"], "mupen64plus-sa -> its own pin (the *-sa identity rule)",
+                   f"mupen64plus-sa -> core_build {e.get('core_build')!r}")
+    e = run("no-such-core")
+    f += not check(e.get("core_build") == "unknown" and "core_display_version" in e and e["core_display_version"] is None,
+                   "an unmapped core -> core_build \"unknown\", core_display_version null",
+                   f"no-such-core -> {e.get('core_build')!r} / {e.get('core_display_version', 'absent')!r}")
+    e = run("ffmpeg")
+    f += not check(e.get("core_build") == "unknown",
+                   "ffmpeg -> \"unknown\" despite a planted ffmpeg-lr line (the exception table fires)",
+                   f"ffmpeg -> core_build {e.get('core_build')!r}: the exception table did not fire")
+    e = run("mupen64plus")
+    f += not check("core_display_version" in e and e["core_display_version"] is None,
+                   "mupen64plus (a .so with no .info) -> core_display_version null",
+                   f"mupen64plus -> core_display_version {e.get('core_display_version', 'absent')!r}")
+    has_pins = a.run("[ -e /usr/share/rocknix/core-pins ] && echo yes || echo no").strip() == "yes"
+    if has_pins:
+        image_pin = a.run("awk '$1 == \"mgba-lr\" { print $2; exit }' /usr/share/rocknix/core-pins").strip()
+        e = run("mgba", env="")
+        f += not check(bool(image_pin) and e.get("core_build") == image_pin,
+                       f"without the override core_build is the image's own mgba-lr pin ({image_pin[:12]}...)",
+                       f"image pin {image_pin!r}, recorded {e.get('core_build')!r}")
+    else:
+        print("    SKIP  image carries no /usr/share/rocknix/core-pins (predates 27eb3264a2); "
+              "the map was proven against a planted file")
+        e = run("mgba", env="")
+        f += not check(e.get("core_build") == "unknown",
+                       "without the override an absent pins file renders as \"unknown\", never as a failure",
+                       f"no pins file, core_build {e.get('core_build')!r}")
+    return f
+
+
+def fx_cap6(p):
+    """CAP6: a unit is what the emulator writes. (a) libretro, the ROM in a
+    subfolder and a stem with glob and shell characters, with decoys that
+    share the prefix. (b) standalone N64: the .eep/.mpk pair beside the ROM
+    (SaveSRAMPath in every shipped mupen64plus.cfg), one unit, both members
+    declared -- acceptance (7). (c) the historical n64/save/ directory as the
+    row's second candidate. (d) a libretro exit of the same N64 ROM joins
+    the unit without restamping the standalone's files (rows are keyed by
+    emulator)."""
+    f = 0
+    a, root = p.a, p.root
+    p.reset()
+    stem = "Game [!] & (x) v1.1"
+    unit = f"gba:{stem}"
+    planted = plant_unit(a, root, "gba", stem, save=700, states={3: 4096}, auto=4096, png=512, romdir="gba/sub")
+    srm, st0, st3, auto = (f"gba/sub/{stem}.srm", f"savestates/gba/{stem}.state",
+                           f"savestates/gba/{stem}.state3", f"savestates/gba/{stem}.state.auto")
+    planted[st0] = plant(a, root, st0, b"#RZIPv" + os.urandom(4096))   # slot 0, with no thumbnail: six members
+    for decoy in (f"savestates/gba/{stem}.state.auto.bak", f"savestates/gba/{stem}x.state9", "savestates/gba/Other.state1"):
+        plant(a, root, decoy, b"#RZIPv decoy")
+    rc, _ = capture(a, root, "gba", p.path(f"gba/sub/{stem}.gba"))
+    m = manifest_of(a) or {}
+    entries = m.get("entries", {})
+    f += not check(rc == 0 and sorted(entries) == sorted([srm, st0, st3, auto]),
+                   "exactly four entries: the .srm (keyed under gba/sub/), .state, .state3, .state.auto",
+                   f"exit {rc}; entries {sorted(entries)}")
+    f += not check(all(e.get("unit") == unit for e in entries.values()) and entries,
+                   f"all with unit {unit!r}", f"units {[e.get('unit') for e in entries.values()]}")
+    slots = [(entries.get(r) or {}).get("slot", "absent") for r in (srm, st0, st3, auto)]
+    f += not check(slots == [None, 0, 3, None], "slots null/0/3/null (a bare .state is slot 0)", f"slots {slots}")
+    f += not check((entries.get(st3) or {}).get("screenshot") == st3 + ".png",
+                   "state3's screenshot is its .png", f"screenshot {(entries.get(st3) or {}).get('screenshot')!r}")
+    f += not check(members(m, unit) == sorted(planted),
+                   "members are exactly the six real paths -- no decoy, no Other.state1",
+                   f"members {members(m, unit)}")
+
+    eep, mpk = "n64/Torn.eep", "n64/Torn.mpk"
+    plant(a, root, eep, os.urandom(2048))
+    plant(a, root, mpk, os.urandom(32768))
+    rc, _ = capture(a, root, "n64", p.path("n64/Torn.z64"), emulator="mupen64plus", core="mupen64plus-sa")
+    m = manifest_of(a) or {}
+    pair = [entry(m, r) or {} for r in (eep, mpk)]
+    f += not check(rc == 0 and all(e.get("kind") == "save" and e.get("unit") == "n64:Torn"
+                                   and "slot" in e and e["slot"] is None and "screenshot" in e and e["screenshot"] is None
+                                   for e in pair),
+                   "the standalone pair: two save entries, slot and screenshot null, one unit n64:Torn",
+                   f"exit {rc}; pair {[(e.get('kind'), e.get('unit'), e.get('slot', 'absent')) for e in pair]}")
+    f += not check(members(m, "n64:Torn") == [eep, mpk], "units[n64:Torn].members declares both (acceptance 7)",
+                   f"members {members(m, 'n64:Torn')}")
+
+    plant(a, root, "n64/save/Old.eep", os.urandom(2048))
+    plant(a, root, "n64/save/Old.mpk", os.urandom(32768))
+    rc, _ = capture(a, root, "n64", p.path("n64/Old.z64"), emulator="mupen64plus", core="mupen64plus-sa")
+    m = manifest_of(a) or {}
+    old = [(entry(m, r) or {}).get("unit") for r in ("n64/save/Old.eep", "n64/save/Old.mpk")]
+    f += not check(rc == 0 and old == ["n64:Old", "n64:Old"],
+                   "the historical n64/save/ directory is the row's second candidate (what the allowlist has named for years)",
+                   f"exit {rc}; units {old}")
+
+    plant(a, root, "n64/Torn.srm", os.urandom(1024))
+    plant(a, root, "savestates/n64/Torn.state1", b"#RZIPv" + os.urandom(4096))
+    rc, _ = capture(a, root, "n64", p.path("n64/Torn.z64"), emulator="retroarch", core="mupen64plus_next")
+    m = manifest_of(a) or {}
+    lr = [(entry(m, r) or {}) for r in ("n64/Torn.srm", "savestates/n64/Torn.state1")]
+    f += not check(rc == 0 and all(e.get("unit") == "n64:Torn" and e.get("emulator") == "retroarch" for e in lr),
+                   "a libretro exit of the same ROM joins unit n64:Torn", f"exit {rc}; {[(e.get('unit'), e.get('emulator')) for e in lr]}")
+    f += not check(members(m, "n64:Torn") == [eep, mpk, "n64/Torn.srm", "savestates/n64/Torn.state1"],
+                   "units[n64:Torn] now declares all four", f"members {members(m, 'n64:Torn')}")
+    f += not check(all((entry(m, r) or {}).get("emulator") == "mupen64plus" for r in (eep, mpk)),
+                   "the .eep/.mpk entries still say mupen64plus (rows are keyed by emulator)",
+                   f"standalone entries now say {[(entry(m, r) or {}).get('emulator') for r in (eep, mpk)]}")
+    return f
+
+
+def fx_cap7(p):
+    """CAP7: a renumber is a move, a deletion is a retired record, and nothing
+    is invented. The manager's path (--retire before the unlink, --rescan
+    after the renumber) carries captured_at, replaces and provenance across
+    the move and grows the stage by nothing; a chain of moves resolves; the
+    shell path (rm + mv, no --retire) records the move, invents no retired
+    row and drops the displaced entry with a WARN, while a member that merely
+    vanished keeps its entry; retired is bounded at 200; a path outside the
+    root is refused."""
+    f = 0
+    a, root = p.a, p.root
+    p.reset()
+
+    def st(stem, n):
+        return f"savestates/gba/{stem}.state{n}"
+
+    def q(rel):
+        return shlex.quote(p.path(rel))
+
+    # The manager's path.
+    s = {n: b"#RZIPv" + os.urandom(3000 + n) for n in (1, 2, 3)}
+    plant(a, root, "gba/Re.srm", os.urandom(512))
+    for n, data in s.items():
+        plant(a, root, st("Re", n), data)
+        plant(a, root, st("Re", n) + ".png", b"\x89PNG" + os.urandom(300 + n))
+    rc, _ = capture(a, root, "gba", p.path("gba/Re.gba"))
+    m = manifest_of(a) or {}
+    before = {n: dict(entry(m, st("Re", n)) or {}) for n in s}
+    if rc != 0 or not all(before[n].get("sha256") == sha(s[n]) for n in s):
+        raise Fail(f"the setup capture did not record the three states (exit {rc})")
+    png2_sha = a.sha(p.path(st("Re", 2) + ".png"))
+    rc, _ = run_rc(a, f"cloud_capture --retire {q(st('Re', 2))} {shlex.quote(st('Re', 2) + '.png')}")
+    m = manifest_of(a) or {}
+    retired = m.get("retired") or []
+    f += not check(rc == 0 and entry(m, st("Re", 2)) is None and st("Re", 2) + ".png" not in m.get("entries", {}),
+                   "--retire (one absolute, one relative path) exited 0 and removed the state's entry",
+                   f"exit {rc}; state2 entry {'present' if entry(m, st('Re', 2)) else 'gone'}")
+    rows = {r.get("path"): r for r in retired}
+    f += not check(len(retired) == 2 and rows.get(st("Re", 2), {}).get("sha256") == sha(s[2])
+                   and rows.get(st("Re", 2) + ".png", {}).get("sha256") == png2_sha,
+                   "two retired rows: the state with its entry's sha, the png with its own file hash, root-relative paths",
+                   f"retired {[(r.get('path'), (r.get('sha256') or '')[:8]) for r in retired]}")
+    f += not check(all("retires_pub" in r and r["retires_pub"] is None and ISO_UTC.match(r.get("at") or "") for r in retired),
+                   "retires_pub null and `at` ISO-UTC on both", f"rows {retired}")
+    f += not check(members(m, "gba:Re") is not None and not any(x in members(m, "gba:Re") for x in (st("Re", 2), st("Re", 2) + ".png")),
+                   "units[gba:Re].members no longer names either", f"members {members(m, 'gba:Re')}")
+    # The stage baseline is taken after the retire: its GC drops the retired
+    # version's seal (referenced by no entry), and the claim under test is
+    # that the *move* adds nothing. rename keeps mtime, as copyToSlot(move=true) does.
+    n_stage, s3_stat = stage_count(a), a.run(f"stat -c '%i %Y' {CACHE}/stage/{sha(s[3])}").strip()
+    a.run(f"rm -f {q(st('Re', 2))} {q(st('Re', 2) + '.png')}; mv {q(st('Re', 3))} {q(st('Re', 2))}; "
+          f"mv {q(st('Re', 3) + '.png')} {q(st('Re', 2) + '.png')}")
+    rc, _ = run_rc(a, f"cloud_capture --rescan --system gba --rom {q('gba/Re.gba')}")
+    m = manifest_of(a) or {}
+    e2 = entry(m, st("Re", 2)) or {}
+    f += not check(rc == 0 and e2.get("sha256") == sha(s[3]) and e2.get("slot") == 2 and e2.get("screenshot") == st("Re", 2) + ".png",
+                   "--rescan re-keyed state3's version at state2 with slot 2 and its png",
+                   f"exit {rc}; state2 sha {(e2.get('sha256') or '')[:8]} slot {e2.get('slot')!r} screenshot {e2.get('screenshot')!r}")
+    f += not check(e2.get("captured_at") == before[3].get("captured_at") and e2.get("replaces") == before[3].get("replaces"),
+                   "captured_at and replaces carried from the moved entry",
+                   f"captured_at {e2.get('captured_at')!r} vs {before[3].get('captured_at')!r}; replaces {e2.get('replaces')!r}")
+    f += not check(e2.get("emulator") == "retroarch" and e2.get("core") == "mgba",
+                   "emulator/core carried across the move, not \"unknown\" (a move carries provenance)",
+                   f"emulator {e2.get('emulator')!r} core {e2.get('core')!r}")
+    f += not check(entry(m, st("Re", 3)) is None, "no entry at state3", "state3 still has an entry")
+    f += not check(stage_count(a) == n_stage and a.run(f"stat -c '%i %Y' {CACHE}/stage/{sha(s[3])}").strip() == s3_stat,
+                   "the stage did not grow (a move needs no new copy)", f"stage {stage_count(a)} vs {n_stage}")
+    f += not check(len(m.get("retired") or []) == 2, "retired is still length 2", f"retired length {len(m.get('retired') or [])}")
+
+    # A copy and a new version at its source in one pass: cp -p state1 state2
+    # (a copyToSlot without move keeps the mtime) then new bytes at state1.
+    # That is a MOVE (state1's old version now sits at state2) and a PUT
+    # (state1 holds a new version). The merge once deleted every move source
+    # after the reduce, put included, and state1's new bytes were never
+    # recorded again -- no entry, and an mtime below every later --started.
+    k = {"A": b"#RZIPv" + os.urandom(6001), "B": b"#RZIPv" + os.urandom(6002)}
+    plant(a, root, st("Copy", 1), k["A"])
+    capture(a, root, "gba", p.path("gba/Copy.gba"))
+    ka = dict(entry(manifest_of(a), st("Copy", 1)) or {})
+    a.run(f"cp -p {q(st('Copy', 1))} {q(st('Copy', 2))}")
+    plant(a, root, st("Copy", 1), k["B"])
+    rc, _ = run_rc(a, f"cloud_capture --rescan --system gba --rom {q('gba/Copy.gba')}")
+    m = manifest_of(a) or {}
+    k1, k2 = entry(m, st("Copy", 1)) or {}, entry(m, st("Copy", 2)) or {}
+    f += not check(rc == 0 and k2.get("sha256") == sha(k["A"]) and k2.get("captured_at") == ka.get("captured_at"),
+                   "cp -p then rewrite: state2 holds the old version as a move (original captured_at)",
+                   f"exit {rc}; state2 {(k2.get('sha256') or '')[:8]} captured_at {k2.get('captured_at')!r} vs {ka.get('captured_at')!r}")
+    f += not check(k1.get("sha256") == sha(k["B"]) and k1.get("replaces") == sha(k["A"]),
+                   "and state1 keeps its new version as a put whose replaces is the old sha (a put at a move source survives)",
+                   f"state1 {'HAS NO ENTRY' if not k1 else (k1.get('sha256') or '')[:8]} replaces {(k1.get('replaces') or '')[:8]} "
+                   "-- a put at a move source was dropped with the source (R5: a version nothing will record again)")
+
+    # A renumber chain: state4 -> state3 -> state2.
+    c = {n: b"#RZIPv" + os.urandom(4000 + n) for n in (1, 2, 3, 4)}
+    for n, data in c.items():
+        plant(a, root, st("Chain", n), data)
+    capture(a, root, "gba", p.path("gba/Chain.gba"))
+    m = manifest_of(a) or {}
+    cb = {n: dict(entry(m, st("Chain", n)) or {}) for n in c}
+    run_rc(a, f"cloud_capture --retire {q(st('Chain', 2))}")
+    a.run(f"rm -f {q(st('Chain', 2))}; mv {q(st('Chain', 3))} {q(st('Chain', 2))}; mv {q(st('Chain', 4))} {q(st('Chain', 3))}")
+    rc, _ = run_rc(a, f"cloud_capture --rescan --system gba --rom {q('gba/Chain.gba')}")
+    m = manifest_of(a) or {}
+    c2, c3 = entry(m, st("Chain", 2)) or {}, entry(m, st("Chain", 3)) or {}
+    f += not check(rc == 0 and c2.get("sha256") == sha(c[3]) and c3.get("sha256") == sha(c[4]),
+                   "the chain resolved: state2 holds S3 and state3 holds S4",
+                   f"exit {rc}; state2 {(c2.get('sha256') or '')[:8]} state3 {(c3.get('sha256') or '')[:8]}")
+    f += not check(c2.get("captured_at") == cb[3].get("captured_at") and c3.get("captured_at") == cb[4].get("captured_at")
+                   and c2.get("replaces") == cb[3].get("replaces") and c3.get("replaces") == cb[4].get("replaces"),
+                   "both as moves: original captured_at, no fabricated replaces",
+                   f"captured_at {c2.get('captured_at')!r}/{c3.get('captured_at')!r}; replaces {c2.get('replaces')!r}/{c3.get('replaces')!r}")
+    chain = sorted(k for k in m.get("entries", {}) if k.startswith("savestates/gba/Chain."))
+    f += not check(chain == [st("Chain", 1), st("Chain", 2), st("Chain", 3)], "no new versions: three Chain entries",
+                   f"Chain entries {chain}")
+
+    # The shell path (A9's shape): rm and mv with no --retire.
+    h = {n: b"#RZIPv" + os.urandom(5000 + n) for n in (1, 2, 3)}
+    for n, data in h.items():
+        plant(a, root, st("Shell", n), data)
+    capture(a, root, "gba", p.path("gba/Shell.gba"))
+    m = manifest_of(a) or {}
+    hb = dict(entry(m, st("Shell", 3)) or {})
+    n_retired = len(m.get("retired") or [])
+    a.run(f"rm -f {q(st('Shell', 2))}; mv {q(st('Shell', 3))} {q(st('Shell', 2))}")
+    mark = log_mark(a)
+    rc, _ = capture(a, root, "gba", p.path("gba/Shell.gba"))
+    m = manifest_of(a) or {}
+    tail = log_since(a, mark)
+    h2 = entry(m, st("Shell", 2)) or {}
+    f += not check(rc == 0 and h2.get("sha256") == sha(h[3]) and h2.get("captured_at") == hb.get("captured_at"),
+                   "the move was recorded at exit (state2 holds S3 with its original captured_at)",
+                   f"exit {rc}; state2 {(h2.get('sha256') or '')[:8]} captured_at {h2.get('captured_at')!r} vs {hb.get('captured_at')!r}")
+    f += not check(len(m.get("retired") or []) == n_retired, "retired gained nothing (no retire record is invented)",
+                   f"retired grew from {n_retired} to {len(m.get('retired') or [])}")
+    f += not check("displaced at" in tail and "without a retire record" in tail,
+                   "the displaced version was named in a WARN", "no 'displaced at ... without a retire record' WARN")
+    f += not check(entry(m, st("Shell", 3)) is None, "the vanished state3 path has no entry", "state3 still has an entry")
+    plant(a, root, "gba/Kept.srm", os.urandom(600))
+    plant(a, root, st("Kept", 1), b"#RZIPv" + os.urandom(2000))   # a second member, so the unit still scans
+    capture(a, root, "gba", p.path("gba/Kept.gba"))
+    a.run(f"rm -f {q('gba/Kept.srm')}")
+    mark = log_mark(a)
+    rc, _ = capture(a, root, "gba", p.path("gba/Kept.gba"))
+    m = manifest_of(a) or {}
+    f += not check(rc == 0 and entry(m, "gba/Kept.srm") is not None and "claimed but not on disk" in log_since(a, mark),
+                   "a member that merely vanished keeps its entry (I5) and the log says 'claimed but not on disk'",
+                   f"exit {rc}; entry {'kept' if entry(m, 'gba/Kept.srm') else 'GONE'}; WARN {'present' if 'claimed but not on disk' in log_since(a, mark) else 'absent'}")
+
+    # The bound: 250 synthetic rows, one more retire, 200 remain.
+    synthetic = [{"sha256": f"{i:064x}", "path": f"savestates/gba/Synthetic.state{i}", "retires_pub": None,
+                  "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(1577836800 + i))} for i in range(250)]
+    a.write("/tmp/qa-retired.json", json.dumps(synthetic).encode())
+    a.run(f"jq --slurpfile r /tmp/qa-retired.json '.retired = $r[0]' {p.manifest} > {p.manifest}.tmp && mv -f {p.manifest}.tmp {p.manifest}; "
+          "rm -f /tmp/qa-retired.json")
+    plant(a, root, "gba/Bound.srm", os.urandom(640))
+    capture(a, root, "gba", p.path("gba/Bound.gba"))
+    rc, _ = run_rc(a, f"cloud_capture --retire {q('gba/Bound.srm')}")
+    m = manifest_of(a) or {}
+    retired = m.get("retired") or []
+    ats = {r.get("at") for r in retired}
+    f += not check(rc == 0 and len(retired) == 200, "retired is trimmed to 200", f"exit {rc}; retired length {len(retired)}")
+    f += not check(bool(retired) and retired[-1].get("path") == "gba/Bound.srm", "the newest row is the one just written",
+                   f"last row {retired[-1] if retired else None}")
+    f += not check(not any(r["at"] in ats for r in synthetic[:51]) and all(r["at"] in ats for r in synthetic[51:]),
+                   "the oldest 51 are gone and the rest kept", "the trim did not drop the oldest 51")
+
+    mark = log_mark(a)
+    rc, _ = run_rc(a, "cloud_capture --retire /storage/cloud-qa-elsewhere/gba/Outside.srm")
+    m = manifest_of(a) or {}
+    f += not check(rc == 1 and len(m.get("retired") or []) == 200 and "WARN" in log_since(a, mark),
+                   "--retire of a path outside the saves root: exit 1, nothing recorded, WARN logged",
+                   f"exit {rc}; retired length {len(m.get('retired') or [])}; WARN {'present' if 'WARN' in log_since(a, mark) else 'absent'}")
+    return f
+
+
+def fx_cap8(p):
+    """CAP8: nothing is stamped that this session did not write; the A2 shape
+    at exit; --full's limits. (a) A member with no entry older than --started
+    is not recorded, per member; --started 0 records it. (b) An equal-size,
+    equal-mtime rewrite is invisible at exit (the documented limit of a
+    size+mtime changed set). (c) --full catches it with "unknown" provenance
+    and GCs the old seal. (d) --full adopts no path without an entry. (e)
+    --full refuses an empty root (A9's shape, fail-closed)."""
+    f = 0
+    a, root = p.a, p.root
+    p.reset()
+    old, rom = "savestates/gba/Old.state1", p.path("gba/Old.gba")
+    plant(a, root, old, b"#RZIPv" + os.urandom(3000))
+    touch_offset(a, p.path(old), -3600)
+    started = int(a.run("date +%s").strip())
+    mark = log_mark(a)
+    rc, _ = capture(a, root, "gba", rom, started=started)
+    f += not check(rc == 0 and manifest_of(a) is None,
+                   "a member older than --started with no entry: exit 0 and no manifest was created",
+                   f"exit {rc}; manifest {'created' if manifest_of(a) is not None else 'absent'}")
+    f += not check("have no entry and were not stamped" in log_since(a, mark),
+                   "the log says it was not stamped", "no 'have no entry and were not stamped' line")
+    # The same unit gains a member this session wrote: recorded, the old one still not.
+    plant(a, root, "gba/Old.srm", os.urandom(512))
+    rc, _ = capture(a, root, "gba", rom, started=started)
+    m = manifest_of(a)
+    f += not check(rc == 0 and entry(m, "gba/Old.srm") is not None and entry(m, old) is None,
+                   "the fresh .srm is recorded and the old state still is not (the rule is per member, not per run)",
+                   f"exit {rc}; srm {'recorded' if entry(m, 'gba/Old.srm') else 'missing'}, old state {'STAMPED' if entry(m, old) else 'not recorded'}")
+    rc, _ = capture(a, root, "gba", rom, started=0)
+    f += not check(rc == 0 and entry(manifest_of(a), old) is not None, "--started 0 records it",
+                   f"exit {rc}; old state {'recorded' if entry(manifest_of(a), old) else 'still missing'}")
+
+    same, srom = "gba/Same.srm", p.path("gba/Same.gba")
+    one, two = b"version-one-of-this-save", b"version-two-of-this-save"
+    assert len(one) == len(two)
+    plant(a, root, same, one)
+    capture(a, root, "gba", srom)
+    qf = shlex.quote(p.path(same))
+    a.run(f"cp -p {qf} {qf}.ref")
+    plant(a, root, same, two)
+    a.run(f"touch -r {qf}.ref {qf}; rm -f {qf}.ref; sync")
+    m0 = manifest_stat(a)
+    rc, _ = capture(a, root, "gba", srom)
+    f += not check(rc == 0 and (entry(manifest_of(a), same) or {}).get("sha256") == sha(one) and manifest_stat(a) == m0,
+                   "an equal-size, equal-mtime rewrite is not seen at exit (the documented limit of size+mtime)",
+                   f"exit {rc}; entry sha is {name_of((entry(manifest_of(a), same) or {}).get('sha256'), {'one': one, 'two': two})}")
+    rc, _ = run_rc(a, "cloud_capture --full")
+    m = manifest_of(a)
+    e = entry(m, same) or {}
+    f += not check(rc == 0 and e.get("sha256") == sha(two) and e.get("replaces") == sha(one),
+                   "--full caught it: version two, replaces version one",
+                   f"exit {rc}; sha {name_of(e.get('sha256'), {'one': one, 'two': two})} replaces {name_of(e.get('replaces'), {'one': one, 'two': two})}")
+    f += not check(e.get("emulator") == e.get("core") == e.get("core_build") == "unknown"
+                   and "core_display_version" in e and e["core_display_version"] is None,
+                   "with emulator/core/core_build \"unknown\" and core_display_version null (the session was not observed)",
+                   f"provenance {[e.get(k) for k in ('emulator', 'core', 'core_build', 'core_display_version')]}")
+    f += not check(e.get("system") == "gba" and e.get("rom") == "Same.gba" and e.get("unit") == "gba:Same" and e.get("kind") == "save",
+                   "system/rom/unit/kind carried", f"{[e.get(k) for k in ('system', 'rom', 'unit', 'kind')]}")
+    f += not check(nulls(e, ("producer", "pub", "published_at")), "producer/pub/published_at null",
+                   f"{[e.get(k, 'absent') for k in ('producer', 'pub', 'published_at')]}")
+    f += not check(stage_sha(a, sha(two)) == sha(two) and stage_sha(a, sha(one)) is None,
+                   "the new sha is in the stage and the old one was GC'd",
+                   f"stage: two {'present' if stage_sha(a, sha(two)) else 'MISSING'}, one {'still present' if stage_sha(a, sha(one)) else 'gone'}")
+
+    plant(a, root, "savestates/gba/Stray.state7", b"#RZIPv" + os.urandom(2000))
+    m0 = manifest_stat(a)
+    rc, _ = run_rc(a, "cloud_capture --full")
+    f += not check(rc == 0 and entry(manifest_of(a), "savestates/gba/Stray.state7") is None and manifest_stat(a) == m0,
+                   "--full adopts nothing: a fresh file with no entry stays unrecorded and the manifest is untouched",
+                   f"exit {rc}; stray {'ADOPTED' if entry(manifest_of(a), 'savestates/gba/Stray.state7') else 'not adopted'}; "
+                   f"stat {'unchanged' if manifest_stat(a) == m0 else 'CHANGED'}")
+
+    ents0 = (manifest_of(a) or {}).get("entries")
+    qr = shlex.quote(root)
+    mark = log_mark(a)
+    a.run(f"mv {qr} {qr}.away; mkdir -p {qr}")
+    try:
+        rc, _ = run_rc(a, "cloud_capture --full")
+        tail = log_since(a, mark)
+    finally:
+        a.run(f"rm -rf {qr}; mv {qr}.away {qr}")
+    f += not check(rc == 1 and (manifest_of(a) or {}).get("entries") == ents0 and root in tail,
+                   "--full on an empty root: exit 1, entries untouched, the log names the root",
+                   f"exit {rc}; entries {'unchanged' if (manifest_of(a) or {}).get('entries') == ents0 else 'CHANGED'}; "
+                   f"root named {'yes' if root in tail else 'no'}")
+    return f
+
+
+def fx_cap9(p):
+    """CAP9: the error policy is the one written down, and the un-provable is
+    not faked. Usage errors exit 2 on stderr; a missing SAVESPATH, an
+    unwritable stage and a newer schema exit 1 with the manifest untouched
+    and an ERROR naming the path; a corrupt manifest is moved aside and the
+    session still recorded; the durable stamps survive where /var/log does
+    not; the no-lock claim is a static check, labelled as one; the jq-absent
+    branch is not reachable on a read-only /usr and is not pretended."""
+    f = 0
+    a, root = p.a, p.root
+    p.reset()
+    rom = p.path("gba/Policy.gba")
+    for label, cmd in (("no --started", "cloud_capture --system gba --rom x.gba --emulator retroarch --core mgba"),
+                       ("no --core", "cloud_capture --system gba --rom x.gba --emulator retroarch --started 0"),
+                       ("an unknown flag", "cloud_capture --bogus"),
+                       ("--retire with no path", "cloud_capture --retire")):
+        out = a.run(f"{cmd} >/tmp/qa-u.out 2>/tmp/qa-u.err; echo rc=$?; wc -c < /tmp/qa-u.err", check=False).split()
+        rc = int(out[0][3:]) if out and out[0].startswith("rc=") else -1
+        err = int(out[1]) if len(out) > 1 and out[1].isdigit() else 0
+        f += not check(rc == 2 and err > 0, f"{label}: exit 2 with a line on stderr", f"{label}: exit {rc}, {err} byte(s) on stderr")
+    f += not check(manifest_of(a) is None, "usage errors created no manifest", "a usage error created a manifest")
+    a.run("rm -f /tmp/qa-u.out /tmp/qa-u.err", check=False)
+
+    # A system with no <emulators> element (tools) exits with an empty pair.
+    # That is nothing to record, not a usage error: exit 0, no manifest, and
+    # no capture-failures row -- one per run of such a system would crowd the
+    # real failures out of the 20 the stamp keeps. ES also skips the spawn
+    # for an empty launchedEmulator; this is the producer's own guard.
+    n0 = failures_lines(a)
+    rc, _ = run_rc(a, "cloud_capture --system tools --rom /storage/roms/tools/x.sh --emulator '' --core '' --started 0 --exit 0")
+    stamp = last_capture(a)
+    f += not check(rc == 0 and manifest_of(a) is None and failures_lines(a) == n0 and stamp is not None and stamp[1] == "0",
+                   "--emulator '' (a system with no emulator): exit 0, nothing recorded, no capture-failures row, last-capture rc 0",
+                   f"exit {rc}; manifest {'created' if manifest_of(a) is not None else 'absent'}; failures {failures_lines(a)} vs {n0}; stamp {stamp!r}")
+
+    set_key(a, "SAVESPATH", "/storage/cloud-qa-missing")
+    n0 = failures_lines(a)
+    mark = log_mark(a)
+    rc, _ = capture(a, root, "gba", rom)
+    set_key(a, "SAVESPATH", root)
+    tail = log_since(a, mark)
+    f += not check(rc == 1 and manifest_of(a) is None and "ERROR" in tail and "/storage/cloud-qa-missing" in tail,
+                   "SAVESPATH not a directory: exit 1, no manifest, ERROR naming the path",
+                   f"exit {rc}; manifest {'created' if manifest_of(a) is not None else 'absent'}; log {tail.strip()[-80:]!r}")
+    f += not check(failures_lines(a) > n0, "capture-failures gained a line", "no capture-failures line for a refused run")
+    stamp_b = last_capture(a)
+
+    plant(a, root, "gba/Policy.srm", os.urandom(512))
+    rc, _ = capture(a, root, "gba", rom)
+    m0 = manifest_stat(a)
+    if rc != 0 or m0 is None:
+        raise Fail(f"the setup capture recorded nothing (exit {rc})")
+    a.run(f"rm -rf {CACHE}/stage; touch {CACHE}/stage")
+    plant(a, root, "gba/Policy.srm", os.urandom(513))
+    mark = log_mark(a)
+    rc, _ = capture(a, root, "gba", rom)
+    tail = log_since(a, mark)
+    a.run(f"rm -f {CACHE}/stage")
+    f += not check(rc == 1 and manifest_stat(a) == m0 and "ERROR" in tail and f"{CACHE}/stage" in tail,
+                   "stage unwritable (a file where the directory goes): exit 1, manifest untouched, ERROR naming the stage",
+                   f"exit {rc}; stat {'unchanged' if manifest_stat(a) == m0 else 'CHANGED'}; log {tail.strip()[-80:]!r}")
+
+    a.run(f"printf 'not json{{' > {p.manifest}")
+    plant(a, root, "gba/After.srm", os.urandom(520))
+    mark = log_mark(a)
+    rc, _ = capture(a, root, "gba", p.path("gba/After.gba"))
+    tail = log_since(a, mark)
+    aside = a.run(f"for x in {p.manifest}.corrupt-*; do [ -e \"$x\" ] && cat \"$x\"; done 2>/dev/null || true")
+    present, text = manifest_text(a)
+    try:
+        m = json.loads(text) if present else None
+    except ValueError:
+        m = None
+    f += not check(rc == 0 and aside == "not json{", "a corrupt manifest is moved aside as manifest-<id>.json.corrupt-<epoch> with its bytes intact",
+                   f"exit {rc}; aside holds {aside!r}")
+    f += not check(m is not None and entry(m, "gba/After.srm") is not None,
+                   "the new manifest parses and holds this session's entries",
+                   "no parseable manifest with this session's entry after the corrupt one was set aside")
+    f += not check("WARN" in tail or "ERROR" in tail, "and it was logged", "nothing logged about the corrupt manifest")
+
+    a.run(f"jq '.schema = 2' {p.manifest} > {p.manifest}.tmp && mv -f {p.manifest}.tmp {p.manifest}")
+    m0 = manifest_stat(a)
+    plant(a, root, "gba/After.srm", os.urandom(521))
+    n0 = failures_lines(a)
+    mark = log_mark(a)
+    rc, _ = capture(a, root, "gba", p.path("gba/After.gba"))
+    tail = log_since(a, mark)
+    f += not check(rc == 1 and manifest_stat(a) == m0 and "ERROR" in tail and "schema" in tail,
+                   "a manifest claiming a newer schema: exit 1, untouched, ERROR naming the schema",
+                   f"exit {rc}; stat {'unchanged' if manifest_stat(a) == m0 else 'CHANGED'}; log {tail.strip()[-80:]!r}")
+    stamp_e = last_capture(a)
+    reason = a.run(f"tail -1 {CACHE}/capture-failures 2>/dev/null || true").strip()
+    f += not check(stamp_b is not None and stamp_b[1] == "1" and stamp_e is not None and stamp_e[1] == "1",
+                   "last-capture recorded rc 1 after both refusals (a stamp that survives the reboot /var/log does not)",
+                   f"last-capture after SAVESPATH: {stamp_b!r}; after schema: {stamp_e!r}")
+    f += not check(failures_lines(a) > n0 and "schema" in reason, "capture-failures names the reason",
+                   f"capture-failures last line {reason!r}")
+
+    # A rev 1 manifest -- no unit, units or retired, the shape this writer
+    # advertises upgrading in place. --full derives each entry's unit from
+    # its system and rom, stamps it on the unchanged entry too, and declares
+    # both in units; nothing is filed under "-".
+    p.reset()
+    r1, k1 = "gba/RevOne.srm", "gba/Kept1.srm"
+    one, kept = plant(a, root, r1, b"rev-one-bytes"), plant(a, root, k1, b"kept-bytes")
+
+    def rev1(rel, data, digest):
+        return {"kind": "save", "sha256": digest, "size": len(data), "mtime": iso_mtime(a, p.path(rel)), "system": "gba",
+                "rom": rel.split("/")[1].replace(".srm", ".gba"), "slot": None, "screenshot": None, "pub": None}
+
+    a.write(p.manifest, json.dumps({"schema": 1, "entries": {r1: rev1(r1, one, "1" * 64), k1: rev1(k1, kept, sha(kept))}}).encode())
+    mark = log_mark(a)
+    rc, _ = run_rc(a, "cloud_capture --full")
+    m = manifest_of(a) or {}
+    e1, ek = entry(m, r1) or {}, entry(m, k1) or {}
+    f += not check(rc == 0 and e1.get("sha256") == sha(one) and e1.get("replaces") == "1" * 64 and e1.get("unit") == "gba:RevOne",
+                   "a rev 1 entry re-hashed by --full carries unit gba:RevOne, derived from its system and rom",
+                   f"exit {rc}; unit {e1.get('unit')!r} sha {(e1.get('sha256') or '')[:8]} replaces {(e1.get('replaces') or '')[:8]}")
+    f += not check(ek.get("unit") == "gba:Kept1" and ek.get("sha256") == sha(kept),
+                   "an unchanged rev 1 entry gains its unit too (the upgrade in place)", f"unit {ek.get('unit')!r}")
+    f += not check(members(m, "gba:RevOne") == [r1] and members(m, "gba:Kept1") == [k1] and "-" not in (m.get("units") or {}),
+                   "units declares both and nothing is filed under \"-\"", f"units {m.get('units')}")
+    f += not check("rev 1" in log_since(a, mark), "the upgrade was logged", "no 'rev 1' line in the log")
+
+    script = a.run("command -v cloud_capture").strip()
+    hits = a.run(f"grep -v '^[[:space:]]*#' {shlex.quote(script)} | grep -c -e flock -e cloud_sync.lock -e rclone -e curl -e wget || true").strip()
+    f += not check(hits == "0", "static: no flock, no lock file, no rclone, curl or wget in the shipped script's code "
+                   "(CAP1 proves it does not block on a held lock and spawns no rclone through PATH, different claims)",
+                   f"static: {hits} non-comment line(s) mention flock, cloud_sync.lock, rclone, curl or wget")
+    print("    SKIP  jq-absent branch is not reachable on a read-only /usr; it is covered by code reading, not by this fixture")
+    return f
+
+
+def boot_caller_gate(lines):
+    """How the autostart runs `cloud_capture --full`, resolved from the file's
+    structure rather than from line order. None when there is no --full line;
+    else (index, enclosing test text or None, gate_ok, background_ok).
+
+    The gate is the `if` that ENCLOSES the --full line: walk back over the
+    non-comment lines, where a `fi` opens a nested block that its own `if`
+    closes, and the first unmatched `if` is the one guarding us -- an `else`
+    or `elif` met first means the line runs when that test is false. It must
+    name BOTH toggles (orchestrator decision 2: a gameexit-only device runs
+    it too). Line order is not evidence: the sync block's own toggle test sits
+    above any line appended after its `fi`, and satisfied the old check for an
+    ungated --full. The line itself must be detached (setsid or nohup, ending
+    in a single `&` -- `&&` is a foreground chain) and niced."""
+    code = [(i, l.strip()) for i, l in enumerate(lines) if l.strip() and not l.lstrip().startswith("#")]
+    full = [i for i, s in code if "cloud_capture --full" in s]
+    if not full:
+        return None
+    enclosing, depth = None, 0
+    for i, s in reversed([(i, s) for i, s in code if i < full[0]]):
+        if s == "fi" or s.startswith("fi;") or s.startswith("fi "):
+            depth += 1
+        elif s.startswith("if "):
+            if depth == 0:
+                enclosing = s
+                break
+            depth -= 1
+        elif depth == 0 and (s == "else" or s.startswith("elif ")):
+            enclosing = s
+            break
+    gate_ok = (enclosing is not None and enclosing.startswith("if ")
+               and bool(re.search(r"cloudsaves\.startup", enclosing)) and bool(re.search(r"cloudsaves\.gameexit", enclosing)))
+    line = lines[full[0]]
+    bg_ok = bool(re.search(r"(setsid|nohup).*(?<!&)&\s*$", line)) and "nice" in line
+    return full[0], enclosing, gate_ok, bg_ok
+
+
+def fx_cap10(p):
+    """CAP10: the card context informs, it never silently refuses -- and a
+    flip discards. (a) A wrong-but-stable card: the version is recorded, the
+    log carries cloud_saves_root's sentence, the stamp carries !card. (b) A
+    card that changes during the run: discarded, manifest untouched, ERROR,
+    capture-failures. (c) --full waits for the usual card and then records.
+    (d) The boot caller, statically: --full runs from the autostart behind
+    the cloud-saves toggle and in the background (D-CLOUD-057: boot time is
+    not ours to spend).
+
+    The fireable form: local_reset wipes the saves-root record and with no
+    record `cloud_saves_root check` exits 0, so a bogus record is planted."""
+    f = 0
+    a, root = p.a, p.root
+    p.reset()
+    rel, rom = "gba/Card.srm", p.path("gba/Card.gba")
+    plant(a, root, rel, os.urandom(512))
+    rc, _ = capture(a, root, "gba", rom)
+    if rc != 0:
+        raise Fail(f"the setup capture exited {rc}")
+    a.run(f"echo 'uuid:00000000-0000-0000-0000-000000000000' > {CACHE}/saves-root")
+    new = plant(a, root, rel, os.urandom(513))
+    mark = log_mark(a)
+    rc, _ = capture(a, root, "gba", rom)
+    tail = log_since(a, mark)
+    stamp = last_capture(a)
+    f += not check(rc == 0 and (entry(manifest_of(a), rel) or {}).get("sha256") == sha(new),
+                   "on a wrong-but-stable card the new version IS recorded (the file is real; its claim belongs, I5)",
+                   f"exit {rc}; entry sha {'is the new bytes' if (entry(manifest_of(a), rel) or {}).get('sha256') == sha(new) else 'is not the new bytes'}")
+    f += not check("different card" in tail, "the log carries cloud_saves_root's 'different card' sentence",
+                   f"log {tail.strip()[-100:]!r}")
+    f += not check(stamp is not None and "!card" in stamp[2], "last-capture carries the !card marker", f"last-capture {stamp!r}")
+
+    # (b) a shim beside a copy of the producer: siblings resolve beside $0,
+    # so the copy is what makes the shim the one that answers.
+    real = a.run("cloud_saves_root identity").strip()
+    capbin, idbin = a.run("command -v cloud_capture").strip(), a.run("command -v cloud_device_id").strip()
+    a.run(f"rm -rf /tmp/qa-flip; mkdir -p /tmp/qa-flip; cp {shlex.quote(capbin)} /tmp/qa-flip/cloud_capture; "
+          f"cp {shlex.quote(idbin)} /tmp/qa-flip/cloud_device_id")
+    a.write("/tmp/qa-flip/cloud_saves_root",
+            ("#!/bin/sh\ncase \"$1\" in\n"
+             f"    check) echo {shlex.quote(real)}; exit 0 ;;\n"
+             "    identity) echo uuid:ffffffff-ffff-ffff-ffff-ffffffffffff; exit 0 ;;\n"
+             "esac\nexit 0\n").encode())
+    a.run("chmod +x /tmp/qa-flip/*")
+    m0, n0 = manifest_stat(a), failures_lines(a)
+    plant(a, root, rel, os.urandom(514))
+    mark = log_mark(a)
+    rc, _ = run_rc(a, f"/tmp/qa-flip/cloud_capture --system gba --rom {shlex.quote(rom)} --emulator retroarch --core mgba --started 0")
+    tail = log_since(a, mark)
+    a.run("rm -rf /tmp/qa-flip", check=False)
+    f += not check(rc == 1 and manifest_stat(a) == m0, "a card that changed during the run: exit 1, the manifest untouched (the run was discarded)",
+                   f"exit {rc}; stat {'unchanged' if manifest_stat(a) == m0 else 'CHANGED: a scan spanning two trees was recorded'}")
+    f += not check("ERROR" in tail and failures_lines(a) > n0, "ERROR logged and capture-failures gained a line",
+                   f"ERROR {'present' if 'ERROR' in tail else 'absent'}; failures {failures_lines(a)} vs {n0}")
+
+    # (c) --full with the bogus record still in place: it waits (bounded), then records.
+    new = plant(a, root, rel, os.urandom(515))
+    mark = log_mark(a)
+    out = a.run("t0=$(date +%s%N); cloud_capture --full >/dev/null 2>&1; rc=$?; t1=$(date +%s%N); "
+                "echo rc=$rc ms=$(( (t1 - t0) / 1000000 ))", check=False)
+    fields = dict(kv.split("=", 1) for kv in out.split() if "=" in kv)
+    rc, ms = int(fields.get("rc", -1)), int(fields.get("ms", -1))
+    tail = log_since(a, mark)
+    f += not check(rc == 0 and (entry(manifest_of(a), rel) or {}).get("sha256") == sha(new),
+                   "--full on a wrong-but-stable card: exit 0 and the entry updated (it informs, it does not refuse)",
+                   f"exit {rc}; entry {'updated' if (entry(manifest_of(a), rel) or {}).get('sha256') == sha(new) else 'NOT updated'}")
+    f += not check(9000 <= ms < 60000, f"and it waited for the usual card first ({ms} ms; the 10 s ceiling of D-CLOUD-057)",
+                   f"--full took {ms} ms: it did not wait for the card (or waited far past the ceiling)")
+    f += not check("different card" in tail or "wait" in tail.lower(), "the wait was logged",
+                   f"no card message in the log: {tail.strip()[-100:]!r}")
+
+    # (d) the boot caller, statically. The staged copy first (the repo's
+    # file), then the image's.
+    staged = f"{a.path_prefix}/102-cloud-saves" if a.path_prefix else ""
+    where = a.run(f"for x in {shlex.quote(staged)} /usr/lib/autostart/common/102-cloud-saves; do "
+                  "[ -n \"$x\" ] && [ -e \"$x\" ] && { echo \"$x\"; break; }; done; true").strip()
+    text = a.run(f"cat {shlex.quote(where)} 2>/dev/null || true") if where else ""
+    absent = (f"static: {where or 'no autostart found'} has no 'cloud_capture --full' line -- the image predates the boot "
+              "caller; stage autostart/102-cloud-saves beside the producer to check the repo's copy")
+    got = boot_caller_gate(text.splitlines())
+    if got is None:
+        f += not check(False, "", absent)
+        f += not check(False, "", absent)
+        return f
+    idx, enclosing, gate_ok, bg_ok = got
+    f += not check(gate_ok, f"static: --full runs at boot inside an `if` on both cloud-saves toggles ({where}:{idx + 1})",
+                   f"static: {where}:{idx + 1}: the enclosing test is {enclosing!r} -- expected an `if` naming both "
+                   "cloudsaves.startup and cloudsaves.gameexit (a gameexit-only device runs it too; a line after the sync block's fi is ungated)")
+    f += not check(bg_ok, "static: and detached under nice, ending in a single & (never delaying boot, D-CLOUD-057)",
+                   f"static: the --full line is not `setsid|nohup ... nice ... &`: {text.splitlines()[idx].strip()[:90]!r}")
+    return f
+
+
+def fx_cap11(p):
+    """CAP11: two writers of one manifest. The boot --full runs detached
+    (D-CLOUD-064) and can overlap the first game's exit capture; capture
+    takes no lock, so the loser must notice, and must not lose a first
+    version -- a member with no entry and an mtime below the next --started
+    is never stamped again. A shim beside a copy of the producer rewrites the
+    manifest (adding an entry of its own) between the run's load and its
+    rename, once. An exit capture that loses re-runs once against the
+    winner's document: exit 0, its version recorded, the other writer's
+    entry kept, the re-run logged. --full never retries: exit 1 and
+    manifest-moved in capture-failures."""
+    f = 0
+    a, root = p.a, p.root
+    p.reset()
+    rel, rom = "gba/Two.srm", p.path("gba/Two.gba")
+    plant(a, root, rel, os.urandom(500))
+    rc, _ = capture(a, root, "gba", rom)
+    if rc != 0:
+        raise Fail(f"the setup capture exited {rc}")
+    # The shim answers as cloud_device_id (siblings resolve beside $0) and on
+    # the --label call -- which the producer makes after loading the manifest
+    # and before writing it -- rewrites the manifest through tmp+rename, once.
+    capbin, idbin, srbin = (a.run(f"command -v {x}").strip() for x in ("cloud_capture", "cloud_device_id", "cloud_saves_root"))
+    other = {"kind": "save", "sha256": "f" * 64, "size": 1, "mtime": "2026-01-01T00:00:00Z", "unit": "gba:Other", "pub": None}
+    a.run(f"rm -rf /tmp/qa-two; mkdir -p /tmp/qa-two; cp {shlex.quote(capbin)} /tmp/qa-two/cloud_capture; "
+          f"cp {shlex.quote(srbin)} /tmp/qa-two/cloud_saves_root")
+    a.write("/tmp/qa-two/cloud_device_id",
+            ("#!/bin/sh\n"
+             "if [ \"$1\" = --label ] && [ ! -e /tmp/qa-two/written ]; then\n"
+             "    : > /tmp/qa-two/written\n"
+             f"    m={shlex.quote(p.manifest)}\n"
+             f"    [ -f \"$m\" ] && jq --argjson o {shlex.quote(json.dumps(other))} '.entries[\"gba/Other.srm\"] = $o' \"$m\" > \"$m.qa\" "
+             "&& mv -f \"$m.qa\" \"$m\"\n"
+             "fi\n"
+             f"exec {shlex.quote(idbin)} \"$@\"\n").encode())
+    a.run("chmod +x /tmp/qa-two/*")
+    try:
+        new = plant(a, root, rel, os.urandom(501))
+        mark = log_mark(a)
+        rc, _ = run_rc(a, f"/tmp/qa-two/cloud_capture --system gba --rom {shlex.quote(rom)} --emulator retroarch --core mgba --started 0")
+        tail = log_since(a, mark)
+        m = manifest_of(a) or {}
+        f += not check(a.run("[ -e /tmp/qa-two/written ] && echo yes || echo no").strip() == "yes",
+                       "the second writer landed between the run's load and its rename (the setup)",
+                       "the shim never wrote: the race was not staged, and the checks below prove nothing")
+        f += not check(rc == 0 and (entry(m, rel) or {}).get("sha256") == sha(new),
+                       "the exit capture that lost the race exited 0 with its version recorded",
+                       f"exit {rc}; entry sha {'is the new bytes' if (entry(m, rel) or {}).get('sha256') == sha(new) else 'IS NOT the new bytes -- a first version was dropped'}")
+        f += not check((entry(m, "gba/Other.srm") or {}).get("sha256") == "f" * 64,
+                       "and the winner's entry stands (the re-run built on the new document, not over it)",
+                       "the other writer's entry is gone: the re-run clobbered the document it lost to")
+        f += not check("re-running once" in tail, "the re-run was logged", f"no 're-running once' line: {tail.strip()[-100:]!r}")
+        # --full does not retry: it is the writer an exit capture yields to.
+        a.run("rm -f /tmp/qa-two/written")
+        old = new
+        plant(a, root, rel, os.urandom(502))
+        n0 = failures_lines(a)
+        rc, _ = run_rc(a, "/tmp/qa-two/cloud_capture --full")
+        reason = a.run(f"tail -1 {CACHE}/capture-failures 2>/dev/null || true").strip()
+        f += not check(rc == 1 and (entry(manifest_of(a), rel) or {}).get("sha256") == sha(old),
+                       "--full that lost the race: exit 1 and its version not recorded (no retry; the next run's job)",
+                       f"exit {rc}; entry {'still the previous version' if (entry(manifest_of(a), rel) or {}).get('sha256') == sha(old) else 'CHANGED'}")
+        f += not check(failures_lines(a) > n0 and "manifest-moved" in reason, "capture-failures names manifest-moved",
+                       f"capture-failures last line {reason!r}")
+    finally:
+        a.run("rm -rf /tmp/qa-two", check=False)
+    return f
+
+
+CAPTURE_FIXTURES = [
+    ("CAP1", "capture on every exit: lock held, no route, no rclone, nothing written into the tree", fx_cap1),
+    ("CAP2", "the recorded core is the argument, never a default", fx_cap2),
+    ("CAP3", "the seal is an independent copy; a hard link fails; the seal guard fires", fx_cap3),
+    ("CAP4", "nothing changed, nothing rewritten -- in all three modes (I8)", fx_cap4),
+    ("CAP5", "core_build is the pin for the core's package; unmapped is unknown", fx_cap5),
+    ("CAP6", "a unit is what the emulator writes: members, decoys, subfolders, and both N64 layouts", fx_cap6),
+    ("CAP7", "a renumber is a move, a deletion is a retired record, and nothing is invented", fx_cap7),
+    ("CAP8", "nothing is stamped that this session did not write; the A2 shape; --full's limits", fx_cap8),
+    ("CAP9", "the error policy is the one written down, and the un-provable is not faked", fx_cap9),
+    ("CAP10", "the card context informs, it never silently refuses -- and a flip discards", fx_cap10),
+    ("CAP11", "two writers of one manifest: the loser re-runs once and a first version is not lost", fx_cap11),
+]
+
+
+def snapshot_cache(dev):
+    """Archive /storage/.cache/cloud_sync before the fixtures wipe it. Returns
+    whether the directory existed, which restore_cache needs to tell "nothing
+    to put back" from "the snapshot failed"."""
+    had = dev.run(f"[ -d {CACHE} ] && echo yes || echo no", check=False).strip() == "yes"
+    dev.run("rm -f /tmp/qa-cache.tgz; tar -C /storage/.cache -czf /tmp/qa-cache.tgz cloud_sync 2>/dev/null || true", check=False)
+    return had
+
+
+def restore_cache(dev, had):
+    """Put the cache directory back from the snapshot -- only when the
+    snapshot exists. tar exiting non-zero for any reason but an absent
+    directory (/tmp full, a read error) left no archive, and deleting the
+    live directory then would drop the device's saves-root record and every
+    last-* stamp on the strength of nothing: a guard that fails open."""
+    have = dev.run("[ -s /tmp/qa-cache.tgz ] && echo yes || echo no", check=False).strip() == "yes"
+    if have:
+        dev.run(f"rm -rf {CACHE}; tar -C /storage/.cache -xzf /tmp/qa-cache.tgz 2>/dev/null; rm -f /tmp/qa-cache.tgz", check=False)
+    elif had:
+        print(f"    WARN  cache snapshot missing; {CACHE} not restored -- the device's stamps and saves-root record "
+              "are whatever the fixtures left", file=sys.stderr)
+    else:
+        dev.run(f"rm -rf {CACHE}", check=False)   # there was none before the run
+
+
+def run_capture(dev, root, args, only):
+    """The capture fixtures on one device. The cache directory holds the
+    device's own stamps and its saves-root record; the fixtures wipe it, so
+    it is carried across and put back, as run_pair does."""
+    failures = 0
+    p = Solo(dev, root)
+    had = snapshot_cache(dev)
+    try:
+        for key, title, fn in CAPTURE_FIXTURES:
+            if only and key not in only:
+                continue
+            step(f"{key} -- {title}")
+            try:
+                failures += fn(p)
+            except Fail as e:
+                failures += 1
+                print(f"    FAIL  {e}")
+    finally:
+        local_reset(dev, root)
+        restore_cache(dev, had)
     return failures
 
 
@@ -1812,19 +3216,35 @@ def restore_device(p, args, archive):
             else:
                 dev.run(f"rm -f {ID_FILE}", check=False)
         dev.run(f"rm -f {shlex.quote(archive)}", check=False)
-        prev = dev.run(f"grep -m1 '^BACKUPFILE_RESTORE_OPTION=' {CONF}.qa-prev 2>/dev/null || true", check=False).strip()
-        if prev:
-            dev.run(f"sed -i 's|^BACKUPFILE_RESTORE_OPTION=.*|{prev}|' {CONF}", check=False)
-        else:
-            dev.run(f"sed -i '/^BACKUPFILE_RESTORE_OPTION=/d' {CONF}", check=False)
-        dev.run(f"rm -f {CONF}.qa-prev", check=False)
+        # The settings-restore option is put back only when the suite saved
+        # it: run_steps writes {CONF}.qa-prev, a --only run never does, and
+        # "no saved value" is not "delete the device's line".
+        if dev.run(f"[ -e {CONF}.qa-prev ] && echo yes || echo no", check=False).strip() == "yes":
+            prev = dev.run(f"grep -m1 '^BACKUPFILE_RESTORE_OPTION=' {CONF}.qa-prev 2>/dev/null || true", check=False).strip()
+            if prev:
+                dev.run(f"sed -i 's|^BACKUPFILE_RESTORE_OPTION=.*|{prev}|' {CONF}", check=False)
+            else:
+                dev.run(f"sed -i '/^BACKUPFILE_RESTORE_OPTION=/d' {CONF}", check=False)
+            dev.run(f"rm -f {CONF}.qa-prev", check=False)
         for key, line in prev_paths.items():
             if line:
                 dev.run(f"sed -i 's|^{key}=.*|{line}|' {CONF}", check=False)
             else:
                 dev.run(f"sed -i '/^{key}=/d' {CONF}", check=False)
         if not args.real_roms:
-            dev.run(f"rm -rf {shlex.quote(SCRATCH)} /storage/roms/{shlex.quote(CONTENT_DIR)} /storage/roms/{shlex.quote(CONTENT_DIR)}-unselected", check=False)
+            # .away is where A9 and CAP8 park the root to test an unmounted
+            # one; a Fail or a dropped ssh between the mv and its undo leaves
+            # it behind, and nothing else knows the name.
+            dev.run(f"rm -rf {shlex.quote(SCRATCH)} {shlex.quote(SCRATCH)}.away", check=False)
+        if p.local_only:
+            # A local prepare read no rclone.conf and created no content
+            # fixture: putting back a blank remote would delete the device's
+            # real one, and resetting the bucket would need a backend that
+            # was never asked for.
+            print("    scratch tree removed and the saves root put back; no remote or bucket was touched")
+            return
+        if not args.real_roms:
+            dev.run(f"rm -rf /storage/roms/{shlex.quote(CONTENT_DIR)} /storage/roms/{shlex.quote(CONTENT_DIR)}-unselected", check=False)
         if prev_rclone_conf.strip():
             dev.write(RCLONE_CONF, prev_rclone_conf.encode())
         else:
