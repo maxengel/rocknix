@@ -21,6 +21,8 @@ GENERIC_X64 VM**, with the renamed config keys and #71's filter-free case as
 its first fixtures. Nothing downstream is trusted until it runs. D-QA-007: the
 VM first.
 
+**2026-09-08 ~20:40Z — everything landed; deploy candidate building.** Polish (workflow w3rkz039f): ES `b2a2732c3` (sizeLabel; done page run summary; snapshot; separators) → test/qa-integration `7a70af0184`, pinned; vm-walks fix `829e2a8763`. **#86 fixed** (workflow wlwdl5iq4, 2 reviewers, 13 findings applied): `323d96a37e` cloud_device_id, `4f9a53265d` A15, cloud_capture adoption `50fe7fb9c8`, D-CLOUD-068. **next = `50fe7fb9c8`** (#85 ×4 + polish, #21, #86, #84…). **Build chain running** (`scratchpad/build-chain.sh`: x64 → `x64-all-20260908-50fe7fb9c8/`, then H700 → `h700-all-20260908-50fe7fb9c8/`; waiter armed). Then: VM re-check on guest b (done page + sizes) and the capture ES-side procedure on guest a (upgrade in place with the x64-all tar), then verify the H700 image and **ask before deploying** (new build; both handhelds will heal their ids on first run). Upstream `pr/automount-card-wait` ready, PR not opened. #85 follow-ups on the issue (backuptool restore vs chosen archive; oracle; pico-8 scan scoping; whole-run bar design).
+
 ## Completed This Session (2026-09-05 → 06)
 
 **The council run reached a majority and a consensus plan.**
