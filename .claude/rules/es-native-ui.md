@@ -238,6 +238,19 @@ public:
 };
 ```
 
+## Comments near a translatable string must be ASCII
+
+ES's build runs `xgettext` over the sources for the `.pot` file, and it
+stops the whole build on a non-ASCII byte in a comment it extracts
+(`Non-ASCII comment at or before <file>:<line> ... Please specify the source
+encoding through --from-code`). It extracts comments that sit right before a
+`_( )` call, so a middle dot, an em dash or an ellipsis in such a comment
+breaks the image build while `g++ -fsyntax-only` passes it (2026-09-08,
+`b44a715a9`: eight comment lines in `GuiCloudTransfer.cpp`). String
+literals may carry `·`; comments may not. Write `.`, `--`, `->`, `...`.
+Before bumping the ES pin, run `grep -nP '^\s*//.*[^\x00-\x7F]'` over the
+files you touched; a real image build is the only check that runs xgettext.
+
 ## Conventions
 
 - Every label through `_( )` (localized, UPPERCASE by convention).
