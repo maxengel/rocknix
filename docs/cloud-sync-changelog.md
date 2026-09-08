@@ -479,9 +479,38 @@ written by a boot restore at a boot without the second card (#83).
 - **Upgrade**: no record yet means nothing to compare. A device updated to
   this build records at its first transfer and is never asked. A clean
   install does the same.
+- **How it actually happened (RG SP journal, 2026-09-08)**: not a missing
+  card. The automount script is started by udev when the card partition is
+  detected, and its first act is to *unmount* `/storage/roms`; it binds the
+  second card back a second later. The interface starts in that same second
+  (automount 23:48:57, unmount 23:48:57, bind 23:48:58, interface 23:48:57,
+  boot restore 23:48:58). A transfer that got in before the bind, or one the
+  bind landed under, wrote to the internal card with both cards in the
+  device. The compositor's `After=rocknix-automount.service` cannot order
+  against a unit that is not in the boot transaction.
+- **So the check waits, and the run is checked again at the end**
+  (`9618b63d7c`). A mismatch with the record is re-read once a second for up
+  to 15 seconds before it is a refusal, which turns the boot race into a
+  short delay. `check` prints the identity it confirmed, and the phase hands
+  it back to `record` after the transfer: if the folder is on a different
+  card by then, nothing is recorded and the phase reports *"The saves folder
+  /storage/roms changed cards during the transfer (it started on uuid:… and
+  is on … now). Files written in that time may be on the other card. Nothing
+  was recorded. Run the transfer again once the cards have settled."*
+  instead of success. Restores are plain copies, so running again is
+  harmless.
 - **Not covered**: a card that flips *between* two transfers and flips back
-  leaves no trace; the guard reads the identity at the moment a transfer
-  runs, which is the only moment the trees can diverge through us.
+  leaves no trace; and the one second in which a running emulator would
+  write a save to the internal card is not our writer. The ROMs and BIOS
+  tier restores into `/storage/roms` in the same boot window and has no
+  guard yet (follow-up on the fork).
+- Proven on GENERIC_X64 guest a with a tmpfs copy bound over
+  `/storage/roms`: the usual card returning 3 s into the wait lets the
+  backup proceed; a card that never returns is refused after the wait
+  (helper in 3 s, the restore script in 22 s with the pauses it already
+  had); a bind landing under a throttled 1200-file copy makes the run fail
+  with the changed-cards message and leaves the record alone; an unflipped
+  backup and restore still pass and record.
 - Proven on GENERIC_X64 guest a with `tools/cloud-test-backend` (MinIO):
   refusal on backup and on restore against a planted record, accept, the
   record rewritten, a matching restore, and a run with no record.

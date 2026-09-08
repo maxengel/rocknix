@@ -167,13 +167,28 @@ seeded from the `/usr/config/*.defaults` templates:
 
 ## The saves folder can change cards
 
-Two-card devices (RG SP) mount the second card at `/storage/roms` and fall
-back to the internal card when it is absent at boot, so the saves tree a
-sync reads is not always the same filesystem. `cloud_saves_root` (D-CLOUD-054,
-#83) records the filesystem UUID under `SAVESPATH` in `/storage/.cache` after
-every successful saves phase; `cloud_backup`/`cloud_restore` refuse the saves
-phase when it changed, until `cloud_setup --accept-saves-root`. Any new saves
-writer goes through the same check.
+Two-card devices (RG SP) bind the second card over `/storage/roms`. The
+automount that does it is started by udev when the card is detected, and its
+first act is to unmount `/storage/roms`; the bind comes a second later, and
+the interface (with its boot restore) starts in that same second. So the
+saves tree a sync reads is not always the same filesystem, with both cards
+in — that is how the RG SP grew a second tree (#83). `cloud_saves_root`
+(D-CLOUD-054/055) records the filesystem UUID under `SAVESPATH` in
+`/storage/.cache` after a saves phase; `cloud_backup`/`cloud_restore` run
+`check --wait 15` first (a mismatch is re-read for 15 s before it refuses)
+and `record <identity-from-check>` afterwards (a card that changed under the
+run fails the phase and records nothing). `cloud_setup --accept-saves-root`
+is the owner's override. Any new saves writer goes through the same two
+calls.
+
+To test a flip on the VM, bind a tmpfs *copy* of the tree over
+`/storage/roms` (`mount -t tmpfs`, `cp -a`, `mount --bind`): the identity
+changes (`dev:` instead of `uuid:`) while rclone keeps finding its files, as
+on a real two-card device. An empty tmpfs makes rclone fail instead and
+proves nothing about the post-check. To make the bind land *during* the
+copy, throttle rclone with `RCLONE_BWLIMIT=200k` in the environment — MinIO
+on the host moves 1200 files in 1.5 s otherwise, and `RCLONEOPTS` in the
+conf is a multi-line value a one-line `sed` will not edit.
 
 Two things learned wiring it:
 
