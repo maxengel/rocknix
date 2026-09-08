@@ -7,6 +7,34 @@
 
 . /etc/profile.d/001-functions
 
+# The full capture pass (fork #21): re-hash every save the manifest already
+# claims, so an edit from a shell, a session EmulationStation itself aborted,
+# a power loss, or a rewrite that kept the size and mtime of a game nobody
+# has played since is caught -- none of those reach the exit-path capture.
+# Boot is the one moment no game can have just exited, so it cannot race one.
+#
+# Only a device that has turned cloud saves on runs it: a device with both
+# toggles off has no consumer for the manifest, and boot time is not ours to
+# spend (#84, D-CLOUD-057). Detached and niced, so it never delays boot and
+# never holds the autostart runner; it needs no network and takes no lock.
+#
+# Two residuals of running it detached, both accepted (D-CLOUD-064):
+# - It can still be finishing when the first game exits, so the two are
+#   concurrent writers of one manifest. Capture takes no lock; the loser sees
+#   the file change under it and, for an exit capture, re-runs once against
+#   the winner's document, so the first version a game wrote is not lost to
+#   the race. --full itself never retries.
+# - On a two-card device that has never synced there is no saves-root record,
+#   so `cloud_saves_root check --wait` returns at once and this pass may hash
+#   the internal card's copies before the automount binds the second card;
+#   the next exit then records the real file with `replaces` pointing at that
+#   stale hash. A flip DURING the pass is discarded; the pre-first-sync window
+#   is not, and a device that has never synced has published nothing yet.
+if [ "$(get_setting cloudsaves.startup)" = "1" ] || [ "$(get_setting cloudsaves.gameexit)" = "1" ]
+then
+  setsid nohup nice -n 10 /usr/bin/cloud_capture --full >/dev/null 2>&1 &
+fi
+
 if [ "$(get_setting cloudsaves.startup)" = "1" ]
 then
   (
