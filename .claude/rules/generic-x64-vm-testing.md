@@ -111,8 +111,8 @@ ssh -i key -p 10022 -o StrictHostKeyChecking=no root@127.0.0.1 'echo ok'
 since they last agreed, and one guest cannot make one; a handheld must
 never be asked to. `tools/vm-pair up <img.gz>` builds two disks from the
 image, boots both headless — guest `a` on the defaults above, guest `b`
-with a `-b` suffix on its sockets, SSH 10023 and VNC :10 — and provisions
-the QA key in each over serial; `vm-pair ssh a '…'`, `vm-pair serial b
+with a `-b` suffix on its sockets, SSH 10023, VNC :10 and its own MAC — and
+provisions the QA key in each over serial; `vm-pair ssh a '…'`, `vm-pair serial b
 '…'`, `vm-pair info`, `vm-pair down`. Both reach the host's backend at
 `10.0.2.2`, so the pair against `cloud-test-backend` is the venue for every
 fixture that manufactures a conflict or interrupts a transfer, run once on
@@ -123,14 +123,42 @@ root@127.0.0.1 --port 10022 --second-port 10023 --identity
 /tmp/rocknix-vm-pair/qa-key` runs the single-device suite on `a`, then the
 two-device fixtures of #35 (`--only A1,A9` for a subset; `--only CONTRACT
 --transport bisync` for #9's items, `--bisync-flags` for Gate 11's variants);
-both guests are put back on every exit. Two guests from one image carry one
-`cloud_device_id` (it hashes the profile's fixed MAC), so the harness gives
-`b` its own for the run and A11 clones it back on purpose. Scripts fixed on
-the host ride in `/tmp/qa-bin` on both guests through `--path-prefix`; the
-pair's `up` does not put them there. The harness's stdout is block-buffered
+both guests are put back on every exit. Scripts fixed on the host ride in
+`/tmp/qa-bin` on both guests through `--path-prefix`; the pair's `up` does
+not put them there.
+
+**Two guests must be two devices (#91).** `cloud_device_id` hashes the
+permanent MAC, and `generic-x64-vm` gives every guest the profile's fixed
+one, so two guests from one image printed one id between them
+(`GENERICX64-15ca35b6b4` on both, 2026-09-08) — one settings folder, one
+manifest, and pair fixtures agreeing with themselves. `vm-pair up` now
+starts `b` with `--mac 52:54:00:52:4E:59` (the profile's plus one; `a`
+keeps `…:58`, so its id does not move), and the harness reads both ids
+before it prepares either guest and refuses the two-device fixtures when
+they match or either is blank — nothing is written, so nothing needs
+putting back. The rewrite it used to do (`<id>-second` on `b` for the run)
+is gone: it ran every pair fixture on an identity the harness had invented.
+A pair started before this keeps its shared id until `vm-pair up` rebuilds
+the disks — the id is derived from the address on first boot and then
+stored, so clearing `b`'s stored id while the MACs match re-derives the
+same one. A11 alone clones `a`'s id onto `b`, on purpose, and puts it back;
+a run interrupted inside A11 leaves that clone behind, and the refusal's
+message tells the two cases apart by the MACs. The harness's stdout is block-buffered
 when redirected, so a run in the background shows nothing until it ends —
 wait for the `PASSED` / `N CHECK(S) FAILED` line rather than reading the
 file early.
+
+**Busybox `pgrep -x` compares the whole argv, not the comm.** On the guest
+`pgrep -x retroarch` returns 1 while `/usr/bin/retroarch` runs (its argv[0]
+is the full path); `pgrep -x emulationstation` happens to work because ES is
+started by its bare name. Match a process by a bracketed fragment of its
+path — `pgrep -f '/usr/bin/retroarc[h]'` — and kill by name with `killall`,
+which is what `input_sense` does. The bracket protects only the pattern's
+own literal: a `pkill -f 'f1-liv[e].sh'` still killed the shell running it
+because the same command line carried `rm -f /tmp/qa-bin/f1-live.sh`. When
+a command both matches and names the thing, put it in a script file and
+run the file (2026-09-08, twice in one hour; the reviewer hit it the same
+day with `pkill -f 'sleep 30'`).
 
 **Stop it by PID.** `pkill -f 'vm76[.]qcow2'` killed the shell that ran it,
 because the same command text held the literal in an `rm` three lines down,

@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import plistlib
+import re
 import shlex
 import shutil
 import subprocess
@@ -146,12 +147,19 @@ def qemu_command(profile, args):
     # port, and a second VM would fail to bind it. The port the guest is told
     # about has to move with it, or cloud_setup would print an SSH command
     # pointing at the other machine.
-    if args.ssh_port:
+    if args.ssh_port or args.mac:
         network = dict(network)
+    if args.ssh_port:
         network["ssh_host_port"] = args.ssh_port
         advertised = dict(network.get("advertised_ssh") or {})
         advertised["host_port"] = args.ssh_port
         network["advertised_ssh"] = advertised
+    # And its own MAC. NAT keeps two guests on the profile's address from
+    # colliding on any network, but cloud_device_id hashes the permanent MAC,
+    # so to the cloud they were one device (fork #91): the same folder, the
+    # same manifest, and two-device fixtures agreeing with themselves.
+    if args.mac:
+        network["mac_address"] = args.mac
     monitor.unlink(missing_ok=True)
 
     command = [
@@ -490,9 +498,28 @@ def add_qemu_options(parser):
             "two at once for multi-device testing"
         ),
     )
+    parser.add_argument(
+        "--mac",
+        type=mac_address,
+        default=None,
+        help=(
+            "the guest NIC's MAC address (default: the profile's). Give a second "
+            "VM its own: cloud_device_id hashes the permanent MAC, so two guests "
+            "on the profile's address are one device to the cloud"
+        ),
+    )
     parser.add_argument("--ovmf-code")
     parser.add_argument("--ovmf-vars-template")
     parser.add_argument("--ovmf-vars")
+
+
+def mac_address(value):
+    """Six hex pairs joined by colons. QEMU rejects anything else only once it
+    starts, after the sockets and pidfile have been claimed; argparse says no
+    before that."""
+    if not re.fullmatch(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}", value):
+        raise argparse.ArgumentTypeError(f"not a MAC address (aa:bb:cc:dd:ee:ff): {value!r}")
+    return value
 
 
 def main():

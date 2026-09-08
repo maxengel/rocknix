@@ -14,9 +14,16 @@
 #   ./tools/vm-pair down                                 # both, by pidfile
 #
 # Guest a keeps generic-x64-vm's defaults (SSH 10022, monitor and serial at
-# /tmp/rocknix-qemu-*.sock, pidfile /tmp/rocknix-qemu.pid, VNC :9); guest b
-# gets the same with a -b suffix, SSH 10023 and VNC :10. Both sit behind
-# user-mode NAT, so the profile's fixed MAC is not a collision, and both reach
+# /tmp/rocknix-qemu-*.sock, pidfile /tmp/rocknix-qemu.pid, VNC :9, the
+# profile's MAC 52:54:00:52:4E:58); guest b gets the same with a -b suffix,
+# SSH 10023, VNC :10 and its own MAC, 52:54:00:52:4E:59. Both sit behind
+# user-mode NAT, so a shared MAC would collide on no network -- but
+# cloud_device_id hashes the permanent MAC, and two guests on the profile's
+# address printed one id between them (fork #91): one settings folder, one
+# manifest, and two-device fixtures agreeing with themselves. The id is
+# derived on first boot and then stored on the disk, so a pair started before
+# guest b had its own address keeps the shared id until `up` rebuilds the
+# disks; clearing the stored id alone re-derives the same one. Both reach
 # the host's QA backend at 10.0.2.2. Disks live under $VM_PAIR_DIR
 # (default /tmp/rocknix-vm-pair): scratch, rebuilt from the image on every up.
 set -euo pipefail
@@ -26,17 +33,19 @@ VM_TOOL="$ROOT/projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm"
 DIR="${VM_PAIR_DIR:-/tmp/rocknix-vm-pair}"
 KEY="$DIR/qa-key"
 
-# Per-guest settings: letter -> monitor serial pidfile vnc sshport
+# Per-guest settings: letter -> monitor serial pidfile vnc sshport mac
+# (every `read` below names all six: the last variable takes the rest of the
+# line, so a field added here without a slot there lands in the one before it)
 settings() {
   case "$1" in
-    a) echo "/tmp/rocknix-qemu-monitor.sock /tmp/rocknix-qemu-serial.sock /tmp/rocknix-qemu.pid 9 10022" ;;
-    b) echo "/tmp/rocknix-qemu-monitor-b.sock /tmp/rocknix-qemu-serial-b.sock /tmp/rocknix-qemu-b.pid 10 10023" ;;
+    a) echo "/tmp/rocknix-qemu-monitor.sock /tmp/rocknix-qemu-serial.sock /tmp/rocknix-qemu.pid 9 10022 52:54:00:52:4E:58" ;;
+    b) echo "/tmp/rocknix-qemu-monitor-b.sock /tmp/rocknix-qemu-serial-b.sock /tmp/rocknix-qemu-b.pid 10 10023 52:54:00:52:4E:59" ;;
     *) echo "vm-pair: guest is a or b, not '$1'" >&2; exit 2 ;;
   esac
 }
 
 stop_one() {
-  read -r _ _ pid _ _ <<<"$(settings "$1")"
+  read -r _ _ pid _ _ _ <<<"$(settings "$1")"
   if [ -f "$pid" ] && kill -0 "$(cat "$pid")" 2>/dev/null; then
     kill "$(cat "$pid")" && echo "down: $1 (pid $(cat "$pid"))"
   fi
@@ -57,12 +66,12 @@ case "${1:-}" in
     done
     rm -f "$DIR/image.img"
     for g in a b; do
-      read -r mon ser pid vnc port <<<"$(settings "$g")"
-      "$VM_TOOL" run --headless --daemonize --monitor "$mon" --serial "$ser" --pidfile "$pid" --vnc "$vnc" --ssh-port "$port" "$DIR/vm-$g.qcow2" 2>&1 | grep -v pw.conf || true
-      echo "up: $g (pid $(cat "$pid"), ssh :$port, serial $ser)"
+      read -r mon ser pid vnc port mac <<<"$(settings "$g")"
+      "$VM_TOOL" run --headless --daemonize --monitor "$mon" --serial "$ser" --pidfile "$pid" --vnc "$vnc" --ssh-port "$port" --mac "$mac" "$DIR/vm-$g.qcow2" 2>&1 | grep -v pw.conf || true
+      echo "up: $g (pid $(cat "$pid"), ssh :$port, serial $ser, mac $mac)"
     done
     for g in a b; do
-      read -r _ ser _ _ port <<<"$(settings "$g")"
+      read -r _ ser _ _ port _ <<<"$(settings "$g")"
       "$HERE/vm-serial" --socket "$ser" wait --up-to 300 >/dev/null
       pub=$(cat "$KEY.pub")
       "$HERE/vm-serial" --socket "$ser" sh "mkdir -p /storage/.ssh && chmod 700 /storage/.ssh && echo '$pub' >> /storage/.ssh/authorized_keys && chmod 600 /storage/.ssh/authorized_keys" >/dev/null
@@ -72,12 +81,12 @@ case "${1:-}" in
     ;;
   down) stop_one a; stop_one b ;;
   ssh)
-    read -r _ _ _ _ port <<<"$(settings "${2:-}")"; shift 2
+    read -r _ _ _ _ port _ <<<"$(settings "${2:-}")"; shift 2
     exec ssh -i "$KEY" -p "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o LogLevel=ERROR root@127.0.0.1 "$@" ;;
   serial)
-    read -r _ ser _ _ _ <<<"$(settings "${2:-}")"; shift 2
+    read -r _ ser _ _ _ _ <<<"$(settings "${2:-}")"; shift 2
     exec "$HERE/vm-serial" --socket "$ser" sh "$@" ;;
   info)
-    for g in a b; do read -r mon ser pid vnc port <<<"$(settings "$g")"; printf '%s: ssh -i %s -p %s root@127.0.0.1   monitor %s   serial %s   pid %s   vnc :%s\n' "$g" "$KEY" "$port" "$mon" "$ser" "$([ -f "$pid" ] && cat "$pid" || echo -)" "$vnc"; done ;;
-  *) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    for g in a b; do read -r mon ser pid vnc port mac <<<"$(settings "$g")"; printf '%s: ssh -i %s -p %s root@127.0.0.1   monitor %s   serial %s   pid %s   vnc :%s   mac %s\n' "$g" "$KEY" "$port" "$mon" "$ser" "$([ -f "$pid" ] && cat "$pid" || echo -)" "$vnc" "$mac"; done ;;
+  *) sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
