@@ -516,3 +516,32 @@ written by a boot restore at a boot without the second card (#83).
   record rewritten, a matching restore, and a run with no record.
 - **Docs debt**: `--accept-saves-root` and the refusal text belong on
   rocknix.org's cloud-sync page (#42 carries the docs PR).
+
+## The wrong-card writes are fixed at the source (2026-09-08)
+
+The saves-root guard (above) catches a saves transfer aimed at the wrong
+card. This removes the wrong aim in the first place, for every tier.
+
+The RG SP's second tree came from `rocknix-automount` binding the
+**internal** card over `/storage/roms` at a boot where the external card
+had not enumerated by the time the script's one scan ran. Nothing waited
+for it. The boot restore then wrote to internal. Unit ordering was not the
+cause — in monotonic time the automount finished about ten seconds before
+the interface on both handhelds; the wall-clock journal only looked
+otherwise because NTP corrected the clock in the middle of the boot.
+
+- `find_games` in `automount` now retries the scan for up to 15 seconds
+  when the device **expects** an external card — it has merged one before
+  (`system.merged.device=external`) or a games device is pinned
+  (`system.gamesdevice`). A one-card device has neither signal and its
+  boot is unchanged; a card genuinely removed still boots to internal
+  after the timeout.
+- Because the wrong bind never happens, both the saves tier and the ROMs
+  and BIOS tier are protected, above the `cloud_saves_root` guard which
+  now becomes a backstop rather than the only defence.
+- Verified on GENERIC_X64 against the real `find_games` body under mocks:
+  card present, card late (waits then mounts), card absent (times out to
+  internal), one-card (no wait), unset setting (no wait), pinned games
+  device with a late card (waits then mounts).
+- The `automount` change is offered upstream to ROCKNIX/distribution on
+  its own (#84).
