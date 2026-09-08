@@ -20,6 +20,8 @@
 #                (--set-syncpath is accepted as the older spelling)
 #                tools use, keeping SETTINGS_REMOTE alongside it; refuses a
 #                path the remote cannot use
+#   --accept-saves-root  the saves folder is on a different card than the last
+#                sync and that is intended (cloud_saves_root)
 #   --check-syncpath [path]  validate a cloud folder against the remote's
 #                shape without changing anything (default: the current one)
 #   --content-location  report where this device's ROMs/BIOS actually are in
@@ -255,6 +257,13 @@ case "$1" in
         exit 0
     ;;
 
+    --accept-saves-root)
+        # The owner says the card the saves folder is on now is the right
+        # one (#83): remember it, so saves transfers stop refusing.
+        tool="$(dirname "$(readlink -f "$0")")/cloud_saves_root"
+        [ -x "${tool}" ] || tool=/usr/bin/cloud_saves_root
+        exec "${tool}" accept
+    ;;
     --check-syncpath)
         # Validate a candidate cloud folder without changing anything, so the
         # UI can refuse a bad one where it is typed rather than letting it

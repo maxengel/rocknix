@@ -543,6 +543,22 @@ restore_game_saves() {
     
     log_message "Starting restore from ${REMOTENAME}${SAVES_REMOTE} to ${SAVESPATH}"
     log_message "Restore started at $(date)" "false"
+
+    # Which card is the saves folder on? (#83; see cloud_backup for the case.)
+    # A restore into the wrong card's tree is the copy that later reads as
+    # this device's newest save.
+    local saves_root_tool
+    # Installed beside this script (/usr/bin on a device; the same
+    # directory wherever a copy of these scripts is run from).
+    saves_root_tool="$(dirname "$(readlink -f "$0")")/cloud_saves_root"
+    [ -x "${saves_root_tool}" ] || saves_root_tool=/usr/bin/cloud_saves_root
+    if [ -x "${saves_root_tool}" ]; then
+        local root_reason
+        if ! root_reason=$("${saves_root_tool}" check); then
+            log_message "${root_reason}" "true" "ERROR"
+            return 1
+        fi
+    fi
     
     # Check if remote path exists before attempting restore
     log_message "Checking if remote path exists: ${REMOTENAME}${SAVES_REMOTE}" "false"
@@ -621,6 +637,10 @@ restore_game_saves() {
     
     # Report the result with detailed error information
     report_rclone_error $RESTORE_STATUS "Game saves restore"
+
+    if { [ $RESTORE_STATUS -eq 0 ] || [ $RESTORE_STATUS -eq 9 ]; } && [ -x "${saves_root_tool}" ]; then
+        "${saves_root_tool}" record
+    fi
     
     return $RESTORE_STATUS
 }

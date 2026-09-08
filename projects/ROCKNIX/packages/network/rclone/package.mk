@@ -67,6 +67,7 @@ makeinstall_target() {
   cp cloud_content_restore ${INSTALL}/usr/bin/
   cp cloud_content_backup ${INSTALL}/usr/bin/
   cp cloud_sync_cleanup_duplicates.sh ${INSTALL}/usr/bin/
+  cp cloud_saves_root ${INSTALL}/usr/bin/
   # No game-end event hook. EmulationStation runs the save sync itself now
   # (FileData::launchGame), so it can show the result on the progress card
   # instead of backgrounding the work into /dev/null where nobody could tell

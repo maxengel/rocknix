@@ -544,6 +544,23 @@ backup_game_saves() {
     
     log_message "Starting backup from ${SAVESPATH} to ${REMOTENAME}${SAVES_REMOTE}"
     log_message "Backup started at $(date)" "false"
+
+    # Which card is the saves folder on? A two-card device flips /storage/roms
+    # to the internal card when the second one is missing at boot, and a stale
+    # tree would then be pushed as this device's newest saves (#83). Refuse
+    # until the owner accepts the change.
+    local saves_root_tool
+    # Installed beside this script (/usr/bin on a device; the same
+    # directory wherever a copy of these scripts is run from).
+    saves_root_tool="$(dirname "$(readlink -f "$0")")/cloud_saves_root"
+    [ -x "${saves_root_tool}" ] || saves_root_tool=/usr/bin/cloud_saves_root
+    if [ -x "${saves_root_tool}" ]; then
+        local root_reason
+        if ! root_reason=$("${saves_root_tool}" check); then
+            log_message "${root_reason}" "true" "ERROR"
+            return 1
+        fi
+    fi
     
     # Check if local backup path exists and has content
     if [ ! -d "${SAVESPATH}" ]; then
@@ -700,6 +717,11 @@ backup_game_saves() {
 
     # Report the result with detailed error information
     report_rclone_error $BACKUP_STATUS "Game saves backup"
+
+    # Remember which card the saves came from, now that a sync from it worked.
+    if { [ $BACKUP_STATUS -eq 0 ] || [ $BACKUP_STATUS -eq 9 ]; } && [ -x "${saves_root_tool}" ]; then
+        "${saves_root_tool}" record
+    fi
 
     # RSYNCRMDIR: after a successful backup, remove orphaned empty directories on
     # the remote (--leave-root keeps the sync root itself). Exit code 9 means
