@@ -817,6 +817,16 @@ backup_system_files() {
         # meant the second device to run replaced the first device's archive,
         # with no remote history to recover it from -- the local archive/
         # rotation never leaves the device (fork #49).
+        #
+        # cloud_device_id heals a stored id whose hash is the shared constant
+        # of #86 on this very call, so from this call on device_dest is the
+        # new folder. Whether the archive is then sent is decided below, by
+        # the upload marker -- which records where the last upload went as
+        # well as what it was, so the first backup after healing sends the
+        # archive to the new folder even when it has not changed since it
+        # went to the old one. The folder it wrote under before is left
+        # exactly as it is: cloud_restore reads it (cloud_device_id
+        # --previous), and nothing here writes to it or trims it.
         local device_dest="${REMOTENAME}${SETTINGS_REMOTE}/$(device_folder)"
 
         log_message "Starting transfer of settings backup files from ${SETTINGS_BACKUPS} to ${device_dest}"
@@ -870,11 +880,20 @@ backup_system_files() {
         #
         # So decide here, on content, instead of leaving it to metadata the
         # remote may not have. The marker records what this device last
-        # actually put in the cloud; when the archive differs from that, the
+        # actually put in the cloud, and where: "<hash> <destination>". When
+        # the archive differs from that, or the destination does, the
         # transfer is forced past rclone's comparison. A game-exit backup runs
         # this on every quit, so uploading 17 MB unconditionally is not an
         # option -- the archive only changes when someone runs `backuptool
         # backup`, and this uploads exactly then.
+        #
+        # The destination joined the marker on 2026-09-08 (#86): a device
+        # whose id was healed writes to a new folder, and a marker that knew
+        # only what was sent said "unchanged; nothing to send" on every
+        # game-exit backup until the next `backuptool backup`, leaving the
+        # new folder empty -- no archive, no device.json. A marker from before
+        # holds the bare hash, which never equals the pair, so an upgraded
+        # device sends exactly once more and is then in step.
         local state_dir="/storage/.cache/cloud_sync"
         local uploaded_marker="${state_dir}/settings-backup.uploaded"
         mkdir -p "${state_dir}" 2>/dev/null
@@ -910,10 +929,10 @@ backup_system_files() {
             last_sum=$(cat "${uploaded_marker}" 2>/dev/null)
         fi
 
-        if [ -n "${local_sum}" ] && [ "${local_sum}" = "${last_sum}" ]; then
+        if [ -n "${local_sum}" ] && [ "${local_sum} ${device_dest}" = "${last_sum}" ]; then
             # Say what is true. Reporting a transfer that did not happen is
             # how the stale-copy bug stayed invisible.
-            log_message "Settings backup is unchanged since the last upload; nothing to send" "true"
+            log_message "Settings backup is unchanged since the last upload to ${device_dest}; nothing to send" "true"
             BACKUP_SYSTEM_STATUS=0
             return 0
         fi
@@ -1001,8 +1020,12 @@ backup_system_files() {
             sent_any=1
         done
 
-        # Say what this folder is. "ROCKNIX-ee5013fc56" tells its owner
+        # Say what this folder is. "ROCKNIX-ee5013fc56" told its owner
         # nothing -- not which handheld it came from, nor what the hex means.
+        # (That hex was not even the device's: it is md5 of the literal
+        # "notset" that every sit-tunnel kernel fed the hash, #86, which
+        # cloud_device_id now heals. The folder name is still the identifier;
+        # it is just a real one now.)
         # The folder name has to stay the stable identifier, because it is what
         # a device finds its own backups by, so the explanation goes inside it.
         if [ ${BACKUP_SYSTEM_STATUS} -eq 0 ] && [ ${sent_any} -eq 1 ]; then
@@ -1031,7 +1054,9 @@ MANIFEST
         # call is needed.
         #
         # Where this runs: device_dest is SETTINGS_REMOTE/<device id>/, the
-        # folder cloud_device_id names this device (Anbernic-RG-SP-ee5013fc56).
+        # folder cloud_device_id names this device (Anbernic-RG-SP-f058e3e9e8).
+        # A folder this device wrote under a healed-away id (#86) is not
+        # device_dest and nothing here reaches it either.
         # A different device's own archives are in a different folder, and
         # nothing here reaches them. Within this folder, the newest
         # CLOUD_BACKUP_KEEP archives carrying this device's label
@@ -1048,8 +1073,10 @@ MANIFEST
         # was restored here from that device's folder and sent up again by the
         # loop above (the fresh-device journey, #26); or the two devices share
         # an id and so share this folder (a cloned id, fork #86 -- the RG SP
-        # and the RG35XX SP currently share the hash ee5013fc56). The id is
-        # deliberately not in the archive name.
+        # and the RG35XX SP shared the hash ee5013fc56, the constant a
+        # sit-tunnel kernel produced, until cloud_device_id healed it on
+        # 2026-09-08; two devices of one model on a build from before that
+        # still do). The id is deliberately not in the archive name.
         #
         # The unlabelled ones are bounded: the older rule had already trimmed
         # them to CLOUD_BACKUP_KEEP, and no new ones are written, so they cost
@@ -1110,7 +1137,7 @@ MANIFEST
             done
             [ ${checked} -eq 1 ] || remote_bytes=""
             if [ -n "${remote_bytes}" ] && [ "${remote_bytes}" = "${local_bytes}" ]; then
-                echo "${local_sum}" > "${uploaded_marker}"
+                printf '%s %s\n' "${local_sum}" "${device_dest}" > "${uploaded_marker}"
             else
                 log_message "The cloud copy did not come back the size we sent (${remote_bytes:-none} vs ${local_bytes}); it will be sent again next time" "true" "WARN"
                 BACKUP_SYSTEM_STATUS=1

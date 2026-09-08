@@ -507,6 +507,14 @@ device_label() {
     [ -n "${tool}" ] && "${tool}" --label 2>/dev/null | tr -cd 'A-Za-z0-9_-'
 }
 
+# Does a cloud folder hold a settings archive at its top level? The same
+# match the transfer below uses, so a folder this says yes to is one the
+# restore can take from. Anything else -- unreachable, absent, only
+# subfolders -- is no.
+folder_has_archives() {
+    rclone lsf "${1}/" --include "/*.{zip,tar.gz}" 2>/dev/null | grep -q .
+}
+
 # The OS name the archive's name ends with. backuptool has OS_NAME from
 # /etc/profile; this script is started by systemd and by EmulationStation,
 # where no profile has run, so it is read from the file the profile reads it
@@ -771,9 +779,10 @@ restore_system_files() {
         # SETTINGS_REMOTE, and they are still someone's only backup -- a device
         # that upgrades must keep finding them. Nothing is moved or deleted:
         # the root copy may belong to another device that has not updated yet.
-        local device_src="${REMOTENAME}${SETTINGS_REMOTE}/$(device_folder)"
-        local legacy_src="${REMOTENAME}${SETTINGS_REMOTE}"
-        local restore_src=""
+        local own_name device_src legacy_src restore_src=""
+        own_name=$(device_folder)
+        device_src="${REMOTENAME}${SETTINGS_REMOTE}/${own_name}"
+        legacy_src="${REMOTENAME}${SETTINGS_REMOTE}"
 
         # The folder this device would have used before the name became
         # readable. An existing device keeps its stored identity and never
@@ -787,16 +796,53 @@ restore_system_files() {
                                             | tr -cd 'A-Za-z0-9_.-')
         local prior_src="${REMOTENAME}${SETTINGS_REMOTE}/${prior_name}"
 
-        if rclone lsf "${device_src}/" --include "/*.{zip,tar.gz}" 2>/dev/null | grep -q .; then
+        # The folders this device may have written under while its id ended
+        # in the shared constant (#86): until 2026-09-08 every device whose
+        # kernel builds in the sit tunnel hashed the same string, so the RG SP
+        # backed up to Anbernic-RG-SP-ee5013fc56 and the RG35XX SP to
+        # ROCKNIX-ee5013fc56. cloud_device_id heals such an id on the first
+        # run that sees a real hardware address and lists the old names under
+        # --previous; the archives are still there, and still someone's only
+        # backup. Nothing is moved: the same name was produced by every device
+        # of that model or hostname, so a folder here may hold another
+        # device's archives too, and the log says so when one is taken.
+        local previous_names=""
+        [ -n "${id_tool}" ] && previous_names=$("${id_tool}" --previous 2>/dev/null \
+                                                | tr -cd 'A-Za-z0-9_.\n-')
+
+        # In order: this device's own folder, its pre-label name, the folders
+        # it was healed away from, and the root where archives sat before
+        # folders existed. The first that holds an archive wins.
+        if folder_has_archives "${device_src}"; then
             restore_src="${device_src}"
-        elif [ -n "${prior_name}" ] \
-             && rclone lsf "${prior_src}/" --include "/*.{zip,tar.gz}" 2>/dev/null | grep -q .; then
+            log_message "Restoring from this device's own cloud folder (${own_name})" "false"
+        fi
+        if [ -z "${restore_src}" ] && [ -n "${prior_name}" ] && folder_has_archives "${prior_src}"; then
             restore_src="${prior_src}"
             log_message "Using backups saved under this device's previous folder name (${prior_name})" "true"
-        elif rclone lsf "${legacy_src}/" --include "/*.{zip,tar.gz}" 2>/dev/null | grep -q .; then
+        fi
+        if [ -z "${restore_src}" ] && [ -n "${previous_names}" ]; then
+            local previous_name
+            while IFS= read -r previous_name; do
+                [ -n "${previous_name}" ] || continue
+                # Already tried above. A cloud_device_id from before --previous
+                # existed answers it with the current id, so this also keeps
+                # an older helper from sending the restore round the same
+                # folder twice.
+                [ "${previous_name}" = "${own_name}" ] && continue
+                [ "${previous_name}" = "${prior_name}" ] && continue
+                if folder_has_archives "${REMOTENAME}${SETTINGS_REMOTE}/${previous_name}"; then
+                    restore_src="${REMOTENAME}${SETTINGS_REMOTE}/${previous_name}"
+                    log_message "Using backups saved under ${previous_name}, a folder this device may have written to while its id was the shared constant (#86); another device of the same model or hostname may have written there too" "true" "WARN"
+                    break
+                fi
+            done <<< "${previous_names}"
+        fi
+        if [ -z "${restore_src}" ] && folder_has_archives "${legacy_src}"; then
             restore_src="${legacy_src}"
             log_message "Using a backup saved before this device had its own cloud folder" "false"
-        else
+        fi
+        if [ -z "${restore_src}" ]; then
             # Say what is actually there. Other devices' folders are not this
             # device's to restore silently, but "no backup found" when the
             # cloud plainly holds several is the kind of dead end that sends

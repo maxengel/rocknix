@@ -12,7 +12,9 @@
 # The identity is generated once and kept in /storage/.config. Whatever it is
 # derived from, the stored value wins afterwards -- so replacing a wifi module
 # does not strand the backups, and the file can be edited to adopt another
-# device's folder deliberately.
+# device's folder deliberately. One exception, below: a stored id whose hash is
+# the constant every sit-tunnel kernel produced (#86) is healed on the first
+# run that can see a real hardware address.
 #
 # It is seeded from the permanent hardware address, because a player's idea of
 # "my device" is the handheld in their hands, not the installation on the card.
@@ -32,46 +34,125 @@
 # symlinks into /storage and is generated on first boot. That identity does not
 # survive a reflash -- worse, but better than none, and it only applies to a
 # device with no network hardware at all.
+#
+# The id file is not in backuptool's include list, so a settings archive never
+# carries it and a restore cannot clone one device's identity onto another.
+# Keep it that way: the shared id of #86 was first suspected to be exactly
+# that, and ruling it out took an afternoon.
 
 ID_FILE="/storage/.config/cloud_sync-device-id"
+# Every id this device has been healed away from, one per line, oldest first.
+# cloud_restore reads them through --previous so archives written under a
+# healed-away id stay restorable.
+PREVIOUS_FILE="${ID_FILE}.previous"
+LOG_FILE="/var/log/cloud_sync.log"
 
-# Interfaces that are not the device: loopback, the USB gadget, container and
-# VPN interfaces. Sorted so the choice does not depend on enumeration order --
-# a device that picked a different adapter on a later boot would rename itself
-# and lose track of its own backups.
+# cloud_backup and cloud_restore capture this script's stdout as the id, so
+# nothing else may be printed there. What happened goes to the journal, and to
+# the cloud-sync log beside the transfers when it is writable.
+log_message() {
+    local message="$1" level="${2:-INFO}"
+    logger -t cloud_device_id "${message}" 2>/dev/null
+    if [ -w "${LOG_FILE}" ] || { [ ! -e "${LOG_FILE}" ] && [ -w "$(dirname "${LOG_FILE}")" ]; }; then
+        printf '[%s] [%s] [cloud_device_id] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "${level}" "${message}" \
+            >> "${LOG_FILE}" 2>/dev/null
+    fi
+}
+
+# Interfaces that could be the device's adapter. Sorted so the choice does not
+# depend on enumeration order -- a device that picked a different adapter on a
+# later boot would rename itself and lose track of its own backups.
+#
+# Two tests, and the name list is neither of them. Until 2026-09-08 this was a
+# denylist of names -- loopback, the USB gadget, container and VPN interfaces
+# -- and every kernel that builds in the IPv6 sit tunnel (CONFIG_IPV6_SIT=y:
+# H700, RK3566, RK3576 among ours) also has a "sit0" that sorts before
+# "wlan0". It was never on the list. ethtool -P on it prints "Permanent
+# address: not set", and permanent_address took that as a seed (#86). So:
+#
+#   * the interface's type must be ARPHRD_ETHER (1) -- sit0 is 776, the
+#     loopback 772, a tunnel or a wireguard link something else again; and
+#   * it must be backed by a physical adapter: /sys/class/net/<n>/device is
+#     the link to the bus device, and a virtual interface has none.
+#
+# The names are still here so a reader can see what is meant, but the two
+# tests are what decide.
 usable_interfaces() {
-    local iface name
+    local iface name type
     for iface in /sys/class/net/*; do
         name=$(basename "${iface}")
         case "${name}" in
             lo|gadget|docker*|veth*|br-*|tailscale*|zt*|tun*|tap*) continue ;;
+            sit*|ip6tnl*|gre*|wg*|dummy*|bond*|ifb*) continue ;;
         esac
+        type=$(tr -cd '0-9' < "${iface}/type" 2>/dev/null)
+        [ "${type}" = "1" ] || continue
+        [ -e "${iface}/device" ] || continue
         echo "${name}"
     done | sort
 }
 
+# A hardware address, or nothing. The shape is the guard: six hex pairs with
+# colons, in either case, and not the all-zero or broadcast address. The
+# denylist this replaces named those two and "" and accepted anything else --
+# including "notset", which is what ethtool's "not set" becomes once the
+# spaces are stripped. A check that names the bad values it knows about
+# cannot fail on one it does not.
+valid_mac() {
+    local lower
+    lower=$(printf '%s' "${1}" | tr 'A-F' 'a-f')
+    case "${lower}" in
+        00:00:00:00:00:00|ff:ff:ff:ff:ff:ff) return 1 ;;
+    esac
+    [[ "${1}" =~ ^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$ ]]
+}
+
 permanent_address() {
     local name perm
-    for name in $(usable_interfaces); do
+    while IFS= read -r name; do
+        [ -n "${name}" ] || continue
         perm=$(ethtool -P "${name}" 2>/dev/null | sed 's/.*: //' | tr -d ' \r\n')
-        case "${perm}" in
-            ""|00:00:00:00:00:00|ff:ff:ff:ff:ff:ff) continue ;;
-        esac
+        valid_mac "${perm}" || continue
         echo "${perm}"
         return 0
-    done
+    done < <(usable_interfaces)
+    return 1
+}
+
+# The hash of a seed, exactly as it has been computed since the first hardware
+# seed (aa58235112): the seed, a bar, and ${DEVICE:-unknown}, md5, ten hex.
+#
+# DEVICE is a build-system variable. On a device it is never set -- /etc/profile
+# exports HW_DEVICE, and nothing exports DEVICE -- so the second term is the
+# literal "unknown" on every handheld and the family does not join the hash.
+# An earlier comment here claimed it did. The recipe stays as it is anyway:
+# every correctly seeded device keeps its id and its pre-label folder name
+# under --legacy, and switching the term to HW_DEVICE would be a second
+# identity change that needs its own legacy variant.
+hash_of() {
+    printf '%s|%s' "${1}" "${DEVICE:-unknown}" | md5sum | cut -c1-10
+}
+
+# What every device with a built-in sit tunnel hashed until 2026-09-08: the
+# string "notset", which is ee5013fc56 -- the suffix both handhelds carried.
+# Computed rather than written down so the derivation is in the code.
+poisoned_hash() {
+    hash_of "notset"
+}
+
+# Does a stored id end in the poisoned hash?
+is_poisoned() {
+    case "${1}" in
+        *-"$(poisoned_hash)") return 0 ;;
+    esac
     return 1
 }
 
 generate_id() {
     local seed prefix
 
-    # The device family joins the hash so two different products cannot
-    # collide on a recycled or spoofed address, and so the value changes if
-    # the same board is reused for another target.
     if seed=$(permanent_address); then
-        prefix=$(printf '%s|%s' "${seed}" "${DEVICE:-unknown}" \
-            | md5sum | cut -c1-10)
+        prefix=$(hash_of "${seed}")
     else
         # No adapter to key on. machine-id is per-installation rather than
         # per-device, so this identity is lost on a reflash.
@@ -88,8 +169,9 @@ generate_id() {
 # The hostname was the wrong source and had been all along: every ROCKNIX
 # image ships with it set the same way (fork #50), so every device's folder
 # came out as "ROCKNIX-ee5013fc56" -- which says neither which handheld it is
-# nor what the hex means. The comment here used to claim "H700-3f2a1c9e04
-# says what the device is"; it never could.
+# nor what the hex means (and the hex, it turned out, said nothing either:
+# #86). The comment here used to claim "H700-3f2a1c9e04 says what the device
+# is"; it never could.
 #
 # The device tree knows. On an RG35XX SP it reads "Anbernic RG35XX SP", which
 # is what its owner calls it. Falling back through the build family to the
@@ -123,6 +205,15 @@ device_label() {
         | cut -c1-32
 }
 
+# The hostname as a path segment: letters, digits, _ and -; "device" when
+# there is none.
+host_label() {
+    local host
+    host=$(hostname 2>/dev/null | tr -cd 'A-Za-z0-9_-')
+    [ -z "${host}" ] && host="device"
+    echo "${host}"
+}
+
 # What this device would have been called before device_label existed.
 #
 # A device generates its identity once and stores it, so an existing device
@@ -131,32 +222,107 @@ device_label() {
 # card finds its own backups again. Under the new rule it would generate a
 # different name and find nothing, so the old one stays available for lookup.
 legacy_id() {
-    local seed prefix host
+    local seed prefix
     if seed=$(permanent_address); then
-        prefix=$(printf '%s|%s' "${seed}" "${DEVICE:-unknown}" | md5sum | cut -c1-10)
+        prefix=$(hash_of "${seed}")
     else
         prefix=$(tr -cd 'a-f0-9' < /etc/machine-id 2>/dev/null | cut -c1-10)
     fi
     [ -z "${prefix}" ] && prefix="unknown"
-    host=$(hostname 2>/dev/null | tr -cd 'A-Za-z0-9_-')
-    [ -z "${host}" ] && host="device"
-    echo "${host}-${prefix}"
+    echo "$(host_label)-${prefix}"
+}
+
+# Every folder name this device may have written under before it was healed,
+# one per line, deduplicated, in the order cloud_restore should try them: the
+# ids it was actually healed away from, then the two shapes the poisoned hash
+# was ever written with -- the device label in front (the RG SP's
+# Anbernic-RG-SP-ee5013fc56) and the hostname in front (the RG35XX SP's
+# ROCKNIX-ee5013fc56, from before the label existed).
+#
+# The last two are named even on a device that was never healed, because a
+# reflashed card has no .previous file and its backups may sit there. They
+# are shared by construction -- every device of one model, or one hostname,
+# produced the same name -- so a folder listed here may hold another
+# device's archives, and cloud_restore says so when it takes one.
+#
+# But only where the trap was possible. It needs a sit0, and a kernel that
+# builds the tunnel in (CONFIG_IPV6_SIT=y) has one from boot; on ours with
+# it as a module (RK3326, RK3399, RK3588, S922X, SM*, GENERIC_X64) it never
+# appears unless something loads it. A device with no sit0 could not have
+# hashed "notset", and every ROCKNIX image ships the hostname ROCKNIX, so
+# listing <hostname>-ee5013fc56 there would send a fresh RG351M to the
+# RG35XX SP's archives before the root tier. The trade, accepted: a healed
+# device reflashed onto a later build that switched sit to a module loses
+# these two guessed names (its .previous went with the card too) and falls
+# to the root tier, whose message lists what the cloud holds.
+previous_ids() {
+    local poisoned
+    poisoned=$(poisoned_hash)
+    {
+        [ -r "${PREVIOUS_FILE}" ] && tr -cd 'A-Za-z0-9_.\n-' < "${PREVIOUS_FILE}"
+        echo
+        if [ -e /sys/class/net/sit0 ]; then
+            echo "$(device_label)-${poisoned}"
+            echo "$(host_label)-${poisoned}"
+        fi
+    } | grep -v '^$' | awk '!seen[$0]++'
+}
+
+# Append an id to the .previous file unless it is already there.
+remember_previous() {
+    mkdir -p "$(dirname "${PREVIOUS_FILE}")" 2>/dev/null
+    grep -qxF -- "${1}" "${PREVIOUS_FILE}" 2>/dev/null && return 0
+    printf '%s\n' "${1}" >> "${PREVIOUS_FILE}" 2>/dev/null
+}
+
+# A stored id ending in the poisoned hash was not derived from this hardware,
+# so the rule that the stored value wins does not protect anything here: it
+# is the same string on every affected device, which is the one thing an
+# identity must not be. It is healed when -- and only when -- a validated
+# hardware address is available: the old id is recorded in .previous, the new
+# one written, and the change logged. With no address there is nothing to
+# regenerate from and the stored id is returned as it is, never invented.
+#
+# Only the poisoned hash is healed. A stored id that merely differs from what
+# this hardware would hash to is the wifi-module-swap case the stored value
+# exists for, and the maintainer's "edit the file to adopt another device's
+# folder"; neither is touched.
+heal_poisoned() {
+    local stored="$1" seed healed
+    seed=$(permanent_address) || return 1
+    healed="$(device_label)-$(hash_of "${seed}")"
+    [ "${healed}" != "${stored}" ] || return 1
+    remember_previous "${stored}"
+    mkdir -p "$(dirname "${ID_FILE}")" 2>/dev/null
+    # Braced, so a file that will not open is reported by the WARN line alone:
+    # redirections apply left to right, and `> file 2>/dev/null` lets the
+    # shell print "Operation not permitted" before stderr is closed.
+    if { printf '%s\n' "${healed}" > "${ID_FILE}"; } 2>/dev/null; then
+        log_message "device id healed: ${stored} -> ${healed} (the stored hash was the shared constant $(poisoned_hash), #86; the old id is kept in ${PREVIOUS_FILE})"
+    else
+        log_message "device id healed in memory only: ${stored} -> ${healed}; ${ID_FILE} is not writable, so this repeats next run" "WARN"
+    fi
+    echo "${healed}"
 }
 
 main() {
-    if [ "$1" = "--legacy" ]; then
-        legacy_id
-        return 0
-    fi
-    if [ "$1" = "--label" ]; then
-        device_label
-        return 0
-    fi
+    case "$1" in
+        --legacy)   legacy_id;    return 0 ;;
+        --label)    device_label; return 0 ;;
+        --previous) previous_ids; return 0 ;;
+    esac
 
     local id=""
 
     if [ -s "${ID_FILE}" ]; then
         id=$(head -1 "${ID_FILE}" | tr -cd 'A-Za-z0-9_.-')
+    fi
+
+    if [ -n "${id}" ] && is_poisoned "${id}"; then
+        local healed
+        if healed=$(heal_poisoned "${id}"); then
+            id="${healed}"
+        fi
     fi
 
     if [ -z "${id}" ]; then
@@ -165,7 +331,7 @@ main() {
         # A read-only or full /storage must not take the backup down; the
         # identity is simply recomputed next time, which lands on the same
         # value anyway when an adapter is present.
-        printf '%s\n' "${id}" > "${ID_FILE}" 2>/dev/null
+        { printf '%s\n' "${id}" > "${ID_FILE}"; } 2>/dev/null
     fi
 
     echo "${id}"
