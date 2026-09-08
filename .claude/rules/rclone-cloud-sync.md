@@ -253,7 +253,12 @@ the boot sync and the menu rows run, and each was paid for on 2026-09-05 by an
   lock-held exit is still recorded, and the working copy the push carries is
   current by the time the sync starts. Its stamps sit beside `last-backup`:
   `/storage/.cache/cloud_sync/last-capture` (`<epoch> <rc> <mode>[!card]
-  <unit|->`, written on every run, including a nothing-changed one) and
+  <unit|-> emu-exit=<N|?> <emulator>/<core>`, written on every run, including
+  a nothing-changed one; the unit may contain spaces, the two trailing fields
+  never do, and outside exit mode they read `emu-exit=? -/-`; `emu-exit` is
+  the launch's exit as EmulationStation saw it -- `runemu.sh`'s 0/1, with the
+  exit hotkey's kill reported as 0 (D-LAUNCH-001) -- not the emulator's own
+  code) and
   `capture-failures` (one line per degraded run, last 20 kept). They exist
   because `/var/log` is tmpfs unless `debugging` is on (D-CLOUD-027): the log
   line is gone at the next reboot, the stamp is not.

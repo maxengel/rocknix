@@ -466,7 +466,11 @@ are D-CLOUD-058 to D-CLOUD-066.
   Its unit membership is carried by `units[<unit>].members`, derived from its
   state's `screenshot`; #22 pushes it by path with its state in the same
   publication. Its torn test is declared-member-versus-listing: `members`
-  names it, the listing says whether it arrived. Accepted residual: a
+  names it, the listing says whether it arrived. So `cloud_capture --retire`
+  of a thumbnail writes no `retired` row — there is no version to retire:
+  handed over beside its state (the save-state manager passes both) it
+  leaves `members` with the state's entry; alone, its state's `screenshot`
+  is set to `null`, which is what drops it. Accepted residual: a
   publication that carried the state and dropped only the thumbnail cannot be
   told apart from a deleted thumbnail by manifests alone, and §1's
   hashed-bytes guarantee does not extend to it. If #22 finds it needs

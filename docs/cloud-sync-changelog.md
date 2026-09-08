@@ -973,3 +973,50 @@ label rule changed between the two generations (fork #86).
   FAILs, one per removed guard) before the fixed scripts were staged. The
   single-device suite then ran on the same guest with the same staged
   scripts and passed every step.
+
+## runemu.sh now returns how the launch ended (2026-09-08)
+
+**Verified on the GENERIC_X64 guest with staged copies of `001-functions`
+and `runemu.sh` only; no image carries it yet.** `wait_lock()` in
+`/etc/profile.d/001-functions` installed an EXIT trap that ran `rm` and then
+re-exited with rm's 0, so every script that had taken the settings lock —
+`runemu.sh` takes it for the cooling profile and netplay mode — exited 0
+however it ended. RetroArch's `Failed to load content` reached
+EmulationStation as a clean exit, and on a build from `test/qa-integration`,
+the branch that carries the capture hook (ES `c530a581b`, merged
+`33a398083`), it reached `cloud_capture --exit` the same way (#90, found by
+#21's exit-path check). The trap also named a variable that was never set,
+so a shell killed while holding the lock left `/tmp/.system.cfg.lock` behind
+and every later `set_setting` waited on it until reboot.
+
+- The trap now saves the exit status first and exits with it, and releases
+  the lock only when this shell still owns it — callers release it themselves
+  a few lines after taking it, and the trap outlives them.
+- With the status finally reaching it, `runemu.sh` had to say what a non-zero
+  one means, because it was not "the launch failed": the exit hotkey ends a
+  standalone emulator with `killall -9` (35 of the 36 standalone start
+  scripts) and RetroArch with SIGTERM, so a player leaving mednafen, Dolphin
+  or xemu by the hotkey after an hour would have returned 137 — and
+  EmulationStation records play count, play time and last-played only for a
+  0. `runemu.sh` now reports 137 and 143 as a clean exit and everything else
+  non-zero as 1, as before (D-LAUNCH-001).
+- On the guest: a 64 KiB zero `QaExit.gba` under mgba made `runemu.sh` log
+  `exiting with 1` and return **0** with the shipped file, **1** with the fix.
+  A live RetroArch (stella; `video_driver=gl`, since the guest has no Vulkan)
+  killed with `-9` as the hotkey does: **1** with the trap fix alone — the
+  regression the review found — and **0** with the mapping; a `.sh` launch
+  ended by TERM (143) or KILL (137) returns 0, one that exits 5 returns 1;
+  `exit 7` while holding the lock returns 7 and releases it; a lock another
+  process owns at exit is left alone; TERM while holding returns 143 and
+  releases it.
+- **For a player**: leaving a game by the hotkey changes nothing — play count
+  and time are kept as they were. A launch that fails now shows as one: no
+  play count or last-played for it, and `cloud_capture --exit 1` in its
+  record. The trade (D-LAUNCH-001): an emulator the kernel's OOM killer ends
+  is indistinguishable from the hotkey and reads as clean. One exception,
+  open as #92: force-quitting RetroArch with the global hotkey — RetroArch's
+  own signal handler exits 1 on the second press, and on the guest the first
+  did nothing — reads as a failed launch and records no play stats for that
+  session; RetroArch's own quit (its hotkey or menu) exits 0 and is
+  unaffected. Upstream defect; offered upstream as its own change once it
+  has run in a built image.
