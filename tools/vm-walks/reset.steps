@@ -1,5 +1,11 @@
 # Close whatever is open: B four times returns any dialog, menu or game list
-# to the system carousel, which is where every walk starts.
+# to the system carousel, which is where every walk starts. On the carousel
+# itself B opens a GO TO dialog (GO TO LETTER under the alphabetical systems
+# sort, GO TO MANUFACTURER under the manufacturer one, and so on by the SORT
+# SYSTEMS setting), so a press that lands there leaves a dialog open instead
+# of closing one -- run wake.steps first (its key is one EmulationStation
+# ignores, so it never opens anything) and, when the starting state is
+# unknown, prefer a fresh EmulationStation: see README.md.
 key z
 wait 1
 key z

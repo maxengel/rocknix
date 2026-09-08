@@ -1,9 +1,39 @@
-# Start: the systems page, focus on SELECT ALL. End: the CLOUD hub, after the
-# transfer page has been closed. Up from the first row is the button bar on
-# BACK; right is BACK UP / RESTORE. The wait covers a small fixture; a real
-# library needs longer, and the page says PRESS ANY BUTTON TO CLOSE when done.
+# Start: the systems page, focus on its first system row (where
+# continue-to-systems.steps leaves it), with NO SYSTEM TICKED -- the
+# precondition below. End: the CLOUD hub, after the transfer page has been
+# closed.
+#
+# Up from the first row is the button bar on BACK. The bar has three buttons
+# since SELECT ALL joined it (ES d57542662): BACK / SELECT ALL (or SELECT
+# NONE) / BACK UP (or RESTORE). The first right and A press SELECT ALL; the
+# second right and A press the verb. Without the first pair the verb runs
+# whatever selection the picker last saved -- it saves on every close, BACK
+# included -- and with nothing ticked cloud_content_backup --selected prints
+# "Nothing to upload" and exits 1: the page ends FAILED with rows 3-4 blank
+# and no transfer was exercised, which is how this walk shipped once (#85).
+#
+# The precondition, because the button is a toggle that reads as what it
+# would do next: once every system is on it says SELECT NONE, and on a VM
+# where an earlier walk already saved SELECT ALL this press clears the
+# selection and the run fails the same way. The selection lives in
+# /storage/.cache/cloud_sync/content-systems and survives an EmulationStation
+# restart, so a fresh ES is not enough. Make it true rather than guess: over
+# serial,
+#   cloud_content_restore --set-systems ""
+# empties the saved selection (a fresh image has none). The bar is rebuilt
+# on the UI thread after the press, hence the wait; read the selected-all
+# frame -- every switch on, the button now reading SELECT NONE -- before
+# trusting the frames after it.
+#
+# The wait covers a small fixture; a real library needs longer, and the page
+# says PRESS ANY BUTTON TO CLOSE when done.
 key up
 wait 1
+key right
+wait 1
+key x
+wait 1
+shot selected-all
 key right
 wait 1
 key x
