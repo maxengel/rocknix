@@ -64,6 +64,23 @@ toward progress (e.g. playtime/size/state heuristics), not timestamps.
     sync** — most fixes belong in both.
   - `cloud_sync_helper` — merges `*.defaults` into the user's config on OS update.
   - `cloud_sync_cleanup_duplicates.sh` — removes duplicate `VAR=` lines from the conf.
+  - `cloud_capture` (#21) — the save-manifest producer. Records what a game
+    session wrote into `/storage/.cache/cloud_sync/manifest-<id>.json`, sealing
+    an independent copy of every version under `…/stage/<sha256>`
+    (D-CLOUD-058). Called by EmulationStation at every game exit
+    (`FileData::launchGame`), by the save-state manager (`--retire` before a
+    delete, `--rescan` after the renumber), and by the boot autostart
+    (`--full`, backgrounded, only when a cloud-saves toggle is on —
+    D-CLOUD-064). Two rules unique to it, both by requirement: it **never
+    takes the flock** on `/var/run/cloud_sync.lock` — it has to record while
+    another cloud_* process holds it, and two writers are resolved by an
+    optimistic inode/mtime check: the loser discards its document and (exit,
+    `--rescan`, `--retire`) re-runs once against the winner's, `--full` never
+    retries — and it
+    **never sources `/etc/profile`** (it needs nothing there, and the `PATH`
+    rewrite would discard the harness prefix). No rclone, no network, no
+    `cloud_sync_helper`, no write anywhere under `SAVESPATH`. `jq` for every
+    JSON read and write; the schema is `docs/save-manifest-schema.md`.
   - `post-update` — runs on update; calls `cloud_sync_helper`, with a copy-based fallback.
 
 ## Config conventions
@@ -227,6 +244,19 @@ the boot sync and the menu rows run, and each was paid for on 2026-09-05 by an
   as SKIPPED.
 - **Under `--yes`, the console pauses are gone.** `pause N` is a no-op when
   nobody is reading; three of them were seven seconds of every headless run.
+- **Capture runs first, and it is not part of the sync.** Before the toggle
+  is read, `launchGame` runs `/usr/bin/cloud_capture --system … --rom …
+  --emulator … --core … --started <tstart> --exit <code>` synchronously
+  through `executeScriptLegacy` — not `runSystemCommand`, which always
+  returns 0 — and logs a nonzero at `LogWarning`, nothing more. It never
+  blocks on the lock and never opens a socket, so a toggle-off, offline or
+  lock-held exit is still recorded, and the working copy the push carries is
+  current by the time the sync starts. Its stamps sit beside `last-backup`:
+  `/storage/.cache/cloud_sync/last-capture` (`<epoch> <rc> <mode>[!card]
+  <unit|->`, written on every run, including a nothing-changed one) and
+  `capture-failures` (one line per degraded run, last 20 kept). They exist
+  because `/var/log` is tmpfs unless `debugging` is on (D-CLOUD-027): the log
+  line is gone at the next reboot, the stamp is not.
 
 Budget on an H700, measured: **starting rclone costs about a second** by
 itself (`rclone version`: 1.0 s), a remote round trip one to two more. That is
@@ -379,7 +409,9 @@ The user guide (<https://rocknix.org/configure/cloud-sync/>) documents the `clou
 options and the Tools backup/restore flow. Known gaps vs. the code: it omits `LOG_LEVEL`,
 the single-remote assumption, and `cloud_sync_cleanup_duplicates.sh`. `RSYNCRMDIR` is now
 implemented as documented (2026-07-23). Reconcile docs against actual behavior before
-relying on them.
+relying on them. `cloud_capture` (#21) has no player-visible surface — no menu row, no
+setting, no flag anyone types — so `documentation-accuracy.md`'s hard gate is not
+triggered by it; say that explicitly in the PR rather than leaving it to be asked.
 
 ## Style
 

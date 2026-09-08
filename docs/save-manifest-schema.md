@@ -325,11 +325,26 @@ modification times equal to the device's, which is what `mtime` is for.
   core name → package (`mgba` → `mgba-lr`, `genesis_plus_gx` →
   `genesis-plus-gx-lr`; the exceptions need a small table, which is #21's to
   write) and records `"unknown"` when the map has no answer.
-- **#21 — capture at game exit, told rather than discovering.** ES knows the
-  game, `getEmulator(true)` and `getCore(true)` at the point where it starts
-  the exit sync (`FileData.cpp:836`); it passes them on the command line so
-  the capture step never has to reverse-engineer which core wrote a state.
-  Standalone emulators pass their own name as `core`.
+- **#21 — capture at game exit, told rather than discovering.** ES passes the
+  game and the **frozen pair** on the command line: the `--emulator=` and
+  `--core=` tokens of the launch command it actually ran, read back from the
+  finished command after `setupSaveState` has had its say
+  (`LaunchGameOptions::launchedEmulator` / `launchedCore`, filled in
+  `FileData::getlaunchCommand`, read in `launchGame`). Never
+  `getEmulator()`/`getCore()` re-resolved at exit: those read SystemConf again
+  and can answer differently by then — a netplay client override, a save-state
+  config that rewrites the core — and the manifest must record what the
+  emulator was handed, not what the menu would pick now. So the capture step
+  never reverse-engineers which core wrote a state. A standalone emulator's
+  `core` is the core name ES has for it (`mupen64plus-sa`, from
+  `add_emu_core`); an empty `--core` falls back to the emulator name, so
+  `core` is never empty (§6). The boot game (GAME SETTINGS → LAUNCH THIS
+  GAME AT STARTUP, `launchStartupGame` in `main.cpp`) is the second launch
+  path and is captured the same way — from the `-P`, `--emulator=` and
+  `--core=` tokens of its stored command, read by `LaunchCommand.h` for both
+  paths, because no system is loaded when it runs. A system with no
+  `<emulators>` element (tools) has an empty pair and is not captured: nothing
+  there writes a save.
 - **#22 — the agreement record** (§2, §7) is written by the transfer that
   moves a version, in both directions, keyed by path.
 - **#25 — the allowlist rule for snapshots** (§8), ahead of the `savestates`
@@ -422,6 +437,76 @@ available; the field records what actually happened, not the best case.
   only when an entry actually changed. An unchanged exit leaves the file — and
   its mtime — untouched, so the manifest does not churn the sync on every game
   exit (the mtime is what rclone would otherwise see change every time).
+
+### What capture writes, and what a thumbnail is (#21, decided 2026-09-08)
+
+The producer is `cloud_capture`
+(`projects/ROCKNIX/packages/network/rclone/sources/cloud_capture`). These are
+the facts a reader of a rev 2 manifest may rely on; the decisions behind them
+are D-CLOUD-058 to D-CLOUD-066.
+
+- **The stage is content-addressed.** The bytes behind every entry's `sha256`
+  are an independent copy at `/storage/.cache/cloud_sync/stage/<sha256>`
+  (D-CLOUD-034: the hash describes the copy, never the live file, so a flush
+  after capture cannot change what the hash names). #22 pushes
+  `stage/<entry.sha256>`, not the tree file, and sets `pub` on success. A
+  stage file is kept while any entry that references it has `pub == null`,
+  and collected once every referencing entry is published or gone.
+- **A `.png` is a declared member with no entry.** The thumbnail is not part
+  of the identity (§1) and the per-path entry shape is frozen (§6, and "What
+  stays exactly as rev 1" below), so it gets no `sha256`, no `slot`, no `pub`.
+  Its unit membership is carried by `units[<unit>].members`, derived from its
+  state's `screenshot`; #22 pushes it by path with its state in the same
+  publication. Its torn test is declared-member-versus-listing: `members`
+  names it, the listing says whether it arrived. Accepted residual: a
+  publication that carried the state and dropped only the thumbnail cannot be
+  told apart from a deleted thumbnail by manifests alone, and §1's
+  hashed-bytes guarantee does not extend to it. If #22 finds it needs
+  per-sidecar integrity, that is an optional rev 2.1 field (`sidecar_of`) with
+  the maintainer's nod, not capture's to invent.
+- **`units[].members` is derived from `entries` on every write** — each
+  unit's entry paths plus their non-null `screenshot` values, sorted and
+  unique — never kept as separate state. So a member that vanished from disk
+  but is still claimed stays declared (which is what lets a reader see a torn
+  set rather than a complete one), and a thumbnail deleted by hand leaves the
+  declaration as soon as its state's `screenshot` is refreshed to `null`.
+- **Two writers are serialised by detection, not by a lock.** Capture never
+  takes the transfer flock. A run that finds the manifest's inode or mtime
+  changed between its load and its rename discards its own document; an
+  exit, `--rescan` or `--retire` that loses re-runs once against the winner's
+  document (a first version dropped here would never be recorded again — no
+  entry, and an mtime below the next `--started`), `--full` never retries.
+  The residual is three writers within one second.
+- **A version found by a verify pass carries unknown provenance.**
+  `cloud_capture --full` (the A2 pass: hash every claimed path) and
+  `--rescan` (one unit, after the save-state manager's renumber) hash paths
+  the manifest already claims; a new version they find records `emulator`,
+  `core` and `core_build` as `"unknown"` and `core_display_version` as `null`,
+  because the session that wrote those bytes was not observed. A move (same
+  hash, new path) carries its provenance, `captured_at` and `replaces`
+  unchanged. Neither pass adopts a path that has no entry; `--rescan`'s one
+  exception is a move onto a renumbered slot, from a version this device
+  already claimed in the same unit.
+- **A member with no entry is recorded only if this session wrote it.** Exit
+  mode receives `--started <epoch>` (ES's `tstart`) and records an unclaimed
+  member only when its mtime is at or after it; an older file with no entry
+  is left alone, with one INFO line. So an upgraded device's existing library
+  is never stamped with today's core, and §4's `unknown` provenance is the
+  honest answer for those files until a transfer touches them (#22 R1).
+- **`retired` is trimmed to the newest 200** (`RETIRED_MAX`, capture's
+  constant) until #22 sets the bound this section leaves to it.
+- **The round-one unit table is keyed by `--emulator`.** `retroarch`:
+  `<romdir>/<stem>.srm`, `savestates/<system>/<stem>.state`, `.state<N>`,
+  `.state.auto`, and each state's `.png` (`romdir` is the ROM's own directory
+  under the saves root, because `savefiles_in_content_dir = "true"`).
+  `mupen64plus` (standalone N64, `--core mupen64plus-sa`):
+  `<romdir>/<stem>.{eep,mpk,sra,fla}`, where every shipped `mupen64plus.cfg`'s
+  `SaveSRAMPath` puts them — beside the ROM — plus the historical
+  `<romdir>/save/<stem>.*` as a second candidate. Any other emulator: no row,
+  nothing recorded, exit 0. Round two (D-QA-010, #88) adds rows; it does not
+  change the shape. Capture records a unit whether or not the sync allowlist
+  carries it — the beside-the-ROM N64 saves are recorded today and travel
+  only once #89 widens the allowlist.
 
 ### What stays exactly as rev 1
 
