@@ -19,8 +19,9 @@ since two devices last agreed, and only a pair can make one (D-QA-009).
 
 --only CAP1..CAP10 runs #21's capture fixtures against a staged cloud_capture
 on one device with no cloud at all -- no MinIO, no remote, no second guest
-(see the capture section below for what to stage). --list prints both
-registries without touching a device.
+(see the capture section below for what to stage). --only A15 runs #86's
+identity fixture: one device and the QA endpoint, no second guest. --list
+prints every registry without touching a device.
 
 Two guards, both load-bearing:
 
@@ -301,6 +302,9 @@ def list_fixtures():
     for key, title, _ in PAIR_FIXTURES:
         print(f"  {key:<10}{title}")
     print(f"  {'CONTRACT':<10}#9's transport contract under the reconciler (see --transport)")
+    print("\nsingle-device cloud fixtures (one device and the QA endpoint; --only A15):")
+    for key, title, _ in SOLO_FIXTURES:
+        print(f"  {key:<10}{title}")
     print("\ncapture fixtures (one device, no cloud; --only CAP1,...,CAP10):")
     for key, title, _ in CAPTURE_FIXTURES:
         print(f"  {key:<10}{title}")
@@ -335,6 +339,7 @@ def main():
         raise Fail("the two-device fixtures rewrite both saves trees; they never run against real ROMs (D-QA-009)")
 
     cap_keys = {k for k, _, _ in CAPTURE_FIXTURES}
+    solo_keys = {k for k, _, _ in SOLO_FIXTURES}
     only = {k.strip().upper() for k in args.only.split(",")} if args.only else None
     # A run naming only capture fixtures needs no MinIO and no second guest:
     # the producer is network-free, so the backend is asked for nothing.
@@ -366,8 +371,10 @@ def main():
             failures += run_steps(first.dev, root, remote, args, first.settings, first.prev_paths)
         if len(prepared) > 1:
             failures += run_pair(prepared[0].dev, prepared[1].dev, root, remote, args, first.settings)
-        elif only and only - cap_keys:
+        elif only and only - cap_keys - solo_keys:
             print("\n--only names two-device fixtures; pass --second-port for the VM pair's guest b")
+        if only and only & solo_keys:
+            failures += run_solo(first.dev, root, remote, args, first.settings, only)
         if only and only & cap_keys:
             failures += run_capture(first.dev, root, args, only)
     finally:
@@ -1692,6 +1699,519 @@ def run_pair(a, b, root, remote, args, settings):
         p.reset()
         for d in (a, b):
             restore_cache(d, had[d])
+    return failures
+
+
+# ===========================================================================
+# #86: where the device's identity comes from -- one device, and the cloud
+# ===========================================================================
+#
+# The single-device suite proves what a device does with its id; this proves
+# where the id comes from. Both handhelds printed the same hash, ee5013fc56,
+# because every kernel that builds in the IPv6 sit tunnel has a sit0 that
+# sorts before wlan0, `ethtool -P sit0` says "not set", and the old
+# permanent_address accepted the string "notset" as a seed. The VM's kernel
+# has sit as a module and its eth0 sorts first, so it never hit the trap by
+# accident; here sit is loaded and the functions of the staged script are run
+# with the interface list narrowed to sit0 -- by overriding usable_interfaces
+# in the harness's own shell after sourcing the script, never through a hook
+# in the product. A macvlan on eth0 stands in for an interface the name list
+# does not know: it is ARPHRD_ETHER with no bus device behind it, so only the
+# sysfs tests can refuse it. The restore half needs the QA endpoint, which is
+# why this is its own registry and not a capture fixture.
+
+# md5("notset|unknown")[:10]: the hash every affected device carried.
+POISONED = hashlib.md5(b"notset|unknown").hexdigest()[:10]
+assert POISONED == "ee5013fc56"
+
+A15_DRIVER = "/tmp/qa-a15-fn"
+A15_HOST = "A15HOST"
+A15_PLANT = "/tmp/qa-a15-plant"
+A15_ASIDE = "/tmp/qa-a15-aside"      # the device's own manifest working copies, for the run
+A15_MACVLAN = "qa0mv"                # type 1, no device link: only the sysfs tests refuse it
+
+
+def fx_a15(dev, root, remote, settings):
+    """A15 (#86): the seed is a MAC or nothing.
+
+    (a) With sit0 present, the old pipeline yields "notset" for it (the trap
+        is real on this kernel); permanent_address yields nothing for sit0
+        and a MAC for eth0; the product's own interface list omits sit0.
+        A macvlan on eth0 is type 1 with no device link and matches no name
+        pattern, so only the sysfs tests can refuse it: the list omits it
+        too, and permanent_address reaches eth0 past it.
+    (b) A planted <hostname>-ee5013fc56 -- the RG35XX SP's shape -- heals on
+        one run to <label>-<md5(MAC|unknown)[:10]>, which is the hash this
+        guest already had, so the recipe is unchanged; the old id is kept in
+        .previous, the change is in the cloud-sync log and the journal (both
+        marked before the run, so only this run's lines count), and
+        --previous lists the recorded id, then <label>-ee5013fc56, then
+        <hostname>-ee5013fc56 for a hostname unlike the label. cloud_capture
+        --full then carries manifest-<old id>.json to the new name, once.
+    (c) An archive planted under the old folder is found by cloud_restore
+        through the --previous tier, and the log names the folder and why;
+        an archive in the device's own folder wins over it. With the upload
+        marker saying the local archive was already sent -- as an old build
+        left it after uploading to the old folder -- a backup still lands in
+        the healed folder, the marker then names that folder, and the run
+        after has nothing to send; the old folder is neither written to nor
+        trimmed.
+    (d) A second run returns the healed id and rewrites nothing -- mtimes
+        moved back first, so a same-content rewrite would show; a healthy id
+        that does not match this hardware is returned unchanged.
+    (e) With no usable adapter the poisoned id is returned unchanged and
+        nothing is written.
+    (f) Without sit0 the two guessed names leave --previous: a device that
+        never had one could not have written under the constant."""
+    f = 0
+    tool = dev.run("command -v cloud_device_id 2>/dev/null || true").strip()
+    if not tool:
+        raise Fail("cloud_device_id does not resolve on the device")
+    print(f"    under test: {tool}")
+
+    # What the fixture disturbs, captured before anything is written.
+    saved_id = dev.run(f"cat {ID_FILE} 2>/dev/null || true")
+    had_prev = dev.run(f"[ -e {ID_FILE}.previous ] && echo yes || echo no").strip() == "yes"
+    saved_prev = dev.run(f"cat {ID_FILE}.previous 2>/dev/null || true")
+    had_sit = dev.run("[ -d /sys/class/net/sit0 ] && echo yes || echo no").strip() == "yes"
+    hostname = dev.run("hostname").strip()
+    opt_line = dev.run(f"grep -m1 '^BACKUPFILE_RESTORE_OPTION=' {CONF} 2>/dev/null || true").strip()
+    marker = f"{CACHE}/settings-backup.uploaded"
+    had_marker = dev.run(f"[ -e {marker} ] && echo yes || echo no").strip() == "yes"
+    saved_marker = dev.run(f"cat {marker} 2>/dev/null || true")
+    # What cloud_capture --full leaves in the cache besides the manifest: its
+    # stamp and stage directory. Removed afterwards only if this run made them.
+    capture_litter = [x for x in (f"{CACHE}/last-capture", f"{CACHE}/stage")
+                      if dev.run(f"[ -e {x} ] && echo yes || echo no").strip() == "no"]
+    # The device's manifest working copies, whatever their names: (b) plants
+    # one under the poisoned id and expects it under the healed one, and a
+    # real one under either name would be mistaken for the fixture's.
+    dev.run(f"rm -rf {A15_ASIDE}; mkdir -p {A15_ASIDE}; "
+            f"for m in {CACHE}/manifest-*.json; do [ -e \"$m\" ] && mv \"$m\" {A15_ASIDE}/; done; true", check=False)
+    settings_remote = settings.get("SETTINGS_REMOTE") or settings.get("SYNCPATH_BACKUP") or ""
+    if not settings_remote:
+        raise Fail("no SETTINGS_REMOTE in the harness's settings; cannot plant a folder")
+    base = f"{remote}:{settings_remote}"
+    broot = f"{root}/backup"
+    a15_save = f"{root}/saves/qa-a15.srm"
+    folders = []
+    mv_made = False
+
+    # One function of the staged script, in a shell that has sourced every
+    # definition but the final dispatch line. A15_IFACES, when set, replaces
+    # usable_interfaces in that shell -- the narrowing lives here.
+    driver = """#!/bin/bash
+tool="$1"; fn="$2"; shift 2
+eval "$(sed '/^main "\\$@"$/d' "${tool}")"
+if [ -n "${A15_IFACES}" ]; then
+    usable_interfaces() { tr ' ' '\\n' <<< "${A15_IFACES}"; }
+fi
+"${fn}" "$@"
+"""
+    dev.write(A15_DRIVER, driver.encode())
+    dev.run(f"chmod +x {A15_DRIVER}")
+
+    def fn(name, ifaces=None):
+        env = f"A15_IFACES={shlex.quote(ifaces)}" if ifaces is not None else ""
+        return run_rc(dev, f"{A15_DRIVER} {shlex.quote(tool)} {name}", env=env)
+
+    def id_file():
+        return dev.run(f"cat {ID_FILE} 2>/dev/null || true").strip()
+
+    def prev_file():
+        return dev.run(f"cat {ID_FILE}.previous 2>/dev/null || true").split()
+
+    def mtime(path):
+        # Nanoseconds. %Y is whole seconds, and a run that finishes in the
+        # same second as the plant would hide a rewrite behind it.
+        return dev.run(f"stat -c '%y' {shlex.quote(path)} 2>/dev/null || true", check=False).strip()
+
+    def journal_mark():
+        # Line count, as log_mark does for the file: every earlier A15 run
+        # left an identical "healed" line in the journal, so a tail of the
+        # journal matched with or without this run writing one.
+        return int(dev.run("journalctl -t cloud_device_id -o cat --no-pager 2>/dev/null | wc -l",
+                           check=False).strip() or 0)
+
+    def journal_since(mark):
+        return dev.run(f"journalctl -t cloud_device_id -o cat --no-pager 2>/dev/null | tail -n +{mark + 1}",
+                       check=False)
+
+    def plant(folder, name, body):
+        dev.write(f"{A15_PLANT}/{name}", body)
+        dev.run(f"rclone copyto {shlex.quote(f'{A15_PLANT}/{name}')} {shlex.quote(f'{folder}/{name}')}")
+        if folder not in folders:
+            folders.append(folder)
+
+    def listing(folder):
+        return dev.run(f"rclone lsf --files-only {shlex.quote(folder + '/')} 2>/dev/null || true", check=False).split()
+
+    try:
+        # --- (a) ---------------------------------------------------------------
+        print("    -- (a) the guard: sit0 yields nothing, eth0 yields a MAC")
+        if not had_sit:
+            dev.run("modprobe sit 2>/dev/null || true", check=False)
+        sit_now = dev.run("[ -d /sys/class/net/sit0 ] && echo yes || echo no").strip() == "yes"
+        f += not check(sit_now, "sit0 is present (modprobe sit)",
+                       "sit0 could not be created; the trap cannot be reproduced on this guest")
+        raw = dev.run("ethtool -P sit0 2>/dev/null | sed 's/.*: //' | tr -d ' \\r\\n'").strip()
+        f += not check(raw == "notset",
+                       f"the old pipeline turns `ethtool -P sit0` into {raw!r} -- the string both handhelds hashed",
+                       f"`ethtool -P sit0` became {raw!r}, not 'notset'; this kernel does not reproduce the trap")
+        stype = dev.run("cat /sys/class/net/sit0/type 2>/dev/null; [ -e /sys/class/net/sit0/device ] && echo device || echo no-device").split()
+        etype = dev.run("cat /sys/class/net/eth0/type 2>/dev/null; [ -e /sys/class/net/eth0/device ] && echo device || echo no-device").split()
+        print(f"          sit0: type {stype[0] if stype else '?'}, {stype[1] if len(stype) > 1 else '?'}; "
+              f"eth0: type {etype[0] if etype else '?'}, {etype[1] if len(etype) > 1 else '?'}")
+        rc, out = fn("permanent_address", "sit0")
+        f += not check(rc != 0 and not out.strip(),
+                       f"permanent_address yields nothing for sit0 (exit {rc})",
+                       f"permanent_address ACCEPTED sit0: exit {rc}, {out.strip()!r}")
+        rc, out = fn("usable_interfaces")
+        listed = out.split()
+        f += not check("eth0" in listed and "sit0" not in listed and "lo" not in listed,
+                       f"the script's own usable_interfaces lists {listed} with sit0 present",
+                       f"usable_interfaces listed {listed}")
+        mac = dev.run("ethtool -P eth0 2>/dev/null | sed 's/.*: //' | tr -d ' \\r\\n'").strip()
+        rc, out = fn("permanent_address", "eth0")
+        f += not check(rc == 0 and out.strip() == mac
+                       and re.fullmatch(r"([0-9a-f]{2}:){5}[0-9a-f]{2}", mac, re.I) is not None,
+                       f"permanent_address yields eth0's permanent address, {mac}",
+                       f"permanent_address gave {out.strip()!r} (exit {rc}) for eth0, whose address is {mac!r}")
+        if not mac:
+            raise Fail("eth0 has no permanent address; the rest of the fixture cannot run")
+        expected_hash = hashlib.md5(f"{mac}|unknown".encode()).hexdigest()[:10]
+        rc, out = fn("poisoned_hash")
+        f += not check(out.strip() == POISONED,
+                       f"the script derives the poisoned constant as {out.strip()}",
+                       f"the script's poisoned_hash is {out.strip()!r}, not {POISONED}")
+        # The sysfs tests on their own. sit0 is refused by its name as well,
+        # so a script with the two tests deleted still passed the checks
+        # above. A macvlan matches no name pattern and is ARPHRD_ETHER with
+        # no bus device behind it -- the only thing that can refuse it is
+        # the device-link test; `ethtool -P` on it says "not set", which is
+        # the trap's own string.
+        dev.run(f"ip link del {A15_MACVLAN} 2>/dev/null || true", check=False)
+        rc_mv, out_mv = run_rc(dev, f"ip link add {A15_MACVLAN} link eth0 type macvlan")
+        mv_made = rc_mv == 0
+        if mv_made:
+            mtype = dev.run(f"cat /sys/class/net/{A15_MACVLAN}/type 2>/dev/null; "
+                            f"[ -e /sys/class/net/{A15_MACVLAN}/device ] && echo device || echo no-device").split()
+            f += not check(mtype[:2] == ["1", "no-device"],
+                           f"{A15_MACVLAN} (a macvlan on eth0) is type 1 with no device link: no name pattern catches it, only the sysfs tests can",
+                           f"{A15_MACVLAN} is {mtype}; it does not isolate the sysfs tests")
+            rc, out = fn("usable_interfaces")
+            listed = out.split()
+            f += not check("eth0" in listed and A15_MACVLAN not in listed,
+                           f"usable_interfaces omits {A15_MACVLAN} and keeps eth0: {listed}",
+                           f"usable_interfaces listed {listed}: the device-link test did not refuse {A15_MACVLAN}")
+            rc, out = fn("permanent_address", f"{A15_MACVLAN} eth0")
+            f += not check(rc == 0 and out.strip() == mac,
+                           f"with {A15_MACVLAN} sorting first, permanent_address still yields eth0's address (valid_mac refuses its 'not set')",
+                           f"permanent_address gave {out.strip()!r} (exit {rc}) with the list {A15_MACVLAN} eth0")
+        else:
+            f += not check(False, "",
+                           f"could not create a macvlan {A15_MACVLAN} on eth0 (exit {rc_mv}: {out_mv.strip()[-80:]}); the sysfs tests are unproven")
+
+        # --- (b) ---------------------------------------------------------------
+        print("    -- (b) a poisoned stored id heals once")
+        label = dev.run("cloud_device_id --label").strip()
+        if not label:
+            raise Fail("cloud_device_id --label printed nothing")
+        # The hostname shape: ROCKNIX-ee5013fc56 on the RG35XX SP, whose id
+        # predates the label. The label shape (the RG SP's) is then the
+        # guessed line of --previous, covered on its own below.
+        poisoned = f"{hostname}-{POISONED}"
+        label_p = f"{label}-{POISONED}"
+        expected = f"{label}-{expected_hash}"
+        if hostname == label:
+            print(f"          (hostname and label are both {label}: the two shapes of the constant collapse here)")
+        dev.run(f"printf '%s\\n' {shlex.quote(poisoned)} > {ID_FILE}; rm -f {ID_FILE}.previous")
+        mark = log_mark(dev)
+        jmark = journal_mark()
+        rc, out = run_rc(dev, "cloud_device_id")
+        new_id = out.strip()
+        f += not check(rc == 0 and new_id == expected,
+                       f"{poisoned} healed to {new_id}",
+                       f"cloud_device_id printed {new_id!r} (exit {rc}); expected {expected}")
+        f += not check(id_file() == expected, "the id file holds the healed id",
+                       f"the id file holds {id_file()!r}")
+        f += not check(prev_file() == [poisoned],
+                       f"the .previous file holds the old id once",
+                       f".previous holds {prev_file()}")
+        # The hash, not the whole id: the guest's stored id was written by the
+        # image's own cloud_device_id, whose label rule may be older than the
+        # staged script's (GENERICX64 from the hostname against GENERIC-X64
+        # from HW_DEVICE, 2026-09-08). The recipe under test is the hash.
+        before = saved_id.strip()
+        before_hash = before.rsplit("-", 1)[-1] if before else ""
+        if before_hash and before_hash != POISONED:
+            f += not check(expected_hash == before_hash,
+                           f"the healed hash {expected_hash} is the one this guest generated before the change ({before}): the recipe is unchanged",
+                           f"the healed hash {expected_hash} differs from the guest's own {before}: THE RECIPE CHANGED")
+            if before != new_id:
+                print(f"          (label {before.rsplit('-', 1)[0]} -> {label}: the label rule, not the hash)")
+        else:
+            print(f"    SKIP  recipe check - the guest's own id ({before or 'none'}) is not a healthy one to compare with")
+        legacy = dev.run("cloud_device_id --legacy").strip()
+        f += not check(legacy == f"{hostname}-{expected_hash}",
+                       f"--legacy is {legacy}: the hostname and the same hash",
+                       f"--legacy is {legacy!r}; expected {hostname}-{expected_hash}")
+        tail = log_since(dev, mark)
+        f += not check(poisoned in tail and expected in tail and "[cloud_device_id]" in tail,
+                       "the cloud-sync log records old -> new under the cloud_device_id tag",
+                       f"the cloud-sync log does not: {tail.strip()[-200:]!r}")
+        journal = journal_since(jmark)
+        f += not check(expected in journal and poisoned in journal,
+                       "and so does the journal (logger -t cloud_device_id), in a line this run wrote",
+                       f"the journal gained nothing saying so: {journal.strip()[-200:]!r}")
+        rc, out = run_rc(dev, "cloud_device_id --previous")
+        lines = out.split()
+        want = [poisoned] if hostname == label else [poisoned, label_p]
+        f += not check(lines == want,
+                       f"--previous lists {lines}: the recorded id, then <label>-{POISONED}"
+                       + (" (which is the recorded one here)" if hostname == label else f"; <hostname>-{POISONED} is the recorded one"),
+                       f"--previous listed {lines}; expected {want}")
+        dev.run(f"hostname {A15_HOST}")
+        rc, out = run_rc(dev, "cloud_device_id --previous")
+        dev.run(f"hostname {shlex.quote(hostname)}")
+        lines2 = out.split()
+        want2 = want + [f"{A15_HOST}-{POISONED}"]
+        f += not check(lines2 == want2,
+                       f"with the hostname {A15_HOST}, --previous adds {A15_HOST}-{POISONED} last",
+                       f"--previous listed {lines2}; expected {want2}")
+
+        # The working copy follows the id. The boot pass is `cloud_capture
+        # --full`, whose first act is to call cloud_device_id -- so on the
+        # handhelds this is where the heal happens and where the manifest
+        # written under the old id would be orphaned.
+        print("    -- (b) cloud_capture --full carries the working copy to the healed id")
+        man_old = f"{CACHE}/manifest-{poisoned}.json"
+        man_new = f"{CACHE}/manifest-{expected}.json"
+        dev.write(man_old, b'{"schema":1,"entries":{},"units":{},"retired":[]}\n')
+        dev.write(a15_save, b"a15")   # --full refuses an empty root
+        mark = log_mark(dev)
+        rc, out = run_rc(dev, "cloud_capture --full")
+        tail = log_since(dev, mark)
+        old_there = dev.run(f"[ -e {shlex.quote(man_old)} ] && echo yes || echo no").strip() == "yes"
+        new_ok = dev.run(f"jq -e '.entries' {shlex.quote(man_new)} >/dev/null 2>&1 && echo yes || echo no",
+                         check=False).strip() == "yes"
+        f += not check(not old_there and new_ok and "adopted" in tail and poisoned in tail and expected in tail,
+                       f"cloud_capture --full adopted manifest-{poisoned}.json as manifest-{expected}.json and said so (exit {rc})",
+                       f"exit {rc}; old manifest {'still there' if old_there else 'gone'}, new one "
+                       f"{'parses' if new_ok else 'absent or unparsable'}; log: {tail.strip()[-300:]!r}")
+        mark = log_mark(dev)
+        rc, out = run_rc(dev, "cloud_capture --full")
+        tail = log_since(dev, mark)
+        f += not check("adopted" not in tail and "could not adopt" not in tail,
+                       "a second --full adopts nothing more (the current name exists)",
+                       f"the second --full logged: {tail.strip()[-300:]!r}")
+
+        # --- (c) ---------------------------------------------------------------
+        print("    -- (c) the old folder stays restorable; backup and retention never touch it")
+        osn = os_name(dev)
+        old_folder = f"{base}/{poisoned}"
+        new_folder = f"{base}/{expected}"
+        old_archive = f"2026_01_01-000000-{osn}_SETTINGS.tar.gz"   # the pre-label shape the RG35XX SP's folder holds
+        backend("reset")
+        dev.run(f"rm -rf {A15_PLANT}; mkdir -p {A15_PLANT} {shlex.quote(broot)}")
+        plant(old_folder, old_archive, b"written under the shared id")
+        dev.run(f"grep -q '^BACKUPFILE_RESTORE_OPTION=' {CONF} "
+                f"&& sed -i 's|^BACKUPFILE_RESTORE_OPTION=.*|BACKUPFILE_RESTORE_OPTION=\"yes\"|' {CONF} "
+                f"|| echo 'BACKUPFILE_RESTORE_OPTION=\"yes\"' >> {CONF}")
+        dev.run(f"rm -f {shlex.quote(broot)}/*.tar.gz {shlex.quote(broot)}/*.zip", check=False)
+        mark = log_mark(dev)
+        rc, out = run_rc(dev, "cloud_restore --yes --system-only")
+        local = dev.run(f"ls -1 {shlex.quote(broot)}/ 2>/dev/null || true", check=False).split()
+        tail = log_since(dev, mark)
+        f += not check(old_archive in local,
+                       f"cloud_restore found the archive under {poisoned} (the hostname shape) through the --previous tier (exit {rc})",
+                       f"restore brought back {local or 'nothing'} (exit {rc})")
+        f += not check(poisoned in tail and "shared constant" in tail,
+                       "and the log names the folder it took and why",
+                       f"the log did not name the folder: {tail.strip()[-300:]!r}")
+        own_archive = f"2026_01_02-000000-{label}-{osn}_SETTINGS.tar.gz"
+        plant(new_folder, own_archive, b"written under the healed id")
+        dev.run(f"rm -f {shlex.quote(broot)}/*.tar.gz {shlex.quote(broot)}/*.zip", check=False)
+        mark = log_mark(dev)
+        run_rc(dev, "cloud_restore --yes --system-only")
+        local = dev.run(f"ls -1 {shlex.quote(broot)}/ 2>/dev/null || true", check=False).split()
+        tail = log_since(dev, mark)
+        f += not check(own_archive in local and old_archive not in local,
+                       "with an archive in its own folder, restore takes that one before the old folder's",
+                       f"restore brought back {local or 'nothing'}")
+        f += not check(f"own cloud folder ({expected})" in tail,
+                       "and says it restored from the device's own folder",
+                       f"the log did not: {tail.strip()[-300:]!r}")
+        keep_raw = dev.run(f"grep -m1 '^CLOUD_BACKUP_KEEP=' {CONF} 2>/dev/null | cut -d= -f2 | tr -d '\"' || true").strip()
+        keep = int(keep_raw) if keep_raw.isdigit() and 1 <= int(keep_raw) <= 20 else 3
+        # More of this device's own labelled archives than retention keeps,
+        # in the OLD folder: if retention reached it, some would go.
+        old_own = [f"2026_01_{d:02d}-000000-{label}-{osn}_SETTINGS.tar.gz" for d in range(3, 3 + keep + 2)]
+        for name in old_own:
+            plant(old_folder, name, name.encode())
+        old_before = sorted(listing(old_folder))
+        upload = f"2026_02_01-000000-{label}-{osn}_SETTINGS.tar.gz"
+        dev.run(f"rm -f {shlex.quote(broot)}/*.tar.gz {shlex.quote(broot)}/*.zip", check=False)
+        dev.write(f"{broot}/{upload}", b"this run's archive")
+        # The regression: the archive has not changed since it was last sent,
+        # and the marker says so -- the bare hash an old build wrote after
+        # uploading to the OLD folder. A game-exit backup on the new build
+        # runs from exactly this state, and a marker that knew only what was
+        # sent answered "nothing to send" and left the healed folder empty.
+        # The hash is computed as cloud_backup computes it: md5 of the
+        # md5sum listing of the archives at the root of SETTINGS_BACKUPS.
+        local_sum = dev.run(f"md5sum {shlex.quote(broot)}/*.tar.gz | md5sum | cut -d' ' -f1").strip()
+        dev.run(f"printf '%s\\n' {local_sum} > {marker}")
+        mark = log_mark(dev)
+        rc, _ = run_rc(dev, "cloud_backup --yes --system-only")
+        new_list = listing(new_folder)
+        old_after = sorted(listing(old_folder))
+        f += not check(rc == 0 and upload in new_list,
+                       f"with the marker saying this archive was already sent (an old build's marker, from the old folder), the backup still landed in the healed folder {expected} (exit {rc})",
+                       f"the backup did not land in {expected} (exit {rc}): {new_list}; log: {log_since(dev, mark).strip()[-200:]!r}")
+        f += not check("device.json" in new_list,
+                       "and wrote the healed folder's device.json",
+                       f"no device.json in {expected}: {new_list}")
+        now_marker = dev.run(f"cat {marker} 2>/dev/null || true").strip()
+        f += not check(now_marker == f"{local_sum} {new_folder}",
+                       f"the marker now records where as well as what: {now_marker}",
+                       f"the marker reads {now_marker!r}; expected {local_sum} {new_folder}")
+        mark = log_mark(dev)
+        rc, _ = run_rc(dev, "cloud_backup --yes --system-only")
+        tail = log_since(dev, mark)
+        # The marker's own line, not the transfer banner (which names the
+        # folder on every run), and no upload: a marker that never learnt
+        # the new shape would send 17 MB on every game exit.
+        f += not check(rc == 0 and f"unchanged since the last upload to {new_folder}" in tail and "Uploading" not in tail,
+                       "and the run after that has nothing to send, and sends nothing",
+                       f"the run after: exit {rc}, log {tail.strip()[-300:]!r}")
+        f += not check(upload not in old_after and old_after == old_before
+                       and all(n in old_after for n in [old_archive] + old_own),
+                       f"nothing was written to or removed from {poisoned}: it still holds its {len(old_before)} archives",
+                       f"THE OLD FOLDER CHANGED: before {old_before}, after {old_after}")
+
+        # --- (d) ---------------------------------------------------------------
+        print("    -- (d) a healthy stored id is left alone")
+        touch_offset(dev, ID_FILE, -5)
+        touch_offset(dev, f"{ID_FILE}.previous", -5)
+        m_id, m_prev = mtime(ID_FILE), mtime(f"{ID_FILE}.previous")
+        rc, out = run_rc(dev, "cloud_device_id")
+        f += not check(out.strip() == expected and id_file() == expected and prev_file() == [poisoned]
+                       and mtime(ID_FILE) == m_id and mtime(f"{ID_FILE}.previous") == m_prev,
+                       "a second run returns the healed id and rewrites nothing (the id file and .previous keep their mtimes)",
+                       f"second run: printed {out.strip()!r}, file {id_file()!r} (mtime {m_id} -> {mtime(ID_FILE)}), "
+                       f".previous {prev_file()} (mtime {m_prev} -> {mtime(f'{ID_FILE}.previous')})")
+        healthy = "Some-Other-Handheld-0123456789"
+        dev.run(f"printf '%s\\n' {healthy} > {ID_FILE}")
+        touch_offset(dev, ID_FILE, -5)
+        m_id = mtime(ID_FILE)
+        mark = log_mark(dev)
+        rc, out = run_rc(dev, "cloud_device_id")
+        f += not check(out.strip() == healthy and id_file() == healthy and prev_file() == [poisoned]
+                       and mtime(ID_FILE) == m_id and healthy not in log_since(dev, mark),
+                       "a healthy id that does not match this hardware is returned unchanged and not rewritten (the module-swap case)",
+                       f"printed {out.strip()!r}, file {id_file()!r} (mtime {m_id} -> {mtime(ID_FILE)}), .previous {prev_file()}")
+
+        # --- (e) ---------------------------------------------------------------
+        print("    -- (e) no adapter, no healing")
+        dev.run(f"printf '%s\\n' {shlex.quote(poisoned)} > {ID_FILE}; rm -f {ID_FILE}.previous")
+        touch_offset(dev, ID_FILE, -5)
+        stamp_before = mtime(ID_FILE)
+        mark = log_mark(dev)
+        rc, out = fn("main", "sit0")
+        stamp_after = mtime(ID_FILE)
+        f += not check(rc == 0 and out.strip() == poisoned,
+                       f"with the interface list narrowed to sit0 the poisoned id is returned unchanged (exit {rc})",
+                       f"printed {out.strip()!r} (exit {rc}); expected {poisoned}")
+        untouched = (id_file() == poisoned and not prev_file()
+                     and stamp_before == stamp_after
+                     and "healed" not in log_since(dev, mark))
+        f += not check(untouched, "and nothing was written: the id file keeps its mtime, no .previous, no log line",
+                       f"file {id_file()!r} (mtime {stamp_before} -> {stamp_after}), .previous {prev_file()}")
+
+        # --- (f) ---------------------------------------------------------------
+        print("    -- (f) without sit0 the guessed names are not offered")
+        # Under a hostname unlike the recorded id's, so that both guessed
+        # names -- <label>-P and <hostname>-P -- would be new lines if the
+        # gate let them through; with the real hostname the second collapses
+        # into the recorded id and an ungated script passes by dedup.
+        dev.run(f"printf '%s\\n' {shlex.quote(poisoned)} > {ID_FILE}.previous")
+        rc_rm, out_rm = run_rc(dev, "rmmod sit")
+        sit_gone = dev.run("[ -d /sys/class/net/sit0 ] && echo yes || echo no").strip() == "no"
+        if sit_gone:
+            dev.run(f"hostname {A15_HOST}")
+            rc, out = run_rc(dev, "cloud_device_id --previous")
+            dev.run(f"hostname {shlex.quote(hostname)}")
+            lines = out.split()
+            f += not check(lines == [poisoned],
+                           f"with no sit0 (hostname {A15_HOST}), --previous lists {lines}: the recorded id only -- a device that never had a sit0 could not have hashed 'notset'",
+                           f"--previous listed {lines} with no sit0; expected [{poisoned}]")
+            if had_sit:
+                dev.run("modprobe sit 2>/dev/null || true", check=False)
+        else:
+            f += not check(False, "", f"sit could not be unloaded (exit {rc_rm}: {out_rm.strip()[-80:]}); the sit0 gate is unproven")
+    finally:
+        # Everything back: the hostname, the identity, sit, the macvlan, the
+        # settings-restore option, the upload marker, the manifests, the
+        # planted folders, the scratch archives, the driver.
+        dev.run(f"hostname {shlex.quote(hostname)}", check=False)
+        if saved_id.strip():
+            dev.write(ID_FILE, saved_id.encode())
+        else:
+            dev.run(f"rm -f {ID_FILE}", check=False)
+        if had_prev:
+            dev.write(f"{ID_FILE}.previous", saved_prev.encode())
+        else:
+            dev.run(f"rm -f {ID_FILE}.previous", check=False)
+        if not had_sit:
+            dev.run("rmmod sit 2>/dev/null || true", check=False)
+        if mv_made:
+            dev.run(f"ip link del {A15_MACVLAN} 2>/dev/null || true", check=False)
+        if opt_line:
+            dev.run(f"sed -i 's|^BACKUPFILE_RESTORE_OPTION=.*|{opt_line}|' {CONF}", check=False)
+        else:
+            dev.run(f"sed -i '/^BACKUPFILE_RESTORE_OPTION=/d' {CONF}", check=False)
+        if had_marker:
+            dev.write(marker, saved_marker.encode())
+        else:
+            dev.run(f"rm -f {marker}", check=False)
+        dev.run(f"rm -f {CACHE}/manifest-*.json; "
+                f"for m in {A15_ASIDE}/manifest-*.json; do [ -e \"$m\" ] && mv \"$m\" {CACHE}/; done; "
+                f"rm -rf {A15_ASIDE} {shlex.quote(a15_save)}; true", check=False)
+        for x in capture_litter:
+            dev.run(f"rm -rf {shlex.quote(x)}", check=False)
+        for folder in folders:
+            dev.run(f"rclone purge {shlex.quote(folder)} >/dev/null 2>&1 || true", check=False)
+        dev.run(f"rm -rf {A15_PLANT} {A15_DRIVER}; rm -f {shlex.quote(broot)}/*.tar.gz {shlex.quote(broot)}/*.zip",
+                check=False)
+        now = id_file()
+        sit_after = dev.run("[ -d /sys/class/net/sit0 ] && echo yes || echo no", check=False).strip() == "yes"
+        mv_after = dev.run(f"[ -d /sys/class/net/{A15_MACVLAN} ] && echo yes || echo no", check=False).strip() == "yes"
+        print(f"    put back: id {now or 'none'}{' (as before)' if now == saved_id.strip() else ' (DIFFERS from ' + (saved_id.strip() or 'none') + ')'}, "
+              f".previous {'restored' if had_prev else 'absent'}, marker {'restored' if had_marker else 'absent'}, "
+              f"sit0 {'present' if sit_after else 'absent'} (was {'present' if had_sit else 'absent'}), "
+              f"{A15_MACVLAN} {'STILL PRESENT' if mv_after else 'gone'}, hostname {dev.run('hostname', check=False).strip()}")
+    return f
+
+
+SOLO_FIXTURES = [
+    ("A15", "the seed is a MAC or nothing: sit0 and a macvlan are refused, a poisoned id heals once, "
+            "the working copy and the next backup follow it, its old folder stays restorable", fx_a15),
+]
+
+
+def run_solo(dev, root, remote, args, settings, only):
+    """The single-device cloud fixtures, on the first (only) device."""
+    failures = 0
+    for key, title, fn in SOLO_FIXTURES:
+        if only and key not in only:
+            continue
+        step(f"{key} -- {title}")
+        try:
+            failures += fn(dev, root, remote, settings)
+        except Fail as e:
+            failures += 1
+            print(f"    FAIL  {e}")
     return failures
 
 
