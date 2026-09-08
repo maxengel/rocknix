@@ -212,8 +212,10 @@ config file, the scripts' log lines, and the archive's filename.
   interface configuration, input mapping, themes, collections, and bezels, and
   **nothing else**: no saves, no ROMs, no operating system. It used to be
   called the *system backup*, which had people expecting their games to be in
-  it. The archive is now named `<date>-ROCKNIX_SETTINGS.tar.gz`; every reader
-  still accepts the three earlier names.
+  it. This change named the archive `<date>-ROCKNIX_SETTINGS.tar.gz`; since
+  2026-09-08 the device's name sits between the date and ROCKNIX (see *The
+  archive says which handheld made it*). Every reader still accepts the three
+  earlier names.
 - **Saves** — game saves, save states, and screenshots. Previously *save data*.
 - **ROMs and BIOS** — as before.
 - **Discarded saves** — what the conflict wizard keeps when you choose against
@@ -282,14 +284,18 @@ So:
   CLOUD YET · NOT IN YOUR CLOUD YET on the backup page, ON THIS DEVICE · *N*
   FILES NOT ON THIS DEVICE · IN YOUR CLOUD ONLY on the restore page. *N* is
   what the transfer would move. BIOS is not listed as a system; it comes with
-  ROMS AND BIOS (D-CLOUD-043).
+  ROMS AND BIOS (D-CLOUD-043). *(The verdicts are superseded 2026-09-08 — the
+  line now leads with what would move; see* The content page leads with what
+  would move*.)*
 - **Game content moves on its own.** Tick it without ROMS AND BIOS and only
   the scraper's folders and game lists travel — no ROM, no BIOS file.
 - **Scripts:** `cloud_content_backup` and `cloud_content_restore` take
   `--with-media` (both tiers) or `--media-only` (game content alone); with
   neither, ROMs and BIOS alone. `cloud_content_restore --scan` reports, for
   the union of cloud and device systems under the same mode,
-  `name|cloud_bytes|supported|device_bytes|files_in_cloud_not_here|files_here_not_in_cloud`.
+  `name|cloud_bytes|supported|device_bytes|files_in_cloud_not_here|files_here_not_in_cloud`
+  *(two byte fields follow since 2026-09-08, and the counts compare size as
+  well as name; see* The content page leads with what would move*)*.
 
 ## The transfer flow after the maintainer's first real backup (2026-09-06)
 
@@ -552,3 +558,275 @@ otherwise because NTP corrected the clock in the middle of the boot.
   becomes readable.
 - The `automount` change is offered upstream to ROCKNIX/distribution on
   its own (#84).
+
+## The content page leads with what would move (2026-09-08)
+
+The maintainer, on CONTENT TO BACK UP, where each system's line read its
+size on the device, a dash, and IN YOUR CLOUD: *"what they'll want to know
+is the delta, or what's being sent up, not just what's in their cloud"*, and
+*"it also is confusing to only say 'in your cloud' because what you're
+backing up is on your device."*
+
+- **Each row's line now says what this run would send.** On the backup
+  page: `312.50 MB TO BACK UP · 14 FILES`, or `ALREADY IN YOUR CLOUD
+  (1.20 GB)` when nothing would move, the parenthesis being the system's
+  size on this device. On the restore page: `312.50 MB TO RESTORE · 14
+  FILES`, or `ALREADY ON THIS DEVICE (1.20 GB)`, the parenthesis being its
+  size in the cloud. A system this device cannot run keeps its suffix and,
+  when a size leads the line, drops the file count from beside it —
+  `12.30 GB TO RESTORE · THIS DEVICE CANNOT RUN IT` — so the row stays one
+  line under the label (D-UI-023). Sizes round up to a whole KB, so a
+  difference of a few bytes reads `1.00 KB`, never `0.00 KB`; and when the
+  only files to move are empty ones (pico-8 ships a 0-byte `Splore.png`)
+  the count carries the line — `1 FILE TO BACK UP` — since a copy sends an
+  empty file all the same.
+- **"Would move" is by name and size.** A file counts when the far side
+  lacks it or holds it at a different size — what `rclone copy` compares
+  (size, then modtime where the backend keeps one). A same-size file is not
+  counted whatever changed inside it — the listings carry name and size
+  only — so the figure can run under what a copy moves, never over. The
+  game list is in the totals and never in the comparison: under game
+  content it travels in its own pass, newest wins, and the scan has no
+  modtime to say which side that is, so a run may carry a game list the
+  line did not mention (under, again, never over). Without that exclusion
+  the side whose list was older read `1 FILE TO RESTORE` for as long as
+  the two lists differed, and a run moved nothing. The file count and the
+  bytes describe one set: until now the count compared names alone, and a
+  ROM re-uploaded at a new size read IN YOUR CLOUD with nothing to send.
+- **Scripts:** `cloud_content_restore --scan` gains two trailing fields:
+  `name|cloud_bytes|supported|device_bytes|files_in_cloud_not_here|files_here_not_in_cloud|bytes_in_cloud_not_here|bytes_here_not_in_cloud`.
+  The first six keep their position and type; fields 5 and 6 now count by
+  name and size, the same set fields 7 and 8 measure. Both sides are listed
+  as `size|relpath` by the tier's own rule and compared in awk (the image's
+  busybox has no `comm`); the device side is one `find` per system where
+  there were two. Lines for the pre-tier layout (a system straight under
+  the content root) are listed for size alone, as before, with zeros in
+  every comparison field.
+- **An EmulationStation ahead of its scripts still works.** Given a
+  six-field scan the page falls back to the verdict it showed before
+  (`<total> · N FILES NOT IN YOUR CLOUD YET` / `IN YOUR CLOUD`, and the
+  restore mirror). A system with nothing on the far side needs no byte
+  fields — all of it moves — so that case reads the new way under either
+  script, and so does a pre-tier line on the restore page.
+- Proven on a GENERIC_X64 guest against `tools/cloud-test-backend` (MinIO)
+  with the modified script staged beside the installed one, twice: first
+  with a file of one size on both sides, a cloud-only file, a device-only
+  file, one file at 1000 bytes in the cloud and 2500 on the device, a game
+  list of one size on both sides, a cloud-only scraped image and a BIOS
+  file (`snes|501000|1|452500|2|2|201000|152500`, `bios|4096|1|0|1|0|4096|0`;
+  the installed six-field script read the same fixture
+  `snes|501000|1|452500|1|1`); then, after review, with the game lists at
+  differing sizes on the two sides — 105 and 210 bytes at the system's
+  root, 40 and 80 in a subfolder — a device-only empty file, and a second
+  system whose only difference is an empty file. Under ROMS AND BIOS that
+  read `snes|301040|1|302580|1|2|1000|2500` and `gba|1234|1|1234|0|1|0|0`;
+  with game content, `snes|351145|1|302790|2|2|51000|2500`; game content
+  alone, `snes|50105|1|210|1|0|50000|0`. Every figure matched a sum of the
+  planted sizes computed separately in the guest's shell; the game lists
+  are in every total and in no comparison field, and the empty file is one
+  file at zero bytes. The version before the review read the same fixture
+  `snes|301040|1|302580|2|3|1040|2580` and `…|4|4|51145|2790`: the game
+  lists counted as moving both ways. The page has not yet been built or
+  seen on a panel for this change: the strings above are what the code
+  produces from those fields.
+- `tools/cloud-round-trip` asserts the eight fields at its
+  unsupported-system step: a cloud-only one-byte file, a file that is one
+  byte in the cloud and two on the device, then a game list of three bytes
+  in the cloud and five on the device, which must leave the ROMS AND BIOS
+  row as it was and, with game content, add to each total without touching
+  a comparison field (added, not yet run).
+
+## The archive says which handheld made it (2026-09-08)
+
+Maintainer: *"in our backup naming, we should include the host name for the
+device. It's not super clear when you have multiple devices to know which one
+is which. For example, I just backed up from my RG SP, but I've also done
+backups from my RG35XX SP. It's not easy to tell when looking at the backups
+which backup came from which system."*
+
+Every device wrote `<date>-ROCKNIX_SETTINGS.tar.gz`, because the slot held
+`OS_NAME` and that is ROCKNIX on all of them. The hostname is not the answer —
+the RG SP's owner had set it, the RG35XX SP still said ROCKNIX — so the name
+now carries the label `cloud_device_id --label` derives from the device tree,
+the same one the per-device cloud folder is built from (D-CLOUD-009), between
+the date and ROCKNIX:
+
+    2026_09_08-161022-Anbernic-RG-SP-ROCKNIX_SETTINGS.tar.gz
+    2026_09_08-161200-Anbernic-RG35XX-SP-ROCKNIX_SETTINGS.tar.gz
+
+- **The label sits in the middle, not in ROCKNIX's place.** The stamp stays
+  first, so a listing still sorts by age; and the name still ends in
+  `-ROCKNIX_SETTINGS.tar.gz`, so the glob every reader already has —
+  `backuptool`'s `newest_backup`, in this build and in every image already on
+  a device — matches it unchanged. The first cut put the label where ROCKNIX
+  was, and the review found that an image from before the change, restoring
+  such an archive from the cloud, could not find it: its finder returned
+  nothing for `…-GENERIC-X64_SETTINGS.tar.gz`. `newest_backup` is now the
+  function that ships, unchanged, and the harness asks the installed
+  `/usr/bin/backuptool` — through that function — to find the archive the new
+  one wrote.
+- **`backuptool`** resolves the helper beside itself or at `/usr/bin` — never
+  via PATH, which `/etc/profile` rewrites. With no helper there is no label
+  and the archive is named as before. The local `archive/` rotation is
+  unchanged and trims every shape.
+- **Retention (`CLOUD_BACKUP_KEEP`) works inside this device's own cloud
+  folder and counts only archives carrying this device's label.** Archives
+  live under `SETTINGS_REMOTE/<device id>/` — `Anbernic-RG-SP-ee5013fc56`,
+  the id `cloud_device_id` gives — so a different device's own archives are
+  in a different folder and are never touched. Within this folder the newest
+  `CLOUD_BACKUP_KEEP` archives carrying this device's label are kept and the
+  rest of those removed; an archive carrying another device's label, or none,
+  is left alone. Before, the newest three of *everything* in the folder
+  survived and the rest went, so an archive another device had put there —
+  restored here and sent up again — could be evicted by this device's backups.
+- **What the label cannot do.** An archive carrying this device's label but
+  made by another device is counted as this device's own, because nothing in
+  the name tells them apart. It can be in this folder in exactly two ways: it
+  was restored here from that device's folder and sent back up with the next
+  backup (the fresh-device journey, #26); or the two devices share an id and
+  so share this folder — a cloned id, fork #86; the RG SP and the RG35XX SP
+  currently share the hash `ee5013fc56`. The id is deliberately not in the
+  archive name. The review's finding that retention removed a same-label
+  archive from a second device of the same model sharing the folder describes
+  exactly this case, and it stands: the code does that, and now says so.
+- **Archives from before names carried a device are left alone.** They cannot
+  be attributed to anyone, and deleting what cannot be attributed is the
+  failure this exists to stop, so the guard fails closed: no label, no
+  deletion (D-CLOUD-067). The cost is bounded — the old rule had already
+  trimmed them to `CLOUD_BACKUP_KEEP` per folder and no new ones are written —
+  so at most that many sit beside the labelled ones until the owner removes
+  them by hand.
+- **`cloud_restore` prefers this device's newest labelled archive** in the
+  folder it restores from. With none — a fresh device that adopted another's
+  folder to take over its settings (#26), or a folder holding only pre-label
+  archives — it takes the newest overall and says so on the transfer page and
+  in the log: *No settings backup named for this device (GENERIC-X64) in …;
+  restoring the newest there, 2099_01_01-000000-Other-Handheld-ROCKNIX_SETTINGS.tar.gz
+  (made on Other-Handheld)*, or *(made before backups were named after the
+  device)* for a pre-label archive. Which folder it restores from is
+  unchanged: its own, its pre-rename folder, then the shared root.
+- **`cloud_device_id --label` is now the same for every caller.** `HW_DEVICE`
+  reaches a shell only through `/etc/profile`, so on a device with no device
+  tree (GENERIC_X64) `backuptool` labelled `GENERIC-X64` while `cloud_backup`,
+  started without a profile, labelled by hostname (`GENERICX64`) — and
+  retention would never have recognised its own archives. The helper reads
+  `HW_DEVICE` from `/etc/os-release` when the environment lacks it, and the
+  cloud scripts read `OS_NAME` the same way for the same reason. Handhelds
+  have a device tree and were never affected; a stored identity is never
+  regenerated.
+- **Upgrade**: nothing to migrate. Old archives keep their names and are read
+  everywhere; the first backup after the update writes the new shape beside
+  them; the cloud folder is the same folder. A device that has not updated yet
+  finds a new archive with the finder it already has — proven below against
+  the image's own `/usr/bin/backuptool`.
+- Proven on GENERIC_X64 guest a (image `5b8e6b45`, from before this change)
+  against `tools/cloud-test-backend` (MinIO), the four scripts staged at
+  `/tmp/qa-bin`, label `GENERIC-X64`, folder `BACKUPS/GENERICX64-15ca35b6b4`,
+  `CLOUD_BACKUP_KEEP=3`:
+  - the image's own `newest_backup`, sourced from `/usr/bin/backuptool`,
+    returned a planted `2026_09_08-120000-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz`
+    — and still returned it, not the newer first-cut
+    `2026_09_08-130000-GENERIC-X64_SETTINGS.tar.gz` planted beside it, which
+    it cannot see;
+  - the staged `backuptool backup` wrote
+    `2026_09_08-152011-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz` (17,313,614
+    bytes, 303 members, `tar -tzf` clean), and the installed finder and the
+    staged one — identical text — both returned it;
+  - with `2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz`,
+    `2026_01_01-000000-Other-Handheld-ROCKNIX_SETTINGS.tar.gz` and three of
+    its own (`2026_01_02`…`04`) planted in its folder, `cloud_backup --yes
+    --system-only` uploaded the real archive and logged *Leaving 2 archive(s)
+    not named for this device (GENERIC-X64) alone* and *Removing old cloud
+    backup 2026_01_02-000000-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz*; the folder
+    afterwards held both planted foreign archives, `01_03`, `01_04` and the
+    real one;
+  - with `2099_01_01-000000-Other-Handheld-ROCKNIX_SETTINGS.tar.gz` added,
+    `cloud_restore --yes --system-only` brought back the real archive and
+    logged *Restoring this device's own newest settings backup (named for
+    GENERIC-X64)*; with its own removed, it brought back the `2099_` archive
+    with the *made on Other-Handheld* line; with only the pre-label archive
+    left, that one, with *made before backups were named after the device*.
+
+  Everything planted was removed afterwards, locally and in the cloud.
+- `tools/cloud-round-trip` asserts the labelled name on the archive
+  `backuptool` writes and that the installed `/usr/bin/backuptool`'s own
+  `newest_backup` finds the same file; keeps its planted `ROCKNIX_` archive as
+  the upgrade path and asserts the fallback is logged; and plants an
+  other-device archive and both pre-label shapes beside this device's in its
+  folder to check retention and the preference. The full single-device suite
+  passed against the staged scripts on guest a — 61 checks, no failures, no
+  skips — with `tools/cloud-test-backend` in `CLOUD_QA_BACKEND=s3` mode, which
+  is what the guest's `qa-cloud:` remote is; in the default WebDAV mode the
+  backend names bucket-less paths the S3 remote rejects, and the suite fails
+  at its first upload. A two-guest fixture would add no evidence: guest b gets
+  its own folder by construction, and sharing one needs a cloned id, which A11
+  refuses.
+- **Docs debt**: the archive name and the retention rule belong on
+  rocknix.org's cloud-sync page (#42 carries the docs PR).
+
+## The transfer page shows a bar for a run that only compares (2026-09-08)
+
+The maintainer, on a saves backup: *"when backing up to the cloud, we seem to
+have lost the progress bar and had it replaced with the small spinner. The
+progress bar was better."* And on the panel: *"It needs more height in
+general because the note that says, 'This can take a while. You can leave it
+running,' is right along the bottom edge and does not have equal padding
+above and below the elements."*
+
+- **The bar shows the lower of two percentages rclone printed: the
+  transfer's and the checks'.** It came only from the byte line, and a saves
+  backup whose saves are all in the cloud already moves nothing: that line
+  reads `0 B / 0 B, -`, rclone prints no per-file line and omits the
+  files-transferred line, so the page showed the spinner from start to
+  COMPLETED — the "lost" bar. The `Checks:` line was the one moving number,
+  and the page ignored it. The transfer's percentage is bytes, or the count
+  of files transferred when the bytes have no number (nothing but empty
+  files queued); the lower of that and the checks' percentage is drawn,
+  because a run is both — rclone compares as it lists and moves what
+  differs — and one changed save among hundreds moves its bytes in a second
+  and then spends the run comparing, so bytes alone would pin the bar at
+  100% over a live CHECKING count for all of it. The files-transferred count
+  is not a third contender for the minimum: it counts completed files, and
+  the VM capture of two files moving together reads `0 / 2, 0%` until both
+  land while the bytes climb 24 → 93%. The page never draws a bar without a
+  number rclone printed; a block that prints none leaves the last real
+  number standing rather than flicking back to the spinner once a second;
+  a `>>> unit` change still resets to the spinner until the new unit prints
+  one.
+- **A comparison-only run says what it is doing.** With no file in flight the
+  file row reads `CHECKING 12 OF 45 FILES` — the name row shows the file if
+  rclone caught one mid-comparison, else WORKING... — and before the first
+  check is queued it reads `CHECKING FILES...`. rclone's `Listed` count is
+  not shown: it counts both sides, so 40 saves list as 80, a number nobody
+  could reconcile with their files. A file that moves still shows its name
+  and TRANSFERRING line, which is why the settings archive was the one name
+  the maintainer saw.
+- **The system's line no longer reads `0 B OF 0 B · - · 0 B/S · -`.** A bare
+  `-` — rclone's word for a value it does not have yet: the ETA of a transfer
+  that has not started, the percentage of nothing — is dropped from every
+  rclone field the page renders, and the byte totals are left off the
+  system's line while they read `0 B / 0 B`, so during a run that only
+  compares that line is blank rather than a row of zeros.
+- **The panel is padded equally above the title and below the footer**
+  (0.05 of the screen height each; the footer used to sit on the bottom
+  edge), and its rows are stacked from the theme's own menu font heights, so
+  the seven lines have room on a 640×480 panel and the page sizes itself for
+  a theme with larger fonts (0.66 of the screen height at 640×480 and 0.56 at
+  1920×1080 on the shipped theme; past 0.9 every pitch is scaled down
+  together). The bar, the spinner and the done-note share one row; the bar
+  used to be drawn a row below the spinner it replaced.
+- Checked by `g++ -fsyntax-only` against the GENERIC_X64 sysroot; by reading
+  rclone 1.75.0's `fs/accounting/stats.go` for when each stats line is
+  printed (`Checks:` once anything is checked or listed, the count line once
+  anything is queued, `-` for a zero total — and the counters only grow, the
+  retry loop resets errors alone); and by replaying two piped rclone 1.75.0
+  captures from the VM through the page's parse rules — one comparing 40
+  files it already had (spinner, then a bar at 100% over CHECKING 40 OF 40
+  FILES, the system's line blank), one moving two (24 → 47 → 69 → 93 →
+  100%) — plus a synthetic run of one changed save among 45 (27 → 0 → 89 →
+  100% block by block; between a block's byte line and its `Checks:` line
+  the previous block's checks stand, so a frame drawn in that instant
+  shows 67%, a number rclone printed a second earlier) and one of four
+  disc images moving together (bytes throughout, where
+  a minimum over all three percentages sat at 0%). The built page is the
+  screendump's to prove.
