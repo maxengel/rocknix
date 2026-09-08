@@ -262,6 +262,26 @@ Same class of symptom, different cause, same instinct — reproduce the
 clean-tree condition for the affected packages rather than trusting an
 incremental build to notice.
 
+## A two-minute build can be a real one
+
+ccache sits under every compile, so a warm root that rebuilds one package
+with one changed source file finishes in about two minutes, image step
+included (H700, 2026-09-08: a one-file RetroArch patch plus a script change
+in rclone, 04:43:46 to 04:45:34). That is not the signature of a build that
+skipped the work. Judge a rebuild by evidence, not by duration:
+
+- the package's `build_target` stamp under `build.*/.stamps/<pkg>/` is newer
+  than the moment `make` started;
+- the object for the changed file (`obj-*/…/<file>.o` in the package's build
+  directory) is newer than that moment too;
+- the binary inside the new image's `SYSTEM` squashfs differs from the one in
+  the previous image (`tar -xf … --wildcards '*/target/SYSTEM'`, then
+  `unsquashfs -d <dir> -n SYSTEM usr/bin/<binary>`).
+
+Grepping the log for a phrase such as `build retroarch:target` is not one of
+those — the log's progress lines say `install`, and a guessed pattern that
+matches nothing reads as "not rebuilt".
+
 ## Budget
 
 - **Disk:** ~90 GB per device build root, plus the shared ~15 GB sources cache.
