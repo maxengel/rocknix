@@ -41,6 +41,28 @@ gh issue create --repo maxengel/rocknix --title "..." --body-file notes.md
   commits/build; consolidate → close `not planned` with a comment naming where the
   scope went. Never leave a delivered issue open or close one silently.
 
+## Every out-of-band request gets an issue, the same session (D-QA-012)
+
+Maintainer, 2026-09-08: *"with all these pieces of feedback I'm giving you, we
+should create issues to cover them. With prior items in the past, it's
+important to make sure that we're creating issues to capture these out-of-band
+requests I'm giving, so we have the right paper trail of what we've been
+doing."*
+
+So: a request, observation, or concern the maintainer raises in conversation --
+a UI nit seen on a device, a "we should also...", a question that turns into
+work -- is filed on the fork **in the same session it is raised**, before or
+alongside the work, not after. The body quotes the maintainer's words
+verbatim (they are the requirement; a paraphrase drifts), states what exists
+today, and carries acceptance criteria. Several small items raised together
+may share one issue with one section each, as #85 does. A concern that is
+really a requirement on existing work is still recorded where it lands
+(register row, issue body edit) **and** made findable: if it lives only in a
+register row or a comment, file the issue and point both ways.
+
+The paper trail is the point. A register row says what was decided; the
+issue says what was asked, by whom, in what words, and whether it was done.
+
 ## Ticking an acceptance criterion
 
 A checkbox records an observed behaviour, never an artifact. "Commit `abc123`
