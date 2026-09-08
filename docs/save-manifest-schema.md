@@ -157,7 +157,7 @@ Top level:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `schema` | int | `1`. Readers refuse a higher number and treat a missing one as `0` (pre-schema). |
+| `schema` | int | `1`. Readers refuse a higher number and treat a missing one as `0` (pre-schema). Rev 2 (§10) keeps this at `1` — it only adds optional fields. |
 | `device.id` | string | `cloud_device_id` — stable, seeded from the permanent hardware address (#49). |
 | `device.label` | string | `cloud_device_id --label`, folder-safe (`Anbernic-RG35XX-SP`). |
 | `device.model` | string | `/proc/device-tree/model`, for display (`Anbernic RG35XX SP`). |
@@ -343,7 +343,94 @@ modification times equal to the device's, which is what `mtime` is for.
   the layout; `system` and `core` are recorded as fields, not parsed out of
   the path.
 
+## 10. Schema rev 2 — capture, publications, and torn-set detection (#21/#22)
+
+Rev 2 is **additive**. The `schema` integer stays `1`: no cloud has yet
+received a rev 1 manifest, and every field below only adds to an entry or the
+top level, so a reader that ignores the new fields still reads a rev 2
+manifest as a valid rev 1 one. A device that has never published simply omits
+them. (When a field genuinely changes meaning, `schema` becomes `2`; adding
+optional fields is not that.)
+
+### Why rev 2 exists
+
+Rev 1 answered "is this the same version?" (the content hash, §1) and "did we
+agree?" (§2). Capture (#21) and the reconciler (#22) need two more things rev 1
+could not express:
+
+- **Which files move together.** An N64 game writes an `.eep` and an `.mpk`;
+  a libretro save writes a `.state`, its `.png`, and the `.state.auto`. A
+  publication that carried some members and not others is *torn*, and a
+  reader can only see that it is torn if each version declares the members its
+  unit is supposed to have. Rev 1's per-path entries cannot say "these belong
+  together."
+- **Which publication a version arrived in.** Two devices editing the same
+  save produce two versions; the reconciler orders and explains them by the
+  publication each arrived in, not by wall-clock time (which two devices do
+  not share — §6, `clock_synced`).
+
+### New per-entry fields
+
+| Field | Type | Meaning |
+|---|---|---|
+| `unit` | string | The game-save this file belongs to, from the unit table (Gate 12): a stable key for "one game's save in one system", e.g. `gba:Advance Wars (USA) (Rev 1)`. Every member of a unit (the `.eep` and `.mpk`; the `.state`, its `.png`, the `.auto`) carries the same `unit`. Derived at capture from `system` + `rom`, never parsed back out of a path. |
+| `producer` | string \| null | When this version was written to the saves tree by a **restore from another device**, that device's id (D-CLOUD-009). `null` when this device produced it by playing. Distinguishes "I made this" from "I received this", which the reconciler needs so a received copy is not re-attributed as a local edit. |
+| `published_at` | string \| null | UTC ISO 8601, when the publication that carried this version was made; `null` until it is published (capture writes the entry; #22's push sets this and `pub`). |
+| `pub` | string \| null | The publication this version arrived in: `<device-id>:<counter>`, the counter a monotonic per-device integer the push increments. Two members with the same `pub` were published together; a member whose unit expects a sibling with the same `pub` and does not find one is a torn publication. `null` until published. |
+
+`producer` and `pub`/`published_at` are the provenance rev 1's *"nothing stamps
+a file it did not write"* rule (§6) already anticipated: capture stamps only
+`producer: null` for what this device played; a restore stamps the producer;
+the push stamps the publication.
+
+### New top-level fields
+
+| Field | Type | Meaning |
+|---|---|---|
+| `units` | object | `unit` key → `{ "members": [ "<relative path>", ... ] }`: what each unit **declares** it should contain, so a reader can tell a complete publication from a torn one without guessing. Members are the paths this device last saw for the unit; a reader compares the declared members against the versions actually present at a `pub`. |
+| `retired` | array | A **bounded** list of deletions this device made, each `{ "sha256", "path", "retires_pub", "at" }`: the version removed, where it was, the `pub` it retired, and when. Bounded because a device does not carry every deletion it ever made forever — the reconciler needs recent deletions to tell "deleted on purpose" from "never arrived", and old ones age out (the bound is #22's to set; capture appends and trims). A deletion the player made through the save-state manager is written here (D-CLOUD-053), not silently dropped. |
+
+### The agreement record gains `verified_by`
+
+Agreement (§2, `/storage/.cache/cloud_sync/agreed.json`) is written **only on
+verified equality**, and now records how equality was verified:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `verified_by` | `"remote-hash"` \| `"size+mtime"` \| `"download-sha256"` | How this agreement was established. `remote-hash`: the remote reported a hash equal to ours (Dropbox). `download-sha256`: we downloaded and hashed (the only proof on a backend with no usable hash, e.g. WebDAV). `size+mtime`: size and mtime matched and nothing stronger was available — the weakest, recorded honestly so the reconciler knows the agreement is only as good as the backend allowed. |
+
+An agreement is never written on `size+mtime` alone where a stronger proof was
+available; the field records what actually happened, not the best case.
+
+### Manifests are a claim set (I5), and where they live
+
+- **Every manifest is read as a set of claims, never as truth.** A device's
+  manifest says what *that device* believes about a path; the cloud head is
+  what the **listing** says is there now (`rclone lsjson`). The reconciler
+  reconciles claims against the listing, so a manifest that names a version
+  the cloud no longer holds is a stale claim, not an error.
+- **The own manifest's working copy leaves the saves tree.** It lives at
+  `/storage/.cache/cloud_sync/manifest-<id>.json` and is *published* to
+  `savestates/.rocknix/manifest-<id>.json` as a decided transfer (#22), not
+  written directly into the synced tree by capture. This keeps capture free of
+  the network and of the sync allowlist entirely.
+- **Foreign manifests are cached, never written into the tree.** A manifest
+  read from another device is cached under
+  `/storage/.cache/cloud_sync/manifests/manifest-<id>.json`; nothing this
+  device does writes another device's manifest back into `savestates/`.
+- **Never rewrite an unchanged manifest (I8).** Capture writes the manifest
+  only when an entry actually changed. An unchanged exit leaves the file — and
+  its mtime — untouched, so the manifest does not churn the sync on every game
+  exit (the mtime is what rclone would otherwise see change every time).
+
+### What stays exactly as rev 1
+
+The identity hash (§1), the conflict test (§3), the per-path entry shape (§6),
+the one-file-per-device layout (§5), and every rev 1 field. Rev 2 adds the
+provenance and grouping the reconciler needs and changes none of it.
+
 ## Open
 
-- Nothing on the schema itself. An alignment review against every prior and
-  planned cloud-sync issue precedes capture (#21), at the maintainer's request.
+- Nothing on the schema itself. Rev 2 (§10, additive) lands with capture
+  (#21); the alignment review that preceded capture is
+  `docs/save-manifest-alignment-review.md`.
