@@ -1709,4 +1709,19 @@ makeinstall_target() {
   mkdir -p ${INSTALL}/usr/lib/autostart/common
   cp ${PKG_DIR}/autostart/* ${INSTALL}/usr/lib/autostart/common
   chmod 0755 ${INSTALL}/usr/lib/autostart/common/*
+
+  ### Core version pins for the save manifest (fork #21, D-CLOUD-017).
+  ### One line per libretro core package built into this image,
+  ### "<package> <PKG_VERSION>". The capture step maps a core name to its
+  ### package and records the version as the manifest's core_build -- the
+  ### value two devices compare to know whether a save state will load
+  ### (#19). Only the build knows every pin, so it is emitted here; a core
+  ### the capture step cannot map records "unknown".
+  mkdir -p ${INSTALL}/usr/share/rocknix
+  : > ${INSTALL}/usr/share/rocknix/core-pins
+  for _core_pkg in ${LIBRETRO_CORES}; do
+    _core_ver="$(get_pkg_version "${_core_pkg}" 2>/dev/null)"
+    [ -n "${_core_ver}" ] && echo "${_core_pkg} ${_core_ver}" >> ${INSTALL}/usr/share/rocknix/core-pins
+  done
+  sort -o ${INSTALL}/usr/share/rocknix/core-pins ${INSTALL}/usr/share/rocknix/core-pins
 }
