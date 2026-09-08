@@ -557,9 +557,6 @@ content_files() {
         ! -path '*conflicted copy*' ! -name '*.sync-conflict-*' \
         "${media[@]}" "$@" 2>/dev/null
 }
-content_bytes() {
-    content_files "$1" -exec stat -c '%s' {} + | awk '{ t += $1 } END { print t+0 }'
-}
 # Local systems that hold content, for the union scan.
 local_content_dirs() {
     local d base
@@ -570,13 +567,30 @@ local_content_dirs() {
         content_files "${d}" | head -1 | grep -q . && printf '%s\n' "${base}"
     done
 }
-# Lines of $1 that are not in $2. Not comm(1): the image's busybox has no
-# comm, and `comm ... | wc -l` then reads 0 -- "nothing differs" -- which is
-# the wrong way for a count to fail (found in the VM, 2026-09-06). awk is
-# what this script already runs on; the getline form is safe when either
-# file is empty, where the NR==FNR idiom is not.
-not_in() {
-    awk -v L="$2" 'BEGIN { while ((getline x < L) > 0) a[x] = 1 } !($0 in a)' "$1"
+# What a copy from side $1 to side $2 would move, as "count|bytes". Both
+# files are "size|relpath" listings, and a line matches only when the far
+# side has the same name at the same size -- so a file absent over there
+# counts, and so does one present at a different size, which is what
+# `rclone copy` compares (size, then modtime where the backend keeps one).
+# A same-size file is NOT counted whatever changed inside it: these listings
+# carry name and size only, so a file rewritten to the same length -- a
+# patched ROM, a re-saved config -- reads as present, though a copy would
+# move it on modtime or hash. The figure here can therefore run under what
+# a copy moves, never over. The caller also strips the game list from both
+# listings first (see --scan): its direction is decided by a modtime these
+# listings do not carry, so a differing size is not a direction. The count
+# and the bytes describe one set, so a page can put them on one line without
+# contradicting itself; until 2026-09-08 the count compared names alone and
+# would have read "0 FILES" beside a non-zero size for a ROM re-uploaded at
+# a new size.
+# Not comm(1): the image's busybox has no comm, and `comm ... | wc -l` then
+# reads 0 -- "nothing differs" -- which is the wrong way for a count to fail
+# (found in the VM, 2026-09-06). awk is what this script already runs on;
+# the getline form is safe when either file is empty, where the NR==FNR
+# idiom is not.
+delta_of() {
+    awk -F'|' -v L="$2" 'BEGIN { while ((getline x < L) > 0) a[x] = 1 }
+        !($0 in a) { n++; b += $1 } END { print n+0 "|" b+0 }' "$1"
 }
 # Drop from a cloud "size|path" listing what content_files drops locally, so
 # the two sides are counted by one rule.
@@ -630,9 +644,14 @@ case "${1}" in
     ;;
     --scan)
         # One line per system in the union of cloud and device:
-        #   name|cloud_bytes|supported|device_bytes|files_in_cloud_not_here|files_here_not_in_cloud
-        # Both sides listed by the same rule (D-CLOUD-048) and compared by name,
-        # because totals cannot say whether one side has what the other has.
+        #   name|cloud_bytes|supported|device_bytes|files_in_cloud_not_here|files_here_not_in_cloud|bytes_in_cloud_not_here|bytes_here_not_in_cloud
+        # Both sides listed by the same rule (D-CLOUD-048) as "size|relpath"
+        # and compared by name and size (delta_of), because totals cannot say
+        # whether one side has what the other has. Fields 7 and 8 are what a
+        # copy in that direction would send; fields 5 and 6 count the same
+        # set. The game list is in the totals and never in the comparison
+        # (below). They arrived 2026-09-08; the first six keep their position
+        # and type, so a page built against six still reads this line.
         SUP=$(supported_systems)
         TMP=$(mktemp -d /tmp/cloud-scan.XXXXXX); trap 'rm -rf "${TMP}"' EXIT
         rclone lsf -R --files-only --format "sp" --separator "|" "${ROOT}ROMs/" 2>/dev/null \
@@ -649,22 +668,45 @@ case "${1}" in
             local_content_dirs
         } | sort -u | while IFS= read -r name; do
             [ -n "${name}" ] || continue
-            cbytes=$(awk -F'|' -v n="${name}" '{ split($2, seg, "/"); if (seg[1] == n) t += $1 } END { print t+0 }' "${TMP}/cloud")
-            awk -F'|' -v n="${name}" '{ split($2, seg, "/"); if (seg[1] == n) print substr($2, length(n) + 2) }' "${TMP}/cloud" | sort > "${TMP}/c"
+            # This system's cloud side, "size|relpath" under the system.
+            awk -F'|' -v n="${name}" '{ split($2, seg, "/"); if (seg[1] == n) print $1 "|" substr($2, length(n) + 2) }' "${TMP}/cloud" > "${TMP}/c"
+            # The device side by the same rule. One find per system: stat
+            # supplies the sizes, so the total needs no second pass. The
+            # prefix is cut by length, not by pattern, so a system name
+            # holding a regex character cannot mis-strip.
             if [ -d "${DEST}/${name}" ]; then
-                lbytes=$(content_bytes "${DEST}/${name}")
-                content_files "${DEST}/${name}" | sed "s|^${DEST}/${name}/||" | sort > "${TMP}/l"
+                content_files "${DEST}/${name}" -exec stat -c '%s|%n' {} + \
+                    | awk -v p="${DEST}/${name}/" '{ i = index($0, "|"); print substr($0, 1, i) substr($0, i + 1 + length(p)) }' > "${TMP}/l"
             else
-                lbytes=0; : > "${TMP}/l"
+                : > "${TMP}/l"
             fi
-            cnl=$(not_in "${TMP}/c" "${TMP}/l" | wc -l)
-            lnc=$(not_in "${TMP}/l" "${TMP}/c" | wc -l)
+            cbytes=$(awk -F'|' '{ t += $1 } END { print t+0 }' "${TMP}/c")
+            lbytes=$(awk -F'|' '{ t += $1 } END { print t+0 }' "${TMP}/l")
+            # The game list is in those totals and out of the comparison.
+            # Under game content it travels in its own pass, --update, newest
+            # wins (the transfer below); these listings carry no modtime to
+            # say which side that is, so a size that differs is not a
+            # direction, and a page that counted it read "1 FILE TO RESTORE"
+            # on whichever side's list was older -- and kept reading it,
+            # since a run moves nothing that way (found in review,
+            # 2026-09-08). Any depth, as the transfer's "**/gamelist.xml".
+            # Under ROMs alone a system's own list is on neither side, so
+            # there the strip touches only a list nested in a subfolder.
+            grep -vE '[|/]gamelist\.xml$' "${TMP}/c" > "${TMP}/cd"
+            grep -vE '[|/]gamelist\.xml$' "${TMP}/l" > "${TMP}/ld"
+            IFS='|' read -r cnl cnl_bytes <<< "$(delta_of "${TMP}/cd" "${TMP}/ld")"
+            IFS='|' read -r lnc lnc_bytes <<< "$(delta_of "${TMP}/ld" "${TMP}/cd")"
             if [ "${name}" = "bios" ] || printf '%s\n' "${SUP}" | grep -qxF "${name}"; then sup=1; else sup=0; fi
-            echo "${name}|${cbytes}|${sup}|${lbytes}|${cnl}|${lnc}"
+            echo "${name}|${cbytes}|${sup}|${lbytes}|${cnl}|${lnc}|${cnl_bytes}|${lnc_bytes}"
         done
+        # The pre-tier layout (a system straight under the content root) is
+        # listed for size alone and never compared: device_bytes and every
+        # comparison field are 0 without looking. The page reads an empty
+        # far side as "all of it moves", which is the only true reading of
+        # a line like this.
         while IFS='|' read -r name bytes; do
             [ -n "${name}" ] || continue
-            echo "${name}|${bytes}|0|0|0|0"
+            echo "${name}|${bytes}|0|0|0|0|0|0"
         done < "${TMP}/legacy"
         exit 0
     ;;
