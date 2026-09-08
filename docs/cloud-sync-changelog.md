@@ -543,5 +543,12 @@ otherwise because NTP corrected the clock in the middle of the boot.
   card present, card late (waits then mounts), card absent (times out to
   internal), one-card (no wait), unset setting (no wait), pinned games
   device with a late card (waits then mounts).
+- **Boot cost.** A normal boot finds the card on the first pass and waits
+  nothing. The retry only runs when a card is *physically present but not
+  probed yet* — `external_node_present()` checks `/sys/block` for a
+  non-internal disk over ~8 GB — so a card that was removed has no node
+  and boot falls to internal after a 2 s grace, not the full timeout. The
+  ceiling is 10 s, paid only by a card present but whose filesystem never
+  becomes readable.
 - The `automount` change is offered upstream to ROCKNIX/distribution on
   its own (#84).
