@@ -184,6 +184,20 @@ function mount_games() {
 function find_games() {
   if /usr/bin/busybox mountpoint -q /storage
   then
+    ### A device that has mounted an external games card before
+    ### (system.merged.device=external) must not settle for the internal
+    ### card just because the external one has not enumerated yet at boot.
+    ### Binding the internal card over /storage/roms lets the boot restore
+    ### write game saves and content to the wrong card, which then lingers
+    ### and later reads as this device's own data (fork #84, D-CLOUD-054/055).
+    ### So on such a device the scan is retried for up to FIND_MAX seconds
+    ### before falling back. A one-card device (setting unset or internal)
+    ### does not wait, so its boot is unchanged.
+    MS_DEVICE=$(get_setting system.merged.device)
+    FIND_TRIES=0
+    FIND_MAX=15
+    while true
+    do
     for DEV in $(for dev in mmcblk[0-9] sd[a-z] nvme[0-9]n[0-9]; do blkid | grep ${dev} | awk 'BEGIN {FS=":"}; /ext4/ || /btrfs/ || /fat/ || /ntfs/ {print $1}' | sort -r; done)
     do
       ROOTDEV=$(echo ${DEV} | sed -e "s#^/.*/##g" -e "s#p[0-9].*\$##g")
@@ -213,9 +227,21 @@ function find_games() {
         log $0 "${DEV} not available."
       fi
     done
+    ### No external card this pass. If one is expected -- this device has
+    ### merged an external card before, or a specific games device is pinned
+    ### (system.gamesdevice) -- wait and rescan rather than settle for
+    ### internal on a card that is a moment slow to enumerate.
+    if { [ "${MS_DEVICE}" = "external" ] || [ -n "${GAMES_DEVICE}" ]; } && [ ${FIND_TRIES} -lt ${FIND_MAX} ]
+    then
+      FIND_TRIES=$((FIND_TRIES + 1))
+      log $0 "Expected external games card not found yet; waiting (${FIND_TRIES}/${FIND_MAX})."
+      sleep 1
+      continue
+    fi
+    break
+    done
     log $0 "Could not find external card to mount, assume internal."
 
-    MS_DEVICE=$(get_setting system.merged.device)
     ### If the merge target isn't defined and we do not have an external microsd, we should use the internal card by default.
     if [ -z "${MS_DEVICE}" ]
     then
