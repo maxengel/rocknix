@@ -105,6 +105,13 @@ device_label() {
         label=$(tr -d '\0' < /sys/firmware/devicetree/base/model 2>/dev/null)
     fi
     [ -z "${label}" ] && label="${HW_DEVICE}"
+    # HW_DEVICE reaches a shell through /etc/profile and nothing else, so a
+    # script started by systemd or by EmulationStation does not have it. On a
+    # device with no device tree (GENERIC_X64) the label then fell through to
+    # the build family for one caller and the hostname for another, and
+    # backuptool and cloud_backup disagreed about what the device is called
+    # (2026-09-08). Read it from where the OS writes it instead.
+    [ -z "${label}" ] && label=$(sed -n 's/^HW_DEVICE="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' /etc/os-release 2>/dev/null | head -1)
     [ -z "${label}" ] && label=$(hostname 2>/dev/null)
     [ -z "${label}" ] && label="device"
 

@@ -43,6 +43,37 @@ ARCHIVEFOLDER="${SETTINGS_BACKUPS}/archive"
 # calling it a system backup had people expecting their saves to be in it.
 # Every reader below still accepts the three earlier names.
 BACKUP_STAMP="$(date +%Y_%m_%d-%H%M%S)"
+# The device's name sits between the stamp and -${OS_NAME}_SETTINGS.
+#
+# Every device used to write <stamp>-ROCKNIX_SETTINGS.tar.gz, so two
+# handhelds' archives were told apart by nothing. Maintainer, 2026-09-08: a
+# backup from the RG SP and one from the RG35XX SP, and no way to say from the
+# names which came from which. The hostname would not do -- one device's owner
+# had set it, the other still said ROCKNIX -- so the name is the one
+# cloud_device_id derives from the device tree ("Anbernic-RG-SP", D-CLOUD-009):
+# stable, readable, and already path-safe.
+#
+# It goes in the MIDDLE, not in place of ROCKNIX, on purpose:
+#
+#     2026_09_08-161022-Anbernic-RG-SP-ROCKNIX_SETTINGS.tar.gz
+#
+# The stamp stays first, so a listing still sorts by age; and the name still
+# ends in -ROCKNIX_SETTINGS.tar.gz, so the glob every reader already has --
+# newest_backup below, and the same function in every image already on a
+# device -- matches it unchanged. A first cut put the label where ROCKNIX was,
+# and an older image's finder then found nothing when it pulled a new archive
+# down from the cloud (review, 2026-09-08).
+#
+# The helper is resolved beside this script or at /usr/bin, never via PATH,
+# which /etc/profile rewrote above. With no helper there is no label, and the
+# name is the one every older archive carries.
+device_label() {
+    local tool
+    tool="$(dirname "$(readlink -f "$0")")/cloud_device_id"
+    [ -x "${tool}" ] || tool="/usr/bin/cloud_device_id"
+    [ -x "${tool}" ] && "${tool}" --label 2>/dev/null | tr -cd 'A-Za-z0-9_-'
+}
+DEVICE_LABEL="$(device_label)"
 # tar, not zip.
 #
 # zip does not carry a symlink as a symlink, and this OS is full of them: the
@@ -57,11 +88,20 @@ BACKUP_STAMP="$(date +%Y_%m_%d-%H%M%S)"
 # extracts cleanly over an existing one. Verified on-device, because Info-ZIP
 # on a desktop and busybox on a handheld disagree, which is how the original
 # bug stayed invisible.
-BACKUPFILE="${SETTINGS_BACKUPS}/${BACKUP_STAMP}-${OS_NAME}_SETTINGS.tar.gz"
+BACKUPFILE="${SETTINGS_BACKUPS}/${BACKUP_STAMP}-${DEVICE_LABEL:+${DEVICE_LABEL}-}${OS_NAME}_SETTINGS.tar.gz"
 LEGACY_BACKUPFILE="${SETTINGS_BACKUPS}/${OS_NAME}_BACKUP.zip"
 
-# The newest archive present, whatever it is called. Names lead with the date,
-# so sorting them orders them by age.
+# The newest archive present, whatever it is called and whichever device wrote
+# it. Names lead with the date, so sorting them orders them by age.
+#
+# Any device's, on purpose. A device that has just pulled another handheld's
+# archive from the cloud (the fresh-device journey, #26) has it beside its own
+# or in place of it, and "restore the newest backup" -- which is what the menu
+# promises -- must apply it. These globs are the ones this function has always
+# had: a labelled name ends in -ROCKNIX_SETTINGS.tar.gz like every archive
+# before it, so the first glob takes the new shape and the old alike, and the
+# other two take the two dated names before that. Unchanged, so that an image
+# from before the label finds a new archive with the very same code.
 newest_backup() {
     local found
     found=$(ls -1 "${SETTINGS_BACKUPS}"/*-"${OS_NAME}"_SETTINGS.tar.gz \

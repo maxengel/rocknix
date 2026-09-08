@@ -473,14 +473,50 @@ load_config() {
     log_message "Configuration loaded successfully" "false"
 }
 
+# cloud_device_id, beside this script or installed. Beside first, so a copy of
+# these scripts staged for a test resolves the helper staged with it; never
+# via PATH. Empty when neither exists, and every caller treats empty as "do
+# not know" rather than inventing a name.
+device_id_tool() {
+    local tool
+    tool="$(dirname "$(readlink -f "$0")")/cloud_device_id"
+    [ -x "${tool}" ] || tool="/usr/bin/cloud_device_id"
+    [ -x "${tool}" ] && echo "${tool}"
+}
+
 # This device's folder in the cloud. cloud_device_id owns the derivation --
 # one implementation, because backup and restore disagreeing here means a
 # device cannot find the archive it wrote.
 device_folder() {
-    local id
-    id=$(/usr/bin/cloud_device_id 2>/dev/null | tr -cd 'A-Za-z0-9_.-')
+    local id="" tool
+    tool=$(device_id_tool)
+    [ -n "${tool}" ] && id=$("${tool}" 2>/dev/null | tr -cd 'A-Za-z0-9_.-')
     [ -z "${id}" ] && id="device-unknown"
     echo "${id}"
+}
+
+# What this device's archives are named after. backuptool writes
+# <stamp>-<label>-ROCKNIX_SETTINGS.tar.gz with the label cloud_device_id
+# derives from the device tree ("Anbernic-RG-SP"), so an archive's name says
+# which handheld made it (2026-09-08). Letters, digits, _ and - only, so the
+# value is literal inside a regular expression. Empty when the helper is
+# missing; the callers then cannot tell this device's archives from another's,
+# and say so.
+device_label() {
+    local tool
+    tool=$(device_id_tool)
+    [ -n "${tool}" ] && "${tool}" --label 2>/dev/null | tr -cd 'A-Za-z0-9_-'
+}
+
+# The OS name the archive's name ends with. backuptool has OS_NAME from
+# /etc/profile; this script is started by systemd and by EmulationStation,
+# where no profile has run, so it is read from the file the profile reads it
+# from. Never empty, so the pattern built on it always names a whole archive.
+os_name() {
+    local name="${OS_NAME}"
+    [ -z "${name}" ] && name=$(sed -n 's/^OS_NAME="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' /etc/os-release 2>/dev/null | head -1)
+    [ -z "${name}" ] && name="ROCKNIX"
+    printf '%s\n' "${name}" | tr -cd 'A-Za-z0-9_-'
 }
 
 # Enhanced error reporting function
@@ -990,29 +1026,63 @@ MANIFEST
                 --log-file /var/log/cloud_sync.log 2>/dev/null
         fi
 
-        # Keep a bounded history. Names lead with the date, so sorting them is
-        # ordering them by age and no metadata call is needed.
+        # Keep a bounded history of THIS device's archives. Names lead with
+        # the date, so sorting them is ordering them by age and no metadata
+        # call is needed.
+        #
+        # Where this runs: device_dest is SETTINGS_REMOTE/<device id>/, the
+        # folder cloud_device_id names this device (Anbernic-RG-SP-ee5013fc56).
+        # A different device's own archives are in a different folder, and
+        # nothing here reaches them. Within this folder, the newest
+        # CLOUD_BACKUP_KEEP archives carrying this device's label
+        # (<stamp>-<label>-ROCKNIX_SETTINGS.tar.gz) are kept and the rest of
+        # those removed. An archive carrying no label -- every one from before
+        # names carried a device: ROCKNIX_SETTINGS, ROCKNIX_BACKUP, the
+        # undated zip -- or another device's label is left alone. Until
+        # 2026-09-08 the newest CLOUD_BACKUP_KEEP of everything here survived
+        # and the rest went, so one device's backup could evict another's.
+        #
+        # An archive carrying this device's label but made by another device
+        # can be in this folder in exactly two ways, and is counted with this
+        # device's own in both, because the label cannot tell them apart: it
+        # was restored here from that device's folder and sent up again by the
+        # loop above (the fresh-device journey, #26); or the two devices share
+        # an id and so share this folder (a cloned id, fork #86 -- the RG SP
+        # and the RG35XX SP currently share the hash ee5013fc56). The id is
+        # deliberately not in the archive name.
+        #
+        # The unlabelled ones are bounded: the older rule had already trimmed
+        # them to CLOUD_BACKUP_KEEP, and no new ones are written, so they cost
+        # at most that many archives per folder until the owner removes them.
+        # Deleting what cannot be attributed is the failure this exists to
+        # stop, so the guard fails closed: no label, no deletion.
         if [ ${BACKUP_SYSTEM_STATUS} -eq 0 ] && [ ${sent_any} -eq 1 ]; then
             local keep="${CLOUD_BACKUP_KEEP:-3}"
             case "${keep}" in
                 ''|*[!0-9]*) keep=3 ;;
             esac
-            # Newest first, with anything undated treated as oldest. Sorting
-            # names alone puts "ROCKNIX_BACKUP.zip" above every "2026_..."
-            # because R sorts after a digit -- so an archive from before names
-            # carried dates would hold a keep-slot for ever while genuinely
-            # newer ones were pruned around it.
-            local listing
-            listing=$(rclone lsf --files-only --include "*.{zip,tar.gz}" "${device_dest}/" 2>/dev/null)
-            local old_archive
-            { printf '%s\n' "${listing}" | grep -E '^[0-9]{4}_' | sort -r
-              printf '%s\n' "${listing}" | grep -vE '^[0-9]{4}_' | grep -v '^$'
-            } | grep -v '^$' | tail -n +$((keep + 1)) | while read -r old_archive
-            do
-                [ -n "${old_archive}" ] || continue
-                log_message "Removing old cloud backup ${old_archive}" "false"
-                rclone deletefile "${device_dest}/${old_archive}" 2>/dev/null
-            done
+            local label
+            label=$(device_label)
+            if [ -z "${label}" ]; then
+                log_message "Cannot tell this device's archives from another device's (cloud_device_id gave no name); nothing removed from ${device_dest}" "false" "WARN"
+            else
+                local osn listing mine total_n mine_n old_archive
+                osn=$(os_name)
+                listing=$(rclone lsf --files-only --include "*.{zip,tar.gz}" "${device_dest}/" 2>/dev/null)
+                mine=$(printf '%s\n' "${listing}" \
+                       | grep -E "^[0-9]{4}_[0-9]{2}_[0-9]{2}-[0-9]{6}-${label}-${osn}_SETTINGS\.tar\.gz$" | sort -r)
+                total_n=$(printf '%s\n' "${listing}" | grep -c .)
+                mine_n=$(printf '%s\n' "${mine}" | grep -c .)
+                if [ "${total_n}" -gt "${mine_n}" ]; then
+                    log_message "Leaving $((total_n - mine_n)) archive(s) not named for this device (${label}) alone in ${device_dest}" "false"
+                fi
+                printf '%s\n' "${mine}" | grep -v '^$' | tail -n +$((keep + 1)) | while read -r old_archive
+                do
+                    [ -n "${old_archive}" ] || continue
+                    log_message "Removing old cloud backup ${old_archive}" "false"
+                    rclone deletefile "${device_dest}/${old_archive}" 2>/dev/null
+                done
+            fi
         fi
 
         # Only record the upload once the remote actually holds a file of the

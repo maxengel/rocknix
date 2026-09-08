@@ -472,14 +472,50 @@ load_config() {
     log_message "Configuration loaded successfully" "false"
 }
 
+# cloud_device_id, beside this script or installed. Beside first, so a copy of
+# these scripts staged for a test resolves the helper staged with it; never
+# via PATH. Empty when neither exists, and every caller treats empty as "do
+# not know" rather than inventing a name.
+device_id_tool() {
+    local tool
+    tool="$(dirname "$(readlink -f "$0")")/cloud_device_id"
+    [ -x "${tool}" ] || tool="/usr/bin/cloud_device_id"
+    [ -x "${tool}" ] && echo "${tool}"
+}
+
 # This device's folder in the cloud. cloud_device_id owns the derivation --
 # one implementation, because backup and restore disagreeing here means a
 # device cannot find the archive it wrote.
 device_folder() {
-    local id
-    id=$(/usr/bin/cloud_device_id 2>/dev/null | tr -cd 'A-Za-z0-9_.-')
+    local id="" tool
+    tool=$(device_id_tool)
+    [ -n "${tool}" ] && id=$("${tool}" 2>/dev/null | tr -cd 'A-Za-z0-9_.-')
     [ -z "${id}" ] && id="device-unknown"
     echo "${id}"
+}
+
+# What this device's archives are named after. backuptool writes
+# <stamp>-<label>-ROCKNIX_SETTINGS.tar.gz with the label cloud_device_id
+# derives from the device tree ("Anbernic-RG-SP"), so an archive's name says
+# which handheld made it (2026-09-08). Letters, digits, _ and - only, so the
+# value is literal inside a regular expression. Empty when the helper is
+# missing; the callers then cannot tell this device's archives from another's,
+# and say so.
+device_label() {
+    local tool
+    tool=$(device_id_tool)
+    [ -n "${tool}" ] && "${tool}" --label 2>/dev/null | tr -cd 'A-Za-z0-9_-'
+}
+
+# The OS name the archive's name ends with. backuptool has OS_NAME from
+# /etc/profile; this script is started by systemd and by EmulationStation,
+# where no profile has run, so it is read from the file the profile reads it
+# from. Never empty, so the pattern built on it always names a whole archive.
+os_name() {
+    local name="${OS_NAME}"
+    [ -z "${name}" ] && name=$(sed -n 's/^OS_NAME="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' /etc/os-release 2>/dev/null | head -1)
+    [ -z "${name}" ] && name="ROCKNIX"
+    printf '%s\n' "${name}" | tr -cd 'A-Za-z0-9_-'
 }
 
 # Enhanced error reporting function
@@ -745,9 +781,10 @@ restore_system_files() {
         # seeding from the hardware address -- and under the new rule it
         # generates a different name. Without this it would find nothing and
         # report that it has no backup, while its backups sat one folder away.
-        local prior_name
-        prior_name=$(/usr/bin/cloud_device_id --legacy 2>/dev/null \
-                     | tr -cd 'A-Za-z0-9_.-')
+        local prior_name="" id_tool
+        id_tool=$(device_id_tool)
+        [ -n "${id_tool}" ] && prior_name=$("${id_tool}" --legacy 2>/dev/null \
+                                            | tr -cd 'A-Za-z0-9_.-')
         local prior_src="${REMOTENAME}${SETTINGS_REMOTE}/${prior_name}"
 
         if rclone lsf "${device_src}/" --include "/*.{zip,tar.gz}" 2>/dev/null | grep -q .; then
@@ -781,9 +818,47 @@ restore_system_files() {
         # with no way for backuptool to know which was meant. Names lead with
         # the date, so the last one in sort order is the most recent and no
         # metadata call is needed to establish that.
-        local newest
-        newest=$(rclone lsf --files-only --include "*.{zip,tar.gz}" "${restore_src}/" 2>/dev/null \
-                 | sort | tail -1)
+        #
+        # This device's own first. Since 2026-09-08 the name carries the
+        # device that wrote it (<stamp>-<label>-ROCKNIX_SETTINGS.tar.gz), and
+        # the folder may hold more than this device's: another handheld's
+        # archive that was restored here and sent up again, one written by a
+        # device sharing the folder (a cloned id, #86), and every archive from
+        # before names carried a device. When this device has a labelled
+        # archive here, the newest of those is the one to bring back. When it
+        # has none -- a fresh device that adopted another's folder to take
+        # over its settings (#26), or a folder holding only archives from
+        # before names carried a device -- the newest overall is, and the log
+        # says whose it was. An archive carrying this device's label but made
+        # on another device (the two ways cloud_backup's retention names) is
+        # taken for this device's own; the label cannot tell them apart.
+        local osn listing label mine newest
+        osn=$(os_name)
+        listing=$(rclone lsf --files-only --include "*.{zip,tar.gz}" "${restore_src}/" 2>/dev/null)
+        label=$(device_label)
+        mine=""
+        if [ -n "${label}" ]; then
+            mine=$(printf '%s\n' "${listing}" \
+                   | grep -E "^[0-9]{4}_[0-9]{2}_[0-9]{2}-[0-9]{6}-${label}-${osn}_SETTINGS\.tar\.gz$" | sort | tail -1)
+        fi
+        if [ -n "${mine}" ]; then
+            newest="${mine}"
+            log_message "Restoring this device's own newest settings backup (named for ${label}): ${newest}" "false"
+        else
+            newest=$(printf '%s\n' "${listing}" | grep -v '^$' | sort | tail -1)
+            if [ -n "${newest}" ]; then
+                local made_by
+                # The label is what sits between the stamp and -ROCKNIX_; an
+                # archive from before the label has nothing there.
+                made_by=$(printf '%s\n' "${newest}" \
+                          | sed -nE "s/^[0-9]{4}_[0-9]{2}_[0-9]{2}-[0-9]{6}-(.*)-${osn}_(SETTINGS|BACKUP)\.(tar\.gz|zip)\$/\1/p")
+                case "${made_by}" in
+                    '') made_by="made before backups were named after the device" ;;
+                    *)  made_by="made on ${made_by}" ;;
+                esac
+                log_message "No settings backup named for this device (${label:-no name}) in ${restore_src}; restoring the newest there, ${newest} (${made_by})" "true"
+            fi
+        fi
 
         if [ -z "${newest}" ]; then
             log_message "There is no settings backup in the cloud yet" "true" "WARN"
