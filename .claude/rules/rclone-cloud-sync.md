@@ -254,7 +254,13 @@ the boot sync and the menu rows run, and each was paid for on 2026-09-05 by an
   current by the time the sync starts. Its stamps sit beside `last-backup`:
   `/storage/.cache/cloud_sync/last-capture` (`<epoch> <rc> <mode>[!card]
   <unit|-> emu-exit=<N|?> <emulator>/<core>`, written on every run, including
-  a nothing-changed one; the unit may contain spaces, the two trailing fields
+  a nothing-changed one, **one line per mode** — `exit`, `rescan`, `full`,
+  `retire`, `usage` — each replaced only by a run of the same mode, so the
+  boot `--full` pass no longer overwrites the last exit's record (D-CLOUD-070,
+  #94); a reader picks its line by the third field with `!card` stripped, and
+  a one-line stamp from an older build is that mode's line —
+  `tools/cloud-capture-stamp-test` checks the update without a device; the unit
+  may contain spaces, the two trailing fields
   never do, and outside exit mode they read `emu-exit=? -/-`; `emu-exit` is
   the launch's exit as EmulationStation saw it -- `runemu.sh`'s 0/1, with the
   exit hotkey's kill reported as 0 (D-LAUNCH-001) -- not the emulator's own
