@@ -1113,3 +1113,20 @@ and every later `set_setting` waited on it until reboot.
   at the guest's size.
 - Verified: `qemu-args --headless --res 640x480` prints `-device
   virtio-gpu-pci,xres=640,yres=480`; a boot at that size is the next VM cycle's.
+
+## A phase failure leaves the scripts as 1, never as rclone's 3 or 4 (#99)
+
+`cloud_backup`, `cloud_restore`, `cloud_content_backup` and `cloud_content_restore`
+exit 3 when another cloud sync holds the lock and 4 when there is no network,
+and EmulationStation names those (`SKIPPED - ANOTHER CLOUD SYNC IS RUNNING`,
+`SKIPPED - NO NETWORK CONNECTION`). A failed phase used to carry rclone's own
+exit code up to the script's exit, and rclone's 3 is "directory not found":
+on the VM a restore against a cloud whose Saves folder did not exist yet ended
+`SKIPPED - ANOTHER CLOUD SYNC IS RUNNING` over `5 FILES RESTORED`. Both
+sentinels are raised by plain exits before any phase runs, so a 3 or 4 that
+reaches the final exit is rclone's and now leaves as 1 (a failure), with a WARN
+line in the log. The proper fix -- sentinel codes rclone never uses, changed in
+the scripts, EmulationStation, the autostart and the harness together -- is
+#99. Harness: the single-device suite now restores against the empty endpoint
+first and asserts exit 1. Player-facing: a run that could not reach a folder
+says FAILED, not that a sync was running.

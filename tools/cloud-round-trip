@@ -423,6 +423,15 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
 
     step("saves back up to the cloud")
     backend("reset")
+    # Nothing is in the cloud yet, so a restore must fail -- and fail as a
+    # failure. cloud_restore used to leave with rclone's own code for "directory
+    # not found", 3, which EmulationStation reads as its lock sentinel and
+    # showed as SKIPPED - ANOTHER CLOUD SYNC IS RUNNING over a run that had
+    # moved five files (VM, 2026-09-09; #99). 4 is the no-network sentinel.
+    rc = dev.run("cloud_restore --yes --saves-only >/dev/null 2>&1; echo $?", check=False).strip()
+    failures += not check(rc == "1",
+                          "a restore with no Saves folder in the cloud fails as 1, not as a sentinel (3/4)",
+                          f"cloud_restore exited {rc!r} against an empty endpoint")
     # As BACK UP SAVES TO THE CLOUD runs it: --saves-only, or the settings
     # phase rides along under a saves label (2026-09-06).
     dev.run("cloud_backup --yes --saves-only >/dev/null 2>&1 || true", check=False)
