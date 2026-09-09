@@ -160,3 +160,8 @@ an empty endpoint and asserts `1`; the distinct codes are #99, because they
 change scripts, EmulationStation, the autostart and the harness together.
 Check every reader that names a code (`GuiCloudTransfer`, `ThreadedCloudSync`,
 `cloudLastRunDetail`, CAP10) whenever one is added.
+
+**Closed 2026-09-09 (same day):** the sentinels are 75 and 69 in the four
+scripts and in EmulationStation's `CloudExit.h`, the remap is gone, and the
+harness asserts both the sentinels and that an empty endpoint's failure is
+not one (#99, D-CLOUD-074).
