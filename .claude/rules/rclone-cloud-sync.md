@@ -237,11 +237,17 @@ the boot sync and the menu rows run, and each was paid for on 2026-09-05 by an
   copies -- a filtered sync would weigh deleting what the filter hid -- and it
   skips the reachability `mkdir` and the `rmdirs` tidy, which are full-pass
   jobs and a remote round trip each.
-- **Exit 3 and exit 4 are skips, not failures.** 3: another sync holds
-  `/var/run/cloud_sync.lock`. 4: no default route (`ip route`, no packets
-  sent), answered in a tenth of a second instead of rclone's 10 s connect and
-  20 s overall timeouts. Neither writes a last-run stamp. The card shows both
-  as SKIPPED.
+- **Exit 75 and exit 69 are skips, not failures.** 75 (`EX_TEMPFAIL`,
+  `EXIT_LOCK_HELD`): another sync holds `/var/run/cloud_sync.lock`. 69
+  (`EX_UNAVAILABLE`, `EXIT_NO_NETWORK`): no default route (`ip route`, no
+  packets sent), answered in a tenth of a second instead of rclone's 10 s
+  connect and 20 s overall timeouts. Neither writes a last-run stamp. The
+  card shows both as SKIPPED. They were 3 and 4 until 2026-09-09 -- which
+  are also rclone's "directory not found" and "file not found", so a failed
+  phase carrying rclone's code up read as a phantom sync (#99, blindspot
+  33). A sentinel must be a code the wrapped tool cannot return; a phase
+  failure now passes rclone's code through unremapped, and every reader
+  (`GuiCloudTransfer`, `ThreadedCloudSync`, the harness) names 75 and 69.
 - **Under `--yes`, the console pauses are gone.** `pause N` is a no-op when
   nobody is reading; three of them were seven seconds of every headless run.
 - **Capture runs first, and it is not part of the sync.** Before the toggle
