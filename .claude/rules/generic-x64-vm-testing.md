@@ -169,6 +169,15 @@ that this never has to be a pattern.
 that, and a longer path fails to bind with an error that names nothing. The
 tool refuses one.
 
+**A handheld's panel size is a flag.** `run --headless --res 640x480 …`
+appends `xres=640,yres=480` to the virtio-gpu device (desktop and headless
+alike), the guest's DRM takes it as the preferred mode, and EmulationStation
+renders at it; without the flag the guest is QEMU's 1280×800 as before (#97).
+So the 640×480 look of the picker rows and the transfer page (#85, #95, #94)
+is a VM check first and a handheld confirmation second (D-QA-007): walk it at
+1280×800, then again with `--res 640x480`; `tools/vm-visual-qa` and the
+walks need no change, a `screendump` simply comes back at the guest's size.
+
 ## Driving EmulationStation from the monitor
 
 The keys the image maps (`/storage/.config/emulationstation/es_input.cfg`,

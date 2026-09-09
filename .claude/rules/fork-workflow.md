@@ -31,9 +31,10 @@ in `.githooks/pre-push` are the same list; change one and change the other.
   `.github/sessions/`, `.github/workflows/fork-*`
 - **Personal writing** — `docs/`, `plans/`
 - **Fork-only tools** — `tools/fork-publish-release`, `tools/cloud-test-backend`,
-  `tools/cloud-round-trip`, `tools/lint-audit-artifacts`, `tools/vm-visual-qa`,
+  `tools/cloud-round-trip`, `tools/cloud-capture-stamp-test` (its device-less stamp
+  check), `tools/lint-audit-artifacts`, `tools/vm-visual-qa`,
   `tools/vm-serial`, `tools/vm-pair`, `tools/vm-walks/`,
-  `tools/fork-worktree`, `tools/cloud-census` (the Gate 12 census reader, #21/#22), `tools/council/` (the council Facilitator, #70)
+  `tools/fork-worktree`, `tools/fork-newdrive`, `tools/cloud-census` (the Gate 12 census reader, #21/#22), `tools/council/` (the council Facilitator, #70)
 - **Council artifacts** — `research/`
 - **Copilot-era leftovers** — `.github/copilot-instructions.md`, `.github/instructions/`,
   `.github/shared-copilot-knowledge/`, `tmp/shared-copilot-knowledge/`,

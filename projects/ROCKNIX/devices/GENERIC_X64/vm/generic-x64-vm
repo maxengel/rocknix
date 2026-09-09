@@ -137,6 +137,14 @@ def qemu_command(profile, args):
             daemonize_args = ["-daemonize"]
     elif args.daemonize:
         raise ValueError("--daemonize needs --headless (a windowed QEMU has nowhere to go)")
+    # The guest's preferred mode. virtio-gpu-pci and virtio-gpu-gl-pci both
+    # take xres/yres, which set the EDID's preferred mode; the guest's DRM
+    # picks it and EmulationStation renders at it, so a handheld's 640x480
+    # is a VM check first (fork #97, D-QA-007). Without the flag QEMU's own
+    # default stands (1280x800), as before.
+    if args.res:
+        xres, yres = args.res
+        display_device = f"{display_device},xres={xres},yres={yres}"
 
     # SSH keeps a loopback bind unless --net lan is given (the image ships
     # a well-known root password).
@@ -508,9 +516,30 @@ def add_qemu_options(parser):
             "on the profile's address are one device to the cloud"
         ),
     )
+    parser.add_argument(
+        "--res",
+        type=resolution,
+        default=None,
+        metavar="WxH",
+        help=(
+            "the guest display's preferred mode, e.g. 640x480 -- appended to the "
+            "virtio-gpu device as xres/yres, for the desktop and headless variants "
+            "alike (default: QEMU's own, 1280x800). Check a handheld panel's look "
+            "on the VM first"
+        ),
+    )
     parser.add_argument("--ovmf-code")
     parser.add_argument("--ovmf-vars-template")
     parser.add_argument("--ovmf-vars")
+
+
+def resolution(value):
+    """WxH, both decimal and nonzero, as the (W, H) pair. QEMU would reject a
+    malformed xres= only once it starts; argparse says no before that."""
+    m = re.fullmatch(r"(\d+)x(\d+)", value)
+    if not m or "0" in (m.group(1).lstrip("0") or "0", m.group(2).lstrip("0") or "0"):
+        raise argparse.ArgumentTypeError(f"not a resolution (WxH, e.g. 640x480): {value!r}")
+    return int(m.group(1)), int(m.group(2))
 
 
 def mac_address(value):

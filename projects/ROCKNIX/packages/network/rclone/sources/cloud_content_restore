@@ -31,8 +31,9 @@ log_message() {
 
 # One cloud transfer at a time, whoever asked for it.
 #
-# Three callers can start one: the boot-time sync (autostart/102-cloud-saves),
-# EmulationStation after a game exits, and a person in the menu. Until
+# Three callers can start one: EmulationStation at boot (the startup sync,
+# which ran headless from autostart/102-cloud-saves until #94), EmulationStation
+# after a game exits, and a person in the menu. Until
 # 2026-09-04 the game-exit path was an OS hook with a pgrep guard; moving it
 # into ES kept the visible progress and dropped the guard, so exiting a game
 # during the boot sync started a second rclone against the same remote. Two
@@ -458,19 +459,34 @@ match_run() {
     # as a unit while it runs, and the summary at the end names what went:
     # the numbers the confirmation showed, per system, so the last screen
     # answers the first one.
-    local total_bytes=0 removed_detail="" unit_i=0 unit_n=${#SYS[@]}
+    local total_bytes=0 removed_detail="" unit_i=0 unit_n=${#SYS[@]} planned
     for sys in "${SYS[@]}"; do
-        line=$(match_plan_one "${sys}")
-        IFS='|' read -r sys verb files bytes <<< "${line}"
         unit_i=$((unit_i + 1))
+        # Every chosen system is an item on the page, announced before its
+        # own dry run -- so the page names what is being checked while the
+        # check runs -- and announced whether or not it turns out to need
+        # anything. The page shows ITEM i OF n with this script's n, so n has
+        # to be the number of announcements the run makes and i their running
+        # count; until 2026-09-09 a system with nothing to do was skipped
+        # without one, and a run over three systems ended on ITEM 2 OF 3
+        # (#95). "Already matches the cloud" is that item's outcome, not a
+        # reason to hide it, and counting the work first would have held the
+        # page on WORKING with no item through one dry run per system. The
+        # preview (apply=0) prints plan lines for the confirmation and no
+        # markers, as before.
+        [ "${apply}" = "1" ] && echo ">>> unit ${sys}|${unit_i}|${unit_n}"
+        planned=$(match_plan_one "${sys}")
+        IFS='|' read -r _ verb files bytes <<< "${planned}"
         case "${verb}" in
-            none) continue ;;
+            none)
+                [ "${apply}" = "1" ] && echo "Nothing to remove from ${sys}: it already matches the cloud."
+                continue
+            ;;
             remove)
                 total_removed=$((total_removed + files))
                 total_bytes=$((total_bytes + bytes))
                 removed_detail="${removed_detail}${removed_detail:+,}${sys}:${files}:${bytes}"
                 if [ "${apply}" = "1" ]; then
-                    echo ">>> unit ${sys}|${unit_i}|${unit_n}"
                     echo "Removing ${sys}: ${files} files (not in your cloud)"
                     rclone delete "${DEST}/${sys}" \
                         "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${METADATA_EXCLUDES[@]}" \
@@ -486,7 +502,6 @@ match_run() {
                 total_bytes=$((total_bytes + bytes))
                 removed_detail="${removed_detail}${removed_detail:+,}${sys}:${files}:${bytes}"
                 if [ "${apply}" = "1" ]; then
-                    echo ">>> unit ${sys}|${unit_i}|${unit_n}"
                     echo "Matching ${sys} to the cloud..."
                     # --max-delete is the fail-closed half: if reality has
                     # drifted from the preview the player agreed to, this
@@ -509,6 +524,14 @@ match_run() {
                     # page then said 224 KB, 2026-09-07).
                     echo "${sys}|sync|${files}|${bytes}"
                 fi
+            ;;
+            *)
+                # match_plan_one prints none, remove or sync; anything else
+                # is a failure to plan, and an announced item must not end
+                # in silence.
+                [ "${apply}" = "1" ] && echo "Could not check ${sys} against the cloud."
+                log_message "match: no plan for ${sys} (${planned})"
+                rc=1
             ;;
         esac
     done

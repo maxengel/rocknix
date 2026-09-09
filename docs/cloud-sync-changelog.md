@@ -70,8 +70,10 @@ config`. That is now a fallback rather than the path.
 
 - **Upload, download and two-way sync**, in `GAME SETTINGS > CLOUD SETTINGS`,
   each showing when it last ran and whether it worked.
-- **Sync at startup**, once the network is actually up — it waits for
-  connectivity rather than failing at boot.
+- **Sync at startup**, run by EmulationStation with the toggle on and shown
+  on the same progress card as the game-exit sync (since 2026-09-09, #94;
+  it used to run headless from the boot autostart, waiting for the network
+  and then saying nothing).
 - **Sync when you exit a game**, reported on screen. It used to run silently in
   the background, which is indistinguishable from not running at all.
 - **Two-way sync never deletes.** The newest copy of each save is kept on both
@@ -1020,3 +1022,94 @@ and every later `set_setting` waited on it until reboot.
   session; RetroArch's own quit (its hotkey or menu) exits 0 and is
   unaffected. Upstream defect; offered upstream as its own change once it
   has run in a built image.
+
+## The settings phase is one item, named SETTINGS (2026-09-09)
+
+- `cloud_backup` and `cloud_restore` announce the settings-archive phase as
+  `>>> unit SETTINGS||`; it read `SETTINGS BACKUP`. EmulationStation now
+  announces the same label itself before `backuptool` writes the archive, and
+  the transfer page folds a repeated identical label into one item, so the
+  archive's write and its transfer read as one item, named with the D-UI-022
+  tier word (#95). The saves phase is still `>>> unit SAVES||`; the content
+  scripts' `>>> unit <system>|i|n` are unchanged.
+- **The scripts can announce units the picker did not list.** Under
+  `--selected`, `cloud_content_backup` adds `bios` whenever the tier moves ROMs
+  and the device has a BIOS folder, and drops a selected system this device has
+  no content for; `cloud_content_restore --selected` adds `bios` whenever the
+  cloud has one. Game content is never a unit of its own — the scraper's
+  folders and the game list move inside the system's unit. So the page's
+  ITEM i OF n starts from the picker's count and is refined from the scripts'
+  own `n` (#95).
+- **Every announced `n` is the number of announcements the run makes.** The
+  match flow (`cloud_content_restore --match --apply`) numbered its items
+  across every chosen system but announced only the ones with work, so a run
+  over three systems ended on ITEM 2 OF 3. It now announces every chosen
+  system, before its own dry run, and says "Nothing to remove from X: it
+  already matches the cloud" for one with nothing to do — that is the item's
+  outcome, not a reason to hide it, and counting the work first would have
+  held the page on WORKING with no item through one dry run per system. The
+  `--selected` loops in both content scripts announce every unit they were
+  built from and skip none. `tools/cloud-round-trip` now checks the protocol
+  on each of those three runs — one `n`, equal to the number of markers, `i`
+  running 1..n — and runs a match with a system that exists nowhere to see it
+  announced.
+- Verified: the label by grep over the tree (nothing in `tools/` or `docs/`
+  parsed the old one); the page's behaviour is the EmulationStation half of
+  #95, checked on the VM with it.
+
+## The startup sync is EmulationStation's, and visible (2026-09-09)
+
+- `autostart/102-cloud-saves` no longer runs the boot pair. With SYNC SAVES
+  DURING STARTUP on, EmulationStation runs `cloud_restore --yes --method=copy
+  --update --saves-only` and then `cloud_backup` the same way, through the
+  progress card the game-exit sync uses, so a player sees it run and how it
+  ended, and a game cannot launch alongside it (the gate that already ships,
+  D-CLOUD-038). The autostart's headless copy — a ping loop against
+  `google.com`, then both scripts with their output discarded — left no sign on
+  screen and sat outside that gate; kept, it would only have raced the visible
+  run for the transfer lock and reported SKIPPED into `/dev/null` (#94).
+- The `cloud_capture --full` pass still runs from the autostart, gated on a
+  cloud-saves toggle and detached, exactly as before (D-CLOUD-064).
+- **Upgrade**: nothing to migrate. The toggle key is unchanged; a device with it
+  on gets the visible sync at its next boot. What changes for a player: the
+  sync starts a few seconds later (after EmulationStation is up, when the
+  network is likelier to be there), and it shows.
+- Verified: the autostart statically (CAP10 (d) still finds the `--full` gate);
+  the EmulationStation half is #94's, checked on the VM with it.
+
+## `last-capture` keeps one line per mode (2026-09-09)
+
+- `cloud_capture`'s durable stamp `/storage/.cache/cloud_sync/last-capture`
+  held one line, rewritten on every run, so the boot `--full` pass wrote over
+  the record of the last game exit (RG SP, 2026-09-09: an exit at 08:19Z,
+  `full - emu-exit=? -/-` in its place after the evening's boot). It now holds
+  **one line per mode** — `exit`, `rescan`, `full`, `retire`, and `usage` for
+  a bad invocation — each replaced only by a run of the same mode
+  (D-CLOUD-070, #94). The fields are unchanged; a reader picks its line by the
+  third field with any `!card` marker stripped, and finds the latest run of
+  any mode by the largest first field. The file is assembled in a temp file
+  and moved into place, so a reader never sees a torn stamp, and lines with
+  fewer than three fields are dropped, so it can never grow past one line per
+  mode.
+- **Upgrade**: a stamp from an older build is a single line and is read as its
+  mode's line; the first run of another mode adds a line beside it rather than
+  replacing it. Nothing to migrate.
+- Verified: `tools/cloud-capture-stamp-test` lifts `finish()` out of the
+  script and runs the sequence with no device — 15 PASS against this build, 8
+  FAIL against the previous `finish()` (one line, overwritten); the harness's
+  CAP12 asserts the same on the VM (not yet run at the time of writing).
+
+## The VM runs at a handheld's panel size (2026-09-09)
+
+- `generic-x64-vm run --res WxH` (and `qemu-args`) appends `xres=W,yres=H` to
+  the virtio-gpu device — `virtio-gpu-gl-pci` on a desktop, `virtio-gpu-pci`
+  under `--headless` — so the guest's preferred mode is the panel's and
+  EmulationStation renders at it. Without the flag the guest is QEMU's
+  1280×800 as before; `--res 640` and `--res 0x480` are refused before QEMU
+  starts (#97).
+- Consequence for QA (D-QA-007): the "640×480 look" boxes on #85, #94 and
+  #95 are VM checks first and a handheld confirmation second;
+  `tools/vm-visual-qa` and the walks need no change, a `screendump` comes back
+  at the guest's size.
+- Verified: `qemu-args --headless --res 640x480` prints `-device
+  virtio-gpu-pci,xres=640,yres=480`; a boot at that size is the next VM cycle's.

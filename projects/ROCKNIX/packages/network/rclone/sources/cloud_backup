@@ -73,8 +73,9 @@ log_message() {
 
 # One cloud transfer at a time, whoever asked for it.
 #
-# Three callers can start one: the boot-time sync (autostart/102-cloud-saves),
-# EmulationStation after a game exits, and a person in the menu. Until
+# Three callers can start one: EmulationStation at boot (the startup sync,
+# which ran headless from autostart/102-cloud-saves until #94), EmulationStation
+# after a game exits, and a person in the menu. Until
 # 2026-09-04 the game-exit path was an OS hook with a pgrep guard; moving it
 # into ES kept the visible progress and dropped the guard, so exiting a game
 # during the boot sync started a second rclone against the same remote. Two
@@ -793,7 +794,12 @@ backup_system_files() {
     echo
     log_message "====================================" "true"
     log_message "STARTING SETTINGS BACKUP FILE TRANSFER" "true"
-    echo ">>> unit SETTINGS BACKUP||"
+    # The transfer page's marker for this phase. The label is the item's
+    # name on the page (D-UI-022: settings), and EmulationStation announces
+    # `>>> unit SETTINGS||` itself before backuptool writes the archive; the
+    # page folds a repeated identical label into the same item, so this one
+    # must match it byte for byte (#95). It read SETTINGS BACKUP until then.
+    echo ">>> unit SETTINGS||"
     log_message "====================================" "true"
     
     if [ "${BACKUPFILE_BACKUP_OPTION}" == "yes" ]; then

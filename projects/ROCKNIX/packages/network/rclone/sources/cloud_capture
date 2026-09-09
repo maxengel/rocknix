@@ -23,15 +23,22 @@
 # from "never arrived".
 #
 # Everything diagnostic goes to /var/log, which is tmpfs and gone at the next
-# boot (D-CLOUD-027). So every run also leaves a one-line stamp under
-# /storage/.cache/cloud_sync -- last-capture, and capture-failures for the
-# runs that could not record -- which is how "did any exit go unrecorded on
-# this device?" gets answered after a reboot. last-capture is
+# boot (D-CLOUD-027). So every run also leaves a stamp under
+# /storage/.cache/cloud_sync -- a line in last-capture, and one in
+# capture-failures for the runs that could not record -- which is how "did
+# any exit go unrecorded on this device?" gets answered after a reboot.
+# last-capture holds ONE LINE PER MODE (exit, rescan, full, retire; usage for
+# a bad invocation), each replaced only by a run of the same mode
+# (D-CLOUD-070, #94): the boot --full pass used to write over the record of
+# the last game exit. A stamp from before that is a single line, and reads as
+# that mode's line. Each line is
 #
 #   <epoch> <rc> <mode>[!card] <unit|-> emu-exit=<N|?> <emulator>/<core>
 #
 # The unit may contain spaces (a ROM stem); the two trailing fields never do,
-# so a reader takes three fields from the front and two from the back.
+# so a reader takes three fields from the front and two from the back, picks
+# its line by the third field with any !card marker stripped, and finds the
+# most recent run of any mode by the largest first field.
 # emu-exit is the launch's exit as EmulationStation saw it -- runemu.sh's
 # status, 0 or 1: it collapses the emulator's own code, and reports the exit
 # hotkey's kill (137/143) as 0 -- not the emulator's code. That and the frozen
@@ -152,9 +159,10 @@ elapsed_ms() {
 }
 
 # ---------------------------------------------------------------------------
-# The durable stamp, on EVERY run (D-CLOUD-027). /var/log dies with the boot;
-# /storage/.cache is device-local, so it is never swept into a settings backup
-# and restored onto a device that never made the run.
+# The durable stamp, on EVERY run (D-CLOUD-027), one line per mode
+# (D-CLOUD-070). /var/log dies with the boot; /storage/.cache is device-local,
+# so it is never swept into a settings backup and restored onto a device that
+# never made the run.
 # ---------------------------------------------------------------------------
 MODE=""
 CARD=""
@@ -163,16 +171,33 @@ RC=0
 REASON=""
 
 finish() {
-    local rc="${1:-${RC}}" reason="${2:-${REASON}}" now emu core
+    local rc="${1:-${RC}}" reason="${2:-${REASON}}" now emu core mode
     now="$(date +%s)"
     mkdir -p "${CACHE}" 2>/dev/null
     # The first four fields keep their positions; the launch's exit as passed
     # to --exit and the frozen pair follow (header). Whitespace inside a token would break the
     # from-the-back parse, so it is folded away; `-` stands for nothing.
     emu="${EMULATOR//[[:space:]]/_}"; core="${CORE//[[:space:]]/_}"
-    printf '%s %s %s %s emu-exit=%s %s/%s\n' "${now}" "${rc}" "${MODE:-usage}${CARD}" "${UNIT:--}" \
-        "${EXITCODE:-?}" "${emu:--}" "${core:--}" \
-        > "${CACHE}/last-capture" 2>/dev/null
+    mode="${MODE:-usage}"
+    # One line per mode (D-CLOUD-070, #94). A single line, rewritten on every
+    # run, let the boot --full pass overwrite the record of the last game exit
+    # (RG SP, 2026-09-09: an exit at 08:19Z, `full - emu-exit=? -/-` where it
+    # had been ten hours later), so a row saying how the last exit went would
+    # have described the boot pass. Every other mode's line is kept exactly as
+    # it is; the line whose third field -- any !card marker stripped -- is
+    # this run's mode is dropped, and this run's line goes last. Lines with
+    # fewer than three fields are noise and are dropped too, so the file can
+    # never grow past one line per mode. Assembled in a temp file in the same
+    # directory and moved into place, so a reader never sees a torn stamp; a
+    # one-line stamp from before this is simply its mode's line.
+    {
+        awk -v m="${mode}" 'NF >= 3 { f = $3; sub(/!.*$/, "", f); if (f != m) print }' \
+            "${CACHE}/last-capture" 2>/dev/null
+        printf '%s %s %s %s emu-exit=%s %s/%s\n' "${now}" "${rc}" "${mode}${CARD}" "${UNIT:--}" \
+            "${EXITCODE:-?}" "${emu:--}" "${core:--}"
+    } > "${CACHE}/.last-capture.$$" 2>/dev/null \
+        && mv -f "${CACHE}/.last-capture.$$" "${CACHE}/last-capture" 2>/dev/null \
+        || rm -f "${CACHE}/.last-capture.$$" 2>/dev/null
     if [ "${rc}" != "0" ]; then
         {
             cat "${CACHE}/capture-failures" 2>/dev/null

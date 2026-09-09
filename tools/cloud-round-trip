@@ -15,9 +15,9 @@ suite (--only A1,A9 runs just those): a conflict is a change on both sides
 since two devices last agreed, and only a pair can make one (D-QA-009).
 
     ./tools/cloud-round-trip --host root@127.0.0.1 --port 10022 --identity ... \
-        --path-prefix /tmp/qa-bin --only CAP1,CAP2,CAP3,CAP4,CAP5,CAP6,CAP7,CAP8,CAP9,CAP10
+        --path-prefix /tmp/qa-bin --only CAP1,CAP2,CAP3,CAP4,CAP5,CAP6,CAP7,CAP8,CAP9,CAP10,CAP11,CAP12
 
---only CAP1..CAP10 runs #21's capture fixtures against a staged cloud_capture
+--only CAP1..CAP12 runs #21's capture fixtures against a staged cloud_capture
 on one device with no cloud at all -- no MinIO, no remote, no second guest
 (see the capture section below for what to stage). --only A15 runs #86's
 identity fixture: one device and the QA endpoint, no second guest. --list
@@ -332,7 +332,7 @@ def list_fixtures():
     print("\nsingle-device cloud fixtures (one device and the QA endpoint; --only A15):")
     for key, title, _ in SOLO_FIXTURES:
         print(f"  {key:<10}{title}")
-    print("\ncapture fixtures (one device, no cloud; --only CAP1,...,CAP10):")
+    print("\ncapture fixtures (one device, no cloud; --only CAP1,...,CAP12):")
     for key, title, _ in CAPTURE_FIXTURES:
         print(f"  {key:<10}{title}")
 
@@ -351,7 +351,7 @@ def main():
                     help="ssh port of a second device -- the VM pair's guest b -- which turns on the two-device fixtures (D-QA-009)")
     ap.add_argument("--second-host", help="ssh target of the second device (default: the same as --host)")
     ap.add_argument("--only", help="run only these fixtures, skipping the single-device suite (comma-separated: A1,A9,CONTRACT "
-                    "for the two-device set, which needs --second-port; CAP1..CAP10 for the capture set, one device, no cloud)")
+                    "for the two-device set, which needs --second-port; CAP1..CAP12 for the capture set, one device, no cloud)")
     ap.add_argument("--list", action="store_true", help="print the fixture registries and exit without touching a device")
     ap.add_argument("--transport", default="copy,bisync", help="transports for #9's contract fixtures: copy, bisync, or both (default)")
     ap.add_argument("--bisync-flags", default="", help="extra flags for every rclone bisync run (Gate 11 variants)")
@@ -778,7 +778,11 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     dev.run(f'touch -d "$(date -d @$(( $(date +%s) + 120 )) \'+%Y-%m-%d %H:%M:%S\')" {shlex.quote(croot)}/gamelist.xml')
     dev.run(f"rm -f {shlex.quote(croot)}/Real.rom")
     dev.run("sync", check=False)
-    dev.run("cloud_content_restore --with-media --selected >/dev/null 2>&1 || true", check=False)
+    _, out = run_rc(dev, "cloud_content_restore --with-media --selected")
+    ok, items, detail = unit_protocol(out)
+    failures += not check(ok and CONTENT_DIR in items,
+                          f"--selected announced every unit it moved, numbered across the run ({detail})",
+                          f"the unit markers do not add up to the run (#95): {detail}")
     # The restore must have done something before "the local one survived"
     # means anything: the ROM removed above is back.
     failures += not check(bool(dev.sha(f"{croot}/Real.rom")),
@@ -949,11 +953,30 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     other = f"{CONTENT_DIR}-unselected"
     dev.write(f"/storage/roms/{other}/game.rom", b"should not be uploaded")
     backend("reset")
-    dev.run("cloud_content_backup --selected >/dev/null 2>&1 || true", check=False)
+    _, out = run_rc(dev, "cloud_content_backup --selected")
+    ok, items, detail = unit_protocol(out)
     listing = backend("ls")
     failures += not check("game.rom" not in listing,
                           "an unselected system was not uploaded",
                           "an UNSELECTED system was uploaded")
+    failures += not check(ok and CONTENT_DIR in items and other not in items,
+                          f"--selected announced the selected units and only those, numbered across the run ({detail})",
+                          f"the unit markers do not add up to the run (#95): {detail}")
+    # The match flow numbers its items the same way, and every chosen system
+    # is one -- including one with nothing to do. Until 2026-09-09 such a
+    # system was skipped without an announcement while n still counted it,
+    # so a run over three systems ended on ITEM 2 OF 3 (#95). `ghost` exists
+    # in neither the cloud nor the device: its plan is `none`.
+    ghost = "ghost-never-a-system"
+    dev.run(f"cloud_content_restore --set-systems {shlex.quote(CONTENT_DIR)} {ghost} >/dev/null 2>&1 || true", check=False)
+    rc, out = run_rc(dev, "cloud_content_restore --match --apply")
+    ok, items, detail = unit_protocol(out)
+    failures += not check(rc == 0 and ok and sorted(items) == sorted([CONTENT_DIR, ghost]),
+                          f"--match --apply announced both chosen systems as ITEM i OF 2, the one with nothing to do included ({detail})",
+                          f"exit {rc}; {detail}; tail {out.strip()[-160:]!r}")
+    failures += not check(f"Nothing to remove from {ghost}" in out,
+                          "and said so for the system that already matches",
+                          "no 'Nothing to remove' line for the system with nothing to do")
     dev.run(f"rm -rf /storage/roms/{shlex.quote(other)}")
     dev.run("rm -f /storage/.cache/cloud_sync/content-systems")
 
@@ -1066,14 +1089,17 @@ ID_FILE = "/storage/.config/cloud_sync-device-id"
 LOG = "/var/log/cloud_sync.log"
 CACHE = "/storage/.cache/cloud_sync"
 
-# The writers of the saves tree (#22 R1), as they run today: the boot
-# autostart (102-cloud-saves); GuiMenu.cpp's SYNC SAVES WITH THE CLOUD, BACK
-# UP SAVES TO THE CLOUD and RESTORE SAVES FROM THE CLOUD (the transfer page's
-# SAVES tick runs the last two); FileData.cpp's game-exit push; and the two
-# scripts from a shell. A1 runs each one. When a writer changes, this table
-# changes in the same commit: the fixture tests what the labels run.
+# The writers of the saves tree (#22 R1), as they run today: the startup
+# sync EmulationStation runs at boot with SYNC SAVES DURING STARTUP on (the
+# same pair as the SYNC SAVES WITH THE CLOUD row; it ran headless from the
+# autostart 102-cloud-saves until #94); GuiMenu.cpp's SYNC SAVES WITH THE
+# CLOUD, BACK UP SAVES TO THE CLOUD and RESTORE SAVES FROM THE CLOUD (the
+# transfer page's SAVES tick runs the last two); FileData.cpp's game-exit
+# push; and the two scripts from a shell. A1 runs each one. When a writer
+# changes, this table changes in the same commit: the fixture tests what the
+# labels run.
 WRITERS = [
-    ("the boot pair (autostart 102-cloud-saves)",
+    ("the startup sync (EmulationStation at boot; the autostart's pair until #94)",
      "cloud_restore --yes --method=copy --update --saves-only; "
      "cloud_backup --yes --method=copy --update --saves-only"),
     ("SYNC SAVES WITH THE CLOUD",
@@ -1132,6 +1158,34 @@ def set_key(dev, key, val):
 def apply_settings(dev, settings):
     for key, val in settings.items():
         set_key(dev, key, val)
+
+
+UNIT_MARK = re.compile(r"^>>> unit (.*)\|(\d*)\|(\d*)$")
+
+
+def unit_protocol(out):
+    """What the transfer page needs from a script's `>>> unit <item>|i|n`
+    markers (#95): the page shows ITEM i OF n with the script's own n, so
+    every n must be the same and equal to the number of announcements the
+    run actually made, and i their running count, 1..n in order. A unit
+    skipped without an announcement, or a stale n, reads on the page as a
+    run that ended short (ITEM 2 OF 3). The saves scripts announce
+    `SAVES||` and `SETTINGS||` with no numbers and let the page count; that
+    shape passes when every marker in the run is unnumbered, and a mix does
+    not. Returns (ok, items in order, a line for the message). A run with no
+    marker at all is (True, [], ...) -- the caller says whether it expected one."""
+    marks = [m.groups() for m in map(UNIT_MARK.match, out.splitlines()) if m]
+    items = [item for item, _, _ in marks]
+    detail = "announced " + ", ".join(f"{item}|{i}|{n}" for item, i, n in marks) if marks else "no unit announcement"
+    if not marks:
+        return True, items, detail
+    if all(i == "" and n == "" for _, i, n in marks):
+        return True, items, detail
+    ok = (all(i.isdigit() and n.isdigit() for _, i, n in marks)
+          and len({n for _, _, n in marks}) == 1
+          and int(marks[0][2]) == len(marks)
+          and [int(i) for _, i, _ in marks] == list(range(1, len(marks) + 1)))
+    return ok, items, detail
 
 
 def run_rc(dev, cmd, env=""):
@@ -2253,7 +2307,7 @@ def run_solo(dev, root, remote, args, settings, only):
 # autostart does (--full), and read the working copy it writes at
 # /storage/.cache/cloud_sync/manifest-<device-id>.json. The producer opens no
 # socket and spawns no rclone, so these need neither MinIO nor a second guest:
-# --only CAP1,...,CAP10 prepares the device locally (prepare_local) and the
+# --only CAP1,...,CAP12 prepares the device locally (prepare_local) and the
 # QA endpoint is never asked for anything.
 #
 # The harness copies nothing onto the device. Stage the producer and its two
@@ -2264,7 +2318,7 @@ def run_solo(dev, root, remote, args, settings, only):
 #         projects/ROCKNIX/packages/network/rclone/sources/{cloud_capture,cloud_device_id,cloud_saves_root} \
 #         root@127.0.0.1:/tmp/qa-bin/ && ssh ... chmod +x /tmp/qa-bin/cloud_*
 #     ./tools/cloud-round-trip --host root@127.0.0.1 --port 10022 --identity /tmp/rocknix-vm-pair/qa-key \
-#         --path-prefix /tmp/qa-bin --only CAP1,CAP2,CAP3,CAP4,CAP5,CAP6,CAP7,CAP8,CAP9,CAP10,CAP11
+#         --path-prefix /tmp/qa-bin --only CAP1,CAP2,CAP3,CAP4,CAP5,CAP6,CAP7,CAP8,CAP9,CAP10,CAP11,CAP12
 #
 # CAP10 (d) also reads autostart/102-cloud-saves: stage it into the same
 # directory to check the repo's copy rather than the image's. CAP11 copies
@@ -2403,20 +2457,48 @@ def iso_mtime(dev, path):
     return dev.run(f"date -u -d @$(stat -c %Y {shlex.quote(path)}) +%FT%TZ").strip()
 
 
-def last_capture(dev):
-    """The durable stamp as (epoch, rc, mode, unit, "emu-exit=<N|?>",
-    "<emulator>/<core>"), or None for anything else -- a four-field stamp
-    from before the launch's exit and the frozen pair were carried is None
-    too, so every check on the trailing fields fails against it. emu-exit is
-    what ES passed to --exit: runemu.sh's 0/1, not the emulator's code. The
-    unit may contain spaces (a ROM stem); the two trailing fields never do,
-    so the parse takes three fields from the front and two from the back."""
-    line = dev.run(f"cat {CACHE}/last-capture 2>/dev/null || true").strip()
-    parts = line.rsplit(None, 2)
+def last_capture_lines(dev):
+    """Every line of the durable stamp as written: one per mode since
+    D-CLOUD-070, one in all from a producer before it. Blank lines dropped,
+    nothing else touched."""
+    out = dev.run(f"cat {CACHE}/last-capture 2>/dev/null || true")
+    return [l for l in out.splitlines() if l.strip()]
+
+
+def stamp_mode(line):
+    """A stamp line's mode: the third field with any !card marker stripped,
+    or None for a line too short to have one."""
+    fields = line.split()
+    return fields[2].split("!")[0] if len(fields) >= 3 else None
+
+
+def parse_capture_line(line):
+    """One stamp line as (epoch, rc, mode, unit, "emu-exit=<N|?>",
+    "<emulator>/<core>"), or None for anything else -- a four-field line from
+    before the launch's exit and the frozen pair were carried is None too, so
+    every check on the trailing fields fails against it. emu-exit is what ES
+    passed to --exit: runemu.sh's 0/1, not the emulator's code. The unit may
+    contain spaces (a ROM stem); the two trailing fields never do, so the
+    parse takes three fields from the front and two from the back."""
+    parts = (line or "").strip().rsplit(None, 2)
     if len(parts) != 3 or not parts[1].startswith("emu-exit=") or "/" not in parts[2]:
         return None
     front = parts[0].split(None, 3)
     return (*front, parts[1], parts[2]) if len(front) == 4 else None
+
+
+def last_capture(dev, mode):
+    """The stamp's line for one mode, parsed, or None when there is none. The
+    file holds one line per mode (D-CLOUD-070, CAP12), so a check on an exit
+    capture reads the exit line whatever --full or --retire has run since --
+    and a one-line stamp from an older producer is read the same way, as its
+    mode's line. Were the file ever to hold two lines of one mode, the later
+    one is taken; CAP12 is where that would be a FAIL."""
+    found = None
+    for line in last_capture_lines(dev):
+        if stamp_mode(line) == mode:
+            found = line
+    return parse_capture_line(found) if found is not None else None
 
 
 def failures_lines(dev):
@@ -2525,7 +2607,7 @@ def fx_cap1(p):
                    f"written into the saves tree: {newer.splitlines()[:3]}")
     size = a.run("wc -c < /tmp/qa-cap1.out 2>/dev/null || echo -1").strip()
     f += not check(size == "0", "stdout was empty (ES reads that pipe)", f"{size} byte(s) on stdout")
-    stamp = last_capture(a)
+    stamp = last_capture(a, "exit")
     f += not check(stamp is not None and stamp[1] == "0" and stamp[2].split("!")[0] == "exit" and stamp[3] == unit,
                    f"{CACHE}/last-capture records rc 0, mode exit, the unit", f"last-capture is {stamp!r}")
     f += not check(stamp is not None and stamp[4] == "emu-exit=1" and stamp[5] == "retroarch/mgba",
@@ -2930,7 +3012,7 @@ def fx_cap7(p):
                    "retires_pub null and `at` ISO-UTC on it", f"rows {retired}")
     f += not check(members(m, "gba:Re") is not None and not any(x in members(m, "gba:Re") for x in (st("Re", 2), st("Re", 2) + ".png")),
                    "units[gba:Re].members no longer names either", f"members {members(m, 'gba:Re')}")
-    stamp = last_capture(a)
+    stamp = last_capture(a, "retire")
     f += not check(stamp is not None and stamp[2] == "retire" and stamp[4:] == ("emu-exit=?", "-/-"),
                    "last-capture for a --retire reads mode retire, emu-exit=? and -/- (no game ran)", f"last-capture is {stamp!r}")
     # A thumbnail alone (the manager can delete just the picture): the
@@ -3199,7 +3281,7 @@ def fx_cap9(p):
     # for an empty launchedEmulator; this is the producer's own guard.
     n0 = failures_lines(a)
     rc, _ = run_rc(a, "cloud_capture --system tools --rom /storage/roms/tools/x.sh --emulator '' --core '' --started 0 --exit 0")
-    stamp = last_capture(a)
+    stamp = last_capture(a, "exit")
     f += not check(rc == 0 and manifest_of(a) is None and failures_lines(a) == n0 and stamp is not None and stamp[1] == "0",
                    "--emulator '' (a system with no emulator): exit 0, nothing recorded, no capture-failures row, last-capture rc 0",
                    f"exit {rc}; manifest {'created' if manifest_of(a) is not None else 'absent'}; failures {failures_lines(a)} vs {n0}; stamp {stamp!r}")
@@ -3216,7 +3298,7 @@ def fx_cap9(p):
                    "SAVESPATH not a directory: exit 1, no manifest, ERROR naming the path",
                    f"exit {rc}; manifest {'created' if manifest_of(a) is not None else 'absent'}; log {tail.strip()[-80:]!r}")
     f += not check(failures_lines(a) > n0, "capture-failures gained a line", "no capture-failures line for a refused run")
-    stamp_b = last_capture(a)
+    stamp_b = last_capture(a, "exit")
 
     plant(a, root, "gba/Policy.srm", os.urandom(512))
     rc, _ = capture(a, root, "gba", rom)
@@ -3261,7 +3343,7 @@ def fx_cap9(p):
     f += not check(rc == 1 and manifest_stat(a) == m0 and "ERROR" in tail and "schema" in tail,
                    "a manifest claiming a newer schema: exit 1, untouched, ERROR naming the schema",
                    f"exit {rc}; stat {'unchanged' if manifest_stat(a) == m0 else 'CHANGED'}; log {tail.strip()[-80:]!r}")
-    stamp_e = last_capture(a)
+    stamp_e = last_capture(a, "exit")
     reason = a.run(f"tail -1 {CACHE}/capture-failures 2>/dev/null || true").strip()
     f += not check(stamp_b is not None and stamp_b[1] == "1" and stamp_e is not None and stamp_e[1] == "1",
                    "last-capture recorded rc 1 after both refusals (a stamp that survives the reboot /var/log does not)",
@@ -3319,10 +3401,11 @@ def boot_caller_gate(lines):
     closes, and the first unmatched `if` is the one guarding us -- an `else`
     or `elif` met first means the line runs when that test is false. It must
     name BOTH toggles (orchestrator decision 2: a gameexit-only device runs
-    it too). Line order is not evidence: the sync block's own toggle test sits
-    above any line appended after its `fi`, and satisfied the old check for an
-    ungated --full. The line itself must be detached (setsid or nohup, ending
-    in a single `&` -- `&&` is a foreground chain) and niced."""
+    it too). Line order is not evidence: until #94 the file also held the
+    headless sync block, whose own toggle test sat above any line appended
+    after its `fi` and satisfied the old check for an ungated --full. The line
+    itself must be detached (setsid or nohup, ending in a single `&` -- `&&`
+    is a foreground chain) and niced."""
     code = [(i, l.strip()) for i, l in enumerate(lines) if l.strip() and not l.lstrip().startswith("#")]
     full = [i for i, s in code if "cloud_capture --full" in s]
     if not full:
@@ -3371,7 +3454,7 @@ def fx_cap10(p):
     mark = log_mark(a)
     rc, _ = capture(a, root, "gba", rom)
     tail = log_since(a, mark)
-    stamp = last_capture(a)
+    stamp = last_capture(a, "exit")
     f += not check(rc == 0 and (entry(manifest_of(a), rel) or {}).get("sha256") == sha(new),
                    "on a wrong-but-stable card the new version IS recorded (the file is real; its claim belongs, I5)",
                    f"exit {rc}; entry sha {'is the new bytes' if (entry(manifest_of(a), rel) or {}).get('sha256') == sha(new) else 'is not the new bytes'}")
@@ -3434,7 +3517,7 @@ def fx_cap10(p):
     idx, enclosing, gate_ok, bg_ok = got
     f += not check(gate_ok, f"static: --full runs at boot inside an `if` on both cloud-saves toggles ({where}:{idx + 1})",
                    f"static: {where}:{idx + 1}: the enclosing test is {enclosing!r} -- expected an `if` naming both "
-                   "cloudsaves.startup and cloudsaves.gameexit (a gameexit-only device runs it too; a line after the sync block's fi is ungated)")
+                   "cloudsaves.startup and cloudsaves.gameexit (a gameexit-only device runs it too; a line after another block's fi is ungated)")
     f += not check(bg_ok, "static: and detached under nice, ending in a single & (never delaying boot, D-CLOUD-057)",
                    f"static: the --full line is not `setsid|nohup ... nice ... &`: {text.splitlines()[idx].strip()[:90]!r}")
     return f
@@ -3509,6 +3592,80 @@ def fx_cap11(p):
     return f
 
 
+def fx_cap12(p):
+    """CAP12: last-capture keeps one line per mode (D-CLOUD-070, #94). A
+    single line rewritten on every run let the boot --full pass write over
+    the record of the last game exit (RG SP, 2026-09-09: an exit at 08:19Z,
+    `full - emu-exit=? -/-` in its place ten hours later), so a row saying
+    how the last exit went would have described the boot pass. (a) A stamp
+    in the old shape -- one line, from a producer before this -- is read as
+    its mode's line and survives a --full pass byte for byte, which adds its
+    own line. (b) An exit after that replaces only the exit line, and a
+    second --full only the full line, each with its own mode and a newer
+    epoch. (c) --retire adds a third line; no mode ever appears twice, and
+    every line still parses the way the one-line stamp did.
+
+    The fireable form: against the shipped finish() (one line, overwritten)
+    (a) reads one line and (b) finds the full line gone after the exit --
+    tools/cloud-capture-stamp-test runs the same sequence against a copy of
+    the function with no device at all."""
+    f = 0
+    a, root = p.a, p.root
+    p.reset()
+    unit, rel, rom = "gba:Stamp", "gba/Stamp.srm", p.path("gba/Stamp.gba")
+    plant(a, root, rel, os.urandom(500))
+    rc, _ = capture(a, root, "gba", rom, exit_code=0)
+    if rc != 0:
+        raise Fail(f"the setup capture exited {rc}")
+    # (a) the old shape, planted over the setup's stamp: an exit an hour ago,
+    # told apart from anything this fixture writes by its unit and epoch.
+    old = f"{int(time.time()) - 3600} 0 exit gba:Before emu-exit=0 retroarch/mgba"
+    a.run(f"printf '%s\\n' {shlex.quote(old)} > {CACHE}/last-capture")
+    rc, _ = run_rc(a, "cloud_capture --full")
+    lines = last_capture_lines(a)
+    modes = sorted(m for m in map(stamp_mode, lines) if m)
+    f += not check(rc == 0 and old in lines,
+                   "a one-line stamp from before (an exit) survives a --full pass byte for byte",
+                   f"--full exit {rc}; the file holds {lines}")
+    f += not check(modes == ["exit", "full"], "and the file holds exactly two lines, exit and full",
+                   f"modes {modes}")
+    full1 = last_capture(a, "full")
+    f += not check(full1 is not None and full1[1] == "0" and full1[3] == "-" and full1[4:] == ("emu-exit=?", "-/-"),
+                   "the full line reads rc 0, unit -, emu-exit=? -/-", f"full line {full1!r}")
+    f += not check(last_capture(a, "exit") == parse_capture_line(old),
+                   "and the exit line, read by mode, is the old one", f"exit line {last_capture(a, 'exit')!r}")
+    # (b) an exit replaces the exit line and nothing else
+    time.sleep(1)   # epochs are seconds; a same-second replacement is invisible by epoch alone
+    plant(a, root, rel, os.urandom(501))
+    rc, _ = capture(a, root, "gba", rom, exit_code=1)
+    ex = last_capture(a, "exit")
+    lines = last_capture_lines(a)
+    f += not check(rc == 0 and ex is not None and ex[3] == unit and ex[4] == "emu-exit=1" and int(ex[0]) > int(old.split()[0]),
+                   "an exit capture replaced the exit line: this run's unit and emu-exit, a newer epoch",
+                   f"exit {rc}; exit line {ex!r}")
+    f += not check(old not in lines and last_capture(a, "full") == full1 and len(lines) == 2,
+                   "the old exit line is gone, the full line stands unchanged, still two lines",
+                   f"the file holds {lines}")
+    time.sleep(1)
+    rc, _ = run_rc(a, "cloud_capture --full")
+    full2 = last_capture(a, "full")
+    lines = last_capture_lines(a)
+    f += not check(rc == 0 and full2 is not None and int(full2[0]) > int(full1[0]) and last_capture(a, "exit") == ex and len(lines) == 2,
+                   "a second --full replaced the full line only: a newer epoch, the exit line unchanged, two lines",
+                   f"exit {rc}; full {full2!r} was {full1!r}; exit {last_capture(a, 'exit')!r}; {len(lines)} line(s)")
+    # (c) a third mode is a third line; the ceiling is one per mode
+    rc, _ = run_rc(a, "cloud_capture --retire savestates/gba/Nothing.state9")
+    lines = last_capture_lines(a)
+    modes = [m for m in map(stamp_mode, lines) if m]
+    f += not check(rc == 0 and sorted(modes) == ["exit", "full", "retire"],
+                   "--retire adds a retire line: three lines, one per mode, no mode twice",
+                   f"exit {rc}; modes {modes}")
+    f += not check(all(parse_capture_line(l) is not None for l in lines),
+                   "every line parses as the one-line stamp did (three fields from the front, two from the back)",
+                   f"unparseable: {[l for l in lines if parse_capture_line(l) is None]}")
+    return f
+
+
 CAPTURE_FIXTURES = [
     ("CAP1", "capture on every exit: lock held, no route, no rclone, nothing written into the tree", fx_cap1),
     ("CAP2", "the recorded core is the argument, never a default", fx_cap2),
@@ -3521,6 +3678,7 @@ CAPTURE_FIXTURES = [
     ("CAP9", "the error policy is the one written down, and the un-provable is not faked", fx_cap9),
     ("CAP10", "the card context informs, it never silently refuses -- and a flip discards", fx_cap10),
     ("CAP11", "two writers of one manifest: the loser re-runs once and a first version is not lost", fx_cap11),
+    ("CAP12", "last-capture keeps one line per mode: an exit survives the boot pass; the old one-line stamp is read", fx_cap12),
 ]
 
 
