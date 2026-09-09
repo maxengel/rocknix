@@ -436,4 +436,12 @@ mkdir -p /storage/.cache/cloud_sync 2>/dev/null
 printf '%s %s\n' "$(date +%s)" "${STATUS}" \
     > "/storage/.cache/cloud_sync/last-content-backup" 2>/dev/null
 
+# 3 and 4 are the sentinels EmulationStation names (another sync holds the
+# lock; no network), both emitted before any unit runs. STATUS carries
+# rclone's own code from a failed unit, and rclone's 3 and 4 mean "directory
+# not found" and "file not found" -- so they leave here as 1, a failure,
+# rather than as a sentinel that was never raised (#99).
+case "${STATUS}" in
+    3|4) STATUS=1 ;;
+esac
 exit ${STATUS}

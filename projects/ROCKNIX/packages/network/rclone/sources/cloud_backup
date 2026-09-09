@@ -293,6 +293,20 @@ clean_exit() {
     local exit_code=$1
     local duration=$(($(date +%s) - START_TIME))
     
+    # 3 and 4 are this script's sentinels -- "another cloud sync holds the
+    # lock" and "no network" -- and EmulationStation names them as such
+    # (SKIPPED - ANOTHER CLOUD SYNC IS RUNNING / SKIPPED - NO NETWORK
+    # CONNECTION). Both are emitted by plain exits before any phase runs, so
+    # a 3 or 4 arriving here is rclone's own code (directory not found, file
+    # not found) carried up from a phase, and reporting it as-is told the
+    # page a sync was running when the cloud's Saves folder simply did not
+    # exist (VM, 2026-09-09; #99). A phase failure is a failure: 1.
+    case "${exit_code}" in
+        3|4)
+            log_message "Phase status ${exit_code} is rclone's, not the lock or network sentinel; reporting 1" "false" "WARN"
+            exit_code=1
+            ;;
+    esac
     record_last_run "${exit_code}"
     log_message "Script completed in ${duration} seconds with exit code ${exit_code}" "false"
     exit ${exit_code}
