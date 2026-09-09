@@ -7,6 +7,18 @@ SCRIPT_NAME=$(basename "$0")
 LOG_FILE="/var/log/cloud_sync.log"
 START_TIME=$(date +%s)
 
+# The two exits that mean "nothing ran", which EmulationStation names
+# (SKIPPED - ANOTHER CLOUD SYNC IS RUNNING / SKIPPED - NO NETWORK CONNECTION).
+# They were 3 and 4 until 2026-09-09 -- and rclone's own 3 and 4 are
+# "directory not found" and "file not found", so a failed phase carrying
+# rclone's code up to the final exit read as a sentinel nobody had raised: a
+# restore against a cloud with no Saves folder yet said a sync was running
+# (#99, blindspot 33). sysexits.h's EX_TEMPFAIL and EX_UNAVAILABLE sit above
+# everything rclone returns (0-9) and below the 128+signal range, so nothing
+# this script forwards can produce them. EmulationStation reads the same two
+# numbers; scripts and ES ship in one image.
+readonly EXIT_LOCK_HELD=75 EXIT_NO_NETWORK=69
+
 # Non-interactive support for hooks and the ES menu:
 #   --yes / -y      answer prompts automatically (headless mode)
 #   --method=X      override the configured transfer method (sync or copy)
@@ -16,8 +28,9 @@ START_TIME=$(date +%s)
 #   --recent        only saves changed since the last backup that worked
 #                   (the game-exit sync); always copies, never tidies
 #
-# Exit codes the UI names: 3 = skipped, another cloud sync holds the lock;
-# 4 = skipped, no network. Neither writes a last-run stamp -- nothing ran.
+# Exit codes the UI names: EXIT_LOCK_HELD (75) = skipped, another cloud sync
+# holds the lock; EXIT_NO_NETWORK (69) = skipped, no network. Neither writes a
+# last-run stamp -- nothing ran. Defined below, with why those two numbers.
 ASSUME_YES=0
 METHOD_OVERRIDE=""
 EXTRA_UPDATE=0
@@ -86,16 +99,16 @@ log_message() {
 # The lock lives here, in the script, so no caller has to know about the
 # others. /var/run is tmpfs, so a lock cannot survive a reboot and go stale.
 # Non-blocking, because a request that queues silently behind a twenty-minute
-# transfer looks exactly like one that hung. Exit 3 means "skipped: another
-# sync is running" -- the UI names it, and no last-run stamp is written for
-# work that did not happen.
+# transfer looks exactly like one that hung. Exit EXIT_LOCK_HELD (75) means
+# "skipped: another sync is running" -- the UI names it, and no last-run stamp
+# is written for work that did not happen.
 CLOUD_SYNC_LOCK=/var/run/cloud_sync.lock
 take_cloud_lock() {
     exec 9>"${CLOUD_SYNC_LOCK}"
     if ! flock -n 9; then
         echo "Another cloud sync is already running. Skipped."
         log_message "skipped: another cloud sync holds ${CLOUD_SYNC_LOCK}" "false"
-        exit 3
+        exit "${EXIT_LOCK_HELD}"
     fi
 }
 
@@ -114,10 +127,10 @@ first_remote() {
     fi
 }
 
-# Exit 4 means "skipped: no network". Answered locally, before any remote
-# probe: with no default route there is nothing to sync to, and somebody
-# exiting a game should not wait for rclone to time out learning that (its
-# probe allows 10 s to connect and 20 s overall). `ip route` reads the
+# Exit EXIT_NO_NETWORK (69) means "skipped: no network". Answered locally,
+# before any remote probe: with no default route there is nothing to sync to,
+# and somebody exiting a game should not wait for rclone to time out learning
+# that (its probe allows 10 s to connect and 20 s overall). `ip route` reads the
 # kernel's table and sends nothing. An interface that is up but has no route
 # yet -- Wi-Fi still associating, DHCP not answered -- counts as no network,
 # which is the right answer for a job that has to run now.
@@ -126,7 +139,7 @@ check_network_link() {
        && ! ip -6 route show default 2>/dev/null | grep -q .; then
         echo "No network connection. Skipped."
         log_message "skipped: no default route, nothing to sync to" "false"
-        exit 4
+        exit "${EXIT_NO_NETWORK}"
     fi
 }
 
@@ -293,20 +306,9 @@ clean_exit() {
     local exit_code=$1
     local duration=$(($(date +%s) - START_TIME))
     
-    # 3 and 4 are this script's sentinels -- "another cloud sync holds the
-    # lock" and "no network" -- and EmulationStation names them as such
-    # (SKIPPED - ANOTHER CLOUD SYNC IS RUNNING / SKIPPED - NO NETWORK
-    # CONNECTION). Both are emitted by plain exits before any phase runs, so
-    # a 3 or 4 arriving here is rclone's own code (directory not found, file
-    # not found) carried up from a phase, and reporting it as-is told the
-    # page a sync was running when the cloud's Saves folder simply did not
-    # exist (VM, 2026-09-09; #99). A phase failure is a failure: 1.
-    case "${exit_code}" in
-        3|4)
-            log_message "Phase status ${exit_code} is rclone's, not the lock or network sentinel; reporting 1" "false" "WARN"
-            exit_code=1
-            ;;
-    esac
+    # A failed phase leaves with the code the phase gave -- rclone's, when a
+    # transfer failed -- unremapped. Nothing rclone returns can read as the
+    # lock or no-network sentinel now that those are 75 and 69 (#99).
     record_last_run "${exit_code}"
     log_message "Script completed in ${duration} seconds with exit code ${exit_code}" "false"
     exit ${exit_code}

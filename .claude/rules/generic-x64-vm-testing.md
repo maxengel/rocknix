@@ -225,10 +225,16 @@ things that cost a cycle each before they were written down:
   lag real time by up to a minute (blindspot 32); order by uptime, not by
   the clock.
 - **A serial or SSH command that hangs on `set_setting` is waiting on
-  `/tmp/.system.cfg.lock`.** `wait_lock` spins with no timeout and never
-  checks whether the holder is alive (#98); one `set_setting cloudsaves.startup 1`
-  took 4 min 43 s on 2026-09-09 after a tool had been killed from outside.
-  Read the pid in the file and `kill -0` it before waiting on it again.
+  `/tmp/.system.cfg.lock`, and since #98 that means a live holder.** Until
+  2026-09-09 `wait_lock` spun with no timeout and never checked whether the
+  pid in the file was alive; one `set_setting cloudsaves.startup 1` took
+  4 min 43 s after a tool had been killed from outside. It now removes a lock
+  whose pid is dead (or whose file is empty or not a pid) and retries at
+  once, and after 30 s of one live holder logs its pid once. So on a build
+  that carries it, `journalctl -t wait_lock` names the holder to look at;
+  on an older build, read the pid in the file and `kill -0` it yourself.
+  `tools/wait-lock-test` proves both behaviours against any copy of
+  `001-functions`.
 - **`vm-serial wait` returns at once if an ES is still up.** Right after
   `reboot` the old EmulationStation is still running for several seconds, so
   "ready after ~0s" means nothing; check that `uptime` has reset first.

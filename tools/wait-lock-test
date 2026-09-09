@@ -1,0 +1,159 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# wait-lock-test - a device-less check of wait_lock() in
+# projects/ROCKNIX/packages/rocknix/profile.d/001-functions, the settings lock
+# every get_setting/set_setting, runemu.sh, backuptool and the cloud scripts
+# share (fork #98):
+#
+#   - a STALE lock (its pid is dead, or the file is empty or not a pid) is
+#     removed, logged with the pid, and the caller proceeds within two seconds;
+#   - a LIVE holder is honoured for as long as it lives, and never stolen;
+#   - a long live wait is logged once, naming the holder, not every second.
+#
+# It lifts wait_lock() (and wait_lock_say(), where the copy has one) out of
+# the 001-functions it is given, points J_CONF_LOCK at a temp file, and runs
+# what set_setting does -- `wait_lock; rm -f "$J_CONF_LOCK"` -- in a fresh
+# bash under `timeout`, so a function that spins forever is a FAIL here and
+# not a hung test. `logger` is shadowed by a function so the line that would
+# reach syslog is read back; one case removes logger from PATH to see the
+# stderr fallback. To watch the guard fire, point it at the function from
+# before the change:
+#
+#     git show 8ccc244dfa:projects/ROCKNIX/packages/rocknix/profile.d/001-functions > /tmp/old
+#     tools/wait-lock-test /tmp/old      # FAILs: a stale lock hangs until the timeout
+#     tools/wait-lock-test               # PASSED
+#
+# Host tool: needs GNU `date +%s%N` and coreutils `timeout`. The functions
+# under test are the ones that run on the device, unchanged.
+#
+# Exit 0 when every check passes, 1 otherwise, 2 when it cannot run.
+set -u
+
+SCRIPT="${1:-$(dirname "$(readlink -f "$0")")/../projects/ROCKNIX/packages/rocknix/profile.d/001-functions}"
+[ -r "${SCRIPT}" ] || { echo "cannot read ${SCRIPT}" >&2; exit 2; }
+
+# wait_lock() as the file defines it, and its helper if it has one. It reads
+# J_CONF_LOCK and calls sleep, rm, cat (in the trap), kill, read, logger.
+FUNCS="$(sed -n '/^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p' "${SCRIPT}")"
+grep -q '^function wait_lock() {' <<<"${FUNCS}" || { echo "no wait_lock() found in ${SCRIPT}" >&2; exit 2; }
+command -v timeout >/dev/null || { echo "needs coreutils timeout" >&2; exit 2; }
+
+TMP="$(mktemp -d)"; trap 'rm -rf "${TMP}"' EXIT
+LOCK="${TMP}/system.cfg.lock"
+FAIL=0
+
+check() { # <0|nonzero> ok-text bad-text
+    if [ "$1" -eq 0 ]; then echo "    PASS  $2"; else echo "    FAIL  $3"; FAIL=$((FAIL + 1)); fi
+}
+now_ms() { echo $(( $(date +%s%N) / 1000000 )); }
+
+# What set_setting does: take the lock, do the work, release it. Prints HELD
+# when the file names this shell after wait_lock returns -- the lock was taken,
+# not merely waited past. PREAMBLE is eval'd first so a case can shadow
+# logger or sleep, or narrow PATH.
+{
+    printf '%s\n' "${FUNCS}"
+    printf 'J_CONF_LOCK=%q\n' "${LOCK}"
+    cat <<'EOF'
+eval "${PREAMBLE:-}"
+wait_lock
+if [ "$(cat "${J_CONF_LOCK}" 2>/dev/null)" = "$$" ]; then echo HELD; else echo "NOT-HELD:$(cat "${J_CONF_LOCK}" 2>/dev/null)"; fi
+rm -f "${J_CONF_LOCK}"
+EOF
+} > "${TMP}/take.sh"
+
+# take <timeout-s> <preamble>: runs take.sh; stdout to $OUT, stderr to $ERR,
+# rc in $RC (124 is timeout's "it hung"), wall time in $MS.
+OUT="${TMP}/out"; ERR="${TMP}/err"
+take() {
+    local t0 t1
+    t0=$(now_ms)
+    PREAMBLE="$2" timeout "$1" bash "${TMP}/take.sh" >"${OUT}" 2>"${ERR}"
+    RC=$?
+    t1=$(now_ms)
+    MS=$((t1 - t0))
+}
+FAKE_LOGGER='logger() { echo "logger $*" >&2; }'
+
+# A pid that is not running: start high and walk down until kill -0 fails.
+DEAD=$(( (1 << 22) - 1 ))
+while kill -0 "${DEAD}" 2>/dev/null; do DEAD=$((DEAD - 1)); done
+
+echo "wait-lock-test: wait_lock() from ${SCRIPT}"
+
+echo "  1. a stale lock -- the file names pid ${DEAD}, which is not running"
+echo "${DEAD}" > "${LOCK}"
+take 4 "${FAKE_LOGGER}"
+[ "${RC}" -eq 0 ] && grep -qx HELD "${OUT}"; check $? "wait_lock returned and the lock was taken (rc 0, HELD)" "rc ${RC} (124 = hung until the timeout), stdout '$(cat "${OUT}")'"
+[ "${MS}" -lt 2000 ]; check $? "in under two seconds (${MS} ms)" "took ${MS} ms"
+[ ! -e "${LOCK}" ]; check $? "the lock file is gone afterwards" "the lock file is still there"
+grep -q -- "-t wait_lock .*stale.*${DEAD}" "${ERR}"; check $? "one syslog line, tagged wait_lock, says the stale lock held by ${DEAD} was removed" "no such line; stderr: '$(tr '\n' '|' < "${ERR}")'"
+[ "$(grep -c 'stale' "${ERR}")" = 1 ]; check $? "and exactly one" "$(grep -c 'stale' "${ERR}") stale lines"
+
+# A holder that behaves like a real caller: writes its pid, works, releases.
+hold_and_release() { # <seconds>
+    bash -c 'echo $$ > "$1"; sleep "$2"; rm -f "$1"' _ "${LOCK}" "$1" &
+    HOLDER=$!
+}
+
+echo "  2. a live holder -- a caller that owns the file for 3 s and then releases it; the wait must outlive it and never steal it"
+rm -f "${LOCK}"
+hold_and_release 3
+until [ -s "${LOCK}" ]; do sleep 0.05; done
+t0=$(now_ms)
+PREAMBLE="${FAKE_LOGGER}" timeout 8 bash "${TMP}/take.sh" >"${OUT}" 2>"${ERR}" & TAKER=$!
+sleep 1.5
+kill -0 "${TAKER}" 2>/dev/null; check $? "1.5 s in, the caller is still waiting" "the caller had already returned 1.5 s in"
+[ "$(cat "${LOCK}" 2>/dev/null)" = "${HOLDER}" ]; check $? "and the live holder still owns the lock (not stolen)" "the lock file reads '$(cat "${LOCK}" 2>/dev/null)', not the holder's ${HOLDER}"
+wait "${TAKER}"; RC=$?
+MS=$(( $(now_ms) - t0 ))
+wait "${HOLDER}" 2>/dev/null
+[ "${RC}" -eq 0 ] && grep -qx HELD "${OUT}"; check $? "the caller took the lock once the holder released it (rc 0, HELD)" "rc ${RC} (124 = hung until the timeout), stdout '$(cat "${OUT}")'"
+[ "${MS}" -ge 2500 ]; check $? "after waiting at least 2.5 s (${MS} ms)" "returned after only ${MS} ms"
+! grep -q 'stale' "${ERR}"; check $? "nothing was reported as stale" "a live holder was reported stale: '$(tr '\n' '|' < "${ERR}")'"
+
+echo "  3. a holder killed mid-wait (SIGKILL, so it cannot release) -- the caller must proceed within a poll of the kill"
+rm -f "${LOCK}"
+bash -c 'echo $$ > "$1"; exec sleep 30' _ "${LOCK}" & HOLDER=$!
+until [ -s "${LOCK}" ]; do sleep 0.05; done
+t0=$(now_ms)
+PREAMBLE="${FAKE_LOGGER}" timeout 8 bash "${TMP}/take.sh" >"${OUT}" 2>"${ERR}" & TAKER=$!
+sleep 1.5
+[ "$(cat "${LOCK}" 2>/dev/null)" = "${HOLDER}" ] && kill -0 "${TAKER}" 2>/dev/null; check $? "1.5 s in, the live holder still owns the lock and the caller is waiting" "lock reads '$(cat "${LOCK}" 2>/dev/null)' (holder ${HOLDER}); caller alive: $(kill -0 "${TAKER}" 2>/dev/null && echo yes || echo no)"
+kill -9 "${HOLDER}" 2>/dev/null; wait "${HOLDER}" 2>/dev/null
+tk=$(now_ms)
+wait "${TAKER}"; RC=$?
+MS=$(( $(now_ms) - tk ))
+[ "${RC}" -eq 0 ] && grep -qx HELD "${OUT}"; check $? "the caller took the lock after the holder was killed (rc 0, HELD)" "rc ${RC} (124 = hung until the timeout), stdout '$(cat "${OUT}")'"
+[ "${MS}" -lt 2000 ]; check $? "within two seconds of the kill (${MS} ms)" "took ${MS} ms after the kill"
+grep -q -- "-t wait_lock .*stale.*${HOLDER}" "${ERR}"; check $? "one syslog line says the stale lock held by ${HOLDER} was removed" "no such line; stderr: '$(tr '\n' '|' < "${ERR}")'"
+
+echo "  4. an empty lock file is stale; with no logger on PATH the line goes to stderr"
+mkdir -p "${TMP}/bin"
+for t in rm sleep cat; do ln -s "$(command -v "${t}")" "${TMP}/bin/${t}"; done
+: > "${LOCK}"
+take 4 "PATH=${TMP}/bin"
+[ "${RC}" -eq 0 ] && grep -qx HELD "${OUT}"; check $? "wait_lock returned and the lock was taken (rc 0, HELD)" "rc ${RC} (124 = hung until the timeout), stdout '$(cat "${OUT}")'"
+[ "${MS}" -lt 2000 ]; check $? "in under two seconds (${MS} ms)" "took ${MS} ms"
+grep -q '^wait_lock: removed stale lock' "${ERR}"; check $? "the removal was said on stderr, prefixed wait_lock:" "no fallback line; stderr: '$(tr '\n' '|' < "${ERR}")'"
+
+echo "  5. a file whose content is not a pid is stale"
+echo "not-a-pid" > "${LOCK}"
+take 4 "${FAKE_LOGGER}"
+[ "${RC}" -eq 0 ] && grep -qx HELD "${OUT}" && [ "${MS}" -lt 2000 ]; check $? "removed and taken in under two seconds (${MS} ms)" "rc ${RC} after ${MS} ms, stdout '$(cat "${OUT}")'"
+
+echo "  6. a long live wait is logged once, naming the holder (the caller's sleep shadowed, so 30 polls take no time)"
+rm -f "${LOCK}"
+hold_and_release 2
+until [ -s "${LOCK}" ]; do sleep 0.05; done
+take 8 "${FAKE_LOGGER}; sleep() { :; }"
+wait "${HOLDER}" 2>/dev/null
+[ "${RC}" -eq 0 ] && grep -qx HELD "${OUT}"; check $? "the caller took the lock once the holder released it (rc 0, HELD)" "rc ${RC} (124 = hung until the timeout), stdout '$(cat "${OUT}")'"
+n=$(grep -c -- "-t wait_lock .*${HOLDER}" "${ERR}")
+[ "${n}" = 1 ]; check $? "exactly one syslog line names the live holder ${HOLDER}" "${n} line(s) name the holder; stderr: '$(tr '\n' '|' < "${ERR}" | cut -c1-300)'"
+! grep -q 'stale' "${ERR}"; check $? "and it was never called stale" "a live holder was reported stale"
+
+echo
+if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

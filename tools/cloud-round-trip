@@ -424,14 +424,16 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     step("saves back up to the cloud")
     backend("reset")
     # Nothing is in the cloud yet, so a restore must fail -- and fail as a
-    # failure. cloud_restore used to leave with rclone's own code for "directory
-    # not found", 3, which EmulationStation reads as its lock sentinel and
-    # showed as SKIPPED - ANOTHER CLOUD SYNC IS RUNNING over a run that had
-    # moved five files (VM, 2026-09-09; #99). 4 is the no-network sentinel.
+    # failure, with its own code. cloud_restore leaves with rclone's code for
+    # "directory not found", 3, which until 2026-09-09 was also the lock
+    # sentinel EmulationStation reads, and the page said SKIPPED - ANOTHER
+    # CLOUD SYNC IS RUNNING over a run that had moved five files (VM; #99).
+    # The sentinels are 75 (lock held) and 69 (no network) now, codes rclone
+    # cannot return; a phase failure passes rclone's code through unremapped.
     rc = dev.run("cloud_restore --yes --saves-only >/dev/null 2>&1; echo $?", check=False).strip()
-    failures += not check(rc == "1",
-                          "a restore with no Saves folder in the cloud fails as 1, not as a sentinel (3/4)",
-                          f"cloud_restore exited {rc!r} against an empty endpoint")
+    failures += not check(rc not in ("0", "75", "69"),
+                          "a restore with no Saves folder in the cloud fails with its own code, not as a sentinel",
+                          f"cloud_restore exited {rc!r} against an empty endpoint (0 = succeeded, 75/69 = read as a sentinel)")
     # As BACK UP SAVES TO THE CLOUD runs it: --saves-only, or the settings
     # phase rides along under a saves label (2026-09-06).
     dev.run("cloud_backup --yes --saves-only >/dev/null 2>&1 || true", check=False)
@@ -805,7 +807,7 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     # Three callers can start a cloud sync -- boot, game exit, the menu -- and
     # until 2026-09-04 nothing stopped two from running at once. The lock lives
     # in the scripts, so this test is caller-agnostic: hold it, then ask.
-    step("a second cloud sync while one runs is refused, exits 3, and stamps nothing")
+    step("a second cloud sync while one runs is refused, exits 75, and stamps nothing")
     dev.run("rm -f /storage/.cache/cloud_sync/last-backup", check=False)
     out = dev.run(
         "exec 9>/var/run/cloud_sync.lock; flock -n 9 || echo HOLDER-FAILED; "
@@ -814,13 +816,13 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     failures += not check("HOLDER-FAILED" not in out,
                           "the test could hold the lock itself",
                           "could not take the lock to set up the test")
-    failures += not check("rc=3" in out,
-                          "the second sync exited 3",
-                          f"expected exit 3 while the lock was held, got: {out.strip()[-40:]}")
+    failures += not check("rc=75" in out,
+                          "the second sync exited 75 (EX_TEMPFAIL, the lock sentinel)",
+                          f"expected exit 75 while the lock was held, got: {out.strip()[-40:]}")
     second = dev.run("cat /tmp/second.out 2>/dev/null || true")
     failures += not check("already running" in second.lower(),
                           "and said another sync was running",
-                          "exit 3 without the message somebody would read")
+                          "exit 75 without the message somebody would read")
     stamp = dev.run("cat /storage/.cache/cloud_sync/last-backup 2>/dev/null || echo NONE")
     failures += not check(stamp.strip() == "NONE",
                           "no last-run stamp was written for work that did not happen",
@@ -828,7 +830,7 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
 
     # The game-exit sync runs cloud_backup --yes --saves-only --recent: only
     # what changed since the last backup that worked, no remote probe, no
-    # tidy, and exit 4 at once when there is no network. Each is a claim a
+    # tidy, and exit 69 at once when there is no network. Each is a claim a
     # player waits on after every game, so each is asserted here -- against
     # the script's own log, because "fast" is not observable from a listing.
     step("a --recent sync with nothing changed leaves the remote alone")
@@ -861,7 +863,7 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
                           "and it was the only file transferred",
                           "more than one file moved for one changed save")
 
-    step("with no network the exit sync returns 4 at once and stamps nothing")
+    step("with no network the exit sync returns 69 at once and stamps nothing")
     out = dev.run(
         "mkdir -p /tmp/noroute && printf '#!/bin/sh\nexit 0\n' > /tmp/noroute/ip && chmod +x /tmp/noroute/ip; "
         "s0=$(cat /storage/.cache/cloud_sync/last-backup 2>/dev/null); "
@@ -870,8 +872,8 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
         "echo rc=$rc ms=$(( (t1 - t0) / 1000000 )) stamp=$([ \"$s0\" = \"$s1\" ] && echo same || echo CHANGED); "
         "rm -rf /tmp/noroute", check=False)
     fields = dict(kv.split("=", 1) for kv in out.split() if "=" in kv)
-    failures += not check(fields.get("rc") == "4", "exit 4 with no default route",
-                          f"expected exit 4 without a route, got: {out.strip()}")
+    failures += not check(fields.get("rc") == "69", "exit 69 (EX_UNAVAILABLE, the no-network sentinel) with no default route",
+                          f"expected exit 69 without a route, got: {out.strip()}")
     failures += not check(fields.get("ms", "99999").isdigit() and int(fields.get("ms", "99999")) < 2000,
                           "and it answered in under two seconds",
                           f"took {fields.get('ms')} ms to notice there was no network")

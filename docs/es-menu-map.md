@@ -116,9 +116,10 @@ flowchart TD
 Rows carry three lines — title, what it carries, `Last … - Succeeded/Failed`
 — read from `/storage/.cache/cloud_sync/last-<name>` (D-UI-014 lineage).
 Anything measured in minutes runs in `GuiCloudTransfer`, not a card
-(`es-native-ui.md`, the fourth tier). Exit 3 from any script means another
-sync held the lock and exit 4 means there was no network; both are shown as
-SKIPPED, not FAILED.
+(`es-native-ui.md`, the fourth tier). Exit 75 from any script means another
+sync held the lock and exit 69 means there was no network (sysexits'
+`EX_TEMPFAIL` and `EX_UNAVAILABLE`, codes rclone cannot return -- #99); both
+are shown as SKIPPED, not FAILED.
 
 
 ## Screens you cannot reach from the main menu

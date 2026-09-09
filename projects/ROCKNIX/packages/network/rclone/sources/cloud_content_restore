@@ -25,6 +25,16 @@ LOG_FILE="/var/log/cloud_sync.log"
 SCRIPT_NAME=$(basename "$0")
 DEST="/storage/roms"
 
+# The exit that means "nothing ran: another cloud sync holds the lock", which
+# EmulationStation names (SKIPPED - ANOTHER CLOUD SYNC IS RUNNING). It was 3
+# until 2026-09-09, which is also rclone's "directory not found", so a failed
+# unit carrying rclone's code to the final exit read as a sync that was never
+# running (#99, blindspot 33). sysexits.h's EX_TEMPFAIL sits above everything
+# rclone returns (0-9) and below the 128+signal range, so nothing this script
+# forwards can produce it. The same two numbers (75, and cloud_backup's 69 for
+# no network) are what EmulationStation reads; scripts and ES ship together.
+readonly EXIT_LOCK_HELD=75
+
 log_message() {
     echo "[$(date "+%Y-%m-%d %H:%M:%S")] [INFO] [${SCRIPT_NAME}] ${1}" >> ${LOG_FILE}
 }
@@ -44,16 +54,16 @@ log_message() {
 # The lock lives here, in the script, so no caller has to know about the
 # others. /var/run is tmpfs, so a lock cannot survive a reboot and go stale.
 # Non-blocking, because a request that queues silently behind a twenty-minute
-# transfer looks exactly like one that hung. Exit 3 means "skipped: another
-# sync is running" -- the UI names it, and no last-run stamp is written for
-# work that did not happen.
+# transfer looks exactly like one that hung. Exit EXIT_LOCK_HELD (75) means
+# "skipped: another sync is running" -- the UI names it, and no last-run stamp
+# is written for work that did not happen.
 CLOUD_SYNC_LOCK=/var/run/cloud_sync.lock
 take_cloud_lock() {
     exec 9>"${CLOUD_SYNC_LOCK}"
     if ! flock -n 9; then
         echo "Another cloud sync is already running. Skipped."
         log_message "skipped: another cloud sync holds ${CLOUD_SYNC_LOCK}"
-        exit 3
+        exit "${EXIT_LOCK_HELD}"
     fi
 }
 
@@ -850,12 +860,6 @@ mkdir -p /storage/.cache/cloud_sync 2>/dev/null
 printf '%s %s\n' "$(date +%s)" "${STATUS}" \
     > "/storage/.cache/cloud_sync/last-content-restore" 2>/dev/null
 
-# 3 and 4 are the sentinels EmulationStation names (another sync holds the
-# lock; no network), both emitted before any unit runs. STATUS carries
-# rclone's own code from a failed unit, and rclone's 3 and 4 mean "directory
-# not found" and "file not found" -- so they leave here as 1, a failure,
-# rather than as a sentinel that was never raised (#99).
-case "${STATUS}" in
-    3|4) STATUS=1 ;;
-esac
+# A failed unit leaves with rclone's own code, unremapped: nothing rclone
+# returns can read as the lock sentinel now that it is 75 (#99).
 exit ${STATUS}
