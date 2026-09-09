@@ -1039,9 +1039,20 @@ and every later `set_setting` waited on it until reboot.
   cloud has one. Game content is never a unit of its own — the scraper's
   folders and the game list move inside the system's unit. So the page's
   ITEM i OF n starts from the picker's count and is refined from the scripts'
-  own `n` (#95). Under `--match`, `n` is the number of chosen systems and a
-  system with nothing to do is skipped without an announcement, so `i` can
-  jump.
+  own `n` (#95).
+- **Every announced `n` is the number of announcements the run makes.** The
+  match flow (`cloud_content_restore --match --apply`) numbered its items
+  across every chosen system but announced only the ones with work, so a run
+  over three systems ended on ITEM 2 OF 3. It now announces every chosen
+  system, before its own dry run, and says "Nothing to remove from X: it
+  already matches the cloud" for one with nothing to do — that is the item's
+  outcome, not a reason to hide it, and counting the work first would have
+  held the page on WORKING with no item through one dry run per system. The
+  `--selected` loops in both content scripts announce every unit they were
+  built from and skip none. `tools/cloud-round-trip` now checks the protocol
+  on each of those three runs — one `n`, equal to the number of markers, `i`
+  running 1..n — and runs a match with a system that exists nowhere to see it
+  announced.
 - Verified: the label by grep over the tree (nothing in `tools/` or `docs/`
   parsed the old one); the page's behaviour is the EmulationStation half of
   #95, checked on the VM with it.

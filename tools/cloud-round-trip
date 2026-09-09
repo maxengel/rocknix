@@ -778,7 +778,11 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     dev.run(f'touch -d "$(date -d @$(( $(date +%s) + 120 )) \'+%Y-%m-%d %H:%M:%S\')" {shlex.quote(croot)}/gamelist.xml')
     dev.run(f"rm -f {shlex.quote(croot)}/Real.rom")
     dev.run("sync", check=False)
-    dev.run("cloud_content_restore --with-media --selected >/dev/null 2>&1 || true", check=False)
+    _, out = run_rc(dev, "cloud_content_restore --with-media --selected")
+    ok, items, detail = unit_protocol(out)
+    failures += not check(ok and CONTENT_DIR in items,
+                          f"--selected announced every unit it moved, numbered across the run ({detail})",
+                          f"the unit markers do not add up to the run (#95): {detail}")
     # The restore must have done something before "the local one survived"
     # means anything: the ROM removed above is back.
     failures += not check(bool(dev.sha(f"{croot}/Real.rom")),
@@ -949,11 +953,30 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     other = f"{CONTENT_DIR}-unselected"
     dev.write(f"/storage/roms/{other}/game.rom", b"should not be uploaded")
     backend("reset")
-    dev.run("cloud_content_backup --selected >/dev/null 2>&1 || true", check=False)
+    _, out = run_rc(dev, "cloud_content_backup --selected")
+    ok, items, detail = unit_protocol(out)
     listing = backend("ls")
     failures += not check("game.rom" not in listing,
                           "an unselected system was not uploaded",
                           "an UNSELECTED system was uploaded")
+    failures += not check(ok and CONTENT_DIR in items and other not in items,
+                          f"--selected announced the selected units and only those, numbered across the run ({detail})",
+                          f"the unit markers do not add up to the run (#95): {detail}")
+    # The match flow numbers its items the same way, and every chosen system
+    # is one -- including one with nothing to do. Until 2026-09-09 such a
+    # system was skipped without an announcement while n still counted it,
+    # so a run over three systems ended on ITEM 2 OF 3 (#95). `ghost` exists
+    # in neither the cloud nor the device: its plan is `none`.
+    ghost = "ghost-never-a-system"
+    dev.run(f"cloud_content_restore --set-systems {shlex.quote(CONTENT_DIR)} {ghost} >/dev/null 2>&1 || true", check=False)
+    rc, out = run_rc(dev, "cloud_content_restore --match --apply")
+    ok, items, detail = unit_protocol(out)
+    failures += not check(rc == 0 and ok and sorted(items) == sorted([CONTENT_DIR, ghost]),
+                          f"--match --apply announced both chosen systems as ITEM i OF 2, the one with nothing to do included ({detail})",
+                          f"exit {rc}; {detail}; tail {out.strip()[-160:]!r}")
+    failures += not check(f"Nothing to remove from {ghost}" in out,
+                          "and said so for the system that already matches",
+                          "no 'Nothing to remove' line for the system with nothing to do")
     dev.run(f"rm -rf /storage/roms/{shlex.quote(other)}")
     dev.run("rm -f /storage/.cache/cloud_sync/content-systems")
 
@@ -1135,6 +1158,34 @@ def set_key(dev, key, val):
 def apply_settings(dev, settings):
     for key, val in settings.items():
         set_key(dev, key, val)
+
+
+UNIT_MARK = re.compile(r"^>>> unit (.*)\|(\d*)\|(\d*)$")
+
+
+def unit_protocol(out):
+    """What the transfer page needs from a script's `>>> unit <item>|i|n`
+    markers (#95): the page shows ITEM i OF n with the script's own n, so
+    every n must be the same and equal to the number of announcements the
+    run actually made, and i their running count, 1..n in order. A unit
+    skipped without an announcement, or a stale n, reads on the page as a
+    run that ended short (ITEM 2 OF 3). The saves scripts announce
+    `SAVES||` and `SETTINGS||` with no numbers and let the page count; that
+    shape passes when every marker in the run is unnumbered, and a mix does
+    not. Returns (ok, items in order, a line for the message). A run with no
+    marker at all is (True, [], ...) -- the caller says whether it expected one."""
+    marks = [m.groups() for m in map(UNIT_MARK.match, out.splitlines()) if m]
+    items = [item for item, _, _ in marks]
+    detail = "announced " + ", ".join(f"{item}|{i}|{n}" for item, i, n in marks) if marks else "no unit announcement"
+    if not marks:
+        return True, items, detail
+    if all(i == "" and n == "" for _, i, n in marks):
+        return True, items, detail
+    ok = (all(i.isdigit() and n.isdigit() for _, i, n in marks)
+          and len({n for _, _, n in marks}) == 1
+          and int(marks[0][2]) == len(marks)
+          and [int(i) for _, i, _ in marks] == list(range(1, len(marks) + 1)))
+    return ok, items, detail
 
 
 def run_rc(dev, cmd, env=""):
