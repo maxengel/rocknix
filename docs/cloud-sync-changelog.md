@@ -1162,3 +1162,97 @@ Verified on the GENERIC_X64 VM at 1280×800 and 640×480 (frames under
 `x64-all-20260909-d8bc358248/shots/`); ES `test/qa-integration` `41b7b8f10`;
 ships in H700 `ef43f2ce4b`. rocknix.org: the cloud-sync page still owes the
 whole native flow (#42).
+
+## `wait_lock` clears a stale settings lock and names a long holder (#98)
+
+Every `get_setting` and `set_setting` on the device, and with them
+`runemu.sh`, `backuptool`, the autostarts and the cloud scripts, take
+`/tmp/.system.cfg.lock` through `wait_lock()` in `001-functions`. #90 made
+*release* reliable for a holder that ends normally; a holder that is
+SIGKILLed, OOM-killed or dies with its terminal cannot run its trap, and
+`wait_lock` retried the create every second forever without reading the pid
+the file carries. On the VM a File Manager chain killed from outside left the
+file behind and one `set_setting cloudsaves.startup 1` took 4 min 43 s to
+return, stalling the `systemctl restart emustation` behind it; nothing named
+the holder, because nothing read it.
+
+- When the create fails, `wait_lock` now reads the pid in the file. A pid
+  `kill -0` rejects, an empty file or one that is not a number is stale: the
+  file is removed -- only if a re-read just before the `rm` still shows the
+  same content, which shrinks the race with a holder that released and a
+  newcomer that took it in between, without closing it -- one line goes to
+  the system log (`logger -t wait_lock "removed stale lock ... held by pid
+  N"`; stderr if an image ever lacks `logger`), and the create is retried at
+  once. A live holder is waited on as before and never displaced; after 30
+  polls of the same holder its pid is logged once, so `journalctl -t
+  wait_lock` names what to look at. The noclobber create and the #90 trap are
+  untouched, and nothing in it is bash-only.
+- Residuals, accepted: a dead holder's pid reused by an unrelated live
+  process is waited on until that process exits (the 30 s line names it); a
+  holder SIGKILLed but not yet reaped is a zombie, which `kill -0` counts as
+  alive until its parent collects it; and a holder's own create is an empty
+  file for a few microseconds between open and write, which the re-read is
+  the only thing standing between and a theft.
+- **Upgrade**: nothing to migrate. `/tmp` is tmpfs and an update reboots, so
+  no stale lock crosses over; the first build to carry this clears one the
+  moment any caller meets it.
+- Verified: `tools/wait-lock-test` (fork-only, registered in the pre-push
+  guard) lifts the function out of any copy of `001-functions` and runs six
+  cases in a fresh bash under `timeout` -- a dead pid, a releasing live holder
+  (never stolen, waited out), a holder SIGKILLed mid-wait (taken within a poll,
+  logged with its pid), an empty file with no `logger` on PATH, garbage
+  content, and the 30 s line exactly once. Against `next`'s copy it fails 13
+  checks, every stale case hanging to the timeout; against this one all 21
+  pass. The VM and the handhelds see it in the next build.
+
+## The lock and no-network sentinels are 75 and 69, codes rclone cannot return (#99)
+
+The stopgap above (`28cc392b41`) remapped a 3 or 4 reaching the four scripts'
+final exit to 1. The proper fix moves the sentinels out of rclone's range:
+`take_cloud_lock` exits **75** (`EX_TEMPFAIL`, `EXIT_LOCK_HELD`) in
+`cloud_backup`, `cloud_restore`, `cloud_content_backup` and
+`cloud_content_restore`, and `cloud_backup`'s `check_network_link` exits **69**
+(`EX_UNAVAILABLE`, `EXIT_NO_NETWORK`). Both come from `sysexits.h`, sit above
+everything rclone returns (0-9) and below the `128+signal` range, and are
+defined once near the top of each script and used by name. The messages
+beside them are unchanged.
+
+- The remap is gone from all four scripts (`clean_exit`'s `case` in the two
+  saves scripts, the `case "${STATUS}"` before the final `exit` in the two
+  content scripts), so a phase failure passes rclone's code through as it did
+  before the stopgap -- and can no longer collide. `report_rclone_error` still
+  names rclone's 3 and 4 with rclone's meanings, which is what they now
+  always are.
+- Readers changed together: the four scripts; EmulationStation's exit-code
+  maps (`GuiCloudTransfer::update`, `ThreadedCloudSync::run`) and its own
+  startup-sync command, which exits 69 where it exited 4 -- the ES half, in
+  the ES repo, done in parallel; `tools/cloud-round-trip`, whose lock fixture
+  expects 75, whose no-route fixture expects 69, and whose restore against
+  the empty endpoint now asserts an exit that is not 0, 75 or 69 ("fails with
+  its own code, not as a sentinel"); `rclone-cloud-sync.md` and
+  `docs/es-menu-map.md`. `autostart/102-cloud-saves` never named a code, and
+  the harness's `WRITERS`/`BOOT_PAIR` name commands, not codes -- nothing to
+  change in either. The register rows and blindspot 33 keep the history as
+  written.
+- **Upgrade**: scripts and EmulationStation ship in one image, so no device
+  ever runs one side new and the other old; the codes change together at the
+  reboot that applies the update. The one mixed state is a development one:
+  scripts staged onto a running device by hand ahead of an image, as the QA
+  protocol does, against an ES that still reads 3 and 4 -- a lock skip then
+  shows FAILED rather than SKIPPED, and the converse for the other order.
+  Stamps: the scripts write no last-run stamp for a sentinel, so no
+  `last-backup`/`last-restore` anywhere holds a 3 or 4 that meant "skipped";
+  one holding rclone's 3 or 4 from a build before the stopgap was a real
+  failure and reads as FAILED, correctly. The ES-written `last-sync-<cause>`
+  stamps (D-CLOUD-072) can hold an rc of 3 or 4 from a sync the previous build
+  skipped; how the new ES renders those until the next sync replaces the
+  stamp is the ES side's to decide.
+- Still open from #99: whether a missing remote Saves folder on a device that
+  has never backed up is a warning rather than a failure (a misconfigured
+  folder name must still fail loudly).
+- Verified: on the host, `take_cloud_lock` lifted out of `cloud_backup` and
+  `cloud_content_restore` exits 75 with the lock held by another shell, and
+  `check_network_link` exits 69 with an `ip` that lists no routes and 0 with
+  the host's; `bash -n` on the four scripts; the harness compiles and lists.
+  The single-device suite on the VM, and the page's SKIPPED/FAILED wording
+  against the new ES, are the next build's checks.
