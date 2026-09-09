@@ -57,3 +57,76 @@ every time, at the moment, by name. The check before asking covers everything
 the action would interrupt. See also blindspot 13 (ticks that were not
 observations) — the same substitution of a proxy for the thing itself.
 
+## 30. A resumed session built on its own summary's claim about the code
+
+**Committed:** 2026-09-06. After a context compaction, the summary said both
+content scripts passed `MEDIA_EXCLUDES` to their `rclone copy`. Neither did.
+The array was defined in both and used by nothing; the session resumed,
+finished the interface, built two images and started a device build on top
+of the claim. The VM found it — a backup with the switch off put `images/`
+and `videos/` in the cloud — because the run read the remote instead of the
+page's COMPLETED SUCCESSFULLY.
+
+**The shape:** a summary is a report, and blindspot 13's rule applies to it as
+to any other report: it records what a session *believed* it had done. A
+claim about the state of the code is checkable in one grep, and a session
+that resumes from a summary has not made that check by reading the summary.
+
+**The fix:** on resume, before building on any "X is done" that names code,
+grep for X. The same session's other summary claim — "unit-tested" — was true
+and irrelevant: the test compared the two selectors and never ran a copy.
+See `engineering-practices.md` § "Verify the artifact, not the report".
+
+
+## 31. A harness that writes and reads through the same wrong path agrees with itself
+
+**Committed:** 2026-09-06 (found 2026-09-07). On MinIO the round-trip suite's
+seeding step put the owner's note at the endpoint and read it back through
+the same helper, and both doubled the bucket: `rocknix-qa/rocknix-qa/GAMES`.
+"The owner's note survived a second seeding" passed on every MinIO run, about
+a folder the device never looked at. The same day, `rclone cat` of a missing
+S3 key exited 0 with no output, and "the manifest reached the cloud" passed on
+MinIO for a manifest that was never there.
+
+**The shape:** a check whose fixture and whose reading share a path derivation
+is comparing the harness with itself. It cannot fail on the thing it names,
+because the device under test is not on the path at all. Blindspot 22's rule
+— a check that cannot run has not passed — has a sibling: a check that runs
+somewhere the device does not look has not tested the device.
+
+**The fix:** derive endpoint paths in one place (`epath()`), with the S3
+bucket stripped where the backend's own commands add it; make the backend's
+`cat` fail on a missing key; and, for any "it reached the cloud" assertion,
+ask what the device would have had to do for it to pass — if the answer is
+nothing, it is not evidence. See `engineering-practices.md` § "Guards must
+fail closed".
+
+## 32. Causal ordering read from wall-clock timestamps that jumped mid-boot
+
+**Committed:** 2026-09-08 (epic #11, #83/#84). To explain how a two-card
+device wrote saves to the wrong card, the boot journal was read in wall-clock
+time and produced a table showing EmulationStation's process starting
+*before* `rocknix-automount` bound the second card — a clean causal story for
+the bug, filed on #84 and stated to the maintainer. It was wrong. On these
+devices the RTC set fails early in boot (`hwclock ... exit code 1`) and NTP
+corrects the clock partway through (`Contacted time server` at ~21 s), so
+every wall-clock timestamp recorded before the sync is on a different clock
+than those after it. Ordering events across that point by their printed time
+compares two clocks. In monotonic time the automount finished ~10 s *before*
+the interface started, on both handhelds — the opposite order.
+
+**The shape:** a timeline assembled from timestamps that are not all on the
+same clock. It reads as evidence because each line has a real time on it; the
+times are simply not comparable to each other. Any boot, container start, or
+freshly-provisioned host whose clock is set by NTP or an RTC fixup during the
+window under study has this hazard, and the conclusion it produced here was
+confident, specific, and backwards.
+
+**The fix:** order boot and early-life events in **monotonic** time
+(`journalctl -o short-monotonic`, `/proc/<pid>/stat` field 22, `CLOCK_MONOTONIC`),
+never wall time, whenever a clock correction can fall inside the window. When
+a wall-clock timeline is the only source, look for a clock jump first
+(`timedatectl`, `Time has been changed`, an RTC failure, an NTP sync line) and
+distrust any ordering that straddles it. And treat a tidy causal story drawn
+from timestamps as a hypothesis until the mechanism is confirmed in the code
+(here: `find_games` scanning once and binding internal), not the timeline.
