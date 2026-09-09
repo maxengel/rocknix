@@ -1378,3 +1378,38 @@ dropped mid-run held the process for well over ten minutes.
   `nmcli` → 0 by route and carrier, a flap mid-grace restarts the grace,
   `--wait abc` → 64, and the marker printed exactly once whenever it waited,
   with nothing on stderr.
+
+## The interface never waits on the network; a launch cancels an automatic sync (2026-09-09)
+
+EmulationStation's interface thread made network-dependent calls in a dozen
+places, the worst of them on pages a player opens when the network is already
+misbehaving: NETWORK SETTINGS pinged three times and read the address before it
+drew (six seconds routed-but-offline, unbounded with a wedged driver), the
+Wi-Fi list ran a rescan in its constructor, ENABLE WI-FI and the save-on-close
+ran `wifictl connect` for up to two minutes with the screen frozen, the CLOUD
+page probed the remote for the legacy-layout check, and the wizard's done step
+seeded eight cloud folders inside a callback. All of those now run on a worker
+or behind a spinner and are time-boxed (`timeout` around every shell call);
+NETWORK SETTINGS opens at once with `CHECKING...` and fills in; the TIDY row on
+CLOUD appears at the end of the page once the check answers, on legacy-layout
+devices only. Still synchronous but bounded: the adapter and channel queries
+that build the Wi-Fi option rows (10 s / 5 s) and `cloud_setup --info` (10 s).
+Found and left for its own change: the RetroAchievements account test in that
+page's save function is an HTTPS request with no total timeout (#103, D-CLOUD-075).
+
+The startup sync now waits for a *settled* connection instead of the first
+`ping google.com`: `cloud_net_ready --wait 60` exits 0 once NetworkManager has
+reported `connected` for three seconds with a default route, 69 at once with no
+route, 69 at the deadline; the card reads `WAITING FOR THE NETWORK...` from its
+one marker line. An image without the helper falls back to the old probe.
+
+**A game launch cancels an automatic saves sync in any phase** — startup or
+exit; a sync the player started by hand is still refused (`YOUR SAVES ARE
+SYNCING WITH THE CLOUD...`). The kill completes before the game starts: SIGTERM
+to the sync's process group, a wait of up to two seconds for the run to end,
+SIGKILL at one and a half, because rclone renames a temporary file into place
+at the end of each copy and a rename landing on a save the game has just
+written would lose it. The card ends `SKIPPED - A GAME WAS STARTED` and the
+stamp records the stop. Every command `ThreadedCloudSync` runs is now wrapped
+in `setsid` with its pid announced, so the exit sync can be signalled too — it
+used to run bare (#101, D-CLOUD-076). ES `test/qa-integration` `e46093354`.
