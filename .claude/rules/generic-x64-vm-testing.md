@@ -202,6 +202,36 @@ things that cost a cycle each before they were written down:
 - **Wait 2 s after a page opens, 7 s after one that scans the cloud**, then
   `shot`. A frame taken early is the previous screen, and it reads as "the
   key did nothing".
+- **A restarted EmulationStation comes back on the last game list, not the
+  carousel.** `systemctl restart emustation` (and ES's own restarts) restore
+  the list that was open -- TOOLS, MUSIC PLAYER, whatever the previous walk
+  left -- so a walk that assumes the carousel starts one screen deep, and its
+  `x` presses launch things: on 2026-09-09 one such run started the File
+  Manager (`foot` + `commander.sh`) and every later key went to it. Only a
+  full reboot lands on the carousel. After a restart, send one `z` (B) and
+  read a frame before driving anything; when a frame shows a game list, that
+  one B is the whole fix. A launched tool is killed by pid over SSH
+  (`pgrep -a foot`), never by pattern, and ES then shows `UKNOWN ERROR : 230`
+  (upstream's spelling) that one `x` dismisses.
+- **After an ES restart, `screendump` can serve the previous ES's last frame
+  for half a minute or more.** Frames captured 7-34 s after a restart still
+  showed the old hub page with its old clock, while the new ES was already
+  running and its startup sync had come and gone. The surface caught up once
+  keys were sent. A full `reboot` does not have the problem: capture
+  continuously from about 15 s after issuing it and the boot-time card is in
+  the frames (`SYNCING SAVES AT STARTUP` at t+25 s, `COMPLETED SUCCESSFULLY`
+  at t+27 s on 2026-09-09). Note that on a fresh boot the guest clock reads
+  from the RTC until NTP corrects it, so log timestamps from the first minute
+  lag real time by up to a minute (blindspot 32); order by uptime, not by
+  the clock.
+- **A serial or SSH command that hangs on `set_setting` is waiting on
+  `/tmp/.system.cfg.lock`.** `wait_lock` spins with no timeout and never
+  checks whether the holder is alive (#98); one `set_setting cloudsaves.startup 1`
+  took 4 min 43 s on 2026-09-09 after a tool had been killed from outside.
+  Read the pid in the file and `kill -0` it before waiting on it again.
+- **`vm-serial wait` returns at once if an ES is still up.** Right after
+  `reboot` the old EmulationStation is still running for several seconds, so
+  "ready after ~0s" means nothing; check that `uptime` has reset first.
 - **A screen that looks like the previous one is not proof the key was
   ignored.** Check `pgrep emulationstation` before re-driving input — an
   abort()ed ES restarts to the carousel, which looks the same.

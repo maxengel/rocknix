@@ -22,11 +22,15 @@ dialog there (GO TO LETTER under the alphabetical systems sort, GO TO
 MANUFACTURER under the manufacturer one; `SystemView::showNavigationBar`
 picks by the SORT SYSTEMS setting) -- so a reset that starts asleep, or
 one B short, ends on a dialog rather than the carousel (#85). The
-deterministic start is a fresh EmulationStation (a rebooted VM, or
-`systemctl restart emustation` over serial): it comes up on the carousel,
-awake, with nothing open, and needs neither file. Use the pair when a walk
-follows another in the same session; when the state is unknown, restart
-instead of guessing. `to-change-cloud-folder.steps` and
+deterministic start is a **rebooted VM**: it comes up on the carousel,
+awake, with nothing open, and needs neither file. A restarted
+EmulationStation (`systemctl restart emustation`) is not that: it restores
+the game list that was open when it went down, so a walk that assumes the
+carousel starts one screen deep and its `x` presses launch whatever is under
+the cursor (the File Manager, 2026-09-09). After a restart, send one `z` and
+read a frame before composing anything. Use the wake/reset pair when a walk
+follows another in the same session; when the state is unknown, reboot or
+read a frame instead of guessing. `to-change-cloud-folder.steps` and
 `confirm-cloud-folder.steps`
 reach the CLOUD FOLDER editor and press OK on the current value; on MinIO,
 where `/ROCKNIX/Saves` is not a legal bucket name, that is the refusal

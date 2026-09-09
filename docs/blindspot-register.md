@@ -130,3 +130,33 @@ a wall-clock timeline is the only source, look for a clock jump first
 distrust any ordering that straddles it. And treat a tidy causal story drawn
 from timestamps as a hypothesis until the mechanism is confirmed in the code
 (here: `find_games` scanning once and binding internal), not the timeline.
+
+## 33. A sentinel exit code borrowed from the exit-code space of the tool the script wraps
+
+**What happened:** the four cloud scripts exit 3 when another cloud sync holds
+the lock and 4 when there is no network, and EmulationStation names both
+(`SKIPPED - ANOTHER CLOUD SYNC IS RUNNING`, `SKIPPED - NO NETWORK CONNECTION`).
+rclone's own exit codes are 3 for "directory not found" and 4 for "file not
+found", and every failed phase carried rclone's code up to the script's exit.
+So a restore against a cloud whose Saves folder did not exist yet -- the
+everyday shape of a fresh device -- ended on the transfer page as `SKIPPED -
+ANOTHER CLOUD SYNC IS RUNNING` over `5 FILES RESTORED` (VM, 2026-09-09, #99).
+The message was specific, confident, and about something that had not
+happened; a player would have gone looking for a sync that was not there.
+
+**Why it is systematic:** a sentinel is meaningful only if nothing else can
+produce it, and a wrapper script's exit status is shared with every command
+whose status it forwards. `1` for "failed" and small integers for "special
+cases" is the habit; the wrapped tool has the same habit. The collision hides
+until the wrapped tool fails in exactly the way that shares the number, which
+in this subsystem is the case a new user hits first.
+
+**The fix:** sentinels live in a range the wrapped tool cannot return
+(`75`/`69` from sysexits, or any value above the tool's documented set), are
+raised only by the code paths that mean them, and the final exit never
+forwards a raw subprocess status that could collide -- map it to `1` and log
+the original. Taken now as the remap plus a harness case that restores against
+an empty endpoint and asserts `1`; the distinct codes are #99, because they
+change scripts, EmulationStation, the autostart and the harness together.
+Check every reader that names a code (`GuiCloudTransfer`, `ThreadedCloudSync`,
+`cloudLastRunDetail`, CAP10) whenever one is added.
