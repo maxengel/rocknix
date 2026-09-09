@@ -1,6 +1,6 @@
 # Saved Session State
 
-> **Saved**: 2026-09-09T18:26:33Z
+> **Saved**: 2026-09-09T20:22:51Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
@@ -9,6 +9,8 @@
 Epic #11 (cloud saves: visual conflict resolution). **#21 capture's initial build is shipped**: H700 `b6bd7dc3b7` is on both handhelds (RG SP, RG35XX SP) since 2026-09-08 22:52Z, deployed after every VM check passed and on the maintainer's word. The maintainer ran the device-side tests on 2026-09-09: the **game-exit capture is verified on the RG SP** (#21 comment), the **labelled settings archive landed in the device's own cloud folder** (#85 item 4), and the **legacy folders and unlabelled archives were removed on their word** (#96, D-CLOUD-069/071). Early on 2026-09-09 they also sent three UI observations that are filed but **not built**: #85 second pass (row says only the delta / `NOTHING NEW TO BACK UP`), #95 (item-first transfer page, one shape per phase) and #94 (startup sync visible; per-mode `last-capture`, D-CLOUD-070). Their question at the stash — *"do we have a new build with the feedback I gave yesterday around the cloud backup work?"* — was answered: `b6bd7dc3b7` carries the 2026-09-08 items (delta rows, bar, height, archive naming); the three above need the next build. **Recommended next tranche: #85 second pass + #95 + #94 together** (all `GuiCloudTransfer`/`GuiMenu` plus the `>>> unit` protocol and the stamp in `cloud_capture`), VM screendumps, then one H700 build; then **#22, the reconciler**, which consumes the manifest capture now writes.
 
 ## Completed This Session
+
+- **QoL tranche, 2026-09-09 evening (maintainer: "let's knock out these quality-of-life improvements now")** — #85 second pass (delta-only picker rows, D-UI-027), #95 (item-first transfer page, `ITEM i OF n` across the run, one shape per phase, D-UI-026), #94 (startup sync run by ES with the card, `last-sync-<origin>` stamps, LAST lines under the toggles, per-mode `last-capture`, D-CLOUD-070/072), #97 (`generic-x64-vm --res WxH`, closed). ES `test/qa-integration` `41b7b8f10`; `next` `ef43f2ce4b` (+ docs `148c7d4ebe`, changelog after). Verified on the VM at 1280×800 and 640×480 (frames under `x64-all-20260909-d8bc358248/shots/`); harness CAP1–12 and the single-device suite PASSED on `ef43f2ce4b`. Found and fixed on the way: rclone numbers rounded so row 4 fits (`e7e672524`), `LEFT` never appended since `621b917eb` (`94924c835`), rclone exit 3 read as the lock sentinel (#99, `28cc392b41`, blindspot 33, D-CLOUD-073). Filed: #98 (`wait_lock` spins forever on a stale lock). **H700 `ef43f2ce4b` built and archived** (`h700-all-20260909-ef43f2ce4b/`, tar sha256 `7aaecb97bfdaf6eb…`), **not staged** — the maintainer is asked first (D-QA-011); the RG35XX SP was offline all session.
 
 Everything below is on `next` (`f451252587`, pushed) unless noted; ES is on `test/qa-integration` `621b917eb` (pinned).
 
@@ -33,6 +35,7 @@ Everything below is on `next` (`f451252587`, pushed) unless noted; ES is on `tes
 
 ## Next Steps
 
+0. **Deploy `ef43f2ce4b`**: on the maintainer's yes, `scp` the tar to the RG SP's `~/.update` (verify the device-side sha256), ask again before the reboot (D-QA-008); the RG35XX SP when it is back. Then their look at the picker, the transfer page, and the boot card; close #85, #94 (launch-gate and handheld boxes), #95. Follow-ups: #98, #99 (proper sentinel codes), the `.tmp` stamp file and `last-sync-manual` unread (from #94's implementer), `README.txt`-style docs debt #42.
 1. ~~Game-exit capture on a handheld~~ **done 2026-09-09** on the RG SP (#21 comment: manifest, hashes vs `sha256sum`, three content-addressed stage copies, `core_build` = image pin = repo pin; two boxes ticked, the `unknown`/wizard half split off for #22). Still open on the device: a save-state delete (`retired` row), #79, #90/#92. **Finding carried to #94**: the boot full pass overwrote the single-line `last-capture` ten hours after the exit; proposal is one line per mode, each replaced only by its own mode.
 2. ~~Settings archive name and cloud folder~~ **done 2026-09-09**: `2026_09_09-031728-Anbernic-RG-SP-ROCKNIX_SETTINGS.tar.gz` in `Anbernic-RG-SP-f058e3e9e8/` beside `device.json` (#85 item 4; #49 commented). **#96 closed (D-CLOUD-069)**: the two legacy folders were copied to `/workspace/artifacts/rocknix-images/legacy-cloud-backups-20260909/` (7 files, verified) and purged on the maintainer's word; the RG35XX SP (offline all session; its only cloud archives were in `ROCKNIX-ee5013fc56/`) has none until its next settings backup. #85 still waits on the 640×480 look.
 3. Check upstream CI/reviews on #3285/#3286 (`gh pr checks`, `gh pr view --comments`).
