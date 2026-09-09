@@ -77,7 +77,19 @@ function get_setting() {
   return
 }
 
+# One line to the system log about the settings lock. busybox ships logger
+# (CONFIG_LOGGER=y); should an image lack it, stderr is the next best reader.
+function wait_lock_say() {
+  if command -v logger >/dev/null 2>&1
+  then
+    logger -t wait_lock "${*}"
+  else
+    echo "wait_lock: ${*}" >&2
+  fi
+}
+
 function wait_lock() {
+  local holder current waited_on="" held_for=0
   while true
   do
     if (set -o noclobber; echo "$$" > "${J_CONF_LOCK}") 2>/dev/null
@@ -89,8 +101,58 @@ function wait_lock() {
       # process may own the file by the time this one exits.
       trap 'rc=$?; [ "$(cat "${J_CONF_LOCK}" 2>/dev/null)" = "$$" ] && rm -f "${J_CONF_LOCK}"; exit "${rc}"' INT TERM EXIT
       break
-    else
-     sleep 1
+    fi
+
+    # The create failed, so the file is there and names its holder -- or named
+    # one. A holder that ends normally releases it through the trap above; one
+    # that is SIGKILLed, OOM-killed or dies with its terminal cannot, and until
+    # 2026-09-09 nothing read the pid in the file, so a stale lock stalled
+    # every get_setting and set_setting on the device until reboot (4 min 43 s
+    # for one set_setting on the VM, #98). Read the holder and ask the kernel.
+    [ -e "${J_CONF_LOCK}" ] || continue   # released since the create failed: try again at once
+    holder=""
+    read -r holder 2>/dev/null < "${J_CONF_LOCK}"
+    case "${holder}" in
+      ''|*[!0-9]*)
+        # Empty, or not a pid: nobody can be holding it. (An empty file is also
+        # what a holder's own create looks like between open and write, for a
+        # few microseconds; the re-read below is what stands between that and a
+        # theft.)
+        ;;
+      *)
+        if kill -0 "${holder}" 2>/dev/null
+        then
+          # Alive: wait, as ever, and never take a live holder's lock. After
+          # 30 s of the same holder, say who it is -- once, not every second --
+          # so the next person to find a stalled set_setting has a pid to look
+          # at instead of a file that carries one nobody reads.
+          if [ "${holder}" != "${waited_on}" ]
+          then
+            waited_on="${holder}"
+            held_for=0
+          fi
+          held_for=$((held_for + 1))
+          if [ "${held_for}" -eq 30 ]
+          then
+            wait_lock_say "still waiting on ${J_CONF_LOCK}: held by live pid ${holder} for ${held_for}s"
+          fi
+          sleep 1
+          continue
+        fi
+        ;;
+    esac
+
+    # Stale. Remove it only if it still says what was read above: between that
+    # read and this rm the holder may have released it and another shell taken
+    # it, and an unconditional rm would steal the newcomer's lock. Re-reading
+    # just before the rm shrinks that window to a few instructions; it does not
+    # close it. Then retry at once -- there is nothing to wait for.
+    current=""
+    read -r current 2>/dev/null < "${J_CONF_LOCK}"
+    if [ -e "${J_CONF_LOCK}" ] && [ "${current}" = "${holder}" ]
+    then
+      rm -f "${J_CONF_LOCK}"
+      wait_lock_say "removed stale lock ${J_CONF_LOCK} held by pid ${holder:-<none>}"
     fi
   done
 }
