@@ -1130,3 +1130,35 @@ the scripts, EmulationStation, the autostart and the harness together -- is
 #99. Harness: the single-device suite now restores against the empty endpoint
 first and asserts exit 1. Player-facing: a run that could not reach a folder
 says FAILED, not that a sync was running.
+
+## The transfer page names the item first; the picker says what is not yet on the far side (2026-09-09)
+
+On BACKING UP TO THE CLOUD and RESTORING FROM THE CLOUD the four rows under the
+title now read, in every phase alike: the item (`BIOS`, `NES`, `SAVES`,
+`SETTINGS`), `ITEM i OF n` counted across the whole run rather than per script,
+what it is doing on that item (`TRANSFERRING <file>` with its progress where the
+line has room, `CHECKING 120 OF 400 FILES`, and `WRITING THE SETTINGS
+ARCHIVE...` while backuptool works, where the settings item used to sit on
+PREPARING... over a spinner), and that item's files and bytes. The bar, elapsed
+time, notice and the done page are as before (#95, D-UI-026). EmulationStation
+announces the settings item before backuptool runs and emits a `>>> doing
+archive` marker; the scripts' label for that phase is `SETTINGS` to match. The
+page counts items itself: a repeated identical label is the same item, `n`
+starts from the picker's selection plus the saves and settings phases and is
+refined from the content script's own count (BIOS coming along on a restore
+turned `ITEM 1 OF 3` into `ITEM 3 OF 4`), and never reads `i > n`. Every size
+and speed rclone prints is re-rendered at `sizeLabel`'s precision (`16.5 MB OF
+16.5 MB · 100% · 520 KB/S`), which is what lets row 4 fit a 640×480 panel; and
+`LEFT` is finally appended to the time left, which a four-byte separator had
+kept off the page since the row existed.
+
+On CONTENT TO BACK UP / CONTENT TO RESTORE each system's line quantifies only
+what this run would move -- `2.9 MB NOT YET IN YOUR CLOUD · 1 FILE`, or `NOTHING
+NEW TO BACK UP`; the restore page reads `NOT YET ON THIS DEVICE` / `NOTHING NEW
+TO RESTORE` -- with no total anywhere on the row, since a size beside a system
+read as an amount about to move (#85 item 1 second pass, D-UI-027).
+
+Verified on the GENERIC_X64 VM at 1280×800 and 640×480 (frames under
+`x64-all-20260909-d8bc358248/shots/`); ES `test/qa-integration` `41b7b8f10`;
+ships in H700 `ef43f2ce4b`. rocknix.org: the cloud-sync page still owes the
+whole native flow (#42).
