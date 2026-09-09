@@ -73,8 +73,9 @@ log_message() {
 
 # One cloud transfer at a time, whoever asked for it.
 #
-# Three callers can start one: the boot-time sync (autostart/102-cloud-saves),
-# EmulationStation after a game exits, and a person in the menu. Until
+# Three callers can start one: EmulationStation at boot (the startup sync,
+# which ran headless from autostart/102-cloud-saves until #94), EmulationStation
+# after a game exits, and a person in the menu. Until
 # 2026-09-04 the game-exit path was an OS hook with a pgrep guard; moving it
 # into ES kept the visible progress and dropped the guard, so exiting a game
 # during the boot sync started a second rclone against the same remote. Two

@@ -1066,14 +1066,17 @@ ID_FILE = "/storage/.config/cloud_sync-device-id"
 LOG = "/var/log/cloud_sync.log"
 CACHE = "/storage/.cache/cloud_sync"
 
-# The writers of the saves tree (#22 R1), as they run today: the boot
-# autostart (102-cloud-saves); GuiMenu.cpp's SYNC SAVES WITH THE CLOUD, BACK
-# UP SAVES TO THE CLOUD and RESTORE SAVES FROM THE CLOUD (the transfer page's
-# SAVES tick runs the last two); FileData.cpp's game-exit push; and the two
-# scripts from a shell. A1 runs each one. When a writer changes, this table
-# changes in the same commit: the fixture tests what the labels run.
+# The writers of the saves tree (#22 R1), as they run today: the startup
+# sync EmulationStation runs at boot with SYNC SAVES DURING STARTUP on (the
+# same pair as the SYNC SAVES WITH THE CLOUD row; it ran headless from the
+# autostart 102-cloud-saves until #94); GuiMenu.cpp's SYNC SAVES WITH THE
+# CLOUD, BACK UP SAVES TO THE CLOUD and RESTORE SAVES FROM THE CLOUD (the
+# transfer page's SAVES tick runs the last two); FileData.cpp's game-exit
+# push; and the two scripts from a shell. A1 runs each one. When a writer
+# changes, this table changes in the same commit: the fixture tests what the
+# labels run.
 WRITERS = [
-    ("the boot pair (autostart 102-cloud-saves)",
+    ("the startup sync (EmulationStation at boot; the autostart's pair until #94)",
      "cloud_restore --yes --method=copy --update --saves-only; "
      "cloud_backup --yes --method=copy --update --saves-only"),
     ("SYNC SAVES WITH THE CLOUD",
@@ -3319,10 +3322,11 @@ def boot_caller_gate(lines):
     closes, and the first unmatched `if` is the one guarding us -- an `else`
     or `elif` met first means the line runs when that test is false. It must
     name BOTH toggles (orchestrator decision 2: a gameexit-only device runs
-    it too). Line order is not evidence: the sync block's own toggle test sits
-    above any line appended after its `fi`, and satisfied the old check for an
-    ungated --full. The line itself must be detached (setsid or nohup, ending
-    in a single `&` -- `&&` is a foreground chain) and niced."""
+    it too). Line order is not evidence: until #94 the file also held the
+    headless sync block, whose own toggle test sat above any line appended
+    after its `fi` and satisfied the old check for an ungated --full. The line
+    itself must be detached (setsid or nohup, ending in a single `&` -- `&&`
+    is a foreground chain) and niced."""
     code = [(i, l.strip()) for i, l in enumerate(lines) if l.strip() and not l.lstrip().startswith("#")]
     full = [i for i, s in code if "cloud_capture --full" in s]
     if not full:
@@ -3434,7 +3438,7 @@ def fx_cap10(p):
     idx, enclosing, gate_ok, bg_ok = got
     f += not check(gate_ok, f"static: --full runs at boot inside an `if` on both cloud-saves toggles ({where}:{idx + 1})",
                    f"static: {where}:{idx + 1}: the enclosing test is {enclosing!r} -- expected an `if` naming both "
-                   "cloudsaves.startup and cloudsaves.gameexit (a gameexit-only device runs it too; a line after the sync block's fi is ungated)")
+                   "cloudsaves.startup and cloudsaves.gameexit (a gameexit-only device runs it too; a line after another block's fi is ungated)")
     f += not check(bg_ok, "static: and detached under nice, ending in a single & (never delaying boot, D-CLOUD-057)",
                    f"static: the --full line is not `setsid|nohup ... nice ... &`: {text.splitlines()[idx].strip()[:90]!r}")
     return f
