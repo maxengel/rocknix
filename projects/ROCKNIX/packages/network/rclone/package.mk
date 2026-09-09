@@ -72,6 +72,9 @@ makeinstall_target() {
   cp cloud_sync_cleanup_duplicates.sh ${INSTALL}/usr/bin/
   cp cloud_saves_root ${INSTALL}/usr/bin/
   cp cloud_capture ${INSTALL}/usr/bin/
+  # cloud_net_ready: what EmulationStation's startup sync asks before it runs
+  # the restore/backup pair -- is the network up, and has it stayed up (#103).
+  cp cloud_net_ready ${INSTALL}/usr/bin/
   # No game-end event hook. EmulationStation runs the save sync itself now
   # (FileData::launchGame), so it can show the result on the progress card
   # instead of backgrounding the work into /dev/null where nobody could tell

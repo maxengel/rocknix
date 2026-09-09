@@ -19,6 +19,29 @@ START_TIME=$(date +%s)
 # numbers; scripts and ES ship in one image.
 readonly EXIT_LOCK_HELD=75 EXIT_NO_NETWORK=69
 
+# The bound on a reachability probe: one attempt, 10 s to connect, 20 s in
+# all. Tighter than the transfers' bound below, because a probe is a single
+# listing whose whole point is to answer quickly. Used by check_internet,
+# by the mkdir that doubles as the pre-run probe, and by
+# network_lost_during_run after a failure.
+readonly -a RCLONE_PROBE_OPTS=(--contimeout 10s --timeout 20s --low-level-retries 1 --retries 1)
+
+# What bounds every other rclone command this script runs against the cloud
+# -- the transfers, the listings, the archive upload and its size check.
+# The value is RCLONE_NET_OPTS in cloud_sync.conf (the reasoning for the
+# numbers is beside it in cloud_sync.conf.defaults), seeded there by
+# cloud_sync_helper; load_config turns it into RCLONE_NET_OPTS_ARRAY. This
+# is the same value for a config the helper has not reached -- the helper
+# binary missing, the line blanked -- so the bound holds on the first run
+# after an update too. Until 2026-09-09 only the probes were bounded and
+# every transfer ran on rclone's defaults: a 60 s connect timeout, a 5 min
+# idle timeout, 10 low-level retries, 3 whole-run retries. A link that
+# dropped mid-run held the process for over ten minutes, and on the RG SP
+# that froze the startup card at 113/113 with the launch gate held (#101,
+# #102, #103). Keep the two values in step.
+RCLONE_NET_OPTS_FALLBACK="--contimeout 15s --timeout 30s --low-level-retries 2 --retries 1"
+RCLONE_NET_OPTS_ARRAY=()
+
 # Non-interactive support for hooks and the ES menu:
 #   --yes / -y      answer prompts automatically (headless mode)
 #   --method=X      override the configured transfer method (sync or copy)
@@ -134,9 +157,13 @@ first_remote() {
 # kernel's table and sends nothing. An interface that is up but has no route
 # yet -- Wi-Fi still associating, DHCP not answered -- counts as no network,
 # which is the right answer for a job that has to run now.
+has_default_route() {
+    ip -4 route show default 2>/dev/null | grep -q . \
+        || ip -6 route show default 2>/dev/null | grep -q .
+}
+
 check_network_link() {
-    if ! ip -4 route show default 2>/dev/null | grep -q . \
-       && ! ip -6 route show default 2>/dev/null | grep -q .; then
+    if ! has_default_route; then
         echo "No network connection. Skipped."
         log_message "skipped: no default route, nothing to sync to" "false"
         exit "${EXIT_NO_NETWORK}"
@@ -336,20 +363,70 @@ check_internet() {
 
     local remote
     remote=$(rclone listremotes 2>/dev/null | head -1)
-    if [ -n "${remote}" ] && rclone lsd "${remote}" \
-            --contimeout 10s --timeout 20s --low-level-retries 1 --retries 1 \
-            >/dev/null 2>&1; then
+    if [ -n "${remote}" ] && rclone lsd "${remote}" "${RCLONE_PROBE_OPTS[@]}" >/dev/null 2>&1; then
         log_message "Cloud storage ${remote} is reachable" "false"
         return 0
     fi
 
     if ping -q -c1 -W 3 1.1.1.1 >/dev/null 2>&1 || ping -q -c1 -W 3 8.8.8.8 >/dev/null 2>&1; then
         log_message "Your cloud storage did not respond.\nCheck that it is still set up and that its sign-in has not expired." "true" "ERROR"
-    else
-        log_message "You're not currently connected to the internet.\nPlease verify your settings and then try again." "true" "ERROR"
+        pause 3
+        clean_exit 1
     fi
+    # A route with nothing behind it -- Wi-Fi associated to an access point
+    # whose uplink is down, or a link that has already gone quiet -- is no
+    # network, the same answer check_network_link gives when there is no
+    # route at all, and with the same code: EmulationStation shows SKIPPED -
+    # NO NETWORK CONNECTION for it, where a 1 read as FAILED and sent
+    # somebody to a log to learn that nothing had gone wrong. Nothing has
+    # run yet, so no stamp, as for the other sentinel exits.
+    log_message "You're not currently connected to the internet.\nPlease verify your settings and then try again." "true" "ERROR"
+    log_message "skipped: no network -- the remote and the internet both unreachable before the run" "false"
     pause 3
-    clean_exit 1
+    exit "${EXIT_NO_NETWORK}"
+}
+
+# Why did rclone fail? Asked after a transfer or a listing came back
+# non-zero, with rclone's code and the phase's name.
+#
+# rclone's code says an operation failed. It does not say whether the cause
+# was the cloud, the sign-in, or the Wi-Fi going away underneath it -- and
+# on a handheld the last is the common one: the RG SP left the LAN a minute
+# into its startup sync and the card sat on 113/113 until rclone gave up
+# (#101). Told apart the way check_internet tells them apart before a run:
+# is there a default route, does the remote answer a bounded probe now, does
+# anything at all.
+#
+# The network gone -- no route, or a route nothing gets through -- ends the
+# run with EXIT_NO_NETWORK (69), which EmulationStation names on the card
+# and on the row (SKIPPED - NO NETWORK CONNECTION). Through clean_exit, so
+# the stamp records a run that did not complete: never 0, because a 0 here
+# would let the next --recent pass skip everything this one never sent, and
+# not rclone's code, because "no network" is the true answer and the one
+# the player can act on. No second phase is attempted -- it would stall for
+# another minute against the same dead link.
+#
+# Anything else is rclone's failure to report, and the caller passes
+# rclone's own code through unchanged as it always did: the remote answers
+# again (a blip rclone did not survive), or the internet answers and the
+# remote does not (the provider, or the sign-in) -- neither is "no network",
+# and saying so would be the phantom sentinel #99 removed.
+network_lost_during_run() {
+    local rc="$1" what="$2"
+    if ! has_default_route; then
+        log_message "The network went away during ${what} (rclone exit ${rc}): no default route now." "true" "ERROR"
+        clean_exit "${EXIT_NO_NETWORK}"
+    fi
+    if rclone lsd "${REMOTENAME}" "${RCLONE_PROBE_OPTS[@]}" >/dev/null 2>&1; then
+        log_message "${what} failed (rclone exit ${rc}) but ${REMOTENAME} answers now; reporting rclone's own result" "false"
+        return 0
+    fi
+    if ping -q -c1 -W 3 1.1.1.1 >/dev/null 2>&1 || ping -q -c1 -W 3 8.8.8.8 >/dev/null 2>&1; then
+        log_message "Your cloud storage stopped responding during ${what} (rclone exit ${rc}).\nCheck that it is still set up and that its sign-in has not expired." "true" "ERROR"
+        return 0
+    fi
+    log_message "The network went away during ${what} (rclone exit ${rc}): nothing answers now." "true" "ERROR"
+    clean_exit "${EXIT_NO_NETWORK}"
 }
 
 # Loads user configuration from cloud_sync.conf
@@ -456,6 +533,21 @@ load_config() {
         RCLONE_OPTS_ARRAY+=("$opt")
     done
     log_message "Options array has ${#RCLONE_OPTS_ARRAY[@]} elements" "false"
+
+    # The network bound, as an array like RCLONEOPTS above. It goes on the
+    # command line AFTER RCLONEOPTS, so a timeout somebody once put there
+    # does not outrank it -- RCLONE_NET_OPTS is where the bound is changed.
+    # Empty or unset -- a config the helper has not seeded, a line somebody
+    # blanked -- means the shipped values, never rclone's defaults: the bound
+    # is a guard, and a guard a missing line switches off is no guard.
+    local net_opts
+    net_opts=$(echo "${RCLONE_NET_OPTS:-}" | tr '\n\\' '  ' | tr -s ' ' | sed 's/^ //; s/ $//')
+    [ -n "${net_opts}" ] || net_opts="${RCLONE_NET_OPTS_FALLBACK}"
+    RCLONE_NET_OPTS_ARRAY=()
+    for opt in ${net_opts}; do
+        RCLONE_NET_OPTS_ARRAY+=("$opt")
+    done
+    log_message "rclone network bound: ${net_opts}" "false"
 
     # Apply command-line overrides
     if [ "${SYSTEM_ONLY}" -eq 1 ]; then
@@ -571,7 +663,7 @@ execute_rclone_with_error_handling() {
     
     # Execute rclone with real-time progress display
     # stdout goes to terminal (shows progress), stderr goes to temp file for logging
-    rclone "${method}" "${extra_opts[@]}" "${source}" "${dest}" 2>"$stderr_file"
+    rclone "${method}" "${extra_opts[@]}" "${RCLONE_NET_OPTS_ARRAY[@]}" "${source}" "${dest}" 2>"$stderr_file"
     local rclone_exit_code=$?
     
     # Log any stderr output for debugging
@@ -645,8 +737,7 @@ backup_game_saves() {
     # the copy does fail, check_internet words the reason below.
     if [ "${RECENT}" -eq 0 ]; then
         log_message "Ensuring remote sync path exists: ${REMOTENAME}${SAVES_REMOTE}" "false"
-        if ! rclone mkdir "${REMOTENAME}${SAVES_REMOTE}" \
-                --contimeout 10s --timeout 20s --low-level-retries 1 --retries 1 2>/dev/null; then
+        if ! rclone mkdir "${REMOTENAME}${SAVES_REMOTE}" "${RCLONE_PROBE_OPTS[@]}" 2>/dev/null; then
             log_message "Remote ${REMOTENAME}${SAVES_REMOTE} is not accessible" "true" "ERROR"
             check_internet
             return 1
@@ -765,10 +856,13 @@ backup_game_saves() {
         "${all_opts[@]}"
 
     BACKUP_STATUS=$?
-    # A --recent run skipped the reachability probe; if the copy itself
-    # failed, find out whether the remote or the network is the reason.
-    if [ "${RECENT}" -eq 1 ] && [ $BACKUP_STATUS -ne 0 ] && [ $BACKUP_STATUS -ne 9 ]; then
-        check_internet
+    # A failed transfer says why. The network gone ends the run as 69 here;
+    # anything else falls through to report_rclone_error with rclone's code.
+    # Every run, not only --recent: the pre-run probe above proves the remote
+    # was there when the run started, and #101 is about the link that goes
+    # away after that.
+    if [ $BACKUP_STATUS -ne 0 ] && [ $BACKUP_STATUS -ne 9 ]; then
+        network_lost_during_run "$BACKUP_STATUS" "the saves backup"
     fi
 
     # The card the saves folder is on must still be the one the transfer
@@ -796,7 +890,7 @@ backup_game_saves() {
     # trip the game-exit sync should not pay.
     if [ "${RSYNCRMDIR}" == "yes" ] && [ "${RECENT}" -eq 0 ] && { [ $BACKUP_STATUS -eq 0 ] || [ $BACKUP_STATUS -eq 9 ]; }; then
         log_message "Removing orphaned empty directories on remote: ${REMOTENAME}${SAVES_REMOTE}" "false"
-        rclone rmdirs "${REMOTENAME}${SAVES_REMOTE}" --leave-root --log-file /var/log/cloud_sync.log 2>/dev/null \
+        rclone rmdirs "${REMOTENAME}${SAVES_REMOTE}" "${RCLONE_NET_OPTS_ARRAY[@]}" --leave-root --log-file /var/log/cloud_sync.log 2>/dev/null \
             || log_message "Empty-directory cleanup failed (non-fatal)" "true" "WARN"
     fi
 
@@ -856,9 +950,10 @@ backup_system_files() {
         
         # Test remote backup path connectivity
         log_message "Testing remote backup path connectivity: ${device_dest}" "false"
-        rclone mkdir "${device_dest}/" 2>/dev/null
+        rclone mkdir "${device_dest}/" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null
         local mkdir_status=$?
         if [ $mkdir_status -ne 0 ]; then
+            network_lost_during_run "$mkdir_status" "the settings backup"
             log_message "Failed to create/access remote backup directory (exit code: $mkdir_status)" "true" "ERROR"
             report_rclone_error $mkdir_status "Remote backup directory creation"
             return $mkdir_status
@@ -1030,10 +1125,13 @@ backup_system_files() {
             # rclone refuses filters on a single-file copy -- "--include=/*.{zip,tar.gz}"
             # came from the folder transfer this replaced and made every upload
             # exit with a usage error.
-            rclone copyto "${archive}" "${device_dest}/${target}" \
+            rclone copyto "${archive}" "${device_dest}/${target}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
                 "${copy_opts[@]}"
             local rc=$?
             if [ ${rc} -ne 0 ]; then
+                # The marker below is not written on this path: the upload
+                # did not finish, so the next run sends the archive again.
+                network_lost_during_run "${rc}" "the settings backup"
                 BACKUP_SYSTEM_STATUS=${rc}
                 report_rclone_error ${rc} "Settings backup file transfer"
                 break
@@ -1067,7 +1165,7 @@ backup_system_files() {
   "keep": "${CLOUD_BACKUP_KEEP:-3}"
 }
 MANIFEST
-            rclone copyto "${manifest}" "${device_dest}/device.json" \
+            rclone copyto "${manifest}" "${device_dest}/device.json" "${RCLONE_NET_OPTS_ARRAY[@]}" \
                 --log-file /var/log/cloud_sync.log 2>/dev/null
         fi
 
@@ -1117,7 +1215,7 @@ MANIFEST
             else
                 local osn listing mine total_n mine_n old_archive
                 osn=$(os_name)
-                listing=$(rclone lsf --files-only --include "*.{zip,tar.gz}" "${device_dest}/" 2>/dev/null)
+                listing=$(rclone lsf --files-only --include "*.{zip,tar.gz}" "${device_dest}/" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null)
                 mine=$(printf '%s\n' "${listing}" \
                        | grep -E "^[0-9]{4}_[0-9]{2}_[0-9]{2}-[0-9]{6}-${label}-${osn}_SETTINGS\.tar\.gz$" | sort -r)
                 total_n=$(printf '%s\n' "${listing}" | grep -c .)
@@ -1129,7 +1227,7 @@ MANIFEST
                 do
                     [ -n "${old_archive}" ] || continue
                     log_message "Removing old cloud backup ${old_archive}" "false"
-                    rclone deletefile "${device_dest}/${old_archive}" 2>/dev/null
+                    rclone deletefile "${device_dest}/${old_archive}" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null
                 done
             fi
         fi
@@ -1151,13 +1249,18 @@ MANIFEST
             local uploaded
             for uploaded in "${uploaded_names[@]}"; do
                 local one
-                one=$(rclone size "${device_dest}/${uploaded}" --json 2>/dev/null \
+                one=$(rclone size "${device_dest}/${uploaded}" --json "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null \
                     | sed -n 's/.*"bytes":[[:space:]]*\([0-9]*\).*/\1/p')
                 [ -n "${one}" ] || continue
                 remote_bytes=$((remote_bytes + one))
                 checked=1
             done
             [ ${checked} -eq 1 ] || remote_bytes=""
+            # Nothing came back at all: the check itself could not reach the
+            # cloud, which after a finished upload most likely means the link
+            # went in between. The marker stays unwritten either way -- the
+            # upload is unconfirmed -- and the run says why it ended.
+            [ -n "${remote_bytes}" ] || network_lost_during_run 1 "the settings backup's size check"
             if [ -n "${remote_bytes}" ] && [ "${remote_bytes}" = "${local_bytes}" ]; then
                 printf '%s %s\n' "${local_sum}" "${device_dest}" > "${uploaded_marker}"
             else
@@ -1231,8 +1334,18 @@ main() {
     # Add a final pause before exiting
     pause 3
     
-    # Use the game saves backup status as the overall exit code
-    clean_exit ${BACKUP_STATUS}
+    # Both phases decide the exit. It was the saves phase's alone -- "use the
+    # game saves backup status as the overall exit code", from when this was
+    # a console tool with one phase that mattered -- so a settings upload
+    # that failed exited 0, and under --system-only, where the saves phase
+    # is skipped and reports 0, every failure did: the card said COMPLETED
+    # SUCCESSFULLY and last-settings-backup recorded 0 for an archive that
+    # never arrived (found while bounding the runs, #103). A run is good when
+    # every phase it ran is; otherwise it carries the first failing phase's
+    # code, the saves phase's when both failed.
+    local overall=${BACKUP_STATUS}
+    [ "${overall}" -eq 0 ] && overall=${BACKUP_SYSTEM_STATUS}
+    clean_exit ${overall}
 }
 
 # Set up signal trap to handle user interruption gracefully

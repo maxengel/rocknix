@@ -14,10 +14,33 @@ START_TIME=$(date +%s)
 # rclone's code to the final exit and the page said a sync was running (#99,
 # blindspot 33). sysexits.h's EX_TEMPFAIL sits above everything rclone
 # returns (0-9) and below the 128+signal range, so nothing this script
-# forwards can produce it. cloud_backup's no-network exit is 69
-# (EX_UNAVAILABLE) by the same rule; EmulationStation reads both, and scripts
-# and ES ship in one image.
-readonly EXIT_LOCK_HELD=75
+# forwards can produce it. The no-network exit is 69 (EX_UNAVAILABLE) by the
+# same rule -- raised by check_network_link before a run and by
+# network_lost_during_run after a failed one, as in cloud_backup;
+# EmulationStation reads both, and scripts and ES ship in one image.
+readonly EXIT_LOCK_HELD=75 EXIT_NO_NETWORK=69
+
+# The bound on a reachability probe: one attempt, 10 s to connect, 20 s in
+# all. Tighter than the transfers' bound below, because a probe is a single
+# listing whose whole point is to answer quickly. Used by check_internet and
+# by network_lost_during_run after a failure.
+readonly -a RCLONE_PROBE_OPTS=(--contimeout 10s --timeout 20s --low-level-retries 1 --retries 1)
+
+# What bounds every other rclone command this script runs against the cloud
+# -- the transfers, the listings, the archive download. The value is
+# RCLONE_NET_OPTS in cloud_sync.conf (the reasoning for the numbers is
+# beside it in cloud_sync.conf.defaults), seeded there by cloud_sync_helper;
+# load_config turns it into RCLONE_NET_OPTS_ARRAY. This is the same value
+# for a config the helper has not reached -- the helper binary missing, the
+# line blanked -- so the bound holds on the first run after an update too.
+# Until 2026-09-09 only the probe was bounded and every transfer ran on
+# rclone's defaults: a 60 s connect timeout, a 5 min idle timeout, 10
+# low-level retries, 3 whole-run retries. A link that dropped mid-run held
+# the process for over ten minutes, and on the RG SP that froze the startup
+# card at 113/113 with the launch gate held (#101, #102, #103). Keep the two
+# values in step.
+RCLONE_NET_OPTS_FALLBACK="--contimeout 15s --timeout 30s --low-level-retries 2 --retries 1"
+RCLONE_NET_OPTS_ARRAY=()
 
 # Non-interactive support for hooks and the ES menu:
 #   --yes / -y   answer prompts automatically (headless mode)
@@ -87,6 +110,27 @@ take_cloud_lock() {
         echo "Another cloud sync is already running. Skipped."
         log_message "skipped: another cloud sync holds ${CLOUD_SYNC_LOCK}" "false"
         exit "${EXIT_LOCK_HELD}"
+    fi
+}
+
+# Exit EXIT_NO_NETWORK (69) means "skipped: no network". Answered locally,
+# before any remote probe: with no default route there is nothing to restore
+# from, and nobody should wait for rclone to time out learning that. `ip
+# route` reads the kernel's table and sends nothing. The same test, the same
+# code and the same "no stamp, nothing ran" as cloud_backup's; until
+# 2026-09-09 this script had no such step and an offline restore reached
+# check_internet, which exited 1 -- FAILED on the card, for a device that
+# was simply not connected.
+has_default_route() {
+    ip -4 route show default 2>/dev/null | grep -q . \
+        || ip -6 route show default 2>/dev/null | grep -q .
+}
+
+check_network_link() {
+    if ! has_default_route; then
+        echo "No network connection. Skipped."
+        log_message "skipped: no default route, nothing to restore from" "false"
+        exit "${EXIT_NO_NETWORK}"
     fi
 }
 
@@ -363,20 +407,66 @@ check_internet() {
 
     local remote
     remote=$(rclone listremotes 2>/dev/null | head -1)
-    if [ -n "${remote}" ] && rclone lsd "${remote}" \
-            --contimeout 10s --timeout 20s --low-level-retries 1 --retries 1 \
-            >/dev/null 2>&1; then
+    if [ -n "${remote}" ] && rclone lsd "${remote}" "${RCLONE_PROBE_OPTS[@]}" >/dev/null 2>&1; then
         log_message "Cloud storage ${remote} is reachable" "false"
         return 0
     fi
 
     if ping -q -c1 -W 3 1.1.1.1 >/dev/null 2>&1 || ping -q -c1 -W 3 8.8.8.8 >/dev/null 2>&1; then
         log_message "Your cloud storage did not respond.\nCheck that it is still set up and that its sign-in has not expired." "true" "ERROR"
-    else
-        log_message "You're not currently connected to the internet.\nPlease verify your settings and then try again." "true" "ERROR"
+        sleep 3
+        clean_exit 1
     fi
+    # A route with nothing behind it -- Wi-Fi associated to an access point
+    # whose uplink is down, or a link that has already gone quiet -- is no
+    # network, the same answer check_network_link gives when there is no
+    # route at all, and with the same code: EmulationStation shows SKIPPED -
+    # NO NETWORK CONNECTION for it, where a 1 read as FAILED and sent
+    # somebody to a log to learn that nothing had gone wrong. Nothing has
+    # run yet, so no stamp, as for the other sentinel exits.
+    log_message "You're not currently connected to the internet.\nPlease verify your settings and then try again." "true" "ERROR"
+    log_message "skipped: no network -- the remote and the internet both unreachable before the run" "false"
     sleep 3
-    clean_exit 1
+    exit "${EXIT_NO_NETWORK}"
+}
+
+# Why did rclone fail? Asked after a transfer or a listing came back
+# non-zero, with rclone's code and the phase's name. The same function as
+# cloud_backup's, for the same reason (#101: the RG SP left the LAN a minute
+# into its startup sync, and the restore half is the first thing that sync
+# runs). Told apart the way check_internet tells them apart before a run:
+# is there a default route, does the remote answer a bounded probe now, does
+# anything at all.
+#
+# The network gone -- no route, or a route nothing gets through -- ends the
+# run with EXIT_NO_NETWORK (69), which EmulationStation names on the card
+# and on the row (SKIPPED - NO NETWORK CONNECTION). Through clean_exit, so
+# the stamp records a run that did not complete: never 0, and not rclone's
+# code, because "no network" is the true answer and the one the player can
+# act on. No second phase is attempted -- it would stall for another minute
+# against the same dead link.
+#
+# Anything else is rclone's failure to report, and the caller passes
+# rclone's own code through unchanged as it always did: the remote answers
+# again (a blip rclone did not survive), or the internet answers and the
+# remote does not (the provider, or the sign-in) -- neither is "no network",
+# and saying so would be the phantom sentinel #99 removed.
+network_lost_during_run() {
+    local rc="$1" what="$2"
+    if ! has_default_route; then
+        log_message "The network went away during ${what} (rclone exit ${rc}): no default route now." "true" "ERROR"
+        clean_exit "${EXIT_NO_NETWORK}"
+    fi
+    if rclone lsd "${REMOTENAME}" "${RCLONE_PROBE_OPTS[@]}" >/dev/null 2>&1; then
+        log_message "${what} failed (rclone exit ${rc}) but ${REMOTENAME} answers now; reporting rclone's own result" "false"
+        return 0
+    fi
+    if ping -q -c1 -W 3 1.1.1.1 >/dev/null 2>&1 || ping -q -c1 -W 3 8.8.8.8 >/dev/null 2>&1; then
+        log_message "Your cloud storage stopped responding during ${what} (rclone exit ${rc}).\nCheck that it is still set up and that its sign-in has not expired." "true" "ERROR"
+        return 0
+    fi
+    log_message "The network went away during ${what} (rclone exit ${rc}): nothing answers now." "true" "ERROR"
+    clean_exit "${EXIT_NO_NETWORK}"
 }
 
 # Loads user configuration from cloud_sync.conf
@@ -472,6 +562,21 @@ load_config() {
     done
     log_message "Options array has ${#RCLONE_OPTS_ARRAY[@]} elements" "false"
 
+    # The network bound, as an array like RCLONEOPTS above. It goes on the
+    # command line AFTER RCLONEOPTS, so a timeout somebody once put there
+    # does not outrank it -- RCLONE_NET_OPTS is where the bound is changed.
+    # Empty or unset -- a config the helper has not seeded, a line somebody
+    # blanked -- means the shipped values, never rclone's defaults: the bound
+    # is a guard, and a guard a missing line switches off is no guard.
+    local net_opts
+    net_opts=$(echo "${RCLONE_NET_OPTS:-}" | tr '\n\\' '  ' | tr -s ' ' | sed 's/^ //; s/ $//')
+    [ -n "${net_opts}" ] || net_opts="${RCLONE_NET_OPTS_FALLBACK}"
+    RCLONE_NET_OPTS_ARRAY=()
+    for opt in ${net_opts}; do
+        RCLONE_NET_OPTS_ARRAY+=("$opt")
+    done
+    log_message "rclone network bound: ${net_opts}" "false"
+
     # Apply command-line overrides
     if [ "${SYSTEM_ONLY}" -eq 1 ]; then
         BACKUPFILE_RESTORE_OPTION="yes"
@@ -528,7 +633,7 @@ device_label() {
 # restore can take from. Anything else -- unreachable, absent, only
 # subfolders -- is no.
 folder_has_archives() {
-    rclone lsf "${1}/" --include "/*.{zip,tar.gz}" 2>/dev/null | grep -q .
+    rclone lsf "${1}/" --include "/*.{zip,tar.gz}" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null | grep -q .
 }
 
 # The OS name the archive's name ends with. backuptool has OS_NAME from
@@ -577,7 +682,7 @@ execute_rclone_with_error_handling() {
     
     # Execute rclone with real-time progress display
     # stdout goes to terminal (shows progress), stderr goes to temp file for logging
-    rclone "${method}" "${extra_opts[@]}" "${source}" "${dest}" 2>"$stderr_file"
+    rclone "${method}" "${extra_opts[@]}" "${RCLONE_NET_OPTS_ARRAY[@]}" "${source}" "${dest}" 2>"$stderr_file"
     local rclone_exit_code=$?
     
     # Log any stderr output for debugging
@@ -625,9 +730,10 @@ restore_game_saves() {
     
     # Check if remote path exists before attempting restore
     log_message "Checking if remote path exists: ${REMOTENAME}${SAVES_REMOTE}" "false"
-    rclone lsd "${REMOTENAME}${SAVES_REMOTE}" > /dev/null 2>&1
+    rclone lsd "${REMOTENAME}${SAVES_REMOTE}" "${RCLONE_NET_OPTS_ARRAY[@]}" > /dev/null 2>&1
     local remote_check_status=$?
     if [ $remote_check_status -ne 0 ]; then
+        network_lost_during_run "$remote_check_status" "the saves restore"
         log_message "Remote path ${REMOTENAME}${SAVES_REMOTE} is not accessible (exit code: $remote_check_status)" "true" "ERROR"
         report_rclone_error $remote_check_status "Remote path check"
         return $remote_check_status
@@ -697,6 +803,11 @@ restore_game_saves() {
         "${all_opts[@]}"
     
     RESTORE_STATUS=$?
+    # A failed transfer says why. The network gone ends the run as 69 here;
+    # anything else falls through to report_rclone_error with rclone's code.
+    if [ $RESTORE_STATUS -ne 0 ] && [ $RESTORE_STATUS -ne 9 ]; then
+        network_lost_during_run "$RESTORE_STATUS" "the saves restore"
+    fi
     
     # The card the saves folder is on must still be the one the transfer
     # started on. A bind that landed mid-run means part of the run went to
@@ -736,10 +847,11 @@ restore_system_files() {
     if [ "${BACKUPFILE_RESTORE_OPTION}" == "yes" ]; then
         # Verify remote backup directory has content before attempting restore
         log_message "Checking remote backup directory: ${REMOTENAME}${SETTINGS_REMOTE}" "false"
-        REMOTE_FILES=$(rclone ls ${REMOTENAME}${SETTINGS_REMOTE}/ 2>/dev/null)
+        REMOTE_FILES=$(rclone ls ${REMOTENAME}${SETTINGS_REMOTE}/ "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null)
         local remote_ls_status=$?
         
         if [ $remote_ls_status -ne 0 ]; then
+            network_lost_during_run "$remote_ls_status" "the settings restore"
             log_message "Failed to access remote backup directory (exit code: $remote_ls_status)" "true" "ERROR"
             report_rclone_error $remote_ls_status "Remote backup directory check"
             return $remote_ls_status
@@ -868,7 +980,7 @@ restore_system_files() {
             # cloud plainly holds several is the kind of dead end that sends
             # someone looking in the wrong place.
             local others
-            others=$(rclone lsf "${legacy_src}/" --dirs-only 2>/dev/null | tr -d '/' | tr '\n' ' ')
+            others=$(rclone lsf "${legacy_src}/" --dirs-only "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null | tr -d '/' | tr '\n' ' ')
             if [ -n "${others}" ]; then
                 log_message "No backup for this device. The cloud holds backups from: ${others}" "true" "WARN"
             else
@@ -900,7 +1012,7 @@ restore_system_files() {
         # taken for this device's own; the label cannot tell them apart.
         local osn listing label mine newest
         osn=$(os_name)
-        listing=$(rclone lsf --files-only --include "*.{zip,tar.gz}" "${restore_src}/" 2>/dev/null)
+        listing=$(rclone lsf --files-only --include "*.{zip,tar.gz}" "${restore_src}/" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null)
         label=$(device_label)
         mine=""
         if [ -n "${label}" ]; then
@@ -972,10 +1084,16 @@ restore_system_files() {
             fetch_opts+=("${opt}")
         done
 
-        rclone copyto "${restore_src}/${newest}" "${SETTINGS_BACKUPS}/${local_name}" \
+        rclone copyto "${restore_src}/${newest}" "${SETTINGS_BACKUPS}/${local_name}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
             "${fetch_opts[@]}"
 
         RESTORE_SYSTEM_STATUS=$?
+        # rclone copy writes to a temporary name and renames on completion,
+        # so a download the link cut leaves no partial archive behind; the
+        # run says why it ended.
+        if [ $RESTORE_SYSTEM_STATUS -ne 0 ]; then
+            network_lost_during_run "$RESTORE_SYSTEM_STATUS" "the settings restore"
+        fi
         report_rclone_error $RESTORE_SYSTEM_STATUS "Settings backup file restore"
         
         return $RESTORE_SYSTEM_STATUS
@@ -989,6 +1107,7 @@ restore_system_files() {
 
 # Main script execution
 main() {
+    check_network_link
     check_rclone_config
     check_internet
     load_config
@@ -1054,8 +1173,18 @@ main() {
     # Add a final pause before exiting
     sleep 3
     
-    # Use the game saves restore status as the overall exit code
-    clean_exit ${RESTORE_STATUS}
+    # Both phases decide the exit. It was the saves phase's alone -- "use the
+    # game saves restore status as the overall exit code" -- so a settings
+    # download that failed exited 0, and under --system-only, where the saves
+    # phase is skipped and reports 0, every failure did: the page said
+    # COMPLETED SUCCESSFULLY and last-settings-restore recorded 0 for an
+    # archive that never arrived (found while bounding the runs, #103; the
+    # same fix as cloud_backup's). A run is good when every phase it ran is;
+    # otherwise it carries the first failing phase's code, the saves phase's
+    # when both failed.
+    local overall=${RESTORE_STATUS}
+    [ "${overall}" -eq 0 ] && overall=${RESTORE_SYSTEM_STATUS}
+    clean_exit ${overall}
 }
 
 # Set up signal trap to handle user interruption gracefully

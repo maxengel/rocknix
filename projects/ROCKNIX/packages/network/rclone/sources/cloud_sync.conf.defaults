@@ -56,6 +56,30 @@ DEFAULT_RCLONEOPTS="--progress \
 --filter-from /storage/.config/cloud_sync-rules.txt \
 --delete-excluded"
 
+# Network bounds
+# --------------
+# Timeouts and retry limits for every rclone command the cloud scripts run
+# against the cloud -- transfers, listings, probes, the settings archive's
+# upload and its size check. Without them rclone's own defaults apply: a
+# 60 s connect timeout, a 5 minute idle timeout, 10 low-level retries and
+# 3 whole-run retries, so a Wi-Fi link that drops in the middle of a run
+# holds the process for well over ten minutes. On the RG SP that left the
+# startup sync's card frozen at 113/113 with the launch gate held (#101,
+# #102).
+#
+# --timeout is rclone's IDLE timeout: it fires when no byte has moved for
+# that long, so a large transfer that is making progress is unaffected.
+# Size it for a stalled link, not a slow one. The retry counts are low on
+# purpose: a run that fails on a transient blip is retried by the exit sync
+# or the next boot, and a manual run is rerun by the player -- while ten
+# low-level retries on a dead link is what produced #102. On a dead link a
+# single operation now gives up in about a minute (two 30 s stalls, or two
+# 15 s connects), and the run is not repeated.
+#
+# One line, split on spaces by the scripts. An empty value gives these same
+# numbers, never rclone's defaults: the scripts fall back to them.
+DEFAULT_RCLONE_NET_OPTS="--contimeout 15s --timeout 30s --low-level-retries 2 --retries 1"
+
 # Backup Options
 # -------------
 ## Backup method

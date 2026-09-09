@@ -30,9 +30,11 @@ DEST="/storage/roms"
 # unit carrying rclone's code to the final exit read as a sync that was never
 # running (#99, blindspot 33). sysexits.h's EX_TEMPFAIL sits above everything
 # rclone returns (0-9) and below the 128+signal range, so nothing this script
-# forwards can produce it. The same two numbers (75, and cloud_backup's 69 for
-# no network) are what EmulationStation reads; scripts and ES ship together.
-readonly EXIT_LOCK_HELD=75
+# forwards can produce it. The same two numbers (75, and 69 for no network --
+# raised here when the link goes away under a running unit, see
+# stop_no_network) are what EmulationStation reads; scripts and ES ship
+# together.
+readonly EXIT_LOCK_HELD=75 EXIT_NO_NETWORK=69
 
 log_message() {
     echo "[$(date "+%Y-%m-%d %H:%M:%S")] [INFO] [${SCRIPT_NAME}] ${1}" >> ${LOG_FILE}
@@ -80,6 +82,62 @@ if [ -z "${REMOTENAME}" ]; then
 fi
 
 ROOT="${REMOTENAME}${CONTENT_REMOTE:+${CONTENT_REMOTE}/}"
+
+# The bound on every rclone command below that opens a socket: RCLONE_NET_OPTS
+# from cloud_sync.conf, or the same shipped values when the config has no
+# such line yet -- this script reads the config without running
+# cloud_sync_helper, so on the first run after an update it may not, and the
+# bound is a guard that a missing line must not switch off. The reasoning
+# for the numbers is beside the option in cloud_sync.conf.defaults; the
+# short version is that rclone's own defaults (60 s connect, 5 min idle, 10
+# low-level retries, 3 whole-run retries) hold a run for over ten minutes
+# on a link that drops mid-run (#101, #102, #103). Keep the fallback in step
+# with the default.
+RCLONE_NET_OPTS_FALLBACK="--contimeout 15s --timeout 30s --low-level-retries 2 --retries 1"
+_net_opts=$(echo "${RCLONE_NET_OPTS:-}" | tr '\n\\' '  ' | tr -s ' ' | sed 's/^ //; s/ $//')
+[ -n "${_net_opts}" ] || _net_opts="${RCLONE_NET_OPTS_FALLBACK}"
+read -r -a RCLONE_NET_OPTS_ARRAY <<< "${_net_opts}"
+# A probe is a single listing that exists to answer quickly: one attempt,
+# tighter than the transfers (the same values the saves scripts probe with).
+readonly -a RCLONE_PROBE_OPTS=(--contimeout 10s --timeout 20s --low-level-retries 1 --retries 1)
+
+has_default_route() {
+    ip -4 route show default 2>/dev/null | grep -q . \
+        || ip -6 route show default 2>/dev/null | grep -q .
+}
+
+# Is the network gone? Asked after rclone failed, so the run can say why it
+# ended rather than hand up a code that reads as FAILED and sends somebody
+# to a log. Gone: no default route, or a route through which neither the
+# remote nor anything else answers a bounded probe. Not gone: the remote
+# answers again (a blip rclone did not survive), or the internet answers
+# while the remote does not (the provider, or the sign-in) -- that is
+# rclone's failure to report, and the caller passes rclone's code through
+# as before. The same three questions cloud_backup asks (#101, #103).
+network_gone() {
+    has_default_route || return 0
+    rclone lsd "${REMOTENAME}" "${RCLONE_PROBE_OPTS[@]}" >/dev/null 2>&1 && return 1
+    ping -q -c1 -W 3 1.1.1.1 >/dev/null 2>&1 && return 1
+    ping -q -c1 -W 3 8.8.8.8 >/dev/null 2>&1 && return 1
+    return 0
+}
+
+# The network went away under a running unit. Says so, records that the run
+# did not complete -- never a 0, which would read as a backup that happened
+# -- and exits EXIT_NO_NETWORK, which EmulationStation names (SKIPPED - NO
+# NETWORK CONNECTION on the card, SKIPPED, NO NETWORK on the row). No
+# further unit is attempted: each would stall for another minute against
+# the same dead link. rclone copy writes each file under a temporary name
+# and renames it when complete, so nothing partial is left in the cloud.
+stop_no_network() {
+    local rc="$1" unit="$2"
+    echo "The network went away while backing up ${unit} (rclone exit ${rc}). Stopped."
+    log_message "stopped: the network went away while backing up ${unit} (rclone exit ${rc}); exit ${EXIT_NO_NETWORK}"
+    mkdir -p /storage/.cache/cloud_sync 2>/dev/null
+    printf '%s %s\n' "$(date +%s)" "${EXIT_NO_NETWORK}" \
+        > "/storage/.cache/cloud_sync/last-content-backup" 2>/dev/null
+    exit "${EXIT_NO_NETWORK}"
+}
 
 # What this device calls a game system.
 #
@@ -417,7 +475,7 @@ for DIR in "${DIRS[@]}"; do
     # before using it), and an unknown flag is a usage error that transfers
     # nothing. rclone pads the file name out to a guessed width; the reader
     # trims it, so the flag bought nothing worth a version check.
-    rclone copy "${SRC}" "${TARGET}"  \
+    rclone copy "${SRC}" "${TARGET}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
         "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${MEDIA_EXCLUDES[@]}" \
         --exclude "gamelist.xml" --exclude "**/gamelist.xml" \
         --progress --stats 1s \
@@ -426,12 +484,15 @@ for DIR in "${DIRS[@]}"; do
 
     # The game list: newest wins, rather than whoever ran last. Game content
     # only (D-CLOUD-049) -- under ROMs alone the file stays where it is.
-    [ "${MEDIA_MODE}" != roms ] && rclone copy "${SRC}" "${TARGET}" \
+    [ "${MEDIA_MODE}" != roms ] && rclone copy "${SRC}" "${TARGET}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
         "${GAMELIST_ONLY[@]}" --update \
         --stats 0 \
         --log-file "${LOG_FILE}" --log-level INFO || true
 
     if [ ${RC} -ne 0 ] && [ ${RC} -ne 9 ]; then
+        # A failed unit says why: the network gone ends the run as 69 here,
+        # anything else carries rclone's own code up as before.
+        network_gone && stop_no_network "${RC}" "${DIR:-everything}"
         echo "Backup of ${DIR:-everything} failed (rclone exit ${RC})."
         STATUS=${RC}
     else
