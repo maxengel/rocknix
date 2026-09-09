@@ -1256,3 +1256,125 @@ beside them are unchanged.
   the host's; `bash -n` on the four scripts; the harness compiles and lists.
   The single-device suite on the VM, and the page's SKIPPED/FAILED wording
   against the new ES, are the next build's checks.
+
+## Every rclone run is bounded, and a run the network took away says so (#103)
+
+The RG SP left the LAN a minute into its first startup sync on `d574edf975`,
+and the card sat at `COMPARING SAVE FILES WITH THE CLOUD 113 / 113` with the
+launch gate held (#101, #102). The scripts' *probes* had always run with
+`--contimeout 10s --timeout 20s --low-level-retries 1 --retries 1`; every
+real `rclone copy`/`sync`/`lsf` ran with `RCLONEOPTS`, which sets none of
+those, so rclone's defaults applied -- a 60 s connect timeout, a 5 minute
+idle timeout, 10 low-level retries, 3 whole-run retries -- and a link that
+dropped mid-run held the process for well over ten minutes.
+
+- **The bound.** A new config option, `RCLONE_NET_OPTS`, in both
+  `cloud_sync.conf` and `cloud_sync.conf.defaults` (`DEFAULT_RCLONE_NET_OPTS`),
+  shipped as `--contimeout 15s --timeout 30s --low-level-retries 2 --retries 1`.
+  `--timeout` is rclone's *idle* timeout -- it fires when no byte has moved for
+  that long, so a 1.4 GiB content restore that is moving is unaffected; it is
+  sized for a stalled link, not a slow one. The retry counts are low on
+  purpose: a run that fails on a transient blip is retried by the exit sync or
+  the next boot, and a manual run is rerun by the player, while ten low-level
+  retries on a dead link is what produced #102. On a dead link one operation
+  now gives up in about a minute (two 30 s stalls, or two 15 s connects) and
+  the run is not repeated. The bound is per operation: a run with several
+  operations still outstanding when the link goes ends after however many of
+  those rclone runs concurrently, which the LINK fixtures measure.
+- **Where it goes.** Every rclone command in `cloud_backup`, `cloud_restore`,
+  `cloud_content_backup` and `cloud_content_restore` that opens a socket
+  carries `"${RCLONE_NET_OPTS_ARRAY[@]}"` on its command line -- the saves
+  transfers (`execute_rclone_with_error_handling`), the settings archive's
+  `mkdir`, `copyto`, `device.json`, retention `lsf`/`deletefile` and its
+  post-upload `size` check, restore's `lsd`/`ls`/`lsf`/`copyto`, the `rmdirs`
+  tidy, and in the content scripts the transfer loops and their gamelist
+  passes, `exists_remote`, `resolve_src`, `sizes_under`, `cloud_root_populated`,
+  the match flow's `lsf`, dry-run `sync` and real `sync`, `--scan`'s two
+  listings and `--list`'s three. It goes **after** `RCLONEOPTS`, so a timeout
+  somebody once put there does not outrank it. The probes keep their own
+  tighter bound, now the one array `RCLONE_PROBE_OPTS`. Not carried, because
+  they open no socket: `rclone listremotes` (reads `rclone.conf`), `rclone
+  help`, and the match flow's `rclone size`/`rclone delete` on a local folder.
+- **A missing line is not a switched-off guard.** Each script falls back to
+  the same shipped values when `RCLONE_NET_OPTS` is unset or blank
+  (`RCLONE_NET_OPTS_FALLBACK`, kept equal to the default), because the content
+  scripts read the config without running `cloud_sync_helper` and a device's
+  first run after the update may reach one before the helper has.
+- **A failed run says why.** After any transfer or listing fails,
+  `network_lost_during_run` (saves scripts) / `network_gone` (content scripts)
+  asks the three questions `check_internet` asks before a run: is there a
+  default route; does the remote answer a bounded probe now; does anything
+  answer at all. **No route, or a route nothing gets through, exits 69**
+  (`EXIT_NO_NETWORK`) -- through `clean_exit`, so `last-backup`,
+  `last-restore`, `last-settings-*` and `last-content-*` record a run that did
+  not complete (never 0: a 0 would let the next `--recent` pass skip what this
+  one never sent). No second phase or further unit is attempted against the
+  same dead link. The remote answering again, or the internet answering while
+  the remote does not, is rclone's failure to report and **rclone's own code
+  passes through unchanged** -- "no network" is not what happened, and saying
+  so would be the phantom sentinel #99 removed. EmulationStation already names
+  69 on the card (`SKIPPED - NO NETWORK CONNECTION`) and on the rows
+  (`SKIPPED, NO NETWORK`); the ES side may want a wording for a run that was
+  cut rather than never started.
+- **The upload marker was already right.** `settings-backup.uploaded` is
+  written only after `rclone size` confirms the cloud holds a file of the
+  bytes sent; a `copyto` that fails, or a size check that gets nothing back,
+  leaves it unwritten and the next run sends the archive again. What was
+  wrong was the **exit code**: both saves scripts exited with the saves
+  phase's status alone, so a failed settings upload exited 0, and under
+  `--system-only` -- where the saves phase is skipped and reports 0 -- every
+  failure did: the card said `COMPLETED SUCCESSFULLY` and
+  `last-settings-backup` recorded 0 for an archive that never arrived. A run
+  now exits 0 only when every phase it ran did, else with the first failing
+  phase's code.
+- **Before a run, two more honest answers.** `check_internet`'s "not connected
+  to the internet" branch (route present, remote and 1.1.1.1/8.8.8.8 all
+  silent) exits 69 without a stamp, as `check_network_link` does, where it
+  exited 1 and read as FAILED; and `cloud_restore` now runs
+  `check_network_link` first, as `cloud_backup` has since #99 -- an offline
+  restore is a skip, not a failure. `cloud_content_restore --match` refuses
+  as before when the content root lists nothing, and exits 69 when the reason
+  is the network; `--scan` exits 69 with no lines rather than handing the page
+  an empty cloud that would read as "nothing of yours is in the cloud yet"
+  (the page ignores the code today; a future reader can use it).
+- **`cloud_net_ready [--wait N]`** (new, installed by `package.mk`): what the
+  startup sync should ask before it runs the pair, in place of `ping
+  google.com`. Exit 0 once NetworkManager reports `connected` (and
+  `CONNECTIVITY` `full` -- or `unknown`, on a build that checks and has not
+  yet -- the image's NetworkManager is built `-Dconcheck=false` and reports
+  `full` behind a default route without probing anything) **and** that has
+  held for a 3 s grace with a default route throughout; exit 69 at once when
+  there is no default route (D-CLOUD-072: no route means no wait); otherwise
+  poll each second up to N (default 60, plus at most the grace) and exit 69 on
+  expiry. Prints `>>> doing network` once when it starts waiting, the grace
+  included, so the card reads `WAITING FOR THE NETWORK...` and a launch during
+  it cancels the sync. `nmcli` is bounded by `timeout 5`; where it is absent
+  or NetworkManager does not answer, the route test plus a carrier on some
+  interface stands in and the log says so. Time from `/proc/uptime`, not the
+  wall clock, which NTP moves at boot. POSIX `sh`; runs under the image's
+  busybox `ash`. The ES-side command that calls it is the ES repo's change.
+- **Upgrade.** `cloud_sync_helper` appends `RCLONE_NET_OPTS` to an existing
+  `cloud_sync.conf` on the first run after the update (`post-update` runs it,
+  and so does every `cloud_backup`/`cloud_restore`), leaving customised keys
+  alone; a fresh device gets it from the defaults. Until the helper has run,
+  the in-script fallback gives the same bound. Nothing else changes shape: no
+  stamp format, no marker, no menu entry. The one visible difference on an
+  upgraded device is a run that used to end FAILED after ten minutes now
+  ending `SKIPPED - NO NETWORK CONNECTION` within about one.
+- **Verified on the host** (the VM's LINK fixtures are the harness agent's, for
+  the next image): `bash -n` on the four scripts under the host's bash and the
+  image's `bash 5.3`; `tools/pkgcheck` clean; a grep over the four scripts
+  finds no rclone invocation without `NET_OPTS`/`PROBE_OPTS` beyond the
+  socket-less ones named above; `cloud_sync_helper`, pointed at a sandbox
+  holding the previous build's `cloud_sync.conf`, appends the key once and is
+  idempotent; the fallback equals the default in all four scripts; the lifted
+  `network_lost_during_run`/`network_gone`, with stubbed `ip`/`rclone`/`ping`,
+  give 69/69 for no route and nothing-answers and pass-through for
+  remote-answers and internet-only, in both saves scripts and both content
+  scripts; `cloud_net_ready` with stubbed `nmcli`/`ip`, under `sh` and the
+  image's busybox `ash`: connected at once → 0 after the grace, no route → 69
+  in 0.0 s, connecting then connected at 5 s → 0 after the grace, never
+  settled → 69 at the deadline, `connected`+`portal` → 69 at the deadline, no
+  `nmcli` → 0 by route and carrier, a flap mid-grace restarts the grace,
+  `--wait abc` → 64, and the marker printed exactly once whenever it waited,
+  with nothing on stderr.
