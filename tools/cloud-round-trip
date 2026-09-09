@@ -23,6 +23,17 @@ on one device with no cloud at all -- no MinIO, no remote, no second guest
 identity fixture: one device and the QA endpoint, no second guest. --list
 prints every registry without touching a device.
 
+    CLOUD_QA_BWLIMIT=200k ./tools/cloud-test-backend up
+    ./tools/cloud-round-trip --host root@127.0.0.1 --port 10022 --identity ... \
+        --only LINK1,LINK2,LINK3,LINK4,LINK5,LINK6,LINK7 --serial-socket /tmp/rocknix-qemu-serial.sock
+
+--only LINK1..LINK7 (or --link after the suite) runs #103's link-loss cells:
+each starts a cloud operation, cuts the guest's link over its serial console
+at a named phase, restores it 40 s later and asserts the run ended within
+90 s with an honest exit and nothing partial left behind. They need the
+throttled WebDAV endpoint and a guest with a serial console (a headless VM);
+on a handheld they are skipped, with a line saying so.
+
 Two guards, both load-bearing:
 
 * Every cloud_* script picks its remote with `rclone listremotes | head -1`.
@@ -39,6 +50,7 @@ import json
 import os
 import re
 import shlex
+import stat
 import subprocess
 import sys
 import time
@@ -123,10 +135,17 @@ class Device:
                      "-o", "UserKnownHostsFile=/dev/null",
                      "-o", "LogLevel=ERROR",
                      "-o", "ControlMaster=auto", "-o", f"ControlPath=/tmp/crt-{os.getuid()}-%C",
-                     "-o", "ControlPersist=120", "-p", str(port)]
+                     "-o", "ControlPersist=120", "-o", "ConnectTimeout=20", "-p", str(port)]
         if identity:
             self.base += ["-i", identity]
         self.base.append(host)
+
+    def disconnect(self):
+        """Close the multiplexed connection. A command sent over a master
+        whose guest has lost its link blocks until TCP gives up or the link
+        returns; the LINK fixtures close it before the cut and let the next
+        command open a fresh one once the link is back."""
+        subprocess.run(self.base[:-1] + ["-O", "exit", self.host], capture_output=True)
 
     def run(self, cmd, check=True):
         if self.path_prefix:
@@ -146,6 +165,35 @@ class Device:
     def sha(self, path):
         out = self.run(f"sha256sum {shlex.quote(path)} 2>/dev/null || true")
         return out.split()[0] if out.strip() else None
+
+
+class Serial:
+    """The guest's serial console, through tools/vm-serial (#103).
+
+    The LINK fixtures need one channel that survives the guest losing its
+    network: the cut and the restore go over it, and so does the poll for
+    the run's exit while the link is down. It is optional -- a handheld has
+    no serial console -- and a fixture that needs it is skipped with a line
+    saying so. `usable` is a check that the socket is a socket and the tool
+    is executable; whether the console belongs to the device on --host is
+    proven separately (Link.assert_same_guest), because cutting the link of
+    the wrong machine is exactly the kind of mistake nothing would report."""
+
+    def __init__(self, socket_path, tool):
+        self.socket, self.tool = socket_path, tool
+
+    def usable(self):
+        try:
+            return stat.S_ISSOCK(os.stat(self.socket).st_mode) and os.access(self.tool, os.X_OK)
+        except OSError:
+            return False
+
+    def run(self, cmd, timeout=30):
+        p = subprocess.run([self.tool, "--socket", self.socket, "--timeout", str(timeout), "sh", cmd],
+                           capture_output=True, text=True, timeout=timeout + 20)
+        if p.returncode != 0:
+            raise Fail(f"serial {cmd!r}: {(p.stderr or p.stdout).strip() or 'no END marker'}")
+        return p.stdout
 
 
 def backend(*args):
@@ -335,6 +383,9 @@ def list_fixtures():
     print("\ncapture fixtures (one device, no cloud; --only CAP1,...,CAP12):")
     for key, title, _ in CAPTURE_FIXTURES:
         print(f"  {key:<10}{title}")
+    print("\nlink-loss fixtures (one guest, the throttled QA endpoint, and its serial console; --link, or --only LINK1,...,LINK7):")
+    for key, title, _ in LINK_FIXTURES:
+        print(f"  {key:<10}{title}")
 
 
 def main():
@@ -356,6 +407,14 @@ def main():
     ap.add_argument("--transport", default="copy,bisync", help="transports for #9's contract fixtures: copy, bisync, or both (default)")
     ap.add_argument("--bisync-flags", default="", help="extra flags for every rclone bisync run (Gate 11 variants)")
     ap.add_argument("--dump", help="a host directory to write every transport run's raw output into (Gate 11's record)")
+    ap.add_argument("--link", action="store_true",
+                    help="run the link-loss fixtures LINK1..LINK7 after the suite (#103); they take minutes and need the guest's serial console")
+    ap.add_argument("--serial-socket", default="/tmp/rocknix-qemu-serial.sock",
+                    help="the guest's serial console socket, from generic-x64-vm run --headless (default: %(default)s); "
+                         "the link-loss fixtures are skipped when it is not there")
+    ap.add_argument("--vm-serial", default=os.path.join(HERE, "vm-serial"), help="the serial client (default: %(default)s)")
+    ap.add_argument("--link-restore-after", type=float, default=40,
+                    help="seconds after the cut at which the link is restored (default: %(default)s; 120 shows an unbounded run overshoot the bound)")
     args = ap.parse_args()
     if args.list:
         list_fixtures()
@@ -367,7 +426,9 @@ def main():
 
     cap_keys = {k for k, _, _ in CAPTURE_FIXTURES}
     solo_keys = {k for k, _, _ in SOLO_FIXTURES}
+    link_keys = {k for k, _, _ in LINK_FIXTURES}
     only = {k.strip().upper() for k in args.only.split(",")} if args.only else None
+    skipped = []
     # A run naming only capture fixtures needs no MinIO and no second guest:
     # the producer is network-free, so the backend is asked for nothing.
     cap_only = only is not None and only <= cap_keys
@@ -399,16 +460,28 @@ def main():
             failures += run_steps(first.dev, root, remote, args, first.settings, first.prev_paths)
         if len(prepared) > 1:
             failures += run_pair(prepared[0].dev, prepared[1].dev, root, remote, args, first.settings)
-        elif only and only - cap_keys - solo_keys:
+        elif only and only - cap_keys - solo_keys - link_keys:
             print("\n--only names two-device fixtures; pass --second-port for the VM pair's guest b")
         if only and only & solo_keys:
             failures += run_solo(first.dev, root, remote, args, first.settings, only)
         if only and only & cap_keys:
             failures += run_capture(first.dev, root, args, only)
+        if args.link or (only and only & link_keys):
+            # Off by default in the suite: minutes per cell, and a channel a
+            # handheld does not have. Skipped -- said, not silently -- when
+            # the console is not there.
+            serial = Serial(args.serial_socket, args.vm_serial)
+            if serial.usable():
+                failures += run_link(first.dev, root, remote, args, first.settings, serial, only)
+            else:
+                skipped.append(f"LINK fixtures: no serial console at {args.serial_socket} (or {args.vm_serial} is not executable); "
+                               "a guest from `generic-x64-vm run --headless` has one, a handheld has none")
+                print(f"\n    SKIP  {skipped[-1]}")
     finally:
         for p in prepared:
             restore_device(p, args, archive)
-    print(f"\n{'PASSED' if failures == 0 else f'{failures} CHECK(S) FAILED'}")
+    note = f" ({'; '.join(skipped)})" if skipped else ""
+    print(f"\n{'PASSED' if failures == 0 else f'{failures} CHECK(S) FAILED'}{note}")
     return 1 if failures else 0
 
 
@@ -1159,6 +1232,17 @@ def backend_files(path):
     """Every file under an endpoint path, as paths relative to it."""
     out = subprocess.run([BACKEND, "ls", path], capture_output=True, text=True).stdout
     return [line.split(None, 1)[1] for line in out.splitlines() if len(line.split(None, 1)) == 2]
+
+
+def backend_sizes(path):
+    """Every file under an endpoint path with its size: {relative path: bytes}."""
+    out = subprocess.run([BACKEND, "ls", path], capture_output=True, text=True).stdout
+    sizes = {}
+    for line in out.splitlines():
+        parts = line.split(None, 1)
+        if len(parts) == 2 and parts[0].isdigit():
+            sizes[parts[1]] = int(parts[0])
+    return sizes
 
 
 def set_key(dev, key, val):
@@ -4155,6 +4239,548 @@ def run_contract(p, kind, args):
         t.clear(p.a)
         t.clear(p.b)
     return f
+
+
+# ===========================================================================
+# #103: the network goes away mid-run -- one device, the QA endpoint, and
+# the serial console that can cut the device's link
+# ===========================================================================
+#
+# What #102 exposed is a failure mode nothing bounds: the link dropping
+# *during* a cloud operation. The scripts probe reachability with short
+# rclone timeouts and then run the copy itself on RCLONEOPTS, which sets
+# none -- rclone's defaults are 60 s to connect, 5 min of idle I/O, three
+# retries and ten low-level retries -- and the RG SP's startup sync sat on a
+# dead connection with the launch gate held (#101). Each cell here starts an
+# operation, waits for the phase it names, cuts the guest's link, restores it
+# after --link-restore-after seconds (40), and asserts what a bounded
+# operation must do: end within LINK_BOUND seconds of the cut with an honest
+# exit (69, the no-network sentinel, or a plain failure -- never 0, never
+# 75), leave no partial file and no truncated one on the receiving side,
+# stamp the failure or nothing (never 0), keep the settings upload marker
+# unless the archive completed, and complete on a plain re-run once the link
+# is back. Time-to-exit is read in the guest's own monotonic clock: the
+# detached wrapper writes `$? <uptime>` when the operation ends, and the cut
+# records the uptime it happened at.
+#
+# Two channels, because the cut kills SSH. The operation is started detached
+# over SSH (setsid nohup, stdout and stderr to a file, the exit code to
+# another), the cut and the restore go over the serial console -- `ip link
+# set eth0 down` / `up`, tools/vm-serial -- and the result is read over SSH
+# once the link is back. A real handheld has no serial console, so these
+# cells are skipped, with a line saying so, when the console is not there.
+#
+# Measured on the GENERIC_X64 guest (2026-09-09, build d574edf975, NM-managed
+# eth0, the WebDAV endpoint throttled to 200k): after `ip link set eth0
+# down` the routes are gone at once, the IPv4 address stays until
+# NetworkManager notices and flushes it (~8 s, state `unavailable`), and an
+# established TCP connection stalls -- it is not reset. After `up` the
+# address, the default route and a ping to the endpoint are back within a
+# second. A fresh connection on the dead link fails in 20 ms (`network is
+# unreachable`; rclone does not retry it). So the hang lives in the transfer
+# that was in flight: TCP retransmits on its doubling schedule, lands the
+# moment the link is back (~51 s after a cut when the outage is 40 s), and an
+# unbounded rclone then *completes*, exit 0, some 50 s after the cut. That is
+# what an unbounded run looks like in these cells with the default outage:
+# not a hang past the bound but a success reported for a run that waited the
+# outage out. `--link-restore-after 120` makes the same run overshoot the
+# bound (TCP's next retransmit is at ~205 s), which is #102's shape. Either
+# way a bounded run ends with the link still down and exits 69.
+#
+# The endpoint must be throttled (CLOUD_QA_BWLIMIT), or nine MiB cross the
+# loopback before the poll can see the transfer start; the cells refuse an
+# unthrottled one rather than report "ended before the cut" seven times. The
+# server's bwlimit is a token bucket with a 4 MiB burst, so three 3 MiB files
+# spend about 25 s in flight. The two listing-bound cells (a compare with
+# everything already in the cloud; the picker scan) run rclone under
+# RCLONE_TPSLIMIT=2 -- two HTTP transactions a second, a stand-in for a
+# provider whose listing is rate-limited -- because this endpoint lists
+# twenty-five directories in well under a second and the cut would land
+# after the compare had finished. The environment variable reaches rclone
+# through the script under test unchanged; nothing in the scripts is edited.
+
+LINK_DIR = "/tmp/qa-link"       # on the device: the detached run's out, rc and pid
+LINK_MIB = 3                    # each transferred fixture file
+LINK_FILES = 3                  # per transfer cell: 9 MiB, ~25 s in flight at 200k after the 4 MiB burst
+LINK_BOUND = 90                 # seconds after the cut by which the run must have ended
+LINK_HANG = 360                 # seconds after the cut before the run is called hung
+LINK_GIVE_UP = 600              # after the hang verdict, how much longer it may take to finish before it is killed
+LINK_TPS = 2                    # RCLONE_TPSLIMIT for the listing-bound cells
+LINK_STAMPS = ("last-backup", "last-restore", "last-settings-backup", "last-settings-restore",
+               "last-content-backup", "last-content-restore", "last-content-match")
+LINK_MARKER_FILE = re.compile(r"^\s*\*\s+\S.*?:\s*\d+% /", re.M)   # rclone's per-file progress line
+LINK_MARKER_CHECKS = re.compile(r"^Checks:\s+\d+ / \d+", re.M)       # the compare phase, in the stats block
+
+
+def backend_throttled():
+    """Whether the WebDAV endpoint runs with --bwlimit. Read off the server's
+    own command line (its pid is beside its data directory), not off an
+    environment variable this process may or may not share with the one
+    that started it."""
+    if backend("backend").strip() != "webdav":
+        return False
+    state = os.path.dirname(backend("path").strip())
+    try:
+        pid = open(os.path.join(state, "webdav.pid")).read().strip()
+        return "--bwlimit" in open(f"/proc/{pid}/cmdline", "rb").read().replace(b"\0", b" ").decode(errors="replace")
+    except OSError:
+        return False
+
+
+class Link:
+    """One device, the QA endpoint, and the console that can cut the link."""
+
+    def __init__(self, dev, serial, root, remote, settings, args):
+        self.dev, self.serial, self.root, self.remote, self.settings, self.args = dev, serial, root, remote, settings, args
+        self.restore_after = args.link_restore_after
+        self.saves_remote = settings.get("SAVES_REMOTE") or settings.get("SYNCPATH")
+        self.settings_remote = settings.get("SETTINGS_REMOTE") or settings.get("SYNCPATH_BACKUP")
+        self.content_remote = settings.get("CONTENT_REMOTE") or settings.get("CONTENTPATH")
+        # The interface that carries the default route -- eth0 on the VM,
+        # wlan0 on a handheld -- read from the guest rather than assumed.
+        self.iface = dev.run("ip -4 route show default 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i==\"dev\") print $(i+1)}' | head -1").strip()
+        if not self.iface:
+            raise Fail("the device has no default route to cut")
+        m = re.search(r"(?:url|endpoint)\s*=\s*\w+://([^/\s]+)", backend("rclone-conf"))
+        if not m:
+            raise Fail("cannot read the endpoint's host:port from the backend's rclone stanza")
+        self.hostport = m.group(1)
+        self.host_ip = self.hostport.split(":")[0]
+        self.t_cut = None
+
+    # -- the guard: the console must belong to the device on --host --------
+    def assert_same_guest(self):
+        nonce = hashlib.sha256(os.urandom(16)).hexdigest()[:16]
+        self.dev.run(f"echo {nonce} > /tmp/qa-link-nonce")
+        seen = self.serial.run("cat /tmp/qa-link-nonce 2>/dev/null").strip()
+        self.dev.run("rm -f /tmp/qa-link-nonce", check=False)
+        if seen != nonce:
+            raise Fail(f"the serial console at {self.serial.socket} is not the device on --host "
+                       f"(wrote {nonce} over ssh, read {seen or 'nothing'} over serial); refusing to cut a link")
+
+    # -- planting ------------------------------------------------------------
+    def big(self, name):
+        return os.urandom(LINK_MIB * 1024 * 1024)
+
+    def plant_device(self, base, files):
+        for rel, data in files.items():
+            self.dev.write(f"{base}/{rel}", data)
+
+    def plant_cloud(self, files, endpoint_path):
+        stage = subprocess.run(["mktemp", "-d"], capture_output=True, text=True).stdout.strip()
+        for rel, data in files.items():
+            path = os.path.join(stage, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            open(path, "wb").write(data)
+        backend("put", stage, endpoint_path)
+        subprocess.run(["rm", "-rf", stage])
+
+    def content_dir(self):
+        """/storage/roms/<CONTENT_DIR>, which the harness owns only if empty."""
+        croot = f"/storage/roms/{CONTENT_DIR}"
+        existing = self.dev.run(f"find {shlex.quote(croot)} -type f 2>/dev/null | head -3 || true").strip()
+        if existing and not self.args.real_roms:
+            raise Fail(f"{croot} holds files ({existing.splitlines()[0]} ...); refusing to use it as a fixture")
+        self.dev.run(f"rm -rf {shlex.quote(croot)}; mkdir -p {shlex.quote(croot)}")
+        return croot
+
+    def reset(self):
+        self.dev.run(f"rm -rf {shlex.quote(self.root)}; mkdir -p {shlex.quote(self.root)}; "
+                     f"rm -rf /storage/roms/{shlex.quote(CONTENT_DIR)} {LINK_DIR}", check=False)
+        backend("reset")
+
+    # -- the detached run ----------------------------------------------------
+    def start(self, cmd, env=""):
+        self.dev.run(f"rm -rf {LINK_DIR}; mkdir -p {LINK_DIR}")
+        inner = f"echo $$ > {LINK_DIR}/pid; {env} {cmd}; echo $? $(cut -d' ' -f1 /proc/uptime) > {LINK_DIR}/rc"
+        self.dev.run(f"setsid nohup sh -c {shlex.quote(inner)} >{LINK_DIR}/out 2>&1 &")
+
+    def status(self):
+        """(out, rc line or '', established connections to the endpoint)."""
+        out = self.dev.run(f"cat {LINK_DIR}/out 2>/dev/null; printf '\\n@@RC %s\\n' \"$(cat {LINK_DIR}/rc 2>/dev/null)\"; "
+                           f"printf '@@CONN %s\\n' \"$(netstat -tn 2>/dev/null | grep -c '{self.hostport} .*ESTABLISHED')\"",
+                           check=False)
+        body, _, tail = out.partition("\n@@RC ")
+        rc, _, conn = tail.partition("\n@@CONN ")
+        return body, rc.strip(), int(conn.strip() or 0)
+
+    def wait_marker(self, marker, timeout=120):
+        """Until the run prints the marker (a regex) -- or, for marker None,
+        holds a connection to the endpoint, which is the only sign a scan
+        gives before it ends. (False, out) when the run ended first."""
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            body, rc, conn = self.status()
+            if marker is not None and marker.search(body):
+                return True, body
+            if marker is None and conn > 0:
+                return True, body
+            if rc:
+                return False, body
+            time.sleep(0.3)
+        raise Fail(f"no marker in {timeout}s: {body.strip().splitlines()[-1][:120] if body.strip() else 'no output'}")
+
+    def rc_line(self, text):
+        parts = text.strip().split()
+        return parts if len(parts) == 2 and parts[0].lstrip("-").isdigit() else None
+
+    # -- the cut and the restore, over serial --------------------------------
+    def cut(self):
+        self.dev.disconnect()
+        out = self.serial.run(f"ip link set {self.iface} down; cut -d' ' -f1 /proc/uptime")
+        self.t_cut = time.time()
+        return float(out.split()[-1])
+
+    def restore(self):
+        out = self.serial.run(f"ip link set {self.iface} up; cut -d' ' -f1 /proc/uptime")
+        up = float(out.split()[-1])
+        t = time.time()
+        test = (f"ip -4 -o addr show {self.iface} | grep -q 'inet ' && ip -4 route show default | grep -q . "
+                f"&& ping -c1 -W1 {self.host_ip} >/dev/null 2>&1 && echo NETOK")
+        while time.time() - t < 90:
+            if "NETOK" in self.serial.run(test):
+                return up, time.time() - t
+            time.sleep(1)
+        raise Fail(f"{self.iface} did not regain an address, a default route and the endpoint within 90 s of `ip link set up`")
+
+    def wait_exit(self, cut_up):
+        """The run's `rc uptime` line: polled over serial while the link is
+        down, over ssh after it is restored. None if it has not ended
+        LINK_HANG seconds after the cut."""
+        seen = None
+        polls = 0
+        while time.time() - self.t_cut < self.restore_after:
+            time.sleep(min(5, max(0.5, self.restore_after - (time.time() - self.t_cut))))
+            polls += 1
+            if polls <= 2:
+                # The first poll proves the cut took -- a guard that cannot
+                # tell eth0 from the wrong interface has not cut anything --
+                # and the second describes the state NetworkManager leaves
+                # once it has noticed (it flushes the address ~8 s in).
+                st = self.serial.run(f"ip -4 route show default 2>/dev/null | grep -c .; "
+                                     f"nmcli -t -f DEVICE,STATE dev 2>/dev/null | grep '^{self.iface}:' | cut -d: -f2; "
+                                     f"ip -4 -o addr show {self.iface} | grep -c 'inet '").split()
+                routes, nm, addrs = (st + ["?", "?", "?"])[:3]
+                if polls == 1 and routes != "0":
+                    raise Fail(f"the cut did not take: {routes} default route(s) still present after `ip link set {self.iface} down`")
+                if polls == 2:
+                    print(f"          {time.time() - self.t_cut:.0f}s into the outage: default route gone; NetworkManager says "
+                          f"{nm}; {'an address still' if addrs not in ('0', '?') else 'no address'} on {self.iface}")
+            r = self.rc_line(self.serial.run(f"cat {LINK_DIR}/rc 2>/dev/null"))
+            if r and seen is None:
+                seen = r
+                print(f"          ended {float(r[1]) - cut_up:.1f}s after the cut, with the link still down (rc {r[0]})")
+        rest_up, back = self.restore()
+        print(f"          link restored {rest_up - cut_up:.1f}s after the cut; address, default route and the endpoint back in {back:.1f}s")
+        if seen:
+            return seen
+        deadline = self.t_cut + LINK_HANG
+        while time.time() < deadline:
+            r = self.rc_line(self.dev.run(f"cat {LINK_DIR}/rc 2>/dev/null", check=False))
+            if r:
+                return r
+            time.sleep(2)
+        return None
+
+    def finish_or_kill(self):
+        """After a hang verdict: the link is back, so let the run finish --
+        the VM has to be clean for the next cell -- and kill its process
+        group only when even that does not end it."""
+        deadline = time.time() + LINK_GIVE_UP
+        while time.time() < deadline:
+            r = self.rc_line(self.dev.run(f"cat {LINK_DIR}/rc 2>/dev/null", check=False))
+            if r:
+                print(f"          (it finished on its own {time.time() - self.t_cut:.0f}s after the cut, rc {r[0]})")
+                return r
+            time.sleep(5)
+        pid = self.dev.run(f"cat {LINK_DIR}/pid 2>/dev/null", check=False).strip()
+        self.dev.run(f"kill -TERM -- -{pid} 2>/dev/null; sleep 2; kill -KILL -- -{pid} 2>/dev/null; true", check=False)
+        print(f"          (killed process group {pid} {time.time() - self.t_cut:.0f}s after the cut; it never ended)")
+        return None
+
+    # -- what the receiving side holds ----------------------------------------
+    def sizes(self, side):
+        kind, where = side
+        if kind == "cloud":
+            return backend_sizes(where)
+        out = self.dev.run(f"cd {shlex.quote(where)} 2>/dev/null && find . -type f -exec stat -c '%s %n' {{}} + ; true", check=False)
+        sizes = {}
+        for line in out.splitlines():
+            size, _, name = line.partition(" ")
+            if size.isdigit() and name.startswith("./"):
+                sizes[name[2:]] = int(size)
+        return sizes
+
+    def digest(self, side, rel):
+        kind, where = side
+        if kind == "cloud":
+            data = backend_bytes(f"{where}/{rel}")
+            return sha(data) if data is not None else None
+        return self.dev.sha(f"{where}/{rel}")
+
+    def settle(self, side):
+        """Sizes on the receiving side once they have stopped changing: the
+        server keeps draining bytes already in the buffers after the client
+        is gone, and a comparison taken mid-drain reads as truncation."""
+        last = self.sizes(side)
+        for _ in range(20):
+            time.sleep(3)
+            now = self.sizes(side)
+            if now == last:
+                return now
+            last = now
+        return last
+
+    def stamps(self):
+        out = self.dev.run(f"cd {CACHE} 2>/dev/null && for s in {' '.join(LINK_STAMPS)} settings-backup.uploaded; do "
+                           f"printf '%s=%s\\n' \"$s\" \"$(cat $s 2>/dev/null)\"; done; true", check=False)
+        return dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+
+    # -- one cell -------------------------------------------------------------
+    def exercise(self, cmd, marker, receiving, sources, stamps, env="", rerun=None, verify=None, upload_marker=False):
+        """Start `cmd` detached, cut at `marker`, restore after
+        restore_after seconds, and assert the contract. `receiving` is
+        ("cloud", endpoint path) or ("device", directory) -- where the
+        operation writes; `sources` maps each file it moves to (size, sha256);
+        `stamps` names the last-* files it may write. `verify(out)` replaces
+        the file comparison after the re-run for an operation that moves
+        nothing (the scan). Returns the number of failed checks."""
+        f = 0
+        before = self.stamps()
+        self.start(cmd, env)
+        landed, out = self.wait_marker(marker)
+        if not landed:
+            rc = self.rc_line(self.status()[1])
+            return f + (not check(False, "", f"the run ended (rc {rc[0] if rc else '?'}) before the cut could land; "
+                                            f"last line: {out.strip().splitlines()[-1][:100] if out.strip() else 'none'}"))
+        cut_up = self.cut()
+        where = out.strip().splitlines()[-1].strip()[:90] if out.strip() else "no output yet"
+        print(f"          cut {self.iface} at guest uptime {cut_up:.2f} ({time.strftime('%H:%M:%S')}); last line: {where!r}")
+        r = self.wait_exit(cut_up)
+        hung = r is None
+        if hung:
+            f += not check(False, "", f"HANG: the run had not ended {LINK_HANG}s after the cut (bound {LINK_BOUND}s); "
+                                      f"link restored {self.restore_after}s after it")
+            r = self.finish_or_kill()
+        if r:
+            rc, tte = int(r[0]), float(r[1]) - cut_up
+            if not hung:
+                why = ("" if tte <= LINK_BOUND else
+                       f": past the {LINK_BOUND}s bound" + (" -- it rode the outage out on rclone's defaults and completed once TCP retransmitted"
+                                                            if rc == 0 else ""))
+                f += not check(tte <= LINK_BOUND, f"ended {tte:.1f}s after the cut (bound {LINK_BOUND}s)",
+                               f"ended {tte:.1f}s after the cut{why}")
+            if rc == 69:
+                what = "exit 69: SKIPPED - NO NETWORK CONNECTION, the sentinel"
+            elif rc == 0 and tte < self.restore_after:
+                what = f"exit 0 {tte:.1f}s after the cut, with the link still down: a success reported for a run that could not reach the cloud"
+            elif rc == 0:
+                what = (f"exit 0 {tte:.1f}s after the cut: a success reported for a run the network left -- it waited "
+                        f"the {self.restore_after:.0f}s outage out on rclone's default timeouts instead of ending within its own bound")
+            elif rc == 75:
+                what = "exit 75: the lock sentinel, for a run nothing else held the lock against"
+            else:
+                what = f"exit {rc}: a plain failure"
+            f += not check(rc == 69 or rc not in (0, 75), what, what)
+        else:
+            rc, tte = None, None
+        # The receiving side, once quiet.
+        sizes = self.settle(receiving) if receiving else {}
+        if receiving:
+            partials = sorted(r for r in sizes if ".partial" in r)
+            f += not check(not partials, "no *.partial left on the receiving side",
+                           f"partial files left on the receiving side: {partials}")
+            wrong = {r: (sizes[r], sources[r][0]) for r in sizes if r in sources and sizes[r] != sources[r][0]}
+            there = [r for r in sizes if r in sources]
+            f += not check(not wrong, f"every file present on the receiving side is whole ({len(there)} of {len(sources)} there)",
+                           f"truncated on the receiving side (got, want): {wrong}")
+        after = self.stamps()
+        for s in stamps:
+            if after.get(s, "") == before.get(s, ""):
+                check(True, f"{s} unchanged ({after.get(s) or 'absent'})", "")
+                continue
+            parts = after.get(s, "").split()
+            code = parts[1] if len(parts) == 2 else "?"
+            f += not check(code not in ("0", "?"), f"{s} records the failure ({after.get(s)})",
+                           f"{s} records success ({after.get(s)}) for a run the network left")
+        if upload_marker:
+            m0, m1 = before.get("settings-backup.uploaded", ""), after.get("settings-backup.uploaded", "")
+            complete = all(sizes.get(r) == size for r, (size, _) in sources.items())
+            f += not check(m1 == m0 or complete,
+                           "settings-backup.uploaded unchanged" if m1 == m0 else "settings-backup.uploaded moved, and the archive is whole in the cloud",
+                           f"settings-backup.uploaded moved ({m0 or 'absent'} -> {m1}) though the archive is not whole in the cloud")
+        # The plain re-run, with the link back.
+        rc2, out2 = run_rc(self.dev, rerun or cmd, env)
+        last = out2.strip().splitlines()[-1][:120] if out2.strip() else "no output"
+        f += not check(rc2 == 0, "a plain re-run with the link back exits 0", f"the re-run exits {rc2}: {last!r}")
+        if verify:
+            ok, msg = verify(out2)
+            f += not check(ok, msg, msg)
+        elif receiving:
+            sizes2 = self.settle(receiving)
+            bad = [r for r in sources if sizes2.get(r) != sources[r][0] or self.digest(receiving, r) != sources[r][1]]
+            f += not check(not bad, f"after the re-run all {len(sources)} files match on the receiving side",
+                           f"after the re-run these do not match on the receiving side: {bad}")
+        return f
+
+
+# -- the cells -----------------------------------------------------------------
+
+def link_files(prefix, n=LINK_FILES, ext="bin"):
+    return {f"{prefix}{i}.{ext}": os.urandom(LINK_MIB * 1024 * 1024) for i in range(1, n + 1)}
+
+
+def srcmap(files):
+    """{rel: bytes} -> {rel: (size, sha256)}, what exercise compares against."""
+    return {rel: (len(data), sha(data)) for rel, data in files.items()}
+
+
+def fx_link1(L):
+    """Saves restore, the startup sync's command, cut during the compare:
+    everything already in the cloud, nothing to move, the listing in flight."""
+    files = {f"saves/sys{d:02d}/game{g}.srm": f"save {d}-{g}".encode() for d in range(1, 25) for g in (1, 2)}
+    L.plant_device(L.root, files)
+    rc, out = run_rc(L.dev, "cloud_backup --yes --saves-only")
+    if rc != 0 or len(backend_sizes(epath(L.saves_remote))) < len(files):
+        raise Fail(f"seeding the cloud with the saves failed (rc {rc}); cannot stage a compare")
+    print(f"          {len(files)} saves in 24 directories on both sides; RCLONE_TPSLIMIT={LINK_TPS} makes the compare last")
+    return L.exercise("cloud_restore --yes --method=copy --update --saves-only", LINK_MARKER_CHECKS,
+                      ("device", L.root), srcmap(files), ["last-restore"], env=f"RCLONE_TPSLIMIT={LINK_TPS}")
+
+
+def fx_link2(L):
+    """Saves backup, cut during the transfer."""
+    files = link_files("savestates/link-", ext="state")
+    L.plant_device(L.root, files)
+    return L.exercise("cloud_backup --yes --saves-only", LINK_MARKER_FILE,
+                      ("cloud", epath(L.saves_remote)), srcmap(files), ["last-backup"])
+
+
+def fx_link3(L):
+    """ROMs and BIOS back up a system, cut during the transfer."""
+    croot = L.content_dir()
+    files = link_files("link-")
+    L.plant_device(croot, files)
+    return L.exercise(f"cloud_content_backup {shlex.quote(CONTENT_DIR)}", LINK_MARKER_FILE,
+                      ("cloud", f"{epath(L.content_remote)}/ROMs/{CONTENT_DIR}"), srcmap(files), ["last-content-backup"])
+
+
+def fx_link4(L):
+    """ROMs and BIOS restore a system, cut during the transfer."""
+    croot = L.content_dir()
+    files = link_files("link-")
+    L.plant_cloud(files, f"{epath(L.content_remote)}/ROMs/{CONTENT_DIR}")
+    return L.exercise(f"cloud_content_restore {shlex.quote(CONTENT_DIR)}", LINK_MARKER_FILE,
+                      ("device", croot), srcmap(files), ["last-content-restore"])
+
+
+def fx_link5(L):
+    """The settings archive -- backuptool's own, then cloud_backup
+    --system-only -- cut mid-upload. The upload marker must not move unless
+    the archive completed."""
+    broot = f"{L.root}/backup"
+    rc, out = run_rc(L.dev, "backuptool backup")
+    names = L.dev.run(f"cd {shlex.quote(broot)} 2>/dev/null && ls *.tar.gz *.zip 2>/dev/null; true", check=False).split()
+    if rc != 0 or not names:
+        raise Fail(f"backuptool backup wrote no archive under {broot} (rc {rc}): {out.strip().splitlines()[-1][:120] if out.strip() else ''}")
+    name = names[0]
+    size = int(L.dev.run(f"stat -c %s {shlex.quote(f'{broot}/{name}')}").strip())
+    digest = L.dev.sha(f"{broot}/{name}")
+    print(f"          archive {name}, {size / 1048576:.1f} MiB")
+    folder = L.dev.run("cloud_device_id 2>/dev/null || true").strip()
+    if not folder:
+        raise Fail("cloud_device_id printed nothing; cannot name the archive's cloud folder")
+    # The marker says what this device last sent and where; without it this
+    # run wants to send the archive, which is the point of the cell.
+    L.dev.run(f"rm -f {CACHE}/settings-backup.uploaded", check=False)
+    return L.exercise("cloud_backup --yes --system-only", LINK_MARKER_FILE,
+                      ("cloud", f"{epath(L.settings_remote)}/{folder}"), {name: (size, digest)},
+                      ["last-settings-backup"], upload_marker=True)
+
+
+def fx_link6(L):
+    """The exit sync -- cloud_backup --yes --saves-only --recent -- cut
+    during the transfer. A stamp of success before it, so --recent takes its
+    filtered path."""
+    files = link_files("savestates/link-", ext="state")
+    L.plant_device(L.root, files)
+    L.dev.run(f"mkdir -p {CACHE}; printf '%s 0\\n' $(( $(date +%s) - 600 )) > {CACHE}/last-backup")
+    return L.exercise("cloud_backup --yes --saves-only --recent", LINK_MARKER_FILE,
+                      ("cloud", epath(L.saves_remote)), srcmap(files), ["last-backup"])
+
+
+def fx_link7(L):
+    """The picker scan, cut mid-scan. Twenty-four systems and BIOS in the
+    cloud, the listing paced to two transactions a second; the scan prints
+    nothing until it is done, so the cut lands once it holds a connection.
+    The re-run must name every planted system."""
+    systems = [f"sys{d:02d}" for d in range(1, 25)]
+    cloud = {f"ROMs/{s}/game.bin": f"rom {s}".encode() for s in systems}
+    cloud["BIOS/bios.bin"] = b"bios"
+    L.plant_cloud(cloud, epath(L.content_remote))
+
+    def verify(out):
+        names = {line.split("|")[0] for line in out.splitlines() if "|" in line}
+        missing = sorted(set(systems + ["bios"]) - names)
+        return (not missing, f"the re-run's scan names all {len(systems)} systems and bios"
+                if not missing else f"the re-run's scan is missing {missing}")
+    return L.exercise("cloud_content_restore --scan", None, None, {}, ["last-content-match", "last-content-restore"],
+                      env=f"RCLONE_TPSLIMIT={LINK_TPS}", verify=verify)
+
+
+LINK_FIXTURES = [
+    ("LINK1", "saves restore (the startup sync's command), link cut during the compare", fx_link1),
+    ("LINK2", "saves backup, link cut during the transfer", fx_link2),
+    ("LINK3", "ROMs and BIOS backup, link cut during the transfer", fx_link3),
+    ("LINK4", "ROMs and BIOS restore, link cut during the transfer", fx_link4),
+    ("LINK5", "settings archive upload (backuptool backup; cloud_backup --system-only), link cut mid-upload", fx_link5),
+    ("LINK6", "the exit sync (cloud_backup --yes --saves-only --recent), link cut during the transfer", fx_link6),
+    ("LINK7", "the picker scan (cloud_content_restore --scan), link cut mid-scan", fx_link7),
+]
+
+
+def run_link(dev, root, remote, args, settings, serial, only):
+    """The link-loss cells on one device (#103). Every cell resets the
+    scratch tree and the endpoint first; the cache directory (stamps, upload
+    marker, saves-root record) is carried across and put back, as run_pair
+    does."""
+    step("the link-loss cells: a serial console, a throttled endpoint, one guest")
+    if args.real_roms:
+        raise Fail("the link-loss cells empty the saves root between cells; they never run against real ROMs")
+    if not check(backend_throttled(), "the endpoint is throttled (--bwlimit on the server)",
+                 "the endpoint is not throttled: nine MiB cross the loopback before the transfer can be cut -- "
+                 "`tools/cloud-test-backend down && CLOUD_QA_BWLIMIT=200k tools/cloud-test-backend up` (WebDAV only)"):
+        return 1
+    L = Link(dev, serial, root, remote, settings, args)
+    L.assert_same_guest()
+    check(True, f"the serial console is this device's; its default route runs over {L.iface}; the endpoint is {L.hostport}", "")
+    print(f"    link restored {L.restore_after}s after each cut; a run must end within {LINK_BOUND}s of it")
+    failures = 0
+    had = snapshot_cache(dev)
+    try:
+        for key, title, fn in LINK_FIXTURES:
+            if only and key not in only:
+                continue
+            step(f"{key} -- {title}")
+            L.reset()
+            try:
+                failures += fn(L)
+            except Fail as e:
+                failures += 1
+                print(f"    FAIL  {e}")
+                # A Fail mid-cell may have left the link down, or a run going.
+                try:
+                    L.serial.run(f"ip link set {L.iface} up")
+                    running = L.dev.run(f"[ -e {LINK_DIR}/pid ] && [ ! -e {LINK_DIR}/rc ] && echo yes || true",
+                                        check=False).strip() == "yes"
+                    if running:
+                        L.finish_or_kill()
+                except Fail as e2:
+                    print(f"    WARN  could not tidy after the failure: {e2}", file=sys.stderr)
+    finally:
+        L.reset()
+        restore_cache(dev, had)
+    return failures
 
 
 def restore_device(p, args, archive):
