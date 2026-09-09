@@ -793,7 +793,12 @@ backup_system_files() {
     echo
     log_message "====================================" "true"
     log_message "STARTING SETTINGS BACKUP FILE TRANSFER" "true"
-    echo ">>> unit SETTINGS BACKUP||"
+    # The transfer page's marker for this phase. The label is the item's
+    # name on the page (D-UI-022: settings), and EmulationStation announces
+    # `>>> unit SETTINGS||` itself before backuptool writes the archive; the
+    # page folds a repeated identical label into the same item, so this one
+    # must match it byte for byte (#95). It read SETTINGS BACKUP until then.
+    echo ">>> unit SETTINGS||"
     log_message "====================================" "true"
     
     if [ "${BACKUPFILE_BACKUP_OPTION}" == "yes" ]; then

@@ -710,7 +710,11 @@ restore_system_files() {
     echo
     log_message "====================================" "true"
     log_message "STARTING SETTINGS BACKUP FILE RESTORE" "true"
-    echo ">>> unit SETTINGS BACKUP||"
+    # The transfer page's marker for this phase. The label is the item's
+    # name on the page (D-UI-022: settings) -- the word cloud_backup and
+    # EmulationStation announce for the same item, so a restore run reads
+    # like a backup run (#95). It read SETTINGS BACKUP until then.
+    echo ">>> unit SETTINGS||"
     log_message "====================================" "true"
     
     if [ "${BACKUPFILE_RESTORE_OPTION}" == "yes" ]; then
