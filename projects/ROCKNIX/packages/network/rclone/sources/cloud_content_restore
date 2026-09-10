@@ -625,8 +625,19 @@ match_run() {
                         rc=${sync_rc}
                         # A failed unit says why: the network gone ends the
                         # run as 69 here, anything else carries rclone's own
-                        # code up as before.
-                        network_gone && stop_no_network match "${sync_rc}" "matching ${sys} to the cloud"
+                        # code up as before. Before the 69 exit, the running
+                        # totals go out on the same `>>> removed` line the
+                        # completed run prints, so the page can report
+                        # COMPLETED WITH GAPS over the deletions that did
+                        # happen -- a match is mostly deletion, and it had
+                        # already run for every system before this one
+                        # (D-UI-028; #105). The counts are the preview's,
+                        # what the player agreed to and --max-delete held
+                        # each system to; the cloud still holds every file.
+                        if network_gone; then
+                            echo ">>> removed ${total_removed}|${total_bytes}|${removed_detail}"
+                            stop_no_network match "${sync_rc}" "matching ${sys} to the cloud"
+                        fi
                     fi
                 else
                     # The bytes the dry run counted, so the confirmation and
