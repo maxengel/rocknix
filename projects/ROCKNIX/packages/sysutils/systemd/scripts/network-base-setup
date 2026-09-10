@@ -1,9 +1,24 @@
 #!/bin/sh
 . /etc/profile
-HOSTNAME=$(get_setting system.hostname)
-echo ${HOSTNAME} >/proc/sys/kernel/hostname
-hostnamectl --transient hostname ${HOSTNAME}
-avahi-set-host-name ${HOSTNAME}
+# system.hostname owns the device name; NetworkManager is told not to touch it
+# (hostname-mode=none). The value is applied in the form hostnamed accepts
+# (clean_hostname: letters, digits, hyphens) and, when that differs from what
+# was stored, written back so the HOSTNAME row shows what the network shows.
+# Quoted throughout: "RG SP" unquoted reached hostnamectl as two arguments
+# and failed, and the kernel name it left behind was re-sanitised later by
+# hostnamed to RGSP (fork #106).
+RAW_HOSTNAME=$(get_setting system.hostname)
+HOSTNAME=$(clean_hostname "${RAW_HOSTNAME}")
+if [ -z "${HOSTNAME}" ]; then
+  HOSTNAME="ROCKNIX"
+fi
+if [ "${HOSTNAME}" != "${RAW_HOSTNAME}" ]; then
+  logger -t network-base-setup "system.hostname '${RAW_HOSTNAME}' applied as '${HOSTNAME}' (the network accepts letters, digits and hyphens)"
+  set_setting system.hostname "${HOSTNAME}"
+fi
+echo "${HOSTNAME}" >/proc/sys/kernel/hostname
+hostnamectl --transient hostname "${HOSTNAME}"
+avahi-set-host-name "${HOSTNAME}"
 
 rm -f /run/rocknix/hosts
 if [ -f /storage/.config/hosts.conf ]; then

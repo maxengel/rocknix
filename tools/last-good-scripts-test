@@ -271,7 +271,7 @@ bt restore --then-cloud; rcg=${RC}
 echo "  c. set_setting is one rename; sort_settings refuses an empty result"
 C="${TMP}/c"; mkdir -p "${C}"
 {
-    sed -n '/^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function sort_settings() {/,/^}/p; /^function set_setting() {/,/^}/p' "${FN}"
+    sed -n '/^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function sort_settings() {/,/^}/p; /^function set_setting() {/,/^}/p; /^function clean_hostname() {/,/^}/p' "${FN}"
     printf 'J_CONF=%q; J_CONF_LOCK=%q\nlogger() { :; }\n' "${C}/system.cfg" "${C}/lock"
 } > "${C}/f.sh"
 printf 'system.hostname=X\nz.key=old\na=1\n' > "${C}/system.cfg"
@@ -294,6 +294,12 @@ PATH="${TMP}/bbin:${PATH}" bash -c ". '${C}/f.sh'; set_setting only.key new" 2>/
 printf 'a.b=1\naXb=2\n' > "${C}/system.cfg"
 PATH="${TMP}/bbin:${PATH}" bash -c ". '${C}/f.sh'; set_setting a.b 3" 2>/dev/null
 [ "$(sort "${C}/system.cfg" | tr '\n' '|')" = "a.b=3|aXb=2|" ]; check $? "the key is matched literally (a.b does not take aXb)" "system.cfg: '$(tr '\n' '|' < "${C}/system.cfg")'"
+# The device name as the network accepts it (fork #106): letters, digits and
+# hyphens, no hyphen at either end, at most 63 -- EmulationStation's HOSTNAME
+# row keeps the same rule at entry, network-base-setup applies this one to a
+# value already stored.
+hn() { PATH="${TMP}/bbin:${PATH}" bash -c ". '${C}/f.sh'; clean_hostname \"\$1\"" _ "$1"; }
+[ "$(hn 'RG SP')" = "RG-SP" ] && [ "$(hn 'GENERIC_X64')" = "GENERIC-X64" ] && [ "$(hn '  weird!! name  ')" = "weird-name" ] && [ "$(hn '-lead-and-trail-')" = "lead-and-trail" ] && [ "$(hn 'rg35xxsp')" = "rg35xxsp" ] && [ -z "$(hn '')" ] && [ "$(hn 'a--b')" = "a-b" ] && [ "$(hn "$(printf 'a%.0s' $(seq 1 70))" | wc -c)" = 64 ]; check $? "clean_hostname: RG SP -> RG-SP, GENERIC_X64 -> GENERIC-X64, punctuation and edges trimmed, 63 at most, empty stays empty" "clean_hostname: 'RG SP'->'$(hn 'RG SP')' 'GENERIC_X64'->'$(hn 'GENERIC_X64')' '  weird!! name  '->'$(hn '  weird!! name  ')' '-lead-and-trail-'->'$(hn '-lead-and-trail-')'"
 : > "${C}/system.cfg"
 PATH="${TMP}/bbin:${PATH}" bash -c ". '${C}/f.sh'; set_setting k v" 2>/dev/null
 [ "$(cat "${C}/system.cfg")" = "k=v" ]; check $? "an empty system.cfg gets its one line" "system.cfg after set_setting on an empty file: '$(cat "${C}/system.cfg")'"
