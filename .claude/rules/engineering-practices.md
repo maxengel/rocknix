@@ -304,3 +304,33 @@ needing a password or a prompt has to happen in the user's own terminal, and
 that is worth saying rather than letting the command fail in front of them.
 
 (Adapted from `operator-asks.instructions.md` in the same estate.)
+
+## Fail gracefully: do what you can, keep the last good state, say how to recover
+
+Maintainer, 2026-09-10 (D-CLOUD-077): *"I think failure is okay. We just need
+to make sure that we degrade gracefully. If something fails, we need to have a
+recovery process and a user notification process. It's easy to say, 'We
+weren't able to upload. Please try again.'"* Binding for every operation a
+player can start or that starts on their behalf.
+
+- **A failure ends, and ends soon.** Bounded timeouts everywhere a network or
+  a disk can stall (D-CLOUD-075); a run that cannot finish says so within a
+  known time rather than holding a card, a gate, or a screen.
+- **The last known good state stays in place.** Prefer operations that are
+  atomic per unit (rclone's temp-and-rename, `mv` over a written temp file,
+  markers written only after the bytes are confirmed) so an interrupted run
+  leaves the previous file, not a partial one, and a re-run completes it.
+  Where partial success is possible, it is reported as partial.
+- **The message is for the player, not the developer.** What did not happen,
+  in their words (`WE COULDN'T FINISH BACKING UP YOUR SAVES. WHAT DID ARRIVE
+  IS IN YOUR CLOUD; THE REST IS AS IT WAS.`), then how to recover (`TRY AGAIN
+  WHEN YOU'RE BACK ONLINE.`). Never a log path, an exit code, or a `logger`
+  hint on a handheld's screen; the log is for us and we read it over SSH.
+- **The retry is in reach.** The surface that reported the failure offers it:
+  a button on the page, the row on the card's outcome line, a re-run that is
+  safe because the state was kept.
+- **Silence is the worst failure.** A scan that fails and shows an empty cloud,
+  a run that exits 0 after moving nothing, a card that fades with no outcome:
+  each is a lie by omission (blindspot 13 and 33 are both this shape).
+
+Audit of the existing surfaces against this: #105.
