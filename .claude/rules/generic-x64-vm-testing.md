@@ -424,6 +424,30 @@ the shell: `map` shows only `BLK0`/`BLK1`, **no `FS0:`**; firmware prints
   image" = an appliance that carries machine config (`.utm` bundle for UTM, OVA for
   VirtualBox/VMware), not a bare disk — a bare disk still needs correct UEFI + 512b setup.
 
+## Crash and hang recipes
+
+The profile carries QEMU's `i6300esb` watchdog with `-action watchdog=reset`,
+and the GENERIC_X64 kernel has pstore over UEFI variables (the guest boots
+OVMF, so a panic's kernel log lands in the variable store and comes back as
+`/sys/fs/pstore/dmesg-efi-*` on the next boot). That makes the whole of
+`handheld-evidence.md` provable here except H700 DRAM retention.
+
+- **A hard power cut**: `system_reset` on the monitor socket. No shutdown
+  runs, so anything not yet synced is lost -- which is the point. The
+  journal syncs every minute; write a marker with `logger`, wait past the
+  interval, cut, and look for it in `journalctl -b -1`.
+- **A kernel panic**: `echo c > /proc/sysrq-trigger` (sysrq is on). The guest
+  reboots itself after `kernel.panic` seconds; `systemd-pstore` then copies
+  the dump into `/storage/.cache/log/pstore/`.
+- **A kernel that stops scheduling**, as PID 1 sees it: starve it. With
+  `sysctl kernel.sched_rt_runtime_us=-1`, one `chrt -f 99` busy loop pinned
+  to each vCPU leaves systemd no CPU to ping from, and the watchdog resets
+  the guest within `RuntimeWatchdogSec`. The previous boot's journal then
+  ends without a shutdown, which is what a real hang looks like afterwards.
+
+`journalctl --list-boots` is the quickest check that the journal is
+persistent at all: a volatile one lists exactly one boot, always.
+
 ## Automated visual QA (`tools/vm-visual-qa`)
 
 UI work can be reviewed without flashing a device or photographing a handheld.

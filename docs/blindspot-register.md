@@ -272,3 +272,29 @@ the only thing that would have caught this before a player did.
 **Open:** no Dropbox fixture exists that runs unattended. The measurement in
 #107 was taken by hand on the maintainer's device, in a scratch folder that
 was purged afterwards.
+
+## 37. A mechanism built by hand while the image carried it, switched off
+
+After the RG SP froze (#102) a watcher was written on the host that pulled
+`dmesg` and the journal over SSH every 15 seconds into `/storage/.cache/boot-evidence/`,
+and #104 opened with "persistent journal on `/storage`" as a thing to build.
+Upstream had shipped exactly that for years: `var-log.mount` binds
+`/storage/.cache/log` over `/var/log`, `storage-log.service` makes the
+journal directory, and `systemd-journal-flush.service` pulls the mount in
+through `RequiresMountsFor`. It was gated on a debugging marker nobody had
+heard of, so it read as absent. The image also already had `systemd-pstore`
+installed and `CONFIG_PSTORE=y` with no backend, and the Allwinner watchdog
+driver with its DT node -- half of #104 was a matter of turning things on.
+
+**The pattern:** a need is met by building, when the first move should have
+been a survey of the image for the switched-off version. A unit with a
+`Condition*=` line, a kernel option built without its backend, a driver with
+no consumer: each is a decision somebody upstream made to ship the thing
+dormant, and finding it costs one `grep` of `/usr/lib/systemd/system` and
+`/proc/config.gz`.
+
+**The rule:** before building a system facility, list what the image
+already ships for it -- units (`systemctl list-unit-files`, read the
+conditions), kernel options, drivers, daemons -- and say in the issue what
+was found and why it is or is not enough. Building on the shipped mechanism
+keeps the fork closer to upstream and is usually a smaller change.

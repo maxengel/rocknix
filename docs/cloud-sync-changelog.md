@@ -1707,3 +1707,33 @@ the autostart chain's verify, after the mounts, puts the copy back
 failed at sysinit and EmulationStation said `COULDN'T BE UNDONE` while the
 copy sat on the folder that was about to be bound. `61024a4d76`; fixture in
 `tools/last-good-scripts-test`.
+
+## Handhelds keep their evidence: persistent logs, a watchdog, a crash store (2026-09-10)
+
+`/var/log` is now a bind mount of `/storage/.cache/log` on every device --
+upstream's own `var-log.mount`, switched on (D-SYS-001) -- so the journal,
+EmulationStation's log and `cloud_sync.log` survive a power cut. The journal
+gets 64M and a one-minute sync; `cloud_sync_helper` trims `cloud_sync.log` to
+its last 512 KiB once it passes 1 MiB, since nothing ever rotated it.
+`/storage/.cache/volatile-log` opts a device out.
+
+systemd arms the hardware watchdog at 15 s (the Allwinner ceiling is 16) and
+leaves the shutdown watchdog off (D-SYS-002). A soft lockup or a hung task
+panics and the device reboots ten seconds later, leaving its trace in
+ramoops -- 1 MiB at `0x4F000000` on every H700 board (D-SYS-003, D-SYS-004)
+-- which `systemd-pstore` copies into `/storage/.cache/log/pstore/` at the
+next boot. H700 gains `PSTORE_RAM`, `PSTORE_CONSOLE`, `WATCHDOG_SYSFS` and
+the two detectors; the VM gains pstore over UEFI variables and QEMU's
+watchdog so it can prove all of this first.
+
+`rocknix-evidence snapshot` writes a page of device state every five minutes
+into a ring of five; `rocknix-evidence collect` bundles the previous boot's
+journal, any pstore dump, the logs and the snapshots into one archive and is
+the first thing to run on a device that has misbehaved (D-SYS-005). The
+config-file half of #104 had already landed: `chksysconfig` keeps the last
+known good `system.cfg` and both EmulationStation writers go through a
+temporary, a sync and a rename (D-CLOUD-078/079).
+
+Upgrade: nothing to migrate. The mount, the sysctl and the timer are all
+image-level; a device already carrying `/storage/.cache/log` from a past
+debugging session simply starts using it. Rule: `handheld-evidence.md`.
