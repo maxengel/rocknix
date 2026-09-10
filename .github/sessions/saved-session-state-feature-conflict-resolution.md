@@ -1,16 +1,14 @@
 # Saved Session State
 
-> **Saved**: 2026-09-10T19:50:44Z
+> **Saved**: 2026-09-10T20:59:08Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). **Round two plus the three settled decisions are built and verified; nothing is staged.** `next` = `24eb4c14cb`+ (code `e5ed60f3df`, ES `635761825`), pushed. Images at `/workspace/artifacts/rocknix-images/{x64,h700}-all-20260910-e5ed60f3df/`; H700 tar sha `9a04717656f4902b...`. Both handhelds still run `7eb713bbd9` and the maintainer has not given a yes for this build.
+Epic #11 (cloud saves). **#104 built and proven on the VM as `aa3df8d178`; #105's children in flight.** `next` = `4fca4d2c13`+ (code `aa3df8d178`, ES `635761825`), pushed. Images at `/workspace/artifacts/rocknix-images/{x64,h700}-all-20260910-aa3df8d178/` (proofs in `x64-.../evidence-proofs.log`, suite in `suite.log`; H700 tar sha `d02358219cd5...`). Both handhelds are OFFLINE and still run `7eb713bbd9`; nothing staged; two later builds (`e5ed60f3df`, `aa3df8d178`) await the maintainer's per-device yes.
 
-Tonight, in order: the RG SP's exit sync was found not to upload (#107, Dropbox + `--low-level-retries 2`), six UX changes came from the maintainer's reading of the surfaces (#106, #108, #110, #111, #112), everything unfiled was filed (#113-#117), and their three open decisions were settled and implemented (#89 N64 saves, #100 the empty cloud, #92 the exit hotkey). Implementing the last one found #117: RetroArch's `exit(1)` path does not flush SRAM, so the exit hotkey pressed twice loses battery saves -- fixed the same hour with a debounce (D-LAUNCH-003).
-
-**The maintainer's stated next step is #104 and #105.**
+Maintainer's direction (2026-09-10): "let's proceed with 104, and 105 can include everything you mention, and we can go in that order." #104: persistent `/var/log` (upstream's `var-log.mount` switched on, D-SYS-001), watchdog 15 s (D-SYS-002), hang policy (D-SYS-003), ramoops at 0x4F000000 for every H700 board (D-SYS-004), `rocknix-evidence` (D-SYS-005); all VM-proven, one device proof open (H700 DRAM retention of ramoops -- a deliberate crash, needs a yes). Two subagents (opus) are on #114 (console hops -> GuiCloudTransfer, ES branch `feature/console-hops`, plus `/usr/bin/run` failure path in `feature/run-failure`) and #115 + #109-ES (ES branch `feature/small-panel`). #113 waits on a Dropbox measurement only a handheld can make (proposed command on the issue). #109's runbook half is in `docs/backup-contents.md`.
 
 ## Completed This Session
 
@@ -32,11 +30,11 @@ Tonight, in order: the RG SP's exit sync was found not to upload (#107, Dropbox 
 
 ## Next Steps
 
-1. **#104 and #105**, at the maintainer's direction. #105 is the epic tonight kept chipping at, and #113/#114/#115 are its children in practice, so fold them into that push. #104 has not been started: persistent logs, a watchdog, a crash store -- the thing that would have said in minutes what the RG SP was doing when it froze.
-2. Staging is the maintainer's call, per device, and they have not given one for `e5ed60f3df`.
-3. #109 is the one filed issue with no code yet. Their RetroAchievements password still needs re-entering by hand.
-4. Evidence still owed: a frame of a part-failed run (#111), the `AFTER YOUR LAST GAME` row line (#112), #110's frames at 640x480, and the transfer page's own path for the empty-cloud offer (#100 -- the card carries it today).
-5. Left open from #92: the first-SIGTERM behaviour on an H700, and play-count recording through the UI.
+1. **Collect the two subagents' reports** (#114 `feature/console-hops` + `feature/run-failure`; #115/#109 `feature/small-panel`): review diffs, merge each ES branch into `test/qa-integration`, push, bump the ES pin (worktree `row-one-line-pin`), merge `feature/run-failure` to next, build x64, frame each surface at 1280x800 and 640x480 on the VM (`tools/vm-pair` guest a is on port 10022, monitor `/tmp/rocknix-qemu-monitor.sock`), tick the boxes with frames, then H700.
+2. **#113**: when a handheld is online and the maintainer says so, run the proposed 5-retry Dropbox measurement three times; choose option 3 or 4 accordingly.
+3. **Device proof for #104**: `echo c > /proc/sysrq-trigger` on a handheld then `rocknix-evidence collect` -- only with a yes naming the device (D-QA-008).
+4. Staging of any build is the maintainer's call, per device; two builds are unstaged.
+5. Housekeeping: `tools/fork-worktree remove` for merged worktrees (`evidence`), push next after each docs commit.
 
 ## Key Files Modified
 
