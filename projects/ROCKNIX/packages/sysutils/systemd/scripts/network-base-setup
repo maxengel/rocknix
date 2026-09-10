@@ -1,20 +1,24 @@
 #!/bin/sh
 . /etc/profile
-# system.hostname owns the device name; NetworkManager is told not to touch it
-# (hostname-mode=none). The value is applied in the form hostnamed accepts
-# (clean_hostname: letters, digits, hyphens) and, when that differs from what
-# was stored, written back so the HOSTNAME row shows what the network shows.
-# Quoted throughout: "RG SP" unquoted reached hostnamectl as two arguments
-# and failed, and the kernel name it left behind was re-sanitised later by
-# hostnamed to RGSP (fork #106).
+# The device name is the player's; the network's rules are ours to satisfy
+# quietly. system.hostname keeps whatever was typed -- spaces, punctuation,
+# anything -- and this applies the form the network accepts (clean_hostname:
+# letters, digits, hyphens). It is NOT written back: the name the player gave
+# the device stays theirs, and EmulationStation shows the applied form under
+# the IP address so somebody who sees RG-SP on their router can find out why
+# (maintainer, fork #106).
+#
+# NetworkManager is told not to touch the hostname (hostname-mode=none), so
+# this is the only writer. Quoted throughout: "RG SP" unquoted reached
+# hostnamectl as two arguments and failed, leaving a kernel name that
+# hostnamed later re-sanitised to RGSP.
 RAW_HOSTNAME=$(get_setting system.hostname)
 HOSTNAME=$(clean_hostname "${RAW_HOSTNAME}")
 if [ -z "${HOSTNAME}" ]; then
   HOSTNAME="ROCKNIX"
 fi
 if [ "${HOSTNAME}" != "${RAW_HOSTNAME}" ]; then
-  logger -t network-base-setup "system.hostname '${RAW_HOSTNAME}' applied as '${HOSTNAME}' (the network accepts letters, digits and hyphens)"
-  set_setting system.hostname "${HOSTNAME}"
+  logger -t network-base-setup "device name '${RAW_HOSTNAME}' is '${HOSTNAME}' on the network (letters, digits and hyphens only)"
 fi
 echo "${HOSTNAME}" >/proc/sys/kernel/hostname
 hostnamectl --transient hostname "${HOSTNAME}"
