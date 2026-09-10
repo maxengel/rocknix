@@ -1,0 +1,32 @@
+# Start: the system carousel of a REBOOTED VM (awake, nothing open). End:
+# USER INTERFACE SETTINGS with its last row -- SHOW RETROACHIEVEMENTS ICON, a
+# Settings-backed switch -- toggled and focused. The next B (`z`) closes the
+# page and runs GuiSettings::save(): Settings::saveFile() writes
+# es_settings.cfg and SystemConf::saveSystemConf() writes system.cfg. KILL13
+# (tools/cloud-round-trip) sends that B itself, on the same monitor
+# connection as the system_reset that follows it; the harness drops every
+# step from the last `key x` on for the walk that changes nothing.
+#
+# MAIN MENU on ROCKNIX: GAME SETTINGS, CONTROLLER & BLUETOOTH SETTINGS, USER
+# INTERFACE SETTINGS, ... -- so START, down, down, A. The page opens on its
+# first row (THEME SET); up lands on BACK, up again wraps to the last row.
+# On ROCKNIX that is SHOW RETROACHIEVEMENTS ICON: the gun/wheel/trackball/
+# spinner rows after it are `#if !defined(ROCKNIX)` (GuiMenu.cpp).
+key shift
+wait 1
+key ret
+wait 2
+key down
+wait 1
+key down
+wait 1
+key x
+wait 2
+key up
+wait 1
+key up
+wait 1
+shot ui-settings-last-row
+key x
+wait 1
+shot toggled

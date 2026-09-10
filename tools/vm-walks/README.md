@@ -36,6 +36,15 @@ reach the CLOUD FOLDER editor and press OK on the current value; on MinIO,
 where `/ROCKNIX/Saves` is not a legal bucket name, that is the refusal
 dialog (#78).
 
+`ui-settings-toggle.steps` starts on the carousel of a rebooted VM and ends on
+USER INTERFACE SETTINGS with its last row -- SHOW RETROACHIEVEMENTS ICON, a
+Settings-backed switch -- toggled and focused; the next B closes the page and
+runs both settings writers (es_settings.cfg and system.cfg). It is the walk
+`tools/cloud-round-trip --only KILL13` drives before its power cuts, and it
+reads the file itself, so a changed row is fixed in one place. Frame-verified
+2026-09-10 at 1280x800: the last row is the RetroAchievements one because the
+gun/wheel/trackball/spinner rows after it are compiled out on ROCKNIX.
+
 `match-dialog.steps` runs the third action from the hub -- MATCH THIS DEVICE
 TO THE CLOUD -- through its confirmation to its done page; it needs the
 seed fixture so the preview lists something.
