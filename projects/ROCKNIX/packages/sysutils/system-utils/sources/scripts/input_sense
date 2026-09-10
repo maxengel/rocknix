@@ -179,6 +179,17 @@ stop_volume_repeat() {
 execute_kill() {
   if [ -e "/tmp/.process-kill-data" ]; then
     TO_KILL="$(cat /tmp/.process-kill-data)"
+    ### Say that the player asked to leave, before the signal goes out. runemu.sh
+    ### maps 137/143 to a clean exit already, which covers every emulator that
+    ### dies on the signal -- but RetroArch catches SIGTERM and ends with its own
+    ### exit(1), the same status as "Failed to load content", so the exit code
+    ### alone cannot tell a forced quit from a failed launch (fork #92,
+    ### D-LAUNCH-002). The marker sits beside the kill data this function already
+    ### reads, in /tmp, because /tmp is a tmpfs: a power cut wipes it, and a
+    ### marker that outlived the boot would make the next launch's failure read
+    ### as clean. runemu.sh clears it on the way into the emulator and consumes
+    ### it at exit; both it and this service run as root.
+    touch "/tmp/.process-kill-requested" 2>/dev/null
     ${DEBUG} && log $0 "Execute: killall ${TO_KILL}"
     killall ${TO_KILL} 2>/dev/null
   fi

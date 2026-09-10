@@ -42,6 +42,16 @@ SET_SETTINGS_TMP="/tmp/shader"
 OUTPUT_LOG="${LOG_DIRECTORY}/${LOG_FILE}"
 SCRIPT_NAME=$(basename "$0")
 
+### The marker the global exit hotkey leaves behind (input_sense,
+### execute_kill): cleared before the emulator starts, consumed by the exit
+### mapping at the bottom of this script -- fork #92, D-LAUNCH-002. It sits
+### in /tmp beside the kill data the same hotkey reads
+### (/tmp/.process-kill-data) because /tmp is a tmpfs: a power cut wipes it,
+### which is exactly what is wanted of a flag that must never outlive the
+### boot. input.service and this script both run as root, so each can write
+### and remove the other's marker.
+EXIT_HOTKEY_MARKER="/tmp/.process-kill-requested"
+
 ### Export Game Guide Path
 GAME_GUIDE_PATH_CHECK="${1%.*}.txt"
 if [ ! -f "${GAME_GUIDE_PATH_CHECK}" ]; then
@@ -411,6 +421,13 @@ if [ "${DEVICE_MANGOHUD_SUPPORT}" == "true" ]; then
   fi
 fi
 
+### Clear the exit hotkey marker on the way into the emulator, so a press
+### left over from an earlier launch -- or from the carousel, where the same
+### hotkey kills EmulationStation -- can never be read as this launch ending
+### (fork #92). Both dispatch paths below run through here, and nothing above
+### it starts an emulator; keep it that way.
+rm -f "${EXIT_HOTKEY_MARKER}"
+
 # If the rom is a shell script just execute it, useful for DOSBOX and ScummVM scan scripts
 if [[ "${ROMNAME}" == *".sh" ]] && [ ! "${PLATFORM}" = "ports" ] && [ ! "${PLATFORM}" = "windows" ]; then
         ${VERBOSE} && log $0 "Executing shell script ${ROMNAME}"
@@ -494,6 +511,21 @@ gpu_profiling "off"
 ### 143 are the player leaving, not a failed launch: a clean exit. Every other
 ### non-zero status still collapses to 1 -- ES keeps 200-300 for messages it can
 ### name, and an emulator's own codes would land in that range.
+###
+### 137/143 cover an emulator that dies on the signal. RetroArch does not: it
+### catches SIGTERM and ends with its own exit(1), which is the same status as
+### "Failed to load content", so no rule reading the code alone can tell a
+### forced quit from a failed launch. The hotkey therefore says so itself --
+### execute_kill touches ${EXIT_HOTKEY_MARKER} immediately before the killall,
+### and a non-zero status that follows a press is read as the player leaving
+### (fork #92, D-LAUNCH-002). A launch with no marker behaves exactly as before.
+### Consume the marker here whatever happened, so it cannot reach another launch.
+EXIT_HOTKEY_PRESSED=false
+if [ -e "${EXIT_HOTKEY_MARKER}" ]
+then
+        EXIT_HOTKEY_PRESSED=true
+        rm -f "${EXIT_HOTKEY_MARKER}"
+fi
 ${VERBOSE} && log $0 "Checking errors: ${ret_error} "
 case "${ret_error}" in
   0)
@@ -504,6 +536,11 @@ case "${ret_error}" in
         quit 0
   ;;
   *)
+        if [ "${EXIT_HOTKEY_PRESSED}" = true ]
+        then
+                log $0 "emulator exited ${ret_error} after the exit hotkey was pressed (marker consumed); a clean exit"
+                quit 0
+        fi
         log $0 "exiting with ${ret_error}"
         quit 1
   ;;
