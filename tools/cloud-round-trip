@@ -52,7 +52,7 @@ monitor and are skipped with a line without them. Every fixture in every
 registry now ends in litter_scan() -- one last-known-good of each record, no
 writer's litter -- and every failure fixture runs its output through
 assert_message() -- no exit code, log path or tool name where a player
-reads (--vocabulary adds D-UI-028's four words once the strings land).
+reads (the three outcome words are asserted by default; --no-vocabulary skips that).
 
 Two guards, both load-bearing:
 
@@ -490,9 +490,11 @@ def main():
     ap.add_argument("--power-cut-trials", type=int, default=3, help="KILL13 arm A: how many of --cut-after-ms to run (default: %(default)s)")
     ap.add_argument("--cut-after-ms", default="0,50,200,1000",
                     help="KILL13 arm A: the gaps between the page close and system_reset, in ms (default: %(default)s)")
-    ap.add_argument("--vocabulary", action="store_true",
-                    help="assert D-UI-028's four outcome words on every run's last line (off until the strings land; the FORBIDDEN "
-                         "check -- no exit codes, log paths or tool names on the screen -- is always on)")
+    ap.add_argument("--vocabulary", dest="vocabulary", action="store_true", default=True,
+                    help="assert the three outcome words (COMPLETED, COULDN'T FINISH, SKIPPED) on every run's last line; on by "
+                         "default since 2026-09-10 (the FORBIDDEN check -- no exit codes, log paths or tool names on the screen -- is always on)")
+    ap.add_argument("--no-vocabulary", dest="vocabulary", action="store_false",
+                    help="skip the outcome-word assertion, for an image that predates the strings")
     args = ap.parse_args()
     # Line-buffered even when redirected: a run in the background used to
     # show nothing until it ended, and a run that hangs showed nothing ever.
@@ -5165,9 +5167,12 @@ FORBIDDEN = re.compile(
     r"|\blogger\b|\bjournalctl\b|\brclone\b|\bstderr\b|\bsysexits\b|\bEX_[A-Z]+\b|\bSIG(TERM|KILL|INT)\b"
     r"|\berrno\b|\bpid\s+\d+|\bflock\b|\bsentinel\b|\bcloud_[a-z_]+\b|\bbackuptool\b|(^|\s)--[a-z][a-z-]+"
     r"|\bCOMPLETED WITH ERRORS\b)")
-# The positive shape (D-UI-028), pinned once the strings land: --vocabulary.
-ALLOWED_SURFACE = re.compile(r"^(COMPLETED( WITH GAPS)?|COULDN'T FINISH|SKIPPED)( - [A-Z0-9 ,.'-]+)?$")
-ALLOWED_SCRIPT = re.compile(r"^(Completed( with gaps)?|Couldn't finish|Skipped)\b.*[.!]$")
+# The positive shape: three words since D-UI-030 retired COMPLETED WITH GAPS
+# (a partial run is COULDN'T FINISH with what arrived counted on the page).
+# On by default since 2026-09-10 (#105's last box): --no-vocabulary turns it
+# off for a run against an image that predates the strings.
+ALLOWED_SURFACE = re.compile(r"^(COMPLETED|COULDN'T FINISH|SKIPPED)( - [A-Z0-9 ,.'-]+)?$")
+ALLOWED_SCRIPT = re.compile(r"^(Completed|Couldn't finish|Skipped)\b.*[.!]$")
 RECOVERY = re.compile(r"(?i)\btry again\b|\bwhen you'?re (back )?online\b")
 
 
