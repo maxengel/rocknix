@@ -316,13 +316,72 @@ controller_confirm() {
 # Device-local state, so it lives under /storage/.cache rather than
 # /storage/.config -- a stamp swept into the settings backup and restored onto
 # a second device would be describing a run that device never made.
+#
+# Whole or not at all: to a temporary name beside the stamp, then renamed
+# over it, as ThreadedCloudSync::recordOutcome does. A kill mid-write leaves
+# the previous stamp; it used to leave an empty file, which the row read as
+# "never" and --recent as "no successful backup" (D-CLOUD-078, #105).
+write_stamp() {
+    local file="$1" line="$2" tmp
+    mkdir -p "$(dirname "${file}")" 2>/dev/null
+    tmp="${file}.tmp.$$"
+    { printf '%s\n' "${line}" > "${tmp}"; } 2>/dev/null \
+        && mv -f "${tmp}" "${file}" 2>/dev/null \
+        || rm -f "${tmp}" 2>/dev/null
+}
+
+# The stamp's third field: why the run did not finish, as the token the
+# menu row reads back (D-UI-028) -- the >>> why sentence with its spaces as
+# underscores, so a reader that splits on spaces still gets one field.
+# Nothing when the run completed, or ended on a sentinel the reader names
+# itself.
 record_last_run() {
     local exit_code="$1"
-    local name="backup"
+    local name="backup" why=""
     [ "${SYSTEM_ONLY}" -eq 1 ] && name="settings-backup"
-    mkdir -p /storage/.cache/cloud_sync 2>/dev/null
-    printf '%s %s\n' "$(date +%s)" "${exit_code}" \
-        > "/storage/.cache/cloud_sync/last-${name}" 2>/dev/null
+    case "${exit_code}" in
+        0|9|"${EXIT_NO_NETWORK}"|"${EXIT_LOCK_HELD}") ;;
+        *) [ -n "${LAST_WHY}" ] && why=" $(printf '%s' "${LAST_WHY}" | tr ' ' '_')" ;;
+    esac
+    write_stamp "/storage/.cache/cloud_sync/last-${name}" "$(date +%s) ${exit_code}${why}"
+}
+
+# Is this settings archive whole? tar lists every member or fails. busybox
+# unzip has no -t, so for a zip the listing is the test (a truncated zip has
+# no central directory to list); -t is tried first for an unzip that has it.
+archive_whole() {
+    case "${1}" in
+        *.tar.gz) tar -tzf "${1}" >/dev/null 2>&1 ;;
+        *)        unzip -t "${1}" >/dev/null 2>&1 || unzip -l "${1}" >/dev/null 2>&1 ;;
+    esac
+}
+
+# Why a run did not finish, in the player's words (D-UI-028, D-CLOUD-077).
+#
+# One `>>> why <SENTENCE>` protocol line at the point of failure is what the
+# sync card and the transfer page read; rclone's own taxonomy and every exit
+# code stay in the log. The sentences are the vocabulary table's in
+# es-native-ui.md. One per phase: a phase resets WHY_SAID, and the second
+# speaker in a phase (network_lost_during_run first, then
+# report_rclone_error) says nothing. LAST_WHY feeds the stamp.
+WHY_SAID=0
+LAST_WHY=""
+say_why() {
+    [ "${WHY_SAID}" -eq 0 ] || return 0
+    WHY_SAID=1
+    LAST_WHY="$1"
+    echo ">>> why $1"
+    log_message "why: $1" "false"
+}
+why_for() {
+    case "$1" in
+        3|4) echo "YOUR CLOUD FOLDER WASN'T FOUND" ;;
+        5)   echo "YOUR CLOUD STOPPED ANSWERING" ;;
+        6)   echo "SOME FILES DIDN'T FINISH" ;;
+        7|8) echo "YOUR CLOUD REFUSED THE TRANSFER" ;;
+        130) echo "IT WAS STOPPED" ;;
+        *)   echo "SOMETHING WENT WRONG" ;;
+    esac
 }
 
 # Performs cleanup operations and exits with the specified code
@@ -1111,6 +1170,19 @@ backup_system_files() {
             [ -f "${archive}" ] || continue
             local base target
             base=$(basename "${archive}")
+            # Whole before it is sent. A truncated archive under the newest
+            # name -- what a backup killed mid-write used to leave -- was
+            # uploaded as this device's newest and counted toward the kept
+            # history, and the restore side then refused it with nothing to
+            # fall back to (D-CLOUD-078, #105). tar lists every member or
+            # fails; busybox unzip has no -t, so a zip is listed instead.
+            if ! archive_whole "${archive}"; then
+                log_message "The settings archive ${base} does not list; not sending it" "false" "ERROR"
+                log_message "The settings archive on this device is damaged. Back up settings again." "true" "ERROR"
+                say_why "THE SETTINGS ARCHIVE ON THIS DEVICE IS DAMAGED"
+                BACKUP_SYSTEM_STATUS=1
+                continue
+            fi
             # backuptool names archives with the date now, so the local name is
             # already the one the cloud should carry -- stamping it again gave
             # "2026_09_02-...-2026_09_01-...-ROCKNIX_BACKUP.zip". Only an
@@ -1154,7 +1226,11 @@ backup_system_files() {
                 model=$(tr -d '\0' < /sys/firmware/devicetree/base/model)
             fi
             local manifest="${state_dir}/device.json"
-            cat > "${manifest}" <<MANIFEST
+            # Written whole or not at all (temp beside it, then renamed), and
+            # the upload's result read rather than discarded: the folder's
+            # description is not the backup, so a failure here does not fail
+            # the run, but it is said and logged instead of vanishing.
+            cat > "${manifest}.tmp.$$" <<MANIFEST
 {
   "id": "$(basename "${device_dest}")",
   "model": "${model}",
@@ -1165,13 +1241,68 @@ backup_system_files() {
   "keep": "${CLOUD_BACKUP_KEEP:-3}"
 }
 MANIFEST
-            rclone copyto "${manifest}" "${device_dest}/device.json" "${RCLONE_NET_OPTS_ARRAY[@]}" \
-                --log-file /var/log/cloud_sync.log 2>/dev/null
+            if mv -f "${manifest}.tmp.$$" "${manifest}" 2>/dev/null; then
+                rclone copyto "${manifest}" "${device_dest}/device.json" "${RCLONE_NET_OPTS_ARRAY[@]}" \
+                    --log-file /var/log/cloud_sync.log 2>/dev/null
+                local manifest_rc=$?
+                if [ ${manifest_rc} -ne 0 ]; then
+                    log_message "device.json could not be sent to ${device_dest} (rclone exit ${manifest_rc}); the archive arrived, the folder's description did not" "false" "WARN"
+                    log_message "The folder's description couldn't be sent this time; the settings backup itself arrived." "true" "WARN"
+                fi
+            else
+                rm -f "${manifest}.tmp.$$" 2>/dev/null
+                log_message "could not write ${manifest}; the folder's description was not sent" "false" "WARN"
+            fi
+        fi
+
+        # Only record the upload once the remote actually holds a file of the
+        # right size. An exit code says the command ended, not that the bytes
+        # arrived, and a marker written on a failed transfer would suppress
+        # every retry afterwards.
+        if [ ${BACKUP_SYSTEM_STATUS} -eq 0 ] && [ -n "${local_sum}" ]; then
+            # The archives we just wrote, not everything in the folder. The
+            # cloud keeps a dated history now, so sizing the whole folder adds
+            # up every archive it holds and compares three of them against the
+            # one local file -- "51486484 vs 17162184", a mismatch reported as
+            # a failed upload on a transfer that worked perfectly. The check is
+            # right; what it was measuring stopped being true when retention
+            # arrived.
+            local remote_bytes=0
+            local checked=0
+            local uploaded
+            for uploaded in "${uploaded_names[@]}"; do
+                local one
+                one=$(rclone size "${device_dest}/${uploaded}" --json "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null \
+                    | sed -n 's/.*"bytes":[[:space:]]*\([0-9]*\).*/\1/p')
+                [ -n "${one}" ] || continue
+                remote_bytes=$((remote_bytes + one))
+                checked=1
+            done
+            [ ${checked} -eq 1 ] || remote_bytes=""
+            # Nothing came back at all: the check itself could not reach the
+            # cloud, which after a finished upload most likely means the link
+            # went in between. The marker stays unwritten either way -- the
+            # upload is unconfirmed -- and the run says why it ended.
+            [ -n "${remote_bytes}" ] || network_lost_during_run 1 "the settings backup's size check"
+            if [ -n "${remote_bytes}" ] && [ "${remote_bytes}" = "${local_bytes}" ]; then
+                write_stamp "${uploaded_marker}" "${local_sum} ${device_dest}"
+            else
+                log_message "The cloud copy did not come back the size we sent (${remote_bytes:-none} vs ${local_bytes}); it will be sent again next time" "true" "WARN"
+                say_why "THE COPY IN YOUR CLOUD DIDN'T MATCH WHAT WAS SENT"
+                BACKUP_SYSTEM_STATUS=1
+            fi
         fi
 
         # Keep a bounded history of THIS device's archives. Names lead with
         # the date, so sorting them is ordering them by age and no metadata
         # call is needed.
+        #
+        # After the size check, not before it. Until 2026-09-10 this ran on
+        # the strength of an upload not yet proven whole, so the previous
+        # records went while the new one might be short -- obligation (3)
+        # before obligation (1) (D-CLOUD-078, #105). The check above sets
+        # BACKUP_SYSTEM_STATUS to 1 when the bytes do not match, and this
+        # then does nothing.
         #
         # Where this runs: device_dest is SETTINGS_REMOTE/<device id>/, the
         # folder cloud_device_id names this device (Anbernic-RG-SP-f058e3e9e8).
@@ -1232,43 +1363,6 @@ MANIFEST
             fi
         fi
 
-        # Only record the upload once the remote actually holds a file of the
-        # right size. An exit code says the command ended, not that the bytes
-        # arrived, and a marker written on a failed transfer would suppress
-        # every retry afterwards.
-        if [ ${BACKUP_SYSTEM_STATUS} -eq 0 ] && [ -n "${local_sum}" ]; then
-            # The archives we just wrote, not everything in the folder. The
-            # cloud keeps a dated history now, so sizing the whole folder adds
-            # up every archive it holds and compares three of them against the
-            # one local file -- "51486484 vs 17162184", a mismatch reported as
-            # a failed upload on a transfer that worked perfectly. The check is
-            # right; what it was measuring stopped being true when retention
-            # arrived.
-            local remote_bytes=0
-            local checked=0
-            local uploaded
-            for uploaded in "${uploaded_names[@]}"; do
-                local one
-                one=$(rclone size "${device_dest}/${uploaded}" --json "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null \
-                    | sed -n 's/.*"bytes":[[:space:]]*\([0-9]*\).*/\1/p')
-                [ -n "${one}" ] || continue
-                remote_bytes=$((remote_bytes + one))
-                checked=1
-            done
-            [ ${checked} -eq 1 ] || remote_bytes=""
-            # Nothing came back at all: the check itself could not reach the
-            # cloud, which after a finished upload most likely means the link
-            # went in between. The marker stays unwritten either way -- the
-            # upload is unconfirmed -- and the run says why it ended.
-            [ -n "${remote_bytes}" ] || network_lost_during_run 1 "the settings backup's size check"
-            if [ -n "${remote_bytes}" ] && [ "${remote_bytes}" = "${local_bytes}" ]; then
-                printf '%s %s\n' "${local_sum}" "${device_dest}" > "${uploaded_marker}"
-            else
-                log_message "The cloud copy did not come back the size we sent (${remote_bytes:-none} vs ${local_bytes}); it will be sent again next time" "true" "WARN"
-                BACKUP_SYSTEM_STATUS=1
-            fi
-        fi
-        
         return $BACKUP_SYSTEM_STATUS
     else
         log_message "Settings backup file transfer skipped (BACKUPFILE_BACKUP_OPTION is not set to 'yes')" "true"
