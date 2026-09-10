@@ -609,6 +609,37 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     else:
         print("    SKIP  allowlist check - nothing uploaded, so it proves nothing")
 
+    step("a second backup replaces several saves at once")
+    # Every saves assertion above this line is about a FIRST upload, and a
+    # first upload has nothing to move out of the way. The exit sync after a
+    # game is the other case -- saves already in the cloud, replaced -- and it
+    # was broken on Dropbox for as long as #103's retry bound shipped, with
+    # the harness green throughout (#107, D-CLOUD-083). --backup-dir turns
+    # each replacement into a server-side move as well as an upload, so this
+    # exercises twice the writes per file and several files at once.
+    #
+    # This backend has no per-folder write lock, so it cannot reproduce
+    # Dropbox's contention; what it can prove is that the replace path works
+    # at all and that the cloud ends up holding the new bytes. Both were
+    # untested until now.
+    for rel in FIXTURES:
+        dev.run(f"printf 'v2-%s' {shlex.quote(rel)} >> {shlex.quote(f'{root}/{rel}')}")
+    want = {rel: dev.sha(f"{root}/{rel}") for rel in FIXTURES}
+    rc, out = run_rc(dev, "cloud_backup --yes --saves-only")
+    failures += not check(rc == 0, f"the second backup completed (exit {rc})",
+                          f"the second backup exited {rc}: {out.strip()[-200:]!r}")
+    # Read the cloud copies back, not the run's own report (#53's lesson).
+    stale = []
+    for rel in FIXTURES:
+        dev.run(f"rm -f {shlex.quote(f'{root}/{rel}')}")
+    run_rc(dev, "cloud_restore --yes --saves-only")
+    for rel in FIXTURES:
+        if dev.sha(f"{root}/{rel}") != want[rel]:
+            stale.append(rel)
+    failures += not check(not stale,
+                          f"all {len(FIXTURES)} replaced saves came back from the cloud as the new bytes",
+                          f"the cloud still holds the old bytes for: {stale}")
+
     step("saves restore from the cloud")
     for rel in FIXTURES:
         dev.run(f"rm -f {shlex.quote(f'{root}/{rel}')}")
