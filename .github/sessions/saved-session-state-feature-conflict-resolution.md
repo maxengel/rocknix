@@ -1,14 +1,14 @@
 # Saved Session State
 
-> **Saved**: 2026-09-10T22:32:41Z
+> **Saved**: 2026-09-10T23:15:15Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). **#104 done to the VM; #105's children mostly closed; build `073929659d` framed at both panel sizes and its suite PASSED. Nothing staged.** `next` = `5d2e017ab7` (code `073929659d`, ES `5443c8f95`), pushed. Images: `/workspace/artifacts/rocknix-images/{x64,h700}-all-20260910-073929659d/` (frames under `x64-.../shots/{1280x800,640x480}/`, `suite.log`; H700 tar sha `712761b58d4b...`); the #104 proofs are in `x64-all-20260910-aa3df8d178/evidence-proofs.log`. Both handhelds were OFFLINE all evening and still run `7eb713bbd9`; three later builds (`e5ed60f3df`, `aa3df8d178`, `073929659d`) await the maintainer's per-device yes -- `073929659d` supersedes the other two.
+Epic #11 (cloud saves). **#117/#118/#119 built into `next`, not yet imaged; #120 (automated testing) opened and its first two boxes started.** `next` = `a918a49c93` (ES `6d0bb8a6a` pinned), pushed. Maintainer (2026-09-10): "tackle the three new issues: 117, 118, and 119 ... then move to 105" and "think about any automated testing ... run on the VMs".
 
-Closed tonight with frames: #112, #114, #109, #48, #111. #115 four of five (the launch gate's *stopping* wording is unframed). #104 body ticked except the H700 device proof (ramoops across the SoC reset -- a deliberate crash, needs a yes). #113 waits on one Dropbox measurement a handheld must make (command on the issue). New: #117 (fixed, debounce), #118 (wizard "remote" strings), #119 (`run` exits 0). Two ES agents' branches merged; worktrees pruned.
+Done tonight: `tools/emulator-exit-test` (#117: PASSED on the shipped `input_sense`, FAILED (2) with the debounce stripped -- three of four criteria ticked, the H700 one open); #118 (34 strings under D-UI-036, merged); #119 (ten maintenance rows headless with an outcome, `run`/`factoryreset` return a status, D-UI-037, merged); `tools/vm-qa` (#120 box 1: one runner, first report `qa-073929659d-20260910-2256/`); the harness outcome-word gate is on by default with three words (#105's last box; suite passes; LINK cells running under it as this was saved -- `scratchpad/link-vocab.log`). Both handhelds OFFLINE all evening, still on `7eb713bbd9`; `073929659d` is the latest verified image, unstaged.
 
 ## Completed This Session
 
@@ -30,11 +30,10 @@ Closed tonight with frames: #112, #114, #109, #48, #111. #115 four of five (the 
 
 ## Next Steps
 
-1. **Staging is the maintainer's call, per device.** When a handheld is online and they say so: stage `073929659d` (`h700-all-20260910-073929659d/`), reboot with a yes by name (D-QA-008/011). Then, with a yes: the two device proofs -- `echo c > /proc/sysrq-trigger` then `rocknix-evidence collect` (#104 ramoops retention), and the #113 five-retry Dropbox measurement run three times.
-2. **#115's last box**: frame the launch gate's stopping wording, or agree it stays a string change.
-3. **#118 / #119** (follow-ups from tonight's agents): a naming decision for the wizard's "remote", and `run`'s exit status.
-4. **#105** remaining harness box (assert player-facing lines match the vocabulary for every LINK cell).
-5. Housekeeping: `row-one-line-pin` worktree stays for pin bumps; guests a (10022, 1280x800) and b (10023, 640x480) are up on `073929659d` via `tools/vm-pair`; guest b has a stray RA username `probe` and both have the QA cloud configured.
+1. **Build `next` (x64 then H700) once the LINK cells finish** (they are timing-bound; do not build under them). Then `tools/vm-qa <img>` from a fresh pair, and frames at 640x480: the wizard's create page with the glossed step 2 (#118), the maintenance-row outcome dialogs (#119), and a real `FACTORY RESET` and `AUDIO RESET` on the disposable guest b (the #119 agent's two named risks: pipewire stopped and `/storage` deleted under a live EmulationStation). Then tick and close #118/#119, tick #105's harness box, QA log, changelog.
+2. **#120** next boxes: reference frames for the walks (box 3), ES unit tests for the pure functions (box 4), the nightly (box 6).
+3. **Device-side, all needing a yes by name**: stage the latest image; the #104 ramoops proof; the #117 H700 first-SIGTERM observation; the #113 Dropbox measurement.
+4. Housekeeping: remove the `vocab-gate` worktree after the LINK run ends; guests a (10022, 1280x800) and b (10023, 640x480) are on `073929659d` with the QA cloud configured and a stray RA username `probe`.
 
 ## Key Files Modified
 
