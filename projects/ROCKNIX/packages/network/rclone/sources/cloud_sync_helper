@@ -302,9 +302,31 @@ update_cloud_sync_config() {
 }
 
 # Main function that handles all updates
+# The log lives on /storage since fork #104 (var-log.mount binds /var/log
+# there), so it must not grow without bound -- every run appends and nothing
+# ever rotated it; a device in the field already carried 80 KiB of it in RAM.
+# Over 1 MiB it is cut to its last 512 KiB, on a line boundary, through a
+# temporary and a rename, so a writer mid-line loses nothing. Run once per
+# script start, from main, under the caller's run lock, so two scripts never
+# trim at once. Sized for months of ordinary runs.
+trim_cloud_log() {
+  local log="${1}" size
+  [ -n "${log}" ] && [ -f "${log}" ] || return 0
+  size=$(stat -c %s "${log}" 2>/dev/null) || return 0
+  [ "${size}" -gt 1048576 ] 2>/dev/null || return 0
+  if tail -c 524288 "${log}" | sed '1d' > "${log}.tmp" 2>/dev/null; then
+    mv -f "${log}.tmp" "${log}"
+    log_to_file "${log}" "log trimmed from ${size} bytes to its last 512 KiB"
+  else
+    rm -f "${log}.tmp"
+  fi
+  return 0
+}
+
 main() {
   local log_file="${1:-/var/log/cloud_sync.log}"
-  
+  trim_cloud_log "${log_file}"
+
   # Update both rules and config
   update_cloud_sync_rules "${log_file}"
   update_cloud_sync_config "${log_file}"
