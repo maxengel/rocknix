@@ -6,13 +6,15 @@
 #
 #   ./tools/vm-qa <ROCKNIX-GENERIC_X64...img.gz>            # bring the pair up from the image, run everything
 #   ./tools/vm-qa --skip-up                                  # the pair is already up on the image under test
-#   ./tools/vm-qa <image> --only round-trip,exit             # a subset: scripts, round-trip, exit, walks
+#   ./tools/vm-qa <image> --only round-trip,exit             # a subset: scripts, round-trip, exit, walks, link
+#   ./tools/vm-qa <image> --link                             # also the seven link-loss cells (minutes each; need the serial console)
 #
 # What runs, in order, each with its own log and a PASS/FAIL line:
 #
 #   scripts     tools/last-good-scripts-test  -- the scripts under busybox shims, on the host
 #   round-trip  tools/cloud-round-trip        -- 27 steps over SSH against the QA cloud, guest a
 #   exit        tools/emulator-exit-test --vm -- the exit hotkey ends a game once, save written, guest a
+#   link        tools/cloud-round-trip --only LINK1..LINK7 -- the link cut mid-run, seven ways (--link, or --only link)
 #   walks       tools/vm-walks/*.steps        -- each step file replayed from a rebooted guest, frames kept
 #               (frames are kept for a person to read; comparing them to references is fork #120's third box)
 #
@@ -22,17 +24,19 @@
 # handheld: the guests are tools/vm-pair's, on this host (fork #120, box 1).
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-IMAGE=""; SKIP_UP=0; ONLY="scripts,round-trip,exit,walks"
+IMAGE=""; SKIP_UP=0; ONLY="scripts,round-trip,exit,walks"; LINK=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --skip-up) SKIP_UP=1; shift ;;
     --only) ONLY=$2; shift 2 ;;
+    --link) LINK=1; shift ;;
     -h|--help) sed -n '5,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) IMAGE=$1; shift ;;
   esac
 done
 [ "$SKIP_UP" = 1 ] || [ -n "$IMAGE" ] || { echo "vm-qa: an image, or --skip-up" >&2; exit 2; }
-KEY=/tmp/rocknix-vm-pair/qa-key; PORT=10022; MON=/tmp/rocknix-qemu-monitor.sock
+KEY=/tmp/rocknix-vm-pair/qa-key; PORT=10022; MON=/tmp/rocknix-qemu-monitor.sock; SERIAL=/tmp/rocknix-qemu-serial.sock
+[ "$LINK" = 1 ] && ONLY="$ONLY,link"
 SSH() { ssh -n -i "$KEY" -p "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=8 -o BatchMode=yes root@127.0.0.1 "$@"; }
 
 "$ROOT/tools/cloud-test-backend" up >/dev/null 2>&1 || { echo "vm-qa: the QA cloud backend did not come up" >&2; exit 1; }
@@ -60,6 +64,9 @@ run_suite() {  # name, log, command...
 case ",$ONLY," in *,scripts,*)    run_suite scripts    "$OUT/scripts.log"    "$ROOT/tools/last-good-scripts-test" ;; esac
 case ",$ONLY," in *,round-trip,*) run_suite round-trip "$OUT/round-trip.log" "$ROOT/tools/cloud-round-trip" --host root@127.0.0.1 --port "$PORT" --identity "$KEY" ;; esac
 case ",$ONLY," in *,exit,*)       run_suite exit       "$OUT/exit.log"       "$ROOT/tools/emulator-exit-test" --port "$PORT" --identity "$KEY" --vm ;; esac
+# The link cells are timing-bound (a run must end within 90 s of the cut), so
+# they run before the walks and never while an image builds on this host.
+case ",$ONLY," in *,link,*)       run_suite link       "$OUT/link.log"       "$ROOT/tools/cloud-round-trip" --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --only LINK1,LINK2,LINK3,LINK4,LINK5,LINK6,LINK7 --serial-socket "$SERIAL" ;; esac
 case ",$ONLY," in *,walks,*)
   # Every walk starts from a rebooted guest, which the README names as the
   # one deterministic start; a boot-time dialog is dismissed with B first.
