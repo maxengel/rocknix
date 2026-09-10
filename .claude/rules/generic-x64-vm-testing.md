@@ -443,6 +443,31 @@ files worth keeping.
 tools/vm-visual-qa --monitor /tmp/mon.sock run steps.txt --outdir shots/ --gif walk.gif
 ```
 
+**Cutting the guest's power (KILL12/13, #105).** `system_reset` over the
+monitor (`printf 'system_reset\n' | socat - UNIX-CONNECT:/tmp/rocknix-qemu-monitor.sock`)
+drops every dirty page in the guest and keeps QEMU up; the disk holds exactly
+what the guest issued. Close the SSH master first (`ssh -O exit`) -- a command
+over it stalls across the reset as across a link cut. Prove the reset landed
+before trusting `vm-serial wait`: read `/proc/sys/kernel/random/boot_id` and
+`/proc/uptime` over serial before, and require a new boot_id and an uptime
+below what it would have read without a reset -- `uptime < u0` alone fails
+when the previous boot was seconds ago. Then `pgrep emulationstation | wc -l`
+= 1, the network test, and `flock -n /var/run/cloud_sync.lock true` (the
+startup sync). `/var/log` does not survive, so anything to be read from
+`es_log.txt` is read in the boot after the cut, and `Could not parse Settings
+file` never lands there at all (Settings load before the log opens). A boot on
+a reseeded `system.cfg` can come up with sshd off: `sshd.service` needs
+`/storage/.cache/services/sshd.conf`, written from `ssh.enabled` at boot, so
+recover over serial with `touch` of that marker then `systemctl start sshd`.
+Once, a reset boot came up with a garbage command line and sat in the
+initramfs shell on the VGA console (ESP intact); a second reset booted
+normally, so give a silent boot 150 s and reset once more before calling it
+dead. The virtio disk is not an SD card: the reset models a battery dying,
+not a card's write cache or FTL, and on this disk a page close followed by a
+cut within 200 ms already tears `system.cfg` written in place.
+`tools/cloud-round-trip --only KILL12,KILL13 --serial-socket ... --monitor-socket ...`
+does all of this.
+
 **Input mapping is the trap.** ES's *compiled* keyboard defaults (F1 = start) are
 not what ships: `/storage/.config/emulationstation/es_input.cfg` on the image maps
 **start = Enter, A/OK = `x`, B/back = `z`**, arrows for direction. Read that file
