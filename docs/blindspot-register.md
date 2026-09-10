@@ -165,3 +165,67 @@ Check every reader that names a code (`GuiCloudTransfer`, `ThreadedCloudSync`,
 scripts and in EmulationStation's `CloudExit.h`, the remap is gone, and the
 harness asserts both the sentinels and that an empty endpoint's failure is
 not one (#99, D-CLOUD-074).
+
+## 34. A check written for the device, proven only under the host's tools
+
+**What happened:** `chksysconfig`'s new `valid()` asked `tr` to delete
+`[:print:][:space:]\200-\377` and called a file text when nothing was left.
+GNU tr on the build host reads those classes; the device's busybox tr reads
+`[:print:]` as the eight characters inside the brackets. So on every device
+every real `system.cfg` was "not text": the shutdown-time and boot-time
+backups were refused, and a damaged live file found its last good copy
+"damaged too" and was reseeded from the image defaults -- #102's morning,
+produced by the change meant to end it. `tools/last-good-scripts-test` passed
+throughout. It already ran `sed`, `mv` and `cp` through the image's busybox
+"so the rename semantics tested are the device's" -- the three commands whose
+differences were already known -- and left `tr` to the host. Found on guest
+d running `c15050c897` (2026-09-10), the first time the path ran on a device:
+a truncated `system.cfg`, a 5137-byte valid record, and after the reboot both
+were the image's 4973 bytes, the record overwritten once EmulationStation
+saved.
+
+**Why it is systematic:** a shim list encodes the differences somebody has
+met. The differences that matter are the ones nobody has, and a test that
+shims only the known set is a test of the author's memory. The same shape as
+blindspot 31 (a harness agreeing with itself): the check and its test shared
+an assumption the device does not.
+
+**The fix:** every external command a check leans on that is a busybox applet
+on the device (`sed mv cp tr head wc cut awk`; `grep` and `sort` there are
+GNU) runs through the image's busybox from the build root; the fixtures are
+shaped like the real file (the image's own 221-line `system.cfg`, a UTF-8
+Wi-Fi name), not three lines the author typed; and the recovery path is
+exercised on the VM -- plant the damage, reboot, read the frame and the files
+-- before a build is called verified. The set itself is now byte ranges
+busybox handles.
+
+**Closed 2026-09-10 (same day):** `f907e7f526`. `BASE_REF=c15050c897
+tools/last-good-scripts-test --old` fails seven checks under busybox tr; the
+current script passes; on guest d with the fixed script bind-mounted, `backup`
+accepted the live file and `verify` restored a truncated and an empty
+`system.cfg` from the record, hostname and a planted marker intact.
+
+## 35. A remedy built on an audit's claim about a default nobody read
+
+**What happened:** the ES flows audit wrote, of the cloud card, "the action
+row already exists and is blank" and "`actionLine=true` by default". The
+header says `bool actionLine = false`. The tranche A implementation composed
+the recovery clause D-CLOUD-077 asks for -- what is in place, where to try
+again -- measured it, chose the longest that fit, and passed it to a card
+with no row to draw it on. The first walk's frames showed a two-row card; the
+run was judged by the stamps and the outcome word, and the missing row was
+noticed on the second pass (guest d, 2026-09-10).
+
+**Why it is systematic:** "verify the artifact, not the report" was written
+about software's reports of itself, and an audit is our own report about the
+code -- read with more trust, because we wrote it. A claim about a default or
+a signature is one grep; an audit row that states one without a `file:line`
+is an assertion, and the implementer inherited it as a fact.
+
+**The fix:** an audit row that cites a default, a signature or a call site
+carries the line it was read from; a fix that adds a visible element is
+accepted by a frame that shows the element, not by the stamp that says the
+run ended. ES `eb4148ebc` creates the card with its action row.
+
+**Closed 2026-09-10:** the frame from the `854989a639` build is the closure
+(see the VM QA log for the date).

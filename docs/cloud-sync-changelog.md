@@ -1596,3 +1596,49 @@ file yielded before. After a run that completed they remove
 copies before it touches anything. No config option was added or renamed.
 `rocknix-update` downloads under `.part` names and renames after the checksum
 matches, so a cut download is never picked up as an update at the next boot.
+
+## The picker's scan: a cloud that refused is not an empty one (2026-09-10)
+
+`cloud_content_restore --scan` exited 69 when its listing failed with the
+network gone and 0 -- an empty cloud -- for every other failed listing, on
+the reasoning that a missing ROMs folder (rclone's 3) is an empty cloud. It
+is; a refused connection (5), a rejected sign-in or any other error is not,
+and with the cloud pointed at a dead port the page listed every system on the
+device as `NOT YET IN YOUR CLOUD` and offered the whole of it for upload. A
+listing that fails with the network up now exits with rclone's own code
+unless that code is 3, prints no system lines, and says on stderr that the
+cloud could not be read; the picker already turns any code other than 0 and
+69 into `COULDN'T READ YOUR CLOUD'S CONTENT. TRY AGAIN.` The BIOS listing's
+code no longer overwrites a ROMs listing's that said more. `tools/cloud-round-trip`
+gains the case (the stanza's endpoint moved to a closed port on the same
+host). `2266c73245`.
+
+## system.cfg's last good copy: a text test busybox understands, verified before the hostname is read (2026-09-10)
+
+`chksysconfig valid()` asked `tr` to delete `[:print:][:space:]\200-\377`;
+busybox tr reads `[:print:]` as eight characters, so every real `system.cfg`
+was "not text", the backups at boot and shutdown were refused, and a damaged
+live file was reseeded from the image defaults with the record then
+overwritten by EmulationStation's next save (guest d, `c15050c897`). The set
+is now byte ranges (tab, newline, carriage return, printable ASCII, and
+everything above 0x7F for UTF-8). `tools/last-good-scripts-test` runs every
+busybox-applet command through the image's busybox and carries the image's
+own `system.cfg` and a UTF-8 value as fixtures (`BASE_REF=c15050c897 ... --old`
+shows seven FAILs against the shipped script). New
+`rocknix-sysconfig.service` runs `chksysconfig verify` at sysinit, before
+`network-base.service` reads `system.hostname` at about 1.7 s; the autostart
+chain's verify ran seconds later and a damaged file gave the device
+`localhost` -- or, reseeded, the image's name (#102's `H700`) -- for the whole
+boot (D-CLOUD-080). `f907e7f526`.
+
+## Cloud rows in one line; the why in the dialog; the card's action row (2026-09-10)
+
+EmulationStation `0a725b2dc` (pinned `b2173652b4`): the line under a cloud row
+is `LAST <date>  -  <outcome>` and nothing more -- the scripts' why sentence
+made it three lines at 1280 px, against D-UI-023 -- and the three manual
+rows' confirmation dialogs carry `LAST TIME IT COULDN'T FINISH: <why>.` as a
+second paragraph when the last run did not finish (D-UI-029). The cloud card
+is created with its action row (`createAsyncNotificationComponent(true)`; the
+default is two rows), so the recovery clause of D-CLOUD-077 -- what is in
+place, and `TRY AGAIN: GAME SETTINGS > ...` -- is drawn; tranche A composed it
+and had no row to draw it on.

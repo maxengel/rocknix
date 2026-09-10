@@ -142,6 +142,15 @@ So:
 An assertion that cannot fail is not evidence. Ask what input would produce a
 FAIL; if you cannot name one, the check proves nothing.
 
+A fifth, of the same family (2026-09-10): the picker's scan named the one
+failure it anticipated -- the network gone, exit 69 -- and let every other
+failed listing fall through to the success path, so a cloud that refused the
+connection was presented as an empty one. A branch for the failure you
+expect is not a guard; the guard is that the success path is reached only by
+success (`rc -eq 0`, or the one other code that genuinely means "nothing
+there"), and every other value is a failure whether or not you have a name
+for it.
+
 Two more shapes, the fourth and fifth instances of blindspot 22 (a probe
 that cannot report absence), promoted here on 2026-09-06:
 

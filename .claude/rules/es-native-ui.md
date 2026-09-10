@@ -34,6 +34,9 @@ this file guides any work there.
   Dialog text MUST describe actual behavior (see the backuptool drift lesson).
 - **Toast**: `window->displayNotificationMessage(_("..."), ms)`.
 - **Background job with progress card**: `window->createAsyncNotificationComponent()`
+  -- two rows (title, text) by default; pass `true` for the third, the action
+  row, when the outcome carries a recovery clause. The cloud card composed one
+  for a day and had no row to draw it on (blindspot 35).
   + worker thread updating it — see `ThreadedBluetooth.cpp` (also used by content
   installers). Best fit for rclone progress (parse `--stats` output later, L3).
 - **Busy spinner while loading**: `GuiLoading<T>` (async worker + result callback), or a

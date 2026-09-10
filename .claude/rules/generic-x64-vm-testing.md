@@ -228,6 +228,11 @@ things that cost a cycle each before they were written down:
 - **After five idle minutes the first key only wakes the screensaver.** Send
   `shift` first — a key the interface ignores — or the walk starts one key
   late and every later press lands one screen off.
+  This holds when you "know" the state: a walk composed without `wake.steps`
+  because the previous walk had ended on the carousel five minutes earlier
+  lost its first key to the screensaver, entered a game list on the second,
+  and launched a game twice (2026-09-10). Wake first, every time, and begin
+  from a frame, not from memory.
 - **`x` on a switch row toggles it; B closes the page and runs its save
   function.** So "flip a switch and see the effect" is `x`, `z`, then reopen.
 - **A transfer page ends on PRESS ANY BUTTON TO CLOSE and returns to the hub**
