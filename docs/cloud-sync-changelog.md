@@ -1413,3 +1413,25 @@ written would lose it. The card ends `SKIPPED - A GAME WAS STARTED` and the
 stamp records the stop. Every command `ThreadedCloudSync` runs is now wrapped
 in `setsid` with its pid announced, so the exit sync can be signalled too — it
 used to run bare (#101, D-CLOUD-076). ES `test/qa-integration` `e46093354`.
+
+## The harness cuts the link mid-run: LINK1-LINK7 (2026-09-10)
+
+`tools/cloud-round-trip` gained a fault-injection family. Each cell starts a
+cloud operation detached over SSH, watches its output for the phase it wants
+(compare, transfer, mid-upload, mid-scan), cuts the guest's link over the
+serial console, restores it forty seconds later, and asserts: the run ends
+within ninety seconds with the no-network code or a plain failure, never 0 and
+never the lock sentinel; the receiving side holds no `*.partial` and every
+file present is whole by content; the settings-upload marker is untouched when
+the archive did not complete; the stamps record the failure; a plain re-run
+completes. Seven cells: saves restore (compare), saves backup, content backup,
+content restore, settings archive upload, the exit sync, the picker scan.
+Against `d574edf975` every cell FAILED -- the unbounded runs rode the outage
+out and reported 0 some 46-81 s after the cut (the frozen-card shape needs a
+longer outage: at 120 s they overshoot the bound at 130-156 s); against
+`12fd47e341` every cell PASSED, each run ending about 30 s after the cut with
+exit 69 and a stamp of 69. Off by default; `--link` or `--only LINKn` runs
+them, and they skip with a line when no serial socket is given, which is every
+handheld. The one thing the WebDAV guest cannot prove is same-name re-upload
+idempotency for the settings archive (a slirp/`rclone serve` lock artifact,
+`423 Locked`); that criterion wants MinIO or a device (#103).

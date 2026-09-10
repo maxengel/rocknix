@@ -178,6 +178,39 @@ is a VM check first and a handheld confirmation second (D-QA-007): walk it at
 1280×800, then again with `--res 640x480`; `tools/vm-visual-qa` and the
 walks need no change, a `screendump` simply comes back at the guest's size.
 
+**Cutting the guest's link (fault injection, #103).** `tools/vm-serial sh 'ip
+link set eth0 down'` cuts it; `... up` restores it. Serial is the only channel
+that survives the cut: the host's forwarded SSH arrives from `10.0.2.2` like
+everything else, so it goes with the link -- and it does not *die*, it
+**stalls**, because an admin-down does not reset an established TCP
+connection, so a command over a `ControlMaster` blocks for the whole outage.
+Close the master before the cut (`ssh -O exit`) and go back over SSH only once
+serial confirms the network. Inside the guest the routes vanish at once (a
+fresh connection fails in 20 ms, `network is unreachable`; rclone does not
+retry it), the IPv4 address lingers until NetworkManager notices ~8 s later
+and flushes it (`nmcli dev` -> `unavailable`), and in-flight transfers sit in
+`ESTABLISHED`. After `up` the address, default route and a ping to `10.0.2.2`
+are back in ~0.3 s -- a handheld's Wi-Fi takes seconds to reassociate, so
+*test for the return* (`ip -4 addr show eth0 | grep inet && ip -4 route show
+default | grep . && ping -c1 -W1 10.0.2.2`) rather than assume it. Read the
+interface off `ip -4 route show default` (`eth0` here, `wlan0` on a handheld).
+Two things this guest cannot stage: a *silent* black hole (no iptables/nft/tc
+on the image), and `ip route del default` does **not** cut the QA endpoint --
+`10.0.2.2` sits on the guest's own /24. Established TCP rides a short outage
+out and resumes on its retransmit schedule, so an *unbounded* rclone
+**completes** after a brief outage rather than hanging; the hang needs an
+outage longer than its timeout budget, and the load-bearing signal on a short
+one is the exit code and stamp. One backend sharp edge: `rclone serve webdav`
+fed a fully-buffered aborted PUT through slirp holds the destination name's
+lock and returns `423 Locked` to a re-PUT of the same name for minutes -- a
+VM-only artifact (a real provider resets the aborted PUT), so assert
+re-upload idempotency for a same-name upload on MinIO/S3 or a device.
+`tools/cloud-round-trip --only LINK1,...,LINK7 --serial-socket <sock>` does
+all of this against the throttled endpoint and refuses unless the console it
+holds is the device on `--host` (a nonce written over SSH, read over serial).
+The cells are off by default in the suite and skipped with a line when no
+serial socket is given, which is every handheld.
+
 ## Driving EmulationStation from the monitor
 
 The keys the image maps (`/storage/.config/emulationstation/es_input.cfg`,
