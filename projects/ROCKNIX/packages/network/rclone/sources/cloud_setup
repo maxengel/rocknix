@@ -194,6 +194,16 @@ case "$1" in
         echo "SAVES_REMOTE=${saves_remote}"
         echo "SYNCPATH=${saves_remote}"
         echo "REMOTES=$(rclone listremotes 2>/dev/null | tr '\n' ' ')"
+        # Which provider this device is actually connected to. The name is the
+        # player's own label for the remote; the type is rclone's word for the
+        # service (dropbox, drive, webdav...), which EmulationStation turns
+        # into the name the player picked it by. Until this, nothing on any
+        # screen said who the cloud was -- the setup page offered to connect
+        # one and never mentioned the one already there (fork #110).
+        remote_name="$(rclone listremotes 2>/dev/null | head -1)"
+        remote_name="${remote_name%:}"
+        echo "REMOTE_NAME=${remote_name}"
+        echo "REMOTE_TYPE=$(rclone config show "${remote_name}" 2>/dev/null | sed -n 's/^[[:space:]]*type[[:space:]]*=[[:space:]]*//p' | head -1)"
         exit 0
     ;;
     --content-location)
