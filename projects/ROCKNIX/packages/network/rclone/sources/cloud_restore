@@ -891,6 +891,35 @@ restore_game_saves() {
     local remote_check_status=$?
     if [ $remote_check_status -ne 0 ]; then
         network_lost_during_run "$remote_check_status" "the saves restore"
+
+        # A cloud that answers, with no saves folder in it, is not a failure:
+        # it is the everyday shape of a device whose saves have never been
+        # backed up, and telling that player their restore FAILED is telling
+        # them something is broken when nothing is (#100, D-CLOUD-085).
+        #
+        # The parent is what separates the two. If the cloud root is there
+        # and only the saves folder inside it is missing, there is simply
+        # nothing to bring back. If the root itself is missing, the setting
+        # is wrong -- a typo in the folder name would otherwise restore
+        # nothing and report success, which is the shape that shipped broken
+        # in four images (blindspot 13). So the parent must be listed
+        # successfully before this counts as empty, and a saves folder
+        # configured AT the root has no parent to distinguish it and keeps
+        # failing.
+        local saves_parent="${SAVES_REMOTE%/}"
+        saves_parent="${saves_parent%/*}"
+        if [ -n "${saves_parent}" ] && [ "${saves_parent}" != "${SAVES_REMOTE%/}" ] \
+           && rclone lsd "${REMOTENAME}${saves_parent}" "${RCLONE_NET_OPTS_ARRAY[@]}" >/dev/null 2>&1; then
+            log_message "saves folder ${SAVES_REMOTE} absent but its parent ${saves_parent} lists; treating as an empty cloud" "false"
+            echo "There's nothing in your cloud to restore yet."
+            # EmulationStation offers to create the folder when it sees this;
+            # the wizard's own seeding action is what makes it (cloud_setup
+            # --seed-folders). A protocol line rather than a parsed sentence,
+            # so rewording the line above can never turn the offer off.
+            echo ">>> offer create-saves-folder"
+            return 0
+        fi
+
         log_message "Couldn't reach your saves folder in the cloud." "true" "ERROR"
         report_rclone_error $remote_check_status "Reaching your saves folder"
         return $remote_check_status
