@@ -5282,7 +5282,19 @@ def litter_scan(dev, settings, remote="", label=""):
         if b.endswith(".tmp") or b.endswith("~") or ".qa" in b:
             off.append((p, "a writer's temporary file"))
         elif b.endswith(".bak"):
-            off.append((p, "a migration copy kept forever: two records at rest (D-CLOUD-079: removed after the next good run)"))
+            # cloud_sync_helper takes the .bak before every merge and the run
+            # removes it once it completes (D-CLOUD-079), so a .bak at rest is
+            # the record a failed run falls back to until the next run
+            # completes -- and a violation only if a run completed after it
+            # was taken and left it there. The newest completed stamp says.
+            taken = int(dev.run(f"stat -c %Y {shlex.quote(p)} 2>/dev/null || echo 0", check=False).strip() or 0)
+            done = 0
+            for st in dev.run(f"cat {CACHE}/last-* 2>/dev/null; true", check=False).splitlines():
+                parts = st.split()
+                if len(parts) >= 2 and parts[1] in ("0", "9") and parts[0].isdigit():
+                    done = max(done, int(parts[0]))
+            if done > taken:
+                off.append((p, f"a migration copy kept past a run that completed {done - taken}s after it was taken (D-CLOUD-079: removed after the next good run)"))
     dev_id = cat(ID_FILE)
     if dev_id and len(dev_id.splitlines()) != 1:
         off.append((ID_FILE, f"{len(dev_id.splitlines())} lines, not one"))
@@ -6703,12 +6715,16 @@ def fx_kill18(L):
     marker appears, before backuptool's `systemctl reboot`)."""
     f = 0
     L.make_scratch()
-    had = L.snapshot_configs([RESTORE_PENDING])
+    had = L.snapshot_configs([RESTORE_PENDING, BACKUPTOOL_CONF])
     live = f"{L.root}/kill18-live"
     broot = L.backups
     try:
         L.dev.run(f"rm -rf {L.q(live)} {L.q(broot)}; mkdir -p {L.q(live)} {L.q(broot)}; "
                   f"echo LIVE > {L.q(live)}/a.cfg; echo LIVE > {L.q(live)}/b.cfg; rm -f {RESTORE_PENDING}")
+        # The copy backuptool takes aside covers LOCATIONS, so the tree the
+        # archive writes over has to be in them for the boot-time revert to
+        # have anything to put back -- on a device the two are the same set.
+        L.dev.write(BACKUPTOOL_CONF, f"LOCATIONS=(\n  {live}\n)\n".encode())
         rel = live.lstrip("/")
         stage = "/storage/cloud-qa-kill/stage18"
         name = f"2098_01_01-000000-{L.label + '-' if L.label else ''}{L.osn}_SETTINGS.tar.gz"
