@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-10T04:46:03Z
+> **Saved**: 2026-09-10T05:14:55Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). **#105 graceful degradation, tranche A, second VM round.** Tranche A (`c15050c897`) was verified on the VM and found five defects; all are fixed on `next` (`c6e4fc3a9c`, ES `28631cf77`) and a GENERIC_X64 build of it is in progress (`tmp/build-x64-9.log`, background task). Nothing from tranche A has been staged on a handheld: both are on `d574edf975`; `12fd47e341` stays HELD and is superseded.
+Epic #11 (cloud saves). **#105 graceful degradation, tranche A, third VM round.** Ten defects found and fixed on the VM today (seven from frames, three from the KILL cells); `next` is `e12bc31290` (code head `9847876563`, ES `5a3759cde`), pushed. A GENERIC_X64 build of `9847876563` is in progress (`tmp/build-x64-10.log`). Two earlier builds (`854989a639`, `70c2ca1af1`) verified at 1280x800 and 640x480; #105 has 7 of 9 boxes ticked with frames. Nothing staged on a handheld: both on `d574edf975`; `12fd47e341` HELD, superseded.
 
 ## Completed This Session
 
@@ -23,6 +23,9 @@ Epic #11 (cloud saves). **#105 graceful degradation, tranche A, second VM round.
 - Earlier this session (see archived state `20260910T03…`): #103 link loss, #98/#99, QoL tranche, #101, #96; `ef43f2ce4b` then `d574edf975` deployed to both handhelds; RG SP incident (#102) restore; tranche A audits + D-CLOUD-077/078/079, D-UI-028.
 
 ## In Progress
+
+- **Third build** (`9847876563`, ES `5a3759cde`: interrupted-restore message; scripts `90e18fdb0d`: set_setting awk+rename, restore revert at boot, rotation by name): background task, log `tmp/build-x64-10.log`. To verify: boot guest d (`tmp/vm-cycle-d.sh <img> tmp/vm-d-9847876563.qcow2`), plant `echo reverted > /storage/.config/.restore-reverted`, reboot, frame the dialog; rows spot check; then guest c re-cycle + `tools/cloud-round-trip ... --link` and guest d `--only KILL3,KILL10,KILL11,KILL12,KILL13,KILL15,KILL16,KILL18 --serial-socket ... --monitor-socket ...` for a clean PASSED; copy artifacts to `/workspace/artifacts/rocknix-images/x64-all-20260910-9847876563/`.
+- **Then the H700 build** from `rocknix.worktrees/devices` (at `9847876563`; clear `.stamps/{emulationstation,rclone,rocknix}` + `.stamps/image/build_target`), then ASK per device before staging and before each reboot.
 
 - **GENERIC_X64 build of `c6e4fc3a9c`** (ES `28631cf77`): background task, log `~/.claude/jobs/52255bdf/tmp/build-x64-9.log`; artifacts go to `/workspace/artifacts/rocknix-images/x64-all-20260910-c6e4fc3a9c/`.
   - **What remains**: boot guest d from it (`tmp/vm-cycle-d.sh <img.gz> tmp/vm-d-c6e4fc3a9c.qcow2`), remote → `10.0.2.2:9011`, run `tmp/walks/e-all.steps` (card, rows, dialog, picker) and confirm rows read `LAST … - COULDN'T FINISH` after a run and the dialog carries the why; then reboot with `--res 640x480` and frame rows, dialog, card, page (`tmp/walks/backup-saves-fail-retry.steps` from the hub), picker.
