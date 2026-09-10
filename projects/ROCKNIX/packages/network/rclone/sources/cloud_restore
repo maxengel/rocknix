@@ -483,7 +483,7 @@ check_internet() {
 
     if ping -q -c1 -W 3 1.1.1.1 >/dev/null 2>&1 || ping -q -c1 -W 3 8.8.8.8 >/dev/null 2>&1; then
         log_message "Couldn't reach your cloud.\nYou may need to sign in again, then try again." "true" "ERROR"
-        say_why "COULDN'T REACH YOUR CLOUD. YOU MAY NEED TO SIGN IN AGAIN"
+        say_why "COULDN'T REACH YOUR CLOUD - CHECK YOUR SIGN-IN"
         sleep 3
         clean_exit 1
     fi
