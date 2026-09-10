@@ -5220,8 +5220,8 @@ def assert_message(out, rc, vocabulary=False, stamp=None, label=""):
                    f"{label}developer words where a player reads ({len(offenders)}): " + "; ".join(offenders[:3]))
     if vocabulary:
         f += not check(bool(ALLOWED_SCRIPT.match(last)),
-                       f"{label}the outcome line is one of D-UI-028's four words ({last[:70]!r})",
-                       f"{label}the outcome line is not Completed / Completed with gaps / Couldn't finish / Skipped: {last[:90]!r}")
+                       f"{label}the outcome line is one of the three outcome words ({last[:70]!r})",
+                       f"{label}the outcome line is not Completed / Couldn't finish / Skipped: {last[:90]!r}")
         if rc is not None and rc not in (0, 75, 69):
             f += not check(bool(RECOVERY.search(last)),
                            f"{label}a failed run says how to recover",

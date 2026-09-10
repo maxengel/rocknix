@@ -183,7 +183,7 @@ network_gone() {
 # happened when the sync ran, and the cloud still holds what they removed.
 stop_no_network() {
     local stamp="$1" rc="$2" doing="$3"
-    echo "Lost the network while ${doing}. Try again when you're online."
+    echo "Couldn't finish: lost the network while ${doing}. Try again when you're online."
     log_message "stopped: the network went away while ${doing} (rclone exit ${rc}); exit ${EXIT_NO_NETWORK}"
     record_outcome "content-${stamp}" "${EXIT_NO_NETWORK}"
     exit "${EXIT_NO_NETWORK}"

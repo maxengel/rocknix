@@ -176,7 +176,7 @@ network_gone() {
 # and renames it when complete, so nothing partial is left in the cloud.
 stop_no_network() {
     local rc="$1" unit="$2"
-    echo "Lost the network while backing up ${unit}. Try again when you're online."
+    echo "Couldn't finish: lost the network while backing up ${unit}. Try again when you're online."
     log_message "stopped: the network went away while backing up ${unit} (rclone exit ${rc}); exit ${EXIT_NO_NETWORK}"
     record_outcome content-backup "${EXIT_NO_NETWORK}"
     exit "${EXIT_NO_NETWORK}"
