@@ -1435,3 +1435,126 @@ them, and they skip with a line when no serial socket is given, which is every
 handheld. The one thing the WebDAV guest cannot prove is same-name re-upload
 idempotency for the settings archive (a slirp/`rclone serve` lock artifact,
 `423 Locked`); that criterion wants MinIO or a device (#103).
+
+## The last known good state, kept: system.cfg (2026-09-10)
+
+`chksysconfig` treats `system.cfg.backup` as the record of the last
+`system.cfg` known to be good (D-CLOUD-078, D-CLOUD-079, #105, #102). `backup`
+copies only a file that passes `valid()` -- non-empty, text, carrying
+`system.hostname=`, every non-blank line `key=value` -- by temp-and-rename, and
+now runs at boot after `verify` and `sort_settings` as well as at shutdown, so
+a device that is only ever powered off still has a fresh good copy. `verify`
+restores from the record for every invalid case (empty, truncated, no hostname
+line, binary) and reseeds the image's `system.cfg` only when the record is
+unusable too, logging which it took (`logger -t chksysconfig`). The blanket
+`rsync -a /usr/config/ /storage/.config` that replaced every differing config
+file whenever one retroarch file was missing is scoped to files actually
+missing (`--ignore-existing`; an empty retroarch file is removed first so it is
+reseeded like a missing one). The file keeps its name, so an upgraded device
+has one record and nothing to migrate; its existing `.backup`, if it is a
+default copy (the RG SP's case), is replaced at the first boot the live file
+is valid. `set_setting` deletes and re-adds a key in one `sed -i` under one
+lock hold -- one rename, where it was a rename and then an append with the
+lock released in between; `sort_settings` refuses to replace the file when the
+sorted copy is empty or has no hostname line. Proven by
+`tools/last-good-scripts-test` (a, c), which fails the same checks against the
+scripts before the change.
+
+## Settings archives: written whole, rotated after, restored with a way back (2026-09-10)
+
+`backuptool backup` writes `<name>.partial`, lists it back, renames it, and
+only then rotates the previous archive into `archive/`. Killed mid-tar it
+leaves the previous archive as the only `*.tar.gz` at the root and a
+`.partial` no reader matches; it used to leave a truncated archive under the
+newest name (which `cloud_backup` sent to the cloud and `restore` refused) or,
+killed during the rotation that ran first, no archive at the root at all.
+`restore` archives the current settings into
+`archive/<stamp>-PRE_RESTORE-<label>-ROCKNIX_SETTINGS.tar.gz` (passwords kept:
+it never leaves the device) before extracting, and a failed extraction puts
+that snapshot back and says so; the snapshots count toward `archive/`'s bound
+of three. `restore --then-cloud` leaves `.cloud-journey-pending` after a
+verified extract, so the menu no longer sets it before the restore has run.
+Every message is a sentence for a screen -- no paths, no `logger`, no codes --
+and the zip check falls back to `unzip -l` because busybox `unzip` has no
+`-t`, which had every legacy `.zip` reading as damaged. `cloud_backup` lists
+each archive before uploading it and skips a damaged one, runs cloud
+retention only after the size verification has passed, writes `device.json`
+by temp-and-rename and reads its upload's result. Proven by the test's (b).
+
+## Saves: what a transfer replaces is kept for one cycle (2026-09-10)
+
+The saves restore passes `--backup-dir /storage/.cache/cloud_sync/replaced/<stamp>`,
+so a local save the cloud copy overwrites is moved aside rather than lost;
+the saves backup passes `--backup-dir <SAVES_REMOTE>-replaced/<stamp>` in copy
+mode as well as sync mode. After a run that completed, every stamp folder but
+the newest is removed on that side (the remote's only on a full pass, never
+on the game-exit `--recent` run), so one record is at rest. The `-replaced`
+folder is shared by every device on the saves folder, so "one cycle" is one
+cycle of whichever device ran last. After each saves transfer and after the
+settings archive download, rclone's `<name>.<8 chars>.partial` litter under
+the tree is removed. Verified with the image's rclone 1.75 that `--backup-dir`
+works under `copy` with `--no-traverse`/`--max-age` and with `--update`.
+
+## Every stamp and record written whole (2026-09-10)
+
+A `write_stamp()` per script (there is no shared library), the shape of
+`ThreadedCloudSync::recordOutcome`: the line goes to a temp beside the stamp
+and is renamed over it. Applied to every `last-*` stamp in the five transfer
+scripts, the `settings-backup.uploaded` marker, `device.json`, the
+`content-systems` selection (where an empty file is a different valid answer),
+the saves-root record, and the device id. `cloud_saves_root check` refuses when
+the record exists and is empty instead of passing unchecked; `cloud_device_id`
+with an empty id file and no adapter returns nothing rather than a new
+identity derived from `machine-id`. `cloud_capture` sweeps `.last-capture.<pid>`
+litter with the rest. **Stamps gain a third field**: when a run did not
+complete and a `>>> why` line was printed, the sentence follows the exit code
+with its spaces as underscores (`1789000000 5 YOUR_CLOUD_STOPPED_ANSWERING`),
+one token for a reader that splits on spaces; nothing is added for 0, 9, 69
+or 75. Proven by the test's (d).
+
+## Failures say why, in the player's words (2026-09-10)
+
+Every failure point prints one `>>> why <SENTENCE>` protocol line from the
+vocabulary table in `es-native-ui.md` (D-UI-028): rclone 3/4 `YOUR CLOUD
+FOLDER WASN'T FOUND`, 5 `YOUR CLOUD STOPPED ANSWERING`, 6 `SOME FILES DIDN'T
+FINISH`, 7/8 `YOUR CLOUD REFUSED THE TRANSFER`, the sign-in probe `YOUR CLOUD
+DIDN'T ANSWER. ITS SIGN-IN MAY HAVE EXPIRED`, the saves-root guard `THE SAVES
+FOLDER IS ON A DIFFERENT CARD`, and the script-side additions `YOUR CLOUD
+STORAGE ISN'T SET UP`, `THE SAVES FOLDER WASN'T FOUND ON THIS DEVICE`, `THE
+SETTINGS ARCHIVE ON THIS DEVICE IS DAMAGED`, `THE COPY IN YOUR CLOUD DIDN'T
+MATCH WHAT WAS SENT`, `YOUR CLOUD SYNC SETTINGS COULDN'T BE READ`, `AN OLD
+RESTORE-FOLDER SETTING IS STILL SET`, `THE SAVES FOLDER'S CARD COULDN'T BE
+CHECKED`, `THE SAVES FOLDER CHANGED CARDS DURING THE TRANSFER`. One per phase
+in the saves scripts, one per failing unit in the content scripts. Nothing a
+screen can show carries an exit code, `rc=`, a log path, `logger`, `rclone`, a
+script name or a `--flag`: rclone's taxonomy and codes go to the log half of
+`log_message`, `Log file: /var/log/cloud_sync.log` is log-only, the summaries
+say `COMPLETED` (0 or 9) or `COULDN'T FINISH` (`SUCCESS` and `COMPLETED WITH
+ERRORS` retire), `rclone config` and `cloud_setup --accept-saves-root` leave
+the screen (the latter goes to the system log; no menu row offers it yet), and
+the menu path named is the current `GAME SETTINGS > MANAGE CLOUD STORAGE`. A
+match cut by link loss prints its running `>>> removed` totals before the 69
+exit so the page can report `COMPLETED WITH GAPS`. The harness's FORBIDDEN
+regex over every screen line of the six scripts is clean (the test's (e)).
+
+## The cloud sync configuration is never half-written (2026-09-10)
+
+`cloud_sync_helper` builds the merged rules beside the file and renames them
+over it (they were built under `/tmp` and moved across filesystems -- a copy
+and an unlink, with the allowlist's catch-all the first line to go from a cut
+copy); takes `cloud_sync-rules.txt.bak` only from a file carrying `- /**` and
+`cloud_sync.conf.bak` only from a conf that is whole (`bash -n`, and every line
+blank, a comment, `KEY=value` with balanced quotes, or a continuation), so a
+torn file never replaces the last good copy; refuses to merge onto a conf that
+is not whole; appends new keys to a same-directory copy installed by one rename
+once it validates; and carries a backslash-continued default (`RCLONEOPTS`)
+whole -- it used to append only the first line, leaving an open quote in any
+conf that lacked the key. `cloud_backup` and `cloud_restore` validate the conf
+before `source`, fall back to the `.bak`, and otherwise refuse with `>>> why
+YOUR CLOUD SYNC SETTINGS COULDN'T BE READ`; they ran on with whatever a torn
+file yielded before. After a run that completed they remove
+`cloud_sync.conf.bak`, `cloud_sync-rules.txt.bak` and
+`cloud_sync.conf.pre-copy-default` (D-CLOUD-079); the next run takes fresh
+copies before it touches anything. No config option was added or renamed.
+`rocknix-update` downloads under `.part` names and renames after the checksum
+matches, so a cut download is never picked up as an update at the next boot.
