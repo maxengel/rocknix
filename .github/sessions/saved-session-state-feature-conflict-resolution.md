@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-10T05:38:52Z
+> **Saved**: 2026-09-10T06:07:28Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). **#105 tranche A is verified on the VM and built for H700; waiting on the maintainer's yes to stage.** `next` = `4dbe0bb3a5` (code head `7eb713bbd9`, ES `5a3759cde`), pushed. GENERIC_X64 `7eb713bbd9` verified (frames, suite PASSED, LINK1-7 PASS, KILL3/10/11/12/13/15/16/18 PASS); H700 `7eb713bbd9` at `/workspace/artifacts/rocknix-images/h700-all-20260910-7eb713bbd9/` (tar sha `2ead84bc1e6c97af…`). Both handhelds are on `d574edf975`; `12fd47e341` HELD and superseded. **Ask before staging and before each reboot, per device (D-QA-011/008).**
+Epic #11 (cloud saves). **#105 tranche A is on both handhelds.** H700 `7eb713bbd9` (tar sha `2ead84bc1e6c…`) was staged and both devices rebooted on the maintainer's authorisation (2026-09-10 05:56Z); both are back on it with settings intact, last-good records written, startup sync completed. `next` = `65f3e7e5e7` (code head `7eb713bbd9`, ES `5a3759cde`), pushed. The maintainer's four-item punch list on the devices is next; the RG SP's settings restore was done 2026-09-09 (not pending).
 
 ## Completed This Session
 
@@ -28,11 +28,11 @@ Epic #11 (cloud saves). **#105 tranche A is verified on the VM and built for H70
 
 ## Next Steps
 
-1. **Maintainer decision**: stage H700 `7eb713bbd9` on the RG SP and/or RG35XX SP (`tmp/deploy.sh` pattern: scp the tar to `~/.update`, verify the device-side sha, then ask again before the reboot, naming the device).
-2. After the handhelds run it: the maintainer's four-item punch list; watch `journalctl -t chksysconfig` on first boot (record refreshed at boot and shutdown now).
-3. #105 remaining boxes: `COMPLETED WITH GAPS` on screen (needs a partial-run fixture) and the harness's positive vocabulary match; tranche B (P2/P3); KILL1/2/4/5 (endpoint cells) and KILL6-9/14/17 not run/implemented on the new scripts.
-4. #104 (persistent journal/logs, watchdog, crash store); #106 (NM hostname rewrite) owner decision; open decisions #100, #89, #92, #42.
-5. Worktrees left: `row-one-line-pin` (pins), `last-good-harness` (merged; remove), ES `row-one-line` (merged).
+1. The maintainer tests on the handhelds (the four-item punch list). Devices: RG SP 192.168.1.175 (hostname reads `RGSP`), RG35XX SP 192.168.1.81 (hostname reads `ROCKNIX` this boot -- #106's race, not the build). No reboots without asking (D-QA-008).
+2. #106: decide `hostname-mode=none` for NetworkManager and quoting in `network-base-setup`; `userconfig.service` takes ~9 s on H700, which is why NM wins the hostname race -- worth its own look.
+3. #105 remaining boxes: `COMPLETED WITH GAPS` on screen (needs a partial-run fixture) and the harness's positive vocabulary match; tranche B (P2/P3); KILL1/2/4/5 on the new scripts; KILL6-9/14/17 not implemented.
+4. #104 (persistent journal/logs, watchdog, crash store); open decisions #100, #89, #92, #42.
+5. Worktrees left: `row-one-line-pin` (pins), `last-good-harness` (merged; remove with `tools/fork-worktree remove`), ES `row-one-line` (merged).
 
 ## Key Files Modified
 
