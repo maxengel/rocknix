@@ -1435,3 +1435,42 @@ them, and they skip with a line when no serial socket is given, which is every
 handheld. The one thing the WebDAV guest cannot prove is same-name re-upload
 idempotency for the settings archive (a slirp/`rclone serve` lock artifact,
 `423 Locked`); that criterion wants MinIO or a device (#103).
+
+## EmulationStation keeps the last good settings file and speaks the outcome vocabulary (2026-09-10)
+
+Both settings files EmulationStation writes -- `es_settings.cfg` and
+`system.cfg` -- now go through a temporary file, an fsync, and a rename (the
+system file used to write a good temporary and then copy it over the live file
+in place; the ES settings file was rewritten in place), under the same
+`/tmp/.system.cfg.lock` the shell's `set_setting` takes. After every good save
+and every good parse at startup the file is copied to `<name>.backup`, the one
+last-known-good record (D-CLOUD-079). A startup that finds the live file
+missing, empty, or unparsable loads the backup, writes it back, and says once
+`YOUR SETTINGS FILE WAS DAMAGED. THE LAST GOOD COPY WAS RESTORED.`; defaults are
+the last resort, never written over a damaged file before that attempt. A host
+kill test (500 rounds, SIGKILL at random points) left the live file and the
+backup complete every time.
+
+The sync card, the transfer page, and the rows under the toggles speak
+D-UI-028: `COMPLETED`, `COMPLETED WITH GAPS - <what>`, `COULDN'T FINISH -
+<why>`, `SKIPPED - <reason>`. The why comes from a `>>> why <sentence>` line the
+scripts print at the failure point, else from a small table; the card's action
+row carries what is in place and how to recover (`TRY AGAIN: GAME SETTINGS >
+BACK UP SAVES TO THE CLOUD`, `IT RUNS AGAIN WHEN YOU EXIT A GAME`, ...), the
+card's token filter is gone, and `FAILED - SEE /var/log/cloud_sync.log` with it.
+The transfer page learns each tier's exit from a `>>> tier <label>|<rc>` line
+the run composition now echoes after every part, so a run with one failed part
+reads `COMPLETED WITH GAPS`, names the items that did not finish and why, says
+what is in place, and offers `A TRY AGAIN  B CLOSE`, which re-runs the same
+command; game lists are rescanned when any tier succeeded. A match cut after
+deletions reads the same way over `N FILES WERE REMOVED FROM THIS DEVICE. YOUR
+CLOUD STILL HAS THEM.` Stamps gain a third field, the why token, additively.
+The picker reads the scan's exit code (`COULDN'T REACH YOUR CLOUD. TRY AGAIN
+WHEN YOU'RE ONLINE.` instead of an empty cloud); the journey marker is set by
+`backuptool restore --then-cloud` after a verified extract and consumed on YES
+or LATER, not on display; the match preview no longer says a device with no
+selection already matches; the seed-folders page shows `MISSING` rows; TIDY
+never offers MOVE over a refusal; deleting a save state is refused while a sync
+runs (D-CLOUD-053). Retired from every screen: `COMPLETED SUCCESSFULLY`,
+`SUCCEEDED`, `FAILED`, `STOPPED`, `BOTH WAYS. NOTHING IS DELETED.`
+ES `test/qa-integration` `81d35668e`.
