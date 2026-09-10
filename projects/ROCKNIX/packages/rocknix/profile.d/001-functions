@@ -199,6 +199,17 @@ EOF
   fi
 }
 
+# The device name in the only form the network accepts: letters, digits and
+# hyphens, at most 63 of them, no hyphen at either end. Anything else -- a
+# space, an underscore, punctuation, a run of hyphens -- becomes one hyphen, so "RG SP" is
+# applied as RG-SP rather than refused by hostnamed and left as whatever
+# NetworkManager put there (fork #106). EmulationStation's HOSTNAME row keeps
+# the same rule at entry (GuiMenu, cleanHostname); this is the fallback for a
+# value already stored. Empty in, empty out: the caller decides the default.
+function clean_hostname() {
+  printf '%s' "${1}" | sed -E 's/[^A-Za-z0-9]+/-/g; s/^-+//; s/-+$//' | cut -c1-63 | sed -E 's/-+$//'
+}
+
 function set_setting() {
 
   if [ ! -d "/storage/.config/system/configs" ]
