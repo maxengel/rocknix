@@ -314,6 +314,19 @@ Then read the endpoint after a transfer (`cloud-test-backend ls`), never the
 page's COMPLETED SUCCESSFULLY — that is the check that found `MEDIA_EXCLUDES`
 being passed to nothing (blindspot 30).
 
+## Fixtures for the launch path
+
+`tools/emulator-exit-test --port <ssh> --identity <key> --vm` (fork-only;
+`--vm` swaps RetroArch to the gl driver for the run because the guest has no
+Vulkan, never pass it for a handheld). It builds a battery-backed Game Boy
+cartridge that writes a known byte, launches it through `runemu.sh` as
+`es_systems.cfg` does, and drives the shipped `execute_kill` from the
+installed `input_sense`: one press, a held combo, the debounce window on a
+target of its own, and the marker's lifetime. Against an `input_sense` with
+the debounce stripped it fails in two places (no `.srm`; the repeat went
+through), which is what makes it a gate (#117, #120). The exit code is not
+the signal -- since #92 a forced quit reads as clean -- the save on disk is.
+
 ## After every VM cycle
 
 A cycle that taught something and left it in the work log has taught the
