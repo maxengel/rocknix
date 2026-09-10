@@ -276,6 +276,13 @@ post_makeinstall_target() {
 
   # journald
   ln -sf /storage/.cache/journald.conf.d ${INSTALL}/usr/lib/systemd/journald.conf.d
+
+  # systemd-pstore's archive directory is a symlink into /storage (tmpfiles
+  # z_01_rocknix.conf, fork #104). systemd's own tmpfiles line creates it as
+  # a plain directory, sorts first, and tmpfiles ignores the later line for
+  # the same path as a duplicate -- so the symlink was never made and the
+  # dump was archived into tmpfs (VM, 2026-09-10). One line for the path.
+  sed -e '/^d \/var\/lib\/systemd\/pstore/d' -i ${INSTALL}/usr/lib/tmpfiles.d/systemd-pstore.conf
 }
 
 post_install() {
