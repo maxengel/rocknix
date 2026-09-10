@@ -1,0 +1,176 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# emulator-exit-test - the exit hotkey ends a game once, cleanly, with the save written.
+#
+#   ./tools/emulator-exit-test --port 10022 --identity /tmp/rocknix-vm-pair/qa-key [--vm] [--only BC]
+#
+# Why this exists. The exit hotkey (A+B+C on a handheld) sends SIGTERM to the
+# emulator through input_sense's execute_kill. RetroArch ends cleanly on the
+# first one, in about half a second, and writes the battery save on the way
+# out. A SECOND SIGTERM inside that half-second makes it exit(1) WITHOUT
+# writing the save -- and the combo re-fires on every further press while the
+# first button is held, so a thumb that lingers loses everything since the
+# last autosave (fork #117). Since D-LAUNCH-003 execute_kill drops a repeat
+# within three seconds. This cell proves, against the shipped input_sense:
+#
+#   A  one press: runemu.sh exits 0, the .srm exists and holds what the game wrote
+#   B  three presses in a row (a held combo): the same outcome -- the repeats are dropped
+#   C  the window closes: on a generic target, a press 4 s after the first goes through
+#   D  the exit-hotkey marker never outlives a launch
+#
+# It fails against an input_sense without the debounce -- B finds no .srm, C
+# finds the repeat went through -- which is what makes it a regression gate
+# rather than a demonstration (proven both ways on the VM, 2026-09-10). The
+# exit code alone is not the signal: since #92 runemu.sh reads a forced quit
+# as clean, so the save on disk is what decides. The
+# cartridge is built here -- 32 KiB, MBC1+RAM+BATTERY, writes $55 to $A000 and
+# spins -- so the save's content is known and nothing copyrighted travels.
+#
+# Runs over SSH against a guest or a handheld that already has gambatte
+# (every ROCKNIX image does). --vm sets RetroArch's video driver to gl for
+# the run and puts it back, because the QEMU guest has no Vulkan; never
+# pass it for a handheld. Nothing else on the device is changed, and every
+# file this writes is removed at the end.
+set -u
+HOST=root@127.0.0.1; PORT=22; KEY=""; VM=0; ONLY=ABCD
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --host) HOST=$2; shift 2 ;;
+    --port) PORT=$2; shift 2 ;;
+    --identity) KEY=$2; shift 2 ;;
+    --vm) VM=1; shift ;;
+    --only) ONLY=$2; shift 2 ;;
+    -h|--help) sed -n '5,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+SSHO=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=8 -o BatchMode=yes -p "$PORT")
+[ -n "$KEY" ] && SSHO+=(-i "$KEY")
+S() { ssh -n "${SSHO[@]}" "$HOST" "$@"; }
+FAILS=0
+check() { if [ "$1" = 0 ]; then echo "  PASS  $2"; else echo "  FAIL  $2"; FAILS=$((FAILS+1)); fi; }
+
+ROM=/storage/roms/gb/ExitProbe.gb; SRM=/storage/roms/gb/ExitProbe.srm
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+
+# --- the cartridge -----------------------------------------------------------
+python3 - "$TMP/ExitProbe.gb" <<'PY'
+import sys
+rom = bytearray(0x8000)
+rom[0x100:0x104] = bytes([0x00, 0xC3, 0x50, 0x01])          # NOP ; JP $0150
+logo = bytes.fromhex("CEED6666CC0D000B03730083000C000D0008111F8889000EDCCC6EE6DDDDD999BBBB67636E0EECCCDDDC999FBBB9333E")
+rom[0x104:0x134] = logo
+rom[0x134:0x13D] = b"EXITPROBE"
+rom[0x147] = 0x03   # MBC1 + RAM + BATTERY
+rom[0x148] = 0x00   # 32 KiB ROM
+rom[0x149] = 0x02   # 8 KiB RAM
+rom[0x14A] = 0x01
+rom[0x14B] = 0x33
+x = 0
+for i in range(0x134, 0x14D):
+    x = (x - rom[i] - 1) & 0xFF
+rom[0x14D] = x
+code = bytes([
+    0xF3,                    # DI
+    0x3E, 0x0A,              # LD A,$0A
+    0xEA, 0x00, 0x00,        # LD ($0000),A   enable external RAM
+    0x3E, 0x55,              # LD A,$55
+    0xEA, 0x00, 0xA0,        # LD ($A000),A   the byte the test looks for
+    0x18, 0xFE,              # JR -2          spin
+])
+rom[0x150:0x150+len(code)] = code
+open(sys.argv[1], "wb").write(rom)
+PY
+scp -q "${SSHO[@]/#-p/-P}" "$TMP/ExitProbe.gb" "$HOST:/tmp/ExitProbe.gb" 2>/dev/null || { scp -q -P "$PORT" ${KEY:+-i "$KEY"} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$TMP/ExitProbe.gb" "$HOST:/tmp/ExitProbe.gb"; }
+
+# --- the device-side helpers -------------------------------------------------
+# press: the shipped execute_kill, extracted from the installed input_sense so
+# the signal and the marker come from the code under test, not a copy of it.
+S 'mkdir -p /storage/roms/gb && mv /tmp/ExitProbe.gb '"$ROM"' && cat > /tmp/exit-press <<"H"
+#!/bin/bash
+DEBUG=false; log() { :; }
+eval "$(sed -n "/^execute_kill()/,/^}/p" /usr/bin/input_sense)"
+for i in $(seq 1 "${1:-1}"); do execute_kill; [ "${1:-1}" -gt 1 ] && [ "${2:-0}" != 0 ] && sleep "${2}"; done
+H
+chmod +x /tmp/exit-press
+cat > /tmp/exit-launch <<"H"
+#!/bin/bash
+# launch through runemu.sh exactly as es_systems.cfg does, record its exit code
+rm -f /tmp/exit-rc
+/usr/bin/runemu.sh "$1" -Pgb --core=gambatte --emulator=retroarch --controllers= >/tmp/exit-launch.log 2>&1
+echo $? > /tmp/exit-rc
+H
+chmod +x /tmp/exit-launch; echo helpers-ready'
+
+VD=""
+if [ "$VM" = 1 ]; then
+  VD=$(S 'grep -E "^video_driver" /storage/.config/retroarch/retroarch.cfg')
+  S 'sed -i "s/^video_driver = .*/video_driver = \"gl\"/" /storage/.config/retroarch/retroarch.cfg'
+fi
+cleanup() {
+  S "pkill -TERM -f '^/usr/bin/retroarch' 2>/dev/null; sleep 1; rm -f $ROM $SRM /storage/roms/gb/ExitProbe.rtc /tmp/exit-press /tmp/exit-launch /tmp/exit-rc /tmp/exit-launch.log; rmdir /storage/roms/gb 2>/dev/null; true"
+  [ -n "$VD" ] && S "sed -i 's/^video_driver = .*/${VD//\//\\/}/' /storage/.config/retroarch/retroarch.cfg"
+}
+trap 'cleanup; rm -rf "$TMP"' EXIT
+
+launch() {  # start the game, wait for RetroArch, give the cartridge time to write
+  S "rm -f $SRM; nohup /tmp/exit-launch $ROM >/dev/null 2>&1 &"
+  local i; for i in $(seq 1 45); do S 'pgrep -f "^/usr/bin/retroarch" >/dev/null' && break; sleep 2; done
+  S 'pgrep -f "^/usr/bin/retroarch" >/dev/null' || { echo "  RetroArch never started (see /tmp/exit-launch.log on the device)"; return 1; }
+  sleep 4
+}
+wait_exit() {  # until runemu.sh has returned
+  local i; for i in $(seq 1 30); do S 'test -f /tmp/exit-rc' && return 0; sleep 1; done; return 1
+}
+srm_ok() { S "test -f $SRM && [ \"\$(head -c1 $SRM | od -An -tx1 | tr -d ' ')\" = 55 ]"; }
+
+case "$ONLY" in *A*)
+echo "A  one press ends the game cleanly and the save is written"
+if launch; then
+  S '/tmp/exit-press 1'; wait_exit; rc=$(S 'cat /tmp/exit-rc 2>/dev/null')
+  check "$([ "$rc" = 0 ]; echo $?)" "runemu.sh exit code is 0 (got ${rc:-none})"
+  check "$(srm_ok; echo $?)" ".srm exists and its first byte is 55"
+  check "$(S 'test ! -e /tmp/.process-kill-requested'; echo $?)" "the exit-hotkey marker was consumed"
+else check 1 "launch"; fi ;; esac
+
+case "$ONLY" in *B*)
+echo "B  a held combo: three presses back to back end the game once, save intact"
+if launch; then
+  S '/tmp/exit-press 3 0'; wait_exit; rc=$(S 'cat /tmp/exit-rc 2>/dev/null')
+  check "$([ "$rc" = 0 ]; echo $?)" "runemu.sh exit code is 0 (got ${rc:-none})"
+  check "$(srm_ok; echo $?)" ".srm exists and its first byte is 55 -- without the debounce there is no .srm"
+else check 1 "launch"; fi ;; esac
+
+case "$ONLY" in *C*)
+echo "C  the window closes: a press 4 s after the first goes through"
+# One process for the three presses, because the window is a variable inside
+# the long-running input_sense and a fresh shell per press would never see
+# it. The target is a script of its own -- `killall sleep` would also hit the
+# device's daemons, which respawn their sleeps and make the count meaningless.
+S 'cp /tmp/.process-kill-data /tmp/.process-kill-data.saved 2>/dev/null; printf "#!/bin/sh\nsleep 300\n" > /tmp/xprobe; chmod +x /tmp/xprobe; echo xprobe > /tmp/.process-kill-data
+cat > /tmp/exit-window <<"H"
+#!/bin/bash
+DEBUG=false; log() { :; }
+eval "$(sed -n "/^execute_kill()/,/^}/p" /usr/bin/input_sense)"
+n() { pgrep -x xprobe | wc -l; }
+(/tmp/xprobe >/dev/null 2>&1 </dev/null &); sleep 0.5
+execute_kill; sleep 0.5; echo "n1=$(n)"
+(/tmp/xprobe >/dev/null 2>&1 </dev/null &); sleep 0.5
+execute_kill; sleep 0.5; echo "n2=$(n)"
+sleep 4
+execute_kill; sleep 0.5; echo "n3=$(n)"
+H
+chmod +x /tmp/exit-window; /tmp/exit-window; pkill -x xprobe; rm -f /tmp/xprobe /tmp/exit-window /tmp/.process-kill-requested; mv -f /tmp/.process-kill-data.saved /tmp/.process-kill-data 2>/dev/null' > "$TMP/c.out" 2>&1
+n1=$(sed -n 's/^n1=//p' "$TMP/c.out"); n2=$(sed -n 's/^n2=//p' "$TMP/c.out"); n3=$(sed -n 's/^n3=//p' "$TMP/c.out")
+check "$([ "${n1:-x}" = 0 ]; echo $?)" "first press kills the target (survivors: ${n1:-?})"
+check "$([ "${n2:-x}" = 1 ]; echo $?)" "a repeat inside 3 s is dropped (survivors: ${n2:-?})"
+check "$([ "${n3:-x}" = 0 ]; echo $?)" "a press after the window goes through (survivors: ${n3:-?})"
+[ "${n1:-x}${n2:-x}${n3:-x}" = "010" ] || { echo "  --- raw:"; sed 's/^/  | /' "$TMP/c.out"; } ;; esac
+
+case "$ONLY" in *D*)
+echo "D  the marker never outlives a launch"
+check "$(S 'test ! -e /tmp/.process-kill-requested'; echo $?)" "no /tmp/.process-kill-requested left behind" ;; esac
+
+echo; if [ "$FAILS" = 0 ]; then echo "PASSED"; else echo "FAILED ($FAILS)"; exit 1; fi
