@@ -231,3 +231,44 @@ run ended. ES `eb4148ebc` creates the card with its action row.
 (`NOTHING WAS SENT. YOUR CLOUD IS AS IT WAS. TRY AGAIN: GAME SETTINGS > BACK UP
 SAVES TO THE CLOUD`); at 640x480 the shorter candidate is chosen
 (`x64-all-20260910-70c2ca1af1/shots/640x480/04-card-t02.png`).
+
+## 36. One backend in the harness, and its semantics mistaken for the contract
+
+**What happened:** #103 bounded every rclone run and cut
+`--low-level-retries` from 10 to 2 along with `--retries`. The harness runs
+against one QA WebDAV server, which accepts concurrent writes to a folder
+without complaint, so nothing changed there and every cell stayed green.
+Dropbox serialises writes per folder and answers concurrent ones with a lock
+error that rclone is expected to ride out at the low level. With two retries
+it does not, and `--backup-dir` makes every replacement a server-side move
+as well as an upload -- so from the day #103 shipped, a saves backup that
+replaced more than one file failed on Dropbox, which is the exit sync after
+a game for any save already in the cloud. It was found by the maintainer
+playing a game (2026-09-10), not by us, and measured on their device:
+replacing 12 files, 6 moves failed at 2 low-level retries and 0 failed at 10.
+
+**Why it is systematic:** a harness with one backend tests one backend's
+semantics and reports them as the contract. The differences that matter --
+per-folder write locks, whether modtimes exist, whether a move is
+server-side, rate limits, batch commits -- are exactly the ones a single
+well-behaved endpoint hides. The same shape as blindspot 34 (a check proven
+only under the host's tools) one layer out: the substitute was convenient
+and its differences from the real thing were invisible until a real device
+met a real provider. Two of the four ways a tuning change can be wrong --
+too tight for a slow provider, too tight for a chatty one -- are unobservable
+here by construction.
+
+**The fix:** when a change tightens or loosens anything that governs how we
+talk to a provider (retries, timeouts, concurrency, batch size, transfer
+counts), say in the change which provider behaviour it assumes and how that
+was established; treat "the harness is green" as evidence about WebDAV only.
+Where a fixture can be written that is backend-agnostic, write it -- the
+suite now covers a second backup that replaces several files at once
+(`d3c8773376`), which was untested in any form. Where it cannot, say so in
+the QA log's "what it could not prove" column rather than leaving the row
+looking complete. A second real provider in the loop, even occasionally, is
+the only thing that would have caught this before a player did.
+
+**Open:** no Dropbox fixture exists that runs unattended. The measurement in
+#107 was taken by hand on the maintainer's device, in a scratch folder that
+was purged afterwards.
