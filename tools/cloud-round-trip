@@ -114,15 +114,36 @@ EXCLUDED = {"saves/scratch.tmp": b"should-never-leave-the-device"}
 # backuptool itself writes, and the retention step plants both shapes side by
 # side.
 ARCHIVE_NAME = "2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz"
-ARCHIVE_BODY = b"settings-backup-archive-v1"
-# Deliberately the same length as ARCHIVE_BODY. A remote with no modtimes and
-# no hashes leaves rclone comparing by size alone, so a second archive of
-# identical size was silently never uploaded while the run reported success
-# (#53). The real archive is ~17 MB of OS-shipped assets around a few KB of
-# config, so an ordinary settings change routinely preserves its size --
-# "preamp=7" -> "preamp=8" is the same width. Only a second backup against an
-# already-populated remote can catch it; the first one always transfers.
-ARCHIVE_BODY_V2 = b"settings-backup-archive-v2"
+# Real archives, since 2026-09-10: cloud_backup lists an archive (tar -tzf)
+# before it sends it and refuses one that does not list -- so a planted run
+# of bytes is "damaged" and never uploaded, which is how the whole settings
+# step went red the first time the suite met tranche A's scripts. One member,
+# storage/.config/qa-suite/settings.cfg, whose text says which version.
+def _settings_archive(version, pad=0):
+    import io, tarfile, gzip
+    raw = io.BytesIO()
+    with tarfile.open(fileobj=raw, mode="w", format=tarfile.GNU_FORMAT) as t:
+        body = (f"qa-suite-settings={version}\n" + " " * pad).encode()
+        ti = tarfile.TarInfo("storage/.config/qa-suite/settings.cfg")
+        ti.size = len(body); ti.mtime = 1700000000; ti.mode = 0o644
+        t.addfile(ti, io.BytesIO(body))
+    return gzip.compress(raw.getvalue(), mtime=0)
+
+def _same_size_pair():
+    """v1 and v2 at the same compressed size. A remote with no modtimes and no
+    hashes leaves rclone comparing by size alone, so a second archive of
+    identical size was silently never uploaded while the run reported success
+    (#53); the regression case needs two archives that differ and weigh the
+    same. Padding inside the member finds a pair; the deflate of two texts
+    that differ by one character almost always lands on the same length."""
+    a = _settings_archive("v1")
+    for pad in range(0, 64):
+        b = _settings_archive("v2", pad)
+        if len(b) == len(a):
+            return a, b
+    raise SystemExit("could not build two settings archives of the same size")
+
+ARCHIVE_BODY, ARCHIVE_BODY_V2 = _same_size_pair()
 assert len(ARCHIVE_BODY_V2) == len(ARCHIVE_BODY)
 
 # A system EmulationStation declares (D-CLOUD-019): the content tier lists
@@ -5159,7 +5180,7 @@ def assert_message(out, rc, vocabulary=False, stamp=None, label=""):
 
 LITTER_ALLOW = {f"{CONF}.qa-prev"}      # the harness's own, put back by restore_device
 ARCHIVE_SHAPES = re.compile(r".*_SETTINGS\.tar\.gz$|.*_BACKUP\.tar\.gz$|.*_BACKUP\.zip$")
-STAMP_LINE = re.compile(r"^\d+ -?\d+( \S+)?$")     # epoch rc [why] -- the third field is D-UI-028's, additive
+STAMP_LINE = re.compile(r"^\d+ -?\d+( .+)?$")     # epoch rc [token] [why...] -- D-UI-028: EmulationStation writes a token and the scripts' sentence; the scripts write the sentence with underscores
 
 
 def valid_syscfg(text):
@@ -5261,7 +5282,19 @@ def litter_scan(dev, settings, remote="", label=""):
         if b.endswith(".tmp") or b.endswith("~") or ".qa" in b:
             off.append((p, "a writer's temporary file"))
         elif b.endswith(".bak"):
-            off.append((p, "a migration copy kept forever: two records at rest (D-CLOUD-079: removed after the next good run)"))
+            # cloud_sync_helper takes the .bak before every merge and the run
+            # removes it once it completes (D-CLOUD-079), so a .bak at rest is
+            # the record a failed run falls back to until the next run
+            # completes -- and a violation only if a run completed after it
+            # was taken and left it there. The newest completed stamp says.
+            taken = int(dev.run(f"stat -c %Y {shlex.quote(p)} 2>/dev/null || echo 0", check=False).strip() or 0)
+            done = 0
+            for st in dev.run(f"cat {CACHE}/last-* 2>/dev/null; true", check=False).splitlines():
+                parts = st.split()
+                if len(parts) >= 2 and parts[1] in ("0", "9") and parts[0].isdigit():
+                    done = max(done, int(parts[0]))
+            if done > taken:
+                off.append((p, f"a migration copy kept past a run that completed {done - taken}s after it was taken (D-CLOUD-079: removed after the next good run)"))
     dev_id = cat(ID_FILE)
     if dev_id and len(dev_id.splitlines()) != 1:
         off.append((ID_FILE, f"{len(dev_id.splitlines())} lines, not one"))
@@ -6066,45 +6099,50 @@ def kill_backuptool_prestate(L, tag):
 
 
 def fx_kill3(L):
-    """KILL3: `backuptool backup` killed mid-rotation -- after the previous
-    archive A was moved into archive/ and before the new one exists at the
-    root (backuptool:279-304 rotates first, :413 writes to the final name).
-    The watcher fires when archive/A exists and the root holds no archive.
-    Asserted: A is still what both readers find -- newest_backup (the
-    harness's finder) and cloud_backup --system-only's root glob -- which
-    FAILS today (A is in archive/, the root is empty, "No settings backup
-    found"); archive/ holds at most 3; a re-run yields exactly one archive at
-    the root with A in archive/."""
+    """KILL3: `backuptool backup` killed mid-rotation. Since 2026-09-10 the
+    new archive is written to .partial, listed back, renamed into place, and
+    ONLY THEN is the previous archive A moved into archive/ and the folder
+    trimmed (D-CLOUD-078: the previous copy stays until the new one is
+    verifiably there). The watcher fires the moment archive/A exists, which is
+    now after the new archive is at the root and before trim_archive runs.
+    Asserted: newest_backup and the root glob find the new, valid archive (a
+    restore or a cloud upload right now would use it); A is in archive/;
+    archive/ holds at most ARCHIVE_KEEP; a re-run leaves exactly one valid
+    archive at the root and keeps A -- rotation trims by the date in the name,
+    so the oldest planted archive goes, not A. Before the change the archive
+    was moved first and a kill here left the root empty ("No settings backup
+    found"); the old watcher also tested `ls root/*.tar.gz root/*.zip`, which
+    fails whenever no .zip matches, so it fired on any state at all."""
     f = 0
     had = L.snapshot_configs([BACKUPTOOL_CONF])
     try:
         A = kill_backuptool_prestate(L, "kill3")
         broot = L.backups
-        cond = f"[ -e {shlex.quote(broot + '/archive/' + A)} ] && ! ls {shlex.quote(broot)}/*.tar.gz {shlex.quote(broot)}/*.zip >/dev/null 2>&1"
+        cond = f"[ -e {shlex.quote(broot + '/archive/' + A)} ]"
         L.start("backuptool backup", shell="bash", watch=(cond, "KILL"))
         r = L.watch_result()
-        f += not check(r[0] == "landed", f"the kill landed mid-rotation (archive/{A} present, root empty)",
+        f += not check(r[0] == "landed", f"the kill landed mid-rotation (archive/{A} present)",
                        f"the kill did not land: watcher says {r}; the run {'ended first' if r[0] == 'missed' else 'never opened the window'}")
         newest = L.finder()
         roots = L.root_archives()
-        f += not check(newest == f"{broot}/{A}",
-                       "A is still what newest_backup finds (RESTORE SETTINGS FROM THIS DEVICE would apply it)",
-                       f"newest_backup finds {os.path.basename(newest) or 'nothing'}: A was rotated away before anything replaced it (backuptool:294)")
-        f += not check(A in roots, "A is still at the root, where cloud_backup --system-only's glob reads",
-                       f"the root holds {roots or 'no archive'}: the settings tier would say 'No settings backup found' (FAIL today)")
+        f += not check(len(roots) == 1 and roots[0] != A and L.tar_ok(f"{broot}/{roots[0]}") and newest == f"{broot}/{roots[0]}",
+                       f"the new archive is at the root, lists, and is what newest_backup finds ({roots[0] if roots else 'none'})",
+                       f"root holds {roots or 'no archive'}; newest_backup finds {os.path.basename(newest) or 'nothing'}")
+        f += not check(A in L.archived(), "A is in archive/", f"A is not in archive/: {L.archived()}")
         f += not check(len(L.archived()) <= 3, f"archive/ holds {len(L.archived())} (<= ARCHIVE_KEEP)", f"archive/ holds {len(L.archived())}")
         rc2, out2 = run_rc(L.dev, "backuptool backup")
         L.keep("KILL3", out2)
         roots2 = L.root_archives()
-        f += not check(rc2 == 0 and len(roots2) == 1 and roots2[0] != A and L.tar_ok(f"{broot}/{roots2[0]}"),
+        f += not check(rc2 == 0 and len(roots2) == 1 and roots2[0] not in (A, roots[0] if roots else "") and L.tar_ok(f"{broot}/{roots2[0]}"),
                        f"a re-run leaves exactly one valid archive at the root ({roots2[0] if roots2 else 'none'})",
                        f"after the re-run (rc {rc2}) the root holds {roots2}")
-        f += not check(A in L.archived(), "and A is in archive/", f"A is not in archive/: {L.archived()}")
+        f += not check(A in L.archived() and len(L.archived()) <= 3,
+                       f"and archive/ keeps A, trimmed by the date in the name to {len(L.archived())}",
+                       f"archive/ after the re-run: {L.archived()} (A {'kept' if A in L.archived() else 'GONE -- trimmed by mtime, not by name'})")
         f += assert_message(out2, rc2, L.args.vocabulary, label="re-run: ")
     finally:
         L.restore_configs_quiet(had)
     return f
-
 
 def fx_kill4(L):
     """KILL4: `backuptool backup` killed mid-`tar -czf`, once the new archive
@@ -6248,21 +6286,23 @@ def fx_kill5(L):
 
 
 def fx_kill10(L):
-    """KILL10: `set_setting k v` killed mid-`sed -i` (001-functions:164). The
-    override is a `sed` function in the calling shell that copies system.cfg
-    to system.cfgQAKILL and kills the group -- a plant standing for busybox's
-    mkstemp temp `system.cfgXXXXXX` (sed.c:1641; GNU sed is host-only here).
-    Asserted: the value stands (k=old); the temp is present and nothing
-    removes it (a FAIL under the one-record rule, found by litter_scan); the
-    stale /tmp/.system.cfg.lock is removed by the next wait_lock within 2 s
-    (wait-lock-test's property); the re-run sets k=v."""
+    """KILL10: `set_setting k v` killed mid-write. Since 2026-09-10 the writer
+    is one awk into system.cfg.tmp and a rename over system.cfg; the override
+    is an `awk` function in the calling shell that kills the group, so the
+    shell has opened system.cfg.tmp (empty) and nothing has been renamed.
+    Asserted: the value stands (k=old); the temporary is present after the
+    kill and gone after the re-run, which replaces it (chksysconfig verify
+    sweeps one at boot as well); the stale /tmp/.system.cfg.lock is removed by
+    the next wait_lock within 2 s (wait-lock-test's property); the re-run sets
+    k=v. Before, a `sed -i` with `/^k=/d` and `$a k=v` lost the key whenever
+    its line was the file's last -- which a freshly appended key always is."""
     f = 0
     key = "qa.kill10"
     L.clear_settings_lock()
     L.dev.run(L.bash_profile(f"set_setting {key} old"))
     b0 = L.dev.sha(f"{SYSCFG}.backup")
-    L.cleanups.append(lambda: L.dev.run(L.bash_profile(f"del_setting {key}") + f"; rm -f {SYSCFG}QAKILL", check=False))
-    body = (f"sed() {{ cp \"$J_CONF\" \"${{J_CONF}}QAKILL\"; kill -KILL -- -$QA_PGID; }}; "
+    L.cleanups.append(lambda: L.dev.run(L.bash_profile(f"del_setting {key}") + f"; rm -f {SYSCFG}.tmp", check=False))
+    body = (f"awk() {{ kill -KILL -- -$QA_PGID; }}; "
             f"set_setting {key} new")
     L.start(L.bash_profile(body), shell="bash")
     for _ in range(50):
@@ -6270,10 +6310,10 @@ def fx_kill10(L):
             break
         time.sleep(0.1)
     val = L.dev.run(L.bash_profile(f"grep '^{key}=' {SYSCFG} | cut -d= -f2"), check=False).strip()
-    f += not check(val == "old", f"{key} still reads old after the kill mid-sed", f"{key} reads {val!r} after a kill mid-sed")
-    f += not check(L.dev.run(f"[ -e {SYSCFG}QAKILL ] && echo yes || echo no", check=False).strip() == "yes",
-                   "the writer's temp (standing for system.cfgXXXXXX) is present -- litter_scan says whether anything sweeps it",
-                   "the plant did not land")
+    f += not check(val == "old", f"{key} still reads old after the kill mid-write", f"{key} reads {val!r} after a kill mid-write")
+    f += not check(L.dev.run(f"[ -e {SYSCFG}.tmp ] && echo yes || echo no", check=False).strip() == "yes",
+                   "the writer's temporary (system.cfg.tmp) is present after the kill",
+                   "the kill did not land inside the writer: no system.cfg.tmp")
     stale = L.dev.run(f"cat {SYSCFG_LOCK} 2>/dev/null || echo none", check=False).strip()
     t0 = time.time()
     rc2, out2 = run_rc(L.dev, L.bash_profile(f"set_setting {key} new"))
@@ -6282,18 +6322,22 @@ def fx_kill10(L):
     f += not check(rc2 == 0 and val2 == "new" and took < 5,
                    f"the re-run cleared the stale lock (held by pid {stale}) and set {key}=new in {took:.1f}s",
                    f"the re-run took {took:.1f}s (rc {rc2}) and {key} reads {val2!r}; lock was {stale!r}")
+    f += not check(L.dev.run(f"[ -e {SYSCFG}.tmp ] && echo yes || echo no", check=False).strip() == "no",
+                   "and the re-run replaced the temporary (none left)", "system.cfg.tmp is still there after the re-run")
     f += not check(L.dev.sha(f"{SYSCFG}.backup") == b0, "system.cfg.backup untouched", "system.cfg.backup changed")
     return f
 
 
 def fx_kill11(L):
-    """KILL11: `set_setting k v` killed between the delete and the add -- the
-    `rm -f lock` at del_setting:166 is after `sed -i` removed the key and
-    before `echo >>` re-adds it, with the lock released between. The override
+    """KILL11: `set_setting k v` killed the moment the lock is released. It
+    used to be released between the delete and the add, so the kill found
+    the key gone (empty = the default); since 2026-09-10 the write is one
+    rename under one lock hold and the release comes after it, so the kill
+    finds the new value in place. Asserted: get_setting k is old or new and
+    never empty -- the previous value is not lost, whichever side of the
+    rename the kill lands; .backup untouched; a re-run sets k=v. The override
     is an `rm` function that runs the real rm and kills when its target is
-    the lock. Asserted: get_setting k is still old -- FAILS today (empty: the
-    two-step update loses the previous value); .backup untouched; a re-run
-    sets k=v."""
+    the lock."""
     f = 0
     key = "qa.kill11"
     L.clear_settings_lock()
@@ -6308,8 +6352,8 @@ def fx_kill11(L):
             break
         time.sleep(0.1)
     val = L.dev.run(L.bash_profile(f"get_setting {key}"), check=False).strip()
-    f += not check(val == "old", f"{key} still reads old after the kill between delete and add",
-                   f"{key} reads {val!r} (empty = the default): the previous value is LOST between del_setting and the echo (001-functions:191-212)")
+    f += not check(val in ("old", "new"), f"{key} reads {val!r} after the kill at the lock release: old or new, never lost",
+                   f"{key} reads {val!r} (empty = the default): the value was LOST across the write")
     f += not check(L.dev.sha(f"{SYSCFG}.backup") == b0, "system.cfg.backup untouched", "system.cfg.backup changed")
     rc2, _ = run_rc(L.dev, L.bash_profile(f"set_setting {key} new"))
     val2 = L.dev.run(f"grep '^{key}=' {SYSCFG} | cut -d= -f2", check=False).strip()
@@ -6671,12 +6715,16 @@ def fx_kill18(L):
     marker appears, before backuptool's `systemctl reboot`)."""
     f = 0
     L.make_scratch()
-    had = L.snapshot_configs([RESTORE_PENDING])
+    had = L.snapshot_configs([RESTORE_PENDING, BACKUPTOOL_CONF])
     live = f"{L.root}/kill18-live"
     broot = L.backups
     try:
         L.dev.run(f"rm -rf {L.q(live)} {L.q(broot)}; mkdir -p {L.q(live)} {L.q(broot)}; "
                   f"echo LIVE > {L.q(live)}/a.cfg; echo LIVE > {L.q(live)}/b.cfg; rm -f {RESTORE_PENDING}")
+        # The copy backuptool takes aside covers LOCATIONS, so the tree the
+        # archive writes over has to be in them for the boot-time revert to
+        # have anything to put back -- on a device the two are the same set.
+        L.dev.write(BACKUPTOOL_CONF, f"LOCATIONS=(\n  {live}\n)\n".encode())
         rel = live.lstrip("/")
         stage = "/storage/cloud-qa-kill/stage18"
         name = f"2098_01_01-000000-{L.label + '-' if L.label else ''}{L.osn}_SETTINGS.tar.gz"
@@ -6696,12 +6744,27 @@ def fx_kill18(L):
         pending = L.dev.run(f"[ -e {RESTORE_PENDING} ] && echo yes || echo no", check=False).strip() == "yes"
         f += not check(r[0] == "landed" and not pending, f"the kill landed mid-extract (a.cfg {a}, {many} of {KILL_MANY} small files, b.cfg {b})",
                        f"the kill did not land mid-extract: watcher {r}, restore marker {'set' if pending else 'unset'}")
-        f += not check((a, b) in (("LIVE", "LIVE"), ("ARCHIVE", "ARCHIVE")),
-                       f"the tree is all-or-nothing after the kill (a.cfg {a}, b.cfg {b})",
-                       f"THE TREE IS HALF RESTORED: a.cfg {a}, b.cfg {b}, {many} of {KILL_MANY} files -- tar extracts over the live tree (backuptool:220)")
+        # tar writes over the live tree, so right after the kill the tree IS
+        # half restored (a.cfg from the archive, b.cfg live); nothing running
+        # can undo it. What must hold is that the copy taken aside exists and
+        # that the next boot puts it back: backuptool leaves
+        # .restore-in-progress naming the copy, and `chksysconfig verify`
+        # (sysinit, rocknix-sysconfig.service) reads it. Run here as the boot
+        # would (D-CLOUD-078; 2026-09-10).
         snap = L.dev.run(f"ls {L.q(broot)}/archive/ 2>/dev/null | grep -i 'PRE_RESTORE\\|pre-restore'; true", check=False).split()
-        f += not check(bool(snap), f"the pre-restore state is kept ({snap})",
+        f += not check(bool(snap), f"the pre-restore state is kept ({snap}) while the tree is half restored (a.cfg {a}, b.cfg {b}, {many} of {KILL_MANY} files)",
                        "the pre-restore state is kept NOWHERE: a killed restore has nothing to revert to (D-CLOUD-078)")
+        mark = L.dev.run("[ -e /storage/.config/.restore-in-progress ] && echo yes || echo no", check=False).strip()
+        f += not check(mark == "yes", "the restore-in-progress marker names the copy for the next boot",
+                       "no .restore-in-progress marker: the boot would not know a restore was cut off")
+        L.dev.run(". /etc/profile >/dev/null 2>&1; chksysconfig verify >/dev/null 2>&1; true", check=False)
+        a3 = L.dev.run(f"cat {L.q(live)}/a.cfg 2>/dev/null || true", check=False).strip()
+        b3 = L.dev.run(f"cat {L.q(live)}/b.cfg 2>/dev/null || true", check=False).strip()
+        said = L.dev.run("cat /storage/.config/.restore-reverted 2>/dev/null; rm -f /storage/.config/.restore-reverted", check=False).strip()
+        mark2 = L.dev.run("[ -e /storage/.config/.restore-in-progress ] && echo yes || echo no", check=False).strip()
+        f += not check((a3, b3) == ("LIVE", "LIVE") and said == "reverted" and mark2 == "no",
+                       f"the boot-time check put the copy back (a.cfg {a3}, b.cfg {b3}), left 'reverted' for EmulationStation to say, and cleared the marker",
+                       f"after chksysconfig verify: a.cfg {a3}, b.cfg {b3}; .restore-reverted {said!r}; marker {'still there' if mark2 == 'yes' else 'gone'}")
         u_now = float(L.dev.run("cut -d' ' -f1 /proc/uptime").strip())
         f += not check(u_now > u_before, "the guest did not reboot", "THE GUEST REBOOTED (backuptool restore's systemctl reboot ran)")
         # The re-run, stopped the instant its marker appears -- after tar,

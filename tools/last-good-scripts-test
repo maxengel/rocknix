@@ -156,6 +156,24 @@ printf 'system.hostname=X\nwifi.ssid=caf\303\251 \342\230\205\n' > "${CFGF}"
 PATH="${A}/bin:${TMP}/bbin:${PATH}" bash -c ". '${A}/fns.sh'; backup" 2>/dev/null
 cmp -s "${CFGF}" "${CFGF}.backup"; check $? "a UTF-8 value (an accented Wi-Fi name) is text" "the UTF-8 system.cfg was refused as damaged"
 
+# A settings restore cut off mid-extract: backuptool left .restore-in-progress
+# naming the copy it took aside; verify puts the copy back over the tree
+# (EXTRACT_ROOT, / on a device), says so for EmulationStation, and clears the
+# marker (D-CLOUD-078, KILL18).
+mkdir -p "${A}/root/storage/.config/test" "${A}/snapsrc/storage/.config/test"
+echo HALF-RESTORED > "${A}/root/storage/.config/test/x.cfg"
+echo LIVE > "${A}/snapsrc/storage/.config/test/x.cfg"
+tar -czf "${A}/cfg/pre-restore.tar.gz" -C "${A}/snapsrc" storage
+printf '%s\n' "${A}/cfg/pre-restore.tar.gz" > "${A}/cfg/.restore-in-progress"
+printf 'system.hostname=X\n' > "${CFGF}"; cp "${CFGF}" "${CFGF}.backup"
+EXTRACT_ROOT="${A}/root" PATH="${A}/bin:${TMP}/bbin:${PATH}" bash -c ". '${A}/fns.sh'; verify" 2>"${A}/err"
+[ "$(cat "${A}/root/storage/.config/test/x.cfg")" = "LIVE" ] && [ ! -e "${A}/cfg/.restore-in-progress" ] && [ "$(cat "${A}/cfg/.restore-reverted" 2>/dev/null)" = "reverted" ]; check $? "a cut-off restore is undone at boot: the copy is back, the marker gone, 'reverted' left for the screen" "x.cfg='$(cat "${A}/root/storage/.config/test/x.cfg")'; marker: $([ -e "${A}/cfg/.restore-in-progress" ] && echo present || echo gone); said: '$(cat "${A}/cfg/.restore-reverted" 2>/dev/null)'"
+rm -f "${A}/cfg/.restore-reverted"
+printf '%s\n' "${A}/cfg/missing.tar.gz" > "${A}/cfg/.restore-in-progress"
+EXTRACT_ROOT="${A}/root" PATH="${A}/bin:${TMP}/bbin:${PATH}" bash -c ". '${A}/fns.sh'; verify" 2>"${A}/err"
+[ ! -e "${A}/cfg/.restore-in-progress" ] && [ "$(cat "${A}/cfg/.restore-reverted" 2>/dev/null)" = "failed" ]; check $? "with the copy missing the marker is cleared and 'failed' is said instead" "marker: $([ -e "${A}/cfg/.restore-in-progress" ] && echo present || echo gone); said: '$(cat "${A}/cfg/.restore-reverted" 2>/dev/null)'"
+rm -f "${A}/cfg/.restore-reverted"
+
 # ---------------------------------------------------------------- b.
 echo "  b. backuptool: a kill mid-tar leaves the previous archive; a failed restore puts the snapshot back"
 B="${TMP}/b"; ST="${B}/storage"
@@ -255,10 +273,22 @@ printf 'system.hostname=X\nz.key=old\na=1\n' > "${C}/system.cfg"
 PATH="${TMP}/bbin:${PATH}" bash -c ". '${C}/f.sh'; set_setting z.key 'pa/th &with spaces&/x'; set_setting new.k 'v/&'; set_setting a default" 2>/dev/null
 [ "$(sort "${C}/system.cfg" | tr '\n' '|')" = "new.k=v/&|system.hostname=X|z.key=pa/th &with spaces&/x|" ]; check $? "values with /, & and spaces land; 'default' deletes; the hostname stays" "system.cfg: '$(tr '\n' '|' < "${C}/system.cfg")'"
 # There is no step between delete and add any more: the file must go from
-# old to new in one rename. Count the writes the function makes: a sed -i is
-# one rename; the old code did a rename and then an append.
-n_sed=$(grep -c 'sed -i -e "/^${1}=/d" -e' "${C}/f.sh"); n_app=$(grep -c 'echo "${1}=${2}" >> "${J_CONF}"' "${C}/f.sh")
-[ "${n_sed}" -ge 1 ] && [ "${n_app}" -eq 0 ]; check $? "set_setting deletes and adds in one sed -i (no separate append)" "set_setting still deletes then appends (${n_app} append, ${n_sed} single-sed)"
+# old to new in one rename. Count the writes the function makes: one write
+# to a temporary and one rename; the old code did a rename and then an
+# append, and the code between (2026-09-10, for a day) one sed -i whose `$a`
+# never ran when the key's line was the last -- see the fixtures below.
+n_tmp=$(grep -c '> "${J_CONF}.tmp"' "${C}/f.sh"); n_mv=$(grep -c 'mv -f "${J_CONF}.tmp" "${J_CONF}"' "${C}/f.sh"); n_app=$(grep -c 'echo "${1}=${2}" >> "${J_CONF}"' "${C}/f.sh")
+[ "${n_tmp}" -ge 1 ] && [ "${n_mv}" -ge 1 ] && [ "${n_app}" -eq 0 ]; check $? "set_setting writes a temporary and renames it (no separate append)" "set_setting: ${n_tmp} temp write(s), ${n_mv} rename(s), ${n_app} append(s)"
+# The key on the LAST line -- which a key that was just appended always is.
+printf 'a=1\nlast.key=old\n' > "${C}/system.cfg"
+PATH="${TMP}/bbin:${PATH}" bash -c ". '${C}/f.sh'; set_setting last.key new" 2>/dev/null
+[ "$(tr '\n' '|' < "${C}/system.cfg")" = "a=1|last.key=new|" ]; check $? "a key on the file's last line is replaced, not lost" "system.cfg: '$(tr '\n' '|' < "${C}/system.cfg")' -- the last line's key was deleted and never re-added"
+printf 'only.key=old\n' > "${C}/system.cfg"
+PATH="${TMP}/bbin:${PATH}" bash -c ". '${C}/f.sh'; set_setting only.key new" 2>/dev/null
+[ "$(cat "${C}/system.cfg")" = "only.key=new" ]; check $? "a one-line file keeps its one key" "system.cfg: '$(cat "${C}/system.cfg")'"
+printf 'a.b=1\naXb=2\n' > "${C}/system.cfg"
+PATH="${TMP}/bbin:${PATH}" bash -c ". '${C}/f.sh'; set_setting a.b 3" 2>/dev/null
+[ "$(sort "${C}/system.cfg" | tr '\n' '|')" = "a.b=3|aXb=2|" ]; check $? "the key is matched literally (a.b does not take aXb)" "system.cfg: '$(tr '\n' '|' < "${C}/system.cfg")'"
 : > "${C}/system.cfg"
 PATH="${TMP}/bbin:${PATH}" bash -c ". '${C}/f.sh'; set_setting k v" 2>/dev/null
 [ "$(cat "${C}/system.cfg")" = "k=v" ]; check $? "an empty system.cfg gets its one line" "system.cfg after set_setting on an empty file: '$(cat "${C}/system.cfg")'"
