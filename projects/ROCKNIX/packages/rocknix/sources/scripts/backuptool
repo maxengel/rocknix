@@ -399,13 +399,24 @@ trim_archive() {
 # the cloud journey's continuation. It used to be touched by the menu in the
 # confirmation callback -- before the restore had run, let alone succeeded --
 # so a restore that failed still produced the offer (#105).
+#
+# --no-restart: leave the restart to the caller. EmulationStation's transfer
+# page runs this restore and has an outcome to put on screen when it ends;
+# the five-second sleep and reboot below take the screen away at exactly
+# that moment, so the page asks for the restore alone and restarts the
+# device itself once the player has read the result (#114). The console
+# flows pass nothing and restart here as they always have -- and an older
+# backuptool, handed the option by a newer EmulationStation, ignores it and
+# does the same, which is the whole reason it is an opt-in.
 THEN_CLOUD=0
+NO_RESTART=0
 VERB="${1}"
 shift
 for OPT in "$@"
 do
     case "${OPT}" in
         --then-cloud) THEN_CLOUD=1 ;;
+        --no-restart) NO_RESTART=1 ;;
     esac
 done
 
@@ -539,8 +550,14 @@ case "${VERB}" in
         fi
 
         note "SETTINGS RESTORED. WI-FI AND ACCOUNT PASSWORDS ARE NOT PART OF A BACKUP AND MUST BE ENTERED AGAIN."
-        note "RESTARTING IN 5 SECONDS SO THE RESTORED SETTINGS TAKE EFFECT..."
         sync
+        if [ "${NO_RESTART}" -eq 1 ]
+        then
+            # The caller restarts. Nothing is announced here: the message
+            # would be a promise this run is not going to keep.
+            exit 0
+        fi
+        note "RESTARTING IN 5 SECONDS SO THE RESTORED SETTINGS TAKE EFFECT..."
         sleep 5
         systemctl reboot
     ;;
@@ -645,7 +662,7 @@ case "${VERB}" in
         sleep 3
     ;;
     *)
-        echo "Usage: backuptool {backup|restore [--then-cloud]}" >&2
+        echo "Usage: backuptool {backup|restore [--then-cloud] [--no-restart]}" >&2
         exit 1
     ;;
 esac
