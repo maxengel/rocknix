@@ -4773,9 +4773,10 @@ class Link:
         mark = log_mark(self.dev)
         rc2, out2 = run_rc(self.dev, rerun or cmd, env)
         self.keep(key, out2)
-        # What the card and the page had to show for the cut run: its stdout
-        # and exit. The vocabulary gate (#105, D-UI-028) judges that.
-        f += assert_message(out, rc, self.args.vocabulary, label="the cut run: ")
+        # What the card and the page had to show for the cut run: its whole
+        # stdout (re-read now that it has ended; `out` stopped at the cut) and
+        # its exit. The vocabulary gate (#105, D-UI-028) judges that.
+        f += assert_message(self.status()[0], rc, self.args.vocabulary, label="the cut run: ")
         # rclone's "423 Locked" goes to the --log-file, not to stdout, so the
         # log is where a lock shows. One case on this backend is not a script
         # fault and not the harness's to pass off as one: when the operation
@@ -5297,13 +5298,17 @@ def litter_scan(dev, settings, remote="", label=""):
             off.append((archived[3], f"{len(archived)} in archive/, more than ARCHIVE_KEEP (3)"))
         counted.append(f"{len(roots)} archive at root, {len(archived)} in archive/")
 
-    # 6. the saves tree
+    # 6. the saves tree. The harness's own allowlist fixture (saves/scratch.tmp,
+    # planted to prove the filter keeps a .tmp out of the cloud) is not litter.
     saves = settings.get("SAVESPATH") or settings.get("BACKUPPATH")
     if saves:
+        own = {f"{saves}/{rel}" for rel in EXCLUDED}
         files = find(saves, None, r"\( -name '*.partial' -o -name '*.tmp' \)")
         for p in files:
-            if not p.endswith(".state.auto.bak"):
-                off.append((p, "rclone's temporary copy of a save, left by a cut transfer"))
+            if p in own or p.endswith(".state.auto.bak"):
+                continue
+            off.append((p, "rclone's temporary copy of a save, left by a cut transfer" if p.endswith(".partial")
+                        else "a writer's temporary file"))
         counted.append(f"saves tree clean of *.partial/*.tmp")
 
     # 7. the cloud folder
@@ -6407,13 +6412,18 @@ def fx_kill12(L):
     return f
 
 
-def classify(parsed, s0, toggle_key, toggle_default, marker_keys):
-    """kept-old | kept-new | DEFAULTS | TORN for one config file after a power
-    cut: TORN when it does not parse or is empty; DEFAULTS when the planted
-    marker keys are gone; else which side of the toggle it is on."""
+def classify(parsed, s0, toggle_key, toggle_default, marker_keys, record=None):
+    """kept-old | kept-new | DEFAULTS | RECORD | TORN for one config file after
+    a power cut: TORN when it does not parse; RECORD when it equals the
+    .backup that predates S0 (chksysconfig's binary-file path restored a
+    torn file from a record written at the last clean shutdown -- D-CLOUD-079
+    writes it after every validated save instead); DEFAULTS when the planted
+    marker keys are gone otherwise; else which side of the toggle it is on."""
     if parsed is None:
         return "TORN"
     if any(parsed.get(k) != v for k, v in marker_keys.items()):
+        if record is not None and parsed == record:
+            return "RECORD"
         return "DEFAULTS"          # /usr/config's copy is an empty <config/>, 41 bytes
     old = s0.get(toggle_key)
     new = parsed.get(toggle_key)
@@ -6477,6 +6487,7 @@ def fx_kill13(L):
         s0_sys = parse_syscfg(L.dev.run(f"cat {SYSCFG}"))
         marker_sys = {"system.qa.kill13": "1", "system.hostname": s0_sys.get("system.hostname", "")}
         sys_s0 = L.dev.run(f"cat {SYSCFG}", check=False)
+        rec_sys = parse_syscfg(L.dev.run(f"cat {SYSCFG}.backup 2>/dev/null || true", check=False))
         gaps = [int(x) for x in str(L.args.cut_after_ms).split(",") if x.strip()][: max(0, L.args.power_cut_trials)]
         trials = [("sync control", None)] + [("cut", g) for g in gaps] + [("no-change control", 0)]
         print(f"    -- arm A: {len(trials)} trials: {[t[0] + (f' {t[1]}ms' if t[1] is not None else '') for t in trials]}; "
@@ -6514,11 +6525,13 @@ def fx_kill13(L):
             parse_err = L.count_in(ES_LOG, ES_PARSE_ERROR)
             tmp = L.dev.run(f"[ -e {SYSCFG}.tmp ] && echo yes || echo no", check=False).strip() == "yes"
             c_es = classify(parse_es(es), cur_es, toggle_key, toggle_default, marker_es)
-            c_sy = classify(parse_syscfg(sy) if sy.strip() else None, cur_sys, "__none__", None, marker_sys)
+            c_sy = classify(parse_syscfg(sy) if sy.strip() else None, cur_sys, "__none__", None, marker_sys, record=rec_sys or None)
             tag = f"{kind}{f' {gap}ms' if gap is not None else ''}"
             what = f"es_settings.cfg {c_es} ({len(es)} bytes), system.cfg {c_sy} ({len(sy)} bytes); boot {took:.0f}s"
-            f += not check(c_es not in ("TORN", "DEFAULTS") and c_sy not in ("TORN", "DEFAULTS"),
-                           f"[{tag}] {what}", f"[{tag}] {what} -- a torn or defaulted file after the cut (D-CLOUD-078)")
+            why = ("" if c_sy != "RECORD" else " -- system.cfg came up torn and chksysconfig restored the .backup from the last clean "
+                   "shutdown, which predates S0: the saved settings are lost")
+            f += not check(c_es not in ("TORN", "DEFAULTS", "RECORD") and c_sy not in ("TORN", "DEFAULTS", "RECORD"),
+                           f"[{tag}] {what}", f"[{tag}] {what} -- a torn, defaulted or stale-record file after the cut (D-CLOUD-078){why}")
             if kind == "sync control":
                 f += not check(c_es == "kept-new", f"[{tag}] the toggle was recorded: the walk reaches the switch",
                                f"[{tag}] the synced close did not record the toggle ({c_es}): the walk is not reaching the switch, "
