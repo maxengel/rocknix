@@ -526,7 +526,7 @@ network_lost_during_run() {
     # The code goes to the log; the screen gets the words (D-UI-028).
     if ! has_default_route; then
         log_message "the network went away during ${what} (rclone exit ${rc}): no default route now" "false" "ERROR"
-        log_message "Lost the network during ${what}. Try again when you're online." "true" "ERROR"
+        log_message "Couldn't finish: lost the network during ${what}. Try again when you're online." "true" "ERROR"
         clean_exit "${EXIT_NO_NETWORK}"
     fi
     if rclone lsd "${REMOTENAME}" "${RCLONE_PROBE_OPTS[@]}" >/dev/null 2>&1; then
@@ -540,7 +540,7 @@ network_lost_during_run() {
         return 0
     fi
     log_message "the network went away during ${what} (rclone exit ${rc}): nothing answers now" "false" "ERROR"
-    log_message "Lost the network during ${what}. Try again when you're online." "true" "ERROR"
+    log_message "Couldn't finish: lost the network during ${what}. Try again when you're online." "true" "ERROR"
     clean_exit "${EXIT_NO_NETWORK}"
 }
 
