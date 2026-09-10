@@ -91,8 +91,23 @@ FIXTURES = {
     "saves/nested/deep/game2.srm": b"save-two-v1",
     "saves/game with space.srm": b"save-three-v1",
     "savestates/game1.state": b"state-one-v1",
+    # Standalone N64 writes beside the ROM, not into a save directory: every
+    # shipped mupen64plus.cfg sets SaveSRAMPath to /storage/roms/n64. The
+    # allowlist's /n64/save/*.eep lines match the libretro layout and never
+    # matched these, so they were carried by nothing until #89 (D-CLOUD-086).
+    # Both depths are here on purpose: the widened rules must take the file
+    # beside the ROM without dropping the one in the save directory.
+    "n64/Mario Probe 64.eep": b"n64-eeprom-v1",
+    "n64/Mario Probe 64.mpk": b"n64-controller-pak-v1",
+    "n64/Mario Probe 64.sra": b"n64-sram-v1",
+    "n64/Mario Probe 64.fla": b"n64-flashram-v1",
+    "n64/save/Libretro Probe 64.eep": b"n64-libretro-layout-v1",
 }
-EXCLUDED = {"saves/scratch.tmp": b"should-never-leave-the-device"}
+# The ROM beside those N64 saves must NOT ride along on the saves tier: it is
+# the ROMs and BIOS tier's, and an allowlist that took *.z64 would put a
+# player's whole N64 library into their saves folder.
+EXCLUDED = {"saves/scratch.tmp": b"should-never-leave-the-device",
+            "n64/Mario Probe 64.z64": b"a-rom-must-not-ride-the-saves-tier"}
 
 # Content sync is a different code path: whole directories of ROMs and BIOS,
 # not allowlisted save files. Its directory is created and removed by the test
