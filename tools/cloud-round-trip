@@ -745,7 +745,10 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
             # retention runs after it; the marker is cleared so a root that
             # looks unchanged is not skipped.
             dev.run(f"rm -f {shlex.quote(broot)}/*.tar.gz {shlex.quote(broot)}/*.zip {CACHE}/settings-backup.uploaded", check=False)
-            dev.write(f"{broot}/{newest_own}", b"the archive this run uploads")
+            # A real archive: cloud_backup lists it before sending and refuses
+            # one that does not list (2026-09-10), so a run of bytes never
+            # uploads and retention never runs.
+            dev.write(f"{broot}/{newest_own}", ARCHIVE_BODY)
             rc, _ = run_rc(dev, "cloud_backup --yes --system-only")
             listing = dev.run(f"rclone lsf --files-only {shlex.quote(folder + '/')} 2>/dev/null || true", check=False).split()
             mine = sorted(n for n in listing if n.endswith(f"-{label}-{osn}_SETTINGS.tar.gz"))
