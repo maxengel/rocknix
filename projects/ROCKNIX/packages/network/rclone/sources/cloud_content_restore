@@ -105,6 +105,29 @@ read -r -a RCLONE_NET_OPTS_ARRAY <<< "${_net_opts}"
 # tighter than the transfers (the same values the saves scripts probe with).
 readonly -a RCLONE_PROBE_OPTS=(--contimeout 10s --timeout 20s --low-level-retries 1 --retries 1)
 
+# Whole or not at all: to a temporary name beside the stamp, then renamed
+# over it, as ThreadedCloudSync::recordOutcome does. A kill mid-write leaves
+# the previous stamp; it used to leave an empty file (D-CLOUD-078, #105).
+# LAST_WHY, when a `>>> why` line was printed, becomes the stamp's third
+# field as a token (spaces to underscores) for the row to read (D-UI-028).
+LAST_WHY=""
+write_stamp() {
+    local file="$1" line="$2" tmp
+    mkdir -p "$(dirname "${file}")" 2>/dev/null
+    tmp="${file}.tmp.$$"
+    { printf '%s\n' "${line}" > "${tmp}"; } 2>/dev/null \
+        && mv -f "${tmp}" "${file}" 2>/dev/null \
+        || rm -f "${tmp}" 2>/dev/null
+}
+record_outcome() { # <stamp-name> <rc>
+    local why=""
+    case "$2" in
+        0|9|"${EXIT_NO_NETWORK}"|"${EXIT_LOCK_HELD}") ;;
+        *) [ -n "${LAST_WHY}" ] && why=" $(printf '%s' "${LAST_WHY}" | tr ' ' '_')" ;;
+    esac
+    write_stamp "/storage/.cache/cloud_sync/last-$1" "$(date +%s) $2${why}"
+}
+
 has_default_route() {
     ip -4 route show default 2>/dev/null | grep -q . \
         || ip -6 route show default 2>/dev/null | grep -q .
@@ -140,9 +163,7 @@ stop_no_network() {
     local stamp="$1" rc="$2" doing="$3"
     echo "The network went away while ${doing} (rclone exit ${rc}). Stopped."
     log_message "stopped: the network went away while ${doing} (rclone exit ${rc}); exit ${EXIT_NO_NETWORK}"
-    mkdir -p /storage/.cache/cloud_sync 2>/dev/null
-    printf '%s %s\n' "$(date +%s)" "${EXIT_NO_NETWORK}" \
-        > "/storage/.cache/cloud_sync/last-content-${stamp}" 2>/dev/null
+    record_outcome "content-${stamp}" "${EXIT_NO_NETWORK}"
     exit "${EXIT_NO_NETWORK}"
 }
 
@@ -634,9 +655,7 @@ match_run() {
         log_message "match: applied, removed ${total_removed} files, rc=${rc}"
         # The page that ran it fades; the row in the menu has to be able to
         # answer "did that work?" afterwards, like every other cloud action.
-        mkdir -p /storage/.cache/cloud_sync 2>/dev/null
-        printf '%s %s\n' "$(date +%s)" "${rc}" \
-            > "/storage/.cache/cloud_sync/last-content-match" 2>/dev/null
+        record_outcome content-match "${rc}"
     fi
     return ${rc}
 }
@@ -846,8 +865,12 @@ case "${1}" in
         shift
         mkdir -p "$(dirname "${SELECTION}")" 2>/dev/null
         # An empty selection is a real answer ("none"), distinct from never
-        # having chosen; the file exists either way.
-        printf '%s\n' $* | grep -v '^[[:space:]]*$' > "${SELECTION}" 2>/dev/null
+        # having chosen; the file exists either way. Which is exactly why it
+        # is written whole or not at all: a kill mid-write left an empty
+        # file, and an empty file is a different valid choice -- every later
+        # --selected then said no systems were selected (D-CLOUD-078, #105).
+        printf '%s\n' $* | grep -v '^[[:space:]]*$' > "${SELECTION}.tmp.$$" 2>/dev/null
+        mv -f "${SELECTION}.tmp.$$" "${SELECTION}" 2>/dev/null || rm -f "${SELECTION}.tmp.$$"
         echo "OK $(selected_systems | wc -l) selected"
         exit 0
     ;;
@@ -954,9 +977,7 @@ done
 # The progress card is gone by the time somebody who walked away comes back, so
 # leave the outcome where the menu can read it later. Device-local state, so it
 # lives under /storage/.cache and not in the settings backup.
-mkdir -p /storage/.cache/cloud_sync 2>/dev/null
-printf '%s %s\n' "$(date +%s)" "${STATUS}" \
-    > "/storage/.cache/cloud_sync/last-content-restore" 2>/dev/null
+record_outcome content-restore "${STATUS}"
 
 # A failed unit leaves with rclone's own code, unremapped: nothing rclone
 # returns can read as the lock sentinel now that it is 75 (#99).

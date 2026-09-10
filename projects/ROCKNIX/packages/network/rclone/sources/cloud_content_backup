@@ -101,6 +101,29 @@ read -r -a RCLONE_NET_OPTS_ARRAY <<< "${_net_opts}"
 # tighter than the transfers (the same values the saves scripts probe with).
 readonly -a RCLONE_PROBE_OPTS=(--contimeout 10s --timeout 20s --low-level-retries 1 --retries 1)
 
+# Whole or not at all: to a temporary name beside the stamp, then renamed
+# over it, as ThreadedCloudSync::recordOutcome does. A kill mid-write leaves
+# the previous stamp; it used to leave an empty file (D-CLOUD-078, #105).
+# LAST_WHY, when a `>>> why` line was printed, becomes the stamp's third
+# field as a token (spaces to underscores) for the row to read (D-UI-028).
+LAST_WHY=""
+write_stamp() {
+    local file="$1" line="$2" tmp
+    mkdir -p "$(dirname "${file}")" 2>/dev/null
+    tmp="${file}.tmp.$$"
+    { printf '%s\n' "${line}" > "${tmp}"; } 2>/dev/null \
+        && mv -f "${tmp}" "${file}" 2>/dev/null \
+        || rm -f "${tmp}" 2>/dev/null
+}
+record_outcome() { # <stamp-name> <rc>
+    local why=""
+    case "$2" in
+        0|9|"${EXIT_NO_NETWORK}"|"${EXIT_LOCK_HELD}") ;;
+        *) [ -n "${LAST_WHY}" ] && why=" $(printf '%s' "${LAST_WHY}" | tr ' ' '_')" ;;
+    esac
+    write_stamp "/storage/.cache/cloud_sync/last-$1" "$(date +%s) $2${why}"
+}
+
 has_default_route() {
     ip -4 route show default 2>/dev/null | grep -q . \
         || ip -6 route show default 2>/dev/null | grep -q .
@@ -133,9 +156,7 @@ stop_no_network() {
     local rc="$1" unit="$2"
     echo "The network went away while backing up ${unit} (rclone exit ${rc}). Stopped."
     log_message "stopped: the network went away while backing up ${unit} (rclone exit ${rc}); exit ${EXIT_NO_NETWORK}"
-    mkdir -p /storage/.cache/cloud_sync 2>/dev/null
-    printf '%s %s\n' "$(date +%s)" "${EXIT_NO_NETWORK}" \
-        > "/storage/.cache/cloud_sync/last-content-backup" 2>/dev/null
+    record_outcome content-backup "${EXIT_NO_NETWORK}"
     exit "${EXIT_NO_NETWORK}"
 }
 
@@ -503,9 +524,7 @@ done
 # The progress card is gone by the time somebody who walked away comes back, so
 # leave the outcome where the menu can read it later. Device-local state, so it
 # lives under /storage/.cache and not in the settings backup.
-mkdir -p /storage/.cache/cloud_sync 2>/dev/null
-printf '%s %s\n' "$(date +%s)" "${STATUS}" \
-    > "/storage/.cache/cloud_sync/last-content-backup" 2>/dev/null
+record_outcome content-backup "${STATUS}"
 
 # A failed unit leaves with rclone's own code, unremapped: nothing rclone
 # returns can read as the lock sentinel now that it is 75 (#99).

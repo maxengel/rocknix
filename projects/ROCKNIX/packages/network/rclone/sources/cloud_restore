@@ -360,13 +360,62 @@ controller_menu() {
 # Device-local state, so it lives under /storage/.cache rather than
 # /storage/.config -- a stamp swept into the settings backup and restored onto
 # a second device would be describing a run that device never made.
+#
+# Whole or not at all: to a temporary name beside the stamp, then renamed
+# over it, as ThreadedCloudSync::recordOutcome does. A kill mid-write leaves
+# the previous stamp; it used to leave an empty file, which the row read as
+# "never" (D-CLOUD-078, #105).
+write_stamp() {
+    local file="$1" line="$2" tmp
+    mkdir -p "$(dirname "${file}")" 2>/dev/null
+    tmp="${file}.tmp.$$"
+    { printf '%s\n' "${line}" > "${tmp}"; } 2>/dev/null \
+        && mv -f "${tmp}" "${file}" 2>/dev/null \
+        || rm -f "${tmp}" 2>/dev/null
+}
+
+# The stamp's third field: why the run did not finish, as the token the
+# menu row reads back (D-UI-028) -- the >>> why sentence with its spaces as
+# underscores, so a reader that splits on spaces still gets one field.
+# Nothing when the run completed, or ended on a sentinel the reader names
+# itself.
 record_last_run() {
     local exit_code="$1"
-    local name="restore"
+    local name="restore" why=""
     [ "${SYSTEM_ONLY}" -eq 1 ] && name="settings-restore"
-    mkdir -p /storage/.cache/cloud_sync 2>/dev/null
-    printf '%s %s\n' "$(date +%s)" "${exit_code}" \
-        > "/storage/.cache/cloud_sync/last-${name}" 2>/dev/null
+    case "${exit_code}" in
+        0|9|"${EXIT_NO_NETWORK}"|"${EXIT_LOCK_HELD}") ;;
+        *) [ -n "${LAST_WHY}" ] && why=" $(printf '%s' "${LAST_WHY}" | tr ' ' '_')" ;;
+    esac
+    write_stamp "/storage/.cache/cloud_sync/last-${name}" "$(date +%s) ${exit_code}${why}"
+}
+
+# Why a run did not finish, in the player's words (D-UI-028, D-CLOUD-077).
+#
+# One `>>> why <SENTENCE>` protocol line at the point of failure is what the
+# sync card and the transfer page read; rclone's own taxonomy and every exit
+# code stay in the log. The sentences are the vocabulary table's in
+# es-native-ui.md. One per phase: a phase resets WHY_SAID, and the second
+# speaker in a phase (network_lost_during_run first, then
+# report_rclone_error) says nothing. LAST_WHY feeds the stamp.
+WHY_SAID=0
+LAST_WHY=""
+say_why() {
+    [ "${WHY_SAID}" -eq 0 ] || return 0
+    WHY_SAID=1
+    LAST_WHY="$1"
+    echo ">>> why $1"
+    log_message "why: $1" "false"
+}
+why_for() {
+    case "$1" in
+        3|4) echo "YOUR CLOUD FOLDER WASN'T FOUND" ;;
+        5)   echo "YOUR CLOUD STOPPED ANSWERING" ;;
+        6)   echo "SOME FILES DIDN'T FINISH" ;;
+        7|8) echo "YOUR CLOUD REFUSED THE TRANSFER" ;;
+        130) echo "IT WAS STOPPED" ;;
+        *)   echo "SOMETHING WENT WRONG" ;;
+    esac
 }
 
 # Performs cleanup operations and exits with the specified code

@@ -519,7 +519,7 @@ if [ ! -e "${MANIFEST}" ] && [ -x "${DEVICE_ID_BIN}" ]; then
 fi
 
 # A killed run's litter: every scratch file carries its writer's pid.
-for _f in "${STAGE}"/.tmp.* "${CACHE}"/.ops.* "${CACHE}"/.cand.* "${CACHE}"/.canon.* "${CACHE}"/.manifest.* "${CACHE}"/.capture-failures.*; do
+for _f in "${STAGE}"/.tmp.* "${CACHE}"/.ops.* "${CACHE}"/.cand.* "${CACHE}"/.canon.* "${CACHE}"/.manifest.* "${CACHE}"/.capture-failures.* "${CACHE}"/.last-capture.*; do
     [ -e "${_f}" ] || continue
     _pid="${_f##*/}"; _pid="${_pid#.*.}"; _pid="${_pid%%.*}"
     case "${_pid}" in ''|*[!0-9]*) continue ;; esac
