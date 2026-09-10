@@ -227,5 +227,7 @@ carries the line it was read from; a fix that adds a visible element is
 accepted by a frame that shows the element, not by the stamp that says the
 run ended. ES `eb4148ebc` creates the card with its action row.
 
-**Closed 2026-09-10:** the frame from the `854989a639` build is the closure
-(see the VM QA log for the date).
+**Closed 2026-09-10 (same day):** the `854989a639` frame shows the third row
+(`NOTHING WAS SENT. YOUR CLOUD IS AS IT WAS. TRY AGAIN: GAME SETTINGS > BACK UP
+SAVES TO THE CLOUD`); at 640x480 the shorter candidate is chosen
+(`x64-all-20260910-70c2ca1af1/shots/640x480/04-card-t02.png`).

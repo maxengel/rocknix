@@ -1654,3 +1654,12 @@ written its stamp, and the confirmation dialog's `LAST TIME` paragraph never
 appeared; a cloud set up in the wizard could likewise stay "not set up" on
 the rows for the session. Found on guest d against `854989a639` with stamps
 planted by hand.
+
+## The manual stamp is the sync row's (2026-09-10)
+
+EmulationStation `ad861363d` (pinned `ea65ac9bf5`): `last-sync-manual` is
+written only when the manual run was SYNC SAVES WITH THE CLOUD. A manual
+backup or restore is stamped by its script (`last-backup`, `last-restore`),
+which the BACK UP and RESTORE rows read; writing the manual stamp for those
+too put a backup's outcome under the sync row (`LAST 00:48 - COULDN'T
+FINISH` on a row nobody had pressed, guest d).
