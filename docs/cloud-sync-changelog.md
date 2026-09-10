@@ -1791,3 +1791,13 @@ hub's. No behaviour changed.
 that a held combo does the same, and that the debounce window closes; with
 the debounce stripped it fails in two places. The first automated test of the
 launch path, and the first cell of #120.
+
+## The harness gate is the default, and it found six lines (2026-09-10)
+
+`tools/cloud-round-trip` asserts the three outcome words on every run's last
+player-facing line by default now (`--no-vocabulary` for an older image),
+and `COMPLETED WITH GAPS` is gone from what it accepts (D-UI-030). Its first
+default run over the link-loss cells caught "Lost the network during ..."
+in LINK1-6; the scripts say "Couldn't finish: lost the network ..." now.
+`tools/vm-qa` runs every automated check against one image and writes one
+report; `--link` adds the seven link cells.
