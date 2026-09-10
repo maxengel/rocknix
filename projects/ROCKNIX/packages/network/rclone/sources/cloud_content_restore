@@ -839,7 +839,13 @@ case "${1}" in
             rclone lsf -R --files-only --format "sp" --separator "|" "${ROOT}BIOS/" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null \
                 | grep -v '|README\.txt$' | sed 's/|/|bios\//' >> "${TMP}/cloud"
             bios_rc=${PIPESTATUS[0]}
-            [ "${bios_rc}" -eq 0 ] || scan_rc=${bios_rc}
+            # Keep the code that says the most. A missing folder is rclone's
+            # 3 and the one code an empty cloud gives, so a ROMs listing the
+            # cloud refused (5, 7) must not be overwritten by a BIOS folder
+            # that merely is not there yet.
+            if [ "${bios_rc}" -ne 0 ] && { [ "${scan_rc}" -eq 0 ] || [ "${scan_rc}" -eq 3 ]; }; then
+                scan_rc=${bios_rc}
+            fi
         fi
         # A listing that failed with the network gone is not an empty cloud,
         # and the page must not be handed one: every system on the device
@@ -851,6 +857,21 @@ case "${1}" in
             log_message "scan: skipped, no network (rclone exit ${scan_rc})"
             echo "No network connection. Skipped." >&2
             exit "${EXIT_NO_NETWORK}"
+        fi
+        # A listing that failed with the network up is not an empty cloud
+        # either, unless the failure is that the folder is not there: rclone's
+        # 3, "directory not found", is what a cloud nothing has been backed up
+        # to yet answers, and goes on as before. Anything else -- the cloud
+        # refused the connection, rejected the sign-in, or answered with an
+        # error -- is a cloud that could not be read, and the page must say
+        # so rather than list every system on the device as "not yet in your
+        # cloud" (a refused port exited 5 and the picker offered the whole
+        # device for upload, 2026-09-10; D-CLOUD-077). rclone's code goes up
+        # unchanged: the sentinels are 75 and 69, which rclone never returns.
+        if [ "${scan_rc}" -ne 0 ] && [ "${scan_rc}" -ne 3 ]; then
+            log_message "scan: the cloud could not be read (rclone exit ${scan_rc})"
+            echo "Your cloud couldn't be read. Try again." >&2
+            exit "${scan_rc}"
         fi
         sizes_under "${ROOT}" | grep -vE '^(ROMs|BIOS)\|' > "${TMP}/legacy"
         {
