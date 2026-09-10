@@ -34,7 +34,14 @@ else
     ui_state start
     exit 0
   else
-    "$*" >/dev/console
+    # The fallback for a command that is a single path with spaces in it --
+    # the same case the weston and sway branches above test for with -f, and
+    # the only input "$*" (one word, the whole argument list) can name. It
+    # ran unguarded on EVERY failure, so a composed command line came back
+    # as `cloud_content_restore --all && cloud_restore --yes: not found`
+    # flashed over the console before the UI returned, on top of whatever
+    # the real failure had said (#114).
+    [ -f "${*}" ] && "$*" >/dev/console
     ui_state start
     exit 0
   fi
