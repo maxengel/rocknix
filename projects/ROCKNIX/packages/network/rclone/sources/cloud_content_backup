@@ -69,7 +69,8 @@ take_cloud_lock() {
 }
 
 if [ ! -e "/storage/.config/rclone/rclone.conf" ]; then
-    echo "rclone is not configured. Use Game Settings > Cloud > Connect Or Repair Cloud Storage first."
+    echo ">>> why YOUR CLOUD STORAGE ISN'T SET UP"
+    echo "Your cloud storage isn't set up yet. Set it up under GAME SETTINGS > MANAGE CLOUD STORAGE first."
     exit 1
 fi
 
@@ -77,7 +78,8 @@ fi
 
 REMOTENAME=$(rclone listremotes | head -1)
 if [ -z "${REMOTENAME}" ]; then
-    echo "No cloud remote configured."
+    echo ">>> why YOUR CLOUD STORAGE ISN'T SET UP"
+    echo "Your cloud storage isn't set up yet. Set it up under GAME SETTINGS > MANAGE CLOUD STORAGE first."
     exit 1
 fi
 
@@ -124,6 +126,26 @@ record_outcome() { # <stamp-name> <rc>
     write_stamp "/storage/.cache/cloud_sync/last-$1" "$(date +%s) $2${why}"
 }
 
+# Why a unit did not finish, in the player's words (D-UI-028, D-CLOUD-077):
+# one `>>> why <SENTENCE>` protocol line per failing unit, which the page
+# and the card read; rclone's code stays in the log. The sentences are the
+# vocabulary table's in es-native-ui.md.
+say_why() {
+    LAST_WHY="$1"
+    echo ">>> why $1"
+    log_message "why: $1"
+}
+why_for() {
+    case "$1" in
+        3|4) echo "YOUR CLOUD FOLDER WASN'T FOUND" ;;
+        5)   echo "YOUR CLOUD STOPPED ANSWERING" ;;
+        6)   echo "SOME FILES DIDN'T FINISH" ;;
+        7|8) echo "YOUR CLOUD REFUSED THE TRANSFER" ;;
+        130) echo "IT WAS STOPPED" ;;
+        *)   echo "SOMETHING WENT WRONG" ;;
+    esac
+}
+
 has_default_route() {
     ip -4 route show default 2>/dev/null | grep -q . \
         || ip -6 route show default 2>/dev/null | grep -q .
@@ -154,7 +176,7 @@ network_gone() {
 # and renames it when complete, so nothing partial is left in the cloud.
 stop_no_network() {
     local rc="$1" unit="$2"
-    echo "The network went away while backing up ${unit} (rclone exit ${rc}). Stopped."
+    echo "The network went away while backing up ${unit}. Stopped."
     log_message "stopped: the network went away while backing up ${unit} (rclone exit ${rc}); exit ${EXIT_NO_NETWORK}"
     record_outcome content-backup "${EXIT_NO_NETWORK}"
     exit "${EXIT_NO_NETWORK}"
@@ -375,7 +397,7 @@ case "${1}" in
         fi
     ;;
     "")
-        echo "Usage: ${SCRIPT_NAME} --list | --list-sizes | --all | <dir> [<dir>...]"
+        echo "Usage: ${SCRIPT_NAME} --list | --list-sizes | --all | <dir> [<dir>...]" >&2
         exit 1
     ;;
     *)
@@ -514,7 +536,9 @@ for DIR in "${DIRS[@]}"; do
         # A failed unit says why: the network gone ends the run as 69 here,
         # anything else carries rclone's own code up as before.
         network_gone && stop_no_network "${RC}" "${DIR:-everything}"
-        echo "Backup of ${DIR:-everything} failed (rclone exit ${RC})."
+        log_message "backup of ${DIR:-everything}: rclone exit ${RC}"
+        echo "Backing up ${DIR:-everything} couldn't finish: $(why_for "${RC}" | tr 'A-Z' 'a-z')."
+        say_why "$(why_for "${RC}")"
         STATUS=${RC}
     else
         echo "Backed up ${DIR:-everything}."

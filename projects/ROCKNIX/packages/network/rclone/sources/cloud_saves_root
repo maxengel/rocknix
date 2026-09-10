@@ -136,8 +136,14 @@ case "${1:-}" in
                 now=$(wait_for "${last}" "${WAIT}")
             fi
             if [ "${now}" != "${last}" ]; then
+                # The why line first, for the caller to relay (D-UI-028);
+                # then the reason and what to do, in the player's words. How
+                # to accept the new card deliberately is a command, so it goes
+                # to the log, not the screen -- no menu row offers it yet.
+                echo ">>> why THE SAVES FOLDER IS ON A DIFFERENT CARD"
                 echo "The saves folder $(saves_path) is on a different card than the last time saves were synced (now ${now}, last time ${last})."
-                echo "Nothing was transferred. If the second card is missing, put it back; if the change is intended, run: cloud_setup --accept-saves-root"
+                echo "Nothing was transferred. If the second card is missing, put it back and try again."
+                logger -t cloud_saves_root "refused: saves root ${now}, recorded ${last}; to accept the current card deliberately run: cloud_setup --accept-saves-root" 2>/dev/null
                 exit 1
             fi
         fi
@@ -147,6 +153,7 @@ case "${1:-}" in
     record)
         now=$(identity)
         if [ -n "${2:-}" ] && [ "${now}" != "${2}" ]; then
+            echo ">>> why THE SAVES FOLDER CHANGED CARDS DURING THE TRANSFER"
             echo "The saves folder $(saves_path) changed cards during the transfer (it started on ${2} and is on ${now} now). Files written in that time may be on the other card."
             echo "Nothing was recorded. Run the transfer again once the cards have settled."
             exit 1

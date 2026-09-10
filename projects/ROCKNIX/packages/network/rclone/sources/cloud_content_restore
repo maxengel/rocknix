@@ -70,7 +70,8 @@ take_cloud_lock() {
 }
 
 if [ ! -e "/storage/.config/rclone/rclone.conf" ]; then
-    echo "rclone is not configured. Use Game Settings > Cloud > Connect Or Repair Cloud Storage first."
+    echo ">>> why YOUR CLOUD STORAGE ISN'T SET UP"
+    echo "Your cloud storage isn't set up yet. Set it up under GAME SETTINGS > MANAGE CLOUD STORAGE first."
     exit 1
 fi
 
@@ -78,7 +79,8 @@ fi
 
 REMOTENAME=$(rclone listremotes | head -1)
 if [ -z "${REMOTENAME}" ]; then
-    echo "No cloud remote configured."
+    echo ">>> why YOUR CLOUD STORAGE ISN'T SET UP"
+    echo "Your cloud storage isn't set up yet. Set it up under GAME SETTINGS > MANAGE CLOUD STORAGE first."
     exit 1
 fi
 
@@ -128,6 +130,26 @@ record_outcome() { # <stamp-name> <rc>
     write_stamp "/storage/.cache/cloud_sync/last-$1" "$(date +%s) $2${why}"
 }
 
+# Why a unit did not finish, in the player's words (D-UI-028, D-CLOUD-077):
+# one `>>> why <SENTENCE>` protocol line per failing unit, which the page
+# and the card read; rclone's code stays in the log. The sentences are the
+# vocabulary table's in es-native-ui.md.
+say_why() {
+    LAST_WHY="$1"
+    echo ">>> why $1"
+    log_message "why: $1"
+}
+why_for() {
+    case "$1" in
+        3|4) echo "YOUR CLOUD FOLDER WASN'T FOUND" ;;
+        5)   echo "YOUR CLOUD STOPPED ANSWERING" ;;
+        6)   echo "SOME FILES DIDN'T FINISH" ;;
+        7|8) echo "YOUR CLOUD REFUSED THE TRANSFER" ;;
+        130) echo "IT WAS STOPPED" ;;
+        *)   echo "SOMETHING WENT WRONG" ;;
+    esac
+}
+
 has_default_route() {
     ip -4 route show default 2>/dev/null | grep -q . \
         || ip -6 route show default 2>/dev/null | grep -q .
@@ -161,7 +183,7 @@ network_gone() {
 # happened when the sync ran, and the cloud still holds what they removed.
 stop_no_network() {
     local stamp="$1" rc="$2" doing="$3"
-    echo "The network went away while ${doing} (rclone exit ${rc}). Stopped."
+    echo "The network went away while ${doing}. Stopped."
     log_message "stopped: the network went away while ${doing} (rclone exit ${rc}); exit ${EXIT_NO_NETWORK}"
     record_outcome "content-${stamp}" "${EXIT_NO_NETWORK}"
     exit "${EXIT_NO_NETWORK}"
@@ -519,7 +541,7 @@ match_plan_one() {
 }
 
 match_run() {
-    local apply="$1" sys line verb files bytes rc=0 sync_rc=0 total_removed=0
+    local apply="$1" sys line verb files bytes rc=0 sync_rc=0 del_rc=0 total_removed=0
 
     # The exclusions are the only thing standing between this and somebody's
     # saves, so assert they exist rather than trusting the file's layout. An
@@ -593,7 +615,14 @@ match_run() {
                     rclone delete "${DEST}/${sys}" \
                         "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${METADATA_EXCLUDES[@]}" \
                         --max-delete "${files}" \
-                        --log-file "${LOG_FILE}" --log-level INFO || rc=$?
+                        --log-file "${LOG_FILE}" --log-level INFO
+                    del_rc=$?
+                    if [ ${del_rc} -ne 0 ]; then
+                        rc=${del_rc}
+                        log_message "match: removing ${sys}: rclone exit ${del_rc}"
+                        echo "Removing ${sys} couldn't finish: $(why_for "${del_rc}" | tr 'A-Z' 'a-z')."
+                        say_why "$(why_for "${del_rc}")"
+                    fi
                     rmdir "${DEST}/${sys}" 2>/dev/null
                 else
                     echo "${sys}|remove|${files}|${bytes}"
@@ -638,6 +667,9 @@ match_run() {
                             echo ">>> removed ${total_removed}|${total_bytes}|${removed_detail}"
                             stop_no_network match "${sync_rc}" "matching ${sys} to the cloud"
                         fi
+                        log_message "match: matching ${sys}: rclone exit ${sync_rc}"
+                        echo "Matching ${sys} to the cloud couldn't finish: $(why_for "${sync_rc}" | tr 'A-Z' 'a-z')."
+                        say_why "$(why_for "${sync_rc}")"
                     fi
                 else
                     # The bytes the dry run counted, so the confirmation and
@@ -921,7 +953,7 @@ case "${1}" in
         DIRS=("")
     ;;
     "")
-        echo "Usage: ${SCRIPT_NAME} --list | --all | <dir> [<dir>...]"
+        echo "Usage: ${SCRIPT_NAME} --list | --all | <dir> [<dir>...]" >&2
         exit 1
     ;;
     *)
@@ -978,7 +1010,9 @@ for DIR in "${DIRS[@]}"; do
         # A failed unit says why: the network gone ends the run as 69 here,
         # anything else carries rclone's own code up as before.
         network_gone && stop_no_network restore "${RC}" "restoring ${DIR:-everything}"
-        echo "Restore of ${DIR:-everything} failed (rclone exit ${RC})."
+        log_message "restore of ${DIR:-everything}: rclone exit ${RC}"
+        echo "Restoring ${DIR:-everything} couldn't finish: $(why_for "${RC}" | tr 'A-Z' 'a-z')."
+        say_why "$(why_for "${RC}")"
         STATUS=${RC}
     else
         echo "Restored ${DIR:-everything}."
