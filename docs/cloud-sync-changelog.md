@@ -1722,7 +1722,8 @@ leaves the shutdown watchdog off (D-SYS-002). A soft lockup or a hung task
 panics and the device reboots ten seconds later, leaving its trace in
 ramoops -- 1 MiB at `0x4F000000` on every H700 board (D-SYS-003, D-SYS-004)
 -- which `systemd-pstore` copies into `/storage/.cache/log/pstore/` at the
-next boot. H700 gains `PSTORE_RAM`, `PSTORE_CONSOLE`, `WATCHDOG_SYSFS` and
+next boot, and the first evidence snapshot after boot archives anything the
+boot-time service did not see (on UEFI the dump appears a little late). H700 gains `PSTORE_RAM`, `PSTORE_CONSOLE`, `WATCHDOG_SYSFS` and
 the two detectors; the VM gains pstore over UEFI variables and QEMU's
 watchdog so it can prove all of this first.
 
