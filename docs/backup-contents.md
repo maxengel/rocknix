@@ -77,3 +77,22 @@ takes effect cleanly (a running EmulationStation would otherwise rewrite
 `es_settings.cfg` over the restored copy). It then leaves
 `/storage/.config/.restore-finish-pending`, which EmulationStation consumes on the
 next boot to offer the credential re-entry flow.
+
+### Restoring by hand
+
+A restore done over SSH -- `tar -xzf` into `/storage/.config` with
+EmulationStation stopped -- skips `backuptool`, so the marker is never written
+and nobody is told which credentials the archive did not carry. That is how the
+RG SP came back on 2026-09-09 with its RetroAchievements username and no
+password or token, signed out with no prompt (#109). Since #109 EmulationStation
+also notices that shape on its own (a username with neither password nor
+token) and offers the re-entry page once per boot; do not rely on it. When
+restoring by hand, do one of these two before starting EmulationStation:
+
+- **Carry the stripped lines across** from the live `system.cfg` you are
+  replacing: `global.retroachievements.password`, `global.retroachievements.token`,
+  the ScreenScraper password and developer pair, `wifi.key`, and the
+  `cloud.*` secrets -- `grep -E '^(global\.retroachievements\.(password|token)|wifi\.key|.*(passw|token|devpass))' system.cfg`
+  on the old file lists them. They never travel in an archive by design.
+- **Or write the marker** -- `touch /storage/.config/.restore-finish-pending` --
+  so the next boot opens FINISH RESTORE SETUP and the player types them in.
