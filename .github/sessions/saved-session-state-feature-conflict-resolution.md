@@ -1,12 +1,14 @@
 # Saved Session State
 
-> **Saved**: 2026-09-10T07:25:23Z
+> **Saved**: 2026-09-10T07:49:15Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). **A second round of maintainer-found work, on top of the deployed `7eb713bbd9`.** They played a game on the RG SP and the exit sync did not upload: root cause is #103's `--low-level-retries 2` against Dropbox's per-folder write lock (#107, D-CLOUD-083) -- the exit sync has been failing for every save already in the cloud since #103 shipped. Six more changes came out of their reading of the surfaces, filed as #107-#112 and built: pass-or-fail (#111), plain language (#108), provider + CHECK CONNECTION (#110), the device name shown not enforced (#106), row consistency (#112). `next` is `736e5a50f2`; GENERIC_X64 `ae3d602cf2` is verified on the VM with frames. **Nothing new is on a handheld** -- both still run `7eb713bbd9`, and the maintainer's instruction for this round was "generate a build once everything's verified working, but please don't transfer anything over".
+Epic #11 (cloud saves). **Round two is built and verified; nothing is staged.** `next` = `8e2f18a810` (code `e73efbc8e0`, ES `16ad2605f`). Both images are at `/workspace/artifacts/rocknix-images/{x64,h700}-all-20260910-e73efbc8e0/` (H700 tar sha `8d8a1f3f41db6b8f...`). Both handhelds still run `7eb713bbd9`; the maintainer's instruction was *"generate a build once everything's verified working, but please don't transfer anything over."* **The next action is theirs: say which device to stage.**
+
+The round began with a real failure: their exit sync after Mario Tennis did not upload. Root cause #107 (Dropbox + `--low-level-retries 2`), fixed and covered by a new suite fixture; blindspot 36 records why the harness could not see it. Six more changes came from their reading of the surfaces: #108 plain language, #110 provider + CHECK CONNECTION, #111 pass-or-fail, #112 row consistency, #106 the device name shown not enforced. #109 (RetroAchievements) is a finding, not a build change.
 
 ## Completed This Session
 
@@ -24,17 +26,14 @@ Epic #11 (cloud saves). **A second round of maintainer-found work, on top of the
 
 ## In Progress
 
-- **Plain-language pass over the scripts** (#108's other half): subagent on `feature/script-language`, worktree `rocknix.worktrees/script-language`. It was told not to touch machine-readable output (`key=value`, `OK`/`FAIL`/`NONE` from `cloud_setup --check`, the `>>> ` protocol lines, `MISSING `/`REFUSING:` prefixes). Merge its branch, then rebuild.
-- **Full suite on guest d** against `ae3d602cf2`, including the new replace fixture (`tmp/suite-d-final.log`).
-- **Not yet built: H700.** Do it after the script language lands, from `rocknix.worktrees/devices` (clear `.stamps/{emulationstation,rclone,rocknix,systemd,networkmanager}` + `.stamps/image/build_target`).
+- Nothing running. Guest d (10025) is on `e73efbc8e0` at 640x480 with its remote pointed at the dead port 9011; guest c (10024) is on an older image.
 
 ## Next Steps
 
-1. Merge `feature/script-language`, rebuild GENERIC_X64, re-frame the card (its line 2 comes from the scripts' `say_why`, so the plain-language pass changes it), then build H700.
-2. **Ask** before staging anything on either handheld, per device (D-QA-008/011). Both are on `7eb713bbd9`.
-3. The RG SP's save from tonight is on the device only -- the cloud copy is from 2026-09-09. Offer to push it up once the fixed build is on the device, or by hand sooner if they want it.
-4. Tell them to re-enter the RetroAchievements password (#109); it has been empty since the 2026-09-09 hand restore.
-5. Open: #109's acceptance work (notice a username with no password), #112's remaining question, the audits' P2/P3 items the first subagent never got to (it died on a Fable credit limit): the journey continuation's console hop, the GuiMsgBox duplicate CHOOSE prompt, the launch-gate wording, and `CHANGE CLOUD FOLDER`'s "cloud remote" jargon.
+1. **Wait for the maintainer to name a device**, then stage `h700-all-20260910-e73efbc8e0` (sha above) and ask again before each reboot (D-QA-008/011).
+2. Tell them: re-enter the RetroAchievements password (#109, empty since the 2026-09-09 hand restore), and their Mario Tennis save is device-only until the fixed build runs an exit sync.
+3. Open work: #109's acceptance items; the card's reason line needs the candidate treatment the action line has (noted on #108); the audits' P2/P3 items the first subagent never reached (the journey continuation's console hop, GuiMsgBox's duplicate CHOOSE prompt, the launch-gate wording, `CHANGE CLOUD FOLDER`'s "cloud remote" jargon); #105 tranche B; #104.
+4. `cloud_setup --info` prints `PASSWORD=<root password>`; three EmulationStation call sites use it, one of which only needs a boolean. Worth narrowing.
 
 ## Key Files Modified
 
