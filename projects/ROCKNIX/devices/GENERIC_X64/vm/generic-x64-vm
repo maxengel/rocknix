@@ -262,6 +262,12 @@ def qemu_command(profile, args):
             "-device",
             "virtio-rng-pci,rng=rng0",
         ]
+    # A hardware watchdog, so the guest mirrors a handheld: systemd arms it
+    # (RuntimeWatchdogSec) and a kernel that stops scheduling is reset by it
+    # rather than left frozen (fork #104). i6300esb is QEMU's standard one and
+    # the kernel the image ships has its driver; "reset" is what the SoC's
+    # watchdog does on a device.
+    command += ["-device", "i6300esb", "-action", "watchdog=reset"]
     return command
 
 

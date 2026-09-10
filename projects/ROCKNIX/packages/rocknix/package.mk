@@ -81,6 +81,8 @@ EOF
 
   ### Take a backup of the system configuration on shutdown
   enable_service save-sysconfig.service
+  # what the device looked like before it froze, kept on /storage (fork #104)
+  enable_service rocknix-evidence.timer
 
   ### Put system.cfg right (from its last good copy) before the hostname is read
   enable_service rocknix-sysconfig.service
