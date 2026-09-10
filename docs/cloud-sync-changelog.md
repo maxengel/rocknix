@@ -1663,3 +1663,36 @@ backup or restore is stamped by its script (`last-backup`, `last-restore`),
 which the BACK UP and RESTORE rows read; writing the manual stamp for those
 too put a backup's outcome under the sync row (`LAST 00:48 - COULDN'T
 FINISH` on a row nobody had pressed, guest d).
+
+## set_setting keeps a key on the last line; a cut-off restore is undone at boot; rotation trims by name (2026-09-10)
+
+Three findings from the KILL cells against tranche A's scripts (`90e18fdb0d`,
+`18eb6ecdd5`):
+
+- `set_setting` was one `sed -i` with `/^k=/d` and `$a k=v`; when the key's
+  line is the file's last -- which a key just appended always is -- `d` ends
+  the cycle before `$a` runs, so the key was deleted and never re-added and
+  read as its default from then on. It is now one awk into `system.cfg.tmp`
+  and a rename over `system.cfg`, under the one lock hold; the key is
+  matched literally and the value crosses through the environment.
+  `chksysconfig verify` sweeps a `system.cfg.tmp` a kill left.
+  `tools/last-good-scripts-test` carries the last-line, one-line and
+  literal-key fixtures (`BASE_REF=c15050c897 ... --old` fails 12 checks).
+- `backuptool restore` writes `.restore-in-progress` naming the copy it took
+  aside before extracting and removes it after; `chksysconfig verify` puts
+  the copy back at the next boot when the marker is still there and leaves
+  `.restore-reverted` for EmulationStation to say once (D-CLOUD-081;
+  ES `5a3759cde`, pin `520357fa52`: `YOUR SETTINGS RESTORE WAS INTERRUPTED.
+  YOUR PREVIOUS SETTINGS WERE PUT BACK. TRY THE RESTORE AGAIN.`).
+- `trim_archive` kept "the newest" by mtime; it sorts by the date in the
+  name now, dateless names last, so a downloaded older archive no longer
+  outlives a newer one.
+
+The harness follows: KILL3 for the write-then-rotate flow (its watcher's
+`ls root/*.tar.gz root/*.zip` failed whenever no `.zip` matched and fired on
+any state), KILL10 shims awk, KILL11 asserts old-or-new, KILL18 runs
+`chksysconfig verify` as the boot would and its snapshot covers the tree it
+restores; the settings-archive step plants a real tar.gz pair of equal size
+(the planted bytes were "damaged" to the new `cloud_backup`); the litter scan
+accepts D-UI-028's stamp shape and judges a `.bak` against the newest
+completed run rather than flagging it wherever it sits.
