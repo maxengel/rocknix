@@ -1,14 +1,14 @@
 # Saved Session State
 
-> **Saved**: 2026-09-10T23:15:15Z
+> **Saved**: 2026-09-10T23:27:26Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). **#117/#118/#119 built into `next`, not yet imaged; #120 (automated testing) opened and its first two boxes started.** `next` = `a918a49c93` (ES `6d0bb8a6a` pinned), pushed. Maintainer (2026-09-10): "tackle the three new issues: 117, 118, and 119 ... then move to 105" and "think about any automated testing ... run on the VMs".
+Epic #11 (cloud saves). **#117/#118/#119 imaged as `7a90be59fb` (x64 built; H700 building); `tools/vm-qa` running against it from a fresh pair; an agent is on #120 box 4 (ES unit tests, branch `feature/unit-tests`).** `next` = `607a2446f2` (ES `6d0bb8a6a` pinned), pushed. Artifacts: `x64-all-20260910-7a90be59fb/`. Maintainer (2026-09-10): "tackle the three new issues: 117, 118, and 119 ... then move to 105" and "think about any automated testing ... run on the VMs".
 
-Done tonight: `tools/emulator-exit-test` (#117: PASSED on the shipped `input_sense`, FAILED (2) with the debounce stripped -- three of four criteria ticked, the H700 one open); #118 (34 strings under D-UI-036, merged); #119 (ten maintenance rows headless with an outcome, `run`/`factoryreset` return a status, D-UI-037, merged); `tools/vm-qa` (#120 box 1: one runner, first report `qa-073929659d-20260910-2256/`); the harness outcome-word gate is on by default with three words (#105's last box; suite passes; LINK cells running under it as this was saved -- `scratchpad/link-vocab.log`). Both handhelds OFFLINE all evening, still on `7eb713bbd9`; `073929659d` is the latest verified image, unstaged.
+Done tonight: `tools/emulator-exit-test` (#117: PASSED on the shipped `input_sense`, FAILED (2) with the debounce stripped -- three of four criteria ticked, the H700 one open); #118 (34 strings under D-UI-036, merged); #119 (ten maintenance rows headless with an outcome, `run`/`factoryreset` return a status, D-UI-037, merged); `tools/vm-qa` (#120 box 1: one runner, first report `qa-073929659d-20260910-2256/`); the harness outcome-word gate is on by default with three words (#105's last box; suite passes; the LINK cells under it caught "Lost the network..." in six cells; fixed in four scripts (`322505757c`), LINK1-4,6 pass, LINK5 is #113, LINK7 clean; #105's harness box ticked). Both handhelds OFFLINE all evening, still on `7eb713bbd9`; `073929659d` is the latest verified image, unstaged.
 
 ## Completed This Session
 
