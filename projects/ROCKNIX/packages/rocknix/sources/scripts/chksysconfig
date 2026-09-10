@@ -42,10 +42,22 @@ say() {
 # (so no NULs and none of the 0x00 fill a torn flash write leaves). The
 # original test read grep's "Binary file" notice and let an empty file
 # through as text, which it is, and as a config, which it is not.
+#
+# The bytes a text file may hold are spelled as ranges -- tab, newline,
+# carriage return, printable ASCII, and everything above 0x7F for UTF-8 --
+# and never as classes. This read `[:print:][:space:]` for a day, which GNU
+# tr on the build host understands and the device's busybox tr does not:
+# it deleted the eight characters inside the brackets and left the rest, so
+# every real system.cfg was "not text", the shutdown and boot-time backups
+# were refused, and a damaged live file found its last good copy "damaged
+# too" and was reseeded from the image defaults -- the RG SP's morning
+# (#102) reproduced by the fix meant to end it (guest d, 2026-09-10).
+# tools/last-good-scripts-test now runs these checks through the image's
+# busybox, which is where it should have failed first.
 valid() {
   local f="$1"
   [ -s "${f}" ] || return 1
-  [ "$(LC_ALL=C tr -d '[:print:][:space:]\200-\377' < "${f}" | head -c 1 | wc -c)" -eq 0 ] || return 1
+  [ "$(LC_ALL=C tr -d '\11\12\15\40-\176\200-\377' < "${f}" | head -c 1 | wc -c)" -eq 0 ] || return 1
   grep -q '^system\.hostname=' "${f}" || return 1
   ! LC_ALL=C grep -qvE '^[[:space:]]*$|^[^=[:space:]][^=]*=' "${f}"
 }

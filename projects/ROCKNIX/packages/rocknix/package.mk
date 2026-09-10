@@ -82,6 +82,9 @@ EOF
   ### Take a backup of the system configuration on shutdown
   enable_service save-sysconfig.service
 
+  ### Put system.cfg right (from its last good copy) before the hostname is read
+  enable_service rocknix-sysconfig.service
+
   sed -i "s#@DEVICENAME@#${DEVICE}#g" ${INSTALL}/usr/config/system/configs/system.cfg
 
   ### Defaults for community builds.
