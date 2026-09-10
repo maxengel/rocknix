@@ -1,0 +1,370 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# last-good-scripts-test - a device-less check that the scripts keep the last
+# known good state when they are killed mid-write (D-CLOUD-078, fork #105):
+#
+#   a. chksysconfig: verify with an empty system.cfg and a valid .backup
+#      restores the backup, not the image defaults; backup with an empty
+#      current file leaves .backup unchanged;
+#   b. backuptool backup killed mid-tar (a tar shim that writes 1 MiB and
+#      SIGKILLs the whole process group) leaves the previous archive as the
+#      only *.tar.gz at the root and a .partial beside it; a restore whose
+#      extraction fails puts the pre-restore snapshot back and says so;
+#   c. set_setting is one rename: the single sed produces the right file for
+#      values carrying /, & and spaces, deletes on "default", and gives an
+#      empty file its one line -- there is no longer a step between delete
+#      and add for a kill to land in;
+#   d. write_stamp killed mid-write leaves the previous stamp;
+#   e. every line the scripts can print to a screen is free of exit codes,
+#      log paths, tool names and flags (the harness's FORBIDDEN regex).
+#
+# The chksysconfig and 001-functions functions are lifted out of the files
+# under test and run in a fresh bash against temp paths, as wait-lock-test
+# does. backuptool is run WHOLE and unmodified inside bwrap, with a stub
+# /etc/profile, a fake /storage and PATH shims (logger, systemctl, sleep,
+# and the tar that dies) -- bubblewrap needs no user namespace here, only
+# setuid or an allowing profile. sed, mv and cp are the image's busybox when
+# its build root is on this machine, the host's otherwise.
+#
+# To watch the guards fire, point it at the scripts from before the change:
+#
+#     tools/last-good-scripts-test --old      # a, b, c FAIL against 1d1503180d
+#     tools/last-good-scripts-test            # PASSED
+#
+# Exit 0 when every check passes, 1 otherwise, 2 when it cannot run.
+set -u
+
+ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+BASE_REF="1d1503180d"
+OLD=0
+[ "${1:-}" = "--old" ] && OLD=1
+
+CHK_REL=projects/ROCKNIX/packages/rocknix/sources/scripts/chksysconfig
+BT_REL=projects/ROCKNIX/packages/rocknix/sources/scripts/backuptool
+FN_REL=projects/ROCKNIX/packages/rocknix/profile.d/001-functions
+RCLONE_REL=projects/ROCKNIX/packages/network/rclone/sources
+
+command -v bwrap >/dev/null || { echo "needs bubblewrap (bwrap)" >&2; exit 2; }
+command -v setsid >/dev/null || { echo "needs setsid" >&2; exit 2; }
+
+TMP="$(mktemp -d)"; trap 'rm -rf "${TMP}"' EXIT
+FAIL=0
+check() { # <0|nonzero> ok-text bad-text
+    if [ "$1" -eq 0 ]; then echo "    PASS  $2"; else echo "    FAIL  $3"; FAIL=$((FAIL + 1)); fi
+}
+
+# The scripts under test: the working tree, or the base commit's.
+mkdir -p "${TMP}/src"
+for rel in "${CHK_REL}" "${BT_REL}" "${FN_REL}"; do
+    if [ "${OLD}" -eq 1 ]; then
+        git -C "${ROOT}" show "${BASE_REF}:${rel}" > "${TMP}/src/$(basename "${rel}")" || { echo "cannot read ${rel} at ${BASE_REF}" >&2; exit 2; }
+    else
+        cp "${ROOT}/${rel}" "${TMP}/src/$(basename "${rel}")"
+    fi
+done
+CHK="${TMP}/src/chksysconfig"; BT="${TMP}/src/backuptool"; FN="${TMP}/src/001-functions"
+chmod +x "${BT}"
+
+# busybox sed/mv/cp from the image when a build root is here, so the rename
+# semantics tested are the device's.
+BB=""
+for b in "${ROOT}"/../*/build.ROCKNIX-*/image/system/usr/bin/busybox "${ROOT}"/build.ROCKNIX-*/image/system/usr/bin/busybox; do
+    [ -x "${b}" ] && "${b}" sed --help >/dev/null 2>&1 && { BB="${b}"; break; }
+done
+[ -n "${BB}" ] || BB="$(command -v busybox || true)"
+mkdir -p "${TMP}/bbin"
+if [ -n "${BB}" ]; then
+    for a in sed mv cp; do printf '#!/bin/sh\nexec %s %s "$@"\n' "${BB}" "${a}" > "${TMP}/bbin/${a}"; chmod +x "${TMP}/bbin/${a}"; done
+fi
+
+echo "last-good-scripts-test: $([ "${OLD}" -eq 1 ] && echo "scripts at ${BASE_REF} (expect FAILs)" || echo "scripts in ${ROOT}")"
+[ -n "${BB}" ] && echo "  sed/mv/cp: $("${BB}" 2>&1 | head -1)"
+
+# ---------------------------------------------------------------- a.
+echo "  a. chksysconfig keeps and restores the last good system.cfg"
+A="${TMP}/a"; mkdir -p "${A}/cfg/system/configs" "${A}/cfg/retroarch" "${A}/def/system/configs" "${A}/def/retroarch"
+printf 'system.hostname=DEFAULT\n' > "${A}/def/system/configs/system.cfg"
+echo d > "${A}/def/retroarch/retroarch.cfg"; echo d > "${A}/def/retroarch/retroarch-core-options.cfg"
+echo user > "${A}/cfg/retroarch/retroarch.cfg"; echo user > "${A}/cfg/retroarch/retroarch-core-options.cfg"
+{
+    # Every function the file defines, whatever it calls them.
+    awk '/^[a-z_]+\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${CHK}"
+    cat <<EOS
+logger() { echo "logger \$*" >&2; }
+CONFIG_ROOT="${A}/cfg"; DEFAULT_ROOT="${A}/def"
+CFG_PATH="\${CONFIG_ROOT}/system/configs"; CFG="\${CFG_PATH}/system.cfg"; BACKUP="\${CFG}.backup"
+EOS
+} > "${A}/fns.sh"
+# The old script names /storage and /usr/config outright, so its rsync must
+# be shimmed to do what it would do -- copy the default tree over the config
+# tree -- against the fixture; the new one takes the roots from variables.
+mkdir -p "${A}/bin"
+cat > "${A}/bin/rsync" <<EOS
+#!/bin/bash
+args=(); ign=0
+for x in "\$@"; do case "\$x" in --ignore-existing) ign=1 ;; -a) ;; /usr/config/) args+=("${A}/def/") ;; /storage/.config) args+=("${A}/cfg") ;; *) args+=("\$x") ;; esac; done
+opts=(-a); [ "\$ign" = 1 ] && opts+=(--ignore-existing)
+exec /usr/bin/rsync "\${opts[@]}" "\${args[@]}"
+EOS
+chmod +x "${A}/bin/rsync"
+CFGF="${A}/cfg/system/configs/system.cfg"
+
+printf 'a.b=1\nsystem.hostname=MINE\n' > "${CFGF}.backup"; : > "${CFGF}"
+PATH="${A}/bin:${PATH}" bash -c ". '${A}/fns.sh'; verify" 2>"${A}/err"
+[ "$(grep '^system.hostname=' "${CFGF}" 2>/dev/null)" = "system.hostname=MINE" ]; check $? "empty system.cfg + valid .backup: verify restored the backup (hostname MINE)" "system.cfg after verify: '$(tr '\n' '|' < "${CFGF}" | cut -c1-80)' -- expected the backup's hostname MINE"
+[ "$(cat "${A}/cfg/retroarch/retroarch.cfg")" = "user" ]; check $? "and the player's retroarch.cfg was left alone" "retroarch.cfg was overwritten with the image default"
+grep -q 'logger -t chksysconfig .*restored' "${A}/err"; check $? "one syslog line names the recovery" "no recovery line in syslog; stderr: '$(tr '\n' '|' < "${A}/err" | cut -c1-200)'"
+
+printf 'a.b=1\nsystem.host' > "${CFGF}"
+PATH="${A}/bin:${PATH}" bash -c ". '${A}/fns.sh'; verify" 2>/dev/null
+[ "$(grep '^system.hostname=' "${CFGF}" 2>/dev/null)" = "system.hostname=MINE" ]; check $? "truncated system.cfg (no hostname): verify restored the backup" "system.cfg after verify: '$(tr '\n' '|' < "${CFGF}" | cut -c1-80)'"
+
+printf 'a.b=1\n\0\0\0\nsystem.hostname=X\n' > "${CFGF}"
+PATH="${A}/bin:${PATH}" bash -c ". '${A}/fns.sh'; verify" 2>/dev/null
+[ "$(grep -a '^system.hostname=' "${CFGF}" 2>/dev/null)" = "system.hostname=MINE" ]; check $? "binary system.cfg: verify restored the backup" "system.cfg after verify: '$(tr '\n' '|' < "${CFGF}" | cut -c1-80)'"
+
+: > "${CFGF}"; : > "${CFGF}.backup"
+PATH="${A}/bin:${PATH}" bash -c ". '${A}/fns.sh'; verify" 2>/dev/null
+[ "$(grep '^system.hostname=' "${CFGF}" 2>/dev/null)" = "system.hostname=DEFAULT" ]; check $? "both empty: verify fell back to the image's system.cfg" "system.cfg after verify: '$(tr '\n' '|' < "${CFGF}" | cut -c1-80)'"
+
+printf 'system.hostname=GOOD\n' > "${CFGF}.backup"; : > "${CFGF}"
+PATH="${A}/bin:${PATH}" bash -c ". '${A}/fns.sh'; backup" 2>/dev/null
+[ "$(cat "${CFGF}.backup")" = "system.hostname=GOOD" ]; check $? "backup with an empty current file left .backup unchanged" ".backup after backup: '$(tr '\n' '|' < "${CFGF}.backup" | cut -c1-80)' -- the empty file replaced the good copy"
+printf 'system.hostname=NEW\nx=1\n' > "${CFGF}"
+PATH="${A}/bin:${PATH}" bash -c ". '${A}/fns.sh'; backup" 2>/dev/null
+[ "$(head -1 "${CFGF}.backup")" = "system.hostname=NEW" ] && [ ! -e "${CFGF}.backup.tmp" ]; check $? "backup with a valid current file replaced .backup, no temp left" ".backup: '$(head -1 "${CFGF}.backup")'; temp present: $([ -e "${CFGF}.backup.tmp" ] && echo yes || echo no)"
+
+# ---------------------------------------------------------------- b.
+echo "  b. backuptool: a kill mid-tar leaves the previous archive; a failed restore puts the snapshot back"
+B="${TMP}/b"; ST="${B}/storage"
+mkdir -p "${ST}/.config/system/configs" "${ST}/.config/test" "${ST}/roms/backup" "${B}/shim" "${B}/repo"
+cp "${BT}" "${B}/repo/backuptool"
+printf 'export PATH=/shim:/usr/bin:/bin\nexport OS_NAME=ROCKNIX\n' > "${B}/profile"
+printf '#!/bin/sh\necho "logger $*" >&2\n' > "${B}/shim/logger"
+printf '#!/bin/sh\necho "systemctl $*"\n' > "${B}/shim/systemctl"
+printf '#!/bin/sh\nexit 0\n' > "${B}/shim/sleep"
+chmod +x "${B}/shim"/*
+printf 'system.hostname=X\nwifi.key=SECRET\n' > "${ST}/.config/system/configs/system.cfg"
+printf 'LOCATIONS=(\n  /storage/.config/system/configs/system.cfg\n  /storage/.config/test/*\n)\n' > "${ST}/.config/backuptool.conf"
+for i in 1 2 3; do echo "file${i}" > "${ST}/.config/test/f${i}"; done
+# Run backuptool whole, inside bwrap: the repo copy at /repo, a stub profile,
+# the fake /storage, shims first on PATH. setsid gives each run its own
+# process group, which is what the dying tar kills.
+bt() { # <verb...>; stdout+stderr to $OUT, rc in $RC (137 when the group was killed)
+    # In a subshell so the shell's own "Killed" notice for the dying group
+    # does not land in the test's output.
+    RC=$( ( setsid -w bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${B}/profile" /etc/profile \
+        --bind "${ST}" /storage --ro-bind "${B}/shim" /shim --ro-bind "${B}/repo" /repo \
+        --dev /dev --proc /proc --tmpfs /tmp \
+        bash /repo/backuptool "$@" > "${OUT}" 2>&1; echo $? ) 2>/dev/null )
+}
+OUT="${B}/out"
+bt backup; rc1=${RC}
+first=$(ls "${ST}/roms/backup"/*.tar.gz 2>/dev/null)
+[ "${rc1}" -eq 0 ] && [ -n "${first}" ] && [ "$(echo "${first}" | wc -l)" -eq 1 ]; check $? "a first backup writes one archive at the root (rc 0)" "rc ${rc1}; root holds: $(ls "${ST}/roms/backup" 2>/dev/null | tr '\n' ' '); out: $(tail -3 "${OUT}" | tr '\n' '|')"
+tar -tzf "${first}" 2>/dev/null | grep -q 'storage/.config/test/f1$'; check $? "and it lists back whole" "archive does not list"
+! tar -xzOf "${first}" storage/.config/system/configs/system.cfg 2>/dev/null | grep -q SECRET; check $? "with the wifi key stripped" "the archive carries the wifi key"
+sleep 1  # a new stamp, so the second archive has a distinct name
+bt backup; rc2=${RC}
+second=$(ls "${ST}/roms/backup"/*.tar.gz 2>/dev/null)
+[ "${rc2}" -eq 0 ] && [ "$(echo "${second}" | wc -l)" -eq 1 ] && [ "${second}" != "${first}" ] && [ -f "${ST}/roms/backup/archive/$(basename "${first}")" ]; check $? "a second backup rotates the first into archive/ and leaves one at the root" "rc ${rc2}; root: $(ls "${ST}/roms/backup" | tr '\n' ' '); archive: $(ls "${ST}/roms/backup/archive" 2>/dev/null | tr '\n' ' ')"
+
+# The kill: tar writing the archive emits 1 MiB and SIGKILLs its own
+# process group -- bwrap, the script, itself. Every other tar call is real.
+cat > "${B}/shim/tar" <<'EOS'
+#!/bin/bash
+out=""; prev=""
+for a in "$@"; do [ "${prev}" = "-czf" ] && out="${a}"; prev="${a}"; done
+if [ -n "${out}" ]; then
+    head -c 1048576 /dev/zero > "${out}"
+    kill -9 -- "-$(cut -d' ' -f5 /proc/self/stat)"
+    sleep 5
+    exit 1
+fi
+exec /usr/bin/tar "$@"
+EOS
+chmod +x "${B}/shim/tar"
+sleep 1
+bt backup; rck=${RC}
+roots=$(ls "${ST}/roms/backup"/*.tar.gz 2>/dev/null)
+partials=$(ls "${ST}/roms/backup"/*.partial 2>/dev/null)
+[ "${rck}" -ne 0 ]; check $? "the run died (rc ${rck})" "the run exited 0 through a tar that killed the group"
+[ "${roots}" = "${second}" ]; check $? "the previous archive is still the only *.tar.gz at the root" "root *.tar.gz: '$(echo "${roots}" | tr '\n' ' ')' -- expected only $(basename "${second}")"
+[ -n "${partials}" ] && [ "$(echo "${partials}" | wc -l)" -eq 1 ]; check $? "a .partial sits beside it ($(basename "${partials:-none}"))" "partials at the root: '$(echo "${partials}" | tr '\n' ' ')' -- the truncated archive was written under the final name"
+[ "$(ls "${ST}/roms/backup/archive"/*.tar.gz 2>/dev/null | wc -l)" -eq 1 ]; check $? "archive/ is unchanged (still one archive)" "archive/ holds $(ls "${ST}/roms/backup/archive" 2>/dev/null | wc -l) file(s): rotation ran before the new archive existed"
+rm -f "${B}/shim/tar"
+
+# A restore whose extraction fails: the shim extracts for real, then damages
+# one restored file and exits 1 -- what a cut mid-extract leaves. The
+# snapshot's own extraction (from archive/) is real.
+echo changed > "${ST}/.config/test/f1"
+cat > "${B}/shim/tar" <<'EOS'
+#!/bin/bash
+if [ "$1" = "-xzf" ] && [[ "$2" != */archive/* ]] && [ "$3" = "-C" ] && [ "$4" = "/" ]; then
+    /usr/bin/tar "$@"
+    echo garbage > /storage/.config/test/f2
+    exit 1
+fi
+exec /usr/bin/tar "$@"
+EOS
+chmod +x "${B}/shim/tar"
+bt restore; rcr=${RC}
+[ "${rcr}" -ne 0 ]; check $? "a restore whose extraction fails exits non-zero" "rc 0 from a failed extraction"
+[ "$(cat "${ST}/.config/test/f1")" = "changed" ] && [ "$(cat "${ST}/.config/test/f2")" = "file2" ]; check $? "and the pre-restore state was put back (f1 'changed', f2 'file2')" "f1='$(cat "${ST}/.config/test/f1")' f2='$(cat "${ST}/.config/test/f2")' -- the tree is half the archive, half the old state"
+ls "${ST}/roms/backup/archive"/*PRE_RESTORE* >/dev/null 2>&1; check $? "the snapshot is in archive/ as *PRE_RESTORE*" "no PRE_RESTORE snapshot in archive/: $(ls "${ST}/roms/backup/archive" 2>/dev/null | tr '\n' ' ')"
+grep -q 'AS THEY WERE' "${OUT}"; check $? "and the screen says the settings are as they were" "screen: $(grep -v '^logger' "${OUT}" | tail -2 | tr '\n' '|')"
+! grep -vE '^logger |^>>> ' "${OUT}" | grep -qiE "logger|/storage/|/var/log|exit [0-9]"; check $? "with no path, log or tool name on it" "a screen line carries one: $(grep -vE '^logger |^>>> ' "${OUT}" | grep -iE 'logger|/storage/|/var/log|exit [0-9]' | head -1)"
+rm -f "${B}/shim/tar"
+# A restore that works, asked to leave the journey marker.
+echo changed > "${ST}/.config/test/f1"
+bt restore --then-cloud; rcg=${RC}
+[ "${rcg}" -eq 0 ] && [ "$(cat "${ST}/.config/test/f1")" = "file1" ] && [ -e "${ST}/.config/.cloud-journey-pending" ]; check $? "a good restore --then-cloud restores f1 and leaves .cloud-journey-pending" "rc ${rcg}; f1='$(cat "${ST}/.config/test/f1")'; marker: $([ -e "${ST}/.config/.cloud-journey-pending" ] && echo yes || echo no)"
+
+# ---------------------------------------------------------------- c.
+echo "  c. set_setting is one rename; sort_settings refuses an empty result"
+C="${TMP}/c"; mkdir -p "${C}"
+{
+    sed -n '/^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function sort_settings() {/,/^}/p; /^function set_setting() {/,/^}/p' "${FN}"
+    printf 'J_CONF=%q; J_CONF_LOCK=%q\nlogger() { :; }\n' "${C}/system.cfg" "${C}/lock"
+} > "${C}/f.sh"
+printf 'system.hostname=X\nz.key=old\na=1\n' > "${C}/system.cfg"
+PATH="${TMP}/bbin:${PATH}" bash -c ". '${C}/f.sh'; set_setting z.key 'pa/th &with spaces&/x'; set_setting new.k 'v/&'; set_setting a default" 2>/dev/null
+[ "$(sort "${C}/system.cfg" | tr '\n' '|')" = "new.k=v/&|system.hostname=X|z.key=pa/th &with spaces&/x|" ]; check $? "values with /, & and spaces land; 'default' deletes; the hostname stays" "system.cfg: '$(tr '\n' '|' < "${C}/system.cfg")'"
+# There is no step between delete and add any more: the file must go from
+# old to new in one rename. Count the writes the function makes: a sed -i is
+# one rename; the old code did a rename and then an append.
+n_sed=$(grep -c 'sed -i -e "/^${1}=/d" -e' "${C}/f.sh"); n_app=$(grep -c 'echo "${1}=${2}" >> "${J_CONF}"' "${C}/f.sh")
+[ "${n_sed}" -ge 1 ] && [ "${n_app}" -eq 0 ]; check $? "set_setting deletes and adds in one sed -i (no separate append)" "set_setting still deletes then appends (${n_app} append, ${n_sed} single-sed)"
+: > "${C}/system.cfg"
+PATH="${TMP}/bbin:${PATH}" bash -c ". '${C}/f.sh'; set_setting k v" 2>/dev/null
+[ "$(cat "${C}/system.cfg")" = "k=v" ]; check $? "an empty system.cfg gets its one line" "system.cfg after set_setting on an empty file: '$(cat "${C}/system.cfg")'"
+printf 'b=2\na=1\n' > "${C}/system.cfg"
+PATH="${TMP}/bbin:${PATH}" bash -c ". '${C}/f.sh'; sort_settings" 2>/dev/null
+[ "$(cat "${C}/system.cfg" | tr '\n' '|')" = "b=2|a=1|" ]; check $? "sort_settings leaves a file with no hostname line alone" "system.cfg was replaced: '$(tr '\n' '|' < "${C}/system.cfg")'"
+printf 'b=2\nsystem.hostname=X\na=1\n' > "${C}/system.cfg"
+PATH="${TMP}/bbin:${PATH}" bash -c ". '${C}/f.sh'; sort_settings" 2>/dev/null
+[ "$(cat "${C}/system.cfg" | tr '\n' '|')" = "a=1|b=2|system.hostname=X|" ]; check $? "and sorts one that has it" "system.cfg: '$(tr '\n' '|' < "${C}/system.cfg")'"
+
+# ---------------------------------------------------------------- d.
+echo "  d. cloud_sync_helper and the saves scripts keep the config's last good copy; stamps survive a kill"
+D="${TMP}/d"; DS="${D}/storage"
+mkdir -p "${DS}/.config" "${DS}/.cache" "${D}/usrconfig" "${D}/repo" "${D}/shim"
+for rel in cloud_sync_helper cloud_backup cloud_sync.conf.defaults cloud_sync-rules.txt.defaults; do
+    if [ "${OLD}" -eq 1 ]; then git -C "${ROOT}" show "${BASE_REF}:${RCLONE_REL}/${rel}" > "${D}/repo/${rel}"
+    else cp "${ROOT}/${RCLONE_REL}/${rel}" "${D}/repo/${rel}"; fi
+done
+cp "${D}/repo/cloud_sync.conf.defaults" "${D}/repo/cloud_sync-rules.txt.defaults" "${D}/usrconfig/"
+# /usr as a tmpfs of binds, so /usr/config can be the fixture's and everything
+# else the host's; /storage the fixture's.
+USR_BINDS=(); for u in bin sbin lib lib64 libexec share; do [ -e "/usr/${u}" ] && USR_BINDS+=(--ro-bind "/usr/${u}" "/usr/${u}"); done
+sb() { # <cmd...>: run inside the sandbox; stdout+stderr to $OUT, rc in $RC
+    RC=$( ( setsid -w bwrap --die-with-parent --tmpfs / --tmpfs /usr "${USR_BINDS[@]}" \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${D}/usrconfig" /usr/config \
+        --bind "${DS}" /storage --ro-bind "${D}/repo" /repo --ro-bind "${D}/shim" /shim \
+        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var \
+        "$@" > "${OUT}" 2>&1; echo $? ) 2>/dev/null )
+}
+OUT="${D}/out"
+# Rules: a user rule above the catch-all.
+printf -- '+ /mine/**\n- /**\n' > "${DS}/.config/cloud_sync-rules.txt"
+printf 'SAVESPATH="/storage/roms"\nBACKUPMETHOD="copy"\n' > "${DS}/.config/cloud_sync.conf"
+sb bash /repo/cloud_sync_helper /tmp/helper.log
+[ "${RC}" -eq 0 ] && [ "$(cat "${DS}/.config/cloud_sync-rules.txt.bak")" = "$(printf -- '+ /mine/**\n- /**')" ]; check $? "the helper keeps a .bak of a whole rules file before merging" "rc ${RC}; .bak: '$(tr '\n' '|' < "${DS}/.config/cloud_sync-rules.txt.bak" 2>/dev/null | cut -c1-60)'"
+head -8 "${DS}/.config/cloud_sync-rules.txt" | grep -q '^+ /mine/\*\*$' && grep -q '^- /\*\*$' "${DS}/.config/cloud_sync-rules.txt"; check $? "and the merged file carries the user's rule first and the catch-all" "merged rules: $(head -3 "${DS}/.config/cloud_sync-rules.txt" | tr '\n' '|')"
+[ ! -e "${DS}/.config/cloud_sync-rules.txt.new" ] && [ ! -e "${DS}/.config/cloud_sync.conf.new" ]; check $? "no .new left beside either file" "a .new was left: $(ls "${DS}/.config" | tr '\n' ' ')"
+grep -q '^SETTINGS_BACKUPS=' "${DS}/.config/cloud_sync.conf" && bash -n "${DS}/.config/cloud_sync.conf" && bash -c '. "$1"; [ -n "${RCLONEOPTS}" ] && case "${RCLONEOPTS}" in *filter-from*) exit 0;; esac; exit 1' _ "${DS}/.config/cloud_sync.conf"; check $? "the conf gained the missing defaults whole (RCLONEOPTS spans lines) and parses" "conf: $(tail -2 "${DS}/.config/cloud_sync.conf" | tr '\n' '|'); parses: $(bash -n "${DS}/.config/cloud_sync.conf" 2>&1 | head -1)"
+# A truncated rules file (no catch-all) must not replace the good .bak.
+good_bak="$(cat "${DS}/.config/cloud_sync-rules.txt.bak")"
+printf -- '+ /mine/**\n+ /half' > "${DS}/.config/cloud_sync-rules.txt"
+sb bash /repo/cloud_sync_helper /tmp/helper.log
+[ "$(cat "${DS}/.config/cloud_sync-rules.txt.bak")" = "${good_bak}" ]; check $? "a truncated rules file does not replace the good .bak" ".bak now: '$(tr '\n' '|' < "${DS}/.config/cloud_sync-rules.txt.bak" | cut -c1-60)' -- the torn file was copied over it"
+# A torn conf: the .bak stays, the live file is left alone by the helper.
+good_conf="$(cat "${DS}/.config/cloud_sync.conf")"
+cp "${DS}/.config/cloud_sync.conf" "${DS}/.config/cloud_sync.conf.bak"
+printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/ROCK' > "${DS}/.config/cloud_sync.conf"
+sb bash /repo/cloud_sync_helper /tmp/helper.log
+[ "$(cat "${DS}/.config/cloud_sync.conf.bak")" = "${good_conf}" ]; check $? "a conf that does not parse does not replace the good .bak" "conf.bak now: '$(tail -1 "${DS}/.config/cloud_sync.conf.bak")'"
+! bash -n "${DS}/.config/cloud_sync.conf" 2>/dev/null; check $? "and the helper left the torn conf as it was rather than appending to it" "the helper wrote onto a torn conf: $(tail -1 "${DS}/.config/cloud_sync.conf")"
+# load_config, lifted from cloud_backup: falls back to the .bak, or refuses.
+{
+    awk '/^(log_message|write_stamp|record_last_run|say_why|why_for|clean_exit|conf_valid|load_config)\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${D}/repo/cloud_backup"
+    cat <<'EOS'
+SCRIPT_NAME=cloud_backup; LOG_FILE=/tmp/cloud_sync.log; START_TIME=$(date +%s); SYSTEM_ONLY=0; ASSUME_YES=1
+EXIT_LOCK_HELD=75; EXIT_NO_NETWORK=69; RCLONE_NET_OPTS_FALLBACK="--contimeout 15s"; METHOD_OVERRIDE=""; EXTRA_UPDATE=0; LOG_LEVEL=INFO
+WHY_SAID=0; LAST_WHY=""
+load_config
+echo "LOADED SAVESPATH=${SAVESPATH}"
+EOS
+} > "${D}/repo/load.sh"
+sb bash /repo/load.sh
+grep -q '^LOADED SAVESPATH=/storage/roms$' "${OUT}" && bash -n "${DS}/.config/cloud_sync.conf" 2>/dev/null; check $? "load_config on a torn conf falls back to the .bak and goes on" "rc ${RC}; out: $(grep -v '^\[' "${OUT}" | tail -2 | tr '\n' '|'); conf parses: $(bash -n "${DS}/.config/cloud_sync.conf" 2>/dev/null && echo yes || echo no)"
+printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/ROCK' > "${DS}/.config/cloud_sync.conf"; rm -f "${DS}/.config/cloud_sync.conf.bak" "${DS}/.cache/cloud_sync/last-backup"
+sb bash /repo/load.sh
+[ "${RC}" -eq 1 ] && ! grep -q '^LOADED' "${OUT}"; check $? "with no .bak it refuses (rc 1) instead of running with half a config" "rc ${RC}; out: $(grep -v '^\[' "${OUT}" | tail -2 | tr '\n' '|')"
+grep -q "^>>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ$" "${OUT}"; check $? "and says why on the protocol line" "no >>> why line; out: $(grep -v '^\[' "${OUT}" | tr '\n' '|' | cut -c1-200)"
+stamp="$(cat "${DS}/.cache/cloud_sync/last-backup" 2>/dev/null)"
+[ "$(echo "${stamp}" | awk '{print $2, $3}')" = "1 YOUR_CLOUD_SYNC_SETTINGS_COULDN'T_BE_READ" ]; check $? "the last-backup stamp carries rc 1 and the why token as its third field" "stamp: '${stamp}'"
+# write_stamp killed before its rename: the previous stamp stands.
+mkdir -p "${DS}/.cache/cloud_sync"; printf '%s\n' "1700000000 0" > "${DS}/.cache/cloud_sync/last-backup"
+{
+    awk '/^(write_stamp|record_last_run)\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${D}/repo/cloud_backup"
+    cat <<'EOS'
+SYSTEM_ONLY=0; EXIT_LOCK_HELD=75; EXIT_NO_NETWORK=69; LAST_WHY=""
+mv() { kill -9 -- "-$(cut -d' ' -f5 /proc/self/stat)"; sleep 5; }
+record_last_run 3
+EOS
+} > "${D}/repo/stamp.sh"
+sb bash /repo/stamp.sh
+[ "$(cat "${DS}/.cache/cloud_sync/last-backup")" = "1700000000 0" ]; check $? "a stamp writer killed before its rename leaves the previous stamp (rc ${RC})" "last-backup: '$(cat "${DS}/.cache/cloud_sync/last-backup")' -- written in place, no rename step to die before"
+ls "${DS}/.cache/cloud_sync"/last-backup.tmp.* >/dev/null 2>&1; check $? "and its temp file beside it, not an empty stamp" "no temp file: $(ls "${DS}/.cache/cloud_sync" | tr '\n' ' ')"
+
+# ---------------------------------------------------------------- e.
+echo "  e. nothing a screen can show carries an exit code, a log path, a tool's name or a flag"
+# The harness's FORBIDDEN regex (docs/audits/2026_09_10-graceful-degradation/
+# kill-fixtures-design.md) over every string literal an echo, a screen-bound
+# log_message, a fail/note/why can print. Log-only lines are skipped: a
+# log_message whose second argument is "false" in the saves scripts, every
+# log_message in the content scripts (theirs writes only to the file), and
+# any line redirected into a file or to stderr. cloud_sync_helper prints
+# nothing to a screen at all and is not scanned.
+E_SRC="${TMP}/e"; mkdir -p "${E_SRC}"
+for rel in "${RCLONE_REL}"/cloud_backup "${RCLONE_REL}"/cloud_restore "${RCLONE_REL}"/cloud_content_backup "${RCLONE_REL}"/cloud_content_restore "${RCLONE_REL}"/cloud_saves_root "${BT_REL}"; do
+    if [ "${OLD}" -eq 1 ]; then git -C "${ROOT}" show "${BASE_REF}:${rel}" > "${E_SRC}/$(basename "${rel}")"; else cp "${ROOT}/${rel}" "${E_SRC}/"; fi
+done
+hits=$(python3 - "${E_SRC}" <<'EOS'
+import re, sys, os
+FORBIDDEN = re.compile(
+    r"(?i)(\bexit(ed)?(\s+code)?\s*[:=]?\s*\(?-?\d+\)?|\brc\s*=\s*-?\d+|/var/log\S*|\S+\.log\b"
+    r"|\blogger\b|\bjournalctl\b|\brclone\b|\bstderr\b|\bsysexits\b|\bEX_[A-Z]+\b|\bSIG(TERM|KILL|INT)\b"
+    r"|\berrno\b|\bpid\s+\d+|\bflock\b|\bsentinel\b|\bcloud_[a-z_]+\b|\bbackuptool\b|(^|\s)--[a-z][a-z-]+"
+    r"|\bCOMPLETED WITH ERRORS\b)")
+d = sys.argv[1]; n_hits = 0
+for f in sorted(os.listdir(d)):
+    content_script = f.startswith("cloud_content_")
+    for n, line in enumerate(open(os.path.join(d, f)), 1):
+        t = line.strip()
+        m = re.match(r'(echo(\s+-e)?|log_message|fail|note|why)\s+(".*?(?<!\\)"|\'.*?\')(.*)$', t)
+        if not m: continue
+        cmd, _, lit, rest = m.groups()
+        if cmd == "log_message" and (content_script or re.search(r'^\s*"false"', rest)): continue
+        if re.search(r'>>?\s*"?\$?\{?(LOG_FILE|log_file)|>&2|>>?\s*"?/', rest): continue
+        text = lit[1:-1]
+        if text.startswith(">>> ") and not text.startswith(">>> why"): continue
+        mm = FORBIDDEN.search(text)
+        if mm:
+            n_hits += 1
+            print(f"      {f}:{n}: [{mm.group(0).strip()}] {text[:100]}")
+print(f"HITS={n_hits}")
+EOS
+)
+echo "${hits}" | grep -v '^HITS='
+n_hits=$(echo "${hits}" | sed -n 's/^HITS=//p')
+[ "${n_hits}" = "0" ]; check $? "no screen line matches FORBIDDEN across the six scripts" "${n_hits} screen line(s) match FORBIDDEN (listed above)"
+
+echo
+if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

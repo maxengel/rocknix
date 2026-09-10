@@ -33,6 +33,7 @@ in `.githooks/pre-push` are the same list; change one and change the other.
 - **Fork-only tools** — `tools/fork-publish-release`, `tools/cloud-test-backend`,
   `tools/cloud-round-trip`, `tools/cloud-capture-stamp-test` (its device-less stamp
   check), `tools/wait-lock-test` (the settings lock's device-less check, #98),
+  `tools/last-good-scripts-test` (the last-known-good writers' device-less check, #105),
   `tools/lint-audit-artifacts`, `tools/vm-visual-qa`,
   `tools/vm-serial`, `tools/vm-pair`, `tools/vm-walks/`,
   `tools/fork-worktree`, `tools/fork-newdrive`, `tools/cloud-census` (the Gate 12 census reader, #21/#22), `tools/council/` (the council Facilitator, #70)
