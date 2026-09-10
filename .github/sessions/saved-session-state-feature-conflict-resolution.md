@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-10T05:14:55Z
+> **Saved**: 2026-09-10T05:38:52Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). **#105 graceful degradation, tranche A, third VM round.** Ten defects found and fixed on the VM today (seven from frames, three from the KILL cells); `next` is `e12bc31290` (code head `9847876563`, ES `5a3759cde`), pushed. A GENERIC_X64 build of `9847876563` is in progress (`tmp/build-x64-10.log`). Two earlier builds (`854989a639`, `70c2ca1af1`) verified at 1280x800 and 640x480; #105 has 7 of 9 boxes ticked with frames. Nothing staged on a handheld: both on `d574edf975`; `12fd47e341` HELD, superseded.
+Epic #11 (cloud saves). **#105 tranche A is verified on the VM and built for H700; waiting on the maintainer's yes to stage.** `next` = `4dbe0bb3a5` (code head `7eb713bbd9`, ES `5a3759cde`), pushed. GENERIC_X64 `7eb713bbd9` verified (frames, suite PASSED, LINK1-7 PASS, KILL3/10/11/12/13/15/16/18 PASS); H700 `7eb713bbd9` at `/workspace/artifacts/rocknix-images/h700-all-20260910-7eb713bbd9/` (tar sha `2ead84bc1e6c97af…`). Both handhelds are on `d574edf975`; `12fd47e341` HELD and superseded. **Ask before staging and before each reboot, per device (D-QA-011/008).**
 
 ## Completed This Session
 
@@ -24,21 +24,15 @@ Epic #11 (cloud saves). **#105 graceful degradation, tranche A, third VM round.*
 
 ## In Progress
 
-- **Third build** (`9847876563`, ES `5a3759cde`: interrupted-restore message; scripts `90e18fdb0d`: set_setting awk+rename, restore revert at boot, rotation by name): background task, log `tmp/build-x64-10.log`. To verify: boot guest d (`tmp/vm-cycle-d.sh <img> tmp/vm-d-9847876563.qcow2`), plant `echo reverted > /storage/.config/.restore-reverted`, reboot, frame the dialog; rows spot check; then guest c re-cycle + `tools/cloud-round-trip ... --link` and guest d `--only KILL3,KILL10,KILL11,KILL12,KILL13,KILL15,KILL16,KILL18 --serial-socket ... --monitor-socket ...` for a clean PASSED; copy artifacts to `/workspace/artifacts/rocknix-images/x64-all-20260910-9847876563/`.
-- **Then the H700 build** from `rocknix.worktrees/devices` (at `9847876563`; clear `.stamps/{emulationstation,rclone,rocknix}` + `.stamps/image/build_target`), then ASK per device before staging and before each reboot.
-
-- **GENERIC_X64 build of `c6e4fc3a9c`** (ES `28631cf77`): background task, log `~/.claude/jobs/52255bdf/tmp/build-x64-9.log`; artifacts go to `/workspace/artifacts/rocknix-images/x64-all-20260910-c6e4fc3a9c/`.
-  - **What remains**: boot guest d from it (`tmp/vm-cycle-d.sh <img.gz> tmp/vm-d-c6e4fc3a9c.qcow2`), remote → `10.0.2.2:9011`, run `tmp/walks/e-all.steps` (card, rows, dialog, picker) and confirm rows read `LAST … - COULDN'T FINISH` after a run and the dialog carries the why; then reboot with `--res 640x480` and frame rows, dialog, card, page (`tmp/walks/backup-saves-fail-retry.steps` from the hub), picker.
-- **KILL harness agent** (`a399d79b5152d3bbf`, worktree `last-good-harness`, uncommitted `tools/cloud-round-trip` + `tools/vm-walks/ui-settings-toggle.steps`): running the suite on guest a (10022) and KILL13 on guest c (10024). Its `tools/cloud-round-trip` edits will conflict with my scan step (`run_steps`, before "folder seeding") — resolve as union.
-- **Guest d** is on `854989a639` (port 10025, sockets `/tmp/rocknix-qemu-{monitor,serial}-d.sock`), remote at 9011, stamps planted by hand (`last-backup`, `last-sync-manual`, `last-restore`), hostname sanitised to `GENERICX64` by hostnamed (#106).
+- Nothing running. Guests: c (10024) and d (10025) on `7eb713bbd9`/`9847876563`, remotes at 9010; WebDAV backend at 200k.
 
 ## Next Steps
 
-1. When the build finishes: copy artifacts, boot guest d, run the e-all walk, read frames (rows + dialog are the two unverified surfaces), then the 640x480 pass. Tick #105's acceptance boxes with frame evidence and comment #105 with the six findings.
-2. After the KILL agent reports: merge `feature/last-good-harness` into next (union on `tools/cloud-round-trip`), run the harness (suite incl. the new scan step, LINK1-7, CAP) against `c6e4fc3a9c` on a guest; place its rule paragraph.
-3. H700 build of `c6e4fc3a9c` from `rocknix.worktrees/devices` (already at `c6e4fc3a9c`): clear `.stamps/{emulationstation,rclone,rocknix}` + `.stamps/image/build_target`; then **ASK** before staging and before each reboot (D-QA-008/011), naming the device. Both handhelds on `d574edf975`.
-4. Then #104 (persistent journal/logs, watchdog, crash store) and #105 tranche B (P2/P3). Open decisions for the maintainer: #100, #89, #92, #42 docs; #106 owner decision (NM `hostname-mode=none`).
-5. Worktree cleanup: `scan-refused`, `sysconfig-valid`, `row-one-line-pin` (all merged) can go via `tools/fork-worktree remove`; ES worktree `row-one-line` merged.
+1. **Maintainer decision**: stage H700 `7eb713bbd9` on the RG SP and/or RG35XX SP (`tmp/deploy.sh` pattern: scp the tar to `~/.update`, verify the device-side sha, then ask again before the reboot, naming the device).
+2. After the handhelds run it: the maintainer's four-item punch list; watch `journalctl -t chksysconfig` on first boot (record refreshed at boot and shutdown now).
+3. #105 remaining boxes: `COMPLETED WITH GAPS` on screen (needs a partial-run fixture) and the harness's positive vocabulary match; tranche B (P2/P3); KILL1/2/4/5 (endpoint cells) and KILL6-9/14/17 not run/implemented on the new scripts.
+4. #104 (persistent journal/logs, watchdog, crash store); #106 (NM hostname rewrite) owner decision; open decisions #100, #89, #92, #42.
+5. Worktrees left: `row-one-line-pin` (pins), `last-good-harness` (merged; remove), ES `row-one-line` (merged).
 
 ## Key Files Modified
 
