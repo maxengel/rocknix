@@ -169,6 +169,11 @@ printf 'system.hostname=X\n' > "${CFGF}"; cp "${CFGF}" "${CFGF}.backup"
 EXTRACT_ROOT="${A}/root" PATH="${A}/bin:${TMP}/bbin:${PATH}" bash -c ". '${A}/fns.sh'; verify" 2>"${A}/err"
 [ "$(cat "${A}/root/storage/.config/test/x.cfg")" = "LIVE" ] && [ ! -e "${A}/cfg/.restore-in-progress" ] && [ "$(cat "${A}/cfg/.restore-reverted" 2>/dev/null)" = "reverted" ]; check $? "a cut-off restore is undone at boot: the copy is back, the marker gone, 'reverted' left for the screen" "x.cfg='$(cat "${A}/root/storage/.config/test/x.cfg")'; marker: $([ -e "${A}/cfg/.restore-in-progress" ] && echo present || echo gone); said: '$(cat "${A}/cfg/.restore-reverted" 2>/dev/null)'"
 rm -f "${A}/cfg/.restore-reverted"
+# The copy's folder not mounted yet (sysinit runs before /storage/roms is
+# bound): the marker stays for the later verify, nothing is said.
+printf '%s\n' "${A}/not-mounted-yet/pre-restore.tar.gz" > "${A}/cfg/.restore-in-progress"
+EXTRACT_ROOT="${A}/root" PATH="${A}/bin:${TMP}/bbin:${PATH}" bash -c ". '${A}/fns.sh'; verify" 2>"${A}/err"
+[ -e "${A}/cfg/.restore-in-progress" ] && [ ! -e "${A}/cfg/.restore-reverted" ] && grep -q 'not mounted yet' "${A}/err"; check $? "a copy whose folder is not mounted yet is left for the later verify, marker kept, nothing said" "marker: $([ -e "${A}/cfg/.restore-in-progress" ] && echo present || echo gone); said: '$(cat "${A}/cfg/.restore-reverted" 2>/dev/null)'; log: $(grep -c 'not mounted yet' "${A}/err") line(s)"
 printf '%s\n' "${A}/cfg/missing.tar.gz" > "${A}/cfg/.restore-in-progress"
 EXTRACT_ROOT="${A}/root" PATH="${A}/bin:${TMP}/bbin:${PATH}" bash -c ". '${A}/fns.sh'; verify" 2>"${A}/err"
 [ ! -e "${A}/cfg/.restore-in-progress" ] && [ "$(cat "${A}/cfg/.restore-reverted" 2>/dev/null)" = "failed" ]; check $? "with the copy missing the marker is cleared and 'failed' is said instead" "marker: $([ -e "${A}/cfg/.restore-in-progress" ] && echo present || echo gone); said: '$(cat "${A}/cfg/.restore-reverted" 2>/dev/null)'"

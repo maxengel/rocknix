@@ -103,6 +103,17 @@ finish_restore() {
   local mark="${CONFIG_ROOT}/.restore-in-progress" said="${CONFIG_ROOT}/.restore-reverted" snap=""
   [ -f "${mark}" ] || return 0
   snap="$(head -n 1 "${mark}" 2>/dev/null)"
+  # The copy lives under the settings backups folder, which is on
+  # /storage/roms -- a bind mount rocknix-automount makes at about 2.5 s,
+  # after the sysinit verify has run at 1.7 s (D-CLOUD-080). A copy whose
+  # folder is not there yet is not missing, it is not mounted yet: leave the
+  # marker for the verify the autostart chain runs once the mounts are up
+  # (001-setup), and say nothing. Only a folder that is there without the
+  # copy in it, or a copy that does not list, is a failure to report.
+  if [ -n "${snap}" ] && [ ! -d "$(dirname "${snap}")" ]; then
+    say "a settings restore was cut off; the copy taken before it (${snap}) is on a folder not mounted yet, so it goes back at the next check this boot"
+    return 0
+  fi
   if [ -n "${snap}" ] && [ -f "${snap}" ] && tar -tzf "${snap}" >/dev/null 2>&1 \
      && tar -xzf "${snap}" -C "${EXTRACT_ROOT:-/}" >/dev/null 2>&1; then
     say "a settings restore was cut off; the copy taken before it was put back (${snap})"
