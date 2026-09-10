@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-10T06:07:28Z
+> **Saved**: 2026-09-10T07:25:23Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). **#105 tranche A is on both handhelds.** H700 `7eb713bbd9` (tar sha `2ead84bc1e6c…`) was staged and both devices rebooted on the maintainer's authorisation (2026-09-10 05:56Z); both are back on it with settings intact, last-good records written, startup sync completed. `next` = `65f3e7e5e7` (code head `7eb713bbd9`, ES `5a3759cde`), pushed. The maintainer's four-item punch list on the devices is next; the RG SP's settings restore was done 2026-09-09 (not pending).
+Epic #11 (cloud saves). **A second round of maintainer-found work, on top of the deployed `7eb713bbd9`.** They played a game on the RG SP and the exit sync did not upload: root cause is #103's `--low-level-retries 2` against Dropbox's per-folder write lock (#107, D-CLOUD-083) -- the exit sync has been failing for every save already in the cloud since #103 shipped. Six more changes came out of their reading of the surfaces, filed as #107-#112 and built: pass-or-fail (#111), plain language (#108), provider + CHECK CONNECTION (#110), the device name shown not enforced (#106), row consistency (#112). `next` is `736e5a50f2`; GENERIC_X64 `ae3d602cf2` is verified on the VM with frames. **Nothing new is on a handheld** -- both still run `7eb713bbd9`, and the maintainer's instruction for this round was "generate a build once everything's verified working, but please don't transfer anything over".
 
 ## Completed This Session
 
@@ -24,15 +24,17 @@ Epic #11 (cloud saves). **#105 tranche A is on both handhelds.** H700 `7eb713bbd
 
 ## In Progress
 
-- Nothing running. Guests: c (10024) and d (10025) on `7eb713bbd9`/`9847876563`, remotes at 9010; WebDAV backend at 200k.
+- **Plain-language pass over the scripts** (#108's other half): subagent on `feature/script-language`, worktree `rocknix.worktrees/script-language`. It was told not to touch machine-readable output (`key=value`, `OK`/`FAIL`/`NONE` from `cloud_setup --check`, the `>>> ` protocol lines, `MISSING `/`REFUSING:` prefixes). Merge its branch, then rebuild.
+- **Full suite on guest d** against `ae3d602cf2`, including the new replace fixture (`tmp/suite-d-final.log`).
+- **Not yet built: H700.** Do it after the script language lands, from `rocknix.worktrees/devices` (clear `.stamps/{emulationstation,rclone,rocknix,systemd,networkmanager}` + `.stamps/image/build_target`).
 
 ## Next Steps
 
-1. The maintainer tests on the handhelds (the four-item punch list). Devices: RG SP 192.168.1.175 (hostname reads `RGSP`), RG35XX SP 192.168.1.81 (hostname reads `ROCKNIX` this boot -- #106's race, not the build). No reboots without asking (D-QA-008).
-2. #106: decide `hostname-mode=none` for NetworkManager and quoting in `network-base-setup`; `userconfig.service` takes ~9 s on H700, which is why NM wins the hostname race -- worth its own look.
-3. #105 remaining boxes: `COMPLETED WITH GAPS` on screen (needs a partial-run fixture) and the harness's positive vocabulary match; tranche B (P2/P3); KILL1/2/4/5 on the new scripts; KILL6-9/14/17 not implemented.
-4. #104 (persistent journal/logs, watchdog, crash store); open decisions #100, #89, #92, #42.
-5. Worktrees left: `row-one-line-pin` (pins), `last-good-harness` (merged; remove with `tools/fork-worktree remove`), ES `row-one-line` (merged).
+1. Merge `feature/script-language`, rebuild GENERIC_X64, re-frame the card (its line 2 comes from the scripts' `say_why`, so the plain-language pass changes it), then build H700.
+2. **Ask** before staging anything on either handheld, per device (D-QA-008/011). Both are on `7eb713bbd9`.
+3. The RG SP's save from tonight is on the device only -- the cloud copy is from 2026-09-09. Offer to push it up once the fixed build is on the device, or by hand sooner if they want it.
+4. Tell them to re-enter the RetroAchievements password (#109); it has been empty since the 2026-09-09 hand restore.
+5. Open: #109's acceptance work (notice a username with no password), #112's remaining question, the audits' P2/P3 items the first subagent never got to (it died on a Fable credit limit): the journey continuation's console hop, the GuiMsgBox duplicate CHOOSE prompt, the launch-gate wording, and `CHANGE CLOUD FOLDER`'s "cloud remote" jargon.
 
 ## Key Files Modified
 
