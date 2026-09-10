@@ -198,6 +198,13 @@ finish() {
     } > "${CACHE}/.last-capture.$$" 2>/dev/null \
         && mv -f "${CACHE}/.last-capture.$$" "${CACHE}/last-capture" 2>/dev/null \
         || rm -f "${CACHE}/.last-capture.$$" 2>/dev/null
+    # A run that completed is the last known good state; the manifests moved
+    # aside as unreadable before it (manifest-<id>.json.corrupt-<epoch>) are
+    # the previous one and go (D-CLOUD-078). The log line that set each aside
+    # stays.
+    if [ "${rc}" = "0" ] && [ -n "${MANIFEST:-}" ]; then
+        rm -f "${MANIFEST}".corrupt-* 2>/dev/null
+    fi
     if [ "${rc}" != "0" ]; then
         {
             cat "${CACHE}/capture-failures" 2>/dev/null

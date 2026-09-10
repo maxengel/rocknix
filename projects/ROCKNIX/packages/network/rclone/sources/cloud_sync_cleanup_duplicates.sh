@@ -18,6 +18,6 @@ awk '
     next
   }
   { print }
-' "$CONF_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$CONF_FILE"
-
-echo "Duplicate variable assignments removed from $CONF_FILE."
+' "$CONF_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$CONF_FILE" \
+  && echo "Duplicate variable assignments removed from $CONF_FILE." \
+  || { rm -f "$TMP_FILE"; echo "Could not clean $CONF_FILE; left as it was." >&2; exit 1; }
