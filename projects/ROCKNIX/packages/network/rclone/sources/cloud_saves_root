@@ -122,9 +122,10 @@ case "${1:-}" in
             # writer, and it must not pass the transfer unchecked (the #83
             # guard failing open). Refuse until a good run rewrites it, or
             # the owner accepts the card.
-            echo ">>> why THE SAVES FOLDER'S CARD COULDN'T BE CHECKED"
-            echo "The record of which card your saves were last synced from is unreadable, so this transfer can't tell whether the saves folder is on the right card."
-            echo "Nothing was transferred. If both cards are in place, accept the current card and try again."
+            echo ">>> why COULDN'T TELL WHICH CARD YOUR SAVES ARE ON"
+            echo "We can't tell which card your saves were last synced from, so nothing was transferred."
+            echo "If both cards are in the device, try again."
+            logger -t cloud_saves_root "refused: the record at ${RECORD} exists and is empty; to accept the current card deliberately run: cloud_setup --accept-saves-root" 2>/dev/null
             exit 1
         fi
         if [ -s "${RECORD}" ]; then
@@ -140,9 +141,9 @@ case "${1:-}" in
                 # then the reason and what to do, in the player's words. How
                 # to accept the new card deliberately is a command, so it goes
                 # to the log, not the screen -- no menu row offers it yet.
-                echo ">>> why THE SAVES FOLDER IS ON A DIFFERENT CARD"
-                echo "The saves folder $(saves_path) is on a different card than the last time saves were synced (now ${now}, last time ${last})."
-                echo "Nothing was transferred. If the second card is missing, put it back and try again."
+                echo ">>> why YOUR SAVES ARE ON A DIFFERENT CARD"
+                echo "Your saves are on a different card than the last time they were synced."
+                echo "Nothing was transferred. If your second card is missing, put it back and try again."
                 logger -t cloud_saves_root "refused: saves root ${now}, recorded ${last}; to accept the current card deliberately run: cloud_setup --accept-saves-root" 2>/dev/null
                 exit 1
             fi
@@ -153,9 +154,10 @@ case "${1:-}" in
     record)
         now=$(identity)
         if [ -n "${2:-}" ] && [ "${now}" != "${2}" ]; then
-            echo ">>> why THE SAVES FOLDER CHANGED CARDS DURING THE TRANSFER"
-            echo "The saves folder $(saves_path) changed cards during the transfer (it started on ${2} and is on ${now} now). Files written in that time may be on the other card."
-            echo "Nothing was recorded. Run the transfer again once the cards have settled."
+            echo ">>> why YOUR SAVES CHANGED CARDS PART-WAY THROUGH"
+            echo "Your saves changed cards part-way through, so some files may have gone to the other card."
+            echo "Nothing was recorded. Try the transfer again once both cards are back in place."
+            logger -t cloud_saves_root "refused to record: saves root $(saves_path) started on ${2} and is on ${now} now" 2>/dev/null
             exit 1
         fi
         write_record "${now}"

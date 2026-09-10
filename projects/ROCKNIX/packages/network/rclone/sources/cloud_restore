@@ -107,7 +107,7 @@ CLOUD_SYNC_LOCK=/var/run/cloud_sync.lock
 take_cloud_lock() {
     exec 9>"${CLOUD_SYNC_LOCK}"
     if ! flock -n 9; then
-        echo "Another cloud sync is already running. Skipped."
+        echo "Skipped: another cloud sync is already running. Try again when it's done."
         log_message "skipped: another cloud sync holds ${CLOUD_SYNC_LOCK}" "false"
         exit "${EXIT_LOCK_HELD}"
     fi
@@ -128,7 +128,7 @@ has_default_route() {
 
 check_network_link() {
     if ! has_default_route; then
-        echo "No network connection. Skipped."
+        echo "Skipped: there's no network connection. Try again when you're online."
         log_message "skipped: no default route, nothing to restore from" "false"
         exit "${EXIT_NO_NETWORK}"
     fi
@@ -458,7 +458,7 @@ clean_exit() {
 check_rclone_config() {
     if [ ! -e "/storage/.config/rclone/rclone.conf" ]; then
         log_message "Your cloud storage isn't set up yet. Set it up under GAME SETTINGS > MANAGE CLOUD STORAGE first." "true" "ERROR"
-        say_why "YOUR CLOUD STORAGE ISN'T SET UP"
+        say_why "YOUR CLOUD STORAGE ISN'T SET UP YET"
         sleep 3
         clean_exit 1
     fi
@@ -482,8 +482,8 @@ check_internet() {
     fi
 
     if ping -q -c1 -W 3 1.1.1.1 >/dev/null 2>&1 || ping -q -c1 -W 3 8.8.8.8 >/dev/null 2>&1; then
-        log_message "Your cloud storage did not respond.\nCheck that it is still set up and that its sign-in has not expired." "true" "ERROR"
-        say_why "YOUR CLOUD DIDN'T ANSWER. ITS SIGN-IN MAY HAVE EXPIRED"
+        log_message "Couldn't reach your cloud.\nYou may need to sign in again, then try again." "true" "ERROR"
+        say_why "COULDN'T REACH YOUR CLOUD. YOU MAY NEED TO SIGN IN AGAIN"
         sleep 3
         clean_exit 1
     fi
@@ -494,7 +494,7 @@ check_internet() {
     # NO NETWORK CONNECTION for it, where a 1 read as FAILED and sent
     # somebody to a log to learn that nothing had gone wrong. Nothing has
     # run yet, so no stamp, as for the other sentinel exits.
-    log_message "You're not currently connected to the internet.\nPlease verify your settings and then try again." "true" "ERROR"
+    log_message "You're not online right now.\nCheck your connection and try again." "true" "ERROR"
     log_message "skipped: no network -- the remote and the internet both unreachable before the run" "false"
     sleep 3
     exit "${EXIT_NO_NETWORK}"
@@ -526,7 +526,7 @@ network_lost_during_run() {
     # The code goes to the log; the screen gets the words (D-UI-028).
     if ! has_default_route; then
         log_message "the network went away during ${what} (rclone exit ${rc}): no default route now" "false" "ERROR"
-        log_message "The network went away during ${what}." "true" "ERROR"
+        log_message "Lost the network during ${what}. Try again when you're online." "true" "ERROR"
         clean_exit "${EXIT_NO_NETWORK}"
     fi
     if rclone lsd "${REMOTENAME}" "${RCLONE_PROBE_OPTS[@]}" >/dev/null 2>&1; then
@@ -535,12 +535,12 @@ network_lost_during_run() {
     fi
     if ping -q -c1 -W 3 1.1.1.1 >/dev/null 2>&1 || ping -q -c1 -W 3 8.8.8.8 >/dev/null 2>&1; then
         log_message "the cloud stopped responding during ${what} (rclone exit ${rc}); the internet answers" "false" "ERROR"
-        log_message "Your cloud storage stopped answering during ${what}.\nCheck that it is still set up and that its sign-in has not expired." "true" "ERROR"
+        log_message "Your cloud stopped answering during ${what}.\nYou may need to sign in again, then try again." "true" "ERROR"
         say_why "YOUR CLOUD STOPPED ANSWERING"
         return 0
     fi
     log_message "the network went away during ${what} (rclone exit ${rc}): nothing answers now" "false" "ERROR"
-    log_message "The network went away during ${what}." "true" "ERROR"
+    log_message "Lost the network during ${what}. Try again when you're online." "true" "ERROR"
     clean_exit "${EXIT_NO_NETWORK}"
 }
 
@@ -589,13 +589,13 @@ load_config() {
             cp -f "${conf}.bak" "${conf}.tmp.$$" && mv -f "${conf}.tmp.$$" "${conf}"
         else
             rm -f "${conf}.tmp.$$" 2>/dev/null
-            log_message "Your cloud sync settings couldn't be read, and there is no good copy to fall back to. Set up cloud storage again under GAME SETTINGS > MANAGE CLOUD STORAGE." "true" "ERROR"
+            log_message "Your cloud sync settings couldn't be read, and there's no good copy to fall back on.\nNothing was changed. Set up cloud storage again under GAME SETTINGS > MANAGE CLOUD STORAGE." "true" "ERROR"
             say_why "YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"
             clean_exit 1
         fi
     fi
     if ! source "${conf}"; then
-        log_message "Your cloud sync settings couldn't be read. Set up cloud storage again under GAME SETTINGS > MANAGE CLOUD STORAGE." "true" "ERROR"
+        log_message "Your cloud sync settings couldn't be read. Nothing was changed.\nSet up cloud storage again under GAME SETTINGS > MANAGE CLOUD STORAGE." "true" "ERROR"
         say_why "YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"
         clean_exit 1
     fi
@@ -606,8 +606,9 @@ load_config() {
     # give the saves tier two local trees, so every saves transfer refuses
     # until the setting is removed. The helper has already logged it.
     if [ -n "${RESTOREPATH:-}" ] && [ "${RESTOREPATH%/}" != "${SAVESPATH%/}" ]; then
-        log_message "An older setting still points restores at ${RESTOREPATH}, but saves have one folder now (${SAVESPATH}). Remove RESTOREPATH from the cloud sync settings file, then try again." "true" "ERROR"
-        say_why "AN OLD RESTORE-FOLDER SETTING IS STILL SET"
+        log_message "RESTOREPATH=${RESTOREPATH} differs from SAVESPATH=${SAVESPATH}; saves have one local folder since D-CLOUD-040" "false" "ERROR"
+        log_message "An old setting is still sending restores to a different folder, and saves have just one folder now.\nNothing was changed. Remove the RESTOREPATH line from your cloud sync settings, then try again." "true" "ERROR"
+        say_why "AN OLD FOLDER SETTING IS IN THE WAY"
         clean_exit 1
     fi
 
@@ -780,14 +781,14 @@ report_rclone_error() {
     local words
 
     case $exit_code in
-        0) log_message "${operation}: completed" "true"; return ;;
-        9) log_message "${operation}: completed, nothing needed moving" "true"; return ;;
+        0) log_message "${operation}: completed." "true"; return ;;
+        9) log_message "${operation}: completed, nothing needed moving." "true"; return ;;
     esac
     log_message "${operation}: rclone exit ${exit_code}" "false" "ERROR"
     words=$(why_for "${exit_code}" | tr 'A-Z' 'a-z')
     case $exit_code in
-        6) log_message "${operation} couldn't finish everything: ${words}." "true" "WARN" ;;
-        *) log_message "${operation} couldn't finish: ${words}." "true" "ERROR" ;;
+        6) log_message "${operation}: ${words}." "true" "WARN" ;;
+        *) log_message "${operation}: ${words}." "true" "ERROR" ;;
     esac
     say_why "$(why_for "${exit_code}")"
 }
@@ -858,11 +859,11 @@ prune_replaced_local() {
 restore_game_saves() {
     WHY_SAID=0
     log_message "====================================" "true"
-    log_message "STARTING GAME SAVES RESTORE" "true"
+    log_message "RESTORING YOUR GAME SAVES" "true"
     echo ">>> unit SAVES||"
     log_message "====================================" "true"
     
-    log_message "Starting restore from ${REMOTENAME}${SAVES_REMOTE} to ${SAVESPATH}"
+    log_message "Starting restore from ${REMOTENAME}${SAVES_REMOTE} to ${SAVESPATH}" "false"
     log_message "Restore started at $(date)" "false"
 
     # Which card is the saves folder on? (#83; see cloud_backup for the case.)
@@ -890,8 +891,8 @@ restore_game_saves() {
     local remote_check_status=$?
     if [ $remote_check_status -ne 0 ]; then
         network_lost_during_run "$remote_check_status" "the saves restore"
-        log_message "Your cloud folder ${SAVES_REMOTE} couldn't be reached." "true" "ERROR"
-        report_rclone_error $remote_check_status "Reaching the saves folder"
+        log_message "Couldn't reach your saves folder in the cloud." "true" "ERROR"
+        report_rclone_error $remote_check_status "Reaching your saves folder"
         return $remote_check_status
     fi
     
@@ -997,7 +998,7 @@ restore_game_saves() {
     if [ -n "${root_note}" ]; then
         relay_refusal "${root_note}"
     else
-        report_rclone_error $RESTORE_STATUS "Game saves restore"
+        report_rclone_error $RESTORE_STATUS "Restoring your saves"
     fi
     
     return $RESTORE_STATUS
@@ -1010,7 +1011,7 @@ restore_system_files() {
     WHY_SAID=0
     echo
     log_message "====================================" "true"
-    log_message "STARTING SETTINGS BACKUP FILE RESTORE" "true"
+    log_message "RESTORING YOUR SETTINGS BACKUP" "true"
     # The transfer page's marker for this phase. The label is the item's
     # name on the page (D-UI-022: settings) -- the word cloud_backup and
     # EmulationStation announce for the same item, so a restore run reads
@@ -1026,18 +1027,18 @@ restore_system_files() {
         
         if [ $remote_ls_status -ne 0 ]; then
             network_lost_during_run "$remote_ls_status" "the settings restore"
-            log_message "Your cloud's settings folder couldn't be reached." "true" "ERROR"
-            report_rclone_error $remote_ls_status "Reaching the settings folder"
+            log_message "Couldn't reach your settings folder in the cloud." "true" "ERROR"
+            report_rclone_error $remote_ls_status "Reaching your settings folder"
             return $remote_ls_status
         fi
         
         # Nothing to restore is not a failure; see backup_system_files.
         if [ -z "${REMOTE_FILES}" ]; then
-            log_message "There are no settings backup files to restore" "true" "WARN"
+            log_message "There's no settings backup in the cloud yet." "true" "WARN"
             return 0
         fi
         
-        log_message "Starting restore of settings backup files from ${REMOTENAME}${SETTINGS_REMOTE} to ${SETTINGS_BACKUPS}"
+        log_message "Starting restore of settings backup files from ${REMOTENAME}${SETTINGS_REMOTE} to ${SETTINGS_BACKUPS}" "false"
         log_message "Settings backup file restore started at $(date)" "false"
         
         # Ensure local target directory exists before attempting restore
@@ -1125,7 +1126,7 @@ restore_system_files() {
         fi
         if [ -z "${restore_src}" ] && [ -n "${prior_name}" ] && folder_has_archives "${prior_src}"; then
             restore_src="${prior_src}"
-            log_message "Using backups saved under this device's previous folder name (${prior_name})" "true"
+            log_message "Using the backups saved under this device's old name (${prior_name})." "true"
         fi
         if [ -z "${restore_src}" ] && [ -n "${previous_names}" ]; then
             local previous_name
@@ -1139,7 +1140,8 @@ restore_system_files() {
                 [ "${previous_name}" = "${prior_name}" ] && continue
                 if folder_has_archives "${REMOTENAME}${SETTINGS_REMOTE}/${previous_name}"; then
                     restore_src="${REMOTENAME}${SETTINGS_REMOTE}/${previous_name}"
-                    log_message "Using backups saved under ${previous_name}, a folder this device may have written to while its id was the shared constant (#86); another device of the same model or hostname may have written there too" "true" "WARN"
+                    log_message "using backups saved under ${previous_name}, a folder this device may have written to while its id was the shared constant (#86); another device of the same model or hostname may have written there too" "false" "WARN"
+                    log_message "Using backups from a folder this device may have shared with another of the same model, so they may not all be from this device." "true" "WARN"
                     break
                 fi
             done <<< "${previous_names}"
@@ -1156,9 +1158,9 @@ restore_system_files() {
             local others
             others=$(rclone lsf "${legacy_src}/" --dirs-only "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null | tr -d '/' | tr '\n' ' ')
             if [ -n "${others}" ]; then
-                log_message "No backup for this device. The cloud holds backups from: ${others}" "true" "WARN"
+                log_message "There's no settings backup for this device yet. The cloud has backups from: ${others}" "true" "WARN"
             else
-                log_message "There is no settings backup in the cloud yet" "true" "WARN"
+                log_message "There's no settings backup in the cloud yet." "true" "WARN"
             fi
             RESTORE_SYSTEM_STATUS=0
             return 0
@@ -1208,12 +1210,13 @@ restore_system_files() {
                     '') made_by="made before backups were named after the device" ;;
                     *)  made_by="made on ${made_by}" ;;
                 esac
-                log_message "No settings backup named for this device (${label:-no name}) in ${restore_src}; restoring the newest there, ${newest} (${made_by})" "true"
+                log_message "no settings backup named for this device (${label:-no name}) in ${restore_src}; restoring the newest there, ${newest} (${made_by})" "false"
+                log_message "No settings backup here is named for this device, so the newest one is being restored (${made_by})." "true"
             fi
         fi
 
         if [ -z "${newest}" ]; then
-            log_message "There is no settings backup in the cloud yet" "true" "WARN"
+            log_message "There's no settings backup in the cloud yet." "true" "WARN"
             RESTORE_SYSTEM_STATUS=0
             return 0
         fi
@@ -1225,7 +1228,8 @@ restore_system_files() {
         # older than everything beside it and sorted to the wrong end.
         local local_name="${newest}"
 
-        log_message "Restoring ${newest} from ${restore_src}" "true"
+        log_message "Restoring ${newest} from ${restore_src}" "false"
+        log_message "Restoring your settings backup from the cloud..." "true"
 
         # Without the filter flags, for the same reason the upload drops them:
         # copyto names one file and rclone refuses filters on a single-file
@@ -1269,11 +1273,11 @@ restore_system_files() {
         if [ $RESTORE_SYSTEM_STATUS -ne 0 ]; then
             network_lost_during_run "$RESTORE_SYSTEM_STATUS" "the settings restore"
         fi
-        report_rclone_error $RESTORE_SYSTEM_STATUS "Settings backup file restore"
+        report_rclone_error $RESTORE_SYSTEM_STATUS "Restoring your settings backup"
         
         return $RESTORE_SYSTEM_STATUS
     else
-        log_message "Settings restore from the cloud is turned off; skipped." "true"
+        log_message "Restoring settings from the cloud is turned off, so it was skipped." "true"
         RESTORE_SYSTEM_STATUS=0
     fi
     
@@ -1292,14 +1296,14 @@ main() {
     REMOTENAME=`rclone listremotes | head -1`
     
     # Begin main script operations with user-friendly header
-    log_message "=> ${OS_NAME} CLOUD RESTORE UTILITY\n"
+    log_message "=> ${OS_NAME} CLOUD RESTORE\n"
     
     # Execute Part 1: Game saves restore
     # This performs the primary save file restoration operation using the configured method
     # --system-only was parsed and then ignored here, so it restored game saves
     # anyway -- the opposite of what it says, over the top of local saves.
     if [ "${SYSTEM_ONLY}" -eq 1 ]; then
-        log_message "Game saves restore skipped (settings only)" "true"
+        log_message "Skipped game saves this time - settings only." "true"
         RESTORE_STATUS=0
     else
         restore_game_saves
@@ -1312,7 +1316,7 @@ main() {
     # Execute Part 2: System restore
     # This restores settings backup files (zip files) if enabled in configuration
     if [ "${SAVES_ONLY}" -eq 1 ]; then
-        log_message "Settings backup file restore skipped (saves only)" "true"
+        log_message "Skipped settings this time - saves only." "true"
         RESTORE_SYSTEM_STATUS=0
     else
         restore_system_files
@@ -1322,7 +1326,7 @@ main() {
     # Create empty missing system directories if removed during restore
     # Only necessary when using sync method which can delete files
     if [ "${RESTOREMETHOD}" == "sync" ]; then
-        log_message "Creating empty missing system directories" "true"
+        log_message "Making sure every system folder is there..." "true"
         # Guarded the way automount does it: the file is generated at build
         # time, so a missing one means a broken image, not a reason to print a
         # systemd error at the end of an otherwise good restore.
@@ -1340,8 +1344,8 @@ main() {
     # Provide final summary of all operations
     log_message "====================================" "true"
     log_message "RESTORE SUMMARY:" "true"
-    log_message "Game saves restore: $(outcome_word $RESTORE_STATUS)" "true"
-    [ "${BACKUPFILE_RESTORE_OPTION}" == "yes" ] && log_message "Settings backup file restore: $(outcome_word $RESTORE_SYSTEM_STATUS)" "true"
+    log_message "Game saves: $(outcome_word $RESTORE_STATUS)" "true"
+    [ "${BACKUPFILE_RESTORE_OPTION}" == "yes" ] && log_message "Settings backup: $(outcome_word $RESTORE_SYSTEM_STATUS)" "true"
     log_message "Log file: ${LOG_FILE}" "false"
     log_message "====================================" "true"
     

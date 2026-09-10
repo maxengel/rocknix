@@ -123,7 +123,7 @@ while :; do
     NOW=$(uptime_cs)
 
     if ! has_default_route; then
-        echo "No network connection. Skipped."
+        echo "Skipped: there's no network connection. Try again when you're online."
         log "no default route after $(((NOW - START) / 100))s (NetworkManager: ${STATE:-not asked}); exit ${EXIT_NO_NETWORK}"
         exit "${EXIT_NO_NETWORK}"
     fi
@@ -159,7 +159,7 @@ while :; do
     else
         SETTLED_SINCE=""
         if [ "${NOW}" -ge "${DEADLINE}" ]; then
-            echo "The network did not settle within ${WAIT} seconds. Skipped."
+            echo "Skipped: your network didn't come up in time. Try again when you're online."
             log "not settled after ${WAIT}s (NetworkManager: ${STATE:-not asked}${CONN:+, connectivity ${CONN}}); exit ${EXIT_NO_NETWORK}"
             exit "${EXIT_NO_NETWORK}"
         fi

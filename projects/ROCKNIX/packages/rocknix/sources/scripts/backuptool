@@ -192,7 +192,7 @@ then
     then
         COMPRESSLOCATIONS=(${LOCATIONS[@]})
     else
-        WARN="YOUR CUSTOM BACKUP LIST COULDN'T BE READ. THE STANDARD LIST IS USED."
+        WARN="YOUR OWN BACKUP LIST COULDN'T BE READ, SO THE STANDARD ONE WAS USED."
         echo "${WARN}"
         logger -t backuptool "${WARN} -- /storage/.config/backuptool.conf failed to source"
         COMPRESSLOCATIONS=(${DEFAULT[@]})
@@ -414,8 +414,8 @@ case "${VERB}" in
         BACKUPFILE="$(newest_backup)"
         if [ -z "${BACKUPFILE}" ] || [ ! -f "${BACKUPFILE}" ]
         then
-            why "THERE IS NO SETTINGS BACKUP ON THIS DEVICE"
-            fail "THERE IS NO SETTINGS BACKUP ON THIS DEVICE. NOTHING WAS CHANGED. BACK UP SETTINGS FIRST, OR RESTORE THEM FROM THE CLOUD." "nothing under ${SETTINGS_BACKUPS} matched"
+            why "THERE'S NO SETTINGS BACKUP ON THIS DEVICE YET"
+            fail "THERE'S NO SETTINGS BACKUP ON THIS DEVICE YET. NOTHING WAS CHANGED. BACK UP SETTINGS FIRST, OR RESTORE THEM FROM THE CLOUD." "nothing under ${SETTINGS_BACKUPS} matched"
         fi
 
         # An archive is whatever it is named. Both are read: every device in
@@ -426,11 +426,11 @@ case "${VERB}" in
             *)        ARCHIVE_KIND="zip" ;;
         esac
 
-        note "CHECKING THE SETTINGS ARCHIVE..." "${BACKUPFILE}"
+        note "CHECKING YOUR SETTINGS BACKUP..." "${BACKUPFILE}"
         if ! archive_ok "${BACKUPFILE}"
         then
-            why "THE SETTINGS ARCHIVE ON THIS DEVICE IS DAMAGED"
-            fail "THE SETTINGS ARCHIVE ON THIS DEVICE IS DAMAGED. NOTHING WAS CHANGED. BACK UP SETTINGS AGAIN." "${BACKUPFILE} does not list"
+            why "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED"
+            fail "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED. NOTHING WAS CHANGED. BACK UP SETTINGS AGAIN." "${BACKUPFILE} does not list"
         fi
 
         # Before anything is written over the live tree, the tree as it is
@@ -453,8 +453,8 @@ case "${VERB}" in
                # and nothing it could damage, so go on without a copy.
                SNAPSHOT=""
                logger -t backuptool "no current settings to copy aside before the restore" ;;
-            *) why "YOUR CURRENT SETTINGS COULDN'T BE COPIED ASIDE"
-               fail "YOUR CURRENT SETTINGS COULDN'T BE COPIED ASIDE, SO NOTHING WAS CHANGED. TRY AGAIN." "write_archive ${SNAPSHOT} failed" ;;
+            *) why "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS"
+               fail "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS, SO NOTHING WAS CHANGED. TRY AGAIN." "write_archive ${SNAPSHOT} failed" ;;
         esac
 
         # From here until the tree is whole again, a power cut leaves it half
@@ -499,7 +499,7 @@ case "${VERB}" in
             done
             if [ "${SKIPPED}" -gt 0 ]
             then
-                note "KEEPING ${SKIPPED} SYSTEM-PROVIDED LINK(S) THIS OLDER BACKUP WOULD HAVE OVERWRITTEN."
+                note "KEEPING ${SKIPPED} FILE(S) THE SYSTEM PROVIDES THAT THIS OLDER BACKUP WOULD HAVE REPLACED."
                 # -x is a mode switch: every argument after it is an exclusion.
                 unzip -o "${BACKUPFILE}" -d / -x ${SKIP} >/dev/null
             else
@@ -514,7 +514,7 @@ case "${VERB}" in
             then
                 rm -f "${RESTORE_MARK}"
                 why "THE RESTORE COULDN'T FINISH"
-                fail "THE RESTORE COULDN'T FINISH. YOUR SETTINGS ARE AS THEY WERE. TRY AGAIN." "extraction of ${BACKUPFILE} failed; ${SNAPSHOT} put back"
+                fail "THE RESTORE COULDN'T FINISH. DON'T WORRY - YOUR SETTINGS ARE UNCHANGED. TRY AGAIN." "extraction of ${BACKUPFILE} failed; ${SNAPSHOT} put back"
             elif [ -n "${SNAPSHOT}" ]
             then
                 why "THE RESTORE COULDN'T FINISH"
@@ -552,7 +552,7 @@ case "${VERB}" in
         do
             command -v "${TOOL}" >/dev/null 2>&1 || {
                 why "THIS DEVICE CAN'T MAKE A SETTINGS BACKUP"
-                fail "THIS DEVICE CAN'T MAKE A SETTINGS BACKUP: A TOOL IS MISSING FROM THE IMAGE." "'${TOOL}' is not on PATH"
+                fail "THIS DEVICE CAN'T MAKE A SETTINGS BACKUP. SOMETHING IT NEEDS IS MISSING FROM THIS BUILD." "'${TOOL}' is not on PATH"
             }
         done
 
@@ -573,10 +573,10 @@ case "${VERB}" in
         write_archive "${BACKUPFILE}" 1
         case $? in
             0) ;;
-            2) why "THE BACKUP COULDN'T FINISH WHILE COLLECTING YOUR SETTINGS"
-               fail "THE BACKUP COULDN'T FINISH WHILE COLLECTING YOUR SETTINGS. NO BACKUP WAS WRITTEN; WHAT WAS HERE BEFORE IS UNCHANGED. TRY AGAIN." "collecting into staging failed" ;;
+            2) why "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS"
+               fail "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS. NOTHING WAS WRITTEN, AND YOUR LAST BACKUP IS UNCHANGED. TRY AGAIN." "collecting into staging failed" ;;
             *) why "THE BACKUP COULDN'T FINISH"
-               fail "THE BACKUP COULDN'T FINISH. NO BACKUP WAS WRITTEN; WHAT WAS HERE BEFORE IS UNCHANGED. TRY AGAIN." "writing or verifying ${BACKUPFILE} failed" ;;
+               fail "THE BACKUP COULDN'T FINISH. NOTHING WAS WRITTEN, AND YOUR LAST BACKUP IS UNCHANGED. TRY AGAIN." "writing or verifying ${BACKUPFILE} failed" ;;
         esac
 
         # Now, and only now, rotate the previous archive into an archive
