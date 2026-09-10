@@ -639,6 +639,11 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     failures += not check(not stale,
                           f"all {len(FIXTURES)} replaced saves came back from the cloud as the new bytes",
                           f"the cloud still holds the old bytes for: {stale}")
+    # These files legitimately hold their v2 bytes from here on, on both
+    # sides. The round-trip check below compares against what was here before
+    # the first backup, so it is told what "before" means now -- otherwise it
+    # reports 0/4 matched for a restore that worked perfectly.
+    before = dict(want)
 
     step("saves restore from the cloud")
     for rel in FIXTURES:
