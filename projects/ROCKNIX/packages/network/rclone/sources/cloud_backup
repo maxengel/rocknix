@@ -405,6 +405,16 @@ clean_exit() {
     # transfer failed -- unremapped. Nothing rclone returns can read as the
     # lock or no-network sentinel now that those are 75 and 69 (#99).
     record_last_run "${exit_code}"
+    # A run that completed is the new known-good state, so the copies the
+    # helper took before touching the config -- and the migration copy it
+    # used to keep for ever -- are superseded and go, leaving one record at
+    # rest (D-CLOUD-078 (3), D-CLOUD-079). The next run takes fresh copies
+    # before it touches anything.
+    case "${exit_code}" in
+        0|9) rm -f /storage/.config/cloud_sync.conf.bak \
+                   /storage/.config/cloud_sync-rules.txt.bak \
+                   /storage/.config/cloud_sync.conf.pre-copy-default 2>/dev/null ;;
+    esac
     log_message "Script completed in ${duration} seconds with exit code ${exit_code}" "false"
     exit ${exit_code}
 }
@@ -504,6 +514,28 @@ network_lost_during_run() {
     clean_exit "${EXIT_NO_NETWORK}"
 }
 
+# Is this a cloud_sync.conf that can be run with? bash -n, and the file's own
+# shape: every line blank, a comment, KEY=value with its double quotes
+# balanced, or the continuation of a value whose previous line ended in a
+# backslash (RCLONEOPTS is written that way). The shape check matters
+# because a torn line -- SAVES_REMOTE="/ROCK, cut mid-value -- can have its
+# quote closed by whatever is appended after it, and then parses.
+conf_valid() {
+    [ -s "$1" ] || return 1
+    bash -n "$1" 2>/dev/null || return 1
+    awk '
+        cont { cont = ($0 ~ /\\$/); next }
+        /^[[:space:]]*(#|$)/ { next }
+        /^[A-Za-z_][A-Za-z0-9_]*=/ {
+            n = gsub(/"/, "\"")
+            if ($0 ~ /\\$/) { cont = 1; next }
+            if (n % 2) exit 1
+            next
+        }
+        { exit 1 }
+    ' "$1"
+}
+
 # Loads user configuration from cloud_sync.conf
 # Applies default values for any missing configuration parameters
 load_config() {
@@ -514,7 +546,29 @@ load_config() {
         /usr/bin/cloud_sync_helper ${LOG_FILE}
     fi
     log_message "Loading configuration from cloud_sync.conf" "false"
-    source /storage/.config/cloud_sync.conf
+    # A config that does not parse is not run with. `source` used to be
+    # unchecked, so a torn file -- a partial trailing line -- was read up to
+    # the tear and the run went on with whatever was missing (SAVES_REMOTE
+    # unset means remote:/). The helper's copy from before this run's
+    # update is the fallback; with no good copy the run refuses and says so
+    # (D-CLOUD-078, #105).
+    local conf="/storage/.config/cloud_sync.conf"
+    if ! conf_valid "${conf}"; then
+        if [ -f "${conf}.bak" ] && conf_valid "${conf}.bak"; then
+            log_message "cloud_sync.conf does not parse; putting back the copy taken before this run's update" "false" "WARN"
+            cp -f "${conf}.bak" "${conf}.tmp.$$" && mv -f "${conf}.tmp.$$" "${conf}"
+        else
+            rm -f "${conf}.tmp.$$" 2>/dev/null
+            log_message "Your cloud sync settings couldn't be read, and there is no good copy to fall back to. Set up cloud storage again under GAME SETTINGS > MANAGE CLOUD STORAGE." "true" "ERROR"
+            say_why "YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"
+            clean_exit 1
+        fi
+    fi
+    if ! source "${conf}"; then
+        log_message "Your cloud sync settings couldn't be read. Set up cloud storage again under GAME SETTINGS > MANAGE CLOUD STORAGE." "true" "ERROR"
+        say_why "YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"
+        clean_exit 1
+    fi
 
     # Saves have one local folder (D-CLOUD-040). RESTOREPATH used to let a
     # restore land somewhere other than the live saves -- a safety valve from
