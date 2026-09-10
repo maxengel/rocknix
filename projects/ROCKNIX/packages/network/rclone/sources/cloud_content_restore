@@ -63,14 +63,14 @@ CLOUD_SYNC_LOCK=/var/run/cloud_sync.lock
 take_cloud_lock() {
     exec 9>"${CLOUD_SYNC_LOCK}"
     if ! flock -n 9; then
-        echo "Another cloud sync is already running. Skipped."
+        echo "Skipped: another cloud sync is already running. Try again when it's done."
         log_message "skipped: another cloud sync holds ${CLOUD_SYNC_LOCK}"
         exit "${EXIT_LOCK_HELD}"
     fi
 }
 
 if [ ! -e "/storage/.config/rclone/rclone.conf" ]; then
-    echo ">>> why YOUR CLOUD STORAGE ISN'T SET UP"
+    echo ">>> why YOUR CLOUD STORAGE ISN'T SET UP YET"
     echo "Your cloud storage isn't set up yet. Set it up under GAME SETTINGS > MANAGE CLOUD STORAGE first."
     exit 1
 fi
@@ -79,7 +79,7 @@ fi
 
 REMOTENAME=$(rclone listremotes | head -1)
 if [ -z "${REMOTENAME}" ]; then
-    echo ">>> why YOUR CLOUD STORAGE ISN'T SET UP"
+    echo ">>> why YOUR CLOUD STORAGE ISN'T SET UP YET"
     echo "Your cloud storage isn't set up yet. Set it up under GAME SETTINGS > MANAGE CLOUD STORAGE first."
     exit 1
 fi
@@ -141,10 +141,10 @@ say_why() {
 }
 why_for() {
     case "$1" in
-        3|4) echo "YOUR CLOUD FOLDER WASN'T FOUND" ;;
+        3|4) echo "COULDN'T FIND YOUR CLOUD FOLDER" ;;
         5)   echo "YOUR CLOUD STOPPED ANSWERING" ;;
         6)   echo "SOME FILES DIDN'T FINISH" ;;
-        7|8) echo "YOUR CLOUD REFUSED THE TRANSFER" ;;
+        7|8) echo "YOUR CLOUD WOULDN'T TAKE THE FILES" ;;
         130) echo "IT WAS STOPPED" ;;
         *)   echo "SOMETHING WENT WRONG" ;;
     esac
@@ -183,7 +183,7 @@ network_gone() {
 # happened when the sync ran, and the cloud still holds what they removed.
 stop_no_network() {
     local stamp="$1" rc="$2" doing="$3"
-    echo "The network went away while ${doing}. Stopped."
+    echo "Lost the network while ${doing}. Try again when you're online."
     log_message "stopped: the network went away while ${doing} (rclone exit ${rc}); exit ${EXIT_NO_NETWORK}"
     record_outcome "content-${stamp}" "${EXIT_NO_NETWORK}"
     exit "${EXIT_NO_NETWORK}"
@@ -547,7 +547,7 @@ match_run() {
     # saves, so assert they exist rather than trusting the file's layout. An
     # unset array expands to nothing and rclone would happily proceed.
     if [ ${#SAVE_EXCLUDES[@]} -eq 0 ] || [ ${#METADATA_EXCLUDES[@]} -eq 0 ]; then
-        echo "Refusing: the save and metadata exclusions are not loaded."
+        echo "Refusing: the rules that keep your saves safe aren't loaded."
         log_message "match: refused, exclusion arrays empty"
         return 1
     fi
@@ -556,15 +556,15 @@ match_run() {
     [ "${apply}" = "1" ] && take_cloud_lock
 
     if ! cloud_root_populated; then
-        echo "Refusing to change anything: the cloud content folder lists nothing."
-        echo "That looks the same whether the library is empty, the network is"
-        echo "down, or the folder was renamed - so nothing is removed."
+        echo "Refusing to change anything: your cloud's ROMs and BIOS folder looks empty."
+        echo "That looks the same whether it really is empty, you're offline, or the"
+        echo "folder was renamed - so nothing is removed."
         log_message "match: refused, content root lists nothing"
         # One of the three it can tell apart: with the network gone the
         # refusal is the no-network skip, and says so with the code
         # EmulationStation names. Nothing ran, so no stamp.
         if network_gone; then
-            echo "No network connection. Skipped."
+            echo "Skipped: there's no network connection. Try again when you're online."
             log_message "match: skipped, no network"
             exit "${EXIT_NO_NETWORK}"
         fi
@@ -573,7 +573,7 @@ match_run() {
 
     mapfile -t SYS < <(selected_systems)
     if [ ${#SYS[@]} -eq 0 ]; then
-        echo "No systems are selected for this device yet."
+        echo "You haven't picked any systems for this device yet."
         return 1
     fi
 
@@ -611,7 +611,7 @@ match_run() {
                 total_bytes=$((total_bytes + bytes))
                 removed_detail="${removed_detail}${removed_detail:+,}${sys}:${files}:${bytes}"
                 if [ "${apply}" = "1" ]; then
-                    echo "Removing ${sys}: ${files} files (not in your cloud)"
+                    echo "Removing ${files} files from ${sys} that aren't in your cloud..."
                     rclone delete "${DEST}/${sys}" \
                         "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${METADATA_EXCLUDES[@]}" \
                         --max-delete "${files}" \
@@ -620,7 +620,7 @@ match_run() {
                     if [ ${del_rc} -ne 0 ]; then
                         rc=${del_rc}
                         log_message "match: removing ${sys}: rclone exit ${del_rc}"
-                        echo "Removing ${sys} couldn't finish: $(why_for "${del_rc}" | tr 'A-Z' 'a-z')."
+                        echo "Couldn't finish removing files from ${sys}: $(why_for "${del_rc}" | tr 'A-Z' 'a-z')."
                         say_why "$(why_for "${del_rc}")"
                     fi
                     rmdir "${DEST}/${sys}" 2>/dev/null
@@ -668,7 +668,7 @@ match_run() {
                             stop_no_network match "${sync_rc}" "matching ${sys} to the cloud"
                         fi
                         log_message "match: matching ${sys}: rclone exit ${sync_rc}"
-                        echo "Matching ${sys} to the cloud couldn't finish: $(why_for "${sync_rc}" | tr 'A-Z' 'a-z')."
+                        echo "Couldn't finish matching ${sys} to the cloud: $(why_for "${sync_rc}" | tr 'A-Z' 'a-z')."
                         say_why "$(why_for "${sync_rc}")"
                     fi
                 else
@@ -682,7 +682,7 @@ match_run() {
                 # match_plan_one prints none, remove or sync; anything else
                 # is a failure to plan, and an announced item must not end
                 # in silence.
-                [ "${apply}" = "1" ] && echo "Could not check ${sys} against the cloud."
+                [ "${apply}" = "1" ] && echo "Couldn't check ${sys} against the cloud."
                 log_message "match: no plan for ${sys} (${planned})"
                 rc=1
             ;;
@@ -855,7 +855,7 @@ case "${1}" in
         # empty cloud, and goes on as before.
         if [ "${scan_rc}" -ne 0 ] && network_gone; then
             log_message "scan: skipped, no network (rclone exit ${scan_rc})"
-            echo "No network connection. Skipped." >&2
+            echo "Skipped: there's no network connection. Try again when you're online." >&2
             exit "${EXIT_NO_NETWORK}"
         fi
         # A listing that failed with the network up is not an empty cloud
@@ -941,7 +941,7 @@ case "${1}" in
     --selected)
         mapfile -t DIRS < <(selected_systems)
         if [ ${#DIRS[@]} -eq 0 ]; then
-            echo "No systems are selected for this device."
+            echo "You haven't picked any systems for this device."
             exit 1
         fi
         # BIOS is not a system and is no longer a pick (maintainer, 2026-09-06):
@@ -1032,7 +1032,7 @@ for DIR in "${DIRS[@]}"; do
         # anything else carries rclone's own code up as before.
         network_gone && stop_no_network restore "${RC}" "restoring ${DIR:-everything}"
         log_message "restore of ${DIR:-everything}: rclone exit ${RC}"
-        echo "Restoring ${DIR:-everything} couldn't finish: $(why_for "${RC}" | tr 'A-Z' 'a-z')."
+        echo "Couldn't finish restoring ${DIR:-everything}: $(why_for "${RC}" | tr 'A-Z' 'a-z')."
         say_why "$(why_for "${RC}")"
         STATUS=${RC}
     else

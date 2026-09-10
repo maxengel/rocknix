@@ -131,7 +131,7 @@ syncpath_problem() {
     path="/$(echo "${path}" | sed 's:^/*::; s:/*$::')"
 
     if [ "${path}" = "/" ]; then
-        echo "The cloud folder cannot be empty."
+        echo "Your cloud folder can't be empty."
         return 1
     fi
 
@@ -160,18 +160,18 @@ syncpath_problem() {
     # message will not: the first path component is a bucket, not a folder.
     if rclone backend features "${remote}" 2>/dev/null | grep -q '"BucketBased": true'; then
         bucket="${path#/}"; bucket="${bucket%%/*}"
-        echo "Your provider would not accept \"${bucket}\"."
+        echo "Your provider wouldn't accept \"${bucket}\"."
         echo
-        echo "This remote stores data in buckets, so the first part of the"
-        echo "folder is a bucket name rather than a folder - and bucket names"
-        echo "have rules folders do not. They are also shared across everyone"
-        echo "using the provider, not private to your account."
+        echo "This provider keeps things in buckets, so the first part of the"
+        echo "folder is a bucket name, not a folder - and bucket names have"
+        echo "rules that folders do not. They are also shared with everyone"
+        echo "else using the provider, not private to your account."
         echo
         echo "  ${probe}"
         echo
         echo "Try something like /rocknix-saves-yourname/Saves instead."
     else
-        echo "Your provider would not accept this folder:"
+        echo "Your provider wouldn't accept this folder:"
         echo
         echo "  ${probe}"
     fi
@@ -399,7 +399,7 @@ case "$1" in
         }
 
         seed_note "${SAVES}" \
-            "Game saves, save states and screenshots." \
+            "Game saves, save states, and screenshots." \
             "" \
             "  savefiles/    battery saves" \
             "  savestates/   save state snapshots" \
@@ -419,7 +419,7 @@ case "$1" in
             "  BIOS/       BIOS and firmware files" \
             "" \
             "The handheld reads these when you choose" \
-            "\"Restore content from the cloud\"."
+            "\"Restore from the cloud\" on it."
 
         seed_note "${CONTENT}/ROMs" \
             "Your games, one folder per system." \

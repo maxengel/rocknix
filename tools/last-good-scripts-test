@@ -259,7 +259,7 @@ bt restore; rcr=${RC}
 [ "${rcr}" -ne 0 ]; check $? "a restore whose extraction fails exits non-zero" "rc 0 from a failed extraction"
 [ "$(cat "${ST}/.config/test/f1")" = "changed" ] && [ "$(cat "${ST}/.config/test/f2")" = "file2" ]; check $? "and the pre-restore state was put back (f1 'changed', f2 'file2')" "f1='$(cat "${ST}/.config/test/f1")' f2='$(cat "${ST}/.config/test/f2")' -- the tree is half the archive, half the old state"
 ls "${ST}/roms/backup/archive"/*PRE_RESTORE* >/dev/null 2>&1; check $? "the snapshot is in archive/ as *PRE_RESTORE*" "no PRE_RESTORE snapshot in archive/: $(ls "${ST}/roms/backup/archive" 2>/dev/null | tr '\n' ' ')"
-grep -q 'AS THEY WERE' "${OUT}"; check $? "and the screen says the settings are as they were" "screen: $(grep -v '^logger' "${OUT}" | tail -2 | tr '\n' '|')"
+grep -q 'YOUR SETTINGS ARE UNCHANGED' "${OUT}"; check $? "and the screen says the settings are unchanged" "screen: $(grep -v '^logger' "${OUT}" | tail -2 | tr '\n' '|')"
 ! grep -vE '^logger |^>>> ' "${OUT}" | grep -qiE "logger|/storage/|/var/log|exit [0-9]"; check $? "with no path, log or tool name on it" "a screen line carries one: $(grep -vE '^logger |^>>> ' "${OUT}" | grep -iE 'logger|/storage/|/var/log|exit [0-9]' | head -1)"
 rm -f "${B}/shim/tar"
 # A restore that works, asked to leave the journey marker.

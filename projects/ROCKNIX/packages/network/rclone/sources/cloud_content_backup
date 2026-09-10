@@ -62,14 +62,14 @@ CLOUD_SYNC_LOCK=/var/run/cloud_sync.lock
 take_cloud_lock() {
     exec 9>"${CLOUD_SYNC_LOCK}"
     if ! flock -n 9; then
-        echo "Another cloud sync is already running. Skipped."
+        echo "Skipped: another cloud sync is already running. Try again when it's done."
         log_message "skipped: another cloud sync holds ${CLOUD_SYNC_LOCK}"
         exit "${EXIT_LOCK_HELD}"
     fi
 }
 
 if [ ! -e "/storage/.config/rclone/rclone.conf" ]; then
-    echo ">>> why YOUR CLOUD STORAGE ISN'T SET UP"
+    echo ">>> why YOUR CLOUD STORAGE ISN'T SET UP YET"
     echo "Your cloud storage isn't set up yet. Set it up under GAME SETTINGS > MANAGE CLOUD STORAGE first."
     exit 1
 fi
@@ -78,7 +78,7 @@ fi
 
 REMOTENAME=$(rclone listremotes | head -1)
 if [ -z "${REMOTENAME}" ]; then
-    echo ">>> why YOUR CLOUD STORAGE ISN'T SET UP"
+    echo ">>> why YOUR CLOUD STORAGE ISN'T SET UP YET"
     echo "Your cloud storage isn't set up yet. Set it up under GAME SETTINGS > MANAGE CLOUD STORAGE first."
     exit 1
 fi
@@ -137,10 +137,10 @@ say_why() {
 }
 why_for() {
     case "$1" in
-        3|4) echo "YOUR CLOUD FOLDER WASN'T FOUND" ;;
+        3|4) echo "COULDN'T FIND YOUR CLOUD FOLDER" ;;
         5)   echo "YOUR CLOUD STOPPED ANSWERING" ;;
         6)   echo "SOME FILES DIDN'T FINISH" ;;
-        7|8) echo "YOUR CLOUD REFUSED THE TRANSFER" ;;
+        7|8) echo "YOUR CLOUD WOULDN'T TAKE THE FILES" ;;
         130) echo "IT WAS STOPPED" ;;
         *)   echo "SOMETHING WENT WRONG" ;;
     esac
@@ -176,7 +176,7 @@ network_gone() {
 # and renames it when complete, so nothing partial is left in the cloud.
 stop_no_network() {
     local rc="$1" unit="$2"
-    echo "The network went away while backing up ${unit}. Stopped."
+    echo "Lost the network while backing up ${unit}. Try again when you're online."
     log_message "stopped: the network went away while backing up ${unit} (rclone exit ${rc}); exit ${EXIT_NO_NETWORK}"
     record_outcome content-backup "${EXIT_NO_NETWORK}"
     exit "${EXIT_NO_NETWORK}"
@@ -371,7 +371,7 @@ case "${1}" in
             DIRS+=("bios")
         fi
         if [ ${#DIRS[@]} -eq 0 ]; then
-            echo "Nothing to upload: no selected system has content on this device."
+            echo "Nothing to back up: none of the systems you picked have anything on this device."
             exit 1
         fi
     ;;
@@ -392,7 +392,7 @@ case "${1}" in
     --all)
         mapfile -t DIRS < <(list_local_dirs)
         if [ ${#DIRS[@]} -eq 0 ]; then
-            echo "No content directories found in ${DEST}."
+            echo "There are no ROMs or BIOS files on this device to back up."
             exit 1
         fi
     ;;
@@ -537,7 +537,7 @@ for DIR in "${DIRS[@]}"; do
         # anything else carries rclone's own code up as before.
         network_gone && stop_no_network "${RC}" "${DIR:-everything}"
         log_message "backup of ${DIR:-everything}: rclone exit ${RC}"
-        echo "Backing up ${DIR:-everything} couldn't finish: $(why_for "${RC}" | tr 'A-Z' 'a-z')."
+        echo "Couldn't finish backing up ${DIR:-everything}: $(why_for "${RC}" | tr 'A-Z' 'a-z')."
         say_why "$(why_for "${RC}")"
         STATUS=${RC}
     else
