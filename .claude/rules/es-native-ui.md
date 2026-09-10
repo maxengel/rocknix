@@ -46,6 +46,13 @@ this file guides any work there.
   `window` shows a splash while it runs; `/usr/bin/run "<cmd>"` for fullscreen console
   TUIs (current parity flows). Native pages should prefer headless backends + the async
   patterns above over console hops.
+- **A file another process writes is read uncached.** `Utils::FileSystem::exists`
+  remembers a miss while `UseFileCache` is on (the default) until a game launch
+  or a restart clears the cache, so a stamp the scripts write, or the
+  `rclone.conf` the wizard makes, reads as absent for the rest of the session
+  on any page that asked before it existed. Pass `exists(path, false)` for
+  those (the cloud rows read NOT DONE ON THIS DEVICE YET after a run had
+  stamped, 2026-09-10).
 - **Gating**: `ApiSystem::isScriptingSupported(ApiSystem::FEATURE)` for capability-based
   entries (batocera-style backends); plain `Utils::FileSystem::exists("/usr/bin/tool")`
   for OS-shipped scripts (our cloud entries). Respect `isFullUI`/kid-mode branches.

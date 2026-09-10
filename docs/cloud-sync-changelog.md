@@ -1642,3 +1642,15 @@ is created with its action row (`createAsyncNotificationComponent(true)`; the
 default is two rows), so the recovery clause of D-CLOUD-077 -- what is in
 place, and `TRY AGAIN: GAME SETTINGS > ...` -- is drawn; tranche A composed it
 and had no row to draw it on.
+
+## Cloud stamps and rclone.conf are read uncached (2026-09-10)
+
+EmulationStation `28631cf77` (pinned `d3f2431034`): the cloud rows' stamp
+reader and the rows' gate on `rclone.conf` pass `enableCache=false` to
+`Utils::FileSystem::exists`. The file cache (`UseFileCache`, on by default)
+remembers a miss until a game launch or a restart, so a GAME SETTINGS page
+opened once before a run read `NOT DONE ON THIS DEVICE YET` after the run had
+written its stamp, and the confirmation dialog's `LAST TIME` paragraph never
+appeared; a cloud set up in the wizard could likewise stay "not set up" on
+the rows for the session. Found on guest d against `854989a639` with stamps
+planted by hand.
