@@ -1696,3 +1696,14 @@ restores; the settings-archive step plants a real tar.gz pair of equal size
 (the planted bytes were "damaged" to the new `cloud_backup`); the litter scan
 accepts D-UI-028's stamp shape and judges a `.bak` against the newest
 completed run rather than flagging it wherever it sits.
+
+## The restore revert waits for /storage/roms (2026-09-10)
+
+`chksysconfig finish_restore` leaves the `.restore-in-progress` marker alone
+when the copy's folder does not exist yet -- `/storage/roms` is bound by
+`rocknix-automount` at about 2.5 s, after the sysinit verify at 1.7 s -- so
+the autostart chain's verify, after the mounts, puts the copy back
+(D-CLOUD-082). The first `9847876563` boot with a marker declared the revert
+failed at sysinit and EmulationStation said `COULDN'T BE UNDONE` while the
+copy sat on the folder that was about to be bound. `61024a4d76`; fixture in
+`tools/last-good-scripts-test`.
