@@ -168,8 +168,19 @@ function del_setting() {
 
 function sort_settings() {
   wait_lock
-  cat "${J_CONF}" | grep ^[a-z0-9] | sort >"${J_CONF}.tmp"
-  mv "${J_CONF}.tmp" "${J_CONF}"
+  # The sorted copy replaces the live file only when it is plainly a config:
+  # non-empty and still carrying the hostname line every image writes. An
+  # unreadable source (EIO, a card on its way out) gives grep nothing, and
+  # the mv below then installed an empty system.cfg -- the shape #102's
+  # "defaults won" started from (D-CLOUD-078).
+  grep '^[a-z0-9]' "${J_CONF}" | sort >"${J_CONF}.tmp"
+  if [ -s "${J_CONF}.tmp" ] && grep -q '^system\.hostname=' "${J_CONF}.tmp"
+  then
+    mv -f "${J_CONF}.tmp" "${J_CONF}"
+  else
+    rm -f "${J_CONF}.tmp"
+    logger -t sort_settings "left system.cfg alone: the sorted copy was empty or had no hostname line" 2>/dev/null
+  fi
   rm -f "${J_CONF_LOCK}"
 }
 
@@ -201,11 +212,25 @@ function set_setting() {
 
   if [[ "${1}" =~ ^[[:alnum:]] ]]
   then
-    del_setting "${1}"
-    if [ ! "${2}" = "default" ]
+    if [ "${2}" = "default" ]
     then
+      del_setting "${1}"
+    else
+      # Delete and re-add in ONE sed under ONE lock hold. busybox sed -i
+      # writes a temporary file and renames it over the original, so the
+      # file goes from the old content to the new in a single step. It used
+      # to be del_setting (a rename) and then an append, with the lock
+      # released and retaken in between: a kill between the two lost the key
+      # -- the setting read as its default from then on (D-CLOUD-078, #105).
+      # $a needs a line to append after, so a file with none (a torn write
+      # left it empty) gets the one line by temp-and-rename instead.
       wait_lock
-      echo "${1}=${2}" >> "${J_CONF}"
+      if [ -s "${J_CONF}" ]
+      then
+        sed -i -e "/^${1}=/d" -e "\$a ${1}=${2}" "${J_CONF}"
+      else
+        printf '%s=%s\n' "${1}" "${2}" > "${J_CONF}.tmp" && mv -f "${J_CONF}.tmp" "${J_CONF}"
+      fi
       rm -f "${J_CONF_LOCK}"
     fi
   fi
