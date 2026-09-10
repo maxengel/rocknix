@@ -119,6 +119,31 @@ Values live in one place each, so a screen never makes its own decision.
   Full-*screen* is a modal takeover, not a wider card — do not reach for it
   for work the player can keep playing through.
 
+### Outcome words, and the register they are written in
+
+A cloud run **passes or fails**. `COMPLETED`, or `COULDN'T FINISH - <why>`,
+or `SKIPPED - <reason>` for the two sentinels and the launch cancel. There is
+no middle word: `COMPLETED WITH GAPS` existed for a day and the maintainer's
+verdict on meeting one was that a half-outcome nobody can act on costs more
+trust than either plain answer (D-UI-030). A run whose parts disagree is a
+failure that still says truthfully what moved.
+
+The words themselves are **everyday, not formal** (D-UI-031). The test is
+whether a person would say it out loud:
+
+| Not this | This |
+| --- | --- |
+| `NOTHING WAS SENT. YOUR CLOUD IS AS IT WAS.` | `DON'T WORRY, NOTHING CHANGED.` |
+| `NO NETWORK CONNECTION` | `YOU'RE NOT ONLINE` |
+| `ANOTHER CLOUD SYNC IS RUNNING` | `A SYNC IS ALREADY RUNNING` |
+| `YOUR CLOUD REFUSED THE TRANSFER` | `YOUR CLOUD WOULDN'T TAKE THE FILES` |
+| `WRITING THE SETTINGS ARCHIVE...` | `PACKING UP YOUR SETTINGS...` |
+| `IT RUNS AGAIN AT THE NEXT STARTUP.` | `IT'LL TRY AGAIN NEXT STARTUP.` |
+
+Unchanged by that pass, because they are vocabulary rather than register: the
+three tiers, the two verbs, `Wi-Fi`, the serial comma, two lines per row, and
+the outcome words above.
+
   **Duration decides between the last two, and the deciding column is
   "Ends".** A card is right for work somebody watches finish — a scrape, a
   hash, a two-second save sync. It is wrong for anything long enough to walk
