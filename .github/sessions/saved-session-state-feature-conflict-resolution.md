@@ -1,14 +1,14 @@
 # Saved Session State
 
-> **Saved**: 2026-09-10T20:59:08Z
+> **Saved**: 2026-09-10T22:32:41Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). **#104 built and proven on the VM as `aa3df8d178`; #105's children in flight.** `next` = `4fca4d2c13`+ (code `aa3df8d178`, ES `635761825`), pushed. Images at `/workspace/artifacts/rocknix-images/{x64,h700}-all-20260910-aa3df8d178/` (proofs in `x64-.../evidence-proofs.log`, suite in `suite.log`; H700 tar sha `d02358219cd5...`). Both handhelds are OFFLINE and still run `7eb713bbd9`; nothing staged; two later builds (`e5ed60f3df`, `aa3df8d178`) await the maintainer's per-device yes.
+Epic #11 (cloud saves). **#104 done to the VM; #105's children mostly closed; build `073929659d` framed at both panel sizes and its suite PASSED. Nothing staged.** `next` = `5d2e017ab7` (code `073929659d`, ES `5443c8f95`), pushed. Images: `/workspace/artifacts/rocknix-images/{x64,h700}-all-20260910-073929659d/` (frames under `x64-.../shots/{1280x800,640x480}/`, `suite.log`; H700 tar sha `712761b58d4b...`); the #104 proofs are in `x64-all-20260910-aa3df8d178/evidence-proofs.log`. Both handhelds were OFFLINE all evening and still run `7eb713bbd9`; three later builds (`e5ed60f3df`, `aa3df8d178`, `073929659d`) await the maintainer's per-device yes -- `073929659d` supersedes the other two.
 
-Maintainer's direction (2026-09-10): "let's proceed with 104, and 105 can include everything you mention, and we can go in that order." #104: persistent `/var/log` (upstream's `var-log.mount` switched on, D-SYS-001), watchdog 15 s (D-SYS-002), hang policy (D-SYS-003), ramoops at 0x4F000000 for every H700 board (D-SYS-004), `rocknix-evidence` (D-SYS-005); all VM-proven, one device proof open (H700 DRAM retention of ramoops -- a deliberate crash, needs a yes). Two subagents (opus) are on #114 (console hops -> GuiCloudTransfer, ES branch `feature/console-hops`, plus `/usr/bin/run` failure path in `feature/run-failure`) and #115 + #109-ES (ES branch `feature/small-panel`). #113 waits on a Dropbox measurement only a handheld can make (proposed command on the issue). #109's runbook half is in `docs/backup-contents.md`.
+Closed tonight with frames: #112, #114, #109, #48, #111. #115 four of five (the launch gate's *stopping* wording is unframed). #104 body ticked except the H700 device proof (ramoops across the SoC reset -- a deliberate crash, needs a yes). #113 waits on one Dropbox measurement a handheld must make (command on the issue). New: #117 (fixed, debounce), #118 (wizard "remote" strings), #119 (`run` exits 0). Two ES agents' branches merged; worktrees pruned.
 
 ## Completed This Session
 
@@ -30,11 +30,11 @@ Maintainer's direction (2026-09-10): "let's proceed with 104, and 105 can includ
 
 ## Next Steps
 
-1. **Collect the two subagents' reports** (#114 `feature/console-hops` + `feature/run-failure`; #115/#109 `feature/small-panel`): review diffs, merge each ES branch into `test/qa-integration`, push, bump the ES pin (worktree `row-one-line-pin`), merge `feature/run-failure` to next, build x64, frame each surface at 1280x800 and 640x480 on the VM (`tools/vm-pair` guest a is on port 10022, monitor `/tmp/rocknix-qemu-monitor.sock`), tick the boxes with frames, then H700.
-2. **#113**: when a handheld is online and the maintainer says so, run the proposed 5-retry Dropbox measurement three times; choose option 3 or 4 accordingly.
-3. **Device proof for #104**: `echo c > /proc/sysrq-trigger` on a handheld then `rocknix-evidence collect` -- only with a yes naming the device (D-QA-008).
-4. Staging of any build is the maintainer's call, per device; two builds are unstaged.
-5. Housekeeping: `tools/fork-worktree remove` for merged worktrees (`evidence`), push next after each docs commit.
+1. **Staging is the maintainer's call, per device.** When a handheld is online and they say so: stage `073929659d` (`h700-all-20260910-073929659d/`), reboot with a yes by name (D-QA-008/011). Then, with a yes: the two device proofs -- `echo c > /proc/sysrq-trigger` then `rocknix-evidence collect` (#104 ramoops retention), and the #113 five-retry Dropbox measurement run three times.
+2. **#115's last box**: frame the launch gate's stopping wording, or agree it stays a string change.
+3. **#118 / #119** (follow-ups from tonight's agents): a naming decision for the wizard's "remote", and `run`'s exit status.
+4. **#105** remaining harness box (assert player-facing lines match the vocabulary for every LINK cell).
+5. Housekeeping: `row-one-line-pin` worktree stays for pin bumps; guests a (10022, 1280x800) and b (10023, 640x480) are up on `073929659d` via `tools/vm-pair`; guest b has a stray RA username `probe` and both have the QA cloud configured.
 
 ## Key Files Modified
 
