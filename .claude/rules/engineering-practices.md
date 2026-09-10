@@ -334,3 +334,19 @@ player can start or that starts on their behalf.
   each is a lie by omission (blindspot 13 and 33 are both this shape).
 
 Audit of the existing surfaces against this: #105.
+
+**The last known good state is a record, kept on purpose (D-CLOUD-078).**
+Maintainer, 2026-09-10: *"we should always keep a record of the last known
+good state ... if something fails, it should always revert to the last known
+good state ... the successful state becomes the last known good state, and we
+can remove the previous one."* For every writer that means three things, in
+order: know that you succeeded (a positive check of the artifact, not the
+absence of an error); replace the old state only after that check
+(temp-and-rename, a marker after the bytes, a copy held until the replacement
+is verified); then remove the superseded record, once, so exactly one
+last-known-good exists at rest. Test it by killing the writer at every step
+and asserting the previous state is what remains -- a writer that leaves an
+empty file, a half-written one, or two candidates has failed this rule.
+`system.cfg` and `es_settings.cfg` failed it on 2026-09-09 (#102): rewritten
+in place, backed up every boot with whatever was there, so a truncated file
+replaced its own good copy and defaults won.
