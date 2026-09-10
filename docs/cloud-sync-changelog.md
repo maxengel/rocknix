@@ -1772,3 +1772,22 @@ restore marker opens; NOT NOW asks again next boot. `docs/backup-contents.md`
 says what a hand restore must do.
 
 EmulationStation `5443c8f95`; ROCKNIX `073929659d`. Frames follow the build.
+
+## The wizard stops saying "remote"; the exit hotkey has a test (2026-09-10)
+
+**#118.** Thirty-four strings across the rclone wizard, the SSH hub and the
+post-restore check said "remote". Under D-UI-036 they now say *cloud storage*
+(`NO CLOUD STORAGE IS SET UP ON THIS DEVICE YET. SET IT UP NOW?`, `YOUR CLOUD
+STORAGE IS READY`), *connection* (`CONNECTION NAME`, `WHICH CONNECTION?`,
+`REPAIR A CONNECTION`, `ADD ANOTHER CONNECTION`), *provider*, and "your cloud
+is answering" for a check that passed. The three numbered steps that walk a
+player through `rclone config` in a terminal keep rclone's word, because that
+is what the terminal shows, and step 2 says once what it means. The CHECK
+CLOUD REMOTE row after a restore is CHECK CONNECTION, the same label as the
+hub's. No behaviour changed.
+
+**#117.** `tools/emulator-exit-test` proves, against the shipped
+`input_sense`, that the exit hotkey ends a game once with the save written,
+that a held combo does the same, and that the debounce window closes; with
+the debounce stripped it fails in two places. The first automated test of the
+launch path, and the first cell of #120.
