@@ -1113,6 +1113,28 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
                           f"scan fields 2-8 were not 5|0|7|2|1|2|2: {row or 'row absent'}")
     dev.run("rm -rf /storage/roms/definitely-not-a-system")
 
+    step("a scan the cloud refused exits with rclone's code and lists nothing")
+    # The network is up and the cloud is not: the stanza's endpoint moved to a
+    # port nothing listens on, on the same host. This is the case the scan's
+    # network probe must not read as "no network" (that is LINK7's 69) and
+    # must not read as an empty cloud either -- it did, and the picker listed
+    # every system on the device as "not yet in your cloud" (2026-09-10).
+    good_conf = dev.run(f"cat {RCLONE_CONF}")
+    dev.run("sed -i -E 's#^((url|endpoint) *= *[a-z]+://[^:/ ]+)(:[0-9]+)?#\\1:1#' " + RCLONE_CONF)
+    moved = dev.run(f"grep -E '^(url|endpoint)' {RCLONE_CONF} || true").strip()
+    rc, out = run_rc(dev, "cloud_content_restore --scan")
+    dev.write(RCLONE_CONF, good_conf.encode())
+    rows = [l for l in out.splitlines() if l.count("|") >= 2]
+    failures += not check(":1" in moved, "the stanza's endpoint was moved to a closed port",
+                          f"the sed did not rewrite the endpoint: {moved!r}")
+    failures += not check(rc not in (0, 69) and not rows,
+                          f"the scan exited {rc} with no system lines",
+                          f"exit {rc} with {len(rows)} system line(s): a refused cloud read as an empty one")
+    rc, out = run_rc(dev, "cloud_content_restore --scan")
+    failures += not check(rc == 0 and any(l.count("|") >= 2 for l in out.splitlines()),
+                          "with the stanza restored the scan lists systems again (exit 0)",
+                          f"exit {rc} after restoring the stanza: {out.strip()[-120:]!r}")
+
     # --- folder seeding -----------------------------------------------------
     step("seeding is idempotent and never clobbers an existing note")
     dev.run("cloud_setup --seed-folders >/dev/null 2>&1 || true", check=False)
