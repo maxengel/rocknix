@@ -346,3 +346,43 @@ files you touched; a real image build is the only check that runs xgettext.
 - Dropping to a fullscreen CLI for things a `GuiSettings` page + headless backend can do
   natively — acceptable as parity stopgap, not as the end state (issue #15 L2).
 - Direct `system()`/popen in UI code paths — use `runSystemCommand`/`ApiSystem`/threads.
+
+## Outcome vocabulary (D-UI-028)
+
+Every cloud surface -- the sync card, the transfer page, the rows under the
+toggles -- ends a run with one of four words, then a why, what is in place,
+and how to recover. Nothing else: no `FAILED`, no `SUCCEEDED`, no log path,
+no exit code, no `rclone`.
+
+| Word | When | Card (line 2) | Page (line 1) | Row token |
+|---|---|---|---|---|
+| `COMPLETED` | every part of the run succeeded (rclone 9 counts as success) | `COMPLETED` | `COMPLETED` | `COMPLETED` |
+| `COMPLETED WITH GAPS - <what>` | some parts succeeded and some did not; a match cut after deletions | `COMPLETED WITH GAPS - NES DID NOT FINISH` | `COMPLETED WITH GAPS` | `COMPLETED WITH GAPS` |
+| `COULDN'T FINISH - <why>` | nothing succeeded and it is not a sentinel | `COULDN'T FINISH - YOUR CLOUD STOPPED ANSWERING` | `COULDN'T FINISH` | `COULDN'T FINISH, YOUR CLOUD STOPPED ANSWERING` |
+| `SKIPPED - <reason>` | only 69, 75, and the launch cancel | `SKIPPED - NO NETWORK CONNECTION` / `SKIPPED - ANOTHER CLOUD SYNC IS RUNNING` / `SKIPPED - A GAME WAS STARTED` | same | `SKIPPED, NO NETWORK` / `SKIPPED, ANOTHER SYNC WAS RUNNING` / `SKIPPED, A GAME WAS STARTED` |
+
+**Why** comes from a `>>> why <sentence>` line the scripts print at the point
+of failure (rclone's own taxonomy stays in the log), else from rc: rclone 3/4
+`YOUR CLOUD FOLDER WASN'T FOUND`; 5 `YOUR CLOUD STOPPED ANSWERING`; 7/8 `YOUR
+CLOUD REFUSED THE TRANSFER`; the sign-in check `YOUR CLOUD DIDN'T ANSWER. ITS
+SIGN-IN MAY HAVE EXPIRED`; the saves-root guard `THE SAVES FOLDER IS ON A
+DIFFERENT CARD`; a 130 that was not a launch cancel `IT WAS STOPPED`; anything
+else `SOMETHING WENT WRONG`.
+
+**In place**, one per verb, true because rclone renames on completion and the
+content scripts never delete outside a match: back up `WHAT WAS SENT IS IN
+YOUR CLOUD. THE REST IS STILL ON THIS DEVICE.` / `NOTHING WAS SENT. YOUR CLOUD
+IS AS IT WAS.`; restore `WHAT ARRIVED IS ON THIS DEVICE. THE REST IS AS IT
+WAS.` / `NOTHING ARRIVED. THIS DEVICE IS AS IT WAS.`; saves sync `THE SAVES
+THAT MOVED ARE ON BOTH SIDES. THE REST ARE AS THEY WERE.` / `YOUR SAVES ARE AS
+THEY WERE.`; match `N FILES WERE REMOVED FROM THIS DEVICE. YOUR CLOUD STILL HAS
+THEM.` / `NOTHING WAS REMOVED.`
+
+**Recover**: the page offers `TRY AGAIN` (A) beside `CLOSE` (B) on line 7 when
+the run did not complete, re-running the same command; the card's action line
+names the row (`TRY AGAIN: GAME SETTINGS > BACK UP SAVES TO THE CLOUD`), or for
+an automatic sync when it runs again (`IT RUNS AGAIN WHEN YOU EXIT A GAME`);
+no network `TRY AGAIN WHEN YOU'RE ONLINE.`; lock held `WAIT FOR IT TO FINISH,
+THEN TRY AGAIN.`; a game started `YOUR SAVES ARE SENT WHEN YOU EXIT THE GAME.`
+Measure every string at 640x480 in frames; if the card's action line clips,
+drop the in-place clause first.
