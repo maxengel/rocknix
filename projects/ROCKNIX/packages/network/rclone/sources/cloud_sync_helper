@@ -355,6 +355,25 @@ main() {
     log_to_file "${log_file}" "BACKUPMETHOD was 'sync', which deletes other devices' saves from the shared folder; set to 'copy'. Previous config kept as cloud_sync.conf.pre-copy-default until the next run that completes (D-CLOUD-079). This is done once; setting it back to sync will be respected."
   fi
 
+  # The shipped rclone retry bounds, for a device that already has the old
+  # ones. update_cloud_sync_config only appends keys it cannot find, so a
+  # value written before today stays for ever -- and the value written before
+  # today (--low-level-retries 2) makes every saves backup fail on Dropbox
+  # once a save is already in the cloud, because Dropbox answers concurrent
+  # writes to one folder with a lock error and two retries do not outlast it.
+  # Rewritten only when it is still exactly what we shipped, so a hand-tuned
+  # value is left alone, and only once, with a marker -- the same shape as the
+  # BACKUPMETHOD migration above and for the same reason.
+  if [ -f "/storage/.config/cloud_sync.conf" ] \
+     && [ ! -f "/storage/.config/.cloud_sync-net-opts-retries-applied" ] \
+     && grep -qF 'RCLONE_NET_OPTS="--contimeout 15s --timeout 30s --low-level-retries 2 --retries 1"' \
+             /storage/.config/cloud_sync.conf; then
+    sed -i 's|^RCLONE_NET_OPTS=.*|RCLONE_NET_OPTS="--contimeout 15s --timeout 30s --low-level-retries 10 --retries 1"|' \
+        /storage/.config/cloud_sync.conf
+    touch /storage/.config/.cloud_sync-net-opts-retries-applied 2>/dev/null
+    log_to_file "${log_file}" "RCLONE_NET_OPTS still held the two-low-level-retry bound, which fails a Dropbox backup whenever a save is replaced; set back to rclone's ten. This is done once; a value you have edited yourself is left alone."
+  fi
+
   return 0
 }
 
