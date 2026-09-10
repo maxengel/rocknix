@@ -34,6 +34,26 @@ at a named phase, restores it 40 s later and asserts the run ended within
 throttled WebDAV endpoint and a guest with a serial console (a headless VM);
 on a handheld they are skipped, with a line saying so.
 
+    ./tools/cloud-round-trip --host root@127.0.0.1 --port 10024 --identity ... \
+        --only KILL1,KILL2,KILL3,KILL4,KILL5,KILL10,KILL11,KILL12,KILL13,KILL15,KILL16,KILL18 \
+        --serial-socket /tmp/rocknix-qemu-serial-c.sock --monitor-socket /tmp/rocknix-qemu-monitor-c.sock
+
+--only KILL1,... (or --kill after the suite) runs #105's KILL cells: each
+writer killed at every step it has (a SIGKILL at rclone's per-file line, a
+guest-side watcher on a filesystem condition, an exported bash function
+that kills from inside the step, a planted torn file), then asserted on
+D-CLOUD-078 -- the previous state is what remains, the stamp never says 0,
+a re-run completes. KILL12 and KILL13 are power cuts: `system_reset` over
+QEMU's monitor with the config files planted torn, or behind
+EmulationStation's own page-close writers (the walk in
+tools/vm-walks/ui-settings-toggle.steps). Cells needing no endpoint prepare
+the device locally; the two power-cut cells need the serial console and the
+monitor and are skipped with a line without them. Every fixture in every
+registry now ends in litter_scan() -- one last-known-good of each record, no
+writer's litter -- and every failure fixture runs its output through
+assert_message() -- no exit code, log path or tool name where a player
+reads (--vocabulary adds D-UI-028's four words once the strings land).
+
 Two guards, both load-bearing:
 
 * Every cloud_* script picks its remote with `rclone listremotes | head -1`.
@@ -341,7 +361,7 @@ def assert_two_devices(a, b):
     raise Fail(f"refusing the two-device fixtures: {why} (#91)")
 
 
-def prepare_local(dev, root, args, prepared):
+def prepare_local(dev, root, args, prepared, keys=("SAVESPATH",), capture=True):
     """Point one device's saves root at the scratch tree and nothing else: no
     remote, no bucket, no second guest. The capture fixtures (#21) drive a
     producer that opens no socket, so the QA endpoint is never asked for
@@ -359,15 +379,19 @@ def prepare_local(dev, root, args, prepared):
     have = dev.run("command -v jq cloud_device_id cloud_saves_root cloud_capture || true")
     check(all(t in have for t in ("jq", "cloud_device_id", "cloud_saves_root")),
           "jq and the sibling helpers present", "device is missing jq, cloud_device_id or cloud_saves_root")
-    check("cloud_capture" in have, "cloud_capture resolves (staged by hand under --path-prefix)",
-          "cloud_capture does not resolve: stage it into the prefix directory; every fixture will fail its setup")
+    if capture:
+        check("cloud_capture" in have, "cloud_capture resolves (staged by hand under --path-prefix)",
+              "cloud_capture does not resolve: stage it into the prefix directory; every fixture will fail its setup")
     step("point the device's saves root at the scratch tree")
-    p.prev_paths["SAVESPATH"] = dev.run(f"grep -m1 '^SAVESPATH=' {CONF} 2>/dev/null || true").strip()
+    for key in keys:
+        p.prev_paths[key] = dev.run(f"grep -m1 '^{key}=' {CONF} 2>/dev/null || true").strip()
     prepared.append(p)
     dev.run(f"mkdir -p {shlex.quote(root)}")
-    apply_settings(dev, {"SAVESPATH": root})
     p.settings = {"SAVESPATH": root}
-    print(f"    scratch tree {root}; SAVESPATH points at it for the run; no remote is touched")
+    if "SETTINGS_BACKUPS" in keys:
+        p.settings["SETTINGS_BACKUPS"] = f"{root}/backup"
+    apply_settings(dev, p.settings)
+    print(f"    scratch tree {root}; {' and '.join(keys)} point at it for the run; no remote is touched")
     return p
 
 
@@ -386,6 +410,11 @@ def list_fixtures():
     print("\nlink-loss fixtures (one guest, the throttled QA endpoint, and its serial console; --link, or --only LINK1,...,LINK7):")
     for key, title, _ in LINK_FIXTURES:
         print(f"  {key:<10}{title}")
+    print("\nKILL cells (a writer killed at every step, the config files power-cut; --kill, or --only KILL1,...; #105):")
+    print(f"  {'':<10}{'needs':<22}what")
+    for key, title, _, needs in KILL_FIXTURES:
+        need = ", ".join(KILL_NEEDS_TEXT[n] for n in sorted(needs)) or "none (local)"
+        print(f"  {key:<10}{need:<22}{title}")
 
 
 def main():
@@ -416,7 +445,25 @@ def main():
     ap.add_argument("--vm-serial", default=os.path.join(HERE, "vm-serial"), help="the serial client (default: %(default)s)")
     ap.add_argument("--link-restore-after", type=float, default=40,
                     help="seconds after the cut at which the link is restored (default: %(default)s; 120 shows an unbounded run overshoot the bound)")
+    ap.add_argument("--kill", action="store_true",
+                    help="run the KILL cells after the suite (#105): a writer killed at every step, the config files power-cut; "
+                         "--only KILL1,... for a subset (cells needing no endpoint prepare the device locally)")
+    ap.add_argument("--monitor-socket", default="/tmp/rocknix-qemu-monitor.sock",
+                    help="QEMU's monitor socket, from generic-x64-vm run --headless (default: %(default)s); the power-cut cells "
+                         "KILL12/KILL13 are skipped when it is not there")
+    ap.add_argument("--power-cut-trials", type=int, default=3, help="KILL13 arm A: how many of --cut-after-ms to run (default: %(default)s)")
+    ap.add_argument("--cut-after-ms", default="0,50,200,1000",
+                    help="KILL13 arm A: the gaps between the page close and system_reset, in ms (default: %(default)s)")
+    ap.add_argument("--vocabulary", action="store_true",
+                    help="assert D-UI-028's four outcome words on every run's last line (off until the strings land; the FORBIDDEN "
+                         "check -- no exit codes, log paths or tool names on the screen -- is always on)")
     args = ap.parse_args()
+    # Line-buffered even when redirected: a run in the background used to
+    # show nothing until it ended, and a run that hangs showed nothing ever.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except (AttributeError, ValueError):
+        pass
     if args.list:
         list_fixtures()
         return 0
@@ -428,12 +475,19 @@ def main():
     cap_keys = {k for k, _, _ in CAPTURE_FIXTURES}
     solo_keys = {k for k, _, _ in SOLO_FIXTURES}
     link_keys = {k for k, _, _ in LINK_FIXTURES}
+    kill_keys = {k for k, _, _, _ in KILL_FIXTURES}
+    kill_local_keys = {k for k, _, _, needs in KILL_FIXTURES if "backend" not in needs}
     only = {k.strip().upper() for k in args.only.split(",")} if args.only else None
     skipped = []
     # A run naming only capture fixtures needs no MinIO and no second guest:
-    # the producer is network-free, so the backend is asked for nothing.
+    # the producer is network-free, so the backend is asked for nothing. The
+    # same for the KILL cells that touch no endpoint (backuptool, set_setting,
+    # the local records, and the power-cut cells, which need the console and
+    # the monitor but no cloud).
     cap_only = only is not None and only <= cap_keys
-    remote = "" if cap_only else backend("remote-name").strip()
+    kill_local = only is not None and bool(only) and only <= kill_local_keys
+    local_only = cap_only or kill_local
+    remote = "" if local_only else backend("remote-name").strip()
     root = "/storage/roms" if args.real_roms else SCRATCH
     devices = [Device(args.host, args.port, args.identity, args.path_prefix)]
     if args.second_port:
@@ -449,8 +503,9 @@ def main():
     # hard way: a run that aborted on guest b left the QA remote and the QA
     # paths behind.
     try:
-        if cap_only:
-            first = prepare_local(devices[0], root, args, prepared)
+        if local_only:
+            first = prepare_local(devices[0], root, args, prepared,
+                                  keys=("SAVESPATH", "SETTINGS_BACKUPS") if kill_local else ("SAVESPATH",), capture=cap_only)
         else:
             if len(devices) > 1:
                 assert_two_devices(devices[0], devices[1])
@@ -461,7 +516,7 @@ def main():
             failures += run_steps(first.dev, root, remote, args, first.settings, first.prev_paths)
         if len(prepared) > 1:
             failures += run_pair(prepared[0].dev, prepared[1].dev, root, remote, args, first.settings)
-        elif only and only - cap_keys - solo_keys - link_keys:
+        elif only and only - cap_keys - solo_keys - link_keys - kill_keys:
             print("\n--only names two-device fixtures; pass --second-port for the VM pair's guest b")
         if only and only & solo_keys:
             failures += run_solo(first.dev, root, remote, args, first.settings, only)
@@ -478,6 +533,12 @@ def main():
                 skipped.append(f"LINK fixtures: no serial console at {args.serial_socket} (or {args.vm_serial} is not executable); "
                                "a guest from `generic-x64-vm run --headless` has one, a handheld has none")
                 print(f"\n    SKIP  {skipped[-1]}")
+        if args.kill or (only and only & kill_keys):
+            # Off by default: minutes per cell, and two of them reboot the
+            # guest. Cells whose channel is missing are skipped one by one,
+            # with a line each, inside run_kill.
+            serial = Serial(args.serial_socket, args.vm_serial)
+            failures += run_kill(first.dev, root, remote, args, first.settings, serial, only, local_only)
     finally:
         for p in prepared:
             restore_device(p, args, archive)
@@ -897,6 +958,7 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     failures += not check("already running" in second.lower(),
                           "and said another sync was running",
                           "exit 75 without the message somebody would read")
+    failures += assert_message(second, 75, args.vocabulary, label="the refusal: ")
     stamp = dev.run("cat /storage/.cache/cloud_sync/last-backup 2>/dev/null || echo NONE")
     failures += not check(stamp.strip() == "NONE",
                           "no last-run stamp was written for work that did not happen",
@@ -941,7 +1003,7 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     out = dev.run(
         "mkdir -p /tmp/noroute && printf '#!/bin/sh\nexit 0\n' > /tmp/noroute/ip && chmod +x /tmp/noroute/ip; "
         "s0=$(cat /storage/.cache/cloud_sync/last-backup 2>/dev/null); "
-        "t0=$(date +%s%N); PATH=/tmp/noroute:$PATH cloud_backup --yes --saves-only --recent >/dev/null 2>&1; "
+        "t0=$(date +%s%N); PATH=/tmp/noroute:$PATH cloud_backup --yes --saves-only --recent >/tmp/qa-noroute.out 2>&1; "
         "rc=$?; t1=$(date +%s%N); s1=$(cat /storage/.cache/cloud_sync/last-backup 2>/dev/null); "
         "echo rc=$rc ms=$(( (t1 - t0) / 1000000 )) stamp=$([ \"$s0\" = \"$s1\" ] && echo same || echo CHANGED); "
         "rm -rf /tmp/noroute", check=False)
@@ -954,6 +1016,8 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     failures += not check(fields.get("stamp") == "same",
                           "no last-run stamp was written for work that did not happen",
                           "A NO-NETWORK SKIP STAMPED A LAST-RUN")
+    failures += assert_message(dev.run("cat /tmp/qa-noroute.out 2>/dev/null || true", check=False),
+                               int(fields["rc"]) if fields.get("rc", "").isdigit() else None, args.vocabulary, label="the no-network skip: ")
 
     step("every EmulationStation system path is carried by exactly one tier")
     # The complement of the rule above: a path in NO tier is silent data loss
@@ -981,9 +1045,7 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     # would drop the --path-prefix directory; the profile is sourced at all
     # because the script itself does, and its globs are built on OS_NAME,
     # which an ssh session does not have.
-    def finder(script):
-        return (f"B={script}; . /etc/profile >/dev/null 2>&1; . {CONF}; "
-                "eval \"$(sed -n '/^newest_backup()/,/^}/p' \"$B\")\"; newest_backup")
+    finder = finder_cmd       # module-level since the KILL cells use it too
     newest_cmd = finder('"$(command -v backuptool)"')
     newest = dev.run(newest_cmd, check=False).strip()
     failures += not check(newest.endswith(".tar.gz"),
@@ -1172,6 +1234,9 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
                           f"not carried: {missing}")
     dev.write(CONF, saved_conf.encode())
 
+    # The one-record assertion over everything the suite touched (#105).
+    step("one last-known-good of every record, and no writer's litter, after the suite")
+    failures += litter_scan(dev, settings, remote)
     return failures
 
 
@@ -1632,28 +1697,34 @@ def fx_a9(p):
     q = shlex.quote(p.root)
     p.a.run(f"mv {q} {q}.away")
     try:
-        rcs = [run_rc(p.a, c)[0] for _, c in passes]
+        runs = [run_rc(p.a, c) for _, c in passes]
+        rcs = [rc for rc, _ in runs]
         present = p.a.run(f"find {q} -type f 2>/dev/null | wc -l").strip()
     finally:
         p.a.run(f"rm -rf {q}; mv {q}.away {q}")
     f += not check(all(rc == 1 for rc in rcs), "with the saves root unmounted every pass refused (exit 1)",
                    f"passes on an unmounted root exited {rcs} (A9: refuse, reason named)")
+    f += assert_message(runs[0][1], runs[0][0], label="the refusal (unmounted root): ")
     f += not check(present == "0", "and nothing was written where the root should be",
                    f"{present} file(s) were written into a root that was not mounted")
     p.a.run(f"mv {q} {q}.away; mkdir -p {q}")
     try:
-        rcs = [run_rc(p.a, c)[0] for _, c in passes]
+        runs = [run_rc(p.a, c) for _, c in passes]
+        rcs = [rc for rc, _ in runs]
         present = p.a.run(f"find {q} -type f 2>/dev/null | wc -l").strip()
     finally:
         p.a.run(f"rm -rf {q}; mv {q}.away {q}")
     f += not check(all(rc == 1 for rc in rcs), "with the saves root empty every pass refused (exit 1)",
                    f"passes on an empty root exited {rcs}")
+    f += assert_message(runs[0][1], runs[0][0], label="the refusal (empty root): ")
     f += not check(present == "0", "and nothing was downloaded into it",
                    f"{present} file(s) were downloaded into an empty root with agreement on record")
     empty = p.saves_remote.rstrip("/") + "-empty"
     set_key(p.a, "SAVES_REMOTE", empty)
-    rcs = [run_rc(p.a, c)[0] for _, c in passes]
+    runs = [run_rc(p.a, c) for _, c in passes]
+    rcs = [rc for rc, _ in runs]
     set_key(p.a, "SAVES_REMOTE", p.saves_remote)
+    f += assert_message(runs[0][1], runs[0][0], label="the refusal (empty cloud folder): ")
     uploaded = backend_files(epath(empty))
     f += not check(all(rc == 1 for rc in rcs), "with the cloud folder empty every pass refused (exit 1)",
                    f"passes against an empty cloud folder exited {rcs}")
@@ -1710,7 +1781,8 @@ def fx_a12(p):
     a.write(CONF, "\n".join(old).encode())
     try:
         mark = log_mark(a)
-        run_rc(a, f"cloud_sync_helper {LOG}")
+        rc_h, out_h = run_rc(a, f"cloud_sync_helper {LOG}")
+        f += assert_message(out_h, rc_h, label="the helper's migration: ")
         conf = a.run(f"cat {CONF}")
         warns = [l for l in log_since(a, mark).splitlines() if "WARN" in l and other in l]
         f += not check(f'SAVESPATH="{p.root}"' in conf, "SAVESPATH was migrated from BACKUPPATH",
@@ -1892,6 +1964,8 @@ def run_pair(a, b, root, remote, args, settings):
             except Fail as e:
                 failures += 1
                 print(f"    FAIL  {e}")
+            for which, d in (("a", a), ("b", b)):
+                failures += litter_scan(d, settings, remote, label=f"{key} on {which}: ")
         if not only or "CONTRACT" in only:
             for kind in args.transport.split(","):
                 failures += run_contract(p, kind.strip(), args)
@@ -2412,6 +2486,7 @@ def run_solo(dev, root, remote, args, settings, only):
         except Fail as e:
             failures += 1
             print(f"    FAIL  {e}")
+        failures += litter_scan(dev, settings, remote, label=f"{key}: ")
     return failures
 
 
@@ -3800,24 +3875,25 @@ CAPTURE_FIXTURES = [
 ]
 
 
-def snapshot_cache(dev):
+def snapshot_cache(dev, where="/tmp/qa-cache.tgz"):
     """Archive /storage/.cache/cloud_sync before the fixtures wipe it. Returns
     whether the directory existed, which restore_cache needs to tell "nothing
-    to put back" from "the snapshot failed"."""
+    to put back" from "the snapshot failed". `where` is on /tmp by default;
+    the KILL cells put it on /storage, because a power cut empties /tmp."""
     had = dev.run(f"[ -d {CACHE} ] && echo yes || echo no", check=False).strip() == "yes"
-    dev.run("rm -f /tmp/qa-cache.tgz; tar -C /storage/.cache -czf /tmp/qa-cache.tgz cloud_sync 2>/dev/null || true", check=False)
+    dev.run(f"rm -f {where}; tar -C /storage/.cache -czf {where} cloud_sync 2>/dev/null || true", check=False)
     return had
 
 
-def restore_cache(dev, had):
+def restore_cache(dev, had, where="/tmp/qa-cache.tgz"):
     """Put the cache directory back from the snapshot -- only when the
     snapshot exists. tar exiting non-zero for any reason but an absent
     directory (/tmp full, a read error) left no archive, and deleting the
     live directory then would drop the device's saves-root record and every
     last-* stamp on the strength of nothing: a guard that fails open."""
-    have = dev.run("[ -s /tmp/qa-cache.tgz ] && echo yes || echo no", check=False).strip() == "yes"
+    have = dev.run(f"[ -s {where} ] && echo yes || echo no", check=False).strip() == "yes"
     if have:
-        dev.run(f"rm -rf {CACHE}; tar -C /storage/.cache -xzf /tmp/qa-cache.tgz 2>/dev/null; rm -f /tmp/qa-cache.tgz", check=False)
+        dev.run(f"rm -rf {CACHE}; tar -C /storage/.cache -xzf {where} 2>/dev/null; rm -f {where}", check=False)
     elif had:
         print(f"    WARN  cache snapshot missing; {CACHE} not restored -- the device's stamps and saves-root record "
               "are whatever the fixtures left", file=sys.stderr)
@@ -3842,6 +3918,7 @@ def run_capture(dev, root, args, only):
             except Fail as e:
                 failures += 1
                 print(f"    FAIL  {e}")
+            failures += litter_scan(dev, {"SAVESPATH": root}, label=f"{key}: ")
     finally:
         local_reset(dev, root)
         restore_cache(dev, had)
@@ -4718,6 +4795,10 @@ class Link:
         mark = log_mark(self.dev)
         rc2, out2 = run_rc(self.dev, rerun or cmd, env)
         self.keep(key, out2)
+        # What the card and the page had to show for the cut run: its whole
+        # stdout (re-read now that it has ended; `out` stopped at the cut) and
+        # its exit. The vocabulary gate (#105, D-UI-028) judges that.
+        f += assert_message(self.status()[0], rc, self.args.vocabulary, label="the cut run: ")
         # rclone's "423 Locked" goes to the --log-file, not to stdout, so the
         # log is where a lock shows. One case on this backend is not a script
         # fault and not the harness's to pass off as one: when the operation
@@ -4897,6 +4978,7 @@ def run_link(dev, root, remote, args, settings, serial, only):
             L.reset()
             try:
                 failures += fn(L)
+                failures += litter_scan(dev, settings, remote, label=f"{key}: ")
             except Fail as e:
                 failures += 1
                 print(f"    FAIL  {e}")
@@ -4912,6 +4994,1816 @@ def run_link(dev, root, remote, args, settings, serial, only):
     finally:
         L.reset()
         restore_cache(dev, had)
+    return failures
+
+
+# ===========================================================================
+# #105: a writer killed at every step, and the power cut (D-CLOUD-077/078/079)
+# ===========================================================================
+#
+# D-CLOUD-078 asks every writer three things, in order: know that you
+# succeeded; replace the old state only after that; remove the superseded
+# record once, so exactly one last-known-good exists at rest. The rule in
+# engineering-practices.md says how to test it: kill the writer at every step
+# and assert the previous state is what remains. These cells do that, each
+# against the shipped scripts and the running EmulationStation, and each was
+# first committed with its failing output (the harness's rule).
+#
+# Four mechanisms, chosen per step (docs/audits/2026_09_10-graceful-
+# degradation/kill-fixtures-design.md):
+#
+# * PG@marker -- SIGKILL (or SIGTERM) the detached run's process group when a
+#   regex matches its stdout: rclone's per-file progress line, so the kill
+#   lands mid-transfer (LINK's wait_marker).
+# * watcher -- a guest-side script polling a filesystem condition every 20 ms
+#   and killing the group the moment it holds. For a window inside one long
+#   binary (tar over 20k files, gzip over 64 MiB) where no line is printed.
+#   It is a file, not a pkill pattern, because of the self-match lesson.
+# * shim -- a bash function of a command's name, exported so it wins over
+#   PATH in every bash the run starts. backuptool and cloud_content_restore
+#   source /etc/profile, which puts /usr/bin first, so a --path-prefix
+#   directory is not enough; an exported function survives that (bash
+#   imports BASH_FUNC_* on start, proven on the guest). set_setting is a
+#   function of the calling shell, so its override is defined in that shell
+#   after the profile is sourced.
+# * plant -- the torn state written directly, standing for a kill inside a
+#   builtin or a single write() syscall that no external signal lands in
+#   deterministically. Labelled as such in the PASS/FAIL text.
+# * reset -- HMP `system_reset` over QEMU's monitor: every dirty page in the
+#   guest is gone, the disk holds exactly what the guest issued. It models a
+#   battery dying. It cannot model an SD card's write cache or FTL, which is
+#   what the RG SP's truncated system.cfg (#102) may have been; that is what
+#   the VM cannot prove, and the cells say so.
+#
+# The record's name follows D-CLOUD-079, not the design's draft: the
+# last-known-good copy of system.cfg keeps its name, `system.cfg.backup`, and
+# es_settings.cfg gains `es_settings.cfg.backup`. The scans accept
+# `.last-good` too, so a build carrying either name is judged on the rule.
+
+import socket
+import xml.etree.ElementTree as ET
+
+KILL_WATCH = "/tmp/qa-kill/watch.sh"
+KILL_SCRATCH = "/storage/cloud-qa-kill"           # 20k empty files and a 64 MiB blob: a tar with a window
+KILL_MANY = 20000
+KILL_BLOB_MIB = 64
+KILL_CONFIGS_TGZ = "/storage/.cache/qa-kill-configs.tgz"   # on /storage: /tmp does not survive a power cut
+SYSCFG_DIR = "/storage/.config/system/configs"
+SYSCFG = f"{SYSCFG_DIR}/system.cfg"
+SYSCFG_LOCK = "/tmp/.system.cfg.lock"
+SYSCFG_DEFAULT = "/usr/config/system/configs/system.cfg"
+ES_DIR = "/storage/.config/emulationstation"
+ES_SETTINGS = f"{ES_DIR}/es_settings.cfg"
+ES_LOG = "/var/log/es_log.txt"
+ES_PARSE_ERROR = "Could not parse Settings file"
+BACKUPTOOL_CONF = "/storage/.config/backuptool.conf"
+RESTORE_PENDING = "/storage/.config/.restore-finish-pending"
+CLOUD_LOCK = "/var/run/cloud_sync.lock"
+RECORD_NAMES = (".backup", ".last-good")          # D-CLOUD-079 keeps .backup; the design drafted .last-good
+KILL_MARKER_NAME = re.compile(r"^\s*\*\s+(\S.*?):\s*\d+% /", re.M)   # the file rclone is on right now
+WALK_TOGGLE = os.path.join(HERE, "vm-walks", "ui-settings-toggle.steps")
+
+
+# -- 2a. the vocabulary gate ----------------------------------------------------
+#
+# What "player-visible" means today, from the classifiers on
+# origin/test/qa-integration: the card (ThreadedCloudSync.cpp) shows a script
+# line iff it has `%`, ` / `, or ERROR|FAILED|WARN case-folded and is not a
+# `>>> ` protocol line; the page (GuiCloudTransfer::handleLine) shows only
+# `>>> ` markers and rclone's own lines. So the gate checks every line the
+# card would show and the last prose line of the run -- which is what #105
+# makes the outcome line -- against words a handheld's screen must never
+# carry. FORBIDDEN is active now: it fails, correctly, on today's `Log file:
+# /var/log/cloud_sync.log`, `(rclone exit 3)`, `Check 'logger' output` and
+# `run: cloud_setup --accept-saves-root`. The ALLOWED shapes are D-UI-028's
+# four words and sit behind --vocabulary until the strings land.
+
+MSG_PROTO = re.compile(r"^>>> ")
+MSG_RCLONE = re.compile(r"^(Transferred:|Checks:|Elapsed time:|Errors:|Deleted:|Renamed:|Transferring:|Checking:)|^\s*\*\s")
+MSG_DECOR = re.compile(r"^[=\-]{4,}$|^\s*$")
+ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+# Each alternative names a fragment seen in the scripts today: exit codes,
+# rc=, log paths, logger, rclone, CLI flags and script names as "recovery"
+# instructions, signals, sysexits.
+FORBIDDEN = re.compile(
+    r"(?i)(\bexit(ed)?(\s+code)?\s*[:=]?\s*\(?-?\d+\)?|\brc\s*=\s*-?\d+|/var/log\S*|\S+\.log\b"
+    r"|\blogger\b|\bjournalctl\b|\brclone\b|\bstderr\b|\bsysexits\b|\bEX_[A-Z]+\b|\bSIG(TERM|KILL|INT)\b"
+    r"|\berrno\b|\bpid\s+\d+|\bflock\b|\bsentinel\b|\bcloud_[a-z_]+\b|\bbackuptool\b|(^|\s)--[a-z][a-z-]+"
+    r"|\bCOMPLETED WITH ERRORS\b)")
+# The positive shape (D-UI-028), pinned once the strings land: --vocabulary.
+ALLOWED_SURFACE = re.compile(r"^(COMPLETED( WITH GAPS)?|COULDN'T FINISH|SKIPPED)( - [A-Z0-9 ,.'-]+)?$")
+ALLOWED_SCRIPT = re.compile(r"^(Completed( with gaps)?|Couldn't finish|Skipped)\b.*[.!]$")
+RECOVERY = re.compile(r"(?i)\btry again\b|\bwhen you'?re (back )?online\b")
+
+
+def clean_line(raw):
+    # Colour codes first, then anything unprintable: stripping ESC before the
+    # regex leaves "[32m" in front of the text.
+    return "".join(c for c in ANSI.sub("", raw) if 32 <= ord(c) < 127).strip()
+
+
+def card_visible(out):
+    """Exactly the card's predicate, applied to a run's stdout."""
+    for raw in out.splitlines():
+        s = clean_line(raw)
+        if not s or MSG_PROTO.match(s):
+            continue
+        u = s.upper()
+        if "%" in s or " / " in s or any(w in u for w in ("ERROR", "FAILED", "WARN")):
+            yield s
+
+
+def last_player_line(out):
+    """The last prose line of a run: not a protocol marker, not rclone's, not
+    a rule of dashes. What #105 turns into the outcome line."""
+    lines = [clean_line(l) for l in out.splitlines()]
+    lines = [l for l in lines if l and not (MSG_PROTO.match(l) or MSG_RCLONE.match(l) or MSG_DECOR.match(l))]
+    return lines[-1] if lines else ""
+
+
+def assert_message(out, rc, vocabulary=False, stamp=None, label=""):
+    """The vocabulary gate on one run's stdout. Returns the number of failed
+    checks. `stamp` is (name, contents) of the last-* file the run wrote,
+    whose second field must be the exit code the run left with."""
+    f = 0
+    visible = list(card_visible(out))
+    last = last_player_line(out)
+    offenders = []
+    for line in visible + ([last] if last else []):
+        m = FORBIDDEN.search(line)
+        if m:
+            offenders.append(f"{line[:90]!r} <- {m.group(0)!r}")
+    seen = set()
+    offenders = [o for o in offenders if not (o in seen or seen.add(o))]
+    f += not check(not offenders,
+                   f"{label}no developer words on the {len(visible)} card-visible line(s) or the outcome line ({last[:70]!r})",
+                   f"{label}developer words where a player reads ({len(offenders)}): " + "; ".join(offenders[:3]))
+    if vocabulary:
+        f += not check(bool(ALLOWED_SCRIPT.match(last)),
+                       f"{label}the outcome line is one of D-UI-028's four words ({last[:70]!r})",
+                       f"{label}the outcome line is not Completed / Completed with gaps / Couldn't finish / Skipped: {last[:90]!r}")
+        if rc is not None and rc not in (0, 75, 69):
+            f += not check(bool(RECOVERY.search(last)),
+                           f"{label}a failed run says how to recover",
+                           f"{label}exit {rc} and the outcome line names no recovery (TRY AGAIN ...): {last[:90]!r}")
+    if stamp is not None and rc is not None:
+        name, contents = stamp
+        parts = (contents or "").split()
+        f += not check(len(parts) >= 2 and parts[1] == str(rc),
+                       f"{label}{name} records the exit the run left with ({rc})",
+                       f"{label}{name} says {contents.strip()!r} for a run that exited {rc}")
+    return f
+
+
+# -- 2b. the one-record assertion ----------------------------------------------
+
+LITTER_ALLOW = {f"{CONF}.qa-prev"}      # the harness's own, put back by restore_device
+ARCHIVE_SHAPES = re.compile(r".*_SETTINGS\.tar\.gz$|.*_BACKUP\.tar\.gz$|.*_BACKUP\.zip$")
+STAMP_LINE = re.compile(r"^\d+ -?\d+( \S+)?$")     # epoch rc [why] -- the third field is D-UI-028's, additive
+
+
+def valid_syscfg(text):
+    """(ok, why) for system.cfg's contents: non-empty, no NUL, has the
+    hostname, every non-blank line key=value."""
+    if not text:
+        return False, "empty"
+    if "\0" in text:
+        return False, "binary"
+    if "system.hostname=" not in text:
+        return False, f"{len(text)} bytes, system.hostname missing"
+    bad = [l for l in text.splitlines() if l.strip() and not re.match(r"^[^=\s]+=", l)]
+    if bad:
+        return False, f"{len(bad)} line(s) not key=value, e.g. {bad[0][:40]!r}"
+    return True, f"{len(text.splitlines())} keys"
+
+
+def parse_syscfg(text):
+    out = {}
+    for l in text.splitlines():
+        if "=" in l and l.strip() and not l.startswith("#"):
+            k, _, v = l.partition("=")
+            out[k.strip()] = v
+    return out
+
+
+def parse_es(text):
+    """{name: value} of an es_settings.cfg, or None when it does not parse."""
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return None
+    if root.tag != "config":
+        return None
+    return {n.get("name"): n.get("value") for n in root if n.get("name") is not None}
+
+
+def litter_scan(dev, settings, remote="", label=""):
+    """The one-record assertion, run at the end of every fixture: nothing a
+    writer left half-done, and exactly one last-known-good of each record.
+    One bounded `find` per root, classification host-side. Returns the number
+    of failed checks (0 or 1) and prints one line naming the first offenders
+    -- or, on a pass, what it counted, because a scan that finds nothing must
+    say what it looked at (engineering-practices, guards fail closed)."""
+    off = []       # (path, why)
+    counted = []
+
+    def find(root, maxdepth=None, extra=""):
+        md = f"-maxdepth {maxdepth}" if maxdepth else ""
+        out = dev.run(f"find {shlex.quote(root)} -xdev {md} -type f {extra} 2>/dev/null | head -20000; true", check=False)
+        return [l for l in out.splitlines() if l]
+
+    def cat(path):
+        return dev.run(f"cat {shlex.quote(path)} 2>/dev/null || true", check=False)
+
+    # 1. the system config and its record
+    files = find(SYSCFG_DIR, 1)
+    for p in files:
+        b = os.path.basename(p)
+        if b == "system.cfg.tmp" or re.fullmatch(r"system\.cfg[A-Za-z0-9]{6}", b) or re.fullmatch(r"sed[A-Za-z0-9]{6}", b) or ".qa" in b:
+            off.append((p, "a writer's temporary file"))
+    ok, why = valid_syscfg(cat(SYSCFG))
+    if not ok:
+        off.append((SYSCFG, f"invalid: {why}"))
+    records = [p for p in files if os.path.basename(p) in {f"system.cfg{s}" for s in RECORD_NAMES}]
+    if len(records) != 1:
+        off.append((f"{SYSCFG}{{{','.join(RECORD_NAMES)}}}", f"{len(records)} last-known-good record(s), not one (D-CLOUD-078/079)"))
+    for r in records:
+        rok, rwhy = valid_syscfg(cat(r))
+        if not rok:
+            off.append((r, f"the record is invalid: {rwhy}"))
+    counted.append(f"system.cfg {why}" + (f", record {os.path.basename(records[0])[10:]}" if len(records) == 1 else ""))
+
+    # 2. EmulationStation's settings and its record
+    files = find(ES_DIR, 1)
+    corrupt = [p for p in files if ".corrupt" in os.path.basename(p)]
+    for p in files:
+        if os.path.basename(p) == "es_settings.cfg.tmp":
+            off.append((p, "a writer's temporary file"))
+    if len(corrupt) > 1:
+        off.append((corrupt[1], f"{len(corrupt)} torn copies kept aside; one at most"))
+    es_text = cat(ES_SETTINGS)
+    es = parse_es(es_text) if es_text else {}
+    if es is None:
+        off.append((ES_SETTINGS, f"does not parse ({len(es_text)} bytes)"))
+    es_records = [p for p in files if os.path.basename(p) in {f"es_settings.cfg{s}" for s in RECORD_NAMES}]
+    if len(es_records) != 1:
+        off.append((f"{ES_SETTINGS}{{{','.join(RECORD_NAMES)}}}", f"{len(es_records)} last-known-good record(s), not one (D-CLOUD-079)"))
+    elif parse_es(cat(es_records[0])) is None:
+        off.append((es_records[0], "the record does not parse"))
+    counted.append(f"es_settings.cfg {len(es or {})} keys")
+
+    # 3. the config root and the rclone directory
+    files = find("/storage/.config", 1) + find("/storage/.config/rclone", 1)
+    for p in files:
+        b = os.path.basename(p)
+        if p in LITTER_ALLOW:
+            continue
+        if b.endswith(".tmp") or b.endswith("~") or ".qa" in b:
+            off.append((p, "a writer's temporary file"))
+        elif b.endswith(".bak"):
+            off.append((p, "a migration copy kept forever: two records at rest (D-CLOUD-079: removed after the next good run)"))
+    dev_id = cat(ID_FILE)
+    if dev_id and len(dev_id.splitlines()) != 1:
+        off.append((ID_FILE, f"{len(dev_id.splitlines())} lines, not one"))
+    prev = cat(f"{ID_FILE}.previous").split()
+    if len(prev) != len(set(prev)):
+        off.append((f"{ID_FILE}.previous", "duplicate lines"))
+
+    # 4. the cache: every stamp and the producer's working copy
+    files = find(CACHE)
+    cache_pats = (".tmp.", ".ops.", ".cand.", ".canon.", ".manifest.", ".last-capture.", ".capture-failures.")
+    manifests = []
+    stamps = 0
+    for p in files:
+        b = os.path.basename(p)
+        if any(b.startswith(x) for x in cache_pats) or b.endswith(".tmp") or b.endswith(".partial"):
+            off.append((p, "a dead writer's scratch file"))
+        elif re.fullmatch(r"manifest-.*\.json", b) and os.path.dirname(p) == CACHE:
+            manifests.append(p)
+        elif b.startswith("last-") and b != "last-capture" and os.path.dirname(p) == CACHE:
+            stamps += 1
+            lines = [l for l in cat(p).splitlines() if l.strip()]
+            if len(lines) != 1 or not STAMP_LINE.match(lines[0]):
+                off.append((p, f"not one `epoch rc` line: {lines[:2]!r}"))
+    if len(manifests) > 1:
+        off.append((manifests[1], f"{len(manifests)} working copies; one, manifest-<device id>.json"))
+    elif manifests and dev_id.strip() and os.path.basename(manifests[0]) != f"manifest-{dev_id.strip()}.json":
+        off.append((manifests[0], f"not this device's (id {dev_id.strip()})"))
+    lc = [l for l in cat(f"{CACHE}/last-capture").splitlines() if l.strip()]
+    modes = [stamp_mode(l) for l in lc]
+    if len(modes) != len(set(modes)):
+        off.append((f"{CACHE}/last-capture", f"more than one line for a mode: {modes}"))
+    marker = cat(f"{CACHE}/settings-backup.uploaded")
+    if marker and not re.fullmatch(r"[0-9a-f]{32}([0-9a-f]{32})? \S+\n?", marker):
+        off.append((f"{CACHE}/settings-backup.uploaded", f"not one `hash dest` line: {marker.strip()[:60]!r}"))
+    if dev.run(f"[ -e {CACHE}/saves-root ] && [ ! -s {CACHE}/saves-root ] && echo EMPTY || true", check=False).strip() == "EMPTY":
+        off.append((f"{CACHE}/saves-root", "an empty record: the #83 guard reads it as none (KILL15)"))
+    counted.append(f"{stamps} last-* stamps, {len(lc)} capture line(s), {len(manifests)} manifest")
+
+    # 5. the settings archives
+    backups = settings.get("SETTINGS_BACKUPS") or settings.get("BACKUPFOLDER")
+    if backups:
+        files = find(backups)
+        roots = [p for p in files if os.path.dirname(p) == backups and ARCHIVE_SHAPES.match(os.path.basename(p))]
+        archived = [p for p in files if os.path.dirname(p) == f"{backups}/archive"]
+        for p in files:
+            b = os.path.basename(p)
+            if b.endswith(".partial") or b.endswith(".tmp") or b.startswith(".qa-"):
+                off.append((p, "a writer's temporary file"))
+        if len(roots) > 1:
+            off.append((roots[1], f"{len(roots)} archives at the root: two candidates, not one record"))
+        for p in roots:
+            test = "unzip -t" if p.endswith(".zip") else "tar -tzf"
+            if dev.run(f"{test} {shlex.quote(p)} >/dev/null 2>&1 && echo ok || echo BAD", check=False).strip() != "ok":
+                off.append((p, "the newest archive does not pass integrity"))
+        if len(archived) > 3:
+            off.append((archived[3], f"{len(archived)} in archive/, more than ARCHIVE_KEEP (3)"))
+        counted.append(f"{len(roots)} archive at root, {len(archived)} in archive/")
+
+    # 6. the saves tree. The harness's own allowlist fixture (saves/scratch.tmp,
+    # planted to prove the filter keeps a .tmp out of the cloud) is not litter.
+    saves = settings.get("SAVESPATH") or settings.get("BACKUPPATH")
+    if saves:
+        own = {f"{saves}/{rel}" for rel in EXCLUDED}
+        files = find(saves, None, r"\( -name '*.partial' -o -name '*.tmp' \)")
+        for p in files:
+            if p in own or p.endswith(".state.auto.bak"):
+                continue
+            off.append((p, "rclone's temporary copy of a save, left by a cut transfer" if p.endswith(".partial")
+                        else "a writer's temporary file"))
+        counted.append(f"saves tree clean of *.partial/*.tmp")
+
+    # 7. the cloud folder
+    if remote:
+        sremote = settings.get("SETTINGS_REMOTE") or settings.get("SYNCPATH_BACKUP") or ""
+        cloud = backend_files(epath(sremote)) if sremote else []
+        for rel in cloud:
+            if rel.endswith(".partial"):
+                off.append((f"cloud:{rel}", "a partial upload under the settings folder"))
+        by_folder = {}
+        for rel in cloud:
+            if "/" in rel:
+                by_folder.setdefault(rel.split("/", 1)[0], []).append(rel.split("/", 1)[1])
+        for folder, names in by_folder.items():
+            if names.count("device.json") > 1:
+                off.append((f"cloud:{folder}/device.json", "more than one"))
+        label_ = dev.run("cloud_device_id --label 2>/dev/null || true", check=False).strip()
+        if dev_id.strip() and label_ and dev_id.strip() in by_folder:
+            osn = os_name(dev)
+            own = [n for n in by_folder[dev_id.strip()] if re.fullmatch(rf"\d{{4}}_\d\d_\d\d-\d{{6}}-{re.escape(label_)}-{re.escape(osn)}_SETTINGS\.tar\.gz", n)]
+            keep_raw = dev.run(f"grep -m1 '^CLOUD_BACKUP_KEEP=' {CONF} 2>/dev/null | cut -d= -f2 | tr -d '\"' || true", check=False).strip()
+            keep = int(keep_raw) if keep_raw.isdigit() else 3
+            if len(own) > keep:
+                off.append((f"cloud:{dev_id.strip()}/", f"{len(own)} of this device's archives, more than CLOUD_BACKUP_KEEP={keep}"))
+        sroot = settings.get("SAVES_REMOTE") or settings.get("SYNCPATH") or ""
+        for rel in (backend_files(epath(sroot)) if sroot else []):
+            if rel.endswith(".partial"):
+                off.append((f"cloud:{rel}", "a partial upload under the saves folder"))
+        counted.append(f"cloud {len(cloud)} settings file(s)")
+
+    shown = "; ".join(f"{p} ({w})" for p, w in off[:5]) + (f"; +{len(off) - 5} more" if len(off) > 5 else "")
+    return int(not check(not off,
+                         f"{label}one record each, no litter: " + "; ".join(counted),
+                         f"{label}{len(off)} record/litter violation(s): {shown}"))
+
+
+# -- the monitor -------------------------------------------------------------------
+
+class Monitor:
+    """QEMU's human monitor over its unix socket: connect, read the prompt,
+    send a line, read the prompt back. `system_reset` is the power cut."""
+
+    def __init__(self, path, timeout=10):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(timeout)
+        self.sock.connect(path)
+        self._prompt()
+
+    def _prompt(self, timeout=5.0):
+        buf = b""
+        end = time.time() + timeout
+        self.sock.settimeout(0.5)
+        while time.time() < end:
+            try:
+                chunk = self.sock.recv(4096)
+            except (socket.timeout, TimeoutError):
+                if buf.rstrip().endswith(b"(qemu)"):
+                    break
+                continue
+            if not chunk:
+                break
+            buf += chunk
+            if buf.rstrip().endswith(b"(qemu)"):
+                break
+        return buf.decode("utf-8", "replace")
+
+    def cmd(self, text):
+        self.sock.sendall((text + "\n").encode())
+        return self._prompt()
+
+    def sendkey(self, key, times=1, gap=0.15):
+        for _ in range(times):
+            self.cmd("sendkey " + key)
+            time.sleep(gap)
+
+    def system_reset(self):
+        self.cmd("system_reset")
+
+    def close(self):
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+
+def walk_steps(path):
+    """A tools/vm-walks step file as [(verb, rest)] -- the same grammar
+    tools/vm-visual-qa reads, so one file serves both."""
+    steps = []
+    for raw in open(path):
+        line = raw.split("#", 1)[0].strip()
+        if line:
+            verb, _, rest = line.partition(" ")
+            steps.append((verb, rest.strip()))
+    return steps
+
+
+def steps_without_toggle(steps):
+    """The walk up to, not including, its last `key x` -- the toggle press --
+    so the same file drives a page open/close that changes nothing."""
+    idx = max((i for i, s in enumerate(steps) if s == ("key", "x")), default=len(steps))
+    return steps[:idx]
+
+
+def run_walk(mon, steps):
+    for verb, rest in steps:
+        if verb == "key":
+            m = re.match(r"^(\S+)(?:\s+x(\d+))?$", rest)
+            if not m:
+                raise Fail(f"bad key step: {rest!r}")
+            mon.sendkey(m.group(1), int(m.group(2) or 1))
+        elif verb == "wait":
+            time.sleep(float(rest))
+        elif verb == "shot":
+            pass                    # frames are for people; the harness reads files
+
+
+# -- the class --------------------------------------------------------------------
+
+WATCH_SH = r"""#!/bin/sh
+# watch.sh PIDFILE RCFILE RESULT DEADLINE SIG COND...
+# Poll COND (evaluated by this shell) every 20 ms. The moment it holds, kill
+# the run's process group -- the pid in PIDFILE is its setsid leader -- with
+# SIG and record when. If the run ends first (RCFILE appears) record that the
+# kill was missed; give up at DEADLINE seconds.
+pidfile=$1; rcfile=$2; result=$3; deadline=$4; sig=$5; shift 5; cond="$*"
+end=$(( $(cut -d. -f1 /proc/uptime) + deadline ))
+while :; do
+  if eval "$cond"; then
+    pgid=$(cat "$pidfile" 2>/dev/null)
+    [ -n "$pgid" ] && kill -"$sig" -- -"$pgid" 2>/dev/null
+    echo "landed $(cut -d' ' -f1 /proc/uptime)" > "$result"; exit 0
+  fi
+  if [ -e "$rcfile" ]; then echo "missed $(cut -d' ' -f1 /proc/uptime)" > "$result"; exit 0; fi
+  if [ "$(cut -d. -f1 /proc/uptime)" -ge "$end" ]; then echo timeout > "$result"; exit 0; fi
+  usleep 20000
+done
+"""
+
+
+class Kill(Link):
+    """One device, its console and monitor, and the QA endpoint when a cell
+    needs one. Inherits the detached run, the marker wait, the receiving-side
+    fingerprints and the stamps from Link; adds the kill mechanisms, the
+    power cut, and snapshots of the two config files."""
+
+    def __init__(self, dev, serial, root, remote, settings, args, monitor_path=None, endpoint=True):
+        self.dev, self.serial, self.root, self.remote, self.settings, self.args = dev, serial, root, remote, settings, args
+        self.restore_after = 0
+        self.endpoint = endpoint
+        self.saves_remote = settings.get("SAVES_REMOTE") or settings.get("SYNCPATH") or ""
+        self.settings_remote = settings.get("SETTINGS_REMOTE") or settings.get("SYNCPATH_BACKUP") or ""
+        self.content_remote = settings.get("CONTENT_REMOTE") or settings.get("CONTENTPATH") or ""
+        self.backups = settings.get("SETTINGS_BACKUPS") or settings.get("BACKUPFOLDER") or f"{root}/backup"
+        self.iface = dev.run("ip -4 route show default 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i==\"dev\") print $(i+1)}' | head -1",
+                             check=False).strip() or "eth0"
+        self.hostport, self.host_ip = "0.0.0.0:0", "10.0.2.2"
+        if endpoint:
+            m = re.search(r"(?:url|endpoint)\s*=\s*\w+://([^/\s]+)", backend("rclone-conf"))
+            if m:
+                self.hostport = m.group(1)
+                self.host_ip = self.hostport.split(":")[0]
+        self.monitor_path = monitor_path
+        self.t_cut = None
+        self.cleanups = []
+        self.after_restart = False
+        self.label = dev.run("cloud_device_id --label 2>/dev/null || true", check=False).strip()
+        self.device_id = dev.run("cloud_device_id 2>/dev/null || true", check=False).strip()
+        self.osn = os_name(dev)
+        keep_raw = dev.run(f"grep -m1 '^CLOUD_BACKUP_KEEP=' {CONF} 2>/dev/null | cut -d= -f2 | tr -d '\"' || true", check=False).strip()
+        self.keep_n = int(keep_raw) if keep_raw.isdigit() else 3
+        self.scratch_made = False
+
+    def q(self, s):
+        return shlex.quote(s)
+
+    def reset(self):
+        self.dev.run(f"rm -rf {self.q(self.root)}; mkdir -p {self.q(self.root)}; "
+                     f"rm -rf /storage/roms/{shlex.quote(CONTENT_DIR)} {LINK_DIR}", check=False)
+        if self.endpoint:
+            backend("reset")
+
+    # -- the guards: the console and the monitor are this guest's -----------------
+    def assert_same_qemu(self):
+        """The monitor socket and the serial console must sit on one QEMU
+        command line. A `system_reset` sent to the wrong guest is a power cut
+        on somebody else's machine, so this fails closed before the by-effect
+        proof (uptime falls) can be attempted."""
+        mon, ser = os.path.realpath(self.monitor_path), os.path.realpath(self.serial.socket)
+        for pid in os.listdir("/proc"):
+            if not pid.isdigit():
+                continue
+            try:
+                argv = open(f"/proc/{pid}/cmdline", "rb").read().split(b"\0")
+            except OSError:
+                continue
+            if not argv or b"qemu-system" not in argv[0]:
+                continue
+            joined = b" ".join(argv).decode(errors="replace")
+            if mon in joined and ser in joined:
+                return pid
+        raise Fail(f"no QEMU process names both {mon} (monitor) and {ser} (serial) on its command line; "
+                   "refusing to reset a guest the console does not belong to")
+
+    # -- the detached run, with a prelude and an optional watcher -------------------
+    def start(self, cmd, env="", prelude="", shell="sh", watch=None):
+        """Start `cmd` detached in its own process group (setsid), the group
+        id in {LINK_DIR}/pid, and -- when `watch` is (condition, signal) --
+        a guest-side watcher polling that condition every 20 ms and killing
+        the group when it holds. `prelude` runs in the same shell before
+        `cmd` (exported function shims; QA_PGID is the group id)."""
+        self.dev.run(f"rm -rf {LINK_DIR}; mkdir -p {LINK_DIR}")
+        if watch:
+            cond, sig = watch
+            self.dev.write(KILL_WATCH, WATCH_SH.encode())     # /tmp: a power cut empties it, so every time
+            self.dev.run(f"setsid nohup sh {KILL_WATCH} {LINK_DIR}/pid {LINK_DIR}/rc {LINK_DIR}/watch 120 {sig} "
+                         f"{shlex.quote(cond)} >/dev/null 2>&1 &")
+        inner = (f"echo $$ > {LINK_DIR}/pid; export QA_PGID=$$; {prelude} {env} {cmd}; "
+                 f"echo $? $(cut -d' ' -f1 /proc/uptime) > {LINK_DIR}/rc")
+        self.dev.run(f"setsid nohup {shell} -c {shlex.quote(inner)} >{LINK_DIR}/out 2>&1 &")
+
+    def pid(self):
+        return self.dev.run(f"cat {LINK_DIR}/pid 2>/dev/null || true", check=False).strip()
+
+    def group_pids(self, pgid):
+        out = self.dev.run(f"ps -o pid,pgid 2>/dev/null | awk '$2 == {pgid} {{print $1}}'; true", check=False)
+        return out.split()
+
+    def kill_group(self, sig="KILL", wait=3.0, then_kill_at=None):
+        """Signal the run's process group; return the seconds until no process
+        of the group was left, or None if some still were after `wait`.
+        then_kill_at is D-CLOUD-076's procedure: TERM, then KILL at that many
+        seconds if the group is still up."""
+        pgid = self.pid()
+        if not pgid:
+            raise Fail("the detached run left no pid file; nothing to kill")
+        self.dev.run(f"kill -{sig} -- -{pgid} 2>/dev/null; true", check=False)
+        t0 = time.time()
+        killed = False
+        while time.time() - t0 < wait:
+            if not self.group_pids(pgid):
+                return time.time() - t0
+            if then_kill_at is not None and not killed and time.time() - t0 >= then_kill_at:
+                self.dev.run(f"kill -KILL -- -{pgid} 2>/dev/null; true", check=False)
+                killed = True
+            time.sleep(0.1)
+        return None if self.group_pids(pgid) else time.time() - t0
+
+    def watch_result(self, timeout=90):
+        """What the watcher recorded: ('landed', guest uptime), ('missed',
+        uptime) when the run ended before its condition held, or ('timeout',)."""
+        t = time.time()
+        while time.time() - t < timeout:
+            r = self.dev.run(f"cat {LINK_DIR}/watch 2>/dev/null || true", check=False).split()
+            if r:
+                if r[0] in ("landed", "missed"):
+                    # The group is gone (or was never signalled): give it a moment.
+                    pgid = self.pid()
+                    for _ in range(30):
+                        if not pgid or not self.group_pids(pgid):
+                            break
+                        time.sleep(0.1)
+                    return (r[0], float(r[1]))
+                return ("timeout",)
+            time.sleep(0.2)
+        raise Fail(f"the watcher recorded nothing in {timeout}s")
+
+    def ended(self):
+        """(rc, uptime) of a run that ended on its own, else None."""
+        return self.rc_line(self.dev.run(f"cat {LINK_DIR}/rc 2>/dev/null || true", check=False))
+
+    def inflight(self, out):
+        names = KILL_MARKER_NAME.findall(out)
+        return names[-1] if names else ""
+
+    @staticmethod
+    def shim(name, body):
+        """A bash function of a command's name, exported so it wins over PATH
+        in every bash the run starts (backuptool re-sources /etc/profile, so a
+        PATH directory would lose). The body may kill the group via QA_PGID."""
+        return f"{name}() {{ {body}; }}; export -f {name};"
+
+    # -- the power cut -----------------------------------------------------------------
+    def mark(self):
+        """Over serial, just before a reset: the guest's uptime, its boot_id
+        and the wall clock. reboot_wait proves the reset against these."""
+        out = self.serial.run("cut -d' ' -f1 /proc/uptime; cat /proc/sys/kernel/random/boot_id", timeout=8).split()
+        return {"u0": float(out[0]), "boot0": out[1] if len(out) > 1 else "", "t0": time.time()}
+
+    def reboot_wait(self, m, deadline=300, retried=False):
+        """After a reset: the guest's boot_id has changed and its uptime is
+        below what it would read had no reset happened (u0 plus the wall
+        time since -- a fresh boot's uptime is small, but u0 is too when the
+        previous boot was seconds ago), which proves the reset hit THIS
+        guest; exactly one emulationstation runs (`vm-serial wait` alone
+        returns at once while an old ES is still up); the network is back
+        (LINK's test); the cloud lock is free (the startup sync has run).
+        Then SSH reconnects on a fresh master. Returns (uptime, seconds)."""
+        t = time.time()
+        test = (f"cut -d' ' -f1 /proc/uptime; cat /proc/sys/kernel/random/boot_id; echo ES=$(pgrep emulationstation | wc -l); "
+                f"ip -4 -o addr show {self.iface} | grep -q 'inet ' && ip -4 route show default | grep -q . "
+                f"&& ping -c1 -W1 {self.host_ip} >/dev/null 2>&1 && echo NETOK; "
+                f"flock -n {CLOUD_LOCK} true && echo LOCKFREE")
+        up, boot = None, ""
+        answered = False
+        while time.time() - t < deadline:
+            try:
+                out = self.serial.run(test, timeout=8)
+            except Fail:
+                # No shell on the console at all. Once on 2026-09-10 a reset
+                # boot came up with a garbage command line (BOOT_IMAGE=<junk>,
+                # no boot=/disk=) and sat in the initramfs shell on the VGA
+                # console, ESP intact -- a transient of that one boot. A
+                # player would power-cycle again; so does the harness, once.
+                if not answered and time.time() - t > 150 and not retried:
+                    print("          no console shell 150s after the reset (the guest may sit in the initramfs shell); "
+                          "resetting once more")
+                    mon = Monitor(self.monitor_path)
+                    mon.system_reset()
+                    mon.close()
+                    return self.reboot_wait(m, deadline, retried=True)
+                time.sleep(2)
+                continue
+            answered = True
+            words = out.split()
+            try:
+                up = float(words[0])
+                boot = words[1]
+            except (IndexError, ValueError):
+                time.sleep(2)
+                continue
+            no_reset = m["u0"] + (time.time() - m["t0"])
+            if boot != m["boot0"] and up < no_reset - 5 and "ES=1" in words and "NETOK" in words and "LOCKFREE" in words:
+                break
+            time.sleep(2)
+        else:
+            raise Fail(f"the guest did not come back within {deadline}s of the reset (last uptime {up}, boot_id "
+                       f"{'unchanged' if boot == m['boot0'] else 'changed'}; wanted a new boot_id and an uptime under "
+                       f"{m['u0'] + (time.time() - m['t0']) - 5:.0f})")
+        self.ssh_back()
+        self.after_restart = False
+        return up, time.time() - t
+
+    def ssh_ok(self):
+        return self.dev.run("echo ok", check=False).strip() == "ok"
+
+    def ssh_back(self, budget=150):
+        """SSH after a boot. When it does not return, the usual cause is a
+        system.cfg that came up as /usr/config's defaults -- ssh.enabled is
+        read at boot, and a boot that reseeded the file left sshd off (guest
+        a, 2026-09-10, after a 0 ms cut behind a page close). That is the
+        FINDING the cell is about to report, not a reason to abort it, so
+        sshd is started over serial -- the files under test are not touched
+        -- and said."""
+        t = time.time()
+        while time.time() - t < 30:
+            if self.ssh_ok():
+                return
+            time.sleep(2)
+        state = self.serial.run("systemctl is-active sshd; get_setting() { grep -m1 \"^$1=\" " + SYSCFG +
+                                " 2>/dev/null | cut -d= -f2; }; echo ssh.enabled=$(get_setting ssh.enabled); "
+                                "wc -c < " + SYSCFG, timeout=10).split()
+        print(f"          ssh is not back 30s after the boot: sshd {state[0] if state else '?'}, {' '.join(state[1:])} bytes in system.cfg; "
+              "starting sshd over serial so the cell can read the files (the boot left it off)")
+        # sshd.service has ConditionPathExists=/storage/.cache/services/sshd.conf;
+        # 099-networkservices writes that marker from ssh.enabled at boot, so
+        # a boot on defaults left none and a bare `systemctl start` is a no-op.
+        self.serial.run("mkdir -p /storage/.cache/services; touch /storage/.cache/services/sshd.conf; systemctl start sshd", timeout=20)
+        while time.time() - t < budget:
+            if self.ssh_ok():
+                return
+            time.sleep(2)
+        raise Fail(f"ssh did not come back within {budget}s of the boot, even after `systemctl start sshd` over serial")
+
+    def run_any(self, cmd, timeout=60):
+        """Over SSH when it answers, over serial when it does not -- for the
+        restores that must happen whatever state a boot left the guest in."""
+        if self.serial is None or self.ssh_ok():
+            return self.dev.run(cmd, check=False)
+        return self.serial.run(cmd, timeout=timeout)
+
+    def power_cut(self, mon=None):
+        """Close the SSH master (a command over it would stall across the
+        reset exactly as across a link cut), read the uptime over serial,
+        `system_reset` over the monitor, wait for the boot. Returns (uptime at
+        the cut, uptime when back, seconds it took)."""
+        self.dev.disconnect()
+        m = self.mark()
+        own = mon is None
+        if own:
+            mon = Monitor(self.monitor_path)
+        mon.system_reset()
+        if own:
+            mon.close()
+        up, took = self.reboot_wait(m)
+        print(f"          power cut at guest uptime {m['u0']:.0f}s; back with uptime {up:.0f}s after {took:.0f}s "
+              "(the monitor is this guest: its boot_id changed and its uptime fell)")
+        return m["u0"], up, took
+
+    def clean_reboot(self):
+        """`systemctl reboot` over serial: the shutdown hook runs."""
+        self.dev.disconnect()
+        m = self.mark()
+        try:
+            self.serial.run("systemctl reboot", timeout=5)
+        except Fail:
+            pass        # the console goes with the system; no END marker is expected
+        up, took = self.reboot_wait(m)
+        print(f"          clean reboot from uptime {m['u0']:.0f}s; back with uptime {up:.0f}s after {took:.0f}s")
+
+    # -- the two config files, put back whatever happens -------------------------------
+    CONFIG_FILES = [SYSCFG, f"{SYSCFG}.backup", f"{SYSCFG}.last-good", f"{SYSCFG}.tmp",
+                    ES_SETTINGS, f"{ES_SETTINGS}.backup", f"{ES_SETTINGS}.last-good", BACKUPTOOL_CONF, RESTORE_PENDING]
+
+    def snapshot_configs(self, files=None):
+        """Archive the config files a cell disturbs, on /storage (a power cut
+        empties /tmp). Returns which of them existed."""
+        self.snap_files = list(files or self.CONFIG_FILES)
+        had = set(self.dev.run("for f in " + " ".join(self.snap_files) + "; do [ -e \"$f\" ] && echo \"$f\"; done; true",
+                               check=False).split())
+        names = " ".join(shlex.quote(p.lstrip("/")) for p in sorted(had))
+        self.dev.run(f"rm -f {KILL_CONFIGS_TGZ}; " + (f"tar -C / -czf {KILL_CONFIGS_TGZ} {names}" if names else f": > {KILL_CONFIGS_TGZ}"))
+        return had
+
+    def restore_configs_quiet(self, had):
+        """Put every snapshotted file back and remove the ones that did not
+        exist -- for cells that touched only backuptool.conf and the archives.
+        Over serial when SSH is gone (a boot on defaults leaves sshd off)."""
+        absent = [p for p in self.snap_files if p not in had]
+        self.run_any("rm -f " + " ".join(absent) + "; true")
+        if had:
+            self.run_any(f"tar -C / -xzf {KILL_CONFIGS_TGZ} 2>/dev/null; true")
+        self.run_any(f"rm -f {KILL_CONFIGS_TGZ}; sync")
+
+    def restore_configs(self, had):
+        """restore_configs_quiet, then restart EmulationStation -- it holds its
+        settings in memory and would rewrite the restored file on its next save."""
+        self.restore_configs_quiet(had)
+        self.es_restart()
+
+    def es_unit(self):
+        for u in ("essway", "emustation"):
+            if self.run_any(f"systemctl is-active {u} 2>/dev/null || true").strip() == "active":
+                return u
+        return "essway"
+
+    def es_restart(self):
+        unit = self.es_unit()
+        self.run_any(f"systemctl restart {unit}; systemctl start sshd 2>/dev/null; true")
+        for _ in range(30):
+            time.sleep(1)
+            if self.run_any("pgrep emulationstation | wc -l").strip() == "1":
+                break
+        time.sleep(4)
+        self.after_restart = True
+
+    # -- scratch for the archive cells -------------------------------------------------
+    def make_scratch(self):
+        """20k empty files and a 64 MiB blob under one directory, so a tar
+        over it -- collecting, compressing, or extracting -- runs for
+        seconds and a 20 ms poll lands inside it. Made once per run."""
+        if self.scratch_made:
+            return
+        self.dev.run(f"rm -rf {KILL_SCRATCH}; mkdir -p {KILL_SCRATCH}/many; "
+                     f"seq 1 {KILL_MANY} | sed 's|^|{KILL_SCRATCH}/many/f|' | xargs touch; "
+                     f"head -c {KILL_BLOB_MIB * 1048576} /dev/urandom > {KILL_SCRATCH}/blob.bin; sync")
+        self.scratch_made = True
+
+    def remove_scratch(self):
+        self.dev.run(f"rm -rf {KILL_SCRATCH}", check=False)
+        self.scratch_made = False
+
+    def plant_tar(self, path, stem, blob_mib=0):
+        """A valid .tar.gz at `path`, made on the guest, with one distinctive
+        member so archives can be told apart by content -- and, with
+        blob_mib, an incompressible member of that size so an upload lasts."""
+        blob = f"head -c {blob_mib * 1048576} /dev/urandom > $d/storage/.config/qa-kill/blob.bin; " if blob_mib else ""
+        self.dev.run(f"d=$(mktemp -d); mkdir -p $d/storage/.config/qa-kill; echo {shlex.quote(stem)} > $d/storage/.config/qa-kill/{shlex.quote(stem)}.cfg; "
+                     f"{blob}mkdir -p {shlex.quote(os.path.dirname(path))}; tar -czf {shlex.quote(path)} -C $d storage; rm -rf $d")
+
+    def marker_sum(self):
+        """The upload marker's first field as cloud_backup computes it
+        (cloud_backup:1042): the md5 of the md5 list of every archive at the
+        root, .zip then .tar.gz."""
+        return self.dev.run(f"a=$(ls {self.q(self.backups)}/*.zip {self.q(self.backups)}/*.tar.gz 2>/dev/null); "
+                            f"[ -n \"$a\" ] && md5sum $a | md5sum | cut -d' ' -f1", check=False).strip()
+
+    def finder(self):
+        """What `backuptool restore` (and RESTORE SETTINGS FROM THIS DEVICE)
+        would apply: the script's own newest_backup, run as run_steps runs it."""
+        return self.dev.run(finder_cmd('"$(command -v backuptool)"'), check=False).strip()
+
+    def root_archives(self):
+        return self.dev.run(f"cd {self.q(self.backups)} 2>/dev/null && ls -1 *.tar.gz *.zip 2>/dev/null; true", check=False).split()
+
+    def archived(self):
+        return self.dev.run(f"ls -1 {self.q(self.backups)}/archive/ 2>/dev/null; true", check=False).split()
+
+    def tar_ok(self, path):
+        return self.dev.run(f"tar -tzf {shlex.quote(path)} >/dev/null 2>&1 && echo ok || echo BAD", check=False).strip() == "ok"
+
+    def bash_profile(self, body):
+        """Run `body` in a bash that has sourced /etc/profile -- where
+        set_setting, get_setting and the lock live."""
+        return f"bash -c {shlex.quote('. /etc/profile >/dev/null 2>&1; ' + body)}"
+
+    def count_in(self, path, needle):
+        """How many lines of a file on the device contain `needle`. `grep -c`
+        prints 0 AND exits 1 when there is none, so `|| echo 0` after it
+        yields "0\n0"; take the first line."""
+        out = self.dev.run(f"grep -c {shlex.quote(needle)} {shlex.quote(path)} 2>/dev/null; true", check=False).split()
+        return int(out[0]) if out and out[0].isdigit() else 0
+
+    def clear_settings_lock(self):
+        """No stale lock before a set_setting cell, or wait_lock's own stale
+        removal would run the rm shim early."""
+        self.dev.run(f"h=$(cat {SYSCFG_LOCK} 2>/dev/null); if [ -z \"$h\" ] || ! kill -0 \"$h\" 2>/dev/null; then rm -f {SYSCFG_LOCK}; fi; true",
+                     check=False)
+
+
+def finder_cmd(script):
+    """backuptool's own newest_backup, evaluated in a shell that has sourced
+    the profile (the globs are built on OS_NAME) and the conf. The script is
+    resolved BEFORE the profile rewrites PATH."""
+    return (f"B={script}; . /etc/profile >/dev/null 2>&1; . {CONF}; "
+            "eval \"$(sed -n '/^newest_backup()/,/^}/p' \"$B\")\"; newest_backup")
+
+
+
+
+# -- the cells --------------------------------------------------------------------------
+
+def fx_kill1(L):
+    """KILL1: `cloud_backup --yes --saves-only` killed mid-transfer, twice --
+    SIGKILL (1a, nothing runs afterwards) and SIGTERM (1b, the script's trap).
+    Cloud holds v1 of three 3 MiB states, the device v2. After the kill the
+    cloud holds, per file, v1 or whole v2 -- never a truncated file under a
+    final name -- and no *.partial; the stamp is unchanged (1a) or 130 (1b),
+    never 0; the lock is released; a plain re-run exits 0 and lands all v2.
+
+    WebDAV's local store preallocates the final name when the PUT starts, so a
+    file cut mid-body reads as truncated there; that is the QA backend's
+    artifact (LINK5), reported as SKIP with the reason, and asserted cleanly
+    on MinIO (CLOUD_QA_BACKEND=s3) where a PUT commits or leaves nothing."""
+    f = 0
+    webdav = backend("backend").strip() == "webdav"
+    for variant, sig in (("1a", "KILL"), ("1b", "TERM")):
+        L.reset()
+        v1 = link_files("savestates/kill1-", ext="state")
+        # A different SIZE, not only different bytes: against the QA WebDAV
+        # (vendor=other, no modtime support) rclone compares by size alone --
+        # "Sizes identical, Unchanged skipping", proven on the guest -- so a
+        # same-size v2 never transfers and the kill has nothing to land in
+        # (#53's shape, on the saves tier). The 4 KiB is the grown save.
+        v2 = {rel: os.urandom(len(data) + 4096) for rel, data in v1.items()}
+        L.plant_cloud(v1, epath(L.saves_remote))
+        L.plant_device(L.root, v2)
+        for rel in v2:
+            touch_offset(L.dev, f"{L.root}/{rel}", 60)
+        before = L.stamps()
+        L.start("cloud_backup --yes --saves-only")
+        landed, out = L.wait_marker(LINK_MARKER_FILE)
+        if not landed:
+            r = L.ended()
+            f += not check(False, "", f"{variant}: the run ended (rc {r[0] if r else '?'}) before the kill could land")
+            continue
+        name = L.inflight(out)
+        gone = L.kill_group(sig, wait=3.0)
+        f += not check(gone is not None, f"{variant}: SIG{sig} mid-transfer of {name!r}: the process group was gone in {gone or 0:.2f}s",
+                       f"{variant}: SIG{sig} sent; processes of the group still up after 3s")
+        got = L.settle(("cloud", epath(L.saves_remote)))
+        partials = sorted(r for r in got if ".partial" in r)
+        f += not check(not partials, f"{variant}: no *.partial in the cloud", f"{variant}: partial files in the cloud: {partials}")
+        states = {}
+        for rel in v1:
+            g = got.get(rel)
+            states[rel] = ("absent" if g is None else "v1" if g == (len(v1[rel]), sha(v1[rel]))
+                           else "v2" if g == (len(v2[rel]), sha(v2[rel])) else f"TORN ({g[0]} bytes)")
+        torn = {r: s for r, s in states.items() if s.startswith("TORN")}
+        if torn and webdav:
+            print(f"    SKIP  {variant}: {torn} -- the QA WebDAV store preallocates the final name and keeps what arrived; "
+                  "a real provider resets an aborted PUT. Assert this on MinIO (CLOUD_QA_BACKEND=s3).")
+        else:
+            f += not check(not torn, f"{variant}: every file in the cloud is v1 or whole v2 ({states})",
+                           f"{variant}: a truncated file under a final name in the cloud: {torn} (all: {states})")
+        after = L.stamps()
+        if sig == "KILL":
+            f += not check(after.get("last-backup") == before.get("last-backup"),
+                           f"{variant}: last-backup unchanged ({after.get('last-backup') or 'absent'}) -- nothing ran after SIGKILL",
+                           f"{variant}: last-backup moved to {after.get('last-backup')!r} after a SIGKILL")
+        else:
+            code = (after.get("last-backup") or "").split()[1:2]
+            f += not check(code == ["130"] or after.get("last-backup") == before.get("last-backup"),
+                           f"{variant}: last-backup records the interruption ({after.get('last-backup')})",
+                           f"{variant}: last-backup is {after.get('last-backup')!r}: the trap should stamp 130, never 0")
+        free = L.dev.run(f"flock -n {CLOUD_LOCK} true && echo FREE || echo HELD", check=False).strip()
+        f += not check(free == "FREE", f"{variant}: the cloud lock is released", f"{variant}: the cloud lock is still held after the kill")
+        waited = L.endpoint_quiet()
+        if waited > 2:
+            print(f"          waited {waited:.0f}s for the endpoint to let go of the cut PUT")
+        mark = log_mark(L.dev)
+        rc2, out2 = run_rc(L.dev, "cloud_backup --yes --saves-only")
+        L.keep(f"KILL{variant}", out2)
+        got2 = L.settle(("cloud", epath(L.saves_remote)))
+        whole = all(got2.get(r) == (len(v2[r]), sha(v2[r])) for r in v2)
+        locked = webdav and rc2 != 0 and "423 Locked" in log_since(L.dev, mark)
+        if locked and whole:
+            print("    SKIP  the re-run met the QA WebDAV server's stale-PUT lock (423 Locked) on the cut file's name; "
+                  "everything is v2 in the cloud regardless. Assert idempotency on MinIO/S3.")
+        else:
+            f += not check(rc2 == 0, f"{variant}: a plain re-run exits 0", f"{variant}: the re-run exits {rc2}")
+        f += not check(whole, f"{variant}: after the re-run the cloud holds whole v2 of all {len(v2)} files",
+                       f"{variant}: after the re-run the cloud does not hold v2 of: {[r for r in v2 if got2.get(r) != (len(v2[r]), sha(v2[r]))]}")
+        f += assert_message(out2, rc2, L.args.vocabulary, label=f"{variant} re-run: ")
+    return f
+
+
+def fx_kill2(L):
+    """KILL2: `cloud_restore --yes --method=copy --update --saves-only` -- the
+    startup pair's first half -- stopped mid-download. Arm 2a is
+    EmulationStation's own procedure (D-CLOUD-076): SIGTERM to the group,
+    SIGKILL at 1.5 s, two seconds in all, because a game is about to start
+    and a rename landing on a save the game has just written would lose it.
+    Arm 2b is a plain SIGKILL, the hard stop nothing handles. RCLONE_BWLIMIT=64k
+    on the guest keeps a 3 MiB download in flight for ~45 s.
+
+    Asserted: the group is empty within the two-second budget (2a); a save
+    "the game" writes into the in-flight file one second later still stands
+    five seconds on (no rename landed); every other file is v1 or whole v2;
+    the stamp is 130 (2a) or unchanged (2b), never 0; rclone's
+    `<name>.<rand>.partial` under SAVESPATH is enumerated -- rclone removes
+    it on SIGTERM itself (found here; the design expected litter in 2a too),
+    so 2b is where it stays, a FAIL under the rule until a sweep lands; and
+    the re-run completes to v2 while KEEPING the previous local version
+    somewhere (`--backup-dir` -- D-CLOUD-078's "would"; a FAIL today)."""
+    f = 0
+    for variant, sig in (("2a", "TERM"), ("2b", "KILL")):
+        L.reset()
+        v1 = link_files("savestates/kill2-", ext="state")
+        v2 = {rel: os.urandom(len(data)) for rel, data in v1.items()}
+        L.plant_device(L.root, v1)
+        for rel in v1:
+            touch_offset(L.dev, f"{L.root}/{rel}", -3600)
+        L.plant_cloud(v2, epath(L.saves_remote))
+        before = L.stamps()
+        L.start("cloud_restore --yes --method=copy --update --saves-only", env="RCLONE_BWLIMIT=64k")
+        landed, out = L.wait_marker(LINK_MARKER_FILE, timeout=180)
+        if not landed:
+            r = L.ended()
+            f += not check(False, "", f"{variant}: the run ended (rc {r[0] if r else '?'}) before the stop could land")
+            continue
+        name = L.inflight(out)
+        t_sig = time.time()
+        if sig == "TERM":
+            gone = L.kill_group("TERM", wait=2.5, then_kill_at=1.5)
+            f += not check(gone is not None and gone <= 2.0,
+                           f"{variant}: TERM then KILL at 1.5s: the group was empty {gone or 0:.2f}s after the signal (budget 2s), mid-download of {name!r}",
+                           f"{variant}: the group was {'still up after 2.5s' if gone is None else f'gone only after {gone:.2f}s'} -- past D-CLOUD-076's two-second budget")
+        else:
+            gone = L.kill_group("KILL", wait=3.0)
+            f += not check(gone is not None, f"{variant}: SIGKILL mid-download of {name!r}: the group was gone in {gone or 0:.2f}s",
+                           f"{variant}: processes of the group still up 3s after SIGKILL")
+        time.sleep(max(0, 1.0 - (time.time() - t_sig)))
+        v3 = os.urandom(len(v1[name])) if name in v1 else os.urandom(3 * 1048576)
+        game_path = f"{L.root}/{name}" if name in v1 else f"{L.root}/savestates/kill2-1.state"
+        L.dev.write(game_path, v3)
+        # Newer than anything the cloud holds, so the re-run's --update leaves
+        # it alone: the hazard under test is the rename, not the comparison.
+        touch_offset(L.dev, game_path, 120)
+        time.sleep(5)
+        now = L.dev.sha(game_path)
+        f += not check(now == sha(v3), f"{variant}: the save the game wrote 1s after the stop still stands 5s later (no rename landed on it)",
+                       f"{variant}: THE GAME'S SAVE WAS OVERWRITTEN: {game_path} is {name_of(now, {'v1': v1.get(name, b''), 'v2': v2.get(name, b'')})}")
+        got = L.fingerprint(("device", L.root))
+        others = {}
+        for rel in v1:
+            if f"{L.root}/{rel}" == game_path:
+                continue
+            g = got.get(rel)
+            others[rel] = ("absent" if g is None else "v1" if g == (len(v1[rel]), sha(v1[rel]))
+                           else "v2" if g == (len(v2[rel]), sha(v2[rel])) else f"TORN ({g[0]} bytes)")
+        f += not check(all(not st.startswith("TORN") and st != "absent" for st in others.values()),
+                       f"{variant}: every other file is v1 or whole v2 ({others})", f"{variant}: a file is torn or gone: {others}")
+        partials = [r for r in got if ".partial" in r]
+        f += not check(not partials, f"{variant}: no rclone *.partial left under SAVESPATH",
+                       f"{variant}: rclone's temporary copy left under SAVESPATH, and nothing removes it: {partials} (D-CLOUD-078: litter forever)")
+        after = L.stamps()
+        code = (after.get("last-restore") or "").split()[1:2]
+        if sig == "TERM":
+            f += not check(code == ["130"] or after.get("last-restore") == before.get("last-restore"),
+                           f"{variant}: last-restore is {after.get('last-restore') or 'unchanged/absent'}: the stop is recorded, never as 0",
+                           f"{variant}: last-restore is {after.get('last-restore')!r} after a stopped run")
+        else:
+            f += not check(after.get("last-restore") == before.get("last-restore"),
+                           f"{variant}: last-restore unchanged ({after.get('last-restore') or 'absent'}) -- nothing ran after SIGKILL",
+                           f"{variant}: last-restore moved to {after.get('last-restore')!r} after SIGKILL")
+        rc2, out2 = run_rc(L.dev, "cloud_restore --yes --method=copy --update --saves-only")
+        L.keep(f"KILL{variant}", out2)
+        f += not check(rc2 == 0, f"{variant}: a plain re-run exits 0", f"{variant}: the re-run exits {rc2}: {last_player_line(out2)[:100]!r}")
+        got2 = L.fingerprint(("device", L.root))
+        expect = {rel: ("v3" if f"{L.root}/{rel}" == game_path else "v2") for rel in v1}
+        have = {}
+        for rel in v1:
+            g = got2.get(rel)
+            have[rel] = ("v3" if g == (len(v3), sha(v3)) else "v2" if g == (len(v2[rel]), sha(v2[rel]))
+                         else "v1" if g == (len(v1[rel]), sha(v1[rel])) else "absent" if g is None else "TORN")
+        f += not check(have == expect, f"{variant}: after the re-run: the game's save kept, the rest v2 ({have})",
+                       f"{variant}: after the re-run the tree is {have}, expected {expect}")
+        overwritten = [rel for rel in v1 if have.get(rel) == "v2"]
+        kept = L.dev.run(f"find {L.q(L.root)} {CACHE} -type f 2>/dev/null | while read -r p; do sha256sum \"$p\"; done | cut -d' ' -f1; true",
+                         check=False).split()
+        missing = [rel for rel in overwritten if sha(v1[rel]) not in kept]
+        f += not check(not missing, f"{variant}: the previous version of every overwritten save is kept somewhere ({len(overwritten)} checked)",
+                       f"{variant}: the previous version of {missing} is kept NOWHERE: the restore overwrote it with no --backup-dir (D-CLOUD-078)")
+        f += assert_message(out2, rc2, L.args.vocabulary, label=f"{variant} re-run: ")
+    return f
+
+
+def kill_backuptool_prestate(L, tag):
+    """A good archive A at the root and two older ones in archive/, under a
+    backuptool.conf whose LOCATIONS is the scratch directory (20k files and
+    a 64 MiB blob) so collecting and compressing take seconds. Returns A."""
+    L.make_scratch()
+    broot = L.backups
+    A = f"2026_03_01-000000-{L.label + '-' if L.label else ''}{L.osn}_SETTINGS.tar.gz"
+    L.dev.run(f"rm -rf {L.q(broot)}; mkdir -p {L.q(broot)}/archive")
+    L.plant_tar(f"{broot}/{A}", f"{tag}-A")
+    for d in (1, 2):
+        L.plant_tar(f"{broot}/archive/2026_02_0{d}-000000-{L.label + '-' if L.label else ''}{L.osn}_SETTINGS.tar.gz", f"{tag}-old{d}")
+    L.dev.write(BACKUPTOOL_CONF, f"LOCATIONS=(\n  {KILL_SCRATCH}\n)\n".encode())
+    L.dev.run("sync")
+    return A
+
+
+def fx_kill3(L):
+    """KILL3: `backuptool backup` killed mid-rotation -- after the previous
+    archive A was moved into archive/ and before the new one exists at the
+    root (backuptool:279-304 rotates first, :413 writes to the final name).
+    The watcher fires when archive/A exists and the root holds no archive.
+    Asserted: A is still what both readers find -- newest_backup (the
+    harness's finder) and cloud_backup --system-only's root glob -- which
+    FAILS today (A is in archive/, the root is empty, "No settings backup
+    found"); archive/ holds at most 3; a re-run yields exactly one archive at
+    the root with A in archive/."""
+    f = 0
+    had = L.snapshot_configs([BACKUPTOOL_CONF])
+    try:
+        A = kill_backuptool_prestate(L, "kill3")
+        broot = L.backups
+        cond = f"[ -e {shlex.quote(broot + '/archive/' + A)} ] && ! ls {shlex.quote(broot)}/*.tar.gz {shlex.quote(broot)}/*.zip >/dev/null 2>&1"
+        L.start("backuptool backup", shell="bash", watch=(cond, "KILL"))
+        r = L.watch_result()
+        f += not check(r[0] == "landed", f"the kill landed mid-rotation (archive/{A} present, root empty)",
+                       f"the kill did not land: watcher says {r}; the run {'ended first' if r[0] == 'missed' else 'never opened the window'}")
+        newest = L.finder()
+        roots = L.root_archives()
+        f += not check(newest == f"{broot}/{A}",
+                       "A is still what newest_backup finds (RESTORE SETTINGS FROM THIS DEVICE would apply it)",
+                       f"newest_backup finds {os.path.basename(newest) or 'nothing'}: A was rotated away before anything replaced it (backuptool:294)")
+        f += not check(A in roots, "A is still at the root, where cloud_backup --system-only's glob reads",
+                       f"the root holds {roots or 'no archive'}: the settings tier would say 'No settings backup found' (FAIL today)")
+        f += not check(len(L.archived()) <= 3, f"archive/ holds {len(L.archived())} (<= ARCHIVE_KEEP)", f"archive/ holds {len(L.archived())}")
+        rc2, out2 = run_rc(L.dev, "backuptool backup")
+        L.keep("KILL3", out2)
+        roots2 = L.root_archives()
+        f += not check(rc2 == 0 and len(roots2) == 1 and roots2[0] != A and L.tar_ok(f"{broot}/{roots2[0]}"),
+                       f"a re-run leaves exactly one valid archive at the root ({roots2[0] if roots2 else 'none'})",
+                       f"after the re-run (rc {rc2}) the root holds {roots2}")
+        f += not check(A in L.archived(), "and A is in archive/", f"A is not in archive/: {L.archived()}")
+        f += assert_message(out2, rc2, L.args.vocabulary, label="re-run: ")
+    finally:
+        L.restore_configs_quiet(had)
+    return f
+
+
+def fx_kill4(L):
+    """KILL4: `backuptool backup` killed mid-`tar -czf`, once the new archive
+    at its FINAL dated name has grown past 1 MiB (the 64 MiB blob keeps gzip
+    busy). Asserted: what the readers find passes `tar -tzf` -- FAILS today,
+    the truncated archive is newest and A is already rotated away; nothing
+    invalid is uploaded by cloud_backup --system-only afterwards -- FAILS
+    today, no integrity check before upload (cloud_backup:1110-1129); no
+    truncated file under a final name at the root; a re-run leaves one valid
+    archive at the root."""
+    f = 0
+    had = L.snapshot_configs([BACKUPTOOL_CONF])
+    try:
+        A = kill_backuptool_prestate(L, "kill4")
+        broot = L.backups
+        cond = (f"f=$(ls {shlex.quote(broot)}/*.tar.gz 2>/dev/null | grep -v {shlex.quote(A)} | head -1); "
+                f"[ -n \"$f\" ] && [ \"$(stat -c %s \"$f\" 2>/dev/null || echo 0)\" -gt 1048576 ]")
+        L.start("backuptool backup", shell="bash", watch=(cond, "KILL"))
+        r = L.watch_result()
+        f += not check(r[0] == "landed", "the kill landed while tar was writing the new archive",
+                       f"the kill did not land: watcher says {r}")
+        newest = L.finder()
+        roots = L.root_archives()
+        truncated = [n for n in roots if not L.tar_ok(f"{broot}/{n}")]
+        f += not check(bool(newest) and L.tar_ok(newest),
+                       f"what the readers find passes tar -tzf ({os.path.basename(newest)})",
+                       f"the readers find {os.path.basename(newest) or 'nothing'}, which {'is truncated' if newest else 'does not exist'}; "
+                       f"A is already in archive/ (FAIL today: backuptool:413 writes the final name directly)")
+        f += not check(not truncated, "no truncated archive under a final name at the root",
+                       f"truncated archive(s) under a final name at the root: {truncated}")
+        if L.endpoint and L.settings_remote and L.device_id:
+            folder = f"{epath(L.settings_remote)}/{L.device_id}"
+            L.dev.run(f"rm -f {CACHE}/settings-backup.uploaded", check=False)
+            rc_up, out_up = run_rc(L.dev, "cloud_backup --yes --system-only")
+            cloud = backend_files(folder)
+            bad_up = [n for n in cloud if n in truncated]
+            f += not check(not bad_up, f"cloud_backup --system-only uploaded no invalid archive (rc {rc_up}; cloud holds {cloud})",
+                           f"cloud_backup --system-only UPLOADED A TRUNCATED ARCHIVE as this device's newest: {bad_up} (rc {rc_up}; no integrity check)")
+            f += assert_message(out_up, rc_up, L.args.vocabulary, label="settings upload: ")
+        else:
+            print("    SKIP  the upload half needs the QA endpoint (run without --only KILL4 alone, or with it prepared)")
+        rc2, out2 = run_rc(L.dev, "backuptool backup")
+        L.keep("KILL4", out2)
+        roots2 = L.root_archives()
+        f += not check(rc2 == 0 and len(roots2) == 1 and L.tar_ok(f"{broot}/{roots2[0]}"),
+                       f"a re-run leaves exactly one valid archive at the root ({roots2[0] if roots2 else 'none'})",
+                       f"after the re-run (rc {rc2}) the root holds {roots2} ({[n for n in roots2 if not L.tar_ok(f'{broot}/{n}')]} invalid)")
+        f += assert_message(out2, rc2, L.args.vocabulary, label="re-run: ")
+    finally:
+        L.restore_configs_quiet(had)
+    return f
+
+
+def fx_kill5(L):
+    """KILL5: `cloud_backup --yes --system-only` killed (SIGKILL) mid-copyto
+    of a 6 MiB archive (LINK5's shape). The marker is planted as
+    `<hash of a previous archive> <dest>`; the cloud folder holds three own
+    labelled archives, one other device's, one unlabelled, and a device.json
+    with distinctive bytes. Asserted: the marker is byte-identical; all five
+    planted archives are still there (retention did not run); device.json is
+    unchanged; last-settings-backup is never 0; the re-run writes the marker
+    as `<new hash> <dest>`, trims this device's archives to CLOUD_BACKUP_KEEP,
+    leaves the others, and there is exactly one device.json.
+
+    WebDAV and MinIO differ on the receiving side (a preallocated final name
+    and a stale-PUT lock against a PUT that commits or leaves nothing); run it
+    once on each, as the pair fixtures prescribe."""
+    f = 0
+    if not L.device_id or not L.label:
+        raise Fail("cloud_device_id gave no id or label; cannot name the folder")
+    L.reset()
+    webdav = backend("backend").strip() == "webdav"
+    broot = L.backups
+    folder = f"{epath(L.settings_remote)}/{L.device_id}"
+    own = [f"2026_01_0{d}-000000-{L.label}-{L.osn}_SETTINGS.tar.gz" for d in (2, 3, 4)]
+    other = f"2026_01_01-000000-Other-Handheld-{L.osn}_SETTINGS.tar.gz"
+    unlabelled = f"2026_01_01-000000-{L.osn}_SETTINGS.tar.gz"
+    device_json = b'{"id": "planted-by-KILL5", "distinctive": "' + os.urandom(8).hex().encode() + b'"}\n'
+    planted = {n: n.encode() for n in own + [other, unlabelled]}
+    planted["device.json"] = device_json
+    L.plant_cloud(planted, folder)
+    archive = f"2026_02_01-000000-{L.label}-{L.osn}_SETTINGS.tar.gz"
+    L.dev.run(f"rm -rf {L.q(broot)}; mkdir -p {L.q(broot)}")
+    L.plant_tar(f"{broot}/{archive}", "kill5", blob_mib=6)       # ~30 s in flight at 200k
+    body_sha = L.dev.sha(f"{broot}/{archive}")
+    body_len = int(L.dev.run(f"stat -c %s {L.q(broot)}/{archive}").strip())
+    expect_sum = L.marker_sum()
+    dest = f"{L.remote}:{L.settings_remote}/{L.device_id}"
+    marker0 = f"{sha(b'the previous archive')} {dest}\n"
+    L.dev.write(f"{CACHE}/settings-backup.uploaded", marker0.encode())
+    before = L.stamps()
+    L.start("cloud_backup --yes --system-only")
+    landed, out = L.wait_marker(LINK_MARKER_FILE)
+    if not landed:
+        r = L.ended()
+        return f + (not check(False, "", f"the run ended (rc {r[0] if r else '?'}) before the kill could land"))
+    gone = L.kill_group("KILL", wait=3.0)
+    f += not check(gone is not None, f"SIGKILL mid-copyto of {L.inflight(out)!r}: the group was gone in {gone or 0:.2f}s", "the group is still up")
+    after = L.stamps()
+    f += not check(after.get("settings-backup.uploaded") == marker0.strip(),
+                   "settings-backup.uploaded is byte-identical (the upload was never confirmed)",
+                   f"the marker moved: {after.get('settings-backup.uploaded')!r}")
+    cloud = backend_files(folder)
+    still = [n for n in own + [other, unlabelled] if n in cloud]
+    f += not check(len(still) == 5, "all five planted archives are still in the folder (retention did not run)",
+                   f"planted archives missing after a killed upload: {[n for n in own + [other, unlabelled] if n not in cloud]}")
+    f += not check(backend_bytes(f"{folder}/device.json") == device_json, "device.json is unchanged",
+                   f"device.json changed on a killed run: {(backend_bytes(f'{folder}/device.json') or b'')[:60]!r}")
+    f += not check(after.get("last-settings-backup") == before.get("last-settings-backup"),
+                   f"last-settings-backup unchanged ({after.get('last-settings-backup') or 'absent'})",
+                   f"last-settings-backup moved to {after.get('last-settings-backup')!r} after SIGKILL")
+    waited = L.endpoint_quiet()
+    if waited > 2:
+        print(f"          waited {waited:.0f}s for the endpoint to let go of the cut PUT")
+    mark = log_mark(L.dev)
+    rc2, out2 = run_rc(L.dev, "cloud_backup --yes --system-only")
+    L.keep("KILL5", out2)
+    cloud2 = backend_files(folder)
+    got_body = backend_bytes(f"{folder}/{archive}")
+    whole = got_body is not None and len(got_body) == body_len and sha(got_body) == body_sha
+    locked = webdav and rc2 != 0 and "423 Locked" in log_since(L.dev, mark)
+    if locked and whole:
+        print("    SKIP  the re-run met the QA WebDAV server's stale-PUT lock (423 Locked) on the same archive name; "
+              "the archive is whole in the cloud. The marker/retention checks below are judged on what a locked re-run leaves.")
+    else:
+        f += not check(rc2 == 0, "a plain re-run exits 0", f"the re-run exits {rc2}: {last_player_line(out2)[:100]!r}")
+        marker2 = L.stamps().get("settings-backup.uploaded", "")
+        f += not check(marker2.split()[:1] == [expect_sum] and marker2.endswith(f"/{L.device_id}"),
+                       f"the marker now says <hash of the archives> <dest> ({marker2[:12]}... {marker2.split()[-1] if marker2 else ''})",
+                       f"the marker after the re-run is {marker2!r}, expected {expect_sum} <dest ending /{L.device_id}>")
+        mine = sorted(n for n in cloud2 if re.fullmatch(rf"\d{{4}}_\d\d_\d\d-\d{{6}}-{re.escape(L.label)}-{re.escape(L.osn)}_SETTINGS\.tar\.gz", n))
+        f += not check(mine == sorted(own[1:] + [archive]),
+                       f"this device's archives trimmed to CLOUD_BACKUP_KEEP={L.keep_n}, oldest first ({mine})",
+                       f"retention left {mine}, expected {sorted(own[1:] + [archive])}")
+    f += not check(other in cloud2 and unlabelled in cloud2, "another device's archive and the unlabelled one were left alone",
+                   f"RETENTION REMOVED WHAT IS NOT THIS DEVICE'S: {[n for n in (other, unlabelled) if n not in cloud2]}")
+    f += not check(cloud2.count("device.json") == 1, "exactly one device.json", f"{cloud2.count('device.json')} device.json")
+    f += not check(whole, "the archive is whole in the cloud", "the archive in the cloud is not the one sent")
+    f += assert_message(out2, rc2, L.args.vocabulary, label="re-run: ")
+    return f
+
+
+def fx_kill10(L):
+    """KILL10: `set_setting k v` killed mid-`sed -i` (001-functions:164). The
+    override is a `sed` function in the calling shell that copies system.cfg
+    to system.cfgQAKILL and kills the group -- a plant standing for busybox's
+    mkstemp temp `system.cfgXXXXXX` (sed.c:1641; GNU sed is host-only here).
+    Asserted: the value stands (k=old); the temp is present and nothing
+    removes it (a FAIL under the one-record rule, found by litter_scan); the
+    stale /tmp/.system.cfg.lock is removed by the next wait_lock within 2 s
+    (wait-lock-test's property); the re-run sets k=v."""
+    f = 0
+    key = "qa.kill10"
+    L.clear_settings_lock()
+    L.dev.run(L.bash_profile(f"set_setting {key} old"))
+    b0 = L.dev.sha(f"{SYSCFG}.backup")
+    L.cleanups.append(lambda: L.dev.run(L.bash_profile(f"del_setting {key}") + f"; rm -f {SYSCFG}QAKILL", check=False))
+    body = (f"sed() {{ cp \"$J_CONF\" \"${{J_CONF}}QAKILL\"; kill -KILL -- -$QA_PGID; }}; "
+            f"set_setting {key} new")
+    L.start(L.bash_profile(body), shell="bash")
+    for _ in range(50):
+        if not L.pid() or not L.group_pids(L.pid()):
+            break
+        time.sleep(0.1)
+    val = L.dev.run(L.bash_profile(f"grep '^{key}=' {SYSCFG} | cut -d= -f2"), check=False).strip()
+    f += not check(val == "old", f"{key} still reads old after the kill mid-sed", f"{key} reads {val!r} after a kill mid-sed")
+    f += not check(L.dev.run(f"[ -e {SYSCFG}QAKILL ] && echo yes || echo no", check=False).strip() == "yes",
+                   "the writer's temp (standing for system.cfgXXXXXX) is present -- litter_scan says whether anything sweeps it",
+                   "the plant did not land")
+    stale = L.dev.run(f"cat {SYSCFG_LOCK} 2>/dev/null || echo none", check=False).strip()
+    t0 = time.time()
+    rc2, out2 = run_rc(L.dev, L.bash_profile(f"set_setting {key} new"))
+    took = time.time() - t0
+    val2 = L.dev.run(f"grep '^{key}=' {SYSCFG} | cut -d= -f2", check=False).strip()
+    f += not check(rc2 == 0 and val2 == "new" and took < 5,
+                   f"the re-run cleared the stale lock (held by pid {stale}) and set {key}=new in {took:.1f}s",
+                   f"the re-run took {took:.1f}s (rc {rc2}) and {key} reads {val2!r}; lock was {stale!r}")
+    f += not check(L.dev.sha(f"{SYSCFG}.backup") == b0, "system.cfg.backup untouched", "system.cfg.backup changed")
+    return f
+
+
+def fx_kill11(L):
+    """KILL11: `set_setting k v` killed between the delete and the add -- the
+    `rm -f lock` at del_setting:166 is after `sed -i` removed the key and
+    before `echo >>` re-adds it, with the lock released between. The override
+    is an `rm` function that runs the real rm and kills when its target is
+    the lock. Asserted: get_setting k is still old -- FAILS today (empty: the
+    two-step update loses the previous value); .backup untouched; a re-run
+    sets k=v."""
+    f = 0
+    key = "qa.kill11"
+    L.clear_settings_lock()
+    L.dev.run(L.bash_profile(f"set_setting {key} old"))
+    b0 = L.dev.sha(f"{SYSCFG}.backup")
+    L.cleanups.append(lambda: L.dev.run(L.bash_profile(f"del_setting {key}"), check=False))
+    body = (f"rm() {{ command rm \"$@\"; if [ \"$2\" = \"$J_CONF_LOCK\" ]; then kill -KILL -- -$QA_PGID; fi; }}; "
+            f"set_setting {key} new")
+    L.start(L.bash_profile(body), shell="bash")
+    for _ in range(50):
+        if not L.pid() or not L.group_pids(L.pid()):
+            break
+        time.sleep(0.1)
+    val = L.dev.run(L.bash_profile(f"get_setting {key}"), check=False).strip()
+    f += not check(val == "old", f"{key} still reads old after the kill between delete and add",
+                   f"{key} reads {val!r} (empty = the default): the previous value is LOST between del_setting and the echo (001-functions:191-212)")
+    f += not check(L.dev.sha(f"{SYSCFG}.backup") == b0, "system.cfg.backup untouched", "system.cfg.backup changed")
+    rc2, _ = run_rc(L.dev, L.bash_profile(f"set_setting {key} new"))
+    val2 = L.dev.run(f"grep '^{key}=' {SYSCFG} | cut -d= -f2", check=False).strip()
+    f += not check(rc2 == 0 and val2 == "new", f"the re-run set {key}=new", f"the re-run (rc {rc2}) left {key}={val2!r}")
+    return f
+
+
+def torn_shapes(good):
+    """(b1) cut so system.hostname is lost; (b2) cut inside the last line
+    with the hostname kept. Both computed from the good file's own bytes."""
+    b1 = good[: max(1, int(len(good) * 0.4))]
+    if b"system.hostname=" in b1:
+        b1 = good[: good.index(b"system.hostname=")]
+    last_nl = good.rstrip(b"\n").rfind(b"\n")
+    b2 = good[: last_nl + 1 + max(1, (len(good) - last_nl - 1) // 2)]
+    if b"system.hostname=" not in b2:
+        b2 = None
+    return b1, b2
+
+
+def fx_kill12(L):
+    """KILL12: what `chksysconfig verify` (autostart/001-setup:27) does at boot
+    with a planted system.cfg: (a) empty, (b1) truncated with system.hostname
+    lost, (b2) truncated with it kept, (c) valid, (d) binary garbage -- today's
+    only handled case, the positive control. Each is planted over SSH,
+    synced, and followed by a power cut (the shutdown hook does not run).
+    Arm C plants (a) and reboots CLEANLY, so save-sysconfig.service runs
+    `chksysconfig backup`.
+
+    Pre-state: a known-good .backup (D-CLOUD-079's record) and a distinctive
+    value in es_settings.cfg. Asserted per D-CLOUD-079: after boot system.cfg
+    equals the record (compared as key=value maps; sort_settings rewrites the
+    file at every boot) in (a)(b1)(b2)(d) and is untouched in (c); the planted
+    ES value survives; the record is still the good copy; a `logger -t
+    chksysconfig` line names the recovery. Today (a) and (b1) trigger
+    `rsync -a /usr/config/ /storage/.config` (chksysconfig:31), which resets
+    es_settings.cfg and retroarch.cfg to defaults too -- #102's "defaults
+    won"; (b2) stands, nothing said; arm C copies the empty file over the good
+    record (chksysconfig:13).
+
+    What the VM cannot prove: an SD card's write cache and FTL on power loss;
+    the reset drops dirty pages, which a card may also do to blocks the
+    kernel believed written."""
+    f = 0
+    L.assert_same_guest()
+    L.assert_same_qemu()
+    had = L.snapshot_configs()
+    try:
+        good = L.dev.run(f"cat {SYSCFG}", check=False)
+        ok, why = valid_syscfg(good)
+        if not ok:
+            raise Fail(f"the device's own system.cfg is not valid ({why}); cannot stage a known-good record")
+        # A key only the good copy carries. Whole-map equality is the wrong
+        # test: sort_settings rewrites the file at every boot and the boot
+        # scripts add keys, so "the last known good" is judged by this
+        # marker and the hostname, "defaults" by the marker's absence.
+        if "qa.kill12.marker=" not in good:
+            good = good.rstrip("\n") + "\nqa.kill12.marker=kept\n"
+        good = good.encode()
+        good_map = parse_syscfg(good.decode())
+        hostname = good_map.get("system.hostname", "")
+
+        def state_of(text):
+            m = parse_syscfg(text)
+            ok_, why_ = valid_syscfg(text)
+            if not ok_:
+                return "INVALID", f"invalid ({why_})"
+            if m.get("qa.kill12.marker") == "kept" and m.get("system.hostname") == hostname:
+                return "GOOD", f"the last known good ({len(m)} keys)"
+            return "DEFAULTS", f"defaults -- the planted marker is gone ({len(m)} keys)"
+
+        L.dev.write(SYSCFG, good)
+        L.dev.write(f"{SYSCFG}.backup", good)
+        L.cleanups.append(lambda: L.dev.run(L.bash_profile("del_setting qa.kill12.marker"), check=False))
+        es0 = L.dev.run(f"cat {ES_SETTINGS}", check=False)
+        marker = '  <string name="QaKill12Marker" value="kept" />\n'
+        es_marked = (es0.replace("</config>", marker + "</config>") if "</config>" in es0
+                     else f'<?xml version="1.0"?>\n<config>\n{marker}</config>\n')
+        b1, b2 = torn_shapes(good)
+        cases = [("a", b"", "empty"), ("b1", b1, f"truncated to {len(b1)} bytes, system.hostname lost"),
+                 ("b2", b2, f"truncated to {len(b2 or b'')} bytes inside the last line, system.hostname kept"),
+                 ("c", good, "valid"), ("d", os.urandom(4096), "binary garbage")]
+        for case, body, shape in cases:
+            if body is None:
+                print(f"    SKIP  ({case}) cannot cut this file inside its last line and keep the hostname")
+                continue
+            print(f"    -- ({case}) system.cfg planted {shape}")
+            L.dev.write(SYSCFG, body)
+            L.dev.write(ES_SETTINGS, es_marked.encode())
+            L.dev.run("sync")
+            L.power_cut()
+            now = L.dev.run(f"cat {SYSCFG} 2>/dev/null || true", check=False)
+            rec = L.dev.run(f"cat {SYSCFG}.backup 2>/dev/null || true", check=False)
+            es = L.dev.run(f"cat {ES_SETTINGS} 2>/dev/null || true", check=False)
+            logged = int(L.dev.run("journalctl -t chksysconfig -o cat --no-pager 2>/dev/null | wc -l", check=False).strip() or 0)
+            state, said = state_of(now)
+            f += not check(state == "GOOD",
+                           f"({case}) after boot system.cfg is {said}",
+                           f"({case}) after boot system.cfg is {said}" + (" -- chksysconfig:21-32 restores only a 'binary' file and reseeds /usr/config for a missing hostname"
+                                                                        if case in ("a", "b1") else " -- a truncated text file stands, nothing said" if case == "b2" else ""))
+            f += not check("QaKill12Marker" in es,
+                           f"({case}) the planted es_settings.cfg value survived the boot",
+                           f"({case}) es_settings.cfg was RESET TO DEFAULTS by `rsync -a /usr/config/ /storage/.config` (#102: every differing file goes)")
+            f += not check(state_of(rec)[0] == "GOOD", f"({case}) system.cfg.backup is still the good copy",
+                           f"({case}) system.cfg.backup is no longer the good copy ({state_of(rec)[1]})")
+            if case != "c":
+                f += not check(logged > 0, f"({case}) `logger -t chksysconfig` recorded the recovery ({logged} line(s) this boot)",
+                               f"({case}) nothing in the journal from chksysconfig this boot: the recovery, or its absence, is silent")
+        print("    -- (arm C) system.cfg planted empty, then a CLEAN reboot so save-sysconfig.service runs `chksysconfig backup`")
+        L.dev.write(SYSCFG, b"")
+        L.dev.write(ES_SETTINGS, es_marked.encode())
+        L.dev.run("sync")
+        L.clean_reboot()
+        rec = L.dev.run(f"cat {SYSCFG}.backup 2>/dev/null || true", check=False)
+        now = L.dev.run(f"cat {SYSCFG} 2>/dev/null || true", check=False)
+        f += not check(state_of(rec)[0] == "GOOD",
+                       "(arm C) the shutdown hook kept the good record when the live file was empty",
+                       f"(arm C) system.cfg.backup after a clean reboot is {state_of(rec)[1]}: chksysconfig:13 copied the empty live file over the good copy; "
+                       f"system.cfg came up as {state_of(now)[1]}")
+    finally:
+        L.restore_configs(had)
+    return f
+
+
+def classify(parsed, s0, toggle_key, toggle_default, marker_keys, record=None):
+    """kept-old | kept-new | DEFAULTS | RECORD | TORN for one config file after
+    a power cut: TORN when it does not parse; RECORD when it equals the
+    .backup that predates S0 (chksysconfig's binary-file path restored a
+    torn file from a record written at the last clean shutdown -- D-CLOUD-079
+    writes it after every validated save instead); DEFAULTS when the planted
+    marker keys are gone otherwise; else which side of the toggle it is on."""
+    if parsed is None:
+        return "TORN"
+    if any(parsed.get(k) != v for k, v in marker_keys.items()):
+        if record is not None and parsed == record:
+            return "RECORD"
+        return "DEFAULTS"          # /usr/config's copy is an empty <config/>, 41 bytes
+    old = s0.get(toggle_key)
+    new = parsed.get(toggle_key)
+    if new == old or (new is None and old in (None, toggle_default)):
+        return "kept-old"
+    return "kept-new"
+
+
+def fx_kill13(L):
+    """KILL13: es_settings.cfg AND system.cfg power-cut through EmulationStation's
+    own writers. Closing any settings page runs GuiSettings::save(), which
+    calls Settings::saveFile() -- pugixml save_file, fopen("wb"), truncate,
+    write, no fsync, no rename -- and SystemConf::saveSystemConf(), which
+    writes system.cfg.tmp and then COPIES it into system.cfg with a
+    truncating stream (the tmp is never renamed into place).
+
+    Arm A, the writer: each trial plants S0 in both files and boots (so ES
+    holds S0 and starts on the carousel), then a walk
+    (tools/vm-walks/ui-settings-toggle.steps) flips a Settings-backed switch
+    on USER INTERFACE SETTINGS, then on ONE monitor connection `sendkey z`
+    (the close: both saves) followed by `system_reset` after a gap from
+    --cut-after-ms; plus two controls, one with `sync` over serial between
+    close and reset (must read kept-new, or the walk is not reaching the
+    switch) and one with no change (kept-old). Per trial, per file: parses,
+    the planted markers survive (not /usr/config's defaults), kept-old or
+    kept-new -- TORN and DEFAULTS are failures; no system.cfg.tmp. The design
+    expected ext4's auto_da_alloc to carry today's in-place writers through
+    this arm; on 2026-09-10 it did not: at 0, 50 and 200 ms -- and after a
+    close that changed nothing -- system.cfg came up EMPTY, chksysconfig
+    reseeded /usr/config over /storage/.config (es_settings.cfg to its
+    41-byte default, ssh.enabled with it), and SSH was off after the boot.
+    auto_da_alloc starts writeback on close(); it does not wait for it. The
+    RG SP's SD card is what the VM still cannot model; the truncate window
+    it does.
+
+    Arm B, the reader, planted: es_settings.cfg (i) empty and (ii) cut inside
+    a tag, synced, power cut. Today ES logs `Could not parse Settings file!`
+    and runs on defaults, and the next page close writes those defaults over
+    the file -- asserted by driving one page open/close and reading it back
+    (FAIL: D-CLOUD-078's "never defaults"). Proposed (D-CLOUD-079): the file
+    equals es_settings.cfg.backup after boot. system.cfg's planted shapes are
+    KILL12's (a) and (b1)."""
+    f = 0
+    L.assert_same_guest()
+    L.assert_same_qemu()
+    had = L.snapshot_configs()
+    steps = walk_steps(WALK_TOGGLE)
+    toggle_key, toggle_default = "ShowCheevosIcon", "true"
+    try:
+        es0 = L.dev.run(f"cat {ES_SETTINGS}", check=False)
+        es_map0 = parse_es(es0) or {}
+        marker_es = {"ScreenSaverTime": "1234567", "QaKill13Marker": "kept"}
+        plant = ''.join(f'  <{"int" if k == "ScreenSaverTime" else "string"} name="{k}" value="{v}" />\n' for k, v in marker_es.items())
+        es_s0 = (es0.replace("</config>", plant + "</config>") if "</config>" in es0
+                 else f'<?xml version="1.0"?>\n<config>\n{plant}</config>\n')
+        es_s0 = re.sub(r'\s*<int name="ScreenSaverTime" value="(?!1234567)[^"]*" />\n?', "\n", es_s0)
+        L.dev.write(ES_SETTINGS, es_s0.encode())
+        L.dev.run(L.bash_profile("set_setting system.qa.kill13 1"))
+        L.dev.run("sync")
+        s0_es = parse_es(L.dev.run(f"cat {ES_SETTINGS}"))
+        s0_sys = parse_syscfg(L.dev.run(f"cat {SYSCFG}"))
+        marker_sys = {"system.qa.kill13": "1", "system.hostname": s0_sys.get("system.hostname", "")}
+        sys_s0 = L.dev.run(f"cat {SYSCFG}", check=False)
+        rec_sys = parse_syscfg(L.dev.run(f"cat {SYSCFG}.backup 2>/dev/null || true", check=False))
+        gaps = [int(x) for x in str(L.args.cut_after_ms).split(",") if x.strip()][: max(0, L.args.power_cut_trials)]
+        trials = [("sync control", None)] + [("cut", g) for g in gaps] + [("no-change control", 0)]
+        print(f"    -- arm A: {len(trials)} trials: {[t[0] + (f' {t[1]}ms' if t[1] is not None else '') for t in trials]}; "
+              "each starts from S0 planted in both files and a boot, so EmulationStation holds S0 and starts on the carousel")
+        for kind, gap in trials:
+            # S0 again, and a boot: a trial that left defaults would otherwise
+            # hand the next one a file without the markers and an ES holding
+            # defaults in memory, and every later trial would read DEFAULTS.
+            L.dev.write(ES_SETTINGS, es_s0.encode())
+            L.dev.write(SYSCFG, sys_s0.encode())
+            L.dev.run("sync")
+            L.power_cut()
+            cur_es = parse_es(L.dev.run(f"cat {ES_SETTINGS} 2>/dev/null || true", check=False)) or s0_es
+            cur_sys = parse_syscfg(L.dev.run(f"cat {SYSCFG} 2>/dev/null || true", check=False)) or s0_sys
+            if classify(cur_es, s0_es, toggle_key, toggle_default, marker_es) == "DEFAULTS":
+                f += not check(False, "", f"[{kind}] the setup boot itself came up without S0 in es_settings.cfg; the trial cannot be judged")
+                continue
+            mon = Monitor(L.monitor_path)
+            try:
+                run_walk(mon, steps_without_toggle(steps) if kind.startswith("no-change") else steps)
+                L.dev.disconnect()
+                m = L.mark()
+                mon.sendkey("z")
+                if kind == "sync control":
+                    time.sleep(1.5)
+                    L.serial.run("sync", timeout=8)
+                elif gap:
+                    time.sleep(gap / 1000.0)
+                mon.system_reset()
+            finally:
+                mon.close()
+            up, took = L.reboot_wait(m)
+            es = L.dev.run(f"cat {ES_SETTINGS} 2>/dev/null || true", check=False)
+            sy = L.dev.run(f"cat {SYSCFG} 2>/dev/null || true", check=False)
+            parse_err = L.count_in(ES_LOG, ES_PARSE_ERROR)
+            tmp = L.dev.run(f"[ -e {SYSCFG}.tmp ] && echo yes || echo no", check=False).strip() == "yes"
+            c_es = classify(parse_es(es), cur_es, toggle_key, toggle_default, marker_es)
+            c_sy = classify(parse_syscfg(sy) if sy.strip() else None, cur_sys, "__none__", None, marker_sys, record=rec_sys or None)
+            tag = f"{kind}{f' {gap}ms' if gap is not None else ''}"
+            what = f"es_settings.cfg {c_es} ({len(es)} bytes), system.cfg {c_sy} ({len(sy)} bytes); boot {took:.0f}s"
+            why = ("" if c_sy != "RECORD" else " -- system.cfg came up torn and chksysconfig restored the .backup from the last clean "
+                   "shutdown, which predates S0: the saved settings are lost")
+            f += not check(c_es not in ("TORN", "DEFAULTS", "RECORD") and c_sy not in ("TORN", "DEFAULTS", "RECORD"),
+                           f"[{tag}] {what}", f"[{tag}] {what} -- a torn, defaulted or stale-record file after the cut (D-CLOUD-078){why}")
+            if kind == "sync control":
+                f += not check(c_es == "kept-new", f"[{tag}] the toggle was recorded: the walk reaches the switch",
+                               f"[{tag}] the synced close did not record the toggle ({c_es}): the walk is not reaching the switch, "
+                               "so the cut trials measure nothing -- read the frames of tools/vm-walks/ui-settings-toggle.steps")
+            f += not check(not tmp, f"[{tag}] no system.cfg.tmp left", f"[{tag}] system.cfg.tmp left behind (SystemConf copies its tmp instead of renaming it)")
+            # Informational, not a check: Settings are loaded before the log
+            # file is opened, so the parse error of a torn file never reaches
+            # es_log.txt (0 on every torn boot, 2026-09-10) -- an assertion on
+            # it could not fail.
+            print(f"          [{tag}] es_log.txt mentions '{ES_PARSE_ERROR}' {parse_err} time(s)")
+        print("    -- arm B: torn es_settings.cfg planted, power cut, then one page open/close to make ES save")
+        for shape, body in (("empty", b""), ("cut inside a tag", es_s0.encode()[: int(len(es_s0) * 0.6)])):
+            L.dev.write(ES_SETTINGS, body)
+            L.dev.run("sync")
+            L.power_cut()
+            parse_err = L.count_in(ES_LOG, ES_PARSE_ERROR)
+            rec = L.dev.run(f"for r in {ES_SETTINGS}.backup {ES_SETTINGS}.last-good; do [ -e $r ] && cat $r && break; done; true", check=False)
+            mon = Monitor(L.monitor_path)
+            try:
+                run_walk(mon, steps_without_toggle(steps))   # to the page's last row, no toggle
+                mon.sendkey("z")                # close: the save
+                time.sleep(2)
+                mon.sendkey("z")                # close the menu
+            finally:
+                mon.close()
+            time.sleep(1)
+            es = L.dev.run(f"cat {ES_SETTINGS} 2>/dev/null || true", check=False)
+            parsed = parse_es(es)
+            kept = parsed is not None and all(parsed.get(k) == v for k, v in marker_es.items())
+            print(f"          ({shape}) es_log.txt mentions the parse error {parse_err} time(s) (Settings load before the log opens); "
+                  f"a record {'exists' if rec else 'does not exist'}")
+            f += not check(kept, f"({shape}) after boot and one save es_settings.cfg carries the last known good settings",
+                           f"({shape}) after boot and one save es_settings.cfg is "
+                           f"{'DEFAULTS: ' + str(len(parsed)) + ' key(s), the planted ones gone' if parsed is not None else 'unparsable'} "
+                           "-- Settings.cpp:512-518 logs and continues on defaults, and the next save writes them over the torn file (D-CLOUD-079: restore from .backup)")
+    finally:
+        L.restore_configs(had)
+    return f
+
+
+def fx_kill15(L):
+    """KILL15: `cloud_saves_root record` writes its one-line record in place
+    (`echo >`, a builtin: no external kill lands in it), so the torn state is
+    planted -- an empty saves-root. Asserted: `check` REFUSES an empty record
+    (with the accept instruction), because `-s` false reads today as "no
+    record" and the #83 guard is silently off (FAIL, fails open); the refusal
+    text carries no CLI name (assert_message)."""
+    f = 0
+    rec = L.dev.run(f"cat {CACHE}/saves-root 2>/dev/null || true", check=False)
+    if not rec.strip():
+        rc0, _ = run_rc(L.dev, "cloud_saves_root record")
+        rec = L.dev.run(f"cat {CACHE}/saves-root 2>/dev/null || true", check=False)
+        if not rec.strip():
+            raise Fail(f"cloud_saves_root record wrote no record (rc {rc0})")
+    L.cleanups.append(lambda: L.dev.write(f"{CACHE}/saves-root", rec.encode()))
+    L.dev.run(f"mkdir -p {CACHE}; : > {CACHE}/saves-root")
+    rc, out = run_rc(L.dev, "cloud_saves_root check")
+    f += not check(rc != 0, "an empty saves-root record is refused (exit 1) rather than read as none",
+                   f"cloud_saves_root check exited {rc} on an EMPTY record: the #83 guard fails open (cloud_saves_root:109 tests -s)")
+    f += assert_message(out, rc, L.args.vocabulary, label="check: ")
+    rc2, out2 = run_rc(L.dev, "cloud_saves_root record")
+    now = L.dev.run(f"cat {CACHE}/saves-root 2>/dev/null || true", check=False).strip()
+    f += not check(rc2 == 0 and now == rec.strip(), f"record rewrites the identity ({now})", f"record (rc {rc2}) left {now!r}, expected {rec.strip()!r}")
+    temps = L.dev.run(f"ls {CACHE}/saves-root.* {CACHE}/.saves-root* 2>/dev/null; true", check=False).split()
+    f += not check(not temps, "no saves-root temp left", f"temps left: {temps}")
+    return f
+
+
+def fx_kill16(L):
+    """KILL16: `content-systems`, written by `cloud_content_restore
+    --set-systems` (the picker's backend, :845-853) in place. Shim arm: an
+    exported `mkdir` function kills the group before the write, so the
+    selection stands (PASS by construction). Plant arm: an empty file is a
+    LEGAL answer ("none"), indistinguishable from a torn one by design, so
+    the only fix is the writer: after `--set-systems a b` exactly two lines,
+    no `content-systems.*` temp."""
+    f = 0
+    sel0 = L.dev.run(f"cat {CACHE}/content-systems 2>/dev/null || true", check=False)
+    had = L.dev.run(f"[ -e {CACHE}/content-systems ] && echo yes || echo no", check=False).strip() == "yes"
+    L.cleanups.append(lambda: (L.dev.write(f"{CACHE}/content-systems", sel0.encode()) if had
+                               else L.dev.run(f"rm -f {CACHE}/content-systems", check=False)))
+    rc0, _ = run_rc(L.dev, "cloud_content_restore --set-systems qa-a qa-b")
+    if rc0 != 0:
+        raise Fail(f"--set-systems qa-a qa-b exited {rc0}")
+    prelude = Kill.shim("mkdir", 'case "$*" in *cloud_sync*) kill -KILL -- -$QA_PGID ;; esac; command mkdir "$@"')
+    L.start("cloud_content_restore --set-systems qa-c qa-d", prelude=prelude, shell="bash")
+    for _ in range(50):
+        if not L.pid() or not L.group_pids(L.pid()):
+            break
+        time.sleep(0.1)
+    sel = L.dev.run("cloud_content_restore --systems 2>/dev/null || true", check=False).split()
+    f += not check(sel == ["qa-a", "qa-b"], "killed before the write (mkdir shim): the selection still reads qa-a qa-b",
+                   f"the selection reads {sel} after a kill before the write")
+    L.dev.run(f": > {CACHE}/content-systems")
+    none = L.dev.run("cloud_content_restore --systems 2>/dev/null || true", check=False).split()
+    print(f"          an empty file reads as {none or 'no systems'} -- legal by design (the picker's 'none'); a torn write is indistinguishable")
+    rc2, out2 = run_rc(L.dev, "cloud_content_restore --set-systems qa-a qa-b")
+    lines = [l for l in L.dev.run(f"cat {CACHE}/content-systems", check=False).splitlines() if l.strip()]
+    temps = L.dev.run(f"ls {CACHE}/content-systems.* {CACHE}/.content-systems* 2>/dev/null; true", check=False).split()
+    f += not check(rc2 == 0 and lines == ["qa-a", "qa-b"], "after --set-systems a b the file holds exactly those two lines",
+                   f"after --set-systems (rc {rc2}) the file holds {lines}")
+    f += not check(not temps, "no content-systems temp left", f"temps left: {temps}")
+    return f
+
+
+def fx_kill18(L):
+    """KILL18: `backuptool restore` killed mid-`tar -xzf ... -C /`
+    (backuptool:220). The archive holds a.cfg, then 20k small files, then
+    b.cfg -- in that order -- so the watcher fires once a.cfg carries the
+    archive's value while b.cfg is still live. Asserted: the tree is either
+    wholly restored or as it was -- FAILS today (a.cfg from the archive, b.cfg
+    live, half applied); the pre-restore state is kept somewhere (a
+    PRE_RESTORE archive under archive/, D-CLOUD-078) -- FAILS today, kept
+    nowhere; the re-run completes (its group is killed the moment the restore
+    marker appears, before backuptool's `systemctl reboot`)."""
+    f = 0
+    L.make_scratch()
+    had = L.snapshot_configs([RESTORE_PENDING])
+    live = f"{L.root}/kill18-live"
+    broot = L.backups
+    try:
+        L.dev.run(f"rm -rf {L.q(live)} {L.q(broot)}; mkdir -p {L.q(live)} {L.q(broot)}; "
+                  f"echo LIVE > {L.q(live)}/a.cfg; echo LIVE > {L.q(live)}/b.cfg; rm -f {RESTORE_PENDING}")
+        rel = live.lstrip("/")
+        stage = "/storage/cloud-qa-kill/stage18"
+        name = f"2098_01_01-000000-{L.label + '-' if L.label else ''}{L.osn}_SETTINGS.tar.gz"
+        L.dev.run(f"rm -rf {stage}; mkdir -p {stage}/{rel}; echo ARCHIVE > {stage}/{rel}/a.cfg; echo ARCHIVE > {stage}/{rel}/b.cfg; "
+                  f"cp -r {KILL_SCRATCH}/many {stage}/{rel}/many; "
+                  f"tar -czf {L.q(broot)}/{name} -C {stage} {rel}/a.cfg {rel}/many {rel}/b.cfg; rm -rf {stage}; sync")
+        newest = L.finder()
+        if os.path.basename(newest) != name:
+            raise Fail(f"newest_backup finds {newest!r}, not the planted {name}")
+        u_before = float(L.dev.run("cut -d' ' -f1 /proc/uptime").strip())
+        cond = f"[ \"$(cat {shlex.quote(live)}/a.cfg 2>/dev/null)\" = ARCHIVE ] || [ -e {RESTORE_PENDING} ]"
+        L.start("backuptool restore", shell="bash", watch=(cond, "KILL"))
+        r = L.watch_result()
+        a = L.dev.run(f"cat {L.q(live)}/a.cfg 2>/dev/null || true", check=False).strip()
+        b = L.dev.run(f"cat {L.q(live)}/b.cfg 2>/dev/null || true", check=False).strip()
+        many = L.dev.run(f"ls {L.q(live)}/many 2>/dev/null | wc -l", check=False).strip()
+        pending = L.dev.run(f"[ -e {RESTORE_PENDING} ] && echo yes || echo no", check=False).strip() == "yes"
+        f += not check(r[0] == "landed" and not pending, f"the kill landed mid-extract (a.cfg {a}, {many} of {KILL_MANY} small files, b.cfg {b})",
+                       f"the kill did not land mid-extract: watcher {r}, restore marker {'set' if pending else 'unset'}")
+        f += not check((a, b) in (("LIVE", "LIVE"), ("ARCHIVE", "ARCHIVE")),
+                       f"the tree is all-or-nothing after the kill (a.cfg {a}, b.cfg {b})",
+                       f"THE TREE IS HALF RESTORED: a.cfg {a}, b.cfg {b}, {many} of {KILL_MANY} files -- tar extracts over the live tree (backuptool:220)")
+        snap = L.dev.run(f"ls {L.q(broot)}/archive/ 2>/dev/null | grep -i 'PRE_RESTORE\\|pre-restore'; true", check=False).split()
+        f += not check(bool(snap), f"the pre-restore state is kept ({snap})",
+                       "the pre-restore state is kept NOWHERE: a killed restore has nothing to revert to (D-CLOUD-078)")
+        u_now = float(L.dev.run("cut -d' ' -f1 /proc/uptime").strip())
+        f += not check(u_now > u_before, "the guest did not reboot", "THE GUEST REBOOTED (backuptool restore's systemctl reboot ran)")
+        # The re-run, stopped the instant its marker appears -- after tar,
+        # before `sleep 5; systemctl reboot`.
+        L.start("backuptool restore", shell="bash", watch=(f"[ -e {RESTORE_PENDING} ]", "KILL"))
+        r2 = L.watch_result()
+        out2 = L.dev.run(f"cat {LINK_DIR}/out 2>/dev/null || true", check=False)
+        L.keep("KILL18", out2)
+        a2 = L.dev.run(f"cat {L.q(live)}/a.cfg 2>/dev/null || true", check=False).strip()
+        b2 = L.dev.run(f"cat {L.q(live)}/b.cfg 2>/dev/null || true", check=False).strip()
+        f += not check(r2[0] == "landed" and (a2, b2) == ("ARCHIVE", "ARCHIVE"),
+                       f"a re-run completes the restore (a.cfg {a2}, b.cfg {b2}; stopped before its reboot)",
+                       f"the re-run left a.cfg {a2}, b.cfg {b2} (watcher {r2})")
+        f += assert_message(out2, None, L.args.vocabulary, label="re-run: ")
+    finally:
+        L.dev.run(f"rm -f {RESTORE_PENDING}; rm -rf {L.q(live)}", check=False)
+        L.restore_configs_quiet(had)
+    return f
+
+
+KILL_FIXTURES = [
+    ("KILL1", "saves backup killed mid-transfer, SIGKILL then SIGTERM: cloud holds v1 or whole v2, stamp never 0, lock released, re-run completes", fx_kill1, {"backend"}),
+    ("KILL2", "saves restore stopped mid-download by ES's TERM-then-KILL (D-CLOUD-076): the game's save stands, *.partial litter, re-run keeps the previous version", fx_kill2, {"backend"}),
+    ("KILL3", "backuptool backup killed mid-rotation: the previous archive is still what both readers find", fx_kill3, set()),
+    ("KILL4", "backuptool backup killed mid-tar: no truncated archive under a final name, nothing invalid uploaded", fx_kill4, set()),
+    ("KILL5", "settings upload killed mid-copyto: marker, retention and device.json untouched; the re-run trims only this device's", fx_kill5, {"backend"}),
+    ("KILL10", "set_setting killed mid-sed: the value stands, the temp is litter, the stale lock clears", fx_kill10, set()),
+    ("KILL11", "set_setting killed between delete and add: the previous value is not lost", fx_kill11, set()),
+    ("KILL12", "chksysconfig at boot with an empty, truncated, valid or binary system.cfg (power cut), and the clean-shutdown record", fx_kill12, {"serial", "monitor"}),
+    ("KILL13", "es_settings.cfg and system.cfg power-cut through ES's own writers (arm A), and planted torn files at boot (arm B)", fx_kill13, {"serial", "monitor"}),
+    ("KILL15", "an empty saves-root record refuses instead of reading as none", fx_kill15, set()),
+    ("KILL16", "content-systems: a kill before the write keeps the selection; an empty file is legal, so the writer must verify", fx_kill16, set()),
+    ("KILL18", "backuptool restore killed mid-extract: the tree is half restored and the pre-restore state kept nowhere", fx_kill18, set()),
+]
+KILL_NEEDS_TEXT = {"backend": "QA endpoint", "minio": "MinIO", "serial": "serial", "monitor": "monitor"}
+
+
+
+
+def run_kill(dev, root, remote, args, settings, serial, only, local_only):
+    """The KILL cells on one device (#105). Each cell resets the scratch tree
+    (and the endpoint, when there is one) first; the cache directory is
+    carried across and put back, from a snapshot on /storage because a power
+    cut empties /tmp. A cell whose channel is missing is skipped with a line
+    naming it; the set never is."""
+    step("the KILL cells: a writer killed at every step, the power cut, one record at rest (#105, D-CLOUD-078)")
+    if args.real_roms:
+        raise Fail("the KILL cells empty the saves root and the settings archives between cells; they never run against real ROMs")
+    serial_ok = serial is not None and serial.usable()
+    try:
+        monitor_ok = stat.S_ISSOCK(os.stat(args.monitor_socket).st_mode)
+    except OSError:
+        monitor_ok = False
+    throttled = (not local_only) and backend_throttled()
+    L = Kill(dev, serial if serial_ok else None, root, remote, settings, args, monitor_path=args.monitor_socket, endpoint=not local_only)
+    print(f"    device {L.device_id or 'no id'} ({L.label or 'no label'}); endpoint {'none (local cells only)' if local_only else L.hostport + (' throttled' if throttled else ' NOT throttled')}; "
+          f"serial {'yes' if serial_ok else 'no'}; monitor {'yes' if monitor_ok else 'no'}")
+    failures = 0
+    had = snapshot_cache(dev, where="/storage/.cache/qa-kill-cache.tgz")
+    try:
+        for key, title, fn, needs in KILL_FIXTURES:
+            if only and key not in only:
+                continue
+            missing = []
+            if "backend" in needs and local_only:
+                missing.append("the QA endpoint (this run prepared the device locally)")
+            elif "backend" in needs and not throttled:
+                missing.append("a throttled endpoint: `tools/cloud-test-backend down && CLOUD_QA_BWLIMIT=200k tools/cloud-test-backend up`")
+            if "serial" in needs and not serial_ok:
+                missing.append(f"a serial console at {args.serial_socket}")
+            if "monitor" in needs and not monitor_ok:
+                missing.append(f"a monitor socket at {args.monitor_socket} (--monitor-socket)")
+            step(f"{key} -- {title}")
+            if missing:
+                print(f"    SKIP  {key} needs {'; '.join(missing)}")
+                continue
+            L.reset()
+            L.cleanups = []
+            t0 = time.time()
+            try:
+                failures += fn(L)
+            except Fail as e:
+                failures += 1
+                print(f"    FAIL  {e}")
+                try:
+                    pgid = L.pid()
+                    if pgid and L.group_pids(pgid):
+                        L.dev.run(f"kill -KILL -- -{pgid} 2>/dev/null; true", check=False)
+                except Fail:
+                    pass
+            failures += litter_scan(dev, settings, "" if local_only else remote, label=f"{key}: ")
+            for c in L.cleanups:
+                try:
+                    c()
+                except Fail as e:
+                    print(f"    WARN  {key}: cleanup incomplete: {e}", file=sys.stderr)
+            print(f"    ({key} took {time.time() - t0:.0f}s)")
+    finally:
+        L.reset()
+        L.remove_scratch()
+        dev.run(f"rm -rf {os.path.dirname(KILL_WATCH)}", check=False)
+        restore_cache(dev, had, where="/storage/.cache/qa-kill-cache.tgz")
     return failures
 
 
