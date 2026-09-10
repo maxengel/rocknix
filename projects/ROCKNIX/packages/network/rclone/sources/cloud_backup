@@ -316,13 +316,81 @@ controller_confirm() {
 # Device-local state, so it lives under /storage/.cache rather than
 # /storage/.config -- a stamp swept into the settings backup and restored onto
 # a second device would be describing a run that device never made.
+#
+# Whole or not at all: to a temporary name beside the stamp, then renamed
+# over it, as ThreadedCloudSync::recordOutcome does. A kill mid-write leaves
+# the previous stamp; it used to leave an empty file, which the row read as
+# "never" and --recent as "no successful backup" (D-CLOUD-078, #105).
+write_stamp() {
+    local file="$1" line="$2" tmp
+    mkdir -p "$(dirname "${file}")" 2>/dev/null
+    tmp="${file}.tmp.$$"
+    { printf '%s\n' "${line}" > "${tmp}"; } 2>/dev/null \
+        && mv -f "${tmp}" "${file}" 2>/dev/null \
+        || rm -f "${tmp}" 2>/dev/null
+}
+
+# The stamp's third field: why the run did not finish, as the token the
+# menu row reads back (D-UI-028) -- the >>> why sentence with its spaces as
+# underscores, so a reader that splits on spaces still gets one field.
+# Nothing when the run completed, or ended on a sentinel the reader names
+# itself.
 record_last_run() {
     local exit_code="$1"
-    local name="backup"
+    local name="backup" why=""
     [ "${SYSTEM_ONLY}" -eq 1 ] && name="settings-backup"
-    mkdir -p /storage/.cache/cloud_sync 2>/dev/null
-    printf '%s %s\n' "$(date +%s)" "${exit_code}" \
-        > "/storage/.cache/cloud_sync/last-${name}" 2>/dev/null
+    case "${exit_code}" in
+        0|9|"${EXIT_NO_NETWORK}"|"${EXIT_LOCK_HELD}") ;;
+        *) [ -n "${LAST_WHY}" ] && why=" $(printf '%s' "${LAST_WHY}" | tr ' ' '_')" ;;
+    esac
+    write_stamp "/storage/.cache/cloud_sync/last-${name}" "$(date +%s) ${exit_code}${why}"
+}
+
+# Is this settings archive whole? tar lists every member or fails. busybox
+# unzip has no -t, so for a zip the listing is the test (a truncated zip has
+# no central directory to list); -t is tried first for an unzip that has it.
+archive_whole() {
+    case "${1}" in
+        *.tar.gz) tar -tzf "${1}" >/dev/null 2>&1 ;;
+        *)        unzip -t "${1}" >/dev/null 2>&1 || unzip -l "${1}" >/dev/null 2>&1 ;;
+    esac
+}
+
+# Why a run did not finish, in the player's words (D-UI-028, D-CLOUD-077).
+#
+# One `>>> why <SENTENCE>` protocol line at the point of failure is what the
+# sync card and the transfer page read; rclone's own taxonomy and every exit
+# code stay in the log. The sentences are the vocabulary table's in
+# es-native-ui.md. One per phase: a phase resets WHY_SAID, and the second
+# speaker in a phase (network_lost_during_run first, then
+# report_rclone_error) says nothing. LAST_WHY feeds the stamp.
+WHY_SAID=0
+LAST_WHY=""
+say_why() {
+    [ "${WHY_SAID}" -eq 0 ] || return 0
+    WHY_SAID=1
+    LAST_WHY="$1"
+    echo ">>> why $1"
+    log_message "why: $1" "false"
+}
+# The summary's word for a phase (D-UI-028): COMPLETED, or COULDN'T FINISH.
+# rclone's 9 (nothing needed moving) is a completion. SUCCESS and COMPLETED
+# WITH ERRORS -- a partial success reported as errors -- retire.
+outcome_word() {
+    case "$1" in
+        0|9) echo "COMPLETED" ;;
+        *)   echo "COULDN'T FINISH" ;;
+    esac
+}
+why_for() {
+    case "$1" in
+        3|4) echo "YOUR CLOUD FOLDER WASN'T FOUND" ;;
+        5)   echo "YOUR CLOUD STOPPED ANSWERING" ;;
+        6)   echo "SOME FILES DIDN'T FINISH" ;;
+        7|8) echo "YOUR CLOUD REFUSED THE TRANSFER" ;;
+        130) echo "IT WAS STOPPED" ;;
+        *)   echo "SOMETHING WENT WRONG" ;;
+    esac
 }
 
 # Performs cleanup operations and exits with the specified code
@@ -337,6 +405,16 @@ clean_exit() {
     # transfer failed -- unremapped. Nothing rclone returns can read as the
     # lock or no-network sentinel now that those are 75 and 69 (#99).
     record_last_run "${exit_code}"
+    # A run that completed is the new known-good state, so the copies the
+    # helper took before touching the config -- and the migration copy it
+    # used to keep for ever -- are superseded and go, leaving one record at
+    # rest (D-CLOUD-078 (3), D-CLOUD-079). The next run takes fresh copies
+    # before it touches anything.
+    case "${exit_code}" in
+        0|9) rm -f /storage/.config/cloud_sync.conf.bak \
+                   /storage/.config/cloud_sync-rules.txt.bak \
+                   /storage/.config/cloud_sync.conf.pre-copy-default 2>/dev/null ;;
+    esac
     log_message "Script completed in ${duration} seconds with exit code ${exit_code}" "false"
     exit ${exit_code}
 }
@@ -345,7 +423,8 @@ clean_exit() {
 # Exits with error if configuration file is missing
 check_rclone_config() {
     if [ ! -e "/storage/.config/rclone/rclone.conf" ]; then
-        log_message "You must configure rclone before using this tool. Run \`rclone config\` to get started." "true" "ERROR"
+        log_message "Your cloud storage isn't set up yet. Set it up under GAME SETTINGS > MANAGE CLOUD STORAGE first." "true" "ERROR"
+        say_why "YOUR CLOUD STORAGE ISN'T SET UP"
         pause 3
         clean_exit 1
     fi
@@ -370,6 +449,7 @@ check_internet() {
 
     if ping -q -c1 -W 3 1.1.1.1 >/dev/null 2>&1 || ping -q -c1 -W 3 8.8.8.8 >/dev/null 2>&1; then
         log_message "Your cloud storage did not respond.\nCheck that it is still set up and that its sign-in has not expired." "true" "ERROR"
+        say_why "YOUR CLOUD DIDN'T ANSWER. ITS SIGN-IN MAY HAVE EXPIRED"
         pause 3
         clean_exit 1
     fi
@@ -413,8 +493,10 @@ check_internet() {
 # and saying so would be the phantom sentinel #99 removed.
 network_lost_during_run() {
     local rc="$1" what="$2"
+    # The code goes to the log; the screen gets the words (D-UI-028).
     if ! has_default_route; then
-        log_message "The network went away during ${what} (rclone exit ${rc}): no default route now." "true" "ERROR"
+        log_message "the network went away during ${what} (rclone exit ${rc}): no default route now" "false" "ERROR"
+        log_message "The network went away during ${what}." "true" "ERROR"
         clean_exit "${EXIT_NO_NETWORK}"
     fi
     if rclone lsd "${REMOTENAME}" "${RCLONE_PROBE_OPTS[@]}" >/dev/null 2>&1; then
@@ -422,11 +504,36 @@ network_lost_during_run() {
         return 0
     fi
     if ping -q -c1 -W 3 1.1.1.1 >/dev/null 2>&1 || ping -q -c1 -W 3 8.8.8.8 >/dev/null 2>&1; then
-        log_message "Your cloud storage stopped responding during ${what} (rclone exit ${rc}).\nCheck that it is still set up and that its sign-in has not expired." "true" "ERROR"
+        log_message "the cloud stopped responding during ${what} (rclone exit ${rc}); the internet answers" "false" "ERROR"
+        log_message "Your cloud storage stopped answering during ${what}.\nCheck that it is still set up and that its sign-in has not expired." "true" "ERROR"
+        say_why "YOUR CLOUD STOPPED ANSWERING"
         return 0
     fi
-    log_message "The network went away during ${what} (rclone exit ${rc}): nothing answers now." "true" "ERROR"
+    log_message "the network went away during ${what} (rclone exit ${rc}): nothing answers now" "false" "ERROR"
+    log_message "The network went away during ${what}." "true" "ERROR"
     clean_exit "${EXIT_NO_NETWORK}"
+}
+
+# Is this a cloud_sync.conf that can be run with? bash -n, and the file's own
+# shape: every line blank, a comment, KEY=value with its double quotes
+# balanced, or the continuation of a value whose previous line ended in a
+# backslash (RCLONEOPTS is written that way). The shape check matters
+# because a torn line -- SAVES_REMOTE="/ROCK, cut mid-value -- can have its
+# quote closed by whatever is appended after it, and then parses.
+conf_valid() {
+    [ -s "$1" ] || return 1
+    bash -n "$1" 2>/dev/null || return 1
+    awk '
+        cont { cont = ($0 ~ /\\$/); next }
+        /^[[:space:]]*(#|$)/ { next }
+        /^[A-Za-z_][A-Za-z0-9_]*=/ {
+            n = gsub(/"/, "\"")
+            if ($0 ~ /\\$/) { cont = 1; next }
+            if (n % 2) exit 1
+            next
+        }
+        { exit 1 }
+    ' "$1"
 }
 
 # Loads user configuration from cloud_sync.conf
@@ -439,7 +546,29 @@ load_config() {
         /usr/bin/cloud_sync_helper ${LOG_FILE}
     fi
     log_message "Loading configuration from cloud_sync.conf" "false"
-    source /storage/.config/cloud_sync.conf
+    # A config that does not parse is not run with. `source` used to be
+    # unchecked, so a torn file -- a partial trailing line -- was read up to
+    # the tear and the run went on with whatever was missing (SAVES_REMOTE
+    # unset means remote:/). The helper's copy from before this run's
+    # update is the fallback; with no good copy the run refuses and says so
+    # (D-CLOUD-078, #105).
+    local conf="/storage/.config/cloud_sync.conf"
+    if ! conf_valid "${conf}"; then
+        if [ -f "${conf}.bak" ] && conf_valid "${conf}.bak"; then
+            log_message "cloud_sync.conf does not parse; putting back the copy taken before this run's update" "false" "WARN"
+            cp -f "${conf}.bak" "${conf}.tmp.$$" && mv -f "${conf}.tmp.$$" "${conf}"
+        else
+            rm -f "${conf}.tmp.$$" 2>/dev/null
+            log_message "Your cloud sync settings couldn't be read, and there is no good copy to fall back to. Set up cloud storage again under GAME SETTINGS > MANAGE CLOUD STORAGE." "true" "ERROR"
+            say_why "YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"
+            clean_exit 1
+        fi
+    fi
+    if ! source "${conf}"; then
+        log_message "Your cloud sync settings couldn't be read. Set up cloud storage again under GAME SETTINGS > MANAGE CLOUD STORAGE." "true" "ERROR"
+        say_why "YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"
+        clean_exit 1
+    fi
 
     # Saves have one local folder (D-CLOUD-040). RESTOREPATH used to let a
     # restore land somewhere other than the live saves -- a safety valve from
@@ -447,7 +576,8 @@ load_config() {
     # give the saves tier two local trees, so every saves transfer refuses
     # until the setting is removed. The helper has already logged it.
     if [ -n "${RESTOREPATH:-}" ] && [ "${RESTOREPATH%/}" != "${SAVESPATH%/}" ]; then
-        log_message "RESTOREPATH (${RESTOREPATH}) differs from SAVESPATH (${SAVESPATH}). Saves have one local folder now; remove RESTOREPATH from cloud_sync.conf." "true" "ERROR"
+        log_message "An older setting still points restores at ${RESTOREPATH}, but saves have one folder now (${SAVESPATH}). Remove RESTOREPATH from the cloud sync settings file, then try again." "true" "ERROR"
+        say_why "AN OLD RESTORE-FOLDER SETTING IS STILL SET"
         clean_exit 1
     fi
 
@@ -462,7 +592,7 @@ load_config() {
 
     if [ $dupes_found -eq 1 ]; then
         # Build the full message including the duplicate info
-        local dupe_message="Warning: Duplicate variable assignments detected in cloud_sync.conf\n\nDuplicate cloud sync variables have been found in the configuration file:"
+        local dupe_message="Warning: duplicate settings were found in the cloud sync configuration:"
         for var in "${duplicate_vars[@]}"; do
             dupe_message="${dupe_message}\n  - $var"
         done
@@ -629,23 +759,37 @@ os_name() {
 }
 
 # Enhanced error reporting function
+#
+# rclone's taxonomy -- "Directory not found or permission denied", "Fatal
+# error - rclone giving up" -- went to the screen with the code until
+# 2026-09-10. The code and rclone's name go to the log; the screen gets the
+# outcome in the player's words and the one `>>> why` line the card and the
+# page read (D-UI-028, D-CLOUD-077).
 report_rclone_error() {
     local exit_code=$1
     local operation="$2"
-    
+    local words
+
     case $exit_code in
-        0) log_message "${operation} completed successfully" "true" ;;
-        1) log_message "${operation} failed: Syntax or usage error" "true" "ERROR" ;;
-        2) log_message "${operation} failed: Error not otherwise categorized" "true" "ERROR" ;;
-        3) log_message "${operation} failed: Directory not found or permission denied" "true" "ERROR" ;;
-        4) log_message "${operation} failed: File not found" "true" "ERROR" ;;
-        5) log_message "${operation} failed: Temporary failure, retry may help" "true" "ERROR" ;;
-        6) log_message "${operation} failed: Less serious errors (e.g. partly transferred)" "true" "WARN" ;;
-        7) log_message "${operation} failed: Fatal error - rclone giving up" "true" "ERROR" ;;
-        8) log_message "${operation} failed: Transfer exceeded - limits exceeded" "true" "ERROR" ;;
-        9) log_message "${operation} completed: no files transferred" "true" ;;
-        *) log_message "${operation} failed with unknown error code: $exit_code" "true" "ERROR" ;;
+        0) log_message "${operation}: completed" "true"; return ;;
+        9) log_message "${operation}: completed, nothing needed moving" "true"; return ;;
     esac
+    log_message "${operation}: rclone exit ${exit_code}" "false" "ERROR"
+    words=$(why_for "${exit_code}" | tr 'A-Z' 'a-z')
+    case $exit_code in
+        6) log_message "${operation} couldn't finish everything: ${words}." "true" "WARN" ;;
+        *) log_message "${operation} couldn't finish: ${words}." "true" "ERROR" ;;
+    esac
+    say_why "$(why_for "${exit_code}")"
+}
+
+# What cloud_saves_root printed when it refused: its own `>>> why` line
+# becomes the phase's why, and the rest is the reason on the screen.
+relay_refusal() {
+    local text="$1" why
+    why=$(printf '%s\n' "${text}" | sed -n 's/^>>> why //p' | head -1)
+    [ -n "${why}" ] && say_why "${why}"
+    log_message "$(printf '%s\n' "${text}" | grep -v '^>>> ')" "true" "ERROR"
 }
 
 # Enhanced rclone execution function with better error handling
@@ -679,9 +823,24 @@ execute_rclone_with_error_handling() {
     return $rclone_exit_code
 }
 
+# Keep only the newest stamp folder under the remote --backup-dir root. Names
+# are stamps, so sorting them is ordering them by age; the root not existing
+# (nothing replaced yet) lists nothing and nothing happens.
+prune_replaced_remote() {
+    local root="$1" d
+    rclone lsf --dirs-only "${root}/" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null \
+        | tr -d '/' | grep . | sort -r | tail -n +2 | while read -r d; do
+        [ -n "${d}" ] || continue
+        log_message "removing replaced-saves folder ${root}/${d} (superseded)" "false"
+        rclone purge "${root}/${d}" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null \
+            || log_message "could not remove ${root}/${d}" "false" "WARN"
+    done
+}
+
 # PART 1: Game saves backup function
 # Backs up game saves to cloud storage
 backup_game_saves() {
+    WHY_SAID=0
     log_message "====================================" "true"
     log_message "STARTING GAME SAVES BACKUP" "true"
     echo ">>> unit SAVES||"
@@ -705,21 +864,22 @@ backup_game_saves() {
         # clear before it is a refusal. check prints the identity it
         # confirmed, or the reason it refused.
         if ! saves_root_id=$("${saves_root_tool}" check --wait 15); then
-            log_message "${saves_root_id}" "true" "ERROR"
+            relay_refusal "${saves_root_id}"
             return 1
         fi
     fi
     
     # Check if local backup path exists and has content
     if [ ! -d "${SAVESPATH}" ]; then
-        log_message "Local backup path ${SAVESPATH} does not exist" "true" "ERROR"
+        log_message "The saves folder ${SAVESPATH} isn't on this device." "true" "ERROR"
+        say_why "THE SAVES FOLDER WASN'T FOUND ON THIS DEVICE"
         return 1
     fi
     
     # Check if we have any files to backup (excluding directories we'll skip anyway)
     local files_to_backup=$(find "${SAVESPATH}" -type f ! -path "*/bios/*" ! -path "*/backups/*" ! -name "*.zip" ! -name "*.tar.gz" | head -1)
     if [ -z "$files_to_backup" ]; then
-        log_message "No files found to backup in ${SAVESPATH}" "true" "WARN"
+        log_message "No saves to back up in ${SAVESPATH}" "true" "WARN"
         return 0
     fi
     
@@ -737,9 +897,15 @@ backup_game_saves() {
     # the copy does fail, check_internet words the reason below.
     if [ "${RECENT}" -eq 0 ]; then
         log_message "Ensuring remote sync path exists: ${REMOTENAME}${SAVES_REMOTE}" "false"
-        if ! rclone mkdir "${REMOTENAME}${SAVES_REMOTE}" "${RCLONE_PROBE_OPTS[@]}" 2>/dev/null; then
-            log_message "Remote ${REMOTENAME}${SAVES_REMOTE} is not accessible" "true" "ERROR"
+        rclone mkdir "${REMOTENAME}${SAVES_REMOTE}" "${RCLONE_PROBE_OPTS[@]}" 2>/dev/null
+        local mkdir_rc=$?
+        if [ ${mkdir_rc} -ne 0 ]; then
+            log_message "remote ${REMOTENAME}${SAVES_REMOTE} not accessible (rclone exit ${mkdir_rc})" "false" "ERROR"
+            log_message "Your cloud folder ${SAVES_REMOTE} couldn't be reached." "true" "ERROR"
+            # Exits 69 or 1 with its own why when the network or the cloud
+            # is the cause; returns when the remote answers, so the folder is.
             check_internet
+            say_why "$(why_for "${mkdir_rc}")"
             return 1
         fi
     fi
@@ -837,14 +1003,22 @@ backup_game_saves() {
     # destroyed, so a mirror is recoverable rather than final. Dated, because
     # the interesting question afterwards is always "what did the run on
     # Tuesday take away".
-    if [ "${BACKUPMETHOD}" == "sync" ]; then
-        # A sibling of SAVES_REMOTE, never inside it: rclone refuses a
-        # --backup-dir that overlaps the destination, and the same reasoning
-        # already applies to SETTINGS_REMOTE.
-        local archive_dir="${SAVES_REMOTE%/}-replaced/$(date +%Y_%m_%d-%H%M%S)"
-        all_opts+=("--backup-dir=${REMOTENAME}${archive_dir}")
-        log_message "INFO" "sync mode: anything replaced or removed goes to ${archive_dir}"
-    fi
+    #
+    # In copy mode as well, since 2026-09-10. copy never deletes, but it does
+    # replace: a cloud save overwritten by this device's copy -- with a wrong
+    # clock, an older one -- had no kept version (D-CLOUD-078's named gap,
+    # #105). rclone moves each file it would replace into --backup-dir before
+    # writing the new one, so the previous cloud copy survives one cycle.
+    # A sibling of SAVES_REMOTE, never inside it: rclone refuses a
+    # --backup-dir that overlaps the destination, and the same reasoning
+    # already applies to SETTINGS_REMOTE. One folder per run; after a full
+    # run that completed, every folder but the newest is removed, so there
+    # is one record at rest (D-CLOUD-078 (3)). The folder is shared by every
+    # device using the saves folder, so "one cycle" is one cycle of whichever
+    # device ran last.
+    local replaced_root="${SAVES_REMOTE%/}-replaced"
+    all_opts+=("--backup-dir=${REMOTENAME}${replaced_root}/$(date +%Y_%m_%d-%H%M%S)")
+    log_message "anything replaced (or, in sync mode, removed) in the cloud goes to ${replaced_root}" "false"
 
     # Check if the rclone version supports the terminal width flag
 
@@ -878,9 +1052,16 @@ backup_game_saves() {
 
     # Report the result with detailed error information
     if [ -n "${root_note}" ]; then
-        log_message "${root_note}" "true" "ERROR"
+        relay_refusal "${root_note}"
     else
         report_rclone_error $BACKUP_STATUS "Game saves backup"
+    fi
+
+    # The replaced files of the run that just completed are the one record
+    # kept; older stamp folders go. Not on a --recent run: a remote round
+    # trip the game-exit sync should not pay (the next full pass trims).
+    if [ "${RECENT}" -eq 0 ] && { [ $BACKUP_STATUS -eq 0 ] || [ $BACKUP_STATUS -eq 9 ]; }; then
+        prune_replaced_remote "${REMOTENAME}${replaced_root}"
     fi
 
     # RSYNCRMDIR: after a successful backup, remove orphaned empty directories on
@@ -891,7 +1072,7 @@ backup_game_saves() {
     if [ "${RSYNCRMDIR}" == "yes" ] && [ "${RECENT}" -eq 0 ] && { [ $BACKUP_STATUS -eq 0 ] || [ $BACKUP_STATUS -eq 9 ]; }; then
         log_message "Removing orphaned empty directories on remote: ${REMOTENAME}${SAVES_REMOTE}" "false"
         rclone rmdirs "${REMOTENAME}${SAVES_REMOTE}" "${RCLONE_NET_OPTS_ARRAY[@]}" --leave-root --log-file /var/log/cloud_sync.log 2>/dev/null \
-            || log_message "Empty-directory cleanup failed (non-fatal)" "true" "WARN"
+            || log_message "Tidying empty cloud folders didn't finish; nothing else is affected." "true" "WARN"
     fi
 
     return $BACKUP_STATUS
@@ -901,6 +1082,7 @@ backup_game_saves() {
 # Transfers existing settings backup files to cloud storage
 # Only runs when BACKUPFILE_BACKUP_OPTION is set to "yes"
 backup_system_files() {
+    WHY_SAID=0
     echo
     log_message "====================================" "true"
     log_message "STARTING SETTINGS BACKUP FILE TRANSFER" "true"
@@ -954,8 +1136,8 @@ backup_system_files() {
         local mkdir_status=$?
         if [ $mkdir_status -ne 0 ]; then
             network_lost_during_run "$mkdir_status" "the settings backup"
-            log_message "Failed to create/access remote backup directory (exit code: $mkdir_status)" "true" "ERROR"
-            report_rclone_error $mkdir_status "Remote backup directory creation"
+            log_message "Your cloud's settings folder couldn't be reached." "true" "ERROR"
+            report_rclone_error $mkdir_status "Reaching the settings folder"
             return $mkdir_status
         fi
         
@@ -1111,6 +1293,19 @@ backup_system_files() {
             [ -f "${archive}" ] || continue
             local base target
             base=$(basename "${archive}")
+            # Whole before it is sent. A truncated archive under the newest
+            # name -- what a backup killed mid-write used to leave -- was
+            # uploaded as this device's newest and counted toward the kept
+            # history, and the restore side then refused it with nothing to
+            # fall back to (D-CLOUD-078, #105). tar lists every member or
+            # fails; busybox unzip has no -t, so a zip is listed instead.
+            if ! archive_whole "${archive}"; then
+                log_message "The settings archive ${base} does not list; not sending it" "false" "ERROR"
+                log_message "The settings archive on this device is damaged. Back up settings again." "true" "ERROR"
+                say_why "THE SETTINGS ARCHIVE ON THIS DEVICE IS DAMAGED"
+                BACKUP_SYSTEM_STATUS=1
+                continue
+            fi
             # backuptool names archives with the date now, so the local name is
             # already the one the cloud should carry -- stamping it again gave
             # "2026_09_02-...-2026_09_01-...-ROCKNIX_BACKUP.zip". Only an
@@ -1154,7 +1349,11 @@ backup_system_files() {
                 model=$(tr -d '\0' < /sys/firmware/devicetree/base/model)
             fi
             local manifest="${state_dir}/device.json"
-            cat > "${manifest}" <<MANIFEST
+            # Written whole or not at all (temp beside it, then renamed), and
+            # the upload's result read rather than discarded: the folder's
+            # description is not the backup, so a failure here does not fail
+            # the run, but it is said and logged instead of vanishing.
+            cat > "${manifest}.tmp.$$" <<MANIFEST
 {
   "id": "$(basename "${device_dest}")",
   "model": "${model}",
@@ -1165,13 +1364,68 @@ backup_system_files() {
   "keep": "${CLOUD_BACKUP_KEEP:-3}"
 }
 MANIFEST
-            rclone copyto "${manifest}" "${device_dest}/device.json" "${RCLONE_NET_OPTS_ARRAY[@]}" \
-                --log-file /var/log/cloud_sync.log 2>/dev/null
+            if mv -f "${manifest}.tmp.$$" "${manifest}" 2>/dev/null; then
+                rclone copyto "${manifest}" "${device_dest}/device.json" "${RCLONE_NET_OPTS_ARRAY[@]}" \
+                    --log-file /var/log/cloud_sync.log 2>/dev/null
+                local manifest_rc=$?
+                if [ ${manifest_rc} -ne 0 ]; then
+                    log_message "device.json could not be sent to ${device_dest} (rclone exit ${manifest_rc}); the archive arrived, the folder's description did not" "false" "WARN"
+                    log_message "The folder's description couldn't be sent this time; the settings backup itself arrived." "true" "WARN"
+                fi
+            else
+                rm -f "${manifest}.tmp.$$" 2>/dev/null
+                log_message "could not write ${manifest}; the folder's description was not sent" "false" "WARN"
+            fi
+        fi
+
+        # Only record the upload once the remote actually holds a file of the
+        # right size. An exit code says the command ended, not that the bytes
+        # arrived, and a marker written on a failed transfer would suppress
+        # every retry afterwards.
+        if [ ${BACKUP_SYSTEM_STATUS} -eq 0 ] && [ -n "${local_sum}" ]; then
+            # The archives we just wrote, not everything in the folder. The
+            # cloud keeps a dated history now, so sizing the whole folder adds
+            # up every archive it holds and compares three of them against the
+            # one local file -- "51486484 vs 17162184", a mismatch reported as
+            # a failed upload on a transfer that worked perfectly. The check is
+            # right; what it was measuring stopped being true when retention
+            # arrived.
+            local remote_bytes=0
+            local checked=0
+            local uploaded
+            for uploaded in "${uploaded_names[@]}"; do
+                local one
+                one=$(rclone size "${device_dest}/${uploaded}" --json "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null \
+                    | sed -n 's/.*"bytes":[[:space:]]*\([0-9]*\).*/\1/p')
+                [ -n "${one}" ] || continue
+                remote_bytes=$((remote_bytes + one))
+                checked=1
+            done
+            [ ${checked} -eq 1 ] || remote_bytes=""
+            # Nothing came back at all: the check itself could not reach the
+            # cloud, which after a finished upload most likely means the link
+            # went in between. The marker stays unwritten either way -- the
+            # upload is unconfirmed -- and the run says why it ended.
+            [ -n "${remote_bytes}" ] || network_lost_during_run 1 "the settings backup's size check"
+            if [ -n "${remote_bytes}" ] && [ "${remote_bytes}" = "${local_bytes}" ]; then
+                write_stamp "${uploaded_marker}" "${local_sum} ${device_dest}"
+            else
+                log_message "The cloud copy did not come back the size we sent (${remote_bytes:-none} vs ${local_bytes}); it will be sent again next time" "true" "WARN"
+                say_why "THE COPY IN YOUR CLOUD DIDN'T MATCH WHAT WAS SENT"
+                BACKUP_SYSTEM_STATUS=1
+            fi
         fi
 
         # Keep a bounded history of THIS device's archives. Names lead with
         # the date, so sorting them is ordering them by age and no metadata
         # call is needed.
+        #
+        # After the size check, not before it. Until 2026-09-10 this ran on
+        # the strength of an upload not yet proven whole, so the previous
+        # records went while the new one might be short -- obligation (3)
+        # before obligation (1) (D-CLOUD-078, #105). The check above sets
+        # BACKUP_SYSTEM_STATUS to 1 when the bytes do not match, and this
+        # then does nothing.
         #
         # Where this runs: device_dest is SETTINGS_REMOTE/<device id>/, the
         # folder cloud_device_id names this device (Anbernic-RG-SP-f058e3e9e8).
@@ -1232,46 +1486,9 @@ MANIFEST
             fi
         fi
 
-        # Only record the upload once the remote actually holds a file of the
-        # right size. An exit code says the command ended, not that the bytes
-        # arrived, and a marker written on a failed transfer would suppress
-        # every retry afterwards.
-        if [ ${BACKUP_SYSTEM_STATUS} -eq 0 ] && [ -n "${local_sum}" ]; then
-            # The archives we just wrote, not everything in the folder. The
-            # cloud keeps a dated history now, so sizing the whole folder adds
-            # up every archive it holds and compares three of them against the
-            # one local file -- "51486484 vs 17162184", a mismatch reported as
-            # a failed upload on a transfer that worked perfectly. The check is
-            # right; what it was measuring stopped being true when retention
-            # arrived.
-            local remote_bytes=0
-            local checked=0
-            local uploaded
-            for uploaded in "${uploaded_names[@]}"; do
-                local one
-                one=$(rclone size "${device_dest}/${uploaded}" --json "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null \
-                    | sed -n 's/.*"bytes":[[:space:]]*\([0-9]*\).*/\1/p')
-                [ -n "${one}" ] || continue
-                remote_bytes=$((remote_bytes + one))
-                checked=1
-            done
-            [ ${checked} -eq 1 ] || remote_bytes=""
-            # Nothing came back at all: the check itself could not reach the
-            # cloud, which after a finished upload most likely means the link
-            # went in between. The marker stays unwritten either way -- the
-            # upload is unconfirmed -- and the run says why it ended.
-            [ -n "${remote_bytes}" ] || network_lost_during_run 1 "the settings backup's size check"
-            if [ -n "${remote_bytes}" ] && [ "${remote_bytes}" = "${local_bytes}" ]; then
-                printf '%s %s\n' "${local_sum}" "${device_dest}" > "${uploaded_marker}"
-            else
-                log_message "The cloud copy did not come back the size we sent (${remote_bytes:-none} vs ${local_bytes}); it will be sent again next time" "true" "WARN"
-                BACKUP_SYSTEM_STATUS=1
-            fi
-        fi
-        
         return $BACKUP_SYSTEM_STATUS
     else
-        log_message "Settings backup file transfer skipped (BACKUPFILE_BACKUP_OPTION is not set to 'yes')" "true"
+        log_message "Settings backup to the cloud is turned off; skipped." "true"
         BACKUP_SYSTEM_STATUS=0
     fi
     
@@ -1297,7 +1514,7 @@ main() {
     # Execute Part 1: Game saves backup
     # This performs the primary save file backup operation using the configured method
     if [ "${SYSTEM_ONLY}" -eq 1 ]; then
-        log_message "Game saves backup skipped (--system-only)" "true"
+        log_message "Game saves backup skipped (settings only)" "true"
         BACKUP_STATUS=0
     else
         backup_game_saves
@@ -1310,7 +1527,7 @@ main() {
     # Execute Part 2: Settings backup file transfer
     # This backs up settings backup files (zip files) if enabled in configuration
     if [ "${SAVES_ONLY}" -eq 1 ]; then
-        log_message "Settings backup file transfer skipped (--saves-only)" "true"
+        log_message "Settings backup file transfer skipped (saves only)" "true"
         BACKUP_SYSTEM_STATUS=0
     else
         backup_system_files
@@ -1326,9 +1543,9 @@ main() {
     # Provide final summary of all operations
     log_message "====================================" "true"
     log_message "BACKUP SUMMARY:" "true"
-    log_message "Game saves backup: $([ $BACKUP_STATUS -eq 0 ] && echo 'SUCCESS' || echo 'COMPLETED WITH ERRORS')" "true"
-    [ "${BACKUPFILE_BACKUP_OPTION}" == "yes" ] && log_message "Settings backup file transfer: $([ $BACKUP_SYSTEM_STATUS -eq 0 ] && echo 'SUCCESS' || echo 'COMPLETED WITH ERRORS')" "true"
-    log_message "Log file: ${LOG_FILE}" "true"
+    log_message "Game saves backup: $(outcome_word $BACKUP_STATUS)" "true"
+    [ "${BACKUPFILE_BACKUP_OPTION}" == "yes" ] && log_message "Settings backup file transfer: $(outcome_word $BACKUP_SYSTEM_STATUS)" "true"
+    log_message "Log file: ${LOG_FILE}" "false"
     log_message "====================================" "true"
     
     # Add a final pause before exiting

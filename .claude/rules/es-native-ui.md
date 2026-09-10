@@ -369,6 +369,20 @@ SIGN-IN MAY HAVE EXPIRED`; the saves-root guard `THE SAVES FOLDER IS ON A
 DIFFERENT CARD`; a 130 that was not a launch cancel `IT WAS STOPPED`; anything
 else `SOMETHING WENT WRONG`.
 
+The scripts also print, where the table has no entry: `YOUR CLOUD STORAGE
+ISN'T SET UP`, `THE SAVES FOLDER WASN'T FOUND ON THIS DEVICE`, `THE SETTINGS
+ARCHIVE ON THIS DEVICE IS DAMAGED`, `THE COPY IN YOUR CLOUD DIDN'T MATCH WHAT
+WAS SENT`, `YOUR CLOUD SYNC SETTINGS COULDN'T BE READ`, `AN OLD RESTORE-FOLDER
+SETTING IS STILL SET`, `THE SAVES FOLDER'S CARD COULDN'T BE CHECKED`, `THE
+SAVES FOLDER CHANGED CARDS DURING THE TRANSFER`, and `SOME FILES DIDN'T
+FINISH` for rclone 6 (2026-09-10, #105 tranche A); `backuptool` prints its
+own on the console flows (`THERE IS NO SETTINGS BACKUP ON THIS DEVICE`, `THE
+RESTORE COULDN'T FINISH`, ...). **The stamp's third field** is the why
+sentence as one token, spaces as underscores
+(`1789000000 5 YOUR_CLOUD_STOPPED_ANSWERING`), present only when the run did
+not complete and was not a sentinel; a reader turns the underscores back into
+spaces.
+
 **In place**, one per verb, true because rclone renames on completion and the
 content scripts never delete outside a match: back up `WHAT WAS SENT IS IN
 YOUR CLOUD. THE REST IS STILL ON THIS DEVICE.` / `NOTHING WAS SENT. YOUR CLOUD

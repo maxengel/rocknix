@@ -268,6 +268,19 @@ previous_ids() {
     } | grep -v '^$' | awk '!seen[$0]++'
 }
 
+# The id file, whole or not at all: written beside itself and renamed over,
+# so a kill mid-write leaves the previous id and never an empty file
+# (D-CLOUD-078, #105). Braced, so a file that will not open is reported by
+# the caller's WARN line alone (redirections apply left to right, and
+# `> file 2>/dev/null` lets the shell print "Operation not permitted" before
+# stderr is closed).
+write_id() {
+    mkdir -p "$(dirname "${ID_FILE}")" 2>/dev/null
+    { printf '%s\n' "$1" > "${ID_FILE}.tmp.$$"; } 2>/dev/null \
+        && mv -f "${ID_FILE}.tmp.$$" "${ID_FILE}" 2>/dev/null \
+        || { rm -f "${ID_FILE}.tmp.$$" 2>/dev/null; return 1; }
+}
+
 # Append an id to the .previous file unless it is already there.
 remember_previous() {
     mkdir -p "$(dirname "${PREVIOUS_FILE}")" 2>/dev/null
@@ -293,11 +306,7 @@ heal_poisoned() {
     healed="$(device_label)-$(hash_of "${seed}")"
     [ "${healed}" != "${stored}" ] || return 1
     remember_previous "${stored}"
-    mkdir -p "$(dirname "${ID_FILE}")" 2>/dev/null
-    # Braced, so a file that will not open is reported by the WARN line alone:
-    # redirections apply left to right, and `> file 2>/dev/null` lets the
-    # shell print "Operation not permitted" before stderr is closed.
-    if { printf '%s\n' "${healed}" > "${ID_FILE}"; } 2>/dev/null; then
+    if write_id "${healed}"; then
         log_message "device id healed: ${stored} -> ${healed} (the stored hash was the shared constant $(poisoned_hash), #86; the old id is kept in ${PREVIOUS_FILE})"
     else
         log_message "device id healed in memory only: ${stored} -> ${healed}; ${ID_FILE} is not writable, so this repeats next run" "WARN"
@@ -326,12 +335,23 @@ main() {
     fi
 
     if [ -z "${id}" ]; then
+        # An id file that exists and is empty was being written when its
+        # writer died (the write is a rename now, so only a file from an
+        # older image can look like this). With an adapter the id is
+        # recomputed from the hardware address and lands on the same value.
+        # Without one it would be regenerated from machine-id -- a different
+        # identity, and an adopted id gone with it, silently. Refuse
+        # instead: nothing on stdout, so the callers say "device-unknown"
+        # rather than inventing a name, and the reason is in the log.
+        if [ -e "${ID_FILE}" ] && [ ! -s "${ID_FILE}" ] && ! permanent_address >/dev/null; then
+            log_message "${ID_FILE} is empty and there is no adapter to derive the id from; not inventing one (put the id back, or remove the file to start fresh)" "WARN"
+            return 1
+        fi
         id=$(generate_id)
-        mkdir -p "$(dirname "${ID_FILE}")" 2>/dev/null
         # A read-only or full /storage must not take the backup down; the
         # identity is simply recomputed next time, which lands on the same
         # value anyway when an adapter is present.
-        { printf '%s\n' "${id}" > "${ID_FILE}"; } 2>/dev/null
+        write_id "${id}"
     fi
 
     echo "${id}"

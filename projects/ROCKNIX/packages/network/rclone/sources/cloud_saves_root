@@ -79,6 +79,16 @@ identity() {
     fi
 }
 
+# The record, whole or not at all: written beside itself and renamed over,
+# so a kill mid-write leaves the previous record and never an empty file
+# (which check would then have to refuse -- D-CLOUD-078, #105).
+write_record() {
+    mkdir -p "$(dirname "${RECORD}")" 2>/dev/null
+    { printf '%s\n' "$1" > "${RECORD}.tmp.$$"; } 2>/dev/null \
+        && mv -f "${RECORD}.tmp.$$" "${RECORD}" 2>/dev/null \
+        || rm -f "${RECORD}.tmp.$$" 2>/dev/null
+}
+
 # Re-read the identity once a second until it equals $1 or $2 seconds pass;
 # print what it is at the end.
 wait_for() {
@@ -106,6 +116,17 @@ case "${1:-}" in
             esac
         done
         now=$(identity)
+        if [ -e "${RECORD}" ] && [ ! -s "${RECORD}" ]; then
+            # A record that exists and says nothing is not "no record": it is
+            # a record that was being written when something killed the
+            # writer, and it must not pass the transfer unchecked (the #83
+            # guard failing open). Refuse until a good run rewrites it, or
+            # the owner accepts the card.
+            echo ">>> why THE SAVES FOLDER'S CARD COULDN'T BE CHECKED"
+            echo "The record of which card your saves were last synced from is unreadable, so this transfer can't tell whether the saves folder is on the right card."
+            echo "Nothing was transferred. If both cards are in place, accept the current card and try again."
+            exit 1
+        fi
         if [ -s "${RECORD}" ]; then
             last=$(head -1 "${RECORD}")
             if [ "${now}" != "${last}" ] && [ "${WAIT}" -gt 0 ] 2>/dev/null; then
@@ -115,8 +136,14 @@ case "${1:-}" in
                 now=$(wait_for "${last}" "${WAIT}")
             fi
             if [ "${now}" != "${last}" ]; then
+                # The why line first, for the caller to relay (D-UI-028);
+                # then the reason and what to do, in the player's words. How
+                # to accept the new card deliberately is a command, so it goes
+                # to the log, not the screen -- no menu row offers it yet.
+                echo ">>> why THE SAVES FOLDER IS ON A DIFFERENT CARD"
                 echo "The saves folder $(saves_path) is on a different card than the last time saves were synced (now ${now}, last time ${last})."
-                echo "Nothing was transferred. If the second card is missing, put it back; if the change is intended, run: cloud_setup --accept-saves-root"
+                echo "Nothing was transferred. If the second card is missing, put it back and try again."
+                logger -t cloud_saves_root "refused: saves root ${now}, recorded ${last}; to accept the current card deliberately run: cloud_setup --accept-saves-root" 2>/dev/null
                 exit 1
             fi
         fi
@@ -126,18 +153,17 @@ case "${1:-}" in
     record)
         now=$(identity)
         if [ -n "${2:-}" ] && [ "${now}" != "${2}" ]; then
+            echo ">>> why THE SAVES FOLDER CHANGED CARDS DURING THE TRANSFER"
             echo "The saves folder $(saves_path) changed cards during the transfer (it started on ${2} and is on ${now} now). Files written in that time may be on the other card."
             echo "Nothing was recorded. Run the transfer again once the cards have settled."
             exit 1
         fi
-        mkdir -p "$(dirname "${RECORD}")" 2>/dev/null
-        echo "${now}" > "${RECORD}" 2>/dev/null
+        write_record "${now}"
         exit 0
     ;;
     accept)
-        mkdir -p "$(dirname "${RECORD}")" 2>/dev/null
-        identity > "${RECORD}" 2>/dev/null
-        echo "Saves folder accepted: $(cat "${RECORD}")"
+        write_record "$(identity)"
+        echo "Saves folder accepted: $(cat "${RECORD}" 2>/dev/null)"
         exit 0
     ;;
     *)
