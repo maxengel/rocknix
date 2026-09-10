@@ -1,14 +1,16 @@
 # Saved Session State
 
-> **Saved**: 2026-09-10T07:49:15Z
+> **Saved**: 2026-09-10T19:50:44Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). **Round two is built and verified; nothing is staged.** `next` = `8e2f18a810` (code `e73efbc8e0`, ES `16ad2605f`). Both images are at `/workspace/artifacts/rocknix-images/{x64,h700}-all-20260910-e73efbc8e0/` (H700 tar sha `8d8a1f3f41db6b8f...`). Both handhelds still run `7eb713bbd9`; the maintainer's instruction was *"generate a build once everything's verified working, but please don't transfer anything over."* **The next action is theirs: say which device to stage.**
+Epic #11 (cloud saves). **Round two plus the three settled decisions are built and verified; nothing is staged.** `next` = `24eb4c14cb`+ (code `e5ed60f3df`, ES `635761825`), pushed. Images at `/workspace/artifacts/rocknix-images/{x64,h700}-all-20260910-e5ed60f3df/`; H700 tar sha `9a04717656f4902b...`. Both handhelds still run `7eb713bbd9` and the maintainer has not given a yes for this build.
 
-The round began with a real failure: their exit sync after Mario Tennis did not upload. Root cause #107 (Dropbox + `--low-level-retries 2`), fixed and covered by a new suite fixture; blindspot 36 records why the harness could not see it. Six more changes came from their reading of the surfaces: #108 plain language, #110 provider + CHECK CONNECTION, #111 pass-or-fail, #112 row consistency, #106 the device name shown not enforced. #109 (RetroAchievements) is a finding, not a build change.
+Tonight, in order: the RG SP's exit sync was found not to upload (#107, Dropbox + `--low-level-retries 2`), six UX changes came from the maintainer's reading of the surfaces (#106, #108, #110, #111, #112), everything unfiled was filed (#113-#117), and their three open decisions were settled and implemented (#89 N64 saves, #100 the empty cloud, #92 the exit hotkey). Implementing the last one found #117: RetroArch's `exit(1)` path does not flush SRAM, so the exit hotkey pressed twice loses battery saves -- fixed the same hour with a debounce (D-LAUNCH-003).
+
+**The maintainer's stated next step is #104 and #105.**
 
 ## Completed This Session
 
@@ -30,10 +32,11 @@ The round began with a real failure: their exit sync after Mario Tennis did not 
 
 ## Next Steps
 
-1. **Wait for the maintainer to name a device**, then stage `h700-all-20260910-e73efbc8e0` (sha above) and ask again before each reboot (D-QA-008/011).
-2. Tell them: re-enter the RetroAchievements password (#109, empty since the 2026-09-09 hand restore), and their Mario Tennis save is device-only until the fixed build runs an exit sync.
-3. Open work: #109's acceptance items; the card's reason line needs the candidate treatment the action line has (noted on #108); the audits' P2/P3 items the first subagent never reached (the journey continuation's console hop, GuiMsgBox's duplicate CHOOSE prompt, the launch-gate wording, `CHANGE CLOUD FOLDER`'s "cloud remote" jargon); #105 tranche B; #104.
-4. `cloud_setup --info` prints `PASSWORD=<root password>`; three EmulationStation call sites use it, one of which only needs a boolean. Worth narrowing.
+1. **#104 and #105**, at the maintainer's direction. #105 is the epic tonight kept chipping at, and #113/#114/#115 are its children in practice, so fold them into that push. #104 has not been started: persistent logs, a watchdog, a crash store -- the thing that would have said in minutes what the RG SP was doing when it froze.
+2. Staging is the maintainer's call, per device, and they have not given one for `e5ed60f3df`.
+3. #109 is the one filed issue with no code yet. Their RetroAchievements password still needs re-entering by hand.
+4. Evidence still owed: a frame of a part-failed run (#111), the `AFTER YOUR LAST GAME` row line (#112), #110's frames at 640x480, and the transfer page's own path for the empty-cloud offer (#100 -- the card carries it today).
+5. Left open from #92: the first-SIGTERM behaviour on an H700, and play-count recording through the UI.
 
 ## Key Files Modified
 
