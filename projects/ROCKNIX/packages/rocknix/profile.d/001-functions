@@ -216,20 +216,28 @@ function set_setting() {
     then
       del_setting "${1}"
     else
-      # Delete and re-add in ONE sed under ONE lock hold. busybox sed -i
-      # writes a temporary file and renames it over the original, so the
-      # file goes from the old content to the new in a single step. It used
-      # to be del_setting (a rename) and then an append, with the lock
-      # released and retaken in between: a kill between the two lost the key
-      # -- the setting read as its default from then on (D-CLOUD-078, #105).
-      # $a needs a line to append after, so a file with none (a torn write
-      # left it empty) gets the one line by temp-and-rename instead.
+      # Delete and re-add in ONE write under ONE lock hold: awk prints every
+      # line but the key's, then the key's new line, into a temporary beside
+      # the file, and the temporary is renamed over it -- so the file goes
+      # from the old content to the new in a single step, and an empty file
+      # (a torn write left it so) gets its one line the same way. It used to
+      # be del_setting (a rename) and then an append, with the lock released
+      # and retaken in between: a kill between the two lost the key
+      # (D-CLOUD-078, #105). Then it was one sed -i, `/^k=/d` and `$a k=v`,
+      # which loses the key whenever its line is the LAST line of the file:
+      # `d` ends the cycle and `$a` never runs for that line, so every key
+      # that sat last in system.cfg read as its default after being set
+      # (KILL10/KILL11 on the VM, 2026-09-10). The key is matched literally
+      # (a dot in it is a dot), and the value crosses through the
+      # environment, so `/`, `&`, `\` and spaces are nobody's to interpret.
       wait_lock
-      if [ -s "${J_CONF}" ]
+      if K="${1}" V="${2}" awk 'BEGIN { k = ENVIRON["K"]; v = ENVIRON["V"] }
+                                index($0, k "=") != 1 { print }
+                                END { print k "=" v }' "${J_CONF}" > "${J_CONF}.tmp" 2>/dev/null
       then
-        sed -i -e "/^${1}=/d" -e "\$a ${1}=${2}" "${J_CONF}"
+        mv -f "${J_CONF}.tmp" "${J_CONF}"
       else
-        printf '%s=%s\n' "${1}" "${2}" > "${J_CONF}.tmp" && mv -f "${J_CONF}.tmp" "${J_CONF}"
+        rm -f "${J_CONF}.tmp"
       fi
       rm -f "${J_CONF_LOCK}"
     fi

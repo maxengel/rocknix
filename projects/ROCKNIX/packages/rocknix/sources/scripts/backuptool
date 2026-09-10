@@ -374,11 +374,21 @@ write_archive() {
 # are candidates too, so a run of restores cannot grow the folder past the
 # same bound; they end in _SETTINGS.tar.gz and the first glob takes them, and
 # they are named as well so a reader knows that is intended.
+#
+# Newest by the date in the name, not by mtime. The name is the date the
+# archive was taken and is kept on rotation; an mtime is when the file was
+# last written, which for an archive that came down from the cloud is the
+# download, so `ls -t` kept a downloaded old archive and trimmed a newer one
+# (KILL3 on the VM, 2026-09-10: the previous archive, planted first, was the
+# one removed). A name with no date is from before names carried them and is
+# the oldest there is; it sorts last.
 trim_archive() {
-    ls -1t "${ARCHIVEFOLDER}"/*_SETTINGS*.tar.gz "${ARCHIVEFOLDER}"/*PRE_RESTORE*.tar.gz \
-           "${ARCHIVEFOLDER}"/*_BACKUP*.tar.gz "${ARCHIVEFOLDER}"/*_BACKUP*.zip \
-           "${ARCHIVEFOLDER}"/ARCHIVED_*.zip 2>/dev/null \
-        | awk '!seen[$0]++' | tail -n +$((ARCHIVE_KEEP + 1)) | while read -r OLD
+    ls -1 "${ARCHIVEFOLDER}"/*_SETTINGS*.tar.gz "${ARCHIVEFOLDER}"/*PRE_RESTORE*.tar.gz \
+          "${ARCHIVEFOLDER}"/*_BACKUP*.tar.gz "${ARCHIVEFOLDER}"/*_BACKUP*.zip \
+          "${ARCHIVEFOLDER}"/ARCHIVED_*.zip 2>/dev/null \
+        | awk '!seen[$0]++' \
+        | awk -F/ '{ n = $NF; k = (n ~ /^[0-9][0-9][0-9][0-9]_/) ? n : "0000_" n; print k "\t" $0 }' \
+        | sort -r | cut -f2- | tail -n +$((ARCHIVE_KEEP + 1)) | while read -r OLD
     do
         rm -f "${OLD}"
     done
@@ -447,6 +457,20 @@ case "${VERB}" in
                fail "YOUR CURRENT SETTINGS COULDN'T BE COPIED ASIDE, SO NOTHING WAS CHANGED. TRY AGAIN." "write_archive ${SNAPSHOT} failed" ;;
         esac
 
+        # From here until the tree is whole again, a power cut leaves it half
+        # from the archive and half from before, with nothing running to
+        # notice. The marker names the copy taken above; chksysconfig verify
+        # reads it at the next boot, puts the copy back and tells
+        # EmulationStation to say so (D-CLOUD-078, KILL18). Removed below
+        # once the extract has finished, or once this script's own revert
+        # has put the copy back; left in place if that revert failed, so the
+        # boot tries again.
+        RESTORE_MARK="/storage/.config/.restore-in-progress"
+        if [ -n "${SNAPSHOT}" ]
+        then
+            printf '%s\n' "${SNAPSHOT}" > "${RESTORE_MARK}.tmp" && mv -f "${RESTORE_MARK}.tmp" "${RESTORE_MARK}"
+        fi
+
         note "RESTORING SETTINGS..." "from ${BACKUPFILE}"
         if [ "${ARCHIVE_KIND}" = "tar" ]
         then
@@ -488,6 +512,7 @@ case "${VERB}" in
             # back over it, and say which state the device is in.
             if [ -n "${SNAPSHOT}" ] && tar -xzf "${SNAPSHOT}" -C / >/dev/null 2>&1
             then
+                rm -f "${RESTORE_MARK}"
                 why "THE RESTORE COULDN'T FINISH"
                 fail "THE RESTORE COULDN'T FINISH. YOUR SETTINGS ARE AS THEY WERE. TRY AGAIN." "extraction of ${BACKUPFILE} failed; ${SNAPSHOT} put back"
             elif [ -n "${SNAPSHOT}" ]
@@ -499,6 +524,9 @@ case "${VERB}" in
                 fail "THE RESTORE COULDN'T FINISH. TRY AGAIN." "extraction of ${BACKUPFILE} failed; there was no previous state to put back"
             fi
         fi
+
+        # The tree is whole: the boot has nothing to put back.
+        rm -f "${RESTORE_MARK}"
 
         # Passwords and keys are stripped at backup time (see write_archive);
         # wifi and similar credentials must be re-entered after a restore.
