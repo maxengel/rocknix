@@ -25,19 +25,28 @@
 # does. backuptool is run WHOLE and unmodified inside bwrap, with a stub
 # /etc/profile, a fake /storage and PATH shims (logger, systemctl, sleep,
 # and the tar that dies) -- bubblewrap needs no user namespace here, only
-# setuid or an allowing profile. sed, mv and cp are the image's busybox when
-# its build root is on this machine, the host's otherwise.
+# setuid or an allowing profile. sed, mv, cp, tr, head, wc, cut and awk are
+# the image's busybox when its build root is on this machine, the host's
+# otherwise -- every external command a check under test leans on that IS a
+# busybox applet on the device (grep and sort there are GNU, and the image's
+# busybox has no grep applet), not only the ones already known to differ:
+# chksysconfig's text test passed here for a day under GNU tr and failed on
+# every device under busybox tr (2026-09-10), so the checks in a. run
+# through the image's binary.
 #
 # To watch the guards fire, point it at the scripts from before the change:
 #
 #     tools/last-good-scripts-test --old      # a, b, c FAIL against 1d1503180d
+#     BASE_REF=c15050c897 tools/last-good-scripts-test --old
+#                                             # a FAILS: the text test that
+#                                             # busybox tr never passed
 #     tools/last-good-scripts-test            # PASSED
 #
 # Exit 0 when every check passes, 1 otherwise, 2 when it cannot run.
 set -u
 
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
-BASE_REF="1d1503180d"
+BASE_REF="${BASE_REF:-1d1503180d}"
 OLD=0
 [ "${1:-}" = "--old" ] && OLD=1
 
@@ -76,11 +85,11 @@ done
 [ -n "${BB}" ] || BB="$(command -v busybox || true)"
 mkdir -p "${TMP}/bbin"
 if [ -n "${BB}" ]; then
-    for a in sed mv cp; do printf '#!/bin/sh\nexec %s %s "$@"\n' "${BB}" "${a}" > "${TMP}/bbin/${a}"; chmod +x "${TMP}/bbin/${a}"; done
+    for a in sed mv cp tr head wc cut awk; do printf '#!/bin/sh\nexec %s %s "$@"\n' "${BB}" "${a}" > "${TMP}/bbin/${a}"; chmod +x "${TMP}/bbin/${a}"; done
 fi
 
 echo "last-good-scripts-test: $([ "${OLD}" -eq 1 ] && echo "scripts at ${BASE_REF} (expect FAILs)" || echo "scripts in ${ROOT}")"
-[ -n "${BB}" ] && echo "  sed/mv/cp: $("${BB}" 2>&1 | head -1)"
+[ -n "${BB}" ] && echo "  sed/mv/cp/tr/head/wc/cut/awk: $("${BB}" 2>&1 | head -1)"
 
 # ---------------------------------------------------------------- a.
 echo "  a. chksysconfig keeps and restores the last good system.cfg"
@@ -112,29 +121,40 @@ chmod +x "${A}/bin/rsync"
 CFGF="${A}/cfg/system/configs/system.cfg"
 
 printf 'a.b=1\nsystem.hostname=MINE\n' > "${CFGF}.backup"; : > "${CFGF}"
-PATH="${A}/bin:${PATH}" bash -c ". '${A}/fns.sh'; verify" 2>"${A}/err"
+PATH="${A}/bin:${TMP}/bbin:${PATH}" bash -c ". '${A}/fns.sh'; verify" 2>"${A}/err"
 [ "$(grep '^system.hostname=' "${CFGF}" 2>/dev/null)" = "system.hostname=MINE" ]; check $? "empty system.cfg + valid .backup: verify restored the backup (hostname MINE)" "system.cfg after verify: '$(tr '\n' '|' < "${CFGF}" | cut -c1-80)' -- expected the backup's hostname MINE"
 [ "$(cat "${A}/cfg/retroarch/retroarch.cfg")" = "user" ]; check $? "and the player's retroarch.cfg was left alone" "retroarch.cfg was overwritten with the image default"
 grep -q 'logger -t chksysconfig .*restored' "${A}/err"; check $? "one syslog line names the recovery" "no recovery line in syslog; stderr: '$(tr '\n' '|' < "${A}/err" | cut -c1-200)'"
 
 printf 'a.b=1\nsystem.host' > "${CFGF}"
-PATH="${A}/bin:${PATH}" bash -c ". '${A}/fns.sh'; verify" 2>/dev/null
+PATH="${A}/bin:${TMP}/bbin:${PATH}" bash -c ". '${A}/fns.sh'; verify" 2>/dev/null
 [ "$(grep '^system.hostname=' "${CFGF}" 2>/dev/null)" = "system.hostname=MINE" ]; check $? "truncated system.cfg (no hostname): verify restored the backup" "system.cfg after verify: '$(tr '\n' '|' < "${CFGF}" | cut -c1-80)'"
 
 printf 'a.b=1\n\0\0\0\nsystem.hostname=X\n' > "${CFGF}"
-PATH="${A}/bin:${PATH}" bash -c ". '${A}/fns.sh'; verify" 2>/dev/null
+PATH="${A}/bin:${TMP}/bbin:${PATH}" bash -c ". '${A}/fns.sh'; verify" 2>/dev/null
 [ "$(grep -a '^system.hostname=' "${CFGF}" 2>/dev/null)" = "system.hostname=MINE" ]; check $? "binary system.cfg: verify restored the backup" "system.cfg after verify: '$(tr '\n' '|' < "${CFGF}" | cut -c1-80)'"
 
 : > "${CFGF}"; : > "${CFGF}.backup"
-PATH="${A}/bin:${PATH}" bash -c ". '${A}/fns.sh'; verify" 2>/dev/null
+PATH="${A}/bin:${TMP}/bbin:${PATH}" bash -c ". '${A}/fns.sh'; verify" 2>/dev/null
 [ "$(grep '^system.hostname=' "${CFGF}" 2>/dev/null)" = "system.hostname=DEFAULT" ]; check $? "both empty: verify fell back to the image's system.cfg" "system.cfg after verify: '$(tr '\n' '|' < "${CFGF}" | cut -c1-80)'"
 
 printf 'system.hostname=GOOD\n' > "${CFGF}.backup"; : > "${CFGF}"
-PATH="${A}/bin:${PATH}" bash -c ". '${A}/fns.sh'; backup" 2>/dev/null
+PATH="${A}/bin:${TMP}/bbin:${PATH}" bash -c ". '${A}/fns.sh'; backup" 2>/dev/null
 [ "$(cat "${CFGF}.backup")" = "system.hostname=GOOD" ]; check $? "backup with an empty current file left .backup unchanged" ".backup after backup: '$(tr '\n' '|' < "${CFGF}.backup" | cut -c1-80)' -- the empty file replaced the good copy"
 printf 'system.hostname=NEW\nx=1\n' > "${CFGF}"
-PATH="${A}/bin:${PATH}" bash -c ". '${A}/fns.sh'; backup" 2>/dev/null
+PATH="${A}/bin:${TMP}/bbin:${PATH}" bash -c ". '${A}/fns.sh'; backup" 2>/dev/null
 [ "$(head -1 "${CFGF}.backup")" = "system.hostname=NEW" ] && [ ! -e "${CFGF}.backup.tmp" ]; check $? "backup with a valid current file replaced .backup, no temp left" ".backup: '$(head -1 "${CFGF}.backup")'; temp present: $([ -e "${CFGF}.backup.tmp" ] && echo yes || echo no)"
+
+# The fixtures above are three lines long. A device's system.cfg is the
+# image's, 220-odd lines, and that is the file the check has to accept --
+# under the device's tr (busybox reads "[:print:]" as eight characters).
+sed 's/@DEVICENAME@/QA/' "${ROOT}/projects/ROCKNIX/packages/rocknix/config/system/configs/system.cfg" > "${CFGF}"
+: > "${CFGF}.backup"
+PATH="${A}/bin:${TMP}/bbin:${PATH}" bash -c ". '${A}/fns.sh'; backup" 2>/dev/null
+cmp -s "${CFGF}" "${CFGF}.backup"; check $? "the image's own system.cfg ($(wc -l < "${CFGF}") lines) is valid and became the record" "the image's system.cfg was refused as damaged; .backup: $(wc -c < "${CFGF}.backup") bytes"
+printf 'system.hostname=X\nwifi.ssid=caf\303\251 \342\230\205\n' > "${CFGF}"
+PATH="${A}/bin:${TMP}/bbin:${PATH}" bash -c ". '${A}/fns.sh'; backup" 2>/dev/null
+cmp -s "${CFGF}" "${CFGF}.backup"; check $? "a UTF-8 value (an accented Wi-Fi name) is text" "the UTF-8 system.cfg was refused as damaged"
 
 # ---------------------------------------------------------------- b.
 echo "  b. backuptool: a kill mid-tar leaves the previous archive; a failed restore puts the snapshot back"
