@@ -1738,3 +1738,37 @@ temporary, a sync and a rename (D-CLOUD-078/079).
 Upgrade: nothing to migrate. The mount, the sysctl and the timer are all
 image-level; a device already carrying `/storage/.cache/log` from a past
 debugging session simply starts using it. Rule: `handheld-evidence.md`.
+
+## The last two console hops, six small-panel fixes, and a missing password noticed (2026-09-10)
+
+**#114.** The journey continuation (YOUR SETTINGS WERE RESTORED. DOWNLOAD YOUR
+GAMES, BIOS FILES, AND SAVES...?) and the settings restore (RESTORE SYSTEM
+SETTINGS FIRST, THEN RESTART?) ran in a fullscreen console. Both run on
+`GuiCloudTransfer` now, composed the way the transfer page composes every
+other run (`>>> tier <label>|<rc>` per part, status accumulated rather than
+taken from the last part -- so unreachable ROMs no longer skip the saves).
+The settings restore's page owns the restart (D-UI-033): `backuptool
+restore --no-restart` is new and opt-in, the page reloads the settings it
+holds in memory and reboots on any button once the player has read the
+outcome. `/usr/bin/run`'s failure branch re-ran the whole command line as one
+word on every failure (`...: not found` flashed over the real error); it now
+only does so for a single path with spaces, which is the case it was for.
+Left for #119: `run` exits 0 on failure.
+
+**#115.** Every message box read `OK CHOOSE CHOOSE` (D-UI-034); the card's
+reason line clipped mid-word at 640x480 and now has short forms (D-UI-035);
+CHANGE CLOUD FOLDER says `THE FOLDER IN YOUR CLOUD THAT HOLDS YOUR SAVES.`;
+the launch gate says WAIT only when the player started the sync, and `IT'S
+STOPPING SO YOU CAN PLAY - TRY AGAIN IN A MOMENT.` when a cancel is still
+finishing; and #48's overlapping OK button is measured at the width the text
+is drawn at (`GuiMsgBox` measured at the box width and drew at the padded
+one, 5% narrower on 640x480, so one line in twenty was never budgeted). The
+wizard's 33 "remote" strings are #118.
+
+**#109.** At startup, a RetroAchievements username with neither password nor
+token gets `YOUR RETROACHIEVEMENTS PASSWORD IS MISSING, SO YOU'RE SIGNED
+OUT. ENTER IT NOW?` once per boot, YES opening the same re-entry page the
+restore marker opens; NOT NOW asks again next boot. `docs/backup-contents.md`
+says what a hand restore must do.
+
+EmulationStation `5443c8f95`; ROCKNIX `073929659d`. Frames follow the build.

@@ -286,6 +286,31 @@ literals may carry `·`; comments may not. Write `.`, `--`, `->`, `...`.
 Before bumping the ES pin, run `grep -nP '^\s*//.*[^\x00-\x7F]'` over the
 files you touched; a real image build is the only check that runs xgettext.
 
+## The help bar offers a direction only where it moves something
+
+`ComponentGrid::getHelpPrompts` used to decide from the grid's dimensions:
+more than one row means up/down, more than one column means left/right. A
+`GuiMsgBox` is a 2x2 shell whose only focusable cell is a button row that is
+itself an N x 2 grid (the second row a 2px shadow spacer), so the inner grid
+claimed up/down and the outer claimed left/right, and every dialog read
+`OK  CHOOSE  CHOOSE` (#115, D-UI-034). `canMoveCursor(dir)` asks whether the
+scan `moveCursor` would run reaches a focusable cell, and the prompt is
+offered only then. When a screen's help bar names a key, pressing it must do
+something; a prompt that lies is worse than none.
+
+## TextComponent measures at its full width and draws at its padded one
+
+`onTextChanged()` sets the automatic height from `sizeWrappedText(text,
+getSize().x())`; `buildTextCache()` lays glyphs out at `mSize.x() - padding`.
+With side padding the drawn width is narrower than the measured one -- 5% on
+a 640x480 `GuiMsgBox` -- so any wrap point in that band costs a line the
+height never budgeted, and a text with no clip rect paints it over whatever
+sits below. That was #48's overlapping OK button; `GuiMsgBox` now measures at
+the drawn width. The root is in `TextComponent` and fixing it there re-heights
+every padded auto-height text in the app, which nobody has looked at on a
+screen yet; until someone does, measure at the padded width where you build
+a dialog, and know that the auto height is optimistic.
+
 ## Conventions
 
 - Every label through `_( )` (localized, UPPERCASE by convention).
