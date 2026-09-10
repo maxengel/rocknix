@@ -439,11 +439,17 @@ OVMF, so a panic's kernel log lands in the variable store and comes back as
 - **A kernel panic**: `echo c > /proc/sysrq-trigger` (sysrq is on). The guest
   reboots itself after `kernel.panic` seconds; `systemd-pstore` then copies
   the dump into `/storage/.cache/log/pstore/`.
-- **A kernel that stops scheduling**, as PID 1 sees it: starve it. With
-  `sysctl kernel.sched_rt_runtime_us=-1`, one `chrt -f 99` busy loop pinned
-  to each vCPU leaves systemd no CPU to ping from, and the watchdog resets
-  the guest within `RuntimeWatchdogSec`. The previous boot's journal then
-  ends without a shutdown, which is what a real hang looks like afterwards.
+- **A PID 1 that stops pinging**, which is what a hung kernel looks like to
+  the watchdog: freeze it. The guest runs hybrid cgroups with a v1 freezer,
+  so `mkdir /sys/fs/cgroup/freezer/wd; echo 1 > .../wd/tasks; echo FROZEN >
+  .../wd/freezer.state` stops systemd cold, and the i6300esb resets the guest
+  within `RuntimeWatchdogSec` (17 s observed against 15 s). The previous
+  boot's journal then ends without a shutdown line, which is what a real
+  hang looks like afterwards. **Do not try to starve PID 1 with RT busy
+  loops**: since 6.12 the scheduler's fair deadline server
+  (`/sys/kernel/debug/sched/fair_server/cpuN/runtime`, 50 ms/s) guarantees
+  SCHED_OTHER tasks CPU regardless of `sched_rt_runtime_us`, and four
+  `chrt -f 99` loops on four vCPUs left systemd pinging happily (2026-09-10).
 
 `journalctl --list-boots` is the quickest check that the journal is
 persistent at all: a volatile one lists exactly one boot, always.
