@@ -237,9 +237,11 @@ things that cost a cycle each before they were written down:
   function.** So "flip a switch and see the effect" is `x`, `z`, then reopen.
 - **A transfer page ends on PRESS ANY BUTTON TO CLOSE and returns to the hub**
   with focus where it was, not to the transfer page.
-- **Wait 2 s after a page opens, 7 s after one that scans the cloud**, then
-  `shot`. A frame taken early is the previous screen, and it reads as "the
-  key did nothing".
+- **Do not time a page; watch it.** A frame taken early is the previous
+  screen, and it reads as "the key did nothing". `settle` before every
+  `shot` and `wait-for-change` after every press replace the old advice
+  (2 s after a page opens, 7 s after one that scans the cloud), which was
+  right on an idle host and wrong on a building one.
 - **A restarted EmulationStation comes back on the last game list, not the
   carousel.** `systemctl restart emustation` (and ES's own restarts) restore
   the list that was open -- TOOLS, MUSIC PLAYER, whatever the previous walk
@@ -280,9 +282,22 @@ things that cost a cycle each before they were written down:
   ignored.** Check `pgrep emulationstation` before re-driving input — an
   abort()ed ES restarts to the carousel, which looks the same.
 
+- **Wait for the frame, not for the clock.** Since #125 the walk steps are
+  `settle` (until the screen holds still) and `wait-for-change` (until the
+  last key has visibly landed), and every file in `tools/vm-walks/` is
+  written on them. A fixed `wait N` between presses is a guess about a host
+  that is also building: a press a second after a screen change is
+  regularly eaten, and the rest of the walk then runs one screen out of
+  phase. `wait-for-change` re-sends the eaten press once and then fails the
+  walk naming the key and the line, so the wrong-screen frames are never
+  produced at all.
+
 `tools/vm-visual-qa` writes PNG with the stdlib, so the frames are readable by
 anyone without Pillow. Read them; a walk whose frames nobody read has tested
-nothing. Reusable walks live in `tools/vm-walks/` — compose them with `cat`.
+nothing. Reusable walks live in `tools/vm-walks/` — compose them with `cat`,
+or name the composition in `tools/vm-walks/suite.txt`, which is what
+`tools/vm-qa --only walks` replays (`--guest b` to drive vm-pair's second
+guest).
 
 ## What the guest's busybox lacks
 
@@ -487,15 +502,30 @@ which is what makes this usable on a headless build host:
 - `sendkey <key>` — the guest sees real key events
 - `screendump <file>` — writes the current framebuffer as a PPM
 
-`tools/vm-visual-qa` wraps them: it runs a step file (`key` / `wait` / `shot`),
-converts frames to PNG (stdlib; no Pillow needed), and optionally assembles an
-animated GIF (that part does need Pillow). `tools/vm-walks/` holds the step
-files worth keeping.
+`tools/vm-visual-qa` wraps them: it runs a step file, converts frames to PNG
+(stdlib; no Pillow needed), and optionally assembles an animated GIF (that
+part does need Pillow). `tools/vm-walks/` holds the step files worth keeping.
 
 ```bash
 # boot headless with a monitor socket, then:
 tools/vm-visual-qa --monitor /tmp/mon.sock run steps.txt --outdir shots/ --gif walk.gif
 ```
+
+The step verbs are `key` / `wait` / `shot` and, since #125, `settle`,
+`wait-for-change`, `wake` and `dismiss-dialogs`. The last four compare
+framebuffers rather than counting seconds: `settle` waits until the screen
+holds still, `wait-for-change` until the last press has visibly landed (and
+fails the walk when it has not), `wake` spends the screensaver's free press
+on a key the interface ignores, and `dismiss-dialogs` presses B until the
+screen repeats itself, which is the carousel toggling GO TO — so it ends
+there whatever was open, where a fixed count of B presses ends on a dialog
+from an odd depth. `--help` carries the thresholds, how they were measured
+on a 640x480 guest, and the interface facts a walk would otherwise have to
+rediscover.
+
+**Neither a walk's result nor its timing is a fixed delay any more, and that
+is the point.** The frame steps are what make a walk survive a host that is
+also building — which is the normal state of this machine.
 
 **Cutting the guest's power (KILL12/13, #105).** `system_reset` over the
 monitor (`printf 'system_reset\n' | socat - UNIX-CONNECT:/tmp/rocknix-qemu-monitor.sock`)
@@ -529,8 +559,10 @@ on the guest rather than assuming — a wrong mapping looks exactly like "input 
 broken".
 
 Other sharp edges: menu lists **wrap**, so `up` from the top is the short path to
-entries near the bottom; give ES a second or two to settle before `shot`, and wait
-for the PPM's size to stop changing or you capture a torn frame.
+entries near the bottom -- through the BACK button, which is a focus stop on every
+page. Put a `settle` step before every `shot` rather than a delay; the tool waits
+for the PPM's size to stop changing itself, so a torn frame is no longer yours to
+worry about.
 
 The frames are meant to be *read* — by a person or an image model — which catches
 what code review cannot. Its first run found a shipped defect: Cloud Tools actions
