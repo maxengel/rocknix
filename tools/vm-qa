@@ -94,8 +94,24 @@ ensure_remote() {
   rm -f "$conf"
   SSH 'chmod 600 /storage/.config/rclone/rclone.conf; /usr/bin/cloud_sync_helper >/dev/null 2>&1; r=$(rclone listremotes 2>/dev/null | head -1); rclone mkdir "${r}/ROCKNIX/Saves" >/dev/null 2>&1; rclone mkdir "${r}/ROCKNIX/Backups" >/dev/null 2>&1; echo "walks: seeded the QA remote ${r} (the guest had none)"' 2>/dev/null
 }
-case ",$ONLY," in *,walks,*)
+# And the transfer walks tick ROMS AND BIOS and continue to the systems page,
+# which on a device with no ROMs is the dialog NO SYSTEM ON THIS DEVICE HOLDS
+# WHAT YOU TICKED (two walks, af2db4ab09). The round-trip suite works in a
+# scratch tree and leaves /storage/roms as it found it -- empty on a fresh
+# pair -- so seed the same fixture the walks were written against: the
+# backend's seed-content in the cloud and seed-device's ROMs on the guest.
+ensure_fixture() {
   ensure_remote
+  SSH 'test -f /storage/roms/snes/shared.sfc' 2>/dev/null && return 0
+  "$ROOT/tools/cloud-test-backend" seed-content >/dev/null 2>&1
+  local scr; scr=$(mktemp)
+  "$ROOT/tools/cloud-test-backend" seed-device > "$scr"
+  scp -q -i "$KEY" -P "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$scr" root@127.0.0.1:/tmp/qa-seed-device.sh
+  rm -f "$scr"
+  SSH 'bash /tmp/qa-seed-device.sh >/dev/null 2>&1; rm -f /tmp/qa-seed-device.sh; echo "walks: seeded the content fixture (cloud seed-content, device ROMs) -- the guest had no ROMs"' 2>/dev/null
+}
+case ",$ONLY," in *,walks,*)
+  ensure_fixture
   # Every walk starts from a rebooted guest, which the README names as the
   # one deterministic start; a boot-time dialog is dismissed with B first.
   walk_all() {
