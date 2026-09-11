@@ -437,6 +437,17 @@ the shell: `map` shows only `BLK0`/`BLK1`, **no `FS0:`**; firmware prints
   image" = an appliance that carries machine config (`.utm` bundle for UTM, OVA for
   VirtualBox/VMware), not a bare disk — a bare disk still needs correct UEFI + 512b setup.
 
+## One command for every check
+
+`./tools/vm-qa <ROCKNIX-GENERIC_X64...img.gz>` brings the pair up from the
+image and runs the scripts test, the round-trip suite, the emulator-exit cell
+and every walk, leaving `report.md` and the logs and frames under
+`/workspace/artifacts/rocknix-images/qa-<build>-<date>/`; it exits non-zero
+if any suite failed. `--skip-up` for a pair already on the image, `--only`
+for a subset, `--link` for the seven link-loss cells (minutes each, never
+while an image builds on this host -- they are timing-bound). Run it on
+every image before anything is staged (#120).
+
 ## Crash and hang recipes
 
 The profile carries QEMU's `i6300esb` watchdog with `-action watchdog=reset`,

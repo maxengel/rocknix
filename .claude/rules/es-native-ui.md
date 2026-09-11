@@ -311,6 +311,24 @@ every padded auto-height text in the app, which nobody has looked at on a
 screen yet; until someone does, measure at the padded width where you build
 a dialog, and know that the auto height is optimistic.
 
+## Pure text has a home, and a test
+
+`es-app/src/CloudText.{h,cpp}` holds the cloud surfaces' pure string code --
+`cleanHostname`, `providerLabel`, `parseLastRun`, `runOrigin`, `shortenWhy`,
+`outcomeCandidates`, `classifyProtocolLine`, `chooseThatFits` -- with nothing
+from the window, the fonts or the filesystem behind it, and
+`es-app/tests/unit/` builds `es-unit-tests` against it with doctest (#120).
+A rule about a string -- a stamp's shape, a protocol line, a candidate list --
+goes there and gets a case; the thin shell that reads the file or measures
+the font stays where it was. Build and run from the ES tree with the
+toolchain's cmake and the host compiler:
+
+```
+B=/workspace/repos/rocknix.worktrees/generic-x64/build.ROCKNIX-GENERIC_X64.x86_64
+$B/toolchain/bin/cmake -S es-app/tests/unit -B build-tests -DCMAKE_CXX_COMPILER=/usr/bin/g++
+$B/toolchain/bin/cmake --build build-tests --target es-unit-tests && ./build-tests/es-unit-tests
+```
+
 ## Conventions
 
 - Every label through `_( )` (localized, UPPERCASE by convention).

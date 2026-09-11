@@ -1801,3 +1801,14 @@ default run over the link-loss cells caught "Lost the network during ..."
 in LINK1-6; the scripts say "Couldn't finish: lost the network ..." now.
 `tools/vm-qa` runs every automated check against one image and writes one
 report; `--link` adds the seven link cells.
+
+## Unit tests for the pure cloud code; `d2eabe879c` (2026-09-11)
+
+The pure text of the cloud surfaces -- the network name derived from a typed
+device name, the provider label, the stamp-line parser, the origin label,
+the outcome line's shorter forms, the `>>> ` protocol-line classifier, and
+the "longest candidate that fits" rule -- lives in `es-app/src/CloudText.{h,cpp}`
+now, with no window, font or file behind it, and `es-app/tests/unit/` builds
+`es-unit-tests` against it: 19 cases, 162 assertions, four milliseconds,
+proven to fail on three deliberate mutations (#120). Behaviour unchanged;
+`d2eabe879c` carries the extraction and passes `tools/vm-qa`.
