@@ -1,16 +1,18 @@
-# Close whatever is open: B four times returns any dialog, menu or game list
-# to the system carousel, which is where every walk starts. On the carousel
-# itself B opens a GO TO dialog (GO TO LETTER under the alphabetical systems
-# sort, GO TO MANUFACTURER under the manufacturer one, and so on by the SORT
-# SYSTEMS setting), so a press that lands there leaves a dialog open instead
-# of closing one -- run wake.steps first (its key is one EmulationStation
-# ignores, so it never opens anything) and, when the starting state is
-# unknown, prefer a fresh EmulationStation: see README.md.
-key z
-wait 1
-key z
-wait 1
-key z
-wait 1
-key z
-wait 2
+# Start: anywhere. End: the system carousel, awake, with nothing open --
+# the state every other walk assumes.
+#
+# This was four B presses, which is a guess about how deep the interface
+# is. B closes a dialog, a menu or a game list, but on the carousel it
+# OPENS the GO TO dialog (GO TO LETTER or GO TO MANUFACTURER, by the SORT
+# SYSTEMS setting; SystemView::showNavigationBar picks). So four presses
+# reach the carousel from an even depth and leave GO TO open from an odd
+# one: with a single dialog up -- the boot-time journey prompt, the
+# RetroAchievements offer, FINISH RESTORE SETUP -- the file written to
+# close things ended holding one (#85).
+#
+# `dismiss-dialogs` presses B until the screen repeats one it has already
+# stood on. That repeat is the carousel toggling GO TO, so it stops there
+# whatever the depth was, and a press that changes nothing at all is
+# re-sent rather than mistaken for the repeat.
+wake
+dismiss-dialogs

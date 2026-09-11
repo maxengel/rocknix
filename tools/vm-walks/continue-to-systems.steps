@@ -1,18 +1,21 @@
 # Start: a transfer page, focus on SAVES, with ROMS AND BIOS or GAME CONTENT
 # on (so the second button reads CONTINUE). End: the systems page, focus on
 # its first system row. Four rows down is the button bar on BACK; right is
-# CONTINUE; the scan behind the page takes a few seconds.
+# CONTINUE; the scan behind the page takes a few seconds, which is what the
+# long settle waits out -- the page is static once the systems are listed.
 key down
-wait 1
+wait-for-change
 key down
-wait 1
+wait-for-change
 key down
-wait 1
+wait-for-change
 key down
-wait 1
+wait-for-change
 key right
-wait 1
+wait-for-change
+settle
 shot continue-focused
 key x
-wait 7
+wait-for-change 20
+settle 30
 shot systems-page

@@ -7,14 +7,20 @@
 # the seed fixture (cloud-test-backend seed-content + seed-device) so the
 # device holds ROMs the cloud does not -- gb entirely, snes/deviceonly.sfc --
 # and the preview has something to list. YES is the first button.
+#
+# Neither A press is re-sent: both start network work, and the settle after
+# each is what waits for it rather than a guess at how long it takes.
 key down
-wait 1
+wait-for-change
 key down
-wait 1
+wait-for-change
+settle
 shot cloud-hub-match-row
 key x
-wait 8
+wait-for-change 25 0
+settle 40
 shot match-confirm
 key x
-wait 12
+wait-for-change 25 0
+settle 60
 shot match-done

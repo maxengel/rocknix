@@ -1,9 +1,16 @@
 # Start: a transfer page, focus on SAVES. End: same page, focus on ROMS AND
 # BIOS, its switch flipped. Flip, not set: the row remembers its last state.
+#
+# The switch press takes `wait-for-change <timeout> 0` -- no re-send. A
+# toggle is the one press where the tool's default retry would be wrong:
+# pressing it a second time puts the switch back, so an eaten press must be
+# reported rather than repaired. A flipped switch moves about 0.2% of the
+# screen, twice the tool's threshold and seven times the clock's tick.
 key down
-wait 1
+wait-for-change
 key x
-wait 1
+wait-for-change 12 0
+settle
 shot roms-flipped
 key up
-wait 1
+wait-for-change

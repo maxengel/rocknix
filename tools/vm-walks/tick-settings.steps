@@ -2,18 +2,20 @@
 # the SETTINGS switch flipped. Rows: SAVES, ROMS AND BIOS, GAME CONTENT,
 # SETTINGS -- three down from SAVES. Flip, not set: the row remembers its
 # last state, so read the frame.
+# The switch press takes no re-send (see tick-roms.steps).
 key down
-wait 1
+wait-for-change
 key down
-wait 1
+wait-for-change
 key down
-wait 1
+wait-for-change
 key x
-wait 1
+wait-for-change 12 0
+settle
 shot settings-flipped
 key up
-wait 1
+wait-for-change
 key up
-wait 1
+wait-for-change
 key up
-wait 1
+wait-for-change

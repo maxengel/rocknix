@@ -2,17 +2,26 @@
 # (see run-transfer.steps for why). End: the CLOUD hub. Like run-transfer
 # but a frame every three seconds for a minute, so every phase of a run
 # with settings, saves and several systems is caught on the page (#95).
+#
+# This is the one file where `wait N` is still right, and it is not a guess
+# about timing: the fixed waits here are a SAMPLER. The point is a frame at
+# a known offset from the start of the transfer -- t+2 s, t+5 s, t+8 s --
+# so the phases can be read off in order. A settle would wait for the page
+# to stop moving, which is precisely what this file exists not to do. The
+# presses before the transfer starts still use the frame steps, because
+# those are waits for a screen and not samples of one.
 key up
-wait 1
+wait-for-change
 key right
-wait 1
+wait-for-change
 key x
-wait 1
+wait-for-change 15 0
+settle
 shot selected-all
 key right
-wait 1
+wait-for-change
 key x
-wait 2
+wait-for-change 25 0
 shot t02
 wait 3
 shot t05
@@ -45,4 +54,5 @@ shot t50
 wait 10
 shot t60
 key x
-wait 2
+wait-for-change 15
+settle
