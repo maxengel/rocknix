@@ -596,17 +596,25 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
 
     step("saves back up to the cloud")
     backend("reset")
-    # Nothing is in the cloud yet, so a restore must fail -- and fail as a
-    # failure, with its own code. cloud_restore leaves with rclone's code for
+    # Nothing is in the cloud yet. Two shapes are acceptable and one never
+    # is. A truthful empty: the parent of the saves folder answers, so the
+    # run ends 0 with "There's nothing in your cloud to restore yet." and
+    # the offer line EmulationStation turns into CREATE IT (#100,
+    # D-CLOUD-085; since #127, D-CLOUD-092, a folder at the root -- the
+    # suite's /GAMES -- has the root for its parent and takes this shape
+    # too). Or a failure with its own code, when the parent itself is
+    # missing. Never a sentinel: cloud_restore used to leave with rclone's
     # "directory not found", 3, which until 2026-09-09 was also the lock
-    # sentinel EmulationStation reads, and the page said SKIPPED - ANOTHER
-    # CLOUD SYNC IS RUNNING over a run that had moved five files (VM; #99).
-    # The sentinels are 75 (lock held) and 69 (no network) now, codes rclone
-    # cannot return; a phase failure passes rclone's code through unremapped.
-    rc = dev.run("cloud_restore --yes --saves-only >/dev/null 2>&1; echo $?", check=False).strip()
-    failures += not check(rc not in ("0", "75", "69"),
-                          "a restore with no Saves folder in the cloud fails with its own code, not as a sentinel",
-                          f"cloud_restore exited {rc!r} against an empty endpoint (0 = succeeded, 75/69 = read as a sentinel)")
+    # sentinel, and the page said SKIPPED - ANOTHER CLOUD SYNC IS RUNNING
+    # over a run that had moved five files (VM; #99). The sentinels are 75
+    # and 69 now, codes rclone cannot return. And never a bare 0: a run
+    # that restored nothing and said COMPLETED with no offer is the shape
+    # that shipped broken in four images (blindspot 13).
+    rc, out = run_rc(dev, "cloud_restore --yes --saves-only")
+    truthful_empty = rc == 0 and ">>> offer create-saves-folder" in out and "nothing in your cloud" in out.lower()
+    failures += not check(truthful_empty or rc not in (0, 75, 69),
+                          "a restore with no Saves folder in the cloud is a truthful empty (0 + the offer) or fails with its own code, never a sentinel",
+                          f"cloud_restore exited {rc!r} against an empty endpoint with no offer (0 = silent success, 75/69 = read as a sentinel): {out.strip()[-160:]!r}")
     # As BACK UP SAVES TO THE CLOUD runs it: --saves-only, or the settings
     # phase rides along under a saves label (2026-09-06).
     dev.run("cloud_backup --yes --saves-only >/dev/null 2>&1 || true", check=False)
