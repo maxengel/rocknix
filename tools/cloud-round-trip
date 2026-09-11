@@ -954,10 +954,66 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
                           "a user's own --filter-from is honoured and nothing is added over it",
                           f"exit {rc}; victim in cloud: {'own-rule-victim.srm' in listing}; added-lines {before_warn}->{after_warn}")
     dev.run(f"mv -f {CONF}.qa-71 {CONF}; rm -f {shlex.quote(f'{root}/{rom_rel}')} {shlex.quote(f'{root}/saves/own-rule-victim.srm')} /tmp/qa-own-rules.txt")
-    # A run's lock can outlive its exit by a moment (a child that inherited
-    # the descriptor), and the next step takes the lock itself; give it up
-    # to ten seconds to fall free rather than hand the next step a race.
-    dev.run("for i in $(seq 1 20); do flock -n /var/run/cloud_sync.lock true 2>/dev/null && break; sleep 0.5; done", check=False)
+    step("the transfer lock is free the moment a run returns, and no child of a run can hold it")
+    # #124. `exec 9>lock` carries no close-on-exec, so the lock descriptor
+    # used to reach rclone and everything else a run started. While the
+    # script outlived its children that was invisible -- bash waits for each
+    # of them -- and the moment it did not, killed or orphaned while rclone
+    # was still copying, the lock outlived the run: every sync afterwards
+    # refused with "another cloud sync is running" when nothing was running.
+    #
+    # This step used to WAIT up to ten seconds for the lock to fall free,
+    # which is how the symptom stayed hidden: a wait turns a defect into a
+    # delay and reports nothing.
+    #
+    # Two assertions, because the first one cannot catch the defect on its
+    # own. A run that completes normally releases the lock even with the
+    # descriptor leaking, so the shipped scripts passed "free after a run"
+    # 100 times out of 100 (measured on the VM, 2026-09-11). The one that
+    # fails on the unfixed code is the second: it asks whether a command
+    # started under the lock can see the descriptor at all.
+    probe = "/tmp/qa-lock-fd-probe.sh"
+    dev.write(probe, b"""#!/bin/bash
+# Does an external command started under the transfer lock still see the
+# lock's descriptor? A bash function named rclone wins over PATH in every
+# bash the run starts (these scripts source /etc/profile, which discards a
+# --path-prefix), and the `sh -c` inside it is a real exec'd child -- which
+# is what rclone is. Prints <saw-it>/<invocations>.
+OUT=/tmp/qa-lock-fd-probe.out
+: > "$OUT"
+rclone() { sh -c 'ls -l /proc/$$/fd 2>/dev/null | grep -c cloud_sync.lock' >> "$OUT"; command rclone "$@"; }
+export -f rclone
+export OUT
+"$@" >/dev/null 2>&1
+saw=$(grep -c '^[1-9]' "$OUT" 2>/dev/null); all=$(wc -l < "$OUT" 2>/dev/null)
+rm -f "$OUT"
+echo "${saw:-0}/${all:-0}"
+""")
+    for tool in ("cloud_backup", "cloud_restore"):
+        seen = dev.run(f"bash {probe} {tool} --yes --saves-only", check=False).strip()
+        saw, _, total = seen.partition("/")
+        # An "of 0" result is not a pass: it would mean the run started no
+        # rclone at all, and the assertion would be holding because nothing
+        # happened.
+        failures += not check(saw == "0" and total.isdigit() and int(total) > 0,
+                              f"no command {tool} starts under the lock sees its descriptor (0 of {total or '?'})",
+                              f"{tool}: {saw} of {total or '?'} rclone invocations inherited the lock descriptor")
+    dev.run(f"rm -f {probe}", check=False)
+    # And the symptom #124 names, in the shape its acceptance criterion asks
+    # for: a run, then the lock, in one shell with nothing in between. The
+    # 0.2 s bound only says how long a failure took; the pass is the first,
+    # immediate attempt.
+    out = dev.run(
+        "cloud_backup --yes --saves-only >/dev/null 2>&1; rc=$?; "
+        "if flock -n /var/run/cloud_sync.lock true 2>/dev/null; then echo \"FREE rc=$rc\"; exit 0; fi; "
+        "h=''; for p in /proc/[0-9]*; do ls -l $p/fd 2>/dev/null | grep -q cloud_sync.lock && "
+        "h=\"$h $(basename $p)=$(tr '\\0' ' ' < $p/cmdline | cut -c1-50)\"; done; "
+        "late=no; for i in 1 2 3 4; do sleep 0.05; "
+        "flock -n /var/run/cloud_sync.lock true 2>/dev/null && { late=yes; break; }; done; "
+        "echo \"HELD rc=$rc free-within-0.2s=$late by$h\"", check=False).strip()
+    failures += not check(out.startswith("FREE"),
+                          f"the lock is free the moment the run returns ({out})",
+                          f"the lock outlived the run: {out[:240]}")
 
     step("a settings-only backup with nothing on the device to send is skipped, and says so once")
     # #126: with no archive under SETTINGS_BACKUPS the run printed "There's no
