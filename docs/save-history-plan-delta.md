@@ -15,8 +15,8 @@ the register rows D-CLOUD-030..053 have it.
 | #22 R2 allowlist | `- /savestates/.snapshots/**` ahead of `+ /savestates/**` (a guard with no writer) | **`- /.history/**`** ahead of every include; `.snapshots` rule dropped | the store must never restore to a device or be mirrored away by a `sync` |
 | #23 retention settings | KEEP DISCARDED SAVES (switch) · DISCARDED SAVES KEPT PER SAVE (1–9, default 3) on the cloud-saves page | the two rows **nest behind one row** (SAVE HISTORY) under SAVE MANAGEMENT, worded for the whole store (KEEP EARLIER VERSIONS OF SAVES · VERSIONS KEPT PER SAVE); age (90 d) and total (256 MiB) caps are **ours, not rows** (D-CLOUD-096, D-UI-039) | fewer rows in one window; one vocabulary |
 | #25 reader | reads `-discarded/`, labels `-replaced/` copies separately | reads **one store**, the `reason` as the label (YOU CHOSE THE OTHER · REPLACED BY A SYNC · DELETED · SET ASIDE AS DAMAGED) | one story for the player |
-| #22 R4 classifier | identity (sha256 vs local agreement) | adds a **`suspect`** class: zero length, or all one byte, where the previous version was neither -- **decision (4) pending:** auto-heal (keep the cloud's good copy, set the suspect one aside, tell the player in the game's words) or refuse and ask | a validity check has no home today |
-| Save states | in scope of the store like any file | **decision (3) pending:** manual slots only, none, or all; auto-states (`.state.auto`) replace on every exit and would dominate a count-bounded store | churn vs. coverage |
+| #22 R4 classifier | identity (sha256 vs local agreement) | adds a **`suspect`** class: zero length, or all one byte, where the previous version was neither -- **decided (D-CLOUD-100): auto-heal** -- keep the cloud's good copy and restore it, set the suspect one aside with `reason: suspect`, tell the player once in the game's words as a recovery | a validity check has no home today |
+| Save states | in scope of the store like any file | **decided (D-CLOUD-099): all of them, auto-states included**, bounded by the per-save count; the accidental overwrite of a state is the moment a player most needs a restore | coverage over churn, by the maintainer's call |
 | Public docs | layout not shown | the cloud-sync page shows the layout table with `.history/` and the README text | documentation-accuracy gate |
 
 ## What does not change
@@ -33,4 +33,6 @@ writer (R1), the transport (D-CLOUD-052).
 the saves folder, writing to it on every overwriting publish with a reason, and bounding
 it by count, age and size, weaken any property the plan relies on -- and what does it
 cost the time to play (D-CLOUD-098)?* Members read this file, `docs/save-history-gap-analysis.md`,
-#22 R1–R9 and D-CLOUD-030..053.
+#22 R1–R9, D-CLOUD-030..053 and D-CLOUD-094..100. The maintainer gave the go for the
+run on 2026-09-11: "I don't care about the OpenRouter cost or the time, so if we think
+it's worth it to do a council run, we should do it."
