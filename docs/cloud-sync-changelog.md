@@ -1820,3 +1820,25 @@ beside the ROM, and the allowlist's `/n64/save/*` lines never matched them,
 so a standalone-N64 player's saves were never backed up. Four `+ /**/*.ext`
 lines in both rule files (D-CLOUD-086, #89); the ROM beside them stays out,
 and the harness plants both layouts.
+
+## Credentials and rules (2026-09-11)
+
+Maintainer's order: #116, #52, #71, #39, then #74 and #100, one build.
+
+- `cloud_setup --info` no longer prints the root password; it says whether
+  one is set, and EmulationStation reads the value in-process where the SSH
+  page must show or pre-fill it (D-INFRA-008).
+- `backuptool` holds `rclone.conf` back from every archive, outright; the
+  post-restore CHECK CONNECTION tells a device with no cloud storage where to
+  connect it, and the credential scanner knows rclone's key names
+  (D-CLOUD-087). `last-good-scripts-test` case f proves both under bwrap.
+- `cloud_backup` and `cloud_restore` apply the saves allowlist whether or
+  not RCLONEOPTS names it (D-CLOUD-088); the leak was reproduced with the
+  shipped script first.
+- `cloud_migrate_layout --check` calls a chosen sibling layout current
+  instead of offering to move it back to `/ROCKNIX` (D-CLOUD-089).
+- The round-trip harness gains four steps -- a user's own rule stays above
+  the catch-all and keeps its file off the cloud (#39); changing the cloud
+  folder puts the settings folder beside it and the archive lands there
+  (#74); a bare RCLONEOPTS keeps the allowlist (#71); an empty cloud offers
+  and a wrong root fails (#100) -- 31 steps, PASSED against the new scripts.
