@@ -8,6 +8,7 @@
 #   ./tools/vm-qa --skip-up                                  # the pair is already up on the image under test
 #   ./tools/vm-qa <image> --only round-trip,exit             # a subset: scripts, round-trip, exit, walks, link
 #   ./tools/vm-qa <image> --link                             # also the seven link-loss cells (minutes each; need the serial console)
+#   ./tools/vm-qa --skip-up --only walks --guest b           # the walks on vm-pair's second guest
 #
 # What runs, in order, each with its own log and a PASS/FAIL line:
 #
@@ -24,18 +25,28 @@
 # handheld: the guests are tools/vm-pair's, on this host (fork #120, box 1).
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-IMAGE=""; SKIP_UP=0; ONLY="scripts,round-trip,exit,walks"; LINK=0
+IMAGE=""; SKIP_UP=0; ONLY="scripts,round-trip,exit,walks"; LINK=0; GUEST=a
 while [ $# -gt 0 ]; do
   case "$1" in
     --skip-up) SKIP_UP=1; shift ;;
     --only) ONLY=$2; shift 2 ;;
+    --guest) GUEST=$2; shift 2 ;;
     --link) LINK=1; shift ;;
-    -h|--help) sed -n '5,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '5,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) IMAGE=$1; shift ;;
   esac
 done
 [ "$SKIP_UP" = 1 ] || [ -n "$IMAGE" ] || { echo "vm-qa: an image, or --skip-up" >&2; exit 2; }
-KEY=/tmp/rocknix-vm-pair/qa-key; PORT=10022; MON=/tmp/rocknix-qemu-monitor.sock; SERIAL=/tmp/rocknix-qemu-serial.sock
+# Which of tools/vm-pair's guests the suites drive. Guest a is the default
+# and the only one `up` is written around; --guest b exists because two
+# sessions share this host and the walks suite is the one that can run
+# anywhere -- it needs a monitor socket and a guest to reboot, nothing else.
+KEY=/tmp/rocknix-vm-pair/qa-key
+case "$GUEST" in
+  a) PORT=10022; MON=/tmp/rocknix-qemu-monitor.sock;   SERIAL=/tmp/rocknix-qemu-serial.sock ;;
+  b) PORT=10023; MON=/tmp/rocknix-qemu-monitor-b.sock; SERIAL=/tmp/rocknix-qemu-serial-b.sock ;;
+  *) echo "vm-qa: --guest is a or b, not '$GUEST'" >&2; exit 2 ;;
+esac
 [ "$LINK" = 1 ] && ONLY="$ONLY,link"
 SSH() { ssh -n -i "$KEY" -p "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=8 -o BatchMode=yes root@127.0.0.1 "$@"; }
 
@@ -46,11 +57,11 @@ if [ "$SKIP_UP" = 0 ]; then
 fi
 for i in $(seq 1 40); do SSH true 2>/dev/null && break; sleep 3; done
 BUILD=$(SSH 'sed -n "s/^BUILD_ID=//p" /etc/os-release' 2>/dev/null | tr -d '"' | cut -c1-10)
-[ -n "$BUILD" ] || { echo "vm-qa: guest a does not answer" >&2; exit 1; }
+[ -n "$BUILD" ] || { echo "vm-qa: guest $GUEST does not answer" >&2; exit 1; }
 OUT="${ROCKNIX_ARTIFACTS:-/workspace/artifacts}/rocknix-images/qa-${BUILD}-$(date +%Y%m%d-%H%M)"
 mkdir -p "$OUT/walks"
 REPORT="$OUT/report.md"
-{ echo "# vm-qa on $BUILD"; echo; echo "started $(date -u '+%Y-%m-%d %H:%M UTC'), guest a at :$PORT, image ${IMAGE:-(already up)}"; echo; echo "| suite | result | time | log |"; echo "| --- | --- | --- | --- |"; } > "$REPORT"
+{ echo "# vm-qa on $BUILD"; echo; echo "started $(date -u '+%Y-%m-%d %H:%M UTC'), guest $GUEST at :$PORT, image ${IMAGE:-(already up)}"; echo; echo "| suite | result | time | log |"; echo "| --- | --- | --- | --- |"; } > "$REPORT"
 FAILS=0
 run_suite() {  # name, log, command...
   local name=$1 log=$2; shift 2
@@ -71,15 +82,50 @@ case ",$ONLY," in *,walks,*)
   # Every walk starts from a rebooted guest, which the README names as the
   # one deterministic start; a boot-time dialog is dismissed with B first.
   walk_all() {
-    local w rc=0
-    for w in "$ROOT"/tools/vm-walks/*.steps; do
-      local name; name=$(basename "$w" .steps)
-      case "$name" in wake|reset) continue ;; esac
+    local rc=0 name legs w
+    # tools/vm-walks/suite.txt names the compositions: most walk files are a
+    # leg that starts on a screen an earlier leg reaches, so replaying them
+    # one at a time drove A presses into the carousel and counted the frames
+    # as a pass (#125). The old behaviour is the fallback if the file is gone.
+    local suite="$ROOT/tools/vm-walks/suite.txt"
+    if [ ! -f "$suite" ]; then
+      for w in "$ROOT"/tools/vm-walks/*.steps; do
+        name=$(basename "$w" .steps)
+        case "$name" in wake|reset) continue ;; esac
+        printf '%s = %s\n' "$name" "$name"
+      done > "$OUT/walks/suite.txt"
+      suite="$OUT/walks/suite.txt"
+    fi
+    while IFS= read -r line; do
+      line=${line%%#*}
+      case "$line" in *=*) ;; *) continue ;; esac
+      name=$(echo "${line%%=*}" | tr -d ' ')
+      legs=${line#*=}
+      # `<name> = <legs> | <shell>`: the part after | is a command run on the
+      # guest BEFORE the reboot, for a walk whose starting screen depends on
+      # state the reboot does not clear. The transfer walks need one --
+      # emptying the saved system selection, which the page's ROMS AND BIOS
+      # switch tracks -- and without it each of them inherited the previous
+      # walk's transfer and flipped the switch the wrong way (#125).
+      pre=""
+      case "$legs" in *\|*) pre=${legs#*|}; legs=${legs%%|*} ;; esac
+      [ -n "$name" ] || continue
+      mkdir -p "$OUT/walks"
+      [ -n "$pre" ] && SSH "$pre" >/dev/null 2>&1
       SSH 'systemctl reboot' 2>/dev/null; sleep 6
       for i in $(seq 1 45); do SSH 'pgrep -x emulationstation >/dev/null' 2>/dev/null && break; sleep 3; done; sleep 10
-      { printf 'key z\nwait 2\n'; cat "$w"; } | timeout 300 "$ROOT/tools/vm-visual-qa" --monitor "$MON" run - --outdir "$OUT/walks/$name/" >/dev/null 2>&1 || { echo "walk $name: exit $?"; rc=1; }
-      echo "walk $name: $(ls "$OUT/walks/$name/" 2>/dev/null | wc -l) frames"
-    done
+      # wake, then dismiss-dialogs: the first key after a boot is eaten by the
+      # screensaver, and a boot-time dialog (the journey prompt, the
+      # RetroAchievements offer, FINISH RESTORE SETUP) has to go before any
+      # walk. This was `key z` + `wait 2`, which is one B press: on a guest
+      # with nothing open that press OPENS the carousel's GO TO dialog, and
+      # the walk then ran a screen out of phase (#125).
+      { printf 'wake\ndismiss-dialogs\n'
+        for w in $legs; do printf '# --- %s ---\n' "$w"; cat "$ROOT/tools/vm-walks/$w.steps"; done
+      } | timeout 900 "$ROOT/tools/vm-visual-qa" --monitor "$MON" run - --outdir "$OUT/walks/$name/" > "$OUT/walks/$name.log" 2>&1 \
+        || { echo "walk $name: exit $?  (see walks/$name.log)"; rc=1; }
+      echo "walk $name: $(ls "$OUT/walks/$name/" 2>/dev/null | wc -l) frames  [$(echo $legs)]"
+    done < "$suite"
     return $rc
   }
   run_suite walks "$OUT/walks.log" walk_all ;; esac

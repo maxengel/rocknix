@@ -1,0 +1,69 @@
+# The walks suite: one composition per line, `<name> = <steps file>...`,
+# replayed by tools/vm-qa in this order. Blank lines and # comments ignored.
+#
+# WHY COMPOSITIONS AND NOT FILES. Most walk files do not start on the
+# carousel -- back-up-page.steps starts on the CLOUD hub, run-transfer.steps
+# on the systems page -- because each one is a leg, and the legs are meant to
+# be `cat`ted together (README.md). The runner used to replay every file on
+# its own from a rebooted guest, so nine of them pressed A on the carousel
+# and drove whatever game list happened to be under the cursor. The frames
+# were still counted and the suite still passed: a walk that reached nothing
+# looked exactly like a walk that reached its screen.
+#
+# So the suite names the composition, and the last file in each line is the
+# walk being exercised -- its shots are the ones to read.
+#
+# Each line starts from a REBOOTED guest, which the runner handles: the
+# carousel, awake, with nothing open.
+#
+# `<name> = <legs> | <shell>` runs that command on the guest just before the
+# reboot. The transfer walks need one, because a reboot is NOT enough to put
+# the BACK UP page's four class switches back at their defaults. The
+# switches are not stored anywhere -- neither system.cfg nor es_settings.cfg
+# has them -- but ROMS AND BIOS comes up tracking the saved system
+# selection in /storage/.cache/cloud_sync/content-systems, which the picker
+# writes on every close, BACK included, and which survives a reboot.
+# Verified both ways on 2026-09-11: selection empty, the switch is off and
+# the button reads BACK UP; selection non-empty, the switch is on and it
+# reads CONTINUE.
+#
+# So `tick-roms` -- which FLIPS rather than sets -- turned the switch OFF
+# whenever a previous walk had left a selection behind, and the walk after
+# it backed up saves alone instead of reaching the systems page. Emptying
+# the selection first is also run-transfer.steps' own precondition, for a
+# different reason (its SELECT ALL is a toggle), so one command serves
+# both.
+
+# THE ORDER IS LOAD-BEARING, once, at the top. match-dialog needs the
+# device to hold ROMs the cloud does not (the seed fixture: gb entirely,
+# snes/deviceonly.sfc) so its preview has something to list, and the
+# run-transfer walks upload exactly those. Run after them it reaches THIS
+# DEVICE ALREADY MATCHES YOUR CLOUD. THERE IS NOTHING TO REMOVE. -- a true
+# answer to a question the walk did not mean to ask (2026-09-11). Nothing
+# else here cares what ran before it.
+#
+# match-dialog is also the one line whose precondition SETS a selection
+# rather than clearing it: with none picked it answers YOU HAVEN'T PICKED
+# ANY SYSTEMS FOR THIS DEVICE YET, which is the same dead end reached from
+# the other direction.
+#
+# For the same reason a second run of the whole suite wants the endpoint
+# re-seeded: the first run's transfers put the device-only files in the
+# cloud, and cloud-test-backend's seed-content does not take them back out.
+# What has to go back is the cloud's copy of what only the device should
+# have -- ROMs/gb, ROMs/pico-8 and ROMs/snes/deviceonly.sfc under the
+# endpoint's Content root.
+
+to-manage-cloud-storage = to-manage-cloud-storage
+back-up-page            = to-manage-cloud-storage back-up-page
+restore-page            = to-manage-cloud-storage restore-page
+match-dialog            = to-manage-cloud-storage match-dialog | cloud_content_restore --set-systems "gb snes"
+to-change-cloud-folder  = to-manage-cloud-storage to-change-cloud-folder
+confirm-cloud-folder    = to-manage-cloud-storage to-change-cloud-folder confirm-cloud-folder
+tick-roms               = to-manage-cloud-storage back-up-page tick-roms | cloud_content_restore --set-systems ""
+tick-settings           = to-manage-cloud-storage back-up-page tick-settings | cloud_content_restore --set-systems ""
+tick-game-content       = to-manage-cloud-storage back-up-page tick-game-content | cloud_content_restore --set-systems ""
+continue-to-systems     = to-manage-cloud-storage back-up-page tick-roms continue-to-systems | cloud_content_restore --set-systems ""
+run-transfer            = to-manage-cloud-storage back-up-page tick-roms continue-to-systems run-transfer | cloud_content_restore --set-systems ""
+run-transfer-frames     = to-manage-cloud-storage back-up-page tick-roms continue-to-systems run-transfer-frames | cloud_content_restore --set-systems ""
+ui-settings-toggle      = ui-settings-toggle
