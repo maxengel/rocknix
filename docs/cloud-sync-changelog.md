@@ -1866,3 +1866,23 @@ Maintainer's order: #116, #52, #71, #39, then #74 and #100, one build.
   upgraded device already holds under `/storage/.config/sysctl.d`
   (D-SYS-007). Neither changes what a handheld does; both change what a
   person reading a crash's evidence sees first (D-SYS-001).
+
+## Field labels in the player's words; the offer knows a near miss (2026-09-11)
+
+- **The provider forms say SERVER ADDRESS, USERNAME, PASSWORD, ACCESS
+  TOKEN** where they said `URL`, `USER`, `PASS`, `BEARER_TOKEN` (#123,
+  D-UI-038). A small map covers the fields the recommended providers ask
+  for; anything rclone adds later shows its name in plain words (`SOME
+  OPTION`), never an identifier. The rclone name still keys the value in
+  `rclone.conf`.
+- **The empty-cloud offer names a folder with a near name** (#127,
+  D-CLOUD-091). With `/ROCKNIX/Savez` configured beside a real
+  `/ROCKNIX/Saves`, the restore says "Your cloud has /ROCKNIX/Saves but no
+  /ROCKNIX/Savez, so check the folder name." and the dialog offers CHANGE
+  FOLDER first, then CREATE ANYWAY, then NOT NOW. It used to offer CREATE
+  IT alone, which would have split the saves across two folders.
+- **A saves folder at the cloud's root gets the offer too** (#127,
+  D-CLOUD-092): the root the remote answers for is its parent. A missing
+  root above a nested folder still fails.
+- The words for all three are the ones proposed in the issues, built
+  under discretion and framed for the maintainer's yes.
