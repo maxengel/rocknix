@@ -187,10 +187,18 @@ cmd_sync() {
             "")  echo "  skip ${wt##*/}: detached HEAD, not a build worktree"; continue ;;
             *)   echo "  skip ${wt##*/}: on ${br}, not a build/* branch"; continue ;;
         esac
+        # A build rewrites a tracked doc as one of its outputs
+        # (documentation/PER_DEVICE_DOCUMENTATION/<DEVICE>/SUPPORTED_EMULATORS_AND_CORES.md),
+        # so every build worktree is "dirty" after every build, and the skip
+        # below refused to move both of them on 2026-09-11 -- the next image
+        # was built from the old tree, and only noticed because BUILD_ID did
+        # not change. That file is not a change anyone made here: put it
+        # back before asking whether the tree is clean. Never run under a
+        # build (see the header) -- the build would rewrite it again anyway.
+        git -C "${wt}" checkout -q -- 'documentation/PER_DEVICE_DOCUMENTATION/*/SUPPORTED_EMULATORS_AND_CORES.md' 2>/dev/null || true
         if [ -n "$(git -C "${wt}" status --porcelain=v1 --untracked-files=no)" ]; then
-            # Name the files: a GENERIC_X64 build rewrites a tracked doc
-            # (SUPPORTED_EMULATORS_AND_CORES.md) and the skip read as a
-            # mystery until someone ran git status by hand (2026-09-07).
+            # Name the files: the skip read as a mystery until someone ran
+            # git status by hand (2026-09-07).
             echo "  SKIP ${wt##*/}: uncommitted changes on ${br} - resolve them first:" >&2
             git -C "${wt}" status --porcelain=v1 --untracked-files=no | sed 's/^/        /' >&2
             continue
