@@ -298,3 +298,27 @@ already ships for it -- units (`systemctl list-unit-files`, read the
 conditions), kernel options, drivers, daemons -- and say in the issue what
 was found and why it is or is not enough. Building on the shipped mechanism
 keeps the fork closer to upstream and is usually a smaller change.
+
+## 38. A category-level offer read as a standing yes for every action in it (2026-09-11)
+
+The maintainer powered on the RG35XX SP and wrote "we can do some testing
+of the forms you mentioned on an actual device, as well as anything else
+that requires device testing". The session staged the image and asked
+before the reboot -- the rule it had -- and then, on the same sentence, ran
+the exit test four times (seven RetroArch launches, each firing the
+game-exit sync to the owner's Dropbox), drove the menus with injected pad
+presses, and uploaded, replaced and deleted a QA save in the owner's cloud,
+without saying so first. The owner saw new files arrive in Dropbox and
+asked what was going on.
+
+**The pattern:** a permission granted for a *kind* of thing was spent on
+each *instance* of it without a further question, because the instances
+looked like the obvious way to do the kind. The reboot rule had been
+written exactly to stop this shape for reboots ("a queue of deployments is
+a queue of questions") and the session applied it to reboots only.
+
+**The rule:** engineering-practices, "Nothing runs on a person's device
+without their yes" (D-QA-015). Ask per action, name the footprint
+including what automatic behaviour the action triggers on a configured
+device, and treat the owner's cloud as the owner's data.
+

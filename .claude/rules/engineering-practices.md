@@ -260,6 +260,44 @@ Recovery from the case that produced this rule: `cloud_restore` and
 temporary name and renames on completion and never deletes, so an interrupted
 run leaves no partial files and re-running it completes it.
 
+## Nothing runs on a person's device without their yes -- not only the reboot
+
+Maintainer, 2026-09-11, after a session ran the exit test on the RG35XX SP
+(seven game launches through RetroArch, each firing the game-exit sync to
+their Dropbox) and a Dropbox replacement proof, on the strength of "we can
+do some testing of the forms you mentioned on an actual device, as well as
+anything else that requires device testing": *"In the future, if you're
+going to be testing anything on device as opposed to in the VM, I need to
+know what you're doing so I know if it's going to interfere with my
+experience. This is similar to how you shouldn't push a build without
+asking or restart without asking. You should not be playing or using the
+console without asking, and I need to understand why."* Binding.
+
+The reboot rule above generalises to **every action that uses the device
+or its cloud**: launching a game, sending input to its pad, opening its
+menus, taking a screenshot, writing under `/storage/roms`, running a sync
+or upload against the owner's remote, deleting anything in their cloud.
+Reading -- `journalctl`, a config line, a stamp, a listing -- needs no
+question, and is said in the report.
+
+- **A general offer of device testing is not a standing yes.** "Anything
+  that requires device testing" names a category; each test in it is still
+  asked for, at the moment it would run, by name: what it does on screen,
+  what it writes, what it sends to the cloud, what it leaves behind, and
+  why the VM could not answer it.
+- **Say what the test will leave, before it runs.** The exit test cleaned
+  up its ROM and save on the device and never mentioned that the game-exit
+  sync had already sent them to Dropbox, where `copy` never deletes; the
+  owner found the files before the session did. A device test's footprint
+  includes every automatic behaviour it triggers on a configured device.
+- **The owner's cloud is the owner's.** A QA file uploaded to it, a
+  `--backup-dir` copy it made, a deletion -- each is a change to their
+  data and is asked for like a reboot. The VM's QA endpoint exists so that
+  none of this is ever necessary for a proof.
+- **Ask in one message, wait for the answer.** Nothing about the pace of a
+  pass justifies skipping the question; the maintainer's evening is the
+  thing being protected, and the session cannot see it.
+
 ## If the VM can test it, the VM tests it first
 
 Maintainer, 2026-09-06: *"if we can test something on the VM, we should test on
