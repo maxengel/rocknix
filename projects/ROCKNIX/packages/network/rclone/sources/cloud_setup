@@ -185,7 +185,12 @@ case "$1" in
         echo "IP=${IP_ADDR}"
         echo "SSH_CMD=${SSH_CMD}"
         echo "OVERRIDE=${OVERRIDE_ACTIVE}"
-        echo "PASSWORD=$(get_setting root.password)"
+        # Whether a root password is set, never the password: this output is
+        # parsed by EmulationStation through a pipeline, and a credential that
+        # crosses a script boundary is one careless echo from a log (#116,
+        # D-INFRA-008). The page that must show or pre-fill it reads
+        # root.password in-process from its own settings.
+        echo "PASSWORD_SET=$([ -n "$(get_setting root.password)" ] && echo 1 || echo 0)"
         echo "SSH_UP=$(systemctl is-active sshd 2>/dev/null)"
         echo "AUTH_PORT=$(auth_port_busy && echo busy || echo free)"
         # Both names for one value: EmulationStation reads SYNCPATH= until its

@@ -935,6 +935,21 @@ backup_game_saves() {
         )
     fi
 
+    # The saves allowlist is not optional. RCLONEOPTS is a user-editable line
+    # that invites changes (a --bwlimit, dropping --progress), and until
+    # 2026-09-11 the allowlist rode along only inside the shipped default
+    # value: an edited RCLONEOPTS that did not happen to keep --filter-from
+    # sent the whole ROM library into the saves folder, silently (#71). So
+    # whatever the options say, the rules file is applied unless the user
+    # named a filter file themselves.
+    local has_filter=0 opt
+    for opt in "${all_opts[@]}"; do
+        case "${opt}" in --filter-from|--filter-from=*|--filters-file|--filters-file=*) has_filter=1 ;; esac
+    done
+    if [ "${has_filter}" = 0 ]; then
+        all_opts+=("--filter-from" "/storage/.config/cloud_sync-rules.txt")
+        log_message "RCLONEOPTS carried no --filter-from; the saves allowlist was added (#71)" "false" "WARN"
+    fi
     # Add debug logging if enabled
     if [ -n "$rclone_debug" ]; then
         all_opts+=("$rclone_debug" "INFO")

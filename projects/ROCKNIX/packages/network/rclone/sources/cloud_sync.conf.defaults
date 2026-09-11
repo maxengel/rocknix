@@ -51,6 +51,9 @@ DEFAULT_LOG_LEVEL="INFO"
 # ---------------
 # rclone sync rules - modify these options to change transfer behavior
 # IMPORTANT: Each option must be preceded by a backslash (\) except the first one
+# The saves allowlist (--filter-from /storage/.config/cloud_sync-rules.txt) is
+# applied whether or not it appears here: dropping it from this line does not
+# drop it from the transfer (#71). To change what syncs, edit the rules file.
 DEFAULT_RCLONEOPTS="--progress \
 --log-file /var/log/cloud_sync.log \
 --filter-from /storage/.config/cloud_sync-rules.txt \
