@@ -410,6 +410,32 @@ say_why() {
 # The summary's word for a phase (D-UI-028): COMPLETED, or COULDN'T FINISH.
 # rclone's 9 (nothing needed moving) is a completion. SUCCESS and COMPLETED
 # WITH ERRORS -- a partial success reported as errors -- retire.
+# Names on stdin within a typo of the one wanted -- two edits, one for a
+# name under five characters -- compared without case: Savez, saves, Save,
+# Saves2 against Saves (#127). The exact name is never among them, since it
+# is the folder that was found missing. busybox awk: no gensub, no
+# multi-dimensional array syntax beyond SUBSEP, both avoided.
+near_names() {
+    awk -v want="$1" '
+    function lev(a, b,    i, j, la, lb, cost, ai, bj, best) {
+        la = length(a); lb = length(b)
+        for (j = 0; j <= lb; j++) d[0, j] = j
+        for (i = 1; i <= la; i++) {
+            d[i, 0] = i; ai = substr(a, i, 1)
+            for (j = 1; j <= lb; j++) {
+                bj = substr(b, j, 1); cost = (ai == bj) ? 0 : 1
+                best = d[i-1, j] + 1
+                if (d[i, j-1] + 1 < best) best = d[i, j-1] + 1
+                if (d[i-1, j-1] + cost < best) best = d[i-1, j-1] + cost
+                d[i, j] = best
+            }
+        }
+        return d[la, lb]
+    }
+    BEGIN { w = tolower(want); lim = (length(w) < 5) ? 1 : 2 }
+    NF && $0 != want { if (lev(tolower($0), w) <= lim) print }'
+}
+
 outcome_word() {
     case "$1" in
         0|9) echo "COMPLETED" ;;
@@ -906,17 +932,38 @@ restore_game_saves() {
         # successfully before this counts as empty, and a saves folder
         # configured AT the root has no parent to distinguish it and keeps
         # failing.
-        local saves_parent="${SAVES_REMOTE%/}"
-        saves_parent="${saves_parent%/*}"
-        if [ -n "${saves_parent}" ] && [ "${saves_parent}" != "${SAVES_REMOTE%/}" ] \
-           && rclone lsd "${REMOTENAME}${saves_parent}" "${RCLONE_NET_OPTS_ARRAY[@]}" >/dev/null 2>&1; then
-            log_message "saves folder ${SAVES_REMOTE} absent but its parent ${saves_parent} lists; treating as an empty cloud" "false"
+        #
+        # Two refinements (#127, D-CLOUD-091/092). A saves folder at the
+        # cloud's root (/Saves) has the root for a parent, and a root the
+        # remote answers for is a present parent by definition -- it used
+        # to have "no parent" and kept failing. And the parent test covers
+        # only the parent: /ROCKNIX/Savez has a present parent and got the
+        # plain offer, and CREATE IT would have put Savez beside the real
+        # Saves, after which every backup went to the wrong folder. So the
+        # parent's folders are listed, and one whose name is within a typo
+        # of the missing one travels on the offer line for EmulationStation
+        # to name -- the plain offer only when nothing near it exists.
+        local saves_path="${SAVES_REMOTE%/}"
+        local saves_parent="${saves_path%/*}"
+        [ "${saves_parent}" = "${saves_path}" ] && saves_parent=""
+        local missing_name="${saves_path##*/}"
+        if rclone lsd "${REMOTENAME}${saves_parent}" "${RCLONE_NET_OPTS_ARRAY[@]}" >/dev/null 2>&1; then
+            local near
+            near=$(rclone lsf --dirs-only "${REMOTENAME}${saves_parent}" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null \
+                   | sed 's|/$||' | near_names "${missing_name}" | head -1)
+            if [ -n "${near}" ]; then
+                log_message "saves folder ${SAVES_REMOTE} absent; its parent ${saves_parent:-/} lists and holds a near name: ${near}" "false"
+                echo "There's nothing in your cloud to restore yet. Your cloud has ${saves_parent}/${near} but no ${saves_path}, so check the folder name."
+                echo ">>> offer create-saves-folder|${saves_path}|${saves_parent}/${near}"
+                return 0
+            fi
+            log_message "saves folder ${SAVES_REMOTE} absent but its parent ${saves_parent:-/} lists; treating as an empty cloud" "false"
             echo "There's nothing in your cloud to restore yet."
             # EmulationStation offers to create the folder when it sees this;
             # the wizard's own seeding action is what makes it (cloud_setup
             # --seed-folders). A protocol line rather than a parsed sentence,
             # so rewording the line above can never turn the offer off.
-            echo ">>> offer create-saves-folder"
+            echo ">>> offer create-saves-folder|${saves_path}"
             return 0
         fi
 
