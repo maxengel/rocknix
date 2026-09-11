@@ -125,14 +125,37 @@ log_message() {
 # transfer looks exactly like one that hung. Exit EXIT_LOCK_HELD (75) means
 # "skipped: another sync is running" -- the UI names it, and no last-run stamp
 # is written for work that did not happen.
+#
+# The descriptor is this shell's and nothing else's. A shell redirection
+# carries no close-on-exec, so `exec 9>` hands fd 9 to every child the
+# script starts, and rclone then holds the lock for the whole of a transfer
+# (watched in /proc on the VM, #124). While the script outlives its
+# children that is invisible, because bash waits for each of them before it
+# exits. The moment it does not -- killed or orphaned while rclone is still
+# copying, a child left in the background -- the lock outlives the run that
+# took it and every sync afterwards is refused with "another cloud sync is
+# running" when nothing is running at all. So the body runs with fd 9
+# closed ("9>&-"): bash keeps the lock on a descriptor of its own, which it
+# does mark close-on-exec, and nothing this script starts can see it.
+#
+# The refusal also waits a moment before saying no, as belt and braces for
+# a holder this script does not own: a descriptor leaked by an older build,
+# or a process in the act of exiting, frees itself in milliseconds, while a
+# real concurrent transfer does not. One second of patience turns a raced
+# skip into a run that works and costs a genuinely blocked run one second.
 CLOUD_SYNC_LOCK=/var/run/cloud_sync.lock
 take_cloud_lock() {
+    local tries=0
     exec 9>"${CLOUD_SYNC_LOCK}"
-    if ! flock -n 9; then
-        echo "Skipped: another cloud sync is already running. Try again when it's done."
-        log_message "skipped: another cloud sync holds ${CLOUD_SYNC_LOCK}" "false"
-        exit "${EXIT_LOCK_HELD}"
-    fi
+    while ! flock -n 9; do
+        if [ "${tries}" -ge 4 ]; then
+            echo "Skipped: another cloud sync is already running. Try again when it's done."
+            log_message "skipped: another cloud sync holds ${CLOUD_SYNC_LOCK}" "false"
+            exit "${EXIT_LOCK_HELD}"
+        fi
+        tries=$((tries + 1))
+        sleep 0.25
+    done
 }
 
 # The configured remote, by the same rule as `rclone listremotes | head -1`
@@ -1591,6 +1614,8 @@ main() {
 # Set up signal trap to handle user interruption gracefully
 trap 'log_message "Script interrupted by user" "false" "WARN"; clean_exit 130' INT TERM
 
-# Start script execution
+# Start script execution. The body runs with the lock descriptor closed,
+# so nothing it starts can hold the lock after this shell is gone -- see
+# take_cloud_lock.
 take_cloud_lock
-main
+main 9>&-
