@@ -238,6 +238,7 @@ write_archive() {
     local SYSCFG="/storage/.config/system/configs/system.cfg"
     local ESCFG="${ESPATH}/es_settings.cfg"
     local RACFG="/storage/.config/retroarch/retroarch.cfg"
+    local RCLONECFG="/storage/.config/rclone/rclone.conf"
     local FILELIST SECRETLIST SENDLIST STAGING CANDIDATE
 
     # Regular files only: symlinks under the config tree point at
@@ -264,13 +265,24 @@ write_archive() {
     # had deliberately excluded.
     if [ "${STRIP}" = "1" ]
     then
-        for CANDIDATE in "${SYSCFG}" "${ESCFG}" "${RACFG}"
+        for CANDIDATE in "${SYSCFG}" "${ESCFG}" "${RACFG}" "${RCLONECFG}"
         do
             if grep -qxF "${CANDIDATE}" "${FILELIST}"
             then
                 echo "${CANDIDATE}" >> "${SECRETLIST}"
             fi
         done
+        # rclone.conf is live OAuth access and refresh tokens for the
+        # player's cloud account. There is no sanitized copy worth keeping
+        # -- a remote without its token is a name -- so it is held back
+        # outright, and a restored device connects its cloud storage again
+        # (thirty seconds on a phone with the wizard). Not in the default
+        # LOCATIONS, but a custom LOCATIONS such as /storage/.config sweeps
+        # it in, and the archive is synced to the cloud by design (#52).
+        if grep -qxF "${RCLONECFG}" "${FILELIST}"
+        then
+            logger -t backuptool "rclone.conf held back from the archive: cloud tokens never travel in a backup (#52)"
+        fi
     fi
 
     # busybox grep -f with an EMPTY pattern file matches nothing and prints
@@ -643,7 +655,7 @@ case "${VERB}" in
             SCANDIR=$(mktemp -d)
             tar -xzf "${BACKUPFILE}" -C "${SCANDIR}" 2>/dev/null
             LEAKS=$(find "${SCANDIR}" -type f \( -name '*.cfg' -o -name '*.conf' -o -name '*.ini' \) \
-                -exec grep -hE '^[a-z_.]*(password|token|stream_key|\.key) *[=:] *"?[^"[:space:]]+' {} + 2>/dev/null \
+                -exec grep -hE '^[a-z_.]*(password|pass|token|secret|stream_key|key) *[=:] *"?[^"[:space:]]+' {} + 2>/dev/null \
                 | wc -l)
             rm -rf "${SCANDIR}"
         else

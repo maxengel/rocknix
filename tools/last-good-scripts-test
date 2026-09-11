@@ -260,6 +260,7 @@ bt restore; rcr=${RC}
 [ "$(cat "${ST}/.config/test/f1")" = "changed" ] && [ "$(cat "${ST}/.config/test/f2")" = "file2" ]; check $? "and the pre-restore state was put back (f1 'changed', f2 'file2')" "f1='$(cat "${ST}/.config/test/f1")' f2='$(cat "${ST}/.config/test/f2")' -- the tree is half the archive, half the old state"
 ls "${ST}/roms/backup/archive"/*PRE_RESTORE* >/dev/null 2>&1; check $? "the snapshot is in archive/ as *PRE_RESTORE*" "no PRE_RESTORE snapshot in archive/: $(ls "${ST}/roms/backup/archive" 2>/dev/null | tr '\n' ' ')"
 grep -q 'YOUR SETTINGS ARE UNCHANGED' "${OUT}"; check $? "and the screen says the settings are unchanged" "screen: $(grep -v '^logger' "${OUT}" | tail -2 | tr '\n' '|')"
+
 ! grep -vE '^logger |^>>> ' "${OUT}" | grep -qiE "logger|/storage/|/var/log|exit [0-9]"; check $? "with no path, log or tool name on it" "a screen line carries one: $(grep -vE '^logger |^>>> ' "${OUT}" | grep -iE 'logger|/storage/|/var/log|exit [0-9]' | head -1)"
 rm -f "${B}/shim/tar"
 # A restore that works, asked to leave the journey marker.
@@ -426,6 +427,38 @@ EOS
 echo "${hits}" | grep -v '^HITS='
 n_hits=$(echo "${hits}" | sed -n 's/^HITS=//p')
 [ "${n_hits}" = "0" ]; check $? "no screen line matches FORBIDDEN across the six scripts" "${n_hits} screen line(s) match FORBIDDEN (listed above)"
+
+
+echo "  f. backuptool: rclone.conf never enters an archive, and the scanner knows rclone's key names (#52)"
+# Its own staging tree: the cases above read "the newest archive" and must
+# not find this one.
+B2="${TMP}/f"; ST2="${B2}/storage"
+mkdir -p "${ST2}/.config/system/configs" "${ST2}/.config/test" "${ST2}/.config/rclone" "${ST2}/roms/backup" "${B2}/shim" "${B2}/repo"
+cp "${BT}" "${B2}/repo/backuptool"
+printf 'export PATH=/shim:/usr/bin:/bin\nexport OS_NAME=ROCKNIX\n' > "${B2}/profile"
+printf '#!/bin/sh\necho "logger $*" >&2\n' > "${B2}/shim/logger"
+printf '#!/bin/sh\necho "systemctl $*"\n' > "${B2}/shim/systemctl"
+printf '#!/bin/sh\nexit 0\n' > "${B2}/shim/sleep"
+chmod +x "${B2}/shim"/*
+printf 'system.hostname=X\n' > "${ST2}/.config/system/configs/system.cfg"
+printf '[qa]\ntype = dropbox\ntoken = {"access_token":"QA-SECRET-TOKEN","refresh_token":"QA-REFRESH"}\n' > "${ST2}/.config/rclone/rclone.conf"
+printf 'name = probe\npass = QA-SECRET-PASS\n' > "${ST2}/.config/test/leaky.conf"
+echo plain > "${ST2}/.config/test/plain.txt"
+printf 'LOCATIONS=(\n  /storage/.config/system/configs/system.cfg\n  /storage/.config/test/*\n  /storage/.config/rclone/*\n)\n' > "${ST2}/.config/backuptool.conf"
+OUT2="${B2}/out"
+RC2=$( ( setsid -w bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr \
+    --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+    --ro-bind /etc /etc --ro-bind "${B2}/profile" /etc/profile \
+    --bind "${ST2}" /storage --ro-bind "${B2}/shim" /shim --ro-bind "${B2}/repo" /repo \
+    --dev /dev --proc /proc --tmpfs /tmp \
+    bash /repo/backuptool backup > "${OUT2}" 2>&1; echo $? ) 2>/dev/null )
+arc=$(ls "${ST2}/roms/backup"/*.tar.gz 2>/dev/null | head -1)
+[ "${RC2}" -eq 0 ] && [ -n "${arc}" ]; check $? "a backup with rclone.conf in LOCATIONS completes (rc ${RC2})" "rc ${RC2}, archive: '${arc}'"
+! tar -tzf "${arc}" 2>/dev/null | grep -q 'rclone/rclone.conf$'; check $? "rclone.conf is not in the archive" "the archive lists rclone.conf"
+! tar -xzOf "${arc}" 2>/dev/null | grep -q 'QA-SECRET-TOKEN'; check $? "and no token travelled in any member" "a member carries the token"
+tar -tzf "${arc}" 2>/dev/null | grep -q 'test/leaky.conf$' && tar -tzf "${arc}" 2>/dev/null | grep -q 'test/plain.txt$'; check $? "files that are not held back are archived as before" "leaky.conf or plain.txt missing"
+grep -q 'rclone.conf held back' "${OUT2}"; check $? "the log says rclone.conf was held back" "no held-back line: $(grep logger "${OUT2}" | tail -2 | tr '\n' ' ')"
+grep -q 'LOOK LIKE PASSWORDS OR KEYS' "${OUT2}"; check $? "the scanner reports the pass= line in a file it does not hold back" "scanner silent: $(grep -v '^logger' "${OUT2}" | tail -3 | tr '\n' ' ')"
 
 echo
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

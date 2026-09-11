@@ -888,6 +888,113 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
                   "(issue #40): it copies cloud -> device, so nothing is ever "
                   "uploaded. Expected until a build carries the fix.")
 
+    step("a user's own rule sits above the catch-all and keeps its file off the cloud")
+    # #39: rclone filters are first-match-wins, and user rules used to be
+    # appended below "- /**", where nothing reaches them. The merge puts them
+    # first now; this proves it the only way that matters -- a file the user
+    # excluded does not travel -- and reads the file's order as well.
+    probe_rel = "saves/keep-off-the-cloud.probe"
+    dev.run(f"printf 'never leaves' > {shlex.quote(f'{root}/{probe_rel}')}")
+    dev.run(f"grep -qxF -- '- /**/*.probe' {RULES} || sed -i '1i - /**/*.probe' {RULES}")
+    rc, out = run_rc(dev, "cloud_backup --yes --saves-only")
+    failures += not check(rc == 0, f"the backup with a user rule completed (exit {rc})", f"exit {rc}: {out.strip()[-160:]!r}")
+    order = dev.run(f"grep -nxF -e '- /**/*.probe' -e '- /**' {RULES} | cut -d: -f1 | tr '\\n' ' '").split()
+    failures += not check(len(order) == 2 and int(order[0]) < int(order[1]),
+                          f"the user rule sits above the catch-all in the merged file (lines {' < '.join(order) if order else '?'})",
+                          f"rules order was {order}")
+    saves_remote = dev.run(f"grep -m1 '^SAVES_REMOTE=' {CONF} | cut -d'\"' -f2").strip()
+    # The scripts fall back to the first configured remote when REMOTENAME is
+    # blank in the conf, and so must this.
+    remote_name = dev.run(f"grep -m1 '^REMOTENAME=' {CONF} | cut -d'\"' -f2").strip() \
+        or dev.run("rclone listremotes 2>/dev/null | head -1").strip()
+    listing = dev.run(f"rclone lsf -R --files-only {shlex.quote(remote_name + saves_remote)} 2>/dev/null || true")
+    failures += not check("keep-off-the-cloud.probe" not in listing and "game1.srm" in listing,
+                          "the excluded file stayed home while the ordinary save travelled",
+                          f"cloud listing: {listing.strip()[:200]!r}")
+    dev.run(f"sed -i '/^- \\/\\*\\*\\/\\*\\.probe$/d' {RULES}; rm -f {shlex.quote(f'{root}/{probe_rel}')}")
+
+    step("an edited RCLONEOPTS without --filter-from still keeps the allowlist")
+    # #71: the allowlist rode along only inside the shipped default value of
+    # RCLONEOPTS, so a player who edited that line (a --bwlimit, dropping
+    # --progress) and did not keep --filter-from sent the whole ROM library
+    # into the saves folder. The scripts add the rules file whenever the
+    # options do not name one; a file outside the allowlist must stay home.
+    dev.run(f"cp {CONF} {CONF}.qa-71")
+    dev.run(f"sed -i '/^RCLONEOPTS=/,/[^\\\\]$/d' {CONF}; echo 'RCLONEOPTS=\"--progress\"' >> {CONF}")
+    rom_rel = "saves/not-a-save.rom"
+    dev.run(f"printf 'a rom, not a save' > {shlex.quote(f'{root}/{rom_rel}')}")
+    rc, out = run_rc(dev, "cloud_backup --yes --saves-only")
+    failures += not check(rc == 0, f"the backup with a bare RCLONEOPTS completed (exit {rc})", f"exit {rc}: {out.strip()[-160:]!r}")
+    listing = dev.run(f"rclone lsf -R --files-only {shlex.quote(remote_name + saves_remote)} 2>/dev/null || true")
+    failures += not check("not-a-save.rom" not in listing and "game1.srm" in listing,
+                          "the file outside the allowlist stayed home while the save travelled",
+                          f"cloud listing: {listing.strip()[:200]!r}")
+    warned = dev.run("grep -c 'carried no --filter-from' /var/log/cloud_sync.log 2>/dev/null || echo 0").strip()
+    failures += not check(warned.isdigit() and int(warned) > 0, "the log says the allowlist was added", "no such log line")
+    dev.run(f"mv -f {CONF}.qa-71 {CONF}; rm -f {shlex.quote(f'{root}/{rom_rel}')}")
+
+    step("changing the cloud folder moves the settings folder beside it, and the layout counts as current")
+    # #74: CHANGE CLOUD FOLDER used to write the settings folder INSIDE the
+    # saves folder -- the nesting cloud_migrate_layout exists to undo and the
+    # data-loss trap cloud_backup warns about. Now the siblings derive from
+    # the new folder, the warning is gone, the next settings backup lands
+    # under the new Backups, and the migration check leaves a chosen layout
+    # alone rather than offering to move it back to /ROCKNIX.
+    prev = {k: dev.run(f"grep -m1 '^{k}=' {CONF} | cut -d'\"' -f2").strip() for k in ("SAVES_REMOTE", "SETTINGS_REMOTE", "CONTENT_REMOTE")}
+    rc, out = run_rc(dev, "cloud_setup --set-saves-remote /QA-Custom/Saves")
+    now = {k: dev.run(f"grep -m1 '^{k}=' {CONF} | cut -d'\"' -f2").strip() for k in ("SAVES_REMOTE", "SETTINGS_REMOTE", "CONTENT_REMOTE")}
+    failures += not check(now == {"SAVES_REMOTE": "/QA-Custom/Saves", "SETTINGS_REMOTE": "/QA-Custom/Backups", "CONTENT_REMOTE": "/QA-Custom/Content"},
+                          "the three folders are siblings under the new root", f"conf reads {now}")
+    # The upload wants a local archive to send; the settings steps above may
+    # have pointed SETTINGS_BACKUPS back at the device default, so plant one
+    # where it points now and take it away afterwards.
+    bk_dir = dev.run(f"grep -m1 '^SETTINGS_BACKUPS=' {CONF} | cut -d'\"' -f2").strip() or "/storage/roms/backup"
+    bk_name = "2026_01_02-000000-QA-ROCKNIX_SETTINGS.tar.gz"
+    dev.run(f"mkdir -p {shlex.quote(bk_dir)}")
+    dev.write(f"{bk_dir}/{bk_name}", ARCHIVE_BODY)
+    rc, out = run_rc(dev, "cloud_backup --yes --system-only")
+    failures += not check(rc == 0 and "inside" not in out.lower(),
+                          f"a settings backup ran without the nesting warning (exit {rc})", f"exit {rc}: {out.strip()[-200:]!r}")
+    label = dev.run("cloud_device_id --label 2>/dev/null || true").strip()
+    landed = dev.run(f"rclone lsf -R --files-only {shlex.quote(remote_name + '/QA-Custom/Backups')} 2>/dev/null || true")
+    failures += not check(".tar.gz" in landed and (not label or label in landed),
+                          f"the archive landed under /QA-Custom/Backups/{label or '<device>'}/", f"listing: {landed.strip()[:200]!r}")
+    rc, out = run_rc(dev, "cloud_migrate_layout --check")
+    failures += not check(rc == 3 and "nothing to move" in out,
+                          "the migration check calls the chosen sibling layout current",
+                          f"exit {rc}: {out.strip()[-200:]!r}")
+    dev.run(f"rm -f {shlex.quote(f'{bk_dir}/{bk_name}')}; "
+            f"cloud_setup --set-saves-remote {shlex.quote(prev['SAVES_REMOTE'] or '/ROCKNIX/Saves')} >/dev/null 2>&1; "
+            f"rclone purge {shlex.quote(remote_name + '/QA-Custom')} >/dev/null 2>&1 || true", check=False)
+    for k, v in prev.items():
+        if v:
+            dev.run(f"sed -i 's|^{k}=.*|{k}=\"{v}\"|' {CONF}")
+
+    step("a cloud with no saves folder yet is empty, not broken; a wrong root still fails")
+    # #100: the parent decides. Root present and only Saves missing is the
+    # everyday shape of a device whose saves were never backed up -- exit 0,
+    # a plain line, and the offer EmulationStation turns into CREATE IT.
+    # The root itself missing is a wrong setting and must keep failing, or
+    # a typo in the folder name would restore nothing and report success.
+    # Done on a folder of its own rather than by moving the suite's saves
+    # folder aside: the suite's SAVES_REMOTE may sit at the root (/GAMES),
+    # where by design there is no parent to tell the two shapes apart.
+    prev_saves = dev.run(f"grep -m1 '^SAVES_REMOTE=' {CONF} | cut -d'\"' -f2").strip()
+    dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"/QA-Empty/Saves\"|' {CONF}; "
+            f"rclone purge {shlex.quote(remote_name + '/QA-Empty')} >/dev/null 2>&1; "
+            f"rclone mkdir {shlex.quote(remote_name + '/QA-Empty/Backups')} >/dev/null 2>&1", check=False)
+    rc, out = run_rc(dev, "cloud_restore --yes --saves-only")
+    failures += not check(rc == 0 and "nothing in your cloud" in out.lower() and ">>> offer create-saves-folder" in out,
+                          "root present, Saves absent: exit 0, the plain line, and the offer",
+                          f"exit {rc}: {out.strip()[-200:]!r}")
+    dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"/QA-No-Such-Root/Saves\"|' {CONF}")
+    rc, out = run_rc(dev, "cloud_restore --yes --saves-only")
+    failures += not check(rc != 0 and ">>> offer" not in out,
+                          f"root absent: the restore fails (exit {rc}) and offers nothing",
+                          f"exit {rc}: {out.strip()[-200:]!r}")
+    dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"{prev_saves}\"|' {CONF}; "
+            f"rclone purge {shlex.quote(remote_name + '/QA-Empty')} >/dev/null 2>&1 || true", check=False)
+
     step("ROMs and BIOS restore it")
     # Plant at the endpoint directly rather than restoring what the upload
     # step just wrote: otherwise a broken uploader fails this check for the
