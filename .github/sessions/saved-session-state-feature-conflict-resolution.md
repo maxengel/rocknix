@@ -1,14 +1,14 @@
 # Saved Session State
 
-> **Saved**: 2026-09-11T02:31:37Z
+> **Saved**: 2026-09-11T02:51:04Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). **The credentials-and-rules pass (#116 #52 #71 #39 #74 #100) is in `next` and built as `88b82d94a7` (x64 + H700); `tools/vm-qa` is running on it from a fresh pair as this was saved.** `next` = `5dceaf0741` (ES `f48bc3620` pinned), pushed. Maintainer (2026-09-11): "116 to 52 to 71 to 39 and then ... 74 and 100 ... with the same build."
+Epic #11 (cloud saves). **The credentials-and-rules pass (#116 #52 #71 #39 #74 #100) is done, built as `88b82d94a7` (x64 + H700), `tools/vm-qa` PASSED on it from a fresh pair (31-step suite), and all six issues are closed with frames.** `next` = `5dceaf0741` (ES `f48bc3620` pinned), pushed. Maintainer (2026-09-11): "116 to 52 to 71 to 39 and then ... 74 and 100 ... with the same build."
 
-Done: #39, #74, #100 closed (proven by new harness steps); #116 and #52 have one box each waiting on a frame from the new image (the SSH page's checkmark; the post-restore check saying where to connect); #71's five boxes are covered by the extended harness step and close once vm-qa passes. Decisions D-INFRA-008, D-CLOUD-087/088/089. Ten delivered-but-open cloud issues were closed earlier tonight (#89 #106 #108 #110 #103 #85 #95 #77 #105 #112...). Both handhelds OFFLINE all night, still on `7eb713bbd9`; `88b82d94a7` supersedes `d2eabe879c` as the image to offer for staging. Artifacts: `x64-all-20260911-88b82d94a7/`, `h700-all-20260911-88b82d94a7/` (tar sha `aeaa94be2834...`).
+Done: all six closed -- #39, #74, #100 by new harness steps; #71 by the extended step (backup, restore, own filter); #52 and #116 by bwrap case f and 640x480 frames. Decisions D-INFRA-008, D-CLOUD-087/088/089. Ten delivered-but-open cloud issues were closed earlier tonight (#89 #106 #108 #110 #103 #85 #95 #77 #105 #112...). Both handhelds OFFLINE all night, still on `7eb713bbd9`; `88b82d94a7` supersedes `d2eabe879c` as the image to offer for staging. Artifacts: `x64-all-20260911-88b82d94a7/`, `h700-all-20260911-88b82d94a7/` (tar sha `aeaa94be2834...`).
 
 ## Completed This Session
 
@@ -30,7 +30,7 @@ Done: #39, #74, #100 closed (proven by new harness steps); #116 and #52 have one
 
 ## Next Steps
 
-1. **Read vm-qa's report on `88b82d94a7`** (`scratchpad/vm-qa-88b8.log`; 31-step suite incl. the four new steps). If PASSED: relaunch guest b at 640x480, frame the SSH setup page (#116: checkmark + CURRENT PASSWORD row) and the post-restore CHECK CONNECTION with no rclone.conf (#52: `NO CLOUD STORAGE IS SET UP... BACKUPS NEVER CARRY YOUR CLOUD SIGN-IN...`); tick and close #116, #52, #71; QA log row; changelog is written.
+1. **`88b82d94a7` is the image to offer for staging**: vm-qa PASSED (four suites), all six issues closed, QA log written.
 2. **Staging is the maintainer's call, per device** (D-QA-008/011): `88b82d94a7`. Device-gated after that: #104 ramoops proof, #117 first-SIGTERM, #113 measurement, #107's Dropbox box.
 3. **#120** remaining: reference frames, shell unit tests (the bwrap harness has case f now), a nightly.
 4. Remaining cloud items (not conflict resolution): #47, #75, #45, #50, #42 (docs gate), #94's two boxes, #115's last box, #118's follow-up on rclone option names.
