@@ -6,7 +6,7 @@
 
 ## Current Focus
 
-Epic #11 (cloud saves). **#117/#118/#119 done; #120 (automated testing) three of six boxes; latest image `d2eabe879c` (x64 + H700), `tools/vm-qa` running on it as this was saved.** `next` = `9fd5ccd699` (ES `f4efddf3b` pinned), pushed. Maintainer's last direction (2026-09-10): tackle #117/#118/#119 then #105, and think about automated testing on the VMs.
+Epic #11 (cloud saves). **#117/#118/#119 done; #120 (automated testing) three of six boxes; latest image `d2eabe879c` (x64 + H700), `tools/vm-qa` PASSED on it from a fresh pair (four suites).** `next` = `9fd5ccd699` (ES `f4efddf3b` pinned), pushed. Maintainer's last direction (2026-09-10): tackle #117/#118/#119 then #105, and think about automated testing on the VMs.
 
 Closed: #118 (34 wizard strings under D-UI-036, framed 640x480), #119 (ten maintenance rows headless with an outcome, D-UI-037; `run`/`factoryreset` return statuses; AUDIO RESET and FACTORY RESET tested under a live ES on the disposable guest), #114, #109, #48, #111, #112. #117: three of four criteria via `tools/emulator-exit-test` (PASS on the shipped `input_sense`, FAIL (2) with the debounce stripped); the H700 first-SIGTERM observation stays open. #120: `tools/vm-qa` (one runner; `--link` for the seven link cells), the exit cell, and ES unit tests (`CloudText`, 19 cases, doctest) are ticked; reference frames for the walks, shell unit tests, and a nightly remain. #105: every box ticked (the harness gate is the default and caught six "Lost the network" lines on its first run, fixed in four scripts); #115's last box and #113 wait on a handheld.
 
@@ -32,7 +32,7 @@ Both handhelds were OFFLINE all evening, still on `7eb713bbd9`. Images: `x64-all
 
 ## Next Steps
 
-1. **Read `tools/vm-qa`'s report on `d2eabe879c`** (`scratchpad/vm-qa-d2ea.log`); if PASSED, that is the image to offer for staging. Copy `report.md` beside the image; QA log row.
+1. **`d2eabe879c` is the image to offer for staging**: vm-qa PASSED (scripts, round-trip, exit, walks); report beside the image; QA log row written.
 2. **Staging is the maintainer's call, per device** (D-QA-008/011). When a handheld is online and they say so: stage `d2eabe879c`; then, each with a yes by name: the #104 ramoops proof (`echo c > /proc/sysrq-trigger`, then `rocknix-evidence collect`), the #117 first-SIGTERM observation, the #113 five-retry Dropbox measurement.
 3. **#120** remaining: reference frames for the walks (box 3), shell unit tests beside each script (box 5), a nightly on a self-hosted runner (box 6). Also worth a line: the walks' key timing under load (wake first; wait for the process, not a fixed delay).
 4. **#115** last box (the launch gate's stopping wording) and the provider forms' raw rclone option names (`URL`, `VENDOR`, `USER`, `PASS`) as a follow-up to #118.
