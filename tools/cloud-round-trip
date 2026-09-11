@@ -1048,8 +1048,38 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     failures += not check(rc != 0 and ">>> offer" not in out,
                           f"root absent: the restore fails (exit {rc}) and offers nothing",
                           f"exit {rc}: {out.strip()[-200:]!r}")
+    # #127: a saves folder at the cloud's root has the root for a parent,
+    # and the root answers, so an empty cloud gets the offer there too.
+    dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"/QA-Root-Saves\"|' {CONF}; "
+            f"rclone purge {shlex.quote(remote_name + '/QA-Root-Saves')} >/dev/null 2>&1 || true", check=False)
+    rc, out = run_rc(dev, "cloud_restore --yes --saves-only")
+    failures += not check(rc == 0 and ">>> offer create-saves-folder|/QA-Root-Saves" in out,
+                          "a root-level saves folder on an empty cloud: exit 0 and the offer names it",
+                          f"exit {rc}: {out.strip()[-200:]!r}")
+    # #127: a typo in the LAST component has a present parent. The offer
+    # carries the folder that sits beside it under a near name, and the
+    # player line names both, so CREATE IT is not the only way forward.
+    dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"/QA-Near/Savez\"|' {CONF}; "
+            f"rclone purge {shlex.quote(remote_name + '/QA-Near')} >/dev/null 2>&1; "
+            f"rclone mkdir {shlex.quote(remote_name + '/QA-Near/Saves')} >/dev/null 2>&1; "
+            f"rclone mkdir {shlex.quote(remote_name + '/QA-Near/Backups')} >/dev/null 2>&1", check=False)
+    rc, out = run_rc(dev, "cloud_restore --yes --saves-only")
+    failures += not check(rc == 0 and ">>> offer create-saves-folder|/QA-Near/Savez|/QA-Near/Saves" in out
+                          and "/QA-Near/Saves but no /QA-Near/Savez" in out,
+                          "Savez beside Saves: exit 0, the offer carries the near name, the line names both",
+                          f"exit {rc}: {out.strip()[-240:]!r}")
+    # And a name that is not near anything (Backups is three edits from
+    # Photos) gets the plain offer, not a false match.
+    dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"/QA-Near/Photos\"|' {CONF}")
+    rc, out = run_rc(dev, "cloud_restore --yes --saves-only")
+    failures += not check(rc == 0 and ">>> offer create-saves-folder|/QA-Near/Photos\n" in out.replace("\r", "") + "\n"
+                          and "but no" not in out,
+                          "a missing folder near nothing gets the plain offer",
+                          f"exit {rc}: {out.strip()[-200:]!r}")
     dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"{prev_saves}\"|' {CONF}; "
-            f"rclone purge {shlex.quote(remote_name + '/QA-Empty')} >/dev/null 2>&1 || true", check=False)
+            f"rclone purge {shlex.quote(remote_name + '/QA-Empty')} >/dev/null 2>&1; "
+            f"rclone purge {shlex.quote(remote_name + '/QA-Near')} >/dev/null 2>&1; "
+            f"rclone purge {shlex.quote(remote_name + '/QA-Root-Saves')} >/dev/null 2>&1 || true", check=False)
 
     step("ROMs and BIOS restore it")
     # Plant at the endpoint directly rather than restoring what the upload
