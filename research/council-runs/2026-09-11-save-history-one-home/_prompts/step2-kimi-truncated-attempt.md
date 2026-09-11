@@ -1,0 +1,11 @@
+# Council Step 2 — peer review of the four Step 1 analyses
+
+Seat: the fifth member. I reviewed `claude-analysis.md`, `gemini-analysis.md`, `gpt-analysis.md`, and `mistral-analysis.md` against the embedded corpus only. Where I say a claim HOLDS, I checked it against the cited source; where I say it is ASSERTED, it rests on the member's own knowledge of rclone or on estimate, whatever the member claimed. I argue substance throughout; nothing below is a comment on the council process.
+
+---
+
+## 1. `claude-analysis.md`
+
+**Strongest argument: §1.4 (the heal cannot run where the delta puts it).** This is the best single catch in any of the four analyses. R5 says the exit push is "to-the-cloud only … No fetches, no ICMP, no probes on this path" (`issues/22.md`), and D-CLOUD-100 says the cloud's good copy "is kept and restored." Both are corpus-verbatim, and they cannot both happen at exit. Claude's traced sequence — torn save at exit → relaunch cancels or pre-empts the boot sync (D-CLOUD-076) → game writes a fresh save over the torn one → next exit classifies "this device changed" and publishes — is a correct reading of R4's table, and the remedy (heal from the capture stage, which D-CLOUD-078 explicitly lists as holding "content-addressed copies of every save the manifest claims"; sticky-divergent otherwise) reopens nothing. §1.2 (count keyed per unit vs per save file) is the second-strongest: R4's "*L* = this device's hash set for the unit" and R9's "unit = game + kind" support the reading, and Claude honestly flags the inference against the unembedded #21. If the inference holds, this is the amendment that makes D-CLOUD-099 survivable.
+
+**Weakest argument: §2.2's "Either way no version is lost; the amended form is strictly better."** This is falsifiable, and `gpt-analysis.md` falsifies it. Claude's own amendment (read the retained copy's hash, compare to *A* before publishing) narrows the race to the copy window but does not close it: if both devices' retains complete before either publish, both see head = *A*, both publish, and the first publisher's version is overwritten without ever entering the store. The claim "no version is lost" should be retracted or scoped. Secondary weaknesses: the migration section's "release note closes the rest" underst
