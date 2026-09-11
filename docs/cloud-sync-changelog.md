@@ -1812,3 +1812,11 @@ now, with no window, font or file behind it, and `es-app/tests/unit/` builds
 `es-unit-tests` against it: 19 cases, 162 assertions, four milliseconds,
 proven to fail on three deliberate mutations (#120). Behaviour unchanged;
 `d2eabe879c` carries the extraction and passes `tools/vm-qa`.
+
+## Standalone N64 saves join the allowlist (2026-09-10, noted 2026-09-11)
+
+Every shipped `mupen64plus.cfg` writes `.eep`, `.mpk`, `.sra` and `.fla`
+beside the ROM, and the allowlist's `/n64/save/*` lines never matched them,
+so a standalone-N64 player's saves were never backed up. Four `+ /**/*.ext`
+lines in both rule files (D-CLOUD-086, #89); the ROM beside them stays out,
+and the harness plants both layouts.
