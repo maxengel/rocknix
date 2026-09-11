@@ -31,3 +31,17 @@ configured beside a real `/QA-Near/Saves`.
 | --- | --- |
 | ![offer](offer-near-name-dialog.png) | YOUR CLOUD HAS A FOLDER CALLED /QA-Near/Saves BUT NONE CALLED /QA-Near/Savez ... IS THE FOLDER NAME RIGHT? — CHANGE FOLDER / CREATE ANYWAY / NOT NOW |
 | ![editor](offer-change-folder-opens-editor.png) | CHANGE FOLDER opens the CLOUD FOLDER editor pre-filled with the configured path |
+
+## The same forms on the RG35XX SP (`af2db4ab09`, upgraded in place)
+
+Captured on the handheld with `grim` over ssh, the menus driven by writing pad
+events to the H700 Gamepad's evdev node (on this pad A is BTN_EAST and B is
+BTN_SOUTH). The panel is 640x480, so these should match the VM frames above
+pixel for pixel in layout; they do.
+
+| Frame | What it shows |
+| --- | --- |
+| ![hub](device-rg35xxsp-cloud-hub.png) | The CLOUD page on the device, Dropbox connected |
+| ![webdav](device-rg35xxsp-webdav-form.png) | WebDAV form on the device |
+| ![sftp](device-rg35xxsp-sftp-form.png) | SSH/SFTP form on the device |
+| ![s3](device-rg35xxsp-s3-form.png) | S3 form on the device, subtitle AMAZON S3 AND COMPATIBLE (#128) |
