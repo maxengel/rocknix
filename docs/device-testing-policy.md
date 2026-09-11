@@ -7,6 +7,16 @@ The practice text lives in `.claude/rules/engineering-practices.md` under "Never
 update, or power-cycle a device without asking" and "Nothing runs on a person's device
 without their yes"; blindspots 26 and 38 record how each rule was learnt.
 
+## The first question
+
+**Can this be done on the VM?** Written down, with the answer, before any device run is
+proposed. Only a "no" with a reason -- a real panel, a real board's memory or GPU, a
+battery -- moves a test off the VM; "a real provider" is not such a reason, because the
+VM host can run WebDAV, S3, SFTP, SMB and FTP backends of its own and a VM guest can sign
+in to a hosted QA account (D-QA-017, #133).  Provider coverage is deliberately
+not Dropbox-shaped: the maintainer uses Dropbox, and QA does not optimise for one
+person's provider (D-QA-017).
+
 ## The one sentence
 
 The handhelds on this LAN belong to a person who may be using them, and the cloud they
