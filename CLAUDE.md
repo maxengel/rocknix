@@ -118,6 +118,13 @@ No Conventional Commits. Scope by package or device, matching history:
 - Before "fixing" apparently wrong code, verify design intent via `git log -S`/`git blame` — several dangerous-looking patterns are intentional (`engineering-practices.md`).
 - `emulationstation` source lives in a separate git repo; see `projects/ROCKNIX/packages/ui/emulationstation/package.mk` for the extra build steps.
 - **Every build ships onto devices that already have state.** Before publishing, check both the upgrade path (a device keeping its `/storage`) and a clean install — see `upgrade-and-install.md`. A fix that changes what we *write* does nothing for what is already written.
+- **A handheld is a person's device, and its cloud is their data.** Nothing runs on one
+  without a per-action yes: not a reboot, not a game launch, not injected input, not a
+  screenshot, not a sync or upload, not a deletion in their cloud. A general offer of
+  device testing is not a standing yes; each test is asked for by name with what it
+  writes, sends and leaves behind. Reads need no question. `engineering-practices.md`
+  § "Nothing runs on a person's device without their yes", D-QA-015, blindspot 38,
+  `docs/device-testing-policy.md`.
 - **Physical-device flashing** — follow `docs/device-flashing-runbook.md` (pointed to from `device-builds.md`): identify the removable card at run time and exclude every system disk; read the raw image back before touching its filesystem; on H700 a fresh card does not boot until the exact device tree is activated as `/dtb.img`.
 - **rclone cloud-sync** and **GENERIC_X64 VM QA** have sharp edges — read their instruction files before touching those areas (filter file is an allowlist; `--delete-excluded` is catastrophic; VM disk must be 16GB+ or first boot breaks in a way that looks like a graphics bug).
 - **Read `.claude/rules/` from `next`, not from your feature worktree.** Feature branches cut from an older base silently lack instruction files added since — `es-native-ui.md` is absent from older worktrees, so ES work done there proceeds without the guidance it mandates.

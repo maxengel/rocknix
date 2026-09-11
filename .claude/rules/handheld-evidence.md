@@ -36,6 +36,11 @@ where, and what to do first.
 
 ## When a device misbehaves: first, before anything else
 
+**Before any of it: the device is a person's, and every action on it or in its
+cloud is asked for by name first (D-QA-015, `docs/device-testing-policy.md`).
+Reading the journal, the stamps and the config is free; a reboot, a launch, a
+sync, a screenshot or a deletion is a question.**
+
 ```
 rocknix-evidence collect
 ```

@@ -55,6 +55,10 @@ any `package.mk` edit), and the real test is that the package/image builds.
 
 ## Subsystem quick warnings (read the instruction file before editing)
 
+- **A handheld is a person's device and its cloud is their data**: every action on one
+  (reboot, game launch, input, screenshot, sync, upload, deletion) is asked for by name
+  before it runs; a category-level offer is not a standing yes; reads are free. See
+  `docs/device-testing-policy.md` and D-QA-015.
 - **Physical-device flashing** (`docs/device-flashing-runbook.md`,
   `device-builds.md`): identify the removable card at run time and exclude all
   system disks; verify the raw image readback before changing its filesystem;
