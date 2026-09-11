@@ -1,25 +1,24 @@
 # Saved Session State
 
-> **Saved**: 2026-09-11T15:15:00Z
+> **Saved**: 2026-09-11T23:10:00Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). **The seven-issue pass (#121-#127) is complete**, plus #128 found on the way; built as **`af2db4ab09`** (x64 + H700) and passed by every runner suite. Closed: #122, #124, #125, #126, #128. Open on purpose: #121 (the handheld box), #123 and #127 (all boxes ticked; waiting on the maintainer's word for D-UI-038 and D-CLOUD-091/092). Filed: **#129, the code audit** the maintainer asked for ("once this is done, we should consider taking a step back and running a code audit") -- the next piece of work.
-
-`next` is at `fd7080b0c3` (pushed after this save). Runner reports: `qa-af2db4ab09-20260911-{0605,0627,0648}` (scripts, round-trip 100/100, exit, walks 13/13). The two runner failures on the first pass were the runner's own fixtures: the empty-endpoint check predating D-CLOUD-092 (`45a0d7cb6a`) and no remote/no ROMs on a fresh pair before the walks (`fcb632d403`, `07977a7910`).
+Epic #11 (cloud saves). The seven-issue pass is done and on the RG35XX SP (`af2db4ab09`, applied on the maintainer's yes). The evening then turned on **process and design**: the device rule (D-QA-015, blindspot 38, `docs/device-testing-policy.md`, `vm-first.md`), the QA cloud matrix (#133, D-QA-017), and the **save-history epic #134** -- one hidden store `Saves/.history/` for the earlier versions of a player's saves (D-CLOUD-095..100) -- which went through a full **council run** (`research/council-runs/2026-09-11-save-history-one-home/`, committed `bfbbc31772`): store-first won 3-2, the consensus round integrated the dissent under the maintainer's steer (time to play, bandwidth, round trips; sync no longer than it must; sanctity the floor), and Step 5 produced tracker text for #134, #22, #23, #25 and two new children. **Nothing from it is applied or built yet**; the maintainer reads `final-issue-draft.md` and settles the thirteen proposals (D-CLOUD-101, open).
 
 ## In Progress
 
-- Nothing running. Guests: a and b on `af2db4ab09` (fresh pair, remote and content fixture seeded by the runner); c (10025, 640x480) on `af2db4ab09` after the in-place upgrade, at the carousel. No handheld touched; both were offline on `7eb713bbd9`.
+- Nothing running. Guests a, b (fresh pair) and c on `af2db4ab09`. RG35XX SP on `af2db4ab09`, clean (the QA files removed on the maintainer's yes; one older set-aside folder of theirs was pruned by the script during the test and is restorable from Dropbox's deleted files -- #130).
 
 ## Next Steps
 
-1. **Report to the maintainer** (this session's closing message): the two confirmations -- #123's label words, #127's dialog/button order and the root-level rule -- and the staging question for `af2db4ab09` (H700 tar sha `29b86dd598389f2c...`, per-device yes, D-QA-008/011). Close #123/#127 on the yes.
-2. **#129 code audit** under the `code-auditor` methodology (Epic/Milestone form), scope in the issue; findings become issues; register rows D-CLOUD-085..093, D-SYS-001..008, D-UI-033..038, D-QA-012..014 checked against the code.
-3. Device-gated after staging: #121 handheld box, #104 ramoops proof, #117 first-SIGTERM, #113, #107's two boxes.
-4. Then #120 boxes 3/5/6 (reference frames -- the runner now has 45 stable walk frames to seed them from), #115 last box, #42, the older cloud backlog.
+1. **The maintainer reads `final-issue-draft.md`** and answers the P-1..P-13 proposals (the draft's closing section lists what still needs their word). Then apply the tracker text to #134/#22/#23/#25, open the two children (the guard image; the fold), and register the settled rows.
+2. **#133** the QA cloud matrix (self-hosted WebDAV/S3/SFTP/SMB/FTP on the VM host; hosted non-Dropbox accounts) -- endorsed as next before the audit.
+3. **#129** the code audit (code-auditor methodology).
+4. #135 time-to-play cell in the runner; #131 the QA handheld (future).
+5. Standing: D-QA-015 -- nothing on a person's device or cloud without a per-action yes; `vm-first.md` -- the VM question in writing before any test.
 
 ## Key Files Modified
 
