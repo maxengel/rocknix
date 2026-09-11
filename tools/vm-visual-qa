@@ -19,8 +19,87 @@
 #
 #   key down            # press a key (QEMU keyname, e.g. down, ret, esc)
 #   key down x4         # press it several times
-#   wait 2              # seconds
+#   wait 2              # a fixed delay in seconds (see "Fixed waits", below)
 #   shot main-menu      # capture a frame, labelled
+#   settle              # wait until the screen stops changing
+#   wait-for-change     # wait until the last `key` has visibly landed
+#   wake                # the screensaver wake key, then settle
+#   dismiss-dialogs     # close whatever is open, ending on the carousel
+#
+# WHY THE FRAME STEPS EXIST (fork #125). A step file made of fixed delays is
+# a guess about a machine that is also building an image: a press one second
+# after a screen change is regularly eaten, and the walk then runs its whole
+# remainder one screen out of phase - a switch that did not toggle, a game
+# list that did not launch, a LATER that landed on the wrong row and typed
+# into a Wi-Fi password field. Three derails on 2026-09-10, two on
+# 2026-09-11. `settle` and `wait-for-change` replace the guess with the
+# framebuffer: they watch the frames QEMU is already able to hand us.
+#
+#   settle [timeout_s] [quiet_s]
+#       Poll until the frame has held still for quiet_s (default 1.2 s),
+#       giving up after timeout_s (default 20 s) and saying so. Use it
+#       before every `shot` and after anything that loads, scans or
+#       transfers. Bounded, and never fails a walk: a screen with a live
+#       element (a spinner, a running transfer's elapsed time) simply runs
+#       to the bound.
+#
+#       The quiet period is deliberately longer than two polls. "Two
+#       consecutive identical frames" is defeated by anything that repaints
+#       about once a second - a clock, a transfer timer - because two polls
+#       half a second apart can both land inside the same second.
+#
+#   wait-for-change [timeout_s] [retries]
+#       Wait until the frame differs from the one taken just before the
+#       most recent `key` step - and that frame is taken from a screen that
+#       has stopped moving, so the tail of the previous transition cannot
+#       be mistaken for this press landing. Gives up after timeout_s
+#       (default 12 s).
+#       On a timeout the key was eaten: the step is re-sent (default 1
+#       retry) and, if that changes nothing either, the walk FAILS naming
+#       the key and the line - loudly, instead of silently running the rest
+#       of the file against the wrong screen. `wait-for-change 12 0` turns
+#       the retry off where a second press would be harmful.
+#
+# `key` settles and captures the pre-press frame only when the file uses
+# `wait-for-change` somewhere, so old step files cost exactly what they
+# used to. That settle is why a walk written on these steps needs no
+# `wait 1` between presses: the tool is already waiting for the screen
+# rather than for the clock.
+#
+# Frames are compared by bytes, not by OCR: the fraction of differing bytes
+# in the PPM. Below SAME_MAX the screen is "unchanged" (a clock digit is
+# not a screen change); above CHANGED_MIN it has "changed". The gap between
+# them is the deliberate dead band.
+#
+# Fixed waits. `wait N` still exists and still has two honest uses: a
+# deliberate sampler (run-transfer-frames.steps takes a frame every three
+# seconds on purpose), and a pause where nothing on screen will change, so
+# there is nothing to settle on. Anywhere else it is the bug this file's
+# frame steps were added to remove.
+#
+# WHAT THE INTERFACE DOES, so a walk does not have to rediscover it:
+#
+#   - Keys: START = `ret`, A = `x`, B = `z`, X = `s`, Y = `a`,
+#     SELECT = `shift_r`, arrows for direction. Read
+#     /storage/.config/emulationstation/es_input.cfg on the guest rather
+#     than trusting this.
+#   - After five idle minutes the first key only wakes the screensaver.
+#     `wake` sends `shift`, which EmulationStation ignores, so it costs no
+#     press that a walk needed. Wake first, every time.
+#   - `up` from a page's first row lands on its BACK button, and only then
+#     wraps to the last row. The button bar is a focus stop on every page.
+#   - B on the system carousel does not close anything: it opens GO TO
+#     (GO TO LETTER or GO TO MANUFACTURER, by the SORT SYSTEMS setting).
+#     A fixed number of B presses therefore ends on a dialog as often as
+#     not; `dismiss-dialogs` presses B until the screen starts repeating
+#     itself, which is the carousel toggling GO TO, and stops there.
+#   - A boot-time dialog (the journey prompt, the RetroAchievements offer,
+#     FINISH RESTORE SETUP) must be dismissed before any walk. That is
+#     `wake` then `dismiss-dialogs`.
+#   - START on MAIN MENU closes it; a restarted (not rebooted)
+#     EmulationStation comes back on the last game list, not the carousel,
+#     and screendump can serve the previous ES's frame for half a minute.
+#     Walks start from a rebooted guest.
 #
 # PNG frames need nothing beyond the stdlib; the contact-sheet GIF needs
 # Pillow, and without it the frames are still written and everything else
@@ -31,7 +110,38 @@ import os
 import re
 import socket
 import sys
+import tempfile
 import time
+
+# Frame comparison, as a fraction of differing bytes in the PPM. 640x480x3
+# is 921600 bytes, so 0.0004 is about 120 pixels and 0.001 about 300.
+#
+# Measured on guest b, build 88b82d94a7, 640x480, 2026-09-11:
+#
+#   a menu page with nothing moving       0.000000 over 100 s
+#   the carousel's clock ticking a minute 0.000276   <- must read as NO change
+#   a switch row toggled                  0.001969   <- must read as a change
+#   a selector bar moved one row          0.066 - 0.12
+#   a page opened, a dialog closed        0.24 - 1.0
+#
+# The switch is the tight one: 0.0020 against the clock's 0.00028, and the
+# whole point of #125 is a walk that notices a switch which did not toggle.
+# So the band sits between them, nearer the clock. Re-measure both numbers
+# if the panel size changes - they are pixel counts wearing percentages.
+SAME_MAX = 0.0004        # at or below this, the screen has not changed
+CHANGED_MIN = 0.001      # at or above this, it has
+
+SETTLE_TIMEOUT = 20.0
+SETTLE_QUIET = 1.2
+CHANGE_TIMEOUT = 12.0
+CHANGE_RETRIES = 1
+POLL = 0.35
+# The settle every tracked key does before it captures its pre-press frame:
+# short, because the screen is usually already still, and bounded low
+# because a key pressed into a page that never stops moving (a running
+# transfer) must not wait out a full settle.
+PRE_KEY_TIMEOUT = 6.0
+PRE_KEY_QUIET = 0.6
 
 
 class Monitor:
@@ -42,6 +152,7 @@ class Monitor:
         self.sock.settimeout(timeout)
         self.sock.connect(path)
         self._drain(0.5)
+        self._scratch = None
 
     def _drain(self, seconds):
         """Absorb whatever the monitor has to say (banner, echoes, prompts)."""
@@ -67,11 +178,18 @@ class Monitor:
             self.cmd("sendkey " + key, settle=0.1)
             time.sleep(gap)
 
-    def screendump(self, path):
+    def screendump(self, path, settle=0.3):
         # QEMU writes the file itself, so give it an absolute host path and
-        # wait for it to appear rather than assuming it is instant.
-        self.cmd("screendump " + path, settle=0.4)
-        for _ in range(40):
+        # wait for it to appear rather than assuming it is instant. Remove
+        # any previous file first: "it exists" is the only signal we have
+        # that the dump landed, and a leftover from the last capture
+        # answers that question with a stale frame.
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        self.cmd("screendump " + path, settle=settle)
+        for _ in range(60):
             if os.path.exists(path) and os.path.getsize(path) > 0:
                 size = -1
                 # Wait for the size to stop changing; a partially written
@@ -83,11 +201,115 @@ class Monitor:
             time.sleep(0.05)
         return False
 
+    def frame(self):
+        """The current framebuffer as bytes, or None if it did not arrive.
+
+        For comparison only - `shot` keeps its own file. One scratch path is
+        reused, so polling a screen for several seconds costs one file."""
+        if self._scratch is None:
+            self._scratch = os.path.join(
+                tempfile.mkdtemp(prefix="vm-visual-qa-"), "frame.ppm")
+        if not self.screendump(self._scratch, settle=0.15):
+            return None
+        try:
+            with open(self._scratch, "rb") as fh:
+                return fh.read()
+        except OSError:
+            return None
+
     def close(self):
         try:
             self.sock.close()
         except OSError:
             pass
+        if self._scratch:
+            try:
+                os.remove(self._scratch)
+                os.rmdir(os.path.dirname(self._scratch))
+            except OSError:
+                pass
+
+
+def frame_diff(a, b):
+    """How much two framebuffers differ, as a fraction of their bytes.
+
+    A missing frame, or a resolution change, counts as completely
+    different. The XOR goes through one big int so the whole comparison
+    happens in C: a 640x480 pair takes about 2 ms, which matters when a
+    settle polls a screen thirty times."""
+    if a is None or b is None or len(a) != len(b) or not a:
+        return 1.0
+    if a == b:
+        return 0.0
+    x = (int.from_bytes(a, "big") ^ int.from_bytes(b, "big")).to_bytes(len(a), "big")
+    return (len(x) - x.count(0)) / float(len(x))
+
+
+def settle(frame_fn, timeout=SETTLE_TIMEOUT, quiet=SETTLE_QUIET, poll=POLL):
+    """Wait until the screen has held still for `quiet` seconds.
+
+    Returns (ok, seconds). ok is False when the bound was reached with the
+    screen still moving - a spinner, a running transfer's elapsed time -
+    which is information, not a failure."""
+    t0 = time.time()
+    last = frame_fn()
+    quiet_since = time.time()
+    while time.time() - t0 < timeout:
+        time.sleep(poll)
+        cur = frame_fn()
+        if frame_diff(cur, last) > SAME_MAX:
+            quiet_since = time.time()
+        last = cur
+        if time.time() - quiet_since >= quiet:
+            return True, time.time() - t0
+    return False, time.time() - t0
+
+
+def wait_for_change(frame_fn, before, timeout=CHANGE_TIMEOUT, poll=POLL):
+    """Wait until the screen differs from `before`. Returns (ok, seconds)."""
+    t0 = time.time()
+    while True:
+        if frame_diff(frame_fn(), before) >= CHANGED_MIN:
+            return True, time.time() - t0
+        if time.time() - t0 >= timeout:
+            return False, time.time() - t0
+        time.sleep(poll)
+
+
+def dismiss_dialogs(frame_fn, sendkey_fn, key="z", limit=8, quiet=0.8, timeout=8.0):
+    """Press B until nothing is open, ending on the system carousel.
+
+    B closes a dialog, a menu or a game list; on the carousel it opens GO
+    TO instead, so B alone never reaches a fixed point and a walk that
+    presses it a fixed number of times ends on a dialog whenever it
+    guessed the depth wrong (reset.steps did, for any odd number of open
+    screens). What it does reach is a two-state cycle: carousel, GO TO,
+    carousel. So press, settle, and stop the moment the screen matches a
+    screen we have already stood on - that repeat is the carousel, with
+    the cycle's dialog closed behind us.
+
+    A press that changes nothing at all was eaten rather than obeyed, so it
+    is re-sent instead of being read as the cycle. Returns how many presses
+    moved the screen (the last of them is GO TO opening, not a close)."""
+    settle(frame_fn, timeout=timeout, quiet=quiet)
+    seen = [frame_fn()]
+    closed = 0
+    eaten = 0
+    for _ in range(limit):
+        sendkey_fn(key)
+        settle(frame_fn, timeout=timeout, quiet=quiet)
+        cur = frame_fn()
+        if frame_diff(cur, seen[-1]) <= SAME_MAX:
+            eaten += 1
+            if eaten > 2:
+                return closed              # B does nothing here; stop pressing
+            continue
+        eaten = 0
+        if any(frame_diff(cur, s) <= SAME_MAX for s in seen[:-1]):
+            return closed                  # back on a screen we have had: the carousel
+        seen.append(cur)
+        closed += 1
+    return closed
 
 
 def to_png(ppm_path, png_path):
@@ -163,47 +385,134 @@ def to_gif(png_paths, gif_path, ms_per_frame=1200, scale=0.5):
     return True
 
 
-def run_steps(mon, steps, outdir):
-    os.makedirs(outdir, exist_ok=True)
-    shots = []
-    index = 0
-    for raw in steps:
+class WalkFailed(Exception):
+    """A step could not be satisfied, so every step after it would run
+    against the wrong screen."""
+
+
+def parse_steps(lines):
+    """[(lineno, verb, rest)] from a step file's lines."""
+    out = []
+    for n, raw in enumerate(lines, 1):
         line = raw.split("#", 1)[0].strip()
         if not line:
             continue
         verb, _, rest = line.partition(" ")
-        rest = rest.strip()
+        out.append((n, verb, rest.strip()))
+    return out
 
+
+def _floats(rest, *defaults):
+    """The step's numeric arguments, each defaulted."""
+    got = rest.split()
+    return [float(got[i]) if i < len(got) else d for i, d in enumerate(defaults)]
+
+
+def run_steps(mon, steps, outdir):
+    os.makedirs(outdir, exist_ok=True)
+    parsed = parse_steps(steps) if not steps or isinstance(steps[0], str) else steps
+    # Capturing the pre-press frame costs a screendump per key, so only do
+    # it for a file that asks: an old step file must cost what it used to.
+    tracking = any(v == "wait-for-change" for _, v, _ in parsed)
+    shots = []
+    index = 0
+    before = None            # the frame taken just before the last key step
+    last_key = None          # (lineno, keyname, times)
+
+    def shot(label):
+        nonlocal index
+        index += 1
+        label = re.sub(r"[^a-zA-Z0-9_-]+", "-", label or "frame").strip("-")
+        base = os.path.join(outdir, "%02d-%s" % (index, label))
+        ppm = base + ".ppm"
+        if not mon.screendump(ppm):
+            print("WARN: no frame captured for " + label, file=sys.stderr)
+            return None
+        png = base + ".png"
+        if to_png(ppm, png):
+            os.remove(ppm)
+            shots.append(png)
+            print("captured " + png)
+            return png
+        shots.append(ppm)
+        print("captured " + ppm + " (PPM: the frame was not a P6/255 image)")
+        return ppm
+
+    for lineno, verb, rest in parsed:
         if verb == "key":
             m = re.match(r"^(\S+)(?:\s+x(\d+))?$", rest)
             if not m:
-                raise SystemExit("bad key step: " + line)
-            mon.sendkey(m.group(1), int(m.group(2) or 1))
+                raise SystemExit("bad key step on line %d: %s" % (lineno, rest))
+            name, times = m.group(1), int(m.group(2) or 1)
+            if tracking:
+                # The pre-press frame has to come from a screen that has
+                # STOPPED moving, or the tail of the last transition
+                # satisfies this press's wait-for-change and an eaten key
+                # reads as a landed one. That is not hypothetical: on
+                # 2026-09-11 an A press on the ROMS AND BIOS switch was
+                # eaten, the row highlight from the `down` before it was
+                # still fading, and the walk carried on with the switch
+                # off - which is the exact failure #125 exists to catch,
+                # reproduced by the mechanism meant to catch it.
+                settle(mon.frame, timeout=PRE_KEY_TIMEOUT, quiet=PRE_KEY_QUIET)
+                before = mon.frame()
+            last_key = (lineno, name, times)
+            mon.sendkey(name, times)
+
         elif verb == "wait":
             time.sleep(float(rest))
+
+        elif verb == "settle":
+            timeout, quiet = _floats(rest, SETTLE_TIMEOUT, SETTLE_QUIET)
+            ok, took = settle(mon.frame, timeout=timeout, quiet=quiet)
+            print("settle: %s after %.1fs" % ("still" if ok else "still moving at the bound", took))
+
+        elif verb == "wait-for-change":
+            if last_key is None:
+                raise SystemExit("wait-for-change on line %d has no key step before it" % lineno)
+            timeout, retries = _floats(rest, CHANGE_TIMEOUT, CHANGE_RETRIES)
+            kline, kname, ktimes = last_key
+            ok, took = wait_for_change(mon.frame, before, timeout=timeout)
+            tries = 0
+            while not ok and tries < int(retries):
+                tries += 1
+                print("wait-for-change: `key %s` (line %d) was eaten after %.1fs; re-sending (%d)"
+                      % (kname, kline, took, tries), file=sys.stderr)
+                mon.sendkey(kname, ktimes)
+                ok, took = wait_for_change(mon.frame, before, timeout=timeout)
+            if not ok:
+                shot("stuck-after-%s" % kname)
+                raise WalkFailed(
+                    "wait-for-change (line %d): the screen did not change within %.0fs of `key %s`"
+                    " on line %d, even after %d re-send(s). The press was eaten, so every step after"
+                    " this one would run against the wrong screen. The frame is the last one in %s."
+                    % (lineno, timeout, kname, kline, int(retries), outdir))
+            print("changed after %.1fs (`key %s`, line %d%s)"
+                  % (took, kname, kline, ", re-sent" if tries else ""))
+
+        elif verb == "wake":
+            # `shift` is a key EmulationStation ignores, so it wakes the
+            # screensaver without spending a press the walk needed.
+            mon.sendkey("shift")
+            settle(mon.frame, timeout=_floats(rest, 8.0)[0], quiet=0.8)
+
+        elif verb == "dismiss-dialogs":
+            limit = int(_floats(rest, 8)[0])
+            closed = dismiss_dialogs(mon.frame, mon.sendkey, limit=limit)
+            print("dismiss-dialogs: %d press(es) moved the screen, back on the carousel" % closed)
+
         elif verb == "shot":
-            index += 1
-            label = re.sub(r"[^a-zA-Z0-9_-]+", "-", rest or "frame").strip("-")
-            base = os.path.join(outdir, "%02d-%s" % (index, label))
-            ppm = base + ".ppm"
-            if not mon.screendump(ppm):
-                print("WARN: no frame captured for " + label, file=sys.stderr)
-                continue
-            png = base + ".png"
-            if to_png(ppm, png):
-                os.remove(ppm)
-                shots.append(png)
-                print("captured " + png)
-            else:
-                shots.append(ppm)
-                print("captured " + ppm + " (PPM: the frame was not a P6/255 image)")
+            shot(rest)
+
         else:
-            raise SystemExit("unknown step: " + line)
+            raise SystemExit("unknown step on line %d: %s %s" % (lineno, verb, rest))
     return shots
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__)
+    ap = argparse.ArgumentParser(
+        description="Drive a headless GENERIC_X64 guest through a UI walk and keep the frames.",
+        epilog=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--monitor", required=True, help="QEMU monitor unix socket")
     sub = ap.add_subparsers(dest="command", required=True)
 
@@ -218,6 +527,12 @@ def main():
     k = sub.add_parser("key", help="send one key")
     k.add_argument("keyname")
     k.add_argument("--times", type=int, default=1)
+
+    st = sub.add_parser("settle", help="wait until the screen stops changing")
+    st.add_argument("--timeout", type=float, default=SETTLE_TIMEOUT)
+    st.add_argument("--quiet", type=float, default=SETTLE_QUIET)
+
+    sub.add_parser("dismiss", help="close whatever is open, ending on the carousel")
 
     args = ap.parse_args()
     mon = Monitor(args.monitor)
@@ -242,6 +557,16 @@ def main():
             print("captured " + args.output)
         elif args.command == "key":
             mon.sendkey(args.keyname, args.times)
+        elif args.command == "settle":
+            ok, took = settle(mon.frame, timeout=args.timeout, quiet=args.quiet)
+            print("settle: %s after %.1fs" % ("still" if ok else "still moving at the bound", took))
+        elif args.command == "dismiss":
+            mon.sendkey("shift")
+            print("%d press(es) moved the screen, back on the carousel"
+                  % dismiss_dialogs(mon.frame, mon.sendkey))
+    except WalkFailed as exc:
+        print("WALK FAILED: %s" % exc, file=sys.stderr)
+        raise SystemExit(3)
     finally:
         mon.close()
 
