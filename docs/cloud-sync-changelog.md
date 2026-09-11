@@ -1886,3 +1886,7 @@ Maintainer's order: #116, #52, #71, #39, then #74 and #100, one build.
   root above a nested folder still fails.
 - The words for all three are the ones proposed in the issues, built
   under discretion and framed for the maintainer's yes.
+- **The S3 form's subtitle is AMAZON S3 AND COMPATIBLE**, not rclone's
+  sixty-provider description in small text (#128). A short, list-free
+  label is kept as it is; a paragraph becomes the words the provider was
+  chosen by.
