@@ -63,6 +63,12 @@ register row or a comment, file the issue and point both ways.
 The paper trail is the point. A register row says what was decided; the
 issue says what was asked, by whom, in what words, and whether it was done.
 
+## An issue that proposes a test says where it runs
+
+Before a test, proof or measurement is run, the issue carries the line
+"Can this be done on the VM? Yes -- how / No -- what only a device can show"
+(`vm-first.md`). A device run without that line in its issue is out of process.
+
 ## Ticking an acceptance criterion
 
 A checkbox records an observed behaviour, never an artifact. "Commit `abc123`

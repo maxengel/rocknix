@@ -118,6 +118,10 @@ No Conventional Commits. Scope by package or device, matching history:
 - Before "fixing" apparently wrong code, verify design intent via `git log -S`/`git blame` — several dangerous-looking patterns are intentional (`engineering-practices.md`).
 - `emulationstation` source lives in a separate git repo; see `projects/ROCKNIX/packages/ui/emulationstation/package.mk` for the extra build steps.
 - **Every build ships onto devices that already have state.** Before publishing, check both the upgrade path (a device keeping its `/storage`) and a clean install — see `upgrade-and-install.md`. A fix that changes what we *write* does nothing for what is already written.
+- **Can this be done on the VM?** Asked and answered in writing, in the issue, before
+  every test, proof or measurement; only a reasoned no (a real panel, a board's memory,
+  a battery, a GPU path) moves it off the VM, and "a real provider" is not a no
+  (`vm-first.md`, D-QA-007/017).
 - **A handheld is a person's device, and its cloud is their data.** Nothing runs on one
   without a per-action yes: not a reboot, not a game launch, not injected input, not a
   screenshot, not a sync or upload, not a deletion in their cloud. A general offer of

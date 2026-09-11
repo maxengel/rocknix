@@ -55,6 +55,8 @@ any `package.mk` edit), and the real test is that the package/image builds.
 
 ## Subsystem quick warnings (read the instruction file before editing)
 
+- **Can this be done on the VM?** -- written and answered in the issue before every test or
+  proof; only a reasoned no moves it off the VM (`.claude/rules/vm-first.md`).
 - **A handheld is a person's device and its cloud is their data**: every action on one
   (reboot, game launch, input, screenshot, sync, upload, deletion) is asked for by name
   before it runs; a category-level offer is not a standing yes; reads are free. See
