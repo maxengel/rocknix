@@ -1,19 +1,33 @@
-# Start: the CLOUD hub, focus on BACK UP TO THE CLOUD. CLOUD STORAGE SETUP's
-# first row is CHANGE CLOUD FOLDER: five downs (RESTORE, MATCH, the two
-# SAVE MANAGEMENT switches, then it).
+# Start: the CLOUD hub, focus on BACK UP TO THE CLOUD. End: the CLOUD
+# FOLDER editor, holding the current folder.
+#
+# Seven downs reach CHANGE CLOUD FOLDER: RESTORE, MATCH, the two SAVE
+# MANAGEMENT switches, CONNECTED TO, CHECK CONNECTION, then it. It was six
+# until CHECK CONNECTION joined CLOUD STORAGE SETUP above it -- with six,
+# A ran the connection check and the walk sat on its WEBDAV ANSWERED.
+# YOU'RE CONNECTED. dialog, where START does nothing (2026-09-11, caught
+# by wait-for-change rather than by four wrong frames).
+#
+# Read the hub-change-folder-row frame before trusting the count: a row
+# added to this group moves the target again, and the frame is what says
+# where the focus actually is.
 key down
-wait 1
+wait-for-change
 key down
-wait 1
+wait-for-change
 key down
-wait 1
+wait-for-change
 key down
-wait 1
+wait-for-change
 key down
-wait 1
+wait-for-change
 key down
-wait 1
+wait-for-change
+key down
+wait-for-change
+settle
 shot hub-change-folder-row
 key x
-wait 2
+wait-for-change
+settle
 shot folder-editor

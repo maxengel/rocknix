@@ -1,0 +1,82 @@
+# The walks suite: one composition per line, `<name> = <steps file>...`,
+# replayed by tools/vm-qa in this order. Blank lines and # comments ignored.
+#
+# WHY COMPOSITIONS AND NOT FILES. Most walk files do not start on the
+# carousel -- back-up-page.steps starts on the CLOUD hub, run-transfer.steps
+# on the systems page -- because each one is a leg, and the legs are meant to
+# be `cat`ted together (README.md). The runner used to replay every file on
+# its own from a rebooted guest, so nine of them pressed A on the carousel
+# and drove whatever game list happened to be under the cursor. The frames
+# were still counted and the suite still passed: a walk that reached nothing
+# looked exactly like a walk that reached its screen.
+#
+# So the suite names the composition, and the last file in each line is the
+# walk being exercised -- its shots are the ones to read.
+#
+# Each line starts from a REBOOTED guest, which the runner handles: the
+# carousel, awake, with nothing open.
+#
+# `default-pre = <shell>` runs on the guest before every walk's reboot, and
+# a line's own `| <shell>` runs after it, so a walk can override what the
+# default set.
+#
+# The default exists because a reboot is NOT enough to put the transfer
+# pages back to their shipped state. EmulationStation saves the four class
+# switches as `cloudsync.pick.<direction>.<class>` in
+# /storage/.config/system/configs/system.cfg when the page closes, and
+# restores them at its next start -- so `tick-roms`, which FLIPS rather
+# than sets, turned ROMS AND BIOS *off* after any walk that had left it on,
+# and the walk after that backed up saves alone instead of reaching the
+# systems page. Three suite runs on 2026-09-11 failed there before the
+# switches were found; note that it is
+# /storage/.config/system/configs/system.cfg, not the
+# /storage/.config/system.cfg the rest of the harness talks about, and that
+# a value written while ES is running does survive the reboot.
+#
+# The default also empties the saved system selection, which is
+# run-transfer.steps' own precondition for a different reason: its SELECT
+# ALL is a toggle that reads SELECT NONE once everything is on.
+
+# THE ORDER IS LOAD-BEARING, once, at the top. match-dialog needs the
+# device to hold ROMs the cloud does not (the seed fixture: gb entirely,
+# snes/deviceonly.sfc) so its preview has something to list, and the
+# run-transfer walks upload exactly those. Run after them it reaches THIS
+# DEVICE ALREADY MATCHES YOUR CLOUD. THERE IS NOTHING TO REMOVE. -- a true
+# answer to a question the walk did not mean to ask (2026-09-11). Nothing
+# else here cares what ran before it.
+#
+# match-dialog is also the one line whose precondition SETS a selection
+# rather than clearing it: with none picked it answers YOU HAVEN'T PICKED
+# ANY SYSTEMS FOR THIS DEVICE YET, which is the same dead end reached from
+# the other direction.
+#
+# run-transfer-frames comes before run-transfer for a smaller version of
+# the same reason. Its whole purpose is a frame every three seconds so the
+# phases of a running transfer can be read off in order (#95), and whichever
+# of the two runs second finds the cloud already holding what the first
+# uploaded and reaches COMPLETED - NOTHING NEW in under two seconds. The
+# sampler is the one that needs something to sample; run-transfer's frames
+# are a completed page either way.
+#
+# For the same reason a second run of the whole suite wants the endpoint
+# re-seeded: the first run's transfers put the device-only files in the
+# cloud, and cloud-test-backend's seed-content does not take them back out.
+# What has to go back is the cloud's copy of what only the device should
+# have -- ROMs/gb, ROMs/pico-8 and ROMs/snes/deviceonly.sfc under the
+# endpoint's Content root.
+
+default-pre = . /etc/profile; for d in backup restore; do for k in content media settings; do set_setting cloudsync.pick.$d.$k 0; done; set_setting cloudsync.pick.$d.saves 1; done; cloud_content_restore --set-systems ""
+
+to-manage-cloud-storage = to-manage-cloud-storage
+back-up-page            = to-manage-cloud-storage back-up-page
+restore-page            = to-manage-cloud-storage restore-page
+match-dialog            = to-manage-cloud-storage match-dialog | cloud_content_restore --set-systems "gb snes"
+to-change-cloud-folder  = to-manage-cloud-storage to-change-cloud-folder
+confirm-cloud-folder    = to-manage-cloud-storage to-change-cloud-folder confirm-cloud-folder
+tick-roms               = to-manage-cloud-storage back-up-page tick-roms
+tick-settings           = to-manage-cloud-storage back-up-page tick-settings
+tick-game-content       = to-manage-cloud-storage back-up-page tick-game-content
+continue-to-systems     = to-manage-cloud-storage back-up-page tick-roms continue-to-systems
+run-transfer-frames     = to-manage-cloud-storage back-up-page tick-roms continue-to-systems run-transfer-frames
+run-transfer            = to-manage-cloud-storage back-up-page tick-roms continue-to-systems run-transfer
+ui-settings-toggle      = ui-settings-toggle

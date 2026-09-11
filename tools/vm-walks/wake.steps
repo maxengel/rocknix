@@ -1,5 +1,7 @@
 # Start: anywhere. End: the same place, awake.
-# After five idle minutes the first key only wakes the screensaver; a shift
-# press is a key EmulationStation ignores.
-key shift
-wait 1
+# After five idle minutes the first key only wakes the screensaver, so the
+# first key of a walk is eaten unless a key EmulationStation ignores spends
+# that press first. `wake` sends `shift` -- which the interface ignores --
+# and then settles, so it costs about a second on a screen that was already
+# awake and waits for the interface to come back on one that was not.
+wake

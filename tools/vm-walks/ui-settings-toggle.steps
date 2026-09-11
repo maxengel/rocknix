@@ -5,28 +5,37 @@
 # es_settings.cfg and SystemConf::saveSystemConf() writes system.cfg. KILL13
 # (tools/cloud-round-trip) sends that B itself, on the same monitor
 # connection as the system_reset that follows it; the harness drops every
-# step from the last `key x` on for the walk that changes nothing.
+# step from the last `key x` on for the walk that changes nothing, so the
+# toggle press must stay the last `key x` in this file.
 #
 # MAIN MENU on ROCKNIX: GAME SETTINGS, CONTROLLER & BLUETOOTH SETTINGS, USER
 # INTERFACE SETTINGS, ... -- so START, down, down, A. The page opens on its
 # first row (THEME SET); up lands on BACK, up again wraps to the last row.
 # On ROCKNIX that is SHOW RETROACHIEVEMENTS ICON: the gun/wheel/trackball/
 # spinner rows after it are `#if !defined(ROCKNIX)` (GuiMenu.cpp).
-key shift
-wait 1
+#
+# The toggle press takes no re-send: a second press would put the switch
+# back, and KILL13 judges itself on whether the switch was recorded, so a
+# silently doubled press would read as "the walk never reached the switch".
+wake
 key ret
-wait 2
+wait-for-change
+settle
 key down
-wait 1
+wait-for-change
 key down
-wait 1
+wait-for-change
+settle
 key x
-wait 2
+wait-for-change
+settle
 key up
-wait 1
+wait-for-change
 key up
-wait 1
+wait-for-change
+settle
 shot ui-settings-last-row
 key x
-wait 1
+wait-for-change 12 0
+settle
 shot toggled

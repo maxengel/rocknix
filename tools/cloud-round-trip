@@ -5750,6 +5750,36 @@ class Monitor:
     def system_reset(self):
         self.cmd("system_reset")
 
+    def screendump(self, path):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        self.cmd("screendump " + path)
+        for _ in range(60):
+            if os.path.exists(path) and os.path.getsize(path) > 0:
+                size = -1
+                while size != os.path.getsize(path):
+                    size = os.path.getsize(path)
+                    time.sleep(0.05)
+                return True
+            time.sleep(0.05)
+        return False
+
+    def frame(self):
+        """The framebuffer as bytes, for the walk's settle/wait-for-change
+        steps. One scratch file, reused."""
+        if getattr(self, "_scratch", None) is None:
+            import tempfile
+            self._scratch = os.path.join(tempfile.mkdtemp(prefix="crt-frame-"), "f.ppm")
+        if not self.screendump(self._scratch):
+            return None
+        try:
+            with open(self._scratch, "rb") as fh:
+                return fh.read()
+        except OSError:
+            return None
+
     def close(self):
         try:
             self.sock.close()
@@ -5776,17 +5806,79 @@ def steps_without_toggle(steps):
     return steps[:idx]
 
 
+def visual_qa():
+    """tools/vm-visual-qa as a module, for the walk step semantics.
+
+    The step grammar has one implementation, not two: `settle` and
+    `wait-for-change` are frame comparisons with calibrated thresholds
+    (fork #125), and a second copy of those numbers here would drift from
+    the one the walks are written against."""
+    import importlib.machinery
+    import importlib.util
+    path = os.path.join(HERE, "vm-visual-qa")
+    try:
+        loader = importlib.machinery.SourceFileLoader("vm_visual_qa", path)
+        spec = importlib.util.spec_from_loader("vm_visual_qa", loader)
+        mod = importlib.util.module_from_spec(spec)
+        loader.exec_module(mod)
+        return mod
+    except Exception as exc:                                  # noqa: BLE001
+        raise Fail(f"the walk steps need {path}: {exc}")
+
+
 def run_walk(mon, steps):
+    vq = visual_qa() if any(v in ("settle", "wait-for-change", "wake", "dismiss-dialogs")
+                            for v, _ in steps) else None
+    before, last_key = None, None
+    tracking = any(v == "wait-for-change" for v, _ in steps)
     for verb, rest in steps:
         if verb == "key":
             m = re.match(r"^(\S+)(?:\s+x(\d+))?$", rest)
             if not m:
                 raise Fail(f"bad key step: {rest!r}")
-            mon.sendkey(m.group(1), int(m.group(2) or 1))
+            name, times = m.group(1), int(m.group(2) or 1)
+            if tracking:
+                # From a still screen, or the last transition's tail reads
+                # as this press landing -- see tools/vm-visual-qa.
+                vq.settle(mon.frame, timeout=vq.PRE_KEY_TIMEOUT, quiet=vq.PRE_KEY_QUIET)
+                before = mon.frame()
+            last_key = (name, times)
+            mon.sendkey(name, times)
         elif verb == "wait":
             time.sleep(float(rest))
         elif verb == "shot":
             pass                    # frames are for people; the harness reads files
+        elif verb == "wake":
+            mon.sendkey("shift")
+            vq.settle(mon.frame, timeout=8.0, quiet=0.8)
+        elif verb == "dismiss-dialogs":
+            vq.dismiss_dialogs(mon.frame, mon.sendkey)
+        elif verb == "settle":
+            a = rest.split()
+            vq.settle(mon.frame,
+                      timeout=float(a[0]) if a else vq.SETTLE_TIMEOUT,
+                      quiet=float(a[1]) if len(a) > 1 else vq.SETTLE_QUIET)
+        elif verb == "wait-for-change":
+            if last_key is None:
+                raise Fail("wait-for-change with no key step before it")
+            a = rest.split()
+            timeout = float(a[0]) if a else vq.CHANGE_TIMEOUT
+            retries = int(float(a[1])) if len(a) > 1 else vq.CHANGE_RETRIES
+            ok, _ = vq.wait_for_change(mon.frame, before, timeout=timeout)
+            tries = 0
+            while not ok and tries < retries:
+                tries += 1
+                mon.sendkey(*last_key)
+                ok, _ = vq.wait_for_change(mon.frame, before, timeout=timeout)
+            if not ok:
+                raise Fail(f"the walk's `key {last_key[0]}` was eaten: the screen did not change "
+                           f"within {timeout:.0f}s, so the page under it is not the one the walk "
+                           f"assumes -- read the frames of tools/vm-walks/")
+        else:
+            # Never silently: an unknown verb used to fall through, so a walk
+            # rewritten on a step this copy did not know would have run its
+            # keys back to back with no waits at all.
+            raise Fail(f"unknown walk step: {verb} {rest}")
 
 
 # -- the class --------------------------------------------------------------------

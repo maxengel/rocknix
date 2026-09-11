@@ -75,8 +75,22 @@ case "${1:-}" in
       "$HERE/vm-serial" --socket "$ser" wait --up-to 300 >/dev/null
       pub=$(cat "$KEY.pub")
       "$HERE/vm-serial" --socket "$ser" sh "mkdir -p /storage/.ssh && chmod 700 /storage/.ssh && echo '$pub' >> /storage/.ssh/authorized_keys && chmod 600 /storage/.ssh/authorized_keys" >/dev/null
-      who=$(ssh -i "$KEY" -p "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o LogLevel=ERROR root@127.0.0.1 'grep ^BUILD_ID= /etc/os-release | cut -c11-20' 2>/dev/null || true)
-      [ -n "$who" ] && echo "ready: $g on $who over ssh :$port" || { echo "vm-pair: guest $g did not answer over ssh" >&2; exit 1; }
+      # Poll for SSH with the bound tools/vm-qa gives it (300 s), not one
+      # attempt. sshd comes up after the serial console does, and on a host
+      # that is also building an image the gap is tens of seconds: a single
+      # try reported "guest a did not answer" for a guest that answered ten
+      # seconds later, and took the whole pair down with it (#125).
+      who=""; t0=$(date +%s)
+      for _ in $(seq 1 100); do
+        who=$(ssh -i "$KEY" -p "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o LogLevel=ERROR -o ConnectTimeout=8 root@127.0.0.1 'grep ^BUILD_ID= /etc/os-release | cut -c11-20' 2>/dev/null || true)
+        if [ -n "$who" ]; then break; fi
+        sleep 3
+      done
+      if [ -n "$who" ]; then
+        echo "ready: $g on $who over ssh :$port (answered after $(( $(date +%s) - t0 ))s)"
+      else
+        echo "vm-pair: guest $g did not answer over ssh within 300s" >&2; exit 1
+      fi
     done
     ;;
   down) stop_one a; stop_one b ;;

@@ -21,25 +21,35 @@
 # serial,
 #   cloud_content_restore --set-systems ""
 # empties the saved selection (a fresh image has none). The bar is rebuilt
-# on the UI thread after the press, hence the wait; read the selected-all
-# frame -- every switch on, the button now reading SELECT NONE -- before
-# trusting the frames after it.
+# on the UI thread after the press, which is what the settle waits for; read
+# the selected-all frame -- every switch on, the button now reading SELECT
+# NONE -- before trusting the frames after it.
 #
-# The wait covers a small fixture; a real library needs longer, and the page
-# says PRESS ANY BUTTON TO CLOSE when done.
+# Neither A press is re-sent. SELECT ALL is a toggle, so a second press
+# clears what the first set; the verb starts a transfer, so a second press
+# would start another.
+#
+# `settle 90` is where the old `wait 16` was. The transfer page repaints its
+# elapsed time every second while it runs, so it is never still until the
+# job ends and the page reads PRESS ANY BUTTON TO CLOSE -- which makes "the
+# screen stopped moving" the same event as "the transfer finished", for a
+# small fixture and for a real library alike. The bound is the give-up, not
+# the expectation.
 key up
-wait 1
+wait-for-change
 key right
-wait 1
+wait-for-change
 key x
-wait 1
+wait-for-change 15 0
+settle
 shot selected-all
 key right
-wait 1
+wait-for-change
 key x
-wait 4
+wait-for-change 25 0
 shot transfer-running
-wait 16
+settle 90
 shot transfer-done
 key x
-wait 2
+wait-for-change 15
+settle

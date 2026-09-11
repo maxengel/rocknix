@@ -1,9 +1,22 @@
-# Start: the CLOUD FOLDER editor, holding the current folder. START is OK:
-# the script probes the provider (a few seconds) and either changes the
-# setting or refuses; a refusal is a dialog naming the reason.
+# Start: the CLOUD FOLDER editor -- an on-screen keyboard holding the
+# current folder. START is OK: the script probes the provider (a few
+# seconds) and either changes the setting or refuses.
+#
+# What the folder-result frame shows depends on the endpoint. On WebDAV,
+# where /ROCKNIX/Saves is an ordinary path, OK is accepted and the frame is
+# the hub again with CHANGE CLOUD FOLDER focused. On MinIO the same value
+# is not a legal bucket name and the frame is the refusal dialog naming the
+# reason (#78) -- which the `key x` after it dismisses. Both are a pass;
+# read the frame to know which endpoint answered.
+#
+# No re-send on the OK press: it submits a form that talks to the provider,
+# and a second submission is a second probe. If START is eaten the walk
+# should say so, not press it again.
 key ret
-wait 8
+wait-for-change 30 0
+settle 20
 shot folder-result
 key x
-wait 2
+wait-for-change
+settle
 shot after-dismiss

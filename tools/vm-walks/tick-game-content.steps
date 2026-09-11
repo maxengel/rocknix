@@ -1,13 +1,15 @@
 # Start: a transfer page, focus on SAVES. End: same page, focus on SAVES, the
-# GAME CONTENT switch flipped.
+# GAME CONTENT switch flipped. Two rows down from SAVES.
+# The switch press takes no re-send (see tick-roms.steps).
 key down
-wait 1
+wait-for-change
 key down
-wait 1
+wait-for-change
 key x
-wait 1
+wait-for-change 12 0
+settle
 shot game-content-flipped
 key up
-wait 1
+wait-for-change
 key up
-wait 1
+wait-for-change

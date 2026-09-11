@@ -5,15 +5,19 @@
 # then wraps to the last row (PER SYSTEM ADVANCED CONFIGURATION), then
 # MANAGE CLOUD STORAGE, the last row of the CLOUD SETTINGS group.
 key ret
-wait 2
+wait-for-change
+settle
 key x
-wait 2
+wait-for-change
+settle
 key up
-wait 1
+wait-for-change
 key up
-wait 1
+wait-for-change
 key up
-wait 1
+wait-for-change
+settle
 key x
-wait 2
+wait-for-change
+settle
 shot cloud-hub
