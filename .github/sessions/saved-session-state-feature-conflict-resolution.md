@@ -1,14 +1,16 @@
 # Saved Session State
 
-> **Saved**: 2026-09-10T23:27:26Z
+> **Saved**: 2026-09-11T00:04:52Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). **#117/#118/#119 imaged as `7a90be59fb` (x64 built; H700 building); `tools/vm-qa` running against it from a fresh pair; an agent is on #120 box 4 (ES unit tests, branch `feature/unit-tests`).** `next` = `607a2446f2` (ES `6d0bb8a6a` pinned), pushed. Artifacts: `x64-all-20260910-7a90be59fb/`. Maintainer (2026-09-10): "tackle the three new issues: 117, 118, and 119 ... then move to 105" and "think about any automated testing ... run on the VMs".
+Epic #11 (cloud saves). **#117/#118/#119 done; #120 (automated testing) three of six boxes; latest image `d2eabe879c` (x64 + H700), `tools/vm-qa` running on it as this was saved.** `next` = `9fd5ccd699` (ES `f4efddf3b` pinned), pushed. Maintainer's last direction (2026-09-10): tackle #117/#118/#119 then #105, and think about automated testing on the VMs.
 
-Done tonight: `tools/emulator-exit-test` (#117: PASSED on the shipped `input_sense`, FAILED (2) with the debounce stripped -- three of four criteria ticked, the H700 one open); #118 (34 strings under D-UI-036, merged); #119 (ten maintenance rows headless with an outcome, `run`/`factoryreset` return a status, D-UI-037, merged); `tools/vm-qa` (#120 box 1: one runner, first report `qa-073929659d-20260910-2256/`); the harness outcome-word gate is on by default with three words (#105's last box; suite passes; the LINK cells under it caught "Lost the network..." in six cells; fixed in four scripts (`322505757c`), LINK1-4,6 pass, LINK5 is #113, LINK7 clean; #105's harness box ticked). Both handhelds OFFLINE all evening, still on `7eb713bbd9`; `073929659d` is the latest verified image, unstaged.
+Closed: #118 (34 wizard strings under D-UI-036, framed 640x480), #119 (ten maintenance rows headless with an outcome, D-UI-037; `run`/`factoryreset` return statuses; AUDIO RESET and FACTORY RESET tested under a live ES on the disposable guest), #114, #109, #48, #111, #112. #117: three of four criteria via `tools/emulator-exit-test` (PASS on the shipped `input_sense`, FAIL (2) with the debounce stripped); the H700 first-SIGTERM observation stays open. #120: `tools/vm-qa` (one runner; `--link` for the seven link cells), the exit cell, and ES unit tests (`CloudText`, 19 cases, doctest) are ticked; reference frames for the walks, shell unit tests, and a nightly remain. #105: every box ticked (the harness gate is the default and caught six "Lost the network" lines on its first run, fixed in four scripts); #115's last box and #113 wait on a handheld.
+
+Both handhelds were OFFLINE all evening, still on `7eb713bbd9`. Images: `x64-all-20260910-d2eabe879c/`, `h700-all-20260910-d2eabe879c/` (tar sha `cc5bf7c1604a...`); `x64-all-20260910-7a90be59fb/` kept for its frames; `x64-all-20260910-aa3df8d178/` kept for the #104 proofs. Nothing staged.
 
 ## Completed This Session
 
@@ -30,10 +32,11 @@ Done tonight: `tools/emulator-exit-test` (#117: PASSED on the shipped `input_sen
 
 ## Next Steps
 
-1. **Build `next` (x64 then H700) once the LINK cells finish** (they are timing-bound; do not build under them). Then `tools/vm-qa <img>` from a fresh pair, and frames at 640x480: the wizard's create page with the glossed step 2 (#118), the maintenance-row outcome dialogs (#119), and a real `FACTORY RESET` and `AUDIO RESET` on the disposable guest b (the #119 agent's two named risks: pipewire stopped and `/storage` deleted under a live EmulationStation). Then tick and close #118/#119, tick #105's harness box, QA log, changelog.
-2. **#120** next boxes: reference frames for the walks (box 3), ES unit tests for the pure functions (box 4), the nightly (box 6).
-3. **Device-side, all needing a yes by name**: stage the latest image; the #104 ramoops proof; the #117 H700 first-SIGTERM observation; the #113 Dropbox measurement.
-4. Housekeeping: remove the `vocab-gate` worktree after the LINK run ends; guests a (10022, 1280x800) and b (10023, 640x480) are on `073929659d` with the QA cloud configured and a stray RA username `probe`.
+1. **Read `tools/vm-qa`'s report on `d2eabe879c`** (`scratchpad/vm-qa-d2ea.log`); if PASSED, that is the image to offer for staging. Copy `report.md` beside the image; QA log row.
+2. **Staging is the maintainer's call, per device** (D-QA-008/011). When a handheld is online and they say so: stage `d2eabe879c`; then, each with a yes by name: the #104 ramoops proof (`echo c > /proc/sysrq-trigger`, then `rocknix-evidence collect`), the #117 first-SIGTERM observation, the #113 five-retry Dropbox measurement.
+3. **#120** remaining: reference frames for the walks (box 3), shell unit tests beside each script (box 5), a nightly on a self-hosted runner (box 6). Also worth a line: the walks' key timing under load (wake first; wait for the process, not a fixed delay).
+4. **#115** last box (the launch gate's stopping wording) and the provider forms' raw rclone option names (`URL`, `VENDOR`, `USER`, `PASS`) as a follow-up to #118.
+5. Housekeeping: guests a and b are being recreated by `vm-qa` on `d2eabe879c` (b at 1280x800 again); `row-one-line-pin` worktree stays.
 
 ## Key Files Modified
 
