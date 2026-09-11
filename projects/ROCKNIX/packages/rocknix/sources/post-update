@@ -84,6 +84,23 @@ for tool in cloud_backup cloud_restore; do
   fi
 done
 
+### Drop the deprecated vm.laptop_mode line from the owner's sysctl.d
+#
+# /usr/config/sysctl.d is copied to /storage/.config/sysctl.d once, on first
+# boot, and never again -- so removing vm.laptop_mode=5 from the package
+# (#122) reaches only a fresh install. On every device that upgraded, the
+# copy still carries it and systemd-sysctl logs "vm.laptop_mode is
+# deprecated. Ignoring setting." on every boot: a warning, in the one place
+# somebody reads after a freeze, about a line the kernel no longer acts on.
+# Remove just that line; the rest of the file is the owner's.
+for f in /storage/.config/sysctl.d/*.conf; do
+  [ -f "${f}" ] || continue
+  if grep -q '^vm\.laptop_mode=' "${f}"; then
+    sed -i '/^vm\.laptop_mode=/d' "${f}"
+    echo "Removed deprecated vm.laptop_mode from ${f}" >>${LOG}
+  fi
+done
+
 ### Add cloud sync-related files if missing
 echo "Update cloud sync files..." >>${LOG}
 if [ -x "/usr/bin/cloud_sync_helper" ]; then
