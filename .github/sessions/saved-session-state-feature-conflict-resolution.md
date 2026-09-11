@@ -1,16 +1,14 @@
 # Saved Session State
 
-> **Saved**: 2026-09-11T00:04:52Z
+> **Saved**: 2026-09-11T02:31:37Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). **#117/#118/#119 done; #120 (automated testing) three of six boxes; latest image `d2eabe879c` (x64 + H700), `tools/vm-qa` PASSED on it from a fresh pair (four suites).** `next` = `9fd5ccd699` (ES `f4efddf3b` pinned), pushed. Maintainer's last direction (2026-09-10): tackle #117/#118/#119 then #105, and think about automated testing on the VMs.
+Epic #11 (cloud saves). **The credentials-and-rules pass (#116 #52 #71 #39 #74 #100) is in `next` and built as `88b82d94a7` (x64 + H700); `tools/vm-qa` is running on it from a fresh pair as this was saved.** `next` = `5dceaf0741` (ES `f48bc3620` pinned), pushed. Maintainer (2026-09-11): "116 to 52 to 71 to 39 and then ... 74 and 100 ... with the same build."
 
-Closed: #118 (34 wizard strings under D-UI-036, framed 640x480), #119 (ten maintenance rows headless with an outcome, D-UI-037; `run`/`factoryreset` return statuses; AUDIO RESET and FACTORY RESET tested under a live ES on the disposable guest), #114, #109, #48, #111, #112. #117: three of four criteria via `tools/emulator-exit-test` (PASS on the shipped `input_sense`, FAIL (2) with the debounce stripped); the H700 first-SIGTERM observation stays open. #120: `tools/vm-qa` (one runner; `--link` for the seven link cells), the exit cell, and ES unit tests (`CloudText`, 19 cases, doctest) are ticked; reference frames for the walks, shell unit tests, and a nightly remain. #105: every box ticked (the harness gate is the default and caught six "Lost the network" lines on its first run, fixed in four scripts); #115's last box and #113 wait on a handheld.
-
-Both handhelds were OFFLINE all evening, still on `7eb713bbd9`. Images: `x64-all-20260910-d2eabe879c/`, `h700-all-20260910-d2eabe879c/` (tar sha `cc5bf7c1604a...`); `x64-all-20260910-7a90be59fb/` kept for its frames; `x64-all-20260910-aa3df8d178/` kept for the #104 proofs. Nothing staged.
+Done: #39, #74, #100 closed (proven by new harness steps); #116 and #52 have one box each waiting on a frame from the new image (the SSH page's checkmark; the post-restore check saying where to connect); #71's five boxes are covered by the extended harness step and close once vm-qa passes. Decisions D-INFRA-008, D-CLOUD-087/088/089. Ten delivered-but-open cloud issues were closed earlier tonight (#89 #106 #108 #110 #103 #85 #95 #77 #105 #112...). Both handhelds OFFLINE all night, still on `7eb713bbd9`; `88b82d94a7` supersedes `d2eabe879c` as the image to offer for staging. Artifacts: `x64-all-20260911-88b82d94a7/`, `h700-all-20260911-88b82d94a7/` (tar sha `aeaa94be2834...`).
 
 ## Completed This Session
 
@@ -32,11 +30,10 @@ Both handhelds were OFFLINE all evening, still on `7eb713bbd9`. Images: `x64-all
 
 ## Next Steps
 
-1. **`d2eabe879c` is the image to offer for staging**: vm-qa PASSED (scripts, round-trip, exit, walks); report beside the image; QA log row written.
-2. **Staging is the maintainer's call, per device** (D-QA-008/011). When a handheld is online and they say so: stage `d2eabe879c`; then, each with a yes by name: the #104 ramoops proof (`echo c > /proc/sysrq-trigger`, then `rocknix-evidence collect`), the #117 first-SIGTERM observation, the #113 five-retry Dropbox measurement.
-3. **#120** remaining: reference frames for the walks (box 3), shell unit tests beside each script (box 5), a nightly on a self-hosted runner (box 6). Also worth a line: the walks' key timing under load (wake first; wait for the process, not a fixed delay).
-4. **#115** last box (the launch gate's stopping wording) and the provider forms' raw rclone option names (`URL`, `VENDOR`, `USER`, `PASS`) as a follow-up to #118.
-5. Housekeeping: guests a and b are being recreated by `vm-qa` on `d2eabe879c` (b at 1280x800 again); `row-one-line-pin` worktree stays.
+1. **Read vm-qa's report on `88b82d94a7`** (`scratchpad/vm-qa-88b8.log`; 31-step suite incl. the four new steps). If PASSED: relaunch guest b at 640x480, frame the SSH setup page (#116: checkmark + CURRENT PASSWORD row) and the post-restore CHECK CONNECTION with no rclone.conf (#52: `NO CLOUD STORAGE IS SET UP... BACKUPS NEVER CARRY YOUR CLOUD SIGN-IN...`); tick and close #116, #52, #71; QA log row; changelog is written.
+2. **Staging is the maintainer's call, per device** (D-QA-008/011): `88b82d94a7`. Device-gated after that: #104 ramoops proof, #117 first-SIGTERM, #113 measurement, #107's Dropbox box.
+3. **#120** remaining: reference frames, shell unit tests (the bwrap harness has case f now), a nightly.
+4. Remaining cloud items (not conflict resolution): #47, #75, #45, #50, #42 (docs gate), #94's two boxes, #115's last box, #118's follow-up on rclone option names.
 
 ## Key Files Modified
 
