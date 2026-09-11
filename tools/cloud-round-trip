@@ -959,6 +959,36 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     # to ten seconds to fall free rather than hand the next step a race.
     dev.run("for i in $(seq 1 20); do flock -n /var/run/cloud_sync.lock true 2>/dev/null && break; sleep 0.5; done", check=False)
 
+    step("a settings-only backup with nothing on the device to send is skipped, and says so once")
+    # #126: with no archive under SETTINGS_BACKUPS the run printed "There's no
+    # settings backup on this device yet." and then "Settings backup:
+    # COMPLETED" -- two lines that contradict each other, and a last-run
+    # stamp for a run that sent nothing. Now the phase line and the summary
+    # word agree (SKIPPED - NOTHING TO SEND YET), the exit is still 0, and
+    # the stamp keeps describing the last upload that happened. Under
+    # --system-only the saves line says it was skipped too, rather than
+    # COMPLETED for a phase that never ran.
+    bk_dir = dev.run(f"grep -m1 '^SETTINGS_BACKUPS=' {CONF} | cut -d'\"' -f2").strip() or "/storage/roms/backup"
+    stash = "/storage/.cache/qa/126-stash"
+    dev.run(f"mkdir -p {shlex.quote(stash)} {shlex.quote(bk_dir)}; mv {shlex.quote(bk_dir)}/* {shlex.quote(stash)}/ 2>/dev/null; true", check=False)
+    stamp_before = dev.run("cat /storage/.cache/cloud_sync/last-settings-backup 2>/dev/null || true").strip()
+    rc, out = run_rc(dev, "cloud_backup --yes --system-only")
+    lines = [clean_line(l) for l in out.splitlines()]
+    settings_words = [l for l in lines if l.startswith("Settings backup:")]
+    saves_words = [l for l in lines if l.startswith("Game saves:")]
+    said_skipped = any(l.startswith("Skipped settings this time") for l in lines)
+    failures += not check(rc == 0 and said_skipped and settings_words == ["Settings backup: SKIPPED - NOTHING TO SEND YET"],
+                          "the settings phase says it was skipped and the summary agrees: SKIPPED - NOTHING TO SEND YET",
+                          f"exit {rc}; phase line said skipped: {said_skipped}; summary: {settings_words}; tail: {out.strip()[-200:]!r}")
+    failures += not check(saves_words == ["Game saves: SKIPPED - SETTINGS ONLY"],
+                          "and the saves line says the phase was skipped, not COMPLETED",
+                          f"summary saves line: {saves_words}")
+    stamp_after = dev.run("cat /storage/.cache/cloud_sync/last-settings-backup 2>/dev/null || true").strip()
+    failures += not check(stamp_after == stamp_before,
+                          f"the settings stamp still describes the last upload that happened ({stamp_after or 'absent'})",
+                          f"the stamp moved from {stamp_before!r} to {stamp_after!r} for a run that sent nothing")
+    dev.run(f"mv {shlex.quote(stash)}/* {shlex.quote(bk_dir)}/ 2>/dev/null; rmdir {shlex.quote(stash)} 2>/dev/null; true", check=False)
+
     step("changing the cloud folder moves the settings folder beside it, and the layout counts as current")
     # #74: CHANGE CLOUD FOLDER used to write the settings folder INSIDE the
     # saves folder -- the nesting cloud_migrate_layout exists to undo and the

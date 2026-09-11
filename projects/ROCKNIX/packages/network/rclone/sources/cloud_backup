@@ -58,6 +58,14 @@ ASSUME_YES=0
 METHOD_OVERRIDE=""
 EXTRA_UPDATE=0
 SYSTEM_ONLY=0
+# The settings phase's own summary word when it is not the exit code's
+# (SKIPPED - NOTHING TO SEND YET), and whether a --system-only run did any
+# work at all -- when it did not, the settings stamp is not rewritten (#126).
+SETTINGS_OUTCOME=""
+SETTINGS_NOTHING_RAN=0
+# The saves phase's, for the same reason: under --system-only the phase is
+# skipped, and its summary line said COMPLETED for work that was never run.
+SAVES_OUTCOME=""
 SAVES_ONLY=0
 RECENT=0
 for CLI_ARG in "$@"; do
@@ -339,6 +347,11 @@ record_last_run() {
     local exit_code="$1"
     local name="backup" why=""
     [ "${SYSTEM_ONLY}" -eq 1 ] && name="settings-backup"
+    # A settings-only run that found nothing to send ran nothing; the stamp
+    # keeps describing the last upload that happened (#126).
+    if [ "${SYSTEM_ONLY}" -eq 1 ] && [ "${SETTINGS_NOTHING_RAN}" -eq 1 ]; then
+        return 0
+    fi
     case "${exit_code}" in
         0|9|"${EXIT_NO_NETWORK}"|"${EXIT_LOCK_HELD}") ;;
         *) [ -n "${LAST_WHY}" ] && why=" $(printf '%s' "${LAST_WHY}" | tr ' ' '_')" ;;
@@ -1115,19 +1128,26 @@ backup_system_files() {
     
     if [ "${BACKUPFILE_BACKUP_OPTION}" == "yes" ]; then
         # Check if backup folder exists first
-        if [ ! -d "${SETTINGS_BACKUPS}" ]; then
         # Nothing to send is not a failure. These used to return 1, which the
         # summary then printed as "COMPLETED WITH ERRORS" on a device that had
         # simply never made a settings backup. backup_game_saves already returns
         # 0 with a warning in the same situation.
-            log_message "the settings backups folder ${SETTINGS_BACKUPS} does not exist" "false" "WARN"
-            log_message "There's no settings backup on this device yet." "true" "WARN"
-            return 0
-        fi
-        
-        # Skip if backup directory is empty to avoid unnecessary transfers
-        if [ -z "$(ls -A ${SETTINGS_BACKUPS} 2>/dev/null)" ]; then
-            log_message "There are no settings backups on this device to send." "true" "WARN"
+        #
+        # Nor is it a completion. The summary said "Settings backup: COMPLETED"
+        # under a line saying there was nothing to send (#126); the tier did
+        # not run, and the vocabulary's word for that is SKIPPED. The exit
+        # stays 0 -- nothing failed -- and the last-run stamp is left alone,
+        # as for the other runs that did nothing (D-UI-028: a stamp records a
+        # run that happened).
+        if [ ! -d "${SETTINGS_BACKUPS}" ] || [ -z "$(ls -A "${SETTINGS_BACKUPS}" 2>/dev/null)" ]; then
+            if [ ! -d "${SETTINGS_BACKUPS}" ]; then
+                log_message "the settings backups folder ${SETTINGS_BACKUPS} does not exist" "false" "WARN"
+            else
+                log_message "the settings backups folder ${SETTINGS_BACKUPS} is empty" "false" "WARN"
+            fi
+            log_message "Skipped settings this time - there's no settings backup on this device to send yet." "true" "WARN"
+            SETTINGS_OUTCOME="SKIPPED - NOTHING TO SEND YET"
+            SETTINGS_NOTHING_RAN=1
             return 0
         fi
         
@@ -1538,6 +1558,7 @@ main() {
     # This performs the primary save file backup operation using the configured method
     if [ "${SYSTEM_ONLY}" -eq 1 ]; then
         log_message "Skipped game saves this time - settings only." "true"
+        SAVES_OUTCOME="SKIPPED - SETTINGS ONLY"
         BACKUP_STATUS=0
     else
         backup_game_saves
@@ -1551,6 +1572,7 @@ main() {
     # This backs up settings backup files (zip files) if enabled in configuration
     if [ "${SAVES_ONLY}" -eq 1 ]; then
         log_message "Skipped settings this time - saves only." "true"
+        SETTINGS_OUTCOME="SKIPPED - SAVES ONLY"
         BACKUP_SYSTEM_STATUS=0
     else
         backup_system_files
@@ -1566,8 +1588,8 @@ main() {
     # Provide final summary of all operations
     log_message "====================================" "true"
     log_message "BACKUP SUMMARY:" "true"
-    log_message "Game saves: $(outcome_word $BACKUP_STATUS)" "true"
-    [ "${BACKUPFILE_BACKUP_OPTION}" == "yes" ] && log_message "Settings backup: $(outcome_word $BACKUP_SYSTEM_STATUS)" "true"
+    log_message "Game saves: ${SAVES_OUTCOME:-$(outcome_word $BACKUP_STATUS)}" "true"
+    [ "${BACKUPFILE_BACKUP_OPTION}" == "yes" ] && log_message "Settings backup: ${SETTINGS_OUTCOME:-$(outcome_word $BACKUP_SYSTEM_STATUS)}" "true"
     log_message "Log file: ${LOG_FILE}" "false"
     log_message "====================================" "true"
     
