@@ -119,7 +119,18 @@ launch() {  # start the game, wait for RetroArch, give the cartridge time to wri
   S "rm -f $SRM; nohup /tmp/exit-launch $ROM >/dev/null 2>&1 &"
   local i; for i in $(seq 1 45); do S 'pgrep -f "^/usr/bin/retroarch" >/dev/null' && break; sleep 2; done
   S 'pgrep -f "^/usr/bin/retroarch" >/dev/null' || { echo "  RetroArch never started (see /tmp/exit-launch.log on the device)"; return 1; }
-  sleep 4
+  # The cartridge writes its byte in its first frames, but RetroArch has to
+  # get there first: on an RG35XX SP the first launch after a boot spends
+  # longer than four seconds loading the core and compiling shaders, so a
+  # fixed wait pressed the hotkey before the game had run and part A found
+  # no .srm -- a warm launch then passed three times (2026-09-11). Wait for
+  # the process to have burnt two seconds of CPU, which means the core is
+  # running, then a margin for the write itself.
+  for i in $(seq 1 40); do
+    S 'p=$(pgrep -f "^/usr/bin/retroarch" | head -1); [ -n "$p" ] && [ "$(awk "{print \$14+\$15}" /proc/$p/stat 2>/dev/null || echo 0)" -ge 200 ]' && break
+    sleep 1
+  done
+  sleep 3
 }
 wait_exit() {  # until runemu.sh has returned
   local i; for i in $(seq 1 30); do S 'test -f /tmp/exit-rc' && return 0; sleep 1; done; return 1
