@@ -40,11 +40,26 @@ when the page stops moving) and a pause where nothing on screen will change.
 ## Where a walk starts
 
 The deterministic start is a **rebooted VM**: it comes up on the carousel,
-awake, with nothing open, and the transfer page's four class switches are
-back at their defaults (SAVES on, the rest off) because nothing persists
-them. `reset.steps` reaches the same state from wherever the interface
-happens to be, and is what to compose in front of a walk that follows
-another in the same session.
+awake, with nothing open. `reset.steps` reaches the same state from wherever
+the interface happens to be, and is what to compose in front of a walk that
+follows another in the same session.
+
+A reboot is not a clean slate, though. The transfer pages' four class
+switches are saved as `cloudsync.pick.<direction>.<class>` in
+**`/storage/.config/system/configs/system.cfg`** when the page closes, and
+restored at the next start -- so a `tick-*` walk, which flips rather than
+sets, goes the wrong way after any earlier walk left one on. `suite.txt`'s
+`default-pre` resets them; a hand-composed walk should do the same:
+
+```bash
+tools/vm-pair ssh b '. /etc/profile; for d in backup restore; do \
+  for k in content media settings; do set_setting cloudsync.pick.$d.$k 0; done; \
+  set_setting cloudsync.pick.$d.saves 1; done'
+```
+
+(That path is not the `/storage/.config/system.cfg` the rest of the harness
+names, and a value written to it while ES is running does survive the
+reboot.)
 
 `reset.steps` used to be four B presses and now calls `dismiss-dialogs`,
 because four is a guess: B closes a dialog, a menu or a game list, but on
@@ -108,8 +123,8 @@ that span files.
 - `run-transfer.steps` presses SELECT ALL and then the verb, and **needs no
   system ticked when it starts**. The verb runs whatever the picker last
   saved to `/storage/.cache/cloud_sync/content-systems` -- saved on every
-  close, BACK included, and kept across a reboot, unlike the class switches
-  -- and with nothing ticked `cloud_content_backup --selected` exits 1
+  close, BACK included, and kept across a reboot -- and with nothing ticked
+  `cloud_content_backup --selected` exits 1
   before any rclone runs, so the page ends FAILED with rows 3-4 blank and
   the walk has exercised no transfer. SELECT ALL is a toggle that reads
   SELECT NONE once everything is on, so on a VM where an earlier walk

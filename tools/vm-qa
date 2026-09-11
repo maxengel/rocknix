@@ -82,7 +82,7 @@ case ",$ONLY," in *,walks,*)
   # Every walk starts from a rebooted guest, which the README names as the
   # one deterministic start; a boot-time dialog is dismissed with B first.
   walk_all() {
-    local rc=0 name legs w
+    local rc=0 name legs w pre defpre=""
     # tools/vm-walks/suite.txt names the compositions: most walk files are a
     # leg that starts on a screen an earlier leg reaches, so replaying them
     # one at a time drove A presses into the carousel and counted the frames
@@ -103,14 +103,19 @@ case ",$ONLY," in *,walks,*)
       legs=${line#*=}
       # `<name> = <legs> | <shell>`: the part after | is a command run on the
       # guest BEFORE the reboot, for a walk whose starting screen depends on
-      # state the reboot does not clear. The transfer walks need one --
-      # emptying the saved system selection, which the page's ROMS AND BIOS
-      # switch tracks -- and without it each of them inherited the previous
-      # walk's transfer and flipped the switch the wrong way (#125).
+      # state a reboot does not clear -- which the transfer page's switches
+      # are: EmulationStation saves them into system.cfg when the page
+      # closes and restores them at the next start, so a `tick-*` leg, which
+      # FLIPS rather than sets, went the wrong way after any walk that had
+      # left one on (#125).
       pre=""
       case "$legs" in *\|*) pre=${legs#*|}; legs=${legs%%|*} ;; esac
+      # `default-pre = <shell>` is the reset every walk wants; a line's own
+      # `| <shell>` runs after it, so a walk can override what it set.
+      if [ "$name" = "default-pre" ]; then defpre=$legs; continue; fi
       [ -n "$name" ] || continue
       mkdir -p "$OUT/walks"
+      [ -n "$defpre" ] && SSH "$defpre" >/dev/null 2>&1
       [ -n "$pre" ] && SSH "$pre" >/dev/null 2>&1
       SSH 'systemctl reboot' 2>/dev/null; sleep 6
       for i in $(seq 1 45); do SSH 'pgrep -x emulationstation >/dev/null' 2>/dev/null && break; sleep 3; done; sleep 10
