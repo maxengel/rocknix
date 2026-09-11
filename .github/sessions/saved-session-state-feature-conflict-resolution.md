@@ -1,29 +1,25 @@
 # Saved Session State
 
-> **Saved**: 2026-09-11T11:20:00Z
+> **Saved**: 2026-09-11T15:15:00Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). **The seven-issue pass from the `88b82d94a7` cycle**, in the maintainer's order: #121, #122, #126 as one small build; #125; #124; #123 and #127.
+Epic #11 (cloud saves). **The seven-issue pass (#121-#127) is complete**, plus #128 found on the way; built as **`af2db4ab09`** (x64 + H700) and passed by every runner suite. Closed: #122, #124, #125, #126, #128. Open on purpose: #121 (the handheld box), #123 and #127 (all boxes ticked; waiting on the maintainer's word for D-UI-038 and D-CLOUD-091/092). Filed: **#129, the code audit** the maintainer asked for ("once this is done, we should consider taking a step back and running a code audit") -- the next piece of work.
 
-State: **six of seven are merged on `next` and built as `af2db4ab09` (x64 + H700)**; #125 (walk tooling) is still with its agent on guest b. #128 (S3 subtitle paragraph) was found while framing and is fixed and closed in the same image. #122 and #128 closed; #121 (VM box), #123, #124, #126, #127 ticked as far as proven, left open for the runner (`tools/vm-qa`) and, for #123/#127, the maintainer's confirmation of the words (D-UI-038, D-CLOUD-091/092).
-
-Images: `9d035dfd57` (#121 #122 #126), `757ca87084` (+#123 #127 +unit ordering), `af2db4ab09` (+#124 +#128), each under `/workspace/artifacts/rocknix-images/x64-all-20260911-<id>/`; H700 `h700-all-20260911-af2db4ab09/` (tar sha `29b86dd598389f2c...`). Guest c (10025, 640x480) was upgraded in place `757ca87084` -> `af2db4ab09` through `.update`: post-update removed a planted `vm.laptop_mode`, the boot after has 0 laptop_mode and 1 powerstate line. Frames for #123, #127, #128 under the images' `shots/640x480/`.
+`next` is at `fd7080b0c3` (pushed after this save). Runner reports: `qa-af2db4ab09-20260911-{0605,0627,0648}` (scripts, round-trip 100/100, exit, walks 13/13). The two runner failures on the first pass were the runner's own fixtures: the empty-endpoint check predating D-CLOUD-092 (`45a0d7cb6a`) and no remote/no ROMs on a fresh pair before the walks (`fcb632d403`, `07977a7910`).
 
 ## In Progress
 
-- **Agent on guest b (10023): #125** -- `feature/walk-tooling` (worktree `rocknix.worktrees/walk-tooling`), not merged. Started ~09:00 UTC.
-- Guests: a (10022) left clean by the #124 agent; c on `af2db4ab09` at the carousel with the QA remote seeded and `/ROCKNIX/Saves`.
+- Nothing running. Guests: a and b on `af2db4ab09` (fresh pair, remote and content fixture seeded by the runner); c (10025, 640x480) on `af2db4ab09` after the in-place upgrade, at the carousel. No handheld touched; both were offline on `7eb713bbd9`.
 
 ## Next Steps
 
-1. When the #125 agent reports: review, merge `feature/walk-tooling` into `next` (tools only -- no rebuild needed unless it touched packages), then `tools/vm-qa /workspace/artifacts/rocknix-images/x64-all-20260911-af2db4ab09/ROCKNIX-GENERIC_X64.x86_64-20260911.img.gz` from a fresh pair (it recreates guests a and b). Expect the new steps: #126 skipped-phase words, #127 three offer checks, #124 lock assertions.
-2. Tick the runner-gated boxes (#126, #127 root-level, #124) and close #121 (VM half; the handheld box stays), #124, #125, #126; #123/#127 close on the maintainer's word.
-3. QA log row for `af2db4ab09`; work log; session state; push `next`.
-4. Report to the maintainer with the two confirmations (#123 words; #127 dialog/buttons and root rule) and the staging question for `af2db4ab09` (both handhelds were offline on `7eb713bbd9`; per-device yes, D-QA-008/011).
-5. Then: #120 boxes 3/5/6, #115 last box, #113, #107's two boxes, #42, the older cloud backlog.
+1. **Report to the maintainer** (this session's closing message): the two confirmations -- #123's label words, #127's dialog/button order and the root-level rule -- and the staging question for `af2db4ab09` (H700 tar sha `29b86dd598389f2c...`, per-device yes, D-QA-008/011). Close #123/#127 on the yes.
+2. **#129 code audit** under the `code-auditor` methodology (Epic/Milestone form), scope in the issue; findings become issues; register rows D-CLOUD-085..093, D-SYS-001..008, D-UI-033..038, D-QA-012..014 checked against the code.
+3. Device-gated after staging: #121 handheld box, #104 ramoops proof, #117 first-SIGTERM, #113, #107's two boxes.
+4. Then #120 boxes 3/5/6 (reference frames -- the runner now has 45 stable walk frames to seed them from), #115 last box, #42, the older cloud backlog.
 
 ## Key Files Modified
 
@@ -39,6 +35,9 @@ Images: `9d035dfd57` (#121 #122 #126), `757ca87084` (+#123 #127 +unit ordering),
 | `tools/fork-worktree` | sync restores the build's generated doc before the dirty check | blocked two syncs today |
 | rclone scripts (`65d7cf6c24`, agent) | lock fd closed for children (`main 9>&-`, brace groups), 1 s retry before the refusal | #124, D-CLOUD-093 (renumbered from the agent's 090) |
 | ES `CloudText::providerSubtitle` (`229f50ad4`) | a paragraph subtitle becomes the provider's label | #128 |
+| `tools/vm-qa` (`fcb632d403`, `07977a7910`) | `ensure_remote` / `ensure_fixture` before the walks | the fresh-pair fixture gap |
+| `tools/cloud-round-trip` (`45a0d7cb6a`) | empty-endpoint restore: truthful empty (0 + offer) or own code, never a sentinel or bare 0 | D-CLOUD-092 |
+| walks tooling (agent, `5650fa8686`..`2e1e2a0bfa`) | `settle`, `wait-for-change`, `wake`, `dismiss-dialogs`; walks rewritten; `suite.txt`; `vm-pair up` waits | #125, D-QA-013/014 |
 | ES `CloudText.{h,cpp}`, `CloudTextTests.cpp` | `fieldLabel`, `ProtocolLine::args` | #123 #127; 20 cases / 207 assertions |
 | ES `GuiMenu.{h,cpp}`, `ThreadedCloudSync.{h,cpp}` | labels via `fieldLabel`; `openCloudFolderEditor`; three-button near-name dialog | |
 | `docs/decision-register.md` | D-CLOUD-090/091/092, D-SYS-007/008, D-UI-038 | |
@@ -52,6 +51,8 @@ Images: `9d035dfd57` (#121 #122 #126), `757ca87084` (+#123 #127 +unit ordering),
 
 ## Notes for Next Session
 
+- The runner's walks need a remote AND device ROMs on the guest; the round-trip suite leaves a fresh pair with neither. `vm-qa` seeds both now; if a walk stops at a dialog, read its `NN-stuck-*.png` before blaming the image.
+- `pgrep -f '<literal>'` matches the `bash -c` wrapper of the command that carries the literal further down (even with the bracket trick); check a process by name (`pgrep -x make -a | grep docker-`). `docker ps` NAMES are random; grep the IMAGE column.
 - `busybox sed` does not take `\x1b`; strip colour with `tr -d '\033' | sed 's/\[[0-9;]*m//g'` when reading a script's WARN/ERROR lines over ssh.
 - `scp` takes `-P` for the port; `-p` is preserve-times and silently makes the port a filename.
 - The harness's vocabulary gate applies to the LINK re-runs and refusals (`args.vocabulary`), not to the summary lines; the summary words are asserted by their own steps.
