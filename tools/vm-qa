@@ -78,7 +78,24 @@ case ",$ONLY," in *,exit,*)       run_suite exit       "$OUT/exit.log"       "$R
 # The link cells are timing-bound (a run must end within 90 s of the cut), so
 # they run before the walks and never while an image builds on this host.
 case ",$ONLY," in *,link,*)       run_suite link       "$OUT/link.log"       "$ROOT/tools/cloud-round-trip" --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --only LINK1,LINK2,LINK3,LINK4,LINK5,LINK6,LINK7 --serial-socket "$SERIAL" ;; esac
+# The walks open pages that refuse without a remote (NO CLOUD STORAGE IS SET
+# UP ON THIS DEVICE YET. SET IT UP NOW?), and the round-trip suite, which runs
+# first, puts the guest's rclone.conf back to how it found it -- on a fresh
+# pair, absent. Seven walks failed at that dialog on af2db4ab09 (2026-09-11)
+# while the same suite had read PASS on the image before, whose fixed-wait
+# walks passed whenever the tool ran (#125). Seed the QA remote when there is
+# none, the way seed-device does, and the folders the transfer page expects.
+ensure_remote() {
+  [ -n "$(SSH 'rclone listremotes 2>/dev/null' 2>/dev/null)" ] && return 0
+  local conf; conf=$(mktemp)
+  "$ROOT/tools/cloud-test-backend" rclone-conf > "$conf"
+  SSH 'mkdir -p /storage/.config/rclone' 2>/dev/null
+  scp -q -i "$KEY" -P "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$conf" root@127.0.0.1:/storage/.config/rclone/rclone.conf
+  rm -f "$conf"
+  SSH 'chmod 600 /storage/.config/rclone/rclone.conf; /usr/bin/cloud_sync_helper >/dev/null 2>&1; r=$(rclone listremotes 2>/dev/null | head -1); rclone mkdir "${r}/ROCKNIX/Saves" >/dev/null 2>&1; rclone mkdir "${r}/ROCKNIX/Backups" >/dev/null 2>&1; echo "walks: seeded the QA remote ${r} (the guest had none)"' 2>/dev/null
+}
 case ",$ONLY," in *,walks,*)
+  ensure_remote
   # Every walk starts from a rebooted guest, which the README names as the
   # one deterministic start; a boot-time dialog is dismissed with B first.
   walk_all() {
