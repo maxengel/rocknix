@@ -1842,3 +1842,27 @@ Maintainer's order: #116, #52, #71, #39, then #74 and #100, one build.
   folder puts the settings folder beside it and the archive lands there
   (#74); a bare RCLONEOPTS keeps the allowlist (#71); an empty cloud offers
   and a wrong root fails (#100) -- 31 steps, PASSED against the new scripts.
+
+## A skipped phase says so; two boot warnings gone (2026-09-11)
+
+- **`cloud_backup`'s summary no longer says COMPLETED for a phase that did
+  not run** (#126, D-CLOUD-090). A settings-only run with no archive on the
+  device said "There's no settings backup on this device yet." and then
+  `Settings backup: COMPLETED`, exit 0, and stamped the run as the last
+  settings backup. Now the phase line reads "Skipped settings this time -
+  there's no settings backup on this device to send yet.", the summary word
+  is `SKIPPED - NOTHING TO SEND YET`, the exit stays 0 and the stamp keeps
+  describing the last upload that happened. Under `--system-only` the saves
+  line reads `SKIPPED - SETTINGS ONLY`, and under `--saves-only` the
+  settings line `SKIPPED - SAVES ONLY`, instead of COMPLETED for work that
+  was never asked for. An archive unchanged since its last upload is still
+  COMPLETED -- the cloud is current. `tools/cloud-round-trip` asserts the
+  phase line, both summary words and the unmoved stamp.
+- **Two lines gone from every boot's journal.** `powerstate` logged an
+  arithmetic error every two seconds on a device with no battery reading
+  (#121); it now skips the battery checks for that pass. `vm.laptop_mode=5`
+  drew a deprecation warning from systemd-sysctl on kernel 7.x (#122); the
+  line is gone from the package, and post-update deletes it from the copy an
+  upgraded device already holds under `/storage/.config/sysctl.d`
+  (D-SYS-007). Neither changes what a handheld does; both change what a
+  person reading a crash's evidence sees first (D-SYS-001).
