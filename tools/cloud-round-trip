@@ -931,7 +931,33 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
                           f"cloud listing: {listing.strip()[:200]!r}")
     warned = dev.run("grep -c 'carried no --filter-from' /var/log/cloud_sync.log 2>/dev/null || echo 0").strip()
     failures += not check(warned.isdigit() and int(warned) > 0, "the log says the allowlist was added", "no such log line")
-    dev.run(f"mv -f {CONF}.qa-71 {CONF}; rm -f {shlex.quote(f'{root}/{rom_rel}')}")
+    # The restore half: a non-save planted IN the cloud must not come down
+    # either, with the same bare options.
+    dev.run(f"printf 'cloud-side rom' > /tmp/qa-cloud-side.rom; rclone copyto /tmp/qa-cloud-side.rom "
+            f"{shlex.quote(remote_name + saves_remote + '/saves/qa-cloud-side.rom')} >/dev/null 2>&1; rm -f /tmp/qa-cloud-side.rom")
+    rc, out = run_rc(dev, "cloud_restore --yes --saves-only")
+    came_down = dev.run(f"test -e {shlex.quote(f'{root}/saves/qa-cloud-side.rom')} && echo yes || echo no").strip()
+    failures += not check(rc == 0 and came_down == "no",
+                          f"a restore with a bare RCLONEOPTS left the cloud-side non-save in the cloud (exit {rc})",
+                          f"exit {rc}, came down: {came_down}")
+    dev.run(f"rclone deletefile {shlex.quote(remote_name + saves_remote + '/saves/qa-cloud-side.rom')} >/dev/null 2>&1 || true", check=False)
+    # A user who names their own filter file keeps control: nothing is added,
+    # and their rule -- excluding one save by name -- is what governs.
+    dev.run(f"printf -- '- /**/own-rule-victim.srm\n+ /**\n' > /tmp/qa-own-rules.txt; "
+            f"sed -i '/^RCLONEOPTS=/d' {CONF}; echo 'RCLONEOPTS=\"--progress --filter-from /tmp/qa-own-rules.txt\"' >> {CONF}; "
+            f"printf 'victim' > {shlex.quote(f'{root}/saves/own-rule-victim.srm')}")
+    before_warn = dev.run("grep -c 'carried no --filter-from' /var/log/cloud_sync.log 2>/dev/null || echo 0").strip()
+    rc, out = run_rc(dev, "cloud_backup --yes --saves-only")
+    listing = dev.run(f"rclone lsf -R --files-only {shlex.quote(remote_name + saves_remote)} 2>/dev/null || true")
+    after_warn = dev.run("grep -c 'carried no --filter-from' /var/log/cloud_sync.log 2>/dev/null || echo 0").strip()
+    failures += not check(rc == 0 and "own-rule-victim.srm" not in listing and after_warn == before_warn,
+                          "a user's own --filter-from is honoured and nothing is added over it",
+                          f"exit {rc}; victim in cloud: {'own-rule-victim.srm' in listing}; added-lines {before_warn}->{after_warn}")
+    dev.run(f"mv -f {CONF}.qa-71 {CONF}; rm -f {shlex.quote(f'{root}/{rom_rel}')} {shlex.quote(f'{root}/saves/own-rule-victim.srm')} /tmp/qa-own-rules.txt")
+    # A run's lock can outlive its exit by a moment (a child that inherited
+    # the descriptor), and the next step takes the lock itself; give it up
+    # to ten seconds to fall free rather than hand the next step a race.
+    dev.run("for i in $(seq 1 20); do flock -n /var/run/cloud_sync.lock true 2>/dev/null && break; sleep 0.5; done", check=False)
 
     step("changing the cloud folder moves the settings folder beside it, and the layout counts as current")
     # #74: CHANGE CLOUD FOLDER used to write the settings folder INSIDE the
