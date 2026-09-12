@@ -11,3 +11,7 @@ one holds the standing questions each of them asks.
   person's device, and was the written answer there first?
 - **One story for the player** (D-CLOUD-095, #134): did the phase add a second home,
   word or setting for something the player experiences as one thing?
+- **Least surprise** (D-UI-042, `.claude/rules/least-surprise.md`): did anything this phase
+  shipped do something other than what its screen led the player to expect, or do the same
+  thing differently in two places?
+
