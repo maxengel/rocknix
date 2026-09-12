@@ -568,6 +568,10 @@ def measure_exit(g, fr, tag, rest_ref, relaunch=False, budget=150.0,
                 break
             time.sleep(0.12)
 
+    # The guest's own clock, for the one condition that cannot be polled:
+    # the stamp carries an epoch, so a run measured with no SSH channel
+    # still has a duration, to the second.
+    epoch0 = g.sh("date +%s")[1]
     th = None
     t0 = time.monotonic()
     g.kill_game()
@@ -591,8 +595,15 @@ def measure_exit(g, fr, tag, rest_ref, relaunch=False, budget=150.0,
             prev = f
         else:
             prev = f
-        if (not relaunch and card_gone is None and marks["stamp"] is not None
-                and t > marks["stamp"] and d_rest <= vq.SAME_MAX):
+        # The card is gone when the screen is the one the launch started
+        # from again. Gated on the stamp where there is an SSH channel to
+        # read it on, and on three seconds where there is not: between the
+        # interface redrawing after the game and the card being created
+        # there is a frame or two of plain carousel, and without a gate
+        # the cell would call that the card leaving.
+        if (not relaunch and card_gone is None and d_rest <= vq.SAME_MAX
+                and ((marks["stamp"] is not None and t > marks["stamp"])
+                     or (not ssh_poll and t - t0 >= 3.0))):
             card_gone = t
             break
         # A card that never goes must not hold the cell for the whole budget:
@@ -625,6 +636,13 @@ def measure_exit(g, fr, tag, rest_ref, relaunch=False, budget=150.0,
         "png": [x for x in shots if x],
     })
     result["stamp"] = parse_stamp(result.get("stamp_after", ""))
+    result["epoch0"] = epoch0
+    try:
+        result["t_sync_stamp_clock"] = int(result["stamp"]["epoch"]) - int(epoch0)
+    except (KeyError, ValueError, TypeError):
+        result["t_sync_stamp_clock"] = None
+    if result["t_sync_stamp"] is None:
+        result["t_sync_stamp"] = result["t_sync_stamp_clock"]
     return result
 
 
@@ -741,6 +759,41 @@ def remote_stanza(backend, address_port, tool):
     return "\n".join(lines) + "\n"
 
 
+def read_routes(g):
+    """The guest's two default routes, verbatim, so they can be put back.
+
+    `ip route show`'s own output is valid input to `ip route replace`, which
+    is why this keeps the line rather than a gateway: a route re-added by
+    hand came back without its src or its metric, and the next condition
+    then measured a guest that was not the one the online run measured."""
+    return {"v4": g.sh("ip -4 route show default | head -1")[1],
+            "v6": g.sh("ip -6 route show default | head -1")[1]}
+
+
+# Every default route, not the first one. `ip route del default` deletes ONE
+# match, and a table that has picked up a second default -- which is what a
+# hand-added route with a different metric is -- then still has one. The
+# noroute cell measured a guest that was still online twice because of it.
+DEL_DEFAULTS = ("for i in 1 2 3 4 5 6; do ip -4 route show default | grep -q . || break; "
+                "ip -4 route del default; done; "
+                "for i in 1 2 3 4 5 6; do ip -6 route show default | grep -q . || break; "
+                "ip -6 route del default; done")
+
+
+def normalise_routes(g, routes):
+    """Back to the routing table the online run was measured on."""
+    cmds = ["ip route del blackhole 10.0.2.2/32 2>/dev/null",
+            "ip link set eth0 up 2>/dev/null",
+            "sleep 1", DEL_DEFAULTS]
+    if routes.get("v4"):
+        cmds.append("ip -4 route add %s" % routes["v4"])
+    if routes.get("v6"):
+        cmds.append("ip -6 route add %s" % routes["v6"])
+    cmds.append("true")
+    g.sh("; ".join(cmds))
+    return g.sh("ip -4 route show default | head -1; ip -6 route show default | head -1")[1]
+
+
 def set_conf(g, text):
     fh = tempfile.NamedTemporaryFile("w", suffix=".conf", delete=False)
     fh.write(text)
@@ -804,6 +857,11 @@ def main():
                     help="full: an auto-state, two manual states, their screenshots and a battery save "
                          "(D-CLOUD-116). srm: one changed battery save (P-13).")
     ap.add_argument("--rom", default=ROM)
+    ap.add_argument("--conditions", default="",
+                    help="only these offline/bounds cells, comma separated "
+                         "(dead,noroute,blackhole,linkdown,portal,stall)")
+    ap.add_argument("--stall-budget", type=float, default=420.0,
+                    help="how long to watch the stalled-endpoint cell before giving up")
     ap.add_argument("--quick", action="store_true",
                     help="the runner's bounded form: one repeat of launch+exit+g2g, no reboot, no fixtures")
     ap.add_argument("--no-configure-remote", action="store_true",
@@ -960,14 +1018,18 @@ def main():
         # --- offline and bounds -------------------------------------------
         conds = []
         if "offline" in only:
-            conds += ["dead", "noroute", "blackhole", "portal"]
+            conds += ["dead", "noroute", "blackhole", "linkdown", "portal"]
         if "bounds" in only:
             for c in ("dead", "stall", "portal"):
                 if c not in conds:
                     conds.append(c)
+        if args.conditions:
+            want = [c.strip() for c in args.conditions.split(",") if c.strip()]
+            conds = [c for c in want if c in conds] or want
         results = {}
+        routes = read_routes(g) if conds else None
         for cond in conds:
-            results[cond] = run_condition(g, fr, cond, args, tool, fixtures, rom)
+            results[cond] = run_condition(g, fr, cond, args, tool, fixtures, rom, routes)
             # put the remote back between conditions
             if not args.no_configure_remote:
                 set_conf(g, subprocess.run([tool, "--backend", args.backend, "rclone-conf"],
@@ -1058,9 +1120,11 @@ def measure_startup(g, fr, args, out, rom=ROM):
     return res
 
 
-def run_condition(g, fr, cond, args, tool, fixtures, rom=ROM):
+def run_condition(g, fr, cond, args, tool, fixtures, rom=ROM, routes=None):
     """One offline or bounds cell: set the condition, exit a game, measure."""
     entry = {"condition": cond}
+    if routes:
+        entry["routes_normalised"] = normalise_routes(g, routes)
     live = subprocess.run([tool, "--backend", args.backend, "rclone-conf"],
                           capture_output=True, text=True).stdout
     fixture = None
@@ -1082,10 +1146,14 @@ def run_condition(g, fr, cond, args, tool, fixtures, rom=ROM):
         fixture.up()
         fixtures.append(fixture)
         set_conf(g, remote_stanza(args.backend, STALL_PORT, tool))
-    elif cond in ("noroute", "blackhole"):
-        entry["how"] = ("the guest's default route removed" if cond == "noroute"
-                        else "a blackhole route to 10.0.2.2 added two seconds after the exit, "
-                             "so the connection can open and then the uplink goes")
+    elif cond in ("noroute", "blackhole", "linkdown"):
+        entry["how"] = {
+            "noroute": "both default routes removed (v4 and v6: deleting only the v4 one leaves "
+                       "the v6 default, and the scripts' has_default_route reads that as online)",
+            "blackhole": "a blackhole route to 10.0.2.2 added 0.4 s after the exit, so the "
+                         "connection can open and then the path to the cloud goes",
+            "linkdown": "eth0 taken down 0.5 s after the exit -- a handheld leaving Wi-Fi",
+        }[cond]
         set_conf(g, live)
 
     seed_payload(g, 7, args.payload)
@@ -1096,33 +1164,58 @@ def run_condition(g, fr, cond, args, tool, fixtures, rom=ROM):
     wait_drawing(g)
 
     if cond == "noroute":
-        entry["route_cmd"] = g.sh("ip route del default; ip -4 route show")[1]
+        # BOTH families. The QA endpoint is on the guest's own /24, so a
+        # missing v4 default does not cut it -- and the scripts do not test
+        # reachability first, they test `is there a default route`, which on
+        # this guest the v6 one answers yes to. Deleting only the v4 default
+        # left the exit sync completing normally in 1.3 s (2026-09-12).
+        entry["route_cmd"] = g.sh(DEL_DEFAULTS + "; echo 'left:'; "
+                                  "ip -4 route show default; ip -6 route show default")[1]
         E = measure_exit(g, fr, "cond-%s" % cond, rest_ref, budget=120, rom=rom)
-        g.sh("ip route show default | grep -q . || ip route add default via 10.0.2.2 dev eth0")
-    elif cond == "blackhole":
+        if routes:
+            normalise_routes(g, routes)
+    elif cond in ("blackhole", "linkdown"):
         # SSH from the host arrives from 10.0.2.2, so a blackhole to it
         # stalls this channel too -- an admin-down link does not reset an
         # established connection. So the cut is armed inside the guest, the
         # master is dropped, and the measurement runs on frames alone until
         # the route comes back.
+        cut, back = (("ip route add blackhole 10.0.2.2/32",
+                      "ip route del blackhole 10.0.2.2/32 2>/dev/null")
+                     if cond == "blackhole" else
+                     ("ip link set eth0 down", "ip link set eth0 up"))
+        # Half a second, not two: the online exit sync ends in 1.4 s, and a
+        # cut armed for +2 s arrived after the sync had completed -- the cell
+        # reported `completed` and measured nothing (2026-09-12).
         g.sh('cat > /tmp/ttp-arm.sh <<"H"\n'
              '#!/bin/sh\n'
-             'sleep 2\n'
-             'ip route add blackhole 10.0.2.2/32\n'
-             'sleep 75\n'
-             'ip route del blackhole 10.0.2.2/32 2>/dev/null\n'
+             'sleep 0.5\n'
+             '%s\n'
+             'sleep 60\n'
+             '%s\n'
              'H\n'
-             'chmod +x /tmp/ttp-arm.sh; setsid /tmp/ttp-arm.sh >/dev/null 2>&1 & echo armed')
-        E = measure_exit(g, fr, "cond-%s" % cond, rest_ref, budget=110,
+             'chmod +x /tmp/ttp-arm.sh; setsid /tmp/ttp-arm.sh >/dev/null 2>&1 & echo armed'
+             % (cut, back))
+        E = measure_exit(g, fr, "cond-%s" % cond, rest_ref, budget=100,
                          ssh_poll=False, rom=rom)
         g.drop_master()
-        g.wait_alive(180)
-        g.sh("ip route del blackhole 10.0.2.2/32 2>/dev/null; "
-             "ip route show default | grep -q . || ip route add default via 10.0.2.2 dev eth0; true")
+        g.wait_alive(240)
+        if routes:
+            normalise_routes(g, routes)
         E["stamp_after"] = g.stamp("exit")
         E["stamp"] = parse_stamp(E["stamp_after"])
+        try:
+            E["t_sync_stamp_clock"] = int(E["stamp"]["epoch"]) - int(E["epoch0"])
+            E["t_sync_stamp"] = E["t_sync_stamp_clock"]
+        except (KeyError, ValueError, TypeError):
+            pass
     else:
-        E = measure_exit(g, fr, "cond-%s" % cond, rest_ref, budget=150, rom=rom)
+        # The stall is the one cell with no bound behind it: nothing in the
+        # scripts or in rclone's flags ends a connection that was accepted
+        # and then went quiet before the handshake, so the budget here is
+        # the measurement, not a timeout of ours.
+        E = measure_exit(g, fr, "cond-%s" % cond, rest_ref,
+                         budget=(args.stall_budget if cond == "stall" else 150), rom=rom)
 
     E["log"] = g.sh("tail -30 /var/log/cloud_sync.log 2>/dev/null | cut -c1-200")[1]
     entry["exit"] = E

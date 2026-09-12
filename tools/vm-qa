@@ -204,7 +204,9 @@ case ",$ONLY," in *,walks,*)
 # row exists yet, so nothing here fails the run -- the numbers are reported
 # and a register row is proposed from them by hand (D-CLOUD-116).
 if [ -f "$OUT/time-to-play/time-to-play.md" ]; then
-  { echo; sed '1s/^# /## /' "$OUT/time-to-play/time-to-play.md"; } >> "$REPORT"
+  # Demoted a level each, so the cell's own sections sit under its heading
+  # rather than beside the report's.
+  { echo; sed -e 's/^## /### /' -e '1s/^# /## /' "$OUT/time-to-play/time-to-play.md"; } >> "$REPORT"
 fi
 echo; cat "$REPORT"; echo; echo "report: $REPORT"
 [ "$FAILS" = 0 ]
