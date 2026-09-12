@@ -14,12 +14,21 @@ because it can help guide our decision-making."* D-CLOUD-098, #135.
 ## What it means when designing
 
 - **Two numbers, on every image:** interface → a game's first frame; a game's exit → the
-  next game's first frame. The runner measures both (#135); their budgets are register
-  rows; a run over budget fails the suite.
+  next game's first frame. The runner measures both (#135) and writes them into
+  `docs/vm-qa-log.md`. **One budget is a register row today** -- the exit sync's 3 s
+  (D-CLOUD-119) -- and `tools/time-to-play` fails a run whose exit-sync median exceeds
+  it. The launch and game-to-game numbers *report* until a row bounds them (#135's own
+  acceptance note); proposing those two rows from the measurement is an Open decision,
+  D-CLOUD-122. A cell that produced no number at all is never a pass either
+  (`headline_missing`, blindspot 39).
 - **Nothing we add sits on the launch path unless it must.** A sync, a capture, a
   retention write, a check -- each is asked: does the player wait for this? If yes, why,
-  for how long, and does the screen say so? A launch already cancels an automatic sync
-  (D-CLOUD-076); a sync that gates a launch (D-CLOUD-038) is bounded and visible.
+  for how long, and does the screen say so? A sync that gates a launch (D-CLOUD-038) is
+  bounded and visible. **What ships today** still cancels an automatic sync at launch
+  (D-CLOUD-076; the card reads `SKIPPED - A GAME WAS STARTED`). **D-CLOUD-109 replaces
+  that** with a bounded wait -- see the bullet below; until it lands, both sentences are
+  true of different builds, and a design written against D-CLOUD-076 is written against
+  a decision that has been superseded.
 - **Rigour is spent where the player is not waiting.** Retain-before-publish, hashing,
   manifests and verification belong after the game has started or after the card has
   said the player may go, not between the press and the frame.

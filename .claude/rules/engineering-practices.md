@@ -134,6 +134,10 @@ So:
   stage can fail.
 - **Quote every expansion** that becomes another command's arguments, or pass
   the list some other way.
+- **`ssh -n` inside a `while read` loop** (or redirect `< /dev/null`). ssh
+  reads the loop's stdin, so the loop processes one item and exits having
+  reported success; the count is the only thing that shows it. The same is
+  true of any command in the loop body that reads stdin.
 - **Prove the guard fires.** Construct the violation it exists to catch and
   watch it fail, then fix it and watch it pass. A guard with no observed
   positive is a guard with no evidence — the same rule blindspot 14 states for
@@ -141,6 +145,26 @@ So:
 
 An assertion that cannot fail is not evidence. Ask what input would produce a
 FAIL; if you cannot name one, the check proves nothing.
+
+**And a suite is not wired in until it has been seen to FAIL once, on the
+runner's own guest.** "Prove the guard fires" applies to a whole check as
+much as to a branch inside one. The time-to-play cell (#135) was written and
+measured on a guest whose RetroArch had been set to GL by hand months
+earlier; its first dispatch by `tools/vm-qa` on a guest running the image's
+default Vulkan driver -- which a QEMU guest cannot draw with -- printed
+`time-to-play: PASS in 581s` over a table in which every headline number was
+`-`. The tool judged its run by whether it *ran*, not by whether it
+*measured*. Three rules came out of it, and they generalise past that suite
+(blindspot 39, D-QA-022):
+
+- **A tool that reports numbers fails when the numbers are missing**, and
+  says which (`headline_missing()` in `tools/time-to-play`; the report ends
+  "Not a pass").
+- **A tool that needs the guest in a state the image does not ship puts it
+  there for the run and restores it** (`--vm`), rather than depending on a
+  condition that happened to be true where it was written.
+- **The first PASS of anything new is the one to distrust.** Construct the
+  failure, watch the runner report it, then trust the green.
 
 A fifth, of the same family (2026-09-10): the picker's scan named the one
 failure it anticipated -- the network gone, exit 69 -- and let every other
@@ -297,6 +321,24 @@ question, and is said in the report.
 - **Ask in one message, wait for the answer.** Nothing about the pace of a
   pass justifies skipping the question; the maintainer's evening is the
   thing being protected, and the session cannot see it.
+- **A read is free, and still goes through the filter.** Reading needs no
+  question, but what is read lands in a transcript, and a device's
+  `system.cfg`, its `rclone.conf`, `get_setting` output and anything piped
+  back over SSH can carry a sign-in. Pipe every such read through
+
+  ```bash
+  grep -v -i -E 'key|pass|token|user|psk'
+  ```
+
+  The filter is deliberately wider than the word *password*: rclone writes
+  `pass =`, `user =`, `token =` and `key =`, and the network writes `psk`. A
+  filter written as `password` let a `pass =` line through on a QA guest on
+  2026-09-12, which is why the QA guests are in scope too -- their
+  credentials are throwaway, their config files are the same shape, and the
+  transcript is the same transcript. A line the filter drops is a line
+  nobody needed; a line it lets through with a secret in it is a transcript
+  to scrub. `docs/device-testing-policy.md` § "Reading a device's output" is
+  the long form. (D-QA-021.)
 
 ## If the VM can test it, the VM tests it first
 
