@@ -1101,18 +1101,42 @@ def main():
     # (RetroArch never drew; see --vm), and the report table said PASS.
     missing = headline_missing(report)
     report["headline_missing"] = missing
+    over = over_budget(report)
+    report["over_budget"] = over
     if missing:
         md += "\n**Not a pass:** " + "; ".join(missing) + ".\n"
+    if over:
+        md += "\n**Over budget:** " + "; ".join(over) + ".\n"
     with open(os.path.join(out, "time-to-play.json"), "w") as fh:
         json.dump(report, fh, indent=1)
     with open(os.path.join(out, "time-to-play.md"), "w") as fh:
         fh.write(md)
     print(md)
     print("frames and json: %s" % out)
-    if missing:
-        print("time-to-play: FAIL -- " + "; ".join(missing), file=sys.stderr)
+    if missing or over:
+        print("time-to-play: FAIL -- " + "; ".join(missing + over), file=sys.stderr)
         return 1
     return 0
+
+
+# The budgets the register carries, and a run over one fails the suite (#135
+# AC 2). D-CLOUD-119 (2026-09-12): the exit sync of one changed battery save
+# on a hashed cloud within 3 s -- measured 0.79 s on S3, 1.0-1.7 s with the
+# full payload on WebDAV and SFTP. Judged on the median of the exit cell's
+# stamp time, the same number the report's headline shows; a cell that did
+# not run is not judged (headline_missing says so). No row yet bounds the
+# launch (0.6-0.9 s measured) or the game-to-game number, so neither fails.
+EXIT_SYNC_BUDGET_S = 3.0
+
+def over_budget(report):
+    out = []
+    rows = [r for r in (report["cells"].get("exit") or []) if r.get("t_sync_stamp") is not None]
+    if rows:
+        med = statistics.median(r["t_sync_stamp"] for r in rows)
+        if med > EXIT_SYNC_BUDGET_S:
+            out.append("the exit sync's stamp took %.2f s (median of %d), over D-CLOUD-119's %.0f s"
+                       % (med, len(rows), EXIT_SYNC_BUDGET_S))
+    return out
 
 
 def headline_missing(report):
