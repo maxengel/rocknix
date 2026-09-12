@@ -332,6 +332,9 @@ $B/toolchain/bin/cmake --build build-tests --target es-unit-tests && ./build-tes
 ## Conventions
 
 - Every label through `_( )` (localized, UPPERCASE by convention).
+- **Clear, then brief, then sized to the space** (`player-language.md`,
+  D-UI-045). Cut every word whose removal changes nothing; a string that
+  needs more room wants a page, not smaller text.
 - **"back up" vs "backup"**: two words as a verb ("BACK UP CONFIGURATIONS TO CLOUD",
   "back up your settings"), one word as a noun/adjective ("RESTORE FROM BACKUP",
   "backup file"). Applies to menu labels, dialogs, script output, and docs.
