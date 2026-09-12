@@ -2,43 +2,105 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 #
-# A disposable cloud endpoint for cloud-sync QA.
+# A disposable cloud endpoint for cloud-sync QA, in five protocols.
 #
-# Serves a directory on this host over WebDAV. A VM started by generic-x64-vm
-# reaches it at 10.0.2.2 (QEMU user-mode networking always routes that to the
-# host), so nothing needs forwarding and no real cloud account is involved.
+# Serves a directory on this host over WebDAV, S3, SFTP, SMB or FTP. A VM
+# started by generic-x64-vm reaches every one of them at 10.0.2.2 (QEMU
+# user-mode networking always routes that to the host), so nothing needs
+# forwarding and no real cloud account is involved.
 #
-# WebDAV rather than S3 by default, because it matches what people actually
-# use. Dropbox, Google Drive and OneDrive are path-based, so SAVES_REMOTE="/GAMES"
-# is a folder. On S3 and B2 the first path component is the *bucket*, so the
-# same setting asks for a bucket named GAMES and fails with InvalidBucketName.
-# Testing on S3 would exercise semantics our users do not have. Set
-# CLOUD_QA_BACKEND=s3 to get MinIO anyway - useful precisely for reproducing
-# that bucket-vs-folder difference.
+#   ./tools/cloud-test-backend --backend sftp up
+#   CLOUD_QA_BACKEND=sftp ./tools/cloud-test-backend up     # the same thing
 #
-# Deliberately local either way: these tests exercise credential stripping and
+# WebDAV is the default, because it matches what people actually use.
+# Dropbox, Google Drive and OneDrive are path-based, so SAVES_REMOTE="/GAMES"
+# is a folder. On S3 and SMB the first path component is the *bucket* or the
+# *share*, so the same setting asks for a bucket named GAMES and fails with
+# InvalidBucketName. Every backend states its own three remotes and the
+# prefix a caller must strip to address the endpoint directly
+# (`saves-remote`, `endpoint-prefix`), so no caller has to know which shape
+# it is talking to.
+#
+# What each one is, and what it cannot do (`caps` prints this per backend):
+#
+#   webdav  :9010  rclone serve webdav        no hashes, NO MODTIMES
+#   s3      :9012  MinIO in a container       MD5 hashes, modtimes, atomic PUT
+#   sftp    :9013  an unprivileged sshd       no hashes (no shell), modtimes
+#   smb     :9014  Samba in a container       no hashes, modtimes
+#   ftp     :9015  pyftpdlib in a venv        no hashes, modtimes
+#
+# WebDAV with vendor=other is the harshest of the five: with neither hashes
+# nor modtimes rclone compares by size alone, which is the shape of #53. The
+# other four all carry modtimes, so a change that only WebDAV catches is a
+# change WebDAV must keep catching.
+#
+# Deliberately local, all five: these tests exercise credential stripping and
 # backup contents, so a live provider token would be handled by exactly the
-# code paths most likely to leak it.
+# code paths most likely to leak it. Every listener binds 127.0.0.1 (set
+# CLOUD_QA_BIND=0.0.0.0 deliberately for a LAN device), and every port is in
+# the 9010-9099 range this fork reserves for QA services.
 #
-#   ./tools/cloud-test-backend up          # start it (CLOUD_QA_BWLIMIT=1M to throttle it)
+#   ./tools/cloud-test-backend up          # start it (CLOUD_QA_BWLIMIT=1M to throttle WebDAV)
 #   ./tools/cloud-test-backend reset       # empty it between tests
 #   ./tools/cloud-test-backend ls [path]   # what the device actually uploaded
 #   ./tools/cloud-test-backend cat <path>  # one uploaded file's bytes
 #   ./tools/cloud-test-backend rclone-conf # the stanza to place on a device
+#   ./tools/cloud-test-backend caps        # hashes / modtimes / commit shape
 #   ./tools/cloud-test-backend seed-content [root]   # a content-tier fixture at the endpoint
 #   ./tools/cloud-test-backend seed-device [root]    # the matching guest-side script, on stdout
 #   ./tools/cloud-test-backend down        # stop it
 set -euo pipefail
 
+# --backend <name> is first-class; CLOUD_QA_BACKEND still works and means the
+# same thing, so every existing caller and every doc line keeps working.
 BACKEND="${CLOUD_QA_BACKEND:-webdav}"
-PORT="${CLOUD_QA_PORT:-9010}"
+while [ $# -gt 0 ]; do
+  case "${1}" in
+    --backend) BACKEND="${2:-}"; shift 2 ;;
+    --backend=*) BACKEND="${1#--backend=}"; shift ;;
+    *) break ;;
+  esac
+done
+case "${BACKEND}" in
+  webdav|s3|sftp|smb|ftp) ;;
+  *) echo "error: unknown backend '${BACKEND}' (webdav, s3, sftp, smb, ftp)" >&2; exit 2 ;;
+esac
+
+# One port each, so more than one backend can be up at a time: a matrix run
+# that had to take the previous endpoint down between rows would test the
+# teardown as much as the code. 9010 is WebDAV's and does not move; 9011 is
+# the deliberately dead port the failure fixtures aim at, and is never bound.
+default_port() {
+  case "${1}" in
+    webdav) echo 9010 ;; s3) echo 9012 ;; sftp) echo 9013 ;;
+    smb)    echo 9014 ;; ftp) echo 9015 ;;
+  esac
+}
+PORT="${CLOUD_QA_PORT:-$(default_port "${BACKEND}")}"
+# The deliberately dead port: nothing ever binds it, on any backend. A
+# failure fixture needs a stanza that is right in every other respect and
+# cannot connect, and rewriting a live stanza with sed only works on the two
+# backends whose address is a URL -- on SFTP, SMB and FTP the sed matched
+# nothing and the "refused cloud" test quietly ran against a working one.
+DEAD_PORT="${CLOUD_QA_DEAD_PORT:-9011}"
+BIND="${CLOUD_QA_BIND:-127.0.0.1}"
 USER_NAME="${CLOUD_QA_USER:-qauser}"
 PASS="${CLOUD_QA_PASS:-qa-password}"   # >=8 chars: MinIO rejects shorter root passwords
 
 STATE="${CLOUD_QA_STATE:-${XDG_CACHE_HOME:-${HOME}/.cache}/rocknix-cloud-qa}"
-DATA="${STATE}/data"
-PIDFILE="${STATE}/webdav.pid"
-LOGFILE="${STATE}/webdav.log"
+# WebDAV's data directory does not move -- it is the one every existing
+# caller, log line and instruction file names. The four added backends get a
+# subdirectory each, so all five can hold fixtures at once.
+if [ "${BACKEND}" = "webdav" ]; then
+  DATA="${STATE}/data"
+  PIDFILE="${STATE}/webdav.pid"
+  LOGFILE="${STATE}/webdav.log"
+else
+  DATA="${STATE}/${BACKEND}/data"
+  PIDFILE="${STATE}/${BACKEND}/${BACKEND}.pid"
+  LOGFILE="${STATE}/${BACKEND}/${BACKEND}.log"
+fi
+CONFDIR="$(dirname "${PIDFILE}")"
 
 # The remote name the device will use. Every cloud_* script selects its
 # remote with `rclone listremotes | head -1` - first alphabetically - so this
@@ -48,11 +110,33 @@ REMOTE="${CLOUD_QA_REMOTE:-qa-cloud}"
 
 GUEST_HOST="${CLOUD_QA_GUEST_HOST:-10.0.2.2}"
 
-# --- S3 (optional) ----------------------------------------------------------
+# --- S3 ---------------------------------------------------------------------
 S3_NAME="${CLOUD_QA_NAME:-rocknix-cloud-qa}"
 S3_BUCKET="${CLOUD_QA_BUCKET:-rocknix-qa}"
 S3_IMAGE="${CLOUD_QA_IMAGE:-quay.io/minio/minio:latest}"
 S3_CONF="${STATE}/s3-host.conf"
+
+# --- SMB --------------------------------------------------------------------
+SMB_NAME="${CLOUD_QA_SMB_NAME:-rocknix-cloud-qa-smb}"
+SMB_SHARE="${CLOUD_QA_SMB_SHARE:-qashare}"
+SMB_IMAGE="${CLOUD_QA_SMB_IMAGE:-dperson/samba:latest}"
+
+# --- SFTP -------------------------------------------------------------------
+SFTP_KEY="${CONFDIR}/qa-sftp-key"
+SFTP_HOSTKEY="${CONFDIR}/hostkey"
+SFTP_USER="${CLOUD_QA_SFTP_USER:-$(id -un)}"
+
+# --- FTP --------------------------------------------------------------------
+# Passive data connections need their own ports, and they are inside the
+# fork's 9010-9099 QA range so nothing here ever strays onto a real service.
+FTP_PASV_LOW="${CLOUD_QA_FTP_PASV_LOW:-9060}"
+FTP_PASV_HIGH="${CLOUD_QA_FTP_PASV_HIGH:-9069}"
+# What the server tells a client to dial for the data connection. The guest
+# knows this host as 10.0.2.2 and cannot reach 127.0.0.1, so PASV must name
+# the guest-facing address; set CLOUD_QA_FTP_MASQ=127.0.0.1 to drive it from
+# the host instead.
+FTP_MASQ="${CLOUD_QA_FTP_MASQ:-${GUEST_HOST}}"
+VENV="${STATE}/venv"
 
 need() { command -v "${1}" >/dev/null 2>&1 || { echo "error: ${1} is required" >&2; exit 1; }; }
 
@@ -76,40 +160,209 @@ EOF
 }
 s3() { s3_host_conf; rclone --config "${S3_CONF}" "$@"; }
 
-webdav_running() {
+pid_running() {
   [ -f "${PIDFILE}" ] && kill -0 "$(cat "${PIDFILE}")" 2>/dev/null
+}
+
+container_of() {
+  case "${BACKEND}" in s3) echo "${S3_NAME}" ;; smb) echo "${SMB_NAME}" ;; *) echo "" ;; esac
+}
+
+# Which backends keep their data in a directory this host can read directly,
+# and which need a client to reach it. Reading the bytes off disk is reading
+# the artifact -- for S3 the artifact is inside MinIO, and reading the WebDAV
+# directory instead read back empty (the seeding step, 2026-09-07).
+fs_backed() { [ "${BACKEND}" != "s3" ]; }
+
+# A listing cached by the server outlives a fixture written behind its back.
+# rclone serve webdav is the only one of the five that caches (1 s, set at
+# start); the rest read the directory on every request. One place to ask.
+settle_cache() { [ "${BACKEND}" = "webdav" ] && sleep 1.5 || true; }
+
+wait_port() {   # wait_port <seconds> -- the listener is up
+  local n="${1}"
+  for _ in $(seq 1 "${n}"); do
+    ss -ltn 2>/dev/null | grep -q ":${PORT} " && return 0
+    sleep 1
+  done
+  return 1
+}
+
+venv_python() {
+  # A virtualenv beside the QA data rather than a system package: this host
+  # installs nothing, and a wiped /tmp or a fresh clone rebuilds it here.
+  if [ ! -x "${VENV}/bin/python" ]; then
+    need python3
+    echo "ftp: creating ${VENV} (pyftpdlib)" >&2
+    python3 -m venv "${VENV}" >&2
+    "${VENV}/bin/pip" install -q pyftpdlib >&2
+  fi
+  "${VENV}/bin/python" -c 'import pyftpdlib' 2>/dev/null || "${VENV}/bin/pip" install -q pyftpdlib >&2
+  echo "${VENV}/bin/python"
+}
+
+write_ftp_server() {
+  cat > "${CONFDIR}/ftpd.py" <<'PY'
+import sys
+from pyftpdlib.authorizers import DummyAuthorizer
+from pyftpdlib.handlers import FTPHandler
+from pyftpdlib.servers import FTPServer
+
+root, bind, port, user, pw, masq, lo, hi = sys.argv[1:9]
+auth = DummyAuthorizer()
+# The user's home is the data directory, so every path the client names is
+# relative to it -- an FTP server is chrooted by construction, which is why
+# this backend needs no path prefix where SMB and S3 do.
+auth.add_user(user, pw, root, perm="elradfmwMT")
+handler = FTPHandler
+handler.authorizer = auth
+handler.masquerade_address = masq
+handler.passive_ports = range(int(lo), int(hi) + 1)
+handler.banner = "rocknix cloud QA"
+handler.use_sendfile = False
+FTPServer.max_cons = 64
+FTPServer((bind, int(port)), handler).serve_forever()
+PY
+}
+
+write_sshd_config() {
+  # An sshd of our own, run as this user on a high port: no root, no PAM, no
+  # system configuration touched, and it goes away with `down`. Key auth only
+  # -- a password would need PAM and therefore root.
+  [ -f "${SFTP_HOSTKEY}" ] || ssh-keygen -q -t ed25519 -N '' -f "${SFTP_HOSTKEY}" -C rocknix-qa-host
+  [ -f "${SFTP_KEY}" ]     || ssh-keygen -q -t ed25519 -N '' -f "${SFTP_KEY}" -C rocknix-qa
+  cp "${SFTP_KEY}.pub" "${CONFDIR}/authorized_keys"
+  chmod 600 "${CONFDIR}/authorized_keys" "${SFTP_HOSTKEY}" "${SFTP_KEY}"
+  cat > "${CONFDIR}/sshd_config" <<EOF
+Port ${PORT}
+ListenAddress ${BIND}
+HostKey ${SFTP_HOSTKEY}
+PidFile ${PIDFILE}
+AuthorizedKeysFile ${CONFDIR}/authorized_keys
+AllowUsers ${SFTP_USER}
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+UsePAM no
+PermitRootLogin no
+StrictModes no
+PrintMotd no
+X11Forwarding no
+AllowTcpForwarding no
+Subsystem sftp internal-sftp -d ${DATA}
+ForceCommand internal-sftp -d ${DATA}
+EOF
 }
 
 case "${1:-}" in
   up)
-    mkdir -p "${DATA}"
-    if [ "${BACKEND}" = "s3" ]; then
-      need docker; need rclone
-      docker ps -a --format '{{.Names}}' | grep -qx "${S3_NAME}" \
-        && docker start "${S3_NAME}" >/dev/null 2>&1 \
-        || docker run -d --name "${S3_NAME}" -p "${PORT}:9000" \
-             -e "MINIO_ROOT_USER=${USER_NAME}" -e "MINIO_ROOT_PASSWORD=${PASS}" \
-             "${S3_IMAGE}" server /data >/dev/null
-      for _ in $(seq 1 60); do
-        s3 mkdir "qa-host:${S3_BUCKET}" >/dev/null 2>&1 && break
-        # A container that has already exited will never become ready, so say
-        # why now instead of waiting out the timeout on a corpse.
+    mkdir -p "${DATA}" "${CONFDIR}"
+    case "${BACKEND}" in
+      s3)
+        need docker; need rclone
+        # A container that is not running is replaced, never restarted. A
+        # stopped one carries the port mapping it was created with, so after
+        # the backends were given a port each the old `docker start` failed
+        # on the address already in use and the fallback `docker run` then
+        # failed on the name -- two errors, neither of them the cause. There
+        # is no volume and `reset` empties the bucket anyway, so recreating
+        # costs nothing.
         if ! docker ps --format '{{.Names}}' | grep -qx "${S3_NAME}"; then
-          echo "error: ${S3_NAME} exited during startup:" >&2
-          docker logs --tail 5 "${S3_NAME}" >&2 2>/dev/null || true
-          exit 1
+          docker rm -f "${S3_NAME}" >/dev/null 2>&1 || true
+          docker run -d --name "${S3_NAME}" -p "${BIND}:${PORT}:9000" \
+            -e "MINIO_ROOT_USER=${USER_NAME}" -e "MINIO_ROOT_PASSWORD=${PASS}" \
+            "${S3_IMAGE}" server /data >/dev/null
         fi
-        sleep 1
-      done
-      s3 lsd "qa-host:${S3_BUCKET}" >/dev/null 2>&1 || {
-        echo "error: bucket not reachable; try: docker logs ${S3_NAME}" >&2; exit 1; }
-      echo "up: s3 bucket ${S3_BUCKET} on port ${PORT}"
-      echo "note: SAVES_REMOTE must start with the bucket, e.g. /${S3_BUCKET}/GAMES"
-      exit 0
-    fi
+        for _ in $(seq 1 60); do
+          s3 mkdir "qa-host:${S3_BUCKET}" >/dev/null 2>&1 && break
+          # A container that has already exited will never become ready, so say
+          # why now instead of waiting out the timeout on a corpse.
+          if ! docker ps --format '{{.Names}}' | grep -qx "${S3_NAME}"; then
+            echo "error: ${S3_NAME} exited during startup:" >&2
+            docker logs --tail 5 "${S3_NAME}" >&2 2>/dev/null || true
+            exit 1
+          fi
+          sleep 1
+        done
+        s3 lsd "qa-host:${S3_BUCKET}" >/dev/null 2>&1 || {
+          echo "error: bucket not reachable; try: docker logs ${S3_NAME}" >&2; exit 1; }
+        echo "up: s3 bucket ${S3_BUCKET} on port ${PORT}"
+        echo "note: SAVES_REMOTE must start with the bucket, e.g. /${S3_BUCKET}/GAMES"
+        exit 0
+        ;;
+
+      smb)
+        need docker
+        if docker ps --format '{{.Names}}' | grep -qx "${SMB_NAME}"; then
+          echo "up: smb share ${SMB_SHARE} already serving ${DATA} on port ${PORT}"; exit 0
+        fi
+        docker rm -f "${SMB_NAME}" >/dev/null 2>&1 || true
+        # Samba writes into the share as root inside the container, which on
+        # the host is root:<our group> and group-writable -- so the data
+        # directory is still ours to read, seed and empty from outside. The
+        # share name is the first component of every remote path here, the
+        # way a bucket is on S3.
+        docker run -d --name "${SMB_NAME}" -p "${BIND}:${PORT}:445" \
+          -v "${DATA}:/share" \
+          -e "USERID=$(id -u)" -e "GROUPID=$(id -g)" \
+          "${SMB_IMAGE}" -u "${USER_NAME};${PASS}" \
+          -s "${SMB_SHARE};/share;yes;no;no;${USER_NAME};${USER_NAME};${USER_NAME}" -p >/dev/null
+        wait_port 60 || {
+          echo "error: smb did not come up; try: docker logs ${SMB_NAME}" >&2; exit 1; }
+        # A bound port is not a served share: ask for the share list before
+        # calling it up, so a container that starts and refuses logins fails
+        # here rather than in the middle of somebody's fixture.
+        for _ in $(seq 1 30); do
+          docker logs "${SMB_NAME}" 2>&1 | grep -q "ready to serve connections" && break
+          sleep 1
+        done
+        docker logs "${SMB_NAME}" 2>&1 | grep -q "ready to serve connections" || {
+          echo "error: smbd never reported ready; try: docker logs ${SMB_NAME}" >&2; exit 1; }
+        echo "up: smb share //${GUEST_HOST}/${SMB_SHARE} serving ${DATA} on port ${PORT}"
+        echo "note: SAVES_REMOTE must start with the share, e.g. /${SMB_SHARE}/GAMES"
+        exit 0
+        ;;
+
+      sftp)
+        need ssh-keygen
+        command -v sshd >/dev/null 2>&1 || [ -x /usr/sbin/sshd ] || {
+          echo "error: sshd is required (looked in PATH and /usr/sbin)" >&2; exit 1; }
+        SSHD=$(command -v sshd 2>/dev/null || echo /usr/sbin/sshd)
+        if pid_running; then
+          echo "up: sftp already serving ${DATA} on port ${PORT}"; exit 0
+        fi
+        write_sshd_config
+        "${SSHD}" -f "${CONFDIR}/sshd_config" -E "${LOGFILE}"
+        wait_port 30 || { echo "error: sftp did not come up; see ${LOGFILE}" >&2; exit 1; }
+        # Prove a login, not just a socket: a guard that cannot run has not
+        # passed, and an sshd that binds but rejects every key looks
+        # identical from outside.
+        echo ls | sftp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -o LogLevel=ERROR -o BatchMode=yes -i "${SFTP_KEY}" -P "${PORT}" \
+              "${SFTP_USER}@127.0.0.1" >/dev/null 2>&1 || {
+          echo "error: sftp is listening but the QA key cannot log in; see ${LOGFILE}" >&2; exit 1; }
+        echo "up: sftp serving ${DATA} at ${SFTP_USER}@127.0.0.1:${PORT} (guest: ${GUEST_HOST}:${PORT})"
+        echo "note: this sshd cannot chroot unprivileged, so the remotes are absolute: ${DATA}/GAMES"
+        exit 0
+        ;;
+
+      ftp)
+        if pid_running; then
+          echo "up: ftp already serving ${DATA} on port ${PORT}"; exit 0
+        fi
+        PY_BIN=$(venv_python)
+        write_ftp_server
+        nohup "${PY_BIN}" "${CONFDIR}/ftpd.py" "${DATA}" "${BIND}" "${PORT}" \
+              "${USER_NAME}" "${PASS}" "${FTP_MASQ}" "${FTP_PASV_LOW}" "${FTP_PASV_HIGH}" \
+              > "${LOGFILE}" 2>&1 &
+        echo $! > "${PIDFILE}"
+        wait_port 30 || { echo "error: ftp did not come up; see ${LOGFILE}" >&2; exit 1; }
+        echo "up: ftp serving ${DATA} on port ${PORT} (guest: ${GUEST_HOST}:${PORT}, PASV ${FTP_PASV_LOW}-${FTP_PASV_HIGH} as ${FTP_MASQ})"
+        exit 0
+        ;;
+    esac
 
     need rclone; need curl
-    if webdav_running; then
+    if pid_running; then
       echo "up: webdav already serving ${DATA} on port ${PORT}"; exit 0
     fi
     # --dir-cache-time: rclone serve caches directory listings for five
@@ -119,7 +372,7 @@ case "${1:-}" in
     # CLOUD_QA_BWLIMIT=1M throttles the server, so a transfer page or a
     # progress parser can be watched mid-transfer on a loopback link that
     # would otherwise finish before the first frame. rclone's own syntax.
-    nohup rclone serve webdav "${DATA}" --addr "127.0.0.1:${PORT}" ${CLOUD_QA_BWLIMIT:+--bwlimit "${CLOUD_QA_BWLIMIT}"} \
+    nohup rclone serve webdav "${DATA}" --addr "${BIND}:${PORT}" ${CLOUD_QA_BWLIMIT:+--bwlimit "${CLOUD_QA_BWLIMIT}"} \
       --dir-cache-time 1s \
       --user "${USER_NAME}" --pass "${PASS}" > "${LOGFILE}" 2>&1 &
     echo $! > "${PIDFILE}"
@@ -133,8 +386,9 @@ case "${1:-}" in
     ;;
 
   down)
-    if [ "${BACKEND}" = "s3" ]; then
-      docker rm -f "${S3_NAME}" >/dev/null 2>&1 || true
+    name=$(container_of)
+    if [ -n "${name}" ]; then
+      docker rm -f "${name}" >/dev/null 2>&1 || true
     else
       [ -f "${PIDFILE}" ] && kill "$(cat "${PIDFILE}")" 2>/dev/null || true
       rm -f "${PIDFILE}"
@@ -159,38 +413,40 @@ case "${1:-}" in
     ;;
 
   reset)
-    if [ "${BACKEND}" = "s3" ]; then
-      need rclone
-      s3 purge "qa-host:${S3_BUCKET}" >/dev/null 2>&1 || true
-      s3 mkdir "qa-host:${S3_BUCKET}" >/dev/null
-    else
+    if fs_backed; then
       # A plain directory, so resetting is a delete and inspecting it is ls.
       rm -rf "${DATA:?}"/* "${DATA:?}"/.[!.]* 2>/dev/null || true
       mkdir -p "${DATA}"
       # The server caches listings for --dir-cache-time (1s); a device that
       # lists within that second still sees what was just deleted. Wait it
       # out here, once, so no caller has to know.
-      sleep 1.5
+      settle_cache
+    else
+      need rclone
+      s3 purge "qa-host:${S3_BUCKET}" >/dev/null 2>&1 || true
+      s3 mkdir "qa-host:${S3_BUCKET}" >/dev/null
     fi
     echo "reset: endpoint is empty"
     ;;
 
   ls)
-    if [ "${BACKEND}" = "s3" ]; then
-      need rclone; s3 ls "qa-host:${S3_BUCKET}${2:+/$2}"
-    else
+    if fs_backed; then
       ( cd "${DATA}${2:+/$2}" 2>/dev/null && find . -type f -printf '%10s %P\n' | sort -k2 ) || true
+    else
+      need rclone; s3 ls "qa-host:${S3_BUCKET}${2:+/$2}" 2>/dev/null || true
     fi
     ;;
 
   path) echo "${DATA}" ;;
 
   cat)
-    # cat <path-under-root> - the bytes the endpoint holds, on either backend;
+    # cat <path-under-root> - the bytes the endpoint holds, on any backend;
     # reading the WebDAV directory on disk is wrong on S3, where the data is
     # in MinIO (the seeding step's note read back as empty there).
     [ -n "${2:-}" ] || { echo "usage: cat <path>" >&2; exit 1; }
-    if [ "${BACKEND}" = "s3" ]; then
+    if fs_backed; then
+      cat "${DATA}/${2}"
+    else
       need rclone
       # rclone cat of a key that does not exist prints nothing and exits 0
       # (a missing key reads as an empty prefix), so a check for "the file
@@ -199,8 +455,6 @@ case "${1:-}" in
       s3 lsf --files-only "qa-host:${S3_BUCKET}/${2}" 2>/dev/null | grep -q . \
         || { echo "cat: no such file at the endpoint: ${2}" >&2; exit 1; }
       s3 cat "qa-host:${S3_BUCKET}/${2}"
-    else
-      cat "${DATA}/${2}"
     fi
     ;;
 
@@ -209,24 +463,25 @@ case "${1:-}" in
     # without going through the device, so a test can exercise restore
     # independently of upload.
     [ -n "${2:-}" ] && [ -n "${3:-}" ] || { echo "usage: put <local-dir> <path>" >&2; exit 1; }
-    if [ "${BACKEND}" = "s3" ]; then
-      need rclone; s3 copy "${2}" "qa-host:${S3_BUCKET}/${3}" >/dev/null
-    else
+    if fs_backed; then
       mkdir -p "${DATA}/${3}"; cp -a "${2}/." "${DATA}/${3}/"
       # Same cache as reset: a device that scans right away lists the
       # directory as it was a second ago and misses the fixture (the
       # unsupported-system step, 2026-09-06).
-      sleep 1.5
+      settle_cache
+    else
+      need rclone; s3 copy "${2}" "qa-host:${S3_BUCKET}/${3}" >/dev/null
     fi
     echo "put: ${3}"
     ;;
 
   status)
-    if [ "${BACKEND}" = "s3" ]; then
-      docker ps --format '{{.Names}}' | grep -qx "${S3_NAME}" \
-        && echo "running: s3 ${S3_NAME} port ${PORT}" || { echo "not running"; exit 1; }
-    elif webdav_running; then
-      echo "running: webdav ${DATA} port ${PORT} ($(find "${DATA}" -type f 2>/dev/null | wc -l) files)"
+    name=$(container_of)
+    if [ -n "${name}" ]; then
+      docker ps --format '{{.Names}}' | grep -qx "${name}" \
+        && echo "running: ${BACKEND} ${name} port ${PORT}" || { echo "not running"; exit 1; }
+    elif pid_running; then
+      echo "running: ${BACKEND} ${DATA} port ${PORT} ($(find "${DATA}" -type f 2>/dev/null | wc -l) files)"
     else
       echo "not running"; exit 1
     fi
@@ -234,8 +489,9 @@ case "${1:-}" in
 
   rclone-conf)
     # What goes in /storage/.config/rclone/rclone.conf on the device.
-    if [ "${BACKEND}" = "s3" ]; then
-      cat <<EOF
+    case "${BACKEND}" in
+      s3)
+        cat <<EOF
 [${REMOTE}]
 type = s3
 provider = Minio
@@ -245,8 +501,49 @@ secret_access_key = ${PASS}
 endpoint = http://${GUEST_HOST}:${PORT}
 force_path_style = true
 EOF
-    else
-      cat <<EOF
+        ;;
+      sftp)
+        # key_pem rather than key_file: the harness writes one file onto the
+        # guest (rclone.conf) and nothing else, so the key has to travel
+        # inside the stanza. shell_type/disable_hashcheck stop rclone probing
+        # for a shell it will never get -- this sshd runs internal-sftp and
+        # nothing else, which is exactly why SFTP is the hash-less row of the
+        # matrix.
+        [ -f "${SFTP_KEY}" ] || { echo "error: no QA key yet; run 'up' first" >&2; exit 1; }
+        cat <<EOF
+[${REMOTE}]
+type = sftp
+host = ${GUEST_HOST}
+port = ${PORT}
+user = ${SFTP_USER}
+key_pem = $(awk '{printf "%s\\n", $0}' "${SFTP_KEY}")
+shell_type = none
+disable_hashcheck = true
+known_hosts_file = none
+EOF
+        ;;
+      smb)
+        cat <<EOF
+[${REMOTE}]
+type = smb
+host = ${GUEST_HOST}
+port = ${PORT}
+user = ${USER_NAME}
+pass = $(rclone obscure "${PASS}" 2>/dev/null || echo "${PASS}")
+EOF
+        ;;
+      ftp)
+        cat <<EOF
+[${REMOTE}]
+type = ftp
+host = ${GUEST_HOST}
+port = ${PORT}
+user = ${USER_NAME}
+pass = $(rclone obscure "${PASS}" 2>/dev/null || echo "${PASS}")
+EOF
+        ;;
+      *)
+        cat <<EOF
 [${REMOTE}]
 type = webdav
 url = http://${GUEST_HOST}:${PORT}
@@ -254,20 +551,48 @@ vendor = other
 user = ${USER_NAME}
 pass = $(rclone obscure "${PASS}" 2>/dev/null || echo "${PASS}")
 EOF
-    fi
+        ;;
+    esac
+    ;;
+
+  endpoint-prefix)
+    # What to strip from a remote path to address this endpoint directly with
+    # ls/cat/put. Empty where the remote root is the data directory; the
+    # bucket on S3, the share on SMB, and the absolute path on SFTP, where an
+    # unprivileged sshd cannot chroot. A caller that hard-codes "the first
+    # component is the bucket" is right on S3 and wrong on three others.
+    case "${BACKEND}" in
+      s3)   echo "/${S3_BUCKET}" ;;
+      smb)  echo "/${SMB_SHARE}" ;;
+      sftp) echo "${DATA}" ;;
+      *)    echo "" ;;
+    esac
+    ;;
+
+  caps)
+    # What this endpoint can and cannot do, so a test that legitimately
+    # cannot hold here is marked with the reason rather than skipped in
+    # silence. hash: what rclone can compare besides size. modtime: whether
+    # rclone can set and read a modification time. commit: whether a PUT cut
+    # in flight leaves nothing (atomic) or a short file under the final name
+    # (partial).
+    case "${BACKEND}" in
+      webdav) echo "hash=none modtime=no commit=partial" ;;
+      s3)     echo "hash=md5 modtime=yes commit=atomic" ;;
+      sftp)   echo "hash=none modtime=yes commit=partial" ;;
+      smb)    echo "hash=none modtime=yes commit=partial" ;;
+      ftp)    echo "hash=none modtime=yes commit=partial" ;;
+    esac
     ;;
 
   saves-remote)
     # What SAVES_REMOTE must be for this endpoint. On a path-based backend it is
-    # just a folder. On a bucket-based one the first component is the bucket,
-    # and it has to be a legal bucket name - lowercase, 3-63 chars - so the
-    # shipped "/GAMES" is rejected outright (issue #38). rclone will create
-    # the bucket itself once the name is valid.
-    if [ "${BACKEND}" = "s3" ]; then
-      echo "/${S3_BUCKET}/GAMES"
-    else
-      echo "/GAMES"
-    fi
+    # just a folder. On a bucket- or share-based one the first component is the
+    # bucket or share, and it has to be a legal name - lowercase, 3-63 chars for
+    # S3 - so the shipped "/GAMES" is rejected outright (issue #38). rclone will
+    # create the bucket itself once the name is valid. On SFTP every path is
+    # absolute, because an sshd running as an ordinary user cannot chroot.
+    echo "$("$0" --backend "${BACKEND}" endpoint-prefix)/GAMES"
     ;;
 
   settings-remote)
@@ -278,21 +603,13 @@ EOF
     # that skips the system phase (--saves-only, or BACKUPFILE_BACKUP_OPTION
     # set to no) removes the archives and puts nothing back. Verified both
     # ways: nested, --saves-only leaves 0 archives; sibling leaves them intact.
-    if [ "${BACKEND}" = "s3" ]; then
-      echo "/${S3_BUCKET}/BACKUPS"
-    else
-      echo "/BACKUPS"
-    fi
+    echo "$("$0" --backend "${BACKEND}" endpoint-prefix)/BACKUPS"
     ;;
 
   content-remote)
     # Where cloud_content_backup/restore put whole content directories.
     # Same bucket-vs-folder split as syncpath.
-    if [ "${BACKEND}" = "s3" ]; then
-      echo "/${S3_BUCKET}/CONTENT"
-    else
-      echo "/CONTENT"
-    fi
+    echo "$("$0" --backend "${BACKEND}" endpoint-prefix)/CONTENT"
     ;;
 
   seed-content)
@@ -315,7 +632,7 @@ EOF
     head -c 50000 /dev/urandom > "${fx}/ROMs/snes/images/cloud-image.png"
     head -c 100000 /dev/urandom > "${fx}/ROMs/nes/n.nes"
     head -c 4096 /dev/urandom > "${fx}/BIOS/foo.bin"
-    "$0" put "${fx}" "${root}" >/dev/null
+    "$0" --backend "${BACKEND}" put "${fx}" "${root}" >/dev/null
     rm -rf "${fx}"
     echo "seed-content: ${root} holds snes (shared, cloudonly, gamelist, images/), nes, BIOS"
     ;;
@@ -330,13 +647,17 @@ EOF
     # images/ and videos/ only the device has, and a GB folder the cloud
     # has never seen.
     root="${2:-ROCKNIX/Content}"
+    # CONTENT_REMOTE is a path the device gives rclone, so it carries the
+    # bucket, share or absolute root this backend needs; seed-content's
+    # <root> is endpoint-relative and does not.
+    cr="$("$0" --backend "${BACKEND}" endpoint-prefix)/${root}"
     cat <<EOF
 mkdir -p /storage/.config/rclone
 cat > /storage/.config/rclone/rclone.conf <<'RC'
-$("$0" rclone-conf)
+$("$0" --backend "${BACKEND}" rclone-conf)
 RC
 /usr/bin/cloud_sync_helper >/dev/null 2>&1
-grep -q '^CONTENT_REMOTE="/${root}"' /storage/.config/cloud_sync.conf || sed -i 's|^CONTENT_REMOTE=.*|CONTENT_REMOTE="/${root}"|' /storage/.config/cloud_sync.conf
+grep -q '^CONTENT_REMOTE="${cr}"' /storage/.config/cloud_sync.conf || sed -i 's|^CONTENT_REMOTE=.*|CONTENT_REMOTE="${cr}"|' /storage/.config/cloud_sync.conf
 /usr/bin/cloud_setup --check
 mkdir -p /storage/roms/snes/images /storage/roms/snes/videos /storage/roms/gb
 head -c 300000 /dev/zero | tr '\0' 'S' > /storage/roms/snes/shared.sfc
@@ -349,11 +670,19 @@ echo "seeded: \$(find /storage/roms/snes /storage/roms/gb -type f | wc -l) devic
 EOF
     ;;
 
+  dead-conf)
+    # The same stanza, pointing at the dead port: a cloud that refuses.
+    CLOUD_QA_PORT="${DEAD_PORT}" exec "$0" --backend "${BACKEND}" rclone-conf
+    ;;
+
+  dead-port)   echo "${DEAD_PORT}" ;;
   remote-name) echo "${REMOTE}" ;;
   backend)     echo "${BACKEND}" ;;
+  backends)    echo "webdav s3 sftp smb ftp" ;;
+  port)        echo "${PORT}" ;;
 
   *)
-    echo "usage: ${0##*/} {up|down|reset|ls [path]|path|put <dir> <path>|status|rclone-conf|saves-remote|settings-remote|content-remote|remote-name|backend}" >&2
+    echo "usage: ${0##*/} [--backend webdav|s3|sftp|smb|ftp] {up|down|reset|ls [path]|path|cat <path>|put <dir> <path>|status|rclone-conf|caps|dead-conf|dead-port|endpoint-prefix|saves-remote|settings-remote|content-remote|seed-content|seed-device|remote-name|backend|backends|port}" >&2
     exit 1
     ;;
 esac
