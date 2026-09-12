@@ -284,6 +284,16 @@ def cmd_create(name, backend_type, settings):
     args = ["config", "create", name, backend_type]
     for key, value in settings:
         args.append("%s=%s" % (key, value))
+    # Bucket-based clouds have no directories: a folder is a prefix on
+    # object names, so an empty one does not exist and mkdir makes nothing.
+    # rclone's answer (v1.63+) is a directory marker -- the zero-byte "name/"
+    # object the AWS and MinIO consoles write for "Create folder" -- behind
+    # directory_markers, off by default. On, mkdir and the folder seeding
+    # behave on a bucket as on Dropbox and an empty folder survives; the
+    # restore judges a folder by its parent's listing either way
+    # (D-CLOUD-120, 2026-09-12). Only where rclone documents the option.
+    if backend_type in ("s3", "gcs", "azureblob") and not any(k == "directory_markers" for k, _ in settings):
+        args.append("directory_markers=true")
     # --non-interactive so rclone reports a question as data instead of
     # blocking on stdin that no one is attached to. --obscure so passwords
     # are stored the way rclone expects rather than in the clear.

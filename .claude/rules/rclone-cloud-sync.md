@@ -310,9 +310,18 @@ costs 0.03 s at one attempt, 2 s at two, 6 s at three, 230 s at ten (rclone
 1.75, #143). Never give a listing the transfer's count.
 
 On a bucket-based cloud (`rclone backend features` says `BucketBased`), a
-folder with no objects does not exist and listing an absent one succeeds
-with nothing -- rclone's documented shape. `cloud_restore` reads an empty
-saves folder there as absent and raises the empty-cloud offer (#141).
+folder is a prefix on object names: listing an absent one succeeds with
+nothing, and `mkdir` alone makes nothing -- rclone's documented shape. So a
+folder there **exists when its parent lists it**, by objects under it or by a
+directory marker (the zero-byte `name/` object the AWS and MinIO consoles
+write for "Create folder", and rclone writes under `directory_markers`);
+never judge it by listing the folder itself. `cloud_restore` does exactly
+that for the saves folder and for its parent, so a mistyped root fails on a
+bucket as on Dropbox (#141, D-CLOUD-120). The wizard's S3 stanza (and the QA
+tool's) sets `directory_markers = true`, and `cloud_setup --seed-folders`
+puts a README in each folder, which is what makes our folders real there.
+An older S3 stanza without the option still works: the parent-listing rule
+does not need markers, it only honours them.
 
 ## Progress output: what actually comes out of a pipe
 
