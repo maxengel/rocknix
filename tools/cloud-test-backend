@@ -424,7 +424,26 @@ case "${1:-}" in
     else
       need rclone
       s3 purge "qa-host:${S3_BUCKET}" >/dev/null 2>&1 || true
+      # MinIO keeps zero-byte "dir/" objects as directory markers. rclone
+      # without --s3-directory-markers lists them as directories and never
+      # deletes them, so purge ends BucketNotEmpty behind the || true and the
+      # "empty" endpoint still holds GAMES/savefiles/ and friends -- which is
+      # a saves folder that exists, not an empty cloud, and the round trip's
+      # empty-endpoint step read the difference (2026-09-12). The AWS CLI
+      # sees every key; where it is installed it takes the markers too, and
+      # the reset says so if anything survived rather than claiming empty.
+      if command -v aws >/dev/null 2>&1; then
+        AWS_ACCESS_KEY_ID="${USER_NAME}" AWS_SECRET_ACCESS_KEY="${PASS}" AWS_EC2_METADATA_DISABLED=true AWS_DEFAULT_REGION=us-east-1 \
+          aws --endpoint-url "http://127.0.0.1:${PORT}" s3 rm "s3://${S3_BUCKET}" --recursive >/dev/null 2>&1 || true
+      fi
       s3 mkdir "qa-host:${S3_BUCKET}" >/dev/null
+      if command -v aws >/dev/null 2>&1; then
+        left=$(AWS_ACCESS_KEY_ID="${USER_NAME}" AWS_SECRET_ACCESS_KEY="${PASS}" AWS_EC2_METADATA_DISABLED=true AWS_DEFAULT_REGION=us-east-1 \
+          aws --endpoint-url "http://127.0.0.1:${PORT}" s3api list-objects-v2 --bucket "${S3_BUCKET}" --query 'KeyCount' --output text 2>/dev/null)
+        if [ -n "${left}" ] && [ "${left}" != "0" ] && [ "${left}" != "None" ]; then
+          echo "warning: ${left} object(s) survived the reset of ${S3_BUCKET}" >&2
+        fi
+      fi
     fi
     echo "reset: endpoint is empty"
     ;;
