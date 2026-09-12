@@ -4,6 +4,9 @@ description: "Before any test, build proof or measurement: can this be done on t
 
 # Can this be done on the VM?
 
+*No `paths:` glob, so this file loads every session: the question is asked
+before a test is written, which is before there is a file to match.*
+
 Maintainer, 2026-09-11: *"we should always ask the question: 'Can this be done on
 the VM?' Only if the answer is no should we move elsewhere."* Binding (D-QA-007,
 D-QA-015, D-QA-017). This file exists so the question is asked every session, by

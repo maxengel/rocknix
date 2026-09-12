@@ -4,6 +4,10 @@ description: "Time to play -- from the interface to a game's first frame, and fr
 
 # Time to play
 
+*No `paths:` glob, so this file loads every session: time to play is a
+property of the whole image, and the change that costs it is rarely in a file
+that looks like it would.*
+
 Maintainer, 2026-09-11: *"a key metric being the time to play, meaning how long does it
 take for someone to go from being in the UI to starting a game, or from exiting a game
 to starting another game ... We need to balance our goal of having a rigorous backup and

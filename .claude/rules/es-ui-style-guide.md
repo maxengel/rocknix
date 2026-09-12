@@ -3,10 +3,8 @@ description: "How an EmulationStation screen looks and behaves: the seven row bu
 paths:
   # ES source lives in the separate `ROCKNIX/emulationstation-next` repo, so no
   # glob written here can name `es-app/**`. `**` is the widest a repo-relative
-  # glob reaches: it loads this file whenever any file in this repo is in
-  # context, which is every session that touches the distribution tree. A
-  # session working *only* in the ES checkout loads nothing from `.claude/rules/`
-  # at all -- that gap needs rules in the ES repo and is open (#147 § 9).
+  # glob reaches; a session working only in the ES checkout still loads none of
+  # these (#147 § 9).
   - "**"
 ---
 

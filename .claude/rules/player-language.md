@@ -4,6 +4,10 @@ description: "Player-facing language is clear first, then as short as it can be 
 
 # Player language
 
+*No `paths:` glob, so this file loads every session: half the strings a
+player reads are printed by shell scripts and half by C++, and no glob covers
+both without covering everything.*
+
 Maintainer, 2026-09-12: *"In general, we should always go for clarity and
 brevity to make sure our language is well-aligned, simple to understand, and
 as short as it can be while still being clear and optimized for the space."*
