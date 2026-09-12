@@ -14,6 +14,11 @@ as short as it can be while still being clear and optimized for the space."*
 D-UI-045. Beside least surprise (`least-surprise.md`) and time to play
 (`time-to-play.md`), this is the test every string a player reads is held to.
 
+This file is the principle. The words themselves -- the four tiers and the two
+verbs, "back up" vs "backup", the serial comma, game save vs save state, Wi-Fi,
+how much text a row may carry, and the outcome vocabulary a run ends with --
+are `es-player-text.md`; the surfaces they are shown on are `es-native-ui.md`.
+
 ## The test, in order
 
 1. **Clear.** A player who has never read our docs knows what happened and

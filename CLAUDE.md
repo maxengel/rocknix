@@ -12,21 +12,21 @@ emulators, userland) per device.
 - `packages/README.md` — the authoritative `package.mk` format reference.
 - `.claude/rules/*.md` — the canonical scoped guides, **loaded automatically**: a rule with a
   `paths:` glob loads when a matching file enters context, one without loads every session.
-  All 21 of them, so nothing is reachable only by accident:
+  All 24 of them, indexed in `instruction-files.md` (which also carries the front-matter
+  standard, D-WORKFLOW-009), so nothing is reachable only by accident:
 
   | Always (no glob, or `paths: "**"`) | Scoped |
   | --- | --- |
   | `least-surprise` · `player-language` · `time-to-play` · `vm-first` — the four principles every interface and sync decision is weighed against | `packaging-and-patches` (`packages/**`, `projects/**`) |
-  | `engineering-practices` · `upgrade-and-install` · `es-native-ui` · `documentation-accuracy` | `rclone-cloud-sync` (the rclone package, `rocknix/sources/scripts`, the cloud tools) |
-  | `fork-workflow` · `worktrees` · `device-builds` · `issue-tracking` · `decision-register` · `learning-capture` · `instruction-files` | `generic-x64-vm-testing` (GENERIC_X64, `projects/ROCKNIX/packages/**`, the VM tools) |
-  | `adversarial-council` | `handheld-evidence` (device packages, device kernels, `docs/**`) |
-  | | `council-substrate-integrity` (council artifacts and skills) |
+  | `es-native-ui` · `es-player-text` · `es-ui-style-guide` · `es-code-traps` — the EmulationStation four: the mechanics · the words a player reads · how a screen looks · the codebase's sharp edges (D-WORKFLOW-007/008) | `rclone-cloud-sync` (the rclone package, `rocknix/sources/scripts`, the cloud tools) |
+  | `engineering-practices` · `upgrade-and-install` · `documentation-accuracy` | `generic-x64-vm-testing` (GENERIC_X64, `projects/ROCKNIX/packages/**`, the VM tools) |
+  | `fork-workflow` · `worktrees` · `device-builds` · `issue-tracking` · `decision-register` · `learning-capture` · `instruction-files` | `handheld-evidence` (device packages, device kernels, `docs/**`) |
+  | `adversarial-council` | `council-substrate-integrity` (council artifacts and skills) |
 
-  Three more documents carry interface law and load *nowhere*: `docs/es-ui-style-guide.md`
-  (row builders, gates, button order, confirmation registers, glyphs),
-  `docs/es-menu-map.md` (where a row belongs — and D-UI-039: a row added, moved or renamed
-  updates it in the same change), `docs/conflict-wizard-ia.md` (the wizard's IA). Open them
-  when the work is theirs; `es-native-ui.md` says which owns what.
+  Two more documents carry interface law and load *nowhere*: `docs/es-menu-map.md`
+  (where a row belongs — and D-UI-039: a row added, moved or renamed updates it in the
+  same change) and `docs/conflict-wizard-ia.md` (the wizard's IA). Open them when the
+  work is theirs; `es-native-ui.md` says which owns what.
 
 ## Build & development commands
 
@@ -131,7 +131,7 @@ No Conventional Commits. Scope by package or device, matching history:
 - Before "fixing" apparently wrong code, verify design intent via `git log -S`/`git blame` — several dangerous-looking patterns are intentional (`engineering-practices.md`).
 - `emulationstation` source lives in a separate git repo; see `projects/ROCKNIX/packages/ui/emulationstation/package.mk` for the extra build steps.
 - **Clarity, then brevity, then sized to the space** for every string a player reads, and surprise them as little as possible — `player-language.md` (D-UI-045) and `least-surprise.md` (D-UI-042), beside `time-to-play.md` (D-CLOUD-098): interface → first frame and exit → next first frame are measured on every image, and nothing goes on the launch path unless it must.
-- **Vocabulary is not decoration.** Four tiers (settings; saves; ROMs and BIOS; game content), two verbs (*back up*, *restore*), *sync* reserved for the automatic behaviour, "Wi-Fi" hyphenated, the serial comma, *game save* vs *save state* — `es-native-ui.md` § Conventions, D-UI-022. Only "back up" vs "backup" is checked mechanically (`tools/vocabulary-check`, the `vocabulary` suite of `tools/vm-qa`).
+- **Vocabulary is not decoration.** Four tiers (settings; saves; ROMs and BIOS; game content), two verbs (*back up*, *restore*), *sync* reserved for the automatic behaviour, "Wi-Fi" hyphenated, the serial comma, *game save* vs *save state* — `es-player-text.md` § Conventions, D-UI-022. Only "back up" vs "backup" is checked mechanically (`tools/vocabulary-check`, the `vocabulary` suite of `tools/vm-qa`).
 - **Every build ships onto devices that already have state.** Before publishing, check both the upgrade path (a device keeping its `/storage`) and a clean install — see `upgrade-and-install.md`. A fix that changes what we *write* does nothing for what is already written.
 - **Can this be done on the VM?** Asked and answered in writing, in the issue, before
   every test, proof or measurement; only a reasoned no (a real panel, a board's memory,
@@ -147,5 +147,5 @@ No Conventional Commits. Scope by package or device, matching history:
 - **Physical-device flashing** — follow `docs/device-flashing-runbook.md` (pointed to from `device-builds.md`): identify the removable card at run time and exclude every system disk; read the raw image back before touching its filesystem; on H700 a fresh card does not boot until the exact device tree is activated as `/dtb.img`.
 - **rclone cloud-sync** and **GENERIC_X64 VM QA** have sharp edges — read their instruction files before touching those areas (filter file is an allowlist; `--delete-excluded` is catastrophic; VM disk must be 16GB+ or first boot breaks in a way that looks like a graphics bug).
 - **A worktree is removed with `tools/fork-worktree remove`**, never `git worktree remove --force` — it cannot tell a few hundred MB of checkout from hours of un-recoverable build output (`worktrees.md`, D-WORKFLOW-005).
-- **Read `.claude/rules/` from `next`, not from your feature worktree.** Feature branches cut from an older base silently lack instruction files added since — `es-native-ui.md` is absent from older worktrees, so ES work done there proceeds without the guidance it mandates.
+- **Read `.claude/rules/` from `next`, not from your feature worktree.** Feature branches cut from an older base silently lack instruction files added since — the four ES rule files (`es-native-ui`, `es-player-text`, `es-ui-style-guide`, `es-code-traps`) are absent from older worktrees, so ES work done there proceeds without the guidance they mandate.
 - **Headless VM QA** (no desktop on the build host): `generic-x64-vm run --headless --daemonize <qcow2>`, then `tools/vm-serial` for a root shell and `tools/vm-visual-qa` with `tools/vm-walks/` for the screen. SSH is disabled on a fresh image, so serial is the way in; stop the VM by its pidfile, never by `pkill` pattern. Details and the keys in `generic-x64-vm-testing.md`.
