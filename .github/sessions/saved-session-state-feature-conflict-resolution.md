@@ -1,29 +1,31 @@
 # Saved Session State
 
-> **Saved**: 2026-09-12T17:45:00Z
+> **Saved**: 2026-09-12T19:20:00Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). Tonight (2026-09-12): #140, #133, #135, #129 delivered; the audit's three high findings fixed and closed; #123 closed; D-UI-045. **Then the maintainer's calls, built:** FINISH RESTORE PROCESS (D-UI-046); the automatic sync's bounds (D-CLOUD-118/119: `--automatic` on the startup and exit syncs, `RCLONE_SYNC_NET_OPTS` + `SYNC_CEILING_SECONDS`, the rclone() wrapper under `timeout`; stall 321 s -> 21 s, portal 0.9 s, refused 12 s with ten retries -- five retries + `--transfers 1` gives 3.9 s, proposed to the maintainer, Dropbox-gated); listings retry three times (#143 closed; S3's SDK attempts ARE `--low-level-retries`, 230 s at ten); buckets: a folder exists when its parent lists it, `directory_markers` on in the wizard's S3 stanza (#141 closed; D-CLOUD-120, the maintainer's marker idea approved). **The RG SP's log found the readiness defect**: `cloud_net_ready` waited for NetworkManager's "full" and gave up at 60 s while the device had internet; now any connected state settles on a held route (`86a28bab78`). **Staging candidate for both handhelds: `918b3c784b`** (x64 and H700, all six suites PASS, reports `qa-918b3c784b-webdav-a-20260912-1715` + `-1719`; H700 tar `533916164c66e721...`; carries the five-retry baseline D-CLOUD-121 and the RG SP's readiness fix); not staged. `c7fba3b8e6` also built and green (superseded). `next` = the QA-log commit after `6539f8ccdd` (the helper migration for the first-cut conf line, not in the image; handhelds do not need it).
+Epic #11 (cloud saves). Tonight (2026-09-12): #140, #133, #135, #129 delivered; the audit's three high findings fixed and closed; #123 closed; D-UI-045. **Then the maintainer's calls, built:** FINISH RESTORE PROCESS (D-UI-046); the automatic sync's bounds (D-CLOUD-118/119: `--automatic` on the startup and exit syncs, `RCLONE_SYNC_NET_OPTS` + `SYNC_CEILING_SECONDS`, the rclone() wrapper under `timeout`; stall 321 s -> 21 s, portal 0.9 s, refused 12 s with ten retries -- five retries + `--transfers 1` gives 3.9 s, proposed to the maintainer, Dropbox-gated); listings retry three times (#143 closed; S3's SDK attempts ARE `--low-level-retries`, 230 s at ten); buckets: a folder exists when its parent lists it, `directory_markers` on in the wizard's S3 stanza (#141 closed; D-CLOUD-120, the maintainer's marker idea approved). **The RG SP's log found the readiness defect**: `cloud_net_ready` waited for NetworkManager's "full" and gave up at 60 s while the device had internet; now any connected state settles on a held route (`86a28bab78`). **Staging candidate for both handhelds: `c90022dc57`** (x64 and H700, all seven runner suites PASS -- `qa-c90022dc57-webdav-a-20260912-1843` + `-1848`; H700 tar `3ec7a29239718e34...`; carries the #127 texts in the maintainer's words (D-UI-047), one description for the FINISH RESTORE PROCESS rows, the five-retry baseline D-CLOUD-121, the RG SP's readiness fix, buckets/markers D-CLOUD-120, the bounded automatic sync D-CLOUD-118); not staged. #127 closed. `tools/vocabulary-check` runs as the runner's `vocabulary` suite. The maintainer's instruction-file sweep (#147) merged: `docs/rules-sweep-2026-09-12.md`, four homeless rules housed, two globs widened, nine contradictions resolved, D-QA-021/022, D-WORKFLOW-004..006, D-UI-048, D-INFRA-010. `next` is at the QA-log commit after the sweep merge.
 
 ## In Progress
 
-- Nothing running. Guests a, b (pair) and c on `918b3c784b`; guest c's conf migrated to the five-retry line (marker set). QA backends up: WebDAV 9010, SFTP 9013, S3 9012. RG35XX SP `af2db4ab09` online and healthy; RG SP `7eb713bbd9` offline (the maintainer will check its lease; it was at 192.168.1.177); both hold the same ten saves. Nothing staged on either (D-QA-015).
-- Bounds on `918b3c784b` (guest c, SFTP): online 1.42-1.56 s; refused port 3.98 s; stall 21.8 s; portal 1.05 s.
+- Nothing running. Guests a, b (pair) and c on `c90022dc57`; guest c on WebDAV, gameexit=1. QA backends up: WebDAV 9010, SFTP 9013, S3 9012. RG35XX SP `af2db4ab09` online and healthy; RG SP `7eb713bbd9` offline (the maintainer will check its lease; it was at 192.168.1.177); both hold the same ten saves. Nothing staged on either (D-QA-015).
 
 ## Next Steps
 
-1. The maintainer's staging yes, per device -- RG SP first when it is back (its startup sync is what `918b3c784b` fixes), then the RG35XX SP: stage the H700 tar (`533916164c66e721...`) in `~/.update`, verify the device-side checksum, ask before each reboot; afterwards read `last-sync-startup` on the RG SP (expect `completed`).
-2. The maintainer's answers pending: #127 texts (three pairs offered, shorter recommended); PL-08 renumber (offered); the Dropbox proof of five retries on a handheld (their yes).
-3. #139 (build item, VM): the offline card's cause + kept-here line, the GAMES WAITING count (needs #22's records), PL-06's silent decline.
-4. Then #134's build order: #136 -> #137 -> #21 -> #22 -> #23 -> #25 -> #139.
+1. The maintainer's staging yes, per device -- RG SP first when it is back (its startup sync is what this build fixes), then the RG35XX SP: stage `h700-all-20260912-c90022dc57/ROCKNIX-H700.aarch64-20260912.tar` (`3ec7a29239718e34...`) in `~/.update`, verify the device-side checksum, ask before each reboot; afterwards read `last-sync-startup` on the RG SP (expect `completed`) and, on either, the first Dropbox exit sync under five retries (the #107 write lock).
+2. The maintainer's calls from the sweep (#147, open): `es-ui-style-guide.md` as a rule file?; split `es-native-ui.md`?; #148 (fourteen SAVESTATE strings; RESTORE SYSTEM SETTINGS FIRST -- deliberate?); the three vocabulary patterns worth adding to `tools/vocabulary-check` (Wi-Fi, serial comma, game save vs save state). PL-08 answered by D-INFRA-010.
+3. #139 (build item, VM): the offline card's cause + kept-here line, GAMES WAITING (needs #22's records), PL-06's silent decline. Then #134's build order: #136 -> #137 -> #21 -> #22 -> #23 -> #25 -> #139.
 
 ## Key Files Modified
 
 | File | Change | Notes |
 | --- | --- | --- |
+| `tools/vocabulary-check` (`fdffd17f25`) | back up / backup as verb / noun over ES strings and script lines; runner suite `vocabulary` | D-UI-047 |
+| ES `CloudOffer.cpp`, `GuiMenu.cpp` (`b14a71ffc`) | the #127 texts as chosen; one relink description | D-UI-047 |
+| rclone `cloud_restore`, `tools/cloud-round-trip` (`d6cd309b05`) | "Nothing to restore yet ..." | #127 |
+| `.claude/rules/*`, `CLAUDE.md`, `AGENTS.md`, `docs/rules-sweep-2026-09-12.md` (agent, `438f14bfff`..`5ca1427ab5`) | the sweep | #147 |
 | rclone conf/defaults/fallbacks (`c638f94ef6`) | `RCLONE_SYNC_NET_OPTS` += `--low-level-retries 5 --transfers 1` | D-CLOUD-121 |
 | rclone `cloud_sync_helper` (`6539f8ccdd`) | once-only migration of the first-cut automatic bound | upgrade path |
 | rclone `cloud_remote`, `cloud_restore` (`0a72907787`, `50b53b016f`) | directory markers on s3/gcs/azureblob; a bucket folder exists when its parent lists it | D-CLOUD-120 |
