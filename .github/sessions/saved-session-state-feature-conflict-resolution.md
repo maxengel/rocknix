@@ -1,29 +1,40 @@
 # Saved Session State
 
-> **Saved**: 2026-09-12T13:05:00Z
+> **Saved**: 2026-09-12T15:15:00Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). The nine save-history decisions are settled (D-CLOUD-105..117, D-UI-040..043); everything is in the tracker (#134 and children). **Tonight (2026-09-12): #140 fixed and closed; #133 the five-backend QA matrix merged (found #141/#142/#143); #135 the time-to-play cell merged and measured (proposed rows on the issue); #129 the milestone audit merged, its three high findings (#144/#145/#146) fixed and closed the same night; #123 closed on the maintainer's word; D-UI-045 (clear, brief, sized to the space) as a rule.** Latest image **`0f89c8f1d4`** (ES `51639dd09`): six runner suites PASS (time-to-play on guest b after the cell's own precondition fix `a8f8ef487d`); frames in `docs/qa-frames/2026-09-12/`. `next` is at `e18c567f82`.
+Epic #11 (cloud saves). Tonight (2026-09-12): #140, #133, #135, #129 delivered; the audit's three high findings fixed and closed; #123 closed; D-UI-045. **Then the maintainer's calls, built:** FINISH RESTORE PROCESS (D-UI-046); the automatic sync's bounds (D-CLOUD-118/119: `--automatic` on the startup and exit syncs, `RCLONE_SYNC_NET_OPTS` + `SYNC_CEILING_SECONDS`, the rclone() wrapper under `timeout`; stall 321 s -> 21 s, portal 0.9 s, refused 12 s with ten retries -- five retries + `--transfers 1` gives 3.9 s, proposed to the maintainer, Dropbox-gated); listings retry three times (#143 closed; S3's SDK attempts ARE `--low-level-retries`, 230 s at ten); buckets: a folder exists when its parent lists it, `directory_markers` on in the wizard's S3 stanza (#141 closed; D-CLOUD-120, the maintainer's marker idea approved). **The RG SP's log found the readiness defect**: `cloud_net_ready` waited for NetworkManager's "full" and gave up at 60 s while the device had internet; now any connected state settles on a held route (`86a28bab78`). `next` = `eda17b076a`; the tree to build is `c7fba3b8e6`.
 
 ## In Progress
 
-- Nothing running. **H700 `0f89c8f1d4` built** (`h700-all-20260912-0f89c8f1d4/`, tar `4e6a5649db47e466...`, BUILD_ID checked, strings checked, fallback constant 10); **not staged** -- the maintainer's per-device yes (D-QA-015). Build worktrees synced to `next` `e18c567f82`.
-- Guests a (Probe.nes, gl, gameexit=1), b, c on `0f89c8f1d4`; guest c on WebDAV, gameexit=1. RG35XX SP on `af2db4ab09`, clean. Older H700 `a2ee7b9bb2` superseded.
+- **Runner on `34606305a1`** (conditional wrapper; scripts, lifetime, round-trip 149 s, exit, time-to-play PASS; walks running) -- report `qa-34606305a1-webdav-a-20260912-1456`. `205b80c8cf` passed five suites and failed the round trip only on the always-on wrapper shadowing the harness's lock probe.
+- **To build next:** x64 and H700 at `c7fba3b8e6` (parent-listing rule, directory markers, S3 reset fix, budget check) -- the final tree for tonight; runner on it; QA-log rows for 205b80c8cf / 34606305a1 / c7fba3b8e6.
+- Guests a, b (pair) on `34606305a1`; guest c on `205b80c8cf`, WebDAV, `/tmp/qa-bin` holds the staged scripts (identical to c7fba3b8e6's). SFTP (9013) and S3 (9012) backends up on the host. RG35XX SP `af2db4ab09` healthy; RG SP `7eb713bbd9` at 192.168.1.177 (ssh config says .175), healthy apart from the readiness defect; both hold the same ten saves. Nothing staged on either.
 
 ## Next Steps
 
-1. Report to the maintainer (done at the end of this session); wait for their calls below.
-2. The maintainer's calls, all put to them in player terms: #127 texts (the short form is in the build; theirs replaces it); #135's proposed rows (P-13 3 s; D-CLOUD-111 connect 5 s / stall 5 s with one retry / ceiling 20 s; D-CLOUD-112 within 3x online) and the two findings (stall behind the screensaver; IPv6 default route counts as connectivity); audit PL-05 (one name for the relink page), PL-08 (D-INFRA-008 renumber); #141/#142/#143 behaviour on remotes without "a folder that does not exist yet"; `GuiMenu:4911` BRING DATA BACK under D-UI-045; staging `0f89c8f1d4` H700 on the RG35XX SP.
-3. Rule text from the audit's proposals once read: P-01 change the set not the site; P-02 a mechanical check for strings naming rows; P-03 a check nothing invokes is not a guard. Blindspot 39 is written.
-4. Then #134's build order: #136 -> #137 -> #21 -> #22 -> #23 -> #25 -> #139, with the bounds (D-CLOUD-111) as the first small piece once the rows are decided.
+1. Runner done -> build x64 `c7fba3b8e6` (both mounts) -> runner (six suites) -> H700 at the same commit (`build/devices` checkout -B) -> file, strings check -> QA-log rows, work log, session state -> report to the maintainer with the staging question for BOTH handhelds (per device; the RG SP first, it is the one that failed).
+2. The maintainer's remaining calls: five retries + `--transfers 1` for the automatic sync (Dropbox proof on a handheld, with their yes); #127 texts (the short form is in the build); audit PL-08 (D-INFRA-008 renumber); PL-06 (#139); `GuiMenu:4911` BRING DATA BACK; the `rgsp` ssh alias IP.
+3. Then #134's build order: #136 -> #137 -> #21 -> #22 -> #23 -> #25 -> #139.
 
 ## Key Files Modified
 
 | File | Change | Notes |
 | --- | --- | --- |
+| rclone `cloud_backup`/`cloud_restore` (`4484eed012`, `34606305a1`) | `--automatic`: rclone() wrapper under `timeout`, `RCLONE_SYNC_NET_OPTS`, `SYNC_CEILING_SECONDS`, why_for 10/124; `RCLONE_LIST_OPTS` three retries | D-CLOUD-118, #143 |
+| rclone `cloud_restore` (`50b53b016f`) | `bucket_based`, `bucket_dir_listed`: a bucket folder exists when its parent lists it | #141, D-CLOUD-120 |
+| rclone `cloud_remote` (`0a72907787`) | `directory_markers=true` on s3/gcs/azureblob remotes it creates | D-CLOUD-120 |
+| rclone `cloud_net_ready` (`86a28bab78`) | any connected state settles on a held route | the RG SP's log |
+| rclone `cloud_content_restore` | listings on `RCLONE_LIST_OPTS` | #143 |
+| `cloud_sync.conf(.defaults)` | `RCLONE_SYNC_NET_OPTS`, `SYNC_CEILING_SECONDS` | |
+| `tools/last-good-scripts-test` cases h, i | the wrapper's ceiling; the readiness shims | |
+| `tools/cloud-test-backend` (`26affac4b0`, `0a72907787`) | `caps` bucket=; S3 reset via aws; S3 stanza with markers | |
+| `tools/cloud-round-trip` (`34606305a1`, `50b53b016f`) | file fixtures for the empty-cloud step | |
+| `tools/time-to-play` (`b391d2172d`) | `over_budget`: the exit sync over 3 s fails | D-CLOUD-119 |
+| ES `FileData.cpp`, `main.cpp`, `GuiMenu.cpp` (`88cb4545b`) | `--automatic`; FINISH RESTORE PROCESS | D-UI-046 |
 | ES `CloudOffer.{h,cpp}`, `CloudText.{h,cpp}`, `GuiCloudTransfer.cpp`, `ThreadedCloudSync.cpp` (`1b3d94d0d`) | one `>>> ` parser (Unit/Removed), the offer dialog shared, raised by the page on dismissal | #145 |
 | ES `GuiMenu.cpp`, `GuiCloudTransfer.cpp` (`db1005101`), `CloudOffer.cpp` (`35618d447`) | strings name real rows; two-level menu path; WI-FI GPIO; short-form dialogs | PL-04/PL-12, D-UI-045 |
 | ES `tests/cloud-oauth-lifetime.py` (`317028769`) | doubles gain `name` + `CloudText::providerSubtitle` | #144 |
