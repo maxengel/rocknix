@@ -10,6 +10,16 @@ Companion to [es-menu-map.md](es-menu-map.md), which places this subtree in the
 wider menu. Rendered low-fidelity wireframes of these screens, with the reasoning
 in the margins: <https://claude.ai/code/artifact/5da9ce12-b088-4db0-8557-4b34fe454dd6>
 
+> **Rev 6 (2026-09-12).** Four maintainer decisions after the save-history council
+> run (#134): one console at a time -- sync never runs on two consoles at once, and
+> the wizard assumes the two versions were made in serial by one player
+> (D-CLOUD-102, D-CLOUD-103; no lock, no marker). The compare page keeps its columns
+> (cloud left, this console right), gains a *played later / earlier on <console>*
+> line under each by publish sequence, and opens with the cursor on the newer
+> version; the choice stays the player's (D-CLOUD-104). Discarded copies live in the
+> one hidden store `Saves/.history/` with every other earlier version, labelled by
+> reason (D-CLOUD-095), not in a `-discarded/` sibling.
+
 > **Rev 5 (2026-09-06).** Five maintainer decisions from the conflict-resolution
 > council, and one vocabulary. *Keep copies of discarded saves* is **on** by
 > default with a count of 1 to 9, default 3 (D-CLOUD-032); the discarded copy
@@ -104,6 +114,7 @@ only the picture and the available options change.
 │ <date> <time>         │ <date> <time>        │
 │ <device + model>      │ <device + model>     │
 │ <emulator/core + ver> │ <emulator/core + ver>│
+│ played later here     │ played earlier here  │   by publish sequence, D-CLOUD-104
 ├───────────────────────┴──────────────────────┤
 │  ( KEEP LEFT )  ( KEEP RIGHT )  ( KEEP BOTH )│   selected side(s) highlight
 │  [ CONTINUE ]        …or [ COMPLETE ] if last│
@@ -115,6 +126,12 @@ Selecting a side **highlights that column**, so LEFT/RIGHT never has to be
 mapped mentally onto CLOUD/DEVICE. Keep the sides in a **fixed order** across
 every conflict — muscle memory does the work on a long list, and a column that
 swaps sides is how the wrong save gets picked at speed.
+
+The page opens with the cursor on the KEEP under the **newer** version, ordered by
+publish sequence, never by clock (D-CLOUD-104): the two versions were made in
+serial by one player (D-CLOUD-103), so the later session is the common answer
+to a missed sync and is one press away. Nothing is kept without that press, and
+the other version is retained in `Saves/.history/` either way.
 
 ## What each kind shows
 
@@ -174,8 +191,13 @@ a conflict"; the panels own "here is what each one is".
   applies nothing. Redoing a few choices beats risking a half-applied
   resolution, and it keeps the "nothing transfers until COMPLETE" guarantee
   simple.
-- **Cloud is always the left column.**
-- **Keep copies of discarded saves is on by default** (D-CLOUD-032, D-CLOUD-036), with a count selector, default 3, 1 to 9.
+- **Cloud is always the left column.** And the columns never swap to put the newer
+  version on one side; the *played later / earlier* line says which is which, and
+  the cursor opens on the newer (D-CLOUD-104).
+- **Serial play is assumed.** One person, one console at a time; no lock or marker
+  tells another console a game is in play; the missed sync is the wizard's case
+  (D-CLOUD-102, D-CLOUD-103).
+- **Keep copies of discarded saves is on by default** (D-CLOUD-032, D-CLOUD-036), with a count selector, default 3, 1 to 9 -- the copies in `Saves/.history/` with the other earlier versions (D-CLOUD-095); the count's range and its fleet-wide meaning are P-1/P-2 on #134.
 
 ## What ES already does (checked, not assumed)
 
