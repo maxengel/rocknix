@@ -79,7 +79,7 @@ Two placement rules the existing tree already follows:
 
 ## Cloud (our subtree)
 
-As built on 2026-09-11 (`af2db4ab09`, ES `98b1034c3`). One door:
+As built on 2026-09-12 (ES `51639dd09`; the tree since `af2db4ab09`). One door:
 `GAME SETTINGS > CLOUD SETTINGS`. The three save actions sit at that level
 because saves move constantly; everything occasional is one row further in,
 behind MANAGE CLOUD STORAGE (D-UI-021 lineage; the vocabulary is D-UI-022:
@@ -104,6 +104,7 @@ flowchart TD
     TICK -->|ROMS AND BIOS ticked| PICK[systems page<br/>select all · badge per system]
     TICK --> XFER[GuiCloudTransfer<br/>full-screen; live line, elapsed, outcome; stays until dismissed]
     PICK --> XFER
+    XFER -.->|saves folder absent| OFFER[create-folder offer<br/><i>on dismissal</i>]
     BR --> MATCH[MATCH THIS DEVICE TO THE CLOUD<br/><i>the only action that deletes</i>] --> PREV[preview → confirm] --> XFER
 
     HUB --> SM[SAVE MANAGEMENT]
@@ -125,7 +126,11 @@ flowchart TD
 **Dialogs the cloud raises on its own.** A restore against a cloud whose saves
 folder is missing ends COMPLETED and offers to create it (D-CLOUD-085); when a
 folder with a near name sits beside the missing one the dialog names both and
-offers CHANGE FOLDER · CREATE ANYWAY · NOT NOW (D-CLOUD-091). BACK UP / RESTORE
+offers CHANGE FOLDER · CREATE ANYWAY · NOT NOW (D-CLOUD-091). Both surfaces
+raise it in the same words (`CloudOffer::present`, #145): the card, as it
+fades, for the save rows in GAME SETTINGS; the transfer page, when the player
+dismisses the done page, for RESTORE FROM THE CLOUD -- until #145 only the
+card did, and the fresh handheld's route saw nothing. BACK UP / RESTORE
 on a device with no cloud storage asks SET IT UP NOW? and YES opens the list.
 FINISH RESTORE SETUP (after a settings restore) tells the player the backup
 never carried the cloud sign-in and points at MANAGE CLOUD STORAGE (D-CLOUD-087).
