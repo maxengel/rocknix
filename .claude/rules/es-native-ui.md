@@ -338,6 +338,12 @@ $B/toolchain/bin/cmake --build build-tests --target es-unit-tests && ./build-tes
 - **"back up" vs "backup"**: two words as a verb ("BACK UP CONFIGURATIONS TO CLOUD",
   "back up your settings"), one word as a noun/adjective ("RESTORE FROM BACKUP",
   "backup file"). Applies to menu labels, dialogs, script output, and docs.
+  Checked mechanically: `tools/vocabulary-check` reads every `_("")` string
+  and every sentence the scripts print, and `tools/vm-qa` runs it as the
+  `vocabulary` suite on every image (maintainer, 2026-09-12: "we should make
+  sure we're consistent ... whether it is one word or two, or how we're using
+  it as a noun versus verb"). A string that is right and still trips a
+  heuristic goes in the tool's allowlist with its reason.
 - **Serial comma, always.** "Game saves, save states, and screenshots" — never
   "…states and screenshots". Without it the last two items read as one thing,
   which in a list of what a backup carries is exactly the ambiguity that

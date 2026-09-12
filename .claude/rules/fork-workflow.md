@@ -30,7 +30,7 @@ in `.githooks/pre-push` are the same list; change one and change the other.
 - **Agent context** — `.claude/`, `CLAUDE.md`, `AGENTS.md`, `.githooks/`,
   `.github/sessions/`, `.github/workflows/fork-*`
 - **Personal writing** — `docs/`, `plans/`
-- **Fork-only tools** — `tools/fork-publish-release`, `tools/cloud-test-backend`, `tools/cloud-round-trip`, `tools/cloud-capture-stamp-test`, `tools/wait-lock-test`, `tools/last-good-scripts-test`, `tools/lint-audit-artifacts`, `tools/vm-visual-qa`, `tools/vm-serial`, `tools/vm-pair`, `tools/cloud-census`, `tools/emulator-exit-test`, `tools/vm-qa`, `tools/time-to-play`, `tools/vm-walks/`, `tools/fork-worktree`, `tools/fork-newdrive`, `tools/council/` (the council Facilitator, #70). One entry per tool, the same entries as `PERSONAL_PATTERNS`; the 2026-09-12 audit found the prose three short
+- **Fork-only tools** — `tools/fork-publish-release`, `tools/cloud-test-backend`, `tools/cloud-round-trip`, `tools/cloud-capture-stamp-test`, `tools/wait-lock-test`, `tools/last-good-scripts-test`, `tools/lint-audit-artifacts`, `tools/vm-visual-qa`, `tools/vm-serial`, `tools/vm-pair`, `tools/cloud-census`, `tools/emulator-exit-test`, `tools/vm-qa`, `tools/time-to-play`, `tools/vocabulary-check`, `tools/vm-walks/`, `tools/fork-worktree`, `tools/fork-newdrive`, `tools/council/` (the council Facilitator, #70). One entry per tool, the same entries as `PERSONAL_PATTERNS`; the 2026-09-12 audit found the prose three short
 - **Council artifacts** — `research/`
 - **Copilot-era leftovers** — `.github/copilot-instructions.md`, `.github/instructions/`,
   `.github/shared-copilot-knowledge/`, `tmp/shared-copilot-knowledge/`,

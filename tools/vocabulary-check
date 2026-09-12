@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+"""vocabulary-check - the player-facing words, held to the rules a reader would apply.
+
+  ./tools/vocabulary-check [--es <emulationstation checkout>] [--scripts <dir>] [--show]
+
+One rule today, from es-native-ui.md and player-language.md (D-UI-022/045):
+"back up" is two words as a verb (BACK UP SAVES TO THE CLOUD, back up your
+settings) and one word as a noun or adjective (RESTORE FROM BACKUP, the
+settings backup, a backup file). The maintainer asked for it to be checked
+mechanically across the interface and the scripts (2026-09-12), after a
+sweep by hand found one string each way. A reader applies the rule once;
+this applies it on every run of tools/vm-qa (the `vocabulary` suite).
+
+What it reads: every _("...") string in the EmulationStation checkout
+(default: the qa-integration worktree, or $ES_SRC), and every sentence the
+cloud scripts print for a player -- log_message ... "true", note, say_why,
+echo -- plus the whole of backuptool's notes. Comments are skipped. It exits
+1 with each offending string and the file it came from; 0 when clean.
+
+Heuristics, so an allowlist carries the few strings that are right and
+still match (upstream's hidden BACKUP USER DATA page, for one):
+  verb written as one word: BACKUP followed by TO / YOUR / MY / THE SAVES /
+      SAVES / SETTINGS / EVERYTHING / IT / THEM / NOW / USER DATA / ROMS
+  noun written as two words: A / THE / YOUR / LAST / FIRST / NEWEST / NO /
+      SETTINGS / CLOUD / MY  BACK UP  not followed by a verb's object
+  the hyphen: BACK-UP anywhere
+"""
+import argparse, os, re, sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+DEFAULT_ES = os.environ.get("ES_SRC") or os.path.expanduser("~/Development/emulationstation-next.worktrees/qa-integration")
+SCRIPTS = os.path.join(ROOT, "projects/ROCKNIX/packages/network/rclone/sources")
+BACKUPTOOL = os.path.join(ROOT, "projects/ROCKNIX/packages/rocknix/sources/scripts/backuptool")
+
+# Strings that match a heuristic and are nonetheless right, or are not ours to
+# change (upstream's, on pages ROCKNIX does not show). Each with its reason.
+ALLOW = {
+    "BACKUP USER DATA": "upstream batocera GuiBackupStart, hidden on ROCKNIX (no ApiSystem::BACKUP); its msgid keys translations",
+}
+
+VERB_AS_ONE = re.compile(r"\bBACKUP (TO|YOUR|MY|THE SAVES|SAVES|SETTINGS|EVERYTHING|IT|THEM|NOW|USER DATA|ROMS|GAME)\b", re.I)
+# A word that makes the BACKUP before an object a noun after all: "your
+# settings backup to the cloud" is a noun phrase with a destination, not an
+# order to back up. Checked on the word before each VERB_AS_ONE match.
+NOUN_MARKERS = {"YOUR", "THE", "A", "AN", "SETTINGS", "LAST", "FIRST", "NEWEST", "OLDEST", "CLOUD", "NO", "THIS", "THAT", "MY", "EACH", "EVERY", "SAVES", "DEVICE", "OWN", "NEW", "OLD", "SAME", "ONE"}
+NOUN_AS_TWO = re.compile(r"\b(A|THE|YOUR|LAST|FIRST|NEWEST|NO|SETTINGS|CLOUD|MY|EACH|EVERY|THIS|THAT) BACK UP\b(?! (TO|YOUR|MY|SAVES|SETTINGS|EVERYTHING|IT|THEM|NOW|ROMS|GAME|WHAT|THIS|THESE|THE|A|AGAIN|NOTHING|SOME|ANY|ALL))", re.I)
+HYPHEN = re.compile(r"\bBACK-UP\b", re.I)
+
+def judge(text):
+    t = text.replace("\\n", " ")
+    hits = []
+    for m in VERB_AS_ONE.finditer(t):
+        before = t[:m.start()].rstrip().split()
+        if before and before[-1].upper().strip("'\",.:;()") in NOUN_MARKERS:
+            continue
+        hits.append("verb written as one word"); break
+    if NOUN_AS_TWO.search(t): hits.append("noun written as two words")
+    if HYPHEN.search(t): hits.append("hyphenated")
+    return hits
+
+def es_strings(es):
+    pat = re.compile(r'_\("((?:[^"\\]|\\.)*)"\)')
+    for dirpath, _, files in os.walk(os.path.join(es, "es-app", "src")):
+        for f in files:
+            if not f.endswith((".cpp", ".h")): continue
+            p = os.path.join(dirpath, f)
+            try: src = open(p, encoding="utf-8", errors="replace").read()
+            except OSError: continue
+            # drop line comments so a commented-out string is not judged
+            src = re.sub(r"//[^\n]*", "", src)
+            for m in pat.finditer(src):
+                yield os.path.relpath(p, es), m.group(1)
+
+def script_lines(paths):
+    say = re.compile(r'\b(log_message|note|say_why|echo)\s+"((?:[^"\\]|\\.)*)"(.*)')
+    for p in paths:
+        try: lines = open(p, encoding="utf-8", errors="replace").read().splitlines()
+        except OSError: continue
+        for line in lines:
+            s = line.strip()
+            if s.startswith("#"): continue
+            m = say.search(s)
+            if not m: continue
+            fn, text, rest = m.groups()
+            if fn == "log_message" and '"false"' in rest: continue   # a log line, not a screen line
+            yield os.path.relpath(p, ROOT), text
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--es", default=DEFAULT_ES)
+    ap.add_argument("--scripts", default=SCRIPTS)
+    ap.add_argument("--show", action="store_true", help="also list every string that was judged")
+    a = ap.parse_args()
+    if not os.path.isdir(os.path.join(a.es, "es-app", "src")):
+        print(f"vocabulary-check: no EmulationStation checkout at {a.es} (set ES_SRC or --es)", file=sys.stderr)
+        return 1
+    paths = [os.path.join(a.scripts, n) for n in ("cloud_backup", "cloud_restore", "cloud_content_backup", "cloud_content_restore", "cloud_setup", "cloud_saves_root", "cloud_net_ready")] + [BACKUPTOOL]
+    judged = failures = 0
+    seen = set()
+    for origin, text in list(es_strings(a.es)) + list(script_lines(paths)):
+        if not re.search(r"\bBACK(ING|ED)? ?-?UPS?\b", text, re.I): continue
+        judged += 1
+        if a.show: print(f"  {origin}: {text[:110]}")
+        hits = judge(text)
+        if not hits: continue
+        key = text.replace("\\n", " ").strip()
+        if key in ALLOW:
+            if key not in seen:
+                print(f"  allowed  {origin}: {key[:90]}  -- {ALLOW[key]}")
+                seen.add(key)
+            continue
+        failures += 1
+        print(f"  FAIL  {origin}: {text[:120]}  -- {', '.join(hits)}")
+    print(f"vocabulary-check: {judged} string(s) with back up / backup judged, {failures} wrong")
+    return 1 if failures else 0
+
+if __name__ == "__main__":
+    sys.exit(main())
