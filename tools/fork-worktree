@@ -24,6 +24,13 @@
 #   ./tools/fork-worktree sync                    # fast-forward every build/* worktree to next
 set -uo pipefail
 
+# Every git read below is about the repository this tool lives in, never the
+# one the shell happens to be standing in. Run with the shell inside the
+# EmulationStation repo (2026-09-12) it read that repo's config, warned that
+# the pre-push guard was unset, listed that repo's worktrees and synced
+# nothing -- while saying nothing untrue about the repo it looked at.
+ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+
 # The gitignored build outputs, per CLAUDE.md. Presence of any of these means
 # the directory is worth more than the checkout it sits in.
 is_build_artifact() {
@@ -51,7 +58,7 @@ artifacts_in() {
     printf '%s' "${found}"
 }
 
-git_dir() { git rev-parse --git-common-dir 2>/dev/null; }
+git_dir() { git -C "${ROOT}" rev-parse --git-common-dir 2>/dev/null; }
 
 # The pre-push guard is installed by absolute path (see .githooks/pre-push for
 # why). Git says nothing when that path stops existing -- it just runs no
@@ -59,7 +66,7 @@ git_dir() { git rev-parse --git-common-dir 2>/dev/null; }
 # This runs from the two subcommands people actually use, so the gap is loud.
 check_hooks_path() {
     local hp
-    hp="$(git config --get core.hooksPath 2>/dev/null || true)"
+    hp="$(git -C "${ROOT}" config --get core.hooksPath 2>/dev/null || true)"
     case "${hp}" in
         '')  echo "⚠ core.hooksPath is not set: the pre-push guard is not running." >&2
              echo "  git config core.hooksPath /workspace/repos/rocknix/.githooks" >&2 ;;
@@ -71,7 +78,7 @@ check_hooks_path() {
 
 cmd_list() {
     check_hooks_path
-    git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt; do
+    git -C "${ROOT}" worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt; do
         local_art="$(artifacts_in "${wt}")"
         if [ -n "${local_art}" ]; then
             echo "  ${wt}"
@@ -146,7 +153,7 @@ cmd_repair() {
     local wt="${1:-}" ref="${2:-next}"
     [ -n "${wt}" ] || { echo "usage: fork-worktree repair <path> [ref]" >&2; exit 1; }
     wt="$(cd "${wt}" 2>/dev/null && pwd)" || { echo "error: no such directory" >&2; exit 1; }
-    if git worktree list --porcelain | awk '/^worktree /{print $2}' | grep -qxF "${wt}"; then
+    if git -C "${ROOT}" worktree list --porcelain | awk '/^worktree /{print $2}' | grep -qxF "${wt}"; then
         echo "  ${wt} is already a registered worktree; nothing to repair"; exit 0
     fi
     local orphan="${wt}.orphan.$$"
@@ -180,7 +187,7 @@ cmd_sync() {
     # build checkouts without anyone noticing. The only ref worth following here
     # is next; testing against something else is not worth that edge.
     local target="next" rc=0
-    git worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt; do
+    git -C "${ROOT}" worktree list --porcelain | awk '/^worktree /{print $2}' | while read -r wt; do
         local br; br="$(git -C "${wt}" branch --show-current)"
         case "${br}" in
             build/*) ;;
