@@ -1,6 +1,10 @@
 ---
-description: "EmulationStation (emulationstation-next) native UI/UX best practices — building blocks, patterns, and precedents for menu/settings/async work."
+description: "EmulationStation mechanics: where the code lives, the patterns for pages, cards and background jobs, the spacing and the four surface tiers, and the code conventions. Read before building or changing an ES screen; the words it shows are in `es-player-text.md`."
 paths:
+  # ES source lives in the separate `ROCKNIX/emulationstation-next` repo, so no
+  # glob written here can name `es-app/**`. `**` is the widest a repo-relative
+  # glob reaches; a session working only in the ES checkout still loads none of
+  # these (#147 § 9).
   - "**"
 ---
 
@@ -9,6 +13,11 @@ paths:
 Survey of `ROCKNIX/emulationstation-next` (2026-07-24) for building native experiences
 (cloud sync, backup/restore, issue #15 L2/L3). Source lives in the separate ES repo;
 this file guides any work there.
+
+**This file was split on 2026-09-12** (#147). Maintainer: *"let's split up the
+native UI into parts."* The mechanics stayed here; the words a player reads
+went to `es-player-text.md`, and the codebase's sharp edges to
+`es-code-traps.md` (D-WORKFLOW-008).
 
 ## Where things live
 
@@ -20,16 +29,18 @@ this file guides any work there.
   `OptionListComponent`, `SliderComponent`, `ButtonComponent`, `BusyComponent`
   (spinner), `AsyncNotificationComponent` (top-right progress card).
 
-## Three documents carry the rest of the interface law
+## The other files that carry the interface law
 
-They are `docs/`, not `.claude/rules/`, so nothing loads them for you. Open
-them when the work is theirs -- the 2026-09-12 sweep (#147) found that no
-rule file named any of them, which is how a page gets built against half the
-house style.
+This file is the mechanics. Three sibling rules and two `docs/` documents carry
+the rest; the two under `docs/` load nowhere, so open them when the work is
+theirs -- the 2026-09-12 sweep (#147) found that no rule file named any of
+them, which is how a page gets built against half the house style.
 
-| Document | Owns |
+| File | Owns |
 | --- | --- |
-| `docs/es-ui-style-guide.md` | the seven row builders, the `multiLine` trap, `addSaveFunc` vs `setOnChangedCallback`, the reboot flags, the four gates in precedence order, button order and the back-button accelerator, confirmation registers, glyphs, placeholder words (`AUTO`, `NONE`, `<NOT SET>`), the three type sizes |
+| `es-player-text.md` (rule) | every word a player reads: the four tiers and the two verbs, "back up" vs "backup", the serial comma, game save vs save state, Wi-Fi, how much text a row may carry, and the outcome vocabulary every run ends with |
+| `es-ui-style-guide.md` (rule) | the seven row builders, the `multiLine` trap, `addSaveFunc` vs `setOnChangedCallback`, the reboot flags, the four gates in precedence order, button order and the back-button accelerator, confirmation registers, glyphs, placeholder words (`AUTO`, `NONE`, `<NOT SET>`), the three type sizes |
+| `es-code-traps.md` (rule) | the sharp edges, each found by debugging: button-bar lifetimes, rclone's piped progress, xgettext and non-ASCII comments, help-bar prompts, `TextComponent`'s measuring, and where pure string code lives |
 | `docs/es-menu-map.md` | where a row belongs: the two entry points, the `addGroup` sections that are the real IA, read-only facts before editable settings, destructive work behind ADVANCED, the kid/kiosk collapse, and cloud's one door |
 | `docs/conflict-wizard-ia.md` | the wizard's architecture: what counts as a conflict, the header's count, nothing transfers until COMPLETE, the column and badge vocabulary |
 
@@ -38,7 +49,7 @@ change (D-UI-039, maintainer 2026-09-11).** The rule is stated in the map
 itself, which is the one place somebody who has not opened it will not read
 it; it is repeated here so it loads with the rest.
 
-Two house rules from the style guide are worth carrying at this altitude
+Two house rules from `es-ui-style-guide.md` are worth carrying at this altitude
 because they decide safety, not looks:
 
 - **YES first in a confirmation**, and the back-button accelerator binds to a
@@ -137,9 +148,9 @@ Values live in one place each, so a screen never makes its own decision.
   placement anybody chose, so anything wider than that is centred.
 
   The four **surface** tiers, so a new surface picks the right one (not
-  the four data tiers of § Conventions -- settings, saves, ROMs and BIOS,
-  game content -- which are a different list that happens to be the same
-  length):
+  the four data tiers of `es-player-text.md` § Conventions -- settings,
+  saves, ROMs and BIOS, game content -- which are a different list that
+  happens to be the same length):
 
   | Surface | Width | Position | Blocks input | Ends |
   |---|---|---|---|---|
@@ -150,31 +161,6 @@ Values live in one place each, so a screen never makes its own decision.
 
   Full-*screen* is a modal takeover, not a wider card — do not reach for it
   for work the player can keep playing through.
-
-### Outcome words, and the register they are written in
-
-A cloud run **passes or fails**. `COMPLETED`, or `COULDN'T FINISH - <why>`,
-or `SKIPPED - <reason>` for the two sentinels and the launch cancel. There is
-no middle word: `COMPLETED WITH GAPS` existed for a day and the maintainer's
-verdict on meeting one was that a half-outcome nobody can act on costs more
-trust than either plain answer (D-UI-030). A run whose parts disagree is a
-failure that still says truthfully what moved.
-
-The words themselves are **everyday, not formal** (D-UI-031). The test is
-whether a person would say it out loud:
-
-| Not this | This |
-| --- | --- |
-| `NOTHING WAS SENT. YOUR CLOUD IS AS IT WAS.` | `DON'T WORRY, NOTHING CHANGED.` |
-| `NO NETWORK CONNECTION` | `YOU'RE NOT ONLINE` |
-| `ANOTHER CLOUD SYNC IS RUNNING` | `A SYNC IS ALREADY RUNNING` |
-| `YOUR CLOUD REFUSED THE TRANSFER` | `YOUR CLOUD WOULDN'T TAKE THE FILES` |
-| `WRITING THE SETTINGS ARCHIVE...` | `PACKING UP YOUR SETTINGS...` |
-| `IT RUNS AGAIN AT THE NEXT STARTUP.` | `IT'LL TRY AGAIN NEXT STARTUP.` |
-
-Unchanged by that pass, because they are vocabulary rather than register: the
-four tiers, the two verbs, `Wi-Fi`, the serial comma, two lines per row, and
-the outcome words above.
 
   **Duration decides between the last two, and the deciding column is
   "Ends".** A card is right for work somebody watches finish — a scrape, a
@@ -204,85 +190,6 @@ the outcome words above.
 Screen-relative fractions, never pixel constants: these panels run from
 640×480 to 1920×1080 and a fixed value is right on exactly one of them.
 
-## A row that leads somewhere is a label, not a paragraph
-
-Maintainer, 2026-09-06: *"adding a fuller description isn't necessarily always
-better. We're dealing with the 3.5- or 4-inch screen here sometimes, so we
-don't want to have lots of tiny text. If necessary, sometimes it's better to
-have the user click into the menu, where they can have some options or at
-least breathing room. If there's more than one action that can be taken, this
-likely makes sense within our menu structures, so the user has room to choose
-what to do."*
-
-So:
-
-- **A row that opens a page with more than one action is a submenu.** Its
-  label carries the verb (MANAGE CLOUD STORAGE, MANAGE GAME SAVE RESTORES AND
-  CONFLICTS); the page inside carries the choices, with room. Do not make up
-  for a hub label with a description that lists everything behind it — that is
-  the tiny text nobody reads, on the panel where it is smallest.
-- **A description, where one is needed, is one short line.** The three section
-  headings the player will see inside (`BACKUP AND RESTORE, SAVE MANAGEMENT,
-  CLOUD STORAGE SETUP.`) is a description; a sentence naming every action is
-  not.
-- **When a row genuinely needs explaining, that is a signal it wants a page**,
-  not a longer line under it.
-
-**Two lines per row, never three (D-UI-023).** Maintainer, the same day, on
-the cloud settings rows that carried a label, what they move, and how they
-last went: *"when we risk having an extra line, if the description can be
-moved into the confirmation dialog and it serves an additive function, that's
-the best-case scenario in principle (because it allows us to keep it to two
-lines max)."* So a row is a label and at most one line under it. When a second
-line wants in, ask what the confirmation dialog already says — the itemisation
-of what moves belongs there, where it is read at the moment of deciding — and
-what the page's job is: on a page that launches a job, the line under the row
-is how it last went; on a page that chooses what moves, it is what the row
-carries. A row with no confirmation has nowhere to move a line to, so it
-keeps the line that serves the page's job and drops the other.
-
-The case: the cloud hub row briefly carried "BACK UP OR RESTORE, CHOOSE ROMS AND
-BIOS, SET WHEN SAVES SYNC, AND CONNECT OR REPAIR YOUR CLOUD STORAGE." — accurate,
-and wrong, replaced the same hour.
-
-## Never rebuild a button bar from inside one of its buttons
-
-`MenuComponent::clearButtons()` destroys the `ButtonComponent`s, and a
-button's callback is a `std::function` that lives inside the button. A
-callback that calls `clearButtons()` + `addButton(...)` — to relabel SELECT
-ALL as SELECT NONE, say — destroys itself while it is running, and
-EmulationStation dies on the press (2026-09-06, the content page's first
-cut; the VM frame after the press was black, the next one the carousel).
-Rebuilding from a *switch row's* change callback is fine — the rows survive
-the rebuild — which is why the transfer page's `rebuildButtons` never showed
-the problem. From a button, post it: `window->postToUiThread([weak]{ if
-(auto b = weak.lock()) (*b)(); })`, with the switches kept quiet while the
-button sets them so their own callbacks do not fire a second rebuild, and
-the rebuild owned by the page (through `onFinalize`) rather than by the
-callbacks that call it, or the shared_ptr cycle keeps it alive forever.
-
-## What rclone's piped progress actually looks like
-
-`GuiCloudTransfer` parses `rclone --progress` through a pipe, and a pipe
-is not a terminal. Three consequences, each of which put nonsense on the
-page before it was written down (2026-09-06):
-
-- The per-file line is `" * %-*s:%3d%% /%s, %s/s, %s"`, so at 100% there is
-  **no space after the colon**: `name.zip:100% / 40 MiB, 1 MiB/s, 0s`. Split
-  on the last `:` that is followed by a percentage, never on `": "` — the
-  latter put the whole line on the name row and showed `S` (the basename of
-  `1Mi/s, 0s`) as the file name.
-- Every line is **cut at 80 columns** (rclone assumes a terminal width it
-  cannot measure), so the last field arrives torn: `5.722 MiB/`, `976.547
-  Ki`. Show a field only when it is whole.
-- Long names are shortened with **U+2026**, and stripping "unprintable"
-  bytes turns `Ikari n…ge` into `Ikari nge`. Keep UTF-8; drop C0 controls.
-- The next block's `Transferred:` is glued to the last per-file line without
-  a newline (already handled: the reader splits on the marker).
-- `BusyComponent::setText("")` is a **no-op** against its empty initial
-  state, so the spinner shows its default WORKING... unless the caption is
-  given at construction: `BusyComponent(window, "")`.
-
 ## Images in a menu row are themed as text unless you stop it
 
 `ComponentList::render` calls `setColor(menuTheme->Text.color)` on **every
@@ -305,111 +212,13 @@ public:
 };
 ```
 
-## Comments near a translatable string must be ASCII
+## Code conventions
 
-ES's build runs `xgettext` over the sources for the `.pot` file, and it
-stops the whole build on a non-ASCII byte in a comment it extracts
-(`Non-ASCII comment at or before <file>:<line> ... Please specify the source
-encoding through --from-code`). It extracts comments that sit right before a
-`_( )` call, so a middle dot, an em dash or an ellipsis in such a comment
-breaks the image build while `g++ -fsyntax-only` passes it (2026-09-08,
-`b44a715a9`: eight comment lines in `GuiCloudTransfer.cpp`). String
-literals may carry `·`; comments may not. Write `.`, `--`, `->`, `...`.
-Before bumping the ES pin, run `grep -nP '^\s*//.*[^\x00-\x7F]'` over the
-files you touched; a real image build is the only check that runs xgettext.
+The language conventions that shared this heading -- the four tiers, the two
+verbs, the serial comma, Wi-Fi, game save vs save state -- are
+`es-player-text.md` § Conventions since the 2026-09-12 split, which is where a
+citation of "`es-native-ui.md` § Conventions" resolves.
 
-## The help bar offers a direction only where it moves something
-
-`ComponentGrid::getHelpPrompts` used to decide from the grid's dimensions:
-more than one row means up/down, more than one column means left/right. A
-`GuiMsgBox` is a 2x2 shell whose only focusable cell is a button row that is
-itself an N x 2 grid (the second row a 2px shadow spacer), so the inner grid
-claimed up/down and the outer claimed left/right, and every dialog read
-`OK  CHOOSE  CHOOSE` (#115, D-UI-034). `canMoveCursor(dir)` asks whether the
-scan `moveCursor` would run reaches a focusable cell, and the prompt is
-offered only then. When a screen's help bar names a key, pressing it must do
-something; a prompt that lies is worse than none.
-
-## TextComponent measures at its full width and draws at its padded one
-
-`onTextChanged()` sets the automatic height from `sizeWrappedText(text,
-getSize().x())`; `buildTextCache()` lays glyphs out at `mSize.x() - padding`.
-With side padding the drawn width is narrower than the measured one -- 5% on
-a 640x480 `GuiMsgBox` -- so any wrap point in that band costs a line the
-height never budgeted, and a text with no clip rect paints it over whatever
-sits below. That was #48's overlapping OK button; `GuiMsgBox` now measures at
-the drawn width. The root is in `TextComponent` and fixing it there re-heights
-every padded auto-height text in the app, which nobody has looked at on a
-screen yet; until someone does, measure at the padded width where you build
-a dialog, and know that the auto height is optimistic.
-
-## Pure text has a home, and a test
-
-`es-app/src/CloudText.{h,cpp}` holds the cloud surfaces' pure string code --
-`cleanHostname`, `providerLabel`, `parseLastRun`, `runOrigin`, `shortenWhy`,
-`outcomeCandidates`, `classifyProtocolLine`, `chooseThatFits` -- with nothing
-from the window, the fonts or the filesystem behind it, and
-`es-app/tests/unit/` builds `es-unit-tests` against it with doctest (#120).
-A rule about a string -- a stamp's shape, a protocol line, a candidate list --
-goes there and gets a case; the thin shell that reads the file or measures
-the font stays where it was. Build and run from the ES tree with the
-toolchain's cmake and the host compiler:
-
-```
-B=/workspace/repos/rocknix.worktrees/generic-x64/build.ROCKNIX-GENERIC_X64.x86_64
-$B/toolchain/bin/cmake -S es-app/tests/unit -B build-tests -DCMAKE_CXX_COMPILER=/usr/bin/g++
-$B/toolchain/bin/cmake --build build-tests --target es-unit-tests && ./build-tests/es-unit-tests
-```
-
-## Conventions
-
-- Every label through `_( )` (localized, UPPERCASE by convention).
-- **Clear, then brief, then sized to the space** (`player-language.md`,
-  D-UI-045). Cut every word whose removal changes nothing; a string that
-  needs more room wants a page, not smaller text.
-- **"back up" vs "backup"**: two words as a verb ("BACK UP SETTINGS TO THE CLOUD",
-  "back up your settings"), one word as a noun/adjective ("RESTORE FROM BACKUP",
-  "backup file"). Applies to menu labels, dialogs, script output, and docs.
-  The old example here, "BACK UP CONFIGURATIONS TO CLOUD", broke the tier rule
-  below while demonstrating the verb rule; *configurations* is banned.
-  Checked mechanically: `tools/vocabulary-check` reads every `_("")` string
-  and every sentence the scripts print, and `tools/vm-qa` runs it as the
-  `vocabulary` suite on every image (maintainer, 2026-09-12: "we should make
-  sure we're consistent ... whether it is one word or two, or how we're using
-  it as a noun versus verb"). A string that is right and still trips a
-  heuristic goes in the tool's allowlist with its reason.
-- **Serial comma, always.** "Game saves, save states, and screenshots" — never
-  "…states and screenshots". Without it the last two items read as one thing,
-  which in a list of what a backup carries is exactly the ambiguity that
-  matters.
-- **"game save" vs "save state".** A battery save is a **game save**; a
-  snapshot of the running machine is a **save state** (two words — the
-  directory is `savestates`, the label is not). They are different files with
-  different failure modes, and a player who has lost one needs to know which.
-  Bare "saves" is fine as a collective where nothing contrasts with it
-  ("games, BIOS files, and saves"); the moment both appear, name them apart.
-- **Four tiers, two verbs, and the destination says where (D-UI-022,
-  D-CLOUD-050).** The things cloud sync moves are **settings** (the archive
-  `backuptool` writes: emulator and interface configuration, input mapping,
-  themes, collections, bezels — no saves, no ROMs, no operating system),
-  **saves** (game saves, save states, and screenshots), **ROMs and BIOS**,
-  and **game content** (what the scraper made: artwork, videos, manuals, and
-  the game lists — D-CLOUD-049 puts `gamelist.xml` here, not with ROMs). The
-  only verbs are *back up* and *restore*; nothing is "uploaded" or
-  "archived" in a label, because a player has no way to tell those apart
-  and the archive is uploaded too. The label says what and where: BACK UP
-  SETTINGS TO THIS DEVICE, BACK UP SAVES TO THE CLOUD, RESTORE SETTINGS FROM
-  THE CLOUD. **Never "system backup"** — it held people to expecting their
-  games in it — and never "save data", "configurations", "everything", or
-  "cloud library". *Sync* is reserved for the automatic two-way behaviour
-  saves get after #22, where a player never picks a direction. The
-  automatic cards already speak it: SYNCING SAVES AT STARTUP, SYNCING SAVES TO THE
-  CLOUD after a game (D-UI-040); *back up* is the deliberate, possibly long action
-  on the transfer page (D-CLOUD-113). The wizard's
-  kept losers are **discarded saves**; *discard* means nothing else.
-- **"Wi-Fi", hyphenated**, in every user-visible string. The settings keys stay
-  `wifi.key` / `wifi.ssid` — an identifier is not a reason to spell the label
-  after it.
 - Theme-aware colors/fonts via `ThemeData::getMenuTheme()`.
 - Pages provide `getHelpPrompts()` so the bottom help bar stays accurate.
 - **`GuiSettings::addSwitch(title, description, settingsID, bool, onChanged)` — the bool
@@ -440,10 +249,6 @@ $B/toolchain/bin/cmake --build build-tests --target es-unit-tests && ./build-tes
 
 ## Anti-patterns (observed, avoid)
 
-- Developer/QA concepts in product text: no QEMU/VM/port-forward mentions, no
-  "open this link on the device" (there is no browser). Console-first: player +
-  handheld + phone companion is the only assumed environment.
-
 - **Two surfaces for one event.** A job that reports progress in one shape
   and its outcome in another, somewhere else on screen, changes shape and
   position at exactly the moment somebody is looking for the answer. The
@@ -466,69 +271,6 @@ $B/toolchain/bin/cmake --build build-tests --target es-unit-tests && ./build-tes
   above. A log file is not that answer either; nobody is going to be told a
   path.
 
-- Dialog text promising behavior the backend doesn't do (pre-P1 backup dialogs).
 - Dropping to a fullscreen CLI for things a `GuiSettings` page + headless backend can do
   natively — acceptable as parity stopgap, not as the end state (issue #15 L2).
 - Direct `system()`/popen in UI code paths — use `runSystemCommand`/`ApiSystem`/threads.
-
-## Outcome vocabulary (D-UI-028)
-
-Every cloud surface -- the sync card, the transfer page, the rows under the
-toggles -- ends a run with one of **three** words, then a why, what is in
-place, and how to recover. Nothing else: no `FAILED`, no `SUCCEEDED`, no log
-path, no exit code, no `rclone`. D-UI-028 set four; **D-UI-030 removed the
-middle one** -- a run passes or fails, and a run whose parts disagree reads
-`COULDN'T FINISH - <why>` with the failing part's why while still saying
-truthfully what moved. The stamps keep the `gaps` token so a log can tell a
-partial run from a total one; no screen ever shows it.
-
-| Word | When | Card (line 2) | Page (line 1) | Row token |
-|---|---|---|---|---|
-| `COMPLETED` | every part of the run succeeded (rclone 9 counts as success) | `COMPLETED` | `COMPLETED` | `COMPLETED` |
-| `COULDN'T FINISH - <why>` | nothing succeeded and it is not a sentinel | `COULDN'T FINISH - YOUR CLOUD STOPPED ANSWERING` | `COULDN'T FINISH` | `COULDN'T FINISH, YOUR CLOUD STOPPED ANSWERING` |
-| `SKIPPED - <reason>` | only 69, 75, and the launch cancel | `SKIPPED - YOU'RE NOT ONLINE` / `SKIPPED - A SYNC IS ALREADY RUNNING` / `SKIPPED - A GAME WAS STARTED` | same | `SKIPPED, NO NETWORK` / `SKIPPED, ANOTHER SYNC WAS RUNNING` / `SKIPPED, A GAME WAS STARTED` |
-
-**Why** comes from a `>>> why <sentence>` line the scripts print at the point
-of failure (rclone's own taxonomy stays in the log), else from rc: rclone 3/4
-`YOUR CLOUD FOLDER WASN'T FOUND`; 5 `YOUR CLOUD STOPPED ANSWERING`; 7/8 `YOUR
-CLOUD REFUSED THE TRANSFER`; the sign-in check `COULDN'T REACH YOUR CLOUD. YOU
-MAY NEED TO SIGN IN AGAIN`; the saves-root guard `YOUR SAVES ARE ON A
-DIFFERENT CARD`; a 130 that was not a launch cancel `IT WAS STOPPED`; anything
-else `SOMETHING WENT WRONG`. The six rc-keyed sentences are duplicated
-verbatim in `ThreadedCloudSync`'s own fallback map, so they change on both
-sides or on neither -- the plain-language pass (#108) deliberately left them
-alone for that reason.
-
-The scripts also print, where the table has no entry: `YOUR CLOUD STORAGE
-ISN'T SET UP YET`, `YOUR SAVES FOLDER ISN'T ON THIS DEVICE`, `THIS DEVICE'S
-SETTINGS BACKUP IS DAMAGED`, `THE COPY IN YOUR CLOUD ISN'T COMPLETE`, `YOUR
-CLOUD SYNC SETTINGS COULDN'T BE READ`, `AN OLD FOLDER SETTING IS IN THE WAY`,
-`COULDN'T TELL WHICH CARD YOUR SAVES ARE ON`, `YOUR SAVES CHANGED CARDS
-PART-WAY THROUGH`, and `SOME FILES DIDN'T FINISH` for rclone 6 (2026-09-10,
-#105 tranche A; reworded into everyday words 2026-09-10, #108); `backuptool`
-prints its own on the console flows (`THERE'S NO SETTINGS BACKUP ON THIS
-DEVICE YET`, `THIS DEVICE'S SETTINGS BACKUP IS DAMAGED`, `COULDN'T KEEP A COPY
-OF YOUR CURRENT SETTINGS`, `THE RESTORE COULDN'T FINISH`, ...). **The stamp's
-third field** is the why
-sentence as one token, spaces as underscores
-(`1789000000 5 YOUR_CLOUD_STOPPED_ANSWERING`), present only when the run did
-not complete and was not a sentinel; a reader turns the underscores back into
-spaces.
-
-**In place**, one per verb, true because rclone renames on completion and the
-content scripts never delete outside a match: back up `WHAT WAS SENT IS IN
-YOUR CLOUD. THE REST IS STILL ON THIS DEVICE.` / `NOTHING WAS SENT. YOUR CLOUD
-IS AS IT WAS.`; restore `WHAT ARRIVED IS ON THIS DEVICE. THE REST IS AS IT
-WAS.` / `NOTHING ARRIVED. THIS DEVICE IS AS IT WAS.`; saves sync `THE SAVES
-THAT MOVED ARE ON BOTH SIDES. THE REST ARE AS THEY WERE.` / `YOUR SAVES ARE AS
-THEY WERE.`; match `N FILES WERE REMOVED FROM THIS DEVICE. YOUR CLOUD STILL HAS
-THEM.` / `NOTHING WAS REMOVED.`
-
-**Recover**: the page offers `TRY AGAIN` (A) beside `CLOSE` (B) on line 7 when
-the run did not complete, re-running the same command; the card's action line
-names the row (`TRY AGAIN: GAME SETTINGS > BACK UP SAVES TO THE CLOUD`), or for
-an automatic sync when it runs again (`IT RUNS AGAIN WHEN YOU EXIT A GAME`);
-no network `TRY AGAIN WHEN YOU'RE ONLINE.`; lock held `WAIT FOR IT TO FINISH,
-THEN TRY AGAIN.`; a game started `YOUR SAVES ARE SENT WHEN YOU EXIT THE GAME.`
-Measure every string at 640x480 in frames; if the card's action line clips,
-drop the in-place clause first.

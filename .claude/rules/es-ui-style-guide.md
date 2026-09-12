@@ -21,7 +21,8 @@ it. Maintainer, #147: *"I think it makes sense to make the style guide into an
 instruction rules file so we don't lose it."* (D-WORKFLOW-007.)
 
 Companion: [es-menu-map.md](../../docs/es-menu-map.md) — where a new screen
-belongs. Deeper background: `es-native-ui.md`.
+belongs. Deeper background: `es-native-ui.md` (the building blocks),
+`es-player-text.md` (the words), `es-code-traps.md` (the sharp edges).
 
 Upstream documents **none** of this: `THEMES.md` covers only repainting menus.
 The Batocera wiki contributes the interaction rules in the last section.
@@ -117,7 +118,7 @@ The first example carried `SAVESTATES AND SCREENSHOTS` until the #147 sweep:
 one word where the rule says two, and no serial comma. The shipped strings
 were already right (`GuiMenu.cpp:4450`, `:4804`, `:5433`); the style guide's
 model was not, which is the worse way round. *Save state* is two words and
-the last item of a list keeps its comma (`es-native-ui.md` § Conventions,
+the last item of a list keeps its comma (`es-player-text.md` § Conventions,
 D-UI-022/048). The second example read `RESTORE SYSTEM SETTINGS FIRST` until
 #148 dropped the word *system*: the tier is **settings** (D-UI-022), and
 *system settings* named a tier that does not exist.
