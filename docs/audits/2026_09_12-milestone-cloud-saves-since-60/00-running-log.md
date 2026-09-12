@@ -134,3 +134,30 @@ code, so every item is *Deferred* to a named open issue (#144, #145, #146, #42, 
 Seventeen criteria are UNTESTABLE only because this run had no guest. Every one is inside
 `tools/vm-qa`'s four suites, which take about two minutes on a fresh pair. That is the cheapest
 remaining verification in this milestone, and it is a run rather than a fix.
+
+### [Close] The scope was pinned; `next` moved under it
+
+SKILL.md's swarm rule: *"while this skill is active on a scope, do not mutate that scope from
+elsewhere — an audit of a moving target proves nothing about either state."* The audit worktree
+is pinned at `e1ddfd7ec2` and never moved. The **primary checkout** did: it was
+`e1ddfd7ec2` at Phase 0 and `3b3322cbaf` at close, three commits later.
+
+Re-derived rather than assumed — `git -C /workspace/repos/rocknix diff --stat
+e1ddfd7ec2..3b3322cbaf`:
+
+```
+docs/blindspot-register.md                  | 29 +++++++
+docs/vm-qa-log.md                           |  2 +-
+docs/work-logs/…/2026_09_12-work_log.md     | 20 ++++++
+tools/time-to-play                          | 45 +++++++++-
+tools/vm-qa                                 |  2 +-
+```
+
+**No audited surface is touched** — not the rclone scripts, not `projects/ROCKNIX/packages/rocknix/`,
+not EmulationStation. Every finding stands against the tip as well as against the pin.
+
+Two of those commits are worth flagging to whoever reads this next, because they landed in
+parallel with the same conclusion this audit reached about the runner: `da2c2a2bbc`
+("a run with no headline number fails (#135)") and `66d932b0c0` (**blindspot 39** — "a new
+suite that passed over a table of dashes"). That is the cannot-fail-is-not-evidence floor,
+found independently from the other side, on the one tool this audit could only read.

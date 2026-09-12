@@ -399,7 +399,7 @@ punch_index:
     owner_area: rclone cloud scripts / issue #71
     where: projects/ROCKNIX/packages/network/rclone/sources/cloud_backup:983
     acceptance: "#71 AC 4 and the case statement describe the same set of filter flags"
-    outcome: deferred:#71
+    outcome: deferred:#129
   - id: PL-10
     severity: Low
     category: Acceptance Criteria Gap
@@ -447,7 +447,7 @@ filed in this session and attached to #129 as GitHub sub-issues; the rest are tr
 | PL-06 | **Deferred** | #129 punch-list checklist, and #139 — rationale: the fix is a behaviour choice (start it and let the lock answer, or say the skip) that belongs with D-UI-041's design |
 | PL-07 | **Deferred** | #42 — open since audit #60's PL-06; this range adds six more user-visible changes to it |
 | PL-08 | **Deferred** | #129 punch-list checklist — rationale: renumbering a decided row is an append-only edit the maintainer should make, and the lint change belongs with it |
-| PL-09 | **Deferred** | #129 punch-list checklist, and #71 — rationale: the criterion is probably what should change, which is a decision |
+| PL-09 | **Deferred** | #129 punch-list checklist (open) — #71 is *closed*, so its body is what needs the edit, not its state; rationale: the criterion is probably what should change, which is a decision |
 | PL-10 | **Deferred** | #127 — the issue itself; close it, or add the box that is genuinely open |
 | PL-11 | **Deferred** | #129 punch-list checklist — rationale: a two-line edit to `.claude/rules/fork-workflow.md`, personal-overlay scope |
 | PL-12 | **Deferred** | #129 punch-list checklist — rationale: cosmetic; bundle with PL-04's string pass |
