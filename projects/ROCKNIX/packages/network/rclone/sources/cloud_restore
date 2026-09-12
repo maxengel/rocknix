@@ -25,6 +25,15 @@ readonly EXIT_LOCK_HELD=75 EXIT_NO_NETWORK=69
 # listing whose whole point is to answer quickly. Used by check_internet and
 # by network_lost_during_run after a failure.
 readonly -a RCLONE_PROBE_OPTS=(--contimeout 10s --timeout 20s --low-level-retries 1 --retries 1)
+# A listing's bound (#143). rclone's S3 backend hands --low-level-retries to
+# the AWS SDK as its number of attempts, with the SDK's exponential backoff
+# between them, and --contimeout never enters it: a refused endpoint costs
+# 0.03 s at 1 attempt, 2 s at 2, 6 s at 3 and 230 s at 10 (rclone 1.75 on
+# the VM, 2026-09-12). Ten is right for a write -- Dropbox answers a
+# concurrent write with a lock error a retry clears (#107) -- and wrong for
+# a listing, which has nothing to clear. Three covers a rate-limit answer
+# and keeps a dead endpoint under ten seconds on every backend.
+readonly -a RCLONE_LIST_OPTS=(--contimeout 15s --timeout 30s --low-level-retries 3 --retries 1)
 
 # What bounds every other rclone command this script runs against the cloud
 # -- the transfers, the listings, the archive download. The value is
@@ -40,6 +49,12 @@ readonly -a RCLONE_PROBE_OPTS=(--contimeout 10s --timeout 20s --low-level-retrie
 # card at 113/113 with the launch gate held (#101, #102, #103). Keep the two
 # values in step.
 RCLONE_NET_OPTS_FALLBACK="--contimeout 15s --timeout 30s --low-level-retries 10 --retries 1"
+# The automatic sync's bound (D-CLOUD-118), appended after the caller's flags
+# by the rclone() wrapper below; the ceiling is enforced by timeout. The two
+# are RCLONE_SYNC_NET_OPTS and SYNC_CEILING_SECONDS in cloud_sync.conf, and
+# these are the same values for a config the helper has not reached.
+RCLONE_SYNC_NET_OPTS_FALLBACK="--contimeout 5s --timeout 5s --retries 1 --max-duration 20s"
+SYNC_CEILING_SECONDS_FALLBACK=20
 RCLONE_NET_OPTS_ARRAY=()
 
 # Non-interactive support for hooks and the ES menu:
@@ -50,6 +65,33 @@ ASSUME_YES=0
 METHOD_OVERRIDE=""
 EXTRA_UPDATE=0
 SYSTEM_ONLY=0
+# --automatic: this run is the startup sync or the sync after a game, not a
+# back up or restore somebody pressed (D-CLOUD-113). A player is waiting to
+# play, so the run is bounded the way #135 measured it should be (D-CLOUD-118):
+# connect in 5 s, give a stalled transfer up after 5 s with nothing moving,
+# and never run past SYNC_CEILING_SECONDS in all -- against a cloud that
+# accepts and never answers the unbounded run took 321 s, with the outcome
+# landing behind the screensaver. The bound is applied here, on every rclone
+# this script runs: RCLONE_SYNC_NET_OPTS goes last on the command line so it
+# outranks the caller's bound, and busybox timeout enforces the ceiling on
+# what rclone's own flags cannot reach (a stalled listing retried ten times).
+# The low-level retry count is left to the caller's: ten for a transfer,
+# because Dropbox answers concurrent writes with a lock error that a retry
+# clears (#107), and the ceiling -- not the retries -- is what bounds a stall.
+# A run the ceiling ends returns 124 (timeout) or 10 (rclone's own
+# --max-duration); why_for says what that means to the player.
+AUTOMATIC=0
+SYNC_DEADLINE=0
+RCLONE_SYNC_NET_OPTS_ARRAY=()
+rclone() {
+    if [ "${AUTOMATIC}" -eq 1 ] && [ "${SYNC_DEADLINE}" -gt 0 ]; then
+        local left=$(( SYNC_DEADLINE - $(date +%s) ))
+        [ "${left}" -ge 1 ] || left=1
+        command timeout -k 3 "${left}" rclone "$@" "${RCLONE_SYNC_NET_OPTS_ARRAY[@]}"
+    else
+        command rclone "$@"
+    fi
+}
 SAVES_ONLY=0
 for CLI_ARG in "$@"; do
     case "${CLI_ARG}" in
@@ -59,6 +101,7 @@ for CLI_ARG in "$@"; do
         --update) EXTRA_UPDATE=1 ;;
         --system-only) SYSTEM_ONLY=1 ;;
         --saves-only) SAVES_ONLY=1 ;;
+        --automatic) AUTOMATIC=1 ;;
     esac
 done
 
@@ -472,6 +515,7 @@ why_for() {
         6)   echo "SOME FILES DIDN'T FINISH" ;;
         7|8) echo "YOUR CLOUD WOULDN'T TAKE THE FILES" ;;
         130) echo "IT WAS STOPPED" ;;
+        10|124) echo "THE CLOUD TOOK TOO LONG - IT'LL TRY AGAIN NEXT TIME" ;;
         *)   echo "SOMETHING WENT WRONG" ;;
     esac
 }
@@ -747,6 +791,22 @@ load_config() {
     done
     log_message "rclone network bound: ${net_opts}" "false"
 
+    # The automatic sync's bound on top (D-CLOUD-118), read the same way and
+    # with the same rule for an empty line; the ceiling is whole seconds.
+    if [ "${AUTOMATIC}" -eq 1 ]; then
+        local sync_opts ceiling
+        sync_opts=$(echo "${RCLONE_SYNC_NET_OPTS:-}" | tr '\n\\' '  ' | tr -s ' ' | sed 's/^ //; s/ $//')
+        [ -n "${sync_opts}" ] || sync_opts="${RCLONE_SYNC_NET_OPTS_FALLBACK}"
+        RCLONE_SYNC_NET_OPTS_ARRAY=()
+        for opt in ${sync_opts}; do
+            RCLONE_SYNC_NET_OPTS_ARRAY+=("$opt")
+        done
+        ceiling="${SYNC_CEILING_SECONDS:-}"
+        [[ "${ceiling}" =~ ^[0-9]+$ ]] && [ "${ceiling}" -ge 1 ] || ceiling="${SYNC_CEILING_SECONDS_FALLBACK}"
+        SYNC_DEADLINE=$(( START_TIME + ceiling ))
+        log_message "automatic run: ${sync_opts}; ceiling ${ceiling}s from start" "false"
+    fi
+
     # Apply command-line overrides
     if [ "${SYSTEM_ONLY}" -eq 1 ]; then
         BACKUPFILE_RESTORE_OPTION="yes"
@@ -803,7 +863,7 @@ device_label() {
 # restore can take from. Anything else -- unreachable, absent, only
 # subfolders -- is no.
 folder_has_archives() {
-    rclone lsf "${1}/" --include "/*.{zip,tar.gz}" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null | grep -q .
+    rclone lsf "${1}/" --include "/*.{zip,tar.gz}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | grep -q .
 }
 
 # The OS name the archive's name ends with. backuptool has OS_NAME from
@@ -936,8 +996,25 @@ restore_game_saves() {
     
     # Check if remote path exists before attempting restore
     log_message "Checking if remote path exists: ${REMOTENAME}${SAVES_REMOTE}" "false"
-    rclone lsd "${REMOTENAME}${SAVES_REMOTE}" "${RCLONE_NET_OPTS_ARRAY[@]}" > /dev/null 2>&1
+    rclone lsd "${REMOTENAME}${SAVES_REMOTE}" "${RCLONE_LIST_OPTS[@]}" > /dev/null 2>&1
     local remote_check_status=$?
+    # On a bucket-based cloud (S3 and its compatibles, GCS, Swift, B2) a
+    # folder is a prefix on object names and nothing else, so a folder with
+    # no objects does not exist and listing an absent one succeeds with
+    # nothing in it -- rclone's documented shape ("listing a nonexistent
+    # directory will produce an error except for remotes which can't have
+    # empty directories"), not a fault. The lsd above therefore proves
+    # nothing there, and a mistyped folder name restored nothing and said
+    # COMPLETED (#141, from the #133 matrix). So on such a cloud an empty
+    # listing is read as the folder being absent, which is what it is, and
+    # the offer below does the rest -- including the near-name check, which
+    # lists the parent's prefixes the same way. The features call is local.
+    if [ ${remote_check_status} -eq 0 ] \
+       && rclone backend features "${REMOTENAME}" 2>/dev/null | grep -q '"BucketBased": *true' \
+       && [ -z "$(rclone lsf --max-depth 1 "${REMOTENAME}${SAVES_REMOTE}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | head -1)" ]; then
+        log_message "bucket-based cloud: ${SAVES_REMOTE} lists nothing, which on a bucket is the folder not existing" "false"
+        remote_check_status=3
+    fi
     if [ $remote_check_status -ne 0 ]; then
         network_lost_during_run "$remote_check_status" "the saves restore"
 
@@ -970,9 +1047,9 @@ restore_game_saves() {
         local saves_parent="${saves_path%/*}"
         [ "${saves_parent}" = "${saves_path}" ] && saves_parent=""
         local missing_name="${saves_path##*/}"
-        if rclone lsd "${REMOTENAME}${saves_parent}" "${RCLONE_NET_OPTS_ARRAY[@]}" >/dev/null 2>&1; then
+        if rclone lsd "${REMOTENAME}${saves_parent}" "${RCLONE_LIST_OPTS[@]}" >/dev/null 2>&1; then
             local near
-            near=$(rclone lsf --dirs-only "${REMOTENAME}${saves_parent}" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null \
+            near=$(rclone lsf --dirs-only "${REMOTENAME}${saves_parent}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null \
                    | sed 's|/$||' | near_names "${missing_name}" | head -1)
             if [ -n "${near}" ]; then
                 log_message "saves folder ${SAVES_REMOTE} absent; its parent ${saves_parent:-/} lists and holds a near name: ${near}" "false"
@@ -1270,7 +1347,7 @@ restore_system_files() {
             # cloud plainly holds several is the kind of dead end that sends
             # someone looking in the wrong place.
             local others
-            others=$(rclone lsf "${legacy_src}/" --dirs-only "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null | tr -d '/' | tr '\n' ' ')
+            others=$(rclone lsf "${legacy_src}/" --dirs-only "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | tr -d '/' | tr '\n' ' ')
             if [ -n "${others}" ]; then
                 log_message "There's no settings backup for this device yet. The cloud has backups from: ${others}" "true" "WARN"
             else
@@ -1302,7 +1379,7 @@ restore_system_files() {
         # taken for this device's own; the label cannot tell them apart.
         local osn listing label mine newest
         osn=$(os_name)
-        listing=$(rclone lsf --files-only --include "*.{zip,tar.gz}" "${restore_src}/" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null)
+        listing=$(rclone lsf --files-only --include "*.{zip,tar.gz}" "${restore_src}/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null)
         label=$(device_label)
         mine=""
         if [ -n "${label}" ]; then

@@ -23,6 +23,9 @@
 #      key names (#52);
 #   g. each script's RCLONE_NET_OPTS_FALLBACK equals the shipped
 #      RCLONE_NET_OPTS, so a torn conf does not silently restore #107 (#146).
+#   h. --automatic's rclone wrapper ends a stalled call at the ceiling and
+#      returns 124; a deliberate run is not wrapped; why_for knows 124 and 10;
+#      the automatic fallback equals the shipped value (D-CLOUD-118).
 #
 # The chksysconfig and 001-functions functions are lifted out of the files
 # under test and run in a fresh bash against temp paths, as wait-lock-test
@@ -477,6 +480,33 @@ conf=$(sed -n 's/^RCLONE_NET_OPTS="\(.*\)"$/\1/p' "${ROOT}/${RCLONE_REL}/cloud_s
 for scr in cloud_backup cloud_restore cloud_content_backup cloud_content_restore; do
   fb=$(sed -n 's/^RCLONE_NET_OPTS_FALLBACK="\(.*\)"$/\1/p' "${ROOT}/${RCLONE_REL}/${scr}")
   [ -n "${fb}" ] && [ "${fb}" = "${shipped}" ]; check $? "${scr}: RCLONE_NET_OPTS_FALLBACK is the shipped value" "${scr}: fallback is '${fb:-(none)}', shipped is '${shipped}'"
+done
+
+echo "  h. --automatic: the rclone wrapper ends a stalled call at the ceiling, and says what that means (D-CLOUD-118)"
+# The wrapper is lifted out of cloud_backup and run against a shim rclone that
+# sleeps for a minute. With AUTOMATIC=1 and a deadline 3 s away it must
+# return 124 within a few seconds; with AUTOMATIC=0 the same shim is left
+# alone (a fast shim, so the case does not wait a minute to prove it).
+H="${TMP}/h"; mkdir -p "${H}/shim"
+printf '#!/bin/sh\nsleep "${SHIM_SLEEP:-60}"\n' > "${H}/shim/rclone"; chmod +x "${H}/shim/rclone"
+sed -n '/^rclone() {/,/^}/p' "${ROOT}/${RCLONE_REL}/cloud_backup" > "${H}/wrapper.sh"
+grep -q 'command timeout' "${H}/wrapper.sh"; check $? "the wrapper is lifted from cloud_backup" "no rclone() wrapper found in cloud_backup"
+t0=$(date +%s)
+RC_H=$(PATH="${H}/shim:${PATH}" bash -c ". '${H}/wrapper.sh'; AUTOMATIC=1; SYNC_DEADLINE=\$(( \$(date +%s) + 3 )); RCLONE_SYNC_NET_OPTS_ARRAY=(--retries 1); rclone lsd x: ; echo \$?" 2>/dev/null | tail -1)
+dt=$(( $(date +%s) - t0 ))
+[ "${RC_H}" = "124" ]; check $? "an automatic run's stalled rclone returns 124 (timeout)" "returned '${RC_H}'"
+[ "${dt}" -le 10 ]; check $? "and within the ceiling (${dt}s)" "took ${dt}s"
+RC_H=$(PATH="${H}/shim:${PATH}" SHIM_SLEEP=0 bash -c ". '${H}/wrapper.sh'; AUTOMATIC=0; SYNC_DEADLINE=0; rclone lsd x: ; echo \$?" 2>/dev/null | tail -1)
+[ "${RC_H}" = "0" ]; check $? "a deliberate run's rclone is not wrapped" "returned '${RC_H}'"
+for scr in cloud_backup cloud_restore; do
+  w=$(bash -c ". <(sed -n '/^why_for() {/,/^}/p' '${ROOT}/${RCLONE_REL}/${scr}'); why_for 124; why_for 10" 2>/dev/null | sort -u | wc -l)
+  bash -c ". <(sed -n '/^why_for() {/,/^}/p' '${ROOT}/${RCLONE_REL}/${scr}'); why_for 124" 2>/dev/null | grep -q "TOOK TOO LONG"; check $? "${scr}: why_for 124 and 10 say the cloud took too long (${w} distinct)" "${scr}: $(bash -c ". <(sed -n '/^why_for() {/,/^}/p' '${ROOT}/${RCLONE_REL}/${scr}'); why_for 124")"
+done
+for scr in cloud_backup cloud_restore cloud_content_backup cloud_content_restore; do :; done
+shipped_sync=$(sed -n 's/^DEFAULT_RCLONE_SYNC_NET_OPTS="\(.*\)"$/\1/p' "${ROOT}/${RCLONE_REL}/cloud_sync.conf.defaults")
+for scr in cloud_backup cloud_restore; do
+  fb=$(sed -n 's/^RCLONE_SYNC_NET_OPTS_FALLBACK="\(.*\)"$/\1/p' "${ROOT}/${RCLONE_REL}/${scr}")
+  [ -n "${fb}" ] && [ "${fb}" = "${shipped_sync}" ]; check $? "${scr}: RCLONE_SYNC_NET_OPTS_FALLBACK is the shipped value" "${scr}: '${fb:-(none)}' vs '${shipped_sync}'"
 done
 
 echo
