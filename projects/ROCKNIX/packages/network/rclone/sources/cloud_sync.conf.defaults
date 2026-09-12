@@ -90,7 +90,7 @@ DEFAULT_RCLONEOPTS="--progress \
 # One line, split on spaces by the scripts. An empty value gives these same
 # numbers, never rclone's defaults: the scripts fall back to them.
 DEFAULT_RCLONE_NET_OPTS="--contimeout 15s --timeout 30s --low-level-retries 10 --retries 1"
-DEFAULT_RCLONE_SYNC_NET_OPTS="--contimeout 5s --timeout 5s --retries 1 --max-duration 20s"
+DEFAULT_RCLONE_SYNC_NET_OPTS="--contimeout 5s --timeout 5s --retries 1 --max-duration 20s --low-level-retries 5 --transfers 1"
 DEFAULT_SYNC_CEILING_SECONDS=20
 
 # Backup Options

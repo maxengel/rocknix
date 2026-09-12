@@ -53,7 +53,7 @@ RCLONE_NET_OPTS_FALLBACK="--contimeout 15s --timeout 30s --low-level-retries 10 
 # by the rclone() wrapper below; the ceiling is enforced by timeout. The two
 # are RCLONE_SYNC_NET_OPTS and SYNC_CEILING_SECONDS in cloud_sync.conf, and
 # these are the same values for a config the helper has not reached.
-RCLONE_SYNC_NET_OPTS_FALLBACK="--contimeout 5s --timeout 5s --retries 1 --max-duration 20s"
+RCLONE_SYNC_NET_OPTS_FALLBACK="--contimeout 5s --timeout 5s --retries 1 --max-duration 20s --low-level-retries 5 --transfers 1"
 SYNC_CEILING_SECONDS_FALLBACK=20
 RCLONE_NET_OPTS_ARRAY=()
 

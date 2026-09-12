@@ -288,7 +288,7 @@ single-file push, and the exit-4 timing.
 EmulationStation runs the startup sync and the sync after a game with
 `--automatic`. Under it every rclone the script makes carries
 `RCLONE_SYNC_NET_OPTS` (`--contimeout 5s --timeout 5s --retries 1
---max-duration 20s`) after the caller's own flags, and runs under busybox
+--max-duration 20s --low-level-retries 5 --transfers 1`) after the caller's own flags, and runs under busybox
 `timeout` against a deadline `SYNC_CEILING_SECONDS` (20) from the script's
 start -- because `--max-duration` bounds transfers and nothing else, and a
 stalled listing retried ten times is what held the exit card for 321 s on
@@ -301,8 +301,12 @@ constant in each script; `tools/last-good-scripts-test` case h holds the
 three equal and proves the wrapper fires. The numbers are a starting point
 the maintainer accepted to tweak on feedback (2026-09-12).
 
-Two retry counts, on purpose. A transfer keeps `--low-level-retries 10`:
-Dropbox answers a concurrent write with a lock error a retry clears (#107).
+Three retry counts, on purpose. A deliberate transfer keeps
+`--low-level-retries 10`: Dropbox answers a concurrent write with a lock
+error a retry clears (#107). The automatic sync runs five, one transfer at
+a time -- serial uploads never make the concurrent writes that trip the
+lock, and rclone spends the same retries on a refused connection (12 s at
+ten, 3.9 s at five, measured; D-CLOUD-121, the maintainer's baseline).
 A listing (`lsd`, `lsf`) carries `RCLONE_LIST_OPTS` with three, because
 rclone's S3 backend hands the count to the AWS SDK as its attempts with
 exponential backoff and `--contimeout` never enters it: a refused endpoint
