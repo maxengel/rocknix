@@ -1132,19 +1132,13 @@ echo "${saw:-0}/${all:-0}"
                           f"exit {rc}: {out.strip()[-200:]!r}")
     dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"{rpath('QA-No-Such-Root/Saves')}\"|' {CONF}")
     rc, out = run_rc(dev, "cloud_restore --yes --saves-only")
-    if caps().get("bucket") == "yes":
-        # On a bucket an absent root and an empty one are one observation
-        # (rclone's documented shape; #141), so the restore cannot fail here
-        # without failing every fresh bucket too. What it must do is not say
-        # COMPLETED and nothing else: the offer names the full path, which
-        # is where a typo is seen.
-        failures += not check(rc == 0 and f">>> offer create-saves-folder|{rpath('QA-No-Such-Root/Saves')}" in out,
-                              f"root absent on a bucket: indistinguishable from empty, so the offer names the path (exit {rc})",
-                              f"exit {rc}: {out.strip()[-200:]!r}")
-    else:
-        failures += not check(rc != 0 and ">>> offer" not in out,
-                              f"root absent: the restore fails (exit {rc}) and offers nothing",
-                              f"exit {rc}: {out.strip()[-200:]!r}")
+    # On a bucket the same holds since 2026-09-12: a folder exists when its
+    # parent lists it (a directory marker or objects), so a root nothing
+    # lists fails there too (#141). The fixtures above are files, because
+    # mkdir on a bucket without directory markers makes nothing.
+    failures += not check(rc != 0 and ">>> offer" not in out,
+                          f"root absent: the restore fails (exit {rc}) and offers nothing",
+                          f"exit {rc}: {out.strip()[-200:]!r}")
     # #127: a saves folder at the cloud's root has the root for a parent,
     # and the root answers, so an empty cloud gets the offer there too.
     dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"{rpath('QA-Root-Saves')}\"|' {CONF}; "
