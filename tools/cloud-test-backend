@@ -77,6 +77,12 @@ default_port() {
   esac
 }
 PORT="${CLOUD_QA_PORT:-$(default_port "${BACKEND}")}"
+# The deliberately dead port: nothing ever binds it, on any backend. A
+# failure fixture needs a stanza that is right in every other respect and
+# cannot connect, and rewriting a live stanza with sed only works on the two
+# backends whose address is a URL -- on SFTP, SMB and FTP the sed matched
+# nothing and the "refused cloud" test quietly ran against a working one.
+DEAD_PORT="${CLOUD_QA_DEAD_PORT:-9011}"
 BIND="${CLOUD_QA_BIND:-127.0.0.1}"
 USER_NAME="${CLOUD_QA_USER:-qauser}"
 PASS="${CLOUD_QA_PASS:-qa-password}"   # >=8 chars: MinIO rejects shorter root passwords
@@ -664,13 +670,19 @@ echo "seeded: \$(find /storage/roms/snes /storage/roms/gb -type f | wc -l) devic
 EOF
     ;;
 
+  dead-conf)
+    # The same stanza, pointing at the dead port: a cloud that refuses.
+    CLOUD_QA_PORT="${DEAD_PORT}" exec "$0" --backend "${BACKEND}" rclone-conf
+    ;;
+
+  dead-port)   echo "${DEAD_PORT}" ;;
   remote-name) echo "${REMOTE}" ;;
   backend)     echo "${BACKEND}" ;;
   backends)    echo "webdav s3 sftp smb ftp" ;;
   port)        echo "${PORT}" ;;
 
   *)
-    echo "usage: ${0##*/} [--backend webdav|s3|sftp|smb|ftp] {up|down|reset|ls [path]|path|cat <path>|put <dir> <path>|status|rclone-conf|caps|endpoint-prefix|saves-remote|settings-remote|content-remote|seed-content|seed-device|remote-name|backend|backends|port}" >&2
+    echo "usage: ${0##*/} [--backend webdav|s3|sftp|smb|ftp] {up|down|reset|ls [path]|path|cat <path>|put <dir> <path>|status|rclone-conf|caps|dead-conf|dead-port|endpoint-prefix|saves-remote|settings-remote|content-remote|seed-content|seed-device|remote-name|backend|backends|port}" >&2
     exit 1
     ;;
 esac
