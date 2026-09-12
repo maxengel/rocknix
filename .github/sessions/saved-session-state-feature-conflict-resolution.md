@@ -1,6 +1,6 @@
 # Saved Session State
 
-> **Saved**: 2026-09-12T22:20:00Z
+> **Saved**: 2026-09-12T23:45:00Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
@@ -10,14 +10,16 @@ Epic #11 (cloud saves). Tonight (2026-09-12): #140, #133, #135, #129 delivered; 
 
 ## In Progress
 
-- Nothing running. Guests a, b (pair) on `ec12767b26`; guest c on `c90022dc57`, WebDAV, gameexit=1. QA backends up: WebDAV 9010, SFTP 9013, S3 9012. RG35XX SP `af2db4ab09` online and healthy; RG SP `7eb713bbd9` offline (the maintainer checks its lease; it was at 192.168.1.177); both hold the same ten saves. Nothing staged on either (D-QA-015).
-- The maintainer asked (22:00) which open issues are QoL / cleanup / bugs rather than net-new, and whether a preview build for the Retroid Pocket Nova (never used) or the RG351M would help before the conflict-resolution work, or whether to stay on the two H700s. Answered in the session's last message; the Nova is already earmarked for #88 (Gate 12 round two, D-QA-010) and is the natural QA handheld (#131, D-QA-016); its build target is to be confirmed with the maintainer (not in `device-builds.md`).
+- **The LINK1-7 cells** (`vm-qa --skip-up --only link`, detached) re-running on the pair under D-CLOUD-118/121's bound for #113's last VM box; log in the session scratchpad `vm-qa-link-ec12767b26.log`.
+- **Milestone 3 "Stable before upstream"** (D-WORKFLOW-011): the hygiene pass closed #90, #91, #107, #76, #92; ticked eighteen boxes elsewhere with evidence; `vm-qa` gains `pair-identity`; `last-good-scripts-test` case j. Three criteria await the maintainer's words (#94 box 3 launch waits/refused vs D-CLOUD-076/109; #51 box 6 "providers we cannot drive"; #7 box 2 "naming the remote"). #73's docs box = #42 = #129 PL-07; #14's REMOTENAME = #33. The QoL list on the milestone: #27 #93 #45 #47 #50 #66 #67 #68 #69 #82 #142 #121 #131 #42.
+- Upstream: every PR to `ROCKNIX/distribution:next`, `es` prefix for EmulationStation (D-WORKFLOW-012).
+- Guests a, b on `ec12767b26`; guest c on `c90022dc57` (WebDAV restored). RG35XX SP online (`af2db4ab09`); RG SP offline; the Nova: stable build first (census #88, QA handheld #131), target to be named by the maintainer.
 
 ## Next Steps
 
-1. The maintainer's staging yes, per device -- RG SP first when back, then the RG35XX SP: `h700-all-20260912-ec12767b26/ROCKNIX-H700.aarch64-20260912.tar` (`701f725cd10467f8...`); stage, verify the device-side checksum, ask before each reboot; afterwards read `last-sync-startup` on the RG SP (expect `completed`) and the first Dropbox exit sync under five retries.
-2. The maintainer's calls: the device question (stay on the two H700s vs the Nova as QA handheld / #88 round two vs the RG351M); D-WORKFLOW-010 (rules in the ES repo); a tracker-hygiene pass over delivered-but-open issues (#12, #35, #51, #64, #73, #92, #94, #107, #113, #91 look delivered -- each closes only with its evidence named).
-3. #139 (VM), then #134's build order: #136 -> #137 -> #21 -> #22 -> #23 -> #25 -> #139; #88 round two needs the Nova.
+1. LINK cells result -> tick #113's VM box (the Dropbox half stays with D-CLOUD-121). Then the QoL list in order: #45 (backuptool: exclude `ppsspp/assets/**` and `PSP/SYSTEM/CACHE/**`, keep `ppsspp.ini`/`controls.ini`/`PSP/Cheats`, fix the backuptool:245 comment; measure the archive on guest c before/after), #142 (FTP: missing dir = not there yet; mkdir before the content copy; `--backend ftp` 99/99), #93 + #82 (one ES change, frames), #47 + #27 (frames at 480x320 too), #50 (default hostname per unit; avahi deliberately off?), then the handheld-gated #66/#68/#121.
+2. Staging `ec12767b26` H700 (`701f725cd10467f8...`) on the RG SP (when back) then the RG35XX SP -- per-device yes; afterwards the Dropbox confirmation of five retries (#107/#113's device half, D-CLOUD-121).
+3. #42 (rocknix.org page) before any upstream PR; then the PRs to distribution:next.
 
 ## Key Files Modified
 
