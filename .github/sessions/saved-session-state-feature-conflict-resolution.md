@@ -1,32 +1,40 @@
 # Saved Session State
 
-> **Saved**: 2026-09-12T11:40:00Z
+> **Saved**: 2026-09-12T12:50:00Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). **The nine save-history decisions are all settled with the maintainer, one at a time** (D-CLOUD-105..108, 114..117, D-UI-043; plus the rulings raised on the way: D-CLOUD-109 a launch waits for a bounded sync, 110 the stage is one cache, 111 the bound watches progress, 112 the offline benchmark, 113 two transfer contracts; D-UI-040 the exit card says syncing (#138), D-UI-041 the offline reminder (#139), D-UI-042 least surprise as a rule file). Everything is in the tracker: #134 (all P-items ticked), #22, #23, #25, #21, #135, #136, #137, #139. `Saves-replaced` design docs superseded; wizard IA rev 6; menu map current.
-
-**`a2ee7b9bb2` (ES `f93acc2a6`, #140 the exit card's live line in the player's words) is built for x64, its binary checked for the six new strings, and framed on guest c: NOTHING SENT YET against the dead port, COMPLETED against the live endpoint (`docs/qa-frames/2026-09-12/`).** **#140 closed**: `tools/vm-qa` passed all four suites on a fresh pair (`qa-a2ee7b9bb2-webdav-a-20260912-0646`). H700 `a2ee7b9bb2` built (tar `cbddc951af027b14...`, strings checked), **not staged**. **#133 merged** (`ac2db6c113`): five backends (webdav 9010, s3 9012, sftp 9013, smb 9014, ftp 9015), `--backend` on the three tools, D-QA-018/019/020; it found #141 (a wrong saves folder reports COMPLETED on a bucket), #142 (FTP: missing dir reads as broken cloud; `--retries 1` lost a file), #143 (a refused S3 endpoint outlives every timeout). Hosted-provider box open on accounts. The maintainer approved #123 (D-UI-044, closed) and set a standing rule for every player-facing string -- clear, brief, sized to the space (D-UI-045, `.claude/rules/player-language.md`).
+Epic #11 (cloud saves). The nine save-history decisions are settled (D-CLOUD-105..117, D-UI-040..043); everything is in the tracker (#134 and children). **Tonight (2026-09-12): #140 fixed and closed; #133 the five-backend QA matrix merged (found #141/#142/#143); #135 the time-to-play cell merged and measured (proposed rows on the issue); #129 the milestone audit merged, its three high findings (#144/#145/#146) fixed and closed the same night; #123 closed on the maintainer's word; D-UI-045 (clear, brief, sized to the space) as a rule.** Latest image **`0f89c8f1d4`** (ES `51639dd09`): six runner suites PASS (time-to-play on guest b after the cell's own precondition fix `a8f8ef487d`); frames in `docs/qa-frames/2026-09-12/`. `next` is at `e18c567f82`.
 
 ## In Progress
 
-- **#129 audit done and merged** (`d152c39800`; `docs/audits/2026_09_12-milestone-cloud-saves-since-60/`, lint PASS): 3 high (#144 lifetime test broken and unrun; #145 the empty-cloud offer never reaches the transfer page -- two `>>> ` parsers; #146 the four `RCLONE_NET_OPTS_FALLBACK` constants still at 2 retries), 5 medium (PL-04 strings naming absent controls; PL-05 FINALIZE RESTORE vs FINISH RESTORE SETUP -- maintainer's call; PL-06 a declined exit sync reports nothing -- behaviour choice, #139; PL-07 rocknix.org docs #42; PL-08 D-INFRA-008 is two rows -- maintainer's append), 6 low. Register: 26/26 named rows hold (D-CLOUD-085 bucket hole = #141; D-QA-013 wording), 25 later rows not yet built, D-CLOUD-109 decided-but-unbuilt reversal of 076.
-- **Fixed tonight, on `next` `01143a23ef`:** #146 (constants to 10 + `last-good-scripts-test` case g, proven to fire); #144 (ES `db550efa9` on `test/qa-integration`: harness doubles gain `name` and `CloudText::providerSubtitle`; proven with a compiling use-after-free mutant -> ASan FAIL keyboard; `vm-qa` gains the `lifetime` suite, fail-closed on a missing `ES_SRC`); `pkgcheck` exits non-zero on FAIL; fork-workflow's tool list matches the hook; backuptool's note names a real row; #71 AC 4 edited (PL-09); #127 has its genuinely open box (PL-10).
-- **Running:** the **#145 agent** (opus) in ES worktree `offer-on-page` on `feature/offer-on-page` from `f93acc2a6`: one `>>> ` parser (`classifyProtocolLine` gains Unit/Removed), the offer dialog factored into one shared function, raised by the transfer page on dismissal; unit tests enumerating every script-emitted shape; PL-04 ES strings and PL-12 (WI-FI GPIO; the menu path written as two levels everywhere). It reports a note for `docs/es-menu-map.md`.
-- Guests a, b on `a2ee7b9bb2` (pair, a's driver back on vulkan); guest c on `a2ee7b9bb2`, WebDAV, gameexit=1. RG35XX SP on `af2db4ab09`, clean; H700 `a2ee7b9bb2` built, not staged.
+- **H700 `0f89c8f1d4`** building (`build/devices` moved to `0f89c8f1d4` so the BUILD_ID matches the tested x64; `fork-worktree sync` fast-forwards it to `next` afterwards). Not to be staged without a per-device yes.
+- Guests a (Probe.nes seeded, gl driver, gameexit=1) and b on `0f89c8f1d4`; guest c on `0f89c8f1d4`, WebDAV, gameexit=1. RG35XX SP on `af2db4ab09`, clean. H700 `a2ee7b9bb2` also built, not staged (superseded by `0f89c8f1d4` once built).
 
 ## Next Steps
 
-1. When the #145 agent reports: verify by grep, merge into `test/qa-integration` (after `db550efa9`), push; bump the pin on `next`; build x64 (both mounts!) and H700; run `tools/vm-qa` (now six suites); frame the offer on the transfer page on guest c (endpoint whose root lists but `Saves` is absent: `cloud-test-backend put` a sibling folder, `rclone purge` the saves folder); update `docs/es-menu-map.md` from the agent's note; close #144/#145/#146 with the build; work log + QA log rows; then tell the maintainer.
-2. The maintainer's calls: #127 texts (short form); #135's proposed rows (P-13 3 s; D-CLOUD-111 connect 5 s / stall 5 s with one retry / ceiling 20 s; D-CLOUD-112 within 3x online) and the two findings (stall behind the screensaver; IPv6 default route); PL-05 (one name for the relink page); PL-08 (D-INFRA-008 renumber, append-only); #141/#142/#143 behaviour on remotes without "a folder that does not exist yet"; staging `a2ee7b9bb2` (or the next build) H700 on the RG35XX SP.
-3. Then #134's build order: #136 -> #137 -> #21 -> #22 -> #23 -> #25 -> #139, with the bounds (D-CLOUD-111) as the first small piece once decided.
+1. When the H700 finishes: file it, check the strings, `fork-worktree sync`; report to the maintainer.
+2. The maintainer's calls, all put to them in player terms: #127 texts (the short form is in the build; theirs replaces it); #135's proposed rows (P-13 3 s; D-CLOUD-111 connect 5 s / stall 5 s with one retry / ceiling 20 s; D-CLOUD-112 within 3x online) and the two findings (stall behind the screensaver; IPv6 default route counts as connectivity); audit PL-05 (one name for the relink page), PL-08 (D-INFRA-008 renumber); #141/#142/#143 behaviour on remotes without "a folder that does not exist yet"; `GuiMenu:4911` BRING DATA BACK under D-UI-045; staging `0f89c8f1d4` H700 on the RG35XX SP.
+3. Rule text from the audit's proposals once read: P-01 change the set not the site; P-02 a mechanical check for strings naming rows; P-03 a check nothing invokes is not a guard. Blindspot 39 is written.
+4. Then #134's build order: #136 -> #137 -> #21 -> #22 -> #23 -> #25 -> #139, with the bounds (D-CLOUD-111) as the first small piece once the rows are decided.
 
 ## Key Files Modified
 
 | File | Change | Notes |
 | --- | --- | --- |
+| ES `CloudOffer.{h,cpp}`, `CloudText.{h,cpp}`, `GuiCloudTransfer.cpp`, `ThreadedCloudSync.cpp` (`1b3d94d0d`) | one `>>> ` parser (Unit/Removed), the offer dialog shared, raised by the page on dismissal | #145 |
+| ES `GuiMenu.cpp`, `GuiCloudTransfer.cpp` (`db1005101`), `CloudOffer.cpp` (`35618d447`) | strings name real rows; two-level menu path; WI-FI GPIO; short-form dialogs | PL-04/PL-12, D-UI-045 |
+| ES `tests/cloud-oauth-lifetime.py` (`317028769`) | doubles gain `name` + `CloudText::providerSubtitle` | #144 |
+| rclone `cloud_backup/restore/content_*` (`59b64f85ce`), `tools/last-good-scripts-test` case g | fallback retries 10; the check | #146 |
+| `tools/vm-qa` (`01789120f4`) | `lifetime` suite, fail-closed | #144 |
+| `tools/pkgcheck` (`81221658b3`) | exits non-zero on FAIL | audit F-08 |
+| `tools/fork-worktree` (`80fc560c3a`) | git reads anchored on its own repo | |
+| `tools/time-to-play` (`da2c2a2bbc`, `a8f8ef487d`) | `--vm` driver swap; `headline_missing`; settings before the boot; `reboot_guest` | #135, blindspot 39 |
+| `tools/cloud-test-backend`, `cloud-round-trip`, `vm-qa` (agent, `a695ba6514`..`fbb3a1f156`) | five backends behind `--backend` | #133 |
+| `docs/audits/2026_09_12-milestone-cloud-saves-since-60/` | the audit | #129 |
+| `docs/blindspot-register.md` 39; `docs/decision-register.md` D-UI-045, D-QA-018..020 | | |
 | ES `CloudText.{h,cpp}` (`1a866ca22`) | `rcloneUnits`, `parseBytes`, `sizeLabel`, `roundSizes` moved in; `liveLine` parser | #140; 29 cases / 280 assertions |
 | ES `ThreadedCloudSync.cpp` | card renders `liveLine` facts: `%s OF %s`, NOTHING SENT/RECEIVED/SYNCED YET, `COMPARING SAVES · %d OF %d`; count line no longer drives words or bar | #140 |
 | ES `GuiCloudTransfer.cpp` | the three size statics delegate to CloudText | #140 |
