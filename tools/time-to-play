@@ -71,6 +71,15 @@
 # by size alone (WebDAV with vendor=other) still sees a change. --payload srm
 # seeds only the battery save, which is P-13's "one changed battery save".
 #
+# The AUTO-state in what actually moves is RetroArch's own, not the seeded
+# one: runemu.sh launches with -autosave 1, so RetroArch rewrites
+# Probe.state.auto and its thumbnail on the way out and the seeded pair is
+# replaced before the sync reads them. So a measured exit moves seven files
+# and about 440 KiB -- a real auto-state and its screenshot, two synthetic
+# manual states with theirs, and the battery save -- which is D-CLOUD-116's
+# shape with the one file that could be real being real. The cell reports
+# what it seeded (`du`); the run's rclone line in the log reports what moved.
+#
 # WHAT IT DOES TO THE GUEST, and puts back: the rclone remote's address (for
 # the offline and bounds cells), cloudsaves.startup (for the startup cell),
 # the guest's default route (for one offline cell), and the seeded saves.
@@ -156,8 +165,14 @@ class Guest:
 
     def sh(self, cmd, timeout=60, master=True):
         try:
+            # errors="replace", not text=True: the guest's log is UTF-8 and
+            # busybox `cut -c` counts BYTES, so a line trimmed for the report
+            # can end mid-character. A whole run died on one 0xc3 while
+            # collecting the portal cell's log (2026-09-12); a measurement
+            # must not be lost to a byte in a diagnostic.
             p = subprocess.run(["ssh", "-n", "-p", self.port] + self._opts(master) + [self.host, cmd],
-                               capture_output=True, text=True, timeout=timeout)
+                               capture_output=True, timeout=timeout,
+                               encoding="utf-8", errors="replace")
             return p.returncode, p.stdout.strip()
         except subprocess.TimeoutExpired:
             return 255, ""
@@ -1264,7 +1279,11 @@ def render(r):
             [["the emulator gone", fmt(stats([x["t_emulator_gone"] for x in E])), len(E)],
              ["**the last-sync-exit stamp**", "**%s**" % fmt(stats([x["t_sync_stamp"] for x in E])), len(E)],
              ["the card gone from the screen", fmt(stats([x["t_card_gone"] for x in E])), len(E)]]))
-        lines.append("Outcomes: %s. Payload %s KiB.\n"
+        # What was seeded, not what moved: RetroArch replaces the auto-state
+        # on its way out, so the transferred total is smaller. The rclone
+        # line in each cell's log is the authority on bytes.
+        lines.append("Outcomes: %s. Payload seeded %s KiB (RetroArch rewrites the auto-state on exit, "
+                     "so what moves is a little less; the log's rclone line has the bytes).\n"
                      % (", ".join("%s x%d" % (k, v) for k, v in toks.items()),
                         E[0].get("payload_kib", "?")))
     if G:
