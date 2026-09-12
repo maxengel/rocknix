@@ -55,7 +55,7 @@ made in sequence by one person. So, in #23:
   stays on the left and this console's on the right (D-CLOUD-041, D-CLOUD-104). Under
   each, one line says which console played it and whether it is the later or the
   earlier session -- *played later on <console name>* / *played earlier on <console
-  name>* (D-CLOUD-106's names) -- ordered by publish sequence, never by clock.
+  name>* (D-NET-001's names) -- ordered by publish sequence, never by clock.
 - **The cursor opens on the newer version** (D-CLOUD-104), whichever column it is in,
   so the common resolution of a missed sync is one press. D-CLOUD-032 stands: nothing
   is kept without that press, and the other version is retained in the store.
