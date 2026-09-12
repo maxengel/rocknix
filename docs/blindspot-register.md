@@ -322,3 +322,32 @@ without their yes" (D-QA-015). Ask per action, name the footprint
 including what automatic behaviour the action triggers on a configured
 device, and treat the owner's cloud as the owner's data.
 
+
+## 39. A new suite that passed over a table of dashes (2026-09-12)
+
+The time-to-play cell (#135) was written and measured on guest c, where
+RetroArch had been set to the GL driver by hand months of sessions ago, and
+wired into `tools/vm-qa` as a default suite. Its first dispatch by the
+runner, on guest a, printed `time-to-play: PASS in 581s` -- and every
+headline number in its table was `-`. Guest a's RetroArch was on the
+image's default, Vulkan, which a QEMU guest cannot draw with: the process
+existed for a fifth of a second and never drew, so no game frame, no exit
+sync, no stamp, and the tool exited 0 because nothing in it had thrown.
+
+**The pattern:** a measurement tool judged its run by whether it *ran*, not
+by whether it *measured*. The condition it depended on (a drawing emulator)
+had been true on every machine it was developed on, so it was never stated
+as a precondition, never set up by the tool, and never checked at the end.
+The runner then reported the empty run in the same PASS line as the full
+ones. Blindspot 13's shape -- a ticked item that had never once functioned
+-- with a suite line instead of a checkbox, and blindspot 14's -- a guard
+with no observed positive -- for the tool as a whole.
+
+**The rule:** a tool that reports numbers fails when the numbers it exists
+to report are missing, and says which (`headline_missing` in
+`tools/time-to-play`; the report ends "Not a pass"). A tool that needs the
+guest in a state the image does not ship puts it there for the run and
+restores it (`--vm`, the exit test's rule since #117). And a suite added to
+the runner is not wired in until it has been seen to FAIL once on the
+runner's own guest -- `engineering-practices.md` § "Prove the guard fires",
+applied to a suite: the first PASS of anything new is the one to distrust.
