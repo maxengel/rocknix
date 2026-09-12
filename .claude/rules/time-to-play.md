@@ -34,6 +34,9 @@ because it can help guide our decision-making."* D-CLOUD-098, #135.
   plane; with no connectivity the sync must reach its outcome in about the time a
   successful sync of the same change would have taken. Size every connect timeout and
   probe to that, and measure the offline exit beside the online one.
+- **Two contracts, never one budget** (D-CLOUD-113): a deliberate back up or restore may
+  take time and says so on its page; an automatic sync on exit or at startup is quick,
+  bounded, and waited for. Do not size one by the other.
 - **Retros and plans name it.** Every phase retro asks what the phase did to time to
   play; every plan for a cloud or interface change states its effect on the two numbers
   before it is built.
