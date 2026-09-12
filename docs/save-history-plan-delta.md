@@ -1,5 +1,7 @@
 # Save history: the delta to the council-derived #11 plan
 
+> **Superseded 2026-09-12** by the council's consensus plan and its by-hand amendment, applied to #134 and its children (`research/council-runs/2026-09-11-save-history-one-home/`, `docs/save-history-consensus-amendment.md`). Kept as the record of how the design was reached.
+
 Maintainer, 2026-09-11: *"I think we need to be crisp about what we're changing in the
 council-derived plan and can take it and put it through another council run if
 necessary."* This is the crisp list. Everything not named here stays as #21–#25, #35 and

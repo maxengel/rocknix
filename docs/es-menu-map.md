@@ -147,46 +147,10 @@ are shown as SKIPPED, not FAILED.
 **Keep this map current.** Maintainer, 2026-09-11: it is *"something we were
 maintaining closely and should still do"* -- every row added, moved or renamed
 in EmulationStation updates this file in the same change (D-UI-039). Pending
-here: #134's history store settings (nested under SAVE MANAGEMENT, not stacked
-on the hub) and #23's KEEP DISCARDED SAVES rows, which share that nest.
-
-## Screens you cannot reach from the main menu
-
-These are entered from the game list or the launch flow, and are easy to forget
-when reasoning about "where does the user see this?":
-
-| Screen | Entered from |
-|---|---|
-| VIEW OPTIONS | SELECT in a game list |
-| *(game name)* game options | long-press South / North in a game list |
-| SAVESTATE MANAGER | game launch, when savestates are enabled |
-| metadata editor, single-game scraper | game options |
-| CONNECT TO NETPLAY | system view |
-| QUICK ACCESS | SELECT in the system view |
-| media viewers (manual, video) | game options, quick access |
-
-## Adding a new destination
-
-1. **Prefer an existing group.** Nearly everything belongs under a group that
-   already exists; a new top-level main-menu entry is almost never right.
-2. **A new top-level entry has no themed icon.** Theme `menuIcons` names are a
-   fixed vocabulary (`iconSystem`, `iconUI`, `iconNetwork`, `iconAdvanced`, …),
-   so an entry outside that list renders without one until upstream adds it.
-3. **Check the mode gates.** Decide explicitly whether kid/kiosk users should see
-   it, and whether it needs `isFullUI`.
-4. **Gate on capability, not assumption** — `Utils::FileSystem::exists("/usr/bin/tool")`
-   for OS-shipped scripts, `ApiSystem::isScriptingSupported(...)` for batocera-style
-   backends.
-
-## Upstream references
-
-There is **no upstream documentation of menu structure or UX** — `THEMES.md`
-covers only how a theme repaints menus (colors, fonts, switch/slider artwork).
-The closest thing to a specification is the Batocera wiki's menu tree, which
-enumerates the same top-level structure this fork ships:
-
-- <https://wiki.batocera.org/menu_tree> — menu enumeration (de-facto placement spec)
-- <https://wiki.batocera.org/emulationstation_overview> — interaction conventions
-  (cardinal button names, South confirms / East cancels, help-bar rule)
-
-ES-DE and RetroPie documentation describes *different* forks and does not apply.
+here, to be drawn when the rows are built (#134, #23): under SAVE MANAGEMENT one
+entering row for the earlier-versions store (its label is the maintainer's word,
+P-11) opening a nested page that holds KEEP EARLIER VERSIONS OF SAVES (switch)
+and VERSIONS KEPT PER SAVE (count) -- the two #23 rows, reworded for the whole
+store (D-CLOUD-095/096, D-UI-039); and, after a conflict, the compare page with
+the cloud's version left and this console's right, a *played later/earlier on
+<console>* line under each, the cursor opening on the newer one (D-CLOUD-104).

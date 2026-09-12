@@ -1,5 +1,7 @@
 # Save history: what #11 covers, what it does not, and one home for both
 
+> **Superseded 2026-09-12** by the council's consensus plan and its by-hand amendment, applied to #134 and its children (`research/council-runs/2026-09-11-save-history-one-home/`, `docs/save-history-consensus-amendment.md`). Kept as the record of how the design was reached.
+
 Maintainer, 2026-09-11: *"So, saves replaced something that is permanent. It doesn't
 make sense, even with our existing naming scheme, which is discarded saves. Is this
 meant to be a permanent part of our structure? If so, we should think about whether
