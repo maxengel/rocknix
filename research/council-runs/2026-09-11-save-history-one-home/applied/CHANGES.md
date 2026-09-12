@@ -2,8 +2,9 @@
 
 Prepared 2026-09-12 from `final-issue-draft.md` (the council's Step 5 handoff) as **overridden by
 `docs/save-history-consensus-amendment.md`** wherever the two differ. Nothing here has been
-written to GitHub: these are bodies ready to paste. `#136` and `#137` are
-placeholders for the two new children's numbers.
+written to GitHub by this pass: these are bodies ready to paste. The two children were opened
+as **#136** (the guard image) and **#137** (the fold) while this pass was running, and their
+numbers are substituted throughout in place of the `#<child-A>` / `#<child-B>` placeholders.
 
 Files:
 
@@ -35,7 +36,7 @@ discretion; P-5 withdrawn; P-14 decided); *Acceptance criteria* (ten observable 
 with its venue).
 Register IDs relied on: D-CLOUD-014, 027, 030, 032, 033, 034, 036, 037, 038, 041, 045, 046,
 047, 052, 053, 074, 075, 076, 077, 078, 083, 088, 093, 094, 095, 096, 097, 098, 099, 100, 101,
-102, 103, 104; D-UI-022, 023, 039; D-QA-007, 015, 017.
+102, 103, 104; D-NET-001; D-UI-022, 023, 039; D-QA-007, 015, 017.
 
 ### `22.md` (the reconciler)
 
@@ -73,7 +74,8 @@ Register IDs relied on: D-CLOUD-014, 027, 030, 032, 033, 034, 036, 037, 038, 041
 
 - **Preamble and walkthrough** -- serial play as an assumption the page may use; columns as the
   source has them; one line under each column saying which session was later, by publish
-  sequence; the page opens with the cursor on the newer version. D-CLOUD-041, 103, 104, 032.
+  sequence, naming the console the player named (D-NET-001); the page opens with the cursor on
+  the newer version. D-CLOUD-041, 103, 104, 032; D-NET-001.
 - **The apply step** -- new bullet: every decision applies through the reconciler with the
   displaced version in the store first; KEEP RIGHT by server-side copy plus verification, never
   a move; no entry for the winner. D-CLOUD-095, 027, 041 (P-3).
@@ -138,12 +140,11 @@ The amendment was followed every time.
 
 ## Judgement calls, flagged
 
-1. **`D-CLOUD-106` does not exist in `docs/decision-register.md`.** The amendment cites it for
-   the console names in the wizard's later/earlier line. The register's highest CLOUD row is
-   D-CLOUD-104. I wrote the line as *PLAYED LATER ON <DEVICE NAME>* / *PLAYED EARLIER ON <DEVICE
-   NAME>*, naming the source as the device label capture already records (D-CLOUD-009, #21), and
-   said in #23 that the exact words are a proposal like P-11's labels. **Needs the maintainer's
-   word, or the missing row.**
+1. **The console names in the wizard's later/earlier line.** The amendment first cited
+   `D-CLOUD-106`, which does not exist in `docs/decision-register.md`; it was corrected to
+   **D-NET-001** (the device name is the player's, stored as typed) while this pass was running,
+   and #23 and #134 now cite that row. The line reads *PLAYED LATER ON <DEVICE NAME>* / *PLAYED
+   EARLIER ON <DEVICE NAME>*, and #23 says its exact words are a proposal like P-11's labels.
 2. **The one-way fetch has no preimage, and the amendment does not say so.** With `store_seq`
    gone I applied the invariant: the local copy a fetch overwrites is this device's agreed
    version, which is exactly the version the console that published the new head displaced and
@@ -173,17 +174,18 @@ The amendment was followed every time.
    #134's last acceptance item is the documentation gate; the list itself stays in
    `final-issue-draft.md`, and P-1..P-14 live in #134's *Decisions still the maintainer's* and
    in D-CLOUD-101.
-9. **Milestones, labels and sub-issue attachment are untouched** -- these files are bodies only.
-   #134 currently carries no milestone; #21/#22/#23/#25 carry *Cloud Saves: Visual Conflict
-   Resolution*. Attaching the two children as real sub-issues of #134 is still to be done
-   (`.claude/rules/issue-tracking.md`).
+9. **Milestones and labels are untouched** -- these files are bodies only. #134 carries no
+   milestone; #21/#22/#23/#25 carry *Cloud Saves: Visual Conflict Resolution*; #136 and #137
+   were opened with `cloud-saves` and are already attached as sub-issues of #134
+   (`.claude/rules/issue-tracking.md`). Whether the two children and #134 should also carry the
+   milestone is the maintainer's call.
 
 ## Unresolved, and who resolves it
 
 - The eight open proposals (P-1, P-2, P-3, P-6, P-10, P-11, P-12, P-13) and the confirmation of
   P-4/P-7/P-8/P-9 -- the maintainer, as #134's checklist.
 - The `N seconds` in #23's ON dialog and P-13's budget row -- E12, on the VM pair.
-- The missing `D-CLOUD-106`, item 1 above.
+- The exact words of the two later/earlier lines, item 1 above (a proposal, like P-11's labels).
 - Corpus gaps the draft declared and this pass did not close, because the files were not in the
   council's corpus: the full `cloud_backup` / `cloud_restore` / `cloud_sync_helper` / layout
   migrator / MATCH scripts (child A's audit task), the launch-time check in the live
