@@ -15,3 +15,17 @@ game) and ended the way the exit hotkey ends a game (`input_sense`'s
 The full half-second sequences are in the artifact directory
 (`x64-all-20260912-a2ee7b9bb2/shots/640x480/{dead,live}/`). Nothing touched
 a handheld.
+
+## The offer on the transfer page (#145), `0f89c8f1d4` (ES `51639dd09`)
+
+Guest c pointed at the SFTP QA endpoint (D-QA-018; its remotes are absolute
+paths, which is why the folder names below are long -- on Dropbox or WebDAV
+the same dialog reads `/ROCKNIX/Savez` and `/ROCKNIX/Saves`), with a `Savez`
+folder beside a missing `Saves`. The walk: MANAGE CLOUD STORAGE > RESTORE
+FROM THE CLOUD, SAVES ticked, CONTINUE.
+
+| Frame | What it shows |
+|---|---|
+| `transfer-page-nothing-to-restore-completed.png` | RESTORING FROM THE CLOUD / COMPLETED, ELAPSED 0:07, PRESS ANY BUTTON TO CLOSE. Until #145 this was the end: the offer the card raises was parsed by the card alone. |
+| `offer-on-transfer-page.png` | On dismissal: YOUR CLOUD HAS A .../Savez FOLDER BUT NO .../Saves FOLDER, SO THERE WAS NOTHING TO RESTORE. / IS THE FOLDER NAME RIGHT? with CHANGE FOLDER · CREATE ANYWAY · NOT NOW -- the same `CloudOffer::present` the card uses, in D-UI-045's short form (offered to the maintainer on #127; their wording replaces it if different). |
+| `cloud-hub-after-offer.png` | NOT NOW returns to the hub. |
