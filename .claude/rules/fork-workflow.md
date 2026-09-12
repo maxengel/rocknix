@@ -135,6 +135,13 @@ warn when the path is unset, relative, or missing.
 
 ## When to merge up
 
+- **Every PR targets `ROCKNIX/distribution:next`** -- the EmulationStation work
+  too, which reaches upstream as the package bump plus patches in the
+  distribution repo, not as a PR to the ES repo. A PR about EmulationStation
+  carries the `es` prefix in its title, as the project's own PRs do
+  (maintainer, 2026-09-12; D-WORKFLOW-012). Check the open PRs at
+  <https://github.com/ROCKNIX/distribution/pulls> for the current shape before
+  cutting one.
 - One self-contained change per PR, scoped like the commit convention
   (`<package>` or `<DEVICE> - <subsystem>`); don't bundle unrelated work.
 - The change builds for at least one target device.
