@@ -334,9 +334,59 @@ needs forwarding.
 ./tools/cloud-test-backend ls                    # what the device uploaded
 ./tools/cloud-test-backend down
 
-CLOUD_QA_BACKEND=s3 ./tools/cloud-test-backend up   # MinIO instead
-CLOUD_QA_BACKEND=s3 ./tools/cloud-round-trip --host ... # bucket-based path
+./tools/cloud-test-backend --backend s3 up       # or s3, sftp, smb, ftp (#133)
+./tools/cloud-round-trip --host ... --backend s3
 ```
+
+### Five backends, and what each one alone can tell you
+
+One protocol's answers to *does this file exist*, *what does it hash to* and
+*what survives a cut PUT* are not the answers. `--backend` picks among five,
+all on this host, all reachable from a guest at `10.0.2.2`, none needing an
+account (`generic-x64-vm-testing.md` has the ports and the data paths):
+
+| `--backend` | Stands for | Hashes | Modtimes | Cut PUT |
+| --- | --- | --- | --- | --- |
+| `webdav` | Dropbox/Drive/OneDrive, the path-based tier | no | **no** | short file |
+| `s3` | S3, B2, the bucket tier (#38, #123) | MD5 | yes | **commits or nothing** |
+| `sftp` | a NAS or a seedbox; the hash-less remote | no | yes | short file |
+| `smb` | the WINDOWS SHARE tier | no | yes | short file |
+| `ftp` | the FTP rows, implicit and explicit | no | yes | short file |
+
+**Run a change against more than WebDAV whenever it touches existence
+checks, directory creation, layout, comparison or an exit code.** The first
+matrix run (2026-09-12, image `d94ca7b159`) found three shipped defects that
+WebDAV cannot show, on 33 steps that were green on WebDAV throughout:
+
+- **#141 — on a bucket remote a wrong saves folder reports COMPLETED.** An
+  empty folder does not exist on S3, so *not created yet* and *exists and is
+  empty* are one observation, and `cloud_restore` resolves it the wrong way:
+  a `SAVES_REMOTE` whose root does not exist at all exits **0** with
+  `Game saves: COMPLETED`, where every path-based backend exits 1 and offers
+  nothing. A typo in the folder name restores nothing and says it worked.
+- **#142 — on FTP a missing directory is exit 1, not 3.** rclone surfaces the
+  server's `501 "No such directory."` as a general error, so every
+  *is it there yet?* branch reads *not created yet* as *your cloud couldn't
+  be read*. And with `--retries 1` a copy into a directory that does not
+  exist yet loses files: rclone's FTP backend fails its first pass on the
+  destination root and only recovers on a retry we do not allow (2 of 3
+  files landed).
+- **#143 — a refused S3 endpoint is not bounded by our timeouts.** The AWS
+  SDK's retryer backs off underneath `--contimeout 15s --timeout 30s
+  --retries 1`; one `rclone lsf` against a closed port ran past 2m23s and the
+  whole suite took 578 s against 128-156 s on the other four.
+
+Two more traps that only the bucket path shows, found earlier the same way:
+
+- **`rclone lsjson --stat` is not an existence test on a bucket remote.** It
+  synthesises a directory entry for *any* path — `utterly-bogus-never-created`
+  returns `IsDir: true` on 1.60, 1.74 and 1.75 — how bucket remotes work, not
+  a bug awaiting a fix. Use a **listing**: does the path contain anything, or
+  does its parent list it?
+- **`rclone mkdir` exits 0 while creating nothing.** Empty directories do not
+  exist on S3; rclone even says so and still returns success. The standard fix
+  is a zero-byte object whose key ends in `/`, which rclone writes with
+  **`--s3-directory-markers`** (default off). B2 has no equivalent flag.
 
 ### Runbook
 
@@ -349,11 +399,13 @@ CLOUD_QA_BACKEND=s3 ./tools/cloud-round-trip --host ... # bucket-based path
 
 Four things that cost time on 2026-09-03:
 
-- **`down` matters.** WebDAV runs as a bare `rclone serve` on the host, and it
-  survives the session that started it. A stale one holding :9010 makes the next
-  `up` fail with `address already in use`, and the S3 path additionally leaves a
-  half-created container behind (`docker rm -f rocknix-cloud-qa`). `CLOUD_QA_PORT`
-  moves it if you need both at once.
+- **`down` matters.** WebDAV, SFTP and FTP run as host processes and survive
+  the session that started them; S3 and SMB are containers. A stale one
+  holding the port makes the next `up` fail with `address already in use`.
+  Since #133 each backend has a port of its own (9010/9012/9013/9014/9015) so
+  several can be up at once and `down` takes down only the one named by
+  `--backend`; `CLOUD_QA_PORT` still moves one if you need two of the same
+  kind.
 - **The host's rclone is not the device's.** This host had **1.60.1-DEV**; the
   device ships **1.74.4**. Backend options differ across that gap —
   `--s3-directory-markers` does not exist in 1.60. Test rclone behaviour by
@@ -365,22 +417,11 @@ Four things that cost time on 2026-09-03:
 
 ### Bucket remotes behave differently, and it is not a detail
 
-Run the S3 path (`CLOUD_QA_BACKEND=s3`, MinIO) whenever a change touches
-existence checks, directory creation, or layout. Two traps, both found this way:
-
-- **`rclone lsjson --stat` is not an existence test on a bucket remote.** It
-  synthesises a directory entry for *any* path — `utterly-bogus-never-created`
-  returns `IsDir: true` on 1.60, 1.74 and 1.75 — how bucket remotes work, not a bug awaiting a fix. Three call sites branched on it,
-  so on S3 the migration always refused ("destination already exists"), the
-  content-restore legacy fallback was dead, and the seeding report could only
-  ever say OK. Use a **listing**: does the path contain anything, or does its
-  parent list it?
-- **`rclone mkdir` exits 0 while creating nothing.** Empty directories do not
-  exist on S3; rclone even says so (`Warning: running mkdir on a remote which
-  can't have empty directories does nothing`) and still returns success. The
-  standard fix is a zero-byte object whose key ends in `/`, which is what the S3
-  console itself writes — rclone does it with **`--s3-directory-markers`**
-  (default off). B2 has no equivalent rclone flag.
+The two traps above (`lsjson --stat`, `mkdir`) are the bucket tier's, and
+both were found by running the S3 path. Three call sites branched on the
+first, so on S3 the migration always refused ("destination already exists"),
+the content-restore legacy fallback was dead, and the seeding report could
+only ever say OK.
 
 The consequence for design: a folder we want a player to *see* needs either a
 marker or a file in it. Our seeded folders get both — the marker so the folder
@@ -393,16 +434,19 @@ serial console (`-serial unix:`) enable sshd and drop in a key —
 `/storage/.ssh/authorized_keys` (mode 600, directory 700). SSH is off on a
 fresh image, and the console gives a root shell without login.
 
-- **WebDAV, not S3, by default.** Dropbox/Drive/OneDrive are path-based, so
+- **WebDAV is the default, and the harshest.** With `vendor=other` it carries
+  neither hashes nor modtimes, so rclone compares by size alone — the shape of
+  #53 — and a bug only WebDAV can catch is one WebDAV must keep catching.
+- **Bucket and share remotes need a different `SAVES_REMOTE`.** Dropbox/Drive/OneDrive are path-based, so
   `SAVES_REMOTE="/GAMES"` is a folder. On S3 and B2 the first path component is the
   *bucket*. rclone creates buckets on demand, so a missing one is not the
   problem - the problem is that `GAMES` is not a **legal** bucket name
   (lowercase only, 3-63 chars), so it is rejected with `InvalidBucketName`
-  before anything can be created (issue #38). Testing on S3 exercises
-  semantics our users do not have; `CLOUD_QA_BACKEND=s3` reproduces that
-  difference on purpose, and the backend reports the `SAVES_REMOTE` it needs
-  (`cloud-test-backend syncpath` -> `/<bucket>/GAMES`) so the driver does not
-  hard-code either shape.
+  before anything can be created (issue #38). SMB has the same shape with the
+  *share* in place of the bucket, and SFTP a third — every path absolute,
+  because an sshd running as an ordinary user cannot chroot. The backend
+  states what it needs (`cloud-test-backend saves-remote`, and
+  `endpoint-prefix` for what to strip) so no caller hard-codes a shape.
 - **Local on purpose.** These tests exercise credential stripping and backup
   contents - the code paths most likely to leak a token into an archive, a log
   or a work log. A throwaway WebDAV password is worth nothing if it escapes.
@@ -417,7 +461,10 @@ fresh image, and the console gives a root shell without login.
   produced nothing.
 
 The OAuth handshake is not covered - `rclone authorize`, port 53682, token
-refresh still need a real provider. The wizard's *gates* (`--connected`,
+refresh still need a real provider, and so does the hosted half of #133
+(Google Drive, Box, pCloud, Mega), which needs QA accounts somebody has to
+create. Everything else the matrix covers runs here, so "we would need a real
+provider" is not an answer to *can this be done on the VM?* (`vm-first.md`). The wizard's *gates* (`--connected`,
 `--check`, `--free-auth-port`) are plain checks and do test here.
 
 ## rocknix.org docs & gaps

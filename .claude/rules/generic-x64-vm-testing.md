@@ -312,14 +312,17 @@ before believing the host.
 
 ## Fixtures for the cloud tier
 
-`tools/cloud-test-backend` serves a directory over WebDAV that the guest
-reaches at `10.0.2.2:9010`; `seed-content` puts the content-tier fixture at
-the endpoint and `seed-device` prints the guest half — the remote, the conf,
-and device ROMs that pair with the fixture so every verdict a systems page
-can give has a system that produces it:
+`tools/cloud-test-backend` serves a directory to the guest in **five
+protocols**, each on its own port so more than one can be up at a time
+(#133). The guest reaches every one of them at `10.0.2.2`.
+`seed-content` puts the content-tier fixture at the endpoint and
+`seed-device` prints the guest half — the remote, the conf, and device ROMs
+that pair with the fixture so every verdict a systems page can give has a
+system that produces it:
 
 ```bash
-tools/cloud-test-backend up && tools/cloud-test-backend reset
+tools/cloud-test-backend up && tools/cloud-test-backend reset      # WebDAV, the default
+tools/cloud-test-backend --backend sftp up                         # or any of the five
 tools/cloud-test-backend seed-content
 tools/cloud-test-backend seed-device > /tmp/seed.sh && tools/vm-serial script /tmp/seed.sh
 tools/vm-serial sh '/usr/bin/cloud_content_restore --scan'
@@ -328,6 +331,53 @@ tools/vm-serial sh '/usr/bin/cloud_content_restore --scan'
 Then read the endpoint after a transfer (`cloud-test-backend ls`), never the
 page's COMPLETED SUCCESSFULLY — that is the check that found `MEDIA_EXCLUDES`
 being passed to nothing (blindspot 30).
+
+### The five backends
+
+| `--backend` | Port | How it runs | Data under `~/.cache/rocknix-cloud-qa/` | Hashes | Modtimes | A PUT cut in flight |
+| --- | --- | --- | --- | --- | --- | --- |
+| `webdav` (default) | 9010 | `rclone serve webdav`, a host process | `data/` | no | **no** | leaves a short file |
+| `s3` | 9012 | MinIO in a container (`rocknix-cloud-qa`) | inside the container | MD5 | yes | **commits or nothing** |
+| `sftp` | 9013 | an unprivileged `sshd`, key auth only | `sftp/data/` | no | yes | leaves a short file |
+| `smb` | 9014 | Samba in a container (`rocknix-cloud-qa-smb`) | `smb/data/` | no | yes | leaves a short file |
+| `ftp` | 9015 | `pyftpdlib` in a venv, PASV 9060-9069 | `ftp/data/` | no | yes | leaves a short file |
+
+`caps` prints the last three columns for the selected backend; nothing binds
+**9011**, which is the dead port every failure fixture aims at
+(`dead-conf` writes the refusing stanza, in whichever field that backend
+carries its address).
+
+**The three shapes a remote path can have**, which is why no caller should
+hard-code one: on WebDAV and FTP the folder *is* the path (`/GAMES`); on S3
+the first component is the bucket and on SMB the share (`/rocknix-qa/GAMES`,
+`/qashare/GAMES`); on SFTP every path is absolute, because an sshd running as
+an ordinary user cannot chroot. `endpoint-prefix` states what to strip,
+`saves-remote` / `settings-remote` / `content-remote` state what to
+configure. A hard-coded `/QA-Custom` is a legal folder on Dropbox and an
+illegal *bucket name* on S3.
+
+**WebDAV is the harshest and stays the default.** With `vendor=other` it
+carries neither hashes nor modtimes, so rclone compares by size alone —
+which is the shape of #53. The other four all carry modtimes, so a bug only
+WebDAV can catch is one WebDAV must keep catching.
+
+### What the matrix cannot do here
+
+- **No hosted provider.** Google Drive, Box, pCloud and Mega need accounts
+  somebody has to create; that half of #133 is the maintainer's to start.
+  Everything else — the S3 form, a hash-less remote, the WINDOWS SHARE tier,
+  FTP — runs on this host with no account at all, so "we need a real
+  provider" is not an answer to *can this be done on the VM?*
+- **Only WebDAV can be throttled.** `CLOUD_QA_BWLIMIT` is an `rclone serve`
+  flag, so the LINK cells (which need a transfer slow enough to cut) and
+  `backend_throttled()` are WebDAV-only.
+- **Only S3 can prove an atomic PUT.** Four of the five write into the final
+  name, so a file cut mid-body reads as truncated; KILL1's torn-file
+  assertion is asserted on `--backend s3` and skipped, with the reason, on
+  the rest.
+- **The host's rclone is not the guest's** (1.60 here, 1.75 on the image).
+  Test rclone *behaviour* by running rclone on the guest against the
+  endpoint, never on the host.
 
 ## Fixtures for the launch path
 
@@ -457,11 +507,25 @@ the shell: `map` shows only `BLK0`/`BLK1`, **no `FS0:`**; firmware prints
 `./tools/vm-qa <ROCKNIX-GENERIC_X64...img.gz>` brings the pair up from the
 image and runs the scripts test, the round-trip suite, the emulator-exit cell
 and every walk, leaving `report.md` and the logs and frames under
-`/workspace/artifacts/rocknix-images/qa-<build>-<date>/`; it exits non-zero
-if any suite failed. `--skip-up` for a pair already on the image, `--only`
-for a subset, `--link` for the seven link-loss cells (minutes each, never
-while an image builds on this host -- they are timing-bound). Run it on
-every image before anything is staged (#120).
+`/workspace/artifacts/rocknix-images/qa-<build>-<backend>-<guest>-<date>/`;
+it exits non-zero if any suite failed. `--skip-up` for a pair already on the
+image, `--only` for a subset, `--link` for the seven link-loss cells (minutes
+each, never while an image builds on this host -- they are timing-bound).
+`--backend <name>` picks which of the five QA clouds every suite talks to
+(default `webdav`); the report header names the cloud, its port and its
+caps. Run it on every image before anything is staged (#120).
+
+Two runs fit on one host at once — `--guest a` against one backend and
+`--guest b` against another, which is how the matrix is walked:
+
+```bash
+./tools/vm-qa --skip-up --only round-trip --backend webdav --guest a &
+./tools/vm-qa --skip-up --only round-trip --backend sftp   --guest b &
+```
+
+The round trip takes about 130-160 s per backend on this host — except S3,
+which takes ~578 s, nearly all of it in one step against a refused endpoint
+(#143).
 
 ## Crash and hang recipes
 
