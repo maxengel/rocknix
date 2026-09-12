@@ -1,12 +1,24 @@
 #!/usr/bin/env python3
-"""Round-trip the cloud-sync scripts against the local QA S3 backend.
+"""Round-trip the cloud-sync scripts against a local QA cloud backend.
 
 Drives a ROCKNIX device over SSH - a VM from generic-x64-vm, or real hardware
 on the LAN - through backup, restore and content sync, and checks the result
-from both ends: file contents on the device, and objects in the bucket.
+from both ends: file contents on the device, and objects at the endpoint.
 
     ./tools/cloud-test-backend up
     ./tools/cloud-round-trip --host root@127.0.0.1 --port 10022
+
+--backend picks which of tools/cloud-test-backend's five endpoints to drive
+(#133); bring the same one up first. WebDAV is the default and the harshest
+-- vendor=other carries neither hashes nor modtimes, so rclone compares by
+size alone -- and the other four each answer "does this exist", "what does
+it hash to" and "what survives a cut PUT" differently:
+
+    ./tools/cloud-test-backend --backend sftp up
+    ./tools/cloud-round-trip --host root@127.0.0.1 --port 10022 --backend sftp
+
+A step that legitimately cannot hold on a backend reads its reason off
+`cloud-test-backend caps` and says so; nothing is skipped in silence.
     ./tools/cloud-round-trip --host root@127.0.0.1 --port 10022 --second-port 10023 \
         --identity /tmp/rocknix-vm-pair/qa-key          # the VM pair: two devices, one cloud
 
@@ -495,7 +507,17 @@ def main():
                          "default since 2026-09-10 (the FORBIDDEN check -- no exit codes, log paths or tool names on the screen -- is always on)")
     ap.add_argument("--no-vocabulary", dest="vocabulary", action="store_false",
                     help="skip the outcome-word assertion, for an image that predates the strings")
+    ap.add_argument("--backend", default=os.environ.get("CLOUD_QA_BACKEND", "webdav"),
+                    help="which QA endpoint to drive: webdav (default), s3, sftp, smb or ftp (#133). "
+                         "Bring it up first with the same name: tools/cloud-test-backend --backend <name> up")
     args = ap.parse_args()
+    # Everything this harness knows about the endpoint it asks
+    # cloud-test-backend, and that tool reads CLOUD_QA_BACKEND. Setting it
+    # here rather than threading a parameter through two hundred call sites
+    # means one switch cannot be half-applied: there is no path by which the
+    # stanza written onto the device and the directory read back afterwards
+    # could come from different backends.
+    os.environ["CLOUD_QA_BACKEND"] = args.backend
     # Line-buffered even when redirected: a run in the background used to
     # show nothing until it ended, and a run that hangs showed nothing ever.
     try:
@@ -1061,9 +1083,9 @@ echo "${saw:-0}/${all:-0}"
     # under the new Backups, and the migration check leaves a chosen layout
     # alone rather than offering to move it back to /ROCKNIX.
     prev = {k: dev.run(f"grep -m1 '^{k}=' {CONF} | cut -d'\"' -f2").strip() for k in ("SAVES_REMOTE", "SETTINGS_REMOTE", "CONTENT_REMOTE")}
-    rc, out = run_rc(dev, "cloud_setup --set-saves-remote /QA-Custom/Saves")
+    rc, out = run_rc(dev, f"cloud_setup --set-saves-remote {rpath('QA-Custom/Saves')}")
     now = {k: dev.run(f"grep -m1 '^{k}=' {CONF} | cut -d'\"' -f2").strip() for k in ("SAVES_REMOTE", "SETTINGS_REMOTE", "CONTENT_REMOTE")}
-    failures += not check(now == {"SAVES_REMOTE": "/QA-Custom/Saves", "SETTINGS_REMOTE": "/QA-Custom/Backups", "CONTENT_REMOTE": "/QA-Custom/Content"},
+    failures += not check(now == {"SAVES_REMOTE": rpath("QA-Custom/Saves"), "SETTINGS_REMOTE": rpath("QA-Custom/Backups"), "CONTENT_REMOTE": rpath("QA-Custom/Content")},
                           "the three folders are siblings under the new root", f"conf reads {now}")
     # The upload wants a local archive to send; the settings steps above may
     # have pointed SETTINGS_BACKUPS back at the device default, so plant one
@@ -1076,16 +1098,16 @@ echo "${saw:-0}/${all:-0}"
     failures += not check(rc == 0 and "inside" not in out.lower(),
                           f"a settings backup ran without the nesting warning (exit {rc})", f"exit {rc}: {out.strip()[-200:]!r}")
     label = dev.run("cloud_device_id --label 2>/dev/null || true").strip()
-    landed = dev.run(f"rclone lsf -R --files-only {shlex.quote(remote_name + '/QA-Custom/Backups')} 2>/dev/null || true")
+    landed = dev.run(f"rclone lsf -R --files-only {shlex.quote(remote_name + rpath('QA-Custom/Backups'))} 2>/dev/null || true")
     failures += not check(".tar.gz" in landed and (not label or label in landed),
-                          f"the archive landed under /QA-Custom/Backups/{label or '<device>'}/", f"listing: {landed.strip()[:200]!r}")
+                          f"the archive landed under {rpath('QA-Custom/Backups')}/{label or '<device>'}/", f"listing: {landed.strip()[:200]!r}")
     rc, out = run_rc(dev, "cloud_migrate_layout --check")
     failures += not check(rc == 3 and "nothing to move" in out,
                           "the migration check calls the chosen sibling layout current",
                           f"exit {rc}: {out.strip()[-200:]!r}")
     dev.run(f"rm -f {shlex.quote(f'{bk_dir}/{bk_name}')}; "
-            f"cloud_setup --set-saves-remote {shlex.quote(prev['SAVES_REMOTE'] or '/ROCKNIX/Saves')} >/dev/null 2>&1; "
-            f"rclone purge {shlex.quote(remote_name + '/QA-Custom')} >/dev/null 2>&1 || true", check=False)
+            f"cloud_setup --set-saves-remote {shlex.quote(prev['SAVES_REMOTE'] or rpath('ROCKNIX/Saves'))} >/dev/null 2>&1; "
+            f"rclone purge {shlex.quote(remote_name + rpath('QA-Custom'))} >/dev/null 2>&1 || true", check=False)
     for k, v in prev.items():
         if v:
             dev.run(f"sed -i 's|^{k}=.*|{k}=\"{v}\"|' {CONF}")
@@ -1100,50 +1122,50 @@ echo "${saw:-0}/${all:-0}"
     # folder aside: the suite's SAVES_REMOTE may sit at the root (/GAMES),
     # where by design there is no parent to tell the two shapes apart.
     prev_saves = dev.run(f"grep -m1 '^SAVES_REMOTE=' {CONF} | cut -d'\"' -f2").strip()
-    dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"/QA-Empty/Saves\"|' {CONF}; "
-            f"rclone purge {shlex.quote(remote_name + '/QA-Empty')} >/dev/null 2>&1; "
-            f"rclone mkdir {shlex.quote(remote_name + '/QA-Empty/Backups')} >/dev/null 2>&1", check=False)
+    dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"{rpath('QA-Empty/Saves')}\"|' {CONF}; "
+            f"rclone purge {shlex.quote(remote_name + rpath('QA-Empty'))} >/dev/null 2>&1; "
+            f"rclone mkdir {shlex.quote(remote_name + rpath('QA-Empty/Backups'))} >/dev/null 2>&1", check=False)
     rc, out = run_rc(dev, "cloud_restore --yes --saves-only")
     failures += not check(rc == 0 and "nothing in your cloud" in out.lower() and ">>> offer create-saves-folder" in out,
                           "root present, Saves absent: exit 0, the plain line, and the offer",
                           f"exit {rc}: {out.strip()[-200:]!r}")
-    dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"/QA-No-Such-Root/Saves\"|' {CONF}")
+    dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"{rpath('QA-No-Such-Root/Saves')}\"|' {CONF}")
     rc, out = run_rc(dev, "cloud_restore --yes --saves-only")
     failures += not check(rc != 0 and ">>> offer" not in out,
                           f"root absent: the restore fails (exit {rc}) and offers nothing",
                           f"exit {rc}: {out.strip()[-200:]!r}")
     # #127: a saves folder at the cloud's root has the root for a parent,
     # and the root answers, so an empty cloud gets the offer there too.
-    dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"/QA-Root-Saves\"|' {CONF}; "
-            f"rclone purge {shlex.quote(remote_name + '/QA-Root-Saves')} >/dev/null 2>&1 || true", check=False)
+    dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"{rpath('QA-Root-Saves')}\"|' {CONF}; "
+            f"rclone purge {shlex.quote(remote_name + rpath('QA-Root-Saves'))} >/dev/null 2>&1 || true", check=False)
     rc, out = run_rc(dev, "cloud_restore --yes --saves-only")
-    failures += not check(rc == 0 and ">>> offer create-saves-folder|/QA-Root-Saves" in out,
+    failures += not check(rc == 0 and f">>> offer create-saves-folder|{rpath('QA-Root-Saves')}" in out,
                           "a root-level saves folder on an empty cloud: exit 0 and the offer names it",
                           f"exit {rc}: {out.strip()[-200:]!r}")
     # #127: a typo in the LAST component has a present parent. The offer
     # carries the folder that sits beside it under a near name, and the
     # player line names both, so CREATE IT is not the only way forward.
-    dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"/QA-Near/Savez\"|' {CONF}; "
-            f"rclone purge {shlex.quote(remote_name + '/QA-Near')} >/dev/null 2>&1; "
-            f"rclone mkdir {shlex.quote(remote_name + '/QA-Near/Saves')} >/dev/null 2>&1; "
-            f"rclone mkdir {shlex.quote(remote_name + '/QA-Near/Backups')} >/dev/null 2>&1", check=False)
+    dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"{rpath('QA-Near/Savez')}\"|' {CONF}; "
+            f"rclone purge {shlex.quote(remote_name + rpath('QA-Near'))} >/dev/null 2>&1; "
+            f"rclone mkdir {shlex.quote(remote_name + rpath('QA-Near/Saves'))} >/dev/null 2>&1; "
+            f"rclone mkdir {shlex.quote(remote_name + rpath('QA-Near/Backups'))} >/dev/null 2>&1", check=False)
     rc, out = run_rc(dev, "cloud_restore --yes --saves-only")
-    failures += not check(rc == 0 and ">>> offer create-saves-folder|/QA-Near/Savez|/QA-Near/Saves" in out
-                          and "/QA-Near/Saves but no /QA-Near/Savez" in out,
+    failures += not check(rc == 0 and f">>> offer create-saves-folder|{rpath('QA-Near/Savez')}|{rpath('QA-Near/Saves')}" in out
+                          and f"{rpath('QA-Near/Saves')} but no {rpath('QA-Near/Savez')}" in out,
                           "Savez beside Saves: exit 0, the offer carries the near name, the line names both",
                           f"exit {rc}: {out.strip()[-240:]!r}")
     # And a name that is not near anything (Backups is three edits from
     # Photos) gets the plain offer, not a false match.
-    dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"/QA-Near/Photos\"|' {CONF}")
+    dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"{rpath('QA-Near/Photos')}\"|' {CONF}")
     rc, out = run_rc(dev, "cloud_restore --yes --saves-only")
-    failures += not check(rc == 0 and ">>> offer create-saves-folder|/QA-Near/Photos\n" in out.replace("\r", "") + "\n"
+    failures += not check(rc == 0 and f">>> offer create-saves-folder|{rpath('QA-Near/Photos')}\n" in out.replace("\r", "") + "\n"
                           and "but no" not in out,
                           "a missing folder near nothing gets the plain offer",
                           f"exit {rc}: {out.strip()[-200:]!r}")
     dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"{prev_saves}\"|' {CONF}; "
-            f"rclone purge {shlex.quote(remote_name + '/QA-Empty')} >/dev/null 2>&1; "
-            f"rclone purge {shlex.quote(remote_name + '/QA-Near')} >/dev/null 2>&1; "
-            f"rclone purge {shlex.quote(remote_name + '/QA-Root-Saves')} >/dev/null 2>&1 || true", check=False)
+            f"rclone purge {shlex.quote(remote_name + rpath('QA-Empty'))} >/dev/null 2>&1; "
+            f"rclone purge {shlex.quote(remote_name + rpath('QA-Near'))} >/dev/null 2>&1; "
+            f"rclone purge {shlex.quote(remote_name + rpath('QA-Root-Saves'))} >/dev/null 2>&1 || true", check=False)
 
     step("ROMs and BIOS restore it")
     # Plant at the endpoint directly rather than restoring what the upload
@@ -1516,13 +1538,19 @@ echo "${saw:-0}/${all:-0}"
     # must not read as an empty cloud either -- it did, and the picker listed
     # every system on the device as "not yet in your cloud" (2026-09-10).
     good_conf = dev.run(f"cat {RCLONE_CONF}")
-    dev.run("sed -i -E 's#^((url|endpoint) *= *[a-z]+://[^:/ ]+)(:[0-9]+)?#\\1:1#' " + RCLONE_CONF)
-    moved = dev.run(f"grep -E '^(url|endpoint)' {RCLONE_CONF} || true").strip()
+    # The backend writes its own refusing stanza (#133). This was a sed over
+    # `url|endpoint`, which are the address fields of exactly two of the five
+    # backends: on SFTP, SMB and FTP it matched nothing, the scan ran against
+    # a working cloud, and the check that a refused cloud does not read as an
+    # empty one passed on a cloud that was never refused.
+    dead_port = backend("dead-port").strip()
+    dev.write(RCLONE_CONF, backend("dead-conf").encode())
+    moved = dev.run(f"grep -E '^(url|endpoint|port) *=' {RCLONE_CONF} || true").strip()
     rc, out = run_rc(dev, "cloud_content_restore --scan")
     dev.write(RCLONE_CONF, good_conf.encode())
     rows = [l for l in out.splitlines() if l.count("|") >= 2]
-    failures += not check(":1" in moved, "the stanza's endpoint was moved to a closed port",
-                          f"the sed did not rewrite the endpoint: {moved!r}")
+    failures += not check(dead_port in moved, f"the stanza's endpoint is the dead port {dead_port}",
+                          f"the stanza does not name the dead port {dead_port}: {moved!r}")
     failures += not check(rc not in (0, 69) and not rows,
                           f"the scan exited {rc} with no system lines",
                           f"exit {rc} with {len(rows)} system line(s): a refused cloud read as an empty one")
@@ -1633,16 +1661,57 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
+_PREFIX = None
+_CAPS = None
+
+
+def endpoint_prefix():
+    """What a remote path carries that the endpoint's own commands do not
+    want. Asked once and remembered: it is a property of the backend, not of
+    the run."""
+    global _PREFIX
+    if _PREFIX is None:
+        _PREFIX = backend("endpoint-prefix").strip()
+    return _PREFIX
+
+
+def caps():
+    """What this endpoint can do: hash, modtime, commit (#133). A test that
+    legitimately cannot hold on a backend is marked with the reason it
+    cannot, never skipped in silence -- a silent skip is how a check that
+    proves nothing reads as a pass."""
+    global _CAPS
+    if _CAPS is None:
+        _CAPS = dict(kv.split("=", 1) for kv in backend("caps").split())
+    return _CAPS
+
+
 def epath(remote_path):
     """The endpoint path of a cloud path, for `cloud-test-backend cat/put/ls`.
-    On WebDAV the folder is the path; on S3 the first component is the
-    bucket, which the backend's own commands already prefix -- passing it
-    again doubled the path, and the seeding step read its note back from a
-    place the device never looked."""
-    path = remote_path.strip().lstrip("/")
-    if backend("backend").strip() == "s3":
-        path = path.split("/", 1)[1] if "/" in path else ""
-    return path
+    On WebDAV and FTP the folder is the path; on S3 the first component is
+    the bucket and on SMB the share, which the backend's own commands already
+    prefix -- passing it again doubled the path, and the seeding step read
+    its note back from a place the device never looked. On SFTP the whole
+    data directory is the prefix, because an sshd running as an ordinary user
+    cannot chroot. The backend states its own prefix rather than the driver
+    guessing from the shape of the path."""
+    path = remote_path.strip()
+    pre = endpoint_prefix()
+    if pre and path.startswith(pre):
+        path = path[len(pre):]
+    return path.lstrip("/")
+
+
+def rpath(*parts):
+    """A remote path for a fixture folder, under whatever root this endpoint
+    needs: nothing on WebDAV and FTP, the bucket on S3, the share on SMB, the
+    data directory on SFTP (#133).
+
+    A hard-coded "/QA-Custom" is a legal folder on Dropbox and an illegal
+    bucket name on S3, so cloud_setup refused it and six checks below failed
+    for a reason that had nothing to do with the code under test. The path a
+    fixture asks for has to be one this endpoint could actually hold."""
+    return endpoint_prefix() + "".join("/" + str(x).strip("/") for x in parts)
 
 
 def backend_bytes(path):
@@ -2179,10 +2248,15 @@ def fx_a14(p):
                        "its entry for the state carries the planted bytes' sha256 (#22)",
                        "the pushed manifest has no entry for the state, or its sha256 is not the planted bytes' (#22)")
         kind = backend("backend").strip()
+        # Whether a remote hash exists at all is the backend's property, not
+        # WebDAV's: three of the five carry no hash (#133), and reading the
+        # name rather than the capability made this check assert "non-null"
+        # against SFTP, SMB and FTP, where null is the correct answer.
+        hashless = caps()["hash"] == "none"
         rh = (pushed or {}).get("remote_hash", "unset")
-        f += not check((rh is None) if kind == "webdav" else rh not in (None, "unset"),
-                       f"remote_hash is {'null' if kind == 'webdav' else 'non-null'} on {kind}",
-                       f"remote_hash is {rh!r} on {kind}")
+        f += not check((rh is None) if hashless else rh not in (None, "unset"),
+                       f"remote_hash is {'null' if hashless else 'non-null'} on {kind} (hash={caps()['hash']})",
+                       f"remote_hash is {rh!r} on {kind} (hash={caps()['hash']})")
     listed = p.a.run("cloud_content_backup --list 2>/dev/null || true").split()
     f += not check("savestates" not in listed, "the ROMs-and-BIOS tier never offers savestates",
                    "the content tier offers the savestates directory (the manifest would ride twice)")
@@ -6312,12 +6386,14 @@ def fx_kill1(L):
     final name -- and no *.partial; the stamp is unchanged (1a) or 130 (1b),
     never 0; the lock is released; a plain re-run exits 0 and lands all v2.
 
-    WebDAV's local store preallocates the final name when the PUT starts, so a
-    file cut mid-body reads as truncated there; that is the QA backend's
-    artifact (LINK5), reported as SKIP with the reason, and asserted cleanly
-    on MinIO (CLOUD_QA_BACKEND=s3) where a PUT commits or leaves nothing."""
+    A backend that writes into the final name preallocates it when the PUT
+    starts, so a file cut mid-body reads as truncated there; that is the QA
+    backend's artifact (LINK5), reported as SKIP with the reason, and
+    asserted cleanly on MinIO (--backend s3) where a PUT commits or leaves
+    nothing. WebDAV, SFTP, SMB and FTP all write in place (`caps` says
+    commit=partial); only S3 commits atomically."""
     f = 0
-    webdav = backend("backend").strip() == "webdav"
+    inplace = caps()["commit"] != "atomic"
     for variant, sig in (("1a", "KILL"), ("1b", "TERM")):
         L.reset()
         v1 = link_files("savestates/kill1-", ext="state")
@@ -6351,9 +6427,9 @@ def fx_kill1(L):
             states[rel] = ("absent" if g is None else "v1" if g == (len(v1[rel]), sha(v1[rel]))
                            else "v2" if g == (len(v2[rel]), sha(v2[rel])) else f"TORN ({g[0]} bytes)")
         torn = {r: s for r, s in states.items() if s.startswith("TORN")}
-        if torn and webdav:
-            print(f"    SKIP  {variant}: {torn} -- the QA WebDAV store preallocates the final name and keeps what arrived; "
-                  "a real provider resets an aborted PUT. Assert this on MinIO (CLOUD_QA_BACKEND=s3).")
+        if torn and inplace:
+            print(f"    SKIP  {variant}: {torn} -- this endpoint ({backend('backend').strip()}) writes into the final name and "
+                  "keeps what arrived; a real provider resets an aborted PUT. Assert this on MinIO (--backend s3).")
         else:
             f += not check(not torn, f"{variant}: every file in the cloud is v1 or whole v2 ({states})",
                            f"{variant}: a truncated file under a final name in the cloud: {torn} (all: {states})")
