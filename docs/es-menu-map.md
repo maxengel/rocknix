@@ -65,7 +65,7 @@ to decide where something belongs.
 | **USER INTERFACE** | APPEARANCE · CONTROL OPTIONS · DISPLAY OPTIONS · GAMELIST OPTIONS · ICONS |
 | **GAME COLLECTION** | COLLECTIONS TO DISPLAY · CREATE CUSTOM COLLECTION · OPTIONS |
 | **SOUND** | VOLUME · MUSIC · SOUNDS |
-| **NETWORK** | INFORMATION · SETTINGS · NETWORK SERVICES · SYNCTHING SERVICES · VPN SERVICES · FINISH RESTORE SETUP (only after a restore) — *no cloud group; D-UI-015/017* |
+| **NETWORK** | INFORMATION · SETTINGS · NETWORK SERVICES · SYNCTHING SERVICES · VPN SERVICES · FINISH RESTORE PROCESS (only after a restore) — *no cloud group; D-UI-015/017* |
 | **SCRAPER** | tabbed: SCRAPE · OPTIONS · ACCOUNTS |
 | **UPDATES & DOWNLOADS** | DOWNLOADS · SOFTWARE UPDATES |
 | **SYSTEM SETTINGS** | SYSTEM · HARDWARE · DEVICE · STORAGE · PERFORMANCE · TWEAKS · SUSPEND · LED HARDWARE · ADVANCED |
@@ -119,7 +119,7 @@ flowchart TD
     LIST --> FORM[provider form<br/>NAME · REQUIRED · OPTIONAL · FINISH: CONNECT<br/><i>labels in the player's words, D-UI-038</i>]
     LIST -->|S3| SUB[compatible service] --> FORM
     FORM -->|OAuth providers| OAUTH[sign in on device / with phone]
-    CSS --> FIN[FINALIZE RESTORE<br/><i>only after a settings restore</i>]
+    CSS --> FIN[FINISH RESTORE PROCESS<br/><i>only after a settings restore</i>]
     CSS --> TIDY[TIDY UP YOUR CLOUD FOLDERS<br/><i>only when something to move</i>]
 ```
 
@@ -132,7 +132,7 @@ fades, for the save rows in GAME SETTINGS; the transfer page, when the player
 dismisses the done page, for RESTORE FROM THE CLOUD -- until #145 only the
 card did, and the fresh handheld's route saw nothing. BACK UP / RESTORE
 on a device with no cloud storage asks SET IT UP NOW? and YES opens the list.
-FINISH RESTORE SETUP (after a settings restore) tells the player the backup
+FINISH RESTORE PROCESS (after a settings restore) tells the player the backup
 never carried the cloud sign-in and points at MANAGE CLOUD STORAGE (D-CLOUD-087).
 
 **Elsewhere, cloud-adjacent.** `SYSTEM SETTINGS > SYSTEM MANAGEMENT AND RESET`:
