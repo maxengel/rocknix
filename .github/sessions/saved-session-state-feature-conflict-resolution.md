@@ -1,6 +1,6 @@
 # Saved Session State
 
-> **Saved**: 2026-09-12T12:50:00Z
+> **Saved**: 2026-09-12T13:05:00Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
@@ -10,12 +10,12 @@ Epic #11 (cloud saves). The nine save-history decisions are settled (D-CLOUD-105
 
 ## In Progress
 
-- **H700 `0f89c8f1d4`** building (`build/devices` moved to `0f89c8f1d4` so the BUILD_ID matches the tested x64; `fork-worktree sync` fast-forwards it to `next` afterwards). Not to be staged without a per-device yes.
-- Guests a (Probe.nes seeded, gl driver, gameexit=1) and b on `0f89c8f1d4`; guest c on `0f89c8f1d4`, WebDAV, gameexit=1. RG35XX SP on `af2db4ab09`, clean. H700 `a2ee7b9bb2` also built, not staged (superseded by `0f89c8f1d4` once built).
+- Nothing running. **H700 `0f89c8f1d4` built** (`h700-all-20260912-0f89c8f1d4/`, tar `4e6a5649db47e466...`, BUILD_ID checked, strings checked, fallback constant 10); **not staged** -- the maintainer's per-device yes (D-QA-015). Build worktrees synced to `next` `e18c567f82`.
+- Guests a (Probe.nes, gl, gameexit=1), b, c on `0f89c8f1d4`; guest c on WebDAV, gameexit=1. RG35XX SP on `af2db4ab09`, clean. Older H700 `a2ee7b9bb2` superseded.
 
 ## Next Steps
 
-1. When the H700 finishes: file it, check the strings, `fork-worktree sync`; report to the maintainer.
+1. Report to the maintainer (done at the end of this session); wait for their calls below.
 2. The maintainer's calls, all put to them in player terms: #127 texts (the short form is in the build; theirs replaces it); #135's proposed rows (P-13 3 s; D-CLOUD-111 connect 5 s / stall 5 s with one retry / ceiling 20 s; D-CLOUD-112 within 3x online) and the two findings (stall behind the screensaver; IPv6 default route counts as connectivity); audit PL-05 (one name for the relink page), PL-08 (D-INFRA-008 renumber); #141/#142/#143 behaviour on remotes without "a folder that does not exist yet"; `GuiMenu:4911` BRING DATA BACK under D-UI-045; staging `0f89c8f1d4` H700 on the RG35XX SP.
 3. Rule text from the audit's proposals once read: P-01 change the set not the site; P-02 a mechanical check for strings naming rows; P-03 a check nothing invokes is not a guard. Blindspot 39 is written.
 4. Then #134's build order: #136 -> #137 -> #21 -> #22 -> #23 -> #25 -> #139, with the bounds (D-CLOUD-111) as the first small piece once the rows are decided.
