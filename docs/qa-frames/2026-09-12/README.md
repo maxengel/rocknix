@@ -29,3 +29,13 @@ FROM THE CLOUD, SAVES ticked, CONTINUE.
 | `transfer-page-nothing-to-restore-completed.png` | RESTORING FROM THE CLOUD / COMPLETED, ELAPSED 0:07, PRESS ANY BUTTON TO CLOSE. Until #145 this was the end: the offer the card raises was parsed by the card alone. |
 | `offer-on-transfer-page.png` | On dismissal: YOUR CLOUD HAS A .../Savez FOLDER BUT NO .../Saves FOLDER, SO THERE WAS NOTHING TO RESTORE. / IS THE FOLDER NAME RIGHT? with CHANGE FOLDER · CREATE ANYWAY · NOT NOW -- the same `CloudOffer::present` the card uses, in D-UI-045's short form (offered to the maintainer on #127; their wording replaces it if different). |
 | `cloud-hub-after-offer.png` | NOT NOW returns to the hub. |
+
+## The two offers in the maintainer's words (#127, D-UI-047), `c90022dc57`
+
+Guest c against the SFTP QA endpoint (absolute paths, as before), reached
+through RESTORE FROM THE CLOUD and dismissed.
+
+| Frame | What it shows |
+|---|---|
+| `offer-near-name-final-words.png` | NOTHING TO RESTORE: YOUR CLOUD HAS .../Savez, NOT .../Saves. / IS THE NAME RIGHT? with CHANGE FOLDER · CREATE ANYWAY · NOT NOW. |
+| `offer-plain-final-words.png` | YOUR CLOUD HAS NO .../Saves FOLDER YET. / CREATE IT NOW? with CREATE IT · NOT NOW. "READY FOR YOUR FIRST BACKUP" is gone: one dialog serves the card and the page. |
