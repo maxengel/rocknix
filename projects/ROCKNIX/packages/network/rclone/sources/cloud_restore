@@ -516,6 +516,32 @@ outcome_word() {
         *)   echo "COULDN'T FINISH" ;;
     esac
 }
+# Whether the cloud is bucket-based (S3 and compatibles, GCS, Swift, B2):
+# rclone's own word, asked once, locally.
+BUCKET_BASED=""
+bucket_based() {
+    if [ -z "${BUCKET_BASED}" ]; then
+        if rclone backend features "${REMOTENAME}" 2>/dev/null | grep -q '"BucketBased": *true'; then
+            BUCKET_BASED=1
+        else
+            BUCKET_BASED=0
+        fi
+    fi
+    [ "${BUCKET_BASED}" = "1" ]
+}
+
+# On a bucket, whether a folder exists: its parent lists it, by a directory
+# marker or by objects under it. The remote's root always exists; a bucket
+# is listed at the root. Listing the folder itself proves nothing there
+# (#141), so this never does.
+bucket_dir_listed() {
+    local path="${1%/}" parent name
+    name="${path##*/}"
+    [ -n "${name}" ] || return 0
+    parent="${path%/*}"
+    rclone lsf --dirs-only "${REMOTENAME}${parent}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | grep -qx "${name}/"
+}
+
 why_for() {
     case "$1" in
         3|4) echo "COULDN'T FIND YOUR CLOUD FOLDER" ;;
@@ -1007,20 +1033,23 @@ restore_game_saves() {
     rclone lsd "${REMOTENAME}${SAVES_REMOTE}" "${RCLONE_LIST_OPTS[@]}" > /dev/null 2>&1
     local remote_check_status=$?
     # On a bucket-based cloud (S3 and its compatibles, GCS, Swift, B2) a
-    # folder is a prefix on object names and nothing else, so a folder with
-    # no objects does not exist and listing an absent one succeeds with
-    # nothing in it -- rclone's documented shape ("listing a nonexistent
+    # folder is a prefix on object names, so listing an absent one succeeds
+    # with nothing in it -- rclone's documented shape ("listing a nonexistent
     # directory will produce an error except for remotes which can't have
     # empty directories"), not a fault. The lsd above therefore proves
     # nothing there, and a mistyped folder name restored nothing and said
-    # COMPLETED (#141, from the #133 matrix). So on such a cloud an empty
-    # listing is read as the folder being absent, which is what it is, and
-    # the offer below does the rest -- including the near-name check, which
-    # lists the parent's prefixes the same way. The features call is local.
-    if [ ${remote_check_status} -eq 0 ] \
-       && rclone backend features "${REMOTENAME}" 2>/dev/null | grep -q '"BucketBased": *true' \
-       && [ -z "$(rclone lsf --max-depth 1 "${REMOTENAME}${SAVES_REMOTE}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | head -1)" ]; then
-        log_message "bucket-based cloud: ${SAVES_REMOTE} lists nothing, which on a bucket is the folder not existing" "false"
+    # COMPLETED (#141, from the #133 matrix). What does exist on a bucket is
+    # what the folder's PARENT lists: a prefix with objects under it, or a
+    # directory marker -- the zero-byte "name/" object the AWS and MinIO
+    # consoles write for "Create folder" and rclone writes under
+    # directory_markers (cloud_setup --seed-folders uses it, and puts a
+    # README in each folder besides, which is what makes our folders real
+    # there). So on a bucket a folder is present when its parent lists it,
+    # and the same rule judges the parent below, which is how a mistyped
+    # root fails on a bucket exactly as on a path-based cloud (2026-09-12,
+    # the maintainer's marker question). The features call is local.
+    if [ ${remote_check_status} -eq 0 ] && bucket_based && ! bucket_dir_listed "${SAVES_REMOTE}"; then
+        log_message "bucket-based cloud: ${SAVES_REMOTE} is not listed by its parent (no marker, no objects), which on a bucket is the folder not existing" "false"
         remote_check_status=3
     fi
     if [ $remote_check_status -ne 0 ]; then
@@ -1055,7 +1084,8 @@ restore_game_saves() {
         local saves_parent="${saves_path%/*}"
         [ "${saves_parent}" = "${saves_path}" ] && saves_parent=""
         local missing_name="${saves_path##*/}"
-        if rclone lsd "${REMOTENAME}${saves_parent}" "${RCLONE_LIST_OPTS[@]}" >/dev/null 2>&1; then
+        if rclone lsd "${REMOTENAME}${saves_parent}" "${RCLONE_LIST_OPTS[@]}" >/dev/null 2>&1 \
+           && { ! bucket_based || bucket_dir_listed "${saves_parent}"; }; then
             local near
             near=$(rclone lsf --dirs-only "${REMOTENAME}${saves_parent}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null \
                    | sed 's|/$||' | near_names "${missing_name}" | head -1)
