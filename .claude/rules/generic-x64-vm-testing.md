@@ -29,8 +29,16 @@ file pointing outside the mounted dir, and `scripts/image` runs `git rev-parse`)
 
 ```bash
 make docker-GENERIC_X64 \
-  DOCKER_EXTRA_OPTS='-v /workspace/repos/rocknix/.git:/workspace/repos/rocknix/.git'
+  DOCKER_EXTRA_OPTS='-v /workspace/repos/rocknix/.git:/workspace/repos/rocknix/.git -v /workspace/cache/rocknix-sources:/workspace/repos/rocknix.worktrees/generic-x64/sources'
 ```
+
+**Both mounts, every time.** The worktree's `sources/` is not a directory of
+ours: it is the root-owned mount point Docker left behind, so a build
+without the second mount dies in its first minute with `mkdir: cannot create
+directory '.../sources/kernel-firmware': Permission denied` under a headline
+naming whichever package came first (`install kernel-firmware:target has
+failed`, 2026-09-12). The shared cache is `SOURCES_DIR` for every build root
+(`device-builds.md`).
 
 Image lands at `target/ROCKNIX-GENERIC_X64.x86_64-<date>.img.gz`. To re-image after a
 scripts/only change (e.g. `mkimage`), remove `build.*/.stamps/image/build_target` first —

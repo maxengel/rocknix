@@ -61,6 +61,24 @@ The GENERIC_X64 pair, the QA WebDAV endpoint (`tools/cloud-test-backend`) and th
 confirmation of something the VM cannot reach -- a real panel, a real board, a real
 provider -- and is scoped to exactly that.
 
+## Reading a device's output
+
+Reading is not an action, but what is read lands in a transcript. A device's
+`system.cfg`, its `rclone.conf`, the output of `get_setting` and anything
+piped back over SSH can carry a sign-in. So every read of those goes through
+a filter, and the filter is wider than the word *password*: rclone writes
+`pass =`, `user =`, `token =`, `key =`; the network writes `psk`.
+
+```bash
+grep -v -i -E 'key|pass|token|user|psk'
+```
+
+A line the filter drops is a line nobody needed to see; a line it lets
+through with a secret in it is a transcript to scrub. The same filter applies
+to the QA guests, whose endpoint credentials are throwaway but whose config
+files have the same shape (2026-09-12: `pass =` slipped a filter written as
+`password`).
+
 ## When it went wrong
 
 2026-09-06: a handheld rebooted mid-restore without a question (blindspot 26 → D-QA-008).
