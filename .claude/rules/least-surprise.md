@@ -4,6 +4,10 @@ description: "Surprise the player as little as possible: things work as they exp
 
 # Least surprise
 
+*No `paths:` glob, so this file loads every session: a principle that
+decides interface and sync questions cannot wait for a matching file to be
+opened.*
+
 Maintainer, 2026-09-12: *"Ultimately, our goal needs to be to surprise the user as
 little as possible. This means things should work as expected and as much the same
 as possible."* D-UI-042. With time to play (`time-to-play.md`) this is the pair of

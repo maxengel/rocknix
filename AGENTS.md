@@ -13,12 +13,17 @@ the LibreELEC/CoreELEC cross-compilation system). There is no app to run — thi
   applies when a matching file is in play; one without applies always. Claude Code
   loads them automatically; point Crush at the directory with `global-context-path`,
   which loads it recursively but ignores `paths:` — so every rule arrives every
-  session there. All 21:
+  session there. All 24, indexed with their triggers in `instruction-files.md`,
+  which also carries the front-matter standard (D-WORKFLOW-009):
 
   - **The four principles**, loaded every session: `least-surprise` (D-UI-042),
     `player-language` (D-UI-045), `time-to-play` (D-CLOUD-098), `vm-first` (D-QA-007).
+  - **The EmulationStation four** (`paths: "**"`, because ES source is a different
+    repository and no glob here can name it): `es-native-ui` (the mechanics),
+    `es-player-text` (every word a player reads), `es-ui-style-guide` (how a screen
+    looks and behaves), `es-code-traps` (the sharp edges) — D-WORKFLOW-007/008.
   - **Always in context** (`paths: "**"`): `engineering-practices`,
-    `upgrade-and-install`, `es-native-ui`, `documentation-accuracy`, `fork-workflow`,
+    `upgrade-and-install`, `documentation-accuracy`, `fork-workflow`,
     `worktrees`, `device-builds`, `issue-tracking`, `decision-register`,
     `learning-capture`, `instruction-files`, `adversarial-council`.
   - **Scoped**: `packaging-and-patches` (`packages/**`, `projects/**`),
@@ -27,9 +32,9 @@ the LibreELEC/CoreELEC cross-compilation system). There is no app to run — thi
     the VM tools), `handheld-evidence` (device packages and kernels, `docs/**`),
     `council-substrate-integrity` (council artifacts and skills).
 
-  Three documents carry interface law and load **nowhere** — open them when the work
-  is theirs: `docs/es-ui-style-guide.md`, `docs/es-menu-map.md` (and D-UI-039: a row
-  added, moved or renamed updates it in the same change), `docs/conflict-wizard-ia.md`.
+  Two documents carry interface law and load **nowhere** — open them when the work
+  is theirs: `docs/es-menu-map.md` (and D-UI-039: a row added, moved or renamed
+  updates it in the same change) and `docs/conflict-wizard-ia.md`.
 
 There is **no unit-test suite**; `tools/pkgcheck <package>` is the only lint (run it after
 any `package.mk` edit), and the real test is that the package/image builds.
@@ -82,7 +87,7 @@ any `package.mk` edit), and the real test is that the package/image builds.
 - **Player-facing words**: four tiers (settings; saves; ROMs and BIOS; game content),
   two verbs (*back up*, *restore*), *sync* only for the automatic behaviour, "Wi-Fi"
   hyphenated, the serial comma, *game save* vs *save state*, a row is a label and at
-  most one line under it (`es-native-ui.md`, D-UI-022/023). Only "back up" vs "backup"
+  most one line under it (`es-player-text.md`, D-UI-022/023). Only "back up" vs "backup"
   is checked mechanically (`tools/vocabulary-check`).
 - **Time to play** (`time-to-play.md`, D-CLOUD-098): interface → a game's first frame,
   and a game's exit → the next game's first frame, measured on every image; nothing new

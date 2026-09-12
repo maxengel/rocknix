@@ -4,11 +4,20 @@ description: "Player-facing language is clear first, then as short as it can be 
 
 # Player language
 
+*No `paths:` glob, so this file loads every session: half the strings a
+player reads are printed by shell scripts and half by C++, and no glob covers
+both without covering everything.*
+
 Maintainer, 2026-09-12: *"In general, we should always go for clarity and
 brevity to make sure our language is well-aligned, simple to understand, and
 as short as it can be while still being clear and optimized for the space."*
 D-UI-045. Beside least surprise (`least-surprise.md`) and time to play
 (`time-to-play.md`), this is the test every string a player reads is held to.
+
+This file is the principle. The words themselves -- the four tiers and the two
+verbs, "back up" vs "backup", the serial comma, game save vs save state, Wi-Fi,
+how much text a row may carry, and the outcome vocabulary a run ends with --
+are `es-player-text.md`; the surfaces they are shown on are `es-native-ui.md`.
 
 ## The test, in order
 

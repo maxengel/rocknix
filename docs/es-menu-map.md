@@ -5,7 +5,7 @@ Derived from `es-app/src/guis/` in `ROCKNIX/emulationstation-next` (surveyed
 2026-08-19 against the `20260818` build) and verified against the running UI with
 `tools/vm-visual-qa`.
 
-Companion documents: [es-ui-style-guide.md](es-ui-style-guide.md) — how a screen
+Companion documents: [es-ui-style-guide.md](../.claude/rules/es-ui-style-guide.md) — how a screen
 should look and behave once you know where it goes; and
 [conflict-wizard-ia.md](conflict-wizard-ia.md) — the flow and screen structure
 for the cloud-save conflict wizard (#23), now entering implementation — milestone "Cloud Saves: Visual Conflict Resolution".
@@ -60,7 +60,7 @@ to decide where something belongs.
 
 | Destination | Groups it contains |
 |---|---|
-| **GAME SETTINGS** | TOOLS · ACCOUNTS · BIOS SETTINGS · SAVESTATES · DEFAULT GLOBAL SETTINGS · **CLOUD SETTINGS** · SYSTEM SETTINGS (per-system config) |
+| **GAME SETTINGS** | TOOLS · ACCOUNTS · BIOS SETTINGS · SAVE STATES · DEFAULT GLOBAL SETTINGS · **CLOUD SETTINGS** · SYSTEM SETTINGS (per-system config) |
 | **CONTROLLER & BLUETOOTH** | SETTINGS · BLUETOOTH · DISPLAY OPTIONS · BEHAVIOR · PLAYER ASSIGNMENTS |
 | **USER INTERFACE** | APPEARANCE · CONTROL OPTIONS · DISPLAY OPTIONS · GAMELIST OPTIONS · ICONS |
 | **GAME COLLECTION** | COLLECTIONS TO DISPLAY · CREATE CUSTOM COLLECTION · OPTIONS |
