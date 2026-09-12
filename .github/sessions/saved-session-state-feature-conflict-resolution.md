@@ -1,6 +1,6 @@
 # Saved Session State
 
-> **Saved**: 2026-09-12T07:20:00Z
+> **Saved**: 2026-09-12T09:40:00Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
@@ -12,16 +12,15 @@ Epic #11 (cloud saves). **The nine save-history decisions are all settled with t
 
 ## In Progress
 
-- **#135 time-to-play cell** running as a subagent (opus) in `rocknix.worktrees/time-to-play` on `feature/time-to-play`: `tools/time-to-play`, the offline cells (D-CLOUD-112), the bounds cells (D-CLOUD-111), wired into `vm-qa`; it uses **guest c** (10025) and the **SFTP** backend (9013), never the pair or 9010; record numbers only on a quiet host. It proposes rows; it writes none as decided.
-- Guests a and b (fresh pair) on `a2ee7b9bb2` from the runner; guest c on `a2ee7b9bb2` (lent to the #135 agent; it restores the WebDAV stanza and gameexit=1 when done). RG35XX SP on `af2db4ab09`, clean; no device action without a per-action yes (D-QA-015).
+- **#135 merged** (`e1ddfd7ec2`): `tools/time-to-play`, the `time-to-play` suite in `vm-qa` (default, `--quick`), three QA-log columns. Measured on a quiet host, guest c: UI to game 0.63 s (identical on sftp/webdav/s3); exit sync 1.30 s webdav / 1.43 s sftp / 0.79 s s3; game to game 1.01 s (a launch cancels the sync today, 10/10); startup sync 37 s from reboot on sftp; offline: no route 0.5 s, portal 0.9 s, **refused port 12 s, stalled endpoint 321 s** (30 s timeout x 10 low-level retries; no `--max-duration`; `--contimeout` never fired); the stall's outcome lands behind the screensaver at 300 s. Found: `has_default_route` counts an IPv6 default. **Proposals on #135** (comment 5644731807): P-13 3 s; D-CLOUD-111 connect 5 s, stall 5 s with `--low-level-retries 1`, ceiling `--max-duration 20s`; D-CLOUD-112 within 3x online (~5 s). Awaiting the maintainer.
+- **Running:** `vm-qa --skip-up --only time-to-play` on the pair (proves the runner's dispatch, which the agent could not); the **#129 audit** as a subagent (opus) in `rocknix.worktrees/audit-129` on `audit/129`, milestone tier, scope `next@e1ddfd7ec2` + ES `f93acc2a6`, host-only evidence, read-only ssh to guest c at most.
+- Guests a, b on `a2ee7b9bb2` (pair); guest c on `a2ee7b9bb2`, WebDAV stanza restored, gameexit=1. RG35XX SP on `af2db4ab09`, clean; H700 `a2ee7b9bb2` built, not staged (D-QA-015).
 
 ## Next Steps
 
-1. When #135 reports: review, merge `feature/time-to-play` into `next`, run the new suite once on the pair, put the proposed rows to the maintainer (P-13, D-CLOUD-111/112), add the QA-log columns' first row.
-2. **#129**: the code audit (`code-auditor` skill, read from `next`; milestone tier -- two epics), scoped to `next` at the merge of #135; findings become issues.
-3. **#127**: the maintainer's word on the dialog texts, offered in the short form (D-UI-045); then the ES change, a build, close.
-4. #141 / #142 / #143 from the matrix: each needs a behaviour decision on remotes without a "folder that does not exist yet"; put the question to the maintainer in player terms before fixing.
-5. Staging on the RG35XX SP: `a2ee7b9bb2` H700 is the candidate (stage, then ask before the reboot) -- only on a per-device yes.
+1. When the suite run reports: tick #135's first AC if the runner's report carries the numbers; when the audit reports: review its findings, merge `audit/129` into `next`, put the punch list's decisions to the maintainer.
+2. The maintainer's calls: #127 texts (short form); #135's proposed rows (P-13, D-CLOUD-111/112) and the two findings (stall behind the screensaver; IPv6 default route); #141/#142/#143 behaviour on remotes without "a folder that does not exist yet"; staging `a2ee7b9bb2` H700 on the RG35XX SP.
+3. Then #134's build order: #136 -> #137 -> #21 -> #22 -> #23 -> #25 -> #139, with the bounds (D-CLOUD-111) implemented in the scripts as the first small piece once the rows are decided.
 
 ## Key Files Modified
 
