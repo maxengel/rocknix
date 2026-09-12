@@ -28,6 +28,8 @@
 #      the automatic fallback equals the shipped value (D-CLOUD-118).
 #   i. cloud_net_ready settles on a held default route in any connected
 #      NetworkManager state; a still-connecting network exits 69 at the deadline.
+#   j. cloud_sync_helper migrates the pre-#107 retry bound once, with a marker,
+#      and leaves a hand-tuned value alone.
 #
 # The chksysconfig and 001-functions functions are lifted out of the files
 # under test and run in a fresh bash against temp paths, as wait-lock-test
@@ -529,6 +531,21 @@ printf '#!/bin/sh\ncase "$*" in *STATE*) echo "connecting" ;; *CONNECTIVITY*) ec
 t0=$(date +%s)
 PATH="${I}/shim:${PATH}" bash "${ROOT}/${RCLONE_REL}/cloud_net_ready" --wait 3 > "${I}/out" 2>&1; RC_I=$?
 [ "${RC_I}" -eq 69 ]; check $? "still connecting at the deadline exits 69" "rc ${RC_I}: $(tail -1 "${I}/out" | cut -c1-120)"
+
+echo "  j. cloud_sync_helper migrates the shipped retry bound once, and leaves a hand-tuned value alone (#107)"
+# The helper rewrites RCLONE_NET_OPTS only while it is exactly the value shipped
+# before #107 (two low-level retries, which failed every Dropbox replacement),
+# once, with a marker; a value somebody tuned by hand is not ours to change.
+# Same sandbox as case d (/storage is ${DS}); a fresh conf for each shape.
+rm -f "${DS}/.config/.cloud_sync-net-opts-retries-applied"
+printf 'SAVESPATH="/storage/roms"\nBACKUPMETHOD="copy"\nRCLONE_NET_OPTS="--contimeout 15s --timeout 30s --low-level-retries 2 --retries 1"\n' > "${DS}/.config/cloud_sync.conf"
+sb bash /repo/cloud_sync_helper /tmp/helper.log
+grep -q '^RCLONE_NET_OPTS="--contimeout 15s --timeout 30s --low-level-retries 10 --retries 1"$' "${DS}/.config/cloud_sync.conf"; check $? "the pre-#107 bound is rewritten to ten low-level retries (rc ${RC})" "conf holds: $(grep ^RCLONE_NET_OPTS "${DS}/.config/cloud_sync.conf")"
+[ -f "${DS}/.config/.cloud_sync-net-opts-retries-applied" ]; check $? "and the once-only marker is set" "no marker"
+printf 'SAVESPATH="/storage/roms"\nBACKUPMETHOD="copy"\nRCLONE_NET_OPTS="--contimeout 15s --timeout 30s --low-level-retries 4 --retries 1"\n' > "${DS}/.config/cloud_sync.conf"
+rm -f "${DS}/.config/.cloud_sync-net-opts-retries-applied"
+sb bash /repo/cloud_sync_helper /tmp/helper.log
+grep -q -- '--low-level-retries 4 --retries 1"$' "${DS}/.config/cloud_sync.conf"; check $? "a hand-tuned bound (four retries) is left alone" "conf holds: $(grep ^RCLONE_NET_OPTS "${DS}/.config/cloud_sync.conf")"
 
 echo
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

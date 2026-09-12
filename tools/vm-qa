@@ -19,6 +19,7 @@
 #   scripts     tools/last-good-scripts-test  -- the scripts under busybox shims, on the host
 #   lifetime    ES tests/cloud-oauth-lifetime.py -- the wizard's page lifetimes under ASan, on the host (ES_SRC)
 #   vocabulary  tools/vocabulary-check       -- back up / backup as verb / noun, ES strings and script lines, on the host
+#   pair-identity  the two guests' MACs and cloud_device_ids differ (#91), over ssh
 #   round-trip  tools/cloud-round-trip        -- 27 steps over SSH against the QA cloud, guest a
 #   exit        tools/emulator-exit-test --vm -- the exit hotkey ends a game once, save written, guest a
 #   time-to-play tools/time-to-play --quick   -- UI to a game's first frame, and one game's exit to the
@@ -34,7 +35,7 @@
 # handheld: the guests are tools/vm-pair's, on this host (fork #120, box 1).
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-IMAGE=""; SKIP_UP=0; ONLY="scripts,lifetime,vocabulary,round-trip,exit,time-to-play,walks"; LINK=0; GUEST=a
+IMAGE=""; SKIP_UP=0; ONLY="scripts,lifetime,vocabulary,pair-identity,round-trip,exit,time-to-play,walks"; LINK=0; GUEST=a
 # Which of the five QA clouds every suite here talks to (#133). It is one
 # variable and not a per-suite flag on purpose: the backend the endpoint is
 # brought up on, the stanza the walks seed, and the endpoint the round trip
@@ -116,6 +117,25 @@ case ",$ONLY," in *,lifetime,*)   run_suite lifetime   "$OUT/lifetime.log"   lif
 # string in the ES checkout the image pins and every sentence the scripts
 # print for a player. On the host, in a second (2026-09-12, the maintainer's ask).
 case ",$ONLY," in *,vocabulary,*) run_suite vocabulary "$OUT/vocabulary.log" env ES_SRC="${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}" "$ROOT/tools/vocabulary-check" ;; esac
+# The two guests are two devices (#91): different MACs, different
+# cloud_device_ids. The round trip's own guard for this (assert_two_devices)
+# runs only under --second-port, which also runs the two-device fixtures that
+# stay red until #22 -- so the default suite never fired it, and the pair
+# sharing an identity would have gone unnoticed (hygiene pass, 2026-09-12).
+# Seconds, over ssh, before anything else touches the pair.
+pair_identity_suite() {
+  local ka kb ia ib
+  ka=$(ssh -n -i "$KEY" -p 10022 $SSHO root@127.0.0.1 'cat /sys/class/net/eth0/address' 2>/dev/null)
+  kb=$(ssh -n -i "$KEY" -p 10023 $SSHO root@127.0.0.1 'cat /sys/class/net/eth0/address' 2>/dev/null)
+  ia=$(ssh -n -i "$KEY" -p 10022 $SSHO root@127.0.0.1 '. /etc/profile; cloud_device_id 2>/dev/null | head -1' 2>/dev/null)
+  ib=$(ssh -n -i "$KEY" -p 10023 $SSHO root@127.0.0.1 '. /etc/profile; cloud_device_id 2>/dev/null | head -1' 2>/dev/null)
+  echo "guest a: mac=${ka:-?} id=${ia:-?}"; echo "guest b: mac=${kb:-?} id=${ib:-?}"
+  [ -n "$ka" ] && [ -n "$kb" ] && [ -n "$ia" ] && [ -n "$ib" ] || { echo "a guest did not answer; the pair's identity is unproven"; return 1; }
+  [ "$ka" != "$kb" ] || { echo "the guests share a MAC"; return 1; }
+  [ "$ia" != "$ib" ] || { echo "the guests share a cloud_device_id"; return 1; }
+  echo "two devices"
+}
+case ",$ONLY," in *,pair-identity,*) run_suite pair-identity "$OUT/pair-identity.log" pair_identity_suite ;; esac
 case ",$ONLY," in *,round-trip,*) run_suite round-trip "$OUT/round-trip.log" "$ROOT/tools/cloud-round-trip" --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --backend "$BACKEND" ;; esac
 case ",$ONLY," in *,exit,*)       run_suite exit       "$OUT/exit.log"       "$ROOT/tools/emulator-exit-test" --port "$PORT" --identity "$KEY" --vm ;; esac
 # Time to play (#135). --quick is the bounded form -- one repeat of the
