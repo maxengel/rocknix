@@ -17,6 +17,7 @@
 # What runs, in order, each with its own log and a PASS/FAIL line:
 #
 #   scripts     tools/last-good-scripts-test  -- the scripts under busybox shims, on the host
+#   lifetime    ES tests/cloud-oauth-lifetime.py -- the wizard's page lifetimes under ASan, on the host (ES_SRC)
 #   round-trip  tools/cloud-round-trip        -- 27 steps over SSH against the QA cloud, guest a
 #   exit        tools/emulator-exit-test --vm -- the exit hotkey ends a game once, save written, guest a
 #   time-to-play tools/time-to-play --quick   -- UI to a game's first frame, and one game's exit to the
@@ -32,7 +33,7 @@
 # handheld: the guests are tools/vm-pair's, on this host (fork #120, box 1).
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-IMAGE=""; SKIP_UP=0; ONLY="scripts,round-trip,exit,time-to-play,walks"; LINK=0; GUEST=a
+IMAGE=""; SKIP_UP=0; ONLY="scripts,lifetime,round-trip,exit,time-to-play,walks"; LINK=0; GUEST=a
 # Which of the five QA clouds every suite here talks to (#133). It is one
 # variable and not a per-suite flag on purpose: the backend the endpoint is
 # brought up on, the stanza the walks seed, and the endpoint the round trip
@@ -93,6 +94,22 @@ run_suite() {  # name, log, command...
   echo "$name: $res in ${dt}s"
 }
 case ",$ONLY," in *,scripts,*)    run_suite scripts    "$OUT/scripts.log"    "$ROOT/tools/last-good-scripts-test" ;; esac
+# EmulationStation's page-lifetime check (#144): the wizard's page-replacement
+# callbacks compiled under AddressSanitizer against small doubles, on the
+# host, in seconds. It had not compiled for a day and nothing ran it, so
+# nothing said so (audit 2026-09-12, F-01). ES_SRC names the checkout whose
+# GuiMenu.cpp is pinned by the image under test; a missing checkout is a
+# FAIL with the reason, never a silent skip -- a guard that cannot run has
+# not passed.
+lifetime_suite() {
+  local es="${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}"
+  if [ ! -f "$es/tests/cloud-oauth-lifetime.py" ]; then
+    echo "no EmulationStation checkout at $es (set ES_SRC); the lifetime check did not run"; return 1
+  fi
+  echo "GuiMenu.cpp from $es at $(git -C "$es" rev-parse --short HEAD 2>/dev/null || echo '?')"
+  python3 "$es/tests/cloud-oauth-lifetime.py"
+}
+case ",$ONLY," in *,lifetime,*)   run_suite lifetime   "$OUT/lifetime.log"   lifetime_suite ;; esac
 case ",$ONLY," in *,round-trip,*) run_suite round-trip "$OUT/round-trip.log" "$ROOT/tools/cloud-round-trip" --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --backend "$BACKEND" ;; esac
 case ",$ONLY," in *,exit,*)       run_suite exit       "$OUT/exit.log"       "$ROOT/tools/emulator-exit-test" --port "$PORT" --identity "$KEY" --vm ;; esac
 # Time to play (#135). --quick is the bounded form -- one repeat of the
