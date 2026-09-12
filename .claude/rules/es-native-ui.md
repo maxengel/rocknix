@@ -20,6 +20,35 @@ this file guides any work there.
   `OptionListComponent`, `SliderComponent`, `ButtonComponent`, `BusyComponent`
   (spinner), `AsyncNotificationComponent` (top-right progress card).
 
+## Three documents carry the rest of the interface law
+
+They are `docs/`, not `.claude/rules/`, so nothing loads them for you. Open
+them when the work is theirs -- the 2026-09-12 sweep (#147) found that no
+rule file named any of them, which is how a page gets built against half the
+house style.
+
+| Document | Owns |
+| --- | --- |
+| `docs/es-ui-style-guide.md` | the seven row builders, the `multiLine` trap, `addSaveFunc` vs `setOnChangedCallback`, the reboot flags, the four gates in precedence order, button order and the back-button accelerator, confirmation registers, glyphs, placeholder words (`AUTO`, `NONE`, `<NOT SET>`), the three type sizes |
+| `docs/es-menu-map.md` | where a row belongs: the two entry points, the `addGroup` sections that are the real IA, read-only facts before editable settings, destructive work behind ADVANCED, the kid/kiosk collapse, and cloud's one door |
+| `docs/conflict-wizard-ia.md` | the wizard's architecture: what counts as a conflict, the header's count, nothing transfers until COMPLETE, the column and badge vocabulary |
+
+**A row added, moved or renamed updates `docs/es-menu-map.md` in the same
+change (D-UI-039, maintainer 2026-09-11).** The rule is stated in the map
+itself, which is the one place somebody who has not opened it will not read
+it; it is repeated here so it loads with the rest.
+
+Two house rules from the style guide are worth carrying at this altitude
+because they decide safety, not looks:
+
+- **YES first in a confirmation**, and the back-button accelerator binds to a
+  button named exactly `NO` or `OK` -- otherwise it falls through to the last
+  button, so back must never land on the destructive choice.
+- **Dim, don't hide.** An unconfigured feature stays visible at alpha `0x50`
+  and offers its setup, keeping its description. A *button*, by contrast, is
+  gated by existence: a null callback means CONTINUE does not exist until it
+  would work.
+
 ## Core patterns (use these, don't invent)
 
 - **Settings page**: `new GuiSettings(window, _("TITLE"))` + `addGroup` / `addEntry`
@@ -107,7 +136,10 @@ Values live in one place each, so a screen never makes its own decision.
   card pinned to a corner reads as a panel that failed to fit rather than a
   placement anybody chose, so anything wider than that is centred.
 
-  The four tiers, so a new surface picks the right one:
+  The four **surface** tiers, so a new surface picks the right one (not
+  the four data tiers of § Conventions -- settings, saves, ROMs and BIOS,
+  game content -- which are a different list that happens to be the same
+  length):
 
   | Surface | Width | Position | Blocks input | Ends |
   |---|---|---|---|---|
@@ -141,7 +173,7 @@ whether a person would say it out loud:
 | `IT RUNS AGAIN AT THE NEXT STARTUP.` | `IT'LL TRY AGAIN NEXT STARTUP.` |
 
 Unchanged by that pass, because they are vocabulary rather than register: the
-three tiers, the two verbs, `Wi-Fi`, the serial comma, two lines per row, and
+four tiers, the two verbs, `Wi-Fi`, the serial comma, two lines per row, and
 the outcome words above.
 
   **Duration decides between the last two, and the deciding column is
@@ -335,9 +367,11 @@ $B/toolchain/bin/cmake --build build-tests --target es-unit-tests && ./build-tes
 - **Clear, then brief, then sized to the space** (`player-language.md`,
   D-UI-045). Cut every word whose removal changes nothing; a string that
   needs more room wants a page, not smaller text.
-- **"back up" vs "backup"**: two words as a verb ("BACK UP CONFIGURATIONS TO CLOUD",
+- **"back up" vs "backup"**: two words as a verb ("BACK UP SETTINGS TO THE CLOUD",
   "back up your settings"), one word as a noun/adjective ("RESTORE FROM BACKUP",
   "backup file"). Applies to menu labels, dialogs, script output, and docs.
+  The old example here, "BACK UP CONFIGURATIONS TO CLOUD", broke the tier rule
+  below while demonstrating the verb rule; *configurations* is banned.
   Checked mechanically: `tools/vocabulary-check` reads every `_("")` string
   and every sentence the scripts print, and `tools/vm-qa` runs it as the
   `vocabulary` suite on every image (maintainer, 2026-09-12: "we should make
@@ -440,16 +474,19 @@ $B/toolchain/bin/cmake --build build-tests --target es-unit-tests && ./build-tes
 ## Outcome vocabulary (D-UI-028)
 
 Every cloud surface -- the sync card, the transfer page, the rows under the
-toggles -- ends a run with one of four words, then a why, what is in place,
-and how to recover. Nothing else: no `FAILED`, no `SUCCEEDED`, no log path,
-no exit code, no `rclone`.
+toggles -- ends a run with one of **three** words, then a why, what is in
+place, and how to recover. Nothing else: no `FAILED`, no `SUCCEEDED`, no log
+path, no exit code, no `rclone`. D-UI-028 set four; **D-UI-030 removed the
+middle one** -- a run passes or fails, and a run whose parts disagree reads
+`COULDN'T FINISH - <why>` with the failing part's why while still saying
+truthfully what moved. The stamps keep the `gaps` token so a log can tell a
+partial run from a total one; no screen ever shows it.
 
 | Word | When | Card (line 2) | Page (line 1) | Row token |
 |---|---|---|---|---|
 | `COMPLETED` | every part of the run succeeded (rclone 9 counts as success) | `COMPLETED` | `COMPLETED` | `COMPLETED` |
-| `COMPLETED WITH GAPS - <what>` | some parts succeeded and some did not; a match cut after deletions | `COMPLETED WITH GAPS - NES DID NOT FINISH` | `COMPLETED WITH GAPS` | `COMPLETED WITH GAPS` |
 | `COULDN'T FINISH - <why>` | nothing succeeded and it is not a sentinel | `COULDN'T FINISH - YOUR CLOUD STOPPED ANSWERING` | `COULDN'T FINISH` | `COULDN'T FINISH, YOUR CLOUD STOPPED ANSWERING` |
-| `SKIPPED - <reason>` | only 69, 75, and the launch cancel | `SKIPPED - NO NETWORK CONNECTION` / `SKIPPED - ANOTHER CLOUD SYNC IS RUNNING` / `SKIPPED - A GAME WAS STARTED` | same | `SKIPPED, NO NETWORK` / `SKIPPED, ANOTHER SYNC WAS RUNNING` / `SKIPPED, A GAME WAS STARTED` |
+| `SKIPPED - <reason>` | only 69, 75, and the launch cancel | `SKIPPED - YOU'RE NOT ONLINE` / `SKIPPED - A SYNC IS ALREADY RUNNING` / `SKIPPED - A GAME WAS STARTED` | same | `SKIPPED, NO NETWORK` / `SKIPPED, ANOTHER SYNC WAS RUNNING` / `SKIPPED, A GAME WAS STARTED` |
 
 **Why** comes from a `>>> why <sentence>` line the scripts print at the point
 of failure (rclone's own taxonomy stays in the log), else from rc: rclone 3/4

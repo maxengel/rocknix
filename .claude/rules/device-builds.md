@@ -184,7 +184,7 @@ option that could not actually run.
 
 ## Late binding bites hardest in a merge
 
-`packages/readme.md` says toolchain and path variables exist only after a
+`packages/README.md` says toolchain and path variables exist only after a
 package loads, so they belong inside functions. A merge is where a violation
 surfaces, because the conflict makes you read code nobody has read since it
 was written.

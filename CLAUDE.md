@@ -9,12 +9,24 @@ emulators, userland) per device.
 
 **Canonical deep-dive docs (this file summarizes; they are authoritative):**
 - `AGENTS.md` — fork workflow and non-obvious gotchas, for agents that read it instead of this file.
-- `packages/readme.md` — the authoritative `package.mk` format reference.
+- `packages/README.md` — the authoritative `package.mk` format reference.
 - `.claude/rules/*.md` — the canonical scoped guides, **loaded automatically**: a rule with a
   `paths:` glob loads when a matching file enters context, one without loads every session.
-  Covers fork workflow, worktrees, rclone cloud-sync, GENERIC_X64 VM QA, ES native UI, issue
-  tracking, learning capture, doc accuracy, engineering practices, device builds, upgrade/install,
-  packaging and patches.
+  All 21 of them, so nothing is reachable only by accident:
+
+  | Always (no glob, or `paths: "**"`) | Scoped |
+  | --- | --- |
+  | `least-surprise` · `player-language` · `time-to-play` · `vm-first` — the four principles every interface and sync decision is weighed against | `packaging-and-patches` (`packages/**`, `projects/**`) |
+  | `engineering-practices` · `upgrade-and-install` · `es-native-ui` · `documentation-accuracy` | `rclone-cloud-sync` (the rclone package, `rocknix/sources/scripts`, the cloud tools) |
+  | `fork-workflow` · `worktrees` · `device-builds` · `issue-tracking` · `decision-register` · `learning-capture` · `instruction-files` | `generic-x64-vm-testing` (GENERIC_X64, `projects/ROCKNIX/packages/**`, the VM tools) |
+  | `adversarial-council` | `handheld-evidence` (device packages, device kernels, `docs/**`) |
+  | | `council-substrate-integrity` (council artifacts and skills) |
+
+  Three more documents carry interface law and load *nowhere*: `docs/es-ui-style-guide.md`
+  (row builders, gates, button order, confirmation registers, glyphs),
+  `docs/es-menu-map.md` (where a row belongs — and D-UI-039: a row added, moved or renamed
+  updates it in the same change), `docs/conflict-wizard-ia.md` (the wizard's IA). Open them
+  when the work is theirs; `es-native-ui.md` says which owns what.
 
 ## Build & development commands
 
@@ -83,7 +95,7 @@ in the device `options` file.
 **Emulator naming:** libretro cores are `*-lr`; standalone emulators are `*-sa`
 (`projects/ROCKNIX/packages/emulators/`).
 
-## `package.mk` rules (see `packages/readme.md` for the full reference)
+## `package.mk` rules (see `packages/README.md` for the full reference)
 
 - **Late-binding (enforced by `pkgcheck`):** toolchain/path vars (`CC`, `CFLAGS`, `PKG_BUILD`, `TARGET_*`, ...) exist only *after* the package loads — reference them **only inside functions** (`configure_package`, `pre_configure_target`, ...), never at global scope.
 - Customize via `pre_*`/`post_*` hook functions rather than replacing core build steps; branch per device with `case ${DEVICE} in ... esac`.
@@ -105,10 +117,11 @@ No Conventional Commits. Scope by package or device, matching history:
 
 - Branch `next` = `upstream/next` + a personal overlay (`.claude/rules/`, `docs/`, `plans/`, `.githooks/`, ...). **Never PR `next` upstream.**
 - Feature work: branch `feature/<name>` from `next` in a worktree at `../rocknix.worktrees/<name>`; the primary checkout stays on `next`.
-- Upstream PRs use a throwaway branch: `git rebase --onto upstream/next next pr/<name>` (excludes personal commits by construction); `.githooks/pre-push` guards `pr/*`.
+- Upstream PRs use a throwaway branch built **by content**: `git checkout next -- <the feature paths>` onto a detached `upstream/next`, one commit. The old `git rebase --onto upstream/next next pr/<name>` recipe is retired — it produces an empty branch, silently, once the feature has been merged into `next`. `.githooks/pre-push` guards `pr/*`; it is the backstop, not the plan.
 - Issues go on the fork: always `gh --repo maxengel/rocknix` (upstream has Issues disabled).
 - User-facing behavior changes need a follow-up docs PR to the separate `ROCKNIX/rocknix.org` repo.
-- Durable lessons: consider an instruction file under `.claude/rules/` and append a timestamped entry to `docs/work-logs/<yyyy_mm>-work_logs/<yyyy_mm_dd>-work_log.md`.
+- Durable lessons: consider an instruction file under `.claude/rules/` and append a timestamped entry to `docs/work-logs/<yyyy_mm>-work_logs/<yyyy_mm_dd>-work_log.md`. A learning that is a *procedure* becomes a tool or a flag, not prose (`learning-capture.md` § 3).
+- Decisions go in `docs/decision-register.md` the same session they are made, and are cited by ID rather than re-argued; the table is **append-only** (`decision-register.md`). Out-of-band maintainer requests become fork issues the same session, quoting their words (`issue-tracking.md`, D-QA-012).
 
 ## Non-obvious gotchas
 
@@ -117,6 +130,8 @@ No Conventional Commits. Scope by package or device, matching history:
 - A network/download failure during a build often surfaces as a **misleading, unrelated-looking build error** — check for failed downloads first.
 - Before "fixing" apparently wrong code, verify design intent via `git log -S`/`git blame` — several dangerous-looking patterns are intentional (`engineering-practices.md`).
 - `emulationstation` source lives in a separate git repo; see `projects/ROCKNIX/packages/ui/emulationstation/package.mk` for the extra build steps.
+- **Clarity, then brevity, then sized to the space** for every string a player reads, and surprise them as little as possible — `player-language.md` (D-UI-045) and `least-surprise.md` (D-UI-042), beside `time-to-play.md` (D-CLOUD-098): interface → first frame and exit → next first frame are measured on every image, and nothing goes on the launch path unless it must.
+- **Vocabulary is not decoration.** Four tiers (settings; saves; ROMs and BIOS; game content), two verbs (*back up*, *restore*), *sync* reserved for the automatic behaviour, "Wi-Fi" hyphenated, the serial comma, *game save* vs *save state* — `es-native-ui.md` § Conventions, D-UI-022. Only "back up" vs "backup" is checked mechanically (`tools/vocabulary-check`, the `vocabulary` suite of `tools/vm-qa`).
 - **Every build ships onto devices that already have state.** Before publishing, check both the upgrade path (a device keeping its `/storage`) and a clean install — see `upgrade-and-install.md`. A fix that changes what we *write* does nothing for what is already written.
 - **Can this be done on the VM?** Asked and answered in writing, in the issue, before
   every test, proof or measurement; only a reasoned no (a real panel, a board's memory,
@@ -131,5 +146,6 @@ No Conventional Commits. Scope by package or device, matching history:
   `docs/device-testing-policy.md`.
 - **Physical-device flashing** — follow `docs/device-flashing-runbook.md` (pointed to from `device-builds.md`): identify the removable card at run time and exclude every system disk; read the raw image back before touching its filesystem; on H700 a fresh card does not boot until the exact device tree is activated as `/dtb.img`.
 - **rclone cloud-sync** and **GENERIC_X64 VM QA** have sharp edges — read their instruction files before touching those areas (filter file is an allowlist; `--delete-excluded` is catastrophic; VM disk must be 16GB+ or first boot breaks in a way that looks like a graphics bug).
+- **A worktree is removed with `tools/fork-worktree remove`**, never `git worktree remove --force` — it cannot tell a few hundred MB of checkout from hours of un-recoverable build output (`worktrees.md`, D-WORKFLOW-005).
 - **Read `.claude/rules/` from `next`, not from your feature worktree.** Feature branches cut from an older base silently lack instruction files added since — `es-native-ui.md` is absent from older worktrees, so ES work done there proceeds without the guidance it mandates.
 - **Headless VM QA** (no desktop on the build host): `generic-x64-vm run --headless --daemonize <qcow2>`, then `tools/vm-serial` for a root shell and `tools/vm-visual-qa` with `tools/vm-walks/` for the screen. SSH is disabled on a fresh image, so serial is the way in; stop the VM by its pidfile, never by `pkill` pattern. Details and the keys in `generic-x64-vm-testing.md`.

@@ -28,7 +28,11 @@ in the margins: <https://claude.ai/code/artifact/5da9ce12-b088-4db0-8557-4b34fe4
 > tool reached from the same menu entry (D-CLOUD-033, D-CLOUD-035); a sync
 > never opens the wizard over a player, it counts and badges, and one entry,
 > MANAGE GAME SAVE RESTORES AND CONFLICTS, owns the queue and the restores
-> (D-CLOUD-035); an unexplained absence is asked as a two-button question in
+> (D-CLOUD-035) -- **superseded in part by D-UI-043 (2026-09-12): the row
+> under SAVE MANAGEMENT is EARLIER VERSIONS OF SAVES and carries no restore
+> verb, because restoring an earlier version belongs to #25 after the wizard,
+> and a corrupted or legacy entry is trash not yet emptied rather than
+> something to offer**; an unexplained absence is asked as a two-button question in
 > this same wizard rather than held as a state (D-CLOUD-037). Vocabulary per
 > D-UI-022: *discard* now means only the copy chosen against — quitting the
 > wizard **drops** its decisions, it does not discard anything.
@@ -133,16 +137,25 @@ serial by one player (D-CLOUD-103), so the later session is the common answer
 to a missed sync and is one press away. Nothing is kept without that press, and
 the other version is retained in `Saves/.history/` either way.
 
+**Retention is unconditional, and the table below said otherwise until the
+#147 sweep.** Nothing leaves the cloud's current save unless that version is
+already in the store (`save-history-consensus-amendment.md`, retain-only), and
+even with the history setting OFF the retain step still runs before a version
+is displaced -- OFF stops long-term history, not the transaction copy
+(D-CLOUD-105). The *keep copies of discarded saves* toggle therefore governs
+how long a losing copy is kept and whether it is offered, never whether it is
+taken. The escape hatch from a wrong press is the store, not the setting.
+
 ## What each kind shows
 
-| | Savestate | In-game save |
+| | Save state | Game save |
 |---|---|---|
 | Picture | screenshot, source badge overlaid | glyph, source badge overlaid |
 | Metadata | date · time · device + model · **core + version** | date · time · device + model · emulator + version |
 | Not shown | file size — not actionable when choosing between two saves | same |
 | Emulator info means | **compatibility** — core- and chipset-specific, may not load (#19) | context — usually portable across emulators |
 | KEEP BOTH | yes — moves to the next free slot via ES's `getNextFreeSlot()` | **no** — fixed slots; shown disabled with a reason |
-| Losing copy | retained only when *keep copies of discarded saves* is on | same |
+| Losing copy | **always retained** in `Saves/.history/` | same |
 
 KEEP BOTH is **dimmed, not hidden**, on in-game saves — the house rule from
 [es-ui-style-guide.md](es-ui-style-guide.md), and a dimmed control with a reason

@@ -21,8 +21,9 @@ D-UI-045. Beside least surprise (`least-surprise.md`) and time to play
    under its title; a dialog is a sentence or two and a question. A string
    that needs more wants a page, not smaller text.
 4. **Well-aligned.** One word for one thing everywhere (D-UI-022: *saves*,
-   *settings*, *ROMs and BIOS*; *back up*, *restore*, *sync*), and one shape
-   for one kind of fact (`12 KB OF 40 KB`, `3 OF 7`, `LAST <date> - <outcome>`).
+   *settings*, *ROMs and BIOS*, *game content*; *back up*, *restore*, *sync*),
+   and one shape for one kind of fact (`12 KB OF 40 KB`, `3 OF 7`,
+   `LAST <date> - <outcome>`).
 
 ## How to apply
 
@@ -38,6 +39,12 @@ D-UI-045. Beside least surprise (`least-surprise.md`) and time to play
 - **Present the short form for approval.** When strings go to the maintainer,
   they approve words, not paragraphs; a long draft is a draft that has not
   been cut yet.
+- **A decision is put in terms of what they would see.** The same test the
+  strings are held to applies to how a choice is asked. On 2026-09-12 nine
+  council proposals went up as "budget", "stage" and "P-4"; none of those
+  meant anything until they were restated as what happens on the screen and
+  how long the player waits, and the walk only moved once they were. Lead
+  with the visible thing, and keep our internal names out of the question.
 - **Brevity is not clipping.** A sentence cut mid-thought to fit is a failure
   of step 3, not a success of step 2 -- drop a whole clause or sentence
   (`outcomeCandidates`, D-UI-035), or move the detail to where it is read

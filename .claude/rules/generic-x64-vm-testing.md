@@ -5,6 +5,18 @@ paths:
   - "projects/ROCKNIX/packages/**"
   - "scripts/mkimage"
   - "scripts/image"
+  # The harness is most of this file and none of it lived under the globs
+  # above, so a session editing the runner, a walk or the QA endpoint had the
+  # rule out of context (#147, 2026-09-12).
+  - "tools/vm-qa"
+  - "tools/vm-serial"
+  - "tools/vm-pair"
+  - "tools/vm-visual-qa"
+  - "tools/vm-walks/**"
+  - "tools/cloud-test-backend"
+  - "tools/emulator-exit-test"
+  - "tools/time-to-play"
+  - "docs/vm-qa-log.md"
 ---
 
 # GENERIC_X64 local VM QA

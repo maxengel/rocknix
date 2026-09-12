@@ -2,6 +2,16 @@
 description: "Conventions for the rclone cloud-sync subsystem (save/savestate/screenshot/settings backup sync)."
 paths:
   - "projects/ROCKNIX/packages/network/rclone/**"
+  # backuptool writes the settings tier this file's vocabulary and its
+  # last-good rules govern, and the pre-push console-first guard already
+  # treats both directories as one product surface -- but the glob did not
+  # (#147, 2026-09-12).
+  - "projects/ROCKNIX/packages/rocknix/sources/scripts/**"
+  - "tools/cloud-round-trip"
+  - "tools/cloud-test-backend"
+  - "tools/cloud-census"
+  - "tools/cloud-capture-stamp-test"
+  - "tools/last-good-scripts-test"
 ---
 
 # rclone cloud-sync conventions

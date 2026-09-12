@@ -95,4 +95,6 @@ restoring by hand, do one of these two before starting EmulationStation:
   `cloud.*` secrets -- `grep -E '^(global\.retroachievements\.(password|token)|wifi\.key|.*(passw|token|devpass))' system.cfg`
   on the old file lists them. They never travel in an archive by design.
 - **Or write the marker** -- `touch /storage/.config/.restore-finish-pending` --
-  so the next boot opens FINISH RESTORE SETUP and the player types them in.
+  so the next boot opens FINISH RESTORE PROCESS and the player types them in
+  (renamed by D-UI-046; this line still said FINISH RESTORE SETUP until the
+  #147 sweep).
