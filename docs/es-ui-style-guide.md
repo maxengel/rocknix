@@ -94,8 +94,17 @@ uses sentence case ("Reduces power consumption when idle."), fork code uses ALL
 CAPS. **Match the fork dialect in fork code**; one sentence, ending in a period,
 `X: Y` for direction or scope, naming the concrete consequence:
 
-> `GAME SAVES, SAVESTATES AND SCREENSHOTS: DEVICE TO CLOUD.`
-> `SYSTEM SETTINGS FIRST (THE DEVICE REBOOTS), THEN GAME SAVES.`
+> `GAME SAVES, SAVE STATES, AND SCREENSHOTS: DEVICE TO CLOUD.`
+> `RESTORE SYSTEM SETTINGS FIRST, THEN RESTART?`
+
+The first example carried `SAVESTATES AND SCREENSHOTS` until the #147 sweep:
+one word where the rule says two, and no serial comma. The shipped strings
+were already right (`GuiMenu.cpp:4450`, `:4804`, `:5433`); the style guide's
+model was not, which is the worse way round. *Save state* is two words and
+the last item of a list keeps its comma (`es-native-ui.md` § Conventions,
+D-UI-022/048). The second example quotes `GuiMenu.cpp:4586` verbatim; whether
+the settings tier keeps the word *system* there is #148's question, not the
+style guide's to decide.
 
 Placeholders: `AUTO` for "system decides", `NONE` for explicitly nothing,
 `<NOT SET>` for a missing credential. Passwords display as `*********`, never

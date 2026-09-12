@@ -82,9 +82,12 @@ Two placement rules the existing tree already follows:
 As built on 2026-09-12 (ES `51639dd09`; the tree since `af2db4ab09`). One door:
 `GAME SETTINGS > CLOUD SETTINGS`. The three save actions sit at that level
 because saves move constantly; everything occasional is one row further in,
-behind MANAGE CLOUD STORAGE (D-UI-021 lineage; the vocabulary is D-UI-022:
-*saves*, *settings*, *ROMs and BIOS*; *back up* and *restore*). `NETWORK
-SETTINGS` carries no cloud group. Rows are a label and at most one line
+behind MANAGE CLOUD STORAGE (D-UI-021 lineage; the vocabulary is D-UI-022 and
+D-CLOUD-049/050: *saves*, *settings*, *ROMs and BIOS*, *game content*;
+*back up* and *restore*, with *sync* reserved for the automatic behaviour,
+D-UI-040). `NETWORK
+SETTINGS` carries no cloud group. The relink row and its page are called
+FINISH RESTORE PROCESS (D-UI-046). Rows are a label and at most one line
 under it (D-UI-023); the line under a launching row is how it last went
 (`LAST <date> - <outcome>`, D-UI-029), read uncached from
 `/storage/.cache/cloud_sync/last-<name>`.
@@ -99,7 +102,7 @@ flowchart TD
 
     ALL --> HUB{{CLOUD}}
     HUB --> BR[BACKUP AND RESTORE]
-    BR --> BU[BACK UP TO THE CLOUD] --> TICK[tick: SAVES · ROMS AND BIOS · SETTINGS<br/>CONTINUE]
+    BR --> BU[BACK UP TO THE CLOUD] --> TICK[tick: SAVES · ROMS AND BIOS · GAME CONTENT · SETTINGS<br/>CONTINUE]
     BR --> RE[RESTORE FROM THE CLOUD] --> TICK
     TICK -->|ROMS AND BIOS ticked| PICK[systems page<br/>select all · badge per system]
     TICK --> XFER[GuiCloudTransfer<br/>full-screen; live line, elapsed, outcome; stays until dismissed]
@@ -140,11 +143,14 @@ DATA MANAGEMENT (back up / restore settings to this device), EMULATOR
 MANAGEMENT and SYSTEM MANAGEMENT (the resets) run headless behind a spinner and
 end in an outcome dialog (D-UI-037). `SCRAPER > OPTIONS` carries DEVELOPER ID /
 DEVELOPER PASSWORD beside the account (#64). The startup sync is a card at
-boot; the exit sync a card after a game; both end on the card (D-UI-028) and a
-launch cancels either (D-CLOUD-076).
+boot; the exit sync a card after a game; both end on the card (D-UI-028, with
+`COMPLETED WITH GAPS` removed by D-UI-030 -- a run passes or fails). A launch
+cancels either **in what ships today** (D-CLOUD-076); **D-CLOUD-109 replaces
+that** with a bounded wait, so this line changes when #22/#135 land.
 
 Anything measured in minutes runs in `GuiCloudTransfer`, not a card
-(`es-native-ui.md`, the fourth tier). Exit 75 from any script means another
+(`es-native-ui.md`, the fourth *surface* tier -- not one of the four data
+tiers above). Exit 75 from any script means another
 sync held the lock and exit 69 means there was no network (sysexits'
 `EX_TEMPFAIL` and `EX_UNAVAILABLE`, codes rclone cannot return -- #99); both
 are shown as SKIPPED, not FAILED.
