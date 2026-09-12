@@ -1,0 +1,1219 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# time-to-play - the two numbers a player feels, measured on one VM guest.
+#
+#   tools/time-to-play --port 10025 --identity /tmp/rocknix-vm-pair/qa-key \
+#       --monitor /tmp/rocknix-qemu-monitor-c.sock --backend sftp \
+#       --repeat 5 --out /tmp/ttp
+#
+# WHY. Time to play is a first-class metric (D-CLOUD-098, #135): how long
+# from the interface to a game's first frame, and from one game's exit to
+# the next game's first frame. Budgets for both are register rows, and a row
+# is only ever set from a measurement (D-CLOUD-116) -- so something has to
+# take the measurement, on the VM and never on a console (vm-first.md).
+# This is that something.
+#
+# WHAT IT MEASURES, and how each number is defined:
+#
+#   launch    UI to game, at rest. From the POST that EmulationStation's own
+#             HTTP API turns into ViewController::launch -- the same code
+#             path as pressing A on the game -- to the first frame the game
+#             draws. "First frame" is the first screendump that differs from
+#             the one before it AT OR AFTER the RetroArch process exists;
+#             the screen leaves the carousel earlier than that (the interface
+#             tears its window down first), which is why the two are
+#             separate numbers here and the earlier one is not the answer.
+#             Corroborated by RetroArch's CPU ticks: the exit cell's rule is
+#             that RetroArch is drawing once utime+stime reach 200
+#             (awk '{print $14+$15}' /proc/<pid>/stat).
+#
+#   exit      The exit sync alone. From the shipped execute_kill (extracted
+#             from the installed input_sense, so the signal is the one under
+#             test) to (a) the last-sync-exit stamp being written -- the work
+#             ending -- and (b) the card leaving the screen, which is later
+#             by the linger the card holds its outcome for. Both are
+#             reported: the stamp is when the saves are safe, the card is
+#             when the player stops being told something is happening.
+#
+#   g2g       Game to game. The same exit, with a launch fired the moment the
+#             emulator is gone. What the launch does to the sync is read off
+#             the stamp's token afterwards -- `cancelled` is D-CLOUD-076's
+#             behaviour today, `completed` would mean it ran to the end --
+#             so the cell reports what the build does rather than assuming.
+#
+#   startup   The startup sync: cloudsaves.startup=1, reboot, and time from
+#             the reboot to the last-sync-startup stamp; then a launch fired
+#             while the startup sync is still running. The setting is put
+#             back afterwards.
+#
+#   offline   D-CLOUD-112's benchmark: the same exit sync with no
+#             connectivity, four ways -- a refused port, no default route, a
+#             blackholed route to the endpoint, and a captive portal
+#             answering HTTP for everything -- each beside the online number,
+#             because the claim under test is that the offline exit reaches
+#             its outcome in about the time a successful one would have
+#             taken.
+#
+#   bounds    D-CLOUD-111's three bounds as they stand TODAY: the refused
+#             port, an endpoint that accepts and never answers, and the
+#             captive portal. How long until the sync ends, and with what
+#             outcome on the card. Frames every half second are kept.
+#
+# The payload. D-CLOUD-116 asks for a game exited with an auto-state plus a
+# couple of manual save states and their screenshots. Probe.nes through
+# RetroArch on the guest leaves a 514-byte auto-state and a 506-byte
+# thumbnail -- a payload so small that it measures the round trip and
+# nothing else -- so the cell seeds realistic files instead and says so in
+# its report: three states of ~180 KiB, three screenshots of ~18 KiB and an
+# 8 KiB battery save, sizes jittered per repeat so that a backend comparing
+# by size alone (WebDAV with vendor=other) still sees a change. --payload srm
+# seeds only the battery save, which is P-13's "one changed battery save".
+#
+# WHAT IT DOES TO THE GUEST, and puts back: the rclone remote's address (for
+# the offline and bounds cells), cloudsaves.startup (for the startup cell),
+# the guest's default route (for one offline cell), and the seeded saves.
+# Nothing else. A copy of rclone.conf is taken before the first change and
+# restored on every exit, including a signal.
+#
+# TIMING RESOLUTION. A screendump round trip through the QEMU monitor costs
+# about 0.2 s on a 640x480 guest, so every frame-derived number is quoted to
+# that. The SSH round trip (a ControlMaster is held open) is measured at the
+# start of the run and reported beside the numbers, because it sits inside
+# the launch number: the POST goes over it.
+import argparse
+import importlib.machinery
+import importlib.util
+import json
+import os
+import shutil
+import signal
+import statistics
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+# vm-visual-qa is the fork's framebuffer tooling: the monitor client, the
+# byte-fraction frame comparison and its two thresholds, and the PPM->PNG
+# writer. Loaded as a module rather than shelled out to per frame -- a
+# subprocess per screendump would reconnect the monitor each time and put
+# the poll interval an order of magnitude above the numbers being measured.
+_loader = importlib.machinery.SourceFileLoader(
+    "vm_visual_qa", os.path.join(HERE, "vm-visual-qa"))
+_spec = importlib.util.spec_from_loader("vm_visual_qa", _loader)
+vq = importlib.util.module_from_spec(_spec)
+_loader.exec_module(vq)
+
+ROM = "/storage/roms/nes/Probe.nes"
+# Busybox pgrep -x compares the whole argv and RetroArch's argv[0] is its
+# full path, so -x never matches it (generic-x64-vm-testing.md). The bracket
+# keeps the pattern from matching the shell that carries it.
+RA_PROBE = ('p=$(pgrep -f "/usr/bin/retroarc[h]" | head -1); '
+            '[ -n "$p" ] && echo "$p $(awk \'{print $14+$15}\' /proc/$p/stat 2>/dev/null || echo 0)"')
+STAMP_DIR = "/storage/.cache/cloud_sync"
+RCLONE_CONF = "/storage/.config/rclone/rclone.conf"
+CLOUD_CONF = "/storage/.config/cloud_sync.conf"
+# The two host fixtures the offline and bounds cells need, in the 9010-9099
+# range this fork reserves for QA services. 9011 is the refused port every
+# failure fixture already aims at and is never bound by anything.
+PORTAL_PORT = 9016
+STALL_PORT = 9017
+DEAD_PORT = 9011
+
+
+# --------------------------------------------------------------------------
+# the guest
+
+
+class Guest:
+    """One SSH channel to the guest, held open.
+
+    ControlMaster because the POST that starts a launch goes over it and the
+    number being measured is in tenths of a second: a fresh TCP connection
+    and key exchange per command would be most of the first repeat's answer.
+    drop_master() exists because an admin-down link or a blackholed route
+    does not reset an established connection -- it stalls it -- so anything
+    that cuts the guest's path to 10.0.2.2 closes the master first."""
+
+    def __init__(self, host, port, key):
+        self.host, self.port, self.key = host, str(port), key
+        self.cp = "/tmp/ttp-cm-%d" % os.getpid()
+
+    def _opts(self, master=True):
+        o = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+             "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=8", "-o", "BatchMode=yes"]
+        if self.key:
+            o += ["-i", self.key]
+        if master:
+            o += ["-o", "ControlMaster=auto", "-o", "ControlPath=" + self.cp,
+                  "-o", "ControlPersist=120"]
+        return o
+
+    def sh(self, cmd, timeout=60, master=True):
+        try:
+            p = subprocess.run(["ssh", "-n", "-p", self.port] + self._opts(master) + [self.host, cmd],
+                               capture_output=True, text=True, timeout=timeout)
+            return p.returncode, p.stdout.strip()
+        except subprocess.TimeoutExpired:
+            return 255, ""
+
+    def put(self, local, remote):
+        subprocess.run(["scp", "-q", "-P", self.port] + self._opts() + [local, self.host + ":" + remote],
+                       capture_output=True)
+
+    def drop_master(self):
+        subprocess.run(["ssh", "-O", "exit", "-o", "ControlPath=" + self.cp,
+                        "-p", self.port, self.host], capture_output=True)
+
+    def alive(self, timeout=8):
+        return self.sh("true", timeout=timeout, master=False)[0] == 0
+
+    def wait_alive(self, budget=180):
+        end = time.monotonic() + budget
+        while time.monotonic() < end:
+            if self.alive(timeout=6):
+                return True
+            time.sleep(2)
+        return False
+
+    # --- the things this cell asks the guest ------------------------------
+
+    def retroarch(self):
+        """(pid, cpu ticks) while RetroArch runs, else None."""
+        rc, out = self.sh(RA_PROBE, timeout=15)
+        if not out:
+            return None
+        parts = out.split()
+        try:
+            return int(parts[0]), int(parts[1])
+        except (IndexError, ValueError):
+            return None
+
+    def stamp(self, name):
+        """The raw last-sync-<name> line, or ''."""
+        return self.sh("cat %s/last-sync-%s 2>/dev/null" % (STAMP_DIR, name), timeout=15)[1]
+
+    def es_up(self):
+        return self.sh("pgrep -x emulationstation >/dev/null && echo y", timeout=15)[1] == "y"
+
+    def launch(self, rom=ROM):
+        """EmulationStation's own launch path, as pressing A on the game is.
+
+        The HTTP API listens on the guest's loopback only, so the POST is
+        made from inside the guest. ViewController::launch is what handles
+        it -- the same function the A press reaches -- so the exit sync,
+        the launch gate and the splash all behave exactly as for a player."""
+        return self.sh("curl -s -o /dev/null -w '%%{http_code}' -X POST "
+                       "-H 'Content-Type: text/plain' --data '%s' "
+                       "http://127.0.0.1:1234/launch" % rom, timeout=25)[1]
+
+    def kill_game(self):
+        """The shipped execute_kill, from the installed input_sense."""
+        return self.sh("/tmp/ttp-kill", timeout=20)[0]
+
+
+GB_PROBE = "/storage/roms/gb/TTProbe.gb"
+GB_LOGO = ("CEED6666CC0D000B03730083000C000D0008111F8889000EDC"
+           "CC6EE6DDDDD999BBBB67636E0EECCCDDDC999FBBB9333E")
+
+
+def build_gb_probe(path):
+    """A cartridge that does nothing but draw.
+
+    The runner's guests carry no ROM of their own, and a cell that cannot
+    press a game on a fresh pair is a cell that never runs. This is the
+    exit test's cartridge with its job swapped: that one writes a battery
+    save and this one turns the LCD on with a blank background, because
+    what this cell needs from a game is a frame that is NOT the black
+    handover screen. Not shared with tools/emulator-exit-test, because the
+    two carts have no line of behaviour in common -- only the twenty bytes
+    of header every Game Boy ROM has."""
+    rom = bytearray(0x8000)
+    rom[0x100:0x104] = bytes([0x00, 0xC3, 0x50, 0x01])      # NOP ; JP $0150
+    rom[0x104:0x134] = bytes.fromhex(GB_LOGO)
+    rom[0x134:0x13B] = b"TTPROBE"
+    rom[0x147] = 0x00   # ROM ONLY; nothing here needs a battery
+    rom[0x148] = 0x00   # 32 KiB
+    rom[0x149] = 0x00
+    rom[0x14A] = 0x01
+    rom[0x14B] = 0x33
+    x = 0
+    for i in range(0x134, 0x14D):
+        x = (x - rom[i] - 1) & 0xFF
+    rom[0x14D] = x
+    rom[0x150:0x15B] = bytes([
+        0xF3,              # DI
+        0x3E, 0xE4,        # LD A,$E4     the usual BGP
+        0xE0, 0x47,        # LDH ($47),A
+        0x3E, 0x91,        # LD A,$91     LCD on, BG on, tiles at $8000
+        0xE0, 0x40,        # LDH ($40),A
+        0x18, 0xFE,        # JR -2        spin
+    ])
+    with open(path, "wb") as fh:
+        fh.write(bytes(rom))
+
+
+def ensure_rom(g, rom, workdir):
+    """The game this cell presses, and whether it had to make one.
+
+    EmulationStation launches what it has scanned, so a ROM dropped on the
+    guest is invisible until it looks again -- and a restart is not enough
+    to look at from here: screendump serves the previous instance's last
+    frame for half a minute afterwards (generic-x64-vm-testing.md), which
+    is exactly the window this cell measures in. A reboot costs about a
+    minute and has neither problem."""
+    if g.sh("test -f '%s' && echo y" % rom)[1] == "y":
+        return rom, False
+    local = os.path.join(workdir, "TTProbe.gb")
+    build_gb_probe(local)
+    g.sh("mkdir -p /storage/roms/gb")
+    g.put(local, GB_PROBE)
+    g.sh("systemctl reboot")
+    g.drop_master()
+    time.sleep(8)
+    g.wait_alive(240)
+    for _ in range(60):
+        if g.es_up():
+            break
+        time.sleep(2)
+    time.sleep(12)
+    return GB_PROBE, True
+
+
+def install_helpers(g):
+    g.sh('cat > /tmp/ttp-kill <<"H"\n'
+         '#!/bin/bash\n'
+         'DEBUG=false; log() { :; }\n'
+         'eval "$(sed -n "/^execute_kill()/,/^}/p" /usr/bin/input_sense)"\n'
+         'execute_kill\n'
+         'H\n'
+         'chmod +x /tmp/ttp-kill; echo ok')
+
+
+# --------------------------------------------------------------------------
+# the payload
+
+
+def seed_payload(g, jitter, kind="full"):
+    """The saves the exit sync has to move, with fresh mtimes.
+
+    Sizes are jittered by the repeat index because WebDAV with vendor=other
+    carries neither hashes nor modtimes: rclone compares by size alone
+    there, so a byte-for-byte-different file of the same size is 'already
+    uploaded' and the repeat would measure an empty transfer (#53's shape).
+    Everything written here is inside cloud_sync-rules.txt's allowlist:
+    /savestates/** wholesale, and *.srm by extension."""
+    if kind == "srm":
+        script = (
+            'set -e; mkdir -p /storage/roms/nes\n'
+            'dd if=/dev/urandom of=/storage/roms/nes/Probe.srm bs=1024 count=%d 2>/dev/null\n'
+            'du -k /storage/roms/nes/Probe.srm | cut -f1\n' % (8 + jitter))
+    else:
+        script = (
+            'set -e; d=/storage/roms/savestates/nes; mkdir -p "$d" /storage/roms/nes\n'
+            'dd if=/dev/urandom of="$d/Probe.state.auto"  bs=1024 count=%d 2>/dev/null\n'
+            'dd if=/dev/urandom of="$d/Probe.state.auto.png" bs=1024 count=%d 2>/dev/null\n'
+            'dd if=/dev/urandom of="$d/Probe.state1"      bs=1024 count=%d 2>/dev/null\n'
+            'dd if=/dev/urandom of="$d/Probe.state1.png"  bs=1024 count=%d 2>/dev/null\n'
+            'dd if=/dev/urandom of="$d/Probe.state2"      bs=1024 count=%d 2>/dev/null\n'
+            'dd if=/dev/urandom of="$d/Probe.state2.png"  bs=1024 count=%d 2>/dev/null\n'
+            'dd if=/dev/urandom of=/storage/roms/nes/Probe.srm bs=1024 count=%d 2>/dev/null\n'
+            'du -ck "$d" /storage/roms/nes/Probe.srm | tail -1 | cut -f1\n'
+            % (180 + jitter, 18 + jitter, 181 + jitter, 17 + jitter,
+               179 + jitter, 19 + jitter, 8 + jitter))
+    return g.sh(script, timeout=60)[1]
+
+
+# --------------------------------------------------------------------------
+# frames
+
+
+def is_blank(frame):
+    """Is this the handover screen rather than a picture?
+
+    Between the interface tearing its window down and the emulator drawing,
+    the scanout is black -- 0.22 s after the press on this guest, a third of
+    a second before RetroArch's first green frame at 0.63 s. Both are "the
+    screen changed", and only the second is the number #135 asks for. A
+    frame whose bytes are almost all zero is the handover; a game frame,
+    even a dark one, is not (Probe.nes draws 0x0d3d0d, 8% of the byte range,
+    on every pixel)."""
+    if not frame:
+        return True
+    # Past the PPM header: three lines, then the pixel data.
+    body = frame
+    for _ in range(3):
+        nl = body.find(b"\n")
+        if nl < 0:
+            break
+        body = body[nl + 1:]
+    if not body:
+        return True
+    return (len(body) - body.count(0)) / float(len(body)) < 0.01
+
+
+class Frames:
+    """A monitor connection plus the bookkeeping every cell wants."""
+
+    def __init__(self, path, outdir):
+        self.mon = vq.Monitor(path)
+        self.outdir = outdir
+        os.makedirs(outdir, exist_ok=True)
+
+    def frame(self):
+        return self.mon.frame()
+
+    def rest(self, timeout=25):
+        """The screen with nothing happening on it: settle, then a frame.
+
+        Every cell that asks 'is the card gone?' asks it against this."""
+        vq.settle(self.mon.frame, timeout=timeout, quiet=1.2)
+        return self.mon.frame()
+
+    def save(self, name, data=None):
+        ppm = os.path.join(self.outdir, name + ".ppm")
+        png = os.path.join(self.outdir, name + ".png")
+        if data is None:
+            if not self.mon.screendump(ppm):
+                return None
+        else:
+            with open(ppm, "wb") as fh:
+                fh.write(data)
+        try:
+            vq.to_png(ppm, png)
+        finally:
+            try:
+                os.remove(ppm)
+            except OSError:
+                pass
+        return os.path.basename(png)
+
+    def close(self):
+        self.mon.close()
+
+
+# --------------------------------------------------------------------------
+# the cells
+
+
+def measure_launch(g, fr, tag, budget=45.0, rom=ROM):
+    """UI to a game's first frame, from a screen at rest.
+
+    Two clocks run at once and neither can be asked to wait for the other:
+    the framebuffer says when a frame was drawn, /proc says when RetroArch
+    existed and when it had burnt enough CPU to be drawing. The process poll
+    is a thread so that a 15 ms SSH round trip does not sit between two
+    screendumps."""
+    base = fr.rest()
+    result = {"tag": tag}
+    ra = {"seen": None, "ticks200": None, "pid": None}
+    stop = threading.Event()
+    t0 = [None]
+
+    def poll():
+        while not stop.is_set():
+            st = g.retroarch()
+            now = time.monotonic()
+            if st is not None:
+                if ra["seen"] is None:
+                    ra["seen"] = now
+                    ra["pid"] = st[0]
+                if ra["ticks200"] is None and st[1] >= 200:
+                    ra["ticks200"] = now
+            time.sleep(0.08)
+
+    th = threading.Thread(target=poll, daemon=True)
+    th.start()
+    t0[0] = time.monotonic()
+    http = g.launch(rom)
+    result["http"] = http
+    series, prev = [], base
+    first_change = game_frame = None
+    saved_first = saved_game = None
+    blank_at = [None]
+    while time.monotonic() - t0[0] < budget:
+        t = time.monotonic()
+        f = fr.frame()
+        d_base = vq.frame_diff(base, f)
+        d_prev = vq.frame_diff(prev, f)
+        series.append([round(t - t0[0], 3), round(d_base, 6), round(d_prev, 6)])
+        blank = is_blank(f)
+        if first_change is None and d_base >= vq.CHANGED_MIN:
+            first_change = t - t0[0]
+            saved_first = fr.save("%s-01-left-carousel" % tag, f)
+        if blank and blank_at[0] is None and d_base >= vq.CHANGED_MIN:
+            blank_at[0] = t - t0[0]
+        seen = ra["seen"]
+        # The game's first frame: not the carousel, not the handover, and
+        # not before the process that draws it exists. All three, because
+        # each alone is wrong on its own -- the black screen satisfies the
+        # first, a carousel redraw the second, and RetroArch exists for a
+        # fifth of a second before it draws anything.
+        if (game_frame is None and first_change is not None and seen is not None
+                and t > seen and not blank and d_base >= vq.CHANGED_MIN):
+            game_frame = t - t0[0]
+            saved_game = fr.save("%s-02-first-game-frame" % tag, f)
+            break
+        if f is not None:
+            prev = f
+    stop.set()
+    th.join(timeout=5)
+    result.update({
+        "t_left_carousel": None if first_change is None else round(first_change, 3),
+        "t_screen_blank": None if blank_at[0] is None else round(blank_at[0], 3),
+        "t_retroarch_seen": None if ra["seen"] is None else round(ra["seen"] - t0[0], 3),
+        "t_first_game_frame": None if game_frame is None else round(game_frame, 3),
+        "frames": series,
+        "png": [x for x in (saved_first, saved_game) if x],
+    })
+    # ticks200 usually lands after the first game frame; give it a moment
+    # rather than reporting a corroboration that simply had not happened yet.
+    end = time.monotonic() + 15
+    while ra["ticks200"] is None and time.monotonic() < end:
+        st = g.retroarch()
+        if st is None:
+            break
+        if st[1] >= 200:
+            ra["ticks200"] = time.monotonic()
+        time.sleep(0.1)
+    result["t_ticks200"] = None if ra["ticks200"] is None else round(ra["ticks200"] - t0[0], 3)
+    return result, base
+
+
+def settle_sync(g, budget=60):
+    """Back to a device with nothing running on it.
+
+    It ENDS a leftover emulator rather than waiting one out: a repeat that
+    began while the previous game was still up measured the previous game's
+    exit, and a cell that waits for a condition it could create itself
+    spends its budget proving the wait works."""
+    if g.retroarch() is not None:
+        g.kill_game()
+    end = time.monotonic() + budget
+    while time.monotonic() < end:
+        busy = g.sh("pgrep -f 'rclon[e]' >/dev/null && echo busy || echo idle")[1]
+        if g.retroarch() is None and busy == "idle":
+            time.sleep(2)
+            return True
+        time.sleep(1)
+    return False
+
+
+def wait_drawing(g, budget=60):
+    """Until RetroArch has burnt 2 s of CPU: the exit cell's readiness rule."""
+    end = time.monotonic() + budget
+    while time.monotonic() < end:
+        st = g.retroarch()
+        if st is not None and st[1] >= 200:
+            return True
+        time.sleep(0.2)
+    return False
+
+
+def parse_stamp(line):
+    parts = (line or "").split()
+    out = {"raw": line}
+    if len(parts) >= 3:
+        out.update({"epoch": parts[0], "rc": parts[1], "token": parts[2],
+                    "why": " ".join(parts[3:])})
+    return out
+
+
+def measure_exit(g, fr, tag, rest_ref, relaunch=False, budget=150.0,
+                 frame_every=0.5, keep_frames=True, ssh_poll=True, rom=ROM):
+    """The exit sync, from execute_kill to the stamp and to the card going.
+
+    rest_ref is the screen before the game was launched: the card is gone
+    when the screen matches it again. That comparison is why the whole cell
+    starts from a settled screen -- a carousel with a dialog half-open on it
+    would never match, and the cell would report the card as never leaving.
+
+    The relaunch is fired from the poll thread the instant the emulator is
+    gone, not from the frame loop: the frame loop runs at half a second and
+    a player's thumb does not wait for a screendump. What the launch then
+    does to the sync is not assumed -- it is read off the stamp's token
+    afterwards.
+
+    ssh_poll=False is for the one condition that cuts this channel (a
+    blackhole route to 10.0.2.2, which the host's forwarded SSH also comes
+    from): the frames still arrive, because the QEMU monitor is a host
+    socket and owes the guest's routing table nothing."""
+    before = g.stamp("exit") if ssh_poll else ""
+    result = {"tag": tag, "stamp_before": before, "relaunch": relaunch}
+    marks = {"gone": None, "stamp": None, "ra2": None, "relaunched": None}
+    stop = threading.Event()
+
+    def poll():
+        while not stop.is_set():
+            if marks["gone"] is None:
+                if g.retroarch() is None:
+                    marks["gone"] = time.monotonic()
+                    if relaunch:
+                        result["http2"] = g.launch(rom)
+                        marks["relaunched"] = time.monotonic()
+            elif relaunch and marks["ra2"] is None:
+                if g.retroarch() is not None:
+                    marks["ra2"] = time.monotonic()
+            if marks["stamp"] is None:
+                now = g.stamp("exit")
+                if now and now != before:
+                    marks["stamp"] = time.monotonic()
+                    result["stamp_after"] = now
+            if marks["stamp"] is not None and marks["gone"] is not None and not relaunch:
+                break
+            time.sleep(0.12)
+
+    th = None
+    t0 = time.monotonic()
+    g.kill_game()
+    if ssh_poll:
+        th = threading.Thread(target=poll, daemon=True)
+        th.start()
+    series, shots = [], []
+    card_gone = game2 = None
+    prev = None
+    n = 0
+    while time.monotonic() - t0 < budget:
+        t = time.monotonic()
+        f = fr.frame()
+        d_rest = vq.frame_diff(rest_ref, f)
+        d_prev = 1.0 if prev is None else vq.frame_diff(prev, f)
+        series.append([round(t - t0, 3), round(d_rest, 6), round(d_prev, 6)])
+        if keep_frames:
+            shots.append(fr.save("%s-%03d" % (tag, n), f))
+        n += 1
+        if prev is not None:
+            prev = f
+        else:
+            prev = f
+        if (not relaunch and card_gone is None and marks["stamp"] is not None
+                and t > marks["stamp"] and d_rest <= vq.SAME_MAX):
+            card_gone = t
+            break
+        # A card that never goes must not hold the cell for the whole budget:
+        # the work ended at the stamp, and twenty seconds is far past every
+        # linger the card has (a second and a half on success).
+        if not relaunch and marks["stamp"] is not None and t - marks["stamp"] > 15:
+            break
+        if (relaunch and game2 is None and marks["ra2"] is not None
+                and t > marks["ra2"] and d_prev >= vq.CHANGED_MIN and not is_blank(f)):
+            game2 = t
+            shots.append(fr.save("%s-game2" % tag, f))
+            break
+        time.sleep(max(0.0, frame_every - (time.monotonic() - t)))
+    stop.set()
+    if th is not None:
+        th.join(timeout=8)
+    if marks["stamp"] is None and ssh_poll:
+        after = g.stamp("exit")
+        if after and after != before:
+            marks["stamp"] = time.monotonic()
+            result["stamp_after"] = after
+    result.update({
+        "t_emulator_gone": None if marks["gone"] is None else round(marks["gone"] - t0, 3),
+        "t_sync_stamp": None if marks["stamp"] is None else round(marks["stamp"] - t0, 3),
+        "t_card_gone": None if card_gone is None else round(card_gone - t0, 3),
+        "t_relaunch_sent": None if marks["relaunched"] is None else round(marks["relaunched"] - t0, 3),
+        "t_retroarch2_seen": None if marks["ra2"] is None else round(marks["ra2"] - t0, 3),
+        "t_second_game_frame": None if game2 is None else round(game2 - t0, 3),
+        "frames": series,
+        "png": [x for x in shots if x],
+    })
+    result["stamp"] = parse_stamp(result.get("stamp_after", ""))
+    return result
+
+
+# --------------------------------------------------------------------------
+# host fixtures for the offline and bounds cells
+
+
+class Fixture:
+    """A tiny host listener the guest's remote can be pointed at.
+
+    portal: answers 302 then 200 with HTML to everything, which is what a
+    hotel or an airport does to a device that thinks it is online.
+    stall:  accepts the connection and never writes a byte, which is the
+    one shape neither a refused port nor a missing route can produce and
+    the only one that tests an idle timeout rather than a connect timeout."""
+
+    def __init__(self, kind, port):
+        self.kind, self.port = kind, port
+        self.proc = None
+
+    def up(self):
+        code = PORTAL_SRC if self.kind == "portal" else STALL_SRC
+        path = os.path.join(tempfile.mkdtemp(prefix="ttp-fix-"), self.kind + ".py")
+        with open(path, "w") as fh:
+            fh.write(code)
+        self.path = path
+        self.proc = subprocess.Popen([sys.executable, path, str(self.port)],
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for _ in range(50):
+            import socket as _s
+            try:
+                c = _s.create_connection(("127.0.0.1", self.port), 0.3)
+                c.close()
+                return True
+            except OSError:
+                time.sleep(0.1)
+        return False
+
+    def down(self):
+        if self.proc is not None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+            self.proc = None
+        try:
+            shutil.rmtree(os.path.dirname(self.path))
+        except (OSError, AttributeError):
+            pass
+
+
+PORTAL_SRC = '''import sys, socketserver, http.server
+class H(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    def _p(self):
+        body = b"<html><head><title>Sign in to Wi-Fi</title></head><body>Sign in to continue</body></html>"
+        if self.path != "/portal":
+            self.send_response(302)
+            self.send_header("Location", "http://10.0.2.2:%d/portal" % self.server.server_address[1])
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+    do_GET = do_HEAD = do_POST = do_PUT = do_DELETE = _p
+    def do_PROPFIND(self): self._p()
+    def do_OPTIONS(self): self._p()
+    def do_MKCOL(self): self._p()
+    def log_message(self, *a): pass
+class S(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+S(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+'''
+
+STALL_SRC = '''import sys, socket, threading
+s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(("127.0.0.1", int(sys.argv[1]))); s.listen(64)
+held = []
+while True:
+    c, _ = s.accept()
+    held.append(c)          # accepted, never answered, never closed
+'''
+
+
+# --------------------------------------------------------------------------
+# the conditions the offline and bounds cells run under
+
+
+def remote_stanza(backend, address_port, tool):
+    """The guest's rclone stanza with its address moved to another port.
+
+    Which field carries the address is the backend's business, not this
+    cell's -- cloud-test-backend already answers that with dead-conf, so
+    the refused case comes from there. For the portal and the stall the
+    same substitution is made on a live stanza: a `url = http://...:PORT`
+    for the two backends whose address is a URL, `port = N` for the rest."""
+    out = subprocess.run([tool, "--backend", backend, "rclone-conf"],
+                         capture_output=True, text=True).stdout
+    lines = []
+    for line in out.splitlines():
+        s = line.strip()
+        if s.startswith("url = "):
+            value = s[len("url = "):]
+            scheme, _, rest = value.partition("://")
+            host = rest.split("/")[0].split(":")[0]
+            line = "url = %s://%s:%d" % (scheme, host, address_port)
+        elif s.startswith("port = "):
+            line = "port = %d" % address_port
+        lines.append(line)
+    return "\n".join(lines) + "\n"
+
+
+def set_conf(g, text):
+    fh = tempfile.NamedTemporaryFile("w", suffix=".conf", delete=False)
+    fh.write(text)
+    fh.close()
+    g.put(fh.name, RCLONE_CONF)
+    g.sh("chmod 600 " + RCLONE_CONF)
+    os.remove(fh.name)
+
+
+# --------------------------------------------------------------------------
+# statistics and the report
+
+
+def stats(values):
+    vals = [v for v in values if v is not None]
+    if not vals:
+        return {"n": 0}
+    return {"n": len(vals),
+            "median": round(statistics.median(vals), 2),
+            "mean": round(statistics.fmean(vals), 2),
+            "max": round(max(vals), 2),
+            "min": round(min(vals), 2),
+            "all": [round(v, 2) for v in vals]}
+
+
+def fmt(st):
+    if not st or st.get("n", 0) == 0:
+        return "-"
+    return "%.2f / %.2f / %.2f" % (st["median"], st["mean"], st["max"])
+
+
+def md_table(head, rows):
+    out = ["| " + " | ".join(head) + " |",
+           "| " + " | ".join("---" for _ in head) + " |"]
+    for r in rows:
+        out.append("| " + " | ".join("-" if c is None else str(c) for c in r) + " |")
+    return "\n".join(out) + "\n"
+
+
+# --------------------------------------------------------------------------
+# main
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="Measure time to play on one GENERIC_X64 guest (#135).",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__)
+    ap.add_argument("--host", default="root@127.0.0.1")
+    ap.add_argument("--port", default="10022", help="the guest's forwarded SSH port")
+    ap.add_argument("--identity", default="/tmp/rocknix-vm-pair/qa-key")
+    ap.add_argument("--monitor", required=True, help="the guest's QEMU monitor socket")
+    ap.add_argument("--backend", default=os.environ.get("CLOUD_QA_BACKEND", "webdav"),
+                    help="which QA cloud the guest's remote points at")
+    ap.add_argument("--repeat", type=int, default=5)
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--only", default="launch,exit,g2g,startup,offline,bounds",
+                    help="cells to run: launch,exit,g2g,startup,offline,bounds")
+    ap.add_argument("--label", default="", help="the host state these numbers were taken under")
+    ap.add_argument("--payload", default="full", choices=("full", "srm"),
+                    help="full: an auto-state, two manual states, their screenshots and a battery save "
+                         "(D-CLOUD-116). srm: one changed battery save (P-13).")
+    ap.add_argument("--rom", default=ROM)
+    ap.add_argument("--quick", action="store_true",
+                    help="the runner's bounded form: one repeat of launch+exit+g2g, no reboot, no fixtures")
+    ap.add_argument("--no-configure-remote", action="store_true",
+                    help="leave the guest's rclone.conf alone (it already points where you want)")
+    args = ap.parse_args()
+
+    if args.quick:
+        args.repeat = 1
+        args.only = "launch,exit,g2g"
+
+    only = [c.strip() for c in args.only.split(",") if c.strip()]
+    out = os.path.abspath(args.out)
+    os.makedirs(out, exist_ok=True)
+    frames_dir = os.path.join(out, "frames")
+    tool = os.path.join(HERE, "cloud-test-backend")
+
+    g = Guest(args.host, args.port, args.identity)
+    if not g.wait_alive(120):
+        print("time-to-play: guest at %s does not answer" % args.port, file=sys.stderr)
+        return 1
+    # Before the helpers: a seeded ROM costs a reboot, and /tmp is a tmpfs.
+    made = {"rom": False}
+    rom, made["rom"] = ensure_rom(g, args.rom, out)
+    install_helpers(g)
+
+    build = g.sh('sed -n "s/^BUILD_ID=//p" /etc/os-release')[1].strip('"')[:10]
+    report = {
+        "build": build, "backend": args.backend, "port": args.port,
+        "repeat": args.repeat, "payload": args.payload,
+        "host_state": args.label or "(not stated)",
+        "started": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime()),
+        "rom": rom, "rom_seeded": made["rom"],
+        "cells": {},
+    }
+
+    # Everything this cell changes on the guest, and the value to put back.
+    saved_conf = os.path.join(out, "rclone.conf.saved")
+    saved_cloud = os.path.join(out, "cloud_sync.conf.saved")
+    subprocess.run(["scp", "-q", "-P", g.port] + g._opts() +
+                   [g.host + ":" + RCLONE_CONF, saved_conf], capture_output=True)
+    subprocess.run(["scp", "-q", "-P", g.port] + g._opts() +
+                   [g.host + ":" + CLOUD_CONF, saved_cloud], capture_output=True)
+    saved_startup = g.sh(". /etc/profile; get_setting cloudsaves.startup")[1]
+    saved_gameexit = g.sh(". /etc/profile; get_setting cloudsaves.gameexit")[1]
+    fixtures = []
+
+    def restore():
+        for f in fixtures:
+            f.down()
+        if os.path.exists(saved_conf) and os.path.getsize(saved_conf) > 0:
+            g.put(saved_conf, RCLONE_CONF)
+            g.sh("chmod 600 " + RCLONE_CONF)
+        if os.path.exists(saved_cloud) and os.path.getsize(saved_cloud) > 0:
+            g.put(saved_cloud, CLOUD_CONF)
+        g.sh("ip route show default | grep -q . || ip route add default via 10.0.2.2 dev eth0 2>/dev/null; "
+             "ip route del blackhole 10.0.2.2/32 2>/dev/null; true")
+        g.sh(". /etc/profile; set_setting cloudsaves.startup %s; set_setting cloudsaves.gameexit %s"
+             % (saved_startup or "0", saved_gameexit or "1"), timeout=120)
+        g.sh("rm -f /tmp/ttp-kill /tmp/ttp-arm.sh")
+        if made["rom"]:
+            g.sh("rm -f %s; rmdir /storage/roms/gb 2>/dev/null; true" % GB_PROBE)
+
+    def on_signal(signum, _frame):
+        restore()
+        sys.exit(128 + signum)
+
+    signal.signal(signal.SIGINT, on_signal)
+    signal.signal(signal.SIGTERM, on_signal)
+
+    fr = Frames(args.monitor, frames_dir)
+    try:
+        # The harness's own cost, reported beside the numbers rather than
+        # subtracted from them: the POST that starts a launch goes over the
+        # SSH channel, so its round trip is inside the launch number.
+        rtts = []
+        for _ in range(7):
+            a = time.monotonic()
+            g.sh("true")
+            rtts.append(time.monotonic() - a)
+        fps = []
+        for _ in range(5):
+            a = time.monotonic()
+            fr.frame()
+            fps.append(time.monotonic() - a)
+        report["ssh_rtt_median_s"] = round(statistics.median(rtts), 4)
+        report["frame_poll_median_s"] = round(statistics.median(fps), 4)
+
+        if not args.no_configure_remote:
+            set_conf(g, subprocess.run([tool, "--backend", args.backend, "rclone-conf"],
+                                       capture_output=True, text=True).stdout)
+            # And the three remote PATHS, which are a different shape on every
+            # backend: a folder on WebDAV and FTP, a bucket or a share first on
+            # S3 and SMB, an absolute filesystem path on SFTP. Writing the
+            # stanza without writing these ran the whole cell against
+            # /ROCKNIX/Saves on an sshd that cannot create it.
+            prefix = subprocess.run([tool, "--backend", args.backend, "endpoint-prefix"],
+                                    capture_output=True, text=True).stdout.strip()
+            g.sh("sed -i 's#^SAVES_REMOTE=.*#SAVES_REMOTE=\"%s/ROCKNIX/Saves\"#; "
+                 "s#^SETTINGS_REMOTE=.*#SETTINGS_REMOTE=\"%s/ROCKNIX/Backups\"#; "
+                 "s#^CONTENT_REMOTE=.*#CONTENT_REMOTE=\"%s/ROCKNIX/Content\"#' %s"
+                 % (prefix, prefix, prefix, CLOUD_CONF))
+            report["remotes"] = g.sh(
+                "grep -E '^(SAVES_REMOTE|SETTINGS_REMOTE|CONTENT_REMOTE)=' " + CLOUD_CONF)[1]
+        g.sh(". /etc/profile; set_setting cloudsaves.gameexit 1", timeout=120)
+        report["remote_reachable"] = g.sh(
+            "rclone lsd qa-cloud: --contimeout 10s --timeout 20s --low-level-retries 1 --retries 1 "
+            ">/dev/null 2>&1 && echo yes || echo no", timeout=60)[1]
+
+        def cycle(tag, relaunch, jitter, keep_frames=False):
+            """One whole online cycle: seed, launch, play, exit."""
+            size = seed_payload(g, jitter, args.payload)
+            # The screen the launch started from IS the screen the card
+            # will have to leave, so it is the one to compare against. It
+            # used to be re-taken after the game had started, which made
+            # the reference a picture of the game -- and the card then
+            # never "went", on any repeat.
+            L, rest_ref = measure_launch(g, fr, tag + "-launch", rom=rom)
+            L["payload_kib"] = size
+            wait_drawing(g)
+            E = measure_exit(g, fr, tag + "-exit", rest_ref, relaunch=relaunch,
+                             keep_frames=keep_frames, rom=rom)
+            E["payload_kib"] = size
+            E["log"] = g.sh("tail -25 /var/log/cloud_sync.log 2>/dev/null | cut -c1-200")[1]
+            if relaunch:
+                # game two is running; end it and let its own sync settle
+                wait_drawing(g, budget=30)
+                settle_sync(g)
+            return L, E
+
+        # --- launch + exit, the online baseline ---------------------------
+        if "launch" in only or "exit" in only:
+            L, E = [], []
+            for i in range(args.repeat):
+                a, b = cycle("r%d" % (i + 1), False, i, keep_frames=(i == 0))
+                L.append(a)
+                E.append(b)
+                settle_sync(g)
+            report["cells"]["launch"] = L
+            report["cells"]["exit"] = E
+
+        # --- game to game -------------------------------------------------
+        if "g2g" in only:
+            G2 = []
+            for i in range(args.repeat):
+                _, b = cycle("g%d" % (i + 1), True, i, keep_frames=(i == 0))
+                G2.append(b)
+                settle_sync(g)
+            report["cells"]["g2g"] = G2
+
+        # --- the startup sync ---------------------------------------------
+        if "startup" in only:
+            report["cells"]["startup"] = measure_startup(g, fr, args, out, rom)
+
+        # --- offline and bounds -------------------------------------------
+        conds = []
+        if "offline" in only:
+            conds += ["dead", "noroute", "blackhole", "portal"]
+        if "bounds" in only:
+            for c in ("dead", "stall", "portal"):
+                if c not in conds:
+                    conds.append(c)
+        results = {}
+        for cond in conds:
+            results[cond] = run_condition(g, fr, cond, args, tool, fixtures, rom)
+            # put the remote back between conditions
+            if not args.no_configure_remote:
+                set_conf(g, subprocess.run([tool, "--backend", args.backend, "rclone-conf"],
+                                           capture_output=True, text=True).stdout)
+            settle_sync(g)
+        if results:
+            report["cells"]["conditions"] = results
+    finally:
+        try:
+            fr.close()
+        except Exception:
+            pass
+        restore()
+        g.drop_master()
+
+    report["finished"] = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
+    with open(os.path.join(out, "time-to-play.json"), "w") as fh:
+        json.dump(report, fh, indent=1)
+    md = render(report)
+    with open(os.path.join(out, "time-to-play.md"), "w") as fh:
+        fh.write(md)
+    print(md)
+    print("frames and json: %s" % out)
+    return 0
+
+
+def measure_startup(g, fr, args, out, rom=ROM):
+    """Boot to the startup card's end, and a launch pressed while it runs."""
+    res = {}
+    g.sh(". /etc/profile; set_setting cloudsaves.startup 1", timeout=180)
+    seed_payload(g, 3, args.payload)
+    for arm, launch_during in (("boot", False), ("boot-launch", True)):
+        before = g.stamp("startup")
+        t0 = time.monotonic()
+        g.sh("systemctl reboot")
+        g.drop_master()
+        time.sleep(6)
+        entry = {"stamp_before": before}
+        if not g.wait_alive(240):
+            entry["error"] = "the guest did not come back"
+            res[arm] = entry
+            continue
+        entry["t_ssh_back"] = round(time.monotonic() - t0, 2)
+        # EmulationStation, then the stamp the startup sync writes
+        es = None
+        launched = None
+        gameframe = None
+        stamped = None
+        prev = None
+        end = time.monotonic() + 240
+        while time.monotonic() < end:
+            if es is None and g.es_up():
+                es = time.monotonic()
+                entry["t_es_up"] = round(es - t0, 2)
+            if stamped is None:
+                now = g.stamp("startup")
+                if now and now != before:
+                    stamped = time.monotonic()
+                    entry["stamp_after"] = now
+                    entry["t_startup_stamp"] = round(stamped - t0, 2)
+                    if not launch_during:
+                        break
+            if launch_during and es is not None and launched is None and stamped is None:
+                # press a game while the startup sync is still running
+                launched = time.monotonic()
+                entry["http"] = g.launch(rom)
+                entry["t_launch_sent"] = round(launched - t0, 2)
+            if launch_during and launched is not None and gameframe is None:
+                f = fr.frame()
+                if (prev is not None and vq.frame_diff(prev, f) >= vq.CHANGED_MIN
+                        and not is_blank(f) and g.retroarch() is not None):
+                    gameframe = time.monotonic()
+                    entry["t_game_frame_after_launch"] = round(gameframe - launched, 2)
+                    entry["png"] = fr.save("startup-%s-game" % arm, f)
+                prev = f
+            if launch_during and gameframe is not None and stamped is not None:
+                break
+            time.sleep(0.25)
+        entry["stamp_after"] = entry.get("stamp_after") or g.stamp("startup")
+        entry["stamp"] = parse_stamp(entry["stamp_after"])
+        entry["exit_stamp"] = parse_stamp(g.stamp("exit"))
+        if launch_during:
+            wait_drawing(g, budget=40)
+            g.kill_game()
+            time.sleep(10)
+        res[arm] = entry
+    g.sh(". /etc/profile; set_setting cloudsaves.startup 0", timeout=180)
+    return res
+
+
+def run_condition(g, fr, cond, args, tool, fixtures, rom=ROM):
+    """One offline or bounds cell: set the condition, exit a game, measure."""
+    entry = {"condition": cond}
+    live = subprocess.run([tool, "--backend", args.backend, "rclone-conf"],
+                          capture_output=True, text=True).stdout
+    fixture = None
+    if cond == "dead":
+        entry["how"] = "the remote points at the refused port %d" % DEAD_PORT
+        set_conf(g, subprocess.run([tool, "--backend", args.backend, "dead-conf"],
+                                   capture_output=True, text=True).stdout)
+    elif cond == "portal":
+        entry["how"] = ("a captive portal on 127.0.0.1:%d answering 302 then 200 to everything, "
+                        "with the remote pointed at it" % PORTAL_PORT)
+        fixture = Fixture("portal", PORTAL_PORT)
+        fixture.up()
+        fixtures.append(fixture)
+        set_conf(g, remote_stanza(args.backend, PORTAL_PORT, tool))
+    elif cond == "stall":
+        entry["how"] = ("an endpoint on 127.0.0.1:%d that accepts and never answers, "
+                        "with the remote pointed at it" % STALL_PORT)
+        fixture = Fixture("stall", STALL_PORT)
+        fixture.up()
+        fixtures.append(fixture)
+        set_conf(g, remote_stanza(args.backend, STALL_PORT, tool))
+    elif cond in ("noroute", "blackhole"):
+        entry["how"] = ("the guest's default route removed" if cond == "noroute"
+                        else "a blackhole route to 10.0.2.2 added two seconds after the exit, "
+                             "so the connection can open and then the uplink goes")
+        set_conf(g, live)
+
+    seed_payload(g, 7, args.payload)
+    entry["routes_before"] = g.sh("ip -4 route show")[1]
+    L, rest_ref = measure_launch(g, fr, "cond-%s-launch" % cond, rom=rom)
+    entry["launch"] = {k: L[k] for k in ("t_left_carousel", "t_retroarch_seen",
+                                         "t_first_game_frame", "t_ticks200")}
+    wait_drawing(g)
+
+    if cond == "noroute":
+        entry["route_cmd"] = g.sh("ip route del default; ip -4 route show")[1]
+        E = measure_exit(g, fr, "cond-%s" % cond, rest_ref, budget=120, rom=rom)
+        g.sh("ip route show default | grep -q . || ip route add default via 10.0.2.2 dev eth0")
+    elif cond == "blackhole":
+        # SSH from the host arrives from 10.0.2.2, so a blackhole to it
+        # stalls this channel too -- an admin-down link does not reset an
+        # established connection. So the cut is armed inside the guest, the
+        # master is dropped, and the measurement runs on frames alone until
+        # the route comes back.
+        g.sh('cat > /tmp/ttp-arm.sh <<"H"\n'
+             '#!/bin/sh\n'
+             'sleep 2\n'
+             'ip route add blackhole 10.0.2.2/32\n'
+             'sleep 75\n'
+             'ip route del blackhole 10.0.2.2/32 2>/dev/null\n'
+             'H\n'
+             'chmod +x /tmp/ttp-arm.sh; setsid /tmp/ttp-arm.sh >/dev/null 2>&1 & echo armed')
+        E = measure_exit(g, fr, "cond-%s" % cond, rest_ref, budget=110,
+                         ssh_poll=False, rom=rom)
+        g.drop_master()
+        g.wait_alive(180)
+        g.sh("ip route del blackhole 10.0.2.2/32 2>/dev/null; "
+             "ip route show default | grep -q . || ip route add default via 10.0.2.2 dev eth0; true")
+        E["stamp_after"] = g.stamp("exit")
+        E["stamp"] = parse_stamp(E["stamp_after"])
+    else:
+        E = measure_exit(g, fr, "cond-%s" % cond, rest_ref, budget=150, rom=rom)
+
+    E["log"] = g.sh("tail -30 /var/log/cloud_sync.log 2>/dev/null | cut -c1-200")[1]
+    entry["exit"] = E
+    entry["routes_after"] = g.sh("ip -4 route show")[1]
+    if fixture is not None:
+        fixture.down()
+        if fixture in fixtures:
+            fixtures.remove(fixture)
+    return entry
+
+
+def render(r):
+    L = r["cells"].get("launch", [])
+    E = r["cells"].get("exit", [])
+    G = r["cells"].get("g2g", [])
+    C = r["cells"].get("conditions", {})
+    S = r["cells"].get("startup", {})
+    lines = ["# time to play -- %s on %s" % (r["build"], r["backend"]),
+             "",
+             "%s, guest at :%s, cloud `%s`, payload `%s`, %d repeat(s)."
+             % (r["started"], r["port"], r["backend"], r["payload"], r["repeat"]),
+             "",
+             "Host state: **%s**. SSH round trip %.0f ms (the launch POST goes over it); "
+             "one screendump %.0f ms, which is the resolution of every frame-derived number below."
+             % (r["host_state"], r.get("ssh_rtt_median_s", 0) * 1000,
+                r.get("frame_poll_median_s", 0) * 1000),
+             "", "Seconds, as median / mean / max.", ""]
+
+    if L:
+        lines.append("## UI to game, at rest\n")
+        lines.append(md_table(
+            ["from the press to", "median / mean / max", "n"],
+            [["the screen leaving the carousel", fmt(stats([x["t_left_carousel"] for x in L])), len(L)],
+             ["the handover (a black screen)", fmt(stats([x.get("t_screen_blank") for x in L])), len(L)],
+             ["RetroArch existing", fmt(stats([x["t_retroarch_seen"] for x in L])), len(L)],
+             ["**the game's first frame**", "**%s**" % fmt(stats([x["t_first_game_frame"] for x in L])), len(L)],
+             ["RetroArch drawing (200 CPU ticks)", fmt(stats([x["t_ticks200"] for x in L])), len(L)]]))
+    if E:
+        toks = {}
+        for x in E:
+            t = x.get("stamp", {}).get("token", "?")
+            toks[t] = toks.get(t, 0) + 1
+        lines.append("## The exit sync, on its own\n")
+        lines.append(md_table(
+            ["from execute_kill to", "median / mean / max", "n"],
+            [["the emulator gone", fmt(stats([x["t_emulator_gone"] for x in E])), len(E)],
+             ["**the last-sync-exit stamp**", "**%s**" % fmt(stats([x["t_sync_stamp"] for x in E])), len(E)],
+             ["the card gone from the screen", fmt(stats([x["t_card_gone"] for x in E])), len(E)]]))
+        lines.append("Outcomes: %s. Payload %s KiB.\n"
+                     % (", ".join("%s x%d" % (k, v) for k, v in toks.items()),
+                        E[0].get("payload_kib", "?")))
+    if G:
+        toks = {}
+        for x in G:
+            t = x.get("stamp", {}).get("token", "?")
+            toks[t] = toks.get(t, 0) + 1
+        lines.append("## Game to game, with the exit sync in flight\n")
+        lines.append(md_table(
+            ["from execute_kill to", "median / mean / max", "n"],
+            [["the emulator gone", fmt(stats([x["t_emulator_gone"] for x in G])), len(G)],
+             ["the relaunch sent", fmt(stats([x["t_relaunch_sent"] for x in G])), len(G)],
+             ["**the next game's first frame**", "**%s**" % fmt(stats([x["t_second_game_frame"] for x in G])), len(G)],
+             ["the exit sync's stamp", fmt(stats([x["t_sync_stamp"] for x in G])), len(G)]]))
+        lines.append("What the launch did to the sync, from the stamp's token: %s.\n"
+                     % ", ".join("`%s` x%d" % (k, v) for k, v in toks.items()))
+    if S:
+        rows = []
+        for arm, e in S.items():
+            rows.append([arm, e.get("t_es_up"), e.get("t_startup_stamp"),
+                         e.get("t_launch_sent"), e.get("t_game_frame_after_launch"),
+                         e.get("stamp", {}).get("token")])
+        lines.append("## The startup sync\n")
+        lines.append(md_table(
+            ["arm", "ES up (s from reboot)", "startup stamp (s from reboot)",
+             "launch sent (s)", "launch to game frame (s)", "stamp token"], rows))
+    if C:
+        online = stats([x["t_sync_stamp"] for x in E]) if E else {}
+        rows = []
+        if online:
+            rows.append(["**online (%s)**" % r["backend"], "a successful sync",
+                         fmt(online), "completed"])
+        for cond, e in C.items():
+            ex = e.get("exit", {})
+            rows.append([cond, e.get("how", ""),
+                         "-" if ex.get("t_sync_stamp") is None else "%.2f" % ex["t_sync_stamp"],
+                         ex.get("stamp", {}).get("token", "?")])
+        lines.append("## Offline and bounds, beside the online run\n")
+        lines.append(md_table(
+            ["cell", "how", "execute_kill to the stamp (s)", "outcome token"], rows))
+    return "\n".join(lines) + "\n"
+
+
+if __name__ == "__main__":
+    sys.exit(main())

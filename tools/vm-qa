@@ -19,6 +19,9 @@
 #   scripts     tools/last-good-scripts-test  -- the scripts under busybox shims, on the host
 #   round-trip  tools/cloud-round-trip        -- 27 steps over SSH against the QA cloud, guest a
 #   exit        tools/emulator-exit-test --vm -- the exit hotkey ends a game once, save written, guest a
+#   time-to-play tools/time-to-play --quick   -- UI to a game's first frame, and one game's exit to the
+#               next game's first frame, with the exit sync running (#135, D-CLOUD-098). Its own table
+#               goes at the end of the report; the suite row here says only whether it ran.
 #   link        tools/cloud-round-trip --only LINK1..LINK7 -- the link cut mid-run, seven ways (--link, or --only link)
 #   walks       tools/vm-walks/*.steps        -- each step file replayed from a rebooted guest, frames kept
 #               (frames are kept for a person to read; comparing them to references is fork #120's third box)
@@ -29,7 +32,7 @@
 # handheld: the guests are tools/vm-pair's, on this host (fork #120, box 1).
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-IMAGE=""; SKIP_UP=0; ONLY="scripts,round-trip,exit,walks"; LINK=0; GUEST=a
+IMAGE=""; SKIP_UP=0; ONLY="scripts,round-trip,exit,time-to-play,walks"; LINK=0; GUEST=a
 # Which of the five QA clouds every suite here talks to (#133). It is one
 # variable and not a per-suite flag on purpose: the backend the endpoint is
 # brought up on, the stanza the walks seed, and the endpoint the round trip
@@ -92,6 +95,17 @@ run_suite() {  # name, log, command...
 case ",$ONLY," in *,scripts,*)    run_suite scripts    "$OUT/scripts.log"    "$ROOT/tools/last-good-scripts-test" ;; esac
 case ",$ONLY," in *,round-trip,*) run_suite round-trip "$OUT/round-trip.log" "$ROOT/tools/cloud-round-trip" --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --backend "$BACKEND" ;; esac
 case ",$ONLY," in *,exit,*)       run_suite exit       "$OUT/exit.log"       "$ROOT/tools/emulator-exit-test" --port "$PORT" --identity "$KEY" --vm ;; esac
+# Time to play (#135). --quick is the bounded form -- one repeat of the
+# launch, the exit sync and a game-to-game, no reboot and no host fixtures --
+# because this runs on every image and the offline and bounds cells are
+# minutes each. The full cell (--repeat 5, every condition) is run by hand
+# when a number is being proposed for a register row (D-CLOUD-116).
+case ",$ONLY," in *,time-to-play,*)
+  run_suite time-to-play "$OUT/time-to-play.log" "$ROOT/tools/time-to-play" \
+    --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --monitor "$MON" \
+    --backend "$BACKEND" --out "$OUT/time-to-play" --quick \
+    --label "vm-qa on $(hostname -s), guest $GUEST" ;;
+esac
 # The link cells are timing-bound (a run must end within 90 s of the cut), so
 # they run before the walks and never while an image builds on this host.
 case ",$ONLY," in *,link,*)       run_suite link       "$OUT/link.log"       "$ROOT/tools/cloud-round-trip" --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --backend "$BACKEND" --only LINK1,LINK2,LINK3,LINK4,LINK5,LINK6,LINK7 --serial-socket "$SERIAL" ;; esac
@@ -185,5 +199,12 @@ case ",$ONLY," in *,walks,*)
   }
   run_suite walks "$OUT/walks.log" walk_all ;; esac
 { echo; if [ "$FAILS" = 0 ]; then echo "**PASSED** -- every suite that ran passed."; else echo "**FAILED** -- $FAILS suite(s) failed; see the logs beside this file."; fi; echo; echo "finished $(date -u '+%Y-%m-%d %H:%M UTC')"; } >> "$REPORT"
+# The time-to-play numbers go BELOW the footer, not into the suite table: the
+# table is one row per suite and this cell reports four of its own. No budget
+# row exists yet, so nothing here fails the run -- the numbers are reported
+# and a register row is proposed from them by hand (D-CLOUD-116).
+if [ -f "$OUT/time-to-play/time-to-play.md" ]; then
+  { echo; sed '1s/^# /## /' "$OUT/time-to-play/time-to-play.md"; } >> "$REPORT"
+fi
 echo; cat "$REPORT"; echo; echo "report: $REPORT"
 [ "$FAILS" = 0 ]
