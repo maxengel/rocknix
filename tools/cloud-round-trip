@@ -633,7 +633,7 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     # that restored nothing and said COMPLETED with no offer is the shape
     # that shipped broken in four images (blindspot 13).
     rc, out = run_rc(dev, "cloud_restore --yes --saves-only")
-    truthful_empty = rc == 0 and ">>> offer create-saves-folder" in out and "nothing in your cloud" in out.lower()
+    truthful_empty = rc == 0 and ">>> offer create-saves-folder" in out and "nothing to restore" in out.lower()
     failures += not check(truthful_empty or rc not in (0, 75, 69),
                           "a restore with no Saves folder in the cloud is a truthful empty (0 + the offer) or fails with its own code, never a sentinel",
                           f"cloud_restore exited {rc!r} against an empty endpoint with no offer (0 = silent success, 75/69 = read as a sentinel): {out.strip()[-160:]!r}")
@@ -1127,7 +1127,7 @@ echo "${saw:-0}/${all:-0}"
             # a file, not mkdir: on a bucket an empty directory does not exist
             f"rclone touch {shlex.quote(remote_name + rpath('QA-Empty/Backups/.keep'))} >/dev/null 2>&1", check=False)
     rc, out = run_rc(dev, "cloud_restore --yes --saves-only")
-    failures += not check(rc == 0 and "nothing in your cloud" in out.lower() and ">>> offer create-saves-folder" in out,
+    failures += not check(rc == 0 and "nothing to restore" in out.lower() and ">>> offer create-saves-folder" in out,
                           "root present, Saves absent: exit 0, the plain line, and the offer",
                           f"exit {rc}: {out.strip()[-200:]!r}")
     dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"{rpath('QA-No-Such-Root/Saves')}\"|' {CONF}")

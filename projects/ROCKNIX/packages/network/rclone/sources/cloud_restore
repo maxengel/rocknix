@@ -1091,12 +1091,12 @@ restore_game_saves() {
                    | sed 's|/$||' | near_names "${missing_name}" | head -1)
             if [ -n "${near}" ]; then
                 log_message "saves folder ${SAVES_REMOTE} absent; its parent ${saves_parent:-/} lists and holds a near name: ${near}" "false"
-                echo "There's nothing in your cloud to restore yet. Your cloud has ${saves_parent}/${near} but no ${saves_path}, so check the folder name."
+                echo "Nothing to restore yet: your cloud has ${saves_parent}/${near} but no ${saves_path}. Check the folder name."
                 echo ">>> offer create-saves-folder|${saves_path}|${saves_parent}/${near}"
                 return 0
             fi
             log_message "saves folder ${SAVES_REMOTE} absent but its parent ${saves_parent:-/} lists; treating as an empty cloud" "false"
-            echo "There's nothing in your cloud to restore yet."
+            echo "Nothing to restore yet."
             # EmulationStation offers to create the folder when it sees this;
             # the wizard's own seeding action is what makes it (cloud_setup
             # --seed-folders). A protocol line rather than a parsed sentence,
