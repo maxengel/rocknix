@@ -148,8 +148,8 @@ are shown as SKIPPED, not FAILED.
 maintaining closely and should still do"* -- every row added, moved or renamed
 in EmulationStation updates this file in the same change (D-UI-039). Pending
 here, to be drawn when the rows are built (#134, #23): under SAVE MANAGEMENT one
-entering row for the earlier-versions store (its label is the maintainer's word,
-P-11) opening a nested page that holds KEEP EARLIER VERSIONS OF SAVES (switch)
+entering row, EARLIER VERSIONS OF SAVES (D-UI-043: about keeping, no restore verb),
+opening a nested page that holds KEEP EARLIER VERSIONS OF SAVES (switch)
 and VERSIONS KEPT PER SAVE (count) -- the two #23 rows, reworded for the whole
 store (D-CLOUD-095/096, D-UI-039); and, after a conflict, the compare page with
 the cloud's version left and this console's right, a *played later/earlier on
