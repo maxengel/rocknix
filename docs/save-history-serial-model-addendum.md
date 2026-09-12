@@ -43,25 +43,45 @@ backend alike; no download; nothing on the launch path. This is the "hybrid" the
 maintainer asked for: the delta's simplicity with the council's transaction shape
 (bytes first, record last, dedupe, copy never move, deferral as a pair).
 
-## What the constraint asks for: prevention
+## What the constraint does not ask for: a lock
 
-"If anything, we would want to prevent concurrent usage." The cheapest sufficient
-form uses what the plan already has. Every pass reads every device's manifest
-(D-CLOUD-045). Each manifest records its device's last publish. So the reconciler
-can see, at startup and before a publish, that **another device has published since
-this device's agreement and this device has not restored it**. In serial use that
-means the player picked up the second console without letting it sync. The plan
-already sends the *changed-on-both-sides* case to the wizard; prevention adds one
-rule ahead of it: **a device whose agreement is behind another device's publication
-does not publish until it has restored** -- the startup sync's ordinary job -- and if
-it cannot restore (no network), the card says so and the game plays on the local
-save, with the publish deferred, not dropped. No lease, no lock object, no new
-write: a read of manifests the pass already makes.
+Maintainer, 2026-09-12, thinking it through: *"whether now or with the future
+conflict resolution, we actually try to, via hidden files or hidden directories, let
+another client know when there may need to be a lock file of some sort placed on a
+game while it launched. Maybe this is too restrictive and would be aggravating
+because we're babysitting the user's gameplay and conflict resolution can take care
+of this."* It would be, and it has a failure mode worse than the problem: a console
+that dies mid-game, or goes offline, leaves a lock the other console honours until
+somebody clears it. **No lock, no marker, no hidden file** (D-CLOUD-103).
 
-Whether the interface should also *warn* when a game is launched on a device that
-is behind the cloud (a "your other console has newer saves" card, cancellable) is
-the maintainer's call; it touches the launch path (D-CLOUD-098) and D-CLOUD-038's
-gate.
+The prevention rule an earlier draft of this addendum proposed is also unnecessary,
+and is withdrawn. The case it guarded -- a console that publishes without having
+restored, because the commute had no network -- is already the classifier's
+both-changed case (R4): the cloud changed since this console's agreement and this
+console changed too, so the wizard shows both. A console that is behind with no
+local change is simply restored by the startup sync. Nothing new is needed.
+
+## What the constraint gives conflict resolution
+
+*"The bigger point is for conflict resolution to assume that serial play is the
+dominant way in which saves are being drafted ... one person isn't playing the same
+game at the same time in two places."* So when the wizard does show two versions,
+they were made in sequence by one person: the home console's after the commute
+console's, or the other way round. Two things follow, and one question:
+
+- **Order them by publish sequence, not by clock.** Each version's `<seq>` and its
+  manifest entry say which console published it and after which agreement. The
+  wizard can say *played later on <console>* and *played earlier on <console>*
+  truthfully, where today it can only say *cloud* and *this device*. Clocks stay
+  untrusted; the sequence is causal.
+- **Both versions are real progress**, so KEEP BOTH and the retained loser matter
+  more, not less: the realistic conflict is a commute session that never synced
+  meeting an evening session at home, and the player may want both.
+- **The open question (D-CLOUD-103's open half):** may the wizard rest its cursor on
+  the version played later, so the common case is one press? D-CLOUD-032's rule is
+  that resolution never *defaults* to recency; a pre-selected cursor with the choice
+  still the player's is a weaker thing than a default, but it is the maintainer's
+  call.
 
 ## What the constraint leaves untouched
 
@@ -78,9 +98,9 @@ auto-states kept (D-CLOUD-099); the bounds (D-CLOUD-096); the reader (#25).
 1. **Amend by hand.** The session drafts the amendment to the consensus plan and the
    tracker text: retain-from-stage replaces escrow as the mechanism (the invariant
    "nothing leaves the head unless it is in the store" stands; "nothing becomes the
-   head unless it is in the store" is dropped), F14/E5/E6 are replaced as above, and
-   the prevention rule is added to R4/R5. The maintainer reads it beside
-   `final-issue-draft.md`.
+   head unless it is in the store" is dropped), F14/E5/E6 are replaced as above, no
+   prevention rule, and the wizard orders the two sides by publish sequence. The
+   maintainer reads it beside `final-issue-draft.md`. **Chosen 2026-09-12.**
 2. **A short council follow-up** on one question -- *under serial single-writer
    use, is retain-from-stage plus the prevention rule the cheapest sufficient form,
    and what does it miss?* -- with this addendum and D-CLOUD-102 added to the
