@@ -1,25 +1,25 @@
 # Saved Session State
 
-> **Saved**: 2026-09-12T02:45:00Z
+> **Saved**: 2026-09-12T06:10:00Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). **The save-history design is closed out into the tracker** (maintainer, 2026-09-12: "let's get all of this into our issues and create new ones where necessary so we can close out all of this work before we move on to the conflict resolution work"). The council's consensus (store-first, 3-2) was amended by hand under the maintainer's later rulings -- one console at a time (D-CLOUD-102), no lock and serial play assumed by the wizard (D-CLOUD-103), columns as the source with the cursor on the newer version (D-CLOUD-104) -- to **retain-only, retained from the console's own stage** (+1 spawn, +S up per changed save, no download). Applied: #134 rewritten (title, design, build order, E1-E15, time to play as a gate, the maintainer's open list, acceptance); #22 R1-R11; #23, #25, #21, #135; children **#136** (guard image: allowlist first rules, `--delete-excluded`/`--backup-dir` audit, rules-file upgrade) and **#137** (the fold of today's set-aside folders) attached under #134, which sits under #11 with the milestone. Bodies kept under `research/council-runs/2026-09-11-save-history-one-home/applied/`.
+Epic #11 (cloud saves). **The nine save-history decisions are all settled with the maintainer, one at a time** (D-CLOUD-105..108, 114..117, D-UI-043; plus the rulings raised on the way: D-CLOUD-109 a launch waits for a bounded sync, 110 the stage is one cache, 111 the bound watches progress, 112 the offline benchmark, 113 two transfer contracts; D-UI-040 the exit card says syncing (#138), D-UI-041 the offline reminder (#139), D-UI-042 least surprise as a rule file). Everything is in the tracker: #134 (all P-items ticked), #22, #23, #25, #21, #135, #136, #137, #139. `Saves-replaced` design docs superseded; wizard IA rev 6; menu map current.
 
-Also closed this stretch: #130 (device review; remaining device items moved to #131/#133), #125, #126, #124, #128, #122, #117, #132 (folded).
+**A build is running**: GENERIC_X64 from `d94ca7b159` (ES `6b49a663aa`, the exit-card wording, #138). Next: `tools/vm-qa` on it, and the exit-card frame on guest c (10025, 640x480; Probe.nes planted, GL driver, sync-on-exit on) by launching the NES probe from ES and pressing `esc` to exit RetroArch, screenshots every second for the card. Then H700.
 
 ## In Progress
 
-- Nothing running. Guests a, b, c on `af2db4ab09`. RG35XX SP on `af2db4ab09`, clean. No device or cloud action without a per-action yes (D-QA-015); the VM question in writing first (`vm-first.md`).
+- x64 build in flight (`scratchpad/build/x64-exitcard.log`). Guests a, b (fresh pair) and c on `af2db4ab09`; c prepared for the frame. RG35XX SP on `af2db4ab09`, clean. No device action without a per-action yes (D-QA-015).
 
 ## Next Steps
 
-1. **The maintainer's nine open items on #134** ("Decisions still the maintainer's": P-1 fleet-wide setting and what OFF means; P-2 protections order and count range 1-9 vs 3-5; P-3 copy+verify vs move; P-6 the exit path's one bounded fetch; P-10 the heal's words; P-11 the two labels; P-12 the mixed-fleet residual; P-13 the budget after E12; P-4/7/8/9 confirm). Each answer becomes a register row (D-CLOUD-101 is the parking row).
-2. **#123 and #127**: all boxes ticked; open only for the maintainer's word on the words/dialog (D-UI-038, D-CLOUD-091/092) -- close on a yes.
-3. **#133** the QA cloud matrix (endorsed as next), then **#129** the code audit; then the conflict-resolution build in #134's order (#136 → #137 → #21 → #22 → #23 → #25), with #135's cell before the budget row.
-4. Docs still pending on their triggers: `docs/save-manifest-schema.md` rev 3 (`history_keep`, after P-1); `.claude/rules/rclone-cloud-sync.md` budget section (after E12); the public cloud-sync page (#42, with #136/#137); `upgrade-and-install.md` fold paragraph (#137).
+1. Build → `tools/vm-qa` → exit-card frame (#138 acceptance) → H700 build → offer the image for staging (per-device yes).
+2. #123 and #127: all boxes ticked; ask the maintainer to close them or say what to change.
+3. **#133** the QA cloud matrix (needed by #135's measurement: SFTP beside WebDAV), then **#129** the audit, then the build in #134's order: #136 → #137 → #21 → #22 → #23 → #25 → #139, with #135's measurement before the limits are set.
+4. Lesson from the walk: put every decision in terms of what the player would see before asking; "budget", "stage", "P-4" meant nothing until then (work log 05:40).
 
 ## Key Files Modified
 
