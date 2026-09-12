@@ -122,7 +122,7 @@ LEGACY_ROOT="${REMOTENAME}"
 # with the default. The two rclone calls that touch only this device --
 # `rclone size` and `rclone delete` on a local folder in the match flow --
 # open no socket and carry none of this.
-RCLONE_NET_OPTS_FALLBACK="--contimeout 15s --timeout 30s --low-level-retries 2 --retries 1"
+RCLONE_NET_OPTS_FALLBACK="--contimeout 15s --timeout 30s --low-level-retries 10 --retries 1"
 _net_opts=$(echo "${RCLONE_NET_OPTS:-}" | tr '\n\\' '  ' | tr -s ' ' | sed 's/^ //; s/ $//')
 [ -n "${_net_opts}" ] || _net_opts="${RCLONE_NET_OPTS_FALLBACK}"
 read -r -a RCLONE_NET_OPTS_ARRAY <<< "${_net_opts}"

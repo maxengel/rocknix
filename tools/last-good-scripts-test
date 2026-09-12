@@ -19,6 +19,10 @@
 #   d. write_stamp killed mid-write leaves the previous stamp;
 #   e. every line the scripts can print to a screen is free of exit codes,
 #      log paths, tool names and flags (the harness's FORBIDDEN regex).
+#   f. backuptool never archives rclone.conf and its scanner knows rclone's
+#      key names (#52);
+#   g. each script's RCLONE_NET_OPTS_FALLBACK equals the shipped
+#      RCLONE_NET_OPTS, so a torn conf does not silently restore #107 (#146).
 #
 # The chksysconfig and 001-functions functions are lifted out of the files
 # under test and run in a fresh bash against temp paths, as wait-lock-test
@@ -459,6 +463,21 @@ arc=$(ls "${ST2}/roms/backup"/*.tar.gz 2>/dev/null | head -1)
 tar -tzf "${arc}" 2>/dev/null | grep -q 'test/leaky.conf$' && tar -tzf "${arc}" 2>/dev/null | grep -q 'test/plain.txt$'; check $? "files that are not held back are archived as before" "leaky.conf or plain.txt missing"
 grep -q 'rclone.conf held back' "${OUT2}"; check $? "the log says rclone.conf was held back" "no held-back line: $(grep logger "${OUT2}" | tail -2 | tr '\n' ' ')"
 grep -q 'LOOK LIKE PASSWORDS OR KEYS' "${OUT2}"; check $? "the scanner reports the pass= line in a file it does not hold back" "scanner silent: $(grep -v '^logger' "${OUT2}" | tail -3 | tr '\n' ' ')"
+
+echo "  g. the in-script RCLONE_NET_OPTS fallback is the shipped value (#146)"
+# Four scripts carry a constant for a conf the helper has not reached, and
+# their comments promise it equals the shipped RCLONE_NET_OPTS. #107 moved
+# the shipped value to ten low-level retries and left all four at two; on
+# the fallback path (a torn conf, a blanked line) that is #107 back, and no
+# check read the constants (audit 2026-09-12, F-03). A comment is not a check.
+shipped=$(sed -n 's/^DEFAULT_RCLONE_NET_OPTS="\(.*\)"$/\1/p' "${ROOT}/${RCLONE_REL}/cloud_sync.conf.defaults")
+[ -n "${shipped}" ]; check $? "cloud_sync.conf.defaults ships RCLONE_NET_OPTS (${shipped})" "no DEFAULT_RCLONE_NET_OPTS line in cloud_sync.conf.defaults"
+conf=$(sed -n 's/^RCLONE_NET_OPTS="\(.*\)"$/\1/p' "${ROOT}/${RCLONE_REL}/cloud_sync.conf")
+[ "${conf}" = "${shipped}" ]; check $? "cloud_sync.conf carries the same value" "cloud_sync.conf has '${conf}'"
+for scr in cloud_backup cloud_restore cloud_content_backup cloud_content_restore; do
+  fb=$(sed -n 's/^RCLONE_NET_OPTS_FALLBACK="\(.*\)"$/\1/p' "${ROOT}/${RCLONE_REL}/${scr}")
+  [ -n "${fb}" ] && [ "${fb}" = "${shipped}" ]; check $? "${scr}: RCLONE_NET_OPTS_FALLBACK is the shipped value" "${scr}: fallback is '${fb:-(none)}', shipped is '${shipped}'"
+done
 
 echo
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

@@ -39,7 +39,7 @@ readonly -a RCLONE_PROBE_OPTS=(--contimeout 10s --timeout 20s --low-level-retrie
 # dropped mid-run held the process for over ten minutes, and on the RG SP
 # that froze the startup card at 113/113 with the launch gate held (#101,
 # #102, #103). Keep the two values in step.
-RCLONE_NET_OPTS_FALLBACK="--contimeout 15s --timeout 30s --low-level-retries 2 --retries 1"
+RCLONE_NET_OPTS_FALLBACK="--contimeout 15s --timeout 30s --low-level-retries 10 --retries 1"
 RCLONE_NET_OPTS_ARRAY=()
 
 # Non-interactive support for hooks and the ES menu:

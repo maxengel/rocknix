@@ -118,7 +118,7 @@ ROOT="${REMOTENAME}${CONTENT_REMOTE:+${CONTENT_REMOTE}/}"
 # low-level retries, 3 whole-run retries) hold a run for over ten minutes
 # on a link that drops mid-run (#101, #102, #103). Keep the fallback in step
 # with the default.
-RCLONE_NET_OPTS_FALLBACK="--contimeout 15s --timeout 30s --low-level-retries 2 --retries 1"
+RCLONE_NET_OPTS_FALLBACK="--contimeout 15s --timeout 30s --low-level-retries 10 --retries 1"
 _net_opts=$(echo "${RCLONE_NET_OPTS:-}" | tr '\n\\' '  ' | tr -s ' ' | sed 's/^ //; s/ $//')
 [ -n "${_net_opts}" ] || _net_opts="${RCLONE_NET_OPTS_FALLBACK}"
 read -r -a RCLONE_NET_OPTS_ARRAY <<< "${_net_opts}"
