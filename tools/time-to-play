@@ -289,6 +289,11 @@ def ensure_rom(g, rom, workdir):
     build_gb_probe(local)
     g.sh("mkdir -p /storage/roms/gb")
     g.put(local, GB_PROBE)
+    return GB_PROBE, True
+
+
+def reboot_guest(g):
+    """Reboot and wait for EmulationStation, then a moment for its first frame."""
     g.sh("systemctl reboot")
     g.drop_master()
     time.sleep(8)
@@ -298,7 +303,6 @@ def ensure_rom(g, rom, workdir):
             break
         time.sleep(2)
     time.sleep(12)
-    return GB_PROBE, True
 
 
 def install_helpers(g):
@@ -901,9 +905,23 @@ def main():
     if not g.wait_alive(120):
         print("time-to-play: guest at %s does not answer" % args.port, file=sys.stderr)
         return 1
+    # EmulationStation reads cloudsaves.gameexit and cloudsaves.startup when
+    # it starts and keeps them in memory; set_setting changes the file and
+    # nothing else. So the values this cell needs go into the file BEFORE the
+    # boot the cell relies on, and a guest whose interface booted on other
+    # values is rebooted -- or the exit sync never runs, the stamp never
+    # appears, and the cell reports nothing (the runner's second dispatch,
+    # fresh pair, 2026-09-12: file 1, interface booted on 0, no stamp; a
+    # reboot with the file at 1, stamp `completed`).
+    saved_startup = g.sh(". /etc/profile; get_setting cloudsaves.startup")[1]
+    saved_gameexit = g.sh(". /etc/profile; get_setting cloudsaves.gameexit")[1]
+    g.sh(". /etc/profile; set_setting cloudsaves.gameexit 1; set_setting cloudsaves.startup 0", timeout=120)
+    settings_changed = (saved_gameexit != "1") or (saved_startup not in ("0", ""))
     # Before the helpers: a seeded ROM costs a reboot, and /tmp is a tmpfs.
     made = {"rom": False}
     rom, made["rom"] = ensure_rom(g, args.rom, out)
+    if made["rom"] or settings_changed:
+        reboot_guest(g)
     install_helpers(g)
 
     build = g.sh('sed -n "s/^BUILD_ID=//p" /etc/os-release')[1].strip('"')[:10]
@@ -913,6 +931,8 @@ def main():
         "host_state": args.label or "(not stated)",
         "started": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime()),
         "rom": rom, "rom_seeded": made["rom"],
+        "interface_rebooted": bool(made["rom"] or settings_changed),
+        "settings_before": {"gameexit": saved_gameexit, "startup": saved_startup},
         "cells": {},
     }
 
@@ -923,8 +943,6 @@ def main():
                    [g.host + ":" + RCLONE_CONF, saved_conf], capture_output=True)
     subprocess.run(["scp", "-q", "-P", g.port] + g._opts() +
                    [g.host + ":" + CLOUD_CONF, saved_cloud], capture_output=True)
-    saved_startup = g.sh(". /etc/profile; get_setting cloudsaves.startup")[1]
-    saved_gameexit = g.sh(". /etc/profile; get_setting cloudsaves.gameexit")[1]
     # A QEMU guest has no Vulkan. Left on the image's default, RetroArch
     # exists for a fifth of a second and never draws, the exit sync never
     # runs, and every headline number below is a dash -- which is what the
