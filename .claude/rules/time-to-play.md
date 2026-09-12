@@ -30,6 +30,10 @@ because it can help guide our decision-making."* D-CLOUD-098, #135.
   measurement, checks connectivity first, and past the budget ends with an outcome the
   player can act on. A sync never takes minutes. Maintainer, 2026-09-12: "If they think a
   sync is happening, they think a sync is happening."
+- **The offline benchmark** (D-CLOUD-112): sync-on-exit stays on, on the subway and on the
+  plane; with no connectivity the sync must reach its outcome in about the time a
+  successful sync of the same change would have taken. Size every connect timeout and
+  probe to that, and measure the offline exit beside the online one.
 - **Retros and plans name it.** Every phase retro asks what the phase did to time to
   play; every plan for a cloud or interface change states its effect on the two numbers
   before it is built.
