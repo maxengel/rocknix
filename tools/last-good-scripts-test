@@ -26,6 +26,8 @@
 #   h. --automatic's rclone wrapper ends a stalled call at the ceiling and
 #      returns 124; a deliberate run is not wrapped; why_for knows 124 and 10;
 #      the automatic fallback equals the shipped value (D-CLOUD-118).
+#   i. cloud_net_ready settles on a held default route in any connected
+#      NetworkManager state; a still-connecting network exits 69 at the deadline.
 #
 # The chksysconfig and 001-functions functions are lifted out of the files
 # under test and run in a fresh bash against temp paths, as wait-lock-test
@@ -508,6 +510,25 @@ for scr in cloud_backup cloud_restore; do
   fb=$(sed -n 's/^RCLONE_SYNC_NET_OPTS_FALLBACK="\(.*\)"$/\1/p' "${ROOT}/${RCLONE_REL}/${scr}")
   [ -n "${fb}" ] && [ "${fb}" = "${shipped_sync}" ]; check $? "${scr}: RCLONE_SYNC_NET_OPTS_FALLBACK is the shipped value" "${scr}: '${fb:-(none)}' vs '${shipped_sync}'"
 done
+
+echo "  i. cloud_net_ready settles on a held default route however NetworkManager judges connectivity"
+# The RG SP case (2026-09-12): NetworkManager stuck at "connected (site
+# only)" / "limited" with the internet reachable; the helper waited 60 s and
+# said no network. Shims stand in for ip (a default route) and nmcli (that
+# verdict); the helper must settle within the grace, not wait to the deadline.
+I="${TMP}/i"; mkdir -p "${I}/shim"
+printf '#!/bin/sh\ncase "$*" in *"route show default"*) echo "default via 192.168.1.1 dev wlan0" ;; esac\n' > "${I}/shim/ip"
+printf '#!/bin/sh\ncase "$*" in *STATE*) echo "connected (site only)" ;; *CONNECTIVITY*) echo "limited" ;; esac\n' > "${I}/shim/nmcli"
+chmod +x "${I}/shim"/*
+t0=$(date +%s)
+PATH="${I}/shim:${PATH}" bash "${ROOT}/${RCLONE_REL}/cloud_net_ready" --wait 12 > "${I}/out" 2>&1; RC_I=$?
+dt=$(( $(date +%s) - t0 ))
+[ "${RC_I}" -eq 0 ]; check $? "connected (site only) + limited settles (rc ${RC_I}, ${dt}s)" "rc ${RC_I} after ${dt}s: $(tail -1 "${I}/out" | cut -c1-120)"
+[ "${dt}" -lt 12 ]; check $? "and before the deadline" "took the whole wait: ${dt}s"
+printf '#!/bin/sh\ncase "$*" in *STATE*) echo "connecting" ;; *CONNECTIVITY*) echo "unknown" ;; esac\n' > "${I}/shim/nmcli"
+t0=$(date +%s)
+PATH="${I}/shim:${PATH}" bash "${ROOT}/${RCLONE_REL}/cloud_net_ready" --wait 3 > "${I}/out" 2>&1; RC_I=$?
+[ "${RC_I}" -eq 69 ]; check $? "still connecting at the deadline exits 69" "rc ${RC_I}: $(tail -1 "${I}/out" | cut -c1-120)"
 
 echo
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

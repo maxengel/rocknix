@@ -7,7 +7,7 @@
 # Usage: cloud_net_ready [--wait N]
 #
 #   exit 0    NetworkManager reports the connection up (STATE connected,
-#             and CONNECTIVITY full where NetworkManager checks it) and it
+#             in any connected state -- its connectivity word is only logged) and it
 #             has stayed up for GRACE seconds with a default route the
 #             whole time
 #   exit 69   no network: there is no default route -- at once, without
@@ -131,15 +131,23 @@ while :; do
     STATE=$(nm_state)
     if [ -n "${STATE}" ]; then
         CONN=$(nm_connectivity)
-        # "connected" alone is NetworkManager's global state; "connected
-        # (site)" and "connected (local)" are not, and do not match. The
-        # connectivity check is compiled out of the image's NetworkManager
-        # (-Dconcheck=false), which reports "full" behind a default route
-        # and never probes anything; a build that does check reports
-        # "unknown" until its first probe answers, and "limited", "portal"
-        # or "none" when it answers badly -- those keep waiting.
-        case "${STATE}:${CONN}" in
-            connected:full|connected:unknown|connected:) SETTLED=1 ;;
+        # Any "connected" state settles -- "connected", "connected (site
+        # only)", "connected (local only)" -- once the default route above
+        # has held for GRACE seconds. NetworkManager's connectivity word is
+        # logged and not judged. It used to be: only "full" (or "unknown",
+        # or blank) settled, and "limited" or "portal" kept waiting until
+        # the deadline. The maintainer's RG SP (2026-09-12, 7eb713bbd9) sat
+        # at "connected (site only), connectivity limited" for its whole
+        # uptime while dropbox.com and two public connectivity checks
+        # answered it in under a second: NetworkManager's probe had failed
+        # once at boot and it re-checks every five minutes, so a 60 s wait
+        # could never see it change, and the startup sync ended "no
+        # network" on a device that had one. The judge of the cloud is the
+        # bounded run that follows (D-CLOUD-118): a portal or a dead link
+        # ends it within seconds with its own words, which is D-CLOUD-112's
+        # shape. "connecting" and "disconnected" still wait.
+        case "${STATE}" in
+            connected*) SETTLED=1 ;;
             *) SETTLED=0 ;;
         esac
     else
