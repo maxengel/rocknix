@@ -1,24 +1,25 @@
 # Saved Session State
 
-> **Saved**: 2026-09-11T23:10:00Z
+> **Saved**: 2026-09-12T02:45:00Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). The seven-issue pass is done and on the RG35XX SP (`af2db4ab09`, applied on the maintainer's yes). The evening then turned on **process and design**: the device rule (D-QA-015, blindspot 38, `docs/device-testing-policy.md`, `vm-first.md`), the QA cloud matrix (#133, D-QA-017), and the **save-history epic #134** -- one hidden store `Saves/.history/` for the earlier versions of a player's saves (D-CLOUD-095..100) -- which went through a full **council run** (`research/council-runs/2026-09-11-save-history-one-home/`, committed `bfbbc31772`): store-first won 3-2, the consensus round integrated the dissent under the maintainer's steer (time to play, bandwidth, round trips; sync no longer than it must; sanctity the floor), and Step 5 produced tracker text for #134, #22, #23, #25 and two new children. **Nothing from it is applied or built yet**; the maintainer reads `final-issue-draft.md` and settles the thirteen proposals (D-CLOUD-101, open).
+Epic #11 (cloud saves). **The save-history design is closed out into the tracker** (maintainer, 2026-09-12: "let's get all of this into our issues and create new ones where necessary so we can close out all of this work before we move on to the conflict resolution work"). The council's consensus (store-first, 3-2) was amended by hand under the maintainer's later rulings -- one console at a time (D-CLOUD-102), no lock and serial play assumed by the wizard (D-CLOUD-103), columns as the source with the cursor on the newer version (D-CLOUD-104) -- to **retain-only, retained from the console's own stage** (+1 spawn, +S up per changed save, no download). Applied: #134 rewritten (title, design, build order, E1-E15, time to play as a gate, the maintainer's open list, acceptance); #22 R1-R11; #23, #25, #21, #135; children **#136** (guard image: allowlist first rules, `--delete-excluded`/`--backup-dir` audit, rules-file upgrade) and **#137** (the fold of today's set-aside folders) attached under #134, which sits under #11 with the milestone. Bodies kept under `research/council-runs/2026-09-11-save-history-one-home/applied/`.
+
+Also closed this stretch: #130 (device review; remaining device items moved to #131/#133), #125, #126, #124, #128, #122, #117, #132 (folded).
 
 ## In Progress
 
-- Nothing running. Guests a, b (fresh pair) and c on `af2db4ab09`. RG35XX SP on `af2db4ab09`, clean (the QA files removed on the maintainer's yes; one older set-aside folder of theirs was pruned by the script during the test and is restorable from Dropbox's deleted files -- #130).
+- Nothing running. Guests a, b, c on `af2db4ab09`. RG35XX SP on `af2db4ab09`, clean. No device or cloud action without a per-action yes (D-QA-015); the VM question in writing first (`vm-first.md`).
 
 ## Next Steps
 
-1. **The maintainer reads `final-issue-draft.md`** and answers the P-1..P-13 proposals (the draft's closing section lists what still needs their word). Then apply the tracker text to #134/#22/#23/#25, open the two children (the guard image; the fold), and register the settled rows.
-2. **#133** the QA cloud matrix (self-hosted WebDAV/S3/SFTP/SMB/FTP on the VM host; hosted non-Dropbox accounts) -- endorsed as next before the audit.
-3. **#129** the code audit (code-auditor methodology).
-4. #135 time-to-play cell in the runner; #131 the QA handheld (future).
-5. Standing: D-QA-015 -- nothing on a person's device or cloud without a per-action yes; `vm-first.md` -- the VM question in writing before any test.
+1. **The maintainer's nine open items on #134** ("Decisions still the maintainer's": P-1 fleet-wide setting and what OFF means; P-2 protections order and count range 1-9 vs 3-5; P-3 copy+verify vs move; P-6 the exit path's one bounded fetch; P-10 the heal's words; P-11 the two labels; P-12 the mixed-fleet residual; P-13 the budget after E12; P-4/7/8/9 confirm). Each answer becomes a register row (D-CLOUD-101 is the parking row).
+2. **#123 and #127**: all boxes ticked; open only for the maintainer's word on the words/dialog (D-UI-038, D-CLOUD-091/092) -- close on a yes.
+3. **#133** the QA cloud matrix (endorsed as next), then **#129** the code audit; then the conflict-resolution build in #134's order (#136 → #137 → #21 → #22 → #23 → #25), with #135's cell before the budget row.
+4. Docs still pending on their triggers: `docs/save-manifest-schema.md` rev 3 (`history_keep`, after P-1); `.claude/rules/rclone-cloud-sync.md` budget section (after E12); the public cloud-sync page (#42, with #136/#137); `upgrade-and-install.md` fold paragraph (#137).
 
 ## Key Files Modified
 
