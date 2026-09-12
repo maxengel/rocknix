@@ -1,6 +1,6 @@
 # Saved Session State
 
-> **Saved**: 2026-09-12T09:05:00Z
+> **Saved**: 2026-09-12T07:20:00Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
@@ -8,21 +8,20 @@
 
 Epic #11 (cloud saves). **The nine save-history decisions are all settled with the maintainer, one at a time** (D-CLOUD-105..108, 114..117, D-UI-043; plus the rulings raised on the way: D-CLOUD-109 a launch waits for a bounded sync, 110 the stage is one cache, 111 the bound watches progress, 112 the offline benchmark, 113 two transfer contracts; D-UI-040 the exit card says syncing (#138), D-UI-041 the offline reminder (#139), D-UI-042 least surprise as a rule file). Everything is in the tracker: #134 (all P-items ticked), #22, #23, #25, #21, #135, #136, #137, #139. `Saves-replaced` design docs superseded; wizard IA rev 6; menu map current.
 
-**`a2ee7b9bb2` (ES `f93acc2a6`, #140 the exit card's live line in the player's words) is built for x64, its binary checked for the six new strings, and framed on guest c: NOTHING SENT YET against the dead port, COMPLETED against the live endpoint (`docs/qa-frames/2026-09-12/`).** #140's criteria 1 and 2 ticked; it closes when the runner's four suites pass on the vm-pair. H700 `a2ee7b9bb2` building. The maintainer approved #123 (D-UI-044, closed) and set a standing rule for every player-facing string -- clear, brief, sized to the space (D-UI-045, `.claude/rules/player-language.md`).
+**`a2ee7b9bb2` (ES `f93acc2a6`, #140 the exit card's live line in the player's words) is built for x64, its binary checked for the six new strings, and framed on guest c: NOTHING SENT YET against the dead port, COMPLETED against the live endpoint (`docs/qa-frames/2026-09-12/`).** **#140 closed**: `tools/vm-qa` passed all four suites on a fresh pair (`qa-a2ee7b9bb2-webdav-a-20260912-0646`). H700 `a2ee7b9bb2` built (tar `cbddc951af027b14...`, strings checked), **not staged**. **#133 merged** (`ac2db6c113`): five backends (webdav 9010, s3 9012, sftp 9013, smb 9014, ftp 9015), `--backend` on the three tools, D-QA-018/019/020; it found #141 (a wrong saves folder reports COMPLETED on a bucket), #142 (FTP: missing dir reads as broken cloud; `--retries 1` lost a file), #143 (a refused S3 endpoint outlives every timeout). Hosted-provider box open on accounts. The maintainer approved #123 (D-UI-044, closed) and set a standing rule for every player-facing string -- clear, brief, sized to the space (D-UI-045, `.claude/rules/player-language.md`).
 
 ## In Progress
 
-- **#133 QA cloud matrix** running as a subagent (opus) in `rocknix.worktrees/qa-cloud-matrix` on `feature/qa-cloud-matrix`: `cloud-test-backend --backend webdav|s3|sftp|smb|ftp`, `cloud-round-trip --backend`, `vm-qa --backend`, rules updated. It holds guests a and b (10022/10023) on `d94ca7b159`; do not run `vm-qa`/`vm-pair up` until it reports. Hosted-provider half deferred to the maintainer (accounts).
-- **H700 `a2ee7b9bb2`** building via `rocknix.worktrees/devices/build-dev.sh H700` (log in the session scratchpad); not to be staged without a per-device yes.
-- Guest c (10025, monitor `/tmp/rocknix-qemu-monitor-c.sock`) on `a2ee7b9bb2`, live endpoint, gameexit=1. RG35XX SP on `af2db4ab09`, clean; no device action without a per-action yes (D-QA-015).
+- **#135 time-to-play cell** running as a subagent (opus) in `rocknix.worktrees/time-to-play` on `feature/time-to-play`: `tools/time-to-play`, the offline cells (D-CLOUD-112), the bounds cells (D-CLOUD-111), wired into `vm-qa`; it uses **guest c** (10025) and the **SFTP** backend (9013), never the pair or 9010; record numbers only on a quiet host. It proposes rows; it writes none as decided.
+- Guests a and b (fresh pair) on `a2ee7b9bb2` from the runner; guest c on `a2ee7b9bb2` (lent to the #135 agent; it restores the WebDAV stanza and gameexit=1 when done). RG35XX SP on `af2db4ab09`, clean; no device action without a per-action yes (D-QA-015).
 
 ## Next Steps
 
-1. When #133 reports: merge `feature/qa-cloud-matrix` into `next`, run `tools/vm-qa` on `a2ee7b9bb2` (fresh pair), add the QA-log row, close #140 on the pass; file issues for the backend differences the matrix found.
-2. **#135**: the time-to-play cell and the offline benchmark cells (D-CLOUD-111/112/116) on WebDAV + SFTP -- VM only.
-3. **#129**: the code audit (`code-auditor` skill, read from `next`), once #133 has landed (the audit scope must not move under it).
-4. **#127**: the maintainer's word on the dialog texts, now offered in the short form (D-UI-045); then the ES change, a build, close.
-5. Staging on the RG35XX SP: offer `a2ee7b9bb2` H700 once built (stage, then ask before the reboot).
+1. When #135 reports: review, merge `feature/time-to-play` into `next`, run the new suite once on the pair, put the proposed rows to the maintainer (P-13, D-CLOUD-111/112), add the QA-log columns' first row.
+2. **#129**: the code audit (`code-auditor` skill, read from `next`; milestone tier -- two epics), scoped to `next` at the merge of #135; findings become issues.
+3. **#127**: the maintainer's word on the dialog texts, offered in the short form (D-UI-045); then the ES change, a build, close.
+4. #141 / #142 / #143 from the matrix: each needs a behaviour decision on remotes without a "folder that does not exist yet"; put the question to the maintainer in player terms before fixing.
+5. Staging on the RG35XX SP: `a2ee7b9bb2` H700 is the candidate (stage, then ask before the reboot) -- only on a per-device yes.
 
 ## Key Files Modified
 
