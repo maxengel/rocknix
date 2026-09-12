@@ -125,6 +125,10 @@ read -r -a RCLONE_NET_OPTS_ARRAY <<< "${_net_opts}"
 # A probe is a single listing that exists to answer quickly: one attempt,
 # tighter than the transfers (the same values the saves scripts probe with).
 readonly -a RCLONE_PROBE_OPTS=(--contimeout 10s --timeout 20s --low-level-retries 1 --retries 1)
+# A listing's bound (#143): three low-level retries, not a transfer's ten --
+# rclone's S3 backend hands the count to the AWS SDK as attempts with
+# exponential backoff (see cloud_backup for the measurement).
+readonly -a RCLONE_LIST_OPTS=(--contimeout 15s --timeout 30s --low-level-retries 3 --retries 1)
 
 # Whole or not at all: to a temporary name beside the stamp, then renamed
 # over it, as ThreadedCloudSync::recordOutcome does. A kill mid-write leaves

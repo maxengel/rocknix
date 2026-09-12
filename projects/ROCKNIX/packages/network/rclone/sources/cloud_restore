@@ -83,15 +83,6 @@ SYSTEM_ONLY=0
 AUTOMATIC=0
 SYNC_DEADLINE=0
 RCLONE_SYNC_NET_OPTS_ARRAY=()
-rclone() {
-    if [ "${AUTOMATIC}" -eq 1 ] && [ "${SYNC_DEADLINE}" -gt 0 ]; then
-        local left=$(( SYNC_DEADLINE - $(date +%s) ))
-        [ "${left}" -ge 1 ] || left=1
-        command timeout -k 3 "${left}" rclone "$@" "${RCLONE_SYNC_NET_OPTS_ARRAY[@]}"
-    else
-        command rclone "$@"
-    fi
-}
 SAVES_ONLY=0
 for CLI_ARG in "$@"; do
     case "${CLI_ARG}" in
@@ -104,6 +95,23 @@ for CLI_ARG in "$@"; do
         --automatic) AUTOMATIC=1 ;;
     esac
 done
+
+# Defined only for an automatic run: a deliberate run's rclone calls go
+# straight to PATH, and an rclone function the environment exported -- the
+# round-trip harness's lock-descriptor probe does exactly that -- keeps
+# working. The definition sits at column 0 so tools/last-good-scripts-test
+# can lift it by its first line.
+if [ "${AUTOMATIC}" -eq 1 ]; then
+rclone() {
+    if [ "${AUTOMATIC}" -eq 1 ] && [ "${SYNC_DEADLINE}" -gt 0 ]; then
+        local left=$(( SYNC_DEADLINE - $(date +%s) ))
+        [ "${left}" -ge 1 ] || left=1
+        command timeout -k 3 "${left}" rclone "$@" "${RCLONE_SYNC_NET_OPTS_ARRAY[@]}"
+    else
+        command rclone "$@"
+    fi
+}
+fi
 
 # Logging function that supports different severity levels and optional console output
 # Parameters:

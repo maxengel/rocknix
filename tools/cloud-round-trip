@@ -1124,16 +1124,27 @@ echo "${saw:-0}/${all:-0}"
     prev_saves = dev.run(f"grep -m1 '^SAVES_REMOTE=' {CONF} | cut -d'\"' -f2").strip()
     dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"{rpath('QA-Empty/Saves')}\"|' {CONF}; "
             f"rclone purge {shlex.quote(remote_name + rpath('QA-Empty'))} >/dev/null 2>&1; "
-            f"rclone mkdir {shlex.quote(remote_name + rpath('QA-Empty/Backups'))} >/dev/null 2>&1", check=False)
+            # a file, not mkdir: on a bucket an empty directory does not exist
+            f"rclone touch {shlex.quote(remote_name + rpath('QA-Empty/Backups/.keep'))} >/dev/null 2>&1", check=False)
     rc, out = run_rc(dev, "cloud_restore --yes --saves-only")
     failures += not check(rc == 0 and "nothing in your cloud" in out.lower() and ">>> offer create-saves-folder" in out,
                           "root present, Saves absent: exit 0, the plain line, and the offer",
                           f"exit {rc}: {out.strip()[-200:]!r}")
     dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"{rpath('QA-No-Such-Root/Saves')}\"|' {CONF}")
     rc, out = run_rc(dev, "cloud_restore --yes --saves-only")
-    failures += not check(rc != 0 and ">>> offer" not in out,
-                          f"root absent: the restore fails (exit {rc}) and offers nothing",
-                          f"exit {rc}: {out.strip()[-200:]!r}")
+    if caps().get("bucket") == "yes":
+        # On a bucket an absent root and an empty one are one observation
+        # (rclone's documented shape; #141), so the restore cannot fail here
+        # without failing every fresh bucket too. What it must do is not say
+        # COMPLETED and nothing else: the offer names the full path, which
+        # is where a typo is seen.
+        failures += not check(rc == 0 and f">>> offer create-saves-folder|{rpath('QA-No-Such-Root/Saves')}" in out,
+                              f"root absent on a bucket: indistinguishable from empty, so the offer names the path (exit {rc})",
+                              f"exit {rc}: {out.strip()[-200:]!r}")
+    else:
+        failures += not check(rc != 0 and ">>> offer" not in out,
+                              f"root absent: the restore fails (exit {rc}) and offers nothing",
+                              f"exit {rc}: {out.strip()[-200:]!r}")
     # #127: a saves folder at the cloud's root has the root for a parent,
     # and the root answers, so an empty cloud gets the offer there too.
     dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"{rpath('QA-Root-Saves')}\"|' {CONF}; "
@@ -1147,8 +1158,8 @@ echo "${saw:-0}/${all:-0}"
     # player line names both, so CREATE IT is not the only way forward.
     dev.run(f"sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=\"{rpath('QA-Near/Savez')}\"|' {CONF}; "
             f"rclone purge {shlex.quote(remote_name + rpath('QA-Near'))} >/dev/null 2>&1; "
-            f"rclone mkdir {shlex.quote(remote_name + rpath('QA-Near/Saves'))} >/dev/null 2>&1; "
-            f"rclone mkdir {shlex.quote(remote_name + rpath('QA-Near/Backups'))} >/dev/null 2>&1", check=False)
+            f"rclone touch {shlex.quote(remote_name + rpath('QA-Near/Saves/.keep'))} >/dev/null 2>&1; "
+            f"rclone touch {shlex.quote(remote_name + rpath('QA-Near/Backups/.keep'))} >/dev/null 2>&1", check=False)
     rc, out = run_rc(dev, "cloud_restore --yes --saves-only")
     failures += not check(rc == 0 and f">>> offer create-saves-folder|{rpath('QA-Near/Savez')}|{rpath('QA-Near/Saves')}" in out
                           and f"{rpath('QA-Near/Saves')} but no {rpath('QA-Near/Savez')}" in out,

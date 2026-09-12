@@ -576,12 +576,15 @@ EOF
     # rclone can set and read a modification time. commit: whether a PUT cut
     # in flight leaves nothing (atomic) or a short file under the final name
     # (partial).
+    # bucket: whether a folder is a prefix on object names and nothing else
+    # (rclone: BucketBased), so a folder with no objects does not exist and an
+    # absent one lists as empty -- the shape of #141.
     case "${BACKEND}" in
-      webdav) echo "hash=none modtime=no commit=partial" ;;
-      s3)     echo "hash=md5 modtime=yes commit=atomic" ;;
-      sftp)   echo "hash=none modtime=yes commit=partial" ;;
-      smb)    echo "hash=none modtime=yes commit=partial" ;;
-      ftp)    echo "hash=none modtime=yes commit=partial" ;;
+      webdav) echo "hash=none modtime=no commit=partial bucket=no" ;;
+      s3)     echo "hash=md5 modtime=yes commit=atomic bucket=yes" ;;
+      sftp)   echo "hash=none modtime=yes commit=partial bucket=no" ;;
+      smb)    echo "hash=none modtime=yes commit=partial bucket=no" ;;
+      ftp)    echo "hash=none modtime=yes commit=partial bucket=no" ;;
     esac
     ;;
 
