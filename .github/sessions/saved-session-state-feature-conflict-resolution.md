@@ -1,6 +1,6 @@
 # Saved Session State
 
-> **Saved**: 2026-09-12T10:25:00Z
+> **Saved**: 2026-09-12T11:40:00Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
@@ -12,16 +12,16 @@ Epic #11 (cloud saves). **The nine save-history decisions are all settled with t
 
 ## In Progress
 
-- **#135 merged** (`e1ddfd7ec2`): `tools/time-to-play`, the `time-to-play` suite in `vm-qa` (default, `--quick`), three QA-log columns. Measured on a quiet host, guest c: UI to game 0.63 s (identical on sftp/webdav/s3); exit sync 1.30 s webdav / 1.43 s sftp / 0.79 s s3; game to game 1.01 s (a launch cancels the sync today, 10/10); startup sync 37 s from reboot on sftp; offline: no route 0.5 s, portal 0.9 s, **refused port 12 s, stalled endpoint 321 s** (30 s timeout x 10 low-level retries; no `--max-duration`; `--contimeout` never fired); the stall's outcome lands behind the screensaver at 300 s. Found: `has_default_route` counts an IPv6 default. **Proposals on #135** (comment 5644731807): P-13 3 s; D-CLOUD-111 connect 5 s, stall 5 s with `--low-level-retries 1`, ceiling `--max-duration 20s`; D-CLOUD-112 within 3x online (~5 s). Awaiting the maintainer.
-- The runner's first dispatch of the suite was a hollow PASS (dashes; guest a on Vulkan) -- fixed `da2c2a2bbc` (`--vm` driver swap; `headline_missing` fails a run with no numbers), proven both ways on guest a, blindspot 39; the runner now reports 0.89 / 1.05 / 1.51 s (`qa-a2ee7b9bb2-webdav-a-20260912-0859`); #135 AC 1 ticked.
-- **Running:** the **#129 audit** as a subagent (opus) in `rocknix.worktrees/audit-129` on `audit/129`, milestone tier, scope `next@e1ddfd7ec2` + ES `f93acc2a6`, host-only evidence, read-only ssh to guest c at most.
-- Guests a, b on `a2ee7b9bb2` (pair); guest c on `a2ee7b9bb2`, WebDAV stanza restored, gameexit=1. RG35XX SP on `af2db4ab09`, clean; H700 `a2ee7b9bb2` built, not staged (D-QA-015).
+- **#129 audit done and merged** (`d152c39800`; `docs/audits/2026_09_12-milestone-cloud-saves-since-60/`, lint PASS): 3 high (#144 lifetime test broken and unrun; #145 the empty-cloud offer never reaches the transfer page -- two `>>> ` parsers; #146 the four `RCLONE_NET_OPTS_FALLBACK` constants still at 2 retries), 5 medium (PL-04 strings naming absent controls; PL-05 FINALIZE RESTORE vs FINISH RESTORE SETUP -- maintainer's call; PL-06 a declined exit sync reports nothing -- behaviour choice, #139; PL-07 rocknix.org docs #42; PL-08 D-INFRA-008 is two rows -- maintainer's append), 6 low. Register: 26/26 named rows hold (D-CLOUD-085 bucket hole = #141; D-QA-013 wording), 25 later rows not yet built, D-CLOUD-109 decided-but-unbuilt reversal of 076.
+- **Fixed tonight, on `next` `01143a23ef`:** #146 (constants to 10 + `last-good-scripts-test` case g, proven to fire); #144 (ES `db550efa9` on `test/qa-integration`: harness doubles gain `name` and `CloudText::providerSubtitle`; proven with a compiling use-after-free mutant -> ASan FAIL keyboard; `vm-qa` gains the `lifetime` suite, fail-closed on a missing `ES_SRC`); `pkgcheck` exits non-zero on FAIL; fork-workflow's tool list matches the hook; backuptool's note names a real row; #71 AC 4 edited (PL-09); #127 has its genuinely open box (PL-10).
+- **Running:** the **#145 agent** (opus) in ES worktree `offer-on-page` on `feature/offer-on-page` from `f93acc2a6`: one `>>> ` parser (`classifyProtocolLine` gains Unit/Removed), the offer dialog factored into one shared function, raised by the transfer page on dismissal; unit tests enumerating every script-emitted shape; PL-04 ES strings and PL-12 (WI-FI GPIO; the menu path written as two levels everywhere). It reports a note for `docs/es-menu-map.md`.
+- Guests a, b on `a2ee7b9bb2` (pair, a's driver back on vulkan); guest c on `a2ee7b9bb2`, WebDAV, gameexit=1. RG35XX SP on `af2db4ab09`, clean; H700 `a2ee7b9bb2` built, not staged.
 
 ## Next Steps
 
-1. When the suite run reports: tick #135's first AC if the runner's report carries the numbers; when the audit reports: review its findings, merge `audit/129` into `next`, put the punch list's decisions to the maintainer.
-2. The maintainer's calls: #127 texts (short form); #135's proposed rows (P-13, D-CLOUD-111/112) and the two findings (stall behind the screensaver; IPv6 default route); #141/#142/#143 behaviour on remotes without "a folder that does not exist yet"; staging `a2ee7b9bb2` H700 on the RG35XX SP.
-3. Then #134's build order: #136 -> #137 -> #21 -> #22 -> #23 -> #25 -> #139, with the bounds (D-CLOUD-111) implemented in the scripts as the first small piece once the rows are decided.
+1. When the #145 agent reports: verify by grep, merge into `test/qa-integration` (after `db550efa9`), push; bump the pin on `next`; build x64 (both mounts!) and H700; run `tools/vm-qa` (now six suites); frame the offer on the transfer page on guest c (endpoint whose root lists but `Saves` is absent: `cloud-test-backend put` a sibling folder, `rclone purge` the saves folder); update `docs/es-menu-map.md` from the agent's note; close #144/#145/#146 with the build; work log + QA log rows; then tell the maintainer.
+2. The maintainer's calls: #127 texts (short form); #135's proposed rows (P-13 3 s; D-CLOUD-111 connect 5 s / stall 5 s with one retry / ceiling 20 s; D-CLOUD-112 within 3x online) and the two findings (stall behind the screensaver; IPv6 default route); PL-05 (one name for the relink page); PL-08 (D-INFRA-008 renumber, append-only); #141/#142/#143 behaviour on remotes without "a folder that does not exist yet"; staging `a2ee7b9bb2` (or the next build) H700 on the RG35XX SP.
+3. Then #134's build order: #136 -> #137 -> #21 -> #22 -> #23 -> #25 -> #139, with the bounds (D-CLOUD-111) as the first small piece once decided.
 
 ## Key Files Modified
 
