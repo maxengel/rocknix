@@ -4,7 +4,7 @@ Low-fidelity structure for the cloud-save conflict wizard (#23). **Information
 architecture and interaction only** — what is on screen, what the player can do,
 and where each choice leads. No visual design: no sizes, colours, spacing or
 component choices. Those come later, against
-[es-ui-style-guide.md](es-ui-style-guide.md).
+[es-ui-style-guide.md](../.claude/rules/es-ui-style-guide.md).
 
 Companion to [es-menu-map.md](es-menu-map.md), which places this subtree in the
 wider menu. Rendered low-fidelity wireframes of these screens, with the reasoning
@@ -158,7 +158,7 @@ taken. The escape hatch from a wrong press is the store, not the setting.
 | Losing copy | **always retained** in `Saves/.history/` | same |
 
 KEEP BOTH is **dimmed, not hidden**, on in-game saves — the house rule from
-[es-ui-style-guide.md](es-ui-style-guide.md), and a dimmed control with a reason
+[es-ui-style-guide.md](../.claude/rules/es-ui-style-guide.md), and a dimmed control with a reason
 teaches what a vanished one cannot.
 
 ## Settings

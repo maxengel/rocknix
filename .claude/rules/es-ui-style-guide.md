@@ -1,11 +1,27 @@
+---
+description: "How an EmulationStation screen looks and behaves: the seven row builders, text, confirmations, waiting, saving, reboot flags, buttons, glyphs, gating, and wizards. Read before building or changing any ES screen."
+paths:
+  # ES source lives in the separate `ROCKNIX/emulationstation-next` repo, so no
+  # glob written here can name `es-app/**`. `**` is the widest a repo-relative
+  # glob reaches: it loads this file whenever any file in this repo is in
+  # context, which is every session that touches the distribution tree. A
+  # session working *only* in the ES checkout loads nothing from `.claude/rules/`
+  # at all -- that gap needs rules in the ES repo and is open (#147 § 9).
+  - "**"
+---
+
 # EmulationStation UI style guide
 
 How a screen should look and behave, derived from what this codebase already
 does — not invented. Every rule below is backed by shipped code; where the tree
 is inconsistent, that is said plainly rather than papered over.
 
-Companion: [es-menu-map.md](es-menu-map.md) — where a new screen belongs.
-Deeper background: `.claude/rules/es-native-ui.md`.
+**This was `docs/es-ui-style-guide.md` until 2026-09-12**, where nothing loaded
+it. Maintainer, #147: *"I think it makes sense to make the style guide into an
+instruction rules file so we don't lose it."* (D-WORKFLOW-007.)
+
+Companion: [es-menu-map.md](../../docs/es-menu-map.md) — where a new screen
+belongs. Deeper background: `es-native-ui.md`.
 
 Upstream documents **none** of this: `THEMES.md` covers only repainting menus.
 The Batocera wiki contributes the interaction rules in the last section.
@@ -95,16 +111,16 @@ CAPS. **Match the fork dialect in fork code**; one sentence, ending in a period,
 `X: Y` for direction or scope, naming the concrete consequence:
 
 > `GAME SAVES, SAVE STATES, AND SCREENSHOTS: DEVICE TO CLOUD.`
-> `RESTORE SYSTEM SETTINGS FIRST, THEN RESTART?`
+> `RESTORE SETTINGS FIRST, THEN RESTART?`
 
 The first example carried `SAVESTATES AND SCREENSHOTS` until the #147 sweep:
 one word where the rule says two, and no serial comma. The shipped strings
 were already right (`GuiMenu.cpp:4450`, `:4804`, `:5433`); the style guide's
 model was not, which is the worse way round. *Save state* is two words and
 the last item of a list keeps its comma (`es-native-ui.md` § Conventions,
-D-UI-022/048). The second example quotes `GuiMenu.cpp:4586` verbatim; whether
-the settings tier keeps the word *system* there is #148's question, not the
-style guide's to decide.
+D-UI-022/048). The second example read `RESTORE SYSTEM SETTINGS FIRST` until
+#148 dropped the word *system*: the tier is **settings** (D-UI-022), and
+*system settings* named a tier that does not exist.
 
 Placeholders: `AUTO` for "system decides", `NONE` for explicitly nothing,
 `<NOT SET>` for a missing credential. Passwords display as `*********`, never
