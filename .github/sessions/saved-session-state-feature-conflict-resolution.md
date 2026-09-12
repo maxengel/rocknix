@@ -1,6 +1,6 @@
 # Saved Session State
 
-> **Saved**: 2026-09-12T09:40:00Z
+> **Saved**: 2026-09-12T10:25:00Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
@@ -13,7 +13,8 @@ Epic #11 (cloud saves). **The nine save-history decisions are all settled with t
 ## In Progress
 
 - **#135 merged** (`e1ddfd7ec2`): `tools/time-to-play`, the `time-to-play` suite in `vm-qa` (default, `--quick`), three QA-log columns. Measured on a quiet host, guest c: UI to game 0.63 s (identical on sftp/webdav/s3); exit sync 1.30 s webdav / 1.43 s sftp / 0.79 s s3; game to game 1.01 s (a launch cancels the sync today, 10/10); startup sync 37 s from reboot on sftp; offline: no route 0.5 s, portal 0.9 s, **refused port 12 s, stalled endpoint 321 s** (30 s timeout x 10 low-level retries; no `--max-duration`; `--contimeout` never fired); the stall's outcome lands behind the screensaver at 300 s. Found: `has_default_route` counts an IPv6 default. **Proposals on #135** (comment 5644731807): P-13 3 s; D-CLOUD-111 connect 5 s, stall 5 s with `--low-level-retries 1`, ceiling `--max-duration 20s`; D-CLOUD-112 within 3x online (~5 s). Awaiting the maintainer.
-- **Running:** `vm-qa --skip-up --only time-to-play` on the pair (proves the runner's dispatch, which the agent could not); the **#129 audit** as a subagent (opus) in `rocknix.worktrees/audit-129` on `audit/129`, milestone tier, scope `next@e1ddfd7ec2` + ES `f93acc2a6`, host-only evidence, read-only ssh to guest c at most.
+- The runner's first dispatch of the suite was a hollow PASS (dashes; guest a on Vulkan) -- fixed `da2c2a2bbc` (`--vm` driver swap; `headline_missing` fails a run with no numbers), proven both ways on guest a, blindspot 39; the runner now reports 0.89 / 1.05 / 1.51 s (`qa-a2ee7b9bb2-webdav-a-20260912-0859`); #135 AC 1 ticked.
+- **Running:** the **#129 audit** as a subagent (opus) in `rocknix.worktrees/audit-129` on `audit/129`, milestone tier, scope `next@e1ddfd7ec2` + ES `f93acc2a6`, host-only evidence, read-only ssh to guest c at most.
 - Guests a, b on `a2ee7b9bb2` (pair); guest c on `a2ee7b9bb2`, WebDAV stanza restored, gameexit=1. RG35XX SP on `af2db4ab09`, clean; H700 `a2ee7b9bb2` built, not staged (D-QA-015).
 
 ## Next Steps
