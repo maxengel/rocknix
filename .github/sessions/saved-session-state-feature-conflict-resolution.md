@@ -1,6 +1,6 @@
 # Saved Session State
 
-> **Saved**: 2026-09-12T06:10:00Z
+> **Saved**: 2026-09-12T07:45:00Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
@@ -8,15 +8,15 @@
 
 Epic #11 (cloud saves). **The nine save-history decisions are all settled with the maintainer, one at a time** (D-CLOUD-105..108, 114..117, D-UI-043; plus the rulings raised on the way: D-CLOUD-109 a launch waits for a bounded sync, 110 the stage is one cache, 111 the bound watches progress, 112 the offline benchmark, 113 two transfer contracts; D-UI-040 the exit card says syncing (#138), D-UI-041 the offline reminder (#139), D-UI-042 least surprise as a rule file). Everything is in the tracker: #134 (all P-items ticked), #22, #23, #25, #21, #135, #136, #137, #139. `Saves-replaced` design docs superseded; wizard IA rev 6; menu map current.
 
-**A build is running**: GENERIC_X64 from `d94ca7b159` (ES `6b49a663aa`, the exit-card wording, #138). Next: `tools/vm-qa` on it, and the exit-card frame on guest c (10025, 640x480; Probe.nes planted, GL driver, sync-on-exit on) by launching the NES probe from ES and pressing `esc` to exit RetroArch, screenshots every second for the card. Then H700.
+**`d94ca7b159` (ES `6b49a663aa`, #138 the exit card says SYNCING SAVES TO THE CLOUD) is built for x64 and H700, passed every runner suite on its first pass, and is framed (exit card running and completed; startup card unchanged; transfer page keeps BACK UP). #138 closed; #140 filed (the card's live line joins rclone's stats). H700 tar `a9b762c770fb38be...` under `h700-all-20260912-d94ca7b159/`, **not staged** -- the maintainer's per-device yes (D-QA-008/011/015).
 
 ## In Progress
 
-- x64 build in flight (`scratchpad/build/x64-exitcard.log`). Guests a, b (fresh pair) and c on `af2db4ab09`; c prepared for the frame. RG35XX SP on `af2db4ab09`, clean. No device action without a per-action yes (D-QA-015).
+- Nothing running. Guests a, b (fresh pair) and c on `d94ca7b159`. RG35XX SP on `af2db4ab09`, clean. No device action without a per-action yes (D-QA-015). Lesson: on the VM `esc` does not quit RetroArch; end a game through input_sense's `execute_kill` over ssh; A on a game with save states opens the SAVESTATE MANAGER first (one more A on START NEW GAME).
 
 ## Next Steps
 
-1. Build → `tools/vm-qa` → exit-card frame (#138 acceptance) → H700 build → offer the image for staging (per-device yes).
+1. Offer `d94ca7b159` for staging on the RG35XX SP (per-device yes; stage, then ask before the reboot).
 2. #123 and #127: all boxes ticked; ask the maintainer to close them or say what to change.
 3. **#133** the QA cloud matrix (needed by #135's measurement: SFTP beside WebDAV), then **#129** the audit, then the build in #134's order: #136 → #137 → #21 → #22 → #23 → #25 → #139, with #135's measurement before the limits are set.
 4. Lesson from the walk: put every decision in terms of what the player would see before asking; "budget", "stage", "P-4" meant nothing until then (work log 05:40).
