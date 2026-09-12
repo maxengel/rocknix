@@ -1,23 +1,22 @@
 # Saved Session State
 
-> **Saved**: 2026-09-12T15:15:00Z
+> **Saved**: 2026-09-12T16:10:00Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`)
 
 ## Current Focus
 
-Epic #11 (cloud saves). Tonight (2026-09-12): #140, #133, #135, #129 delivered; the audit's three high findings fixed and closed; #123 closed; D-UI-045. **Then the maintainer's calls, built:** FINISH RESTORE PROCESS (D-UI-046); the automatic sync's bounds (D-CLOUD-118/119: `--automatic` on the startup and exit syncs, `RCLONE_SYNC_NET_OPTS` + `SYNC_CEILING_SECONDS`, the rclone() wrapper under `timeout`; stall 321 s -> 21 s, portal 0.9 s, refused 12 s with ten retries -- five retries + `--transfers 1` gives 3.9 s, proposed to the maintainer, Dropbox-gated); listings retry three times (#143 closed; S3's SDK attempts ARE `--low-level-retries`, 230 s at ten); buckets: a folder exists when its parent lists it, `directory_markers` on in the wizard's S3 stanza (#141 closed; D-CLOUD-120, the maintainer's marker idea approved). **The RG SP's log found the readiness defect**: `cloud_net_ready` waited for NetworkManager's "full" and gave up at 60 s while the device had internet; now any connected state settles on a held route (`86a28bab78`). `next` = `eda17b076a`; the tree to build is `c7fba3b8e6`.
+Epic #11 (cloud saves). Tonight (2026-09-12): #140, #133, #135, #129 delivered; the audit's three high findings fixed and closed; #123 closed; D-UI-045. **Then the maintainer's calls, built:** FINISH RESTORE PROCESS (D-UI-046); the automatic sync's bounds (D-CLOUD-118/119: `--automatic` on the startup and exit syncs, `RCLONE_SYNC_NET_OPTS` + `SYNC_CEILING_SECONDS`, the rclone() wrapper under `timeout`; stall 321 s -> 21 s, portal 0.9 s, refused 12 s with ten retries -- five retries + `--transfers 1` gives 3.9 s, proposed to the maintainer, Dropbox-gated); listings retry three times (#143 closed; S3's SDK attempts ARE `--low-level-retries`, 230 s at ten); buckets: a folder exists when its parent lists it, `directory_markers` on in the wizard's S3 stanza (#141 closed; D-CLOUD-120, the maintainer's marker idea approved). **The RG SP's log found the readiness defect**: `cloud_net_ready` waited for NetworkManager's "full" and gave up at 60 s while the device had internet; now any connected state settles on a held route (`86a28bab78`). **`c7fba3b8e6` is built for x64 and H700 and passed all six runner suites** (reports `qa-c7fba3b8e6-webdav-a-20260912-1523` + `-1546`); H700 tar `ae0c0ddb56583ccc...`, not staged. `next` is at the QA-log commit after `805b603c9d`.
 
 ## In Progress
 
-- **Runner on `34606305a1`** (conditional wrapper; scripts, lifetime, round-trip 149 s, exit, time-to-play PASS; walks running) -- report `qa-34606305a1-webdav-a-20260912-1456`. `205b80c8cf` passed five suites and failed the round trip only on the always-on wrapper shadowing the harness's lock probe.
-- **To build next:** x64 and H700 at `c7fba3b8e6` (parent-listing rule, directory markers, S3 reset fix, budget check) -- the final tree for tonight; runner on it; QA-log rows for 205b80c8cf / 34606305a1 / c7fba3b8e6.
-- Guests a, b (pair) on `34606305a1`; guest c on `205b80c8cf`, WebDAV, `/tmp/qa-bin` holds the staged scripts (identical to c7fba3b8e6's). SFTP (9013) and S3 (9012) backends up on the host. RG35XX SP `af2db4ab09` healthy; RG SP `7eb713bbd9` at 192.168.1.177 (ssh config says .175), healthy apart from the readiness defect; both hold the same ten saves. Nothing staged on either.
+- Nothing running. Guests a, b (pair) and c on `c7fba3b8e6`/`205b80c8cf` (c still on 205b80c8cf, WebDAV, `/tmp/qa-bin` staged scripts). SFTP (9013) and S3 (9012) QA backends up on the host; WebDAV 9010 up. RG35XX SP `af2db4ab09` and RG SP `7eb713bbd9` (192.168.1.177) online, healthy, ten identical saves each; nothing staged on either (D-QA-015).
+- The harness's memory watchdog killed two background runner runs tonight with 30 GB free; a run that must finish is started `setsid nohup` and polled from the foreground.
 
 ## Next Steps
 
-1. Runner done -> build x64 `c7fba3b8e6` (both mounts) -> runner (six suites) -> H700 at the same commit (`build/devices` checkout -B) -> file, strings check -> QA-log rows, work log, session state -> report to the maintainer with the staging question for BOTH handhelds (per device; the RG SP first, it is the one that failed).
-2. The maintainer's remaining calls: five retries + `--transfers 1` for the automatic sync (Dropbox proof on a handheld, with their yes); #127 texts (the short form is in the build); audit PL-08 (D-INFRA-008 renumber); PL-06 (#139); `GuiMenu:4911` BRING DATA BACK; the `rgsp` ssh alias IP.
+1. The maintainer's staging yes, per device: RG SP first (`c7fba3b8e6` fixes its startup sync), then the RG35XX SP -- stage the H700 tar in `~/.update`, verify the device-side checksum, ask before each reboot; afterwards read the startup-sync stamp on the RG SP (`last-sync-startup` should read `completed` where it read `69 no-network`).
+2. The maintainer's remaining calls: five low-level retries + `--transfers 1` for the automatic sync (proven on the VM: refused port 3.9 s; needs a Dropbox device for #107's write lock); #127 texts (short form in the build); audit PL-06 (#139), PL-07 (#42), PL-08 (D-INFRA-008 renumber); `GuiMenu:4911` BRING DATA BACK; the `rgsp` ssh alias points at .175, the device is at .177.
 3. Then #134's build order: #136 -> #137 -> #21 -> #22 -> #23 -> #25 -> #139.
 
 ## Key Files Modified
