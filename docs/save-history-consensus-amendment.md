@@ -51,17 +51,16 @@ a console that is behind with a local change is shown the two versions.
 What D-CLOUD-103 adds is an **assumption the wizard may use**: the two versions were
 made in sequence by one person. So, in #23:
 
-- **Order by publish sequence, name the consoles.** Each version's `<seq>` and manifest
-  entry say which console published it and after which agreement. The compare surface
-  labels the sides *played later on <console name>* and *played earlier on <console
-  name>* (D-CLOUD-106's device names), instead of *cloud* and *this device*. Clocks are
-  not consulted for the order.
+- **Columns as the source has them; order shown, not swapped.** The cloud's version
+  stays on the left and this console's on the right (D-CLOUD-041, D-CLOUD-104). Under
+  each, one line says which console played it and whether it is the later or the
+  earlier session -- *played later on <console name>* / *played earlier on <console
+  name>* (D-CLOUD-106's names) -- ordered by publish sequence, never by clock.
+- **The cursor opens on the newer version** (D-CLOUD-104), whichever column it is in,
+  so the common resolution of a missed sync is one press. D-CLOUD-032 stands: nothing
+  is kept without that press, and the other version is retained in the store.
 - **KEEP BOTH stays first-class.** Both versions are real progress; the retained loser
   and KEEP BOTH are the common resolution of a missed sync, not the edge case.
-- **The open question (D-CLOUD-103, open half):** may the cursor rest on the version
-  played later, so the common case is one press? D-CLOUD-032 forbids a *default* to
-  recency; a pre-selected cursor with the choice still the player's is weaker than a
-  default. The maintainer's call; either reading ships.
 
 When the stage lacks the displaced version (§1, third row) and the case is *not*
 both-changed -- the first pass after cutover on a legacy head -- the retain copies the
@@ -83,12 +82,11 @@ copy, or one download and upload on a backend without it), and marks the entry
 - **#22 R9 (the store):** entries are displaced versions (`replaced`, `discarded`,
   `deleted`, `suspect`, `legacy`); `published` is removed from the reason set; the
   `store_seq` manifest field (P-5) is not needed and is withdrawn.
-- **#23 (the wizard):** the compare surface's side labels and ordering per §3; the
-  open question flagged as the maintainer's.
+- **#23 (the wizard):** the compare surface keeps its columns, gains the later/earlier
+  line under each, and opens with the cursor on the newer version (D-CLOUD-104).
 - **#25 (the reader):** unchanged, minus the `published` label.
 - **Register proposals:** P-5 withdrawn; P-6's ledger replaced by §1's; P-12's residual
-  narrows to the legacy cutover copy; the rest as drafted. New proposal **P-14**: the
-  cursor-on-later question.
+  narrows to the legacy cutover copy; the rest as drafted. P-14 (the cursor) is decided: D-CLOUD-104.
 
 ## 5. What this costs the player, stated
 
