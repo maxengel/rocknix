@@ -119,6 +119,7 @@ vq = importlib.util.module_from_spec(_spec)
 _loader.exec_module(vq)
 
 ROM = "/storage/roms/nes/Probe.nes"
+RETROARCH_CFG = "/storage/.config/retroarch/retroarch.cfg"
 # Busybox pgrep -x compares the whole argv and RetroArch's argv[0] is its
 # full path, so -x never matches it (generic-x64-vm-testing.md). The bracket
 # keeps the pattern from matching the shell that carries it.
@@ -881,6 +882,9 @@ def main():
                     help="the runner's bounded form: one repeat of launch+exit+g2g, no reboot, no fixtures")
     ap.add_argument("--no-configure-remote", action="store_true",
                     help="leave the guest's rclone.conf alone (it already points where you want)")
+    ap.add_argument("--vm", action="store_true",
+                    help="the guest is a QEMU VM with no Vulkan: set RetroArch's video driver to gl "
+                         "for the run and put it back after (the exit test's rule). Never for a handheld.")
     args = ap.parse_args()
 
     if args.quick:
@@ -921,6 +925,15 @@ def main():
                    [g.host + ":" + CLOUD_CONF, saved_cloud], capture_output=True)
     saved_startup = g.sh(". /etc/profile; get_setting cloudsaves.startup")[1]
     saved_gameexit = g.sh(". /etc/profile; get_setting cloudsaves.gameexit")[1]
+    # A QEMU guest has no Vulkan. Left on the image's default, RetroArch
+    # exists for a fifth of a second and never draws, the exit sync never
+    # runs, and every headline number below is a dash -- which is what the
+    # runner's first dispatch of this cell reported as a PASS (2026-09-12).
+    # The exit test has always swapped the driver for its run; so does this.
+    saved_vd = ""
+    if args.vm:
+        saved_vd = g.sh('grep -E "^video_driver" ' + RETROARCH_CFG)[1].strip()
+        g.sh("sed -i 's/^video_driver = .*/video_driver = \"gl\"/' " + RETROARCH_CFG)
     fixtures = []
 
     def restore():
@@ -936,6 +949,9 @@ def main():
         g.sh(". /etc/profile; set_setting cloudsaves.startup %s; set_setting cloudsaves.gameexit %s"
              % (saved_startup or "0", saved_gameexit or "1"), timeout=120)
         g.sh("rm -f /tmp/ttp-kill /tmp/ttp-arm.sh")
+        if args.vm and saved_vd:
+            g.sh("sed -i 's/^video_driver = .*/%s/' %s"
+                 % (saved_vd.replace("\\", "\\\\").replace("/", "\\/").replace("&", "\\&"), RETROARCH_CFG))
         if made["rom"]:
             g.sh("rm -f %s; rmdir /storage/roms/gb 2>/dev/null; true" % GB_PROBE)
 
@@ -1061,14 +1077,41 @@ def main():
         g.drop_master()
 
     report["finished"] = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
+    md = render(report)
+    # A run that ran cleanly and measured nothing is not a pass. The first
+    # dispatch from the runner printed every headline as "-" and exited 0
+    # (RetroArch never drew; see --vm), and the report table said PASS.
+    missing = headline_missing(report)
+    report["headline_missing"] = missing
+    if missing:
+        md += "\n**Not a pass:** " + "; ".join(missing) + ".\n"
     with open(os.path.join(out, "time-to-play.json"), "w") as fh:
         json.dump(report, fh, indent=1)
-    md = render(report)
     with open(os.path.join(out, "time-to-play.md"), "w") as fh:
         fh.write(md)
     print(md)
     print("frames and json: %s" % out)
+    if missing:
+        print("time-to-play: FAIL -- " + "; ".join(missing), file=sys.stderr)
+        return 1
     return 0
+
+
+def headline_missing(report):
+    """The numbers this cell exists to report, and how many repeats lacked
+    each. An assertion that cannot fail is not evidence
+    (engineering-practices.md), and a table of dashes under a PASS line is
+    exactly that. Cells that did not run are not judged."""
+    checks = [("launch", "t_first_game_frame", "the game's first frame"),
+              ("exit", "t_sync_stamp", "the exit sync's stamp"),
+              ("g2g", "t_second_game_frame", "the next game's first frame")]
+    out = []
+    for cell, field, what in checks:
+        rows = report["cells"].get(cell) or []
+        n = sum(1 for r in rows if r.get(field) is None)
+        if n:
+            out.append("%s missing in %d of %d %s repeat(s)" % (what, n, len(rows), cell))
+    return out
 
 
 def measure_startup(g, fr, args, out, rom=ROM):

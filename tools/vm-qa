@@ -103,7 +103,7 @@ case ",$ONLY," in *,exit,*)       run_suite exit       "$OUT/exit.log"       "$R
 case ",$ONLY," in *,time-to-play,*)
   run_suite time-to-play "$OUT/time-to-play.log" "$ROOT/tools/time-to-play" \
     --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --monitor "$MON" \
-    --backend "$BACKEND" --out "$OUT/time-to-play" --quick \
+    --backend "$BACKEND" --out "$OUT/time-to-play" --quick --vm \
     --label "vm-qa on $(hostname -s), guest $GUEST" ;;
 esac
 # The link cells are timing-bound (a run must end within 90 s of the cut), so
