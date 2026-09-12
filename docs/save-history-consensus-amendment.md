@@ -106,3 +106,11 @@ retain from the stage and the heal from the stage (D-CLOUD-108) read that cache 
 are unchanged. R6's "an automatic pass holding the lock is cancelled" becomes "is
 waited for, to its budget"; #21's seal copy of the new version is dropped.
 
+## 7. The heal, after the maintainer's review (2026-09-12)
+
+D-CLOUD-114: the card names the emulator as the source of the corrupted file and says
+it was replaced with the last known good version and kept with the earlier versions;
+the suspect file's bytes are kept in `.history/` as a real version (F13's exact
+descriptor is not enough -- the player may want to look at or restore the file), shown
+by #25 as SET ASIDE AS DAMAGED. The second occurrence for a game still asks.
+
