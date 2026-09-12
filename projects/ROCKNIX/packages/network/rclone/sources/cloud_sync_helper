@@ -396,6 +396,21 @@ main() {
     log_to_file "${log_file}" "RCLONE_NET_OPTS still held the two-low-level-retry bound, which fails a Dropbox backup whenever a save is replaced; set back to rclone's ten. This is done once; a value you have edited yourself is left alone."
   fi
 
+  # The automatic sync's bound, for a device that got its first cut
+  # (2026-09-12, ten low-level retries left to the caller) before the
+  # maintainer's baseline of five retries and one transfer at a time
+  # (D-CLOUD-121) shipped the same day. Same shape as above: rewritten only
+  # while it is still exactly the first-cut value, once, with a marker.
+  if [ -f "/storage/.config/cloud_sync.conf" ] \
+     && [ ! -f "/storage/.config/.cloud_sync-sync-net-opts-five-applied" ] \
+     && grep -qF 'RCLONE_SYNC_NET_OPTS="--contimeout 5s --timeout 5s --retries 1 --max-duration 20s"' \
+             /storage/.config/cloud_sync.conf; then
+    sed -i 's|^RCLONE_SYNC_NET_OPTS=.*|RCLONE_SYNC_NET_OPTS="--contimeout 5s --timeout 5s --retries 1 --max-duration 20s --low-level-retries 5 --transfers 1"|' \
+        /storage/.config/cloud_sync.conf
+    touch /storage/.config/.cloud_sync-sync-net-opts-five-applied 2>/dev/null
+    log_to_file "${log_file}" "RCLONE_SYNC_NET_OPTS held the first-cut automatic bound; set to five low-level retries and one transfer at a time (D-CLOUD-121)"
+  fi
+
   return 0
 }
 
