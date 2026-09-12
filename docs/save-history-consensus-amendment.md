@@ -94,3 +94,15 @@ Interface to first frame: unchanged. Exit to the next first frame: unchanged in 
 worst case; the exit sync is longer by one upload of the changed save's size and one
 spawn, measured by #135 before the budget is set. A missed sync is one wizard page,
 ordered so the later session is obvious, with KEEP BOTH beside the choice.
+
+## 6. The launch rule and the stage, after the maintainer's review (2026-09-12)
+
+D-CLOUD-109 replaces cancel-on-launch: a launch waits for an in-flight exit sync,
+which bounds itself to a budget of a few seconds (#135) and past it ends with a
+connectivity outcome; never minutes; time-based bounds; connectivity checks first.
+D-CLOUD-110 shrinks the stage to the last-agreed-version cache: the new save is hashed
+and uploaded from the ROM folder, since nothing writes it during the upload. The
+retain from the stage and the heal from the stage (D-CLOUD-108) read that cache and
+are unchanged. R6's "an automatic pass holding the lock is cancelled" becomes "is
+waited for, to its budget"; #21's seal copy of the new version is dropped.
+

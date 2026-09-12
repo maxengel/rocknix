@@ -25,6 +25,11 @@ because it can help guide our decision-making."* D-CLOUD-098, #135.
   said the player may go, not between the press and the frame.
 - **A setting that trades speed for safety says its price** in seconds, where it is
   turned on.
+- **A sync the player can see is never cancelled by a launch; it is bounded instead**
+  (D-CLOUD-109). The launch waits; the sync gets a budget of a few seconds set from
+  measurement, checks connectivity first, and past the budget ends with an outcome the
+  player can act on. A sync never takes minutes. Maintainer, 2026-09-12: "If they think a
+  sync is happening, they think a sync is happening."
 - **Retros and plans name it.** Every phase retro asks what the phase did to time to
   play; every plan for a cloud or interface change states its effect on the two numbers
   before it is built.
