@@ -359,7 +359,10 @@ $B/toolchain/bin/cmake --build build-tests --target es-unit-tests && ./build-tes
   THE CLOUD. **Never "system backup"** — it held people to expecting their
   games in it — and never "save data", "configurations", "everything", or
   "cloud library". *Sync* is reserved for the automatic two-way behaviour
-  saves get after #22, where a player never picks a direction. The wizard's
+  saves get after #22, where a player never picks a direction. The
+  automatic cards already speak it: SYNCING SAVES AT STARTUP, SYNCING SAVES TO THE
+  CLOUD after a game (D-UI-040); *back up* is the deliberate, possibly long action
+  on the transfer page (D-CLOUD-113). The wizard's
   kept losers are **discarded saves**; *discard* means nothing else.
 - **"Wi-Fi", hyphenated**, in every user-visible string. The settings keys stay
   `wifi.key` / `wifi.ssid` — an identifier is not a reason to spell the label
