@@ -691,3 +691,13 @@ worry about.
 The frames are meant to be *read* — by a person or an image model — which catches
 what code review cannot. Its first run found a shipped defect: Cloud Tools actions
 rendered without their scope descriptions whenever no remote was configured.
+
+## The credential filter is for a guest's files, not for a harness's verdicts
+
+Guest and device reads go through `grep -v -i -E 'key|pass|token|user|psk'` so a
+value never lands in a transcript. Applied to a harness log it deletes every
+`PASS` line -- a proofs run on 2026-09-13 lost its own verdicts that way. For
+host-side harness output (`tools/vm-qa`, `tools/cloud-round-trip`,
+`tools/last-good-scripts-test`) filter on the shapes a value would take,
+`grep -v -i -E 'passw|pass=|pass:|token=|key='`, and keep the verdicts; the
+strict filter stays for anything read from `/storage`.
