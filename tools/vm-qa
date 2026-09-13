@@ -21,7 +21,8 @@
 #   lifetime    ES tests/cloud-oauth-lifetime.py -- the wizard's page lifetimes under ASan, on the host (ES_SRC)
 #   vocabulary  tools/vocabulary-check       -- back up / backup as verb / noun, ES strings and script lines, on the host
 #   register    tools/register-check         -- the decision register: every ID once, every citation names a row, on the host (ES_SRC)
-#   pair-identity  the two guests' MACs, cloud_device_ids (#91) and hostnames (#50) differ, over ssh
+#   pair-identity  the two guests' MACs, cloud_device_ids (#91) and hostnames (#50) differ, and each
+#               answers for its own name over mDNS (#50 box 6, #151 PL-01), over ssh
 #   round-trip  tools/cloud-round-trip        -- 27 steps over SSH against the QA cloud, guest a
 #   exit        tools/emulator-exit-test --vm -- the exit hotkey ends a game once, save written, guest a
 #   time-to-play tools/time-to-play --quick   -- UI to a game's first frame, and one game's exit to the
@@ -53,7 +54,7 @@ while [ $# -gt 0 ]; do
     --backend) BACKEND=$2; shift 2 ;;
     --link) LINK=1; shift ;;
     --list) printf '%s\n' $SUITES; exit 0 ;;
-    -h|--help) sed -n '5,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '5,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) IMAGE=$1; shift ;;
   esac
 done
@@ -152,15 +153,17 @@ case ",$ONLY," in *,register,*)   run_suite register   "$OUT/register.log"   reg
 # sharing an identity would have gone unnoticed (hygiene pass, 2026-09-12).
 # Seconds, over ssh, before anything else touches the pair.
 pair_identity_suite() {
-  local ka kb ia ib
+  # Every check runs and every failure is printed before the suite fails, so
+  # one shared name does not hide a wrong mDNS name behind it (#151 PL-01).
+  local bad=0 ka kb ia ib
   ka=$(ssh -n -i "$KEY" -p 10022 $SSHO root@127.0.0.1 'cat /sys/class/net/eth0/address' 2>/dev/null)
   kb=$(ssh -n -i "$KEY" -p 10023 $SSHO root@127.0.0.1 'cat /sys/class/net/eth0/address' 2>/dev/null)
   ia=$(ssh -n -i "$KEY" -p 10022 $SSHO root@127.0.0.1 '. /etc/profile; cloud_device_id 2>/dev/null | head -1' 2>/dev/null)
   ib=$(ssh -n -i "$KEY" -p 10023 $SSHO root@127.0.0.1 '. /etc/profile; cloud_device_id 2>/dev/null | head -1' 2>/dev/null)
   echo "guest a: mac=${ka:-?} id=${ia:-?}"; echo "guest b: mac=${kb:-?} id=${ib:-?}"
   [ -n "$ka" ] && [ -n "$kb" ] && [ -n "$ia" ] && [ -n "$ib" ] || { echo "a guest did not answer; the pair's identity is unproven"; return 1; }
-  [ "$ka" != "$kb" ] || { echo "the guests share a MAC"; return 1; }
-  [ "$ia" != "$ib" ] || { echo "the guests share a cloud_device_id"; return 1; }
+  [ "$ka" != "$kb" ] || { echo "FAIL: the guests share a MAC"; bad=1; }
+  [ "$ia" != "$ib" ] || { echo "FAIL: the guests share a cloud_device_id"; bad=1; }
   # And two names (#50, D-NET-002): the shipped family name becomes the
   # unit's own at boot, so the kernel names differ and each equals the
   # cleaned form of its own stored setting. An image from before #50 fails
@@ -172,9 +175,30 @@ pair_identity_suite() {
   sb=$(ssh -n -i "$KEY" -p 10023 $SSHO root@127.0.0.1 '. /etc/profile; clean_hostname "$(get_setting system.hostname)"' 2>/dev/null)
   echo "guest a: hostname=${ha:-?} setting=${sa:-?}"; echo "guest b: hostname=${hb:-?} setting=${sb:-?}"
   [ -n "$ha" ] && [ -n "$hb" ] || { echo "a guest did not answer its hostname"; return 1; }
-  [ "$ha" != "$hb" ] || { echo "the guests share a hostname (${ha}): the shipped family name was not made the unit's own"; return 1; }
-  [ "$ha" = "$sa" ] && [ "$hb" = "$sb" ] || { echo "a kernel hostname differs from its stored setting"; return 1; }
-  echo "two devices, two names"
+  [ "$ha" != "$hb" ] || { echo "FAIL: the guests share a hostname (${ha}): the shipped family name was not made the unit's own"; bad=1; }
+  [ "$ha" = "$sa" ] && [ "$hb" = "$sb" ] || { echo "FAIL: a kernel hostname differs from its stored setting"; bad=1; }
+  # And each answers for its own name over mDNS (#50 box 6, D-NET-003; audit
+  # #151 PL-01): avahi logs `Host name is <x>.local` when it publishes, and
+  # <x> has to be the kernel name network-base-setup wrote. The daemon reads
+  # the kernel name when it comes up, so a unit that starts before the write
+  # publishes the image's name for the whole boot -- on 519f40aa0c guest b
+  # answered for ROCKNIX.local while named GENERIC-X64-0964, and nothing
+  # corrected it. The last `Host name is` line is the one in force; none at
+  # all is a FAIL too -- a responder that has not published, or a journal
+  # this could not read, is not a responder proven to answer.
+  local ma mb
+  ma=$(ssh -n -i "$KEY" -p 10022 $SSHO root@127.0.0.1 'journalctl -b -u avahi-daemon -o cat 2>/dev/null | sed -n "s/.*Host name is \([^ .]*\)\.local.*/\1/p" | tail -1' 2>/dev/null)
+  mb=$(ssh -n -i "$KEY" -p 10023 $SSHO root@127.0.0.1 'journalctl -b -u avahi-daemon -o cat 2>/dev/null | sed -n "s/.*Host name is \([^ .]*\)\.local.*/\1/p" | tail -1' 2>/dev/null)
+  local pa=${ma:+$ma.local} pb=${mb:+$mb.local}
+  echo "guest a: mdns=${pa:-?}"; echo "guest b: mdns=${pb:-?}"
+  if [ -z "$ma" ] || [ -z "$mb" ]; then
+    echo "FAIL: a guest's avahi journal has no 'Host name is' line: the responder has not published, or the journal could not be read"; bad=1
+  else
+    [ "$ma" = "$ha" ] || { echo "FAIL: guest a answers over mDNS for ${ma}.local while named ${ha}: the responder published before network-base-setup wrote the name"; bad=1; }
+    [ "$mb" = "$hb" ] || { echo "FAIL: guest b answers over mDNS for ${mb}.local while named ${hb}: the responder published before network-base-setup wrote the name"; bad=1; }
+  fi
+  [ "$bad" = 0 ] || return 1
+  echo "two devices, two names, each answering for its own over mDNS"
 }
 case ",$ONLY," in *,pair-identity,*) run_suite pair-identity "$OUT/pair-identity.log" pair_identity_suite ;; esac
 case ",$ONLY," in *,round-trip,*) run_suite round-trip "$OUT/round-trip.log" "$ROOT/tools/cloud-round-trip" --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --backend "$BACKEND" ;; esac
