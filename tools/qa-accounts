@@ -46,22 +46,39 @@ q() { printf '%q' "$1"; }
 if [ "${WHAT}" = ra ]; then
     need RA_QA_USER RA_QA_PASSWORD RA_QA_WEBKEY
     g ". /etc/profile; set_setting global.retroachievements 1; set_setting global.retroachievements.username $(q "${RA_QA_USER}"); set_setting global.retroachievements.password $(q "${RA_QA_PASSWORD}"); set_setting global.retroachievements.key $(q "${RA_QA_WEBKEY}")" >/dev/null
-    echo "set on :${PORT}: global.retroachievements=1 global.retroachievements.username global.retroachievements.password global.retroachievements.key (read by the interface at its next start: reboot the guest)"
+    # Report what the device holds, not what was intended.
+    got=$(g '. /etc/profile; for k in global.retroachievements.username global.retroachievements.password global.retroachievements.key; do [ -n "$(get_setting $k)" ] && printf "%s " "$k"; done')
+    echo "set on :${PORT}: global.retroachievements=1 ${got}(read by the interface at its next start: reboot the guest)"
+    case "${got}" in *username*password*key*) exit 0 ;; *) echo "qa-accounts: a value did not land" >&2; exit 1 ;; esac
 else
     # An account, a developer pair, or both -- whichever the file holds. A
     # pair alone is enough for a real scrape (anonymous quota) and for the
-    # wrong-password case with a made-up account planted beside it.
+    # wrong-password case with a made-up account planted beside it. Only the
+    # names being written are replaced; the other pair's lines stay.
+    #
+    # The lines travel over ssh's stdin, never through a second shell's
+    # quoting: sent as an argument they lost their attribute quotes and left
+    # es_settings.cfg unparseable, which the interface answered by ignoring
+    # the whole file (2026-09-13). Written with a rename, verified by reading
+    # the names back.
     xml() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/"/\&quot;/g'; }
-    lines=""; names=""
+    lines=""; names=""; drop=""
     if [ -n "${SS_QA_USER:-}" ] && [ -n "${SS_QA_PASSWORD:-}" ]; then
-        lines="\t<string name=\"ScreenScraperUser\" value=\"$(xml "${SS_QA_USER}")\" />\n\t<string name=\"ScreenScraperPass\" value=\"$(xml "${SS_QA_PASSWORD}")\" />"
-        names="ScreenScraperUser ScreenScraperPass"
+        lines="$(printf '\t<string name="ScreenScraperUser" value="%s" />\n\t<string name="ScreenScraperPass" value="%s" />' "$(xml "${SS_QA_USER}")" "$(xml "${SS_QA_PASSWORD}")")"
+        names="ScreenScraperUser ScreenScraperPass"; drop='User\|Pass'
     fi
     if [ -n "${SS_QA_DEVID:-}" ] && [ -n "${SS_QA_DEVPASSWORD:-}" ]; then
-        lines="${lines}${lines:+\n}\t<string name=\"ScreenScraperDevId\" value=\"$(xml "${SS_QA_DEVID}")\" />\n\t<string name=\"ScreenScraperDevPass\" value=\"$(xml "${SS_QA_DEVPASSWORD}")\" />"
-        names="${names}${names:+ }ScreenScraperDevId ScreenScraperDevPass"
+        more="$(printf '\t<string name="ScreenScraperDevId" value="%s" />\n\t<string name="ScreenScraperDevPass" value="%s" />' "$(xml "${SS_QA_DEVID}")" "$(xml "${SS_QA_DEVPASSWORD}")")"
+        lines="${lines}${lines:+
+}${more}"; names="${names}${names:+ }ScreenScraperDevId ScreenScraperDevPass"; drop="${drop}${drop:+\|}DevId\|DevPass"
     fi
     [ -n "${names}" ] || { echo "qa-accounts: neither SS_QA_USER/SS_QA_PASSWORD nor SS_QA_DEVID/SS_QA_DEVPASSWORD is set in ${FILE}" >&2; exit 1; }
-    g "F=/storage/.config/emulationstation/es_settings.cfg; sed -i '/name=\"ScreenScraper\(User\|Pass\|DevId\|DevPass\)\"/d' \$F; sed -i \"s|</config>|$(printf '%s' "${lines}" | sed 's/|/\\|/g')\n</config>|\" \$F; grep -c 'name=\"ScreenScraper' \$F" >/dev/null
-    echo "set on :${PORT}: ${names} (es_settings.cfg; the interface reads it at its next start: reboot the guest)"
+    printf '%s\n' "${lines}" | ssh -i "${KEY}" -p "${PORT}" "${SSHO[@]}" root@127.0.0.1 "F=/storage/.config/emulationstation/es_settings.cfg
+        grep -v '</config>' \$F | grep -v 'name=\"\{0,1\}ScreenScraper\(${drop}\)\"\{0,1\} ' > \$F.new
+        cat >> \$F.new
+        echo '</config>' >> \$F.new
+        mv \$F.new \$F" || { echo "qa-accounts: the write failed" >&2; exit 1; }
+    got=$(g 'grep -o "name=\"ScreenScraper[A-Za-z]*\" value=\"[^\"][^\"]*\"" /storage/.config/emulationstation/es_settings.cfg | sed "s/^name=\"//; s/\" value=.*//" | tr "\n" " "')
+    echo "es_settings.cfg on :${PORT} now holds, with values: ${got}(the interface reads it at its next start: reboot the guest)"
+    for n in ${names}; do case " ${got}" in *" ${n} "*) ;; *) echo "qa-accounts: ${n} did not land" >&2; exit 1 ;; esac; done
 fi
