@@ -976,9 +976,11 @@ echo "  n. a deliberate cloud_backup ends a transfer that stops making progress 
 # runs. The hang -- rclone's shape on S3 after a cut: an upload that sits
 # and then completes once the link is back (#153) -- must be ended at the
 # ceiling: exit non-zero, no success stamp, the why on the protocol line,
-# Couldn't finish ... Try again. as the outcome line, within a bound the old
-# scripts cannot meet (their run waits the shim's 40 s out, exits 0 and
-# stamps success). A plain run must still complete, stamp 0 and end on the
+# Couldn't finish ... Try again. as the outcome line -- on a line of its own,
+# since the kill lands inside rclone's redraw and its last line has no
+# newline -- within a bound the old scripts cannot meet (their run waits
+# the shim's 40 s out, exits 0 and stamps success). A plain run must still
+# complete, stamp 0 and end on the
 # sentence the LINK cells accept. A transfer that keeps printing progress
 # for longer than the ceiling must not be ended -- what tells a stall
 # ceiling from a fixed one; the old scripts pass that by having none.
@@ -1020,6 +1022,10 @@ case "${verb}" in
     copyto)
         src=$1; dst=$(local_of "$2")
         if [ -e /run/hang ]; then
+            # One redraw first, ending on the per-file line the way rclone
+            # leaves it on a pipe: no newline. A kill inside it left the
+            # script's next sentence glued to it (LINK5 on MinIO, 2026-09-13).
+            printf 'Transferred:   \t   0 B / 2 MiB, 0%%, 0 B/s, ETA -\nTransferred:            0 / 1, 0%%\nElapsed time:  1.0s\nTransferring:\n * blob.tar.gz:  0%% /2Mi, 0/s, -'
             trap 'kill "${sp}" 2>/dev/null; exit 143' TERM
             sleep 40 & sp=$!; wait "${sp}"
         fi
@@ -1073,6 +1079,14 @@ stamp_n="$(cat "${STAMP}" 2>/dev/null)"
 grep -q '^>>> why YOUR CLOUD STOPPED ANSWERING$' "${OUT}"; check $? "the why on the protocol line: YOUR CLOUD STOPPED ANSWERING" "no such why line; protocol lines: $(grep '^>>> ' "${OUT}" | tr '\n' '|' | cut -c1-160)"
 last="$(last_prose "${OUT}")"
 echo "${last}" | grep -qE "^Couldn't finish\b.*[.!]$" && echo "${last}" | grep -qi 'try again'; check $? "the outcome line is Couldn't finish ... Try again. ('${last}')" "the outcome line is '${last}'"
+# The kill lands inside rclone's redraw, whose last line carries no newline;
+# the wrapper closes it, so whatever the script prints next -- here
+# report_rclone_error's sentence, on the S3 guest the outcome sentence
+# itself -- starts a line of its own. Without that, every reader that
+# takes the stream by lines sees rclone's line and never the sentence
+# (LINK5 on MinIO, 4d7eb1f303, 2026-09-13). The shim's per-file line is
+# known exactly, so the test is that it stands as a whole line.
+grep -qxF ' * blob.tar.gz:  0% /2Mi, 0/s, -' "${OUT}"; check $? "rclone's open progress line was closed before the script spoke again: the per-file line stands whole" "the script's next sentence is glued to rclone's last progress line, which had no newline: '$(sed 's/\x1b\[[0-9;]*m//g' "${OUT}" | grep -F ' * blob.tar.gz:' | tail -1 | cut -c1-110)' (#153, LINK5 on MinIO, 2026-09-13)"
 grep -q 'stall ceiling 9s' "${NLOG}"; check $? "the ceiling is sized from the conf's --timeout 3s (9 s with the grace)" "log: $(grep -o 'stall ceiling[^|]*' "${NLOG}" | head -1)"
 [ -z "$(ls -d "${N}/varrun"/cloud_sync.*/ 2>/dev/null)" ]; check $? "no fifo or trace is left under /var/run" "left behind: $(ls "${N}/varrun" | tr '\n' ' ')"
 rm -f "${N}/run/hang"; : > "${NLOG}"

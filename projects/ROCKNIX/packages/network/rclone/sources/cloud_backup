@@ -244,7 +244,7 @@ advance_mark() {
 # printed afterwards overtakes rclone's last block.
 bounded_rclone() {
     local dir="${CEILING_DIR_ROOT}/cloud_sync.${$}.${RANDOM}" fifo trace pid tee_pid rc
-    local mark high="0 0 0 0" new since now ticks=0 ended=0 n
+    local mark high="0 0 0 0" new since now ticks=0 ended=0 n progress_verb=0
     if ! mkdir -p "${dir}" 2>/dev/null || ! mkfifo "${dir}/fifo" 2>/dev/null; then
         # Nowhere to trace through. On a device /var/run is tmpfs and this
         # does not happen; when it does, the call runs as it did before the
@@ -260,6 +260,7 @@ bounded_rclone() {
     local -a args=("$@")
     case "$1" in
         copy|copyto|sync|move|moveto)
+            progress_verb=1
             local has_progress=0 a
             for a in "$@"; do
                 case "${a}" in --progress|-P) has_progress=1 ;; esac
@@ -302,6 +303,22 @@ bounded_rclone() {
     while [ "${n}" -lt 30 ] && child_running "${tee_pid}"; do sleep 0.1; n=$((n + 1)); done
     kill -KILL "${tee_pid}" 2>/dev/null
     wait "${tee_pid}" 2>/dev/null
+    # rclone ends each redraw of its stats block on a " * file" line with no
+    # newline (the rule's "Progress output"), so a transfer ended inside a
+    # redraw -- the ceiling's kill lands there -- leaves that line open on
+    # the stream, and the sentence the caller prints next is glued to it:
+    # " * ...SETTINGS.tar.gz:  0% / 12.011 MiB, 0 B/s, -Couldn't finish:
+    # lost the network during the settings backup." (LINK5 on MinIO,
+    # 4d7eb1f303, 2026-09-13). Every reader that takes the stream by lines
+    # -- the card, the page, the round-trip's outcome gate -- then sees
+    # rclone's line and never the outcome. When the block was left open,
+    # close it; only on the verbs whose stdout is the block, so a listing
+    # the caller captures is handed over byte for byte. A block that ended
+    # on its own newline gets nothing, and neither reader minds a blank
+    # line (CloudText::liveLine reads one as nothing).
+    if [ "${progress_verb}" -eq 1 ] && [ -s "${trace}" ] && [ -n "$(tail -c1 "${trace}")" ]; then
+        printf '\n'
+    fi
     rm -rf "${dir}" 2>/dev/null
     if [ "${ended}" -eq 1 ]; then
         log_message "rclone $1 made no progress for ${DELIBERATE_CEILING_SECONDS}s and was ended (it returned ${rc}); reporting 124" "false" "WARN"
