@@ -57,8 +57,12 @@ and every package before it from the old — a mixed image, with no error and a
 `BUILD_ID` that names only one of the two. It happened on 2026-09-04: `rclone`
 (seq 632) picked up commits landed mid-build while the other 660 packages did
 not. Benign that time because the late commits touched only `rclone`; the next
-time it will not be. Check `docker ps` for a `rocknix-build` container before
-running `sync`, and if one is up, wait.
+time it will not be. Check for a running build before `sync`, and if one is up, wait -- with
+`pgrep -f 'make docker-[A-Z]'`, not `docker ps | grep rocknix-build`: the build
+containers carry random names (`jolly_turing`), so that grep answered zero all
+day on 2026-09-13 while an SM8550 build ran. While a device build is in flight,
+fast-forward another build worktree by hand (`git -C <worktree> merge --ff-only
+next`) rather than with `sync`, which walks every build worktree at once.
 
 It deliberately takes **no target argument**. It walks every build worktree at
 once, so an arbitrary ref moves all of them together; while this function was
