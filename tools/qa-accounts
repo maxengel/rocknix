@@ -33,8 +33,13 @@
 # missing or already-broken file is an error, not a new invalid file),
 # rebuilds beside the original, parses the rebuild on the host, and only
 # then puts it in place. `clear` takes out everything `ra` and `screenscraper`
-# wrote except the global.retroachievements switch itself, whose earlier value
-# it cannot know.
+# wrote, and what the interface wrote from them: EmulationStation stores the
+# session token as global.retroachievements.token after a login (the page's
+# save and NetworkThread), and the guest is not clean while it holds one
+# (#166). Not the global.retroachievements switch itself, whose earlier value
+# it cannot know, and not the OFFLINE RETROACHIEVEMENTS toggle's keys: those
+# are the toggle's, not the account's, and only raofflineproxy-ctl disable
+# takes the toggle out with its marker and service.
 set -uo pipefail
 FILE="${QA_ACCOUNTS:-$HOME/.ROCKNIX/qa-accounts}"
 PORT="${1:-}"; WHAT="${2:-}"
@@ -43,12 +48,14 @@ SSHO=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ER
 case "${PORT}" in 1002[2-9]) ;; *) echo "qa-accounts: <ssh-port> must be a QA guest's (10022-10029)" >&2; exit 2 ;; esac
 case "${WHAT}" in ra|screenscraper|clear) ;; *) echo "qa-accounts: ra, screenscraper or clear" >&2; exit 2 ;; esac
 CFG=/storage/.config/emulationstation/es_settings.cfg
+# What `ra` writes, and the token the interface writes from it.
+RA_KEYS="global.retroachievements.username global.retroachievements.password global.retroachievements.key global.retroachievements.token"
 g() { ssh -n -i "${KEY}" -p "${PORT}" "${SSHO[@]}" root@127.0.0.1 "$@"; }        # nothing on stdin
 feed() { ssh -i "${KEY}" -p "${PORT}" "${SSHO[@]}" root@127.0.0.1 "$@"; }        # the values, on stdin
 parse() { python3 -c 'import xml.etree.ElementTree as E,sys; E.parse(sys.stdin)' 2>/dev/null; }
 if [ "${WHAT}" = clear ]; then
     g '. /etc/profile; F=/storage/.config/emulationstation/es_settings.cfg; [ -f "$F" ] || exit 3
-       for k in global.retroachievements.username global.retroachievements.password global.retroachievements.key; do set_setting $k default; done
+       for k in '"${RA_KEYS}"'; do set_setting $k default; done
        sed -i "/name=\"ScreenScraper\(User\|Pass\|DevId\|DevPass\)\"/d" "$F"' >/dev/null
     rc=$?
     case "${rc}" in
@@ -57,12 +64,12 @@ if [ "${WHAT}" = clear ]; then
         *) echo "qa-accounts: clear on :${PORT} did not run (ssh exit ${rc})" >&2; exit 1 ;;
     esac
     # What the guest holds now. Names only.
-    left=$(g '. /etc/profile; for k in global.retroachievements.username global.retroachievements.password global.retroachievements.key; do [ -n "$(get_setting $k)" ] && printf "%s " "$k"; done
+    left=$(g '. /etc/profile; for k in '"${RA_KEYS}"'; do [ -n "$(get_setting $k)" ] && printf "%s " "$k"; done
               grep -o "name=\"ScreenScraper\(User\|Pass\|DevId\|DevPass\)\"" /storage/.config/emulationstation/es_settings.cfg | tr "\n" " "; exit 0') \
         || { echo "qa-accounts: could not read :${PORT} back after clear" >&2; exit 1; }
     [ -z "${left// /}" ] || { echo "qa-accounts: still set on :${PORT}: ${left}" >&2; exit 1; }
     g "cat ${CFG}" | parse || { echo "qa-accounts: ${CFG} on :${PORT} does not parse after clear" >&2; exit 1; }
-    echo "cleared: global.retroachievements.username global.retroachievements.password global.retroachievements.key ScreenScraperUser ScreenScraperPass ScreenScraperDevId ScreenScraperDevPass"
+    echo "cleared: ${RA_KEYS} ScreenScraperUser ScreenScraperPass ScreenScraperDevId ScreenScraperDevPass"
     exit 0
 fi
 [ -f "${FILE}" ] || { echo "qa-accounts: no ${FILE} -- see the header for its shape" >&2; exit 1; }
