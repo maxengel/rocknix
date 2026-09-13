@@ -126,8 +126,11 @@ auth_port_busy() {
 #
 # rclone reports the distinction itself, so no provider list is hardcoded.
 # Returns 0 when the path will work; prints a reason and returns 1 when not.
-# Listings that decide something get a bound (as the sync scripts' do): a
-# cloud that never answers is a refusal in 30 s, not a wizard that hangs.
+# Listings that decide something get a bound (as the sync scripts' do) -- the
+# folder probe below and the parent walk alike; `backend features` asks
+# rclone about itself and makes no round trip: a cloud that never answers is
+# a refusal in 30 s, not a wizard that hangs. Until #151 PL-15 the probe was
+# the one unbounded listing here, and this comment covered only the walk.
 readonly -a RCLONE_LIST_OPTS=(--contimeout 15s --timeout 30s --low-level-retries 3 --retries 1)
 # Is this remote path missing, rather than unreadable? rclone answers "not
 # found" (exit 3) when the server's reply is the one it maps to that, and a
@@ -181,7 +184,7 @@ syncpath_problem() {
     # would type on a second device -- was refused as "your provider would
     # not accept this folder", with the folder's own contents quoted as the
     # reason (found by the A3 fixture on the VM pair, 2026-09-06).
-    probe=$(rclone lsd "${remote}${path#/}" --log-level ERROR 2>&1 >/dev/null | head -2)
+    probe=$(rclone lsd "${remote}${path#/}" "${RCLONE_LIST_OPTS[@]}" --log-level ERROR 2>&1 >/dev/null | head -2)
     case "${probe}" in
         # A folder that does not exist yet is fine - it gets created on use.
         *"not found"*|*NoSuchBucket*|"") return 0 ;;

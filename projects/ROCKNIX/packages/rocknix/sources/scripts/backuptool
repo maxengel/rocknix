@@ -270,8 +270,9 @@ write_archive() {
     #      and travels (ppsspp.ini, controls.ini, their own cheat .ini files).
     #   2. ppsspp/assets/ and PSP/SYSTEM/CACHE/ never travel, edited or not:
     #      one is the emulator's program data, the other a cache.
-    # Prefix matches on the file list, so a custom LOCATIONS that names one of
-    # these on purpose is still pruned -- they are the OS's to provide.
+    # Substring matches on the file list (grep -F, unanchored: the two paths
+    # match wherever they occur in a line), so a custom LOCATIONS that names
+    # one of these on purpose is still pruned -- they are the OS's to provide.
     local REGENERABLE PRUNED KEPT F REL
     REGENERABLE=$(mktemp)
     printf '%s\n' /storage/.config/ppsspp/assets/ /storage/.config/ppsspp/PSP/SYSTEM/CACHE/ > "${REGENERABLE}"
