@@ -5305,7 +5305,20 @@ def fx_link5(L):
     --system-only -- cut mid-upload. The upload marker must not move unless
     the archive completed."""
     broot = f"{L.root}/backup"
-    rc, out = run_rc(L.dev, "backuptool backup")
+    # The cell's premise is an upload long enough to cut. Until #45 the
+    # archive was 16 MiB of PPSSPP's shipped assets and needed no help;
+    # since #45 a stock guest's archive is a few KB and the run ended
+    # before the cut could land (db6b42c180, 2026-09-13). Twelve MiB of
+    # random bytes in a location backuptool archives by default -- no
+    # /usr/config twin, so the identity prune keeps it -- put the premise
+    # back: ~60 s in flight at 200k after the 4 MiB burst. Removed as soon
+    # as the archive holds it; the archive is what travels.
+    pad = "/storage/.config/retroarch/link5-padding.bin"
+    L.dev.run(f"head -c 12582912 /dev/urandom > {pad}; sync")
+    try:
+        rc, out = run_rc(L.dev, "backuptool backup")
+    finally:
+        L.dev.run(f"rm -f {pad}", check=False)
     names = L.dev.run(f"cd {shlex.quote(broot)} 2>/dev/null && ls *.tar.gz *.zip 2>/dev/null; true", check=False).split()
     if rc != 0 or not names:
         raise Fail(f"backuptool backup wrote no archive under {broot} (rc {rc}): {out.strip().splitlines()[-1][:120] if out.strip() else ''}")
