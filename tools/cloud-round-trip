@@ -4841,6 +4841,17 @@ LINK_STAMPS = ("last-backup", "last-restore", "last-settings-backup", "last-sett
                "last-content-backup", "last-content-restore", "last-content-match")
 LINK_MARKER_FILE = re.compile(r"^\s*\*\s+\S.*?:\s*\d+% /", re.M)   # rclone's per-file progress line
 LINK_MARKER_CHECKS = re.compile(r"^Checks:\s+\d+ / \d+", re.M)       # the compare phase, in the stats block
+LINK_FILE_PERCENT = re.compile(r"^\s*\*\s+\S.*?:\s*(\d+)% /", re.M)   # the per-file line's percentage
+# The deliberate run's stall ceiling ending an rclone (cloud_backup / cloud_restore
+# bounded_rclone, D-CLOUD-127): the wrapper's own log line.
+LINK_STALL_ENDED = re.compile(r"rclone \w+ made no progress for \d+s and was ended \(it returned \d+\); reporting 124")
+
+
+def last_file_percent(out):
+    """The percentage on rclone's last per-file progress line in `out`, or -1
+    when it printed none."""
+    found = LINK_FILE_PERCENT.findall(out)
+    return int(found[-1]) if found else -1
 
 
 def backend_throttled():
@@ -5224,15 +5235,18 @@ class Link:
         waited = self.endpoint_quiet()
         if waited > 2:
             print(f"          waited {waited:.0f}s for the endpoint to let go of the cut run before the re-run")
-        # The re-run. On this QA server one case needs tolerating: the cut
-        # run's copyto delivered the whole archive body through QEMU's slirp
-        # buffer even as rclone reported failure (the receiving-side check
-        # above finds it whole), and rclone serve webdav then holds that dated
-        # filename's lock for a moment -- a PUT of the SAME name gets `423
-        # Locked`. A real provider resets an aborted PUT and has no such lock;
-        # this is the fixture, so retry only on that exact signature, only on
-        # WebDAV, and say so. A genuine re-run failure carries no "423 Locked"
-        # and is reported at once.
+        # The re-run. On this QA server two cases need tolerating, both the
+        # same buffer. One: the cut run's copyto delivered the whole archive
+        # body through QEMU's slirp buffer even as rclone reported failure
+        # (the receiving-side check above finds it whole), and rclone serve
+        # webdav then holds that dated filename's lock for a moment -- a PUT
+        # of the SAME name gets `423 Locked`. A real provider resets an
+        # aborted PUT and has no such lock. Two: the re-run's own PUT goes
+        # into the same buffer at once and is drained by the throttled server
+        # for longer than the deliberate run's stall ceiling (D-CLOUD-128,
+        # below). Both are the fixture, so tolerate only those exact
+        # signatures, only on WebDAV, and say so. A genuine re-run failure
+        # carries neither and is reported at once.
         webdav = backend("backend").strip() == "webdav"
         mark = log_mark(self.dev)
         rc2, out2 = run_rc(self.dev, rerun or cmd, env)
@@ -5261,7 +5275,30 @@ class Link:
         # 40 s and 120 s outages): the re-run was accepted at once and the
         # archive matched after it, the stale short body discarded by the
         # atomic PUT rather than kept under the name.
-        locked = webdav and rc2 != 0 and "423 Locked" in log_since(self.dev, mark)
+        since = log_since(self.dev, mark)
+        locked = webdav and rc2 != 0 and "423 Locked" in since
+        # The buffer's other face, seen the first time the cell ran under the
+        # stall ceiling (LINK5 on WebDAV, 4d7eb1f303, 2026-09-13): the re-run
+        # started only after endpoint_quiet() saw the server hold no fd, so
+        # no PUT held the name and nothing 423-shaped was logged; its own PUT
+        # of the 12 MiB archive was taken by slirp at once, the server drained
+        # it at 200k for ~40 s after the 4 MiB burst (the fixture's sizing,
+        # fx_link5), and rclone's counter -- bytes handed to the kernel, not
+        # bytes the server has -- read 100% and moved nothing for all of it.
+        # 36 s of that is the ceiling: the wrapper ended a healthy upload
+        # (`made no progress for 36s ... reporting 124`), and the archive was
+        # whole on the receiving side afterwards, the buffer having delivered
+        # the body regardless. Over a link TCP sizes the in-flight bytes to
+        # the path, so that leg is seconds on a handheld; here it is the whole
+        # archive. So: rc 124, the wrapper's line, no lock, the last per-file
+        # line at 100%, the archive already whole -- and only on WebDAV. The
+        # comparison after the re-run still runs (the drain must have
+        # finished the file), and on S3 every check runs: the proxy pumps the
+        # same way, the 12 MiB re-run passed there by the margin of a smaller
+        # buffer, and a 124 there is a FAIL to look at, not a face to learn.
+        # KILL5's 6 MiB archive drains inside the ceiling and is unaffected.
+        drained = (webdav and rc2 == 124 and not locked
+                   and LINK_STALL_ENDED.search(since) is not None and last_file_percent(out2) == 100)
         archive_whole = receiving and all(got.get(r) == src for r, src in sources.items())
         telling = [l for l in out2.splitlines() if re.search(r"ERROR|WARN|Failed|failed|exit", l)]
         last = (telling or out2.strip().splitlines() or ["no output"])[-1].strip()[:160]
@@ -5269,6 +5306,12 @@ class Link:
             print("    SKIP  the re-run is refused by the QA WebDAV server's stale-PUT lock (423 Locked) on the same "
                   "archive name -- a slirp artifact, not the script; the archive is already whole in the cloud. "
                   "Asserted on MinIO (LINK5, 2026-09-13): no lock, the re-run exits 0 and the archive matches after it.")
+        elif drained and archive_whole:
+            print("    SKIP  the re-run was ended by the stall ceiling with rclone's counter at 100%: QEMU's user-mode "
+                  "stack takes the whole body at once and the throttled QA WebDAV server drains it for longer than the "
+                  "ceiling, so the counter shows no progress while the upload completes -- the fixture, not the script "
+                  "(D-CLOUD-128, 2026-09-13); the archive is already whole in the cloud and is compared again below. "
+                  "Asserted on MinIO (LINK5, 4d7eb1f303, 2026-09-13): the re-run exits 0 and the archive matches after it.")
         else:
             f += not check(rc2 == 0, "a plain re-run with the link back exits 0", f"the re-run exits {rc2}: {last!r}")
         if verify:
@@ -5358,7 +5401,10 @@ def fx_link5(L):
     # random bytes in a location backuptool archives by default -- no
     # /usr/config twin, so the identity prune keeps it -- put the premise
     # back: ~60 s in flight at 200k after the 4 MiB burst. Removed as soon
-    # as the archive holds it; the archive is what travels.
+    # as the archive holds it; the archive is what travels. That drain is
+    # longer than the deliberate run's 36 s stall ceiling by construction,
+    # which on WebDAV ends the plain re-run at 100% (exercise() SKIPs that
+    # one signature there, D-CLOUD-128); on S3 the re-run has passed.
     pad = "/storage/.config/retroarch/link5-padding.bin"
     L.dev.run(f"head -c 12582912 /dev/urandom > {pad}; sync")
     try:

@@ -224,7 +224,14 @@ one is the exit code and stamp. One backend sharp edge: `rclone serve webdav`
 fed a fully-buffered aborted PUT through slirp holds the destination name's
 lock and returns `423 Locked` to a re-PUT of the same name for minutes -- a
 VM-only artifact (a real provider resets the aborted PUT), so assert
-re-upload idempotency for a same-name upload on MinIO/S3 or a device.
+re-upload idempotency for a same-name upload on MinIO/S3 or a device. The
+same buffer has a second face since the deliberate run's stall ceiling
+(#153): a healthy 12 MiB re-run is taken by slirp at once and drained by
+the throttled server for ~40 s, during which rclone's counter reads 100%
+and moves nothing, so the ceiling ends an upload that is completing and
+the archive is whole afterwards (LINK5 on WebDAV, 4d7eb1f303, 2026-09-13).
+The cell SKIPs that signature on WebDAV only (D-CLOUD-128); KILL5's 6 MiB
+archive drains inside the ceiling, and on S3 the same re-run has passed.
 `tools/cloud-round-trip --only LINK1,...,LINK7 --serial-socket <sock>` does
 all of this against the throttled endpoint and refuses unless the console it
 holds is the device on `--host` (a nonce written over SSH, read over serial).

@@ -329,6 +329,23 @@ now ends on its own sentence -- `Completed.`, `Couldn't finish: <why>. Try
 again.`, `Skipped: <reason>.` -- because `Settings backup: COMPLETED` was
 not a line the LINK cells' vocabulary gate accepts.
 
+**What the ceiling cannot see (D-CLOUD-128).** rclone's transferred count
+is bytes handed to the kernel, not bytes the server has. From the last byte
+handed over to the server's reply there is no progress signal, and that leg
+lasts the buffering between the two divided by the server's ingestion rate.
+Over a link TCP sizes the in-flight bytes to the path — a handheld's
+`tcp_wmem` holds a few MiB — so it is seconds. On the QA fixture it is the
+whole archive: QEMU's user-mode stack takes a 12 MiB body in under a second
+and `rclone serve webdav --bwlimit 200k` drains it for ~40 s after its 4 MiB
+burst, so LINK5's plain re-run is ended at 36 s with the counter at 100%
+while the upload is completing, and the archive is whole afterwards
+(4d7eb1f303, 2026-09-13; not the stale-PUT lock — the re-run waits for the
+server to let go, and no 423 was logged). `tools/cloud-round-trip` SKIPs
+that one signature on WebDAV and nowhere else; a 124 on the S3 re-run is a
+FAIL to look at. A real server ingesting at 200 KiB/s or less behind 7 MiB
+or more of buffering would reproduce it; the knobs are `--timeout` in
+`RCLONE_NET_OPTS` and the grace.
+
 Both keys live in `cloud_sync.conf` and its defaults with a fallback
 constant in each script; `tools/last-good-scripts-test` case h holds the
 three equal and proves both wrappers fire, and case n runs `cloud_backup`
@@ -387,6 +404,14 @@ only observation settles. Measured against rclone **1.75.0 on an H700**:
   A reader splitting on `\n` alone loses both halves of that join — every
   block after the first. Split on `\n`, `\r`, **and** an embedded
   `Transferred:`.
+- **A kill lands inside a redraw**, so an rclone the stall ceiling ends
+  leaves that last ` * file` line open, and whatever the script prints next
+  is glued to it: ` * …SETTINGS.tar.gz:  0% / 12.011 MiB, 0 B/s, -Couldn't
+  finish: lost the network during the settings backup.` (LINK5 on MinIO,
+  2026-09-13) — a line no reader recognises as the outcome. `bounded_rclone`
+  closes the line when the trace's last byte is not a newline, on the
+  transfer verbs only; `tools/last-good-scripts-test` case n kills a shim
+  mid-redraw and reads the sentence at the start of a line.
 - **`Transferred:` appears twice per block**: bytes first, then a file count
   (`0 / 6, 0%`). The byte line is the one with a unit in it.
 - **`--progress-terminal-width` does not exist in 1.75.0.** An unknown flag is
