@@ -95,6 +95,41 @@ every padded auto-height text in the app, which nobody has looked at on a
 screen yet; until someone does, measure at the padded width where you build
 a dialog, and know that the auto height is optimistic.
 
+## Three things a font is not (2026-09-13, #27)
+
+Four cuts of one label fix, each proven wrong by a 640x480 frame, came down
+to three facts about `Font` that nothing in the code says out loud:
+
+- **`Font::get(size, path)` scales the size.** `ScreenSettings::fontScale()`
+  is 1.31 on a panel under 720 px (1.5 under 320), and the menu theme's
+  fonts are made with `menuScaling = true` and its own 1.31. `getSize()`
+  returns the *scaled* size. So handing a menu-theme font's `getSize()`
+  into a theme `<fontSize>` -- which goes back through `Font::get` -- scales
+  it twice: a 16 px small font became 20, then 26, on a 640x480 panel, and
+  nobody noticed because at 1280x800 both scales are 1. Ask for
+  `getSize() / fontScale()`, and measure text with the font object the
+  component will actually use, not the theme's.
+- **`Font::getHeight()` is the tallest glyph rasterised *so far*.**
+  `mMaxGlyphHeight` starts at 0 and grows in `getGlyph`. Measured before a
+  label has drawn, it under-reports; `TextComponent`'s AUTO wrap threshold
+  (1.8 lines of the same moving number) is judged later, with more glyphs
+  loaded. A layout computed from it in a constructor can be right in the
+  constructor and wrong on screen. Rasterise the printable range first
+  (`font->sizeText(<ASCII 32..126>)`), or force the mode
+  (`<multiLine>true</multiLine>`, honoured by the grid tile's text since
+  ES `2088eadb9`).
+- **`Utils::FileSystem::exists(path)` caches for the session** by default
+  (`enableCache = true`), and caches its own answers. A marker written
+  after startup reads as absent until restart. Pass `false` for anything
+  that changes while ES runs -- the rclone.conf gate did; the restore-marker
+  gates did not (ES `613f6152b`).
+
+And one about the window: with full-screen menus on (every handheld panel),
+`Window::render` draws no help prompts while a second page is open. A page
+that is not a `MenuComponent` and wants a bar -- the save state manager --
+draws it itself with `mWindow->renderHelpPromptsEarly()` when it is the top
+page (ES `d8e95118c`, #149).
+
 ## Pure text has a home, and a test
 
 `es-app/src/CloudText.{h,cpp}` holds the cloud surfaces' pure string code --
