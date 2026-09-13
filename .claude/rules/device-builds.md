@@ -301,7 +301,7 @@ a member login is not accepted in its place), `CHEEVOS_DEV_LOGIN`
 `HFS_DEV_LOGIN`. Without them the matching scraper is not built — **except
 ScreenScraper on fork builds**: since #64 (2026-09-05) the package sets
 `SCREENSCRAPER_RUNTIME_DEV_LOGIN`, the scraper is always built, and the
-developer pair is typed on the device under the scraper's OPTIONS beside the
+developer pair is typed on the device under the scraper's ACCOUNTS tab beside the
 account (DEVELOPER ID / DEVELOPER PASSWORD, held back from settings backups).
 So the options file is for RetroAchievements, TheGamesDB and HfsDB only, and
 a fork image never needs to carry a ScreenScraper key.
