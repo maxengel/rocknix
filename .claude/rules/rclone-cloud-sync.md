@@ -615,3 +615,20 @@ in a fourteen-case matrix, not inferred:
   cannot see a same-size, same-mtime change at all without `--download-hash`,
   which downloads the whole tree every pass. Its raw runs are what
   `cloud-round-trip --dump` writes.
+
+## What rclone's stats block looks like on a pipe (#157)
+
+Read from rclone 1.75.0's `stats.go`, and the reason the startup sync card once
+showed "113 of 113" twice with a still bar between: every stats block prints
+the **bytes line first** (`Transferred: X / Y, N%, …`), then a `Checks:` line
+whenever checks, total checks or listed files are non-zero. While a run is still
+listing, that line is `Checks: 0 / 0, -, Listed N`, so a card that shows every
+checks line shows `0 OF 0` for a block. A sync is two rclone runs (a restore,
+then a backup), so the checks count climbs to the full total twice, once per
+run, and the byte line between them is the restore's near-empty one. Nothing
+prose reaches the card from `cloud_backup` or `cloud_restore`: they speak
+`>>> unit`, `>>> why`, `>>> offer`; only `cloud_net_ready` prints a `>>> doing`.
+So a card that wants to say which run it is in has to be told by the composition
+that runs both -- `main.cpp`'s startup command echoes `>>> doing receive` and
+`>>> doing send` before each half (D-UI-052), and `CloudText::phaseBar` maps the
+run's percentage into its half of the bar.
