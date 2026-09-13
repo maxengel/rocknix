@@ -96,5 +96,12 @@ post_install() {
   add_group avahi 70
 
   enable_service avahi-defaults.service
- # enable_service avahi-daemon.service
+  # The responder is on (fork #50, D-NET-003, the maintainer's call of
+  # 2026-09-13): with it off since the first ROCKNIX commit a device could
+  # resolve other .local names (nss-mdns) but never answer for its own, and
+  # two same-family units on one network were addressable by neither name
+  # nor lease. It publishes the kernel hostname, which network-base-setup
+  # has made this unit's own by the time the daemon starts (the unit orders
+  # after it). /storage/.cache/services/avahi.disabled still turns it off.
+  enable_service avahi-daemon.service
 }

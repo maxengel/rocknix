@@ -50,7 +50,9 @@ echo "${HOSTNAME}" >/proc/sys/kernel/hostname
 # over D-Bus) the call above undid the write above, and the device spent
 # the boot as ROCKNIX. The write is the whole job; the unit now orders
 # this before hostnamed and NetworkManager so they read the written name.
-avahi-set-host-name "${HOSTNAME}"
+# No avahi-set-host-name either: the daemon starts after this unit and
+# publishes the kernel's name itself; called here it failed on every boot
+# ("Daemon not running").
 
 rm -f /run/rocknix/hosts
 if [ -f /storage/.config/hosts.conf ]; then
