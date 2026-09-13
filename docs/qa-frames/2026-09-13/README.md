@@ -45,6 +45,16 @@ queued, so the compare line stands alone only when there is nothing to move.
 That is the case the acceptance criterion names, and where the second count
 used to appear.
 
+`4d7eb1f303` (EmulationStation `44bcc4d51d`) on guest d at 640x480, for #160:
+the RetroAchievements game page for Sonic the Hedgehog (the probe ROM given
+`<cheevosId>1</cheevosId>`, opened from the game's options panel, VIEW THIS
+GAME'S ACHIEVEMENTS), with the QA account carried in by `tools/qa-accounts`.
+The account has unlocked nothing, so the page reads 0/35 and the bar is at
+0 %. Framed at the theme's default font size and at Extra Large
+(`<string name="subset.font-size" value="xlarge" />` in `es_settings.cfg`,
+written with EmulationStation stopped), in English and, for Extra Large,
+French.
+
 | Frame | What it shows |
 |---|---|
 | `save-state-manager-four-tiles-1280x800.png` | The manager on `878ec8863b`: START NEW GAME, AUTO SAVE, SLOT 1, SLOT 2, every label whole, the sheet half the screen (#27's first cut, where it happened to work). |
@@ -103,3 +113,6 @@ used to appear.
 | `startup-sync-2-receiving-bytes-1280x800-1e5a2818e8.png` | Step 2 on guest a at 1280x800 (the pair's `/ROCKNIX/Saves` remote): RECEIVING · 656 KB OF 3.2 MB, the bar a stub at the left, inside 0-50 %. |
 | `startup-sync-2c-receiving-half-done-1280x800-1e5a2818e8.png` | The receive half complete at 1280x800: RECEIVING · 3.2 MB OF 3.2 MB, the bar ending at the card's midpoint. |
 | `startup-sync-4-sending-bytes-1280x800-1e5a2818e8.png` | Step 4 at 1280x800: SENDING · 440 KB OF 3.1 MB, the bar past the midpoint, inside 50-100 %. |
+| `retroachievements-game-page-default-640x480-4d7eb1f303.png` | The game page at the DEFAULT font size on `4d7eb1f303`: `0% complete` and its bar are drawn across `Achievements (softcore): 0/35` and `Achievements (hardcore): 0/35` -- #160's overlap, still present at this size. The three header lines are centred here: under full-screen menus `MenuComponent::updateSize` returns before the branch that left-aligns the subtitle, so it keeps its `ALIGN_CENTER` across 0.88 of the screen, while `GuiGameAchievements` measures `textRight` as position + padding + text width -- the left-aligned right edge, which ends before 55 % of the column although the centred text runs past it. The list below is untouched. |
+| `retroachievements-game-page-xlarge-640x480-4d7eb1f303.png` | The same page at Extra Large: the measured width now crosses the threshold, and `0% complete` with its bar sits on its own row under `Points: 0/300`, the list starting below -- nothing overlaps. The bar's row starts at the header's left padding while the three lines above it are centred, so it sits left of them rather than under them. |
+| `retroachievements-game-page-xlarge-640x480-4d7eb1f303-fr.png` | Extra Large in French: `Succès (mode facile): 0/35`, `Succès (mode difficile): 0/35`, `Points: 0/300`, then `0% terminé` on its own row, nothing overlapping; the options-panel row that opens the page reads VOIR LES SUCCÈS DU JEU. The achievement names and descriptions below come from RetroAchievements in English. |
