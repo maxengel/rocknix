@@ -64,6 +64,12 @@
 #      proxy's folder under /storage/.config is held back whole from a
 #      backup and never put back on a restore (its token cache and award
 #      queue, D-INFRA-010).
+#   q. 099-networkservices, the boot pass over /usr/lib/autostart/daemons/*:
+#      a fragment that sets no CONF inherits none from the fragment before
+#      it, so the marker the previous fragment wrote (raofflineproxy.conf,
+#      smb.conf) is still there when the backgrounded systemctl start reads
+#      the unit's ConditionPathExists; the pass still removes the marker and
+#      stops the service when the toggle is off (#166).
 #
 # The chksysconfig and 001-functions functions are lifted out of the files
 # under test and run in a fresh bash against temp paths, as wait-lock-test
@@ -103,6 +109,12 @@
 #                                             # (the folder travelled) and p
 #                                             # FAILS whole: the tree before
 #                                             # #165 has no raofflineproxy-ctl
+#     BASE_REF=0f7785e6ed tools/last-good-scripts-test --old
+#                                             # q FAILS: the boot pass before
+#                                             # #166 removed raofflineproxy.conf
+#                                             # through 007-syncthing (and
+#                                             # smb.conf through 004-tailscaled,
+#                                             # at every BASE_REF: upstream's leak)
 #     tools/last-good-scripts-test            # PASSED
 #
 # One FAIL in m that names "the built image" is about the build root on this
@@ -1232,6 +1244,115 @@ ctl enable
 [ "${RC}" -eq 1 ] && [ ! -e "${PMARK}" ] && [ "$(pv global.retroachievements.hardcore)" = "1" ] && [ -z "$(pv global.retroachievements.offlineproxy)" ] && [ -z "$(pv global.retroachievements.offlineproxy.hardcore_was)" ]; check $? "a service that will not start: exit 1, no marker left, hardcore still 1, no toggle and no record written" "rc ${RC}; marker: $([ -e "${PMARK}" ] && echo yes || echo no); system.cfg: $(tr '\n' '|' < "${PCFG}")"
 [ ! -s "${OUT}" ]; check $? "and nothing on stdout for EmulationStation to mistake for a result" "stdout: $(tr '\n' '|' < "${OUT}")"
 rm -f "${P}/run/fail-start"
+fi
+
+# ---------------------------------------------------------------- q.
+echo "  q. 099-networkservices: a daemon fragment that sets no CONF inherits none from the fragment before it (#166)"
+# The boot pass sources every /usr/lib/autostart/daemons/* in turn and, for
+# each, removes the marker CONF names before rewriting it from STATE and
+# backgrounding a systemctl start or stop. It never reset the variables
+# between fragments, so a fragment that sets no CONF (004-*, 005-fstrim,
+# 007-syncthing) inherited the previous one's and removed the marker it had
+# just written: 007-syncthing took raofflineproxy.conf from
+# 006-raofflineproxy, and the unit's ConditionPathExists read false by the
+# time the backgrounded start was processed, so the toggle died on the
+# second boot while the row still read on (#166 s. 6). The same leak has
+# removed samba's smb.conf through 004-tailscaled at every boot since the
+# fragments were written, which is why the smb.conf check below fails at
+# every BASE_REF and the raofflineproxy.conf one from #165 on.
+#
+# The pass runs WHOLE and unmodified under bwrap over the real fragments,
+# every one the tree ships, at their real path: /usr/lib is the host's bound
+# entry by entry so the fixture's daemons/ can sit under it, /etc is a tmpfs
+# holding the loader's cache and a stub 001-functions (get_setting lifted
+# from the file under test, on the fixture's system.cfg; tocon and log to
+# stderr), /storage the fixture's, and systemctl a shim that reads the
+# raofflineproxy unit's condition the way systemd does -- when the start is
+# processed, a moment after the loop has moved on -- and logs what it found.
+# Both starts and stops are backgrounded by the pass, so the wrapper waits
+# for them before the log is read.
+NS_REL=projects/ROCKNIX/packages/rocknix/autostart/099-networkservices
+Q="${TMP}/q"; QS="${Q}/storage"; mkdir -p "${QS}/.config/system/configs" "${QS}/.cache/services" "${Q}/repo" "${Q}/shim" "${Q}/run" "${Q}/daemons" "${Q}/etc"
+src_of "${NS_REL}" "${Q}/repo/099-networkservices"
+bash -n "${Q}/repo/099-networkservices"; check $? "099-networkservices parses (bash -n)" "099-networkservices does not parse"
+QHAVE_RA=0
+while IFS= read -r frag; do
+    rel="${frag#* }"
+    if [ "${OLD}" -eq 1 ] && ! git -C "${ROOT}" cat-file -e "${BASE_REF}:${rel}" 2>/dev/null; then
+        echo "    note  ${rel##*/} is absent at ${BASE_REF}; left out of the pass"
+        continue
+    fi
+    src_of "${rel}" "${Q}/daemons/${rel##*/}"
+    [ "${rel##*/}" = "006-raofflineproxy" ] && QHAVE_RA=1
+done < <(cd "${ROOT}" && find projects -path '*/daemons/[0-9]*' -type f -printf '%f %p\n' | sort)
+QFRAGS="$(ls "${Q}/daemons" | tr '\n' ' ')"
+echo "    fragments: ${QFRAGS}"
+{
+    sed -n '/^function get_setting() {/,/^}/p' "${FN}"
+    cat <<'EOS'
+tocon() { echo "tocon $*" >&2; }
+log() { echo "log $*" >&2; }
+J_CONF=/storage/.config/system/configs/system.cfg
+EOS
+} > "${Q}/etc/001-functions"
+cat > "${Q}/shim/systemctl" <<'EOS'
+#!/bin/sh
+# systemd reads ConditionPathExists when it processes the start, not when
+# systemctl is invoked, and the boot pass backgrounds every call and moves
+# on to the next fragment; a short wait puts this shim on the same side of
+# that race as the real unit.
+sleep 1
+case "$1" in
+    start)
+        case "$2" in
+            raofflineproxy|raofflineproxy.service)
+                if [ -e /storage/.cache/services/raofflineproxy.conf ]; then echo "start $2 started" >> /run/systemctl.log; else echo "start $2 condition-unmet" >> /run/systemctl.log; fi ;;
+            *) echo "start $2 started" >> /run/systemctl.log ;;
+        esac ;;
+    stop) echo "stop $2" >> /run/systemctl.log ;;
+    *) echo "$*" >> /run/systemctl.log ;;
+esac
+exit 0
+EOS
+printf '#!/bin/sh\necho "logger $*" >&2\n' > "${Q}/shim/logger"
+chmod +x "${Q}/shim"/*
+QUSR=(--tmpfs /usr); for u in bin sbin lib64 libexec share; do [ -e "/usr/${u}" ] && QUSR+=(--ro-bind "/usr/${u}" "/usr/${u}"); done
+for e in /usr/lib/* /usr/lib/.[!.]*; do [ -e "${e}" ] && QUSR+=(--ro-bind "${e}" "${e}"); done
+QETC=(--tmpfs /etc); for e in /etc/ld.so.cache /etc/alternatives /etc/passwd /etc/group; do [ -e "${e}" ] && QETC+=(--ro-bind "${e}" "${e}"); done
+QBB=(); QPATH="/shim:/usr/bin:/bin"
+if [ -n "${BB}" ]; then QBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB}" "${BB}"); QPATH="/shim:/bbin:/usr/bin:/bin"; fi
+QOUT="${Q}/out"; QCFG="${QS}/.config/system/configs/system.cfg"; QSVC="${QS}/.cache/services"; QLOG="${Q}/run/systemctl.log"
+qpass() { # run the boot pass once; rc in $RC, output in $QOUT, systemctl's log in $QLOG
+    : > "${QLOG}"
+    RC=$( ( bwrap --die-with-parent --tmpfs / "${QUSR[@]}" "${QBB[@]}" \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        "${QETC[@]}" --ro-bind "${Q}/etc/001-functions" /etc/profile.d/001-functions \
+        --ro-bind "${Q}/daemons" /usr/lib/autostart/daemons \
+        --bind "${QS}" /storage --ro-bind "${Q}/repo" /repo --ro-bind "${Q}/shim" /shim --bind "${Q}/run" /run \
+        --dev /dev --proc /proc --tmpfs /tmp --setenv PATH "${QPATH}" \
+        bash -c 'source /repo/099-networkservices; wait' > "${QOUT}" 2>&1; echo $? ) 2>/dev/null )
+}
+# Boot 2 of #166 s. 6: the toggle on in system.cfg, its marker already there
+# from the toggle's own enable, samba on beside it, everything else off.
+printf 'system.hostname=X\nglobal.retroachievements.offlineproxy=1\nsamba.enabled=1\nssh.enabled=0\nsyncthing.enabled=0\n' > "${QCFG}"
+rm -f "${QSVC}"/*; touch "${QSVC}/raofflineproxy.conf" "${QSVC}/smb.conf"
+qpass
+[ "${RC}" -eq 0 ]; check $? "the boot pass ran over ${QFRAGS% } (rc ${RC})" "rc ${RC}; output: $(tr '\n' '|' < "${QOUT}" | cut -c1-240)"
+[ -e "${QSVC}/smb.conf" ]; check $? "samba on: smb.conf is still there after the pass" "smb.conf is gone after the pass: a fragment without CONF (004-tailscaled) inherited samba's and removed it; markers left: $(ls "${QSVC}" | tr '\n' ' ')"
+if [ "${QHAVE_RA}" -eq 1 ]; then
+    [ -e "${QSVC}/raofflineproxy.conf" ]; check $? "toggle on: raofflineproxy.conf is still there after the pass" "raofflineproxy.conf is gone after the pass: 007-syncthing inherited CONF from 006-raofflineproxy and removed it; markers left: $(ls "${QSVC}" | tr '\n' ' ')"
+    grep -qx 'start raofflineproxy started' "${QLOG}"; check $? "and the unit's condition held when its start was processed" "systemctl saw: $(grep raofflineproxy "${QLOG}" | tr '\n' '|')"
+    ! grep -q 'condition-unmet' "${QLOG}"; check $? "no start found its marker missing" "systemctl saw: $(tr '\n' '|' < "${QLOG}")"
+    [ ! -e "${QSVC}/sshd.conf" ] && grep -qx 'stop sshd' "${QLOG}"; check $? "ssh off: no sshd.conf, sshd stopped (the pass still does its job)" "sshd.conf: $([ -e "${QSVC}/sshd.conf" ] && echo present || echo absent); systemctl saw: $(tr '\n' '|' < "${QLOG}")"
+    # Step 7 of the upgrade shape: the toggle off (or never set) and a marker
+    # left behind -- the pass removes it and stops the service.
+    printf 'system.hostname=X\nglobal.retroachievements.offlineproxy=0\nsamba.enabled=1\n' > "${QCFG}"
+    rm -f "${QSVC}"/*; touch "${QSVC}/raofflineproxy.conf" "${QSVC}/smb.conf"
+    qpass
+    [ "${RC}" -eq 0 ] && [ ! -e "${QSVC}/raofflineproxy.conf" ] && grep -qx 'stop raofflineproxy' "${QLOG}"; check $? "toggle off with a marker left behind: the marker is removed and the service stopped (rc ${RC})" "rc ${RC}; marker: $([ -e "${QSVC}/raofflineproxy.conf" ] && echo present || echo gone); systemctl saw: $(tr '\n' '|' < "${QLOG}")"
+    [ -e "${QSVC}/smb.conf" ]; check $? "and samba's marker is still there" "smb.conf gone; markers left: $(ls "${QSVC}" | tr '\n' ' ')"
+else
+    check 1 "" "006-raofflineproxy is absent at ${BASE_REF}: the toggle had no boot pass"
 fi
 
 echo
