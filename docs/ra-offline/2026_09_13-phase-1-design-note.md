@@ -500,13 +500,31 @@ To **misantronic/RAOfflineProxy**:
    (`linux/rocknix/README.md:216-224`) against `build_bundle.sh:10`'s
    `1.13.0-alpha1`; "verified end to end" is one SM8550. A native-path e2e
    scenario beside `test_rocknix_lifecycle.py` once § 10 exists.
+8. `ConnectivityMonitor` logs the restore (`Connectivity restored; attempting
+   flush`, `proxy_service.py:978`) and nothing when the link goes: on the VM
+   check `online_state.json={"online":false}` was the only evidence of the
+   drop (#166 § 4). One `LOGGER.info` on the transition to offline, so the
+   service log reads both ends of an outage. Noted, not patched.
+9. `handle_online_request` answered every non-2xx from `dorequest.php` with
+   `503 upstream unavailable` (`proxy_service.py:512`), so a ROM with no
+   achievement set read "Load failed (-27): upstream unavailable" through the
+   proxy and "Load failed (-29): Unknown game" without it (#166 § 3). The fork
+   carries `patches/001-dorequest-4xx-passthrough.patch` -- a 4xx other than
+   401/403 passes through as it came, status and body; 5xx and network
+   errors keep the 503 -- written to be offered upstream as-is.
 
 To **ROCKNIX/distribution** (the docs hard gate applies; `rocknix.org` needs a
 page): `cheevos_custom_host` from a setting in `setsettings.sh` and
 `AchievementsHost` in `cheevos_ppsspp.sh` (§ 10); the upstream README's
 finding that `cheevos_duckstation.sh` is disabled with "Seems like Duckstation
 changed the token encryption" (`linux/rocknix/README.md:90-100`) is a ROCKNIX
-bug they have already written up for us.
+bug they have already written up for us. And `099-networkservices`, which
+never reset `STATE SVC CONF DAEMONS` between the fragments it sources, so a
+fragment without `CONF=` removed the marker the previous one had just written
+-- `007-syncthing` took `raofflineproxy.conf` and the toggle died on the
+second boot (#166 § 6); `004-tailscaled` has taken samba's `smb.conf` the
+same way at every boot. One `unset` at the top of the loop, on the feature
+branch, worth a PR of its own.
 
 Fork findings from this read, not the proxy's: `ppsspp_retroachievements.dat`
 holds the raw RA token (`cheevos_ppsspp.sh:33`, `:44`) and sits under
