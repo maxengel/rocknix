@@ -22,6 +22,7 @@ They land in **`target/`** — `config/path` sets `TARGET_IMG=$ROOT/target`, and
 | Anbernic RG35XX SP | `H700` | aarch64 | cortex-a53, crypto-neon-fp-armv8; maintainer's unit is LPDDR4 and uses the DDR4 image (`vdd-dram` = 1.1 V, verified 2026-09-05) |
 | Anbernic RG SP | `H700` | aarch64 | cortex-a53, crypto-neon-fp-armv8; maintainer's unit is LPDDR3 and uses the DDR3 image (stock boot0 `dram_type = 7`, then ROCKNIX `vdd-dram` = 1.2 V, verified 2026-09-05) |
 | Anbernic RG351M | `RK3326` | aarch64 | |
+| Retroid Pocket Nova | `SM8550` | aarch64 | cortex-a710 / cortex-x3 (`projects/ROCKNIX/devices/SM8550/options`), crypto-neon-fp-armv8; upstream release 20260901 lists it under SM8550; no build root in the devices worktree yet, so its first build is cold (hours, ~90 GB) -- #150, D-QA-023 |
 | VM / QA | `GENERIC_X64` | x86_64 | fork-only device; see `generic-x64-vm-testing` |
 
 The RG353M, RG35XX SP, and RG351M are *different build families* — separate
