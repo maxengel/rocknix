@@ -33,6 +33,10 @@
 #   k. backuptool leaves out what the image ships (a file identical to its
 #      /usr/config copy; PPSSPP's assets and shader cache always), and a
 #      restore of an older archive does not put those back (#45).
+#   l. a missing cloud folder reads as not there yet whatever the server's
+#      words: absent_not_broken walks up to the nearest listable parent, the
+#      setup wizard carries the same function, the content backup makes its
+#      folder before copying (#142).
 #
 # The chksysconfig and 001-functions functions are lifted out of the files
 # under test and run in a fresh bash against temp paths, as wait-lock-test
@@ -597,5 +601,44 @@ btk restore; rck2=${RC}
 [ "${rck2}" -eq 0 ]; check $? "a pre-#45 archive restores (rc ${rck2})" "rc ${rck2}: $(grep -v '^logger' "${OUT}" | tail -3 | tr '\n' '|')"
 [ "$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp.ini")" = "OLD ini" ] && [ "$(cat "${KS}/.config/test/own")" = "OLD own" ]; check $? "the ini and the player's file come back from it" "ini='$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp.ini")' own='$(cat "${KS}/.config/test/own")'"
 [ "$(cat "${KS}/.config/ppsspp/assets/lang/en_US.ini")" = "edited strings" ] && [ "$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/CACHE/x.cache")" = "shader cache" ]; check $? "its assets and cache are left where they were" "asset='$(cat "${KS}/.config/ppsspp/assets/lang/en_US.ini")' cache='$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/CACHE/x.cache")' -- an older emulator's program data was put under a newer one"
+
+echo "  l. a missing cloud folder reads as not there yet whatever the server's words (#142)"
+# absent_not_broken, lifted from cloud_content_restore and run against a shim
+# rclone whose cloud holds /QA/Saves and /QA/Content/ROMs and answers every
+# other folder with an FTP-style plain error (exit 1, not rclone's 3). The
+# walk must call an absent folder absent at any depth, a present one present,
+# and a root that will not list broken. Then the copy in cloud_setup must be
+# the same function, and the content backup must make its folder before it
+# copies into it.
+LL="${TMP}/l"; mkdir -p "${LL}/shim"
+cat > "${LL}/shim/rclone" <<'EOR'
+#!/bin/bash
+[ "$1" = lsf ] || exit 2
+for a in "$@"; do case "$a" in *:*) p="$a";; esac; done
+rel="${p#*:}"; rel="${rel#/}"; rel="${rel%/}"
+[ -n "${ROOT_DOWN:-}" ] && exit 1
+case "$rel" in
+  "") printf 'QA/\n' ;;
+  QA) printf 'Saves/\nContent/\n' ;;
+  QA/Content) printf 'ROMs/\n' ;;
+  *) echo 'NOTICE: Failed to lsf: 501 "No such directory."' >&2; exit 1 ;;
+esac
+EOR
+chmod +x "${LL}/shim/rclone"
+sed -n '/^absent_not_broken() {/,/^}/p' "${ROOT}/${RCLONE_REL}/cloud_content_restore" > "${LL}/fn.sh"
+grep -q 'rclone lsf --dirs-only' "${LL}/fn.sh"; check $? "absent_not_broken is lifted from cloud_content_restore" "no absent_not_broken() in cloud_content_restore"
+lq() { # <path> <expected rc> ; ROOT_DOWN passes through
+    PATH="${LL}/shim:${PATH}" bash -c ". '${LL}/fn.sh'; RCLONE_LIST_OPTS=(--retries 1); absent_not_broken '$1'" 2>/dev/null; [ $? -eq "$2" ]
+}
+lq qa:/QA/Content/BIOS/ 0; check $? "a folder its listable parent lacks is absent (QA/Content/BIOS)" "QA/Content/BIOS did not read as absent"
+lq qa:/QA/Content/ROMs/ 1; check $? "a folder its parent lists is present, so the failure was something else (QA/Content/ROMs)" "QA/Content/ROMs read as absent"
+lq qa:/QA-Custom/Saves 0; check $? "absent two levels up, no leading slash (QA-Custom/Saves: the root lists and lacks QA-Custom)" "QA-Custom/Saves did not read as absent"
+lq qa:/Nope/A/B/ 0; check $? "absent three deep (Nope/A/B)" "Nope/A/B did not read as absent"
+lq qa:/QA/ 1; check $? "a folder the root lists is present (QA)" "QA read as absent"
+ROOT_DOWN=1 lq qa:/QA/Content/ROMs/ 1; check $? "a root that will not list is broken, not absent" "an unlistable root read as absent"
+lq qa:/ 1; check $? "the root itself is never absent" "the root read as absent"
+[ -s "${LL}/fn.sh" ] && [ -s "${LL}/fn.sh" ] && diff -q <(sed -n '/^absent_not_broken() {/,/^}/p' "${ROOT}/${RCLONE_REL}/cloud_setup") "${LL}/fn.sh" >/dev/null; check $? "cloud_setup carries the identical function" "cloud_setup's absent_not_broken differs from cloud_content_restore's (or is missing)"
+awk '/^    rclone mkdir "\$\{TARGET\}"/{m=NR} /^    rclone copy "\$\{SRC\}" "\$\{TARGET\}"/{c=NR} END{exit !(m && c && m < c)}' "${ROOT}/${RCLONE_REL}/cloud_content_backup"; check $? "cloud_content_backup makes the folder before it copies into it" "no rclone mkdir of the target ahead of the copy in cloud_content_backup"
+grep -q 'absent_not_broken "${ROOT}ROMs/"' "${ROOT}/${RCLONE_REL}/cloud_content_restore" && grep -q 'absent_not_broken "${ROOT}BIOS/"' "${ROOT}/${RCLONE_REL}/cloud_content_restore"; check $? "the scan asks it about ROMs and BIOS before calling the cloud unreadable" "the scan does not consult absent_not_broken for both folders"
 echo
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

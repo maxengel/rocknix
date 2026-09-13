@@ -551,6 +551,17 @@ for DIR in "${DIRS[@]}"; do
     # before using it), and an unknown flag is a usage error that transfers
     # nothing. rclone pads the file name out to a guessed width; the reader
     # trims it, so the flag bought nothing worth a version check.
+    #
+    # The folder first, on its own. rclone creates a missing destination as
+    # part of a copy, but only after listing it, and a server that answers a
+    # missing folder with an error rather than "not found" (an FTP server's
+    # 501 where the standard reply is 550) fails that listing. Under
+    # --retries 1 that one attempt is the whole run: reported as failed,
+    # with files that may or may not have landed (#142, from the #133
+    # matrix: 2 of 3). mkdir is one round trip, idempotent, and on a bucket
+    # under directory markers it writes the marker the folder's parent then
+    # lists (D-CLOUD-120). Its own failure is left to the copy to report.
+    rclone mkdir "${TARGET}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null
     rclone copy "${SRC}" "${TARGET}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
         "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${MEDIA_EXCLUDES[@]}" \
         --exclude "gamelist.xml" --exclude "**/gamelist.xml" \
