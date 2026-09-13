@@ -708,3 +708,14 @@ host-side harness output (`tools/vm-qa`, `tools/cloud-round-trip`,
 `tools/last-good-scripts-test`) filter on the shapes a value would take,
 `grep -v -i -E 'passw|pass=|pass:|token=|key='`, and keep the verdicts; the
 strict filter stays for anything read from `/storage`.
+
+## Games with RetroAchievements sets for the guests
+
+Three free homebrew titles with RetroAchievements sets live outside the repo at
+`/workspace/artifacts/rocknix-qa-roms/` (README there: sources, sha256s, systems):
+Tobu Tobu Girl Deluxe (GBC), Niñoid (GB), Böbl (NES). They are what an achievement
+proof on a guest uses -- the fixture ROMs have no sets, so before 2026-09-13 an unlock
+could only be shown on a handheld. Copy them under `/storage/roms/<system>/`, put the
+QA account on with `tools/qa-accounts <port> ra`, and read RetroArch's log for the
+unlock; with the offline proxy on, the proxy's `service.log` shows the queued award and
+its flush. Do not commit them; the directory is the fixture home.
