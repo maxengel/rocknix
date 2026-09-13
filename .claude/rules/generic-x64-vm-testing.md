@@ -333,11 +333,15 @@ So a UI change is framed at 640x480 before it is called done. A small guest
 beside the pair is one QEMU command: the pair's arguments with `-device
 virtio-gpu-pci,xres=640,yres=480`, its own disk from the same image, its own
 ports and sockets (`-d` suffix, SSH 10026, MAC `52:54:00:52:4E:5B`, VNC :12),
-the QA key written over serial with `tools/vm-serial`. The session
-scratchpad's `rebuild-d.sh` does exactly that and reboots the guest seeded
-with a NES ROM and three save states; making it a `vm-pair` guest is open.
-Read the small frame first: at that size a label that fits is the finding,
-and a bar that is missing is one too.
+the QA key written over serial with `tools/vm-serial`. **Its disk lives in
+its own directory** (`/tmp/rocknix-vm-d`), never in vm-pair's: `vm-pair up`
+begins with `rm -f "$DIR"/vm-*.qcow2`, so a third guest kept there loses its
+disk under it the moment the runner starts and boots into the firmware's
+"select boot device" menu, while its own conversion disturbs the pair's
+(2026-09-13, both at once). The session scratchpad's `rebuild-d.sh` does the
+rest and reboots the guest seeded with a NES ROM and three save states;
+making it a `vm-pair` guest is open. Read the small frame first: at that
+size a label that fits is the finding, and a bar that is missing is one too.
 
 ## What the guest's busybox lacks
 
