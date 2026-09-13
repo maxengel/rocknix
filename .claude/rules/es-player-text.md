@@ -72,6 +72,28 @@ Beside it: `es-native-ui.md` (the surfaces the words go on),
   `wifi.key` / `wifi.ssid` — an identifier is not a reason to spell the label
   after it.
 
+## Every fork string ships in English and French (D-UI-051)
+
+The language is `system.language` (SYSTEM SETTINGS > LANGUAGE); every
+`_("")` string is keyed to it through the `.po` files under
+`locale/lang/<lang>/LC_MESSAGES/emulationstation2.po`. The build runs
+xgettext over the sources and msgmerge into each file, so a new msgid reaches
+every language untranslated and falls through to English -- which is where
+the fork's strings stood until 2026-09-13. Maintainer: *"we could at least
+support English and French, and other people could add other error messages
+for other languages if they choose."*
+
+So a string added here gets its French written into `locale/lang/fr/...`
+in the same commit, in that file's own style: accented capitals (RÉSULTAT,
+SYSTÈME), the typographic apostrophe (D’UTILISATEUR), a space before `?`
+and `:`, and the tabs and pages by the names the file already gives them
+(SCRAPEUR / OPTIONS / COMPTES, PARAMÈTRES RETROACHIEVEMENTS). The msgid must
+match the source string byte for byte, `\n` included; the first thirteen
+were written by a script that read the msgids out of the sources rather
+than retyping them. The cloud pages and the rest of the fork's strings
+since 2026-08 have no French yet and are a follow-up. Other languages are
+whoever reads them.
+
 ## A row that leads somewhere is a label, not a paragraph
 
 Maintainer, 2026-09-06: *"adding a fuller description isn't necessarily always
