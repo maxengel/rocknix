@@ -157,11 +157,49 @@ function wait_lock() {
   done
 }
 
+# One key, one write, one rename, under a lock the caller holds: awk prints
+# every line but the key's, then the key's new line, into a temporary
+# beside the file, and the temporary is renamed over it -- so the file goes
+# from the old content to the new in a single step, and an empty file (a
+# torn write left it so) gets its one line the same way. It used to be
+# del_setting (a rename) and then an append, with the lock released and
+# retaken in between: a kill between the two lost the key (D-CLOUD-078,
+# #105). Then it was one sed -i, `/^k=/d` and `$a k=v`, which loses the
+# key whenever its line is the LAST line of the file: `d` ends the cycle
+# and `$a` never runs for that line, so every key that sat last in
+# system.cfg read as its default after being set (KILL10/KILL11 on the VM,
+# 2026-09-10). The key is matched literally (a dot in it is a dot), and the
+# value crosses through the environment, so `/`, `&`, `\` and spaces are
+# nobody's to interpret.
+function write_setting_line() {
+  if K="${1}" V="${2}" awk 'BEGIN { k = ENVIRON["K"]; v = ENVIRON["V"] }
+                            index($0, k "=") != 1 { print }
+                            END { print k "=" v }' "${J_CONF}" > "${J_CONF}.tmp" 2>/dev/null
+  then
+    mv -f "${J_CONF}.tmp" "${J_CONF}"
+  else
+    rm -f "${J_CONF}.tmp"
+  fi
+}
 function del_setting() {
   wait_lock
   if [[ "${1}" =~ ^[[:alnum:]] ]]
   then
-    sed -i "/^${1}=/d" "${J_CONF}"
+    if [ "${1}" = "system.hostname" ]
+    then
+      # The hostname line is the sentinel chksysconfig reads a usable
+      # system.cfg by -- deliberate since #102, where a file that had lost
+      # it was the symptom of "defaults won". Deleting the line made the
+      # file read as damaged at the next shutdown and boot, and the last
+      # good copy, with the old name in it, came back (#154). So this key's
+      # default is an empty value, not an absent line: network-base-setup
+      # already reads empty as the shipped default and gives the unit its
+      # own name at the next boot (D-NET-002, D-NET-009). The sentinel
+      # itself is not loosened.
+      write_setting_line "${1}" ""
+    else
+      sed -i "/^${1}=/d" "${J_CONF}"
+    fi
   fi
   rm -f "${J_CONF_LOCK}"
 }
@@ -225,31 +263,12 @@ function set_setting() {
   then
     if [ "${2}" = "default" ]
     then
+      # Removes the line -- or, for system.hostname, empties it: see there.
       del_setting "${1}"
     else
-      # Delete and re-add in ONE write under ONE lock hold: awk prints every
-      # line but the key's, then the key's new line, into a temporary beside
-      # the file, and the temporary is renamed over it -- so the file goes
-      # from the old content to the new in a single step, and an empty file
-      # (a torn write left it so) gets its one line the same way. It used to
-      # be del_setting (a rename) and then an append, with the lock released
-      # and retaken in between: a kill between the two lost the key
-      # (D-CLOUD-078, #105). Then it was one sed -i, `/^k=/d` and `$a k=v`,
-      # which loses the key whenever its line is the LAST line of the file:
-      # `d` ends the cycle and `$a` never runs for that line, so every key
-      # that sat last in system.cfg read as its default after being set
-      # (KILL10/KILL11 on the VM, 2026-09-10). The key is matched literally
-      # (a dot in it is a dot), and the value crosses through the
-      # environment, so `/`, `&`, `\` and spaces are nobody's to interpret.
+      # One write under one lock hold (write_setting_line says why).
       wait_lock
-      if K="${1}" V="${2}" awk 'BEGIN { k = ENVIRON["K"]; v = ENVIRON["V"] }
-                                index($0, k "=") != 1 { print }
-                                END { print k "=" v }' "${J_CONF}" > "${J_CONF}.tmp" 2>/dev/null
-      then
-        mv -f "${J_CONF}.tmp" "${J_CONF}"
-      else
-        rm -f "${J_CONF}.tmp"
-      fi
+      write_setting_line "${1}" "${2}"
       rm -f "${J_CONF_LOCK}"
     fi
   fi

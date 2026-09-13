@@ -49,6 +49,11 @@
 #      protocol line and Couldn't finish ... Try again. as the outcome line;
 #      a run that completes ends on Completed. and stamps 0; a transfer that
 #      keeps moving past the ceiling is not ended (D-CLOUD-126, #153).
+#   o. set_setting system.hostname default (and del_setting) leaves an empty
+#      system.hostname= line rather than none, so chksysconfig still reads
+#      the file as usable and network-base-setup gives the unit its own name
+#      at the next boot; any other key deleted with default is removed as
+#      before (D-NET-009, #154).
 #
 # The chksysconfig and 001-functions functions are lifted out of the files
 # under test and run in a fresh bash against temp paths, as wait-lock-test
@@ -80,8 +85,9 @@
 #                                             # busybox tr never passed
 #     BASE_REF=8707919349 tools/last-good-scripts-test --old
 #                                             # h (the deliberate stall, the
-#                                             # deliberate why) and n FAIL:
+#                                             # deliberate why), n and o FAIL:
 #                                             # the scripts from before #153
+#                                             # and #154
 #     tools/last-good-scripts-test            # PASSED
 #
 # One FAIL in m that names "the built image" is about the build root on this
@@ -332,7 +338,7 @@ bt restore --then-cloud; rcg=${RC}
 echo "  c. set_setting is one rename; sort_settings refuses an empty result"
 C="${TMP}/c"; mkdir -p "${C}"
 {
-    sed -n '/^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function sort_settings() {/,/^}/p; /^function set_setting() {/,/^}/p; /^function clean_hostname() {/,/^}/p' "${FN}"
+    sed -n '/^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function sort_settings() {/,/^}/p; /^function set_setting() {/,/^}/p; /^function clean_hostname() {/,/^}/p' "${FN}"
     printf 'J_CONF=%q; J_CONF_LOCK=%q\nlogger() { :; }\n' "${C}/system.cfg" "${C}/lock"
 } > "${C}/f.sh"
 printf 'system.hostname=X\nz.key=old\na=1\n' > "${C}/system.cfg"
@@ -1045,6 +1051,37 @@ rm -f "${STAMP}" "${NS}/.cache/cloud_sync/settings-backup.uploaded"; : > "${NLOG
 nb
 [ "${RC}" -eq 0 ] && [ "${DT}" -ge 15 ] && ! grep -q 'made no progress' "${NLOG}"; check $? "a transfer that keeps moving for longer than the ceiling (15 s of climbing bytes against 9 s) is not ended (rc ${RC}, ${DT}s)" "rc ${RC} after ${DT}s; log: $(grep -o 'made no progress[^|]*' "${NLOG}" | head -1) -- a fixed ceiling ends the transfers a deliberate run exists for"
 rm -f "${N}/run/crawl"
+
+echo "  o. set_setting system.hostname default keeps the line chksysconfig's sentinel reads, empty (D-NET-009)"
+# The functions lifted in c, chksysconfig's in a, and case m's
+# network-base-setup sandbox. `set_setting system.hostname default` deleted
+# the line chksysconfig treats as the sentinel of a usable system.cfg, so
+# the file read as damaged at the next shutdown ("not backing up
+# system.cfg") and boot ("recovering"), and the last good copy brought the
+# old name back twice (#154, guest b). The key's default is an empty value:
+# the line stays, chksysconfig accepts the file and takes it as the record,
+# and network-base-setup reads empty as the shipped default and names the
+# unit at the next boot. Any other key deleted with default is removed as
+# it always was.
+printf 'a=1\nsystem.hostname=Max Deck\nz=2\n' > "${C}/system.cfg"
+PATH="${TMP}/bbin:${PATH}" bash -c ". '${C}/f.sh'; set_setting system.hostname default" 2>/dev/null
+[ "$(sort "${C}/system.cfg" | tr '\n' '|')" = "a=1|system.hostname=|z=2|" ]; check $? "set_setting system.hostname default leaves an empty system.hostname= line" "system.cfg: '$(tr '\n' '|' < "${C}/system.cfg")' -- the sentinel line was deleted (#154)"
+PATH="${TMP}/bbin:${PATH}" bash -c ". '${C}/f.sh'; set_setting z default" 2>/dev/null
+[ "$(sort "${C}/system.cfg" | tr '\n' '|')" = "a=1|system.hostname=|" ]; check $? "another key deleted with default is removed as before (z)" "system.cfg: '$(tr '\n' '|' < "${C}/system.cfg")'"
+printf 'a=1\nsystem.hostname=Max Deck\n' > "${C}/system.cfg"
+PATH="${TMP}/bbin:${PATH}" bash -c ". '${C}/f.sh'; del_setting system.hostname" 2>/dev/null
+[ "$(tr '\n' '|' < "${C}/system.cfg")" = "a=1|system.hostname=|" ]; check $? "del_setting system.hostname does the same" "system.cfg: '$(tr '\n' '|' < "${C}/system.cfg")'"
+[ ! -e "${C}/system.cfg.tmp" ]; check $? "and leaves no temporary beside the file" "system.cfg.tmp left behind"
+# chksysconfig on that file: usable, and the shutdown-time backup takes it
+# as the record rather than refusing it as damaged.
+cp "${C}/system.cfg" "${CFGF}"; printf 'system.hostname=OLD\n' > "${CFGF}.backup"
+PATH="${A}/bin:${TMP}/bbin:${PATH}" bash -c ". '${A}/fns.sh'; valid '${CFGF}'" 2>/dev/null; check $? "chksysconfig reads the file as usable (the sentinel line is there, empty)" "chksysconfig calls the file damaged: no hostname line"
+PATH="${A}/bin:${TMP}/bbin:${PATH}" bash -c ". '${A}/fns.sh'; backup" 2>"${TMP}/o.err"
+cmp -s "${CFGF}" "${CFGF}.backup"; check $? "and the shutdown-time backup takes it as the last good copy" "refused: $(tr '\n' '|' < "${TMP}/o.err" | cut -c1-160) -- the copy with the old name stays the record and comes back at the next boot (#154)"
+# network-base-setup on that file: the empty name is the shipped default
+# and the unit gets its own, written back.
+cp "${C}/system.cfg" "${MS}/system.cfg"; OUT="${M}/out"
+nbs; [ "$(hn)" = "H700-9a3f" ] && grep -q 'shipped default' "${OUT}"; check $? "network-base-setup then names the unit H700-9a3f and the log says the shipped default was replaced" "system.hostname is '$(hn)'; log: $(grep -o 'device name[^|]*' "${OUT}" | head -1)"
 
 echo
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
