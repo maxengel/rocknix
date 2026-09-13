@@ -214,6 +214,33 @@ archive_ok() {
     esac
 }
 
+# The standalone emulators' cheevos_*.sh scripts copy the RetroAchievements
+# token out of system.cfg into the emulator's own files at every launch, so
+# the token that write_archive deletes from the archived system.cfg would
+# come back into the archive under another name (#169; D-INFRA-010: no keys
+# travel). Two shapes. RATOKENFILES hold the token and nothing of the
+# player's -- PPSSPP's .dat is the bare token, Dolphin's RetroAchievements.ini
+# and SkyEmu's ra_token.txt are rewritten whole from system.cfg, ARMSX2's
+# secrets.ini is the shipped seed plus the token -- so they are held back
+# like rclone.conf and skipped on restore, and the emulator writes them
+# again from system.cfg the first time it starts after a restore, once the
+# player has signed in again. RATOKENSETTINGS are the emulator's whole
+# settings file with a token line in it; those travel with the value
+# blanked, as retroarch.cfg does. Only PPSSPP's is in the default LOCATIONS;
+# the rest are reached by a custom list such as /storage/.config.
+RATOKENFILES=(
+    /storage/.config/ppsspp/PSP/SYSTEM/ppsspp_retroachievements.dat  # cheevos_ppsspp.sh
+    /storage/.config/dolphin-emu/RetroAchievements.ini               # cheevos_dolphin.sh
+    /storage/.config/SkyEmu/ra_token.txt                             # cheevos_skyemu.sh
+    /storage/.config/ARMSX2/inis/secrets.ini                         # cheevos_armsx2.sh
+)
+RATOKENSETTINGS=(
+    /storage/.config/duckstation/settings.ini   # Token =   (DuckStation's own sign-in; cheevos_duckstation.sh is disabled upstream)
+    /storage/.config/melonDS/melonDS.ini        # RA_Token= RA_Password=   (cheevos_melonds.sh)
+    /storage/.config/flycast/emu.cfg            # Token =   (cheevos_flycast.sh)
+    /storage/.config/aethersx2/inis/PCSX2.ini   # Token =   (cheevos_aethersx2.sh)
+)
+
 # Write one settings archive to TARGET, whole or not at all.
 #
 # Staged, then archived once, to TARGET.partial; listed back (tar -tzf) as
@@ -239,7 +266,7 @@ write_archive() {
     local ESCFG="${ESPATH}/es_settings.cfg"
     local RACFG="/storage/.config/retroarch/retroarch.cfg"
     local RCLONECFG="/storage/.config/rclone/rclone.conf"
-    local FILELIST SECRETLIST SENDLIST STAGING CANDIDATE
+    local FILELIST SECRETLIST SENDLIST STAGING CANDIDATE HELD BLANKED
 
     # Regular files only: a symlink under the config tree is the OS's
     # (es_systems.cfg and es_features.cfg point into /usr/config; the
@@ -341,6 +368,28 @@ write_archive() {
         then
             logger -t backuptool "rclone.conf held back from the archive: cloud tokens never travel in a backup (#52)"
         fi
+        # The emulators' copies of the RetroAchievements token (#169; the
+        # lists above write_archive). The token-only files are held back
+        # outright, and the count goes to the log the way the pruned seeds'
+        # does; the settings files go on the list so a blanked copy is
+        # staged below in place of the real one.
+        HELD=0
+        for CANDIDATE in "${RATOKENFILES[@]}"
+        do
+            if grep -qxF "${CANDIDATE}" "${FILELIST}"
+            then
+                echo "${CANDIDATE}" >> "${SECRETLIST}"
+                HELD=$((HELD + 1))
+            fi
+        done
+        [ "${HELD}" -gt 0 ] && logger -t backuptool "held back ${HELD} file(s) that hold only a RetroAchievements token; the emulator writes them again at its next start (#169)"
+        for CANDIDATE in "${RATOKENSETTINGS[@]}"
+        do
+            if grep -qxF "${CANDIDATE}" "${FILELIST}"
+            then
+                echo "${CANDIDATE}" >> "${SECRETLIST}"
+            fi
+        done
     fi
 
     # busybox grep -f with an EMPTY pattern file matches nothing and prints
@@ -414,6 +463,26 @@ write_archive() {
             sed -E 's/^([a-z_]*(password|token|stream_key)) = ".*"$/\1 = ""/' "${RACFG}" \
                 > "${STAGING}/storage/.config/retroarch/retroarch.cfg"
         fi
+
+        # The standalone emulators' settings files carry the token as a
+        # line of their own -- `Token = ` in DuckStation's, flycast's and
+        # AetherSX2's, `RA_Token=` and `RA_Password=` in melonDS's. Blank
+        # the value and keep the key, as for retroarch.cfg: the cheevos_*.sh
+        # script finds the line and writes the token back at the next
+        # launch. No other key in those files ends in Token or Password
+        # (checked against the shipped seeds, 2026-09-13; #169).
+        BLANKED=0
+        for CANDIDATE in "${RATOKENSETTINGS[@]}"
+        do
+            if grep -qxF "${CANDIDATE}" "${SECRETLIST}"
+            then
+                mkdir -p "${STAGING}${CANDIDATE%/*}"
+                sed -E 's/^([A-Za-z_]*(Token|Password)[[:space:]]*=[[:space:]]*).*$/\1/' "${CANDIDATE}" \
+                    > "${STAGING}${CANDIDATE}"
+                BLANKED=$((BLANKED + 1))
+            fi
+        done
+        [ "${BLANKED}" -gt 0 ] && logger -t backuptool "blanked the RetroAchievements token in ${BLANKED} emulator settings file(s) (#169)"
     fi
     rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
 
@@ -562,9 +631,17 @@ case "${VERB}" in
             # PPSSPP's assets and shader cache, and extracting them over a
             # newer image's would put an older emulator's program data under a
             # newer emulator (upgrade-and-install: fixing what is written does
-            # nothing for what was already written).
+            # nothing for what was already written). And the files that hold
+            # only a RetroAchievements token, which every archive written
+            # before #169 carries: a token from before is not put on this
+            # device, and the emulator writes a current one from system.cfg
+            # at its next start. That is all a restore strips. The settings
+            # files' token lines an older archive still carries are left to
+            # the emulator, which rewrites them at launch; tar cannot edit a
+            # member on the way past, and the archive is where the token
+            # must not be.
             SKIP=$(mktemp)
-            printf '%s\n' 'storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' > "${SKIP}"
+            printf '%s\n' 'storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" > "${SKIP}"
             tar -xzf "${BACKUPFILE}" -C / -X "${SKIP}" >/dev/null
             RC_TAR=$?; rm -f "${SKIP}"; (exit ${RC_TAR})
         else
@@ -579,8 +656,9 @@ case "${VERB}" in
             # a zip is the oldest archive there is, written when assets/ and
             # the shader cache travelled whole, so it is the archive most
             # likely to carry them -- and until #151 PL-03 this branch skipped
-            # neither, while D-CLOUD-008 said "from any archive".
-            SKIP=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*')
+            # neither, while D-CLOUD-008 said "from any archive". The token-only
+            # files are skipped here too (#169), as in the tar branch.
+            SKIP=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}")
             SKIPPED=0
             for ENTRY in $(unzip -l "${BACKUPFILE}" 2>/dev/null | awk 'NF>3 && $4 ~ /^storage\// {print $4}')
             do
@@ -721,10 +799,18 @@ case "${VERB}" in
             # containing a space split into two names that do not exist, tar
             # errored into /dev/null, and those members went unscanned -- a
             # credential check failing open.
+            # The capitalised keys are the ones the standalone emulators'
+            # cheevos_*.sh scripts write (Token, ApiToken, RA_Token,
+            # RA_Password); until #169 the anchor was lower-case only, so
+            # the token travelled in every backup of a device that had run
+            # PPSSPP with RetroAchievements on and this line never spoke.
+            # Named, not matched case-insensitively, so a catalogue's
+            # `Password = ...` stays out. A bare-token file (.dat, .txt) has
+            # no key shape to match; those are held back by name instead.
             SCANDIR=$(mktemp -d)
             tar -xzf "${BACKUPFILE}" -C "${SCANDIR}" 2>/dev/null
             LEAKS=$(find "${SCANDIR}" -type f \( -name '*.cfg' -o -name '*.conf' -o -name '*.ini' \) \
-                -exec grep -hE '^[a-z_.]*(password|pass|token|secret|stream_key|key) *[=:] *"?[^"[:space:]]+' {} + 2>/dev/null \
+                -exec grep -hE '^([a-z_.]*(password|pass|token|secret|stream_key|key)|Token|ApiToken|RA_Token|RA_Password) *[=:] *"?[^"[:space:]]+' {} + 2>/dev/null \
                 | wc -l)
             rm -rf "${SCANDIR}"
         else
