@@ -1827,7 +1827,7 @@ Maintainer's order: #116, #52, #71, #39, then #74 and #100, one build.
 
 - `cloud_setup --info` no longer prints the root password; it says whether
   one is set, and EmulationStation reads the value in-process where the SSH
-  page must show or pre-fill it (D-INFRA-008).
+  page must show or pre-fill it (D-INFRA-010).
 - `backuptool` holds `rclone.conf` back from every archive, outright; the
   post-restore CHECK CONNECTION tells a device with no cloud storage where to
   connect it, and the credential scanner knows rclone's key names

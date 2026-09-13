@@ -15,7 +15,11 @@ so they get re-derived, contradicted, or quietly re-decided.
 ## The contract
 
 - **Append-only.** A reversal or refinement is a **new row citing the old ID**.
-  Never edit or delete a decided row; the history is the point.
+  Never edit or delete a decided row; the history is the point. The one
+  exception is clerical (D-WORKFLOW-013): a mis-keyed ID is corrected in the
+  ID cell alone, the text untouched, with a row recording the fix and the live
+  citations cleaned up in the same change. `tools/register-check` refuses a
+  duplicate ID and a citation that names no row; run it after every edit here.
 - **One row per decision**: date, stable ID (`D-<AREA>-<n>`), the decision in a
   sentence or two with the operative choice in bold, and refs — the issue,
   commit, or comment where it was made or is evidenced.
