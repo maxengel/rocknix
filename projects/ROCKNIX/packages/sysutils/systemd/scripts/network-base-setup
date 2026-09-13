@@ -25,13 +25,35 @@ RAW_HOSTNAME=$(get_setting system.hostname)
 # address. Any other name is the player's and is never touched (D-NET-001).
 # An empty name gets the same default rather than the bare ROCKNIX below.
 FAMILY=$(sed -n 's/^HW_DEVICE="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' /etc/os-release 2>/dev/null | head -1)
+SHIPPED=""
 if [ -z "${RAW_HOSTNAME}" ] || { [ -n "${FAMILY}" ] && [ "${RAW_HOSTNAME}" = "${FAMILY}" ]; }; then
+  SHIPPED="the shipped default (${FAMILY:-empty})"
+else
+  # The generated shape with another unit's digits is another unit's shipped
+  # default, carried here by a settings restore (#151 PL-02, D-NET-004):
+  # unit A boots as H700-9a3f, the player restores A's settings on unit B --
+  # the fresh-handheld journey -- and B's system.cfg says H700-9a3f, neither
+  # the family nor empty, so it read as the player's and both units kept one
+  # name, permanently where before it was per boot. The shape is the family
+  # as the network spells it (GENERIC_X64 is GENERIC-X64), a hyphen and four
+  # hex digits; whose digits they are is decided below, once this unit's own
+  # are known. A name of another family's shape is left alone, as the bare
+  # family is. A player who typed exactly this shape with digits not their
+  # unit's loses it, as one who typed the bare family does (D-NET-002).
+  case "${RAW_HOSTNAME}" in
+    "$(clean_hostname "${FAMILY:-ROCKNIX}")"-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]) SHIPPED="another unit's shipped default (${RAW_HOSTNAME}), carried here by a settings restore" ;;
+  esac
+fi
+if [ -n "${SHIPPED}" ]; then
   UNIT_ID=$(cloud_device_id 2>/dev/null)
   UNIT=$(printf '%s' "${UNIT_ID##*-}" | tr -cd 'a-f0-9' | cut -c1-4)
   if [ -n "${UNIT}" ]; then
-    RAW_HOSTNAME=$(clean_hostname "${FAMILY:-ROCKNIX}-${UNIT}")
-    set_setting system.hostname "${RAW_HOSTNAME}"
-    logger -t network-base-setup "device name was the shipped default (${FAMILY:-empty}); it is now ${RAW_HOSTNAME}, this unit's own"
+    OWN=$(clean_hostname "${FAMILY:-ROCKNIX}-${UNIT}")
+    if [ "${RAW_HOSTNAME}" != "${OWN}" ]; then
+      RAW_HOSTNAME="${OWN}"
+      set_setting system.hostname "${RAW_HOSTNAME}"
+      logger -t network-base-setup "device name was ${SHIPPED}; it is now ${RAW_HOSTNAME}, this unit's own"
+    fi
   fi
 fi
 HOSTNAME=$(clean_hostname "${RAW_HOSTNAME}")

@@ -729,6 +729,22 @@ printf 'system.hostname=\n' > "${MS}/system.cfg"
 nbs; [ "$(hn)" = "H700-9a3f" ]; check $? "an empty name gets the unit's own too" "empty became '$(hn)'"
 printf 'system.hostname=RK3566\n' > "${MS}/system.cfg"
 nbs; [ "$(hn)" = "RK3566" ]; check $? "another family's name is not this device's shipped default and is left alone" "RK3566 became '$(hn)'"
+# A settings restore carries system.hostname, so another unit's generated
+# name arrives on this one and, being neither the family nor empty, read as
+# the player's: both units kept one name (#151 PL-02, D-NET-004). The shape
+# with digits not this unit's is re-derived; a typed name and another
+# family's shape are not.
+printf 'system.hostname=H700-15ca\n' > "${MS}/system.cfg"
+nbs; [ "$(hn)" = "H700-9a3f" ] && grep -q "another unit's shipped default (H700-15ca)" "${OUT}"; check $? "another unit's generated name of this family (H700-15ca, carried by a settings restore) becomes this unit's H700-9a3f, and the log says whose it was" "H700-15ca became '$(hn)'; log: $(grep -o 'device name[^|]*' "${OUT}" | head -1) -- two units keep one name after a restore (#151 PL-02)"
+nbs; [ "$(hn)" = "H700-9a3f" ] && ! grep -q 'device name' "${OUT}"; check $? "and the unit's own generated name is then left alone, silently" "own name: '$(hn)'; log: $(grep -o 'device name[^|]*' "${OUT}" | head -1)"
+printf 'system.hostname=RK3566-15ca\n' > "${MS}/system.cfg"
+nbs; [ "$(hn)" = "RK3566-15ca" ]; check $? "another family's generated name is left alone, as the bare family is (RK3566-15ca)" "RK3566-15ca became '$(hn)'"
+# The family as the network spells it: GENERIC_X64 boots as GENERIC-X64-xxxx,
+# so the shape is matched on the cleaned family, not the raw one.
+printf 'NAME="ROCKNIX"\nHW_DEVICE="GENERIC_X64"\n' > "${M}/os-release"
+printf 'system.hostname=GENERIC-X64-15ca\n' > "${MS}/system.cfg"
+nbs; [ "$(hn)" = "GENERIC-X64-9a3f" ]; check $? "a family the network spells with a hyphen (GENERIC_X64): GENERIC-X64-15ca becomes GENERIC-X64-9a3f" "GENERIC-X64-15ca became '$(hn)' -- the shape was matched on the raw family name"
+printf 'NAME="ROCKNIX"\nHW_DEVICE="H700"\n' > "${M}/os-release"
 # The responder is told the name only when it is already up (the boot that
 # is not in order); a daemon that is not running is a log line, not a failed
 # call -- the unguarded call failed on every boot and was removed for it.
