@@ -13,12 +13,14 @@
 #   ./tools/vm-qa <image> --link                             # also the seven link-loss cells (minutes each; need the serial console)
 #   ./tools/vm-qa --skip-up --only walks --guest b           # the walks on vm-pair's second guest
 #   ./tools/vm-qa --skip-up --only round-trip --backend sftp # the round trip against another cloud (#133)
+#   ./tools/vm-qa --list                                     # the suite names --only takes, one per line
 #
 # What runs, in order, each with its own log and a PASS/FAIL line:
 #
 #   scripts     tools/last-good-scripts-test  -- the scripts under busybox shims, on the host
 #   lifetime    ES tests/cloud-oauth-lifetime.py -- the wizard's page lifetimes under ASan, on the host (ES_SRC)
 #   vocabulary  tools/vocabulary-check       -- back up / backup as verb / noun, ES strings and script lines, on the host
+#   register    tools/register-check         -- the decision register: every ID once, every citation names a row, on the host (ES_SRC)
 #   pair-identity  the two guests' MACs, cloud_device_ids (#91) and hostnames (#50) differ, over ssh
 #   round-trip  tools/cloud-round-trip        -- 27 steps over SSH against the QA cloud, guest a
 #   exit        tools/emulator-exit-test --vm -- the exit hotkey ends a game once, save written, guest a
@@ -35,7 +37,8 @@
 # handheld: the guests are tools/vm-pair's, on this host (fork #120, box 1).
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-IMAGE=""; SKIP_UP=0; ONLY="scripts,lifetime,vocabulary,pair-identity,round-trip,exit,time-to-play,walks"; LINK=0; GUEST=a
+IMAGE=""; SKIP_UP=0; ONLY="scripts,lifetime,vocabulary,register,pair-identity,round-trip,exit,time-to-play,walks"; LINK=0; GUEST=a
+SUITES="scripts lifetime vocabulary register pair-identity round-trip exit time-to-play link walks"
 # Which of the five QA clouds every suite here talks to (#133). It is one
 # variable and not a per-suite flag on purpose: the backend the endpoint is
 # brought up on, the stanza the walks seed, and the endpoint the round trip
@@ -49,7 +52,8 @@ while [ $# -gt 0 ]; do
     --guest) GUEST=$2; shift 2 ;;
     --backend) BACKEND=$2; shift 2 ;;
     --link) LINK=1; shift ;;
-    -h|--help) sed -n '5,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --list) printf '%s\n' $SUITES; exit 0 ;;
+    -h|--help) sed -n '5,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) IMAGE=$1; shift ;;
   esac
 done
@@ -122,6 +126,25 @@ case ",$ONLY," in *,lifetime,*)   run_suite lifetime   "$OUT/lifetime.log"   lif
 # string in the ES checkout the image pins and every sentence the scripts
 # print for a player. On the host, in a second (2026-09-12, the maintainer's ask).
 case ",$ONLY," in *,vocabulary,*) run_suite vocabulary "$OUT/vocabulary.log" env ES_SRC="${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}" "$ROOT/tools/vocabulary-check" ;; esac
+# The decision register as a lookup table (D-WORKFLOW-013): every ID once,
+# and every `D-<AREA>-<n>` cited in a live document -- the rules, the
+# scripts, the tools, and EmulationStation's sources when the checkout the
+# image pins is on this host -- names a row. It had fired for real
+# (D-CLOUD-007, and a dangling citation the same week) and nothing ran it
+# but a hand (audit #151 PL-11). On the host, in a second, beside vocabulary.
+# Without the ES checkout the register is still checked; the log says what
+# was not.
+register_suite() {
+  local es="${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}"
+  if [ -d "$es" ]; then
+    echo "EmulationStation sources from $es at $(git -C "$es" rev-parse --short HEAD 2>/dev/null || echo '?')"
+    env ES_SRC="$es" "$ROOT/tools/register-check"
+  else
+    echo "no EmulationStation checkout at $es (set ES_SRC): the register is checked without the interface's citations"
+    env -u ES_SRC "$ROOT/tools/register-check"
+  fi
+}
+case ",$ONLY," in *,register,*)   run_suite register   "$OUT/register.log"   register_suite ;; esac
 # The two guests are two devices (#91): different MACs, different
 # cloud_device_ids. The round trip's own guard for this (assert_two_devices)
 # runs only under --second-port, which also runs the two-device fixtures that

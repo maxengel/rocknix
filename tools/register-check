@@ -11,14 +11,25 @@
 #      two script trees and (when ES_SRC points at a checkout) EmulationStation's
 #      sources may cite `D-<AREA>-<n>` only for a row that exists.
 #
+# A citation is any `D-<LETTERS>-<DIGITS>` at a word boundary -- any area, any
+# width. It was `D-(CLOUD|UI|...)-[0-9]{3}`, so a citation under an area not in
+# that list (a THEME row, say) was never looked up, and a four-digit ID was
+# read as its first three digits and passed (audit #151 PL-11). This file is
+# itself an input, which is why the two examples are not spelled out here.
+#
 # Dated records are not checked for citations -- audit artifacts, work logs and
 # dated reports describe the register as it was -- but the register itself is
-# always checked whole. Exit 0 when clean, 1 with every problem listed.
+# always checked whole. Every input listed below has to be readable: a document
+# that cannot be read has not been checked, and this says so and fails rather
+# than passing over it (engineering-practices.md, guards fail closed). Runs on
+# the host as tools/vm-qa's `register` suite, beside `vocabulary`.
+# Exit 0 when clean, 1 with every problem listed.
 set -u
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 REG="${ROOT}/docs/decision-register.md"
 [ -r "${REG}" ] || { echo "register-check: no ${REG}" >&2; exit 2; }
 FAIL=0
+CITE='D-[A-Z]+-[0-9]+\b'
 
 # 1. every ID once, across both tables
 dups=$(grep -o -E '^\| D-[A-Z]+-[0-9]+ ' "${REG}" | tr -d '| ' | sort | uniq -d)
@@ -44,7 +55,17 @@ LIVE=(
     "${ROOT}/projects/ROCKNIX/packages/sysutils/systemd/scripts"
     "${ROOT}/tools"
 )
-[ -n "${ES_SRC:-}" ] && [ -d "${ES_SRC}" ] && LIVE+=("${ES_SRC}/es-app/src" "${ES_SRC}/es-core/src")
+# EmulationStation's sources are optional -- the checkout is not part of this
+# tree -- but once ES_SRC names one, it is an input like the others.
+if [ -n "${ES_SRC:-}" ]; then
+    LIVE+=("${ES_SRC}/es-app/src" "${ES_SRC}/es-core/src")
+fi
+for p in "${LIVE[@]}"; do
+    if [ ! -r "${p}" ]; then
+        echo "UNREADABLE ${p#${ROOT}/}: it is a live document and was not checked"
+        FAIL=1
+    fi
+done
 missing=0
 while IFS=: read -r file line cite; do
     [ -n "${cite}" ] || continue
@@ -53,13 +74,13 @@ while IFS=: read -r file line cite; do
         echo "MISSING ${cite}: ${file#${ROOT}/}:${line}"
         missing=$((missing + 1))
     fi
-done < <(grep -rn -o -E 'D-(CLOUD|UI|QA|WORKFLOW|INFRA|SYS|LAUNCH|NET)-[0-9]{3}' "${LIVE[@]}" 2>/dev/null \
+done < <(grep -rn -o -E "${CITE}" "${LIVE[@]}" 2>/dev/null \
          | grep -v -F "${REG}:" \
          | sed -E 's/^([^:]+):([0-9]+):(.*)$/\1:\2:\3/' | sort -u)
 # the register's own cross-references (a row citing an earlier row)
 while IFS= read -r cite; do
     grep -qx "${cite}" <<< "${ids}" || { echo "MISSING ${cite}: cited inside the register"; missing=$((missing + 1)); }
-done < <(grep -o -E 'D-(CLOUD|UI|QA|WORKFLOW|INFRA|SYS|LAUNCH|NET)-[0-9]{3}' "${REG}" | sort -u)
+done < <(grep -o -E "${CITE}" "${REG}" | sort -u)
 [ "${missing}" -eq 0 ] || FAIL=1
 
 n_rows=$(printf '%s\n' "${ids}" | grep -c .)
