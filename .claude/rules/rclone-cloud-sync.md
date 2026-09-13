@@ -293,23 +293,48 @@ changed: 18 s → 5 s. One save written: about 7 s, most of it Dropbox's commit.
 `tools/cloud-round-trip` asserts the window, the untouched remote, the
 single-file push, and the exit-4 timing.
 
-## The automatic sync is bounded; the deliberate one is not (D-CLOUD-118)
+## Both runs are bounded: the automatic one from its start, the deliberate one from its last progress (D-CLOUD-118, D-CLOUD-126)
 
 EmulationStation runs the startup sync and the sync after a game with
 `--automatic`. Under it every rclone the script makes carries
 `RCLONE_SYNC_NET_OPTS` (`--contimeout 5s --timeout 5s --retries 1
---max-duration 20s --low-level-retries 5 --transfers 1`) after the caller's own flags, and runs under busybox
-`timeout` against a deadline `SYNC_CEILING_SECONDS` (20) from the script's
+--max-duration 20s --low-level-retries 5 --transfers 1`) after the caller's own flags, and runs under
+`timeout` (coreutils' on the image -- busybox ships no such applet)
+against a deadline `SYNC_CEILING_SECONDS` (20) from the script's
 start -- because `--max-duration` bounds transfers and nothing else, and a
 stalled listing retried ten times is what held the exit card for 321 s on
 the VM (#135). A run the ceiling ends returns 124 (timeout) or 10 (rclone),
-and `why_for` says THE CLOUD TOOK TOO LONG - IT'LL TRY AGAIN NEXT TIME. The
-back up and restore a player presses keep `RCLONE_NET_OPTS`.
+and `why_for` says THE CLOUD TOOK TOO LONG - IT'LL TRY AGAIN NEXT TIME.
+
+The back up and restore a player presses keep `RCLONE_NET_OPTS`, and since
+#153 (D-CLOUD-126) run under a **stall ceiling**: every rclone of a
+deliberate run is ended, with 124, once it has made no progress for the
+bound's idle timeout (`--timeout 30s`) plus a six-second grace. Progress is
+read from rclone's own stats block -- the byte, check, file and delete
+counts exceeding what they had reached before; the block goes through a
+fifo and `tee` to a trace on its way to stdout, so the page and the card
+see exactly what they saw. The ceiling is measured from the last progress,
+not the call's start, because the deliberate run is the one that moves a
+first backup of every save state or an archive carrying a theme pack; a
+fixed ceiling would end exactly those. It exists because rclone's S3
+backend hands `--low-level-retries` to the AWS SDK, whose backoff no timeout
+of ours covers: a cut `cloud_backup --system-only` rode a 40 s outage out
+and completed 88.8 s after the cut, exit 0, stamping success (LINK5 on
+MinIO, 2026-09-13). The LINK5 capture also fixed the signal: rclone's
+transferred count never falls on a retry (8.902 MiB stood for 45 s while
+the total grew from 12.0 to 20.9 MiB), so a count above its previous high
+is progress and a total that grows is not. `why_for` on a deliberate 124
+says YOUR CLOUD STOPPED ANSWERING, with TRY AGAIN in reach. A run's summary
+now ends on its own sentence -- `Completed.`, `Couldn't finish: <why>. Try
+again.`, `Skipped: <reason>.` -- because `Settings backup: COMPLETED` was
+not a line the LINK cells' vocabulary gate accepts.
 
 Both keys live in `cloud_sync.conf` and its defaults with a fallback
 constant in each script; `tools/last-good-scripts-test` case h holds the
-three equal and proves the wrapper fires. The numbers are a starting point
-the maintainer accepted to tweak on feedback (2026-09-12).
+three equal and proves both wrappers fire, and case n runs `cloud_backup`
+whole against a shim rclone that hangs, crawls and completes. The numbers
+are a starting point the maintainer accepted to tweak on feedback
+(2026-09-12).
 
 Three retry counts, on purpose. A deliberate transfer keeps
 `--low-level-retries 10`: Dropbox answers a concurrent write with a lock

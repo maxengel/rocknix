@@ -24,8 +24,10 @@
 #   g. each script's RCLONE_NET_OPTS_FALLBACK equals the shipped
 #      RCLONE_NET_OPTS, so a torn conf does not silently restore #107 (#146).
 #   h. --automatic's rclone wrapper ends a stalled call at the ceiling and
-#      returns 124; a deliberate run is not wrapped; why_for knows 124 and 10;
-#      the automatic fallback equals the shipped value (D-CLOUD-118).
+#      returns 124; a deliberate run's is ended at the stall ceiling and
+#      returns 124 too, while one that finishes returns its own status;
+#      why_for says what 124 means to each; the automatic fallback equals
+#      the shipped value (D-CLOUD-118, D-CLOUD-126).
 #   i. cloud_net_ready settles on a held default route in any connected
 #      NetworkManager state; a still-connecting network exits 69 at the deadline.
 #   j. cloud_sync_helper migrates the pre-#107 retry bound once, with a marker,
@@ -41,6 +43,12 @@
 #      per-unit suffix once and writes it back; a name the player typed, or
 #      another family's, is left alone; the script no longer calls hostnamectl and
 #      the unit orders before systemd-hostnamed and NetworkManager (#50).
+#   n. a deliberate cloud_backup whose rclone stops making progress is ended
+#      at the stall ceiling (rclone's idle timeout plus a grace, sized from
+#      RCLONE_NET_OPTS): exit non-zero, no success stamp, the why on the
+#      protocol line and Couldn't finish ... Try again. as the outcome line;
+#      a run that completes ends on Completed. and stamps 0; a transfer that
+#      keeps moving past the ceiling is not ended (D-CLOUD-126, #153).
 #
 # The chksysconfig and 001-functions functions are lifted out of the files
 # under test and run in a fresh bash against temp paths, as wait-lock-test
@@ -70,6 +78,10 @@
 #     BASE_REF=c15050c897 tools/last-good-scripts-test --old
 #                                             # a FAILS: the text test that
 #                                             # busybox tr never passed
+#     BASE_REF=8707919349 tools/last-good-scripts-test --old
+#                                             # h (the deliberate stall, the
+#                                             # deliberate why) and n FAIL:
+#                                             # the scripts from before #153
 #     tools/last-good-scripts-test            # PASSED
 #
 # One FAIL in m that names "the built image" is about the build root on this
@@ -522,14 +534,22 @@ for scr in cloud_backup cloud_restore cloud_content_backup cloud_content_restore
   [ -n "${fb}" ] && [ "${fb}" = "${shipped}" ]; check $? "${scr}: RCLONE_NET_OPTS_FALLBACK is the shipped value" "${scr}: fallback is '${fb:-(none)}', shipped is '${shipped}'"
 done
 
-echo "  h. --automatic: the rclone wrapper ends a stalled call at the ceiling, and says what that means (D-CLOUD-118)"
-# The wrapper is lifted out of cloud_backup and run against a shim rclone that
-# sleeps for a minute. With AUTOMATIC=1 and a deadline 3 s away it must
-# return 124 within a few seconds; with AUTOMATIC=0 the same shim is left
-# alone (a fast shim, so the case does not wait a minute to prove it).
-H="${TMP}/h"; mkdir -p "${H}/shim"
-printf '#!/bin/sh\nsleep "${SHIM_SLEEP:-60}"\n' > "${H}/shim/rclone"; chmod +x "${H}/shim/rclone"
-sed -n '/^rclone() {/,/^}/p' "${ROOT}/${RCLONE_REL}/cloud_backup" > "${H}/wrapper.sh"
+echo "  h. the rclone wrapper: an automatic run's stalled call ends at the ceiling, a deliberate run's at the stall ceiling (D-CLOUD-118, D-CLOUD-126)"
+# The wrapper and its helpers are lifted out of cloud_backup (from BASE_REF
+# under --old, as every case does since #151 PL-10) and run against a shim
+# rclone that sleeps. With AUTOMATIC=1 and a deadline 3 s away it must
+# return 124 within a few seconds. With AUTOMATIC=0 and a 3 s stall ceiling
+# a shim that finishes returns its own status, and one that prints nothing
+# and sleeps is ended at the ceiling and returns 124 as well -- the shipped
+# scripts left it to sleep its 20 s out and returned 0 (#153). The shim
+# execs its sleep so a TERM reaches the process holding the wrapper's fifo.
+H="${TMP}/h"; mkdir -p "${H}/shim" "${H}/run"
+printf '#!/bin/sh\nexec sleep "${SHIM_SLEEP:-60}"\n' > "${H}/shim/rclone"; chmod +x "${H}/shim/rclone"
+src_of "${RCLONE_REL}/cloud_backup" "${H}/cloud_backup"; src_of "${RCLONE_REL}/cloud_restore" "${H}/cloud_restore"
+{
+    sed -n '/^child_running() {/,/^}/p; /^progress_mark() {/,/^}/p; /^advance_mark() {/,/^}/p; /^bounded_rclone() {/,/^}/p; /^rclone() {/,/^}/p' "${H}/cloud_backup"
+    printf 'RCLONE_OUTER=""; RCLONE_CHILD=""; CEILING_DIR_ROOT=%q; DELIBERATE_CEILING_SECONDS=3\nlog_message() { :; }\n' "${H}/run"
+} > "${H}/wrapper.sh"
 grep -q 'command timeout' "${H}/wrapper.sh"; check $? "the wrapper is lifted from cloud_backup" "no rclone() wrapper found in cloud_backup"
 t0=$(date +%s)
 RC_H=$(PATH="${H}/shim:${PATH}" bash -c ". '${H}/wrapper.sh'; AUTOMATIC=1; SYNC_DEADLINE=\$(( \$(date +%s) + 3 )); RCLONE_SYNC_NET_OPTS_ARRAY=(--retries 1); rclone lsd x: ; echo \$?" 2>/dev/null | tail -1)
@@ -537,10 +557,14 @@ dt=$(( $(date +%s) - t0 ))
 [ "${RC_H}" = "124" ]; check $? "an automatic run's stalled rclone returns 124 (timeout)" "returned '${RC_H}'"
 [ "${dt}" -le 10 ]; check $? "and within the ceiling (${dt}s)" "took ${dt}s"
 RC_H=$(PATH="${H}/shim:${PATH}" SHIM_SLEEP=0 bash -c ". '${H}/wrapper.sh'; AUTOMATIC=0; SYNC_DEADLINE=0; rclone lsd x: ; echo \$?" 2>/dev/null | tail -1)
-[ "${RC_H}" = "0" ]; check $? "a deliberate run's rclone is not wrapped" "returned '${RC_H}'"
+[ "${RC_H}" = "0" ]; check $? "a deliberate run's rclone that finishes returns its own status" "returned '${RC_H}'"
+t0=$(date +%s)
+RC_H=$(PATH="${H}/shim:${PATH}" SHIM_SLEEP=20 bash -c ". '${H}/wrapper.sh'; AUTOMATIC=0; SYNC_DEADLINE=0; rclone lsd x: ; echo \$?" 2>/dev/null | tail -1)
+dt=$(( $(date +%s) - t0 ))
+[ "${RC_H}" = "124" ] && [ "${dt}" -le 10 ]; check $? "a deliberate run's rclone that shows no progress is ended at the stall ceiling and returns 124 (${dt}s)" "returned '${RC_H}' after ${dt}s -- a deliberate run's stalled rclone was left to itself (#153)"
 for scr in cloud_backup cloud_restore; do
-  w=$(bash -c ". <(sed -n '/^why_for() {/,/^}/p' '${ROOT}/${RCLONE_REL}/${scr}'); why_for 124; why_for 10" 2>/dev/null | sort -u | wc -l)
-  bash -c ". <(sed -n '/^why_for() {/,/^}/p' '${ROOT}/${RCLONE_REL}/${scr}'); why_for 124" 2>/dev/null | grep -q "TOOK TOO LONG"; check $? "${scr}: why_for 124 and 10 say the cloud took too long (${w} distinct)" "${scr}: $(bash -c ". <(sed -n '/^why_for() {/,/^}/p' '${ROOT}/${RCLONE_REL}/${scr}'); why_for 124")"
+  bash -c ". <(sed -n '/^why_for() {/,/^}/p' '${H}/${scr}'); AUTOMATIC=1; why_for 124" 2>/dev/null | grep -q "TOOK TOO LONG"; check $? "${scr}: why_for 124 on an automatic run says the cloud took too long" "${scr}: $(bash -c ". <(sed -n '/^why_for() {/,/^}/p' '${H}/${scr}'); AUTOMATIC=1; why_for 124" 2>/dev/null)"
+  bash -c ". <(sed -n '/^why_for() {/,/^}/p' '${H}/${scr}'); AUTOMATIC=0; why_for 124" 2>/dev/null | grep -q "STOPPED ANSWERING"; check $? "${scr}: and on a deliberate run that the cloud stopped answering (TRY AGAIN is in reach)" "${scr}: '$(bash -c ". <(sed -n '/^why_for() {/,/^}/p' '${H}/${scr}'); AUTOMATIC=0; why_for 124" 2>/dev/null)' -- the automatic sync's words, promising a retry nobody scheduled (#153)"
 done
 for scr in cloud_backup cloud_restore cloud_content_backup cloud_content_restore; do :; done
 shipped_sync=$(sed -n 's/^DEFAULT_RCLONE_SYNC_NET_OPTS="\(.*\)"$/\1/p' "${ROOT}/${RCLONE_REL}/cloud_sync.conf.defaults")
@@ -904,6 +928,123 @@ case "${BB}" in
 esac
 grep -q -E '^[[:space:]]*enable_service avahi-daemon.service' "${M}/repo/avahi-package.mk" && grep -q -E '^After=.*network-base\.service' "${AVAHI_UNIT}"; check $? "the mDNS responder is enabled, and its unit in ${AVAHI_WHERE} orders after network-base (D-NET-003)" "avahi: enabled=$(grep -c -E '^[[:space:]]*enable_service avahi-daemon.service' "${M}/repo/avahi-package.mk"); the unit in ${AVAHI_WHERE} has $(grep -E '^After=' "${AVAHI_UNIT}" || echo 'no After= line') -- avahi's stock unit ships over the fork's unless the recipe removes usr/lib/systemd (#151 PL-01); rebuild avahi and the image"
 grep -q -E '^Before=.*systemd-hostnamed\.service' "${M}/repo/network-base.service" && grep -q -E '^Before=.*NetworkManager\.service' "${M}/repo/network-base.service"; check $? "network-base.service orders itself before systemd-hostnamed and NetworkManager" "network-base.service: $(grep -E '^(Before|After)=' "${M}/repo/network-base.service" | tr '\n' ' ')"
+
+echo "  n. a deliberate cloud_backup ends a transfer that stops making progress at the stall ceiling, and says it couldn't finish (D-CLOUD-126)"
+# cloud_backup --yes --system-only WHOLE, inside bwrap, against a shim
+# rclone whose copyto hangs, crawls or copies at once into a fake cloud
+# under /tmp/cloud, and answers every listing at once. The conf's bound
+# says --timeout 3s, so the ceiling is 9 s and the case is quick. Three
+# runs. The hang -- rclone's shape on S3 after a cut: an upload that sits
+# and then completes once the link is back (#153) -- must be ended at the
+# ceiling: exit non-zero, no success stamp, the why on the protocol line,
+# Couldn't finish ... Try again. as the outcome line, within a bound the old
+# scripts cannot meet (their run waits the shim's 40 s out, exits 0 and
+# stamps success). A plain run must still complete, stamp 0 and end on the
+# sentence the LINK cells accept. A transfer that keeps printing progress
+# for longer than the ceiling must not be ended -- what tells a stall
+# ceiling from a fixed one; the old scripts pass that by having none.
+N="${TMP}/n"; NS="${N}/storage"
+mkdir -p "${NS}/.config/rclone" "${NS}/.cache" "${NS}/roms/backup" "${N}/repo" "${N}/shim" "${N}/log" "${N}/run" "${N}/varrun" "${N}/nbin" "${N}/arch/storage/.config"
+src_of "${RCLONE_REL}/cloud_backup" "${N}/repo/cloud_backup"
+printf '[qa]\ntype = s3\nprovider = Minio\n' > "${NS}/.config/rclone/rclone.conf"
+cat > "${NS}/.config/cloud_sync.conf" <<'EOS'
+SAVESPATH="/storage/roms"
+SAVES_REMOTE="/Saves"
+SETTINGS_BACKUPS="/storage/roms/backup"
+SETTINGS_REMOTE="/Settings"
+BACKUPMETHOD="copy"
+BACKUPFILE_BACKUP_OPTION="yes"
+RCLONEOPTS="--progress --log-file /var/log/cloud_sync.log"
+RCLONE_NET_OPTS="--contimeout 2s --timeout 3s --low-level-retries 10 --retries 1"
+LOG_LEVEL="INFO"
+EOS
+printf -- '- /**\n' > "${NS}/.config/cloud_sync-rules.txt"
+head -c 300000 /dev/urandom > "${N}/arch/storage/.config/blob"
+tar -C "${N}/arch" -czf "${NS}/roms/backup/2026_09_13-120000-QA-ROCKNIX_SETTINGS.tar.gz" storage
+# Beside the script, where device_id_tool looks first.
+printf '#!/bin/sh\ncase "$1" in --label) echo QA ;; *) echo QA-deadbeef01 ;; esac\n' > "${N}/repo/cloud_device_id"
+printf '#!/bin/sh\ncase "$*" in *"route show default"*) echo "default via 10.0.2.2 dev eth0" ;; esac\n' > "${N}/shim/ip"
+printf '#!/bin/sh\nexit 0\n' > "${N}/shim/ping"
+cat > "${N}/shim/rclone" <<'EOS'
+#!/bin/bash
+# A cloud under /tmp/cloud: qa:/folder/name lands at /tmp/cloud/folder/name.
+# Options come after the paths, as the scripts pass them. /run/hang makes
+# copyto sit for 40 s before copying (rclone's shape on S3 after a cut);
+# /run/crawl makes it print a stats block a second, bytes climbing, for
+# longer than the ceiling before it copies.
+verb=$1; shift
+local_of() { echo "/tmp/cloud/${1#*:}"; }
+case "${verb}" in
+    listremotes) echo "qa:" ;;
+    lsd|mkdir|deletefile|rmdirs|purge) exit 0 ;;
+    help) echo "Usage: rclone [flags] <command>" ;;
+    copyto)
+        src=$1; dst=$(local_of "$2")
+        if [ -e /run/hang ]; then
+            trap 'kill "${sp}" 2>/dev/null; exit 143' TERM
+            sleep 40 & sp=$!; wait "${sp}"
+        fi
+        if [ -e /run/crawl ]; then
+            for i in $(seq 1 15); do
+                printf 'Transferred:   \t   %d KiB / 2 MiB, %d%%, 100 KiB/s, ETA 10s\nTransferred:            0 / 1, 0%%\nElapsed time:  %d.0s\nTransferring:\n * blob.tar.gz:%d%% /2Mi, 100Ki/s, 10s' $((i * 100)) $((i * 5)) "${i}" $((i * 5))
+                sleep 1
+            done
+            echo
+        fi
+        mkdir -p "$(dirname "${dst}")" && cp "${src}" "${dst}" ;;
+    size) printf '{"count":1,"bytes":%s}\n' "$(stat -c %s "$(local_of "$1")" 2>/dev/null || echo 0)" ;;
+    lsf) for a in "$@"; do case "${a}" in *:*) ls "$(local_of "${a}")" 2>/dev/null ;; esac; done ;;
+    *) exit 0 ;;
+esac
+EOS
+chmod +x "${N}/shim"/* "${N}/repo/cloud_device_id"
+# The image's busybox for what the wrapper and the script lean on -- tail,
+# tr, sed, awk, mkfifo, tee, sleep, flock, stat, md5sum, wc, cut, head --
+# in front of the host's, as case m has them. timeout is coreutils' on the
+# image (busybox ships no such applet) and the host's here.
+NBB=()
+if [ -n "${BB}" ]; then
+    for a in sed tr head wc cut awk tail tee mkfifo sleep flock stat md5sum; do printf '#!/bin/sh\nexec %s %s "$@"\n' "${BB}" "${a}" > "${N}/nbin/${a}"; chmod +x "${N}/nbin/${a}"; done
+    NBB=(--ro-bind "${N}/nbin" /nbin --ro-bind "${BB}" "${BB}")
+fi
+nb() { # cloud_backup --yes --system-only, whole; stdout+stderr to $OUT, rc in $RC, wall seconds in $DT
+    local t0; t0=$(date +%s)
+    RC=$( ( setsid -w timeout 120 bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${NBB[@]}" \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --bind "${NS}" /storage --ro-bind "${N}/shim" /shim --ro-bind "${N}/repo" /repo \
+        --bind "${N}/run" /run --bind "${N}/log" /var/log --bind "${N}/varrun" /var/run \
+        --dev /dev --proc /proc --tmpfs /tmp \
+        --setenv PATH "/shim:/nbin:/usr/bin:/bin" \
+        bash /repo/cloud_backup --yes --system-only > "${OUT}" 2>&1; echo $? ) 2>/dev/null )
+    DT=$(( $(date +%s) - t0 ))
+}
+# The last prose line of a run, as tools/cloud-round-trip reads it: colour
+# codes off, not a protocol marker, not rclone's, not a rule of dashes.
+last_prose() {
+    sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$1" | tr '\r' '\n' | grep -vE '^>>> |^(Transferred:|Checks:|Elapsed time:|Errors:|Deleted:|Renamed:|Transferring:|Checking:)|^[[:space:]]*\*[[:space:]]|^[=-]{4,}$|^[[:space:]]*$' | tail -1
+}
+OUT="${N}/out"; STAMP="${NS}/.cache/cloud_sync/last-settings-backup"; NLOG="${N}/log/cloud_sync.log"
+rm -f "${N}/run/hang" "${N}/run/crawl" "${STAMP}" "${NS}/.cache/cloud_sync/settings-backup.uploaded"; : > "${NLOG}"
+touch "${N}/run/hang"
+nb
+[ "${RC}" -ne 0 ]; check $? "a transfer that stops making progress ends the run non-zero (rc ${RC}, ${DT}s)" "rc 0 after ${DT}s: the run waited the stall out and reported success (#153)"
+[ "${DT}" -le 24 ]; check $? "and within the ceiling and a margin (9 s + 15; took ${DT}s)" "took ${DT}s against a 9 s ceiling"
+stamp_n="$(cat "${STAMP}" 2>/dev/null)"
+[ -z "${stamp_n}" ] || [ "$(echo "${stamp_n}" | awk '{print $2}')" != "0" ]; check $? "last-settings-backup records no success (${stamp_n:-no stamp})" "last-settings-backup says '${stamp_n}' for a run that was ended"
+grep -q '^>>> why YOUR CLOUD STOPPED ANSWERING$' "${OUT}"; check $? "the why on the protocol line: YOUR CLOUD STOPPED ANSWERING" "no such why line; protocol lines: $(grep '^>>> ' "${OUT}" | tr '\n' '|' | cut -c1-160)"
+last="$(last_prose "${OUT}")"
+echo "${last}" | grep -qE "^Couldn't finish\b.*[.!]$" && echo "${last}" | grep -qi 'try again'; check $? "the outcome line is Couldn't finish ... Try again. ('${last}')" "the outcome line is '${last}'"
+grep -q 'stall ceiling 9s' "${NLOG}"; check $? "the ceiling is sized from the conf's --timeout 3s (9 s with the grace)" "log: $(grep -o 'stall ceiling[^|]*' "${NLOG}" | head -1)"
+[ -z "$(ls -d "${N}/varrun"/cloud_sync.*/ 2>/dev/null)" ]; check $? "no fifo or trace is left under /var/run" "left behind: $(ls "${N}/varrun" | tr '\n' ' ')"
+rm -f "${N}/run/hang"; : > "${NLOG}"
+nb
+[ "${RC}" -eq 0 ] && [ "$(awk '{print $2}' "${STAMP}" 2>/dev/null)" = "0" ] && [ -f "${NS}/.cache/cloud_sync/settings-backup.uploaded" ]; check $? "a plain run completes (rc ${RC}, ${DT}s), stamps 0 and records the upload" "rc ${RC}; stamp '$(cat "${STAMP}" 2>/dev/null)'; marker: $([ -f "${NS}/.cache/cloud_sync/settings-backup.uploaded" ] && echo yes || echo no); tail: $(tail -3 "${OUT}" | tr '\n' '|' | cut -c1-200)"
+last="$(last_prose "${OUT}")"
+[ "${last}" = "Completed." ]; check $? "and ends on the sentence the LINK cells accept: Completed." "the outcome line is '${last}' -- tools/cloud-round-trip's ALLOWED_SCRIPT wants Completed / Couldn't finish / Skipped, ending in a period (#153)"
+rm -f "${STAMP}" "${NS}/.cache/cloud_sync/settings-backup.uploaded"; : > "${NLOG}"; touch "${N}/run/crawl"
+nb
+[ "${RC}" -eq 0 ] && [ "${DT}" -ge 15 ] && ! grep -q 'made no progress' "${NLOG}"; check $? "a transfer that keeps moving for longer than the ceiling (15 s of climbing bytes against 9 s) is not ended (rc ${RC}, ${DT}s)" "rc ${RC} after ${DT}s; log: $(grep -o 'made no progress[^|]*' "${NLOG}" | head -1) -- a fixed ceiling ends the transfers a deliberate run exists for"
+rm -f "${N}/run/crawl"
 
 echo
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

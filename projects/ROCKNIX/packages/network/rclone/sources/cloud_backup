@@ -114,22 +114,217 @@ for CLI_ARG in "$@"; do
     esac
 done
 
-# Defined only for an automatic run: a deliberate run's rclone calls go
-# straight to PATH, and an rclone function the environment exported -- the
-# round-trip harness's lock-descriptor probe does exactly that -- keeps
-# working. The definition sits at column 0 so tools/last-good-scripts-test
-# can lift it by its first line.
-if [ "${AUTOMATIC}" -eq 1 ]; then
-rclone() {
-    if [ "${AUTOMATIC}" -eq 1 ] && [ "${SYNC_DEADLINE}" -gt 0 ]; then
-        local left=$(( SYNC_DEADLINE - $(date +%s) ))
-        [ "${left}" -ge 1 ] || left=1
-        command timeout -k 3 "${left}" rclone "$@" "${RCLONE_SYNC_NET_OPTS_ARRAY[@]}"
-    else
+# Every rclone this script runs goes through the rclone() function below:
+# the automatic run's bound on one branch, the deliberate run's on the
+# other (D-CLOUD-126, #153). The function and its helpers sit at column 0
+# so tools/last-good-scripts-test can lift them by their first lines.
+#
+# An rclone function the environment exported -- the round-trip harness's
+# lock-descriptor probe does exactly that, to count what a child of a run
+# can see -- used to reach a deliberate run unwrapped, because no function
+# was defined for one. It still runs: it is kept under another name and
+# the deliberate branch calls it in place of the binary, in the foreground.
+# A shell function cannot be ended the way a process can, and the only
+# environments that export one are harnesses.
+RCLONE_OUTER=""
+if declare -F rclone >/dev/null 2>&1; then
+    eval "outer_$(declare -f rclone)"
+    RCLONE_OUTER=outer_rclone
+fi
+
+# The deliberate run's ceiling (D-CLOUD-126, #153). RCLONE_NET_OPTS bounds
+# a dead link with --timeout 30s, rclone's idle limit: nothing moved for
+# that long, the connection is dropped and the operation retried. On the
+# path-based backends a retry against a dead link fails at once and the
+# run ends inside the outage, exit 69. rclone's S3 backend hands
+# --low-level-retries to the AWS SDK as its attempt count, and the SDK
+# backs off exponentially between attempts with no timeout of ours in the
+# way (the note beside RCLONE_LIST_OPTS: 230 s at ten). So a deliberate
+# `cloud_backup --system-only` whose link dropped sat through the outage,
+# re-dialled when the link came back, uploaded the whole archive again and
+# exited 0 -- 88.8 s after a 40 s cut, 163.6 s after a 120 s one -- past
+# the 90 s tools/cloud-round-trip's LINK cells hold every run to, and
+# stamped success for a run the network had left (LINK5 on MinIO,
+# 2026-09-13). --low-level-retries itself is not the knob (D-CLOUD-083).
+#
+# The ceiling is the automatic run's mechanism -- end the process, return
+# 124 -- measured differently. The automatic run is bounded from its
+# start, because a player is waiting to play and the run is small by
+# construction. A deliberate run is the one that moves a first backup of
+# every save state, or a settings archive carrying a theme pack, so a
+# ceiling from its start would end exactly the transfers it exists for.
+# This one is measured from the last moment rclone made progress: the
+# byte, check, file or delete count in its own stats block exceeding what
+# it had reached before. The block goes to stdout under --progress and is
+# copied to a trace on its way through; rclone's transferred count never
+# falls on a retry, only its total grows (the LINK5 capture shows
+# 8.902 MiB standing for 45 s under a total that went from 12.0 to
+# 20.9 MiB), so a count above its previous high is progress and nothing
+# else is. A transfer that keeps moving is never ended; one that has moved
+# nothing for the idle timeout plus a grace is. The grace gives a healthy
+# link's retry after the idle timeout time to show progress -- the SDK's
+# first backoffs are a second or two -- and stays short enough that a run
+# whose link is down ends before an outage of the LINK cells' shape is
+# over, with the link still down, exit 69 like the other backends.
+# load_config sizes the ceiling from RCLONE_NET_OPTS; the value here is
+# for a config the helper has not reached. Calls that print no stats block
+# -- a mkdir, a size, a deletefile, each carrying the transfer's ten
+# retries -- are bounded from their start by the same figure, which is
+# what they need.
+#
+# A run the ceiling ends returns 124, as the automatic run's does; why_for
+# says what that means to a player who pressed the button: YOUR CLOUD
+# STOPPED ANSWERING, with TRY AGAIN in reach.
+DELIBERATE_CEILING_GRACE=6
+DELIBERATE_CEILING_SECONDS=36
+CEILING_DIR_ROOT=/var/run
+RCLONE_CHILD=""
+
+# Is this child still running? kill -0 says yes of one that has exited and
+# not been waited for, so the state in /proc is read: Z is done. The comm
+# field holds no spaces for rclone, so the third field is the state.
+child_running() {
+    local _pid _comm state
+    { read -r _pid _comm state _ < "/proc/$1/stat"; } 2>/dev/null || return 1
+    [ "${state}" != "Z" ]
+}
+
+# The furthest rclone's stats block in the tail of a trace has got: bytes
+# transferred, checks done, files transferred, files deleted -- four
+# integers on one line. The bytes line is the Transferred: with a unit in
+# it; the one without is the file count. A block's last line is glued to
+# the next block's Transferred: (the rule's "Progress output" section),
+# which the sed unglues. Rates, ETAs, percentages and the elapsed time are
+# not progress and are not read.
+progress_mark() {
+    tail -c 8192 "$1" 2>/dev/null | tr '\r' '\n' | sed 's/Transferred:/\nTransferred:/g' | awk '
+        function unit(u) {
+            if (u ~ /^K/) return 1024
+            if (u ~ /^M/) return 1048576
+            if (u ~ /^G/) return 1073741824
+            if (u ~ /^T/) return 1099511627776
+            return 1
+        }
+        /^Transferred:/ {
+            s = $0; sub(/^Transferred:[ \t]*/, "", s); sub(/ \/.*$/, "", s)
+            n = split(s, w, " ")
+            if (n >= 2) { b = w[1] * unit(w[2]); if (b > bytes) bytes = b }
+            else if (n == 1 && w[1] ~ /^[0-9]+$/ && w[1] + 0 > files) files = w[1] + 0
+        }
+        /^Checks:/  { s = $0; sub(/^Checks:[ \t]*/, "", s);  sub(/[^0-9].*$/, "", s); if (s + 0 > checks)  checks  = s + 0 }
+        /^Deleted:/ { s = $0; sub(/^Deleted:[ \t]*/, "", s); sub(/[^0-9].*$/, "", s); if (s + 0 > deleted) deleted = s + 0 }
+        END { printf "%d %d %d %d\n", bytes, checks, files, deleted }'
+}
+
+# Did any count in <mark> exceed <high water>? Prints the new high water --
+# each field the larger of the two, so a count that falls back (a phase
+# that starts over) never lets an old level read as new progress -- and
+# returns 0 when something grew.
+advance_mark() {
+    local a=($1) b=(${2:-0 0 0 0}) i grew=1
+    for i in 0 1 2 3; do
+        if [ "${a[$i]:-0}" -gt "${b[$i]:-0}" ] 2>/dev/null; then
+            b[$i]="${a[$i]}"
+            grew=0
+        fi
+    done
+    echo "${b[*]}"
+    return "${grew}"
+}
+
+# rclone under the stall ceiling. Its stdout goes through a fifo to tee,
+# which copies it to the trace and on to wherever the caller pointed it --
+# the page's pipe, a $(...), /dev/null; stderr is not touched. A transfer
+# verb that was given no --progress is given it: the block is the only
+# progress signal there is, and without one the ceiling would be measured
+# from the start (the shipped RCLONEOPTS carries --progress; a hand-edited
+# one might not). Nothing else is added: -P refreshes every 500 ms on its
+# own, and a --stats 1s beside it would halve the card's liveness signal.
+# Waiting for tee at the end keeps the caller's stream whole: nothing
+# printed afterwards overtakes rclone's last block.
+bounded_rclone() {
+    local dir="${CEILING_DIR_ROOT}/cloud_sync.${$}.${RANDOM}" fifo trace pid tee_pid rc
+    local mark high="0 0 0 0" new since now ticks=0 ended=0 n
+    if ! mkdir -p "${dir}" 2>/dev/null || ! mkfifo "${dir}/fifo" 2>/dev/null; then
+        # Nowhere to trace through. On a device /var/run is tmpfs and this
+        # does not happen; when it does, the call runs as it did before the
+        # ceiling and the log says so -- a backup refused for want of a
+        # fifo would be the worse failure.
+        log_message "cannot make ${dir}/fifo; rclone $1 runs without the stall ceiling" "false" "WARN"
+        rm -rf "${dir}" 2>/dev/null
         command rclone "$@"
+        return
+    fi
+    fifo="${dir}/fifo"; trace="${dir}/trace"
+    : > "${trace}"
+    local -a args=("$@")
+    case "$1" in
+        copy|copyto|sync|move|moveto)
+            local has_progress=0 a
+            for a in "$@"; do
+                case "${a}" in --progress|-P) has_progress=1 ;; esac
+            done
+            [ "${has_progress}" -eq 1 ] || args+=(--progress) ;;
+    esac
+    tee -a "${trace}" < "${fifo}" &
+    tee_pid=$!
+    command rclone "${args[@]}" > "${fifo}" &
+    pid=$!
+    RCLONE_CHILD="${pid}"
+    since=$(date +%s)
+    while child_running "${pid}"; do
+        sleep 0.25
+        ticks=$((ticks + 1))
+        [ $((ticks % 4)) -eq 0 ] || continue
+        mark=$(progress_mark "${trace}")
+        if new=$(advance_mark "${mark}" "${high}"); then
+            high="${new}"
+            since=$(date +%s)
+            continue
+        fi
+        now=$(date +%s)
+        if [ $((now - since)) -ge "${DELIBERATE_CEILING_SECONDS}" ]; then
+            ended=1
+            kill -TERM "${pid}" 2>/dev/null
+            # Three seconds to go, as timeout -k 3 gives the automatic run.
+            n=0
+            while [ "${n}" -lt 30 ] && child_running "${pid}"; do sleep 0.1; n=$((n + 1)); done
+            kill -KILL "${pid}" 2>/dev/null
+            break
+        fi
+    done
+    wait "${pid}" 2>/dev/null; rc=$?
+    RCLONE_CHILD=""
+    # tee ends when the fifo's last writer has gone. rclone starts no
+    # children; a shim under test might leave one holding the fifo, so tee
+    # gets the same three seconds and is then ended too.
+    n=0
+    while [ "${n}" -lt 30 ] && child_running "${tee_pid}"; do sleep 0.1; n=$((n + 1)); done
+    kill -KILL "${tee_pid}" 2>/dev/null
+    wait "${tee_pid}" 2>/dev/null
+    rm -rf "${dir}" 2>/dev/null
+    if [ "${ended}" -eq 1 ]; then
+        log_message "rclone $1 made no progress for ${DELIBERATE_CEILING_SECONDS}s and was ended (it returned ${rc}); reporting 124" "false" "WARN"
+        rc=124
+    fi
+    return "${rc}"
+}
+
+rclone() {
+    if [ "${AUTOMATIC}" -eq 1 ]; then
+        if [ "${SYNC_DEADLINE}" -gt 0 ]; then
+            local left=$(( SYNC_DEADLINE - $(date +%s) ))
+            [ "${left}" -ge 1 ] || left=1
+            command timeout -k 3 "${left}" rclone "$@" "${RCLONE_SYNC_NET_OPTS_ARRAY[@]}"
+        else
+            command rclone "$@"
+        fi
+    elif [ -n "${RCLONE_OUTER}" ]; then
+        "${RCLONE_OUTER}" "$@"
+    else
+        bounded_rclone "$@"
     fi
 }
-fi
 
 # The pauses between sections give somebody reading the console time to see
 # each one before the next scrolls in. Under --yes nobody is reading -- the
@@ -476,8 +671,63 @@ why_for() {
         6)   echo "SOME FILES DIDN'T FINISH" ;;
         7|8) echo "YOUR CLOUD WOULDN'T TAKE THE FILES" ;;
         130) echo "IT WAS STOPPED" ;;
-        10|124) echo "THE CLOUD TOOK TOO LONG - IT'LL TRY AGAIN NEXT TIME" ;;
+        10|124)
+            # The ceiling ended the run. An automatic sync runs again on its
+            # own; a run somebody pressed has TRY AGAIN in reach, and what
+            # they saw was a cloud that stopped answering (D-CLOUD-126).
+            if [ "${AUTOMATIC:-0}" -eq 1 ]; then
+                echo "THE CLOUD TOOK TOO LONG - IT'LL TRY AGAIN NEXT TIME"
+            else
+                echo "YOUR CLOUD STOPPED ANSWERING"
+            fi ;;
         *)   echo "SOMETHING WENT WRONG" ;;
+    esac
+}
+
+# The value of --timeout among rclone options, in whole seconds: 30s, 1m,
+# 2h, a bare number (seconds, as rclone reads one), or --timeout=30s.
+# Nothing when it is absent or not a shape this knows.
+idle_timeout_seconds() {
+    local v="" prev="" a
+    for a in "$@"; do
+        case "${a}" in
+            --timeout=*) v="${a#--timeout=}" ;;
+            *) [ "${prev}" = "--timeout" ] && v="${a}" ;;
+        esac
+        prev="${a}"
+    done
+    case "${v}" in
+        *h) [[ "${v%h}" =~ ^[0-9]+$ ]] && echo $(( ${v%h} * 3600 )) ;;
+        *m) [[ "${v%m}" =~ ^[0-9]+$ ]] && echo $(( ${v%m} * 60 )) ;;
+        *s) [[ "${v%s}" =~ ^[0-9]+$ ]] && echo "${v%s}" ;;
+        *)  [[ "${v}" =~ ^[0-9]+$ ]] && echo "${v}" ;;
+    esac
+}
+
+# The run's own outcome line, printed last, in the sentence form the other
+# outcome lines use (D-UI-028): Completed. / Couldn't finish: <why>. Try
+# again. / Skipped: <reason>. The phase lines above it say which tier did
+# what; this is the answer for a reader that takes the last line --
+# tools/cloud-round-trip's vocabulary gate does, and "Settings backup:
+# COMPLETED" was not a sentence it accepts (#153, D-CLOUD-126).
+run_outcome_line() {
+    local rc="$1" why
+    case "${rc}" in
+        0|9)
+            # A settings-only run that found nothing to send ran nothing, and
+            # said so where it was skipped (D-CLOUD-090).
+            if [ "${SYSTEM_ONLY}" -eq 1 ] && [ "${SETTINGS_NOTHING_RAN}" -eq 1 ]; then
+                echo "Skipped: there's no settings backup on this device to send yet."
+            else
+                echo "Completed."
+            fi ;;
+        *)
+            why=$(printf '%s' "${LAST_WHY}" | tr 'A-Z' 'a-z')
+            if [ -n "${why}" ]; then
+                echo "Couldn't finish: ${why}. Try again."
+            else
+                echo "Couldn't finish. Try again."
+            fi ;;
     esac
 }
 
@@ -488,6 +738,14 @@ why_for() {
 clean_exit() {
     local exit_code=$1
     local duration=$(($(date +%s) - START_TIME))
+
+    # A deliberate run's rclone runs in the background under the stall
+    # ceiling; a signal that reached the script mid-copy ends it here rather
+    # than leaving it to finish unwatched, and its trace goes with it.
+    if [ -n "${RCLONE_CHILD}" ] && child_running "${RCLONE_CHILD}"; then
+        kill -TERM "${RCLONE_CHILD}" 2>/dev/null
+    fi
+    rm -rf "${CEILING_DIR_ROOT}/cloud_sync.${$}."* 2>/dev/null
     
     # A failed phase leaves with the code the phase gave -- rclone's, when a
     # transfer failed -- unremapped. Nothing rclone returns can read as the
@@ -767,6 +1025,22 @@ load_config() {
         RCLONE_NET_OPTS_ARRAY+=("$opt")
     done
     log_message "rclone network bound: ${net_opts}" "false"
+
+    # The deliberate run's ceiling, from the idle timeout in that bound
+    # (D-CLOUD-126): --timeout is when rclone gives a stalled link up; the
+    # ceiling is that plus DELIBERATE_CEILING_GRACE seconds for the retry
+    # to show progress on a link that is merely slow. A value that cannot
+    # be read -- the flag missing, a unit this does not know, a zero that
+    # would mean no idle limit at all -- leaves the shipped figure, never
+    # no ceiling.
+    if [ "${AUTOMATIC}" -eq 0 ]; then
+        local idle
+        idle=$(idle_timeout_seconds "${RCLONE_NET_OPTS_ARRAY[@]}")
+        if [ -n "${idle}" ] && [ "${idle}" -ge 1 ] 2>/dev/null; then
+            DELIBERATE_CEILING_SECONDS=$(( idle + DELIBERATE_CEILING_GRACE ))
+        fi
+        log_message "deliberate run: stall ceiling ${DELIBERATE_CEILING_SECONDS}s (rclone idle timeout ${idle:-unreadable}s + ${DELIBERATE_CEILING_GRACE}s grace)" "false"
+    fi
 
     # The automatic sync's bound on top (D-CLOUD-118), read the same way and
     # with the same rule for an empty line; the ceiling is whole seconds.
@@ -1676,11 +1950,20 @@ main() {
     # Add a line break for better visual separation
     echo
     
+    # The run's exit, decided by both phases (the note below the summary
+    # says why); computed here because the outcome line reads it.
+    local overall=${BACKUP_STATUS}
+    [ "${overall}" -eq 0 ] && overall=${BACKUP_SYSTEM_STATUS}
+
     # Provide final summary of all operations
     log_message "====================================" "true"
     log_message "BACKUP SUMMARY:" "true"
     log_message "Game saves: ${SAVES_OUTCOME:-$(outcome_word $BACKUP_STATUS)}" "true"
     [ "${BACKUPFILE_BACKUP_OPTION}" == "yes" ] && log_message "Settings backup: ${SETTINGS_OUTCOME:-$(outcome_word $BACKUP_SYSTEM_STATUS)}" "true"
+    case "${overall}" in
+        0|9) log_message "$(run_outcome_line "${overall}")" "true" ;;
+        *)   log_message "$(run_outcome_line "${overall}")" "true" "ERROR" ;;
+    esac
     log_message "Log file: ${LOG_FILE}" "false"
     log_message "====================================" "true"
     
@@ -1696,8 +1979,6 @@ main() {
     # never arrived (found while bounding the runs, #103). A run is good when
     # every phase it ran is; otherwise it carries the first failing phase's
     # code, the saves phase's when both failed.
-    local overall=${BACKUP_STATUS}
-    [ "${overall}" -eq 0 ] && overall=${BACKUP_SYSTEM_STATUS}
     clean_exit ${overall}
 }
 
