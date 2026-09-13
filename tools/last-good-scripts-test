@@ -72,6 +72,12 @@
 #                                             # busybox tr never passed
 #     tools/last-good-scripts-test            # PASSED
 #
+# One FAIL in m that names "the built image" is about the build root on this
+# machine, not the tree: case m grades the avahi unit the image ships, and a
+# root built before the avahi recipe removed the stock units (#151 PL-01)
+# holds the wrong one until avahi and the image are rebuilt. It is a true
+# statement about that image and is left to fail rather than softened.
+#
 # Exit 0 when every check passes, 1 otherwise, 2 when it cannot run.
 set -u
 
