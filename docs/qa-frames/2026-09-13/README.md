@@ -22,6 +22,29 @@ with the link cut before boot.
 follow-through: the RESTORE group heading in French, and the CHECK CONNECTION
 press on a guest with no cloud storage, link up.
 
+`1e5a2818e8` (EmulationStation `3a121f0152`) on guest d at 640x480 and on
+vm-pair's guest a at 1280x800, for #157 (D-UI-052, option 1): the startup
+save-sync card with its two-half bar and the half named in the line. Guest d
+was pointed at the QA WebDAV endpoint (`tools/cloud-test-backend`, remote
+`qa-cloud`, its own `SAVES_REMOTE=/QA-d/Saves` beside the pair's
+`/ROCKNIX/Saves`) with `cloudsaves.startup=1`, then rebooted with a frame
+taken every 0.3 s from ten seconds after the reboot (`burst.py` in the session
+scratchpad: a screendump loop that keeps only the frames that changed). Two
+kinds of boot. **Bytes both ways**: a few hundred small saves and one 2-4 MiB
+file only in the cloud, sixty small saves and a 2 MiB file only on the device,
+so each half moved bytes for several seconds. **Nothing to move**: both sides
+equal at 566 files, so each half is a compare and nothing else -- the
+maintainer's "113 of 113" shape. The card is on screen from `>>> doing
+receive` on: on the VM EmulationStation draws the carousel about five seconds
+after it starts and `cloud_net_ready`'s grace ends about then, so every step
+of the sync is drawn. Frames carrying `-fr` were taken with
+`system.language=fr_FR`. Not caught: `RECEIVING · COMPARING SAVES` on a boot
+that then moved bytes -- rclone lists, compares and transfers concurrently,
+and on this endpoint the first stats block (one second in) already had bytes
+queued, so the compare line stands alone only when there is nothing to move.
+That is the case the acceptance criterion names, and where the second count
+used to appear.
+
 | Frame | What it shows |
 |---|---|
 | `save-state-manager-four-tiles-1280x800.png` | The manager on `878ec8863b`: START NEW GAME, AUTO SAVE, SLOT 1, SLOT 2, every label whole, the sheet half the screen (#27's first cut, where it happened to work). |
@@ -59,3 +82,24 @@ press on a guest with no cloud storage, link up.
 | `finish-restore-process-no-wifi-bottom-640x480-f0ab059596-fr.png` | The French page walked to its button bar, PLUS TARD focused beside TERMINER: AU DÉMARRAGE, OU DANS PARAMÈTRES RÉSEAU > FINIR LA RESTAURATION. on one line. |
 | `network-settings-finish-restore-row-640x480-0f4e4829a8-fr.png` | PARAMÈTRES RÉSEAU while the marker exists, on `0f4e4829a8`: the group heading above FINIR LA RESTAURATION now reads RESTAURER (it was RESTORE on `f0ab059596`); the row's line unchanged -- MOTS DE PASSE NON SAUVEGARDÉS À RESSAISIR : WI-FI, COMPTES, APPAREIL., one line, RETOUR under the page (#155 follow-through). The rest of the page (NETWORK SERVICES, ENABLE SSH, SYNCTHING SERVICES, VPN SERVICES, ...) still English -- upstream gaps, outside #155. |
 | `finish-restore-process-check-connection-no-cloud-640x480-0f4e4829a8-fr.png` | VÉRIFIER LA CONNEXION pressed on FINIR LA RESTAURATION in French, link up, no `rclone.conf` on the guest: the row is gated (`cloudConfigured`, `GuiMenu.cpp:7336`) and opens the set-up offer -- NO CLOUD STORAGE IS SET UP ON THIS DEVICE YET. / SET IT UP NOW? -- OUI / NON, so the `GuiLoading` that shows CHECKING... (now VÉRIFICATION…, `msgfmt` 1302 translated) never runs here; the frame taken with no wait after the press and the settled one are byte-identical. The offer's body has no msgid in `fr/LC_MESSAGES/emulationstation2.po` (none of the NO CLOUD STORAGE dialogs do) -- recorded, outside #155's boxes. |
+| `startup-sync-1-receiving-starting-640x480-1e5a2818e8.png` | Step 1, the receive half announced (`>>> doing receive`): SYNCING SAVES AT STARTUP / RECEIVING · STARTING..., the bar at its start (nothing drawn at 0 %). Byte-identical across three boots (#157, D-UI-052). |
+| `startup-sync-1-receiving-comparing-640x480-1e5a2818e8.png` | Step 1 on the nothing-to-move boot: RECEIVING · COMPARING SAVES · 566 OF 566, the bar still at its start -- a comparison is not a transfer. The frame before it read 499 OF 499; the count climbs, the bar does not. |
+| `startup-sync-2-receiving-bytes-640x480-1e5a2818e8.png` | Step 2, bytes arriving: RECEIVING · 408 KB OF 4.4 MB, the bar a short stub at the left -- inside the receive half's 0-50 %. |
+| `startup-sync-2b-receiving-bytes-later-640x480-1e5a2818e8.png` | Step 2 a second later: RECEIVING · 1.1 MB OF 4.4 MB, the bar about a quarter of the way to the midpoint. |
+| `startup-sync-2c-receiving-half-done-640x480-1e5a2818e8.png` | The receive half complete: RECEIVING · 4.5 MB OF 4.5 MB, the bar ending exactly at the card's midpoint (50 %). It holds there through `cloud_restore`'s post-transfer work until the send half is announced. |
+| `startup-sync-3-sending-starting-640x480-1e5a2818e8.png` | Step 3, the send half announced (`>>> doing send`): SENDING · STARTING..., the bar parked at 50 % -- it never returns to 0. |
+| `startup-sync-3-sending-comparing-640x480-1e5a2818e8.png` | Step 3 on the nothing-to-move boot: SENDING · COMPARING SAVES · 566 OF 566, the bar at 50 %. The same 566 the receive half showed, now visibly the other half's count -- the maintainer's step 3 with its name on it. The frame before it read 495 OF 495. |
+| `startup-sync-4-sending-bytes-640x480-1e5a2818e8.png` | Step 4, bytes leaving: SENDING · 136 KB OF 2.5 MB, the bar just past the midpoint -- inside 50-100 %. |
+| `startup-sync-4b-sending-bytes-later-640x480-1e5a2818e8.png` | Step 4 a second later: SENDING · 384 KB OF 2.5 MB, the bar further right. |
+| `startup-sync-4c-sending-done-640x480-1e5a2818e8.png` | The send half complete: SENDING · 2.5 MB OF 2.5 MB, the bar the full width of the card (100 %). |
+| `startup-sync-5-completed-640x480-1e5a2818e8.png` | Step 5, the outcome: the title turns to SYNC SAVES, the line to COMPLETED, the bar full. Byte-identical on the bytes boot and the nothing-to-move boot. |
+| `startup-sync-1-receiving-starting-640x480-1e5a2818e8-fr.png` | Step 1 in French: RÉCEPTION · DÉMARRAGE…, bar at the start. The title SYNCING SAVES AT STARTUP has no msgstr and stays English (D-UI-051 gap; the help bar under it is French). |
+| `startup-sync-1-receiving-comparing-640x480-1e5a2818e8-fr.png` | Step 1 in French, nothing to move: RÉCEPTION · COMPARAISON DES SAUVEGARDES · 828 SUR 828 on one line inside the card at 640x480 -- the longest line the card can show, measured here. Bar at the start. |
+| `startup-sync-2-receiving-bytes-640x480-1e5a2818e8-fr.png` | Step 2 in French: RÉCEPTION · 888 KB SUR 3.6 MB, the bar inside 0-50 %. |
+| `startup-sync-3-sending-starting-640x480-1e5a2818e8-fr.png` | Step 3 in French: ENVOI · DÉMARRAGE…, the bar parked at 50 %. |
+| `startup-sync-3-sending-comparing-640x480-1e5a2818e8-fr.png` | Step 3 in French, nothing to move: ENVOI · COMPARAISON DES SAUVEGARDES · 759 SUR 759, the bar at 50 %. |
+| `startup-sync-4-sending-bytes-640x480-1e5a2818e8-fr.png` | Step 4 in French: ENVOI · 304 KB SUR 2.5 MB, the bar inside 50-100 %. |
+| `startup-sync-5-completed-640x480-1e5a2818e8-fr.png` | Step 5 in French: SYNC SAVES / COMPLETED, bar full -- both English; neither string has a msgstr (D-UI-051 gap, recorded). |
+| `startup-sync-2-receiving-bytes-1280x800-1e5a2818e8.png` | Step 2 on guest a at 1280x800 (the pair's `/ROCKNIX/Saves` remote): RECEIVING · 656 KB OF 3.2 MB, the bar a stub at the left, inside 0-50 %. |
+| `startup-sync-2c-receiving-half-done-1280x800-1e5a2818e8.png` | The receive half complete at 1280x800: RECEIVING · 3.2 MB OF 3.2 MB, the bar ending at the card's midpoint. |
+| `startup-sync-4-sending-bytes-1280x800-1e5a2818e8.png` | Step 4 at 1280x800: SENDING · 440 KB OF 3.1 MB, the bar past the midpoint, inside 50-100 %. |
