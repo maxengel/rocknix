@@ -270,7 +270,7 @@ punch_index:
     owner_area: projects/ROCKNIX/packages/network/avahi; tools/last-good-scripts-test; tools/vm-qa
     where: projects/ROCKNIX/packages/network/avahi/package.mk:81-99
     acceptance: "the built avahi-daemon.service lists network-base.service in After=; ten pair boots publish the kernel hostname; case m reads the built unit; pair-identity asserts the mDNS name"
-    outcome: open
+    outcome: resolved
   - id: PL-02
     severity: High
     category: Interaction Defect
@@ -278,7 +278,7 @@ punch_index:
     owner_area: projects/ROCKNIX/packages/sysutils/systemd/scripts/network-base-setup; backuptool
     where: projects/ROCKNIX/packages/sysutils/systemd/scripts/network-base-setup:26
     acceptance: "after restoring unit a's settings on unit b and rebooting, pair-identity reports two names; the choice is a register row"
-    outcome: open
+    outcome: resolved
   - id: PL-03
     severity: Medium
     category: Acceptance Criteria Gap
@@ -286,7 +286,7 @@ punch_index:
     owner_area: backuptool; tools/last-good-scripts-test; docs/decision-register.md
     where: projects/ROCKNIX/packages/rocknix/sources/scripts/backuptool:578-600
     acceptance: "a zip fixture in case k passes on the fixed script and fails under --old; D-CLOUD-008 has its addendum"
-    outcome: open
+    outcome: resolved
   - id: PL-04
     severity: Medium
     category: Interaction Defect
@@ -294,7 +294,7 @@ punch_index:
     owner_area: network-base-setup; cloud_device_id
     where: projects/ROCKNIX/packages/sysutils/systemd/scripts/network-base-setup:28-34
     acceptance: "on a fresh-flashed H700 the stored id equals the MAC hash on two flashes, or the first boot logs that the adapter was absent and keeps the shipped name"
-    outcome: open
+    outcome: resolved
   - id: PL-05
     severity: Medium
     category: Acceptance Criteria Gap
@@ -302,7 +302,7 @@ punch_index:
     owner_area: emulationstation-next GuiMenu.cpp openRestoreRelink; issue #47
     where: es-app/src/guis/GuiMenu.cpp:7269-7272
     acceptance: "a 640x480 frame with every row at two lines or fewer and the empty circle visible; #47's body matches its state"
-    outcome: open
+    outcome: resolved
   - id: PL-06
     severity: Medium
     category: Acceptance Criteria Gap
@@ -310,7 +310,7 @@ punch_index:
     owner_area: emulationstation-next ScreenScraper.cpp; issue #66; tools/qa-accounts
     where: es-app/src/scrapers/ScreenScraper.cpp:1019-1030
     acceptance: "bogus pair + no account names the pair, or #66 box 3 says otherwise and why; the frame is from the pinned commit"
-    outcome: open
+    outcome: resolved
   - id: PL-07
     severity: Medium
     category: Cornerstone Violation
@@ -318,7 +318,7 @@ punch_index:
     owner_area: emulationstation-next ScreenScraper.cpp
     where: es-app/src/scrapers/ScreenScraper.cpp:976-1035
     acceptance: "offline and probe-timeout frames at 640x480 in English and French name no credential"
-    outcome: open
+    outcome: deferred:#156
   - id: PL-08
     severity: Medium
     category: Cornerstone Violation
@@ -326,7 +326,7 @@ punch_index:
     owner_area: .githooks/pre-push (both repos)
     where: .githooks/pre-push:108-154
     acceptance: "three negative tests refuse in both repos, recorded"
-    outcome: open
+    outcome: resolved
   - id: PL-09
     severity: Medium
     category: Cornerstone Violation
@@ -334,7 +334,7 @@ punch_index:
     owner_area: tools/qa-accounts
     where: tools/qa-accounts:43-52
     acceptance: "no value in ps during a write; clear fails on a dead port; a missing es_settings.cfg is refused; 10020/10021 rejected"
-    outcome: open
+    outcome: resolved
   - id: PL-10
     severity: Medium
     category: Test Gap
@@ -342,7 +342,7 @@ punch_index:
     owner_area: tools/last-good-scripts-test
     where: tools/last-good-scripts-test:342
     acceptance: "BASE_REF=53f390b1e9 --old fails checks in k, l and m; case m runs on the image's busybox when a build root is present"
-    outcome: open
+    outcome: resolved
   - id: PL-11
     severity: Low
     category: Test Gap
@@ -350,7 +350,7 @@ punch_index:
     owner_area: tools/register-check; tools/vm-qa
     where: tools/register-check:47-56
     acceptance: "D-THEME-001 and D-CLOUD-1234 citations fail; vm-qa lists a register suite"
-    outcome: open
+    outcome: resolved
   - id: PL-12
     severity: Low
     category: Documentation Gap
@@ -358,7 +358,7 @@ punch_index:
     owner_area: docs/vm-qa-log.md; issue #113
     where: docs/vm-qa-log.md:58
     acceptance: "grep finds 303 where #113's tick says it is"
-    outcome: open
+    outcome: resolved
   - id: PL-13
     severity: Low
     category: Test Gap
@@ -366,7 +366,7 @@ punch_index:
     owner_area: tools/cloud-round-trip
     where: tools/cloud-round-trip:5245-5253
     acceptance: "the SKIP cites a MinIO run with its date, or the check runs there"
-    outcome: open
+    outcome: resolved
   - id: PL-14
     severity: Low
     category: Code Quality
@@ -374,7 +374,7 @@ punch_index:
     owner_area: backuptool; cloud_setup; cloud_content_restore; network-base-setup
     where: projects/ROCKNIX/packages/rocknix/sources/scripts/backuptool:279
     acceptance: "each of the four branches has a failing input in a case and refuses or logs"
-    outcome: open
+    outcome: resolved
   - id: PL-15
     severity: Low
     category: Documentation Gap
@@ -382,7 +382,7 @@ punch_index:
     owner_area: docs/decision-register.md; backuptool; cloud_setup; ES CLAUDE.md and pre-push
     where: docs/decision-register.md
     acceptance: "each text matches the code it describes; register-check passes"
-    outcome: open
+    outcome: resolved
   - id: PL-16
     severity: Low
     category: Missing Artifact
@@ -390,7 +390,7 @@ punch_index:
     owner_area: tracker; issue #42
     where: docs/decision-register.md row D-UI-051
     acceptance: "a French follow-up issue exists on the milestone; #42 lists the five additions"
-    outcome: open
+    outcome: resolved
   - id: PL-17
     severity: Low
     category: Code Quality
@@ -398,7 +398,7 @@ punch_index:
     owner_area: emulationstation-next GuiSaveState.cpp; docs/qa-frames
     where: es-app/src/guis/GuiSaveState.cpp:112-118
     acceptance: "the two helpSize values agree at both sizes; fourteen status frames exist"
-    outcome: open
+    outcome: deferred:#156
   - id: PL-18
     severity: Low
     category: Documentation Gap
@@ -406,34 +406,34 @@ punch_index:
     owner_area: docs/decision-register.md; issue #50
     where: docs/decision-register.md row D-NET-003
     acceptance: "a row citing D-NET-003 states the shipped state and the real off-switch; #50 box 6 matches"
-    outcome: open
+    outcome: resolved
 ```
 
 ---
 
 # Phase 7 resolution gate
 
-Phase 7 is the maintainer's. Every item has a recorded outcome here so nothing is in limbo: **this audit fixed nothing** — it ran under an explicit no-change mandate — so no item is *Resolved*; each is **Deferred** to a named place, and under D-WORKFLOW-015 that deferral is a sequencing fact, never a severity excuse. Where an item also lives in an open issue of the range, that issue is named beside the audit issue.
+Phase 7 is the maintainer's. Outcomes below were re-derived on 2026-09-13 from the commits, suite runs, frames and issue edits named in each row, after the fix streams landed and the rebuilt image `d32f47a947` went through the nine runner suites, the pair proofs and the 640x480 frames (D-WORKFLOW-015: every item fixed at every severity). Two items keep a **Deferred** half, both to #156, because their remaining frames need an HTTPS shim the VM does not have; that is a harness decision, not a severity excuse.
 
 | Item | Outcome | Evidence |
 | --- | --- | --- |
-| PL-01 | **Deferred** | #151 (checkbox), and #50 (open; box 6 is the claim it corrects) |
-| PL-02 | **Deferred** | #151, and #50 (AC-50-1 is the criterion it defeats); needs the maintainer's choice between the default fix and the per-unit classification |
-| PL-03 | **Deferred** | #151, and #45 (open; box 4) |
-| PL-04 | **Deferred** | #151, and #50 (box 3); needs a design choice — (a) or (b) in the item |
-| PL-05 | **Deferred** | #151, and #47 (closed with the boxes open — to reopen or to tick with the frame) |
-| PL-06 | **Deferred** | #151, and #66 (open; box 3) |
-| PL-07 | **Deferred** | #151, and #66 |
-| PL-08 | **Deferred** | #151 (no other home; both hooks) |
-| PL-09 | **Deferred** | #151 (fork-only tool) |
-| PL-10 | **Deferred** | #151 (fork-only tool) |
-| PL-11 | **Deferred** | #151 (fork-only tool) |
-| PL-12 | **Deferred** | #151, and #113 (open; boxes 1 and 4) |
-| PL-13 | **Deferred** | #151, and #113 |
-| PL-14 | **Deferred** | #151 |
-| PL-15 | **Deferred** | #151 |
-| PL-16 | **Deferred** | #151, and #42 (open) |
-| PL-17 | **Deferred** | #151 |
-| PL-18 | **Deferred** | #151, and #50 |
+| PL-01 | **Resolved** | `1d07330ae1` (recipe `rm -rf ${INSTALL}/usr/lib/systemd`, guarded re-publish), `216f3a57b0`, `d46f7fa227` (pair-identity mDNS assertion), `401a3a047c`; built unit on `d32f47a947` has `After=network.target network-base.service avahi-defaults.service`; 20 of 20 pair boots publish the kernel hostname; case m check 8 grades the built image and FAILed against the stale root; #151 box ticked |
+| PL-02 | **Resolved** | `5cfeeabb8c` + D-NET-004 (default fix): a's archive restored on b -> b reboots as `GENERIC-X64-0964` logging "another unit's shipped default ... carried here by a settings restore"; `Max Deck` kept as `Max-Deck`; pair-identity PASS with two names; #151 box ticked |
+| PL-03 | **Resolved** | `9e811f240d` + D-CLOUD-124: legacy `ROCKNIX_BACKUP.zip` restored on guest a left `assets/lang/en_US.ini` and CACHE at their md5s and brought `ppsspp.ini` in; case k zip fixture FAILs under `--old`; #45 box 4 names both archive kinds; #151 box ticked |
+| PL-04 | **Resolved** (VM half); device proof on #150 | `9d71a829fe` + D-NET-005: `cloud_device_id --if-present`; case m with a fake `/sys/class/net`, 8 checks FAIL at `6e09b6fcca`; the two fresh H700 flashes are a #150 criterion; #151 box ticked |
+| PL-05 | **Resolved** | ES `15bfd5e81` (pinned `c694d733c6`): rows one line under the label at both panels, measured; frames `finish-restore-process-no-wifi-top/bottom-640x480-d32f47a947.png` (+`-fr`) with the empty circle on WI-FI PASSWORD; #47 reopened, boxes 2-5 ticked; #151 box ticked. The NETWORK SETTINGS row that leads to the page is #155 |
+| PL-06 | **Resolved** | ES `2842af2d0`: probe before the account check; frame `screenscraper-rejected-developer-pair-no-account-640x480-d32f47a947.png` (+`-fr`) from the pinned commit; #66 box 3 reworded to the shipped ordering and SCRAPER > ACCOUNTS; #151 box ticked |
+| PL-07 | **Resolved** for the offline sentence; **Deferred** to #156 for the probe-unknown frame | ES `5a0095455`: `REQ_IO_ERROR`/status 0 -> `YOU'RE NOT ONLINE. TRY AGAIN WHEN YOU ARE.`, framed EN/FR (`screenscraper-not-online-640x480-d32f47a947.png`); tri-state probe in code, French present; `COULDN'T REACH SCREENSCRAPER. TRY AGAIN.` cannot be reached on the VM (every IO failure meets the guard first; the HTTPS API needs the #156 shim) |
+| PL-08 | **Resolved** | distribution hook `17dbb85b88`, ES hook `51edcf728c`: every pushed commit's added lines scanned, `pr/*` keyed on the remote ref, missing base refused; three negative tests recorded in each header; #151 box ticked |
+| PL-09 | **Resolved** | `ac7b17554c`: values over ssh stdin (no value in `ps`), `clear` fails on a dead port, missing/unparseable `es_settings.cfg` refused, ports `1002[2-9]`; #151 box ticked |
+| PL-10 | **Resolved** | `00d6bfaaad`, `401a3a047c`: `BASE_REF=53f390b1e9 --old` -> 36 FAIL (k 6, l 13, m 17), normal 130 PASS from the primary on the image busybox; #151 box ticked |
+| PL-11 | **Resolved** | `4b219ef937`: `D-[A-Z]+-[0-9]+\b`, unreadable input fails, `register` suite in `vm-qa`; scratch `D-THEME-001`/`D-CLOUD-1234` -> MISSING; #151 box ticked |
+| PL-12 | **Resolved** | `1ee141207f`: 303 s in the `db6b42c180` row; #113 boxes 1 and 4 re-pointed; #151 box ticked |
+| PL-13 | **Resolved** | `96284d5544`: throttled S3 endpoint; LINK5 on MinIO at 40 s and 120 s with every receiving-side check PASS and no SKIP; WebDAV SKIP texts cite the run. The unbounded S3 deliberate run it exposed is #153; #151 box ticked |
+| PL-14 | **Resolved** | `e18916ff7e`: four branches fail closed, each with a failing input in the suite (3 FAIL under `BASE_REF=6e09b6fcca --old`); #151 box ticked |
+| PL-15 | **Resolved** | `91f14ad20a` (D-CLOUD-125, "substring", bounded `lsd`), `9e811f240d` (part 6), ES `ee53ecd65` (CLAUDE.md, hook comment, SCRAPER > ACCOUNTS -- where the fields are; `device-builds.md` corrected `ff46dc2310`); #151 box ticked |
+| PL-16 | **Resolved** | #152 filed (French follow-up); #42 carries the five surfaces; #151 box ticked |
+| PL-17 | **Resolved** for `helpRowPerc`; **Deferred** to #156 for the fourteen status frames | ES `772d70035`: `helpRowPerc(float, const HelpStyle&)`, guard gone, debug log; `GuiSaveState: help row 0.164167 of a 264 px sheet` equal for constructor and onSizeChanged at 640x480 (1280x800 measured separately, see the #151 comment); all seven status msgids have French msgstrs; the frames need the #156 shim |
+| PL-18 | **Resolved** | D-NET-006 `d32f47a947`; #50 box 6 reworded to the shipped state and re-ticked after the 20 boots; #151 box ticked |
 
-**Gate status:** 18 of 18 items carry an outcome naming #151 and, where one exists, the open issue of the range. Nothing is claimed fixed. The two High items (PL-01, PL-02) and PL-04 are the ones that touch what ships on a device; PL-01's recipe line is the smallest change with the largest effect.
+**Gate status:** 18 of 18 items carry an outcome with evidence; 16 Resolved in full, 2 Resolved in code and framed where the VM can reach, Deferred to #156 for the frames it cannot. Side findings filed on their own: #153, #154, #155, #156. The device proofs (PL-04's two flashes; #50's LAN boxes) ride #150's staging round.
