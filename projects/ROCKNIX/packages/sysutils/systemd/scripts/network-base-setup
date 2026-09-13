@@ -13,6 +13,27 @@
 # hostnamectl as two arguments and failed, leaving a kernel name that
 # hostnamed later re-sanitised to RGSP.
 RAW_HOSTNAME=$(get_setting system.hostname)
+# A per-unit default (fork #50). The image ships system.hostname as the
+# build family -- H700, RK3566 -- so two units of one family on one network
+# claimed the same name and the router's lease flipped between them, and
+# the failure looked like a network fault (EHOSTUNREACH by name and by the
+# address the router showed). A name equal to the family is the shipped
+# default and never something a player typed, so it becomes
+# <FAMILY>-<four hex digits of this unit's id>, once, and is written back:
+# stable across boots, what NETWORK SETTINGS shows, and the same after a
+# reflash, because cloud_device_id seeds the id from the permanent hardware
+# address. Any other name is the player's and is never touched (D-NET-001).
+# An empty name gets the same default rather than the bare ROCKNIX below.
+FAMILY=$(sed -n 's/^HW_DEVICE="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' /etc/os-release 2>/dev/null | head -1)
+if [ -z "${RAW_HOSTNAME}" ] || { [ -n "${FAMILY}" ] && [ "${RAW_HOSTNAME}" = "${FAMILY}" ]; }; then
+  UNIT_ID=$(cloud_device_id 2>/dev/null)
+  UNIT=$(printf '%s' "${UNIT_ID##*-}" | tr -cd 'a-f0-9' | cut -c1-4)
+  if [ -n "${UNIT}" ]; then
+    RAW_HOSTNAME=$(clean_hostname "${FAMILY:-ROCKNIX}-${UNIT}")
+    set_setting system.hostname "${RAW_HOSTNAME}"
+    logger -t network-base-setup "device name was the shipped default (${FAMILY:-empty}); it is now ${RAW_HOSTNAME}, this unit's own"
+  fi
+fi
 HOSTNAME=$(clean_hostname "${RAW_HOSTNAME}")
 if [ -z "${HOSTNAME}" ]; then
   HOSTNAME="ROCKNIX"

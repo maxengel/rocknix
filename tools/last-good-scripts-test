@@ -37,6 +37,9 @@
 #      words: absent_not_broken walks up to the nearest listable parent, the
 #      setup wizard carries the same function, the content backup makes its
 #      folder before copying (#142).
+#   m. network-base-setup gives the shipped device name (the build family) a
+#      per-unit suffix once and writes it back; a name the player typed, or
+#      another family's, is left alone (#50).
 #
 # The chksysconfig and 001-functions functions are lifted out of the files
 # under test and run in a fresh bash against temp paths, as wait-lock-test
@@ -71,6 +74,7 @@ OLD=0
 CHK_REL=projects/ROCKNIX/packages/rocknix/sources/scripts/chksysconfig
 BT_REL=projects/ROCKNIX/packages/rocknix/sources/scripts/backuptool
 FN_REL=projects/ROCKNIX/packages/rocknix/profile.d/001-functions
+NBS_REL=projects/ROCKNIX/packages/sysutils/systemd/scripts/network-base-setup
 RCLONE_REL=projects/ROCKNIX/packages/network/rclone/sources
 
 command -v bwrap >/dev/null || { echo "needs bubblewrap (bwrap)" >&2; exit 2; }
@@ -640,5 +644,42 @@ lq qa:/ 1; check $? "the root itself is never absent" "the root read as absent"
 [ -s "${LL}/fn.sh" ] && [ -s "${LL}/fn.sh" ] && diff -q <(sed -n '/^absent_not_broken() {/,/^}/p' "${ROOT}/${RCLONE_REL}/cloud_setup") "${LL}/fn.sh" >/dev/null; check $? "cloud_setup carries the identical function" "cloud_setup's absent_not_broken differs from cloud_content_restore's (or is missing)"
 awk '/^    rclone mkdir "\$\{TARGET\}"/{m=NR} /^    rclone copy "\$\{SRC\}" "\$\{TARGET\}"/{c=NR} END{exit !(m && c && m < c)}' "${ROOT}/${RCLONE_REL}/cloud_content_backup"; check $? "cloud_content_backup makes the folder before it copies into it" "no rclone mkdir of the target ahead of the copy in cloud_content_backup"
 grep -q 'absent_not_broken "${ROOT}ROMs/"' "${ROOT}/${RCLONE_REL}/cloud_content_restore" && grep -q 'absent_not_broken "${ROOT}BIOS/"' "${ROOT}/${RCLONE_REL}/cloud_content_restore"; check $? "the scan asks it about ROMs and BIOS before calling the cloud unreadable" "the scan does not consult absent_not_broken for both folders"
+echo "  m. the shipped device name becomes this unit's own, once; a player's name is never touched (#50)"
+# network-base-setup whole, inside bwrap: a stub /etc/profile that loads the
+# image's 001-functions against a fake system.cfg, a fake /etc/os-release
+# naming the family, and shims for hostnamectl, avahi-set-host-name, logger
+# and cloud_device_id (a fixed id, as a unit's is). It runs under bash, as the
+# image's /bin/sh is. /proc is the sandbox's,
+# so the kernel-name write fails harmlessly; what is checked is the setting.
+M="${TMP}/m"; MS="${M}/storage/.config/system/configs"; mkdir -p "${MS}" "${M}/shim" "${M}/repo" "${M}/run"
+cp "${ROOT}/${NBS_REL}" "${M}/repo/network-base-setup"; cp "${FN}" "${M}/repo/001-functions"
+# 001-functions puts /usr/bin first on PATH, so the shims go in front AFTER it.
+printf 'J_DIR=/storage/.config/system\n. /repo/001-functions\nexport PATH=/shim:${PATH}\nJ_CONF=/storage/.config/system/configs/system.cfg\nJ_CONF_LOCK=/tmp/.system.cfg.lock\n' > "${M}/profile"
+printf 'NAME="ROCKNIX"\nHW_DEVICE="H700"\n' > "${M}/os-release"
+for sh in hostnamectl avahi-set-host-name; do printf '#!/bin/sh\nexit 0\n' > "${M}/shim/${sh}"; done
+printf '#!/bin/sh\necho "logger $*" >&2\n' > "${M}/shim/logger"
+printf '#!/bin/sh\necho "RG35XX-SP-9a3f0c77e1"\n' > "${M}/shim/cloud_device_id"
+chmod +x "${M}/shim"/*
+nbs() { # runs the script; stderr to $OUT
+    bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${M}/profile" /etc/profile --ro-bind "${M}/os-release" /etc/os-release \
+        --bind "${M}/storage" /storage --ro-bind "${M}/shim" /shim --ro-bind "${M}/repo" /repo \
+        --bind "${M}/run" /run --dev /dev --proc /proc --tmpfs /tmp \
+        bash /repo/network-base-setup > "${OUT}" 2>&1
+}
+OUT="${M}/out"
+hn() { sed -n 's/^system\.hostname=//p' "${MS}/system.cfg"; }
+printf 'system.hostname=H700\nsystem.language=en_US\n' > "${MS}/system.cfg"
+nbs; [ "$(hn)" = "H700-9a3f" ]; check $? "the family name H700 becomes H700-9a3f (four hex digits of the unit's id), written back" "system.hostname is '$(hn)'; out: $(tail -2 "${OUT}" | tr '\n' '|')"
+grep -q 'shipped default' "${OUT}"; check $? "and the log says the shipped default was replaced" "log: $(grep logger "${OUT}" | head -1)"
+nbs; [ "$(hn)" = "H700-9a3f" ]; check $? "a second boot leaves it (stable)" "second run: '$(hn)'"
+printf 'system.hostname=Max Deck\n' > "${MS}/system.cfg"
+nbs; [ "$(hn)" = "Max Deck" ]; check $? "a name the player typed is untouched (Max Deck)" "player's name became '$(hn)'"
+printf 'system.hostname=\n' > "${MS}/system.cfg"
+nbs; [ "$(hn)" = "H700-9a3f" ]; check $? "an empty name gets the unit's own too" "empty became '$(hn)'"
+printf 'system.hostname=RK3566\n' > "${MS}/system.cfg"
+nbs; [ "$(hn)" = "RK3566" ]; check $? "another family's name is not this device's shipped default and is left alone" "RK3566 became '$(hn)'"
+
 echo
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
