@@ -1,0 +1,61 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# qa-accounts - carry a QA test account from the build host into a QA guest,
+# so the pages that need a real RetroAchievements or ScreenScraper login can
+# be pressed on the VM without a credential ever passing through a chat, a
+# commit or a log (D-QA-016, D-INFRA-006's pattern).
+#
+# The accounts live in ~/.ROCKNIX/qa-accounts, mode 0600, as export lines:
+#
+#   export RA_QA_USER=...          RetroAchievements test account
+#   export RA_QA_PASSWORD=...
+#   export RA_QA_WEBKEY=...        its web API key (retroachievements.org > settings)
+#   export SS_QA_USER=...          ScreenScraper test account
+#   export SS_QA_PASSWORD=...
+#   export SS_QA_DEVID=...         a developer pair, if one may be used on the VM
+#   export SS_QA_DEVPASSWORD=...
+#
+#   tools/qa-accounts <ssh-port> ra             # RetroAchievements: system.cfg, live
+#   tools/qa-accounts <ssh-port> screenscraper  # ScreenScraper: es_settings.cfg, needs a reboot
+#   tools/qa-accounts <ssh-port> clear          # take both back out
+#
+# Prints the names it set and nothing else. Refuses a file that is not
+# 0600, and a port that is not one of the QA guests' (10022-10029).
+set -u
+FILE="${QA_ACCOUNTS:-$HOME/.ROCKNIX/qa-accounts}"
+PORT="${1:-}"; WHAT="${2:-}"
+KEY="${QA_KEY:-/tmp/rocknix-vm-pair/qa-key}"
+SSHO=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=8 -o BatchMode=yes)
+case "${PORT}" in 1002[0-9]) ;; *) echo "qa-accounts: <ssh-port> must be a QA guest's (10022-10029)" >&2; exit 2 ;; esac
+case "${WHAT}" in ra|screenscraper|clear) ;; *) echo "qa-accounts: ra, screenscraper or clear" >&2; exit 2 ;; esac
+g() { ssh -n -i "${KEY}" -p "${PORT}" "${SSHO[@]}" root@127.0.0.1 "$@"; }
+if [ "${WHAT}" = clear ]; then
+    g '. /etc/profile; for k in global.retroachievements.password global.retroachievements.key; do set_setting $k default; done
+       F=/storage/.config/emulationstation/es_settings.cfg; sed -i "/name=\"ScreenScraper\(User\|Pass\|DevId\|DevPass\)\"/d" $F' >/dev/null
+    echo "cleared: global.retroachievements.password global.retroachievements.key ScreenScraperUser ScreenScraperPass ScreenScraperDevId ScreenScraperDevPass"
+    exit 0
+fi
+[ -f "${FILE}" ] || { echo "qa-accounts: no ${FILE} -- see the header for its shape" >&2; exit 1; }
+mode=$(stat -c %a "${FILE}"); [ "${mode}" = "600" ] || { echo "qa-accounts: ${FILE} is mode ${mode}, must be 600" >&2; exit 1; }
+# shellcheck disable=SC1090
+set -a; . "${FILE}"; set +a
+need() { for v in "$@"; do [ -n "${!v:-}" ] || { echo "qa-accounts: ${v} is not set in ${FILE}" >&2; exit 1; }; done; }
+q() { printf '%q' "$1"; }
+if [ "${WHAT}" = ra ]; then
+    need RA_QA_USER RA_QA_PASSWORD RA_QA_WEBKEY
+    g ". /etc/profile; set_setting global.retroachievements 1; set_setting global.retroachievements.username $(q "${RA_QA_USER}"); set_setting global.retroachievements.password $(q "${RA_QA_PASSWORD}"); set_setting global.retroachievements.key $(q "${RA_QA_WEBKEY}")" >/dev/null
+    echo "set on :${PORT}: global.retroachievements=1 global.retroachievements.username global.retroachievements.password global.retroachievements.key (read by the interface at its next start: reboot the guest)"
+else
+    need SS_QA_USER SS_QA_PASSWORD
+    xml() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/"/\&quot;/g'; }
+    lines="\t<string name=\"ScreenScraperUser\" value=\"$(xml "${SS_QA_USER}")\" />\n\t<string name=\"ScreenScraperPass\" value=\"$(xml "${SS_QA_PASSWORD}")\" />"
+    names="ScreenScraperUser ScreenScraperPass"
+    if [ -n "${SS_QA_DEVID:-}" ] && [ -n "${SS_QA_DEVPASSWORD:-}" ]; then
+        lines="${lines}\n\t<string name=\"ScreenScraperDevId\" value=\"$(xml "${SS_QA_DEVID}")\" />\n\t<string name=\"ScreenScraperDevPass\" value=\"$(xml "${SS_QA_DEVPASSWORD}")\" />"
+        names="${names} ScreenScraperDevId ScreenScraperDevPass"
+    fi
+    g "F=/storage/.config/emulationstation/es_settings.cfg; sed -i '/name=\"ScreenScraper\(User\|Pass\|DevId\|DevPass\)\"/d' \$F; sed -i \"s|</config>|$(printf '%s' "${lines}" | sed 's/|/\\|/g')\n</config>|\" \$F; grep -c 'name=\"ScreenScraper' \$F" >/dev/null
+    echo "set on :${PORT}: ${names} (es_settings.cfg; the interface reads it at its next start: reboot the guest)"
+fi
