@@ -14,7 +14,7 @@
 #   export RA_QA_WEBKEY=...        its web API key (retroachievements.org > settings)
 #   export SS_QA_USER=...          ScreenScraper test account
 #   export SS_QA_PASSWORD=...
-#   export SS_QA_DEVID=...         a developer pair, if one may be used on the VM (enough on its own)
+#   export SS_QA_DEVID=...         a developer pair, if one may be used on the VM
 #   export SS_QA_DEVPASSWORD=...
 #
 #   tools/qa-accounts <ssh-port> ra             # RetroAchievements: system.cfg, live
@@ -23,18 +23,46 @@
 #
 # Prints the names it set and nothing else. Refuses a file that is not
 # 0600, and a port that is not one of the QA guests' (10022-10029).
-set -u
+#
+# How a value travels (audit #151 PL-09, after D-INFRA-010): over ssh's
+# STDIN, both ways -- never as an argument, so it is in neither host's `ps`
+# nor the guest's `sh -c` while this runs. Every report here is what the
+# guest holds afterwards, read back, not what was asked: `clear` prints
+# `cleared:` only once the ssh has succeeded and the settings read back
+# empty; the ScreenScraper writer refuses a file with no `<config>` (a
+# missing or already-broken file is an error, not a new invalid file),
+# rebuilds beside the original, parses the rebuild on the host, and only
+# then puts it in place. `clear` takes out everything `ra` and `screenscraper`
+# wrote except the global.retroachievements switch itself, whose earlier value
+# it cannot know.
+set -uo pipefail
 FILE="${QA_ACCOUNTS:-$HOME/.ROCKNIX/qa-accounts}"
 PORT="${1:-}"; WHAT="${2:-}"
 KEY="${QA_KEY:-/tmp/rocknix-vm-pair/qa-key}"
 SSHO=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=8 -o BatchMode=yes)
-case "${PORT}" in 1002[0-9]) ;; *) echo "qa-accounts: <ssh-port> must be a QA guest's (10022-10029)" >&2; exit 2 ;; esac
+case "${PORT}" in 1002[2-9]) ;; *) echo "qa-accounts: <ssh-port> must be a QA guest's (10022-10029)" >&2; exit 2 ;; esac
 case "${WHAT}" in ra|screenscraper|clear) ;; *) echo "qa-accounts: ra, screenscraper or clear" >&2; exit 2 ;; esac
-g() { ssh -n -i "${KEY}" -p "${PORT}" "${SSHO[@]}" root@127.0.0.1 "$@"; }
+CFG=/storage/.config/emulationstation/es_settings.cfg
+g() { ssh -n -i "${KEY}" -p "${PORT}" "${SSHO[@]}" root@127.0.0.1 "$@"; }        # nothing on stdin
+feed() { ssh -i "${KEY}" -p "${PORT}" "${SSHO[@]}" root@127.0.0.1 "$@"; }        # the values, on stdin
+parse() { python3 -c 'import xml.etree.ElementTree as E,sys; E.parse(sys.stdin)' 2>/dev/null; }
 if [ "${WHAT}" = clear ]; then
-    g '. /etc/profile; for k in global.retroachievements.password global.retroachievements.key; do set_setting $k default; done
-       F=/storage/.config/emulationstation/es_settings.cfg; sed -i "/name=\"ScreenScraper\(User\|Pass\|DevId\|DevPass\)\"/d" $F' >/dev/null
-    echo "cleared: global.retroachievements.password global.retroachievements.key ScreenScraperUser ScreenScraperPass ScreenScraperDevId ScreenScraperDevPass"
+    g '. /etc/profile; F=/storage/.config/emulationstation/es_settings.cfg; [ -f "$F" ] || exit 3
+       for k in global.retroachievements.username global.retroachievements.password global.retroachievements.key; do set_setting $k default; done
+       sed -i "/name=\"ScreenScraper\(User\|Pass\|DevId\|DevPass\)\"/d" "$F"' >/dev/null
+    rc=$?
+    case "${rc}" in
+        0) ;;
+        3) echo "qa-accounts: no ${CFG} on :${PORT}; nothing cleared" >&2; exit 1 ;;
+        *) echo "qa-accounts: clear on :${PORT} did not run (ssh exit ${rc})" >&2; exit 1 ;;
+    esac
+    # What the guest holds now. Names only.
+    left=$(g '. /etc/profile; for k in global.retroachievements.username global.retroachievements.password global.retroachievements.key; do [ -n "$(get_setting $k)" ] && printf "%s " "$k"; done
+              grep -o "name=\"ScreenScraper\(User\|Pass\|DevId\|DevPass\)\"" /storage/.config/emulationstation/es_settings.cfg | tr "\n" " "; exit 0') \
+        || { echo "qa-accounts: could not read :${PORT} back after clear" >&2; exit 1; }
+    [ -z "${left// /}" ] || { echo "qa-accounts: still set on :${PORT}: ${left}" >&2; exit 1; }
+    g "cat ${CFG}" | parse || { echo "qa-accounts: ${CFG} on :${PORT} does not parse after clear" >&2; exit 1; }
+    echo "cleared: global.retroachievements.username global.retroachievements.password global.retroachievements.key ScreenScraperUser ScreenScraperPass ScreenScraperDevId ScreenScraperDevPass"
     exit 0
 fi
 [ -f "${FILE}" ] || { echo "qa-accounts: no ${FILE} -- see the header for its shape" >&2; exit 1; }
@@ -42,26 +70,34 @@ mode=$(stat -c %a "${FILE}"); [ "${mode}" = "600" ] || { echo "qa-accounts: ${FI
 # shellcheck disable=SC1090
 set -a; . "${FILE}"; set +a
 need() { for v in "$@"; do [ -n "${!v:-}" ] || { echo "qa-accounts: ${v} is not set in ${FILE}" >&2; exit 1; }; done; }
-q() { printf '%q' "$1"; }
+oneline() { for v in "$@"; do case "${!v:-}" in *$'\n'*) echo "qa-accounts: ${v} holds a newline; a setting is one line" >&2; exit 1 ;; esac; done; }
 if [ "${WHAT}" = ra ]; then
     need RA_QA_USER RA_QA_PASSWORD RA_QA_WEBKEY
-    g ". /etc/profile; set_setting global.retroachievements 1; set_setting global.retroachievements.username $(q "${RA_QA_USER}"); set_setting global.retroachievements.password $(q "${RA_QA_PASSWORD}"); set_setting global.retroachievements.key $(q "${RA_QA_WEBKEY}")" >/dev/null
+    oneline RA_QA_USER RA_QA_PASSWORD RA_QA_WEBKEY
+    # key=value lines on stdin; the guest splits at the first = and sets each.
+    printf '%s\n' "global.retroachievements=1" "global.retroachievements.username=${RA_QA_USER}" \
+                  "global.retroachievements.password=${RA_QA_PASSWORD}" "global.retroachievements.key=${RA_QA_WEBKEY}" \
+      | feed '. /etc/profile; while IFS= read -r line; do set_setting "${line%%=*}" "${line#*=}"; done' >/dev/null \
+      || { echo "qa-accounts: the write to :${PORT} failed" >&2; exit 1; }
     # Report what the device holds, not what was intended.
-    got=$(g '. /etc/profile; for k in global.retroachievements.username global.retroachievements.password global.retroachievements.key; do [ -n "$(get_setting $k)" ] && printf "%s " "$k"; done')
+    got=$(g '. /etc/profile; for k in global.retroachievements.username global.retroachievements.password global.retroachievements.key; do [ -n "$(get_setting $k)" ] && printf "%s " "$k"; done; exit 0') \
+        || { echo "qa-accounts: could not read :${PORT} back" >&2; exit 1; }
     echo "set on :${PORT}: global.retroachievements=1 ${got}(read by the interface at its next start: reboot the guest)"
     case "${got}" in *username*password*key*) exit 0 ;; *) echo "qa-accounts: a value did not land" >&2; exit 1 ;; esac
 else
-    # An account, a developer pair, or both -- whichever the file holds. A
-    # pair alone is enough for a real scrape (anonymous quota) and for the
-    # wrong-password case with a made-up account planted beside it. Only the
-    # names being written are replaced; the other pair's lines stay.
+    # An account, a developer pair, or both -- whichever the file holds; which
+    # combinations ScreenScraper accepts is #66's question (#151 PL-06), and
+    # this writes what it is given. Only the names being written are
+    # replaced; the other pair's lines stay.
     #
     # The lines travel over ssh's stdin, never through a second shell's
     # quoting: sent as an argument they lost their attribute quotes and left
     # es_settings.cfg unparseable, which the interface answered by ignoring
-    # the whole file (2026-09-13). Written with a rename, verified by reading
-    # the names back.
+    # the whole file (2026-09-13). The guest rebuilds the file beside the
+    # original and sends the rebuild back; it is parsed here, and only a
+    # rebuild that parses is moved into place.
     xml() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/"/\&quot;/g'; }
+    oneline SS_QA_USER SS_QA_PASSWORD SS_QA_DEVID SS_QA_DEVPASSWORD
     lines=""; names=""; drop=""
     if [ -n "${SS_QA_USER:-}" ] && [ -n "${SS_QA_PASSWORD:-}" ]; then
         lines="$(printf '\t<string name="ScreenScraperUser" value="%s" />\n\t<string name="ScreenScraperPass" value="%s" />' "$(xml "${SS_QA_USER}")" "$(xml "${SS_QA_PASSWORD}")")"
@@ -73,12 +109,22 @@ else
 }${more}"; names="${names}${names:+ }ScreenScraperDevId ScreenScraperDevPass"; drop="${drop}${drop:+\|}DevId\|DevPass"
     fi
     [ -n "${names}" ] || { echo "qa-accounts: neither SS_QA_USER/SS_QA_PASSWORD nor SS_QA_DEVID/SS_QA_DEVPASSWORD is set in ${FILE}" >&2; exit 1; }
-    printf '%s\n' "${lines}" | ssh -i "${KEY}" -p "${PORT}" "${SSHO[@]}" root@127.0.0.1 "F=/storage/.config/emulationstation/es_settings.cfg
+    printf '%s\n' "${lines}" | feed "F=/storage/.config/emulationstation/es_settings.cfg
+        grep -q '<config>' \$F 2>/dev/null || exit 3
         grep -v '</config>' \$F | grep -v 'name=\"\{0,1\}ScreenScraper\(${drop}\)\"\{0,1\} ' > \$F.new
         cat >> \$F.new
         echo '</config>' >> \$F.new
-        mv \$F.new \$F" || { echo "qa-accounts: the write failed" >&2; exit 1; }
-    got=$(g 'grep -o "name=\"ScreenScraper[A-Za-z]*\" value=\"[^\"][^\"]*\"" /storage/.config/emulationstation/es_settings.cfg | sed "s/^name=\"//; s/\" value=.*//" | tr "\n" " "')
+        cat \$F.new" | parse
+    st=("${PIPESTATUS[@]}")
+    case "${st[1]}" in
+        0) ;;
+        3) echo "qa-accounts: ${CFG} on :${PORT} has no <config> (missing, or already not a settings file); nothing written" >&2; exit 1 ;;
+        *) echo "qa-accounts: the write to :${PORT} failed (ssh exit ${st[1]})" >&2; exit 1 ;;
+    esac
+    [ "${st[2]}" = 0 ] || { g "rm -f ${CFG}.new"; echo "qa-accounts: the rebuilt es_settings.cfg does not parse; ${CFG} on :${PORT} left as it was" >&2; exit 1; }
+    g "mv ${CFG}.new ${CFG}" || { echo "qa-accounts: the rebuild parses but could not be put in place on :${PORT}" >&2; exit 1; }
+    got=$(g 'grep -o "name=\"ScreenScraper[A-Za-z]*\" value=\"[^\"][^\"]*\"" /storage/.config/emulationstation/es_settings.cfg | sed "s/^name=\"//; s/\" value=.*//" | tr "\n" " "; exit 0') \
+        || { echo "qa-accounts: could not read :${PORT} back" >&2; exit 1; }
     echo "es_settings.cfg on :${PORT} now holds, with values: ${got}(the interface reads it at its next start: reboot the guest)"
     for n in ${names}; do case " ${got}" in *" ${n} "*) ;; *) echo "qa-accounts: ${n} did not land" >&2; exit 1 ;; esac; done
 fi
