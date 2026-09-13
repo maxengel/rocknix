@@ -636,6 +636,26 @@ btk restore; rck2=${RC}
 [ "${rck2}" -eq 0 ]; check $? "a pre-#45 archive restores (rc ${rck2})" "rc ${rck2}: $(grep -v '^logger' "${OUT}" | tail -3 | tr '\n' '|')"
 [ "$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp.ini")" = "OLD ini" ] && [ "$(cat "${KS}/.config/test/own")" = "OLD own" ]; check $? "the ini and the player's file come back from it" "ini='$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp.ini")' own='$(cat "${KS}/.config/test/own")'"
 [ "$(cat "${KS}/.config/ppsspp/assets/lang/en_US.ini")" = "edited strings" ] && [ "$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/CACHE/x.cache")" = "shader cache" ]; check $? "its assets and cache are left where they were" "asset='$(cat "${KS}/.config/ppsspp/assets/lang/en_US.ini")' cache='$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/CACHE/x.cache")' -- an older emulator's program data was put under a newer one"
+# The same archive as a zip: the shape every backup had before 2026-08-26,
+# so the one most likely to carry assets whole -- and the zip branch skipped
+# only live symlinks, so D-CLOUD-008's "from any archive" was tar-only until
+# #151 PL-03 (D-CLOUD-124). A regular-file copy of a symlink the OS provides
+# is in the fixture too, so the branch is seen to keep its original job.
+rm -f "${KS}/roms/backup"/*.tar.gz
+echo "edited strings" > "${KS}/.config/ppsspp/assets/lang/en_US.ini"; echo "shader cache" > "${KS}/.config/ppsspp/PSP/SYSTEM/CACHE/x.cache"
+echo "the player's ini" > "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp.ini"; echo "the player's own" > "${KS}/.config/test/own"
+ln -sfn /usr/config/test/seed "${KS}/.config/test/link"
+echo "OLD link contents" > "${KO}/storage/.config/test/link"
+(cd "${KO}" && python3 -c 'import zipfile, os, sys
+z = zipfile.ZipFile(sys.argv[1], "w", zipfile.ZIP_DEFLATED)
+for r, _, fs in os.walk("storage"):
+    for f in fs: z.write(os.path.join(r, f))
+z.close()' "${KS}/roms/backup/20260101000000-ROCKNIX_BACKUP.zip")
+btk restore; rck3=${RC}
+[ "${rck3}" -eq 0 ]; check $? "a pre-#45 zip archive restores (rc ${rck3})" "rc ${rck3}: $(grep -v '^logger' "${OUT}" | tail -3 | tr '\n' '|')"
+[ "$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp.ini")" = "OLD ini" ] && [ "$(cat "${KS}/.config/test/own")" = "OLD own" ]; check $? "the ini and the player's file come back from the zip" "ini='$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp.ini")' own='$(cat "${KS}/.config/test/own")'"
+[ "$(cat "${KS}/.config/ppsspp/assets/lang/en_US.ini")" = "edited strings" ] && [ "$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/CACHE/x.cache")" = "shader cache" ]; check $? "its assets and cache are left where they were (zip)" "asset='$(cat "${KS}/.config/ppsspp/assets/lang/en_US.ini")' cache='$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/CACHE/x.cache")' -- the zip branch skipped only symlinks, and the oldest archives put an older emulator's program data under a newer one (#151 PL-03)"
+[ -L "${KS}/.config/test/link" ] && grep -q 'KEEPING 1 FILE(S) THE SYSTEM PROVIDES' "${OUT}"; check $? "and the symlink the OS provides is still a symlink, said on the screen (KEEPING 1 FILE(S))" "link: $([ -L "${KS}/.config/test/link" ] && echo symlink || echo "regular file: $(cat "${KS}/.config/test/link" 2>/dev/null)"); screen: $(grep -c 'KEEPING' "${OUT}") KEEPING line(s)"
 
 echo "  l. a missing cloud folder reads as not there yet whatever the server's words (#142)"
 # absent_not_broken, lifted from cloud_content_restore and run against a shim

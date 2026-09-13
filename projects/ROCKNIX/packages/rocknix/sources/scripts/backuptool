@@ -561,24 +561,28 @@ case "${VERB}" in
             # unrestorable here. Skip exactly those entries instead: the OS
             # owns those symlinks and provides them, and replacing one with a
             # stale copy is the bug that got them excluded from backups in the
-            # first place.
+            # first place. And skip the same two prefixes the tar branch does:
+            # a zip is the oldest archive there is, written when assets/ and
+            # the shader cache travelled whole, so it is the archive most
+            # likely to carry them -- and until #151 PL-03 this branch skipped
+            # neither, while D-CLOUD-008 said "from any archive".
+            SKIP=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*')
             SKIPPED=0
             for ENTRY in $(unzip -l "${BACKUPFILE}" 2>/dev/null | awk 'NF>3 && $4 ~ /^storage\// {print $4}')
             do
                 if [ -L "/${ENTRY}" ]
                 then
-                    SKIP="${SKIP} ${ENTRY}"
+                    SKIP+=("${ENTRY}")
                     SKIPPED=$((SKIPPED + 1))
                 fi
             done
             if [ "${SKIPPED}" -gt 0 ]
             then
                 note "KEEPING ${SKIPPED} FILE(S) THE SYSTEM PROVIDES THAT THIS OLDER BACKUP WOULD HAVE REPLACED."
-                # -x is a mode switch: every argument after it is an exclusion.
-                unzip -o "${BACKUPFILE}" -d / -x ${SKIP} >/dev/null
-            else
-                unzip -o "${BACKUPFILE}" -d / >/dev/null
             fi
+            # -x is a mode switch: every argument after it is an exclusion,
+            # so it goes last. busybox and Info-ZIP both take the patterns.
+            unzip -o "${BACKUPFILE}" -d / -x "${SKIP[@]}" >/dev/null
         fi
         if [ $? -ne 0 ]
         then
