@@ -39,13 +39,29 @@ else
   hardcore="False"
 fi
 
+# OFFLINE RETROACHIEVEMENTS (fork #165, D-RA-002): PPSSPP's own achievements
+# client behind AchievementsHost, pointed at the RAOfflineProxy service on
+# loopback when the toggle is on, hardcore is off (the proxy refuses hardcore
+# awards) and the port answers -- a host with nothing behind it would disable
+# achievements for the session. Empty otherwise, which is PPSSPP's default
+# host: this file travels in a settings backup, so a restored device with the
+# toggle off must find the line cleared, not pointing at a dead port.
+host=""
+if [ "$(get_setting "global.retroachievements.offlineproxy")" = 1 ] && [ "${hardcore}" = "False" ]; then
+  if netstat -ltn 2>/dev/null | grep -q '127\.0\.0\.1:8080 '; then
+    host="127.0.0.1:8080"
+  else
+    echo "Offline RetroAchievements is on but nothing answers on 127.0.0.1:8080; launching direct." >> ${LOG_FILE}
+  fi
+fi
+
 # Update emulator config with RetroAchievements settings
 zcheevos=$(grep -Fx "[Achievements]" ${PPSSPP_INI})
 echo "${token}" > ${PPSSPP_ACHIEVEMENTS}
 
 if [ -z "${zcheevos}" ]
 then
-    echo -e "[Achievements]\nAchievementsEnable = True\nAchievementsUserName = ${username}\nAchievementsChallengeMode = ${hardcore}" >> ${PPSSPP_INI}
+    echo -e "[Achievements]\nAchievementsEnable = True\nAchievementsUserName = ${username}\nAchievementsChallengeMode = ${hardcore}\nAchievementsHost = ${host}" >> ${PPSSPP_INI}
 else
     sed -i '/^AchievementsEnable =/c\AchievementsEnable = True' ${PPSSPP_INI}
     if ! grep -q "^AchievementsUserName = " ${PPSSPP_INI}; then
@@ -58,5 +74,13 @@ else
         sed -i "/^\[Achievements\]/a AchievementsChallengeMode = ${hardcore}" ${PPSSPP_INI}
     else
         sed -i "/^\[Achievements\]/,/^\[/{s/^AchievementsChallengeMode = .*/AchievementsChallengeMode = ${hardcore}/;}" ${PPSSPP_INI}
+    fi
+
+    # Matched up to the "=", not past it: an empty value is written as
+    # "AchievementsHost = " and PPSSPP may save it back without the space.
+    if ! grep -q "^AchievementsHost =" ${PPSSPP_INI}; then
+        sed -i "/^\[Achievements\]/a AchievementsHost = ${host}" ${PPSSPP_INI}
+    else
+        sed -i "/^\[Achievements\]/,/^\[/{s/^AchievementsHost =.*/AchievementsHost = ${host}/;}" ${PPSSPP_INI}
     fi
 fi

@@ -479,6 +479,40 @@ function set_cheevos() {
         else
             add_setting "none" "cheevos_unlock_sound_enable" "false"
         fi
+        # OFFLINE RETROACHIEVEMENTS (fork #165, D-RA-002): RetroArch talks to
+        # the RAOfflineProxy service on loopback, which caches game data and
+        # queues casual awards earned without a connection. System-wide, so
+        # the global key and not game_setting. Three conditions, all of them
+        # fail-closed to the direct path RetroArch has today:
+        #   - the toggle is on (raofflineproxy-ctl enable set it);
+        #   - this game's effective hardcore is off -- the toggle turns the
+        #     global off, but a per-game override still wins, and the proxy
+        #     refuses hardcore awards, so such a game keeps the direct path;
+        #   - the proxy's port answers. A host with nothing behind it would
+        #     make rcheevos disable achievements for the whole session, so
+        #     when the service is not up yet the launch goes direct and says
+        #     so in the log.
+        # The host goes into this launch's appendconfig and nowhere else, so
+        # nothing persistent is written, nothing needs reverting, and no proxy
+        # host travels in a settings backup (retroarch.cfg and system.cfg both
+        # do). The empty value in the other branches clears any
+        # cheevos_custom_host a restored retroarch.cfg may still carry from
+        # the upstream installer's patcher, so a device with the toggle off is
+        # never left pointing at a dead port.
+        local OFFLINE_PROXY=$(get_setting "global.retroachievements.offlineproxy")
+        local CHEEVOS_HARDCORE=$(game_setting "retroachievements.hardcore")
+        if [ "${OFFLINE_PROXY}" = "1" ] && [ "${CHEEVOS_HARDCORE}" != "1" ]
+        then
+            if netstat -ltn 2>/dev/null | grep -q '127\.0\.0\.1:8080 '
+            then
+                add_setting "none" "cheevos_custom_host" "127.0.0.1:8080"
+            else
+                log "offline RetroAchievements is on but nothing answers on 127.0.0.1:8080; launching direct"
+                add_setting "none" "cheevos_custom_host" ""
+            fi
+        else
+            add_setting "none" "cheevos_custom_host" ""
+        fi
     else
         add_setting "none" "cheevos_enable" "false"
     fi
