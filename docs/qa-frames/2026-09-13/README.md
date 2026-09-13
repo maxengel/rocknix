@@ -7,6 +7,13 @@ virtio-gpu-pci,xres=640,yres=480`); `02f368914e` (ES `557a27d20`) and
 on guest b. Every frame is `tools/vm-visual-qa`'s screendump,
 driven by step files kept in the session scratchpad.
 
+`d32f47a947` (EmulationStation `51edcf728c`) on guest d at 640x480, for audit
+#151's PL-05, PL-06, PL-07 and PL-17: the restore page on a guest whose link
+was cut before boot (so no address, and the WI-FI row unset), the scraper's
+start-of-scrape sentences with a bogus developer pair and no account, and the
+save state manager under `--debug`. Frames carrying `-fr` were taken with
+`system.language=fr_FR`.
+
 | Frame | What it shows |
 |---|---|
 | `save-state-manager-four-tiles-1280x800.png` | The manager on `878ec8863b`: START NEW GAME, AUTO SAVE, SLOT 1, SLOT 2, every label whole, the sheet half the screen (#27's first cut, where it happened to work). |
@@ -25,3 +32,15 @@ driven by step files kept in the session scratchpad.
 | `save-state-manager-after-delete-640x480-db6b42c180.png` | After deleting the auto save at 640x480: START NEW GAME focused, START NEW AUTO SAVE whole, BACK / LAUNCH (#93 at this size too). |
 | `save-state-manager-four-tiles-1280x800-db6b42c180.png` | The fourth cut at 1280x800: unchanged labels, the bar drawn once (#149's second criterion). |
 | `save-state-manager-slot-focused-1280x800-db6b42c180.png` | AUTO SAVE focused at 1280x800 on the fourth cut. |
+| `finish-restore-process-no-wifi-top-640x480-d32f47a947.png` | FINISH RESTORE PROCESS at boot on `d32f47a947`, 640x480, link cut before boot: the empty circle on WI-FI PASSWORD, the check-circle on DEVICE PASSWORD, every row a label and one line -- the whole page fits, nothing to scroll (#151 PL-05, #47). |
+| `finish-restore-process-no-wifi-bottom-640x480-d32f47a947.png` | The same page walked to its button bar, LATER focused: LATER KEEPS THIS LIST / BACK AT STARTUP, OR IN NETWORK SETTINGS > FINISH RESTORE PROCESS. on one line (#47 box 4). |
+| `finish-restore-process-no-wifi-top-640x480-d32f47a947-fr.png` | The same boot in French: FINIR LA RESTAURATION, the two descriptions that have French (DEVICE PASSWORD's, LATER's) translated; the subtitle, the group names, the WI-FI and CHECK CONNECTION rows and the buttons still English -- no msgstr (D-UI-051 gap). Rows still two lines. |
+| `finish-restore-process-no-wifi-bottom-640x480-d32f47a947-fr.png` | The French page at its button bar: AU DÉMARRAGE, OU DANS PARAMÈTRES RÉSEAU > FINIR LA RESTAURATION. on one line. |
+| `finish-restore-process-online-top-640x480-d32f47a947.png` | The same page at a later boot with the link up: WI-FI PASSWORD now carries the check-circle -- the pair of glyphs #47 box 3 asked for, side by side with the frame above. |
+| `network-settings-finish-restore-row-640x480-d32f47a947.png` | NETWORK SETTINGS while the marker exists: the RESTORE group's FINISH RESTORE PROCESS row (the on-demand route LATER names). Its description wraps to a second line at 640x480 -- a three-line row, `GuiMenu.cpp:9041`, filed separately. |
+| `screenscraper-rejected-developer-pair-no-account-640x480-d32f47a947.png` | SCRAPE NOW with a bogus developer pair and no account on the shipped ordering: SCREENSCRAPER REJECTED THE DEVELOPER ID OR PASSWORD. CHECK THEM UNDER SCRAPER > ACCOUNTS. -- the pair is probed before the account is looked at (#151 PL-06, #66 box 3). Log: user-info 403, pair alone 200 rejected. |
+| `screenscraper-rejected-developer-pair-no-account-640x480-d32f47a947-fr.png` | The same press in French: SCREENSCRAPER A REFUSÉ L’IDENTIFIANT OU LE MOT DE PASSE DÉVELOPPEUR. VÉRIFIEZ-LES DANS SCRAPEUR > COMPTES. |
+| `screenscraper-not-online-640x480-d32f47a947.png` | SCRAPE NOW with the guest's link cut (`set_link net0 off`, address gone): YOU'RE NOT ONLINE. TRY AGAIN WHEN YOU ARE. Log: HTTP 3, "Could not resolve hostname" (#151 PL-07). A blackhole route to `api.screenscraper.fr` (HTTP 3, "Could not connect to server") and a route via `lo` (HTTP 3 after the 10 s connect timeout, "Timeout was reached") drew the byte-identical frame; neither reaches the probe, so COULDN'T REACH SCREENSCRAPER stays unframed. |
+| `screenscraper-not-online-640x480-d32f47a947-fr.png` | The same press in French: VOUS N’ÊTES PAS EN LIGNE. RÉESSAYEZ QUAND VOUS LE SEREZ. |
+| `save-state-manager-four-tiles-640x480-d32f47a947.png` | The manager on `d32f47a947` under `--debug`: START NEW GAME, AUTO SAVE, SLOT 1, SLOT 2 with dates, BACK / LAUNCH. es_log: `help row 0.164167 of a 264 px sheet (constructor)` and `(onSizeChanged)` -- equal (#151 PL-17). |
+| `save-state-manager-four-tiles-640x480-d32f47a947-fr.png` | The manager in French: NOUVELLE PARTIE, SAUV. AUTO, EMPLACEMENT 1, EMPLACEMENT 2, RETOUR / LANCER, every label inside its tile. |
