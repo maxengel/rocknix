@@ -30,6 +30,9 @@
 #      NetworkManager state; a still-connecting network exits 69 at the deadline.
 #   j. cloud_sync_helper migrates the pre-#107 retry bound once, with a marker,
 #      and leaves a hand-tuned value alone.
+#   k. backuptool leaves out what the image ships (a file identical to its
+#      /usr/config copy; PPSSPP's assets and shader cache always), and a
+#      restore of an older archive does not put those back (#45).
 #
 # The chksysconfig and 001-functions functions are lifted out of the files
 # under test and run in a fresh bash against temp paths, as wait-lock-test
@@ -47,7 +50,7 @@
 #
 # To watch the guards fire, point it at the scripts from before the change:
 #
-#     tools/last-good-scripts-test --old      # a, b, c FAIL against 1d1503180d
+#     tools/last-good-scripts-test --old      # a, b, c, k FAIL against 1d1503180d
 #     BASE_REF=c15050c897 tools/last-good-scripts-test --old
 #                                             # a FAILS: the text test that
 #                                             # busybox tr never passed
@@ -547,5 +550,52 @@ rm -f "${DS}/.config/.cloud_sync-net-opts-retries-applied"
 sb bash /repo/cloud_sync_helper /tmp/helper.log
 grep -q -- '--low-level-retries 4 --retries 1"$' "${DS}/.config/cloud_sync.conf"; check $? "a hand-tuned bound (four retries) is left alone" "conf holds: $(grep ^RCLONE_NET_OPTS "${DS}/.config/cloud_sync.conf")"
 
+
+echo "  k. backuptool: what the image ships does not travel, and an older archive's copy of it is not put back (#45)"
+# A fake /usr/config beside the real /usr (bwrap cannot make a mountpoint
+# under a read-only /usr, so /usr is bound a subdirectory at a time). Under
+# /storage/.config: shipped seeds unchanged (cheat.db, test/seed), a file the
+# player edited (ppsspp.ini), a file with no counterpart (test/own), and an
+# asset and a cache entry, which never travel, edited or not.
+K="${TMP}/k"; KS="${K}/storage"; KU="${K}/usrconfig"
+mkdir -p "${KS}/.config/ppsspp/assets/lang" "${KS}/.config/ppsspp/PSP/SYSTEM/CACHE" "${KS}/.config/ppsspp/PSP/Cheats" "${KS}/.config/test" "${KS}/roms/backup" \
+         "${KU}/ppsspp/assets/lang" "${KU}/ppsspp/PSP/SYSTEM" "${KU}/ppsspp/PSP/Cheats" "${KU}/test"
+head -c 65536 /dev/urandom > "${KU}/ppsspp/PSP/Cheats/cheat.db"; cp "${KU}/ppsspp/PSP/Cheats/cheat.db" "${KS}/.config/ppsspp/PSP/Cheats/cheat.db"
+echo "shipped seed" > "${KU}/test/seed"; cp "${KU}/test/seed" "${KS}/.config/test/seed"
+echo "shipped ini" > "${KU}/ppsspp/PSP/SYSTEM/ppsspp.ini"; echo "the player's ini" > "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp.ini"
+echo "shipped strings" > "${KU}/ppsspp/assets/lang/en_US.ini"; echo "edited strings" > "${KS}/.config/ppsspp/assets/lang/en_US.ini"
+echo "shader cache" > "${KS}/.config/ppsspp/PSP/SYSTEM/CACHE/x.cache"
+echo "the player's own" > "${KS}/.config/test/own"
+printf 'LOCATIONS=(\n  /storage/.config/ppsspp/*\n  /storage/.config/test/*\n)\n' > "${KS}/.config/backuptool.conf"
+UB=(); for d in /usr/*/; do d="${d%/}"; UB+=(--ro-bind "${d}" "${d}"); done
+btk() { # <verb...>; as bt, with /usr/config ours
+    RC=$( ( setsid -w bwrap --die-with-parent --tmpfs / "${UB[@]}" --ro-bind "${KU}" /usr/config \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${B}/profile" /etc/profile \
+        --bind "${KS}" /storage --ro-bind "${B}/shim" /shim --ro-bind "${B}/repo" /repo \
+        --dev /dev --proc /proc --tmpfs /tmp \
+        bash /repo/backuptool "$@" > "${OUT}" 2>&1; echo $? ) 2>/dev/null )
+}
+OUT="${K}/out"
+btk backup; rck1=${RC}
+karch=$(ls "${KS}/roms/backup"/*.tar.gz 2>/dev/null)
+[ "${rck1}" -eq 0 ] && [ -n "${karch}" ]; check $? "a backup writes (rc ${rck1})" "rc ${rck1}: $(tail -3 "${OUT}" | tr '\n' '|')"
+klist=$(tar -tzf "${karch}" 2>/dev/null)
+echo "${klist}" | grep -q 'ppsspp/PSP/SYSTEM/ppsspp.ini$' && echo "${klist}" | grep -q 'test/own$'; check $? "the edited ini and the player's own file travel" "archive lists: $(echo "${klist}" | tr '\n' ' ')"
+! echo "${klist}" | grep -q -E 'cheat.db$|test/seed$'; check $? "shipped seeds identical to /usr/config do not (cheat.db, test/seed)" "a shipped seed is in the archive: $(echo "${klist}" | grep -E 'cheat.db$|test/seed$' | tr '\n' ' ')"
+! echo "${klist}" | grep -q -E 'ppsspp/assets/|SYSTEM/CACHE/'; check $? "assets and the shader cache never do, edited or not" "the archive carries: $(echo "${klist}" | grep -E 'ppsspp/assets/|SYSTEM/CACHE/' | tr '\n' ' ')"
+grep -q 'left out 2 file(s) identical' "${OUT}"; check $? "and the log says two were left out as the image's own" "log: $(grep 'left out' "${OUT}" | head -1)"
+# An archive from before #45: assets, cache, an ini and the player's file,
+# all older. Restoring it must put back the ini and the file and leave the
+# newer image's assets and cache alone.
+rm -f "${KS}/roms/backup"/*.tar.gz
+KO="${K}/old"; mkdir -p "${KO}/storage/.config/ppsspp/assets/lang" "${KO}/storage/.config/ppsspp/PSP/SYSTEM/CACHE" "${KO}/storage/.config/test"
+echo "OLD strings" > "${KO}/storage/.config/ppsspp/assets/lang/en_US.ini"; echo "OLD cache" > "${KO}/storage/.config/ppsspp/PSP/SYSTEM/CACHE/x.cache"
+echo "OLD ini" > "${KO}/storage/.config/ppsspp/PSP/SYSTEM/ppsspp.ini"; echo "OLD own" > "${KO}/storage/.config/test/own"
+tar -C "${KO}" -czf "${KS}/roms/backup/20260101000000-ROCKNIX_SETTINGS.tar.gz" storage
+btk restore; rck2=${RC}
+[ "${rck2}" -eq 0 ]; check $? "a pre-#45 archive restores (rc ${rck2})" "rc ${rck2}: $(grep -v '^logger' "${OUT}" | tail -3 | tr '\n' '|')"
+[ "$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp.ini")" = "OLD ini" ] && [ "$(cat "${KS}/.config/test/own")" = "OLD own" ]; check $? "the ini and the player's file come back from it" "ini='$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp.ini")' own='$(cat "${KS}/.config/test/own")'"
+[ "$(cat "${KS}/.config/ppsspp/assets/lang/en_US.ini")" = "edited strings" ] && [ "$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/CACHE/x.cache")" = "shader cache" ]; check $? "its assets and cache are left where they were" "asset='$(cat "${KS}/.config/ppsspp/assets/lang/en_US.ini")' cache='$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/CACHE/x.cache")' -- an older emulator's program data was put under a newer one"
 echo
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

@@ -241,9 +241,12 @@ write_archive() {
     local RCLONECFG="/storage/.config/rclone/rclone.conf"
     local FILELIST SECRETLIST SENDLIST STAGING CANDIDATE
 
-    # Regular files only: symlinks under the config tree point at
-    # OS-shipped content (e.g. the ppsspp assets link into /usr).
-    # zip -r follows them and stores their target's bytes; on restore
+    # Regular files only: a symlink under the config tree is the OS's
+    # (es_systems.cfg and es_features.cfg point into /usr/config; the
+    # ppsspp link runs the other way -- /usr/bin/assets points INTO
+    # /storage/.config/ppsspp/assets -- so that one is not an example of
+    # this, though the rule holds; #45). zip -r follows them and stores
+    # their target's bytes; on restore
     # busybox unzip then refuses to overwrite the still-present
     # symlink ("exists but is not a regular file") and aborts the
     # whole restore partway. Symlinks are the OS's to provide, not
@@ -252,6 +255,47 @@ write_archive() {
     SECRETLIST=$(mktemp)
     SENDLIST=$(mktemp)
     find ${COMPRESSLOCATIONS[@]} -type f 2>/dev/null > "${FILELIST}"
+
+    # Inside a configured location, what the image ships is not the player's
+    # configuration and does not travel (#45). A stock device's archive was
+    # 16.4 MB, and so was a fresh VM's: almost all of it OS-shipped content
+    # under /storage/.config -- PPSSPP's assets (46 language .ini files, every
+    # shader, fonts, the debugger web app), its 8.7 MB cheat.db, a libretro
+    # core's jar -- copied there from /usr/config at first boot and put back
+    # by factoryreset, plus the GL shader cache, which is stale after any
+    # driver change. Two rules, applied to the file list:
+    #   1. a file under /storage/.config that is byte-identical to its
+    #      /usr/config counterpart is the shipped seed, unchanged; the image
+    #      has it, so the backup need not. A file the player edited differs
+    #      and travels (ppsspp.ini, controls.ini, their own cheat .ini files).
+    #   2. ppsspp/assets/ and PSP/SYSTEM/CACHE/ never travel, edited or not:
+    #      one is the emulator's program data, the other a cache.
+    # Prefix matches on the file list, so a custom LOCATIONS that names one of
+    # these on purpose is still pruned -- they are the OS's to provide.
+    local REGENERABLE PRUNED KEPT F REL
+    REGENERABLE=$(mktemp)
+    printf '%s\n' /storage/.config/ppsspp/assets/ /storage/.config/ppsspp/PSP/SYSTEM/CACHE/ > "${REGENERABLE}"
+    grep -v -F -f "${REGENERABLE}" "${FILELIST}" > "${FILELIST}.pruned" || true
+    rm -f "${REGENERABLE}"
+    KEPT=$(mktemp); PRUNED=0
+    while IFS= read -r F
+    do
+        case "${F}" in
+            /storage/.config/*)
+                REL="${F#/storage/.config/}"
+                if [ -f "/usr/config/${REL}" ] && cmp -s "/usr/config/${REL}" "${F}"
+                then
+                    PRUNED=$((PRUNED + 1))
+                    continue
+                fi
+                ;;
+        esac
+        printf '%s\n' "${F}" >> "${KEPT}"
+    done < "${FILELIST}.pruned"
+    mv "${KEPT}" "${FILELIST}"
+    rm -f "${FILELIST}.pruned"
+    [ "${PRUNED}" -gt 0 ] && logger -t backuptool "left out ${PRUNED} file(s) identical to the image's own copies under /usr/config"
+
     if [ ! -s "${FILELIST}" ]
     then
         # busybox tar given an empty list writes nothing readable.
@@ -497,10 +541,18 @@ case "${VERB}" in
         note "RESTORING SETTINGS..." "from ${BACKUPFILE}"
         if [ "${ARCHIVE_KIND}" = "tar" ]
         then
-            # No skip-list here, and none needed. tar replaces a symlink with
-            # whatever the archive holds instead of refusing and aborting, and
-            # what the archive holds is the symlink itself.
-            tar -xzf "${BACKUPFILE}" -C / >/dev/null
+            # No symlink skip-list here, and none needed: tar replaces a
+            # symlink with whatever the archive holds instead of refusing and
+            # aborting, and what the archive holds is the symlink itself. What
+            # IS skipped is the OS's: an archive written before #45 carries
+            # PPSSPP's assets and shader cache, and extracting them over a
+            # newer image's would put an older emulator's program data under a
+            # newer emulator (upgrade-and-install: fixing what is written does
+            # nothing for what was already written).
+            SKIP=$(mktemp)
+            printf '%s\n' 'storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' > "${SKIP}"
+            tar -xzf "${BACKUPFILE}" -C / -X "${SKIP}" >/dev/null
+            RC_TAR=$?; rm -f "${SKIP}"; (exit ${RC_TAR})
         else
             # Archives written before backups switched to regular files only
             # hold the *contents* of symlinked paths. Extracting one of those
@@ -510,7 +562,6 @@ case "${VERB}" in
             # owns those symlinks and provides them, and replacing one with a
             # stale copy is the bug that got them excluded from backups in the
             # first place.
-            SKIP=""
             SKIPPED=0
             for ENTRY in $(unzip -l "${BACKUPFILE}" 2>/dev/null | awk 'NF>3 && $4 ~ /^storage\// {print $4}')
             do
