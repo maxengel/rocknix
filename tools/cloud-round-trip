@@ -5242,6 +5242,16 @@ class Link:
         if verify:
             ok, msg = verify(out2)
             f += not check(ok, msg, msg)
+        elif receiving and locked and archive_whole:
+            # The lock's second face: the stale PUT the server is still
+            # holding open commits or aborts when slirp finally drops the
+            # connection, and the stored file changes under a name the re-run
+            # was refused for. Comparing it now judges the QA server, not the
+            # script (LINK5 on db6b42c180, 2026-09-13: whole and matching after
+            # the cut, refused with 423 on the re-run, then no longer
+            # matching). Same artifact, same disposition as the line above.
+            print("    SKIP  the receiving side after the re-run: under the stale-PUT lock the QA WebDAV server's copy "
+                  "changes when the cut connection finally closes; not the script's doing. Assert on MinIO/S3 or a real provider.")
         elif receiving:
             got2 = self.settle(receiving)
             bad = [r for r in sources if got2.get(r) != sources[r]]
