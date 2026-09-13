@@ -76,6 +76,26 @@ started at 2.1 s before `essway` at 3.6-3.8 s); HARDCORE MODE had been
 switched on by hand before the turn-on, as in the first check. `-fr` with
 `system.language=fr_FR`.
 
+`e1edaaa33b`, later the same day -- the owed half of #166 on the same TEST
+build and guest, no handheld, no cloud: an achievement unlocked with the link
+cut, recorded once it returned. The three free homebrew titles with
+RetroAchievements sets (`/workspace/artifacts/rocknix-qa-roms/`, README there)
+under `/storage/roms/gbc|gb|nes/`, the QA account on, the toggle on
+(`raofflineproxy-ctl enable`; HARDCORE MODE was 0 as found, so
+`hardcore_was=0`). Each game launched once online from the interface so the
+proxy cached it (`cached_game_ids.txt`: 4902 Böbl, 15738 Tobu Tobu Girl
+Deluxe, 31199 Niñoid). Then Tobu Tobu Girl Deluxe launched online through the
+proxy, `set_link net0 off` at 22:00:23Z (`operstate=down`,
+`online_state.json {"online": false}`, ssh dead; serial for reads), and
+stepping through the game's main menu unlocked `100359 Potato-tan Secret`
+("Listen to the hidden song.", 3 pts) at 22:02:42Z. RetroArch exited with the
+link still down (`pkill retroarch`), `set_link net0 on` at 22:05:41Z, and the
+proxy flushed eleven seconds later. The interface said nothing at either
+moment: no exit surface without a cloud account, and the reconnect message
+is not built yet. The control (toggle off, the same loss as #162) was
+attempted for twelve minutes in Böbl and Niñoid and reached no unlock by
+keyboard; not run. Frames `ra-offline-unlock-*`.
+
 | Frame | What it shows |
 |---|---|
 | `save-state-manager-four-tiles-1280x800.png` | The manager on `878ec8863b`: START NEW GAME, AUTO SAVE, SLOT 1, SLOT 2, every label whole, the sheet half the screen (#27's first cut, where it happened to work). |
@@ -161,3 +181,11 @@ switched on by hand before the turn-on, as in the first check. `-fr` with
 | `ra-offline-toggle-on-640x480-0f7785e6ed-fr.png` | After ACTIVER: the row on, MODE DIFFICILE off; the journal `offline RetroAchievements on: hardcore was 1, now 0; raofflineproxy.service active`. |
 | `ra-offline-toggle-row-sentence-case-640x480-e1edaaa33b.png` | The row focused on `e1edaaa33b`: OFFLINE RETROACHIEVEMENTS / `Beta. Casual achievements only, even without a connection.` -- sentence case like `Disable loading states, rewind and cheats for more points.` above it and `Compete in high-score and best time leaderboards (requires hardcore).` below; the label stays UPPERCASE. The switch on and HARDCORE MODE off, the state the toggle held through two reboots. |
 | `ra-offline-toggle-row-sentence-case-640x480-e1edaaa33b-fr.png` | The same row in French: RETROACHIEVEMENTS HORS LIGNE / `Bêta. Succès en mode facile seulement, même sans connexion.` beside `Désactive les chargements d'état, le rembobinage et les codes pour plus de points.` and `Participez au classement des meilleurs temps et scores (mode difficile requis).`; the switch on, MODE DIFFICILE off. |
+| `ra-offline-unlock-online-launch-640x480-e1edaaa33b.png` | Tobu Tobu Girl Deluxe's title screen after the online launch through the proxy: `Using host: 127.0.0.1:8080`, `Identified game: 15738 "~Homebrew~ Tobu Tobu Girl Deluxe"`, `Set 6292: 29/29 achievements active` -- 28 real plus the proxy's synthetic `101000001 Warning: Casual Only` (0 pts, "Hardcore unlocks cannot be earned using this emulator."), which RetroArch awards five seconds into every session through the proxy, toast and all; launched direct the set reads 12/12 for Böbl and 6/6 for Niñoid, 13 and 7 through the proxy. |
+| `ra-offline-unlock-menu-scores-640x480-e1edaaa33b.png` | The game's MAIN MENU on SCORES with the link down, one of the entries stepped through in the minute the hidden song unlocked; PLAINS is the only playable level on a fresh save, every other entry LOCKED (the jukebox, and with it `100358 The Song That Never Ends`, is behind progress). |
+| `ra-offline-unlock-menu-offline-640x480-e1edaaa33b.png` | The menu back on PLAINS about a minute after the unlock: no toast left, and no `!RA!` badge -- the proxy answered the award with `Success:true, Error:"queued_offline"`, so rcheevos schedules no retry and the disconnected badge never comes on. RetroArch's log at that moment: `[INFO] [RCHEEVOS] Awarding achievement 100359: Potato-tan Secret` / `[INFO] [RCHEEVOS] Achievement 100359: queued_offline`; the proxy's: `Request: POST /dorequest.php body=r=awardachievement&u=<account>&t=<redacted>&a=100359&h=0&m=c48f26f5079ad1b411c78fbcb2738d67&v=... online=False` / `Queued offline award: achievementId=100359 queuedAt=1789336962833`; `pending_awards` one row, `status=pending`, `prevHash=genesis`, `retryCount=0`. |
+| `ra-offline-unlock-exit-offline-640x480-e1edaaa33b.png` | The GBC list after `pkill retroarch` with the link still down (the network glyph gone from the header, 18:05 local): no exit surface and no word about the waiting award -- no cloud account, so no exit sync card, and the reconnect message is not built yet. RetroArch's last line `Unloading game 15738`; the queue row still `pending`; `raofflineproxy-ctl status` `enabled=1 marker=1 service=active hardcore=0`. |
+| `ra-offline-unlock-after-reconnect-640x480-e1edaaa33b.png` | The same list ~30 s after `set_link net0 on`, the glyph back; nothing said. Behind it the proxy had already flushed: `Connectivity restored; attempting flush` 11 s after the link returned, `Flush started: pending_awards=1`, `Flush sending: achievementId=100359 offsetSeconds=190 clamped=False userAgent=RetroArch/1.22.2 (Linux 7.1) gambatte_libretro/v0.5.0-netlink_9267c4b9a9 RAOfflineProxy/Linux/1.13.0-alpha1 url=/dorequest.php`, `Flush succeeded: achievementId=100359`, `Flush complete: total=1 flushed=1 skipped_deleted=0 skipped_stale=0 pending_remaining=0`; the queue row purged; `online_state.json {"online": true}`. |
+| `ra-offline-unlock-game-options-640x480-e1edaaa33b.png` | X on the game: GAME / SAVE STATES / DELETE GAME / COLLECTIONS / ADD TO FAVORITES / OPTIONS / SCRAPE / ADVANCED GAME OPTIONS / EDIT THIS GAME'S METADATA -- no VIEW ACHIEVEMENTS, since the unscraped gamelist carries no RetroAchievements id; the game page is reached from MAIN MENU > RETROACHIEVEMENTS instead. |
+| `ra-offline-unlock-ra-summary-640x480-e1edaaa33b.png` | MAIN MENU > RETROACHIEVEMENTS, live from RA after the flush: `Softcore points: 3`, `Points (hardcore): 0`, `~Homebrew~ Tobu Tobu Girl Deluxe` `3 of 275 softcore points` `4% (1 of 28)`. Niñoid and Böbl, played but with nothing unlocked, are not listed. |
+| `ra-offline-unlock-ra-game-page-640x480-e1edaaa33b.png` | The game page: `Achievements (softcore): 1/28`, `Points: 3/275`, and `Potato-tan Secret -- Listen to the hidden song. - Points: 3 -- Unlocked on: 2026-09-13 22:02:43` -- the moment of the offline unlock (queued 22:02:42Z), not the flush at 22:05:53Z, so RA applied the proxy's `offsetSeconds`. The `startsession` row the proxy re-cached after the flush reads `When=1789337156` (22:05:56Z) for the same unlock; which of the two RA's own site shows was not checked. A relaunch online then read `Set 6292: 28/29 achievements active`, `You have 1 of 29 achievements unlocked`. |
