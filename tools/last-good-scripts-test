@@ -656,6 +656,20 @@ btk restore; rck3=${RC}
 [ "$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp.ini")" = "OLD ini" ] && [ "$(cat "${KS}/.config/test/own")" = "OLD own" ]; check $? "the ini and the player's file come back from the zip" "ini='$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp.ini")' own='$(cat "${KS}/.config/test/own")'"
 [ "$(cat "${KS}/.config/ppsspp/assets/lang/en_US.ini")" = "edited strings" ] && [ "$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/CACHE/x.cache")" = "shader cache" ]; check $? "its assets and cache are left where they were (zip)" "asset='$(cat "${KS}/.config/ppsspp/assets/lang/en_US.ini")' cache='$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/CACHE/x.cache")' -- the zip branch skipped only symlinks, and the oldest archives put an older emulator's program data under a newer one (#151 PL-03)"
 [ -L "${KS}/.config/test/link" ] && grep -q 'KEEPING 1 FILE(S) THE SYSTEM PROVIDES' "${OUT}"; check $? "and the symlink the OS provides is still a symlink, said on the screen (KEEPING 1 FILE(S))" "link: $([ -L "${KS}/.config/test/link" ] && echo symlink || echo "regular file: $(cat "${KS}/.config/test/link" 2>/dev/null)"); screen: $(grep -c 'KEEPING' "${OUT}") KEEPING line(s)"
+# The prune's grep dying part-way (exit 2, as a read error would): a pruned
+# list from a grep that did not finish is a partial backup announced as a
+# success. The shim writes one line of the list and dies; every other grep
+# in the script is the real one (#151 PL-14: `|| true` took what was there).
+cat > "${K}/kshim/grep" <<'EOS'
+#!/bin/bash
+for a in "$@"; do [ "$a" = -f ] && { head -1 "${@: -1}"; echo "grep: read error" >&2; exit 2; }; done
+exec /usr/bin/grep "$@"
+EOS
+chmod +x "${K}/kshim/grep"
+rm -f "${KS}/roms/backup"/*.tar.gz "${KS}/roms/backup"/*.zip
+btk backup; rck4=${RC}
+[ "${rck4}" -ne 0 ] && [ -z "$(ls "${KS}/roms/backup"/*.tar.gz 2>/dev/null)" ] && grep -q 'could not be filtered' "${OUT}"; check $? "a backup whose list filter dies part-way (grep exit 2) writes nothing and says why in the log" "rc ${rck4}; archives written: $(ls "${KS}/roms/backup"/*.tar.gz 2>/dev/null | wc -l); log: $(grep -o 'could not be filtered[^|]*' "${OUT}" | head -1) -- one line of the list became a backup announced as a success (#151 PL-14)"
+rm -f "${K}/kshim/grep"
 
 echo "  l. a missing cloud folder reads as not there yet whatever the server's words (#142)"
 # absent_not_broken, lifted from cloud_content_restore and run against a shim
@@ -671,15 +685,32 @@ for rel in cloud_content_restore cloud_setup cloud_content_backup; do
 done
 cat > "${LL}/shim/rclone" <<'EOR'
 #!/bin/bash
-[ "$1" = lsf ] || exit 2
-for a in "$@"; do case "$a" in *:*) p="$a";; esac; done
+# lsf lists a cloud of /QA/Saves, /QA/Content/ROMs and /QA/-Dash; every other
+# folder is an FTP-style plain error (exit 1, not rclone's 3). lsd answers the
+# same way, or "not found" (exit 3) under LSD_NOTFOUND. backend features says
+# what FEATURES says -- bucket, path -- or fails outright (anything else).
+p=""; for a in "$@"; do case "$a" in *:*) p="$a";; esac; done
 rel="${p#*:}"; rel="${rel#/}"; rel="${rel%/}"
-[ -n "${ROOT_DOWN:-}" ] && exit 1
-case "$rel" in
-  "") printf 'QA/\n' ;;
-  QA) printf 'Saves/\nContent/\n' ;;
-  QA/Content) printf 'ROMs/\n' ;;
-  *) echo 'NOTICE: Failed to lsf: 501 "No such directory."' >&2; exit 1 ;;
+case "$1" in
+  lsf)
+    [ -n "${ROOT_DOWN:-}" ] && exit 1
+    case "$rel" in
+      "") printf 'QA/\n' ;;
+      QA) printf 'Saves/\nContent/\n-Dash/\n' ;;
+      QA/Content) printf 'ROMs/\n' ;;
+      *) echo 'NOTICE: Failed to lsf: 501 "No such directory."' >&2; exit 1 ;;
+    esac ;;
+  lsd)
+    case "$rel" in QA|QA/Saves|QA/Content|QA/Content/ROMs|QA/-Dash) exit 0 ;; esac
+    if [ -n "${LSD_NOTFOUND:-}" ]; then echo 'ERROR : directory not found' >&2; exit 3; fi
+    echo 'ERROR : Failed to lsd: 501 "No such directory."' >&2; exit 1 ;;
+  backend)
+    case "${FEATURES:-}" in
+      bucket) printf '{\n\t"Features": {\n\t\t"BucketBased": true,\n\t\t"BucketBasedRootOK": true\n\t}\n}\n' ;;
+      path)   printf '{\n\t"Features": {\n\t\t"BucketBased": false,\n\t\t"BucketBasedRootOK": false\n\t}\n}\n' ;;
+      *) exit 1 ;;
+    esac ;;
+  *) exit 2 ;;
 esac
 EOR
 chmod +x "${LL}/shim/rclone"
@@ -695,6 +726,24 @@ lq qa:/Nope/A/B/ 0; check $? "absent three deep (Nope/A/B)" "Nope/A/B did not re
 lq qa:/QA/ 1; check $? "a folder the root lists is present (QA)" "QA read as absent"
 ROOT_DOWN=1 lq qa:/QA/Content/ROMs/ 1; check $? "a root that will not list is broken, not absent" "an unlistable root read as absent"
 lq qa:/ 1; check $? "the root itself is never absent" "the root read as absent"
+# A folder whose name starts with a hyphen: grep -qFx "-Dash/" took it as
+# options, errored, and the failed match read as "the parent lacks it" --
+# a present folder called absent (#151 PL-14). The name goes after --.
+lq 'qa:/QA/-Dash/' 1; check $? "a folder whose name starts with a hyphen (QA/-Dash) is present, not read as options and called absent" "QA/-Dash read as absent: grep took '-Dash/' as its options and the error read as 'not listed' (#151 PL-14)"
+# cloud_setup's folder setter, lifted with the walk and its bound. The
+# parent walk runs only on a remote rclone says is path-based; a bucket's
+# refusal stands with the bucket message; and when `backend features`
+# cannot be read at all the provider's answer is taken -- a folder is not
+# stored on a guess (#151 PL-14: a failed call read as "not bucket-based").
+sed -n '/^readonly -a RCLONE_LIST_OPTS/p; /^absent_not_broken() {/,/^}/p; /^syncpath_problem() {/,/^}/p' "${LL}/src/cloud_setup" > "${LL}/sp.sh"
+grep -q '^syncpath_problem() {' "${LL}/sp.sh"; check $? "syncpath_problem is lifted from cloud_setup with the walk" "no syncpath_problem() in cloud_setup"
+sp() { # <path> <expected rc>; FEATURES and LSD_NOTFOUND pass through; the reason to sp.out
+    PATH="${LL}/shim:${PATH}" bash -c ". '${LL}/sp.sh'; syncpath_problem '$1' qa:" > "${LL}/sp.out" 2>/dev/null; [ $? -eq "$2" ]
+}
+FEATURES=path sp /QA/New 0; check $? "on a path-based remote a folder its parent lacks is accepted as not there yet (QA/New)" "QA/New was refused on a path-based remote: $(head -1 "${LL}/sp.out")"
+FEATURES=bucket sp /Bad-Bucket/x 1 && grep -q 'buckets' "${LL}/sp.out"; check $? "on a bucket remote the provider's refusal stands, and the message names buckets (Bad-Bucket)" "bucket refusal: $(head -1 "${LL}/sp.out")"
+FEATURES=fail sp /QA/New 1; check $? "when rclone cannot say which kind the remote is, the provider's refusal is taken rather than the walk's 'not there yet' (QA/New)" "QA/New was accepted with the remote's kind unknown -- a failed backend features read as path-based and the walk ran (#151 PL-14)"
+FEATURES=fail LSD_NOTFOUND=1 sp /QA/New 0; check $? "and the provider's own 'not found' is accepted whatever the kind (QA/New)" "a not-found folder was refused: $(head -1 "${LL}/sp.out")"
 [ -s "${LL}/fn.sh" ] && diff -q <(sed -n '/^absent_not_broken() {/,/^}/p' "${LL}/src/cloud_setup") "${LL}/fn.sh" >/dev/null; check $? "cloud_setup carries the identical function" "cloud_setup's absent_not_broken differs from cloud_content_restore's (or is missing)"
 awk '/^    rclone mkdir "\$\{TARGET\}"/{m=NR} /^    rclone copy "\$\{SRC\}" "\$\{TARGET\}"/{c=NR} END{exit !(m && c && m < c)}' "${LL}/src/cloud_content_backup"; check $? "cloud_content_backup makes the folder before it copies into it" "no rclone mkdir of the target ahead of the copy in cloud_content_backup"
 grep -q 'absent_not_broken "${ROOT}ROMs/"' "${LL}/src/cloud_content_restore" && grep -q 'absent_not_broken "${ROOT}BIOS/"' "${LL}/src/cloud_content_restore"; check $? "the scan asks it about ROMs and BIOS before calling the cloud unreadable" "the scan does not consult absent_not_broken for both folders"

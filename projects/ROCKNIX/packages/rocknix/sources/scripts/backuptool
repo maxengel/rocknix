@@ -275,8 +275,21 @@ write_archive() {
     local REGENERABLE PRUNED KEPT F REL
     REGENERABLE=$(mktemp)
     printf '%s\n' /storage/.config/ppsspp/assets/ /storage/.config/ppsspp/PSP/SYSTEM/CACHE/ > "${REGENERABLE}"
-    grep -v -F -f "${REGENERABLE}" "${FILELIST}" > "${FILELIST}.pruned" || true
+    GREP_RC=0
+    grep -v -F -f "${REGENERABLE}" "${FILELIST}" > "${FILELIST}.pruned" || GREP_RC=$?
     rm -f "${REGENERABLE}"
+    # grep's 1 is "every line matched" -- nothing outside the two prefixes,
+    # which is fine; 2 is grep itself failing (a list it could not read), and
+    # a pruned list from a grep that did not finish is a partial backup that
+    # would be announced as a success. Refuse it: 2 to the caller, "nothing
+    # could be collected", with the reason in the log (#151 PL-14; until
+    # then `|| true` took whatever had been written).
+    if [ "${GREP_RC}" -gt 1 ]
+    then
+        logger -t backuptool "the backup list could not be filtered (grep exit ${GREP_RC}); nothing written"
+        rm -f "${FILELIST}" "${FILELIST}.pruned" "${SECRETLIST}" "${SENDLIST}"
+        return 2
+    fi
     KEPT=$(mktemp); PRUNED=0
     while IFS= read -r F
     do

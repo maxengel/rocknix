@@ -148,7 +148,7 @@ absent_not_broken() {
         name="${rel##*/}"; parent="${rel%/*}"
         [ "${parent}" = "${rel}" ] && parent=""
         if listing=$(rclone lsf --dirs-only "${remote}/${parent:+${parent}/}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); then
-            printf '%s\n' "${listing}" | grep -qFx "${name}/" && return 1
+            printf '%s\n' "${listing}" | grep -qFx -- "${name}/" && return 1
             return 0
         fi
         [ -n "${parent}" ] || return 1
@@ -192,14 +192,29 @@ syncpath_problem() {
     # a bucket the first component is a bucket name the provider judges,
     # and the provider's own answer stands -- the parent rule would read
     # InvalidBucketName as "not there yet" and store the name it rejected.
-    if ! rclone backend features "${remote}" 2>/dev/null | grep -q '"BucketBased": true' \
-       && absent_not_broken "${remote}${path#/}"; then
+    #
+    # Which kind this remote is, rclone says in JSON, and the answer has to
+    # be one of the two before anything rests on it. A `backend features`
+    # that fails or prints neither is "unknown", and unknown takes the
+    # provider's refusal at face value: the parent walk runs only on a
+    # remote known to be path-based. Until #151 PL-14 a failed call read as
+    # "not bucket-based" -- a grep over empty output -- and the walk ran,
+    # so the one guard against storing a rejected bucket name fell open
+    # exactly when rclone could not be asked.
+    local features bucket_based=unknown
+    if features=$(rclone backend features "${remote}" 2>/dev/null); then
+        case "${features}" in
+            *'"BucketBased": true'*)  bucket_based=yes ;;
+            *'"BucketBased": false'*) bucket_based=no ;;
+        esac
+    fi
+    if [ "${bucket_based}" = no ] && absent_not_broken "${remote}${path#/}"; then
         return 0
     fi
 
     # Something is wrong. If the remote is bucket-based, name the reason the
     # message will not: the first path component is a bucket, not a folder.
-    if rclone backend features "${remote}" 2>/dev/null | grep -q '"BucketBased": true'; then
+    if [ "${bucket_based}" = yes ]; then
         bucket="${path#/}"; bucket="${bucket%%/*}"
         echo "Your provider wouldn't accept \"${bucket}\"."
         echo
