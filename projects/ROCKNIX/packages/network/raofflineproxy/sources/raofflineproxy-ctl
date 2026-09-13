@@ -1,0 +1,169 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# raofflineproxy-ctl - the backend of the OFFLINE RETROACHIEVEMENTS toggle
+# (fork #165; D-RA-001, D-RA-002). One system-wide switch, off by default:
+#
+#   enable   write the on-marker the unit conditions on, start the service,
+#            then in system.cfg record the hardcore setting as it was
+#            (once -- a second enable keeps the first record), turn hardcore
+#            off and set the toggle. The proxy is casual-only and refuses
+#            hardcore awards, so the switch is made here, on purpose, with
+#            the sentence on screen in EmulationStation -- never silently.
+#   disable  stop the service, remove the marker, clear the toggle, and put
+#            hardcore back the way the record says it was; the record goes.
+#   start    systemctl start; the marker must already be there.
+#   stop     systemctl stop.
+#   status   enabled=, marker=, service=, hardcore= on stdout; exit 0 when the
+#            toggle is on, 1 when off.
+#
+# The toggle is global.retroachievements.offlineproxy in system.cfg, the
+# setting setsettings.sh (RetroArch) and cheevos_ppsspp.sh read at every
+# launch to point the emulator at 127.0.0.1:8080 -- into that launch's own
+# config, so no host ever lands in a file a settings backup carries.
+# system.cfg travels with the toggle in it; the marker under /storage/.cache
+# does not, and /usr/lib/autostart/daemons/006-raofflineproxy re-derives it
+# at boot. Everything the proxy itself writes lives under
+# /storage/.config/raofflineproxy, which backuptool holds back whole (its
+# token cache and award queue never travel, D-INFRA-010).
+#
+# Machine-facing. The last line of stdout after enable or disable is
+# hardcore=<0|1>, the setting as it stands afterwards; EmulationStation
+# reads it to keep its HARDCORE MODE row truthful. Everything else goes to
+# the log. Exit 0 when done, 1 when a step could not be made to hold, 2 on
+# usage.
+
+# No set -u: get_setting and set_setting come from /etc/profile and read
+# positional parameters they were not given; every value this script relies
+# on is read back and tested below instead.
+. /etc/profile
+
+MARKER_DIR="/storage/.cache/services"
+MARKER="${MARKER_DIR}/raofflineproxy.conf"
+UNIT="raofflineproxy.service"
+KEY="global.retroachievements.offlineproxy"
+HARDCORE_KEY="global.retroachievements.hardcore"
+HARDCORE_WAS_KEY="global.retroachievements.offlineproxy.hardcore_was"
+
+say() {
+    logger -t raofflineproxy-ctl "$*"
+}
+
+fail() {
+    say "$*"
+    echo "raofflineproxy-ctl: $*" >&2
+    exit 1
+}
+
+# A setting as system.cfg holds it; empty when absent.
+setting() {
+    get_setting "${1}"
+}
+
+# 0 or 1, from a value that may be empty or anything else.
+as_flag() {
+    if [ "${1:-}" = "1" ]; then echo 1; else echo 0; fi
+}
+
+have_systemctl() {
+    command -v systemctl >/dev/null 2>&1
+}
+
+service_state() {
+    if have_systemctl; then
+        systemctl is-active "${UNIT}" 2>/dev/null || true
+    else
+        echo unknown
+    fi
+}
+
+do_start() {
+    have_systemctl || fail "no systemctl to start ${UNIT} with"
+    systemctl start "${UNIT}" || fail "${UNIT} did not start"
+}
+
+do_stop() {
+    have_systemctl || return 0
+    systemctl stop "${UNIT}" || say "${UNIT} did not stop cleanly; carrying on"
+}
+
+do_enable() {
+    # The marker first, the service second: if the service cannot start,
+    # nothing about the player's settings has changed yet, and the marker
+    # goes again so the next boot does not start what could not run now.
+    mkdir -p "${MARKER_DIR}" || fail "cannot create ${MARKER_DIR}"
+    touch "${MARKER}" || fail "cannot write ${MARKER}"
+    if have_systemctl; then
+        if ! systemctl start "${UNIT}"; then
+            rm -f "${MARKER}"
+            fail "${UNIT} did not start; the toggle stays off"
+        fi
+    fi
+
+    # Record hardcore as it was, once. A second enable finds the record and
+    # keeps it, so the value disable puts back is the player's and not the 0
+    # the first enable wrote.
+    if [ -z "$(setting "${HARDCORE_WAS_KEY}")" ]; then
+        set_setting "${HARDCORE_WAS_KEY}" "$(as_flag "$(setting "${HARDCORE_KEY}")")"
+    fi
+    set_setting "${HARDCORE_KEY}" 0
+    set_setting "${KEY}" 1
+
+    # Read back what was written; a write that did not land is a failure,
+    # not a success with a caveat.
+    [ "$(setting "${KEY}")" = "1" ] || fail "${KEY} did not take"
+    [ "$(setting "${HARDCORE_KEY}")" = "0" ] || fail "${HARDCORE_KEY} did not take"
+    [ -n "$(setting "${HARDCORE_WAS_KEY}")" ] || fail "${HARDCORE_WAS_KEY} did not take"
+    [ -e "${MARKER}" ] || fail "${MARKER} is gone"
+
+    say "offline RetroAchievements on: hardcore was $(setting "${HARDCORE_WAS_KEY}"), now 0; ${UNIT} $(service_state)"
+    echo "hardcore=0"
+}
+
+do_disable() {
+    do_stop
+    rm -f "${MARKER}"
+    set_setting "${KEY}" 0
+
+    # Put hardcore back as the record says. No record -- a device that never
+    # had the toggle on, or a second disable -- leaves it alone.
+    local WAS
+    WAS="$(setting "${HARDCORE_WAS_KEY}")"
+    if [ -n "${WAS}" ]; then
+        set_setting "${HARDCORE_KEY}" "$(as_flag "${WAS}")"
+        set_setting "${HARDCORE_WAS_KEY}" default
+    fi
+
+    [ "$(setting "${KEY}")" = "0" ] || fail "${KEY} did not clear"
+    [ ! -e "${MARKER}" ] || fail "${MARKER} could not be removed"
+    if [ -n "${WAS}" ]; then
+        [ "$(setting "${HARDCORE_KEY}")" = "$(as_flag "${WAS}")" ] || fail "${HARDCORE_KEY} was not put back"
+        [ -z "$(setting "${HARDCORE_WAS_KEY}")" ] || fail "${HARDCORE_WAS_KEY} was not cleared"
+    fi
+
+    say "offline RetroAchievements off: hardcore ${WAS:+put back to }${WAS:-left as it was}; ${UNIT} $(service_state)"
+    echo "hardcore=$(as_flag "$(setting "${HARDCORE_KEY}")")"
+}
+
+do_status() {
+    local ON
+    ON="$(as_flag "$(setting "${KEY}")")"
+    echo "enabled=${ON}"
+    if [ -e "${MARKER}" ]; then echo "marker=1"; else echo "marker=0"; fi
+    echo "service=$(service_state)"
+    echo "hardcore=$(as_flag "$(setting "${HARDCORE_KEY}")")"
+    [ "${ON}" = "1" ]
+}
+
+case "${1:-}" in
+    enable)  do_enable ;;
+    disable) do_disable ;;
+    start)   do_start ;;
+    stop)    do_stop ;;
+    status)  do_status ;;
+    *)
+        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status}" >&2
+        exit 2
+    ;;
+esac

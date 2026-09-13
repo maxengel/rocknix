@@ -1,0 +1,32 @@
+[Unit]
+Description=RAOfflineProxy (offline RetroAchievements)
+# The marker is the off-switch, the way avahi's and sshd's are:
+# raofflineproxy-ctl enable writes it, disable removes it, and the boot-time
+# daemons pass re-derives it from global.retroachievements.offlineproxy in
+# system.cfg (fork #165).
+ConditionPathExists=/storage/.cache/services/raofflineproxy.conf
+# The proxy tolerates no network (that is its purpose); it only needs the
+# interface list and system.cfg to be in place. network-base.service by name,
+# as avahi does: network.target does not order after the units wanted by it.
+After=network.target network-base.service rocknix-sysconfig.service
+# Up before a game can be launched, so an emulator's first RetroAchievements
+# call finds the port listening rather than refused -- a refused connection
+# makes rcheevos disable achievements for the whole session.
+Before=emustation.service essway.service
+
+[Service]
+Type=simple
+Environment=RAOFFLINEPROXY_CONFIG_DIR=/storage/.config/raofflineproxy
+Environment=HOME=/storage
+Environment=XDG_CONFIG_HOME=/storage/.config
+# Measured upstream on a 103 MB device: 32 -> 19 MB RSS.
+Environment=MALLOC_ARENA_MAX=2
+ExecStart=/usr/bin/python3 -m raofflineproxy.main run-service
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+StartLimitInterval=60
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target
