@@ -14,7 +14,7 @@
 #   export RA_QA_WEBKEY=...        its web API key (retroachievements.org > settings)
 #   export SS_QA_USER=...          ScreenScraper test account
 #   export SS_QA_PASSWORD=...
-#   export SS_QA_DEVID=...         a developer pair, if one may be used on the VM
+#   export SS_QA_DEVID=...         a developer pair, if one may be used on the VM (enough on its own)
 #   export SS_QA_DEVPASSWORD=...
 #
 #   tools/qa-accounts <ssh-port> ra             # RetroAchievements: system.cfg, live
@@ -48,14 +48,20 @@ if [ "${WHAT}" = ra ]; then
     g ". /etc/profile; set_setting global.retroachievements 1; set_setting global.retroachievements.username $(q "${RA_QA_USER}"); set_setting global.retroachievements.password $(q "${RA_QA_PASSWORD}"); set_setting global.retroachievements.key $(q "${RA_QA_WEBKEY}")" >/dev/null
     echo "set on :${PORT}: global.retroachievements=1 global.retroachievements.username global.retroachievements.password global.retroachievements.key (read by the interface at its next start: reboot the guest)"
 else
-    need SS_QA_USER SS_QA_PASSWORD
+    # An account, a developer pair, or both -- whichever the file holds. A
+    # pair alone is enough for a real scrape (anonymous quota) and for the
+    # wrong-password case with a made-up account planted beside it.
     xml() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/"/\&quot;/g'; }
-    lines="\t<string name=\"ScreenScraperUser\" value=\"$(xml "${SS_QA_USER}")\" />\n\t<string name=\"ScreenScraperPass\" value=\"$(xml "${SS_QA_PASSWORD}")\" />"
-    names="ScreenScraperUser ScreenScraperPass"
-    if [ -n "${SS_QA_DEVID:-}" ] && [ -n "${SS_QA_DEVPASSWORD:-}" ]; then
-        lines="${lines}\n\t<string name=\"ScreenScraperDevId\" value=\"$(xml "${SS_QA_DEVID}")\" />\n\t<string name=\"ScreenScraperDevPass\" value=\"$(xml "${SS_QA_DEVPASSWORD}")\" />"
-        names="${names} ScreenScraperDevId ScreenScraperDevPass"
+    lines=""; names=""
+    if [ -n "${SS_QA_USER:-}" ] && [ -n "${SS_QA_PASSWORD:-}" ]; then
+        lines="\t<string name=\"ScreenScraperUser\" value=\"$(xml "${SS_QA_USER}")\" />\n\t<string name=\"ScreenScraperPass\" value=\"$(xml "${SS_QA_PASSWORD}")\" />"
+        names="ScreenScraperUser ScreenScraperPass"
     fi
+    if [ -n "${SS_QA_DEVID:-}" ] && [ -n "${SS_QA_DEVPASSWORD:-}" ]; then
+        lines="${lines}${lines:+\n}\t<string name=\"ScreenScraperDevId\" value=\"$(xml "${SS_QA_DEVID}")\" />\n\t<string name=\"ScreenScraperDevPass\" value=\"$(xml "${SS_QA_DEVPASSWORD}")\" />"
+        names="${names}${names:+ }ScreenScraperDevId ScreenScraperDevPass"
+    fi
+    [ -n "${names}" ] || { echo "qa-accounts: neither SS_QA_USER/SS_QA_PASSWORD nor SS_QA_DEVID/SS_QA_DEVPASSWORD is set in ${FILE}" >&2; exit 1; }
     g "F=/storage/.config/emulationstation/es_settings.cfg; sed -i '/name=\"ScreenScraper\(User\|Pass\|DevId\|DevPass\)\"/d' \$F; sed -i \"s|</config>|$(printf '%s' "${lines}" | sed 's/|/\\|/g')\n</config>|\" \$F; grep -c 'name=\"ScreenScraper' \$F" >/dev/null
     echo "set on :${PORT}: ${names} (es_settings.cfg; the interface reads it at its next start: reboot the guest)"
 fi
