@@ -319,6 +319,26 @@ or name the composition in `tools/vm-walks/suite.txt`, which is what
 `tools/vm-qa --only walks` replays (`--guest b` to drive vm-pair's second
 guest).
 
+## Frame at the handheld's size, not only the pair's
+
+vm-pair's guests run at 1280x800. The maintainer's handhelds are 640x480,
+and two things differ under 720 px that 1280x800 never exercises:
+`Font::get` scales every requested size by 1.31 (1.5 under 320), and
+full-screen menus are on, so the window draws no help bar under a second
+page. #27's first cut was right at 1280x800 and truncated every label at
+640x480; four cuts were each caught by a 640x480 frame and none would have
+been caught at the pair's size (blindspot 41).
+
+So a UI change is framed at 640x480 before it is called done. A small guest
+beside the pair is one QEMU command: the pair's arguments with `-device
+virtio-gpu-pci,xres=640,yres=480`, its own disk from the same image, its own
+ports and sockets (`-d` suffix, SSH 10026, MAC `52:54:00:52:4E:5B`, VNC :12),
+the QA key written over serial with `tools/vm-serial`. The session
+scratchpad's `rebuild-d.sh` does exactly that and reboots the guest seeded
+with a NES ROM and three save states; making it a `vm-pair` guest is open.
+Read the small frame first: at that size a label that fits is the finding,
+and a bar that is missing is one too.
+
 ## What the guest's busybox lacks
 
 The scripts run on the image, not on the host, and the host's coreutils hide

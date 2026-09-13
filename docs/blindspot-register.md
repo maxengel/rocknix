@@ -374,3 +374,24 @@ the class is to run a new suite once from `env -i` -- or under `setsid
 nohup`, which the memory watchdog already forces on long runs -- before
 believing its first PASS. Related: 39 (a PASS over a table of dashes), 14
 (a hook with no observed positive).
+
+## 41. Verified at a size no handheld has (2026-09-13)
+
+#27's first cut was framed on vm-pair's guest b, which runs at 1280x800,
+and looked right: every label whole, the sheet half the screen. The
+maintainer's panels are 640x480, and there the same build still ended
+every label in "...". Two things differ under 720 px that nothing at
+1280x800 exercises: `Font::get` scales every requested size by 1.31, and
+full-screen menus are on, which changes what the window draws. A UI change
+proven only at the pair's size has been proven on a screen the project does
+not ship on.
+
+The shape: the fixture that is easiest to reach is not the one that
+represents the target, and a frame from it carries the same weight in a
+comment as a frame from the right one. Four cuts of #27 were each caught by
+a 640x480 frame, and none of them would have been caught at 1280x800. The
+fix is a standing 640x480 guest beside the pair (guest d tonight, built by
+hand from the same image with `-device virtio-gpu-pci,xres=640,yres=480`)
+and the rule that a UI frame is read at the handheld's size before it is
+called done. Related: 39 (a PASS over a table of dashes), 13 (ticked items
+that had never functioned).
