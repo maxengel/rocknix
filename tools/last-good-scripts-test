@@ -54,6 +54,16 @@
 #      the file as usable and network-base-setup gives the unit its own name
 #      at the next boot; any other key deleted with default is removed as
 #      before (D-NET-009, #154).
+#   p. raofflineproxy-ctl, the OFFLINE RETROACHIEVEMENTS toggle's backend
+#      (#165, D-RA-002): enable writes the marker the unit conditions on,
+#      starts the service, records the hardcore setting as it was and turns
+#      it off; disable stops, removes the marker and puts hardcore back as
+#      recorded; both are harmless run twice; a service that will not start
+#      leaves the settings untouched and the marker gone; the last stdout
+#      line is hardcore=<0|1> and nothing else is printed. And in k: the
+#      proxy's folder under /storage/.config is held back whole from a
+#      backup and never put back on a restore (its token cache and award
+#      queue, D-INFRA-010).
 #
 # The chksysconfig and 001-functions functions are lifted out of the files
 # under test and run in a fresh bash against temp paths, as wait-lock-test
@@ -88,6 +98,11 @@
 #                                             # deliberate why), n and o FAIL:
 #                                             # the scripts from before #153
 #                                             # and #154
+#     BASE_REF=34aca64afd tools/last-good-scripts-test --old
+#                                             # k's proxy-folder checks FAIL
+#                                             # (the folder travelled) and p
+#                                             # FAILS whole: the tree before
+#                                             # #165 has no raofflineproxy-ctl
 #     tools/last-good-scripts-test            # PASSED
 #
 # One FAIL in m that names "the built image" is about the build root on this
@@ -647,7 +662,17 @@ printf 'RA_Enabled=1\nRA_Username=qa\nRA_Password=%s\nRA_Token=%s\nRA_HardcoreMo
 printf '[achievements]\nEnabled = yes\nUserName = qa\nToken = %s\n' "${KTOK}" > "${KS}/.config/flycast/emu.cfg"
 printf '[Achievements]\nEnabled = true\nUsername = qa\nToken = %s\nLoginTimestamp = 1\n' "${KTOK}" > "${KS}/.config/aethersx2/inis/PCSX2.ini"
 printf '[Other]\nToken = %s\n' "${KTOK2}" > "${KS}/.config/test/unknown.ini"
-printf 'LOCATIONS=(\n  /storage/.config/ppsspp/*\n  /storage/.config/test/*\n  /storage/.config/dolphin-emu/*\n  /storage/.config/SkyEmu/*\n  /storage/.config/ARMSX2/*\n  /storage/.config/duckstation/*\n  /storage/.config/melonDS/*\n  /storage/.config/flycast/*\n  /storage/.config/aethersx2/*\n)\n' > "${KS}/.config/backuptool.conf"
+# The offline RetroAchievements proxy's folder (#165): its SQLite cache with
+# the token in a cached login row, the HMAC key that signs the award queue,
+# its config and its log -- every file under it is held back, whatever it is
+# called, so the fixture has one of each shape plus a nested one.
+mkdir -p "${KS}/.config/raofflineproxy/image_cache/games"
+printf 'SQLite format 3\0login2::qa {"Token":"%s"}\n' "${KTOK}" > "${KS}/.config/raofflineproxy/proxy.sqlite3"
+head -c 32 /dev/urandom > "${KS}/.config/raofflineproxy/award_secret.key"
+printf '{"proxy_port": 8080}\n' > "${KS}/.config/raofflineproxy/config.json"
+printf 'service started\n' > "${KS}/.config/raofflineproxy/service.log"
+printf 'PNG\n' > "${KS}/.config/raofflineproxy/image_cache/games/1.png"
+printf 'LOCATIONS=(\n  /storage/.config/ppsspp/*\n  /storage/.config/test/*\n  /storage/.config/dolphin-emu/*\n  /storage/.config/SkyEmu/*\n  /storage/.config/ARMSX2/*\n  /storage/.config/duckstation/*\n  /storage/.config/melonDS/*\n  /storage/.config/flycast/*\n  /storage/.config/aethersx2/*\n  /storage/.config/raofflineproxy/*\n)\n' > "${KS}/.config/backuptool.conf"
 UB=(); for d in /usr/*/; do d="${d%/}"; UB+=(--ro-bind "${d}" "${d}"); done
 # tar and unzip are the image's busybox here when a build root is on this
 # machine: the restore's -X and -x exclusion lists are what this case
@@ -686,6 +711,8 @@ echo "${klist}" | grep -q 'duckstation/settings.ini$' && echo "${klist}" | grep 
     && grep -qx 'Token = ' "${KX}/storage/.config/flycast/emu.cfg" && grep -qx 'Token = ' "${KX}/storage/.config/aethersx2/inis/PCSX2.ini"; check $? "the four settings files with a token line travel with the value blanked and every other line kept (DuckStation, melonDS, flycast, AetherSX2)" "duckstation: $(tr '\n' '|' < "${KX}/storage/.config/duckstation/settings.ini" 2>/dev/null) melonDS: $(tr '\n' '|' < "${KX}/storage/.config/melonDS/melonDS.ini" 2>/dev/null) flycast: $(tr '\n' '|' < "${KX}/storage/.config/flycast/emu.cfg" 2>/dev/null) aethersx2: $(tr '\n' '|' < "${KX}/storage/.config/aethersx2/inis/PCSX2.ini" 2>/dev/null)"
 ! grep -rqF "${KTOK}" "${KX}" 2>/dev/null; check $? "and the planted token appears in no member of the archive" "the token is in: $(grep -rlF "${KTOK}" "${KX}" 2>/dev/null | sed "s|${KX}/||" | tr '\n' ' ')"
 grep -q 'held back 4 file(s) that hold only a RetroAchievements token' "${OUT}" && grep -q 'blanked the RetroAchievements token in 4 emulator settings file(s)' "${OUT}"; check $? "and the log counts four held back and four blanked" "log: $(grep -oE '(held back|blanked)[^|]*' "${OUT}" | tr '\n' ' ')"
+! echo "${klist}" | grep -q 'storage/.config/raofflineproxy/'; check $? "the offline RetroAchievements proxy's folder travels in no shape: none of its five files is in the archive (#165)" "the archive carries: $(echo "${klist}" | grep 'raofflineproxy/' | tr '\n' ' ')"
+grep -q "held back 5 file(s) under the offline RetroAchievements proxy's folder" "${OUT}"; check $? "and the log counts the five held back under it" "log: $(grep -o "held back [0-9]* file(s) under the offline[^|]*" "${OUT}" | head -1 | grep . || echo silent)"
 grep -qE '[^0-9]1 LINE\(S\) IN THIS BACKUP LOOK LIKE PASSWORDS OR KEYS' "${OUT}"; check $? "the scanner sees a Token = line in a file the strip does not know (test/unknown.ini), and only that one" "scanner: $(grep -oE '[0-9]+ LINE\(S\) IN THIS BACKUP[^|]*' "${OUT}" | head -1 | grep . || echo silent) -- until #169 its anchor was lower-case only, and the emulators' keys are capitalised"
 # An archive from before #45: assets, cache, an ini and the player's file,
 # all older. Restoring it must put back the ini and the file and leave the
@@ -695,12 +722,14 @@ KO="${K}/old"; mkdir -p "${KO}/storage/.config/ppsspp/assets/lang" "${KO}/storag
 echo "OLD strings" > "${KO}/storage/.config/ppsspp/assets/lang/en_US.ini"; echo "OLD cache" > "${KO}/storage/.config/ppsspp/PSP/SYSTEM/CACHE/x.cache"
 echo "OLD ini" > "${KO}/storage/.config/ppsspp/PSP/SYSTEM/ppsspp.ini"; echo "OLD own" > "${KO}/storage/.config/test/own"
 echo "OLD TOKEN" > "${KO}/storage/.config/ppsspp/PSP/SYSTEM/ppsspp_retroachievements.dat"  # every archive written before #169 has one
+mkdir -p "${KO}/storage/.config/raofflineproxy"; echo "OLD QUEUE" > "${KO}/storage/.config/raofflineproxy/proxy.sqlite3"  # a custom-LOCATIONS archive from before #165
 tar -C "${KO}" -czf "${KS}/roms/backup/20260101000000-ROCKNIX_SETTINGS.tar.gz" storage
 btk restore; rck2=${RC}
 [ "${rck2}" -eq 0 ]; check $? "a pre-#45 archive restores (rc ${rck2})" "rc ${rck2}: $(grep -v '^logger' "${OUT}" | tail -3 | tr '\n' '|')"
 [ "$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp.ini")" = "OLD ini" ] && [ "$(cat "${KS}/.config/test/own")" = "OLD own" ]; check $? "the ini and the player's file come back from it" "ini='$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp.ini")' own='$(cat "${KS}/.config/test/own")'"
 [ "$(cat "${KS}/.config/ppsspp/assets/lang/en_US.ini")" = "edited strings" ] && [ "$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/CACHE/x.cache")" = "shader cache" ]; check $? "its assets and cache are left where they were" "asset='$(cat "${KS}/.config/ppsspp/assets/lang/en_US.ini")' cache='$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/CACHE/x.cache")' -- an older emulator's program data was put under a newer one"
 [ "$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp_retroachievements.dat" 2>/dev/null)" = "${KTOK}" ]; check $? "its token file is not put back over the device's own (tar, #169)" "the .dat now reads '$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp_retroachievements.dat" 2>/dev/null)' -- a token from before landed on this device"
+! grep -q 'OLD QUEUE' "${KS}/.config/raofflineproxy/proxy.sqlite3" 2>/dev/null; check $? "the proxy's queue from the archive is not put over this device's own (tar, #165)" "proxy.sqlite3 now holds the archive's copy -- another device's award queue landed here"
 ksnap=$(ls "${KS}/roms/backup/archive/"*PRE_RESTORE*.tar.gz 2>/dev/null | head -1)
 [ -n "${ksnap}" ] && tar -xzOf "${ksnap}" storage/.config/ppsspp/PSP/SYSTEM/ppsspp_retroachievements.dat 2>/dev/null | grep -qF "${KTOK}"; check $? "while the copy kept before the restore still carries the device's own token (STRIP=0: it never leaves the device, and 'as they were' means exactly that)" "snapshot: ${ksnap:-none}; .dat in it: $(tar -xzOf "${ksnap}" storage/.config/ppsspp/PSP/SYSTEM/ppsspp_retroachievements.dat 2>/dev/null || echo absent)"
 # The same archive as a zip: the shape every backup had before 2026-08-26,
@@ -712,6 +741,7 @@ rm -f "${KS}/roms/backup"/*.tar.gz
 echo "edited strings" > "${KS}/.config/ppsspp/assets/lang/en_US.ini"; echo "shader cache" > "${KS}/.config/ppsspp/PSP/SYSTEM/CACHE/x.cache"
 echo "the player's ini" > "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp.ini"; echo "the player's own" > "${KS}/.config/test/own"
 rm -f "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp_retroachievements.dat"  # so the zip's copy landing is simply its existence
+rm -f "${KS}/.config/raofflineproxy/proxy.sqlite3"
 ln -sfn /usr/config/test/seed "${KS}/.config/test/link"
 echo "OLD link contents" > "${KO}/storage/.config/test/link"
 (cd "${KO}" && python3 -c 'import zipfile, os, sys
@@ -724,6 +754,7 @@ btk restore; rck3=${RC}
 [ "$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp.ini")" = "OLD ini" ] && [ "$(cat "${KS}/.config/test/own")" = "OLD own" ]; check $? "the ini and the player's file come back from the zip" "ini='$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp.ini")' own='$(cat "${KS}/.config/test/own")'"
 [ "$(cat "${KS}/.config/ppsspp/assets/lang/en_US.ini")" = "edited strings" ] && [ "$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/CACHE/x.cache")" = "shader cache" ]; check $? "its assets and cache are left where they were (zip)" "asset='$(cat "${KS}/.config/ppsspp/assets/lang/en_US.ini")' cache='$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/CACHE/x.cache")' -- the zip branch skipped only symlinks, and the oldest archives put an older emulator's program data under a newer one (#151 PL-03)"
 [ ! -e "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp_retroachievements.dat" ]; check $? "its token file is not put back from a zip either (#169; the image's unzip -x on an exact member name)" "the .dat landed from the zip: '$(cat "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp_retroachievements.dat" 2>/dev/null)'"
+! grep -q 'OLD QUEUE' "${KS}/.config/raofflineproxy/proxy.sqlite3" 2>/dev/null; check $? "nor is the proxy's queue (zip, #165)" "proxy.sqlite3 now holds the zip's copy"
 [ -L "${KS}/.config/test/link" ] && grep -q 'KEEPING 1 FILE(S) THE SYSTEM PROVIDES' "${OUT}"; check $? "and the symlink the OS provides is still a symlink, said on the screen (KEEPING 1 FILE(S))" "link: $([ -L "${KS}/.config/test/link" ] && echo symlink || echo "regular file: $(cat "${KS}/.config/test/link" 2>/dev/null)"); screen: $(grep -c 'KEEPING' "${OUT}") KEEPING line(s)"
 # The prune's grep dying part-way (exit 2, as a read error would): a pruned
 # list from a grep that did not finish is a partial backup announced as a
@@ -1129,6 +1160,79 @@ cmp -s "${CFGF}" "${CFGF}.backup"; check $? "and the shutdown-time backup takes 
 # and the unit gets its own, written back.
 cp "${C}/system.cfg" "${MS}/system.cfg"; OUT="${M}/out"
 nbs; [ "$(hn)" = "H700-9a3f" ] && grep -q 'shipped default' "${OUT}"; check $? "network-base-setup then names the unit H700-9a3f and the log says the shipped default was replaced" "system.hostname is '$(hn)'; log: $(grep -o 'device name[^|]*' "${OUT}" | head -1)"
+
+echo "  p. raofflineproxy-ctl: enable records hardcore and turns it off, disable puts it back; both harmless twice (#165, D-RA-002)"
+# The script whole, under bwrap like backuptool in b: a stub /etc/profile
+# that carries get_setting and set_setting lifted from 001-functions (the
+# real profile sources them the same way) with J_CONF at the fake
+# /storage's system.cfg, a systemctl shim that logs its calls and fails when
+# told to, a logger shim, and the image's busybox for sed/awk/mv when a
+# build root is here. Under --old the tree before #165 has no such script,
+# and the case says so as one FAIL rather than ending the run.
+CTL_REL=projects/ROCKNIX/packages/network/raofflineproxy/sources/raofflineproxy-ctl
+P="${TMP}/p"; PS="${P}/storage"; mkdir -p "${PS}/.config/system/configs" "${PS}/.cache" "${P}/repo" "${P}/shim" "${P}/run"
+if [ "${OLD}" -eq 1 ] && ! git -C "${ROOT}" cat-file -e "${BASE_REF}:${CTL_REL}" 2>/dev/null; then
+    check 1 "" "raofflineproxy-ctl is absent at ${BASE_REF}: the toggle had no backend"
+else
+src_of "${CTL_REL}" "${P}/repo/raofflineproxy-ctl"
+{
+    sed -n '/^function get_setting() {/,/^}/p; /^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function set_setting() {/,/^}/p' "${FN}"
+} > "${P}/repo/fns.sh"
+PBB=(); PPATH="/shim:/usr/bin:/bin"
+if [ -n "${BB}" ]; then PBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB}" "${BB}"); PPATH="/shim:/bbin:/usr/bin:/bin"; fi
+printf 'export PATH=%s\nexport OS_NAME=ROCKNIX\nJ_CONF=/storage/.config/system/configs/system.cfg\nJ_CONF_LOCK=/tmp/.system.cfg.lock\n. /repo/fns.sh\n' "${PPATH}" > "${P}/profile"
+cat > "${P}/shim/systemctl" <<'EOS'
+#!/bin/sh
+echo "systemctl $*" >> /run/systemctl.log
+case "$1" in
+    start) [ -e /run/fail-start ] && exit 1; touch /run/active; exit 0 ;;
+    stop) rm -f /run/active; exit 0 ;;
+    is-active) if [ -e /run/active ]; then echo active; exit 0; else echo inactive; exit 3; fi ;;
+esac
+exit 0
+EOS
+printf '#!/bin/sh\necho "logger $*" >&2\n' > "${P}/shim/logger"
+chmod +x "${P}/shim"/*
+ctl() { # <verb>: stdout to $OUT, stderr to $ERR, rc in $RC
+    RC=$( ( bwrap --die-with-parent --tmpfs / --tmpfs /usr "${USR_BINDS[@]}" "${PBB[@]}" \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${P}/profile" /etc/profile \
+        --bind "${PS}" /storage --ro-bind "${P}/repo" /repo --ro-bind "${P}/shim" /shim --bind "${P}/run" /run \
+        --dev /dev --proc /proc --tmpfs /tmp \
+        bash /repo/raofflineproxy-ctl "$@" > "${OUT}" 2> "${ERR}"; echo $? ) 2>/dev/null )
+}
+OUT="${P}/out"; ERR="${P}/err"; PCFG="${PS}/.config/system/configs/system.cfg"; PMARK="${PS}/.cache/services/raofflineproxy.conf"
+pv() { sed -n "s/^${1}=//p" "${PCFG}"; }
+# A hardcore player turns the toggle on.
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.hardcore=1\n' > "${PCFG}"
+ctl status; [ "${RC}" -eq 1 ] && grep -qx 'enabled=0' "${OUT}"; check $? "status before: enabled=0, exit 1" "rc ${RC}; out: $(tr '\n' '|' < "${OUT}")"
+ctl enable
+[ "${RC}" -eq 0 ] && [ "$(pv global.retroachievements.offlineproxy)" = "1" ] && [ "$(pv global.retroachievements.hardcore)" = "0" ] && [ "$(pv global.retroachievements.offlineproxy.hardcore_was)" = "1" ]; check $? "enable (rc ${RC}): the toggle is 1, hardcore 0, and the record says it was 1" "rc ${RC}; system.cfg: $(tr '\n' '|' < "${PCFG}"); err: $(tr '\n' '|' < "${ERR}" | cut -c1-160)"
+[ -e "${PMARK}" ] && grep -q '^systemctl start raofflineproxy.service$' "${P}/run/systemctl.log"; check $? "the marker is written and the service started" "marker: $([ -e "${PMARK}" ] && echo yes || echo no); systemctl: $(tr '\n' '|' < "${P}/run/systemctl.log" 2>/dev/null)"
+[ "$(wc -l < "${OUT}")" -eq 1 ] && [ "$(tail -1 "${OUT}")" = "hardcore=0" ]; check $? "stdout is the one line EmulationStation reads: hardcore=0" "stdout: $(tr '\n' '|' < "${OUT}")"
+[ "$(grep -c . "${PCFG}")" -eq 5 ] && grep -qx 'system.hostname=X' "${PCFG}" && grep -qx 'global.retroachievements=1' "${PCFG}"; check $? "and the other lines of system.cfg are as they were" "system.cfg: $(tr '\n' '|' < "${PCFG}")"
+# Twice: the record must still say 1, not the 0 the first enable wrote.
+ctl status; [ "${RC}" -eq 0 ] && grep -qx 'enabled=1' "${OUT}" && grep -qx 'hardcore=0' "${OUT}" && grep -qx 'service=active' "${OUT}"; check $? "status after: enabled=1, hardcore=0, service=active, exit 0" "rc ${RC}; out: $(tr '\n' '|' < "${OUT}")"
+ctl enable
+[ "${RC}" -eq 0 ] && [ "$(pv global.retroachievements.offlineproxy.hardcore_was)" = "1" ] && [ "$(pv global.retroachievements.hardcore)" = "0" ] && [ "$(tail -1 "${OUT}")" = "hardcore=0" ]; check $? "a second enable keeps the record at 1 (rc ${RC})" "record now '$(pv global.retroachievements.offlineproxy.hardcore_was)' -- the first enable's 0 was recorded over the player's 1"
+# Off again: hardcore comes back, the record goes, the marker goes.
+ctl disable
+[ "${RC}" -eq 0 ] && [ "$(pv global.retroachievements.offlineproxy)" = "0" ] && [ "$(pv global.retroachievements.hardcore)" = "1" ] && [ -z "$(pv global.retroachievements.offlineproxy.hardcore_was)" ] && ! grep -q 'hardcore_was' "${PCFG}"; check $? "disable (rc ${RC}): the toggle is 0, hardcore is back at 1, the record line is gone" "rc ${RC}; system.cfg: $(tr '\n' '|' < "${PCFG}"); err: $(tr '\n' '|' < "${ERR}" | cut -c1-160)"
+[ ! -e "${PMARK}" ] && grep -q '^systemctl stop raofflineproxy.service$' "${P}/run/systemctl.log" && [ "$(tail -1 "${OUT}")" = "hardcore=1" ] && [ "$(wc -l < "${OUT}")" -eq 1 ]; check $? "the marker is gone, the service stopped, and stdout is hardcore=1" "marker: $([ -e "${PMARK}" ] && echo yes || echo no); systemctl: $(tr '\n' '|' < "${P}/run/systemctl.log"); stdout: $(tr '\n' '|' < "${OUT}")"
+ctl disable
+[ "${RC}" -eq 0 ] && [ "$(pv global.retroachievements.hardcore)" = "1" ] && [ "$(tail -1 "${OUT}")" = "hardcore=1" ]; check $? "a second disable changes nothing and still answers hardcore=1 (rc ${RC})" "rc ${RC}; hardcore '$(pv global.retroachievements.hardcore)'; stdout: $(tr '\n' '|' < "${OUT}")"
+# A casual player, and a device whose system.cfg has never had the key.
+printf 'system.hostname=X\nglobal.retroachievements=1\n' > "${PCFG}"
+ctl enable; rce=${RC}; ctl disable
+[ "${rce}" -eq 0 ] && [ "${RC}" -eq 0 ] && [ "$(pv global.retroachievements.hardcore)" = "0" ] && [ "$(tail -1 "${OUT}")" = "hardcore=0" ]; check $? "with no hardcore line before, enable then disable leaves hardcore 0 (rc ${rce}/${RC})" "hardcore '$(pv global.retroachievements.hardcore)'; stdout: $(tr '\n' '|' < "${OUT}")"
+# The service will not start: nothing about the settings changes, the
+# marker does not stay, and the exit says so.
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.hardcore=1\n' > "${PCFG}"; touch "${P}/run/fail-start"
+ctl enable
+[ "${RC}" -eq 1 ] && [ ! -e "${PMARK}" ] && [ "$(pv global.retroachievements.hardcore)" = "1" ] && [ -z "$(pv global.retroachievements.offlineproxy)" ] && [ -z "$(pv global.retroachievements.offlineproxy.hardcore_was)" ]; check $? "a service that will not start: exit 1, no marker left, hardcore still 1, no toggle and no record written" "rc ${RC}; marker: $([ -e "${PMARK}" ] && echo yes || echo no); system.cfg: $(tr '\n' '|' < "${PCFG}")"
+[ ! -s "${OUT}" ]; check $? "and nothing on stdout for EmulationStation to mistake for a result" "stdout: $(tr '\n' '|' < "${OUT}")"
+rm -f "${P}/run/fail-start"
+fi
 
 echo
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
