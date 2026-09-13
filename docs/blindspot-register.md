@@ -351,3 +351,26 @@ restores it (`--vm`, the exit test's rule since #117). And a suite added to
 the runner is not wired in until it has been seen to FAIL once on the
 runner's own guest -- `engineering-practices.md` § "Prove the guard fires",
 applied to a suite: the first PASS of anything new is the one to distrust.
+
+## 40. A suite that passed on the caller's shell (2026-09-13)
+
+`tools/vm-qa`'s pair-identity suite (added 2026-09-12) ran four `ssh`
+commands with `$SSHO` in them, and `vm-qa` never defined `SSHO`. It passed
+that night because the shell that started the runner had the variable set
+for its own ssh calls, and the runner inherited it. Started tonight under
+`setsid nohup` with a clean environment, the same suite printed `SSHO:
+unbound variable` four times, got no answer from either guest, and said so:
+`pair-identity: FAIL (1)`. The failure was the honest result; the pass the
+night before was not evidence of anything except what the caller's shell
+happened to contain.
+
+The shape: a tool that works only in the environment it was written in, and
+whose dependence on that environment is invisible because the environment
+is always there when its author runs it. `set -u` turned the invisible
+dependence into a loud failure the first time the environment differed,
+which is the argument for `set -u` in every tool here. The fix is to
+declare what the tool needs (`SSHO` defined in `vm-qa`), and the check for
+the class is to run a new suite once from `env -i` -- or under `setsid
+nohup`, which the memory watchdog already forces on long runs -- before
+believing its first PASS. Related: 39 (a PASS over a table of dashes), 14
+(a hook with no observed positive).
