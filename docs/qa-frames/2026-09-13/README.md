@@ -65,6 +65,17 @@ revert had something to revert to. Frames carrying `-fr` were taken with
 `system.language=fr_FR`. The row's line is UPPERCASE where every sibling
 description on the page is sentence case, in both languages.
 
+`e1edaaa33b` -- the second **feature-branch TEST build**, again not a `next`
+image: distribution `feature/ra-offline` tip `e1edaaa33b` (the four fixes to the
+first check's findings and the docs commit, on top of `eefb1a7393`) with
+EmulationStation `feature/ra-offline` `23dc0336ff` -- on guest d at 640x480,
+re-checking #166. The row's line is now sentence case like its siblings. The
+frames were taken with the toggle on after two reboots that kept the marker
+and the service (`enabled=1 marker=1 service=active` at both boots, the unit
+started at 2.1 s before `essway` at 3.6-3.8 s); HARDCORE MODE had been
+switched on by hand before the turn-on, as in the first check. `-fr` with
+`system.language=fr_FR`.
+
 | Frame | What it shows |
 |---|---|
 | `save-state-manager-four-tiles-1280x800.png` | The manager on `878ec8863b`: START NEW GAME, AUTO SAVE, SLOT 1, SLOT 2, every label whole, the sheet half the screen (#27's first cut, where it happened to work). |
@@ -148,3 +159,5 @@ description on the page is sentence case, in both languages.
 | `ra-offline-toggle-dialog-640x480-0f7785e6ed-fr.png` | The dialog in French: `C’EST UNE FONCTION BÊTA. ELLE NE FONCTIONNE QU’AVEC LES SUCCÈS EN MODE FACILE, ET L’ACTIVER DÉSACTIVE LE MODE DIFFICILE.` (three lines) over `LES SUCCÈS OBTENUS HORS LIGNE SONT ENVOYÉS À RETROACHIEVEMENTS QUAND VOUS ÊTES DE NOUVEAU EN LIGNE.` (three lines), ACTIVER focused, PAS MAINTENANT beside it. Inside the box at 640x480. |
 | `ra-offline-toggle-not-now-640x480-0f7785e6ed-fr.png` | After PAS MAINTENANT: the switch back off, MODE DIFFICILE still on. |
 | `ra-offline-toggle-on-640x480-0f7785e6ed-fr.png` | After ACTIVER: the row on, MODE DIFFICILE off; the journal `offline RetroAchievements on: hardcore was 1, now 0; raofflineproxy.service active`. |
+| `ra-offline-toggle-row-sentence-case-640x480-e1edaaa33b.png` | The row focused on `e1edaaa33b`: OFFLINE RETROACHIEVEMENTS / `Beta. Casual achievements only, even without a connection.` -- sentence case like `Disable loading states, rewind and cheats for more points.` above it and `Compete in high-score and best time leaderboards (requires hardcore).` below; the label stays UPPERCASE. The switch on and HARDCORE MODE off, the state the toggle held through two reboots. |
+| `ra-offline-toggle-row-sentence-case-640x480-e1edaaa33b-fr.png` | The same row in French: RETROACHIEVEMENTS HORS LIGNE / `Bêta. Succès en mode facile seulement, même sans connexion.` beside `Désactive les chargements d'état, le rembobinage et les codes pour plus de points.` and `Participez au classement des meilleurs temps et scores (mode difficile requis).`; the switch on, MODE DIFFICILE off. |
