@@ -42,9 +42,10 @@ prints every registry without touching a device.
 --only LINK1..LINK7 (or --link after the suite) runs #103's link-loss cells:
 each starts a cloud operation, cuts the guest's link over its serial console
 at a named phase, restores it 40 s later and asserts the run ended within
-90 s with an honest exit and nothing partial left behind. They need the
-throttled WebDAV endpoint and a guest with a serial console (a headless VM);
-on a handheld they are skipped, with a line saying so.
+90 s with an honest exit and nothing partial left behind. They need a
+throttled endpoint (WebDAV, or s3 behind cloud-test-backend's proxy) and a
+guest with a serial console (a headless VM); on a handheld they are skipped,
+with a line saying so.
 
     ./tools/cloud-round-trip --host root@127.0.0.1 --port 10024 --identity ... \
         --only KILL1,KILL2,KILL3,KILL4,KILL5,KILL10,KILL11,KILL12,KILL13,KILL15,KILL16,KILL18 \
@@ -4800,11 +4801,28 @@ def run_contract(p, kind, args):
 # bound (TCP's next retransmit is at ~205 s), which is #102's shape. Either
 # way a bounded run ends with the link still down and exits 69.
 #
+# That is WebDAV, whose rclone backend does not retry a dial the dead link
+# refuses. On s3 it does: --low-level-retries goes to the AWS SDK as its
+# attempt count, with the SDK's exponential backoff between attempts, and no
+# timeout covers the backoff (cloud_backup's own note beside
+# RCLONE_LIST_OPTS: 230 s at ten attempts). LINK5 on MinIO behind the
+# throttle proxy (2026-09-13, build 519f40aa0c, rclone 1.75.0, guest d):
+# the cut PUT died when the link came back (8.4 of 12 MiB delivered; MinIO
+# discarded it), the next attempt re-dialled within 2-6 s and uploaded the
+# whole archive, and the deliberate `cloud_backup --system-only` exited 0
+# -- 88.8 s after a 40 s cut, 163.6 s after a 120 s cut, past the bound,
+# with last-settings-backup recording success. The FAILs that produces are
+# the finding, not a harness fault; the automatic path is unaffected, its
+# busybox timeout ceiling holding on every backend.
+#
 # The endpoint must be throttled (CLOUD_QA_BWLIMIT), or nine MiB cross the
 # loopback before the poll can see the transfer start; the cells refuse an
 # unthrottled one rather than report "ended before the cut" seven times. The
 # server's bwlimit is a token bucket with a 4 MiB burst, so three 3 MiB files
-# spend about 25 s in flight. The two listing-bound cells (a compare with
+# spend about 25 s in flight. On WebDAV that bucket is rclone serve's own; on
+# s3 it is the proxy cloud-test-backend puts in front of MinIO (which has no
+# such knob), built to the same shape, so the figures hold on both. The other
+# three backends cannot be throttled. The two listing-bound cells (a compare with
 # everything already in the cloud; the picker scan) run rclone under
 # RCLONE_TPSLIMIT=2 -- two HTTP transactions a second, a stand-in for a
 # provider whose listing is rate-limited -- because this endpoint lists
@@ -4826,15 +4844,19 @@ LINK_MARKER_CHECKS = re.compile(r"^Checks:\s+\d+ / \d+", re.M)       # the compa
 
 
 def backend_throttled():
-    """Whether the WebDAV endpoint runs with --bwlimit. Read off the server's
-    own command line (its pid is beside its data directory), not off an
+    """Whether the endpoint runs with --bwlimit. Read off the server's own
+    command line (its pid is beside its data directory), not off an
     environment variable this process may or may not share with the one
-    that started it."""
-    if backend("backend").strip() != "webdav":
+    that started it. On WebDAV that server is rclone serve; on s3 it is the
+    token-bucket proxy cloud-test-backend puts in front of MinIO, started
+    with the same flag and leaving its pid in the same place. The other
+    three have no throttle, so they never pass."""
+    kind = backend("backend").strip()
+    if kind not in ("webdav", "s3"):
         return False
     state = os.path.dirname(backend("path").strip())
     try:
-        pid = open(os.path.join(state, "webdav.pid")).read().strip()
+        pid = open(os.path.join(state, f"{kind}.pid")).read().strip()
         return "--bwlimit" in open(f"/proc/{pid}/cmdline", "rb").read().replace(b"\0", b" ").decode(errors="replace")
     except OSError:
         return False
@@ -5059,8 +5081,11 @@ class Link:
         closed). So the ESTABLISHED socket clearing is not enough; wait for
         the server to hold no open fd under its data directory. WebDAV only
         -- a real provider resets an aborted PUT and has no such drain, and
-        the check reads a local rclone serve's /proc. Returns how long it
-        took."""
+        the check reads a local rclone serve's /proc. On s3 the throttle
+        proxy drains the same buffer into MinIO, but the cut PUT ended when
+        the link came back (the guest's RST reached slirp) and the atomic
+        PUT discarded it, so nothing is held (LINK5, 2026-09-13). Returns
+        how long it took."""
         if backend("backend").strip() != "webdav":
             return 0.0
         data = backend("path").strip()
@@ -5137,7 +5162,7 @@ class Link:
             rc, tte = int(r[0]), float(r[1]) - cut_up
             if not hung:
                 why = ("" if tte <= LINK_BOUND else
-                       f": past the {LINK_BOUND}s bound" + (" -- it rode the outage out on rclone's defaults and completed once TCP retransmitted"
+                       f": past the {LINK_BOUND}s bound" + (" -- it rode the outage out and completed once the link was back"
                                                             if rc == 0 else ""))
                 f += not check(tte <= LINK_BOUND, f"ended {tte:.1f}s after the cut (bound {LINK_BOUND}s)",
                                f"ended {tte:.1f}s after the cut{why}")
@@ -5146,8 +5171,12 @@ class Link:
             elif rc == 0 and tte < self.restore_after:
                 what = f"exit 0 {tte:.1f}s after the cut, with the link still down: a success reported for a run that could not reach the cloud"
             elif rc == 0:
+                # How it waited differs by backend -- TCP retransmits on
+                # WebDAV, the S3 backend's re-dials through its low-level
+                # retries on s3 (the header, 2026-09-13) -- so the line
+                # names the outcome and not a mechanism.
                 what = (f"exit 0 {tte:.1f}s after the cut: a success reported for a run the network left -- it waited "
-                        f"the {self.restore_after:.0f}s outage out on rclone's default timeouts instead of ending within its own bound")
+                        f"the {self.restore_after:.0f}s outage out instead of ending within its own bound")
             elif rc == 75:
                 what = "exit 75: the lock sentinel, for a run nothing else held the lock against"
             else:
@@ -5227,8 +5256,11 @@ class Link:
         # nothing, and the re-run genuinely re-uploads and succeeds. So where
         # the archive is already whole and correct in the cloud and the only
         # thing stopping the re-run is that lock, this criterion is SKIPPED
-        # with the reason, not FAILED -- and it wants MinIO/S3 or a real
-        # provider to be asserted, which this run notes.
+        # with the reason, not FAILED. On every other backend `locked` is
+        # False and both checks run; on MinIO they have (LINK5, 2026-09-13,
+        # 40 s and 120 s outages): the re-run was accepted at once and the
+        # archive matched after it, the stale short body discarded by the
+        # atomic PUT rather than kept under the name.
         locked = webdav and rc2 != 0 and "423 Locked" in log_since(self.dev, mark)
         archive_whole = receiving and all(got.get(r) == src for r, src in sources.items())
         telling = [l for l in out2.splitlines() if re.search(r"ERROR|WARN|Failed|failed|exit", l)]
@@ -5236,7 +5268,7 @@ class Link:
         if locked and archive_whole:
             print("    SKIP  the re-run is refused by the QA WebDAV server's stale-PUT lock (423 Locked) on the same "
                   "archive name -- a slirp artifact, not the script; the archive is already whole in the cloud. "
-                  "Assert idempotency on MinIO/S3 or a real provider.")
+                  "Asserted on MinIO (LINK5, 2026-09-13): no lock, the re-run exits 0 and the archive matches after it.")
         else:
             f += not check(rc2 == 0, "a plain re-run with the link back exits 0", f"the re-run exits {rc2}: {last!r}")
         if verify:
@@ -5250,8 +5282,12 @@ class Link:
             # script (LINK5 on db6b42c180, 2026-09-13: whole and matching after
             # the cut, refused with 423 on the re-run, then no longer
             # matching). Same artifact, same disposition as the line above.
+            # On MinIO the same day (519f40aa0c, guest d, 40 s and 120 s
+            # outages) this check ran and passed: whole and matching after
+            # the cut and after the re-run, the cut PUT's 8.4 MiB discarded.
             print("    SKIP  the receiving side after the re-run: under the stale-PUT lock the QA WebDAV server's copy "
-                  "changes when the cut connection finally closes; not the script's doing. Assert on MinIO/S3 or a real provider.")
+                  "changes when the cut connection finally closes; not the script's doing. Asserted on MinIO "
+                  "(LINK5, 2026-09-13): whole and matching after the cut and after the re-run.")
         elif receiving:
             got2 = self.settle(receiving)
             bad = [r for r in sources if got2.get(r) != sources[r]]
@@ -5398,7 +5434,8 @@ def run_link(dev, root, remote, args, settings, serial, only):
         raise Fail("the link-loss cells empty the saves root between cells; they never run against real ROMs")
     if not check(backend_throttled(), "the endpoint is throttled (--bwlimit on the server)",
                  "the endpoint is not throttled: nine MiB cross the loopback before the transfer can be cut -- "
-                 "`tools/cloud-test-backend down && CLOUD_QA_BWLIMIT=200k tools/cloud-test-backend up` (WebDAV only)"):
+                 "`tools/cloud-test-backend [--backend s3] down && CLOUD_QA_BWLIMIT=200k tools/cloud-test-backend [--backend s3] up` "
+                 "(WebDAV or s3; the other three cannot be throttled)"):
         return 1
     L = Link(dev, serial, root, remote, settings, args)
     L.assert_same_guest()

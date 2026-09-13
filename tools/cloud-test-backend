@@ -40,7 +40,7 @@
 # CLOUD_QA_BIND=0.0.0.0 deliberately for a LAN device), and every port is in
 # the 9010-9099 range this fork reserves for QA services.
 #
-#   ./tools/cloud-test-backend up          # start it (CLOUD_QA_BWLIMIT=1M to throttle WebDAV)
+#   ./tools/cloud-test-backend up          # start it (CLOUD_QA_BWLIMIT=1M to throttle WebDAV or S3)
 #   ./tools/cloud-test-backend reset       # empty it between tests
 #   ./tools/cloud-test-backend ls [path]   # what the device actually uploaded
 #   ./tools/cloud-test-backend cat <path>  # one uploaded file's bytes
@@ -115,6 +115,16 @@ S3_NAME="${CLOUD_QA_NAME:-rocknix-cloud-qa}"
 S3_BUCKET="${CLOUD_QA_BUCKET:-rocknix-qa}"
 S3_IMAGE="${CLOUD_QA_IMAGE:-quay.io/minio/minio:latest}"
 S3_CONF="${STATE}/s3-host.conf"
+# Throttled S3 (CLOUD_QA_BWLIMIT): MinIO has no bandwidth knob of its own, so
+# it listens on this loopback port and a token-bucket proxy (write_throttle)
+# takes PORT in front of it. The guest meets the proxy; this host's own rclone
+# (reset, ls, cat, put) meets MinIO directly, the way the WebDAV commands read
+# the data directory rather than the throttled server. Where MinIO actually
+# listens is recorded beside the proxy's pid, so a later invocation reads the
+# mode off the state and not off an environment variable it may not share
+# with the one that started it.
+S3_UPSTREAM_PORT="${CLOUD_QA_S3_UPSTREAM_PORT:-9022}"
+S3_API_PORT_FILE="${CONFDIR}/api-port"
 
 # --- SMB --------------------------------------------------------------------
 SMB_NAME="${CLOUD_QA_SMB_NAME:-rocknix-cloud-qa-smb}"
@@ -140,6 +150,8 @@ VENV="${STATE}/venv"
 
 need() { command -v "${1}" >/dev/null 2>&1 || { echo "error: ${1} is required" >&2; exit 1; }; }
 
+s3_api_port() { cat "${S3_API_PORT_FILE}" 2>/dev/null || echo "${PORT}"; }
+
 s3_host_conf() {
   mkdir -p "${STATE}"
   # A config file rather than an on-the-fly connection string: rclone's
@@ -152,7 +164,7 @@ provider = Minio
 env_auth = false
 access_key_id = ${USER_NAME}
 secret_access_key = ${PASS}
-endpoint = http://127.0.0.1:${PORT}
+endpoint = http://127.0.0.1:$(s3_api_port)
 force_path_style = true
 region = us-east-1
 EOF
@@ -225,6 +237,137 @@ FTPServer((bind, int(port)), handler).serve_forever()
 PY
 }
 
+write_throttle() {
+  cat > "${CONFDIR}/throttle.py" <<'PY'
+"""A TCP proxy that paces bytes through a token bucket: what `rclone serve
+--bwlimit` does for the WebDAV endpoint, done for MinIO, which has no such
+knob. One bucket per direction, both at the rate given, 4 MiB burst --
+rclone's own bucket shape (accounting/token_bucket.go), which the link-loss
+cells' file sizes and bounds were measured against."""
+import argparse
+import asyncio
+import re
+import sys
+import time
+
+BURST = 4 * 1024 * 1024          # rclone's maxBurstSize
+CHUNK = 64 * 1024
+UNITS = {"": 1024, "b": 1, "k": 1024, "m": 1024 ** 2, "g": 1024 ** 3}
+
+
+def parse_rate(text):
+    # rclone's SizeSuffix as --bwlimit reads it: a bare number is KiB/s; B, K,
+    # M, G scale it (a trailing i or B is tolerated: 200Ki, 1MiB). Anything
+    # else -- an up:down pair, a timetable -- is refused, not half-honoured.
+    m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*([bBkKmMgG]?)(?:i?[bB]?)?\s*", text)
+    if not m or float(m.group(1)) <= 0:
+        sys.exit(f"throttle: cannot read --bwlimit {text!r}; one positive rate such as 200k or 1M")
+    return float(m.group(1)) * UNITS[m.group(2).lower()]
+
+
+class Bucket:
+    def __init__(self, rate):
+        self.rate, self.tokens, self.at = rate, float(BURST), time.monotonic()
+
+    async def take(self, n):
+        while True:
+            now = time.monotonic()
+            self.tokens = min(float(BURST), self.tokens + (now - self.at) * self.rate)
+            self.at = now
+            if self.tokens >= n:
+                self.tokens -= n
+                return
+            await asyncio.sleep((n - self.tokens) / self.rate)
+
+
+async def pump(reader, writer, bucket, count):
+    # One direction. The bucket is taken before the bytes move on and nothing
+    # more is read until they have, so a slow bucket backs up into the
+    # sender's TCP window the way rclone serve's does -- which is what lets
+    # QEMU's user-mode stack hold a guest's whole upload after the guest is
+    # gone, the artifact the link-loss cells are built around.
+    try:
+        while True:
+            data = await reader.read(CHUNK)
+            if not data:
+                break
+            await bucket.take(len(data))
+            writer.write(data)
+            await writer.drain()
+            count[0] += len(data)
+    except OSError:
+        pass
+    finally:
+        try:
+            if writer.can_write_eof():
+                writer.write_eof()
+        except (OSError, RuntimeError):
+            pass
+
+
+async def serve(listen, upstream, rate):
+    host, port = listen.rsplit(":", 1)
+    up_host, up_port = upstream.rsplit(":", 1)
+    buckets = (Bucket(rate), Bucket(rate))       # to upstream, back
+    seq = [0]
+
+    def log(msg):
+        print(f"{time.strftime('%H:%M:%S')} throttle: {msg}", flush=True)
+
+    async def handle(cr, cw):
+        seq[0] += 1
+        k = seq[0]
+        peer = cw.get_extra_info("peername") or ("?", "?")
+        t0 = time.monotonic()
+        try:
+            sr, sw = await asyncio.open_connection(up_host, int(up_port))
+        except OSError as e:
+            log(f"#{k}: upstream {upstream} refused ({e}); closing {peer[0]}:{peer[1]}")
+            cw.close()
+            return
+        log(f"#{k}: open from {peer[0]}:{peer[1]}")
+        sent, got = [0], [0]
+        await asyncio.gather(pump(cr, sw, buckets[0], sent), pump(sr, cw, buckets[1], got))
+        for w in (cw, sw):
+            w.close()
+        for w in (cw, sw):
+            try:
+                await w.wait_closed()
+            except OSError:
+                pass
+        log(f"#{k}: closed after {time.monotonic() - t0:.1f}s; {sent[0]} B to upstream, {got[0]} B back")
+
+    server = await asyncio.start_server(handle, host, int(port))
+    log(f"{listen} -> {upstream} at {rate:.0f} B/s each way, burst {BURST >> 20} MiB")
+    async with server:
+        await server.serve_forever()
+
+
+ap = argparse.ArgumentParser(description=__doc__)
+ap.add_argument("--listen", required=True, help="host:port the guest dials")
+ap.add_argument("--upstream", required=True, help="host:port MinIO listens on")
+ap.add_argument("--bwlimit", required=True, help="rclone syntax: 200k, 1M")
+a = ap.parse_args()
+try:
+    asyncio.run(serve(a.listen, a.upstream, parse_rate(a.bwlimit)))
+except KeyboardInterrupt:
+    pass
+PY
+}
+
+throttle_rate() {
+  # The rate the running proxy was started with, off its own argv -- the
+  # place cloud-round-trip's backend_throttled() reads the flag from too.
+  tr '\0' '\n' < "/proc/$(cat "${PIDFILE}")/cmdline" 2>/dev/null | grep -A1 -x -- --bwlimit | tail -1
+}
+
+throttle_down() {
+  # The s3 throttle proxy and its record of where MinIO listens; harmless
+  # when there is none.
+  if [ -f "${PIDFILE}" ]; then kill "$(cat "${PIDFILE}")" 2>/dev/null || true; fi
+  rm -f "${PIDFILE}" "${S3_API_PORT_FILE}"
+}
+
 write_sshd_config() {
   # An sshd of our own, run as this user on a high port: no root, no PAM, no
   # system configuration touched, and it goes away with `down`. Key auth only
@@ -266,11 +409,43 @@ case "${1:-}" in
         # failed on the name -- two errors, neither of them the cause. There
         # is no volume and `reset` empties the bucket anyway, so recreating
         # costs nothing.
-        if ! docker ps --format '{{.Names}}' | grep -qx "${S3_NAME}"; then
+        if docker ps --format '{{.Names}}' | grep -qx "${S3_NAME}"; then
+          # Up already, and it stays in the mode it is up in: a throttle
+          # asked for over an unthrottled MinIO -- or the reverse -- is
+          # refused, rather than answered with the other one.
+          if [ -n "${CLOUD_QA_BWLIMIT:-}" ] && ! pid_running; then
+            echo "error: s3 is up unthrottled; 'down' first, then CLOUD_QA_BWLIMIT=${CLOUD_QA_BWLIMIT} up" >&2; exit 1
+          fi
+          if [ -z "${CLOUD_QA_BWLIMIT:-}" ] && pid_running; then
+            echo "error: s3 is up throttled (proxy pid $(cat "${PIDFILE}")); 'down' first for an unthrottled one" >&2; exit 1
+          fi
+          if pid_running && [ "$(throttle_rate)" != "${CLOUD_QA_BWLIMIT}" ]; then
+            echo "error: s3 is up throttled to $(throttle_rate), not ${CLOUD_QA_BWLIMIT}; 'down' first" >&2; exit 1
+          fi
+        else
           docker rm -f "${S3_NAME}" >/dev/null 2>&1 || true
-          docker run -d --name "${S3_NAME}" -p "${BIND}:${PORT}:9000" \
-            -e "MINIO_ROOT_USER=${USER_NAME}" -e "MINIO_ROOT_PASSWORD=${PASS}" \
-            "${S3_IMAGE}" server /data >/dev/null
+          throttle_down
+          if [ -n "${CLOUD_QA_BWLIMIT:-}" ]; then
+            need python3
+            docker run -d --name "${S3_NAME}" -p "127.0.0.1:${S3_UPSTREAM_PORT}:9000" \
+              -e "MINIO_ROOT_USER=${USER_NAME}" -e "MINIO_ROOT_PASSWORD=${PASS}" \
+              "${S3_IMAGE}" server /data >/dev/null
+            echo "${S3_UPSTREAM_PORT}" > "${S3_API_PORT_FILE}"
+            write_throttle
+            nohup python3 "${CONFDIR}/throttle.py" --listen "${BIND}:${PORT}" \
+                  --upstream "127.0.0.1:${S3_UPSTREAM_PORT}" --bwlimit "${CLOUD_QA_BWLIMIT}" > "${LOGFILE}" 2>&1 &
+            echo $! > "${PIDFILE}"
+            # Alive AND bound, or it has not come up: a proxy that died on
+            # its arguments leaves the guest a refused port and every cell
+            # failing for a reason that names nothing.
+            wait_port 10 && pid_running || {
+              echo "error: the s3 throttle did not come up on ${PORT}; see ${LOGFILE}" >&2
+              throttle_down; docker rm -f "${S3_NAME}" >/dev/null 2>&1 || true; exit 1; }
+          else
+            docker run -d --name "${S3_NAME}" -p "${BIND}:${PORT}:9000" \
+              -e "MINIO_ROOT_USER=${USER_NAME}" -e "MINIO_ROOT_PASSWORD=${PASS}" \
+              "${S3_IMAGE}" server /data >/dev/null
+          fi
         fi
         for _ in $(seq 1 60); do
           s3 mkdir "qa-host:${S3_BUCKET}" >/dev/null 2>&1 && break
@@ -285,7 +460,7 @@ case "${1:-}" in
         done
         s3 lsd "qa-host:${S3_BUCKET}" >/dev/null 2>&1 || {
           echo "error: bucket not reachable; try: docker logs ${S3_NAME}" >&2; exit 1; }
-        echo "up: s3 bucket ${S3_BUCKET} on port ${PORT}"
+        echo "up: s3 bucket ${S3_BUCKET} on port ${PORT}${CLOUD_QA_BWLIMIT:+ (throttled to ${CLOUD_QA_BWLIMIT} by a proxy; MinIO itself on 127.0.0.1:${S3_UPSTREAM_PORT})}"
         echo "note: SAVES_REMOTE must start with the bucket, e.g. /${S3_BUCKET}/GAMES"
         exit 0
         ;;
@@ -389,6 +564,7 @@ case "${1:-}" in
     name=$(container_of)
     if [ -n "${name}" ]; then
       docker rm -f "${name}" >/dev/null 2>&1 || true
+      if [ "${BACKEND}" = s3 ]; then throttle_down; fi
     else
       [ -f "${PIDFILE}" ] && kill "$(cat "${PIDFILE}")" 2>/dev/null || true
       rm -f "${PIDFILE}"
@@ -434,12 +610,12 @@ case "${1:-}" in
       # the reset says so if anything survived rather than claiming empty.
       if command -v aws >/dev/null 2>&1; then
         AWS_ACCESS_KEY_ID="${USER_NAME}" AWS_SECRET_ACCESS_KEY="${PASS}" AWS_EC2_METADATA_DISABLED=true AWS_DEFAULT_REGION=us-east-1 \
-          aws --endpoint-url "http://127.0.0.1:${PORT}" s3 rm "s3://${S3_BUCKET}" --recursive >/dev/null 2>&1 || true
+          aws --endpoint-url "http://127.0.0.1:$(s3_api_port)" s3 rm "s3://${S3_BUCKET}" --recursive >/dev/null 2>&1 || true
       fi
       s3 mkdir "qa-host:${S3_BUCKET}" >/dev/null
       if command -v aws >/dev/null 2>&1; then
         left=$(AWS_ACCESS_KEY_ID="${USER_NAME}" AWS_SECRET_ACCESS_KEY="${PASS}" AWS_EC2_METADATA_DISABLED=true AWS_DEFAULT_REGION=us-east-1 \
-          aws --endpoint-url "http://127.0.0.1:${PORT}" s3api list-objects-v2 --bucket "${S3_BUCKET}" --query 'KeyCount' --output text 2>/dev/null)
+          aws --endpoint-url "http://127.0.0.1:$(s3_api_port)" s3api list-objects-v2 --bucket "${S3_BUCKET}" --query 'KeyCount' --output text 2>/dev/null)
         if [ -n "${left}" ] && [ "${left}" != "0" ] && [ "${left}" != "None" ]; then
           echo "warning: ${left} object(s) survived the reset of ${S3_BUCKET}" >&2
         fi
@@ -497,8 +673,20 @@ case "${1:-}" in
   status)
     name=$(container_of)
     if [ -n "${name}" ]; then
-      docker ps --format '{{.Names}}' | grep -qx "${name}" \
-        && echo "running: ${BACKEND} ${name} port ${PORT}" || { echo "not running"; exit 1; }
+      docker ps --format '{{.Names}}' | grep -qx "${name}" || { echo "not running"; exit 1; }
+      extra=""
+      if [ "${BACKEND}" = s3 ] && [ -f "${S3_API_PORT_FILE}" ]; then
+        # Throttled: MinIO sits behind the proxy, so the proxy has to be up
+        # too -- a container that looks fine from here is a refused port to
+        # the guest when it is not.
+        if pid_running; then
+          extra=" (throttled: proxy pid $(cat "${PIDFILE}") on ${PORT}, MinIO on 127.0.0.1:$(s3_api_port))"
+        else
+          echo "broken: ${BACKEND} ${name} is up on 127.0.0.1:$(s3_api_port) but its throttle proxy on ${PORT} is not; 'down', then 'up'" >&2
+          exit 1
+        fi
+      fi
+      echo "running: ${BACKEND} ${name} port ${PORT}${extra}"
     elif pid_running; then
       echo "running: ${BACKEND} ${DATA} port ${PORT} ($(find "${DATA}" -type f 2>/dev/null | wc -l) files)"
     else
