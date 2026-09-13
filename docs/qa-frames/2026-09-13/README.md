@@ -14,6 +14,10 @@ start-of-scrape sentences with a bogus developer pair and no account, and the
 save state manager under `--debug`. Frames carrying `-fr` were taken with
 `system.language=fr_FR`.
 
+`f0ab059596` (EmulationStation `8c8be81ba3`) on guest d at 640x480, for #155:
+the NETWORK SETTINGS row after its cut, and the restore page in French, again
+with the link cut before boot.
+
 | Frame | What it shows |
 |---|---|
 | `save-state-manager-four-tiles-1280x800.png` | The manager on `878ec8863b`: START NEW GAME, AUTO SAVE, SLOT 1, SLOT 2, every label whole, the sheet half the screen (#27's first cut, where it happened to work). |
@@ -45,3 +49,7 @@ save state manager under `--debug`. Frames carrying `-fr` were taken with
 | `save-state-manager-four-tiles-640x480-d32f47a947.png` | The manager on `d32f47a947` under `--debug`: START NEW GAME, AUTO SAVE, SLOT 1, SLOT 2 with dates, BACK / LAUNCH. es_log: `help row 0.164167 of a 264 px sheet (constructor)` and `(onSizeChanged)` -- equal (#151 PL-17). |
 | `save-state-manager-four-tiles-640x480-d32f47a947-fr.png` | The manager in French: NOUVELLE PARTIE, SAUV. AUTO, EMPLACEMENT 1, EMPLACEMENT 2, RETOUR / LANCER, every label inside its tile. |
 | `save-state-manager-two-tiles-1280x800-d32f47a947.png` | The manager on `d32f47a947` at 1280x800 under `--debug` (guest a, SNES `cloudonly`, which has no states): START NEW GAME focused, START NEW AUTO SAVE, BACK / LAUNCH, the sheet the lower 440 px. journal and es_log: `help row 0.164167 of a 440 px sheet (constructor)` and `(onSizeChanged)` -- equal, and the same share as the 264 px sheet at 640x480 (#151 PL-17, the 1280x800 half). |
+| `network-settings-finish-restore-row-640x480-f0ab059596.png` | NETWORK SETTINGS while the marker exists, on `f0ab059596`: the RESTORE group's FINISH RESTORE PROCESS row is a label and one line -- RE-ENTER THE PASSWORDS BACKUPS LEAVE OUT (WI-FI, ACCOUNTS, DEVICE). -- where `d32f47a947` wrapped it to a third (#155 box 1, D-UI-023). |
+| `network-settings-finish-restore-row-640x480-f0ab059596-fr.png` | The same row in French under PARAMÈTRES RÉSEAU: FINIR LA RESTAURATION / MOTS DE PASSE NON SAUVEGARDÉS À RESSAISIR : WI-FI, COMPTES, APPAREIL., one line, RETOUR under the page (#155 box 2). The RESTORE group heading above the row, and the rest of NETWORK SETTINGS (NETWORK SERVICES, ENABLE SSH, SYNCTHING SERVICES, VPN SERVICES, ...), stay English -- no msgstr; outside #155's row. |
+| `finish-restore-process-no-wifi-top-640x480-f0ab059596-fr.png` | FINISH RESTORE PROCESS at boot in French on `f0ab059596`, link cut before boot: FINIR LA RESTAURATION, RESSAISISSEZ LES MOTS DE PASSE NON SAUVEGARDÉS, RÉSEAU, MOT DE PASSE WI-FI (empty circle) / CLÉ WI-FI JAMAIS SAUVEGARDÉE. RESSAISISSEZ-LA POUR REVENIR EN LIGNE., CET APPAREIL, MOT DE PASSE (SSH, SAMBA, SERVEUR DE FICHIERS) (check-circle), VÉRIFIER LA CONNEXION, LES MANETTES BLUETOOTH SONT À RÉASSOCIER, PLUS TARD GARDE CETTE LISTE, PLUS TARD / TERMINER -- no English left on the page (#155 box 2, D-UI-051), every row still a label and one line, the whole page on screen. |
+| `finish-restore-process-no-wifi-bottom-640x480-f0ab059596-fr.png` | The French page walked to its button bar, PLUS TARD focused beside TERMINER: AU DÉMARRAGE, OU DANS PARAMÈTRES RÉSEAU > FINIR LA RESTAURATION. on one line. |
