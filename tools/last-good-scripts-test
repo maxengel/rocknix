@@ -127,7 +127,7 @@ chmod +x "${BT}"
 # busybox sed/mv/cp from the image when a build root is here, so the rename
 # semantics tested are the device's.
 BB=""
-for b in "${ROOT}"/../*/build.ROCKNIX-*/image/system/usr/bin/busybox "${ROOT}"/build.ROCKNIX-*/image/system/usr/bin/busybox; do
+for b in "${ROOT}"/../*/build.ROCKNIX-*/image/system/usr/bin/busybox "${ROOT}".worktrees/*/build.ROCKNIX-*/image/system/usr/bin/busybox "${ROOT}"/build.ROCKNIX-*/image/system/usr/bin/busybox; do
     [ -x "${b}" ] && "${b}" sed --help >/dev/null 2>&1 && { BB="${b}"; break; }
 done
 [ -n "${BB}" ] || BB="$(command -v busybox || true)"
