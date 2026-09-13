@@ -47,18 +47,26 @@
 # does. backuptool is run WHOLE and unmodified inside bwrap, with a stub
 # /etc/profile, a fake /storage and PATH shims (logger, systemctl, sleep,
 # and the tar that dies) -- bubblewrap needs no user namespace here, only
-# setuid or an allowing profile. sed, mv, cp, tr, head, wc, cut and awk are
-# the image's busybox when its build root is on this machine, the host's
-# otherwise -- every external command a check under test leans on that IS a
-# busybox applet on the device (grep and sort there are GNU, and the image's
-# busybox has no grep applet), not only the ones already known to differ:
-# chksysconfig's text test passed here for a day under GNU tr and failed on
-# every device under busybox tr (2026-09-10), so the checks in a. run
-# through the image's binary.
+# setuid or an allowing profile. sed, mv, cp, tr, head, wc, cut and awk --
+# and, in k, tar and unzip; in m, the same applets under network-base-setup
+# -- are the image's busybox when its build root is on this machine, the
+# host's otherwise -- every external command a check under test leans on
+# that IS a busybox applet on the device (grep and sort there are GNU, and
+# the image's busybox has no grep applet), not only the ones already known
+# to differ: chksysconfig's text test passed here for a day under GNU tr and
+# failed on every device under busybox tr (2026-09-10), so the checks in a.
+# run through the image's binary.
 #
-# To watch the guards fire, point it at the scripts from before the change:
+# To watch the guards fire, point it at the scripts from before the change.
+# Every case that runs or lifts a script takes it from BASE_REF under --old
+# (src_of), so a case whose FAILs have never been seen is a case with no
+# evidence (#151 PL-10):
 #
-#     tools/last-good-scripts-test --old      # a, b, c, k FAIL against 1d1503180d
+#     tools/last-good-scripts-test --old      # a, b, c, d, e, f, j, k, l, m
+#                                             # FAIL against 1d1503180d
+#     BASE_REF=53f390b1e9 tools/last-good-scripts-test --old
+#                                             # k, l, m FAIL: the scripts from
+#                                             # before #45, #142 and #50
 #     BASE_REF=c15050c897 tools/last-good-scripts-test --old
 #                                             # a FAILS: the text test that
 #                                             # busybox tr never passed
@@ -87,14 +95,25 @@ check() { # <0|nonzero> ok-text bad-text
     if [ "$1" -eq 0 ]; then echo "    PASS  $2"; else echo "    FAIL  $3"; FAIL=$((FAIL + 1)); fi
 }
 
+# One file under test: the working tree's copy, or the base commit's under
+# --old. A copy that cannot be read ends the run (exit 2) rather than
+# leaving an empty file for a case to grade -- against an empty script every
+# guard is absent, and the FAILs would read as the guards firing. Every case
+# that lifts or runs a script takes it from here, so --old means the same
+# thing in every case (#151 PL-10: cases l and m used to read the working
+# tree whatever the flag said, and their checks had never been seen to fail).
+src_of() { # <repo-relative path> <destination>
+    if [ "${OLD}" -eq 1 ]; then
+        git -C "${ROOT}" show "${BASE_REF}:${1}" > "${2}" || { echo "cannot read ${1} at ${BASE_REF}" >&2; exit 2; }
+    else
+        cp "${ROOT}/${1}" "${2}" || { echo "cannot read ${1}" >&2; exit 2; }
+    fi
+}
+
 # The scripts under test: the working tree, or the base commit's.
 mkdir -p "${TMP}/src"
 for rel in "${CHK_REL}" "${BT_REL}" "${FN_REL}"; do
-    if [ "${OLD}" -eq 1 ]; then
-        git -C "${ROOT}" show "${BASE_REF}:${rel}" > "${TMP}/src/$(basename "${rel}")" || { echo "cannot read ${rel} at ${BASE_REF}" >&2; exit 2; }
-    else
-        cp "${ROOT}/${rel}" "${TMP}/src/$(basename "${rel}")"
-    fi
+    src_of "${rel}" "${TMP}/src/$(basename "${rel}")"
 done
 CHK="${TMP}/src/chksysconfig"; BT="${TMP}/src/backuptool"; FN="${TMP}/src/001-functions"
 chmod +x "${BT}"
@@ -339,8 +358,7 @@ echo "  d. cloud_sync_helper and the saves scripts keep the config's last good c
 D="${TMP}/d"; DS="${D}/storage"
 mkdir -p "${DS}/.config" "${DS}/.cache" "${D}/usrconfig" "${D}/repo" "${D}/shim"
 for rel in cloud_sync_helper cloud_backup cloud_sync.conf.defaults cloud_sync-rules.txt.defaults; do
-    if [ "${OLD}" -eq 1 ]; then git -C "${ROOT}" show "${BASE_REF}:${RCLONE_REL}/${rel}" > "${D}/repo/${rel}"
-    else cp "${ROOT}/${RCLONE_REL}/${rel}" "${D}/repo/${rel}"; fi
+    src_of "${RCLONE_REL}/${rel}" "${D}/repo/${rel}"
 done
 cp "${D}/repo/cloud_sync.conf.defaults" "${D}/repo/cloud_sync-rules.txt.defaults" "${D}/usrconfig/"
 # /usr as a tmpfs of binds, so /usr/config can be the fixture's and everything
@@ -419,7 +437,7 @@ echo "  e. nothing a screen can show carries an exit code, a log path, a tool's 
 # nothing to a screen at all and is not scanned.
 E_SRC="${TMP}/e"; mkdir -p "${E_SRC}"
 for rel in "${RCLONE_REL}"/cloud_backup "${RCLONE_REL}"/cloud_restore "${RCLONE_REL}"/cloud_content_backup "${RCLONE_REL}"/cloud_content_restore "${RCLONE_REL}"/cloud_saves_root "${BT_REL}"; do
-    if [ "${OLD}" -eq 1 ]; then git -C "${ROOT}" show "${BASE_REF}:${rel}" > "${E_SRC}/$(basename "${rel}")"; else cp "${ROOT}/${rel}" "${E_SRC}/"; fi
+    src_of "${rel}" "${E_SRC}/$(basename "${rel}")"
 done
 hits=$(python3 - "${E_SRC}" <<'EOS'
 import re, sys, os
@@ -577,11 +595,23 @@ echo "shader cache" > "${KS}/.config/ppsspp/PSP/SYSTEM/CACHE/x.cache"
 echo "the player's own" > "${KS}/.config/test/own"
 printf 'LOCATIONS=(\n  /storage/.config/ppsspp/*\n  /storage/.config/test/*\n)\n' > "${KS}/.config/backuptool.conf"
 UB=(); for d in /usr/*/; do d="${d%/}"; UB+=(--ro-bind "${d}" "${d}"); done
-btk() { # <verb...>; as bt, with /usr/config ours
-    RC=$( ( setsid -w bwrap --die-with-parent --tmpfs / "${UB[@]}" --ro-bind "${KU}" /usr/config \
+# tar and unzip are the image's busybox here when a build root is on this
+# machine: the restore's -X and -x exclusion lists are what this case
+# grades, and their semantics are the device's, not GNU tar's or Info-ZIP's
+# (#151 PL-10 -- until then the device's -X had been proven once, by hand,
+# on a guest). The binary is bound in at its own path so the shims' exec
+# lines resolve inside the sandbox.
+mkdir -p "${K}/kshim"; KBB=()
+if [ -n "${BB}" ]; then
+    for a in tar unzip; do printf '#!/bin/sh\nexec %s %s "$@"\n' "${BB}" "${a}" > "${K}/kshim/${a}"; chmod +x "${K}/kshim/${a}"; done
+    KBB=(--ro-bind "${BB}" "${BB}")
+fi
+printf 'export PATH=/kshim:/shim:/usr/bin:/bin\nexport OS_NAME=ROCKNIX\n' > "${K}/profile"
+btk() { # <verb...>; as bt, with /usr/config ours and the image's tar and unzip
+    RC=$( ( setsid -w bwrap --die-with-parent --tmpfs / "${UB[@]}" --ro-bind "${KU}" /usr/config "${KBB[@]}" \
         --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
-        --ro-bind /etc /etc --ro-bind "${B}/profile" /etc/profile \
-        --bind "${KS}" /storage --ro-bind "${B}/shim" /shim --ro-bind "${B}/repo" /repo \
+        --ro-bind /etc /etc --ro-bind "${K}/profile" /etc/profile \
+        --bind "${KS}" /storage --ro-bind "${B}/shim" /shim --ro-bind "${K}/kshim" /kshim --ro-bind "${B}/repo" /repo \
         --dev /dev --proc /proc --tmpfs /tmp \
         bash /repo/backuptool "$@" > "${OUT}" 2>&1; echo $? ) 2>/dev/null )
 }
@@ -615,7 +645,10 @@ echo "  l. a missing cloud folder reads as not there yet whatever the server's w
 # and a root that will not list broken. Then the copy in cloud_setup must be
 # the same function, and the content backup must make its folder before it
 # copies into it.
-LL="${TMP}/l"; mkdir -p "${LL}/shim"
+LL="${TMP}/l"; mkdir -p "${LL}/shim" "${LL}/src"
+for rel in cloud_content_restore cloud_setup cloud_content_backup; do
+    src_of "${RCLONE_REL}/${rel}" "${LL}/src/${rel}"
+done
 cat > "${LL}/shim/rclone" <<'EOR'
 #!/bin/bash
 [ "$1" = lsf ] || exit 2
@@ -630,7 +663,7 @@ case "$rel" in
 esac
 EOR
 chmod +x "${LL}/shim/rclone"
-sed -n '/^absent_not_broken() {/,/^}/p' "${ROOT}/${RCLONE_REL}/cloud_content_restore" > "${LL}/fn.sh"
+sed -n '/^absent_not_broken() {/,/^}/p' "${LL}/src/cloud_content_restore" > "${LL}/fn.sh"
 grep -q 'rclone lsf --dirs-only' "${LL}/fn.sh"; check $? "absent_not_broken is lifted from cloud_content_restore" "no absent_not_broken() in cloud_content_restore"
 lq() { # <path> <expected rc> ; ROOT_DOWN passes through
     PATH="${LL}/shim:${PATH}" bash -c ". '${LL}/fn.sh'; RCLONE_LIST_OPTS=(--retries 1); absent_not_broken '$1'" 2>/dev/null; [ $? -eq "$2" ]
@@ -642,9 +675,9 @@ lq qa:/Nope/A/B/ 0; check $? "absent three deep (Nope/A/B)" "Nope/A/B did not re
 lq qa:/QA/ 1; check $? "a folder the root lists is present (QA)" "QA read as absent"
 ROOT_DOWN=1 lq qa:/QA/Content/ROMs/ 1; check $? "a root that will not list is broken, not absent" "an unlistable root read as absent"
 lq qa:/ 1; check $? "the root itself is never absent" "the root read as absent"
-[ -s "${LL}/fn.sh" ] && [ -s "${LL}/fn.sh" ] && diff -q <(sed -n '/^absent_not_broken() {/,/^}/p' "${ROOT}/${RCLONE_REL}/cloud_setup") "${LL}/fn.sh" >/dev/null; check $? "cloud_setup carries the identical function" "cloud_setup's absent_not_broken differs from cloud_content_restore's (or is missing)"
-awk '/^    rclone mkdir "\$\{TARGET\}"/{m=NR} /^    rclone copy "\$\{SRC\}" "\$\{TARGET\}"/{c=NR} END{exit !(m && c && m < c)}' "${ROOT}/${RCLONE_REL}/cloud_content_backup"; check $? "cloud_content_backup makes the folder before it copies into it" "no rclone mkdir of the target ahead of the copy in cloud_content_backup"
-grep -q 'absent_not_broken "${ROOT}ROMs/"' "${ROOT}/${RCLONE_REL}/cloud_content_restore" && grep -q 'absent_not_broken "${ROOT}BIOS/"' "${ROOT}/${RCLONE_REL}/cloud_content_restore"; check $? "the scan asks it about ROMs and BIOS before calling the cloud unreadable" "the scan does not consult absent_not_broken for both folders"
+[ -s "${LL}/fn.sh" ] && diff -q <(sed -n '/^absent_not_broken() {/,/^}/p' "${LL}/src/cloud_setup") "${LL}/fn.sh" >/dev/null; check $? "cloud_setup carries the identical function" "cloud_setup's absent_not_broken differs from cloud_content_restore's (or is missing)"
+awk '/^    rclone mkdir "\$\{TARGET\}"/{m=NR} /^    rclone copy "\$\{SRC\}" "\$\{TARGET\}"/{c=NR} END{exit !(m && c && m < c)}' "${LL}/src/cloud_content_backup"; check $? "cloud_content_backup makes the folder before it copies into it" "no rclone mkdir of the target ahead of the copy in cloud_content_backup"
+grep -q 'absent_not_broken "${ROOT}ROMs/"' "${LL}/src/cloud_content_restore" && grep -q 'absent_not_broken "${ROOT}BIOS/"' "${LL}/src/cloud_content_restore"; check $? "the scan asks it about ROMs and BIOS before calling the cloud unreadable" "the scan does not consult absent_not_broken for both folders"
 echo "  m. the shipped device name becomes this unit's own, once; a player's name is never touched (#50)"
 # network-base-setup whole, inside bwrap: a stub /etc/profile that loads the
 # image's 001-functions against a fake system.cfg, a fake /etc/os-release
@@ -653,16 +686,26 @@ echo "  m. the shipped device name becomes this unit's own, once; a player's nam
 # image's /bin/sh is. /proc is the sandbox's,
 # so the kernel-name write fails harmlessly; what is checked is the setting.
 M="${TMP}/m"; MS="${M}/storage/.config/system/configs"; mkdir -p "${MS}" "${M}/shim" "${M}/repo" "${M}/run"
-cp "${ROOT}/${NBS_REL}" "${M}/repo/network-base-setup"; cp "${FN}" "${M}/repo/001-functions"
-# 001-functions puts /usr/bin first on PATH, so the shims go in front AFTER it.
-printf 'J_DIR=/storage/.config/system\n. /repo/001-functions\nexport PATH=/shim:${PATH}\nJ_CONF=/storage/.config/system/configs/system.cfg\nJ_CONF_LOCK=/tmp/.system.cfg.lock\n' > "${M}/profile"
+src_of "${NBS_REL}" "${M}/repo/network-base-setup"; cp "${FN}" "${M}/repo/001-functions"
+NBS="${M}/repo/network-base-setup"
+# The units and the recipe the static checks below read, from the same tree
+# as the script.
+src_of projects/ROCKNIX/packages/sysutils/systemd/system.d/network-base.service "${M}/repo/network-base.service"
+src_of projects/ROCKNIX/packages/network/avahi/system.d/avahi-daemon.service "${M}/repo/avahi-daemon.service"
+src_of projects/ROCKNIX/packages/network/avahi/package.mk "${M}/repo/avahi-package.mk"
+# 001-functions puts /usr/bin first on PATH, so the shims go in front AFTER
+# it -- and the image's busybox applets (sed, tr, cut and head: the family
+# pipeline and clean_hostname run through all four) in front of the host's,
+# as case a has them. Until #151 PL-10 this case ran them under GNU.
+MBB=(); if [ -n "${BB}" ]; then MBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB}" "${BB}"); fi
+printf 'J_DIR=/storage/.config/system\n. /repo/001-functions\nexport PATH=/shim:/bbin:${PATH}\nJ_CONF=/storage/.config/system/configs/system.cfg\nJ_CONF_LOCK=/tmp/.system.cfg.lock\n' > "${M}/profile"
 printf 'NAME="ROCKNIX"\nHW_DEVICE="H700"\n' > "${M}/os-release"
 for sh in hostnamectl avahi-set-host-name; do printf '#!/bin/sh\nexit 0\n' > "${M}/shim/${sh}"; done
 printf '#!/bin/sh\necho "logger $*" >&2\n' > "${M}/shim/logger"
 printf '#!/bin/sh\necho "RG35XX-SP-9a3f0c77e1"\n' > "${M}/shim/cloud_device_id"
 chmod +x "${M}/shim"/*
 nbs() { # runs the script; stderr to $OUT
-    bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr \
+    bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${MBB[@]}" \
         --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
         --ro-bind /etc /etc --ro-bind "${M}/profile" /etc/profile --ro-bind "${M}/os-release" /etc/os-release \
         --bind "${M}/storage" /storage --ro-bind "${M}/shim" /shim --ro-bind "${M}/repo" /repo \
@@ -681,9 +724,9 @@ printf 'system.hostname=\n' > "${MS}/system.cfg"
 nbs; [ "$(hn)" = "H700-9a3f" ]; check $? "an empty name gets the unit's own too" "empty became '$(hn)'"
 printf 'system.hostname=RK3566\n' > "${MS}/system.cfg"
 nbs; [ "$(hn)" = "RK3566" ]; check $? "another family's name is not this device's shipped default and is left alone" "RK3566 became '$(hn)'"
-! grep -q -E '^[[:space:]]*(hostnamectl|avahi-set-host-name)' "${ROOT}/${NBS_REL}"; check $? "the script calls neither hostnamectl (hostnamed re-applied its cached name on that call) nor avahi-set-host-name (the daemon starts after it)" "network-base-setup still calls a daemon: $(grep -n -E '^[[:space:]]*(hostnamectl|avahi-set-host-name)' "${ROOT}/${NBS_REL}" | head -1)"
-grep -q -E '^[[:space:]]*enable_service avahi-daemon.service' "${ROOT}/projects/ROCKNIX/packages/network/avahi/package.mk" && grep -q -E '^After=.*network-base\.service' "${ROOT}/projects/ROCKNIX/packages/network/avahi/system.d/avahi-daemon.service"; check $? "the mDNS responder is enabled and orders after network-base (D-NET-003)" "avahi: enabled=$(grep -c -E '^[[:space:]]*enable_service avahi-daemon.service' "${ROOT}/projects/ROCKNIX/packages/network/avahi/package.mk") After=$(grep -E '^After=' "${ROOT}/projects/ROCKNIX/packages/network/avahi/system.d/avahi-daemon.service")"
-grep -q -E '^Before=.*systemd-hostnamed\.service' "${ROOT}/projects/ROCKNIX/packages/sysutils/systemd/system.d/network-base.service" && grep -q -E '^Before=.*NetworkManager\.service' "${ROOT}/projects/ROCKNIX/packages/sysutils/systemd/system.d/network-base.service"; check $? "network-base.service orders itself before systemd-hostnamed and NetworkManager" "network-base.service: $(grep -E '^(Before|After)=' "${ROOT}/projects/ROCKNIX/packages/sysutils/systemd/system.d/network-base.service" | tr '\n' ' ')"
+! grep -q -E '^[[:space:]]*(hostnamectl|avahi-set-host-name)' "${NBS}"; check $? "the script calls neither hostnamectl (hostnamed re-applied its cached name on that call) nor avahi-set-host-name (the daemon starts after it)" "network-base-setup still calls a daemon: $(grep -n -E '^[[:space:]]*(hostnamectl|avahi-set-host-name)' "${NBS}" | head -1)"
+grep -q -E '^[[:space:]]*enable_service avahi-daemon.service' "${M}/repo/avahi-package.mk" && grep -q -E '^After=.*network-base\.service' "${M}/repo/avahi-daemon.service"; check $? "the mDNS responder is enabled and orders after network-base (D-NET-003)" "avahi: enabled=$(grep -c -E '^[[:space:]]*enable_service avahi-daemon.service' "${M}/repo/avahi-package.mk") After=$(grep -E '^After=' "${M}/repo/avahi-daemon.service")"
+grep -q -E '^Before=.*systemd-hostnamed\.service' "${M}/repo/network-base.service" && grep -q -E '^Before=.*NetworkManager\.service' "${M}/repo/network-base.service"; check $? "network-base.service orders itself before systemd-hostnamed and NetworkManager" "network-base.service: $(grep -E '^(Before|After)=' "${M}/repo/network-base.service" | tr '\n' ' ')"
 
 echo
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
