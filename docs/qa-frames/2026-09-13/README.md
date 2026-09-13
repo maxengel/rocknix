@@ -55,6 +55,16 @@ The account has unlocked nothing, so the page reads 0/35 and the bar is at
 written with EmulationStation stopped), in English and, for Extra Large,
 French.
 
+`0f7785e6ed` -- a **feature-branch TEST build**, not a `next` image: distribution
+`feature/ra-offline` (`1d03246676`..`eefb1a7393` on `next` `34aca64afd`, ES pin
+`0f7785e6ed`) with EmulationStation `feature/ra-offline` `403a45415c` -- on
+guest d at 640x480, for #165 and #166 (the OFFLINE RETROACHIEVEMENTS toggle,
+D-RA-002). GAME SETTINGS > RETROACHIEVEMENTS SETTINGS, the QA account carried
+in by `tools/qa-accounts`, HARDCORE MODE switched on by hand first so the
+revert had something to revert to. Frames carrying `-fr` were taken with
+`system.language=fr_FR`. The row's line is UPPERCASE where every sibling
+description on the page is sentence case, in both languages.
+
 | Frame | What it shows |
 |---|---|
 | `save-state-manager-four-tiles-1280x800.png` | The manager on `878ec8863b`: START NEW GAME, AUTO SAVE, SLOT 1, SLOT 2, every label whole, the sheet half the screen (#27's first cut, where it happened to work). |
@@ -125,3 +135,16 @@ French.
 | `startup-sync-3-sending-starting-1280x800-9684d8665d-fr.png` | The send half announced: ENVOI · DÉMARRAGE…, the bar parked at 50 %, the title still SYNCHRONISATION DES SAUVEGARDES AU DÉMARRAGE. 19.7 s. |
 | `startup-sync-5-completed-1280x800-9684d8665d-fr.png` | The outcome in French: the title turns to SYNCHRONISER LES SAUVEGARDES, the line to TERMINÉ, the bar full -- both strings had no msgstr on `1e5a2818e8` and stayed English there. 20.9 s; the whole sync took a second per half (12 saves, nothing to compare for long), so no compare-line frame exists at this size. |
 | `finish-restore-process-after-169-archive-1280x800-9684d8665d.png` | FINISH RESTORE PROCESS at boot on pair guest b at 1280x800 after `backuptool restore --no-restart` of an archive written on guest d with the QA RetroAchievements account and a PPSSPP `.dat` present (#169 box 3): NETWORK > WI-FI PASSWORD (ticked, the VM's wired link), ACCOUNTS > RETROACHIEVEMENTS (<account>) / YOUR USERNAME WAS RESTORED; THE PASSWORD WAS NOT., THIS DEVICE > DEVICE PASSWORD, LATER / FINISH. The `.dat` did not land (`PSP/SYSTEM/` held `CACHE` and `ppsspp.ini` only); after the account was re-entered and ES had logged in, `cheevos_ppsspp.sh` wrote it again at 17 bytes. |
+| `ra-offline-toggle-page-top-640x480-0f7785e6ed.png` | The page on open: the new subtitle `!RA! IN A GAME'S CORNER MEANS AN ACHIEVEMENT HASN'T REACHED RETROACHIEVEMENTS YET.` wraps to two lines under the title (as #165 measured); SETTINGS with the account rows, OPTIONS with HARDCORE MODE off, then the new row OFFLINE RETROACHIEVEMENTS / `BETA. CASUAL ACHIEVEMENTS ONLY, EVEN WITHOUT A CONNECTION.` on one line, the switch off, LEADERBOARDS below. |
+| `ra-offline-toggle-off-fresh-640x480-0f7785e6ed.png` | The row focused on a fresh image (the upgrade shape: `global.retroachievements.offlineproxy` absent from `system.cfg`, `raofflineproxy-ctl status` = `enabled=0 marker=0 service=inactive`): the switch off, HARDCORE MODE off, nothing running. Label and line fit at 640x480 with the switch beside them. |
+| `ra-offline-toggle-off-hardcore-on-640x480-0f7785e6ed.png` | Before the first turn-on: HARDCORE MODE switched on and saved (page closed and reopened; `system.cfg` read `hardcore=1`), the new row off. |
+| `ra-offline-toggle-dialog-640x480-0f7785e6ed.png` | A on the row: `THIS IS A BETA FEATURE. IT WORKS FOR CASUAL ACHIEVEMENTS ONLY, AND TURNING IT ON TURNS HARDCORE MODE OFF.` (three lines) over `ACHIEVEMENTS YOU EARN OFFLINE ARE SENT TO RETROACHIEVEMENTS WHEN YOU'RE BACK ONLINE.` (two lines), TURN ON focused, NOT NOW beside it; the switch behind the dialog already drawn on, HARDCORE MODE still on. Everything inside the box at 640x480. |
+| `ra-offline-toggle-not-now-640x480-0f7785e6ed.png` | After NOT NOW (B): the switch back off, HARDCORE MODE untouched (on). `raofflineproxy-ctl status` unchanged, nothing written. |
+| `ra-offline-toggle-on-640x480-0f7785e6ed.png` | After TURN ON: the row on and HARDCORE MODE off, set from the script's `hardcore=0` line. On the guest at that moment: `enabled=1 marker=1 service=active`, `127.0.0.1:8080` listening, `system.cfg` holding `offlineproxy=1`, `hardcore=0`, `offlineproxy.hardcore_was=1`, one journal line `offline RetroAchievements on: hardcore was 1, now 0`. The values held through the page's own save at close. |
+| `ra-offline-toggle-after-off-640x480-0f7785e6ed.png` | A on the row while on (no dialog): the row off and HARDCORE MODE back on, from the record. Guest: `enabled=0 marker=0 service=inactive hardcore=1`, `hardcore_was` cleared, nothing on 8080; the next launch's appendconfig read `cheevos_custom_host = ""` and RetroArch `Using host: https://retroachievements.org`. |
+| `ra-offline-toggle-page-top-640x480-0f7785e6ed-fr.png` | The page in French: PARAMÈTRES RETROACHIEVEMENTS, the subtitle `!RA! DANS LE COIN D’UN JEU : UN SUCCÈS N’A PAS ENCORE ATTEINT RETROACHIEVEMENTS.` on two lines, MODE DIFFICILE off, RETROACHIEVEMENTS HORS LIGNE / `BÊTA. SUCCÈS EN MODE FACILE SEULEMENT, MÊME SANS CONNEXION.` on one line, the switch on (the toggle was on when the language changed). |
+| `ra-offline-toggle-on-service-dead-640x480-0f7785e6ed-fr.png` | The row on while nothing runs -- the state after a **second** reboot with the toggle on: `enabled=1 marker=0 service=inactive`, the unit skipped twice by its ConditionPathExists. `099-networkservices` never resets `CONF` between daemon files, so `007-syncthing` (no `CONF=` line) inherits `raofflineproxy.conf` and deletes it; the first reboot only looked fine because the marker still existed when systemd reached the unit at 1.96 s. The page has no way to show the difference. |
+| `ra-offline-toggle-after-off-640x480-0f7785e6ed-fr.png` | A on the row in French: RETROACHIEVEMENTS HORS LIGNE off, MODE DIFFICILE back on (`hardcore put back to 1` in the journal). |
+| `ra-offline-toggle-dialog-640x480-0f7785e6ed-fr.png` | The dialog in French: `C’EST UNE FONCTION BÊTA. ELLE NE FONCTIONNE QU’AVEC LES SUCCÈS EN MODE FACILE, ET L’ACTIVER DÉSACTIVE LE MODE DIFFICILE.` (three lines) over `LES SUCCÈS OBTENUS HORS LIGNE SONT ENVOYÉS À RETROACHIEVEMENTS QUAND VOUS ÊTES DE NOUVEAU EN LIGNE.` (three lines), ACTIVER focused, PAS MAINTENANT beside it. Inside the box at 640x480. |
+| `ra-offline-toggle-not-now-640x480-0f7785e6ed-fr.png` | After PAS MAINTENANT: the switch back off, MODE DIFFICILE still on. |
+| `ra-offline-toggle-on-640x480-0f7785e6ed-fr.png` | After ACTIVER: the row on, MODE DIFFICILE off; the journal `offline RetroAchievements on: hardcore was 1, now 0; raofflineproxy.service active`. |
