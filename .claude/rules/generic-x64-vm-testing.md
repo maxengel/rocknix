@@ -419,9 +419,18 @@ WebDAV can catch is one WebDAV must keep catching.
   Everything else — the S3 form, a hash-less remote, the WINDOWS SHARE tier,
   FTP — runs on this host with no account at all, so "we need a real
   provider" is not an answer to *can this be done on the VM?*
-- **Only WebDAV can be throttled.** `CLOUD_QA_BWLIMIT` is an `rclone serve`
-  flag, so the LINK cells (which need a transfer slow enough to cut) and
-  `backend_throttled()` are WebDAV-only.
+- **WebDAV and S3 can be throttled; the other three cannot.** For WebDAV
+  `CLOUD_QA_BWLIMIT` is an `rclone serve` flag. For S3 (#151 PL-13,
+  `96284d5544`) the same variable moves MinIO to loopback 9022 and fronts
+  9012 with an inline token-bucket proxy shaped like rclone's (4 MiB burst,
+  one bucket per direction), so the LINK constants calibrated on WebDAV
+  hold; the host's own rclone bypasses it. `backend_throttled()` reads
+  `<state>/<backend>.pid` for both. SFTP, FTP and the SMB tier have no
+  throttle, so the LINK cells still cannot run against them. On S3 the LINK
+  cells see rclone's S3 backend re-dial through the AWS SDK's backoff for
+  `--low-level-retries 10` after a cut, which no `--timeout` covers -- the
+  deliberate `--system-only` run completed 88.8 s after a 40 s cut and
+  reported success (its own issue).
 - **Only S3 can prove an atomic PUT.** Four of the five write into the final
   name, so a file cut mid-body reads as truncated; KILL1's torn-file
   assertion is asserted on `--backend s3` and skipped, with the reason, on
