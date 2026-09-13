@@ -18,6 +18,10 @@ save state manager under `--debug`. Frames carrying `-fr` were taken with
 the NETWORK SETTINGS row after its cut, and the restore page in French, again
 with the link cut before boot.
 
+`0f4e4829a8` (EmulationStation `3d9394660c`) on guest d at 640x480, for #155's
+follow-through: the RESTORE group heading in French, and the CHECK CONNECTION
+press on a guest with no cloud storage, link up.
+
 | Frame | What it shows |
 |---|---|
 | `save-state-manager-four-tiles-1280x800.png` | The manager on `878ec8863b`: START NEW GAME, AUTO SAVE, SLOT 1, SLOT 2, every label whole, the sheet half the screen (#27's first cut, where it happened to work). |
@@ -53,3 +57,5 @@ with the link cut before boot.
 | `network-settings-finish-restore-row-640x480-f0ab059596-fr.png` | The same row in French under PARAMÈTRES RÉSEAU: FINIR LA RESTAURATION / MOTS DE PASSE NON SAUVEGARDÉS À RESSAISIR : WI-FI, COMPTES, APPAREIL., one line, RETOUR under the page (#155 box 2). The RESTORE group heading above the row, and the rest of NETWORK SETTINGS (NETWORK SERVICES, ENABLE SSH, SYNCTHING SERVICES, VPN SERVICES, ...), stay English -- no msgstr; outside #155's row. |
 | `finish-restore-process-no-wifi-top-640x480-f0ab059596-fr.png` | FINISH RESTORE PROCESS at boot in French on `f0ab059596`, link cut before boot: FINIR LA RESTAURATION, RESSAISISSEZ LES MOTS DE PASSE NON SAUVEGARDÉS, RÉSEAU, MOT DE PASSE WI-FI (empty circle) / CLÉ WI-FI JAMAIS SAUVEGARDÉE. RESSAISISSEZ-LA POUR REVENIR EN LIGNE., CET APPAREIL, MOT DE PASSE (SSH, SAMBA, SERVEUR DE FICHIERS) (check-circle), VÉRIFIER LA CONNEXION, LES MANETTES BLUETOOTH SONT À RÉASSOCIER, PLUS TARD GARDE CETTE LISTE, PLUS TARD / TERMINER -- no English left on the page (#155 box 2, D-UI-051), every row still a label and one line, the whole page on screen. |
 | `finish-restore-process-no-wifi-bottom-640x480-f0ab059596-fr.png` | The French page walked to its button bar, PLUS TARD focused beside TERMINER: AU DÉMARRAGE, OU DANS PARAMÈTRES RÉSEAU > FINIR LA RESTAURATION. on one line. |
+| `network-settings-finish-restore-row-640x480-0f4e4829a8-fr.png` | PARAMÈTRES RÉSEAU while the marker exists, on `0f4e4829a8`: the group heading above FINIR LA RESTAURATION now reads RESTAURER (it was RESTORE on `f0ab059596`); the row's line unchanged -- MOTS DE PASSE NON SAUVEGARDÉS À RESSAISIR : WI-FI, COMPTES, APPAREIL., one line, RETOUR under the page (#155 follow-through). The rest of the page (NETWORK SERVICES, ENABLE SSH, SYNCTHING SERVICES, VPN SERVICES, ...) still English -- upstream gaps, outside #155. |
+| `finish-restore-process-check-connection-no-cloud-640x480-0f4e4829a8-fr.png` | VÉRIFIER LA CONNEXION pressed on FINIR LA RESTAURATION in French, link up, no `rclone.conf` on the guest: the row is gated (`cloudConfigured`, `GuiMenu.cpp:7336`) and opens the set-up offer -- NO CLOUD STORAGE IS SET UP ON THIS DEVICE YET. / SET IT UP NOW? -- OUI / NON, so the `GuiLoading` that shows CHECKING... (now VÉRIFICATION…, `msgfmt` 1302 translated) never runs here; the frame taken with no wait after the press and the settled one are byte-identical. The offer's body has no msgid in `fr/LC_MESSAGES/emulationstation2.po` (none of the NO CLOUD STORAGE dialogs do) -- recorded, outside #155's boxes. |
