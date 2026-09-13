@@ -707,7 +707,22 @@ printf '#!/bin/sh\nexit 0\n' > "${M}/shim/hostnamectl"
 printf '#!/bin/sh\ncase "$1" in -c) [ -e /run/avahi-up ] ;; *) exit 0 ;; esac\n' > "${M}/shim/avahi-daemon"
 printf '#!/bin/sh\necho "avahi-set-host-name $*" >> /run/avahi-set-host-name.log\n' > "${M}/shim/avahi-set-host-name"
 printf '#!/bin/sh\necho "logger $*" >&2\n' > "${M}/shim/logger"
-printf '#!/bin/sh\necho "RG35XX-SP-9a3f0c77e1"\n' > "${M}/shim/cloud_device_id"
+# cloud_device_id as network-base-setup sees it: this unit's stored id --
+# unless /run/no-adapter says there is neither a stored id nor an adapter
+# yet, when --if-present prints nothing and exits 1 and a plain run seeds
+# from machine-id as the real tool does (#151 PL-04); /run/id-nohex is a
+# stored id with no hex in its suffix.
+cat > "${M}/shim/cloud_device_id" <<'EOS'
+#!/bin/sh
+if [ -e /run/no-adapter ]; then
+    [ "$1" = --if-present ] && exit 1
+    echo "RG35XX-SP-deadbeef01"
+elif [ -e /run/id-nohex ]; then
+    echo "RG35XX-SP-unknown"
+else
+    echo "RG35XX-SP-9a3f0c77e1"
+fi
+EOS
 chmod +x "${M}/shim"/*
 nbs() { # runs the script; stderr to $OUT
     bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${MBB[@]}" \
@@ -745,6 +760,49 @@ printf 'NAME="ROCKNIX"\nHW_DEVICE="GENERIC_X64"\n' > "${M}/os-release"
 printf 'system.hostname=GENERIC-X64-15ca\n' > "${MS}/system.cfg"
 nbs; [ "$(hn)" = "GENERIC-X64-9a3f" ]; check $? "a family the network spells with a hyphen (GENERIC_X64): GENERIC-X64-15ca becomes GENERIC-X64-9a3f" "GENERIC-X64-15ca became '$(hn)' -- the shape was matched on the raw family name"
 printf 'NAME="ROCKNIX"\nHW_DEVICE="H700"\n' > "${M}/os-release"
+# The first boot's ~2 s, before a handheld's wifi is an interface: the namer
+# must not seed the identity from machine-id (a reflash that finds the
+# adapter would derive another), so it asks --if-present, keeps the shipped
+# name when there is no answer, says so, and names the unit on the boot
+# that has one (#151 PL-04, D-NET-005). A stored id with no hex in it is
+# logged, not passed over (#151 PL-14).
+touch "${M}/run/no-adapter"
+printf 'system.hostname=H700\n' > "${MS}/system.cfg"
+nbs; [ "$(hn)" = "H700" ] && grep -q 'adapter not present yet, keeping the shipped name (H700)' "${OUT}"; check $? "with no adapter and nothing stored, the shipped name H700 is kept for a later boot and the log says so" "no adapter: H700 became '$(hn)'; log: $(grep -o 'adapter not present[^|]*' "${OUT}" | head -1) -- the identity was seeded from machine-id at ~2 s and the suffix with it (#151 PL-04)"
+rm -f "${M}/run/no-adapter"
+nbs; [ "$(hn)" = "H700-9a3f" ]; check $? "and the boot that finds the adapter gives the unit its own name" "after the adapter appeared: '$(hn)'"
+touch "${M}/run/id-nohex"
+printf 'system.hostname=H700\n' > "${MS}/system.cfg"
+nbs; [ "$(hn)" = "H700" ] && grep -q 'carries no hex digits; keeping the shipped name (H700)' "${OUT}"; check $? "an id with no hex digits (RG35XX-SP-unknown) keeps the shipped name and is logged, not silent" "no-hex id: H700 became '$(hn)'; log: $(grep -o 'device id[^|]*' "${OUT}" | head -1)"
+rm -f "${M}/run/id-nohex"
+# cloud_device_id itself, against a fake /sys/class/net: with no adapter and
+# nothing stored, --if-present prints nothing and seeds nothing while a
+# plain run still seeds from machine-id; with an adapter it prints the hash
+# a seeding would store and stores nothing; once something is stored it
+# returns that.
+src_of "${RCLONE_REL}/cloud_device_id" "${M}/repo/cloud_device_id"
+CDI="${M}/cdi"; mkdir -p "${CDI}/storage/.config" "${CDI}/net" "${CDI}/shim"
+printf '0123456789abcdef0123456789abcdef\n' > "${CDI}/machine-id"
+printf '#!/bin/sh\necho "Permanent address: 02:aa:bb:cc:dd:ee"\n' > "${CDI}/shim/ethtool"; chmod +x "${CDI}/shim/ethtool"
+IDF="${CDI}/storage/.config/cloud_sync-device-id"
+cdi() { # <args...>: stdout to $OUT, rc in $RC
+    RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${M}/os-release" /etc/os-release --ro-bind "${CDI}/machine-id" /etc/machine-id \
+        --tmpfs /sys --ro-bind "${CDI}/net" /sys/class/net \
+        --bind "${CDI}/storage" /storage --ro-bind "${CDI}/shim" /shim --ro-bind "${M}/shim" /mshim --ro-bind "${M}/repo" /repo \
+        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var \
+        --unsetenv DEVICE --unsetenv HW_DEVICE --setenv PATH "/shim:/mshim:${PATH}" \
+        bash /repo/cloud_device_id "$@" > "${OUT}" 2>/dev/null; echo $? ) 2>/dev/null )
+}
+cdi --if-present; [ "${RC}" -ne 0 ] && [ ! -s "${OUT}" ] && [ ! -e "${IDF}" ]; check $? "cloud_device_id --if-present with no adapter and nothing stored prints nothing, exits non-zero and seeds nothing" "rc ${RC}; printed '$(cat "${OUT}")'; id file: $([ -e "${IDF}" ] && cat "${IDF}" || echo none) -- the boot-time caller seeded the identity from machine-id (#151 PL-04)"
+cdi; [ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "H700-0123456789" ] && [ "$(cat "${IDF}" 2>/dev/null)" = "H700-0123456789" ]; check $? "a plain run there still seeds from machine-id (H700-0123456789): the callers with the network up are unchanged" "rc ${RC}; printed '$(cat "${OUT}")'; stored '$(cat "${IDF}" 2>/dev/null)'"
+rm -f "${IDF}"
+mkdir -p "${CDI}/net/wlan0/device"; echo 1 > "${CDI}/net/wlan0/type"
+want_id="H700-$(printf '%s|%s' 02:aa:bb:cc:dd:ee unknown | md5sum | cut -c1-10)"
+cdi --if-present; [ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "${want_id}" ] && [ ! -e "${IDF}" ]; check $? "with an adapter and nothing stored, --if-present prints the adapter's hash (${want_id}) and stores nothing" "rc ${RC}; printed '$(cat "${OUT}")'; id file: $([ -e "${IDF}" ] && cat "${IDF}" || echo none)"
+cdi; [ "$(cat "${IDF}" 2>/dev/null)" = "${want_id}" ]; check $? "a plain run stores that same id" "stored '$(cat "${IDF}" 2>/dev/null)'"
+cdi --if-present; [ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "${want_id}" ]; check $? "and --if-present then returns the stored id" "rc ${RC}; printed '$(cat "${OUT}")'"
 # The responder is told the name only when it is already up (the boot that
 # is not in order); a daemon that is not running is a log line, not a failed
 # call -- the unguarded call failed on every boot and was removed for it.

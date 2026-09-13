@@ -45,7 +45,16 @@ else
   esac
 fi
 if [ -n "${SHIPPED}" ]; then
-  UNIT_ID=$(cloud_device_id 2>/dev/null)
+  # The stored id, or the adapter's, or nothing. This runs at ~2 s of the
+  # first boot, before a handheld's SDIO wifi is an interface, and a plain
+  # cloud_device_id there would seed the identity from machine-id and keep
+  # it ("the stored value wins") -- a different id from the one a reflash
+  # that finds the adapter derives, so the name and the cloud folder would
+  # depend on boot timing (#151 PL-04, D-NET-005). --if-present never seeds:
+  # with nothing to say, the shipped name stays for this boot, the log says
+  # so, and the next boot asks again. An id with no hex in it is logged too
+  # rather than passed over in silence.
+  UNIT_ID=$(cloud_device_id --if-present 2>/dev/null)
   UNIT=$(printf '%s' "${UNIT_ID##*-}" | tr -cd 'a-f0-9' | cut -c1-4)
   if [ -n "${UNIT}" ]; then
     OWN=$(clean_hostname "${FAMILY:-ROCKNIX}-${UNIT}")
@@ -54,6 +63,10 @@ if [ -n "${SHIPPED}" ]; then
       set_setting system.hostname "${RAW_HOSTNAME}"
       logger -t network-base-setup "device name was ${SHIPPED}; it is now ${RAW_HOSTNAME}, this unit's own"
     fi
+  elif [ -z "${UNIT_ID}" ]; then
+    logger -t network-base-setup "adapter not present yet, keeping the shipped name (${RAW_HOSTNAME:-${FAMILY:-ROCKNIX}}) for a later boot"
+  else
+    logger -t network-base-setup "device id ${UNIT_ID} carries no hex digits; keeping the shipped name (${RAW_HOSTNAME:-${FAMILY:-ROCKNIX}})"
   fi
 fi
 HOSTNAME=$(clean_hostname "${RAW_HOSTNAME}")

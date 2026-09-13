@@ -39,6 +39,17 @@
 # carries it and a restore cannot clone one device's identity onto another.
 # Keep it that way: the shared id of #86 was first suspected to be exactly
 # that, and ruling it out took an afternoon.
+#
+# --if-present: the stored id; or, with none stored, the id the adapter gives,
+# computed and NOT stored; or nothing at all (exit 1) when there is no adapter
+# to compute from. For the caller that runs before the network exists.
+# network-base.service names the device at ~2 s of the first boot (#50), and a
+# plain run there on a handheld whose SDIO wifi is not an interface yet would
+# seed the identity from machine-id and keep it ("the stored value wins") -- a
+# different id from the one a reflash whose first boot finds the adapter
+# derives, so two names and two cloud folders decided by boot timing (#151
+# PL-04, D-NET-005). Seeding stays with the callers that have the network
+# up; the boot-time caller keeps the shipped name for a later boot.
 
 ID_FILE="/storage/.config/cloud_sync-device-id"
 # Every id this device has been healed away from, one per line, oldest first.
@@ -315,10 +326,12 @@ heal_poisoned() {
 }
 
 main() {
+    local if_present=0
     case "$1" in
-        --legacy)   legacy_id;    return 0 ;;
-        --label)    device_label; return 0 ;;
-        --previous) previous_ids; return 0 ;;
+        --legacy)     legacy_id;    return 0 ;;
+        --label)      device_label; return 0 ;;
+        --previous)   previous_ids; return 0 ;;
+        --if-present) if_present=1 ;;
     esac
 
     local id=""
@@ -332,6 +345,21 @@ main() {
         if healed=$(heal_poisoned "${id}"); then
             id="${healed}"
         fi
+    fi
+
+    if [ -z "${id}" ] && [ "${if_present}" -eq 1 ]; then
+        # Nothing stored, and this caller may not seed. With an adapter the
+        # id it would get is the id a later seeding lands on, so it is
+        # computed and handed over unstored; without one there is nothing
+        # this boot can say for certain, and the caller is told so with an
+        # empty answer rather than a machine-id identity that a reflash
+        # would not reproduce.
+        if permanent_address >/dev/null; then
+            generate_id
+            return 0
+        fi
+        log_message "no stored id and no adapter to derive one from yet; not seeding the identity from machine-id at this caller's request (--if-present)"
+        return 1
     fi
 
     if [ -z "${id}" ]; then
