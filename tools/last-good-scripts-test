@@ -39,7 +39,8 @@
 #      folder before copying (#142).
 #   m. network-base-setup gives the shipped device name (the build family) a
 #      per-unit suffix once and writes it back; a name the player typed, or
-#      another family's, is left alone (#50).
+#      another family's, is left alone; the script no longer calls hostnamectl and
+#      the unit orders before systemd-hostnamed and NetworkManager (#50).
 #
 # The chksysconfig and 001-functions functions are lifted out of the files
 # under test and run in a fresh bash against temp paths, as wait-lock-test
@@ -680,6 +681,8 @@ printf 'system.hostname=\n' > "${MS}/system.cfg"
 nbs; [ "$(hn)" = "H700-9a3f" ]; check $? "an empty name gets the unit's own too" "empty became '$(hn)'"
 printf 'system.hostname=RK3566\n' > "${MS}/system.cfg"
 nbs; [ "$(hn)" = "RK3566" ]; check $? "another family's name is not this device's shipped default and is left alone" "RK3566 became '$(hn)'"
+! grep -q -E '^[[:space:]]*hostnamectl' "${ROOT}/${NBS_REL}"; check $? "the script no longer calls hostnamectl (hostnamed re-applied its cached name on that call)" "network-base-setup still calls hostnamectl: $(grep -n -E '^[[:space:]]*hostnamectl' "${ROOT}/${NBS_REL}" | head -1)"
+grep -q -E '^Before=.*systemd-hostnamed\.service' "${ROOT}/projects/ROCKNIX/packages/sysutils/systemd/system.d/network-base.service" && grep -q -E '^Before=.*NetworkManager\.service' "${ROOT}/projects/ROCKNIX/packages/sysutils/systemd/system.d/network-base.service"; check $? "network-base.service orders itself before systemd-hostnamed and NetworkManager" "network-base.service: $(grep -E '^(Before|After)=' "${ROOT}/projects/ROCKNIX/packages/sysutils/systemd/system.d/network-base.service" | tr '\n' ' ')"
 
 echo
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

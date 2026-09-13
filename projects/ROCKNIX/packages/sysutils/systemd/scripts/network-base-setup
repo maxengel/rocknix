@@ -9,8 +9,8 @@
 # (maintainer, fork #106).
 #
 # NetworkManager is told not to touch the hostname (hostname-mode=none), so
-# this is the only writer. Quoted throughout: "RG SP" unquoted reached
-# hostnamectl as two arguments and failed, leaving a kernel name that
+# this is the only writer. Quoted throughout: "RG SP" unquoted once reached
+# the setter as two arguments and failed, leaving a kernel name that
 # hostnamed later re-sanitised to RGSP.
 RAW_HOSTNAME=$(get_setting system.hostname)
 # A per-unit default (fork #50). The image ships system.hostname as the
@@ -42,7 +42,14 @@ if [ "${HOSTNAME}" != "${RAW_HOSTNAME}" ]; then
   logger -t network-base-setup "device name '${RAW_HOSTNAME}' is '${HOSTNAME}' on the network (letters, digits and hyphens only)"
 fi
 echo "${HOSTNAME}" >/proc/sys/kernel/hostname
-hostnamectl --transient hostname "${HOSTNAME}"
+# No hostnamectl here. /etc/hostname is a symlink to /proc/sys/kernel/hostname,
+# so systemd-hostnamed reads the kernel's name at ITS start as the static
+# name and refuses a transient one ("static hostname is already set") --
+# and answering that call is when it puts its cached name back over the
+# kernel's. When hostnamed had started first (NetworkManager activates it
+# over D-Bus) the call above undid the write above, and the device spent
+# the boot as ROCKNIX. The write is the whole job; the unit now orders
+# this before hostnamed and NetworkManager so they read the written name.
 avahi-set-host-name "${HOSTNAME}"
 
 rm -f /run/rocknix/hosts

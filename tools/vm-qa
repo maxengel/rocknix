@@ -19,7 +19,7 @@
 #   scripts     tools/last-good-scripts-test  -- the scripts under busybox shims, on the host
 #   lifetime    ES tests/cloud-oauth-lifetime.py -- the wizard's page lifetimes under ASan, on the host (ES_SRC)
 #   vocabulary  tools/vocabulary-check       -- back up / backup as verb / noun, ES strings and script lines, on the host
-#   pair-identity  the two guests' MACs and cloud_device_ids differ (#91), over ssh
+#   pair-identity  the two guests' MACs, cloud_device_ids (#91) and hostnames (#50) differ, over ssh
 #   round-trip  tools/cloud-round-trip        -- 27 steps over SSH against the QA cloud, guest a
 #   exit        tools/emulator-exit-test --vm -- the exit hotkey ends a game once, save written, guest a
 #   time-to-play tools/time-to-play --quick   -- UI to a game's first frame, and one game's exit to the
@@ -59,6 +59,11 @@ done
 # sessions share this host and the walks suite is the one that can run
 # anywhere -- it needs a monitor socket and a guest to reboot, nothing else.
 KEY=/tmp/rocknix-vm-pair/qa-key
+# The ssh options every suite here runs with. Declared, not inherited: the
+# pair-identity suite used $SSHO without this line and passed for a night
+# because the shell that started the runner had it set; started under a
+# clean environment it failed on "unbound variable" (blindspot 40).
+SSHO="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=8 -o BatchMode=yes"
 case "$GUEST" in
   a) PORT=10022; MON=/tmp/rocknix-qemu-monitor.sock;   SERIAL=/tmp/rocknix-qemu-serial.sock ;;
   b) PORT=10023; MON=/tmp/rocknix-qemu-monitor-b.sock; SERIAL=/tmp/rocknix-qemu-serial-b.sock ;;
@@ -133,7 +138,20 @@ pair_identity_suite() {
   [ -n "$ka" ] && [ -n "$kb" ] && [ -n "$ia" ] && [ -n "$ib" ] || { echo "a guest did not answer; the pair's identity is unproven"; return 1; }
   [ "$ka" != "$kb" ] || { echo "the guests share a MAC"; return 1; }
   [ "$ia" != "$ib" ] || { echo "the guests share a cloud_device_id"; return 1; }
-  echo "two devices"
+  # And two names (#50, D-NET-002): the shipped family name becomes the
+  # unit's own at boot, so the kernel names differ and each equals the
+  # cleaned form of its own stored setting. An image from before #50 fails
+  # here with both guests named GENERIC-X64, which is the collision itself.
+  local ha hb sa sb
+  ha=$(ssh -n -i "$KEY" -p 10022 $SSHO root@127.0.0.1 'hostname' 2>/dev/null)
+  hb=$(ssh -n -i "$KEY" -p 10023 $SSHO root@127.0.0.1 'hostname' 2>/dev/null)
+  sa=$(ssh -n -i "$KEY" -p 10022 $SSHO root@127.0.0.1 '. /etc/profile; clean_hostname "$(get_setting system.hostname)"' 2>/dev/null)
+  sb=$(ssh -n -i "$KEY" -p 10023 $SSHO root@127.0.0.1 '. /etc/profile; clean_hostname "$(get_setting system.hostname)"' 2>/dev/null)
+  echo "guest a: hostname=${ha:-?} setting=${sa:-?}"; echo "guest b: hostname=${hb:-?} setting=${sb:-?}"
+  [ -n "$ha" ] && [ -n "$hb" ] || { echo "a guest did not answer its hostname"; return 1; }
+  [ "$ha" != "$hb" ] || { echo "the guests share a hostname (${ha}): the shipped family name was not made the unit's own"; return 1; }
+  [ "$ha" = "$sa" ] && [ "$hb" = "$sb" ] || { echo "a kernel hostname differs from its stored setting"; return 1; }
+  echo "two devices, two names"
 }
 case ",$ONLY," in *,pair-identity,*) run_suite pair-identity "$OUT/pair-identity.log" pair_identity_suite ;; esac
 case ",$ONLY," in *,round-trip,*) run_suite round-trip "$OUT/round-trip.log" "$ROOT/tools/cloud-round-trip" --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --backend "$BACKEND" ;; esac
