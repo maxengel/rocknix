@@ -334,7 +334,14 @@ beside the pair is one QEMU command: the pair's arguments with `-device
 virtio-gpu-pci,xres=640,yres=480`, its own disk from the same image, its own
 ports and sockets (`-d` suffix, SSH 10026, MAC `52:54:00:52:4E:5B`, VNC :12),
 the QA key written over serial with `tools/vm-serial`. **Its disk lives in
-its own directory** (`/tmp/rocknix-vm-d`), never in vm-pair's: `vm-pair up`
+its own directory on the disk-backed workspace** (`/workspace/tmp/rocknix-vm-d`),
+never in vm-pair's and not on `/tmp`. `/tmp` is a 31 GB tmpfs: a raw image is
+4.3 GB, each guest disk 2 GB, and a disk deleted under a running guest still
+counts until that guest exits. Two conversions at once ran it out of space
+and truncated both new disks silently -- 0.9 GB and 1.8 GB where 2.2 GB was
+right -- so the guests booted to the firmware's boot menu (2026-09-13, twice
+before the cause was found). Check `df /tmp` before a second conversion, and
+never in vm-pair's directory: `vm-pair up`
 begins with `rm -f "$DIR"/vm-*.qcow2`, so a third guest kept there loses its
 disk under it the moment the runner starts and boots into the firmware's
 "select boot device" menu, while its own conversion disturbs the pair's
