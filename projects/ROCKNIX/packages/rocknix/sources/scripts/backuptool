@@ -240,6 +240,19 @@ RATOKENSETTINGS=(
     /storage/.config/flycast/emu.cfg            # Token =   (cheevos_flycast.sh)
     /storage/.config/aethersx2/inis/PCSX2.ini   # Token =   (cheevos_aethersx2.sh)
 )
+# The offline RetroAchievements proxy's own folder (#165; D-RA-002,
+# D-INFRA-010). Its cache holds the RetroAchievements token three ways -- the
+# cached login2 row, auth::invalid_token, the t= in every queued award -- and
+# the HMAC key that signs the award queue. There is no sanitised copy worth
+# keeping: a queue is bound to the device that earned it, a copy on a second
+# device would replay the same awards, and the cache re-fills from the next
+# online launch. So the whole folder is held back, by prefix, and never put
+# back on a restore. Not in the default LOCATIONS; a custom list such as
+# /storage/.config sweeps it in. The toggle itself
+# (global.retroachievements.offlineproxy) is a line in system.cfg and travels.
+RATOKENDIRS=(
+    /storage/.config/raofflineproxy/
+)
 
 # Write one settings archive to TARGET, whole or not at all.
 #
@@ -390,6 +403,19 @@ write_archive() {
                 echo "${CANDIDATE}" >> "${SECRETLIST}"
             fi
         done
+        # The proxy's folder, every file under it (#165). grep -F on the
+        # prefix: the list holds absolute paths, so the prefix matches a file
+        # under that folder and nothing else.
+        HELD=0
+        for CANDIDATE in "${RATOKENDIRS[@]}"
+        do
+            while IFS= read -r F
+            do
+                echo "${F}" >> "${SECRETLIST}"
+                HELD=$((HELD + 1))
+            done < <(grep -F "${CANDIDATE}" "${FILELIST}" || true)
+        done
+        [ "${HELD}" -gt 0 ] && logger -t backuptool "held back ${HELD} file(s) under the offline RetroAchievements proxy's folder: its token cache and award queue never travel (#165)"
     fi
 
     # busybox grep -f with an EMPTY pattern file matches nothing and prints
@@ -641,7 +667,7 @@ case "${VERB}" in
             # member on the way past, and the archive is where the token
             # must not be.
             SKIP=$(mktemp)
-            printf '%s\n' 'storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" > "${SKIP}"
+            printf '%s\n' 'storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIRS[@]#/}"'*' > "${SKIP}"
             tar -xzf "${BACKUPFILE}" -C / -X "${SKIP}" >/dev/null
             RC_TAR=$?; rm -f "${SKIP}"; (exit ${RC_TAR})
         else
@@ -658,7 +684,7 @@ case "${VERB}" in
             # likely to carry them -- and until #151 PL-03 this branch skipped
             # neither, while D-CLOUD-008 said "from any archive". The token-only
             # files are skipped here too (#169), as in the tar branch.
-            SKIP=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}")
+            SKIP=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIRS[@]#/}"'*')
             SKIPPED=0
             for ENTRY in $(unzip -l "${BACKUPFILE}" 2>/dev/null | awk 'NF>3 && $4 ~ /^storage\// {print $4}')
             do
