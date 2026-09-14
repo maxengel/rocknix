@@ -70,6 +70,27 @@ being tested, a throwaway commit was fast-forwarded onto two real build
 checkouts exactly that way, and went unnoticed because the test only read the
 output line it expected. `next` is the only ref worth following here.
 
+## One builder per build worktree
+
+A build worktree is a single mutable thing: one checked-out tree, one
+`target/` whose image file name carries only the date, and one
+`package.mk` whose ES pin a stream may edit without committing. Two
+streams building there in the same hour cannot both be right. On
+2026-09-14 the #179 and #181 streams did exactly that in `generic-x64`,
+three minutes apart: the second build inherited the first's uncommitted ES
+pin edit, wrote an image whose `BUILD_ID` named one stream's distribution
+and whose EmulationStation was the other's, overwrote the first stream's
+image under the same file name, and its `git checkout -- package.mk`
+cleanup discarded the first stream's edit. Neither build failed.
+
+So: **subagents deliver branches; the integrator builds.** A brief that
+sends an agent to build an image says which worktree is its alone, and
+nothing else builds there until it reports. An uncommitted pin edit in a
+build worktree belongs to whoever is building right now and to nobody
+after; commit the pin on a throwaway `build/*` branch instead, so `git
+status` shows whose tree it is. Read `target/`'s file time and the image's
+`/etc/os-release` before trusting an image you did not watch being built.
+
 ## Removing a worktree
 
 **Use `tools/fork-worktree remove`, not `git worktree remove`.**
