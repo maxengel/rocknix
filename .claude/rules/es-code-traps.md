@@ -147,10 +147,10 @@ B=/workspace/repos/rocknix.worktrees/generic-x64/build.ROCKNIX-GENERIC_X64.x86_6
 $B/toolchain/bin/cmake -S es-app/tests/unit -B build-tests -DCMAKE_CXX_COMPILER=/usr/bin/g++ \
   -DRAPIDJSON_INCLUDE_DIR=$B/toolchain/x86_64-rocknix-linux-gnu/sysroot/usr/include
 $B/toolchain/bin/cmake --build build-tests --target es-unit-tests && ./build-tests/es-unit-tests
+```
 
 The tests' CMake fails closed without rapidjson (`rapidjson/document.h was not
 found`): the header lives in the toolchain's sysroot, not on the host, so the
 configure line names it (audit #186 PL-21, 2026-09-14). The build root's own
 copy, `$B/build/rapidjson-1.1.0/include`, works the same.
-```
 
