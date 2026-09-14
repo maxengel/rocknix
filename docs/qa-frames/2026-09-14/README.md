@@ -216,3 +216,14 @@ read`), then `topup --after-index` cached Ninoid from the index without hashing 
 - `184-ra-settings-row-beta-1280x800-3387cf5da0.png` -- RETROACHIEVEMENTS SETTINGS at 1280x800 on the way back: HARDCORE MODE off, the (BETA) row with its line.
 - `184-game-indexes-rows-1280x800-3387cf5da0.png` -- the GAME INDEXES rows while OFFLINE ACHIEVEMENTS is on: **INDEX NEW GAMES AT STARTUP** (on) with `Also saves new games' achievement data for offline play.` and **INDEX GAMES** with `Also saves their achievement data for offline play.` (#184 note 3b, D-RA-013, PL-10).
 - `186-pl09-summary-offline-100-games-1280x800-3387cf5da0.png` -- offline, 100 games cached by id from the hash library (no ROMs): the RETROACHIEVEMENTS summary at 1280x800, `YOU'RE NOT ONLINE. SHOWING THE GAMES SAVED ON THIS DEVICE.`, the list with points and progress per game (cropped below the title, which carries the account name). From the host: the PLEASE WAIT card was on the first screenshot after the press (1.7 s), the list on the second (2.6 s); a key press costs the frame tool ~0.8 s and a screenshot ~0.9 s, so the list was on screen within about 1.7 s of the press landing (PL-09).
+
+## RC-8 `b22f345923` -- #188 and #189 from the RG SP's first index-fed top-up
+
+Guest d from the RC-8 image (ES `9a84432c5`, the ctl with the DONE verdict and the progress
+file). Eighty Game Boy pad files given real ids and hashes in the gb gamelist (`index-forty.py`,
+through the client's own modules), the page opened, then `raofflineproxy-ctl topup --after-index`
+started over ssh -- as the link-up hook or the index would start it -- with the page open.
+
+- `189-row-saving-game-2-of-80-640x480-b22f345923.png`, `...-16-of-80-...`, `...-31-of-80-focused-...` -- the scan row while a top-up the ctl runs on its own is at work: `SAVING GAMES FOR OFFLINE PLAY... - GAME 2 OF 80`, then 16, then 31 (the row focused), refreshed once a second with no press; the ready count did not fit beside it at 640x480, so the second candidate is shown (D-UI-035). The progress file at the last frame: `route=topup at=... index=41 total=80 name=pad-40.gb`.
+- `189-row-completed-122-ready-640x480-b22f345923.png` -- when the run ended: `COMPLETED · 122 GAMES READY FOR OFFLINE PLAY` (the stamp `0 topup cached=80 ... indexed=80 errors=0`, no `why`: the run over a larger index than any scan stamped COMPLETED, #188 box 4). The earlier forty-game run had done the same in 44 s, before the walk reached the page.
+- `189-row-saving-game-3-of-120-640x480-b22f345923-fr.png`, `...-33-of-120-focused-...-fr.png`, `189-row-completed-243-ready-640x480-b22f345923-fr.png` -- the same in French over 120 games: `ENREGISTREMENT DES JEUX POUR JOUER HORS LIGNE… - JEU 3 SUR 120`, then 33, then `TERMINÉ · 243 JEUX PRÊTS POUR JOUER HORS LIGNE`.
