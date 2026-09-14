@@ -141,18 +141,21 @@ never carried the cloud sign-in and points at MANAGE CLOUD STORAGE (D-CLOUD-087)
 ## RetroAchievements (our rows)
 
 `GAME SETTINGS > RETROACHIEVEMENTS SETTINGS > OPTIONS` carries one row of the
-fork's under HARDCORE MODE: OFFLINE ACHIEVEMENTS / `Beta. Casual achievements
-only.` with an arrow (D-RA-003), shown only where `/usr/bin/raofflineproxy-ctl`
-exists. Its page (as built on 2026-09-14, #165/#173/#179; D-RA-002..005,
-D-RA-010):
+fork's under HARDCORE MODE: OFFLINE ACHIEVEMENTS (BETA) / `Casual achievements
+only.` with an arrow (D-RA-003, D-UI-053), shown only where
+`/usr/bin/raofflineproxy-ctl` exists. Its page (as built for the eighth candidate,
+2026-09-14, #165/#173/#179/#184/#189; D-RA-002..005, D-RA-010, D-RA-012, D-RA-013,
+D-UI-054):
 
 ```mermaid
 flowchart TD
-    RAS[RETROACHIEVEMENTS SETTINGS] --> OA[OFFLINE ACHIEVEMENTS<br/><i>Beta. Casual achievements only.</i>]
-    OA --> PAGE{{OFFLINE ACHIEVEMENTS}}
-    PAGE --> SW[OFFLINE ACHIEVEMENTS switch] -->|on| TURNON[dialog: beta, casual only, hardcore off<br/>TURN ON . NOT NOW]
+    RAS[RETROACHIEVEMENTS SETTINGS] --> OA[OFFLINE ACHIEVEMENTS (BETA)<br/><i>Casual achievements only.</i>]
+    OA --> PAGE{{OFFLINE ACHIEVEMENTS (BETA)}}
+    PAGE --> SW[OFFLINE ACHIEVEMENTS (BETA) switch] -->|on| TURNON[dialog: beta, casual only, hardcore off;<br/>with the startup index off: IT ALSO TURNS ON INDEX NEW GAMES AT STARTUP...<br/>TURN ON . NOT NOW]
+    TURNON -->|TURN ON, online| SCANNOW[SCAN GAMES FOR OFFLINE ACHIEVEMENTS NOW?<br/>the scan's sentence<br/>SCAN NOW . LATER]
+    TURNON -->|TURN ON, no address| NOTONLINE[YOU'RE NOT ONLINE. SCAN GAMES FOR OFFLINE ACHIEVEMENTS WHEN YOU'RE CONNECTED...<br/>OK]
     PAGE --> I1[one block, after the two options and a half-line gap: EARN CASUAL ACHIEVEMENTS WITHOUT A CONNECTION. THEY ARE SENT WHEN YOU'RE BACK ONLINE. CASUAL ACHIEVEMENTS ONLY, SO TURNING IT ON TURNS HARDCORE MODE OFF. '!RA!' IN A GAME'S CORNER MEANS AN ACHIEVEMENT HASN'T REACHED RETROACHIEVEMENTS YET. NEW GAMES ARE ADDED THE NEXT TIME YOU'RE CONNECTED.]
-    PAGE --> SCAN[SCAN GAMES FOR OFFLINE ACHIEVEMENTS<br/><i>NOT SCANNED YET . N GAMES READY FOR OFFLINE PLAY</i><br/><i>LAST date - outcome . N GAMES READY FOR OFFLINE PLAY</i><br/><i>WHEN YOU CAME ONLINE - outcome . N GAMES READY ...</i>]
+    PAGE --> SCAN[SCAN GAMES FOR OFFLINE ACHIEVEMENTS<br/><i>NOT SCANNED YET . N GAMES READY FOR OFFLINE PLAY</i><br/><i>LAST date - COMPLETED or COULDN'T FINISH . N GAMES READY FOR OFFLINE PLAY</i><br/><i>WHEN YOU CAME ONLINE - outcome . N GAMES READY ...</i><br/><i>SCANNING... - GAME i OF n . N GAMES READY (a scan left running with B, PL-07)</i><br/><i>SAVING GAMES FOR OFFLINE PLAY... - GAME i OF n . N GAMES READY (a top-up the ctl runs, #189; refreshed once a second)</i>]
     SCAN -.->|switch off| DIM1[dimmed: TURN ON OFFLINE ACHIEVEMENTS FIRST.]
     SCAN -.->|no address| DIM2[dimmed: YOU'RE NOT ONLINE.]
     SCAN --> CONFIRM[SCAN GAMES FOR OFFLINE ACHIEVEMENTS?<br/>what it does and costs; last time's why<br/>YES . NO]
