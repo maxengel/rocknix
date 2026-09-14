@@ -146,3 +146,16 @@ The walk `174-toggle.steps`: MAIN MENU -> NETWORK SETTINGS -> up three times fro
 
 - `174-tailscale-row-on-640x480-ec12767b26.png` -- the row, switch on (`tailscale.up=1` set by hand before the walk).
 - `174-tailscale-reauth-popup-switch-on-640x480-ec12767b26.png` -- after the switch went on: `TAILSCALE REAUTHENTICATE:` with the login URL, the switch showing **on**. When the page closed, `system.cfg` held `tailscale.up=0` (`IsTailscaleUp()` returned false on `Logged out.`), tailscaled still active; after a reboot `tailscale.up=0`, tailscaled **inactive** -- #174 reproduced. The fix (ES `fix/tailscale-intent`, D-NET-010) is proven with the same walk expecting `1` and an active daemon after the reboot.
+
+## #181 -- system logos after a quick-select jump, before and after the fix (guest d, 640x480)
+
+The recipe: boot on GBA, A into its list, d-pad left five times (quick-select jumps to the neighbouring system's list without passing its system view), B back to the system view. Edge width of the logo (`pngtool.py edge`, crop 120,110 400x180; ~0.4-0.6 is a crisp 1 px edge):
+
+| frame | build | edge |
+|---|---|---|
+| `181-fbneo-system-view-after-jump-640x480-c5c50a2d5f-before.png` | RC-4 | 0.70 |
+| `181-nes-system-view-after-jump-640x480-c5c50a2d5f-before.png` | RC-4 | 1.21 |
+| `181-fbneo-system-view-after-jump-640x480-b3189ba85f.png` | RC-5 | 0.42 |
+| `181-nes-system-view-after-jump-640x480-b3189ba85f.png` | RC-5 | 0.46 |
+
+The fix: ES `fix/svg-shared-size` `20824cc29` (a shared SVG is rasterised at the largest size any consumer asks for).
