@@ -139,3 +139,10 @@ Not framed: nothing on screen changes for #176.
 | `175-refused-dialog-640x480-5801ceb5fc.png` | Online, wrong password, token cleared, the switch toggled off then on, B: **RETROACHIEVEMENTS DIDN'T ACCEPT YOUR SIGN-IN: Invalid user/password combination. Please try again.** / **RETROACHIEVEMENTS STAYS ON. CHECK YOUR USERNAME AND PASSWORD, THEN TRY AGAIN.** over GAME SETTINGS, OK. The server's sentence is RetroAchievements' own and stays English. |
 | `175-refused-after-ok-640x480-5801ceb5fc.png` | After OK: GAME SETTINGS, RETROACHIEVEMENTS SETTINGS focused; `system.cfg` `global.retroachievements=1`, token empty; the MAIN MENU behind still holds RETROACHIEVEMENTS. |
 | `175-refused-dialog-640x480-5801ceb5fc-fr.png` | The same refusal in French: **RETROACHIEVEMENTS N'A PAS ACCEPTÉ VOTRE CONNEXION : Invalid user/password combination. Please try again.** / **RETROACHIEVEMENTS RESTE ACTIVÉ. VÉRIFIEZ VOTRE NOM D'UTILISATEUR ET VOTRE MOT DE PASSE, PUIS RÉESSAYEZ.**, OK -- four lines of ours at 640x480, nothing clipped. |
+
+## #174 -- the Tailscale switch and the setting the boot reads (guest e, 640x480, the 2026-09-12 image `ec12767b26`, before the fix)
+
+The walk `174-toggle.steps`: MAIN MENU -> NETWORK SETTINGS -> up three times from the top (BACK, ZEROTIER ONE, TAILSCALE VPN) -> the switch off, then on, with no tailnet.
+
+- `174-tailscale-row-on-640x480-ec12767b26.png` -- the row, switch on (`tailscale.up=1` set by hand before the walk).
+- `174-tailscale-reauth-popup-switch-on-640x480-ec12767b26.png` -- after the switch went on: `TAILSCALE REAUTHENTICATE:` with the login URL, the switch showing **on**. When the page closed, `system.cfg` held `tailscale.up=0` (`IsTailscaleUp()` returned false on `Logged out.`), tailscaled still active; after a reboot `tailscale.up=0`, tailscaled **inactive** -- #174 reproduced. The fix (ES `fix/tailscale-intent`, D-NET-010) is proven with the same walk expecting `1` and an active daemon after the reboot.
