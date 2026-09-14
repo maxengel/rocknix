@@ -63,7 +63,12 @@
 #      line is hardcore=<0|1> and nothing else is printed. And in k: the
 #      proxy's folder under /storage/.config is held back whole from a
 #      backup and never put back on a restore (its token cache and award
-#      queue, D-INFRA-010).
+#      queue, D-INFRA-010). Then the two answers the sync cards ask for
+#      (#173, D-RA-004): pending counts the pending rows of a fixture store
+#      shaped like the proxy's (0 and 1, exit 1 and 0; 0 with the toggle
+#      off; exit 2 and nothing on stdout when the store cannot be read),
+#      and flushed prints the service's last-flush stamp once and removes
+#      it (exit 1 when there is none, or none worth the name).
 #   q. 099-networkservices, the boot pass over /usr/lib/autostart/daemons/*:
 #      a fragment that sets no CONF inherits none from the fragment before
 #      it, so the marker the previous fragment wrote (raofflineproxy.conf,
@@ -115,6 +120,10 @@
 #                                             # through 007-syncthing (and
 #                                             # smb.conf through 004-tailscaled,
 #                                             # at every BASE_REF: upstream's leak)
+#     BASE_REF=d79281066c tools/last-good-scripts-test --old
+#                                             # p's pending and flushed checks
+#                                             # FAIL: the ctl before #173 has
+#                                             # neither verb (usage, exit 2)
 #     tools/last-good-scripts-test            # PASSED
 #
 # One FAIL in m that names "the built image" is about the build root on this
@@ -1173,7 +1182,7 @@ cmp -s "${CFGF}" "${CFGF}.backup"; check $? "and the shutdown-time backup takes 
 cp "${C}/system.cfg" "${MS}/system.cfg"; OUT="${M}/out"
 nbs; [ "$(hn)" = "H700-9a3f" ] && grep -q 'shipped default' "${OUT}"; check $? "network-base-setup then names the unit H700-9a3f and the log says the shipped default was replaced" "system.hostname is '$(hn)'; log: $(grep -o 'device name[^|]*' "${OUT}" | head -1)"
 
-echo "  p. raofflineproxy-ctl: enable records hardcore and turns it off, disable puts it back; both harmless twice (#165, D-RA-002)"
+echo "  p. raofflineproxy-ctl: enable records hardcore and turns it off, disable puts it back; both harmless twice (#165, D-RA-002); pending and flushed answer the sync cards (#173)"
 # The script whole, under bwrap like backuptool in b: a stub /etc/profile
 # that carries get_setting and set_setting lifted from 001-functions (the
 # real profile sources them the same way) with J_CONF at the fake
@@ -1244,6 +1253,56 @@ ctl enable
 [ "${RC}" -eq 1 ] && [ ! -e "${PMARK}" ] && [ "$(pv global.retroachievements.hardcore)" = "1" ] && [ -z "$(pv global.retroachievements.offlineproxy)" ] && [ -z "$(pv global.retroachievements.offlineproxy.hardcore_was)" ]; check $? "a service that will not start: exit 1, no marker left, hardcore still 1, no toggle and no record written" "rc ${RC}; marker: $([ -e "${PMARK}" ] && echo yes || echo no); system.cfg: $(tr '\n' '|' < "${PCFG}")"
 [ ! -s "${OUT}" ]; check $? "and nothing on stdout for EmulationStation to mistake for a result" "stdout: $(tr '\n' '|' < "${OUT}")"
 rm -f "${P}/run/fail-start"
+# pending and flushed (#173, D-RA-004): what the exit sync card asks before
+# it speaks, and what the next card that reached the network asks. A
+# fixture store with the proxy's own pending_awards table (storage.py's
+# DDL, WAL like the service's), written by the host's python3; the ctl
+# reads it read-only through the same sqlite3 module the service uses.
+PQ="${PS}/.config/raofflineproxy"; PDB="${PQ}/proxy.sqlite3"; PSTAMP="${PQ}/last-flush"; mkdir -p "${PQ}"
+pdb() { # <sql...>: create the fixture store if need be, then run each statement
+    python3 - "${PDB}" "$@" <<'EOS'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1]); db.execute("PRAGMA journal_mode=WAL")
+db.execute("""CREATE TABLE IF NOT EXISTS pending_awards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, achievementId INTEGER NOT NULL UNIQUE, queryString TEXT NOT NULL,
+    requestBody TEXT NOT NULL, userAgent TEXT NOT NULL, queuedAt INTEGER NOT NULL, retryCount INTEGER NOT NULL DEFAULT 0,
+    lastError TEXT, status TEXT NOT NULL DEFAULT 'pending', payloadHash TEXT NOT NULL DEFAULT '', prevHash TEXT NOT NULL DEFAULT '',
+    signature TEXT NOT NULL DEFAULT '', signedAt INTEGER NOT NULL DEFAULT 0)""")
+for sql in sys.argv[2:]: db.execute(sql)
+db.commit(); db.close()
+EOS
+}
+prow() { # <achievementId> <status>: one row of the proxy's shape
+    echo "INSERT INTO pending_awards(achievementId,queryString,requestBody,userAgent,queuedAt,status) VALUES (${1},'','r=awardachievement&u=qa&a=${1}&h=0','RetroArch/1.22.2',1789336962833,'${2}')"
+}
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\n' > "${PCFG}"
+rm -f "${PDB}" "${PDB}-wal" "${PDB}-shm" "${PSTAMP}"
+ctl pending; [ "${RC}" -eq 1 ] && [ "$(cat "${OUT}")" = "0" ]; check $? "pending before the service ever wrote a store: 0, exit 1" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}"); err: $(tr '\n' '|' < "${ERR}" | cut -c1-160)"
+pdb
+ctl pending; [ "${RC}" -eq 1 ] && [ "$(cat "${OUT}")" = "0" ]; check $? "an empty queue: 0, exit 1" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}"); err: $(tr '\n' '|' < "${ERR}" | cut -c1-160)"
+pdb "$(prow 100359 pending)" "$(prow 100358 flushed)" "$(prow 100357 stale)"
+ctl pending; [ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "1" ] && [ "$(wc -l < "${OUT}")" -eq 1 ]; check $? "one pending row beside a flushed and a stale one: 1, on the one line, exit 0" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}"); err: $(tr '\n' '|' < "${ERR}" | cut -c1-160)"
+pdb "$(prow 100360 pending)"
+ctl pending; [ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "2" ]; check $? "a second pending row: 2" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}")"
+# The toggle off: the service is stopped, and a row nobody will send is not
+# on its way anywhere.
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=0\n' > "${PCFG}"
+ctl pending; [ "${RC}" -eq 1 ] && [ "$(cat "${OUT}")" = "0" ]; check $? "the same rows with the toggle off: 0, exit 1 -- nothing would send them" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}")"
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\n' > "${PCFG}"
+# A store that cannot be read: an unknown count is never printed as one.
+rm -f "${PDB}-wal" "${PDB}-shm"; printf 'not a database\n' > "${PDB}"
+ctl pending; [ "${RC}" -eq 2 ] && [ ! -s "${OUT}" ] && grep -q 'could not be read' "${ERR}"; check $? "a store that is not one: exit 2, nothing on stdout, the reason on stderr" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}"); err: $(tr '\n' '|' < "${ERR}" | cut -c1-160)"
+rm -f "${PDB}" "${PDB}-wal" "${PDB}-shm"
+# flushed: the stamp patches/003 has the service leave after a flush that
+# sent awards, "<epoch> <flushed>", told once.
+ctl flushed; [ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ]; check $? "flushed with no stamp: exit 1, nothing on stdout" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}")"
+printf '1789337156 2\n' > "${PSTAMP}"
+ctl flushed; [ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "1789337156 2" ] && [ ! -e "${PSTAMP}" ]; check $? "a stamp: printed as written, exit 0, and removed" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}"); stamp: $([ -e "${PSTAMP}" ] && echo still there || echo gone)"
+ctl flushed; [ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ]; check $? "asked again: exit 1 -- one flush is said once" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}")"
+printf '1789337156 0\n' > "${PSTAMP}"
+ctl flushed; [ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ] && [ ! -e "${PSTAMP}" ]; check $? "a stamp that says nothing went: removed, exit 1, nothing claimed" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}"); stamp: $([ -e "${PSTAMP}" ] && echo still there || echo gone)"
+printf 'garbage\n' > "${PSTAMP}"
+ctl flushed; [ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ] && [ ! -e "${PSTAMP}" ]; check $? "a stamp that is not one: removed, exit 1, nothing claimed" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}"); stamp: $([ -e "${PSTAMP}" ] && echo still there || echo gone)"
 fi
 
 # ---------------------------------------------------------------- q.

@@ -17,6 +17,24 @@
 #   stop     systemctl stop.
 #   status   enabled=, marker=, service=, hardcore= on stdout; exit 0 when the
 #            toggle is on, 1 when off.
+#   pending  how many casual awards the proxy is holding for the next
+#            connection: the count of pending rows in its store, on one
+#            line; exit 0 when there is at least one, 1 when none. With the
+#            toggle off the answer is 0: the service is stopped, so a row
+#            left in the store is not on its way anywhere, and the sentence
+#            the count feeds ("... WILL BE SENT NEXT TIME YOU'RE CONNECTED")
+#            would be a promise nobody keeps. Exit 2, nothing on stdout,
+#            when the store could not be read -- an unknown count is never
+#            reported as one, so nothing is promised on its strength.
+#   flushed  the stamp the service leaves after a flush that sent awards
+#            (patches/003: "<epoch> <flushed>", once per such flush),
+#            printed as written and removed, exit 0; exit 1 when there is
+#            none, or none worth the name. Whoever asks is told once.
+#
+#   EmulationStation asks pending as the exit sync card ends and flushed as
+#   the next sync card that reached the network does (fork #173, D-RA-004);
+#   both answers are read through CloudText, so the shapes above are the
+#   contract.
 #
 # The toggle is global.retroachievements.offlineproxy in system.cfg, the
 # setting setsettings.sh (RetroArch) and cheevos_ppsspp.sh read at every
@@ -32,7 +50,7 @@
 # hardcore=<0|1>, the setting as it stands afterwards; EmulationStation
 # reads it to keep its HARDCORE MODE row truthful. Everything else goes to
 # the log. Exit 0 when done, 1 when a step could not be made to hold, 2 on
-# usage.
+# usage or when an answer could not be read.
 
 # No set -u: get_setting and set_setting come from /etc/profile and read
 # positional parameters they were not given; every value this script relies
@@ -45,6 +63,11 @@ UNIT="raofflineproxy.service"
 KEY="global.retroachievements.offlineproxy"
 HARDCORE_KEY="global.retroachievements.hardcore"
 HARDCORE_WAS_KEY="global.retroachievements.offlineproxy.hardcore_was"
+# Where the service keeps everything it writes: RAOFFLINEPROXY_CONFIG_DIR in
+# the unit, and the default the proxy resolves on a ROCKNIX image without it.
+PROXY_DIR="/storage/.config/raofflineproxy"
+QUEUE="${PROXY_DIR}/proxy.sqlite3"
+FLUSH_STAMP="${PROXY_DIR}/last-flush"
 
 say() {
     logger -t raofflineproxy-ctl "$*"
@@ -156,14 +179,61 @@ do_status() {
     [ "${ON}" = "1" ]
 }
 
+# The count could not be read: nothing on stdout, the reason on stderr and in
+# the log, exit 2. A guard that cannot run has not passed -- and a number
+# that is not known is not printed as one.
+cannot_tell() {
+    say "$*"
+    echo "raofflineproxy-ctl: $*" >&2
+    exit 2
+}
+
+do_pending() {
+    if [ "$(as_flag "$(setting "${KEY}")")" != "1" ] || [ ! -e "${QUEUE}" ]; then
+        echo 0
+        return 1
+    fi
+    # The same interpreter and sqlite3 module the service writes the store
+    # with (the package depends on Python3 for the service itself), opened
+    # read-only, with a second's patience for a write in flight. The image
+    # also carries a sqlite3 binary, but not by this package's asking.
+    local N
+    N="$(python3 -c '
+import sqlite3, sys
+db = sqlite3.connect("file:%s?mode=ro" % sys.argv[1], uri=True, timeout=1.0)
+print(db.execute("SELECT COUNT(*) FROM pending_awards WHERE status = ?", ("pending",)).fetchone()[0])
+' "${QUEUE}" 2>/dev/null)" || cannot_tell "the award queue at ${QUEUE} could not be read"
+    case "${N}" in
+        ''|*[!0-9]*) cannot_tell "the award queue answered '${N}', not a count" ;;
+    esac
+    echo "${N}"
+    [ "${N}" -gt 0 ]
+}
+
+do_flushed() {
+    [ -e "${FLUSH_STAMP}" ] || return 1
+    local LINE
+    LINE="$(head -n 1 "${FLUSH_STAMP}" 2>/dev/null)"
+    # Removed before it is judged, so a stamp that says nothing went, or
+    # nothing readable, is gone too and never read twice.
+    rm -f "${FLUSH_STAMP}"
+    if [[ "${LINE}" =~ ^[0-9]+\ [1-9][0-9]*$ ]]; then
+        echo "${LINE}"
+        return 0
+    fi
+    return 1
+}
+
 case "${1:-}" in
     enable)  do_enable ;;
     disable) do_disable ;;
     start)   do_start ;;
     stop)    do_stop ;;
     status)  do_status ;;
+    pending) do_pending ;;
+    flushed) do_flushed ;;
     *)
-        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status}" >&2
+        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|flushed}" >&2
         exit 2
     ;;
 esac
