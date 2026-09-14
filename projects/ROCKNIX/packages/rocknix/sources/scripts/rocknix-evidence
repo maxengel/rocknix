@@ -25,8 +25,16 @@
 #                files. Run it after a device has misbehaved, before anything
 #                else is done to it; the archive is what to read and to send.
 #
-# Nothing here reads a password, a key, or a token: system.cfg and rclone.conf
-# are listed by size only, and the logs the scripts write carry neither.
+# Nothing here reads system.cfg or rclone.conf beyond their size, and every
+# file that goes into an archive or a snapshot passes through
+# redact_credentials (001-functions) first: a password, token or API key
+# reads <redacted>, the key or flag it sat under is kept. This file used to
+# say the logs carry no credential; they did -- a launch log in verbose mode
+# carried the RetroAchievements password, and a process list can carry one
+# on an emulator's command line -- so it is enforced here on the way out
+# rather than assumed of every writer (fork #176, D-INFRA-010). Without the
+# filter nothing is collected: an archive is what a player sends to a
+# stranger, and no archive beats an unfiltered one.
 # The tree is named after the log it lives beside, not after this script, so
 # a person who finds /storage/.cache/log finds everything in one place.
 
@@ -82,11 +90,40 @@ archive_unread_pstore() {
   return 0
 }
 
+# The filter every file leaves through. A missing helper is an image fault;
+# say so once and write nothing, never an unfiltered page.
+have_filter() {
+  type redact_credentials >/dev/null 2>&1 && return 0
+  logger -t rocknix-evidence "redact_credentials is missing from /etc/profile.d/001-functions; nothing written"
+  return 1
+}
+
+# Every regular file under a directory, through the filter, in place, its
+# mtime kept (when a log was last written is evidence). A file the filter
+# cannot rewrite is removed rather than left as it was, and named. sed passes
+# bytes it does not match through untouched, and the pstore dumps are kernel
+# text, so nothing here is damaged by the pass.
+FILTERED=0; LEFT_OUT=0
+filter_tree() {
+  local f
+  while IFS= read -r -d '' f; do
+    if redact_credentials < "${f}" > "${f}.redacting" 2>/dev/null; then
+      touch -r "${f}" "${f}.redacting" 2>/dev/null
+      mv -f "${f}.redacting" "${f}"; FILTERED=$((FILTERED + 1))
+    else
+      rm -f "${f}" "${f}.redacting"; LEFT_OUT=$((LEFT_OUT + 1))
+      echo "Left out ${f#${1}/}: the credential filter couldn't rewrite it."
+    fi
+  done < <(find "$1" -type f -print0)
+  return 0
+}
+
 snapshot() {
+  have_filter || exit 0
   mkdir -p "${EVIDENCE_DIR}" || exit 0
   archive_unread_pstore
   local tmp="${EVIDENCE_DIR}/state.tmp" i
-  write_snapshot 2>/dev/null | head -c "${SNAPSHOT_BYTES_MAX}" > "${tmp}" || { rm -f "${tmp}"; exit 0; }
+  write_snapshot 2>/dev/null | redact_credentials | head -c "${SNAPSHOT_BYTES_MAX}" > "${tmp}" || { rm -f "${tmp}"; exit 0; }
   # Rotate like EmulationStation rotates its log: newest is state.0.txt.
   rm -f "${EVIDENCE_DIR}/state.$((RING - 1)).txt"
   for ((i = RING - 2; i >= 0; i--)); do
@@ -99,6 +136,10 @@ snapshot() {
 take() { [ -e "$1" ] && cp -a "$1" "$2" 2>/dev/null; return 0; }
 
 collect() {
+  if ! have_filter; then
+    echo "Couldn't load the credential filter (redact_credentials, /etc/profile.d/001-functions); nothing collected."
+    exit 1
+  fi
   mkdir -p "${EVIDENCE_DIR}" || { echo "Couldn't write to ${EVIDENCE_DIR}."; exit 1; }
   local stamp label dir out
   stamp=$(date '+%Y_%m_%d-%H%M%S'); label=$(device_label)
@@ -108,6 +149,10 @@ collect() {
   {
     echo "collected $(date '+%Y-%m-%d %H:%M:%S %Z') on ${label}"
     echo "uptime $(cut -d' ' -f1 /proc/uptime)s"
+    echo
+    echo "credential filter: every file in this archive has passed through redact_credentials"
+    echo "  (/etc/profile.d/001-functions). A password, token, API key or similar value reads"
+    echo "  <redacted>; the key or flag it belonged to is kept. The count is at the end of this file."
     echo; cat /etc/os-release
     echo; echo "cmdline: $(cat /proc/cmdline)"
     echo; echo "boots known to the journal:"; journalctl --list-boots --no-pager 2>/dev/null
@@ -133,9 +178,16 @@ collect() {
   for f in "${EVIDENCE_DIR}"/state.*.txt; do take "${f}" "${dir}/snapshots/"; done
   for f in /storage/.cache/cloud_sync/*; do take "${f}" "${dir}/stamps/"; done
 
+  # Last, over everything that landed above, whatever wrote it: the filter
+  # is applied to the tree, not trusted of each writer. Then the count goes
+  # into the summary -- our own words and numbers, nothing that needs the pass.
+  filter_tree "${dir}"
+  printf '\ncredential filter: %s file(s) rewritten, %s left out\n' "${FILTERED}" "${LEFT_OUT}" >> "${dir}/summary.txt"
+
   if tar -czf "${out}" -C "${EVIDENCE_DIR}" "$(basename "${dir}")" 2>/dev/null; then
     rm -rf "${dir}"
     echo "Evidence collected: ${out} ($(du -h "${out}" | cut -f1))"
+    echo "Every file in it has been through the credential filter (${FILTERED} rewritten, ${LEFT_OUT} left out)."
     echo "Start with summary.txt, then journal-previous-boot.txt and pstore/."
   else
     rm -f "${out}"
