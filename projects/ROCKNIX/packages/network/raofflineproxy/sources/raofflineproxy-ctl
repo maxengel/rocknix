@@ -36,6 +36,51 @@
 #   both answers are read through CloudText, so the shapes above are the
 #   contract.
 #
+# And the three verbs of SCAN GAMES FOR OFFLINE ACHIEVEMENTS (fork #179,
+# D-RA-010): the proxy serves a game offline only from what it cached while
+# online, so a game never started with a connection earned nothing offline
+# until somebody started it once online. The scan caches every game on the
+# console that RetroAchievements knows, and the top-up keeps the recently
+# played ones cached without anyone pressing anything.
+#
+#   scan     walk the ROM folders of the systems RetroAchievements has sets
+#            for, and hand every ROM not yet cached to the client's own
+#            `cache-roms` (hash, look the game up, save its achievement
+#            list, the player's unlocks and a session). A page in
+#            EmulationStation (GuiOfflineScan) runs it and reads its ">>> "
+#            lines: `doing listing`, `total <n>`, `game <i>|<n>|<name>`,
+#            `cached <c>|<s>`, `note <TOKEN>`, `why <TOKEN>`,
+#            `done <c>|<s>|<ready>|<limit>`. Refuses -- with an exit code
+#            the page names and no stamp -- when the toggle is off (78), no
+#            account is signed in (77), the device is offline by the proxy's
+#            own probe (69), or another scan or top-up holds the lock (75).
+#            Stops when the client reports the proxy's 100-game cap (one
+#            lookup past it, no more), or after three lookups in a row that
+#            RetroAchievements did not answer. Writes last-scan (below) and
+#            exits 0 when it ran to the end, 1 when it could not finish.
+#   topup    the client's `run-smart-cache` -- RetroArch's recent history,
+#            PPSSPP's recent list -- so a game played once online is cached
+#            even if the scan was never pressed. For EmulationStation's
+#            network-up hook: silent (nothing on stdout), bounded (one
+#            attempt per half hour, fifteen minutes at most), the same
+#            refusals as scan with the same codes, and it writes last-scan
+#            only when it cached something or could not finish -- a top-up
+#            that found nothing new leaves the last scan's line alone.
+#   ready    how many games are cached: the count in the client's own
+#            cached_game_ids.txt export (one id per line, rewritten on every
+#            cache change by the service and the client alike), on one line.
+#
+#   last-scan is /storage/.config/raofflineproxy/last-scan, one line:
+#   "<epoch> <rc> <scan|topup> cached=<n> skipped=<m> ready=<total>
+#   limit=<0|1>[ why=<TOKEN>]" -- how the last run went, read by the page
+#   for the line under the row (CloudText::parseScanStamp). `skipped` is the
+#   ROMs RetroAchievements does not know, which the client refuses one at a
+#   time and the scan counts rather than reports (the proxy's own docs skip
+#   them silently). Tokens, never sentences: the page says them in the
+#   player's language. scan.log beside it carries the client's line for
+#   every ROM; the client redacts the token in what it logs and prints file
+#   names and reasons only, and nothing here prints a value from system.cfg.
+#
 # The toggle is global.retroachievements.offlineproxy in system.cfg, the
 # setting setsettings.sh (RetroArch) and cheevos_ppsspp.sh read at every
 # launch to point the emulator at 127.0.0.1:8080 -- into that launch's own
@@ -50,7 +95,9 @@
 # hardcore=<0|1>, the setting as it stands afterwards; EmulationStation
 # reads it to keep its HARDCORE MODE row truthful. Everything else goes to
 # the log. Exit 0 when done, 1 when a step could not be made to hold, 2 on
-# usage or when an answer could not be read.
+# usage or when an answer could not be read; scan and topup add the four
+# sysexits codes above, which CloudExit.h in EmulationStation spells the
+# same way.
 
 # No set -u: get_setting and set_setting come from /etc/profile and read
 # positional parameters they were not given; every value this script relies
@@ -68,6 +115,71 @@ HARDCORE_WAS_KEY="global.retroachievements.offlineproxy.hardcore_was"
 PROXY_DIR="/storage/.config/raofflineproxy"
 QUEUE="${PROXY_DIR}/proxy.sqlite3"
 FLUSH_STAMP="${PROXY_DIR}/last-flush"
+
+# The scan's files, all beside the proxy's own so backuptool holds them back
+# with the rest (D-INFRA-010) and `disable` leaves them where the cache is.
+SCAN_STAMP="${PROXY_DIR}/last-scan"
+SCAN_LOG="${PROXY_DIR}/scan.log"
+TOPUP_MARK="${PROXY_DIR}/last-topup-attempt"
+READY_FILE="${PROXY_DIR}/cached_game_ids.txt"
+SCAN_LOCK="/var/run/raofflineproxy-scan.lock"
+ROMS_ROOT="/storage/roms"
+# The account keys EmulationStation writes (the token after a sign-in). Read
+# for presence only, never printed.
+USER_KEY="global.retroachievements.username"
+TOKEN_KEY="global.retroachievements.token"
+PASSWORD_KEY="global.retroachievements.password"
+
+# sysexits.h, as CloudExit.h names them: a run that did nothing, and why.
+EX_UNAVAILABLE=69   # offline by the proxy's probe
+EX_TEMPFAIL=75      # another scan or top-up holds the lock
+EX_NOPERM=77        # no RetroAchievements account signed in
+EX_CONFIG=78        # the toggle is off
+
+# The proxy's cap on manually cached games (rom_browser.MAX_CACHED_GAMES), a
+# courtesy to the server that the client enforces; named here for the log.
+CACHE_CAP=100
+# Lookups RetroAchievements did not answer, in a row, before the scan stops
+# asking: every one is a request spent on a link or a sign-in that is not
+# working, and the page can say so sooner.
+ERRORS_IN_A_ROW=3
+# One automatic top-up attempt per this many seconds, and no single run
+# longer than TOPUP_TIMEOUT: a link that flaps must not turn into a request
+# storm, and a hook that never returns is a hook nobody can reason about.
+TOPUP_INTERVAL=1800
+TOPUP_TIMEOUT=900
+
+# The client resolves its folder the way the unit sets it, and RetroArch's
+# `~` in content_history_path and playlist_directory is /storage on ROCKNIX
+# (the proxy expands it with HOME, and EmulationStation's may differ).
+export RAOFFLINEPROXY_CONFIG_DIR="${PROXY_DIR}"
+export HOME=/storage
+export XDG_CONFIG_HOME=/storage/.config
+PROXY_PY="python3 -m raofflineproxy.main"
+
+# The ROCKNIX ROM folders of the systems RetroAchievements has sets for, by
+# RetroAchievements' console list (2026-09) mapped onto the folder names
+# es_systems.cfg uses on this image, both spellings where two images differ
+# (coleco/colecovision, odyssey/odyssey2, pc88/pc-8800, fbneo/fbn,
+# sgfx/supergrafx). A folder that is not here is never walked: the proxy
+# would only hash it and be told no, one request per file, and a computer
+# or Windows library can be tens of gigabytes. Arcade folders hash by file
+# name (rc_hash's arcade rule), so they cost no reading. The hack folders
+# (nesh, snesh, ...) stay: RetroAchievements has sets for many hacks, and
+# the ones it does not know are skipped like any other ROM.
+SCAN_SYSTEMS="
+  nes famicom fds nesh snes sfc snesh snesmsu1 satellaview sufami
+  gb gbh gbc gbch gba gbah n64 n64dd nds ndsiware gamecube wii
+  pokemini virtualboy megaduck supervision arduboy wasm4 uzebox
+  channelf odyssey odyssey2 videopac intellivision coleco colecovision vectrex
+  mastersystem megadrive genesis megadrive-japan megadriveh genh sega32x
+  segacd megacd saturn dreamcast gamegear gamegearh ggh sg-1000
+  psx ps2 psp pspminis
+  atari2600 atari7800 atarijaguar atarijaguarcd atarilynx
+  pcengine tg16 pcenginecd tg16cd sgfx supergrafx pcfx pc88 pc-8800
+  ngp ngpc neocd wonderswan wonderswancolor msx msx2 amstradcpc apple2 3do
+  arcade mame fbneo fbn neogeo cps1 cps2 cps3
+"
 
 say() {
     logger -t raofflineproxy-ctl "$*"
@@ -224,6 +336,385 @@ do_flushed() {
     return 1
 }
 
+# ---- the scan -------------------------------------------------------------
+
+# A line for the page: ">>> <word> <fields>". Everything else on stdout is
+# the client's own output, which the page shows nothing of.
+tell() {
+    printf '>>> %s\n' "$*"
+}
+
+# The scan's own log, rotated once past a megabyte. The client's lines are
+# file names and reasons; nothing from system.cfg is ever written here.
+slog() {
+    mkdir -p "${PROXY_DIR}" 2>/dev/null
+    if [ -e "${SCAN_LOG}" ] && [ "$(stat -c %s "${SCAN_LOG}" 2>/dev/null || echo 0)" -gt 1048576 ]; then
+        mv -f "${SCAN_LOG}" "${SCAN_LOG}.1"
+    fi
+    printf '%s %s\n' "$(date -u '+%Y-%m-%d %H:%M:%S')" "$*" >> "${SCAN_LOG}"
+}
+
+# How many games are cached, from the client's export. One id per line, so
+# the count is the line count; absent means none yet. Falls back to asking
+# the client when the export is missing but a store exists, and to 0 when
+# even that cannot be read -- a number that is not known is never invented.
+count_ready() {
+    local N=""
+    if [ -s "${READY_FILE}" ]; then
+        N="$(grep -c -E '^[0-9]+$' "${READY_FILE}" 2>/dev/null)"
+    elif [ -e "${QUEUE}" ]; then
+        N="$(${PROXY_PY} cached-games-count 2>/dev/null | tail -n 1)"
+    fi
+    case "${N}" in ''|*[!0-9]*) N=0 ;; esac
+    echo "${N}"
+}
+
+do_ready() {
+    count_ready
+}
+
+# "<epoch> <rc> <route> cached=<n> skipped=<m> ready=<total> limit=<0|1>
+# [why=<TOKEN>]", written whole or not at all (a rename), so the page never
+# reads half a line.
+write_stamp() {
+    local RC="$1" ROUTE="$2" CACHED="$3" SKIPPED="$4" READY="$5" LIMIT="$6" WHY="${7:-}"
+    local LINE="$(date +%s) ${RC} ${ROUTE} cached=${CACHED} skipped=${SKIPPED} ready=${READY} limit=${LIMIT}"
+    [ -n "${WHY}" ] && LINE="${LINE} why=${WHY}"
+    mkdir -p "${PROXY_DIR}" || return 1
+    printf '%s\n' "${LINE}" > "${SCAN_STAMP}.tmp" && mv -f "${SCAN_STAMP}.tmp" "${SCAN_STAMP}"
+}
+
+# The account EmulationStation signed in with: a user name and either the
+# token it wrote after the sign-in or the password it will sign in with.
+# Presence only; the values stay in system.cfg.
+have_account() {
+    [ -n "$(setting "${USER_KEY}")" ] || return 1
+    [ -n "$(setting "${TOKEN_KEY}")" ] || [ -n "$(setting "${PASSWORD_KEY}")" ]
+}
+
+# The proxy's own answer to "is RetroAchievements reachable": probe-online
+# sends one HEAD to retroachievements.org (a fresh process asks every time;
+# its thirty-second memory is per process) and writes the answer to
+# online_state.json, printing nothing. Anything but a readable "online":
+# true reads as offline -- a check that cannot run has not passed.
+is_online() {
+    ${PROXY_PY} probe-online >/dev/null 2>&1 || return 1
+    grep -q -E '"online": *true' "${PROXY_DIR}/online_state.json" 2>/dev/null
+}
+
+# What both verbs refuse before they touch anything, in the order a player
+# would fix them: the toggle, then the account. Exit codes only; the page
+# says them.
+refuse_unless_ready() {
+    local VERB="$1"
+    if [ "$(as_flag "$(setting "${KEY}")")" != "1" ]; then
+        say "${VERB}: refused, offline RetroAchievements is off"
+        tell "why TOGGLE_OFF"
+        exit ${EX_CONFIG}
+    fi
+    if ! have_account; then
+        say "${VERB}: refused, no RetroAchievements account is signed in"
+        tell "why NO_ACCOUNT"
+        exit ${EX_NOPERM}
+    fi
+}
+
+# One scan or top-up at a time (the lock is held for the rest of the run;
+# the fd closes with the process). Exit 75 when another holds it.
+take_lock() {
+    local VERB="$1"
+    exec 9>"${SCAN_LOCK}" || fail "cannot open ${SCAN_LOCK}"
+    if ! flock -n 9; then
+        say "${VERB}: another scan or top-up is running"
+        exit ${EX_TEMPFAIL}
+    fi
+}
+
+# The ROMs to hand to the client, one path per line into $1, most worth
+# caching first: what RetroArch's history says was played (most recent
+# first), then everything else newest file first -- so a library over the
+# cap caches the games somebody actually plays. Written in the client's own
+# terms: its extension list decides what is a ROM (is_supported_browser_file,
+# archives included -- an arcade set hashes by name), its cached-path record
+# decides what is already done (a game cached by starting it online has no
+# path recorded and is cached again once, which also refreshes its unlocks),
+# its history reader decides what was played, and its scan cap bounds the
+# walk. Skipped besides: hidden files and folders, the scraper's folders,
+# empty files (the image's placeholder.zip), and a .bin beside a .cue, .gdi
+# or .m3u -- a disc's data track, hashed through its sheet, and on its own
+# up to eight candidate hashes and a lookup each. Prints
+# "found=<n> new=<m> cached=<k>" on stdout.
+list_candidates() {
+    python3 - "$1" "${ROMS_ROOT}" "${SCAN_SYSTEMS}" <<'PY'
+import os, sys
+from pathlib import Path
+from raofflineproxy.config import load_config
+from raofflineproxy.rom_browser import (
+    MAX_SCAN_ENTRIES, is_supported_browser_file, load_cached_rom_paths, normalize_cached_rom_path,
+)
+from raofflineproxy.smart_cache import load_content_history_paths
+from raofflineproxy.storage import Storage
+
+out, roms_root, systems = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3].split()
+SKIP_DIRS = {
+    "images", "videos", "manuals", "media", "downloaded_images", "downloaded_videos",
+    "downloaded_manuals", "imgs", "savestates", "screenshots", "saves", "savefiles",
+}
+DISC_SHEETS = (".cue", ".gdi", ".m3u")
+
+found = []
+for name in systems:
+    root = roms_root / name
+    if not root.is_dir():
+        continue
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d.lower() not in SKIP_DIRS)
+        has_sheet = any(f.lower().endswith(DISC_SHEETS) for f in filenames)
+        for fn in sorted(filenames):
+            if fn.startswith("."):
+                continue
+            path = Path(dirpath) / fn
+            if not is_supported_browser_file(path):
+                continue
+            if has_sheet and fn.lower().endswith(".bin"):
+                continue
+            try:
+                if not path.is_file() or path.stat().st_size == 0:
+                    continue
+            except OSError:
+                continue
+            found.append(path)
+            if len(found) >= MAX_SCAN_ENTRIES:
+                break
+        if len(found) >= MAX_SCAN_ENTRIES:
+            break
+    if len(found) >= MAX_SCAN_ENTRIES:
+        break
+
+config = load_config()
+storage = Storage()
+try:
+    cached = load_cached_rom_paths(storage)
+finally:
+    storage.close()
+try:
+    history = load_content_history_paths(config)
+except Exception:
+    history = []
+
+new = [p for p in found if normalize_cached_rom_path(p) not in cached]
+new_set = {str(p) for p in new}
+first = [p for p in history if str(p) in new_set]
+first_set = {str(p) for p in first}
+
+def mtime(p):
+    try:
+        return p.stat().st_mtime
+    except OSError:
+        return 0.0
+
+rest = sorted((p for p in new if str(p) not in first_set), key=mtime, reverse=True)
+ordered = first + rest
+out.write_text("".join(f"{p}\n" for p in ordered), encoding="utf-8")
+print(f"found={len(found)} new={len(ordered)} cached={len(found) - len(new)}")
+PY
+}
+
+do_scan() {
+    take_lock scan
+    refuse_unless_ready scan
+    mkdir -p "${PROXY_DIR}" || fail "cannot create ${PROXY_DIR}"
+    if ! is_online; then
+        say "scan: refused, RetroAchievements is not reachable"
+        slog "scan refused: offline by the proxy's probe"
+        exit ${EX_UNAVAILABLE}
+    fi
+
+    local LIST FIFO
+    LIST="$(mktemp /tmp/raofflineproxy-scan.XXXXXX)" || fail "cannot create the list"
+    FIFO="$(mktemp -u /tmp/raofflineproxy-scan-out.XXXXXX)"
+    # Everything of the run's goes when the run does, however it ends.
+    trap 'rm -f "${LIST}" "${FIFO}"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
+
+    local COUNTS
+    tell "doing listing"
+    if ! COUNTS="$(list_candidates "${LIST}" 2>>"${SCAN_LOG}")"; then
+        slog "scan: the library could not be listed"
+        tell "why LIBRARY_UNREADABLE"
+        write_stamp 1 scan 0 0 "$(count_ready)" 0 LIBRARY_UNREADABLE
+        exit 1
+    fi
+    local FOUND NEW
+    FOUND="${COUNTS#*found=}"; FOUND="${FOUND%% *}"
+    NEW="${COUNTS#*new=}"; NEW="${NEW%% *}"
+    case "${FOUND}" in ''|*[!0-9]*) FOUND=0 ;; esac
+    case "${NEW}" in ''|*[!0-9]*) NEW=0 ;; esac
+    slog "scan start: ${COUNTS}"
+
+    local READY
+    if [ "${FOUND}" -eq 0 ]; then
+        READY="$(count_ready)"
+        slog "scan: no games found under ${ROMS_ROOT}"
+        tell "why NO_GAMES_FOUND"
+        write_stamp 1 scan 0 0 "${READY}" 0 NO_GAMES_FOUND
+        exit 1
+    fi
+    tell "total ${NEW}"
+    if [ "${NEW}" -eq 0 ]; then
+        READY="$(count_ready)"
+        slog "scan done: nothing new, ready=${READY}"
+        tell "note NOTHING_NEW"
+        write_stamp 0 scan 0 0 "${READY}" 0
+        tell "done 0|0|${READY}|0"
+        exit 0
+    fi
+
+    # The client, its stdout through a fifo so its lines are read as they
+    # come and it can be stopped between two of them; its stderr to the
+    # log. cache-roms prints "OK i/n <file>", "FAIL i/n <file>: <reason>",
+    # "DONE cached=<c> failed=<f>", one line per ROM, as it finishes each.
+    local -a PATHS
+    mapfile -t PATHS < "${LIST}"
+    mkfifo "${FIFO}" || fail "cannot create ${FIFO}"
+    ${PROXY_PY} cache-roms --paths-file "${LIST}" > "${FIFO}" 2>>"${SCAN_LOG}" &
+    CLIENT=$!
+    exec 8< "${FIFO}"
+
+    local CACHED=0 SKIPPED=0 ERRORS=0 IN_A_ROW=0 LIMIT=0 WHY="" STOPPED=0 line index name
+    name="${PATHS[0]##*/}"
+    tell "game 1|${NEW}|${name%.*}"
+    while IFS= read -r line <&8; do
+        slog "client: ${line}"
+        case "${line}" in
+            OK\ *)
+                CACHED=$((CACHED + 1)); IN_A_ROW=0 ;;
+            *"Cache limit reached"*)
+                # One lookup past the cap, and no more: every further ROM
+                # would be hashed and looked up only to be refused.
+                LIMIT=1; STOPPED=1
+                slog "scan: the proxy's cap of ${CACHE_CAP} games is reached"
+                kill "${CLIENT}" 2>/dev/null
+                break ;;
+            *"No RetroAchievements match"*|*"Hash failed"*|*": not found")
+                # Not a game RetroAchievements knows, or not a file it can
+                # read: the proxy's docs skip these silently, and so does
+                # the page -- counted here for the log and the stamp.
+                SKIPPED=$((SKIPPED + 1)); IN_A_ROW=0 ;;
+            *"login required"*|*"HTTP Error 401"*|*"HTTP Error 403"*)
+                # The account, not the link: no retry changes it.
+                WHY=SIGN_IN_REFUSED; STOPPED=1
+                kill "${CLIENT}" 2>/dev/null
+                break ;;
+            FAIL\ *)
+                # A lookup or a fetch that did not come back: the link, the
+                # server, a 429. A run of them is the scan asking a question
+                # nobody is answering.
+                ERRORS=$((ERRORS + 1)); IN_A_ROW=$((IN_A_ROW + 1))
+                if [ "${IN_A_ROW}" -ge "${ERRORS_IN_A_ROW}" ]; then
+                    WHY=RETROACHIEVEMENTS_STOPPED_ANSWERING; STOPPED=1
+                    kill "${CLIENT}" 2>/dev/null
+                    break
+                fi ;;
+            *)
+                continue ;;
+        esac
+        # The client finished ROM i (1-based); what it is on now is i+1.
+        index="${line#* }"; index="${index%%/*}"
+        case "${index}" in ''|*[!0-9]*) index=0 ;; esac
+        tell "cached ${CACHED}|${SKIPPED}"
+        if [ "${index}" -gt 0 ] && [ "${index}" -lt "${NEW}" ]; then
+            name="${PATHS[${index}]##*/}"
+            tell "game $((index + 1))|${NEW}|${name%.*}"
+        fi
+    done
+    exec 8<&-
+    wait "${CLIENT}" 2>/dev/null
+    local CLIENT_RC=$?
+    unset CLIENT
+
+    READY="$(count_ready)"
+    local RC=0
+    if [ -n "${WHY}" ]; then
+        RC=1
+    elif [ "${STOPPED}" -eq 0 ] && [ "${CLIENT_RC}" -ne 0 ]; then
+        # The client died on its own without a reason the lines above
+        # named: the log has its traceback.
+        RC=1; WHY=SOMETHING_WENT_WRONG
+    fi
+    [ "${LIMIT}" -eq 1 ] && tell "note LIMIT_REACHED"
+    [ -n "${WHY}" ] && tell "why ${WHY}"
+    write_stamp "${RC}" scan "${CACHED}" "${SKIPPED}" "${READY}" "${LIMIT}" "${WHY}"
+    slog "scan done: rc=${RC} cached=${CACHED} skipped=${SKIPPED} errors=${ERRORS} ready=${READY} limit=${LIMIT}${WHY:+ why=${WHY}}"
+    say "scan: cached ${CACHED}, skipped ${SKIPPED}, ${READY} ready${WHY:+; ${WHY}}"
+    tell "done ${CACHED}|${SKIPPED}|${READY}|${LIMIT}"
+    exit "${RC}"
+}
+
+do_topup() {
+    take_lock topup
+    refuse_unless_ready topup >/dev/null
+    mkdir -p "${PROXY_DIR}" || fail "cannot create ${PROXY_DIR}"
+
+    # Bounded: one attempt per interval, whatever the link does. The mark
+    # is the attempt, not the outcome, so a link that flaps every minute
+    # costs one probe per half hour.
+    if [ -e "${TOPUP_MARK}" ]; then
+        local AGE=$(( $(date +%s) - $(stat -c %Y "${TOPUP_MARK}" 2>/dev/null || echo 0) ))
+        if [ "${AGE}" -ge 0 ] && [ "${AGE}" -lt "${TOPUP_INTERVAL}" ]; then
+            exit 0
+        fi
+    fi
+    touch "${TOPUP_MARK}"
+
+    # The hook fires when the address arrives, which can be before the
+    # resolver answers (fork #175); three probes over ten seconds, then no.
+    local TRY ONLINE=0
+    for TRY in 1 2 3; do
+        if is_online; then ONLINE=1; break; fi
+        [ "${TRY}" -lt 3 ] && sleep 5
+    done
+    if [ "${ONLINE}" -eq 0 ]; then
+        slog "topup refused: offline by the proxy's probe"
+        exit ${EX_UNAVAILABLE}
+    fi
+
+    # The client's own recently-played pass: RetroArch's history and
+    # PPSSPP's recent list, each not yet cached, up to the cap, with the
+    # client's own pause between requests. Its progress lines are JSON;
+    # the last line is the result.
+    local OUT RC RESULT
+    OUT="$(timeout "${TOPUP_TIMEOUT}" ${PROXY_PY} run-smart-cache 2>>"${SCAN_LOG}")"
+    RC=$?
+    RESULT="$(printf '%s\n' "${OUT}" | grep '"type":"result"' | tail -n 1)"
+    local CACHED=0 SKIPPED=0 LIMIT=0
+    if [ -n "${RESULT}" ]; then
+        read -r CACHED SKIPPED LIMIT < <(python3 -c '
+import json, sys
+r = json.loads(sys.argv[1])
+print(int(r.get("cached", 0)), int(r.get("skipped", 0)), 1 if r.get("limit_reached") else 0)
+' "${RESULT}" 2>/dev/null || echo "0 0 0")
+    fi
+    local READY
+    READY="$(count_ready)"
+    slog "topup: rc=${RC} cached=${CACHED} skipped=${SKIPPED} ready=${READY} limit=${LIMIT}"
+
+    # The line under the row changes only when the top-up has something to
+    # say: games it added, or a run that could not finish. Nothing new
+    # leaves the last scan's line as it was.
+    if [ "${RC}" -ne 0 ]; then
+        local WHY=RETROACHIEVEMENTS_STOPPED_ANSWERING
+        [ "${RC}" -eq 124 ] && WHY=TOOK_TOO_LONG
+        write_stamp 1 topup "${CACHED}" "${SKIPPED}" "${READY}" "${LIMIT}" "${WHY}"
+        say "topup could not finish (rc ${RC}); ${READY} ready"
+        exit 1
+    fi
+    if [ "${CACHED}" -gt 0 ]; then
+        write_stamp 0 topup "${CACHED}" "${SKIPPED}" "${READY}" "${LIMIT}"
+        say "topup: cached ${CACHED} recently played game(s); ${READY} ready"
+    fi
+    exit 0
+}
+
 case "${1:-}" in
     enable)  do_enable ;;
     disable) do_disable ;;
@@ -232,8 +723,11 @@ case "${1:-}" in
     status)  do_status ;;
     pending) do_pending ;;
     flushed) do_flushed ;;
+    scan)    do_scan ;;
+    topup)   do_topup ;;
+    ready)   do_ready ;;
     *)
-        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|flushed}" >&2
+        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|flushed|scan|topup|ready}" >&2
         exit 2
     ;;
 esac
