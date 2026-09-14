@@ -169,3 +169,12 @@ Walk `179/walks/to-game-settings(-2).steps` + `scan-en.steps`: GAME SETTINGS -> 
 - `179-scan-running-640x480-b3189ba85f.png` -- the fourth-tier page while scanning (`GAME n OF 4`, the name, `GAMES ADDED`, spinner, elapsed).
 - `179-scan-done-640x480-b3189ba85f.png` -- `COMPLETED · GAMES ADDED: 3 · WITHOUT ACHIEVEMENTS: 1 · 3 GAMES READY FOR OFFLINE PLAY · ELAPSED 0:06`.
 - `179-offline-page-after-scan-640x480-b3189ba85f.png` -- the row's line afterwards: `LAST 09/14/2026 04:38 - COMPLETED · 3 GAMES READY FOR OFFLINE PLAY`.
+
+## #180 -- the achievements pages with the link off (guest d, 640x480, RC-5 `b3189ba85f`)
+
+Setup: the QA account in, RETROACHIEVEMENTS on, the proxy on, Tobu started once online (its set cached by hash), Böbl cached by the #179 scan (by id); then `set_link net0 off`. Walk `180-summary-to-game.steps`: MAIN MENU -> RETROACHIEVEMENTS (the summary, offline: `Softcore points: 3 / Points (hardcore): 0 / YOU'RE NOT ONLINE. SHOWING THE GAMES SAVED ON THIS DEVICE.`, Böbl `0% (0 of 12)`, Tobu `4% (1 of 28)` -- that frame carries the account name and is not kept here) -> A on a game.
+
+- `180-game-achievements-offline-tobu-640x480-b3189ba85f.png` -- `Achievements (softcore): 1/28`, `Points: 3/275`, `YOU'RE NOT ONLINE. SHOWING WHAT'S SAVED ON THIS DEVICE.`, `4% complete`, Potato-tan Secret `Unlocked`, badges drawn from the proxy's image cache (the hash path).
+- `180-game-achievements-offline-bobl-640x480-b3189ba85f.png` -- Böbl `0/12`, the twelve rows with badges (the id path, cached by the scan).
+
+Not framed: the one-line dialog for a never-cached game (Böbl had been scanned by then), and the "will be sent" marker (needs a real queued unlock, D-RA-006). The game-options entry VIEW THIS GAME'S ACHIEVEMENTS did not appear on this guest even with `cheevosId` in the gamelist -- a pre-existing gate (`FileData::hasCheevos`), fork #183.
