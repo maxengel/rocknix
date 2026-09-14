@@ -418,3 +418,26 @@ just said. Blindspots 13 and 34 are the same rule turned outward (verify the
 artifact, not the report); this is the rule turned on one's own act. Related:
 D-QA-015 (the reboot is asked for by name), #150, #174, the 2026-09-14 work log
 at 01:45 UTC.
+
+## 43. A safety claim in a header comment, never tested (2026-09-14)
+
+`rocknix-evidence` was written to be the file a player sends to a stranger,
+and its header said so with confidence: *"Nothing here reads a password, a
+key, or a token: system.cfg and rclone.conf are listed by size only, and the
+logs the scripts write carry neither."* The second half was a claim about
+other people's code -- setsettings' verbose `log()`, inherited from JELOS,
+had written `cheevos_password = "…"` into `exec.log` since before the fork
+existed -- and nothing ever checked it. The bundle copied `exec.log` whole.
+The phase-3 fixture stream noticed only because its excerpt filter tripped
+on the value (#176).
+
+The shape: a comment that states a property of code you do not own is a
+hope, not a guard, and it reads as a guard to everyone after you. If the
+property matters at a boundary you own, enforce it there -- filter on the
+way out, refuse to proceed without the filter -- and prove it with a planted
+value that the old code lets through (`tools/last-good-scripts-test` r and
+s). The fix was to stop asserting the logs were clean and to make the bundle
+clean whatever the logs hold. Blindspot 13 is the same failure on a ticked
+checkbox; *guards must fail closed* in `engineering-practices.md` is the rule
+this instance adds a case to. Related: D-INFRA-010, D-INFRA-011, the
+2026-09-14 work log.

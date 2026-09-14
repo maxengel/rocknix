@@ -47,7 +47,13 @@ rocknix-evidence collect
 
 One archive under `/storage/.cache/log/evidence/`, with the previous boot's
 journal and kernel log, any pstore dump, the ES and cloud logs, the state
-snapshots, and the config files **by size only**. Copy it off the device;
+snapshots, and the config files **by size only**. Every file in it, and every
+snapshot page, has been through `redact_credentials` (`001-functions`): a
+password, token or API key reads `<redacted>` and the key or flag it sat
+under is kept, so the archive can be handed to a stranger. The launch log in
+verbose mode carried the RetroAchievements password before that pass existed
+(#176, D-INFRA-010); `summary.txt` says the filter ran and how many files it
+rewrote. Copy it off the device;
 read `summary.txt`, then `journal-previous-boot.txt`, then `pstore/`. Do
 this before a second reboot, before re-running anything, and before touching
 a config file -- each of those is another boot of journal and one more
