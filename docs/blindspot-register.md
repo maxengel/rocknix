@@ -395,4 +395,26 @@ hand from the same image with `-device virtio-gpu-pci,xres=640,yres=480`)
 and the rule that a UI frame is read at the handheld's size before it is
 called done. Related: 39 (a PASS over a table of dashes), 13 (ticked items
 that had never functioned).
-| 42 | 2026-09-14 | **Reported an action as not taken because the actor's own tool output said so, while the acted-on device's journal showed it had been.** The RG SP rebooted at 00:49:48 UTC from the harness's `sync; reboot` (authorised); the tool result displayed for that call read as an idle check with no answer, and the orchestrator told the maintainer twice that it had not rebooted the device. The previous-boot journal (two ssh logins from the build host, the reboot request a third of a second later) settled it. Rule: when something you may have caused happens on a device, read the device before saying "not me" -- the journal, `last`, the unit log -- and treat the harness's displayed output as one witness, not the record. Same shape as blindspots 13 and 34 turned inward: verify the artifact, including your own act. | #150, #174; `docs/work-logs/2026_09-work_logs/2026_09_14-work_log.md` 01:45 UTC |
+
+## 42. "Not me", read from the transcript instead of the device (2026-09-14)
+
+The RG SP rebooted at 00:49:48 UTC. The maintainer asked whether something had
+caused it, since they had not. The orchestrator answered twice that it had not
+sent a reboot, because the tool result it had in front of it read as an idle
+check with no answer and the branch that reboots gated on that check. The
+device's previous-boot journal (this image keeps five boots) said otherwise:
+two ssh logins from the build host's tailnet address at 1856.7 s and 1857.7 s,
+and `systemd-logind: The system will reboot now!` a third of a second after the
+second one, with no power key, lid or watchdog line before it. The reboot was
+the harness's own `sync; reboot`, sent under the yes the maintainer had given
+minutes earlier -- authorised, correct, and then denied.
+
+The shape: a transcript is one witness to what the actor did, and the actor
+reads it with the bias of knowing what it meant to do. The thing acted on keeps
+its own record. When a device changes state and you are a candidate cause, read
+the device -- `journalctl -b -1`, `last`, the unit's log, the ssh logins -- before
+saying "not me", and say what you find even when it contradicts what you have
+just said. Blindspots 13 and 34 are the same rule turned outward (verify the
+artifact, not the report); this is the rule turned on one's own act. Related:
+D-QA-015 (the reboot is asked for by name), #150, #174, the 2026-09-14 work log
+at 01:45 UTC.
