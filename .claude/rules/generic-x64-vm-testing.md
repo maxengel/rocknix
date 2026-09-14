@@ -581,6 +581,12 @@ each, never while an image builds on this host -- they are timing-bound).
 `--backend <name>` picks which of the five QA clouds every suite talks to
 (default `webdav`); the report header names the cloud, its port and its
 caps. Run it on every image before anything is staged (#120).
+`--ra-offline` (or `--only ra-offline`) adds the offline-achievements
+scenario, `tools/ra-offline-test` (#166): opt-in like `link` because it
+needs the serial console, the QA RetroAchievements account file, and spends
+one of that account's cheap achievements per PASS -- see § Games with
+RetroAchievements sets below. `--guest d` drives the 640x480 guest beside
+the pair (`--skip-up` with it: `up` is written around the pair only).
 
 Two runs fit on one host at once — `--guest a` against one backend and
 `--guest b` against another, which is how the matrix is walked:
@@ -719,3 +725,40 @@ could only be shown on a handheld. Copy them under `/storage/roms/<system>/`, pu
 QA account on with `tools/qa-accounts <port> ra`, and read RetroArch's log for the
 unlock; with the offline proxy on, the proxy's `service.log` shows the queued award and
 its flush. Do not commit them; the directory is the fixture home.
+
+`tools/ra-offline-test` drives the whole scenario (the `ra-offline` suite of
+`tools/vm-qa`): account on, toggle on, the game launched online through the
+interface's own launch path (`POST /launch` on the guest's loopback, as
+`tools/time-to-play` does), the link cut on the monitor, the game driven over
+`sendkey` until RetroArch logs `Awarding achievement`, the exit with the link
+down, `pending`, the link back, `Flush complete ... flushed=1`, the stamp, and
+RetroAchievements' own API saying the award landed. `--control` runs it with
+the toggle off and asserts #162's loss instead.
+
+Three things about it that are not obvious from the outside:
+
+- **An achievement is spent by a PASS.** RetroAchievements records an unlock
+  once per account (softcore; hardcore is a second life, but the proxy is
+  casual-only), so the fixture first asks RA's API which of its routed
+  achievements the QA account has NOT earned, and FAILs naming the spent one
+  with its date when none is left -- never passes over nothing. The
+  maintainer resets the account's progress on the game at retroachievements.org
+  between runs (2026-09-14), or a second QA account is used. A nightly that
+  includes this suite needs one of those every run.
+- **A route is a key cadence someone has driven to the award.** Tobu's hidden
+  song: two STARTs to the MAIN MENU, then left/right through the carousel with
+  4.5 s on each entry -- the award at about the 18th press, 90 s in. Böbl's
+  Dive Ball and Niñoid's double jump have no route: Böbl's bubble must be
+  sprung over a pillar from a full dive on a timing no blind sequence hit, and
+  Niñoid's tutorial kid did not jump on A, B or Up (2026-09-14, on a pair guest
+  with the link cut so nothing was spent -- hardcore mode is how a spent
+  softcore achievement is re-driven for a route check: it fires again, and is
+  lost on purpose by killing RetroArch before the link returns).
+- **The only channel with the link down is the serial console**, and its
+  lines end in CRLF. `tools/vm-serial` strips the outermost; a second line
+  keeps its `\r`, so `"0"` reads as `"0<CR>"` in a `[ = ]`. Pipe serial
+  output through `tr -d '\r'` before comparing it. Busybox `pgrep -x
+  retroarch` matches nothing (the process is `/usr/bin/retroarch`); use
+  `pgrep -f ^/usr/bin/retroarch`. And `exec.log` carries
+  `cheevos_password = "..."` from `setsettings.sh` -- every excerpt goes
+  through the credential filter with the account name masked.
