@@ -147,6 +147,12 @@
 #            cached_game_ids.txt export (one id per line, rewritten on every
 #            cache change by the service and the client alike), on one line.
 #
+#   running  /storage/.config/raofflineproxy/running while a scan or top-up is
+#            at its jobs (fork #189): one line, `route=<scan|topup> at=<epoch>
+#            [index=<i> total=<n> name=<game>]`, rewritten as each game
+#            finishes (index is the game it is on now), removed when the
+#            run ends -- the interface shows a run it did not start from it,
+#            and treats one older than the bound as gone.
 #   last-scan is /storage/.config/raofflineproxy/last-scan, one line:
 #   "<epoch> <rc> <scan|topup> cached=<n> skipped=<m> ready=<total>
 #   limit=<0|1> indexed=<i> errors=<e>[ why=<TOKEN>]" -- how the last run
@@ -214,6 +220,7 @@ FLUSH_STAMP="${PROXY_DIR}/last-flush"
 # with the rest (D-INFRA-010) and `disable` leaves them where the cache is.
 SCAN_STAMP="${PROXY_DIR}/last-scan"
 SCAN_LOG="${PROXY_DIR}/scan.log"
+RUNNING="${PROXY_DIR}/running"
 TOPUP_MARK="${PROXY_DIR}/last-topup-attempt"
 READY_FILE="${PROXY_DIR}/cached_game_ids.txt"
 SCAN_LOCK="/var/run/raofflineproxy-scan.lock"
@@ -589,6 +596,15 @@ do_flushed() {
 }
 
 # ---- the scan -------------------------------------------------------------
+
+# The progress file (fork #189): whole or not at all (temp + rename), so a
+# reader never sees half a line; RUN_ROUTE is set by the route before its
+# first mark. $1 is the rest of the line (" index=<i> total=<n> name=<g>").
+mark_running() {
+    printf 'route=%s at=%s%s\n' "${RUN_ROUTE:-run}" "$(date +%s)" "${1:-}" > "${RUNNING}.tmp" 2>/dev/null \
+        && mv -f "${RUNNING}.tmp" "${RUNNING}" 2>/dev/null
+}
+unmark_running() { rm -f "${RUNNING}" "${RUNNING}.tmp"; }
 
 # A line for the page: ">>> <word> <fields>". Everything else on stdout is
 # the client's own output, which the page shows nothing of.
@@ -1039,11 +1055,12 @@ run_jobs() {
     CLIENT=$!
     exec 8< "${JOBS_FIFO}"
 
-    R_CACHED=0; R_SKIPPED=0; R_ERRORS=0; R_LIMIT=0; R_WHY=""; R_STOPPED=0; R_INDEXED=0
+    R_CACHED=0; R_SKIPPED=0; R_ERRORS=0; R_LIMIT=0; R_WHY=""; R_STOPPED=0; R_INDEXED=0; R_DONE=0
     local IN_A_ROW=0 line index name
-    if [ "${MODE}" = page ] && [ "${TOTAL}" -gt 0 ]; then
+    if [ "${TOTAL}" -gt 0 ]; then
         name="${PATHS[0]##*/}"
-        tell "game 1|${TOTAL}|${name%.*}"
+        mark_running " index=1 total=${TOTAL} name=${name//[[:space:]]/_}"
+        [ "${MODE}" = page ] && tell "game 1|${TOTAL}|${name%.*}"
     fi
     while IFS= read -r line <&8; do
         slog "client: ${line}"
@@ -1051,7 +1068,10 @@ run_jobs() {
             OK\ *)
                 R_CACHED=$((R_CACHED + 1)); IN_A_ROW=0 ;;
             DONE\ *)
-                R_INDEXED="$(count_of "${line}" indexed)"
+                # The helper's verdict on the games: whatever the process does
+                # afterwards (badge downloads outliving the bound, fork #188) is
+                # not the run's outcome.
+                R_INDEXED="$(count_of "${line}" indexed)"; R_DONE=1
                 continue ;;
             *"Cache limit reached"*)
                 # The client says it will cache no more (no ROCKNIX client
@@ -1085,13 +1105,16 @@ run_jobs() {
             *)
                 continue ;;
         esac
-        [ "${MODE}" = page ] || continue
         # The helper finished game i (1-based); what it is on now is i+1.
         index="${line#* }"; index="${index%%/*}"
         case "${index}" in ''|*[!0-9]*) index=0 ;; esac
-        tell "cached ${R_CACHED}|${R_SKIPPED}"
         if [ "${index}" -gt 0 ] && [ "${index}" -lt "${TOTAL}" ]; then
             name="${PATHS[${index}]##*/}"
+            mark_running " index=$((index + 1)) total=${TOTAL} name=${name//[[:space:]]/_}"
+        fi
+        [ "${MODE}" = page ] || continue
+        tell "cached ${R_CACHED}|${R_SKIPPED}"
+        if [ "${index}" -gt 0 ] && [ "${index}" -lt "${TOTAL}" ]; then
             tell "game $((index + 1))|${TOTAL}|${name%.*}"
         fi
     done
@@ -1100,6 +1123,10 @@ run_jobs() {
     R_CLIENT_RC=$?
     unset CLIENT
     rm -f "${JOBS_FIFO}"; JOBS_FIFO=""
+    unmark_running
+    if [ "${R_DONE}" -eq 1 ] && [ "${R_CLIENT_RC}" -ne 0 ]; then
+        slog "run: the helper had reported DONE and ended with rc ${R_CLIENT_RC} afterwards (badge downloads cut short) -- not the run's verdict (#188)"
+    fi
 }
 
 # A run asked to stop (disable's SIGTERM, #186 PL-30) exits through its
@@ -1112,6 +1139,7 @@ stopped() {
 
 do_scan() {
     trap 'stopped scan' TERM
+    RUN_ROUTE=scan
     take_lock scan
     refuse_unless_ready scan
     mkdir -p "${PROXY_DIR}" || fail "cannot create ${PROXY_DIR}"
@@ -1124,9 +1152,10 @@ do_scan() {
     local LIST
     LIST="$(mktemp /tmp/raofflineproxy-scan.XXXXXX)" || fail "cannot create the list"
     # Everything of the run's goes when the run does, however it ends.
-    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
+    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}" "${RUNNING}" "${RUNNING}.tmp"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
 
     local COUNTS
+    mark_running
     tell "doing listing"
     if ! COUNTS="$(list_jobs "${LIST}" all 0 2>>"${SCAN_LOG}")"; then
         slog "scan: the library could not be listed"
@@ -1166,9 +1195,10 @@ do_scan() {
     local RC=0 WHY="${R_WHY}"
     if [ -n "${WHY}" ]; then
         RC=1
-    elif [ "${R_STOPPED}" -eq 0 ] && [ "${R_CLIENT_RC}" -ne 0 ]; then
-        # The helper died on its own without a reason the lines above
-        # named: the log has its traceback.
+    elif [ "${R_STOPPED}" -eq 0 ] && [ "${R_CLIENT_RC}" -ne 0 ] && [ "${R_DONE}" -eq 0 ]; then
+        # The helper died on its own, before its DONE, without a reason the
+        # lines above named: the log has its traceback. (After DONE the games
+        # are cached and the exit is the badge downloads', fork #188.)
         RC=1; WHY=SOMETHING_WENT_WRONG
     elif [ "${R_ERRORS}" -gt 0 ]; then
         # A fetch that failed for any game, even between games that went
@@ -1194,6 +1224,7 @@ do_scan() {
 # do. It marks the attempt like any other, once its probe has answered.
 do_topup() {
     local AFTER_INDEX=0 AI_NOTE=""
+    RUN_ROUTE=topup
     if [ "${1:-}" = "--after-index" ]; then AFTER_INDEX=1; AI_NOTE=" (after the index)"; fi
     trap 'stopped topup' TERM
     # One deadline, taken before anything can wait: the lock, the probes,
@@ -1237,7 +1268,8 @@ do_topup() {
 
     local LIST
     LIST="$(mktemp /tmp/raofflineproxy-topup.XXXXXX)" || fail "cannot create the list"
-    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}" "${SC_OUT:-}"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
+    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}" "${SC_OUT:-}" "${RUNNING}" "${RUNNING}.tmp"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
+    mark_running
 
     # First, every game the interface's index knows and the client has not
     # cached -- the games added and indexed since the last run, and with a
@@ -1268,7 +1300,10 @@ do_topup() {
         else
             run_jobs quiet "${LIST}" "${NEW}" "${LEFT}"
             CACHED="${R_CACHED}"; SKIPPED="${R_SKIPPED}"; INDEXED="${R_INDEXED}"; LIMIT="${R_LIMIT}"; ERRORS="${R_ERRORS}"; WHY="${R_WHY}"
-            if [ -z "${WHY}" ] && [ "${R_STOPPED}" -eq 0 ] && [ "${R_CLIENT_RC}" -ne 0 ]; then
+            # A helper killed by the bound after its DONE finished its games
+            # (fork #188: badge downloads kept it alive); only one cut before
+            # DONE makes the run one that did not finish.
+            if [ -z "${WHY}" ] && [ "${R_STOPPED}" -eq 0 ] && [ "${R_CLIENT_RC}" -ne 0 ] && [ "${R_DONE}" -eq 0 ]; then
                 WHY=RETROACHIEVEMENTS_STOPPED_ANSWERING
                 [ "${R_CLIENT_RC}" -eq 124 ] && WHY=TOOK_TOO_LONG
             fi
@@ -1289,11 +1324,13 @@ do_topup() {
     if [ -z "${WHY}" ] && [ "${LEFT}" -ge 60 ]; then
         local SRC RESULT
         SC_OUT="$(mktemp /tmp/raofflineproxy-topup-sc.XXXXXX)" || fail "cannot create the result file"
+        mark_running
         timeout "${LEFT}" ${PROXY_PY} run-smart-cache > "${SC_OUT}" 2>>"${SCAN_LOG}" &
         CLIENT=$!
         wait "${CLIENT}" 2>/dev/null
         SRC=$?
         unset CLIENT
+        unmark_running
         RESULT="$(grep '"type":"result"' "${SC_OUT}" 2>/dev/null | tail -n 1)"
         rm -f "${SC_OUT}"; SC_OUT=""
         local SC=0 SS=0 SL=0

@@ -34,10 +34,12 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
+import threading
 from pathlib import Path
 
-from raofflineproxy import cache_keys, network, rom_browser, rom_cache
+from raofflineproxy import cache_keys, image_cache, network, rom_browser, rom_cache
 from raofflineproxy.auth import resolve_credentials
 from raofflineproxy.config import configure_logging, image_caching_enabled, load_config
 from raofflineproxy.network import apply_scan_batch_cooldown
@@ -64,6 +66,22 @@ rom_cache.http_get = _counting_http_get
 
 def note(text: str) -> None:
     print(text, file=sys.stderr, flush=True)
+
+
+def wait_for_badges(seconds: float) -> None:
+    """The badge images the games queued are still coming down in image_cache's
+    pool, whose workers are not daemon threads: left alone, the process would
+    live until the last one landed -- on the RG SP 83 s past its DONE, until
+    the ctl's bound killed it and read the kill as the verdict (fork #188).
+    Give them `seconds`, then drop what has not started (the games are cached
+    either way; a badge that did not come is fetched when a page asks for it
+    online, and offline the page shows the blank it already tolerates)."""
+    waiter = threading.Thread(target=lambda: image_cache._image_download_executor.shutdown(wait=True), daemon=True)
+    waiter.start()
+    waiter.join(timeout=max(0.0, seconds))
+    if waiter.is_alive():
+        note(f"badge downloads still running after {int(seconds)} s; the rest are dropped (fetched when a page asks for them online)")
+        image_cache.shutdown_image_downloads()
 
 
 def cache_indexed(game_id: int, hash_value: str, path: Path, credentials: dict,
@@ -176,6 +194,7 @@ def main() -> int:
         storage.close()
 
     print(f"DONE cached={cached} failed={failed} indexed={indexed}", flush=True)
+    wait_for_badges(float(os.environ.get("RAOFFLINEPROXY_IMAGE_WAIT", "120")))
     return 0
 
 

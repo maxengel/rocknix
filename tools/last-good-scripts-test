@@ -101,7 +101,9 @@
 #      the top-up probes with the token check's patience and marks the
 #      attempt only after an answer (PL-04); one deadline over the lock
 #      wait, the listing and both passes (PL-28); a failed game ends the
-#      run COULDN'T FINISH (PL-24); the walk's cap counts uncached files
+#      run COULDN'T FINISH (PL-24); the helper's DONE is the verdict and a
+#      kill after it is not (#188); the progress file while the jobs run
+#      (#189); the walk's cap counts uncached files
 #      (PL-17); disable stops a running run (PL-30). And the client's own
 #      predicates, from the patched tree: the refresh bound and the
 #      surviving thread (patch 005, PL-01/PL-25), a game evicted whole
@@ -170,6 +172,10 @@
 #                                             # Fetch lines, in the bundle and
 #                                             # in a snapshot page, and a
 #                                             # collect that runs with no filter
+#     BASE_REF=3387cf5da0 tools/last-good-scripts-test --old
+#                                             # t's #188 and #189 checks FAIL:
+#                                             # the ctl from before the DONE
+#                                             # verdict and the progress file
 #     tools/last-good-scripts-test            # PASSED
 #
 # One FAIL in m that names "the built image" is about the build root on this
@@ -1837,8 +1843,12 @@ jobs = [l for l in Path(sys.argv[1]).read_text().splitlines() if l.strip()]
 with (run / "helper-jobs.log").open("a") as log: log.write("".join(j + "\n" for j in jobs))
 storage = Storage(); cached = failed = indexed = 0; total = len(jobs)
 def say(text): print(text, flush=True)
+running = Path(os.environ.get("RAOFFLINEPROXY_CONFIG_DIR", "/storage/.config/raofflineproxy")) / "running"
 for i, raw in enumerate(jobs, start=1):
     kind, gid, hsh, path = raw.split("\t", 3); label = Path(path).name
+    if i > 1: time.sleep(0.2)   # let the ctl read the last OK and rewrite the progress file
+    if running.exists():
+        with (run / "running-seen").open("a") as f: f.write(running.read_text())
     step = plan[i - 1].split() if i - 1 < len(plan) and plan[i - 1].strip() else ["ok"]
     if step[0] == "skip": failed += 1; say(f"FAIL {i}/{total} {label}: No RetroAchievements match"); continue
     if step[0] == "fail": failed += 1; say(f"FAIL {i}/{total} {label}: patch request failed: HTTP Error 429: Too Many Requests"); continue
@@ -1858,6 +1868,15 @@ for i, raw in enumerate(jobs, start=1):
 storage.close()
 with (run / "helper-times").open("a") as f: f.write(f"end {now()}\n")
 say(f"DONE cached={cached} failed={failed} indexed={indexed}")
+# After DONE (fork #188): what the badge downloads did on the RG SP -- `slow N`
+# runs on past the budget and is killed by the fake timeout; `die` ends with 3.
+linger = (run / "helper-linger").read_text().split() if (run / "helper-linger").exists() else []
+if linger and linger[0] == "slow":
+    n = int(linger[1]); budget = os.environ.get("FAKE_BUDGET")
+    if budget and n > int(budget):
+        (run / "clock").write_text(f"{clock() + int(budget)}\n"); (run / "timeout-hit").touch(); sys.exit(143)
+    (run / "clock").write_text(f"{clock() + n}\n")
+if linger and linger[0] == "die": sys.exit(3)
 EOS
 # MAX_SCAN_ENTRIES is the client's constant; with RA_TEST_SCAN_CAP set this
 # sitecustomize lowers it for a run, so the cap is tested with eleven files
@@ -1996,6 +2015,40 @@ T0=$(cat "${TR}/clock")
 tctl topup; T1=$(cat "${TR}/clock"); TOOK=$(( T1 - T0 ))
 [ "${RC}" -eq 1 ] && [ "${TOOK}" -le 900 ] && grep -q 'why=TOOK_TOO_LONG$' "${TSTAMP}" && ! grep -q '^smart ' "${TR}/probe.log"; check $? "topup with the listing 120 s late and a helper that would run 900 s: ended at ${TOOK} s from its start (rc ${RC}), TOOK_TOO_LONG, no recently played pass" "rc ${RC}; took ${TOOK}s; stamp: $(cat "${TSTAMP}" 2>/dev/null); smart: $(grep -c '^smart ' "${TR}/probe.log"); log: $(grep topup "${TLOG}" | tr '\n' '|' | cut -c1-300) -- the fifteen minutes were not one bound (#186 PL-28)"
 rm -f "${TR}/listing-delay" "${TR}/helper-plan"
+# The helper's DONE is the verdict on the games (fork #188: on the RG SP the
+# helper finished its 147 games and then downloaded badges until the bound
+# killed it, and the kill was read as TOOK_TOO_LONG). Finished, then killed
+# by the bound: the run finished -- rc 0, no why, the note in the log. The
+# case above (killed before DONE) stays TOOK_TOO_LONG.
+treset; touch -d '2 hours ago' "${TMARK}"; printf 'ok\nok\n' > "${TR}/helper-plan"; echo 'slow 1000' > "${TR}/helper-linger"
+tctl topup; [ "${RC}" -eq 0 ] && grep -qE ' 0 topup cached=2 skipped=0 ready=[0-9]+ limit=0 indexed=2 errors=0$' "${TSTAMP}" && grep -q 'had reported DONE and ended with rc 124' "${TLOG}"; check $? "topup whose helper reported DONE and was then killed by the bound: the run finished, rc 0, no why (#188)" "rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null); log: $(grep -E 'DONE|topup' "${TLOG}" | tail -3 | tr '\n' '|')"
+rm -f "${TR}/helper-linger" "${TR}/helper-plan"
+# The same on the scan route: a helper that dies after its DONE.
+treset; printf 'ok\nok\n' > "${TR}/helper-plan"; echo die > "${TR}/helper-linger"
+tctl scan; [ "${RC}" -eq 0 ] && grep -qE '^>>> done [0-9]+\|0\|[0-9]+\|0$' "${OUT}" && ! grep -q '>>> why' "${OUT}" && grep -qE ' 0 scan cached=[0-9]+ ' "${TSTAMP}" && grep -q 'had reported DONE and ended with rc 3' "${TLOG}"; check $? "scan whose helper died after its DONE: COMPLETED, no why (#188)" "rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|'); stamp: $(cat "${TSTAMP}" 2>/dev/null)"
+rm -f "${TR}/helper-linger" "${TR}/helper-plan"
+# While the jobs run the ctl keeps the progress file the page reads (fork
+# #189): route, the game it is on, the total; gone when the run ends.
+treset; touch -d '2 hours ago' "${TMARK}"; printf 'ok\nok\n' > "${TR}/helper-plan"
+tctl topup; [ "${RC}" -eq 0 ] && grep -qE '^route=topup at=[0-9]+ index=1 total=2 name=' "${TR}/running-seen" && grep -qE '^route=topup at=[0-9]+ index=2 total=2 name=' "${TR}/running-seen" && [ ! -e "${TPD}/running" ] && [ ! -e "${TPD}/running.tmp" ]; check $? "topup keeps running (route topup, game 1 then 2 of 2) while its jobs run and removes it after (#189)" "rc ${RC}; seen: $(tr '\n' '|' < "${TR}/running-seen" 2>/dev/null); left: $(ls "${TPD}" | tr '\n' ' ')"
+treset; printf 'ok\nok\n' > "${TR}/helper-plan"
+tctl scan; [ "${RC}" -eq 0 ] && grep -qE '^route=scan at=[0-9]+ index=1 total=[0-9]+ name=' "${TR}/running-seen" && grep -qE '^route=scan at=[0-9]+ index=2 total=[0-9]+ name=' "${TR}/running-seen" && [ ! -e "${TPD}/running" ]; check $? "scan keeps running (route scan, game 1 then 2 of n) while its jobs run and removes it after (#189)" "rc ${RC}; seen: $(tr '\n' '|' < "${TR}/running-seen" 2>/dev/null); left: $(ls "${TPD}" | tr '\n' ' ')"
+rm -f "${TR}/helper-plan"
+# The real helper's badge wait (fork #188): with downloads still queued it
+# returns within its bound and shuts the pool down, dropping the rest.
+PYTHONPATH="${CLIENT}" python3 - "${ROOT}/${HELPER_REL}" <<'EOS' >"${OUT}" 2>"${ERR}"
+import sys, time, importlib.machinery, importlib.util, concurrent.futures as cf
+from raofflineproxy import image_cache
+spec = importlib.util.spec_from_loader("helper", importlib.machinery.SourceFileLoader("helper", sys.argv[1]))
+helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(helper)
+image_cache._image_download_executor = cf.ThreadPoolExecutor(max_workers=1)
+for _ in range(3): image_cache._image_download_executor.submit(time.sleep, 4)
+t0 = time.time(); helper.wait_for_badges(0.5); took = time.time() - t0
+assert took < 3, took
+assert image_cache._image_download_executor._shutdown
+print(f"ok {took:.2f}")
+EOS
+RC=$?; [ "${RC}" -eq 0 ] && grep -q '^ok ' "${OUT}"; check $? "the helper's badge wait returns within its bound and shuts the pool down ($(cat "${OUT}" 2>/dev/null))" "rc ${RC}; $(tail -3 "${ERR}" 2>/dev/null | tr '\n' '|')"
 # The lock wait spends from the same deadline: an after-index run behind a
 # holder that never lets go gives up inside the fifteen minutes.
 treset; T0=$(cat "${TR}/clock")
