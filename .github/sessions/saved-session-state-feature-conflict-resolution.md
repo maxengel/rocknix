@@ -1,6 +1,6 @@
 # Saved Session State
 
-> **Saved**: 2026-09-13T22:45:00Z
+> **Saved**: 2026-09-14T01:05:00Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`, worktree `~/Development/emulationstation-next.worktrees/qa-integration`; ES upstream branch is `master`)
 
@@ -8,7 +8,10 @@
 
 Epic #11 (cloud saves), milestone 3 "Stable before upstream". Today (2026-09-13, UTC night): #45 VM half, #142 (closed), #93, #47, #27, #149 (closed), #129 (closed), #50 delivered (router/LAN boxes open), #82 VM half, #113 VM half, #66/#67/#68/#69 VM boxes all ticked. Decisions D-CLOUD-008, D-CLOUD-123, D-NET-002/003, D-UI-050/051, D-WORKFLOW-010/013/014, D-QA-016 written; register 232 IDs, `tools/register-check` clean; blindspots 40, 41.
 
-## In Progress (nothing running in the background)
+## In Progress
+- **Scratch moved:** the harness scratchpad became unavailable at 01:00 UTC; the session's scripts now live in `/workspace/tmp/rocknix-session/` (`rebuild-d.sh` -- IMG is the newest `generic-x64/target/ROCKNIX-GENERIC_X64.x86_64-*.img.gz`, the date rolled to 20260914; `build-x64.sh`; `stage-h700.sh <host>` with `HOSTOPT`; `burst.py`; `current-x64-id`, `current-device-id`). The old path still holds the 2026-09-13 logs on disk.
+- **RG SP staging:** on the tailnet as `RG-SP` (100.75.221.73, via relay); `3ada78e181` tar STAGED in `/storage/.update/` at 00:44 UTC (checksum verified on the device); the maintainer said yes to the reboot at ~00:55 UTC, but ssh timed out at the moment of the idle re-check (device asleep or hotspot down) -- retry the idle check and the reboot when it answers, under that yes, and verify per the runbook. RG35XX SP and the Nova: not yet on the tailnet.
+- **Phase 2b verification agent** on guest d (TEST image `609f1df917`, feature tips distribution `609f1df917` / ES `f7430b49d0`): page, patches 002/003 (D-RA-005: the casual-only warning is the server's), `pending|flushed`, the messages ("sent" for achievements, "synced" for saves); frames to `docs/qa-frames/2026-09-14/`. Open: the two-part sentence does not fit at 640x480 (falls through to the achievements sentence) -- maintainer's call.
 
 - **Waiting on the maintainer (travelling):** Tailscale access to the RG SP, RG35XX SP and Pocket Nova -> stage H700/SM8550 `3ada78e181` (artifacts `h700-all-20260913-3ada78e181/`, `sm8550-20260913-3ada78e181/`; `scratchpad/stage-h700.sh <host>` shape, each reboot a question), read #161's journal; decisions: #151 Phase 7 close, #47 look, the `!RA!` subtitle (two lines at 640x480: keep or move into the dialog), D-RA-003 (the synthetic achievement: keep / suppress repeats / patch out), where #159/#158 sit relative to conflict resolution (D-WORKFLOW-019).
 - **Drop 1 (cloud sync) state:** x64 `9684d8665d` nine suites PASS + two proofs rounds clean; both device images from `3ada78e181` verified; both handhelds on `0b1a1d4db0` awaiting the update. Device round after staging: #45, #50 LAN, #82, #113 Dropbox, #121, #66-#69 H700 boxes, PL-04 flashes, #157 box 5, #160 box 4, #153 box 5 (transfer-page frame en/fr could be a VM frame too).
