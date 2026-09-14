@@ -53,16 +53,34 @@
 #            two numbers and nothing else.
 #
 # And the three verbs of SCAN GAMES FOR OFFLINE ACHIEVEMENTS (fork #179,
-# D-RA-010): the proxy serves a game offline only from what it cached while
-# online, so a game never started with a connection earned nothing offline
-# until somebody started it once online. The scan caches every game on the
-# console that RetroAchievements knows, and the top-up keeps the recently
-# played ones cached without anyone pressing anything.
+# D-RA-010; fork #184, D-RA-013): the proxy serves a game offline only from
+# what it cached while online, so a game never started with a connection
+# earned nothing offline until somebody started it once online. The scan
+# caches every game on the console that RetroAchievements knows, and the
+# top-up keeps the cache following the library without anyone pressing
+# anything.
 #
-#   scan     walk the ROM folders of the systems RetroAchievements has sets
-#            for, and hand every ROM not yet cached to the client's own
-#            `cache-roms` (hash, look the game up, save its achievement
-#            list, the player's unlocks and a session). A page in
+#   Both follow the interface's own game index (D-RA-013). INDEX NEW GAMES
+#   AT STARTUP and INDEX GAMES (the hasher) write each game's <cheevosHash>
+#   and, where RetroAchievements knows the hash, its <cheevosId> into the
+#   system's gamelist.xml -- through the interface's recovery/<system>/ files
+#   until it writes the gamelist at its next clean exit; this reads both.
+#   The rule, per system: where an index exists (any game with a cheevosHash)
+#   only the games with a cheevosId are cached, from the id and the hash the
+#   interface already has -- the ROM is never read again -- and the games
+#   without an entry are left to the index (they are the ones it found no
+#   set for, or the ones added since it ran, which the next index picks up);
+#   where no index exists at all, every ROM under the folder is hashed and
+#   looked up as before. So a library that was indexed never has its
+#   leftovers hashed one at a time on every run, and a device that never
+#   indexed still gets the whole scan. The work is done by
+#   raofflineproxy-cache-indexed beside this script, over a job list
+#   list_jobs writes (its header has the two line shapes).
+#
+#   scan     list the jobs (above), and hand them to the helper: an indexed
+#            game costs the proxy's patch, unlocks and achievementsets
+#            requests and no hash lookup; an unindexed one the client's own
+#            add_rom_to_cache (hash, gameid, then the same three). A page in
 #            EmulationStation (GuiOfflineScan) runs it and reads its ">>> "
 #            lines: `doing listing`, `total <n>`, `game <i>|<n>|<name>`,
 #            `cached <c>|<s>`, `note <TOKEN>`, `why <TOKEN>`,
@@ -70,32 +88,46 @@
 #            the page names and no stamp -- when the toggle is off (78), no
 #            account is signed in (77), the device is offline by the proxy's
 #            own probe (69), or another scan or top-up holds the lock (75).
-#            Stops when the client reports the proxy's 100-game cap (one
-#            lookup past it, no more), or after three lookups in a row that
-#            RetroAchievements did not answer. Writes last-scan (below) and
-#            exits 0 when it ran to the end, 1 when it could not finish.
-#   topup    the client's `run-smart-cache` -- RetroArch's recent history,
-#            PPSSPP's recent list -- so a game played once online is cached
-#            even if the scan was never pressed. For EmulationStation's
-#            network-up hook: silent (nothing on stdout), bounded (one
-#            attempt per half hour, fifteen minutes at most), the same
-#            refusals as scan with the same codes, and it writes last-scan
-#            only when it cached something or could not finish -- a top-up
-#            that found nothing new leaves the last scan's line alone.
+#            Stops when the client reports its cap (patch 004 puts it out of
+#            reach), or after three lookups in a row that RetroAchievements
+#            did not answer. Writes last-scan (below) and exits 0 when it ran
+#            to the end, 1 when it could not finish.
+#   topup    every game the index knows and the client has not cached, then
+#            the client's `run-smart-cache` (RetroArch's recent history,
+#            PPSSPP's recent list) for what the index missed -- so a game
+#            added and indexed, or played once online, is cached even if the
+#            scan was never pressed. For EmulationStation's network-up hook:
+#            silent (nothing on stdout), bounded (one attempt per half hour,
+#            fifteen minutes at most for the two passes together -- a first
+#            top-up over a library nobody scanned caches what fits and the
+#            next connect carries on), the same refusals as scan with the
+#            same codes, and it writes last-scan only when it cached
+#            something or could not finish -- a top-up that found nothing
+#            new leaves the last scan's line alone.
+#   topup --after-index
+#            the same, started by EmulationStation as its hasher finishes
+#            with the toggle on: the index has just grown, so this one does
+#            not count the half hour since the last attempt against itself,
+#            and it waits for a top-up already running rather than giving
+#            way to one that read the index before it grew.
 #   ready    how many games are cached: the count in the client's own
 #            cached_game_ids.txt export (one id per line, rewritten on every
 #            cache change by the service and the client alike), on one line.
 #
 #   last-scan is /storage/.config/raofflineproxy/last-scan, one line:
 #   "<epoch> <rc> <scan|topup> cached=<n> skipped=<m> ready=<total>
-#   limit=<0|1>[ why=<TOKEN>]" -- how the last run went, read by the page
-#   for the line under the row (CloudText::parseScanStamp). `skipped` is the
-#   ROMs RetroAchievements does not know, which the client refuses one at a
-#   time and the scan counts rather than reports (the proxy's own docs skip
-#   them silently). Tokens, never sentences: the page says them in the
-#   player's language. scan.log beside it carries the client's line for
-#   every ROM; the client redacts the token in what it logs and prints file
-#   names and reasons only, and nothing here prints a value from system.cfg.
+#   limit=<0|1> indexed=<i>[ why=<TOKEN>]" -- how the last run went, read by
+#   the page for the line under the row (CloudText::parseScanStamp, which
+#   passes over keys it does not know). `skipped` is the ROMs
+#   RetroAchievements does not know, which the client refuses one at a time
+#   and the scan counts rather than reports (the proxy's own docs skip them
+#   silently); `indexed` is how many of `cached` came from the interface's
+#   index without a hash. Tokens, never sentences: the page says them in the
+#   player's language. scan.log beside it carries the helper's line for
+#   every game -- which RetroAchievements actions it cost, so an indexed
+#   game shows patch,unlocks,achievementsets and never gameid; the client
+#   redacts the token in what it logs and prints file names and reasons
+#   only, and nothing here prints a value from system.cfg.
 #
 # The toggle is global.retroachievements.offlineproxy in system.cfg, the
 # setting setsettings.sh (RetroArch) and cheevos_ppsspp.sh read at every
@@ -140,6 +172,9 @@ TOPUP_MARK="${PROXY_DIR}/last-topup-attempt"
 READY_FILE="${PROXY_DIR}/cached_game_ids.txt"
 SCAN_LOCK="/var/run/raofflineproxy-scan.lock"
 ROMS_ROOT="/storage/roms"
+# The interface's own folder: es_systems.cfg, and the two places its game
+# index is kept on disk (gamelists/<system>/ and recovery/<system>/).
+ES_DIR="/storage/.config/emulationstation"
 # The account keys EmulationStation writes (the token after a sign-in). Read
 # for presence only, never printed.
 USER_KEY="global.retroachievements.username"
@@ -454,11 +489,13 @@ do_ready() {
 }
 
 # "<epoch> <rc> <route> cached=<n> skipped=<m> ready=<total> limit=<0|1>
-# [why=<TOKEN>]", written whole or not at all (a rename), so the page never
-# reads half a line.
+# indexed=<i> [why=<TOKEN>]", written whole or not at all (a rename), so the
+# page never reads half a line. The page reads the keys it knows and passes
+# over the rest (CloudText::parseScanStamp), so indexed= is for the log and
+# for whoever reads the file.
 write_stamp() {
-    local RC="$1" ROUTE="$2" CACHED="$3" SKIPPED="$4" READY="$5" LIMIT="$6" WHY="${7:-}"
-    local LINE="$(date +%s) ${RC} ${ROUTE} cached=${CACHED} skipped=${SKIPPED} ready=${READY} limit=${LIMIT}"
+    local RC="$1" ROUTE="$2" CACHED="$3" SKIPPED="$4" READY="$5" LIMIT="$6" INDEXED="${7:-0}" WHY="${8:-}"
+    local LINE="$(date +%s) ${RC} ${ROUTE} cached=${CACHED} skipped=${SKIPPED} ready=${READY} limit=${LIMIT} indexed=${INDEXED}"
     [ -n "${WHY}" ] && LINE="${LINE} why=${WHY}"
     mkdir -p "${PROXY_DIR}" || return 1
     printf '%s\n' "${LINE}" > "${SCAN_STAMP}.tmp" && mv -f "${SCAN_STAMP}.tmp" "${SCAN_STAMP}"
@@ -500,92 +537,174 @@ refuse_unless_ready() {
 }
 
 # One scan or top-up at a time (the lock is held for the rest of the run;
-# the fd closes with the process). Exit 75 when another holds it.
+# the fd closes with the process). Exit 75 when another holds it -- except
+# for the top-up that follows the interface's index (topup --after-index),
+# which waits its turn for as long as one run may take: it is the one run
+# that knows the index has just grown, and the top-up ahead of it read the
+# index before that. Busybox flock has no -w, so the wait is a loop.
 take_lock() {
-    local VERB="$1"
+    local VERB="$1" WAIT="${2:-0}" WAITED=0
     exec 9>"${SCAN_LOCK}" || fail "cannot open ${SCAN_LOCK}"
-    if ! flock -n 9; then
-        say "${VERB}: another scan or top-up is running"
-        exit ${EX_TEMPFAIL}
-    fi
+    until flock -n 9; do
+        if [ "${WAIT}" -eq 0 ] || [ "${WAITED}" -ge "${TOPUP_TIMEOUT}" ]; then
+            say "${VERB}: another scan or top-up is running"
+            exit ${EX_TEMPFAIL}
+        fi
+        sleep 10
+        WAITED=$((WAITED + 10))
+    done
 }
 
-# The ROMs to hand to the client, one path per line into $1, most worth
-# caching first: what RetroArch's history says was played (most recent
-# first), then everything else newest file first -- so a library over the
-# cap caches the games somebody actually plays. Written in the client's own
-# terms: its extension list decides what is a ROM (is_supported_browser_file,
-# archives included -- an arcade set hashes by name), its cached-path record
-# decides what is already done (a game cached by starting it online has no
-# path recorded and is cached again once, which also refreshes its unlocks),
-# its history reader decides what was played, and its scan cap bounds the
-# walk. Skipped besides: hidden files and folders, the scraper's folders,
-# empty files (the image's placeholder.zip), and a .bin beside a .cue, .gdi
-# or .m3u -- a disc's data track, hashed through its sheet, and on its own
-# up to eight candidate hashes and a lookup each. Prints
-# "found=<n> new=<m> cached=<k>" on stdout.
-list_candidates() {
-    python3 - "$1" "${ROMS_ROOT}" "${SCAN_SYSTEMS}" <<'PY'
+# The games to cache, one job per line into $1, in the client's own terms
+# where it has any, and in the interface's where it has the better ones
+# (D-RA-013):
+#
+#   I<TAB><gameId><TAB><hash><TAB><path>   from the interface's index
+#   H<TAB><TAB><TAB><path>                 to be hashed and looked up
+#
+# The interface's index is what the hasher wrote (INDEX NEW GAMES AT
+# STARTUP, INDEX GAMES): per system, the games' <cheevosHash> and
+# <cheevosId> in gamelist.xml -- beside the ROMs, else under the interface's
+# gamelists/<system>/ -- overlaid with the per-game files under its
+# recovery/<system>/, which is where a change lives until the interface
+# writes the gamelist at its next clean exit (a recovery file whose
+# parentHash is not the current gamelist's size is stale, and skipped as
+# the interface skips it). A system has an index when any
+# of its games carries a cheevosHash: the hasher writes the hash for every
+# game it looked at and the id only for the ones RetroAchievements knows, so
+# a system whose games all came back without a set is indexed too, and
+# nothing in it is hashed again. In an indexed system the jobs are the games
+# with a cheevosId whose file is still there and whose id the client has not
+# cached (its own export of cached ids, the count `ready` reads); the rest
+# of the system -- games with no set, and games added since the index ran --
+# is left to the index. A system with no index at all keeps today's walk
+# (mode all): every ROM under its folder, in the client's own terms -- its
+# extension list decides what is a ROM (is_supported_browser_file, archives
+# included), its cached-path record what is already done, its history reader
+# what was played (most recent first, then newest file first) -- less hidden
+# files and folders, the scraper's folders, empty files, and a .bin beside a
+# .cue, .gdi or .m3u. Mode indexed writes the I jobs alone: the top-up on
+# connect never hashes a library nobody asked it to.
+#
+# The systems and their folders come from es_systems.cfg (the interface's
+# own custom, user or image copy, in the order it reads them); the walk's
+# folders from SCAN_SYSTEMS as before, less any folder an indexed system
+# owns. Prints "found=<seen> new=<jobs> cached=<seen-jobs> indexed=<I>
+# hashing=<H>" on stdout.
+list_jobs() {
+    python3 - "$1" "${2:-all}" "${ROMS_ROOT}" "${ES_DIR}" "${SCAN_SYSTEMS}" <<'PY'
 import os, sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from raofflineproxy.config import load_config
+from raofflineproxy.es_export import collect_cached_game_ids
 from raofflineproxy.rom_browser import (
     MAX_SCAN_ENTRIES, is_supported_browser_file, load_cached_rom_paths, normalize_cached_rom_path,
 )
 from raofflineproxy.smart_cache import load_content_history_paths
 from raofflineproxy.storage import Storage
 
-out, roms_root, systems = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3].split()
+out, mode, roms_root, es_dir = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3]), Path(sys.argv[4])
+walk_systems = sys.argv[5].split()
 SKIP_DIRS = {
     "images", "videos", "manuals", "media", "downloaded_images", "downloaded_videos",
     "downloaded_manuals", "imgs", "savestates", "screenshots", "saves", "savefiles",
 }
 DISC_SHEETS = (".cue", ".gdi", ".m3u")
 
-found = []
-for name in systems:
-    root = roms_root / name
-    if not root.is_dir():
-        continue
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d.lower() not in SKIP_DIRS)
-        has_sheet = any(f.lower().endswith(DISC_SHEETS) for f in filenames)
-        for fn in sorted(filenames):
-            if fn.startswith("."):
-                continue
-            path = Path(dirpath) / fn
-            if not is_supported_browser_file(path):
-                continue
-            if has_sheet and fn.lower().endswith(".bin"):
-                continue
+
+def es_systems():
+    """(name, folder) per <system> of the interface's es_systems.cfg."""
+    for cfg in (es_dir / "es_systems_custom.cfg", es_dir / "es_systems.cfg",
+                Path("/usr/config/emulationstation/es_systems.cfg")):
+        if not cfg.is_file():
+            continue
+        try:
+            root = ET.parse(cfg).getroot()
+        except Exception:
+            continue
+        found = []
+        for system in root.iter("system"):
+            name = (system.findtext("name") or "").strip()
+            folder = (system.findtext("path") or "").strip()
+            if name and folder:
+                found.append((name, Path(os.path.expanduser(folder))))
+        return found
+    return []
+
+
+def game_path(folder, text):
+    text = text.strip()
+    if text.startswith("./"):
+        return folder / text[2:]
+    if text.startswith("/"):
+        return Path(text)
+    return folder / text
+
+
+def read_index(name, folder):
+    """{path: (cheevosHash, cheevosId)} for one system, read as the
+    interface reads it (Gamelist.cpp parseGamelist): gamelist.xml, then the
+    recovery files over it. A recovery file is a game's whole metadata as the
+    interface last had it, so its values replace the gamelist's -- but only
+    while its parentHash names the gamelist it was written beside (the
+    gamelist's size in bytes, 0 when there is none); one that names another
+    is stale and skipped, as the interface skips it."""
+    entries = {}
+
+    def take(doc, parent=None):
+        try:
+            root = ET.parse(doc).getroot()
+        except Exception:
+            return
+        if parent is not None:
             try:
-                if not path.is_file() or path.stat().st_size == 0:
-                    continue
-            except OSError:
+                written_beside = int(root.get("parentHash", "0"))
+            except ValueError:
+                return
+            if written_beside != parent:
+                return
+        for game in root.iter("game"):
+            text = game.findtext("path") or ""
+            if not text.strip():
                 continue
-            found.append(path)
-            if len(found) >= MAX_SCAN_ENTRIES:
-                break
-        if len(found) >= MAX_SCAN_ENTRIES:
-            break
-    if len(found) >= MAX_SCAN_ENTRIES:
-        break
+            entries[game_path(folder, text)] = (
+                (game.findtext("cheevosHash") or "").strip(),
+                (game.findtext("cheevosId") or "").strip(),
+            )
+
+    gamelist = folder / "gamelist.xml"
+    if not gamelist.is_file():
+        gamelist = es_dir / "gamelists" / name / "gamelist.xml"
+    size = 0
+    if gamelist.is_file():
+        try:
+            size = gamelist.stat().st_size
+        except OSError:
+            size = 0
+        take(gamelist)
+    recovery = es_dir / "recovery" / name
+    if recovery.is_dir():
+        for dirpath, dirnames, filenames in os.walk(recovery):
+            dirnames.sort()
+            for fn in sorted(filenames):
+                if fn.lower().endswith(".xml"):
+                    take(Path(dirpath) / fn, parent=size)
+    return entries
+
 
 config = load_config()
 storage = Storage()
 try:
-    cached = load_cached_rom_paths(storage)
+    cached_ids = collect_cached_game_ids(storage)
+    cached_paths = load_cached_rom_paths(storage)
 finally:
     storage.close()
 try:
-    history = load_content_history_paths(config)
+    history = [str(p) for p in load_content_history_paths(config)]
 except Exception:
     history = []
 
-new = [p for p in found if normalize_cached_rom_path(p) not in cached]
-new_set = {str(p) for p in new}
-first = [p for p in history if str(p) in new_set]
-first_set = {str(p) for p in first}
 
 def mtime(p):
     try:
@@ -593,11 +712,182 @@ def mtime(p):
     except OSError:
         return 0.0
 
-rest = sorted((p for p in new if str(p) not in first_set), key=mtime, reverse=True)
-ordered = first + rest
-out.write_text("".join(f"{p}\n" for p in ordered), encoding="utf-8")
-print(f"found={len(found)} new={len(ordered)} cached={len(found) - len(new)}")
+
+def by_history(paths):
+    """The played ones first, most recent first; then the rest, newest first."""
+    order = {p: i for i, p in enumerate(history)}
+    played = sorted((p for p in paths if str(p) in order), key=lambda p: order[str(p)])
+    rest = sorted((p for p in paths if str(p) not in order), key=mtime, reverse=True)
+    return played + rest
+
+
+indexed_dirs = set()
+indexed_seen = 0
+indexed_jobs = {}
+for name, folder in es_systems():
+    if not folder.is_dir():
+        continue
+    index = read_index(name, folder)
+    if not any(h for h, _ in index.values()):
+        continue
+    try:
+        indexed_dirs.add(folder.resolve())
+    except OSError:
+        indexed_dirs.add(folder)
+    for path, (hash_value, id_text) in index.items():
+        try:
+            game_id = int(id_text)
+        except ValueError:
+            game_id = 0
+        if game_id <= 0 or not hash_value or not path.is_file():
+            continue
+        indexed_seen += 1
+        if game_id in cached_ids or path in indexed_jobs:
+            continue
+        indexed_jobs[path] = (game_id, hash_value)
+
+walked = []
+if mode == "all":
+    for name in walk_systems:
+        root = roms_root / name
+        if not root.is_dir():
+            continue
+        try:
+            if root.resolve() in indexed_dirs:
+                continue
+        except OSError:
+            pass
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d.lower() not in SKIP_DIRS)
+            has_sheet = any(f.lower().endswith(DISC_SHEETS) for f in filenames)
+            for fn in sorted(filenames):
+                if fn.startswith("."):
+                    continue
+                path = Path(dirpath) / fn
+                if not is_supported_browser_file(path):
+                    continue
+                if has_sheet and fn.lower().endswith(".bin"):
+                    continue
+                try:
+                    if not path.is_file() or path.stat().st_size == 0:
+                        continue
+                except OSError:
+                    continue
+                walked.append(path)
+                if len(walked) >= MAX_SCAN_ENTRIES:
+                    break
+            if len(walked) >= MAX_SCAN_ENTRIES:
+                break
+        if len(walked) >= MAX_SCAN_ENTRIES:
+            break
+
+hash_jobs = [p for p in walked if normalize_cached_rom_path(p) not in cached_paths]
+
+lines = [f"I\t{indexed_jobs[p][0]}\t{indexed_jobs[p][1]}\t{p}\n" for p in by_history(list(indexed_jobs))]
+lines += [f"H\t\t\t{p}\n" for p in by_history(hash_jobs)]
+out.write_text("".join(lines), encoding="utf-8")
+found = indexed_seen + len(walked)
+new = len(lines)
+print(f"found={found} new={new} cached={found - new} indexed={len(indexed_jobs)} hashing={len(hash_jobs)}")
 PY
+}
+
+# One field of list_jobs' summary line, or 0.
+count_of() {
+    local V="${1#*${2}=}"
+    V="${V%% *}"
+    case "${V}" in ''|*[!0-9]*) echo 0 ;; *) echo "${V}" ;; esac
+}
+
+# The helper that works the job list: beside this script, so a copy of the
+# two files runs from anywhere they are put together.
+case "$0" in
+    */*) HELPER="${0%/*}/raofflineproxy-cache-indexed" ;;
+    *)   HELPER="/usr/bin/raofflineproxy-cache-indexed" ;;
+esac
+
+# Run the job list $2 of $3 games through the helper and read its lines as
+# they come -- "OK i/n <file>", "FAIL i/n <file>: <reason>", "DONE cached=
+# failed= indexed=" -- stopping it after three lookups in a row that
+# RetroAchievements did not answer, or on a refused sign-in, or when the
+# client reports its cap. $1 is page (the >>> lines for GuiOfflineScan) or
+# quiet (nothing on stdout, for the top-up); $4 a bound in seconds, 0 for
+# none. Leaves R_CACHED R_SKIPPED R_ERRORS R_LIMIT R_WHY R_STOPPED R_INDEXED
+# R_CLIENT_RC for the caller, and the helper's stderr in the scan log. The
+# helper's stdout goes through a fifo so it can be stopped between two lines.
+run_jobs() {
+    local MODE="$1" LIST="$2" TOTAL="$3" BUDGET="${4:-0}"
+    local -a PATHS
+    mapfile -t PATHS < "${LIST}"
+    JOBS_FIFO="$(mktemp -u /tmp/raofflineproxy-scan-out.XXXXXX)"
+    mkfifo "${JOBS_FIFO}" || fail "cannot create ${JOBS_FIFO}"
+    if [ "${BUDGET}" -gt 0 ]; then
+        timeout "${BUDGET}" python3 "${HELPER}" "${LIST}" > "${JOBS_FIFO}" 2>>"${SCAN_LOG}" &
+    else
+        python3 "${HELPER}" "${LIST}" > "${JOBS_FIFO}" 2>>"${SCAN_LOG}" &
+    fi
+    CLIENT=$!
+    exec 8< "${JOBS_FIFO}"
+
+    R_CACHED=0; R_SKIPPED=0; R_ERRORS=0; R_LIMIT=0; R_WHY=""; R_STOPPED=0; R_INDEXED=0
+    local IN_A_ROW=0 line index name
+    if [ "${MODE}" = page ] && [ "${TOTAL}" -gt 0 ]; then
+        name="${PATHS[0]##*/}"
+        tell "game 1|${TOTAL}|${name%.*}"
+    fi
+    while IFS= read -r line <&8; do
+        slog "client: ${line}"
+        case "${line}" in
+            OK\ *)
+                R_CACHED=$((R_CACHED + 1)); IN_A_ROW=0 ;;
+            DONE\ *)
+                R_INDEXED="$(count_of "${line}" indexed)"
+                continue ;;
+            *"Cache limit reached"*)
+                # One lookup past the cap, and no more: every further ROM
+                # would be hashed and looked up only to be refused.
+                R_LIMIT=1; R_STOPPED=1
+                slog "run: the proxy's cap of ${CACHE_CAP} games is reached"
+                kill "${CLIENT}" 2>/dev/null
+                break ;;
+            *"No RetroAchievements match"*|*"Hash failed"*|*": not found")
+                # Not a game RetroAchievements knows, or not a file it can
+                # read: the proxy's docs skip these silently, and so does
+                # the page -- counted here for the log and the stamp.
+                R_SKIPPED=$((R_SKIPPED + 1)); IN_A_ROW=0 ;;
+            *"login required"*|*"HTTP Error 401"*|*"HTTP Error 403"*)
+                # The account, not the link: no retry changes it.
+                R_WHY=SIGN_IN_REFUSED; R_STOPPED=1
+                kill "${CLIENT}" 2>/dev/null
+                break ;;
+            FAIL\ *)
+                # A lookup or a fetch that did not come back: the link, the
+                # server, a 429. A run of them is the scan asking a question
+                # nobody is answering.
+                R_ERRORS=$((R_ERRORS + 1)); IN_A_ROW=$((IN_A_ROW + 1))
+                if [ "${IN_A_ROW}" -ge "${ERRORS_IN_A_ROW}" ]; then
+                    R_WHY=RETROACHIEVEMENTS_STOPPED_ANSWERING; R_STOPPED=1
+                    kill "${CLIENT}" 2>/dev/null
+                    break
+                fi ;;
+            *)
+                continue ;;
+        esac
+        [ "${MODE}" = page ] || continue
+        # The helper finished game i (1-based); what it is on now is i+1.
+        index="${line#* }"; index="${index%%/*}"
+        case "${index}" in ''|*[!0-9]*) index=0 ;; esac
+        tell "cached ${R_CACHED}|${R_SKIPPED}"
+        if [ "${index}" -gt 0 ] && [ "${index}" -lt "${TOTAL}" ]; then
+            name="${PATHS[${index}]##*/}"
+            tell "game $((index + 1))|${TOTAL}|${name%.*}"
+        fi
+    done
+    exec 8<&-
+    wait "${CLIENT}" 2>/dev/null
+    R_CLIENT_RC=$?
+    unset CLIENT
+    rm -f "${JOBS_FIFO}"; JOBS_FIFO=""
 }
 
 do_scan() {
@@ -610,25 +900,22 @@ do_scan() {
         exit ${EX_UNAVAILABLE}
     fi
 
-    local LIST FIFO
+    local LIST
     LIST="$(mktemp /tmp/raofflineproxy-scan.XXXXXX)" || fail "cannot create the list"
-    FIFO="$(mktemp -u /tmp/raofflineproxy-scan-out.XXXXXX)"
     # Everything of the run's goes when the run does, however it ends.
-    trap 'rm -f "${LIST}" "${FIFO}"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
+    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
 
     local COUNTS
     tell "doing listing"
-    if ! COUNTS="$(list_candidates "${LIST}" 2>>"${SCAN_LOG}")"; then
+    if ! COUNTS="$(list_jobs "${LIST}" all 2>>"${SCAN_LOG}")"; then
         slog "scan: the library could not be listed"
         tell "why LIBRARY_UNREADABLE"
-        write_stamp 1 scan 0 0 "$(count_ready)" 0 LIBRARY_UNREADABLE
+        write_stamp 1 scan 0 0 "$(count_ready)" 0 0 LIBRARY_UNREADABLE
         exit 1
     fi
     local FOUND NEW
-    FOUND="${COUNTS#*found=}"; FOUND="${FOUND%% *}"
-    NEW="${COUNTS#*new=}"; NEW="${NEW%% *}"
-    case "${FOUND}" in ''|*[!0-9]*) FOUND=0 ;; esac
-    case "${NEW}" in ''|*[!0-9]*) NEW=0 ;; esac
+    FOUND="$(count_of "${COUNTS}" found)"
+    NEW="$(count_of "${COUNTS}" new)"
     slog "scan start: ${COUNTS}"
 
     local READY
@@ -636,7 +923,7 @@ do_scan() {
         READY="$(count_ready)"
         slog "scan: no games found under ${ROMS_ROOT}"
         tell "why NO_GAMES_FOUND"
-        write_stamp 1 scan 0 0 "${READY}" 0 NO_GAMES_FOUND
+        write_stamp 1 scan 0 0 "${READY}" 0 0 NO_GAMES_FOUND
         exit 1
     fi
     tell "total ${NEW}"
@@ -644,101 +931,49 @@ do_scan() {
         READY="$(count_ready)"
         slog "scan done: nothing new, ready=${READY}"
         tell "note NOTHING_NEW"
-        write_stamp 0 scan 0 0 "${READY}" 0
+        write_stamp 0 scan 0 0 "${READY}" 0 0
         tell "done 0|0|${READY}|0"
         exit 0
     fi
 
-    # The client, its stdout through a fifo so its lines are read as they
-    # come and it can be stopped between two of them; its stderr to the
-    # log. cache-roms prints "OK i/n <file>", "FAIL i/n <file>: <reason>",
-    # "DONE cached=<c> failed=<f>", one line per ROM, as it finishes each.
-    local -a PATHS
-    mapfile -t PATHS < "${LIST}"
-    mkfifo "${FIFO}" || fail "cannot create ${FIFO}"
-    ${PROXY_PY} cache-roms --paths-file "${LIST}" > "${FIFO}" 2>>"${SCAN_LOG}" &
-    CLIENT=$!
-    exec 8< "${FIFO}"
-
-    local CACHED=0 SKIPPED=0 ERRORS=0 IN_A_ROW=0 LIMIT=0 WHY="" STOPPED=0 line index name
-    name="${PATHS[0]##*/}"
-    tell "game 1|${NEW}|${name%.*}"
-    while IFS= read -r line <&8; do
-        slog "client: ${line}"
-        case "${line}" in
-            OK\ *)
-                CACHED=$((CACHED + 1)); IN_A_ROW=0 ;;
-            *"Cache limit reached"*)
-                # One lookup past the cap, and no more: every further ROM
-                # would be hashed and looked up only to be refused.
-                LIMIT=1; STOPPED=1
-                slog "scan: the proxy's cap of ${CACHE_CAP} games is reached"
-                kill "${CLIENT}" 2>/dev/null
-                break ;;
-            *"No RetroAchievements match"*|*"Hash failed"*|*": not found")
-                # Not a game RetroAchievements knows, or not a file it can
-                # read: the proxy's docs skip these silently, and so does
-                # the page -- counted here for the log and the stamp.
-                SKIPPED=$((SKIPPED + 1)); IN_A_ROW=0 ;;
-            *"login required"*|*"HTTP Error 401"*|*"HTTP Error 403"*)
-                # The account, not the link: no retry changes it.
-                WHY=SIGN_IN_REFUSED; STOPPED=1
-                kill "${CLIENT}" 2>/dev/null
-                break ;;
-            FAIL\ *)
-                # A lookup or a fetch that did not come back: the link, the
-                # server, a 429. A run of them is the scan asking a question
-                # nobody is answering.
-                ERRORS=$((ERRORS + 1)); IN_A_ROW=$((IN_A_ROW + 1))
-                if [ "${IN_A_ROW}" -ge "${ERRORS_IN_A_ROW}" ]; then
-                    WHY=RETROACHIEVEMENTS_STOPPED_ANSWERING; STOPPED=1
-                    kill "${CLIENT}" 2>/dev/null
-                    break
-                fi ;;
-            *)
-                continue ;;
-        esac
-        # The client finished ROM i (1-based); what it is on now is i+1.
-        index="${line#* }"; index="${index%%/*}"
-        case "${index}" in ''|*[!0-9]*) index=0 ;; esac
-        tell "cached ${CACHED}|${SKIPPED}"
-        if [ "${index}" -gt 0 ] && [ "${index}" -lt "${NEW}" ]; then
-            name="${PATHS[${index}]##*/}"
-            tell "game $((index + 1))|${NEW}|${name%.*}"
-        fi
-    done
-    exec 8<&-
-    wait "${CLIENT}" 2>/dev/null
-    local CLIENT_RC=$?
-    unset CLIENT
+    run_jobs page "${LIST}" "${NEW}" 0
 
     READY="$(count_ready)"
-    local RC=0
+    local RC=0 WHY="${R_WHY}"
     if [ -n "${WHY}" ]; then
         RC=1
-    elif [ "${STOPPED}" -eq 0 ] && [ "${CLIENT_RC}" -ne 0 ]; then
-        # The client died on its own without a reason the lines above
+    elif [ "${R_STOPPED}" -eq 0 ] && [ "${R_CLIENT_RC}" -ne 0 ]; then
+        # The helper died on its own without a reason the lines above
         # named: the log has its traceback.
         RC=1; WHY=SOMETHING_WENT_WRONG
     fi
-    [ "${LIMIT}" -eq 1 ] && tell "note LIMIT_REACHED"
+    [ "${R_LIMIT}" -eq 1 ] && tell "note LIMIT_REACHED"
     [ -n "${WHY}" ] && tell "why ${WHY}"
-    write_stamp "${RC}" scan "${CACHED}" "${SKIPPED}" "${READY}" "${LIMIT}" "${WHY}"
-    slog "scan done: rc=${RC} cached=${CACHED} skipped=${SKIPPED} errors=${ERRORS} ready=${READY} limit=${LIMIT}${WHY:+ why=${WHY}}"
-    say "scan: cached ${CACHED}, skipped ${SKIPPED}, ${READY} ready${WHY:+; ${WHY}}"
-    tell "done ${CACHED}|${SKIPPED}|${READY}|${LIMIT}"
+    write_stamp "${RC}" scan "${R_CACHED}" "${R_SKIPPED}" "${READY}" "${R_LIMIT}" "${R_INDEXED}" "${WHY}"
+    slog "scan done: rc=${RC} cached=${R_CACHED} indexed=${R_INDEXED} skipped=${R_SKIPPED} errors=${R_ERRORS} ready=${READY} limit=${R_LIMIT}${WHY:+ why=${WHY}}"
+    say "scan: cached ${R_CACHED} (${R_INDEXED} from the index), skipped ${R_SKIPPED}, ${READY} ready${WHY:+; ${WHY}}"
+    tell "done ${R_CACHED}|${R_SKIPPED}|${READY}|${R_LIMIT}"
     exit "${RC}"
 }
 
+# topup [--after-index]. --after-index is the run the interface starts as
+# its hasher finishes (ThreadedHasher, with the toggle on): it waits for a
+# top-up already running instead of giving way to it, and it does not count
+# the half-hour since the last attempt against itself -- the index has just
+# grown, and that is the one moment a top-up is sure to have something to
+# do. It still marks the attempt, so a link that flaps in the next half hour
+# costs nothing more.
 do_topup() {
-    take_lock topup
+    local AFTER_INDEX=0 AI_NOTE=""
+    if [ "${1:-}" = "--after-index" ]; then AFTER_INDEX=1; AI_NOTE=" (after the index)"; fi
+    take_lock topup "${AFTER_INDEX}"
     refuse_unless_ready topup >/dev/null
     mkdir -p "${PROXY_DIR}" || fail "cannot create ${PROXY_DIR}"
 
     # Bounded: one attempt per interval, whatever the link does. The mark
     # is the attempt, not the outcome, so a link that flaps every minute
     # costs one probe per half hour.
-    if [ -e "${TOPUP_MARK}" ]; then
+    if [ "${AFTER_INDEX}" -eq 0 ] && [ -e "${TOPUP_MARK}" ]; then
         local AGE=$(( $(date +%s) - $(stat -c %Y "${TOPUP_MARK}" 2>/dev/null || echo 0) ))
         if [ "${AGE}" -ge 0 ] && [ "${AGE}" -lt "${TOPUP_INTERVAL}" ]; then
             exit 0
@@ -758,39 +993,75 @@ do_topup() {
         exit ${EX_UNAVAILABLE}
     fi
 
-    # The client's own recently-played pass: RetroArch's history and
-    # PPSSPP's recent list, each not yet cached, up to the cap, with the
-    # client's own pause between requests. Its progress lines are JSON;
-    # the last line is the result.
-    local OUT RC RESULT
-    OUT="$(timeout "${TOPUP_TIMEOUT}" ${PROXY_PY} run-smart-cache 2>>"${SCAN_LOG}")"
-    RC=$?
-    RESULT="$(printf '%s\n' "${OUT}" | grep '"type":"result"' | tail -n 1)"
-    local CACHED=0 SKIPPED=0 LIMIT=0
-    if [ -n "${RESULT}" ]; then
-        read -r CACHED SKIPPED LIMIT < <(python3 -c '
+    local START LIST
+    START="$(date +%s)"
+    LIST="$(mktemp /tmp/raofflineproxy-topup.XXXXXX)" || fail "cannot create the list"
+    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
+
+    # First, every game the interface's index knows and the client has not
+    # cached -- the games added and indexed since the last run, and with a
+    # library nobody scanned, as many as the bound allows (the rest next
+    # time). Nothing is hashed here.
+    local COUNTS NEW=0 CACHED=0 SKIPPED=0 INDEXED=0 LIMIT=0 WHY="" RC=0
+    if COUNTS="$(list_jobs "${LIST}" indexed 2>>"${SCAN_LOG}")"; then
+        NEW="$(count_of "${COUNTS}" new)"
+        slog "topup start${AI_NOTE}: ${COUNTS}"
+    else
+        slog "topup: the interface's index could not be read; the recently played pass runs alone"
+    fi
+    if [ "${NEW}" -gt 0 ]; then
+        run_jobs quiet "${LIST}" "${NEW}" "${TOPUP_TIMEOUT}"
+        CACHED="${R_CACHED}"; SKIPPED="${R_SKIPPED}"; INDEXED="${R_INDEXED}"; LIMIT="${R_LIMIT}"; WHY="${R_WHY}"
+        if [ -z "${WHY}" ] && [ "${R_STOPPED}" -eq 0 ] && [ "${R_CLIENT_RC}" -ne 0 ]; then
+            WHY=RETROACHIEVEMENTS_STOPPED_ANSWERING
+            [ "${R_CLIENT_RC}" -eq 124 ] && WHY=TOOK_TOO_LONG
+        fi
+        slog "topup indexed pass: cached=${CACHED} indexed=${INDEXED} skipped=${SKIPPED} errors=${R_ERRORS} rc=${R_CLIENT_RC}${WHY:+ why=${WHY}}"
+    fi
+
+    # Then the client's own recently-played pass for what the index missed
+    # -- RetroArch's history, PPSSPP's recent list -- each not yet cached,
+    # with the client's own pause between requests, in what is left of the
+    # bound. Its progress lines are JSON; the last line is the result.
+    local LEFT=$(( TOPUP_TIMEOUT - ($(date +%s) - START) ))
+    if [ -z "${WHY}" ] && [ "${LEFT}" -ge 60 ]; then
+        local OUT SRC RESULT
+        OUT="$(timeout "${LEFT}" ${PROXY_PY} run-smart-cache 2>>"${SCAN_LOG}")"
+        SRC=$?
+        RESULT="$(printf '%s\n' "${OUT}" | grep '"type":"result"' | tail -n 1)"
+        local SC=0 SS=0 SL=0
+        if [ -n "${RESULT}" ]; then
+            read -r SC SS SL < <(python3 -c '
 import json, sys
 r = json.loads(sys.argv[1])
 print(int(r.get("cached", 0)), int(r.get("skipped", 0)), 1 if r.get("limit_reached") else 0)
 ' "${RESULT}" 2>/dev/null || echo "0 0 0")
+        fi
+        CACHED=$((CACHED + SC)); SKIPPED=$((SKIPPED + SS)); [ "${SL}" -eq 1 ] && LIMIT=1
+        slog "topup recently played: rc=${SRC} cached=${SC} skipped=${SS} limit=${SL}"
+        if [ "${SRC}" -ne 0 ]; then
+            WHY=RETROACHIEVEMENTS_STOPPED_ANSWERING
+            [ "${SRC}" -eq 124 ] && WHY=TOOK_TOO_LONG
+        fi
+    elif [ -z "${WHY}" ]; then
+        slog "topup: no time left for the recently played pass (${LEFT}s)"
     fi
+
     local READY
     READY="$(count_ready)"
-    slog "topup: rc=${RC} cached=${CACHED} skipped=${SKIPPED} ready=${READY} limit=${LIMIT}"
+    slog "topup done: cached=${CACHED} indexed=${INDEXED} skipped=${SKIPPED} ready=${READY} limit=${LIMIT}${WHY:+ why=${WHY}}"
 
     # The line under the row changes only when the top-up has something to
     # say: games it added, or a run that could not finish. Nothing new
     # leaves the last scan's line as it was.
-    if [ "${RC}" -ne 0 ]; then
-        local WHY=RETROACHIEVEMENTS_STOPPED_ANSWERING
-        [ "${RC}" -eq 124 ] && WHY=TOOK_TOO_LONG
-        write_stamp 1 topup "${CACHED}" "${SKIPPED}" "${READY}" "${LIMIT}" "${WHY}"
-        say "topup could not finish (rc ${RC}); ${READY} ready"
+    if [ -n "${WHY}" ]; then
+        write_stamp 1 topup "${CACHED}" "${SKIPPED}" "${READY}" "${LIMIT}" "${INDEXED}" "${WHY}"
+        say "topup could not finish (${WHY}); cached ${CACHED}, ${READY} ready"
         exit 1
     fi
     if [ "${CACHED}" -gt 0 ]; then
-        write_stamp 0 topup "${CACHED}" "${SKIPPED}" "${READY}" "${LIMIT}"
-        say "topup: cached ${CACHED} recently played game(s); ${READY} ready"
+        write_stamp 0 topup "${CACHED}" "${SKIPPED}" "${READY}" "${LIMIT}" "${INDEXED}"
+        say "topup: cached ${CACHED} game(s), ${INDEXED} from the index; ${READY} ready"
     fi
     exit 0
 }
@@ -806,10 +1077,10 @@ case "${1:-}" in
     account) do_account ;;
     flushed) do_flushed ;;
     scan)    do_scan ;;
-    topup)   do_topup ;;
+    topup)   do_topup "${2:-}" ;;
     ready)   do_ready ;;
     *)
-        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|pending-ids|account|flushed|scan|topup|ready}" >&2
+        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|pending-ids|account|flushed|scan|topup [--after-index]|ready}" >&2
         exit 2
     ;;
 esac
