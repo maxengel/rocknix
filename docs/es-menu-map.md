@@ -162,8 +162,11 @@ flowchart TD
 The row's line and the page's last screen read the same two files the ctl
 and the proxy's client leave under `/storage/.config/raofflineproxy/`:
 `last-scan` (`<epoch> <rc> <scan|topup> cached= skipped= ready= limit=
-[why=]`, D-UI-029's shape for this row) and `cached_game_ids.txt` (one id
-per line: the count). Exit 69 and 75 from `raofflineproxy-ctl scan` read
+indexed= errors= [why=]`, D-UI-029's shape for this row; `errors` is how
+many games a fetch failed for, and such a run ends rc 1 with
+`why=SOME_GAMES_NOT_SAVED` -- a token the page renders as SOMETHING WENT
+WRONG until it learns the word, audit #186 PL-24) and `cached_game_ids.txt`
+(one id per line: the count). Exit 69 and 75 from `raofflineproxy-ctl scan` read
 SKIPPED - YOU'RE NOT ONLINE / SKIPPED - A SCAN IS ALREADY RUNNING; 77 and 78
 (no account, switch off) COULDN'T FINISH with the reason on line 4. The
 automatic top-up (`raofflineproxy-ctl topup`, run by `NetworkThread` when the
