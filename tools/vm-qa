@@ -13,6 +13,7 @@
 #   ./tools/vm-qa <image> --link                             # also the seven link-loss cells (minutes each; need the serial console)
 #   ./tools/vm-qa --skip-up --only walks --guest b           # the walks on vm-pair's second guest
 #   ./tools/vm-qa --skip-up --only round-trip --backend sftp # the round trip against another cloud (#133)
+#   ./tools/vm-qa --skip-up --only ra-offline --guest d      # the offline-achievements scenario on the 640x480 guest (#166)
 #   ./tools/vm-qa --list                                     # the suite names --only takes, one per line
 #
 # What runs, in order, each with its own log and a PASS/FAIL line:
@@ -29,6 +30,10 @@
 #               next game's first frame, with the exit sync running (#135, D-CLOUD-098). Its own table
 #               goes at the end of the report; the suite row here says only whether it ran.
 #   link        tools/cloud-round-trip --only LINK1..LINK7 -- the link cut mid-run, seven ways (--link, or --only link)
+#   ra-offline  tools/ra-offline-test         -- an achievement unlocked with the link cut is queued by the offline
+#               proxy and sent when the link returns (#166); needs the serial console and the QA
+#               RetroAchievements account, and spends one of its cheap achievements per PASS, so it is
+#               opt-in like link (--ra-offline, or --only ra-offline); --control runs #162's loss instead
 #   walks       tools/vm-walks/*.steps        -- each step file replayed from a rebooted guest, frames kept
 #               (frames are kept for a person to read; comparing them to references is fork #120's third box)
 #
@@ -38,8 +43,8 @@
 # handheld: the guests are tools/vm-pair's, on this host (fork #120, box 1).
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-IMAGE=""; SKIP_UP=0; ONLY="scripts,lifetime,vocabulary,register,pair-identity,round-trip,exit,time-to-play,walks"; LINK=0; GUEST=a
-SUITES="scripts lifetime vocabulary register pair-identity round-trip exit time-to-play link walks"
+IMAGE=""; SKIP_UP=0; ONLY="scripts,lifetime,vocabulary,register,pair-identity,round-trip,exit,time-to-play,walks"; LINK=0; RA_OFFLINE=0; GUEST=a
+SUITES="scripts lifetime vocabulary register pair-identity round-trip exit time-to-play link ra-offline walks"
 # Which of the five QA clouds every suite here talks to (#133). It is one
 # variable and not a per-suite flag on purpose: the backend the endpoint is
 # brought up on, the stanza the walks seed, and the endpoint the round trip
@@ -53,8 +58,9 @@ while [ $# -gt 0 ]; do
     --guest) GUEST=$2; shift 2 ;;
     --backend) BACKEND=$2; shift 2 ;;
     --link) LINK=1; shift ;;
+    --ra-offline) RA_OFFLINE=1; shift ;;
     --list) printf '%s\n' $SUITES; exit 0 ;;
-    -h|--help) sed -n '5,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '5,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) IMAGE=$1; shift ;;
   esac
 done
@@ -72,9 +78,13 @@ SSHO="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ER
 case "$GUEST" in
   a) PORT=10022; MON=/tmp/rocknix-qemu-monitor.sock;   SERIAL=/tmp/rocknix-qemu-serial.sock ;;
   b) PORT=10023; MON=/tmp/rocknix-qemu-monitor-b.sock; SERIAL=/tmp/rocknix-qemu-serial-b.sock ;;
-  *) echo "vm-qa: --guest is a or b, not '$GUEST'" >&2; exit 2 ;;
+  # The 640x480 guest beside the pair (generic-x64-vm-testing.md § Frame at
+  # the handheld's size): not vm-pair's, so `up` never touches it -- --skip-up.
+  d) PORT=10026; MON=/tmp/rocknix-qemu-monitor-d.sock; SERIAL=/tmp/rocknix-qemu-serial-d.sock ;;
+  *) echo "vm-qa: --guest is a, b or d, not '$GUEST'" >&2; exit 2 ;;
 esac
 [ "$LINK" = 1 ] && ONLY="$ONLY,link"
+[ "$RA_OFFLINE" = 1 ] && ONLY="$ONLY,ra-offline"
 SSH() { ssh -n -i "$KEY" -p "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=8 -o BatchMode=yes root@127.0.0.1 "$@"; }
 
 export CLOUD_QA_BACKEND="$BACKEND"
@@ -217,6 +227,15 @@ esac
 # The link cells are timing-bound (a run must end within 90 s of the cut), so
 # they run before the walks and never while an image builds on this host.
 case ",$ONLY," in *,link,*)       run_suite link       "$OUT/link.log"       "$ROOT/tools/cloud-round-trip" --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --backend "$BACKEND" --only LINK1,LINK2,LINK3,LINK4,LINK5,LINK6,LINK7 --serial-socket "$SERIAL" ;; esac
+# The offline-achievements scenario (#166): the QA account on, the toggle on,
+# a game with a RetroAchievements set launched online, the link cut on the
+# monitor, an achievement unlocked and queued, the game ended offline, the
+# link back, the award flushed and on the account. Serial console, monitor
+# and the QA account file are its preconditions and each is a FAIL when
+# missing; a PASS spends one cheap achievement on the QA account, which is
+# why it is opt-in. Timing-bound like link (the flush within 90 s), so never
+# while an image builds here.
+case ",$ONLY," in *,ra-offline,*) run_suite ra-offline "$OUT/ra-offline.log" "$ROOT/tools/ra-offline-test" --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --monitor "$MON" --serial "$SERIAL" --frames "$OUT/ra-offline-frames" ;; esac
 # The walks open pages that refuse without a remote (NO CLOUD STORAGE IS SET
 # UP ON THIS DEVICE YET. SET IT UP NOW?), and the round-trip suite, which runs
 # first, puts the guest's rclone.conf back to how it found it -- on a fresh
