@@ -68,7 +68,12 @@
 #      shaped like the proxy's (0 and 1, exit 1 and 0; 0 with the toggle
 #      off; exit 2 and nothing on stdout when the store cannot be read),
 #      and flushed prints the service's last-flush stamp once and removes
-#      it (exit 1 when there is none, or none worth the name).
+#      it (exit 1 when there is none, or none worth the name). Since audit
+#      #186: an enable whose settings write fails at any of its three
+#      writes leaves the device as it was (PL-16); a flush stamp the service
+#      replaces between the read and the remove is the next caller's, not
+#      lost (PL-32); a cached sign-in without points answers exit 1, never
+#      0 points (PL-26).
 #   q. 099-networkservices, the boot pass over /usr/lib/autostart/daemons/*:
 #      a fragment that sets no CONF inherits none from the fragment before
 #      it, so the marker the previous fragment wrote (raofflineproxy.conf,
@@ -85,6 +90,24 @@
 #      snapshot page (a process list can carry --ra-password), the key names
 #      do, summary.txt says the filter ran and over how many files, and
 #      without the helper nothing is collected and no page is written (#176).
+#   t. raofflineproxy-ctl scan, topup and ready (#179, #184; audit #186
+#      PL-05), against the client the tree describes -- its tarball from
+#      the sources cache with the package's patches applied in order, the
+#      client's own probe, smart cache and helper shimmed, a virtual clock
+#      (date +%s and sleep are shims over /run/clock): the four refusals
+#      with no stamp; the listing follows the index and asks "cached" of
+#      this account's rows and this hash (PL-23, PL-02); the probe writes
+#      its own folder and never the service's online_state.json (PL-03);
+#      the top-up probes with the token check's patience and marks the
+#      attempt only after an answer (PL-04); one deadline over the lock
+#      wait, the listing and both passes (PL-28); a failed game ends the
+#      run COULDN'T FINISH (PL-24); the walk's cap counts uncached files
+#      (PL-17); disable stops a running run (PL-30). And the client's own
+#      predicates, from the patched tree: the refresh bound and the
+#      surviving thread (patch 005, PL-01/PL-25), a game evicted whole
+#      (006, PL-02), the configured account's cached sign-in (007, PL-23),
+#      the log upload gated off (008, PL-12), a badge temp name per thread
+#      (009, PL-33).
 #
 # The chksysconfig and 001-functions functions are lifted out of the files
 # under test and run in a fresh bash against temp paths, as wait-lock-test
@@ -134,6 +157,12 @@
 #                                             # p's pending and flushed checks
 #                                             # FAIL: the ctl before #173 has
 #                                             # neither verb (usage, exit 2)
+#     BASE_REF=cee1656c33 tools/last-good-scripts-test --old
+#                                             # the audited tip of #163: p's
+#                                             # PL-16/26/32 checks, r's three
+#                                             # PL-29 canaries and t's fix
+#                                             # checks FAIL (the audit's
+#                                             # findings, each seen to fire)
 #     BASE_REF=28a80357ed tools/last-good-scripts-test --old
 #                                             # r and s FAIL: the scripts from
 #                                             # before #176 -- the password in
@@ -1219,6 +1248,23 @@ src_of "${CTL_REL}" "${P}/repo/raofflineproxy-ctl"
 PBB=(); PPATH="/shim:/usr/bin:/bin"
 if [ -n "${BB}" ]; then PBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB}" "${BB}"); PPATH="/shim:/bbin:/usr/bin:/bin"; fi
 printf 'export PATH=%s\nexport OS_NAME=ROCKNIX\nJ_CONF=/storage/.config/system/configs/system.cfg\nJ_CONF_LOCK=/tmp/.system.cfg.lock\n. /repo/fns.sh\n' "${PPATH}" > "${P}/profile"
+# One write can be made to fail: /run/fail-set names a key whose set_setting
+# writes nothing and returns 1 (PL-16's three sub-cases).
+cat >> "${P}/profile" <<'EOS'
+if [ -e /run/fail-set ]; then
+    eval "$(declare -f set_setting | sed '1s/^set_setting/real_set_setting/')"
+    set_setting() { if [ "${1}" = "$(cat /run/fail-set)" ]; then return 1; fi; real_set_setting "$@"; }
+fi
+EOS
+# head, for one call when /run/race-flush is there: read as asked, then put a
+# new stamp where the service would -- a flush landing between the read and
+# the remove (PL-32).
+cat > "${P}/shim/head" <<'EOS'
+#!/bin/sh
+out="$(PATH=/bbin:/usr/bin:/bin head "$@")"
+if [ -e /run/race-flush ]; then rm -f /run/race-flush; printf '1789337200 5\n' > /storage/.config/raofflineproxy/last-flush; fi
+printf '%s\n' "${out}"
+EOS
 cat > "${P}/shim/systemctl" <<'EOS'
 #!/bin/sh
 echo "systemctl $*" >> /run/systemctl.log
@@ -1270,6 +1316,16 @@ ctl enable
 [ "${RC}" -eq 1 ] && [ ! -e "${PMARK}" ] && [ "$(pv global.retroachievements.hardcore)" = "1" ] && [ -z "$(pv global.retroachievements.offlineproxy)" ] && [ -z "$(pv global.retroachievements.offlineproxy.hardcore_was)" ]; check $? "a service that will not start: exit 1, no marker left, hardcore still 1, no toggle and no record written" "rc ${RC}; marker: $([ -e "${PMARK}" ] && echo yes || echo no); system.cfg: $(tr '\n' '|' < "${PCFG}")"
 [ ! -s "${OUT}" ]; check $? "and nothing on stdout for EmulationStation to mistake for a result" "stdout: $(tr '\n' '|' < "${OUT}")"
 rm -f "${P}/run/fail-start"
+# A settings write that fails, at each of the three, on a device with
+# hardcore on: the device is left exactly as it was -- toggle unset,
+# hardcore 1, no record, the marker gone, the service stopped (#186 PL-16).
+for fk in global.retroachievements.offlineproxy.hardcore_was global.retroachievements.hardcore global.retroachievements.offlineproxy; do
+    printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.hardcore=1\n' > "${PCFG}"; rm -f "${P}/run/active" "${PMARK}"; : > "${P}/run/systemctl.log"
+    printf '%s\n' "${fk}" > "${P}/run/fail-set"
+    ctl enable
+    [ "${RC}" -eq 1 ] && [ "$(pv global.retroachievements.offlineproxy)" != "1" ] && [ "$(pv global.retroachievements.hardcore)" = "1" ] && ! grep -q 'hardcore_was' "${PCFG}" && [ ! -e "${PMARK}" ] && [ ! -e "${P}/run/active" ] && [ ! -s "${OUT}" ]; check $? "enable with the ${fk##*.} write failing: exit 1, toggle not 1, hardcore still 1, no record, marker gone, service stopped, nothing on stdout" "rc ${RC}; system.cfg: $(tr '\n' '|' < "${PCFG}"); marker: $([ -e "${PMARK}" ] && echo yes || echo no); service: $([ -e "${P}/run/active" ] && echo active || echo stopped); stdout: $(tr '\n' '|' < "${OUT}") (#186 PL-16)"
+done
+rm -f "${P}/run/fail-set"
 # pending and flushed (#173, D-RA-004): what the exit sync card asks before
 # it speaks, and what the next card that reached the network asks. A
 # fixture store with the proxy's own pending_awards table (storage.py's
@@ -1342,6 +1398,18 @@ ctl flushed; [ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "1789337156 2" ] && [ ! 
 ctl flushed; [ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ]; check $? "asked again: exit 1 -- one flush is said once" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}")"
 printf '1789337156 0\n' > "${PSTAMP}"
 ctl flushed; [ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ] && [ ! -e "${PSTAMP}" ]; check $? "a stamp that says nothing went: removed, exit 1, nothing claimed" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}"); stamp: $([ -e "${PSTAMP}" ] && echo still there || echo gone)"
+# A flush that lands between the read and the remove (the head shim writes
+# the service's next stamp): it is the next call's, not lost (#186 PL-32).
+printf '1789337156 2\n' > "${PSTAMP}"; touch "${P}/run/race-flush"
+ctl flushed; first="$(cat "${OUT}")"; rc1=${RC}
+ctl flushed; [ "${rc1}" -eq 0 ] && [ "${first}" = "1789337156 2" ] && [ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "1789337200 5" ]; check $? "a stamp the service replaces between the read and the remove is reported by the next call (first '${first}', then '$(cat "${OUT}")')" "first rc ${rc1} '${first}'; second rc ${RC} '$(cat "${OUT}")' -- the replacement was removed unread (#186 PL-32)"
+rm -f "${P}/run/race-flush" "${PSTAMP}"
+# A cached sign-in the proxy made from a token carries no Score: account
+# answers exit 1, never score=0 (#186 PL-26).
+rm -f "${PDB}" "${PDB}-wal" "${PDB}-shm"; pdb "INSERT INTO api_cache(cacheKey,responseBody,cachedAt,firstCachedAt) VALUES ('login2::qa','{\"Success\":true,\"User\":\"QA\",\"Token\":\"SECRETTOKEN123\"}',1789336962833,1789336962833)"
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\nglobal.retroachievements.username=QA\n' > "${PCFG}"
+ctl account; [ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ] && ! grep -q SECRETTOKEN "${OUT}" "${ERR}"; check $? "account on a cached sign-in without points (a token sign-in): exit 1, nothing on stdout" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}") -- an absent number read as a score (#186 PL-26)"
+rm -f "${PDB}" "${PDB}-wal" "${PDB}-shm"
 printf 'garbage\n' > "${PSTAMP}"
 ctl flushed; [ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ] && [ ! -e "${PSTAMP}" ]; check $? "a stamp that is not one: removed, exit 1, nothing claimed" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}"); stamp: $([ -e "${PSTAMP}" ] && echo still there || echo gone)"
 fi
@@ -1527,12 +1595,16 @@ MIIEowIBAAKCAQEAPLANTEDPEM
 ${DASH5}END RSA PRIVATE KEY${DASH5}
 rclone: https://max:PLANTEDurl@dav.example.org/remote.php
 wifi.key=PLANTEDpsk psk="PLANTEDpsk2"
+emulationstation[412]: runSystemCommand: set_setting global.retroachievements.key=PLANTEDweb1
+cheevos_password='PLANTEDsq2' AchievementsUserName = 'qa-user'
+raofflineproxy[9]: refresh u=qa-user t=PLANTEDbare3 g=1
 AchievementsUserName = qa-user hotkey_enable = "true" cheevos_password = "" input_player1_a = "x"
 EOS
     PATH="${TMP}/bbin:${PATH}" bash -c ". '${R}/helper.sh'; redact_credentials" < "${R}/shapes.in" > "${R}/shapes.out" 2>"${R}/shapes.err"
     [ "$(grep -c PLANTED "${R}/shapes.out")" -eq 0 ] && ! grep -q 'ZZZZZZZZ' "${R}/shapes.out"; check $? "the helper: no planted value survives any of its $(wc -l < "${R}/shapes.in") shapes (ScreenScraper pair, RA p=/t=/y=, setrootpass, INI Token, JSON, the guard's token formats, a PEM block, a URL password, a PSK)" "survivors: $(grep -n 'PLANTED\|ZZZZZZZZ' "${R}/shapes.out" | tr '\n' '|' | cut -c1-300)"
     grep -qF 'devpassword=<redacted>&softname=es&ssid=me&sspassword=<redacted>&crc=1' "${R}/shapes.out" && grep -qF 'z=qa-user&y=<redacted>' "${R}/shapes.out" && grep -qF 'u=qa-user&p=<redacted>' "${R}/shapes.out" && grep -qF 'setrootpass <redacted>' "${R}/shapes.out" && grep -qxF 'GITHUB_TOKEN=<redacted>' "${R}/shapes.out" && grep -qF 'key github_pat_<redacted> AKIA<redacted> xoxb-<redacted> sk-<redacted> disk-usage' "${R}/shapes.out" && grep -qF 'https://max:<redacted>@dav' "${R}/shapes.out"; check $? "and each keeps what names it: devpassword=<redacted>, &y=<redacted>, &p=<redacted>, setrootpass <redacted>, GITHUB_TOKEN=<redacted> (the key rule, before the ghp_ one), github_pat_<redacted>, max:<redacted>@" "output: $(tr '\n' '|' < "${R}/shapes.out" | cut -c1-400)"
     grep -qF 'AchievementsUserName = qa-user hotkey_enable = "true" cheevos_password = "" input_player1_a = "x"' "${R}/shapes.out" && grep -qF '&softname=es&ssid=me&' "${R}/shapes.out" && grep -qF 'disk-usage' "${R}/shapes.out"; check $? "controls survive: a username, hotkey_enable, an empty cheevos_password, a URL's other parameters, disk-usage" "controls line: $(grep -F 'AchievementsUserName' "${R}/shapes.out" | cut -c1-200); disk-usage: $(grep -c disk-usage "${R}/shapes.out")"
+    grep -qF 'global.retroachievements.key=<redacted>' "${R}/shapes.out" && grep -qF "cheevos_password='<redacted>' AchievementsUserName = 'qa-user'" "${R}/shapes.out" && grep -qF 'raofflineproxy[9]: refresh u=qa-user t=<redacted> g=1' "${R}/shapes.out"; check $? "and the three shapes the audit found passing (#186 PL-29): the web key's setting name, a single-quoted value, a bare t= on a proxy line" "lines: $(grep -E 'retroachievements.key|cheevos_password=|refresh u=' "${R}/shapes.out" | tr '\n' '|' | cut -c1-300) (#186 PL-29)"
     PATH="${TMP}/bbin:${PATH}" bash -c ". '${R}/helper.sh'; redact_credentials" < "${R}/shapes.out" > "${R}/shapes.out2" 2>/dev/null
     cmp -s "${R}/shapes.out" "${R}/shapes.out2"; check $? "a second pass changes nothing (the bundle filters a log the launcher already filtered)" "the second pass changed the output: $(diff "${R}/shapes.out" "${R}/shapes.out2" | head -3 | tr '\n' '|')"
     [ ! -s "${R}/shapes.err" ]; check $? "the sed program is accepted by the sed in use ($([ -n "${BB}" ] && echo "the image's busybox" || echo "the host's"))" "sed said: $(tr '\n' '|' < "${R}/shapes.err" | cut -c1-200)"
@@ -1622,6 +1694,493 @@ ev collect
 NARCH_AFTER=$(ls "${EVD}"/*-evidence.tar.gz 2>/dev/null | wc -l)
 [ "${RC}" -ne 0 ] && [ "${NARCH_AFTER}" -eq "${NARCH_BEFORE}" ] && grep -q 'nothing collected' "${S}/out/run"; check $? "without the helper, collect refuses (rc ${RC}), writes no archive and says why: $(grep -o "Couldn't load the credential filter[^.]*" "${S}/out/run" | head -1)" "rc ${RC}; archives before ${NARCH_BEFORE}, after ${NARCH_AFTER}; output: $(tr '\n' '|' < "${S}/out/run" | cut -c1-200) -- collect went ahead with no filter (#176)"
 [ -z "$(ls -d "${EVD}"/*-evidence 2>/dev/null)" ]; check $? "and leaves no half-built directory behind" "left: $(ls -d "${EVD}"/*-evidence 2>/dev/null | tr '\n' ' ')"
+
+# ---------------------------------------------------------------- t.
+echo "  t. raofflineproxy-ctl scan, topup and ready against the client the tree describes: the refusals, the index rule by account and hash, the probe's own folder and patience, one deadline, the failure verdict, the cap over uncached files, a stop on disable, and the patched client's own predicates (#186 PL-01..05, 12, 17, 23, 24, 25, 28, 30, 33)"
+# The client is built as the package builds it: the pinned tarball from the
+# sources cache (PKG_VERSION in package.mk), the package's patches applied
+# in order (from BASE_REF under --old, so the client is the one that tree
+# describes). Its own network verbs -- probe-online, run-smart-cache,
+# cached-games-count -- and the helper the ctl runs are shims that answer
+# from files under /run; everything else the ctl imports (the storage, the
+# export, the browser's rules, the history reader) is the real, patched
+# code, and the fixture store is written through the real Storage. Time is
+# virtual: date +%s reads /run/clock, sleep advances it (real when
+# /run/fast-sleep is absent), timeout runs its command with the budget in
+# FAKE_BUDGET and returns 124 when the command says it ran past it -- so a
+# fifteen-minute deadline is tested in milliseconds, and a real wait is
+# taken only where a real process must be stopped (PL-30).
+T="${TMP}/t"; TS="${T}/storage"; TR="${T}/run"; mkdir -p "${TS}/.config/system/configs" "${TS}/.config/raofflineproxy" "${TS}/.config/emulationstation/recovery/nes" "${TS}/roms/nes" "${TS}/roms/gb/images" "${T}/repo" "${T}/shim" "${TR}" "${T}/varrun" "${T}/pypath"
+PKG_REL=projects/ROCKNIX/packages/network/raofflineproxy/package.mk
+PATCHES_REL=projects/ROCKNIX/packages/network/raofflineproxy/patches
+HELPER_REL=projects/ROCKNIX/packages/network/raofflineproxy/sources/raofflineproxy-cache-indexed
+PIN="$(sed -n 's/^PKG_VERSION="\([0-9a-f]*\)"$/\1/p' "${ROOT}/${PKG_REL}" 2>/dev/null | head -1)"
+TARBALL=""
+for d in "${SOURCES_DIR:-}" /workspace/cache/rocknix-sources "${ROOT}/sources" "${ROOT}"/../*/sources; do
+    [ -n "${d}" ] && [ -f "${d}/raofflineproxy/raofflineproxy-${PIN}.tar.gz" ] && { TARBALL="${d}/raofflineproxy/raofflineproxy-${PIN}.tar.gz"; break; }
+done
+if [ "${OLD}" -eq 1 ] && ! git -C "${ROOT}" cat-file -e "${BASE_REF}:${CTL_REL}" 2>/dev/null; then
+    check 1 "" "raofflineproxy-ctl is absent at ${BASE_REF}: no scan to test"
+elif [ -z "${TARBALL}" ]; then
+    echo "    SKIP  the client's tarball raofflineproxy-${PIN:-?}.tar.gz is not under SOURCES_DIR, /workspace/cache/rocknix-sources or a build worktree's sources/ -- case t needs the pinned client to drive the ctl's listing against"
+else
+src_of "${CTL_REL}" "${T}/repo/raofflineproxy-ctl"
+# The archive's top directory is the project's name and the pin (a GitHub
+# archive: RAOfflineProxy-<hash>); only the module is taken out of it.
+tar -xzf "${TARBALL}" -C "${T}" --wildcards '*/linux/raofflineproxy/*' 2>/dev/null
+mkdir -p "${T}/patched"
+mv "${T}"/*-"${PIN}"/linux "${T}/patched/linux" 2>/dev/null; rm -rf "${T}"/*-"${PIN}"
+rm -rf "${T}/patched/linux/raofflineproxy/__pycache__"
+[ -f "${T}/patched/linux/raofflineproxy/storage.py" ]; check $? "the pinned client unpacked from $(basename "${TARBALL}")" "no linux/raofflineproxy/storage.py came out of ${TARBALL}: $(ls "${T}" | tr '\n' ' ')"
+# The patches, in order, as scripts/unpack applies them (patch -p1).
+TPATCH_OK=1; TPATCHES=""
+if [ "${OLD}" -eq 1 ]; then
+    TPATCHES="$(git -C "${ROOT}" ls-tree --name-only "${BASE_REF}" -- "${PATCHES_REL}/" 2>/dev/null | grep '\.patch$' | sort)"
+else
+    TPATCHES="$(cd "${ROOT}" && ls "${PATCHES_REL}"/*.patch 2>/dev/null | sort)"
+fi
+for prel in ${TPATCHES}; do
+    src_of "${prel}" "${T}/one.patch"
+    if ! patch -d "${T}/patched" -p1 -N -s < "${T}/one.patch" >"${T}/patch.out" 2>&1; then
+        TPATCH_OK=0; check 1 "" "${prel##*/} does not apply to the pinned client: $(tr '\n' '|' < "${T}/patch.out" | cut -c1-200)"
+    fi
+done
+[ "${TPATCH_OK}" -eq 1 ]; check $? "the client at ${PIN:0:10} with $(echo "${TPATCHES}" | grep -c .) patch(es) applied in order, each compiled: $(cd "${T}/patched/linux/raofflineproxy" && python3 -m py_compile *.py 2>&1 | head -1 || true)ok" "a patch did not apply; the runs below are against a client the tree does not describe"
+CLIENT="${T}/patched/linux"
+{
+    sed -n '/^function get_setting() {/,/^}/p; /^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function set_setting() {/,/^}/p' "${FN}"
+} > "${T}/repo/fns.sh"
+TBB=(); TPATH="/shim:/usr/bin:/bin"
+if [ -n "${BB}" ]; then
+    mkdir -p "${T}/bbin"; for a in sed mv cp tr head wc cut awk tail flock mkfifo mktemp stat; do printf '#!/bin/sh\nexec %s %s "$@"\n' "${BB}" "${a}" > "${T}/bbin/${a}"; chmod +x "${T}/bbin/${a}"; done
+    TBB=(--ro-bind "${T}/bbin" /bbin --ro-bind "${BB}" "${BB}"); TPATH="/shim:/bbin:/usr/bin:/bin"
+fi
+printf 'export PATH=%s\nexport OS_NAME=ROCKNIX\nJ_CONF=/storage/.config/system/configs/system.cfg\nJ_CONF_LOCK=/tmp/.system.cfg.lock\n. /repo/fns.sh\n' "${TPATH}" > "${T}/profile"
+printf '#!/bin/sh\necho "logger $*" >&2\n' > "${T}/shim/logger"
+cat > "${T}/shim/systemctl" <<'EOS'
+#!/bin/sh
+echo "systemctl $*" >> /run/systemctl.log
+case "$1" in start) touch /run/active ;; stop) rm -f /run/active ;; is-active) [ -e /run/active ] && { echo active; exit 0; } || { echo inactive; exit 3; } ;; esac
+exit 0
+EOS
+# The clock: date +%s reads it, sleep advances it (or really sleeps).
+cat > "${T}/shim/date" <<'EOS'
+#!/bin/sh
+if [ "$1" = "+%s" ] && [ -s /run/clock ]; then cat /run/clock; exit 0; fi
+exec /usr/bin/date "$@"
+EOS
+cat > "${T}/shim/sleep" <<'EOS'
+#!/bin/sh
+if [ -e /run/fast-sleep ] && [ -s /run/clock ]; then echo "$1" >> /run/sleep.log; echo $(( $(cat /run/clock) + ${1%.*} )) > /run/clock; exit 0; fi
+exec /usr/bin/sleep "$@"
+EOS
+cat > "${T}/shim/timeout" <<'EOS'
+#!/bin/bash
+# timeout on the virtual clock: the budget goes to the command in FAKE_BUDGET;
+# a command that would run past it advances the clock to the budget, touches
+# /run/timeout-hit and exits, and this returns 124 as timeout would. SIGTERM
+# is forwarded, as timeout forwards it.
+budget="$1"; shift; rm -f /run/timeout-hit
+# stdin handed on explicitly: a background command's default stdin is
+# /dev/null, and the listing is a heredoc on it.
+exec 3<&0
+FAKE_BUDGET="${budget}" "$@" <&3 & child=$!
+trap 'kill -TERM "${child}" 2>/dev/null' TERM
+wait "${child}"; rc=$?
+[ -e /run/timeout-hit ] && { rm -f /run/timeout-hit; exit 124; }
+exit "${rc}"
+EOS
+# The client's own network verbs, answered from /run: probe-online writes the
+# answer at the head of /run/probe-answers into the folder it was pointed at
+# (and logs which folder); run-smart-cache prints /run/smart-result;
+# cached-games-count prints /run/cached-count. A listing (python3 -) is
+# delayed by /run/listing-delay virtual seconds. Everything else is python.
+cat > "${T}/shim/python3" <<'EOS'
+#!/bin/sh
+case "$1 $2 $3" in
+    "-m raofflineproxy.main probe-online")
+        a="$(head -n 1 /run/probe-answers 2>/dev/null)"; [ -n "$a" ] || a=false
+        [ "$(wc -l < /run/probe-answers 2>/dev/null || echo 0)" -gt 1 ] && sed -i '1d' /run/probe-answers
+        echo "probe dir=${RAOFFLINEPROXY_CONFIG_DIR} answer=${a} at=$(cat /run/clock 2>/dev/null)" >> /run/probe.log
+        mkdir -p "${RAOFFLINEPROXY_CONFIG_DIR}" && printf '{\n  "online": %s\n}\n' "$a" > "${RAOFFLINEPROXY_CONFIG_DIR}/online_state.json"; exit 0 ;;
+    "-m raofflineproxy.main run-smart-cache")
+        echo "smart budget=${FAKE_BUDGET:-none} at=$(cat /run/clock 2>/dev/null)" >> /run/probe.log
+        if [ -s /run/smart-slow ]; then s="$(cat /run/smart-slow)"; if [ -n "${FAKE_BUDGET:-}" ] && [ "$s" -gt "${FAKE_BUDGET}" ]; then echo $(( $(cat /run/clock) + FAKE_BUDGET )) > /run/clock; touch /run/timeout-hit; exit 143; fi; echo $(( $(cat /run/clock) + s )) > /run/clock; fi
+        cat /run/smart-result 2>/dev/null || echo '{"type":"result","scanned":0,"total":0,"cached":0,"skipped":0,"limit_reached":false}'; exit 0 ;;
+    "-m raofflineproxy.main cached-games-count") cat /run/cached-count 2>/dev/null || echo 0; exit 0 ;;
+esac
+if [ "$1" = "-" ] && [ -s /run/listing-delay ]; then echo $(( $(cat /run/clock) + $(cat /run/listing-delay) )) > /run/clock; fi
+exec /usr/bin/python3 "$@"
+EOS
+# The helper the ctl runs beside itself, speaking cache-roms' lines: job i
+# does what line i of /run/helper-plan says -- ok (the three rows a launch
+# reads, written through the real Storage for the signed-in account, the
+# ROM's path on the patch row), skip (no match), fail (a fetch that did not
+# come back), login (sign-in refused), slow N (N virtual seconds, or the
+# budget and a timeout), wait N (N real seconds), die -- and ok when there
+# is no line. It records its pid, its jobs and its start and end.
+cat > "${T}/repo/raofflineproxy-cache-indexed" <<'EOS'
+import os, sys, time
+from pathlib import Path
+from raofflineproxy import cache_keys
+from raofflineproxy.rom_browser import normalize_cached_rom_path
+from raofflineproxy.storage import Storage
+run = Path("/run"); (run / "helper.pid").write_text(f"{os.getpid()}\n")
+def clock(): return int((run / "clock").read_text().strip() or 0)
+def now(): return clock() if (run / "clock").exists() else int(time.time())
+(run / "helper-times").write_text(f"start {now()}\n")
+user = ""
+for line in Path("/storage/.config/system/configs/system.cfg").read_text().splitlines():
+    if line.startswith("global.retroachievements.username="): user = cache_keys.normalize_user(line.split("=", 1)[1])
+plan = (run / "helper-plan").read_text().splitlines() if (run / "helper-plan").exists() else []
+jobs = [l for l in Path(sys.argv[1]).read_text().splitlines() if l.strip()]
+with (run / "helper-jobs.log").open("a") as log: log.write("".join(j + "\n" for j in jobs))
+storage = Storage(); cached = failed = indexed = 0; total = len(jobs)
+def say(text): print(text, flush=True)
+for i, raw in enumerate(jobs, start=1):
+    kind, gid, hsh, path = raw.split("\t", 3); label = Path(path).name
+    step = plan[i - 1].split() if i - 1 < len(plan) and plan[i - 1].strip() else ["ok"]
+    if step[0] == "skip": failed += 1; say(f"FAIL {i}/{total} {label}: No RetroAchievements match"); continue
+    if step[0] == "fail": failed += 1; say(f"FAIL {i}/{total} {label}: patch request failed: HTTP Error 429: Too Many Requests"); continue
+    if step[0] == "login": failed += 1; say(f"FAIL {i}/{total} {label}: RetroAchievements login required"); continue
+    if step[0] == "die": sys.exit(3)
+    if step[0] == "wait": time.sleep(float(step[1]))
+    if step[0] == "slow":
+        n = int(step[1]); budget = os.environ.get("FAKE_BUDGET")
+        if budget and n > int(budget):
+            (run / "clock").write_text(f"{clock() + int(budget)}\n"); (run / "timeout-hit").touch(); sys.exit(143)
+        (run / "clock").write_text(f"{clock() + n}\n")
+    game_id = int(gid) if gid else 9000 + i; hash_value = hsh or f"h{i:04d}"
+    storage.upsert_cache(cache_keys.patch(game_id, user), '{"Success":true,"PatchData":{"ID":%d,"Title":"G%d"}}' % (game_id, game_id), source_rom_path=normalize_cached_rom_path(path))
+    storage.upsert_cache(cache_keys.unlocks(game_id, user), '{"Success":true,"UserUnlocks":[]}')
+    storage.upsert_cache(cache_keys.achievementsets(hash_value, user), '{"Success":true,"GameId":%d,"Sets":[]}' % game_id)
+    cached += 1; indexed += 1 if kind == "I" else 0; say(f"OK {i}/{total} {label}")
+storage.close()
+with (run / "helper-times").open("a") as f: f.write(f"end {now()}\n")
+say(f"DONE cached={cached} failed={failed} indexed={indexed}")
+EOS
+# MAX_SCAN_ENTRIES is the client's constant; with RA_TEST_SCAN_CAP set this
+# sitecustomize lowers it for a run, so the cap is tested with eleven files
+# rather than five thousand and one.
+cat > "${T}/pypath/sitecustomize.py" <<'EOS'
+import os
+_cap = os.environ.get("RA_TEST_SCAN_CAP")
+if _cap:
+    import raofflineproxy.rom_browser as _rb
+    _rb.MAX_SCAN_ENTRIES = int(_cap)
+EOS
+chmod +x "${T}/shim"/*
+TCFG="${TS}/.config/system/configs/system.cfg"; TPD="${TS}/.config/raofflineproxy"; TSTAMP="${TPD}/last-scan"; TLOG="${TPD}/scan.log"; TMARK="${TPD}/last-topup-attempt"; TREADY="${TPD}/cached_game_ids.txt"; TSTATE="${TPD}/online_state.json"
+TENV=()
+tctl() { # <verb...>: stdout to $OUT, stderr to $ERR, rc in $RC
+    RC=$( ( bwrap --die-with-parent --tmpfs / --tmpfs /usr "${USR_BINDS[@]}" "${TBB[@]}" \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${T}/profile" /etc/profile \
+        --bind "${TS}" /storage --ro-bind "${T}/repo" /repo --ro-bind "${T}/shim" /shim --ro-bind "${CLIENT}" /client --ro-bind "${T}/pypath" /pypath \
+        --bind "${TR}" /run --tmpfs /var --bind "${T}/varrun" /var/run \
+        --dev /dev --proc /proc --tmpfs /tmp --setenv PYTHONPATH /client:/pypath "${TENV[@]}" \
+        bash /repo/raofflineproxy-ctl "$@" > "${OUT}" 2> "${ERR}"; echo $? ) 2>/dev/null )
+}
+OUT="${T}/out"; ERR="${T}/err"
+tv() { sed -n "s/^${1}=//p" "${TCFG}"; }
+treset() { # the store, the export, the stamps, the log and /run: a fresh device with the fixture's rows
+    rm -rf "${TPD}"; mkdir -p "${TPD}"; rm -f "${TR}"/* 2>/dev/null; rm -f "${T}/varrun"/* 2>/dev/null
+    date +%s > "${TR}/clock"; touch "${TR}/fast-sleep"; echo true > "${TR}/probe-answers"
+    PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+# game 102 (b.nes) complete for qa; 105 (e.nes) patch row only (a fetch that
+# failed after the first write); 101 (a.nes) complete for another account.
+s.upsert_cache(cache_keys.patch(102, "qa"), '{"Success":true,"PatchData":{"ID":102}}', source_rom_path="/nes/b.nes")
+s.upsert_cache(cache_keys.unlocks(102, "qa"), '{"Success":true,"UserUnlocks":[]}')
+s.upsert_cache(cache_keys.achievementsets("bbbb", "qa"), '{"Success":true,"GameId":102,"Sets":[]}')
+s.upsert_cache(cache_keys.patch(105, "qa"), '{"Success":true,"PatchData":{"ID":105}}', source_rom_path="/nes/e.nes")
+s.upsert_cache(cache_keys.patch(101, "other"), '{"Success":true,"PatchData":{"ID":101}}', source_rom_path="/nes/a.nes")
+s.upsert_cache(cache_keys.unlocks(101, "other"), '{"Success":true,"UserUnlocks":[]}')
+s.upsert_cache(cache_keys.achievementsets("aaaa", "other"), '{"Success":true,"GameId":101,"Sets":[]}')
+s.close()
+EOS
+}
+# The library: nes indexed (a gamelist with hashes, a recovery file that
+# names it and one that names another), gb unindexed.
+cat > "${TS}/.config/emulationstation/es_systems.cfg" <<'EOS'
+<?xml version="1.0"?>
+<systemList>
+  <system><name>nes</name><fullname>NES</fullname><path>/storage/roms/nes</path></system>
+  <system><name>gb</name><fullname>GB</fullname><path>/storage/roms/gb</path></system>
+  <system><name>gbc</name><fullname>GBC</fullname><path>/storage/roms/gbc</path></system>
+</systemList>
+EOS
+for f in a b c d e f g; do printf 'NES\x1a%s' "${f}" > "${TS}/roms/nes/${f}.nes"; done
+cat > "${TS}/roms/nes/gamelist.xml" <<'EOS'
+<?xml version="1.0"?>
+<gameList>
+  <game><path>./a.nes</path><name>A</name><cheevosHash>AAAA</cheevosHash><cheevosId>101</cheevosId></game>
+  <game><path>./b.nes</path><name>B</name><cheevosHash>bbbb</cheevosHash><cheevosId>102</cheevosId></game>
+  <game><path>./c.nes</path><name>C</name><cheevosHash>cccc</cheevosHash></game>
+  <game><path>./d.nes</path><name>D</name></game>
+</gameList>
+EOS
+GLSIZE=$(stat -c %s "${TS}/roms/nes/gamelist.xml")
+printf '<?xml version="1.0"?>\n<gameList parentHash="%s">\n  <game><path>./e.nes</path><name>E</name><cheevosHash>eeee</cheevosHash><cheevosId>105</cheevosId></game>\n</gameList>\n' "${GLSIZE}" > "${TS}/.config/emulationstation/recovery/nes/e.xml"
+printf '<?xml version="1.0"?>\n<gameList parentHash="999999">\n  <game><path>./f.nes</path><name>F</name><cheevosHash>ffff</cheevosHash><cheevosId>106</cheevosId></game>\n</gameList>\n' > "${TS}/.config/emulationstation/recovery/nes/f-stale.xml"
+printf 'GB h' > "${TS}/roms/gb/h.gb"; printf 'GB i' > "${TS}/roms/gb/i.gb"; printf 'GB hidden' > "${TS}/roms/gb/.hidden.gb"; : > "${TS}/roms/gb/empty.gb"; printf 'GB art' > "${TS}/roms/gb/images/art.gb"
+# ready: from the client's export, one id per line; nothing invented.
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\nglobal.retroachievements.username=QA\nglobal.retroachievements.token=FIXTURETOKEN\n' > "${TCFG}"
+treset; rm -f "${TREADY}"; rm -f "${TPD}/proxy.sqlite3"*
+tctl ready; [ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "0" ]; check $? "ready with no export and no store: 0" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}")"
+printf '101\n102\nnot-a-number\n105\n' > "${TREADY}"
+tctl ready; [ "$(cat "${OUT}")" = "3" ]; check $? "ready from the export: 3 (a line that is not a number is not a game)" "stdout: $(tr '\n' '|' < "${OUT}")"
+# The four refusals, each with no stamp (#179).
+treset
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=0\nglobal.retroachievements.username=QA\nglobal.retroachievements.token=FIXTURETOKEN\n' > "${TCFG}"
+tctl scan; [ "${RC}" -eq 78 ] && grep -qx '>>> why TOGGLE_OFF' "${OUT}" && [ ! -e "${TSTAMP}" ]; check $? "scan with the toggle off: exit 78, why TOGGLE_OFF, no stamp" "rc ${RC}; out: $(tr '\n' '|' < "${OUT}" | cut -c1-120); stamp: $([ -e "${TSTAMP}" ] && echo written || echo none)"
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\n' > "${TCFG}"
+tctl scan; [ "${RC}" -eq 77 ] && grep -qx '>>> why NO_ACCOUNT' "${OUT}" && [ ! -e "${TSTAMP}" ]; check $? "scan with no account: exit 77, why NO_ACCOUNT, no stamp" "rc ${RC}; out: $(tr '\n' '|' < "${OUT}" | cut -c1-120)"
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\nglobal.retroachievements.username=QA\nglobal.retroachievements.token=FIXTURETOKEN\n' > "${TCFG}"
+# Offline by the probe -- and the probe must not touch the service's file:
+# the service says online, and its file's bytes and mtime stay (#186 PL-03).
+printf '{\n  "online": true\n}\n' > "${TSTATE}"; touch -d '2026-09-14 10:00:00' "${TSTATE}"; STATE_M=$(stat -c %Y "${TSTATE}")
+echo false > "${TR}/probe-answers"
+tctl scan; [ "${RC}" -eq 69 ] && [ ! -e "${TSTAMP}" ] && grep -q 'scan refused: offline by the proxy' "${TLOG}"; check $? "scan offline by the proxy's probe: exit 69, no stamp, the refusal in scan.log" "rc ${RC}; stamp: $([ -e "${TSTAMP}" ] && echo written || echo none); log: $(tail -1 "${TLOG}" 2>/dev/null | cut -c1-120)"
+[ "$(stat -c %Y "${TSTATE}")" = "${STATE_M}" ] && grep -q '"online": true' "${TSTATE}" && grep -q 'probe dir=' "${TR}/probe.log" && ! grep -q 'probe dir=/storage/.config/raofflineproxy ' "${TR}/probe.log"; check $? "the ctl's probe wrote its own folder ($(sed -n 's/^probe dir=\([^ ]*\).*/\1/p' "${TR}/probe.log" | head -1)); the service's online_state.json still says online with its mtime unchanged" "state mtime $(stat -c %Y "${TSTATE}") vs ${STATE_M}, content: $(tr '\n' ' ' < "${TSTATE}"); probes: $(tr '\n' '|' < "${TR}/probe.log" | cut -c1-200) (#186 PL-03)"
+# Another run holds the lock: exit 75 at once.
+echo true > "${TR}/probe-answers"
+( bwrap --die-with-parent --tmpfs / --tmpfs /usr "${USR_BINDS[@]}" --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 --tmpfs /var --bind "${T}/varrun" /var/run --dev /dev --proc /proc \
+    bash -c 'exec 9<>/var/run/raofflineproxy-scan.lock; flock 9; echo $$ >&9; sleep 30' ) >/dev/null 2>&1 &
+THOLD=$!; sleep 1
+tctl scan; [ "${RC}" -eq 75 ] && [ ! -e "${TSTAMP}" ]; check $? "scan while another scan or top-up holds the lock: exit 75, no stamp" "rc ${RC}; out: $(tr '\n' '|' < "${OUT}" | cut -c1-120)"
+kill "${THOLD}" 2>/dev/null; wait "${THOLD}" 2>/dev/null; rm -f "${T}/varrun"/*
+# The listing (D-RA-013; #186 PL-23, PL-02): the indexed system's games with
+# an id -- less the one cached for this account -- from the index; the
+# unindexed folder walked; nothing hidden, empty, in a media folder or
+# stale. e.nes has a patch row and nothing else, a.nes is cached for another
+# account: both are jobs.
+treset
+tctl scan; [ "${RC}" -eq 0 ] && grep -q 'scan start: found=5 new=4 cached=1 indexed=2 hashing=2' "${TLOG}"; check $? "scan over the fixture library (rc ${RC}): found=5 new=4 cached=1 indexed=2 hashing=2 -- $(grep -o 'scan start: .*' "${TLOG}" | tail -1 | cut -c12-)" "rc ${RC}; log: $(grep 'scan start' "${TLOG}" | tail -1 | cut -c1-160); err: $(tr '\n' '|' < "${ERR}" | cut -c1-200) (#186 PL-23/PL-02)"
+J="${TR}/helper-jobs.log"
+grep -qP '^I\t101\tAAAA\t/storage/roms/nes/a.nes$' "${J}" && grep -qP '^I\t105\teeee\t/storage/roms/nes/e.nes$' "${J}" && grep -qP '^H\t\t\t/storage/roms/gb/h.gb$' "${J}" && grep -qP '^H\t\t\t/storage/roms/gb/i.gb$' "${J}" && [ "$(grep -c . "${J}")" -eq 4 ]; check $? "the jobs: I 101 a.nes (cached for another account), I 105 e.nes (patch row alone), H h.gb, H i.gb -- and not b.nes (cached), c.nes (no set), d.nes (no hash), f.nes (stale recovery), g.nes (unlisted in an indexed system), the hidden, empty and media-folder files" "jobs: $(tr '\t' ',' < "${J}" | tr '\n' '|' | cut -c1-300) (#186 PL-23)"
+grep -qx '>>> total 4' "${OUT}" && grep -qx '>>> done 4|0|5|0' "${OUT}" && grep -q '^[0-9]* 0 scan cached=4 skipped=0 ready=5 limit=0 indexed=2 errors=0$' "${TSTAMP}" && [ "$(sort -n "${TREADY}" | tr '\n' ' ')" = "101 102 105 9003 9004 " ]; check $? "the page's lines (total 4, done 4|0|5|0), the stamp (0 scan cached=4 ready=5 indexed=2 errors=0) and the client's export (101 102 105 and the two hashed) agree" "out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-200); stamp: $(cat "${TSTAMP}" 2>/dev/null); export: $(tr '\n' ' ' < "${TREADY}" 2>/dev/null)"
+tctl scan; [ "${RC}" -eq 0 ] && grep -qx '>>> note NOTHING_NEW' "${OUT}" && grep -qx '>>> done 0|0|5|0' "${OUT}"; check $? "a second scan: nothing new (every game now cached for this account), done 0|0|5|0" "rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-200)"
+# A fetch that fails among ones that go through (#186 PL-24): the run could
+# not finish, says how many, and the next run tries the game again.
+treset; printf 'ok\nfail\nok\nskip\n' > "${TR}/helper-plan"
+tctl scan; [ "${RC}" -eq 1 ] && grep -qx '>>> errors 1' "${OUT}" && grep -qx '>>> why SOME_GAMES_NOT_SAVED' "${OUT}" && grep -q ' 1 scan cached=2 skipped=1 ready=[0-9]* limit=0 indexed=[0-9]* errors=1 why=SOME_GAMES_NOT_SAVED$' "${TSTAMP}"; check $? "one FAIL among OKs and a skip: exit 1, errors 1, why SOME_GAMES_NOT_SAVED, the stamp says so" "rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-200); stamp: $(cat "${TSTAMP}" 2>/dev/null) -- a failed game read as COMPLETED (#186 PL-24)"
+rm -f "${TR}/helper-plan"; : > "${TR}/helper-jobs.log"
+tctl scan; [ "${RC}" -eq 0 ] && [ "$(grep -c . "${TR}/helper-jobs.log")" -eq 2 ] && [ "$(grep -c '^I' "${TR}/helper-jobs.log")" -eq 1 ] && [ "$(grep -c '^H' "${TR}/helper-jobs.log")" -eq 1 ] && grep -qx '>>> done 2|0|[0-9]*|0' "${OUT}"; check $? "the next scan tries the failed game again, and the unknown one (nothing marks either cached): 2 jobs, one from the index, one to hash; done 2|0|n|0" "rc ${RC}; jobs: $(tr '\t' ',' < "${TR}/helper-jobs.log" | tr '\n' '|'); out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-160)"
+# Three fetches in a row unanswered, and a refused sign-in.
+treset; printf 'fail\nfail\nfail\nok\n' > "${TR}/helper-plan"
+tctl scan; [ "${RC}" -eq 1 ] && grep -qx '>>> why RETROACHIEVEMENTS_STOPPED_ANSWERING' "${OUT}" && grep -q 'why=RETROACHIEVEMENTS_STOPPED_ANSWERING$' "${TSTAMP}"; check $? "three FAILs in a row: exit 1, why RETROACHIEVEMENTS_STOPPED_ANSWERING, stamped" "rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-200)"
+treset; printf 'ok\nlogin\n' > "${TR}/helper-plan"
+tctl scan; [ "${RC}" -eq 1 ] && grep -qx '>>> why SIGN_IN_REFUSED' "${OUT}"; check $? "a refused sign-in: exit 1, why SIGN_IN_REFUSED" "rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-200)"
+rm -f "${TR}/helper-plan"
+# topup (#184; #186 PL-04): the probe with the token check's patience -- the
+# answer arrives on the third try -- then the mark; a probe that never
+# answers leaves no mark; the half-hour rule; --after-index ignores it.
+treset; rm -f "${TMARK}"; printf 'false\nfalse\ntrue\n' > "${TR}/probe-answers"
+tctl topup; [ "${RC}" -eq 0 ] && [ "$(grep -c '^probe ' "${TR}/probe.log")" -eq 3 ] && [ "$(grep -c '^10$' "${TR}/sleep.log")" -eq 2 ] && [ -e "${TMARK}" ]; check $? "topup with the resolver two probes behind: three probes ten seconds apart, then the run and the mark (rc ${RC})" "rc ${RC}; probes: $(grep -c '^probe ' "${TR}/probe.log"); sleeps: $(tr '\n' ',' < "${TR}/sleep.log" 2>/dev/null); mark: $([ -e "${TMARK}" ] && echo set || echo none); log: $(tail -2 "${TLOG}" | tr '\n' '|' | cut -c1-200) (#186 PL-04)"
+grep -q 'topup start: found=3 new=2 cached=1 indexed=2 hashing=0' "${TLOG}" && grep -q 'topup indexed pass: cached=2' "${TLOG}" && grep -q '^smart budget=' "${TR}/probe.log" && grep -q ' 0 topup cached=2 skipped=0 ready=[0-9]* limit=0 indexed=2 errors=0$' "${TSTAMP}"; check $? "its indexed pass saw the index alone (found=3 new=2 cached=1 indexed=2 hashing=0), cached the two and hashed nothing; the recently played pass ran; the stamp says topup cached=2" "log: $(grep 'topup' "${TLOG}" | tr '\n' '|' | cut -c1-300); stamp: $(cat "${TSTAMP}" 2>/dev/null)"
+touch -d '2 hours ago' "${TMARK}"; MARK_M=$(stat -c %Y "${TMARK}"); echo false > "${TR}/probe-answers"; : > "${TR}/probe.log"; : > "${TR}/sleep.log"
+tctl topup; [ "${RC}" -eq 69 ] && [ "$(grep -c '^probe ' "${TR}/probe.log")" -eq 9 ] && [ "$(stat -c %Y "${TMARK}")" = "${MARK_M}" ] && grep -q 'not counted as an attempt' "${TLOG}"; check $? "topup with no answer at all: nine probes, exit 69, and the mark untouched -- the next link event tries again" "rc ${RC}; probes: $(grep -c '^probe ' "${TR}/probe.log"); mark mtime $(stat -c %Y "${TMARK}") vs ${MARK_M} -- a probe that reached nothing was counted as the half hour's attempt (#186 PL-04)"
+echo true > "${TR}/probe-answers"; : > "${TR}/probe.log"
+tctl topup; [ "${RC}" -eq 0 ] && [ "$(stat -c %Y "${TMARK}")" != "${MARK_M}" ]; check $? "topup once the probe answers: the mark is set (rc ${RC})" "rc ${RC}; mark mtime $(stat -c %Y "${TMARK}") vs ${MARK_M}"
+: > "${TR}/probe.log"
+tctl topup; [ "${RC}" -eq 0 ] && [ ! -s "${TR}/probe.log" ]; check $? "a second topup inside the half hour: exit 0 at once, no probe" "rc ${RC}; probes: $(tr '\n' '|' < "${TR}/probe.log")"
+tctl topup --after-index; [ "${RC}" -eq 0 ] && grep -q '^probe ' "${TR}/probe.log"; check $? "topup --after-index inside the half hour: probes and runs (rc ${RC})" "rc ${RC}; probes: $(tr '\n' '|' < "${TR}/probe.log" | cut -c1-100)"
+# One deadline (#186 PL-28): the listing takes two virtual minutes, the
+# helper would take fifteen; the run ends within fifteen of its start, with
+# TOOK_TOO_LONG, and the recently played pass is not started.
+treset; touch -d '2 hours ago' "${TMARK}"; echo 120 > "${TR}/listing-delay"; printf 'slow 900\n' > "${TR}/helper-plan"
+T0=$(cat "${TR}/clock")
+tctl topup; T1=$(cat "${TR}/clock"); TOOK=$(( T1 - T0 ))
+[ "${RC}" -eq 1 ] && [ "${TOOK}" -le 900 ] && grep -q 'why=TOOK_TOO_LONG$' "${TSTAMP}" && ! grep -q '^smart ' "${TR}/probe.log"; check $? "topup with the listing 120 s late and a helper that would run 900 s: ended at ${TOOK} s from its start (rc ${RC}), TOOK_TOO_LONG, no recently played pass" "rc ${RC}; took ${TOOK}s; stamp: $(cat "${TSTAMP}" 2>/dev/null); smart: $(grep -c '^smart ' "${TR}/probe.log"); log: $(grep topup "${TLOG}" | tr '\n' '|' | cut -c1-300) -- the fifteen minutes were not one bound (#186 PL-28)"
+rm -f "${TR}/listing-delay" "${TR}/helper-plan"
+# The lock wait spends from the same deadline: an after-index run behind a
+# holder that never lets go gives up inside the fifteen minutes.
+treset; T0=$(cat "${TR}/clock")
+( bwrap --die-with-parent --tmpfs / --tmpfs /usr "${USR_BINDS[@]}" --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 --tmpfs /var --bind "${T}/varrun" /var/run --dev /dev --proc /proc \
+    bash -c 'exec 9<>/var/run/raofflineproxy-scan.lock; flock 9; echo $$ >&9; sleep 60' ) >/dev/null 2>&1 &
+THOLD=$!; sleep 1
+tctl topup --after-index; T1=$(cat "${TR}/clock")
+[ "${RC}" -eq 75 ] && [ $(( T1 - T0 )) -le 900 ]; check $? "topup --after-index behind a lock nobody releases: exit 75 after $(( T1 - T0 )) virtual seconds, inside the deadline" "rc ${RC}; waited $(( T1 - T0 ))s"
+kill "${THOLD}" 2>/dev/null; wait "${THOLD}" 2>/dev/null; rm -f "${T}/varrun"/*
+# disable stops a running run (#186 PL-30): the helper is on a real 20 s
+# wait; disable finds the run through the pid in the lock file, asks it to
+# stop, and the helper is gone within ten seconds.
+treset; rm -f "${TR}/fast-sleep"; printf 'wait 20\n' > "${TR}/helper-plan"; rm -f "${TR}/helper.pid" "${TR}/helper-times"
+( bwrap --die-with-parent --tmpfs / --tmpfs /usr "${USR_BINDS[@]}" "${TBB[@]}" \
+    --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+    --ro-bind /etc /etc --ro-bind "${T}/profile" /etc/profile \
+    --bind "${TS}" /storage --ro-bind "${T}/repo" /repo --ro-bind "${T}/shim" /shim --ro-bind "${CLIENT}" /client --ro-bind "${T}/pypath" /pypath \
+    --bind "${TR}" /run --tmpfs /var --bind "${T}/varrun" /var/run \
+    --dev /dev --proc /proc --tmpfs /tmp --setenv PYTHONPATH /client:/pypath \
+    bash /repo/raofflineproxy-ctl scan > "${T}/bg.out" 2> "${T}/bg.err"; echo $? > "${T}/bg.rc" ) &
+TBG=$!
+for i in $(seq 1 50); do [ -s "${TR}/helper.pid" ] && grep -q '^start' "${TR}/helper-times" 2>/dev/null && break; sleep 0.2; done
+HPID=$(cat "${TR}/helper.pid" 2>/dev/null); sleep 0.5
+tctl disable; DRC=${RC}
+GONE=0; for i in $(seq 1 100); do kill -0 "${HPID}" 2>/dev/null || { GONE=1; break; }; sleep 0.1; done
+wait "${TBG}" 2>/dev/null
+[ "${DRC}" -eq 0 ] && [ -n "${HPID}" ] && [ "${GONE}" -eq 1 ] && grep -q 'asking it to stop' "${ERR}" && grep -q 'scan or top-up stopped' "${ERR}" && ! grep -q '^end' "${TR}/helper-times"; check $? "disable during a scan: the run is asked to stop through its lock file's pid, the helper (pid ${HPID:-?}) is gone within ten seconds, disable exits 0 (the scan itself exited $(cat "${T}/bg.rc" 2>/dev/null))" "disable rc ${DRC}; helper ${HPID:-none} gone: ${GONE}; disable said: $(grep -i 'scan or top-up\|asking' "${ERR}" | tr '\n' '|' | cut -c1-200); helper times: $(tr '\n' ' ' < "${TR}/helper-times" 2>/dev/null) (#186 PL-30)"
+[ "$(tv global.retroachievements.offlineproxy)" = "0" ] && [ ! -e "${TSTAMP}" ]; check $? "and the toggle is 0 with no stamp from the stopped run" "toggle '$(tv global.retroachievements.offlineproxy)'; stamp: $(cat "${TSTAMP}" 2>/dev/null)"
+[ -n "${HPID}" ] && kill -9 "${HPID}" 2>/dev/null; rm -f "${TR}/helper-plan"; touch "${TR}/fast-sleep"
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\nglobal.retroachievements.username=QA\nglobal.retroachievements.token=FIXTURETOKEN\n' > "${TCFG}"
+# The walk's cap counts uncached files (#186 PL-17): eleven ROMs in an
+# unindexed folder and a cap of ten -- the first scan takes ten and says
+# truncated=1, the second reaches the eleventh.
+treset; mkdir -p "${TS}/roms/gbc"; for i in $(seq -w 1 11); do printf 'GBC %s' "${i}" > "${TS}/roms/gbc/g${i}.gbc"; done
+TENV=(--setenv RA_TEST_SCAN_CAP 10)
+tctl scan; [ "${RC}" -eq 0 ] && grep -q 'scan start: found=[0-9]* new=1[0-9] cached=[0-9]* indexed=2 hashing=1[0-9] truncated=1' "${TLOG}" && grep -q 'the walk stopped at the client' "${TLOG}"; check $? "a scan with the cap at ten over eleven unindexed ROMs: truncated=1 said in the log ($(grep -o 'scan start: .*' "${TLOG}" | tail -1 | cut -c12-))" "rc ${RC}; log: $(grep 'scan start\|walk stopped' "${TLOG}" | tr '\n' '|' | cut -c1-240) (#186 PL-17)"
+: > "${TR}/helper-jobs.log"
+tctl scan; [ "${RC}" -eq 0 ] && grep -qP '^H\t\t\t/storage/roms/gbc/g11.gbc$' "${TR}/helper-jobs.log" && grep -q 'truncated=0' "${TLOG}"; check $? "the second scan reaches the eleventh file (g11.gbc a job) and is not truncated" "rc ${RC}; jobs: $(tr '\t' ',' < "${TR}/helper-jobs.log" | tr '\n' '|' | cut -c1-200); log: $(grep 'scan start' "${TLOG}" | tail -1 | cut -c1-160) -- the walk stopped at the same ten cached files (#186 PL-17)"
+TENV=(); rm -rf "${TS}/roms/gbc"
+# The client's own predicates, from the patched tree, on the host's python
+# (the same sqlite3 module the service uses): each prints one PASS or FAIL
+# line and the harness grades the lines.
+RAOFFLINEPROXY_CONFIG_DIR="${T}/predicates-cfg" PYTHONPATH="${CLIENT}" python3 - > "${T}/predicates.out" 2>&1 <<'EOS'
+import json, os, threading, time
+from pathlib import Path
+cfg = Path(os.environ["RAOFFLINEPROXY_CONFIG_DIR"]); cfg.mkdir(parents=True, exist_ok=True)
+def verdict(ok, name, detail=""):
+    print(("PASS " if ok else "FAIL ") + name + (f" -- {detail}" if detail and not ok else ""))
+from raofflineproxy import cache_keys, proxy_service, storage as storage_mod, auth, image_cache
+from raofflineproxy.storage import Storage
+H = 3600 * 1000; now = int(time.time() * 1000)
+# 005 / PL-01: only rows a day old are due, oldest first, at most the slice.
+try:
+    sel = proxy_service.select_games_to_refresh
+    rows = [{"cacheKey": "patch:1:qa", "cachedAt": now - 1 * H}, {"cacheKey": "patch:2:qa", "cachedAt": now - 23 * H},
+            {"cacheKey": "patch:3:qa", "cachedAt": now - 25 * H}, {"cacheKey": "patch:4:qa", "cachedAt": now - 30 * H},
+            {"cacheKey": "patch:5:qa", "cachedAt": now - 100 * H}, {"cacheKey": "patch:5:other", "cachedAt": now - 1 * H},
+            {"cacheKey": "patch:6:qa", "cachedAt": now - 200 * H}]
+    got = sel(rows, now)
+    verdict(got == [6, 4, 3], "PL-01 refresh: due = patch rows older than 24 h, oldest first (6, 4, 3); 1 h, 23 h and a game refreshed for another account an hour ago are not", f"got {got}")
+    verdict(sel(rows, now, max_games=2) == [6, 4] and sel(rows, now, max_games=0) == [], "PL-01 refresh: the per-pass slice caps the list (2 -> [6, 4]; 0 -> none)", f"got {sel(rows, now, max_games=2)}")
+    verdict(proxy_service.REFRESH_MAX_GAMES_PER_PASS <= 50 and proxy_service.REFRESH_MIN_AGE_SECONDS >= 24 * 3600, "PL-01 refresh: at most 50 games a pass (100 GETs an hour) and a day between refreshes of one game", f"{proxy_service.REFRESH_MAX_GAMES_PER_PASS}/{proxy_service.REFRESH_MIN_AGE_SECONDS}")
+except AttributeError as exc:
+    verdict(False, "PL-01 refresh: due = patch rows older than 24 h, oldest first (6, 4, 3); 1 h, 23 h and a game refreshed for another account an hour ago are not", f"the client has no bound: {exc}")
+    verdict(False, "PL-01 refresh: the per-pass slice caps the list (2 -> [6, 4]; 0 -> none)", "no select_games_to_refresh")
+    verdict(False, "PL-01 refresh: at most 50 games a pass (100 GETs an hour) and a day between refreshes of one game", "no constants")
+# 005 / PL-25: a raising fetch costs one game, a refused sign-in ends the pass, the thread survives a raising pass.
+class FakeServer:
+    def __init__(self, st): self.storage = st; self.config_data = {}
+    def is_online(self): return True
+calls = []
+def fake_creds(*a, **k): return {"user": "qa", "token": "t"}
+def raising_refresh(game_id, *a, **k):
+    calls.append(game_id)
+    if game_id == 6: raise proxy_service.CacheGameAuthError("401") if getattr(raising_refresh, "auth", False) else RuntimeError("boom")
+def noop(*a, **k): return None
+try:
+    st = Storage(cfg / "p25.sqlite3")
+    for gid in (6, 4, 3): st.upsert_cache(cache_keys.patch(gid, "qa"), "{}", cached_at=now - gid * 30 * H)
+    evicted = []
+    st.evict_cache_older_than = lambda before: evicted.append(before)
+    saved = (proxy_service.resolve_credentials, proxy_service.refresh_game_patch, proxy_service.cache_unlocks, proxy_service.cache_session)
+    proxy_service.resolve_credentials, proxy_service.refresh_game_patch, proxy_service.cache_unlocks, proxy_service.cache_session = fake_creds, raising_refresh, noop, noop
+    try:
+        pr = proxy_service.PeriodicRefresh(FakeServer(st), interval_seconds=1)
+        pr.run_pass()
+        verdict(calls == [6, 4, 3] and len(evicted) == 1, "PL-25 refresh: a fetch that raises costs that game only (6 raised, 4 and 3 refreshed) and the eviction still runs", f"calls {calls}, evictions {len(evicted)}")
+        calls.clear(); raising_refresh.auth = True
+        pr.run_pass()
+        verdict(calls == [6], "PL-25 refresh: a refused sign-in ends the pass without a request for the remaining games", f"calls {calls}")
+        raising_refresh.auth = False
+        seen = []
+        def bad_pass(): seen.append(1); pr.stop_event.set(); raise RuntimeError("pass failed")
+        pr.run_pass = bad_pass; pr.interval_seconds = 0.01
+        pr.run()
+        verdict(seen == [1], "PL-25 refresh: run() survives a pass that raises (the thread lives for the service's lifetime)", f"passes {seen}")
+    finally:
+        proxy_service.resolve_credentials, proxy_service.refresh_game_patch, proxy_service.cache_unlocks, proxy_service.cache_session = saved
+        st.close()
+except Exception as exc:
+    for n in ("a fetch that raises costs that game only (6 raised, 4 and 3 refreshed) and the eviction still runs", "a refused sign-in ends the pass without a request for the remaining games", "run() survives a pass that raises (the thread lives for the service's lifetime)"):
+        verdict(False, "PL-25 refresh: " + n, f"{type(exc).__name__}: {exc}")
+# 006 / PL-02: a game is evicted whole or not at all.
+st = Storage(cfg / "p02.sqlite3"); old = now - 61 * 24 * H; before = now - 60 * 24 * H
+st.upsert_cache(cache_keys.patch(1, "qa"), '{"Success":true}', cached_at=now)
+st.upsert_cache(cache_keys.unlocks(1, "qa"), '{"Success":true}', cached_at=old)
+st.upsert_cache(cache_keys.achievementsets("aaaa", "qa"), '{"Success":true,"GameId":1}', cached_at=old)
+st.upsert_cache(cache_keys.game_id("aaaa"), '{"GameID":1}', cached_at=old)
+st.upsert_cache(cache_keys.patch(2, "qa"), '{"Success":true}', cached_at=old)
+st.upsert_cache(cache_keys.achievementsets("bbbb", "qa"), '{"Success":true,"GameId":2}', cached_at=old)
+st.upsert_cache(cache_keys.game_id("bbbb"), '{"GameID":2}', cached_at=old)
+st.upsert_cache(cache_keys.login("qa"), '{"Success":true,"User":"QA","Token":"t"}', cached_at=old)
+st.upsert_cache(cache_keys.USER_AGENT, "RetroArch/1.22", cached_at=old)
+st.evict_cache_older_than(before)
+keys = {e["cacheKey"] for p in ("patch:", "unlocks:", "achievementsets:", "gameid:", "login2::", "ua::") for e in st.get_all_cache_by_prefix(p)}
+g1 = {cache_keys.patch(1, "qa"), cache_keys.unlocks(1, "qa"), cache_keys.achievementsets("aaaa", "qa"), cache_keys.game_id("aaaa")}
+g2 = {cache_keys.patch(2, "qa"), cache_keys.achievementsets("bbbb", "qa"), cache_keys.game_id("bbbb")}
+verdict(g1 <= keys, "PL-02 eviction: a game with a fresh patch row keeps its 61-day-old achievementsets, gameid and unlocks rows", f"missing {sorted(g1 - keys)}")
+verdict(not (g2 & keys) and cache_keys.login("qa") in keys and cache_keys.USER_AGENT in keys, "PL-02 eviction: a game whose every row is stale goes whole; the login and User-Agent rows stay", f"left {sorted(g2 & keys)}")
+st.close()
+# 007 / PL-23: a cached sign-in of another account is not this account's.
+st = Storage(cfg / "p23.sqlite3")
+st.upsert_cache(cache_keys.login("alpha"), '{"Success":true,"User":"Alpha","Token":"ta"}')
+saved = {n: getattr(auth, n) for n in ("load_retroarch_token_credentials", "load_rocknix_system_token_credentials", "load_retroarch_password_credentials", "load_rocknix_system_password_credentials", "load_spruce_credentials", "login_and_cache_token")}
+try:
+    auth.load_retroarch_token_credentials = lambda p: None; auth.load_rocknix_system_token_credentials = lambda p: None
+    auth.load_retroarch_password_credentials = lambda p: None; auth.load_spruce_credentials = lambda: None
+    auth.login_and_cache_token = lambda *a, **k: None
+    auth.load_rocknix_system_password_credentials = lambda p: {"user": "Beta", "password": "pw"}
+    got = auth.resolve_credentials(st, {"retroarch_cfg": "/nonexistent/retroarch.cfg"})
+    verdict(got is None, "PL-23 credentials: with Beta's password configured and only Alpha's sign-in cached (and no login possible), nothing is returned -- never Alpha's token", f"got {got and got.get('user')}")
+    st.upsert_cache(cache_keys.login("beta"), '{"Success":true,"User":"Beta","Token":"tb"}')
+    got = auth.resolve_credentials(st, {"retroarch_cfg": "/nonexistent/retroarch.cfg"})
+    verdict(got is not None and got.get("user") == "Beta", "PL-23 credentials: with Beta's own sign-in cached it is Beta's that is returned", f"got {got}")
+finally:
+    for n, f in saved.items(): setattr(auth, n, f)
+    st.close()
+# 008 / PL-12: the automatic report is off unless config opts in.
+(cfg / "storage_corruption.json").write_text(json.dumps({"detected_at": 1, "quarantined_path": "x", "reason": "r", "size_bytes": 1, "lost_pending_awards": None, "reported": False, "upload_id": None, "notified": False}))
+uploads = []
+saved_report = proxy_service.log_uploader.report_storage_corruption
+proxy_service.log_uploader.report_storage_corruption = lambda incident: uploads.append(incident) or "up-1"
+try:
+    try:
+        proxy_service.retry_storage_corruption_report({})
+        verdict(uploads == [], "PL-12 upload: a planted incident is not reported with upload_logs unset", f"uploads {len(uploads)}")
+    except TypeError as exc:
+        verdict(False, "PL-12 upload: a planted incident is not reported with upload_logs unset", f"no gate: {exc}")
+    try:
+        proxy_service.retry_storage_corruption_report({"upload_logs": True})
+        verdict(len(uploads) == 1, "PL-12 upload: with upload_logs true it is", f"uploads {len(uploads)}")
+    except TypeError as exc:
+        verdict(False, "PL-12 upload: with upload_logs true it is", f"{exc}")
+finally:
+    proxy_service.log_uploader.report_storage_corruption = saved_report
+# 009 / PL-33: two threads fetching one badge use two temp names.
+import urllib.request
+names = []; barrier = threading.Barrier(2, timeout=5); target_dir = image_cache.STATIC_DIR / "Badge"
+class FakeResp:
+    status = 200
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def read(self): return b"PNG"
+# Both workers are held at the moment they write their temp file, so the
+# two names are seen side by side.
+saved_open, saved_wb = urllib.request.urlopen, Path.write_bytes
+def rec_write_bytes(self, data):
+    names.append(self.name); barrier.wait(); return saved_wb(self, data)
+urllib.request.urlopen = lambda req, timeout=10: FakeResp(); Path.write_bytes = rec_write_bytes
+try:
+    ts = [threading.Thread(target=image_cache.download_static_image, args=("https://media.retroachievements.org/Badge/1.png", "/Badge/1.png", "ua")) for _ in range(2)]
+    [t.start() for t in ts]; [t.join() for t in ts]
+    seen = set(names)
+    verdict(len(names) == 2 and len(seen) == 2 and (target_dir / "1.png").read_bytes() == b"PNG" and not list(target_dir.glob("*.tmp")), "PL-33 badges: two workers on one asset write two temp names, the asset lands, no temp file is left", f"temp names {names}, left {[p.name for p in target_dir.glob('*.tmp')] if target_dir.exists() else 'no dir'}")
+finally:
+    urllib.request.urlopen, Path.write_bytes = saved_open, saved_wb
+EOS
+grep -q 'PL-' "${T}/predicates.out"; check $? "the patched client's predicates ran ($(grep -c '^PASS' "${T}/predicates.out") PASS / $(grep -c '^FAIL' "${T}/predicates.out") FAIL lines)" "the predicate run printed no verdicts: $(tr '\n' '|' < "${T}/predicates.out" | cut -c1-300)"
+while IFS= read -r line; do
+    case "${line}" in
+        PASS\ *) check 0 "${line#PASS }" "" ;;
+        FAIL\ *) check 1 "" "${line#FAIL }" ;;
+    esac
+done < "${T}/predicates.out"
+fi
 
 echo
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
