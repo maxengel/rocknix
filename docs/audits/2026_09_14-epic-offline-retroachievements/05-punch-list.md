@@ -304,7 +304,7 @@ Seat attribution: PL-23..PL-33 are the GPT seat's (G-nn), each confirmed against
 
 - **Severity:** Medium
 - **Category:** Cornerstone Violation (D-INFRA-011: the one helper decides what a credential looks like)
-- **Source finding:** G-10 (confirmed by canaries this session: `set_setting global.retroachievements.key=CANARY…` and `cheevos_password='CANARY'` survived; `"…"` and bare values were redacted; a `t=` not preceded by `?`/`&` survived)
+- **Source finding:** G-10 (confirmed by canaries this session: `set_setting global.retroachievements.key=<canary>` and `cheevos_password='<canary>'` survived; `"…"` and bare values were redacted; a `t=` not preceded by `?`/`&` survived)
 - **Owner area:** `projects/ROCKNIX/packages/rocknix/profile.d/001-functions:56-88`; harness case r
 - **What:** add `\.key\b` (the RA web key's setting name) to the word list — or the explicit key `retroachievements\.key` — extend the assignment rules to `'…'` values, and let the RA-line rule match `[?& ]` before `[pty]=`. No current writer logs these shapes; the guard exists so the next writer is covered. Plant the canaries in case r (fails before, passes after).
 - **Acceptance:** the three canaries above read `<redacted>` under the image's busybox sed; case r asserts them.
