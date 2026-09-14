@@ -36,6 +36,22 @@
 #   both answers are read through CloudText, so the shapes above are the
 #   contract.
 #
+#   And two read-only answers for the achievements pages, which read the
+#   proxy's cache when the device is offline (fork #180, D-RA-009):
+#
+#   pending-ids  the casual awards still waiting, one per line as
+#            "<achievementId> <epoch>" (when it was earned, in seconds),
+#            oldest first; exit 0 with at least one, 1 with none. The page
+#            marks those achievements as earned and waiting to be sent. The
+#            same refusals as pending: toggle off or no store answers
+#            nothing with exit 1, a store that cannot be read exit 2.
+#   account  the signed-in account's points as RetroAchievements last told
+#            the proxy, from its cached sign-in: "score=<n> softcore=<n>" on
+#            one line, exit 0; exit 1 when the toggle is off or nothing is
+#            cached for this account; exit 2 when the store cannot be read.
+#            Reads the row that also holds the session token and prints the
+#            two numbers and nothing else.
+#
 # And the three verbs of SCAN GAMES FOR OFFLINE ACHIEVEMENTS (fork #179,
 # D-RA-010): the proxy serves a game offline only from what it cached while
 # online, so a game never started with a connection earned nothing offline
@@ -320,6 +336,70 @@ print(db.execute("SELECT COUNT(*) FROM pending_awards WHERE status = ?", ("pendi
     esac
     echo "${N}"
     [ "${N}" -gt 0 ]
+}
+
+# The pending awards by id, oldest first, each with the second it was earned
+# (the store keeps milliseconds). Read the way pending reads: read-only, the
+# service's own sqlite3 module, a second's patience.
+do_pending_ids() {
+    if [ "$(as_flag "$(setting "${KEY}")")" != "1" ] || [ ! -e "${QUEUE}" ]; then
+        return 1
+    fi
+    local ROWS
+    ROWS="$(python3 -c '
+import sqlite3, sys
+db = sqlite3.connect("file:%s?mode=ro" % sys.argv[1], uri=True, timeout=1.0)
+for aid, queued in db.execute("SELECT achievementId, queuedAt FROM pending_awards WHERE status = ? ORDER BY queuedAt ASC, id ASC", ("pending",)):
+    print(int(aid), int(queued) // 1000)
+' "${QUEUE}" 2>/dev/null)" || cannot_tell "the award queue at ${QUEUE} could not be read"
+    [ -n "${ROWS}" ] || return 1
+    printf '%s\n' "${ROWS}"
+    return 0
+}
+
+# The account's points from the proxy's cached sign-in (the login2 row of the
+# signed-in user, keyed by the user name in lower case as cache_keys.py
+# normalises it). The row carries the session token; the two numbers are
+# all that leaves this function.
+do_account() {
+    if [ "$(as_flag "$(setting "${KEY}")")" != "1" ] || [ ! -e "${QUEUE}" ]; then
+        return 1
+    fi
+    local USER LINE
+    USER="$(setting "${USER_KEY}")"
+    [ -n "${USER}" ] || return 1
+    # Exit 1 is "no such row", said apart from a store that cannot be read
+    # (exit 3): an account nobody signed in is not the same as a store the
+    # page should not trust, and only the second is a cannot_tell.
+    LINE="$(python3 -c '
+import json, sqlite3, sys
+try:
+    db = sqlite3.connect("file:%s?mode=ro" % sys.argv[1], uri=True, timeout=1.0)
+    row = db.execute("SELECT responseBody FROM api_cache WHERE cacheKey = ?", ("login2::" + sys.argv[2].strip().lower(),)).fetchone()
+except Exception:
+    sys.exit(3)
+if row is None:
+    sys.exit(1)
+try:
+    body = json.loads(row[0])
+    score = int(body.get("Score", 0) or 0)
+    softcore = int(body.get("SoftcoreScore", 0) or 0)
+except Exception:
+    sys.exit(3)
+print("score=%d softcore=%d" % (score, softcore))
+' "${QUEUE}" "${USER}" 2>/dev/null)"
+    local RC=$?
+    if [ "${RC}" -eq 1 ]; then
+        return 1
+    elif [ "${RC}" -ne 0 ]; then
+        cannot_tell "the proxy's store at ${QUEUE} could not be read"
+    fi
+    case "${LINE}" in
+        score=*\ softcore=*) ;;
+        *) cannot_tell "the proxy's store answered '${LINE}', not the account's points" ;;
+    esac
+    echo "${LINE}"
+    return 0
 }
 
 do_flushed() {
@@ -722,12 +802,14 @@ case "${1:-}" in
     stop)    do_stop ;;
     status)  do_status ;;
     pending) do_pending ;;
+    pending-ids) do_pending_ids ;;
+    account) do_account ;;
     flushed) do_flushed ;;
     scan)    do_scan ;;
     topup)   do_topup ;;
     ready)   do_ready ;;
     *)
-        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|flushed|scan|topup|ready}" >&2
+        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|pending-ids|account|flushed|scan|topup|ready}" >&2
         exit 2
     ;;
 esac

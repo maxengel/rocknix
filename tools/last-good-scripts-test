@@ -1199,7 +1199,7 @@ cmp -s "${CFGF}" "${CFGF}.backup"; check $? "and the shutdown-time backup takes 
 cp "${C}/system.cfg" "${MS}/system.cfg"; OUT="${M}/out"
 nbs; [ "$(hn)" = "H700-9a3f" ] && grep -q 'shipped default' "${OUT}"; check $? "network-base-setup then names the unit H700-9a3f and the log says the shipped default was replaced" "system.hostname is '$(hn)'; log: $(grep -o 'device name[^|]*' "${OUT}" | head -1)"
 
-echo "  p. raofflineproxy-ctl: enable records hardcore and turns it off, disable puts it back; both harmless twice (#165, D-RA-002); pending and flushed answer the sync cards (#173)"
+echo "  p. raofflineproxy-ctl: enable records hardcore and turns it off, disable puts it back; both harmless twice (#165, D-RA-002); pending and flushed answer the sync cards (#173); pending-ids and account answer the achievements pages (#180)"
 # The script whole, under bwrap like backuptool in b: a stub /etc/profile
 # that carries get_setting and set_setting lifted from 001-functions (the
 # real profile sources them the same way) with J_CONF at the fake
@@ -1285,6 +1285,9 @@ db.execute("""CREATE TABLE IF NOT EXISTS pending_awards (
     requestBody TEXT NOT NULL, userAgent TEXT NOT NULL, queuedAt INTEGER NOT NULL, retryCount INTEGER NOT NULL DEFAULT 0,
     lastError TEXT, status TEXT NOT NULL DEFAULT 'pending', payloadHash TEXT NOT NULL DEFAULT '', prevHash TEXT NOT NULL DEFAULT '',
     signature TEXT NOT NULL DEFAULT '', signedAt INTEGER NOT NULL DEFAULT 0)""")
+db.execute("""CREATE TABLE IF NOT EXISTS api_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, cacheKey TEXT NOT NULL UNIQUE, responseBody TEXT NOT NULL,
+    sourceRomPath TEXT, cachedAt INTEGER NOT NULL, firstCachedAt INTEGER NOT NULL)""")
 for sql in sys.argv[2:]: db.execute(sql)
 db.commit(); db.close()
 EOS
@@ -1301,15 +1304,36 @@ pdb "$(prow 100359 pending)" "$(prow 100358 flushed)" "$(prow 100357 stale)"
 ctl pending; [ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "1" ] && [ "$(wc -l < "${OUT}")" -eq 1 ]; check $? "one pending row beside a flushed and a stale one: 1, on the one line, exit 0" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}"); err: $(tr '\n' '|' < "${ERR}" | cut -c1-160)"
 pdb "$(prow 100360 pending)"
 ctl pending; [ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "2" ]; check $? "a second pending row: 2" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}")"
+# pending-ids (#180): the same rows by id, oldest first, each with the
+# second it was earned -- the store's milliseconds cut to seconds -- and
+# only the pending ones. The second row was queued later by the fixture's
+# clock, so it is second.
+pdb "UPDATE pending_awards SET queuedAt = 1789337000000 WHERE achievementId = 100360"
+ctl pending-ids; [ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "$(printf '100359 1789336962\n100360 1789337000')" ]; check $? "pending-ids: the two pending rows as '<id> <epoch>', oldest first, exit 0; the flushed and stale rows absent" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}"); err: $(tr '\n' '|' < "${ERR}" | cut -c1-160)"
+# account (#180): the cached sign-in's two numbers and nothing else -- the
+# row holds the token, and the token must not be in what is printed.
+pdb "INSERT INTO api_cache(cacheKey,responseBody,cachedAt,firstCachedAt) VALUES ('login2::qa','{\"Success\":true,\"User\":\"QA\",\"Token\":\"SECRETTOKEN123\",\"Score\":1234,\"SoftcoreScore\":56,\"Messages\":0,\"Permissions\":1}',1789336962833,1789336962833)"
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\nglobal.retroachievements.username=QA\n' > "${PCFG}"
+ctl account; [ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "score=1234 softcore=56" ] && ! grep -q SECRETTOKEN "${OUT}" "${ERR}"; check $? "account: score=1234 softcore=56 from the cached sign-in (the user name matched in lower case), exit 0, and the token appears nowhere" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}"); err: $(tr '\n' '|' < "${ERR}" | cut -c1-160)"
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\nglobal.retroachievements.username=somebodyelse\n' > "${PCFG}"
+ctl account; [ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ]; check $? "account for a user the proxy never signed in: exit 1, nothing on stdout" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}")"
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\n' > "${PCFG}"
+ctl account; [ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ]; check $? "account with no user name set: exit 1, nothing on stdout" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}")"
 # The toggle off: the service is stopped, and a row nobody will send is not
 # on its way anywhere.
-printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=0\n' > "${PCFG}"
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=0\nglobal.retroachievements.username=QA\n' > "${PCFG}"
 ctl pending; [ "${RC}" -eq 1 ] && [ "$(cat "${OUT}")" = "0" ]; check $? "the same rows with the toggle off: 0, exit 1 -- nothing would send them" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}")"
-printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\n' > "${PCFG}"
+ctl pending-ids; [ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ]; check $? "pending-ids with the toggle off: nothing, exit 1" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}")"
+ctl account; [ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ]; check $? "account with the toggle off: nothing, exit 1" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}")"
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\nglobal.retroachievements.username=QA\n' > "${PCFG}"
 # A store that cannot be read: an unknown count is never printed as one.
 rm -f "${PDB}-wal" "${PDB}-shm"; printf 'not a database\n' > "${PDB}"
 ctl pending; [ "${RC}" -eq 2 ] && [ ! -s "${OUT}" ] && grep -q 'could not be read' "${ERR}"; check $? "a store that is not one: exit 2, nothing on stdout, the reason on stderr" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}"); err: $(tr '\n' '|' < "${ERR}" | cut -c1-160)"
+ctl pending-ids; [ "${RC}" -eq 2 ] && [ ! -s "${OUT}" ] && grep -q 'could not be read' "${ERR}"; check $? "pending-ids on that store: exit 2, nothing on stdout" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}"); err: $(tr '\n' '|' < "${ERR}" | cut -c1-160)"
+ctl account; [ "${RC}" -eq 2 ] && [ ! -s "${OUT}" ] && grep -q 'could not be read' "${ERR}"; check $? "account on that store: exit 2, nothing on stdout" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}"); err: $(tr '\n' '|' < "${ERR}" | cut -c1-160)"
 rm -f "${PDB}" "${PDB}-wal" "${PDB}-shm"
+ctl pending-ids; [ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ]; check $? "pending-ids with no store: nothing, exit 1" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}")"
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\n' > "${PCFG}"
 # flushed: the stamp patches/003 has the service leave after a flush that
 # sent awards, "<epoch> <flushed>", told once.
 ctl flushed; [ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ]; check $? "flushed with no stamp: exit 1, nothing on stdout" "rc ${RC}; stdout: $(tr '\n' '|' < "${OUT}")"
