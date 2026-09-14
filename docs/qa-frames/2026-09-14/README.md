@@ -37,6 +37,21 @@ and `ra-offline-exit-awards-pending` / `ra-offline-flushed` rows are those runs'
 frames; the tool's 20-frame bursts after each game exit are under
 `/workspace/artifacts/rocknix-images/qa-609f1df917-webdav-d-20260914-0249/ra-offline-frames/`.
 
+Later still, the **release-candidate** image `31253072d6` (`next`; EmulationStation
+`f7430b49d0`, the same ES as the TEST image) on QA pair guest a at **1280x800**
+(QEMU's default virtio-gpu mode), no RetroAchievements account (the page shows
+without one), the toggle off and **left off** -- guest a is a cloud-sync fixture,
+so the TURN ON / NOT NOW dialog is framed on its NOT NOW path only (the switch
+put on, the dialog framed, B reverting it; `offlineproxy` unset, no marker, the
+service inactive, EmulationStation's pid unchanged afterwards). The
+`-1280x800-31253072d6` rows. At this size the menu is a centred box rather
+than the full screen, so the RetroAchievements settings list scrolls:
+LEADERBOARDS, VERBOSE MODE, RICH PRESENCE, ENCORE MODE follow the offline row
+once it is focused. One thing seen only here: in French the *upstream* MODE
+DIFFICILE description ("Désactive les chargements d'état, le rembobinage et les
+codes pour plus de points.") wraps to two lines at 1280x800, so that row -- not
+ours -- is three lines (D-UI-023); it is one line at 640x480 and in English.
+
 | Frame | What it shows |
 | --- | --- |
 | `ra-offline-set-28-not-29-640x480-609f1df917.png` | Tobu Tobu Girl Deluxe launched online through the proxy: RetroArch's card reads "You have 1 of 28 achievements unlocked" -- the set is **28, not 29**. RetroArch's log had `Set 6292: 27/28 achievements active`, no `Awarding achievement 101000001`; the proxy's cached `achievementsets` body held 28 achievements, 101000001 absent, flags all 3 (patch 002 / D-RA-005). |
@@ -53,3 +68,8 @@ frames; the tool's 20-frame bursts after each game exit are under
 | `ra-offline-exit-awards-pending-640x480-609f1df917.png` | The suite run (toggle **on**): the same unlock through the proxy (`Using host: 127.0.0.1:8080`, `28/28 active` -- 28 not 29, no `101000001` award in the session), `Achievement 100359: queued_offline`, proxy `Queued offline award: achievementId=100359`, then `execute_kill` with eth0 down and the proxy's `online_state.json` already false. The exit sync card ~1 s later: SYNC SAVES / **SKIPPED - YOU'RE NOT ONLINE** / **OFFLINE ACHIEVEMENTS WILL BE SENT NEXT TIME YOU'RE CONNECTED.** -- D-RA-004's awards-pending sentence, fed by `raofflineproxy-ctl pending` = 1. |
 | `ra-offline-flushed-640x480-609f1df917.png` | The next connected exit card, after `set_link net0 on`: the proxy logged `Connectivity restored; attempting flush` and `Flush complete: total=1 flushed=1 skipped_deleted=0 skipped_stale=0 pending_remaining=0` 11 s after the link returned and left `last-flush` = `1789354334 1`; the relaunch online read `Set 6292: 27/28 achievements active`; its exit ran the card online: SYNC SAVES / **COMPLETED** / **OFFLINE ACHIEVEMENTS HAVE BEEN SENT TO RETROACHIEVEMENTS.** (the stamp read and cleared by the card). RetroAchievements' API: `100359` earned `2026-09-14 02:51:28`, the unlock's own moment. |
 | `ra-offline-recorded-640x480-609f1df917.png` | The same achievements page after the suite run (account put back on for the frame, guest rebooted): **Achievements (softcore): 1/28**, 4% complete, Points 3/275, and the first row in colour -- **Potato-tan Secret -- Listen to the hidden song. - Points: 3 -- Unlocked on: 2026-09-14 02:51:28** -- the moment RetroArch awarded it offline (the proxy's `queuedAt=1789354288002`), not the flush's 02:52:14: RA applied the proxy's `offsetSeconds`, as the 09-13 proof also saw. The control's frame above is this page with 0/28. |
+| `ra-offline-toggle-row-1280x800-31253072d6.png` | RC, 1280x800, English: RETROACHIEVEMENTS SETTINGS with the **OFFLINE ACHIEVEMENTS** row focused (reached 5 downs from the page's first row) -- the label, one sentence-case line "Beta. Casual achievements only.", and an arrow; HARDCORE MODE (off, one-line description) above, LEADERBOARDS / VERBOSE MODE / RICH PRESENCE below. Two lines, nothing clipped; the same shape as the 640x480 frame. |
+| `ra-offline-toggle-page-1280x800-31253072d6.png` | RC, 1280x800: the OFFLINE ACHIEVEMENTS page with the switch **off** (focused) and the three info rows, each two lines -- "EARN CASUAL ACHIEVEMENTS WITHOUT A CONNECTION. THEY ARE SENT WHEN YOU'RE BACK ONLINE.", "BETA. CASUAL ACHIEVEMENTS ONLY, SO TURNING IT ON TURNS HARDCORE MODE OFF.", "!RA! IN A GAME'S CORNER MEANS AN ACHIEVEMENT HASN'T REACHED RETROACHIEVEMENTS YET." -- then BACK. Same wraps as at 640x480 (the box is wider, the font larger). |
+| `ra-offline-toggle-dialog-1280x800-31253072d6.png` | RC, 1280x800: A on the switch raises the TURN ON / NOT NOW dialog over the page, "THIS IS A BETA FEATURE. IT WORKS FOR CASUAL ACHIEVEMENTS ONLY, AND TURNING IT ON TURNS HARDCORE MODE OFF." on three lines, TURN ON focused; the switch behind shows on until B (NOT NOW's path) puts it back off. Nothing was enabled on the guest. |
+| `ra-offline-toggle-row-1280x800-31253072d6-fr.png` | RC, 1280x800, French: PARAMÈTRES RETROACHIEVEMENTS with **SUCCÈS HORS LIGNE** focused -- "Bêta. Succès en mode facile seulement." and an arrow, two lines; CLASSEMENTS, MODE VERBEUX, RICH PRESENCE, MODE ENCORE below. Above it the upstream MODE DIFFICILE row's French description wraps to two lines here (three-line row; see the paragraph above). |
+| `ra-offline-toggle-page-1280x800-31253072d6-fr.png` | RC, 1280x800, French SUCCÈS HORS LIGNE page: the switch off, then "OBTENEZ DES SUCCÈS EN MODE FACILE SANS CONNEXION. ILS SONT ENVOYÉS QUAND VOUS ÊTES DE NOUVEAU EN LIGNE.", "BÊTA. SUCCÈS EN MODE FACILE SEULEMENT, DONC L'ACTIVER DÉSACTIVE LE MODE DIFFICILE.", "!RA! DANS LE COIN D'UN JEU : UN SUCCÈS N'A PAS ENCORE ATTEINT RETROACHIEVEMENTS." -- each two lines, RETOUR. |
