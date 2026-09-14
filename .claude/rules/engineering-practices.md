@@ -439,3 +439,30 @@ empty file, a half-written one, or two candidates has failed this rule.
 `system.cfg` and `es_settings.cfg` failed it on 2026-09-09 (#102): rewritten
 in place, backed up every boot with whatever was there, so a truncated file
 replaced its own good copy and defaults won.
+
+## A device's state is read from the device, and an act on it is written down as it happens
+
+Maintainer, 2026-09-14, after the harness had denied a reboot the device's own
+journal showed it had sent: *"We should think about if there's anything we should
+add to an instruction file, etc., to make sure you're keeping track of the truth
+behind some of these log-related behavior claims."* Blindspot 42 is the case.
+
+- **Before saying what did or did not happen on a device, read the device.**
+  `journalctl -b -1` (this image keeps several boots), the ssh logins in it, the
+  unit's log, `last` where it exists, the boot id. A tool result in the transcript
+  is one witness and is read with the bias of knowing what the command was meant
+  to do; the device's record has no such bias. When the two disagree, the device
+  wins and the disagreement itself is reported.
+- **Write every state-changing device action down as it happens, not after.**
+  `tools/device-act <target> <label> -- <command>` runs the command over ssh and
+  appends BEGIN and END lines to `/workspace/artifacts/rocknix-device-actions.log`
+  with the device's boot id before and after -- a changed boot id is a reboot,
+  whatever anyone remembers. Reboots, updates staged into `/storage/.update`,
+  settings written on a device: through it, or with the same two lines written by
+  hand. The log lives outside the repo and outside any per-session scratch.
+- **Answer "did you do X" with evidence, not memory.** Quote the action log line
+  and the device's journal line, or say that neither exists. "I don't think so" is
+  not an answer about a device someone else owns.
+- **When you were wrong, correct every place the wrong statement landed** -- the
+  issue comment, the work log, the reply -- in the same session, and say plainly
+  that the earlier statement was wrong.
