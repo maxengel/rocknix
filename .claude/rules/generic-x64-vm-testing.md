@@ -809,3 +809,29 @@ Three things about it that are not obvious from the outside:
   `pgrep -f ^/usr/bin/retroarch`. And `exec.log` carries
   `cheevos_password = "..."` from `setsettings.sh` -- every excerpt goes
   through the credential filter with the account name masked.
+
+## The interface runs under `essway.service`, and its PATH comes from `/etc/profile`
+
+On the VM image (and the handhelds' too) EmulationStation is not `emustation.service`'s
+process: that unit is inactive, and `essway.service` runs `/usr/bin/start_es.sh`, which
+sources `es_settings` -> `/etc/profile` -> `/etc/profile.d/*` (where `098-busybox` sets
+`PATH="/usr/bin:/usr/sbin"`) -> `/storage/.config/profile.d/*`, then execs
+`emulationstation`. So on 2026-09-14 a drop-in on `emustation.service` was loaded and
+changed nothing, and `Environment=PATH=...` on `essway.service` reached `start_es.sh` and
+was reset before the interface ran. A shim that must be first on the interface's PATH (a
+`systemctl` that sleeps on stop, to watch a page stay alive during a ctl call) goes in as
+a file under `/storage/.config/profile.d/` with `export PATH=/storage/.qa-shim:$PATH`, and
+applies at the next boot -- to every shell that sources the profile, your own included.
+Read the answer from `/proc/<pid>/environ` of the running interface, not from
+`systemctl show`.
+
+Three more harness traps from the same day. Busybox `pgrep` has no `-c`; a poller that
+runs `pgrep -c` prints a usage message every second and reads as "0" downstream -- use
+`pgrep -f 'patter[n]' | wc -l`. `settle` compares frames with a dead band, so a row whose
+counter moves by a digit or two (`SCANNING... - GAME 24 OF 57`) reads as still: the end
+of a run is a fixed `wait` sized to the run, then a settle. And a press sent while the
+interface thread is blocked (the Tailscale switch's `tailscale up --timeout=7s`) is
+queued and lands when the block ends, racing whatever opens then -- the #174 walk's
+second press landed on the switch instead of the popup and turned it off again, a
+"regression" the journal (`tailscaled` started at 34.7 s, stopped at 42.5 s) refuted.
+Never send a second press into a known block; wait it out.
