@@ -1,6 +1,6 @@
 # Saved Session State
 
-> **Saved**: 2026-09-14T01:05:00Z
+> **Saved**: 2026-09-14T01:25:00Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work itself lands on `next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation at `~/Development/emulationstation-next` (build branch `test/qa-integration`, worktree `~/Development/emulationstation-next.worktrees/qa-integration`; ES upstream branch is `master`)
 
@@ -10,7 +10,7 @@ Epic #11 (cloud saves), milestone 3 "Stable before upstream". Today (2026-09-13,
 
 ## In Progress
 - **Scratch moved:** the harness scratchpad became unavailable at 01:00 UTC; the session's scripts now live in `/workspace/tmp/rocknix-session/` (`rebuild-d.sh` -- IMG is the newest `generic-x64/target/ROCKNIX-GENERIC_X64.x86_64-*.img.gz`, the date rolled to 20260914; `build-x64.sh`; `stage-h700.sh <host>` with `HOSTOPT`; `burst.py`; `current-x64-id`, `current-device-id`). The old path still holds the 2026-09-13 logs on disk.
-- **RG SP staging:** on the tailnet as `RG-SP` (100.75.221.73, via relay); `3ada78e181` tar STAGED in `/storage/.update/` at 00:44 UTC (checksum verified on the device); the maintainer said yes to the reboot at ~00:55 UTC, but ssh timed out at the moment of the idle re-check (device asleep or hotspot down) -- retry the idle check and the reboot when it answers, under that yes, and verify per the runbook. RG35XX SP and the Nova: not yet on the tailnet.
+- **RG SP is on `3ada78e181`** (verified 01:20 UTC over Tailscale, 100.75.221.73; the maintainer's own restart applied the staged tar; #174: Tailscale does not reconnect after a restart on its own). RG35XX SP and the Nova: not yet on the tailnet; stage the same way (`/workspace/tmp/rocknix-session/stage-h700.sh <host>` with `HOSTOPT='-o Hostname=<ip>'`; the SM8550 tar for the Nova needs its own copy of the script with the SM8550 artifact path; each reboot a question).
 - **Phase 2b verification agent** on guest d (TEST image `609f1df917`, feature tips distribution `609f1df917` / ES `f7430b49d0`): page, patches 002/003 (D-RA-005: the casual-only warning is the server's), `pending|flushed`, the messages ("sent" for achievements, "synced" for saves); frames to `docs/qa-frames/2026-09-14/`. Open: the two-part sentence does not fit at 640x480 (falls through to the achievements sentence) -- maintainer's call.
 
 - **Waiting on the maintainer (travelling):** Tailscale access to the RG SP, RG35XX SP and Pocket Nova -> stage H700/SM8550 `3ada78e181` (artifacts `h700-all-20260913-3ada78e181/`, `sm8550-20260913-3ada78e181/`; `scratchpad/stage-h700.sh <host>` shape, each reboot a question), read #161's journal; decisions: #151 Phase 7 close, #47 look, the `!RA!` subtitle (two lines at 640x480: keep or move into the dialog), D-RA-003 (the synthetic achievement: keep / suppress repeats / patch out), where #159/#158 sit relative to conflict resolution (D-WORKFLOW-019).
