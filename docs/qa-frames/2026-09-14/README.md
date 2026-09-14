@@ -160,3 +160,12 @@ The recipe: boot on GBA, A into its list, d-pad left five times (quick-select ju
 
 The fix: ES `fix/svg-shared-size` `20824cc29` (a shared SVG is rasterised at the largest size any consumer asks for).
 - `174-tailscale-reauth-popup-switch-on-640x480-b3189ba85f-after.png` -- RC-5 `b3189ba85f`, the same walk: the popup and the switch as before, but `tailscale.up=1` on disk at once, `1` after the page closed, and after the reboot `tailscaled` **active** (uptime 46 s).
+
+## #179 -- SCAN GAMES FOR OFFLINE ACHIEVEMENTS (guest d, 640x480, RC-5 `b3189ba85f`)
+
+Walk `179/walks/to-game-settings(-2).steps` + `scan-en.steps`: GAME SETTINGS -> RETROACHIEVEMENTS SETTINGS -> OFFLINE ACHIEVEMENTS -> the toggle on -> the scan row -> the confirmation -> the page.
+
+- `179-scan-confirm-dialog-640x480-b3189ba85f.png` -- `SCAN GAMES FOR OFFLINE ACHIEVEMENTS?` and what it does.
+- `179-scan-running-640x480-b3189ba85f.png` -- the fourth-tier page while scanning (`GAME n OF 4`, the name, `GAMES ADDED`, spinner, elapsed).
+- `179-scan-done-640x480-b3189ba85f.png` -- `COMPLETED · GAMES ADDED: 3 · WITHOUT ACHIEVEMENTS: 1 · 3 GAMES READY FOR OFFLINE PLAY · ELAPSED 0:06`.
+- `179-offline-page-after-scan-640x480-b3189ba85f.png` -- the row's line afterwards: `LAST 09/14/2026 04:38 - COMPLETED · 3 GAMES READY FOR OFFLINE PLAY`.
