@@ -39,7 +39,13 @@
 # (#166). Not the global.retroachievements switch itself, whose earlier value
 # it cannot know, and not the OFFLINE RETROACHIEVEMENTS toggle's keys: those
 # are the toggle's, not the account's, and only raofflineproxy-ctl disable
-# takes the toggle out with its marker and service.
+# takes the toggle out with its marker and service. What the account left
+# on the guest through the proxy does go (audit #186 PL-13): the proxy's
+# folder under /storage/.config -- its cached sign-in with the session
+# token, its award queue, its cache -- and PPSSPP's token file, each
+# removed and named; the folder only while the toggle is off, since with it
+# on the service owns the folder, and then `clear` names what it left and
+# why and exits 1: the guest is not clean.
 set -uo pipefail
 FILE="${QA_ACCOUNTS:-$HOME/.ROCKNIX/qa-accounts}"
 PORT="${1:-}"; WHAT="${2:-}"
@@ -69,7 +75,23 @@ if [ "${WHAT}" = clear ]; then
         || { echo "qa-accounts: could not read :${PORT} back after clear" >&2; exit 1; }
     [ -z "${left// /}" ] || { echo "qa-accounts: still set on :${PORT}: ${left}" >&2; exit 1; }
     g "cat ${CFG}" | parse || { echo "qa-accounts: ${CFG} on :${PORT} does not parse after clear" >&2; exit 1; }
-    echo "cleared: ${RA_KEYS} ScreenScraperUser ScreenScraperPass ScreenScraperDevId ScreenScraperDevPass"
+    # The proxy's folder and PPSSPP's token file: removed while the toggle is
+    # off, named either way. Two lines back, names only.
+    residue=$(g '. /etc/profile; D=/storage/.config/raofflineproxy; T=/storage/.config/ppsspp/PSP/SYSTEM/ppsspp_retroachievements.dat
+        removed=""; kept=""
+        if [ "$(get_setting global.retroachievements.offlineproxy)" = 1 ]; then
+            [ -e "$D" ] && kept="$D (offline achievements are on; raofflineproxy-ctl disable first)"
+        elif [ -e "$D" ]; then
+            rm -rf "$D" && removed="$D"
+        fi
+        if [ -e "$T" ]; then rm -f "$T" && removed="${removed}${removed:+ }$T"; fi
+        [ -e "$D" ] && [ -z "$kept" ] && kept="$D (could not be removed)"
+        [ -e "$T" ] && kept="${kept}${kept:+; }$T (could not be removed)"
+        echo "removed=$removed"; echo "kept=$kept"; exit 0') \
+        || { echo "qa-accounts: could not read the proxy's folder on :${PORT} after clear" >&2; exit 1; }
+    removed=$(printf '%s\n' "${residue}" | sed -n 's/^removed=//p'); kept=$(printf '%s\n' "${residue}" | sed -n 's/^kept=//p')
+    echo "cleared: ${RA_KEYS} ScreenScraperUser ScreenScraperPass ScreenScraperDevId ScreenScraperDevPass${removed:+; removed: ${removed}}"
+    [ -z "${kept}" ] || { echo "qa-accounts: left on :${PORT}: ${kept}" >&2; exit 1; }
     exit 0
 fi
 [ -f "${FILE}" ] || { echo "qa-accounts: no ${FILE} -- see the header for its shape" >&2; exit 1; }
