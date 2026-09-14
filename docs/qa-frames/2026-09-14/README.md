@@ -73,3 +73,69 @@ ours -- is three lines (D-UI-023); it is one line at 640x480 and in English.
 | `ra-offline-toggle-dialog-1280x800-31253072d6.png` | RC, 1280x800: A on the switch raises the TURN ON / NOT NOW dialog over the page, "THIS IS A BETA FEATURE. IT WORKS FOR CASUAL ACHIEVEMENTS ONLY, AND TURNING IT ON TURNS HARDCORE MODE OFF." on three lines, TURN ON focused; the switch behind shows on until B (NOT NOW's path) puts it back off. Nothing was enabled on the guest. |
 | `ra-offline-toggle-row-1280x800-31253072d6-fr.png` | RC, 1280x800, French: PARAMÈTRES RETROACHIEVEMENTS with **SUCCÈS HORS LIGNE** focused -- "Bêta. Succès en mode facile seulement." and an arrow, two lines; CLASSEMENTS, MODE VERBEUX, RICH PRESENCE, MODE ENCORE below. Above it the upstream MODE DIFFICILE row's French description wraps to two lines here (three-line row; see the paragraph above). |
 | `ra-offline-toggle-page-1280x800-31253072d6-fr.png` | RC, 1280x800, French SUCCÈS HORS LIGNE page: the switch off, then "OBTENEZ DES SUCCÈS EN MODE FACILE SANS CONNEXION. ILS SONT ENVOYÉS QUAND VOUS ÊTES DE NOUVEAU EN LIGNE.", "BÊTA. SUCCÈS EN MODE FACILE SEULEMENT, DONC L'ACTIVER DÉSACTIVE LE MODE DIFFICILE.", "!RA! DANS LE COIN D'UN JEU : UN SUCCÈS N'A PAS ENCORE ATTEINT RETROACHIEVEMENTS." -- each two lines, RETOUR. |
+
+## RC-3 `5801ceb5fc` -- #175 and #176 verified on guest d (640x480)
+
+Release-candidate image **`5801ceb5fc`** (`next`; EmulationStation `b6b6f3cea4`,
+which carries #175's `461e14305`), guest d rebuilt from it, the QA
+RetroAchievements account carried in by `tools/qa-accounts`, the link cut and
+restored on the QEMU monitor (`set_link net0 off|on`), reads over the serial
+socket while offline. `system.loglevel` is `verbose` on this image by default
+(`/usr/config/system/configs/system.cfg`), so the launch log was already at the
+level #176 needed. EmulationStation's `LogLevel` was raised to `information`
+for the second offline cycle so the fix's INFO line would be written; the
+shipped level is `warning`, at which only the WARNING and ERROR lines below
+appear, and only ERROR lines reach the journal (`Log.cpp` writes those to
+stderr; the file log is batched and flushed on rotation, so the lines are read
+from `es_log.0.txt` after the next boot).
+
+**#175, offline boot** (three cycles, English then French): after `set_link
+net0 off` and a reboot, `eth0` down, the boot sign-in fails
+(`[CheckCheevosTokenComponent] Failed to generate a new cheevos token: Could
+not resolve hostname`), `global.retroachievements=1`, RETROACHIEVEMENTS on the
+MAIN MENU. GAME SETTINGS > RETROACHIEVEMENTS SETTINGS opened (switch on) and
+closed with B while still offline: **no dialog**, `system.cfg` still `=1`, and
+the flushed log has the fix's line at the second of the close --
+`WARNING retroachievements: could not reach RetroAchievements for a token
+(Could not resolve hostname); the switch stays as set, and the sign-in runs
+when the network is up`. The MAIN MENU rebuilt with RETROACHIEVEMENTS still in
+it. Then `set_link net0 on`: the re-check fired within 5 s of NetworkManager's
+`device activated` every time, and **twice** signed in (`INFO
+[CheckCheevosTokenComponent] Generated a new cheevos token, saving.`, the token
+written to `system.cfg` 2 s and 5 s after activation) -- but **once it fired
+while DNS was not yet answering** (4.6 s after the link, `Could not resolve
+hostname` again) and there is no second attempt before the component's
+120-minute schedule; a further link flap rescued it. Reported on #175 as the
+one thing left.
+
+**#175, refusal**: password set wrong and the token cleared, reboot online, the
+boot check refused (`Failed to generate a new cheevos token: Invalid
+user/password combination. Please try again.`), the switch toggled off and on
+and the page closed: the DIDN'T ACCEPT dialog, `system.cfg` `=1` after OK, the
+entry still on the MAIN MENU. English and French.
+
+**#176**: the account's password replaced by a known dummy (`PLANTEDpw7Qx`),
+`Probe.nes` launched through the interface's `POST /launch`, exited by
+`input_sense`'s `execute_kill`. `/var/log/exec.log` (383 lines, verbose): the
+dummy **0** times; `Added setting: cheevos_password = "<redacted>"` and
+`Fetch "retroachievements.password" "nes" "Probe.nes"] (<redacted>)` present;
+`cheevos_username` still named. The dummy 0 times in `es_log*.txt`, the
+journal and `/var/log/retroarch/`. `rocknix-evidence collect` -> a 108 KB
+archive of 21 files, `21 rewritten, 0 left out`; extracted on the guest, the
+dummy in **0** files; `logs/exec.log` carries the redacted line; `summary.txt`
+ends `credential filter: 21 file(s) rewritten, 0 left out`. No gopher64 (or
+any standalone with a password flag) is launchable on the guest -- no ROM --
+so the `--ra-password <redacted>` shape stays proven by suite case r only.
+Not framed: nothing on screen changes for #176.
+
+| Frame | What it shows |
+| --- | --- |
+| `175-offline-boot-menu-640x480-5801ceb5fc.png` | RC-3, after the offline boot (`eth0` down, boot sign-in failed, `global.retroachievements=1`, token empty): MAIN MENU with **RETROACHIEVEMENTS** as its first row. |
+| `175-offline-ra-settings-before-B-640x480-5801ceb5fc.png` | Still offline: RETROACHIEVEMENTS SETTINGS with the switch **on**, the account (USERNAME 8BitKidQA), HARDCORE MODE off, OFFLINE ACHIEVEMENTS, LEADERBOARDS, VERBOSE MODE -- the page as it is about to be closed with B. |
+| `175-offline-after-B-no-dialog-640x480-5801ceb5fc.png` | The frame after B, still offline: GAME SETTINGS with RETROACHIEVEMENTS SETTINGS focused and **no UNABLE TO ACTIVATE dialog** (RC-1 `31253072d6` showed one here and wrote `=0`). `system.cfg` read `=1`; the WARNING line above was logged at this second. |
+| `175-offline-main-menu-after-close-640x480-5801ceb5fc.png` | B again: the MAIN MENU rebuilt, **RETROACHIEVEMENTS still its first row** (GAME SETTINGS focused, where we came from). RC-1 rebuilt this menu without the entry. |
+| `175-offline-ra-settings-before-B-640x480-5801ceb5fc-fr.png` | The same offline page in French (`fr_FR`): PARAMÈTRES RETROACHIEVEMENTS, the switch on, NOM D'UTILISATEUR / MOT DE PASSE / CLÉ D'API WEB, MODE DIFFICILE with its one-line description `Sans chargement d'état, rembobinage ni codes : plus de points.` (the D-UI-023 line RC-3 also carries), SUCCÈS HORS LIGNE, CLASSEMENTS, MODE VERBEUX. |
+| `175-offline-after-B-no-dialog-640x480-5801ceb5fc-fr.png` | After B in French, offline: PARAMÈTRES DES JEUX, PARAMÈTRES RETROACHIEVEMENTS focused, no dialog. `=1`. |
+| `175-refused-dialog-640x480-5801ceb5fc.png` | Online, wrong password, token cleared, the switch toggled off then on, B: **RETROACHIEVEMENTS DIDN'T ACCEPT YOUR SIGN-IN: Invalid user/password combination. Please try again.** / **RETROACHIEVEMENTS STAYS ON. CHECK YOUR USERNAME AND PASSWORD, THEN TRY AGAIN.** over GAME SETTINGS, OK. The server's sentence is RetroAchievements' own and stays English. |
+| `175-refused-after-ok-640x480-5801ceb5fc.png` | After OK: GAME SETTINGS, RETROACHIEVEMENTS SETTINGS focused; `system.cfg` `global.retroachievements=1`, token empty; the MAIN MENU behind still holds RETROACHIEVEMENTS. |
+| `175-refused-dialog-640x480-5801ceb5fc-fr.png` | The same refusal in French: **RETROACHIEVEMENTS N'A PAS ACCEPTÉ VOTRE CONNEXION : Invalid user/password combination. Please try again.** / **RETROACHIEVEMENTS RESTE ACTIVÉ. VÉRIFIEZ VOTRE NOM D'UTILISATEUR ET VOTRE MOT DE PASSE, PUIS RÉESSAYEZ.**, OK -- four lines of ours at 640x480, nothing clipped. |
