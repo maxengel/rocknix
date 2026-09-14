@@ -1,6 +1,6 @@
 # Offline achievements (beta)
 
-*Draft for the `ROCKNIX/rocknix.org` site, `docs/configure/offline-achievements.md` (or a section of `docs/configure/retroachievements.md`). Kept in the fork's `docs/` until the site PR, per `fork-workflow.md` (personal path) and `documentation-accuracy.md` (the code and the page move together). Every menu label below is the string the interface shows in the sixth candidate; check them against `GuiRetroAchievementsSettings.cpp` and `GuiOfflineScan.cpp` before opening the PR. Audit #186 PL-11; phase 5 #168.*
+*Draft for the `ROCKNIX/rocknix.org` site, `docs/configure/offline-achievements.md` (or a section of `docs/configure/retroachievements.md`). Kept in the fork's `docs/` until the site PR, per `fork-workflow.md` (personal path) and `documentation-accuracy.md` (the code and the page move together). Every menu label below is the string the interface shows in the seventh candidate (`3387cf5da0`); check them against `GuiRetroAchievementsSettings.cpp` and `GuiOfflineScan.cpp` before opening the PR. Audit #186 PL-11; phase 5 #168.*
 
 ## What it does
 
@@ -44,7 +44,7 @@ A game whose data has not been saved yet says so in one message: scan your games
 
 ## Turning it off
 
-Turn the switch off on the same page. Achievements already waiting are sent the next time the device is connected. Hardcore mode is not turned back on for you; choose it again under **RETROACHIEVEMENTS SETTINGS** if you want it.
+Turn the switch off on the same page. Achievements already waiting are sent the next time the device is connected. **HARDCORE MODE** goes back to how it was before you turned offline achievements on.
 
 ## What a settings backup carries
 

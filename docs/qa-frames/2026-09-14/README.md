@@ -201,3 +201,18 @@ out of the repo.
 - `184-offline-page-640x480-768a0a9f48-fr.png` -- the French page, switch on, the row `N'A PAS PU SE TERMINER · 2 JEUX PRÊTS POUR JOUER HORS LIGNE`, the block with `'!RA!'` and `LES NOUVEAUX JEUX SONT AJOUTÉS À VOTRE PROCHAINE CONNEXION.` (PL-10).
 
 Not framed on RC-6: the GAME INDEXES rows with their offline lines (the walk's three ups landed at the top of the page; RC-7 walks to the foot), the game-options entry and the index heal (the startup index never ran on RC-6, #183 -- RC-7), the hundred-game summary timing (PL-09's other half), and 1280x800.
+
+## RC-7 `3387cf5da0` -- #183: the startup index runs
+
+Guest d from the RC-7 image (ES `9842a0083`), the same fixtures as RC-6. At the connected boot after
+the switch went on through the page, the startup index ran two seconds after the interface started
+(`Hashing [nes] Bobl`, twenty files hashed; Tobu, planted with a hash and no id, healed from the
+library: `ThreadedHasher: id 15738 for [gbc] Tobu Tobu Girl Deluxe from the hash library, no file
+read`), then `topup --after-index` cached Ninoid from the index without hashing it
+(`topup indexed pass: cached=1 indexed=1`; ids 4902 15738 31199).
+
+- `183-game-options-view-achievements-640x480-3387cf5da0.png` -- Tobu's game options with **VIEW THIS GAME'S ACHIEVEMENTS**, second row, on a guest that had never shown it (#183 boxes 1 and 3; PL-08).
+- `184-offline-page-1280x800-3387cf5da0.png` -- the page at 1280x800 (switch on, `NOT SCANNED YET · NO GAMES READY FOR OFFLINE PLAY YET`), the whole block on one screen with its last sentence (PL-10).
+- `184-ra-settings-row-beta-1280x800-3387cf5da0.png` -- RETROACHIEVEMENTS SETTINGS at 1280x800 on the way back: HARDCORE MODE off, the (BETA) row with its line.
+- `184-game-indexes-rows-1280x800-3387cf5da0.png` -- the GAME INDEXES rows while OFFLINE ACHIEVEMENTS is on: **INDEX NEW GAMES AT STARTUP** (on) with `Also saves new games' achievement data for offline play.` and **INDEX GAMES** with `Also saves their achievement data for offline play.` (#184 note 3b, D-RA-013, PL-10).
+- `186-pl09-summary-offline-100-games-640x480-3387cf5da0.png` -- offline, 100 games cached by id from the hash library (no ROMs) plus the three: the RETROACHIEVEMENTS summary, `YOU'RE NOT ONLINE. SHOWING THE GAMES SAVED ON THIS DEVICE.`, the list with points and progress per game (cropped below the title, which carries the account name). From A: the PLEASE WAIT card at 1.7 s, the list at 2.6 s, measured from the host with the frame tool's own latency inside both numbers (PL-09).
