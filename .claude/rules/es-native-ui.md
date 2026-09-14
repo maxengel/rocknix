@@ -162,6 +162,18 @@ Values live in one place each, so a screen never makes its own decision.
   Full-*screen* is a modal takeover, not a wider card — do not reach for it
   for work the player can keep playing through.
 
+  **A fourth-tier page is left running, not sat in.** A job measured in
+  minutes gets a page that outlives it, and the player gets to leave. B
+  closes the page and the job goes on; the row that launched it shows the
+  live line (`SCANNING... - GAME 12 OF 400`), pressing that row reopens the
+  page on the run, the job survives an interface exit, and the outcome still
+  lands on the row and on the page when it is reopened. Every other press is
+  refused while it runs, because there is nothing to choose. The scan page
+  (`GuiOfflineScan` with `OfflineScanJob`, audit #186 PL-07) is the model;
+  `GuiCloudTransfer` catches up in #187. The tell that a page has this wrong
+  is a footer that says the player *can* leave it running while the page
+  itself takes every button.
+
   **Duration decides between the last two, and the deciding column is
   "Ends".** A card is right for work somebody watches finish — a scrape, a
   hash, a two-second save sync. It is wrong for anything long enough to walk
