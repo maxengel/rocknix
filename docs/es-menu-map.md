@@ -138,6 +138,41 @@ on a device with no cloud storage asks SET IT UP NOW? and YES opens the list.
 FINISH RESTORE PROCESS (after a settings restore) tells the player the backup
 never carried the cloud sign-in and points at MANAGE CLOUD STORAGE (D-CLOUD-087).
 
+## RetroAchievements (our rows)
+
+`GAME SETTINGS > RETROACHIEVEMENTS SETTINGS > OPTIONS` carries one row of the
+fork's under HARDCORE MODE: OFFLINE ACHIEVEMENTS / `Beta. Casual achievements
+only.` with an arrow (D-RA-003), shown only where `/usr/bin/raofflineproxy-ctl`
+exists. Its page (as built on 2026-09-14, #165/#173/#179; D-RA-002..005,
+D-RA-010):
+
+```mermaid
+flowchart TD
+    RAS[RETROACHIEVEMENTS SETTINGS] --> OA[OFFLINE ACHIEVEMENTS<br/><i>Beta. Casual achievements only.</i>]
+    OA --> PAGE{{OFFLINE ACHIEVEMENTS}}
+    PAGE --> SW[OFFLINE ACHIEVEMENTS switch] -->|on| TURNON[dialog: beta, casual only, hardcore off<br/>TURN ON . NOT NOW]
+    PAGE --> I1[EARN CASUAL ACHIEVEMENTS WITHOUT A CONNECTION. THEY ARE SENT WHEN YOU'RE BACK ONLINE.]
+    PAGE --> I2[BETA. CASUAL ACHIEVEMENTS ONLY, SO TURNING IT ON TURNS HARDCORE MODE OFF.]
+    PAGE --> I3[!RA! IN A GAME'S CORNER MEANS AN ACHIEVEMENT HASN'T REACHED RETROACHIEVEMENTS YET.]
+    PAGE --> SCAN[SCAN GAMES FOR OFFLINE ACHIEVEMENTS<br/><i>NOT SCANNED YET . N GAMES READY FOR OFFLINE PLAY</i><br/><i>LAST date - outcome . N GAMES READY FOR OFFLINE PLAY</i><br/><i>WHEN YOU CAME ONLINE - outcome . N GAMES READY ...</i>]
+    SCAN -.->|switch off| DIM1[dimmed: TURN ON OFFLINE ACHIEVEMENTS FIRST.]
+    SCAN -.->|no address| DIM2[dimmed: YOU'RE NOT ONLINE.]
+    SCAN --> CONFIRM[SCAN GAMES FOR OFFLINE ACHIEVEMENTS?<br/>what it does and costs; last time's why<br/>YES . NO]
+    CONFIRM --> XFER[GuiOfflineScan<br/>full screen; GAME i OF n, the game, counts so far, spinner, elapsed;<br/>outcome and N GAMES READY FOR OFFLINE PLAY; stays until dismissed]
+```
+
+The row's line and the page's last screen read the same two files the ctl
+and the proxy's client leave under `/storage/.config/raofflineproxy/`:
+`last-scan` (`<epoch> <rc> <scan|topup> cached= skipped= ready= limit=
+[why=]`, D-UI-029's shape for this row) and `cached_game_ids.txt` (one id
+per line: the count). Exit 69 and 75 from `raofflineproxy-ctl scan` read
+SKIPPED - YOU'RE NOT ONLINE / SKIPPED - A SCAN IS ALREADY RUNNING; 77 and 78
+(no account, switch off) COULDN'T FINISH with the reason on line 4. The
+automatic top-up (`raofflineproxy-ctl topup`, run by `NetworkThread` when the
+device comes online, bounded to one attempt per half hour) has no surface of
+its own: its result, when it added games or could not finish, is the same
+line under the row, with WHEN YOU CAME ONLINE in place of the date (D-UI-032).
+
 **Elsewhere, cloud-adjacent.** `SYSTEM SETTINGS > SYSTEM MANAGEMENT AND RESET`:
 DATA MANAGEMENT (back up / restore settings to this device), EMULATOR
 MANAGEMENT and SYSTEM MANAGEMENT (the resets) run headless behind a spinner and
