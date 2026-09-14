@@ -246,10 +246,19 @@ done
 ### Core functions
 ###
 
+# Every line goes through redact_credentials (001-functions): the value under
+# a credential key reads <redacted> and the key stays, so the log still says
+# the setting was applied. cheevos_password went into exec.log in the clear
+# through this function -- the Added setting line and game_setting's Fetch
+# line -- and rocknix-evidence bundled it (fork #176, D-INFRA-010). The
+# timestamp is built in-process now; the one subshell per line is the
+# redaction's, which forks a sed only for a line that names a credential.
 function log() {
     if [ ${LOGGING} = "verbose" ]
     then
-        echo "$(printf '%(%c)T\n' -1): setsettings: $*" >> ${LOG_DIR}/${LOG_FILE} 2>&1
+        local TS
+        printf -v TS '%(%c)T' -1
+        echo "${TS}: setsettings: $(redact_credentials "$*")" >> ${LOG_DIR}/${LOG_FILE} 2>&1
     fi
 }
 

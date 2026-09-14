@@ -25,6 +25,68 @@ function log() {
   echo "$(date) ${SOURCE}: ${MESSAGE}" >>/var/log/messages
 }
 
+# Every credential a launcher can log or a support bundle can carry, and the
+# one way it is shown: the key or flag stays, the value reads <redacted>, so a
+# log still says the setting was applied and nothing about what it was (fork
+# #176, D-INFRA-010). RetroArch's launch log carried cheevos_password in the
+# clear and rocknix-evidence copied it into the files a player sends for help.
+# This is the only place that knows what a credential looks like in a line;
+# every write to exec.log and every file the evidence bundle takes goes
+# through it, so no script keeps its own list.
+#
+#   redact_credentials              # stdin to stdout, whole streams (files)
+#   redact_credentials "a line"     # the line, redacted, on stdout
+#
+# Shapes, all case-insensitive: key = "value", key=value, "key": "value" and
+# key: value where the key names a password, token, API key, secret or PSK;
+# a flag of that name followed by its value (--ra-password X); setsettings'
+# Fetch "<key>" ... ] (value) line; RetroAchievements' p=, t= and y= request
+# parameters on a line about RetroAchievements; the pre-push guard's fixed
+# token formats (devpassword=, &y=, AKIA, ghp_, github_pat_, xox., sk-, a
+# private-key block); setrootpass <value>; the password in a URL's
+# user:password@. An empty value is left empty: whether a credential is set
+# may be shown, only what it is may not. The word list is deliberately wide
+# (a value under a key merely named like a credential is hidden too): a
+# hidden setting in a debug log costs a question, a shown password costs an
+# account.
+#
+# The one-line form checks the line in bash first and forks a sed only for a
+# line that names a credential: setsettings writes a hundred lines a launch
+# in verbose mode and a fork for each would be felt on a handheld.
+function redact_credentials() {
+  local words='passw|token|api_?key|secret|psk|wifi\.key'
+  local marks='[?&][pty]=|AKIA|gh[pousr]_|github_pat_|xox[baprs]-|sk-|PRIVATE KEY|setrootpass|://[^/[:space:]@]+:[^/[:space:]@]+@'
+  if [ $# -gt 0 ]; then
+    local line="$*" nocase=0
+    shopt -q nocasematch && nocase=1
+    shopt -s nocasematch
+    if [[ "${line}" =~ (${words}|${marks}) ]]; then
+      [ "${nocase}" -eq 1 ] || shopt -u nocasematch
+      printf '%s\n' "${line}" | redact_credentials
+    else
+      [ "${nocase}" -eq 1 ] || shopt -u nocasematch
+      printf '%s\n' "${line}"
+    fi
+    return
+  fi
+  local key="[A-Za-z0-9_.-]*(${words})[A-Za-z0-9_.-]*"
+  sed -E \
+    -e "s/(^|[^A-Za-z0-9_.-])(${key}\"?[[:space:]]*[=:][[:space:]]*)\"[^\"]+\"/\1\2\"<redacted>\"/Ig" \
+    -e "s/(^|[^A-Za-z0-9_.-])(${key}\"?[[:space:]]*[=:][[:space:]]*)[^[:space:]\"'&;]+/\1\2<redacted>/Ig" \
+    -e "s/(^|[[:space:]])(--?${key})[[:space:]]+(\"[^\"]+\"|'[^']+'|[^[:space:]\"']+)/\1\2 <redacted>/Ig" \
+    -e "s/^(.*\"[^\"]*(${words})[^\"]*\".*\] \().*\)[[:space:]]*\$/\1<redacted>)/I" \
+    -e '/[Rr]etro[Aa]chievements|dorequest|127\.0\.0\.1:8080/s/([?&][pty]=)[^&[:space:]"'"'"']+/\1<redacted>/g' \
+    -e 's/([?&]y=)[A-Za-z0-9]{16,}/\1<redacted>/g' \
+    -e 's/(^|[^A-Za-z0-9])(AKIA)[0-9A-Z]{16}/\1\2<redacted>/g' \
+    -e 's/(^|[^A-Za-z0-9])(gh[pousr]_)[A-Za-z0-9]{36}/\1\2<redacted>/g' \
+    -e 's/(^|[^A-Za-z0-9])(github_pat_)[A-Za-z0-9_]{20,}/\1\2<redacted>/g' \
+    -e 's/(^|[^A-Za-z0-9])(xox[baprs]-)[A-Za-z0-9-]{10,}/\1\2<redacted>/g' \
+    -e 's/(^|[^A-Za-z0-9])(sk-)[A-Za-z0-9_-]{24,}/\1\2<redacted>/g' \
+    -e '/-----BEGIN [A-Z ]*PRIVATE KEY/,/-----END [A-Z ]*PRIVATE KEY/{/-----(BEGIN|END) [A-Z ]*PRIVATE KEY/!s/.*/<redacted>/}' \
+    -e 's/(setrootpass[[:space:]]+)[^[:space:]]+/\1<redacted>/' \
+    -e 's#(://[^/[:space:]@:]+:)[^@/[:space:]]+@#\1<redacted>@#g'
+}
+
 function get_setting() {
   if [ -n "${3}" ]
   then

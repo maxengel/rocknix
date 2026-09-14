@@ -60,6 +60,15 @@ fi
   /usr/bin/game-guides-tool "${1}"
 
 ### Function Library
+### Every line this script logs -- to exec.log or to its own stdout, which
+### the journal keeps -- goes through redact_credentials (001-functions): a
+### credential's value reads <redacted>, its key or flag stays. The
+### "Executing ..." line carries an emulator's whole command line, and a
+### standalone emulator can take a password there (gopher64's --ra-password);
+### exec.log is what rocknix-evidence bundles (fork #176, D-INFRA-010). The
+### emulator's own output is still redirected straight into the file below,
+### not piped through a filter: a game's life must not depend on a second
+### process staying alive to read its stdout. The bundle is filtered whole.
 function log() {
         if [ ${LOG} == true ]
         then
@@ -67,9 +76,9 @@ function log() {
                 then
                         mkdir -p "$LOG_DIRECTORY"
                 fi
-                echo "${SCRIPT_NAME}: $*" 2>&1 | tee -a ${LOG_DIRECTORY}/${LOG_FILE}
+                redact_credentials "${SCRIPT_NAME}: $*" 2>&1 | tee -a ${LOG_DIRECTORY}/${LOG_FILE}
         else
-                echo "${SCRIPT_NAME}: $*"
+                redact_credentials "${SCRIPT_NAME}: $*"
         fi
 }
 
@@ -80,7 +89,7 @@ function loginit() {
                 then
                         rm -f ${LOG_DIRECTORY}/${LOG_FILE}
                 fi
-                cat <<EOF >${LOG_DIRECTORY}/${LOG_FILE}
+                redact_credentials <<EOF >${LOG_DIRECTORY}/${LOG_FILE}
 Emulation Run Log - Started at $(date)
 
 ARG1: $1
