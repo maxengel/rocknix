@@ -441,3 +441,26 @@ clean whatever the logs hold. Blindspot 13 is the same failure on a ticked
 checkbox; *guards must fail closed* in `engineering-practices.md` is the rule
 this instance adds a case to. Related: D-INFRA-010, D-INFRA-011, the
 2026-09-14 work log.
+
+## 44. Proven at a fixture's size, not the device's (2026-09-14)
+
+The index-fed top-up (D-RA-013) was proven on the VM with three games and a
+handful of pads: the stamp said COMPLETED, the ids were there, the row read
+right. Its first run on the RG SP had 147 games to save and a device with
+24,702 badge images, and two things the fixture could not show appeared at
+once: the helper finished its games and then downloaded badges for 83 s until
+the fifteen-minute bound killed it, and the ctl read the kill as the verdict
+(#188); and for those fifteen minutes the page showed nothing of a run the
+ctl started on its own (#189). The maintainer, reading it: *"It currently is
+reporting that nothing is going on on the device."*
+
+The shape: a proof sized to what the harness can drive in a minute answers
+"does the path work", not "what does the path do at the numbers a device
+has". Time-bounded work, background tails (threads, downloads, flushes) and
+progress display are exactly the properties that only appear at scale or at
+length. Before a candidate goes to a device, run one proof at the device's
+own numbers -- the hundred-game summary (PL-09) was that for the read path;
+the top-up never got one for the write path. Blindspot 41 is the same failure
+on a panel size; this one is on a library size. Related: D-RA-019, the
+2026-09-14 work log (22:20 UTC), `rc8-topup-row.sh` (forty indexed games,
+the first write-path proof at length).
