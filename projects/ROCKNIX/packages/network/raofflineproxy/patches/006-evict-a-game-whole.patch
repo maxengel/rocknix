@@ -1,0 +1,159 @@
+storage: evict a cached game whole or not at all, never its sets alone
+
+evict_cache_older_than deleted every api_cache row older than sixty days
+except the login rows and the User-Agent row. The hourly refresh upserts a
+game's patch, unlocks and startsession rows -- so those never age -- and
+touches neither its achievementsets row (keyed by hash, written once by a
+launch or a bulk cache) nor its gameid alias. So, sixty days after a game
+was cached, exactly the row a RetroArch 1.22 launch loads the game through
+was gone (handle_offline_request serves achievementsets from that row and
+its gameid fallback and rebuilds nothing from patch), while the refreshed
+patch row kept the game in cached_game_ids.txt and in every "cached" count
+(es_export.collect_cached_game_ids, rom_browser.list_cached_games). The
+game was still counted as cached and no longer playable offline: a
+RetroArch without a connection read "Load failed (-27): no cached
+response" (ROCKNIX audit #186 PL-02, High). On a casual cadence -- a game
+scanned once and not opened for two months -- that is the ordinary case,
+and nothing said so.
+
+Eviction is now by game: a stale row is kept while any patch or
+achievementsets row of its game is younger than the cut-off, and a game's
+rows go together when all of them are stale (the login rows and the
+User-Agent row are kept as before). The game a row belongs to is read from
+its key for patch, unlocks and startsession, and from its body for
+achievementsets (GameId) and gameid (GameID). Nothing is loaded unless a
+stale row exists at all, so the hourly pass over a healthy store costs one
+SELECT of keys and ages.
+
+Written for ROCKNIX (fork issue maxengel/rocknix#186, PL-02); its
+raofflineproxy-ctl now also treats a game whose achievementsets row is
+missing as not cached, so a bulk cache re-adds one lost before this patch.
+Offered upstream as-is (ROCKNIX D-RA-016).
+
+--- a/linux/raofflineproxy/storage.py
++++ b/linux/raofflineproxy/storage.py
+@@ -477,17 +477,24 @@
+         self._after_cache_mutation(None)
+ 
+     def evict_cache_older_than(self, before: int) -> None:
++        # A game is evicted whole or not at all. The refresh keeps a game's
++        # patch, unlocks and startsession rows young and never touches its
++        # achievementsets row (keyed by hash, fetched once by a launch or a
++        # bulk cache) or its gameid alias, so evicting row by row deleted, at
++        # sixty days, exactly the row a RetroArch 1.22 launch loads the game
++        # through -- while the refreshed patch row kept the game in
++        # cached_game_ids.txt and every "cached" count. The game was still
++        # counted and no longer playable offline. So a stale row is kept
++        # while any patch or achievementsets row of its game is still young,
++        # and a game goes only when all of them are stale; the login rows
++        # and the User-Agent row are kept as before.
++        doomed = self._stale_cache_keys_by_game(before)
+         if self._use_sqlite:
+             assert self._connection is not None
+             with self._lock:
+-                self._connection.execute(
+-                    """
+-                    DELETE FROM api_cache
+-                    WHERE cachedAt < ?
+-                      AND cacheKey NOT LIKE 'login2::%'
+-                      AND cacheKey != ?
+-                    """,
+-                    (before, cache_keys.USER_AGENT),
++                self._connection.executemany(
++                    "DELETE FROM api_cache WHERE cacheKey = ?",
++                    [(key,) for key in sorted(doomed)],
+                 )
+                 self._connection.commit()
+             self._after_cache_mutation(None)
+@@ -500,13 +507,88 @@
+                 self._json_state["api_cache"] = [
+                     item
+                     for item in self._json_state["api_cache"]
+-                    if item["cachedAt"] >= before
+-                    or item["cacheKey"].startswith(cache_keys.PREFIX_LOGIN)
+-                    or item["cacheKey"] == cache_keys.USER_AGENT
++                    if item["cacheKey"] not in doomed
+                 ]
+                 self._write_json_state_unlocked()
+         self._after_cache_mutation(None)
+ 
++    def _cache_keys_and_ages(self) -> list[dict]:
++        """Every api_cache row as {cacheKey, cachedAt}, without its body."""
++        if self._use_sqlite:
++            assert self._connection is not None
++            with self._lock:
++                rows = self._connection.execute(
++                    "SELECT cacheKey, cachedAt FROM api_cache"
++                ).fetchall()
++            return [row_to_dict(row) for row in rows]
++
++        with self._lock:
++            with self._json_file_lock(exclusive=False):
++                self._reload_json_state_unlocked()
++                assert self._json_state is not None
++                return [
++                    {"cacheKey": item["cacheKey"], "cachedAt": item.get("cachedAt", 0)}
++                    for item in self._json_state["api_cache"]
++                ]
++
++    def _game_id_of_cache_key(self, cache_key: str) -> int | None:
++        """The game a cache row belongs to: from the key for patch, unlocks
++        and startsession rows, from the body for achievementsets (GameId)
++        and gameid (GameID) rows. None for a row that names no game."""
++        for prefix in (
++            cache_keys.PREFIX_PATCH,
++            cache_keys.PREFIX_UNLOCKS,
++            cache_keys.PREFIX_STARTSESSION,
++        ):
++            if cache_key.startswith(prefix):
++                value = cache_key[len(prefix):].split(":", 1)[0]
++                return int(value) if value.isdigit() else None
++        if cache_key.startswith(cache_keys.PREFIX_ACHIEVEMENTSETS) or cache_key.startswith(
++            cache_keys.PREFIX_GAMEID
++        ):
++            entry = self.get_cache(cache_key)
++            if entry is None:
++                return None
++            try:
++                payload = json.loads(entry["responseBody"])
++            except Exception:
++                return None
++            if not isinstance(payload, dict):
++                return None
++            field = "GameId" if cache_key.startswith(cache_keys.PREFIX_ACHIEVEMENTSETS) else "GameID"
++            value = payload.get(field)
++            return value if isinstance(value, int) and value > 0 else None
++        return None
++
++    def _stale_cache_keys_by_game(self, before: int) -> set[str]:
++        """The keys eviction may delete: rows older than `before`, less the
++        login rows and the User-Agent row, less every row of a game one of
++        whose patch or achievementsets rows is younger than `before`."""
++        rows = self._cache_keys_and_ages()
++        stale = {
++            row["cacheKey"]
++            for row in rows
++            if int(row.get("cachedAt") or 0) < before
++            and not row["cacheKey"].startswith(cache_keys.PREFIX_LOGIN)
++            and row["cacheKey"] != cache_keys.USER_AGENT
++        }
++        if not stale:
++            return stale
++        live: set[int] = set()
++        for row in rows:
++            key = row["cacheKey"]
++            if int(row.get("cachedAt") or 0) < before:
++                continue
++            if not (
++                key.startswith(cache_keys.PREFIX_PATCH)
++                or key.startswith(cache_keys.PREFIX_ACHIEVEMENTSETS)
++            ):
++                continue
++            game_id = self._game_id_of_cache_key(key)
++            if game_id is not None:
++                live.add(game_id)
++        return {key for key in stale if self._game_id_of_cache_key(key) not in live}
++
+     def get_pending_awards(self) -> list[dict]:
+         if self._use_sqlite:
+             assert self._connection is not None

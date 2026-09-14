@@ -37,11 +37,14 @@ function log() {
 #   redact_credentials              # stdin to stdout, whole streams (files)
 #   redact_credentials "a line"     # the line, redacted, on stdout
 #
-# Shapes, all case-insensitive: key = "value", key=value, "key": "value" and
-# key: value where the key names a password, token, API key, secret or PSK;
+# Shapes, all case-insensitive: key = "value", key = 'value', key=value,
+# "key": "value" and key: value where the key names a password, token, API
+# key, secret, PSK or RetroAchievements' web key (global.retroachievements.key);
 # a flag of that name followed by its value (--ra-password X); setsettings'
 # Fetch "<key>" ... ] (value) line; RetroAchievements' p=, t= and y= request
-# parameters on a line about RetroAchievements; the pre-push guard's fixed
+# parameters on a line about RetroAchievements (or from its proxy), after
+# ?, & or a space -- a log line pastes them bare as often as it joins them
+# (#186 PL-29); the pre-push guard's fixed
 # token formats (devpassword=, &y=, AKIA, ghp_, github_pat_, xox., sk-, a
 # private-key block); setrootpass <value>; the password in a URL's
 # user:password@. An empty value is left empty: whether a credential is set
@@ -54,8 +57,8 @@ function log() {
 # line that names a credential: setsettings writes a hundred lines a launch
 # in verbose mode and a fork for each would be felt on a handheld.
 function redact_credentials() {
-  local words='passw|token|api_?key|secret|psk|wifi\.key'
-  local marks='[?&][pty]=|AKIA|gh[pousr]_|github_pat_|xox[baprs]-|sk-|PRIVATE KEY|setrootpass|://[^/[:space:]@]+:[^/[:space:]@]+@'
+  local words='passw|token|api_?key|secret|psk|wifi\.key|retroachievements\.key'
+  local marks='(^|[?&[:space:]])[pty]=|AKIA|gh[pousr]_|github_pat_|xox[baprs]-|sk-|PRIVATE KEY|setrootpass|://[^/[:space:]@]+:[^/[:space:]@]+@'
   if [ $# -gt 0 ]; then
     local line="$*" nocase=0
     shopt -q nocasematch && nocase=1
@@ -72,10 +75,11 @@ function redact_credentials() {
   local key="[A-Za-z0-9_.-]*(${words})[A-Za-z0-9_.-]*"
   sed -E \
     -e "s/(^|[^A-Za-z0-9_.-])(${key}\"?[[:space:]]*[=:][[:space:]]*)\"[^\"]+\"/\1\2\"<redacted>\"/Ig" \
+    -e "s/(^|[^A-Za-z0-9_.-])(${key}\"?[[:space:]]*[=:][[:space:]]*)'[^']+'/\1\2'<redacted>'/Ig" \
     -e "s/(^|[^A-Za-z0-9_.-])(${key}\"?[[:space:]]*[=:][[:space:]]*)[^[:space:]\"'&;]+/\1\2<redacted>/Ig" \
     -e "s/(^|[[:space:]])(--?${key})[[:space:]]+(\"[^\"]+\"|'[^']+'|[^[:space:]\"']+)/\1\2 <redacted>/Ig" \
     -e "s/^(.*\"[^\"]*(${words})[^\"]*\".*\] \().*\)[[:space:]]*\$/\1<redacted>)/I" \
-    -e '/[Rr]etro[Aa]chievements|dorequest|127\.0\.0\.1:8080/s/([?&][pty]=)[^&[:space:]"'"'"']+/\1<redacted>/g' \
+    -e '/[Rr]etro[Aa]chievements|raofflineproxy|dorequest|127\.0\.0\.1:8080/s/(^|[?&[:space:]])([pty]=)[^&[:space:]"'"'"']+/\1\2<redacted>/g' \
     -e 's/([?&]y=)[A-Za-z0-9]{16,}/\1<redacted>/g' \
     -e 's/(^|[^A-Za-z0-9])(AKIA)[0-9A-Z]{16}/\1\2<redacted>/g' \
     -e 's/(^|[^A-Za-z0-9])(gh[pousr]_)[A-Za-z0-9]{36}/\1\2<redacted>/g' \

@@ -508,9 +508,16 @@ function set_cheevos() {
         # cheevos_custom_host a restored retroarch.cfg may still carry from
         # the upstream installer's patcher, so a device with the toggle off is
         # never left pointing at a dead port.
+        # The hardcore test asks for "0", not "anything but 1": get_setting
+        # answers nothing for a key it could not read as it does for one
+        # that is unset, and an unknown hardcore must not route awards to a
+        # proxy that refuses hardcore ones (audit #186 PL-31). With the
+        # toggle on the key is always written -- raofflineproxy-ctl enable
+        # sets global.retroachievements.hardcore=0 -- so an empty read is a
+        # read that failed, and that launch goes direct.
         local OFFLINE_PROXY=$(get_setting "global.retroachievements.offlineproxy")
         local CHEEVOS_HARDCORE=$(game_setting "retroachievements.hardcore")
-        if [ "${OFFLINE_PROXY}" = "1" ] && [ "${CHEEVOS_HARDCORE}" != "1" ]
+        if [ "${OFFLINE_PROXY}" = "1" ] && [ "${CHEEVOS_HARDCORE}" = "0" ]
         then
             if netstat -ltn 2>/dev/null | grep -q '127\.0\.0\.1:8080 '
             then

@@ -151,9 +151,7 @@ flowchart TD
     RAS[RETROACHIEVEMENTS SETTINGS] --> OA[OFFLINE ACHIEVEMENTS<br/><i>Beta. Casual achievements only.</i>]
     OA --> PAGE{{OFFLINE ACHIEVEMENTS}}
     PAGE --> SW[OFFLINE ACHIEVEMENTS switch] -->|on| TURNON[dialog: beta, casual only, hardcore off<br/>TURN ON . NOT NOW]
-    PAGE --> I1[EARN CASUAL ACHIEVEMENTS WITHOUT A CONNECTION. THEY ARE SENT WHEN YOU'RE BACK ONLINE.]
-    PAGE --> I2[BETA. CASUAL ACHIEVEMENTS ONLY, SO TURNING IT ON TURNS HARDCORE MODE OFF.]
-    PAGE --> I3[!RA! IN A GAME'S CORNER MEANS AN ACHIEVEMENT HASN'T REACHED RETROACHIEVEMENTS YET.]
+    PAGE --> I1[one block, after the two options and a half-line gap: EARN CASUAL ACHIEVEMENTS WITHOUT A CONNECTION. THEY ARE SENT WHEN YOU'RE BACK ONLINE. CASUAL ACHIEVEMENTS ONLY, SO TURNING IT ON TURNS HARDCORE MODE OFF. '!RA!' IN A GAME'S CORNER MEANS AN ACHIEVEMENT HASN'T REACHED RETROACHIEVEMENTS YET. NEW GAMES ARE ADDED THE NEXT TIME YOU'RE CONNECTED.]
     PAGE --> SCAN[SCAN GAMES FOR OFFLINE ACHIEVEMENTS<br/><i>NOT SCANNED YET . N GAMES READY FOR OFFLINE PLAY</i><br/><i>LAST date - outcome . N GAMES READY FOR OFFLINE PLAY</i><br/><i>WHEN YOU CAME ONLINE - outcome . N GAMES READY ...</i>]
     SCAN -.->|switch off| DIM1[dimmed: TURN ON OFFLINE ACHIEVEMENTS FIRST.]
     SCAN -.->|no address| DIM2[dimmed: YOU'RE NOT ONLINE.]
@@ -164,14 +162,33 @@ flowchart TD
 The row's line and the page's last screen read the same two files the ctl
 and the proxy's client leave under `/storage/.config/raofflineproxy/`:
 `last-scan` (`<epoch> <rc> <scan|topup> cached= skipped= ready= limit=
-[why=]`, D-UI-029's shape for this row) and `cached_game_ids.txt` (one id
-per line: the count). Exit 69 and 75 from `raofflineproxy-ctl scan` read
+indexed= errors= [why=]`, D-UI-029's shape for this row; `errors` is how
+many games a fetch failed for, and such a run ends rc 1 with
+`why=SOME_GAMES_NOT_SAVED` -- a token the page renders as SOMETHING WENT
+WRONG until it learns the word, audit #186 PL-24) and `cached_game_ids.txt`
+(one id per line: the count). Exit 69 and 75 from `raofflineproxy-ctl scan` read
 SKIPPED - YOU'RE NOT ONLINE / SKIPPED - A SCAN IS ALREADY RUNNING; 77 and 78
 (no account, switch off) COULDN'T FINISH with the reason on line 4. The
 automatic top-up (`raofflineproxy-ctl topup`, run by `NetworkThread` when the
 device comes online, bounded to one attempt per half hour) has no surface of
 its own: its result, when it added games or could not finish, is the same
 line under the row, with WHEN YOU CAME ONLINE in place of the date (D-UI-032).
+
+Since the RC-5 round (#184 notes 3b/5b, D-RA-013) the scan and the top-up
+follow the interface's own game index: where a system's games carry a
+`cheevosHash` (INDEX NEW GAMES AT STARTUP, INDEX GAMES -- in `gamelist.xml`,
+or in `recovery/<system>/` until the next clean exit writes it), only the
+games with a `cheevosId` are cached, from that id and hash, the ROM never read
+again; a system with no index at all is hashed as before. The top-up caches
+every indexed game not yet cached (not only the recently played), and
+`ThreadedHasher` runs `raofflineproxy-ctl topup --after-index` as it finishes
+with the toggle on, so INDEX NEW GAMES AT STARTUP feeds the cache by itself.
+While the toggle is on, the two GAME INDEXES rows on RETROACHIEVEMENTS
+SETTINGS carry one line each -- INDEX NEW GAMES AT STARTUP / `Also saves new
+games' achievement data for offline play.`, INDEX GAMES / `Also saves their
+achievement data for offline play.` -- and so does FIND ALL GAMES WITH
+NETPLAY/ACHIEVEMENTS under DEVELOPER > TOOLS; off, the rows read as
+upstream's. The stamp gains `indexed=<n>`, which the page passes over.
 
 **Elsewhere, cloud-adjacent.** `SYSTEM SETTINGS > SYSTEM MANAGEMENT AND RESET`:
 DATA MANAGEMENT (back up / restore settings to this device), EMULATOR

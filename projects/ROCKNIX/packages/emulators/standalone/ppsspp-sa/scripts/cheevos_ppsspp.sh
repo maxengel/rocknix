@@ -17,8 +17,10 @@ token=$(get_setting "global.retroachievements.token")
 enabled=$(get_setting "global.retroachievements")
 hardcore=$(get_setting "global.retroachievements.hardcore")
 
-# Check if RetroAchievements are enabled in Emulation Station
-if [ ! ${enabled} = 1 ]; then
+# Check if RetroAchievements are enabled in Emulation Station. Quoted: an
+# empty read used to make the test a syntax error that fell through to
+# "enabled" (audit #186 PL-31).
+if [ "${enabled}" != "1" ]; then
     echo "RetroAchievements are not enabled, please turn them on in Emulation Station." > ${LOG_FILE}
     sed -i '/^AchievementsEnable =/c\AchievementsEnable = False' ${PPSSPP_INI}
     exit 1
@@ -33,6 +35,7 @@ fi
 echo "${token}" > ${PPSSPP_ACHIEVEMENTS}
 
 # Set hardcore mode
+hardcore_raw="${hardcore}"
 if [ "${hardcore}" = 1 ]; then
   hardcore="True"
 else
@@ -46,8 +49,12 @@ fi
 # achievements for the session. Empty otherwise, which is PPSSPP's default
 # host: this file travels in a settings backup, so a restored device with the
 # toggle off must find the line cleared, not pointing at a dead port.
+# Routed only when hardcore READ as off ("0" -- raofflineproxy-ctl enable
+# writes the key), never when it read as nothing: an empty answer is a key
+# that could not be read as much as one that is unset, and the proxy
+# refuses hardcore awards, so unknown keeps the direct path (#186 PL-31).
 host=""
-if [ "$(get_setting "global.retroachievements.offlineproxy")" = 1 ] && [ "${hardcore}" = "False" ]; then
+if [ "$(get_setting "global.retroachievements.offlineproxy")" = 1 ] && [ "${hardcore_raw}" = "0" ]; then
   if netstat -ltn 2>/dev/null | grep -q '127\.0\.0\.1:8080 '; then
     host="127.0.0.1:8080"
   else

@@ -38,7 +38,9 @@ PKG_BUILD_FLAGS="+pic"
 # the proxy itself (setsettings.sh set_cheevos, cheevos_ppsspp.sh).
 #
 # SCAN GAMES FOR OFFLINE ACHIEVEMENTS (fork #179, D-RA-010) adds the one
-# native piece the client needs and the tarball does not carry built:
+# native piece the client needs and the tarball does not carry built (and,
+# since fork #184 / D-RA-013, raofflineproxy-cache-indexed, which caches a
+# game the interface's own index identified without hashing it again):
 # libraproxy_rchash.so, rcheevos' rc_hash with the libchdr CHD reader and the
 # LZMA SDK 7z reader behind one C entry point (third_party/rcheevos_glue),
 # which rom_hashing.py loads through ctypes to identify a ROM the way
@@ -116,6 +118,11 @@ makeinstall_target() {
   mkdir -p "${INSTALL}/usr/bin"
   cp "${PKG_DIR}/sources/raofflineproxy-ctl" "${INSTALL}/usr/bin/raofflineproxy-ctl"
   chmod 0755 "${INSTALL}/usr/bin/raofflineproxy-ctl"
+  # The scan's worker (fork #184, D-RA-013): caches a game the interface's
+  # index already identified from its id and hash, and hands the rest to the
+  # client's own hashing path. The ctl looks for it beside itself.
+  cp "${PKG_DIR}/sources/raofflineproxy-cache-indexed" "${INSTALL}/usr/bin/raofflineproxy-cache-indexed"
+  chmod 0755 "${INSTALL}/usr/bin/raofflineproxy-cache-indexed"
 
   # /usr/lib is the first system path rom_hashing.py's loader tries after the
   # module's own directory.
