@@ -10,16 +10,18 @@ the request throttle (network.py: 0.3 s between requests, a cooldown per batch,
 backoff on 429) stays, so a full-library scan is as polite as the capped one,
 only longer.
 
---- a/linux/raofflineproxy/rom_browser.py
-+++ b/linux/raofflineproxy/rom_browser.py
-@@ -46,7 +46,11 @@
- 
- 
+
+--- a/linux/raofflineproxy/rom_browser.py	2026-09-14 13:40:37.034601743 +0000
++++ b/linux/raofflineproxy/rom_browser.py	2026-09-14 13:40:37.050798440 +0000
+@@ -46,7 +46,10 @@
+ # which bundles a 7z reader (third_party/lzma-sdk), so it never reaches zipfile.
+ ZIP_READABLE_ARCHIVE_EXTENSIONS = {".zip"}
+ EXCLUDED_BROWSER_DIR_NAMES = {"Imgs"}
 -MAX_CACHED_GAMES = 100
 +# ROCKNIX: no cap on how many games the scan may cache (fork #184, D-RA-014);
 +# upstream's 100 was a courtesy to the server, which the request throttle in
-+# network.py keeps. Large enough that no library reaches it, small enough for
-+# the progress arithmetic that divides by it.
++# network.py keeps. Large enough that no library reaches it.
 +MAX_CACHED_GAMES = 1000000
- 
+ MAX_SCAN_ENTRIES = 5000
+ MAX_SCAN_DEPTH = 12
  
