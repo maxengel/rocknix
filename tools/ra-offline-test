@@ -249,7 +249,15 @@ else
   S 'raofflineproxy-ctl enable' >/dev/null 2>&1; WE_ENABLED=1; [ "${TOGGLE_WAS:-0}" = 1 ] && WE_ENABLED=0
   st=$(S 'raofflineproxy-ctl status 2>/dev/null | tr "\n" " "')
   check "$(case "$st" in *"enabled=1 marker=1 service=active"*) echo 0 ;; *) echo 1 ;; esac)" "raofflineproxy-ctl status: ${st}(the toggle on)"
-  check "$(S 'netstat -ltn 2>/dev/null | grep -q "127\.0\.0\.1:8080 "'; echo $?)" "the proxy listens on 127.0.0.1:8080"
+  # The unit is Type=simple, so `status` says active the moment python3 starts;
+  # the socket appears about a second later (RC 31253072d6: t+1 s). Wait for it,
+  # bounded, and fail closed if it never comes.
+  port_rc=1
+  for _i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    S 'netstat -ltn 2>/dev/null | grep -q "127\.0\.0\.1:8080 "' && { port_rc=0; break; }
+    sleep 1
+  done
+  check "$port_rc" "the proxy listens on 127.0.0.1:8080 (waited up to 15 s for the socket)"
   p=$(S 'raofflineproxy-ctl pending 2>/dev/null'); prc=$(S 'raofflineproxy-ctl pending >/dev/null 2>&1; echo $?')
   check "$([ "$p" = 0 ] && [ "$prc" = 1 ]; echo $?)" "the award queue is empty before the run (pending=${p:-?} exit ${prc:-?})"
   S 'rm -f /storage/.config/raofflineproxy/last-flush' >/dev/null 2>&1
