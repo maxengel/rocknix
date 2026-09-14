@@ -159,3 +159,4 @@ The recipe: boot on GBA, A into its list, d-pad left five times (quick-select ju
 | `181-nes-system-view-after-jump-640x480-b3189ba85f.png` | RC-5 | 0.46 |
 
 The fix: ES `fix/svg-shared-size` `20824cc29` (a shared SVG is rasterised at the largest size any consumer asks for).
+- `174-tailscale-reauth-popup-switch-on-640x480-b3189ba85f-after.png` -- RC-5 `b3189ba85f`, the same walk: the popup and the switch as before, but `tailscale.up=1` on disk at once, `1` after the page closed, and after the reboot `tailscaled` **active** (uptime 46 s).
