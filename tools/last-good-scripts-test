@@ -75,6 +75,16 @@
 #      smb.conf) is still there when the backgrounded systemctl start reads
 #      the unit's ConditionPathExists; the pass still removes the marker and
 #      stops the service when the toggle is off (#166).
+#   r. the launch log carries no credential value: setsettings' Added setting
+#      and Fetch lines, runemu's Executing line and loginit header, and the
+#      shapes redact_credentials (001-functions) knows -- the key or flag
+#      kept, the value <redacted>, an empty value left empty, a value under
+#      a plain key untouched, and RetroArch's appendconfig still carrying the
+#      real password, since only the log is redacted (#176, D-INFRA-010).
+#   s. rocknix-evidence: no planted value survives into the archive or a
+#      snapshot page (a process list can carry --ra-password), the key names
+#      do, summary.txt says the filter ran and over how many files, and
+#      without the helper nothing is collected and no page is written (#176).
 #
 # The chksysconfig and 001-functions functions are lifted out of the files
 # under test and run in a fresh bash against temp paths, as wait-lock-test
@@ -124,6 +134,13 @@
 #                                             # p's pending and flushed checks
 #                                             # FAIL: the ctl before #173 has
 #                                             # neither verb (usage, exit 2)
+#     BASE_REF=28a80357ed tools/last-good-scripts-test --old
+#                                             # r and s FAIL: the scripts from
+#                                             # before #176 -- the password in
+#                                             # exec.log's Added setting and
+#                                             # Fetch lines, in the bundle and
+#                                             # in a snapshot page, and a
+#                                             # collect that runs with no filter
 #     tools/last-good-scripts-test            # PASSED
 #
 # One FAIL in m that names "the built image" is about the build root on this
@@ -1413,6 +1430,174 @@ if [ "${QHAVE_RA}" -eq 1 ]; then
 else
     check 1 "" "006-raofflineproxy is absent at ${BASE_REF}: the toggle had no boot pass"
 fi
+
+echo "  r. the launch log carries no credential value: setsettings' Added setting and Fetch lines, runemu's Executing line, the helper's shapes (#176, D-INFRA-010)"
+# setsettings' log, game_setting, clear_setting and add_setting lifted from
+# the script under test and run in a fresh bash against a temp log and
+# appendconfig, get_setting shimmed to hand out a planted password; runemu's
+# log and loginit the same way; redact_credentials lifted from 001-functions
+# (absent at a BASE_REF before #176, which is the leak: the old log() never
+# calls it and writes the value). The appendconfig must still carry the real
+# value -- RetroArch logs in with it; only the log is redacted. sed is the
+# image's busybox when a build root is here: the filter is one sed program,
+# and busybox's dialect (the I flag, {n,} bounds, ranges with !) is what runs
+# on the device.
+SS_REL=projects/ROCKNIX/packages/rocknix/sources/scripts/setsettings.sh
+RE_REL=projects/ROCKNIX/packages/rocknix/sources/scripts/runemu.sh
+R="${TMP}/r"; mkdir -p "${R}/repo" "${R}/log"
+src_of "${SS_REL}" "${R}/repo/setsettings.sh"; src_of "${RE_REL}" "${R}/repo/runemu.sh"
+bash -n "${R}/repo/setsettings.sh"; check $? "setsettings.sh parses (bash -n)" "setsettings.sh does not parse"
+bash -n "${R}/repo/runemu.sh"; check $? "runemu.sh parses (bash -n)" "runemu.sh does not parse"
+PLANT=PLANTEDpw7Qx; PLANT2=PLANTEDVALUE123
+# The guard's token formats (ghp_ and 36 characters, AKIA and 16, ...) are
+# built here from a run of one letter: the pre-push hook refuses a file that
+# holds one of those shapes as a literal, and rightly, so this file never does.
+Z="$(printf '%*s' 40 '' | tr ' ' 'Z')"; DASH5='-----'
+sed -n '/^function redact_credentials() {/,/^}/p' "${FN}" > "${R}/helper.sh"
+HAVE_HELPER=0; [ -s "${R}/helper.sh" ] && HAVE_HELPER=1
+{
+    cat "${R}/helper.sh"
+    sed -n '/^function log() {/,/^}/p; /^function game_setting() {/,/^}/p; /^function clear_setting() {/,/^}/p; /^function add_setting() {/,/^}/p' "${R}/repo/setsettings.sh"
+    cat <<EOS
+get_setting() { case "\$1" in retroachievements.password) echo "${PLANT}" ;; retroachievements.username) echo "qa-user" ;; *) echo 1 ;; esac; }
+LOGGING=verbose; LOG_DIR="${R}/log"; LOG_FILE=exec.log; TMP_CONFIG="${R}/log/append.cfg"; PLATFORM=nes; ROM="Mario (USA).zip"
+EOS
+} > "${R}/ss.sh"
+: > "${R}/log/exec.log"; : > "${R}/log/append.cfg"; rm -f "${R}/log/append.cfg.sed"
+PATH="${TMP}/bbin:${PATH}" bash -c ". '${R}/ss.sh'; add_setting retroachievements.password cheevos_password; add_setting retroachievements.username cheevos_username; add_setting none cheevos_custom_host 127.0.0.1:8080; add_setting none cheevos_token ''" 2>"${R}/ss.err"
+RLOG="${R}/log/exec.log"
+! grep -qF "${PLANT}" "${RLOG}"; check $? "setsettings: the planted password is nowhere in exec.log" "exec.log carries the password: $(grep -F "${PLANT}" "${RLOG}" | sed 's/^.*setsettings: //' | tr '\n' '|' | cut -c1-200) (#176)"
+grep -q 'Added setting: cheevos_password = "<redacted>"' "${RLOG}"; check $? "the Added setting line keeps the key: cheevos_password = \"<redacted>\"" "no such line; cheevos_password lines: $(grep cheevos_password "${RLOG}" | sed 's/^.*setsettings: //' | tr '\n' '|' | cut -c1-200)"
+grep -qF 'Fetch "retroachievements.password" "nes" "Mario (USA).zip"] (<redacted>)' "${RLOG}"; check $? "game_setting's Fetch line reads ] (<redacted>), the ROM's own parentheses notwithstanding" "Fetch lines: $(grep Fetch "${RLOG}" | sed 's/^.*setsettings: //' | tr '\n' '|' | cut -c1-200)"
+grep -q 'cheevos_username = "qa-user"' "${RLOG}" && grep -q 'cheevos_custom_host = "127.0.0.1:8080"' "${RLOG}" && grep -q 'cheevos_token = ""' "${RLOG}"; check $? "a value under a plain key is untouched, and an empty credential stays empty (cheevos_token = \"\")" "lines: $(grep -E 'cheevos_(username|custom_host|token)' "${RLOG}" | sed 's/^.*setsettings: //' | tr '\n' '|' | cut -c1-200)"
+grep -qxF "cheevos_password = \"${PLANT}\"" "${R}/log/append.cfg"; check $? "the appendconfig RetroArch reads still carries the real password" "append.cfg: $(tr '\n' '|' < "${R}/log/append.cfg" | cut -c1-200) -- the redaction reached the config, not only the log"
+[ ! -s "${R}/ss.err" ]; check $? "and the lifted functions ran without an error" "stderr: $(tr '\n' '|' < "${R}/ss.err" | cut -c1-200)"
+{
+    cat "${R}/helper.sh"
+    sed -n '/^function log() {/,/^}/p; /^function loginit() {/,/^}/p' "${R}/repo/runemu.sh"
+    echo "LOG=true; LOG_DIRECTORY='${R}/log'; LOG_FILE=runemu.log; SCRIPT_NAME=runemu.sh; EMULATOR=retroarch; PLATFORM=nes; CORE=fceumm; ROMNAME=/storage/roms/nes/game.zip"
+} > "${R}/re.sh"
+PATH="${TMP}/bbin:${PATH}" bash -c ". '${R}/re.sh'; loginit /storage/roms/nes/game.zip \"--token=${PLANT}\" -C fceumm >/dev/null; log 'Executing /usr/bin/gopher64 --fullscreen --ra-username qa-user --ra-password ${PLANT} game.z64' >/dev/null; log 'Executing retroarch -L core.so --appendconfig /tmp/.retroarch.cfg rom.zip' >/dev/null" 2>"${R}/re.err"
+RLOG="${R}/log/runemu.log"
+! grep -qF "${PLANT}" "${RLOG}"; check $? "runemu: the planted value is nowhere in its log (the Executing line, the loginit header)" "runemu's log carries it: $(grep -F "${PLANT}" "${RLOG}" | tr '\n' '|' | cut -c1-200) (#176)"
+grep -qF -- '--ra-password <redacted>' "${RLOG}" && grep -qF -- '--ra-username qa-user' "${RLOG}"; check $? "the Executing line keeps the flag and the username: --ra-username qa-user --ra-password <redacted>" "Executing lines: $(grep Executing "${RLOG}" | tr '\n' '|' | cut -c1-200)"
+grep -qF 'appendconfig /tmp/.retroarch.cfg rom.zip' "${RLOG}" && grep -q '^ARG1: /storage/roms/nes/game.zip' "${RLOG}"; check $? "a command line with no credential, and the header's ARG1, are untouched" "log: $(tr '\n' '|' < "${RLOG}" | cut -c1-240)"
+[ ! -s "${R}/re.err" ]; check $? "and runemu's lifted functions ran without an error" "stderr: $(tr '\n' '|' < "${R}/re.err" | cut -c1-200)"
+# The helper on its own, over every shape it claims (the pre-push guard's
+# SECRET_PATTERNS among them) and the controls that must survive. Absent at
+# the BASE_REF, that is one FAIL, not an empty output graded as clean.
+if [ "${HAVE_HELPER}" -eq 1 ]; then
+    cat > "${R}/shapes.in" <<EOS
+GET https://www.screenscraper.fr/api2/jeuInfos.php?devid=dev1&devpassword=${PLANT2}&softname=es&ssid=me&sspassword=PLANTEDss&crc=1
+https://retroachievements.org/API/API_GetUser.php?z=qa-user&y=${Z:0:20}
+http://127.0.0.1:8080/dorequest.php?r=login2&u=qa-user&p=${PLANT}
+http://127.0.0.1:8080/dorequest.php?r=patch&u=qa-user&t=PLANTEDtoken&g=1
+emulationstation[412]: runSystemCommand: setrootpass PLANTEDroot9
+Token = PLANTEDini
+RA_Password=PLANTEDmelon
+{"access_token": "${Z:0:20}", "expires": 3600}
+GITHUB_TOKEN=ghp_${Z:0:36}
+key github_pat_${Z:0:22} AKIA${Z:0:16} xoxb-${Z:0:12} sk-${Z:0:26} disk-usage
+${DASH5}BEGIN RSA PRIVATE KEY${DASH5}
+MIIEowIBAAKCAQEAPLANTEDPEM
+${DASH5}END RSA PRIVATE KEY${DASH5}
+rclone: https://max:PLANTEDurl@dav.example.org/remote.php
+wifi.key=PLANTEDpsk psk="PLANTEDpsk2"
+AchievementsUserName = qa-user hotkey_enable = "true" cheevos_password = "" input_player1_a = "x"
+EOS
+    PATH="${TMP}/bbin:${PATH}" bash -c ". '${R}/helper.sh'; redact_credentials" < "${R}/shapes.in" > "${R}/shapes.out" 2>"${R}/shapes.err"
+    [ "$(grep -c PLANTED "${R}/shapes.out")" -eq 0 ] && ! grep -q 'ZZZZZZZZ' "${R}/shapes.out"; check $? "the helper: no planted value survives any of its $(wc -l < "${R}/shapes.in") shapes (ScreenScraper pair, RA p=/t=/y=, setrootpass, INI Token, JSON, the guard's token formats, a PEM block, a URL password, a PSK)" "survivors: $(grep -n 'PLANTED\|ZZZZZZZZ' "${R}/shapes.out" | tr '\n' '|' | cut -c1-300)"
+    grep -qF 'devpassword=<redacted>&softname=es&ssid=me&sspassword=<redacted>&crc=1' "${R}/shapes.out" && grep -qF 'z=qa-user&y=<redacted>' "${R}/shapes.out" && grep -qF 'u=qa-user&p=<redacted>' "${R}/shapes.out" && grep -qF 'setrootpass <redacted>' "${R}/shapes.out" && grep -qxF 'GITHUB_TOKEN=<redacted>' "${R}/shapes.out" && grep -qF 'key github_pat_<redacted> AKIA<redacted> xoxb-<redacted> sk-<redacted> disk-usage' "${R}/shapes.out" && grep -qF 'https://max:<redacted>@dav' "${R}/shapes.out"; check $? "and each keeps what names it: devpassword=<redacted>, &y=<redacted>, &p=<redacted>, setrootpass <redacted>, GITHUB_TOKEN=<redacted> (the key rule, before the ghp_ one), github_pat_<redacted>, max:<redacted>@" "output: $(tr '\n' '|' < "${R}/shapes.out" | cut -c1-400)"
+    grep -qF 'AchievementsUserName = qa-user hotkey_enable = "true" cheevos_password = "" input_player1_a = "x"' "${R}/shapes.out" && grep -qF '&softname=es&ssid=me&' "${R}/shapes.out" && grep -qF 'disk-usage' "${R}/shapes.out"; check $? "controls survive: a username, hotkey_enable, an empty cheevos_password, a URL's other parameters, disk-usage" "controls line: $(grep -F 'AchievementsUserName' "${R}/shapes.out" | cut -c1-200); disk-usage: $(grep -c disk-usage "${R}/shapes.out")"
+    PATH="${TMP}/bbin:${PATH}" bash -c ". '${R}/helper.sh'; redact_credentials" < "${R}/shapes.out" > "${R}/shapes.out2" 2>/dev/null
+    cmp -s "${R}/shapes.out" "${R}/shapes.out2"; check $? "a second pass changes nothing (the bundle filters a log the launcher already filtered)" "the second pass changed the output: $(diff "${R}/shapes.out" "${R}/shapes.out2" | head -3 | tr '\n' '|')"
+    [ ! -s "${R}/shapes.err" ]; check $? "the sed program is accepted by the sed in use ($([ -n "${BB}" ] && echo "the image's busybox" || echo "the host's"))" "sed said: $(tr '\n' '|' < "${R}/shapes.err" | cut -c1-200)"
+else
+    check 1 "" "redact_credentials is absent from 001-functions at ${BASE_REF}: nothing filtered the launch log (#176)"
+fi
+
+echo "  s. rocknix-evidence: every file in the bundle has been through the credential filter, summary.txt says so, and without the filter nothing is collected (#176)"
+# The script whole under bwrap: a fake /storage whose .cache/log is also
+# /var/log (the device's bind mount), fixture logs seeded with the values
+# case r plants -- exec.log's Added setting and Fetch lines, a gopher64
+# command line, a ScreenScraper URL, es_log.txt's setrootpass line -- shims
+# for journalctl (which hands back the same two shapes as journal lines),
+# dmesg, sysctl, top (a process list with --ra-password on it) and logger,
+# and /etc/profile.d/001-functions holding the lifted helper: empty at a
+# BASE_REF before #176, which is the state the old script ran in. The
+# archive is opened on the host and every planted value counted across
+# every file; then the helper file is emptied and both verbs run again.
+EV_REL=projects/ROCKNIX/packages/rocknix/sources/scripts/rocknix-evidence
+S="${TMP}/s"; SS="${S}/storage"; mkdir -p "${SS}/.cache/log" "${SS}/.cache/cloud_sync" "${S}/repo" "${S}/shim" "${S}/etc" "${S}/out" "${S}/x"
+src_of "${EV_REL}" "${S}/repo/rocknix-evidence"
+bash -n "${S}/repo/rocknix-evidence"; check $? "rocknix-evidence parses (bash -n)" "rocknix-evidence does not parse"
+cp "${R}/helper.sh" "${S}/etc/001-functions"
+printf 'NAME="ROCKNIX"\nVERSION="test"\nBUILD_ID=test\n' > "${S}/etc/os-release"
+cat > "${SS}/.cache/log/exec.log" <<EOS
+Emulation Run Log - Started at Sun Sep 14 03:00:00 UTC 2026
+Sun Sep 14 03:00:00 2026: setsettings: Added setting: cheevos_enable = "true"
+Sun Sep 14 03:00:00 2026: setsettings: Fetch "retroachievements.password" "nes" "Mario (USA).zip"] (${PLANT})
+Sun Sep 14 03:00:00 2026: setsettings: Added setting: cheevos_password = "${PLANT}"
+runemu.sh: Executing /usr/bin/gopher64 --ra-username qa-user --ra-password ${PLANT} game.z64
+GET https://www.screenscraper.fr/api2/jeuInfos.php?devid=dev1&devpassword=${PLANT2}&softname=es
+EOS
+touch -d '2026-09-14 02:59:00' "${SS}/.cache/log/exec.log"
+printf 'lvl0:\trunSystemCommand: setrootpass PLANTEDroot9\nlvl0:\tScreenScraper developer pair alone: HTTP 200\n' > "${SS}/.cache/log/es_log.txt"
+printf '[2026-09-14 03:00:00] [INFO] [cloud_backup] Completed.\n' > "${SS}/.cache/log/cloud_sync.log"
+printf '1757800000 0\n' > "${SS}/.cache/cloud_sync/last-settings-backup"
+cat > "${S}/shim/journalctl" <<EOS
+#!/bin/sh
+case "\$*" in
+    *--list-boots*) echo " 0 0123456789abcdef Sun 2026-09-14 02:00:00 UTC" ;;
+    -k*|*" -k "*) echo "[    0.000000] Linux version test" ;;
+    *) echo "2026-09-14T03:00:00+0000 dev emulationstation[412]: runSystemCommand: setrootpass PLANTEDroot9"
+       echo "2026-09-14T03:00:01+0000 dev raofflineproxy[9]: GET /dorequest.php?r=login2&u=qa-user&p=${PLANT}"
+       echo "2026-09-14T03:00:02+0000 dev chksysconfig[7]: system.cfg is usable" ;;
+esac
+exit 0
+EOS
+printf '#!/bin/sh\necho "[    1.000000] dmesg line"\n' > "${S}/shim/dmesg"
+printf '#!/bin/sh\necho 1\n' > "${S}/shim/sysctl"
+printf '#!/bin/sh\necho "  PID USER  COMMAND"\necho "  412 root  /usr/bin/gopher64 --fullscreen --ra-username qa-user --ra-password %s game.z64"\n' "${PLANT}" > "${S}/shim/top"
+printf '#!/bin/sh\necho "logger $*" >&2\n' > "${S}/shim/logger"
+chmod +x "${S}/shim"/*
+SETC=(--tmpfs /etc); for e in /etc/ld.so.cache /etc/alternatives /etc/passwd /etc/group; do [ -e "${e}" ] && SETC+=(--ro-bind "${e}" "${e}"); done
+SBB=(); SPATH="/shim:/usr/bin:/bin"
+if [ -n "${BB}" ]; then SBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB}" "${BB}"); SPATH="/shim:/bbin:/usr/bin:/bin"; fi
+ev() { # <verb>: rc in $RC, output in $S/out/run
+    RC=$( ( bwrap --die-with-parent --tmpfs / --tmpfs /usr "${USR_BINDS[@]}" "${SBB[@]}" \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        "${SETC[@]}" --ro-bind "${S}/etc/os-release" /etc/os-release --ro-bind "${S}/etc/001-functions" /etc/profile.d/001-functions \
+        --bind "${SS}" /storage --bind "${SS}/.cache/log" /var/log --ro-bind "${S}/repo" /repo --ro-bind "${S}/shim" /shim \
+        --dev /dev --proc /proc --tmpfs /tmp --setenv PATH "${SPATH}" \
+        bash /repo/rocknix-evidence "$@" > "${S}/out/run" 2>&1; echo $? ) 2>/dev/null )
+}
+EVD="${SS}/.cache/log/evidence"
+ev snapshot
+[ "${RC}" -eq 0 ] && [ -s "${EVD}/state.0.txt" ]; check $? "snapshot wrote a page (rc ${RC})" "rc ${RC}; page: $([ -e "${EVD}/state.0.txt" ] && echo present || echo absent); output: $(tr '\n' '|' < "${S}/out/run" | cut -c1-200)"
+! grep -qF "${PLANT}" "${EVD}/state.0.txt" 2>/dev/null && grep -qF -- '--ra-password <redacted>' "${EVD}/state.0.txt" 2>/dev/null; check $? "the page's process list reads --ra-password <redacted>" "the page: $(grep -F 'ra-password' "${EVD}/state.0.txt" 2>/dev/null | tr '\n' '|' | cut -c1-200) (#176)"
+ev collect
+ARCH="$(ls "${EVD}"/*-evidence.tar.gz 2>/dev/null | head -1)"
+[ "${RC}" -eq 0 ] && [ -n "${ARCH}" ]; check $? "collect wrote an archive (rc ${RC}, $(basename "${ARCH:-none}"))" "rc ${RC}; archives: $(ls "${EVD}" 2>/dev/null | tr '\n' ' '); output: $(tr '\n' '|' < "${S}/out/run" | cut -c1-200)"
+rm -rf "${S}/x"; mkdir -p "${S}/x"; [ -n "${ARCH}" ] && tar -xzf "${ARCH}" -C "${S}/x" 2>/dev/null
+XD="$(ls -d "${S}"/x/*-evidence 2>/dev/null | head -1)"
+NFILES=$(find "${S}/x" -type f | wc -l)
+SURV="$(grep -rn -e "${PLANT}" -e "${PLANT2}" -e PLANTEDroot9 "${S}/x" 2>/dev/null)"
+[ "${NFILES}" -gt 0 ] && [ -z "${SURV}" ]; check $? "no planted value anywhere in the bundle (grep -c 0 across ${NFILES} files: exec.log, es_log.txt, both journals, the snapshot page, the summary)" "survivors: $(echo "${SURV}" | sed "s#${S}/x/##" | tr '\n' '|' | cut -c1-300) (#176)"
+grep -qF 'cheevos_password = "<redacted>"' "${XD}/logs/exec.log" 2>/dev/null && grep -qF '] (<redacted>)' "${XD}/logs/exec.log" 2>/dev/null && grep -qF 'devpassword=<redacted>' "${XD}/logs/exec.log" 2>/dev/null; check $? "exec.log in the bundle keeps its keys: cheevos_password = \"<redacted>\", ] (<redacted>), devpassword=<redacted>" "logs/exec.log: $(tr '\n' '|' < "${XD}/logs/exec.log" 2>/dev/null | cut -c1-300)"
+grep -qF 'setrootpass <redacted>' "${XD}/logs/es_log.txt" 2>/dev/null && grep -qF 'setrootpass <redacted>' "${XD}/journal-previous-boot.txt" 2>/dev/null && grep -qF 'u=qa-user&p=<redacted>' "${XD}/journal-previous-boot.txt" 2>/dev/null; check $? "es_log.txt and the journal read setrootpass <redacted> and p=<redacted>" "es_log: $(tr '\n' '|' < "${XD}/logs/es_log.txt" 2>/dev/null | cut -c1-120); journal: $(tr '\n' '|' < "${XD}/journal-previous-boot.txt" 2>/dev/null | cut -c1-200)"
+grep -qF 'cheevos_enable = "true"' "${XD}/logs/exec.log" 2>/dev/null && grep -qF 'ScreenScraper developer pair alone: HTTP 200' "${XD}/logs/es_log.txt" 2>/dev/null && grep -qF 'Completed.' "${XD}/logs/cloud_sync.log" 2>/dev/null; check $? "and lines with no credential are as they were" "exec: $(grep -c cheevos_enable "${XD}/logs/exec.log" 2>/dev/null); es_log: $(grep -c 'HTTP 200' "${XD}/logs/es_log.txt" 2>/dev/null); cloud: $(grep -c Completed "${XD}/logs/cloud_sync.log" 2>/dev/null)"
+grep -q '^credential filter: every file in this archive has passed through redact_credentials' "${XD}/summary.txt" 2>/dev/null && grep -qE '^credential filter: [1-9][0-9]* file\(s\) rewritten, 0 left out$' "${XD}/summary.txt" 2>/dev/null; check $? "summary.txt says the filter ran and over how many files ($(grep -oE '^credential filter: [0-9]+ file\(s\) rewritten, [0-9]+ left out' "${XD}/summary.txt" 2>/dev/null | sed 's/^credential filter: //'))" "summary.txt: $(grep -i 'credential' "${XD}/summary.txt" 2>/dev/null | tr '\n' '|' | cut -c1-200) -- a reader cannot tell whether the archive was filtered (#176)"
+[ "$(stat -c %Y "${XD}/logs/exec.log" 2>/dev/null)" = "$(stat -c %Y "${SS}/.cache/log/exec.log")" ]; check $? "the filtered copy keeps the log's mtime (when it was last written is evidence)" "mtime $(stat -c %Y "${XD}/logs/exec.log" 2>/dev/null) against the log's $(stat -c %Y "${SS}/.cache/log/exec.log")"
+# Without the helper: no page, no archive, and the reason said.
+: > "${S}/etc/001-functions"; rm -f "${EVD}"/state.*.txt
+ev snapshot
+[ ! -e "${EVD}/state.0.txt" ]; check $? "without the helper, snapshot writes no page (rc ${RC})" "a page was written with no filter in place: $(grep -F 'ra-password' "${EVD}/state.0.txt" 2>/dev/null | cut -c1-120) (#176)"
+NARCH_BEFORE=$(ls "${EVD}"/*-evidence.tar.gz 2>/dev/null | wc -l); sleep 1
+ev collect
+NARCH_AFTER=$(ls "${EVD}"/*-evidence.tar.gz 2>/dev/null | wc -l)
+[ "${RC}" -ne 0 ] && [ "${NARCH_AFTER}" -eq "${NARCH_BEFORE}" ] && grep -q 'nothing collected' "${S}/out/run"; check $? "without the helper, collect refuses (rc ${RC}), writes no archive and says why: $(grep -o "Couldn't load the credential filter[^.]*" "${S}/out/run" | head -1)" "rc ${RC}; archives before ${NARCH_BEFORE}, after ${NARCH_AFTER}; output: $(tr '\n' '|' < "${S}/out/run" | cut -c1-200) -- collect went ahead with no filter (#176)"
+[ -z "$(ls -d "${EVD}"/*-evidence 2>/dev/null)" ]; check $? "and leaves no half-built directory behind" "left: $(ls -d "${EVD}"/*-evidence 2>/dev/null | tr '\n' ' ')"
 
 echo
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
