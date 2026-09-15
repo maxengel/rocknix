@@ -857,3 +857,27 @@ So, in every proof script:
 - **A named frame proves nothing about its contents.** Open one before grading a phase.
 
 The session scripts carry these as `no_game` and `menu_open` (`rc6/guards.sh`).
+
+## A settings change made from the shell is invisible to the running interface
+
+The interface loads `system.cfg` once at start. `set_setting` from ssh changes the
+file, and every later read the interface makes still sees the old value, so a
+proof that flips a toggle from the shell and then drives the interface is
+driving yesterday's setting. 2026-09-15, RC-11 build 2: the proxy toggle was
+turned on from the shell while the summary proofs ran; the interface, started
+before that, still saw it off, opened a NOT CONNECTED dialog instead of the
+offline list -- and the timer graded the dialog PASS because it held still.
+
+- After `set_setting` on a guest, restart the interface (`systemctl restart
+  essway`) or reboot before pressing anything that reads the setting. The
+  proof scripts' `ensure_toggle_on` (`rc6/guards.sh`) compares `system.cfg`'s
+  mtime with the interface process's start and restarts when the file is newer.
+- **A screen that holds still is not the screen you asked for.** Grade the path,
+  not the stillness: the offline summary is proven by the interface's own
+  `raofflineproxy-ctl summary` call in its log (a dialog asks nothing), the
+  slot launch by `-e <slot>` in `exec.log`, a card by its words in the log.
+  A frame is the evidence for a human; the log line is the evidence for a check.
+- `set_link off` leaves the guest's address in place, so the interface still
+  thinks it has a network; `nmcli dev disconnect eth0` over the serial console
+  is what "Wi-Fi off" means on a device. ssh dies with the link: read through
+  `tools/vm-serial` until `set_link on` and `nmcli dev connect eth0`.
