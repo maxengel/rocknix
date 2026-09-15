@@ -110,6 +110,18 @@
 #      (006, PL-02), the configured account's cached sign-in (007, PL-23),
 #      the log upload gated off (008, PL-12), a badge temp name per thread
 #      (009, PL-33).
+#   u. wifictl current, saved and forget (#191), the three verbs the network
+#      rows read NetworkManager through: saved lists every wireless profile
+#      as <name><TAB>active|saved, the one in use first, a wired profile
+#      never, a colon in a name unescaped as nmcli -t escapes it; current
+#      prints the joined network's SSID, nothing and exit 1 when joined to
+#      none; forget deletes exactly the named profile -- a name with a space
+#      and a colon -- and says disconnected on a second line when it was the
+#      one in use; a name that is not a remembered wireless network, an
+#      empty one, or a NetworkManager that does not answer is a refusal
+#      with nothing printed and nothing deleted, and saved and current tell
+#      "no answer" from "none" (exit 1 and 2) rather than reading a silence
+#      as an empty list.
 #
 # The chksysconfig and 001-functions functions are lifted out of the files
 # under test and run in a fresh bash against temp paths, as wait-lock-test
@@ -176,6 +188,10 @@
 #                                             # t's #188 and #189 checks FAIL:
 #                                             # the ctl from before the DONE
 #                                             # verdict and the progress file
+#     BASE_REF=655f103cc5 tools/last-good-scripts-test --old
+#                                             # u FAILS whole: the wifictl
+#                                             # from before #191 has none of
+#                                             # current, saved and forget
 #     tools/last-good-scripts-test            # PASSED
 #
 # One FAIL in m that names "the built image" is about the build root on this
@@ -196,6 +212,7 @@ CHK_REL=projects/ROCKNIX/packages/rocknix/sources/scripts/chksysconfig
 BT_REL=projects/ROCKNIX/packages/rocknix/sources/scripts/backuptool
 FN_REL=projects/ROCKNIX/packages/rocknix/profile.d/001-functions
 NBS_REL=projects/ROCKNIX/packages/sysutils/systemd/scripts/network-base-setup
+WIFICTL_REL=projects/ROCKNIX/packages/rocknix/sources/scripts/wifictl
 RCLONE_REL=projects/ROCKNIX/packages/network/rclone/sources
 
 command -v bwrap >/dev/null || { echo "needs bubblewrap (bwrap)" >&2; exit 2; }
@@ -2277,6 +2294,92 @@ while IFS= read -r line; do
     esac
 done < "${T}/predicates.out"
 fi
+
+echo "  u. wifictl current, saved and forget read NetworkManager, not the setting; forget says when it dropped the connection (#191)"
+# wifictl whole, inside bwrap: a fake wlan0 under /sys/class/net (the script
+# exits 0 without an adapter), a stub /etc/profile with the two settings
+# helpers, and an nmcli shim that answers from a profile table the checks
+# edit -- two wireless profiles, "Home Wi-Fi" in use and "Cafe: Guest" saved
+# (a space and a colon, which nmcli -t escapes as \:), and a wired one that
+# must never be listed. connection delete removes the named row and records
+# the name it was given in /run/deleted; /run/nm-down makes every call fail,
+# as a NetworkManager that has stopped answering does (fork #102). The
+# image's busybox applets (sed, awk, head, cut) stand in front of the
+# host's, as in m: the pipelines under test run under them on the device.
+U="${TMP}/u"; mkdir -p "${U}/shim" "${U}/repo" "${U}/run"
+src_of "${WIFICTL_REL}" "${U}/repo/wifictl"
+printf 'get_setting() { :; }\nset_setting() { :; }\nexport PATH=/shim:/bbin:/usr/bin:/bin\n' > "${U}/profile"
+cat > "${U}/shim/nmcli" <<'EOS'
+#!/bin/bash
+# NetworkManager as wifictl asks it: the profiles in /run/profiles (name,
+# type, active -- tab-separated), escaped as nmcli -t escapes them.
+[ -e /run/nm-down ] && { echo "Error: NetworkManager is not running." >&2; exit 8; }
+TAB=$(printf '\t')
+esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/:/\\:/g'; }
+case "$*" in
+  *"connection show"*)
+    while IFS="${TAB}" read -r name type active; do
+      printf '%s:%s:%s\n' "$(esc "${name}")" "${type}" "${active}"
+    done < /run/profiles ;;
+  *"wifi list"*)
+    # The access points in range: every remembered wireless network, the
+    # one in use marked, and a neighbour nobody saved.
+    while IFS="${TAB}" read -r name type active; do
+      case "${type}" in *wireless*) printf '%s:%s\n' "${active}" "$(esc "${name}")" ;; esac
+    done < /run/profiles
+    echo "no:Neighbour" ;;
+  *"connection delete id "*)
+    all="$*"; name="${all#*connection delete id }"
+    printf '%s\n' "${name}" >> /run/deleted
+    cut -f1 /run/profiles | grep -q -x -F -- "${name}" || { echo "Error: unknown connection '${name}'." >&2; exit 10; }
+    NAME="${name}" awk -F'\t' '$1 != ENVIRON["NAME"]' /run/profiles > /run/profiles.new && mv /run/profiles.new /run/profiles ;;
+  *) echo "nmcli shim: unexpected call: $*" >&2; exit 2 ;;
+esac
+EOS
+chmod +x "${U}/shim/nmcli"
+UBB=(); if [ -n "${BB}" ]; then UBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB}" "${BB}"); fi
+wctl() { # <verb> [name]: wifictl whole; stdout to $OUT, stderr to $U/err, rc in $RC
+    RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${UBB[@]}" \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${U}/profile" /etc/profile \
+        --ro-bind "${U}/shim" /shim --ro-bind "${U}/repo" /repo --bind "${U}/run" /run \
+        --dir /sys/class/net/wlan0 --dev /dev --proc /proc --tmpfs /tmp \
+        bash /repo/wifictl "$@" > "${OUT}" 2> "${U}/err"; echo $? ) 2>/dev/null )
+}
+OUT="${U}/out"
+uprofiles() { # the table as the checks start: Home Wi-Fi in use, Cafe: Guest saved, a wired profile
+    printf 'Home Wi-Fi\t802-11-wireless\tyes\nCafe: Guest\t802-11-wireless\tno\nWired connection 1\t802-3-ethernet\tno\n' > "${U}/run/profiles"
+    : > "${U}/run/deleted"; rm -f "${U}/run/nm-down"
+}
+uout() { tr '\t\n' '~|' < "${OUT}"; }
+uprofiles
+wctl saved
+[ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "$(printf 'Home Wi-Fi\tactive\nCafe: Guest\tsaved')" ]; check $? "saved: the two wireless profiles as name<TAB>active|saved, the one in use first, the colon unescaped, the wired profile left out (rc ${RC})" "rc ${RC}; printed: '$(uout)'; stderr: $(head -c 200 "${U}/err" | tr '\n' '|')"
+wctl current
+[ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "Home Wi-Fi" ]; check $? "current: the joined network's SSID, Home Wi-Fi -- NetworkManager's answer, not the setting (rc ${RC})" "rc ${RC}; printed: '$(uout)'; stderr: $(head -c 200 "${U}/err" | tr '\n' '|')"
+wctl forget "Home Wi-Fi"
+[ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "$(printf 'forgotten\ndisconnected')" ] && [ "$(cat "${U}/run/deleted")" = "Home Wi-Fi" ]; check $? "forget of the network in use: forgotten, then disconnected on a second line; exactly that profile deleted (rc ${RC})" "rc ${RC}; printed: '$(uout)'; deleted: '$(tr '\n' '|' < "${U}/run/deleted")'"
+wctl current
+[ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ]; check $? "current with no network joined: nothing printed, exit 1" "rc ${RC}; printed: '$(uout)'"
+wctl saved
+[ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "$(printf 'Cafe: Guest\tsaved')" ]; check $? "saved after that forget: the one remaining network, saved" "rc ${RC}; printed: '$(uout)'"
+uprofiles
+wctl forget "Cafe: Guest"
+[ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "forgotten" ] && [ "$(cat "${U}/run/deleted")" = "Cafe: Guest" ] && grep -q '^Home Wi-Fi' "${U}/run/profiles"; check $? "forget of a saved network whose name carries a space and a colon: forgotten alone, exactly that profile deleted, the one in use kept" "rc ${RC}; printed: '$(uout)'; deleted: '$(tr '\n' '|' < "${U}/run/deleted")'; left: $(cut -f1 "${U}/run/profiles" | tr '\n' '|')"
+uprofiles
+wctl forget "Nowhere"
+[ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ] && [ ! -s "${U}/run/deleted" ]; check $? "forget of a name nobody remembers: nothing printed, exit 1, nothing deleted" "rc ${RC}; printed: '$(uout)'; deleted: '$(tr '\n' '|' < "${U}/run/deleted")'"
+wctl forget "Wired connection 1"
+[ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ] && [ ! -s "${U}/run/deleted" ]; check $? "forget of the wired profile: refused -- not a network a player joined" "rc ${RC}; printed: '$(uout)'; deleted: '$(tr '\n' '|' < "${U}/run/deleted")'"
+wctl forget ""
+[ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ] && [ ! -s "${U}/run/deleted" ]; check $? "forget with no name: refused, nothing deleted" "rc ${RC}; printed: '$(uout)'; deleted: '$(tr '\n' '|' < "${U}/run/deleted")'"
+touch "${U}/run/nm-down"
+wctl saved
+[ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ]; check $? "saved with NetworkManager not answering: nothing printed, exit 1 -- not an empty list" "rc ${RC}; printed: '$(uout)'"
+wctl current
+[ "${RC}" -eq 2 ] && [ ! -s "${OUT}" ]; check $? "current with NetworkManager not answering: exit 2, not 'joined to none'" "rc ${RC}; printed: '$(uout)'"
+wctl forget "Home Wi-Fi"
+[ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ] && [ ! -s "${U}/run/deleted" ]; check $? "forget with NetworkManager not answering: refused, nothing deleted" "rc ${RC}; printed: '$(uout)'; deleted: '$(tr '\n' '|' < "${U}/run/deleted")'"
 
 echo
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

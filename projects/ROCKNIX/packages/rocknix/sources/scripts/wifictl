@@ -14,6 +14,15 @@ NMCLI="$(command -v nmcli 2>/dev/null)"
 ### Usage:
 ###     wifictl command [ssid] [psk]
 ###
+### For the interface's network rows (fork #191), reading NetworkManager
+### rather than the wifi.ssid setting:
+###     wifictl current           the network joined now; nothing and exit 1 when none,
+###                               exit 2 when NetworkManager could not be asked
+###     wifictl saved             the remembered networks, one per line: <name><TAB>active|saved
+###     wifictl forget <name>     forget one: prints "forgotten", then "disconnected" on a
+###                               second line when it was the one in use; exit 1, nothing
+###                               printed, when it is not a remembered network or the delete failed
+###
 
 IWD_AP_CFG_DIR="/storage/.cache/iwd/ap"
 WIFI_TYPE=$(get_setting wifi.adhoc.enabled)
@@ -144,6 +153,70 @@ pin_wifi() {
     done
 }
 
+# What NetworkManager remembers and what it is joined to, for the interface
+# (fork #191). The setting wifi.ssid is the network the player configured
+# last; NetworkManager keeps a profile for every network the device has
+# joined and autoconnects to whichever remembered one is in range, so the
+# two are not the same network -- and NETWORK SETTINGS showed the setting as
+# though it were the connection. These read NetworkManager itself.
+#
+# nmcli -t separates fields with ':' and escapes a ':' or '\' inside a value
+# with a backslash. A network's name can carry either, so the fields that
+# cannot (TYPE, ACTIVE) are taken from the right, and the name is unescaped
+# once it stands alone.
+nm_unescape() {
+  sed 's/\\\(.\)/\1/g'
+}
+
+# The SSID the device is joined to now: the one access point NetworkManager
+# marks active, from the list it already holds (no rescan). Nothing and exit
+# 1 when the device is joined to none; exit 2 when NetworkManager could not
+# be asked, so a caller cannot read a silence as "not connected".
+current_wifi() {
+  local aps ssid
+  aps=$("${NMCLI}" -t -f ACTIVE,SSID device wifi list ifname "${WIFI_DEV}" --rescan no 2>/dev/null) || return 2
+  ssid=$(printf '%s\n' "${aps}" | sed -n 's/^yes://p' | head -n 1 | nm_unescape)
+  [ -n "${ssid}" ] || return 1
+  printf '%s\n' "${ssid}"
+}
+
+# Every network NetworkManager remembers: one line per wireless profile,
+# <name><TAB>active or <name><TAB>saved, in nmcli's order (the one in use
+# first). Wired and other profiles are not networks a player joined and are
+# left out. Exit 1 with nothing printed when NetworkManager could not be
+# asked -- an empty list and no list are different answers.
+saved_wifi() {
+  local profiles
+  profiles=$("${NMCLI}" -t -f NAME,TYPE,ACTIVE connection show 2>/dev/null) || return 1
+  printf '%s\n' "${profiles}" |
+    awk -F: 'NF >= 3 && $(NF-1) ~ /wireless/ {
+      name = $1; for (i = 2; i <= NF - 2; i++) name = name ":" $i
+      print name "\t" ($NF == "yes" ? "active" : "saved")
+    }' | nm_unescape
+}
+
+# Forget a remembered network: delete its profile, and say when that dropped
+# the connection. Prints "forgotten" once the profile is gone, then
+# "disconnected" on a second line when it was the one in use --
+# NetworkManager deactivates a profile as it deletes it, so the device is
+# off that network from this moment (autoconnect may then join another
+# remembered one in range). A name that is not a remembered wireless
+# network, a NetworkManager that cannot be asked, or a delete that fails:
+# nothing printed and exit 1, so a caller cannot read a refusal as done.
+# The name is matched whole, through the environment rather than awk -v,
+# which would read backslashes in it as escapes.
+forget_wifi() {
+  local name="${1}" rows state
+  [ -n "${name}" ] || return 1
+  rows=$(saved_wifi) || return 1
+  state=$(printf '%s\n' "${rows}" | NAME="${name}" awk -F'\t' '$1 == ENVIRON["NAME"] { print $2 }')
+  [ -n "${state}" ] || return 1
+  "${NMCLI}" connection delete id "${name}" >/dev/null 2>&1 || return 1
+  echo "forgotten"
+  case "${state}" in *active*) echo "disconnected" ;; esac
+  return 0
+}
+
 has_ap_mode() {
   wait_for_wifi
 
@@ -204,5 +277,14 @@ case "${1}" in
     "${NMCLI}" dev wifi rescan ifname "${WIFI_DEV}" 2>/dev/null
     sleep 2
     list_wifi
+    ;;
+  current)
+    current_wifi
+    ;;
+  saved)
+    saved_wifi
+    ;;
+  forget)
+    forget_wifi "${2}"
     ;;
 esac
