@@ -835,3 +835,25 @@ queued and lands when the block ends, racing whatever opens then -- the #174 wal
 second press landed on the switch instead of the popup and turned it off again, a
 "regression" the journal (`tailscaled` started at 34.7 s, stopped at 42.5 s) refuted.
 Never send a second press into a known block; wait it out.
+
+## A game in the foreground swallows a whole proof run, and every check still "reads"
+
+2026-09-15, the RC-10 run: the walk's first START did not open the main menu (frame
+`01-main-menu.png` showed the carousel), so the presses meant for GAME SETTINGS walked the
+carousel, opened a game's save state manager and pressed LAUNCH. For the next hour every
+"captured" frame was the game, two timers measured the game's animation and reported
+176 s and 2.6 s, and greps of the interface's log returned zeros -- all of it graded as
+if it were the interface. Nothing in the run noticed.
+
+So, in every proof script:
+
+- **Before any walk, `pgrep -f '^/usr/bin/retroarch'` on the guest must be 0.** A hit is a
+  FAIL of the phase, not a thing to work around: kill it, say so, and let the phase fail.
+- **A press that must change the screen is proven to have changed it.** Opening the main
+  menu is a frame before START and a frame after, compared; three tries, then stop the
+  walk. `wait-for-change` alone is not that proof -- a carousel that moved is also a change.
+- **After the walk, `pgrep` again.** A game that appeared during the walk means the walk
+  went somewhere else; the frames after that point say nothing about the interface.
+- **A named frame proves nothing about its contents.** Open one before grading a phase.
+
+The session scripts carry these as `no_game` and `menu_open` (`rc6/guards.sh`).
