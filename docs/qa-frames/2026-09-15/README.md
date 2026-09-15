@@ -1,6 +1,6 @@
 # QA frames, 2026-09-15 -- RC-11 on GENERIC_X64 guest d (640x480)
 
-Builds: RC-11 build 1 `66bfd20330` (ES `137309b7d`) and build 2 `a6d032bf5e` (ES `8d5ad005d`, adds #199). RC-12 build 1 `2514d317f7` (ES `7dd9de6a1`): the maintainer's two calls on the RC-11 round (#191, D-UI-061/062), on guest d upgraded in place from RC-11 build 2. The build is the last
+Builds: RC-11 build 1 `66bfd20330` (ES `137309b7d`) and build 2 `a6d032bf5e` (ES `8d5ad005d`, adds #199). RC-12 build 1 `2514d317f7` (ES `7dd9de6a1`): the maintainer's two calls on the RC-11 round (#191, D-UI-061/062), on guest d upgraded in place from RC-11 build 2. RC-12 build 2 `0242500826` (ES `e7d5029fb`, `wifictl join`): the phone paradigm for Wi-Fi (#201, D-UI-063/064), on guest d upgraded in place again, the `wifictl` stand-in answering two saved networks (Home Wi-Fi in use, Cafe: Guest) and three in range (those two and Library). The build is the last
 token of each file name. Frames that showed the QA account's name (the summary page's title, RetroArch's login toast) carry a
 black box over it; nothing else is edited. Taken with `tools/vm-visual-qa` over the QEMU monitor; the tool's own press-and-
 screenshot latency is about 1.7 s and sits inside every timing quoted in the QA log.
@@ -29,6 +29,16 @@ screenshot latency is about 1.7 s and sits inside every timing quoted in the QA 
 | `191-manage-saved-networks-640x480-2514d317f7.png` | #191 (RC-12) | MANAGE SAVED NETWORKS: group `SAVED NETWORKS`, `Home Wi-Fi  IN USE`, `Cafe: Guest` |
 | `191-network-settings-other-network-fr-640x480-2514d317f7.png` | #191 (RC-12) | The other-network row in French: `CONNECTÉ À Cafe: Guest`; the row `GÉRER LES RÉSEAUX ENREGISTRÉS` |
 | `191-manage-saved-networks-fr-640x480-2514d317f7.png` | #191 (RC-12) | The page in French: `GÉRER LES RÉSEAUX ENREGISTRÉS`, `RÉSEAUX ENREGISTRÉS`, `UTILISÉ` beside the one in use |
+| `201-network-settings-row-640x480-0242500826.png` | #201 | NETWORK SETTINGS: WI-FI SSID's value is the network the device is on, `Home Wi-Fi`, with an arrow; no line under the label (D-UI-063) |
+| `201-picker-640x480-0242500826.png` | #201 | A on the row: WI-FI NETWORKS -- `Home Wi-Fi  CONNECTED` first, `Cafe: Guest  SAVED`, `Library`; REFRESH, INPUT MANUALLY, BACK (D-UI-064) |
+| `201-joined-toast-640x480-0242500826.png` | #201 | A on Cafe: Guest (saved, no key asked): after the spinner, the toast `CONNECTED TO Cafe: Guest` over the rebuilt page, the row now `Cafe: Guest`; `wifi.ssid` / `wifi.key` moved by `wifictl join` |
+| `201-picker-after-join-640x480-0242500826.png` | #201 | The picker again: `Cafe: Guest  CONNECTED` first, `Home Wi-Fi  SAVED`, `Library` |
+| `201-key-popup-640x480-0242500826.png` | #201 | A on Library (not saved): the WI-FI KEY on-screen keyboard; START accepts (empty for an open network) |
+| `201-connected-new-network-640x480-0242500826.png` | #201 | After the spinner: `CONNECTED TO Library`, the row `Library`, the WI-FI KEY row empty as typed; the stand-in now holds Library as a saved network |
+| `201-connect-failed-dialog-640x480-0242500826.png` | #201 | The stand-in refusing the connect: `COULDN'T CONNECT TO Library.` / `CHECK THE KEY AND TRY AGAIN.` over the picker; the row afterwards still `Home Wi-Fi`, the settings untouched |
+| `201-join-failed-dialog-640x480-0242500826.png` | #201 | The stand-in refusing the join: `COULDN'T CONNECT TO Cafe: Guest.` / `IF ITS KEY HAS CHANGED, FORGET IT UNDER MANAGE SAVED NETWORKS AND JOIN IT AGAIN WITH THE NEW KEY.` |
+| `201-network-settings-row-fr-640x480-0242500826.png` | #201 | The row in French: `NOM DU RÉSEAU WI-FI  Library` (the WI--FI typo of the French labels fixed in this build), `GÉRER LES RÉSEAUX ENREGISTRÉS` |
+| `201-picker-fr-640x480-0242500826.png` | #201 | The picker in French: `RÉSEAUX WI-FI`, `Library  CONNECTÉ`, `Cafe: Guest  ENREGISTRÉ`, `Home Wi-Fi  ENREGISTRÉ`; RAFRAÎCHIR, SAISIE MANUELLE, RETOUR |
 
 Not framed this round: the startup card's first step (#192; the VM guest had no working cloud remote at boot -- the words are unit-tested,
 the RG SP's normal boot is the check), a transfer left running (#187; the nine suites' walks passed on both builds), the English
