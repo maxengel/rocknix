@@ -44,6 +44,20 @@ SNAPSHOT="${SNAPSHOT#*--snapshot=*}"
 CONTROLLERS="$@"
 CONTROLLERS="${CONTROLLERS#*--controllers=*}"
 
+#State file: the save state manager's -state_file, handed over by runemu as
+#one --state_file= argument ahead of --controllers=. The value is a path, and
+#ROM names carry spaces, parentheses and " - ", so it is read from the argument
+#it arrived in, never cut out of the joined "$@" (fork #196, D-UI-057).
+STATEFILE=""
+for SETSETTINGS_ARGUMENT in "$@"
+do
+    case "${SETSETTINGS_ARGUMENT}" in
+        --state_file=*)
+            STATEFILE="${SETSETTINGS_ARGUMENT#--state_file=}"
+        ;;
+    esac
+done
+
 ###
 ### Arrays containing various supported/non-supported attributes.
 ###
@@ -888,7 +902,37 @@ function set_autosave() {
         add_setting "none" "state_slot" "${SNAPSHOT}"
     fi
 
-    add_setting "none" "savestate_auto_load" "${SETAUTOSAVE}"
+    # The state the interface asked to start from (--state_file=, the save
+    # state manager's -state_file), on the contract Batocera's launcher keeps
+    # (configgen libretroConfig.py, libretroGenerator.py -- fork #196,
+    # D-UI-057): the .auto file turns RetroArch's auto-load on for this run;
+    # any other file is RetroArch's entry slot, "-e <slot>", which it loads
+    # instead of the auto save and makes the current slot. Its exit auto save
+    # is untouched either way, so the quit state lands in .state.auto whatever
+    # tile the game was started from. The argument reaches runemu through
+    # stdout, as --host and --set-shader do; a slot that is not a number gets
+    # no -e, since the line is spliced into a command that is eval'd.
+    local SETAUTOLOAD=${SETAUTOSAVE}
+    if [ -n "${STATEFILE}" ]
+    then
+        case "${STATEFILE}" in
+            *.auto)
+                SETAUTOLOAD=true
+            ;;
+            *)
+                case "${SNAPSHOT}" in
+                    ""|*[!0-9]*)
+                        log "State file ${STATEFILE} without a numeric slot (${SNAPSHOT}): no entry slot"
+                    ;;
+                    *)
+                        echo -n " -e ${SNAPSHOT}"
+                    ;;
+                esac
+            ;;
+        esac
+    fi
+
+    add_setting "none" "savestate_auto_load" "${SETAUTOLOAD}"
     add_setting "none" "savestate_auto_save" "${SETAUTOSAVE}"
 }
 

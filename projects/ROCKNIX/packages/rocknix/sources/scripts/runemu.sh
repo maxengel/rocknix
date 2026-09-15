@@ -170,6 +170,61 @@ set_kill stop
 
 ### Determine which emulator we're launching and make appropriate adjustments before launching.
 ${VERBOSE} && log $0 "Configuring for ${EMULATOR}"
+### The save state manager's arguments follow --controllers= on the command
+### line. The interface writes them, this script reads them, setsettings.sh
+### turns them into RetroArch's configuration (fork #196, D-UI-057):
+###   -autosave 0|1       the exit auto save and auto-load, off or on, for this run
+###   -state_slot N       RetroArch's current slot (-1 is its auto slot)
+###   -state_file <path>  the state to start from: the .auto file, or a slot's
+### Since es_savestates.cfg each of them can arrive on its own -- "-autosave 1
+### -state_file <auto>" for the AUTO SAVE tile and for a plain launch with AUTO
+### SAVE/LOAD on, "-autosave 0" alone for START NEW GAME, "-state_slot N
+### -state_file <slot file>" for a numbered slot -- where the interface's
+### built-in fallback always sent -state_slot with them. Sets CONTROLLERCONFIG,
+### SNAPSHOT, AUTOSAVE and STATEFILE; call it with the script's own "$@".
+function parse_savestate_arguments() {
+  CONTROLLERCONFIG="${ARGUMENTS#*--controllers=*}"
+  SNAPSHOT=""
+  AUTOSAVE=""
+  STATEFILE=""
+
+  if [[ "${ARGUMENTS}" == *" -state_slot "* ]] || \
+     [[ "${ARGUMENTS}" == *" -autosave "* ]] || \
+     [[ "${ARGUMENTS}" == *" -state_file "* ]]
+  then
+    ### The controllers value ends where the first of them begins.
+    CONTROLLERCONFIG="${CONTROLLERCONFIG%% -state_slot *}"
+    CONTROLLERCONFIG="${CONTROLLERCONFIG%% -autosave *}"
+    CONTROLLERCONFIG="${CONTROLLERCONFIG%% -state_file *}"
+    if [[ "${ARGUMENTS}" == *" -state_slot "* ]]
+    then
+      SNAPSHOT="${ARGUMENTS#* -state_slot *}" # -state_slot x
+      SNAPSHOT="${SNAPSHOT%% -*}"
+    fi
+    if [[ "${ARGUMENTS}" == *" -autosave "* ]]
+    then
+      AUTOSAVE="${ARGUMENTS#* -autosave *}" # -autosave x
+      AUTOSAVE="${AUTOSAVE%% -*}"
+    fi
+    ### The state file is a path, and ROM names carry spaces, parentheses and
+    ### " - " (Mario Tennis - Power Tour (USA, Australia)), so it is taken whole
+    ### from the argument list -- the shell already split it -- never cut out
+    ### of the joined string.
+    local PREVIOUS=""
+    local ARGUMENT
+    for ARGUMENT in "$@"
+    do
+      if [ "${PREVIOUS}" = "-state_file" ]
+      then
+        STATEFILE="${ARGUMENT}"
+      fi
+      PREVIOUS="${ARGUMENT}"
+    done
+  else
+    CONTROLLERCONFIG="${CONTROLLERCONFIG%% --*}"  # until a -- is found
+  fi
+}
+
 case ${EMULATOR} in
   mednafen)
     set_kill set "-9 mednafen"
@@ -241,25 +296,7 @@ case ${EMULATOR} in
 
     RUNTHIS='${EMUPERF} /usr/bin/${RABIN} -L /tmp/cores/${CORE}_libretro.so --config ${RETROARCH_TEMP_CONFIG} --appendconfig ${RETROARCH_APPEND_CONFIG} "${ROMNAME}"'
 
-    CONTROLLERCONFIG="${ARGUMENTS#*--controllers=*}"
-
-    if [[ "${ARGUMENTS}" == *"-state_slot"* ]]
-    then
-      CONTROLLERCONFIG="${CONTROLLERCONFIG%% -state_slot*}"  # until -state is found
-      SNAPSHOT="${ARGUMENTS#*-state_slot *}" # -state_slot x
-      SNAPSHOT="${SNAPSHOT%% -*}"
-        if [[ "${ARGUMENTS}" == *"-autosave"* ]]; then
-          CONTROLLERCONFIG="${CONTROLLERCONFIG%% -autosave*}"  # until -autosave is found
-          AUTOSAVE="${ARGUMENTS#*-autosave *}" # -autosave x
-          AUTOSAVE="${AUTOSAVE%% -*}"
-        else
-          AUTOSAVE=""
-        fi
-    else
-      CONTROLLERCONFIG="${CONTROLLERCONFIG%% --*}"  # until a -- is found
-      SNAPSHOT=""
-      AUTOSAVE=""
-    fi
+    parse_savestate_arguments "$@"
 
     # Configure platform specific requirements
     case ${PLATFORM} in
@@ -278,8 +315,11 @@ case ${EMULATOR} in
     then
       rm -f "${SET_SETTINGS_TMP}"
     fi
-    ${VERBOSE} && log $0 "Execute setsettings (${PLATFORM} ${ROMNAME} ${CORE} --controllers=${CONTROLLERCONFIG} --autosave=${AUTOSAVE} --snapshot=${SNAPSHOT})"
-    (/usr/bin/setsettings.sh "${PLATFORM}" "${ROMNAME}" "${CORE}" --controllers="${CONTROLLERCONFIG}" --autosave="${AUTOSAVE}" --snapshot="${SNAPSHOT}" >${SET_SETTINGS_TMP})
+    ### --state_file= goes ahead of --controllers=: setsettings reads CONTROLLERS
+    ### as everything after --controllers=, and a state file's path is a ROM
+    ### name, which can hold "p1" and would read as a controller (#196).
+    ${VERBOSE} && log $0 "Execute setsettings (${PLATFORM} ${ROMNAME} ${CORE} --state_file=${STATEFILE} --controllers=${CONTROLLERCONFIG} --autosave=${AUTOSAVE} --snapshot=${SNAPSHOT})"
+    (/usr/bin/setsettings.sh "${PLATFORM}" "${ROMNAME}" "${CORE}" --state_file="${STATEFILE}" --controllers="${CONTROLLERCONFIG}" --autosave="${AUTOSAVE}" --snapshot="${SNAPSHOT}" >${SET_SETTINGS_TMP})
 
     ### Enable RetroArch Network Control for this session on dual-screen devices
     ### so the bottom-screen UI can forward save-state / load-state / resume commands.
