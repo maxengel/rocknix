@@ -1,6 +1,6 @@
 # QA frames, 2026-09-15 -- RC-11 on GENERIC_X64 guest d (640x480)
 
-Builds: RC-11 build 1 `66bfd20330` (ES `137309b7d`) and build 2 `a6d032bf5e` (ES `8d5ad005d`, adds #199). RC-12 build 1 `2514d317f7` (ES `7dd9de6a1`): the maintainer's two calls on the RC-11 round (#191, D-UI-061/062), on guest d upgraded in place from RC-11 build 2. RC-12 build 2 `0242500826` (ES `e7d5029fb`, `wifictl join`): the phone paradigm for Wi-Fi (#201, D-UI-063/064), on guest d upgraded in place again, the `wifictl` stand-in answering two saved networks (Home Wi-Fi in use, Cafe: Guest) and three in range (those two and Library). The build is the last
+Builds: RC-11 build 1 `66bfd20330` (ES `137309b7d`) and build 2 `a6d032bf5e` (ES `8d5ad005d`, adds #199). RC-12 build 1 `2514d317f7` (ES `7dd9de6a1`): the maintainer's two calls on the RC-11 round (#191, D-UI-061/062), on guest d upgraded in place from RC-11 build 2. RC-12 build 2 `0242500826` (ES `e7d5029fb`, `wifictl join`): the phone paradigm for Wi-Fi (#201, D-UI-063/064), on guest d upgraded in place again, the `wifictl` stand-in answering two saved networks (Home Wi-Fi in use, Cafe: Guest) and three in range (those two and Library). RC-12 build 3 `f2ee6415cd` (ES `34523d1ac`): the save state manager's tile labels a point smaller (#202). The build is the last
 token of each file name. Frames that showed the QA account's name (the summary page's title, RetroArch's login toast) carry a
 black box over it; nothing else is edited. Taken with `tools/vm-visual-qa` over the QEMU monitor; the tool's own press-and-
 screenshot latency is about 1.7 s and sits inside every timing quoted in the QA log.
@@ -39,6 +39,8 @@ screenshot latency is about 1.7 s and sits inside every timing quoted in the QA 
 | `201-join-failed-dialog-640x480-0242500826.png` | #201 | The stand-in refusing the join: `COULDN'T CONNECT TO Cafe: Guest.` / `IF ITS KEY HAS CHANGED, FORGET IT UNDER MANAGE SAVED NETWORKS AND JOIN IT AGAIN WITH THE NEW KEY.` |
 | `201-network-settings-row-fr-640x480-0242500826.png` | #201 | The row in French: `NOM DU RÉSEAU WI-FI  Library` (the WI--FI typo of the French labels fixed in this build), `GÉRER LES RÉSEAUX ENREGISTRÉS` |
 | `201-picker-fr-640x480-0242500826.png` | #201 | The picker in French: `RÉSEAUX WI-FI`, `Library  CONNECTÉ`, `Cafe: Guest  ENREGISTRÉ`, `Home Wi-Fi  ENREGISTRÉ`; RAFRAÎCHIR, SAISIE MANUELLE, RETOUR |
+| `202-manager-labels-en-640x480-f2ee6415cd.png` | #202 | Tobu Tobu Girl Deluxe's SAVE STATE MANAGER on build 3: START NEW GAME and `AUTO SAVE / 09/15/2026 02:43` at 15 px (a point under the small font); compare `196-manager-*-66bfd20330.png` |
+| `202-manager-labels-fr-640x480-f2ee6415cd.png` | #202 | Böbl's manager in French: `NOUVELLE PARTIE`, `SAUV. AUTO 15/09/2026 02:44`; the title SAVE STATE MANAGER has no French line yet |
 
 Not framed this round: the startup card's first step (#192; the VM guest had no working cloud remote at boot -- the words are unit-tested,
 the RG SP's normal boot is the check), a transfer left running (#187; the nine suites' walks passed on both builds), the English
