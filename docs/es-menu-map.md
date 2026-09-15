@@ -138,6 +138,51 @@ on a device with no cloud storage asks SET IT UP NOW? and YES opens the list.
 FINISH RESTORE PROCESS (after a settings restore) tells the player the backup
 never carried the cloud sign-in and points at MANAGE CLOUD STORAGE (D-CLOUD-087).
 
+## Network (our rows)
+
+`NETWORK SETTINGS > SETTINGS`, as built for #191 (2026-09-15). Wi-Fi is
+NetworkManager: it keeps a profile for every network the device has joined and
+autoconnects to whichever remembered one is in range, so the network the
+device is on and the one the player configured last (`wifi.ssid`, the value
+WI-FI SSID edits) are two different facts. The row used to show the setting
+as though it were the connection.
+
+```mermaid
+flowchart TD
+    NET[NETWORK SETTINGS] --> SSID[WI-FI SSID  <i>configured name</i><br/><i>CONNECTED TO network . NOT CONNECTED . COULDN'T CHECK</i>]
+    SSID -->|A| PICK[Wi-Fi picker . INPUT MANUALLY -- edits wifi.ssid, as before]
+    NET --> MN[MANAGE NETWORKS]
+    MN --> PAGE{{MANAGE NETWORKS}}
+    PAGE --> ROWS[REMEMBERED NETWORKS: one row per profile, the name as NetworkManager has it;<br/>IN USE beside the one the device is on; NO REMEMBERED NETWORKS when there are none]
+    ROWS -->|A| ASK[FORGET name?<br/>YOU'RE CONNECTED TO IT NOW, SO YOU'LL BE DISCONNECTED. -- when in use<br/>THIS DEVICE WON'T JOIN IT AGAIN ON ITS OWN.<br/>YES . NO]
+    ASK -->|YES| DONE[page rebuilt from NetworkManager; toast: name : FORGOTTEN<br/>or name : FORGOTTEN, AND YOU'RE DISCONNECTED]
+    ASK -.->|delete refused| ERR[COULDN'T FORGET name. TRY AGAIN.]
+    MN -.->|list unreadable| ERR2[COULDN'T READ THE REMEMBERED NETWORKS. TRY AGAIN.]
+```
+
+- **The line under WI-FI SSID is the network the device is joined to now**,
+  read from NetworkManager (`wifictl current`) off the interface thread, as
+  the IP ADDRESS and INTERNET STATUS rows are; CHECKING... until it answers.
+  NOT CONNECTED when the device is joined to none, COULDN'T CHECK when
+  NetworkManager itself did not answer -- the two are different facts and
+  the row does not read the second as the first. The value on the right
+  stays the configured name and the row still edits it (D-UI-023: a label
+  and one line under it).
+- **MANAGE NETWORKS** sits with the Wi-Fi rows (Wi-Fi on, not LOCAL PLAY
+  MODE). Its page lists `wifictl saved` -- NetworkManager's wireless
+  profiles, the one in use first as nmcli orders them -- behind a spinner,
+  since one nmcli call is one D-Bus round trip to a service that can stop
+  answering (#102). A on a row confirms, YES first, so B answers NO; the
+  help bar names A FORGET only while there is a network to forget. FORGET
+  deletes the profile (`wifictl forget <name>`): the device stops joining
+  that network on its own and the password NetworkManager held goes with
+  it; `wifi.ssid` and `wifi.key` are untouched, so the network the player
+  configured is still one press away in the picker. Forgetting the one in
+  use disconnects the device at once (NetworkManager may then join another
+  remembered network in range), and the toast says so. A list that could
+  not be read is a dialog, not an empty page: an empty list and no list are
+  different answers, in the script (exit 1) as on the screen.
+
 ## RetroAchievements (our rows)
 
 `GAME SETTINGS > RETROACHIEVEMENTS SETTINGS > OPTIONS` carries one row of the
