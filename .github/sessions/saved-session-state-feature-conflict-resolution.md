@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-15T23:28:00Z
+> **Saved**: 2026-09-15T23:35:00Z
 > **Branch**: feature/conflict-resolution (worktree; the work itself is on `next` and in the ES repo)
 > **Repo**: maxengel/rocknix (primary checkout /workspace/repos/rocknix on `next`); ES ~/Development/emulationstation-next (build branch `test/qa-integration`)
 
 ## Current Focus
 
-RC-12 round on the RG SP, live: the maintainer rebooted the device onto **RC-12 build 2 `0242500826`** themselves (~22:05 UTC) and is testing (the Wi-Fi picker between two networks -- no word yet). Their two notes are built and VM-proven: #202 (build 3, the manager's labels a point smaller; French title in build 5) and #203 (build 4 + build 5, D-CLOUD-129: a launch over the player's sync or a running transfer asks STOP IT AND PLAY / KEEP WAITING; both paths proven on guest d, six frames filed; a stopped manual backup's row reads SKIPPED, A GAME WAS STARTED since build 5). **The device candidate is build 5 `8b533d76ec`** (pin commit `0659732cc1`; H700 filed `h700-all-20260915-8b533d76ec`, tar sha `451d58190365b9f5…`, NOT staged). Build 4's nine suites PASSED; build 5's had round-trip FAIL (1) because guest d's proof runs wrote the shared QA folder `/GAMES` during it -- guest d's cloud config restored (`cloud_sync.conf.before-203`), round-trip re-running alone (watcher `btgp2eqol`). The punch list and the eleven decisions are **#200**.
+RC-12 round on the RG SP, live: the maintainer rebooted the device onto **RC-12 build 2 `0242500826`** themselves (~22:05 UTC) and is testing (the Wi-Fi picker between two networks -- no word yet). Their two notes are built and VM-proven: #202 (build 3, the manager's labels a point smaller; French title in build 5) and #203 (build 4 + build 5, D-CLOUD-129: a launch over the player's sync or a running transfer asks STOP IT AND PLAY / KEEP WAITING; both paths proven on guest d, six frames filed; a stopped manual backup's row reads SKIPPED, A GAME WAS STARTED since build 5). **The device candidate is build 5 `8b533d76ec`** (pin commit `0659732cc1`; H700 filed `h700-all-20260915-8b533d76ec`, tar sha `451d58190365b9f5…`, NOT staged). Build 4's nine suites PASSED; build 5's full run had round-trip FAIL (1) because guest d's proof runs wrote the shared QA folder `/GAMES` during it (guest d's cloud config restored), and round-trip alone then PASSED -- build 5 is nine of nine (rule + memory: one writer per QA cloud folder). The punch list and the eleven decisions are **#200**.
 
 ## Completed This Session (since the 14:14 UTC RC-11 device apply)
 
@@ -17,7 +17,6 @@ RC-12 round on the RG SP, live: the maintainer rebooted the device onto **RC-12 
 
 ## In Progress
 
-- The round-trip re-run on build 5 (`vm-qa-8b533d76ec-roundtrip-again.log`); then the QA row for build 5 gets its suites column, #203 a line, and build 5 is the clean candidate.
 - The maintainer's round on the RG SP; each note -> issue (D-QA-012), branch, build. #203 follow-up: a transfer stopped from the transfer page leaves its parts' script stamps at 130 (the hub rows read COULDN'T FINISH once dismissed); #203 box 1 (the winding-down automatic sync's spinner) not exercised on the VM.
 - The #200 decisions (eleven items; item 11 the row's label).
 
