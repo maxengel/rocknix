@@ -2049,6 +2049,32 @@ assert image_cache._image_download_executor._shutdown
 print(f"ok {took:.2f}")
 EOS
 RC=$?; [ "${RC}" -eq 0 ] && grep -q '^ok ' "${OUT}"; check $? "the helper's badge wait returns within its bound and shuts the pool down ($(cat "${OUT}" 2>/dev/null))" "rc ${RC}; $(tail -3 "${ERR}" 2>/dev/null | tr '\n' '|')"
+# summary (#190): the page's whole offline summary in one read of the store.
+# The core set only (Flags 3), unlocked = the store's unlocks and the awards
+# still waiting; a set with nothing in it is not a game; another account's
+# game is not listed; the icon carries the service's address.
+treset; PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
+import json, sqlite3
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+s.upsert_cache(cache_keys.patch(102, "qa"), json.dumps({"Success": True, "PatchData": {"ID": 102, "Title": "Bee", "ImageIcon": "/Images/000102.png", "Achievements": [
+    {"ID": 1001, "Title": "a", "Points": 5, "Flags": 3}, {"ID": 1002, "Title": "b", "Points": 10, "Flags": 3}, {"ID": 1003, "Title": "unofficial", "Points": 50, "Flags": 5}]}}))
+s.upsert_cache(cache_keys.unlocks(102, "qa"), json.dumps({"Success": True, "UserUnlocks": [1001]}))
+s.upsert_cache(cache_keys.patch(107, "qa"), json.dumps({"Success": True, "PatchData": {"ID": 107, "Title": "Empty", "Achievements": []}}))
+s.upsert_cache(cache_keys.patch(108, "other"), json.dumps({"Success": True, "PatchData": {"ID": 108, "Title": "Theirs", "ImageIcon": "https://media.retroachievements.org/Images/000108.png", "Achievements": [{"ID": 2001, "Points": 1, "Flags": 3}]}}))
+s.close()
+EOS
+tctl summary; [ "${RC}" -eq 0 ] && [ "$(grep -c . "${OUT}")" -eq 1 ] && grep -qx '{"id":102,"title":"Bee","icon":"http://127.0.0.1:8080/Images/000102.png","achievements":2,"points":15,"unlocked":1,"unlockedPoints":5,"pending":0}' "${OUT}"; check $? "summary: one line for game 102 -- 2 core achievements, 15 points, 1 unlocked (5), none pending; the empty set and another account's game not listed" "rc ${RC}; out: $(tr '\n' '|' < "${OUT}")"
+# a casual award still waiting for achievement 1002 counts as unlocked, and as pending
+python3 - "${TPD}/proxy.sqlite3" <<'EOS'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+db.execute("INSERT INTO pending_awards (achievementId, queryString, requestBody, userAgent, queuedAt, status) VALUES (1002, 'r=awardachievement&u=qa&a=1002&h=0', '', 'ra', 1789400000, 'pending')")
+db.commit(); db.close()
+EOS
+tctl summary; [ "${RC}" -eq 0 ] && grep -qx '{"id":102,"title":"Bee","icon":"http://127.0.0.1:8080/Images/000102.png","achievements":2,"points":15,"unlocked":2,"unlockedPoints":15,"pending":1}' "${OUT}"; check $? "summary: a casual award still waiting counts as unlocked and as pending (2 of 2, 15 points, pending 1)" "rc ${RC}; out: $(tr '\n' '|' < "${OUT}")"
+sed -i "s/^global.retroachievements.offlineproxy=.*/global.retroachievements.offlineproxy=0/" "${TCFG}"; tctl summary; [ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ]; check $? "summary with the toggle off: nothing, exit 1" "rc ${RC}; out: $(tr '\n' '|' < "${OUT}")"; sed -i "s/^global.retroachievements.offlineproxy=.*/global.retroachievements.offlineproxy=1/" "${TCFG}"
 # The lock wait spends from the same deadline: an after-index run behind a
 # holder that never lets go gives up inside the fifteen minutes.
 treset; T0=$(cat "${TR}/clock")
@@ -2225,6 +2251,23 @@ try:
     verdict(len(names) == 2 and len(seen) == 2 and (target_dir / "1.png").read_bytes() == b"PNG" and not list(target_dir.glob("*.tmp")), "PL-33 badges: two workers on one asset write two temp names, the asset lands, no temp file is left", f"temp names {names}, left {[p.name for p in target_dir.glob('*.tmp')] if target_dir.exists() else 'no dir'}")
 finally:
     urllib.request.urlopen, Path.write_bytes = saved_open, saved_wb
+# 010 / #190: a request that asks for the store only is answered from it while the process believes it is online.
+class StoreOnlyServer:
+    def __init__(self, st): self.storage = st; self.config_data = {}; self.took = None
+    def is_online(self): return True
+    def handle_online_request(self, *a, **k): self.took = "online"; return b"online"
+    def handle_offline_request(self, path, raw_body, action): self.took = "offline"; return b"offline"
+    def handle_offline_login(self, *a, **k): return None
+    def handle_award_request(self, *a, **k): self.took = "award"; return b"award"
+try:
+    st = Storage(); srv = StoreOnlyServer(st)
+    proxy_service.ProxyRuntimeServer.process_proxy_request(srv, "GET", "/dorequest.php?r=patch&g=1&u=qa", "", {"X-RA-Store-Only": "1", "User-Agent": "es"})
+    with_header = srv.took; srv.took = None
+    proxy_service.ProxyRuntimeServer.process_proxy_request(srv, "GET", "/dorequest.php?r=patch&g=1&u=qa", "", {"User-Agent": "es"})
+    without = srv.took; st.close()
+    verdict(with_header == "offline" and without == "online", "010 / #190 store-only: X-RA-Store-Only: 1 is served from the store while the process believes it is online; without it, upstream first", f"with the header {with_header}, without {without}")
+except Exception as exc:
+    verdict(False, "010 / #190 store-only: X-RA-Store-Only: 1 is served from the store while the process believes it is online; without it, upstream first", repr(exc))
 EOS
 grep -q 'PL-' "${T}/predicates.out"; check $? "the patched client's predicates ran ($(grep -c '^PASS' "${T}/predicates.out") PASS / $(grep -c '^FAIL' "${T}/predicates.out") FAIL lines)" "the predicate run printed no verdicts: $(tr '\n' '|' < "${T}/predicates.out" | cut -c1-300)"
 while IFS= read -r line; do
