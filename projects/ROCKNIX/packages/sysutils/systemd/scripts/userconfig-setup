@@ -48,7 +48,9 @@ then
     ln -s /usr/config/SDL-GameControllerDB/gamecontrollerdb.txt /storage/.config/SDL-GameControllerDB/gamecontrollerdb.txt  >/dev/null 2>&1
 
     ### Remove and link es configs so they are managed with OS updates.
-    for es_cfg in es_features.cfg es_systems.cfg
+    ### es_savestates.cfg is the save state layout the interface reads first
+    ### from here; runemu.sh/setsettings.sh carry its launcher contract (#196).
+    for es_cfg in es_features.cfg es_systems.cfg es_savestates.cfg
     do
       ln -s /usr/config/emulationstation/${es_cfg} /storage/.config/emulationstation/${es_cfg}  >/dev/null 2>&1
     done

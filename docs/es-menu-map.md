@@ -77,6 +77,28 @@ Two placement rules the existing tree already follows:
 - **Destructive and system-level operations sit behind ADVANCED**, inside SYSTEM
   SETTINGS → SYSTEM MANAGEMENT AND RESET, where every row confirms first.
 
+## Save state manager
+
+A game's long-press menu > SAVE STATES, or before every launch under GAME
+SETTINGS > SAVE STATES > SHOW SAVE STATE MANAGER. The tiles are START NEW GAME,
+START NEW AUTO SAVE (only while no auto save exists), AUTO SAVE, and one per
+numbered slot -- dated and newest first under INCREMENT PER SAVE, `SLOT n` under
+DO NOT INCREMENT (D-UI-059). Since #196 (D-UI-057) the image ships Batocera's
+`es_savestates.cfg` entry and the launcher carries Batocera's contract, so
+RetroArch does the loading and the saving itself and the interface never parks
+or restores a file: **LAUNCH on a numbered slot** starts RetroArch on that slot
+(`-e <n>`), which becomes its current slot, and with AUTO SAVE/LOAD on quitting
+writes RetroArch's exit auto save as on any other run -- the AUTO SAVE tile
+then shows the quit time and the slot's file is untouched (before, the
+interface put the pre-launch auto save back and the quit state was lost);
+**LAUNCH on AUTO SAVE**, like a plain launch with AUTO SAVE/LOAD on, auto-loads
+that file and quitting overwrites it, as before; **START NEW GAME** runs with
+the exit auto save and auto-load off for that session, so it still writes no
+auto save and the existing one is kept, as upstream. INCREMENTAL SAVE STATES
+offers INCREMENT PER SAVE and DO NOT INCREMENT; INCREMENT SLOT went with
+Batocera's `001-no-next-slot` patch, under which the launched slot is the
+current slot, never the next free one.
+
 ## Cloud (our subtree)
 
 As built on 2026-09-12 (ES `51639dd09`; the tree since `af2db4ab09`). One door:

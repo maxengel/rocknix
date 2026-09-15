@@ -27,7 +27,9 @@ then
 fi
 
 ### Remove and link es configs so they are managed with OS updates.
-for es_cfg in es_features.cfg es_systems.cfg
+### es_savestates.cfg joins them (#196): an upgraded device gets the link here,
+### a fresh one in userconfig-setup, and the interface reads this path first.
+for es_cfg in es_features.cfg es_systems.cfg es_savestates.cfg
 do
   mv /storage/.config/emulationstation/${es_cfg} /storage/.config/emulationstation/last_${es_cfg} >/dev/null 2>&1
   ln -s /usr/config/emulationstation/${es_cfg} /storage/.config/emulationstation/${es_cfg}  >/dev/null 2>&1

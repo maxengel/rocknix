@@ -122,6 +122,17 @@
 #      with nothing printed and nothing deleted, and saved and current tell
 #      "no answer" from "none" (exit 1 and 2) rather than reading a silence
 #      as an empty list.
+#   v. the save state manager's arguments reach RetroArch as Batocera's
+#      launcher carries them (#196, D-UI-057): runemu's
+#      parse_savestate_arguments reads -state_slot, -autosave and -state_file
+#      each on its own -- once es_savestates.cfg is there the interface sends
+#      "-autosave 0" alone for START NEW GAME and "-autosave 1 -state_file
+#      <auto>" for the AUTO SAVE tile -- and takes the path whole (spaces,
+#      parentheses, " - "); setsettings reads --state_file= ahead of
+#      --controllers= and set_autosave turns a .auto file into
+#      savestate_auto_load and any other into " -e <slot>" on stdout, spliced
+#      before --config like --host; a slot that is not a number gets no -e;
+#      without -state_file the appendconfig is today's, byte for byte.
 #
 # The chksysconfig and 001-functions functions are lifted out of the files
 # under test and run in a fresh bash against temp paths, as wait-lock-test
@@ -192,6 +203,9 @@
 #                                             # u FAILS whole: the wifictl
 #                                             # from before #191 has none of
 #                                             # current, saved and forget
+#                                             # v FAILS: the launcher before
+#                                             # #196 has no parse function
+#                                             # and no --state_file= parser
 #     tools/last-good-scripts-test            # PASSED
 #
 # One FAIL in m that names "the built image" is about the build root on this
@@ -2382,4 +2396,81 @@ wctl forget "Home Wi-Fi"
 [ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ] && [ ! -s "${U}/run/deleted" ]; check $? "forget with NetworkManager not answering: refused, nothing deleted" "rc ${RC}; printed: '$(uout)'; deleted: '$(tr '\n' '|' < "${U}/run/deleted")'"
 
 echo
+# ---------------------------------------------------------------- u.
+echo "  v. the save state manager's arguments reach RetroArch as Batocera's launcher carries them (#196, D-UI-057): runemu reads -state_slot, -autosave and -state_file each on its own and takes the path whole; setsettings turns a .auto file into savestate_auto_load and any other into -e <slot>; without -state_file, today's lines byte for byte"
+# parse_savestate_arguments lifted from runemu.sh and called with the argument
+# list the interface's command line becomes after sh -c (the quotes gone, the
+# state file one argument, the controllers value one argument); setsettings'
+# argument parsers (the block from #Autosave to the --state_file= loop's done)
+# and set_autosave with log, game_setting, clear_setting and add_setting lifted
+# the same way, get_setting shimmed to the AUTO SAVE/LOAD value under test, the
+# appendconfig in a temp file, redact_credentials from 001-functions. The -e
+# fragment is what set_autosave prints; runemu splices every setsettings
+# fragment before --config (--host, --set-shader), and that splice line is
+# checked to still be there before the same line is applied here. At a
+# BASE_REF before #196 the function and the parser are absent: one FAIL each,
+# not a silent skip.
+U="${TMP}/u"; mkdir -p "${U}/repo" "${U}/log" "${U}/savestates"
+src_of "${SS_REL}" "${U}/repo/setsettings.sh"; src_of "${RE_REL}" "${U}/repo/runemu.sh"
+TENNIS="Mario Tennis - Power Tour (USA, Australia) (En,Fr,De,Es,It)"
+UROM="/storage/roms/gba/${TENNIS}.zip"; USTATES="/storage/roms/savestates/gba"
+UPADS="-p1index 0 -p1guid 030000005e0400008e02000014010000 -p2index 1 -p2guid 03000000790000000600000010010000"
+sed -n '/^function parse_savestate_arguments() {/,/^}/p' "${U}/repo/runemu.sh" > "${U}/parse.sh"
+if [ -s "${U}/parse.sh" ]; then
+    grep -qE '^\s*parse_savestate_arguments "\$@"' "${U}/repo/runemu.sh"; check $? "runemu.sh calls parse_savestate_arguments with its own \"\$@\"" "the call is missing or does not pass \"\$@\": $(grep -n 'parse_savestate_arguments' "${U}/repo/runemu.sh" | tr '\n' '|' | cut -c1-200)"
+    # pa <manager args...>: the lifted function over an interface command line; C= S= A= F= on four lines
+    pa() { bash -c '. "$0"; ARGUMENTS="$@"; parse_savestate_arguments "$@"; printf "%s\n" "C=${CONTROLLERCONFIG}" "S=${SNAPSHOT}" "A=${AUTOSAVE}" "F=${STATEFILE}"' "${U}/parse.sh" "${UROM}" -Pgba --core=mgba --emulator=retroarch --controllers="${UPADS}" "$@" 2>"${U}/pa.err"; }
+    # want <S> <A> <F> <manager args...>: the four variables as expected, controllers intact, no error
+    want() { local exp got; exp="$(printf 'C=%s\nS=%s\nA=%s\nF=%s' "${UPADS}" "$1" "$2" "$3")"; shift 3; got="$(pa "$@")"; [ "${got}" = "${exp}" ] && [ ! -s "${U}/pa.err" ]; }
+    said() { pa "$@" | tr '\n' '|'; [ -s "${U}/pa.err" ] && printf ' err: %s' "$(tr '\n' '|' < "${U}/pa.err")"; }
+    want 3 "" "${USTATES}/${TENNIS}.state3" -state_slot 3 -state_file "${USTATES}/${TENNIS}.state3"; check $? "a numbered slot (-state_slot 3 -state_file <slot file>): SNAPSHOT 3, no AUTOSAVE, the path whole -- spaces, parentheses and \" - \" -- the controllers intact" "got: $(said -state_slot 3 -state_file "${USTATES}/${TENNIS}.state3")"
+    want "" 1 "${USTATES}/${TENNIS}.state.auto" -autosave 1 -state_file "${USTATES}/${TENNIS}.state.auto"; check $? "the AUTO SAVE tile, and a plain launch with AUTO SAVE/LOAD on (-autosave 1 -state_file <auto>, no -state_slot): AUTOSAVE 1, the .auto path whole, no SNAPSHOT" "got: $(said -autosave 1 -state_file "${USTATES}/${TENNIS}.state.auto")"
+    want "" 0 "" -autosave 0; check $? "START NEW GAME (-autosave 0 alone): AUTOSAVE 0 and the controllers cut before it -- the shape the old parser dropped into CONTROLLERCONFIG" "got: $(said -autosave 0)"
+    want -1 1 "" -autosave 1 -state_slot -1; check $? "START NEW AUTO SAVE (-autosave 1 -state_slot -1): SNAPSHOT -1, RetroArch's auto slot" "got: $(said -autosave 1 -state_slot -1)"
+    want 2 1 "" -autosave 1 -state_slot 2 && want 2 "" "" -state_slot 2 && want 2 0 "" -autosave 0 -state_slot 2 && want "" "" "" && want "" "" "" --host --port 55435 --nick qa; check $? "without -state_file, the shapes the built-in fallback sends (-autosave 1 -state_slot 2; -state_slot 2; -autosave 0 -state_slot 2; none; a netplay tail) read exactly as today" "got: $(said -autosave 1 -state_slot 2) / $(said -state_slot 2) / $(said -autosave 0 -state_slot 2) / $(said) / $(said --host --port 55435 --nick qa)"
+    grep -qF -- '--state_file="${STATEFILE}" --controllers="${CONTROLLERCONFIG}" --autosave="${AUTOSAVE}" --snapshot="${SNAPSHOT}"' "${U}/repo/runemu.sh"; check $? "runemu hands setsettings --state_file= ahead of --controllers=, so the path never lands in CONTROLLERS (a ROM name can hold p1)" "the setsettings call: $(grep -n 'setsettings.sh "' "${U}/repo/runemu.sh" | tr '\n' '|' | cut -c1-240)"
+else
+    check 1 "" "runemu.sh has no parse_savestate_arguments: -autosave and -state_file are read only beside -state_slot (#196)"
+fi
+if grep -q '^#State file' "${U}/repo/setsettings.sh"; then
+    sed -n '/^#Autosave$/,/^done$/p' "${U}/repo/setsettings.sh" > "${U}/args.sh"
+    # sp <setsettings options...>: the four parsers over runemu's call; A= S= C= F= on four lines
+    sp() { bash -c '. "$0"; printf "%s\n" "A=${AUTOSAVE}" "S=${SNAPSHOT}" "C=${CONTROLLERS}" "F=${STATEFILE}"' "${U}/args.sh" gba "${UROM}" mgba "$@" 2>"${U}/sp.err"; }
+    got="$(sp --state_file="${USTATES}/${TENNIS}.state3" --controllers="${UPADS}" --autosave=1 --snapshot=3)"
+    [ "${got}" = "$(printf 'A=1\nS=3\nC=%s --autosave=1 --snapshot=3\nF=%s' "${UPADS}" "${USTATES}/${TENNIS}.state3")" ] && [ ! -s "${U}/sp.err" ]; check $? "setsettings reads --state_file= whole and, placed ahead of --controllers=, leaves AUTOSAVE, SNAPSHOT and CONTROLLERS exactly as today" "got: $(echo "${got}" | tr '\n' '|'); err: $(tr '\n' '|' < "${U}/sp.err")"
+    got="$(sp --state_file= --controllers="${UPADS}" --autosave= --snapshot=)"
+    [ "${got}" = "$(printf 'A=\nS=\nC=%s --autosave= --snapshot=\nF=' "${UPADS}")" ]; check $? "an empty --state_file= (no manager, or a tile without a file) reads as no state file, the other three as today" "got: $(echo "${got}" | tr '\n' '|')"
+    sed -n '/^function redact_credentials() {/,/^}/p' "${FN}" > "${U}/ss.sh"
+    sed -n '/^function log() {/,/^}/p; /^function game_setting() {/,/^}/p; /^function clear_setting() {/,/^}/p; /^function add_setting() {/,/^}/p; /^function set_autosave() {/,/^}/p' "${U}/repo/setsettings.sh" >> "${U}/ss.sh"
+    # sa <AUTO SAVE/LOAD setting> <AUTOSAVE> <SNAPSHOT> <STATEFILE>: set_autosave; the appendconfig in $U/append.cfg, its stdout in $U/sa.out
+    sa() {
+        : > "${U}/append.cfg"; rm -f "${U}/append.cfg.sed"; : > "${U}/log/exec.log"
+        SETTING_AUTOSAVE="$1" AUTOSAVE="$2" SNAPSHOT="$3" STATEFILE="$4" PLATFORM=gba ROM="${TENNIS}.zip" SNAPSHOTS="${U}/savestates" TMP_CONFIG="${U}/append.cfg" LOGGING=verbose LOG_DIR="${U}/log" LOG_FILE=exec.log \
+        PATH="${TMP}/bbin:${PATH}" bash -c '. "$0"; get_setting() { echo "${SETTING_AUTOSAVE}"; }; set_autosave' "${U}/ss.sh" > "${U}/sa.out" 2>"${U}/sa.err"
+    }
+    # is <expected appendconfig lines, |-joined> <expected stdout>
+    is() { [ "$(tr '\n' '|' < "${U}/append.cfg")" = "$1" ] && [ "$(cat "${U}/sa.out")" = "$2" ] && [ ! -s "${U}/sa.err" ]; }
+    got() { printf 'cfg: %s stdout: [%s] err: %s' "$(tr '\n' '|' < "${U}/append.cfg")" "$(cat "${U}/sa.out")" "$(tr '\n' '|' < "${U}/sa.err")"; }
+    DIR="savestate_directory = \"${U}/savestates/gba\"|"
+    sa 1 "" 3 "${USTATES}/${TENNIS}.state3"; is "${DIR}state_slot = \"3\"|savestate_auto_load = \"true\"|savestate_auto_save = \"true\"|" " -e 3"; check $? "a numbered slot with AUTO SAVE/LOAD on: state_slot 3, auto-load and the exit auto save on, and \" -e 3\" on stdout" "$(got)"
+    [ -d "${U}/savestates/gba" ]; check $? "and the savestates directory is made" "no ${U}/savestates/gba"
+    sa 0 "" 3 "${USTATES}/${TENNIS}.state3"; is "${DIR}state_slot = \"3\"|savestate_auto_load = \"false\"|savestate_auto_save = \"false\"|" " -e 3"; check $? "a numbered slot with AUTO SAVE/LOAD off: \" -e 3\" still, both auto settings off -- the slot loads, nothing is written at quit" "$(got)"
+    sa 1 1 "" "${USTATES}/${TENNIS}.state.auto"; is "${DIR}savestate_auto_load = \"true\"|savestate_auto_save = \"true\"|" ""; check $? "the AUTO SAVE tile (-autosave 1, the .auto file, no slot): auto-load and auto-save on, no state_slot, nothing on stdout" "$(got)"
+    sa 0 "" "" "${USTATES}/${TENNIS}.state.auto"; is "${DIR}savestate_auto_load = \"true\"|savestate_auto_save = \"false\"|" ""; check $? "a .auto file with AUTO SAVE/LOAD off: the file alone turns auto-load on (Batocera's rule), the exit auto save stays off" "$(got)"
+    sa 1 1 2 ""; is "${DIR}state_slot = \"2\"|savestate_auto_load = \"true\"|savestate_auto_save = \"true\"|" "" && sa 0 "" "" ""; is "${DIR}savestate_auto_load = \"false\"|savestate_auto_save = \"false\"|" "" && sa 1 0 2 ""; is "${DIR}state_slot = \"2\"|savestate_auto_load = \"false\"|savestate_auto_save = \"false\"|" ""; check $? "without a state file (the fallback's -autosave 1 -state_slot 2; nothing; -autosave 0 -state_slot 2): today's appendconfig lines byte for byte and nothing on stdout" "$(got)"
+    sa 1 0 "" ""; is "${DIR}savestate_auto_load = \"false\"|savestate_auto_save = \"false\"|" ""; check $? "START NEW GAME (-autosave 0 alone): both off, no state_slot, no -e" "$(got)"
+    sa 1 "" "" "${USTATES}/${TENNIS}.state3" && [ "$(cat "${U}/sa.out")" = "" ] && sa 1 "" -1 "${USTATES}/${TENNIS}.state3" && [ "$(cat "${U}/sa.out")" = "" ] && sa 1 "" "3; rm -rf x" "${USTATES}/${TENNIS}.state3" && [ "$(cat "${U}/sa.out")" = "" ]; check $? "a slot that is not a number (none, -1, \"3; rm -rf x\") gets no -e: the fragment is eval'd inside RetroArch's command line" "stdout: [$(cat "${U}/sa.out")]"
+    SPLICE='RUNTHIS=$(echo ${RUNTHIS} | sed "s|--config|${EXTRAOPTS} --config|")'
+    grep -qF "${SPLICE}" "${U}/repo/runemu.sh"; check $? "runemu still splices setsettings' stdout before --config (the line --host and --set-shader ride)" "the splice line changed: $(grep -n 'EXTRAOPTS' "${U}/repo/runemu.sh" | tr '\n' '|' | cut -c1-240)"
+    RUNTHIS='${EMUPERF} /usr/bin/${RABIN} -L /tmp/cores/${CORE}_libretro.so --config ${RETROARCH_TEMP_CONFIG} --appendconfig ${RETROARCH_APPEND_CONFIG} "${ROMNAME}"'
+    sa 1 "" 3 "${USTATES}/${TENNIS}.state3"; EXTRAOPTS=$(cat "${U}/sa.out"); eval "${SPLICE}"
+    # The fragment carries its leading space, like --host's, so the splice leaves two before it; eval collapses them.
+    [[ "$(printf '%s' "${RUNTHIS}" | tr -s ' ')" == *'_libretro.so -e 3 --config ${RETROARCH_TEMP_CONFIG}'* ]]; check $? "spliced, the RetroArch command reads ... _libretro.so -e 3 --config ..." "RUNTHIS: ${RUNTHIS}"
+    RUNTHIS='${EMUPERF} /usr/bin/${RABIN} -L /tmp/cores/${CORE}_libretro.so --config ${RETROARCH_TEMP_CONFIG} --appendconfig ${RETROARCH_APPEND_CONFIG} "${ROMNAME}"'
+    sa 1 1 2 ""; EXTRAOPTS=$(cat "${U}/sa.out"); eval "${SPLICE}"
+    [[ "${RUNTHIS}" != *" -e "* ]] && [[ "${RUNTHIS}" == *'_libretro.so'*'--config ${RETROARCH_TEMP_CONFIG}'* ]]; check $? "and without a state file no -e is spliced" "RUNTHIS: ${RUNTHIS}"
+else
+    check 1 "" "setsettings.sh has no --state_file= parser and set_autosave knows no state file (#196)"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
