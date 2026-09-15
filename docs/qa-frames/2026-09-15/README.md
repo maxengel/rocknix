@@ -1,6 +1,6 @@
 # QA frames, 2026-09-15 -- RC-11 on GENERIC_X64 guest d (640x480)
 
-Builds: RC-11 build 1 `66bfd20330` (ES `137309b7d`) and build 2 `a6d032bf5e` (ES `8d5ad005d`, adds #199). The build is the last
+Builds: RC-11 build 1 `66bfd20330` (ES `137309b7d`) and build 2 `a6d032bf5e` (ES `8d5ad005d`, adds #199). RC-12 build 1 `2514d317f7` (ES `7dd9de6a1`): the maintainer's two calls on the RC-11 round (#191, D-UI-061/062), on guest d upgraded in place from RC-11 build 2. The build is the last
 token of each file name. Frames that showed the QA account's name (the summary page's title, RetroArch's login toast) carry a
 black box over it; nothing else is edited. Taken with `tools/vm-visual-qa` over the QEMU monitor; the tool's own press-and-
 screenshot latency is about 1.7 s and sits inside every timing quoted in the QA log.
@@ -22,6 +22,13 @@ screenshot latency is about 1.7 s and sits inside every timing quoted in the QA 
 | `191-forget-dialog-640x480-a6d032bf5e.png` | #191 | `FORGET Home Wi-Fi?` with the consequence, YES / NO |
 | `191-after-forget-toast-640x480-a6d032bf5e.png` | #191 | The toast `Home Wi-Fi : FORGOTTEN, AND YOU'RE DISCONNECTED` and the list rebuilt |
 | `182-cloud-rows-dimmed-no-cloud-640x480-a6d032bf5e.png` | #182 | GAME SETTINGS with no cloud configured: the CLOUD SETTINGS rows dimmed on this frame, not only on the first |
+| `191-network-settings-same-network-640x480-2514d317f7.png` | #191 (RC-12) | NETWORK SETTINGS with the device on the configured network (the stand-in answers `Home Wi-Fi`, `wifi.ssid` = `Home Wi-Fi`): WI-FI SSID is one line, no name repeated (D-UI-061); the MANAGE SAVED NETWORKS row below WI-FI COUNTRY (D-UI-062) |
+| `191-network-settings-other-network-640x480-2514d317f7.png` | #191 (RC-12) | The stand-in answers `Cafe: Guest`: the row has grown the line `CONNECTED TO Cafe: Guest`, the value still `Home Wi-Fi`, the rows below moved down |
+| `191-network-settings-not-connected-640x480-2514d317f7.png` | #191 (RC-12) | No active network: `NOT CONNECTED` under the label |
+| `191-network-settings-could-not-check-640x480-2514d317f7.png` | #191 (RC-12) | The stand-in exits 2 for `current` (NetworkManager not answering): `COULDN'T CHECK` |
+| `191-manage-saved-networks-640x480-2514d317f7.png` | #191 (RC-12) | MANAGE SAVED NETWORKS: group `SAVED NETWORKS`, `Home Wi-Fi  IN USE`, `Cafe: Guest` |
+| `191-network-settings-other-network-fr-640x480-2514d317f7.png` | #191 (RC-12) | The other-network row in French: `CONNECTÉ À Cafe: Guest`; the row `GÉRER LES RÉSEAUX ENREGISTRÉS` |
+| `191-manage-saved-networks-fr-640x480-2514d317f7.png` | #191 (RC-12) | The page in French: `GÉRER LES RÉSEAUX ENREGISTRÉS`, `RÉSEAUX ENREGISTRÉS`, `UTILISÉ` beside the one in use |
 
 Not framed this round: the startup card's first step (#192; the VM guest had no working cloud remote at boot -- the words are unit-tested,
 the RG SP's normal boot is the check), a transfer left running (#187; the nine suites' walks passed on both builds), the English
