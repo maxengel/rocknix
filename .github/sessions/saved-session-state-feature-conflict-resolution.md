@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-15T19:58:00Z
+> **Saved**: 2026-09-15T20:02:00Z
 > **Branch**: feature/conflict-resolution (worktree; the work itself is on `next` and in the ES repo)
 > **Repo**: maxengel/rocknix (primary checkout /workspace/repos/rocknix on `next`); ES ~/Development/emulationstation-next (build branch `test/qa-integration`)
 
 ## Current Focus
 
-RC-12 for the "Offline RetroAchievements" milestone round: the maintainer's three calls of 2026-09-15 on the RG SP's NETWORK SETTINGS, built and VM-proven as **RC-12 build 2 `0242500826`** (ES `e7d5029fb`, `wifictl join`): MANAGE SAVED NETWORKS; the WI-FI SSID row's value is the network the device is on; the picker lists the networks in range with CONNECTED / SAVED marks and joins a saved one with a press (#201, D-UI-063/064). Its x64 image passed eight suites with walks finishing; the H700 image is filed (`h700-all-20260915-0242500826`, tar sha `9350a37a85e9a8f2…`) and **not staged** -- the RG SP (on RC-11 build 2 `a6d032bf5e`) waits for the maintainer's word; staging is asked, the reboot is asked (D-QA-011/015, `tools/device-act`). The punch list of what they should confirm on the device and the eleven decisions still theirs is **#200**.
+RC-12 for the "Offline RetroAchievements" milestone round: the maintainer's three calls of 2026-09-15 on the RG SP's NETWORK SETTINGS, built and VM-proven as **RC-12 build 2 `0242500826`** (ES `e7d5029fb`, `wifictl join`): MANAGE SAVED NETWORKS; the WI-FI SSID row's value is the network the device is on; the picker lists the networks in range with CONNECTED / SAVED marks and joins a saved one with a press (#201, D-UI-063/064). Its x64 image passed the nine suites; the H700 image is filed (`h700-all-20260915-0242500826`, tar sha `9350a37a85e9a8f2…`) and **not staged** -- the RG SP (on RC-11 build 2 `a6d032bf5e`) waits for the maintainer's word; staging is asked, the reboot is asked (D-QA-011/015, `tools/device-act`). The punch list of what they should confirm on the device and the eleven decisions still theirs is **#200**.
 
 ## Completed This Session (since the 14:14 UTC RC-11 device apply)
 
@@ -17,15 +17,14 @@ RC-12 for the "Offline RetroAchievements" milestone round: the maintainer's thre
 
 ## In Progress
 
-- The nine suites on the build 2 image (`vm-qa-0242500826.log`; 8 PASS, walks running at 19:58 UTC) -- a background watcher reports when they end; then the QA log row for build 2 and a work log line.
+- (done 20:00 UTC) The nine suites on the build 2 image PASSED (`qa-0242500826-webdav-a-20260915-1935`); the QA log row and the 20:00 work log line are on `next` (`48c8baa05a`, pushed).
 - The maintainer's decisions on #200 (eleven items: #194 toast wording, #195 hour format, #193 the French game-page line and the summary line, #196 parity details, #187 the hub row, #190/#199 box 3, #185's round, the two commits with the QA account's name, and the WI-FI SSID row's label). Each wording decision is one string; RC-12 build 3 would gather them.
 
 ## Next Steps
 
-1. When the watcher fires: append the build 2 row to `docs/vm-qa-log.md`, a work log line, commit, push `next`.
-2. On the maintainer's word for RC-12 on the RG SP: idle check, then ask to stage (`stage-h700.sh` pattern, wrapper `stage-rgsp-run-<id>.sh`), then ask for the reboot as its own question through `tools/device-act`; verify from the device (`rgsp-after-reboot.sh`); the RG SP's own network is what #201 box 5 needs (the phone's hotspot beside the home network).
-3. Apply the #200 decisions as they come (one string each; register rows citing D-RA-021 / D-UI-058 / D-UI-060 ...), build 3, VM proofs, H700.
-4. Follow-ups still open: #198 (setrootpass quoting), #193 French wrap (decision 3 on #200), #190 box 3 / #199 box 3, #196 upgrade check and START NEW GAME, #192 card frames, #187 frames, 1280x800 frames, rocknix.org pages (#191/#201 network settings; save states), upstream proposals (#168), #185, #186, SM8550 (D-WORKFLOW-020).
+1. On the maintainer's word for RC-12 on the RG SP: idle check, then ask to stage (`stage-h700.sh` pattern, wrapper `stage-rgsp-run-<id>.sh`), then ask for the reboot as its own question through `tools/device-act`; verify from the device (`rgsp-after-reboot.sh`); the RG SP's own network is what #201 box 5 needs (the phone's hotspot beside the home network).
+2. Apply the #200 decisions as they come (one string each; register rows citing D-RA-021 / D-UI-058 / D-UI-060 ...), build 3, VM proofs, H700.
+3. Follow-ups still open: #198 (setrootpass quoting), #193 French wrap (decision 3 on #200), #190 box 3 / #199 box 3, #196 upgrade check and START NEW GAME, #192 card frames, #187 frames, 1280x800 frames, rocknix.org pages (#191/#201 network settings; save states), upstream proposals (#168), #185, #186, SM8550 (D-WORKFLOW-020).
 
 ## Key Files Modified
 
