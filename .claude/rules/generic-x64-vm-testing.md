@@ -881,3 +881,18 @@ offline list -- and the timer graded the dialog PASS because it held still.
   thinks it has a network; `nmcli dev disconnect eth0` over the serial console
   is what "Wi-Fi off" means on a device. ssh dies with the link: read through
   `tools/vm-serial` until `set_link on` and `nmcli dev connect eth0`.
+
+## One writer per QA cloud folder
+
+`tools/cloud-test-backend` serves one directory to every guest, and the
+round-trip suite's scenarios read that directory's state as their fixture --
+"an empty endpoint" is a check, not a setup step. A proof on another guest
+that backs up to the same `SAVES_REMOTE` (`/GAMES`) while the suites run on
+the pair makes those checks lie: on 2026-09-15 a `cloud_restore` against
+"an empty endpoint" exited 0 with a restore summary, because guest d's
+#203 proof had just uploaded 471 KB of saves there, and build 5 read as a
+FAIL it had not earned (the re-run alone passed). So: while `tools/vm-qa`
+runs, no other guest points at the QA backend; a proof that needs the cloud
+waits for the suites or uses a folder of its own (`SAVES_REMOTE=/GAMES-d`,
+set on that guest alone) -- and a guest borrowed for a cloud proof gets its
+`cloud_sync.conf` and `rclone.conf` put back before the next suite run.
