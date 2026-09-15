@@ -109,7 +109,9 @@
 #      surviving thread (patch 005, PL-01/PL-25), a game evicted whole
 #      (006, PL-02), the configured account's cached sign-in (007, PL-23),
 #      the log upload gated off (008, PL-12), a badge temp name per thread
-#      (009, PL-33).
+#      (009, PL-33), a store-only request served from the store (010, #190),
+#      the store's login answer marked X-RA-Offline: 1 and every answer
+#      X-RA-Proxy: 1 (011, #194).
 #   u. wifictl current, saved and forget (#191), the three verbs the network
 #      rows read NetworkManager through: saved lists every wireless profile
 #      as <name><TAB>active|saved, the one in use first, a wired profile
@@ -1719,7 +1721,7 @@ NARCH_AFTER=$(ls "${EVD}"/*-evidence.tar.gz 2>/dev/null | wc -l)
 [ -z "$(ls -d "${EVD}"/*-evidence 2>/dev/null)" ]; check $? "and leaves no half-built directory behind" "left: $(ls -d "${EVD}"/*-evidence 2>/dev/null | tr '\n' ' ')"
 
 # ---------------------------------------------------------------- t.
-echo "  t. raofflineproxy-ctl scan, topup and ready against the client the tree describes: the refusals, the index rule by account and hash, the probe's own folder and patience, one deadline, the failure verdict, the cap over uncached files, a stop on disable, and the patched client's own predicates (#186 PL-01..05, 12, 17, 23, 24, 25, 28, 30, 33)"
+echo "  t. raofflineproxy-ctl scan, topup and ready against the client the tree describes: the refusals, the index rule by account and hash, the probe's own folder and patience, one deadline, the failure verdict, the cap over uncached files, a stop on disable, and the patched client's own predicates (#186 PL-01..05, 12, 17, 23, 24, 25, 28, 30, 33; #190; #194)"
 # The client is built as the package builds it: the pinned tarball from the
 # sources cache (PKG_VERSION in package.mk), the package's patches applied
 # in order (from BASE_REF under --old, so the client is the one that tree
@@ -2285,6 +2287,27 @@ try:
     verdict(with_header == "offline" and without == "online", "010 / #190 store-only: X-RA-Store-Only: 1 is served from the store while the process believes it is online; without it, upstream first", f"with the header {with_header}, without {without}")
 except Exception as exc:
     verdict(False, "010 / #190 store-only: X-RA-Store-Only: 1 is served from the store while the process believes it is online; without it, upstream first", repr(exc))
+# 011 / #194: the store's answer to a login carries X-RA-Offline: 1, and every answer the process writes carries X-RA-Proxy: 1 -- read back through http.client, so the head is one a client parses.
+import http.client, io
+class HeadSock:
+    def __init__(self, data): self.f = io.BytesIO(data)
+    def makefile(self, *a, **k): return self.f
+def parse(raw):
+    r = http.client.HTTPResponse(HeadSock(raw)); r.begin(); body = r.read()
+    return r, body
+class LoginServer:
+    def __init__(self, st): self.storage = st
+try:
+    st = Storage(cfg / "p194.sqlite3")
+    st.upsert_cache(cache_keys.login("qa"), '{"Success":true,"User":"qa","Token":"planted"}')
+    r, body = parse(proxy_service.ProxyRuntimeServer.handle_offline_login(LoginServer(st), "/dorequest.php?r=login2&u=qa&p=x", "", "login2"))
+    login_ok = r.status == 200 and r.getheader("X-RA-Offline") == "1" and r.getheader("X-RA-Proxy") == "1" and body == b'{"Success":true,"User":"qa","Token":"planted"}' and int(r.getheader("Content-Length")) == len(body)
+    others = [parse(b) for b in (proxy_service.ok_json('{"Success":true}'), proxy_service.error_json(503, "offline"), proxy_service.raw_response_bytes(200, b"PNG", "image/png", "OK"))]
+    proxy_on_all = all(r.getheader("X-RA-Proxy") == "1" and r.getheader("X-RA-Offline") is None for r, _ in others) and [b for _, b in others] == [b'{"Success":true}', b'{"Success":false,"Error":"offline"}', b"PNG"]
+    st.close()
+    verdict(login_ok and proxy_on_all, "011 / #194 login header: the store's answer to r=login2 carries X-RA-Offline: 1 and X-RA-Proxy: 1 with the body intact; a plain answer, an error and a raw asset carry X-RA-Proxy: 1 and no X-RA-Offline", f"login {r.status} offline={r.getheader('X-RA-Offline')} proxy={r.getheader('X-RA-Proxy')} body={body!r}; others: {[(o.status, o.getheader('X-RA-Proxy'), o.getheader('X-RA-Offline'), b) for o, b in others]}")
+except Exception as exc:
+    verdict(False, "011 / #194 login header: the store's answer to r=login2 carries X-RA-Offline: 1 and X-RA-Proxy: 1 with the body intact; a plain answer, an error and a raw asset carry X-RA-Proxy: 1 and no X-RA-Offline", repr(exc))
 EOS
 grep -q 'PL-' "${T}/predicates.out"; check $? "the patched client's predicates ran ($(grep -c '^PASS' "${T}/predicates.out") PASS / $(grep -c '^FAIL' "${T}/predicates.out") FAIL lines)" "the predicate run printed no verdicts: $(tr '\n' '|' < "${T}/predicates.out" | cut -c1-300)"
 while IFS= read -r line; do
