@@ -111,7 +111,11 @@
 #      the log upload gated off (008, PL-12), a badge temp name per thread
 #      (009, PL-33), a store-only request served from the store (010, #190),
 #      the store's login answer marked X-RA-Offline: 1 and every answer
-#      X-RA-Proxy: 1 (011, #194).
+#      X-RA-Proxy: 1 (011, #194), an image the store does not hold answered
+#      404 at once through the whole request handler -- store-only, or the
+#      process's own state offline -- with is_online never asked and nothing
+#      fetched, while a hit is served and a miss with the state online still
+#      asks the link and fetches (012, #199).
 #   u. wifictl current, saved and forget (#191), the three verbs the network
 #      rows read NetworkManager through: saved lists every wireless profile
 #      as <name><TAB>active|saved, the one in use first, a wired profile
@@ -208,6 +212,13 @@
 #                                             # v FAILS: the launcher before
 #                                             # #196 has no parse function
 #                                             # and no --state_file= parser
+#     BASE_REF=70b6c70ca7 tools/last-good-scripts-test --old
+#                                             # t's four 012 checks FAIL: the
+#                                             # client before #199 asks
+#                                             # is_online about every image
+#                                             # (its log line), again about
+#                                             # one it does not hold, and
+#                                             # fetches it; a miss is a 200
 #     tools/last-good-scripts-test            # PASSED
 #
 # One FAIL in m that names "the built image" is about the build root on this
@@ -1735,7 +1746,7 @@ NARCH_AFTER=$(ls "${EVD}"/*-evidence.tar.gz 2>/dev/null | wc -l)
 [ -z "$(ls -d "${EVD}"/*-evidence 2>/dev/null)" ]; check $? "and leaves no half-built directory behind" "left: $(ls -d "${EVD}"/*-evidence 2>/dev/null | tr '\n' ' ')"
 
 # ---------------------------------------------------------------- t.
-echo "  t. raofflineproxy-ctl scan, topup and ready against the client the tree describes: the refusals, the index rule by account and hash, the probe's own folder and patience, one deadline, the failure verdict, the cap over uncached files, a stop on disable, and the patched client's own predicates (#186 PL-01..05, 12, 17, 23, 24, 25, 28, 30, 33; #190; #194)"
+echo "  t. raofflineproxy-ctl scan, topup and ready against the client the tree describes: the refusals, the index rule by account and hash, the probe's own folder and patience, one deadline, the failure verdict, the cap over uncached files, a stop on disable, and the patched client's own predicates (#186 PL-01..05, 12, 17, 23, 24, 25, 28, 30, 33; #190; #194; #199)"
 # The client is built as the package builds it: the pinned tarball from the
 # sources cache (PKG_VERSION in package.mk), the package's patches applied
 # in order (from BASE_REF under --old, so the client is the one that tree
@@ -2322,6 +2333,46 @@ try:
     verdict(login_ok and proxy_on_all, "011 / #194 login header: the store's answer to r=login2 carries X-RA-Offline: 1 and X-RA-Proxy: 1 with the body intact; a plain answer, an error and a raw asset carry X-RA-Proxy: 1 and no X-RA-Offline", f"login {r.status} offline={r.getheader('X-RA-Offline')} proxy={r.getheader('X-RA-Proxy')} body={body!r}; others: {[(o.status, o.getheader('X-RA-Proxy'), o.getheader('X-RA-Offline'), b) for o, b in others]}")
 except Exception as exc:
     verdict(False, "011 / #194 login header: the store's answer to r=login2 carries X-RA-Offline: 1 and X-RA-Proxy: 1 with the body intact; a plain answer, an error and a raw asset carry X-RA-Proxy: 1 and no X-RA-Offline", repr(exc))
+# 012 / #199: an image the store does not hold is a 404 at once -- with X-RA-Store-Only: 1, or while the process's own state is offline -- driven through the real request handler over a fake connection, so the log line's probe is in the count: is_online never asked, nothing forwarded, the answer inside a second. A hit is served, and a miss with the state online still asks the link and fetches, as before.
+from raofflineproxy import network
+class ImageServer:
+    def __init__(self, st): self.storage = st; self.config_data = {}; self.asked = []
+    def is_online(self): self.asked.append("is_online"); return True
+    def _forward_static_asset(self, path, headers): self.asked.append("forward"); return proxy_service.raw_response_bytes(200, b"fetched", "image/png", "OK")
+    def process_proxy_request(self, *a): return proxy_service.ProxyRuntimeServer.process_proxy_request(self, *a)
+class ImageSock:
+    # What socketserver.StreamRequestHandler asks of a connection: a reader over the request bytes, sendall for the answer.
+    def __init__(self, raw): self.rfile = io.BytesIO(raw); self.out = bytearray()
+    def makefile(self, mode, *a, **k): return self.rfile
+    def sendall(self, data): self.out += data
+    def settimeout(self, *a): pass
+    def setsockopt(self, *a): pass
+    def shutdown(self, *a): pass
+    def close(self): pass
+def image_request(srv, path, extra=""):
+    sock = ImageSock(f"GET {path} HTTP/1.1\r\nHost: 127.0.0.1:8080\r\nUser-Agent: es\r\n{extra}\r\n".encode()); t0 = time.monotonic()
+    proxy_service.ProxyRequestHandler(sock, ("127.0.0.1", 40000), srv)
+    r, body = parse(bytes(sock.out)); return r, body, time.monotonic() - t0
+try:
+    st = Storage(cfg / "p199.sqlite3"); srv = ImageServer(st)
+    icon = image_cache.STATIC_DIR / "Images" / "000903.png"; icon.parent.mkdir(parents=True, exist_ok=True); icon.write_bytes(b"\x89PNG fixture 903")
+    network.mark_retroachievements_reachable()
+    r, body, dt = image_request(srv, "/Images/000901.png", "X-RA-Store-Only: 1\r\n")
+    verdict(r.status == 404 and srv.asked == [] and dt < 1.0 and r.getheader("X-RA-Proxy") == "1", "012 / #199 image miss, store-only: an uncached /Images/ with X-RA-Store-Only: 1 while the state is online is 404 at once -- is_online never asked, nothing forwarded", f"status {r.status} asked {srv.asked} in {dt:.3f}s body {body!r}")
+    srv.asked = []; network.mark_retroachievements_unreachable()
+    r, body, dt = image_request(srv, "/Badge/00902_lock.png")
+    verdict(r.status == 404 and srv.asked == [] and dt < 1.0, "012 / #199 image miss, offline: an uncached /Badge/ with no header while the process's own state is offline is 404 at once -- is_online never asked, the log line included, nothing forwarded", f"status {r.status} asked {srv.asked} in {dt:.3f}s body {body!r}")
+    srv.asked = []
+    r, body, dt = image_request(srv, "/Images/000903.png", "X-RA-Store-Only: 1\r\n")
+    verdict(r.status == 200 and body == b"\x89PNG fixture 903" and r.getheader("Content-Type") == "image/png" and int(r.getheader("Content-Length")) == len(body) and srv.asked == [], "012 / #199 image hit: a cached /Images/ is served -- its bytes, image/png -- offline and store-only alike, with no question to the link", f"status {r.status} type {r.getheader('Content-Type')} asked {srv.asked} body {body!r}")
+    srv.asked = []; network.mark_retroachievements_reachable()
+    r, body, dt = image_request(srv, "/Images/000904.png")
+    verdict(r.status == 200 and body == b"fetched" and srv.asked == ["is_online", "forward"], "012 / #199 image miss, online: an uncached image with no header while the state is online still asks is_online and fetches upstream, as before", f"status {r.status} asked {srv.asked} body {body!r}")
+    st.close()
+except Exception as exc:
+    verdict(False, "012 / #199 image miss: store-only or offline is 404 at once with no probe and no fetch; a hit is served; an online miss still fetches", repr(exc))
+finally:
+    network.reset_retroachievements_reachability_for_tests()
 EOS
 grep -q 'PL-' "${T}/predicates.out"; check $? "the patched client's predicates ran ($(grep -c '^PASS' "${T}/predicates.out") PASS / $(grep -c '^FAIL' "${T}/predicates.out") FAIL lines)" "the predicate run printed no verdicts: $(tr '\n' '|' < "${T}/predicates.out" | cut -c1-300)"
 while IFS= read -r line; do
