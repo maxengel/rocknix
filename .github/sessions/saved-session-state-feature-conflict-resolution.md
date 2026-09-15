@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-15T07:21:57Z
+> **Saved**: 2026-09-15T14:15:42Z
 > **Branch**: `feature/conflict-resolution` (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the work lands on `next` in the primary checkout `/workspace/repos/rocknix` -- never `cd` into it, use `git -C`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution) + EmulationStation `~/Development/emulationstation-next` (build branch `test/qa-integration`, worktree `~/Development/emulationstation-next.worktrees/qa-integration`, tip `8d5ad005d`, pushed)
 
 ## Current Focus
 
-**RC-11 build 2 `a6d032bf5e` is built for x64 and H700, VM-proven, and waits for the maintainer's word to be staged on the RG SP.** It carries everything the maintainer reported since RC-7 plus the older unbuilt items: #196 (save states follow Batocera's route, D-UI-057), #191 (live Wi-Fi SSID line + MANAGE NETWORKS), #193, #195 (D-UI-058), #182, #194, #192, #187 (D-UI-060 pending approval), #177, #178, and #199 (found during the proofs). The nine suites PASSED on both RC-11 builds; guest d's proofs on build 2 passed with the harness hardened twice more. Overnight the maintainer's fully-offline test also completed end to end: achievement 14600 earned with Wi-Fi off on RC-7, queued, flushed at reconnect, on the RetroAchievements profile dated to the offline moment (#167 box 1).
+**RC-11 build 2 `a6d032bf5e` is on the RG SP** (applied 2026-09-15 14:14 UTC on the maintainer's word; boot id `7ddd012a`, queue empty, `ready=247 pending=0`); the maintainer's eyes on the device and their approvals are what remain. It carries everything the maintainer reported since RC-7 plus the older unbuilt items: #196 (save states follow Batocera's route, D-UI-057), #191 (live Wi-Fi SSID line + MANAGE NETWORKS), #193, #195 (D-UI-058), #182, #194, #192, #187 (D-UI-060 pending approval), #177, #178, and #199 (found during the proofs). The nine suites PASSED on both RC-11 builds; guest d's proofs on build 2 passed with the harness hardened twice more. Overnight the maintainer's fully-offline test also completed end to end: achievement 14600 earned with Wi-Fi off on RC-7, queued, flushed at reconnect, on the RetroAchievements profile dated to the offline moment (#167 box 1).
 
 ## Completed This Session
 
@@ -18,7 +18,7 @@
 
 ## In Progress
 
-- **RC-11 build 2 -> the RG SP.** Current state: built, filed, unstaged; the RG SP is on RC-7 `3387cf5da0`, online (SSID mismatch #191 confirmed live). What remains: the maintainer's word to stage (`HOSTOPT='-o Hostname=100.75.221.73 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR' bash /workspace/tmp/rocknix-session/stage-h700.sh rgsp /workspace/artifacts/rocknix-images/h700-all-20260915-a6d032bf5e`, BEGIN/END in the action log), then the reboot as its own question through `tools/device-act`, then `rgsp-after-reboot.sh a6d032bf5e`. Idle check first (game, cloud lock via `flock -n`, scrape).
+- **RC-11 build 2 on the RG SP (done 14:14 UTC).** Staged 13:52-14:08 (sha256 matched on the device), reboot via `tools/device-act` 14:10:10 quoting the maintainer, RETURNED 14:14:29. If a further build is staged, the same recipe: the maintainer's word to stage (`HOSTOPT='-o Hostname=100.75.221.73 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR' bash /workspace/tmp/rocknix-session/stage-h700.sh rgsp /workspace/artifacts/rocknix-images/h700-all-20260915-a6d032bf5e`, BEGIN/END in the action log), then the reboot as its own question through `tools/device-act`, then `rgsp-after-reboot.sh a6d032bf5e`. Idle check first (game, cloud lock via `flock -n`, scrape).
 - **The maintainer's approvals (acceptance after the build, by their word):** #194 wording A (`Logged in as "Name" (offline).`) vs B; #195 padded `02:17 AM` (register example `9:07 AM`) and a literal AM/PM for French; #193's French line wraps onto the bar's row at 640 (shorten or a second text line) and the summary line (D-RA-021); #191's labels; #196's patch 001 and the slot renumbering; #187's hub row until seen (D-UI-060).
 - **Guests:** a/b on build 2 (pair), d on build 2 at 640x480 (account in, toggle on, 202 games cached by id, LastSystem gbc, wifictl stub unmounted, ClockMode12 default), e on RC-6 `768a0a9f48` (:10027).
 
