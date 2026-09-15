@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-15T22:42:00Z
+> **Saved**: 2026-09-15T22:55:00Z
 > **Branch**: feature/conflict-resolution (worktree; the work itself is on `next` and in the ES repo)
 > **Repo**: maxengel/rocknix (primary checkout /workspace/repos/rocknix on `next`); ES ~/Development/emulationstation-next (build branch `test/qa-integration`)
 
 ## Current Focus
 
-RC-12 round on the RG SP, live: the maintainer rebooted the device onto **RC-12 build 2 `0242500826`** themselves (~22:05 UTC; verified from the device) and is testing -- the save state manager, then the Wi-Fi picker between two networks. Their notes so far are built: **build 3 `f2ee6415cd`** (#202, the manager's tile labels a point smaller; VM frames filed, QA row) and **build 4 `5b795f2e49`** (#203, D-CLOUD-129: a launch over the player's sync or a running transfer asks STOP IT AND PLAY / KEEP WAITING, the winding-down automatic sync waited for behind a spinner; suites running at 22:40 UTC). A French title for the manager (`071f19a9d` on `test/qa-integration`) awaits the next pin. Nothing beyond build 2 is staged; the punch list and the eleven decisions are **#200**.
+RC-12 round on the RG SP, live: the maintainer rebooted the device onto **RC-12 build 2 `0242500826`** themselves (~22:05 UTC; verified from the device) and is testing -- the save state manager, then the Wi-Fi picker between two networks. Their notes so far are built: **build 3 `f2ee6415cd`** (#202, the manager's tile labels a point smaller; VM frames filed), **build 4 `5b795f2e49`** (#203, D-CLOUD-129: a launch over the player's sync or a running transfer asks STOP IT AND PLAY / KEEP WAITING; proven on guest d -- the question, the stop, the game a second later; suites running at 22:50 UTC) and **build 5 `8b533d76ec`** (pin commit `0659732cc1`; #203's gap: a stopped manual backup's row read COULDN'T FINISH, now stamped with the cancel token; the transfer's word is the card's SKIPPED - YOU STARTED A GAME; the manager's French title) -- x64 building at 22:48, a background chain files it, upgrades guest d and starts its H700 build. Nothing beyond build 2 is staged; the punch list and the eleven decisions are **#200**.
 
 ## Completed This Session (since the 14:14 UTC RC-11 device apply)
 
@@ -17,8 +17,8 @@ RC-12 round on the RG SP, live: the maintainer rebooted the device onto **RC-12 
 
 ## In Progress
 
-- The nine suites on build 4 (`vm-qa-5b795f2e49.log`; a background watcher reports). Then: the #203 proof needs a running transfer -- guest a has the QA WebDAV cloud after the round-trip suite; throttle with `RCLONEOPTS="--bwlimit 50k"` in its `cloud_sync.conf`, start BACK UP SAVES TO THE CLOUD from the menu, leave it with B, launch a game -> the question -> STOP IT AND PLAY; frames EN/FR; then the QA row for build 4 and H700.
-- The maintainer's round on the RG SP (they are on the Wi-Fi picker now); each note becomes an issue (D-QA-012), a branch, a build.
+- Build 4's nine suites (`vm-qa-5b795f2e49.log`; watcher). Build 5's x64 build + guest d upgrade + H700 build (watcher `bcoex0i0g`). Then on guest d (pointed at the local QA WebDAV, `--bwlimit 8k`; `cloud_sync.conf.before-203` holds its previous conf): re-run the #203 proof -- GAME SETTINGS > BACK UP SAVES TO THE CLOUD > YES (row 18 from the top), back out with B B (B answers NO on a confirmation, so never press B on the dialog), A A on the NES list (Böbl -> manager), A on START NEW GAME -> the question -> A; quit with `pkill -TERM retroarch`; the row should read SKIPPED, A GAME WAS STARTED. Then the transfer-page variant (MANAGE CLOUD STORAGE > BACK UP TO THE CLOUD > ticks > CONTINUE > the page > B > launch). Frames EN/FR, file, QA rows for builds 4 and 5, #203 ticks.
+- The maintainer's round on the RG SP (Wi-Fi picker between two networks); each note -> issue, branch, build.
 - The #200 decisions (eleven items; item 11 the row's label).
 
 ## Next Steps
