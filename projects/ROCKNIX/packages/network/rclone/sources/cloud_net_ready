@@ -18,7 +18,8 @@
 #             EmulationStation share for "skipped, no network".
 #
 # Prints ">>> doing network" once, the moment it starts waiting -- which
-# includes the grace -- so the sync card shows WAITING FOR THE NETWORK...
+# includes the grace -- so the sync card names its step: CHECKING THE CONNECTION...
+# when the interface sees a link, WAITING FOR A NETWORK, UP TO N SECONDS... when it does not (#192)
 # and a game launched meanwhile cancels the sync rather than being refused
 # (ThreadedCloudSync::cancelIfWaitingForNetwork). Nothing else on stdout
 # on success; one line saying why on a 69.

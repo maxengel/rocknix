@@ -157,7 +157,7 @@ Values live in one place each, so a screen never makes its own decision.
   | `Splash` (boot, gamelist reload, launch) | full screen; its bar is 0.5W | whole screen | yes | when the work does |
   | `GuiInfoPopup` (toast) | fits text, capped 0.9W | top, centred | no | on a timer |
   | `AsyncNotificationComponent` (progress) | 0.9W | top, centred | no | when the work does |
-  | `GuiCloudTransfer` (long job) | full screen | whole screen | yes | **when dismissed** |
+  | `GuiCloudTransfer` (long job) | full screen | whole screen | no since #187: B leaves the run going and the row that launched it follows the run | **when dismissed** |
 
   Full-*screen* is a modal takeover, not a wider card — do not reach for it
   for work the player can keep playing through.
@@ -170,7 +170,7 @@ Values live in one place each, so a screen never makes its own decision.
   lands on the row and on the page when it is reopened. Every other press is
   refused while it runs, because there is nothing to choose. The scan page
   (`GuiOfflineScan` with `OfflineScanJob`, audit #186 PL-07) is the model;
-  `GuiCloudTransfer` catches up in #187. The tell that a page has this wrong
+  `GuiCloudTransfer` caught up in #187 (RC-11): the run lives in `CloudTransferJob`, the page is a view of it, and B hands the run to the hub row. The tell that a page has this wrong
   is a footer that says the player *can* leave it running while the page
   itself takes every button.
 
