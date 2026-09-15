@@ -116,7 +116,7 @@
 #      process's own state offline -- with is_online never asked and nothing
 #      fetched, while a hit is served and a miss with the state online still
 #      asks the link and fetches (012, #199).
-#   u. wifictl current, saved and forget (#191), the three verbs the network
+#   u. wifictl current, saved, forget and join (#191), the four verbs the network
 #      rows read NetworkManager through: saved lists every wireless profile
 #      as <name><TAB>active|saved, the one in use first, a wired profile
 #      never, a colon in a name unescaped as nmcli -t escapes it; current
@@ -2383,7 +2383,7 @@ while IFS= read -r line; do
 done < "${T}/predicates.out"
 fi
 
-echo "  u. wifictl current, saved and forget read NetworkManager, not the setting; forget says when it dropped the connection (#191)"
+echo "  u. wifictl current, saved, forget and join read NetworkManager, not the setting; forget says when it dropped the connection; join activates the saved profile and moves the settings onto it (#191)"
 # wifictl whole, inside bwrap: a fake wlan0 under /sys/class/net (the script
 # exits 0 without an adapter), a stub /etc/profile with the two settings
 # helpers, and an nmcli shim that answers from a profile table the checks
@@ -2391,12 +2391,18 @@ echo "  u. wifictl current, saved and forget read NetworkManager, not the settin
 # (a space and a colon, which nmcli -t escapes as \:), and a wired one that
 # must never be listed. connection delete removes the named row and records
 # the name it was given in /run/deleted; /run/nm-down makes every call fail,
-# as a NetworkManager that has stopped answering does (fork #102). The
-# image's busybox applets (sed, awk, head, cut) stand in front of the
-# host's, as in m: the pipelines under test run under them on the device.
+# as a NetworkManager that has stopped answering does (fork #102).
+# connection up id <name> marks that row active and the others not, and
+# records the name in /run/up (or fails, when /run/up-fails exists, as an
+# access point that refuses the stored key does); -s -g ...psk connection
+# show id <name> answers the profile's key as psk-of-<name>; device show and
+# connection modify serve pin_wifi. The stub profile's set_setting records
+# each call in /run/settings. The image's busybox applets (sed, awk, head,
+# cut) stand in front of the host's, as in m: the pipelines under test run
+# under them on the device.
 U="${TMP}/u"; mkdir -p "${U}/shim" "${U}/repo" "${U}/run"
 src_of "${WIFICTL_REL}" "${U}/repo/wifictl"
-printf 'get_setting() { :; }\nset_setting() { :; }\nexport PATH=/shim:/bbin:/usr/bin:/bin\n' > "${U}/profile"
+printf 'get_setting() { :; }\nset_setting() { printf "%%s=%%s\\n" "$1" "$2" >> /run/settings; }\nexport PATH=/shim:/bbin:/usr/bin:/bin\n' > "${U}/profile"
 cat > "${U}/shim/nmcli" <<'EOS'
 #!/bin/bash
 # NetworkManager as wifictl asks it: the profiles in /run/profiles (name,
@@ -2405,6 +2411,21 @@ cat > "${U}/shim/nmcli" <<'EOS'
 TAB=$(printf '\t')
 esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/:/\\:/g'; }
 case "$*" in
+  *"-s -g 802-11-wireless-security.psk connection show id "*)
+    all="$*"; name="${all#*connection show id }"
+    cut -f1 /run/profiles | grep -q -x -F -- "${name}" || { echo "Error: unknown connection '${name}'." >&2; exit 10; }
+    printf 'psk-of-%s\n' "${name}" ;;
+  *"device show "*)
+    active=$(awk -F'\t' '$2 ~ /wireless/ && $3 == "yes" { print $1 }' /run/profiles | head -n 1)
+    printf 'GENERAL.CONNECTION:%s\n' "$(esc "${active}")" ;;
+  *"connection modify "*)
+    exit 0 ;;
+  *"connection up id "*)
+    all="$*"; name="${all#*connection up id }"
+    printf '%s\n' "${name}" >> /run/up
+    cut -f1 /run/profiles | grep -q -x -F -- "${name}" || { echo "Error: unknown connection '${name}'." >&2; exit 10; }
+    [ -e /run/up-fails ] && { echo "Error: Connection activation failed: (7) Secrets were required, but not provided." >&2; exit 4; }
+    NAME="${name}" awk -F'\t' 'BEGIN { OFS = FS } { $3 = ($1 == ENVIRON["NAME"] && $2 ~ /wireless/) ? "yes" : (($2 ~ /wireless/) ? "no" : $3); print }' /run/profiles > /run/profiles.new && mv /run/profiles.new /run/profiles ;;
   *"connection show"*)
     while IFS="${TAB}" read -r name type active; do
       printf '%s:%s:%s\n' "$(esc "${name}")" "${type}" "${active}"
@@ -2437,7 +2458,7 @@ wctl() { # <verb> [name]: wifictl whole; stdout to $OUT, stderr to $U/err, rc in
 OUT="${U}/out"
 uprofiles() { # the table as the checks start: Home Wi-Fi in use, Cafe: Guest saved, a wired profile
     printf 'Home Wi-Fi\t802-11-wireless\tyes\nCafe: Guest\t802-11-wireless\tno\nWired connection 1\t802-3-ethernet\tno\n' > "${U}/run/profiles"
-    : > "${U}/run/deleted"; rm -f "${U}/run/nm-down"
+    : > "${U}/run/deleted"; : > "${U}/run/up"; : > "${U}/run/settings"; rm -f "${U}/run/nm-down" "${U}/run/up-fails"
 }
 uout() { tr '\t\n' '~|' < "${OUT}"; }
 uprofiles
@@ -2461,7 +2482,26 @@ wctl forget "Wired connection 1"
 [ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ] && [ ! -s "${U}/run/deleted" ]; check $? "forget of the wired profile: refused -- not a network a player joined" "rc ${RC}; printed: '$(uout)'; deleted: '$(tr '\n' '|' < "${U}/run/deleted")'"
 wctl forget ""
 [ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ] && [ ! -s "${U}/run/deleted" ]; check $? "forget with no name: refused, nothing deleted" "rc ${RC}; printed: '$(uout)'; deleted: '$(tr '\n' '|' < "${U}/run/deleted")'"
+uprofiles
+wctl join "Cafe: Guest"
+[ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "joined" ] && [ "$(cat "${U}/run/up")" = "Cafe: Guest" ] && [ "$(awk -F'\t' '$3 == "yes" { print $1 }' "${U}/run/profiles")" = "Cafe: Guest" ] && grep -q -x -F 'wifi.ssid=Cafe: Guest' "${U}/run/settings" && grep -q -x -F 'wifi.key=psk-of-Cafe: Guest' "${U}/run/settings"; check $? "join of a saved network: its profile brought up (connection up, exactly that one), joined printed, wifi.ssid and wifi.key moved onto it from the profile" "rc ${RC}; printed: '$(uout)'; up: '$(tr '\n' '|' < "${U}/run/up")'; active: '$(awk -F'\t' '$3 == "yes" { print $1 }' "${U}/run/profiles" | tr '\n' '|')'; settings: '$(tr '\n' '|' < "${U}/run/settings")'"
+uprofiles
+wctl join "Home Wi-Fi"
+[ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "joined" ] && [ ! -s "${U}/run/up" ] && grep -q -x -F 'wifi.ssid=Home Wi-Fi' "${U}/run/settings"; check $? "join of the network already in use: joined without a connection up, the settings still moved onto it" "rc ${RC}; printed: '$(uout)'; up: '$(tr '\n' '|' < "${U}/run/up")'; settings: '$(tr '\n' '|' < "${U}/run/settings")'"
+uprofiles
+wctl join "Nowhere"
+[ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ] && [ ! -s "${U}/run/up" ] && ! grep -q -E "^wifi\.(ssid|key)=" "${U}/run/settings"; check $? "join of a name nobody saved: nothing printed, exit 1, nothing brought up, the settings untouched" "rc ${RC}; printed: '$(uout)'; up: '$(tr '\n' '|' < "${U}/run/up")'; settings: '$(tr '\n' '|' < "${U}/run/settings")'"
+wctl join "Wired connection 1"
+[ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ] && [ ! -s "${U}/run/up" ]; check $? "join of the wired profile: refused -- not a network a player joined" "rc ${RC}; printed: '$(uout)'; up: '$(tr '\n' '|' < "${U}/run/up")'"
+wctl join ""
+[ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ] && [ ! -s "${U}/run/up" ]; check $? "join with no name: refused" "rc ${RC}; printed: '$(uout)'"
+uprofiles; touch "${U}/run/up-fails"
+wctl join "Cafe: Guest"
+[ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ] && ! grep -q -E "^wifi\.(ssid|key)=" "${U}/run/settings" && [ "$(awk -F'\t' '$3 == "yes" { print $1 }' "${U}/run/profiles")" = "Home Wi-Fi" ]; check $? "join whose activation fails (the stored key refused): nothing printed, exit 1, the settings untouched, the device still on its network" "rc ${RC}; printed: '$(uout)'; settings: '$(tr '\n' '|' < "${U}/run/settings")'; active: '$(awk -F'\t' '$3 == "yes" { print $1 }' "${U}/run/profiles" | tr '\n' '|')'"
+uprofiles
 touch "${U}/run/nm-down"
+wctl join "Cafe: Guest"
+[ "${RC}" -eq 2 ] && [ ! -s "${OUT}" ] && ! grep -q -E "^wifi\.(ssid|key)=" "${U}/run/settings"; check $? "join with NetworkManager not answering: exit 2, nothing printed, the settings untouched" "rc ${RC}; printed: '$(uout)'; settings: '$(tr '\n' '|' < "${U}/run/settings")'"
 wctl saved
 [ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ]; check $? "saved with NetworkManager not answering: nothing printed, exit 1 -- not an empty list" "rc ${RC}; printed: '$(uout)'"
 wctl current

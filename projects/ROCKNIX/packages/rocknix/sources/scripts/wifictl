@@ -22,6 +22,11 @@ NMCLI="$(command -v nmcli 2>/dev/null)"
 ###     wifictl forget <name>     forget one: prints "forgotten", then "disconnected" on a
 ###                               second line when it was the one in use; exit 1, nothing
 ###                               printed, when it is not a remembered network or the delete failed
+###     wifictl join <name>       join a saved network with the key NetworkManager holds for it
+###                               (the picker's press on a SAVED row): prints "joined" once its
+###                               profile is active and moves wifi.ssid / wifi.key onto it; exit 1,
+###                               nothing printed, when it is not a saved network or the
+###                               activation failed; exit 2 when NetworkManager could not be asked
 ###
 
 IWD_AP_CFG_DIR="/storage/.cache/iwd/ap"
@@ -217,6 +222,37 @@ forget_wifi() {
   return 0
 }
 
+# Join a saved network by its profile, with the key NetworkManager holds --
+# the picker's press on a network the device has joined before (fork #191;
+# the maintainer's paradigm of 2026-09-15: the WI-FI SSID row is the network
+# you are on, the list behind it is what is in range, a saved one joins with
+# a press). `connect` would have deleted the profile and rebuilt it from the
+# WI-FI KEY setting, which holds the last key typed, for some other network.
+# Prints "joined" once the profile is active (at once when it already is),
+# then the settings wifi.ssid and wifi.key follow the profile, so the paths
+# that connect from the settings -- the WI-FI KEY row, the ENABLE WI-FI
+# switch, the restore wizard -- name the network the player is on; the key is
+# read from NetworkManager and never printed. pin_wifi then prefers this
+# network at the next boot and resume. A name that is not a saved wireless
+# network, or an activation that fails: nothing printed, exit 1. NetworkManager
+# not answering: exit 2, so a caller cannot read a silence as a refusal.
+join_wifi() {
+  local name="${1}" rows state psk
+  [ -n "${name}" ] || return 1
+  rows=$(saved_wifi) || return 2
+  state=$(printf '%s\n' "${rows}" | NAME="${name}" awk -F'\t' '$1 == ENVIRON["NAME"] { print $2 }')
+  [ -n "${state}" ] || return 1
+  if [ "${state}" != "active" ]; then
+    "${NMCLI}" -w 90 connection up id "${name}" >/dev/null 2>&1 || return 1
+  fi
+  psk=$("${NMCLI}" -s -g 802-11-wireless-security.psk connection show id "${name}" 2>/dev/null)
+  set_setting wifi.ssid "${name}"
+  set_setting wifi.key "${psk}"
+  pin_wifi
+  echo "joined"
+  return 0
+}
+
 has_ap_mode() {
   wait_for_wifi
 
@@ -286,5 +322,8 @@ case "${1}" in
     ;;
   forget)
     forget_wifi "${2}"
+    ;;
+  join)
+    join_wifi "${2}"
     ;;
 esac
