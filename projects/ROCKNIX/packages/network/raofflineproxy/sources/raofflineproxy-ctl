@@ -56,6 +56,12 @@
 #            same refusals as pending: toggle off or no store answers
 #            nothing with exit 1, a store that cannot be read exit 2.
 #   account  the signed-in account's points as RetroAchievements last told
+#   summary  one line of JSON per game the store holds for the signed-in
+#            account -- id, title, icon, achievements, points, unlocked,
+#            unlockedPoints, pending -- from one read of sqlite: the page's
+#            whole offline summary without a request per game (fork #190).
+#            Exit 1 with the toggle off, no account or no store; 3 when the
+#            store cannot be read.
 #            the proxy, from its cached sign-in: "score=<n> softcore=<n>" on
 #            one line, exit 0; exit 1 when the toggle is off, nothing is
 #            cached for this account, or the cached sign-in carries no
@@ -527,6 +533,80 @@ for aid, queued in db.execute("SELECT achievementId, queuedAt FROM pending_award
 # signed-in user, keyed by the user name in lower case as cache_keys.py
 # normalises it). The row carries the session token; the two numbers are
 # all that leaves this function.
+# summary: the page's whole offline summary in one read of the store (fork
+# #190: 247 saved games were 494 requests to the service, each tried
+# upstream first while the service still believed it was online -- hours on
+# a link that had just gone). One JSON object a line, sorted by id:
+#   {"id":4902,"title":"Bobl","icon":"http://127.0.0.1:8080/Images/x.png",
+#    "achievements":12,"points":110,"unlocked":1,"unlockedPoints":5,"pending":1}
+# The core set (Flags 3, positive ids) as the interface reads a patch; a game
+# whose set is empty is not a cached game (audit #186 PL-26); unlocked counts
+# the store's unlocks and the casual awards still waiting, as the service's
+# own offline unlocks answer does; the icon carries the service's address as
+# the service would rewrite it. Exit 1 with the toggle off, no account set or
+# no store; the store that cannot be read is a cannot_tell.
+do_summary() {
+    if [ "$(as_flag "$(setting "${KEY}")")" != "1" ] || [ ! -e "${QUEUE}" ]; then
+        return 1
+    fi
+    local USER
+    USER="$(setting "${USER_KEY}")"
+    [ -n "${USER}" ] || return 1
+    python3 - "${QUEUE}" "${USER}" <<'PY_SUMMARY'
+import json, sqlite3, sys
+from urllib.parse import urlsplit
+store, user = sys.argv[1], sys.argv[2].strip().lower()
+base = "http://127.0.0.1:8080"
+def icon_url(text):
+    text = (text or "").strip()
+    if not text:
+        return ""
+    if text.startswith("/"):
+        return base + text
+    if "://" in text:
+        path = urlsplit(text).path
+        return base + path if path else ""
+    return base + "/" + text
+try:
+    db = sqlite3.connect("file:%s?mode=ro" % store, uri=True, timeout=1.0)
+    patches = db.execute("SELECT cacheKey, responseBody FROM api_cache WHERE cacheKey LIKE ?", ("patch:%:" + user,)).fetchall()
+    unlock_rows = dict(db.execute("SELECT cacheKey, responseBody FROM api_cache WHERE cacheKey LIKE ?", ("unlocks:%:" + user + ":0",)).fetchall())
+    pending = {int(aid) for (aid,) in db.execute("SELECT achievementId FROM pending_awards WHERE status = 'pending'")}
+except Exception:
+    sys.exit(3)
+games = []
+for key, body in patches:
+    parts = key.split(":")
+    if len(parts) != 3 or parts[2] != user:
+        continue
+    try:
+        gid = int(parts[1])
+        patch = (json.loads(body) or {}).get("PatchData") or {}
+        core = [a for a in (patch.get("Achievements") or []) if isinstance(a, dict) and int(a.get("Flags") or 3) == 3 and int(a.get("ID") or 0) > 0]
+    except Exception:
+        continue
+    if gid <= 0 or not core:
+        continue
+    points = {int(a["ID"]): int(a.get("Points") or 0) for a in core}
+    unlocked = set()
+    row = unlock_rows.get("unlocks:%d:%s:0" % (gid, user))   # the casual row (cache_keys.unlocks: a trailing 0)
+    if row:
+        try:
+            unlocked = {int(u) for u in (json.loads(row).get("UserUnlocks") or [])}
+        except Exception:
+            unlocked = set()
+    queued = pending & set(points)
+    unlocked = (unlocked | queued) & set(points)
+    games.append({"id": gid, "title": str(patch.get("Title") or ""), "icon": icon_url(patch.get("ImageIcon")),
+                  "achievements": len(points), "points": sum(points.values()), "unlocked": len(unlocked),
+                  "unlockedPoints": sum(points[i] for i in unlocked), "pending": len(queued)})
+for game in sorted(games, key=lambda g: g["id"]):
+    print(json.dumps(game, separators=(",", ":"), ensure_ascii=False))
+PY_SUMMARY
+    local RC=$?
+    [ "${RC}" -eq 0 ] || cannot_tell "the proxy's store at ${QUEUE} could not be read"
+}
+
 do_account() {
     if [ "$(as_flag "$(setting "${KEY}")")" != "1" ] || [ ! -e "${QUEUE}" ]; then
         return 1
@@ -1379,6 +1459,7 @@ case "${1:-}" in
     pending) do_pending ;;
     pending-ids) do_pending_ids ;;
     account) do_account ;;
+    summary) do_summary ;;
     flushed) do_flushed ;;
     scan)    do_scan ;;
     topup)   do_topup "${2:-}" ;;
