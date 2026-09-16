@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-15T23:35:00Z
+> **Saved**: 2026-09-16T02:20:00Z
 > **Branch**: feature/conflict-resolution (worktree; the work itself is on `next` and in the ES repo)
 > **Repo**: maxengel/rocknix (primary checkout /workspace/repos/rocknix on `next`); ES ~/Development/emulationstation-next (build branch `test/qa-integration`)
 
 ## Current Focus
 
-RC-12 round on the RG SP, live: the maintainer rebooted the device onto **RC-12 build 2 `0242500826`** themselves (~22:05 UTC) and is testing (the Wi-Fi picker between two networks -- no word yet). Their two notes are built and VM-proven: #202 (build 3, the manager's labels a point smaller; French title in build 5) and #203 (build 4 + build 5, D-CLOUD-129: a launch over the player's sync or a running transfer asks STOP IT AND PLAY / KEEP WAITING; both paths proven on guest d, six frames filed; a stopped manual backup's row reads SKIPPED, A GAME WAS STARTED since build 5). **The device candidate is build 5 `8b533d76ec`** (pin commit `0659732cc1`; H700 filed `h700-all-20260915-8b533d76ec`, tar sha `451d58190365b9f5…`, NOT staged). Build 4's nine suites PASSED; build 5's full run had round-trip FAIL (1) because guest d's proof runs wrote the shared QA folder `/GAMES` during it (guest d's cloud config restored), and round-trip alone then PASSED -- build 5 is nine of nine (rule + memory: one writer per QA cloud folder). The punch list and the eleven decisions are **#200**.
+RC-12 round: the maintainer settled the eleven #200 decisions one at a time on 2026-09-16 (D-RA-022/023, D-UI-065..071, D-WORKFLOW-023, D-QA-026; all annotated on #200). The four that change code -- WI-FI NETWORK, no slot renumbering (both call sites), the two offline lines' French -- are ES `8d7213712` (merged `f26668e7c`), pinned as **RC-12 build 6 `bc26baa60d`**: x64 then H700 building in one chain (`build-rc12f.sh`); a background watcher (`bx4zqi2wj`) files the x64 image, upgrades guest d in place and starts the nine suites. Build 6 replaces build 5 as the device candidate once proven; **nothing beyond build 2 is staged**; the maintainer said no build goes to the device until the decisions were in -- they now are. Their Wi-Fi picker test on the RG SP: no word yet. Translation is off their plate (D-UI-065, #204: French continues as the layout check; the second language follows evidence of where the players are -- the stargazers endpoint 404s; upstream's translation activity favours fr/es/pt/de all-time, de/ja/zh/pt_BR this year).
 
 ## Completed This Session (since the 14:14 UTC RC-11 device apply)
 
@@ -17,12 +17,13 @@ RC-12 round on the RG SP, live: the maintainer rebooted the device onto **RC-12 
 
 ## In Progress
 
-- The maintainer's round on the RG SP; each note -> issue (D-QA-012), branch, build. #203 follow-up: a transfer stopped from the transfer page leaves its parts' script stamps at 130 (the hub rows read COULDN'T FINISH once dismissed); #203 box 1 (the winding-down automatic sync's spinner) not exercised on the VM.
-- The #200 decisions (eleven items; item 11 the row's label).
+- Build 6: the chain (x64 -> H700), the watcher (file, guest d, suites). Then on guest d: frames of NETWORK SETTINGS (WI-FI NETWORK), the two French offline lines (game page at 640x480 no longer wrapping; the summary), and a slot deletion in the manager leaving a gap (no renumber) plus a session end with a gap kept; file frames, QA row, #200/#201/#193/#196 comments; H700 filed.
+- Then the maintainer's word to stage build 6 on the RG SP (staging asked; the reboot its own question).
+- #203 follow-ups (transfer-page stamps; the automatic sync's spinner unexercised); #204 (second language evidence); the RG SP items of #200 section A on the device.
 
 ## Next Steps
 
-1. When the maintainer says so: stage build 5's H700 tar (`h700-all-20260915-8b533d76ec`; `stage-rgsp-run-<id>.sh` pattern, BEGIN/END lines), then the reboot as its own question through `tools/device-act`, then `rgsp-after-reboot.sh <id>`.
+1. When the maintainer says so: stage build 6's H700 tar (`h700-all-20260916-bc26baa60d`, once built and proven; `stage-rgsp-run-<id>.sh` pattern, BEGIN/END lines), then the reboot as its own question through `tools/device-act`, then `rgsp-after-reboot.sh <id>`.
 2. Apply the #200 decisions as they come (one string each; register rows citing D-RA-021 / D-UI-058 / D-UI-060 ...), build 3, VM proofs, H700.
 3. Follow-ups still open: #198 (setrootpass quoting), #193 French wrap (decision 3 on #200), #190 box 3 / #199 box 3, #196 upgrade check and START NEW GAME, #192 card frames, #187 frames, 1280x800 frames, rocknix.org pages (#191/#201 network settings; save states), upstream proposals (#168), #185, #186, SM8550 (D-WORKFLOW-020).
 
