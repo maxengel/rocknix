@@ -175,7 +175,7 @@ were the connection.
 
 ```mermaid
 flowchart TD
-    NET[NETWORK SETTINGS] --> SSID[WI-FI SSID  <i>the network the device is on . NOT CONNECTED . COULDN'T CHECK</i>]
+    NET[NETWORK SETTINGS] --> SSID[WI-FI NETWORK  <i>the network the device is on . NOT CONNECTED . COULDN'T CHECK</i>]
     SSID -->|A| PICK{{WI-FI NETWORKS: the networks in range, the joined one first<br/>Home Wi-Fi  CONNECTED . Cafe: Guest  SAVED . Library<br/>REFRESH . INPUT MANUALLY . BACK}}
     PICK -->|A on SAVED| JOIN[CONNECTING TO WI-FI -- wifictl join, the key NetworkManager holds;<br/>toast CONNECTED TO name; the page rebuilt]
     PICK -->|A on another| KEY[WI-FI KEY -- the on-screen keyboard, empty for an open network]
@@ -191,8 +191,8 @@ flowchart TD
     MN -.->|list unreadable| ERR2[COULDN'T READ THE SAVED NETWORKS. TRY AGAIN.]
 ```
 
-- **The WI-FI SSID row's value is the network the device is on now**
-  (D-UI-063), asked of NetworkManager (`wifictl current`) off the interface
+- **The WI-FI NETWORK row's value is the network the device is on now**
+  (D-UI-063; the label is D-UI-071, WI-FI SSID until RC-12 build 6), asked of NetworkManager (`wifictl current`) off the interface
   thread as the IP ADDRESS and INTERNET STATUS rows are: CHECKING... until
   the answer, then the name, NOT CONNECTED when the device is on none, or
   COULDN'T CHECK when NetworkManager itself did not answer -- two different
