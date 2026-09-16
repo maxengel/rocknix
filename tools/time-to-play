@@ -38,6 +38,8 @@
 #             when the player stops being told something is happening.
 #
 #   g2g       Game to game. The same exit, with a launch fired the moment the
+#             emulator is gone and STOP IT AND PLAY pressed half a second later
+#             (D-CLOUD-130: the launch asks before it stops the sync), timed to
 #             emulator is gone. What the launch does to the sync is read off
 #             the stamp's token afterwards -- `cancelled` is D-CLOUD-076's
 #             behaviour today, `completed` would mean it ran to the end --
@@ -565,7 +567,7 @@ def measure_exit(g, fr, tag, rest_ref, relaunch=False, budget=150.0,
     socket and owes the guest's routing table nothing."""
     before = g.stamp("exit") if ssh_poll else ""
     result = {"tag": tag, "stamp_before": before, "relaunch": relaunch}
-    marks = {"gone": None, "stamp": None, "ra2": None, "relaunched": None}
+    marks = {"gone": None, "stamp": None, "ra2": None, "relaunched": None, "answered": None}
     stop = threading.Event()
 
     def poll():
@@ -631,6 +633,17 @@ def measure_exit(g, fr, tag, rest_ref, relaunch=False, budget=150.0,
         # linger the card has (a second and a half on success).
         if not relaunch and marks["stamp"] is not None and t - marks["stamp"] > 15:
             break
+        # Since D-CLOUD-130 a launch over the running exit sync asks STOP IT
+        # AND PLAY / KEEP WAITING instead of cancelling on its own. A player's
+        # thumb answers, and so does this cell: A once, half a second after
+        # the relaunch went -- from this thread, which owns the monitor
+        # socket -- so the number measured is still exit to the next first
+        # frame, the one press included. With no sync in flight the launch
+        # has gone ahead and the A lands in the game, harmlessly.
+        if (relaunch and marks["relaunched"] is not None and marks["answered"] is None
+                and time.monotonic() - marks["relaunched"] >= 0.5):
+            fr.mon.sendkey("x")
+            marks["answered"] = time.monotonic()
         if (relaunch and game2 is None and marks["ra2"] is not None
                 and t > marks["ra2"] and d_prev >= vq.CHANGED_MIN and not is_blank(f)):
             game2 = t
@@ -650,6 +663,7 @@ def measure_exit(g, fr, tag, rest_ref, relaunch=False, budget=150.0,
         "t_sync_stamp": None if marks["stamp"] is None else round(marks["stamp"] - t0, 3),
         "t_card_gone": None if card_gone is None else round(card_gone - t0, 3),
         "t_relaunch_sent": None if marks["relaunched"] is None else round(marks["relaunched"] - t0, 3),
+        "t_question_answered": None if marks["answered"] is None else round(marks["answered"] - t0, 3),
         "t_retroarch2_seen": None if marks["ra2"] is None else round(marks["ra2"] - t0, 3),
         "t_second_game_frame": None if game2 is None else round(game2 - t0, 3),
         "frames": series,
@@ -1381,6 +1395,7 @@ def render(r):
             ["from execute_kill to", "median / mean / max", "n"],
             [["the emulator gone", fmt(stats([x["t_emulator_gone"] for x in G])), len(G)],
              ["the relaunch sent", fmt(stats([x["t_relaunch_sent"] for x in G])), len(G)],
+             ["the question answered (STOP IT AND PLAY, D-CLOUD-130)", fmt(stats([x.get("t_question_answered") for x in G])), len(G)],
              ["**the next game's first frame**", "**%s**" % fmt(stats([x["t_second_game_frame"] for x in G])), len(G)],
              ["the exit sync's stamp", fmt(stats([x["t_sync_stamp"] for x in G])), len(G)]]))
         lines.append("What the launch did to the sync, from the stamp's token: %s.\n"
