@@ -21,11 +21,15 @@ not its identity.
 
 Why this and not the slot:
 
-- **Renumbering is a rename.** ES calls `renumberSlots()` after every savestate
-  deletion, and it moves files with `copyToSlot(slot, move = true)`. The bytes
-  do not change, so the hash does not change; the slot does. Sync sees a
-  delete and a create; the hash sees one version that moved. Slot numbers are
-  therefore not stable across devices (#24), and a hash is.
+- **Renumbering is a rename.** Upstream ES calls `renumberSlots()` after every
+  savestate deletion, and it moves files with `copyToSlot(slot, move = true)`.
+  The bytes do not change, so the hash does not change; the slot does. Sync
+  sees a delete and a create; the hash sees one version that moved. Slot
+  numbers are therefore not stable across devices (#24), and a hash is. (This
+  fork stopped renumbering on 2026-09-16, D-UI-069: a deletion in the manager
+  now writes only its `retired` row through `--retire`, and the `--rescan`
+  that followed it went with D-CLOUD-132. The argument stands for a device
+  still on upstream behaviour and for the slot's instability as an identity.)
 - **It is the same on every side.** A remote's native hash type varies by
   backend (Dropbox's own, S3's md5, none at all on WebDAV); sha256 computed by
   us at capture compares sidecar to sidecar regardless of where the file is.
