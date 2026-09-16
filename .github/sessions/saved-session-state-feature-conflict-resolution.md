@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-16T05:00:00Z
+> **Saved**: 2026-09-16T05:22:00Z
 > **Branch**: feature/conflict-resolution (worktree; the work itself is on `next` and in the ES repo)
 > **Repo**: maxengel/rocknix (primary checkout /workspace/repos/rocknix on `next`); ES ~/Development/emulationstation-next (build branch `test/qa-integration`)
 
 ## Current Focus
 
-RC-12 round: the maintainer settled the eleven #200 decisions (2026-09-16) and a twelfth -- every sync a launch would interrupt asks, the automatic ones too (D-CLOUD-130). **Build 6 `bc26baa60d` is ON the RG SP** (staged 03:18, rebooted through `tools/device-act` 03:33 UTC on the maintainer's yes, verified). **Build 7 `586d2334fd`** (ES `265540258`: the automatic syncs ask; a fix-up for a comment line that had broken compilation for eleven minutes on `test/qa-integration`) is proven on guest d (the question over an exit sync, STOP IT AND PLAY, a nine-second spinner wait while the sync died, the game, the stamp `cancelled`), H700 filed (`h700-all-20260916-586d2334fd`, tar sha `550b8863dad59f41…`), **not staged**; its nine suites are running (watcher `b36tsme8i`). Nothing touches the device without a new yes. Translation off the maintainer's plate, French stays at low priority (D-UI-072, #204 parked).
+RC-12 round: the maintainer settled the eleven #200 decisions (2026-09-16) and a twelfth -- every sync a launch would interrupt asks, the automatic ones too (D-CLOUD-130). **Build 6 `bc26baa60d` is ON the RG SP** (staged 03:18, rebooted through `tools/device-act` 03:33 UTC on the maintainer's yes, verified). **Build 7 `586d2334fd`** (ES `265540258`: the automatic syncs ask; a fix-up for a comment line that had broken compilation for eleven minutes on `test/qa-integration`) is proven on guest d (the question over an exit sync, STOP IT AND PLAY, a nine-second spinner wait while the sync died, the game, the stamp `cancelled`), H700 filed (`h700-all-20260916-586d2334fd`, tar sha `550b8863dad59f41…`), **not staged**; nine of nine (the full run's time-to-play FAIL was the benchmark meeting the new question; `tools/time-to-play` now answers it, D-CLOUD-131, and passed alone: exit to the next first frame 2.01 s with the press). Nothing touches the device without a new yes. Translation off the maintainer's plate, French stays at low priority (D-UI-072, #204 parked).
 
 ## Completed This Session (since the 14:14 UTC RC-11 device apply)
 
@@ -17,7 +17,7 @@ RC-12 round: the maintainer settled the eleven #200 decisions (2026-09-16) and a
 
 ## In Progress
 
-- Build 7's suites; then the QA row for build 7, and the offer to stage it (staging asked, the reboot asked).
+- Build 7 offered for the RG SP: waiting on the maintainer's word to stage (D-QA-011), then the reboot as its own question (D-QA-015).
 - The maintainer's round on build 6 (the RG SP items of #200 section A; the Wi-Fi picker between two networks); each note -> issue, branch, build.
 - Follow-ups: #203's transfer-page stamps; the French offline lines unframed (START swallowed after restarts on guest d); rocknix.org pages; upstream proposals (#168); #185's own round.
 
