@@ -1,71 +1,62 @@
 # Saved Session State
 
-> **Saved**: 2026-09-16T15:08:29Z
+> **Saved**: 2026-09-16T23:43:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` and in the ES repo)
-> **Repo**: maxengel/rocknix -- primary checkout /workspace/repos/rocknix on `next` (f56f286020, pushed); ES ~/Development/emulationstation-next, build branch `test/qa-integration` at `265540258` (pushed)
+> **Repo**: maxengel/rocknix -- primary checkout /workspace/repos/rocknix on `next` (8ad3984a95, pushed); ES ~/Development/emulationstation-next, build branch `test/qa-integration` at `942132e99` (pushed); feature worktree `emulationstation-next.worktrees/delete-async` on `feature/savestate-delete-async` (a8e274598, merged)
 
 ## Current Focus
 
-RC-12 for the "Offline RetroAchievements" milestone round on the maintainer's RG SP. **The RG SP is on RC-12 build 6 `bc26baa60d`** (staged 03:18 UTC on "you may stage the buils", rebooted through `tools/device-act` 03:33 UTC on "you may reboot", verified back with an empty queue, `ready=247 pending=0`). **RC-12 build 7 `586d2334fd` is built, proven and offered; NOT staged** -- it awaits the maintainer's word (D-QA-011), then the reboot as its own question (D-QA-015). Build 7 adds D-CLOUD-130: every sync a game launch would interrupt asks STOP IT AND PLAY / KEEP WAITING, the automatic startup and after-a-game syncs included (the maintainer's consistency call after meeting the exit sync's silent stop).
+#205 -- the save state manager's DELETE hung for "a second or so" on the RG SP. Root cause found, reproduced on guest d, fixed, proven, built as **RC-12 build 9 `e287f9d21a`** (nine suites PASSED, guest d proof PASS), H700 filed, **NOT staged**: the RG SP was off the network (both addresses) when the run ended, so the staging question waits for the device (D-QA-011), then the reboot as its own question (D-QA-015). The RG SP is still on RC-12 build 6 `bc26baa60d`.
 
-## Completed This Session (2026-09-15 evening -> 2026-09-16 05:20 UTC)
+## Completed This Session (2026-09-16 15:13 -> 23:45 UTC)
 
-- #200 punch list filed and kept current; the maintainer's eleven decisions taken one at a time and recorded (D-RA-022/023, D-UI-065..072, D-WORKFLOW-023, D-QA-026), plus a twelfth (D-CLOUD-130) and the benchmark's consequence (D-CLOUD-131).
-- Builds, each x64-proven on guest d, nine suites, H700 filed under `/workspace/artifacts/rocknix-images/h700-all-2026091{5,6}-<id>/`:
-  - build 1 `2514d317f7` (the SSID line only when it differed; MANAGE SAVED NETWORKS) -- superseded;
-  - build 2 `0242500826` (#201, the Wi-Fi paradigm: the row is the network you are on, the picker marks CONNECTED/SAVED and joins a saved network; `wifictl join`) -- was on the RG SP 22:05-03:33;
-  - build 3 `f2ee6415cd` (#202, the manager's labels a point smaller); build 4 `5b795f2e49` (#203, the launch-over-sync question for the player's syncs and transfers); build 5 `8b533d76ec` (a stopped manual backup's row says so; the transfer word; the manager's French title);
-  - build 6 `bc26baa60d` (the eleven decisions: WI-FI NETWORK, no slot renumbering, the offline lines' French) -- **on the device**;
-  - build 7 `586d2334fd` (the automatic syncs ask too) -- the candidate.
-- `tools/time-to-play` answers the launch question in its game-to-game cell (D-CLOUD-131): exit -> next first frame 2.01 s with the press.
-- Rules/memories: one writer per QA cloud folder while the suites run (rule + memory); gate commits on the check (memory); the QA-account frames deleted unfiled.
-- Issues: #200 (punch list + decisions), #201 (paradigm; box 5 RG SP half + docs open), #202 (RG SP half open), #203 (boxes 1-3 ticked; RG SP half, French frames, docs open; follow-up: transfer-page stamps), #204 closed as parked (French stays, low priority). #191, #193, #196 carry the decisions.
+- **Cause** (asked as a question, answered first, then fixed on the maintainer's go): since D-CLOUD-053 the Y handler ran `cloud_capture --retire` and `--rescan` synchronously on the interface thread (`popen`); COPY TO FREE SLOT runs no script. Reproduced through the manager on guest d with a press timer over the QEMU monitor (`scratchpad/press-time.py`, 83 ms/frame): YES 0.588 s to the first changed frame vs a copy 0.350 s on build 7; the journal put the retire at 165 ms of interface thread; ~150 ms under ES because each `popen` forks a 346 MB process. On the A53 that is the second the maintainer felt.
+- **Decisions**: D-UI-073 (instant deletion: tile gone the frame YES is pressed; retire then unlink on one worker, one at a time; paths not pointers; joined at exit), D-CLOUD-132 (no post-delete `--rescan`: nothing renumbers since D-UI-069). Maintainer: *"Let's go with option 1 with the mitigation steps you've outlined."* Blindspot 45 (a fixture's speed, not the device's).
+- **ES** `a11cde632` + `a8e274598` on `feature/savestate-delete-async`, merged to `test/qa-integration` (`2bf92e67f`, then `942132e99`): `SaveStateDeleteQueue` (pure order book; 7 unit cases / 52 assertions, 109 / 1201 in all -- compiled with host g++, no cmake on this host, see below), `SaveStateDeleter` (the worker; `shutdown()` from main's tail and `onExit`), `GuiSaveState` (hides pending tiles in `loadGrid`, enqueues two strings on YES, polls `completed()` in `update()` keeping the cursor), `SaveStateRepository::onDisk` (never hands out a state whose file is gone -- the ghost tile the teardown case found on build 8).
+- **Builds**: build 8 `a4dfd97ca5` (nine suites PASSED; guest d proof found the ghost) and build 9 `e287f9d21a` (nine PASSED `qa-e287f9d21a-webdav-a-20260916-2316`; guest d: copy 0.349 s, YES 0.345 s; retire on the worker, no rescan, file gone, row written; YES+B 10 ms later with ES intact and no ghost on reopen; a file removed over ssh not listed). Filed under `/workspace/artifacts/rocknix-images/{x64,h700}-all-20260916-{a4dfd97ca5,e287f9d21a}/` (build 9 H700 tar sha `5d7b9806eab2cb00…`).
+- **Issues**: #205 (cause, reproduction, decision, builds, proofs; VM-side acceptance boxes ticked, the rescan box superseded in the body; box 1 and the device half of box 5 open), #206 (COPY TO FREE SLOT writes a slot no capture mode records -- open, not started). Both sub-issues of #11.
+- **Docs on `next`** (all pushed): register rows, blindspot 45, `save-manifest-schema.md` renumber bullet corrected, QA rows for builds 8 and 9 in `docs/vm-qa-log.md`, work log entries 15:50 -> 23:45, frames `docs/qa-frames/2026-09-16/205-*`.
+- Memory: `one-proof-at-the-devices-numbers` extended with the speed lesson.
 
 ## In Progress
 
-- **Offering build 7 to the RG SP**: the maintainer has not yet answered "May I stage build 7?". On a yes: `stage-rgsp-run-586d2334fd.sh` (copy the build-6 wrapper: artifact dir `h700-all-20260916-586d2334fd`, quote the maintainer's yes, BEGIN/END lines), then ask for the reboot by name, then `rgsp-after-reboot.sh 586d2334fd`.
-- The maintainer's own round on build 6/7: the RG SP items of #200 section A (the Wi-Fi picker between two networks -- no word yet; the manager's text; the launch-over-sync question; the rest). Each note -> issue quoting them (D-QA-012), branch from `test/qa-integration`, merge, pin, x64 build, suites, guest d proof, H700, then ask to stage.
+- **Offering build 9 to the RG SP**: not asked yet because the device was off the network. On the maintainer's yes: `stage-rgsp-run-e287f9d21a.sh` (copy the build-6 wrapper `stage-rgsp-run-bc26baa60d.sh`: artifact dir `h700-all-20260916-e287f9d21a`, quote the yes, BEGIN/END lines), then the reboot as its own question through `tools/device-act rgsp "reboot-apply-h700-e287f9d21a (maintainer yes ...)" -- 'sync; reboot'`, then `rgsp-after-reboot.sh e287f9d21a`. Note the RG SP goes from build 6 straight to build 9 (builds 7 and 8 never staged): D-CLOUD-130 (the automatic syncs ask) lands on the device with it.
+- The maintainer's own round then: #205 box 1 (no perceptible freeze after YES) and the device's `(--retire, N ms)` line from `/var/log/cloud_sync.log` (read-only, `tools/device-act`), plus #200 section A on build 9.
 
 ## Next Steps
 
-1. When the maintainer says so: stage build 7 (staging asked -- their word), then the reboot as its own question through `tools/device-act rgsp "reboot-apply-h700-586d2334fd (maintainer yes ...)" -- 'sync; reboot'`, then `rgsp-after-reboot.sh 586d2334fd`; record the RETURNED line, the QA row's device column, the work log, #200.
-2. Follow-ups, none blocking: #203's transfer-page stamps (a transfer stopped from the transfer page leaves its parts' script stamps at 130 with no token, so the hub rows read COULDN'T FINISH once dismissed); the two French offline lines unframed on the VM (START swallowed after restarts; see notes); the rocknix.org pages for network settings (#191/#201), save states (#196), the cloud question (#203) -- required before any upstream PR (documentation-accuracy.md); upstream proposals (#168); #185's own round (D-WORKFLOW-023); the audit (task #11) and the RAOfflineProxy upstreaming (task #12) from earlier days.
-3. Blindspot/rule material already captured: one writer per QA cloud folder; gate commits on the check; the START key after an ES restart (harness note in the 02:55 work log).
+1. When the RG SP is on: ask *"May I stage build 9 `e287f9d21a` on the RG SP?"*; stage; ask for the reboot by name; `rgsp-after-reboot.sh`; record the RETURNED line, the QA row's device column, the work log, #205 (tick box 1 and box 5's device half on the maintainer's word; record the device's retire ms).
+2. #206 (its own change, #21's design): a capture mode for a manager-made copy, plus the missing running-sync gate on the X handler.
+3. Earlier follow-ups, unchanged: #203's transfer-page stamps; the rocknix.org pages (#191/#201, #196, #203) before any upstream PR; #185's own round; the audit and RAOfflineProxy upstreaming tasks.
 
 ## Key Files Modified (this session)
 
 | File | Change | Notes |
 | --- | --- | --- |
-| ES `es-app/src/FileData.cpp` | Modified | the launch gate: one question over any sync (card or transfer), `launchNow` / `launchWhenGone` (spinner, SIGKILL at 5 s, gives up at 20 s) |
-| ES `es-app/src/CloudTransferJob.{h,cpp}` | Modified | runs under `setsid` with a `>>> pid` line; `stopForLaunch`; a stopped run exits `CloudExit::Stopped` and reads SKIPPED - YOU STARTED A GAME |
-| ES `es-app/src/ThreadedCloudSync.{h,cpp}` | Modified | `cancelForLaunch(refusal, evenIfPlayerStarted)`; `writeStamp`; a cancelled manual backup/restore stamps `last-backup`/`last-restore` with the cancel token |
-| ES `es-app/src/guis/GuiWifi.{h,cpp}` | Rewritten | the picker (D-UI-063/064) |
-| ES `es-app/src/guis/GuiMenu.{h,cpp}` | Modified | WI-FI NETWORK row (value = the network the device is on), MANAGE SAVED NETWORKS words, `openWifiSettings` gone |
-| ES `es-app/src/SaveState.cpp`, `guis/GuiSaveState.cpp` | Modified | no renumbering (D-UI-069); labels a point smaller (#202) |
-| ES `es-app/src/WifiText.{h,cpp}`, `ApiSystem.{h,cpp}`, `GuiSettings.{h,cpp}`, `MultiLineMenuEntry.{h,cpp}`, unit tests, FR .po | Modified | `pickerRows`/`parseJoin`; `joinWifiNetwork`; the description-row helper removed; `layoutRows`; 102 unit cases |
-| `projects/ROCKNIX/packages/rocknix/sources/scripts/wifictl` | Modified | `join <name>` (+ harness section u., 19 PASS) |
-| `projects/ROCKNIX/packages/ui/emulationstation/package.mk` | Modified | pin `265540258e4b94f4050cda67e07e47d08c5632f2` (build 7) |
-| `tools/time-to-play` | Modified | the g2g cell presses STOP IT AND PLAY (D-CLOUD-131) |
-| `.claude/rules/generic-x64-vm-testing.md` | Modified | one writer per QA cloud folder |
-| `docs/decision-register.md`, `docs/es-menu-map.md`, `docs/vm-qa-log.md`, `docs/work-logs/2026_09-work_logs/2026_09_1{5,6}-work_log.md`, `docs/qa-frames/2026-09-1{5,6}/` | Modified | 306 register IDs; rows for builds 1-7; frames for #191/#201/#202/#203/#196 |
+| ES `es-app/src/SaveStateDeleteQueue.{h,cpp}` | Created | pure order book: enqueue/take/finish/isPending/completed; unit-tested |
+| ES `es-app/src/SaveStateDeleter.{h,cpp}` | Created | the worker: retire then unlink, one job at a time; `shutdown()` joins |
+| ES `es-app/src/guis/GuiSaveState.{h,cpp}` | Modified | YES enqueues two strings and reloads; `loadGrid` hides pending; `update()` polls `completed()` |
+| ES `es-app/src/SaveStateRepository.{h,cpp}` | Modified | `onDisk`/`anyOnDisk`: `getSaveStates`/`hasSaveStates` skip vanished files |
+| ES `es-app/src/main.cpp`, `es-app/CMakeLists.txt`, `es-app/tests/unit/{CMakeLists.txt,README.md,SaveStateDeleteQueueTests.cpp}` | Modified/Created | shutdown hook; sources listed; the test |
+| `projects/ROCKNIX/packages/ui/emulationstation/package.mk` | Modified | pin `942132e99efa8b5ac3048eea50fce33a2a5e0a51` (build 9) |
+| `docs/decision-register.md`, `docs/blindspot-register.md`, `docs/save-manifest-schema.md`, `docs/vm-qa-log.md`, `docs/work-logs/2026_09-work_logs/2026_09_16-work_log.md`, `docs/qa-frames/2026-09-16/205-*` | Modified | D-UI-073, D-CLOUD-132; blindspot 45; rows; frames |
 
 ## Related Context
 
-- **Tracker**: #200 (punch list + the twelve decisions), #201, #202, #203, #191, #193, #196, #204 (closed, parked); milestone "Offline RetroAchievements", epic #11.
-- **Device record**: `/workspace/artifacts/rocknix-device-actions.log` (BEGIN/END/RETURNED lines for every stage and reboot; the last: build 6's reboot 03:33 UTC).
-- **Session scripts** (`/workspace/tmp/rocknix-session/`): `rc11/lib.sh` (guest d helpers: `g`, `gput`, `ser`, `frame`, `press`, `link`, `set_lang`, `es_restart`, `no_game`), `rc12/wifictl-stub-2` (the Wi-Fi stand-in), `stage-h700.sh` + `stage-rgsp-run-<id>.sh` (staging wrappers), `rgsp-after-reboot.sh`, `build-rc12g.sh` (x64 -> H700 chain pattern), `vm-qa-<id>.log`, frames under `rc12/frames-*/`.
-- **Artifacts**: `/workspace/artifacts/rocknix-images/{x64,h700}-all-2026091{5,6}-<id>/` with BUILD_INFO.txt and SHA256SUMS.tar (H700); suite reports `qa-<id>-webdav-a-<date>/`.
+- **Tracker**: #205, #206 (new, under #11); #200 (the RG SP round), #201-#203, #185.
+- **Session scripts** (`/workspace/tmp/rocknix-session/delete-async/`): `chk.sh` (cross-compiler syntax check for the ES worktree; `chk.sh <files>`), `build-tests/es-unit-tests` (built by hand with host g++ -- **no cmake on this host**; the g++ line is in the 2026-09-16 work log / this session), `proof-9.sh` (the guest d proof, gated; assumes the NES list with Bobl selected), `chain-*.sh`/`build-x64-*.sh`/`suites-*.sh` (the build pattern: x64, then suites and H700 side by side), logs. Scratchpad (may vanish): `press-time.py`, `keys-fast.py`, frames.
+- **Device record**: `/workspace/artifacts/rocknix-device-actions.log` -- two read-only attempts on the RG SP this session (both unreachable); the last real act is build 6's reboot (03:33 UTC).
 
 ## Notes for Next Session
 
-- **Guest d** (`:10026`, monitor `/tmp/rocknix-qemu-monitor-d.sock`, serial `-serial-d.sock`) is on build 7 with the Wi-Fi stand-in NOT mounted after its last reboot, cloud config restored (no remote, `cloudsaves.gameexit=0`), English; Tobu has slot files `state3` + auto, Böbl `state1..3` + auto in `/storage/roms/savestates/{gbc,nes}/`. Guests a/b are the suites' (`tools/vm-qa` brings them up from the image). The QA WebDAV backend (`tools/cloud-test-backend`, :9010) serves one directory: never let another guest write `/GAMES` while the suites run; a proof uses its own folder (`SAVES_REMOTE=/GAMES-d`).
-- **START (`sendkey ret`) is swallowed for a minute or more after an ES restart on guest d**, while A and B register; the frame tool's `wait-for-change` retry makes it worse (a second START closes the menu). Held presses (`sendkey ret 300`) after a long idle worked. Reach pages through A/B where possible; frames right after a restart can be stale ~30-60 s.
-- The exit sync on the VM at `--bwlimit 8k` ends by its own progress bound after ~20 s (THE CLOUD TOOK TOO LONG, D-CLOUD-111): answer a launch question within the sync's first seconds to exercise the cancel.
-- Every device act: idle check, ask by name, `tools/device-act`, read the device afterwards; a status read must be side-effect-free (`cat` the flush stamp, never `raofflineproxy-ctl flushed`); mask values; the QA account's name never enters the repo (frames are checked before filing; two were deleted this session).
-- Commit gating: chain the commit on the check (`chk || exit 1`) -- a broken FileData.cpp reached `test/qa-integration` for eleven minutes this session because the check only fed an echo.
-- Commits: `git -c user.name="Max Engel" -c user.email="max@awecelot.com"`, trailers `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` and `Claude-Session: https://claude.ai/code/session_01LkFLXE5GsT1apn8AwrxrGR`; register append-only (`tools/register-check`); never `cd` into the primary checkout; sync build worktrees only with no build running; the ES pin must be pushed before building.
+- **Guest d** (`:10026`) is on **build 9**, English, fixture intact: Bobl `state1..3` + auto, Tobu `state3` + auto; no cloud remote; the manifest carries ten `retired` rows from today's scratch deletions (harmless). After an ES restart guest d sits on the **carousel** (not the list): X there is RANDOM -- this framed PICO-8's list once and a #205 comment row was posted on it before the frame was read (corrected in the next comment). Read the frame before the claim.
+- The auto-mode classifier refuses a VM reboot when it shares a command with a copy; the maintainer authorised rebooting guest d in chat (*"please reboot that guest d vm"*), and standalone reboot commands then passed.
+- ES does not handle SIGTERM (`signal(SIGTERM, …)` commented out): `systemctl restart essway` kills it in 25 ms; the join at exit guards ES's own quit paths only. A kill inside the retire's tail leaves a row and the file (same as before).
+- Timing floor on guest d's rig: ~0.26-0.35 s press to first changed frame (input latency + 83 ms/frame); compare presses against each other, not against zero.
+- Every device act: idle check, ask by name, `tools/device-act`, read the device afterwards; the ES pin must be pushed before building; build worktrees sync only with no build running; commits gated on the check (`chk.sh ... && git commit`).
+- Commits: `git -c user.name="Max Engel" -c user.email="max@awecelot.com"`, trailers `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` and `Claude-Session: https://claude.ai/code/session_01LkFLXE5GsT1apn8AwrxrGR`; register append-only (`tools/register-check`, ES_SRC for ES citations); never `cd` into the primary checkout.
 
 ## Open Questions
 
-- The maintainer's yes to stage build 7 on the RG SP (asked at 05:22 UTC); then the reboot.
-- Their Wi-Fi picker result between two networks on the device (#201 box 5), and the rest of #200 section A on build 6/7.
+- The maintainer's yes to stage build 9 on the RG SP (the device was off the network at 23:41 UTC); then the reboot.
+- Their feel of the deletion on the device (#205 box 1) and the device's `(--retire, N ms)` number.
