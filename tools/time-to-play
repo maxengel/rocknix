@@ -39,11 +39,11 @@
 #
 #   g2g       Game to game. The same exit, with a launch fired the moment the
 #             emulator is gone and STOP IT AND PLAY pressed half a second later
-#             (D-CLOUD-130: the launch asks before it stops the sync), timed to
-#             emulator is gone. What the launch does to the sync is read off
-#             the stamp's token afterwards -- `cancelled` is D-CLOUD-076's
-#             behaviour today, `completed` would mean it ran to the end --
-#             so the cell reports what the build does rather than assuming.
+#             (D-CLOUD-130: the launch asks before it stops the sync). What the
+#             launch does to the sync is read off the stamp's token afterwards
+#             -- `cancelled` is the answer's doing, `completed` would mean the
+#             sync ran to the end before the press -- so the cell reports what
+#             the build does rather than assuming.
 #
 #   startup   The startup sync: cloudsaves.startup=1, reboot, and time from
 #             the reboot to the last-sync-startup stamp; then a launch fired
