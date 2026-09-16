@@ -464,3 +464,27 @@ the top-up never got one for the write path. Blindspot 41 is the same failure
 on a panel size; this one is on a library size. Related: D-RA-019, the
 2026-09-14 work log (22:20 UTC), `rc8-topup-row.sh` (forty indexed games,
 the first write-path proof at length).
+
+## 45. Proven at a fixture's speed, not the device's (2026-09-16)
+
+The save state manager's DELETE has run two synchronous `cloud_capture`
+invocations on the interface thread since D-CLOUD-053 (2026-09-07): the
+retire before the unlink, the rescan after it. Every proof of it ran on
+guest d, where the pair costs about 140 ms and a real deletion's retire
+logged 150 ms -- numbers nobody would call a freeze, so nobody did. On the
+RG SP the maintainer felt *"a second or so"* and asked whether something was
+wrong (#205). Nothing was: bash, `jq` and `sha256sum` on a Cortex-A53 at
+handheld clocks run several times slower than on the build host, and two
+serial runs of a 1,370-line script add up to exactly what was felt.
+
+The shape: 41 was a panel size and 44 a library size; this one is the CPU.
+A latency proven on the VM is a lower bound, not the device's number, and
+the ratio is largest for exactly the work the interface thread should not
+be doing -- forking a shell, starting `jq`, hashing files. So anything on
+that thread that shells out needs either the device's own timing (the
+script's `(--retire, N ms)` lines, read from the device) or to leave the
+thread. D-CLOUD-098's budget was measured the same way (the 2026-09-16 work
+log, 05:20 UTC) and wants the same check. Found beside it: COPY TO FREE
+SLOT records nothing at all (#206), which is why it felt instant. Related:
+41, 44, `engineering-practices.md` (the VM tests first, and what it cannot
+prove).
