@@ -139,6 +139,8 @@
 #      savestate_auto_load and any other into " -e <slot>" on stdout, spliced
 #      before --config like --host; a slot that is not a number gets no -e;
 #      without -state_file the appendconfig is today's, byte for byte.
+#   w. cheevos_armsx2.sh writes one Token line to secrets.ini however often it
+#      runs, and gives a secrets.ini without the section its header once (#170).
 #
 # The chksysconfig and 001-functions functions are lifted out of the files
 # under test and run in a fresh bash against temp paths, as wait-lock-test
@@ -2586,5 +2588,39 @@ if grep -q '^#State file' "${U}/repo/setsettings.sh"; then
 else
     check 1 "" "setsettings.sh has no --state_file= parser and set_autosave knows no state file (#196)"
 fi
+
+echo "  w. cheevos_armsx2.sh writes one Token line to secrets.ini, however often it runs (#170)"
+W="${TMP}/w"; WS="${W}/storage"; WI="${WS}/.config/ARMSX2/inis"
+mkdir -p "${WI}" "${W}/repo" "${W}/shim"
+src_of "projects/ROCKNIX/packages/emulators/standalone/armsx2-sa/scripts/cheevos_armsx2.sh" "${W}/repo/cheevos_armsx2.sh"
+# The script sources /etc/profile for get_setting; the stub answers from a map.
+cat > "${W}/profile" <<'PEOF'
+export PATH=/shim:/usr/bin:/bin
+get_setting() {
+    case "$1" in
+        global.retroachievements) echo 1 ;;
+        global.retroachievements.username) echo player ;;
+        global.retroachievements.token) echo TOKEN-NEW ;;
+        *) echo 0 ;;
+    esac
+}
+PEOF
+printf '[Achievements]\nEnabled = false\nUsername = old\nChallengeMode = false\nLoginTimestamp = 1\n' > "${WI}/PCSX2.ini"
+printf '[Achievements]\nToken = TOKEN-OLD\n' > "${WI}/secrets.ini"
+wr() { # run the script once inside the sandbox; stdout+stderr to $OUT, rc in $RC
+    RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${W}/profile" /etc/profile \
+        --bind "${WS}" /storage --ro-bind "${W}/shim" /shim --ro-bind "${W}/repo" /repo \
+        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var \
+        bash /repo/cheevos_armsx2.sh > "${OUT}" 2>&1; echo $? ) 2>/dev/null )
+}
+OUT="${W}/out"
+wr; wr
+[ "${RC}" -eq 0 ] && [ "$(grep -c '^Token = ' "${WI}/secrets.ini")" -eq 1 ] && grep -q '^Token = TOKEN-NEW$' "${WI}/secrets.ini"; check $? "two launches leave exactly one Token line in secrets.ini, the current token" "rc ${RC}; secrets.ini: $(tr '\n' '|' < "${WI}/secrets.ini"); out: $(tail -2 "${OUT}" | tr '\n' '|')"
+grep -q '^Username = player$' "${WI}/PCSX2.ini" && [ "$(grep -c '^\[Achievements\]' "${WI}/PCSX2.ini")" -eq 1 ]; check $? "and PCSX2.ini carries the account once, with no Token of its own" "PCSX2.ini: $(tr '\n' '|' < "${WI}/PCSX2.ini")"
+printf 'Something = 1\n' > "${WI}/secrets.ini"
+wr; wr
+[ "$(grep -c '^Token = ' "${WI}/secrets.ini")" -eq 1 ] && [ "$(grep -cFx '[Achievements]' "${WI}/secrets.ini")" -eq 1 ]; check $? "a secrets.ini without the section gains [Achievements] once and one Token line" "secrets.ini: $(tr '\n' '|' < "${WI}/secrets.ini")"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

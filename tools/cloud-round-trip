@@ -27,9 +27,9 @@ suite (--only A1,A9 runs just those): a conflict is a change on both sides
 since two devices last agreed, and only a pair can make one (D-QA-009).
 
     ./tools/cloud-round-trip --host root@127.0.0.1 --port 10022 --identity ... \
-        --path-prefix /tmp/qa-bin --only CAP1,CAP2,CAP3,CAP4,CAP5,CAP6,CAP7,CAP8,CAP9,CAP10,CAP11,CAP12
+        --path-prefix /tmp/qa-bin --only CAP1,CAP2,CAP3,CAP4,CAP5,CAP6,CAP7,CAP8,CAP9,CAP10,CAP11,CAP12,CAP13,CAP14
 
---only CAP1..CAP12 runs #21's capture fixtures against a staged cloud_capture
+--only CAP1..CAP14 runs #21's capture fixtures against a staged cloud_capture
 on one device with no cloud at all -- no MinIO, no remote, no second guest
 (see the capture section below for what to stage). --only A15 runs #86's
 identity fixture: one device and the QA endpoint, no second guest. --list
@@ -453,7 +453,7 @@ def list_fixtures():
     print("\nsingle-device cloud fixtures (one device and the QA endpoint; --only A15):")
     for key, title, _ in SOLO_FIXTURES:
         print(f"  {key:<10}{title}")
-    print("\ncapture fixtures (one device, no cloud; --only CAP1,...,CAP12):")
+    print("\ncapture fixtures (one device, no cloud; --only CAP1,...,CAP14):")
     for key, title, _ in CAPTURE_FIXTURES:
         print(f"  {key:<10}{title}")
     print("\nlink-loss fixtures (one guest, the throttled QA endpoint, and its serial console; --link, or --only LINK1,...,LINK7):")
@@ -480,7 +480,7 @@ def main():
                     help="ssh port of a second device -- the VM pair's guest b -- which turns on the two-device fixtures (D-QA-009)")
     ap.add_argument("--second-host", help="ssh target of the second device (default: the same as --host)")
     ap.add_argument("--only", help="run only these fixtures, skipping the single-device suite (comma-separated: A1,A9,CONTRACT "
-                    "for the two-device set, which needs --second-port; CAP1..CAP12 for the capture set, one device, no cloud)")
+                    "for the two-device set, which needs --second-port; CAP1..CAP14 for the capture set, one device, no cloud)")
     ap.add_argument("--list", action="store_true", help="print the fixture registries and exit without touching a device")
     ap.add_argument("--transport", default="copy,bisync", help="transports for #9's contract fixtures: copy, bisync, or both (default)")
     ap.add_argument("--bisync-flags", default="", help="extra flags for every rclone bisync run (Gate 11 variants)")
@@ -2914,7 +2914,7 @@ def run_solo(dev, root, remote, args, settings, only):
 # autostart does (--full), and read the working copy it writes at
 # /storage/.cache/cloud_sync/manifest-<device-id>.json. The producer opens no
 # socket and spawns no rclone, so these need neither MinIO nor a second guest:
-# --only CAP1,...,CAP12 prepares the device locally (prepare_local) and the
+# --only CAP1,...,CAP14 prepares the device locally (prepare_local) and the
 # QA endpoint is never asked for anything.
 #
 # The harness copies nothing onto the device. Stage the producer and its two
@@ -2925,7 +2925,7 @@ def run_solo(dev, root, remote, args, settings, only):
 #         projects/ROCKNIX/packages/network/rclone/sources/{cloud_capture,cloud_device_id,cloud_saves_root} \
 #         root@127.0.0.1:/tmp/qa-bin/ && ssh ... chmod +x /tmp/qa-bin/cloud_*
 #     ./tools/cloud-round-trip --host root@127.0.0.1 --port 10022 --identity /tmp/rocknix-vm-pair/qa-key \
-#         --path-prefix /tmp/qa-bin --only CAP1,CAP2,CAP3,CAP4,CAP5,CAP6,CAP7,CAP8,CAP9,CAP10,CAP11,CAP12
+#         --path-prefix /tmp/qa-bin --only CAP1,CAP2,CAP3,CAP4,CAP5,CAP6,CAP7,CAP8,CAP9,CAP10,CAP11,CAP12,CAP13,CAP14
 #
 # CAP10 (d) also reads autostart/102-cloud-saves: stage it into the same
 # directory to check the repo's copy rather than the image's. CAP11 copies
@@ -4273,6 +4273,124 @@ def fx_cap12(p):
     return f
 
 
+def fx_cap13(p):
+    """CAP13: --retire --unlink is the save-state manager's deletion as one
+    unit (D-CLOUD-133, #205): the retired row, then the files, in one process
+    that ignores SIGTERM -- build 9 held the unlink in EmulationStation and a
+    stop between the two left the row with the file still there. (a) A
+    recorded slot: the row carries its sha, its entry is gone, the state and
+    its thumbnail are gone from disk. (b) A slot with no entry: the row
+    carries the live hash and the file goes. (c) --unlink without --retire is
+    a usage error (2) and removes nothing. (d) A SIGTERM sent as the run
+    starts is ignored: it finishes, the row is written, the file goes."""
+    f = 0
+    a, root = p.a, p.root
+    p.reset()
+    rom = p.path("gba/Unit.gba")
+    planted = plant_unit(a, root, "gba", "Unit", states={1: 700, 2: 800, 3: 900}, png=64)
+    rc, _ = capture(a, root, "gba", rom, exit_code=0)
+    if rc != 0:
+        raise Fail(f"the setup capture exited {rc}")
+    st2, png2 = "savestates/gba/Unit.state2", "savestates/gba/Unit.state2.png"
+    rc, _ = run_rc(a, f"cloud_capture --retire --unlink {shlex.quote(p.path(st2))} {shlex.quote(p.path(png2))}")
+    m = manifest_of(a) or {}
+    rows = [r for r in m.get("retired") or [] if r.get("path") == st2]
+    on_disk = a.run(f"for x in {shlex.quote(p.path(st2))} {shlex.quote(p.path(png2))}; do [ -e \"$x\" ] && echo yes || echo no; done").split()
+    f += not check(rc == 0 and bool(rows) and rows[0].get("sha256") == sha(planted[st2]) and st2 not in (m.get("entries") or {}),
+                   "(a) the retired row carries state2's sha and its entry is gone",
+                   f"rc {rc}; rows {rows[:1]}; entry still present: {st2 in (m.get('entries') or {})}")
+    f += not check(on_disk == ["no", "no"], "(a) the state and its thumbnail are gone from disk", f"on disk: {on_disk}")
+    st7 = "savestates/gba/Unit.state7"
+    data = plant(a, root, st7, b"#RZIPv" + os.urandom(300))
+    rc, _ = run_rc(a, f"cloud_capture --retire --unlink {shlex.quote(p.path(st7))}")
+    m = manifest_of(a) or {}
+    rows = [r for r in m.get("retired") or [] if r.get("path") == st7]
+    gone = a.run(f"[ -e {shlex.quote(p.path(st7))} ] && echo yes || echo no").strip()
+    f += not check(rc == 0 and bool(rows) and rows[0].get("sha256") == sha(data) and gone == "no",
+                   "(b) a slot with no entry: the row carries the live hash and the file goes",
+                   f"rc {rc}; rows {rows[:1]}; on disk: {gone}")
+    st3 = "savestates/gba/Unit.state3"
+    rc, _ = run_rc(a, f"cloud_capture --unlink {shlex.quote(p.path(st3))}")
+    still = a.run(f"[ -e {shlex.quote(p.path(st3))} ] && echo yes || echo no").strip()
+    f += not check(rc == 2 and still == "yes", "(c) --unlink without --retire is refused (2) and removes nothing",
+                   f"rc {rc}; state3 on disk: {still}")
+    out = a.run(f"cloud_capture --retire --unlink {shlex.quote(p.path(st3))} & pid=$!; sleep 0.05; kill -TERM $pid 2>/dev/null; "
+                f"wait $pid; echo rc=$?; [ -e {shlex.quote(p.path(st3))} ] && echo yes || echo no")
+    m = manifest_of(a) or {}
+    rows = [r for r in m.get("retired") or [] if r.get("path") == st3]
+    f += not check("rc=0" in out and out.strip().endswith("no") and bool(rows),
+                   "(d) a SIGTERM as the run starts is ignored: it finishes, the row is written, the file goes",
+                   f"out {out.strip()!r}; rows for state3: {len(rows)}")
+    return f
+
+
+def fx_cap14(p):
+    """CAP14: --adopt records the copy the save-state manager made (#206), which
+    no other mode ever did: exit mode takes only what a launch wrote, the
+    verify passes adopt nothing new. (a) The source has an entry and the bytes
+    match: the new path gets the source's version -- the same sha, emulator,
+    core and core_build -- with its own slot, size and thumbnail, replaces and
+    pub null, and joins the unit's members. (b) The source has no entry: the
+    copy is recorded with unknown provenance and the live hash; the source
+    stays unrecorded. (c) A path that is not this unit's: nothing recorded,
+    exit 0. (d) A copy then --retire --unlink of it: the row names the copy's
+    sha and the files go."""
+    f = 0
+    a, root = p.a, p.root
+    p.reset()
+    rom = p.path("gba/Copy.gba")
+    planted = plant_unit(a, root, "gba", "Copy", states={3: 900}, png=64)
+    rc, _ = capture(a, root, "gba", rom, exit_code=0)
+    if rc != 0:
+        raise Fail(f"the setup capture exited {rc}")
+    st3, st4 = "savestates/gba/Copy.state3", "savestates/gba/Copy.state4"
+    a.run(f"cp {shlex.quote(p.path(st3))} {shlex.quote(p.path(st4))}; cp {shlex.quote(p.path(st3 + '.png'))} {shlex.quote(p.path(st4 + '.png'))}")
+    rc, _ = run_rc(a, f"cloud_capture --adopt {shlex.quote(p.path(st4))} --from {shlex.quote(p.path(st3))} --system gba --rom {shlex.quote(rom)}")
+    m = manifest_of(a) or {}
+    ent = m.get("entries") or {}
+    e3, e4 = ent.get(st3) or {}, ent.get(st4) or {}
+    f += not check(rc == 0 and bool(e4) and e4.get("sha256") == sha(planted[st3]) == e3.get("sha256"),
+                   "(a) the copy's entry carries the source's sha", f"rc {rc}; entry {e4}")
+    f += not check(bool(e4) and e4.get("emulator") == e3.get("emulator") == "retroarch" and e4.get("core") == e3.get("core")
+                   and e4.get("core_build") == e3.get("core_build"),
+                   "(a) and the source's emulator, core and core_build",
+                   f"copy {e4.get('emulator')}/{e4.get('core')}/{e4.get('core_build')} vs source {e3.get('emulator')}/{e3.get('core')}/{e3.get('core_build')}")
+    f += not check(e4.get("slot") == 4 and e4.get("kind") == "state" and e4.get("screenshot") == st4 + ".png"
+                   and e4.get("replaces") is None and e4.get("pub") is None,
+                   "(a) its own slot, kind and thumbnail; replaces and pub null",
+                   f"slot {e4.get('slot')} kind {e4.get('kind')} shot {e4.get('screenshot')} replaces {e4.get('replaces')} pub {e4.get('pub')}")
+    members = ((m.get("units") or {}).get("gba:Copy") or {}).get("members") or []
+    f += not check(st4 in members and st4 + ".png" in members, "(a) the copy and its thumbnail are the unit's members",
+                   f"members {members}")
+    st8, st9 = "savestates/gba/Copy.state8", "savestates/gba/Copy.state9"
+    data = plant(a, root, st8, b"#RZIPv" + os.urandom(333))
+    a.run(f"cp {shlex.quote(p.path(st8))} {shlex.quote(p.path(st9))}")
+    rc, _ = run_rc(a, f"cloud_capture --adopt {shlex.quote(p.path(st9))} --from {shlex.quote(p.path(st8))} --system gba --rom {shlex.quote(rom)}")
+    m = manifest_of(a) or {}
+    ent = m.get("entries") or {}
+    e9 = ent.get(st9) or {}
+    f += not check(rc == 0 and bool(e9) and e9.get("sha256") == sha(data) and e9.get("emulator") == "unknown"
+                   and e9.get("core") == "unknown" and e9.get("core_build") == "unknown" and st8 not in ent,
+                   "(b) a copy of an unrecorded source is recorded with unknown provenance and the live hash; the source stays unrecorded",
+                   f"rc {rc}; entry {e9}; source recorded: {st8 in ent}")
+    other = "savestates/gba/Other.state1"
+    plant(a, root, other, b"#RZIPv" + os.urandom(200))
+    rc, _ = run_rc(a, f"cloud_capture --adopt {shlex.quote(p.path(other))} --from {shlex.quote(p.path(st3))} --system gba --rom {shlex.quote(rom)}")
+    m = manifest_of(a) or {}
+    f += not check(rc == 0 and other not in (m.get("entries") or {}),
+                   "(c) a path that is not this unit's is not adopted (exit 0, nothing recorded)",
+                   f"rc {rc}; recorded: {other in (m.get('entries') or {})}")
+    rc, _ = run_rc(a, f"cloud_capture --retire --unlink {shlex.quote(p.path(st4))} {shlex.quote(p.path(st4 + '.png'))}")
+    m = manifest_of(a) or {}
+    rows = [r for r in m.get("retired") or [] if r.get("path") == st4]
+    on_disk = a.run(f"for x in {shlex.quote(p.path(st4))} {shlex.quote(p.path(st4 + '.png'))}; do [ -e \"$x\" ] && echo yes || echo no; done").split()
+    f += not check(rc == 0 and bool(rows) and rows[0].get("sha256") == sha(planted[st3]) and on_disk == ["no", "no"]
+                   and st4 not in (m.get("entries") or {}),
+                   "(d) the copy deleted with --retire --unlink: the row names its sha, the files go, the entry goes",
+                   f"rc {rc}; rows {rows[:1]}; on disk {on_disk}")
+    return f
+
+
 CAPTURE_FIXTURES = [
     ("CAP1", "capture on every exit: lock held, no route, no rclone, nothing written into the tree", fx_cap1),
     ("CAP2", "the recorded core is the argument, never a default", fx_cap2),
@@ -4286,6 +4404,8 @@ CAPTURE_FIXTURES = [
     ("CAP10", "the card context informs, it never silently refuses -- and a flip discards", fx_cap10),
     ("CAP11", "two writers of one manifest: the loser re-runs once and a first version is not lost", fx_cap11),
     ("CAP12", "last-capture keeps one line per mode: an exit survives the boot pass; the old one-line stamp is read", fx_cap12),
+    ("CAP13", "--retire --unlink is the manager's deletion as one unit: row, then files, SIGTERM ignored", fx_cap13),
+    ("CAP14", "--adopt records the copy the manager made: the source's version at the new path, or unknown provenance", fx_cap14),
 ]
 
 
