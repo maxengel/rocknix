@@ -22,6 +22,7 @@
 #   lifetime    ES tests/cloud-oauth-lifetime.py -- the wizard's page lifetimes under ASan, on the host (ES_SRC)
 #   vocabulary  tools/vocabulary-check       -- back up / backup as verb / noun, ES strings and script lines, on the host
 #   register    tools/register-check         -- the decision register: every ID once, every citation names a row, on the host (ES_SRC)
+#   french      tools/es-untranslated        -- every fork string in the interface has French (D-UI-051, #152), on the host (ES_SRC)
 #   pair-identity  the two guests' MACs, cloud_device_ids (#91) and hostnames (#50) differ, and each
 #               answers for its own name over mDNS (#50 box 6, #151 PL-01), over ssh
 #   round-trip  tools/cloud-round-trip        -- 27 steps over SSH against the QA cloud, guest a
@@ -43,8 +44,8 @@
 # handheld: the guests are tools/vm-pair's, on this host (fork #120, box 1).
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-IMAGE=""; SKIP_UP=0; ONLY="scripts,lifetime,vocabulary,register,pair-identity,round-trip,exit,time-to-play,walks"; LINK=0; RA_OFFLINE=0; GUEST=a
-SUITES="scripts lifetime vocabulary register pair-identity round-trip exit time-to-play link ra-offline walks"
+IMAGE=""; SKIP_UP=0; ONLY="scripts,lifetime,vocabulary,register,french,pair-identity,round-trip,exit,time-to-play,walks"; LINK=0; RA_OFFLINE=0; GUEST=a
+SUITES="scripts lifetime vocabulary register french pair-identity round-trip exit time-to-play link ra-offline walks"
 # Which of the five QA clouds every suite here talks to (#133). It is one
 # variable and not a per-suite flag on purpose: the backend the endpoint is
 # brought up on, the stanza the walks seed, and the endpoint the round trip
@@ -137,6 +138,8 @@ case ",$ONLY," in *,lifetime,*)   run_suite lifetime   "$OUT/lifetime.log"   lif
 # string in the ES checkout the image pins and every sentence the scripts
 # print for a player. On the host, in a second (2026-09-12, the maintainer's ask).
 case ",$ONLY," in *,vocabulary,*) run_suite vocabulary "$OUT/vocabulary.log" env ES_SRC="${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}" "$ROOT/tools/vocabulary-check" ;; esac
+# Every string the fork adds has French (D-UI-051): tools/es-untranslated lists the ones that do not and exits 1 while any remain (#152).
+case ",$ONLY," in *,french,*) run_suite french "$OUT/french.log" env ES_SRC="${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}" "$ROOT/tools/es-untranslated" ;; esac
 # The decision register as a lookup table (D-WORKFLOW-013): every ID once,
 # and every `D-<AREA>-<n>` cited in a live document -- the rules, the
 # scripts, the tools, and EmulationStation's sources when the checkout the
