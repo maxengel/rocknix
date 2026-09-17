@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-17T01:12:49Z
+> **Saved**: 2026-09-17T02:21:40Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` and in the ES repo)
 > **Repo**: maxengel/rocknix -- primary checkout /workspace/repos/rocknix on `next` (pushed); ES ~/Development/emulationstation-next, build branch `test/qa-integration` at `63a60bfad` (pushed); ES feature worktree `emulationstation-next.worktrees/delete-async` (`feature/savestate-delete-async`, `9e4e2ab85`, merged); distribution feature worktree `/workspace/repos/rocknix.worktrees/build10-fixes` (`feature/build10-fixes`, merged into next)
 
 ## Current Focus
 
-**RC-12 build 10 `0923b9ee9f` is the device candidate**: build 9 (#205's instant deletion, the ghost fix) plus every defect outstanding to date, per the maintainer's *"take care of everything to date with the build we're about to do"*: the deletion as one unit inside `cloud_capture --retire --unlink` with SIGTERM ignored (D-CLOUD-133, closes the row-without-unlink window), COPY TO FREE SLOT gated and recorded through `--adopt` (#206, D-CLOUD-134), a stopped transfer restamping its parts (#203's follow-up), `cheevos_armsx2.sh` writing one Token line (#170). Nine suites PASSED; guest d's four cases PASS; CAP1-14 PASS on guest b; H700 filed. **NOT staged**: the RG SP was off the network all night (both addresses), so the staging question (D-QA-011) waits for the device, then the reboot as its own question (D-QA-015). The RG SP is still on RC-12 build 6 `bc26baa60d`; builds 7-10 land on it together.
+**RC-12 build 10 `0923b9ee9f` is ON THE RG SP** (staged 01:48-02:08 UTC on *"The console is online now. You have my permission to copy the new build over."*, rebooted through `tools/device-act` at 02:16:41 on *"You may reboot."*, back in ~80 s: boot `bae3b500`, queue empty, `ready=247 pending=0`). The device went from build 6 straight to build 10: D-CLOUD-130 (the automatic syncs ask), #205 (instant deletion; the deletion as one unit inside `cloud_capture --retire --unlink`, SIGTERM ignored, D-CLOUD-133), #206 (COPY TO FREE SLOT gated and recorded through `--adopt`, D-CLOUD-134), #203's stopped-transfer stamps, #170. **The maintainer's round is next**: #205 box 1 (no perceptible freeze after YES), #200 section A, #170 box 1 (a PS2 title twice). After their first deletion, read the device's `(--retire --unlink, N ms)` line from `/var/log/cloud_sync.log` (read-only, `tools/device-act`) and record it on #205.
 
 ## Completed This Session (2026-09-17 00:00 -> 01:20 UTC)
 
@@ -18,11 +18,11 @@
 
 ## In Progress
 
-- **Offering build 10 to the RG SP**: not asked yet (device off). On the maintainer's yes: `stage-rgsp-run-0923b9ee9f.sh` (copy the build-6 wrapper: artifact dir `h700-all-20260917-0923b9ee9f`, quote the yes, BEGIN/END lines), then the reboot as its own question through `tools/device-act rgsp "reboot-apply-h700-0923b9ee9f (maintainer yes ...)" -- 'sync; reboot'`, then `rgsp-after-reboot.sh 0923b9ee9f`. The device goes from build 6 straight to build 10: D-CLOUD-130 (the automatic syncs ask), #205, #206, #203, #170 all land at once.
+- **Build 10 on the RG SP; the maintainer's round.** Each note from the device -> an issue quoting them (D-QA-012), a branch from `test/qa-integration` / `next`, merge, pin, x64 build, suites, guest d proof, H700, then the staging question. `stage-rgsp-run-0923b9ee9f.sh` and `rgsp-after-reboot.sh` are the templates (the wrapper's artifact directory carries the build date: check it before running; the first run of this one named yesterday's and stopped short).
 
 ## Next Steps
 
-1. When the RG SP is on: ask *"May I stage build 10 `0923b9ee9f` on the RG SP?"*; stage; ask for the reboot by name; after-reboot check; record the RETURNED line, the QA row's device column, the work log, #205 (box 1 + the device's `(--retire … --unlink, N ms)` line), #200 section A on build 10.
+1. The maintainer's round on build 10: #205 box 1 and the device's `(--retire --unlink, N ms)` line (read after their first deletion); #200 section A; #170 box 1; #201 box 5 (the Wi-Fi picker between two networks).
 2. #206 box 3: prove the copy's gate on the VM with a sync in flight (guest d pointed at `/GAMES-d` at 8 KB/s, BACK UP SAVES from GAME SETTINGS, then X in the manager -> the refusal).
 3. Closures owed on confirmation: #182 (fixed RC-11 build 2), #175, #183 and the rest of the fixed-awaiting list; #170 box 1 on the device.
 4. Earlier follow-ups unchanged: rocknix.org pages before any upstream PR; #185's round; #162 within #173.
@@ -44,7 +44,7 @@
 - **Tracker**: #205, #206, #203, #170 (build 10); #200 (the RG SP round); #11 epic.
 - **Session scripts** (`/workspace/tmp/rocknix-session/delete-async/`): `chk.sh`, `unit-tests.sh <ES worktree>` (no cmake on this host), `press-time.py`, `keys-fast.py`, `proof-9.sh`, `proof-10.sh`, `chain-*.sh`/`build-x64-*.sh`/`suites-*.sh`, `cap-all-guest-b.log`; `rc11/lib.sh` (guest d helpers).
 - **Artifacts**: `/workspace/artifacts/rocknix-images/{x64,h700}-all-20260917-0923b9ee9f/`; suites `qa-0923b9ee9f-webdav-a-20260917-0046`.
-- **Device record**: `/workspace/artifacts/rocknix-device-actions.log` -- the last real act is build 6's reboot (2026-09-16 03:33 UTC).
+- **Device record**: `/workspace/artifacts/rocknix-device-actions.log` -- the last acts: build 10 staged (01:48-02:08 UTC), rebooted (02:16:41), RETURNED on `0923b9ee9f` (02:20:39), a read-only binaries check after.
 
 ## Notes for Next Session
 
@@ -58,5 +58,5 @@
 
 ## Open Questions
 
-- The maintainer's yes to stage build 10 on the RG SP (device off the network at 01:15 UTC); then the reboot.
 - Their feel of the deletion on the device (#205 box 1) and the device's retire ms.
+- Their Wi-Fi picker result between two networks (#201 box 5) and the rest of #200 section A on build 10.
