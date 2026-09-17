@@ -1,62 +1,62 @@
 # Saved Session State
 
-> **Saved**: 2026-09-16T23:43:00Z
+> **Saved**: 2026-09-17T01:12:49Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` and in the ES repo)
-> **Repo**: maxengel/rocknix -- primary checkout /workspace/repos/rocknix on `next` (8ad3984a95, pushed); ES ~/Development/emulationstation-next, build branch `test/qa-integration` at `942132e99` (pushed); feature worktree `emulationstation-next.worktrees/delete-async` on `feature/savestate-delete-async` (a8e274598, merged)
+> **Repo**: maxengel/rocknix -- primary checkout /workspace/repos/rocknix on `next` (pushed); ES ~/Development/emulationstation-next, build branch `test/qa-integration` at `63a60bfad` (pushed); ES feature worktree `emulationstation-next.worktrees/delete-async` (`feature/savestate-delete-async`, `9e4e2ab85`, merged); distribution feature worktree `/workspace/repos/rocknix.worktrees/build10-fixes` (`feature/build10-fixes`, merged into next)
 
 ## Current Focus
 
-#205 -- the save state manager's DELETE hung for "a second or so" on the RG SP. Root cause found, reproduced on guest d, fixed, proven, built as **RC-12 build 9 `e287f9d21a`** (nine suites PASSED, guest d proof PASS), H700 filed, **NOT staged**: the RG SP was off the network (both addresses) when the run ended, so the staging question waits for the device (D-QA-011), then the reboot as its own question (D-QA-015). The RG SP is still on RC-12 build 6 `bc26baa60d`.
+**RC-12 build 10 `0923b9ee9f` is the device candidate**: build 9 (#205's instant deletion, the ghost fix) plus every defect outstanding to date, per the maintainer's *"take care of everything to date with the build we're about to do"*: the deletion as one unit inside `cloud_capture --retire --unlink` with SIGTERM ignored (D-CLOUD-133, closes the row-without-unlink window), COPY TO FREE SLOT gated and recorded through `--adopt` (#206, D-CLOUD-134), a stopped transfer restamping its parts (#203's follow-up), `cheevos_armsx2.sh` writing one Token line (#170). Nine suites PASSED; guest d's four cases PASS; CAP1-14 PASS on guest b; H700 filed. **NOT staged**: the RG SP was off the network all night (both addresses), so the staging question (D-QA-011) waits for the device, then the reboot as its own question (D-QA-015). The RG SP is still on RC-12 build 6 `bc26baa60d`; builds 7-10 land on it together.
 
-## Completed This Session (2026-09-16 15:13 -> 23:45 UTC)
+## Completed This Session (2026-09-17 00:00 -> 01:20 UTC)
 
-- **Cause** (asked as a question, answered first, then fixed on the maintainer's go): since D-CLOUD-053 the Y handler ran `cloud_capture --retire` and `--rescan` synchronously on the interface thread (`popen`); COPY TO FREE SLOT runs no script. Reproduced through the manager on guest d with a press timer over the QEMU monitor (`scratchpad/press-time.py`, 83 ms/frame): YES 0.588 s to the first changed frame vs a copy 0.350 s on build 7; the journal put the retire at 165 ms of interface thread; ~150 ms under ES because each `popen` forks a 346 MB process. On the A53 that is the second the maintainer felt.
-- **Decisions**: D-UI-073 (instant deletion: tile gone the frame YES is pressed; retire then unlink on one worker, one at a time; paths not pointers; joined at exit), D-CLOUD-132 (no post-delete `--rescan`: nothing renumbers since D-UI-069). Maintainer: *"Let's go with option 1 with the mitigation steps you've outlined."* Blindspot 45 (a fixture's speed, not the device's).
-- **ES** `a11cde632` + `a8e274598` on `feature/savestate-delete-async`, merged to `test/qa-integration` (`2bf92e67f`, then `942132e99`): `SaveStateDeleteQueue` (pure order book; 7 unit cases / 52 assertions, 109 / 1201 in all -- compiled with host g++, no cmake on this host, see below), `SaveStateDeleter` (the worker; `shutdown()` from main's tail and `onExit`), `GuiSaveState` (hides pending tiles in `loadGrid`, enqueues two strings on YES, polls `completed()` in `update()` keeping the cursor), `SaveStateRepository::onDisk` (never hands out a state whose file is gone -- the ghost tile the teardown case found on build 8).
-- **Builds**: build 8 `a4dfd97ca5` (nine suites PASSED; guest d proof found the ghost) and build 9 `e287f9d21a` (nine PASSED `qa-e287f9d21a-webdav-a-20260916-2316`; guest d: copy 0.349 s, YES 0.345 s; retire on the worker, no rescan, file gone, row written; YES+B 10 ms later with ES intact and no ghost on reopen; a file removed over ssh not listed). Filed under `/workspace/artifacts/rocknix-images/{x64,h700}-all-20260916-{a4dfd97ca5,e287f9d21a}/` (build 9 H700 tar sha `5d7b9806eab2cb00…`).
-- **Issues**: #205 (cause, reproduction, decision, builds, proofs; VM-side acceptance boxes ticked, the rescan box superseded in the body; box 1 and the device half of box 5 open), #206 (COPY TO FREE SLOT writes a slot no capture mode records -- open, not started). Both sub-issues of #11.
-- **Docs on `next`** (all pushed): register rows, blindspot 45, `save-manifest-schema.md` renumber bullet corrected, QA rows for builds 8 and 9 in `docs/vm-qa-log.md`, work log entries 15:50 -> 23:45, frames `docs/qa-frames/2026-09-16/205-*`.
-- Memory: `one-proof-at-the-devices-numbers` extended with the speed lesson.
+- Inventory from the tracker: of nineteen open bugs, fifteen fixed-awaiting-confirmation (#182 since RC-11 build 2), two lists (#79, #161), #162 in the RA-offline program; outstanding and in reach: #205's SIGTERM window, #206, #203's stamps, #170. All four in build 10.
+- **ES** `9e4e2ab85`: `SaveStateDeleter` -> `SaveStateBookkeeper`, queue with a job kind (`SaveStateJobQueue`), `deleteLater` runs `--retire --unlink` and removes what is left, `recordCopy` runs `--adopt`; X handler gated (French line) and recording; `CloudTransferJob::restampStoppedParts` (a stamp whose mtime >= the job's start rewritten `130 cancelled`). Unit tests 112 / 1224.
+- **Distribution** `581f16c550` (+ CAP9 fixture fix): `cloud_capture` `trap '' TERM`, `--unlink` (in finish(), not on rc 2), `--adopt DEST --from SRC --system --rom` (a `copy` op; unknown provenance when the source has no entry; membership by the layout row); `cheevos_armsx2.sh` tests secrets.ini; `tools/last-good-scripts-test` w.; `tools/cloud-round-trip` CAP13 (retire --unlink incl. SIGTERM ignored), CAP14 (adopt), CAP9 to D-CLOUD-078.
+- Register D-CLOUD-133/134 (310 IDs); work log 2026-09-17 (00:45, 00:50, 01:15); QA row build 10; frames `docs/qa-frames/2026-09-17/`; issues #205/#206/#203/#170 updated (bodies ticked where the VM proved it).
+- Two slips logged: the chain that ran on after a refused merge (`set -e` in a tool shell; gate with `||`), and `pkill -f` matching its own shell. Memory `gate-commits-on-the-check` extended.
 
 ## In Progress
 
-- **Offering build 9 to the RG SP**: not asked yet because the device was off the network. On the maintainer's yes: `stage-rgsp-run-e287f9d21a.sh` (copy the build-6 wrapper `stage-rgsp-run-bc26baa60d.sh`: artifact dir `h700-all-20260916-e287f9d21a`, quote the yes, BEGIN/END lines), then the reboot as its own question through `tools/device-act rgsp "reboot-apply-h700-e287f9d21a (maintainer yes ...)" -- 'sync; reboot'`, then `rgsp-after-reboot.sh e287f9d21a`. Note the RG SP goes from build 6 straight to build 9 (builds 7 and 8 never staged): D-CLOUD-130 (the automatic syncs ask) lands on the device with it.
-- The maintainer's own round then: #205 box 1 (no perceptible freeze after YES) and the device's `(--retire, N ms)` line from `/var/log/cloud_sync.log` (read-only, `tools/device-act`), plus #200 section A on build 9.
+- **Offering build 10 to the RG SP**: not asked yet (device off). On the maintainer's yes: `stage-rgsp-run-0923b9ee9f.sh` (copy the build-6 wrapper: artifact dir `h700-all-20260917-0923b9ee9f`, quote the yes, BEGIN/END lines), then the reboot as its own question through `tools/device-act rgsp "reboot-apply-h700-0923b9ee9f (maintainer yes ...)" -- 'sync; reboot'`, then `rgsp-after-reboot.sh 0923b9ee9f`. The device goes from build 6 straight to build 10: D-CLOUD-130 (the automatic syncs ask), #205, #206, #203, #170 all land at once.
 
 ## Next Steps
 
-1. When the RG SP is on: ask *"May I stage build 9 `e287f9d21a` on the RG SP?"*; stage; ask for the reboot by name; `rgsp-after-reboot.sh`; record the RETURNED line, the QA row's device column, the work log, #205 (tick box 1 and box 5's device half on the maintainer's word; record the device's retire ms).
-2. #206 (its own change, #21's design): a capture mode for a manager-made copy, plus the missing running-sync gate on the X handler.
-3. Earlier follow-ups, unchanged: #203's transfer-page stamps; the rocknix.org pages (#191/#201, #196, #203) before any upstream PR; #185's own round; the audit and RAOfflineProxy upstreaming tasks.
+1. When the RG SP is on: ask *"May I stage build 10 `0923b9ee9f` on the RG SP?"*; stage; ask for the reboot by name; after-reboot check; record the RETURNED line, the QA row's device column, the work log, #205 (box 1 + the device's `(--retire … --unlink, N ms)` line), #200 section A on build 10.
+2. #206 box 3: prove the copy's gate on the VM with a sync in flight (guest d pointed at `/GAMES-d` at 8 KB/s, BACK UP SAVES from GAME SETTINGS, then X in the manager -> the refusal).
+3. Closures owed on confirmation: #182 (fixed RC-11 build 2), #175, #183 and the rest of the fixed-awaiting list; #170 box 1 on the device.
+4. Earlier follow-ups unchanged: rocknix.org pages before any upstream PR; #185's round; #162 within #173.
 
 ## Key Files Modified (this session)
 
 | File | Change | Notes |
 | --- | --- | --- |
-| ES `es-app/src/SaveStateDeleteQueue.{h,cpp}` | Created | pure order book: enqueue/take/finish/isPending/completed; unit-tested |
-| ES `es-app/src/SaveStateDeleter.{h,cpp}` | Created | the worker: retire then unlink, one job at a time; `shutdown()` joins |
-| ES `es-app/src/guis/GuiSaveState.{h,cpp}` | Modified | YES enqueues two strings and reloads; `loadGrid` hides pending; `update()` polls `completed()` |
-| ES `es-app/src/SaveStateRepository.{h,cpp}` | Modified | `onDisk`/`anyOnDisk`: `getSaveStates`/`hasSaveStates` skip vanished files |
-| ES `es-app/src/main.cpp`, `es-app/CMakeLists.txt`, `es-app/tests/unit/{CMakeLists.txt,README.md,SaveStateDeleteQueueTests.cpp}` | Modified/Created | shutdown hook; sources listed; the test |
-| `projects/ROCKNIX/packages/ui/emulationstation/package.mk` | Modified | pin `942132e99efa8b5ac3048eea50fce33a2a5e0a51` (build 9) |
-| `docs/decision-register.md`, `docs/blindspot-register.md`, `docs/save-manifest-schema.md`, `docs/vm-qa-log.md`, `docs/work-logs/2026_09-work_logs/2026_09_16-work_log.md`, `docs/qa-frames/2026-09-16/205-*` | Modified | D-UI-073, D-CLOUD-132; blindspot 45; rows; frames |
+| ES `es-app/src/SaveStateBookkeeper.{h,cpp}`, `SaveStateJobQueue.{h,cpp}` | Renamed/Modified | jobs with a kind; delete via `--retire --unlink`, copy via `--adopt` |
+| ES `es-app/src/guis/GuiSaveState.cpp`, `CloudTransferJob.{h,cpp}`, `main.cpp`, `locale/lang/fr/...po`, `tests/unit/SaveStateJobQueueTests.cpp` | Modified | the gate + record; restampStoppedParts; two French lines |
+| `projects/ROCKNIX/packages/network/rclone/sources/cloud_capture` | Modified | trap '' TERM; --unlink; --adopt; copy op |
+| `projects/ROCKNIX/packages/emulators/standalone/armsx2-sa/scripts/cheevos_armsx2.sh` | Modified | #170 |
+| `tools/last-good-scripts-test`, `tools/cloud-round-trip` | Modified | section w.; CAP13/14; CAP9 |
+| `projects/ROCKNIX/packages/ui/emulationstation/package.mk` | Modified | pin `63a60bfadc7ae7dcae4b50ba0fdef81433618ef0` (build 10) |
+| `docs/decision-register.md`, `docs/vm-qa-log.md`, `docs/work-logs/2026_09-work_logs/2026_09_17-work_log.md`, `docs/qa-frames/2026-09-17/` | Modified | D-CLOUD-133/134; row; log; 4 frames |
 
 ## Related Context
 
-- **Tracker**: #205, #206 (new, under #11); #200 (the RG SP round), #201-#203, #185.
-- **Session scripts** (`/workspace/tmp/rocknix-session/delete-async/`): `chk.sh` (cross-compiler syntax check for the ES worktree; `chk.sh <files>`), `build-tests/es-unit-tests` (built by hand with host g++ -- **no cmake on this host**; the g++ line is in the 2026-09-16 work log / this session), `proof-9.sh` (the guest d proof, gated; assumes the NES list with Bobl selected), `chain-*.sh`/`build-x64-*.sh`/`suites-*.sh` (the build pattern: x64, then suites and H700 side by side), logs. Scratchpad (may vanish): `press-time.py`, `keys-fast.py`, frames.
-- **Device record**: `/workspace/artifacts/rocknix-device-actions.log` -- two read-only attempts on the RG SP this session (both unreachable); the last real act is build 6's reboot (03:33 UTC).
+- **Tracker**: #205, #206, #203, #170 (build 10); #200 (the RG SP round); #11 epic.
+- **Session scripts** (`/workspace/tmp/rocknix-session/delete-async/`): `chk.sh`, `unit-tests.sh <ES worktree>` (no cmake on this host), `press-time.py`, `keys-fast.py`, `proof-9.sh`, `proof-10.sh`, `chain-*.sh`/`build-x64-*.sh`/`suites-*.sh`, `cap-all-guest-b.log`; `rc11/lib.sh` (guest d helpers).
+- **Artifacts**: `/workspace/artifacts/rocknix-images/{x64,h700}-all-20260917-0923b9ee9f/`; suites `qa-0923b9ee9f-webdav-a-20260917-0046`.
+- **Device record**: `/workspace/artifacts/rocknix-device-actions.log` -- the last real act is build 6's reboot (2026-09-16 03:33 UTC).
 
 ## Notes for Next Session
 
-- **Guest d** (`:10026`) is on **build 9**, English, fixture intact: Bobl `state1..3` + auto, Tobu `state3` + auto; no cloud remote; the manifest carries ten `retired` rows from today's scratch deletions (harmless). After an ES restart guest d sits on the **carousel** (not the list): X there is RANDOM -- this framed PICO-8's list once and a #205 comment row was posted on it before the frame was read (corrected in the next comment). Read the frame before the claim.
-- The auto-mode classifier refuses a VM reboot when it shares a command with a copy; the maintainer authorised rebooting guest d in chat (*"please reboot that guest d vm"*), and standalone reboot commands then passed.
-- ES does not handle SIGTERM (`signal(SIGTERM, …)` commented out): `systemctl restart essway` kills it in 25 ms; the join at exit guards ES's own quit paths only. A kill inside the retire's tail leaves a row and the file (same as before).
-- Timing floor on guest d's rig: ~0.26-0.35 s press to first changed frame (input latency + 83 ms/frame); compare presses against each other, not against zero.
-- Every device act: idle check, ask by name, `tools/device-act`, read the device afterwards; the ES pin must be pushed before building; build worktrees sync only with no build running; commits gated on the check (`chk.sh ... && git commit`).
+- **Guest d** (`:10026`) is on **build 10**, English, on the carousel; fixture: Bobl `state1..3` + auto + a leftover `state4` copy (with an entry), Tobu `state3` + auto; cloud config restored (no rclone.conf, `/ROCKNIX/Saves`, no bwlimit); the manifest carries eleven+ scratch `retired` rows. Guests a/b are on build 10 from the suites; guest b's `/tmp/qa-bin` is gone with the re-image.
+- Pointing guest d at its own QA folder: `tools/cloud-test-backend rclone-conf` -> `/storage/.config/rclone/rclone.conf` (0600), `cloud_sync_helper`, `SAVES_REMOTE="/GAMES-d"`, `--bwlimit 8k` after `--progress` in RCLONEOPTS (a multi-line value; edit with a sed on the first line). GAME SETTINGS' cloud rows read the stamps even with no remote.
+- The transfer-page walk on guest d: START -> down 1 -> A (GAME SETTINGS) -> up x12 lands near MANAGE CLOUD STORAGE (check the frame) -> A -> A (BACK UP TO THE CLOUD, SAVES ticked) -> up, right, A (BACK UP) -> B leaves the page live -> B x3 to the carousel -> A -> A (Bobl's manager) -> A (START NEW GAME) -> the question.
+- After midnight, yesterday's image filename is gone from `target/`: derive the image path with `ls -t`, never bake the date in.
+- The CAP fixtures wipe a guest's saves root: never run them on guest d; guest b (`:10023`) with the script staged under `/tmp/qa-bin`.
+- Every device act: idle check, ask by name, `tools/device-act`, read the device afterwards; the ES pin must be pushed before building; build worktrees sync only with no build running; gate every chain step with `|| exit 1`; commits gated on the check; `pkill -f 'pat[n]'`.
 - Commits: `git -c user.name="Max Engel" -c user.email="max@awecelot.com"`, trailers `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` and `Claude-Session: https://claude.ai/code/session_01LkFLXE5GsT1apn8AwrxrGR`; register append-only (`tools/register-check`, ES_SRC for ES citations); never `cd` into the primary checkout.
 
 ## Open Questions
 
-- The maintainer's yes to stage build 9 on the RG SP (the device was off the network at 23:41 UTC); then the reboot.
-- Their feel of the deletion on the device (#205 box 1) and the device's `(--retire, N ms)` number.
+- The maintainer's yes to stage build 10 on the RG SP (device off the network at 01:15 UTC); then the reboot.
+- Their feel of the deletion on the device (#205 box 1) and the device's retire ms.
