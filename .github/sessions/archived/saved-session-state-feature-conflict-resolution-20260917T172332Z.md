@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-17T17:23:32Z
+> **Saved**: 2026-09-17T17:18:45Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` and in the ES repo)
-> **Repo**: maxengel/rocknix -- primary checkout /workspace/repos/rocknix on `next` (bfb3b5d00d, pushed); ES ~/Development/emulationstation-next, build branch `test/qa-integration` at `7fc2466a9` (pushed; pinned as build 15); ES feature worktrees `manager-no-flash` (#207), `card-compare-words` (#208), `french-sweep` (#152), `transfer-compare-words` (#157), all merged; distribution feature worktree `/workspace/repos/rocknix.worktrees/build11-flash` (`feature/build11-flash`, merged into next)
+> **Repo**: maxengel/rocknix -- primary checkout /workspace/repos/rocknix on `next` (335fc4b042, pushed); ES ~/Development/emulationstation-next, build branch `test/qa-integration` at `7fc2466a9` (pushed; pinned as build 15); ES feature worktrees `manager-no-flash` (#207), `card-compare-words` (#208), `french-sweep` (#152), `transfer-compare-words` (#157), all merged; distribution feature worktree `/workspace/repos/rocknix.worktrees/build11-flash` (`feature/build11-flash`, merged into next)
 
 ## Current Focus
 
-**RC-12 build 15 `b245fd12ac` is the build to stage on the RG SP; it waits for the maintainer's word.** It carries everything from today: #207 (the deletion flash), #208 (NOTHING SENT YET), the worker's truthful deletion line, #152 (French for every fork string, the hub row fitting 640x480), #157's page word (COMPARING), two menu typos. Ten suites PASSED on it (`qa-b245fd12ac-webdav-a-20260917-1651`); guest d runs it and framed the French pages right. Builds 11-15 all passed their suites; the RC's tracker is tied up to the device boxes. **Nothing is in flight.** #157 box 1 is ticked (the card at 640x480 and 1280x800, English and French); only its box 3 (the handhelds at boot) remains. **Nothing has touched the RG SP this session** beyond one read-only log read (02:36). The staging question is asked in the session's last message: `QUOTE='<their words>' bash /workspace/tmp/rocknix-session/stage-rgsp-run-b245fd12ac.sh`, then the reboot as a second question, then `bash /workspace/tmp/rocknix-session/rgsp-after-reboot.sh b245fd12ac`.
+**RC-12 build 15 `b245fd12ac` is the build to stage on the RG SP; it waits for the maintainer's word.** It carries everything from today: #207 (the deletion flash), #208 (NOTHING SENT YET), the worker's truthful deletion line, #152 (French for every fork string, the hub row fitting 640x480), #157's page word (COMPARING), two menu typos. Ten suites PASSED on it (`qa-b245fd12ac-webdav-a-20260917-1651`); guest d runs it and framed the French pages right. Builds 11-15 all passed their suites; the RC's tracker is tied up to the device boxes. **In flight**: guest b's 1280x800 card capture (EN then FR, `capture-b.sh` v2, waiter `b5j1ujg8s`) for #157 box 1. **Nothing has touched the RG SP this session** beyond one read-only log read (02:36). The staging question is asked in the session's last message: `QUOTE='<their words>' bash /workspace/tmp/rocknix-session/stage-rgsp-run-b245fd12ac.sh`, then the reboot as a second question, then `bash /workspace/tmp/rocknix-session/rgsp-after-reboot.sh b245fd12ac`.
 
 ## Completed This Session (2026-09-17 02:26 -> 2026-09-17T16:39:07Z)
 
@@ -15,11 +15,12 @@
 - **Decisions**: D-QA-027 (RG35XX SP = QA handheld, bench device, QA accounts), D-QA-028 (SM8550 after the RC). #131 box 1 ticked.
 - **#152 French sweep**: `tools/es-untranslated` (661 fork strings; exit 1 while any lack French; in the pre-push guard, the workflow rule and `tools/vm-qa` as the `french` suite); 492 translations in three batches (`french-sweep/batch{1,2,3}.py` via `po_append.py`); 661 / 661; ES `1c1d5e5d5` -> merge `c4198009d`; pin `7c3484140f` = build 14. Then the hub-row fix and the transfer page's COMPARING (ES `7fc2466a9`) = build 15. #152 all three boxes ticked; #157 box 2 ticked; #67 boxes 1-3 ticked (guest d, the QA ScreenScraper account seeded).
 - **Builds** 11 `ea828b286a`, 12 `6c0c13dc4e`, 13 `91cfa8a2b1`, 14 `7c3484140f`, 15 `b245fd12ac` (x64 + H700), archived under `/workspace/artifacts/rocknix-images/{x64,h700}-all-20260917-<id>/` with `SHA256SUMS.tar`, `BUILD_INFO.txt`. Suites PASSED on all five (ten on 14 and 15, the `french` suite among them). CAP13/14 PASSED on 12. **Build 15 H700 tar sha `915fc1a0db5cdd002d30fde7bde3adf91bf25812da4473aaad341ac4856bbfad`, 1,304,320,000 bytes.**
-- **Records**: QA rows 11-15; work log 02:58 -> 17:20 (sixteen entries); register 314 IDs; frames `207-*`, `206-*`, `208-*` (EN and FR), `152-*` (builds 14 and 15), `157-*` (640 and 1280, EN and FR), `67-*`; memory `build-id-is-the-synced-head`.
+- **Records**: QA rows 11-15; work log 02:58 -> 17:20 (sixteen entries); register 314 IDs; frames `207-*`, `206-*`, `208-*` (EN and FR), `152-*` (builds 14 and 15), `157-*`, `67-*`; memory `build-id-is-the-synced-head`.
 
 ## In Progress
 
-- **The staging question for build 15** -- asked in the session's last two messages; the maintainer's answer decides the next act. Nothing else is open on the VM side.
+- **Guest b's 1280x800 capture** (waiter `b5j1ujg8s`; logs `french-sweep/capture-b2-{en,fr}.log`, frames `frames-b2/`): read a compare frame and a bytes frame per language, copy them as `157-card-*-1280x800-b245fd12ac.png`, tick #157 box 1 with the four sizes/languages, commit the docs. The first attempt walked into CONTROLLER SETTINGS (no RETROACHIEVEMENTS row on that guest); v2 has no `down` after START and frames the menu it lands on.
+- **The staging question for build 15** -- asked; the maintainer's answer decides the next act.
 
 ## Next Steps
 
