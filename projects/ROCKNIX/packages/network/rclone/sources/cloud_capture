@@ -63,6 +63,14 @@
 #                                        record deliberate deletions, BEFORE the unlink
 #                                        (a state's .png: dropped from its unit's members,
 #                                        never a retired row -- D-CLOUD-059)
+#   cloud_capture --retire --unlink PATH [PATH ...]
+#                                        the same, then the files go: the save-state
+#                                        manager's deletion as one unit, so a stop cannot
+#                                        leave the row without the unlink (D-CLOUD-133)
+#   cloud_capture --adopt PATH --from PATH --system SYS --rom ROM
+#                                        record a copy the save-state manager made: the
+#                                        source's version at the new path, or a version of
+#                                        unknown provenance when the source had no entry
 #   cloud_capture -h | --help
 #
 # Exit codes: 0 recorded, or nothing to record; 1 could not record (the
@@ -72,7 +80,8 @@
 # What this script never does: take the transfer lock or touch /var/run, open
 # a socket, run rclone or cloud_sync_helper, source the conf or /etc/profile
 # (098-busybox would discard a staged PATH), or write anywhere under the
-# saves folder. CLOUD_CAPTURE_PINS is the one environment override, so the
+# saves folder -- --unlink removes exactly the files --retire was handed, and
+# nothing else. CLOUD_CAPTURE_PINS is the one environment override, so the
 # core-pins map can be proven on an image whose read-only /usr has none.
 #
 # Two writers are serialised by detection, not by a lock. The boot --full
@@ -97,6 +106,14 @@ STAGE_MAX_BYTES=268435456
 JQ="/usr/bin/jq"
 
 SCRIPT_NAME="cloud_capture"
+# systemd stops EmulationStation's cgroup with one SIGTERM to every process in
+# it (essway.service, KillMode control-group), and a deletion this recorder is
+# asked to finish (--retire --unlink) is one unit: the row, then the files.
+# Ignored here and, since exec keeps SIG_IGN, in every jq, sha256sum and mv
+# this starts; systemd's SIGKILL comes only at the stop timeout, long after a
+# run this short has exited (fork #205, D-CLOUD-133). A terminal's Ctrl-C
+# (SIGINT) still ends it.
+trap '' TERM
 ECHO_TO_SCREEN="false"
 read -r _UP0 _ < /proc/uptime 2>/dev/null || _UP0="0"
 _UP0_MS=$(( 10#${_UP0/./}0 ))
@@ -212,6 +229,19 @@ finish() {
         } | tail -n 20 > "${CACHE}/.capture-failures.$$" 2>/dev/null \
             && mv -f "${CACHE}/.capture-failures.$$" "${CACHE}/capture-failures" 2>/dev/null
     fi
+    # --retire --unlink: the files go here, once the row is on disk or the
+    # attempt to record it is over -- the deletion the player asked for
+    # proceeds whatever the record said, as it did when EmulationStation held
+    # the unlink (D-CLOUD-133). Not after a usage error: nothing was asked
+    # for properly, and the caller unlinks nothing it was refused.
+    if [ "${mode}" = "retire" ] && [ "${UNLINK:-0}" -eq 1 ] && [ "${rc}" != "2" ]; then
+        local _n=0 _p
+        for _p in ${RETIRE_PATHS[@]+"${RETIRE_PATHS[@]}"}; do
+            [ -e "${_p}" ] || continue
+            rm -f -- "${_p}" 2>/dev/null && _n=$(( _n + 1 ))
+        done
+        log_info "unlinked ${_n} file(s) after the retire (--unlink)"
+    fi
     exit "${rc}"
 }
 
@@ -232,6 +262,7 @@ usage_error() {
 SYSTEM=""; ROM=""; EMULATOR=""; CORE=""; STARTED=""; EXITCODE="?"
 HAVE_SYSTEM=0; HAVE_ROM=0; HAVE_EMU=0; HAVE_CORE=0; HAVE_STARTED=0; HAVE_EXIT=0
 RETIRE_PATHS=()
+UNLINK=0; ADOPT_DEST=""; ADOPT_SRC=""
 # The argv as given, kept whole for the one re-run a lost write earns.
 ORIG_ARGS=("$@")
 
@@ -254,13 +285,20 @@ while [ $# -gt 0 ]; do
         --full)     set_mode "full"; shift ;;
         --retire)
             set_mode "retire"; shift
+            # The paths follow, --unlink among them or before them: the
+            # manager sends `--retire --unlink STATE PNG` (CAP13 caught the
+            # first cut collecting nothing past --unlink and exiting 2).
             while [ $# -gt 0 ]; do
                 case "$1" in
+                    --unlink) UNLINK=1; shift ;;
                     --*) break ;;
                     *)   RETIRE_PATHS+=("$1"); shift ;;
                 esac
             done
             ;;
+        --unlink)   UNLINK=1; shift ;;
+        --adopt)    set_mode "adopt"; [ $# -ge 2 ] || usage_error "--adopt needs a PATH"; ADOPT_DEST="$2"; shift 2 ;;
+        --from)     [ $# -ge 2 ] || usage_error "--from needs a PATH"; ADOPT_SRC="$2"; shift 2 ;;
         -h|--help)  usage; exit 0 ;;
         *)          usage_error "unknown argument: $1" ;;
     esac
@@ -313,7 +351,22 @@ case "${MODE}" in
             usage_error "--retire takes no game context"
         fi
         ;;
+    adopt)
+        [ -n "${ADOPT_DEST}" ] || usage_error "--adopt needs a PATH"
+        [ -n "${ADOPT_SRC}" ]  || usage_error "--adopt needs --from PATH"
+        { [ "${HAVE_SYSTEM}" -eq 1 ] && [ -n "${SYSTEM}" ]; } || usage_error "--adopt needs --system"
+        { [ "${HAVE_ROM}" -eq 1 ] && [ -n "${ROM}" ]; }       || usage_error "--adopt needs --rom"
+        if [ "${HAVE_EMU}" -eq 1 ] || [ "${HAVE_CORE}" -eq 1 ] || [ "${HAVE_STARTED}" -eq 1 ] || [ "${HAVE_EXIT}" -eq 1 ]; then
+            usage_error "--adopt takes no --emulator/--core/--started/--exit: no game ran"
+        fi
+        ;;
 esac
+if [ "${UNLINK}" -eq 1 ] && [ "${MODE}" != "retire" ]; then
+    usage_error "--unlink goes with --retire"
+fi
+if [ -n "${ADOPT_SRC}" ] && [ "${MODE}" != "adopt" ]; then
+    usage_error "--from goes with --adopt"
+fi
 
 # Exit mode's stdout is EmulationStation's pipe; keep it empty. The other
 # modes talk when somebody is at a terminal.
@@ -447,6 +500,18 @@ screenshot_of() {
     return 0
 }
 
+# The root-relative form of an absolute path under the saves folder, or 1
+# for one outside it and 2 for one that is not plain (.., ., //).
+rel_of() {
+    local p="$1"
+    case "${p}" in
+        "${ROOT}/"*) p="${p#"${ROOT}/"}" ;;
+        /*) return 1 ;;
+    esac
+    case "/${p}/" in *"/../"*|*"/./"*|"//"*) return 2 ;; esac
+    printf '%s' "${p}"
+}
+
 # Version order, so a downward renumber is resolved lowest slot first
 # (state2 before state10); byte order would put state10 first. busybox sort
 # has no -V (CONFIG_FEATURE_SORT_BIG is unset) and /usr/bin/sort is GNU on
@@ -460,7 +525,7 @@ else
 fi
 
 case "${MODE}" in
-    exit|rescan)
+    exit|rescan|adopt)
         # --rescan has no --emulator (no game ran), so it walks every row: a
         # member may now sit at a path with no entry after a renumber, and a
         # MOVE is the only op allowed to adopt it.
@@ -474,6 +539,22 @@ case "${MODE}" in
         fi
         ;;
 esac
+ADOPT_REL=""; ADOPT_SRC_REL=""
+if [ "${MODE}" = "adopt" ]; then
+    # Both paths must be this unit's: the copy the manager made, and the
+    # slot it was made from. The layout row decides membership, so a path
+    # that is not a state of this game is not adopted by any argument.
+    ADOPT_REL="$(rel_of "${ADOPT_DEST}")" || { log_warn "${ADOPT_DEST} is not a plain path under ${ROOT}; nothing recorded"; finish 1 "adopt-outside-root"; }
+    ADOPT_SRC_REL="$(rel_of "${ADOPT_SRC}")" || { log_warn "${ADOPT_SRC} is not a plain path under ${ROOT}; nothing recorded"; finish 1 "adopt-outside-root"; }
+    if [ -z "${M_KIND[${ADOPT_REL}]}" ]; then
+        log_warn "${ADOPT_REL} is not a member of ${UNIT} on disk; nothing recorded"
+        finish 0
+    fi
+    case "${M_KIND[${ADOPT_REL}]}" in
+        state|auto) ;;
+        *) log_warn "${ADOPT_REL} is a ${M_KIND[${ADOPT_REL}]}, not a state; nothing recorded"; finish 0 ;;
+    esac
+fi
 
 DEVICE_ID_BIN="$(_sib cloud_device_id)"
 DEVICE_ID=""
@@ -779,6 +860,20 @@ op_move() {
           screenshot: (if $shot == "" then null else $shot end)}')"
 }
 
+# A copy the manager made: the source's entry at a new path, with the new
+# file's own size, mtime, slot and thumbnail, a fresh captured_at, and
+# nothing inherited that belongs to the source's placement (replaces, pub).
+op_copy() {
+    local from="$1" to="$2" size="$3" mtime="$4" kind="$5" slot="$6" shot="$7"
+    local slot_json="null"
+    case "${slot}" in ''|-|*[!0-9]*) slot_json="null" ;; *) slot_json="$(( 10#${slot} ))" ;; esac
+    emit_op "$("${JQ}" -nc --arg from "${from}" --arg to "${to}" --argjson size "${size}" --arg mtime "${mtime}" \
+        --arg kind "${kind}" --argjson slot "${slot_json}" --arg shot "${shot}" \
+        --arg at "${NOW}" --arg local "${LOCAL_NOW}" --argjson synced "${SYNCED}" \
+        '{op: "copy", from: $from, to: $to, size: $size, mtime: $mtime, kind: $kind, slot: $slot,
+          screenshot: (if $shot == "" then null else $shot end), at: $at, local: $local, synced: $synced}')"
+}
+
 op_retire() {
     local path="$1" sha="$2"
     emit_op "$("${JQ}" -nc --arg path "${path}" --arg sha "${sha}" --arg at "${NOW}" \
@@ -999,7 +1094,7 @@ fi
 # hashed differently).
 # ---------------------------------------------------------------------------
 declare -A MOVED_FROM MOVED_TO MOVE_SRC PUT_AT
-N_PUT=0; N_MOVE=0; N_META=0; N_RETIRE=0
+N_PUT=0; N_MOVE=0; N_META=0; N_RETIRE=0; N_COPY=0
 
 # Does the entry at path q still describe the bytes on disk at q?
 entry_holds() {
@@ -1131,6 +1226,49 @@ if [ "${MODE}" = "exit" ] || [ "${MODE}" = "rescan" ] || [ "${MODE}" = "full" ];
     for _u in "${!VANISHED_COUNT[@]}"; do
         log_warn "${VANISHED_COUNT[${_u}]} member(s) of ${_u} are claimed but not on disk; no retire record"
     done
+fi
+
+# ---------------------------------------------------------------------------
+# STEP 7b -- --adopt: the copy the save-state manager made (#206)
+# ---------------------------------------------------------------------------
+# Exit mode records only what a launch wrote; the verify passes adopt no path
+# without an entry. A slot copied in the manager was neither, so no mode ever
+# recorded it and the manifest-driven sync would never move it. The manager
+# made it, so the manager records it: the source's version at the new path
+# when the bytes are the source's recorded version, else -- the source had no
+# entry, or changed under the copy -- a version of unknown provenance, hashed,
+# the words rescan uses for a version it did not see written. Attribution
+# stays honest: nothing is guessed about who wrote the bytes.
+if [ "${MODE}" = "adopt" ]; then
+    _dest="${ADOPT_REL}"; _srcrel="${ADOPT_SRC_REL}"
+    if [ "${_dest}" = "${_srcrel}" ]; then
+        log_warn "${_dest} copied onto itself; nothing recorded"
+        finish 0
+    fi
+    _dstat="$(stat -c '%s %Y' "${ROOT}/${_dest}" 2>/dev/null)"
+    if [ -z "${_dstat}" ]; then
+        log_warn "${_dest} is not on disk; nothing recorded"
+        finish 0
+    fi
+    _dshot="$(screenshot_of "${_dest}" "${M_KIND[${_dest}]}")"
+    if known_hash "${ROOT}/${_dest}" "${_dest}" || seal "${ROOT}/${_dest}"; then
+        _dsha="${SEAL_SHA}"; _dsize="${SEAL_SIZE}"; _dmt="$(mtime_iso "${SEAL_EPOCH}")"
+    else
+        finish 1 "seal-failed"
+    fi
+    if [ -n "${E_SHA[${_srcrel}]}" ] && [ "${E_SHA[${_srcrel}]}" != "-" ] && [ "${E_SHA[${_srcrel}]}" = "${_dsha}" ]; then
+        op_copy "${_srcrel}" "${_dest}" "${_dsize}" "${_dmt}" "${M_KIND[${_dest}]}" "${M_SLOT[${_dest}]}" "${_dshot}"
+        N_COPY=1
+        log_info "${_dest} is a copy of ${_srcrel}: the same version, recorded at the new path"
+    else
+        _entry="$(render_entry "${M_KIND[${_dest}]}" "${_dsha}" "${_dsize}" "${_dmt}" "${SYSTEM}" "${ROM##*/}" \
+            "unknown" "unknown" "unknown" "${UNIT}" "${M_SLOT[${_dest}]}" "${_dshot}" "" \
+            "" "${NOW}" "${LOCAL_NOW}" "${SYNCED}")"
+        [ -n "${_entry}" ] || { log_error "could not render the entry for ${_dest}; not recorded this run"; finish 1 "render-failed"; }
+        op_put "${_dest}" "${_entry}"
+        N_PUT=1
+        log_info "${_dest} was copied from ${_srcrel}, which has no recorded version with these bytes: recorded with unknown provenance"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -1267,6 +1405,9 @@ def members:
       if   $o.op == "put"  then .entries[$o.path] = $o.entry
       elif $o.op == "meta" then (if .entries[$o.path] != null then .entries[$o.path] |= (.size = $o.size | .mtime = $o.mtime | .screenshot = $o.screenshot) else . end)
       elif $o.op == "move" then .entries[$o.to] = ($doc.entries[$o.from] + { size: $o.size, mtime: $o.mtime, kind: $o.kind, slot: $o.slot, screenshot: $o.screenshot })
+      elif $o.op == "copy" then .entries[$o.to] = ($doc.entries[$o.from] + { size: $o.size, mtime: $o.mtime, kind: $o.kind, slot: $o.slot, screenshot: $o.screenshot,
+                                                                            captured_at: $o.at, captured_local: $o.local, clock_synced: $o.synced,
+                                                                            replaces: null, remote_hash: null, producer: null, published_at: null, pub: null })
       elif $o.op == "retire" then (.retired += [{ sha256: $o.sha256, path: $o.path, retires_pub: (.entries[$o.path].pub // null), at: $o.at }])
                                 | del(.entries[$o.path])
       elif $o.op == "unit" then (if .entries[$o.path] != null then .entries[$o.path].unit = $o.unit else . end)
@@ -1280,7 +1421,7 @@ EOF
 if ! "${JQ}" -n -S --slurpfile ops "${OPS}" --argjson device "${DEVICE_JSON}" --argjson max "${RETIRED_MAX}" \
         "${MERGE_JQ}" "${SRC}" > "${CAND}" 2>/dev/null \
     || [ ! -s "${CAND}" ] || ! "${JQ}" -e 'type == "object" and (.entries | type) == "object"' "${CAND}" >/dev/null 2>&1; then
-    log_error "merging ${N_PUT} new, ${N_MOVE} moved, ${N_META} metadata, ${N_RETIRE} retired into ${MANIFEST} failed; the previous manifest is intact"
+    log_error "merging ${N_PUT} new, ${N_MOVE} moved, ${N_COPY} copied, ${N_META} metadata, ${N_RETIRE} retired into ${MANIFEST} failed; the previous manifest is intact"
     finish 1 "merge-failed"
 fi
 
@@ -1365,6 +1506,7 @@ case "${MODE}" in
     exit)   log_info "recorded ${N_PUT} new, ${N_MOVE} moved, ${N_META} metadata, ${N_RETIRE} retired for ${UNIT} (core ${CORE}, build ${CORE_BUILD}, exit ${EXITCODE}, $(elapsed_ms) ms)" ;;
     rescan) log_info "recorded ${N_PUT} new, ${N_MOVE} moved, ${N_META} metadata, ${N_RETIRE} retired for ${UNIT} (--rescan, $(elapsed_ms) ms)" ;;
     full)   log_info "recorded ${N_PUT} new, ${N_MOVE} moved, ${N_META} metadata, ${N_RETIRE} retired over ${#M_PATHS[@]} claimed path(s) (--full, $(elapsed_ms) ms)" ;;
-    retire) log_info "recorded ${N_RETIRE} retired, ${N_META} thumbnail(s) dropped from members (--retire, $(elapsed_ms) ms)" ;;
+    retire) log_info "recorded ${N_RETIRE} retired, ${N_META} thumbnail(s) dropped from members (--retire$([ "${UNLINK}" -eq 1 ] && printf ' --unlink'), $(elapsed_ms) ms)" ;;
+    adopt)  log_info "recorded ${N_COPY} copied, ${N_PUT} new for ${UNIT} (--adopt, $(elapsed_ms) ms)" ;;
 esac
 finish "${RC}"

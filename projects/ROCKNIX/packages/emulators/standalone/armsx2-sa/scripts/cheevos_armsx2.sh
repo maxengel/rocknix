@@ -55,7 +55,12 @@ else
         sed -i "/^\[Achievements\]/,/^\[/{s/^Username = .*/Username = ${username}/;}" ${ARMSX2_CFG}
     fi
 
-    if ! grep -q "^Token = " ${ARMSX2_CFG}; then
+    # The token lives in secrets.ini, so that is the file to test (fork #170:
+    # testing PCSX2.ini never matched, and a Token line was appended at every
+    # launch). A secrets.ini without the section yet gets the section once.
+    if ! grep -qFx "[Achievements]" ${ARMSX2_TOKEN} 2>/dev/null; then
+        sed -i "\$a [Achievements]\nToken = ${token}" ${ARMSX2_TOKEN}
+    elif ! grep -q "^Token = " ${ARMSX2_TOKEN}; then
         sed -i "/^\[Achievements\]/a Token = ${token}" ${ARMSX2_TOKEN}
     else
         sed -i "/^\[Achievements\]/,/^\[/{s/^Token = .*/Token = ${token}/;}" ${ARMSX2_TOKEN}
