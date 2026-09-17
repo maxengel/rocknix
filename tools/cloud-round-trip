@@ -3933,8 +3933,15 @@ def fx_cap9(p):
         m = json.loads(text) if present else None
     except ValueError:
         m = None
-    f += not check(rc == 0 and aside == "not json{", "a corrupt manifest is moved aside as manifest-<id>.json.corrupt-<epoch> with its bytes intact",
-                   f"exit {rc}; aside holds {aside!r}")
+    # The aside is written, named in the log, and then removed by the run
+    # that completed: a completed run is the last known good state and the
+    # manifests moved aside before it were the previous one (D-CLOUD-078,
+    # 2026-09-10). This check expected the aside to remain, which it did
+    # until then; it had not run since (found 2026-09-17, CAP9 against the
+    # build 9 script failed the same way).
+    f += not check(rc == 0 and "would not parse; moved aside to" in tail and aside == "",
+                   "a corrupt manifest is moved aside as manifest-<id>.json.corrupt-<epoch>, the log names it, and the completed run removes the aside (D-CLOUD-078)",
+                   f"exit {rc}; aside holds {aside!r}; log: {tail[-240:]!r}")
     f += not check(m is not None and entry(m, "gba/After.srm") is not None,
                    "the new manifest parses and holds this session's entries",
                    "no parseable manifest with this session's entry after the corrupt one was set aside")
