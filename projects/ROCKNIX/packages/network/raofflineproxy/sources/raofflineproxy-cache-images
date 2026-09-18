@@ -229,8 +229,14 @@ def main() -> int:
 
     user_agent = proxy_user_agent(self_user_agent())
 
-    verify_deadline = time.monotonic() + max(1.0, args.seconds)
+    # One budget for the run, not one per phase: the top-up hands us the
+    # seconds it has left, so a verify that took all of them and a fetch
+    # that then took all of them again would overrun the caller twice over.
+    # Verify gets at most half, so the fetch always gets a turn.
+    budget_end = time.monotonic() + max(1.0, args.seconds)
+    verify_deadline = min(budget_end, time.monotonic() + max(1.0, args.seconds) / 2)
     damaged_found: list[str] = []
+    verify_left = 0
     if args.verify:
         try:
             _, _, _rows = missing_paths(storage)  # warm the same read the counts use
@@ -282,6 +288,10 @@ def main() -> int:
         tell(f"verified {checked}|{len(paths)}")
         if wrapped:
             tell("note VERIFY_COMPLETE")
+        else:
+            verify_left = len(paths) - index
+            note(f"{verify_left} image(s) left to verify; the next pass resumes at {paths[index - 1]}")
+            tell(f"note VERIFY_LEFT {verify_left}")
 
     try:
         missing, total_paths, rows = missing_paths(storage)
@@ -295,9 +305,9 @@ def main() -> int:
     if not missing:
         tell("note NOTHING_MISSING")
         tell("done 0|0")
-        return 0
+        return 1 if verify_left else 0
 
-    deadline = time.monotonic() + max(1.0, args.seconds)
+    deadline = budget_end
     fetched = 0
     done = 0
     stopped = False
@@ -345,7 +355,7 @@ def main() -> int:
     if left:
         tell("why SOME_IMAGES_NOT_SAVED")
     tell(f"done {fetched}|{len(left)}")
-    return 1 if left else 0
+    return 1 if (left or verify_left) else 0
 
 
 if __name__ == "__main__":
