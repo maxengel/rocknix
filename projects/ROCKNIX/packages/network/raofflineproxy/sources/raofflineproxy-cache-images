@@ -5,7 +5,7 @@
 # raofflineproxy-cache-images - the images of the achievements this device has
 # already cached, fetched until none is missing (fork #212, D-RA-0xx).
 #
-#   raofflineproxy-cache-images [--seconds N]
+#   raofflineproxy-cache-images [--seconds N] [--verify]
 #
 # Caching a game's achievements and caching its images are one action to a
 # player -- "whenever we cache the achievements, we cache the images for the
@@ -31,6 +31,18 @@
 #   * it is resumable -- nothing marks a game done but its own files, so a
 #     run that stops at its ceiling leaves the rest for the next one.
 #
+# With --verify the files that are there are read as well as counted: the PNG
+# signature, an IEND trailer, and a plausible size. Presence is what every
+# other check in this subsystem tests, so a file that is there and wrong is
+# never looked at again -- patch 013 stops one being written from now on, and
+# this finds the ones written before it, and anything a card or a filesystem
+# damages later (#213). A structural sweep of the maintainer's 30,546 images
+# does not fit in one short run on an A53, so the sweep is resumable in its
+# own right: it walks the paths in order from a cursor, verifies what its
+# ceiling allows, and writes the cursor back, so each top-up verifies the
+# next slice and the whole store comes round in a few runs. Reaching the end
+# clears the cursor and says so.
+#
 # The ceiling is time (--seconds, default 300). A run that leaves images
 # behind says how many and exits 1, the way a scan that could not finish does
 # (#186 PL-24): a partial pass is never reported as a complete one. Exit 2 is
@@ -50,6 +62,8 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from pathlib import Path
+
 from raofflineproxy import cache_keys, image_cache
 from raofflineproxy.auth import resolve_credentials
 from raofflineproxy.config import RA_MEDIA_HOST, configure_logging, load_config
@@ -63,6 +77,58 @@ ROW_PREFIXES = (
     cache_keys.PREFIX_ACHIEVEMENTSETS,
     cache_keys.PREFIX_LOGIN,
 )
+
+# Where --verify left off, so each run takes the next slice (#213).
+CURSOR = image_cache.IMAGE_CACHE_DIR / "verify-cursor"
+
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+# Smaller than any real badge: a PNG needs a signature, an IHDR and an IEND,
+# and the smallest one RetroAchievements serves is a few hundred bytes (of a
+# 4,000-badge sample on the maintainer's device the smallest was 266).
+PNG_FLOOR = 68
+
+
+def damaged(path: str) -> str | None:
+    """Why the cached file for path is not a whole image, or None if it is."""
+    target = image_cache.resolve_cached_static_asset(path)
+    if target is None:
+        return "absent"
+    try:
+        size = target.stat().st_size
+        if not path.lower().endswith(".png"):
+            return None if size > 0 else "empty"
+        if size < PNG_FLOOR:
+            return f"tiny({size})"
+        with target.open("rb") as handle:
+            if handle.read(8) != PNG_MAGIC:
+                return "not a PNG"
+            handle.seek(-12, 2)
+            if b"IEND" not in handle.read(12):
+                return "no IEND"
+    except OSError as exc:
+        return f"unreadable ({exc})"
+    return None
+
+
+# The cursor holds a path in the same shape as the rest of this script --
+# with its leading slash, as extract_image_path gives it -- so the string
+# comparison that resumes the sweep compares like with like.
+def read_cursor() -> str:
+    try:
+        return CURSOR.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def write_cursor(value: str) -> None:
+    try:
+        CURSOR.parent.mkdir(parents=True, exist_ok=True)
+        if value:
+            CURSOR.write_text(value + "\n", encoding="utf-8")
+        else:
+            CURSOR.unlink(missing_ok=True)
+    except OSError as exc:
+        note(f"the verify cursor could not be written: {exc}")
 
 
 def tell(text: str) -> None:
@@ -104,6 +170,17 @@ def image_paths(body: str) -> set[str]:
     return found
 
 
+def all_paths(storage: Storage) -> set[str]:
+    """Every image path the cached rows refer to, whether its file is there."""
+    seen: set[str] = set()
+    for prefix in ROW_PREFIXES:
+        for row in storage.get_all_cache_by_prefix(prefix):
+            body = row.get("responseBody")
+            if body:
+                seen |= image_paths(body)
+    return seen
+
+
 def missing_paths(storage: Storage) -> tuple[list[str], int, int]:
     """(the paths with no file, how many paths there were, how many rows)."""
     seen: set[str] = set()
@@ -122,6 +199,7 @@ def missing_paths(storage: Storage) -> tuple[list[str], int, int]:
 def main() -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--seconds", type=float, default=300.0)
+    parser.add_argument("--verify", action="store_true")
     parser.add_argument("-h", "--help", action="store_true")
     args = parser.parse_args()
     if args.help:
@@ -151,6 +229,70 @@ def main() -> int:
 
     user_agent = proxy_user_agent(self_user_agent())
 
+    # One budget for the run, not one per phase: the top-up hands us the
+    # seconds it has left, so a verify that took all of them and a fetch
+    # that then took all of them again would overrun the caller twice over.
+    # Verify gets at most half, so the fetch always gets a turn.
+    budget_end = time.monotonic() + max(1.0, args.seconds)
+    verify_deadline = min(budget_end, time.monotonic() + max(1.0, args.seconds) / 2)
+    damaged_found: list[str] = []
+    verify_left = 0
+    if args.verify:
+        try:
+            _, _, _rows = missing_paths(storage)  # warm the same read the counts use
+        except Exception:
+            pass
+        try:
+            paths = sorted(all_paths(storage))
+        except Exception as exc:
+            note(f"the store could not be read: {exc}")
+            tell("why STORE_UNREADABLE")
+            return 2
+        cursor = read_cursor()
+        start = 0
+        if cursor:
+            for index, path in enumerate(paths):
+                if path > cursor:
+                    start = index
+                    break
+            else:
+                start = len(paths)
+        checked = 0
+        index = start
+        while index < len(paths):
+            path = paths[index]
+            why = damaged(path)
+            if why is not None and why != "absent":
+                note(f"{path}: {why}")
+                damaged_found.append(path)
+                # Drop it, so the fetch below treats it as missing and the
+                # cache never keeps a file it has just called damaged.
+                target = image_cache.resolve_cached_static_asset(path)
+                if target is not None:
+                    try:
+                        target.unlink()
+                    except OSError as exc:
+                        note(f"{path}: could not be removed ({exc})")
+            checked += 1
+            index += 1
+            if checked % 500 == 0:
+                tell(f"verified {checked}|{len(paths) - start}")
+            if time.monotonic() > verify_deadline:
+                break
+        wrapped = index >= len(paths)
+        write_cursor("" if wrapped else paths[index - 1])
+        note(
+            f"verified {checked} of {len(paths)} image(s) from {start}, "
+            f"{len(damaged_found)} damaged{', the store came round' if wrapped else ''}"
+        )
+        tell(f"verified {checked}|{len(paths)}")
+        if wrapped:
+            tell("note VERIFY_COMPLETE")
+        else:
+            verify_left = len(paths) - index
+            note(f"{verify_left} image(s) left to verify; the next pass resumes at {paths[index - 1]}")
+            tell(f"note VERIFY_LEFT {verify_left}")
+
     try:
         missing, total_paths, rows = missing_paths(storage)
     except Exception as exc:
@@ -163,9 +305,9 @@ def main() -> int:
     if not missing:
         tell("note NOTHING_MISSING")
         tell("done 0|0")
-        return 0
+        return 1 if verify_left else 0
 
-    deadline = time.monotonic() + max(1.0, args.seconds)
+    deadline = budget_end
     fetched = 0
     done = 0
     stopped = False
@@ -175,10 +317,14 @@ def main() -> int:
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = {}
         for path in missing:
+            # extract_image_path hands back the path with its leading slash
+            # ("/Badge/109361.png"), which is the shape the client's own
+            # cache uses, so the URL is the media host and that path with
+            # nothing between them.
             futures[pool.submit(
                 image_cache.download_static_image,
-                f"{RA_MEDIA_HOST}/{path}",
-                "/" + path,
+                f"{RA_MEDIA_HOST}{path}",
+                path,
                 user_agent,
             )] = path
         for future in as_completed(futures):
@@ -201,11 +347,15 @@ def main() -> int:
                 break
 
     left = [p for p in missing if image_cache.resolve_cached_static_asset(p) is None]
-    note(f"fetched {fetched}, still missing {len(left)}{' (stopped at the ceiling)' if stopped else ''}")
+    note(
+        f"fetched {fetched}, still missing {len(left)}"
+        f"{' (stopped at the ceiling)' if stopped else ''}"
+        f"{f'; {len(damaged_found)} were damaged and re-fetched' if damaged_found else ''}"
+    )
     if left:
         tell("why SOME_IMAGES_NOT_SAVED")
     tell(f"done {fetched}|{len(left)}")
-    return 1 if left else 0
+    return 1 if (left or verify_left) else 0
 
 
 if __name__ == "__main__":
