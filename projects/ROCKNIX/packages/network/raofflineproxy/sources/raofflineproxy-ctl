@@ -1108,8 +1108,8 @@ count_of() {
 # The helper that works the job list: beside this script, so a copy of the
 # two files runs from anywhere they are put together.
 case "$0" in
-    */*) HELPER="${0%/*}/raofflineproxy-cache-indexed" ;;
-    *)   HELPER="/usr/bin/raofflineproxy-cache-indexed" ;;
+    */*) HELPER="${0%/*}/raofflineproxy-cache-indexed"; IMAGE_HELPER="${0%/*}/raofflineproxy-cache-images" ;;
+    *)   HELPER="/usr/bin/raofflineproxy-cache-indexed"; IMAGE_HELPER="/usr/bin/raofflineproxy-cache-images" ;;
 esac
 
 # Run the job list $2 of $3 games through the helper and read its lines as
@@ -1217,6 +1217,50 @@ stopped() {
     exit 143
 }
 
+# The images of what is cached, fetched until none is missing (#212). A
+# game's achievements and its images are one action to a player -- the
+# maintainer, 2026-09-18: "whenever we cache the achievements, we cache the
+# images for the achievements" -- so this runs at the end of a scan and of a
+# top-up that cached anything, and on its own as the `images` verb.
+#
+# The helper walks the store, not the library: every cached set row, every
+# image path in it, and the ones with no file get fetched. Idempotent (the
+# check is the file's existence and the client's own download no-ops on one)
+# and resumable (nothing marks a game done but its files), so a run that
+# stops at its ceiling costs the next one nothing. Bounded by what is left of
+# the caller's deadline, or IMAGE_PASS_SECONDS on its own.
+#
+# Its exit code is not the caller's: a scan that cached every game and left
+# an image behind cached every game. The line it writes to the log says what
+# happened, and the `images` verb is where a non-zero exit is the answer.
+IMAGE_PASS_SECONDS="${RAOFFLINEPROXY_IMAGE_PASS_SECONDS:-300}"
+
+run_image_pass() {
+    local VERB="$1" SECONDS_LEFT="${2:-${IMAGE_PASS_SECONDS}}" RC=0
+    [ -x "${IMAGE_HELPER}" ] || { slog "${VERB}: no image helper at ${IMAGE_HELPER}"; return 0; }
+    [ "${SECONDS_LEFT}" -gt 10 ] 2>/dev/null || { slog "${VERB}: no time left for the image pass (${SECONDS_LEFT}s)"; return 0; }
+    slog "${VERB}: image pass, up to ${SECONDS_LEFT}s"
+    "${IMAGE_HELPER}" --seconds "${SECONDS_LEFT}" >>"${SCAN_LOG}" 2>&1 || RC=$?
+    slog "${VERB}: image pass rc=${RC}"
+    return "${RC}"
+}
+
+do_images() {
+    refuse_unless_ready images
+    if ! is_online; then
+        say "images: refused, this device is offline"
+        tell "why NO_NETWORK"
+        exit ${EX_UNAVAILABLE}
+    fi
+    take_lock images
+    mark_running images
+    trap unmark_running EXIT
+    local RC=0
+    "${IMAGE_HELPER}" --seconds "${IMAGE_PASS_SECONDS}" || RC=$?
+    slog "images: rc=${RC}"
+    exit "${RC}"
+}
+
 do_scan() {
     trap 'stopped scan' TERM
     RUN_ROUTE=scan
@@ -1286,6 +1330,12 @@ do_scan() {
         # parts disagree is COULDN'T FINISH); the next run tries them again.
         RC=1; WHY=SOME_GAMES_NOT_SAVED
     fi
+    # The images of what this run cached, and of anything cached before it
+    # that is still missing one (#212): the same action, finished.
+    # The scan has no deadline of its own (the top-up's TOPUP_TIMEOUT is the
+    # one clock here), so the pass gets its own ceiling.
+    [ "${R_CACHED}" -gt 0 ] && run_image_pass scan "${IMAGE_PASS_SECONDS}" || true
+
     [ "${R_LIMIT}" -eq 1 ] && tell "note LIMIT_REACHED"
     [ "${R_ERRORS}" -gt 0 ] && tell "errors ${R_ERRORS}"
     [ -n "${WHY}" ] && tell "why ${WHY}"
@@ -1444,6 +1494,7 @@ print(int(r.get("cached", 0)), int(r.get("skipped", 0)), 1 if r.get("limit_reach
         exit 1
     fi
     if [ "${CACHED}" -gt 0 ]; then
+        run_image_pass topup "$(time_left "${START}")" || true
         write_stamp 0 topup "${CACHED}" "${SKIPPED}" "${READY}" "${LIMIT}" "${INDEXED}" "${ERRORS}"
         say "topup: cached ${CACHED} game(s), ${INDEXED} from the index; ${READY} ready"
     fi
@@ -1464,8 +1515,9 @@ case "${1:-}" in
     scan)    do_scan ;;
     topup)   do_topup "${2:-}" ;;
     ready)   do_ready ;;
+    images)  do_images ;;
     *)
-        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|pending-ids|account|flushed|scan|topup [--after-index]|ready}" >&2
+        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|pending-ids|account|flushed|scan|topup [--after-index]|images|ready}" >&2
         exit 2
     ;;
 esac

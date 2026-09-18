@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# raofflineproxy-cache-images - the images of the achievements this device has
+# already cached, fetched until none is missing (fork #212, D-RA-0xx).
+#
+#   raofflineproxy-cache-images [--seconds N]
+#
+# Caching a game's achievements and caching its images are one action to a
+# player -- "whenever we cache the achievements, we cache the images for the
+# achievements" (maintainer, 2026-09-18) -- and two pieces of work to this
+# process. The set is stored synchronously; its images go to a four-worker
+# pool that the scan gives one global grace of RAOFFLINEPROXY_IMAGE_WAIT
+# seconds (120 by default) before dropping what has not started, because the
+# pool's non-daemon threads once held the helper 83 s past its DONE (#188).
+# A library's scan queues tens of thousands of images, so the pool loses most
+# of them, and a miss is answered 404 at once while offline (patch 012, for
+# #199's stall). Measured on the maintainer's RG SP before this existed: 494
+# cached set rows referencing 56,111 image paths, 956 of them missing, 123 of
+# 494 games incomplete -- with nothing saying which.
+#
+# This walks the store instead of the library: every cached patch,
+# achievementsets and login2 row, every image path in it, and the ones whose
+# file is not in image_cache/static get fetched. Two properties make that
+# safe to run at the end of every scan and top-up:
+#
+#   * it is idempotent -- download_static_image no-ops on an existing file,
+#     and the check here is the file's existence, so a second run fetches
+#     nothing and costs no request;
+#   * it is resumable -- nothing marks a game done but its own files, so a
+#     run that stops at its ceiling leaves the rest for the next one.
+#
+# The ceiling is time (--seconds, default 300). A run that leaves images
+# behind says how many and exits 1, the way a scan that could not finish does
+# (#186 PL-24): a partial pass is never reported as a complete one. Exit 2 is
+# a precondition this could not meet (no store, no account).
+#
+# It prints the scan page's own protocol on stdout, so the same reader can
+# follow it: ">>> doing images", ">>> total <n>", ">>> image <i>|<n>",
+# ">>> note NOTHING_MISSING", ">>> why <TOKEN>", ">>> done <fetched>|<left>".
+# Everything else goes to stderr for the log. No value from system.cfg is
+# printed: the credentials pass through the client's resolve_credentials and
+# no further, and only paths under the media host are ever fetched.
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from raofflineproxy import cache_keys, image_cache
+from raofflineproxy.auth import resolve_credentials
+from raofflineproxy.config import RA_MEDIA_HOST, configure_logging, load_config
+from raofflineproxy.storage import Storage
+from raofflineproxy.utils import proxy_user_agent, self_user_agent
+
+# The prefixes whose bodies carry image URLs (image_cache.rewrite_image_urls
+# rewrites exactly these three actions).
+ROW_PREFIXES = (
+    cache_keys.PREFIX_PATCH,
+    cache_keys.PREFIX_ACHIEVEMENTSETS,
+    cache_keys.PREFIX_LOGIN,
+)
+
+
+def tell(text: str) -> None:
+    print(">>> " + text, flush=True)
+
+
+def note(text: str) -> None:
+    print(text, file=sys.stderr, flush=True)
+
+
+def image_paths(body: str) -> set[str]:
+    """Every /Badge/, /Images/ or /UserPic/ path a stored body refers to.
+
+    The stored body has been rewritten to point at this proxy, so the strings
+    read http://127.0.0.1:8080/Badge/1.png rather than the media host's URL;
+    extract_image_path takes the path out of either shape. A body is walked
+    rather than pattern-matched so a field this does not know about still
+    contributes its image.
+    """
+    found: set[str] = set()
+    try:
+        data = json.loads(body)
+    except Exception:
+        return found
+
+    def walk(node) -> None:
+        if isinstance(node, dict):
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+        elif isinstance(node, str) and any(p in node for p in image_cache.IMAGE_PATH_PREFIXES):
+            path = image_cache.extract_image_path(node)
+            if path:
+                found.add(path)
+
+    walk(data)
+    return found
+
+
+def missing_paths(storage: Storage) -> tuple[list[str], int, int]:
+    """(the paths with no file, how many paths there were, how many rows)."""
+    seen: set[str] = set()
+    rows = 0
+    for prefix in ROW_PREFIXES:
+        for row in storage.get_all_cache_by_prefix(prefix):
+            body = row.get("responseBody")
+            if not body:
+                continue
+            rows += 1
+            seen |= image_paths(body)
+    missing = [p for p in sorted(seen) if image_cache.resolve_cached_static_asset(p) is None]
+    return missing, len(seen), rows
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--seconds", type=float, default=300.0)
+    parser.add_argument("-h", "--help", action="store_true")
+    args = parser.parse_args()
+    if args.help:
+        print(__doc__ or "usage: raofflineproxy-cache-images [--seconds N]")
+        return 0
+
+    configure_logging()
+    config_data = load_config()
+
+    tell("doing images")
+    try:
+        storage = Storage()
+    except Exception as exc:
+        note(f"the store could not be opened: {exc}")
+        tell("why STORE_UNREADABLE")
+        return 2
+
+    try:
+        credentials = resolve_credentials(storage, config_data, self_user_agent())
+    except Exception as exc:
+        note(f"no account to fetch as: {exc}")
+        tell("why NO_ACCOUNT")
+        return 2
+    if not credentials or not credentials.get("user"):
+        tell("why NO_ACCOUNT")
+        return 2
+
+    user_agent = proxy_user_agent(self_user_agent())
+
+    try:
+        missing, total_paths, rows = missing_paths(storage)
+    except Exception as exc:
+        note(f"the store could not be read: {exc}")
+        tell("why STORE_UNREADABLE")
+        return 2
+
+    note(f"{rows} cached set row(s), {total_paths} image path(s), {len(missing)} missing")
+    tell(f"total {len(missing)}")
+    if not missing:
+        tell("note NOTHING_MISSING")
+        tell("done 0|0")
+        return 0
+
+    deadline = time.monotonic() + max(1.0, args.seconds)
+    fetched = 0
+    done = 0
+    stopped = False
+
+    # The pool the proxy uses for its own images, four workers, so this asks
+    # RetroAchievements' media host no harder than a launch does.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {}
+        for path in missing:
+            futures[pool.submit(
+                image_cache.download_static_image,
+                f"{RA_MEDIA_HOST}/{path}",
+                "/" + path,
+                user_agent,
+            )] = path
+        for future in as_completed(futures):
+            path = futures[future]
+            done += 1
+            try:
+                future.result()
+            except Exception as exc:  # download_static_image swallows its own
+                note(f"{path}: {exc}")
+            if image_cache.resolve_cached_static_asset(path) is not None:
+                fetched += 1
+            if done % 25 == 0 or done == len(missing):
+                tell(f"image {done}|{len(missing)}")
+            if time.monotonic() > deadline:
+                stopped = True
+                # Drop what has not started; what is in flight carries its own
+                # timeout, and the next run picks up whatever did not land.
+                for pending in futures:
+                    pending.cancel()
+                break
+
+    left = [p for p in missing if image_cache.resolve_cached_static_asset(p) is None]
+    note(f"fetched {fetched}, still missing {len(left)}{' (stopped at the ceiling)' if stopped else ''}")
+    if left:
+        tell("why SOME_IMAGES_NOT_SAVED")
+    tell(f"done {fetched}|{len(left)}")
+    return 1 if left else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

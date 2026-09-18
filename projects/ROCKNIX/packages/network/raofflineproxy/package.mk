@@ -124,6 +124,12 @@ makeinstall_target() {
   cp "${PKG_DIR}/sources/raofflineproxy-cache-indexed" "${INSTALL}/usr/bin/raofflineproxy-cache-indexed"
   chmod 0755 "${INSTALL}/usr/bin/raofflineproxy-cache-indexed"
 
+  # The images of what is cached, fetched until none is missing (#212): the
+  # same action as caching the achievements, run at the end of a scan and a
+  # top-up and available on its own as `raofflineproxy-ctl images`.
+  cp "${PKG_DIR}/sources/raofflineproxy-cache-images" "${INSTALL}/usr/bin/raofflineproxy-cache-images"
+  chmod 0755 "${INSTALL}/usr/bin/raofflineproxy-cache-images"
+
   # /usr/lib is the first system path rom_hashing.py's loader tries after the
   # module's own directory.
   mkdir -p "${INSTALL}/usr/lib"
