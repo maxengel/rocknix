@@ -49,6 +49,24 @@ change (D-UI-039, maintainer 2026-09-11).** The rule is stated in the map
 itself, which is the one place somebody who has not opened it will not read
 it; it is repeated here so it loads with the rest.
 
+**And it is checked, because for a month it was not kept.** `tools/es-menu-map-check`
+reads every screen title in the EmulationStation commit the package pins --
+not a working tree, which is usually somebody's feature branch -- and fails on
+one the map neither describes nor declares. On 2026-09-18 it found **30 of 51
+screens** missing, six of them pages this fork wrote itself: FINISH RESTORE
+SETUP's three password pages, and the setup wizard's WHICH CONNECTION?, SSH
+PASSWORD and CLOUD SETUP COMPLETE. A documentation practice that nothing
+verifies decays exactly like an unverified guard, and for the same reason --
+nobody finds out.
+
+A screen we deliberately do not map is declared in the map's **`## Not mapped`**
+section as `- TITLE -- why`, which is where an upstream page we never touch
+belongs. Two consequences worth knowing: adding a ROCKNIX row to one of those
+pages means mapping it properly and deleting its declaration, and a declaration
+naming a screen that no longer exists fails the check too -- it would otherwise
+sit there excusing the next screen that reuses the name. The check runs in
+`tools/vm-qa` as the `menumap` suite, beside `french`.
+
 Two house rules from `es-ui-style-guide.md` are worth carrying at this altitude
 because they decide safety, not looks:
 

@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# es-menu-map-check -- does docs/es-menu-map.md still describe the menus that ship?
+#
+# The map is how a new feature gets placed rather than invented, and
+# .claude/rules/es-native-ui.md has asked since 2026-08-19 that a row added,
+# moved or renamed updates it in the same change. That promise did not hold:
+# on 2026-09-18 twenty-eight of the forty-one page titles in the shipped
+# binary were absent from the map, among them screens this fork wrote itself
+# (FINISH RESTORE SETUP, CLOUD REMOTE SETUP, WHICH REMOTE?). A practice that
+# nothing checks is a practice that decays silently, which is the whole
+# argument of engineering-practices.md -- so this is the check.
+#
+# It reads the EmulationStation source at the commit the image actually
+# ships (PKG_VERSION in the emulationstation package), not a working tree,
+# because the working tree is usually someone's feature branch and the
+# question is about what players have.
+#
+#   tools/es-menu-map-check [--es-src DIR] [--ref COMMIT] [--quiet]
+#
+# A screen this fork deliberately does not map -- an upstream page ROCKNIX
+# hides, a Kodi or Batocera-store leftover -- is declared in the map itself,
+# under "## Not mapped", as `- TITLE -- why`. The declaration lives beside
+# the map rather than in this tool so the reader of the map sees the same
+# list the check enforces, and so a reason is written down once.
+#
+# Exits 0 when every screen is mapped or declared, 1 when something is
+# neither -- or when a declaration names a screen that no longer exists --
+# and 2 when the check could not run at all (no source, no map, an
+# unreadable ref), because a check that cannot run has not passed.
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+MAP = REPO / "docs" / "es-menu-map.md"
+PKG = REPO / "projects/ROCKNIX/packages/ui/emulationstation/package.mk"
+DEFAULT_SRC = Path.home() / "Development" / "emulationstation-next"
+
+# Where a screen's title is written. Each pattern's one group is the title.
+SCREEN_PATTERNS = [
+    # new GuiSettings(window, _("TITLE")) -- the ordinary settings page
+    re.compile(r'new\s+GuiSettings\s*\(\s*\w+\s*,\s*_\("([^"]+)"\)'),
+    # auto s = GuiSettings(mWindow, _("TITLE")) -- constructed directly
+    re.compile(r'(?<!new )\bGuiSettings\s*\(\s*m?[Ww]indow\s*,\s*_\("([^"]+)"\)'),
+    # MenuComponent(window, _("TITLE")) -- a page built on the menu component
+    re.compile(r'MenuComponent\s*\(\s*\w+\s*,\s*_\("([^"]+)"\)'),
+]
+
+SOURCE_DIRS = ["es-app/src/guis", "es-core/src/guis"]
+
+
+def die(message: str) -> None:
+    print(f"es-menu-map-check: {message}", file=sys.stderr)
+    raise SystemExit(2)
+
+
+def shipped_ref() -> str:
+    """The commit the image ships, from the package recipe."""
+    try:
+        text = PKG.read_text(encoding="utf-8")
+    except OSError as exc:
+        die(f"cannot read {PKG}: {exc}")
+    match = re.search(r'^PKG_VERSION="([0-9a-f]{7,40})"', text, re.M)
+    if not match:
+        die(f"no PKG_VERSION commit in {PKG}")
+    return match.group(1)
+
+
+def source_files(src: Path, ref: str) -> dict[str, str]:
+    """Every guis/*.cpp at `ref`, as {path: text}."""
+    try:
+        listing = subprocess.run(
+            ["git", "-C", str(src), "ls-tree", "-r", "--name-only", ref, *SOURCE_DIRS],
+            capture_output=True, text=True, check=True,
+        ).stdout.split()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        die(f"cannot list {ref} in {src}: {exc}")
+    files = {}
+    for path in listing:
+        if not path.endswith(".cpp"):
+            continue
+        try:
+            files[path] = subprocess.run(
+                ["git", "-C", str(src), "show", f"{ref}:{path}"],
+                capture_output=True, text=True, check=True,
+            ).stdout
+        except (OSError, subprocess.CalledProcessError) as exc:
+            die(f"cannot read {path} at {ref}: {exc}")
+    if not files:
+        die(f"no {' or '.join(SOURCE_DIRS)} sources at {ref} in {src}")
+    return files
+
+
+def screens(files: dict[str, str]) -> dict[str, str]:
+    """{title: the file it is built in} for every screen in the source."""
+    found: dict[str, str] = {}
+    for path, text in files.items():
+        for pattern in SCREEN_PATTERNS:
+            for match in pattern.finditer(text):
+                found.setdefault(match.group(1), path.rsplit("/", 1)[-1])
+    return found
+
+
+def map_text_and_exclusions() -> tuple[str, dict[str, str]]:
+    """The map's prose, and the screens it declares it does not cover."""
+    try:
+        text = MAP.read_text(encoding="utf-8")
+    except OSError as exc:
+        die(f"cannot read {MAP}: {exc}")
+    exclusions: dict[str, str] = {}
+    section = re.search(r"^## Not mapped\b.*?$(.*?)(?=^## |\Z)", text, re.M | re.S)
+    if section:
+        for line in section.group(1).splitlines():
+            # Split on the first " -- " (or em dash), not on a character
+            # class: a title may itself contain a hyphen (WI-FI PASSWORD),
+            # and a parser that cannot hold the titles we actually use is
+            # a parser that silently drops declarations.
+            entry = re.match(r"\s*-\s+(.+?)\s+(?:--|—)\s+(.+)$", line)
+            if entry:
+                title = entry.group(1).strip().strip("*").strip("`").strip()
+                exclusions[title] = entry.group(2).strip()
+    return text, exclusions
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(add_help=True)
+    parser.add_argument("--es-src", default=os.environ.get("ES_SRC", str(DEFAULT_SRC)))
+    parser.add_argument("--ref", default=None, help="default: the shipped PKG_VERSION")
+    parser.add_argument("--quiet", action="store_true")
+    args = parser.parse_args()
+
+    src = Path(args.es_src).expanduser()
+    if not (src / ".git").exists():
+        die(f"{src} is not an EmulationStation checkout (--es-src or ES_SRC)")
+    ref = args.ref or shipped_ref()
+
+    found = screens(source_files(src, ref))
+    text, exclusions = map_text_and_exclusions()
+
+    missing = {}
+    for title, where in sorted(found.items()):
+        if title in exclusions:
+            continue
+        if title.lower() in text.lower():
+            continue
+        missing[title] = where
+
+    # An exclusion for a screen that no longer exists is stale: it was
+    # written for something that has since been renamed or removed, and it
+    # will silently excuse a future screen that happens to reuse the name.
+    stale = sorted(set(exclusions) - set(found))
+
+    if not args.quiet:
+        print(f"{len(found)} screen(s) at {ref[:9]}, "
+              f"{len(found) - len(missing) - len(exclusions)} in the map, "
+              f"{len(exclusions)} declared unmapped, {len(missing)} missing")
+        for title, where in missing.items():
+            print(f"  MISSING  {title}  ({where})")
+        for title in stale:
+            print(f"  STALE    {title} is declared unmapped but no longer exists")
+
+    # A stale declaration counts as a failure too. It is not cosmetic: it
+    # sits there excusing a title that no longer exists, and will silently
+    # excuse the next screen that reuses the name. Fail closed.
+    return 1 if (missing or stale) else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -146,6 +146,11 @@ flowchart TD
     FORM -->|OAuth providers| OAUTH[sign in on device / with phone]
     CSS --> FIN[FINISH RESTORE PROCESS<br/><i>only after a settings restore</i>]
     CSS --> TIDY[TIDY UP YOUR CLOUD FOLDERS<br/><i>only when something to move</i>]
+
+    CONN --> WHICH{{WHICH CONNECTION?<br/><i>openCloudSetup, the wizard's first step</i>}}
+    WHICH --> PWPAGE[SSH PASSWORD<br/><i>cloudSetupOpenPasswordPage; device access for the setup route</i>]
+    OAUTH --> DONE[CLOUD SETUP COMPLETE<br/><i>cloudSetupBuildDoneStep; subtitle YOUR CLOUD STORAGE IS READY</i>]
+    FORM --> DONE
 ```
 
 **Dialogs the cloud raises on its own.** A restore against a cloud whose saves
@@ -161,6 +166,30 @@ FINISH RESTORE PROCESS (after a settings restore) tells the player the backup
 never carried the cloud sign-in and points at MANAGE CLOUD STORAGE (D-CLOUD-087).
 
 **Since RC-11 (#187, #192).** A transfer started from BACK UP TO THE CLOUD, RESTORE FROM THE CLOUD or MATCH can be left running: B closes its page and the row that launched it reads the run (`BACKING UP... - ITEM i OF n  ·  <item>`, refreshed each second) while the other two rows dim; pressing any of the three reopens the page; after the end the row reads `LAST <date> - COMPLETED` (or `COULDN'T FINISH` / `SKIPPED - ...`) until the outcome page is seen, then goes back to its one-line description. Launching a game while any sync or transfer runs asks -- the sentence naming it, then STOP IT AND PLAY or KEEP WAITING (D-CLOUD-129 for the ones the player started, since RC-12 build 4; D-CLOUD-130 for the automatic startup and after-a-game syncs, since build 7; until then the first were refused and the second cancelled without asking). The startup card's first step reads `CHECKING THE CONNECTION...` when the interface sees a link and `WAITING FOR A NETWORK, UP TO 60 SECONDS...` when it does not; `SKIPPED - YOU'RE NOT ONLINE` follows the wait as before.
+
+### FINISH RESTORE SETUP (the checklist after a settings restore)
+
+`GuiMenu::openRestoreRelink`, subtitled *RE-ENTER THE PASSWORDS BACKUPS DO NOT
+INCLUDE*. It exists because no credential travels in a settings archive
+(D-RA-025, D-INFRA-010): `write_archive` deletes every `.key`/`.password`/`.token`
+line from the archived `system.cfg` and blanks the same in `retroarch.cfg`, so a
+restored device comes back with its configuration and none of its secrets. Each
+row is a state row -- a check-circle when the credential is present, an empty
+circle when it is not, deliberately never a warning triangle, because "not set
+yet" is the expected state on arrival.
+
+```mermaid
+flowchart TD
+    REL{{FINISH RESTORE SETUP<br/><i>RE-ENTER THE PASSWORDS BACKUPS DO NOT INCLUDE</i>}}
+    REL --> WIFI[WI-FI PASSWORD<br/><i>first: everything else needs the network back</i>]
+    REL --> DEV[DEVICE PASSWORD]
+    REL --> NP[NETPLAY PASSWORD<br/><i>only when the restored configuration uses it</i>]
+    WIFI --> RECONNECT[reconnects on save, then the page rebuilds]
+```
+
+Wi-Fi comes first by design: the sanitised `system.cfg` drops `wifi.key`, so a
+settings restore disconnects, and the cloud-journey continuation that follows
+this page needs the link back.
 
 ## Network (our rows)
 
@@ -320,3 +349,37 @@ and VERSIONS KEPT PER SAVE (count) -- the two #23 rows, reworded for the whole
 store (D-CLOUD-095/096, D-UI-039); and, after a conflict, the compare page with
 the cloud's version left and this console's right, a *played later/earlier on
 <console>* line under each, the cursor opening on the newer one (D-CLOUD-104).
+
+## Not mapped
+
+Upstream Batocera pages this fork neither wrote nor modifies. They are listed
+rather than omitted so the check (`tools/es-menu-map-check`) can tell a page we
+decided not to document from a page somebody forgot — and so that the day we add
+a row to one of them, the declaration is where the reader will trip over it.
+**Adding a row to any of these means mapping it above and deleting its line
+here.** The reason column is the point; a line with no reason is not a decision.
+
+- SYSTEM OPTIONS -- upstream system page; ROCKNIX adds no row to it
+- SECURITY -- upstream; the SSH/root-password surface we use in the wizard is mapped above instead
+- FRONTEND DEVELOPER OPTIONS -- upstream diagnostics, not a player surface
+- PER SYSTEM ADVANCED CONFIGURATION -- upstream per-emulator tree, unchanged here
+- EMULATOR SETTINGS -- upstream per-system emulator/core choice, unchanged here
+- LATENCY REDUCTION -- upstream run-ahead page, unchanged here
+- MULTISCREENS -- upstream; no ROCKNIX handheld has a second screen
+- DECORATIONS -- upstream bezel page; settings backups carry bezels but the page is theirs
+- DMD -- upstream pinball display integration, not built for our devices
+- FORMAT DEVICE -- upstream storage tool, unchanged here
+- SAFELY EJECT A DISK -- upstream storage tool, unchanged here
+- KODI SETTINGS -- upstream; Kodi is not in our images
+- FAVORITE SONGS -- upstream background-music picker, unchanged here
+- SCREENSAVER SETTINGS -- upstream screensaver page, unchanged here
+- AI GAME TRANSLATION -- upstream feature, not configured on our images
+- SCREENSCRAPER -- upstream scraper page; our fork's change is the developer pair inside it (#64), not the page's shape
+- NETPLAY SETTINGS -- upstream netplay page, unchanged here
+- CONNECT TO NETPLAY -- upstream netplay browser, unchanged here
+- ADD TO CUSTOM COLLECTION... -- upstream collections flow, unchanged here
+- GLOBAL HOTKEYS -- upstream hotkey editor, unchanged here
+- JOYSTICKS HOTKEYS -- upstream hotkey editor, unchanged here
+- KEYBOARDTOPADS -- upstream key-to-pad editor; #63 will move its tab strip to the focus model, which does not change where it lives
+- ANALOG STICKS LEDS -- upstream LED page for controllers our devices do not have
+- PAIR A BLUETOOTH DEVICE -- upstream pairing flow, unchanged here
