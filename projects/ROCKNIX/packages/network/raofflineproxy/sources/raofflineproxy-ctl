@@ -1236,16 +1236,19 @@ stopped() {
 IMAGE_PASS_SECONDS="${RAOFFLINEPROXY_IMAGE_PASS_SECONDS:-300}"
 
 run_image_pass() {
-    local VERB="$1" SECONDS_LEFT="${2:-${IMAGE_PASS_SECONDS}}" RC=0
+    local VERB="$1" SECONDS_LEFT="${2:-${IMAGE_PASS_SECONDS}}" MODE="${3:-}" RC=0
     [ -x "${IMAGE_HELPER}" ] || { slog "${VERB}: no image helper at ${IMAGE_HELPER}"; return 0; }
     [ "${SECONDS_LEFT}" -gt 10 ] 2>/dev/null || { slog "${VERB}: no time left for the image pass (${SECONDS_LEFT}s)"; return 0; }
-    slog "${VERB}: image pass, up to ${SECONDS_LEFT}s"
-    "${IMAGE_HELPER}" --seconds "${SECONDS_LEFT}" >>"${SCAN_LOG}" 2>&1 || RC=$?
+    slog "${VERB}: image pass, up to ${SECONDS_LEFT}s${MODE:+ (${MODE})}"
+    # shellcheck disable=SC2086 -- MODE is one flag or empty, on purpose
+    "${IMAGE_HELPER}" --seconds "${SECONDS_LEFT}" ${MODE} >>"${SCAN_LOG}" 2>&1 || RC=$?
     slog "${VERB}: image pass rc=${RC}"
     return "${RC}"
 }
 
 do_images() {
+    local MODE=""
+    [ "${1:-}" = "--verify" ] && MODE=--verify
     refuse_unless_ready images
     if ! is_online; then
         say "images: refused, this device is offline"
@@ -1256,8 +1259,9 @@ do_images() {
     mark_running images
     trap unmark_running EXIT
     local RC=0
-    "${IMAGE_HELPER}" --seconds "${IMAGE_PASS_SECONDS}" || RC=$?
-    slog "images: rc=${RC}"
+    # shellcheck disable=SC2086 -- MODE is one flag or empty, on purpose
+    "${IMAGE_HELPER}" --seconds "${IMAGE_PASS_SECONDS}" ${MODE} || RC=$?
+    slog "images: rc=${RC}${MODE:+ (${MODE})}"
     exit "${RC}"
 }
 
@@ -1494,7 +1498,10 @@ print(int(r.get("cached", 0)), int(r.get("skipped", 0)), 1 if r.get("limit_reach
         exit 1
     fi
     if [ "${CACHED}" -gt 0 ]; then
-        run_image_pass topup "$(time_left "${START}")" || true
+        # The top-up is the background run, so it is where the store is
+        # verified as well as filled: a slice per run from the cursor, so
+        # the whole store comes round without any one run being long (#213).
+        run_image_pass topup "$(time_left "${START}")" --verify || true
         write_stamp 0 topup "${CACHED}" "${SKIPPED}" "${READY}" "${LIMIT}" "${INDEXED}" "${ERRORS}"
         say "topup: cached ${CACHED} game(s), ${INDEXED} from the index; ${READY} ready"
     fi
@@ -1515,9 +1522,9 @@ case "${1:-}" in
     scan)    do_scan ;;
     topup)   do_topup "${2:-}" ;;
     ready)   do_ready ;;
-    images)  do_images ;;
+    images)  do_images "${2:-}" ;;
     *)
-        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|pending-ids|account|flushed|scan|topup [--after-index]|images|ready}" >&2
+        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|pending-ids|account|flushed|scan|topup [--after-index]|images [--verify]|ready}" >&2
         exit 2
     ;;
 esac
