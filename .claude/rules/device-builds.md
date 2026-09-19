@@ -252,6 +252,16 @@ started — and treat it as poisoned like compiled output.
 
 Then `rm -rf $R/.stamps/<pkg> $R/build/<pkg>-*` for each and resume.
 
+**Before resuming a failed build, copy `.threads/logs` somewhere.** The
+per-thread logs are per *slot*, not per package: `109.log` is whichever
+package thread 109 ran last, and a resume reuses every slot. On 2026-09-19 an
+H700 failure (`libxcb` relinking against a `usr/lib32/libc.so` that `ld` said
+did not exist) was resumed on a guess about the cause, and by the time anyone
+went to check which package had been writing the sysroot at that moment, all
+of those logs carried the resume's timestamps. The cause is now unknowable
+from that run. The build scripts archive the logs on any non-zero exit for
+this reason; if you run `make` by hand, do it yourself first.
+
 **If a resume fails the same way again after that sweep, stop clearing
 packages and wipe the arch's build root.** At that point the state is not
 enumerable and the rebuild is cheaper than the next three guesses —
