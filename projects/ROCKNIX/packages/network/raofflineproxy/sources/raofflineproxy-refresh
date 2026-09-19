@@ -71,6 +71,49 @@ def game_ids(rows: list[dict]) -> list[int]:
     return ids
 
 
+def drop_startsession(storage: Storage, game_id: int) -> int:
+    """Remove the cached session response for a game. Returns rows removed."""
+    removed = 0
+    prefix = f"{cache_keys.PREFIX_STARTSESSION}{game_id}:"
+    try:
+        for row in storage.get_all_cache_by_prefix(cache_keys.PREFIX_STARTSESSION):
+            key = str(row.get("cacheKey") or "")
+            if key.startswith(prefix):
+                storage.delete_cache(key)
+                removed += 1
+    except Exception as exc:
+        note(f"game {game_id}: the startsession row could not be dropped ({exc})")
+    return removed
+
+
+def row_ages(storage: Storage, game_id: int) -> str:
+    """The four per-game rows and their ages, so staleness is visible."""
+    now_ms = int(time.time() * 1000)
+    ages = []
+    # achievementsets is keyed by the ROM's hash, not by the game id, so it
+    # cannot be looked up from here; saying "none" for it would be a false
+    # statement about a row that exists. It is named and left unchecked.
+    for prefix in (cache_keys.PREFIX_PATCH,
+                   cache_keys.PREFIX_UNLOCKS, cache_keys.PREFIX_STARTSESSION):
+        try:
+            rows = [r for r in storage.get_all_cache_by_prefix(prefix)
+                    if f":{game_id}:" in f":{str(r.get('cacheKey') or '')}:"
+                    or str(r.get("cacheKey") or "").startswith(f"{prefix}{game_id}:")]
+        except Exception:
+            rows = []
+        if not rows:
+            ages.append(f"{prefix.rstrip(':')}=none")
+            continue
+        try:
+            stamp = int(rows[0].get("cachedAt") or 0)
+            stamp = stamp // 1000 if stamp > 1e11 else stamp
+            ages.append(f"{prefix.rstrip(':')}={max(0, now_ms // 1000 - stamp)}s")
+        except Exception:
+            ages.append(f"{prefix.rstrip(':')}=?")
+    ages.append("achievementsets=hash-keyed, not checked here")
+    return " ".join(ages)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--game", type=int, help="one game id")
@@ -137,6 +180,21 @@ def main() -> int:
             proxy_service.cache_unlocks(
                 gid, credentials, user_agent, config_data, storage
             )
+            # And the third row. A game has four cached rows -- patch,
+            # achievementsets, unlocks and startsession -- and startsession
+            # carries the player's unlocks *inside the session response*, so
+            # a stale one tells RetroArch at launch that achievements are
+            # already earned however fresh `unlocks` is. That is exactly what
+            # happened on the RG SP on 2026-09-19: two achievements reset on
+            # the site, patch and unlocks refreshed, and the game still
+            # announced both as unlocked from a startsession row two days old.
+            #
+            # It is deleted rather than re-fetched because there is nothing to
+            # fetch outside a real session, and deleting is safe: proved on
+            # guest d, an offline launch with no cached startsession loads the
+            # game and reports the right count, because the proxy rebuilds the
+            # session from the unlocks row (build_unlocks_array).
+            dropped = drop_startsession(storage, gid)
             done += 1
             # It is documented as returning the title and returns the patch
             # body, so take the title out of it rather than printing a page
@@ -147,7 +205,9 @@ def main() -> int:
                     title = (json.loads(answer).get("PatchData") or {}).get("Title") or ""
                 except Exception:
                     title = str(answer)[:40]
-            note(f"re-read {index}/{len(wanted)}: game {gid}" + (f" '{title}'" if title else ""))
+            note(f"re-read {index}/{len(wanted)}: game {gid}" + (f" '{title}'" if title else "")
+                 + (f"; dropped {dropped} startsession row(s)" if dropped else "")
+                 + f"; {row_ages(storage, gid)}")
             tell(f"refresh {index}|{len(wanted)}")
         except Exception as exc:
             failed += 1
