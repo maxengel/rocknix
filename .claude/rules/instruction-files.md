@@ -120,6 +120,11 @@ D-UI-039, a row added, moved or renamed updates it in the same change),
 (the device and QA-guest policy, whose read filter is now also in
 `engineering-practices.md`).
 
+**The principles behind these rules, and which rule enforces each, are in
+[`working-principles.md`](working-principles.md)** — an index, not a second
+copy. Read it when you want to know whether something is already covered
+before writing a new rule; ten of twelve imported principles turned out to be.
+
 **When a rule earns its place, write it down.** `docs/blindspot-register.md`
 holds failure modes this project has actually committed — consult it before
 calling something greenfield, and add to it when a new one surfaces.
