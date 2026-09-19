@@ -58,9 +58,12 @@ if [ "$DETACH" = 1 ]; then
   # Detached, so a harness reaping its own background tasks does not take
   # this with them -- the reason the status file exists at all.
   DETACH=0
+  # Its own stderr goes beside the status file, not to /dev/null: on
+  # 2026-09-19 a watcher died ten minutes into a run and the only evidence
+  # was a stale heartbeat, with nothing to say why.
   setsid nohup "$0" --log "$LOG" --rc "$RC" ${PID:+--pid "$PID"} \
       --pattern "$PATTERN" --stall-min "$STALL" --status "$STATUS" \
-      --interval "$INTERVAL" >/dev/null 2>&1 &
+      --interval "$INTERVAL" >/dev/null 2>"$STATUS.err" &
   sleep 2
   echo "watch-job: detached, status at $STATUS"
   exit 0

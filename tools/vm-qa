@@ -45,8 +45,14 @@
 # handheld: the guests are tools/vm-pair's, on this host (fork #120, box 1).
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-IMAGE=""; SKIP_UP=0; ONLY="scripts,lifetime,vocabulary,register,french,pair-identity,round-trip,exit,time-to-play,walks"; LINK=0; RA_OFFLINE=0; GUEST=a
+IMAGE=""; SKIP_UP=0; LINK=0; RA_OFFLINE=0; GUEST=a
+# The default run is every suite in SUITES except the two that are opt-in
+# (link needs a second backend, ra-offline spends a QA achievement). It used
+# to be a second, hand-typed list here -- and menumap, added to SUITES on
+# 2026-09-19, never ran because this copy was not updated. One list.
+ONLY=""
 SUITES="scripts lifetime vocabulary register french menumap pair-identity round-trip exit time-to-play link ra-offline walks"
+[ -n "$ONLY" ] || ONLY=$(printf '%s' "$SUITES" | tr ' ' '\n' | grep -vxE 'link|ra-offline' | paste -sd, -)
 # Which of the five QA clouds every suite here talks to (#133). It is one
 # variable and not a per-suite flag on purpose: the backend the endpoint is
 # brought up on, the stanza the walks seed, and the endpoint the round trip
