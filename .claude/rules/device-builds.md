@@ -283,6 +283,43 @@ Grepping the log for a phrase such as `build retroarch:target` is not one of
 those — the log's progress lines say `install`, and a guessed pattern that
 matches nothing reads as "not rebuilt".
 
+## Before a build: the machine is memory-bound, not disk-bound
+
+`tools/build-preflight` reports it and `--stop-vms` clears what it can. Run it
+before a cold build.
+
+The two constraints are easy to confuse because one of them is never a problem:
+`/workspace` has terabytes free while the box runs out of RAM. On 2026-09-19 a
+cold GENERIC_X64 build reached `webkitgtk`, compiled WebCore at
+`CONCURRENCY_MAKE_LEVEL=nproc=24`, and the kernel killed `cc1plus` twice:
+
+```
+x86_64-rocknix-linux-gnu-g++-15.2.0: fatal error: Killed signal terminated program cc1plus
+```
+
+**What made it expensive was the collateral, not the failure.** The same
+pressure killed a running QA guest and a background watcher, so the first
+symptom was silence: a build that had been dead for two hours, a guest whose
+monitor socket had no owner, and nothing that said so. A memory failure does
+not announce itself the way a compile error does.
+
+So, before a cold build:
+
+- **Stop the QA guests you are not using.** Each QEMU guest holds about 2 GB
+  and they are routinely left up for days. They are also what the build kills
+  first, so leaving one up is not a neutral choice — it is choosing to risk
+  whatever state it holds.
+- **Look at swap, not just RAM.** A full swap means the cushion is gone: the
+  next spike is an OOM kill rather than a slowdown. `swapoff -a && swapon -a`
+  reclaims it and needs root plus enough free RAM to take the pages back.
+- **Cap the heavyweight packages rather than the whole build.** `webkitgtk`
+  carries `PKG_MAKE_OPTS_TARGET="-j4"` for this reason; `ninja` takes the last
+  `-j` it is given and `scripts/build` appends the package's options after
+  `NINJA_OPTS`, so one package narrows without slowing the other six hundred.
+  Find them one at a time with evidence rather than lowering
+  `CONCURRENCY_MAKE_LEVEL` globally (maintainer, 2026-09-19: optimise for a
+  build that finishes, even if it takes longer).
+
 ## Budget
 
 - **Disk:** ~90 GB per device build root, plus the shared ~15 GB sources cache.

@@ -1,0 +1,104 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# watch-job -- keep one file that tells the truth about a long job.
+#
+#   tools/watch-job --log FILE --rc FILE [--pid N] [--pattern RE]
+#                   [--stall-min N] [--status FILE] [--detach]
+#
+# Why a file and not a subscription. A session that says "I am watching this"
+# is relying on something that can stop without saying so: a harness can reap
+# a background task under memory pressure, a shell can be killed, a session
+# can end. All of those look exactly like a healthy job -- silence. That cost
+# this project two unnoticed build failures in one day, seven hours and five
+# (engineering-practices.md, "A promise is not a mechanism").
+#
+# So the artifact is a status file, rewritten every INTERVAL seconds, and the
+# file's own mtime is what makes the watcher checkable: if the status is
+# older than a couple of intervals, THE WATCHER IS DEAD, whatever it says
+# inside. That is the one thing a subscription cannot tell you.
+#
+# It reports four states, and the last two are the ones that matter:
+#
+#   running   the log advanced within --stall-min
+#   stalled   the process is alive but the log has not moved -- which is not
+#             always wrong (a long link step) but is always worth knowing
+#   finished  the rc file exists; its contents are the outcome
+#   died      no process and no rc file: killed outright, wrote no exit code.
+#             This is the case a plain "wait for the rc file" waits through
+#             forever.
+#
+# Reading it is one command, and a stale mtime is a failed check, not a pass:
+#
+#   cat /workspace/tmp/rocknix-session/<job>.status
+#
+# Fork-only.
+
+set -u
+LOG=""; RC=""; PID=""; PATTERN='\[[0-9]+/[0-9]+\]'; STALL=15; STATUS=""; DETACH=0; INTERVAL=30
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --log)        LOG="$2"; shift 2 ;;
+    --rc)         RC="$2"; shift 2 ;;
+    --pid)        PID="$2"; shift 2 ;;
+    --pattern)    PATTERN="$2"; shift 2 ;;
+    --stall-min)  STALL="$2"; shift 2 ;;
+    --status)     STATUS="$2"; shift 2 ;;
+    --interval)   INTERVAL="$2"; shift 2 ;;
+    --detach)     DETACH=1; shift ;;
+    *) echo "watch-job: unknown argument $1" >&2; exit 2 ;;
+  esac
+done
+[ -n "$LOG" ] && [ -n "$RC" ] || { echo "watch-job: --log and --rc are required" >&2; exit 2; }
+[ -n "$STATUS" ] || STATUS="${RC%.rc}.status"
+
+if [ "$DETACH" = 1 ]; then
+  # Detached, so a harness reaping its own background tasks does not take
+  # this with them -- the reason the status file exists at all.
+  DETACH=0
+  setsid nohup "$0" --log "$LOG" --rc "$RC" ${PID:+--pid "$PID"} \
+      --pattern "$PATTERN" --stall-min "$STALL" --status "$STATUS" \
+      --interval "$INTERVAL" >/dev/null 2>&1 &
+  sleep 2
+  echo "watch-job: detached, status at $STATUS"
+  exit 0
+fi
+
+started=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+while :; do
+  now_s=$(date +%s)
+  log_age=$([ -f "$LOG" ] && echo $(( now_s - $(stat -c %Y "$LOG") )) || echo -1)
+  progress=$(grep -oE "$PATTERN" "$LOG" 2>/dev/null | tail -1)
+  alive=no
+  if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then alive=yes; fi
+
+  if [ -f "$RC" ]; then
+    state=finished
+  elif [ "$alive" = no ] && [ -n "$PID" ]; then
+    state=died
+  elif [ "$log_age" -ge 0 ] && [ "$log_age" -gt $(( STALL * 60 )) ]; then
+    state=stalled
+  else
+    state=running
+  fi
+
+  {
+    echo "state:       $state"
+    echo "written:     $(date -u '+%Y-%m-%d %H:%M:%S UTC')   <- if this is stale, the watcher is dead"
+    echo "watcher_pid: $$"
+    echo "job_pid:     ${PID:-unknown}  alive=$alive"
+    echo "started:     $started"
+    echo "progress:    ${progress:-none matched}"
+    echo "log:         $LOG  (last written ${log_age}s ago)"
+    [ -f "$RC" ] && echo "outcome:     rc=$(cat "$RC")"
+    [ "$state" = died ] && echo "outcome:     NO EXIT CODE WRITTEN -- the job was killed, not finished"
+    [ "$state" = stalled ] && echo "note:        alive but the log has not advanced in over ${STALL} min"
+    echo "tail:"
+    tail -2 "$LOG" 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | cut -c1-130 | sed 's/^/  /'
+  } > "$STATUS.tmp" && mv "$STATUS.tmp" "$STATUS"
+
+  case "$state" in finished|died) exit 0 ;; esac
+  sleep "$INTERVAL"
+done
