@@ -9,6 +9,10 @@ PKG_SITE="https://github.com/ROCKNIX/packages"
 PKG_URL="${PKG_SITE}/raw/refs/heads/main/aethersx2.tar.gz"
 PKG_DEPENDS_TARGET="toolchain qt6 libgpg-error fuse2 xz libpcap"
 PKG_LONGDESC="Arm PS2 Emulator appimage"
+# aarch64 only, restored after the 2026-09 upstream cleanup dropped it
+# (28e750db32). PKG_EMUS lists this package for every device, so PKG_ARCH
+# is the only thing keeping it off x86_64.
+PKG_ARCH="aarch64"
 PKG_TOOLCHAIN="manual"
 
 get_graphicdrivers

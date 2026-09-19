@@ -9,6 +9,10 @@ PKG_SITE="https://www.richwhitehouse.com/jaguar"
 PKG_URL="${PKG_SITE}/builds/BigPEmu_LinuxARM64_${PKG_VERSION}.tar.gz"
 PKG_DEPENDS_TARGET="toolchain SDL2"
 PKG_LONGDESC="BigPEmu - The World's Prefurred Large Pussycat Emulator."
+# aarch64 only, restored after the 2026-09 upstream cleanup dropped it
+# (28e750db32). PKG_EMUS lists this package for every device, so PKG_ARCH
+# is the only thing keeping it off x86_64.
+PKG_ARCH="aarch64"
 PKG_TOOLCHAIN="manual"
 
 makeinstall_target() {

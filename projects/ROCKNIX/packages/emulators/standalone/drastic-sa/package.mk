@@ -8,6 +8,10 @@ PKG_LICENSE="proprietary"
 PKG_URL="https://github.com/ROCKNIX/packages/raw/main/drastic.tar.gz"
 PKG_DEPENDS_TARGET="toolchain rocknix-hotkey"
 PKG_LONGDESC="Install Drastic Launcher script, will download bin on first run"
+# aarch64 only, restored after the 2026-09 upstream cleanup dropped it
+# (28e750db32). PKG_EMUS lists this package for every device, so PKG_ARCH
+# is the only thing keeping it off x86_64.
+PKG_ARCH="aarch64"
 PKG_TOOLCHAIN="make"
 
 make_target() {

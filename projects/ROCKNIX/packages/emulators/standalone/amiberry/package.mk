@@ -8,6 +8,10 @@ PKG_SITE="https://github.com/midwan/amiberry"
 PKG_URL="${PKG_SITE}.git"
 PKG_DEPENDS_TARGET="toolchain linux glibc bzip2 zlib SDL2 SDL2_image SDL2_ttf capsimg freetype libxml2 flac libogg mpg123 libpng libmpeg2 libserialport"
 PKG_LONGDESC="Amiberry is an optimized Amiga emulator for ARM-based boards."
+# aarch64 only, restored after the 2026-09 upstream cleanup dropped it
+# (28e750db32). PKG_EMUS lists this package for every device, so PKG_ARCH
+# is the only thing keeping it off x86_64.
+PKG_ARCH="aarch64"
 PKG_TOOLCHAIN="make"
 
 if [ ! "${OPENGL}" = "no" ]; then
