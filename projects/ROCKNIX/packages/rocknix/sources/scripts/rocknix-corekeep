@@ -57,6 +57,11 @@
 # release candidate (the maintainer's ask, 2026-09-19). Turn it on for a
 # device with:
 #
+# The marker lives on /storage, so it SURVIVES AN IN-PLACE UPDATE: a device
+# armed for troubleshooting stays armed across the next image unless it is
+# turned off. Disarm before handing a device an image meant to be evaluated
+# as it ships (D-QA-029).
+#
 #   rocknix-corekeep --on     # writes the marker, says where dumps will land
 #   rocknix-corekeep --off    # removes it; nothing is kept again
 #   rocknix-corekeep --status
