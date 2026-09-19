@@ -129,6 +129,8 @@ makeinstall_target() {
   # top-up and available on its own as `raofflineproxy-ctl images`.
   cp "${PKG_DIR}/sources/raofflineproxy-cache-images" "${INSTALL}/usr/bin/raofflineproxy-cache-images"
   chmod 0755 "${INSTALL}/usr/bin/raofflineproxy-cache-images"
+  cp "${PKG_DIR}/sources/raofflineproxy-refresh" "${INSTALL}/usr/bin/raofflineproxy-refresh"
+  chmod 0755 "${INSTALL}/usr/bin/raofflineproxy-refresh"
 
   # /usr/lib is the first system path rom_hashing.py's loader tries after the
   # module's own directory.

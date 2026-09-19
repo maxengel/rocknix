@@ -1108,8 +1108,8 @@ count_of() {
 # The helper that works the job list: beside this script, so a copy of the
 # two files runs from anywhere they are put together.
 case "$0" in
-    */*) HELPER="${0%/*}/raofflineproxy-cache-indexed"; IMAGE_HELPER="${0%/*}/raofflineproxy-cache-images" ;;
-    *)   HELPER="/usr/bin/raofflineproxy-cache-indexed"; IMAGE_HELPER="/usr/bin/raofflineproxy-cache-images" ;;
+    */*) HELPER="${0%/*}/raofflineproxy-cache-indexed"; IMAGE_HELPER="${0%/*}/raofflineproxy-cache-images"; REFRESH_HELPER="${0%/*}/raofflineproxy-refresh" ;;
+    *)   HELPER="/usr/bin/raofflineproxy-cache-indexed"; IMAGE_HELPER="/usr/bin/raofflineproxy-cache-images"; REFRESH_HELPER="/usr/bin/raofflineproxy-refresh" ;;
 esac
 
 # Run the job list $2 of $3 games through the helper and read its lines as
@@ -1262,6 +1262,35 @@ do_images() {
     # shellcheck disable=SC2086 -- MODE is one flag or empty, on purpose
     "${IMAGE_HELPER}" --seconds "${IMAGE_PASS_SECONDS}" ${MODE} || RC=$?
     slog "images: rc=${RC}${MODE:+ (${MODE})}"
+    exit "${RC}"
+}
+
+# refresh [--game <id>|--all]. The daily pass re-reads every cached game's
+# patch and unlocks within a day (patch 005), which covers the ordinary case.
+# This is for the player standing in front of the device who has just changed
+# something on the site -- reset an achievement, earned one elsewhere -- and
+# wants it true here before going offline (#223).
+do_refresh() {
+    local WHICH=()
+    case "${1:-}" in
+        --all)  WHICH=(--all) ;;
+        --game) [ -n "${2:-}" ] || { echo "usage: raofflineproxy-ctl refresh [--all|--game <id>]" >&2; exit ${EX_USAGE}; }
+                WHICH=(--game "${2}") ;;
+        "")     ;;
+        *)      echo "usage: raofflineproxy-ctl refresh [--all|--game <id>]" >&2; exit ${EX_USAGE} ;;
+    esac
+    refuse_unless_ready refresh
+    if ! is_online; then
+        say "refresh: refused, this device is offline"
+        tell "why NO_NETWORK"
+        exit ${EX_UNAVAILABLE}
+    fi
+    take_lock refresh
+    mark_running refresh
+    trap unmark_running EXIT
+    local RC=0
+    "${REFRESH_HELPER}" --seconds "${TOPUP_TIMEOUT}" "${WHICH[@]}" || RC=$?
+    slog "refresh: rc=${RC} ${WHICH[*]}"
     exit "${RC}"
 }
 
@@ -1523,8 +1552,9 @@ case "${1:-}" in
     topup)   do_topup "${2:-}" ;;
     ready)   do_ready ;;
     images)  do_images "${2:-}" ;;
+    refresh) do_refresh "${2:-}" "${3:-}" ;;
     *)
-        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|pending-ids|account|flushed|scan|topup [--after-index]|images [--verify]|ready}" >&2
+        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|pending-ids|account|flushed|scan|topup [--after-index]|images [--verify]|refresh [--all|--game <id>]|ready}" >&2
         exit 2
     ;;
 esac
