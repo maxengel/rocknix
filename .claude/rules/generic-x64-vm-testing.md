@@ -677,6 +677,26 @@ OVMF, so a panic's kernel log lands in the variable store and comes back as
 `journalctl --list-boots` is the quickest check that the journal is
 persistent at all: a volatile one lists exactly one boot, always.
 
+## Spin a guest down when its job is done
+
+A guest costs about 2 GB of RAM for as long as it is up, and guests are
+routinely left running for days because nothing forces the question. On
+2026-09-19 two had been up for **one day and five days** while a cold build
+was taking the machine, and a third was OOM-killed outright during it — the
+build did not fail politely, it took the guest with it.
+
+So: **bring a guest up for a job, take it down when the job ends.** Not as
+tidiness — as the difference between a build that finishes and one that dies
+at its heaviest package.
+
+- `tools/build-preflight` lists what is up, how much each holds, and how long
+  it has been there; `--stop-vms` stops them.
+- Disk state survives a stop, so taking a guest down costs the running state
+  and nothing else. Anything worth keeping should already be off the guest.
+- A guest left up deliberately — mid-QA, holding a fixture someone is using —
+  is fine, and is worth saying out loud rather than leaving for the next
+  person to guess at.
+
 ## Automated visual QA (`tools/vm-visual-qa`)
 
 UI work can be reviewed without flashing a device or photographing a handheld.

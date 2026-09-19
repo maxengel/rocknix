@@ -125,6 +125,39 @@ D-UI-039, a row added, moved or renamed updates it in the same change),
 copy. Read it when you want to know whether something is already covered
 before writing a new rule; ten of twelve imported principles turned out to be.
 
+## The fork's own tools, and which rule documents each
+
+Written because a tool nobody remembers is a tool nobody runs — and this
+estate now has twenty-nine of them. One line each; the rule named is where the
+detail lives, so this stays an index rather than a second copy. `tools/` is
+otherwise upstream's, which is why the fork-only ones are enumerated by hand
+in `.githooks/pre-push` and in `fork-workflow.md`; **a new one is added to
+both lists and to this table, or it is invisible.**
+
+| Tool | What it answers | Detail in |
+| --- | --- | --- |
+| `build-preflight` | has the machine the memory for a build, and what is holding it | `device-builds.md` |
+| `watch-job` | is a long job still alive, stalled, finished, or killed — and is the watcher itself alive | `engineering-practices.md` |
+| `fork-worktree` | worktree list / remove / repair / sync, refusing to destroy build output | `worktrees.md` |
+| `fork-newdrive` | move the build estate to another volume | `device-builds.md` |
+| `fork-publish-release` | publish an image, refusing to publish embedded credentials | `device-builds.md` |
+| `device-act` | run one command on a device, recorded with the boot id before and after | `engineering-practices.md` |
+| `qa-accounts` | carry QA credentials into a guest without printing them | `generic-x64-vm-testing.md` |
+| `vm-pair`, `vm-serial`, `vm-visual-qa`, `vm-walks/` | bring guests up, drive them, capture frames, walk the interface | `generic-x64-vm-testing.md` |
+| `vm-qa` | every automated check against one image, one report | `generic-x64-vm-testing.md` |
+| `cloud-round-trip`, `cloud-test-backend`, `cloud-census`, `cloud-capture-stamp-test` | the cloud-sync suites and their backends | `rclone-cloud-sync.md` |
+| `emulator-exit-test`, `wait-lock-test`, `last-good-scripts-test` | the exit hotkey, the lock's patience, the scripts under busybox | `generic-x64-vm-testing.md` |
+| `time-to-play` | interface to a game's first frame, and game to game | `time-to-play.md` |
+| `ra-offline-test` | an achievement earned offline survives to the server | `generic-x64-vm-testing.md` |
+| `ra-candidate-games` | which homebrew titles have cheap achievements, and does a ROM carry its set | `generic-x64-vm-testing.md` |
+| `retroarch-wrapper-test` | does the threaded video wrapper run a posted command exactly once | `engineering-practices.md` |
+| `es-menu-map-check` | does `docs/es-menu-map.md` still describe the menus that ship | `es-native-ui.md` |
+| `es-untranslated` | which fork strings have no French | `es-native-ui.md` |
+| `vocabulary-check` | back up / backup, and the rest of the player vocabulary | `es-player-text.md` |
+| `register-check` | every decision ID once, every citation naming a real row | `decision-register.md` |
+| `lint-audit-artifacts` | the audit artifacts are well formed | `issue-tracking.md` |
+| `pkgcheck` *(upstream's)* | a `package.mk` obeys late binding | `packaging-and-patches.md` |
+
 **When a rule earns its place, write it down.** `docs/blindspot-register.md`
 holds failure modes this project has actually committed — consult it before
 calling something greenfield, and add to it when a new one surfaces.
