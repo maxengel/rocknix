@@ -24,6 +24,7 @@ the reason.
 | **Read, don't recall** | Rules are read from `next` in the current session, not remembered. See the pre-flight section below, which is new. | `instruction-files.md`, and **§Pre-flight** below |
 | **Completion ≠ closure** | Delivered is not closed: the criterion is ticked from observed behaviour, the register and log are written, the issue is closed with the evidence named. | `issue-tracking.md` (closing discipline), `learning-capture.md` |
 | **Urgency increases rigour** | **New.** See below. | **§Under pressure** below |
+| **A promise is not a mechanism** | **New.** Report the running state and name what watches it, or say nothing is watching. | `engineering-practices.md` §*A promise is not a mechanism* |
 | **Categorical prevention** | Fixing the instance is half; the other half is the guard that would have caught it, plus a blindspot entry. | `engineering-practices.md` §*A failure you find is yours to fix*, `docs/blindspot-register.md` |
 | **Fail loudly / fail closed** | A check that cannot run has not passed, and the safe branch is the one a broken check falls into. | `engineering-practices.md` §*Guards must fail closed* |
 | **Fix immediately, never defer** | The session that finds a defect fixes it, or says plainly that it did not and why. | `engineering-practices.md` §*A failure you find is yours to fix* |

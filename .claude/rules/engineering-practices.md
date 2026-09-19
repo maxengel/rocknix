@@ -141,6 +141,61 @@ So, before stating what code does:
   called refresh" are different sentences, and only one of them is evidence.
 
 
+## A promise is not a mechanism: report the running state, not the intention
+
+*A name is not a behaviour* covers claims about code. This is the same rule
+turned on **your own next actions**, and it was missing: "I'll watch this" is a
+claim about behaviour with no artifact behind it, and it is worth less than
+nothing, because the person reading it stops watching too.
+
+Maintainer, 2026-09-19: *"The promise to do something is less valuable than
+the proof that something is about to be done... focus on the active state of
+doing something as opposed to a guarantee of a future state."*
+
+The case: a cold build was started and reported with "I'll report when it lands
+or breaks." It broke **seven hours** before anyone noticed, because nothing was
+watching. The next run was reported with "this time it's watched." Nothing was
+watching then either; it broke and sat **five hours**. The third run differed
+in exactly one way — a process existed.
+
+### The form
+
+For anything short-term and operational — a build, a transfer, a device coming
+back, a job that must be checked later — one of two sentences is allowed:
+
+- **"It is running, and here is what is watching it."** Name the artifact: the
+  PID, the file it blocks on, the timer, the hook. A reader can check it.
+- **"I have not set anything up to watch this."** Also fine. It tells the
+  reader the job is theirs.
+
+What is not allowed is the future tense standing alone. "I'll keep an eye on
+it", "I'll report back", "this time it's watched" — none of those is a
+mechanism, and the last one was false when written.
+
+### Say how the watch fails
+
+A monitor is a guard, so *guards must fail closed* applies to it. State the
+condition under which it stays silent while the thing it watches is dead:
+
+> The watcher fires when the build writes its exit code. If the script is
+> killed outright — OOM, a reboot — no exit code is written and the watcher
+> waits forever, which looks exactly like a healthy build.
+
+A watch whose silent-failure mode has not been named has not been thought
+through.
+
+### Why this one has no tool behind it
+
+Every other rule here can be checked by something: `pkgcheck`, `register-check`,
+`es-menu-map-check`, the pre-push guard. This one cannot — no tool can read a
+sentence and tell whether the process it describes exists. So it is enforced by
+the shape of the sentence itself: **if you cannot name the running artifact,
+you may not make the claim.** That is the self-examining tier in
+`working-principles.md`'s enforcement ladder, and it is where a rule lands when
+nothing better is available. Naming that openly is better than implying an
+enforcement that is not there.
+
+
 ## Guards must fail closed
 
 A check that cannot run has not passed. Three defects in one day's work shared
