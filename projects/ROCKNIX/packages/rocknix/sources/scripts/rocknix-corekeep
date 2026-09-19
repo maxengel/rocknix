@@ -51,10 +51,54 @@
 #
 # Fork-only (#104's neighbourhood, #79, #211).
 
+# Off unless somebody asked for it. The handler ships in every image and does
+# nothing until this marker exists, so a QA build and a release build are the
+# same image and there is no debug setting to remember to revert before a
+# release candidate (the maintainer's ask, 2026-09-19). Turn it on for a
+# device with:
+#
+#   rocknix-corekeep --on     # writes the marker, says where dumps will land
+#   rocknix-corekeep --off    # removes it; nothing is kept again
+#   rocknix-corekeep --status
+#
+# Whether this should instead be on for everyone is a real question -- four
+# unreadable crashes argue yes, and a core holds the device's credentials
+# (as /storage/.config/system/configs/system.cfg already does, on the same
+# partition) -- and it is recorded as an open decision rather than settled
+# here by default.
+CORE_MARKER="/storage/.config/keep-core-dumps"
 CORE_DIR="/storage/.cache/log/cores"
 CORE_MAX_BYTES=$(( 192 * 1024 * 1024 ))   # compressed; a whole RetroArch core is far smaller
 CORE_KEEP=3
 CORE_MIN_FREE_KB=$(( 512 * 1024 ))        # 512 MB of headroom, or we only write the note
+
+case "${1:-}" in
+    --on)
+        mkdir -p "$(dirname "${CORE_MARKER}")" 2>/dev/null
+        date -u '+armed %Y-%m-%d %H:%M:%S UTC' > "${CORE_MARKER}"
+        echo "core dumps will be kept under ${CORE_DIR} (ring of ${CORE_KEEP}, ${CORE_MAX_BYTES} byte cap)"
+        echo "a core is process memory: assume it holds this device's tokens and keys"
+        exit 0 ;;
+    --off)
+        rm -f "${CORE_MARKER}"
+        echo "core dumps are discarded again; ${CORE_DIR} left as it is"
+        exit 0 ;;
+    --status)
+        if [ -f "${CORE_MARKER}" ]; then
+            echo "on ($(cat "${CORE_MARKER}" 2>/dev/null))"
+            ls -1 "${CORE_DIR}"/core.*.gz 2>/dev/null | wc -l | tr -d '\n'; echo " dump(s) kept"
+        else
+            echo "off -- no ${CORE_MARKER}"
+        fi
+        exit 0 ;;
+esac
+
+# The kernel is the only other caller, and it passes no such flag. Without the
+# marker the dump is read and dropped: the kernel needs the pipe consumed.
+if [ ! -f "${CORE_MARKER}" ]; then
+    cat > /dev/null 2>&1
+    exit 0
+fi
 
 EXE="${1:-unknown}"
 PID="${2:-0}"
