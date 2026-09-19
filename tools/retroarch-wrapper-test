@@ -1,0 +1,213 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+"""retroarch-wrapper-test -- does the threaded video wrapper run a posted
+command exactly once?
+
+    tools/retroarch-wrapper-test [path/to/video_thread_wrapper.c] [--gated]
+
+It extracts send_packet, wait_reply, reply, send_and_wait_user_to_thread and
+the dequeue block of video_thread_loop VERBATIM from the file given (by
+default the H700 build root's), compiles them against small doubles --
+pthreads for slock/scond, a stub handle_packet carrying the real
+CUSTOM_COMMAND case -- and drives them: one thread posts a command whose data
+is a LOCAL, as every caller of video_thread_texture_handle does; another sets
+frame.updated, which wakes the loop in the window where cmd_data still holds
+the packet that has just completed.
+
+The method counts its calls. 2000 posts must produce exactly 2000 calls.
+
+Written after #211, where a doubled call dereferenced a returned stack frame
+and segfaulted RetroArch on a handheld -- four times over two weeks, once with
+a core dump. Against the unfixed source it fails in seconds:
+
+    as shipped:   posted 2000 command(s); the method ran 2017 time(s)  FAIL
+    with 0015:    posted 2000 command(s); the method ran 2000 time(s)  PASS
+
+Exit 0 when every command ran once, 1 when any ran twice, 2 when the fixture
+could not be built -- a check that cannot run has not passed.
+"""
+import re, subprocess, sys, tempfile
+from pathlib import Path
+
+args = [a for a in sys.argv[1:] if not a.startswith("--")]
+if args:
+    src_path = Path(args[0])
+else:
+    found = sorted(Path("/workspace/repos/rocknix.worktrees/devices").glob(
+        "build.ROCKNIX-H700.aarch64/build/retroarch-*/gfx/video_thread_wrapper.c"))
+    if not found:
+        print("retroarch-wrapper-test: no video_thread_wrapper.c given and none "
+              "in the H700 build root", file=sys.stderr)
+        sys.exit(2)
+    src_path = found[0]
+gated = "--gated" in sys.argv
+source = src_path.read_text()
+
+def func(sig):
+    start = source.index(sig)
+    brace = source.index("{", start)
+    depth, end = 1, brace + 1
+    while depth:
+        depth += (source[end] == "{") - (source[end] == "}")
+        end += 1
+    return source[start:end]
+
+send_packet = func("static void video_thread_send_packet(")
+wait_reply  = func("static void video_thread_wait_reply(")
+reply       = func("static void video_thread_reply(")
+send_wait   = func("static void video_thread_send_and_wait_user_to_thread(")
+
+# The dequeue is extracted from video_thread_loop in the file under test,
+# so this checks the real source rather than a model of it.
+loop = func("static void video_thread_loop(")
+start = loop.index("slock_lock(thr->lock);")
+end = loop.index("return;", loop.index("video_thread_handle_packet")) + len("return;")
+dequeue = loop[start:end]
+# the frame path is not under test; keep the loop from spinning on it
+dequeue = dequeue.replace("return;", "return NULL;")
+dequeue = dequeue.replace("updated = thr->frame.updated;",
+                          "updated = thr->frame.updated; thr->frame.updated = false;")
+
+harness = r"""
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <string.h>
+#include <unistd.h>
+
+typedef pthread_mutex_t slock_t;
+typedef pthread_cond_t  scond_t;
+static void slock_lock(slock_t *l)   { pthread_mutex_lock(l); }
+static void slock_unlock(slock_t *l) { pthread_mutex_unlock(l); }
+static void scond_wait(scond_t *c, slock_t *l) { pthread_cond_wait(c, l); }
+static void scond_signal(scond_t *c) { pthread_cond_broadcast(c); }
+
+enum { CMD_VIDEO_NONE = 0, CMD_CUSTOM_COMMAND = 7 };
+typedef unsigned long uintptr_t_;
+typedef uintptr_t_ (*custom_command_method_t)(void*);
+
+typedef struct { int type; struct { struct { custom_command_method_t method;
+   void *data; uintptr_t_ return_value; } custom_command; } data; } thread_packet_t;
+
+typedef struct { slock_t *lock, *user_lock; scond_t *cond_cmd, *cond_thread;
+   int send_cmd, reply_cmd; thread_packet_t cmd_data;
+   struct { bool updated; } frame; } thread_video_t;
+
+static int g_calls = 0;
+static bool video_thread_handle_packet(thread_video_t *thr, const thread_packet_t *incoming);
+__SEND_PACKET__
+__WAIT_REPLY__
+__REPLY__
+__SEND_WAIT__
+
+/* The wrap the drivers post: reads the caller's stack object. */
+typedef struct { void *gl; void *payload; } gl3_texture_cmd_t;
+static uintptr_t_ texture_wrap(void *data)
+{
+   gl3_texture_cmd_t *cmd = (gl3_texture_cmd_t*)data;
+   __sync_fetch_and_add(&g_calls, 1);
+   return (uintptr_t_)(cmd->gl != NULL);   /* the read that faulted in #211 */
+}
+
+static bool video_thread_handle_packet(thread_video_t *thr, const thread_packet_t *incoming)
+{
+   thread_packet_t pkt = *incoming;
+   switch (pkt.type)
+   {
+      case CMD_VIDEO_NONE: break;
+      case CMD_CUSTOM_COMMAND:
+         if (pkt.data.custom_command.method)
+            pkt.data.custom_command.return_value =
+               pkt.data.custom_command.method(pkt.data.custom_command.data);
+         video_thread_reply(thr, &pkt);
+         break;
+   }
+   return false;
+}
+
+static thread_video_t g_thr;
+static volatile bool g_stop = false;
+
+static void *video_thread(void *arg)
+{
+   thread_video_t *thr = (thread_video_t*)arg;
+   thread_packet_t pkt;
+   bool updated; bool have_cmd = false; (void)have_cmd; (void)updated;
+   while (!g_stop)
+   {
+__DEQUEUE__
+      if (g_stop) break;
+   }
+   return NULL;
+}
+
+/* gl3_load_texture's shape: the cmd is a local, and the frame dies on return. */
+static void post_one(void)
+{
+   gl3_texture_cmd_t cmd;
+   thread_packet_t pkt;
+   cmd.gl = (void*)0x1; cmd.payload = (void*)0x2;
+   pkt.type = CMD_CUSTOM_COMMAND;
+   pkt.data.custom_command.method = texture_wrap;
+   pkt.data.custom_command.data   = &cmd;
+   video_thread_send_and_wait_user_to_thread(&g_thr, &pkt);
+}
+
+/* The frame that arrives in the reply window. */
+static void *frame_thread(void *arg)
+{
+   (void)arg;
+   while (!g_stop)
+   {
+      slock_lock(g_thr.lock);
+      g_thr.frame.updated = true;
+      scond_signal(g_thr.cond_thread);
+      slock_unlock(g_thr.lock);
+      usleep(200);
+   }
+   return NULL;
+}
+
+int main(void)
+{
+   pthread_mutex_t l = PTHREAD_MUTEX_INITIALIZER, u = PTHREAD_MUTEX_INITIALIZER;
+   pthread_cond_t  c = PTHREAD_COND_INITIALIZER,  t = PTHREAD_COND_INITIALIZER;
+   pthread_t vt, ft;
+   int posts = 2000;
+   memset(&g_thr, 0, sizeof(g_thr));
+   g_thr.lock = &l; g_thr.user_lock = &u; g_thr.cond_cmd = &c; g_thr.cond_thread = &t;
+   pthread_create(&vt, NULL, video_thread, &g_thr);
+   pthread_create(&ft, NULL, frame_thread, NULL);
+   for (int i = 0; i < posts; i++) post_one();
+   g_stop = true;
+   /* wake the dequeue's inner wait, which tests neither stop flag */
+   slock_lock(g_thr.lock); g_thr.frame.updated = true;
+   scond_signal(g_thr.cond_thread); slock_unlock(g_thr.lock);
+   pthread_join(ft, NULL); pthread_join(vt, NULL);
+   printf("posted %d command(s); the method ran %d time(s)\n", posts, g_calls);
+   if (g_calls != posts) { printf("FAIL: a posted command was executed more than once\n"); return 1; }
+   printf("PASS: every command ran exactly once\n");
+   return 0;
+}
+"""
+harness = (harness.replace("__SEND_PACKET__", send_packet)
+                  .replace("__WAIT_REPLY__", wait_reply)
+                  .replace("__REPLY__", reply)
+                  .replace("__SEND_WAIT__", send_wait)
+                  .replace("__DEQUEUE__", dequeue))
+out = Path(tempfile.mkdtemp()) / "t.c"
+out.write_text(harness)
+exe = out.with_suffix("")
+cc = subprocess.run(["gcc", "-O1", "-g", "-fsanitize=address", "-fno-omit-frame-pointer",
+                     str(out), "-o", str(exe), "-lpthread"], capture_output=True, text=True)
+if cc.returncode:
+    print(cc.stderr[-2500:]); sys.exit(2)
+env = {"ASAN_OPTIONS": "detect_stack_use_after_return=1:abort_on_error=0", "PATH": "/usr/bin:/bin"}
+r = subprocess.run([str(exe)], capture_output=True, text=True, env=env, timeout=60)
+print(r.stdout.strip())
+if r.returncode != 0:
+    tail = [l for l in r.stderr.splitlines() if "ERROR" in l or "stack-use-after" in l or "#0 " in l or "#1 " in l]
+    print("\n".join(tail[:6]) if tail else r.stderr[-800:])
+sys.exit(r.returncode)
