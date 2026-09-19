@@ -553,6 +553,7 @@ gpu_profiling "off"
 ### Capture and the game-exit save sync run from EmulationStation (FileData::launchGame, fork #21).
 ### Never spawn a second uploader here: it would run before ES resumes, so before capture, as a second writer on one remote (#21 DOES-NOT-BUILD).
 
+${VERBOSE} && log $0 "Checking errors: ${ret_error} "
 ### Report how the launch ended. EmulationStation records play count, play time
 ### and last-played only on 0 (FileData::launchGame) and hands the same code to
 ### cloud_capture --exit. The global exit hotkey (input_sense, execute_kill) ends
@@ -575,7 +576,6 @@ then
         EXIT_HOTKEY_PRESSED=true
         rm -f "${EXIT_HOTKEY_MARKER}"
 fi
-${VERBOSE} && log $0 "Checking errors: ${ret_error} "
 case "${ret_error}" in
   0)
         quit 0
