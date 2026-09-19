@@ -15,9 +15,10 @@
 #   raofflineproxy-refresh --all           every cached game, floor ignored
 #   raofflineproxy-refresh                 what the daily pass would take now
 #
-# It is the same work the service does -- proxy_service.refresh_game_patch,
-# which re-fetches the patch and the player's unlocks and caches the set's
-# images with them -- run when asked instead of when due. Nothing here
+# It is the same work the service's own pass does -- refresh_game_patch for
+# the set and its images, then cache_unlocks for what the player has earned --
+# run when asked instead of when due. Both, because the names mislead: the
+# "patch" refresh does not touch unlocks. Nothing here
 # changes what a pass is allowed to do: the client's own throttle, batch
 # cooldown and 429 backoff still pace every request, and the run is bounded
 # by --seconds so a player who asks for 500 games does not wait forever.
@@ -125,6 +126,16 @@ def main() -> int:
         try:
             answer = proxy_service.refresh_game_patch(
                 gid, credentials, user_agent, storage, config_data
+            )
+            # The patch is only half of it. refresh_game_patch re-reads the
+            # set; the player's unlocks are a separate call, and a refresh
+            # that skips it reports success while leaving the device
+            # believing in achievements the site no longer holds -- which is
+            # exactly what it did on the RG SP on 2026-09-19, after two
+            # achievements were reset on the site: patch 28 s old, unlocks
+            # 87,168 s old, and the two still reading as earned.
+            proxy_service.cache_unlocks(
+                gid, credentials, user_agent, config_data, storage
             )
             done += 1
             # It is documented as returning the title and returns the patch
