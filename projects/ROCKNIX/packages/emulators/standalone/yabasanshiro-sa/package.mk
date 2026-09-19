@@ -8,6 +8,14 @@ PKG_SITE="https://github.com/sydarn/yabause"
 PKG_URL="${PKG_SITE}.git"
 PKG_DEPENDS_TARGET="toolchain SDL2 boost openal-soft zlib"
 PKG_LONGDESC="Yabause is a Sega Saturn emulator and took over as Yaba Sanshiro"
+# aarch64 only, restored after the 2026-09 upstream cleanup dropped it
+# (28e750db32). PKG_EMUS lists this package for every device, so PKG_ARCH was
+# the only thing keeping it off x86_64 -- and on x86_64 the CMake config
+# selects the qt port instead of retro_arena, leaving makeinstall_target to
+# cp a retro_arena/yabasanshiro that was never built. That failed the cold
+# GENERIC_X64 build at 610/641 on 2026-09-19. Upstream's own AMD64 target
+# has the same exposure; reported rather than assumed.
+PKG_ARCH="aarch64"
 PKG_TOOLCHAIN="cmake-make"
 PKG_BUILD_FLAGS="+speed"
 
