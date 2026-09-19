@@ -93,6 +93,54 @@ changed but the same size.
 Assertions that only hold because nothing had happened yet are the ones to
 distrust — see also *Verify the artifact, not the report*.
 
+## A name is not a behaviour, and a summary is not the source
+
+*Verify the artifact, not the report* covers software that reports success.
+This is its quieter sibling: **nobody reported anything, and a claim was made
+anyway** — read off a function's name, a log line's wording, a comment, or a
+document's summary, and then stated as fact about what the code does.
+
+Four in one day, 2026-09-18/19, all in the same subsystem:
+
+- **`refresh_game_patch`** re-reads the achievement set. The player's unlocks
+  are `cache_unlocks`, a separate call. A helper built on the first alone
+  answered `re-read 1 game(s), 0 failed` while changing nothing that mattered
+  — and the commit message for it claimed the function "re-fetches the patch
+  and the player's unlocks", which was read from the name. Caught only
+  because the maintainer reset two achievements on the site and the device
+  still read them as earned.
+- **A log line's wording taken as scope.** `Periodic refresh: N game(s) due
+  (patch older than 86400s)` is the *selection predicate*; the pass then
+  re-reads patch **and** unlocks. The maintainer was told the opposite. The
+  patch file's first sentence said so plainly.
+- **A summary table taken as the record.** An issue's table listed two
+  crashes and said "both entries are Bubble Bobble". Two more, including the
+  only one with a core dump, were in its comments. A whole line of reasoning
+  was built on the table.
+- **A comparison that could not fail.** Two package pins compared as empty
+  strings, printing "SAME" — the `guards must fail closed` rule, committed
+  while writing about it.
+
+The common shape: a **claim by an author** — a name, a comment, a log string,
+a table — was treated as an **observation**. Authors describe intent; only
+the artifact records behaviour.
+
+So, before stating what code does:
+
+- **Name the artifact that would settle it, and read that.** For "does this
+  refresh the unlocks?", the artifact is the row's `cachedAt` moving, not the
+  function's name. For "what does this pass cover?", it is the code or the
+  patch that wrote it, not the line it prints. For "what happened?", it is the
+  log and the comments, not the summary someone wrote over them.
+- **When a name and a behaviour disagree, the name is wrong** and is worth
+  fixing or commenting — but the claim you make is the behaviour's.
+- **A document's summary is a pointer to its evidence**, and the evidence is
+  usually somewhere the summary does not go: an issue's comments, a patch's
+  prose, a second table. Read to the bottom before repeating the top.
+- **Say which one you did.** "The row's timestamp moved" and "the function is
+  called refresh" are different sentences, and only one of them is evidence.
+
+
 ## Guards must fail closed
 
 A check that cannot run has not passed. Three defects in one day's work shared

@@ -488,3 +488,42 @@ log, 05:20 UTC) and wants the same check. Found beside it: COPY TO FREE
 SLOT records nothing at all (#206), which is why it felt instant. Related:
 41, 44, `engineering-practices.md` (the VM tests first, and what it cannot
 prove).
+
+## 46. A name read as a behaviour (2026-09-19)
+
+Four claims in one day, all about the offline-RetroAchievements subsystem,
+none of them observed:
+
+1. `refresh_game_patch` was taken to refresh the player's unlocks because it
+   is called *refresh*. It refreshes the set; unlocks are `cache_unlocks`, a
+   separate call. A helper built on it reported `re-read 1 game(s), 0 failed`
+   and moved nothing that mattered, and its commit message asserted the
+   unlocks behaviour in writing.
+2. `Periodic refresh: N game(s) due (patch older than 86400s)` was read as
+   the *scope* of the refresh. It is the selection predicate; the pass
+   re-reads patch and unlocks both. The maintainer was told the opposite, in
+   an issue comment, and it had to be corrected there.
+3. An issue's summary table said "both entries are Bubble Bobble". Two
+   further crashes, including the only one with a core dump and a root cause,
+   were in the issue's comments. The table was repeated to the maintainer as
+   the history.
+4. Two package pins were compared as empty strings and printed "SAME" —
+   blindspot 14's shape, committed in a session about it.
+
+**What makes this its own entry** rather than a repeat of *verify the
+artifact, not the report*: in that failure mode, software says it succeeded
+and you believe it. Here **nothing said anything**. A name, a log string, a
+comment and a table are claims by an author about intent; each was turned
+into a statement about behaviour without a single artifact being read.
+
+The tell, in all four: the sentence could be written without opening
+anything. "It refreshes the patch and unlocks" needs the function's name
+only. "The row's `cachedAt` moved from 87,168 s to 1 s" cannot be written
+without looking.
+
+What caught it was not review — it was the maintainer resetting two
+achievements on a real device and noticing the device disagreed. Three of the
+four had already been stated to them as fact.
+
+Rule: `engineering-practices.md` § *A name is not a behaviour, and a summary
+is not the source*.
