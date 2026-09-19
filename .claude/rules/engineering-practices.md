@@ -172,6 +172,36 @@ What is not allowed is the future tense standing alone. "I'll keep an eye on
 it", "I'll report back", "this time it's watched" — none of those is a
 mechanism, and the last one was false when written.
 
+### Recorded is not delivered: arm both, every time
+
+The first time this rule was applied it was applied by half. `tools/watch-job`
+was written so a long job leaves a **durable** record — a status file that
+survives a reaped task and whose staleness is visible. It does exactly that.
+It delivers nothing: it writes a file, and a file tells no one. The H700 build
+that followed was armed with the file alone and reported as "the watcher will
+tell me when it lands or dies" — which was false in the tense it was written.
+It failed at 21:20; the file said so from 21:21; nobody read it until 22:42.
+
+Two mechanisms, because they fail differently:
+
+- **The record** — `watch-job --detach`. Survives the session, survives the
+  harness reaping its own tasks, and reports `died` rather than silence when
+  the job is killed. Cannot notify.
+- **The delivery** — a harness background waiter (`until [ -f <rc> ]; do
+  sleep 60; done` under `run_in_background`). Notifies the session the moment
+  the job ends. Can be reaped under memory pressure, and then says nothing.
+
+Neither alone is a watch. The sentence that satisfies this rule names
+**both**: *"watch-job is recording to `<status>` (pid N), and a harness
+waiter on `<rc>` will deliver the result."* If the waiter has been reaped and
+not re-armed, say so, and read the file by hand at a stated interval.
+
+Two more traps met arming it, both already in this project's records:
+`pgrep -f` on the job's name matched the session's own shell (blindspot: the
+self-matching pattern — anchor it: `^/bin/bash \./build-h700\.sh$`), and
+`pkill -f` on the watcher's command line killed the shell issuing it. Stop a
+watcher by the pid its status file records, never by pattern.
+
 ### Say how the watch fails
 
 A monitor is a guard, so *guards must fail closed* applies to it. State the
