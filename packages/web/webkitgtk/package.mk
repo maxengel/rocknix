@@ -50,13 +50,16 @@ pre_configure_target() {
   # switch WebKit's own option dependencies hang off: it takes video, Web
   # Audio, WebCodecs and speech synthesis down with it. Turning off only
   # video and Web Audio left WebCodecs holding USE_GSTREAMER on, and WebCore
-  # then failed to find gst/gst.h (run 7, 2026-09-20).
+  # then failed to find gst/gst.h (run 7, 2026-09-20). WebDriver is a
+  # test-automation daemon nothing here drives; in 2.54.0 it also fails to
+  # compile under this option set (an undeclared log channel, run 8).
   PKG_CMAKE_OPTS_TARGET="-DPORT=GTK \
                          -DUSE_GTK4=OFF \
                          -DUSE_SOUP2=OFF \
                          -DENABLE_WAYLAND_TARGET=ON \
                          -DENABLE_X11_TARGET=OFF \
                          -DENABLE_MINIBROWSER=ON \
+                         -DENABLE_WEBDRIVER=OFF \
                          -DENABLE_INTROSPECTION=OFF \
                          -DENABLE_DOCUMENTATION=OFF \
                          -DENABLE_SPELLCHECK=OFF \
