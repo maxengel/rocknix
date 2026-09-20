@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-20T23:55:15Z
-> **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `33157b18d0`, pushed to origin)
+> **Saved**: 2026-09-20T22:50:05Z
+> **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `de8f93726b`, pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The RC round for `77e7e97515` is under way on two surfaces: #236 (the record) and its page https://claude.ai/artifact/Uq74wpvRB3SzpZ1oydYEmo (the maintainer's working surface; ticks live in the page's `db`, collection `checks`, one doc per item id, `{done, note, at}`; read them with ArtifactData and mirror into #236).** Section A is the maintainer's, on the RG35XX SP (the RC applied 22:48). Section B, mine, so far: upgrade rehearsal PASS 20/20 (now `tools/vm-upgrade-rehearsal`, proven both ways); closures #131 #184 #175 #183 #47; frames #160 (1280x800) and #94 (the launch-over-sync gate) filed under `docs/qa-frames/2026-09-20/` and ticked. No guest is running; nothing is in flight.
+**Nothing is in flight.** The H700 release candidate `ROCKNIX-H700.aarch64-20260920` (BUILD_ID `77e7e97515`) is applied on the RG35XX SP and read back from the device (22:48 UTC: BUILD_ID, empty queue, one `libcairo.so.2.11804.4`, rclone v1.75.1, new boot id `6d76be88…`). The RG SP stays on build 15 and the Nova untouched until there is a release candidate the maintainer is confident in for their build (D-QA-031). Delivered today: #226 (cairo master fetched into every image since June; cairo 1.18.4 + meson `--wrap-mode=nodownload`), #227 (fork-introduced packages current before submission, D-WORKFLOW-024, `tools/fork-package-freshness`), upstream PR ROCKNIX/distribution#3359 open; #228 holds WebKit 2.54 (needs video; video needs gstreamer-mpegts and -gl; 2026-08-30 precedent `64907d0ab8`, blindspot 48); program epic #235 (milestone 5) filed for offering VM QA, tooling and practices upstream, future scope.
 
 ## Completed This Session
 
@@ -19,18 +19,17 @@
 
 ## In Progress
 
-- **#236 section B, remaining** (harness task #7):
-  - **#153's frame**: a cut S3 upload's outcome sentence on the transfer page, guest d (640x480), EN then FR. Recipe: `CLOUD_QA_BWLIMIT=1M CLOUD_QA_BACKEND=s3 tools/cloud-test-backend up` (throttled); guest d via `bash /workspace/tmp/rocknix-session/rebuild-d.sh` (picks the newest x64 image; ssh :10026, monitor `/tmp/rocknix-qemu-monitor-d.sock`, serial `-d.sock`); rclone.conf from `CLOUD_QA_BACKEND=s3 tools/cloud-test-backend rclone-conf` written over a stdin-open ssh; walks `to-manage-cloud-storage` → `back-up-page` → `tick-settings` → start; cut with `tools/vm-serial` (`ip link set eth0 down`) a few seconds in; frame after the bounded retry ends; read #153's body first for the sentence "the option prescribes" (not found in `cloud_sync.conf.defaults`); then `Language` fr_FR (stop ES, edit, reboot the guest — a *restarted* ES lands on the last game list).
-  - #211 box 1 (VM reproduction record + `tools/retroarch-wrapper-test` output); #209 walks (blocked on the maintainer's C decision); punch lists #151 PL-07/PL-17 and #186 PL-20 (+ lint, PL-18 rows, PL-19 bodies) — ES code work, which means a new ES pin and a new image, so the RC would move: raise with the maintainer before starting; #150 rows; #222's last box.
-- **#198** is an open bug (unquoted device password), not a frame; it sits in the bug list of the RC write-up.
+- Nothing. All harness tasks (#1–#5) completed; #6 dropped by D-QA-030.
 
 ## Next Steps
 
-1. **Read the page's ticks** (`ArtifactData list checks`) at the start of a session and mirror any of the maintainer's ticks and notes into #236 and the source issues.
-2. **#153's frame** per the recipe above, then tick #153 and the `b-frames` doc on the page (set `done: true`).
-3. **Ask the maintainer** whether the punch-list items (#151 PL-07/PL-17, #186 PL-20) are RC gates for *this* build — they need ES changes and therefore a new image — or deferred with the reason (D-WORKFLOW-015 says all severities; the milestone allows deliberate deferral).
-4. **Then D**: the RG SP question only after A is done and the maintainer says so (D-QA-031). **Then E**: the SM8550 cold build for the Nova.
-5. Watch ROCKNIX/distribution#3359; #228 is the maintainer's call; the maintainer's list (#216, #223, #224, #218, #214/#215/#219) after.
+1. **#236 is the RC round checklist**, also a page the maintainer ticks online: https://claude.ai/artifact/Uq74wpvRB3SzpZ1oydYEmo (db capability; read ticks with ArtifactData `checks/<id>` and mirror them into #236). `tools/vm-upgrade-rehearsal` exists (proof PASS 19/19). B done so far: the upgrade rehearsal, the four closures. **#236 is the RC round checklist** for `77e7e97515` on the RG35XX SP: section A is the maintainer's hands on the device, section B is mine (upgrade rehearsal from the build-15 image in a VM, the frames owed to #47/#153/#160/#94/#198, #211's VM record, closures #131/#184/#175/#183, punch lists #151 PL-07/PL-17 and #186 PL-20, #150's rows), section C their decisions, D the RG SP, E the SM8550 build and the Nova. Start B.
+2. **Watch ROCKNIX/distribution#3359** for review. Upstream's `AGENTS.md` asks for build artifacts on PRs; the description says why they are not linked (personal scraper keys in the ES binary). If asked, a build without `~/.ROCKNIX/options` mounted would be publishable.
+2. **#228 is the maintainer's call**: gst-plugins-bad (mpegts) + GL in gst-plugins-base; a WebKit patch for `JSHTMLMediaElementCustom.cpp`; or stay on 2.52.x. The recipe carries `# freshness: pinned -- ... (#228)`; the sweep exits 0.
+3. **The maintainer's list**: #216 fetch ordering, #223 refresh by recency, #224 REFRESH ACHIEVEMENT STATUS row (ES), #218 pacing curve (ask RA `#coders` first), #214/#215/#219.
+4. **Conflict-resolution feature** with the RG35XX SP as its test device (wipe and fresh-install then, per the maintainer). Read `docs/decision-register.md` rows touching it first.
+5. **Epic #235** waits; kickoff is `begin-exploration` (Discovery Epic); #230 (GENERIC_X64 upstream or AMD64 VM-aware) wants the council.
+6. Housekeeping when convenient: the `pr-cairo-1.18` worktree can go after the PR merges (`tools/fork-worktree remove`); stale glib `subprojects/sysprof` clones on the warm x64 and H700-arm roots are inert.
 
 ## Key Files Modified
 
