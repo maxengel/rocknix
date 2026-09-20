@@ -44,6 +44,9 @@ pre_configure_target() {
   # sandbox and its dbus proxy) or surface we have no use for on a handheld
   # that opens exactly one page. Introspection and docs are build-host
   # artifacts that never reach the image.
+  # Video and Web Audio are off because a sign-in page plays neither, and
+  # because 2.54 makes their GStreamer libraries hard requirements (video
+  # wants gstreamer-mpegts and gstreamer-gl, which this image does not build).
   PKG_CMAKE_OPTS_TARGET="-DPORT=GTK \
                          -DUSE_GTK4=OFF \
                          -DUSE_SOUP2=OFF \
@@ -60,6 +63,8 @@ pre_configure_target() {
                          -DENABLE_BUBBLEWRAP_SANDBOX=OFF \
                          -DENABLE_JOURNALD_LOG=OFF \
                          -DENABLE_GAMEPAD=OFF \
+                         -DENABLE_VIDEO=OFF \
+                         -DENABLE_WEB_AUDIO=OFF \
                          -DENABLE_MEDIA_STREAM=OFF \
                          -DENABLE_MEDIA_RECORDER=OFF \
                          -DUSE_GSTREAMER_GL=OFF \
