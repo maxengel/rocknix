@@ -273,6 +273,40 @@ Same class of symptom, different cause, same instinct — reproduce the
 clean-tree condition for the affected packages rather than trusting an
 incremental build to notice.
 
+## A build that fetches its own dependency
+
+pango 1.58 needs cairo 1.18 and the ROCKNIX override pinned 1.17.8. For
+three months nothing failed: meson's `cairo.wrap` fallback cloned cairo's
+git master at configure time, built it inside pango and installed it over
+the pinned copy. `[DONE] build pango:target`, every time; every GENERIC_X64
+and H700 image carried `libcairo.so.2 -> libcairo.so.2.11805.5`, an
+unpinned build nobody had chosen (#226, blindspot 47). The first container
+without DNS failed pango, which is how it was found — and upstream's CI has
+DNS, so upstream ships the same thing and cannot see it.
+
+- `scripts/build` now passes `--wrap-mode=nodownload` to every meson
+  configure, target and host. A subproject may be used only when it ships in
+  the tarball (glib's gvdb, kmsxx's pixpat); one that would have to be
+  fetched fails the configure, and the failure names the dependency that is
+  really missing. That is the message to fix, not the flag to remove.
+- After a build, list what was fetched anyway:
+
+  ```bash
+  find build.*/build -mindepth 4 -maxdepth 4 -path '*/subprojects/*/.git'
+  ```
+
+  Empty is the only good answer, and only on a root where every package
+  configured under the guard — a warm root keeps old clones for packages
+  that did not rebuild. On the 2026-09-19 roots this listed exactly two:
+  pango's cairo (built in) and glib's sysprof (cloned, then disabled).
+- cmake's `FetchContent`, cargo and go vendoring have no equivalent switch.
+  A recipe that builds one of those wants the same question asked of it.
+- A pinned version in a recipe is a claim about the image only once the
+  image is read: `unsquashfs -ll SYSTEM usr/lib | grep libcairo`. The
+  package's install tree is what `scripts/install` copies, so a subproject
+  a package built is in *that package's* `install_pkg/`, not the library's
+  — cleaning cairo would not have removed it; cleaning pango did.
+
 ## A two-minute build can be a real one
 
 ccache sits under every compile, so a warm root that rebuilds one package

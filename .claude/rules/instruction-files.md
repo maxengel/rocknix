@@ -139,6 +139,7 @@ both lists and to this table, or it is invisible.**
 | `build-preflight` | has the machine the memory for a build, and what is holding it | `device-builds.md` |
 | `watch-job` | is a long job still alive, stalled, finished, or killed — and is the watcher itself alive | `engineering-practices.md` |
 | `fork-worktree` | worktree list / remove / repair / sync, refusing to destroy build output | `worktrees.md` |
+| `fork-package-freshness` | are the packages the fork introduces at their latest upstream release, or pinned with a stated reason | `fork-workflow.md` |
 | `fork-newdrive` | move the build estate to another volume | `device-builds.md` |
 | `fork-publish-release` | publish an image, refusing to publish embedded credentials | `device-builds.md` |
 | `device-act` | run one command on a device, recorded with the boot id before and after | `engineering-practices.md` |

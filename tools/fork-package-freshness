@@ -1,0 +1,147 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# fork-package-freshness -- are the packages this fork introduces at their
+# current upstream release?
+#
+#   tools/fork-package-freshness              # every fork-introduced package
+#   tools/fork-package-freshness rclone ...   # only these
+#   tools/fork-package-freshness --list       # name the packages and stop
+#
+# Exit 0 when every package is CURRENT, PINNED on purpose, INHERITED or
+# LOCAL; 1 when any is BEHIND; 2 when any could not be checked (UNKNOWN):
+# a check that cannot run has not passed (engineering-practices.md).
+#
+# Which packages: every package.mk on HEAD_REF (next) that is absent on
+# BASE_REF (upstream/next) -- the fork added it -- plus EXTRA_PACKAGES,
+# recipes the fork owns although upstream carries a copy. Maintainer,
+# 2026-09-20 (fork #227, D-WORKFLOW-024): "we should also make sure that
+# packages we're introducing into the system are up to date ... it's a good
+# idea to have everything as up to date as possible when we submit it."
+#
+# How "latest" is found, by the host PKG_URL points at:
+#   github.com               the latest release, else the newest release-shaped tag
+#   download.gnome.org       cache.json, even minor versions only (GNOME stable)
+#   ftp.gnu.org / savannah   the directory listing
+#   webkitgtk.org            the release listing, even minor versions only
+#   cache.ruby-lang.org      ruby/ruby tags in the recipe's own minor series
+#   downloads.rclone.org     rclone/rclone's latest release
+#   dotat.at                 the directory listing, else fanf2/unifdef on GitHub
+# A PKG_VERSION that is a commit hash is compared with the default branch of
+# the repository PKG_SITE names and reported as commits behind it. A recipe
+# that must stay where it is says what it follows:
+#   # freshness: pinned -- <why>
+# and is reported PINNED. A recipe with no PKG_VERSION of its own sources
+# upstream's generic recipe (INHERITED); one with no PKG_URL is ours (LOCAL).
+set -uo pipefail
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+HEAD_REF=${FRESHNESS_HEAD:-next}
+BASE_REF=${FRESHNESS_BASE:-upstream/next}
+EXTRA_PACKAGES="projects/ROCKNIX/packages/network/rclone"
+
+var() { grep -m1 "^${2}=" "$1" | cut -d'"' -f2; }
+newest() { sort -V | tail -1; }
+release_only() { grep -E '^[0-9]+(\.[0-9]+)+$'; }          # no rc, alpha, beta
+tag_version() { sed -E 's/^[^0-9]*//; s/_/./g'; }          # v1.2.0, libpsl-0.21.0, v3_3_12
+github_repo() { sed -nE 's#^https?://github\.com/([^/]+/[^/#?]+).*#\1#p' <<<"$1" | sed 's/\.git$//'; }
+
+latest_github() {  # <owner/repo>
+    local v
+    v=$(gh api "repos/$1/releases/latest" --jq .tag_name 2>/dev/null | tag_version | release_only)
+    [ -n "$v" ] && { echo "$v"; return; }
+    gh api "repos/$1/tags?per_page=50" --jq '.[].name' 2>/dev/null | tag_version | release_only | newest
+}
+latest_gnome() {  # <module>
+    curl -fsSL --max-time 30 "https://download.gnome.org/sources/$1/cache.json" 2>/dev/null | python3 -c '
+import json, sys, re
+d = json.load(sys.stdin); p = sys.argv[1]
+vs = [v for v in d[2].get(p, []) if re.fullmatch(r"\d+\.\d+(\.\d+)?", v)]
+vs = [v for v in vs if int(v.split(".")[1]) % 2 == 0]
+vs.sort(key=lambda s: [int(x) for x in s.split(".")])
+print(vs[-1] if vs else "")' "$1"
+}
+latest_listing() {  # <directory url> <name>
+    curl -fsSL --max-time 30 "$1" 2>/dev/null | grep -oE "$2-[0-9]+(\.[0-9]+)+\.tar" | sed -E "s/^$2-//; s/\.tar$//" | newest
+}
+latest_webkitgtk() {
+    curl -fsSL --max-time 30 https://webkitgtk.org/releases/ 2>/dev/null \
+        | grep -oE 'webkitgtk-2\.[0-9]*[02468]\.[0-9]+\.tar\.xz' | sed -E 's/^webkitgtk-//; s/\.tar\.xz$//' | newest
+}
+latest_ruby() {  # <recipe version> -- newest in the same minor series
+    local series=${1%.*}
+    gh api "repos/ruby/ruby/tags?per_page=100" --jq '.[].name' 2>/dev/null | grep -E "^v${series//./_}_[0-9]+$" | tag_version | newest
+}
+commits_behind() {  # <owner/repo> <sha>
+    gh api "repos/$1/compare/$2...HEAD" --jq 'if .ahead_by == 0 then "0 behind"
+        else "\(.ahead_by) behind \(.commits[-1].sha[0:10]) (\(.commits[-1].commit.committer.date[0:10]))" end' 2>/dev/null
+}
+packages() {
+    git -C "$ROOT" diff --name-only --diff-filter=A "$BASE_REF" "$HEAD_REF" -- '*/package.mk' | sed 's|/package.mk$||'
+    for p in $EXTRA_PACKAGES; do echo "$p"; done
+}
+
+if [ "${1:-}" = "--list" ]; then packages; exit 0; fi
+
+rc=0
+printf '%-26s %-14s %-14s %s\n' PACKAGE RECIPE LATEST VERDICT
+while read -r d; do
+    name=$(basename "$d")
+    if [ $# -gt 0 ]; then case " $* " in *" $name "*) ;; *) continue ;; esac; fi
+    f="$ROOT/$d/package.mk"
+    if [ ! -f "$f" ]; then printf '%-26s %-14s %-14s %s\n' "$name" - - "UNKNOWN: no package.mk in the working tree"; rc=2; continue; fi
+    ver=$(var "$f" PKG_VERSION); url=$(var "$f" PKG_URL); site=$(var "$f" PKG_SITE)
+    pinned=$(grep -m1 -E '^# freshness: pinned -- ' "$f" | sed 's/^# freshness: pinned -- //')
+    latest=""; verdict=""
+    if [ -z "$ver" ] && grep -qE '^\. .*/package\.mk' "$f"; then
+        verdict="INHERITED"
+    elif [ -z "$url" ]; then
+        verdict="LOCAL"
+    elif [ -z "$ver" ]; then
+        verdict="UNKNOWN: PKG_URL without a PKG_VERSION"; rc=2
+    elif [[ "$ver" =~ ^[0-9a-f]{40}$ ]]; then
+        repo=$(github_repo "$site")
+        if [ -z "$repo" ]; then
+            verdict="UNKNOWN: PKG_SITE is not a GitHub repository"; rc=2
+        else
+            behind=$(commits_behind "$repo" "$ver"); latest=${behind%% *}
+            case "$behind" in
+                "")   verdict="UNKNOWN: compare failed for $repo"; rc=2 ;;
+                0\ *) verdict="CURRENT (the pin is HEAD)" ;;
+                *)    if [ -n "$pinned" ]; then verdict="PINNED: $pinned ($behind)"
+                      else verdict="BEHIND: $behind"; [ $rc -lt 1 ] && rc=1; fi ;;
+            esac
+        fi
+    else
+        # the recipe's own URL pattern, with its version; variables a recipe sets
+        # elsewhere (rclone's RCLONE_ARCH) expand empty, the host survives
+        eurl=$( set +u; PKG_VERSION=$ver; PKG_NAME=$name; SOURCEFORGE_SRC=https://downloads.sourceforge.net/project
+                eval "$(grep -E '^PKG_(NAME|SITE)=' "$f")"; eval "$(grep -m1 '^PKG_URL=' "$f")"; echo "$PKG_URL" )
+        host=$(sed -E 's#^[a-z]+://([^/]+).*#\1#' <<<"$eurl")
+        case "$eurl" in
+            https://downloads.rclone.org/*) latest=$(latest_github rclone/rclone) ;;
+            *cache.ruby-lang.org/*)         latest=$(latest_ruby "$ver") ;;
+            *webkitgtk.org/*)               latest=$(latest_webkitgtk) ;;
+            *download.gnome.org/sources/*)  latest=$(latest_gnome "$(sed -nE 's#.*/sources/([^/]+)/.*#\1#p' <<<"$eurl")") ;;
+            *ftp.gnu.org/gnu/*|*savannah.gnu.org/releases/*)
+                                            latest=$(latest_listing "$(dirname "$eurl")/" "$name") ;;
+            *dotat.at/*)                    latest=$(latest_listing "$(dirname "$eurl")/" "$name")
+                                            [ -n "$latest" ] || latest=$(latest_github fanf2/unifdef) ;;   # dotat.at is often down; same author, same tags
+            *github.com/*)                  latest=$(latest_github "$(github_repo "$eurl")") ;;
+        esac
+        if [ -z "$latest" ]; then
+            if [ -n "$pinned" ]; then verdict="PINNED: $pinned (latest not resolvable)"
+            else verdict="UNKNOWN: no resolver for $host, or it did not answer"; rc=2; fi
+        elif [ "$latest" = "$ver" ]; then
+            verdict="CURRENT"
+        elif [ "$(printf '%s\n%s\n' "$ver" "$latest" | newest)" = "$latest" ]; then
+            if [ -n "$pinned" ]; then verdict="PINNED: $pinned (latest $latest)"
+            else verdict="BEHIND"; [ $rc -lt 1 ] && rc=1; fi
+        else
+            verdict="AHEAD of upstream's latest"
+        fi
+    fi
+    printf '%-26s %-14s %-14s %s\n' "$name" "${ver:0:14}" "${latest:0:14}" "$verdict"
+done < <(packages)
+exit $rc
