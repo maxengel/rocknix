@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-20T22:50:05Z
-> **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `de8f93726b`, pushed to origin)
+> **Saved**: 2026-09-20T22:32:09Z
+> **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `f7152d84a4`+1 (work log), pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**Nothing is in flight.** The H700 release candidate `ROCKNIX-H700.aarch64-20260920` (BUILD_ID `77e7e97515`) is applied on the RG35XX SP and read back from the device (22:48 UTC: BUILD_ID, empty queue, one `libcairo.so.2.11804.4`, rclone v1.75.1, new boot id `6d76be88…`). The RG SP stays on build 15 and the Nova untouched until there is a release candidate the maintainer is confident in for their build (D-QA-031). Delivered today: #226 (cairo master fetched into every image since June; cairo 1.18.4 + meson `--wrap-mode=nodownload`), #227 (fork-introduced packages current before submission, D-WORKFLOW-024, `tools/fork-package-freshness`), upstream PR ROCKNIX/distribution#3359 open; #228 holds WebKit 2.54 (needs video; video needs gstreamer-mpegts and -gl; 2026-08-30 precedent `64907d0ab8`, blindspot 48); program epic #235 (milestone 5) filed for offering VM QA, tooling and practices upstream, future scope.
+**The H700 release candidate `ROCKNIX-H700.aarch64-20260920` (BUILD_ID `77e7e97515`) is staged in the RG35XX SP's update queue and the reboot has been asked of the maintainer, by name.** Nothing else is in flight. Delivered today: #226 (cairo master fetched into every image; fixed with cairo 1.18.4 + meson `--wrap-mode=nodownload`) and #227 (fork-introduced packages current before submission, D-WORKFLOW-024, `tools/fork-package-freshness`), both closed from observed artifacts; upstream PR ROCKNIX/distribution#3359 open; #228 holds WebKit 2.54 (needs video, video needs gstreamer-mpegts and -gl; the 2026-08-30 precedent `64907d0ab8` is on it). Program epic #235 (milestone 5) filed for offering VM QA, tooling and practices upstream, future scope. D-QA-030 (no ra-offline pass for this build), D-QA-031 (RG35XX SP gets RCs; RG SP and Nova wait for a confident RC per build).
 
 ## Completed This Session
 
@@ -19,16 +19,15 @@
 
 ## In Progress
 
-- Nothing. All harness tasks (#1–#5) completed; #6 dropped by D-QA-030.
+- **RG35XX SP**: tar staged 22:31 (`/storage/.update/ROCKNIX-H700.aarch64-20260920.tar`, device-side sha256 `4e5f4cb792dc…` matched, boot id `51cbba31…` unchanged). Waiting on the maintainer's yes to reboot. Harness task #4.
 
 ## Next Steps
 
-1. **Watch ROCKNIX/distribution#3359** for review. Upstream's `AGENTS.md` asks for build artifacts on PRs; the description says why they are not linked (personal scraper keys in the ES binary). If asked, a build without `~/.ROCKNIX/options` mounted would be publishable.
-2. **#228 is the maintainer's call**: gst-plugins-bad (mpegts) + GL in gst-plugins-base; a WebKit patch for `JSHTMLMediaElementCustom.cpp`; or stay on 2.52.x. The recipe carries `# freshness: pinned -- ... (#228)`; the sweep exits 0.
-3. **The maintainer's list**: #216 fetch ordering, #223 refresh by recency, #224 REFRESH ACHIEVEMENT STATUS row (ES), #218 pacing curve (ask RA `#coders` first), #214/#215/#219.
-4. **Conflict-resolution feature** with the RG35XX SP as its test device (wipe and fresh-install then, per the maintainer). Read `docs/decision-register.md` rows touching it first.
-5. **Epic #235** waits; kickoff is `begin-exploration` (Discovery Epic); #230 (GENERIC_X64 upstream or AMD64 VM-aware) wants the council.
-6. Housekeeping when convenient: the `pr-cairo-1.18` worktree can go after the PR merges (`tools/fork-worktree remove`); stale glib `subprojects/sysprof` clones on the warm x64 and H700-arm roots are inert.
+1. **On the maintainer's yes**: `tools/device-act rg35xxsp "reboot to apply 77e7e97515" -- 'sync; reboot'`; then confirm on the device: BUILD_ID `77e7e97515`, `ls /usr/lib/libcairo.so.2.*` = one regular file, `/storage/.update` empty, `rclone version` v1.75.1; record in the work log and close task #4. **Do not** stage to the RG SP or the Nova (D-QA-031).
+2. Watch ROCKNIX/distribution#3359 for review; upstream's `AGENTS.md` asks for build artifacts on PRs and the description explains why they are not linked (personal scraper keys in the ES binary).
+3. #228 is the maintainer's call (build gst-plugins-bad mpegts + GL in gst-plugins-base; a WebKit patch; or stay on 2.52.x). The recipe carries `# freshness: pinned -- ... (#228)`; the sweep exits 0.
+4. Then the maintainer's list: #216, #223, #224, #218, #214/#215/#219; the conflict-resolution feature, with the RG35XX SP as its test device (it may be wiped and fresh-installed then).
+5. Epic #235 waits; kickoff is `begin-exploration` (Discovery Epic), #230 wants the council.
 
 ## Key Files Modified
 
