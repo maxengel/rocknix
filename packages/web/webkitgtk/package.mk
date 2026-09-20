@@ -2,8 +2,10 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="webkitgtk"
-PKG_VERSION="2.54.0"
-PKG_SHA256="846fd19ccedbae1dbfe904f26dbf2d68a800a33a50caf2ad5222c8dcb3f25682"
+# freshness: pinned -- 2.54.0 does not build with video off, and video needs gstreamer-mpegts and
+# gstreamer-gl the image lacks (fork #228); remove this line in the commit that bumps it
+PKG_VERSION="2.52.6"
+PKG_SHA256="179a2ea3f8f6edd4be7f31fdc55afc57bd0729f1fba648c61d4181539ac116fc"
 PKG_LICENSE="LGPL-2.1-or-later AND BSD-2-Clause"
 PKG_SITE="https://webkitgtk.org/"
 PKG_URL="https://webkitgtk.org/releases/${PKG_NAME}-${PKG_VERSION}.tar.xz"
@@ -44,22 +46,12 @@ pre_configure_target() {
   # sandbox and its dbus proxy) or surface we have no use for on a handheld
   # that opens exactly one page. Introspection and docs are build-host
   # artifacts that never reach the image.
-  # GStreamer is off outright: a sign-in page plays nothing, and 2.54 makes
-  # video's GStreamer libraries hard requirements (gstreamer-mpegts and
-  # gstreamer-gl, which this image does not build). USE_GSTREAMER is the
-  # switch WebKit's own option dependencies hang off: it takes video, Web
-  # Audio, WebCodecs and speech synthesis down with it. Turning off only
-  # video and Web Audio left WebCodecs holding USE_GSTREAMER on, and WebCore
-  # then failed to find gst/gst.h (run 7, 2026-09-20). WebDriver is a
-  # test-automation daemon nothing here drives; in 2.54.0 it also fails to
-  # compile under this option set (an undeclared log channel, run 8).
   PKG_CMAKE_OPTS_TARGET="-DPORT=GTK \
                          -DUSE_GTK4=OFF \
                          -DUSE_SOUP2=OFF \
                          -DENABLE_WAYLAND_TARGET=ON \
                          -DENABLE_X11_TARGET=OFF \
                          -DENABLE_MINIBROWSER=ON \
-                         -DENABLE_WEBDRIVER=OFF \
                          -DENABLE_INTROSPECTION=OFF \
                          -DENABLE_DOCUMENTATION=OFF \
                          -DENABLE_SPELLCHECK=OFF \
@@ -70,10 +62,6 @@ pre_configure_target() {
                          -DENABLE_BUBBLEWRAP_SANDBOX=OFF \
                          -DENABLE_JOURNALD_LOG=OFF \
                          -DENABLE_GAMEPAD=OFF \
-                         -DUSE_GSTREAMER=OFF \
-                         -DENABLE_VIDEO=OFF \
-                         -DENABLE_WEB_AUDIO=OFF \
-                         -DENABLE_WEB_CODECS=OFF \
                          -DENABLE_MEDIA_STREAM=OFF \
                          -DENABLE_MEDIA_RECORDER=OFF \
                          -DUSE_GSTREAMER_GL=OFF \
