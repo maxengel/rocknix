@@ -2,8 +2,8 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="openjpeg"
-PKG_VERSION="2.5.3"
-PKG_SHA256="368fe0468228e767433c9ebdea82ad9d801a3ad1e4234421f352c8b06e7aa707"
+PKG_VERSION="2.5.4"
+PKG_SHA256="a695fbe19c0165f295a8531b1e4e855cd94d0875d2f88ec4b61080677e27188a"
 PKG_LICENSE="BSD-2-Clause"
 PKG_SITE="https://www.openjpeg.org/"
 PKG_URL="https://github.com/uclouvain/openjpeg/archive/v${PKG_VERSION}/${PKG_NAME}-${PKG_VERSION}.tar.gz"
