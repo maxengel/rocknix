@@ -527,3 +527,34 @@ four had already been stated to them as fact.
 
 Rule: `engineering-practices.md` § *A name is not a behaviour, and a summary
 is not the source*.
+
+## 47. A dependency the build fetched for itself (2026-09-20)
+
+pango 1.58 needed cairo >= 1.18 and the tree pinned 1.17.8. For three months
+every build resolved that on its own: meson cloned cairo's git master at
+configure time, built it inside pango, and installed it over the pinned copy.
+The build log said `[DONE] build pango:target`; the image said `libcairo.so.2
+-> libcairo.so.2.11805.5`. Every GENERIC_X64 and H700 image since June carried
+it, including builds 11-16 and the merged-tree x64 that passed vm-qa on
+2026-09-19; the maintainer's handheld runs it now (#226).
+
+It was found by accident: the first build whose container had no DNS failed
+pango. And the session's first reading of that failure was still wrong -- a
+wrap-mode regression from the 148-commit merge -- when neither recipe had
+changed in the merge. What had changed was the network.
+
+The shape: a build system that is allowed to satisfy its own unmet dependency
+reports success, and success is what nobody reads. Upstream CI has network,
+so upstream ships the same thing and cannot see it either.
+
+- Every `found: NO` followed by a fallback is a place where the build may
+  substitute code nobody pinned. `--wrap-mode=nodownload` (`79437a25c0`)
+  turns that into a failure for meson; cmake's FetchContent and cargo or go
+  vendoring have no such switch and want the same audit.
+- After a build, `find build.*/build -mindepth 4 -maxdepth 4 -path
+  '*/subprojects/*/.git'` lists what was fetched. Empty is the only good
+  answer, and it is only meaningful on a root where every package configured
+  under the guard.
+- A pinned version in a recipe is a claim about the image only once the image
+  is read (`unsquashfs -ll SYSTEM usr/lib | grep <lib>`). Blindspot 13's rule,
+  applied to libraries.
