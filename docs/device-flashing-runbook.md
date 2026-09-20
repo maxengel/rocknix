@@ -76,6 +76,10 @@ and the TF2 games filesystem.
    example `/storage/.cache/<image>.tar.part`. Verify its SHA-256 **on the
    device**, then move it into `/storage/.update/<image>.tar` and sync. This
    keeps incomplete transfers out of the boot-time updater's queue.
+   The device-side hash of a 1.3 GB tar takes minutes on an A53, longer
+   than `tools/device-act`'s default 30 s: raise `DEVICE_ACT_TIMEOUT` or run
+   the hash detached on the device and poll for its result file, and make the
+   move conditional on the match so a cut-off hash leaves the queue empty.
 5. Record the update as **staged** until the device reboots and applies it.
    After reboot, confirm the new `BUILD_ID`, model/DTB, RAM voltage, expected
    storage mounts, changed binary hash, and an empty update queue. A successful
