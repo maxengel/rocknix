@@ -2,8 +2,8 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="libpsl"
-PKG_VERSION="0.21.5"
-PKG_SHA256="1dcc9ceae8b128f3c0b3f654decd0e1e891afc6ff81098f227ef260449dae208"
+PKG_VERSION="0.23.3"
+PKG_SHA256="93941f85a1e7bd593fa94f299233cb5dfc91cd144fd9a78a6ceb75001c5b03be"
 PKG_LICENSE="MIT"
 PKG_SITE="https://github.com/rockdaboot/libpsl"
 PKG_URL="https://github.com/rockdaboot/libpsl/releases/download/${PKG_VERSION}/${PKG_NAME}-${PKG_VERSION}.tar.gz"
