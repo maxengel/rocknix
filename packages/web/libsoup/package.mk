@@ -2,8 +2,8 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="libsoup"
-PKG_VERSION="3.6.5"
-PKG_SHA256="6891765aac3e949017945c3eaebd8cc8216df772456dc9f460976fbdb7ada234"
+PKG_VERSION="3.6.6"
+PKG_SHA256="51ed0ae06f9d5a40f401ff459e2e5f652f9a510b7730e1359ee66d14d4872740"
 PKG_LICENSE="LGPL-2.1-or-later"
 PKG_SITE="https://libsoup.gnome.org/"
 PKG_URL="https://download.gnome.org/sources/${PKG_NAME}/${PKG_VERSION:0:3}/${PKG_NAME}-${PKG_VERSION}.tar.xz"
