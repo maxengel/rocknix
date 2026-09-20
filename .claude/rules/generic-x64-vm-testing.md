@@ -127,6 +127,16 @@ tools/vm-serial sh "mkdir -p /storage/.ssh && chmod 700 /storage/.ssh && echo '$
 ssh -i key -p 10022 -o StrictHostKeyChecking=no root@127.0.0.1 'echo ok'
 ```
 
+**`get_setting` and `set_setting` are shell functions, not files.** They come
+from `/etc/profile.d/001-functions`, which a non-interactive ssh shell never
+sources, so a fixture that runs `set_setting` over `vm-pair ssh` gets
+`command not found` on stderr and a silent no-op on stdout. The upgrade
+rehearsal of 2026-09-20 seeded a setting that way, asserted nothing about it,
+and reported the image had lost it after the update; the image had never been
+given it. Prefix guest commands with `. /etc/profile >/dev/null 2>&1;` and
+assert the read-back *before* the step under test, so the fixture's own
+failures cannot be booked to the build.
+
 **Two guests, one cloud (D-QA-009).** A conflict is a change on both sides
 since they last agreed, and one guest cannot make one; a handheld must
 never be asked to. `tools/vm-pair up <img.gz>` builds two disks from the
