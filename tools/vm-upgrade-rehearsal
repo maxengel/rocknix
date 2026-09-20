@@ -47,7 +47,7 @@ head -c 200000 /dev/urandom > /storage/roms/savestates/nes/Rehearsal.state1
 head -c 100000 /dev/urandom > /storage/roms/savestates/nes/Rehearsal.state2
 head -c 8192   /dev/urandom > /storage/roms/nes/Rehearsal.srm
 echo rehearsal-marker > /storage/.config/rehearsal-marker
-set_setting rehearsal.marker "$WANT"; sync' >>"$LOG" 2>&1
+set_setting rehearsal.marker '"$WANT"'; sync' >>"$LOG" 2>&1
 SUMS0=$(ssha 'cd /storage/roms && sha256sum savestates/nes/Rehearsal.state.auto savestates/nes/Rehearsal.state1 savestates/nes/Rehearsal.state2 nes/Rehearsal.srm'); echo "$SUMS0" >> "$LOG"
 check "four seeded files exist" "$(echo "$SUMS0" | grep -c '^[0-9a-f]\{64\} ')" "4"
 check "set_setting is a function on the guest" "$(ssha 'command -v set_setting >/dev/null && echo yes')" "yes"
@@ -96,3 +96,4 @@ ssha 'ls -la /storage/roms/savestates/nes /storage/roms/nes; cat /etc/os-release
 say "pair down"; ./tools/vm-pair down >>"$LOG" 2>&1
 if [ $fail = 0 ]; then say "RESULT PASS"; else say "RESULT FAIL"; fi
 echo $fail > "$OUT/rc"; echo "$OUT"
+exit $fail
