@@ -46,6 +46,16 @@ pre_configure_target() {
   # sandbox and its dbus proxy) or surface we have no use for on a handheld
   # that opens exactly one page. Introspection and docs are build-host
   # artifacts that never reach the image.
+  #
+  # ENABLE_VIDEO stays ON. The GTK port does not build with it off: WebCore
+  # compiles JSHTMLMediaElementCustom.cpp regardless and needs the binding
+  # only video generates. Learned 2026-08-30 (cb05cbe80d turned it off,
+  # 64907d0ab8 turned it back on the same day) and again 2026-09-20, when
+  # four builds of 2.54.0 hit the same wall from every side (#228). What can
+  # go is the *pipeline around* video: media stream, recorder, WebRTC, the
+  # transcoder, GL upload -- all off below. 2.54 additionally makes
+  # gstreamer-mpegts and gstreamer-gl hard requirements of video, which is
+  # why it is held at 2.52.6 until this image builds them.
   PKG_CMAKE_OPTS_TARGET="-DPORT=GTK \
                          -DUSE_GTK4=OFF \
                          -DUSE_SOUP2=OFF \
