@@ -10,6 +10,7 @@ PKG_NAME="raofflineproxy-rcheevos"
 # are compiled by raofflineproxy's own recipe into libraproxy_rchash.so, the
 # library the client's ROM hashing loads (fork #179). Source only: nothing
 # here is built or installed on its own.
+# freshness: pinned -- follows the third_party/rcheevos submodule commit RAOfflineProxy names (fork #179)
 PKG_VERSION="2ad0b8672f68a48148620164510b963039e49eb1"
 PKG_SHA256="b8e3e834d15c327085154315c49dea85b081ad48592ba1740f323ac953e1bfec"
 PKG_LICENSE="MIT"

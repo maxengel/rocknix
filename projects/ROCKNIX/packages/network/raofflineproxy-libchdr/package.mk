@@ -10,6 +10,7 @@ PKG_NAME="raofflineproxy-libchdr"
 # into libraproxy_rchash.so so a CHD disc image hashes the way RetroArch
 # hashes it (fork #179). Source only: nothing here is built or installed on
 # its own.
+# freshness: pinned -- follows the third_party/libchdr submodule commit RAOfflineProxy names (fork #179)
 PKG_VERSION="970a0ce060c0aa1012b1eebba1433c9a9e8ac8b9"
 PKG_SHA256="6b7a04ae29ad497dcae4a0f918b289df7df95eea6dd2deed8c420b2ee2c481cd"
 PKG_LICENSE="BSD-3-Clause"
