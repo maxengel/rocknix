@@ -2,8 +2,8 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="ruby"
-PKG_VERSION="3.3.6"
-PKG_SHA256="540975969d1af42190d26ff629bc93b1c3f4bffff4ab253e245e125085e66266"
+PKG_VERSION="3.3.12"
+PKG_SHA256="873e3297990b8cff7a5436f6e510a3a7a18c74e5f2c794e4162e605fe0a743b3"
 PKG_LICENSE="BSD-2-Clause"
 PKG_SITE="https://www.ruby-lang.org/"
 PKG_URL="https://cache.ruby-lang.org/pub/ruby/${PKG_VERSION:0:3}/${PKG_NAME}-${PKG_VERSION}.tar.xz"
