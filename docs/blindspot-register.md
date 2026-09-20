@@ -558,3 +558,31 @@ so upstream ships the same thing and cannot see it either.
 - A pinned version in a recipe is a claim about the image only once the image
   is read (`unsquashfs -ll SYSTEM usr/lib | grep <lib>`). Blindspot 13's rule,
   applied to libraries.
+
+## 48. A constraint that lived only in a commit subject (2026-09-20)
+
+On 2026-08-30 the sign-in window's WebKit had its video pipeline switched
+off (`cb05cbe80d`) and switched back on the same day, because "disabling it
+is not a configuration the GTK port builds" (`64907d0ab8`). Three weeks
+later the same option was turned off again, and four builds of WebKit 2.54.0
+were spent walking into the same wall from four sides (#228). The maintainer
+remembered; the session did not, and the repo had recorded the lesson in
+exactly one place — the subject line of a commit that changed one flag.
+
+Nothing in the recipe said the flag must stay. No work-log entry, no
+register row, no comment beside `-DENABLE_VIDEO`. `git log -- <recipe>`
+would have shown it on the first screen, and engineering-practices already
+says to read the history before changing what looks wrong; the reading was
+skipped because the change did not look like a fix, it looked like a
+tidy-up.
+
+- A constraint is written **next to the thing it constrains**, with the
+  date and the commit, or it will be rediscovered by the next person to find
+  the option tidy-looking. A commit message is where it was found, not where
+  it lives.
+- Before changing a package's options — not only when fixing them — read
+  that package's log. It costs one command, and on 2026-09-20 it would have
+  cost thirty minutes less than the alternative.
+- "Have we hit this before?" is a question the repo can answer mechanically
+  (`git log -S<option> -- <path>`, `grep -rn <option> docs/`) and the
+  maintainer should not have to.

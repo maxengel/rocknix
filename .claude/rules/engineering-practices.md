@@ -21,6 +21,15 @@ Before changing code that looks wrong, confirm it isn't intentional:
   impact (e.g. allowlist vs denylist semantics).
 - **Prefer a question over a silent rewrite** when intent is ambiguous — confirm with the
   maintainer rather than changing deliberate behavior.
+- **Read the log before changing options, not only before fixing bugs.** A
+  flag that looks like a tidy-up may be the residue of a failed attempt.
+  `git log --oneline -- <recipe>` on 2026-09-20 would have shown "keep VIDEO
+  on -- disabling it is not a configuration the GTK port builds" from three
+  weeks earlier; four builds rediscovered it instead (blindspot 48).
+- **A constraint lives beside the thing it constrains.** When the history
+  does hold the reason, write it into the recipe or config next to the
+  option, with the date and commit. A commit message is where the lesson
+  was found, not where it should stay.
 
 **Case study:** restore-side `--delete-excluded` in the rclone cloud-sync scripts looked like
 data loss, but was gated by the default `RESTOREMETHOD=copy` (delete is a no-op for `copy`),
