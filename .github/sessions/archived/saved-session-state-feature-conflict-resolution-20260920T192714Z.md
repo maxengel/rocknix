@@ -1,12 +1,14 @@
 # Saved Session State
 
-> **Saved**: 2026-09-20T22:32:09Z
-> **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `f7152d84a4`+1 (work log), pushed to origin)
+> **Saved**: 2026-09-20T19:27:14Z
+> **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `0ea9a4bb78`, pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The H700 release candidate `ROCKNIX-H700.aarch64-20260920` (BUILD_ID `77e7e97515`) is staged in the RG35XX SP's update queue and the reboot has been asked of the maintainer, by name.** Nothing else is in flight. Delivered today: #226 (cairo master fetched into every image; fixed with cairo 1.18.4 + meson `--wrap-mode=nodownload`) and #227 (fork-introduced packages current before submission, D-WORKFLOW-024, `tools/fork-package-freshness`), both closed from observed artifacts; upstream PR ROCKNIX/distribution#3359 open; #228 holds WebKit 2.54 (needs video, video needs gstreamer-mpegts and -gl; the 2026-08-30 precedent `64907d0ab8` is on it). Program epic #235 (milestone 5) filed for offering VM QA, tooling and practices upstream, future scope. D-QA-030 (no ra-offline pass for this build), D-QA-031 (RG35XX SP gets RCs; RG SP and Nova wait for a confident RC per build).
+**H700 run 3 is building the cold aarch64 root** (launched 19:22 from `77e7e97515`, the same BUILD_ID as the x64 image; status `/workspace/tmp/rocknix-session/build-h700.status`, rc `build-h700-run3.rc`, harness waiter armed). The arm side finished 19:25 with pango configured against the sysroot cairo (`cairo found: YES 1.18.4`, no clone) — the exact package that failed run 2. Before that: x64 run 10 built `ROCKNIX-GENERIC_X64.x86_64-20260920.img.gz` at 18:54 and vm-qa PASSED eleven suites 18:56-19:21 (`qa-77e7e97515-webdav-a-20260920-1856`). webkitgtk 2.54.0 failed four warm builds and is held at 2.52.6 for the RC (#228, `# freshness: pinned`). All three QA guests were stopped before the H700 build.
+
+The session's finding stands: pango 1.58 has required cairo >= 1.18 since June, the override pinned 1.17.8, meson cloned cairo master into every image since (#226, blindspot 47). The maintainer ruled fork-introduced packages are current before submission (D-WORKFLOW-024, #227); the sweep and `tools/fork-package-freshness` are done.
 
 ## Completed This Session
 
@@ -19,15 +21,16 @@
 
 ## In Progress
 
-- **RG35XX SP**: tar staged 22:31 (`/storage/.update/ROCKNIX-H700.aarch64-20260920.tar`, device-side sha256 `4e5f4cb792dc…` matched, boot id `51cbba31…` unchanged). Waiting on the maintainer's yes to reboot. Harness task #4.
+- **H700 run 3, aarch64 side** — cold root, hours. Poisoned-package sweep if it fails (device-builds.md); copy `.threads/logs` is automatic in `build-h700.sh` on non-zero exit.
+- Harness tasks #3 (this build, in progress), #6 (ra-offline suite on guest d, after the build), #4 (handhelds, after #6), #5 (upstream PR + close #226/#227).
 
 ## Next Steps
 
-1. **On the maintainer's yes**: `tools/device-act rg35xxsp "reboot to apply 77e7e97515" -- 'sync; reboot'`; then confirm on the device: BUILD_ID `77e7e97515`, `ls /usr/lib/libcairo.so.2.*` = one regular file, `/storage/.update` empty, `rclone version` v1.75.1; record in the work log and close task #4. **Do not** stage to the RG SP or the Nova (D-QA-031).
-2. Watch ROCKNIX/distribution#3359 for review; upstream's `AGENTS.md` asks for build artifacts on PRs and the description explains why they are not linked (personal scraper keys in the ES binary).
-3. #228 is the maintainer's call (build gst-plugins-bad mpegts + GL in gst-plugins-base; a WebKit patch; or stay on 2.52.x). The recipe carries `# freshness: pinned -- ... (#228)`; the sweep exits 0.
-4. Then the maintainer's list: #216, #223, #224, #218, #214/#215/#219; the conflict-resolution feature, with the RG35XX SP as its test device (it may be wiped and fresh-installed then).
-5. Epic #235 waits; kickoff is `begin-exploration` (Discovery Epic), #230 wants the council.
+1. **When run 3 lands**: on the cold aarch64 root, `find build.ROCKNIX-H700.aarch64/build -mindepth 4 -maxdepth 4 -path '*/subprojects/*/.git'` must print nothing (the guard's own criterion); extract `SYSTEM` from the tar and `unsquashfs -ll SYSTEM usr/lib | grep libcairo` must show one regular `libcairo.so.2.*` (`.11804.4`); tick both on #226. Record `BUILD_ID`, tar sha256, sizes.
+2. **ra-offline suite on guest d** against the x64 image (task #6): bring the pair up on `ROCKNIX-GENERIC_X64.x86_64-20260920.img.gz`, `./tools/vm-qa --skip-up --only ra-offline --guest d`; fixtures per `/workspace/artifacts/rocknix-qa-roms/README.md` (Cookie Clicker's cheap tier is spent); never echo `~/.ROCKNIX/qa-accounts`. Tick or comment the proxy criterion on #227. Stop the guests after.
+3. **Handhelds** (task #4): RG35XX SP first, then RG SP (`DEVICE_ACT_SSH_OPTS='-o Hostname=100.75.221.73' tools/device-act rgsp …`); idle check (emulator, `rclon[e]`, `flock -n /var/run/cloud_sync.lock true`, transfer page); stage the one H700 tar per the runbook's update section; **ask before each reboot, per device**; keeper off (D-QA-029).
+4. **Upstream PR** (task #5): `pr/cairo-1.18` by content — detached worktree at `upstream/next`, `git checkout next -- projects/ROCKNIX/packages/graphics/cairo/package.mk scripts/build`, one commit, body `/workspace/tmp/rocknix-session/pr-cairo-body.md`; `scripts/build` differs from upstream by exactly the six nodownload lines. Then close #226 and #227 from observed behaviour, and note #228 for the maintainer.
+5. Then the maintainer's list: #216, #223, #224, #218, #214/#215/#219.
 
 ## Key Files Modified
 
