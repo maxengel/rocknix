@@ -1,0 +1,98 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# vm-upgrade-rehearsal -- the upgrade path, rehearsed in a VM before a handheld
+# takes it (upgrade-and-install.md: "boot a VM from the previous image, use it
+# enough to create state, then update it in place and confirm that state still
+# works").
+#
+#   tools/vm-upgrade-rehearsal <previous ROCKNIX-GENERIC_X64...img.gz> <new ROCKNIX-GENERIC_X64...tar> <expected new BUILD_ID prefix>
+#
+# Boots vm-pair's guest a from the previous image, seeds state a player would
+# have -- an auto save and two numbered save states, a battery save, a
+# setting, a marker file, a linked cloud (the local QA backend) with a saves
+# remote, and a settings backup -- then puts the new tar in /storage/.update,
+# reboots, and checks every piece against what was seeded. Every check is a
+# PASS/FAIL line; the exit code is 0 only when all pass. The fixture asserts
+# its own seeding before the step under test, so a fixture fault cannot be
+# booked to the build (2026-09-20, generic-x64-vm-testing.md).
+#
+# Output: a directory under /workspace/artifacts/rocknix-images/ named
+# qa-<new>-upgrade-from-<old>-<stamp>/ with rehearsal.log, the post-update
+# journal errors, and rc.
+set -u
+OLD=${1:?previous image (.img.gz)}; NEW=${2:?new update tar}; WANT=${3:?expected new BUILD_ID prefix}
+[ -f "$OLD" ] || { echo "no such image: $OLD" >&2; exit 2; }
+[ -f "$NEW" ] || { echo "no such tar: $NEW" >&2; exit 2; }
+cd "$(dirname "$0")/.." || exit 2
+OLDID=$(gzip -dc -- "$OLD" 2>/dev/null | head -c 0; basename "$(dirname "$OLD")" | grep -oE '[0-9a-f]{10}$' || echo prev)
+OUT=/workspace/artifacts/rocknix-images/qa-${WANT}-upgrade-from-${OLDID}-$(date -u +%Y%m%d-%H%M); mkdir -p "$OUT"
+LOG=$OUT/rehearsal.log; : > "$LOG"
+say(){ echo "=== $(date -u '+%H:%M:%S') $*" | tee -a "$LOG"; }
+ssha(){ ./tools/vm-pair ssh a ". /etc/profile >/dev/null 2>&1; $*" 2>>"$LOG"; }
+fail=0
+check(){ if [ "$2" = "$3" ]; then echo "PASS $1" | tee -a "$LOG"; else echo "FAIL $1: got '$2' want '$3'" | tee -a "$LOG"; fail=1; fi; }
+
+say "backend: $(./tools/cloud-test-backend status 2>&1 | head -1)"; ./tools/cloud-test-backend up >>"$LOG" 2>&1 || true
+say "pair up from $(basename "$OLD")"
+./tools/vm-pair up "$OLD" >>"$LOG" 2>&1 || { say "vm-pair up FAILED"; echo 1 > "$OUT/rc"; exit 1; }
+for i in $(seq 1 40); do ssha 'echo ok' 2>/dev/null | grep -q '^ok$' && break; sleep 10; done
+BID0=$(ssha 'grep ^BUILD_ID= /etc/os-release | cut -d\" -f2'); echo "old build id: $BID0" | tee -a "$LOG"; check "old build id read" "$([ -n "$BID0" ] && echo yes)" "yes"
+
+say "seed state on guest a"
+ssha 'mkdir -p /storage/roms/savestates/nes /storage/roms/nes /storage/.config/rclone
+head -c 300000 /dev/urandom > /storage/roms/savestates/nes/Rehearsal.state.auto
+head -c 200000 /dev/urandom > /storage/roms/savestates/nes/Rehearsal.state1
+head -c 100000 /dev/urandom > /storage/roms/savestates/nes/Rehearsal.state2
+head -c 8192   /dev/urandom > /storage/roms/nes/Rehearsal.srm
+echo rehearsal-marker > /storage/.config/rehearsal-marker
+set_setting rehearsal.marker "$WANT"; sync' >>"$LOG" 2>&1
+SUMS0=$(ssha 'cd /storage/roms && sha256sum savestates/nes/Rehearsal.state.auto savestates/nes/Rehearsal.state1 savestates/nes/Rehearsal.state2 nes/Rehearsal.srm'); echo "$SUMS0" >> "$LOG"
+check "four seeded files exist" "$(echo "$SUMS0" | grep -c '^[0-9a-f]\{64\} ')" "4"
+check "set_setting is a function on the guest" "$(ssha 'command -v set_setting >/dev/null && echo yes')" "yes"
+check "setting reads back before the update" "$(ssha 'get_setting rehearsal.marker')" "$WANT"
+
+say "link the local WebDAV backend"
+CONF=$(./tools/cloud-test-backend rclone-conf 2>>"$LOG"); check "backend gave an rclone.conf" "$([ -n "$CONF" ] && echo yes)" "yes"
+ssha "cat > /storage/.config/rclone/rclone.conf <<'RC'
+$CONF
+RC
+chmod 600 /storage/.config/rclone/rclone.conf" >>"$LOG" 2>&1
+REM0=$(ssha 'rclone listremotes 2>/dev/null | head -1'); echo "remote: $REM0" >> "$LOG"
+check "guest sees one remote" "$([ -n "$REM0" ] && echo yes)" "yes"
+ssha "rclone mkdir ${REM0}Rehearsal/Saves 2>>/dev/null; cloud_setup --set-saves-remote /Rehearsal/Saves" >>"$LOG" 2>&1
+CONFPATH=$(ssha 'ls /storage/.config/cloud_sync.conf 2>/dev/null || find /storage/.config -maxdepth 2 -name cloud_sync.conf | head -1')
+SR0=$(ssha "grep -E '^SAVES_REMOTE=' $CONFPATH 2>/dev/null"); echo "saves remote before: $SR0 ($CONFPATH)" >> "$LOG"
+check "saves remote set before the update" "$(echo "$SR0" | grep -c Rehearsal)" "1"
+check "rclone (previous) lists the remote" "$(ssha "rclone lsd ${REM0} >/dev/null 2>&1 && echo ok")" "ok"
+
+say "a settings backup"
+ssha 'backuptool backup >/dev/null 2>&1; ls /storage/roms/backup/ 2>/dev/null' >>"$LOG" 2>&1
+BK0=$(ssha 'ls /storage/roms/backup/ 2>/dev/null | wc -l'); echo "backups before: $BK0" >> "$LOG"
+
+say "stage $(basename "$NEW") and reboot guest a"
+scp -q -i /tmp/rocknix-vm-pair/qa-key -P 10022 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$NEW" root@127.0.0.1:/storage/.update/ 2>>"$LOG" || { say "scp FAILED"; fail=1; }
+ssha 'sync; ls -la /storage/.update/' >>"$LOG" 2>&1
+ssha 'sync; reboot' >/dev/null 2>&1
+sleep 90
+BID1=""; for i in $(seq 1 40); do BID1=$(ssha 'grep ^BUILD_ID= /etc/os-release | cut -d\" -f2' 2>/dev/null); [ "${BID1:0:${#WANT}}" = "$WANT" ] && break; sleep 15; done
+say "guest a back after $i polls"
+check "new build id is $WANT" "${BID1:0:${#WANT}}" "$WANT"
+SUMS1=$(ssha 'cd /storage/roms && sha256sum savestates/nes/Rehearsal.state.auto savestates/nes/Rehearsal.state1 savestates/nes/Rehearsal.state2 nes/Rehearsal.srm')
+check "saves and save states byte-identical" "$SUMS1" "$SUMS0"
+check "marker file kept" "$(ssha 'cat /storage/.config/rehearsal-marker')" "rehearsal-marker"
+check "setting kept" "$(ssha 'get_setting rehearsal.marker')" "$WANT"
+check "rclone remote kept" "$(ssha 'rclone listremotes 2>/dev/null | head -1')" "$REM0"
+check "rclone (new) lists the remote" "$(ssha "rclone lsd ${REM0} >/dev/null 2>&1 && echo ok")" "ok"
+check "saves remote kept" "$(ssha "grep -E '^SAVES_REMOTE=' $CONFPATH 2>/dev/null")" "$SR0"
+check "cloud conf gained the new defaults, kept the old values" "$(ssha "grep -cE '^(CONTENT_REMOTE|SAVES_REMOTE)=' $CONFPATH")" "2"
+check "backup archive kept" "$(ssha 'ls /storage/roms/backup/ 2>/dev/null | wc -l')" "$BK0"
+check "update queue empty" "$(ssha 'ls /storage/.update | wc -l')" "0"
+check "one libcairo.so.2.*" "$(ssha 'ls /usr/lib/libcairo.so.2.* | wc -l')" "1"
+echo "rclone after: $(ssha 'rclone version | head -1')" | tee -a "$LOG"
+ssha 'journalctl -b -p err --no-pager | tail -30' > "$OUT/journal-err-after.txt" 2>&1
+ssha 'ls -la /storage/roms/savestates/nes /storage/roms/nes; cat /etc/os-release' > "$OUT/state-after.txt" 2>&1
+say "pair down"; ./tools/vm-pair down >>"$LOG" 2>&1
+if [ $fail = 0 ]; then say "RESULT PASS"; else say "RESULT FAIL"; fi
+echo $fail > "$OUT/rc"; echo "$OUT"

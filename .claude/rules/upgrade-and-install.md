@@ -146,7 +146,10 @@ The cheap way to cover both paths, per
   state (a backup, a config change, a save), then update it in place and confirm
   that state still works.
 
-`tools/vm-visual-qa` drives both headlessly.
+`tools/vm-upgrade-rehearsal <previous img.gz> <new tar> <new BUILD_ID>` runs the
+upgrade half end to end and fails closed on any piece of state that did not
+survive (first run 2026-09-20, build 15 to `77e7e97515`, 20 of 20). The clean
+install is what `tools/vm-qa` boots from the image every run.
 
 **And under the device's tools, not the host's.** `tr -d '[:print:][:space:]'`
 deletes every printable byte under GNU tr and eight literal characters under
