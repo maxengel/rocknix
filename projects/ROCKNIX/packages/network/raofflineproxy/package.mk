@@ -2,12 +2,16 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="raofflineproxy"
-# Pinned by full commit (packages/README.md): main at 2026-09-12, nineteen
-# commits past v1.13.0-alpha1, none of them touching what ROCKNIX runs
-# except one muOS revert-path fix; APP_VERSION still reads 1.13.0-alpha1
-# (docs/ra-offline/2026_09_13-phase-1-design-note.md, fork #164).
-PKG_VERSION="64d03d30633ca6e7719c26d732cef3c97dedcc27"
-PKG_SHA256="49b135cdf89d75ef33fe85ffa6d361bfca03e7012d8bd88fe43a476735206abd"
+# Pinned by full commit (packages/README.md): main at 2026-09-20. Since the
+# previous pin (64d03d30, 2026-09-12) the Linux side gained retries on the
+# RetroAchievements reachability probe, tethered interfaces counting as
+# active, two menu fixes, darkOS 32-bit RetroArch config support, and the
+# libchdr submodule at 8e7b8bd (raofflineproxy-libchdr follows it); rcheevos
+# is unchanged and APP_VERSION still reads 1.13.0-alpha1, forty-two commits
+# past that tag (docs/ra-offline/2026_09_13-phase-1-design-note.md, fork
+# #164, #227).
+PKG_VERSION="4e9bab484e4d7be30b2dbc313aae94ca2f5f742a"
+PKG_SHA256="a0a39a155154b4d0a09ae813739b3d430dab579dc67d509659966d530b3b9c6a"
 # GPLv3 text with no "or any later version" grant in the sources.
 PKG_LICENSE="GPL-3.0-only"
 PKG_SITE="https://github.com/misantronic/RAOfflineProxy"
