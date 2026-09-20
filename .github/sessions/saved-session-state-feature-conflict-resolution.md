@@ -1,77 +1,72 @@
 # Saved Session State
 
-> **Saved**: 2026-09-20T03:15:22Z
-> **Branch**: feature/conflict-resolution (this worktree; all of the session's work landed on `next` in the primary checkout `/workspace/repos/rocknix`, head `2600de9dde`)
+> **Saved**: 2026-09-20T18:40:18Z
+> **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `e39fc7f68a`, not yet pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-Getting a **clean cold H700 build** of the merged tree so the release candidate can go onto the RG SP and the RG35XX SP (the new dedicated QA handheld, D-QA-027). GENERIC_X64 built and passed vm-qa (10/10 suites green). H700 has failed twice on the arm (32-bit) side: first `libxcb` (evidence lost to a resume — my fault), then `pango`, whose cause IS captured this time: **meson tried to `git clone` a cairo subproject during configure** — `Subproject cairo is buildable: NO`, then a git clone of `master` from the network. That is a wrap-mode/subproject fetch that should be disabled or pointed at the sysroot's cairo; it is almost certainly a consequence of the 148-commit upstream merge (`28e750db32 "standalone: cleanup packages"` already cost five `PKG_ARCH` guards and one `ppsspp-sa` guard).
+**x64 run 9 is compiling webkitgtk 2.54.0** (launched 18:38 from `e39fc7f68a`; status file `/workspace/tmp/rocknix-session/build-x64.status`, rc file `build-x64-run9.rc`, harness waiter armed). When it succeeds: vm-qa over `ROCKNIX-GENERIC_X64.x86_64-20260920.img.gz` (`vmqa-run.sh` already points at it), then the H700 run 3 (`build-h700.sh` already renamed), then the handhelds, then the upstream PR. Runs 6, 7 and 8 each failed inside webkitgtk 2.54 (gstreamer components; WebCodecs holding `USE_GSTREAMER`; WebDriver's log channel) — three fixes on one package. **If run 9 fails in webkitgtk again, do not fix a fourth time: hold webkitgtk at 2.52.6 for the RC and file the 2.54 bump as follow-up.**
+
+The session's finding: the H700 run-2 pango failure was not a merge regression. pango 1.58 has required cairo >= 1.18 since June; the ROCKNIX override pinned 1.17.8; meson cloned cairo master at configure time into every image since (#226, blindspot 47). The maintainer then ruled that fork-introduced packages are current before submission (D-WORKFLOW-024, #227).
 
 ## Completed This Session
 
-- **#211 root-caused with a core dump**: RetroArch segfault in `video_texture_load_wrap_gl3_mipmap+0xc`, posting thread already in `rc_evaluate_trigger` — `video_thread_loop` dispatched a completed command a second time on a frame wake (`cmd_data.type` is cleared by the poster, not the consumer). **Patch 0015** `projects/ROCKNIX/packages/emulators/libretro/retroarch/patches/0015-video-thread-wrapper-run-a-command-once.patch` (`e5d14d4220`). `tools/retroarch-wrapper-test` extracts the real functions and fails 1.22.2 (2017/2000), passes the fix (2000/2000). Upstream master already had the same gate (libretro/RetroArch#19577 filed, corrected, closed). #225 filed for the 22 call sites + `font_driver.c` double-free exposure; ES ASan/TSan walk dropped (separate process).
-- **Upstream merge** of 148 commits (`7bd7f31312`), four conflicts resolved by hand; then five `PKG_ARCH="aarch64"` guards restored (`1ffec5fd3e`, `2869da3147`), `ppsspp-sa` directory guard (`e424886341`), `webkitgtk` capped at `-j4` (`2f2eecd544`).
-- **GENERIC_X64 image** `ROCKNIX-GENERIC_X64.x86_64-20260919.img.gz` from `2f2eecd544`: vm-qa 9 PASS + `menumap` PASS standalone; the one FAIL (PL-33) was a stale test double, fixed (`6558618a59`). Row in `docs/vm-qa-log.md`.
-- **RA cache**: `raofflineproxy-refresh` + `raofflineproxy-ctl refresh` (`87d9969bbb`, `609c6a14be`, `901dd7644a`) — refreshes patch **and** unlocks **and** drops the stale `startsession` row (the third row; a stale one told RetroArch two reset achievements were still earned). Patch 014 connection reuse (`b8cc433bdb`, 14.9→38.9 img/s). Patch 013 validate-at-write + `--verify` sweep (`2e1df9d4dc`, `0d74ce702b`).
-- **Core keeper** `rocknix-corekeep` ships **inert** (marker `/storage/.config/keep-core-dumps`, survives updates — D-QA-029). RG SP disarmed and hand-staged helpers removed; its #211 dump left on device and copied to `/workspace/artifacts/rocknix-images/crash-211-evidence/2026-09-19/`.
-- **Tools**: `build-preflight`, `watch-job`, `ra-candidate-games` (`--check` hashes RA's way — iNES header), `es-menu-map-check`, `retroarch-wrapper-test`; all registered in `.githooks/pre-push` + `fork-workflow.md` + the new tool index in `instruction-files.md`.
-- **Fixtures**: Combo Fishing (2026 build), Cookie Clicker (headerless hash matches), MeteoRain — verified by hash in `/workspace/artifacts/rocknix-qa-roms/README.md`. Cookie Clicker's cheap tier is **spent** (flushed); route documented.
-- **Rules**: `working-principles.md` (RAMD 12 mapped), `engineering-practices.md` §"A name is not a behaviour", §"A promise is not a mechanism" (+ recorded-is-not-delivered), device-builds memory section + "copy .threads/logs before resuming", vm-testing spin-down, blindspot 46, D-RA-024..027, D-UI-076/077, D-QA-029.
-- Issues filed today: #212–#225 (#220 withdrawn, #219/#215/#211/#79 updated).
+- **Diagnosis, from artifacts**: x64 image and build-16 H700 SYSTEM both carry `libcairo.so.2 -> libcairo.so.2.11805.5`; pango's `install_pkg` held the files; the only two build-time clones on both roots were pango/cairo and glib/sysprof.
+- **Fix**: `1e5b87963a` cairo override -> 1.18.4; `79437a25c0` `--wrap-mode=nodownload` in `scripts/build` (target + host).
+- **Freshness sweep** (each checksum from the downloaded tarball): brotli 1.2.0, openjpeg 2.5.4, libtasn1 4.21.0, dmidecode 3.7, ryzenadj 0.19.0, libsoup 3.6.6, ruby 3.3.12, libpsl 0.23.3, glib-networking 2.90.0, webkitgtk 2.54.0 (+ `06016e4bbf`, `ef905ccc2e`, `e39fc7f68a`: `USE_GSTREAMER=OFF`, video/web audio/WebCodecs off, WebDriver off), rclone 1.75.1 (`fd9ef7897a`, verified against SHA256SUMS), raofflineproxy pin -> `4e9bab484e` with libchdr -> `8e7b8bd` (`41f86ec9ba`). Pins annotated `# freshness: pinned -- ...` on zip, rcheevos, libchdr (`747e670271`).
+- **Tool**: `tools/fork-package-freshness` (`3834edb658`), registered in `fork-workflow.md`, the tool index, the pre-push guard; proven: full sweep exit 0, brotli held back -> BEHIND exit 1.
+- **Records**: #226 (cairo), #227 (freshness rule), D-WORKFLOW-024, blindspot 47, `device-builds.md` "A build that fetches its own dependency", work log 2026-09-20 (four entries), memory `fork-packages-current-before-submission`.
+- **Session state** from 03:15 committed here (`20d5dab4d7`; the stash had left it uncommitted).
 
 ## In Progress
 
-- **Cold H700 build on the merged tree**
-  - **Current state**: run 2 failed at `pango:target` [236/244] during `configure_target`. Thread logs preserved at `/workspace/artifacts/rocknix-images/build-failures/20260919-225431-build-h700-run2/build.ROCKNIX-H700.arm-threads/235.log`. Build root `build.ROCKNIX-H700.arm` and `.aarch64` exist (partial). Watchers exited. **Nothing is running.**
-  - **What remains**: fix pango (below), resume, get an image, vm-first isn't possible for H700 — so device.
+- **x64 run 9** — webkitgtk at ~7430/8557 at 18:40, past both earlier failure points; configure took 9 s. The image is assembled from `install_pkg/`; pango was cleaned by hand before run 6 so its tree no longer carries cairo 1.18.5; stale sysroot `libcairo*.so.2.11805.5` removed. Poisoned-package sweep run after each failure (found only webkitgtk, plus amiberry/yabasanshiro-sa leftovers once).
+- Tasks #1–#5 in the harness task list mirror the pipeline below.
 
 ## Next Steps
 
-1. **Read `235.log` fully** (`grep -n 'cairo\|subproject\|wrap' …`). Fix `pango`'s meson so it does **not** fetch the cairo subproject: likely `PKG_MESON_OPTS_TARGET+=" --wrap-mode=nodownload"` (or `-Dcairo=enabled` with the sysroot's cairo as a dependency — check `packages/*/pango/package.mk` depends on `cairo`). Verify against the pre-merge recipe: `git show pre-merge-2026-09-19:<path>`. **Do not resume on a guess** — read first.
-2. **Enumerate, don't fix one at a time**: `git diff pre-merge-2026-09-19 upstream/next -- '**/package.mk' | grep -E '^[-+].*(wrap-mode|PKG_MESON|PKG_ARCH|if \[ -d)'` to catch siblings of the pango/PKG_ARCH/ppsspp class before the next run.
-3. Resume: `cd /workspace/tmp/rocknix-session && sed -i 's|build-h700-run2|build-h700-run3|g' build-h700.sh && rm -f build-h700-run3.rc && setsid nohup ./build-h700.sh >/dev/null 2>&1 &` then arm **both** watchers: `tools/watch-job --log …run3.log --rc …run3.rc --pid "$(pgrep -f '^/bin/bash \./build-h700\.sh$')" --status …/build-h700.status --detach` **and** a harness `run_in_background` `until [ -f …run3.rc ]` waiter. Run `tools/build-preflight` first.
-4. Also worth asking: whether the `libxcb` failure (run 1, `usr/lib32/libc.so` absent at link time) recurs on a cold build — it passed on resume, cause unknown (logs lost). A second cold H700 build after this one succeeds would settle it.
-5. When an H700 image exists: it is the RC candidate. Stage to the RG35XX SP (QA device) first, then RG SP — **ask before each reboot, per device**. Keeper stays off (D-QA-029).
-6. Then the maintainer's list: #216 fetch ordering, #223 refresh by recency, #224 REFRESH ACHIEVEMENT STATUS row (ES), #218 pacing curve (ask RA `#coders` first), #214/#215/#219 after the RC.
+1. **Read run 9's outcome** from `build-x64-run9.rc` and the status file. On failure in webkitgtk: revert `packages/web/webkitgtk` to 2.52.6 (`git revert` of `c4c813fea4`, `06016e4bbf`, `ef905ccc2e`, `e39fc7f68a`, or one commit restoring the recipe), note it in #227, sweep poisoned packages, clean webkitgtk, sync, relaunch.
+2. **On success**: verify the image root (`build.ROCKNIX-GENERIC_X64.x86_64/image/system/usr/lib`): exactly one `libcairo.so.2.*` regular file, `libcairo.so.2 -> libcairo.so.2.11804.4`; `strings` of the webkit2gtk-4.1 library carries 2.54.0; rclone binary reports 1.75.1. Then `cd /workspace/tmp/rocknix-session && setsid nohup ./vmqa-run.sh &` with a waiter on `vmqa.rc`; **no x64 build while vm-qa runs**. Add the row to `docs/vm-qa-log.md`.
+3. **H700 run 3**: `tools/build-preflight`, confirm `devices` worktree is at the image's head, `cd /workspace/tmp/rocknix-session && rm -f build-h700-run3.rc && setsid nohup ./build-h700.sh >/dev/null 2>&1 &`, then `tools/watch-job --log …run3.log --rc …run3.rc --pid "$(pgrep -f '^/bin/bash \./build-h700\.sh$')" --status …/build-h700.status --detach` **and** a harness waiter. Afterwards check pango's arm thread log (`cairo found: YES 1.18.4`), `find build.*/build -mindepth 4 -maxdepth 4 -path '*/subprojects/*/.git'` empty on the cold aarch64 root, SYSTEM squashfs libcairo.
+4. **Handhelds**: RG35XX SP first, then RG SP; idle check, **ask before each reboot, per device**; keeper off (D-QA-029).
+5. **Upstream PR** `pr/cairo-1.18` by content (cairo override + `scripts/build`; body at `/workspace/tmp/rocknix-session/pr-cairo-body.md`); tick and close #226/#227 from observed behaviour; push `next` to origin.
+6. Then the maintainer's list: #216, #223, #224, #218, #214/#215/#219.
 
 ## Key Files Modified
 
 | File | Change | Notes |
 | --- | --- | --- |
-| `projects/ROCKNIX/packages/emulators/libretro/retroarch/patches/0015-*.patch` | Created | the #211 fix |
-| `tools/retroarch-wrapper-test`, `tools/watch-job`, `tools/build-preflight`, `tools/ra-candidate-games`, `tools/es-menu-map-check` | Created | see the tool index in `instruction-files.md` |
-| `projects/ROCKNIX/packages/emulators/standalone/{aethersx2-sa,amiberry,bigpemu-sa,drastic-sa,yabasanshiro-sa}/package.mk` | Modified | `PKG_ARCH="aarch64"` restored |
-| `projects/ROCKNIX/packages/emulators/standalone/ppsspp-sa/package.mk` | Modified | directory guard restored |
-| `packages/web/webkitgtk/package.mk` | Modified | `-j4` |
-| `projects/ROCKNIX/packages/network/raofflineproxy/{sources/raofflineproxy-refresh,sources/raofflineproxy-ctl,patches/013,014}` | Created/Modified | refresh verb, validation, keep-alive |
-| `projects/ROCKNIX/packages/rocknix/sources/scripts/rocknix-corekeep` + `…/busybox/sysctl.d/99-coredump.conf` | Created/Modified | inert core keeper |
-| `tools/last-good-scripts-test`, `tools/vm-qa` | Modified | PL-33 seam; one suite list |
-| `.claude/rules/*` (engineering-practices, working-principles, device-builds, generic-x64-vm-testing, instruction-files, es-native-ui, fork-workflow) | Modified | rules listed above |
-| `docs/decision-register.md`, `docs/blindspot-register.md`, `docs/vm-qa-log.md`, `docs/es-menu-map.md`, `docs/work-logs/2026_09-work_logs/2026_09_1{8,9}-work_log.md` | Modified | records |
-| `/workspace/tmp/rocknix-session/build-{x64,h700}.sh`, `vmqa-run.sh`, `wipe-build-roots.sh` | Session scripts | outside the repo; archive thread logs on failure |
+| `projects/ROCKNIX/packages/graphics/cairo/package.mk` | Modified | 1.18.4, release URL, SPDX licence, `-Dxml` and `ipc_rmid` sed dropped |
+| `scripts/build` | Modified | `--wrap-mode=nodownload` in TARGET_ and HOST_MESON_OPTS |
+| `packages/{compress/brotli,graphics/openjpeg,security/libtasn1,sysutils/dmidecode,sysutils/ryzenadj,web/libsoup,devel/ruby,web/libpsl,network/glib-networking,web/webkitgtk}/package.mk` | Modified | version + checksum bumps; webkitgtk also `USE_GSTREAMER`/video/web audio/WebCodecs/WebDriver off |
+| `projects/ROCKNIX/packages/network/{rclone,raofflineproxy,raofflineproxy-libchdr,raofflineproxy-rcheevos}/package.mk`, `packages/compress/zip/package.mk` | Modified | rclone 1.75.1; proxy pin; pinned annotations |
+| `tools/fork-package-freshness` | Created | the D-WORKFLOW-024 check |
+| `.claude/rules/{fork-workflow,instruction-files,device-builds}.md`, `.githooks/pre-push` | Modified | tool registration; the meson-fetch lesson |
+| `docs/{blindspot-register,decision-register}.md`, `docs/work-logs/2026_09-work_logs/2026_09_20-work_log.md` | Modified/Created | blindspot 47, D-WORKFLOW-024, four entries |
+| `/workspace/tmp/rocknix-session/{build-x64.sh,build-h700.sh,vmqa-run.sh,bump-pkg.sh,pr-cairo-body.md,issue-cairo.md,issue-freshness.md}` | Session scripts | outside the repo |
 
 ## Related Context
 
-- **Tracker**: #211 (crash, root cause, dump), #225 (blast radius), #79 (crash list, now four rows), #163 (offline RA epic), #217–#224 (tonight's RA/refresh issues), #104 (evidence/crash store)
-- **Upstream**: libretro/RetroArch#19577 (closed: master already fixed), #19517/#19518 (the earlier poster-lock fix)
-- **Evidence**: `/workspace/artifacts/rocknix-images/crash-211-evidence/` (both crash sessions + the dump), `/workspace/artifacts/rocknix-images/build-failures/`
-- **QA report**: `/workspace/artifacts/rocknix-images/qa-2f2eecd544-webdav-a-20260919-2036/`
-- **Device**: RG SP over tailscale `100.75.221.73` (LAN `.175` does not answer); use `DEVICE_ACT_SSH_OPTS='-o Hostname=100.75.221.73' tools/device-act rgsp …`. Running build 15 `b245fd12ac`, keeper OFF, Bubble Bobble achievements 380824/380883 reset and the device agrees.
+- **Tracker**: #226 (cairo/meson), #227 (freshness rule + sweep), #179 (rcheevos/libchdr pins), #164/#165 (proxy pin), #211/#225 (RetroArch crash, previous session), milestone "Stable before upstream"
+- **Evidence**: `/workspace/artifacts/rocknix-images/build-failures/20260920-18{1726,3235,3639}-build-x64-run{6,7,8}/` (webkitgtk thread logs), `…/20260919-225431-build-h700-run2/…/235.log` (pango)
+- **Scratch tarballs**: `/home/max/.claude/jobs/d9b03c5e/tmp/bumps/` (every bumped tarball, the proxy archives, extracted webkit cmake) — job-scoped, will vanish
+- **Device**: RG SP over tailscale `100.75.221.73`, on build 15 `b245fd12ac` (runs cairo master), keeper OFF
 
 ## Notes for Next Session
 
-- **Six unverified claims in one day** are documented in blindspot 46 and the work log; the pattern is reaching for the plausible explanation when a next step is waiting. The `libxcb` resume erased the evidence — read `235.log` **before** touching the pango build.
-- **Watching = the file + the waiter.** `watch-job --detach` records; only a harness `run_in_background` waiter delivers, and it can be reaped under memory pressure (it was, once). Say which are armed. Stop a watcher by the pid in its status file, never `pkill -f` (it killed the issuing shell — exit 144). Anchor `pgrep` patterns: `'^/bin/bash \./build-h700\.sh$'`.
-- **Memory, not disk, is the build constraint.** `build-preflight` first; guests are ~2GB each and a build under pressure kills them (guest d was lost that way). All guests are down now. Swap was fully consumed once; `sudo swapoff -a && swapon -a` needs root.
-- **Go's module cache is read-only** — `rm -rf` on a build root leaves `.gopath` behind silently; `chmod -R u+w` first and check the directory is absent, not the exit code.
-- `.threads/logs/N.log` are **per slot**, reused by a resume. The build scripts now archive them on non-zero exit.
-- The ES source checkout `~/Development/emulationstation-next` is on a feature branch; the shipped pin is `fb6947fb4` (`origin/test/qa-integration`). `es-menu-map-check` reads the pin, not the working tree.
-- `raofflineproxy-refresh`'s `row_ages` cannot check `achievementsets` (hash-keyed) and says so. `refresh_game_patch` returns the patch body, not a title, despite its annotation.
-- `~/.ROCKNIX/qa-accounts` values are never echoed; the RA account name on the maintainer's device is theirs, not the QA account's — mask both in output.
+- **Read the artifact, not the log.** The cairo finding lived in `image/system/usr/lib` and `install_pkg/pango-*`; the build log said DONE throughout. `unsquashfs -ll SYSTEM usr/lib | grep libcairo` on a shipped tar is the check.
+- **The subproject a package built is in that package's `install_pkg/`**, so cleaning the library's own package changes nothing; clean the consumer.
+- **WebKit 2.54 option graph**: `USE_GSTREAMER` (public, default ON) is what video, Web Audio, WebCodecs and speech synthesis hang off; WebDriver is public default ON. Ask "what sets the thing the error names?", not "which feature sounds like it?".
+- **Three fixes on one failure is the stop line** (engineering-practices). webkitgtk has had three; a fourth is a revert to 2.52.6.
+- `scripts/clean` run natively did not remove pango's stamps/install tree on the x64 root; `rm -rf .stamps/<p> build/<p>-* install_pkg/<p>-*` did.
+- `tools/fork-package-freshness` exits 2 on UNKNOWN by design (dotat.at was down once; it now falls back to GitHub for unifdef). Do not soften the exit code; add a resolver.
+- `tools/fork-worktree sync` ignores untracked files (`--untracked-files=no`), so `.H700-done` etc. in `devices` do not block it. Never sync with a `rocknix-build` container up.
+- Watchers: `watch-job --detach` writes the status file (mtime is the liveness); a harness `run_in_background` waiter on the `.rc` file delivers the notification. Both were armed for every run today; the waiters returned promptly each time.
+- The pango subproject fetch also means **upstream ROCKNIX images carry cairo master**; the upstream PR is the fix for them too.
 
 ## Open Questions
 
-- Should `rocknix-corekeep` ever default to on? Parked (D-RA-024/D-QA-029): four unreadable crashes argue yes; a core holds the device's credentials.
-- D-RA-026: does the static-sets export travel in the settings backup (#219)? Maintainer said images are never a separate choice (D-RA-027); the sets half is open.
-- #209 save-state hotkey mode semantics; #104 crash-store test in a few days; whether the `libxcb` relink failure is deterministic on cold arm builds.
+- webkitgtk 2.54.0 for the RC or 2.52.6 — decided by run 9.
+- Should `webkitgtk`'s now-unused `gstreamer gst-plugins-base` dependency line go? qt6/gst-plugins-good/gst-libav keep gstreamer in the image regardless; left in place.
+- Carried over: core keeper default (D-QA-029), static-sets export in the settings backup (#219/D-RA-026), #209 hotkey semantics, whether run 1's libxcb relink failure is deterministic on a cold arm build.
