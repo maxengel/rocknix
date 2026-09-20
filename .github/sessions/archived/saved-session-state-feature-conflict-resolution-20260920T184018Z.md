@@ -1,14 +1,14 @@
 # Saved Session State
 
-> **Saved**: 2026-09-20T19:27:14Z
-> **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `0ea9a4bb78`, pushed to origin)
+> **Saved**: 2026-09-20T18:40:18Z
+> **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `e39fc7f68a`, not yet pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**H700 run 3 is building the cold aarch64 root** (launched 19:22 from `77e7e97515`, the same BUILD_ID as the x64 image; status `/workspace/tmp/rocknix-session/build-h700.status`, rc `build-h700-run3.rc`, harness waiter armed). The arm side finished 19:25 with pango configured against the sysroot cairo (`cairo found: YES 1.18.4`, no clone) — the exact package that failed run 2. Before that: x64 run 10 built `ROCKNIX-GENERIC_X64.x86_64-20260920.img.gz` at 18:54 and vm-qa PASSED eleven suites 18:56-19:21 (`qa-77e7e97515-webdav-a-20260920-1856`). webkitgtk 2.54.0 failed four warm builds and is held at 2.52.6 for the RC (#228, `# freshness: pinned`). All three QA guests were stopped before the H700 build.
+**x64 run 9 is compiling webkitgtk 2.54.0** (launched 18:38 from `e39fc7f68a`; status file `/workspace/tmp/rocknix-session/build-x64.status`, rc file `build-x64-run9.rc`, harness waiter armed). When it succeeds: vm-qa over `ROCKNIX-GENERIC_X64.x86_64-20260920.img.gz` (`vmqa-run.sh` already points at it), then the H700 run 3 (`build-h700.sh` already renamed), then the handhelds, then the upstream PR. Runs 6, 7 and 8 each failed inside webkitgtk 2.54 (gstreamer components; WebCodecs holding `USE_GSTREAMER`; WebDriver's log channel) — three fixes on one package. **If run 9 fails in webkitgtk again, do not fix a fourth time: hold webkitgtk at 2.52.6 for the RC and file the 2.54 bump as follow-up.**
 
-The session's finding stands: pango 1.58 has required cairo >= 1.18 since June, the override pinned 1.17.8, meson cloned cairo master into every image since (#226, blindspot 47). The maintainer ruled fork-introduced packages are current before submission (D-WORKFLOW-024, #227); the sweep and `tools/fork-package-freshness` are done.
+The session's finding: the H700 run-2 pango failure was not a merge regression. pango 1.58 has required cairo >= 1.18 since June; the ROCKNIX override pinned 1.17.8; meson cloned cairo master at configure time into every image since (#226, blindspot 47). The maintainer then ruled that fork-introduced packages are current before submission (D-WORKFLOW-024, #227).
 
 ## Completed This Session
 
@@ -21,16 +21,17 @@ The session's finding stands: pango 1.58 has required cairo >= 1.18 since June, 
 
 ## In Progress
 
-- **H700 run 3, aarch64 side** — cold root, hours. Poisoned-package sweep if it fails (device-builds.md); copy `.threads/logs` is automatic in `build-h700.sh` on non-zero exit.
-- Harness tasks #3 (this build, in progress), #6 (ra-offline suite on guest d, after the build), #4 (handhelds, after #6), #5 (upstream PR + close #226/#227).
+- **x64 run 9** — webkitgtk at ~7430/8557 at 18:40, past both earlier failure points; configure took 9 s. The image is assembled from `install_pkg/`; pango was cleaned by hand before run 6 so its tree no longer carries cairo 1.18.5; stale sysroot `libcairo*.so.2.11805.5` removed. Poisoned-package sweep run after each failure (found only webkitgtk, plus amiberry/yabasanshiro-sa leftovers once).
+- Tasks #1–#5 in the harness task list mirror the pipeline below.
 
 ## Next Steps
 
-1. **When run 3 lands**: on the cold aarch64 root, `find build.ROCKNIX-H700.aarch64/build -mindepth 4 -maxdepth 4 -path '*/subprojects/*/.git'` must print nothing (the guard's own criterion); extract `SYSTEM` from the tar and `unsquashfs -ll SYSTEM usr/lib | grep libcairo` must show one regular `libcairo.so.2.*` (`.11804.4`); tick both on #226. Record `BUILD_ID`, tar sha256, sizes.
-2. **ra-offline suite on guest d** against the x64 image (task #6): bring the pair up on `ROCKNIX-GENERIC_X64.x86_64-20260920.img.gz`, `./tools/vm-qa --skip-up --only ra-offline --guest d`; fixtures per `/workspace/artifacts/rocknix-qa-roms/README.md` (Cookie Clicker's cheap tier is spent); never echo `~/.ROCKNIX/qa-accounts`. Tick or comment the proxy criterion on #227. Stop the guests after.
-3. **Handhelds** (task #4): RG35XX SP first, then RG SP (`DEVICE_ACT_SSH_OPTS='-o Hostname=100.75.221.73' tools/device-act rgsp …`); idle check (emulator, `rclon[e]`, `flock -n /var/run/cloud_sync.lock true`, transfer page); stage the one H700 tar per the runbook's update section; **ask before each reboot, per device**; keeper off (D-QA-029).
-4. **Upstream PR** (task #5): `pr/cairo-1.18` by content — detached worktree at `upstream/next`, `git checkout next -- projects/ROCKNIX/packages/graphics/cairo/package.mk scripts/build`, one commit, body `/workspace/tmp/rocknix-session/pr-cairo-body.md`; `scripts/build` differs from upstream by exactly the six nodownload lines. Then close #226 and #227 from observed behaviour, and note #228 for the maintainer.
-5. Then the maintainer's list: #216, #223, #224, #218, #214/#215/#219.
+1. **Read run 9's outcome** from `build-x64-run9.rc` and the status file. On failure in webkitgtk: revert `packages/web/webkitgtk` to 2.52.6 (`git revert` of `c4c813fea4`, `06016e4bbf`, `ef905ccc2e`, `e39fc7f68a`, or one commit restoring the recipe), note it in #227, sweep poisoned packages, clean webkitgtk, sync, relaunch.
+2. **On success**: verify the image root (`build.ROCKNIX-GENERIC_X64.x86_64/image/system/usr/lib`): exactly one `libcairo.so.2.*` regular file, `libcairo.so.2 -> libcairo.so.2.11804.4`; `strings` of the webkit2gtk-4.1 library carries 2.54.0; rclone binary reports 1.75.1. Then `cd /workspace/tmp/rocknix-session && setsid nohup ./vmqa-run.sh &` with a waiter on `vmqa.rc`; **no x64 build while vm-qa runs**. Add the row to `docs/vm-qa-log.md`.
+3. **H700 run 3**: `tools/build-preflight`, confirm `devices` worktree is at the image's head, `cd /workspace/tmp/rocknix-session && rm -f build-h700-run3.rc && setsid nohup ./build-h700.sh >/dev/null 2>&1 &`, then `tools/watch-job --log …run3.log --rc …run3.rc --pid "$(pgrep -f '^/bin/bash \./build-h700\.sh$')" --status …/build-h700.status --detach` **and** a harness waiter. Afterwards check pango's arm thread log (`cairo found: YES 1.18.4`), `find build.*/build -mindepth 4 -maxdepth 4 -path '*/subprojects/*/.git'` empty on the cold aarch64 root, SYSTEM squashfs libcairo.
+4. **Handhelds**: RG35XX SP first, then RG SP; idle check, **ask before each reboot, per device**; keeper off (D-QA-029).
+5. **Upstream PR** `pr/cairo-1.18` by content (cairo override + `scripts/build`; body at `/workspace/tmp/rocknix-session/pr-cairo-body.md`); tick and close #226/#227 from observed behaviour; push `next` to origin.
+6. Then the maintainer's list: #216, #223, #224, #218, #214/#215/#219.
 
 ## Key Files Modified
 
@@ -66,6 +67,6 @@ The session's finding stands: pango 1.58 has required cairo >= 1.18 since June, 
 
 ## Open Questions
 
-- webkitgtk 2.54: option 1 (gst-plugins-bad mpegts + GL in gst-plugins-base), a WebKit patch, or stay on 2.52.x — #228, the maintainer's call.
+- webkitgtk 2.54.0 for the RC or 2.52.6 — decided by run 9.
 - Should `webkitgtk`'s now-unused `gstreamer gst-plugins-base` dependency line go? qt6/gst-plugins-good/gst-libav keep gstreamer in the image regardless; left in place.
 - Carried over: core keeper default (D-QA-029), static-sets export in the settings backup (#219/D-RA-026), #209 hotkey semantics, whether run 1's libxcb relink failure is deterministic on a cold arm build.
