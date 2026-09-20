@@ -26,7 +26,7 @@ OLD=${1:?previous image (.img.gz)}; NEW=${2:?new update tar}; WANT=${3:?expected
 [ -f "$OLD" ] || { echo "no such image: $OLD" >&2; exit 2; }
 [ -f "$NEW" ] || { echo "no such tar: $NEW" >&2; exit 2; }
 cd "$(dirname "$0")/.." || exit 2
-OLDID=$(gzip -dc -- "$OLD" 2>/dev/null | head -c 0; basename "$(dirname "$OLD")" | grep -oE '[0-9a-f]{10}$' || echo prev)
+OLDID=$(basename "$(dirname "$OLD")" | grep -oE '[0-9a-f]{10}$' || echo previous)   # the artifact directories end in the BUILD_ID
 OUT=/workspace/artifacts/rocknix-images/qa-${WANT}-upgrade-from-${OLDID}-$(date -u +%Y%m%d-%H%M); mkdir -p "$OUT"
 LOG=$OUT/rehearsal.log; : > "$LOG"
 say(){ echo "=== $(date -u '+%H:%M:%S') $*" | tee -a "$LOG"; }
