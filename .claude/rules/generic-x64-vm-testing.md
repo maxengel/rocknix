@@ -387,6 +387,40 @@ rest and reboots the guest seeded with a NES ROM and three save states;
 making it a `vm-pair` guest is open. Read the small frame first: at that
 size a label that fits is the finding, and a bar that is missing is one too.
 
+## Driving EmulationStation blind: what the 2026-09-21 walks taught
+
+Twenty-three checklist boxes were walked on guest d in one night; about a
+third of the walks landed somewhere other than intended. Every miss had the
+same shape -- a step count that assumed a starting state the interface did
+not have -- and each is now a rule for the next steps file:
+
+- **`dismiss-dialogs` ends on the carousel where it was**, not on the first
+  system. Read the carousel frame before counting presses from it.
+- **The navigation bar (B on the carousel) opens on the current system's
+  group** (NES -> NINTENDO), with four rows that wrap. So "SYSTEM" is one
+  down from NINTENDO, two down from LEXALOFFLE, one *up* from COLLECTIONS.
+  Shot the bar, then count.
+- **A on a game with save states opens the SAVE STATE MANAGER**, not the game;
+  A again on START NEW GAME launches. A on a Tools entry launches the tool
+  (the File Manager took a walk meant for NES; `pkill -x mc` over serial).
+- **The main menu's RETROACHIEVEMENTS row exists only with
+  `RetroachievementsMenuitem` on** (a Settings bool) plus the toggle and a
+  username; otherwise the entry lives under GAME SETTINGS. And ES reads the
+  account at start: an account set while ES runs needs a **reboot** -- not a
+  restart -- before the row appears and the login happens (a restarted ES
+  also leaves the screendump stale, per the memory).
+- **`set_link net0 off` on the monitor is the link cut**; confirm with
+  `cat /sys/class/net/eth0/carrier` over serial (0) before the first key.
+  The proxy's `online_state.json` lags a few seconds behind the carrier.
+- **RetroArch quits on Esc twice** from the keyboard here; F8 did not take a
+  screenshot (`input_screenshot` is unset; the hotkey enable is a pad
+  button), so #82 on the VM is a file dropped into `/storage/roms/screenshots`
+  during a session, not a key.
+- **Redact the QA account's name** from any frame before filing (the summary
+  title, the login toast): `docs/qa-frames/.../README.md` says where the box is.
+- **`scp` takes `-P` for the port**; `ssh -n` closes stdin, so a heredoc to a
+  guest file needs a plain `ssh`. Both cost a walk each.
+
 ## What the guest's busybox lacks
 
 The scripts run on the image, not on the host, and the host's coreutils hide
