@@ -289,9 +289,33 @@ wait_log() {  # over ssh: pattern, seconds -> 0 when exec.log has it
 # A fresh cartridge save, so the route starts where it was written from
 # (RetroArch keeps saves beside the ROM on this image: savefiles_in_content_dir).
 S "rm -f '${ROM%.*}.srm' '${ROM%.*}.rtc'" >/dev/null 2>&1
+# The previous launch's log goes first. runemu.sh writes exec.log afresh
+# per launch, but a launch that never happens leaves the old file in place,
+# and every log check below would then pass on lines another run wrote --
+# which is exactly what happened on 2026-09-21 (run 2 on d55169e59e: POST
+# /launch answered 200, RetroArch never appeared, and "logged in",
+# "Identified game" and "achievements active" all PASSed from a log three
+# hours old). No file, no false pass.
+S 'rm -f /var/log/exec.log' >/dev/null 2>&1
+# The interface on the carousel first. A page left open by a previous walk
+# -- a finished transfer page waiting on A or B, a dialog -- takes the
+# launch's 200 and launches nothing (2026-09-21, the same run as above).
+# vm-visual-qa's dismiss-dialogs presses B until the screen stops changing.
+printf 'dismiss-dialogs\nsettle\n' > /tmp/ra-offline-dismiss.steps
+"$ROOT/tools/vm-visual-qa" --monitor "$MONITOR" run /tmp/ra-offline-dismiss.steps --outdir /tmp >/dev/null 2>&1
+rm -f /tmp/ra-offline-dismiss.steps
 http=$(launch "$ROM")
 for i in $(seq 1 45); do S 'pgrep -f ^/usr/bin/retroarch >/dev/null' 2>/dev/null && break; sleep 1; done
 check "$(S 'pgrep -f ^/usr/bin/retroarch >/dev/null'; echo $?)" "POST /launch $ROM -> HTTP ${http:-?}; RetroArch running"
+if ! S 'pgrep -f ^/usr/bin/retroarch >/dev/null' 2>/dev/null; then
+  # Nothing below can be true without a running emulator; say what the
+  # interface was doing instead and stop, rather than grade twelve more
+  # lines against a log that does not exist.
+  say "the interface's last lines: $(S 'tail -3 /var/log/es_log.txt 2>/dev/null | cut -c1-140' | mask | tr '\n' ' ')"
+  say "exec.log after the launch: $(S 'ls -la /var/log/exec.log 2>&1 | cut -c1-100')"
+  [ -n "$FRAMES" ] && "$ROOT/tools/vm-visual-qa" --monitor "$MONITOR" shot "$FRAMES/no-launch.png" >/dev/null 2>&1 && say "frame: $FRAMES/no-launch.png"
+  cleanup; exit 1
+fi
 wait_log 'logged in successfully' 60; check $? "RetroArch: logged in"
 wait_log "Identified game: $GID " 60; check $? "RetroArch: Identified game: $GID"
 wait_log 'achievements active' 30; setline=$(S 'grep -m1 -o -E "Set [0-9]+: [0-9]+/[0-9]+ achievements active" /var/log/exec.log' | mask)

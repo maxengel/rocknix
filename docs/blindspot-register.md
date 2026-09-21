@@ -610,3 +610,26 @@ The general shape: **when a check costs an hour, look for the same check
 priced in seconds before paying the hour** -- the expensive path usually
 contains the cheap one as a step, and the step can be run alone.
 
+## 50. A log check that never asked whose log it was (2026-09-21)
+
+`ra-offline-test` run 2 on `d55169e59e`: `POST /launch` answered 200, RetroArch
+never appeared, and the next three checks PASSed -- "logged in", "Identified
+game: 15738", "Set 6292: 27/28 achievements active" -- from an `exec.log`
+written three hours earlier by a route-discovery run that had nothing to do
+with this one. The 27/28 was even the wrong number for an account that had
+just been reset to 0/28; nobody reading the PASS line would have known.
+
+Two habits failed at once. The launch was sent to an interface that still had
+a finished transfer page and four menus stacked on it from the last walk, and
+a 200 from the API was read as a launch; the log checks then read whatever
+file was there. The tool now removes `exec.log` before the launch, puts the
+interface on the carousel first (`dismiss-dialogs`), and stops when the
+emulator is not running, instead of grading twelve more lines against a log
+that does not exist.
+
+The general shape, the same as blindspot 13 and "Verify the artifact, not the
+report": **a check that reads a file must first establish the file is this
+run's**. A fixture that another run can leave behind -- a log, a stamp, a
+marker, a page on the screen -- is a fixture the check has to clear or date
+before it trusts it.
+
