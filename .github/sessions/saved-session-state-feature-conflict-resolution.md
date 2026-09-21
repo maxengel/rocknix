@@ -1,36 +1,32 @@
 # Saved Session State
 
-> **Saved**: 2026-09-21T16:15:35Z
-> **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `a283f504a0`)
+> **Saved**: 2026-09-21T16:45:19Z
+> **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `8c975c962f`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The RC round for `77e7e97515` (#236, page https://claude.ai/artifact/Uq74wpvRB3SzpZ1oydYEmo) is done on the VM except two boxes, and the candidate is being re-cut.** Section B's last frame (#153, a settings archive cut mid-upload on S3) found the transfer page saying SKIPPED - YOU'RE NOT ONLINE over WHAT MADE IT IS IN YOUR CLOUD for a run the script called "Couldn't finish". Fixed in EmulationStation `7afce37a6` (branch `feature/transfer-cut-outcome`, merged to `test/qa-integration`), pin bumped on `next` (`a283f504a0`), and a warm GENERIC_X64 rebuild (run 11, `/workspace/tmp/rocknix-session/build-x64-run11.{sh,log,rc}`) is running detached. Next: boot guest d on the new image, redo the #153 frame (EN, FR), then the H700 build for the second candidate, then the checklist page and #236 re-cut for the new BUILD_ID.
+**The RC round (#236, page https://claude.ai/artifact/Uq74wpvRB3SzpZ1oydYEmo) has a second candidate, `d55169e59e`, built for H700 and recorded under `/workspace/artifacts/rocknix-images/h700-all-20260921-d55169e59e/`.** The delta from `77e7e97515` is the EmulationStation pin (`fb6947fb4` -> `d842bbe16`) for #153's transfer-page words, proven on guest d in EN and FR; #153 is closed. `tools/vm-qa` run 2 is running over the x64 twin (`/workspace/tmp/rocknix-session/vmqa-run2.{sh,log,rc}`, a background waiter watches the rc). The RG35XX SP is off the network, so the tar is not staged; when it answers, stage into `~/.update` (device-act, DEVICE_ACT_TIMEOUT for the hash, verify the sha256 on the device) and ask for the reboot by name.
 
-## Completed This Session (2026-09-21, after the last stash)
+## Completed since the last stash (2026-09-21 afternoon)
 
-- Kitesurf / browser reset: closed out -- RA's web API is read-only, the site's pages sit behind bot protection we do not work around, Kitesurf is a remote browser that would carry the QA password; #240 (under #120), D-QA-035. Hardcore is not a second spend (RAOfflineProxy is casual-only). Tobu's jukebox achievement is behind progress (menu = PLAINS, LOCKED x5, SCORES on a fresh save); gameplay candidates named on #240.
-- B boxes proven on the RC (frames under `docs/qa-frames/2026-09-21/`, ticked on the page and in #236): #82 (screenshots list after an API launch and an `execute_kill` exit), #65, #67, #64 (real scrape + no-pair sentence + archive without password rows), #66 (wrong pair, no account). #153 framed EN/FR -> the defect above.
-- Findings filed: `GET /emukill` is a no-op on this image (`batocera-es-swissknife` absent) -- #239 body corrected; the RA API still shows 100359 earned 2026-09-14 (a-211 stays blocked on the maintainer's reset).
-- Docs on `next`: work log entries (five today), D-QA-035, qa-frames README.
-
-## In Progress
-
-- **GENERIC_X64 run 11** (ES pin `7afce37a6`). A background waiter watches `build-x64-run11.rc`. On rc 0: `bash /workspace/tmp/rocknix-session/rebuild-d.sh` to put guest d on it (check the script names the image by date), then the #153 walk: MAIN MENU > GAME SETTINGS > up x3 (MANAGE CLOUD STORAGE) > BACK UP TO THE CLOUD > chooser (read the toggles from a frame; SETTINGS on, SAVES off) > down x4, right, A > cut the link (`set_link net0 off` on `/tmp/rocknix-qemu-monitor-d.sock`) ~12 s in > frames every 10 s. Expect COULDN'T FINISH / DON'T WORRY, NOTHING CHANGED; FR: N'A PAS PU SE TERMINER, header PARAMÈTRES. Guest d holds the fixture: S3 stanza (`qa-cloud`, throttled MinIO on :9012 via `CLOUD_QA_BWLIMIT=200k`), bucket-prefixed cloud paths (originals in `/storage/.config/cloud_sync.conf.pre-153`), the 12 MiB pad at `/storage/.config/retroarch/link5-padding.bin` (the page packs anew, so the pad must stay), language en_US for the next boot (set fr_FR + reboot for the FR frame).
-- Then **H700** (`/workspace/tmp/rocknix-session/build-h700.sh`, make a run4 with the new head), record under `/workspace/artifacts/rocknix-images/h700-rc-<date>-<id>/`, the checklist page and #236 re-cut for the new id, and the RG35XX SP staged with a per-device yes.
+- B on the VM: #82, #65, #67, #64, #66 proven on the RC and ticked; #153 framed, defect found, fixed in ES (`7afce37a6`, `d842bbe16`), re-proven, closed. `tools/retroarch-wrapper-test` PASS recorded on #211.
+- Builds: GENERIC_X64 runs 11 (ok), 12 (died on an unbraced loop -- blindspot 49), 13 (ok); H700 run 4 (ok). Guest d took each x64 image as an in-place update.
+- New tool `tools/es-syntax-check` (ninja's own compile command, -fsyntax-only), registered in guard/list/index and `es-native-ui.md`; memory `es-syntax-check-before-pin-bump`.
+- Records: #240 (Kitesurf/reset, D-QA-035), #239 corrected (/emukill no-op), #236 comments, page v6, work log entries, qa-frames README.
 
 ## Next Steps
 
-1. Build result -> VM proof of #153 on guest d (EN, FR) -> tick #153's last box with the frames.
-2. H700 second candidate; page + #236 updated with the new BUILD_ID; RG35XX SP offer (ask before the reboot).
-3. a-211: waits on the maintainer confirming the reset of game 15738 on the QA account (the API is the check).
-4. Cleanup on guest d after the proof: remove the pad, restore `cloud_sync.conf.pre-153`, `tools/cloud-test-backend --backend s3 down` then an unthrottled `up` if the round-trip suite needs it.
+1. vm-qa run 2 result -> `docs/vm-qa-log.md` row for `d55169e59e` (the previous row's shape), #150 row 12 ticked if it passes (note: built with `build-h700-run4.sh`, i.e. `make docker-H700`, not `devices/build-dev.sh`).
+2. RG35XX SP back online -> stage the tar (`h700-all-20260921-d55169e59e/ROCKNIX-H700.aarch64-20260921.tar`), verify sha256 on the device, ask before the reboot. Then the maintainer ticks `a-build-2`.
+3. a-211 waits on the RetroAchievements reset (game 15738, QA account; the API is the check). #240's gameplay routes are the longer path.
+4. After A: the RG SP question (D-QA-031), then SM8550 for the Nova (#150 rows 13-17).
+5. Cleanup done: guest d pad and bucket paths removed, S3 unthrottled; ES worktree `transfer-cut-outcome` can be removed (merged).
 
 ## Notes for Next Session
 
-- The ES API launches (`POST /launch`); it does not quit -- use the exit hotkey's `execute_kill` (see `tools/ra-offline-test`'s `/tmp/ra-offline-kill`).
-- The carousel keeps its position across an API launch/exit; read where you stand from a frame before counting systems.
-- `pgrep -fa 'rclon[e] '` still self-matches when the same command line carries `rclone` elsewhere (e.g. a `pkill -x rclone`); the "2 running" after the cut run were the ssh shell.
-- `scraper-config.sh` (session dir): each failure mode restores all four ScreenScraper rows first, then breaks one; a reboot after every edit.
-- Kitesurf: do not revisit for retroachievements.org (D-QA-035).
+- The transfer page packs a fresh archive before sending; for a cut-upload fixture the pad must stay in place during the UI run (LINK5's remove-the-pad trick is for the script path).
+- The chooser page remembers its toggles across reboots and updates; A on a switch row toggles. Read a frame first.
+- `GET /emukill` does nothing on this image; quit through `execute_kill` (#239).
+- An ES `.cpp` edit runs `tools/es-syntax-check` before commit/merge/bump.
+- The RG35XX SP alias is `rg35xxsp` (192.168.1.81) in `~/.ssh/config`; `rgsp` is 192.168.1.175 (the RG SP -- receives nothing until A is done, D-QA-031).
