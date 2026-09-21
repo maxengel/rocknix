@@ -16,3 +16,8 @@ account's name is boxed out of the summary title (D-QA-026).
   MOST RECENT PROGRESS.`, the bar and `0% complete` on one line on a visible
   track under the header lines, the list below; nothing overlaps (#193, and
   #160's 640x480 look on the RC).
+- `194-offline-login-toast-640x480-77e7e97515.png` — Böbl launched from the
+  NES list with the link cut, 2 s in: the toast at the bottom reads
+  `RetroAchievements: Logged in as "<account>" (offline).` on a dark backdrop
+  that covers the whole text (the name boxed out), and the game's badge card
+  top-left reads `You have 0 of 12 achievements unlocked` (#194).
