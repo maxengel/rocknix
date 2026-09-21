@@ -91,12 +91,12 @@ because they decide safety, not looks:
 - **Confirmation**: `GuiMsgBox(window, _("TEXT"), _("YES"), cb, _("NO"), nullptr)`.
   Dialog text MUST describe actual behavior (see the backuptool drift lesson).
 - **Toast**: `window->displayNotificationMessage(_("..."), ms)`.
-- **Background job with progress card**: `window->createAsyncNotificationComponent()`
+- **Background job with progress card, for fast work only (D-UI-078)**: `window->createAsyncNotificationComponent()`
   -- two rows (title, text) by default; pass `true` for the third, the action
   row, when the outcome carries a recovery clause. The cloud card composed one
   for a day and had no row to draw it on (blindspot 35).
   + worker thread updating it — see `ThreadedBluetooth.cpp` (also used by content
-  installers). Best fit for rclone progress (parse `--stats` output later, L3).
+  installers). Seconds, not minutes: anything longer is the fourth tier below.
 - **Busy spinner while loading**: `GuiLoading<T>` (async worker + result callback), or a
   full-screen `GuiComponent` owning a `BusyComponent` + small state machine — see
   `GuiBackup.cpp` (batocera's native user-data backup).
@@ -175,22 +175,37 @@ Values live in one place each, so a screen never makes its own decision.
   | `Splash` (boot, gamelist reload, launch) | full screen; its bar is 0.5W | whole screen | yes | when the work does |
   | `GuiInfoPopup` (toast) | fits text, capped 0.9W | top, centred | no | on a timer |
   | `AsyncNotificationComponent` (progress) | 0.9W | top, centred | no | when the work does |
-  | `GuiCloudTransfer` (long job) | full screen | whole screen | no since #187: B leaves the run going and the row that launched it follows the run | **when dismissed** |
+  | `GuiCloudTransfer`, `GuiOfflineScan` (long job) | full screen | whole screen | yes; CANCEL is the one way out while it runs (D-UI-078) | **when dismissed** |
 
   Full-*screen* is a modal takeover, not a wider card — do not reach for it
   for work the player can keep playing through.
 
-  **A fourth-tier page is left running, not sat in.** A job measured in
-  minutes gets a page that outlives it, and the player gets to leave. B
-  closes the page and the job goes on; the row that launched it shows the
-  live line (`SCANNING... - GAME 12 OF 400`), pressing that row reopens the
-  page on the run, the job survives an interface exit, and the outcome still
-  lands on the row and on the page when it is reopened. Every other press is
-  refused while it runs, because there is nothing to choose. The scan page
-  (`GuiOfflineScan` with `OfflineScanJob`, audit #186 PL-07) is the model;
-  `GuiCloudTransfer` caught up in #187 (RC-11): the run lives in `CloudTransferJob`, the page is a view of it, and B hands the run to the hub row. The tell that a page has this wrong
-  is a footer that says the player *can* leave it running while the page
-  itself takes every button.
+  **A fourth-tier page is sat in, with CANCEL (D-UI-078, 2026-09-21).** A
+  job measured in minutes gets a page that owns the screen until the job
+  ends, and the only way out while it runs is CANCEL: a confirmation that
+  says what cancelling means for that job -- start over, or resume where the
+  job supports it -- then the stop. Every other press is refused, because
+  there is nothing to choose. Backgrounding is for fast work only: the
+  two-second save sync at startup and exit, a Bluetooth scan. Maintainer, on
+  the RG35XX SP at the scan page's PRESS B TO KEEP SCANNING IN THE
+  BACKGROUND: *"we should only allow things to run in the background when
+  they're fast. If it's something that's going to take longer time, like
+  scraping or doing the RetroAchievements offline work, we should force that
+  to be on a foreground page."*
+
+  It was the other way for a week. Audit #186 PL-07 made the scan page
+  leaveable (B closed it, `OfflineScanJob` ran on, the SCAN GAMES row carried
+  the live line, pressing the row reopened the page), and #187 gave
+  `GuiCloudTransfer` the same shape in RC-11 (D-UI-060, D-UI-070). What that
+  bought was every edge case of a job nobody is watching: no end signal, an
+  outcome on a row the player has to go and find, a second press that has to
+  know whether to reopen or refuse, a run that outlives the interface. The
+  maintainer met the B prompt on the device, asked what would happen, and
+  the honest answer was "nothing tells you" -- which is the whole case. A
+  page that holds the player for the job's length is the simpler contract,
+  and CANCEL is the way to give it back. The tell that a page has this wrong
+  is a footer offering to leave it running. #241 carries the change; the
+  scraper, an upstream background card today, moves with it.
 
   **Duration decides between the last two, and the deciding column is
   "Ends".** A card is right for work somebody watches finish — a scrape, a
