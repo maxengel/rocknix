@@ -65,3 +65,24 @@ account's name is boxed out of the summary title (D-QA-026).
   and `2026-09-21-in-session` with no UPDATE GAMELISTS. `GET /emukill` answered
   200 and killed nothing (#239): `ApiSystem::emuKill` runs
   `batocera-es-swissknife`, which this image does not carry.
+- `65-*-640x480.png` — #65 on the RC (guest d): SCRAPER opens on SCRAPE FROM;
+  `up` lands on the tab strip, drawn as a filled box over SCRAPE where the
+  unfocused strip is an underline; `right` there moves to OPTIONS with the strip
+  still focused; `down` returns to IMAGE SOURCE; `right` on that row cycles
+  SCREENSHOT to TITLE SCREENSHOT in place.
+- `67-*-640x480.png` — #67 on the RC: GAMES TO SCRAPE FOR set to GAMES MISSING
+  ALL MEDIA, kept across a tab switch and across BACK to the main menu and
+  reopening SCRAPER.
+- `64-scraper-accounts-tab-640x480.png` (account name boxed),
+  `64-scraping-1of6-640x480.png`, `64-scraping-3of6-bobl-640x480.png`,
+  `64-no-developer-pair-sentence-640x480.png` — #64 on the RC: the QA
+  ScreenScraper account and the public JELOS pair under ACCOUNTS; SCRAPE NOW
+  runs SCRAPING 1/6..6/6 and wrote images, marquee, manual and videos for Böbl,
+  Tobu, Ninoid and MeteoRain; with the developer rows removed the same button
+  gives SCREENSCRAPER NEEDS A DEVELOPER ID AND PASSWORD. ENTER YOURS UNDER
+  SCRAPER > ACCOUNTS.
+- `66-wrong-developer-pair-sentence-640x480.png`,
+  `66-no-account-sentence-640x480.png` — #66 on the RC: a made-up pair with a
+  valid account gives SCREENSCRAPER REJECTED THE DEVELOPER ID OR PASSWORD. CHECK
+  THEM UNDER SCRAPER > ACCOUNTS.; a valid pair with no account gives
+  SCREENSCRAPER NEEDS YOUR ACCOUNT TO SCRAPE. ADD IT UNDER SCRAPER > ACCOUNTS.
