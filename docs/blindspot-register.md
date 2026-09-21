@@ -586,3 +586,27 @@ tidy-up.
 - "Have we hit this before?" is a question the repo can answer mechanically
   (`git log -S<option> -- <path>`, `grep -rn <option> docs/`) and the
   maintainer should not have to.
+
+## 49. An edit made blind to the compiler (2026-09-21)
+
+The transfer-page fix for #153 came in three EmulationStation commits. The
+second turned a one-statement loop body into three statements and left the
+braces off; the syntax was fine, the scope was not. It was committed, pushed,
+merged into the integration branch, the pin was bumped on `next`, the build
+worktree synced, and GENERIC_X64 run 12 ran for twenty minutes before
+`GuiCloudTransfer.cpp:641: error: 'name' was not declared` came back from
+thread log 621. The compiler that would have said so in five seconds had been
+on this disk the whole time: the build root's cross toolchain, and ninja's
+exact command for that object under `build/emulationstation-*/`.
+
+The habit that failed was treating the image build as the first compiler an
+ES edit meets, because it had always been the only one at hand. It was not
+the only one at hand; it was the only one anyone had asked. `tools/es-syntax-check`
+now replays the build's own command with `-fsyntax-only` (proven: PASS on the
+braced file, FAIL with the errors on a broken copy), and `es-native-ui.md`
+says a `.cpp` edit is not ready to merge until it has passed.
+
+The general shape: **when a check costs an hour, look for the same check
+priced in seconds before paying the hour** -- the expensive path usually
+contains the cheap one as a step, and the step can be run alone.
+

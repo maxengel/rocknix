@@ -141,6 +141,7 @@ both lists and to this table, or it is invisible.**
 | `fork-worktree` | worktree list / remove / repair / sync, refusing to destroy build output | `worktrees.md` |
 | `fork-package-freshness` | are the packages the fork introduces at their latest upstream release, or pinned with a stated reason | `fork-workflow.md` |
 | `vm-upgrade-rehearsal` | boot the previous image in a guest, seed a player's state, update in place, check every piece survived | `upgrade-and-install.md` |
+| `es-syntax-check` | compile an EmulationStation edit syntax-only with the image build's own command, before the pin moves | `es-native-ui.md` |
 | `fork-newdrive` | move the build estate to another volume | `device-builds.md` |
 | `fork-publish-release` | publish an image, refusing to publish embedded credentials | `device-builds.md` |
 | `device-act` | run one command on a device, recorded with the boot id before and after | `engineering-practices.md` |

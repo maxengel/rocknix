@@ -304,3 +304,23 @@ citation of "`es-native-ui.md` § Conventions" resolves.
 - Dropping to a fullscreen CLI for things a `GuiSettings` page + headless backend can do
   natively — acceptable as parity stopgap, not as the end state (issue #15 L2).
 - Direct `system()`/popen in UI code paths — use `runSystemCommand`/`ApiSystem`/threads.
+
+## Before the pin moves, the compiler has seen the edit
+
+An EmulationStation edit has no compiler nearer than an image build, and a
+mistake any compiler catches costs a build cycle to find: on 2026-09-21 a
+loop body grew from one statement to three without braces, the pin was
+bumped, and GENERIC_X64 run 12 spent twenty minutes to say `'name' was not
+declared` (blindspot 49). The build root holds the cross toolchain and
+ninja's exact command for every object, so
+
+```bash
+tools/es-syntax-check es-app/src/guis/GuiCloudTransfer.cpp   # from the ROCKNIX checkout
+```
+
+replays that command on the edited file with `-fsyntax-only` in a few
+seconds, PASS or the compiler's errors. It reads headers from the build
+tree, so an edit that changes a header is checked with `--with <dir>` or
+by the build; it exits 2 when it cannot run, and that is not a pass. An ES
+commit that touches a `.cpp` is not ready to merge until this has passed.
+
