@@ -53,3 +53,8 @@ account's name is boxed out of the summary title (D-QA-026).
   SEARCH · GAME OPTIONS`, centred, and offers no SAVE STATES where none can
   apply (#210's VM half). The Tools entries carry their icons under the default
   artwork setting (#69's baseline).
+- `181-logo-{nes,gb,gba}-640x480-77e7e97515.png` — the carousel on guest d
+  with the GBA fixture added: NES, GAME BOY and GAME BOY ADVANCE logos render
+  equally sharp here, so #181's softness (FBNeo, NES and Game Boy against GBA,
+  Genesis and Sega CD on the handheld) is not reproduced on the VM and stays a
+  panel or scaler matter for the device.
