@@ -100,3 +100,10 @@ account's name is boxed out of the summary title (D-QA-026).
 - `153-s3-cut-upload-{transferring,outcome}-fr-d55169e59e-640x480.png` — on
   `d55169e59e` (ES `d842bbe16`) the French page is French throughout:
   PARAMÈTRES - VOUS N'ÊTES PAS EN LIGNE / PAS D'INQUIÉTUDE, RIEN N'A CHANGÉ.
+- `211-exit-card-offline-award-queued-fr-640x480-d55169e59e.png`,
+  `211-exit-card-awards-sent-fr-640x480-d55169e59e.png` — `ra-offline-test`
+  run 3 on guest d (`d55169e59e`, the interface still in French from the #153
+  walk): the exit toast with the link cut, LES SUCCÈS HORS LIGNE SERONT ENVOYÉS
+  À VOTRE PROCHAINE CONNEXION., and after the flush and an online relaunch, LES
+  SUCCÈS HORS LIGNE ONT ÉTÉ ENVOYÉS À RETROACHIEVEMENTS., once (#173's
+  sentences; #211's flush box). The API read 100359 earned at 17:47:50 UTC.
