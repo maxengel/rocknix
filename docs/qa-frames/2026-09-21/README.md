@@ -31,3 +31,7 @@ account's name is boxed out of the summary title (D-QA-026).
   ANY BUTTON TO CLOSE`. Three cached games finish in two seconds, so the
   running line (`SAVING GAMES FOR OFFLINE PLAY... - GAME i OF n`) is not
   catchable here; the RG SP's RC-11 round saw it on a real library (#200).
+- `68-online-summary-640x480-77e7e97515.png` — link on, MAIN MENU,
+  RETROACHIEVEMENTS with the QA account and its web API key entered on the
+  device: the summary loads from RetroAchievements (softcore points 4; Cookie
+  Clicker 50 %, Tobu 4 %), no 401 (#68). Account name boxed.
