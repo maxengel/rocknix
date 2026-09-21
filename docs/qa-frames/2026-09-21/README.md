@@ -35,3 +35,11 @@ account's name is boxed out of the summary title (D-QA-026).
   RETROACHIEVEMENTS with the QA account and its web API key entered on the
   device: the summary loads from RetroAchievements (softcore points 4; Cookie
   Clicker 50 %, Tobu 4 %), no 401 (#68). Account name boxed.
+- `157-startup-card-{1-checking,2-receiving,3-completed}-1280x800-77e7e97515.png`
+  — guest a (1280x800) rebooted with SYNC SAVES DURING STARTUP on and a linked
+  local remote holding a seeded save and auto save, sampled every second from
+  8 s: `SYNCING SAVES AT STARTUP · CHECKING THE CONNECTION...` (the #192 first
+  step), then `RECEIVING · 407 KB OF 407 KB` with a moving bar, then `SYNC
+  SAVES · COMPLETED` with the bar full, then the card fades. One count per
+  step, no still bar (#157). The compare step on a two-file fixture is shorter
+  than the sampling interval; its halves were framed on builds 13-15.
