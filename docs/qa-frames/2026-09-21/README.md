@@ -48,3 +48,8 @@ account's name is boxed out of the summary title (D-QA-026).
   with SHOW CLOCK IN 12-HOUR FORMAT off the tiles read `09/20/2026 22:30`;
   with it on, `09/20/2026 10:30 PM` and the clock `12:04 AM` (#195). The
   AUTO SAVE tile's label is two lines over its thumbnail (#202).
+- `210-{screenshots,tools}-list-help-bar-640x480-77e7e97515.png` — the
+  SCREENSHOTS and TOOLS lists: the help bar reads `OPTIONS · MENU · BACK ·
+  SEARCH · GAME OPTIONS`, centred, and offers no SAVE STATES where none can
+  apply (#210's VM half). The Tools entries carry their icons under the default
+  artwork setting (#69's baseline).
