@@ -86,3 +86,17 @@ account's name is boxed out of the summary title (D-QA-026).
   valid account gives SCREENSCRAPER REJECTED THE DEVELOPER ID OR PASSWORD. CHECK
   THEM UNDER SCRAPER > ACCOUNTS.; a valid pair with no account gives
   SCREENSCRAPER NEEDS YOUR ACCOUNT TO SCRAPE. ADD IT UNDER SCRAPER > ACCOUNTS.
+- `153-s3-cut-upload-{transferring,stalled,outcome}-{en,fr}-640x480.png` — #153's
+  last box on the first candidate `77e7e97515`, guest d, MinIO behind the 200k
+  proxy, a 12 MiB settings archive from BACK UP TO THE CLOUD (SETTINGS alone)
+  cut at ~75 %: the script ends inside its bound (`Couldn't finish`, exit 69,
+  44 s) but the page read SKIPPED - YOU'RE NOT ONLINE over WHAT MADE IT IS IN
+  YOUR CLOUD (FR: IGNORÉ - VOUS N'ÊTES PAS EN LIGNE), and the French header
+  said SETTINGS. The defect that re-cut the candidate.
+- `153-s3-cut-upload-*-{en,fr}-a283f504a0-640x480.png` — the same run on the
+  second candidate's first cut (ES `7afce37a6`): COULDN'T FINISH / SETTINGS -
+  YOU'RE NOT ONLINE / DON'T WORRY, NOTHING CHANGED.; French N'A PAS PU SE
+  TERMINER, header PARAMÈTRES, but the why line still said SETTINGS.
+- `153-s3-cut-upload-{transferring,outcome}-fr-d55169e59e-640x480.png` — on
+  `d55169e59e` (ES `d842bbe16`) the French page is French throughout:
+  PARAMÈTRES - VOUS N'ÊTES PAS EN LIGNE / PAS D'INQUIÉTUDE, RIEN N'A CHANGÉ.
