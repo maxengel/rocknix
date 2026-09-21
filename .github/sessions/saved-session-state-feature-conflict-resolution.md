@@ -1,6 +1,6 @@
 # Saved Session State
 
-> **Saved**: 2026-09-20T23:55:15Z
+> **Saved**: 2026-09-21T04:16:57Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `33157b18d0`, pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
@@ -19,21 +19,17 @@
 
 ## In Progress
 
-- **2026-09-21 00:30, D-QA-032 applied**: the maintainer asked for any EmulationStation change before the other devices' build. Read against the pin `fb6947fb4`: PL-07 (`5a0095455`) and PL-17 (`772d70035`) are already in it; PL-20 was an issue edit (#168). #151 and #186 are closed as delivered (linters and `register-check` PASS), #150's first box ticked. **No new build unless section A finds an ES defect**; `77e7e97515` stands. The page (version 4) and #236 say so; the maintainer is working section A on the RG35XX SP now. Read the page's ticks (`ArtifactData list checks`) first thing next session and mirror them into #236.
-
-
-- **#236 section B, remaining** (harness task #7):
-  - **#153's frame**: a cut S3 upload's outcome sentence on the transfer page, guest d (640x480), EN then FR. Recipe: `CLOUD_QA_BWLIMIT=1M CLOUD_QA_BACKEND=s3 tools/cloud-test-backend up` (throttled); guest d via `bash /workspace/tmp/rocknix-session/rebuild-d.sh` (picks the newest x64 image; ssh :10026, monitor `/tmp/rocknix-qemu-monitor-d.sock`, serial `-d.sock`); rclone.conf from `CLOUD_QA_BACKEND=s3 tools/cloud-test-backend rclone-conf` written over a stdin-open ssh; walks `to-manage-cloud-storage` → `back-up-page` → `tick-settings` → start; cut with `tools/vm-serial` (`ip link set eth0 down`) a few seconds in; frame after the bounded retry ends; read #153's body first for the sentence "the option prescribes" (not found in `cloud_sync.conf.defaults`); then `Language` fr_FR (stop ES, edit, reboot the guest — a *restarted* ES lands on the last game list).
-  - #211 box 1 (VM reproduction record + `tools/retroarch-wrapper-test` output); #209 walks (blocked on the maintainer's C decision); punch lists #151 PL-07/PL-17 and #186 PL-20 (+ lint, PL-18 rows, PL-19 bodies) — ES code work, which means a new ES pin and a new image, so the RC would move: raise with the maintainer before starting; #150 rows; #222's last box.
-- **#198** is an open bug (unquoted device password), not a frame; it sits in the bug list of the RC write-up.
+- **#236 section B on the VM** (harness task #7). Both guests up on the RC: pair a/b (`vm-pair`, 1280x800) and guest d (`bash /workspace/tmp/rocknix-session/rebuild-d.sh`, 640x480, ssh :10026, monitor `/tmp/rocknix-qemu-monitor-d.sock`, serial `-d.sock`). Guest d has the QA RA account, the offline toggle, `RetroachievementsMenuitem` and `ClockMode12` on, three fixture titles cached; guest a is linked to the local WebDAV (`qa-cloud:`), `cloudsaves.startup=1`, seeded saves.
+- **Done on the VM** (frames under `docs/qa-frames/2026-09-21/`, ticks on the page and in #236): #190, #193, #194 offline; #189; #68; #160 640x480; #157; #195; #210; #45 (closed), #169/#221 archive read; #94/#203 from the time-to-play frame. Maintainer's own: a-build, a-ssid, a-card-first-step, a-mdns.
+- **Blocked**: `ra-offline` (a-211-flush, a-211-journal) -- the QA account has earned the only routed achievement (Tobu 100359, 2026-09-14); needs the maintainer to reset that game's progress on retroachievements.org, or `tools/ra-candidate-games` to route a new title.
 
 ## Next Steps
 
-1. **Read the page's ticks** (`ArtifactData list checks`) at the start of a session and mirror any of the maintainer's ticks and notes into #236 and the source issues.
-2. **#153's frame** per the recipe above, then tick #153 and the `b-frames` doc on the page (set `done: true`).
-3. **Ask the maintainer** whether the punch-list items (#151 PL-07/PL-17, #186 PL-20) are RC gates for *this* build — they need ES changes and therefore a new image — or deferred with the reason (D-WORKFLOW-015 says all severities; the milestone allows deliberate deferral).
-4. **Then D**: the RG SP question only after A is done and the maintainer says so (D-QA-031). **Then E**: the SM8550 cold build for the Nova.
-5. Watch ROCKNIX/distribution#3359; #228 is the maintainer's call; the maintainer's list (#216, #223, #224, #218, #214/#215/#219) after.
+1. **Remaining B walks on guest d** (the walk rules are in `generic-x64-vm-testing.md` § Driving EmulationStation blind): #82 -- launch Böbl (A on NES list, A on START NEW GAME), while in game `scp` a PNG into `/storage/roms/screenshots/`, Esc twice, then the Screenshots list shows it; #196 -- LAUNCH Probe from a slot tile, wait, Esc twice, the manager shows AUTO SAVE with the quit time and the slot still there; #181 -- copy `MeteoRain.gba` to `/storage/roms/gba`, reboot, frame the carousel logos NES vs GBA; #183 -- a boot sampler (`wait 8`, shots every second to 60 s) shows no PLEASE WAIT.
+2. **Scraper four** (#64 #66 #67 #65): `tools/qa-accounts 10026 ss`, reboot guest d, MAIN MENU > SCRAPER walks; #66's four sentences need the pair emptied/wrong in the ACCOUNTS rows.
+3. **#153** cut S3 upload frame (recipe in the previous state), **#211 box 1** VM record.
+4. **Read the page's ticks** each session (`ArtifactData list checks`) and mirror into #236.
+5. When B is done and A's five device boxes are the maintainer's: the RG SP question (D-QA-031), then the SM8550 build for the Nova.
 
 ## Key Files Modified
 
