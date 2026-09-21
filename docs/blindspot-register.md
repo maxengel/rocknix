@@ -633,3 +633,28 @@ run's**. A fixture that another run can leave behind -- a log, a stamp, a
 marker, a page on the screen -- is a fixture the check has to clear or date
 before it trusts it.
 
+## 51. A checklist built from open boxes inherits stale boxes (2026-09-21)
+
+The round's device section was assembled on 2026-09-20 from the open `- [ ]`
+lines of the issues it touched. Two of its nine boxes were not work at all.
+#181's "confirm on the RG SP" had been confirmed in chat on 2026-09-14 -- the
+maintainer reported the logos "fixed themselves" after a restart, which the
+work log of that day records as the cause exactly -- and the fix had shipped
+in every candidate since; the checklist not only carried the box, it grew a
+note calling the softness "a panel matter" when the VM showed the logos sharp,
+which turned a fixed bug into a hardware suspicion. #121's "LED and audible
+alerts still fire" was the handheld half of a log-noise fix, never an issue
+anybody had seen; on the page it read as a battery LED problem the maintainer
+did not remember, because there was none. A third line, "one sleep and wake",
+had no source in any issue.
+
+The maintainer caught all of it in one question: *"we should go back through
+and verify that these aren't already solved points."*
+
+An open box is a claim like any other. The issue's `- [ ]` says what was
+unfinished when the box was written; the last comment, the day's work log and
+the pin say whether it still is. **Before a box goes on a checklist, read the
+issue to its end and the log for the day it was filed**, and write the box in
+the words of what somebody will observe -- not the issue's title. A box that
+cannot be traced to an observation nobody has yet made is not a box.
+

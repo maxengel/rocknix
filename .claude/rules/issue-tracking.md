@@ -83,3 +83,13 @@ feature that had never once functioned and shipped broken in four images.
   a decision that lives only in comments will be missed.
 - One false tick voids the list. Re-derive the siblings rather than assuming
   the rest are sound.
+
+## Putting a box on a checklist
+
+An open `- [ ]` is a claim that the work is undone, made when the box was
+written. Before it goes on a round's checklist or a page somebody else works
+from, read the issue to its last comment, the work log of the day it was
+filed, and the pin -- two of nine device boxes on the 2026-09-21 round were
+already done or never issues (blindspot 51). Write the box as the observation
+somebody will make, not as the issue's title, and drop any line that cannot
+be traced to an issue.
