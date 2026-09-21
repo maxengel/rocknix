@@ -19,6 +19,9 @@
 
 ## In Progress
 
+- **2026-09-21 00:30, D-QA-032 applied**: the maintainer asked for any EmulationStation change before the other devices' build. Read against the pin `fb6947fb4`: PL-07 (`5a0095455`) and PL-17 (`772d70035`) are already in it; PL-20 was an issue edit (#168). #151 and #186 are closed as delivered (linters and `register-check` PASS), #150's first box ticked. **No new build unless section A finds an ES defect**; `77e7e97515` stands. The page (version 4) and #236 say so; the maintainer is working section A on the RG35XX SP now. Read the page's ticks (`ArtifactData list checks`) first thing next session and mirror them into #236.
+
+
 - **#236 section B, remaining** (harness task #7):
   - **#153's frame**: a cut S3 upload's outcome sentence on the transfer page, guest d (640x480), EN then FR. Recipe: `CLOUD_QA_BWLIMIT=1M CLOUD_QA_BACKEND=s3 tools/cloud-test-backend up` (throttled); guest d via `bash /workspace/tmp/rocknix-session/rebuild-d.sh` (picks the newest x64 image; ssh :10026, monitor `/tmp/rocknix-qemu-monitor-d.sock`, serial `-d.sock`); rclone.conf from `CLOUD_QA_BACKEND=s3 tools/cloud-test-backend rclone-conf` written over a stdin-open ssh; walks `to-manage-cloud-storage` → `back-up-page` → `tick-settings` → start; cut with `tools/vm-serial` (`ip link set eth0 down`) a few seconds in; frame after the bounded retry ends; read #153's body first for the sentence "the option prescribes" (not found in `cloud_sync.conf.defaults`); then `Language` fr_FR (stop ES, edit, reboot the guest — a *restarted* ES lands on the last game list).
   - #211 box 1 (VM reproduction record + `tools/retroarch-wrapper-test` output); #209 walks (blocked on the maintainer's C decision); punch lists #151 PL-07/PL-17 and #186 PL-20 (+ lint, PL-18 rows, PL-19 bodies) — ES code work, which means a new ES pin and a new image, so the RC would move: raise with the maintainer before starting; #150 rows; #222's last box.
