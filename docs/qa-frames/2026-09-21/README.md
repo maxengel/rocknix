@@ -58,3 +58,10 @@ account's name is boxed out of the summary title (D-QA-026).
   equally sharp here, so #181's softness (FBNeo, NES and Game Boy against GBA,
   Genesis and Sega CD on the handheld) is not reproduced on the VM and stays a
   panel or scaler matter for the device.
+- `82-bobl-launched-by-api-640x480.png`, `82-screenshots-list-after-game-exit-640x480.png`
+  — #82 on the RC: Böbl launched on guest d through `POST /launch`, a PNG
+  copied into `/storage/roms/screenshots` while it ran, the game ended through
+  the exit hotkey's `execute_kill`; SCREENSHOTS then lists `2026-09-13-at-boot`
+  and `2026-09-21-in-session` with no UPDATE GAMELISTS. `GET /emukill` answered
+  200 and killed nothing (#239): `ApiSystem::emuKill` runs
+  `batocera-es-swissknife`, which this image does not carry.
