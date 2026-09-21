@@ -21,3 +21,13 @@ account's name is boxed out of the summary title (D-QA-026).
   `RetroAchievements: Logged in as "<account>" (offline).` on a dark backdrop
   that covers the whole text (the name boxed out), and the game's badge card
   top-left reads `You have 0 of 12 achievements unlocked` (#194).
+- `189-offline-achievements-page-row-640x480-77e7e97515.png` — GAME SETTINGS,
+  RETROACHIEVEMENTS SETTINGS, OFFLINE ACHIEVEMENTS (BETA): the switch on and
+  the SCAN GAMES FOR OFFLINE ACHIEVEMENTS row reading `LAST 09/20/2026 23:26 -
+  COMPLETED · 3 GAMES READY FOR OFFLINE PLAY` (#189/#188, the last run).
+- `189-scan-completed-640x480-77e7e97515.png` — A on that row, YES to the
+  dialog: the scan runs as its own page and ends `COMPLETED · GAMES WITH
+  ACHIEVEMENTS ADDED: 0 · 3 GAMES READY FOR OFFLINE PLAY · ELAPSED 0:02 · PRESS
+  ANY BUTTON TO CLOSE`. Three cached games finish in two seconds, so the
+  running line (`SAVING GAMES FOR OFFLINE PLAY... - GAME i OF n`) is not
+  catchable here; the RG SP's RC-11 round saw it on a real library (#200).
