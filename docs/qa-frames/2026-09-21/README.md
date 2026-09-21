@@ -43,3 +43,8 @@ account's name is boxed out of the summary title (D-QA-026).
   SAVES · COMPLETED` with the bar full, then the card fades. One count per
   step, no still bar (#157). The compare step on a two-file fixture is shorter
   than the sampling interval; its halves were framed on builds 13-15.
+- `195-save-state-manager-{24h,12h}-640x480-77e7e97515.png` — Probe's SAVE
+  STATE MANAGER (an auto save and two slots seeded by the guest's rebuild):
+  with SHOW CLOCK IN 12-HOUR FORMAT off the tiles read `09/20/2026 22:30`;
+  with it on, `09/20/2026 10:30 PM` and the clock `12:04 AM` (#195). The
+  AUTO SAVE tile's label is two lines over its thumbnail (#202).
