@@ -9,6 +9,22 @@ paths:
 High-signal, generalizable practices. Add entries only when a learning clearly generalizes
 beyond one task (see `learning-capture.md`).
 
+## Change stays inside the fork's lanes
+
+Maintainer, 2026-09-22, when a rule made for the fork's pages (D-UI-078)
+would have reached four upstream surfaces: *"We don't need to alter
+behaviors outside of the core work we've been tackling [...] I'm more
+comfortable modifying work within the different lanes we've been working
+in around cloud sync, cloud behaviors, game saves, Wi-Fi, etc."*
+(D-UI-079). The lanes are the fork's own work: cloud sync and cloud
+behaviours, game saves and save states, Wi-Fi and the network pages, the
+offline achievements work, and the pages those touch. A practice that
+generalises is recorded as a rule and applied inside the lanes; an
+upstream surface outside them -- a card, a menu, a flow the fork has not
+been working in -- is left as upstream has it until the maintainer opens
+that lane, however well the rule would fit. Name the surfaces the rule
+would also reach and ask; do not fold them into the change.
+
 ## Verify design intent before "fixing" an apparent bug
 
 Before changing code that looks wrong, confirm it isn't intentional:

@@ -204,8 +204,11 @@ Values live in one place each, so a screen never makes its own decision.
   the honest answer was "nothing tells you" -- which is the whole case. A
   page that holds the player for the job's length is the simpler contract,
   and CANCEL is the way to give it back. The tell that a page has this wrong
-  is a footer offering to leave it running. #241 carries the change; the
-  scraper, an upstream background card today, moves with it.
+  is a footer offering to leave it running. #241 carried the change, the
+  scraper included. The other upstream cards -- the game index, the
+  content installer, the OS update, the Bluetooth scan -- stay as they
+  are (D-UI-079): the rule is for the lanes the fork works in, and an
+  upstream surface outside them is not changed on the strength of it.
 
   **Duration decides between the last two, and the deciding column is
   "Ends".** A card is right for work somebody watches finish — a scrape, a
