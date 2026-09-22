@@ -27,7 +27,7 @@
 1. Soak window → journal read → tick `a-soak` (page) and the #236 soak line; close #161 (not planned, scope named) if no drop showed; add a #79 row only if a crash did.
 2. Stage the third candidate on the RG35XX SP (above); once they confirm BUILD ID `7560330` and try CANCEL on the scan page, tick `a-build-3` on the page and mirror it into #236.
 3. The RG SP (D-QA-031) when the maintainer calls the candidate confident: the same tar, the runbook's path, `tools/device-act rgsp` (192.168.1.175), `DEVICE_ACT_TIMEOUT=900` for the hash, ask before the reboot. D's rehearsal box is green for this tar.
-4. #241's last box: the maintainer's classification of the other background cards (INDEX GAMES / `ThreadedHasher`, `ContentInstaller`, `GuiUpdate`, `ThreadedBluetooth`) — a row each, or "fast, stays a card". Then close #241 completed with the commits.
+4. #241 is closed (D-UI-079: the other background cards keep their cards; the rule is for the fork's lanes). Nothing left on it.
 5. SM8550 for the Nova (#150, D-QA-028) after the RG SP; then #211's two-unlock VM reproduction / #240; housekeeping (`tools/fork-worktree list`; upstream PR #3359; #228 the maintainer's).
 
 ## Key Files Modified (this session)
@@ -65,6 +65,5 @@
 ## Open Questions
 
 - The soak's window (the maintainer's) and their yes to the reboot for `75603308e4`.
-- The other background cards (index, content installer, OS update, Bluetooth): fast enough to stay cards, or pages too (#241's last box).
 - `ra-offline` was not re-run on the third candidate (the RA path did not change); run it before the RG SP if the maintainer wants the suite green on the shipped pin — it spends a QA achievement and needs their reset.
 - #228 webkitgtk 2.54 — the maintainer's.
