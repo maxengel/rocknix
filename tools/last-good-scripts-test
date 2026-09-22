@@ -1779,7 +1779,11 @@ else
 src_of "${CTL_REL}" "${T}/repo/raofflineproxy-ctl"
 # The archive's top directory is the project's name and the pin (a GitHub
 # archive: RAOfflineProxy-<hash>); only the module is taken out of it.
-tar -xzf "${TARBALL}" -C "${T}" --wildcards '*/linux/raofflineproxy/*' 2>/dev/null
+# The module and its tests: a patch may carry a test for what it changes
+# (015 does), and a patch with a hunk for a file that was not unpacked does
+# not apply at all -- which read as "the tree describes a client the build
+# does not" on 2026-09-22 while the build had applied it (fork #242).
+tar -xzf "${TARBALL}" -C "${T}" --wildcards '*/linux/raofflineproxy/*' '*/linux/tests/*' 2>/dev/null
 mkdir -p "${T}/patched"
 mv "${T}"/*-"${PIN}"/linux "${T}/patched/linux" 2>/dev/null; rm -rf "${T}"/*-"${PIN}"
 rm -rf "${T}/patched/linux/raofflineproxy/__pycache__"
