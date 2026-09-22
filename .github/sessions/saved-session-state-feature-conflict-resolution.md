@@ -1,31 +1,32 @@
 # Saved Session State
 
-> **Saved**: 2026-09-22T02:25:28Z
-> **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `0236a12bef`, pushed to origin)
+> **Saved**: 2026-09-22T05:40:00Z
+> **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `2c5d28eb55`, pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The RC round (#236; page https://claude.ai/artifact/Uq74wpvRB3SzpZ1oydYEmo, v9) has a third candidate, `75603308e4`, built and proven on the VM but not yet on the RG35XX SP.** It exists because the maintainer, mid-soak at the scan page's PRESS B TO KEEP SCANNING IN THE BACKGROUND, ruled that long work never goes to the background (D-UI-078, #241): the offline scan, the transfer page and the scraper now sit on a foreground page whose one way out while they run is CANCEL. Nothing is in flight: no build, no suite, no guest (d and the pair are down). The RG35XX SP is mid-soak with Wi-Fi off; the tar goes to it after the soak, with the maintainer's yes before the reboot.
+**The RC round (#236; page https://claude.ai/artifact/Uq74wpvRB3SzpZ1oydYEmo, v10) has its third candidate at a fourth cut, `f2f23da875`, built, proven on the VM, and waiting for the maintainer's soak to end before it goes to the RG35XX SP.** Two changes rode it tonight: the maintainer's call that long work never goes to the background (D-UI-078, #241, closed) and the defect their soak found offline -- VIEW THIS GAME'S ACHIEVEMENTS ending "Timeout was reached" and a launch with no achievements (#242, closed: the proxy's unbounded name lookup, patch 015; the interface says the service didn't answer instead of asking the web). Nothing is in flight: no build, no suite, no guest. The maintainer brought the device back online at ~04:30 UTC for the log read; the soak's state is theirs to say.
 
-## Completed This Session (2026-09-21 23:25 – 2026-09-22 02:25 UTC)
+## Completed This Session (2026-09-21 23:25 – 2026-09-22 05:40 UTC)
 
 - **The answer that started it**: B on the scan page closed the page and the scan ran on with no toast and only the SCAN GAMES row to report; the maintainer's call followed. Register D-UI-078 (reverses D-UI-060/070); `es-native-ui.md`'s fourth-tier paragraph rewritten ("sat in, with CANCEL"); #241 filed; #187 closed not planned.
 - **EmulationStation** (`feature/foreground-cancel`, merged to `test/qa-integration`, pin `54b5e7427`): `acd7a6fee` the three pages (scan: `OfflineScanJob` under setsid with a `>>> pid` line and `cancel()` = SIGINT to the group; transfer: `CloudTransferJob::stopByPlayer()` + the `player-cancelled` stamp token → `Outcome::SkippedCancelled`; scraper: `GuiScraperRun` over `ThreadedScraper::progress()`, card and toast gone); `7c7ffab43` `MultiLineMenuEntry::layoutRows` measures from the fonts (a refreshed two-line row drifted 10 %/refresh — the OFFLINE ACHIEVEMENTS page came back a screen tall after a long scan, on `d55169e59e` too); `46111b1e3` the scraper note's French fits a 640x480 line. 17 French strings added, 6 removed; unit tests 113/1237.
 - **Distribution on `next`** (`f0576e5f1a`, `56fe1fb2cf`, `75603308e4`, then docs `704fdc5825`, `d12e1a33c8`, `0236a12bef`): `raofflineproxy-ctl` traps INT as the player's cancel (stamp `why=CANCELLED`, exit 130); `last-good-scripts-test` `cancel` plan word + 3 checks (342/0); `es-syntax-check --with` → `-iquote`, new files borrow a sibling's command.
 - **Proof**: guest d 640x480 EN and FR on each cut; vm-qa run 4 eleven suites PASSED (`qa-75603308e4-webdav-a-20260922-0153`); upgrade rehearsal from the RG SP's build `b245fd12ac` 20/20 (`qa-75603308e4-upgrade-from-b245fd12ac-20260922-0218`); after a cancelled backup the QA cloud held 33 whole files, no partial. Frames `docs/qa-frames/2026-09-22/241-*` + README; row in `docs/vm-qa-log.md`.
 - **Artifacts**: `/workspace/artifacts/rocknix-images/h700-all-20260922-75603308e4/` (tar, DDR3, DDR4, SHA256SUMS, RECORD.txt); run 6's dir (`56fe1fb2cf`) marked SUPERSEDED. x64 image `generic-x64/target/ROCKNIX-GENERIC_X64.x86_64-20260922.{img.gz,tar}`.
-- **Tracker**: #241 seven of eight boxes ticked with observations; #236 body + page carry the third candidate (`a-build-3`, D's tar/id); comments on #236, #241, #187. Work log `docs/work-logs/2026_09-work_logs/2026_09_22-work_log.md` (three entries) and the 2026-09-21 log's last entry.
+- **#242 (the soak's finding, 04:00-05:35 UTC)**: cause from the device's logs (read-only over `tools/device-act`): the proxy probes to write `online=` in its request log line and neither the probe nor the upstream forwarder bounds the resolver, so offline with the interface up every request paid glibc's twenty seconds; the interface waits fifteen. Proxy patch 015 (`resolve_host_bounded`, three seconds; the log line reads the tracker; 3 tests, 23/23), ES `c8b03e3d6` (pin `a29db7111`: offline + no answer = a sentence, not the web). Fourth cut `f2f23da875` (x64 run 17, H700 run 8, `h700-all-20260922-f2f23da875/`; runs 5-7 superseded); proofs on guest d in the handheld's shape (`repro-242.sh`: address kept, route gone, resolver black-holed): the page within seconds, the sentence within eight with the service stopped; vm-qa run 5 ten suites green + the harness 342/0 (it now unpacks the client's tests, so a patch carrying one applies); rehearsal from `b245fd12ac` 20/20. `tools/png-blackout` (stdlib) paints the account's name out of a frame. Rules: `generic-x64-vm-testing.md` "A cut link is not the only way to be offline"; `engineering-practices.md` "Change stays inside the fork's lanes" (D-UI-079).
+- **Tracker**: #241 and #242 closed as delivered; #236 body + page carry the fourth cut (`a-build-3` names `f2f23da`, D's tar/id); comments on #236, #241, #242, #187. Work log `docs/work-logs/2026_09-work_logs/2026_09_22-work_log.md` (three entries) and the 2026-09-21 log's last entry.
 
 ## In Progress
 
 - **The soak (the maintainer's, D-QA-036)** on the RG35XX SP: unchanged from the last stash — read the journal when they name the window (`tools/device-act rg35xxsp`, read-only: `status=139/134`, SIGSEGV/SIGABRT/core for #79; `raofflineproxy-ctl status`/`flushed` + the RA API for #211; `CTRL-EVENT-DISCONNECTED|beacon loss|NetworkManager state` for #161). **Tell them to keep Wi-Fi on until the SCAN GAMES row says COMPLETED** before the offline hours (a fetch that fails offline ends the scan COULDN'T FINISH).
-- **Staging `75603308e4` on the RG35XX SP**: after the soak. Idle check first (emulator, cloud transfer, `flock -n /var/run/cloud_sync.lock true`, a scan), tar to a staging dir, hash on the device against `SHA256SUMS`, move into `/storage/.update`, **ask before the reboot, naming the device**. Their box `a-build-3` on the page.
+- **Staging `f2f23da875` on the RG35XX SP**: after the soak. Idle check first (emulator, cloud transfer, `flock -n /var/run/cloud_sync.lock true`, a scan), tar to a staging dir, hash on the device against `SHA256SUMS`, move into `/storage/.update`, **ask before the reboot, naming the device**. Their box `a-build-3` on the page.
 
 ## Next Steps
 
 1. Soak window → journal read → tick `a-soak` (page) and the #236 soak line; close #161 (not planned, scope named) if no drop showed; add a #79 row only if a crash did.
-2. Stage the third candidate on the RG35XX SP (above); once they confirm BUILD ID `7560330` and try CANCEL on the scan page, tick `a-build-3` on the page and mirror it into #236.
+2. Stage the fourth cut `f2f23da875` on the RG35XX SP (above; the tar in `h700-all-20260922-f2f23da875/`); once they confirm BUILD ID `f2f23da`, try CANCEL on the scan page and VIEW THIS GAME'S ACHIEVEMENTS offline, tick `a-build-3` on the page and mirror it into #236.
 3. The RG SP (D-QA-031) when the maintainer calls the candidate confident: the same tar, the runbook's path, `tools/device-act rgsp` (192.168.1.175), `DEVICE_ACT_TIMEOUT=900` for the hash, ask before the reboot. D's rehearsal box is green for this tar.
 4. #241 is closed (D-UI-079: the other background cards keep their cards; the rule is for the fork's lanes). Nothing left on it.
 5. SM8550 for the Nova (#150, D-QA-028) after the RG SP; then #211's two-unlock VM reproduction / #240; housekeeping (`tools/fork-worktree list`; upstream PR #3359; #228 the maintainer's).
@@ -40,7 +41,10 @@
 | `tools/last-good-scripts-test` | Modified | fake helper's `cancel` plan word; three checks after the SOME_GAMES_NOT_SAVED case |
 | `tools/es-syntax-check` | Modified | `--with` → `-iquote`; a new file borrows a sibling's compile command |
 | `projects/ROCKNIX/packages/ui/emulationstation/package.mk` | Modified | pin `d842bbe16` → `0970b66e1` → `3305233d1` → `54b5e7427` |
-| `docs/qa-frames/2026-09-22/` | Created | 22 frames + README (#241, EN/FR) |
+| `docs/qa-frames/2026-09-22/` | Created | 24 frames + README (#241 EN/FR; #242 the page offline and the service-down sentence) |
+| `projects/ROCKNIX/packages/network/raofflineproxy/patches/015-bounded-name-lookup.patch` | Created | a name lookup gets three seconds; the log line reads the tracker; three tests |
+| `tools/png-blackout` | Created | paint a rectangle of a PNG black with the stdlib; registered in the guard, `fork-workflow.md`, `instruction-files.md` |
+| `.claude/rules/generic-x64-vm-testing.md`, `.claude/rules/engineering-practices.md` | Modified | the two-shape offline proof; change stays inside the fork's lanes (D-UI-079) |
 | `docs/vm-qa-log.md`, `docs/work-logs/2026_09-work_logs/2026_09_2{1,2}-work_log.md` | Modified | the row for `75603308e4`; the night's entries |
 | ES repo (`~/Development/emulationstation-next`, worktree `foreground-cancel`) | branch merged | `OfflineScanJob.*`, `GuiOfflineScan.*`, `GuiRetroAchievementsSettings.cpp`, `OfflineAchievements.cpp`, `CloudTransferJob.*`, `GuiCloudTransfer.*`, `CloudText.*`, `GuiMenu.cpp`, `ThreadedScraper.*`, `GuiScraperRun.*` (new), `GuiScraperStart.cpp`, `MultiLineMenuEntry.cpp`, `CMakeLists.txt`, `CloudTextTests.cpp`, the French `.po` |
 
