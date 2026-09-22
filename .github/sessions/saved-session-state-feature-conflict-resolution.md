@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-22T22:27:00Z
+> **Saved**: 2026-09-22T22:58:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `4af5adf7e0`, pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The round's candidate is the ninth cut `520e1c92ca`** (`h700-all-20260922-520e1c92ca/`, ES pin `d534632d7`), staged on the RG35XX SP (checksum matched 22:07 UTC, nothing applied). It carries #243 and **the fix for #246**: the interface's crash in the maintainer's soak was the after-exit rescan of the SCREENSHOTS folder reloading a list view whose cursor it had just deleted (`rescanIfFolderChanged` -> `clear()` -> `reloadGameListView` reading the freed cursor); reproduced on guest d in the soak's shape (seventh cut died on session 16, eighth on 13 with a backtrace whose faulting PC was in the heap), fixed by `dropGameListView` / `remakeGameListView` around the repopulate, and held for forty sessions. The eighth cut also made the crash handler print a backtrace and die of the signal. **vm-qa run 10 and the upgrade rehearsal are running on the ninth cut** (`chain-246-9.sh`, `vmqa-run10.log`, `upgrade-rehearsal-run10.{log,rc}`, done-marker `chain-246-9.done`); the reboot of the RG35XX SP is asked for after them and is not yet answered.
+**The round's candidate is the ninth cut `520e1c92ca`** (`h700-all-20260922-520e1c92ca/`, ES pin `d534632d7`), staged on the RG35XX SP (checksum matched 22:07 UTC, nothing applied). It carries #243 and **the fix for #246**: the interface's crash in the maintainer's soak was the after-exit rescan of the SCREENSHOTS folder reloading a list view whose cursor it had just deleted (`rescanIfFolderChanged` -> `clear()` -> `reloadGameListView` reading the freed cursor); reproduced on guest d in the soak's shape (seventh cut died on session 16, eighth on 13 with a backtrace whose faulting PC was in the heap), fixed by `dropGameListView` / `remakeGameListView` around the repopulate, and held for forty sessions. The eighth cut also made the crash handler print a backtrace and die of the signal. **vm-qa run 10 eleven suites PASSED and the rehearsal 19/19 on the ninth cut** (rows in `docs/vm-qa-log.md`). **The reboot of the RG35XX SP to apply `520e1c92ca` is asked for and not yet answered.** Nothing is in flight.
 
 ## Completed This Session (2026-09-22 16:15 – 17:37 UTC, after the previous stash)
 
@@ -21,7 +21,7 @@
 
 ## In Progress
 
-- **vm-qa run 10 + rehearsal on `520e1c92ca`**; then the QA row, the RECORD's proof line, and the reboot question to the maintainer (the keeper is armed on the RG35XX SP since 21:20 UTC with their yes).
+- **One question open with the maintainer**: reboot the RG35XX SP to apply `520e1c92ca` (staged, checksum matched, QA green). Do nothing to the device without the yes. The keeper is armed there since 21:20 UTC with their yes.
 - #246 is fixed and proven on the VM; the device half (the maintainer's next offline session on the ninth cut) and #247 (the keeper notes a cut dump as whole) remain.
 
 ## Next Steps
