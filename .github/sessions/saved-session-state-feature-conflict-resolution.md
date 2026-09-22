@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-22T18:05:00Z
+> **Saved**: 2026-09-22T21:16:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `4af5adf7e0`, pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The round's candidate is the seventh cut `220585b56b`** (`h700-all-20260922-220585b56b/`, ES pin `4217ca838`): since the fourth cut `f2f23da875` that the RG35XX SP has run since 15:06 UTC, the only tree change is #243 (D-UI-080) -- save-state thumbnails and screenshots drawn at their system's display aspect, proven on guest d with a ring fixture. **vm-qa run 8 eleven suites PASSED and the upgrade rehearsal from `b245fd12ac` PASS** (rows in `docs/vm-qa-log.md`, docs commit on `next`; RECORD.txt complete). Nothing is in flight. The RG35XX SP is offline for the maintainer's soak (D-QA-036); staging the seventh cut waits for it to come online, and the reboot is a question at that moment.
+**The round's candidate is the seventh cut `220585b56b`** (`h700-all-20260922-220585b56b/`, ES pin `4217ca838`): since the fourth cut `f2f23da875` that the RG35XX SP has run since 15:06 UTC, the only tree change is #243 (D-UI-080) -- save-state thumbnails and screenshots drawn at their system's display aspect, proven on guest d with a ring fixture. **vm-qa run 8 eleven suites PASSED and the upgrade rehearsal from `b245fd12ac` PASS** (rows in `docs/vm-qa-log.md`, docs commit on `next`; RECORD.txt complete). Nothing is in flight. The RG35XX SP came back at 21:08 UTC; the soak's journal is read (#236 comment): eight Dr. Mario awards queued offline and all eight sent on the next link, no drop, **one EmulationStation SIGSEGV after a Dr. Mario exit offline -- #246**, no core kept. **The seventh cut's tar is verified and queued in `/storage/.update` on the RG35XX SP; the reboot is asked for and not yet answered.** Also asked: arming `rocknix-corekeep --on` there.
 
 ## Completed This Session (2026-09-22 16:15 – 17:37 UTC, after the previous stash)
 
@@ -21,11 +21,12 @@
 
 ## In Progress
 
-- Nothing in flight. The seventh cut is fully recorded (vm-qa run 8 `qa-220585b56b-webdav-a-20260922-1735`, rehearsal `qa-220585b56b-upgrade-from-b245fd12ac-20260922-1759`).
+- **Two questions open with the maintainer**: reboot the RG35XX SP to apply `220585b56b` (staged, checksum matched), and arm the core keeper on it (`rocknix-corekeep --on`, writes `/storage/.config/keep-core-dumps`). Do neither without the yes.
+- #246 (the interface's crash in the soak): reproduce the offline game-end flow on the VM with awards queued (`Debug=true`, read `/var/log/es_log.txt` before any reboot); read the path between `cloud_capture` and `raofflineproxy-ctl pending` with #241's code in view.
 
 ## Next Steps
 
-1. **The RG35XX SP**: when the maintainer brings it online (their soak's Wi-Fi-back moment), read the journal read-only through `tools/device-act rg35xxsp` first (the awards' lines, `Flush`, `status=139`, `CTRL-EVENT-DISCONNECTED`) and tick `a-soak`/#79/#161/#211 lines; then stage `ROCKNIX-H700.aarch64-20260922.tar` from `h700-all-20260922-220585b56b/` into `~/.update` (staging needs no question), verify the device-side checksum, and **ask before the reboot, naming the device**. After: BUILD ID `220585b` in SYSTEM SETTINGS; the maintainer's word on an NES thumbnail (#243 box 3).
+1. **The RG35XX SP**: on the maintainer's yes, `tools/device-act rg35xxsp 'reboot to apply 220585b56b -- the maintainer said yes' -- 'sync; (sleep 2; reboot) >/dev/null 2>&1 &'`, wait, read BUILD_ID (`220585b56b`) and that `/storage/.update` is empty; then the maintainer's word on an NES thumbnail (#243 box 3) and the soak line ticks on #236 (`a-soak`; #161 closes not planned if they agree; #211's device box). On the keeper's yes: `rocknix-corekeep --on` through device-act.
 2. #245 / D-UI-081: the maintainer's call. If option 1, a RetroArch patch `0016` rotating the raw capture by the content rotation; the proof is the device (the VM has no arcade ROM).
 3. Then the RG SP (D-QA-031) with the same tar; SM8550 for the Nova (#150); the housekeeping list in the previous state.
 
@@ -46,7 +47,7 @@
 
 ## Related Context
 
-- **Tracker**: #243 (box 3 open), #244 (closed), #245 (new, D-UI-081), #236 (round page: seventh cut), #211/#79/#161 (soak), #150
+- **Tracker**: #243 (box 3 open), #244 (closed), #245 (new, D-UI-081), #246 (new: the interface's crash in the soak; #79 row 5), #236 (round page: seventh cut, soak read), #211/#161 (soak), #150
 - **Register**: D-UI-080, D-QA-037, D-UI-081 (open), D-QA-036, D-QA-031
 - **Artifacts**: `h700-all-20260922-220585b56b/` (the candidate); `qa-5d8bc093c7-webdav-a-20260922-1623/`; the seventh cut's run dirs once done
 - **Session scripts** (`/workspace/tmp/rocknix-session/`): `mkpng.py`, `seed-243.sh`, `measure-243.py`, `proof-243d.sh <outdir> [systems]` (X = GAME OPTIONS then A = the manager), `proof-243s.sh <outdir>` (`KEEP=1` keeps the guest up; SCREENSHOTS is five right of PICO-8), `chain-243-9.sh`, `build-x64-run22.sh`, `build-h700-run11.sh`, `vmqa-run8.sh`, `record-h700-run11.sh`, `changelog-gap-draft.md` (the survey's draft with evidence comments)
