@@ -2206,6 +2206,15 @@ the handheld took them.
   answer -- it says `THE OFFLINE ACHIEVEMENTS SERVICE DIDN'T ANSWER. TRY
   AGAIN IN A MOMENT.` instead. Confirmed by the maintainer on the RG35XX
   SP: the page, the offline sign-in toast, the badges.
+- **The interface no longer dies after a game in which an achievement was
+  unlocked** (#246). Every unlock writes a screenshot, and the folder rescan
+  that follows a game exit deleted the SCREENSHOTS entries and then reloaded
+  a view still pointing at one of them -- freed memory, which held together
+  seventeen times on the VM and not the eighteenth, and on the RG35XX SP
+  went at the second exit of the maintainer's offline session. The rescan
+  now takes the view down before the files go and remakes it after. And
+  when the interface does die, its log carries a backtrace and the crash
+  keeper, once armed, keeps the fault itself rather than the teardown.
 - **Save-state thumbnails and screenshots are drawn at the shape of the
   system that made them** (#243, D-UI-080). RetroArch writes both at the
   core's native size, which for the NES and the SNES is the pixel grid and
