@@ -1869,10 +1869,11 @@ EOS
 # reads, written through the real Storage for the signed-in account, the
 # ROM's path on the patch row), skip (no match), fail (a fetch that did not
 # come back), login (sign-in refused), slow N (N virtual seconds, or the
-# budget and a timeout), wait N (N real seconds), die -- and ok when there
-# is no line. It records its pid, its jobs and its start and end.
+# budget and a timeout), wait N (N real seconds), cancel (the interface's
+# SIGINT to the ctl, then wait to be ended), die -- and ok when there is no
+# line. It records its pid, its jobs and its start and end.
 cat > "${T}/repo/raofflineproxy-cache-indexed" <<'EOS'
-import os, sys, time
+import os, signal, sys, time
 from pathlib import Path
 from raofflineproxy import cache_keys
 from raofflineproxy.rom_browser import normalize_cached_rom_path
@@ -1901,6 +1902,12 @@ for i, raw in enumerate(jobs, start=1):
     if step[0] == "login": failed += 1; say(f"FAIL {i}/{total} {label}: RetroAchievements login required"); continue
     if step[0] == "die": sys.exit(3)
     if step[0] == "wait": time.sleep(float(step[1]))
+    if step[0] == "cancel":
+        # The interface's CANCEL (D-UI-078): SIGINT to the ctl, whose pid is
+        # the lock file's first line. Sent from here rather than from a
+        # background job of the harness, whose children have SIGINT ignored
+        # at entry and so cannot trap it (POSIX asynchronous lists).
+        os.kill(int(Path("/var/run/raofflineproxy-scan.lock").read_text().split()[0]), signal.SIGINT); time.sleep(10); continue
     if step[0] == "slow":
         n = int(step[1]); budget = os.environ.get("FAKE_BUDGET")
         if budget and n > int(budget):
@@ -2034,6 +2041,18 @@ treset; printf 'ok\nfail\nok\nskip\n' > "${TR}/helper-plan"
 tctl scan; [ "${RC}" -eq 1 ] && grep -qx '>>> errors 1' "${OUT}" && grep -qx '>>> why SOME_GAMES_NOT_SAVED' "${OUT}" && grep -q ' 1 scan cached=2 skipped=1 ready=[0-9]* limit=0 indexed=[0-9]* errors=1 why=SOME_GAMES_NOT_SAVED$' "${TSTAMP}"; check $? "one FAIL among OKs and a skip: exit 1, errors 1, why SOME_GAMES_NOT_SAVED, the stamp says so" "rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-200); stamp: $(cat "${TSTAMP}" 2>/dev/null) -- a failed game read as COMPLETED (#186 PL-24)"
 rm -f "${TR}/helper-plan"; : > "${TR}/helper-jobs.log"
 tctl scan; [ "${RC}" -eq 0 ] && [ "$(grep -c . "${TR}/helper-jobs.log")" -eq 2 ] && [ "$(grep -c '^I' "${TR}/helper-jobs.log")" -eq 1 ] && [ "$(grep -c '^H' "${TR}/helper-jobs.log")" -eq 1 ] && grep -qx '>>> done 2|0|[0-9]*|0' "${OUT}"; check $? "the next scan tries the failed game again, and the unknown one (nothing marks either cached): 2 jobs, one from the index, one to hash; done 2|0|n|0" "rc ${RC}; jobs: $(tr '\t' ',' < "${TR}/helper-jobs.log" | tr '\n' '|'); out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-160)"
+# The player's CANCEL on the scan page (D-UI-078, #241): the interface sends
+# SIGINT to the run, and the ctl's INT trap stamps the run with the counts it
+# had reached and why=CANCELLED, tells the page why, ends its helper, frees
+# the lock and exits 130. What was saved stays saved, and the next scan
+# passes over it. The helper's second job sends the signal (plan word
+# cancel), which is where the interface's would land.
+treset; printf 'ok\ncancel\nok\nok\n' > "${TR}/helper-plan"
+tctl scan; [ "${RC}" -eq 130 ] && grep -qx '>>> why CANCELLED' "${OUT}" && grep -q '^[0-9]* 130 scan cached=1 skipped=0 ready=[0-9]* limit=0 indexed=[0-9]* errors=0 why=CANCELLED$' "${TSTAMP}"; check $? "a scan cancelled from its page (SIGINT after the first OK): exit 130, why CANCELLED to the page, the stamp with the one game it had saved" "rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-160); stamp: $(cat "${TSTAMP}" 2>/dev/null); err: $(tr '\n' '|' < "${ERR}" | cut -c1-160)"
+HP="$(cat "${TR}/helper.pid" 2>/dev/null)"; for _ in $(seq 1 50); do kill -0 "${HP:-1}" 2>/dev/null || break; sleep 0.1; done
+! kill -0 "${HP:-1}" 2>/dev/null && flock -n "${T}/varrun/raofflineproxy-scan.lock" true; check $? "the cancelled run's helper (pid ${HP:-?}) is gone and the scan lock is free" "helper alive: $(kill -0 "${HP:-1}" 2>/dev/null && echo yes || echo no); lock free: $(flock -n "${T}/varrun/raofflineproxy-scan.lock" true && echo yes || echo no)"
+rm -f "${TR}/helper-plan"; : > "${TR}/helper-jobs.log"
+tctl scan; [ "${RC}" -eq 0 ] && grep -qx '>>> done 3|0|5|0' "${OUT}" && [ "$(grep -c . "${TR}/helper-jobs.log")" -eq 3 ]; check $? "the scan after a cancel passes over the game the cancelled run saved: 3 jobs, done 3|0|5|0" "rc ${RC}; jobs: $(grep -c . "${TR}/helper-jobs.log"); out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-160)"
 # Three fetches in a row unanswered, and a refused sign-in.
 treset; printf 'fail\nfail\nfail\nok\n' > "${TR}/helper-plan"
 tctl scan; [ "${RC}" -eq 1 ] && grep -qx '>>> why RETROACHIEVEMENTS_STOPPED_ANSWERING' "${OUT}" && grep -q 'why=RETROACHIEVEMENTS_STOPPED_ANSWERING$' "${TSTAMP}"; check $? "three FAILs in a row: exit 1, why RETROACHIEVEMENTS_STOPPED_ANSWERING, stamped" "rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-200)"

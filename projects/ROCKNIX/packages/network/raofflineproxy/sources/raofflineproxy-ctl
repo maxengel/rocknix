@@ -169,8 +169,10 @@
 #   proxy's own docs skip them silently); `indexed` is how many of `cached`
 #   came from the interface's index without a hash; `errors` is how many
 #   games a fetch failed for, which is what makes rc 1 with
-#   why=SOME_GAMES_NOT_SAVED. Tokens, never sentences: the page says them in the
-#   player's language. scan.log beside it carries the helper's line for
+#   why=SOME_GAMES_NOT_SAVED; a scan the player cancelled from its page
+#   (SIGINT from the interface, D-UI-078) is rc 130 with why=CANCELLED and
+#   the counts it had reached. Tokens, never sentences: the page says them
+#   in the player's language. scan.log beside it carries the helper's line for
 #   every game -- which RetroAchievements actions it cost, so an indexed
 #   game shows patch,unlocks,achievementsets and never gameid; the client
 #   redacts the token in what it logs and prints file names and reasons
@@ -1217,6 +1219,24 @@ stopped() {
     exit 143
 }
 
+# A scan the player cancelled from its page (SIGINT from the interface,
+# fork #241, D-UI-078). Not a failure: what the run saved stays saved, and
+# the next scan passes over those games. So the stamp is written with the
+# counts the run had reached -- the line under the row says SKIPPED and the
+# ready count is right -- the page is told why, and the run exits 130
+# through its EXIT trap (the helper ended, the run's files gone). R_CACHED
+# and the rest are the run's so far; before run_jobs they are unset, and
+# read as 0.
+cancelled() {
+    local READY
+    READY="$(count_ready)"
+    tell "why CANCELLED"
+    write_stamp 130 "${1}" "${R_CACHED:-0}" "${R_SKIPPED:-0}" "${READY}" 0 "${R_INDEXED:-0}" "${R_ERRORS:-0}" CANCELLED
+    slog "${1} cancelled by the player: cached=${R_CACHED:-0} skipped=${R_SKIPPED:-0} errors=${R_ERRORS:-0} ready=${READY}"
+    say "${1}: cancelled"
+    exit 130
+}
+
 # The images of what is cached, fetched until none is missing (#212). A
 # game's achievements and its images are one action to a player -- the
 # maintainer, 2026-09-18: "whenever we cache the achievements, we cache the
@@ -1296,6 +1316,7 @@ do_refresh() {
 
 do_scan() {
     trap 'stopped scan' TERM
+    trap 'cancelled scan' INT
     RUN_ROUTE=scan
     take_lock scan
     refuse_unless_ready scan
