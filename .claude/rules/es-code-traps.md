@@ -181,3 +181,24 @@ So, for a change that must reach "the picture next to the list":
 - **An Info log line shows nowhere on the image** until `Debug=true` is in
   es_settings.cfg with essway stopped, and `/var/log/es_log.txt` is tmpfs,
   so a proof script's closing reboot wipes it (memory `es-info-log-needs-debug`).
+
+## A rescan that deletes FileData drops the view first (2026-09-22, #246)
+
+`ViewController::reloadGameListView(IGameListView*)` begins by reading the
+old view's cursor (`getCursor()`, `isPlaceHolder()`, `getPath()`). That is
+fine when the files outlive the view, and a use of freed memory when the
+caller has just deleted them: `SystemData::rescanIfFolderChanged` cleared
+the root folder and then asked for the reload, and the interface died on
+the eighteenth screenshot of a session -- the seventeen before had read
+plausible bytes from the freed block. It took a run in the soak's shape
+on the VM to see it once, because it is the heap's choice.
+
+So a caller that is about to replace a system's FileData uses the two
+halves -- `dropGameListView(system, &wasCurrent)` before the delete
+(reads the cursor path while it is alive, takes the view down, remembers
+whether it was on screen), `remakeGameListView(system, cursorPath,
+wasCurrent)` after the repopulate -- and never `reloadGameListView`
+across a `clear()`. The general rule: **before deleting objects, list who
+holds a pointer** -- the view's cursor, `mCurrentView`, the collections
+(which exclude the imageviewer platform for exactly this reason),
+`FileData::mRunningGame` -- and drop or re-point each one first.
