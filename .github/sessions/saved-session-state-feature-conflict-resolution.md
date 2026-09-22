@@ -1,72 +1,67 @@
 # Saved Session State
 
-> **Saved**: 2026-09-22T15:10:00Z
-> **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `2c5d28eb55`, pushed to origin)
+> **Saved**: 2026-09-22T17:37:01Z
+> **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `4af5adf7e0`, pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The RG35XX SP is on the third candidate's fourth cut, `f2f23da875`, since 15:06 UTC (staged and rebooted with the maintainer's yes at ~14:55), and the soak (D-QA-036) restarts on it.** The round's remaining device box is that soak: hours of offline play, two unlocks in one FBNeo session, Wi-Fi back on; plus the page's `a-build-3` (SYSTEM SETTINGS `f2f23da`, CANCEL on the scan page, VIEW THIS GAME'S ACHIEVEMENTS offline on a scanned game). Nothing is in flight: no build, no suite, no guest. #241 and #242 are closed; #236 carries the fourth cut.
+**The round's candidate is the seventh cut `220585b56b`** (`h700-all-20260922-220585b56b/`, ES pin `4217ca838`): since the fourth cut `f2f23da875` that the RG35XX SP has run since 15:06 UTC, the only tree change is #243 (D-UI-080) -- save-state thumbnails and screenshots drawn at their system's display aspect, proven on guest d with a ring fixture. **vm-qa run 8 and the upgrade rehearsal from `b245fd12ac` are running** (`chain-243-9.sh`, `vmqa-run8.log`, `upgrade-rehearsal-run8.{log,rc}`, done-marker `chain-243-9.done`); their row in `docs/vm-qa-log.md` and the RECORD.txt line "running at the time of writing" are what is left to write for the cut. The RG35XX SP is offline for the maintainer's soak (D-QA-036); staging the seventh cut waits for it to come online, and the reboot is a question at that moment.
 
-## Completed This Session (2026-09-21 23:25 – 2026-09-22 05:40 UTC)
+## Completed This Session (2026-09-22 16:15 – 17:37 UTC, after the previous stash)
 
-- **The answer that started it**: B on the scan page closed the page and the scan ran on with no toast and only the SCAN GAMES row to report; the maintainer's call followed. Register D-UI-078 (reverses D-UI-060/070); `es-native-ui.md`'s fourth-tier paragraph rewritten ("sat in, with CANCEL"); #241 filed; #187 closed not planned.
-- **EmulationStation** (`feature/foreground-cancel`, merged to `test/qa-integration`, pin `54b5e7427`): `acd7a6fee` the three pages (scan: `OfflineScanJob` under setsid with a `>>> pid` line and `cancel()` = SIGINT to the group; transfer: `CloudTransferJob::stopByPlayer()` + the `player-cancelled` stamp token → `Outcome::SkippedCancelled`; scraper: `GuiScraperRun` over `ThreadedScraper::progress()`, card and toast gone); `7c7ffab43` `MultiLineMenuEntry::layoutRows` measures from the fonts (a refreshed two-line row drifted 10 %/refresh — the OFFLINE ACHIEVEMENTS page came back a screen tall after a long scan, on `d55169e59e` too); `46111b1e3` the scraper note's French fits a 640x480 line. 17 French strings added, 6 removed; unit tests 113/1237.
-- **Distribution on `next`** (`f0576e5f1a`, `56fe1fb2cf`, `75603308e4`, then docs `704fdc5825`, `d12e1a33c8`, `0236a12bef`): `raofflineproxy-ctl` traps INT as the player's cancel (stamp `why=CANCELLED`, exit 130); `last-good-scripts-test` `cancel` plan word + 3 checks (342/0); `es-syntax-check --with` → `-iquote`, new files borrow a sibling's command.
-- **Proof**: guest d 640x480 EN and FR on each cut; vm-qa run 4 eleven suites PASSED (`qa-75603308e4-webdav-a-20260922-0153`); upgrade rehearsal from the RG SP's build `b245fd12ac` 20/20 (`qa-75603308e4-upgrade-from-b245fd12ac-20260922-0218`); after a cancelled backup the QA cloud held 33 whole files, no partial. Frames `docs/qa-frames/2026-09-22/241-*` + README; row in `docs/vm-qa-log.md`.
-- **Artifacts**: `/workspace/artifacts/rocknix-images/h700-all-20260922-75603308e4/` (tar, DDR3, DDR4, SHA256SUMS, RECORD.txt); run 6's dir (`56fe1fb2cf`) marked SUPERSEDED. x64 image `generic-x64/target/ROCKNIX-GENERIC_X64.x86_64-20260922.{img.gz,tar}`.
-- **#242 (the soak's finding, 04:00-05:35 UTC)**: cause from the device's logs (read-only over `tools/device-act`): the proxy probes to write `online=` in its request log line and neither the probe nor the upstream forwarder bounds the resolver, so offline with the interface up every request paid glibc's twenty seconds; the interface waits fifteen. Proxy patch 015 (`resolve_host_bounded`, three seconds; the log line reads the tracker; 3 tests, 23/23), ES `c8b03e3d6` (pin `a29db7111`: offline + no answer = a sentence, not the web). Fourth cut `f2f23da875` (x64 run 17, H700 run 8, `h700-all-20260922-f2f23da875/`; runs 5-7 superseded); proofs on guest d in the handheld's shape (`repro-242.sh`: address kept, route gone, resolver black-holed): the page within seconds, the sentence within eight with the service stopped; vm-qa run 5 ten suites green + the harness 342/0 (it now unpacks the client's tests, so a patch carrying one applies); rehearsal from `b245fd12ac` 20/20. `tools/png-blackout` (stdlib) paints the account's name out of a frame. Rules: `generic-x64-vm-testing.md` "A cut link is not the only way to be offline"; `engineering-practices.md` "Change stays inside the fork's lanes" (D-UI-079).
-- **Tracker**: #241 and #242 closed as delivered; #236 body + page carry the fourth cut (`a-build-3` names `f2f23da`, D's tar/id); comments on #236, #241, #242, #187. Work log `docs/work-logs/2026_09-work_logs/2026_09_22-work_log.md` (three entries) and the 2026-09-21 log's last entry.
+- **#243 (D-UI-080, option 1)** -- ES `3b7265f33` (`ImageComponent::setDisplayAspect`; the SAVE STATE MANAGER's grid gives tiles their system's aspect; `DisplayAspect`/`DisplayAspectText` with the 4:3 table and the file-name rule; unit tests), `9f46264a8` (the SCREENSHOTS list is the `imageviewer` platform, not a system named "screenshots"), `4e4ab0647` (the theme's own bound extra takes the aspect: art-book-next hides `md_image` and draws `game-artwork` with `{game:image}`, an `ISimpleGameListView` extra; `DisplayAspect::applyToBoundImages`). Diagnostic cuts `05dc0a829` and `c437fe77f` (log lines, removed in `4e4ab0647`). Distribution pins `5d8bc093c7` (fifth), `2e2773bacf` (sixth), `0f916d52a4`/`8dc8233331` (diagnostic, x64 only), `220585b56b` (seventh). `tools/es-syntax-check --tree` committed.
+- **Proof** (guest d, 640x480, `mkpng.py` fixture + `measure-243.py`): manager NES tiles 87x87 (4:3 for 256x240), Game Boy 98x99 as is; SCREENSHOTS list Bobl 167x167 (was 151x189 = 0.80 on every cut before), Ninoid 191x191. Frames `docs/qa-frames/2026-09-22/243-*` + README section. #243 comment with the before/after table; boxes 1 and 2 ticked, box 3 the maintainer's.
+- **#244 closed** (docs commit `4af5adf7e0`): the change log's nine missing sections 2026-09-12 → 21 (a survey agent's draft, 49 claims with evidence, spot-checked by grep) and the 2026-09-22 section (#241, #242, #243); two drift lines fixed; rule `.claude/rules/change-log.md` (in `2e2773bacf`).
+- **D-QA-037** (the soak's two unlocks count on any core; the maintainer's Dr. Mario question) -- register row, #236 soak lines and comment, work log.
+- **#245 filed** (the maintainer's report: vertical arcade thumbnails a quarter turn off): cause in RetroArch's `task_screenshot.c` (no rotation handling; `SET_ROTATION` applied at display only); three options; open decision **D-UI-081** in the register's Open decisions.
+- **Rules/memory**: `es-code-traps.md` § "The picture beside a game list is the theme's own extra, not md_image"; memory `es-info-log-needs-debug` (ES logs warnings only; `Debug=true` with essway stopped; `/var/log/es_log.txt` is tmpfs); memory `gate-commits-on-the-check` updated (a `| tail` after the check masked a FAIL and the chain committed and built anyway -- `set -o pipefail`).
+- **Artifacts**: `h700-all-20260922-{5d8bc093c7,2e2773bacf,220585b56b}/` with SHA256SUMS + RECORD.txt (the first two marked SUPERSEDED; `f2f23da875`'s record marked superseded by the seventh). The fifth cut's rehearsal was voided (it staged a tar the sixth cut's build was rewriting); vm-qa run 7 (sixth cut) stopped after ten green suites.
+- **QA log**: row for the fifth cut (run 6, eleven suites PASSED, `qa-5d8bc093c7-webdav-a-20260922-1623`, 0.89 / 1.43 / 2.01) in `docs/vm-qa-log.md`.
 
 ## In Progress
 
-- **The soak (the maintainer's, D-QA-036)** on the RG35XX SP, now on `f2f23da875`: read the journal when they name the window (`tools/device-act rg35xxsp`, read-only: `status=139/134`, SIGSEGV/SIGABRT/core for #79; `raofflineproxy-ctl status`/`flushed` + the RA API for #211; `CTRL-EVENT-DISCONNECTED|beacon loss|NetworkManager state` for #161). The scanned store (238 games) carried over the update; no rescan needed. A page opened offline should show within seconds now, and a launch should sign in within a few seconds.
+- **vm-qa run 8 + upgrade rehearsal on `220585b56b`** (`chain-243-9.sh`). When `chain-243-9.done` appears: read `vmqa-run8.log` (suite table, the run dir `qa-220585b56b-webdav-a-...`, the three time-to-play medians) and `upgrade-rehearsal-run8.{rc,log}`; add the row to `docs/vm-qa-log.md` (a second row, or a line in it, for the sixth cut's stopped run 7); update `h700-all-20260922-220585b56b/RECORD.txt`'s Proof line; tick D's box on #236; commit and push.
 
 ## Next Steps
 
-1. Soak window → journal read → tick `a-soak` (page) and the #236 soak line; close #161 (not planned, scope named) if no drop showed; add a #79 row only if a crash did. Mirror the maintainer's `a-build-3` tick (the page) into #236 when it lands.
-2. Done: the RG35XX SP is on `f2f23da875` (15:06 UTC; the act recorded by device-act, its label's hour wrong, the log entry says so).
-3. The RG SP (D-QA-031) when the maintainer calls the candidate confident: the same tar, the runbook's path, `tools/device-act rgsp` (192.168.1.175), `DEVICE_ACT_TIMEOUT=900` for the hash, ask before the reboot. D's rehearsal box is green for this tar.
-4. #241 is closed (D-UI-079: the other background cards keep their cards; the rule is for the fork's lanes). Nothing left on it.
-5. SM8550 for the Nova (#150, D-QA-028) after the RG SP; then #211's two-unlock VM reproduction / #240; housekeeping (`tools/fork-worktree list`; upstream PR #3359; #228 the maintainer's).
+1. Finish the vm-qa row (above). If a suite fails, it is this cut's -- read the suite log before deciding anything.
+2. **The RG35XX SP**: when the maintainer brings it online (their soak's Wi-Fi-back moment), read the journal read-only through `tools/device-act rg35xxsp` first (the awards' lines, `Flush`, `status=139`, `CTRL-EVENT-DISCONNECTED`) and tick `a-soak`/#79/#161/#211 lines; then stage `ROCKNIX-H700.aarch64-20260922.tar` from `h700-all-20260922-220585b56b/` into `~/.update` (staging needs no question), verify the device-side checksum, and **ask before the reboot, naming the device**. After: BUILD ID `220585b` in SYSTEM SETTINGS; the maintainer's word on an NES thumbnail (#243 box 3).
+3. #245 / D-UI-081: the maintainer's call. If option 1, a RetroArch patch `0016` rotating the raw capture by the content rotation; the proof is the device (the VM has no arcade ROM).
+4. Then the RG SP (D-QA-031) with the same tar; SM8550 for the Nova (#150); the housekeeping list in the previous state.
 
 ## Key Files Modified (this session)
 
 | File | Change | Notes |
 | --- | --- | --- |
-| `docs/decision-register.md` | Modified | D-UI-078 (long work is a foreground page with CANCEL; reverses D-UI-060/070) |
-| `.claude/rules/es-native-ui.md` | Modified | fourth tier "sat in, with CANCEL"; card = fast work only; "A layout must not be computed from what it last produced" |
-| `projects/ROCKNIX/packages/network/raofflineproxy/sources/raofflineproxy-ctl` | Modified | `cancelled()` + `trap 'cancelled scan' INT`; the why-token contract names CANCELLED |
-| `tools/last-good-scripts-test` | Modified | fake helper's `cancel` plan word; three checks after the SOME_GAMES_NOT_SAVED case |
-| `tools/es-syntax-check` | Modified | `--with` → `-iquote`; a new file borrows a sibling's compile command |
-| `projects/ROCKNIX/packages/ui/emulationstation/package.mk` | Modified | pin `d842bbe16` → `0970b66e1` → `3305233d1` → `54b5e7427` |
-| `docs/qa-frames/2026-09-22/` | Created | 24 frames + README (#241 EN/FR; #242 the page offline and the service-down sentence) |
-| `projects/ROCKNIX/packages/network/raofflineproxy/patches/015-bounded-name-lookup.patch` | Created | a name lookup gets three seconds; the log line reads the tracker; three tests |
-| `tools/png-blackout` | Created | paint a rectangle of a PNG black with the stdlib; registered in the guard, `fork-workflow.md`, `instruction-files.md` |
-| `.claude/rules/generic-x64-vm-testing.md`, `.claude/rules/engineering-practices.md` | Modified | the two-shape offline proof; change stays inside the fork's lanes (D-UI-079) |
-| `docs/vm-qa-log.md`, `docs/work-logs/2026_09-work_logs/2026_09_2{1,2}-work_log.md` | Modified | the row for `75603308e4`; the night's entries |
-| ES repo (`~/Development/emulationstation-next`, worktree `foreground-cancel`) | branch merged | `OfflineScanJob.*`, `GuiOfflineScan.*`, `GuiRetroAchievementsSettings.cpp`, `OfflineAchievements.cpp`, `CloudTransferJob.*`, `GuiCloudTransfer.*`, `CloudText.*`, `GuiMenu.cpp`, `ThreadedScraper.*`, `GuiScraperRun.*` (new), `GuiScraperStart.cpp`, `MultiLineMenuEntry.cpp`, `CMakeLists.txt`, `CloudTextTests.cpp`, the French `.po` |
+| `projects/ROCKNIX/packages/ui/emulationstation/package.mk` | Modified | pin `a29db7111` → `820852ea7` → `cc2189f47` → `e86f117fc` → `de4584956` → `4217ca838` |
+| `tools/es-syntax-check` | Modified | `--tree <worktree>`: a header farm so es-core and es-app header edits check together |
+| `docs/cloud-sync-changelog.md` | Modified | nine sections 2026-09-12 → 21; the 2026-09-22 section; rclone 1.75.1; FINISH RESTORE PROCESS |
+| `.claude/rules/change-log.md` | Created | the change log is written the day the change lands |
+| `.claude/rules/es-code-traps.md` | Modified | the theme-extra trap (+ the log-level note) |
+| `docs/decision-register.md` | Modified | D-UI-080, D-QA-037; D-UI-081 open |
+| `docs/vm-qa-log.md` | Modified | the fifth cut's row |
+| `docs/qa-frames/2026-09-22/243-*.png`, `README.md` | Created/Modified | before/after frames with the ring numbers |
+| `docs/work-logs/2026_09-work_logs/2026_09_22-work_log.md` | Modified | four entries (D-QA-037; #243; #245; the theme-extra diagnosis) |
+| ES repo (`feature/display-aspect`, merged to `test/qa-integration`) | branch | `ImageComponent.{h,cpp}`, `GridTileComponent.*`, `ImageGridComponent.h`, `GuiSaveState.cpp`, `DetailedContainer.cpp`, `ISimpleGameListView.cpp`, `DisplayAspect.{h,cpp}`, `DisplayAspectText.{h,cpp}` (new), `CMakeLists.txt`, `DisplayAspectTextTests.cpp` (new) |
 
 ## Related Context
 
-- **Tracker**: #241 (this change; one box open), #236 (round record), #150 (H700/SM8550 rows), #161/#79/#211 (soak-dependent), #240, #237, #239, #187 (closed)
-- **Register**: D-UI-078 (new), D-QA-032 (why the change rode this candidate), D-QA-036 (the soak), D-QA-031 (the RG SP gate), D-CLOUD-129 (the stop path the transfer cancel reuses), D-UI-028 (the SKIPPED word)
-- **Artifacts**: `h700-all-20260922-75603308e4/`, `qa-75603308e4-webdav-a-20260922-0153/`, `qa-75603308e4-upgrade-from-b245fd12ac-20260922-0218/`
-- **Session scripts** (`/workspace/tmp/rocknix-session/`): `rebuild-d2.sh <img> [fr_FR]` (guest d seeded for the three walks: 6 RA ROMs + 30 pads, QA remote + 150 MB fixture, accounts, toggle off), `proofs-241.sh <img> <id>`, `file-frames-241.sh <id>`, `check-old-close.sh`, `build-x64-run1{4,5,6}.sh`, `build-h700-run{5,6,7}.sh`, `vmqa-run4.sh`, `record-h700-run6.sh`; steps under `frames-241/steps/`; frames under `frames-241/<id>/{en,fr}/`
+- **Tracker**: #243 (box 3 open), #244 (closed), #245 (new, D-UI-081), #236 (round page: seventh cut), #211/#79/#161 (soak), #150
+- **Register**: D-UI-080, D-QA-037, D-UI-081 (open), D-QA-036, D-QA-031
+- **Artifacts**: `h700-all-20260922-220585b56b/` (the candidate); `qa-5d8bc093c7-webdav-a-20260922-1623/`; the seventh cut's run dirs once done
+- **Session scripts** (`/workspace/tmp/rocknix-session/`): `mkpng.py`, `seed-243.sh`, `measure-243.py`, `proof-243d.sh <outdir> [systems]` (X = GAME OPTIONS then A = the manager), `proof-243s.sh <outdir>` (`KEEP=1` keeps the guest up; SCREENSHOTS is five right of PICO-8), `chain-243-9.sh`, `build-x64-run22.sh`, `build-h700-run11.sh`, `vmqa-run8.sh`, `record-h700-run11.sh`, `changelog-gap-draft.md` (the survey's draft with evidence comments)
 
 ## Notes for Next Session
 
-- **The device is on `d55169e59e`, which has the row-layout defect**: after their library scan ended and they closed the page, the OFFLINE ACHIEVEMENTS page beneath will have looked garbled (two texts on top of each other, one grey bar). Reopening the page draws it correctly; the third candidate fixes it. Say so if they mention it.
-- A page beneath a full-screen page receives no `update()` and does not render; the drift came from `layoutRows()` reading the grid's cell sizes back on every `setDescription`, whoever called it.
-- A harness `&` job has SIGINT ignored at entry, so a bash `trap ... INT` inside it never fires; the fake helper sends the signal from inside the run (memory `background-jobs-cannot-trap-sigint`).
-- `es-syntax-check --with <es-app/src>` now really puts the edited headers first; a header edit still needs it.
-- Guest d's `RCLONEOPTS --bwlimit` edit did not slow the content backup (5.4 MB/s); the 150 MB fixture was long enough anyway.
-- `cloud-test-backend reset` between proof passes; the QA cloud data dir is `~/.cache/rocknix-cloud-qa/data`.
-- The RG35XX SP is `rg35xxsp` (192.168.1.81), the RG SP `rgsp` (192.168.1.175); every device command through `tools/device-act`; the reboot is a question every time.
-- AUTOMATIC SCREENSHOT was toggled on by a stray walk on guest d's first image; the guest was rebuilt since, nothing persists.
+- **Driving the SCREENSHOTS list on the VM**: `StartupSystem=<name>` in es_settings.cfg with essway stopped lands the carousel on nes/gb/pico-8 but **not** on `imageviewer` (it comes up at PICO-8 although the API lists it visible); from PICO-8 the order is nes, gb, gbc, gba, SCREENSHOTS. `LastSystem` counts only when `StartupSystem` is `lastsystem`. `vm-visual-qa run --outdir` must be absolute.
+- **ES diagnostics**: `LOG(LogInfo)` shows nowhere until `Debug=true`; the log is `/var/log/es_log.txt` (tmpfs -- read it before any reboot).
+- **One chain per image.** A chain's tail must not overlap the next chain's x64 build (the rehearsal staged a tar mid-rewrite). The seventh cut's chain waited on the diagnostic chain's done-marker before syncing.
+- The RG35XX SP is `rg35xxsp` (192.168.1.81), offline for the soak at the time of writing; `tools/device-act` for every command; the reboot is a question every time.
+- Guest d currently holds the seventh cut with the fixtures seeded; the QA cloud was reset before vm-qa run 8.
 
 ## Open Questions
 
-- The soak's window (the maintainer's) and their yes to the reboot for `75603308e4`.
-- `ra-offline` was not re-run on the third candidate (the RA path did not change); run it before the RG SP if the maintainer wants the suite green on the shipped pin — it spends a QA achievement and needs their reset.
-- #228 webkitgtk 2.54 — the maintainer's.
+- The maintainer's call on #245 / D-UI-081.
+- The soak's window and the RG35XX SP coming online (their say).
+- `ra-offline` not re-run since the second candidate; run it before the RG SP if wanted (spends a QA achievement).
