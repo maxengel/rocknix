@@ -487,3 +487,41 @@ EMULATIONSTATION_SRC=~/Development/emulationstation-next.worktrees/<branch> \
 Note that a package's source change does **not** always retrigger a rebuild:
 clear its stamp first (`build.*/.stamps/<pkg>/`), and delete
 `build.*/.stamps/image/build_target` to force a fresh image.
+
+## Reading a crash
+
+Since the seventh cut of the 2026-09-22 round (#246), EmulationStation's
+signal handler writes a backtrace to stderr before it dies of the signal:
+in the journal, under `start_es.sh`, a line `EmulationStation crash
+backtrace (innermost first; symbolise with addr2line):` followed by one
+frame per line, `emulationstation(+0x...) [0x...]` or `libfoo.so(sym+0x..)`.
+Before that the handler logged one line and called `exit()`, so the only
+core the keeper could have caught described the teardown, not the fault.
+
+Both builds' `emulationstation` binaries are unstripped, with debug info,
+in the build root (`build.ROCKNIX-<DEVICE>.<ARCH>/build/emulationstation-<pin>/emulationstation`),
+and both toolchains carry a symboliser -- **the build that produced the
+image, so match the pin in the directory name to the device's BUILD_ID**:
+
+```bash
+# H700 (aarch64):
+B=/workspace/repos/rocknix.worktrees/devices/build.ROCKNIX-H700.aarch64
+$B/toolchain/bin/aarch64-rocknix-linux-gnu-addr2line -f -C -i \
+  -e $B/build/emulationstation-<pin>/emulationstation 0x<addr> 0x<addr> ...
+# GENERIC_X64:
+X=/workspace/repos/rocknix.worktrees/generic-x64/build.ROCKNIX-GENERIC_X64.x86_64
+$X/toolchain/bin/llvm-addr2line -f -C -i -e $X/build/emulationstation-<pin>/emulationstation 0x<addr> ...
+```
+
+`backtrace_symbols_fd` prints `emulationstation(+0xOFF)` for the main
+binary; feed addr2line the `+0xOFF` value when the binary is
+position-independent (`readelf -h | grep Type` says `DYN`), the absolute
+`[0x...]` when it says `EXEC`. A frame in a shared library is symbolised
+against that library from the same build root's `image/system/usr/lib`.
+
+A core, when `rocknix-corekeep --on` has been armed on the device
+(`/storage/.cache/log/cores/core.<exe>.<epoch>.<pid>.gz` + `.txt`), is
+read with gdb on the host against the same unstripped binary -- the host
+needs `gdb` (or `gdb-multiarch` for an aarch64 core) installed, which it
+was not on 2026-09-22. The core holds whatever the process held, tokens
+included: copy it with scp, read it here, delete it when done.
