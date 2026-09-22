@@ -257,6 +257,24 @@ public:
 };
 ```
 
+## A layout must not be computed from what it last produced
+
+`MultiLineMenuEntry::layoutRows` sized its two rows from `mText->getSize()`
+and `mSubstring->getSize()` -- which, after the first pass, are the cells
+the grid handed those texts (0.9 and 1.1 of their natural heights), because
+`TextComponent` stops sizing itself once it has been given a height. So
+every `setDescription` moved the split by ten percent: a row refreshed
+once looked a little tight, and the SCAN GAMES row, refreshed for each
+game of a 37-game scan under the scan page, came back a screen tall with
+the two texts drawn on top of each other (2026-09-22, #241; fixed in ES
+`7c7ffab43` by measuring from the fonts). It had shipped in two candidates
+because every walk scanned a handful of games (blindspot 44).
+
+So a layout pass reads its inputs from something the pass does not write
+-- the font, the text, the parent's width -- never from the sizes it set
+last time. And a row that is refreshed on a timer is proved with a refresh
+count in the hundreds, not with one.
+
 ## Code conventions
 
 The language conventions that shared this heading -- the four tiers, the two
