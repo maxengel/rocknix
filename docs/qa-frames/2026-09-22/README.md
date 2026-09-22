@@ -83,3 +83,27 @@ restarted after the toggle went on from the shell.
   log. The summary's title behind the dialog carried the QA account's name;
   the top band is painted out with `tools/png-blackout` (stdlib only), which
   is how a frame with the name in it is filed from now on.
+
+## #243 -- thumbnails and screenshots at the system's display aspect (D-UI-080), on `220585b56b`
+
+Guest d at `640x480`, seeded with a fixture picture whose circle is round
+only at the aspect the pixels were made for (`mkpng.py`): a 256x240 NES one
+drawn round at 4:3 (in the file its ring measures 165x207, w/h 0.80) and a
+160x144 Game Boy one (round as is). `measure-243.py` finds the ring in a
+frame and reports its box, so each claim below is a number.
+
+- `243-before-screenshots-list-nes-file-shape` -- the fifth cut
+  (`5d8bc093c7`): the SCREENSHOTS list drawing Bobl's screenshot at the
+  file's proportions, ring 151x189 (0.80), the tall ellipse the maintainer
+  saw. The same on the sixth cut and on everything before.
+- `243-after-manager-nes-tiles-4x3` -- SAVE STATE MANAGER for Bobl (NES):
+  AUTO SAVE and SLOT 1 tiles, each 256x240 file drawn 4:3, rings 87x87
+  (1.00).
+- `243-after-manager-gb-tile-as-is` -- Ninoid (Game Boy): its 160x144 tile
+  as the file is, ring 98x99.
+- `243-after-screenshots-list-nes-4x3` -- SCREENSHOTS list, Bobl's
+  screenshot at 4:3, ring 167x167 (1.00): the theme's own bound picture
+  (`game-artwork`, `{game:image}`) takes the aspect, `md_image` being
+  hidden by the theme.
+- `243-after-screenshots-list-gb-as-is` -- Ninoid's screenshot as the file
+  is, ring 191x191.

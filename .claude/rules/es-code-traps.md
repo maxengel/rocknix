@@ -154,3 +154,30 @@ found`): the header lives in the toolchain's sysroot, not on the host, so the
 configure line names it (audit #186 PL-21, 2026-09-14). The build root's own
 copy, `$B/build/rapidjson-1.1.0/include`, works the same.
 
+
+## The picture beside a game list is the theme's own extra, not md_image (2026-09-22, #243)
+
+The shipped theme (art-book-next) hides `md_image` in the detailed view
+(`<visible>false</visible>`) and draws the game's picture with an extra of
+its own, `<image name="game-artwork" extra="true">` with
+`<path>{game:image}</path>`. That extra is an `ISimpleGameListView::mThemeExtras`
+entry, bound to the selected file by `updateThemeExtrasBindings()`; it is not
+one of `DetailedContainer::mThemeExtras` (which held 0 there), and it is not
+`mImage`. So anything done to `mImage` in the container -- an aspect, a
+tint, a size -- lands on a component nobody sees, while the frame shows the
+extra untouched. Two cuts and two diagnostic builds went by before
+`ImageComponent::resize` was made to say which component it was sizing:
+`md_image` at its 307x192 target had the aspect, `game-artwork` at 260x220
+had not.
+
+So, for a change that must reach "the picture next to the list":
+
+- **Apply it in the list view, to its extras, after `BindingManager::updateBindings`**,
+  by matching each `ImageComponent`'s `getImagePath()` against the file's
+  image path (`DisplayAspect::applyToBoundImages`). The container's `mImage`
+  and its own extras get the same call, for a theme that does use `md_image`.
+- **Check the theme before trusting an element name.** `grep -rn 'md_image\|{game:image}'`
+  on `/usr/share/themes/<theme>/` says which component actually draws.
+- **An Info log line shows nowhere on the image** until `Debug=true` is in
+  es_settings.cfg with essway stopped, and `/var/log/es_log.txt` is tmpfs,
+  so a proof script's closing reboot wipes it (memory `es-info-log-needs-debug`).

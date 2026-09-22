@@ -15,7 +15,7 @@ below is verified working there unless a line says otherwise. Other targets
 build from the same sources but have not been run — that is the main thing this
 document is asking for help with.
 
-**Base:** `upstream/next` as of 2026-09-04. rclone moves **1.71.0 → 1.75.0**
+**Base:** `upstream/next` as of 2026-09-04. rclone moves **1.71.0 → 1.75.1**
 (S3 multipart streaming improvements, and the version our checksums pin).
 
 ---
@@ -369,7 +369,7 @@ Everything else is handled without asking:
   preceded it, and the pre-`CONTENT_REMOTE` root — so a library that has not been
   re-uploaded still downloads. Backup only ever writes the current shape, so
   libraries migrate themselves as they are used.
-- **After a whole-device restore**, the device offers `FINISH RESTORE SETUP` to
+- **After a whole-device restore**, the device offers `FINISH RESTORE PROCESS` to
   re-enter the passwords a backup deliberately does not carry. It reappears at
   next startup if dismissed.
 
@@ -1890,3 +1890,329 @@ Maintainer's order: #116, #52, #71, #39, then #74 and #100, one build.
   sixty-provider description in small text (#128). A short, list-free
   label is kept as it is; a paragraph becomes the words the provider was
   chosen by.
+
+## The exit card says syncing; the card speaks in your words; FINISH RESTORE PROCESS; the automatic sync is bounded (2026-09-12)
+
+The night after the council the maintainer walked its proposals one at a
+time; what a player sees from that walk is below, the rest is design
+(D-CLOUD-102..117).
+
+- **The card after a game says `SYNC SAVES` / `SYNCING SAVES TO THE CLOUD`**,
+  not BACKING UP SAVES, matching the startup card (#138, D-UI-040). *Back up*
+  and *restore* stay the transfer page's words. Maintainer: *"save the word
+  'backup' for when someone feels it's a longer, deliberate action."*
+  - **The card's live line reads `12 KB OF 40 KB` and `COMPARING SAVES · 12 OF
+  70`**, never rclone's units or two stats fields run together (#140).
+  - **The relink page and both rows that open it are `FINISH RESTORE PROCESS`**
+  (the hub said FINALIZE RESTORE, NETWORK SETTINGS said FINISH RESTORE SETUP)
+  (#129, D-UI-046). Maintainer: *"make it both, say, 'finish restore process.'"*
+  - **The empty-cloud dialogs in their short form** (#127, D-UI-045/047):
+  `NOTHING TO RESTORE: YOUR CLOUD HAS Savez, NOT Saves.` / `IS THE NAME
+  RIGHT?` with `CHANGE FOLDER` · `CREATE ANYWAY` · `NOT NOW`; a plain `YOUR
+  CLOUD HAS NO SAVES FOLDER YET.` / `CREATE IT NOW?`. The transfer page raises
+  the offer too, so a fresh handheld meets it (#145).
+  - **Save state is two words everywhere, and the settings tier is settings**
+  (#148, D-UI-049): fourteen inherited `SAVESTATE` labels read SAVE STATE, the
+  restart dialog reads `RESTORE SETTINGS FIRST, THEN RESTART?`, the DATA
+  MANAGEMENT row `RESTORE SETTINGS FROM THIS DEVICE`.
+  - **The automatic sync -- at startup and after a game -- is bounded: 5 s to
+  connect, 5 s with no bytes moving, 20 s in all, five retries, one transfer
+  at a time** (D-CLOUD-118/121). Past the ceiling it ends `THE CLOUD TOOK TOO
+  LONG - IT'LL TRY AGAIN NEXT TIME`; a stalled endpoint had held the exit
+  card for 321 s. Maintainer: *"Five retries sounds like a good place to
+  start as a baseline."*
+  - **The startup sync no longer waits a minute on a network NetworkManager
+  calls "limited"**: any connected state with a held route settles at once.
+  The RG SP had logged `not settled after 60s` while Dropbox answered it.
+  - **On a bucket cloud (S3 and compatibles) a mistyped saves folder fails as
+  on Dropbox** instead of reporting `Game saves: COMPLETED` over nothing: a
+  folder exists when its parent lists it, the wizard's S3 stanza turns
+  directory markers on so an empty folder survives, and listings retry three
+  times, not ten (#141, #143, D-CLOUD-120).
+  
+## Settings backups leave the image's files out; the device names itself; a missing folder is not a broken cloud (2026-09-13)
+
+- **A settings backup carries your configuration and nothing the image
+  ships** (#45, D-CLOUD-008): a file identical to the image's own copy is left
+  out, and PPSSPP's `assets/` and shader cache never travel -- 17 MB became
+  9 KB. A restore skips those two prefixes from any archive, old `.zip` ones
+  included, so an older emulator's files no longer land under a newer one
+  (D-CLOUD-124).
+  - **Two units of one family no longer fight over one name on your network.**
+  A device still called by its family (`H700`) names itself `H700-<four hex
+  digits>` once, from its own hardware id; a name you typed is never touched,
+  and one carried in by another device's settings restore is re-derived
+  (#50, D-NET-002/004/005). **And it answers for `<name>.local`**: the mDNS
+  responder is on again, after the device has its name (D-NET-003/006).
+  Maintainer: *"We should turn back on the mDNS responder."*
+  - **On FTP, a folder that is not there yet no longer reads as "Your cloud
+  couldn't be read"**, and the content backup makes each folder before
+  copying, so a first copy into a new folder lands whole (#142, D-CLOUD-123).
+  - **A deliberate back up or restore ends when the cloud stops answering, on
+  every provider**: ended once rclone has shown no progress for 36 s, saying
+  `Couldn't finish: ...` on its own line, where on S3 the SDK re-dialled
+  through the whole outage and then stamped success (#153, D-CLOUD-126/127).
+  The summary ends on a sentence: `Completed.`, `Couldn't finish: <why>. Try
+  again.`, `Skipped: <reason>.` Maintainer: *"It feels the most transparent."*
+  - **The emulators' copies of your RetroAchievements token stay out of a
+  settings backup** (#169, D-INFRA-010): PPSSPP's, Dolphin's, SkyEmu's and
+  ARMSX2's token files are held back whole, four other emulators' settings
+  travel with the token blanked, and an old archive does not land one.
+  
+## The save state manager fits its labels; ScreenScraper says which credential; the startup card names its half (2026-09-13)
+
+- **`START NEW GAME` and `AUTO SAVE` read whole on a 640x480 panel**, and the
+  manager draws its help bar there for the first time (`BACK / DELETE / COPY
+  TO FREE SLOT / LAUNCH` on a slot) (#27, #149, D-UI-050). The tiles had been
+  drawn a third larger than the menu's own small text since the page was
+  written; the maintainer had picked the wrong tile because of it. After a
+  delete the cursor lands on START NEW GAME and the bar follows (#93).
+  - **A scrape that cannot sign in says which credential, in English**, not
+  ScreenScraper's raw French blaming the account (#66): `SCREENSCRAPER
+  REJECTED THE DEVELOPER ID OR PASSWORD. CHECK THEM UNDER SCRAPER >
+  ACCOUNTS.`, `SCREENSCRAPER REJECTED YOUR USERNAME OR PASSWORD. ...`,
+  `SCREENSCRAPER NEEDS YOUR ACCOUNT TO SCRAPE. ADD IT UNDER SCRAPER >
+  ACCOUNTS.`, `COULDN'T REACH SCREENSCRAPER. TRY AGAIN.`, and a line per
+  documented status. The developer pair lives under SCRAPER > ACCOUNTS
+  beside the account (#151 PL-06/07/15).
+  - **The fork's strings ship in French too**, keyed to SYSTEM SETTINGS >
+  LANGUAGE (D-UI-051) -- the credential messages first, the rest on 09-17.
+  Maintainer: *"we could at least support English and French."*
+  - **The startup card names its half and the bar only moves forward** (#157,
+  D-UI-052): `RECEIVING · COMPARING SAVES · 113 OF 113`, the bar filling 0-50
+  while receiving and 50-100 while sending. The maintainer had seen "113 of
+  113" twice with a still bar between: *"no indication that it is working
+  correctly."*
+  - **The RetroAchievements game page no longer draws its bar over the header
+  at 640x480** (#160, #193): the header is left-aligned in both menu modes
+  and the bar and its percentage share one row on a visible track.
+  
+## Offline achievements (BETA) (2026-09-13 to 2026-09-15)
+
+The award the maintainer lost on a train -- unlocked offline, gone when the
+game exited -- is what this is for (#162, #163). Built on RAOfflineProxy
+(GPL-3, RetroAchievements-approved), packaged natively. Maintainer: *"someone
+using RetroAchievements with offline achievements enabled doesn't have to
+care whether they're connected or not."* (D-RA-008)
+
+- **`OFFLINE ACHIEVEMENTS (BETA)` is a row under RETROACHIEVEMENTS SETTINGS
+  that opens a page of its own**: the switch, `SCAN GAMES FOR OFFLINE
+  ACHIEVEMENTS`, then one block of text -- `EARN CASUAL ACHIEVEMENTS WITHOUT A
+  CONNECTION. THEY ARE SENT WHEN YOU'RE BACK ONLINE. CASUAL ACHIEVEMENTS ONLY,
+  SO TURNING IT ON TURNS HARDCORE MODE OFF. '!RA!' IN A GAME'S CORNER MEANS AN
+  ACHIEVEMENT HASN'T REACHED RETROACHIEVEMENTS YET.` (D-RA-001/002/003,
+  D-UI-053/054/056). Maintainer: *"put the exclamation point, RA exclamation
+  point, in between single quotes, so people know what that means."*
+  - **Turning it on says so and offers the scan**: `THIS IS A BETA FEATURE. IT
+  WORKS FOR CASUAL ACHIEVEMENTS ONLY, AND TURNING IT ON TURNS HARDCORE MODE
+  OFF.` with `TURN ON` / `NOT NOW`, then `SCAN GAMES FOR OFFLINE ACHIEVEMENTS
+  NOW?` with `SCAN NOW` / `LATER` (D-RA-012). Hardcore is put back when the
+  switch goes off. Maintainer: *"otherwise, they may skip the scan process."*
+  - **The scan caches every game on the console that has a set -- no cap** --
+  from the interface's own index, without re-hashing; a top-up on connect
+  adds what is new, and the page says `NEW GAMES ARE ADDED THE NEXT TIME
+  YOU'RE CONNECTED.` (#179, #184, D-RA-010/013/014). The scan page counts
+  `GAMES WITH ACHIEVEMENTS ADDED: N` and `NOT SAVED: N`; the row under it
+  reads `N GAMES READY FOR OFFLINE PLAY`, or `SAVING GAMES FOR OFFLINE
+  PLAY...` with its count while a top-up runs on its own (#189).
+  Maintainer: *"I would want every game available for offline play."*
+  - **With Wi-Fi off, the achievements pages still show your progress** from
+  the store on the device (#180, D-RA-009/011/021): a game's page says
+  `YOU'RE OFFLINE. SHOWING YOUR MOST RECENT PROGRESS.`, the summary `YOU'RE
+  OFFLINE. SHOWING THE GAMES SAVED FOR OFFLINE PLAY.` Maintainer: *"I just
+  turned off Wi-Fi and tried to view the achievements, and I couldn't."*
+  - **The cards say what happens next, never that the link was down** (#173,
+  D-RA-004/017): at exit `OFFLINE ACHIEVEMENTS WILL BE SENT NEXT TIME YOU'RE
+  CONNECTED.` (or `... WILL BE SENT AND SAVES SYNCED NEXT TIME YOU'RE
+  CONNECTED.`), on the next connected card `OFFLINE ACHIEVEMENTS HAVE BEEN
+  SENT TO RETROACHIEVEMENTS.` Achievements are *sent*, saves are *synced*.
+  - **The proxy's synthetic "Warning: Casual Only" achievement never reaches
+  the emulator** (it was awarded with a toast at every launch), a game
+  without a set reads as unknown rather than an outage, **a settings backup
+  never carries the proxy's store**, and the proxy's automatic crash-log
+  upload to its developer is off unless you turn it on (D-RA-003/005, #186).
+  
+## Four fixes found on the way to the release candidate (2026-09-14)
+
+- **The RETROACHIEVEMENTS switch no longer turns itself off** after a boot
+  whose sign-in ran before the network was up (#175). A refusal says
+  `RETROACHIEVEMENTS DIDN'T ACCEPT YOUR SIGN-IN: <why>` and leaves the switch
+  on; an unreachable server says `COULDN'T REACH RETROACHIEVEMENTS TO SIGN YOU
+  IN. RETROACHIEVEMENTS STAYS ON. IT'LL SIGN IN WHEN YOU'RE ONLINE.`, and the
+  sign-in is retried when the link comes up, nine times ten seconds apart,
+  because a hotspot's DNS lags its address.
+  - **Your RetroAchievements password is out of the launch log and out of a
+  support bundle** (#176, #177, D-INFRA-011): with verbose logging, the
+  image's default, `exec.log` had carried it on every launch and
+  `rocknix-evidence` copied it. Every value now reads `<redacted>`.
+  - **System logos are sharp on every system** (#181). FBNeo, NES and Game Boy
+  read soft because one logo was shared between the carousel and a game
+  list's header and whichever loaded first fixed its size. Maintainer, after
+  a restart: they *"fixed themselves"* -- which is the cause exactly.
+  - **Tailscale comes back after a restart when its switch is on** (#174,
+  D-NET-010): the switch records your choice, not its seven-second probe's
+  answer, which wrote `0` whenever the node still needed a sign-in.
+  - **INDEX NEW GAMES AT STARTUP actually runs** (#183, D-RA-018). It had never
+  once run on ROCKNIX: the index started only with the splash screen's
+  window, and ROCKNIX starts the interface without a splash.
+  
+## Offline, the achievements pages answer; the login toast says so; save state times; Wi-Fi like a phone; a launch over a sync asks (2026-09-15)
+
+- **RETROACHIEVEMENTS from the main menu answers in seconds with Wi-Fi off**
+  (#190, D-RA-020). It hung on PLEASE WAIT: 247 games were 494 requests to a
+  proxy that still believed it was online. The interface asks the proxy for
+  its store only and reads the summary in one call. Maintainer: *"just gets
+  stuck on 'Please Wait' while I'm offline."*
+  - **RetroArch's login toast says `RetroAchievements: Logged in as "<account>"
+  (offline).`** when the proxy answered from its store, and its backdrop
+  covers the text at 640x480 (#194, D-RA-022).
+  - **The SAVE STATE MANAGER's times follow SHOW CLOCK IN 12-HOUR FORMAT**:
+  `09/15/2026 02:17 AM` with it on, `02:17` with it off, French with a
+  literal AM/PM (#195, D-UI-058/066). A Sunday-morning `09:07` had read as
+  9:07 pm on a Monday night. Maintainer: *"adding AM or PM to the save state
+  time when the user chooses to use the 12-hour clock."*
+  - **Playing from a slot loads that slot and keeps RetroArch's exit auto
+  save** (#196, D-UI-057). The interface used to put the old auto save back
+  over the one RetroArch had just written, so a session from a slot left no
+  save state. ROCKNIX ships Batocera's `es_savestates.cfg` entry and the
+  launcher turns the chosen file into RetroArch's entry slot. Maintainer:
+  *"stay consistent with upstream Batocera game saves."*
+  - **NETWORK SETTINGS shows the network you are on.** The `WI-FI NETWORK`
+  row's value is the connection -- the name, `NOT CONNECTED`, or `COULDN'T
+  CHECK` -- not the last one typed (#191, #201, D-UI-063/071). A opens
+  `WI-FI NETWORKS`: the networks in range, the joined one first marked
+  `CONNECTED`, remembered ones marked `SAVED`; a press on a saved one joins
+  it with no key asked, any other asks the key; a refusal says `COULDN'T
+  CONNECT TO <name>.` Switching between home and a phone's hotspot used to
+  destroy the saved key. **`MANAGE SAVED NETWORKS`** lists what the device
+  remembers, marks the one `IN USE`, and forgets one after `FORGET <name>?`
+  (D-UI-062/064/068). Maintainer: *"This matches the paradigm on other
+  operating systems, phones, etc."*
+  - **Launching a game while saves sync is a question, not a refusal** (#203,
+  D-CLOUD-129): `YOUR SAVES ARE SYNCING WITH THE CLOUD.` / `IF YOU STOP IT,
+  THE NEXT SYNC FINISHES WHAT THIS ONE DID NOT.` with `STOP IT AND PLAY` /
+  `KEEP WAITING`; over a back up or restore left running, `YOUR BACKUP TO
+  THE CLOUD IS STILL RUNNING.` / `IF YOU STOP IT, WHAT IT HAS NOT MOVED YET
+  WAITS FOR THE NEXT RUN.` A stopped run reads `SKIPPED - YOU STARTED A
+  GAME` on the card and `SKIPPED, A GAME WAS STARTED` on its row.
+  Maintainer: *"it told me it was stopping so I couldn't play. That seems
+  less than ideal."*
+  - **The manager's tile labels are a point smaller** (#202). Maintainer: *"the
+  text could be a tiny bit smaller, maybe one point or so."*
+  
+## The automatic syncs ask too; slot numbers never change; the deletion is instant (2026-09-16)
+
+- **The sync at startup and after a game asks the same question** -- `STOP IT
+  AND PLAY` / `KEEP WAITING` -- and nothing is cancelled until you answer
+  (D-CLOUD-130). Maintainer: *"we should have a consistent behavior."* The
+  price, measured: about a second of your own press (D-CLOUD-131).
+  - **A save state slot's number never changes**: no renumbering after a
+  session or a deletion; gaps stay (D-UI-069). A renumber was a delete plus a
+  new file to the sync -- a delete you never made.
+  - **Deleting a save state is instant** (#205, D-UI-073): the tile goes the
+  frame YES is pressed; the bookkeeping -- the retired row, then the files,
+  one unit the script owns -- runs on a worker (D-CLOUD-132/133). It had
+  taken a second on the RG SP. A reopened manager never lists a state whose
+  file is gone. Maintainer: *"deletions show up quickly."*
+  
+## COPY TO FREE SLOT is recorded; no flash after a delete; COMPARING SAVES; French for every fork string (2026-09-17)
+
+- **A copy made with COPY TO FREE SLOT is recorded for the sync and refused
+  while a sync runs**, as a deletion is: `YOUR SAVES ARE SYNCING WITH THE
+  CLOUD.` / `WAIT FOR IT TO FINISH BEFORE COPYING A SAVE STATE - THE
+  NOTIFICATION AT THE TOP SAYS WHEN IT IS DONE.` (#206, D-CLOUD-134). The copy
+  is as quick as before.
+  - **Nothing on the page redraws after the tile goes** (#207, D-UI-074): the
+  grid is rebuilt only when the disk disagrees with the page, now the one
+  sign a deletion did not take. Maintainer: *"deletes worked as expected
+  without the screen redraw issue."*
+  - **The sync card's live line says `COMPARING SAVES` while rclone lists and
+  compares** -- never `NOTHING SENT YET` between the stages of a sync (#208,
+  D-UI-075). A half with nothing to move still ends on its outcome line.
+  Maintainer: *"in general, we just want to communicate progress."*
+  - **The transfer page says `COMPARING 3 OF 40 FILES`** for the phase the card
+  calls COMPARING SAVES; it said CHECKING (#157). **And a transfer stopped
+  for a game reads `SKIPPED, A GAME WAS STARTED` on every row it touched**,
+  not COULDN'T FINISH (#203).
+  - **Every string the fork adds is in French** (#152, D-UI-072): 492 more
+  entries, the cloud hub's line shortened so it keeps to two lines at 640x480,
+  two English typos in the menu gone. Maintainer: *"we can stick with French."*
+  - **ARMSX2 no longer adds a `Token =` line to its `secrets.ini` at every
+  launch** (#170); its device check waits for a PS2-capable handheld.
+  
+## The help bar promises only what the buttons do; badges cached with achievements; a RetroArch crash fixed (2026-09-18 and 2026-09-19)
+
+- **SAVE STATES is offered only where it can happen**, so SCREENSHOTS, TOOLS
+  and a PICO-8 list no longer promise it, and **the bar is centred on what it
+  draws** (#210) -- it had been centred on a box that included the prompt it
+  dropped, 138 px off on a French list. Maintainer: *"this menu doesn't seem
+  to appear centered on every playlist."*
+  - **A game's badge images are cached with its achievements** (#212,
+  D-RA-027): the pass runs at the end of a scan and of a top-up, resumes
+  where it stopped, and an image is proved whole before it is kept (#213,
+  D-RA-024). The RG SP had 956 images missing across 123 cached games, so
+  badges were blank offline. Fetches reuse one connection, several times
+  faster (#217). Maintainer: *"whenever we cache the achievements, we cache
+  the images for the achievements."*
+  - **A RetroArch crash in its video thread is fixed** (#211, #225): a posted
+  command could run twice when a frame arrived in the same window -- a dead
+  stack frame, or a double free. Read from a core dump off the RG SP: SIGSEGV
+  loading a texture while an achievement was being evaluated.
+  
+## The transfer page's words on a cut run (2026-09-21)
+
+- **A back up cut by the network reads `COULDN'T FINISH` / `DON'T WORRY,
+  NOTHING CHANGED.`**, not SKIPPED - YOU'RE NOT ONLINE over WHAT MADE IT IS
+  IN YOUR CLOUD (#153). *Skipped* is nothing attempted; the page had called a
+  run that moved nine megabytes skipped and claimed a file had landed when
+  none had. The note counts files that completed, and the SETTINGS / SAVES
+  header and the failed item's name are French on the French page.
+
+## Long work is a page with CANCEL; offline achievements answer at once; thumbnails at the system's shape (2026-09-22)
+
+The maintainer's round on the RG35XX SP (#236) produced three changes in
+one night, all three built as one candidate and proven on the VM before
+the handheld took them.
+
+- **The offline-achievements scan, the cloud back up / restore page and the
+  scraper run on a page that owns the screen until the work ends** (#241,
+  D-UI-078). The only way out while any of them runs is CANCEL: a
+  confirmation that says what cancelling means -- `GAMES ALREADY SAVED
+  STAY SAVED. THE NEXT SCAN CARRIES ON FROM THERE.`, `WHAT'S ALREADY IN
+  PLACE STAYS. THE NEXT BACKUP OR RESTORE FINISHES WHAT THIS ONE DIDN'T.`,
+  `WHAT'S SCRAPED SO FAR IS KEPT. UPDATE GAMELISTS TO APPLY IT.` -- then
+  the stop, and the page ends `SKIPPED - YOU CANCELLED IT` with what the
+  run had done. Nothing can be sent to the background any more: the
+  earlier "press B to keep it running" left a job with no end signal and an
+  outcome on a row the player had to go and find. The scraper's corner card
+  and its toast are gone with it. Backgrounding stays for work that is
+  fast -- the startup and exit save sync. Maintainer, at the scan page:
+  *"we should only allow things to run in the background when they're
+  fast."*
+- **Found under it and fixed: a refreshed two-line row kept growing.** The
+  OFFLINE ACHIEVEMENTS page came back with its scan row drawn a screen
+  tall after a long scan, on this candidate and the one before it -- every
+  refresh of the row's line moved its split by ten percent. Measured from
+  the fonts now; a row refreshed a thousand times keeps its height.
+- **Offline, the achievements pages answer in seconds** (#242). With
+  OFFLINE ACHIEVEMENTS on and the Wi-Fi off, VIEW THIS GAME'S ACHIEVEMENTS
+  ended `An error occurred. Timeout was reached.` and a game's launch
+  showed no achievements for half a minute: the proxy on the device gave
+  the resolver its full twenty seconds on every request while the
+  interface stayed up with a route and no DNS, which is how a handheld goes
+  offline as often as not. A name lookup now gets three seconds, before the
+  proxy's probe and before every attempt at RetroAchievements, and the
+  interface no longer asks the web when offline and the store did not
+  answer -- it says `THE OFFLINE ACHIEVEMENTS SERVICE DIDN'T ANSWER. TRY
+  AGAIN IN A MOMENT.` instead. Confirmed by the maintainer on the RG35XX
+  SP: the page, the offline sign-in toast, the badges.
+- **Save-state thumbnails and screenshots are drawn at the shape of the
+  system that made them** (#243, D-UI-080). RetroArch writes both at the
+  core's native size, which for the NES and the SNES is the pixel grid and
+  not the 4:3 picture the game showed, so the SAVE STATE MANAGER's tiles
+  and the SCREENSHOTS entry's pictures were a fifth narrower than the game.
+  The interface now fits them at the system's display aspect -- 4:3 for
+  the consoles and computers whose pixels are not square; the Game Boy,
+  GBA and the other square-pixel handhelds as they are. RetroArch's
+  capture is left alone. Maintainer: *"It's odd to see certain things
+  stretched out of aspect ratio."*
