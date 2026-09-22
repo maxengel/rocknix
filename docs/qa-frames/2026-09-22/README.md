@@ -54,3 +54,24 @@ each pass; every frame `640x480`; the French set carries `-fr`.
   GAMES SCRAPED: 12 · UPDATE GAMELISTS TO APPLY CHANGES.` -- the French note
   takes the shorter `METTEZ À JOUR LES LISTES DE JEUX POUR L'APPLIQUER.`,
   since the long form ran off this panel on the second cut (ES `46111b1e3`).
+
+## #242 -- offline with a resolver that waits, on `f2f23da875`
+
+The RG35XX SP's shape, not the VM's usual link cut: an address on the
+interface, no default route, and a nameserver that never answers
+(`repro-242.sh`: `nameserver 10.0.2.99`, `options timeout:10 attempts:2`, so
+a lookup waits its twenty seconds as glibc's did on the handheld). The
+toggle on and the six fixture games scanned into the store; the interface
+restarted after the toggle went on from the shell.
+
+- `242-game-page-offline-resolver-waits-*` -- MAIN MENU, RETROACHIEVEMENTS
+  (the summary from the store, `YOU'RE OFFLINE. SHOWING THE GAMES SAVED FOR
+  OFFLINE PLAY.`, at once), A on Böbl: the game's page within a few seconds,
+  `YOU'RE OFFLINE. SHOWING YOUR MOST RECENT PROGRESS.` The proxy logged the
+  store's `patch` and `unlocks` requests the instant they arrived (60 ms
+  apart) and its own probe as `name lookup of retroachievements.org took
+  longer than 3 s`; the interface's log has no timeout. On the previous
+  cuts and on the device the same request was logged twenty seconds after it
+  arrived, the interface gave up at fifteen, asked the web, and showed
+  libcurl's "Timeout was reached". The summary frame is not filed: its title
+  carries the QA account's name.

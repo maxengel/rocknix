@@ -421,6 +421,28 @@ not have -- and each is now a rule for the next steps file:
 - **`scp` takes `-P` for the port**; `ssh -n` closes stdin, so a heredoc to a
   guest file needs a plain `ssh`. Both cost a walk each.
 
+## A cut link is not the only way to be offline
+
+`set_link net0 off` on the monitor is the fixture every offline proof used,
+and it fails a name lookup at once: no route, `Network is unreachable`, the
+proxy's probe answered in milliseconds. A handheld goes offline the other
+way as often -- still associated to a hotspot whose uplink has gone, or with
+a Wi-Fi switch that leaves the interface up -- and then the interface has an
+address, a route, and a resolver that waits its full twenty seconds for a
+nameserver that never answers. Everything that bounds an HTTP call and not
+the lookup (`urlopen(timeout=...)`, curl's timeouts) waits with it. That is
+how #242 shipped in three candidates past proofs #190 and #193 that passed:
+the offline page had never been opened on a link with a resolver in it.
+
+So an offline proof runs in both shapes. The second is `repro-242.sh`'s:
+keep the address, `ip route del default`, and point `/etc/resolv.conf` (its
+`readlink -f`: systemd-resolved's stub) at a black hole with `options
+timeout:10 attempts:2`, then confirm over serial that `getaddrinfo` takes
+its twenty seconds before the first key. And a setting the fixture changes
+from the shell -- the offline toggle through the ctl -- is read by the
+interface at its next start only (§ below); reboot before the walk, or the
+page decides "toggle off" and asks the web.
+
 ## What the guest's busybox lacks
 
 The scripts run on the image, not on the host, and the host's coreutils hide
