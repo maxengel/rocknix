@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-22T05:40:00Z
+> **Saved**: 2026-09-22T15:10:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `2c5d28eb55`, pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The RC round (#236; page https://claude.ai/artifact/Uq74wpvRB3SzpZ1oydYEmo, v10) has its third candidate at a fourth cut, `f2f23da875`, built, proven on the VM, and waiting for the maintainer's soak to end before it goes to the RG35XX SP.** Two changes rode it tonight: the maintainer's call that long work never goes to the background (D-UI-078, #241, closed) and the defect their soak found offline -- VIEW THIS GAME'S ACHIEVEMENTS ending "Timeout was reached" and a launch with no achievements (#242, closed: the proxy's unbounded name lookup, patch 015; the interface says the service didn't answer instead of asking the web). Nothing is in flight: no build, no suite, no guest. The maintainer brought the device back online at ~04:30 UTC for the log read; the soak's state is theirs to say.
+**The RG35XX SP is on the third candidate's fourth cut, `f2f23da875`, since 15:06 UTC (staged and rebooted with the maintainer's yes at ~14:55), and the soak (D-QA-036) restarts on it.** The round's remaining device box is that soak: hours of offline play, two unlocks in one FBNeo session, Wi-Fi back on; plus the page's `a-build-3` (SYSTEM SETTINGS `f2f23da`, CANCEL on the scan page, VIEW THIS GAME'S ACHIEVEMENTS offline on a scanned game). Nothing is in flight: no build, no suite, no guest. #241 and #242 are closed; #236 carries the fourth cut.
 
 ## Completed This Session (2026-09-21 23:25 – 2026-09-22 05:40 UTC)
 
@@ -20,13 +20,12 @@
 
 ## In Progress
 
-- **The soak (the maintainer's, D-QA-036)** on the RG35XX SP: unchanged from the last stash — read the journal when they name the window (`tools/device-act rg35xxsp`, read-only: `status=139/134`, SIGSEGV/SIGABRT/core for #79; `raofflineproxy-ctl status`/`flushed` + the RA API for #211; `CTRL-EVENT-DISCONNECTED|beacon loss|NetworkManager state` for #161). **Tell them to keep Wi-Fi on until the SCAN GAMES row says COMPLETED** before the offline hours (a fetch that fails offline ends the scan COULDN'T FINISH).
-- **Staging `f2f23da875` on the RG35XX SP**: after the soak. Idle check first (emulator, cloud transfer, `flock -n /var/run/cloud_sync.lock true`, a scan), tar to a staging dir, hash on the device against `SHA256SUMS`, move into `/storage/.update`, **ask before the reboot, naming the device**. Their box `a-build-3` on the page.
+- **The soak (the maintainer's, D-QA-036)** on the RG35XX SP, now on `f2f23da875`: read the journal when they name the window (`tools/device-act rg35xxsp`, read-only: `status=139/134`, SIGSEGV/SIGABRT/core for #79; `raofflineproxy-ctl status`/`flushed` + the RA API for #211; `CTRL-EVENT-DISCONNECTED|beacon loss|NetworkManager state` for #161). The scanned store (238 games) carried over the update; no rescan needed. A page opened offline should show within seconds now, and a launch should sign in within a few seconds.
 
 ## Next Steps
 
-1. Soak window → journal read → tick `a-soak` (page) and the #236 soak line; close #161 (not planned, scope named) if no drop showed; add a #79 row only if a crash did.
-2. Stage the fourth cut `f2f23da875` on the RG35XX SP (above; the tar in `h700-all-20260922-f2f23da875/`); once they confirm BUILD ID `f2f23da`, try CANCEL on the scan page and VIEW THIS GAME'S ACHIEVEMENTS offline, tick `a-build-3` on the page and mirror it into #236.
+1. Soak window → journal read → tick `a-soak` (page) and the #236 soak line; close #161 (not planned, scope named) if no drop showed; add a #79 row only if a crash did. Mirror the maintainer's `a-build-3` tick (the page) into #236 when it lands.
+2. Done: the RG35XX SP is on `f2f23da875` (15:06 UTC; the act recorded by device-act, its label's hour wrong, the log entry says so).
 3. The RG SP (D-QA-031) when the maintainer calls the candidate confident: the same tar, the runbook's path, `tools/device-act rgsp` (192.168.1.175), `DEVICE_ACT_TIMEOUT=900` for the hash, ask before the reboot. D's rehearsal box is green for this tar.
 4. #241 is closed (D-UI-079: the other background cards keep their cards; the rule is for the fork's lanes). Nothing left on it.
 5. SM8550 for the Nova (#150, D-QA-028) after the RG SP; then #211's two-unlock VM reproduction / #240; housekeeping (`tools/fork-worktree list`; upstream PR #3359; #228 the maintainer's).
