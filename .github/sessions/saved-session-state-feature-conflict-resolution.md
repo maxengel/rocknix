@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-22T22:58:00Z
+> **Saved**: 2026-09-22T23:05:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `4af5adf7e0`, pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The round's candidate is the ninth cut `520e1c92ca`** (`h700-all-20260922-520e1c92ca/`, ES pin `d534632d7`), staged on the RG35XX SP (checksum matched 22:07 UTC, nothing applied). It carries #243 and **the fix for #246**: the interface's crash in the maintainer's soak was the after-exit rescan of the SCREENSHOTS folder reloading a list view whose cursor it had just deleted (`rescanIfFolderChanged` -> `clear()` -> `reloadGameListView` reading the freed cursor); reproduced on guest d in the soak's shape (seventh cut died on session 16, eighth on 13 with a backtrace whose faulting PC was in the heap), fixed by `dropGameListView` / `remakeGameListView` around the repopulate, and held for forty sessions. The eighth cut also made the crash handler print a backtrace and die of the signal. **vm-qa run 10 eleven suites PASSED and the rehearsal 19/19 on the ninth cut** (rows in `docs/vm-qa-log.md`). **The reboot of the RG35XX SP to apply `520e1c92ca` is asked for and not yet answered.** Nothing is in flight.
+**The round's candidate is the ninth cut `520e1c92ca`** (`h700-all-20260922-520e1c92ca/`, ES pin `d534632d7`), staged on the RG35XX SP (checksum matched 22:07 UTC, nothing applied). It carries #243 and **the fix for #246**: the interface's crash in the maintainer's soak was the after-exit rescan of the SCREENSHOTS folder reloading a list view whose cursor it had just deleted (`rescanIfFolderChanged` -> `clear()` -> `reloadGameListView` reading the freed cursor); reproduced on guest d in the soak's shape (seventh cut died on session 16, eighth on 13 with a backtrace whose faulting PC was in the heap), fixed by `dropGameListView` / `remakeGameListView` around the repopulate, and held for forty sessions. The eighth cut also made the crash handler print a backtrace and die of the signal. **vm-qa run 10 eleven suites PASSED and the rehearsal 19/19 on the ninth cut** (rows in `docs/vm-qa-log.md`). **The RG35XX SP runs `520e1c92ca` since 23:01 UTC** (reboot with the maintainer's yes at 22:57; queue empty, store and settings intact, keeper armed). Nothing is in flight; what is open is the maintainer's: #246's device half (an offline session with unlocks), #243's box 3, #245 / D-UI-081, the RG SP (D-QA-031) with this tar.
 
 ## Completed This Session (2026-09-22 16:15 – 17:37 UTC, after the previous stash)
 
@@ -21,12 +21,12 @@
 
 ## In Progress
 
-- **One question open with the maintainer**: reboot the RG35XX SP to apply `520e1c92ca` (staged, checksum matched, QA green). Do nothing to the device without the yes. The keeper is armed there since 21:20 UTC with their yes.
+- Nothing in flight. The RG35XX SP is on the ninth cut; the earlier #79 crashes (rows 1-4) are RetroArch's own -- the threaded video wrapper, patches 0011/0015, #211/#225 -- and separate from #246, which is the interface's; the shared trigger is an unlock's screenshot and badge.
 - #246 is fixed and proven on the VM; the device half (the maintainer's next offline session on the ninth cut) and #247 (the keeper notes a cut dump as whole) remain.
 
 ## Next Steps
 
-1. **The RG35XX SP**: on the maintainer's yes, `tools/device-act rg35xxsp 'reboot to apply 520e1c92ca -- the maintainer said yes' -- 'sync; (sleep 2; reboot) >/dev/null 2>&1 &'`, wait, read BUILD_ID (`520e1c92ca`) and that `/storage/.update` is empty; then the maintainer's word on an NES thumbnail (#243 box 3) and the soak line ticks on #236 (`a-soak`; #161 closes not planned if they agree; #211's device box). On the keeper's yes: `rocknix-corekeep --on` through device-act.
+1. **The RG35XX SP is done for this cut.** Next from the maintainer: their word on an NES thumbnail (#243 box 3), an offline session with unlocks on this cut (#246's device half; the keeper is armed, the handler prints a backtrace), the soak line ticks on #236 (`a-soak`; #161 closes not planned if they agree; #211's device box).
 2. #245 / D-UI-081: the maintainer's call. If option 1, a RetroArch patch `0016` rotating the raw capture by the content rotation; the proof is the device (the VM has no arcade ROM).
 3. Then the RG SP (D-QA-031) with the same tar; SM8550 for the Nova (#150); the housekeeping list in the previous state.
 
