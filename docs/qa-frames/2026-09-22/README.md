@@ -75,3 +75,11 @@ restarted after the toggle went on from the shell.
   arrived, the interface gave up at fifteen, asked the web, and showed
   libcurl's "Timeout was reached". The summary frame is not filed: its title
   carries the QA account's name.
+- `242-service-down-sentence-*` -- the same shape with `raofflineproxy` stopped
+  after the monitor had marked the device offline: A on Böbl, and within eight
+  seconds `AN ERROR OCCURRED / THE OFFLINE ACHIEVEMENTS SERVICE DIDN'T
+  ANSWER. TRY AGAIN IN A MOMENT.` over the summary, with `offline, and the
+  proxy did not answer for game 4902; not asking the web` in the interface's
+  log. The summary's title behind the dialog carried the QA account's name;
+  the top band is painted out with `tools/png-blackout` (stdlib only), which
+  is how a frame with the name in it is filed from now on.

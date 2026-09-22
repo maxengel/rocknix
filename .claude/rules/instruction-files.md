@@ -142,6 +142,7 @@ both lists and to this table, or it is invisible.**
 | `fork-package-freshness` | are the packages the fork introduces at their latest upstream release, or pinned with a stated reason | `fork-workflow.md` |
 | `vm-upgrade-rehearsal` | boot the previous image in a guest, seed a player's state, update in place, check every piece survived | `upgrade-and-install.md` |
 | `es-syntax-check` | compile an EmulationStation edit syntax-only with the image build's own command, before the pin moves | `es-native-ui.md` |
+| `png-blackout` | paint a rectangle of a frame black with the standard library, so a screendump carrying the QA account's name is filed with the band painted out | `generic-x64-vm-testing.md` |
 | `fork-newdrive` | move the build estate to another volume | `device-builds.md` |
 | `fork-publish-release` | publish an image, refusing to publish embedded credentials | `device-builds.md` |
 | `device-act` | run one command on a device, recorded with the boot id before and after | `engineering-practices.md` |
