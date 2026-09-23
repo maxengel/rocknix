@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-23T04:16:00Z
+> **Saved**: 2026-09-23T04:55:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `4af5adf7e0`, pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The RG35XX SP runs the thirteenth cut `9221b4528d`** (applied 03:56 UTC; the maintainer confirmed Ms. Pac-Man's thumbnail upright with nothing replayed, #248's device half). **The fourteenth cut `c0c2d15179` is building** (`chain-249.sh`: `setsettings.sh` sets `state_slot -1` for the AUTO SAVE tile, #249 -- the load hotkey reloads the auto save; proven on guest d from both tiles with the launcher bind-mounted, `check-249.sh`); vm-qa run 15 and the rehearsal follow (`vmqa-run15.log`, `upgrade-rehearsal-run15.{log,rc}`, `chain-249.done`), then the tar is staged on the RG35XX SP and the reboot asked. The maintainer's banner question (the RetroAchievements login toast looked blurry in Ms. Pac-Man) is answered from the tree: RetroArch untouched since 2026-09-15, widgets at scale 1.0, nothing of ours draws it; if it differs between a vertical and a horizontal game on the same build, that is RetroArch's rendering under rotation and a separate look.
+**The RG35XX SP runs the thirteenth cut `9221b4528d`** (Ms. Pac-Man's thumbnail confirmed upright, #248). **The fourteenth cut `c0c2d15179` is the candidate** (#249: the AUTO SAVE tile on RetroArch's Auto slot; proven on guest d from both tiles; vm-qa run 15 ten suites PASSED with the `scripts` suite's two failures being the harness's own old expectations, updated in the commit after and green locally; rehearsal 19/19). **Its tar is in `/storage/.update` on the RG35XX SP (checksum matched 04:28 UTC); the reboot is asked for and not yet answered.** The maintainer's "fuzzy text" question is answered with evidence: nothing in the cuts touches fonts or scaling; RetroArch unchanged since 09-15; the interface's text byte-identical on the same page between 09-14 and today (`compare-text.py`). Nothing is in flight.
 
 ## Completed This Session (2026-09-22 16:15 – 17:37 UTC, after the previous stash)
 
@@ -21,12 +21,12 @@
 
 ## In Progress
 
-- **The fourteenth cut's builds, vm-qa run 15 and the rehearsal** (`chain-249.done`); then `record-h700-run18`, the RECORD.txt, the QA row, staging (`stage-rg35xxsp-*` from the thirteenth's with the id replaced, through a helper so no shell carries the name), the reboot question. The earlier #79 crashes (rows 1-4) are RetroArch's own (threaded video wrapper, patches 0011/0015) and separate from #246.
+- **One question open with the maintainer**: reboot the RG35XX SP to apply `c0c2d15179`. Do nothing to the device without the yes. The earlier #79 crashes (rows 1-4) are RetroArch's own (threaded video wrapper, patches 0011/0015) and separate from #246.
 - #246 is fixed and proven on the VM; the device half (the maintainer's next offline session on the ninth cut) and #247 (the keeper notes a cut dump as whole) remain.
 
 ## Next Steps
 
-1. **The RG35XX SP is done for this cut** (`9221b4528d` applied 03:56 UTC). Next from the maintainer: their word on an NES thumbnail (#243 box 3), an offline session with unlocks on this cut (#246's device half; the keeper is armed, the handler prints a backtrace), the soak line ticks on #236 (`a-soak`; #161 closes not planned if they agree; #211's device box).
+1. **The RG35XX SP**: on the maintainer's yes, `tools/device-act rg35xxsp 'reboot to apply c0c2d15179 -- the maintainer said yes' -- 'sync; (sleep 2; reboot) >/dev/null 2>&1 &'`, then BUILD_ID `c0c2d15179`, queue empty. Next from the maintainer: their word on an NES thumbnail (#243 box 3), an offline session with unlocks on this cut (#246's device half; the keeper is armed, the handler prints a backtrace), the soak line ticks on #236 (`a-soak`; #161 closes not planned if they agree; #211's device box).
 2. #245 / D-UI-081: the maintainer's call. If option 1, a RetroArch patch `0016` rotating the raw capture by the content rotation; the proof is the device (the VM has no arcade ROM).
 3. Then the RG SP (D-QA-031) with the same tar; SM8550 for the Nova (#150); the housekeeping list in the previous state.
 
