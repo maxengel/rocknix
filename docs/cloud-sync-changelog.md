@@ -2228,6 +2228,12 @@ the handheld took them.
   screenshot is right the moment the build is, with nothing to replay. The
   screenshot RetroArch takes at an achievement unlock is recognised too. The files stay as RetroArch wrote them. Maintainer: *"I think
   we do it on our side."*
+- **A game started from the SAVE STATE MANAGER's AUTO SAVE tile runs on
+  RetroArch's Auto slot** (#249): the quick menu says `Auto` and the load
+  hotkey reloads the auto save the game started from, as it reloads a
+  numbered slot's state for a numbered tile. It had stayed on slot 0, so
+  the hotkey loaded a different file. Maintainer: *"it doesn't reload the
+  autosave."*
 - **Save-state thumbnails and screenshots are drawn at the shape of the
   system that made them** (#243, D-UI-080). RetroArch writes both at the
   core's native size, which for the NES and the SNES is the pixel grid and
