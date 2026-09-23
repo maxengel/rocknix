@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-23T01:32:00Z
+> **Saved**: 2026-09-23T01:58:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `4af5adf7e0`, pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The round's candidate is the eleventh cut `ed61a18d5c`** (`h700-all-20260923-ed61a18d5c/`, ES pin `034b5d574`): the ninth (on the RG35XX SP since 2026-09-22 23:01 UTC) plus **#245 / D-UI-081, decided "our side"** -- the interface learns a game's rotation from the launch log at the end of each RetroArch session, records it beside the states (`<rom>.rotation`, `turns=N`), and turns that game's captures by it on every surface (manager tiles, SCREENSHOTS list + grid style, full-screen viewer), with the aspect. Proven on guest d (recording path and every surface upright, frames `docs/qa-frames/2026-09-23/245-*`); the tenth cut `bf53cea7e4` turned nothing because a two-byte record read as empty under `readAllText`'s BOM check. **vm-qa run 12 eleven suites PASSED and the rehearsal 19/19 on the eleventh cut** (rows in `docs/vm-qa-log.md`); **the RG35XX SP runs `ed61a18d5c` since 01:29 UTC** (reboot with the maintainer's yes at 01:24; queue empty, store and settings intact, keeper armed, no fault). Nothing is in flight; what is open is the maintainer's: #245's device half (a vertical FBNeo game's session), #246's device half (an offline session with unlocks), #243 box 3, the RG SP (D-QA-031) with `h700-all-20260923-ed61a18d5c/ROCKNIX-H700.aarch64-20260923.tar`. The image file names now carry `20260923`.
+**The round's candidate is the twelfth cut `428d44af40`** (`h700-all-20260923-428d44af40/`, ES pin `5bf387346`, fbneo-lr with the rotation table): the eleventh (on the RG35XX SP since 01:29 UTC) plus **#248 / D-UI-082** -- a capture with no session record takes its turn from the core's own driver table (`/usr/config/emulationstation/rotation/fbneo.txt`, 2,544 games, generated at build time from FBNeo's source), so the maintainer's Ms. Pac-Man thumbnail is upright the moment the build is, with nothing to replay. Proven on guest d with no session played (frames `docs/qa-frames/2026-09-23/248-*`). **vm-qa run 13 and the rehearsal are running** (`chain-248.sh`, `vmqa-run13.log`, `upgrade-rehearsal-run13.{log,rc}`, `chain-248.done`); the tar is being staged on the RG35XX SP (`stage-428d44af40.log`); the reboot is asked for after QA and not yet answered.
 
 ## Completed This Session (2026-09-22 16:15 – 17:37 UTC, after the previous stash)
 
@@ -21,12 +21,12 @@
 
 ## In Progress
 
-- Nothing in flight. The RG35XX SP is on the eleventh cut. The earlier #79 crashes (rows 1-4) are RetroArch's own (threaded video wrapper, patches 0011/0015) and separate from #246.
+- **vm-qa run 13 + rehearsal on `428d44af40`**, then: the QA row, the RECORD's proof line, #236 comment, the reboot question. The earlier #79 crashes (rows 1-4) are RetroArch's own (threaded video wrapper, patches 0011/0015) and separate from #246.
 - #246 is fixed and proven on the VM; the device half (the maintainer's next offline session on the ninth cut) and #247 (the keeper notes a cut dump as whole) remain.
 
 ## Next Steps
 
-1. **The RG35XX SP is done for this cut** (`ed61a18d5c` applied 01:29 UTC). Next from the maintainer: their word on an NES thumbnail (#243 box 3), an offline session with unlocks on this cut (#246's device half; the keeper is armed, the handler prints a backtrace), the soak line ticks on #236 (`a-soak`; #161 closes not planned if they agree; #211's device box).
+1. **The RG35XX SP**: on the maintainer's yes, `tools/device-act rg35xxsp 'reboot to apply 428d44af40 -- the maintainer said yes' -- 'sync; (sleep 2; reboot) >/dev/null 2>&1 &'`, then BUILD_ID `428d44af40`, queue empty, and `/usr/config/emulationstation/rotation/fbneo.txt` present. Next from the maintainer: their word on an NES thumbnail (#243 box 3), an offline session with unlocks on this cut (#246's device half; the keeper is armed, the handler prints a backtrace), the soak line ticks on #236 (`a-soak`; #161 closes not planned if they agree; #211's device box).
 2. #245 / D-UI-081: the maintainer's call. If option 1, a RetroArch patch `0016` rotating the raw capture by the content rotation; the proof is the device (the VM has no arcade ROM).
 3. Then the RG SP (D-QA-031) with the same tar; SM8550 for the Nova (#150); the housekeeping list in the previous state.
 
@@ -47,13 +47,14 @@
 
 ## Related Context
 
-- **Tracker**: #243 (box 3 open), #244 (closed), #245 (built, eleventh cut; the device half open), #246 (fixed in the ninth cut; the device half open), #247 (the keeper's whole/cut note), #79 row 5, #236 (round page: seventh cut, soak read), #211/#161 (soak), #150
+- **Tracker**: #243 (box 3 open), #244 (closed), #245 (built; the device half open), #248 (built, twelfth cut; the device half open: Ms. Pac-Man upright straight after the update), #246 (fixed in the ninth cut; the device half open), #247 (the keeper's whole/cut note), #79 row 5, #236 (round page: seventh cut, soak read), #211/#161 (soak), #150
 - **Register**: D-UI-080, D-QA-037, D-UI-081 (open), D-QA-036, D-QA-031
 - **Artifacts**: `h700-all-20260922-220585b56b/` (the candidate); `qa-5d8bc093c7-webdav-a-20260922-1623/`; the seventh cut's run dirs once done
-- **Session scripts** (`/workspace/tmp/rocknix-session/`): `seed-245.sh`, `proof-245s.sh` (list + viewer), `exit-record-245.sh` (a session with a SET_ROTATION line appended; run it only on a settled guest -- both proof passes reboot at their end), `chain-245c.sh`, `restage-11.sh`; `repro-246.sh` / `repro-246b.sh <N> <outdir>` (the soak's shape as a loop; needs the guest prepped: Debug, gameexit, proxy enable+scan, keeper on, `/tmp/vd.bak`), `unwind.py`, `chain-246-9.sh`; `mkpng.py`, `seed-243.sh`, `measure-243.py`, `proof-243d.sh <outdir> [systems]` (X = GAME OPTIONS then A = the manager), `proof-243s.sh <outdir>` (`KEEP=1` keeps the guest up; SCREENSHOTS is five right of PICO-8), `chain-243-9.sh`, `build-x64-run22.sh`, `build-h700-run11.sh`, `vmqa-run8.sh`, `record-h700-run11.sh`, `changelog-gap-draft.md` (the survey's draft with evidence comments)
+- **Session scripts** (`/workspace/tmp/rocknix-session/`): `seed-248.sh` (Ms. Pac-Man under `fbn`, no record), `proof-248s.sh` + `find-carousel.py` (SCREENSHOTS found by its logo), `chain-248.sh`, `fbneo-rotation-table.py` (now `fbneo-lr/scripts/rotation-table.py`); `seed-245.sh`, `proof-245s.sh` (list + viewer), `exit-record-245.sh` (a session with a SET_ROTATION line appended; run it only on a settled guest -- both proof passes reboot at their end), `chain-245c.sh`, `restage-11.sh`; `repro-246.sh` / `repro-246b.sh <N> <outdir>` (the soak's shape as a loop; needs the guest prepped: Debug, gameexit, proxy enable+scan, keeper on, `/tmp/vd.bak`), `unwind.py`, `chain-246-9.sh`; `mkpng.py`, `seed-243.sh`, `measure-243.py`, `proof-243d.sh <outdir> [systems]` (X = GAME OPTIONS then A = the manager), `proof-243s.sh <outdir>` (`KEEP=1` keeps the guest up; SCREENSHOTS is five right of PICO-8), `chain-243-9.sh`, `build-x64-run22.sh`, `build-h700-run11.sh`, `vmqa-run8.sh`, `record-h700-run11.sh`, `changelog-gap-draft.md` (the survey's draft with evidence comments)
 
 ## Notes for Next Session
 
+- **The FBNeo system on the image is `fbn`** (`/storage/roms/fbneo`, states under `savestates/fbn`, default core fbneo); `arcade` is mame2003_plus with no rotation table yet.
 - **Driving the SCREENSHOTS list on the VM**: `StartupSystem=<name>` in es_settings.cfg with essway stopped lands the carousel on nes/gb/pico-8 but **not** on `imageviewer` (it comes up at PICO-8 although the API lists it visible); from PICO-8 the order is nes, gb, gbc, gba, SCREENSHOTS. `LastSystem` counts only when `StartupSystem` is `lastsystem`. `vm-visual-qa run --outdir` must be absolute.
 - **ES diagnostics**: `LOG(LogInfo)` shows nowhere until `Debug=true`; the log is `/var/log/es_log.txt` on the VM (tmpfs -- read it before any reboot) and rotates to `es_log.0.txt` on a restart; on the device `/var/log` persists. busybox `pgrep -x retroarch` never matches `/usr/bin/retroarch`; RetroArch on the VM needs `video_driver = "gl"`.
 - **One chain per image.** A chain's tail must not overlap the next chain's x64 build (the rehearsal staged a tar mid-rewrite). The seventh cut's chain waited on the diagnostic chain's done-marker before syncing.
