@@ -1,14 +1,14 @@
 # Saved Session State
 
-> **Saved**: 2026-09-23T22:20:00Z
+> **Saved**: 2026-09-23T19:55:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `e5065e18ee` + UNCOMMITTED #252 work: `tools/frame-diff`, `tools/vm-qa`, `tools/vm-walks/{suite.txt,masks.txt,claims.txt,manager.steps,fixtures/,README.md}`, `.githooks/pre-push`, `.claude/rules/{generic-x64-vm-testing,fork-workflow}.md`, `docs/{decision-register,cloud-sync-changelog}.md`, the work log)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**#254 (D-WORKFLOW-028): the ceremonies are a state machine a tool turns.** On the maintainer's direction (*"state machines that are mandatory, as opposed to things that are just optional"*): `tools/ceremony-check` (retro / friction / weekly / monthly / index / register / blindspot guards / audit / futro; the cheap ones refuse a push of `next` through `.githooks/pre-push`, an audit or a futro owed keeps `fork-checks.yml` red), `docs/friction-log.md` (six entries, each with an issue or a guard), `docs/retros/`, `docs/futros/`, `.claude/rules/ceremonies.md` (states, markers, cadences, the timescales adapted from Pongogo), register D-WORKFLOW-028 decided and D-QA-040 open (the cadence numbers; block vs CI). Proofs done and recorded on #254: three `BLOCK` positives and the dry-run push refusal; the first `fork-checks.yml` run on `de9f7ced98` succeeded (run 35927195067). The clock starts 2026-09-21: the retro is due after 5 active days (~09-26), the W39 summary by 09-29, and the **audit gate will go red within days** (10 of 12 closed issues, 2 of 14 days) -- an audit of the RC round is genuinely owed.
+**Blindspot 52 (#253): four "pending decisions" put to the maintainer were settled in the record.** The maintainer: *"I worry that we're losing track of the institutional knowledge ... I think a lot of these are actually settled issues. We need to spend the time doing our own project archaeology ... and then figuring out how we prevent this from happening in the future."* Done the same session: the archaeology on #209 (parity, D-UI-057 -> D-UI-083), #228 (RC pin D-WORKFLOW-026; the post-RC path D-WORKFLOW-027 open with pros/cons on the issue), #225 (the 09-19 scope cut, D-QA-039, closed as delivered), #42 (D-WORKFLOW-014, not an RC item), #251 (verified: the fraction is dropped by FT_Set_Pixel_Sizes; 10 px vs 17 px on the H700; options with numbers). Prevention: `tools/archaeology <terms>|--issue N`, `tools/work-log-index --write|--check` (`docs/work-logs/INDEX.md`), the push-guard warning, three rule sentences (decision-register.md, learning-capture.md), blindspot 52, #236 § C rewritten to two open items (D-WORKFLOW-027, #251). All committed and pushed on `next`.
 
-**Also today:** #250 proven and the fifteenth cut green; #252 (frame-diff) rolled out; #253 (archaeology, the index) landed after blindspot 52. **The RG35XX SP runs the fourteenth; the fifteenth's transfer and reboot remain asked for and unanswered.** #209's build and #251's pick wait on the maintainer.
+**Also today:** #250 proven and the fifteenth cut green; #252 (frame-diff gate) rolled out and proven (runs 17-21). **The RG35XX SP runs the fourteenth; the fifteenth's transfer and reboot are still asked for and unanswered.**
 
 ## Completed This Session (2026-09-23 04:55 -> 05:30 UTC)
 
@@ -25,10 +25,10 @@
 
 ## Next Steps
 
-1. **Every session**: `tools/ceremony-check` first; `tools/archaeology <terms>` before anything is called pending; a friction line the moment something slows; `tools/work-log-index --write` after a log entry. Never edit a shell tool while a run of it is in flight.
-2. When the audit gate goes red: run the `code-auditor` skill on the RC round's work since #186 (09-14); when the retro comes due (~09-26): the `mini-retro` skill on the cut stream 09-14..23, written to `docs/retros/2026-09-26-rc-cuts.md`, and the 2026-W39 summary by 09-29. #254 box 2's constructed red CI run (or the audit gate's own red) then revert.
-3. On the maintainer's yes: the fifteenth onto the RG35XX SP (`stage-rg35xxsp-aa8d525a8a.sh`, then the reboot through `tools/device-act`), then the device boxes (#250, #249, #245, #246, #243), the RG SP, the Nova. On their nod: #209 (D-UI-083) into the next cut; on their pick: #251. D-QA-040: their cadence numbers.
-4. #252 box 3b (SCREENSHOTS/viewer walks); #253's four-week box (10-21).
+1. **Before putting anything to the maintainer as pending: `tools/archaeology <terms>` first** (rule in decision-register.md). After appending a work-log entry: `tools/work-log-index --write`.
+2. On the maintainer's yes: stage the fifteenth (`stage-rg35xxsp-aa8d525a8a.sh`), then the reboot through `tools/device-act`; then #250 box 2, #249, #245, #246, #243 device halves; then the RG SP (D-QA-031), then the Nova.
+3. On the maintainer's nod: build #209 (D-UI-083) into the next cut; on their pick, #251.
+4. #252 box 3b (SCREENSHOTS/viewer walks); #253's four-week box (2026-10-21).
 
 ## Key Files Modified (this session)
 
