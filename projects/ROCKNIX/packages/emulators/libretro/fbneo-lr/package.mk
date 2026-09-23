@@ -24,4 +24,14 @@ post_unpack() {
 makeinstall_target() {
   mkdir -p ${INSTALL}/usr/lib/libretro
     cp -a ${PKG_BUILD}/src/burner/libretro/fbneo_libretro.so ${INSTALL}/usr/lib/libretro
+
+  # The quarter turns the core asks the display for, per game, read from the
+  # driver flags in the source this build compiles (fork #248, D-UI-081).
+  # EmulationStation turns a game's save-state thumbnails and screenshots by
+  # it when no session has recorded the rotation yet -- the captures already
+  # on a device are right the moment the build is. The generator mirrors
+  # libretro.cpp's mapping with the Vertical mode option off.
+  mkdir -p ${INSTALL}/usr/config/emulationstation/rotation
+  python3 ${PKG_DIR}/scripts/rotation-table.py ${PKG_BUILD} > ${INSTALL}/usr/config/emulationstation/rotation/fbneo.txt
+  echo "USING: fbneo rotation table: $(wc -l < ${INSTALL}/usr/config/emulationstation/rotation/fbneo.txt) games with a turn"
 }
