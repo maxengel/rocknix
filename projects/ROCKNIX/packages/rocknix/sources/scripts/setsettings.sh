@@ -897,10 +897,12 @@ function set_autosave() {
         mkdir "${SNAPSHOTS}/${PLATFORM}"
     fi
 
-    if [ ! -z "${SNAPSHOT}" ]
-    then
-        add_setting "none" "state_slot" "${SNAPSHOT}"
-    fi
+    # RetroArch's current slot: the numbered tile's number, or -1 -- its
+    # own Auto slot, the .auto file -- for the AUTO SAVE tile (fork #249),
+    # so the quick menu says Auto and the load hotkey reloads the state the
+    # game started from, as it does for a numbered tile. It used to stay at
+    # whatever it was, 0, and the hotkey loaded slot 0 instead.
+    local SLOT="${SNAPSHOT}"
 
     # The state the interface asked to start from (--state_file=, the save
     # state manager's -state_file), on the contract Batocera's launcher keeps
@@ -918,6 +920,7 @@ function set_autosave() {
         case "${STATEFILE}" in
             *.auto)
                 SETAUTOLOAD=true
+                SLOT="-1"
             ;;
             *)
                 case "${SNAPSHOT}" in
@@ -930,6 +933,11 @@ function set_autosave() {
                 esac
             ;;
         esac
+    fi
+
+    if [ ! -z "${SLOT}" ]
+    then
+        add_setting "none" "state_slot" "${SLOT}"
     fi
 
     add_setting "none" "savestate_auto_load" "${SETAUTOLOAD}"
