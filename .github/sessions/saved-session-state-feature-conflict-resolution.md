@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-23T02:42:00Z
+> **Saved**: 2026-09-23T03:20:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `4af5adf7e0`, pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**Two cuts stand.** The twelfth `428d44af40` (FBNeo's rotation table; QA green; **its tar is in `/storage/.update` on the RG35XX SP, checksum matched, the reboot asked and not answered** -- the maintainer asked first whether the fix should cover every arcade core). The thirteenth `9221b4528d` is building (`chain-248b.sh`: tables for mame2003_plus, mame2010, fbalpha2012, fbalpha2019 generated in their packages; ES pin `456eb7150` reads the achievement screenshot's name `<content>-cheevo-<id>`); its proofs seed galaga under `arcade` (mame2003_plus, no record) beside Ms. Pac-Man under `fbn`, then vm-qa run 14 and the rehearsal (`frames-248b/`, `measure-248b-*.txt`, `chain-248b.done`). The census of rotating cores is on #248 and in the work log; MAME 2015 needs no table, current MAME and Flycast wait. The maintainer's library is all `fbn`, so either cut covers it; if they answer yes to the reboot before the thirteenth is proven, apply the twelfth (staged) and stage the thirteenth after.
+**The round's candidate is the thirteenth cut `9221b4528d`** (`h700-all-20260923-9221b4528d/`, ES pin `456eb7150`): the eleventh (on the RG35XX SP since 2026-09-23 01:29 UTC) plus **#248 whole** -- a capture with no session record takes its turn from its core's own driver table (FBNeo, FB Alpha 2012/2019, MAME 2003-plus, MAME 2010, each `/usr/config/emulationstation/rotation/<core>.txt` generated in its package at build time), and the SCREENSHOTS lookup reads the achievement screenshot's name. Proven on guest d with no session played (Ms. Pac-Man under `fbn`, Galaga under `arcade`); vm-qa run 14 eleven suites PASSED; rehearsal 19/19. **Its tar is in `/storage/.update` on the RG35XX SP (checksum matched 02:54 UTC); the reboot is asked for and not yet answered.** Nothing is in flight. The maintainer's library is all `fbn`.
 
 ## Completed This Session (2026-09-22 16:15 – 17:37 UTC, after the previous stash)
 
@@ -21,12 +21,12 @@
 
 ## In Progress
 
-- **The reboot question is open** (twelfth staged); the thirteenth builds. Do nothing to the device without the yes. The earlier #79 crashes (rows 1-4) are RetroArch's own (threaded video wrapper, patches 0011/0015) and separate from #246.
+- **One question open with the maintainer**: reboot the RG35XX SP to apply `9221b4528d`. Do nothing to the device without the yes. The earlier #79 crashes (rows 1-4) are RetroArch's own (threaded video wrapper, patches 0011/0015) and separate from #246.
 - #246 is fixed and proven on the VM; the device half (the maintainer's next offline session on the ninth cut) and #247 (the keeper notes a cut dump as whole) remain.
 
 ## Next Steps
 
-1. **The RG35XX SP**: on the maintainer's yes, `tools/device-act rg35xxsp 'reboot to apply 428d44af40 -- the maintainer said yes' -- 'sync; (sleep 2; reboot) >/dev/null 2>&1 &'`, then BUILD_ID `428d44af40`, queue empty, and `/usr/config/emulationstation/rotation/fbneo.txt` present. Next from the maintainer: their word on an NES thumbnail (#243 box 3), an offline session with unlocks on this cut (#246's device half; the keeper is armed, the handler prints a backtrace), the soak line ticks on #236 (`a-soak`; #161 closes not planned if they agree; #211's device box).
+1. **The RG35XX SP**: on the maintainer's yes, `tools/device-act rg35xxsp 'reboot to apply 9221b4528d -- the maintainer said yes' -- 'sync; (sleep 2; reboot) >/dev/null 2>&1 &'`, then BUILD_ID `9221b4528d`, queue empty, and the five tables under `/usr/config/emulationstation/rotation/`. Next from the maintainer: their word on an NES thumbnail (#243 box 3), an offline session with unlocks on this cut (#246's device half; the keeper is armed, the handler prints a backtrace), the soak line ticks on #236 (`a-soak`; #161 closes not planned if they agree; #211's device box).
 2. #245 / D-UI-081: the maintainer's call. If option 1, a RetroArch patch `0016` rotating the raw capture by the content rotation; the proof is the device (the VM has no arcade ROM).
 3. Then the RG SP (D-QA-031) with the same tar; SM8550 for the Nova (#150); the housekeeping list in the previous state.
 
@@ -47,7 +47,7 @@
 
 ## Related Context
 
-- **Tracker**: #243 (box 3 open), #244 (closed), #245 (built; the device half open), #248 (built, twelfth cut; the device half open: Ms. Pac-Man upright straight after the update), #246 (fixed in the ninth cut; the device half open), #247 (the keeper's whole/cut note), #79 row 5, #236 (round page: seventh cut, soak read), #211/#161 (soak), #150
+- **Tracker**: #243 (box 3 open), #244 (closed), #245 (built; the device half open), #248 (built, thirteenth cut; the device half open: Ms. Pac-Man upright straight after the update), #246 (fixed in the ninth cut; the device half open), #247 (the keeper's whole/cut note), #79 row 5, #236 (round page: seventh cut, soak read), #211/#161 (soak), #150
 - **Register**: D-UI-080, D-QA-037, D-UI-081 (open), D-QA-036, D-QA-031
 - **Artifacts**: `h700-all-20260922-220585b56b/` (the candidate); `qa-5d8bc093c7-webdav-a-20260922-1623/`; the seventh cut's run dirs once done
 - **Session scripts** (`/workspace/tmp/rocknix-session/`): `seed-248.sh` (Ms. Pac-Man under `fbn`, no record), `proof-248s.sh` + `find-carousel.py` (SCREENSHOTS found by its logo), `chain-248.sh`, `fbneo-rotation-table.py` (now `fbneo-lr/scripts/rotation-table.py`); `seed-245.sh`, `proof-245s.sh` (list + viewer), `exit-record-245.sh` (a session with a SET_ROTATION line appended; run it only on a settled guest -- both proof passes reboot at their end), `chain-245c.sh`, `restage-11.sh`; `repro-246.sh` / `repro-246b.sh <N> <outdir>` (the soak's shape as a loop; needs the guest prepped: Debug, gameexit, proxy enable+scan, keeper on, `/tmp/vd.bak`), `unwind.py`, `chain-246-9.sh`; `mkpng.py`, `seed-243.sh`, `measure-243.py`, `proof-243d.sh <outdir> [systems]` (X = GAME OPTIONS then A = the manager), `proof-243s.sh <outdir>` (`KEEP=1` keeps the guest up; SCREENSHOTS is five right of PICO-8), `chain-243-9.sh`, `build-x64-run22.sh`, `build-h700-run11.sh`, `vmqa-run8.sh`, `record-h700-run11.sh`, `changelog-gap-draft.md` (the survey's draft with evidence comments)
