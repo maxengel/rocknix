@@ -76,3 +76,24 @@ file from 09-15 on -- it is 54x43 at x 55..108, y 306..348.
   pixels differ (`compare-region.py`) -- while the capture tiles keep their
   turn and shape: rings 68x69 (`fbn`), 73x73 (`nes`), 89x89 (`gb`), mark
   above.
+
+## #252 -- the walk frames are diffed against the last accepted cut (D-QA-038)
+
+Guest a at `1280x800`, `tools/vm-qa --only walks,frame-diff` on the
+fifteenth cut's image, runs 17 to 21 (16:27 to 18:30 UTC). The new
+`frame-diff` suite compares every walk frame with the baseline's and fails
+on a box no claim covers; `masks.txt` hides the clock and a running
+transfer's live lines.
+
+- `252-walk-manager-{fbn,nes}-1280x800` -- the new manager walks, run 20:
+  Ms. Pac-Man under `fbn` (the turn from FBNeo's table) and Bobl under `nes`
+  (a turn recorded), the capture tile portrait with the mark above, the
+  START NEW GAME arrow the same on both, the tile date fixed at
+  `09/01/2026 12:00` by the fixture so the frames compare.
+- `252-diff-systems-page-cloud-populated` / `-cloud-reset` -- what the diff
+  caught between runs 18 and 20 (`x 250..598, y 367..380` and `y 438..451`):
+  the FBNEO and NES rows read NOTHING NEW TO BACK UP after a run had left
+  the fixture's ROMs in the QA cloud, and `4 KB NOT YET IN YOUR CLOUD · 1
+  FILE` once the walks reset the cloud before seeding it. The first is what
+  a second run used to inherit; the second is the state every run starts
+  from now.
