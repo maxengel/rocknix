@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-23T01:58:00Z
+> **Saved**: 2026-09-23T02:25:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `4af5adf7e0`, pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The round's candidate is the twelfth cut `428d44af40`** (`h700-all-20260923-428d44af40/`, ES pin `5bf387346`, fbneo-lr with the rotation table): the eleventh (on the RG35XX SP since 01:29 UTC) plus **#248 / D-UI-082** -- a capture with no session record takes its turn from the core's own driver table (`/usr/config/emulationstation/rotation/fbneo.txt`, 2,544 games, generated at build time from FBNeo's source), so the maintainer's Ms. Pac-Man thumbnail is upright the moment the build is, with nothing to replay. Proven on guest d with no session played (frames `docs/qa-frames/2026-09-23/248-*`). **vm-qa run 13 and the rehearsal are running** (`chain-248.sh`, `vmqa-run13.log`, `upgrade-rehearsal-run13.{log,rc}`, `chain-248.done`); the tar is being staged on the RG35XX SP (`stage-428d44af40.log`); the reboot is asked for after QA and not yet answered.
+**The round's candidate is the twelfth cut `428d44af40`** (`h700-all-20260923-428d44af40/`, ES pin `5bf387346`, fbneo-lr with the rotation table): the eleventh (on the RG35XX SP since 01:29 UTC) plus **#248 / D-UI-082** -- a capture with no session record takes its turn from the core's own driver table (`/usr/config/emulationstation/rotation/fbneo.txt`, 2,544 games, generated at build time from FBNeo's source), so the maintainer's Ms. Pac-Man thumbnail is upright the moment the build is, with nothing to replay. Proven on guest d with no session played (frames `docs/qa-frames/2026-09-23/248-*`). **vm-qa run 13 eleven suites PASSED and the rehearsal 19/19** (rows in `docs/vm-qa-log.md`); the tar is in `/storage/.update` on the RG35XX SP (checksum matched 01:59 UTC); **the reboot is asked for and not yet answered.** Nothing is in flight.
 
 ## Completed This Session (2026-09-22 16:15 – 17:37 UTC, after the previous stash)
 
@@ -21,7 +21,7 @@
 
 ## In Progress
 
-- **vm-qa run 13 + rehearsal on `428d44af40`**, then: the QA row, the RECORD's proof line, #236 comment, the reboot question. The earlier #79 crashes (rows 1-4) are RetroArch's own (threaded video wrapper, patches 0011/0015) and separate from #246.
+- **One question open with the maintainer**: reboot the RG35XX SP to apply `428d44af40`. Do nothing to the device without the yes. The earlier #79 crashes (rows 1-4) are RetroArch's own (threaded video wrapper, patches 0011/0015) and separate from #246.
 - #246 is fixed and proven on the VM; the device half (the maintainer's next offline session on the ninth cut) and #247 (the keeper notes a cut dump as whole) remain.
 
 ## Next Steps
