@@ -1,14 +1,14 @@
 # Saved Session State
 
-> **Saved**: 2026-09-23T19:55:00Z
+> **Saved**: 2026-09-23T18:45:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `e5065e18ee` + UNCOMMITTED #252 work: `tools/frame-diff`, `tools/vm-qa`, `tools/vm-walks/{suite.txt,masks.txt,claims.txt,manager.steps,fixtures/,README.md}`, `.githooks/pre-push`, `.claude/rules/{generic-x64-vm-testing,fork-workflow}.md`, `docs/{decision-register,cloud-sync-changelog}.md`, the work log)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**Blindspot 52 (#253): four "pending decisions" put to the maintainer were settled in the record.** The maintainer: *"I worry that we're losing track of the institutional knowledge ... I think a lot of these are actually settled issues. We need to spend the time doing our own project archaeology ... and then figuring out how we prevent this from happening in the future."* Done the same session: the archaeology on #209 (parity, D-UI-057 -> D-UI-083), #228 (RC pin D-WORKFLOW-026; the post-RC path D-WORKFLOW-027 open with pros/cons on the issue), #225 (the 09-19 scope cut, D-QA-039, closed as delivered), #42 (D-WORKFLOW-014, not an RC item), #251 (verified: the fraction is dropped by FT_Set_Pixel_Sizes; 10 px vs 17 px on the H700; options with numbers). Prevention: `tools/archaeology <terms>|--issue N`, `tools/work-log-index --write|--check` (`docs/work-logs/INDEX.md`), the push-guard warning, three rule sentences (decision-register.md, learning-capture.md), blindspot 52, #236 § C rewritten to two open items (D-WORKFLOW-027, #251). All committed and pushed on `next`.
+**#252 is rolled out and proven (D-QA-038; commits `f23e56b11b` tools + rules, `043e743316` docs, on `next`).** `tools/frame-diff`, the `frame-diff` suite in `tools/vm-qa` (rc 3 = SKIP shown), `tools/vm-walks/masks.txt` (four measured rectangles) and `claims.txt` (empty now), three `manager-*` walks with `ensure_manager_fixture`, `default-pre` fixing the hub's sync rows and clearing StartupSystem, the walks resetting the QA cloud before seeding. Five runs on the fifteenth's image: run 17 FAIL 156 unclaimed (the suite failing closed on the fixture's own changes), run 18 accepted, run 19 PASS 0 boxes/78 frames (by hand; vm-qa died -- the script had been edited while running), run 20 (cloud reset) accepted as **the baseline** (`walk-baseline/BASELINE.txt`, build `aa8d525a8a`, note inside), **run 21 PASS 0 boxes/78 frames**. Issue #252: boxes 1, 2, 3a, 4, 5 ticked with evidence; 3b open (SCREENSHOTS list and viewer walks: `StartupSystem` does not land on `imageviewer`). Comment `#issuecomment-5800562556`. Told the maintainer: no device testing required.
 
-**Also today:** #250 proven and the fifteenth cut green; #252 (frame-diff gate) rolled out and proven (runs 17-21). **The RG35XX SP runs the fourteenth; the fifteenth's transfer and reboot are still asked for and unanswered.**
+**The RG35XX SP runs the fourteenth (`c0c2d15179`)**; the fifteenth (`aa8d525a8a`, #250) is built and green; **its transfer and reboot are asked for and unanswered** (D-QA-011). Nothing is in flight; guest a is up on the fifteenth's image from run 21.
 
 ## Completed This Session (2026-09-23 04:55 -> 05:30 UTC)
 
@@ -19,16 +19,15 @@
 
 ## In Progress
 
-- The transfer and reboot question for the fifteenth on the RG35XX SP (asked 05:50, 16:20, 18:45 and 19:55 UTC).
-- #209's build waits on the maintainer's nod for a cut (the decision is settled): one `case` line in `setsettings.sh` (`0|2|false|none` -> `savestate_auto_index false`), the legacy `0` shown as DO NOT INCREMENT in the interface, `savestate_max_keep` never written empty.
-- #251: the maintainer's pick among the four options (numbers on the issue).
+- The transfer and reboot question for the fifteenth on the RG35XX SP (asked 05:50, 16:20 and 18:45 UTC).
 
 ## Next Steps
 
-1. **Before putting anything to the maintainer as pending: `tools/archaeology <terms>` first** (rule in decision-register.md). After appending a work-log entry: `tools/work-log-index --write`.
-2. On the maintainer's yes: stage the fifteenth (`stage-rg35xxsp-aa8d525a8a.sh`), then the reboot through `tools/device-act`; then #250 box 2, #249, #245, #246, #243 device halves; then the RG SP (D-QA-031), then the Nova.
-3. On the maintainer's nod: build #209 (D-UI-083) into the next cut; on their pick, #251.
-4. #252 box 3b (SCREENSHOTS/viewer walks); #253's four-week box (2026-10-21).
+1. On the maintainer's yes: `bash /workspace/tmp/rocknix-session/stage-rg35xxsp-aa8d525a8a.sh > stage-aa8d525a8a.log` (the queue is empty now, so nothing is replaced); put the time into `h700-all-20260923-aa8d525a8a/RECORD.txt` and the fifteenth's QA row; on the yes to the reboot, `tools/device-act rg35xxsp 'reboot to apply aa8d525a8a -- the maintainer said yes' -- 'sync; (sleep 2; reboot) >/dev/null 2>&1 &'`, confirm BUILD_ID and the empty queue, work log. **When the fifteenth is on the device, move the baseline as the rule says** -- it already is the fifteenth's frames (run 20), so only `BASELINE.txt`'s note needs the word "accepted on the device".
+2. The maintainer's device boxes after that: #250 box 2, #249, #245, #246, #243 box 3; the #236 round page's "You" box.
+3. #252 box 3b: walks for the SCREENSHOTS list and the viewer (reach `imageviewer` from a stated key sequence, e.g. `key left` from the first system if the carousel wraps -- check on guest a; the proofs used `find-carousel.py` by logo). Then claim/accept as usual.
+4. #251: the maintainer's call. The RG SP (D-QA-031) with the fifteenth's tar. The MAME/Flycast current tables later.
+5. Never edit `tools/vm-qa` (or any bash tool) while a run is in flight (memory `never-edit-a-running-bash-script`).
 
 ## Key Files Modified (this session)
 
