@@ -40,3 +40,13 @@ record**; the turn can only come from `/usr/config/emulationstation/rotation/fbn
 - `248-after-screenshots-list-mspacman-upright-from-table` -- the
   SCREENSHOTS list on Ms. Pac-Man's screenshot: portrait, ring 132x133,
   mark above.
+- `248-after-manager-galaga-mame2003plus-upright-from-table` -- the
+  thirteenth cut (`9221b4528d`): Galaga's ROM name under the `arcade`
+  system, whose core is MAME 2003-plus, a left-marked thumbnail and no
+  record: the tile portrait, ring 68x69, mark above -- from
+  `mame2003_plus.txt` (1,643 games), one of the four tables this cut adds
+  (MAME 2003-plus, MAME 2010, FB Alpha 2012 and 2019, beside FBNeo's).
+- `248-after-screenshots-list-galaga-cheevo-name-upright` -- the SCREENSHOTS
+  list on `galaga-cheevo-123456.png`, the name RetroArch gives the
+  screenshot it takes at an achievement unlock: recognised now, portrait,
+  ring 132x133, mark above.
