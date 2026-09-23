@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-22T23:05:00Z
+> **Saved**: 2026-09-23T00:52:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `4af5adf7e0`, pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The round's candidate is the ninth cut `520e1c92ca`** (`h700-all-20260922-520e1c92ca/`, ES pin `d534632d7`), staged on the RG35XX SP (checksum matched 22:07 UTC, nothing applied). It carries #243 and **the fix for #246**: the interface's crash in the maintainer's soak was the after-exit rescan of the SCREENSHOTS folder reloading a list view whose cursor it had just deleted (`rescanIfFolderChanged` -> `clear()` -> `reloadGameListView` reading the freed cursor); reproduced on guest d in the soak's shape (seventh cut died on session 16, eighth on 13 with a backtrace whose faulting PC was in the heap), fixed by `dropGameListView` / `remakeGameListView` around the repopulate, and held for forty sessions. The eighth cut also made the crash handler print a backtrace and die of the signal. **vm-qa run 10 eleven suites PASSED and the rehearsal 19/19 on the ninth cut** (rows in `docs/vm-qa-log.md`). **The RG35XX SP runs `520e1c92ca` since 23:01 UTC** (reboot with the maintainer's yes at 22:57; queue empty, store and settings intact, keeper armed). Nothing is in flight; what is open is the maintainer's: #246's device half (an offline session with unlocks), #243's box 3, #245 / D-UI-081, the RG SP (D-QA-031) with this tar.
+**The round's candidate is the eleventh cut `ed61a18d5c`** (`h700-all-20260923-ed61a18d5c/`, ES pin `034b5d574`): the ninth (on the RG35XX SP since 2026-09-22 23:01 UTC) plus **#245 / D-UI-081, decided "our side"** -- the interface learns a game's rotation from the launch log at the end of each RetroArch session, records it beside the states (`<rom>.rotation`, `turns=N`), and turns that game's captures by it on every surface (manager tiles, SCREENSHOTS list + grid style, full-screen viewer), with the aspect. Proven on guest d (recording path and every surface upright, frames `docs/qa-frames/2026-09-23/245-*`); the tenth cut `bf53cea7e4` turned nothing because a two-byte record read as empty under `readAllText`'s BOM check. **vm-qa run 12 and the rehearsal are running on the eleventh cut** (`chain-245c.sh`, `vmqa-run12.log`, `upgrade-rehearsal-run12.{log,rc}`, `chain-245c.done`), the tar is being staged on the RG35XX SP (`stage-ed61a18d5c.log`), and the reboot is asked for after QA and not yet answered. The image file names now carry `20260923`.
 
 ## Completed This Session (2026-09-22 16:15 – 17:37 UTC, after the previous stash)
 
@@ -21,12 +21,12 @@
 
 ## In Progress
 
-- Nothing in flight. The RG35XX SP is on the ninth cut; the earlier #79 crashes (rows 1-4) are RetroArch's own -- the threaded video wrapper, patches 0011/0015, #211/#225 -- and separate from #246, which is the interface's; the shared trigger is an unlock's screenshot and badge.
+- **vm-qa run 12 + rehearsal on `ed61a18d5c`**, then: the QA row, the RECORD's proof line, #236 comment, and the reboot question (the eleventh's tar in `/storage/.update` once staging ends). The earlier #79 crashes (rows 1-4) are RetroArch's own (threaded video wrapper, patches 0011/0015) and separate from #246.
 - #246 is fixed and proven on the VM; the device half (the maintainer's next offline session on the ninth cut) and #247 (the keeper notes a cut dump as whole) remain.
 
 ## Next Steps
 
-1. **The RG35XX SP is done for this cut.** Next from the maintainer: their word on an NES thumbnail (#243 box 3), an offline session with unlocks on this cut (#246's device half; the keeper is armed, the handler prints a backtrace), the soak line ticks on #236 (`a-soak`; #161 closes not planned if they agree; #211's device box).
+1. **The RG35XX SP**: on the maintainer's yes, `tools/device-act rg35xxsp 'reboot to apply ed61a18d5c -- the maintainer said yes' -- 'sync; (sleep 2; reboot) >/dev/null 2>&1 &'`, then BUILD_ID `ed61a18d5c`, queue empty, keeper armed, store intact. Next from the maintainer: their word on an NES thumbnail (#243 box 3), an offline session with unlocks on this cut (#246's device half; the keeper is armed, the handler prints a backtrace), the soak line ticks on #236 (`a-soak`; #161 closes not planned if they agree; #211's device box).
 2. #245 / D-UI-081: the maintainer's call. If option 1, a RetroArch patch `0016` rotating the raw capture by the content rotation; the proof is the device (the VM has no arcade ROM).
 3. Then the RG SP (D-QA-031) with the same tar; SM8550 for the Nova (#150); the housekeeping list in the previous state.
 
@@ -47,10 +47,10 @@
 
 ## Related Context
 
-- **Tracker**: #243 (box 3 open), #244 (closed), #245 (new, D-UI-081), #246 (fixed in the ninth cut; the device half open), #247 (the keeper's whole/cut note), #79 row 5, #236 (round page: seventh cut, soak read), #211/#161 (soak), #150
+- **Tracker**: #243 (box 3 open), #244 (closed), #245 (built, eleventh cut; the device half open), #246 (fixed in the ninth cut; the device half open), #247 (the keeper's whole/cut note), #79 row 5, #236 (round page: seventh cut, soak read), #211/#161 (soak), #150
 - **Register**: D-UI-080, D-QA-037, D-UI-081 (open), D-QA-036, D-QA-031
 - **Artifacts**: `h700-all-20260922-220585b56b/` (the candidate); `qa-5d8bc093c7-webdav-a-20260922-1623/`; the seventh cut's run dirs once done
-- **Session scripts** (`/workspace/tmp/rocknix-session/`): `repro-246.sh` / `repro-246b.sh <N> <outdir>` (the soak's shape as a loop; needs the guest prepped: Debug, gameexit, proxy enable+scan, keeper on, `/tmp/vd.bak`), `unwind.py`, `chain-246-9.sh`; `mkpng.py`, `seed-243.sh`, `measure-243.py`, `proof-243d.sh <outdir> [systems]` (X = GAME OPTIONS then A = the manager), `proof-243s.sh <outdir>` (`KEEP=1` keeps the guest up; SCREENSHOTS is five right of PICO-8), `chain-243-9.sh`, `build-x64-run22.sh`, `build-h700-run11.sh`, `vmqa-run8.sh`, `record-h700-run11.sh`, `changelog-gap-draft.md` (the survey's draft with evidence comments)
+- **Session scripts** (`/workspace/tmp/rocknix-session/`): `seed-245.sh`, `proof-245s.sh` (list + viewer), `exit-record-245.sh` (a session with a SET_ROTATION line appended; run it only on a settled guest -- both proof passes reboot at their end), `chain-245c.sh`, `restage-11.sh`; `repro-246.sh` / `repro-246b.sh <N> <outdir>` (the soak's shape as a loop; needs the guest prepped: Debug, gameexit, proxy enable+scan, keeper on, `/tmp/vd.bak`), `unwind.py`, `chain-246-9.sh`; `mkpng.py`, `seed-243.sh`, `measure-243.py`, `proof-243d.sh <outdir> [systems]` (X = GAME OPTIONS then A = the manager), `proof-243s.sh <outdir>` (`KEEP=1` keeps the guest up; SCREENSHOTS is five right of PICO-8), `chain-243-9.sh`, `build-x64-run22.sh`, `build-h700-run11.sh`, `vmqa-run8.sh`, `record-h700-run11.sh`, `changelog-gap-draft.md` (the survey's draft with evidence comments)
 
 ## Notes for Next Session
 
