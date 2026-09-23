@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-23T03:20:00Z
+> **Saved**: 2026-09-23T03:58:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `4af5adf7e0`, pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The round's candidate is the thirteenth cut `9221b4528d`** (`h700-all-20260923-9221b4528d/`, ES pin `456eb7150`): the eleventh (on the RG35XX SP since 2026-09-23 01:29 UTC) plus **#248 whole** -- a capture with no session record takes its turn from its core's own driver table (FBNeo, FB Alpha 2012/2019, MAME 2003-plus, MAME 2010, each `/usr/config/emulationstation/rotation/<core>.txt` generated in its package at build time), and the SCREENSHOTS lookup reads the achievement screenshot's name. Proven on guest d with no session played (Ms. Pac-Man under `fbn`, Galaga under `arcade`); vm-qa run 14 eleven suites PASSED; rehearsal 19/19. **Its tar is in `/storage/.update` on the RG35XX SP (checksum matched 02:54 UTC); the reboot is asked for and not yet answered.** Nothing is in flight. The maintainer's library is all `fbn`.
+**The round's candidate is the thirteenth cut `9221b4528d`** (`h700-all-20260923-9221b4528d/`, ES pin `456eb7150`): the eleventh (on the RG35XX SP since 2026-09-23 01:29 UTC) plus **#248 whole** -- a capture with no session record takes its turn from its core's own driver table (FBNeo, FB Alpha 2012/2019, MAME 2003-plus, MAME 2010, each `/usr/config/emulationstation/rotation/<core>.txt` generated in its package at build time), and the SCREENSHOTS lookup reads the achievement screenshot's name. Proven on guest d with no session played (Ms. Pac-Man under `fbn`, Galaga under `arcade`); vm-qa run 14 eleven suites PASSED; rehearsal 19/19. **The RG35XX SP runs `9221b4528d` since 03:56 UTC** (reboot with the maintainer's yes at 03:51; queue empty, the five tables present, no record for Ms. Pac-Man yet so the table is what turns it, store and settings intact, keeper armed, no fault). Nothing is in flight; what is open is the maintainer's: Ms. Pac-Man upright with nothing replayed (#248), a vertical FBNeo game's session (#245), an offline session with unlocks (#246), #243 box 3, the RG SP (D-QA-031) with `h700-all-20260923-9221b4528d/ROCKNIX-H700.aarch64-20260923.tar`. Later, when a build window allows: current MAME's and Flycast's tables (#248).
 
 ## Completed This Session (2026-09-22 16:15 – 17:37 UTC, after the previous stash)
 
@@ -21,12 +21,12 @@
 
 ## In Progress
 
-- **One question open with the maintainer**: reboot the RG35XX SP to apply `9221b4528d`. Do nothing to the device without the yes. The earlier #79 crashes (rows 1-4) are RetroArch's own (threaded video wrapper, patches 0011/0015) and separate from #246.
+- Nothing in flight. The RG35XX SP is on the thirteenth cut. The earlier #79 crashes (rows 1-4) are RetroArch's own (threaded video wrapper, patches 0011/0015) and separate from #246.
 - #246 is fixed and proven on the VM; the device half (the maintainer's next offline session on the ninth cut) and #247 (the keeper notes a cut dump as whole) remain.
 
 ## Next Steps
 
-1. **The RG35XX SP**: on the maintainer's yes, `tools/device-act rg35xxsp 'reboot to apply 9221b4528d -- the maintainer said yes' -- 'sync; (sleep 2; reboot) >/dev/null 2>&1 &'`, then BUILD_ID `9221b4528d`, queue empty, and the five tables under `/usr/config/emulationstation/rotation/`. Next from the maintainer: their word on an NES thumbnail (#243 box 3), an offline session with unlocks on this cut (#246's device half; the keeper is armed, the handler prints a backtrace), the soak line ticks on #236 (`a-soak`; #161 closes not planned if they agree; #211's device box).
+1. **The RG35XX SP is done for this cut** (`9221b4528d` applied 03:56 UTC). Next from the maintainer: their word on an NES thumbnail (#243 box 3), an offline session with unlocks on this cut (#246's device half; the keeper is armed, the handler prints a backtrace), the soak line ticks on #236 (`a-soak`; #161 closes not planned if they agree; #211's device box).
 2. #245 / D-UI-081: the maintainer's call. If option 1, a RetroArch patch `0016` rotating the raw capture by the content rotation; the proof is the device (the VM has no arcade ROM).
 3. Then the RG SP (D-QA-031) with the same tar; SM8550 for the Nova (#150); the housekeeping list in the previous state.
 
