@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-23T03:58:00Z
+> **Saved**: 2026-09-23T04:16:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `4af5adf7e0`, pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The round's candidate is the thirteenth cut `9221b4528d`** (`h700-all-20260923-9221b4528d/`, ES pin `456eb7150`): the eleventh (on the RG35XX SP since 2026-09-23 01:29 UTC) plus **#248 whole** -- a capture with no session record takes its turn from its core's own driver table (FBNeo, FB Alpha 2012/2019, MAME 2003-plus, MAME 2010, each `/usr/config/emulationstation/rotation/<core>.txt` generated in its package at build time), and the SCREENSHOTS lookup reads the achievement screenshot's name. Proven on guest d with no session played (Ms. Pac-Man under `fbn`, Galaga under `arcade`); vm-qa run 14 eleven suites PASSED; rehearsal 19/19. **The RG35XX SP runs `9221b4528d` since 03:56 UTC** (reboot with the maintainer's yes at 03:51; queue empty, the five tables present, no record for Ms. Pac-Man yet so the table is what turns it, store and settings intact, keeper armed, no fault). Nothing is in flight; what is open is the maintainer's: Ms. Pac-Man upright with nothing replayed (#248), a vertical FBNeo game's session (#245), an offline session with unlocks (#246), #243 box 3, the RG SP (D-QA-031) with `h700-all-20260923-9221b4528d/ROCKNIX-H700.aarch64-20260923.tar`. Later, when a build window allows: current MAME's and Flycast's tables (#248).
+**The RG35XX SP runs the thirteenth cut `9221b4528d`** (applied 03:56 UTC; the maintainer confirmed Ms. Pac-Man's thumbnail upright with nothing replayed, #248's device half). **The fourteenth cut `c0c2d15179` is building** (`chain-249.sh`: `setsettings.sh` sets `state_slot -1` for the AUTO SAVE tile, #249 -- the load hotkey reloads the auto save; proven on guest d from both tiles with the launcher bind-mounted, `check-249.sh`); vm-qa run 15 and the rehearsal follow (`vmqa-run15.log`, `upgrade-rehearsal-run15.{log,rc}`, `chain-249.done`), then the tar is staged on the RG35XX SP and the reboot asked. The maintainer's banner question (the RetroAchievements login toast looked blurry in Ms. Pac-Man) is answered from the tree: RetroArch untouched since 2026-09-15, widgets at scale 1.0, nothing of ours draws it; if it differs between a vertical and a horizontal game on the same build, that is RetroArch's rendering under rotation and a separate look.
 
 ## Completed This Session (2026-09-22 16:15 – 17:37 UTC, after the previous stash)
 
@@ -21,7 +21,7 @@
 
 ## In Progress
 
-- Nothing in flight. The RG35XX SP is on the thirteenth cut. The earlier #79 crashes (rows 1-4) are RetroArch's own (threaded video wrapper, patches 0011/0015) and separate from #246.
+- **The fourteenth cut's builds, vm-qa run 15 and the rehearsal** (`chain-249.done`); then `record-h700-run18`, the RECORD.txt, the QA row, staging (`stage-rg35xxsp-*` from the thirteenth's with the id replaced, through a helper so no shell carries the name), the reboot question. The earlier #79 crashes (rows 1-4) are RetroArch's own (threaded video wrapper, patches 0011/0015) and separate from #246.
 - #246 is fixed and proven on the VM; the device half (the maintainer's next offline session on the ninth cut) and #247 (the keeper notes a cut dump as whole) remain.
 
 ## Next Steps
@@ -47,7 +47,7 @@
 
 ## Related Context
 
-- **Tracker**: #243 (box 3 open), #244 (closed), #245 (built; the device half open), #248 (built, thirteenth cut; the device half open: Ms. Pac-Man upright straight after the update), #246 (fixed in the ninth cut; the device half open), #247 (the keeper's whole/cut note), #79 row 5, #236 (round page: seventh cut, soak read), #211/#161 (soak), #150
+- **Tracker**: #243 (box 3 open), #244 (closed), #245 (built; the device half open), #248 (done on the device; current MAME and Flycast tables later), #249 (fourteenth cut building; the device half open), #246 (fixed in the ninth cut; the device half open), #247 (the keeper's whole/cut note), #79 row 5, #236 (round page: seventh cut, soak read), #211/#161 (soak), #150
 - **Register**: D-UI-080, D-QA-037, D-UI-081 (open), D-QA-036, D-QA-031
 - **Artifacts**: `h700-all-20260922-220585b56b/` (the candidate); `qa-5d8bc093c7-webdav-a-20260922-1623/`; the seventh cut's run dirs once done
 - **Session scripts** (`/workspace/tmp/rocknix-session/`): `seed-248.sh` (Ms. Pac-Man under `fbn`, no record), `proof-248s.sh` + `find-carousel.py` (SCREENSHOTS found by its logo), `chain-248.sh`, `fbneo-rotation-table.py` (now `fbneo-lr/scripts/rotation-table.py`); `seed-245.sh`, `proof-245s.sh` (list + viewer), `exit-record-245.sh` (a session with a SET_ROTATION line appended; run it only on a settled guest -- both proof passes reboot at their end), `chain-245c.sh`, `restage-11.sh`; `repro-246.sh` / `repro-246b.sh <N> <outdir>` (the soak's shape as a loop; needs the guest prepped: Debug, gameexit, proxy enable+scan, keeper on, `/tmp/vd.bak`), `unwind.py`, `chain-246-9.sh`; `mkpng.py`, `seed-243.sh`, `measure-243.py`, `proof-243d.sh <outdir> [systems]` (X = GAME OPTIONS then A = the manager), `proof-243s.sh <outdir>` (`KEEP=1` keeps the guest up; SCREENSHOTS is five right of PICO-8), `chain-243-9.sh`, `build-x64-run22.sh`, `build-h700-run11.sh`, `vmqa-run8.sh`, `record-h700-run11.sh`, `changelog-gap-draft.md` (the survey's draft with evidence comments)
