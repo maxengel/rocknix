@@ -2223,9 +2223,10 @@ the handheld took them.
   wherever it draws them: the manager's tiles, the SCREENSHOTS list and its
   grid style, and the full-screen viewer. A game played before this build
   has no session record yet, so the interface takes its turn from the
-  core's own driver table, installed with FBNeo (#248): every existing
-  thumbnail and screenshot is right the moment the build is, with nothing
-  to replay. The files stay as RetroArch wrote them. Maintainer: *"I think
+  core's own driver table, installed with FBNeo, FB Alpha 2012 and 2019,
+  MAME 2003-plus and MAME 2010 (#248): every existing thumbnail and
+  screenshot is right the moment the build is, with nothing to replay. The
+  screenshot RetroArch takes at an achievement unlock is recognised too. The files stay as RetroArch wrote them. Maintainer: *"I think
   we do it on our side."*
 - **Save-state thumbnails and screenshots are drawn at the shape of the
   system that made them** (#243, D-UI-080). RetroArch writes both at the
