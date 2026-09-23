@@ -50,3 +50,29 @@ record**; the turn can only come from `/usr/config/emulationstation/rotation/fbn
   list on `galaga-cheevo-123456.png`, the name RetroArch gives the
   screenshot it takes at an achievement unlock: recognised now, portrait,
   ring 132x133, mark above.
+
+## #250 -- the manager's arrow tiles as they always were, on `aa8d525a8a`
+
+Guest d at `640x480`, the fixtures of #245 (a turn recorded for Ms. Pac-Man
+under `fbn` and Bobl under `nes`; Ninoid under `gb` untouched). The transform
+of #243 and #245 had been set on the manager's whole grid, so the arrow on
+START NEW GAME and START NEW AUTO SAVE (`:/freeslot.svg`, a placeholder
+state with no capture) took it too. `arrow-bbox.py` reports the bright
+arrow's box inside that tile; before either change -- the 2026-09-21 frame
+`195-save-state-manager-24h-640x480-77e7e97515` and the manager frames on
+file from 09-15 on -- it is 54x43 at x 55..108, y 306..348.
+
+- `250-before-manager-nes-arrow-fitted-4x3` -- the fifth cut (`5d8bc093c7`,
+  #243 alone): Bobl under `nes`. An NES game fits at 4:3, and so did the
+  arrow: 84x38, wide and flat -- the "scaled to reflect how we're scaling
+  the system" the maintainer saw. The same cut left a Game Boy game's arrow
+  alone (54x43), the Game Boy having no aspect entry.
+- `250-before-manager-fbn-arrow-turned` -- the thirteenth cut
+  (`9221b4528d`, #245 on top): Ms. Pac-Man, the capture tile portrait with
+  the mark above, and the arrow pointing down (50x65).
+- `250-after-manager-{fbn,nes,gb}-arrow-unchanged` -- the fifteenth cut:
+  the same three managers. The arrow tile (x 8..156, y 262..436) is
+  pixel-identical to the 2026-09-21 frame in all three -- 0 of 25,752
+  pixels differ (`compare-region.py`) -- while the capture tiles keep their
+  turn and shape: rings 68x69 (`fbn`), 73x73 (`nes`), 89x89 (`gb`), mark
+  above.

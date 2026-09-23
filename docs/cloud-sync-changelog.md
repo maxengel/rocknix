@@ -2234,6 +2234,15 @@ the handheld took them.
   numbered slot's state for a numbered tile. It had stayed on slot 0, so
   the hotkey loaded a different file. Maintainer: *"it doesn't reload the
   autosave."*
+- **The SAVE STATE MANAGER's arrow tiles are as they always were** (#250).
+  The transform that fits a thumbnail to its system's shape (#243) and
+  turns a vertical game's (#245) had been applied to every tile of the
+  manager, so the arrow on START NEW GAME and START NEW AUTO SAVE was
+  fitted at 4:3 on an NES game and pointed down on a vertical arcade one.
+  It now applies only to a tile that shows a capture, and the arrow tiles
+  are pixel-identical to a build from before either change. Maintainer:
+  *"the arrows should all remain exactly how they were. It's just the
+  screenshot itself."*
 - **Save-state thumbnails and screenshots are drawn at the shape of the
   system that made them** (#243, D-UI-080). RetroArch writes both at the
   core's native size, which for the NES and the SNES is the pixel grid and
