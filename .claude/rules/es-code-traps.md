@@ -202,3 +202,15 @@ across a `clear()`. The general rule: **before deleting objects, list who
 holds a pointer** -- the view's cursor, `mCurrentView`, the collections
 (which exclude the imageviewer platform for exactly this reason),
 `FileData::mRunningGame` -- and drop or re-point each one first.
+
+## A file under three bytes reads as empty (2026-09-23, #245)
+
+`Utils::FileSystem::readAllText` skips a UTF-8 byte-order mark by reading
+three bytes first (`skipUtf8Bom`), and `file.read(bom, 3)` on a shorter
+file fails the stream; the `seekg(0)` after it does not clear that, so
+`rdbuf()` yields nothing. A two-byte record (`1\n`) existed, read as `""`,
+and parsed as "no rotation" -- three surfaces stayed unturned while the
+record beside them said one turn, and it took a diagnostic build to see
+`exists yes turns 0`. A stamp or record the interface writes and reads back
+is a line that says what it is (`turns=1`), never a bare digit, and a
+reader that gets `""` from a file that exists should suspect this first.
