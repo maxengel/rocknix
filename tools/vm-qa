@@ -37,6 +37,8 @@
 #               RetroAchievements account, and spends one of its cheap achievements per PASS, so it is
 #               opt-in like link (--ra-offline, or --only ra-offline); --control runs #162's loss instead
 #   walks       tools/vm-walks/*.steps        -- each step file replayed from a rebooted guest, frames kept
+#   frame-diff  tools/frame-diff              -- the walk frames against the last accepted cut's; a box no
+#                                               claim in tools/vm-walks/claims.txt covers is a FAIL (#252)
 #               (frames are kept for a person to read; comparing them to references is fork #120's third box)
 #
 # The report goes to $ROCKNIX_ARTIFACTS/rocknix-images/qa-<build>-<date>/report.md
@@ -51,7 +53,7 @@ IMAGE=""; SKIP_UP=0; LINK=0; RA_OFFLINE=0; GUEST=a
 # to be a second, hand-typed list here -- and menumap, added to SUITES on
 # 2026-09-19, never ran because this copy was not updated. One list.
 ONLY=""
-SUITES="scripts lifetime vocabulary register french menumap pair-identity round-trip exit time-to-play link ra-offline walks"
+SUITES="scripts lifetime vocabulary register french menumap pair-identity round-trip exit time-to-play link ra-offline walks frame-diff"
 [ -n "$ONLY" ] || ONLY=$(printf '%s' "$SUITES" | tr ' ' '\n' | grep -vxE 'link|ra-offline' | paste -sd, -)
 # Which of the five QA clouds every suite here talks to (#133). It is one
 # variable and not a per-suite flag on purpose: the backend the endpoint is
@@ -114,12 +116,14 @@ mkdir -p "$OUT/walks"
 REPORT="$OUT/report.md"
 { echo "# vm-qa on $BUILD"; echo; echo "started $(date -u '+%Y-%m-%d %H:%M UTC'), guest $GUEST at :$PORT, cloud $BACKEND (port $("$ROOT/tools/cloud-test-backend" port), $("$ROOT/tools/cloud-test-backend" caps)), image ${IMAGE:-(already up)}"; echo; echo "| suite | result | time | log |"; echo "| --- | --- | --- | --- |"; } > "$REPORT"
 FAILS=0
+SKIPS=0  # a suite that could not run (rc 3) is shown as such, never folded into PASS
 run_suite() {  # name, log, command...
   local name=$1 log=$2; shift 2
   local t0=$(date +%s) rc
   "$@" > "$log" 2>&1; rc=$?
   local dt=$(( $(date +%s) - t0 ))
-  local res=PASS; [ "$rc" = 0 ] || { res="FAIL ($rc)"; FAILS=$((FAILS+1)); }
+  local res=PASS
+  if [ "$rc" = 3 ]; then res="SKIP"; SKIPS=$((SKIPS+1)); elif [ "$rc" != 0 ]; then res="FAIL ($rc)"; FAILS=$((FAILS+1)); fi
   printf '| %s | %s | %ds | `%s` |\n' "$name" "$res" "$dt" "$(basename "$log")" >> "$REPORT"
   echo "$name: $res in ${dt}s"
 }
@@ -273,9 +277,35 @@ ensure_remote() {
 # scratch tree and leaves /storage/roms as it found it -- empty on a fresh
 # pair -- so seed the same fixture the walks were written against: the
 # backend's seed-content in the cloud and seed-device's ROMs on the guest.
+# The manager walks want a game per system with a capture to show (#252): a
+# NES game with a turn recorded beside its states, a Game Boy game as it is,
+# and an FBNeo game the core's own table turns. Stub ROMs, the fixture
+# pictures under tools/vm-walks/fixtures/ (a ring that is round only at the
+# right aspect, a green mark on the edge that is the game's top), and fixed
+# mtimes, so the tile dates read the same on every run and the frames compare.
+ensure_manager_fixture() {
+  SSH 'test -f /storage/roms/savestates/fbn/mspacman.state.auto.png' 2>/dev/null && return 0
+  local F="$ROOT/tools/vm-walks/fixtures" put
+  put() { scp -q -i "$KEY" -P "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$1" "root@127.0.0.1:$2"; }
+  SSH 'mkdir -p /storage/roms/nes /storage/roms/gb /storage/roms/fbneo /storage/roms/savestates/nes /storage/roms/savestates/gb /storage/roms/savestates/fbn /storage/roms/screenshots; for f in nes/Bobl.nes gb/Ninoid.gb fbneo/mspacman.zip; do head -c 4096 /dev/urandom > /storage/roms/$f; done; for s in nes/Bobl gb/Ninoid fbn/mspacman; do head -c 4096 /dev/urandom > /storage/roms/savestates/$s.state.auto; done; printf "turns=1\n" > /storage/roms/savestates/nes/Bobl.rotation' 2>/dev/null
+  put "$F/nes-256x240-right.png" /storage/roms/savestates/nes/Bobl.state.auto.png
+  put "$F/gb-160x144.png" /storage/roms/savestates/gb/Ninoid.state.auto.png
+  put "$F/arcade-vertical-raw-left.png" /storage/roms/savestates/fbn/mspacman.state.auto.png
+  put "$F/nes-256x240-right.png" /storage/roms/screenshots/Bobl-260901-120000.png
+  put "$F/gb-160x144.png" /storage/roms/screenshots/Ninoid-260901-120100.png
+  put "$F/arcade-vertical-raw-left.png" /storage/roms/screenshots/mspacman-260901-120200.png
+  SSH 'touch -d "2026-09-01 12:00:00" /storage/roms/savestates/*/* /storage/roms/screenshots/* /storage/roms/nes/* /storage/roms/gb/* /storage/roms/fbneo/*; sync; echo "walks: seeded the manager fixture (nes with a turn recorded, gb as is, fbn from the core table; mtimes 2026-09-01 12:00)"' 2>/dev/null
+}
 ensure_fixture() {
   ensure_remote
   SSH 'test -f /storage/roms/snes/shared.sfc' 2>/dev/null && return 0
+  # The transfer walks upload the device-only ROMs, and the cloud keeps them:
+  # a second run then frames a systems page and a phase line that count what
+  # the first run left there (runs 17 and 18, 2026-09-23). The frame-diff
+  # suite compares those frames, so the endpoint is put back to the seed
+  # every time the guest is seeded, the way the round-trip suite does before
+  # its own work.
+  "$ROOT/tools/cloud-test-backend" reset >/dev/null 2>&1
   "$ROOT/tools/cloud-test-backend" seed-content >/dev/null 2>&1
   local scr; scr=$(mktemp)
   "$ROOT/tools/cloud-test-backend" seed-device > "$scr"
@@ -285,6 +315,7 @@ ensure_fixture() {
 }
 case ",$ONLY," in *,walks,*)
   ensure_fixture
+  ensure_manager_fixture
   # Every walk starts from a rebooted guest, which the README names as the
   # one deterministic start; a boot-time dialog is dismissed with B first.
   walk_all() {
@@ -340,7 +371,21 @@ case ",$ONLY," in *,walks,*)
     return $rc
   }
   run_suite walks "$OUT/walks.log" walk_all ;; esac
-{ echo; if [ "$FAILS" = 0 ]; then echo "**PASSED** -- every suite that ran passed."; else echo "**FAILED** -- $FAILS suite(s) failed; see the logs beside this file."; fi; echo; echo "finished $(date -u '+%Y-%m-%d %H:%M UTC')"; } >> "$REPORT"
+# The walk frames against the last cut the maintainer accepted (#252): every
+# box of differing pixels outside tools/vm-walks/masks.txt must be inside a
+# claim in tools/vm-walks/claims.txt, or the suite fails. No baseline is a
+# SKIP the table shows, never a quiet pass -- accept one with
+#   tools/frame-diff accept <run>/walks <baseline> --build <id>
+# once a cut is on the device. WALK_BASELINE overrides the directory.
+frame_diff_suite() {
+  local base="${WALK_BASELINE:-$(dirname "$OUT")/walk-baseline}"
+  if [ ! -f "$base/BASELINE.txt" ]; then
+    echo "frame-diff: no baseline at $base -- accept one: tools/frame-diff accept <run>/walks $base --build <id>"; return 3
+  fi
+  "$ROOT/tools/frame-diff" compare "$base" "$OUT/walks" --masks "$ROOT/tools/vm-walks/masks.txt" --claims "$ROOT/tools/vm-walks/claims.txt" --report "$OUT/frame-diff.md"
+}
+case ",$ONLY," in *,frame-diff,*) run_suite frame-diff "$OUT/frame-diff.log" frame_diff_suite ;; esac
+{ echo; if [ "$FAILS" = 0 ] && [ "$SKIPS" = 0 ]; then echo "**PASSED** -- every suite that ran passed."; elif [ "$FAILS" = 0 ]; then echo "**PASSED with $SKIPS suite(s) SKIPPED** -- a skipped suite could not run (its log says why) and has not passed."; else echo "**FAILED** -- $FAILS suite(s) failed; see the logs beside this file."; fi; echo; echo "finished $(date -u '+%Y-%m-%d %H:%M UTC')"; } >> "$REPORT"
 # The time-to-play numbers go BELOW the footer, not into the suite table: the
 # table is one row per suite and this cell reports four of its own. No budget
 # row exists yet, so nothing here fails the run -- the numbers are reported

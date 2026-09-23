@@ -36,6 +36,15 @@
 # The default also empties the saved system selection, which is
 # run-transfer.steps' own precondition for a different reason: its SELECT
 # ALL is a toggle that reads SELECT NONE once everything is on.
+#
+# It also puts the CLOUD hub's two sync rows into one state -- both switches
+# off, no last-run stamp under either -- because a full vm-qa run reaches
+# the walks after the exit suite has turned the game-exit sync on and left
+# a COMPLETED stamp, and a `--only walks` run does not. The frame-diff
+# suite (#252) compares the hub's pixels, so the walks decide that state
+# rather than inherit it from whatever ran before. And it clears
+# StartupSystem, with essway stopped first, so a manager walk's landing
+# system does not become every later walk's.
 
 # THE ORDER IS LOAD-BEARING, once, at the top. match-dialog needs the
 # device to hold ROMs the cloud does not (the seed fixture: gb entirely,
@@ -65,7 +74,7 @@
 # have -- ROMs/gb, ROMs/pico-8 and ROMs/snes/deviceonly.sfc under the
 # endpoint's Content root.
 
-default-pre = . /etc/profile; for d in backup restore; do for k in content media settings; do set_setting cloudsync.pick.$d.$k 0; done; set_setting cloudsync.pick.$d.saves 1; done; cloud_content_restore --set-systems ""
+default-pre = systemctl stop essway; sed -i '/StartupSystem/d' /storage/.config/emulationstation/es_settings.cfg; . /etc/profile; set_setting cloudsaves.startup 0; set_setting cloudsaves.gameexit 0; rm -f /storage/.cache/cloud_sync/last-*; for d in backup restore; do for k in content media settings; do set_setting cloudsync.pick.$d.$k 0; done; set_setting cloudsync.pick.$d.saves 1; done; cloud_content_restore --set-systems ""
 
 to-manage-cloud-storage = to-manage-cloud-storage
 back-up-page            = to-manage-cloud-storage back-up-page
@@ -80,3 +89,12 @@ continue-to-systems     = to-manage-cloud-storage back-up-page tick-roms continu
 run-transfer-frames     = to-manage-cloud-storage back-up-page tick-roms continue-to-systems run-transfer-frames
 run-transfer            = to-manage-cloud-storage back-up-page tick-roms continue-to-systems run-transfer
 ui-settings-toggle      = ui-settings-toggle
+
+# The manager walks (#252). `StartupSystem` lands the rebooted carousel on
+# the system whose first game carries the fixture capture; essway is stopped
+# before the edit, since EmulationStation writes its settings back at exit
+# and would undo it at the reboot. default-pre clears the key again for every
+# other walk, and every walk, so the default start stays the default.
+manager-nes = manager | systemctl stop essway; sed -i 's|</config>|\t<string name="StartupSystem" value="nes" />\n</config>|' /storage/.config/emulationstation/es_settings.cfg; sync
+manager-gb  = manager | systemctl stop essway; sed -i 's|</config>|\t<string name="StartupSystem" value="gb" />\n</config>|' /storage/.config/emulationstation/es_settings.cfg; sync
+manager-fbn = manager | systemctl stop essway; sed -i 's|</config>|\t<string name="StartupSystem" value="fbn" />\n</config>|' /storage/.config/emulationstation/es_settings.cfg; sync

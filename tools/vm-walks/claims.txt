@@ -1,0 +1,7 @@
+# What a cut means to change on the walked screens, one box per line:
+#   <baseline-build|*> <screen-glob> x0 y0 x1 y1 <issue>  # what
+# tools/frame-diff holds every differing box against these; a box no line
+# contains fails the frame-diff suite. A claim names the baseline it was
+# written against (the build in walk-baseline/BASELINE.txt), so it goes
+# stale -- and is reported as such -- when the baseline moves; prune it
+# then. A whole-frame rectangle claims a walk the baseline has not seen.

@@ -145,3 +145,31 @@ fix the walk in the same change as the interface -- a walk that no longer
 reaches its screen is the first thing the next cycle finds, and the
 cheapest. Since #125 it is also the first thing the *walk* finds: the run
 fails on the press that stopped landing, rather than four frames later.
+
+## The frames are compared, not only counted
+
+Since #252 the `frame-diff` suite in `tools/vm-qa` diffs every frame a walk
+leaves against the same frame from the last cut accepted on a device
+(`walk-baseline/` beside the run directories; `tools/frame-diff` is the
+tool). Two files here steer it:
+
+- `masks.txt` -- rectangles it does not compare, one per line with the
+  reason: the clock, a transfer's live lines. Measured, not guessed: a diff
+  of two runs of near-identical cuts showed the clock and nothing else on
+  61 of 63 frames.
+- `claims.txt` -- what a cut means to change: `<baseline-build> <screen-glob>
+  x0 y0 x1 y1 <issue> <what>`. A box outside every claim fails the suite. A
+  claim is written against a baseline build and goes stale when the baseline
+  moves; the run says which ones to prune.
+
+The `manager-*` lines are the first walks added for it: the SAVE STATE
+MANAGER on a NES game with a turn recorded, a Game Boy game as it is, and an
+FBNeo game the core's table turns, over the pictures in `fixtures/` (a ring
+that is round only at the right aspect, a green mark on the edge that is the
+game's top), seeded by vm-qa with fixed mtimes so the tile dates never
+differ. Their frames are the ones to read for #243, #245, #248 and #250.
+
+Because the frames are compared, `default-pre` fixes everything a walked
+screen shows that an earlier suite could leave behind: the hub's two sync
+switches off and their stamps gone, the transfer picks reset, `StartupSystem`
+cleared. A run that only walks and a full run then frame the same screens.

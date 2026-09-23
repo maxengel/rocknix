@@ -982,3 +982,52 @@ runs, no other guest points at the QA backend; a proof that needs the cloud
 waits for the suites or uses a folder of its own (`SAVES_REMOTE=/GAMES-d`,
 set on that guest alone) -- and a guest borrowed for a cloud proof gets its
 `cloud_sync.conf` and `rclone.conf` put back before the next suite run.
+
+## The frames are compared, not only counted (#252)
+
+`tools/vm-qa`'s `frame-diff` suite holds every walk frame against the same
+frame from the last cut the maintainer accepted on a device
+(`$ROCKNIX_ARTIFACTS/rocknix-images/walk-baseline/`; `BASELINE.txt` names the
+build), clusters the pixels that differ into boxes, and fails the run on any
+box that no line in `tools/vm-walks/claims.txt` contains. A claim is the
+baseline build, a screen glob, a rectangle and the issue that means the
+change; a whole-frame rectangle claims a walk the baseline has not seen.
+`tools/vm-walks/masks.txt` lists the few rectangles it does not compare --
+the clock, a transfer's live lines -- each measured from a diff of two runs,
+and each a place the check is blind. No baseline is a SKIP the report table
+shows; it is never folded into a pass.
+
+Why: the SAVE STATE MANAGER's arrow changed shape on the fifth cut of a
+series and direction on the eleventh, and ten cuts went by, each with a
+proof on guest d that measured the thumbnail it meant to change and nothing
+else. The arrow was on every one of those frames. The maintainer found it on
+the handheld at the thirteenth (#250).
+
+So:
+
+- **A proof asserts what must not change, too**, and against the build
+  before the series' *first* change -- named in the acceptance box, with a
+  frame kept from it. The previous cut is not a baseline: it can already
+  carry the defect, and #250's first box named one that did.
+- **Claim before you run.** A cut that changes a walked screen adds its
+  claim line with the change, the way it adds its change-log line. An
+  unclaimed box after the fact is the finding, not an inconvenience.
+- **Move the baseline when a cut is accepted on the device**, not when it
+  passes the VM: `tools/frame-diff accept <run>/walks <baseline> --build
+  <id>`, then prune the claims written against the old one (the next run
+  reports them as stale).
+- **A new walk is claimed whole**, and the screen it reaches gets a fixture
+  with fixed mtimes (`ensure_manager_fixture` in `vm-qa`), so its frames
+  compare from the first run.
+- The manager walks (`manager-nes`, `manager-gb`, `manager-fbn`) land the
+  rebooted carousel with `StartupSystem`, with essway stopped first because
+  EmulationStation writes its settings back at exit; `default-pre` clears
+  the key before every walk.
+- **The walks decide the state they frame.** `default-pre` also turns both
+  sync switches off and removes the last-run stamps, because a full run
+  reaches the walks after the exit suite has left the game-exit sync on
+  with a COMPLETED stamp and a `--only walks` run does not -- the first
+  frame-diff run found the hub's row and switch differing for that reason,
+  and the backdrop and the systems page differing because the manager
+  fixture adds systems. Anything a walked screen shows is either fixed by
+  the suite or masked; nothing is inherited from what ran before.

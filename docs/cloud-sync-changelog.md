@@ -2243,6 +2243,15 @@ the handheld took them.
   are pixel-identical to a build from before either change. Maintainer:
   *"the arrows should all remain exactly how they were. It's just the
   screenshot itself."*
+- **The VM now checks that a build changed only what it meant to** (#252,
+  D-QA-038). Every screen the QA walks reach is compared, pixel for pixel,
+  with the same screen on the last build accepted on a handheld; a change
+  no issue claims fails the run. The arrow in the SAVE STATE MANAGER had
+  been wrong for ten builds because each check measured only the
+  thumbnail it was about. Three walks of the manager itself (a NES game, a
+  Game Boy game, a vertical arcade game) are the first added under it.
+  Maintainer: *"I think your recommendation for 252 is a strong
+  recommendation, and so we should roll that out as well."*
 - **Save-state thumbnails and screenshots are drawn at the shape of the
   system that made them** (#243, D-UI-080). RetroArch writes both at the
   core's native size, which for the NES and the SNES is the pixel grid and
