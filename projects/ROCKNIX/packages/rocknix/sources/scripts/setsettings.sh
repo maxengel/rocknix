@@ -859,15 +859,24 @@ function set_rewind() {
 function set_savestates() {
     local SAVESTATES="$(game_setting incrementalsavestates)"
     local MAXINCREMENTALSAVES="$(game_setting maxincrementalsaves)"
+    # The interface stores "" for INCREMENT PER SAVE and "2" for DO NOT
+    # INCREMENT; a device upgraded from before the row had two spellings can
+    # hold "0". Batocera's launcher turns auto-index on unless the value reads
+    # false, so "2" and "0" are off (fork #209, D-UI-083). "2" used to fall
+    # through to on, and the save hotkey never wrote the launched slot.
     case ${SAVESTATES} in
-        0|false|none)
+        0|2|false|none)
             add_setting "none" "savestate_auto_index" "false"
         ;;
         *)
             add_setting "none" "savestate_auto_index" "true"
         ;;
     esac
-    add_setting "none" "savestate_max_keep" "${MAXINCREMENTALSAVES}"
+    # Only when set: an empty savestate_max_keep is a value RetroArch has to guess at.
+    if [ -n "${MAXINCREMENTALSAVES}" ]
+    then
+        add_setting "none" "savestate_max_keep" "${MAXINCREMENTALSAVES}"
+    fi
 }
 
 function set_autosave() {

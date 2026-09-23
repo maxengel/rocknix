@@ -2650,4 +2650,64 @@ printf 'Something = 1\n' > "${WI}/secrets.ini"
 wr; wr
 [ "$(grep -c '^Token = ' "${WI}/secrets.ini")" -eq 1 ] && [ "$(grep -cFx '[Achievements]' "${WI}/secrets.ini")" -eq 1 ]; check $? "a secrets.ini without the section gains [Achievements] once and one Token line" "secrets.ini: $(tr '\n' '|' < "${WI}/secrets.ini")"
 
+echo "  x. the launcher's incremental-save modes, the password's handoff, and the keeper's cut/whole note (#209, #198, #247)"
+# x1. set_savestates maps the interface's three spellings as Batocera's launcher does
+#     (D-UI-083): "" (INCREMENT PER SAVE) on; "2" (DO NOT INCREMENT) off; a legacy "0"
+#     off; and savestate_max_keep is written only when maxincrementalsaves has a value.
+X="${TMP}/x"; mkdir -p "${X}/log" "${X}/repo"
+src_of "projects/ROCKNIX/packages/rocknix/sources/scripts/setsettings.sh" "${X}/repo/setsettings.sh"
+sed -n '/^function log() {/,/^}/p; /^function clear_setting() {/,/^}/p; /^function add_setting() {/,/^}/p; /^function set_savestates() {/,/^}/p' "${X}/repo/setsettings.sh" > "${X}/sv.sh"
+sv() { # sv <incrementalsavestates> <maxincrementalsaves>: set_savestates; the appendconfig in $X/append.cfg
+    : > "${X}/append.cfg"; rm -f "${X}/append.cfg.sed"; : > "${X}/log/exec.log"
+    INC="$1" MAXK="$2" PLATFORM=gba ROM=tennis.zip TMP_CONFIG="${X}/append.cfg" LOGGING=verbose LOG_DIR="${X}/log" LOG_FILE=exec.log \
+    PATH="${TMP}/bbin:${PATH}" bash -c '. "$0"; game_setting() { case "$1" in incrementalsavestates) echo "${INC}";; maxincrementalsaves) echo "${MAXK}";; esac; }; set_savestates' "${X}/sv.sh" > "${X}/sv.out" 2>"${X}/sv.err"
+}
+cfg() { tr '\n' '|' < "${X}/append.cfg"; }
+sv "" 5;  [ "$(cfg)" = 'savestate_auto_index = "true"|savestate_max_keep = "5"|' ];  check $? "INCREMENT PER SAVE (\"\"): savestate_auto_index true, savestate_max_keep 5" "got $(cfg)"
+sv 2 5;   [ "$(cfg)" = 'savestate_auto_index = "false"|savestate_max_keep = "5"|' ]; check $? "DO NOT INCREMENT (\"2\"): savestate_auto_index false, so the save hotkey writes the launched slot (#209, D-UI-083)" "got $(cfg)"
+sv 0 5;   [ "$(cfg)" = 'savestate_auto_index = "false"|savestate_max_keep = "5"|' ]; check $? "a legacy \"0\": off, as DO NOT INCREMENT" "got $(cfg)"
+sv "" ""; [ "$(cfg)" = 'savestate_auto_index = "true"|' ];                             check $? "no maxincrementalsaves: no savestate_max_keep line, never an empty value" "got $(cfg)"
+# x2. setrootpass hands the password on whole: printf rather than echo -ne, so a
+#     backslash survives (#198); the interface quotes it before the shell (shellQuote).
+XR="${X}/rootpass"; XS="${XR}/storage/.cache"; mkdir -p "${XS}" "${XR}/shim" "${XR}/repo" "${XR}/run"
+src_of "projects/ROCKNIX/packages/rocknix/sources/scripts/setrootpass" "${XR}/repo/setrootpass"
+printf 'root:OLDHASH:19000::::::\n' > "${XS}/shadow"
+printf 'export PATH=/shim:/usr/bin:/bin\nget_setting() { echo 0; }\nset_setting() { printf "%%s=%%s\\n" "$1" "$2" >> /run/settings; }\n' > "${XR}/profile"
+printf '#!/bin/bash\n# a hash never holds a backslash; the fake encodes the password in hex\nprintf "CRYPT<%%s>" "$(printf "%%s" "$3" | od -An -tx1 | tr -d " \\n")"\n' > "${XR}/shim/cryptpw"
+printf '#!/bin/bash\ncat > /run/smb\n' > "${XR}/shim/smbpasswd"
+printf '#!/bin/bash\nprintf "%%s\\n" "$@" > /run/syncthing\n' > "${XR}/shim/syncthing"
+printf '#!/bin/bash\nexit 0\n' > "${XR}/shim/logger"
+printf '#!/bin/bash\necho inactive\n' > "${XR}/shim/systemctl"
+chmod +x "${XR}/shim"/*
+rp() { # rp <password>: setrootpass in the sandbox; rc in RC
+    : > "${XR}/run/settings"
+    RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${XR}/profile" /etc/profile --bind "${XR}/storage" /storage --ro-bind "${XR}/shim" /shim --ro-bind "${XR}/repo" /repo \
+        --bind "${XR}/run" /run --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var \
+        bash /repo/setrootpass "$1" > "${XR}/out" 2>&1; echo $? ) 2>/dev/null )
+}
+PW='a b$c\n2'
+rp "${PW}"
+PWHEX="$(printf '%s' "${PW}" | od -An -tx1 | tr -d ' \n')"
+[ "${RC}" -eq 0 ] && grep -qF "root:CRYPT<${PWHEX}>:19000::::::" "${XS}/shadow"; check $? "a password with a space, a \$ and a backslash reaches cryptpw whole and lands in shadow (#198)" "rc ${RC}; shadow: $(cat "${XS}/shadow"); out: $(head -c 200 "${XR}/out")"
+[ "$(cat "${XR}/run/smb")" = "$(printf '%s\n%s' "${PW}" "${PW}")" ]; check $? "and smbpasswd receives it twice, byte for byte (printf, not echo -ne)" "smb got: $(tr '\n' '|' < "${XR}/run/smb")"
+grep -qFx -- "${PW}" "${XR}/run/syncthing" && grep -qF -- "root.password=${PW}" "${XR}/run/settings"; check $? "syncthing and the setting get the same bytes" "syncthing: $(tr '\n' ' ' < "${XR}/run/syncthing"); settings: $(cat "${XR}/run/settings")"
+# x3. rocknix-corekeep: a dump cut at the cap is noted CUT from the raw byte count, not
+#     the compressed one (#247); a small dump is whole. CORE_MAX_BYTES from the environment
+#     sets a 1 MB cap for the run.
+XC="${X}/corekeep"; mkdir -p "${XC}/storage/.config" "${XC}/shim" "${XC}/repo"
+src_of "projects/ROCKNIX/packages/rocknix/sources/scripts/rocknix-corekeep" "${XC}/repo/rocknix-corekeep"
+printf 'armed test\n' > "${XC}/storage/.config/keep-core-dumps"
+printf '#!/bin/bash\nexit 0\n' > "${XC}/shim/logger"; chmod +x "${XC}/shim/logger"
+ck() { # ck <raw bytes> <exe>: that many zero bytes through the keeper; the note in $NOTE
+    rm -rf "${XC}/storage/.cache"; mkdir -p "${XC}/storage/.cache/log"
+    ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --bind "${XC}/storage" /storage --ro-bind "${XC}/shim" /shim --ro-bind "${XC}/repo" /repo \
+        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --setenv PATH /shim:/usr/bin:/bin --setenv CORE_MAX_BYTES 1048576 \
+        bash -c "head -c $1 /dev/zero | bash /repo/rocknix-corekeep $2 4242 1700000000 11 '!usr!bin!$2'" ) > "${XC}/out" 2>&1
+    NOTE="$(cat "${XC}"/storage/.cache/log/cores/core.*.txt 2>/dev/null)"
+}
+ck 65536 retroarch;          printf '%s' "${NOTE}" | grep '^dump' | grep -q 'whole' && ! printf '%s' "${NOTE}" | grep '^dump' | grep -qi 'cut'; check $? "a 64 KB dump under a 1 MB cap is noted whole" "note: $(printf '%s' "${NOTE}" | grep '^dump'); out: $(head -c 160 "${XC}/out")"
+ck 3145728 emulationstation; printf '%s' "${NOTE}" | grep '^dump' | grep -qi 'cut' && ! printf '%s' "${NOTE}" | grep '^dump' | grep -q 'whole'; check $? "a 3 MB dump under a 1 MB cap is noted CUT from the raw count -- its compressed size is far under the cap (#247)" "note: $(printf '%s' "${NOTE}" | grep '^dump')"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

@@ -73,7 +73,14 @@
 # here by default.
 CORE_MARKER="/storage/.config/keep-core-dumps"
 CORE_DIR="/storage/.cache/log/cores"
-CORE_MAX_BYTES=$(( 192 * 1024 * 1024 ))   # compressed; a whole RetroArch core is far smaller
+# The cap is on the RAW bytes kept (head -c before gzip), per executable: a
+# whole RetroArch core is well under 256 MB; the interface's is mostly
+# texture memory and ran to 866 MB on x86_64, so it gets a gigabyte before
+# the stacks are lost (fork #247). CORE_MAX_BYTES in the environment sets
+# one cap for a run, which is how the scripts harness proves both notes.
+CORE_MAX_BYTES_DEFAULT=$(( 256 * 1024 * 1024 ))
+CORE_MAX_BYTES_INTERFACE=$(( 1024 * 1024 * 1024 ))
+CORE_MAX_BYTES="${CORE_MAX_BYTES:-}"
 CORE_KEEP=3
 CORE_MIN_FREE_KB=$(( 512 * 1024 ))        # 512 MB of headroom, or we only write the note
 
@@ -81,7 +88,7 @@ case "${1:-}" in
     --on)
         mkdir -p "$(dirname "${CORE_MARKER}")" 2>/dev/null
         date -u '+armed %Y-%m-%d %H:%M:%S UTC' > "${CORE_MARKER}"
-        echo "core dumps will be kept under ${CORE_DIR} (ring of ${CORE_KEEP}, ${CORE_MAX_BYTES} byte cap)"
+        echo "core dumps will be kept under ${CORE_DIR} (ring of ${CORE_KEEP}; raw caps ${CORE_MAX_BYTES_DEFAULT} bytes, ${CORE_MAX_BYTES_INTERFACE} for the interface)"
         echo "a core is process memory: assume it holds this device's tokens and keys"
         exit 0 ;;
     --off)
@@ -113,6 +120,12 @@ EXEPATH="${5:-}"
 
 # A name that cannot escape the directory: the kernel gives %e from the
 # process, and a process can be named almost anything.
+if [ -z "${CORE_MAX_BYTES}" ]; then
+    case "${EXE}" in
+        emulationstation) CORE_MAX_BYTES="${CORE_MAX_BYTES_INTERFACE}" ;;
+        *)                CORE_MAX_BYTES="${CORE_MAX_BYTES_DEFAULT}" ;;
+    esac
+fi
 SAFE=$(printf '%s' "${EXE}" | tr -c 'A-Za-z0-9._-' '_' | cut -c1-40)
 [ -n "${SAFE}" ] || SAFE=unknown
 BASE="${CORE_DIR}/core.${SAFE}.${WHEN}.${PID}"
@@ -151,10 +164,16 @@ fi
 # unbounded one can be the size of RAM.
 if head -c "${CORE_MAX_BYTES}" | gzip -1 > "${BASE}.gz" 2>/dev/null; then
     SIZE=$(stat -c%s "${BASE}.gz" 2>/dev/null || echo 0)
-    if [ "${SIZE}" -ge "${CORE_MAX_BYTES}" ]; then
-        note "dump         ${BASE}.gz (${SIZE} bytes, CUT at the ${CORE_MAX_BYTES} byte cap)"
+    # Whole or cut is decided by the raw count gzip records, never by the
+    # compressed size: a cut dump of zeros compresses to nothing and used to
+    # read "whole" (fork #247). At the cap, head stopped reading, so the
+    # process offered more than was kept.
+    RAW=$(gzip -l "${BASE}.gz" 2>/dev/null | awk 'NR==2{print $2}')
+    case "${RAW}" in ''|*[!0-9]*) RAW=0 ;; esac
+    if [ "${RAW}" -ge "${CORE_MAX_BYTES}" ]; then
+        note "dump         ${BASE}.gz (CUT at the cap: ${RAW} raw bytes kept of more, ${SIZE} compressed; cap ${CORE_MAX_BYTES})"
     else
-        note "dump         ${BASE}.gz (${SIZE} bytes, whole)"
+        note "dump         ${BASE}.gz (whole: ${RAW} raw bytes, ${SIZE} compressed)"
     fi
     logger -t rocknix-corekeep "${EXE} died on signal ${SIG}; kept ${BASE}.gz (${SIZE} bytes)"
 else
