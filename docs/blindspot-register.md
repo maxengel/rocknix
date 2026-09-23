@@ -658,3 +658,36 @@ issue to its end and the log for the day it was filed**, and write the box in
 the words of what somebody will observe -- not the issue's title. A box that
 cannot be traced to an observation nobody has yet made is not a box.
 
+
+## 52. A decisions list built from an issue's section, twice (2026-09-23)
+
+Blindspot 51 was written on 2026-09-21 about the round page's device boxes.
+Two days later the same page's "Your decisions, pending" section was read out
+to the maintainer as four open calls -- #209, #228, #225, #42 -- and three
+of the four were settled in the record when the section was written on
+2026-09-20. #225's scope had been cut on the maintainer's own word the day
+before (the comment of 2026-09-19 03:13). #42 had been sequenced to the
+upstream step a week earlier (D-WORKFLOW-014). #228's release-candidate
+answer was that afternoon's commit (`77e7e97515`, "back to 2.52.6 for the
+release candidate"), leaving only the path after the RC open. #209's one
+remaining question was answered by the parity decision it cites (D-UI-057).
+None of that was in the register as a row under those numbers, so a grep of
+the register found nothing, and nobody grepped the issues or the logs.
+
+The maintainer: *"I worry that we're losing track of the institutional
+knowledge we've built through learning ... I think a lot of these are
+actually settled issues. We need to spend the time doing our own project
+archaeology around this and then figuring out how we prevent this from
+happening in the future."*
+
+Two failures, one shape. A list on an issue is a copy of the record at the
+moment it was written and drifts from the first comment on; a session that
+reads the copy and not the record inherits the drift, and a session that
+does it twice has a habit, not an accident. The fix is not another reminder
+to read carefully. It is a tool that does the reading -- `tools/archaeology
+<terms>` over the register, the blindspots, every work-log entry, the rules,
+`git log -S` and the issues with their comments -- and the rule that nothing
+is put to the maintainer as pending without its output; the register
+carrying a row for every decision the maintainer makes in an issue comment,
+the day it is made, so the grep that was run does find it; and an index over
+the work logs (`tools/work-log-index`) so a month reads in a minute. #253.

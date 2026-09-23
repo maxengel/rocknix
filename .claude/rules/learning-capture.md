@@ -33,6 +33,13 @@ Append a timestamped entry to the day's work log:
 - A day file holds **multiple** entries; head each with a timestamp
   (e.g. `## 19:04 UTC — <title>`). **Append, don't overwrite.**
 - Keep entries concise: what was learned/decided, why, and any follow-ups (issue links).
+- Then `tools/work-log-index --write`. `docs/work-logs/INDEX.md` is the
+  day/week/month table of contents over the day files -- the view the
+  maintainer asked for on 2026-09-23 (*"so we know what's happened a day, a
+  week, a month"*) -- and the push guard warns when a log changes without it.
+  `tools/archaeology` reads the entries themselves, so the log is only as
+  findable as its headings are specific: a heading names the issue and the
+  thing decided, not "progress".
 
 ## 3. Make it executable, if it was a procedure
 

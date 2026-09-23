@@ -95,6 +95,8 @@ PERSONAL_PATTERNS=(
   'tools/fork-package-freshness'
   'tools/vm-upgrade-rehearsal'
   'tools/frame-diff'
+  'tools/archaeology'
+  'tools/work-log-index'
   'tools/es-syntax-check'
   'tools/png-blackout'
   'tools/fork-newdrive'
@@ -283,6 +285,17 @@ while read -r local_ref local_sha remote_ref remote_sha; do
         echo "  Genuinely upstream-bound? Nothing to do."
       } >&2
     fi
+  fi
+
+  # The work-log index (tools/work-log-index) is the day/week/month table of
+  # contents over docs/work-logs/; a log pushed without it leaves the index a
+  # step behind the record (#253). A warning, not a block: the index is a
+  # convenience over the day files, which remain the record.
+  logs_changed="$(git diff --name-only "$base_ref" "$local_sha" -- 'docs/work-logs/' 2>/dev/null | grep -E 'work_log\.md$' || true)"
+  if [ -n "$logs_changed" ] && ! git diff --name-only "$base_ref" "$local_sha" -- 'docs/work-logs/INDEX.md' 2>/dev/null | grep -q .; then
+    {
+      echo "⚠ pre-push: ${branch} changes work logs without docs/work-logs/INDEX.md -- run tools/work-log-index --write and amend."
+    } >&2
   fi
 
   # Console-first content guard: product surfaces (user-visible script text in
