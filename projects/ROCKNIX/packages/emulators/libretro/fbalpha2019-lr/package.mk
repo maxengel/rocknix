@@ -17,4 +17,13 @@ makeinstall_target() {
   mkdir -p ${INSTALL}/usr/lib/libretro
     cp -a ${PKG_DIR}/fbalpha2019_libretro.info ${INSTALL}/usr/lib/libretro
     cp -a fbalpha_libretro.so ${INSTALL}/usr/lib/libretro/fbalpha2019_libretro.so
+
+  # The quarter turns this core asks the display for, per game, from the
+  # driver table in the source this build compiles (fork #248, D-UI-082):
+  # EmulationStation turns a game's captures by it when no session has
+  # recorded the rotation yet, so what is already on a device is right the
+  # moment the build is. The generator mirrors the core's own mapping.
+  mkdir -p ${INSTALL}/usr/config/emulationstation/rotation
+  python3 ${PKG_DIR}/../rotation-table-fba.py ${PKG_BUILD} > ${INSTALL}/usr/config/emulationstation/rotation/fbalpha2019.txt
+  echo "USING: fbalpha2019 rotation table: $(wc -l < ${INSTALL}/usr/config/emulationstation/rotation/fbalpha2019.txt) games with a turn"
 }
