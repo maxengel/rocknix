@@ -1,0 +1,34 @@
+# The fork's record checks, run on every push of next and once a day: the
+# work-log index current, the decision register sound, no friction entry
+# left without an issue, the retro / weekly / monthly cadence kept, every
+# recent blindspot naming a guard, an audit and a futro when they are owed.
+# Red until each overdue ceremony has its artifact (#254, D-WORKFLOW-028).
+# Fork-only (`fork-*`): never part of an upstream PR.
+name: fork record checks
+
+on:
+  push:
+    branches: [next]
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  record:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: work-log index is current
+        run: ./tools/work-log-index --check
+      - name: decision register is a lookup table
+        run: ./tools/register-check
+      - name: ceremonies are not overdue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./tools/ceremony-check

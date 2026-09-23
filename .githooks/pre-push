@@ -51,6 +51,9 @@ set -uo pipefail
 
 # Personal paths that must never appear in an upstream PR branch.
 # Keep this in step with `.claude/rules/fork-workflow.md` § "Personal paths".
+# The working tree this push comes from: the tools the guard runs live there.
+hooks_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+
 PERSONAL_PATTERNS=(
   # Agent context, rules and skills
   '.claude/'
@@ -97,6 +100,7 @@ PERSONAL_PATTERNS=(
   'tools/frame-diff'
   'tools/archaeology'
   'tools/work-log-index'
+  'tools/ceremony-check'
   'tools/es-syntax-check'
   'tools/png-blackout'
   'tools/fork-newdrive'
@@ -209,6 +213,34 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     continue
   fi
 
+  # --- the ceremonies, next only ---------------------------------------------
+  # The integration branch carries the record, so a push of it is where the
+  # record's own checks run: the work-log index current (tools/work-log-index),
+  # and tools/ceremony-check's blocking set -- a friction entry without an
+  # issue, a retro past its grace, a missing weekly or monthly summary, a
+  # blindspot without a guard, the register lint. The long ceremonies (an
+  # audit, a futro) are reported here and enforced by the fork's CI, so a fix
+  # can still be pushed while one is owed (#254, D-WORKFLOW-028).
+  if [ "$remote_ref" = "refs/heads/next" ]; then
+    if [ "$whole" = 0 ] && git diff --name-only "$range" -- 'docs/work-logs/' 2>/dev/null | grep -qE 'work_log\.md$' \
+       && ! git diff --name-only "$range" -- 'docs/work-logs/INDEX.md' 2>/dev/null | grep -q .; then
+      echo "⚠ pre-push: this push changes work logs without docs/work-logs/INDEX.md -- run tools/work-log-index --write and amend." >&2
+    fi
+    if [ -x "$hooks_root/tools/ceremony-check" ]; then
+      if ! gate_out="$("$hooks_root/tools/ceremony-check" --gate 2>&1)"; then
+        {
+          echo "✗ pre-push: refusing to push next: a ceremony is overdue past its grace."
+          printf '%s\n' "$gate_out" | sed 's/^/    /'
+          echo "  Write the artifact it names (docs/friction-log.md, docs/retros/, the summary, the index), then push again."
+        } >&2
+        status=1
+        continue
+      elif [ -n "$gate_out" ]; then
+        printf '%s\n' "$gate_out" | sed 's/^/  ⚠ pre-push: /' >&2
+      fi
+    fi
+  fi
+
   # --- personal paths, pr/* only -------------------------------------------
   # Keyed on where the push LANDS. `git push origin feature/x:pr/x` used to
   # pass here because the local name was not pr/*.
@@ -285,17 +317,6 @@ while read -r local_ref local_sha remote_ref remote_sha; do
         echo "  Genuinely upstream-bound? Nothing to do."
       } >&2
     fi
-  fi
-
-  # The work-log index (tools/work-log-index) is the day/week/month table of
-  # contents over docs/work-logs/; a log pushed without it leaves the index a
-  # step behind the record (#253). A warning, not a block: the index is a
-  # convenience over the day files, which remain the record.
-  logs_changed="$(git diff --name-only "$base_ref" "$local_sha" -- 'docs/work-logs/' 2>/dev/null | grep -E 'work_log\.md$' || true)"
-  if [ -n "$logs_changed" ] && ! git diff --name-only "$base_ref" "$local_sha" -- 'docs/work-logs/INDEX.md' 2>/dev/null | grep -q .; then
-    {
-      echo "⚠ pre-push: ${branch} changes work logs without docs/work-logs/INDEX.md -- run tools/work-log-index --write and amend."
-    } >&2
   fi
 
   # Console-first content guard: product surfaces (user-visible script text in
