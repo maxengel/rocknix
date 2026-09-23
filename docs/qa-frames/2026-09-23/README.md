@@ -24,3 +24,19 @@ which side of it the mark sits on; upright means the mark is above.
   above.
 - `245-after-viewer-nes-upright` -- A on Bobl's screenshot: the full-screen
   viewer, portrait, ring 305x304, mark above.
+
+## #248 -- a capture with no session record takes its turn from the core's table (D-UI-082), on `428d44af40`
+
+Guest d, seeded with Ms. Pac-Man's ROM name under the FBNeo system (`fbn`),
+a save state whose thumbnail carries the green mark on the raw frame's
+LEFT edge -- the game's top for rotation 3, which is what FBNeo asks for a
+VERTICAL | FLIPPED game -- a screenshot named for it, and **no rotation
+record**; the turn can only come from `/usr/config/emulationstation/rotation/fbneo.txt`
+(2,544 games, generated from the core's driver flags at build time).
+
+- `248-after-manager-mspacman-upright-from-table` -- SAVE STATE MANAGER for
+  Ms. Pac-Man: the tile portrait, ring 68x69 round, mark above. No session
+  was ever played.
+- `248-after-screenshots-list-mspacman-upright-from-table` -- the
+  SCREENSHOTS list on Ms. Pac-Man's screenshot: portrait, ring 132x133,
+  mark above.
