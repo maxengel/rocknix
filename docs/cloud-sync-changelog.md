@@ -2215,6 +2215,14 @@ the handheld took them.
   now takes the view down before the files go and remakes it after. And
   when the interface does die, its log carries a backtrace and the crash
   keeper, once armed, keeps the fault itself rather than the teardown.
+- **A vertical arcade game's thumbnails and screenshots are upright** (#245,
+  D-UI-081). RetroArch turns such a game's frame for the display and its
+  capture does not, so the SAVE STATE MANAGER's tiles and the SCREENSHOTS
+  entries came out a quarter turn off. The interface now learns each game's
+  rotation at the end of its session and turns that game's captures by it
+  wherever it draws them: the manager's tiles, the SCREENSHOTS list and its
+  grid style, and the full-screen viewer. The files stay as RetroArch wrote
+  them. Maintainer: *"I think we do it on our side."*
 - **Save-state thumbnails and screenshots are drawn at the shape of the
   system that made them** (#243, D-UI-080). RetroArch writes both at the
   core's native size, which for the NES and the SNES is the pixel grid and
