@@ -1,12 +1,14 @@
 # Saved Session State
 
-> **Saved**: 2026-09-23T23:40:00Z
+> **Saved**: 2026-09-23T22:20:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `e5065e18ee` + UNCOMMITTED #252 work: `tools/frame-diff`, `tools/vm-qa`, `tools/vm-walks/{suite.txt,masks.txt,claims.txt,manager.steps,fixtures/,README.md}`, `.githooks/pre-push`, `.claude/rules/{generic-x64-vm-testing,fork-workflow}.md`, `docs/{decision-register,cloud-sync-changelog}.md`, the work log)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The RG35XX SP runs the fifteenth cut `aa8d525a8a`** (staged 23:16 UTC, rebooted 23:17 on the maintainer's yes, up 23:22, queue empty; RECORD.txt, the QA row, #250, #236 and the walk baseline say so). **The sixteenth cut is a batch, on the maintainer's direction** (*"get as close as we can to a potential release candidate build, as opposed to cutting lots of incremental builds"*): **#209** (launcher `set_savestates`: `0|2|false|none` -> off; `savestate_max_keep` only when set; the interface shows a legacy `0` as DO NOT INCREMENT -- D-UI-083), **#198** (`Utils::String::shellQuote` around the password at GuiMenu.cpp:3160 and :5993; `setrootpass` uses printf, not `echo -ne`; harness case), **#247** (rocknix-corekeep: the cut/whole note from the *uncompressed* size via `gzip -l` against the raw cap; a per-executable cap for emulationstation; harness cases proving both branches), and **#251 if the maintainer picks** (recommended: option 2, a 14 px floor for the message-queue font). Everything else open is verification or closure (#177/#178/#208/#182/#69 fixed earlier; #174 a cause not yet seen -- after this reboot tailscaled was up at 44 s). #254's gate and CI are live (both runs green); the audit gate goes red within days.
+**#254 (D-WORKFLOW-028): the ceremonies are a state machine a tool turns.** On the maintainer's direction (*"state machines that are mandatory, as opposed to things that are just optional"*): `tools/ceremony-check` (retro / friction / weekly / monthly / index / register / blindspot guards / audit / futro; the cheap ones refuse a push of `next` through `.githooks/pre-push`, an audit or a futro owed keeps `fork-checks.yml` red), `docs/friction-log.md` (six entries, each with an issue or a guard), `docs/retros/`, `docs/futros/`, `.claude/rules/ceremonies.md` (states, markers, cadences, the timescales adapted from Pongogo), register D-WORKFLOW-028 decided and D-QA-040 open (the cadence numbers; block vs CI). Proofs done and recorded on #254: three `BLOCK` positives and the dry-run push refusal; the first `fork-checks.yml` run on `de9f7ced98` succeeded (run 35927195067). The clock starts 2026-09-21: the retro is due after 5 active days (~09-26), the W39 summary by 09-29, and the **audit gate will go red within days** (10 of 12 closed issues, 2 of 14 days) -- an audit of the RC round is genuinely owed.
+
+**Also today:** #250 proven and the fifteenth cut green; #252 (frame-diff) rolled out; #253 (archaeology, the index) landed after blindspot 52. **The RG35XX SP runs the fourteenth; the fifteenth's transfer and reboot remain asked for and unanswered.** #209's build and #251's pick wait on the maintainer.
 
 ## Completed This Session (2026-09-23 04:55 -> 05:30 UTC)
 
@@ -23,10 +25,10 @@
 
 ## Next Steps
 
-1. **The sixteenth cut.** ES: worktree `~/Development/emulationstation-next.worktrees/rc-batch` on `feature/rc-batch` from `test/qa-integration` (`834bf069c`): #198's two `shellQuote` sites (+ a `SecurityText` helper with a unit test if cheap), #209's legacy-`0` display in GuiMenu.cpp:5323-5331; `tools/es-syntax-check --tree`; merge to `test/qa-integration`; push; pin bump. Distribution on `next`: `setsettings.sh` `set_savestates`; `setrootpass` printf; `rocknix-corekeep` cap/note; `tools/last-good-scripts-test` cases for all three (run against the unfixed code first: FAIL, then PASS). Then x64 run 31 + H700 run 20, `proof`: the scripts suite + a guest-d launch with DO NOT INCREMENT (`check-249.sh`'s shape) + `setrootpass 'a b$c'` on guest d and a `cryptpw` compare; vm-qa (now with frame-diff: claims for any walked screen the cut changes -- none expected); rehearsal; RECORD.txt; ask the maintainer for the transfer and the reboot.
-2. **Every session**: `tools/ceremony-check` first; `tools/archaeology <terms>` before anything is called pending; a friction line when something slows; `tools/work-log-index --write` after a log entry.
-3. When the audit gate goes red: `code-auditor` on the work since #186; retro ~09-26 (`docs/retros/`), the 2026-W39 summary by 09-29.
-4. The maintainer's device boxes on the fifteenth: #250, #249, #245, #246, #243; then the RG SP (D-QA-031), the Nova. #252 box 3b; #253's four-week box.
+1. **Every session**: `tools/ceremony-check` first; `tools/archaeology <terms>` before anything is called pending; a friction line the moment something slows; `tools/work-log-index --write` after a log entry. Never edit a shell tool while a run of it is in flight.
+2. When the audit gate goes red: run the `code-auditor` skill on the RC round's work since #186 (09-14); when the retro comes due (~09-26): the `mini-retro` skill on the cut stream 09-14..23, written to `docs/retros/2026-09-26-rc-cuts.md`, and the 2026-W39 summary by 09-29. #254 box 2's constructed red CI run (or the audit gate's own red) then revert.
+3. On the maintainer's yes: the fifteenth onto the RG35XX SP (`stage-rg35xxsp-aa8d525a8a.sh`, then the reboot through `tools/device-act`), then the device boxes (#250, #249, #245, #246, #243), the RG SP, the Nova. On their nod: #209 (D-UI-083) into the next cut; on their pick: #251. D-QA-040: their cadence numbers.
+4. #252 box 3b (SCREENSHOTS/viewer walks); #253's four-week box (10-21).
 
 ## Key Files Modified (this session)
 
