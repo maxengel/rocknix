@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-23T02:25:00Z
+> **Saved**: 2026-09-23T02:42:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `4af5adf7e0`, pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The round's candidate is the twelfth cut `428d44af40`** (`h700-all-20260923-428d44af40/`, ES pin `5bf387346`, fbneo-lr with the rotation table): the eleventh (on the RG35XX SP since 01:29 UTC) plus **#248 / D-UI-082** -- a capture with no session record takes its turn from the core's own driver table (`/usr/config/emulationstation/rotation/fbneo.txt`, 2,544 games, generated at build time from FBNeo's source), so the maintainer's Ms. Pac-Man thumbnail is upright the moment the build is, with nothing to replay. Proven on guest d with no session played (frames `docs/qa-frames/2026-09-23/248-*`). **vm-qa run 13 eleven suites PASSED and the rehearsal 19/19** (rows in `docs/vm-qa-log.md`); the tar is in `/storage/.update` on the RG35XX SP (checksum matched 01:59 UTC); **the reboot is asked for and not yet answered.** Nothing is in flight.
+**Two cuts stand.** The twelfth `428d44af40` (FBNeo's rotation table; QA green; **its tar is in `/storage/.update` on the RG35XX SP, checksum matched, the reboot asked and not answered** -- the maintainer asked first whether the fix should cover every arcade core). The thirteenth `9221b4528d` is building (`chain-248b.sh`: tables for mame2003_plus, mame2010, fbalpha2012, fbalpha2019 generated in their packages; ES pin `456eb7150` reads the achievement screenshot's name `<content>-cheevo-<id>`); its proofs seed galaga under `arcade` (mame2003_plus, no record) beside Ms. Pac-Man under `fbn`, then vm-qa run 14 and the rehearsal (`frames-248b/`, `measure-248b-*.txt`, `chain-248b.done`). The census of rotating cores is on #248 and in the work log; MAME 2015 needs no table, current MAME and Flycast wait. The maintainer's library is all `fbn`, so either cut covers it; if they answer yes to the reboot before the thirteenth is proven, apply the twelfth (staged) and stage the thirteenth after.
 
 ## Completed This Session (2026-09-22 16:15 – 17:37 UTC, after the previous stash)
 
@@ -21,7 +21,7 @@
 
 ## In Progress
 
-- **One question open with the maintainer**: reboot the RG35XX SP to apply `428d44af40`. Do nothing to the device without the yes. The earlier #79 crashes (rows 1-4) are RetroArch's own (threaded video wrapper, patches 0011/0015) and separate from #246.
+- **The reboot question is open** (twelfth staged); the thirteenth builds. Do nothing to the device without the yes. The earlier #79 crashes (rows 1-4) are RetroArch's own (threaded video wrapper, patches 0011/0015) and separate from #246.
 - #246 is fixed and proven on the VM; the device half (the maintainer's next offline session on the ninth cut) and #247 (the keeper notes a cut dump as whole) remain.
 
 ## Next Steps
