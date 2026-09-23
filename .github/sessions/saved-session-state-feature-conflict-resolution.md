@@ -1,12 +1,14 @@
 # Saved Session State
 
-> **Saved**: 2026-09-23T05:50:00Z
-> **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head: the QA-row commit after `b26f214a56`, pushed to origin)
+> **Saved**: 2026-09-23T16:58:00Z
+> **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `e5065e18ee` + UNCOMMITTED #252 work: `tools/frame-diff`, `tools/vm-qa`, `tools/vm-walks/{suite.txt,masks.txt,claims.txt,manager.steps,fixtures/,README.md}`, `.githooks/pre-push`, `.claude/rules/{generic-x64-vm-testing,fork-workflow}.md`, `docs/{decision-register,cloud-sync-changelog}.md`, the work log)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The RG35XX SP runs the thirteenth cut `9221b4528d` and is OFF** (no route to host 05:35-05:40 UTC; 01:40 local). The fourteenth `c0c2d15179` (#249) is in its `/storage/.update`, so **its next power-on applies the fourteenth**. **The fifteenth cut `aa8d525a8a` (#250; ES pin `834bf069c`) is green end to end**: x64 run 30 + H700 run 19 (`h700-all-20260923-aa8d525a8a`, RECORD.txt written, the fourteenth's marked SUPERSEDED), the arrow proof on guest d, vm-qa run 16 eleven suites PASSED, the rehearsal 19/19; QA row and work log committed on `next`. `stage-rg35xxsp-aa8d525a8a.sh` stopped on reachability. Asked of the maintainer, together: the transfer of the fifteenth once the device is back (D-QA-011) and the reboot that applies it. Nothing is in flight.
+**#252 is being rolled out (D-QA-038, the maintainer's yes at ~16:20 UTC: "roll that out as well ... shouldn't require us to cut a new build. Let me know what testing is required").** Built and proven on the host: `tools/frame-diff` (compare/accept/boxes; stdlib PNG; 16-px cells; masks; claims keyed by the baseline build; rc 2 = no baseline), the `frame-diff` suite in `tools/vm-qa` (after `walks`; rc 3 = SKIP shown in the table and the footer), `tools/vm-walks/masks.txt` (the clock 1110..1215 x 36..64; the running transfer's count line, bar and ELAPSED), `claims.txt` (three whole-frame claims for the new manager walks against `9221b4528d`), `manager.steps` + `manager-{nes,gb,fbn}` suite lines (StartupSystem with essway stopped) + `ensure_manager_fixture` in vm-qa (stub ROMs, the ring pictures in `tools/vm-walks/fixtures/`, `turns=1` for Bobl, mtimes 2026-09-01 12:00), and `default-pre` now also turning both sync switches off and removing `/storage/.cache/cloud_sync/last-*`. **Baseline** `/workspace/artifacts/rocknix-images/walk-baseline` = run 14's frames (`9221b4528d`). **Run 17** (`qa-aa8d525a8a-webdav-a-20260923-1627`, `--only walks,frame-diff`): walks PASS 1332 s, the three manager walks reached the manager (arrow upright, tiles turned, dates fixed), frame-diff FAIL (1) with 156 unclaimed boxes -- the manager fixture changed the carousel backdrop and the systems page, and the hub's game-exit row/switch differed because the exit suite had not run; the suite fails closed as designed. **Run 18 is in flight** (started 16:53, same flags, with the hub normalisation; `vmqa-run18.{log,rc}`; a first start without the normalisation was killed at 16:53).
+
+**The RG35XX SP** came up on the fourteenth (`c0c2d15179`, the queued tar applied at the power-on; queue empty). The fifteenth (`aa8d525a8a`, #250) is built, green (vm-qa 11/11 run 16, rehearsal 19/19), not staged: the transfer and the reboot are asked for and unanswered (D-QA-011).
 
 ## Completed This Session (2026-09-23 04:55 -> 05:30 UTC)
 
@@ -17,13 +19,14 @@
 
 ## In Progress
 
-- **The transfer and the reboot question** for the RG35XX SP (asked 05:50 UTC for the fifteenth; the fourteenth's reboot ask of 04:28 is superseded). Do nothing to the device without the yes; when it comes back online before a reboot, the fifteenth's same-named tar replaces the fourteenth's in `/storage/.update`; if it has already rebooted onto the fourteenth, the fifteenth is staged on top and asked for again.
+- **Run 18** (`--only walks,frame-diff` on the fifteenth's image; ~25 min). Expected: walks PASS, frame-diff FAIL against the thirteenth's baseline (the fixture and the normalisation changed the walked screens; the thirteenth's x64 image is not kept, so that baseline cannot be regenerated under the new suite).
+- **The transfer and reboot question** for the fifteenth on the RG35XX SP.
 
 ## Next Steps
 
-1. On the maintainer's yes to the transfer, once `timeout 6 ssh -n rg35xxsp true` answers: `bash /workspace/tmp/rocknix-session/stage-rg35xxsp-aa8d525a8a.sh > stage-aa8d525a8a.log` (idle check, copy, hash on the device, mv into `/storage/.update`; through `tools/device-act`); then put the staging time into `RECORD.txt` and the QA row. On the yes to the reboot: `tools/device-act rg35xxsp 'reboot to apply aa8d525a8a -- the maintainer said yes' -- 'sync; (sleep 2; reboot) >/dev/null 2>&1 &'`; confirm BUILD_ID `aa8d525a8a` and an empty queue; work log.
-2. Then the maintainer's device boxes: #250 box 2 (the arrows on a vertical and a horizontal game), #249 (the quick menu's Auto slot from the AUTO SAVE tile), #245 (a vertical FBNeo session), #246 (an offline session with unlocks), #243 box 3; the #236 round page's "You" box names the fifteenth.
-3. #251: the maintainer's call (options in the issue). Then the RG SP (D-QA-031) with the same tar; the current MAME/Flycast tables later.
+1. When run 18 ends: read its `frame-diff.md`; the boxes should be the fixture's (backdrop, systems page, transfer counts) and nothing on the hub's rows. Then `tools/frame-diff accept <run18>/walks /workspace/artifacts/rocknix-images/walk-baseline --build aa8d525a8a --note "first baseline under the suite with the manager fixture and the hub normalisation; the thirteenth's x64 image is not kept"`, prune the three `9221b4528d` claims from `claims.txt`, and run **run 19** (same flags) -- the end-to-end negative control, expected PASS with zero boxes. Positive controls already on file: `frame-diff boxes` on the twelfth vs fifteenth `fbn` manager at 640x480 (one box, the arrow) and run 17's FAIL (156 unclaimed).
+2. Commit on `next` (tools + rules + docs + the guard), push; QA-log rows for runs 17-19; #252 comment with the proofs and tick the boxes that hold (tool, suite, walks, rule, change log); work log; the answer to the maintainer: no device testing is needed, it is all host and VM.
+3. Then the fifteenth on the device once the maintainer says yes to the transfer and the reboot (`stage-rg35xxsp-aa8d525a8a.sh`; `tools/device-act` for the reboot). Then #250 box 2, #249, #245, #246, #243 device halves; #251 the maintainer's call.
 
 ## Key Files Modified (this session)
 
@@ -51,5 +54,6 @@
 
 ## Open Questions
 
-- The transfer and the reboot of the RG35XX SP for the fifteenth (asked 05:50 UTC; the device is off).
+- The transfer and the reboot of the RG35XX SP for the fifteenth (asked 05:50 UTC and again at 16:20; the device is on, on the fourteenth).
+- Whether the walk baseline may be the fifteenth's own frames for now (the thirteenth's x64 image is gone); the rule says it moves when a cut is accepted on the device.
 - #251: which option, if any.
