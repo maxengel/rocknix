@@ -624,3 +624,14 @@ behind some of these log-related behavior claims."* Blindspot 42 is the case.
 - **When you were wrong, correct every place the wrong statement landed** -- the
   issue comment, the work log, the reply -- in the same session, and say plainly
   that the earlier statement was wrong.
+
+## Never edit a shell tool while a run of it is in flight
+
+bash reads a script by file offset as it executes, so an edit to
+`tools/vm-qa` while a run was inside its walks made that run fail twenty-two
+minutes later with `---: command not found` and a syntax error at a line that
+reads fine (run 19, 2026-09-23). `bash -n` on the edited file passes, which
+makes it look like a harness bug. While a bash tool is running, edit a copy
+or queue the change until the run's rc file exists; Python and compiled tools
+are safe to edit mid-run, shell scripts are not. If a run dies with a
+nonsense syntax error, check the file's mtime against the run's start first.
