@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-23T00:52:00Z
+> **Saved**: 2026-09-23T01:17:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `4af5adf7e0`, pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The round's candidate is the eleventh cut `ed61a18d5c`** (`h700-all-20260923-ed61a18d5c/`, ES pin `034b5d574`): the ninth (on the RG35XX SP since 2026-09-22 23:01 UTC) plus **#245 / D-UI-081, decided "our side"** -- the interface learns a game's rotation from the launch log at the end of each RetroArch session, records it beside the states (`<rom>.rotation`, `turns=N`), and turns that game's captures by it on every surface (manager tiles, SCREENSHOTS list + grid style, full-screen viewer), with the aspect. Proven on guest d (recording path and every surface upright, frames `docs/qa-frames/2026-09-23/245-*`); the tenth cut `bf53cea7e4` turned nothing because a two-byte record read as empty under `readAllText`'s BOM check. **vm-qa run 12 and the rehearsal are running on the eleventh cut** (`chain-245c.sh`, `vmqa-run12.log`, `upgrade-rehearsal-run12.{log,rc}`, `chain-245c.done`), the tar is being staged on the RG35XX SP (`stage-ed61a18d5c.log`), and the reboot is asked for after QA and not yet answered. The image file names now carry `20260923`.
+**The round's candidate is the eleventh cut `ed61a18d5c`** (`h700-all-20260923-ed61a18d5c/`, ES pin `034b5d574`): the ninth (on the RG35XX SP since 2026-09-22 23:01 UTC) plus **#245 / D-UI-081, decided "our side"** -- the interface learns a game's rotation from the launch log at the end of each RetroArch session, records it beside the states (`<rom>.rotation`, `turns=N`), and turns that game's captures by it on every surface (manager tiles, SCREENSHOTS list + grid style, full-screen viewer), with the aspect. Proven on guest d (recording path and every surface upright, frames `docs/qa-frames/2026-09-23/245-*`); the tenth cut `bf53cea7e4` turned nothing because a two-byte record read as empty under `readAllText`'s BOM check. **vm-qa run 12 eleven suites PASSED and the rehearsal 19/19 on the eleventh cut** (rows in `docs/vm-qa-log.md`); the tar is in `/storage/.update` on the RG35XX SP (checksum matched); **the reboot is asked for and not yet answered.** Nothing is in flight. The image file names now carry `20260923`.
 
 ## Completed This Session (2026-09-22 16:15 – 17:37 UTC, after the previous stash)
 
@@ -21,7 +21,7 @@
 
 ## In Progress
 
-- **vm-qa run 12 + rehearsal on `ed61a18d5c`**, then: the QA row, the RECORD's proof line, #236 comment, and the reboot question (the eleventh's tar in `/storage/.update` once staging ends). The earlier #79 crashes (rows 1-4) are RetroArch's own (threaded video wrapper, patches 0011/0015) and separate from #246.
+- **One question open with the maintainer**: reboot the RG35XX SP to apply `ed61a18d5c`. Do nothing to the device without the yes. The earlier #79 crashes (rows 1-4) are RetroArch's own (threaded video wrapper, patches 0011/0015) and separate from #246.
 - #246 is fixed and proven on the VM; the device half (the maintainer's next offline session on the ninth cut) and #247 (the keeper notes a cut dump as whole) remain.
 
 ## Next Steps
