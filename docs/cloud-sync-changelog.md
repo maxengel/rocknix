@@ -2252,6 +2252,22 @@ the handheld took them.
   Game Boy game, a vertical arcade game) are the first added under it.
   Maintainer: *"I think your recommendation for 252 is a strong
   recommendation, and so we should roll that out as well."*
+- **DO NOT INCREMENT now means it** (#209, D-UI-083). With INCREMENTAL SAVE
+  STATES set to DO NOT INCREMENT, the save-state hotkey writes the slot the
+  game was started from; it had kept making new slots, because the launcher
+  read the setting's second spelling as "on". INCREMENT PER SAVE is
+  unchanged: a new slot on every save, the launched one untouched, which is
+  what the row promises and what Batocera does. A device that still held
+  the old "0" now shows DO NOT INCREMENT, which is what it was doing.
+- **A device password with a space, a `$` or a quote is set as typed** (#198).
+  The interface handed it to the shell unquoted, so it was cut at the space
+  or misread; it is quoted now, as the Wi-Fi key already was, and the script
+  passes it to the file-sharing password whole.
+- **A core dump cut at the keeper's cap says so** (#247). The note compared
+  the compressed size to the cap and called a truncated dump whole; it now
+  reads the raw count, and the interface's core, mostly texture memory, gets
+  a larger cap before its stacks are lost. Only for troubleshooting; the
+  keeper stays off on a release candidate (D-QA-029).
 - **Save-state thumbnails and screenshots are drawn at the shape of the
   system that made them** (#243, D-UI-080). RetroArch writes both at the
   core's native size, which for the NES and the SNES is the pixel grid and
