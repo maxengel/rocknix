@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-23T05:50:00Z
-> **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head: the QA-row commit after `b26f214a56`, pushed to origin)
+> **Saved**: 2026-09-23T05:30:00Z
+> **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `b26f214a56`, pushed to origin)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The RG35XX SP runs the thirteenth cut `9221b4528d` and is OFF** (no route to host 05:35-05:40 UTC; 01:40 local). The fourteenth `c0c2d15179` (#249) is in its `/storage/.update`, so **its next power-on applies the fourteenth**. **The fifteenth cut `aa8d525a8a` (#250; ES pin `834bf069c`) is green end to end**: x64 run 30 + H700 run 19 (`h700-all-20260923-aa8d525a8a`, RECORD.txt written, the fourteenth's marked SUPERSEDED), the arrow proof on guest d, vm-qa run 16 eleven suites PASSED, the rehearsal 19/19; QA row and work log committed on `next`. `stage-rg35xxsp-aa8d525a8a.sh` stopped on reachability. Asked of the maintainer, together: the transfer of the fifteenth once the device is back (D-QA-011) and the reboot that applies it. Nothing is in flight.
+**The RG35XX SP runs the thirteenth cut `9221b4528d`.** The fourteenth `c0c2d15179` (#249) is in its `/storage/.update` with the reboot asked and unanswered. **The fifteenth cut `aa8d525a8a` (#250: the manager's arrow tiles untouched by the thumbnail transform; ES pin `834bf069c`) is the candidate**: x64 run 30 and H700 run 19 built (`h700-all-20260923-aa8d525a8a`, SHA256SUMS, no RECORD.txt yet), proven on guest d (the arrow tile pixel-identical to the 2026-09-21 pre-#243 frame in `fbn`/`nes`/`gb`, 0 of 25,752 pixels differ; capture tiles still turned, rings 68x69/73x73/89x89 mark above), **chain-250 still running**: vm-qa run 16 ten suites PASSED, `walks` in progress, then the upgrade rehearsal from `b245fd12ac`. When green: RECORD.txt, mark the fourteenth's record SUPERSEDED, the QA row, stage on the RG35XX SP with `stage-rgsp-aa8d525a8a.sh` (it replaces the fourteenth's same-named tar in `/storage/.update`), then ask for the reboot by name.
 
 ## Completed This Session (2026-09-23 04:55 -> 05:30 UTC)
 
@@ -17,13 +17,15 @@
 
 ## In Progress
 
-- **The transfer and the reboot question** for the RG35XX SP (asked 05:50 UTC for the fifteenth; the fourteenth's reboot ask of 04:28 is superseded). Do nothing to the device without the yes; when it comes back online before a reboot, the fifteenth's same-named tar replaces the fourteenth's in `/storage/.update`; if it has already rebooted onto the fourteenth, the fifteenth is staged on top and asked for again.
+- **chain-250** (`chain-250.sh`, log `chain-250.log`, done marker `chain-250.done`): vm-qa run 16 (`qa-aa8d525a8a-webdav-a-20260923-0506`, `vmqa-run16.rc`) then the rehearsal (`upgrade-rehearsal-run16.{log,rc}`).
+- **The reboot question** for the RG35XX SP stays open; the answer applies whatever is in `/storage/.update` at that moment (the fifteenth once staged).
 
 ## Next Steps
 
-1. On the maintainer's yes to the transfer, once `timeout 6 ssh -n rg35xxsp true` answers: `bash /workspace/tmp/rocknix-session/stage-rg35xxsp-aa8d525a8a.sh > stage-aa8d525a8a.log` (idle check, copy, hash on the device, mv into `/storage/.update`; through `tools/device-act`); then put the staging time into `RECORD.txt` and the QA row. On the yes to the reboot: `tools/device-act rg35xxsp 'reboot to apply aa8d525a8a -- the maintainer said yes' -- 'sync; (sleep 2; reboot) >/dev/null 2>&1 &'`; confirm BUILD_ID `aa8d525a8a` and an empty queue; work log.
-2. Then the maintainer's device boxes: #250 box 2 (the arrows on a vertical and a horizontal game), #249 (the quick menu's Auto slot from the AUTO SAVE tile), #245 (a vertical FBNeo session), #246 (an offline session with unlocks), #243 box 3; the #236 round page's "You" box names the fifteenth.
-3. #251: the maintainer's call (options in the issue). Then the RG SP (D-QA-031) with the same tar; the current MAME/Flycast tables later.
+1. On `chain-250.done`: read `vmqa-run16.rc` (0 = eleven suites PASSED) and `upgrade-rehearsal-run16.rc` (19/19). Write `RECORD.txt` in `h700-all-20260923-aa8d525a8a` (format: the fourteenth's), prepend `SUPERSEDED by h700-all-20260923-aa8d525a8a (fifteenth cut: the manager's arrow tiles untouched, #250)` to the fourteenth's, add the QA row to `docs/vm-qa-log.md`, commit docs on `next`.
+2. `bash /workspace/tmp/rocknix-session/stage-rgsp-aa8d525a8a.sh > stage-aa8d525a8a.log` (idle check, copy, hash on the device, mv into `/storage/.update`; every device command through `tools/device-act`). Then ask the maintainer for the reboot of the RG35XX SP, naming `aa8d525a8a` and what it carries since the thirteenth (#249, #250).
+3. On the yes: `tools/device-act rg35xxsp 'reboot to apply aa8d525a8a -- the maintainer said yes' -- 'sync; (sleep 2; reboot) >/dev/null 2>&1 &'`; confirm BUILD_ID and the empty queue; log the device-actions line; work log; the maintainer's device boxes: #250 box 2, #249, #245 (a vertical FBNeo session), #246 (an offline session with unlocks), #243 box 3.
+4. #251: the maintainer's call (options in the issue); then the RG SP (D-QA-031) with the same tar; the current MAME/Flycast tables later.
 
 ## Key Files Modified (this session)
 
@@ -51,5 +53,5 @@
 
 ## Open Questions
 
-- The transfer and the reboot of the RG35XX SP for the fifteenth (asked 05:50 UTC; the device is off).
+- The reboot of the RG35XX SP (asked for the fourteenth; to be re-asked for the fifteenth once staged).
 - #251: which option, if any.
