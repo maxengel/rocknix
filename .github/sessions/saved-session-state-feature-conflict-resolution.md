@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-24T20:05:39Z
-> **Branch**: feature/conflict-resolution (session-state worktree; merged up to next `4b84aaacdb`)
+> **Saved**: 2026-09-24T20:25:11Z
+> **Branch**: feature/conflict-resolution (session-state worktree; merged up to next `d27858eb70`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-The RC round (#236). The twentieth cut `c041be7e98` is proven and unstaged (the copy and reboot are the maintainer's; asked twice, unanswered). The maintainer's twelve answers to the #262 triage are recorded (D-UI-086..088, D-CLOUD-136, D-QA-041/042, D-WORKFLOW-033..040); three build items are on `next` for the **twenty-first cut** -- #195 YESTERDAY (ES `5067f7a1b`, pin bumped), #192 the reachable network wait, #255's sharp widget sizes (RetroArch patch 0017) with #263's guest-surface fix -- and the **webkitgtk 2.54 spike** (#228, branch `build/webkit-254` in the x64 worktree) is on its fifth build (`build-x64-run41`, started 20:04 UTC, `tools/watch-job` status file beside its log). Two of the three allowed fixes are used (WebDriver off, GStreamer GL on); runs 39 and 40 died of a SIGTERM at 30 min and a header-copy ordering race, not of the recipe.
+The RC round (#236). **The webkitgtk 2.54 spike is over** (D-WORKFLOW-041): six builds, three fixes used, a fourth wall at the final link (`Inspector::DOMFrontendDispatcher::powerEfficientPlaybackStateChanged` undefined); 2.52.6 stays pinned for this candidate, branch `build/webkit-254` (`afb5b9feb1`, pushed) holds the attempt for the conflict-resolution candidate. **The twenty-first cut is building**: `chain-21.sh` started 20:24 UTC at `d27858eb70` (sync, H700 + x64, guest d rebuild, vm-qa run 27, rehearsal run 22); contents #195 YESTERDAY, #192 the reachable wait, #255 patch 0017 (sharp widget sizes; its first version missed two callers, #264), #263 the guest surface fix. The twentieth cut `c041be7e98` is proven and unstaged; the maintainer has not answered the staging question or the #15/#18 close.
 
 ## Completed This Session
 
@@ -19,14 +19,10 @@ The RC round (#236). The twentieth cut `c041be7e98` is proven and unstaged (the 
 
 ## In Progress
 
-- **webkitgtk 2.54 spike build run41** in the x64 worktree on `build/webkit-254` (`26370b0324`: 2.54.0 + gst GL + gst-plugins-bad mpegts + WEBDRIVER off + GSTREAMER_GL on). Log `/workspace/tmp/rocknix-session/build-x64-run41.log`, rc file `.rc`, watcher `.status`. A harness waiter (`b8w0aa4tu`) delivers the end.
-  - **If it lands**: boot the image on guest d (`rebuild-d2.sh <img>`), run `tools/signin-memory 10026` (baseline on 2.52.6 was 246 MB together: window 166, web 74, network 53), record two QA-log rows and the squashfs delta on #228; then merge `build/webkit-254` into `next` (after `fork-worktree sync` conflicts: the worktree is on the spike branch -- `git switch build/generic-x64` first, merge the spike commit into next from the primary checkout, then sync) and cut the twenty-first with it.
-  - **If it fails on a new compile error**: that is the third fix; past it, revert -- `git switch build/generic-x64` in the x64 worktree, `scripts/clean webkitgtk gst-plugins-base gst-plugins-bad` (their build dirs hold 2.54 / GL / mpegts state), D-WORKFLOW-027 decided "pinned for this candidate; revisit with the conflict-resolution candidate", `# freshness: pinned` line restored (it is still on `next`; the spike branch removed it).
-- The x64 build worktree is on the spike branch; **the twenty-first cut cannot build until the spike resolves** (shared build root).
+- **chain-21** (`/workspace/tmp/rocknix-session/chain-21.sh`, pid in `pgrep -f 'chain-21[.]sh'`, log `chain-21.log`, x64 build `build-x64-run42.log`/`.rc`, H700 `build-h700-run25.log`, watcher `chain-21.status`, end marker `chain-21.done`; harness waiter `bdlg03nph`). webkitgtk 2.52.6, gst-plugins-base and cloud-signin-window rebuild from ccache after the spike's clean. Then guest d on the image, `vmqa-run27.sh` (fourteen suites; `frame-diff` may show RetroArch-screen changes now that the surface is 1:1 -- claim them), `upgrade-rehearsal-run22`.
+  - **After**: record `h700-all-20260924-d27858eb70` (`record-h700-run22.sh` shape; remove the superseded `h700-all-20260924-24badef3cb`), QA-log row, RECORD.txt, change-log lines for #192/#195/#255/#263, #236 comment, #255 frames at 1:1 (640x480 and 1280x800) with the surface confirmed in RetroArch's log first, then ask the copy and reboot yeses.
 
 ## Next Steps
-
-0. Resolve the spike (above). Then `chain-21.sh` (prepared, not started: x64 run 42, H700 run 25, guest d rebuild, vm-qa run 27, rehearsal run 22) after `tools/fork-worktree sync` -- with `frame-diff` expecting changes on RetroArch screens if any walk frames a game (the surface is 1:1 now; claim them).
 
 1. On the maintainer's **yes to the copy**: stage `/workspace/artifacts/rocknix-images/h700-all-20260924-c041be7e98/ROCKNIX-H700.aarch64-20260924.tar` into the RG35XX SP's `~/.update` through `tools/device-act` (idle check first: `flock -n /var/run/cloud_sync.lock true`, `pgrep rclon[e]`, an emulator). On a **separate yes to the reboot**: reboot through `device-act`; then read `/etc/os-release` (BUILD_ID `c041be7e98`) and the journal.
 2. The Scaffold branch `feat-260-code-auditor-second-opinion` (`39bf935`) is pushed by the maintainer from Marvin (`git am /workspace/artifacts/scaffold-260/0001-*.patch`); Groundhog needs the council substrate before Phase 4.6 can be ported there (question on #260). Close #260 when both are answered.
