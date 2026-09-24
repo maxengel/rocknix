@@ -28,3 +28,14 @@ So the softness is stroke width against the pixel grid, decided by size:
 Inter UI's stems cross one pixel at about 13 px and two at about 25 px on
 this renderer, and the sizes the interface picks for a 640x480 panel with no
 DPI reported fall below the first threshold for the message queue.
+
+## #251 fixed -- the seventeenth cut `443028ff7a`, the toast at 14 px
+
+- `251-toast-10px-vs-14px-4x` -- the sixteenth cut's 10 px toast (top) and
+  the seventeenth's 14 px (bottom), guest d at the H700's widget factor,
+  enlarged 4x. Measured over the same text span on the x-height row: 10 px,
+  41 strokes, none with a fully-lit pixel, mean stem 0.76 px; 14 px, 44
+  strokes, 16 solid (36%), mean stem 1.19 px -- the same solid share as the
+  achievement banner's 17 px (38%, 1.37 px). A first read over a shorter
+  span said none were solid; the span has to be the same text on every
+  size, which is in #255's brief for the measuring tool.
