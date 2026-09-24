@@ -20,7 +20,7 @@ those sizes already land. The CJK message-queue fonts are not Inter and
 are left alone. The 14 px floor (0016) stays under it.
 
 --- a/gfx/gfx_widgets.c	2026-09-24 19:39:34.001518686 +0000
-+++ b/gfx/gfx_widgets.c	2026-09-24 19:39:34.010384212 +0000
++++ b/gfx/gfx_widgets.c	2026-09-24 20:14:56.399109468 +0000
 @@ -53,6 +53,46 @@
   * computed size is already larger (ROCKNIX fork, #251). */
  #define MSG_QUEUE_MIN_SIZE  14.0f
@@ -105,7 +105,7 @@ are left alone. The 14 px floor (0016) stays under it.
  
        /* Create msg_queue font */
        switch (*msg_hash_get_uint(MSG_HASH_USER_LANGUAGE))
-@@ -1006,7 +1053,9 @@
+@@ -1006,20 +1053,22 @@
        }
        gfx_widgets_font_init(p_disp, p_dispwidget,
              &p_dispwidget->gfx_widget_fonts.msg_queue,
@@ -116,8 +116,15 @@ are left alone. The 14 px floor (0016) stays under it.
     }
     else
     {
-@@ -1019,7 +1068,7 @@
-             is_threaded, font_path, BASE_FONT_SIZE, 9.0f);
+       /* Load fonts from user-supplied path */
+       gfx_widgets_font_init(p_disp, p_dispwidget,
+             &p_dispwidget->gfx_widget_fonts.regular,
+-            is_threaded, font_path, BASE_FONT_SIZE, 9.0f);
++            is_threaded, font_path, BASE_FONT_SIZE, 9.0f, NULL, 0);
+       gfx_widgets_font_init(p_disp, p_dispwidget,
+             &p_dispwidget->gfx_widget_fonts.bold,
+-            is_threaded, font_path, BASE_FONT_SIZE, 9.0f);
++            is_threaded, font_path, BASE_FONT_SIZE, 9.0f, NULL, 0);
        gfx_widgets_font_init(p_disp, p_dispwidget,
              &p_dispwidget->gfx_widget_fonts.msg_queue,
 -            is_threaded, font_path, MSG_QUEUE_FONT_SIZE, MSG_QUEUE_MIN_SIZE);
