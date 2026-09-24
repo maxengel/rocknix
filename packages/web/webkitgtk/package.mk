@@ -2,10 +2,8 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="webkitgtk"
-# freshness: pinned -- 2.54.0 does not build with video off, and video needs gstreamer-mpegts and
-# gstreamer-gl the image lacks (fork #228); remove this line in the commit that bumps it
-PKG_VERSION="2.52.6"
-PKG_SHA256="179a2ea3f8f6edd4be7f31fdc55afc57bd0729f1fba648c61d4181539ac116fc"
+PKG_VERSION="2.54.0"
+PKG_SHA256="846fd19ccedbae1dbfe904f26dbf2d68a800a33a50caf2ad5222c8dcb3f25682"
 PKG_LICENSE="LGPL-2.1-or-later AND BSD-2-Clause"
 PKG_SITE="https://webkitgtk.org/"
 PKG_URL="https://webkitgtk.org/releases/${PKG_NAME}-${PKG_VERSION}.tar.xz"
@@ -14,7 +12,7 @@ PKG_DEPENDS_TARGET="toolchain ruby:host unifdef:host \
                     libjpeg-turbo libpng libwebp openjpeg woff2 brotli \
                     libgcrypt libtasn1 zlib freetype fontconfig \
                     libepoxy wayland wayland-protocols libdrm mesa \
-                    at-spi2-atk gstreamer gst-plugins-base"
+                    at-spi2-atk gstreamer gst-plugins-base gst-plugins-bad"
 PKG_LONGDESC="WebKit rendering engine, GTK port. Present for one job: showing a cloud provider's sign-in page on the device, so the OAuth redirect to localhost lands where rclone is listening instead of on somebody's phone."
 PKG_TOOLCHAIN="cmake"
 
@@ -47,6 +45,21 @@ pre_configure_target() {
   # that opens exactly one page. Introspection and docs are build-host
   # artifacts that never reach the image.
   #
+  # USE_GSTREAMER_GL is ON, because USE_GBM is on (the GTK port's Wayland
+  # buffers) and 2.54.0's VideoFrameGStreamer declares the DMABuf memory
+  # type only under GSTREAMER_GL while compiling getDMABuf() under GBM alone:
+  # with GL off and GBM on, `'DMABuf' is not a member of MemoryType` at
+  # object 7916 of 8585 (fork #228, the 2026-09-24 spike, fix two of three).
+  # The GL upload path it enables is never exercised by a sign-in page.
+  # And the third fix, a patch: WebKit's own processes could not find
+  # GraphicsTypesGL.h through GStreamerCommon.h in that option set
+  # (patches/webkitgtk-0002); three fixes is the bound (D-WORKFLOW-038).
+  # ENABLE_WEBDRIVER is OFF: a sign-in window is not driven by Selenium,
+  # and 2.54.0's WebDriver does not compile in this option set anyway --
+  # WebDriverService.cpp:383 asks for a WebDriverClassic log channel that
+  # nothing declares (fork #228, the 2026-09-20 run 8 and the 2026-09-24
+  # spike both stopped there, the second at object 7364 of 8609 with the
+  # GStreamer pieces in place).
   # ENABLE_VIDEO stays ON. The GTK port does not build with it off: WebCore
   # compiles JSHTMLMediaElementCustom.cpp regardless and needs the binding
   # only video generates. Learned 2026-08-30 (cb05cbe80d turned it off,
@@ -54,8 +67,9 @@ pre_configure_target() {
   # four builds of 2.54.0 hit the same wall from every side (#228). What can
   # go is the *pipeline around* video: media stream, recorder, WebRTC, the
   # transcoder, GL upload -- all off below. 2.54 additionally makes
-  # gstreamer-mpegts and gstreamer-gl hard requirements of video, which is
-  # why it is held at 2.52.6 until this image builds them.
+  # gstreamer-mpegts and gstreamer-gl hard requirements of video: the
+  # fork's gst-plugins-base builds GL and its gst-plugins-bad keeps the
+  # mpegts library for exactly this (fork #228, D-WORKFLOW-038).
   PKG_CMAKE_OPTS_TARGET="-DPORT=GTK \
                          -DUSE_GTK4=OFF \
                          -DUSE_SOUP2=OFF \
@@ -63,6 +77,7 @@ pre_configure_target() {
                          -DENABLE_X11_TARGET=OFF \
                          -DENABLE_MINIBROWSER=ON \
                          -DENABLE_INTROSPECTION=OFF \
+                         -DENABLE_WEBDRIVER=OFF \
                          -DENABLE_DOCUMENTATION=OFF \
                          -DENABLE_SPELLCHECK=OFF \
                          -DENABLE_SPEECH_SYNTHESIS=OFF \
@@ -74,7 +89,7 @@ pre_configure_target() {
                          -DENABLE_GAMEPAD=OFF \
                          -DENABLE_MEDIA_STREAM=OFF \
                          -DENABLE_MEDIA_RECORDER=OFF \
-                         -DUSE_GSTREAMER_GL=OFF \
+                         -DUSE_GSTREAMER_GL=ON \
                          -DUSE_GSTREAMER_WEBRTC=OFF \
                          -DUSE_GSTREAMER_TRANSCODER=OFF \
                          -DENABLE_WEB_RTC=OFF \
