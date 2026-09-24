@@ -1,14 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-24T01:30:00Z
+> **Saved**: 2026-09-24T01:00:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `e5065e18ee` + UNCOMMITTED #252 work: `tools/frame-diff`, `tools/vm-qa`, `tools/vm-walks/{suite.txt,masks.txt,claims.txt,manager.steps,fixtures/,README.md}`, `.githooks/pre-push`, `.claude/rules/{generic-x64-vm-testing,fork-workflow}.md`, `docs/{decision-register,cloud-sync-changelog}.md`, the work log)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The seventeenth cut `443028ff7a` is the candidate** (the maintainer: *"Let's go with option two"*, D-UI-084): RetroArch patch `0016-widgets-message-queue-floor.patch` (the message queue never under 14 px) on top of the sixteenth's #209/#198/#247. Built 01:08-01:11 (RetroArch re-patched and rebuilt on both arches), `h700-all-20260924-443028ff7a` with RECORD.txt (VMQA_RESULT placeholder), guest d proof done (14 px: 44 strokes, 16 solid, mean stem 1.19 px; frame `251-toast-10px-vs-14px-4x`). **vm-qa run 23 + the rehearsal are rerunning (`chain-17b.sh`, `vmqa-run23.{log,rc}`, `upgrade-rehearsal-run18.{log,rc}`, `chain-17.done`)** after a false alarm: a stem measurement over a short span read 0 solid and I stopped the first run; the full span read 36% and the floor stays 14. When green: finalize RECORD.txt, the QA row, mark the sixteenth's record superseded, then ask the maintainer for the copy and the reboot (`stage-rg35xxsp-443028ff7a.sh` ready). **Then the rigorous code audit** (the maintainer: *"a full code audit using the code auditor's skill and being very rigorous to make sure comment quality, etc., are all well defined and executed"*) over the work since #186, with the `code-auditor` skill; its punch list fixed at every severity before the candidate is called one (D-WORKFLOW-015/016). **The RG35XX SP runs the fifteenth `aa8d525a8a`.**
-
-Filed tonight: #255 (grid-fit font sizes per panel, the maintainer's idea, with the measurements), #256 (upstream in several PRs: the map; the interface side is coupled through GuiMenu.cpp +5,774 and ApiSystem.cpp +1,458; distribution splits by package).
+**The sixteenth cut `6205420b3d` is green end to end and waits on the maintainer's yes to copy and to reboot** (D-QA-011; asked 2026-09-24 00:20 UTC). It carries #209 (DO NOT INCREMENT off; a legacy `0`; `savestate_max_keep` only when set; D-UI-083), #198 (the password quoted at both `setrootpass` sites; printf to smbpasswd), #247 (the keeper's note from the raw count; raw caps per executable). ES `75ca1dac2` (`feature/rc-batch` merged to `test/qa-integration`), pin `b8def98ab2`, scripts `2337c07f73`. Proofs: harness section x (five checks that failed before the fix); guest d `check-209.sh`/`check-209c.sh`/`check-247.sh`; vm-qa run 22 twelve suites PASSED with `frame-diff` at 0 boxes; rehearsal 19/19; `h700-all-20260923-6205420b3d` with RECORD.txt; the fifteenth's record marked superseded-once-applied. `stage-rg35xxsp-6205420b3d.sh` is ready. **The RG35XX SP runs the fifteenth `aa8d525a8a`.** #251 has no pick and is not in the cut.
 
 ## Completed This Session (2026-09-23 04:55 -> 05:30 UTC)
 
@@ -19,16 +17,16 @@ Filed tonight: #255 (grid-fit font sizes per panel, the maintainer's idea, with 
 
 ## In Progress
 
-- chain-17b (vm-qa run 23 with frame-diff; the rehearsal). Expected: twelve suites PASSED, frame-diff 0 boxes (the toast is not walked), rehearsal 19/19.
-- The copy and reboot question for the seventeenth (to be asked when green).
-- The code audit (next, after the ask).
+- **#251 waits on the maintainer's pick**, now with measurements (comment of 2026-09-24 00:55 UTC; frames `docs/qa-frames/2026-09-24/251-*`): 10 px stems 0.76 px with no solid core; 15 px 1.40 px; the banner's 17 px 1.37 px; 24 px 1.87 px but the banner runs off the 640 px panel, so option 3 is withdrawn; full hinting through FreeType's classic interpreter changed no pixel. Recommendation: option 2, a 14 px floor for the message-queue font (a RetroArch fork patch in `gfx_widgets_font_init`, where the 9 px floor is; needs a RetroArch rebuild and a seventeenth cut). The maintainer wants nothing left to decide before the transfer, so the sixteenth's copy/reboot ask stands until they pick; on a pick, the seventeenth carries it.
+- **#255 filed** (the maintainer's idea: snap widget font sizes to the grid per panel, from #251's data); no work started.
+- The copy and reboot question for the sixteenth on the RG35XX SP (asked 00:20 UTC) -- likely superseded by a seventeenth cut once #251 is picked.
 
 ## Next Steps
 
-1. On `chain-17.done`: RECORD.txt's VMQA_RESULT; the QA row for `443028ff7a` (runs 32/21, vm-qa 23, rehearsal 18); the sixteenth's RECORD marked superseded; commit/push; ask the maintainer for the copy and the reboot of the RG35XX SP (D-QA-011). On the yes: `stage-rg35xxsp-443028ff7a.sh`, then the reboot through `tools/device-act`; BUILD_ID + empty queue; `tools/frame-diff accept <run23>/walks walk-baseline --build 443028ff7a` once on the device; RECORD, QA row, #236 box, work log.
-2. **The code audit** with the `code-auditor` skill (Milestone tier: the work since #186, 2026-09-14 -> the seventeenth cut), comment quality in scope; audit agents on Fable 5.1 (memory `audit-subagents-run-on-fable`); `tools/lint-audit-artifacts` before its Phase 6; the punch list fixed at every severity (D-WORKFLOW-015) and tested on the VM before any device build (D-WORKFLOW-016). Also the retro due ~09-26 and the 2026-W39 summary by 09-29 (`tools/ceremony-check`).
-3. **Every session**: `tools/ceremony-check` first; `tools/archaeology <terms>` before anything is called pending; a friction line when something slows; `tools/work-log-index --write` after a log entry. Never edit a shell tool while a run of it is in flight. A stem measurement compares the same text span on every size.
-4. The maintainer's device boxes on the seventeenth: #251 (the toast reads), #209 (the save shortcut), #198 (a password with a space), #250, #249, #245, #246, #243; then the RG SP (D-QA-031), the Nova. #252 box 3b; #253's four-week box; #255, #256 later; #42 (docs) before the upstream PRs.
+1. On the yes: `bash /workspace/tmp/rocknix-session/stage-rg35xxsp-6205420b3d.sh` (idle check, copy, sha256, mv); then the reboot through `tools/device-act rg35xxsp 'reboot to apply 6205420b3d -- the maintainer said yes' -- 'sync; (sleep 2; reboot) >/dev/null 2>&1 &'` after a second idle check; confirm BUILD_ID and the empty queue; RECORD.txt, the QA row, #236's box, the walk baseline (`tools/frame-diff accept <run22>/walks walk-baseline --build 6205420b3d` once it is on the device), work log.
+2. **Every session**: `tools/ceremony-check` first; `tools/archaeology <terms>` before anything is called pending; a friction line when something slows; `tools/work-log-index --write` after a log entry. Never edit a shell tool while a run of it is in flight.
+3. The audit gate goes red within days (the record says an audit is owed): `code-auditor` on the work since #186. Retro ~09-26 (`docs/retros/`), the 2026-W39 summary by 09-29.
+4. The maintainer's device boxes on the sixteenth: #209 (the save shortcut), #198 (a password with a space), #250, #249, #245, #246, #243; then the RG SP (D-QA-031), the Nova. #252 box 3b; #253's four-week box; #251 on a pick.
 
 ## Key Files Modified (this session)
 
