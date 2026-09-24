@@ -2307,3 +2307,51 @@ moved them to the day they landed.)
   Panels at 720p and above are unchanged. Maintainer: *"It just isn't
   nearly as easy to read that text overlay as it is, say, the top-left
   achievement banner."*
+
+## The audit's punch list, fixed before the candidate is called one (2026-09-24)
+
+The milestone audit of the round (#258: 347 boxes re-derived, thirty
+findings, none critical or high) was the maintainer's condition for a
+release candidate -- *"a full code audit using the code auditor's skill and
+being very rigorous"* -- and its punch list was fixed at every severity in
+one cut, proven on the VM first. What a player would notice:
+
+- **A fresh device and an updated one land in the same place** (#258
+  PL-001). The save-state layout file the OS manages was copied onto a
+  freshly flashed device where an updated one has a link, so a later change
+  to the shipped file would have reached the second and not the first; the
+  first boot now leaves it out of its copy and links it, as every update
+  does. `tools/vm-qa`'s new `fresh` suite reads the first-boot state on
+  every image.
+- **Deleting a save state never removes a file outside the saves folder**
+  (#258 PL-002, D-CLOUD-135). The deletion's script refused to record such a
+  path and then removed it anyway; it now refuses both.
+- **A crash restarts the interface instead of hanging it** (#258 PL-003,
+  D-SYS-009). The crash handler wrote to the log under a lock a faulting
+  thread could be holding; it writes the signal's name and the frames
+  straight to the journal now, and the interface is back in two seconds.
+- **The offline RETROACHIEVEMENTS page never waits on the web** (#258
+  PL-028, D-RA-028). Offline with nothing cached yet, it said PLEASE WAIT
+  for a bounded web request; it says `THE OFFLINE ACHIEVEMENTS SERVICE
+  DIDN'T ANSWER. TRY AGAIN IN A MOMENT.`, as the game page has since #242.
+- **A screenshot turns the moment its game's rotation is known** (#258
+  PL-019). A vertical game's screenshot viewed before its first session kept
+  the wrong turn until the interface restarted; the turn is read from the
+  record on every look. The grid's looping tiles (the copies drawn at the
+  far end of a wrapped SCREENSHOTS list) take the same turn and shape as
+  their originals (PL-017).
+- **RetroArch's message queue floor and the rest of the round stand**: the
+  build carries the seventeenth cut's changes unchanged; this cut is the
+  audit's corrections, the ES pin at `4fd019f04`.
+
+Under the surface: the offline-achievements ctl's `refresh` exits 64 on a
+bad argument instead of 0 and its `images` and `refresh` verbs can be
+stopped by `disable` (PL-012, PL-013); the five arcade rotation tables fail
+the build when empty (PL-018); the proxy pin says why it stays (PL-014,
+#259); thirty-two comments describe the code as it is (PL-006, PL-009,
+PL-010, PL-011, PL-026, PL-027); six tools are sharper and each was seen to
+fail once first (PL-004, PL-005, PL-015, PL-020, PL-021, PL-022, PL-030);
+and the record -- fourteen issue bodies, the change log's dates, the manifest
+schema, the menu map, the rocknix.org draft -- says what the tracker and the
+code say (PL-007, PL-008, PL-023, PL-024, PL-029).
+
