@@ -66,7 +66,7 @@ goes back).
  
  
 +def store_only_requested(headers: dict[str, str]) -> bool:
-+    value = headers.get(STORE_ONLY_HEADER) or headers.get(STORE_ONLY_HEADER.lower())
++    value = next((v for k, v in headers.items() if k.lower() == STORE_ONLY_HEADER.lower()), None)
 +    return value == "1"
 +
 +

@@ -822,6 +822,12 @@ take_lock() {
         pause 10
     done
     printf '%s\n' "$$" >&9
+    # The lock is held, so no run is live: a progress file still here was a
+    # run that died without its EXIT trap (a kill -9, a power cut), and the
+    # interface has been ignoring it since its 900 s bound. Removed here, at
+    # the one point every verb passes (#189 box 3's "and removed"; the
+    # seat's G-08 under audit #258).
+    rm -f "${RUNNING}" "${RUNNING}.tmp"
 }
 
 # The games to cache, one job per line into $1, in the client's own terms

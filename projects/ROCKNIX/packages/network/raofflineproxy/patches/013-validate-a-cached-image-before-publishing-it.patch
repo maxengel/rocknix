@@ -29,7 +29,15 @@ as-is.
 
 --- a/linux/raofflineproxy/image_cache.py
 +++ b/linux/raofflineproxy/image_cache.py
-@@ -179,7 +179,30 @@
+@@ -4,6 +4,7 @@
+ import logging
+ import shutil
+ import urllib.request
++import zlib
+ from concurrent.futures import ThreadPoolExecutor
+ from pathlib import Path
+ 
+@@ -179,7 +180,52 @@
              )
              try:
                  with urllib.request.urlopen(request, timeout=10) as response:
@@ -57,6 +65,28 @@ as-is.
 +                    payload.startswith(b"\x89PNG\r\n\x1a\n") and b"IEND" in payload[-12:]
 +                ):
 +                    raise ValueError("not a whole PNG")
++                if image_path.lower().endswith(".png"):
++                    # The frame alone -- signature and trailer -- admits a body
++                    # whose image data is garbage. Walk the chunks: each CRC,
++                    # and the IDAT stream has to inflate (audit #258, the
++                    # seat's G-01). A few microseconds per badge.
++                    pos, idat = 8, b""
++                    while pos + 12 <= len(payload):
++                        length = int.from_bytes(payload[pos:pos + 4], "big")
++                        ctype = payload[pos + 4:pos + 8]
++                        data = payload[pos + 8:pos + 8 + length]
++                        crc = payload[pos + 8 + length:pos + 12 + length]
++                        if len(data) != length or len(crc) != 4 or (zlib.crc32(ctype + data) & 0xFFFFFFFF) != int.from_bytes(crc, "big"):
++                            raise ValueError(f"PNG chunk {ctype!r} fails its CRC")
++                        if ctype == b"IDAT":
++                            idat += data
++                        pos += 12 + length
++                        if ctype == b"IEND":
++                            break
++                    try:
++                        zlib.decompress(idat)
++                    except zlib.error as exc:
++                        raise ValueError(f"PNG image data does not inflate: {exc}")
 +                tmp.write_bytes(payload)
                  os.replace(tmp, target)
                  tmp = None

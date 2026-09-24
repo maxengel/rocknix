@@ -2215,6 +2215,47 @@ wait "${TBG}" 2>/dev/null
 [ "${DRC}" -eq 0 ] && [ -n "${IPID}" ] && [ "${GONE}" -eq 1 ] && grep -q 'asking it to stop' "${ERR}" && ! grep -q '^done' "${TR}/images-times" && [ ! -e "${TPD}/running" ]; check $? "disable during an images run: asked to stop through the lock's pid, the image helper (pid ${IPID:-?}) gone within ten seconds, the progress file removed (the run exited $(cat "${T}/bg.rc" 2>/dev/null))" "disable rc ${DRC}; helper ${IPID:-none} gone: ${GONE}; running left: $([ -e "${TPD}/running" ] && echo yes || echo no); helper times: $(tr '\n' ' ' < "${TR}/images-times" 2>/dev/null); disable said: $(grep -i 'asking\|stopped' "${ERR}" | tr '\n' '|' | cut -c1-160) (#258 PL-013)"
 [ -n "${IPID}" ] && kill -9 "${IPID}" 2>/dev/null; rm -f "${TR}/images-plan" "${TR}/images.pid" "${TR}/images-times"; touch "${TR}/fast-sleep"
 printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\nglobal.retroachievements.username=QA\nglobal.retroachievements.token=FIXTURETOKEN\n' > "${TCFG}"
+# refresh --game with no id: the other usage branch (the seat's note on F-12).
+tctl refresh --game
+[ "${RC}" -eq 64 ] && grep -q '^usage: raofflineproxy-ctl refresh' "${ERR}"; check $? "refresh --game with no id: usage on stderr, exit 64 (the second usage branch)" "rc ${RC}; stderr: $(head -c 120 "${ERR}")"
+# A dead run's progress file (G-08, #189 box 3's "and removed"): planted as a
+# run that died would leave it, it is gone once the next verb has the lock --
+# here a top-up that then skips on the half-hour mark, so nothing else wrote.
+treset; printf 'route=scan at=%s index=3 total=9 name=dead\n' "$(( $(cat "${TR}/clock") - 3600 ))" > "${TPD}/running"; touch "${TMARK}"
+tctl topup
+[ "${RC}" -eq 0 ] && [ ! -e "${TPD}/running" ]; check $? "a dead run's progress file is removed by the next verb that takes the lock (a top-up that skipped on the mark), exit 0" "rc ${RC}; running left: $([ -e "${TPD}/running" ] && cat "${TPD}/running" || echo no)"
+# refresh (the seat's note on F-13: the acceptance tested images alone): the
+# same shape as the images case -- a helper beside the ctl that waits, a
+# disable that ends it through the lock's pid.
+cat > "${T}/repo/raofflineproxy-refresh" <<'EOS'
+#!/bin/bash
+echo $$ > /run/refresh.pid
+trap 'echo end >> /run/refresh-times; exit 143' TERM
+echo start >> /run/refresh-times
+n=$(cat /run/refresh-plan 2>/dev/null || echo 0)
+i=0; while [ "$i" -lt "$n" ]; do /bin/sleep 1; i=$((i+1)); done
+echo done >> /run/refresh-times
+EOS
+chmod +x "${T}/repo/raofflineproxy-refresh"
+treset; rm -f "${TR}/fast-sleep"; printf '20\n' > "${TR}/refresh-plan"; rm -f "${TR}/refresh.pid" "${TR}/refresh-times"
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\nglobal.retroachievements.username=QA\nglobal.retroachievements.token=FIXTURETOKEN\n' > "${TCFG}"
+( bwrap --die-with-parent --tmpfs / --tmpfs /usr "${USR_BINDS[@]}" "${TBB[@]}" \
+    --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+    --ro-bind /etc /etc --ro-bind "${T}/profile" /etc/profile \
+    --bind "${TS}" /storage --ro-bind "${T}/repo" /repo --ro-bind "${T}/shim" /shim --ro-bind "${CLIENT}" /client --ro-bind "${T}/pypath" /pypath \
+    --bind "${TR}" /run --tmpfs /var --bind "${T}/varrun" /var/run \
+    --dev /dev --proc /proc --tmpfs /tmp --setenv PYTHONPATH /client:/pypath \
+    bash /repo/raofflineproxy-ctl refresh --all > "${T}/bg.out" 2> "${T}/bg.err"; echo $? > "${T}/bg.rc" ) &
+TBG=$!
+for i in $(seq 1 50); do [ -s "${TR}/refresh.pid" ] && [ -s "${TPD}/running" ] && break; sleep 0.2; done
+RPID=$(cat "${TR}/refresh.pid" 2>/dev/null); RRUN=$(cat "${TPD}/running" 2>/dev/null)
+[[ "${RRUN}" =~ ^route=refresh\ at=[0-9]+$ ]]; check $? "refresh: the progress file reads route=refresh at=<epoch> while the helper runs" "running: '${RRUN}'"
+tctl disable; DRC=${RC}
+GONE=0; for i in $(seq 1 100); do kill -0 "${RPID}" 2>/dev/null || { GONE=1; break; }; sleep 0.1; done
+wait "${TBG}" 2>/dev/null
+[ "${DRC}" -eq 0 ] && [ -n "${RPID}" ] && [ "${GONE}" -eq 1 ] && ! grep -q '^done' "${TR}/refresh-times" && [ ! -e "${TPD}/running" ]; check $? "disable during a refresh: the helper (pid ${RPID:-?}) gone within ten seconds, the progress file removed (the run exited $(cat "${T}/bg.rc" 2>/dev/null))" "disable rc ${DRC}; helper ${RPID:-none} gone: ${GONE}; running left: $([ -e "${TPD}/running" ] && echo yes || echo no); helper times: $(tr '\n' ' ' < "${TR}/refresh-times" 2>/dev/null)"
+[ -n "${RPID}" ] && kill -9 "${RPID}" 2>/dev/null; rm -f "${TR}/refresh-plan" "${TR}/refresh.pid" "${TR}/refresh-times"; touch "${TR}/fast-sleep"
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\nglobal.retroachievements.username=QA\nglobal.retroachievements.token=FIXTURETOKEN\n' > "${TCFG}"
 # The walk's cap counts uncached files (#186 PL-17): eleven ROMs in an
 # unindexed folder and a cap of ten -- the first scan takes ten and says
 # truncated=1, the second reaches the eleventh.
@@ -2350,7 +2391,11 @@ finally:
 # temp file is written. The double is now on the new seam and the payload is
 # a real (tiny) PNG.
 names = []; barrier = threading.Barrier(2, timeout=5); target_dir = image_cache.STATIC_DIR / "Badge"
-PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 20 + b"\x00\x00\x00\x00IEND\xaeB`\x82"
+# A real 1x1 PNG: patch 013 walks the chunks and inflates the IDAT stream since
+# audit #258 (the seat's G-01), so a framed-but-empty body is refused now.
+import struct, zlib
+def _chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+PNG = b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)) + _chunk(b"IDAT", zlib.compress(b"\x00\xff\x00\x00")) + _chunk(b"IEND", b"")
 # Both workers are held at the moment they write their temp file, so the
 # two names are seen side by side.
 saved_fetch, saved_wb = image_cache.fetch_static_asset, Path.write_bytes
@@ -2365,6 +2410,27 @@ try:
     verdict(len(names) == 2 and len(seen) == 2 and (target_dir / "1.png").read_bytes() == PNG and not list(target_dir.glob("*.tmp")), "PL-33 badges: two workers on one asset write two temp names, the asset lands, no temp file is left", f"temp names {names}, left {[p.name for p in target_dir.glob('*.tmp')] if target_dir.exists() else 'no dir'}")
 finally:
     image_cache.fetch_static_asset, Path.write_bytes = saved_fetch, saved_wb
+# 013 / #213, tightened under audit #258 (the seat's G-01): the frame alone -- signature and IEND --
+# admitted a body whose image data was garbage. Now each chunk's CRC and the IDAT stream have to hold.
+try:
+    saved_fetch = image_cache.fetch_static_asset
+    bad_idat = bytearray(zlib.compress(b"\x00\xff\x00\x00")); bad_idat[5] ^= 0xFF
+    bodies = {
+        "good": PNG,
+        "bad-idat": b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)) + _chunk(b"IDAT", bytes(bad_idat)) + _chunk(b"IEND", b""),
+        "bad-crc": PNG[:-1] + bytes([PNG[-1] ^ 0x01]),
+        "frame-only": b"\x89PNG\r\n\x1a\n" + b"\x00" * 20 + b"\x00\x00\x00\x00IEND\xaeB`\x82",
+    }
+    got = {}
+    for name, body in bodies.items():
+        image_cache.fetch_static_asset = (lambda body: (lambda url, headers, timeout=10.0, _redirects=3: ({"Content-Length": str(len(body))}, body)))(body)
+        image_cache.download_static_image(f"https://media.retroachievements.org/Badge/v-{name}.png", f"/Badge/v-{name}.png", "ua")
+        got[name] = (target_dir / f"v-{name}.png").exists()
+    verdict(got == {"good": True, "bad-idat": False, "bad-crc": False, "frame-only": False}, "013 / #213 validator (G-01): a whole PNG is published; a corrupt IDAT, a bad chunk CRC and a frame with no image data are not", f"published: {got}")
+except Exception as exc:
+    verdict(False, "013 / #213 validator (G-01): a whole PNG is published; a corrupt IDAT, a bad chunk CRC and a frame with no image data are not", repr(exc))
+finally:
+    image_cache.fetch_static_asset = saved_fetch
 # 010 / #190: a request that asks for the store only is answered from it while the process believes it is online.
 class StoreOnlyServer:
     def __init__(self, st): self.storage = st; self.config_data = {}; self.took = None
@@ -2438,6 +2504,9 @@ try:
     srv.asked = []; network.mark_retroachievements_reachable()
     r, body, dt = image_request(srv, "/Images/000904.png")
     verdict(r.status == 200 and body == b"fetched" and srv.asked == ["is_online", "forward"], "012 / #199 image miss, online: an uncached image with no header while the state is online still asks is_online and fetches upstream, as before", f"status {r.status} asked {srv.asked} body {body!r}")
+    srv.asked = []
+    r, body, dt = image_request(srv, "/Images/000903.png", "X-Ra-Store-Only: 1\r\n")
+    verdict(r.status == 200 and body == b"\x89PNG fixture 903" and srv.asked == [], "012 / #199 store-only header in another client's capitalisation (X-Ra-Store-Only, urllib's): still the store's copy, no probe, no fetch (G-02; until #258 only the exact and the all-lower spellings counted)", f"status {r.status}, asked {srv.asked}")
     st.close()
 except Exception as exc:
     verdict(False, "012 / #199 image miss: store-only or offline is 404 at once with no probe and no fetch; a hit is served; an online miss still fetches", repr(exc))
@@ -2749,6 +2818,21 @@ ck() { # ck <raw bytes> <exe>: that many zero bytes through the keeper; the note
     NOTE="$(cat "${XC}"/storage/.cache/log/cores/core.*.txt 2>/dev/null)"
 }
 ck 65536 retroarch;          printf '%s' "${NOTE}" | grep '^dump' | grep -q 'whole' && ! printf '%s' "${NOTE}" | grep '^dump' | grep -qi 'cut'; check $? "a 64 KB dump under a 1 MB cap is noted whole" "note: $(printf '%s' "${NOTE}" | grep '^dump'); out: $(head -c 160 "${XC}/out")"
-ck 3145728 emulationstation; printf '%s' "${NOTE}" | grep '^dump' | grep -qi 'cut' && ! printf '%s' "${NOTE}" | grep '^dump' | grep -q 'whole'; check $? "a 3 MB dump under a 1 MB cap is noted CUT from the raw count -- its compressed size is far under the cap (#247)" "note: $(printf '%s' "${NOTE}" | grep '^dump')"
+ck 3145728 emulationstation; printf '%s' "${NOTE}" | grep '^dump' | grep -qi 'cut' && ! printf '%s' "${NOTE}" | grep '^dump' | grep -q 'whole'; check $? "a 3 MB dump under a 1 MB cap is noted CUT from the raw count -- its compressed size is far under the cap (#247)"
+ck 1048576 retroarch;        printf '%s' "${NOTE}" | grep '^dump' | grep -q 'whole' && ! printf '%s' "${NOTE}" | grep '^dump' | grep -qi 'cut'; check $? "a dump of exactly the cap is noted whole, not CUT: one more byte is asked of the stream and none comes (audit #258, the seat's G-06)" "note: $(printf '%s' "${NOTE}" | grep '^dump' | cut -c1-120)"
+# The floor counts the cap (G-03): with the headroom set so the card holds the
+# floor but not the floor plus the cap, the dump is refused with the note
+# naming both; the same dump with a lower floor is kept.
+XFREE=$(df -k "${XC}/storage" | awk 'NR==2{print $4}')
+ckf() { # ckf <raw bytes> <exe> <CORE_MIN_FREE_KB>
+    rm -rf "${XC}/storage/.cache"; mkdir -p "${XC}/storage/.cache/log"
+    ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --bind "${XC}/storage" /storage --ro-bind "${XC}/shim" /shim --ro-bind "${XC}/repo" /repo \
+        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --setenv PATH /shim:/usr/bin:/bin --setenv CORE_MAX_BYTES 1048576 --setenv CORE_MIN_FREE_KB "$3" \
+        bash -c "head -c $1 /dev/zero | bash /repo/rocknix-corekeep $2 4242 1700000000 11 '!usr!bin!$2'" ) > "${XC}/out" 2>&1
+    NOTE="$(cat "${XC}"/storage/.cache/log/cores/core.*.txt 2>/dev/null)"
+}
+ckf 65536 retroarch $(( XFREE - 512 )); printf '%s' "${NOTE}" | grep '^dump' | grep -q 'NOT KEPT' && printf '%s' "${NOTE}" | grep '^dump' | grep -q 'plus the 1048576 byte cap'; check $? "with free space above the floor but under the floor plus the cap, the dump is refused and the note names both (audit #258, the seat's G-03; the old test admitted it)" "free ${XFREE} KB; note: $(printf '%s' "${NOTE}" | grep '^dump' | cut -c1-140)"
+ckf 65536 retroarch 1024;                printf '%s' "${NOTE}" | grep '^dump' | grep -q 'whole'; check $? "and with a floor the card clears by more than the cap, the same dump is kept" "note: $(printf '%s' "${NOTE}" | grep '^dump' | cut -c1-100)" "note: $(printf '%s' "${NOTE}" | grep '^dump')"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

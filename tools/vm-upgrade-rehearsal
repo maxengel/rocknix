@@ -102,6 +102,7 @@ check "update queue empty" "$(ssha 'ls /storage/.update | wc -l')" "0"
 # upgrade path. Each names its issue; drop it when the issue's cause is gone
 # upstream (audit #258 PL-030 asked that a generic tool label these).
 check "release check #226: one libcairo.so.2.* (pango's fetched cairo is gone)" "$(ssha 'ls /usr/lib/libcairo.so.2.* | wc -l')" "1"
+check "release check #226: libcairo.so.2 is a link to that one file (#226 box 1; the seat's G-10 under #258)" "$(ssha 'readlink /usr/lib/libcairo.so.2')" "$(ssha 'basename $(ls /usr/lib/libcairo.so.2.*)')"
 echo "rclone after: $(ssha 'rclone version | head -1')" | tee -a "$LOG"
 ssha 'journalctl -b -p err --no-pager | tail -30' > "$OUT/journal-err-after.txt" 2>&1
 ssha 'ls -la /storage/roms/savestates/nes /storage/roms/nes; cat /etc/os-release' > "$OUT/state-after.txt" 2>&1

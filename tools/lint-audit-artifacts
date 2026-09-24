@@ -56,6 +56,32 @@ def main():
         else:
             bad(f"04-analysis.md missing section: {sec}")
 
+    # Phase 4.6 (skill v1.11, 2026-09-24): an Epic or Milestone audit carries a
+    # second opinion from the council's GPT seat, graded against the artifact,
+    # with the run's provenance beside it. Audits from before the phase are
+    # not held to it; one from today on that lacks it skipped a phase.
+    m = re.match(r"(\d{4})_(\d\d)_(\d\d)-(milestone|epic|issue)-", d.name)
+    if m and m.group(4) in ("milestone", "epic") and (m.group(1), m.group(2), m.group(3)) >= ("2026", "09", "24"):
+        if re.search(r"^##+ Second opinion", analysis, re.M):
+            ok("04 § Second opinion (Phase 4.6)")
+        else:
+            bad("04-analysis.md has no § Second opinion: Phase 4.6 (the GPT seat) was skipped or not recorded")
+        prov = list((d / "second-opinions").glob("*.provenance.json")) if (d / "second-opinions").is_dir() else []
+        if prov:
+            served = []
+            for pf in prov:
+                try:
+                    j = json.loads(pf.read_text())
+                    served.append(str(j.get("declared_model", "")) + " / " + str((j.get("final") or {}).get("verification", {}).get("observed", "")))
+                except Exception as e:  # noqa: BLE001
+                    served.append(f"unreadable ({e})")
+            if all("gpt-6-astra" in x for x in served):
+                ok(f"second-opinions/: {len(prov)} provenance file(s), the served model gpt-6-astra")
+            else:
+                bad(f"second-opinions/: a provenance file names another model or none: {served}")
+        else:
+            bad("second-opinions/ has no *.provenance.json: the seat's run left no record")
+
     punch = (d / "05-punch-list.md").read_text() if (d / "05-punch-list.md").exists() else ""
     items = re.findall(r"^## (PL-\d+)\b.*$", punch, re.M)
     if not items:
