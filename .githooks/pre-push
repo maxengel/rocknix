@@ -51,8 +51,12 @@ set -uo pipefail
 
 # Personal paths that must never appear in an upstream PR branch.
 # Keep this in step with `.claude/rules/fork-workflow.md` § "Personal paths".
-# The working tree this push comes from: the tools the guard runs live there.
-hooks_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+# The checkout this hook lives in: the tools the guard runs live beside it.
+# core.hooksPath is an absolute path into the primary checkout, so this is
+# the primary's tools/ whichever worktree pushes -- it used to be the
+# pushing worktree's, and a worktree cut before a tool existed pushed next
+# with that gate silently skipped (audit #258 PL-004).
+hooks_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
 
 PERSONAL_PATTERNS=(
   # Agent context, rules and skills
@@ -226,7 +230,13 @@ while read -r local_ref local_sha remote_ref remote_sha; do
        && ! git diff --name-only "$range" -- 'docs/work-logs/INDEX.md' 2>/dev/null | grep -q .; then
       echo "⚠ pre-push: this push changes work logs without docs/work-logs/INDEX.md -- run tools/work-log-index --write and amend." >&2
     fi
-    if [ -x "$hooks_root/tools/ceremony-check" ]; then
+    if [ ! -x "$hooks_root/tools/ceremony-check" ]; then
+      # A gate that cannot run has not passed (engineering-practices.md).
+      echo "✗ pre-push: refusing to push next: $hooks_root/tools/ceremony-check is missing or not executable, so the ceremony gate cannot run." >&2
+      status=1
+      continue
+    fi
+    if true; then
       if ! gate_out="$("$hooks_root/tools/ceremony-check" --gate 2>&1)"; then
         {
           echo "✗ pre-push: refusing to push next: a ceremony is overdue past its grace."

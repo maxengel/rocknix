@@ -2189,11 +2189,13 @@ the handheld took them.
   fast -- the startup and exit save sync. Maintainer, at the scan page:
   *"we should only allow things to run in the background when they're
   fast."*
+
 - **Found under it and fixed: a refreshed two-line row kept growing.** The
   OFFLINE ACHIEVEMENTS page came back with its scan row drawn a screen
   tall after a long scan, on this candidate and the one before it -- every
   refresh of the row's line moved its split by ten percent. Measured from
   the fonts now; a row refreshed a thousand times keeps its height.
+
 - **Offline, the achievements pages answer in seconds** (#242). With
   OFFLINE ACHIEVEMENTS on and the Wi-Fi off, VIEW THIS GAME'S ACHIEVEMENTS
   ended `An error occurred. Timeout was reached.` and a game's launch
@@ -2206,6 +2208,7 @@ the handheld took them.
   answer -- it says `THE OFFLINE ACHIEVEMENTS SERVICE DIDN'T ANSWER. TRY
   AGAIN IN A MOMENT.` instead. Confirmed by the maintainer on the RG35XX
   SP: the page, the offline sign-in toast, the badges.
+
 - **The interface no longer dies after a game in which an achievement was
   unlocked** (#246). Every unlock writes a screenshot, and the folder rescan
   that follows a game exit deleted the SCREENSHOTS entries and then reloaded
@@ -2215,6 +2218,25 @@ the handheld took them.
   now takes the view down before the files go and remakes it after. And
   when the interface does die, its log carries a backtrace and the crash
   keeper, once armed, keeps the fault itself rather than the teardown.
+
+- **Save-state thumbnails and screenshots are drawn at the shape of the
+  system that made them** (#243, D-UI-080). RetroArch writes both at the
+  core's native size, which for the NES and the SNES is the pixel grid and
+  not the 4:3 picture the game showed, so the SAVE STATE MANAGER's tiles
+  and the SCREENSHOTS entry's pictures were a fifth narrower than the game.
+  The interface now fits them at the system's display aspect -- 4:3 for
+  the consoles and computers whose pixels are not square; the Game Boy,
+  GBA and the other square-pixel handhelds as they are. RetroArch's
+  capture is left alone. Maintainer: *"It's odd to see certain things
+  stretched out of aspect ratio."*
+
+## The round goes on: upright arcade captures, the AUTO SAVE tile, the arrows, a frame gate, DO NOT INCREMENT, the device password, the core note (2026-09-23)
+
+The maintainer's device round on the sixteenth and seventeenth candidates; each
+landed on `next` on the 23rd and every one was proven on the VM before the
+RG35XX SP took it. (Written under the 22nd's heading until audit #258 PL-024
+moved them to the day they landed.)
+
 - **A vertical arcade game's thumbnails and screenshots are upright** (#245,
   D-UI-081). RetroArch turns such a game's frame for the display and its
   capture does not, so the SAVE STATE MANAGER's tiles and the SCREENSHOTS
@@ -2228,12 +2250,14 @@ the handheld took them.
   screenshot is right the moment the build is, with nothing to replay. The
   screenshot RetroArch takes at an achievement unlock is recognised too. The files stay as RetroArch wrote them. Maintainer: *"I think
   we do it on our side."*
+
 - **A game started from the SAVE STATE MANAGER's AUTO SAVE tile runs on
   RetroArch's Auto slot** (#249): the quick menu says `Auto` and the load
   hotkey reloads the auto save the game started from, as it reloads a
   numbered slot's state for a numbered tile. It had stayed on slot 0, so
   the hotkey loaded a different file. Maintainer: *"it doesn't reload the
   autosave."*
+
 - **The SAVE STATE MANAGER's arrow tiles are as they always were** (#250).
   The transform that fits a thumbnail to its system's shape (#243) and
   turns a vertical game's (#245) had been applied to every tile of the
@@ -2243,6 +2267,7 @@ the handheld took them.
   are pixel-identical to a build from before either change. Maintainer:
   *"the arrows should all remain exactly how they were. It's just the
   screenshot itself."*
+
 - **The VM now checks that a build changed only what it meant to** (#252,
   D-QA-038). Every screen the QA walks reach is compared, pixel for pixel,
   with the same screen on the last build accepted on a handheld; a change
@@ -2252,6 +2277,7 @@ the handheld took them.
   Game Boy game, a vertical arcade game) are the first added under it.
   Maintainer: *"I think your recommendation for 252 is a strong
   recommendation, and so we should roll that out as well."*
+
 - **DO NOT INCREMENT now means it** (#209, D-UI-083). With INCREMENTAL SAVE
   STATES set to DO NOT INCREMENT, the save-state hotkey writes the slot the
   game was started from; it had kept making new slots, because the launcher
@@ -2259,15 +2285,20 @@ the handheld took them.
   unchanged: a new slot on every save, the launched one untouched, which is
   what the row promises and what Batocera does. A device that still held
   the old "0" now shows DO NOT INCREMENT, which is what it was doing.
+
 - **A device password with a space, a `$` or a quote is set as typed** (#198).
   The interface handed it to the shell unquoted, so it was cut at the space
   or misread; it is quoted now, as the Wi-Fi key already was, and the script
   passes it to the file-sharing password whole.
+
 - **A core dump cut at the keeper's cap says so** (#247). The note compared
   the compressed size to the cap and called a truncated dump whole; it now
   reads the raw count, and the interface's core, mostly texture memory, gets
   a larger cap before its stacks are lost. Only for troubleshooting; the
   keeper stays off on a release candidate (D-QA-029).
+
+## RetroArch's notifications get a floor (2026-09-24)
+
 - **RetroArch's notifications are readable on small panels** (#251,
   D-UI-084). The message queue -- the sign-in banner, "saved state", the
   scan and sync notices -- was drawn at 10 pixels on a 640x480 handheld and
@@ -2276,13 +2307,3 @@ the handheld took them.
   Panels at 720p and above are unchanged. Maintainer: *"It just isn't
   nearly as easy to read that text overlay as it is, say, the top-left
   achievement banner."*
-- **Save-state thumbnails and screenshots are drawn at the shape of the
-  system that made them** (#243, D-UI-080). RetroArch writes both at the
-  core's native size, which for the NES and the SNES is the pixel grid and
-  not the 4:3 picture the game showed, so the SAVE STATE MANAGER's tiles
-  and the SCREENSHOTS entry's pictures were a fifth narrower than the game.
-  The interface now fits them at the system's display aspect -- 4:3 for
-  the consoles and computers whose pixels are not square; the Game Boy,
-  GBA and the other square-pixel handhelds as they are. RetroArch's
-  capture is left alone. Maintainer: *"It's odd to see certain things
-  stretched out of aspect ratio."*

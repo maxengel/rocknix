@@ -8,7 +8,8 @@
 # locale/lang/fr/LC_MESSAGES/emulationstation2.po; a missing translation falls through
 # to English silently, which is why this exists (#152). A fork string is a `_("...")`
 # msgid in es-app/src or es-core/src that upstream batocera's catalogue does not carry;
-# the reference is the upstream base commit's own .po, read from git, so the list is
+# the reference is the upstream base's own .po (the merge base of HEAD with the
+# upstream branch, derived each run -- audit #258 PL-022), read from git, so the list is
 # exactly what the fork added. Untranslated means the msgid is absent from the current
 # French catalogue or has an empty msgstr. The msgid must match the source byte for
 # byte, because the build merges by msgid.
@@ -87,7 +88,8 @@ def source_strings(root):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--es-src", default=os.environ.get("ES_SRC", ""))
-    ap.add_argument("--upstream", default="2e1564402", help="upstream batocera base commit whose catalogue defines the non-fork strings")
+    ap.add_argument("--upstream", default="", help="the upstream base commit(s) whose catalogue defines the non-fork strings; default: every merge base of HEAD with ES_UPSTREAM_REF (rocknix/master)")
+    ap.add_argument("--upstream-ref", default=os.environ.get("ES_UPSTREAM_REF", "rocknix/master"), help="the upstream branch the base is derived from (ES_UPSTREAM_REF)")
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args()
     if not a.es_src or not os.path.isdir(os.path.join(a.es_src, "es-app", "src")):
@@ -97,12 +99,27 @@ def main():
         fr = parse_po(open(po_path, encoding="utf-8").read())
     except OSError as e:
         print("es-untranslated: cannot read " + po_path + ": " + str(e), file=sys.stderr); return 2
-    try:
-        up = subprocess.run(["git", "-C", a.es_src, "show", a.upstream + ":locale/lang/fr/LC_MESSAGES/emulationstation2.po"],
-                            capture_output=True, text=True, check=True).stdout
-    except subprocess.CalledProcessError as e:
-        print("es-untranslated: cannot read the upstream catalogue at " + a.upstream + ": " + e.stderr.strip(), file=sys.stderr); return 2
-    upstream_ids = set(parse_po(up).keys())
+    # The base is derived, not remembered (audit #258 PL-022): a constant
+    # outlives the rebase that moves it, and every string upstream added
+    # since then is then counted as the fork's. `git merge-base --all` gives
+    # every base of a criss-cross history; the union of their catalogues is
+    # what upstream carried. Failing to find one is a check that cannot
+    # run, not an empty upstream.
+    bases = [b for b in a.upstream.split(",") if b]
+    if not bases:
+        r = subprocess.run(["git", "-C", a.es_src, "merge-base", "--all", "HEAD", a.upstream_ref], capture_output=True, text=True)
+        if r.returncode != 0 or not r.stdout.strip():
+            print("es-untranslated: no merge base of HEAD with " + a.upstream_ref + " -- fetch the upstream remote (git remote add rocknix https://github.com/ROCKNIX/emulationstation-next.git; git fetch rocknix master) or pass --upstream <commit>: " + r.stderr.strip(), file=sys.stderr); return 2
+        bases = r.stdout.split()
+    upstream_ids = set()
+    for b in bases:
+        try:
+            up = subprocess.run(["git", "-C", a.es_src, "show", b + ":locale/lang/fr/LC_MESSAGES/emulationstation2.po"],
+                                capture_output=True, text=True, check=True).stdout
+        except subprocess.CalledProcessError as e:
+            print("es-untranslated: cannot read the upstream catalogue at " + b + ": " + e.stderr.strip(), file=sys.stderr); return 2
+        upstream_ids |= set(parse_po(up).keys())
+    print("es-untranslated: upstream base " + ", ".join(b[:9] for b in bases) + (" (merge base of HEAD with " + a.upstream_ref + ")" if not a.upstream else " (given)"))
     src = source_strings(a.es_src)
     fork = {k: v for k, v in src.items() if k not in upstream_ids}
     missing = sorted(((v, k) for k, v in fork.items() if not fr.get(k)), key=lambda t: (t[0].split(":")[0], int(t[0].split(":")[1])))

@@ -356,77 +356,79 @@ Seat attribution: PL-23..PL-33 are the GPT seat's (G-nn), each confirmed against
 
 ```yaml
 punch_index:
-- {id: PL-01, severity: High,   category: Interaction Defect, source_finding: F-19, owner_area: raofflineproxy patches / upstream PeriodicRefresh, where: proxy_service.py:1022-1057, acceptance: "refresh bounded by age and recency; harness/unit pins it; upstream draft", outcome: open}
-- {id: PL-02, severity: High,   category: Interaction Defect, source_finding: F-20, owner_area: raofflineproxy patches / ctl list_jobs, where: storage.py:479-493; proxy_service.py:644-668,1036-1057; raofflineproxy-ctl:696-747, acceptance: "an aged achievementsets row is refreshed or re-cached; ready never over-counts", outcome: open}
-- {id: PL-03, severity: Medium, category: Interaction Defect, source_finding: F-01, owner_area: raofflineproxy-ctl is_online, where: raofflineproxy-ctl:512-520, acceptance: "the ctl never writes the service's online_state.json", outcome: open}
-- {id: PL-04, severity: Medium, category: Interaction Defect, source_finding: F-03, owner_area: raofflineproxy-ctl do_topup, where: raofflineproxy-ctl:976-994, acceptance: "90 s probe window; mark only after a real answer", outcome: open}
-- {id: PL-05, severity: Medium, category: Test Gap, source_finding: F-04, owner_area: tools/last-good-scripts-test, where: tools/last-good-scripts-test:1346+, acceptance: "case t passes; --old fails PL-03/PL-04 assertions", outcome: open}
-- {id: PL-06, severity: Medium, category: Spec Drift, source_finding: F-10, owner_area: ES GuiRetroAchievementsSettings apply; #183, where: GuiRetroAchievementsSettings.cpp:271,309-325, acceptance: "a fresh guest indexes and caches an added game, or the sentence is conditional; frames", outcome: open}
-- {id: PL-07, severity: Medium, category: Cornerstone Violation, source_finding: F-16, owner_area: ES GuiOfflineScan, where: GuiOfflineScan.cpp:94-153, acceptance: "B leaves the scan running; the row reports; frames; rule P-03", outcome: open}
-- {id: PL-08, severity: Medium, category: Cornerstone Violation, source_finding: F-18, owner_area: ES ThreadedHasher, where: ThreadedHasher.cpp:226-240,146-164, acceptance: "hash-no-id games gain an id at startup without a re-hash; walk frame", outcome: open}
-- {id: PL-09, severity: Medium, category: Improvement, source_finding: F-17, owner_area: ES RetroAchievements getUserSummaryFromDevice; ctl summary, where: RetroAchievements.cpp:395-407, acceptance: "offline summary of 100 games under 2 s; one timeout on a hung proxy", outcome: open}
-- {id: PL-10, severity: Medium, category: Missing Artifact, source_finding: F-11, owner_area: docs/qa-frames; #184, where: docs/qa-frames/<date>/, acceptance: "RC-6 page and cards framed EN+FR at 640x480 (+1280 page)", outcome: open}
-- {id: PL-11, severity: Medium, category: Documentation Gap, source_finding: F-14, owner_area: rocknix.org; #168, where: docs/ draft then the site PR, acceptance: "the page draft exists and matches the code", outcome: open}
-- {id: PL-12, severity: Low,    category: Improvement, source_finding: F-02, owner_area: raofflineproxy patches; #168, where: proxy_service.py:1060-1076, acceptance: "upload gated off; item on #168", outcome: open}
-- {id: PL-13, severity: Low,    category: Test Gap, source_finding: F-05, owner_area: tools/qa-accounts, where: tools/qa-accounts:56-73, acceptance: "clear removes the proxy folder and says so", outcome: open}
-- {id: PL-14, severity: Low,    category: Cornerstone Violation, source_finding: F-06, owner_area: tools/ra-offline-test, where: tools/ra-offline-test:195-198, acceptance: "no key in argv; step 2 passes", outcome: open}
-- {id: PL-15, severity: Low,    category: Code Quality, source_finding: F-07, owner_area: raofflineproxy-ctl; GuiOfflineScan, where: raofflineproxy-ctl:190-192,850; GuiOfflineScan.cpp:280-281, acceptance: "no cap number remains", outcome: open}
-- {id: PL-16, severity: Medium, category: Code Quality, source_finding: F-08, owner_area: raofflineproxy-ctl do_enable, where: raofflineproxy-ctl:277-308, acceptance: "the toggle is written last; any failure rolls back; harness p three sub-cases", outcome: open}
-- {id: PL-17, severity: Medium, category: Code Quality, source_finding: F-09, owner_area: raofflineproxy-ctl list_jobs, where: raofflineproxy-ctl:776-784, acceptance: "a second scan reaches files past the cap; truncated= in the summary", outcome: open}
-- {id: PL-18, severity: Low,    category: Documentation Gap, source_finding: F-12, owner_area: docs/decision-register.md, where: rows D-UI-053, D-RA-004, D-RA-015, acceptance: "refining rows exist; register-check passes", outcome: open}
-- {id: PL-19, severity: Low,    category: Documentation Gap, source_finding: F-13, owner_area: issues #173 #179 #163 #180 #183 #184, where: issue bodies, acceptance: "bodies amended; milestone attached", outcome: open}
-- {id: PL-20, severity: Low,    category: Improvement, source_finding: F-15, owner_area: #168 upstream list, where: network.py:19; utils.py:110-124, acceptance: "item on #168", outcome: resolved}
-- {id: PL-21, severity: Low,    category: Documentation Gap, source_finding: F-21, owner_area: .claude/rules/es-code-traps.md, where: the unit-test recipe, acceptance: "the command runs as written", outcome: open}
-- {id: PL-22, severity: Low,    category: Code Quality, source_finding: F-22, owner_area: raofflineproxy-ctl header; #168, where: raofflineproxy-ctl:1-150, acceptance: "schema named; item on #168", outcome: open}
-- {id: PL-23, severity: Medium, category: Interaction Defect, source_finding: G-02, owner_area: raofflineproxy-ctl list_jobs; upstream es_export/auth, where: raofflineproxy-ctl:696-747; es_export.py:22-39; auth.py:42-69, acceptance: "readiness keyed by user and hash; credentials carry the configured user", outcome: open}
-- {id: PL-24, severity: Medium, category: Cornerstone Violation, source_finding: G-03, owner_area: raofflineproxy-cache-indexed; raofflineproxy-ctl run_jobs, where: raofflineproxy-cache-indexed:147-179; raofflineproxy-ctl:863-872,942-949, acceptance: "an unresolved caching error ends COULDN'T FINISH with a count", outcome: open}
-- {id: PL-25, severity: Medium, category: Code Quality, source_finding: G-04, owner_area: raofflineproxy patches; upstream PeriodicRefresh, where: proxy_service.py:1021-1057, acceptance: "a raising request leaves the refresh thread alive; upstream draft", outcome: open}
-- {id: PL-26, severity: Medium, category: Cornerstone Violation, source_finding: G-06, owner_area: ES RetroAchievements; OfflineAchievementsText; ctl do_account, where: RetroAchievements.cpp:329-336,395-447; raofflineproxy-ctl:418-424, acceptance: "malformed answers are invalid, not empty; tests added", outcome: open}
-- {id: PL-27, severity: Medium, category: Cornerstone Violation, source_finding: G-07, owner_area: ES GuiRetroAchievementsSettings apply, where: GuiRetroAchievementsSettings.cpp:282-326, acceptance: "the toggle runs the ctl off the UI thread; the interface renders during a 10 s stop", outcome: open}
-- {id: PL-28, severity: Medium, category: Code Quality, source_finding: G-08, owner_area: raofflineproxy-ctl do_topup/take_lock, where: raofflineproxy-ctl:997-1029,545-556, acceptance: "one deadline from START across listing, the lock wait and both passes", outcome: open}
-- {id: PL-29, severity: Medium, category: Cornerstone Violation, source_finding: G-10, owner_area: profile.d/001-functions; harness case r, where: 001-functions:72-78, acceptance: "three canaries read <redacted> under busybox sed; case r asserts them", outcome: open}
-- {id: PL-30, severity: Medium, category: Interaction Defect, source_finding: G-11, owner_area: raofflineproxy-ctl do_disable/run_jobs, where: raofflineproxy-ctl:310-333,818-891, acceptance: "disable ends a running helper within 10 s", outcome: open}
-- {id: PL-31, severity: Low,    category: Code Quality, source_finding: G-05, owner_area: setsettings.sh; cheevos_ppsspp.sh, where: setsettings.sh:512-513; cheevos_ppsspp.sh:21, acceptance: "an unreadable hardcore reads as direct; the PPSSPP test is quoted", outcome: open}
-- {id: PL-32, severity: Low,    category: Code Quality, source_finding: G-09, owner_area: raofflineproxy-ctl do_flushed, where: raofflineproxy-ctl:440-452, acceptance: "rename-then-read; harness p asserts no lost stamp", outcome: open}
-- {id: PL-33, severity: Low,    category: Code Quality, source_finding: G-12, owner_area: #168 upstream list; image_cache.py, where: image_cache.py:150-195, acceptance: "item on #168", outcome: open}
+- {id: PL-01, severity: High,   category: Interaction Defect, source_finding: F-19, owner_area: raofflineproxy patches / upstream PeriodicRefresh, where: proxy_service.py:1022-1057, acceptance: "refresh bounded by age and recency; harness/unit pins it; upstream draft", outcome: resolved (patch 005 `889a59e208`)}
+- {id: PL-02, severity: High,   category: Interaction Defect, source_finding: F-20, owner_area: raofflineproxy patches / ctl list_jobs, where: storage.py:479-493; proxy_service.py:644-668,1036-1057; raofflineproxy-ctl:696-747, acceptance: "an aged achievementsets row is refreshed or re-cached; ready never over-counts", outcome: resolved (patch 006 `faf1467de3` + ctl `1159fd29c0`)}
+- {id: PL-03, severity: Medium, category: Interaction Defect, source_finding: F-01, owner_area: raofflineproxy-ctl is_online, where: raofflineproxy-ctl:512-520, acceptance: "the ctl never writes the service's online_state.json", outcome: resolved (ctl `1159fd29c0`)}
+- {id: PL-04, severity: Medium, category: Interaction Defect, source_finding: F-03, owner_area: raofflineproxy-ctl do_topup, where: raofflineproxy-ctl:976-994, acceptance: "90 s probe window; mark only after a real answer", outcome: resolved (ctl `1159fd29c0`)}
+- {id: PL-05, severity: Medium, category: Test Gap, source_finding: F-04, owner_area: tools/last-good-scripts-test, where: tools/last-good-scripts-test:1346+, acceptance: "case t passes; --old fails PL-03/PL-04 assertions", outcome: resolved (harness case t `2a3169b7a5`)}
+- {id: PL-06, severity: Medium, category: Spec Drift, source_finding: F-10, owner_area: ES GuiRetroAchievementsSettings apply; #183, where: GuiRetroAchievementsSettings.cpp:271,309-325, acceptance: "a fresh guest indexes and caches an added game, or the sentence is conditional; frames", outcome: resolved (ES `f69ede142`)}
+- {id: PL-07, severity: Medium, category: Cornerstone Violation, source_finding: F-16, owner_area: ES GuiOfflineScan, where: GuiOfflineScan.cpp:94-153, acceptance: "B leaves the scan running; the row reports; frames; rule P-03", outcome: resolved (#241, ES `acd7a6fee` (D-UI-078: the foreground pass is bounded by CANCEL; the leavable page of ES `d86754c57`, 2026-09-14, was reversed 2026-09-21))}
+- {id: PL-08, severity: Medium, category: Cornerstone Violation, source_finding: F-18, owner_area: ES ThreadedHasher, where: ThreadedHasher.cpp:226-240,146-164, acceptance: "hash-no-id games gain an id at startup without a re-hash; walk frame", outcome: resolved (ES `f80083a19`, `29b5d6fdc`)}
+- {id: PL-09, severity: Medium, category: Improvement, source_finding: F-17, owner_area: ES RetroAchievements getUserSummaryFromDevice; ctl summary, where: RetroAchievements.cpp:395-407, acceptance: "offline summary of 100 games under 2 s; one timeout on a hung proxy", outcome: resolved (ES `17cc3ce82`, `f054fef73`)}
+- {id: PL-10, severity: Medium, category: Missing Artifact, source_finding: F-11, owner_area: docs/qa-frames; #184, where: docs/qa-frames/<date>/, acceptance: "RC-6 page and cards framed EN+FR at 640x480 (+1280 page)", outcome: resolved (`15d4bfe442` (the RC-6 frames under docs/qa-frames))}
+- {id: PL-11, severity: Medium, category: Documentation Gap, source_finding: F-14, owner_area: rocknix.org; #168, where: docs/ draft then the site PR, acceptance: "the page draft exists and matches the code", outcome: resolved (the fork's draft `58ce7d1349`, its backgrounding sentence corrected under #258 PL-007; the rocknix.org PR itself is #42's)}
+- {id: PL-12, severity: Low,    category: Improvement, source_finding: F-02, owner_area: raofflineproxy patches; #168, where: proxy_service.py:1060-1076, acceptance: "upload gated off; item on #168", outcome: resolved (patch 008 `12484e492c`)}
+- {id: PL-13, severity: Low,    category: Test Gap, source_finding: F-05, owner_area: tools/qa-accounts, where: tools/qa-accounts:56-73, acceptance: "clear removes the proxy folder and says so", outcome: resolved (`4e11497aa7`)}
+- {id: PL-14, severity: Low,    category: Cornerstone Violation, source_finding: F-06, owner_area: tools/ra-offline-test, where: tools/ra-offline-test:195-198, acceptance: "no key in argv; step 2 passes", outcome: resolved (`eeda543cdc`)}
+- {id: PL-15, severity: Low,    category: Code Quality, source_finding: F-07, owner_area: raofflineproxy-ctl; GuiOfflineScan, where: raofflineproxy-ctl:190-192,850; GuiOfflineScan.cpp:280-281, acceptance: "no cap number remains", outcome: resolved (ctl `1159fd29c0` + ES `dd50866f4`)}
+- {id: PL-16, severity: Medium, category: Code Quality, source_finding: F-08, owner_area: raofflineproxy-ctl do_enable, where: raofflineproxy-ctl:277-308, acceptance: "the toggle is written last; any failure rolls back; harness p three sub-cases", outcome: resolved (ctl `1159fd29c0`)}
+- {id: PL-17, severity: Medium, category: Code Quality, source_finding: F-09, owner_area: raofflineproxy-ctl list_jobs, where: raofflineproxy-ctl:776-784, acceptance: "a second scan reaches files past the cap; truncated= in the summary", outcome: resolved (ctl `1159fd29c0`)}
+- {id: PL-18, severity: Low,    category: Documentation Gap, source_finding: F-12, owner_area: docs/decision-register.md, where: rows D-UI-053, D-RA-004, D-RA-015, acceptance: "refining rows exist; register-check passes", outcome: resolved (`3875accc81`)}
+- {id: PL-19, severity: Low,    category: Documentation Gap, source_finding: F-13, owner_area: issues #173 #179 #163 #180 #183 #184, where: issue bodies, acceptance: "bodies amended; milestone attached", outcome: resolved (tracker edits of 2026-09-14 recorded on #186 (#173, #179, #163 amended; the milestone on #179 #180 #183 #184))}
+- {id: PL-20, severity: Low,    category: Improvement, source_finding: F-15, owner_area: #168 upstream list, where: network.py:19; utils.py:110-124, acceptance: "item on #168", outcome: deferred (#168 (upstream list, 2026-09-21))}
+- {id: PL-21, severity: Low,    category: Documentation Gap, source_finding: F-21, owner_area: .claude/rules/es-code-traps.md, where: the unit-test recipe, acceptance: "the command runs as written", outcome: resolved (`01b78bc741`)}
+- {id: PL-22, severity: Low,    category: Code Quality, source_finding: F-22, owner_area: raofflineproxy-ctl header; #168, where: raofflineproxy-ctl:1-150, acceptance: "schema named; item on #168", outcome: resolved (ctl `1159fd29c0` (the header names the schema); the version guard is #168's item 12)}
+- {id: PL-23, severity: Medium, category: Interaction Defect, source_finding: G-02, owner_area: raofflineproxy-ctl list_jobs; upstream es_export/auth, where: raofflineproxy-ctl:696-747; es_export.py:22-39; auth.py:42-69, acceptance: "readiness keyed by user and hash; credentials carry the configured user", outcome: resolved (patch 007 `be3db49acb` + ctl `1159fd29c0`)}
+- {id: PL-24, severity: Medium, category: Cornerstone Violation, source_finding: G-03, owner_area: raofflineproxy-cache-indexed; raofflineproxy-ctl run_jobs, where: raofflineproxy-cache-indexed:147-179; raofflineproxy-ctl:863-872,942-949, acceptance: "an unresolved caching error ends COULDN'T FINISH with a count", outcome: resolved (ctl `1159fd29c0` + ES `fb5f56c7f`)}
+- {id: PL-25, severity: Medium, category: Code Quality, source_finding: G-04, owner_area: raofflineproxy patches; upstream PeriodicRefresh, where: proxy_service.py:1021-1057, acceptance: "a raising request leaves the refresh thread alive; upstream draft", outcome: resolved (patch 005 `889a59e208`)}
+- {id: PL-26, severity: Medium, category: Cornerstone Violation, source_finding: G-06, owner_area: ES RetroAchievements; OfflineAchievementsText; ctl do_account, where: RetroAchievements.cpp:329-336,395-447; raofflineproxy-ctl:418-424, acceptance: "malformed answers are invalid, not empty; tests added", outcome: resolved (ctl `1159fd29c0` + ES `22044d604`)}
+- {id: PL-27, severity: Medium, category: Cornerstone Violation, source_finding: G-07, owner_area: ES GuiRetroAchievementsSettings apply, where: GuiRetroAchievementsSettings.cpp:282-326, acceptance: "the toggle runs the ctl off the UI thread; the interface renders during a 10 s stop", outcome: resolved (ES `70023f5fc`)}
+- {id: PL-28, severity: Medium, category: Code Quality, source_finding: G-08, owner_area: raofflineproxy-ctl do_topup/take_lock, where: raofflineproxy-ctl:997-1029,545-556, acceptance: "one deadline from START across listing, the lock wait and both passes", outcome: resolved (ctl `1159fd29c0`)}
+- {id: PL-29, severity: Medium, category: Cornerstone Violation, source_finding: G-10, owner_area: profile.d/001-functions; harness case r, where: 001-functions:72-78, acceptance: "three canaries read <redacted> under busybox sed; case r asserts them", outcome: resolved (`9a2c9228aa`)}
+- {id: PL-30, severity: Medium, category: Interaction Defect, source_finding: G-11, owner_area: raofflineproxy-ctl do_disable/run_jobs, where: raofflineproxy-ctl:310-333,818-891, acceptance: "disable ends a running helper within 10 s", outcome: resolved (ctl `1159fd29c0`)}
+- {id: PL-31, severity: Low,    category: Code Quality, source_finding: G-05, owner_area: setsettings.sh; cheevos_ppsspp.sh, where: setsettings.sh:512-513; cheevos_ppsspp.sh:21, acceptance: "an unreadable hardcore reads as direct; the PPSSPP test is quoted", outcome: resolved (`3d8e8044ee`)}
+- {id: PL-32, severity: Low,    category: Code Quality, source_finding: G-09, owner_area: raofflineproxy-ctl do_flushed, where: raofflineproxy-ctl:440-452, acceptance: "rename-then-read; harness p asserts no lost stamp", outcome: resolved (ctl `1159fd29c0`)}
+- {id: PL-33, severity: Low,    category: Code Quality, source_finding: G-12, owner_area: #168 upstream list; image_cache.py, where: image_cache.py:150-195, acceptance: "item on #168", outcome: resolved (patch 009 `109ad8706f`)}
 ```
 
 # Phase 7 resolution gate
 
 The audit ran under the maintainer's no-fix mandate ("Do not fix anything. The audit's product is the punch list; fixes are a separate stream"), so no item is Resolved here. Every item is **Deferred, by name, to the fix stream tracked on the audit issue #186** — a named deferral under D-WORKFLOW-015 (all severities get fixed), not a severity excuse. The fix stream records each outcome on that issue's checklist with the commit, frame or command output that proves the item's Acceptance, and re-runs `tools/lint-audit-artifacts … --issue 186` when the last one lands.
 
-| Item | Outcome (2026-09-14) |
-| --- | --- |
-| PL-01 | Deferred — fix stream on #186 (client patch 005 + upstream draft) |
-| PL-02 | Deferred — fix stream on #186 (client patch 006 / ctl) |
-| PL-03 | Deferred — fix stream on #186 |
-| PL-04 | Deferred — fix stream on #186 |
-| PL-05 | Deferred — fix stream on #186 |
-| PL-06 | Deferred — fix stream on #186 (with #183) |
-| PL-07 | Deferred — fix stream on #186 |
-| PL-08 | Deferred — fix stream on #186 (with #183) |
-| PL-09 | Deferred — fix stream on #186 |
-| PL-10 | Deferred — fix stream on #186 (the sixth candidate's frames, #184) |
-| PL-11 | Deferred — fix stream on #186 (with #168) |
-| PL-12 | Deferred — fix stream on #186 (with #168) |
-| PL-13 | Deferred — fix stream on #186 |
-| PL-14 | Deferred — fix stream on #186 |
-| PL-15 | Deferred — fix stream on #186 |
-| PL-16 | Deferred — fix stream on #186 |
-| PL-17 | Deferred — fix stream on #186 |
-| PL-18 | Deferred — fix stream on #186 |
-| PL-19 | Deferred — fix stream on #186 |
-| PL-20 | Deferred — fix stream on #186 (with #168) |
-| PL-21 | Deferred — fix stream on #186 |
-| PL-22 | Deferred — fix stream on #186 (with #168) |
-| PL-23 | Deferred — fix stream on #186 |
-| PL-24 | Deferred — fix stream on #186 |
-| PL-25 | Deferred — fix stream on #186 (with #168) |
-| PL-26 | Deferred — fix stream on #186 |
-| PL-27 | Deferred — fix stream on #186 |
-| PL-28 | Deferred — fix stream on #186 |
-| PL-29 | Deferred — fix stream on #186 |
-| PL-30 | Deferred — fix stream on #186 |
-| PL-31 | Deferred — fix stream on #186 |
-| PL-32 | Deferred — fix stream on #186 |
-| PL-33 | Deferred — fix stream on #186 (with #168) |
+Second gate, 2026-09-24 (audit #258 PL-015): the fix stream on #186 closed every item, and #186 is closed completed with a ticked box per item; the third column records each resolution with its commit, taken from those boxes and the commit log (`git log --grep`), so the table says what the tracker says. The YAML index below carries the same word per item, which `tools/lint-audit-artifacts` now compares against this column.
+
+| Item | Outcome (2026-09-14) | Outcome (2026-09-24, audit #258 PL-015) |
+| --- | --- | --- |
+| PL-01 | Deferred — fix stream on #186 (client patch 005 + upstream draft) | Resolved -- patch 005 `889a59e208` |
+| PL-02 | Deferred — fix stream on #186 (client patch 006 / ctl) | Resolved -- patch 006 `faf1467de3` + ctl `1159fd29c0` |
+| PL-03 | Deferred — fix stream on #186 | Resolved -- ctl `1159fd29c0` |
+| PL-04 | Deferred — fix stream on #186 | Resolved -- ctl `1159fd29c0` |
+| PL-05 | Deferred — fix stream on #186 | Resolved -- harness case t `2a3169b7a5` |
+| PL-06 | Deferred — fix stream on #186 (with #183) | Resolved -- ES `f69ede142` |
+| PL-07 | Deferred — fix stream on #186 | Resolved -- #241, ES `acd7a6fee` (D-UI-078: the foreground pass is bounded by CANCEL; the leavable page of ES `d86754c57`, 2026-09-14, was reversed 2026-09-21) |
+| PL-08 | Deferred — fix stream on #186 (with #183) | Resolved -- ES `f80083a19`, `29b5d6fdc` |
+| PL-09 | Deferred — fix stream on #186 | Resolved -- ES `17cc3ce82`, `f054fef73` |
+| PL-10 | Deferred — fix stream on #186 (the sixth candidate's frames, #184) | Resolved -- `15d4bfe442` (the RC-6 frames under docs/qa-frames) |
+| PL-11 | Deferred — fix stream on #186 (with #168) | Resolved -- the fork's draft `58ce7d1349`, its backgrounding sentence corrected under #258 PL-007; the rocknix.org PR itself is #42's |
+| PL-12 | Deferred — fix stream on #186 (with #168) | Resolved -- patch 008 `12484e492c` |
+| PL-13 | Deferred — fix stream on #186 | Resolved -- `4e11497aa7` |
+| PL-14 | Deferred — fix stream on #186 | Resolved -- `eeda543cdc` |
+| PL-15 | Deferred — fix stream on #186 | Resolved -- ctl `1159fd29c0` + ES `dd50866f4` |
+| PL-16 | Deferred — fix stream on #186 | Resolved -- ctl `1159fd29c0` |
+| PL-17 | Deferred — fix stream on #186 | Resolved -- ctl `1159fd29c0` |
+| PL-18 | Deferred — fix stream on #186 | Resolved -- `3875accc81` |
+| PL-19 | Deferred — fix stream on #186 | Resolved -- tracker edits of 2026-09-14 recorded on #186 (#173, #179, #163 amended; the milestone on #179 #180 #183 #184) |
+| PL-20 | Deferred — fix stream on #186 (with #168) | Deferred -- #168 (upstream list, 2026-09-21) |
+| PL-21 | Deferred — fix stream on #186 | Resolved -- `01b78bc741` |
+| PL-22 | Deferred — fix stream on #186 (with #168) | Resolved -- ctl `1159fd29c0` (the header names the schema); the version guard is #168's item 12 |
+| PL-23 | Deferred — fix stream on #186 | Resolved -- patch 007 `be3db49acb` + ctl `1159fd29c0` |
+| PL-24 | Deferred — fix stream on #186 | Resolved -- ctl `1159fd29c0` + ES `fb5f56c7f` |
+| PL-25 | Deferred — fix stream on #186 (with #168) | Resolved -- patch 005 `889a59e208` |
+| PL-26 | Deferred — fix stream on #186 | Resolved -- ctl `1159fd29c0` + ES `22044d604` |
+| PL-27 | Deferred — fix stream on #186 | Resolved -- ES `70023f5fc` |
+| PL-28 | Deferred — fix stream on #186 | Resolved -- ctl `1159fd29c0` |
+| PL-29 | Deferred — fix stream on #186 | Resolved -- `9a2c9228aa` |
+| PL-30 | Deferred — fix stream on #186 | Resolved -- ctl `1159fd29c0` |
+| PL-31 | Deferred — fix stream on #186 | Resolved -- `3d8e8044ee` |
+| PL-32 | Deferred — fix stream on #186 | Resolved -- ctl `1159fd29c0` |
+| PL-33 | Deferred — fix stream on #186 (with #168) | Resolved -- patch 009 `109ad8706f` |
