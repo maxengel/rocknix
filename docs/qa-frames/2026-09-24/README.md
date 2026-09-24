@@ -80,3 +80,24 @@ from vm-qa run 24 (`qa-a84fce38a6-webdav-a-20260924-0424`): the SAVE STATE MANAG
 on the Game Boy fixture, the third of the three walks #252 box 3 names (nes and
 fbn were filed on 2026-09-23). `frame-diff` compared all three against the
 `443028ff7a` baseline with 0 boxes.
+
+## #258 PL-019 -- a screenshot turns the moment its record is written, without a restart (guest d, 640x480, `c8609558d4`)
+
+A vertical game the tables do not know (`fbneo/vertprobe.zip`, a stub) and
+its screenshot (`screenshots/vertprobe-260901-120300.png`, the raw
+landscape capture of a vertical board: the green block on the left). The
+SCREENSHOTS list and the viewer framed with no record; then
+`turns=1` written by hand over ssh to `savestates/fbn/vertprobe.rotation`
+(the synthetic line); the same list and viewer framed again with the same
+interface process (`pidof emulationstation` 6518 before and after).
+
+| Frame | What it shows |
+| --- | --- |
+| `258-pl019-screenshot-list-before-record-640x480-c8609558d4.png` | the list's picture untransformed, the block on the left |
+| `258-pl019-screenshot-viewer-before-record-640x480-c8609558d4.png` | the viewer the same |
+| `258-pl019-screenshot-list-after-record-same-process-640x480-c8609558d4.png` | after the record: the picture upright, the block at the bottom -- no restart |
+| `258-pl019-screenshot-viewer-after-record-same-process-640x480-c8609558d4.png` | the viewer upright |
+
+On `a84fce38a6` and before, the same steps would have shown the first pair
+twice: the screenshot cache held the Transform it was built with until the
+process ended (audit #258 PL-019; ES `4fd019f04`).
