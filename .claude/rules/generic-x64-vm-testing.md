@@ -335,6 +335,15 @@ things that cost a cycle each before they were written down:
 - **`vm-serial wait` returns at once if an ES is still up.** Right after
   `reboot` the old EmulationStation is still running for several seconds, so
   "ready after ~0s" means nothing; check that `uptime` has reset first.
+- **A press count is a claim about the page's order, and the manager's
+  order moves.** The SAVE STATE MANAGER sorts its tiles by slot under DO NOT
+  INCREMENT and by date, newest first, under INCREMENT PER SAVE
+  (`GuiSaveState.cpp:239`), so "two rights is SLOT 1" was true on one run and
+  landed on AUTO SAVE the next, once a save had changed the dates. Arrange
+  the files so the tile you want is the last one and press past the end (the
+  grid does not wrap), or read the selection from a frame before A; and let
+  the proof read back what was launched (`-e <slot>`, the appendconfig)
+  rather than trust the presses (#209, 2026-09-23).
 - **A screen that looks like the previous one is not proof the key was
   ignored.** Check `pgrep emulationstation` before re-driving input — an
   abort()ed ES restarts to the carousel, which looks the same.
