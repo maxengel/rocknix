@@ -14,13 +14,27 @@ NMCLI="$(command -v nmcli 2>/dev/null)"
 ### Usage:
 ###     wifictl command [ssid] [psk]
 ###
+### For the interface's network rows (fork #191), reading NetworkManager
+### rather than the wifi.ssid setting:
+###     wifictl current           the network joined now; nothing and exit 1 when none,
+###                               exit 2 when NetworkManager could not be asked
+###     wifictl saved             the remembered networks, one per line: <name><TAB>active|saved
+###     wifictl forget <name>     forget one: prints "forgotten", then "disconnected" on a
+###                               second line when it was the one in use; exit 1, nothing
+###                               printed, when it is not a remembered network or the delete failed
+###     wifictl join <name>       join a saved network with the key NetworkManager holds for it
+###                               (the picker's press on a SAVED row): prints "joined" once its
+###                               profile is active and moves wifi.ssid / wifi.key onto it; exit 1,
+###                               nothing printed, when it is not a saved network or the
+###                               activation failed; exit 2 when NetworkManager could not be asked
+###
 
-IWD_AP_CFG_DIR="/storage/.cache/iwd/ap"
 WIFI_TYPE=$(get_setting wifi.adhoc.enabled)
 NETWORK_ADDRESS="192.168.80"
 ADHOC_CLIENT_ID=$(get_setting wifi.adhoc.id)
+[ -z "${ADHOC_CLIENT_ID}" ] && ADHOC_CLIENT_ID="1"
+NETPLAY_SSID="NETPLAY_AP"
 WIFI_DEV="$(ls /sys/class/net | grep -m1 ^wlan)"
-DEFAULT_CHAN="6"
 
 # Exit the script if the WiFi device isn't available
 [ -z "${WIFI_DEV}" ] && exit 0
@@ -32,14 +46,8 @@ PSK="${3:-$(get_setting wifi.key 2>/dev/null)}"
 COUNTRY="${4:-$(get_setting wifi.country | tr -d '[:space:]' 2>/dev/null)}"
 
 if [ "${WIFI_TYPE}" = "1" ]; then
-  SSID="NETPLAY_AP"
+  SSID="${NETPLAY_SSID}"
   PSK="deadbeef"
-fi
-
-ADHOC_CHAN=$(get_setting wifi.adhoc.channel)
-if [ -z "${ADHOC_CHAN}" ]; then
-  ADHOC_CHAN="${DEFAULT_CHAN}"
-  set_setting wifi.adhoc.channel ${DEFAULT_CHAN}
 fi
 
 ###
@@ -86,33 +94,52 @@ connect_wifi() {
 
 create_adhoc() {
   wait_for_wifi
-  "${NMCLI}" device set "${WIFI_DEV}" managed no >/dev/null 2>&1
+  # NetworkManager drives iwd into AP mode itself (Device.Mode + AP.Start).
+  # Switching the mode behind its back only makes NM force the device back to
+  # station mode, so the netplay AP has to be a NetworkManager connection.
+  # No DHCP: the clients derive their address from the local play ID.
+  "${NMCLI}" connection delete id "${SSID}" >/dev/null 2>&1
+  "${NMCLI}" connection add type wifi ifname "${WIFI_DEV}" con-name "${SSID}" ssid "${SSID}" \
+    802-11-wireless.mode ap \
+    802-11-wireless.band bg \
+    802-11-wireless-security.key-mgmt wpa-psk \
+    802-11-wireless-security.psk "${PSK}" \
+    ipv4.method manual ipv4.addresses "${NETWORK_ADDRESS}.${ADHOC_CLIENT_ID}/24" \
+    ipv6.method disabled || return 1
+  "${NMCLI}" -w 30 connection up id "${SSID}" || return 1
+}
 
-  # Create an iwd AP profile file
-  mkdir -p "${IWD_AP_CFG_DIR}"
-  cat <<EOF >"${IWD_AP_CFG_DIR}/${SSID}.ap"
-[General]
-Channel=${ADHOC_CHAN}
-DisableHT=true
-
-[Security]
-Passphrase=${PSK}
-
-[IPv4]
-Address=${NETWORK_ADDRESS}.${ADHOC_CLIENT_ID}
-Netmask=255.255.255.0
-Gateway=${NETWORK_ADDRESS}.${ADHOC_CLIENT_ID}
-EOF
-
-  iwctl device ${WIFI_DEV} set-property Mode ap
-  # Start the AP profile
-  iwctl ap ${WIFI_DEV} start-profile "${SSID}" 2>/dev/null
+connect_adhoc_client() {
+  destroy_adhoc
+  # Static lease: the netplay host runs no DHCP server, so the client
+  # address is derived from the local play ID. Autoconnect stays off so a
+  # vanished host doesn't keep the device from returning to ordinary
+  # networks; rejoining is an explicit wifictl connect (ES toggle).
+  "${NMCLI}" connection add type wifi ifname "${WIFI_DEV}" con-name "${SSID}" ssid "${SSID}" \
+    802-11-wireless-security.key-mgmt wpa-psk \
+    802-11-wireless-security.psk "${PSK}" \
+    ipv4.method manual ipv4.addresses "${NETWORK_ADDRESS}.${ADHOC_CLIENT_ID}/24" \
+    ipv6.method disabled connection.autoconnect no || return 1
+  # The iwd backend fails "connection up" instantly when the SSID is not in
+  # the scan cache yet, so make sure the host AP shows up first
+  for i in $(seq 1 15); do
+    "${NMCLI}" device wifi rescan ifname "${WIFI_DEV}" >/dev/null 2>&1
+    sleep 2
+    "${NMCLI}" -t -f SSID device wifi list ifname "${WIFI_DEV}" 2>/dev/null | grep -q "^${SSID}$" && break
+  done
+  "${NMCLI}" -t -f SSID device wifi list ifname "${WIFI_DEV}" 2>/dev/null | grep -q "^${SSID}$" || return 1
+  # The host may still be coming up
+  for i in $(seq 1 3); do
+    "${NMCLI}" -w 20 connection up id "${SSID}" && return 0
+    sleep 3
+  done
+  return 1
 }
 
 destroy_adhoc() {
-  iwctl ap ${WIFI_DEV} stop 2>/dev/null
-  rm -f "${IWD_AP_CFG_DIR}/${SSID}.ap" 2>/dev/null
-  "${NMCLI}" device set "${WIFI_DEV}" managed yes >/dev/null 2>&1
+  # Remove the netplay connection (host or client) so NM autoconnect
+  # can't resurrect it and the device returns to the ordinary networks
+  "${NMCLI}" connection delete id "${NETPLAY_SSID}" >/dev/null 2>&1
 }
 
 # Prefer the network currently in use for the next automatic connection. On
@@ -144,6 +171,101 @@ pin_wifi() {
     done
 }
 
+# What NetworkManager remembers and what it is joined to, for the interface
+# (fork #191). The setting wifi.ssid is the network the player configured
+# last; NetworkManager keeps a profile for every network the device has
+# joined and autoconnects to whichever remembered one is in range, so the
+# two are not the same network -- and NETWORK SETTINGS showed the setting as
+# though it were the connection. These read NetworkManager itself.
+#
+# nmcli -t separates fields with ':' and escapes a ':' or '\' inside a value
+# with a backslash. A network's name can carry either, so the fields that
+# cannot (TYPE, ACTIVE) are taken from the right, and the name is unescaped
+# once it stands alone.
+nm_unescape() {
+  sed 's/\\\(.\)/\1/g'
+}
+
+# The SSID the device is joined to now: the one access point NetworkManager
+# marks active, from the list it already holds (no rescan). Nothing and exit
+# 1 when the device is joined to none; exit 2 when NetworkManager could not
+# be asked, so a caller cannot read a silence as "not connected".
+current_wifi() {
+  local aps ssid
+  aps=$("${NMCLI}" -t -f ACTIVE,SSID device wifi list ifname "${WIFI_DEV}" --rescan no 2>/dev/null) || return 2
+  ssid=$(printf '%s\n' "${aps}" | sed -n 's/^yes://p' | head -n 1 | nm_unescape)
+  [ -n "${ssid}" ] || return 1
+  printf '%s\n' "${ssid}"
+}
+
+# Every network NetworkManager remembers: one line per wireless profile,
+# <name><TAB>active or <name><TAB>saved, in nmcli's order (the one in use
+# first). Wired and other profiles are not networks a player joined and are
+# left out. Exit 1 with nothing printed when NetworkManager could not be
+# asked -- an empty list and no list are different answers.
+saved_wifi() {
+  local profiles
+  profiles=$("${NMCLI}" -t -f NAME,TYPE,ACTIVE connection show 2>/dev/null) || return 1
+  printf '%s\n' "${profiles}" |
+    awk -F: 'NF >= 3 && $(NF-1) ~ /wireless/ {
+      name = $1; for (i = 2; i <= NF - 2; i++) name = name ":" $i
+      print name "\t" ($NF == "yes" ? "active" : "saved")
+    }' | nm_unescape
+}
+
+# Forget a remembered network: delete its profile, and say when that dropped
+# the connection. Prints "forgotten" once the profile is gone, then
+# "disconnected" on a second line when it was the one in use --
+# NetworkManager deactivates a profile as it deletes it, so the device is
+# off that network from this moment (autoconnect may then join another
+# remembered one in range). A name that is not a remembered wireless
+# network, a NetworkManager that cannot be asked, or a delete that fails:
+# nothing printed and exit 1, so a caller cannot read a refusal as done.
+# The name is matched whole, through the environment rather than awk -v,
+# which would read backslashes in it as escapes.
+forget_wifi() {
+  local name="${1}" rows state
+  [ -n "${name}" ] || return 1
+  rows=$(saved_wifi) || return 1
+  state=$(printf '%s\n' "${rows}" | NAME="${name}" awk -F'\t' '$1 == ENVIRON["NAME"] { print $2 }')
+  [ -n "${state}" ] || return 1
+  "${NMCLI}" connection delete id "${name}" >/dev/null 2>&1 || return 1
+  echo "forgotten"
+  case "${state}" in *active*) echo "disconnected" ;; esac
+  return 0
+}
+
+# Join a saved network by its profile, with the key NetworkManager holds --
+# the picker's press on a network the device has joined before (fork #191;
+# the maintainer's paradigm of 2026-09-15: the WI-FI SSID row is the network
+# you are on, the list behind it is what is in range, a saved one joins with
+# a press). `connect` would have deleted the profile and rebuilt it from the
+# WI-FI KEY setting, which holds the last key typed, for some other network.
+# Prints "joined" once the profile is active (at once when it already is),
+# then the settings wifi.ssid and wifi.key follow the profile, so the paths
+# that connect from the settings -- the WI-FI KEY row, the ENABLE WI-FI
+# switch, the restore wizard -- name the network the player is on; the key is
+# read from NetworkManager and never printed. pin_wifi then prefers this
+# network at the next boot and resume. A name that is not a saved wireless
+# network, or an activation that fails: nothing printed, exit 1. NetworkManager
+# not answering: exit 2, so a caller cannot read a silence as a refusal.
+join_wifi() {
+  local name="${1}" rows state psk
+  [ -n "${name}" ] || return 1
+  rows=$(saved_wifi) || return 2
+  state=$(printf '%s\n' "${rows}" | NAME="${name}" awk -F'\t' '$1 == ENVIRON["NAME"] { print $2 }')
+  [ -n "${state}" ] || return 1
+  if [ "${state}" != "active" ]; then
+    "${NMCLI}" -w 90 connection up id "${name}" >/dev/null 2>&1 || return 1
+  fi
+  psk=$("${NMCLI}" -s -g 802-11-wireless-security.psk connection show id "${name}" 2>/dev/null)
+  set_setting wifi.ssid "${name}"
+  set_setting wifi.key "${psk}"
+  pin_wifi
+  echo "joined"
+  return 0
+}
+
 has_ap_mode() {
   wait_for_wifi
 
@@ -168,18 +290,17 @@ case "${1}" in
   connect)
     if [ "${WIFI_TYPE}" = "1" ] && \
        [ "${ADHOC_CLIENT_ID}" = "1" ]; then
-      create_adhoc >/dev/null 2>&1
+      create_adhoc
+    elif [ "${WIFI_TYPE}" = "1" ]; then
+      connect_adhoc_client
     else
-      destroy_adhoc >/dev/null 2>&1
-      # Allow NetworkManager time to re-initialize the device after setting managed=yes
-      sleep 3
-      connect_wifi >/dev/null 2>&1
+      destroy_adhoc
+      connect_wifi
     fi
   ;;
   disconnect)
     if [ "${WIFI_TYPE}" = "1" ]; then
-      destroy_adhoc >/dev/null 2>&1
-      iwctl ap ${WIFI_DEV} stop 2>/dev/null
+      destroy_adhoc
     else
       "${NMCLI}" device disconnect "${WIFI_DEV}" >/dev/null 2>&1
     fi
@@ -204,5 +325,17 @@ case "${1}" in
     "${NMCLI}" dev wifi rescan ifname "${WIFI_DEV}" 2>/dev/null
     sleep 2
     list_wifi
+    ;;
+  current)
+    current_wifi
+    ;;
+  saved)
+    saved_wifi
+    ;;
+  forget)
+    forget_wifi "${2}"
+    ;;
+  join)
+    join_wifi "${2}"
     ;;
 esac

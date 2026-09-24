@@ -1,0 +1,63 @@
+image_cache: an image is published only when it is whole and is an image
+
+download_static_image wrote response.read() to a temp file and renamed it
+into place. The rename is atomic, so a killed process cannot publish half a
+file -- but a short read can: nothing compared the bytes against the length
+the server declared, so a connection that dropped mid-body was published
+under the asset's real name, and from then on every existence check called
+it cached. target.exists() here, resolve_cached_static_asset in the proxy,
+and ROCKNIX's own image pass all test presence, never content, so a
+truncated badge or icon stays in the cache until something deletes it by
+hand -- and offline it is served, whole or not.
+
+Two tests before the rename that makes the file the cache's answer: the
+Content-Length the server declared, when it declared one, and the PNG
+signature with an IEND trailer in the last twelve bytes for a .png path. A
+body that fails either is dropped and the asset stays missing, which the
+callers already handle -- a miss is re-requested while online and answered
+404 at once while offline (ROCKNIX patch 012). Nothing is retried here:
+best-effort is this function's contract, and a missing asset is a state the
+cache is allowed to be in, while a damaged one that claims to be cached is
+not.
+
+Checked on a ROCKNIX guest: a fixture that closes the connection after half
+the body leaves no file where it used to leave a truncated PNG, and a
+second pass fetches the asset whole.
+
+Written for ROCKNIX (fork issue maxengel/rocknix#213). Offered upstream
+as-is.
+
+--- a/linux/raofflineproxy/image_cache.py
++++ b/linux/raofflineproxy/image_cache.py
+@@ -179,7 +179,30 @@
+             )
+             try:
+                 with urllib.request.urlopen(request, timeout=10) as response:
+-                    tmp.write_bytes(response.read())
++                    declared = response.headers.get("Content-Length")
++                    payload = response.read()
++                # An image is published only when it is whole and is an
++                # image. response.read() returns what arrived, so a
++                # connection that drops mid-body used to be written under
++                # the asset's real name and every later existence check --
++                # this function's own target.exists(), the proxy's
++                # resolve_cached_static_asset, ROCKNIX's image pass -- called
++                # it cached for good. Two cheap tests, before the rename that
++                # makes it the cache's answer: the length the server declared
++                # if it declared one, and the PNG signature with an IEND
++                # trailer. A body that fails either is dropped and the asset
++                # stays missing, which is a state the callers already handle
++                # (a miss is re-requested, or answered 404 at once offline).
++                # Written for ROCKNIX (fork maxengel/rocknix#213).
++                if declared is not None and declared.isdigit() and len(payload) != int(declared):
++                    raise ValueError(
++                        f"short read: {len(payload)} of {declared} bytes"
++                    )
++                if image_path.lower().endswith(".png") and not (
++                    payload.startswith(b"\x89PNG\r\n\x1a\n") and b"IEND" in payload[-12:]
++                ):
++                    raise ValueError("not a whole PNG")
++                tmp.write_bytes(payload)
+                 os.replace(tmp, target)
+                 tmp = None
+             finally:

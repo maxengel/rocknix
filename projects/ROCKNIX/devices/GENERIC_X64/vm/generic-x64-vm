@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import plistlib
+import re
 import shlex
 import shutil
 import subprocess
@@ -106,6 +107,45 @@ def qemu_command(profile, args):
 
     monitor = Path(args.monitor).resolve()
 
+    # Headless (a build host with no desktop): virtio-gpu-gl-pci refuses
+    # -display none, so the GL-less device stands in; a VNC display on
+    # loopback keeps a scanout committed, which is what makes the monitor's
+    # screendump return a frame rather than black; the serial console moves
+    # from stdio to a unix socket so a script can hold a root shell in the
+    # guest (SSH is off on a fresh image); and a pidfile makes stopping the
+    # VM a kill by PID rather than a pkill by pattern (which has killed the
+    # shell running it). Unix socket paths over 107 bytes fail to bind, and a
+    # session scratch directory is longer than that -- keep them under /tmp.
+    display_device = display["device"]
+    display_arg = args.display
+    vnc_args = []
+    serial_arg = "stdio"
+    pidfile_args = []
+    daemonize_args = []
+    if args.headless:
+        display_device = display_device.replace("-gl-", "-")
+        display_arg = "none"
+        vnc_args = ["-vnc", f"127.0.0.1:{args.vnc}"]
+        serial = Path(args.serial).resolve()
+        serial.unlink(missing_ok=True)
+        serial_arg = f"unix:{serial},server,nowait"
+        pidfile_args = ["-pidfile", str(Path(args.pidfile).resolve())]
+        for sock in (monitor, serial):
+            if len(str(sock).encode()) > 107:
+                raise ValueError(f"unix socket path too long to bind (>107 bytes): {sock}")
+        if args.daemonize:
+            daemonize_args = ["-daemonize"]
+    elif args.daemonize:
+        raise ValueError("--daemonize needs --headless (a windowed QEMU has nowhere to go)")
+    # The guest's preferred mode. virtio-gpu-pci and virtio-gpu-gl-pci both
+    # take xres/yres, which set the EDID's preferred mode; the guest's DRM
+    # picks it and EmulationStation renders at it, so a handheld's 640x480
+    # is a VM check first (fork #97, D-QA-007). Without the flag QEMU's own
+    # default stands (1280x800), as before.
+    if args.res:
+        xres, yres = args.res
+        display_device = f"{display_device},xres={xres},yres={yres}"
+
     # SSH keeps a loopback bind unless --net lan is given (the image ships
     # a well-known root password).
     ssh_bind = "0.0.0.0" if args.net == "lan" else "127.0.0.1"
@@ -115,12 +155,19 @@ def qemu_command(profile, args):
     # port, and a second VM would fail to bind it. The port the guest is told
     # about has to move with it, or cloud_setup would print an SSH command
     # pointing at the other machine.
-    if args.ssh_port:
+    if args.ssh_port or args.mac:
         network = dict(network)
+    if args.ssh_port:
         network["ssh_host_port"] = args.ssh_port
         advertised = dict(network.get("advertised_ssh") or {})
         advertised["host_port"] = args.ssh_port
         network["advertised_ssh"] = advertised
+    # And its own MAC. NAT keeps two guests on the profile's address from
+    # colliding on any network, but cloud_device_id hashes the permanent MAC,
+    # so to the cloud they were one device (fork #91): the same folder, the
+    # same manifest, and two-device fixtures agreeing with themselves.
+    if args.mac:
+        network["mac_address"] = args.mac
     monitor.unlink(missing_ok=True)
 
     command = [
@@ -155,9 +202,10 @@ def qemu_command(profile, args):
         "-vga",
         "none",
         "-device",
-        display["device"],
+        display_device,
         "-display",
-        args.display,
+        display_arg,
+        *vnc_args,
         "-netdev",
         (
             f"bridge,id=net0,br={args.bridge}"
@@ -203,7 +251,9 @@ def qemu_command(profile, args):
             else []
         ),
         "-serial",
-        "stdio",
+        serial_arg,
+        *pidfile_args,
+        *daemonize_args,
     ]
     if profile["rng"]:
         command += [
@@ -212,6 +262,12 @@ def qemu_command(profile, args):
             "-device",
             "virtio-rng-pci,rng=rng0",
         ]
+    # A hardware watchdog, so the guest mirrors a handheld: systemd arms it
+    # (RuntimeWatchdogSec) and a kernel that stops scheduling is reset by it
+    # rather than left frozen (fork #104). i6300esb is QEMU's standard one and
+    # the kernel the image ships has its driver; "reset" is what the SoC's
+    # watchdog does on a device.
+    command += ["-device", "i6300esb", "-action", "watchdog=reset"]
     return command
 
 
@@ -430,6 +486,23 @@ def add_qemu_options(parser):
     )
     parser.add_argument("--monitor", default="/tmp/rocknix-qemu-monitor.sock")
     parser.add_argument(
+        "--headless",
+        action="store_true",
+        help=(
+            "no window: virtio-gpu-pci with -display none, a VNC scanout on "
+            "loopback (--vnc), the serial console on a unix socket (--serial) "
+            "and a --pidfile; for build hosts without a desktop"
+        ),
+    )
+    parser.add_argument("--serial", default="/tmp/rocknix-qemu-serial.sock", help="serial console socket with --headless")
+    parser.add_argument("--vnc", type=int, default=9, help="VNC display number with --headless (default: 9, port 5909)")
+    parser.add_argument("--pidfile", default="/tmp/rocknix-qemu.pid", help="QEMU pidfile with --headless")
+    parser.add_argument(
+        "--daemonize",
+        action="store_true",
+        help="with --headless: return once the VM is up, leaving it running (stop it with kill $(cat pidfile))",
+    )
+    parser.add_argument(
         "--ssh-port",
         type=int,
         default=None,
@@ -439,9 +512,49 @@ def add_qemu_options(parser):
             "two at once for multi-device testing"
         ),
     )
+    parser.add_argument(
+        "--mac",
+        type=mac_address,
+        default=None,
+        help=(
+            "the guest NIC's MAC address (default: the profile's). Give a second "
+            "VM its own: cloud_device_id hashes the permanent MAC, so two guests "
+            "on the profile's address are one device to the cloud"
+        ),
+    )
+    parser.add_argument(
+        "--res",
+        type=resolution,
+        default=None,
+        metavar="WxH",
+        help=(
+            "the guest display's preferred mode, e.g. 640x480 -- appended to the "
+            "virtio-gpu device as xres/yres, for the desktop and headless variants "
+            "alike (default: QEMU's own, 1280x800). Check a handheld panel's look "
+            "on the VM first"
+        ),
+    )
     parser.add_argument("--ovmf-code")
     parser.add_argument("--ovmf-vars-template")
     parser.add_argument("--ovmf-vars")
+
+
+def resolution(value):
+    """WxH, both decimal and nonzero, as the (W, H) pair. QEMU would reject a
+    malformed xres= only once it starts; argparse says no before that."""
+    m = re.fullmatch(r"(\d+)x(\d+)", value)
+    if not m or "0" in (m.group(1).lstrip("0") or "0", m.group(2).lstrip("0") or "0"):
+        raise argparse.ArgumentTypeError(f"not a resolution (WxH, e.g. 640x480): {value!r}")
+    return int(m.group(1)), int(m.group(2))
+
+
+def mac_address(value):
+    """Six hex pairs joined by colons. QEMU rejects anything else only once it
+    starts, after the sockets and pidfile have been claimed; argparse says no
+    before that."""
+    if not re.fullmatch(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}", value):
+        raise argparse.ArgumentTypeError(f"not a MAC address (aa:bb:cc:dd:ee:ff): {value!r}")
+    return value
 
 
 def main():

@@ -15,7 +15,7 @@ below is verified working there unless a line says otherwise. Other targets
 build from the same sources but have not been run — that is the main thing this
 document is asking for help with.
 
-**Base:** `upstream/next` as of 2026-09-04. rclone moves **1.71.0 → 1.75.0**
+**Base:** `upstream/next` as of 2026-09-04. rclone moves **1.71.0 → 1.75.1**
 (S3 multipart streaming improvements, and the version our checksums pin).
 
 ---
@@ -70,8 +70,10 @@ config`. That is now a fallback rather than the path.
 
 - **Upload, download and two-way sync**, in `GAME SETTINGS > CLOUD SETTINGS`,
   each showing when it last ran and whether it worked.
-- **Sync at startup**, once the network is actually up — it waits for
-  connectivity rather than failing at boot.
+- **Sync at startup**, run by EmulationStation with the toggle on and shown
+  on the same progress card as the game-exit sync (since 2026-09-09, #94;
+  it used to run headless from the boot autostart, waiting for the network
+  and then saying nothing).
 - **Sync when you exit a game**, reported on screen. It used to run silently in
   the background, which is indistinguishable from not running at all.
 - **Two-way sync never deletes.** The newest copy of each save is kept on both
@@ -367,7 +369,7 @@ Everything else is handled without asking:
   preceded it, and the pre-`CONTENT_REMOTE` root — so a library that has not been
   re-uploaded still downloads. Backup only ever writes the current shape, so
   libraries migrate themselves as they are used.
-- **After a whole-device restore**, the device offers `FINISH RESTORE SETUP` to
+- **After a whole-device restore**, the device offers `FINISH RESTORE PROCESS` to
   re-enter the passwords a backup deliberately does not carry. It reappears at
   next startup if dismissed.
 
@@ -1020,3 +1022,1267 @@ and every later `set_setting` waited on it until reboot.
   session; RetroArch's own quit (its hotkey or menu) exits 0 and is
   unaffected. Upstream defect; offered upstream as its own change once it
   has run in a built image.
+
+## The settings phase is one item, named SETTINGS (2026-09-09)
+
+- `cloud_backup` and `cloud_restore` announce the settings-archive phase as
+  `>>> unit SETTINGS||`; it read `SETTINGS BACKUP`. EmulationStation now
+  announces the same label itself before `backuptool` writes the archive, and
+  the transfer page folds a repeated identical label into one item, so the
+  archive's write and its transfer read as one item, named with the D-UI-022
+  tier word (#95). The saves phase is still `>>> unit SAVES||`; the content
+  scripts' `>>> unit <system>|i|n` are unchanged.
+- **The scripts can announce units the picker did not list.** Under
+  `--selected`, `cloud_content_backup` adds `bios` whenever the tier moves ROMs
+  and the device has a BIOS folder, and drops a selected system this device has
+  no content for; `cloud_content_restore --selected` adds `bios` whenever the
+  cloud has one. Game content is never a unit of its own — the scraper's
+  folders and the game list move inside the system's unit. So the page's
+  ITEM i OF n starts from the picker's count and is refined from the scripts'
+  own `n` (#95).
+- **Every announced `n` is the number of announcements the run makes.** The
+  match flow (`cloud_content_restore --match --apply`) numbered its items
+  across every chosen system but announced only the ones with work, so a run
+  over three systems ended on ITEM 2 OF 3. It now announces every chosen
+  system, before its own dry run, and says "Nothing to remove from X: it
+  already matches the cloud" for one with nothing to do — that is the item's
+  outcome, not a reason to hide it, and counting the work first would have
+  held the page on WORKING with no item through one dry run per system. The
+  `--selected` loops in both content scripts announce every unit they were
+  built from and skip none. `tools/cloud-round-trip` now checks the protocol
+  on each of those three runs — one `n`, equal to the number of markers, `i`
+  running 1..n — and runs a match with a system that exists nowhere to see it
+  announced.
+- Verified: the label by grep over the tree (nothing in `tools/` or `docs/`
+  parsed the old one); the page's behaviour is the EmulationStation half of
+  #95, checked on the VM with it.
+
+## The startup sync is EmulationStation's, and visible (2026-09-09)
+
+- `autostart/102-cloud-saves` no longer runs the boot pair. With SYNC SAVES
+  DURING STARTUP on, EmulationStation runs `cloud_restore --yes --method=copy
+  --update --saves-only` and then `cloud_backup` the same way, through the
+  progress card the game-exit sync uses, so a player sees it run and how it
+  ended, and a game cannot launch alongside it (the gate that already ships,
+  D-CLOUD-038). The autostart's headless copy — a ping loop against
+  `google.com`, then both scripts with their output discarded — left no sign on
+  screen and sat outside that gate; kept, it would only have raced the visible
+  run for the transfer lock and reported SKIPPED into `/dev/null` (#94).
+- The `cloud_capture --full` pass still runs from the autostart, gated on a
+  cloud-saves toggle and detached, exactly as before (D-CLOUD-064).
+- **Upgrade**: nothing to migrate. The toggle key is unchanged; a device with it
+  on gets the visible sync at its next boot. What changes for a player: the
+  sync starts a few seconds later (after EmulationStation is up, when the
+  network is likelier to be there), and it shows.
+- Verified: the autostart statically (CAP10 (d) still finds the `--full` gate);
+  the EmulationStation half is #94's, checked on the VM with it.
+
+## `last-capture` keeps one line per mode (2026-09-09)
+
+- `cloud_capture`'s durable stamp `/storage/.cache/cloud_sync/last-capture`
+  held one line, rewritten on every run, so the boot `--full` pass wrote over
+  the record of the last game exit (RG SP, 2026-09-09: an exit at 08:19Z,
+  `full - emu-exit=? -/-` in its place after the evening's boot). It now holds
+  **one line per mode** — `exit`, `rescan`, `full`, `retire`, and `usage` for
+  a bad invocation — each replaced only by a run of the same mode
+  (D-CLOUD-070, #94). The fields are unchanged; a reader picks its line by the
+  third field with any `!card` marker stripped, and finds the latest run of
+  any mode by the largest first field. The file is assembled in a temp file
+  and moved into place, so a reader never sees a torn stamp, and lines with
+  fewer than three fields are dropped, so it can never grow past one line per
+  mode.
+- **Upgrade**: a stamp from an older build is a single line and is read as its
+  mode's line; the first run of another mode adds a line beside it rather than
+  replacing it. Nothing to migrate.
+- Verified: `tools/cloud-capture-stamp-test` lifts `finish()` out of the
+  script and runs the sequence with no device — 15 PASS against this build, 8
+  FAIL against the previous `finish()` (one line, overwritten); the harness's
+  CAP12 asserts the same on the VM (not yet run at the time of writing).
+
+## The VM runs at a handheld's panel size (2026-09-09)
+
+- `generic-x64-vm run --res WxH` (and `qemu-args`) appends `xres=W,yres=H` to
+  the virtio-gpu device — `virtio-gpu-gl-pci` on a desktop, `virtio-gpu-pci`
+  under `--headless` — so the guest's preferred mode is the panel's and
+  EmulationStation renders at it. Without the flag the guest is QEMU's
+  1280×800 as before; `--res 640` and `--res 0x480` are refused before QEMU
+  starts (#97).
+- Consequence for QA (D-QA-007): the "640×480 look" boxes on #85, #94 and
+  #95 are VM checks first and a handheld confirmation second;
+  `tools/vm-visual-qa` and the walks need no change, a `screendump` comes back
+  at the guest's size.
+- Verified: `qemu-args --headless --res 640x480` prints `-device
+  virtio-gpu-pci,xres=640,yres=480`; a boot at that size is the next VM cycle's.
+
+## A phase failure leaves the scripts as 1, never as rclone's 3 or 4 (#99)
+
+`cloud_backup`, `cloud_restore`, `cloud_content_backup` and `cloud_content_restore`
+exit 3 when another cloud sync holds the lock and 4 when there is no network,
+and EmulationStation names those (`SKIPPED - ANOTHER CLOUD SYNC IS RUNNING`,
+`SKIPPED - NO NETWORK CONNECTION`). A failed phase used to carry rclone's own
+exit code up to the script's exit, and rclone's 3 is "directory not found":
+on the VM a restore against a cloud whose Saves folder did not exist yet ended
+`SKIPPED - ANOTHER CLOUD SYNC IS RUNNING` over `5 FILES RESTORED`. Both
+sentinels are raised by plain exits before any phase runs, so a 3 or 4 that
+reaches the final exit is rclone's and now leaves as 1 (a failure), with a WARN
+line in the log. The proper fix -- sentinel codes rclone never uses, changed in
+the scripts, EmulationStation, the autostart and the harness together -- is
+#99. Harness: the single-device suite now restores against the empty endpoint
+first and asserts exit 1. Player-facing: a run that could not reach a folder
+says FAILED, not that a sync was running.
+
+## The transfer page names the item first; the picker says what is not yet on the far side (2026-09-09)
+
+On BACKING UP TO THE CLOUD and RESTORING FROM THE CLOUD the four rows under the
+title now read, in every phase alike: the item (`BIOS`, `NES`, `SAVES`,
+`SETTINGS`), `ITEM i OF n` counted across the whole run rather than per script,
+what it is doing on that item (`TRANSFERRING <file>` with its progress where the
+line has room, `CHECKING 120 OF 400 FILES`, and `WRITING THE SETTINGS
+ARCHIVE...` while backuptool works, where the settings item used to sit on
+PREPARING... over a spinner), and that item's files and bytes. The bar, elapsed
+time, notice and the done page are as before (#95, D-UI-026). EmulationStation
+announces the settings item before backuptool runs and emits a `>>> doing
+archive` marker; the scripts' label for that phase is `SETTINGS` to match. The
+page counts items itself: a repeated identical label is the same item, `n`
+starts from the picker's selection plus the saves and settings phases and is
+refined from the content script's own count (BIOS coming along on a restore
+turned `ITEM 1 OF 3` into `ITEM 3 OF 4`), and never reads `i > n`. Every size
+and speed rclone prints is re-rendered at `sizeLabel`'s precision (`16.5 MB OF
+16.5 MB · 100% · 520 KB/S`), which is what lets row 4 fit a 640×480 panel; and
+`LEFT` is finally appended to the time left, which a four-byte separator had
+kept off the page since the row existed.
+
+On CONTENT TO BACK UP / CONTENT TO RESTORE each system's line quantifies only
+what this run would move -- `2.9 MB NOT YET IN YOUR CLOUD · 1 FILE`, or `NOTHING
+NEW TO BACK UP`; the restore page reads `NOT YET ON THIS DEVICE` / `NOTHING NEW
+TO RESTORE` -- with no total anywhere on the row, since a size beside a system
+read as an amount about to move (#85 item 1 second pass, D-UI-027).
+
+Verified on the GENERIC_X64 VM at 1280×800 and 640×480 (frames under
+`x64-all-20260909-d8bc358248/shots/`); ES `test/qa-integration` `41b7b8f10`;
+ships in H700 `ef43f2ce4b`. rocknix.org: the cloud-sync page still owes the
+whole native flow (#42).
+
+## `wait_lock` clears a stale settings lock and names a long holder (#98)
+
+Every `get_setting` and `set_setting` on the device, and with them
+`runemu.sh`, `backuptool`, the autostarts and the cloud scripts, take
+`/tmp/.system.cfg.lock` through `wait_lock()` in `001-functions`. #90 made
+*release* reliable for a holder that ends normally; a holder that is
+SIGKILLed, OOM-killed or dies with its terminal cannot run its trap, and
+`wait_lock` retried the create every second forever without reading the pid
+the file carries. On the VM a File Manager chain killed from outside left the
+file behind and one `set_setting cloudsaves.startup 1` took 4 min 43 s to
+return, stalling the `systemctl restart emustation` behind it; nothing named
+the holder, because nothing read it.
+
+- When the create fails, `wait_lock` now reads the pid in the file. A pid
+  `kill -0` rejects, an empty file or one that is not a number is stale: the
+  file is removed -- only if a re-read just before the `rm` still shows the
+  same content, which shrinks the race with a holder that released and a
+  newcomer that took it in between, without closing it -- one line goes to
+  the system log (`logger -t wait_lock "removed stale lock ... held by pid
+  N"`; stderr if an image ever lacks `logger`), and the create is retried at
+  once. A live holder is waited on as before and never displaced; after 30
+  polls of the same holder its pid is logged once, so `journalctl -t
+  wait_lock` names what to look at. The noclobber create and the #90 trap are
+  untouched, and nothing in it is bash-only.
+- Residuals, accepted: a dead holder's pid reused by an unrelated live
+  process is waited on until that process exits (the 30 s line names it); a
+  holder SIGKILLed but not yet reaped is a zombie, which `kill -0` counts as
+  alive until its parent collects it; and a holder's own create is an empty
+  file for a few microseconds between open and write, which the re-read is
+  the only thing standing between and a theft.
+- **Upgrade**: nothing to migrate. `/tmp` is tmpfs and an update reboots, so
+  no stale lock crosses over; the first build to carry this clears one the
+  moment any caller meets it.
+- Verified: `tools/wait-lock-test` (fork-only, registered in the pre-push
+  guard) lifts the function out of any copy of `001-functions` and runs six
+  cases in a fresh bash under `timeout` -- a dead pid, a releasing live holder
+  (never stolen, waited out), a holder SIGKILLed mid-wait (taken within a poll,
+  logged with its pid), an empty file with no `logger` on PATH, garbage
+  content, and the 30 s line exactly once. Against `next`'s copy it fails 13
+  checks, every stale case hanging to the timeout; against this one all 21
+  pass. The VM and the handhelds see it in the next build.
+
+## The lock and no-network sentinels are 75 and 69, codes rclone cannot return (#99)
+
+The stopgap above (`28cc392b41`) remapped a 3 or 4 reaching the four scripts'
+final exit to 1. The proper fix moves the sentinels out of rclone's range:
+`take_cloud_lock` exits **75** (`EX_TEMPFAIL`, `EXIT_LOCK_HELD`) in
+`cloud_backup`, `cloud_restore`, `cloud_content_backup` and
+`cloud_content_restore`, and `cloud_backup`'s `check_network_link` exits **69**
+(`EX_UNAVAILABLE`, `EXIT_NO_NETWORK`). Both come from `sysexits.h`, sit above
+everything rclone returns (0-9) and below the `128+signal` range, and are
+defined once near the top of each script and used by name. The messages
+beside them are unchanged.
+
+- The remap is gone from all four scripts (`clean_exit`'s `case` in the two
+  saves scripts, the `case "${STATUS}"` before the final `exit` in the two
+  content scripts), so a phase failure passes rclone's code through as it did
+  before the stopgap -- and can no longer collide. `report_rclone_error` still
+  names rclone's 3 and 4 with rclone's meanings, which is what they now
+  always are.
+- Readers changed together: the four scripts; EmulationStation's exit-code
+  maps (`GuiCloudTransfer::update`, `ThreadedCloudSync::run`) and its own
+  startup-sync command, which exits 69 where it exited 4 -- the ES half, in
+  the ES repo, done in parallel; `tools/cloud-round-trip`, whose lock fixture
+  expects 75, whose no-route fixture expects 69, and whose restore against
+  the empty endpoint now asserts an exit that is not 0, 75 or 69 ("fails with
+  its own code, not as a sentinel"); `rclone-cloud-sync.md` and
+  `docs/es-menu-map.md`. `autostart/102-cloud-saves` never named a code, and
+  the harness's `WRITERS`/`BOOT_PAIR` name commands, not codes -- nothing to
+  change in either. The register rows and blindspot 33 keep the history as
+  written.
+- **Upgrade**: scripts and EmulationStation ship in one image, so no device
+  ever runs one side new and the other old; the codes change together at the
+  reboot that applies the update. The one mixed state is a development one:
+  scripts staged onto a running device by hand ahead of an image, as the QA
+  protocol does, against an ES that still reads 3 and 4 -- a lock skip then
+  shows FAILED rather than SKIPPED, and the converse for the other order.
+  Stamps: the scripts write no last-run stamp for a sentinel, so no
+  `last-backup`/`last-restore` anywhere holds a 3 or 4 that meant "skipped";
+  one holding rclone's 3 or 4 from a build before the stopgap was a real
+  failure and reads as FAILED, correctly. The ES-written `last-sync-<cause>`
+  stamps (D-CLOUD-072) can hold an rc of 3 or 4 from a sync the previous build
+  skipped; how the new ES renders those until the next sync replaces the
+  stamp is the ES side's to decide.
+- Still open from #99: whether a missing remote Saves folder on a device that
+  has never backed up is a warning rather than a failure (a misconfigured
+  folder name must still fail loudly).
+- Verified: on the host, `take_cloud_lock` lifted out of `cloud_backup` and
+  `cloud_content_restore` exits 75 with the lock held by another shell, and
+  `check_network_link` exits 69 with an `ip` that lists no routes and 0 with
+  the host's; `bash -n` on the four scripts; the harness compiles and lists.
+  The single-device suite on the VM, and the page's SKIPPED/FAILED wording
+  against the new ES, are the next build's checks.
+
+## Every rclone run is bounded, and a run the network took away says so (#103)
+
+The RG SP left the LAN a minute into its first startup sync on `d574edf975`,
+and the card sat at `COMPARING SAVE FILES WITH THE CLOUD 113 / 113` with the
+launch gate held (#101, #102). The scripts' *probes* had always run with
+`--contimeout 10s --timeout 20s --low-level-retries 1 --retries 1`; every
+real `rclone copy`/`sync`/`lsf` ran with `RCLONEOPTS`, which sets none of
+those, so rclone's defaults applied -- a 60 s connect timeout, a 5 minute
+idle timeout, 10 low-level retries, 3 whole-run retries -- and a link that
+dropped mid-run held the process for well over ten minutes.
+
+- **The bound.** A new config option, `RCLONE_NET_OPTS`, in both
+  `cloud_sync.conf` and `cloud_sync.conf.defaults` (`DEFAULT_RCLONE_NET_OPTS`),
+  shipped as `--contimeout 15s --timeout 30s --low-level-retries 2 --retries 1`.
+  `--timeout` is rclone's *idle* timeout -- it fires when no byte has moved for
+  that long, so a 1.4 GiB content restore that is moving is unaffected; it is
+  sized for a stalled link, not a slow one. The retry counts are low on
+  purpose: a run that fails on a transient blip is retried by the exit sync or
+  the next boot, and a manual run is rerun by the player, while ten low-level
+  retries on a dead link is what produced #102. On a dead link one operation
+  now gives up in about a minute (two 30 s stalls, or two 15 s connects) and
+  the run is not repeated. The bound is per operation: a run with several
+  operations still outstanding when the link goes ends after however many of
+  those rclone runs concurrently, which the LINK fixtures measure.
+- **Where it goes.** Every rclone command in `cloud_backup`, `cloud_restore`,
+  `cloud_content_backup` and `cloud_content_restore` that opens a socket
+  carries `"${RCLONE_NET_OPTS_ARRAY[@]}"` on its command line -- the saves
+  transfers (`execute_rclone_with_error_handling`), the settings archive's
+  `mkdir`, `copyto`, `device.json`, retention `lsf`/`deletefile` and its
+  post-upload `size` check, restore's `lsd`/`ls`/`lsf`/`copyto`, the `rmdirs`
+  tidy, and in the content scripts the transfer loops and their gamelist
+  passes, `exists_remote`, `resolve_src`, `sizes_under`, `cloud_root_populated`,
+  the match flow's `lsf`, dry-run `sync` and real `sync`, `--scan`'s two
+  listings and `--list`'s three. It goes **after** `RCLONEOPTS`, so a timeout
+  somebody once put there does not outrank it. The probes keep their own
+  tighter bound, now the one array `RCLONE_PROBE_OPTS`. Not carried, because
+  they open no socket: `rclone listremotes` (reads `rclone.conf`), `rclone
+  help`, and the match flow's `rclone size`/`rclone delete` on a local folder.
+- **A missing line is not a switched-off guard.** Each script falls back to
+  the same shipped values when `RCLONE_NET_OPTS` is unset or blank
+  (`RCLONE_NET_OPTS_FALLBACK`, kept equal to the default), because the content
+  scripts read the config without running `cloud_sync_helper` and a device's
+  first run after the update may reach one before the helper has.
+- **A failed run says why.** After any transfer or listing fails,
+  `network_lost_during_run` (saves scripts) / `network_gone` (content scripts)
+  asks the three questions `check_internet` asks before a run: is there a
+  default route; does the remote answer a bounded probe now; does anything
+  answer at all. **No route, or a route nothing gets through, exits 69**
+  (`EXIT_NO_NETWORK`) -- through `clean_exit`, so `last-backup`,
+  `last-restore`, `last-settings-*` and `last-content-*` record a run that did
+  not complete (never 0: a 0 would let the next `--recent` pass skip what this
+  one never sent). No second phase or further unit is attempted against the
+  same dead link. The remote answering again, or the internet answering while
+  the remote does not, is rclone's failure to report and **rclone's own code
+  passes through unchanged** -- "no network" is not what happened, and saying
+  so would be the phantom sentinel #99 removed. EmulationStation already names
+  69 on the card (`SKIPPED - NO NETWORK CONNECTION`) and on the rows
+  (`SKIPPED, NO NETWORK`); the ES side may want a wording for a run that was
+  cut rather than never started.
+- **The upload marker was already right.** `settings-backup.uploaded` is
+  written only after `rclone size` confirms the cloud holds a file of the
+  bytes sent; a `copyto` that fails, or a size check that gets nothing back,
+  leaves it unwritten and the next run sends the archive again. What was
+  wrong was the **exit code**: both saves scripts exited with the saves
+  phase's status alone, so a failed settings upload exited 0, and under
+  `--system-only` -- where the saves phase is skipped and reports 0 -- every
+  failure did: the card said `COMPLETED SUCCESSFULLY` and
+  `last-settings-backup` recorded 0 for an archive that never arrived. A run
+  now exits 0 only when every phase it ran did, else with the first failing
+  phase's code.
+- **Before a run, two more honest answers.** `check_internet`'s "not connected
+  to the internet" branch (route present, remote and 1.1.1.1/8.8.8.8 all
+  silent) exits 69 without a stamp, as `check_network_link` does, where it
+  exited 1 and read as FAILED; and `cloud_restore` now runs
+  `check_network_link` first, as `cloud_backup` has since #99 -- an offline
+  restore is a skip, not a failure. `cloud_content_restore --match` refuses
+  as before when the content root lists nothing, and exits 69 when the reason
+  is the network; `--scan` exits 69 with no lines rather than handing the page
+  an empty cloud that would read as "nothing of yours is in the cloud yet"
+  (the page ignores the code today; a future reader can use it).
+- **`cloud_net_ready [--wait N]`** (new, installed by `package.mk`): what the
+  startup sync should ask before it runs the pair, in place of `ping
+  google.com`. Exit 0 once NetworkManager reports `connected` (and
+  `CONNECTIVITY` `full` -- or `unknown`, on a build that checks and has not
+  yet -- the image's NetworkManager is built `-Dconcheck=false` and reports
+  `full` behind a default route without probing anything) **and** that has
+  held for a 3 s grace with a default route throughout; exit 69 at once when
+  there is no default route (D-CLOUD-072: no route means no wait); otherwise
+  poll each second up to N (default 60, plus at most the grace) and exit 69 on
+  expiry. Prints `>>> doing network` once when it starts waiting, the grace
+  included, so the card reads `WAITING FOR THE NETWORK...` and a launch during
+  it cancels the sync. `nmcli` is bounded by `timeout 5`; where it is absent
+  or NetworkManager does not answer, the route test plus a carrier on some
+  interface stands in and the log says so. Time from `/proc/uptime`, not the
+  wall clock, which NTP moves at boot. POSIX `sh`; runs under the image's
+  busybox `ash`. The ES-side command that calls it is the ES repo's change.
+- **Upgrade.** `cloud_sync_helper` appends `RCLONE_NET_OPTS` to an existing
+  `cloud_sync.conf` on the first run after the update (`post-update` runs it,
+  and so does every `cloud_backup`/`cloud_restore`), leaving customised keys
+  alone; a fresh device gets it from the defaults. Until the helper has run,
+  the in-script fallback gives the same bound. Nothing else changes shape: no
+  stamp format, no marker, no menu entry. The one visible difference on an
+  upgraded device is a run that used to end FAILED after ten minutes now
+  ending `SKIPPED - NO NETWORK CONNECTION` within about one.
+- **Verified on the host** (the VM's LINK fixtures are the harness agent's, for
+  the next image): `bash -n` on the four scripts under the host's bash and the
+  image's `bash 5.3`; `tools/pkgcheck` clean; a grep over the four scripts
+  finds no rclone invocation without `NET_OPTS`/`PROBE_OPTS` beyond the
+  socket-less ones named above; `cloud_sync_helper`, pointed at a sandbox
+  holding the previous build's `cloud_sync.conf`, appends the key once and is
+  idempotent; the fallback equals the default in all four scripts; the lifted
+  `network_lost_during_run`/`network_gone`, with stubbed `ip`/`rclone`/`ping`,
+  give 69/69 for no route and nothing-answers and pass-through for
+  remote-answers and internet-only, in both saves scripts and both content
+  scripts; `cloud_net_ready` with stubbed `nmcli`/`ip`, under `sh` and the
+  image's busybox `ash`: connected at once → 0 after the grace, no route → 69
+  in 0.0 s, connecting then connected at 5 s → 0 after the grace, never
+  settled → 69 at the deadline, `connected`+`portal` → 69 at the deadline, no
+  `nmcli` → 0 by route and carrier, a flap mid-grace restarts the grace,
+  `--wait abc` → 64, and the marker printed exactly once whenever it waited,
+  with nothing on stderr.
+
+## The interface never waits on the network; a launch cancels an automatic sync (2026-09-09)
+
+EmulationStation's interface thread made network-dependent calls in a dozen
+places, the worst of them on pages a player opens when the network is already
+misbehaving: NETWORK SETTINGS pinged three times and read the address before it
+drew (six seconds routed-but-offline, unbounded with a wedged driver), the
+Wi-Fi list ran a rescan in its constructor, ENABLE WI-FI and the save-on-close
+ran `wifictl connect` for up to two minutes with the screen frozen, the CLOUD
+page probed the remote for the legacy-layout check, and the wizard's done step
+seeded eight cloud folders inside a callback. All of those now run on a worker
+or behind a spinner and are time-boxed (`timeout` around every shell call);
+NETWORK SETTINGS opens at once with `CHECKING...` and fills in; the TIDY row on
+CLOUD appears at the end of the page once the check answers, on legacy-layout
+devices only. Still synchronous but bounded: the adapter and channel queries
+that build the Wi-Fi option rows (10 s / 5 s) and `cloud_setup --info` (10 s).
+Found and left for its own change: the RetroAchievements account test in that
+page's save function is an HTTPS request with no total timeout (#103, D-CLOUD-075).
+
+The startup sync now waits for a *settled* connection instead of the first
+`ping google.com`: `cloud_net_ready --wait 60` exits 0 once NetworkManager has
+reported `connected` for three seconds with a default route, 69 at once with no
+route, 69 at the deadline; the card reads `WAITING FOR THE NETWORK...` from its
+one marker line. An image without the helper falls back to the old probe.
+
+**A game launch cancels an automatic saves sync in any phase** — startup or
+exit; a sync the player started by hand is still refused (`YOUR SAVES ARE
+SYNCING WITH THE CLOUD...`). The kill completes before the game starts: SIGTERM
+to the sync's process group, a wait of up to two seconds for the run to end,
+SIGKILL at one and a half, because rclone renames a temporary file into place
+at the end of each copy and a rename landing on a save the game has just
+written would lose it. The card ends `SKIPPED - A GAME WAS STARTED` and the
+stamp records the stop. Every command `ThreadedCloudSync` runs is now wrapped
+in `setsid` with its pid announced, so the exit sync can be signalled too — it
+used to run bare (#101, D-CLOUD-076). ES `test/qa-integration` `e46093354`.
+
+## The harness cuts the link mid-run: LINK1-LINK7 (2026-09-10)
+
+`tools/cloud-round-trip` gained a fault-injection family. Each cell starts a
+cloud operation detached over SSH, watches its output for the phase it wants
+(compare, transfer, mid-upload, mid-scan), cuts the guest's link over the
+serial console, restores it forty seconds later, and asserts: the run ends
+within ninety seconds with the no-network code or a plain failure, never 0 and
+never the lock sentinel; the receiving side holds no `*.partial` and every
+file present is whole by content; the settings-upload marker is untouched when
+the archive did not complete; the stamps record the failure; a plain re-run
+completes. Seven cells: saves restore (compare), saves backup, content backup,
+content restore, settings archive upload, the exit sync, the picker scan.
+Against `d574edf975` every cell FAILED -- the unbounded runs rode the outage
+out and reported 0 some 46-81 s after the cut (the frozen-card shape needs a
+longer outage: at 120 s they overshoot the bound at 130-156 s); against
+`12fd47e341` every cell PASSED, each run ending about 30 s after the cut with
+exit 69 and a stamp of 69. Off by default; `--link` or `--only LINKn` runs
+them, and they skip with a line when no serial socket is given, which is every
+handheld. The one thing the WebDAV guest cannot prove is same-name re-upload
+idempotency for the settings archive (a slirp/`rclone serve` lock artifact,
+`423 Locked`); that criterion wants MinIO or a device (#103).
+
+## EmulationStation keeps the last good settings file and speaks the outcome vocabulary (2026-09-10)
+
+Both settings files EmulationStation writes -- `es_settings.cfg` and
+`system.cfg` -- now go through a temporary file, an fsync, and a rename (the
+system file used to write a good temporary and then copy it over the live file
+in place; the ES settings file was rewritten in place), under the same
+`/tmp/.system.cfg.lock` the shell's `set_setting` takes. After every good save
+and every good parse at startup the file is copied to `<name>.backup`, the one
+last-known-good record (D-CLOUD-079). A startup that finds the live file
+missing, empty, or unparsable loads the backup, writes it back, and says once
+`YOUR SETTINGS FILE WAS DAMAGED. THE LAST GOOD COPY WAS RESTORED.`; defaults are
+the last resort, never written over a damaged file before that attempt. A host
+kill test (500 rounds, SIGKILL at random points) left the live file and the
+backup complete every time.
+
+The sync card, the transfer page, and the rows under the toggles speak
+D-UI-028: `COMPLETED`, `COMPLETED WITH GAPS - <what>`, `COULDN'T FINISH -
+<why>`, `SKIPPED - <reason>`. The why comes from a `>>> why <sentence>` line the
+scripts print at the failure point, else from a small table; the card's action
+row carries what is in place and how to recover (`TRY AGAIN: GAME SETTINGS >
+BACK UP SAVES TO THE CLOUD`, `IT RUNS AGAIN WHEN YOU EXIT A GAME`, ...), the
+card's token filter is gone, and `FAILED - SEE /var/log/cloud_sync.log` with it.
+The transfer page learns each tier's exit from a `>>> tier <label>|<rc>` line
+the run composition now echoes after every part, so a run with one failed part
+reads `COMPLETED WITH GAPS`, names the items that did not finish and why, says
+what is in place, and offers `A TRY AGAIN  B CLOSE`, which re-runs the same
+command; game lists are rescanned when any tier succeeded. A match cut after
+deletions reads the same way over `N FILES WERE REMOVED FROM THIS DEVICE. YOUR
+CLOUD STILL HAS THEM.` Stamps gain a third field, the why token, additively.
+The picker reads the scan's exit code (`COULDN'T REACH YOUR CLOUD. TRY AGAIN
+WHEN YOU'RE ONLINE.` instead of an empty cloud); the journey marker is set by
+`backuptool restore --then-cloud` after a verified extract and consumed on YES
+or LATER, not on display; the match preview no longer says a device with no
+selection already matches; the seed-folders page shows `MISSING` rows; TIDY
+never offers MOVE over a refusal; deleting a save state is refused while a sync
+runs (D-CLOUD-053). Retired from every screen: `COMPLETED SUCCESSFULLY`,
+`SUCCEEDED`, `FAILED`, `STOPPED`, `BOTH WAYS. NOTHING IS DELETED.`
+ES `test/qa-integration` `81d35668e`.
+## The last known good state, kept: system.cfg (2026-09-10)
+
+`chksysconfig` treats `system.cfg.backup` as the record of the last
+`system.cfg` known to be good (D-CLOUD-078, D-CLOUD-079, #105, #102). `backup`
+copies only a file that passes `valid()` -- non-empty, text, carrying
+`system.hostname=`, every non-blank line `key=value` -- by temp-and-rename, and
+now runs at boot after `verify` and `sort_settings` as well as at shutdown, so
+a device that is only ever powered off still has a fresh good copy. `verify`
+restores from the record for every invalid case (empty, truncated, no hostname
+line, binary) and reseeds the image's `system.cfg` only when the record is
+unusable too, logging which it took (`logger -t chksysconfig`). The blanket
+`rsync -a /usr/config/ /storage/.config` that replaced every differing config
+file whenever one retroarch file was missing is scoped to files actually
+missing (`--ignore-existing`; an empty retroarch file is removed first so it is
+reseeded like a missing one). The file keeps its name, so an upgraded device
+has one record and nothing to migrate; its existing `.backup`, if it is a
+default copy (the RG SP's case), is replaced at the first boot the live file
+is valid. `set_setting` deletes and re-adds a key in one `sed -i` under one
+lock hold -- one rename, where it was a rename and then an append with the
+lock released in between; `sort_settings` refuses to replace the file when the
+sorted copy is empty or has no hostname line. Proven by
+`tools/last-good-scripts-test` (a, c), which fails the same checks against the
+scripts before the change.
+
+## Settings archives: written whole, rotated after, restored with a way back (2026-09-10)
+
+`backuptool backup` writes `<name>.partial`, lists it back, renames it, and
+only then rotates the previous archive into `archive/`. Killed mid-tar it
+leaves the previous archive as the only `*.tar.gz` at the root and a
+`.partial` no reader matches; it used to leave a truncated archive under the
+newest name (which `cloud_backup` sent to the cloud and `restore` refused) or,
+killed during the rotation that ran first, no archive at the root at all.
+`restore` archives the current settings into
+`archive/<stamp>-PRE_RESTORE-<label>-ROCKNIX_SETTINGS.tar.gz` (passwords kept:
+it never leaves the device) before extracting, and a failed extraction puts
+that snapshot back and says so; the snapshots count toward `archive/`'s bound
+of three. `restore --then-cloud` leaves `.cloud-journey-pending` after a
+verified extract, so the menu no longer sets it before the restore has run.
+Every message is a sentence for a screen -- no paths, no `logger`, no codes --
+and the zip check falls back to `unzip -l` because busybox `unzip` has no
+`-t`, which had every legacy `.zip` reading as damaged. `cloud_backup` lists
+each archive before uploading it and skips a damaged one, runs cloud
+retention only after the size verification has passed, writes `device.json`
+by temp-and-rename and reads its upload's result. Proven by the test's (b).
+
+## Saves: what a transfer replaces is kept for one cycle (2026-09-10)
+
+The saves restore passes `--backup-dir /storage/.cache/cloud_sync/replaced/<stamp>`,
+so a local save the cloud copy overwrites is moved aside rather than lost;
+the saves backup passes `--backup-dir <SAVES_REMOTE>-replaced/<stamp>` in copy
+mode as well as sync mode. After a run that completed, every stamp folder but
+the newest is removed on that side (the remote's only on a full pass, never
+on the game-exit `--recent` run), so one record is at rest. The `-replaced`
+folder is shared by every device on the saves folder, so "one cycle" is one
+cycle of whichever device ran last. After each saves transfer and after the
+settings archive download, rclone's `<name>.<8 chars>.partial` litter under
+the tree is removed. Verified with the image's rclone 1.75 that `--backup-dir`
+works under `copy` with `--no-traverse`/`--max-age` and with `--update`.
+
+## Every stamp and record written whole (2026-09-10)
+
+A `write_stamp()` per script (there is no shared library), the shape of
+`ThreadedCloudSync::recordOutcome`: the line goes to a temp beside the stamp
+and is renamed over it. Applied to every `last-*` stamp in the five transfer
+scripts, the `settings-backup.uploaded` marker, `device.json`, the
+`content-systems` selection (where an empty file is a different valid answer),
+the saves-root record, and the device id. `cloud_saves_root check` refuses when
+the record exists and is empty instead of passing unchecked; `cloud_device_id`
+with an empty id file and no adapter returns nothing rather than a new
+identity derived from `machine-id`. `cloud_capture` sweeps `.last-capture.<pid>`
+litter with the rest. **Stamps gain a third field**: when a run did not
+complete and a `>>> why` line was printed, the sentence follows the exit code
+with its spaces as underscores (`1789000000 5 YOUR_CLOUD_STOPPED_ANSWERING`),
+one token for a reader that splits on spaces; nothing is added for 0, 9, 69
+or 75. Proven by the test's (d).
+
+## Failures say why, in the player's words (2026-09-10)
+
+Every failure point prints one `>>> why <SENTENCE>` protocol line from the
+vocabulary table in `es-native-ui.md` (D-UI-028): rclone 3/4 `YOUR CLOUD
+FOLDER WASN'T FOUND`, 5 `YOUR CLOUD STOPPED ANSWERING`, 6 `SOME FILES DIDN'T
+FINISH`, 7/8 `YOUR CLOUD REFUSED THE TRANSFER`, the sign-in probe `YOUR CLOUD
+DIDN'T ANSWER. ITS SIGN-IN MAY HAVE EXPIRED`, the saves-root guard `THE SAVES
+FOLDER IS ON A DIFFERENT CARD`, and the script-side additions `YOUR CLOUD
+STORAGE ISN'T SET UP`, `THE SAVES FOLDER WASN'T FOUND ON THIS DEVICE`, `THE
+SETTINGS ARCHIVE ON THIS DEVICE IS DAMAGED`, `THE COPY IN YOUR CLOUD DIDN'T
+MATCH WHAT WAS SENT`, `YOUR CLOUD SYNC SETTINGS COULDN'T BE READ`, `AN OLD
+RESTORE-FOLDER SETTING IS STILL SET`, `THE SAVES FOLDER'S CARD COULDN'T BE
+CHECKED`, `THE SAVES FOLDER CHANGED CARDS DURING THE TRANSFER`. One per phase
+in the saves scripts, one per failing unit in the content scripts. Nothing a
+screen can show carries an exit code, `rc=`, a log path, `logger`, `rclone`, a
+script name or a `--flag`: rclone's taxonomy and codes go to the log half of
+`log_message`, `Log file: /var/log/cloud_sync.log` is log-only, the summaries
+say `COMPLETED` (0 or 9) or `COULDN'T FINISH` (`SUCCESS` and `COMPLETED WITH
+ERRORS` retire), `rclone config` and `cloud_setup --accept-saves-root` leave
+the screen (the latter goes to the system log; no menu row offers it yet), and
+the menu path named is the current `GAME SETTINGS > MANAGE CLOUD STORAGE`. A
+match cut by link loss prints its running `>>> removed` totals before the 69
+exit so the page can report `COMPLETED WITH GAPS`. The harness's FORBIDDEN
+regex over every screen line of the six scripts is clean (the test's (e)).
+
+## The cloud sync configuration is never half-written (2026-09-10)
+
+`cloud_sync_helper` builds the merged rules beside the file and renames them
+over it (they were built under `/tmp` and moved across filesystems -- a copy
+and an unlink, with the allowlist's catch-all the first line to go from a cut
+copy); takes `cloud_sync-rules.txt.bak` only from a file carrying `- /**` and
+`cloud_sync.conf.bak` only from a conf that is whole (`bash -n`, and every line
+blank, a comment, `KEY=value` with balanced quotes, or a continuation), so a
+torn file never replaces the last good copy; refuses to merge onto a conf that
+is not whole; appends new keys to a same-directory copy installed by one rename
+once it validates; and carries a backslash-continued default (`RCLONEOPTS`)
+whole -- it used to append only the first line, leaving an open quote in any
+conf that lacked the key. `cloud_backup` and `cloud_restore` validate the conf
+before `source`, fall back to the `.bak`, and otherwise refuse with `>>> why
+YOUR CLOUD SYNC SETTINGS COULDN'T BE READ`; they ran on with whatever a torn
+file yielded before. After a run that completed they remove
+`cloud_sync.conf.bak`, `cloud_sync-rules.txt.bak` and
+`cloud_sync.conf.pre-copy-default` (D-CLOUD-079); the next run takes fresh
+copies before it touches anything. No config option was added or renamed.
+`rocknix-update` downloads under `.part` names and renames after the checksum
+matches, so a cut download is never picked up as an update at the next boot.
+
+## The picker's scan: a cloud that refused is not an empty one (2026-09-10)
+
+`cloud_content_restore --scan` exited 69 when its listing failed with the
+network gone and 0 -- an empty cloud -- for every other failed listing, on
+the reasoning that a missing ROMs folder (rclone's 3) is an empty cloud. It
+is; a refused connection (5), a rejected sign-in or any other error is not,
+and with the cloud pointed at a dead port the page listed every system on the
+device as `NOT YET IN YOUR CLOUD` and offered the whole of it for upload. A
+listing that fails with the network up now exits with rclone's own code
+unless that code is 3, prints no system lines, and says on stderr that the
+cloud could not be read; the picker already turns any code other than 0 and
+69 into `COULDN'T READ YOUR CLOUD'S CONTENT. TRY AGAIN.` The BIOS listing's
+code no longer overwrites a ROMs listing's that said more. `tools/cloud-round-trip`
+gains the case (the stanza's endpoint moved to a closed port on the same
+host). `2266c73245`.
+
+## system.cfg's last good copy: a text test busybox understands, verified before the hostname is read (2026-09-10)
+
+`chksysconfig valid()` asked `tr` to delete `[:print:][:space:]\200-\377`;
+busybox tr reads `[:print:]` as eight characters, so every real `system.cfg`
+was "not text", the backups at boot and shutdown were refused, and a damaged
+live file was reseeded from the image defaults with the record then
+overwritten by EmulationStation's next save (guest d, `c15050c897`). The set
+is now byte ranges (tab, newline, carriage return, printable ASCII, and
+everything above 0x7F for UTF-8). `tools/last-good-scripts-test` runs every
+busybox-applet command through the image's busybox and carries the image's
+own `system.cfg` and a UTF-8 value as fixtures (`BASE_REF=c15050c897 ... --old`
+shows seven FAILs against the shipped script). New
+`rocknix-sysconfig.service` runs `chksysconfig verify` at sysinit, before
+`network-base.service` reads `system.hostname` at about 1.7 s; the autostart
+chain's verify ran seconds later and a damaged file gave the device
+`localhost` -- or, reseeded, the image's name (#102's `H700`) -- for the whole
+boot (D-CLOUD-080). `f907e7f526`.
+
+## Cloud rows in one line; the why in the dialog; the card's action row (2026-09-10)
+
+EmulationStation `0a725b2dc` (pinned `b2173652b4`): the line under a cloud row
+is `LAST <date>  -  <outcome>` and nothing more -- the scripts' why sentence
+made it three lines at 1280 px, against D-UI-023 -- and the three manual
+rows' confirmation dialogs carry `LAST TIME IT COULDN'T FINISH: <why>.` as a
+second paragraph when the last run did not finish (D-UI-029). The cloud card
+is created with its action row (`createAsyncNotificationComponent(true)`; the
+default is two rows), so the recovery clause of D-CLOUD-077 -- what is in
+place, and `TRY AGAIN: GAME SETTINGS > ...` -- is drawn; tranche A composed it
+and had no row to draw it on.
+
+## Cloud stamps and rclone.conf are read uncached (2026-09-10)
+
+EmulationStation `28631cf77` (pinned `d3f2431034`): the cloud rows' stamp
+reader and the rows' gate on `rclone.conf` pass `enableCache=false` to
+`Utils::FileSystem::exists`. The file cache (`UseFileCache`, on by default)
+remembers a miss until a game launch or a restart, so a GAME SETTINGS page
+opened once before a run read `NOT DONE ON THIS DEVICE YET` after the run had
+written its stamp, and the confirmation dialog's `LAST TIME` paragraph never
+appeared; a cloud set up in the wizard could likewise stay "not set up" on
+the rows for the session. Found on guest d against `854989a639` with stamps
+planted by hand.
+
+## The manual stamp is the sync row's (2026-09-10)
+
+EmulationStation `ad861363d` (pinned `ea65ac9bf5`): `last-sync-manual` is
+written only when the manual run was SYNC SAVES WITH THE CLOUD. A manual
+backup or restore is stamped by its script (`last-backup`, `last-restore`),
+which the BACK UP and RESTORE rows read; writing the manual stamp for those
+too put a backup's outcome under the sync row (`LAST 00:48 - COULDN'T
+FINISH` on a row nobody had pressed, guest d).
+
+## set_setting keeps a key on the last line; a cut-off restore is undone at boot; rotation trims by name (2026-09-10)
+
+Three findings from the KILL cells against tranche A's scripts (`90e18fdb0d`,
+`18eb6ecdd5`):
+
+- `set_setting` was one `sed -i` with `/^k=/d` and `$a k=v`; when the key's
+  line is the file's last -- which a key just appended always is -- `d` ends
+  the cycle before `$a` runs, so the key was deleted and never re-added and
+  read as its default from then on. It is now one awk into `system.cfg.tmp`
+  and a rename over `system.cfg`, under the one lock hold; the key is
+  matched literally and the value crosses through the environment.
+  `chksysconfig verify` sweeps a `system.cfg.tmp` a kill left.
+  `tools/last-good-scripts-test` carries the last-line, one-line and
+  literal-key fixtures (`BASE_REF=c15050c897 ... --old` fails 12 checks).
+- `backuptool restore` writes `.restore-in-progress` naming the copy it took
+  aside before extracting and removes it after; `chksysconfig verify` puts
+  the copy back at the next boot when the marker is still there and leaves
+  `.restore-reverted` for EmulationStation to say once (D-CLOUD-081;
+  ES `5a3759cde`, pin `520357fa52`: `YOUR SETTINGS RESTORE WAS INTERRUPTED.
+  YOUR PREVIOUS SETTINGS WERE PUT BACK. TRY THE RESTORE AGAIN.`).
+- `trim_archive` kept "the newest" by mtime; it sorts by the date in the
+  name now, dateless names last, so a downloaded older archive no longer
+  outlives a newer one.
+
+The harness follows: KILL3 for the write-then-rotate flow (its watcher's
+`ls root/*.tar.gz root/*.zip` failed whenever no `.zip` matched and fired on
+any state), KILL10 shims awk, KILL11 asserts old-or-new, KILL18 runs
+`chksysconfig verify` as the boot would and its snapshot covers the tree it
+restores; the settings-archive step plants a real tar.gz pair of equal size
+(the planted bytes were "damaged" to the new `cloud_backup`); the litter scan
+accepts D-UI-028's stamp shape and judges a `.bak` against the newest
+completed run rather than flagging it wherever it sits.
+
+## The restore revert waits for /storage/roms (2026-09-10)
+
+`chksysconfig finish_restore` leaves the `.restore-in-progress` marker alone
+when the copy's folder does not exist yet -- `/storage/roms` is bound by
+`rocknix-automount` at about 2.5 s, after the sysinit verify at 1.7 s -- so
+the autostart chain's verify, after the mounts, puts the copy back
+(D-CLOUD-082). The first `9847876563` boot with a marker declared the revert
+failed at sysinit and EmulationStation said `COULDN'T BE UNDONE` while the
+copy sat on the folder that was about to be bound. `61024a4d76`; fixture in
+`tools/last-good-scripts-test`.
+
+## Handhelds keep their evidence: persistent logs, a watchdog, a crash store (2026-09-10)
+
+`/var/log` is now a bind mount of `/storage/.cache/log` on every device --
+upstream's own `var-log.mount`, switched on (D-SYS-001) -- so the journal,
+EmulationStation's log and `cloud_sync.log` survive a power cut. The journal
+gets 64M and a one-minute sync; `cloud_sync_helper` trims `cloud_sync.log` to
+its last 512 KiB once it passes 1 MiB, since nothing ever rotated it.
+`/storage/.cache/volatile-log` opts a device out.
+
+systemd arms the hardware watchdog at 15 s (the Allwinner ceiling is 16) and
+leaves the shutdown watchdog off (D-SYS-002). A soft lockup or a hung task
+panics and the device reboots ten seconds later, leaving its trace in
+ramoops -- 1 MiB at `0x4F000000` on every H700 board (D-SYS-003, D-SYS-004)
+-- which `systemd-pstore` copies into `/storage/.cache/log/pstore/` at the
+next boot, and the first evidence snapshot after boot archives anything the
+boot-time service did not see (on UEFI the dump appears a little late). H700 gains `PSTORE_RAM`, `PSTORE_CONSOLE`, `WATCHDOG_SYSFS` and
+the two detectors; the VM gains pstore over UEFI variables and QEMU's
+watchdog so it can prove all of this first.
+
+`rocknix-evidence snapshot` writes a page of device state every five minutes
+into a ring of five; `rocknix-evidence collect` bundles the previous boot's
+journal, any pstore dump, the logs and the snapshots into one archive and is
+the first thing to run on a device that has misbehaved (D-SYS-005). The
+config-file half of #104 had already landed: `chksysconfig` keeps the last
+known good `system.cfg` and both EmulationStation writers go through a
+temporary, a sync and a rename (D-CLOUD-078/079).
+
+Upgrade: nothing to migrate. The mount, the sysctl and the timer are all
+image-level; a device already carrying `/storage/.cache/log` from a past
+debugging session simply starts using it. Rule: `handheld-evidence.md`.
+
+## The last two console hops, six small-panel fixes, and a missing password noticed (2026-09-10)
+
+**#114.** The journey continuation (YOUR SETTINGS WERE RESTORED. DOWNLOAD YOUR
+GAMES, BIOS FILES, AND SAVES...?) and the settings restore (RESTORE SYSTEM
+SETTINGS FIRST, THEN RESTART?) ran in a fullscreen console. Both run on
+`GuiCloudTransfer` now, composed the way the transfer page composes every
+other run (`>>> tier <label>|<rc>` per part, status accumulated rather than
+taken from the last part -- so unreachable ROMs no longer skip the saves).
+The settings restore's page owns the restart (D-UI-033): `backuptool
+restore --no-restart` is new and opt-in, the page reloads the settings it
+holds in memory and reboots on any button once the player has read the
+outcome. `/usr/bin/run`'s failure branch re-ran the whole command line as one
+word on every failure (`...: not found` flashed over the real error); it now
+only does so for a single path with spaces, which is the case it was for.
+Left for #119: `run` exits 0 on failure.
+
+**#115.** Every message box read `OK CHOOSE CHOOSE` (D-UI-034); the card's
+reason line clipped mid-word at 640x480 and now has short forms (D-UI-035);
+CHANGE CLOUD FOLDER says `THE FOLDER IN YOUR CLOUD THAT HOLDS YOUR SAVES.`;
+the launch gate says WAIT only when the player started the sync, and `IT'S
+STOPPING SO YOU CAN PLAY - TRY AGAIN IN A MOMENT.` when a cancel is still
+finishing; and #48's overlapping OK button is measured at the width the text
+is drawn at (`GuiMsgBox` measured at the box width and drew at the padded
+one, 5% narrower on 640x480, so one line in twenty was never budgeted). The
+wizard's 33 "remote" strings are #118.
+
+**#109.** At startup, a RetroAchievements username with neither password nor
+token gets `YOUR RETROACHIEVEMENTS PASSWORD IS MISSING, SO YOU'RE SIGNED
+OUT. ENTER IT NOW?` once per boot, YES opening the same re-entry page the
+restore marker opens; NOT NOW asks again next boot. `docs/backup-contents.md`
+says what a hand restore must do.
+
+EmulationStation `5443c8f95`; ROCKNIX `073929659d`. Frames follow the build.
+
+## The wizard stops saying "remote"; the exit hotkey has a test (2026-09-10)
+
+**#118.** Thirty-four strings across the rclone wizard, the SSH hub and the
+post-restore check said "remote". Under D-UI-036 they now say *cloud storage*
+(`NO CLOUD STORAGE IS SET UP ON THIS DEVICE YET. SET IT UP NOW?`, `YOUR CLOUD
+STORAGE IS READY`), *connection* (`CONNECTION NAME`, `WHICH CONNECTION?`,
+`REPAIR A CONNECTION`, `ADD ANOTHER CONNECTION`), *provider*, and "your cloud
+is answering" for a check that passed. The three numbered steps that walk a
+player through `rclone config` in a terminal keep rclone's word, because that
+is what the terminal shows, and step 2 says once what it means. The CHECK
+CLOUD REMOTE row after a restore is CHECK CONNECTION, the same label as the
+hub's. No behaviour changed.
+
+**#117.** `tools/emulator-exit-test` proves, against the shipped
+`input_sense`, that the exit hotkey ends a game once with the save written,
+that a held combo does the same, and that the debounce window closes; with
+the debounce stripped it fails in two places. The first automated test of the
+launch path, and the first cell of #120.
+
+## The harness gate is the default, and it found six lines (2026-09-10)
+
+`tools/cloud-round-trip` asserts the three outcome words on every run's last
+player-facing line by default now (`--no-vocabulary` for an older image),
+and `COMPLETED WITH GAPS` is gone from what it accepts (D-UI-030). Its first
+default run over the link-loss cells caught "Lost the network during ..."
+in LINK1-6; the scripts say "Couldn't finish: lost the network ..." now.
+`tools/vm-qa` runs every automated check against one image and writes one
+report; `--link` adds the seven link cells.
+
+## Unit tests for the pure cloud code; `d2eabe879c` (2026-09-11)
+
+The pure text of the cloud surfaces -- the network name derived from a typed
+device name, the provider label, the stamp-line parser, the origin label,
+the outcome line's shorter forms, the `>>> ` protocol-line classifier, and
+the "longest candidate that fits" rule -- lives in `es-app/src/CloudText.{h,cpp}`
+now, with no window, font or file behind it, and `es-app/tests/unit/` builds
+`es-unit-tests` against it: 19 cases, 162 assertions, four milliseconds,
+proven to fail on three deliberate mutations (#120). Behaviour unchanged;
+`d2eabe879c` carries the extraction and passes `tools/vm-qa`.
+
+## Standalone N64 saves join the allowlist (2026-09-10, noted 2026-09-11)
+
+Every shipped `mupen64plus.cfg` writes `.eep`, `.mpk`, `.sra` and `.fla`
+beside the ROM, and the allowlist's `/n64/save/*` lines never matched them,
+so a standalone-N64 player's saves were never backed up. Four `+ /**/*.ext`
+lines in both rule files (D-CLOUD-086, #89); the ROM beside them stays out,
+and the harness plants both layouts.
+
+## Credentials and rules (2026-09-11)
+
+Maintainer's order: #116, #52, #71, #39, then #74 and #100, one build.
+
+- `cloud_setup --info` no longer prints the root password; it says whether
+  one is set, and EmulationStation reads the value in-process where the SSH
+  page must show or pre-fill it (D-INFRA-010).
+- `backuptool` holds `rclone.conf` back from every archive, outright; the
+  post-restore CHECK CONNECTION tells a device with no cloud storage where to
+  connect it, and the credential scanner knows rclone's key names
+  (D-CLOUD-087). `last-good-scripts-test` case f proves both under bwrap.
+- `cloud_backup` and `cloud_restore` apply the saves allowlist whether or
+  not RCLONEOPTS names it (D-CLOUD-088); the leak was reproduced with the
+  shipped script first.
+- `cloud_migrate_layout --check` calls a chosen sibling layout current
+  instead of offering to move it back to `/ROCKNIX` (D-CLOUD-089).
+- The round-trip harness gains four steps -- a user's own rule stays above
+  the catch-all and keeps its file off the cloud (#39); changing the cloud
+  folder puts the settings folder beside it and the archive lands there
+  (#74); a bare RCLONEOPTS keeps the allowlist (#71); an empty cloud offers
+  and a wrong root fails (#100) -- 31 steps, PASSED against the new scripts.
+
+## A skipped phase says so; two boot warnings gone (2026-09-11)
+
+- **`cloud_backup`'s summary no longer says COMPLETED for a phase that did
+  not run** (#126, D-CLOUD-090). A settings-only run with no archive on the
+  device said "There's no settings backup on this device yet." and then
+  `Settings backup: COMPLETED`, exit 0, and stamped the run as the last
+  settings backup. Now the phase line reads "Skipped settings this time -
+  there's no settings backup on this device to send yet.", the summary word
+  is `SKIPPED - NOTHING TO SEND YET`, the exit stays 0 and the stamp keeps
+  describing the last upload that happened. Under `--system-only` the saves
+  line reads `SKIPPED - SETTINGS ONLY`, and under `--saves-only` the
+  settings line `SKIPPED - SAVES ONLY`, instead of COMPLETED for work that
+  was never asked for. An archive unchanged since its last upload is still
+  COMPLETED -- the cloud is current. `tools/cloud-round-trip` asserts the
+  phase line, both summary words and the unmoved stamp.
+- **Two lines gone from every boot's journal.** `powerstate` logged an
+  arithmetic error every two seconds on a device with no battery reading
+  (#121); it now skips the battery checks for that pass. `vm.laptop_mode=5`
+  drew a deprecation warning from systemd-sysctl on kernel 7.x (#122); the
+  line is gone from the package, and post-update deletes it from the copy an
+  upgraded device already holds under `/storage/.config/sysctl.d`
+  (D-SYS-007). Neither changes what a handheld does; both change what a
+  person reading a crash's evidence sees first (D-SYS-001).
+
+## Field labels in the player's words; the offer knows a near miss (2026-09-11)
+
+- **The provider forms say SERVER ADDRESS, USERNAME, PASSWORD, ACCESS
+  TOKEN** where they said `URL`, `USER`, `PASS`, `BEARER_TOKEN` (#123,
+  D-UI-038). A small map covers the fields the recommended providers ask
+  for; anything rclone adds later shows its name in plain words (`SOME
+  OPTION`), never an identifier. The rclone name still keys the value in
+  `rclone.conf`.
+- **The empty-cloud offer names a folder with a near name** (#127,
+  D-CLOUD-091). With `/ROCKNIX/Savez` configured beside a real
+  `/ROCKNIX/Saves`, the restore says "Your cloud has /ROCKNIX/Saves but no
+  /ROCKNIX/Savez, so check the folder name." and the dialog offers CHANGE
+  FOLDER first, then CREATE ANYWAY, then NOT NOW. It used to offer CREATE
+  IT alone, which would have split the saves across two folders.
+- **A saves folder at the cloud's root gets the offer too** (#127,
+  D-CLOUD-092): the root the remote answers for is its parent. A missing
+  root above a nested folder still fails.
+- The words for all three are the ones proposed in the issues, built
+  under discretion and framed for the maintainer's yes.
+- **The S3 form's subtitle is AMAZON S3 AND COMPATIBLE**, not rclone's
+  sixty-provider description in small text (#128). A short, list-free
+  label is kept as it is; a paragraph becomes the words the provider was
+  chosen by.
+
+## The exit card says syncing; the card speaks in your words; FINISH RESTORE PROCESS; the automatic sync is bounded (2026-09-12)
+
+The night after the council the maintainer walked its proposals one at a
+time; what a player sees from that walk is below, the rest is design
+(D-CLOUD-102..117).
+
+- **The card after a game says `SYNC SAVES` / `SYNCING SAVES TO THE CLOUD`**,
+  not BACKING UP SAVES, matching the startup card (#138, D-UI-040). *Back up*
+  and *restore* stay the transfer page's words. Maintainer: *"save the word
+  'backup' for when someone feels it's a longer, deliberate action."*
+  - **The card's live line reads `12 KB OF 40 KB` and `COMPARING SAVES · 12 OF
+  70`**, never rclone's units or two stats fields run together (#140).
+  - **The relink page and both rows that open it are `FINISH RESTORE PROCESS`**
+  (the hub said FINALIZE RESTORE, NETWORK SETTINGS said FINISH RESTORE SETUP)
+  (#129, D-UI-046). Maintainer: *"make it both, say, 'finish restore process.'"*
+  - **The empty-cloud dialogs in their short form** (#127, D-UI-045/047):
+  `NOTHING TO RESTORE: YOUR CLOUD HAS Savez, NOT Saves.` / `IS THE NAME
+  RIGHT?` with `CHANGE FOLDER` · `CREATE ANYWAY` · `NOT NOW`; a plain `YOUR
+  CLOUD HAS NO SAVES FOLDER YET.` / `CREATE IT NOW?`. The transfer page raises
+  the offer too, so a fresh handheld meets it (#145).
+  - **Save state is two words everywhere, and the settings tier is settings**
+  (#148, D-UI-049): fourteen inherited `SAVESTATE` labels read SAVE STATE, the
+  restart dialog reads `RESTORE SETTINGS FIRST, THEN RESTART?`, the DATA
+  MANAGEMENT row `RESTORE SETTINGS FROM THIS DEVICE`.
+  - **The automatic sync -- at startup and after a game -- is bounded: 5 s to
+  connect, 5 s with no bytes moving, 20 s in all, five retries, one transfer
+  at a time** (D-CLOUD-118/121). Past the ceiling it ends `THE CLOUD TOOK TOO
+  LONG - IT'LL TRY AGAIN NEXT TIME`; a stalled endpoint had held the exit
+  card for 321 s. Maintainer: *"Five retries sounds like a good place to
+  start as a baseline."*
+  - **The startup sync no longer waits a minute on a network NetworkManager
+  calls "limited"**: any connected state with a held route settles at once.
+  The RG SP had logged `not settled after 60s` while Dropbox answered it.
+  - **On a bucket cloud (S3 and compatibles) a mistyped saves folder fails as
+  on Dropbox** instead of reporting `Game saves: COMPLETED` over nothing: a
+  folder exists when its parent lists it, the wizard's S3 stanza turns
+  directory markers on so an empty folder survives, and listings retry three
+  times, not ten (#141, #143, D-CLOUD-120).
+  
+## Settings backups leave the image's files out; the device names itself; a missing folder is not a broken cloud (2026-09-13)
+
+- **A settings backup carries your configuration and nothing the image
+  ships** (#45, D-CLOUD-008): a file identical to the image's own copy is left
+  out, and PPSSPP's `assets/` and shader cache never travel -- 17 MB became
+  9 KB. A restore skips those two prefixes from any archive, old `.zip` ones
+  included, so an older emulator's files no longer land under a newer one
+  (D-CLOUD-124).
+  - **Two units of one family no longer fight over one name on your network.**
+  A device still called by its family (`H700`) names itself `H700-<four hex
+  digits>` once, from its own hardware id; a name you typed is never touched,
+  and one carried in by another device's settings restore is re-derived
+  (#50, D-NET-002/004/005). **And it answers for `<name>.local`**: the mDNS
+  responder is on again, after the device has its name (D-NET-003/006).
+  Maintainer: *"We should turn back on the mDNS responder."*
+  - **On FTP, a folder that is not there yet no longer reads as "Your cloud
+  couldn't be read"**, and the content backup makes each folder before
+  copying, so a first copy into a new folder lands whole (#142, D-CLOUD-123).
+  - **A deliberate back up or restore ends when the cloud stops answering, on
+  every provider**: ended once rclone has shown no progress for 36 s, saying
+  `Couldn't finish: ...` on its own line, where on S3 the SDK re-dialled
+  through the whole outage and then stamped success (#153, D-CLOUD-126/127).
+  The summary ends on a sentence: `Completed.`, `Couldn't finish: <why>. Try
+  again.`, `Skipped: <reason>.` Maintainer: *"It feels the most transparent."*
+  - **The emulators' copies of your RetroAchievements token stay out of a
+  settings backup** (#169, D-INFRA-010): PPSSPP's, Dolphin's, SkyEmu's and
+  ARMSX2's token files are held back whole, four other emulators' settings
+  travel with the token blanked, and an old archive does not land one.
+  
+## The save state manager fits its labels; ScreenScraper says which credential; the startup card names its half (2026-09-13)
+
+- **`START NEW GAME` and `AUTO SAVE` read whole on a 640x480 panel**, and the
+  manager draws its help bar there for the first time (`BACK / DELETE / COPY
+  TO FREE SLOT / LAUNCH` on a slot) (#27, #149, D-UI-050). The tiles had been
+  drawn a third larger than the menu's own small text since the page was
+  written; the maintainer had picked the wrong tile because of it. After a
+  delete the cursor lands on START NEW GAME and the bar follows (#93).
+  - **A scrape that cannot sign in says which credential, in English**, not
+  ScreenScraper's raw French blaming the account (#66): `SCREENSCRAPER
+  REJECTED THE DEVELOPER ID OR PASSWORD. CHECK THEM UNDER SCRAPER >
+  ACCOUNTS.`, `SCREENSCRAPER REJECTED YOUR USERNAME OR PASSWORD. ...`,
+  `SCREENSCRAPER NEEDS YOUR ACCOUNT TO SCRAPE. ADD IT UNDER SCRAPER >
+  ACCOUNTS.`, `COULDN'T REACH SCREENSCRAPER. TRY AGAIN.`, and a line per
+  documented status. The developer pair lives under SCRAPER > ACCOUNTS
+  beside the account (#151 PL-06/07/15).
+  - **The fork's strings ship in French too**, keyed to SYSTEM SETTINGS >
+  LANGUAGE (D-UI-051) -- the credential messages first, the rest on 09-17.
+  Maintainer: *"we could at least support English and French."*
+  - **The startup card names its half and the bar only moves forward** (#157,
+  D-UI-052): `RECEIVING · COMPARING SAVES · 113 OF 113`, the bar filling 0-50
+  while receiving and 50-100 while sending. The maintainer had seen "113 of
+  113" twice with a still bar between: *"no indication that it is working
+  correctly."*
+  - **The RetroAchievements game page no longer draws its bar over the header
+  at 640x480** (#160, #193): the header is left-aligned in both menu modes
+  and the bar and its percentage share one row on a visible track.
+  
+## Offline achievements (BETA) (2026-09-13 to 2026-09-15)
+
+The award the maintainer lost on a train -- unlocked offline, gone when the
+game exited -- is what this is for (#162, #163). Built on RAOfflineProxy
+(GPL-3, RetroAchievements-approved), packaged natively. Maintainer: *"someone
+using RetroAchievements with offline achievements enabled doesn't have to
+care whether they're connected or not."* (D-RA-008)
+
+- **`OFFLINE ACHIEVEMENTS (BETA)` is a row under RETROACHIEVEMENTS SETTINGS
+  that opens a page of its own**: the switch, `SCAN GAMES FOR OFFLINE
+  ACHIEVEMENTS`, then one block of text -- `EARN CASUAL ACHIEVEMENTS WITHOUT A
+  CONNECTION. THEY ARE SENT WHEN YOU'RE BACK ONLINE. CASUAL ACHIEVEMENTS ONLY,
+  SO TURNING IT ON TURNS HARDCORE MODE OFF. '!RA!' IN A GAME'S CORNER MEANS AN
+  ACHIEVEMENT HASN'T REACHED RETROACHIEVEMENTS YET.` (D-RA-001/002/003,
+  D-UI-053/054/056). Maintainer: *"put the exclamation point, RA exclamation
+  point, in between single quotes, so people know what that means."*
+  - **Turning it on says so and offers the scan**: `THIS IS A BETA FEATURE. IT
+  WORKS FOR CASUAL ACHIEVEMENTS ONLY, AND TURNING IT ON TURNS HARDCORE MODE
+  OFF.` with `TURN ON` / `NOT NOW`, then `SCAN GAMES FOR OFFLINE ACHIEVEMENTS
+  NOW?` with `SCAN NOW` / `LATER` (D-RA-012). Hardcore is put back when the
+  switch goes off. Maintainer: *"otherwise, they may skip the scan process."*
+  - **The scan caches every game on the console that has a set -- no cap** --
+  from the interface's own index, without re-hashing; a top-up on connect
+  adds what is new, and the page says `NEW GAMES ARE ADDED THE NEXT TIME
+  YOU'RE CONNECTED.` (#179, #184, D-RA-010/013/014). The scan page counts
+  `GAMES WITH ACHIEVEMENTS ADDED: N` and `NOT SAVED: N`; the row under it
+  reads `N GAMES READY FOR OFFLINE PLAY`, or `SAVING GAMES FOR OFFLINE
+  PLAY...` with its count while a top-up runs on its own (#189).
+  Maintainer: *"I would want every game available for offline play."*
+  - **With Wi-Fi off, the achievements pages still show your progress** from
+  the store on the device (#180, D-RA-009/011/021): a game's page says
+  `YOU'RE OFFLINE. SHOWING YOUR MOST RECENT PROGRESS.`, the summary `YOU'RE
+  OFFLINE. SHOWING THE GAMES SAVED FOR OFFLINE PLAY.` Maintainer: *"I just
+  turned off Wi-Fi and tried to view the achievements, and I couldn't."*
+  - **The cards say what happens next, never that the link was down** (#173,
+  D-RA-004/017): at exit `OFFLINE ACHIEVEMENTS WILL BE SENT NEXT TIME YOU'RE
+  CONNECTED.` (or `... WILL BE SENT AND SAVES SYNCED NEXT TIME YOU'RE
+  CONNECTED.`), on the next connected card `OFFLINE ACHIEVEMENTS HAVE BEEN
+  SENT TO RETROACHIEVEMENTS.` Achievements are *sent*, saves are *synced*.
+  - **The proxy's synthetic "Warning: Casual Only" achievement never reaches
+  the emulator** (it was awarded with a toast at every launch), a game
+  without a set reads as unknown rather than an outage, **a settings backup
+  never carries the proxy's store**, and the proxy's automatic crash-log
+  upload to its developer is off unless you turn it on (D-RA-003/005, #186).
+  
+## Four fixes found on the way to the release candidate (2026-09-14)
+
+- **The RETROACHIEVEMENTS switch no longer turns itself off** after a boot
+  whose sign-in ran before the network was up (#175). A refusal says
+  `RETROACHIEVEMENTS DIDN'T ACCEPT YOUR SIGN-IN: <why>` and leaves the switch
+  on; an unreachable server says `COULDN'T REACH RETROACHIEVEMENTS TO SIGN YOU
+  IN. RETROACHIEVEMENTS STAYS ON. IT'LL SIGN IN WHEN YOU'RE ONLINE.`, and the
+  sign-in is retried when the link comes up, nine times ten seconds apart,
+  because a hotspot's DNS lags its address.
+  - **Your RetroAchievements password is out of the launch log and out of a
+  support bundle** (#176, #177, D-INFRA-011): with verbose logging, the
+  image's default, `exec.log` had carried it on every launch and
+  `rocknix-evidence` copied it. Every value now reads `<redacted>`.
+  - **System logos are sharp on every system** (#181). FBNeo, NES and Game Boy
+  read soft because one logo was shared between the carousel and a game
+  list's header and whichever loaded first fixed its size. Maintainer, after
+  a restart: they *"fixed themselves"* -- which is the cause exactly.
+  - **Tailscale comes back after a restart when its switch is on** (#174,
+  D-NET-010): the switch records your choice, not its seven-second probe's
+  answer, which wrote `0` whenever the node still needed a sign-in.
+  - **INDEX NEW GAMES AT STARTUP actually runs** (#183, D-RA-018). It had never
+  once run on ROCKNIX: the index started only with the splash screen's
+  window, and ROCKNIX starts the interface without a splash.
+  
+## Offline, the achievements pages answer; the login toast says so; save state times; Wi-Fi like a phone; a launch over a sync asks (2026-09-15)
+
+- **RETROACHIEVEMENTS from the main menu answers in seconds with Wi-Fi off**
+  (#190, D-RA-020). It hung on PLEASE WAIT: 247 games were 494 requests to a
+  proxy that still believed it was online. The interface asks the proxy for
+  its store only and reads the summary in one call. Maintainer: *"just gets
+  stuck on 'Please Wait' while I'm offline."*
+  - **RetroArch's login toast says `RetroAchievements: Logged in as "<account>"
+  (offline).`** when the proxy answered from its store, and its backdrop
+  covers the text at 640x480 (#194, D-RA-022).
+  - **The SAVE STATE MANAGER's times follow SHOW CLOCK IN 12-HOUR FORMAT**:
+  `09/15/2026 02:17 AM` with it on, `02:17` with it off, French with a
+  literal AM/PM (#195, D-UI-058/066). A Sunday-morning `09:07` had read as
+  9:07 pm on a Monday night. Maintainer: *"adding AM or PM to the save state
+  time when the user chooses to use the 12-hour clock."*
+  - **Playing from a slot loads that slot and keeps RetroArch's exit auto
+  save** (#196, D-UI-057). The interface used to put the old auto save back
+  over the one RetroArch had just written, so a session from a slot left no
+  save state. ROCKNIX ships Batocera's `es_savestates.cfg` entry and the
+  launcher turns the chosen file into RetroArch's entry slot. Maintainer:
+  *"stay consistent with upstream Batocera game saves."*
+  - **NETWORK SETTINGS shows the network you are on.** The `WI-FI NETWORK`
+  row's value is the connection -- the name, `NOT CONNECTED`, or `COULDN'T
+  CHECK` -- not the last one typed (#191, #201, D-UI-063/071). A opens
+  `WI-FI NETWORKS`: the networks in range, the joined one first marked
+  `CONNECTED`, remembered ones marked `SAVED`; a press on a saved one joins
+  it with no key asked, any other asks the key; a refusal says `COULDN'T
+  CONNECT TO <name>.` Switching between home and a phone's hotspot used to
+  destroy the saved key. **`MANAGE SAVED NETWORKS`** lists what the device
+  remembers, marks the one `IN USE`, and forgets one after `FORGET <name>?`
+  (D-UI-062/064/068). Maintainer: *"This matches the paradigm on other
+  operating systems, phones, etc."*
+  - **Launching a game while saves sync is a question, not a refusal** (#203,
+  D-CLOUD-129): `YOUR SAVES ARE SYNCING WITH THE CLOUD.` / `IF YOU STOP IT,
+  THE NEXT SYNC FINISHES WHAT THIS ONE DID NOT.` with `STOP IT AND PLAY` /
+  `KEEP WAITING`; over a back up or restore left running, `YOUR BACKUP TO
+  THE CLOUD IS STILL RUNNING.` / `IF YOU STOP IT, WHAT IT HAS NOT MOVED YET
+  WAITS FOR THE NEXT RUN.` A stopped run reads `SKIPPED - YOU STARTED A
+  GAME` on the card and `SKIPPED, A GAME WAS STARTED` on its row.
+  Maintainer: *"it told me it was stopping so I couldn't play. That seems
+  less than ideal."*
+  - **The manager's tile labels are a point smaller** (#202). Maintainer: *"the
+  text could be a tiny bit smaller, maybe one point or so."*
+  
+## The automatic syncs ask too; slot numbers never change; the deletion is instant (2026-09-16)
+
+- **The sync at startup and after a game asks the same question** -- `STOP IT
+  AND PLAY` / `KEEP WAITING` -- and nothing is cancelled until you answer
+  (D-CLOUD-130). Maintainer: *"we should have a consistent behavior."* The
+  price, measured: about a second of your own press (D-CLOUD-131).
+  - **A save state slot's number never changes**: no renumbering after a
+  session or a deletion; gaps stay (D-UI-069). A renumber was a delete plus a
+  new file to the sync -- a delete you never made.
+  - **Deleting a save state is instant** (#205, D-UI-073): the tile goes the
+  frame YES is pressed; the bookkeeping -- the retired row, then the files,
+  one unit the script owns -- runs on a worker (D-CLOUD-132/133). It had
+  taken a second on the RG SP. A reopened manager never lists a state whose
+  file is gone. Maintainer: *"deletions show up quickly."*
+  
+## COPY TO FREE SLOT is recorded; no flash after a delete; COMPARING SAVES; French for every fork string (2026-09-17)
+
+- **A copy made with COPY TO FREE SLOT is recorded for the sync and refused
+  while a sync runs**, as a deletion is: `YOUR SAVES ARE SYNCING WITH THE
+  CLOUD.` / `WAIT FOR IT TO FINISH BEFORE COPYING A SAVE STATE - THE
+  NOTIFICATION AT THE TOP SAYS WHEN IT IS DONE.` (#206, D-CLOUD-134). The copy
+  is as quick as before.
+  - **Nothing on the page redraws after the tile goes** (#207, D-UI-074): the
+  grid is rebuilt only when the disk disagrees with the page, now the one
+  sign a deletion did not take. Maintainer: *"deletes worked as expected
+  without the screen redraw issue."*
+  - **The sync card's live line says `COMPARING SAVES` while rclone lists and
+  compares** -- never `NOTHING SENT YET` between the stages of a sync (#208,
+  D-UI-075). A half with nothing to move still ends on its outcome line.
+  Maintainer: *"in general, we just want to communicate progress."*
+  - **The transfer page says `COMPARING 3 OF 40 FILES`** for the phase the card
+  calls COMPARING SAVES; it said CHECKING (#157). **And a transfer stopped
+  for a game reads `SKIPPED, A GAME WAS STARTED` on every row it touched**,
+  not COULDN'T FINISH (#203).
+  - **Every string the fork adds is in French** (#152, D-UI-072): 492 more
+  entries, the cloud hub's line shortened so it keeps to two lines at 640x480,
+  two English typos in the menu gone. Maintainer: *"we can stick with French."*
+  - **ARMSX2 no longer adds a `Token =` line to its `secrets.ini` at every
+  launch** (#170); its device check waits for a PS2-capable handheld.
+  
+## The help bar promises only what the buttons do; badges cached with achievements; a RetroArch crash fixed (2026-09-18 and 2026-09-19)
+
+- **SAVE STATES is offered only where it can happen**, so SCREENSHOTS, TOOLS
+  and a PICO-8 list no longer promise it, and **the bar is centred on what it
+  draws** (#210) -- it had been centred on a box that included the prompt it
+  dropped, 138 px off on a French list. Maintainer: *"this menu doesn't seem
+  to appear centered on every playlist."*
+  - **A game's badge images are cached with its achievements** (#212,
+  D-RA-027): the pass runs at the end of a scan and of a top-up, resumes
+  where it stopped, and an image is proved whole before it is kept (#213,
+  D-RA-024). The RG SP had 956 images missing across 123 cached games, so
+  badges were blank offline. Fetches reuse one connection, several times
+  faster (#217). Maintainer: *"whenever we cache the achievements, we cache
+  the images for the achievements."*
+  - **A RetroArch crash in its video thread is fixed** (#211, #225): a posted
+  command could run twice when a frame arrived in the same window -- a dead
+  stack frame, or a double free. Read from a core dump off the RG SP: SIGSEGV
+  loading a texture while an achievement was being evaluated.
+  
+## The transfer page's words on a cut run (2026-09-21)
+
+- **A back up cut by the network reads `COULDN'T FINISH` / `DON'T WORRY,
+  NOTHING CHANGED.`**, not SKIPPED - YOU'RE NOT ONLINE over WHAT MADE IT IS
+  IN YOUR CLOUD (#153). *Skipped* is nothing attempted; the page had called a
+  run that moved nine megabytes skipped and claimed a file had landed when
+  none had. The note counts files that completed, and the SETTINGS / SAVES
+  header and the failed item's name are French on the French page.
+
+## Long work is a page with CANCEL; offline achievements answer at once; thumbnails at the system's shape (2026-09-22)
+
+The maintainer's round on the RG35XX SP (#236) produced three changes in
+one night, all three built as one candidate and proven on the VM before
+the handheld took them.
+
+- **The offline-achievements scan, the cloud back up / restore page and the
+  scraper run on a page that owns the screen until the work ends** (#241,
+  D-UI-078). The only way out while any of them runs is CANCEL: a
+  confirmation that says what cancelling means -- `GAMES ALREADY SAVED
+  STAY SAVED. THE NEXT SCAN CARRIES ON FROM THERE.`, `WHAT'S ALREADY IN
+  PLACE STAYS. THE NEXT BACKUP OR RESTORE FINISHES WHAT THIS ONE DIDN'T.`,
+  `WHAT'S SCRAPED SO FAR IS KEPT. UPDATE GAMELISTS TO APPLY IT.` -- then
+  the stop, and the page ends `SKIPPED - YOU CANCELLED IT` with what the
+  run had done. Nothing can be sent to the background any more: the
+  earlier "press B to keep it running" left a job with no end signal and an
+  outcome on a row the player had to go and find. The scraper's corner card
+  and its toast are gone with it. Backgrounding stays for work that is
+  fast -- the startup and exit save sync. Maintainer, at the scan page:
+  *"we should only allow things to run in the background when they're
+  fast."*
+- **Found under it and fixed: a refreshed two-line row kept growing.** The
+  OFFLINE ACHIEVEMENTS page came back with its scan row drawn a screen
+  tall after a long scan, on this candidate and the one before it -- every
+  refresh of the row's line moved its split by ten percent. Measured from
+  the fonts now; a row refreshed a thousand times keeps its height.
+- **Offline, the achievements pages answer in seconds** (#242). With
+  OFFLINE ACHIEVEMENTS on and the Wi-Fi off, VIEW THIS GAME'S ACHIEVEMENTS
+  ended `An error occurred. Timeout was reached.` and a game's launch
+  showed no achievements for half a minute: the proxy on the device gave
+  the resolver its full twenty seconds on every request while the
+  interface stayed up with a route and no DNS, which is how a handheld goes
+  offline as often as not. A name lookup now gets three seconds, before the
+  proxy's probe and before every attempt at RetroAchievements, and the
+  interface no longer asks the web when offline and the store did not
+  answer -- it says `THE OFFLINE ACHIEVEMENTS SERVICE DIDN'T ANSWER. TRY
+  AGAIN IN A MOMENT.` instead. Confirmed by the maintainer on the RG35XX
+  SP: the page, the offline sign-in toast, the badges.
+- **The interface no longer dies after a game in which an achievement was
+  unlocked** (#246). Every unlock writes a screenshot, and the folder rescan
+  that follows a game exit deleted the SCREENSHOTS entries and then reloaded
+  a view still pointing at one of them -- freed memory, which held together
+  seventeen times on the VM and not the eighteenth, and on the RG35XX SP
+  went at the second exit of the maintainer's offline session. The rescan
+  now takes the view down before the files go and remakes it after. And
+  when the interface does die, its log carries a backtrace and the crash
+  keeper, once armed, keeps the fault itself rather than the teardown.
+- **A vertical arcade game's thumbnails and screenshots are upright** (#245,
+  D-UI-081). RetroArch turns such a game's frame for the display and its
+  capture does not, so the SAVE STATE MANAGER's tiles and the SCREENSHOTS
+  entries came out a quarter turn off. The interface now learns each game's
+  rotation at the end of its session and turns that game's captures by it
+  wherever it draws them: the manager's tiles, the SCREENSHOTS list and its
+  grid style, and the full-screen viewer. A game played before this build
+  has no session record yet, so the interface takes its turn from the
+  core's own driver table, installed with FBNeo, FB Alpha 2012 and 2019,
+  MAME 2003-plus and MAME 2010 (#248): every existing thumbnail and
+  screenshot is right the moment the build is, with nothing to replay. The
+  screenshot RetroArch takes at an achievement unlock is recognised too. The files stay as RetroArch wrote them. Maintainer: *"I think
+  we do it on our side."*
+- **A game started from the SAVE STATE MANAGER's AUTO SAVE tile runs on
+  RetroArch's Auto slot** (#249): the quick menu says `Auto` and the load
+  hotkey reloads the auto save the game started from, as it reloads a
+  numbered slot's state for a numbered tile. It had stayed on slot 0, so
+  the hotkey loaded a different file. Maintainer: *"it doesn't reload the
+  autosave."*
+- **The SAVE STATE MANAGER's arrow tiles are as they always were** (#250).
+  The transform that fits a thumbnail to its system's shape (#243) and
+  turns a vertical game's (#245) had been applied to every tile of the
+  manager, so the arrow on START NEW GAME and START NEW AUTO SAVE was
+  fitted at 4:3 on an NES game and pointed down on a vertical arcade one.
+  It now applies only to a tile that shows a capture, and the arrow tiles
+  are pixel-identical to a build from before either change. Maintainer:
+  *"the arrows should all remain exactly how they were. It's just the
+  screenshot itself."*
+- **The VM now checks that a build changed only what it meant to** (#252,
+  D-QA-038). Every screen the QA walks reach is compared, pixel for pixel,
+  with the same screen on the last build accepted on a handheld; a change
+  no issue claims fails the run. The arrow in the SAVE STATE MANAGER had
+  been wrong for ten builds because each check measured only the
+  thumbnail it was about. Three walks of the manager itself (a NES game, a
+  Game Boy game, a vertical arcade game) are the first added under it.
+  Maintainer: *"I think your recommendation for 252 is a strong
+  recommendation, and so we should roll that out as well."*
+- **DO NOT INCREMENT now means it** (#209, D-UI-083). With INCREMENTAL SAVE
+  STATES set to DO NOT INCREMENT, the save-state hotkey writes the slot the
+  game was started from; it had kept making new slots, because the launcher
+  read the setting's second spelling as "on". INCREMENT PER SAVE is
+  unchanged: a new slot on every save, the launched one untouched, which is
+  what the row promises and what Batocera does. A device that still held
+  the old "0" now shows DO NOT INCREMENT, which is what it was doing.
+- **A device password with a space, a `$` or a quote is set as typed** (#198).
+  The interface handed it to the shell unquoted, so it was cut at the space
+  or misread; it is quoted now, as the Wi-Fi key already was, and the script
+  passes it to the file-sharing password whole.
+- **A core dump cut at the keeper's cap says so** (#247). The note compared
+  the compressed size to the cap and called a truncated dump whole; it now
+  reads the raw count, and the interface's core, mostly texture memory, gets
+  a larger cap before its stacks are lost. Only for troubleshooting; the
+  keeper stays off on a release candidate (D-QA-029).
+- **RetroArch's notifications are readable on small panels** (#251,
+  D-UI-084). The message queue -- the sign-in banner, "saved state", the
+  scan and sync notices -- was drawn at 10 pixels on a 640x480 handheld and
+  at the 9-pixel floor on a 480x320 one, where no stroke of the font owns
+  a whole pixel; it now has a floor of 14 pixels, where the strokes do.
+  Panels at 720p and above are unchanged. Maintainer: *"It just isn't
+  nearly as easy to read that text overlay as it is, say, the top-left
+  achievement banner."*
+- **Save-state thumbnails and screenshots are drawn at the shape of the
+  system that made them** (#243, D-UI-080). RetroArch writes both at the
+  core's native size, which for the NES and the SNES is the pixel grid and
+  not the 4:3 picture the game showed, so the SAVE STATE MANAGER's tiles
+  and the SCREENSHOTS entry's pictures were a fifth narrower than the game.
+  The interface now fits them at the system's display aspect -- 4:3 for
+  the consoles and computers whose pixels are not square; the Game Boy,
+  GBA and the other square-pixel handhelds as they are. RetroArch's
+  capture is left alone. Maintainer: *"It's odd to see certain things
+  stretched out of aspect ratio."*

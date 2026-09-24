@@ -16,7 +16,19 @@
 #   /some/other/folder/file.name*
 # )
 
+# The folder the settings tier reads: cloud_backup uploads from
+# SETTINGS_BACKUPS in cloud_sync.conf, and this must write where that reads,
+# or the settings tier (backuptool backup && cloud_backup --system-only)
+# archives into one folder and uploads from another. Found by the round-trip
+# harness on 2026-09-06 (Gate 0, #35): the value was a constant here.
+# BACKUPFOLDER is the name an un-migrated conf still carries (D-UI-022).
 SETTINGS_BACKUPS="/storage/roms/backup"
+if [ -f /storage/.config/cloud_sync.conf ]; then
+    _configured=$(sed -n 's/^SETTINGS_BACKUPS="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' /storage/.config/cloud_sync.conf | head -1)
+    [ -z "${_configured}" ] && _configured=$(sed -n 's/^BACKUPFOLDER="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' /storage/.config/cloud_sync.conf | head -1)
+    [ -n "${_configured}" ] && SETTINGS_BACKUPS="${_configured}"
+    unset _configured
+fi
 ARCHIVEFOLDER="${SETTINGS_BACKUPS}/archive"
 # The name a backup is written under, and the one used to find it again.
 #
@@ -31,6 +43,37 @@ ARCHIVEFOLDER="${SETTINGS_BACKUPS}/archive"
 # calling it a system backup had people expecting their saves to be in it.
 # Every reader below still accepts the three earlier names.
 BACKUP_STAMP="$(date +%Y_%m_%d-%H%M%S)"
+# The device's name sits between the stamp and -${OS_NAME}_SETTINGS.
+#
+# Every device used to write <stamp>-ROCKNIX_SETTINGS.tar.gz, so two
+# handhelds' archives were told apart by nothing. Maintainer, 2026-09-08: a
+# backup from the RG SP and one from the RG35XX SP, and no way to say from the
+# names which came from which. The hostname would not do -- one device's owner
+# had set it, the other still said ROCKNIX -- so the name is the one
+# cloud_device_id derives from the device tree ("Anbernic-RG-SP", D-CLOUD-009):
+# stable, readable, and already path-safe.
+#
+# It goes in the MIDDLE, not in place of ROCKNIX, on purpose:
+#
+#     2026_09_08-161022-Anbernic-RG-SP-ROCKNIX_SETTINGS.tar.gz
+#
+# The stamp stays first, so a listing still sorts by age; and the name still
+# ends in -ROCKNIX_SETTINGS.tar.gz, so the glob every reader already has --
+# newest_backup below, and the same function in every image already on a
+# device -- matches it unchanged. A first cut put the label where ROCKNIX was,
+# and an older image's finder then found nothing when it pulled a new archive
+# down from the cloud (review, 2026-09-08).
+#
+# The helper is resolved beside this script or at /usr/bin, never via PATH,
+# which /etc/profile rewrote above. With no helper there is no label, and the
+# name is the one every older archive carries.
+device_label() {
+    local tool
+    tool="$(dirname "$(readlink -f "$0")")/cloud_device_id"
+    [ -x "${tool}" ] || tool="/usr/bin/cloud_device_id"
+    [ -x "${tool}" ] && "${tool}" --label 2>/dev/null | tr -cd 'A-Za-z0-9_-'
+}
+DEVICE_LABEL="$(device_label)"
 # tar, not zip.
 #
 # zip does not carry a symlink as a symlink, and this OS is full of them: the
@@ -45,11 +88,20 @@ BACKUP_STAMP="$(date +%Y_%m_%d-%H%M%S)"
 # extracts cleanly over an existing one. Verified on-device, because Info-ZIP
 # on a desktop and busybox on a handheld disagree, which is how the original
 # bug stayed invisible.
-BACKUPFILE="${SETTINGS_BACKUPS}/${BACKUP_STAMP}-${OS_NAME}_SETTINGS.tar.gz"
+BACKUPFILE="${SETTINGS_BACKUPS}/${BACKUP_STAMP}-${DEVICE_LABEL:+${DEVICE_LABEL}-}${OS_NAME}_SETTINGS.tar.gz"
 LEGACY_BACKUPFILE="${SETTINGS_BACKUPS}/${OS_NAME}_BACKUP.zip"
 
-# The newest archive present, whatever it is called. Names lead with the date,
-# so sorting them orders them by age.
+# The newest archive present, whatever it is called and whichever device wrote
+# it. Names lead with the date, so sorting them orders them by age.
+#
+# Any device's, on purpose. A device that has just pulled another handheld's
+# archive from the cloud (the fresh-device journey, #26) has it beside its own
+# or in place of it, and "restore the newest backup" -- which is what the menu
+# promises -- must apply it. These globs are the ones this function has always
+# had: a labelled name ends in -ROCKNIX_SETTINGS.tar.gz like every archive
+# before it, so the first glob takes the new shape and the old alike, and the
+# other two take the two dated names before that. Unchanged, so that an image
+# from before the label finds a new archive with the very same code.
 newest_backup() {
     local found
     found=$(ls -1 "${SETTINGS_BACKUPS}"/*-"${OS_NAME}"_SETTINGS.tar.gz \
@@ -65,16 +117,32 @@ ARCHIVE_KEEP=3
 ESPATH="/storage/.config/emulationstation"
 mkdir -p "${SETTINGS_BACKUPS}"
 
+# What the player sees, and what the log keeps. The first argument is the
+# screen line: a sentence in the player's words that says what did not
+# happen, what is in place, and what to do -- never a path, a code, a log or a
+# tool's name (D-CLOUD-077, D-UI-028). The second, when given, is detail for
+# the system log only. Until 2026-09-10 these printed "Restore reported
+# errors. Check 'logger' output" and paths under /storage to a 3.5-inch
+# screen.
 fail() {
     echo -e "\e[31m${1}\e[0m"
-    logger -t backuptool "${1}"
+    logger -t backuptool "${1}${2:+ -- ${2}}"
     sleep 5
     exit 1
 }
 
 note() {
     echo -e "\e[32m${1}\e[0m"
-    logger -t backuptool "${1}"
+    logger -t backuptool "${1}${2:+ -- ${2}}"
+}
+
+# The one protocol line the transfer page and the sync card read for why a
+# run did not finish (D-UI-028): upper case, the player's words. This tool's
+# output is discarded in EmulationStation's chains today and shown verbatim
+# on the console flows; the line is here for when those hops move onto the
+# page (#105, tranche B).
+why() {
+    echo ">>> why ${1}"
 }
 
 # es_systems.cfg / es_features.cfg are OS-managed symlinks into /usr/config;
@@ -124,208 +192,274 @@ then
     then
         COMPRESSLOCATIONS=(${LOCATIONS[@]})
     else
-        WARN="Error loading custom backuptool configs. Using defaults."
+        WARN="YOUR OWN BACKUP LIST COULDN'T BE READ, SO THE STANDARD ONE WAS USED."
         echo "${WARN}"
-        logger -t backuptool "${WARN}"
+        logger -t backuptool "${WARN} -- /storage/.config/backuptool.conf failed to source"
         COMPRESSLOCATIONS=(${DEFAULT[@]})
     fi
 else
     COMPRESSLOCATIONS=(${DEFAULT[@]})
 fi
 
-case "${1}" in
-    "restore")
-        BACKUPFILE="$(newest_backup)"
-        if [ -z "${BACKUPFILE}" ] || [ ! -f "${BACKUPFILE}" ]
-        then
-            fail "No settings backup found in ${SETTINGS_BACKUPS}. Nothing to restore."
-        fi
+# Is this archive whole? tar lists every member or fails; busybox unzip has
+# no -t, so for a zip the listing is the test (a truncated zip has no central
+# directory to list) -- and the -t is tried first for an unzip that has it.
+# Until 2026-09-10 the zip check was `unzip -t` alone, which busybox answers
+# with its usage text and exit 1, so every legacy .zip on a device read as
+# damaged.
+archive_ok() {
+    case "${1}" in
+        *.tar.gz) tar -tzf "${1}" >/dev/null 2>&1 ;;
+        *)        unzip -t "${1}" >/dev/null 2>&1 || unzip -l "${1}" >/dev/null 2>&1 ;;
+    esac
+}
 
-        # An archive is whatever it is named. Both are read: every device in
-        # the field has .zip archives locally, and a format change is no
-        # reason to strand them.
-        case "${BACKUPFILE}" in
-            *.tar.gz) ARCHIVE_KIND="tar" ;;
-            *)        ARCHIVE_KIND="zip" ;;
-        esac
+# The standalone emulators' cheevos_*.sh scripts copy the RetroAchievements
+# token out of system.cfg into the emulator's own files at every launch, so
+# the token that write_archive deletes from the archived system.cfg would
+# come back into the archive under another name (#169; D-INFRA-010: no keys
+# travel). Two shapes. RATOKENFILES hold the token and nothing of the
+# player's -- PPSSPP's .dat is the bare token, Dolphin's RetroAchievements.ini
+# and SkyEmu's ra_token.txt are rewritten whole from system.cfg, ARMSX2's
+# secrets.ini is the shipped seed plus the token -- so they are held back
+# like rclone.conf and skipped on restore, and the emulator writes them
+# again from system.cfg the first time it starts after a restore, once the
+# player has signed in again. RATOKENSETTINGS are the emulator's whole
+# settings file with a token line in it; those travel with the value
+# blanked, as retroarch.cfg does. Only PPSSPP's is in the default LOCATIONS;
+# the rest are reached by a custom list such as /storage/.config.
+RATOKENFILES=(
+    /storage/.config/ppsspp/PSP/SYSTEM/ppsspp_retroachievements.dat  # cheevos_ppsspp.sh
+    /storage/.config/dolphin-emu/RetroAchievements.ini               # cheevos_dolphin.sh
+    /storage/.config/SkyEmu/ra_token.txt                             # cheevos_skyemu.sh
+    /storage/.config/ARMSX2/inis/secrets.ini                         # cheevos_armsx2.sh
+)
+RATOKENSETTINGS=(
+    /storage/.config/duckstation/settings.ini   # Token =   (DuckStation's own sign-in; cheevos_duckstation.sh is disabled upstream)
+    /storage/.config/melonDS/melonDS.ini        # RA_Token= RA_Password=   (cheevos_melonds.sh)
+    /storage/.config/flycast/emu.cfg            # Token =   (cheevos_flycast.sh)
+    /storage/.config/aethersx2/inis/PCSX2.ini   # Token =   (cheevos_aethersx2.sh)
+)
+# The offline RetroAchievements proxy's own folder (#165; D-RA-002,
+# D-INFRA-010). Its cache holds the RetroAchievements token three ways -- the
+# cached login2 row, auth::invalid_token, the t= in every queued award -- and
+# the HMAC key that signs the award queue. There is no sanitised copy worth
+# keeping: a queue is bound to the device that earned it, a copy on a second
+# device would replay the same awards, and the cache re-fills from the next
+# online launch. So the whole folder is held back, by prefix, and never put
+# back on a restore. Not in the default LOCATIONS; a custom list such as
+# /storage/.config sweeps it in. The toggle itself
+# (global.retroachievements.offlineproxy) is a line in system.cfg and travels.
+RATOKENDIRS=(
+    /storage/.config/raofflineproxy/
+)
 
-        note "Verifying backup archive..."
-        if [ "${ARCHIVE_KIND}" = "tar" ]
-        then
-            tar -tzf "${BACKUPFILE}" >/dev/null 2>&1 || \
-                fail "Backup archive is damaged (${BACKUPFILE}). Restore aborted; nothing was changed."
-        else
-            unzip -t "${BACKUPFILE}" >/dev/null 2>&1 || \
-                fail "Backup archive is damaged (${BACKUPFILE}). Restore aborted; nothing was changed."
-        fi
+# Write one settings archive to TARGET, whole or not at all.
+#
+# Staged, then archived once, to TARGET.partial; listed back (tar -tzf) as
+# the positive check that it is complete; only then renamed to TARGET. A
+# kill or a power cut at any point leaves TARGET as it was -- absent, or the
+# previous archive -- and at most a .partial beside it that nothing reads
+# (every glob here and in cloud_backup ends in .tar.gz). Until 2026-09-10
+# the archive was written straight under its final dated name, so a cut
+# mid-tar left a truncated file that newest_backup picked as the newest and
+# cloud_backup sent to the cloud (D-CLOUD-078, #105).
+#
+# With STRIP=1 the credential-carrying files are held back and a sanitized
+# copy archived instead (the archive can be synced to the cloud). The
+# pre-restore snapshot passes 0: it never leaves the device, and putting it
+# back must give the player exactly the settings they had, passwords too.
+#
+# Returns 0 when TARGET holds a verified archive; 2 when nothing could be
+# collected (an unreadable input, or nothing to collect); 3 when the archive
+# could not be written or did not list back. TARGET is untouched on 2 and 3.
+write_archive() {
+    local TARGET="${1}" STRIP="${2:-1}"
+    local SYSCFG="/storage/.config/system/configs/system.cfg"
+    local ESCFG="${ESPATH}/es_settings.cfg"
+    local RACFG="/storage/.config/retroarch/retroarch.cfg"
+    local RCLONECFG="/storage/.config/rclone/rclone.conf"
+    local FILELIST SECRETLIST SENDLIST STAGING CANDIDATE HELD BLANKED
 
-        note "Restoring configuration from ${BACKUPFILE}..."
-        if [ "${ARCHIVE_KIND}" = "tar" ]
-        then
-            # No skip-list here, and none needed. tar replaces a symlink with
-            # whatever the archive holds instead of refusing and aborting, and
-            # what the archive holds is the symlink itself.
-            tar -xzf "${BACKUPFILE}" -C / >/dev/null
-        else
-            # Archives written before backups switched to regular files only
-            # hold the *contents* of symlinked paths. Extracting one of those
-            # over the live symlink makes busybox unzip abort the whole
-            # restore, so every backup taken before that change would be
-            # unrestorable here. Skip exactly those entries instead: the OS
-            # owns those symlinks and provides them, and replacing one with a
-            # stale copy is the bug that got them excluded from backups in the
-            # first place.
-            SKIP=""
-            SKIPPED=0
-            for ENTRY in $(unzip -l "${BACKUPFILE}" 2>/dev/null | awk 'NF>3 && $4 ~ /^storage\// {print $4}')
-            do
-                if [ -L "/${ENTRY}" ]
+    # Regular files only: a symlink under the config tree is the OS's
+    # (es_systems.cfg and es_features.cfg point into /usr/config; the
+    # ppsspp link runs the other way -- /usr/bin/assets points INTO
+    # /storage/.config/ppsspp/assets -- so that one is not an example of
+    # this, though the rule holds; #45). zip -r follows them and stores
+    # their target's bytes; on restore
+    # busybox unzip then refuses to overwrite the still-present
+    # symlink ("exists but is not a regular file") and aborts the
+    # whole restore partway. Symlinks are the OS's to provide, not
+    # the backup's to carry.
+    FILELIST=$(mktemp)
+    SECRETLIST=$(mktemp)
+    SENDLIST=$(mktemp)
+    find ${COMPRESSLOCATIONS[@]} -type f 2>/dev/null > "${FILELIST}"
+
+    # Inside a configured location, what the image ships is not the player's
+    # configuration and does not travel (#45). A stock device's archive was
+    # 16.4 MB, and so was a fresh VM's: almost all of it OS-shipped content
+    # under /storage/.config -- PPSSPP's assets (46 language .ini files, every
+    # shader, fonts, the debugger web app), its 8.7 MB cheat.db, a libretro
+    # core's jar -- copied there from /usr/config at first boot and put back
+    # by factoryreset, plus the GL shader cache, which is stale after any
+    # driver change. Two rules, applied to the file list:
+    #   1. a file under /storage/.config that is byte-identical to its
+    #      /usr/config counterpart is the shipped seed, unchanged; the image
+    #      has it, so the backup need not. A file the player edited differs
+    #      and travels (ppsspp.ini, controls.ini, their own cheat .ini files).
+    #   2. ppsspp/assets/ and PSP/SYSTEM/CACHE/ never travel, edited or not:
+    #      one is the emulator's program data, the other a cache.
+    # Substring matches on the file list (grep -F, unanchored: the two paths
+    # match wherever they occur in a line), so a custom LOCATIONS that names
+    # one of these on purpose is still pruned -- they are the OS's to provide.
+    local REGENERABLE PRUNED KEPT F REL
+    REGENERABLE=$(mktemp)
+    printf '%s\n' /storage/.config/ppsspp/assets/ /storage/.config/ppsspp/PSP/SYSTEM/CACHE/ > "${REGENERABLE}"
+    GREP_RC=0
+    grep -v -F -f "${REGENERABLE}" "${FILELIST}" > "${FILELIST}.pruned" || GREP_RC=$?
+    rm -f "${REGENERABLE}"
+    # grep's 1 is "every line matched" -- nothing outside the two prefixes,
+    # which is fine; 2 is grep itself failing (a list it could not read), and
+    # a pruned list from a grep that did not finish is a partial backup that
+    # would be announced as a success. Refuse it: 2 to the caller, "nothing
+    # could be collected", with the reason in the log (#151 PL-14; until
+    # then `|| true` took whatever had been written).
+    if [ "${GREP_RC}" -gt 1 ]
+    then
+        logger -t backuptool "the backup list could not be filtered (grep exit ${GREP_RC}); nothing written"
+        rm -f "${FILELIST}" "${FILELIST}.pruned" "${SECRETLIST}" "${SENDLIST}"
+        return 2
+    fi
+    KEPT=$(mktemp); PRUNED=0
+    while IFS= read -r F
+    do
+        case "${F}" in
+            /storage/.config/*)
+                REL="${F#/storage/.config/}"
+                if [ -f "/usr/config/${REL}" ] && cmp -s "/usr/config/${REL}" "${F}"
                 then
-                    SKIP="${SKIP} ${ENTRY}"
-                    SKIPPED=$((SKIPPED + 1))
+                    PRUNED=$((PRUNED + 1))
+                    continue
                 fi
-            done
-            if [ "${SKIPPED}" -gt 0 ]
-            then
-                note "Keeping ${SKIPPED} system-provided link(s) this older backup would have overwritten."
-                # -x is a mode switch: every argument after it is an exclusion.
-                unzip -o "${BACKUPFILE}" -d / -x ${SKIP} >/dev/null
-            else
-                unzip -o "${BACKUPFILE}" -d / >/dev/null
-            fi
-        fi
-        if [ $? -ne 0 ]
-        then
-            fail "Restore reported errors. Check 'logger' output; the device will NOT reboot."
-        fi
+                ;;
+        esac
+        printf '%s\n' "${F}" >> "${KEPT}"
+    done < "${FILELIST}.pruned"
+    mv "${KEPT}" "${FILELIST}"
+    rm -f "${FILELIST}.pruned"
+    [ "${PRUNED}" -gt 0 ] && logger -t backuptool "left out ${PRUNED} file(s) identical to the image's own copies under /usr/config"
 
-        # Passwords and keys are stripped at backup time (see below); wifi and
-        # similar credentials must be re-entered after a restore.
-        # EmulationStation shows a native reminder on next boot to re-enter
-        # the credentials that backups deliberately exclude.
-        touch /storage/.config/.restore-finish-pending
+    if [ ! -s "${FILELIST}" ]
+    then
+        # busybox tar given an empty list writes nothing readable.
+        rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
+        return 2
+    fi
 
-        note "Restore complete. Wifi/account passwords are not part of backups and must be re-entered."
-        note "Rebooting in 5 seconds so the restored configuration takes effect cleanly..."
-        sync
-        sleep 5
-        systemctl reboot
-    ;;
-    "backup")
-        # Guard the tool this whole path depends on. busybox provides unzip but
-        # not zip, so a missing package means backup dies with a bare
-        # "zip: not found" after the user has already chosen to back up.
-        for TOOL in tar gzip
-        do
-            command -v "${TOOL}" >/dev/null 2>&1 || \
-                fail "Cannot create a backup: '${TOOL}' is missing from this image."
-        done
-        # Rotate the previous backup into an archive folder that the cloud
-        # allowlist (backup/*.zip) does not match, and keep only the newest few.
-        # Rotate whatever archive is currently at the root. Each backup writes
-        # a new dated name, so this is only ever the previous one.
-        PREVIOUS="$(newest_backup)"
-        if [ -n "${PREVIOUS}" ] && [ -f "${PREVIOUS}" ]
-        then
-            mkdir -p "${ARCHIVEFOLDER}"
-            # Moved under the name it already has, keeping the date it was
-            # taken. Re-stamping on rotation would date every archive to the
-            # moment it was superseded, which is not when it was made and is
-            # not what somebody hunting for "the one from before Tuesday"
-            # needs. An archive written before names carried dates has none to
-            # keep, so it gets one now.
-            PREVIOUS_NAME="$(basename "${PREVIOUS}")"
-            case "${PREVIOUS_NAME}" in
-                [0-9][0-9][0-9][0-9]_*) ;;
-                *) PREVIOUS_NAME="$(date -r "${PREVIOUS}" +%Y_%m_%d-%H%M%S 2>/dev/null || date +%Y_%m_%d-%H%M%S)-${PREVIOUS_NAME}" ;;
-            esac
-            mv "${PREVIOUS}" "${ARCHIVEFOLDER}/${PREVIOUS_NAME}"
-            # Both shapes: an upgraded device still has archives written under
-            # the old name, and rotation must not skip them and keep them for
-            # ever while trimming only the new ones.
-            ls -1t "${ARCHIVEFOLDER}"/*_SETTINGS*.tar.gz "${ARCHIVEFOLDER}"/*_BACKUP*.tar.gz "${ARCHIVEFOLDER}"/*_BACKUP*.zip \
-                   "${ARCHIVEFOLDER}"/ARCHIVED_*.zip 2>/dev/null \
-                | awk '!seen[$0]++' | tail -n +$((ARCHIVE_KEEP + 1)) | while read -r OLD
-            do
-                rm -f "${OLD}"
-            done
-        fi
-
-        note "Backing up configuration to ${BACKUPFILE}..."
-
-        # Files that carry credentials. They are held back from the archive and
-        # a sanitized copy added afterwards, so a populated secret never enters
-        # it at all. Sanitizing after the fact meant the real value was written
-        # into the zip first and only then overwritten -- and a backup
-        # interrupted in between left it there.
-        SYSCFG="/storage/.config/system/configs/system.cfg"
-        ESCFG="${ESPATH}/es_settings.cfg"
-        RACFG="/storage/.config/retroarch/retroarch.cfg"
-
-        # Regular files only: symlinks under the config tree point at
-        # OS-shipped content (e.g. the ppsspp assets link into /usr).
-        # zip -r follows them and stores their target's bytes; on restore
-        # busybox unzip then refuses to overwrite the still-present
-        # symlink ("exists but is not a regular file") and aborts the
-        # whole restore partway. Symlinks are the OS's to provide, not
-        # the backup's to carry.
-        FILELIST=$(mktemp)
-        SECRETLIST=$(mktemp)
-        find ${COMPRESSLOCATIONS[@]} -type f 2>/dev/null > "${FILELIST}"
-
-        # Only hold back what this backup was actually going to contain. A user
-        # with custom LOCATIONS may have left these out on purpose, and adding a
-        # sanitized copy regardless would put a file in their backup that they
-        # had deliberately excluded.
-        for CANDIDATE in "${SYSCFG}" "${ESCFG}" "${RACFG}"
+    # Only hold back what this backup was actually going to contain. A user
+    # with custom LOCATIONS may have left these out on purpose, and adding a
+    # sanitized copy regardless would put a file in their backup that they
+    # had deliberately excluded.
+    if [ "${STRIP}" = "1" ]
+    then
+        for CANDIDATE in "${SYSCFG}" "${ESCFG}" "${RACFG}" "${RCLONECFG}"
         do
             if grep -qxF "${CANDIDATE}" "${FILELIST}"
             then
                 echo "${CANDIDATE}" >> "${SECRETLIST}"
             fi
         done
-
-        # busybox grep -f with an EMPTY pattern file matches nothing and prints
-        # nothing, where GNU grep prints every line. The device has busybox, so
-        # piping that into zip would hand it an empty list and fail the backup
-        # outright -- and only for someone whose custom LOCATIONS excluded all
-        # three credential files, which is exactly the case the membership check
-        # above exists to support. Skip the filter when there is nothing to hold
-        # back rather than relying on grep to agree across implementations.
-        SENDLIST=$(mktemp)
-        if [ -s "${SECRETLIST}" ]
+        # rclone.conf is live OAuth access and refresh tokens for the
+        # player's cloud account. There is no sanitized copy worth keeping
+        # -- a remote without its token is a name -- so it is held back
+        # outright, and a restored device connects its cloud storage again
+        # (thirty seconds on a phone with the wizard). Not in the default
+        # LOCATIONS, but a custom LOCATIONS such as /storage/.config sweeps
+        # it in, and the archive is synced to the cloud by design (#52).
+        if grep -qxF "${RCLONECFG}" "${FILELIST}"
         then
-            grep -vxF -f "${SECRETLIST}" "${FILELIST}" > "${SENDLIST}"
-        else
-            cp "${FILELIST}" "${SENDLIST}"
+            logger -t backuptool "rclone.conf held back from the archive: cloud tokens never travel in a backup (#52)"
         fi
+        # The emulators' copies of the RetroAchievements token (#169; the
+        # lists above write_archive). The token-only files are held back
+        # outright, and the count goes to the log the way the pruned seeds'
+        # does; the settings files go on the list so a blanked copy is
+        # staged below in place of the real one.
+        HELD=0
+        for CANDIDATE in "${RATOKENFILES[@]}"
+        do
+            if grep -qxF "${CANDIDATE}" "${FILELIST}"
+            then
+                echo "${CANDIDATE}" >> "${SECRETLIST}"
+                HELD=$((HELD + 1))
+            fi
+        done
+        [ "${HELD}" -gt 0 ] && logger -t backuptool "held back ${HELD} file(s) that hold only a RetroAchievements token; the emulator writes them again at its next start (#169)"
+        for CANDIDATE in "${RATOKENSETTINGS[@]}"
+        do
+            if grep -qxF "${CANDIDATE}" "${FILELIST}"
+            then
+                echo "${CANDIDATE}" >> "${SECRETLIST}"
+            fi
+        done
+        # The proxy's folder, every file under it (#165). grep -F on the
+        # prefix: the list holds absolute paths, so the prefix matches a file
+        # under that folder and nothing else.
+        HELD=0
+        for CANDIDATE in "${RATOKENDIRS[@]}"
+        do
+            while IFS= read -r F
+            do
+                echo "${F}" >> "${SECRETLIST}"
+                HELD=$((HELD + 1))
+            done < <(grep -F "${CANDIDATE}" "${FILELIST}" || true)
+        done
+        [ "${HELD}" -gt 0 ] && logger -t backuptool "held back ${HELD} file(s) under the offline RetroAchievements proxy's folder: its token cache and award queue never travel (#165)"
+    fi
 
-        # Staged, then archived once.
-        #
-        # zip could append, so the old flow wrote the archive and then added
-        # sanitized copies over the top. tar cannot append to a compressed
-        # archive, and the staging that replaces it is the better shape
-        # anyway: the sanitized file is the only version that ever exists in
-        # the tree being archived, so there is no ordering in which a real
-        # credential is written and later overwritten.
-        STAGING=$(mktemp -d)
-        # pipefail, in a subshell so it does not leak into the rest of the
-        # script: a pipeline's status is its LAST command's, so without this
-        # the guard tested the extracting tar and ignored the collecting one.
-        # The collector exits 1 on an unreadable input or an unwritable target
-        # and the pipeline still reported 0, so a short archive was written and
-        # announced as a success.
-        ( set -o pipefail
-          tar -cf - -T "${SENDLIST}" 2>/dev/null | tar -xf - -C "${STAGING}" 2>/dev/null )
-        if [ $? -ne 0 ]
-        then
-            rm -rf "${STAGING}"
-            rm -f "${BACKUPFILE}" "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
-            fail "Backup failed while collecting files; no backup file was written."
-        fi
+    # busybox grep -f with an EMPTY pattern file matches nothing and prints
+    # nothing, where GNU grep prints every line. The device has busybox, so
+    # piping that into zip would hand it an empty list and fail the backup
+    # outright -- and only for someone whose custom LOCATIONS excluded all
+    # three credential files, which is exactly the case the membership check
+    # above exists to support. Skip the filter when there is nothing to hold
+    # back rather than relying on grep to agree across implementations.
+    if [ -s "${SECRETLIST}" ]
+    then
+        grep -vxF -f "${SECRETLIST}" "${FILELIST}" > "${SENDLIST}"
+    else
+        cp "${FILELIST}" "${SENDLIST}"
+    fi
 
-        # Wifi keys, the root password, and account passwords/tokens must never
-        # leave the device (the archive can be synced to the cloud).
+    # Staged, then archived once.
+    #
+    # zip could append, so the old flow wrote the archive and then added
+    # sanitized copies over the top. tar cannot append to a compressed
+    # archive, and the staging that replaces it is the better shape
+    # anyway: the sanitized file is the only version that ever exists in
+    # the tree being archived, so there is no ordering in which a real
+    # credential is written and later overwritten.
+    STAGING=$(mktemp -d)
+    # pipefail, in a subshell so it does not leak into the rest of the
+    # script: a pipeline's status is its LAST command's, so without this
+    # the guard tested the extracting tar and ignored the collecting one.
+    # The collector exits 1 on an unreadable input or an unwritable target
+    # and the pipeline still reported 0, so a short archive was written and
+    # announced as a success.
+    ( set -o pipefail
+      tar -cf - -T "${SENDLIST}" 2>/dev/null | tar -xf - -C "${STAGING}" 2>/dev/null )
+    if [ $? -ne 0 ]
+    then
+        rm -rf "${STAGING}"
+        rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
+        return 2
+    fi
+
+    if [ "${STRIP}" = "1" ]
+    then
+        # Wifi keys, the root password, and account passwords/tokens must
+        # never leave the device (the archive can be synced to the cloud).
         if grep -qxF "${SYSCFG}" "${SECRETLIST}"
         then
             mkdir -p "${STAGING}/storage/.config/system/configs"
@@ -356,17 +490,318 @@ case "${1}" in
                 > "${STAGING}/storage/.config/retroarch/retroarch.cfg"
         fi
 
-        # Member names come out as storage/... exactly as the zip's did, so
-        # anything reading the archive sees the same shape.
-        if ! tar -czf "${BACKUPFILE}" -C "${STAGING}" storage
-        then
-            rm -rf "${STAGING}"
-            rm -f "${BACKUPFILE}" "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
-            fail "Backup failed; no backup file was written."
-        fi
-        rm -rf "${STAGING}"
+        # The standalone emulators' settings files carry the token as a
+        # line of their own -- `Token = ` in DuckStation's, flycast's and
+        # AetherSX2's, `RA_Token=` and `RA_Password=` in melonDS's. Blank
+        # the value and keep the key, as for retroarch.cfg: the cheevos_*.sh
+        # script finds the line and writes the token back at the next
+        # launch. No other key in those files ends in Token or Password
+        # (checked against the shipped seeds, 2026-09-13; #169).
+        BLANKED=0
+        for CANDIDATE in "${RATOKENSETTINGS[@]}"
+        do
+            if grep -qxF "${CANDIDATE}" "${SECRETLIST}"
+            then
+                mkdir -p "${STAGING}${CANDIDATE%/*}"
+                sed -E 's/^([A-Za-z_]*(Token|Password)[[:space:]]*=[[:space:]]*).*$/\1/' "${CANDIDATE}" \
+                    > "${STAGING}${CANDIDATE}"
+                BLANKED=$((BLANKED + 1))
+            fi
+        done
+        [ "${BLANKED}" -gt 0 ] && logger -t backuptool "blanked the RetroAchievements token in ${BLANKED} emulator settings file(s) (#169)"
+    fi
+    rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
 
-        rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
+    # Member names come out as storage/... exactly as the zip's did, so
+    # anything reading the archive sees the same shape. To .partial first;
+    # the name every reader looks for is given only to an archive that has
+    # listed back whole.
+    if ! tar -czf "${TARGET}.partial" -C "${STAGING}" storage \
+       || ! tar -tzf "${TARGET}.partial" >/dev/null 2>&1
+    then
+        rm -rf "${STAGING}"
+        rm -f "${TARGET}.partial"
+        return 3
+    fi
+    rm -rf "${STAGING}"
+    if ! mv -f "${TARGET}.partial" "${TARGET}"
+    then
+        rm -f "${TARGET}.partial"
+        return 3
+    fi
+    return 0
+}
+
+# Keep only the newest ARCHIVE_KEEP archives under archive/. Both shapes: an
+# upgraded device still has archives written under the old name, and
+# rotation must not skip them and keep them for ever while trimming only the
+# new ones. The pre-restore snapshots restore writes (<stamp>-PRE_RESTORE-...)
+# are candidates too, so a run of restores cannot grow the folder past the
+# same bound; they end in _SETTINGS.tar.gz and the first glob takes them, and
+# they are named as well so a reader knows that is intended.
+#
+# Newest by the date in the name, not by mtime. The name is the date the
+# archive was taken and is kept on rotation; an mtime is when the file was
+# last written, which for an archive that came down from the cloud is the
+# download, so `ls -t` kept a downloaded old archive and trimmed a newer one
+# (KILL3 on the VM, 2026-09-10: the previous archive, planted first, was the
+# one removed). A name with no date is from before names carried them and is
+# the oldest there is; it sorts last.
+trim_archive() {
+    ls -1 "${ARCHIVEFOLDER}"/*_SETTINGS*.tar.gz "${ARCHIVEFOLDER}"/*PRE_RESTORE*.tar.gz \
+          "${ARCHIVEFOLDER}"/*_BACKUP*.tar.gz "${ARCHIVEFOLDER}"/*_BACKUP*.zip \
+          "${ARCHIVEFOLDER}"/ARCHIVED_*.zip 2>/dev/null \
+        | awk '!seen[$0]++' \
+        | awk -F/ '{ n = $NF; k = (n ~ /^[0-9][0-9][0-9][0-9]_/) ? n : "0000_" n; print k "\t" $0 }' \
+        | sort -r | cut -f2- | tail -n +$((ARCHIVE_KEEP + 1)) | while read -r OLD
+    do
+        rm -f "${OLD}"
+    done
+}
+
+# Options after the verb. --then-cloud: once the settings are verifiably in
+# place, leave the marker EmulationStation reads at the next start to offer
+# the cloud journey's continuation. It used to be touched by the menu in the
+# confirmation callback -- before the restore had run, let alone succeeded --
+# so a restore that failed still produced the offer (#105).
+#
+# --no-restart: leave the restart to the caller. EmulationStation's transfer
+# page runs this restore and has an outcome to put on screen when it ends;
+# the five-second sleep and reboot below take the screen away at exactly
+# that moment, so the page asks for the restore alone and restarts the
+# device itself once the player has read the result (#114). The console
+# flows pass nothing and restart here as they always have -- and an older
+# backuptool, handed the option by a newer EmulationStation, ignores it and
+# does the same, which is the whole reason it is an opt-in.
+THEN_CLOUD=0
+NO_RESTART=0
+VERB="${1}"
+shift
+for OPT in "$@"
+do
+    case "${OPT}" in
+        --then-cloud) THEN_CLOUD=1 ;;
+        --no-restart) NO_RESTART=1 ;;
+    esac
+done
+
+case "${VERB}" in
+    "restore")
+        BACKUPFILE="$(newest_backup)"
+        if [ -z "${BACKUPFILE}" ] || [ ! -f "${BACKUPFILE}" ]
+        then
+            why "THERE'S NO SETTINGS BACKUP ON THIS DEVICE YET"
+            fail "THERE'S NO SETTINGS BACKUP ON THIS DEVICE YET. NOTHING WAS CHANGED. BACK UP SETTINGS FIRST, OR RESTORE THEM FROM THE CLOUD." "nothing under ${SETTINGS_BACKUPS} matched"
+        fi
+
+        # An archive is whatever it is named. Both are read: every device in
+        # the field has .zip archives locally, and a format change is no
+        # reason to strand them.
+        case "${BACKUPFILE}" in
+            *.tar.gz) ARCHIVE_KIND="tar" ;;
+            *)        ARCHIVE_KIND="zip" ;;
+        esac
+
+        note "CHECKING YOUR SETTINGS BACKUP..." "${BACKUPFILE}"
+        if ! archive_ok "${BACKUPFILE}"
+        then
+            why "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED"
+            fail "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED. NOTHING WAS CHANGED. BACK UP SETTINGS AGAIN." "${BACKUPFILE} does not list"
+        fi
+
+        # Before anything is written over the live tree, the tree as it is
+        # now goes into archive/ under the same shape as a backup, so a
+        # restore that does not finish has something to go back to
+        # (D-CLOUD-078: a failure reverts to the last known good state).
+        # archive/ is never sent to the cloud and never scanned by
+        # newest_backup, so the copy cannot be mistaken for a backup the
+        # player made; it is trimmed with the rest of archive/ so the folder
+        # stays bounded. Passwords are kept in it (STRIP=0): it stays on the
+        # device, and "as they were" has to mean exactly that.
+        mkdir -p "${ARCHIVEFOLDER}"
+        SNAPSHOT="${ARCHIVEFOLDER}/${BACKUP_STAMP}-PRE_RESTORE-${DEVICE_LABEL:+${DEVICE_LABEL}-}${OS_NAME}_SETTINGS.tar.gz"
+        note "KEEPING A COPY OF YOUR CURRENT SETTINGS..." "${SNAPSHOT}"
+        write_archive "${SNAPSHOT}" 0
+        case $? in
+            0) trim_archive ;;
+            2) # Nothing on the device to keep: a fresh install, or nothing
+               # readable. There is nothing a failed restore could revert to
+               # and nothing it could damage, so go on without a copy.
+               SNAPSHOT=""
+               logger -t backuptool "no current settings to copy aside before the restore" ;;
+            *) why "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS"
+               fail "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS, SO NOTHING WAS CHANGED. TRY AGAIN." "write_archive ${SNAPSHOT} failed" ;;
+        esac
+
+        # From here until the tree is whole again, a power cut leaves it half
+        # from the archive and half from before, with nothing running to
+        # notice. The marker names the copy taken above; chksysconfig verify
+        # reads it at the next boot, puts the copy back and tells
+        # EmulationStation to say so (D-CLOUD-078, KILL18). Removed below
+        # once the extract has finished, or once this script's own revert
+        # has put the copy back; left in place if that revert failed, so the
+        # boot tries again.
+        RESTORE_MARK="/storage/.config/.restore-in-progress"
+        if [ -n "${SNAPSHOT}" ]
+        then
+            printf '%s\n' "${SNAPSHOT}" > "${RESTORE_MARK}.tmp" && mv -f "${RESTORE_MARK}.tmp" "${RESTORE_MARK}"
+        fi
+
+        note "RESTORING SETTINGS..." "from ${BACKUPFILE}"
+        if [ "${ARCHIVE_KIND}" = "tar" ]
+        then
+            # No symlink skip-list here, and none needed: tar replaces a
+            # symlink with whatever the archive holds instead of refusing and
+            # aborting, and what the archive holds is the symlink itself. What
+            # IS skipped is the OS's: an archive written before #45 carries
+            # PPSSPP's assets and shader cache, and extracting them over a
+            # newer image's would put an older emulator's program data under a
+            # newer emulator (upgrade-and-install: fixing what is written does
+            # nothing for what was already written). And the files that hold
+            # only a RetroAchievements token, which every archive written
+            # before #169 carries: a token from before is not put on this
+            # device, and the emulator writes a current one from system.cfg
+            # at its next start. That is all a restore strips. The settings
+            # files' token lines an older archive still carries are left to
+            # the emulator, which rewrites them at launch; tar cannot edit a
+            # member on the way past, and the archive is where the token
+            # must not be.
+            SKIP=$(mktemp)
+            printf '%s\n' 'storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIRS[@]#/}"'*' > "${SKIP}"
+            tar -xzf "${BACKUPFILE}" -C / -X "${SKIP}" >/dev/null
+            RC_TAR=$?; rm -f "${SKIP}"; (exit ${RC_TAR})
+        else
+            # Archives written before backups switched to regular files only
+            # hold the *contents* of symlinked paths. Extracting one of those
+            # over the live symlink makes busybox unzip abort the whole
+            # restore, so every backup taken before that change would be
+            # unrestorable here. Skip exactly those entries instead: the OS
+            # owns those symlinks and provides them, and replacing one with a
+            # stale copy is the bug that got them excluded from backups in the
+            # first place. And skip the same two prefixes the tar branch does:
+            # a zip is the oldest archive there is, written when assets/ and
+            # the shader cache travelled whole, so it is the archive most
+            # likely to carry them -- and until #151 PL-03 this branch skipped
+            # neither, while D-CLOUD-008 said "from any archive". The token-only
+            # files are skipped here too (#169), as in the tar branch.
+            SKIP=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIRS[@]#/}"'*')
+            SKIPPED=0
+            for ENTRY in $(unzip -l "${BACKUPFILE}" 2>/dev/null | awk 'NF>3 && $4 ~ /^storage\// {print $4}')
+            do
+                if [ -L "/${ENTRY}" ]
+                then
+                    SKIP+=("${ENTRY}")
+                    SKIPPED=$((SKIPPED + 1))
+                fi
+            done
+            if [ "${SKIPPED}" -gt 0 ]
+            then
+                note "KEEPING ${SKIPPED} FILE(S) THE SYSTEM PROVIDES THAT THIS OLDER BACKUP WOULD HAVE REPLACED."
+            fi
+            # -x is a mode switch: every argument after it is an exclusion,
+            # so it goes last. busybox and Info-ZIP both take the patterns.
+            unzip -o "${BACKUPFILE}" -d / -x "${SKIP[@]}" >/dev/null
+        fi
+        if [ $? -ne 0 ]
+        then
+            # Half the archive may be in place. Put the copy taken above
+            # back over it, and say which state the device is in.
+            if [ -n "${SNAPSHOT}" ] && tar -xzf "${SNAPSHOT}" -C / >/dev/null 2>&1
+            then
+                rm -f "${RESTORE_MARK}"
+                why "THE RESTORE COULDN'T FINISH"
+                fail "THE RESTORE COULDN'T FINISH. DON'T WORRY - YOUR SETTINGS ARE UNCHANGED. TRY AGAIN." "extraction of ${BACKUPFILE} failed; ${SNAPSHOT} put back"
+            elif [ -n "${SNAPSHOT}" ]
+            then
+                why "THE RESTORE COULDN'T FINISH"
+                fail "THE RESTORE COULDN'T FINISH, AND SOME OF YOUR SETTINGS COULDN'T BE PUT BACK. TRY THE RESTORE AGAIN." "extraction of ${BACKUPFILE} failed and so did putting back ${SNAPSHOT}"
+            else
+                why "THE RESTORE COULDN'T FINISH"
+                fail "THE RESTORE COULDN'T FINISH. TRY AGAIN." "extraction of ${BACKUPFILE} failed; there was no previous state to put back"
+            fi
+        fi
+
+        # The tree is whole: the boot has nothing to put back.
+        rm -f "${RESTORE_MARK}"
+
+        # Passwords and keys are stripped at backup time (see write_archive);
+        # wifi and similar credentials must be re-entered after a restore.
+        # EmulationStation shows a native reminder on next boot to re-enter
+        # the credentials that backups deliberately exclude.
+        touch /storage/.config/.restore-finish-pending
+        if [ "${THEN_CLOUD}" -eq 1 ]
+        then
+            touch /storage/.config/.cloud-journey-pending
+        fi
+
+        note "SETTINGS RESTORED. WI-FI AND ACCOUNT PASSWORDS ARE NOT PART OF A BACKUP AND MUST BE ENTERED AGAIN."
+        sync
+        if [ "${NO_RESTART}" -eq 1 ]
+        then
+            # The caller restarts. Nothing is announced here: the message
+            # would be a promise this run is not going to keep.
+            exit 0
+        fi
+        note "RESTARTING IN 5 SECONDS SO THE RESTORED SETTINGS TAKE EFFECT..."
+        sleep 5
+        systemctl reboot
+    ;;
+    "backup")
+        # Guard the tool this whole path depends on. busybox provides unzip but
+        # not zip, so a missing package means backup dies with a bare
+        # "zip: not found" after the user has already chosen to back up.
+        for TOOL in tar gzip
+        do
+            command -v "${TOOL}" >/dev/null 2>&1 || {
+                why "THIS DEVICE CAN'T MAKE A SETTINGS BACKUP"
+                fail "THIS DEVICE CAN'T MAKE A SETTINGS BACKUP. SOMETHING IT NEEDS IS MISSING FROM THIS BUILD." "'${TOOL}' is not on PATH"
+            }
+        done
+
+        # A .partial left by a run that was killed mid-write is not a backup
+        # and nothing reads it; clear it so it does not sit there for ever.
+        rm -f "${SETTINGS_BACKUPS}"/*.tar.gz.partial 2>/dev/null
+
+        # The archive at the root right now, named before the new one exists
+        # so that newest_backup cannot return the new one. It stays exactly
+        # where it is until the new archive has been written and verified:
+        # until 2026-09-10 it was moved into archive/ FIRST, so a kill in
+        # between left no archive at the root at all -- restore said there
+        # was nothing to restore while archive/ held three, and cloud_backup
+        # sent nothing (D-CLOUD-078, #105).
+        PREVIOUS="$(newest_backup)"
+
+        note "BACKING UP SETTINGS..." "to ${BACKUPFILE}"
+        write_archive "${BACKUPFILE}" 1
+        case $? in
+            0) ;;
+            2) why "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS"
+               fail "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS. NOTHING WAS WRITTEN, AND YOUR LAST BACKUP IS UNCHANGED. TRY AGAIN." "collecting into staging failed" ;;
+            *) why "THE BACKUP COULDN'T FINISH"
+               fail "THE BACKUP COULDN'T FINISH. NOTHING WAS WRITTEN, AND YOUR LAST BACKUP IS UNCHANGED. TRY AGAIN." "writing or verifying ${BACKUPFILE} failed" ;;
+        esac
+
+        # Now, and only now, rotate the previous archive into an archive
+        # folder that the cloud allowlist (backup/*.zip) does not match, and
+        # keep only the newest few. Each backup writes a new dated name, so
+        # this is only ever the previous one.
+        if [ -n "${PREVIOUS}" ] && [ -f "${PREVIOUS}" ] && [ "${PREVIOUS}" != "${BACKUPFILE}" ]
+        then
+            mkdir -p "${ARCHIVEFOLDER}"
+            # Moved under the name it already has, keeping the date it was
+            # taken. Re-stamping on rotation would date every archive to the
+            # moment it was superseded, which is not when it was made and is
+            # not what somebody hunting for "the one from before Tuesday"
+            # needs. An archive written before names carried dates has none to
+            # keep, so it gets one now.
+            PREVIOUS_NAME="$(basename "${PREVIOUS}")"
+            case "${PREVIOUS_NAME}" in
+                [0-9][0-9][0-9][0-9]_*) ;;
+                *) PREVIOUS_NAME="$(date -r "${PREVIOUS}" +%Y_%m_%d-%H%M%S 2>/dev/null || date +%Y_%m_%d-%H%M%S)-${PREVIOUS_NAME}" ;;
+            esac
+            mv "${PREVIOUS}" "${ARCHIVEFOLDER}/${PREVIOUS_NAME}"
+            trim_archive
+        fi
 
         # Last line of defence: the archive can be synced to the cloud, so
         # never ship one carrying a populated credential. This greps what
@@ -390,10 +825,18 @@ case "${1}" in
             # containing a space split into two names that do not exist, tar
             # errored into /dev/null, and those members went unscanned -- a
             # credential check failing open.
+            # The capitalised keys are the ones the standalone emulators'
+            # cheevos_*.sh scripts write (Token, ApiToken, RA_Token,
+            # RA_Password); until #169 the anchor was lower-case only, so
+            # the token travelled in every backup of a device that had run
+            # PPSSPP with RetroAchievements on and this line never spoke.
+            # Named, not matched case-insensitively, so a catalogue's
+            # `Password = ...` stays out. A bare-token file (.dat, .txt) has
+            # no key shape to match; those are held back by name instead.
             SCANDIR=$(mktemp -d)
             tar -xzf "${BACKUPFILE}" -C "${SCANDIR}" 2>/dev/null
             LEAKS=$(find "${SCANDIR}" -type f \( -name '*.cfg' -o -name '*.conf' -o -name '*.ini' \) \
-                -exec grep -hE '^[a-z_.]*(password|token|stream_key|\.key) *[=:] *"?[^"[:space:]]+' {} + 2>/dev/null \
+                -exec grep -hE '^([a-z_.]*(password|pass|token|secret|stream_key|key)|Token|ApiToken|RA_Token|RA_Password) *[=:] *"?[^"[:space:]]+' {} + 2>/dev/null \
                 | wc -l)
             rm -rf "${SCANDIR}"
         else
@@ -401,18 +844,18 @@ case "${1}" in
         fi
         if [ "${LEAKS}" -gt 0 ] 2>/dev/null
         then
-            WARN="Warning: ${LEAKS} credential-looking line(s) in ${BACKUPFILE}. Review before sharing or syncing it."
+            WARN="${LEAKS} LINE(S) IN THIS BACKUP LOOK LIKE PASSWORDS OR KEYS. CHECK IT BEFORE SHARING IT OR SENDING IT TO THE CLOUD."
             echo -e "\e[33m${WARN}\e[0m"
-            logger -t backuptool "${WARN}"
+            logger -t backuptool "${WARN} -- ${BACKUPFILE}"
         fi
 
         sync
-        note "Backup complete: ${BACKUPFILE}"
-        note "Copy it somewhere safe, or enable the settings backup option in cloud sync."
+        note "SETTINGS BACKED UP TO THIS DEVICE." "${BACKUPFILE}"
+        note "COPY IT SOMEWHERE SAFE, OR BACK UP TO THE CLOUD UNDER GAME SETTINGS > MANAGE CLOUD STORAGE."
         sleep 3
     ;;
     *)
-        echo "Usage: backuptool {backup|restore}"
+        echo "Usage: backuptool {backup|restore [--then-cloud] [--no-restart]}" >&2
         exit 1
     ;;
 esac

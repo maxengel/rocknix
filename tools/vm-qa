@@ -1,0 +1,399 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# vm-qa - every automated check the fork has, against one GENERIC_X64 image, one report.
+#
+#   ./tools/vm-qa <ROCKNIX-GENERIC_X64...img.gz>            # bring the pair up from the image, run everything
+#   ./tools/vm-qa --skip-up                                  # the pair is already up on the image under test
+#   ./tools/vm-qa <image> --only round-trip,exit             # a subset: scripts, round-trip, exit, walks, link
+#
+# Each run writes to qa-<build>-<backend>-<guest>-<date>, so a matrix of
+# backends against one image keeps a report each.
+#   ./tools/vm-qa <image> --link                             # also the seven link-loss cells (minutes each; need the serial console)
+#   ./tools/vm-qa --skip-up --only walks --guest b           # the walks on vm-pair's second guest
+#   ./tools/vm-qa --skip-up --only round-trip --backend sftp # the round trip against another cloud (#133)
+#   ./tools/vm-qa --skip-up --only ra-offline --guest d      # the offline-achievements scenario on the 640x480 guest (#166)
+#   ./tools/vm-qa --list                                     # the suite names --only takes, one per line
+#
+# What runs, in order, each with its own log and a PASS/FAIL line:
+#
+#   scripts     tools/last-good-scripts-test  -- the scripts under busybox shims, on the host
+#   lifetime    ES tests/cloud-oauth-lifetime.py -- the wizard's page lifetimes under ASan, on the host (ES_SRC)
+#   vocabulary  tools/vocabulary-check       -- back up / backup as verb / noun, ES strings and script lines, on the host
+#   register    tools/register-check         -- the decision register: every ID once, every citation names a row, on the host (ES_SRC)
+#   french      tools/es-untranslated        -- every fork string in the interface has French (D-UI-051, #152), on the host (ES_SRC)
+#   menumap     tools/es-menu-map-check      -- docs/es-menu-map.md still describes the menus the image ships (D-UI-039), on the host (ES_SRC)
+#   pair-identity  the two guests' MACs, cloud_device_ids (#91) and hostnames (#50) differ, and each
+#               answers for its own name over mDNS (#50 box 6, #151 PL-01), over ssh
+#   round-trip  tools/cloud-round-trip        -- 27 steps over SSH against the QA cloud, guest a
+#   exit        tools/emulator-exit-test --vm -- the exit hotkey ends a game once, save written, guest a
+#   time-to-play tools/time-to-play --quick   -- UI to a game's first frame, and one game's exit to the
+#               next game's first frame, with the exit sync running (#135, D-CLOUD-098). Its own table
+#               goes at the end of the report; the suite row here says only whether it ran.
+#   link        tools/cloud-round-trip --only LINK1..LINK7 -- the link cut mid-run, seven ways (--link, or --only link)
+#   ra-offline  tools/ra-offline-test         -- an achievement unlocked with the link cut is queued by the offline
+#               proxy and sent when the link returns (#166); needs the serial console and the QA
+#               RetroAchievements account, and spends one of its cheap achievements per PASS, so it is
+#               opt-in like link (--ra-offline, or --only ra-offline); --control runs #162's loss instead
+#   walks       tools/vm-walks/*.steps        -- each step file replayed from a rebooted guest, frames kept
+#   frame-diff  tools/frame-diff              -- the walk frames against the last accepted cut's; a box no
+#                                               claim in tools/vm-walks/claims.txt covers is a FAIL (#252)
+#               (frames are kept for a person to read; comparing them to references is fork #120's third box)
+#
+# The report goes to $ROCKNIX_ARTIFACTS/rocknix-images/qa-<build>-<date>/report.md
+# (default /workspace/artifacts), beside the logs and frames, and this exits
+# non-zero if any suite failed -- so a nightly can tell. Nothing here touches a
+# handheld: the guests are tools/vm-pair's, on this host (fork #120, box 1).
+set -u
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+IMAGE=""; SKIP_UP=0; LINK=0; RA_OFFLINE=0; GUEST=a
+# The default run is every suite in SUITES except the two that are opt-in
+# (link needs a second backend, ra-offline spends a QA achievement). It used
+# to be a second, hand-typed list here -- and menumap, added to SUITES on
+# 2026-09-19, never ran because this copy was not updated. One list.
+ONLY=""
+SUITES="scripts lifetime vocabulary register french menumap pair-identity round-trip exit time-to-play link ra-offline walks frame-diff"
+[ -n "$ONLY" ] || ONLY=$(printf '%s' "$SUITES" | tr ' ' '\n' | grep -vxE 'link|ra-offline' | paste -sd, -)
+# Which of the five QA clouds every suite here talks to (#133). It is one
+# variable and not a per-suite flag on purpose: the backend the endpoint is
+# brought up on, the stanza the walks seed, and the endpoint the round trip
+# reads back have to be the same one, and CLOUD_QA_BACKEND is what every
+# tool below reads.
+BACKEND="${CLOUD_QA_BACKEND:-webdav}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --skip-up) SKIP_UP=1; shift ;;
+    --only) ONLY=$2; shift 2 ;;
+    --guest) GUEST=$2; shift 2 ;;
+    --backend) BACKEND=$2; shift 2 ;;
+    --link) LINK=1; shift ;;
+    --ra-offline) RA_OFFLINE=1; shift ;;
+    --list) printf '%s\n' $SUITES; exit 0 ;;
+    -h|--help) sed -n '5,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) IMAGE=$1; shift ;;
+  esac
+done
+[ "$SKIP_UP" = 1 ] || [ -n "$IMAGE" ] || { echo "vm-qa: an image, or --skip-up" >&2; exit 2; }
+# Which of tools/vm-pair's guests the suites drive. Guest a is the default
+# and the only one `up` is written around; --guest b exists because two
+# sessions share this host and the walks suite is the one that can run
+# anywhere -- it needs a monitor socket and a guest to reboot, nothing else.
+KEY=/tmp/rocknix-vm-pair/qa-key
+# The ssh options every suite here runs with. Declared, not inherited: the
+# pair-identity suite used $SSHO without this line and passed for a night
+# because the shell that started the runner had it set; started under a
+# clean environment it failed on "unbound variable" (blindspot 40).
+SSHO="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=8 -o BatchMode=yes"
+case "$GUEST" in
+  a) PORT=10022; MON=/tmp/rocknix-qemu-monitor.sock;   SERIAL=/tmp/rocknix-qemu-serial.sock ;;
+  b) PORT=10023; MON=/tmp/rocknix-qemu-monitor-b.sock; SERIAL=/tmp/rocknix-qemu-serial-b.sock ;;
+  # The 640x480 guest beside the pair (generic-x64-vm-testing.md § Frame at
+  # the handheld's size): not vm-pair's, so `up` never touches it -- --skip-up.
+  d) PORT=10026; MON=/tmp/rocknix-qemu-monitor-d.sock; SERIAL=/tmp/rocknix-qemu-serial-d.sock ;;
+  *) echo "vm-qa: --guest is a, b or d, not '$GUEST'" >&2; exit 2 ;;
+esac
+[ "$LINK" = 1 ] && ONLY="$ONLY,link"
+[ "$RA_OFFLINE" = 1 ] && ONLY="$ONLY,ra-offline"
+SSH() { ssh -n -i "$KEY" -p "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=8 -o BatchMode=yes root@127.0.0.1 "$@"; }
+
+export CLOUD_QA_BACKEND="$BACKEND"
+"$ROOT/tools/cloud-test-backend" up >/dev/null 2>&1 || { echo "vm-qa: the $BACKEND QA cloud backend did not come up" >&2; exit 1; }
+if [ "$SKIP_UP" = 0 ]; then
+  "$ROOT/tools/vm-pair" down >/dev/null 2>&1
+  "$ROOT/tools/vm-pair" up "$IMAGE" 2>&1 | tail -2
+fi
+for i in $(seq 1 40); do SSH true 2>/dev/null && break; sleep 3; done
+BUILD=$(SSH 'sed -n "s/^BUILD_ID=//p" /etc/os-release' 2>/dev/null | tr -d '"' | cut -c1-10)
+[ -n "$BUILD" ] || { echo "vm-qa: guest $GUEST does not answer" >&2; exit 1; }
+# The backend and the guest are in the directory name, not only the build and
+# the minute. Two vm-qa runs against one image -- which is what a backend
+# matrix is (#133) -- started in the same minute, shared a directory, and the
+# second overwrote the first's report and logs: two runs, one answer, and the
+# surviving report named the other run's cloud.
+OUT="${ROCKNIX_ARTIFACTS:-/workspace/artifacts}/rocknix-images/qa-${BUILD}-${BACKEND}-${GUEST}-$(date +%Y%m%d-%H%M)"
+mkdir -p "$OUT/walks"
+REPORT="$OUT/report.md"
+{ echo "# vm-qa on $BUILD"; echo; echo "started $(date -u '+%Y-%m-%d %H:%M UTC'), guest $GUEST at :$PORT, cloud $BACKEND (port $("$ROOT/tools/cloud-test-backend" port), $("$ROOT/tools/cloud-test-backend" caps)), image ${IMAGE:-(already up)}"; echo; echo "| suite | result | time | log |"; echo "| --- | --- | --- | --- |"; } > "$REPORT"
+FAILS=0
+SKIPS=0  # a suite that could not run (rc 3) is shown as such, never folded into PASS
+run_suite() {  # name, log, command...
+  local name=$1 log=$2; shift 2
+  local t0=$(date +%s) rc
+  "$@" > "$log" 2>&1; rc=$?
+  local dt=$(( $(date +%s) - t0 ))
+  local res=PASS
+  if [ "$rc" = 3 ]; then res="SKIP"; SKIPS=$((SKIPS+1)); elif [ "$rc" != 0 ]; then res="FAIL ($rc)"; FAILS=$((FAILS+1)); fi
+  printf '| %s | %s | %ds | `%s` |\n' "$name" "$res" "$dt" "$(basename "$log")" >> "$REPORT"
+  echo "$name: $res in ${dt}s"
+}
+case ",$ONLY," in *,scripts,*)    run_suite scripts    "$OUT/scripts.log"    "$ROOT/tools/last-good-scripts-test" ;; esac
+# EmulationStation's page-lifetime check (#144): the wizard's page-replacement
+# callbacks compiled under AddressSanitizer against small doubles, on the
+# host, in seconds. It had not compiled for a day and nothing ran it, so
+# nothing said so (audit 2026-09-12, F-01). ES_SRC names the checkout whose
+# GuiMenu.cpp is pinned by the image under test; a missing checkout is a
+# FAIL with the reason, never a silent skip -- a guard that cannot run has
+# not passed.
+lifetime_suite() {
+  local es="${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}"
+  if [ ! -f "$es/tests/cloud-oauth-lifetime.py" ]; then
+    echo "no EmulationStation checkout at $es (set ES_SRC); the lifetime check did not run"; return 1
+  fi
+  echo "GuiMenu.cpp from $es at $(git -C "$es" rev-parse --short HEAD 2>/dev/null || echo '?')"
+  python3 "$es/tests/cloud-oauth-lifetime.py"
+}
+case ",$ONLY," in *,lifetime,*)   run_suite lifetime   "$OUT/lifetime.log"   lifetime_suite ;; esac
+# The player-facing words held to their rules (es-player-text.md, player-language.md):
+# "back up" two words as a verb, "backup" one as a noun, across every _("")
+# string in the ES checkout the image pins and every sentence the scripts
+# print for a player. On the host, in a second (2026-09-12, the maintainer's ask).
+case ",$ONLY," in *,vocabulary,*) run_suite vocabulary "$OUT/vocabulary.log" env ES_SRC="${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}" "$ROOT/tools/vocabulary-check" ;; esac
+# Every string the fork adds has French (D-UI-051): tools/es-untranslated lists the ones that do not and exits 1 while any remain (#152).
+case ",$ONLY," in *,french,*) run_suite french "$OUT/french.log" env ES_SRC="${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}" "$ROOT/tools/es-untranslated" ;; esac
+# The menu map still describes what ships (D-UI-039): tools/es-menu-map-check reads the
+# screens in the ES commit the package pins and fails on one the map neither maps nor
+# declares under "## Not mapped". The rule predates the check by a month, and 30 screens
+# had drifted out by the time anybody counted (2026-09-18).
+case ",$ONLY," in *,menumap,*) run_suite menumap "$OUT/menumap.log" env ES_SRC="${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}" "$ROOT/tools/es-menu-map-check" ;; esac
+# The decision register as a lookup table (D-WORKFLOW-013): every ID once,
+# and every `D-<AREA>-<n>` cited in a live document -- the rules, the
+# scripts, the tools, and EmulationStation's sources when the checkout the
+# image pins is on this host -- names a row. It had fired for real
+# (D-CLOUD-007, and a dangling citation the same week) and nothing ran it
+# but a hand (audit #151 PL-11). On the host, in a second, beside vocabulary.
+# Without the ES checkout the register is still checked; the log says what
+# was not.
+register_suite() {
+  local es="${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}"
+  if [ -d "$es" ]; then
+    echo "EmulationStation sources from $es at $(git -C "$es" rev-parse --short HEAD 2>/dev/null || echo '?')"
+    env ES_SRC="$es" "$ROOT/tools/register-check"
+  else
+    echo "no EmulationStation checkout at $es (set ES_SRC): the register is checked without the interface's citations"
+    env -u ES_SRC "$ROOT/tools/register-check"
+  fi
+}
+case ",$ONLY," in *,register,*)   run_suite register   "$OUT/register.log"   register_suite ;; esac
+# The two guests are two devices (#91): different MACs, different
+# cloud_device_ids. The round trip's own guard for this (assert_two_devices)
+# runs only under --second-port, which also runs the two-device fixtures that
+# stay red until #22 -- so the default suite never fired it, and the pair
+# sharing an identity would have gone unnoticed (hygiene pass, 2026-09-12).
+# Seconds, over ssh, before anything else touches the pair.
+pair_identity_suite() {
+  # Every check runs and every failure is printed before the suite fails, so
+  # one shared name does not hide a wrong mDNS name behind it (#151 PL-01).
+  local bad=0 ka kb ia ib
+  ka=$(ssh -n -i "$KEY" -p 10022 $SSHO root@127.0.0.1 'cat /sys/class/net/eth0/address' 2>/dev/null)
+  kb=$(ssh -n -i "$KEY" -p 10023 $SSHO root@127.0.0.1 'cat /sys/class/net/eth0/address' 2>/dev/null)
+  ia=$(ssh -n -i "$KEY" -p 10022 $SSHO root@127.0.0.1 '. /etc/profile; cloud_device_id 2>/dev/null | head -1' 2>/dev/null)
+  ib=$(ssh -n -i "$KEY" -p 10023 $SSHO root@127.0.0.1 '. /etc/profile; cloud_device_id 2>/dev/null | head -1' 2>/dev/null)
+  echo "guest a: mac=${ka:-?} id=${ia:-?}"; echo "guest b: mac=${kb:-?} id=${ib:-?}"
+  [ -n "$ka" ] && [ -n "$kb" ] && [ -n "$ia" ] && [ -n "$ib" ] || { echo "a guest did not answer; the pair's identity is unproven"; return 1; }
+  [ "$ka" != "$kb" ] || { echo "FAIL: the guests share a MAC"; bad=1; }
+  [ "$ia" != "$ib" ] || { echo "FAIL: the guests share a cloud_device_id"; bad=1; }
+  # And two names (#50, D-NET-002): the shipped family name becomes the
+  # unit's own at boot, so the kernel names differ and each equals the
+  # cleaned form of its own stored setting. An image from before #50 fails
+  # here with both guests named GENERIC-X64, which is the collision itself.
+  local ha hb sa sb
+  ha=$(ssh -n -i "$KEY" -p 10022 $SSHO root@127.0.0.1 'hostname' 2>/dev/null)
+  hb=$(ssh -n -i "$KEY" -p 10023 $SSHO root@127.0.0.1 'hostname' 2>/dev/null)
+  sa=$(ssh -n -i "$KEY" -p 10022 $SSHO root@127.0.0.1 '. /etc/profile; clean_hostname "$(get_setting system.hostname)"' 2>/dev/null)
+  sb=$(ssh -n -i "$KEY" -p 10023 $SSHO root@127.0.0.1 '. /etc/profile; clean_hostname "$(get_setting system.hostname)"' 2>/dev/null)
+  echo "guest a: hostname=${ha:-?} setting=${sa:-?}"; echo "guest b: hostname=${hb:-?} setting=${sb:-?}"
+  [ -n "$ha" ] && [ -n "$hb" ] || { echo "a guest did not answer its hostname"; return 1; }
+  [ "$ha" != "$hb" ] || { echo "FAIL: the guests share a hostname (${ha}): the shipped family name was not made the unit's own"; bad=1; }
+  [ "$ha" = "$sa" ] && [ "$hb" = "$sb" ] || { echo "FAIL: a kernel hostname differs from its stored setting"; bad=1; }
+  # And each answers for its own name over mDNS (#50 box 6, D-NET-003; audit
+  # #151 PL-01): avahi logs `Host name is <x>.local` when it publishes, and
+  # <x> has to be the kernel name network-base-setup wrote. The daemon reads
+  # the kernel name when it comes up, so a unit that starts before the write
+  # publishes the image's name for the whole boot -- on 519f40aa0c guest b
+  # answered for ROCKNIX.local while named GENERIC-X64-0964, and nothing
+  # corrected it. The last `Host name is` line is the one in force; none at
+  # all is a FAIL too -- a responder that has not published, or a journal
+  # this could not read, is not a responder proven to answer.
+  local ma mb
+  ma=$(ssh -n -i "$KEY" -p 10022 $SSHO root@127.0.0.1 'journalctl -b -u avahi-daemon -o cat 2>/dev/null | sed -n "s/.*Host name is \([^ .]*\)\.local.*/\1/p" | tail -1' 2>/dev/null)
+  mb=$(ssh -n -i "$KEY" -p 10023 $SSHO root@127.0.0.1 'journalctl -b -u avahi-daemon -o cat 2>/dev/null | sed -n "s/.*Host name is \([^ .]*\)\.local.*/\1/p" | tail -1' 2>/dev/null)
+  local pa=${ma:+$ma.local} pb=${mb:+$mb.local}
+  echo "guest a: mdns=${pa:-?}"; echo "guest b: mdns=${pb:-?}"
+  if [ -z "$ma" ] || [ -z "$mb" ]; then
+    echo "FAIL: a guest's avahi journal has no 'Host name is' line: the responder has not published, or the journal could not be read"; bad=1
+  else
+    [ "$ma" = "$ha" ] || { echo "FAIL: guest a answers over mDNS for ${ma}.local while named ${ha}: the responder published before network-base-setup wrote the name"; bad=1; }
+    [ "$mb" = "$hb" ] || { echo "FAIL: guest b answers over mDNS for ${mb}.local while named ${hb}: the responder published before network-base-setup wrote the name"; bad=1; }
+  fi
+  [ "$bad" = 0 ] || return 1
+  echo "two devices, two names, each answering for its own over mDNS"
+}
+case ",$ONLY," in *,pair-identity,*) run_suite pair-identity "$OUT/pair-identity.log" pair_identity_suite ;; esac
+case ",$ONLY," in *,round-trip,*) run_suite round-trip "$OUT/round-trip.log" "$ROOT/tools/cloud-round-trip" --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --backend "$BACKEND" ;; esac
+case ",$ONLY," in *,exit,*)       run_suite exit       "$OUT/exit.log"       "$ROOT/tools/emulator-exit-test" --port "$PORT" --identity "$KEY" --vm ;; esac
+# Time to play (#135). --quick is the bounded form -- one repeat of the
+# launch, the exit sync and a game-to-game, no reboot and no host fixtures --
+# because this runs on every image and the offline and bounds cells are
+# minutes each. The full cell (--repeat 5, every condition) is run by hand
+# when a number is being proposed for a register row (D-CLOUD-116).
+case ",$ONLY," in *,time-to-play,*)
+  run_suite time-to-play "$OUT/time-to-play.log" "$ROOT/tools/time-to-play" \
+    --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --monitor "$MON" \
+    --backend "$BACKEND" --out "$OUT/time-to-play" --quick --vm \
+    --label "vm-qa on $(hostname -s), guest $GUEST" ;;
+esac
+# The link cells are timing-bound (a run must end within 90 s of the cut), so
+# they run before the walks and never while an image builds on this host.
+case ",$ONLY," in *,link,*)       run_suite link       "$OUT/link.log"       "$ROOT/tools/cloud-round-trip" --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --backend "$BACKEND" --only LINK1,LINK2,LINK3,LINK4,LINK5,LINK6,LINK7 --serial-socket "$SERIAL" ;; esac
+# The offline-achievements scenario (#166): the QA account on, the toggle on,
+# a game with a RetroAchievements set launched online, the link cut on the
+# monitor, an achievement unlocked and queued, the game ended offline, the
+# link back, the award flushed and on the account. Serial console, monitor
+# and the QA account file are its preconditions and each is a FAIL when
+# missing; a PASS spends one cheap achievement on the QA account, which is
+# why it is opt-in. Timing-bound like link (the flush within 90 s), so never
+# while an image builds here.
+case ",$ONLY," in *,ra-offline,*) run_suite ra-offline "$OUT/ra-offline.log" "$ROOT/tools/ra-offline-test" --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --monitor "$MON" --serial "$SERIAL" --frames "$OUT/ra-offline-frames" ;; esac
+# The walks open pages that refuse without a remote (NO CLOUD STORAGE IS SET
+# UP ON THIS DEVICE YET. SET IT UP NOW?), and the round-trip suite, which runs
+# first, puts the guest's rclone.conf back to how it found it -- on a fresh
+# pair, absent. Seven walks failed at that dialog on af2db4ab09 (2026-09-11)
+# while the same suite had read PASS on the image before, whose fixed-wait
+# walks passed whenever the tool ran (#125). Seed the QA remote when there is
+# none, the way seed-device does, and the folders the transfer page expects.
+ensure_remote() {
+  [ -n "$(SSH 'rclone listremotes 2>/dev/null' 2>/dev/null)" ] && return 0
+  local conf; conf=$(mktemp)
+  "$ROOT/tools/cloud-test-backend" rclone-conf > "$conf"
+  SSH 'mkdir -p /storage/.config/rclone' 2>/dev/null
+  scp -q -i "$KEY" -P "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$conf" root@127.0.0.1:/storage/.config/rclone/rclone.conf
+  rm -f "$conf"
+  SSH 'chmod 600 /storage/.config/rclone/rclone.conf; /usr/bin/cloud_sync_helper >/dev/null 2>&1; r=$(rclone listremotes 2>/dev/null | head -1); rclone mkdir "${r}/ROCKNIX/Saves" >/dev/null 2>&1; rclone mkdir "${r}/ROCKNIX/Backups" >/dev/null 2>&1; echo "walks: seeded the QA remote ${r} (the guest had none)"' 2>/dev/null
+}
+# And the transfer walks tick ROMS AND BIOS and continue to the systems page,
+# which on a device with no ROMs is the dialog NO SYSTEM ON THIS DEVICE HOLDS
+# WHAT YOU TICKED (two walks, af2db4ab09). The round-trip suite works in a
+# scratch tree and leaves /storage/roms as it found it -- empty on a fresh
+# pair -- so seed the same fixture the walks were written against: the
+# backend's seed-content in the cloud and seed-device's ROMs on the guest.
+# The manager walks want a game per system with a capture to show (#252): a
+# NES game with a turn recorded beside its states, a Game Boy game as it is,
+# and an FBNeo game the core's own table turns. Stub ROMs, the fixture
+# pictures under tools/vm-walks/fixtures/ (a ring that is round only at the
+# right aspect, a green mark on the edge that is the game's top), and fixed
+# mtimes, so the tile dates read the same on every run and the frames compare.
+ensure_manager_fixture() {
+  SSH 'test -f /storage/roms/savestates/fbn/mspacman.state.auto.png' 2>/dev/null && return 0
+  local F="$ROOT/tools/vm-walks/fixtures" put
+  put() { scp -q -i "$KEY" -P "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$1" "root@127.0.0.1:$2"; }
+  SSH 'mkdir -p /storage/roms/nes /storage/roms/gb /storage/roms/fbneo /storage/roms/savestates/nes /storage/roms/savestates/gb /storage/roms/savestates/fbn /storage/roms/screenshots; for f in nes/Bobl.nes gb/Ninoid.gb fbneo/mspacman.zip; do head -c 4096 /dev/urandom > /storage/roms/$f; done; for s in nes/Bobl gb/Ninoid fbn/mspacman; do head -c 4096 /dev/urandom > /storage/roms/savestates/$s.state.auto; done; printf "turns=1\n" > /storage/roms/savestates/nes/Bobl.rotation' 2>/dev/null
+  put "$F/nes-256x240-right.png" /storage/roms/savestates/nes/Bobl.state.auto.png
+  put "$F/gb-160x144.png" /storage/roms/savestates/gb/Ninoid.state.auto.png
+  put "$F/arcade-vertical-raw-left.png" /storage/roms/savestates/fbn/mspacman.state.auto.png
+  put "$F/nes-256x240-right.png" /storage/roms/screenshots/Bobl-260901-120000.png
+  put "$F/gb-160x144.png" /storage/roms/screenshots/Ninoid-260901-120100.png
+  put "$F/arcade-vertical-raw-left.png" /storage/roms/screenshots/mspacman-260901-120200.png
+  SSH 'touch -d "2026-09-01 12:00:00" /storage/roms/savestates/*/* /storage/roms/screenshots/* /storage/roms/nes/* /storage/roms/gb/* /storage/roms/fbneo/*; sync; echo "walks: seeded the manager fixture (nes with a turn recorded, gb as is, fbn from the core table; mtimes 2026-09-01 12:00)"' 2>/dev/null
+}
+ensure_fixture() {
+  ensure_remote
+  SSH 'test -f /storage/roms/snes/shared.sfc' 2>/dev/null && return 0
+  # The transfer walks upload the device-only ROMs, and the cloud keeps them:
+  # a second run then frames a systems page and a phase line that count what
+  # the first run left there (runs 17 and 18, 2026-09-23). The frame-diff
+  # suite compares those frames, so the endpoint is put back to the seed
+  # every time the guest is seeded, the way the round-trip suite does before
+  # its own work.
+  "$ROOT/tools/cloud-test-backend" reset >/dev/null 2>&1
+  "$ROOT/tools/cloud-test-backend" seed-content >/dev/null 2>&1
+  local scr; scr=$(mktemp)
+  "$ROOT/tools/cloud-test-backend" seed-device > "$scr"
+  scp -q -i "$KEY" -P "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$scr" root@127.0.0.1:/tmp/qa-seed-device.sh
+  rm -f "$scr"
+  SSH 'bash /tmp/qa-seed-device.sh >/dev/null 2>&1; rm -f /tmp/qa-seed-device.sh; echo "walks: seeded the content fixture (cloud seed-content, device ROMs) -- the guest had no ROMs"' 2>/dev/null
+}
+case ",$ONLY," in *,walks,*)
+  ensure_fixture
+  ensure_manager_fixture
+  # Every walk starts from a rebooted guest, which the README names as the
+  # one deterministic start; a boot-time dialog is dismissed with B first.
+  walk_all() {
+    local rc=0 name legs w pre defpre=""
+    # tools/vm-walks/suite.txt names the compositions: most walk files are a
+    # leg that starts on a screen an earlier leg reaches, so replaying them
+    # one at a time drove A presses into the carousel and counted the frames
+    # as a pass (#125). The old behaviour is the fallback if the file is gone.
+    local suite="$ROOT/tools/vm-walks/suite.txt"
+    if [ ! -f "$suite" ]; then
+      for w in "$ROOT"/tools/vm-walks/*.steps; do
+        name=$(basename "$w" .steps)
+        case "$name" in wake|reset) continue ;; esac
+        printf '%s = %s\n' "$name" "$name"
+      done > "$OUT/walks/suite.txt"
+      suite="$OUT/walks/suite.txt"
+    fi
+    while IFS= read -r line; do
+      line=${line%%#*}
+      case "$line" in *=*) ;; *) continue ;; esac
+      name=$(echo "${line%%=*}" | tr -d ' ')
+      legs=${line#*=}
+      # `<name> = <legs> | <shell>`: the part after | is a command run on the
+      # guest BEFORE the reboot, for a walk whose starting screen depends on
+      # state a reboot does not clear -- which the transfer page's switches
+      # are: EmulationStation saves them into system.cfg when the page
+      # closes and restores them at the next start, so a `tick-*` leg, which
+      # FLIPS rather than sets, went the wrong way after any walk that had
+      # left one on (#125).
+      pre=""
+      case "$legs" in *\|*) pre=${legs#*|}; legs=${legs%%|*} ;; esac
+      # `default-pre = <shell>` is the reset every walk wants; a line's own
+      # `| <shell>` runs after it, so a walk can override what it set.
+      if [ "$name" = "default-pre" ]; then defpre=$legs; continue; fi
+      [ -n "$name" ] || continue
+      mkdir -p "$OUT/walks"
+      [ -n "$defpre" ] && SSH "$defpre" >/dev/null 2>&1
+      [ -n "$pre" ] && SSH "$pre" >/dev/null 2>&1
+      SSH 'systemctl reboot' 2>/dev/null; sleep 6
+      for i in $(seq 1 45); do SSH 'pgrep -x emulationstation >/dev/null' 2>/dev/null && break; sleep 3; done; sleep 10
+      # wake, then dismiss-dialogs: the first key after a boot is eaten by the
+      # screensaver, and a boot-time dialog (the journey prompt, the
+      # RetroAchievements offer, FINISH RESTORE SETUP) has to go before any
+      # walk. This was `key z` + `wait 2`, which is one B press: on a guest
+      # with nothing open that press OPENS the carousel's GO TO dialog, and
+      # the walk then ran a screen out of phase (#125).
+      { printf 'wake\ndismiss-dialogs\n'
+        for w in $legs; do printf '# --- %s ---\n' "$w"; cat "$ROOT/tools/vm-walks/$w.steps"; done
+      } | timeout 900 "$ROOT/tools/vm-visual-qa" --monitor "$MON" run - --outdir "$OUT/walks/$name/" > "$OUT/walks/$name.log" 2>&1 \
+        || { echo "walk $name: exit $?  (see walks/$name.log)"; rc=1; }
+      echo "walk $name: $(ls "$OUT/walks/$name/" 2>/dev/null | wc -l) frames  [$(echo $legs)]"
+    done < "$suite"
+    return $rc
+  }
+  run_suite walks "$OUT/walks.log" walk_all ;; esac
+# The walk frames against the last cut the maintainer accepted (#252): every
+# box of differing pixels outside tools/vm-walks/masks.txt must be inside a
+# claim in tools/vm-walks/claims.txt, or the suite fails. No baseline is a
+# SKIP the table shows, never a quiet pass -- accept one with
+#   tools/frame-diff accept <run>/walks <baseline> --build <id>
+# once a cut is on the device. WALK_BASELINE overrides the directory.
+frame_diff_suite() {
+  local base="${WALK_BASELINE:-$(dirname "$OUT")/walk-baseline}"
+  if [ ! -f "$base/BASELINE.txt" ]; then
+    echo "frame-diff: no baseline at $base -- accept one: tools/frame-diff accept <run>/walks $base --build <id>"; return 3
+  fi
+  "$ROOT/tools/frame-diff" compare "$base" "$OUT/walks" --masks "$ROOT/tools/vm-walks/masks.txt" --claims "$ROOT/tools/vm-walks/claims.txt" --report "$OUT/frame-diff.md"
+}
+case ",$ONLY," in *,frame-diff,*) run_suite frame-diff "$OUT/frame-diff.log" frame_diff_suite ;; esac
+{ echo; if [ "$FAILS" = 0 ] && [ "$SKIPS" = 0 ]; then echo "**PASSED** -- every suite that ran passed."; elif [ "$FAILS" = 0 ]; then echo "**PASSED with $SKIPS suite(s) SKIPPED** -- a skipped suite could not run (its log says why) and has not passed."; else echo "**FAILED** -- $FAILS suite(s) failed; see the logs beside this file."; fi; echo; echo "finished $(date -u '+%Y-%m-%d %H:%M UTC')"; } >> "$REPORT"
+# The time-to-play numbers go BELOW the footer, not into the suite table: the
+# table is one row per suite and this cell reports four of its own. No budget
+# row exists yet, so nothing here fails the run -- the numbers are reported
+# and a register row is proposed from them by hand (D-CLOUD-116).
+if [ -f "$OUT/time-to-play/time-to-play.md" ]; then
+  # Demoted a level each, so the cell's own sections sit under its heading
+  # rather than beside the report's.
+  { echo; sed -e 's/^## /### /' -e '1s/^# /## /' "$OUT/time-to-play/time-to-play.md"; } >> "$REPORT"
+fi
+echo; cat "$REPORT"; echo; echo "report: $REPORT"
+[ "$FAILS" = 0 ]

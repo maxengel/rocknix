@@ -1,0 +1,80 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# build-preflight -- what the machine has before a build takes it.
+#
+#   tools/build-preflight            # report only
+#   tools/build-preflight --stop-vms # also stop running QA guests
+#
+# Builds here are memory-bound, not disk-bound, and the two are easy to
+# confuse: /workspace has terabytes free while the box runs out of RAM. On
+# 2026-09-19 a cold GENERIC_X64 build reached webkitgtk, compiled WebCore at
+# CONCURRENCY_MAKE_LEVEL=nproc=24, and the kernel killed cc1plus twice. It
+# also killed a running QA guest and a background watcher, so the first
+# symptom was silence rather than an error.
+#
+# What this checks, and why each one:
+#
+#   RAM        the constraint. A heavyweight C++ package wants 1.5-2.5 GB per
+#              parallel compiler.
+#   Swap       a full swap means there is no cushion left: the next spike goes
+#              to the OOM killer rather than degrading. Reclaiming it needs
+#              root, so this prints the command rather than running it.
+#   QA guests  each QEMU guest holds ~2 GB and they are often left up for
+#              days. They are also what the build will kill first.
+#   Disk       reported for completeness; it has never been the limit here.
+#
+# It exits 0 when the machine looks ready, 1 when something is worth fixing
+# first. It never stops a guest without --stop-vms, because a guest may be
+# holding QA state someone is in the middle of.
+
+set -u
+STOP_VMS=0
+[ "${1:-}" = "--stop-vms" ] && STOP_VMS=1
+
+verdict=0
+say() { printf '%s\n' "$*"; }
+
+read -r _ mem_total mem_used _ _ _ mem_avail <<<"$(free -m | awk 'NR==2')"
+read -r _ swap_total swap_used swap_free <<<"$(free -m | awk 'NR==3')"
+say "RAM    ${mem_total}MB total, ${mem_used}MB used, ${mem_avail}MB available"
+say "Swap   ${swap_total}MB total, ${swap_used}MB used, ${swap_free}MB free"
+say "Disk   $(df -h /workspace | awk 'NR==2{print $4" free of "$2}')  (not the usual limit)"
+say ""
+
+if [ "$mem_avail" -lt 16000 ]; then
+    say "  LOW: under 16GB available. A heavyweight package will not fit beside this."
+    verdict=1
+fi
+if [ "$swap_total" -gt 0 ] && [ "$swap_free" -lt $(( swap_total / 5 )) ]; then
+    say "  SWAP EXHAUSTED: ${swap_free}MB of ${swap_total}MB free. There is no cushion;"
+    say "    the next spike is an OOM kill rather than a slowdown. To reclaim it:"
+    say "      sudo swapoff -a && sudo swapon -a     # needs ${swap_used}MB of free RAM"
+    verdict=1
+fi
+
+guests=$(pgrep -f 'qemu-system-x86_64' 2>/dev/null)
+if [ -n "$guests" ]; then
+    say "  QA guests running:"
+    for p in $guests; do
+        rss=$(( $(ps -o rss= -p "$p" 2>/dev/null || echo 0) / 1024 ))
+        [ "$rss" -lt 64 ] && continue
+        mon=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null | grep -oE 'monitor-[a-z]\.sock' | head -1)
+        up=$(ps -o etime= -p "$p" 2>/dev/null | tr -d ' ')
+        say "      pid $p  ${mon:-unknown}  ${rss}MB  up ${up}"
+        if [ "$STOP_VMS" = 1 ]; then
+            kill "$p" 2>/dev/null && say "        stopped"
+        fi
+    done
+    if [ "$STOP_VMS" = 0 ]; then
+        say "    Each is ~2GB, and a build under pressure will kill them before it fails"
+        say "    itself -- one was lost that way on 2026-09-19. Stop the idle ones with"
+        say "    --stop-vms, or leave them knowingly."
+        verdict=1
+    fi
+fi
+
+say ""
+[ "$verdict" = 0 ] && say "READY" || say "Worth clearing the above first; a build that finishes beats one that is fast."
+exit "$verdict"

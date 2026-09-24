@@ -22,6 +22,17 @@ projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm \
   run target/ROCKNIX-GENERIC_X64.x86_64-<date>.qcow2
 ```
 
+The guest boots at QEMU's default mode, 1280x800. `--res WxH` sets the
+display's preferred mode instead -- `xres=`/`yres=` on the virtio-gpu device,
+for the desktop (`virtio-gpu-gl-pci`) and `--headless` (`virtio-gpu-pci`)
+variants alike -- so a handheld panel's look is checked on the VM before a
+device (fork #97):
+
+```bash
+projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm \
+  run --headless --res 640x480 target/ROCKNIX-GENERIC_X64.x86_64-<date>.qcow2
+```
+
 Generate the UTM bundle:
 
 ```bash

@@ -2,6 +2,8 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="webkitgtk"
+# freshness: pinned -- 2.54.0 does not build with video off, and video needs gstreamer-mpegts and
+# gstreamer-gl the image lacks (fork #228); remove this line in the commit that bumps it
 PKG_VERSION="2.52.6"
 PKG_SHA256="179a2ea3f8f6edd4be7f31fdc55afc57bd0729f1fba648c61d4181539ac116fc"
 PKG_LICENSE="LGPL-2.1-or-later AND BSD-2-Clause"
@@ -16,12 +18,44 @@ PKG_DEPENDS_TARGET="toolchain ruby:host unifdef:host \
 PKG_LONGDESC="WebKit rendering engine, GTK port. Present for one job: showing a cloud provider's sign-in page on the device, so the OAuth redirect to localhost lands where rclone is listening instead of on somebody's phone."
 PKG_TOOLCHAIN="cmake"
 
+# ROCKNIX fork: cap this package's parallelism, and only this package's.
+#
+# CONCURRENCY_MAKE_LEVEL is nproc (24 on the build box), and WebCore's
+# translation units are the heaviest in the tree -- 24 cc1plus at once asks
+# for more memory than the machine has. The cold GENERIC_X64 build of
+# 2026-09-19 died here twice with
+#
+#   x86_64-rocknix-linux-gnu-g++-15.2.0: fatal error: Killed signal
+#   terminated program cc1plus
+#
+# at ninja edge ~5437 of 6230, taking the box low enough on memory that
+# unrelated processes were reaped too. ninja takes the last -j it is given
+# and scripts/build appends PKG_MAKE_OPTS_TARGET after NINJA_OPTS, so this
+# overrides the global level for webkitgtk alone; every other package still
+# builds at full width.
+#
+# 4 is deliberately conservative -- the maintainer's call, 2026-09-19, is to
+# optimise for a build that finishes rather than one that is fast. Raise it
+# only with a build that survives on a machine doing something else at the
+# same time.
+PKG_MAKE_OPTS_TARGET="-j4"
+
 pre_configure_target() {
   # A sign-in window, not a web browser. Everything switched off below is
   # either a dependency we do not ship (spellcheck/enchant, the bubblewrap
   # sandbox and its dbus proxy) or surface we have no use for on a handheld
   # that opens exactly one page. Introspection and docs are build-host
   # artifacts that never reach the image.
+  #
+  # ENABLE_VIDEO stays ON. The GTK port does not build with it off: WebCore
+  # compiles JSHTMLMediaElementCustom.cpp regardless and needs the binding
+  # only video generates. Learned 2026-08-30 (cb05cbe80d turned it off,
+  # 64907d0ab8 turned it back on the same day) and again 2026-09-20, when
+  # four builds of 2.54.0 hit the same wall from every side (#228). What can
+  # go is the *pipeline around* video: media stream, recorder, WebRTC, the
+  # transcoder, GL upload -- all off below. 2.54 additionally makes
+  # gstreamer-mpegts and gstreamer-gl hard requirements of video, which is
+  # why it is held at 2.52.6 until this image builds them.
   PKG_CMAKE_OPTS_TARGET="-DPORT=GTK \
                          -DUSE_GTK4=OFF \
                          -DUSE_SOUP2=OFF \

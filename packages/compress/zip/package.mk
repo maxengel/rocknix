@@ -2,6 +2,7 @@
 # Copyright (C) 2009-2016 Stephan Raue (stephan@openelec.tv)
 
 PKG_NAME="zip"
+# freshness: pinned -- Info-ZIP 3.0 (2008) is the final release
 PKG_VERSION="3.0"
 PKG_SHA256="f0e8bb1f9b7eb0b01285495a2699df3a4b766784c1765a8f1aeedf63c0806369"
 PKG_LICENSE="Info-ZIP"

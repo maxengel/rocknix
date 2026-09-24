@@ -146,4 +146,20 @@ The cheap way to cover both paths, per
   state (a backup, a config change, a save), then update it in place and confirm
   that state still works.
 
-`tools/vm-visual-qa` drives both headlessly.
+`tools/vm-upgrade-rehearsal <previous img.gz> <new tar> <new BUILD_ID>` runs the
+upgrade half end to end and fails closed on any piece of state that did not
+survive (first run 2026-09-20, build 15 to `77e7e97515`, 20 of 20). The clean
+install is what `tools/vm-qa` boots from the image every run.
+
+**And under the device's tools, not the host's.** `tr -d '[:print:][:space:]'`
+deletes every printable byte under GNU tr and eight literal characters under
+busybox tr, so a text check that passed in `tools/last-good-scripts-test`
+rejected every real `system.cfg` on every device and the last-good record
+was never written (2026-09-10, blindspot 34). The test now runs every
+command that is a busybox applet on the device (`sed mv cp tr head wc cut
+awk`) through the image's busybox from the build root, and its fixtures are
+the image's own files, not three lines typed for the test. When a script
+will run under busybox, ask of every external command it calls whether the
+host's is the same program -- `readlink -f $(command -v tr)` on the device
+answers it -- and shim the ones that are not, not only the ones already known
+to differ.

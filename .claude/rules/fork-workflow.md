@@ -30,9 +30,7 @@ in `.githooks/pre-push` are the same list; change one and change the other.
 - **Agent context** — `.claude/`, `CLAUDE.md`, `AGENTS.md`, `.githooks/`,
   `.github/sessions/`, `.github/workflows/fork-*`
 - **Personal writing** — `docs/`, `plans/`
-- **Fork-only tools** — `tools/fork-publish-release`, `tools/cloud-test-backend`,
-  `tools/cloud-round-trip`, `tools/lint-audit-artifacts`, `tools/vm-visual-qa`,
-  `tools/fork-worktree`, `tools/council/` (the council Facilitator, #70)
+- **Fork-only tools** — `tools/fork-publish-release`, `tools/cloud-test-backend`, `tools/cloud-round-trip`, `tools/cloud-capture-stamp-test`, `tools/wait-lock-test`, `tools/last-good-scripts-test`, `tools/lint-audit-artifacts`, `tools/vm-visual-qa`, `tools/vm-serial`, `tools/vm-pair`, `tools/cloud-census`, `tools/emulator-exit-test`, `tools/vm-qa`, `tools/time-to-play`, `tools/vocabulary-check`, `tools/register-check`, `tools/device-act`, `tools/ra-offline-test`, `tools/qa-accounts`, `tools/vm-walks/`, `tools/fork-worktree`, `tools/fork-package-freshness`, `tools/vm-upgrade-rehearsal`, `tools/frame-diff`, `tools/archaeology`, `tools/work-log-index`, `tools/ceremony-check`, `tools/es-syntax-check`, `tools/png-blackout`, `tools/fork-newdrive`, `tools/es-untranslated`, `tools/es-menu-map-check`, `tools/ra-candidate-games`, `tools/retroarch-wrapper-test`, `tools/build-preflight`, `tools/watch-job`, `tools/council/` (the council Facilitator, #70). One entry per tool, the same entries as `PERSONAL_PATTERNS`; the 2026-09-12 audit found the prose three short
 - **Council artifacts** — `research/`
 - **Copilot-era leftovers** — `.github/copilot-instructions.md`, `.github/instructions/`,
   `.github/shared-copilot-knowledge/`, `tmp/shared-copilot-knowledge/`,
@@ -137,11 +135,22 @@ warn when the path is unset, relative, or missing.
 
 ## When to merge up
 
+- **Every PR targets `ROCKNIX/distribution:next`** -- the EmulationStation work
+  too, which reaches upstream as the package bump plus patches in the
+  distribution repo, not as a PR to the ES repo. A PR about EmulationStation
+  carries the `es` prefix in its title, as the project's own PRs do
+  (maintainer, 2026-09-12; D-WORKFLOW-012). Check the open PRs at
+  <https://github.com/ROCKNIX/distribution/pulls> for the current shape before
+  cutting one.
 - One self-contained change per PR, scoped like the commit convention
   (`<package>` or `<DEVICE> - <subsystem>`); don't bundle unrelated work.
 - The change builds for at least one target device.
 - `pr/<name>` is rebased on current `upstream/next` (fetch first) to minimize conflicts.
 - Never include personal/infra paths (the guard enforces this).
+- Every package the fork introduces is at its latest upstream release, or its
+  recipe says what it is pinned to: `tools/fork-package-freshness` exits 0
+  (D-WORKFLOW-024, #227). Upstream reviews what we submit against current
+  releases, so a stale dependency is a review round we chose to have.
 
 ## Keep `next` synced
 

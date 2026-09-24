@@ -1,0 +1,41 @@
+# Start: the system carousel of a REBOOTED VM (awake, nothing open). End:
+# USER INTERFACE SETTINGS with its last row -- SHOW RETROACHIEVEMENTS ICON, a
+# Settings-backed switch -- toggled and focused. The next B (`z`) closes the
+# page and runs GuiSettings::save(): Settings::saveFile() writes
+# es_settings.cfg and SystemConf::saveSystemConf() writes system.cfg. KILL13
+# (tools/cloud-round-trip) sends that B itself, on the same monitor
+# connection as the system_reset that follows it; the harness drops every
+# step from the last `key x` on for the walk that changes nothing, so the
+# toggle press must stay the last `key x` in this file.
+#
+# MAIN MENU on ROCKNIX: GAME SETTINGS, CONTROLLER & BLUETOOTH SETTINGS, USER
+# INTERFACE SETTINGS, ... -- so START, down, down, A. The page opens on its
+# first row (THEME SET); up lands on BACK, up again wraps to the last row.
+# On ROCKNIX that is SHOW RETROACHIEVEMENTS ICON: the gun/wheel/trackball/
+# spinner rows after it are `#if !defined(ROCKNIX)` (GuiMenu.cpp).
+#
+# The toggle press takes no re-send: a second press would put the switch
+# back, and KILL13 judges itself on whether the switch was recorded, so a
+# silently doubled press would read as "the walk never reached the switch".
+wake
+key ret
+wait-for-change
+settle
+key down
+wait-for-change
+key down
+wait-for-change
+settle
+key x
+wait-for-change
+settle
+key up
+wait-for-change
+key up
+wait-for-change
+settle
+shot ui-settings-last-row
+key x
+wait-for-change 12 0
+settle
+shot toggled

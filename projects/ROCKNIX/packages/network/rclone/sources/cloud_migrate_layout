@@ -198,6 +198,23 @@ main() {
 
     content=$(conf_value CONTENT_REMOTE)
 
+    # A layout the owner chose is current too. CHANGE CLOUD FOLDER writes the
+    # settings and content folders as SIBLINGS of the saves folder -- the
+    # parent's Backups and Content, or the folder's own when it sits at the
+    # root -- and a device on /Custom/Saves, /Custom/Backups, /Custom/Content
+    # has nothing to migrate. Until 2026-09-11 only the /ROCKNIX names counted
+    # as current, so this check offered to move a deliberately chosen layout
+    # back to the default one (#74). The nested first layout, backups INSIDE
+    # the saves folder, is the only shape this tool exists to move.
+    local sib_parent="${saves%/*}"; [ -n "${sib_parent}" ] || sib_parent="${saves}"
+    if [ "${saves}" != "${NEW_SAVES}" ] && [ "${backups}" = "${sib_parent}/Backups" ]; then
+        case "${content}" in
+            "${sib_parent}/Content"|"")
+                say "Already on a sibling layout of your own (${saves}, ${backups}); nothing to move."
+                return 3 ;;
+        esac
+    fi
+
     if [ "${saves}" = "${NEW_SAVES}" ] && [ "${backups}" = "${NEW_BACKUPS}" ]; then
         # Saves and backups are current, but a device migrated before
         # CONTENT_REMOTE was carried along is still pointing its ROMs at the old

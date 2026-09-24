@@ -2,9 +2,10 @@
 # pre-push guard for the maxengel/rocknix fork.
 #
 # Blocks pushing a PR branch (pr/*) that carries personal fork artifacts which
-# must never reach an upstream pull request. Build clean PR branches with:
-#   git switch -c pr/<name> feature/<name>
-#   git rebase --onto upstream/next next pr/<name>
+# must never reach an upstream pull request. Build clean PR branches by
+# content, from upstream/next (.claude/rules/fork-workflow.md):
+#   git worktree add --detach ../rocknix.worktrees/pr-<name> upstream/next
+#   git switch -c pr/<name> && git checkout next -- <the feature paths> && git commit
 #
 # INSTALL WITH AN ABSOLUTE PATH:
 #   git config core.hooksPath /path/to/rocknix/.githooks
@@ -12,19 +13,47 @@
 # A *relative* `core.hooksPath=.githooks` looks right and silently does nothing
 # where it matters most. The path resolves against whichever working tree you
 # are pushing from, and a correctly built pr/* branch has no `.githooks/` in it
-# - excluding it is the whole point of the rebase above. Check out such a
+# - excluding it is the whole point of building it by content. Check out such a
 # branch in a worktree and the hook file is simply absent, so git runs no hook
 # and every check below is skipped. The better the PR branch, the less the
 # guard exists. An absolute path pins the hook to the main checkout, so it runs
 # regardless of which branch or worktree is being pushed.
 #
-# Only branches named pr/* are guarded for personal paths; every branch is
-# scanned for credential-shaped lines (see SECRET_PATTERNS below).
+# Only pushes whose DESTINATION is refs/heads/pr/* are guarded for personal
+# paths -- `git push origin feature/x:pr/x` lands on pr/x and is judged as
+# pr/x; every branch is scanned for credential-shaped lines (SECRET_PATTERNS
+# below), in every commit the push carries, not only at its tip.
+#
+# Fails closed: a pr/* push with no upstream/next or origin/next to compare
+# against is refused, not waved through with a warning, and so is any push
+# whose range this hook cannot diff. Proven on 2026-09-13 (audit #151 PL-08)
+# in a scratch repo with `core.hooksPath` pointing at this directory, one
+# refusal each -- the commands, then the hook's answer:
+#
+#   # a value committed in the middle of the push and removed again at its tip
+#   #   (devpassword=<sixteen letters spelling nothing>; a tip-only scan passes it)
+#   git push scratch feature/x
+#     -> "refusing to push feature/x: it carries lines shaped like credentials:"
+#        "  7a9d1d2:notes.txt:+[REDACTED]" (the middle commit, named), exit 1
+#   # a personal path pushed to a pr/* destination under another local name
+#   git push scratch feature/p:refs/heads/pr/p
+#     -> "pre-push blocked: pr/p (pushed from feature/p) carries personal artifacts
+#         that must not go upstream:  docs/note.md", exit 1
+#   # a pr/* push with no upstream/next and no origin/next in the repo
+#   git push scratch pr/y
+#     -> "refusing to push pr/y: no upstream/next or origin/next to compare a pr/* branch against", exit 1
+#
+# The hook at next 6e09b6fcca let all three through (the first two silently,
+# the third with a warning); the same three shapes without their fault push
+# through this one, and a range git cannot diff at all is refused too.
 
 set -uo pipefail
 
 # Personal paths that must never appear in an upstream PR branch.
 # Keep this in step with `.claude/rules/fork-workflow.md` § "Personal paths".
+# The working tree this push comes from: the tools the guard runs live there.
+hooks_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+
 PERSONAL_PATTERNS=(
   # Agent context, rules and skills
   '.claude/'
@@ -42,9 +71,38 @@ PERSONAL_PATTERNS=(
   'tools/fork-publish-release'
   'tools/cloud-test-backend'
   'tools/cloud-round-trip'
+  'tools/cloud-capture-stamp-test'
+  'tools/wait-lock-test'
+  'tools/last-good-scripts-test'
   'tools/lint-audit-artifacts'
+  'tools/es-untranslated'
+  'tools/es-menu-map-check'
+  'tools/ra-candidate-games'
+  'tools/retroarch-wrapper-test'
+  'tools/build-preflight'
+  'tools/watch-job'
   'tools/vm-visual-qa'
+  'tools/vm-serial'
+  'tools/vm-pair'
+  'tools/cloud-census'
+  'tools/emulator-exit-test'
+  'tools/vm-qa'
+  'tools/time-to-play'
+  'tools/vocabulary-check'
+  'tools/register-check'
+  'tools/device-act'
+  'tools/qa-accounts'
+  'tools/ra-offline-test'
+  'tools/vm-walks/'
   'tools/fork-worktree'
+  'tools/fork-package-freshness'
+  'tools/vm-upgrade-rehearsal'
+  'tools/frame-diff'
+  'tools/archaeology'
+  'tools/work-log-index'
+  'tools/ceremony-check'
+  'tools/es-syntax-check'
+  'tools/png-blackout'
   'tools/fork-newdrive'
   'tools/council/'
   # The council's deliberation artifacts (fork issue #70)
@@ -60,6 +118,7 @@ PERSONAL_PATTERNS=(
 )
 
 zero='0000000000000000000000000000000000000000'
+empty_tree="$(git hash-object -t tree /dev/null)"
 status=0
 
 # Lines shaped like credentials, on EVERY branch. GitHub's push protection
@@ -92,53 +151,121 @@ for cand in upstream/next origin/next; do
   fi
 done
 
-while read -r local_ref local_sha _remote_ref remote_sha; do
+while read -r local_ref local_sha remote_ref remote_sha; do
   # Skip branch deletions.
   [ "$local_sha" = "$zero" ] && continue
 
+  pushed="${local_ref#refs/heads/}"
+
   # --- credentials, every branch -------------------------------------------
-  # The files this push adds or changes, read at the pushed tip. A whole file
-  # is scanned rather than only the added lines, so a secret that slipped in
-  # earlier blocks the next push that touches its file, too.
+  # Two scans. (1) The files this push adds or changes, read whole at the
+  # pushed tip, so a secret that slipped in earlier blocks the next push that
+  # touches its file. (2) Every line ADDED by every commit in the range: a
+  # value committed and removed again inside one push is in the history being
+  # pushed and invisible at the tip (audit #151 PL-08). A range this hook
+  # cannot diff is refused -- a scan that did not run has not passed.
+  whole=0
   if [ "$remote_sha" = "$zero" ]; then
     oldest="$(git rev-list "$local_sha" --not --remotes 2>/dev/null | tail -1)"
     if [ -n "$oldest" ] && git rev-parse --verify --quiet "${oldest}^" >/dev/null; then
       range="${oldest}^..${local_sha}"
-    else
+    elif [ -n "$oldest" ]; then
+      whole=1                      # the remotes have none of this history: scan all of it
+    elif git rev-parse --verify --quiet "${local_sha}^" >/dev/null; then
       range="${local_sha}^..${local_sha}"
+    else
+      whole=1
     fi
   else
     range="${remote_sha}..${local_sha}"
+  fi
+  names="$(mktemp)"; added="$(mktemp)"
+  scan_ok=1
+  if [ "$whole" = 1 ]; then
+    git diff --name-only --no-renames --diff-filter=AM "$empty_tree" "$local_sha" -- . ':!*.po' ':!*.pot' > "$names" 2>/dev/null || scan_ok=0
+    git log -p --root --no-renames --format='commit %h' "$local_sha" -- . ':!*.po' ':!*.pot' > "$added" 2>/dev/null || scan_ok=0
+  else
+    git diff --name-only --no-renames --diff-filter=AM "$range" -- . ':!*.po' ':!*.pot' > "$names" 2>/dev/null || scan_ok=0
+    git log -p --no-renames --format='commit %h' "$range" -- . ':!*.po' ':!*.pot' > "$added" 2>/dev/null || scan_ok=0
+  fi
+  if [ "$scan_ok" != 1 ]; then
+    rm -f "$names" "$added"
+    echo "✗ pre-push: refusing to push ${pushed}: could not diff ${range:-$local_sha} to scan it for credentials." >&2
+    status=1
+    continue
   fi
   leaks=''
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     hit="$(git show "${local_sha}:${f}" 2>/dev/null | grep -nE "$SECRET_PATTERNS" | sed -E "s/($SECRET_PATTERNS)/[REDACTED]/g" | head -3 || true)"
     [ -n "$hit" ] && leaks+="$(printf '%s\n' "$hit" | sed "s|^|  ${f}:|")"$'\n'
-  done <<< "$(git diff --name-only --diff-filter=AM "$range" -- . ':!*.po' ':!*.pot' 2>/dev/null || true)"
+  done < "$names"
+  # <commit>:<file>:<added line>, for every + line under every +++ b/<file>
+  hit="$(awk '/^commit /{c=$2} /^\+\+\+ b\//{f=substr($0,7)} /^\+/ && !/^\+\+\+ /{print c ":" f ":" $0}' "$added" \
+         | grep -E "$SECRET_PATTERNS" | sed -E "s/($SECRET_PATTERNS)/[REDACTED]/g" | head -3 || true)"
+  [ -n "$hit" ] && leaks+="$(printf '%s\n' "$hit" | sed 's|^|  |')"$'\n'
+  rm -f "$names" "$added"
   if [ -n "$leaks" ]; then
-    echo "✗ pre-push: refusing to push ${local_ref#refs/heads/}: it carries lines shaped like credentials:" >&2
+    echo "✗ pre-push: refusing to push ${pushed}: it carries lines shaped like credentials:" >&2
     printf '%s' "$leaks" >&2
     echo "  Placeholders belong in <angle brackets>. A real value has to come out of history before this pushes." >&2
     status=1
     continue
   fi
 
+  # --- the ceremonies, next only ---------------------------------------------
+  # The integration branch carries the record, so a push of it is where the
+  # record's own checks run: the work-log index current (tools/work-log-index),
+  # and tools/ceremony-check's blocking set -- a friction entry without an
+  # issue, a retro past its grace, a missing weekly or monthly summary, a
+  # blindspot without a guard, the register lint. The long ceremonies (an
+  # audit, a futro) are reported here and enforced by the fork's CI, so a fix
+  # can still be pushed while one is owed (#254, D-WORKFLOW-028).
+  if [ "$remote_ref" = "refs/heads/next" ]; then
+    if [ "$whole" = 0 ] && git diff --name-only "$range" -- 'docs/work-logs/' 2>/dev/null | grep -qE 'work_log\.md$' \
+       && ! git diff --name-only "$range" -- 'docs/work-logs/INDEX.md' 2>/dev/null | grep -q .; then
+      echo "⚠ pre-push: this push changes work logs without docs/work-logs/INDEX.md -- run tools/work-log-index --write and amend." >&2
+    fi
+    if [ -x "$hooks_root/tools/ceremony-check" ]; then
+      if ! gate_out="$("$hooks_root/tools/ceremony-check" --gate 2>&1)"; then
+        {
+          echo "✗ pre-push: refusing to push next: a ceremony is overdue past its grace."
+          printf '%s\n' "$gate_out" | sed 's/^/    /'
+          echo "  Write the artifact it names (docs/friction-log.md, docs/retros/, the summary, the index), then push again."
+        } >&2
+        status=1
+        continue
+      elif [ -n "$gate_out" ]; then
+        printf '%s\n' "$gate_out" | sed 's/^/  ⚠ pre-push: /' >&2
+      fi
+    fi
+  fi
+
   # --- personal paths, pr/* only -------------------------------------------
-  case "$local_ref" in
+  # Keyed on where the push LANDS. `git push origin feature/x:pr/x` used to
+  # pass here because the local name was not pr/*.
+  case "$remote_ref" in
     refs/heads/pr/*) ;;
     *) continue ;;
   esac
 
-  branch="${local_ref#refs/heads/}"
+  dest="${remote_ref#refs/heads/}"
+  branch="$dest"
+  [ "$dest" = "$pushed" ] || branch="${dest} (pushed from ${pushed})"
 
   if [ -z "$base_ref" ]; then
-    echo "⚠ pre-push: no upstream/next or origin/next found to validate ${local_ref}; skipping guard." >&2
+    echo "✗ pre-push: refusing to push ${branch}: no upstream/next or origin/next to compare a pr/* branch against." >&2
+    echo "  git fetch upstream, then push again." >&2
+    status=1
     continue
   fi
 
   # Files that differ between clean upstream and this PR branch tip.
-  changed="$(git diff --name-only "$base_ref" "$local_sha")"
+  if ! changed="$(git diff --name-only "$base_ref" "$local_sha" 2>/dev/null)"; then
+    echo "✗ pre-push: refusing to push ${branch}: git diff ${base_ref} ${local_sha} failed, so the personal-path guard could not run." >&2
+    status=1
+    continue
+  fi
 
   hits=''
   while IFS= read -r f; do
@@ -156,7 +283,7 @@ while read -r local_ref local_sha _remote_ref remote_sha; do
       printf '%s' "$hits"
       echo "  Rebuild the PR branch from upstream by content, not by commit:"
       echo "    git worktree add --detach ../rocknix.worktrees/pr-tmp upstream/next"
-      echo "    git switch -c ${branch} && git checkout next -- <the feature paths> && git commit"
+      echo "    git switch -c ${dest} && git checkout next -- <the feature paths> && git commit"
     } >&2
     status=1
   fi

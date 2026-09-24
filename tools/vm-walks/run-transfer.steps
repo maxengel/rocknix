@@ -1,0 +1,55 @@
+# Start: the systems page, focus on its first system row (where
+# continue-to-systems.steps leaves it), with NO SYSTEM TICKED -- the
+# precondition below. End: the CLOUD hub, after the transfer page has been
+# closed.
+#
+# Up from the first row is the button bar on BACK. The bar has three buttons
+# since SELECT ALL joined it (ES d57542662): BACK / SELECT ALL (or SELECT
+# NONE) / BACK UP (or RESTORE). The first right and A press SELECT ALL; the
+# second right and A press the verb. Without the first pair the verb runs
+# whatever selection the picker last saved -- it saves on every close, BACK
+# included -- and with nothing ticked cloud_content_backup --selected prints
+# "Nothing to back up" and exits 1: the page ends FAILED with rows 3-4 blank
+# and no transfer was exercised, which is how this walk shipped once (#85).
+#
+# The precondition, because the button is a toggle that reads as what it
+# would do next: once every system is on it says SELECT NONE, and on a VM
+# where an earlier walk already saved SELECT ALL this press clears the
+# selection and the run fails the same way. The selection lives in
+# /storage/.cache/cloud_sync/content-systems and survives an EmulationStation
+# restart, so a fresh ES is not enough. Make it true rather than guess: over
+# serial,
+#   cloud_content_restore --set-systems ""
+# empties the saved selection (a fresh image has none). The bar is rebuilt
+# on the UI thread after the press, which is what the settle waits for; read
+# the selected-all frame -- every switch on, the button now reading SELECT
+# NONE -- before trusting the frames after it.
+#
+# Neither A press is re-sent. SELECT ALL is a toggle, so a second press
+# clears what the first set; the verb starts a transfer, so a second press
+# would start another.
+#
+# `settle 90` is where the old `wait 16` was. The transfer page repaints its
+# elapsed time every second while it runs, so it is never still until the
+# job ends and the page reads PRESS ANY BUTTON TO CLOSE -- which makes "the
+# screen stopped moving" the same event as "the transfer finished", for a
+# small fixture and for a real library alike. The bound is the give-up, not
+# the expectation.
+key up
+wait-for-change
+key right
+wait-for-change
+key x
+wait-for-change 15 0
+settle
+shot selected-all
+key right
+wait-for-change
+key x
+wait-for-change 25 0
+shot transfer-running
+settle 90
+shot transfer-done
+key x
+wait-for-change 15
+settle

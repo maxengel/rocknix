@@ -1,6 +1,10 @@
 ---
-description: "EmulationStation (emulationstation-next) native UI/UX best practices — building blocks, patterns, and precedents for menu/settings/async work."
+description: "EmulationStation mechanics: where the code lives, the patterns for pages, cards and background jobs, the spacing and the four surface tiers, and the code conventions. Read before building or changing an ES screen; the words it shows are in `es-player-text.md`."
 paths:
+  # ES source lives in the separate `ROCKNIX/emulationstation-next` repo, so no
+  # glob written here can name `es-app/**`. `**` is the widest a repo-relative
+  # glob reaches; a session working only in the ES checkout still loads none of
+  # these (#147 § 9).
   - "**"
 ---
 
@@ -9,6 +13,11 @@ paths:
 Survey of `ROCKNIX/emulationstation-next` (2026-07-24) for building native experiences
 (cloud sync, backup/restore, issue #15 L2/L3). Source lives in the separate ES repo;
 this file guides any work there.
+
+**This file was split on 2026-09-12** (#147). Maintainer: *"let's split up the
+native UI into parts."* The mechanics stayed here; the words a player reads
+went to `es-player-text.md`, and the codebase's sharp edges to
+`es-code-traps.md` (D-WORKFLOW-008).
 
 ## Where things live
 
@@ -19,6 +28,55 @@ this file guides any work there.
 - `es-core/src/components/` — `MenuComponent`, `ComponentList`, `SwitchComponent`,
   `OptionListComponent`, `SliderComponent`, `ButtonComponent`, `BusyComponent`
   (spinner), `AsyncNotificationComponent` (top-right progress card).
+
+## The other files that carry the interface law
+
+This file is the mechanics. Three sibling rules and two `docs/` documents carry
+the rest; the two under `docs/` load nowhere, so open them when the work is
+theirs -- the 2026-09-12 sweep (#147) found that no rule file named any of
+them, which is how a page gets built against half the house style.
+
+| File | Owns |
+| --- | --- |
+| `es-player-text.md` (rule) | every word a player reads: the four tiers and the two verbs, "back up" vs "backup", the serial comma, game save vs save state, Wi-Fi, how much text a row may carry, and the outcome vocabulary every run ends with |
+| `es-ui-style-guide.md` (rule) | the seven row builders, the `multiLine` trap, `addSaveFunc` vs `setOnChangedCallback`, the reboot flags, the four gates in precedence order, button order and the back-button accelerator, confirmation registers, glyphs, placeholder words (`AUTO`, `NONE`, `<NOT SET>`), the three type sizes |
+| `es-code-traps.md` (rule) | the sharp edges, each found by debugging: button-bar lifetimes, rclone's piped progress, xgettext and non-ASCII comments, help-bar prompts, `TextComponent`'s measuring, and where pure string code lives |
+| `docs/es-menu-map.md` | where a row belongs: the two entry points, the `addGroup` sections that are the real IA, read-only facts before editable settings, destructive work behind ADVANCED, the kid/kiosk collapse, and cloud's one door |
+| `docs/conflict-wizard-ia.md` | the wizard's architecture: what counts as a conflict, the header's count, nothing transfers until COMPLETE, the column and badge vocabulary |
+
+**A row added, moved or renamed updates `docs/es-menu-map.md` in the same
+change (D-UI-039, maintainer 2026-09-11).** The rule is stated in the map
+itself, which is the one place somebody who has not opened it will not read
+it; it is repeated here so it loads with the rest.
+
+**And it is checked, because for a month it was not kept.** `tools/es-menu-map-check`
+reads every screen title in the EmulationStation commit the package pins --
+not a working tree, which is usually somebody's feature branch -- and fails on
+one the map neither describes nor declares. On 2026-09-18 it found **30 of 51
+screens** missing, six of them pages this fork wrote itself: FINISH RESTORE
+SETUP's three password pages, and the setup wizard's WHICH CONNECTION?, SSH
+PASSWORD and CLOUD SETUP COMPLETE. A documentation practice that nothing
+verifies decays exactly like an unverified guard, and for the same reason --
+nobody finds out.
+
+A screen we deliberately do not map is declared in the map's **`## Not mapped`**
+section as `- TITLE -- why`, which is where an upstream page we never touch
+belongs. Two consequences worth knowing: adding a ROCKNIX row to one of those
+pages means mapping it properly and deleting its declaration, and a declaration
+naming a screen that no longer exists fails the check too -- it would otherwise
+sit there excusing the next screen that reuses the name. The check runs in
+`tools/vm-qa` as the `menumap` suite, beside `french`.
+
+Two house rules from `es-ui-style-guide.md` are worth carrying at this altitude
+because they decide safety, not looks:
+
+- **YES first in a confirmation**, and the back-button accelerator binds to a
+  button named exactly `NO` or `OK` -- otherwise it falls through to the last
+  button, so back must never land on the destructive choice.
+- **Dim, don't hide.** An unconfigured feature stays visible at alpha `0x50`
+  and offers its setup, keeping its description. A *button*, by contrast, is
+  gated by existence: a null callback means CONTINUE does not exist until it
+  would work.
 
 ## Core patterns (use these, don't invent)
 
@@ -33,9 +91,12 @@ this file guides any work there.
 - **Confirmation**: `GuiMsgBox(window, _("TEXT"), _("YES"), cb, _("NO"), nullptr)`.
   Dialog text MUST describe actual behavior (see the backuptool drift lesson).
 - **Toast**: `window->displayNotificationMessage(_("..."), ms)`.
-- **Background job with progress card**: `window->createAsyncNotificationComponent()`
+- **Background job with progress card, for fast work only (D-UI-078)**: `window->createAsyncNotificationComponent()`
+  -- two rows (title, text) by default; pass `true` for the third, the action
+  row, when the outcome carries a recovery clause. The cloud card composed one
+  for a day and had no row to draw it on (blindspot 35).
   + worker thread updating it — see `ThreadedBluetooth.cpp` (also used by content
-  installers). Best fit for rclone progress (parse `--stats` output later, L3).
+  installers). Seconds, not minutes: anything longer is the fourth tier below.
 - **Busy spinner while loading**: `GuiLoading<T>` (async worker + result callback), or a
   full-screen `GuiComponent` owning a `BusyComponent` + small state machine — see
   `GuiBackup.cpp` (batocera's native user-data backup).
@@ -43,6 +104,13 @@ this file guides any work there.
   `window` shows a splash while it runs; `/usr/bin/run "<cmd>"` for fullscreen console
   TUIs (current parity flows). Native pages should prefer headless backends + the async
   patterns above over console hops.
+- **A file another process writes is read uncached.** `Utils::FileSystem::exists`
+  remembers a miss while `UseFileCache` is on (the default) until a game launch
+  or a restart clears the cache, so a stamp the scripts write, or the
+  `rclone.conf` the wizard makes, reads as absent for the rest of the session
+  on any page that asked before it existed. Pass `exists(path, false)` for
+  those (the cloud rows read NOT DONE ON THIS DEVICE YET after a run had
+  stamped, 2026-09-10).
 - **Gating**: `ApiSystem::isScriptingSupported(ApiSystem::FEATURE)` for capability-based
   entries (batocera-style backends); plain `Utils::FileSystem::exists("/usr/bin/tool")`
   for OS-shipped scripts (our cloud entries). Respect `isFullUI`/kid-mode branches.
@@ -97,17 +165,50 @@ Values live in one place each, so a screen never makes its own decision.
   card pinned to a corner reads as a panel that failed to fit rather than a
   placement anybody chose, so anything wider than that is centred.
 
-  The four tiers, so a new surface picks the right one:
+  The four **surface** tiers, so a new surface picks the right one (not
+  the four data tiers of `es-player-text.md` § Conventions -- settings,
+  saves, ROMs and BIOS, game content -- which are a different list that
+  happens to be the same length):
 
   | Surface | Width | Position | Blocks input | Ends |
   |---|---|---|---|---|
   | `Splash` (boot, gamelist reload, launch) | full screen; its bar is 0.5W | whole screen | yes | when the work does |
   | `GuiInfoPopup` (toast) | fits text, capped 0.9W | top, centred | no | on a timer |
   | `AsyncNotificationComponent` (progress) | 0.9W | top, centred | no | when the work does |
-  | `GuiCloudTransfer` (long job) | full screen | whole screen | yes | **when dismissed** |
+  | `GuiCloudTransfer`, `GuiOfflineScan` (long job) | full screen | whole screen | yes; CANCEL is the one way out while it runs (D-UI-078) | **when dismissed** |
 
   Full-*screen* is a modal takeover, not a wider card — do not reach for it
   for work the player can keep playing through.
+
+  **A fourth-tier page is sat in, with CANCEL (D-UI-078, 2026-09-21).** A
+  job measured in minutes gets a page that owns the screen until the job
+  ends, and the only way out while it runs is CANCEL: a confirmation that
+  says what cancelling means for that job -- start over, or resume where the
+  job supports it -- then the stop. Every other press is refused, because
+  there is nothing to choose. Backgrounding is for fast work only: the
+  two-second save sync at startup and exit, a Bluetooth scan. Maintainer, on
+  the RG35XX SP at the scan page's PRESS B TO KEEP SCANNING IN THE
+  BACKGROUND: *"we should only allow things to run in the background when
+  they're fast. If it's something that's going to take longer time, like
+  scraping or doing the RetroAchievements offline work, we should force that
+  to be on a foreground page."*
+
+  It was the other way for a week. Audit #186 PL-07 made the scan page
+  leaveable (B closed it, `OfflineScanJob` ran on, the SCAN GAMES row carried
+  the live line, pressing the row reopened the page), and #187 gave
+  `GuiCloudTransfer` the same shape in RC-11 (D-UI-060, D-UI-070). What that
+  bought was every edge case of a job nobody is watching: no end signal, an
+  outcome on a row the player has to go and find, a second press that has to
+  know whether to reopen or refuse, a run that outlives the interface. The
+  maintainer met the B prompt on the device, asked what would happen, and
+  the honest answer was "nothing tells you" -- which is the whole case. A
+  page that holds the player for the job's length is the simpler contract,
+  and CANCEL is the way to give it back. The tell that a page has this wrong
+  is a footer offering to leave it running. #241 carried the change, the
+  scraper included. The other upstream cards -- the game index, the
+  content installer, the OS update, the Bluetooth scan -- stay as they
+  are (D-UI-079): the rule is for the lanes the fork works in, and an
+  upstream surface outside them is not changed on the strength of it.
 
   **Duration decides between the last two, and the deciding column is
   "Ends".** A card is right for work somebody watches finish — a scrape, a
@@ -137,47 +238,6 @@ Values live in one place each, so a screen never makes its own decision.
 Screen-relative fractions, never pixel constants: these panels run from
 640×480 to 1920×1080 and a fixed value is right on exactly one of them.
 
-## A row that leads somewhere is a label, not a paragraph
-
-Maintainer, 2026-09-06: *"adding a fuller description isn't necessarily always
-better. We're dealing with the 3.5- or 4-inch screen here sometimes, so we
-don't want to have lots of tiny text. If necessary, sometimes it's better to
-have the user click into the menu, where they can have some options or at
-least breathing room. If there's more than one action that can be taken, this
-likely makes sense within our menu structures, so the user has room to choose
-what to do."*
-
-So:
-
-- **A row that opens a page with more than one action is a submenu.** Its
-  label carries the verb (MANAGE CLOUD STORAGE, MANAGE GAME SAVE RESTORES AND
-  CONFLICTS); the page inside carries the choices, with room. Do not make up
-  for a hub label with a description that lists everything behind it — that is
-  the tiny text nobody reads, on the panel where it is smallest.
-- **A description, where one is needed, is one short line.** The three section
-  headings the player will see inside (`BACKUP AND RESTORE, SAVE MANAGEMENT,
-  CLOUD STORAGE SETUP.`) is a description; a sentence naming every action is
-  not.
-- **When a row genuinely needs explaining, that is a signal it wants a page**,
-  not a longer line under it.
-
-**Two lines per row, never three (D-UI-023).** Maintainer, the same day, on
-the cloud settings rows that carried a label, what they move, and how they
-last went: *"when we risk having an extra line, if the description can be
-moved into the confirmation dialog and it serves an additive function, that's
-the best-case scenario in principle (because it allows us to keep it to two
-lines max)."* So a row is a label and at most one line under it. When a second
-line wants in, ask what the confirmation dialog already says — the itemisation
-of what moves belongs there, where it is read at the moment of deciding — and
-what the page's job is: on a page that launches a job, the line under the row
-is how it last went; on a page that chooses what moves, it is what the row
-carries. A row with no confirmation has nowhere to move a line to, so it
-keeps the line that serves the page's job and drops the other.
-
-The case: the cloud hub row briefly carried "BACK UP OR RESTORE, CHOOSE ROMS AND
-BIOS, SET WHEN SAVES SYNC, AND CONNECT OR REPAIR YOUR CLOUD STORAGE." — accurate,
-and wrong, replaced the same hour.
-
 ## Images in a menu row are themed as text unless you stop it
 
 `ComponentList::render` calls `setColor(menuTheme->Text.color)` on **every
@@ -200,41 +260,40 @@ public:
 };
 ```
 
-## Conventions
+## A layout must not be computed from what it last produced
 
-- Every label through `_( )` (localized, UPPERCASE by convention).
-- **"back up" vs "backup"**: two words as a verb ("BACK UP CONFIGURATIONS TO CLOUD",
-  "back up your settings"), one word as a noun/adjective ("RESTORE FROM BACKUP",
-  "backup file"). Applies to menu labels, dialogs, script output, and docs.
-- **Serial comma, always.** "Game saves, save states, and screenshots" — never
-  "…states and screenshots". Without it the last two items read as one thing,
-  which in a list of what a backup carries is exactly the ambiguity that
-  matters.
-- **"game save" vs "save state".** A battery save is a **game save**; a
-  snapshot of the running machine is a **save state** (two words — the
-  directory is `savestates`, the label is not). They are different files with
-  different failure modes, and a player who has lost one needs to know which.
-  Bare "saves" is fine as a collective where nothing contrasts with it
-  ("games, BIOS files, and saves"); the moment both appear, name them apart.
-- **Three tiers, two verbs, and the destination says where (D-UI-022).**
-  The things cloud sync moves are **settings** (the archive `backuptool`
-  writes: emulator and interface configuration, input mapping, themes,
-  collections, bezels — no saves, no ROMs, no operating system), **saves**
-  (game saves, save states, and screenshots), and **ROMs and BIOS**. The
-  only verbs are *back up* and *restore*; nothing is "uploaded" or
-  "archived" in a label, because a player has no way to tell those apart
-  and the archive is uploaded too. The label says what and where: BACK UP
-  SETTINGS TO THIS DEVICE, BACK UP SAVES TO THE CLOUD, RESTORE SETTINGS FROM
-  THE CLOUD. **Never "system backup"** — it held people to expecting their
-  games in it — and never "save data", "configurations", "everything", or
-  "cloud library". *Sync* is reserved for the automatic two-way behaviour
-  saves get after #22, where a player never picks a direction. The wizard's
-  kept losers are **discarded saves**; *discard* means nothing else.
-- **"Wi-Fi", hyphenated**, in every user-visible string. The settings keys stay
-  `wifi.key` / `wifi.ssid` — an identifier is not a reason to spell the label
-  after it.
+`MultiLineMenuEntry::layoutRows` sized its two rows from `mText->getSize()`
+and `mSubstring->getSize()` -- which, after the first pass, are the cells
+the grid handed those texts (0.9 and 1.1 of their natural heights), because
+`TextComponent` stops sizing itself once it has been given a height. So
+every `setDescription` moved the split by ten percent: a row refreshed
+once looked a little tight, and the SCAN GAMES row, refreshed for each
+game of a 37-game scan under the scan page, came back a screen tall with
+the two texts drawn on top of each other (2026-09-22, #241; fixed in ES
+`7c7ffab43` by measuring from the fonts). It had shipped in two candidates
+because every walk scanned a handful of games (blindspot 44).
+
+So a layout pass reads its inputs from something the pass does not write
+-- the font, the text, the parent's width -- never from the sizes it set
+last time. And a row that is refreshed on a timer is proved with a refresh
+count in the hundreds, not with one.
+
+## Code conventions
+
+The language conventions that shared this heading -- the four tiers, the two
+verbs, the serial comma, Wi-Fi, game save vs save state -- are
+`es-player-text.md` § Conventions since the 2026-09-12 split, which is where a
+citation of "`es-native-ui.md` § Conventions" resolves.
+
 - Theme-aware colors/fonts via `ThemeData::getMenuTheme()`.
 - Pages provide `getHelpPrompts()` so the bottom help bar stays accurate.
+- **`GuiSettings::addSwitch(title, description, settingsID, bool, onChanged)` — the bool
+  is `storeInSettings`, not a default.** `true` sends the value to `es_settings.cfg`
+  (ES's own store); `false` to SystemConf (`system.cfg`), which is the only place the
+  launch scripts read. A row that needs a default-on switch on SystemConf is written by
+  hand: `setState(SystemConf::getBool(key, true))` plus an `addSaveFunc` calling
+  `setBool`. The PROGRESS TRACKER row passed `true` as a default and its state went
+  where no script looks (2026-09-07).
 - Lambda capture: `Window* window = mWindow;` then capture `window` (menu may be deleted).
 - Wizard page replacement: `cloudSetupPresent(window, current, prev)` closes
   `prev`, and `GuiSettings::close()` ends with `delete this`. Callbacks on the
@@ -255,10 +314,6 @@ public:
 - **`GuiBatoceraStore`/`GuiThemeDownloader`** — list + install with async progress.
 
 ## Anti-patterns (observed, avoid)
-
-- Developer/QA concepts in product text: no QEMU/VM/port-forward mentions, no
-  "open this link on the device" (there is no browser). Console-first: player +
-  handheld + phone companion is the only assumed environment.
 
 - **Two surfaces for one event.** A job that reports progress in one shape
   and its outcome in another, somewhere else on screen, changes shape and
@@ -282,7 +337,26 @@ public:
   above. A log file is not that answer either; nobody is going to be told a
   path.
 
-- Dialog text promising behavior the backend doesn't do (pre-P1 backup dialogs).
 - Dropping to a fullscreen CLI for things a `GuiSettings` page + headless backend can do
   natively — acceptable as parity stopgap, not as the end state (issue #15 L2).
 - Direct `system()`/popen in UI code paths — use `runSystemCommand`/`ApiSystem`/threads.
+
+## Before the pin moves, the compiler has seen the edit
+
+An EmulationStation edit has no compiler nearer than an image build, and a
+mistake any compiler catches costs a build cycle to find: on 2026-09-21 a
+loop body grew from one statement to three without braces, the pin was
+bumped, and GENERIC_X64 run 12 spent twenty minutes to say `'name' was not
+declared` (blindspot 49). The build root holds the cross toolchain and
+ninja's exact command for every object, so
+
+```bash
+tools/es-syntax-check es-app/src/guis/GuiCloudTransfer.cpp   # from the ROCKNIX checkout
+```
+
+replays that command on the edited file with `-fsyntax-only` in a few
+seconds, PASS or the compiler's errors. It reads headers from the build
+tree, so an edit that changes a header is checked with `--with <dir>` or
+by the build; it exits 2 when it cannot run, and that is not a pass. An ES
+commit that touches a `.cpp` is not ready to merge until this has passed.
+

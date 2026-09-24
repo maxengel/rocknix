@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# Did the ceremonies happen? The record says, and this reads it: the last
+# retro, futro and audit, the friction log's entries without an issue, the
+# weekly and monthly summaries, the work-log index, the register, and whether
+# each recent blindspot names a guard that exists. A ceremony that is due is
+# a line; one that is overdue past its grace fails the run. The cheap ones
+# (the friction log, the index, the register, the summaries, a retro, a
+# blindspot's guard) refuse a push of next through the guard; the long ones
+# (an audit, a futro) keep the fork's CI red until they happen, so the fixes
+# can still be pushed while the ceremony is owed (#254, D-WORKFLOW-028;
+# D-QA-040 is the maintainer's call on the cadences and on which ones block).
+#
+#   tools/ceremony-check            # report; exit 1 when something is overdue
+#   tools/ceremony-check --gate     # the same, terse, for the push guard
+#   tools/ceremony-check --no-gh    # without the tracker (audits and closures come from gh)
+#
+# The cadences are the constants below (D-QA-040 is the maintainer's call on
+# them). The clock starts at SINCE: nothing before it is demanded, so the
+# gate begins clean and demands from the day it was adopted rather than
+# refusing every push over a backlog nobody can pay at once.
+#
+# Markers, all in the record, none in anybody's memory:
+#   retro     docs/retros/<yyyy-mm-dd>-*.md, or a work-log entry whose heading says retro
+#   futro     docs/futros/<yyyy-mm-dd>-*.md, or a work-log entry whose heading says futro
+#   audit     an issue whose title starts "Audit" or "Code audit" (gh), or docs/audits/<yyyy-mm-dd>-*/
+#   friction  docs/friction-log.md entries: `- <yyyy-mm-dd> HH:MM -- ... -- issue: #N|none`
+#   weekly    docs/work-logs/<yyyy_mm>-work_logs/<yyyy>-W<ww>-summary.md
+#   monthly   docs/work-logs/<yyyy_mm>-work_logs/SUMMARY.md
+#   index     tools/work-log-index --check
+#   register  tools/register-check
+#   guards    docs/blindspot-register.md entries >= GUARD_FROM name a guard that exists
+
+import datetime as dt
+import glob
+import json
+import os
+import re
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = 'maxengel/rocknix'
+
+SINCE = dt.date(2026, 9, 21)       # the gate's clock starts here (the RC round; blindspot 51)
+RETRO_ACTIVE_DAYS = 5              # a phase retro every five days with a work-log entry
+RETRO_GRACE_DAYS = 2               # ... due at five, blocking at seven
+FUTRO_AFTER_EPIC_DAYS = 3          # a futro within three days of a new epic or milestone issue
+AUDIT_CLOSED_ISSUES = 12           # an audit after twelve issues closed as completed ...
+AUDIT_DAYS = 14                    # ... or fourteen days, whichever first
+FRICTION_ISSUE_DAYS = 3            # a friction entry gets an issue (or a guard) within three days
+WEEKLY_GRACE_DAYS = 2              # the week's summary by Tuesday
+MONTHLY_GRACE_DAYS = 3             # the month's summary by the 3rd
+GUARD_FROM = 52                    # blindspot entries from this number on must name a guard
+
+
+def sh(cmd, timeout=120):
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=ROOT)
+        return p.returncode, p.stdout.strip(), p.stderr.strip()
+    except Exception as e:  # noqa: BLE001
+        return 99, '', str(e)
+
+
+def gh_json(args):
+    rc, out, err = sh(['gh'] + args, timeout=60)
+    if rc != 0:
+        return None, err or ('gh exit %d' % rc)
+    try:
+        return json.loads(out), None
+    except ValueError:
+        return None, 'gh returned no JSON'
+
+
+def work_log_days():
+    """{date: [(hh:mm, title)]} for every day file."""
+    days = {}
+    for path in glob.glob(os.path.join(ROOT, 'docs/work-logs/*/*-work_log.md')):
+        m = re.search(r'(\d{4})_(\d\d)_(\d\d)-work_log\.md$', path)
+        if not m:
+            continue
+        d = dt.date(*map(int, m.groups()))
+        items = []
+        for line in open(path, encoding='utf-8'):
+            if line.startswith('## '):
+                hm = re.match(r'## (\d\d:\d\d) UTC\s*[—–-]+\s*(.*)', line.strip())
+                items.append((hm.group(1), hm.group(2)) if hm else ('', line.strip().lstrip('# ')))
+        days[d] = items
+    return days
+
+
+def last_marker(days, word, folder):
+    """The latest date of a docs/<folder>/<date>-*.md file or a work-log heading containing word."""
+    best = None
+    for path in glob.glob(os.path.join(ROOT, 'docs', folder, '*.md')):
+        m = re.match(r'(\d{4})-(\d\d)-(\d\d)', os.path.basename(path))
+        if m:
+            d = dt.date(*map(int, m.groups()))
+            best = d if best is None or d > best else best
+    rx = re.compile(word, re.I)
+    for d, items in days.items():
+        if any(rx.search(t) for _, t in items):
+            best = d if best is None or d > best else best
+    return best
+
+
+def main():
+    gate = '--gate' in sys.argv
+    use_gh = '--no-gh' not in sys.argv
+    # CEREMONY_TODAY=<yyyy-mm-dd> moves the clock, for proving a gate fires (the guard's positive)
+    today = dt.date.fromisoformat(os.environ['CEREMONY_TODAY']) if os.environ.get('CEREMONY_TODAY') else dt.date.today()
+    days = work_log_days()
+    active = sorted(d for d in days if d >= SINCE)
+    lines = []
+    overdue = []   # (level, text): 'block' refuses a push of next; 'ci' fails the fork's CI only
+
+    def report(ok, name, text):
+        lines.append('%s  %-9s %s' % ('ok  ' if ok else 'DUE ', name, text))
+
+    # 1. mini-retro: every RETRO_ACTIVE_DAYS active days
+    last_retro = last_marker(days, r'\bretro\b|retrospective', 'retros')
+    start = max(SINCE, last_retro) if last_retro else SINCE
+    since_retro = [d for d in active if d > start]
+    n = len(since_retro)
+    if n >= RETRO_ACTIVE_DAYS + RETRO_GRACE_DAYS:
+        overdue.append(('block', 'retro: %d active days since %s (cadence %d, grace %d) -- run the mini-retro skill; docs/retros/<date>-<scope>.md' % (n, start, RETRO_ACTIVE_DAYS, RETRO_GRACE_DAYS)))
+        report(False, 'retro', 'OVERDUE: %d active days since %s' % (n, start))
+    elif n >= RETRO_ACTIVE_DAYS:
+        report(False, 'retro', 'due: %d active days since %s (blocks at %d)' % (n, start, RETRO_ACTIVE_DAYS + RETRO_GRACE_DAYS))
+    else:
+        report(True, 'retro', 'last %s; %d of %d active days' % (last_retro or 'none since the clock started', n, RETRO_ACTIVE_DAYS))
+
+    # 2. friction log
+    fl = os.path.join(ROOT, 'docs/friction-log.md')
+    if not os.path.exists(fl):
+        overdue.append(('block', 'friction: docs/friction-log.md is missing'))
+        report(False, 'friction', 'no docs/friction-log.md')
+    else:
+        open_entries = []
+        for line in open(fl, encoding='utf-8'):
+            m = re.match(r'- (\d{4}-\d\d-\d\d) .*issue:\s*(#\d+|none|guard)', line.strip(), re.I)
+            if not m:
+                continue
+            d = dt.date.fromisoformat(m.group(1))
+            if m.group(2).lower() == 'none' and (today - d).days > FRICTION_ISSUE_DAYS and d >= SINCE:
+                open_entries.append(line.strip()[:110])
+        if open_entries:
+            overdue.append(('block', 'friction: %d entrie(s) older than %d days without an issue or a guard' % (len(open_entries), FRICTION_ISSUE_DAYS)))
+            report(False, 'friction', 'OVERDUE: %d entrie(s) without an issue past %d days' % (len(open_entries), FRICTION_ISSUE_DAYS))
+            for e in open_entries[:5]:
+                lines.append('             %s' % e)
+        else:
+            report(True, 'friction', 'every entry since %s has an issue or a guard within %d days' % (SINCE, FRICTION_ISSUE_DAYS))
+
+    # 3. weekly and monthly summaries
+    last_week_end = today - dt.timedelta(days=today.isoweekday())      # last Sunday
+    if last_week_end >= SINCE + dt.timedelta(days=6):
+        iso = last_week_end.isocalendar()
+        wk = '%04d-W%02d' % (iso[0], iso[1])
+        wpath = os.path.join(ROOT, 'docs/work-logs/%04d_%02d-work_logs/%s-summary.md' % (last_week_end.year, last_week_end.month, wk))
+        if os.path.exists(wpath):
+            report(True, 'weekly', '%s summary present' % wk)
+        elif (today - last_week_end).days > WEEKLY_GRACE_DAYS:
+            overdue.append(('block', 'weekly: %s summary missing (%s)' % (wk, os.path.relpath(wpath, ROOT))))
+            report(False, 'weekly', 'OVERDUE: %s summary missing' % wk)
+        else:
+            report(False, 'weekly', 'due: %s summary by %s' % (wk, last_week_end + dt.timedelta(days=WEEKLY_GRACE_DAYS)))
+    else:
+        report(True, 'weekly', 'the first full week since the clock started has not ended')
+    first_of_month = today.replace(day=1)
+    prev_month_end = first_of_month - dt.timedelta(days=1)
+    if prev_month_end >= SINCE:
+        mpath = os.path.join(ROOT, 'docs/work-logs/%04d_%02d-work_logs/SUMMARY.md' % (prev_month_end.year, prev_month_end.month))
+        if os.path.exists(mpath):
+            report(True, 'monthly', '%04d-%02d summary present' % (prev_month_end.year, prev_month_end.month))
+        elif (today - prev_month_end).days > MONTHLY_GRACE_DAYS:
+            overdue.append(('block', 'monthly: %04d-%02d summary missing' % (prev_month_end.year, prev_month_end.month)))
+            report(False, 'monthly', 'OVERDUE: %04d-%02d summary missing' % (prev_month_end.year, prev_month_end.month))
+        else:
+            report(False, 'monthly', 'due: %04d-%02d summary by the %dth' % (prev_month_end.year, prev_month_end.month, MONTHLY_GRACE_DAYS))
+    else:
+        report(True, 'monthly', 'no month has ended since the clock started')
+
+    # 4. the index and the register
+    rc, out, _ = sh([os.path.join(ROOT, 'tools/work-log-index'), '--check'])
+    if rc == 0:
+        report(True, 'index', out or 'current')
+    else:
+        overdue.append(('block', 'index: ' + (out or 'stale')))
+        report(False, 'index', out or 'stale')
+    rc, out, err = sh([os.path.join(ROOT, 'tools/register-check')])
+    if rc == 0:
+        report(True, 'register', (out or 'ok').splitlines()[-1][:100])
+    else:
+        overdue.append(('block', 'register: ' + ((out or err).splitlines() or ['failed'])[-1][:120]))
+        report(False, 'register', 'FAIL')
+
+    # 5. blindspot guards
+    bs = os.path.join(ROOT, 'docs/blindspot-register.md')
+    unguarded = []
+    if os.path.exists(bs):
+        text = open(bs, encoding='utf-8').read()
+        parts = re.split(r'^## (\d+)\. ', text, flags=re.M)
+        for i in range(1, len(parts), 2):
+            num = int(parts[i])
+            body = parts[i + 1]
+            if num < GUARD_FROM:
+                continue
+            names = re.findall(r'`(tools/[A-Za-z0-9_./-]+|\.githooks/[A-Za-z0-9_./-]+|\.claude/rules/[A-Za-z0-9_./-]+\.md)`', body)
+            found = [n for n in names if os.path.exists(os.path.join(ROOT, n))]
+            if not found:
+                unguarded.append(num)
+        if unguarded:
+            overdue.append(('block', 'guards: blindspot entries %s name no guard that exists in the tree' % unguarded))
+            report(False, 'guards', 'blindspots without a guard: %s' % unguarded)
+        else:
+            report(True, 'guards', 'every entry from %d names a guard in the tree' % GUARD_FROM)
+
+    # 6. audits and futros (the tracker)
+    if use_gh:
+        data, err = gh_json(['issue', 'list', '--repo', REPO, '--state', 'all', '--limit', '100', '--search',
+                             'Audit in:title', '--json', 'number,title,createdAt'])
+        last_audit = None
+        if err:
+            report(False, 'audit', 'gh failed: %s' % err[:80])
+            overdue.append(('ci', 'audit: the tracker did not answer (%s)' % err[:60]))
+        else:
+            for it in data or []:
+                if re.match(r'(Audit|Code audit)\b', it['title']):
+                    d = dt.date.fromisoformat(it['createdAt'][:10])
+                    last_audit = d if last_audit is None or d > last_audit else last_audit
+            for path in glob.glob(os.path.join(ROOT, 'docs/audits/*')):
+                m = re.match(r'(\d{4})-(\d\d)-(\d\d)', os.path.basename(path))
+                if m:
+                    d = dt.date(*map(int, m.groups()))
+                    last_audit = d if last_audit is None or d > last_audit else last_audit
+            start = max(SINCE, last_audit) if last_audit else SINCE
+            closed, err2 = gh_json(['issue', 'list', '--repo', REPO, '--state', 'closed', '--limit', '200',
+                                    '--search', 'closed:>=%s reason:completed' % start.isoformat(), '--json', 'number'])
+            nclosed = len(closed or [])
+            ndays = (today - start).days
+            if nclosed >= AUDIT_CLOSED_ISSUES or ndays >= AUDIT_DAYS:
+                overdue.append(('ci', 'audit: %d issues closed and %d days since %s (cadence %d issues or %d days) -- run the code-auditor skill' % (nclosed, ndays, start, AUDIT_CLOSED_ISSUES, AUDIT_DAYS)))
+                report(False, 'audit', 'OVERDUE: %d closed, %d days since %s' % (nclosed, ndays, start))
+            else:
+                report(True, 'audit', 'last %s; %d of %d closed issues, %d of %d days' % (last_audit or 'none', nclosed, AUDIT_CLOSED_ISSUES, ndays, AUDIT_DAYS))
+        epics, err = gh_json(['issue', 'list', '--repo', REPO, '--state', 'open', '--label', 'epic', '--limit', '50',
+                              '--json', 'number,title,createdAt'])
+        if err:
+            report(False, 'futro', 'gh failed: %s' % err[:80])
+        else:
+            last_futro = last_marker(days, r'\bfutro\b', 'futros')
+            missing = []
+            for it in epics or []:
+                d = dt.date.fromisoformat(it['createdAt'][:10])
+                if d < SINCE:
+                    continue
+                if (last_futro is None or last_futro < d) and (today - d).days > FUTRO_AFTER_EPIC_DAYS:
+                    missing.append('#%d' % it['number'])
+            if missing:
+                overdue.append(('ci', 'futro: epics %s opened since %s with no futro within %d days' % (' '.join(missing), SINCE, FUTRO_AFTER_EPIC_DAYS)))
+                report(False, 'futro', 'OVERDUE for %s' % ' '.join(missing))
+            else:
+                report(True, 'futro', 'last %s; no epic since %s without one' % (last_futro or 'none', SINCE))
+    else:
+        report(True, 'audit', 'not checked (--no-gh)')
+        report(True, 'futro', 'not checked (--no-gh)')
+
+    blocking = [t for lv, t in overdue if lv == 'block']
+    ci_only = [t for lv, t in overdue if lv == 'ci']
+    if gate:
+        for t in blocking:
+            print('ceremony-check: BLOCK ' + t)
+        for t in ci_only:
+            print('ceremony-check: overdue (CI is red, the push goes through) ' + t)
+        return 1 if blocking else 0
+    print('ceremony-check (clock since %s, today %s)' % (SINCE, today))
+    for l in lines:
+        print('  ' + l)
+    if overdue:
+        print('\n%d overdue. %d refuse a push of next; every one keeps the fork CI red until its artifact exists:' % (len(overdue), len(blocking)))
+        for lv, t in overdue:
+            print('  - [%s] %s' % ('push+CI' if lv == 'block' else 'CI', t))
+        return 1
+    print('\nnothing overdue.')
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

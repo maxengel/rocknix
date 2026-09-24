@@ -57,14 +57,39 @@ and every package before it from the old — a mixed image, with no error and a
 `BUILD_ID` that names only one of the two. It happened on 2026-09-04: `rclone`
 (seq 632) picked up commits landed mid-build while the other 660 packages did
 not. Benign that time because the late commits touched only `rclone`; the next
-time it will not be. Check `docker ps` for a `rocknix-build` container before
-running `sync`, and if one is up, wait.
+time it will not be. Check for a running build before `sync`, and if one is up, wait -- with
+`pgrep -f 'make docker-[A-Z]'`, not `docker ps | grep rocknix-build`: the build
+containers carry random names (`jolly_turing`), so that grep answered zero all
+day on 2026-09-13 while an SM8550 build ran. While a device build is in flight,
+fast-forward another build worktree by hand (`git -C <worktree> merge --ff-only
+next`) rather than with `sync`, which walks every build worktree at once.
 
 It deliberately takes **no target argument**. It walks every build worktree at
 once, so an arbitrary ref moves all of them together; while this function was
 being tested, a throwaway commit was fast-forwarded onto two real build
 checkouts exactly that way, and went unnoticed because the test only read the
 output line it expected. `next` is the only ref worth following here.
+
+## One builder per build worktree
+
+A build worktree is a single mutable thing: one checked-out tree, one
+`target/` whose image file name carries only the date, and one
+`package.mk` whose ES pin a stream may edit without committing. Two
+streams building there in the same hour cannot both be right. On
+2026-09-14 the #179 and #181 streams did exactly that in `generic-x64`,
+three minutes apart: the second build inherited the first's uncommitted ES
+pin edit, wrote an image whose `BUILD_ID` named one stream's distribution
+and whose EmulationStation was the other's, overwrote the first stream's
+image under the same file name, and its `git checkout -- package.mk`
+cleanup discarded the first stream's edit. Neither build failed.
+
+So: **subagents deliver branches; the integrator builds.** A brief that
+sends an agent to build an image says which worktree is its alone, and
+nothing else builds there until it reports. An uncommitted pin edit in a
+build worktree belongs to whoever is building right now and to nobody
+after; commit the pin on a throwaway `build/*` branch instead, so `git
+status` shows whose tree it is. Read `target/`'s file time and the image's
+`/etc/os-release` before trusting an image you did not watch being built.
 
 ## Removing a worktree
 
@@ -120,10 +145,14 @@ git worktree add ../rocknix.worktrees/<name> feature/<name>
 ## Manage worktrees
 
 ```bash
-git worktree list                                       # show all worktrees
-git worktree remove ../rocknix.worktrees/<name>         # delete when finished
+./tools/fork-worktree list                              # what each one is holding
+./tools/fork-worktree remove ../rocknix.worktrees/<name>  # delete when finished
 git worktree prune                                      # clean up stale entries
 ```
+
+`git worktree list` still reads fine; `git worktree remove` does not, for the
+reason § "Removing a worktree" gives -- it cannot tell a few hundred MB of
+checkout from hours of un-recoverable build output.
 
 ## Rules
 
@@ -132,6 +161,13 @@ git worktree prune                                      # clean up stale entries
    `next` carries the personal overlay, so instructions are present while you work.
 3. **Keep the primary checkout on `next`** (the "main" reflection); do feature work in worktrees.
 4. **Keep worktrees as siblings** — never nest one inside the primary checkout.
-5. **Remove with `git worktree remove`** (not `rm -rf`) so git metadata stays consistent.
-6. Opening a clean upstream PR from a worktree still follows `fork-workflow.md`
-   (`pr/<name>` built via `git rebase --onto upstream/next next pr/<name>`).
+5. **Remove with `./tools/fork-worktree remove`** (never `rm -rf`, and never plain
+   `git worktree remove --force`) so git metadata stays consistent *and* build output
+   is not destroyed without being named first -- see § "Removing a worktree".
+6. Opening a clean upstream PR from a worktree still follows `fork-workflow.md`:
+   `pr/<name>` is built **by content** from `upstream/next` --
+   `git checkout next -- <the feature paths>`, one commit. The old
+   `git rebase --onto upstream/next next pr/<name>` recipe is retired: once the
+   feature is merged into `next` (which is where it has to go to be built and QA'd),
+   `next..pr/<name>` is empty and the rebase silently produces a PR branch with
+   nothing in it.

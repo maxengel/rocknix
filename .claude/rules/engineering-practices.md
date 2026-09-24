@@ -9,6 +9,22 @@ paths:
 High-signal, generalizable practices. Add entries only when a learning clearly generalizes
 beyond one task (see `learning-capture.md`).
 
+## Change stays inside the fork's lanes
+
+Maintainer, 2026-09-22, when a rule made for the fork's pages (D-UI-078)
+would have reached four upstream surfaces: *"We don't need to alter
+behaviors outside of the core work we've been tackling [...] I'm more
+comfortable modifying work within the different lanes we've been working
+in around cloud sync, cloud behaviors, game saves, Wi-Fi, etc."*
+(D-UI-079). The lanes are the fork's own work: cloud sync and cloud
+behaviours, game saves and save states, Wi-Fi and the network pages, the
+offline achievements work, and the pages those touch. A practice that
+generalises is recorded as a rule and applied inside the lanes; an
+upstream surface outside them -- a card, a menu, a flow the fork has not
+been working in -- is left as upstream has it until the maintainer opens
+that lane, however well the rule would fit. Name the surfaces the rule
+would also reach and ask; do not fold them into the change.
+
 ## Verify design intent before "fixing" an apparent bug
 
 Before changing code that looks wrong, confirm it isn't intentional:
@@ -21,6 +37,15 @@ Before changing code that looks wrong, confirm it isn't intentional:
   impact (e.g. allowlist vs denylist semantics).
 - **Prefer a question over a silent rewrite** when intent is ambiguous — confirm with the
   maintainer rather than changing deliberate behavior.
+- **Read the log before changing options, not only before fixing bugs.** A
+  flag that looks like a tidy-up may be the residue of a failed attempt.
+  `git log --oneline -- <recipe>` on 2026-09-20 would have shown "keep VIDEO
+  on -- disabling it is not a configuration the GTK port builds" from three
+  weeks earlier; four builds rediscovered it instead (blindspot 48).
+- **A constraint lives beside the thing it constrains.** When the history
+  does hold the reason, write it into the recipe or config next to the
+  option, with the date and commit. A commit message is where the lesson
+  was found, not where it should stay.
 
 **Case study:** restore-side `--delete-excluded` in the rclone cloud-sync scripts looked like
 data loss, but was gated by the default `RESTOREMETHOD=copy` (delete is a no-op for `copy`),
@@ -93,6 +118,139 @@ changed but the same size.
 Assertions that only hold because nothing had happened yet are the ones to
 distrust — see also *Verify the artifact, not the report*.
 
+## A name is not a behaviour, and a summary is not the source
+
+*Verify the artifact, not the report* covers software that reports success.
+This is its quieter sibling: **nobody reported anything, and a claim was made
+anyway** — read off a function's name, a log line's wording, a comment, or a
+document's summary, and then stated as fact about what the code does.
+
+Four in one day, 2026-09-18/19, all in the same subsystem:
+
+- **`refresh_game_patch`** re-reads the achievement set. The player's unlocks
+  are `cache_unlocks`, a separate call. A helper built on the first alone
+  answered `re-read 1 game(s), 0 failed` while changing nothing that mattered
+  — and the commit message for it claimed the function "re-fetches the patch
+  and the player's unlocks", which was read from the name. Caught only
+  because the maintainer reset two achievements on the site and the device
+  still read them as earned.
+- **A log line's wording taken as scope.** `Periodic refresh: N game(s) due
+  (patch older than 86400s)` is the *selection predicate*; the pass then
+  re-reads patch **and** unlocks. The maintainer was told the opposite. The
+  patch file's first sentence said so plainly.
+- **A summary table taken as the record.** An issue's table listed two
+  crashes and said "both entries are Bubble Bobble". Two more, including the
+  only one with a core dump, were in its comments. A whole line of reasoning
+  was built on the table.
+- **A comparison that could not fail.** Two package pins compared as empty
+  strings, printing "SAME" — the `guards must fail closed` rule, committed
+  while writing about it.
+
+The common shape: a **claim by an author** — a name, a comment, a log string,
+a table — was treated as an **observation**. Authors describe intent; only
+the artifact records behaviour.
+
+So, before stating what code does:
+
+- **Name the artifact that would settle it, and read that.** For "does this
+  refresh the unlocks?", the artifact is the row's `cachedAt` moving, not the
+  function's name. For "what does this pass cover?", it is the code or the
+  patch that wrote it, not the line it prints. For "what happened?", it is the
+  log and the comments, not the summary someone wrote over them.
+- **When a name and a behaviour disagree, the name is wrong** and is worth
+  fixing or commenting — but the claim you make is the behaviour's.
+- **A document's summary is a pointer to its evidence**, and the evidence is
+  usually somewhere the summary does not go: an issue's comments, a patch's
+  prose, a second table. Read to the bottom before repeating the top.
+- **Say which one you did.** "The row's timestamp moved" and "the function is
+  called refresh" are different sentences, and only one of them is evidence.
+
+
+## A promise is not a mechanism: report the running state, not the intention
+
+*A name is not a behaviour* covers claims about code. This is the same rule
+turned on **your own next actions**, and it was missing: "I'll watch this" is a
+claim about behaviour with no artifact behind it, and it is worth less than
+nothing, because the person reading it stops watching too.
+
+Maintainer, 2026-09-19: *"The promise to do something is less valuable than
+the proof that something is about to be done... focus on the active state of
+doing something as opposed to a guarantee of a future state."*
+
+The case: a cold build was started and reported with "I'll report when it lands
+or breaks." It broke **seven hours** before anyone noticed, because nothing was
+watching. The next run was reported with "this time it's watched." Nothing was
+watching then either; it broke and sat **five hours**. The third run differed
+in exactly one way — a process existed.
+
+### The form
+
+For anything short-term and operational — a build, a transfer, a device coming
+back, a job that must be checked later — one of two sentences is allowed:
+
+- **"It is running, and here is what is watching it."** Name the artifact: the
+  PID, the file it blocks on, the timer, the hook. A reader can check it.
+- **"I have not set anything up to watch this."** Also fine. It tells the
+  reader the job is theirs.
+
+What is not allowed is the future tense standing alone. "I'll keep an eye on
+it", "I'll report back", "this time it's watched" — none of those is a
+mechanism, and the last one was false when written.
+
+### Recorded is not delivered: arm both, every time
+
+The first time this rule was applied it was applied by half. `tools/watch-job`
+was written so a long job leaves a **durable** record — a status file that
+survives a reaped task and whose staleness is visible. It does exactly that.
+It delivers nothing: it writes a file, and a file tells no one. The H700 build
+that followed was armed with the file alone and reported as "the watcher will
+tell me when it lands or dies" — which was false in the tense it was written.
+It failed at 21:20; the file said so from 21:21; nobody read it until 22:42.
+
+Two mechanisms, because they fail differently:
+
+- **The record** — `watch-job --detach`. Survives the session, survives the
+  harness reaping its own tasks, and reports `died` rather than silence when
+  the job is killed. Cannot notify.
+- **The delivery** — a harness background waiter (`until [ -f <rc> ]; do
+  sleep 60; done` under `run_in_background`). Notifies the session the moment
+  the job ends. Can be reaped under memory pressure, and then says nothing.
+
+Neither alone is a watch. The sentence that satisfies this rule names
+**both**: *"watch-job is recording to `<status>` (pid N), and a harness
+waiter on `<rc>` will deliver the result."* If the waiter has been reaped and
+not re-armed, say so, and read the file by hand at a stated interval.
+
+Two more traps met arming it, both already in this project's records:
+`pgrep -f` on the job's name matched the session's own shell (blindspot: the
+self-matching pattern — anchor it: `^/bin/bash \./build-h700\.sh$`), and
+`pkill -f` on the watcher's command line killed the shell issuing it. Stop a
+watcher by the pid its status file records, never by pattern.
+
+### Say how the watch fails
+
+A monitor is a guard, so *guards must fail closed* applies to it. State the
+condition under which it stays silent while the thing it watches is dead:
+
+> The watcher fires when the build writes its exit code. If the script is
+> killed outright — OOM, a reboot — no exit code is written and the watcher
+> waits forever, which looks exactly like a healthy build.
+
+A watch whose silent-failure mode has not been named has not been thought
+through.
+
+### Why this one has no tool behind it
+
+Every other rule here can be checked by something: `pkgcheck`, `register-check`,
+`es-menu-map-check`, the pre-push guard. This one cannot — no tool can read a
+sentence and tell whether the process it describes exists. So it is enforced by
+the shape of the sentence itself: **if you cannot name the running artifact,
+you may not make the claim.** That is the self-examining tier in
+`working-principles.md`'s enforcement ladder, and it is where a rule lands when
+nothing better is available. Naming that openly is better than implying an
+enforcement that is not there.
+
+
 ## Guards must fail closed
 
 A check that cannot run has not passed. Three defects in one day's work shared
@@ -134,6 +292,10 @@ So:
   stage can fail.
 - **Quote every expansion** that becomes another command's arguments, or pass
   the list some other way.
+- **`ssh -n` inside a `while read` loop** (or redirect `< /dev/null`). ssh
+  reads the loop's stdin, so the loop processes one item and exits having
+  reported success; the count is the only thing that shows it. The same is
+  true of any command in the loop body that reads stdin.
 - **Prove the guard fires.** Construct the violation it exists to catch and
   watch it fail, then fix it and watch it pass. A guard with no observed
   positive is a guard with no evidence — the same rule blindspot 14 states for
@@ -141,6 +303,51 @@ So:
 
 An assertion that cannot fail is not evidence. Ask what input would produce a
 FAIL; if you cannot name one, the check proves nothing.
+
+**And a suite is not wired in until it has been seen to FAIL once, on the
+runner's own guest.** "Prove the guard fires" applies to a whole check as
+much as to a branch inside one. The time-to-play cell (#135) was written and
+measured on a guest whose RetroArch had been set to GL by hand months
+earlier; its first dispatch by `tools/vm-qa` on a guest running the image's
+default Vulkan driver -- which a QEMU guest cannot draw with -- printed
+`time-to-play: PASS in 581s` over a table in which every headline number was
+`-`. The tool judged its run by whether it *ran*, not by whether it
+*measured*. Three rules came out of it, and they generalise past that suite
+(blindspot 39, D-QA-022):
+
+- **A tool that reports numbers fails when the numbers are missing**, and
+  says which (`headline_missing()` in `tools/time-to-play`; the report ends
+  "Not a pass").
+- **A tool that needs the guest in a state the image does not ship puts it
+  there for the run and restores it** (`--vm`), rather than depending on a
+  condition that happened to be true where it was written.
+- **The first PASS of anything new is the one to distrust.** Construct the
+  failure, watch the runner report it, then trust the green.
+
+A fifth, of the same family (2026-09-10): the picker's scan named the one
+failure it anticipated -- the network gone, exit 69 -- and let every other
+failed listing fall through to the success path, so a cloud that refused the
+connection was presented as an empty one. A branch for the failure you
+expect is not a guard; the guard is that the success path is reached only by
+success (`rc -eq 0`, or the one other code that genuinely means "nothing
+there"), and every other value is a failure whether or not you have a name
+for it.
+
+Two more shapes, the fourth and fifth instances of blindspot 22 (a probe
+that cannot report absence), promoted here on 2026-09-06:
+
+- **A missing tool is a failing guard.** `comm … | wc -l` on the image's
+  busybox — which has no `comm` — read 0, and 0 meant "nothing differs".
+  A count built on a command that may not exist must fail loudly when it
+  does not (`command -v` first), and any script that reaches for a
+  coreutils name runs on the VM before the host's answer is believed
+  (`generic-x64-vm-testing.md` § What the guest's busybox lacks).
+- **A kill by pattern reaches the shell that runs it.** `pkill -f
+  'vm76[.]qcow2'` killed its own shell because the same command text held
+  the literal in an `rm` three lines down, and `bash -c` carries the whole
+  script in its argv. Long-lived processes get a pidfile; a kill goes by
+  PID; when a pattern is unavoidable, filter the hits by
+  `/proc/<pid>/comm` before signalling.
 
 ## Before deleting a duplicate, diff its behaviours, not its purpose
 
@@ -217,10 +424,16 @@ Each reboot is asked for, at the moment it would happen, naming the device.
   like `cloud_content_[a-z]*`, which matches its own literal in the shell's
   argv and reported two phantom transfers on 2026-09-06. When a count is not
   zero, list the processes before believing it.
-- **Staging is fine; the reboot is the question.** Copying the update tarball
-  into `~/.update` changes nothing until the next boot, so it may be done
-  without asking, and the person told that it is staged and what the next
-  reboot will do.
+- **Ask before the transfer too, not only the reboot** (maintainer,
+  2026-09-07, D-QA-011: *"Why wouldn't you just ask me if it's okay to
+  transfer? I thought that was our policy. It's fine if you're waiting for it
+  to be idle, but you might as well just ask."*). Copying the update tarball
+  into `~/.update` changes nothing until the next boot, but it is a gigabyte
+  over the device's Wi-Fi and a write to somebody's card, so it is a
+  question — one that can be answered once for a batch ("stage on both when
+  idle"), unlike the reboot. Waiting for idle is a courtesy on top of the
+  answer, never a substitute for asking. No automatic waiter stages a
+  device on its own.
 - **A queue of deployments is a queue of questions.** Five images in a night
   do not earn a standing yes; the fifth reboot is asked for like the first.
 
@@ -228,6 +441,62 @@ Recovery from the case that produced this rule: `cloud_restore` and
 `cloud_content_restore` are `rclone copy`, which writes each file to a
 temporary name and renames on completion and never deletes, so an interrupted
 run leaves no partial files and re-running it completes it.
+
+## Nothing runs on a person's device without their yes -- not only the reboot
+
+Maintainer, 2026-09-11, after a session ran the exit test on the RG35XX SP
+(seven game launches through RetroArch, each firing the game-exit sync to
+their Dropbox) and a Dropbox replacement proof, on the strength of "we can
+do some testing of the forms you mentioned on an actual device, as well as
+anything else that requires device testing": *"In the future, if you're
+going to be testing anything on device as opposed to in the VM, I need to
+know what you're doing so I know if it's going to interfere with my
+experience. This is similar to how you shouldn't push a build without
+asking or restart without asking. You should not be playing or using the
+console without asking, and I need to understand why."* Binding.
+
+The reboot rule above generalises to **every action that uses the device
+or its cloud**: launching a game, sending input to its pad, opening its
+menus, taking a screenshot, writing under `/storage/roms`, running a sync
+or upload against the owner's remote, deleting anything in their cloud.
+Reading -- `journalctl`, a config line, a stamp, a listing -- needs no
+question, and is said in the report.
+
+- **A general offer of device testing is not a standing yes.** "Anything
+  that requires device testing" names a category; each test in it is still
+  asked for, at the moment it would run, by name: what it does on screen,
+  what it writes, what it sends to the cloud, what it leaves behind, and
+  why the VM could not answer it.
+- **Say what the test will leave, before it runs.** The exit test cleaned
+  up its ROM and save on the device and never mentioned that the game-exit
+  sync had already sent them to Dropbox, where `copy` never deletes; the
+  owner found the files before the session did. A device test's footprint
+  includes every automatic behaviour it triggers on a configured device.
+- **The owner's cloud is the owner's.** A QA file uploaded to it, a
+  `--backup-dir` copy it made, a deletion -- each is a change to their
+  data and is asked for like a reboot. The VM's QA endpoint exists so that
+  none of this is ever necessary for a proof.
+- **Ask in one message, wait for the answer.** Nothing about the pace of a
+  pass justifies skipping the question; the maintainer's evening is the
+  thing being protected, and the session cannot see it.
+- **A read is free, and still goes through the filter.** Reading needs no
+  question, but what is read lands in a transcript, and a device's
+  `system.cfg`, its `rclone.conf`, `get_setting` output and anything piped
+  back over SSH can carry a sign-in. Pipe every such read through
+
+  ```bash
+  grep -v -i -E 'key|pass|token|user|psk'
+  ```
+
+  The filter is deliberately wider than the word *password*: rclone writes
+  `pass =`, `user =`, `token =` and `key =`, and the network writes `psk`. A
+  filter written as `password` let a `pass =` line through on a QA guest on
+  2026-09-12, which is why the QA guests are in scope too -- their
+  credentials are throwaway, their config files are the same shape, and the
+  transcript is the same transcript. A line the filter drops is a line
+  nobody needed; a line it lets through with a secret in it is a transcript
+  to scrub. `docs/device-testing-policy.md` § "Reading a device's output" is
+  the long form. (D-QA-021.)
 
 ## If the VM can test it, the VM tests it first
 
@@ -282,3 +551,87 @@ needing a password or a prompt has to happen in the user's own terminal, and
 that is worth saying rather than letting the command fail in front of them.
 
 (Adapted from `operator-asks.instructions.md` in the same estate.)
+
+## Fail gracefully: do what you can, keep the last good state, say how to recover
+
+Maintainer, 2026-09-10 (D-CLOUD-077): *"I think failure is okay. We just need
+to make sure that we degrade gracefully. If something fails, we need to have a
+recovery process and a user notification process. It's easy to say, 'We
+weren't able to upload. Please try again.'"* Binding for every operation a
+player can start or that starts on their behalf.
+
+- **A failure ends, and ends soon.** Bounded timeouts everywhere a network or
+  a disk can stall (D-CLOUD-075); a run that cannot finish says so within a
+  known time rather than holding a card, a gate, or a screen.
+- **The last known good state stays in place.** Prefer operations that are
+  atomic per unit (rclone's temp-and-rename, `mv` over a written temp file,
+  markers written only after the bytes are confirmed) so an interrupted run
+  leaves the previous file, not a partial one, and a re-run completes it.
+  Where partial success is possible, it is reported as partial.
+- **The message is for the player, not the developer.** What did not happen,
+  in their words (`WE COULDN'T FINISH BACKING UP YOUR SAVES. WHAT DID ARRIVE
+  IS IN YOUR CLOUD; THE REST IS AS IT WAS.`), then how to recover (`TRY AGAIN
+  WHEN YOU'RE BACK ONLINE.`). Never a log path, an exit code, or a `logger`
+  hint on a handheld's screen; the log is for us and we read it over SSH.
+- **The retry is in reach.** The surface that reported the failure offers it:
+  a button on the page, the row on the card's outcome line, a re-run that is
+  safe because the state was kept.
+- **Silence is the worst failure.** A scan that fails and shows an empty cloud,
+  a run that exits 0 after moving nothing, a card that fades with no outcome:
+  each is a lie by omission (blindspot 13 and 33 are both this shape).
+
+Audit of the existing surfaces against this: #105.
+
+**The last known good state is a record, kept on purpose (D-CLOUD-078).**
+Maintainer, 2026-09-10: *"we should always keep a record of the last known
+good state ... if something fails, it should always revert to the last known
+good state ... the successful state becomes the last known good state, and we
+can remove the previous one."* For every writer that means three things, in
+order: know that you succeeded (a positive check of the artifact, not the
+absence of an error); replace the old state only after that check
+(temp-and-rename, a marker after the bytes, a copy held until the replacement
+is verified); then remove the superseded record, once, so exactly one
+last-known-good exists at rest. Test it by killing the writer at every step
+and asserting the previous state is what remains -- a writer that leaves an
+empty file, a half-written one, or two candidates has failed this rule.
+`system.cfg` and `es_settings.cfg` failed it on 2026-09-09 (#102): rewritten
+in place, backed up every boot with whatever was there, so a truncated file
+replaced its own good copy and defaults won.
+
+## A device's state is read from the device, and an act on it is written down as it happens
+
+Maintainer, 2026-09-14, after the harness had denied a reboot the device's own
+journal showed it had sent: *"We should think about if there's anything we should
+add to an instruction file, etc., to make sure you're keeping track of the truth
+behind some of these log-related behavior claims."* Blindspot 42 is the case.
+
+- **Before saying what did or did not happen on a device, read the device.**
+  `journalctl -b -1` (this image keeps several boots), the ssh logins in it, the
+  unit's log, `last` where it exists, the boot id. A tool result in the transcript
+  is one witness and is read with the bias of knowing what the command was meant
+  to do; the device's record has no such bias. When the two disagree, the device
+  wins and the disagreement itself is reported.
+- **Write every state-changing device action down as it happens, not after.**
+  `tools/device-act <target> <label> -- <command>` runs the command over ssh and
+  appends BEGIN and END lines to `/workspace/artifacts/rocknix-device-actions.log`
+  with the device's boot id before and after -- a changed boot id is a reboot,
+  whatever anyone remembers. Reboots, updates staged into `/storage/.update`,
+  settings written on a device: through it, or with the same two lines written by
+  hand. The log lives outside the repo and outside any per-session scratch.
+- **Answer "did you do X" with evidence, not memory.** Quote the action log line
+  and the device's journal line, or say that neither exists. "I don't think so" is
+  not an answer about a device someone else owns.
+- **When you were wrong, correct every place the wrong statement landed** -- the
+  issue comment, the work log, the reply -- in the same session, and say plainly
+  that the earlier statement was wrong.
+
+## Never edit a shell tool while a run of it is in flight
+
+bash reads a script by file offset as it executes, so an edit to
+`tools/vm-qa` while a run was inside its walks made that run fail twenty-two
+minutes later with `---: command not found` and a syntax error at a line that
+reads fine (run 19, 2026-09-23). `bash -n` on the edited file passes, which
+makes it look like a harness bug. While a bash tool is running, edit a copy
+or queue the change until the run's rc file exists; Python and compiled tools
+are safe to edit mid-run, shell scripts are not. If a run dies with a
+nonsense syntax error, check the file's mtime against the run's start first.

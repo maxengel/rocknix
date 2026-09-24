@@ -4,11 +4,21 @@ Low-fidelity structure for the cloud-save conflict wizard (#23). **Information
 architecture and interaction only** — what is on screen, what the player can do,
 and where each choice leads. No visual design: no sizes, colours, spacing or
 component choices. Those come later, against
-[es-ui-style-guide.md](es-ui-style-guide.md).
+[es-ui-style-guide.md](../.claude/rules/es-ui-style-guide.md).
 
 Companion to [es-menu-map.md](es-menu-map.md), which places this subtree in the
 wider menu. Rendered low-fidelity wireframes of these screens, with the reasoning
 in the margins: <https://claude.ai/code/artifact/5da9ce12-b088-4db0-8557-4b34fe454dd6>
+
+> **Rev 6 (2026-09-12).** Four maintainer decisions after the save-history council
+> run (#134): one console at a time -- sync never runs on two consoles at once, and
+> the wizard assumes the two versions were made in serial by one player
+> (D-CLOUD-102, D-CLOUD-103; no lock, no marker). The compare page keeps its columns
+> (cloud left, this console right), gains a *played later / earlier on <console>*
+> line under each by publish sequence, and opens with the cursor on the newer
+> version; the choice stays the player's (D-CLOUD-104). Discarded copies live in the
+> one hidden store `Saves/.history/` with every other earlier version, labelled by
+> reason (D-CLOUD-095), not in a `-discarded/` sibling.
 
 > **Rev 5 (2026-09-06).** Five maintainer decisions from the conflict-resolution
 > council, and one vocabulary. *Keep copies of discarded saves* is **on** by
@@ -18,7 +28,11 @@ in the margins: <https://claude.ai/code/artifact/5da9ce12-b088-4db0-8557-4b34fe4
 > tool reached from the same menu entry (D-CLOUD-033, D-CLOUD-035); a sync
 > never opens the wizard over a player, it counts and badges, and one entry,
 > MANAGE GAME SAVE RESTORES AND CONFLICTS, owns the queue and the restores
-> (D-CLOUD-035); an unexplained absence is asked as a two-button question in
+> (D-CLOUD-035) -- **superseded in part by D-UI-043 (2026-09-12): the row
+> under SAVE MANAGEMENT is EARLIER VERSIONS OF SAVES and carries no restore
+> verb, because restoring an earlier version belongs to #25 after the wizard,
+> and a corrupted or legacy entry is trash not yet emptied rather than
+> something to offer**; an unexplained absence is asked as a two-button question in
 > this same wizard rather than held as a state (D-CLOUD-037). Vocabulary per
 > D-UI-022: *discard* now means only the copy chosen against — quitting the
 > wizard **drops** its decisions, it does not discard anything.
@@ -104,6 +118,7 @@ only the picture and the available options change.
 │ <date> <time>         │ <date> <time>        │
 │ <device + model>      │ <device + model>     │
 │ <emulator/core + ver> │ <emulator/core + ver>│
+│ played later here     │ played earlier here  │   by publish sequence, D-CLOUD-104
 ├───────────────────────┴──────────────────────┤
 │  ( KEEP LEFT )  ( KEEP RIGHT )  ( KEEP BOTH )│   selected side(s) highlight
 │  [ CONTINUE ]        …or [ COMPLETE ] if last│
@@ -116,19 +131,34 @@ mapped mentally onto CLOUD/DEVICE. Keep the sides in a **fixed order** across
 every conflict — muscle memory does the work on a long list, and a column that
 swaps sides is how the wrong save gets picked at speed.
 
+The page opens with the cursor on the KEEP under the **newer** version, ordered by
+publish sequence, never by clock (D-CLOUD-104): the two versions were made in
+serial by one player (D-CLOUD-103), so the later session is the common answer
+to a missed sync and is one press away. Nothing is kept without that press, and
+the other version is retained in `Saves/.history/` either way.
+
+**Retention is unconditional, and the table below said otherwise until the
+#147 sweep.** Nothing leaves the cloud's current save unless that version is
+already in the store (`save-history-consensus-amendment.md`, retain-only), and
+even with the history setting OFF the retain step still runs before a version
+is displaced -- OFF stops long-term history, not the transaction copy
+(D-CLOUD-105). The *keep copies of discarded saves* toggle therefore governs
+how long a losing copy is kept and whether it is offered, never whether it is
+taken. The escape hatch from a wrong press is the store, not the setting.
+
 ## What each kind shows
 
-| | Savestate | In-game save |
+| | Save state | Game save |
 |---|---|---|
 | Picture | screenshot, source badge overlaid | glyph, source badge overlaid |
 | Metadata | date · time · device + model · **core + version** | date · time · device + model · emulator + version |
 | Not shown | file size — not actionable when choosing between two saves | same |
 | Emulator info means | **compatibility** — core- and chipset-specific, may not load (#19) | context — usually portable across emulators |
 | KEEP BOTH | yes — moves to the next free slot via ES's `getNextFreeSlot()` | **no** — fixed slots; shown disabled with a reason |
-| Losing copy | retained only when *keep copies of discarded saves* is on | same |
+| Losing copy | **always retained** in `Saves/.history/` | same |
 
 KEEP BOTH is **dimmed, not hidden**, on in-game saves — the house rule from
-[es-ui-style-guide.md](es-ui-style-guide.md), and a dimmed control with a reason
+[es-ui-style-guide.md](../.claude/rules/es-ui-style-guide.md), and a dimmed control with a reason
 teaches what a vanished one cannot.
 
 ## Settings
@@ -174,8 +204,13 @@ a conflict"; the panels own "here is what each one is".
   applies nothing. Redoing a few choices beats risking a half-applied
   resolution, and it keeps the "nothing transfers until COMPLETE" guarantee
   simple.
-- **Cloud is always the left column.**
-- **Keep copies of discarded saves is on by default** (D-CLOUD-032, D-CLOUD-036), with a count selector, default 3, 1 to 9.
+- **Cloud is always the left column.** And the columns never swap to put the newer
+  version on one side; the *played later / earlier* line says which is which, and
+  the cursor opens on the newer (D-CLOUD-104).
+- **Serial play is assumed.** One person, one console at a time; no lock or marker
+  tells another console a game is in play; the missed sync is the wizard's case
+  (D-CLOUD-102, D-CLOUD-103).
+- **Keep copies of discarded saves is on by default** (D-CLOUD-032, D-CLOUD-036), with a count selector, default 3, 1 to 9 -- the copies in `Saves/.history/` with the other earlier versions (D-CLOUD-095); the count's range and its fleet-wide meaning are P-1/P-2 on #134.
 
 ## What ES already does (checked, not assumed)
 

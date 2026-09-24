@@ -1,0 +1,44 @@
+#!/bin/bash
+# device-act -- run one command on a device over ssh and record the act where it
+# cannot be argued with later.
+#
+#   tools/device-act <ssh target> <label> -- <remote command...>
+#   tools/device-act rgsp "reboot to apply 3ada78e181" -- 'sync; reboot'
+#   DEVICE_ACT_SSH_OPTS='-o Hostname=100.75.221.73' tools/device-act rgsp ... -- ...
+#   DEVICE_ACT_TIMEOUT=600 tools/device-act rg35xxsp 'hash the staged tar' -- 'sha256sum ...'
+#
+# The command is killed after DEVICE_ACT_TIMEOUT seconds (default 30) and
+# reported as rc=124. A sha256 of a 1.3 GB update tar on an A53 takes minutes,
+# so either raise the timeout or start the work detached on the device and
+# poll for its result file (2026-09-20: the default cut the hash off and the
+# staging chain stopped before the move, which is the safe direction).
+#
+# Why (blindspot 42, 2026-09-14): a device rebooted from a harness command, and the
+# harness then said "not me" twice because the tool result it was reading looked
+# like a check that never ran. The device's journal had the truth. So every action
+# that changes a device's state is written down BEFORE it runs, with the device's
+# boot id at that moment, and the outcome AFTER, with the boot id again -- a
+# changed boot id is a reboot, whatever the transcript says.
+#
+# The record is ${DEVICE_ACTIONS_LOG:-/workspace/artifacts/rocknix-device-actions.log},
+# outside the repo and outside any per-session scratch, one line per phase:
+#   <UTC time> <target> <label> BEGIN  boot_id=<id> host=<hostname>
+#   <UTC time> <target> <label> END    rc=<n> boot_id=<id or unreachable>
+# Read it before answering "did you do X" -- and read the device too.
+set -u
+LOG="${DEVICE_ACTIONS_LOG:-/workspace/artifacts/rocknix-device-actions.log}"
+SSH_OPTS=(-n -o ConnectTimeout=8 -o BatchMode=yes ${DEVICE_ACT_SSH_OPTS:-})
+TARGET="${1:?ssh target}"; LABEL="${2:?label}"; shift 2
+[ "${1:-}" = "--" ] && shift
+[ $# -ge 1 ] || { echo "device-act: no remote command after --" >&2; exit 2; }
+CMD="$*"
+mkdir -p "$(dirname "$LOG")"
+probe() { timeout 12 ssh "${SSH_OPTS[@]}" "$TARGET" 'echo "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null) $(hostname)"' 2>/dev/null; }
+BEFORE=$(probe) || BEFORE="unreachable"
+printf '%s %s %q BEGIN boot_id=%s cmd=%q\n' "$(date -u +%FT%TZ)" "$TARGET" "$LABEL" "${BEFORE%% *}" "$CMD" >> "$LOG"
+timeout "${DEVICE_ACT_TIMEOUT:-30}" ssh "${SSH_OPTS[@]}" "$TARGET" "$CMD"; RC=$?
+sleep 2
+AFTER=$(probe) || AFTER="unreachable"
+printf '%s %s %q END rc=%s boot_id=%s\n' "$(date -u +%FT%TZ)" "$TARGET" "$LABEL" "$RC" "${AFTER%% *}" >> "$LOG"
+echo "device-act: $TARGET '$LABEL' rc=$RC; before boot_id=${BEFORE%% *} after=${AFTER%% *}; recorded in $LOG"
+exit $RC

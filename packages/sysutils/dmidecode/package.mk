@@ -2,8 +2,8 @@
 # Copyright (C) 2025 ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="dmidecode"
-PKG_VERSION="3.6"
-PKG_SHA256="e40c65f3ec3dafe31ad8349a4ef1a97122d38f65004ed66575e1a8d575dd8bae"
+PKG_VERSION="3.7"
+PKG_SHA256="2c3aed12c85a1e6a9410d406d5e417c455466dc1bc7c89278bb32cf7cad91e8a"
 PKG_ARCH="x86_64"
 PKG_LICENSE="GPL-2.0"
 PKG_SITE="http://www.nongnu.org/dmidecode/"

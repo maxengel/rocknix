@@ -22,6 +22,7 @@ They land in **`target/`** — `config/path` sets `TARGET_IMG=$ROOT/target`, and
 | Anbernic RG35XX SP | `H700` | aarch64 | cortex-a53, crypto-neon-fp-armv8; maintainer's unit is LPDDR4 and uses the DDR4 image (`vdd-dram` = 1.1 V, verified 2026-09-05) |
 | Anbernic RG SP | `H700` | aarch64 | cortex-a53, crypto-neon-fp-armv8; maintainer's unit is LPDDR3 and uses the DDR3 image (stock boot0 `dram_type = 7`, then ROCKNIX `vdd-dram` = 1.2 V, verified 2026-09-05) |
 | Anbernic RG351M | `RK3326` | aarch64 | |
+| Retroid Pocket Nova | `SM8550` | aarch64 | cortex-a710 / cortex-x3 (`projects/ROCKNIX/devices/SM8550/options`), crypto-neon-fp-armv8; upstream release 20260901 lists it under SM8550; no build root in the devices worktree yet, so its first build is cold (hours, ~90 GB) -- #150, D-QA-023 |
 | VM / QA | `GENERIC_X64` | x86_64 | fork-only device; see `generic-x64-vm-testing` |
 
 The RG353M, RG35XX SP, and RG351M are *different build families* — separate
@@ -184,7 +185,7 @@ option that could not actually run.
 
 ## Late binding bites hardest in a merge
 
-`packages/readme.md` says toolchain and path variables exist only after a
+`packages/README.md` says toolchain and path variables exist only after a
 package loads, so they belong inside functions. A merge is where a violation
 surfaces, because the conflict makes you read code nobody has read since it
 was written.
@@ -251,6 +252,16 @@ started — and treat it as poisoned like compiled output.
 
 Then `rm -rf $R/.stamps/<pkg> $R/build/<pkg>-*` for each and resume.
 
+**Before resuming a failed build, copy `.threads/logs` somewhere.** The
+per-thread logs are per *slot*, not per package: `109.log` is whichever
+package thread 109 ran last, and a resume reuses every slot. On 2026-09-19 an
+H700 failure (`libxcb` relinking against a `usr/lib32/libc.so` that `ld` said
+did not exist) was resumed on a guess about the cause, and by the time anyone
+went to check which package had been writing the sysroot at that moment, all
+of those logs carried the resume's timestamps. The cause is now unknowable
+from that run. The build scripts archive the logs on any non-zero exit for
+this reason; if you run `make` by hand, do it yourself first.
+
 **If a resume fails the same way again after that sweep, stop clearing
 packages and wipe the arch's build root.** At that point the state is not
 enumerable and the rebuild is cheaper than the next three guesses —
@@ -261,6 +272,97 @@ previous tree. This one is a *partial* artifact from an interrupted run.
 Same class of symptom, different cause, same instinct — reproduce the
 clean-tree condition for the affected packages rather than trusting an
 incremental build to notice.
+
+## A build that fetches its own dependency
+
+pango 1.58 needs cairo 1.18 and the ROCKNIX override pinned 1.17.8. For
+three months nothing failed: meson's `cairo.wrap` fallback cloned cairo's
+git master at configure time, built it inside pango and installed it over
+the pinned copy. `[DONE] build pango:target`, every time; every GENERIC_X64
+and H700 image carried `libcairo.so.2 -> libcairo.so.2.11805.5`, an
+unpinned build nobody had chosen (#226, blindspot 47). The first container
+without DNS failed pango, which is how it was found — and upstream's CI has
+DNS, so upstream ships the same thing and cannot see it.
+
+- `scripts/build` now passes `--wrap-mode=nodownload` to every meson
+  configure, target and host. A subproject may be used only when it ships in
+  the tarball (glib's gvdb, kmsxx's pixpat); one that would have to be
+  fetched fails the configure, and the failure names the dependency that is
+  really missing. That is the message to fix, not the flag to remove.
+- After a build, list what was fetched anyway:
+
+  ```bash
+  find build.*/build -mindepth 4 -maxdepth 4 -path '*/subprojects/*/.git'
+  ```
+
+  Empty is the only good answer, and only on a root where every package
+  configured under the guard — a warm root keeps old clones for packages
+  that did not rebuild. On the 2026-09-19 roots this listed exactly two:
+  pango's cairo (built in) and glib's sysprof (cloned, then disabled).
+- cmake's `FetchContent`, cargo and go vendoring have no equivalent switch.
+  A recipe that builds one of those wants the same question asked of it.
+- A pinned version in a recipe is a claim about the image only once the
+  image is read: `unsquashfs -ll SYSTEM usr/lib | grep libcairo`. The
+  package's install tree is what `scripts/install` copies, so a subproject
+  a package built is in *that package's* `install_pkg/`, not the library's
+  — cleaning cairo would not have removed it; cleaning pango did.
+
+## A two-minute build can be a real one
+
+ccache sits under every compile, so a warm root that rebuilds one package
+with one changed source file finishes in about two minutes, image step
+included (H700, 2026-09-08: a one-file RetroArch patch plus a script change
+in rclone, 04:43:46 to 04:45:34). That is not the signature of a build that
+skipped the work. Judge a rebuild by evidence, not by duration:
+
+- the package's `build_target` stamp under `build.*/.stamps/<pkg>/` is newer
+  than the moment `make` started;
+- the object for the changed file (`obj-*/…/<file>.o` in the package's build
+  directory) is newer than that moment too;
+- the binary inside the new image's `SYSTEM` squashfs differs from the one in
+  the previous image (`tar -xf … --wildcards '*/target/SYSTEM'`, then
+  `unsquashfs -d <dir> -n SYSTEM usr/bin/<binary>`).
+
+Grepping the log for a phrase such as `build retroarch:target` is not one of
+those — the log's progress lines say `install`, and a guessed pattern that
+matches nothing reads as "not rebuilt".
+
+## Before a build: the machine is memory-bound, not disk-bound
+
+`tools/build-preflight` reports it and `--stop-vms` clears what it can. Run it
+before a cold build.
+
+The two constraints are easy to confuse because one of them is never a problem:
+`/workspace` has terabytes free while the box runs out of RAM. On 2026-09-19 a
+cold GENERIC_X64 build reached `webkitgtk`, compiled WebCore at
+`CONCURRENCY_MAKE_LEVEL=nproc=24`, and the kernel killed `cc1plus` twice:
+
+```
+x86_64-rocknix-linux-gnu-g++-15.2.0: fatal error: Killed signal terminated program cc1plus
+```
+
+**What made it expensive was the collateral, not the failure.** The same
+pressure killed a running QA guest and a background watcher, so the first
+symptom was silence: a build that had been dead for two hours, a guest whose
+monitor socket had no owner, and nothing that said so. A memory failure does
+not announce itself the way a compile error does.
+
+So, before a cold build:
+
+- **Stop the QA guests you are not using.** Each QEMU guest holds about 2 GB
+  and they are routinely left up for days. They are also what the build kills
+  first, so leaving one up is not a neutral choice — it is choosing to risk
+  whatever state it holds.
+- **Look at swap, not just RAM.** A full swap means the cushion is gone: the
+  next spike is an OOM kill rather than a slowdown. `swapoff -a && swapon -a`
+  reclaims it and needs root plus enough free RAM to take the pages back.
+- **Cap the heavyweight packages rather than the whole build.** `webkitgtk`
+  carries `PKG_MAKE_OPTS_TARGET="-j4"` for this reason; `ninja` takes the last
+  `-j` it is given and `scripts/build` appends the package's options after
+  `NINJA_OPTS`, so one package narrows without slowing the other six hundred.
+  Find them one at a time with evidence rather than lowering
+  `CONCURRENCY_MAKE_LEVEL` globally (maintainer, 2026-09-19: optimise for a
+  build that finishes, even if it takes longer).
 
 ## Budget
 
@@ -280,7 +382,7 @@ a member login is not accepted in its place), `CHEEVOS_DEV_LOGIN`
 `HFS_DEV_LOGIN`. Without them the matching scraper is not built — **except
 ScreenScraper on fork builds**: since #64 (2026-09-05) the package sets
 `SCREENSCRAPER_RUNTIME_DEV_LOGIN`, the scraper is always built, and the
-developer pair is typed on the device under the scraper's OPTIONS beside the
+developer pair is typed on the device under the scraper's ACCOUNTS tab beside the
 account (DEVELOPER ID / DEVELOPER PASSWORD, held back from settings backups).
 So the options file is for RetroAchievements, TheGamesDB and HfsDB only, and
 a fork image never needs to carry a ScreenScraper key.
@@ -325,9 +427,11 @@ when you do it, and prefer a fresh date.
 
 ## Installing on the device
 
-**Ask before the reboot, every time** (`engineering-practices.md` § "Never
-reboot, update, or power-cycle a device without asking"). Staging the tarball in
-`~/.update` is inert and needs no question; the reboot that applies it does.
+**Ask before the transfer and before the reboot** (`engineering-practices.md`
+§ "Never reboot, update, or power-cycle a device without asking"; D-QA-011).
+Staging the tarball in `~/.update` is inert until the next boot, but the copy
+is a question too — it can be answered once for a batch; the reboot is asked
+for each time, by device.
 
 For a fresh card, follow `docs/device-flashing-runbook.md`. It covers artifact
 intake, physical board-variant evidence, removable-disk identification, full
@@ -348,6 +452,18 @@ same-day builds in separate artifact directories and record `BUILD_ID` plus
 checksums; the date and filename alone do not distinguish them.
 
 ## Iterating on EmulationStation
+
+**Upstream PRs for ES go through a different fork.** `~/Development/emulationstation-next`'s
+`origin` (`maxengel/emulationstation-next`) is a GitHub fork of
+*batocera-linux/batocera-emulationstation*, so it is outside ROCKNIX's fork
+network and GitHub refuses a PR from it into `ROCKNIX/emulationstation-next`
+("Head repository can't be blank"). The fork that works is
+`maxengel/emulationstation-next-rocknix` (remote `rocknixfork` in the PR
+worktrees under `~/Development/emulationstation-next.worktrees/`): branch from
+`upstream/master`, cherry-pick the commit, push there, then
+`gh pr create --repo ROCKNIX/emulationstation-next --base master --head maxengel:<branch>`
+(2026-09-07, ES PR #33).
+
 
 **`EMULATIONSTATION_SRC` only mounts the directory — it does not build from it.**
 The `docker-%` target turns it into a `-v` bind mount and nothing else;
@@ -371,3 +487,41 @@ EMULATIONSTATION_SRC=~/Development/emulationstation-next.worktrees/<branch> \
 Note that a package's source change does **not** always retrigger a rebuild:
 clear its stamp first (`build.*/.stamps/<pkg>/`), and delete
 `build.*/.stamps/image/build_target` to force a fresh image.
+
+## Reading a crash
+
+Since the seventh cut of the 2026-09-22 round (#246), EmulationStation's
+signal handler writes a backtrace to stderr before it dies of the signal:
+in the journal, under `start_es.sh`, a line `EmulationStation crash
+backtrace (innermost first; symbolise with addr2line):` followed by one
+frame per line, `emulationstation(+0x...) [0x...]` or `libfoo.so(sym+0x..)`.
+Before that the handler logged one line and called `exit()`, so the only
+core the keeper could have caught described the teardown, not the fault.
+
+Both builds' `emulationstation` binaries are unstripped, with debug info,
+in the build root (`build.ROCKNIX-<DEVICE>.<ARCH>/build/emulationstation-<pin>/emulationstation`),
+and both toolchains carry a symboliser -- **the build that produced the
+image, so match the pin in the directory name to the device's BUILD_ID**:
+
+```bash
+# H700 (aarch64):
+B=/workspace/repos/rocknix.worktrees/devices/build.ROCKNIX-H700.aarch64
+$B/toolchain/bin/aarch64-rocknix-linux-gnu-addr2line -f -C -i \
+  -e $B/build/emulationstation-<pin>/emulationstation 0x<addr> 0x<addr> ...
+# GENERIC_X64:
+X=/workspace/repos/rocknix.worktrees/generic-x64/build.ROCKNIX-GENERIC_X64.x86_64
+$X/toolchain/bin/llvm-addr2line -f -C -i -e $X/build/emulationstation-<pin>/emulationstation 0x<addr> ...
+```
+
+`backtrace_symbols_fd` prints `emulationstation(+0xOFF)` for the main
+binary; feed addr2line the `+0xOFF` value when the binary is
+position-independent (`readelf -h | grep Type` says `DYN`), the absolute
+`[0x...]` when it says `EXEC`. A frame in a shared library is symbolised
+against that library from the same build root's `image/system/usr/lib`.
+
+A core, when `rocknix-corekeep --on` has been armed on the device
+(`/storage/.cache/log/cores/core.<exe>.<epoch>.<pid>.gz` + `.txt`), is
+read with gdb on the host against the same unstripped binary -- the host
+needs `gdb` (or `gdb-multiarch` for an aarch64 core) installed, which it
+was not on 2026-09-22. The core holds whatever the process held, tokens
+included: copy it with scp, read it here, delete it when done.

@@ -21,7 +21,7 @@ PKG_UI_TOOLS="fbgrab grim"
 
 PKG_GRAPHICS="imagemagick"
 
-PKG_FONTS="corefonts"
+PKG_FONTS="corefonts noto-sans-cjk"
 
 PKG_MULTIMEDIA="ffmpeg vlc mpv gmu m8c"
 
@@ -101,6 +101,9 @@ fi
 
 # modules packages
 [ "${MODULES_PKG}" = "yes" ] && PKG_DEPENDS_TARGET+=" modules"
+
+# Batteryplus voltage-based battery percentage daemon
+[ "${BATTERYPLUS_SUPPORT}" = "yes" ] && PKG_DEPENDS_TARGET+=" batteryplus"
 
 # Entware support
 mkdir -p ${INSTALL}

@@ -15,7 +15,11 @@ so they get re-derived, contradicted, or quietly re-decided.
 ## The contract
 
 - **Append-only.** A reversal or refinement is a **new row citing the old ID**.
-  Never edit or delete a decided row; the history is the point.
+  Never edit or delete a decided row; the history is the point. The one
+  exception is clerical (D-WORKFLOW-013): a mis-keyed ID is corrected in the
+  ID cell alone, the text untouched, with a row recording the fix and the live
+  citations cleaned up in the same change. `tools/register-check` refuses a
+  duplicate ID and a citation that names no row; run it after every edit here.
 - **One row per decision**: date, stable ID (`D-<AREA>-<n>`), the decision in a
   sentence or two with the operative choice in bold, and refs — the issue,
   commit, or comment where it was made or is evidenced.
@@ -49,6 +53,18 @@ facts about what happened — those are work-log material.
   the ID and move on rather than re-deriving the argument.
 - **At the end of a session** — sweep for decisions that were made and never
   written down.
+- **Before putting anything to the maintainer as pending, open or undecided**
+  — run `tools/archaeology <terms>` (and `--issue N`) and cite what it finds.
+  It reads this register, the blindspots, every work-log entry, the rules,
+  `git log -S` and the issues with their comments. A question is pending only
+  when the register's open table holds it and nothing below says otherwise.
+  On 2026-09-23 four "pending decisions" were put to the maintainer that the
+  comments, the commits and this register had settled (blindspot 52).
+- **A decision the maintainer makes in an issue comment or in chat gets its
+  row the same day**, under the issue's number, so the grep that is run does
+  find it. #225's scope cut of 2026-09-19 had no row and was asked again.
+- **An issue's "decisions pending" section names open-table IDs**; it never
+  restates the question, because a restated question is a copy that drifts.
 
 ## The other ledgers
 

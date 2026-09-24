@@ -2,12 +2,14 @@
 # Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="emulationstation"
-PKG_VERSION="a13966a2184035456064c0af3832353195cedd2b"
+PKG_VERSION="75ca1dac2ef964c24fdd2c12d4fd9e36c25f5959"
 PKG_GIT_CLONE_BRANCH="test/qa-integration"
 PKG_LICENSE="GPL"
 PKG_SITE="https://github.com/maxengel/emulationstation-next"
 PKG_URL="${PKG_SITE}.git"
-PKG_DEPENDS_TARGET="boost toolchain SDL2 freetype curl freeimage bash rapidjson SDL2_mixer fping p7zip alsa vlc drm_tool pugixml ${OPENGLES}"
+# noto-sans-cjk came from upstream 2026-09; the fork builds its own ES from
+# its own branch, so the clone form stays.
+PKG_DEPENDS_TARGET="boost toolchain SDL2 freetype curl freeimage bash rapidjson SDL2_mixer fping p7zip alsa vlc drm_tool pugixml noto-sans-cjk ${OPENGLES}"
 PKG_NEED_UNPACK="busybox"
 PKG_LONGDESC="Emulationstation emulator frontend"
 PKG_BUILD_FLAGS="-gold"
@@ -26,7 +28,8 @@ PKG_CMAKE_OPTS_TARGET+=" -DROCKNIX=1 \
 # environment still wins and hides the rows.
 PKG_CMAKE_OPTS_TARGET+=" -DSCREENSCRAPER_RUNTIME_DEV_LOGIN=1"
 
-[ "${DEVICE}" = "S922X" ] && PKG_CMAKE_OPTS_TARGET+=" -DBATTERYPLUS=1"
+# Upstream replaced the S922X test with a build option (2026-09).
+[ "${BATTERYPLUS_SUPPORT}" = "yes" ] && PKG_CMAKE_OPTS_TARGET+=" -DBATTERYPLUS=1"
 
 pre_configure_target() {
   for key in SCREENSCRAPER_DEV_LOGIN \
@@ -61,6 +64,9 @@ makeinstall_target() {
 
   mkdir -p ${INSTALL}/usr/config/emulationstation/resources
     cp -a ${PKG_BUILD}/resources/* ${INSTALL}/usr/config/emulationstation/resources
+    rm -f ${INSTALL}/usr/config/emulationstation/resources/DroidSansFallbackFull.ttf
+    ln -sf /usr/share/fonts/truetype/noto-cjk/NotoSansCJKsc-Regular.otf \
+      ${INSTALL}/usr/config/emulationstation/resources/DroidSansFallbackFull.ttf
 
   mkdir -p ${INSTALL}/usr/bin
     cp -a ${PKG_BUILD}/es_settings ${INSTALL}/usr/bin

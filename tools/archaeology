@@ -1,0 +1,264 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# What does the record already say about this? One command over every place
+# a decision or a lesson can live in this fork, printed as dated lines, so
+# "have we settled this before?" is answered by reading, not by asking.
+#
+#   tools/archaeology <term>...            # each term a case-insensitive regex
+#   tools/archaeology --issue 209          # the issue's own trail as well
+#   tools/archaeology --since 2026-09-01 webkit gstreamer
+#   tools/archaeology --no-gh ...          # offline: skip the tracker
+#
+# It reads the decision register (decided rows and the open table), the
+# blindspot register, every dated work-log entry, the rule files, the git
+# history (`git log -S`), and the fork's issues and comments (`gh`). A hit
+# is one line: where, when, what. Run it before listing anything as
+# "pending" or "undecided" for the maintainer -- on 2026-09-23 four
+# decisions were put to them that the register, the issues and the logs
+# had already settled (blindspot 52), and each would have shown up here.
+
+import os
+import re
+import subprocess
+import sys
+import json
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = 'maxengel/rocknix'
+
+
+def rx(term):
+    return re.compile(term, re.I)
+
+
+def clip(s, n=150):
+    s = ' '.join(s.split())
+    return s if len(s) <= n else s[:n - 1] + '…'
+
+
+def register(terms, since):
+    """Decided rows and open rows of docs/decision-register.md."""
+    path = os.path.join(ROOT, 'docs/decision-register.md')
+    if not os.path.exists(path):
+        return []
+    hits = []
+    section = 'decided'
+    for line in open(path, encoding='utf-8'):
+        if line.startswith('## Open decisions'):
+            section = 'open'
+        if not line.startswith('| D-'):
+            continue
+        cells = [c.strip() for c in line.strip().strip('|').split('|')]
+        if len(cells) < 3:
+            continue
+        did = cells[0]
+        date = cells[1] if re.match(r'\d{4}-\d\d-\d\d', cells[1]) else '(open)'
+        text = cells[2] if date != '(open)' else cells[1]
+        blob = line
+        if all(t.search(blob) for t in terms):
+            if since and date != '(open)' and date < since:
+                continue
+            tag = 'OPEN' if section == 'open' or date == '(open)' else 'decided'
+            hits.append((date, 'register %s %s' % (tag, did), clip(text.replace('**', ''), 170)))
+    return hits
+
+
+def blindspots(terms, since):
+    path = os.path.join(ROOT, 'docs/blindspot-register.md')
+    if not os.path.exists(path):
+        return []
+    hits = []
+    head = None
+    body = []
+
+    def flush():
+        if head and all(t.search(head + '\n' + '\n'.join(body)) for t in terms):
+            m = re.search(r'\((\d{4}-\d\d-\d\d)\)', head)
+            date = m.group(1) if m else ''
+            if not (since and date and date < since):
+                hits.append((date, 'blindspot', clip(head.lstrip('# '), 150)))
+    for line in open(path, encoding='utf-8'):
+        if line.startswith('## '):
+            flush()
+            head, body = line.strip(), []
+        else:
+            body.append(line)
+    flush()
+    return hits
+
+
+def work_logs(terms, since):
+    base = os.path.join(ROOT, 'docs/work-logs')
+    hits = []
+    for d, _, files in os.walk(base):
+        for f in sorted(files):
+            m = re.match(r'(\d{4})_(\d\d)_(\d\d)-work_log\.md$', f)
+            if not m:
+                continue
+            date = '%s-%s-%s' % m.groups()
+            if since and date < since:
+                continue
+            head, body = None, []
+
+            def flush():
+                if head is None:
+                    return
+                blob = head + '\n' + '\n'.join(body)
+                if all(t.search(blob) for t in terms):
+                    hm = re.match(r'## (\d\d:\d\d) UTC\s*[—–-]+\s*(.*)', head)
+                    when, title = (hm.group(1), hm.group(2)) if hm else ('', head.lstrip('# '))
+                    hits.append((date, 'work-log %s' % when, clip(title, 150)))
+            for line in open(os.path.join(d, f), encoding='utf-8'):
+                if line.startswith('## '):
+                    flush()
+                    head, body = line.strip(), []
+                else:
+                    body.append(line)
+            flush()
+    return hits
+
+
+def rules(terms):
+    base = os.path.join(ROOT, '.claude/rules')
+    hits = []
+    if not os.path.isdir(base):
+        return hits
+    for f in sorted(os.listdir(base)):
+        if not f.endswith('.md'):
+            continue
+        head, body = f, []
+
+        def flush():
+            blob = head + '\n' + '\n'.join(body)
+            if all(t.search(blob) for t in terms):
+                hits.append(('', 'rule %s' % f, clip(head.lstrip('# '), 150)))
+        for line in open(os.path.join(base, f), encoding='utf-8'):
+            if line.startswith('## '):
+                flush()
+                head, body = line.strip(), []
+            else:
+                body.append(line)
+        flush()
+    return hits
+
+
+def git_history(terms, since, limit=15):
+    hits = []
+    for t in terms:
+        # -G takes a regex over the diff's lines (-S wants a literal string)
+        cmd = ['git', '-C', ROOT, 'log', '--date=short', '--format=%ad %h %s', '--regexp-ignore-case', '-G' + t.pattern, '--', '.']
+        if since:
+            cmd.insert(4, '--since=' + since)
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True, timeout=120).stdout
+        except Exception as e:  # noqa: BLE001
+            hits.append(('', 'git', 'git log failed: %s' % e))
+            continue
+        for line in out.splitlines()[:limit]:
+            date, sha, subj = line.split(' ', 2)
+            hits.append((date, 'git %s' % sha, clip(subj, 150)))
+    return hits
+
+
+def gh_json(args):
+    try:
+        out = subprocess.run(['gh'] + args, capture_output=True, text=True, timeout=60)
+    except Exception as e:  # noqa: BLE001
+        return None, str(e)
+    if out.returncode != 0:
+        return None, out.stderr.strip()
+    try:
+        return json.loads(out.stdout), None
+    except ValueError:
+        return None, 'gh returned no JSON'
+
+
+def issues(terms, since):
+    hits = []
+    for t in terms:
+        data, err = gh_json(['issue', 'list', '--repo', REPO, '--state', 'all', '--limit', '30',
+                             '--search', t.pattern, '--json', 'number,title,state,createdAt,closedAt'])
+        if err:
+            hits.append(('', 'gh', 'issue search failed: %s' % clip(err, 100)))
+            continue
+        for it in data:
+            date = it['createdAt'][:10]
+            if since and date < since:
+                continue
+            closed = (' closed %s' % it['closedAt'][:10]) if it.get('closedAt') else ''
+            hits.append((date, 'issue #%d %s%s' % (it['number'], it['state'].lower(), closed), clip(it['title'], 150)))
+    return hits
+
+
+def issue_trail(n):
+    data, err = gh_json(['issue', 'view', str(n), '--repo', REPO, '--json', 'title,state,createdAt,body,comments'])
+    if err:
+        return [('', 'gh', 'issue %s: %s' % (n, clip(err, 100)))]
+    hits = [(data['createdAt'][:10], 'issue #%s %s' % (n, data['state'].lower()), clip(data['title'], 150))]
+    ids = sorted(set(re.findall(r'\bD-[A-Z]+-\d+\b', data.get('body') or '')))
+    if ids:
+        hits.append((data['createdAt'][:10], 'issue #%s body cites' % n, ' '.join(ids)))
+    for c in data.get('comments') or []:
+        date = c['createdAt'][:10]
+        body = c.get('body') or ''
+        cids = sorted(set(re.findall(r'\bD-[A-Z]+-\d+\b', body)))
+        first = clip(body.strip().split('\n', 1)[0].replace('**', ''), 140)
+        hits.append((date, 'issue #%s comment' % n, first + ((' [' + ' '.join(cids) + ']') if cids else '')))
+    return hits
+
+
+def main():
+    args = sys.argv[1:]
+    if not args or args[0] in ('-h', '--help'):
+        print(open(__file__).read().split('\n\n')[0].replace('# ', '').replace('#', ''))
+        return 0
+    since = None
+    issue = None
+    use_gh = True
+    terms = []
+    i = 0
+    while i < len(args):
+        if args[i] == '--since':
+            since = args[i + 1]
+            i += 2
+        elif args[i] == '--issue':
+            issue = args[i + 1]
+            i += 2
+        elif args[i] == '--no-gh':
+            use_gh = False
+            i += 1
+        else:
+            terms.append(args[i])
+            i += 1
+    if issue and not terms:
+        terms = ['#%s\\b' % issue]
+    if not terms:
+        sys.exit('archaeology: give a term, or --issue N')
+    trx = [rx(t) for t in terms]
+    groups = [
+        ('The decision register', register(trx, since)),
+        ('The blindspot register', blindspots(trx, since)),
+        ('Work logs', work_logs(trx, since)),
+        ('Rules', rules(trx)),
+        ('Git history (-G, on this checkout)', git_history(trx, since)),
+    ]
+    if use_gh:
+        groups.append(('Issues', issues(trx, since)))
+        if issue:
+            groups.append(('Issue #%s, its trail' % issue, issue_trail(issue)))
+    total = 0
+    print('archaeology: %s%s' % (' AND '.join(terms), (' since ' + since) if since else ''))
+    for title, hits in groups:
+        hits = sorted(set(hits), key=lambda h: (h[0] or '9999', h[1]))
+        print('\n== %s (%d)' % (title, len(hits)))
+        for date, where, what in hits:
+            print('  %-10s  %-28s  %s' % (date or '', where, what))
+        total += len(hits)
+    print('\n%d line(s). A decision listed as pending without a register OPEN row above is a claim to check.' % total)
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

@@ -7,7 +7,7 @@ paths:
 
 # Packaging & patches
 
-`packages/readme.md` is the authoritative `package.mk` reference and wins any
+`packages/README.md` is the authoritative `package.mk` reference and wins any
 disagreement with this file. What follows is the working subset — the parts
 that come up every time and the ones that are easy to get wrong.
 

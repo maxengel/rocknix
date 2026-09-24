@@ -1,0 +1,116 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# cloud-capture-stamp-test - a device-less check of cloud_capture's durable
+# stamp: finish() keeps ONE LINE PER MODE in last-capture (D-CLOUD-070, #94),
+# so the boot --full pass no longer writes over the record of the last game
+# exit, and a one-line stamp from an older build is read as its mode's line.
+#
+# It lifts finish() out of the script it is given (default: the repo's
+# cloud_capture), runs it in a subshell with CACHE pointed at a temp directory
+# and `date` faked so every epoch is chosen, and reads the file back. The same
+# sequence runs on a device as tools/cloud-round-trip's CAP12; this is what
+# runs when there is no device. To watch the guard fire, point it at the
+# finish() from before the change:
+#
+#     git show f451252587:projects/ROCKNIX/packages/network/rclone/sources/cloud_capture > /tmp/old
+#     tools/cloud-capture-stamp-test /tmp/old      # FAILs: one line, overwritten
+#     tools/cloud-capture-stamp-test               # PASSED
+#
+# Exit 0 when every check passes, 1 otherwise, 2 when it cannot run.
+set -u
+
+SCRIPT="${1:-$(dirname "$(readlink -f "$0")")/../projects/ROCKNIX/packages/network/rclone/sources/cloud_capture}"
+[ -r "${SCRIPT}" ] || { echo "cannot read ${SCRIPT}" >&2; exit 2; }
+
+# finish() as the script defines it, and nothing else of the script: it
+# reads MODE, CARD, UNIT, RC, REASON, EXITCODE, EMULATOR, CORE and CACHE, and
+# calls date, mkdir, printf, cat, tail, mv (and awk since D-CLOUD-070).
+FINISH="$(sed -n '/^finish() {/,/^}/p' "${SCRIPT}")"
+[ -n "${FINISH}" ] || { echo "no finish() found in ${SCRIPT}" >&2; exit 2; }
+
+TMP="$(mktemp -d)"; trap 'rm -rf "${TMP}"' EXIT
+CACHE="${TMP}/cloud_sync"
+STAMP="${CACHE}/last-capture"
+FAIL=0
+
+check() { # <0|nonzero> ok-text bad-text
+    if [ "$1" -eq 0 ]; then echo "    PASS  $2"; else echo "    FAIL  $3"; FAIL=$((FAIL + 1)); fi
+}
+
+# One run of finish(): the epoch `date` will answer, then the run's context.
+# finish() ends in `exit`, so it runs in a subshell; its status is the rc.
+stamp() { # NOW MODE RC UNIT [CARD] [EXITCODE] [EMULATOR] [CORE]
+    (
+        eval "${FINISH}"
+        date() { echo "${FAKE_NOW}"; }
+        FAKE_NOW="$1" MODE="$2" RC="$3" UNIT="$4" CARD="${5:-}" EXITCODE="${6:-?}" \
+            EMULATOR="${7:-}" CORE="${8:-}" REASON="" CACHE="${CACHE}"
+        finish "${RC}" >/dev/null 2>&1
+    )
+}
+
+lines()   { [ -e "${STAMP}" ] && grep -c . "${STAMP}" || echo 0; }
+modes()   { awk 'NF >= 3 { f = $3; sub(/!.*$/, "", f); print f }' "${STAMP}" 2>/dev/null | sort | tr '\n' ' ' | sed 's/ $//'; }
+line_of() { awk -v m="$1" 'NF >= 3 { f = $3; sub(/!.*$/, "", f); if (f == m) print }' "${STAMP}" 2>/dev/null; }
+show()    { echo "          last-capture: $(lines) line(s)"; sed 's/^/          | /' "${STAMP}" 2>/dev/null; }
+
+echo "cloud-capture-stamp-test: finish() from ${SCRIPT}"
+
+echo "  1. a first exit writes the one line it always did"
+mkdir -p "${CACHE}"
+stamp 1000 exit 0 "gba:Game" "" 0 retroarch mgba
+want="1000 0 exit gba:Game emu-exit=0 retroarch/mgba"
+[ "$(cat "${STAMP}" 2>/dev/null)" = "${want}" ]; check $? "the stamp is exactly '${want}'" "the stamp is '$(cat "${STAMP}" 2>/dev/null)', not '${want}'"
+
+echo "  2. a one-line stamp from before (an exit) survives a --full pass byte for byte"
+old="900 0 exit gba:Before emu-exit=0 retroarch/mgba"
+printf '%s\n' "${old}" > "${STAMP}"
+stamp 2000 full 0 ""
+grep -qxF "${old}" "${STAMP}"; check $? "the old exit line is still there, unchanged" "the old exit line is gone: $(show)"
+[ "$(lines)" = 2 ] && [ "$(modes)" = "exit full" ]; check $? "two lines: exit and full" "$(lines) line(s), modes '$(modes)'"
+[ "$(line_of full)" = "2000 0 full - emu-exit=? -/-" ]; check $? "the full line reads '2000 0 full - emu-exit=? -/-'" "the full line is '$(line_of full)'"
+show
+
+echo "  3. an exit replaces the exit line only"
+stamp 3000 exit 0 "gba:Game" "" 1 retroarch mgba
+[ "$(line_of exit)" = "3000 0 exit gba:Game emu-exit=1 retroarch/mgba" ]; check $? "the exit line is this run's" "the exit line is '$(line_of exit)'"
+! grep -qxF "${old}" "${STAMP}" && [ "$(line_of full)" = "2000 0 full - emu-exit=? -/-" ] && [ "$(lines)" = 2 ]
+check $? "the old exit line is gone, the full line stands, still two lines" "expected the exit line replaced and the full line kept; $(show)"
+
+echo "  4. a second --full replaces the full line only"
+stamp 4000 full 0 ""
+[ "$(line_of full)" = "4000 0 full - emu-exit=? -/-" ] && [ "$(line_of exit)" = "3000 0 exit gba:Game emu-exit=1 retroarch/mgba" ] && [ "$(lines)" = 2 ]
+check $? "full line at 4000, exit line unchanged, two lines" "expected the full line replaced and the exit line kept; $(show)"
+
+echo "  5. every other mode is its own line; none appears twice"
+stamp 5000 retire 0 ""
+stamp 6000 rescan 0 "gba:Game"
+stamp 7000 "" 2 ""          # a bad invocation: MODE empty reads as usage
+[ "$(lines)" = 5 ] && [ "$(modes)" = "exit full rescan retire usage" ]; check $? "five lines: exit full rescan retire usage" "$(lines) line(s), modes '$(modes)'"
+[ "$(line_of usage)" = "7000 2 usage - emu-exit=? -/-" ]; check $? "the usage line carries rc 2" "the usage line is '$(line_of usage)'"
+show
+
+echo "  6. the !card marker does not make a second exit line"
+stamp 8000 exit 0 "gba:Game" "!card" 0 retroarch mgba
+[ "$(lines)" = 5 ] && [ "$(line_of exit)" = "8000 0 exit!card gba:Game emu-exit=0 retroarch/mgba" ]
+check $? "exit!card replaced the exit line; still five lines" "expected five lines with exit!card in the exit slot; $(show)"
+stamp 9000 exit 0 "gba:Game" "" 0 retroarch mgba
+[ "$(lines)" = 5 ] && [ "$(line_of exit)" = "9000 0 exit gba:Game emu-exit=0 retroarch/mgba" ]
+check $? "and a plain exit replaced the exit!card line" "expected five lines with a plain exit in the slot; $(show)"
+
+echo "  7. a file that somehow holds a mode twice converges on the next run of that mode"
+printf '%s\n' "100 0 exit gba:A emu-exit=0 retroarch/mgba" "200 0 full - emu-exit=? -/-" "300 0 exit gba:B emu-exit=0 retroarch/mgba" "" > "${STAMP}"
+stamp 9500 exit 0 "gba:C" "" 0 retroarch mgba
+[ "$(lines)" = 2 ] && [ "$(line_of exit)" = "9500 0 exit gba:C emu-exit=0 retroarch/mgba" ] && [ "$(line_of full)" = "200 0 full - emu-exit=? -/-" ]
+check $? "one exit line, the full line kept, the blank line dropped" "expected two lines, exit gba:C and the full line; $(show)"
+
+echo "  8. a unit with spaces still parses from the back, and nothing is left beside the stamp"
+stamp 9900 exit 0 "gba:Two Words" "" 0 retroarch mgba
+[ "$(line_of exit | awk '{print $(NF-1), $NF}')" = "emu-exit=0 retroarch/mgba" ]; check $? "the two trailing fields are intact past a spaced unit" "exit line '$(line_of exit)'"
+left="$(ls -A "${CACHE}" | grep -v -e '^last-capture$' -e '^capture-failures$' || true)"
+[ -z "${left}" ]; check $? "no temp file left in the cache directory" "left behind: ${left}"
+
+echo
+if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

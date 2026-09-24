@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# png-blackout - paint a rectangle of a PNG black, with the standard library
+# only (the build host has no Pillow, and neither does tools/vm-visual-qa).
+#
+#   tools/png-blackout <in.png> <out.png> <x> <y> <width> <height>
+#
+# For the frames under docs/qa-frames/: a screendump whose title carries the
+# QA account's name is filed with that band painted out rather than not at
+# all (the README of each day says where the box is). Handles 8-bit RGB and
+# RGBA, non-interlaced, one IDAT stream, which is what QEMU's screendump
+# converted by vm-visual-qa produces; anything else is refused, not guessed.
+import struct, sys, zlib
+
+def chunks(data):
+    pos = 8
+    while pos < len(data):
+        (length,) = struct.unpack(">I", data[pos:pos + 4])
+        kind = data[pos + 4:pos + 8]
+        yield kind, data[pos + 8:pos + 8 + length]
+        pos += 12 + length
+
+def chunk(kind, body):
+    return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF)
+
+def main():
+    if len(sys.argv) != 7:
+        sys.exit(__doc__ or "usage: png-blackout <in> <out> <x> <y> <w> <h>")
+    src, dst = sys.argv[1], sys.argv[2]
+    x, y, w, h = (int(v) for v in sys.argv[3:7])
+    data = open(src, "rb").read()
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        sys.exit("not a PNG")
+    ihdr = None; idat = b""; others = []
+    for kind, body in chunks(data):
+        if kind == b"IHDR": ihdr = body
+        elif kind == b"IDAT": idat += body
+        elif kind == b"IEND": pass
+        else: others.append((kind, body))
+    width, height, depth, ctype, comp, filt, interlace = struct.unpack(">IIBBBBB", ihdr)
+    if depth != 8 or ctype not in (2, 6) or interlace != 0:
+        sys.exit(f"unsupported PNG: depth {depth}, colour type {ctype}, interlace {interlace}")
+    bpp = 3 if ctype == 2 else 4
+    stride = width * bpp
+    raw = zlib.decompress(idat)
+    rows = []; prev = bytearray(stride)
+    for r in range(height):
+        off = r * (stride + 1)
+        ftype = raw[off]; line = bytearray(raw[off + 1:off + 1 + stride])
+        if ftype == 1:
+            for i in range(bpp, stride): line[i] = (line[i] + line[i - bpp]) & 255
+        elif ftype == 2:
+            for i in range(stride): line[i] = (line[i] + prev[i]) & 255
+        elif ftype == 3:
+            for i in range(stride):
+                left = line[i - bpp] if i >= bpp else 0
+                line[i] = (line[i] + ((left + prev[i]) >> 1)) & 255
+        elif ftype == 4:
+            for i in range(stride):
+                a = line[i - bpp] if i >= bpp else 0; b = prev[i]; c = prev[i - bpp] if i >= bpp else 0
+                p = a + b - c; pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                pred = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                line[i] = (line[i] + pred) & 255
+        elif ftype != 0:
+            sys.exit(f"unsupported filter {ftype} on row {r}")
+        rows.append(line); prev = line
+    for r in range(max(0, y), min(height, y + h)):
+        for c in range(max(0, x), min(width, x + w)):
+            rows[r][c * bpp:c * bpp + 3] = b"\x00\x00\x00"
+    out = b"".join(b"\x00" + bytes(row) for row in rows)
+    png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
+    for kind, body in others:
+        if kind in (b"tEXt", b"iTXt", b"zTXt", b"pHYs", b"gAMA", b"sRGB"): png += chunk(kind, body)
+    png += chunk(b"IDAT", zlib.compress(out, 9)) + chunk(b"IEND", b"")
+    open(dst, "wb").write(png)
+    print(f"{dst}: {width}x{height}, {w}x{h} at ({x},{y}) painted out")
+
+if __name__ == "__main__":
+    main()

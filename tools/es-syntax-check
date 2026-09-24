@@ -1,0 +1,113 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# es-syntax-check - compile one EmulationStation source file with the image
+# build's own compiler and flags, syntax only, before the pin moves.
+#
+#   tools/es-syntax-check <path/to/File.cpp> [more .cpp files]
+#   tools/es-syntax-check --tree <es worktree> <File.cpp>...   # headers changed too
+#
+# An EmulationStation edit here has no compiler nearer than an image build:
+# the cross toolchain, the sysroot and the flags live in a build root, and a
+# mistake that any compiler would have caught costs a full build cycle to
+# find. On 2026-09-21 a loop body grew from one statement to three without
+# braces; the syntax was fine, the scoping was not, and GENERIC_X64 run 12
+# died at emulationstation with `'name' was not declared` twenty minutes
+# after the pin was bumped (blindspot 49).
+#
+# So: find the newest emulationstation build directory under the build root
+# (`ES_BUILD_ROOT`, default the generic-x64 worktree's), ask ninja for the
+# exact command it used on the object that corresponds to the file, point
+# that command at the edited file instead, drop the output and dependency
+# flags, add -fsyntax-only, and run it. Headers come from the build tree, so
+# a header the edit changed is not seen -- point at the edited tree with
+# `--with <dir>` (adds -iquote<dir>, which a `#include "..."` searches before
+# every -I of the build, so the edited header wins over the build tree's
+# copy; -I would come after them and lose) -- or, when headers changed in
+# both es-core and es-app, `--tree <worktree>`, which builds a farm of the
+# build tree's headers with only the changed ones pointed at the worktree,
+# so `#pragma once` sees each header once. Or accept that this checks the
+# .cpp alone.
+#
+# Exit 0 when every file passes, 1 when one does not (the compiler's errors
+# are printed), 2 when the check cannot run -- no build root, no ninja
+# directory, no command for that object. A check that cannot run has not
+# passed (engineering-practices.md, "Guards must fail closed").
+set -uo pipefail
+ROOT_DEFAULT=/workspace/repos/rocknix.worktrees/generic-x64/build.ROCKNIX-GENERIC_X64.x86_64
+BROOT="${ES_BUILD_ROOT:-$ROOT_DEFAULT}"
+WITH=""
+TREE=""
+FILES=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --root) BROOT="${2:?}"; shift 2 ;;
+    --with) WITH="$WITH -iquote${2:?}"; shift 2 ;;
+    --tree) TREE="${2:?}"; shift 2 ;;
+    -h|--help) sed -n '5,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) FILES+=("$1"); shift ;;
+  esac
+done
+[ ${#FILES[@]} -gt 0 ] || { echo "es-syntax-check: name at least one .cpp" >&2; exit 2; }
+[ -d "$BROOT" ] || { echo "es-syntax-check: no build root at $BROOT (ES_BUILD_ROOT, --root)" >&2; exit 2; }
+NINJA="$BROOT/toolchain/bin/ninja"; [ -x "$NINJA" ] || NINJA=$(command -v ninja || true)
+[ -n "$NINJA" ] || { echo "es-syntax-check: no ninja in $BROOT/toolchain/bin or on PATH" >&2; exit 2; }
+# The newest emulationstation build directory: a stale one has the right
+# flags too, and its headers differ only where the pin moved.
+BD=$(ls -td "$BROOT"/build/emulationstation-*/.x86_64-rocknix-linux-gnu "$BROOT"/build/emulationstation-*/.*-rocknix-linux-gnu* 2>/dev/null | head -1)
+[ -n "$BD" ] || { echo "es-syntax-check: no emulationstation build directory under $BROOT/build" >&2; exit 2; }
+echo "using $(basename "$(dirname "$BD")")"
+# --tree <worktree>: an edit that changed headers in both es-core and es-app.
+# Two plain --with dirs break on `#pragma once` -- a header reached through
+# the worktree in one place and through the build tree in another is two
+# files to the compiler (Delegate.h, 2026-09-22) -- so the farm below is
+# the build tree's es-core/src and es-app/src as symlinks (the build tree's
+# inodes), with only the headers that differ from the worktree's pointed at
+# the worktree. Every include then resolves to one file, and the edited
+# headers win.
+if [ -n "$TREE" ]; then
+  [ -d "$TREE/es-core/src" ] && [ -d "$TREE/es-app/src" ] || { echo "es-syntax-check: --tree $TREE has no es-core/src and es-app/src" >&2; exit 2; }
+  ESB=$(dirname "$BD"); FARM=$(mktemp -d "${TMPDIR:-/tmp}/es-syntax-farm.XXXXXX"); trap 'rm -rf "$FARM"' EXIT
+  for part in es-core es-app; do
+    cp -rs "$ESB/$part/src" "$FARM/$part"
+    while IFS= read -r h; do
+      rel=${h#"$TREE/$part/src/"}
+      if [ ! -e "$ESB/$part/src/$rel" ] || ! cmp -s "$h" "$ESB/$part/src/$rel"; then
+        mkdir -p "$FARM/$part/$(dirname "$rel")"; ln -sfn "$h" "$FARM/$part/$rel"; echo "  (header) $part/src/$rel from the tree"
+      fi
+    done < <(find "$TREE/$part/src" -name '*.h' -type f)
+    WITH="$WITH -iquote$FARM/$part"
+  done
+fi
+fail=0
+for f in "${FILES[@]}"; do
+  [ -f "$f" ] || { echo "  MISSING $f" >&2; fail=1; continue; }
+  abs=$(readlink -f "$f")
+  # es-app/src/guis/GuiCloudTransfer.cpp -> es-app/CMakeFiles/emulationstation.dir/src/guis/GuiCloudTransfer.cpp.o
+  rel=${abs#*/es-app/}; comp=es-app; dir=emulationstation
+  case "$abs" in
+    */es-core/*) rel=${abs#*/es-core/}; comp=es-core; dir=es-core ;;
+    */es-app/*) ;;
+    *) echo "  SKIP    $f: not under es-app/ or es-core/" >&2; fail=1; continue ;;
+  esac
+  obj="$comp/CMakeFiles/$dir.dir/$rel.o"
+  cmd=$("$NINJA" -C "$BD" -t commands "$obj" 2>/dev/null | tail -1)
+  if [ -z "$cmd" ]; then
+    # A file the build has never seen -- new in the edit -- borrows the
+    # command of a sibling object in its directory: the flags are the
+    # directory's, and the source is substituted below.
+    sib=$("$NINJA" -C "$BD" -t targets all 2>/dev/null | sed -n "s#^\($(dirname "$obj")/[^/]*\.cpp\.o\):.*#\1#p" | grep -v "/$(basename "$rel").o\$" | head -1)
+    [ -n "$sib" ] && cmd=$("$NINJA" -C "$BD" -t commands "$sib" 2>/dev/null | tail -1)
+    [ -n "$cmd" ] && echo "  (new)   $f: borrowing the command of $(basename "$sib" .o)"
+  fi
+  [ -n "$cmd" ] || { echo "  NO-CMD  $f: ninja has no command for $obj and no sibling to borrow from" >&2; fail=1; continue; }
+  new=$(printf '%s' "$cmd" | sed -E "s#-c [^ ]+\.(cpp|cc|cxx)( |\$)#-c ${abs} #; s# -o [^ ]+\.o# #; s# -MF [^ ]+# #; s# -MD # #; s# -MT [^ ]+# #")
+  new="$new $WITH -fsyntax-only"
+  if out=$(cd "$BD" && eval "$new" 2>&1); then
+    echo "  OK      $f"
+  else
+    echo "  FAIL    $f"; printf '%s\n' "$out" | grep -E 'error|note:' | head -12 | sed 's/^/          /'; fail=1
+  fi
+done
+[ "$fail" = 0 ] && echo "PASS" || { echo "FAIL"; exit 1; }

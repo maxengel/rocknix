@@ -225,7 +225,7 @@ write next. Read from `backuptool`, `cloud_backup`, `cloud_restore`,
 
 | Path | What |
 | --- | --- |
-| `/ROCKNIX/SaveVersions/` | discarded saves and sync-replaced copies, the cloud as source of truth (D-CLOUD-036); replaces the `-replaced/` sibling's role for anything a player can restore |
+| ~~`/ROCKNIX/SaveVersions/`~~ | **superseded by D-CLOUD-095 (2026-09-11): one hidden store, `Saves/.history/`, declared in `Saves/README.md`, replaces both planned siblings (`-replaced/`, `-discarded/`) and this one.** Left here because a term must stay readable against every layout that has shipped; marked by the #147 sweep, which found it still listed as current |
 | `savestates/.rocknix/manifest-<device-id>.json` | the per-device manifests (D-CLOUD-031) |
 | `savestates/.snapshots/` | #25's local snapshots — needs its allowlist exclusion as a command-line flag, not a defaults rule |
 

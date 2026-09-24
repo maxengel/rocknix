@@ -1,0 +1,33 @@
+# Start: the carousel on the system the suite line set with StartupSystem
+# (a game list's first entry is the fixture game). End: the carousel.
+#
+# The SAVE STATE MANAGER for the list's first game: carousel, list, X for
+# GAME OPTIONS, A for the manager, right to the capture tile, back out.
+# Read the manager frames for the START NEW GAME arrow (one arrow, one
+# direction, one size on every system -- #250) and the capture tile at the
+# system's aspect (#243) and turn (#245, #248).
+settle
+shot 0-carousel
+key x
+wait-for-change
+settle
+shot 1-list
+key s
+wait-for-change 6
+settle
+shot 2-game-options
+key x
+wait-for-change 10
+settle 10 2
+shot 3-manager
+key right
+wait-for-change 4
+settle
+shot 4-manager-next-tile
+key z
+wait-for-change
+settle
+key z
+wait-for-change
+settle
+dismiss-dialogs

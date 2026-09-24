@@ -1,0 +1,431 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# ra-offline-test - the offline RetroAchievements scenario on a QA guest, end to
+# end, with a PASS/FAIL line per assertion (fork #166, D-RA-001/002/004).
+#
+#   ./tools/ra-offline-test --port 10026 --identity /tmp/rocknix-vm-pair/qa-key \
+#       --monitor /tmp/rocknix-qemu-monitor-d.sock --serial /tmp/rocknix-qemu-serial-d.sock
+#   ./tools/ra-offline-test ... --control        # the toggle OFF: the same unlock is lost (#162)
+#   ./tools/ra-offline-test ... --game bobl      # this game, whatever the account holds
+#   ./tools/ra-offline-test ... --frames DIR     # also frame the interface after each exit (the sync card's sentences, #173)
+#   ./tools/ra-offline-test --list-games         # the candidates, in the order they are tried
+#
+# What one run does, in order (the proxy on; --control differs where noted):
+#
+#   1 the three free homebrew titles with RetroAchievements sets
+#     (/workspace/artifacts/rocknix-qa-roms, README there) are on the guest, sha256
+#     checked; a ROM this had to copy means a reboot, so the interface scans it
+#   2 a cheap achievement the QA account has NOT earned is chosen, read from
+#     RetroAchievements' own API on the host (the web key from
+#     ~/.ROCKNIX/qa-accounts, never printed); all spent, or the API unreachable,
+#     is a FAIL that says so -- this never passes over nothing
+#   3 the QA account goes on (tools/qa-accounts), the toggle goes on
+#     (raofflineproxy-ctl enable; --control: disable), the award queue reads 0
+#   4 the game is launched online through EmulationStation's own launch path
+#     (POST /launch, the same code as pressing A): logged in, the set loaded,
+#     RetroArch talking to 127.0.0.1:8080 (--control: retroachievements.org),
+#     and no synthetic "Casual Only" award (D-RA-005)
+#   5 the link is cut on the QEMU monitor (set_link net0 off); the guest's
+#     eth0 reads down over serial, and the proxy's online_state.json reads
+#     false before any key is sent, so the award meets a proxy that already
+#     knows it is offline
+#   6 the game is driven over the monitor, one press at a time with the route
+#     for that title, until RetroArch logs `Awarding achievement <id>`
+#     (bounded, 4 min; Tobu's takes about 90 s); the proxy
+#     answered `queued_offline` and logged `Queued offline award`
+#     (--control: no such word anywhere -- RetroArch is on its own)
+#   7 the game is ended with the link still down, through the shipped
+#     execute_kill; `raofflineproxy-ctl pending` answers 1 (--control: 0)
+#   8 the link comes back; within 90 s the proxy logs `Flush complete ...
+#     flushed=1` and leaves its last-flush stamp; pending answers 0
+#   9 RetroAchievements' API shows the achievement earned (--control: NOT
+#     earned after 90 s -- #162's loss, reproduced); a relaunch online reads
+#     one more unlocked (--control: the same count as before)
+#  10 cleanup: toggle and RetroAchievements switches back as found, the
+#     account cleared, the proxy's folder removed where this turned the proxy
+#     on (its sqlite holds the cached session token), the link on
+#
+# Every guest line this prints goes through the credential filter
+# (generic-x64-vm-testing.md) with the account name masked: exec.log carries
+# `cheevos_password = "..."` from setsettings.sh, and RetroArch names the
+# account on login. Nothing here touches a handheld or a cloud account; the
+# only account is the QA RetroAchievements one, and one PASS spends one of
+# its cheap achievements (the candidates below are what it has to spend --
+# a nightly needs a reset of the account's progress on those games, or a
+# fresh account, once they are gone).
+#
+# Exit 0 when every assertion passed, 1 otherwise, 2 on usage or a
+# precondition that could not be checked. A guest that does not answer, a
+# ROM that is not there, a monitor or serial socket that is missing, are
+# FAILs before anything runs -- a guard that cannot run has not passed.
+set -u
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+HOST=root@127.0.0.1; PORT=10026; KEY=/tmp/rocknix-vm-pair/qa-key
+MONITOR=/tmp/rocknix-qemu-monitor-d.sock; SERIAL=/tmp/rocknix-qemu-serial-d.sock
+ROMS="${ROCKNIX_ARTIFACTS:-/workspace/artifacts}/rocknix-qa-roms"
+CONTROL=0; GAME=""; NETDEV=net0; FRAMES=""
+ACCOUNTS="${QA_ACCOUNTS:-$HOME/.ROCKNIX/qa-accounts}"
+# The three titles (all copied and checked), and the CANDIDATES among them:
+# an achievement with a route -- route_<key> below -- that has been driven
+# to `Awarding achievement` on a guest, not guessed at. One so far: Tobu's
+# hidden song from the title's menu, #166's proof (2026-09-13) and the same
+# cadence re-driven in hardcore on a pair guest with the link cut
+# (2026-09-14; hardcore because the softcore unlock was spent, and lost on
+# purpose: killed before the link came back). Böbl's Dive Ball and Niñoid's
+# double jump were tried the same day and are not routed: Böbl's bubble has
+# to be sprung over a pillar from a full dive on a timing no blind key
+# sequence hit, and Niñoid's tutorial kid did not jump on A, B or Up.
+# Adding a candidate means driving its route to the award once and saying
+# where; a route nobody has seen reach the unlock is a guard with no
+# observed positive.
+GAMES="tobu ninoid bobl"
+CANDIDATES="tobu"
+declare -A SYSTEM=([tobu]=gbc [ninoid]=gb [bobl]=nes)
+declare -A GAMEID=([tobu]=15738 [ninoid]=31199 [bobl]=4902)
+declare -A ACHID=([tobu]=100359 [ninoid]=474237 [bobl]=111764)
+declare -A TITLE=([tobu]="Potato-tan Secret" [ninoid]="Climbing Trees" [bobl]="Go Deeper")
+declare -A SRC=([tobu]="tobu/Tobu Tobu Girl Deluxe.gb" [ninoid]="ninoid/Ninoid.gb" [bobl]="bobl/Bobl (v1.2)-unpacked/böbl-1.2.nes")
+declare -A DST=([tobu]="/storage/roms/gbc/Tobu Tobu Girl Deluxe.gb" [ninoid]="/storage/roms/gb/Ninoid.gb" [bobl]="/storage/roms/nes/Bobl.nes")
+declare -A SHA=([tobu]=0a0e8018dbbc8d7f [ninoid]=a40191c169c68e66 [bobl]=025ec44d0d84ac46)
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --host) HOST=$2; shift 2 ;;
+    --port) PORT=$2; shift 2 ;;
+    --identity) KEY=$2; shift 2 ;;
+    --monitor) MONITOR=$2; shift 2 ;;
+    --serial) SERIAL=$2; shift 2 ;;
+    --roms) ROMS=$2; shift 2 ;;
+    --netdev) NETDEV=$2; shift 2 ;;
+    --control) CONTROL=1; shift ;;
+    --game) GAME=$2; shift 2 ;;
+    --frames) FRAMES=$2; shift 2 ;;
+    --list-games) for g in $GAMES; do r=routed; case " $CANDIDATES " in *" $g "*) ;; *) r="no route yet" ;; esac; printf '%-7s %-4s game %-6s achievement %-7s %-18s %s\n' "$g" "${SYSTEM[$g]}" "${GAMEID[$g]}" "${ACHID[$g]}" "${TITLE[$g]}" "$r"; done; exit 0 ;;
+    -h|--help) sed -n '5,62p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+[ -z "$GAME" ] || case " $CANDIDATES " in *" $GAME "*) ;; *) echo "ra-offline-test: --game is one of: $CANDIDATES (--list-games)" >&2; exit 2 ;; esac
+SSHO=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=8 -o BatchMode=yes -p "$PORT" -i "$KEY")
+S() { ssh -n "${SSHO[@]}" "$HOST" "$@"; }
+# The serial console: the channel that works with the link down (tools/vm-serial).
+# The console's lines end in CRLF; vm-serial strips only the outermost, so
+# a second line keeps its \r and "0" reads as "0<CR>" -- the control's
+# pending check failed on exactly that (2026-09-14).
+SER() { python3 "$ROOT/tools/vm-serial" --socket "$SERIAL" --timeout "${2:-25}" sh "$1" 2>/dev/null | tr -d '\r'; }
+MON() { printf '%s\n' "$1" | socat -t 1 - "UNIX-CONNECT:$MONITOR" >/dev/null 2>&1; }
+# With --frames: screendumps of the interface for ~12 s after a game exit,
+# 0.6 s apart, kept as <name>-<n>.png -- the exit sync card's sentence about
+# the awards (D-RA-004) is on screen for a few seconds and gone; a person
+# reads the frames, this tool asserts nothing from them.
+frames_after_exit() {
+  [ -n "$FRAMES" ] || return 0
+  mkdir -p "$FRAMES"; local i
+  for i in $(seq 1 20); do "$ROOT/tools/vm-visual-qa" --monitor "$MONITOR" shot "$FRAMES/$1-$i.png" >/dev/null 2>&1; sleep 0.6; done
+  say "frames: $FRAMES/$1-1..20.png"
+}
+# A key on the monitor, held for ms (QEMU's default press is 100 ms; a
+# platformer wants longer holds), then a gap so the game sees it released.
+press() { MON "sendkey $1 ${2:-120}"; sleep "$(awk -v h="${2:-120}" -v g="${3:-150}" 'BEGIN{printf "%.3f", (h+g)/1000}')"; }
+FAILS=0; PASSES=0
+check() { if [ "$1" = 0 ]; then echo "  PASS  $2"; PASSES=$((PASSES+1)); else echo "  FAIL  $2"; FAILS=$((FAILS+1)); fi; }
+# Nothing read from the guest is printed raw: the account's name is masked
+# and any line shaped like a value is dropped (generic-x64-vm-testing.md).
+ACCOUNT=""
+mask() { grep -v -i -E 'passw|pass=|pass:|token=|key=' | { if [ -n "$ACCOUNT" ]; then sed "s/${ACCOUNT}/<account>/g"; else cat; fi; }; }
+say() { echo "  |     $*"; }
+now() { date +%s; }
+MODE="proxy on"; [ "$CONTROL" = 1 ] && MODE="control: toggle off"
+echo "ra-offline-test: guest :$PORT, $MODE, $(date -u '+%Y-%m-%d %H:%M UTC')"
+
+# --- 0 preconditions: every one a FAIL, none a silent skip ------------------
+echo "0  preconditions"
+have_all=0
+for t in socat curl jq python3 sha256sum; do command -v "$t" >/dev/null 2>&1 || { check 1 "$t on the host"; have_all=1; }; done
+[ -S "$MONITOR" ] || { check 1 "monitor socket $MONITOR"; have_all=1; }
+[ -S "$SERIAL" ] || { check 1 "serial socket $SERIAL"; have_all=1; }
+[ -f "$ACCOUNTS" ] || { check 1 "QA accounts file $ACCOUNTS"; have_all=1; }
+for g in $GAMES; do [ -f "$ROMS/${SRC[$g]}" ] || { check 1 "ROM on the host: $ROMS/${SRC[$g]}"; have_all=1; }; done
+BUILD=$(S 'sed -n "s/^BUILD_ID=//p" /etc/os-release' 2>/dev/null | tr -d '"' | cut -c1-10)
+[ -n "$BUILD" ] || { check 1 "guest :$PORT answers over ssh"; have_all=1; }
+[ "$have_all" = 0 ] || { echo; echo "FAILED ($FAILS) -- preconditions; nothing ran"; exit 1; }
+check 0 "guest :$PORT answers over ssh (build $BUILD); monitor, serial, ROMs and the accounts file are here"
+check "$(S 'test -x /usr/bin/raofflineproxy-ctl'; echo $?)" "/usr/bin/raofflineproxy-ctl is on the image"
+check "$(S 'pgrep -x emulationstation >/dev/null && curl -s -o /dev/null -m 5 http://127.0.0.1:1234/ >/dev/null 2>&1'; echo $?)" "EmulationStation is up and its HTTP API answers on the guest's loopback"
+ser_up=$(SER 'echo serial-ok' 8)
+check "$([ "$ser_up" = serial-ok ]; echo $?)" "the serial console answers"
+[ "$FAILS" = 0 ] || { echo; echo "FAILED ($FAILS) -- preconditions; nothing ran"; exit 1; }
+# The account's name, for masking, and the web key for the API -- sourced in
+# this shell, used in subshells, printed by nothing.
+mode=$(stat -c %a "$ACCOUNTS"); [ "$mode" = 600 ] || { check 1 "$ACCOUNTS is mode $mode, must be 600"; echo; echo "FAILED ($FAILS)"; exit 1; }
+# shellcheck disable=SC1090
+set -a; . "$ACCOUNTS"; set +a
+ACCOUNT="${RA_QA_USER:-}"
+[ -n "$ACCOUNT" ] && [ -n "${RA_QA_WEBKEY:-}" ] || { check 1 "RA_QA_USER and RA_QA_WEBKEY are set in $ACCOUNTS"; echo; echo "FAILED ($FAILS)"; exit 1; }
+
+# --- 1 the ROMs ---------------------------------------------------------------
+echo "1  the games with RetroAchievements sets are on the guest"
+copied=0
+for g in $GAMES; do
+  dst="${DST[$g]}"
+  if ! S "test -f '$dst'"; then
+    # Over ssh's stdin, not scp: the destination has spaces, and scp's two
+    # protocols disagree about whether the remote path is quoted.
+    ssh "${SSHO[@]}" "$HOST" "mkdir -p '$(dirname "$dst")' && cat > '$dst'" < "$ROMS/${SRC[$g]}"
+    copied=1; say "copied ${SRC[$g]} -> $dst"
+  fi
+  got=$(S "sha256sum '$dst' 2>/dev/null | cut -c1-16")
+  check "$([ "$got" = "${SHA[$g]}" ]; echo $?)" "$g: $dst sha256 ${SHA[$g]}... (got ${got:-none})"
+done
+[ "$FAILS" = 0 ] || { echo; echo "FAILED ($FAILS) -- a ROM is missing or wrong; nothing launched"; exit 1; }
+if [ "$copied" = 1 ]; then
+  say "a ROM was copied: rebooting so EmulationStation scans it"
+  S 'systemctl reboot' 2>/dev/null; sleep 8
+  for i in $(seq 1 60); do S 'pgrep -x emulationstation >/dev/null' 2>/dev/null && break; sleep 3; done; sleep 15
+  check "$(S 'pgrep -x emulationstation >/dev/null'; echo $?)" "EmulationStation back after the reboot"
+fi
+
+# --- 2 which achievement -------------------------------------------------------
+echo "2  a cheap achievement the QA account has not earned"
+# RetroAchievements' API, from the host: the account's progress on a game.
+# Prints `1 <DateEarned>` or `0` for the id, nothing when the API did not
+# answer (an unknown is never read as unearned -- it would launch a run that
+# can only end in a route timeout blamed on the route).
+earned() {  # game-id achievement-id
+  # The URL, key and all, reaches curl as a config line on stdin (-K -),
+  # never as an argument: a value in argv is in every `ps` for the length
+  # of the request (#151 PL-09's rule; audit #186 PL-14).
+  printf 'url = "https://retroachievements.org/API/API_GetGameInfoAndUserProgress.php?g=%s&u=%s&y=%s"\n' "$1" "${RA_QA_USER}" "${RA_QA_WEBKEY}" \
+    | curl -s -m 20 -K - 2>/dev/null \
+    | jq -r --arg id "$2" 'if (.Achievements|type)=="object" then (if .Achievements[$id].DateEarned then "1 \(.Achievements[$id].DateEarned)" else "0" end) else empty end' 2>/dev/null
+}
+PICK=""; spent=""; unknown=""
+for g in ${GAME:-$CANDIDATES}; do
+  e=$(earned "${GAMEID[$g]}" "${ACHID[$g]}")
+  case "$e" in
+    0) say "$g: ${ACHID[$g]} ${TITLE[$g]} -- not earned"; PICK=$g; break ;;
+    1*) say "$g: ${ACHID[$g]} ${TITLE[$g]} -- earned on the QA account ${e#1 }"; spent="${spent}${spent:+; }${ACHID[$g]} ${TITLE[$g]} (game ${GAMEID[$g]}, earned ${e#1 })" ;;
+    *) say "$g: RetroAchievements' API did not answer for game ${GAMEID[$g]}"; unknown="${unknown}${unknown:+, }$g" ;;
+  esac
+done
+if [ -z "$PICK" ]; then
+  if [ -n "$unknown" ]; then check 1 "RetroAchievements' API did not answer for: $unknown -- whether the account has anything left to unlock is unknown, so nothing runs"
+  else check 1 "the QA account has already earned every achievement this fixture can reach: ${spent} -- reset the account's progress on that game at retroachievements.org (or use a second QA account) and run again"; fi
+  echo; echo "FAILED ($FAILS) -- no achievement to unlock; nothing launched"; exit 1
+fi
+check 0 "chosen: $PICK -- ${TITLE[$PICK]} (achievement ${ACHID[$PICK]}, game ${GAMEID[$PICK]}, ${SYSTEM[$PICK]})"
+ROM="${DST[$PICK]}"; AID="${ACHID[$PICK]}"; GID="${GAMEID[$PICK]}"
+
+# --- 3 account and toggle ------------------------------------------------------
+echo "3  the QA account on, the toggle $([ "$CONTROL" = 1 ] && echo off || echo on)"
+# As found, for the cleanup: the two RetroAchievements switches and the toggle.
+RA_WAS=$(S '. /etc/profile; get_setting global.retroachievements'); HC_WAS=$(S '. /etc/profile; get_setting global.retroachievements.hardcore')
+TOGGLE_WAS=$(S 'raofflineproxy-ctl status 2>/dev/null | sed -n "s/^enabled=//p"')
+say "as found: global.retroachievements=${RA_WAS:-unset} hardcore=${HC_WAS:-unset} toggle enabled=${TOGGLE_WAS:-?}"
+WE_ENABLED=0
+cleanup() {
+  echo "10 cleanup"
+  S 'pgrep -f ^/usr/bin/retroarch >/dev/null && /tmp/ra-offline-kill; sleep 2; pkill -f ^/usr/bin/retroarch 2>/dev/null; rm -f /tmp/ra-offline-kill; true' >/dev/null 2>&1
+  MON "set_link $NETDEV on"
+  for i in $(seq 1 20); do S true 2>/dev/null && break; sleep 3; done
+  if [ "${TOGGLE_WAS:-0}" = 1 ]; then S 'raofflineproxy-ctl enable' >/dev/null 2>&1; else S 'raofflineproxy-ctl disable' >/dev/null 2>&1; fi
+  [ "$WE_ENABLED" = 1 ] && S 'raofflineproxy-ctl flushed >/dev/null 2>&1; rm -rf /storage/.config/raofflineproxy' >/dev/null 2>&1
+  "$ROOT/tools/qa-accounts" "$PORT" clear 2>&1 | sed 's/^/  |     /'
+  S ". /etc/profile; set_setting global.retroachievements '${RA_WAS:-default}'; set_setting global.retroachievements.hardcore '${HC_WAS:-default}'" >/dev/null 2>&1
+  st=$(S 'raofflineproxy-ctl status 2>/dev/null | tr "\n" " "'); link=$(S 'cat /sys/class/net/eth0/operstate 2>/dev/null')
+  say "left: ${st}eth0=${link:-?} account cleared; global.retroachievements=${RA_WAS:-unset} hardcore=${HC_WAS:-unset} put back"
+  echo; if [ "$FAILS" = 0 ]; then echo "PASSED ($PASSES)"; else echo "FAILED ($FAILS of $((FAILS+PASSES)))"; fi
+  [ "$FAILS" = 0 ]
+}
+"$ROOT/tools/qa-accounts" "$PORT" ra > /tmp/ra-offline-acct.$$ 2>&1; rc=$?
+# qa-accounts prints names and never values (its contract), so its line is
+# masked for the account's name but not dropped by the value filter, which
+# would eat it on the word "password".
+check "$rc" "tools/qa-accounts $PORT ra: $(sed "s/${ACCOUNT}/<account>/g" /tmp/ra-offline-acct.$$ | head -1)"; rm -f /tmp/ra-offline-acct.$$
+[ "$rc" = 0 ] || { echo; echo "FAILED ($FAILS) -- no account; nothing launched"; exit 1; }
+if [ "$CONTROL" = 1 ]; then
+  S 'raofflineproxy-ctl disable' >/dev/null 2>&1
+  st=$(S 'raofflineproxy-ctl status 2>/dev/null | tr "\n" " "')
+  check "$(case "$st" in *"enabled=0 marker=0 service=inactive"*) echo 0 ;; *) echo 1 ;; esac)" "raofflineproxy-ctl status: ${st}(the toggle off)"
+  check "$(S 'netstat -ltn 2>/dev/null | grep -q "127\.0\.0\.1:8080 "'; [ $? != 0 ]; echo $?)" "nothing listens on 127.0.0.1:8080"
+else
+  S 'raofflineproxy-ctl enable' >/dev/null 2>&1; WE_ENABLED=1; [ "${TOGGLE_WAS:-0}" = 1 ] && WE_ENABLED=0
+  st=$(S 'raofflineproxy-ctl status 2>/dev/null | tr "\n" " "')
+  check "$(case "$st" in *"enabled=1 marker=1 service=active"*) echo 0 ;; *) echo 1 ;; esac)" "raofflineproxy-ctl status: ${st}(the toggle on)"
+  # The unit is Type=simple, so `status` says active the moment python3 starts;
+  # the socket appears about a second later (RC 31253072d6: t+1 s). Wait for it,
+  # bounded, and fail closed if it never comes.
+  port_rc=1
+  for _i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    S 'netstat -ltn 2>/dev/null | grep -q "127\.0\.0\.1:8080 "' && { port_rc=0; break; }
+    sleep 1
+  done
+  check "$port_rc" "the proxy listens on 127.0.0.1:8080 (waited up to 15 s for the socket)"
+  p=$(S 'raofflineproxy-ctl pending 2>/dev/null'); prc=$(S 'raofflineproxy-ctl pending >/dev/null 2>&1; echo $?')
+  check "$([ "$p" = 0 ] && [ "$prc" = 1 ]; echo $?)" "the award queue is empty before the run (pending=${p:-?} exit ${prc:-?})"
+  S 'rm -f /storage/.config/raofflineproxy/last-flush' >/dev/null 2>&1
+fi
+[ "$FAILS" = 0 ] || { cleanup; exit 1; }
+# The shipped exit hotkey, extracted from the installed input_sense so the
+# signal and its marker are the code under test (tools/emulator-exit-test).
+S 'cat > /tmp/ra-offline-kill <<"H"
+#!/bin/bash
+DEBUG=false; log() { :; }
+eval "$(sed -n "/^execute_kill()/,/^}/p" /usr/bin/input_sense)"
+execute_kill
+H
+chmod +x /tmp/ra-offline-kill; pgrep -f ^/usr/bin/retroarch >/dev/null && { /tmp/ra-offline-kill; sleep 3; }; true' >/dev/null 2>&1
+
+# --- 4 online launch -----------------------------------------------------------
+echo "4  the game launched online through the interface"
+launch() {  # ROM -> the HTTP status, and RetroArch running
+  local http; http=$(S "curl -s -o /dev/null -w '%{http_code}' -m 20 -X POST -H 'Content-Type: text/plain' --data '$1' http://127.0.0.1:1234/launch")
+  echo "$http"
+}
+wait_log() {  # over ssh: pattern, seconds -> 0 when exec.log has it
+  local i; for i in $(seq 1 "$2"); do S "grep -q -E '$1' /var/log/exec.log 2>/dev/null" && return 0; sleep 1; done; return 1
+}
+# A fresh cartridge save, so the route starts where it was written from
+# (RetroArch keeps saves beside the ROM on this image: savefiles_in_content_dir).
+S "rm -f '${ROM%.*}.srm' '${ROM%.*}.rtc'" >/dev/null 2>&1
+# The previous launch's log goes first. runemu.sh writes exec.log afresh
+# per launch, but a launch that never happens leaves the old file in place,
+# and every log check below would then pass on lines another run wrote --
+# which is exactly what happened on 2026-09-21 (run 2 on d55169e59e: POST
+# /launch answered 200, RetroArch never appeared, and "logged in",
+# "Identified game" and "achievements active" all PASSed from a log three
+# hours old). No file, no false pass.
+S 'rm -f /var/log/exec.log' >/dev/null 2>&1
+# The interface on the carousel first. A page left open by a previous walk
+# -- a finished transfer page waiting on A or B, a dialog -- takes the
+# launch's 200 and launches nothing (2026-09-21, the same run as above).
+# vm-visual-qa's dismiss-dialogs presses B until the screen stops changing.
+printf 'dismiss-dialogs\nsettle\n' > /tmp/ra-offline-dismiss.steps
+"$ROOT/tools/vm-visual-qa" --monitor "$MONITOR" run /tmp/ra-offline-dismiss.steps --outdir /tmp >/dev/null 2>&1
+rm -f /tmp/ra-offline-dismiss.steps
+http=$(launch "$ROM")
+for i in $(seq 1 45); do S 'pgrep -f ^/usr/bin/retroarch >/dev/null' 2>/dev/null && break; sleep 1; done
+check "$(S 'pgrep -f ^/usr/bin/retroarch >/dev/null'; echo $?)" "POST /launch $ROM -> HTTP ${http:-?}; RetroArch running"
+if ! S 'pgrep -f ^/usr/bin/retroarch >/dev/null' 2>/dev/null; then
+  # Nothing below can be true without a running emulator; say what the
+  # interface was doing instead and stop, rather than grade twelve more
+  # lines against a log that does not exist.
+  say "the interface's last lines: $(S 'tail -3 /var/log/es_log.txt 2>/dev/null | cut -c1-140' | mask | tr '\n' ' ')"
+  say "exec.log after the launch: $(S 'ls -la /var/log/exec.log 2>&1 | cut -c1-100')"
+  [ -n "$FRAMES" ] && "$ROOT/tools/vm-visual-qa" --monitor "$MONITOR" shot "$FRAMES/no-launch.png" >/dev/null 2>&1 && say "frame: $FRAMES/no-launch.png"
+  cleanup; exit 1
+fi
+wait_log 'logged in successfully' 60; check $? "RetroArch: logged in"
+wait_log "Identified game: $GID " 60; check $? "RetroArch: Identified game: $GID"
+wait_log 'achievements active' 30; setline=$(S 'grep -m1 -o -E "Set [0-9]+: [0-9]+/[0-9]+ achievements active" /var/log/exec.log' | mask)
+check "$([ -n "$setline" ]; echo $?)" "RetroArch: ${setline:-no 'achievements active' line}"
+TOTAL=$(echo "$setline" | sed -n 's/.*: [0-9]*\/\([0-9]*\) achievements.*/\1/p'); ACTIVE0=$(echo "$setline" | sed -n 's/.*: \([0-9]*\)\/[0-9]* achievements.*/\1/p')
+hostline=$(S 'grep -m1 -o -E "Using host: [^ ]+" /var/log/exec.log' | mask)
+if [ "$CONTROL" = 1 ]; then check "$(case "$hostline" in *retroachievements.org*) echo 0 ;; *) echo 1 ;; esac)" "RetroArch direct: ${hostline:-no 'Using host' line}"
+else check "$(case "$hostline" in *127.0.0.1:8080*) echo 0 ;; *) echo 1 ;; esac)" "RetroArch through the proxy: ${hostline:-no 'Using host' line}"; fi
+if [ "$CONTROL" = 0 ]; then
+  sleep 8   # the synthetic award fired five seconds into every proxied session before patch 002
+  check "$(S 'grep -q "Awarding achievement 101000001" /var/log/exec.log'; [ $? != 0 ]; echo $?)" "no synthetic 'Casual Only' award (101000001) in the session (D-RA-005)"
+fi
+[ "$FAILS" = 0 ] || { cleanup; exit 1; }
+PROXYLOG=/storage/.config/raofflineproxy/service.log
+LOG0=$(S "[ -f $PROXYLOG ] && wc -l < $PROXYLOG || echo 0" 2>/dev/null); LOG0=${LOG0:-0}
+
+# --- 5 the link cut ------------------------------------------------------------
+echo "5  the link cut on the monitor"
+T_CUT=$(now); MON "set_link $NETDEV off"
+down=1; for i in $(seq 1 10); do [ "$(SER 'cat /sys/class/net/eth0/operstate' 8)" = down ] && { down=0; break; }; sleep 1; done
+check "$down" "eth0 operstate=down over serial"
+if [ "$CONTROL" = 0 ]; then
+  off=1; for i in $(seq 1 30); do case "$(SER 'cat /storage/.config/raofflineproxy/online_state.json 2>/dev/null' 8)" in *'"online": false'*|*'"online":false'*) off=0; break ;; esac; sleep 2; done
+  check "$off" "the proxy's online_state.json reads false ($(( $(now) - T_CUT )) s after the cut)"
+fi
+[ "$FAILS" = 0 ] || { cleanup; exit 1; }
+
+# --- 6 the unlock, offline -----------------------------------------------------
+echo "6  the game driven over the monitor until the unlock"
+# A route is one PRESS per call from wherever the game stands (the loop
+# below reads the log after every press, so the award is seen the moment it
+# is logged rather than at the end of a pass). RetroArch's keys on the image:
+# A = x, B = z, START = ret, SELECT = shift_r, arrows.
+ROUTE_STEP=0
+route_tobu() {
+  # The hidden song is heard from the title's MAIN MENU without playing:
+  # past the "SOUND BY potato-tan" splash and the title with two STARTs
+  # (a third would start PLAINS), then the left/right carousel -- PLAINS,
+  # LOCKED entries, SCORES -- six right, six left, four and a half seconds
+  # on each entry, over and over. #166's proof unlocked it this way by hand
+  # in about two minutes (2026-09-13); this cadence, re-driven in hardcore
+  # on a pair guest with the link cut, logged the award at the 18th press,
+  # 90 s in (2026-09-14). One press per call.
+  local keys="right right right right right right left left left left left left"
+  if [ "$ROUTE_STEP" = 0 ]; then press ret 150 2500; press ret 150 2500
+  else set -- $keys; local i=$(( (ROUTE_STEP - 1) % 12 + 1 )); press "${!i}" 150 4500; fi
+  ROUTE_STEP=$((ROUTE_STEP+1))
+}
+awarded=1; T0=$(now)
+while [ $(( $(now) - T0 )) -lt 240 ]; do
+  "route_$PICK"
+  n=$(SER "grep -c 'Awarding achievement $AID' /var/log/exec.log 2>/dev/null" 10)
+  [ "${n:-0}" != 0 ] 2>/dev/null && [ "${n:-0}" -gt 0 ] && { awarded=0; break; }
+done
+T_AWARD=$(now)
+line=$(SER "grep -m1 'Awarding achievement $AID' /var/log/exec.log" 10 | mask)
+check "$awarded" "RetroArch: ${line:-no 'Awarding achievement '$AID' ...' line within 240 s -- the route for $PICK did not reach it}"
+q=$(SER "grep -c 'Achievement $AID: queued_offline' /var/log/exec.log 2>/dev/null" 10)
+if [ "$CONTROL" = 0 ]; then
+  check "$([ "${q:-0}" -gt 0 ] 2>/dev/null; echo $?)" "RetroArch: Achievement $AID: queued_offline (the proxy took it)"
+  ql=$(SER "grep 'Queued offline award: achievementId=$AID' $PROXYLOG | tail -1" 10 | mask)
+  check "$([ -n "$ql" ]; echo $?)" "proxy: ${ql#*INFO }"
+else
+  check "$([ "${q:-0}" = 0 ]; echo $?)" "RetroArch: no queued_offline for $AID (no proxy: the award has nowhere to wait)"
+  err=$(SER "grep -E 'Achievement $AID:|[Ee]rror awarding|award.*fail' /var/log/exec.log | tail -1" 10 | mask)
+  say "RetroArch's own word on it: ${err:-nothing yet}"
+fi
+
+# --- 7 exit with the link down -------------------------------------------------
+echo "7  the game ended with the link still down"
+SER '/tmp/ra-offline-kill' 10 >/dev/null
+frames_after_exit exit-offline &
+gone=1; for i in $(seq 1 30); do [ "$(SER 'pgrep -f ^/usr/bin/retroarch | wc -l' 8)" = 0 ] && { gone=0; break; }; sleep 1; done
+wait
+check "$gone" "RetroArch gone after execute_kill (the interface's exit path ran with eth0 down)"
+check "$([ "$(SER 'pgrep -x emulationstation | wc -l' 8)" = 1 ]; echo $?)" "EmulationStation still up"
+p=$(SER 'raofflineproxy-ctl pending 2>/dev/null; echo "rc=$?"' 10); prc=${p##*rc=}; p=${p%%$'\n'*}
+if [ "$CONTROL" = 0 ]; then check "$([ "$p" = 1 ] && [ "$prc" = 0 ]; echo $?)" "raofflineproxy-ctl pending = ${p:-?} (exit ${prc:-?}): one award waiting"
+else check "$([ "$p" = 0 ] && [ "$prc" = 1 ]; echo $?)" "raofflineproxy-ctl pending = ${p:-?} (exit ${prc:-?}): nothing waits with the toggle off"; fi
+
+# --- 8 the link back -----------------------------------------------------------
+echo "8  the link back"
+T_UP=$(now); MON "set_link $NETDEV on"
+for i in $(seq 1 30); do S true 2>/dev/null && break; sleep 2; done
+check "$(S true; echo $?)" "ssh back $(( $(now) - T_UP )) s after set_link on"
+if [ "$CONTROL" = 0 ]; then
+  fl=""; for i in $(seq 1 45); do fl=$(S "tail -n +$((LOG0+1)) $PROXYLOG 2>/dev/null | grep -m1 'Flush complete:'" | mask); [ -n "$fl" ] && break; sleep 2; done
+  fltext="${fl#*INFO }"; [ -n "$fl" ] || fltext="no 'Flush complete' line within 90 s"
+  check "$(case "$fl" in *"flushed=1"*) echo 0 ;; *) echo 1 ;; esac)" "proxy: ${fltext} ($(( $(now) - T_UP )) s after the link returned)"
+  stamp=$(S 'cat /storage/.config/raofflineproxy/last-flush 2>/dev/null')
+  check "$(case "$stamp" in [0-9]*" 1") echo 0 ;; *) echo 1 ;; esac)" "the last-flush stamp reads '<epoch> 1' (got '${stamp:-none}')"
+  p=$(S 'raofflineproxy-ctl pending 2>/dev/null'); check "$([ "$p" = 0 ]; echo $?)" "raofflineproxy-ctl pending = ${p:-?} after the flush"
+fi
+
+# --- 9 recorded, or lost -------------------------------------------------------
+echo "9  RetroAchievements' answer, and a relaunch online"
+if [ "$CONTROL" = 0 ]; then
+  # earned() answers `1 <DateEarned>` once it is there (the control's `0`
+  # branch below compares whole; this one compares the first word -- the run
+  # of 2026-09-14 02:49 failed here on '1 2026-09-14 02:51:28' = 1).
+  e=""; for i in $(seq 1 9); do e=$(earned "$GID" "$AID"); [ "${e%% *}" = 1 ] && break; sleep 10; done
+  check "$([ "${e%% *}" = 1 ]; echo $?)" "RetroAchievements' API: achievement $AID earned by the QA account (answer '${e:-none}')"
+else
+  sleep 90; e=$(earned "$GID" "$AID")
+  check "$([ "$e" = 0 ]; echo $?)" "RetroAchievements' API, 90 s after the link returned: achievement $AID NOT earned (answer '${e:-none}') -- #162's loss"
+fi
+http=$(launch "$ROM"); for i in $(seq 1 45); do S 'pgrep -f ^/usr/bin/retroarch >/dev/null' 2>/dev/null && break; sleep 1; done
+wait_log 'achievements active' 60; setline2=$(S 'grep -m1 -o -E "Set [0-9]+: [0-9]+/[0-9]+ achievements active" /var/log/exec.log' | mask)
+ACTIVE1=$(echo "$setline2" | sed -n 's/.*: \([0-9]*\)\/[0-9]* achievements.*/\1/p')
+if [ "$CONTROL" = 0 ]; then check "$([ -n "$ACTIVE0" ] && [ -n "$ACTIVE1" ] && [ "$ACTIVE1" = $((ACTIVE0-1)) ]; echo $?)" "relaunch: ${setline2:-?} -- one fewer active than ${ACTIVE0:-?}/${TOTAL:-?} before"
+else check "$([ -n "$ACTIVE0" ] && [ -n "$ACTIVE1" ] && [ "$ACTIVE1" = "$ACTIVE0" ]; echo $?)" "relaunch: ${setline2:-?} -- the same ${ACTIVE0:-?}/${TOTAL:-?} active as before: the unlock is not there"; fi
+S '/tmp/ra-offline-kill' >/dev/null 2>&1; frames_after_exit exit-online; sleep 3
+cleanup

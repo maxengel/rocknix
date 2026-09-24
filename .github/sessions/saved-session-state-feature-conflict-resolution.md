@@ -1,6 +1,6 @@
 # Saved Session State
 
-> **Saved**: 2026-09-24T02:35:00Z
+> **Saved**: 2026-09-24T03:10:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `e5065e18ee` + UNCOMMITTED #252 work: `tools/frame-diff`, `tools/vm-qa`, `tools/vm-walks/{suite.txt,masks.txt,claims.txt,manager.steps,fixtures/,README.md}`, `.githooks/pre-push`, `.claude/rules/{generic-x64-vm-testing,fork-workflow}.md`, `docs/{decision-register,cloud-sync-changelog}.md`, the work log)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
@@ -12,16 +12,79 @@ Filed tonight: #255 (grid-fit font sizes per panel, the maintainer's idea, with 
 
 ## Completed This Session (2026-09-23 04:55 -> 05:30 UTC)
 
+<<<<<<< HEAD
 - **#250** -- ES `bb79e4fc4` (`GuiSaveState` sets a tile decorator: aspect and turns only for a tile whose entry has a capture; `ImageGridComponent::setTileDecorator`; the grid-wide `setImageDisplayAspect/Rotation` removed). Distribution pin `aa8d525a8a`. Body box 1 corrected and ticked; comment with the arrow table (`issues/250#issuecomment-5789496467`).
 - **The arrow reference**: the fifth cut `5d8bc093c7` had already fitted the arrow at 4:3 on an NES game (84x38); every pre-#243 manager frame (09-15 .. 09-21 `77e7e97515`) has it at 54x43, x 55..108, y 306..348, and the fifteenth matches those. The 1,033-pixel difference against the fifth cut's NES frame in `measure-250-aa8d525a8a.txt` is the fifth cut's own distortion, not a regression.
 - **Docs** (`b26f214a56` on `next`): `docs/qa-frames/2026-09-23/250-*` five frames + README section; work-log entries 05:05 and 05:20; the change log's #250 line; the 09-22 #245 decision entry that had been left uncommitted.
 - **#251 filed** (the sign-in banner's font is RetroArch's message-queue 20 against the achievement banner's 32; options for the maintainer).
+=======
+**2026-09-08 ~20:40Z — everything landed; deploy candidate building.** Polish (workflow w3rkz039f): ES `b2a2732c3` (sizeLabel; done page run summary; snapshot; separators) → test/qa-integration `7a70af0184`, pinned; vm-walks fix `829e2a8763`. **#86 fixed** (workflow wlwdl5iq4, 2 reviewers, 13 findings applied): `323d96a37e` cloud_device_id, `4f9a53265d` A15, cloud_capture adoption `50fe7fb9c8`, D-CLOUD-068. **next = `50fe7fb9c8`** (#85 ×4 + polish, #21, #86, #84…). **Build chain running** (`scratchpad/build-chain.sh`: x64 → `x64-all-20260908-50fe7fb9c8/`, then H700 → `h700-all-20260908-50fe7fb9c8/`; waiter armed). Then: VM re-check on guest b (done page + sizes) and the capture ES-side procedure on guest a (upgrade in place with the x64-all tar), then verify the H700 image and **ask before deploying** (new build; both handhelds will heal their ids on first run). Upstream `pr/automount-card-wait` ready, PR not opened. #85 follow-ups on the issue (backuptool restore vs chosen archive; oracle; pico-8 scan scoping; whole-run bar design).
+
+**2026-09-08 ~21:20Z — final VM checks: 5/6 pass; fixes in flight.** Guest b (748ffd41b8): sizes whole KB, done page `3 FILES · 2.1 MB BACKED UP` / `NOTHING NEW TO SEND…` (shots `scratchpad/shots-final/`). Guest a: capture ran from the real ES exit path with the toggle off (es_log 387, /proc argv), no-stamp rule held, core_build == shipped pin, manager DELETE → retired row; **fail: emulator exit reached capture as 0** — upstream bug **#90**: `001-functions` `wait_lock()` EXIT trap re-exits runemu.sh with rm's status; **#91**: both VM guests share a MAC → same device id (harness). Also: `--retire` gave the .png sidecar a retired row (vs D-CLOUD-059); stamp lacks emu-exit; MATCH dialog fake decimals; device.json id spelling (follow-up on #86). **Fix workflow wh9bp0us8 running** in `rocknix.worktrees/exit-status` (feature/exit-status) + ES transfer-ux. Then: commit, land, pin, rebuild chain, targeted re-verify (emu-exit=1 through the real path; manifest sha copied to host; sidecar not retired), **then deploy H700 (authorised: "deploy and reboot once all checks pass")**.
+
+**2026-09-08 ~22:25Z — fixes landed: next `61ae10975f`.** Workflow wh9bp0us8 (4 impl + review + fix): `afa175b99b` 001-functions wait_lock trap (#90); `bb0fd2bcad` runemu.sh 137/143→0 (D-LAUNCH-001; **agent-made product decision, surfaced to the maintainer**); `75c7b5eacd` cloud_capture sidecar/stamp + CAP assertions + pair id assertion; `f85a3eea77` vm-pair/generic-x64-vm --mac (#91); ES `ba30956e3`/`621b917eb` match-dialog sizes (the fixer committed+merged ES itself), pin bumped; docs (D-LAUNCH-002 open → **#92**: RetroArch force-quit by hotkey exits 1 like a failed load). **Build chain running from 61ae10975f** (x64 → H700; H700 script's internal sync removed so BUILD_ID = 61ae10975f). **Re-check workflow** on guest a (real exit → `--exit 1`, stamp `emu-exit=1 retroarch/mgba`; sha copy; one retired row, none for .png). **Deploy once green** (authorised). Upstream PR branches to prepare later: automount (ready), wait_lock (#90 message drafted at `scratchpad/f1-commit-msg.txt`).
+
+## Completed This Session (2026-09-05 → 06)
+
+**The council run reached a majority and a consensus plan.**
+`research/council-runs/2026-09-05-conflict-resolution-foundation/`:
+
+- Three consecutive 2-2-1 ties (r1, r2, r3), then **r4: `claude-revised_plan-r4.md`
+  wins 3-2**, chosen by the three seats that did not write it (its author's
+  seat voted for kimi). r4's reviews had reported no architecture left to
+  choose between — the vote was for the document a builder is handed.
+- **Step 4.5** `revised_approaches/consensus_plan.md`: base adopted whole, the
+  four blockers `gpt_vote-r4.md` was conditional on cleared, seven further
+  defects fixed, 26 dissent primitives integrated and priced, 7 genuine
+  conflicts listed. Sealed (`step4_5.seal.json`), chain and seals verified.
+- Recorded and settled: the r3 votes' contradictory claims about the retention
+  stores (mistral's rested on two false premises — recorded, tally left as cast).
+
+**Maintainer decisions, all in `docs/decision-register.md`:** D-CLOUD-032
+(undo is first-class; one step back; edge cases inform, not drive), -033 (V1
+retains, no undo control; #25 is the restore tool, "time machine" over the
+wizard's compare surface), -034 (a safeguard's cost is named and earned),
+-035 (badge + one entry MANAGE GAME SAVE RESTORES AND CONFLICTS), -036 (**cloud
+is the source of truth for discarded copies**; default 3, 1–9; loser verified in
+the cloud before the winner replaces it), -037 (unexplained absence is a
+two-button question in the wizard), -038 (launch gating extends the shipped
+guard in `FileData::launchGame`), -039 (the bisync spike is decisive, upstream
+requests for narrow gaps), -040 (RESTOREPATH removed; design intent traced to
+the 2025-07 import), D-UI-022 (**the vocabulary**), D-WORKFLOW-003 earlier.
+
+**The vocabulary sweep (#73) — done, ten images.** Sixth–tenth (`7eb021f210`, failed `f72d1f4981`, `3bfa0b4e33`→`7eb021f210` sync-row line, `b6b46e0507` connected page + dialog, `684ce7f16c` match row, `2a460ce125` seven-line transfer page + BIOS with the tier, **`2e33f6b2be` tidy-up gate**) all from the maintainer's screen review. Decisions: D-UI-023 (two lines per row; a description that would make a third moves into the confirmation dialog), D-UI-024 (the seven-line transfer page; scripts announce each system with `>>> unit <system>|<i>|<n>`), D-CLOUD-042 (`Saves-discarded`; split root refused), D-CLOUD-043 (BIOS is not a system; comes with the tier), D-QA-007 (VM first), **D-QA-008 (never reboot without asking — after I rebooted the RG SP during a restore; blindspot 29)**. Issues #74 (fixed, first criterion ticked), #75 (settings-backup picker, under #18). The tidy-up row bug was pre-existing: `runSystemCommand` returns 0 regardless. **The vocabulary sweep (#73) — first image, both devices:** Five images: `7b60fadaec` (sweep), `c78e6dea21` (never deployed), `27d1734555`, failed `f72d1f4981`, **`3bfa0b4e33` (current)**. Kept under `/workspace/artifacts/rocknix-images/`. Screen review added D-UI-023 (two lines per row, never three; a description that would make a third line moves into the confirmation dialog): hub row → MANAGE CLOUD STORAGE over its section names; sync row one line; saves rows keep how they last went; transfer-page tier rows keep what they carry; match row the same; tidy row says settings backups. Issues #74 (cloud-folder change nested settings backups — fixed) and #75 (choose which settings backup to restore, under #18). The RG SP is `rgsp` (192.168.1.175), keyed like `rg35xxsp`; both LPDDR facts confirmed from hardware.
+
+- `docs/cloud-vocabulary-audit.md` — the audit (the "system backup" holds
+  settings only; backup names both an artifact and a direction; every backup
+  artifact that ever shipped, §7).
+- Distribution `24dce33f23`, `b1e8d1f646`, `07296bbe64` (all on `next`):
+  keys → `SAVESPATH SETTINGS_BACKUPS SAVES_REMOTE SETTINGS_REMOTE CONTENT_REMOTE`;
+  `cloud_sync_helper` migrates once + moves the settings rows' stamps (harness-proved,
+  idempotent); RESTOREPATH refused if split; helper runs before `source`;
+  archive `<date>-ROCKNIX_SETTINGS.tar.gz`, three old names still read;
+  wizard IA rev 5; rules + changelog + live docs renamed.
+- EmulationStation `d161afb2b` → merge `2045c4d33c` on `test/qa-integration`
+  (pinned): SETTINGS / SAVES tiers, back up / restore verbs, bundle names its
+  parts, "cloud library" → ROMs and BIOS, stamps follow, `info["SAVES_REMOTE"]`.
+  **Only one** of four `"SYSTEM SETTINGS"` was the cloud tier.
+- **Image**: `ROCKNIX-H700.aarch64-20260906-{DDR4,DDR3}.img.gz` + `.tar`,
+  BUILD_ID `7b60fadaec`, in `devices/target/` and kept at
+  `/workspace/artifacts/rocknix-images/`. Verified in the build root: 5 new
+  strings in the ES binary, 0 old; `cloud_backup` has SAVESPATH ×10, BACKUPPATH ×0;
+  defaults carry all three new remote keys.
+- **Not in that image**: `07296bbe64` (#74 fix) landed after the build started.
+
+**Issues filed:** #71 (a user-edited RCLONEOPTS drops the allowlist — verified),
+#73 (the sweep; progress comment posted), #74 (CHANGE CLOUD FOLDER nested the
+settings backups inside the saves folder and stranded the ROMs folder — fixed
+on `next`, rides the next image). #25 carries the restore tool's shape.
+>>>>>>> next
 
 ## In Progress
 
-- **The RG35XX SP runs the seventeenth cut `443028ff7a`** (staged 02:20 UTC, rebooted 02:21 on the maintainer's yes, up 02:27, queue empty). The walk baseline is run 23's frames (`walk-baseline/BASELINE.txt`, build 443028ff7a). The maintainer's boxes on it: #251, #209, #198, #250, #249, #245, #246, #243.
-- **The milestone audit** runs in a background Fable agent (launched 02:03; `docs/audits/2026_09_24-milestone-rc-round-since-186/`). When it returns: verify leads, `tools/lint-audit-artifacts`, the Phase 6 issue, resolve every item (an eighteenth cut if code changes; VM first), Phase 7 outcomes from commands. Council second opinions once Phase 2 exists.
-- #257 filed (the staging as a tool in the tree; a dated file name cost a no-op copy).
+- **The milestone audit** (`docs/audits/2026_09_24-milestone-rc-round-since-186/`): the Fable agent finished Phase 1 (research notes with the mechanical checks: 28/28 pkgcheck, scripts harness PASSED, unit tests 119/1302, register/vocabulary/menumap/untranslated clean, msgfmt clean via the build root, guest d on the tip) and was stopped by the account's monthly spend limit (HTTP 429) at ~02:35 UTC; after the maintainer's `/login` it was resumed by SendMessage at 03:00 with orders to do Phases 1.6-5 itself (no more subagents) and to read `date -u` before each log entry (its earlier stamps ran ahead of the clock). Its Phase 1 leads to expect in the punch list: raofflineproxy 16 commits behind upstream and unpinned (D-WORKFLOW-024); `tools/es-syntax-check --tree` false-positive redefinitions on two RA translation units (same-directory includes); two in-range non-ASCII comment characters (GuiScraperRun.cpp:177, .h:38); three stale "WI-FI SSID row" comments after D-UI-071; the four new tools missing from `instruction-files.md`'s table; the change log's last section headed 2026-09-22 carrying later days; #186's punch index without Phase 7 outcomes; a `cloud_capture --retire --unlink` lead (deletion proceeds when the record fails). When it returns: verify, lint, the Phase 6 issue, resolve at every severity (an eighteenth cut if code changes; VM first), Phase 7 from commands.
+- **This worktree's rules were stale** (eleven files behind `next`) for the whole session; merged up to `next` at 03:05 (friction line, #254).
+- The RG35XX SP runs the seventeenth `443028ff7a`; the maintainer's boxes on it stand.
 
 ## Next Steps
 

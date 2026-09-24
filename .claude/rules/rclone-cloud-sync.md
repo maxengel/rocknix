@@ -2,6 +2,16 @@
 description: "Conventions for the rclone cloud-sync subsystem (save/savestate/screenshot/settings backup sync)."
 paths:
   - "projects/ROCKNIX/packages/network/rclone/**"
+  # backuptool writes the settings tier this file's vocabulary and its
+  # last-good rules govern, and the pre-push console-first guard already
+  # treats both directories as one product surface -- but the glob did not
+  # (#147, 2026-09-12).
+  - "projects/ROCKNIX/packages/rocknix/sources/scripts/**"
+  - "tools/cloud-round-trip"
+  - "tools/cloud-test-backend"
+  - "tools/cloud-census"
+  - "tools/cloud-capture-stamp-test"
+  - "tools/last-good-scripts-test"
 ---
 
 # rclone cloud-sync conventions
@@ -64,6 +74,23 @@ toward progress (e.g. playtime/size/state heuristics), not timestamps.
     sync** — most fixes belong in both.
   - `cloud_sync_helper` — merges `*.defaults` into the user's config on OS update.
   - `cloud_sync_cleanup_duplicates.sh` — removes duplicate `VAR=` lines from the conf.
+  - `cloud_capture` (#21) — the save-manifest producer. Records what a game
+    session wrote into `/storage/.cache/cloud_sync/manifest-<id>.json`, sealing
+    an independent copy of every version under `…/stage/<sha256>`
+    (D-CLOUD-058). Called by EmulationStation at every game exit
+    (`FileData::launchGame`), by the save-state manager (`--retire` before a
+    delete, `--rescan` after the renumber), and by the boot autostart
+    (`--full`, backgrounded, only when a cloud-saves toggle is on —
+    D-CLOUD-064). Two rules unique to it, both by requirement: it **never
+    takes the flock** on `/var/run/cloud_sync.lock` — it has to record while
+    another cloud_* process holds it, and two writers are resolved by an
+    optimistic inode/mtime check: the loser discards its document and (exit,
+    `--rescan`, `--retire`) re-runs once against the winner's, `--full` never
+    retries — and it
+    **never sources `/etc/profile`** (it needs nothing there, and the `PATH`
+    rewrite would discard the harness prefix). No rclone, no network, no
+    `cloud_sync_helper`, no write anywhere under `SAVESPATH`. `jq` for every
+    JSON read and write; the schema is `docs/save-manifest-schema.md`.
   - `post-update` — runs on update; calls `cloud_sync_helper`, with a copy-based fallback.
 
 ## Config conventions
@@ -165,6 +192,43 @@ seeded from the `/usr/config/*.defaults` templates:
 - **Single remote only:** operations use `rclone listremotes | head -1` — the first
   configured remote. Don't assume multi-remote support without adding it deliberately.
 
+## The saves folder can change cards
+
+Two-card devices (RG SP) bind the second card over `/storage/roms`. The
+automount that does it is started by udev when the card is detected, and its
+first act is to unmount `/storage/roms`; the bind comes a second later, and
+the interface (with its boot restore) starts in that same second. So the
+saves tree a sync reads is not always the same filesystem, with both cards
+in — that is how the RG SP grew a second tree (#83). `cloud_saves_root`
+(D-CLOUD-054/055) records the filesystem UUID under `SAVESPATH` in
+`/storage/.cache` after a saves phase; `cloud_backup`/`cloud_restore` run
+`check --wait 15` first (a mismatch is re-read for 15 s before it refuses)
+and `record <identity-from-check>` afterwards (a card that changed under the
+run fails the phase and records nothing). `cloud_setup --accept-saves-root`
+is the owner's override. Any new saves writer goes through the same two
+calls.
+
+To test a flip on the VM, bind a tmpfs *copy* of the tree over
+`/storage/roms` (`mount -t tmpfs`, `cp -a`, `mount --bind`): the identity
+changes (`dev:` instead of `uuid:`) while rclone keeps finding its files, as
+on a real two-card device. An empty tmpfs makes rclone fail instead and
+proves nothing about the post-check. To make the bind land *during* the
+copy, throttle rclone with `RCLONE_BWLIMIT=200k` in the environment — MinIO
+on the host moves 1200 files in 1.5 s otherwise, and `RCLONEOPTS` in the
+conf is a multi-line value a one-line `sed` will not edit.
+
+Two things learned wiring it:
+
+- **The scripts source `/etc/profile`, which rewrites `PATH`.** A helper
+  looked up by name inside `cloud_setup` was not found even with its
+  directory on the caller's `PATH`. Resolve a sibling helper beside the
+  script — `"$(dirname "$(readlink -f "$0")")/<helper>"`, then `/usr/bin` —
+  never through `PATH`. This is also what lets a VM run the scripts from
+  `/tmp/qa-bin` (the harness's PATH prefix) and still find the helper.
+- **`--saves-only` still prints `Settings backup file transfer: SUCCESS`.**
+  The report line is unconditional; the phase was skipped. Read the saves
+  line for the saves outcome.
+
 ## The game-exit sync: `--saves-only --recent`
 
 ES runs `cloud_backup --yes --saves-only --recent` when a game exits
@@ -183,13 +247,43 @@ the boot sync and the menu rows run, and each was paid for on 2026-09-05 by an
   copies -- a filtered sync would weigh deleting what the filter hid -- and it
   skips the reachability `mkdir` and the `rmdirs` tidy, which are full-pass
   jobs and a remote round trip each.
-- **Exit 3 and exit 4 are skips, not failures.** 3: another sync holds
-  `/var/run/cloud_sync.lock`. 4: no default route (`ip route`, no packets
-  sent), answered in a tenth of a second instead of rclone's 10 s connect and
-  20 s overall timeouts. Neither writes a last-run stamp. The card shows both
-  as SKIPPED.
+- **Exit 75 and exit 69 are skips, not failures.** 75 (`EX_TEMPFAIL`,
+  `EXIT_LOCK_HELD`): another sync holds `/var/run/cloud_sync.lock`. 69
+  (`EX_UNAVAILABLE`, `EXIT_NO_NETWORK`): no default route (`ip route`, no
+  packets sent), answered in a tenth of a second instead of rclone's 10 s
+  connect and 20 s overall timeouts. Neither writes a last-run stamp. The
+  card shows both as SKIPPED. They were 3 and 4 until 2026-09-09 -- which
+  are also rclone's "directory not found" and "file not found", so a failed
+  phase carrying rclone's code up read as a phantom sync (#99, blindspot
+  33). A sentinel must be a code the wrapped tool cannot return; a phase
+  failure now passes rclone's code through unremapped, and every reader
+  (`GuiCloudTransfer`, `ThreadedCloudSync`, the harness) names 75 and 69.
 - **Under `--yes`, the console pauses are gone.** `pause N` is a no-op when
   nobody is reading; three of them were seven seconds of every headless run.
+- **Capture runs first, and it is not part of the sync.** Before the toggle
+  is read, `launchGame` runs `/usr/bin/cloud_capture --system … --rom …
+  --emulator … --core … --started <tstart> --exit <code>` synchronously
+  through `executeScriptLegacy` — not `runSystemCommand`, which always
+  returns 0 — and logs a nonzero at `LogWarning`, nothing more. It never
+  blocks on the lock and never opens a socket, so a toggle-off, offline or
+  lock-held exit is still recorded, and the working copy the push carries is
+  current by the time the sync starts. Its stamps sit beside `last-backup`:
+  `/storage/.cache/cloud_sync/last-capture` (`<epoch> <rc> <mode>[!card]
+  <unit|-> emu-exit=<N|?> <emulator>/<core>`, written on every run, including
+  a nothing-changed one, **one line per mode** — `exit`, `rescan`, `full`,
+  `retire`, `usage` — each replaced only by a run of the same mode, so the
+  boot `--full` pass no longer overwrites the last exit's record (D-CLOUD-070,
+  #94); a reader picks its line by the third field with `!card` stripped, and
+  a one-line stamp from an older build is that mode's line —
+  `tools/cloud-capture-stamp-test` checks the update without a device; the unit
+  may contain spaces, the two trailing fields
+  never do, and outside exit mode they read `emu-exit=? -/-`; `emu-exit` is
+  the launch's exit as EmulationStation saw it -- `runemu.sh`'s 0/1, with the
+  exit hotkey's kill reported as 0 (D-LAUNCH-001) -- not the emulator's own
+  code) and
+  `capture-failures` (one line per degraded run, last 20 kept). They exist
+  because `/var/log` is tmpfs unless `debugging` is on (D-CLOUD-027): the log
+  line is gone at the next reboot, the stamp is not.
 
 Budget on an H700, measured: **starting rclone costs about a second** by
 itself (`rclone version`: 1.0 s), a remote round trip one to two more. That is
@@ -198,6 +292,92 @@ why the recent path spawns rclone once, reads the remote's name from
 changed: 18 s → 5 s. One save written: about 7 s, most of it Dropbox's commit.
 `tools/cloud-round-trip` asserts the window, the untouched remote, the
 single-file push, and the exit-4 timing.
+
+## Both runs are bounded: the automatic one from its start, the deliberate one from its last progress (D-CLOUD-118, D-CLOUD-126)
+
+EmulationStation runs the startup sync and the sync after a game with
+`--automatic`. Under it every rclone the script makes carries
+`RCLONE_SYNC_NET_OPTS` (`--contimeout 5s --timeout 5s --retries 1
+--max-duration 20s --low-level-retries 5 --transfers 1`) after the caller's own flags, and runs under
+`timeout` (coreutils' on the image -- busybox ships no such applet)
+against a deadline `SYNC_CEILING_SECONDS` (20) from the script's
+start -- because `--max-duration` bounds transfers and nothing else, and a
+stalled listing retried ten times is what held the exit card for 321 s on
+the VM (#135). A run the ceiling ends returns 124 (timeout) or 10 (rclone),
+and `why_for` says THE CLOUD TOOK TOO LONG - IT'LL TRY AGAIN NEXT TIME.
+
+The back up and restore a player presses keep `RCLONE_NET_OPTS`, and since
+#153 (D-CLOUD-126) run under a **stall ceiling**: every rclone of a
+deliberate run is ended, with 124, once it has made no progress for the
+bound's idle timeout (`--timeout 30s`) plus a six-second grace. Progress is
+read from rclone's own stats block -- the byte, check, file and delete
+counts exceeding what they had reached before; the block goes through a
+fifo and `tee` to a trace on its way to stdout, so the page and the card
+see exactly what they saw. The ceiling is measured from the last progress,
+not the call's start, because the deliberate run is the one that moves a
+first backup of every save state or an archive carrying a theme pack; a
+fixed ceiling would end exactly those. It exists because rclone's S3
+backend hands `--low-level-retries` to the AWS SDK, whose backoff no timeout
+of ours covers: a cut `cloud_backup --system-only` rode a 40 s outage out
+and completed 88.8 s after the cut, exit 0, stamping success (LINK5 on
+MinIO, 2026-09-13). The LINK5 capture also fixed the signal: rclone's
+transferred count never falls on a retry (8.902 MiB stood for 45 s while
+the total grew from 12.0 to 20.9 MiB), so a count above its previous high
+is progress and a total that grows is not. `why_for` on a deliberate 124
+says YOUR CLOUD STOPPED ANSWERING, with TRY AGAIN in reach. A run's summary
+now ends on its own sentence -- `Completed.`, `Couldn't finish: <why>. Try
+again.`, `Skipped: <reason>.` -- because `Settings backup: COMPLETED` was
+not a line the LINK cells' vocabulary gate accepts.
+
+**What the ceiling cannot see (D-CLOUD-128).** rclone's transferred count
+is bytes handed to the kernel, not bytes the server has. From the last byte
+handed over to the server's reply there is no progress signal, and that leg
+lasts the buffering between the two divided by the server's ingestion rate.
+Over a link TCP sizes the in-flight bytes to the path — a handheld's
+`tcp_wmem` holds a few MiB — so it is seconds. On the QA fixture it is the
+whole archive: QEMU's user-mode stack takes a 12 MiB body in under a second
+and `rclone serve webdav --bwlimit 200k` drains it for ~40 s after its 4 MiB
+burst, so LINK5's plain re-run is ended at 36 s with the counter at 100%
+while the upload is completing, and the archive is whole afterwards
+(4d7eb1f303, 2026-09-13; not the stale-PUT lock — the re-run waits for the
+server to let go, and no 423 was logged). `tools/cloud-round-trip` SKIPs
+that one signature on WebDAV and nowhere else; a 124 on the S3 re-run is a
+FAIL to look at. A real server ingesting at 200 KiB/s or less behind 7 MiB
+or more of buffering would reproduce it; the knobs are `--timeout` in
+`RCLONE_NET_OPTS` and the grace.
+
+Both keys live in `cloud_sync.conf` and its defaults with a fallback
+constant in each script; `tools/last-good-scripts-test` case h holds the
+three equal and proves both wrappers fire, and case n runs `cloud_backup`
+whole against a shim rclone that hangs, crawls and completes. The numbers
+are a starting point the maintainer accepted to tweak on feedback
+(2026-09-12).
+
+Three retry counts, on purpose. A deliberate transfer keeps
+`--low-level-retries 10`: Dropbox answers a concurrent write with a lock
+error a retry clears (#107). The automatic sync runs five, one transfer at
+a time -- serial uploads never make the concurrent writes that trip the
+lock, and rclone spends the same retries on a refused connection (12 s at
+ten, 3.9 s at five, measured; D-CLOUD-121, the maintainer's baseline).
+A listing (`lsd`, `lsf`) carries `RCLONE_LIST_OPTS` with three, because
+rclone's S3 backend hands the count to the AWS SDK as its attempts with
+exponential backoff and `--contimeout` never enters it: a refused endpoint
+costs 0.03 s at one attempt, 2 s at two, 6 s at three, 230 s at ten (rclone
+1.75, #143). Never give a listing the transfer's count.
+
+On a bucket-based cloud (`rclone backend features` says `BucketBased`), a
+folder is a prefix on object names: listing an absent one succeeds with
+nothing, and `mkdir` alone makes nothing -- rclone's documented shape. So a
+folder there **exists when its parent lists it**, by objects under it or by a
+directory marker (the zero-byte `name/` object the AWS and MinIO consoles
+write for "Create folder", and rclone writes under `directory_markers`);
+never judge it by listing the folder itself. `cloud_restore` does exactly
+that for the saves folder and for its parent, so a mistyped root fails on a
+bucket as on Dropbox (#141, D-CLOUD-120). The wizard's S3 stanza (and the QA
+tool's) sets `directory_markers = true`, and `cloud_setup --seed-folders`
+puts a README in each folder, which is what makes our folders real there.
+An older S3 stanza without the option still works: the parent-listing rule
+does not need markers, it only honours them.
 
 ## Progress output: what actually comes out of a pipe
 
@@ -224,6 +404,14 @@ only observation settles. Measured against rclone **1.75.0 on an H700**:
   A reader splitting on `\n` alone loses both halves of that join — every
   block after the first. Split on `\n`, `\r`, **and** an embedded
   `Transferred:`.
+- **A kill lands inside a redraw**, so an rclone the stall ceiling ends
+  leaves that last ` * file` line open, and whatever the script prints next
+  is glued to it: ` * …SETTINGS.tar.gz:  0% / 12.011 MiB, 0 B/s, -Couldn't
+  finish: lost the network during the settings backup.` (LINK5 on MinIO,
+  2026-09-13) — a line no reader recognises as the outcome. `bounded_rclone`
+  closes the line when the trace's last byte is not a newline, on the
+  transfer verbs only; `tools/last-good-scripts-test` case n kills a shim
+  mid-redraw and reads the sentence at the start of a line.
 - **`Transferred:` appears twice per block**: bytes first, then a file count
   (`0 / 6, 0%`). The byte line is the one with a unit in it.
 - **`--progress-terminal-width` does not exist in 1.75.0.** An unknown flag is
@@ -250,9 +438,59 @@ needs forwarding.
 ./tools/cloud-test-backend ls                    # what the device uploaded
 ./tools/cloud-test-backend down
 
-CLOUD_QA_BACKEND=s3 ./tools/cloud-test-backend up   # MinIO instead
-CLOUD_QA_BACKEND=s3 ./tools/cloud-round-trip --host ... # bucket-based path
+./tools/cloud-test-backend --backend s3 up       # or s3, sftp, smb, ftp (#133)
+./tools/cloud-round-trip --host ... --backend s3
 ```
+
+### Five backends, and what each one alone can tell you
+
+One protocol's answers to *does this file exist*, *what does it hash to* and
+*what survives a cut PUT* are not the answers. `--backend` picks among five,
+all on this host, all reachable from a guest at `10.0.2.2`, none needing an
+account (`generic-x64-vm-testing.md` has the ports and the data paths):
+
+| `--backend` | Stands for | Hashes | Modtimes | Cut PUT |
+| --- | --- | --- | --- | --- |
+| `webdav` | Dropbox/Drive/OneDrive, the path-based tier | no | **no** | short file |
+| `s3` | S3, B2, the bucket tier (#38, #123) | MD5 | yes | **commits or nothing** |
+| `sftp` | a NAS or a seedbox; the hash-less remote | no | yes | short file |
+| `smb` | the WINDOWS SHARE tier | no | yes | short file |
+| `ftp` | the FTP rows, implicit and explicit | no | yes | short file |
+
+**Run a change against more than WebDAV whenever it touches existence
+checks, directory creation, layout, comparison or an exit code.** The first
+matrix run (2026-09-12, image `d94ca7b159`) found three shipped defects that
+WebDAV cannot show, on 33 steps that were green on WebDAV throughout:
+
+- **#141 — on a bucket remote a wrong saves folder reports COMPLETED.** An
+  empty folder does not exist on S3, so *not created yet* and *exists and is
+  empty* are one observation, and `cloud_restore` resolves it the wrong way:
+  a `SAVES_REMOTE` whose root does not exist at all exits **0** with
+  `Game saves: COMPLETED`, where every path-based backend exits 1 and offers
+  nothing. A typo in the folder name restores nothing and says it worked.
+- **#142 — on FTP a missing directory is exit 1, not 3.** rclone surfaces the
+  server's `501 "No such directory."` as a general error, so every
+  *is it there yet?* branch reads *not created yet* as *your cloud couldn't
+  be read*. And with `--retries 1` a copy into a directory that does not
+  exist yet loses files: rclone's FTP backend fails its first pass on the
+  destination root and only recovers on a retry we do not allow (2 of 3
+  files landed).
+- **#143 — a refused S3 endpoint is not bounded by our timeouts.** The AWS
+  SDK's retryer backs off underneath `--contimeout 15s --timeout 30s
+  --retries 1`; one `rclone lsf` against a closed port ran past 2m23s and the
+  whole suite took 578 s against 128-156 s on the other four.
+
+Two more traps that only the bucket path shows, found earlier the same way:
+
+- **`rclone lsjson --stat` is not an existence test on a bucket remote.** It
+  synthesises a directory entry for *any* path — `utterly-bogus-never-created`
+  returns `IsDir: true` on 1.60, 1.74 and 1.75 — how bucket remotes work, not
+  a bug awaiting a fix. Use a **listing**: does the path contain anything, or
+  does its parent list it?
+- **`rclone mkdir` exits 0 while creating nothing.** Empty directories do not
+  exist on S3; rclone even says so and still returns success. The standard fix
+  is a zero-byte object whose key ends in `/`, which rclone writes with
+  **`--s3-directory-markers`** (default off). B2 has no equivalent flag.
 
 ### Runbook
 
@@ -265,11 +503,13 @@ CLOUD_QA_BACKEND=s3 ./tools/cloud-round-trip --host ... # bucket-based path
 
 Four things that cost time on 2026-09-03:
 
-- **`down` matters.** WebDAV runs as a bare `rclone serve` on the host, and it
-  survives the session that started it. A stale one holding :9010 makes the next
-  `up` fail with `address already in use`, and the S3 path additionally leaves a
-  half-created container behind (`docker rm -f rocknix-cloud-qa`). `CLOUD_QA_PORT`
-  moves it if you need both at once.
+- **`down` matters.** WebDAV, SFTP and FTP run as host processes and survive
+  the session that started them; S3 and SMB are containers. A stale one
+  holding the port makes the next `up` fail with `address already in use`.
+  Since #133 each backend has a port of its own (9010/9012/9013/9014/9015) so
+  several can be up at once and `down` takes down only the one named by
+  `--backend`; `CLOUD_QA_PORT` still moves one if you need two of the same
+  kind.
 - **The host's rclone is not the device's.** This host had **1.60.1-DEV**; the
   device ships **1.74.4**. Backend options differ across that gap —
   `--s3-directory-markers` does not exist in 1.60. Test rclone behaviour by
@@ -281,22 +521,11 @@ Four things that cost time on 2026-09-03:
 
 ### Bucket remotes behave differently, and it is not a detail
 
-Run the S3 path (`CLOUD_QA_BACKEND=s3`, MinIO) whenever a change touches
-existence checks, directory creation, or layout. Two traps, both found this way:
-
-- **`rclone lsjson --stat` is not an existence test on a bucket remote.** It
-  synthesises a directory entry for *any* path — `utterly-bogus-never-created`
-  returns `IsDir: true` on 1.60, 1.74 and 1.75 — how bucket remotes work, not a bug awaiting a fix. Three call sites branched on it,
-  so on S3 the migration always refused ("destination already exists"), the
-  content-restore legacy fallback was dead, and the seeding report could only
-  ever say OK. Use a **listing**: does the path contain anything, or does its
-  parent list it?
-- **`rclone mkdir` exits 0 while creating nothing.** Empty directories do not
-  exist on S3; rclone even says so (`Warning: running mkdir on a remote which
-  can't have empty directories does nothing`) and still returns success. The
-  standard fix is a zero-byte object whose key ends in `/`, which is what the S3
-  console itself writes — rclone does it with **`--s3-directory-markers`**
-  (default off). B2 has no equivalent rclone flag.
+The two traps above (`lsjson --stat`, `mkdir`) are the bucket tier's, and
+both were found by running the S3 path. Three call sites branched on the
+first, so on S3 the migration always refused ("destination already exists"),
+the content-restore legacy fallback was dead, and the seeding report could
+only ever say OK.
 
 The consequence for design: a folder we want a player to *see* needs either a
 marker or a file in it. Our seeded folders get both — the marker so the folder
@@ -309,16 +538,19 @@ serial console (`-serial unix:`) enable sshd and drop in a key —
 `/storage/.ssh/authorized_keys` (mode 600, directory 700). SSH is off on a
 fresh image, and the console gives a root shell without login.
 
-- **WebDAV, not S3, by default.** Dropbox/Drive/OneDrive are path-based, so
+- **WebDAV is the default, and the harshest.** With `vendor=other` it carries
+  neither hashes nor modtimes, so rclone compares by size alone — the shape of
+  #53 — and a bug only WebDAV can catch is one WebDAV must keep catching.
+- **Bucket and share remotes need a different `SAVES_REMOTE`.** Dropbox/Drive/OneDrive are path-based, so
   `SAVES_REMOTE="/GAMES"` is a folder. On S3 and B2 the first path component is the
   *bucket*. rclone creates buckets on demand, so a missing one is not the
   problem - the problem is that `GAMES` is not a **legal** bucket name
   (lowercase only, 3-63 chars), so it is rejected with `InvalidBucketName`
-  before anything can be created (issue #38). Testing on S3 exercises
-  semantics our users do not have; `CLOUD_QA_BACKEND=s3` reproduces that
-  difference on purpose, and the backend reports the `SAVES_REMOTE` it needs
-  (`cloud-test-backend syncpath` -> `/<bucket>/GAMES`) so the driver does not
-  hard-code either shape.
+  before anything can be created (issue #38). SMB has the same shape with the
+  *share* in place of the bucket, and SFTP a third — every path absolute,
+  because an sshd running as an ordinary user cannot chroot. The backend
+  states what it needs (`cloud-test-backend saves-remote`, and
+  `endpoint-prefix` for what to strip) so no caller hard-codes a shape.
 - **Local on purpose.** These tests exercise credential stripping and backup
   contents - the code paths most likely to leak a token into an archive, a log
   or a work log. A throwaway WebDAV password is worth nothing if it escapes.
@@ -333,7 +565,10 @@ fresh image, and the console gives a root shell without login.
   produced nothing.
 
 The OAuth handshake is not covered - `rclone authorize`, port 53682, token
-refresh still need a real provider. The wizard's *gates* (`--connected`,
+refresh still need a real provider, and so does the hosted half of #133
+(Google Drive, Box, pCloud, Mega), which needs QA accounts somebody has to
+create. Everything else the matrix covers runs here, so "we would need a real
+provider" is not an answer to *can this be done on the VM?* (`vm-first.md`). The wizard's *gates* (`--connected`,
 `--check`, `--free-auth-port`) are plain checks and do test here.
 
 ## rocknix.org docs & gaps
@@ -342,7 +577,9 @@ The user guide (<https://rocknix.org/configure/cloud-sync/>) documents the `clou
 options and the Tools backup/restore flow. Known gaps vs. the code: it omits `LOG_LEVEL`,
 the single-remote assumption, and `cloud_sync_cleanup_duplicates.sh`. `RSYNCRMDIR` is now
 implemented as documented (2026-07-23). Reconcile docs against actual behavior before
-relying on them.
+relying on them. `cloud_capture` (#21) has no player-visible surface — no menu row, no
+setting, no flag anyone types — so `documentation-accuracy.md`'s hard gate is not
+triggered by it; say that explicitly in the PR rather than leaving it to be asked.
 
 ## Style
 
@@ -352,3 +589,96 @@ relying on them.
   `/var/log/cloud_sync.log`; pass `"false"` to suppress on-screen echo for debug lines.
 - Controller input goes through `read_controller_input` (`evtest`); respect the mappings
   sourced from `/storage/.config/profile.d/098-controller`.
+
+## The content tier's flags, and what the scripts may not call
+
+`cloud_content_backup --selected` and `cloud_content_restore --selected` move
+the systems chosen with `--set-systems`, in one of three modes (`MEDIA_MODE`
+in each script, D-CLOUD-050): with neither flag, ROMs and BIOS alone — the
+scraper's folders under a system (`MEDIA_DIRS`) and `gamelist.xml` are
+excluded from the transfer and from every count (D-CLOUD-048, D-CLOUD-049);
+`--with-media` carries both tiers; `--media-only` carries the scraper's
+folders and the game list and nothing else, BIOS included in "nothing". The
+interface derives the mode from the ROMS AND BIOS and GAME CONTENT ticks.
+`cloud_content_restore --scan` is what both systems pages read:
+`name|cloud_bytes|supported|device_bytes|files_in_cloud_not_here|files_here_not_in_cloud`,
+one line per system in the union of cloud and device, both sides listed under
+the transfer's own rule. Anything that changes what a transfer carries has to
+change `content_files` (device), `cloud_content_filter` (cloud) and the
+`rclone copy` excludes together, or the page will describe a transfer the
+script does not perform.
+
+**The image's busybox has no `comm`.** `comm … | wc -l` reads 0 there, which
+in a difference count means "identical" — it shipped that way for one VM run
+(2026-09-06). Use `not_in` (awk) in `cloud_content_restore`, and before
+reaching for any coreutils name in these scripts, run it on the VM: `mapfile`,
+`stat -c`, `find -path`, `mktemp -d` and `sort -u` are there; `comm`,
+`pgrep -c`, `find -printf` and `ls --time-style` are not.
+
+## A saves label runs `--saves-only`
+
+`cloud_backup --yes` and `cloud_restore --yes` run **two** phases — the saves
+sync and the settings-archive upload or download — and emit a `>>> unit`
+marker for each. Every command behind a label that says *saves* (the
+transfer page's saves tier, BACK UP SAVES TO THE CLOUD, RESTORE SAVES FROM
+THE CLOUD, SYNC SAVES WITH THE CLOUD, the boot-time sync, the game-exit
+push) passes `--saves-only`; only the settings tier moves settings
+(`backuptool backup && cloud_backup --yes --system-only`). Without the flag
+a run with SETTINGS unticked still moved the archive, and the transfer page
+kept the phase's label — SETTINGS BACKUP — through every ROM that followed,
+because `cloud_content_backup` announced no units of its own (fixed the
+same day; restore had since D-UI-024). The D-UI-022 rule that the label says
+what moves is enforced by the flag, not by the label.
+
+
+## What the QA backends compare by (measured 2026-09-07, rclone v1.75.0)
+
+A fixture that stages "the cloud's copy is newer" or "the same size" has to
+know what the shipped `copy` does on each backend. Measured on the VM pair
+in a fourteen-case matrix, not inferred:
+
+- **WebDAV (`rclone serve webdav`)** reports every file's modtime as its
+  *upload* time — a local mtime does not survive the trip — and offers no
+  hashes. A plain `copy` replaces the destination whenever size **or** mtime
+  differ, in either direction; `copy --update` keeps whichever side has the
+  later mtime; an equal-size, equal-mtime byte change is skipped outright
+  (#53's shape, and A2's). So "the cloud's copy is newer" is staged by
+  making the local file *older* (`touch -d` an hour back), never by touching
+  the cloud. A PUT killed mid-transfer leaves a partial file at the
+  endpoint, hash-equal to nothing.
+- **MinIO** keeps modtimes and offers hashes: the equal-size, equal-mtime
+  change is transferred, and a killed upload leaves nothing behind. `rclone
+  cat` of a missing key exits 0 with no output — a missing key is an empty
+  prefix — so `cloud-test-backend cat` checks existence first.
+- **bisync**, scored for Gate 11 (#9; verdict D-CLOUD-052 — not used): a
+  tree where one change is "all files changed" — a one-file tree — aborts
+  as a safety measure; `--files-from` cannot sit beside `--filters-file`, so
+  a decided run drops the allowlist; a run killed with `kill -9` leaves
+  `<workdir>/*.lck` and every later run refuses until it is removed
+  (`--max-lock`, minimum 2 m, expires it); without its listings it demands
+  `--resync`, and `--resync` is `--resync-mode path1` — the device's copy
+  wins, silently; with `--conflict-resolve none` a both-changed pair is
+  renamed `.conflict1`/`.conflict2` on both sides unless the run is stopped
+  at the dry run, and recovery after a kill is a wet run that renames a torn
+  head the same way; on a hashless backend it downloads a both-changed pair
+  to compare ("check --download for safety") and skips it when equal, but
+  cannot see a same-size, same-mtime change at all without `--download-hash`,
+  which downloads the whole tree every pass. Its raw runs are what
+  `cloud-round-trip --dump` writes.
+
+## What rclone's stats block looks like on a pipe (#157)
+
+Read from rclone 1.75.0's `stats.go`, and the reason the startup sync card once
+showed "113 of 113" twice with a still bar between: every stats block prints
+the **bytes line first** (`Transferred: X / Y, N%, …`), then a `Checks:` line
+whenever checks, total checks or listed files are non-zero. While a run is still
+listing, that line is `Checks: 0 / 0, -, Listed N`, so a card that shows every
+checks line shows `0 OF 0` for a block. A sync is two rclone runs (a restore,
+then a backup), so the checks count climbs to the full total twice, once per
+run, and the byte line between them is the restore's near-empty one. Nothing
+prose reaches the card from `cloud_backup` or `cloud_restore`: they speak
+`>>> unit`, `>>> why`, `>>> offer`; only `cloud_net_ready` prints a `>>> doing`.
+So a card that wants to say which run it is in has to be told by the composition
+that runs both -- `main.cpp`'s startup command echoes `>>> doing receive` and
+`>>> doing send` before each half (D-UI-052), and `CloudText::phaseBar` maps the
+run's percentage into its half of the bar.
