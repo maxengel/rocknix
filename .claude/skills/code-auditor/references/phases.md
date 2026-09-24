@@ -436,6 +436,94 @@ this pass was skipped).
 
 ---
 
+## Phase 4.6 — Second opinion: a different model refutes and extends (mandatory at Epic and Milestone tiers)
+
+Phase 4.5 is the auditing model refuting itself, and a model shares its
+blind spots with itself: the same priors about what a name means, the same
+reading habits, the same assumption that a check which exists also runs.
+The #186 audit (2026-09-14) took a second opinion from the council's GPT
+seat by choice and a third of its punch list came from that seat -- eleven
+findings the orchestrator had not made, one of them High. The #258 audit
+(2026-09-24) closed without one. From v1.11 the second opinion is a phase,
+not a choice (maintainer, 2026-09-24: *"I think it makes sense to modify
+the skill to do that ... GPT Astro 6 at a high level, whatever the highest
+effort level we can get for reasoning is."*).
+
+**Who and how.** The council's GPT seat -- `openai/gpt-6-astra` at effort
+`max`, through the project's Facilitator (`tools/council/run invoke --member
+gpt --prompt-file <brief> --output <file>`; OpenRouter, provider pinned to
+OpenAI, `allow_fallbacks: false`), which records the served model and the
+identity gate in `<file>.provenance.json`. Never a direct API call, never a
+different model in that seat, never the auditing model in a "critic" hat
+(`adversarial-council.md` § Hard routing rule: a pseudo-council is not a
+council). **Fails closed:** where the Facilitator, the key
+(`~/.config/council/env`) or the seat is unavailable, the audit pauses at
+this phase and the running log says which prerequisite is missing; it does
+not proceed to Phase 5 on the orchestrator's word alone, and it does not
+substitute another model or another prompt. An audit that reaches Phase 5
+without this section is an audit that skipped a phase.
+
+**Why a different model, and why second.** Two questions the maintainer
+asked to have worked out, answered here so they are not re-argued:
+
+- *One model wearing hats, or two models?* A different prompt is a different
+  question to the same reader; a different model is a different reader.
+  Phase 4.5's self-refutation stays because it is cheap and kills the
+  obvious false positives before they cost the seat's time; it is not the
+  adversarial phase. The adversarial phase is the seat.
+- *Ours first, or theirs first?* Ours first, of necessity: the seat reads a
+  packet of text and can run nothing, while Phases 1-4 are built on
+  commands, a guest, a harness and the tree. The model with the tools
+  gathers the evidence; the model without them reads the same evidence and
+  argues. The cost is anchoring -- a seat that sees our verdicts may confirm
+  rather than search -- which the brief counters by asking for the seat's
+  own findings before its comments on ours, and which the Milestone tier
+  removes by splitting the call in two (below). #186's single combined call
+  still produced eleven additions, so a one-call second opinion is worth
+  having when two are not affordable.
+
+**The brief** (`second-opinions/gpt-brief.md`, template in
+[`references/templates.md` § Second opinion](templates.md)) carries: the
+scope and the tier; the evidence packet -- `02-forward-audit.md` whole (its
+criteria, verdicts and `file:line` evidence), `03-retrospective.md`, and
+`04-analysis.md` through § Finding Verification; the punch list as it
+stands; and three asks in this order: (1) the seat's own findings from the
+packet, each with severity and the packet's `file:line`, made before it
+comments on ours; (2) for every finding of ours at Medium or above (and any
+Low it thinks mis-graded) a refutation attempt -- agree, disagree, re-grade,
+narrow -- naming what would make the finding false; (3) what it could not
+judge from the packet, so the orchestrator knows where the packet was thin.
+The seat does not see the tree; its `file:line` is the packet's.
+
+**Two calls at Milestone tier.** The tier whose value is independence
+(SKILL.md § Tier posture) runs the seat twice: a **blind pass** on the
+evidence packet with the verdict and finding columns removed -- the
+criteria, the code and command excerpts, the reads -- asking for findings
+alone; then the **refutation pass** above, with our findings and the blind
+pass's own list. The orchestrator compares the three lists (ours, the
+blind pass's, the refutation's). Epic and Issue tiers run the refutation
+pass alone. The number of calls and their `provenance.json` paths are
+recorded in the section.
+
+**Grading -- the orchestrator's, and the rule is the subagent rule.** Every
+seat item is a lead, never evidence (SKILL.md § Evidence floor). For each,
+the orchestrator re-reads the artifact -- the tree, a command, a frame --
+and records one row in `04-analysis.md` § Second opinion: the seat's item,
+the orchestrator's grade (**confirmed** / **agree, re-graded** / **agree,
+narrowed** / **disagree, with the artifact** / **could not verify**), and
+the evidence. A confirmed new finding gets an id (`G-nn`), a severity, and
+a punch item; a re-grade moves the finding's severity; a disagreement is
+recorded with the artifact that settles it, never dropped. "Could not
+verify" is an honest grade and a Coverage Boundary line, not a pass.
+
+**Record** in `04-analysis.md` § Second opinion: the command, the
+provenance path(s), the served model from the identity gate, the grading
+table, and one line of net effect (items added, re-graded, folded,
+disagreed). The artifact-contract lint requires the section at Epic and
+Milestone tiers for audits dated from 2026-09-24 on.
+
+---
+
 ## Phase 5 — Punch list
 
 **Goal:** Distil all findings into an actionable, prioritised list another agent or engineer can execute.
@@ -451,6 +539,10 @@ category-to-priority mapping in [`references/templates.md` § Punch List](templa
 only. Open scope already represented by a tracked issue goes in the
 "Pre-existing tracked scope" section (issue links, no PL numbers) — exempt
 from the Phase 7 gate.
+
+Phase 4.6's confirmed items are punch items like any other (source finding
+`G-nn`), and its re-grades move items between the priority sections
+before this list is written -- the list is written once, after the seat.
 
 **Final step:** if the repo provides an artifact-contract lint (e.g. a
 `lint-audit-artifacts` script), run it and fix every finding before Phase 6;

@@ -83,6 +83,34 @@ def main():
             bad("second-opinions/ has no *.provenance.json: the seat's run left no record")
 
     punch = (d / "05-punch-list.md").read_text() if (d / "05-punch-list.md").exists() else ""
+    # A table whose last row is **Total** is the sum of the rows above it. The
+    # seat's G-11 under #258 (2026-09-24): the scorecard's printed total
+    # disagreed with its own rows by five boxes and eleven PASS verdicts, and
+    # the forward audit's per-section subtotals disagreed with both. Arithmetic
+    # is the one claim in an audit a tool can settle outright.
+    for tbl in re.findall(r"((?:^\|.*\n)+)", analysis + "\n", re.M):
+        rows = [r for r in tbl.strip().splitlines() if not re.match(r"^\|\s*:?-", r)]
+        tot = [r for r in rows if re.match(r"^\|\s*\*\*Total\*\*", r)]
+        if not tot:
+            continue
+
+        def nums(r):
+            return [int(c) if re.fullmatch(r"\d+", c) else None
+                    for c in [x.strip().strip("*").strip() for x in r.strip().strip("|").split("|")]]
+        body = [nums(r) for r in rows if r not in tot]
+        printed = nums(tot[-1])
+        off = []
+        for i, v in enumerate(printed):
+            if v is None:
+                continue
+            got = sum(r[i] for r in body if i < len(r) and r[i] is not None)
+            if got != v:
+                off.append(f"column {i}: printed {v}, the rows sum to {got}")
+        if off:
+            bad("04-analysis.md: a **Total** row is not the sum of its table -- " + "; ".join(off))
+        else:
+            ok(f"04-analysis.md: the **Total** row sums from its {len(body)} rows")
+
     items = re.findall(r"^## (PL-\d+)\b.*$", punch, re.M)
     if not items:
         bad("05-punch-list.md declares no PL- items")

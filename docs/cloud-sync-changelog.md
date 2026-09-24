@@ -2310,7 +2310,7 @@ moved them to the day they landed.)
 
 ## The audit's punch list, fixed before the candidate is called one (2026-09-24)
 
-The milestone audit of the round (#258: 347 boxes re-derived, thirty
+The milestone audit of the round (#258: 352 boxes re-derived -- the headline read 347 until the second opinion's G-11 -- thirty
 findings, none critical or high) was the maintainer's condition for a
 release candidate -- *"a full code audit using the code auditor's skill and
 being very rigorous"* -- and its punch list was fixed at every severity in
@@ -2355,3 +2355,24 @@ and the record -- fourteen issue bodies, the change log's dates, the manifest
 schema, the menu map, the rocknix.org draft -- says what the tracker and the
 code say (PL-007, PL-008, PL-023, PL-024, PL-029).
 
+### The second opinion, and the twentieth cut (2026-09-24, #260)
+
+The maintainer asked whether the audit had an adversarial phase by default;
+it had not, and now does. The council's GPT seat read the whole audit and
+its items, and nine of its findings held against the tree (PL-031..PL-039).
+What a player would notice, in the twentieth cut `c041be7e98`:
+
+- **The crash keeper never fills the card** (PL-033). It kept a core dump
+  after checking for 512 MB free, and the dump itself could be up to the
+  cap, so a card with just over the floor ended under it. It now needs the
+  floor plus the cap before it writes, and says both when it refuses.
+- **A cached achievement badge is whole or it is not served** (PL-031). The
+  offline proxy checked a badge's signature and header; it now checks every
+  chunk and inflates the image, so a torn download is treated as a miss
+  rather than shown broken.
+- **A dead run's progress line does not linger** (PL-037). A `running` file
+  left by a killed image or refresh run is removed by the next run that
+  takes the lock.
+- **A core of exactly the cap is not called truncated** (PL-035), and a
+  screenshot's game is looked up from an index built once rather than a
+  walk of the whole library per new screenshot (PL-034).

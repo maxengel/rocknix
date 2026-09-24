@@ -105,3 +105,7 @@
 ### [Phase 5 — correction] 03:41 — PL-015 reworded after reading the lint
 
 - The lint (`tools/lint-audit-artifacts:66-87`) reads a Phase 7 outcomes *table* in the punch list, not the YAML index; #186's table is complete (that is why it PASSes) while its index says `open` ×32. PL-015 and its six mentions (01, 02 ×2, 03 ×2, 04 ×2) now say "the index disagrees with the table and the lint checks only the table". The 30 lint lines on this folder are the same Phase 7 check on a punch list whose outcomes are the orchestrator's to record; the structural checks pass.
+
+### [Phase 4.6] 15:53 — The second opinion graded; the totals corrected
+
+The GPT seat's run (05:49 UTC, 1,125 s, `openai/gpt-6-astra` from the provider response, effort max) read and graded row by row against the tree at `c041be7e98`: 9 confirmed (PL-031..PL-039), 6 re-graded, 2 disagreements with the artifact (G-05, F-29), 1 evidence note (G-09). G-11 held: the headline 347 / 184 / 32 was not the sum of the scorecard's rows (352 / 195 / 27) nor of the forward audit's per-section subtotals (346 / 188 / 27); the rows are the count from here, the 04 headline and this log's earlier figures are superseded (lines 84 and 98 above stand as written), and `tools/lint-audit-artifacts` now sums every **Total** row. The nine fixes are the twentieth cut, building as `c041be7e98` (ES `d30cbd282`).
