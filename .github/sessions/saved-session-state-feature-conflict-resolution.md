@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-24T20:25:11Z
-> **Branch**: feature/conflict-resolution (session-state worktree; merged up to next `d27858eb70`)
+> **Saved**: 2026-09-24T21:11:04Z
+> **Branch**: feature/conflict-resolution (session-state worktree; merged up to next (the twenty-first cut d27858eb70 and its records))
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-The RC round (#236). **The webkitgtk 2.54 spike is over** (D-WORKFLOW-041): six builds, three fixes used, a fourth wall at the final link (`Inspector::DOMFrontendDispatcher::powerEfficientPlaybackStateChanged` undefined); 2.52.6 stays pinned for this candidate, branch `build/webkit-254` (`afb5b9feb1`, pushed) holds the attempt for the conflict-resolution candidate. **The twenty-first cut is building**: `chain-21.sh` started 20:24 UTC at `d27858eb70` (sync, H700 + x64, guest d rebuild, vm-qa run 27, rehearsal run 22); contents #195 YESTERDAY, #192 the reachable wait, #255 patch 0017 (sharp widget sizes; its first version missed two callers, #264), #263 the guest surface fix. The twentieth cut `c041be7e98` is proven and unstaged; the maintainer has not answered the staging question or the #15/#18 close.
+The RC round (#236). **The twenty-first cut `d27858eb70` is built and proven** (vm-qa run 27 fourteen of fourteen, `frame-diff` 0 boxes over 78 screens, time to play 1.10 / 1.51 / 0.84 s with the #263 surface guard's first real pass; rehearsal run 22 PASS 20/20; artifacts `h700-all-20260924-d27858eb70`, `x64-all-20260924-d27858eb70` with RECORD.txt). It carries #195 YESTERDAY, #192 the reachable wait, #255 the sharp widget sizes (patch 0017), #263 the guest surface fix; webkitgtk stays 2.52.6 (the 2.54 spike ended at the final link, D-WORKFLOW-041; the bump is the next candidate's first work, D-WORKFLOW-042). **Not staged**: the copy and the reboot of the RG35XX SP are asked on #236 for this cut (replacing the twentieth's questions) and unanswered. The maintainer also owes: close #15/#18 or keep; the SemVer scheme on #265 (D-WORKFLOW-043) is the release after this one.
 
 ## Completed This Session
 
@@ -19,14 +19,15 @@ The RC round (#236). **The webkitgtk 2.54 spike is over** (D-WORKFLOW-041): six 
 
 ## In Progress
 
-- **chain-21** (`/workspace/tmp/rocknix-session/chain-21.sh`, pid in `pgrep -f 'chain-21[.]sh'`, log `chain-21.log`, x64 build `build-x64-run42.log`/`.rc`, H700 `build-h700-run25.log`, watcher `chain-21.status`, end marker `chain-21.done`; harness waiter `bdlg03nph`). webkitgtk 2.52.6, gst-plugins-base and cloud-signin-window rebuild from ccache after the spike's clean. Then guest d on the image, `vmqa-run27.sh` (fourteen suites; `frame-diff` may show RetroArch-screen changes now that the surface is 1:1 -- claim them), `upgrade-rehearsal-run22`.
-  - **After**: record `h700-all-20260924-d27858eb70` (`record-h700-run22.sh` shape; remove the superseded `h700-all-20260924-24badef3cb`), QA-log row, RECORD.txt, change-log lines for #192/#195/#255/#263, #236 comment, #255 frames at 1:1 (640x480 and 1280x800) with the surface confirmed in RetroArch's log first, then ask the copy and reboot yeses.
+- Nothing running. Guest d is up on `d27858eb70` (:10026, StartupSystem nes, a Bobl state dated yesterday for #195's frame). No build, no QA run.
 
 ## Next Steps
 
-1. On the maintainer's **yes to the copy**: stage `/workspace/artifacts/rocknix-images/h700-all-20260924-c041be7e98/ROCKNIX-H700.aarch64-20260924.tar` into the RG35XX SP's `~/.update` through `tools/device-act` (idle check first: `flock -n /var/run/cloud_sync.lock true`, `pgrep rclon[e]`, an emulator). On a **separate yes to the reboot**: reboot through `device-act`; then read `/etc/os-release` (BUILD_ID `c041be7e98`) and the journal.
-2. The Scaffold branch `feat-260-code-auditor-second-opinion` (`39bf935`) is pushed by the maintainer from Marvin (`git am /workspace/artifacts/scaffold-260/0001-*.patch`); Groundhog needs the council substrate before Phase 4.6 can be ported there (question on #260). Close #260 when both are answered.
-3. #193 1280x800/online frames and #192's WAITING line remain the maintainer's calls; #259 (proxy bump) after the RC.
+1. On the maintainer's **yes to the copy**: stage `/workspace/artifacts/rocknix-images/h700-all-20260924-d27858eb70/ROCKNIX-H700.aarch64-20260924.tar` into the RG35XX SP's `~/.update` through `tools/device-act` (idle check: `flock -n /var/run/cloud_sync.lock true`, `pgrep rclon[e]`, an emulator). On a **separate yes to the reboot**: reboot through `device-act`; read `/etc/os-release` (BUILD_ID `d27858eb70`) and the journal; then #236 § A's device boxes and the soak (D-QA-036).
+2. Owed frames on the next VM session: #255's notification at 15 px at 640x480 (a denser shot burst after F2; check `Using resolution` first) and the 1280x800 pair; #195's HIER and an older save's date form.
+3. #228: the 2.54 bump is the next candidate's first work, from `build/webkit-254` at the final link (the Inspector protocol's `powerEfficientPlaybackStateChanged`).
+4. #265: the SemVer scheme's row after the maintainer's word; #264: `tools/retroarch-syntax-check`.
+5. #15/#18 close or keep; #193 1280x800/online frames; #192's WAITING frame is the RG SP's boot.
 
 ## Key Files Modified
 
