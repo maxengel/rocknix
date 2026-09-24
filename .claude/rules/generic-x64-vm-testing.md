@@ -992,6 +992,42 @@ waits for the suites or uses a folder of its own (`SAVES_REMOTE=/GAMES-d`,
 set on that guest alone) -- and a guest borrowed for a cloud proof gets its
 `cloud_sync.conf` and `rclone.conf` put back before the next suite run.
 
+## A RetroArch frame is evidence only when its surface was the panel (#263)
+
+RetroArch's own log says what it drew into, two lines apart:
+
+```
+[INFO] [GL] Detecting screen resolution: 640x480.
+[INFO] [GL] Using resolution 240x256.
+```
+
+Under sway, RetroArch's fullscreen toplevel comes up at its splash size
+(240x256) and is resized by the compositor's fullscreen configure; when
+the first frame wins that race the surface stays small and sway scales it
+to the panel, and every stem of every letter in every widget is two grey
+columns wide whatever the font size. RetroArch knows the bug
+(`gfx/common/wayland_common.c:87-104`, "a fullscreen sizing bug on some
+hardware and/or compositors") and its detection does not always fire. The
+H700 runs on KMS with `video_fullscreen_x = 640` and never draws this way.
+Every RetroArch frame read off a guest before 2026-09-24 -- #251's stem
+measurements among them -- was that scaled picture (blindspot 54).
+
+So, for any claim about RetroArch's text, widgets or picture on a guest:
+
+- **Read `Using resolution` from the guest's `/var/log/exec.log` after the
+  launch, and compare it with the screendump's size.** `tools/time-to-play`
+  does this after its first launch (`surface_check`) and is not a pass when
+  the surface is under the panel; a walk or a proof script that frames a
+  game does the same by hand until it grows the check.
+- The GENERIC_X64 cfg ships `video_fullscreen_x/y = 640/480` and the boot
+  quirk `092-retroarch-surface` follows the guest's mode; that changes the
+  odds, not the race. A run whose log says the surface was small is
+  repeated, and its frames are not filed as evidence of anything but the
+  bug.
+- `tools/font-stems` renders a face through the image's own FreeType the
+  way RetroArch's font driver does, and is the number to reason from when a
+  frame and a table disagree.
+
 ## The frames are compared, not only counted (#252)
 
 `tools/vm-qa`'s `frame-diff` suite holds every walk frame against the same
