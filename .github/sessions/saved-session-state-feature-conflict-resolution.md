@@ -1,6 +1,6 @@
 # Saved Session State
 
-> **Saved**: 2026-09-24T02:05:00Z
+> **Saved**: 2026-09-24T02:35:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `e5065e18ee` + UNCOMMITTED #252 work: `tools/frame-diff`, `tools/vm-qa`, `tools/vm-walks/{suite.txt,masks.txt,claims.txt,manager.steps,fixtures/,README.md}`, `.githooks/pre-push`, `.claude/rules/{generic-x64-vm-testing,fork-workflow}.md`, `docs/{decision-register,cloud-sync-changelog}.md`, the work log)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
@@ -19,9 +19,9 @@ Filed tonight: #255 (grid-fit font sizes per panel, the maintainer's idea, with 
 
 ## In Progress
 
-- **The milestone audit** (`docs/audits/2026_09_24-milestone-rc-round-since-186/`): a fresh Fable agent runs Phases 1-5 in the background (launched 02:03 UTC; hours). When it returns: verify its leads against the primary artifacts, run `tools/lint-audit-artifacts <folder> --issue <n>`, create the Phase 6 issue (`--repo maxengel/rocknix`, labels audit + punch-list, one checkbox per item), resolve every item (D-WORKFLOW-015: every severity) -- code fixes become the eighteenth cut, tested on the VM before any device build (D-WORKFLOW-016) -- and record Phase 7 outcomes from commands. Second opinions through the council Facilitator once Phase 2 exists (`~/.config/council/env` holds the key; the environment does not).
-- **The seventeenth cut `443028ff7a` waits on the maintainer's yes** to copy and to reboot (asked 01:55 UTC). `stage-rg35xxsp-443028ff7a.sh` ready. Staging a device does not mutate the audit's frozen scope.
-- The RG35XX SP runs the fifteenth `aa8d525a8a`.
+- **The RG35XX SP runs the seventeenth cut `443028ff7a`** (staged 02:20 UTC, rebooted 02:21 on the maintainer's yes, up 02:27, queue empty). The walk baseline is run 23's frames (`walk-baseline/BASELINE.txt`, build 443028ff7a). The maintainer's boxes on it: #251, #209, #198, #250, #249, #245, #246, #243.
+- **The milestone audit** runs in a background Fable agent (launched 02:03; `docs/audits/2026_09_24-milestone-rc-round-since-186/`). When it returns: verify leads, `tools/lint-audit-artifacts`, the Phase 6 issue, resolve every item (an eighteenth cut if code changes; VM first), Phase 7 outcomes from commands. Council second opinions once Phase 2 exists.
+- #257 filed (the staging as a tool in the tree; a dated file name cost a no-op copy).
 
 ## Next Steps
 
