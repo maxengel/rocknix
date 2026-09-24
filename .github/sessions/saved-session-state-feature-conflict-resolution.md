@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-24T16:04:36Z
+> **Saved**: 2026-09-24T16:20:52Z
 > **Branch**: feature/conflict-resolution (session-state worktree; merged up to next `4a6bfff2f0`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-The RC round (#236) for the RG35XX SP: the milestone audit #258 closed at every severity (D-WORKFLOW-015), then the maintainer asked for an adversarial phase in the code-auditor skill by default (#260). Phase 4.6 (the council GPT seat's second opinion) is written (skill v1.11.0), was run on #258, graded, and its nine confirmed items are fixed in the **twentieth cut `c041be7e98`** (ES `d30cbd282`), whose QA chain (`chain-20.sh`: vm-qa run 26, rehearsal run 21) was in flight when this was saved.
+The RC round (#236) for the RG35XX SP: the milestone audit #258 closed at every severity (D-WORKFLOW-015), then the maintainer asked for an adversarial phase in the code-auditor skill by default (#260). Phase 4.6 (the council GPT seat's second opinion) is written (skill v1.11.0), was run on #258, graded, and its nine confirmed items are fixed in the **twentieth cut `c041be7e98`** (ES `d30cbd282`), proven green (vm-qa run 26 fourteen of fourteen, `frame-diff` 0 boxes; rehearsal run 21 20/20) and recorded (QA log row, RECORD.txt, #258/#260/#236 comments). Not staged: the copy and the reboot of the RG35XX SP are asked on #236 and in the report (D-QA-011).
 
 ## Completed This Session
 
@@ -19,16 +19,13 @@ The RC round (#236) for the RG35XX SP: the milestone audit #258 closed at every 
 
 ## In Progress
 
-- `chain-20.sh` (setsid, log `/workspace/tmp/rocknix-session/chain-20.log`): x64 run 35 and H700 run 24 built 15:42-15:46 UTC; guest d rebuilt on `c041be7e98` 15:47; vm-qa run 26 running (`vmqa-run26.log`); then rehearsal run 21; `chain-20.done` marks the end.
-  - **What remains**: read run 26's report (fourteen suites; frame-diff against the masked baseline) and rehearsal run 21 (expect 19/19 + the new libcairo readlink check = 20); record them in `05-punch-list.md`'s gate lead and PL-031..039 rows, `docs/vm-qa-log.md` row, `RECORD.txt` in `h700-all-20260924-c041be7e98`; tick #260 box 4; #236 comment.
+- Nothing running. `chain-20.done` exists; no build, guest rebuild or QA run is in flight.
 
 ## Next Steps
 
-1. When `chain-20.done` exists: `grep -E 'PASS|FAIL' /workspace/tmp/rocknix-session/vmqa-run26.log | tail -20` and the rehearsal tail in `chain-20.log`; on a FAIL, read the suite's report before anything else.
-2. Record the proof (QA log row, RECORD.txt, punch-list lead, #258 comment), commit on next, push.
-3. **Ask the maintainer** (D-QA-011) for the copy of `ROCKNIX-H700.aarch64-20260924.tar` from `h700-all-20260924-c041be7e98` to the RG35XX SP's `~/.update` and, separately, for the reboot. The seventeenth (`443028ff7a`) is on the device since 02:27 UTC.
-4. Maintainer pushes the Scaffold branch from Marvin (`git am` the patch); Groundhog port is a question first (no council substrate there).
-5. #193 1280x800/online frames and #192's WAITING line remain the maintainer's calls.
+1. On the maintainer's **yes to the copy**: stage `/workspace/artifacts/rocknix-images/h700-all-20260924-c041be7e98/ROCKNIX-H700.aarch64-20260924.tar` into the RG35XX SP's `~/.update` through `tools/device-act` (idle check first: `flock -n /var/run/cloud_sync.lock true`, `pgrep rclon[e]`, an emulator). On a **separate yes to the reboot**: reboot through `device-act`; then read `/etc/os-release` (BUILD_ID `c041be7e98`) and the journal.
+2. The Scaffold branch `feat-260-code-auditor-second-opinion` (`39bf935`) is pushed by the maintainer from Marvin (`git am /workspace/artifacts/scaffold-260/0001-*.patch`); Groundhog needs the council substrate before Phase 4.6 can be ported there (question on #260). Close #260 when both are answered.
+3. #193 1280x800/online frames and #192's WAITING line remain the maintainer's calls; #259 (proxy bump) after the RC.
 
 ## Key Files Modified
 
