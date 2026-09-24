@@ -3,6 +3,10 @@
 
 . ${ROOT}/packages/multimedia/gstreamer/gst-plugins-base/package.mk
 
+# GL needs the EGL/GLES headers and wayland-client in the sysroot before
+# meson looks for them (fork #228).
+PKG_DEPENDS_TARGET="${PKG_DEPENDS_TARGET} mesa wayland"
+
 # Upstream throws the whole install away -- this package exists there only to
 # populate the sysroot so other things can link. That works right up until
 # something links it and then has to *run*: WebKit pulls in libgstapp, audio,
@@ -24,7 +28,9 @@
 # chain onto. Only -Dapp differs from upstream; keep the rest in step when
 # rebasing.
 pre_configure_target() {
-  PKG_MESON_OPTS_TARGET="-Dgl=disabled \
+  PKG_MESON_OPTS_TARGET="-Dgl=enabled \
+                         -Dgl_platform=egl \
+                         -Dgl_winsys=wayland \
                          -Dadder=disabled \
                          -Dapp=enabled \
                          -Daudioconvert=disabled \
