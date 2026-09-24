@@ -39,3 +39,36 @@ DPI reported fall below the first threshold for the message queue.
   achievement banner's 17 px (38%, 1.37 px). A first read over a shorter
   span said none were solid; the span has to be the same text on every
   size, which is in #255's brief for the measuring tool.
+
+## #192 and #203 -- the startup card's lines and the launch question, on `a84fce38a6` (guest d, 640x480, EN and FR)
+
+Taken for audit #258 PL-025, which found the boxes named frames nobody had
+filed. Guest d rebooted its interface with `cloudsaves.startup` on; frames at
+0.7 s from the moment `essway` started, over the QA WebDAV cloud at
+`--bwlimit 1M`.
+
+| Frame | What it shows |
+| --- | --- |
+| `192-startup-card-checking-en-640x480-a84fce38a6.png` | link up: `SYNCING SAVES AT STARTUP` / `CHECKING THE CONNECTION...` (#192 case a, D-UI-055) |
+| `192-startup-card-checking-fr-640x480-a84fce38a6.png` | the same in French: `SYNCHRONISATION DES SAUVEGARDES AU DÉMARRAGE` / `VÉRIFICATION DE LA CONNEXION...` |
+| `192-startup-card-sending-en-640x480-a84fce38a6.png` | the step after: `SENDING · 3 KB OF 3 KB` |
+| `192-startup-card-offline-skipped-en-640x480-a84fce38a6.png` | `eth0` down before the interface started: `SYNC SAVES` / `SKIPPED - YOU'RE NOT ONLINE` / `IT'LL TRY AGAIN AT STARTUP, OR SYNC NOW FROM GAME SETTINGS.` -- at once, with no `WAITING FOR A NETWORK` step (below) |
+| `192-startup-card-offline-skipped-fr-640x480-a84fce38a6.png` | the same in French: `IGNORÉ - VOUS N'ÊTES PAS EN LIGNE` / `NOUVEL ESSAI AU PROCHAIN DÉMARRAGE.` |
+| `203-launch-question-over-startup-sync-fr-640x480-a84fce38a6.png` | `POST /launch` while the startup sync ran: `VOS SAUVEGARDES SE SYNCHRONISENT AVEC LE CLOUD.` / `SI VOUS L'ARRÊTEZ, LA PROCHAINE SYNCHRONISATION FINIRA CE QUE CELLE-CI N'A PAS FAIT.` -- `L'ARRÊTER ET JOUER` / `CONTINUER D'ATTENDRE` (D-CLOUD-130; #203's FR frame, the EN ten were filed on 2026-09-16) |
+| `203-after-keep-waiting-sync-goes-on-fr-640x480-a84fce38a6.png` | after B (CONTINUER D'ATTENDRE): the sync goes on, `ENVOI · 8.0 MB SUR 8.0 MB` |
+
+**#192 case b -- `WAITING FOR A NETWORK, UP TO 60 SECONDS...` -- could not be
+framed, and the reason is in the scripts, not the fixture.** `cloud_net_ready`
+exits 69 at once when there is no default route (D-CLOUD-072: "no route means
+no wait, so a device booted offline never holds the launch gate"), and the
+card then reads `SKIPPED - YOU'RE NOT ONLINE`; the waiting line is drawn only
+while the script waits, and it waits only with a route. Two constructions
+were tried on guest d: (1) `eth0` down with a dummy interface asking DHCP of
+nobody, so NetworkManager read `connecting` -- no route, exit 69 at once
+(`cloud_sync.log`: `no default route after 0s`); (2) the same with a device
+route through the dummy -- a route, but `eth0`'s address survived `ip link set
+down`, the interface saw a link and said `CHECKING THE CONNECTION...`. The
+waiting words need no address on any interface and a default route at the
+same time, which no real device has either: a default route rides an address.
+Recorded on #192 for the maintainer's call (drop the words, or make the no-route
+case wait a bounded few seconds before it says offline).
