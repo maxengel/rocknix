@@ -20,6 +20,8 @@
 #
 #   scripts     tools/last-good-scripts-test  -- the scripts under busybox shims, on the host
 #   lifetime    ES tests/cloud-oauth-lifetime.py -- the wizard's page lifetimes under ASan, on the host (ES_SRC)
+#   wrapper     tools/retroarch-wrapper-test -- RetroArch's threaded video wrapper runs a posted command exactly once
+#               (#211, #225; patch 0015), against the source in the build root, on the host
 #   vocabulary  tools/vocabulary-check       -- back up / backup as verb / noun, ES strings and script lines, on the host
 #   register    tools/register-check         -- the decision register: every ID once, every citation names a row, on the host (ES_SRC)
 #   french      tools/es-untranslated        -- every fork string in the interface has French (D-UI-051, #152), on the host (ES_SRC)
@@ -56,7 +58,7 @@ IMAGE=""; SKIP_UP=0; LINK=0; RA_OFFLINE=0; GUEST=a
 # to be a second, hand-typed list here -- and menumap, added to SUITES on
 # 2026-09-19, never ran because this copy was not updated. One list.
 ONLY=""
-SUITES="scripts lifetime vocabulary register french menumap pair-identity fresh round-trip exit time-to-play link ra-offline walks frame-diff"
+SUITES="scripts lifetime wrapper vocabulary register french menumap pair-identity fresh round-trip exit time-to-play link ra-offline walks frame-diff"
 [ -n "$ONLY" ] || ONLY=$(printf '%s' "$SUITES" | tr ' ' '\n' | grep -vxE 'link|ra-offline' | paste -sd, -)
 # Which of the five QA clouds every suite here talks to (#133). It is one
 # variable and not a per-suite flag on purpose: the backend the endpoint is
@@ -151,6 +153,11 @@ case ",$ONLY," in *,lifetime,*)   run_suite lifetime   "$OUT/lifetime.log"   lif
 # "back up" two words as a verb, "backup" one as a noun, across every _("")
 # string in the ES checkout the image pins and every sentence the scripts
 # print for a player. On the host, in a second (2026-09-12, the maintainer's ask).
+# RetroArch's threaded video wrapper, extracted from the source the image was
+# built from and driven 2000 times (#211's crash, #225's gate): it had a test
+# and no suite ran it (audit #258 PL-020), which is the shape blindspot 14
+# names. Seconds, on the host; 2 when no source is found, which is not a pass.
+case ",$ONLY," in *,wrapper,*) run_suite wrapper "$OUT/wrapper.log" "$ROOT/tools/retroarch-wrapper-test" ;; esac
 case ",$ONLY," in *,vocabulary,*) run_suite vocabulary "$OUT/vocabulary.log" env ES_SRC="${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}" "$ROOT/tools/vocabulary-check" ;; esac
 # Every string the fork adds has French (D-UI-051): tools/es-untranslated lists the ones that do not and exits 1 while any remain (#152).
 case ",$ONLY," in *,french,*) run_suite french "$OUT/french.log" env ES_SRC="${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}" "$ROOT/tools/es-untranslated" ;; esac

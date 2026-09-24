@@ -10,6 +10,12 @@
 #   tools/archaeology --issue 209          # the issue's own trail as well
 #   tools/archaeology --since 2026-09-01 webkit gstreamer
 #   tools/archaeology --no-gh ...          # offline: skip the tracker
+#   tools/archaeology --reversal 'left running|in the background'   # the sweep list after a reversal
+#
+# --reversal prints every line in this tree (outside build output), the
+# EmulationStation checkout (ES_SRC) and docs/ that carries the old words, so
+# a row that reverses, renames or re-pins can list what it made stale and the
+# sweep can land with it (decision-register.md, audit #258 P-01).
 #
 # It reads the decision register (decided rows and the open table), the
 # blindspot register, every dated work-log entry, the rule files, the git
@@ -209,8 +215,28 @@ def issue_trail(n):
     return hits
 
 
+def reversal(pattern):
+    """Every line carrying the old words: this tree, the ES checkout, docs/."""
+    roots = [ROOT]
+    es = os.environ.get('ES_SRC') or os.path.expanduser('~/Development/emulationstation-next.worktrees/qa-integration')
+    if os.path.isdir(es):
+        roots.append(es)
+    total = 0
+    for r in roots:
+        cmd = ['grep', '-rnIE', '--exclude-dir=.git', '--exclude-dir=build.*', '--exclude-dir=sources', '--exclude-dir=target',
+               '--exclude-dir=build-tests', '--exclude-dir=node_modules', pattern, r]
+        out = subprocess.run(cmd, capture_output=True, text=True).stdout
+        for line in out.splitlines():
+            print(line[:220])
+            total += 1
+    print('\n%d line(s) carry the old words; each is a comment, a doc or a box to sweep in the same change as the row.' % total)
+    return 0
+
+
 def main():
     args = sys.argv[1:]
+    if len(args) >= 2 and args[0] == '--reversal':
+        return reversal(args[1])
     if not args or args[0] in ('-h', '--help'):
         print(open(__file__).read().split('\n\n')[0].replace('# ', '').replace('#', ''))
         return 0

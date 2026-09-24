@@ -97,6 +97,14 @@ case "${1:-}" in
   ssh)
     read -r _ _ _ _ port _ <<<"$(settings "${2:-}")"; shift 2
     exec ssh -i "$KEY" -p "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o LogLevel=ERROR root@127.0.0.1 "$@" ;;
+  scp)
+    # vm-pair scp <a|b> <local file> <remote path>: the pair's key and the
+    # guest's port, so a caller never carries them (vm-upgrade-rehearsal did,
+    # audit #258 PL-030).
+    read -r _ _ _ _ port _ <<<"$(settings "${2:-}")"; shift 2
+    exec scp -q -i "$KEY" -P "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o LogLevel=ERROR "$1" "root@127.0.0.1:$2" ;;
+  port)
+    read -r _ _ _ _ port _ <<<"$(settings "${2:-}")"; echo "$port" ;;
   serial)
     read -r _ ser _ _ _ _ <<<"$(settings "${2:-}")"; shift 2
     exec "$HERE/vm-serial" --socket "$ser" sh "$@" ;;

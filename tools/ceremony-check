@@ -30,6 +30,7 @@
 #   weekly    docs/work-logs/<yyyy_mm>-work_logs/<yyyy>-W<ww>-summary.md
 #   monthly   docs/work-logs/<yyyy_mm>-work_logs/SUMMARY.md
 #   index     tools/work-log-index --check
+#   hygiene   no issue closed as completed since the clock carries an open box (audit #258 P-03; CI red)
 #   register  tools/register-check
 #   guards    docs/blindspot-register.md entries >= GUARD_FROM name a guard that exists
 
@@ -274,9 +275,27 @@ def main():
                 report(False, 'futro', 'OVERDUE for %s' % ' '.join(missing))
             else:
                 report(True, 'futro', 'last %s; no epic since %s without one' % (last_futro or 'none', SINCE))
+        # 7. issue hygiene (audit #258 PL-008, P-03): an issue closed as completed
+        # with a box still open is a delivered item nobody ticked, or a
+        # criterion nobody struck -- #225 closed with five of them. Read from
+        # the tracker since the clock; CI red, not push-blocking, since the fix
+        # is a tracker edit and not a file.
+        closed_bodies, err = gh_json(['issue', 'list', '--repo', REPO, '--state', 'closed', '--limit', '200',
+                                      '--search', 'closed:>=%s reason:completed' % SINCE.isoformat(), '--json', 'number,body'])
+        if err:
+            report(False, 'hygiene', 'gh failed: %s' % err[:80])
+        else:
+            with_open = ['#%d' % it['number'] for it in closed_bodies or []
+                         if re.search(r'^\s*- \[ \]', it.get('body') or '', re.M)]
+            if with_open:
+                overdue.append(('ci', 'hygiene: closed as completed with an open box: %s -- tick it with its evidence or strike it with the decision (issue-tracking.md)' % ' '.join(with_open)))
+                report(False, 'hygiene', 'closed-completed issues with an open box: %s' % ' '.join(with_open))
+            else:
+                report(True, 'hygiene', 'no issue closed completed since %s carries an open box' % SINCE)
     else:
         report(True, 'audit', 'not checked (--no-gh)')
         report(True, 'futro', 'not checked (--no-gh)')
+        report(True, 'hygiene', 'not checked (--no-gh)')
 
     blocking = [t for lv, t in overdue if lv == 'block']
     ci_only = [t for lv, t in overdue if lv == 'ci']

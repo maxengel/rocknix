@@ -72,3 +72,11 @@ waiting words need no address on any interface and a default route at the
 same time, which no real device has either: a default route rides an address.
 Recorded on #192 for the maintainer's call (drop the words, or make the no-route
 case wait a bounded few seconds before it says offline).
+
+## #252 -- the third manager walk's frame (guest a, 1280x800, `a84fce38a6`)
+
+`252-walk-manager-gb-1280x800-a84fce38a6.png` is `walks/manager-gb/04-3-manager.png`
+from vm-qa run 24 (`qa-a84fce38a6-webdav-a-20260924-0424`): the SAVE STATE MANAGER
+on the Game Boy fixture, the third of the three walks #252 box 3 names (nes and
+fbn were filed on 2026-09-23). `frame-diff` compared all three against the
+`443028ff7a` baseline with 0 boxes.

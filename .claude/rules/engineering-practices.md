@@ -304,6 +304,38 @@ So:
 An assertion that cannot fail is not evidence. Ask what input would produce a
 FAIL; if you cannot name one, the check proves nothing.
 
+**The positive is recorded where the guard is wired (audit #258, P-02).** A
+hook line, a CI step, a suite line or a `check` in a script is committed
+with a work-log line naming the constructed failure it was seen to catch,
+the date, and the command -- five guards in the RC round had none (the
+build's `--wrap-mode=nodownload`, the push guard's index warning, a red
+`fork-checks.yml` run, `tools/retroarch-wrapper-test`, `tools/archaeology`'s
+own constructed case), and each was proven in an afternoon once asked. A
+guard whose positive nobody can point at is a guard whose first real firing
+will be argued with. No tool audits this yet: `tools/ceremony-check` proves
+blindspot entries name a guard that exists, not that the guard has fired;
+extending it to the fork tools is #254's, and until then this paragraph is
+the whole enforcement.
+
+**Success reported over a no-op is the same defect with a friendlier face
+(audit #258, P-04).** Four shapes from one round, each green:
+
+- **A count echoed is not a floor.** `echo "USING: $(wc -l < table) games"`
+  printed `0 games` and the build went on; assert the number, and fail under
+  the floor.
+- **An exit code named must be defined.** `exit ${EX_USAGE}` with no
+  `EX_USAGE=` anywhere is `exit`, the last command's status -- the usage
+  `echo`'s 0. `set -u` does not catch it in a script that never enables it.
+  Define the constants in one block at the top and grep `exit \$\{` against
+  it.
+- **A success log line is written from the artifact, not the exit status.**
+  `save state copy recorded` on rc 0 recorded nothing when the script had
+  exited 0 with a WARN; the script now exits a distinct code and the caller
+  says "recorded nothing".
+- **A lint reads every copy of the claim it checks.** `lint-audit-artifacts`
+  read the Phase 7 table and never the YAML index beside it, which said
+  `open` for 32 resolved items; it compares them now.
+
 **And a suite is not wired in until it has been seen to FAIL once, on the
 runner's own guest.** "Prove the guard fires" applies to a whole check as
 much as to a branch inside one. The time-to-play cell (#135) was written and
