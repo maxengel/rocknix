@@ -1,6 +1,6 @@
 # Saved Session State
 
-> **Saved**: 2026-09-24T01:00:00Z
+> **Saved**: 2026-09-24T00:20:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `e5065e18ee` + UNCOMMITTED #252 work: `tools/frame-diff`, `tools/vm-qa`, `tools/vm-walks/{suite.txt,masks.txt,claims.txt,manager.steps,fixtures/,README.md}`, `.githooks/pre-push`, `.claude/rules/{generic-x64-vm-testing,fork-workflow}.md`, `docs/{decision-register,cloud-sync-changelog}.md`, the work log)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
@@ -17,9 +17,8 @@
 
 ## In Progress
 
-- **#251 waits on the maintainer's pick**, now with measurements (comment of 2026-09-24 00:55 UTC; frames `docs/qa-frames/2026-09-24/251-*`): 10 px stems 0.76 px with no solid core; 15 px 1.40 px; the banner's 17 px 1.37 px; 24 px 1.87 px but the banner runs off the 640 px panel, so option 3 is withdrawn; full hinting through FreeType's classic interpreter changed no pixel. Recommendation: option 2, a 14 px floor for the message-queue font (a RetroArch fork patch in `gfx_widgets_font_init`, where the 9 px floor is; needs a RetroArch rebuild and a seventeenth cut). The maintainer wants nothing left to decide before the transfer, so the sixteenth's copy/reboot ask stands until they pick; on a pick, the seventeenth carries it.
-- **#255 filed** (the maintainer's idea: snap widget font sizes to the grid per panel, from #251's data); no work started.
-- The copy and reboot question for the sixteenth on the RG35XX SP (asked 00:20 UTC) -- likely superseded by a seventeenth cut once #251 is picked.
+- The copy and reboot question for the sixteenth on the RG35XX SP.
+- #251: the maintainer's pick (a 14 px floor recommended). #198's end-to-end press through the on-screen keyboard is the maintainer's first box on the device.
 
 ## Next Steps
 
