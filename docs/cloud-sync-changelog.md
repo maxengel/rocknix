@@ -2268,6 +2268,14 @@ the handheld took them.
   reads the raw count, and the interface's core, mostly texture memory, gets
   a larger cap before its stacks are lost. Only for troubleshooting; the
   keeper stays off on a release candidate (D-QA-029).
+- **RetroArch's notifications are readable on small panels** (#251,
+  D-UI-084). The message queue -- the sign-in banner, "saved state", the
+  scan and sync notices -- was drawn at 10 pixels on a 640x480 handheld and
+  at the 9-pixel floor on a 480x320 one, where no stroke of the font owns
+  a whole pixel; it now has a floor of 14 pixels, where the strokes do.
+  Panels at 720p and above are unchanged. Maintainer: *"It just isn't
+  nearly as easy to read that text overlay as it is, say, the top-left
+  achievement banner."*
 - **Save-state thumbnails and screenshots are drawn at the shape of the
   system that made them** (#243, D-UI-080). RetroArch writes both at the
   core's native size, which for the NES and the SNES is the pixel grid and
