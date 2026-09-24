@@ -1,6 +1,6 @@
 # Saved Session State
 
-> **Saved**: 2026-09-24T01:30:00Z
+> **Saved**: 2026-09-24T02:05:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `e5065e18ee` + UNCOMMITTED #252 work: `tools/frame-diff`, `tools/vm-qa`, `tools/vm-walks/{suite.txt,masks.txt,claims.txt,manager.steps,fixtures/,README.md}`, `.githooks/pre-push`, `.claude/rules/{generic-x64-vm-testing,fork-workflow}.md`, `docs/{decision-register,cloud-sync-changelog}.md`, the work log)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
@@ -19,9 +19,9 @@ Filed tonight: #255 (grid-fit font sizes per panel, the maintainer's idea, with 
 
 ## In Progress
 
-- chain-17b (vm-qa run 23 with frame-diff; the rehearsal). Expected: twelve suites PASSED, frame-diff 0 boxes (the toast is not walked), rehearsal 19/19.
-- The copy and reboot question for the seventeenth (to be asked when green).
-- The code audit (next, after the ask).
+- **The milestone audit** (`docs/audits/2026_09_24-milestone-rc-round-since-186/`): a fresh Fable agent runs Phases 1-5 in the background (launched 02:03 UTC; hours). When it returns: verify its leads against the primary artifacts, run `tools/lint-audit-artifacts <folder> --issue <n>`, create the Phase 6 issue (`--repo maxengel/rocknix`, labels audit + punch-list, one checkbox per item), resolve every item (D-WORKFLOW-015: every severity) -- code fixes become the eighteenth cut, tested on the VM before any device build (D-WORKFLOW-016) -- and record Phase 7 outcomes from commands. Second opinions through the council Facilitator once Phase 2 exists (`~/.config/council/env` holds the key; the environment does not).
+- **The seventeenth cut `443028ff7a` waits on the maintainer's yes** to copy and to reboot (asked 01:55 UTC). `stage-rg35xxsp-443028ff7a.sh` ready. Staging a device does not mutate the audit's frozen scope.
+- The RG35XX SP runs the fifteenth `aa8d525a8a`.
 
 ## Next Steps
 
