@@ -101,3 +101,14 @@ interface process (`pidof emulationstation` 6518 before and after).
 On `a84fce38a6` and before, the same steps would have shown the first pair
 twice: the screenshot cache held the Transform it was built with until the
 process ended (audit #258 PL-019; ES `4fd019f04`).
+
+## #182 -- the gated cloud rows dimmed at 1280x800 (guest b, fresh, no cloud, `c8609558d4`)
+
+`182-cloud-rows-dimmed-no-cloud-1280x800-c8609558d4.png`: the CLOUD hub on a
+guest with no `rclone.conf` -- BACK UP TO THE CLOUD, RESTORE FROM THE CLOUD
+and MATCH THIS DEVICE TO THE CLOUD drawn dimmed while the SAVE MANAGEMENT
+rows are full; a second frame a second later was byte-identical (md5
+`550e3ce3`), so the dim holds across frames (`ComponentList::render`
+recolours every element every frame; ES `d9fa93bf2`'s `setDimmed` re-applies
+it). `...-cursor-moved-...png`: the cursor on RESTORE, the rows still dimmed.
+The 640x480 frame is RC-11's (`182-cloud-rows-dimmed-no-cloud-640x480-a6d032bf5e.png`).
