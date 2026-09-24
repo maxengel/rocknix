@@ -319,9 +319,11 @@ vm-qa run 24 (13 suites, `frame-diff` 0 boxes) and the rehearsal; the two
 follow-ups PL-003 and PL-019 needed are the nineteenth, `c8609558d4` (ES
 `4fd019f04`), proven by run 25 and rehearsal run 20. The nine items the second
 opinion added (PL-031..PL-039, `04-analysis.md` § Second opinion) are the
-twentieth, `c041be7e98` (ES `d30cbd282`): vm-qa run 26 and rehearsal run 21 are
-in flight as this is written and their results are recorded here when they
-land. The YAML index carries the same word per item;
+twentieth, `c041be7e98` (ES `d30cbd282`), proven by vm-qa run 26
+(`qa-c041be7e98-webdav-a-20260924-1547`: fourteen suites PASS, `frame-diff` 0
+boxes over 78 screens, the seat's harness cases PASS in `scripts.log`) and
+rehearsal run 21 (`qa-c041be7e98-upgrade-from-b245fd12ac-20260924-1616`: PASS
+20/20, the twentieth check the libcairo link). The YAML index carries the same word per item;
 `tools/lint-audit-artifacts --issue 258` compares them.
 
 | Item | Outcome (2026-09-24) |
