@@ -67,20 +67,31 @@ def main():
     # Slice from the gate *heading*, not the first "Phase 7" mention: the
     # instructions and the tracked-scope section may name it earlier, and a
     # slice from there matches each item's own heading instead of its outcome.
-    m = re.search(r"^#+ .*Phase 7.*$", punch, re.M)
+    # The gate's own heading, not the first heading that names Phase 7: #258's
+    # PL-015 item was titled "...its Phase 7 outcomes table..." and the slice
+    # began there, reading the item bodies as the gate (2026-09-24).
+    m = re.search(r"^#+ .*Phase 7 resolution gate.*$", punch, re.M) or re.search(r"^#+ .*Phase 7.*$", punch, re.M)
     gate = punch[m.start():] if m else ""
     if not gate:
         bad("05-punch-list.md has no Phase 7 resolution gate")
-    # The outcome in force is the row's LAST cell: a table may grow a column
-    # per gate (2026-09-14's "Deferred -- fix stream", then 2026-09-24's
-    # "Resolved `abc`"), and the first word found would read the old one.
+    # The outcome in force is the LAST cell that carries an outcome word: a
+    # table may grow a column per gate (2026-09-14's "Deferred -- fix stream",
+    # then 2026-09-24's "Resolved `abc`"), and the first word found would read
+    # the old one; the older tables put the word in a middle cell and the
+    # evidence after it (`| PL-01 | **Resolved** | 2b626195d8; ... |`), so the
+    # evidence is looked for from that cell to the row's end.
     def outcome_cell(row):
         cells = [c.strip() for c in row.strip().strip("|").split("|")]
-        return cells[-1] if cells else row
+        idx = [i for i, c in enumerate(cells) if re.search(r"Resolved|Deferred|Withdrawn", c)]
+        return " | ".join(cells[idx[-1]:]) if idx else (cells[-1] if cells else row)
 
     table_words = {}
     for pl in items:
-        row = next((l for l in gate.splitlines() if re.search(r"\b" + re.escape(pl) + r"\b", l)), None)
+        # A table row for the item first (`| PL-003 | ...`); a prose mention
+        # of the id -- the gate's lead may say which cut carried PL-003 --
+        # is not its outcome.
+        row = next((l for l in gate.splitlines() if re.match(r"^\|\s*" + re.escape(pl) + r"\s*\|", l)), None) \
+            or next((l for l in gate.splitlines() if re.search(r"\b" + re.escape(pl) + r"\b", l)), None)
         if row is None:
             bad(f"{pl} has no Phase 7 outcome"); continue
         cell = outcome_cell(row)
@@ -106,10 +117,13 @@ def main():
     # Withdrawn; `open` only where the table has no outcome yet.
     idx = re.search(r"^punch_index:\s*$(.*?)^```", punch, re.M | re.S)
     if not idx:
-        bad("05-punch-list.md has no punch_index YAML block")
+        # The YAML index arrived with the 2026-09-12 audit; the two folders
+        # before it have a table alone, which is what the checks above read.
+        ok("no punch_index YAML block (an audit from before the index; the table alone is checked)")
     else:
         for m in re.finditer(r"id:\s*(PL-\d+)\b(.*?)(?=\n-\s*(?:\{)?\s*id:|\Z)", idx.group(1), re.S):
             pl, body = m.group(1), m.group(2)
+            # `outcome: deferred:#144`, `deferred (#N)`, `resolved (abc)`: the word is the first token
             om = re.search(r"outcome:\s*['\"]?([A-Za-z]+)", body)
             index_word = om.group(1).lower() if om else ""
             table_word = table_words.get(pl, "")
