@@ -42,6 +42,21 @@ so they get re-derived, contradicted, or quietly re-decided.
 Write it **in the same session the decision happens**. Deferred capture is how
 these registers die.
 
+### A reversal, a rename or a re-pin sweeps its old words (audit #258, P-01)
+
+A row that reverses a design, renames a thing or moves a pin leaves the old
+sentences behind in every place that named it: code comments, the docs, the
+menu map, open acceptance boxes, a punch list's text. D-UI-078 reversed the
+leavable transfer page and seventeen comments in eight files went on
+describing it as the present design for three days; D-UI-071 renamed WI-FI
+SSID and four comments kept the old name; a re-pin left two comments naming
+the commit before. So the row's refs list what it made stale, and the sweep
+lands in the same change as the row -- `tools/archaeology --reversal <old
+words>` prints every line in this tree, the EmulationStation checkout and
+`docs/` that carries them, which is the list to work down. A sweep that
+cannot land the same session is an open box on the row's issue, not a
+sentence in the row.
+
 Not register material: routine implementation choices with no fork, and plain
 facts about what happened — those are work-log material.
 

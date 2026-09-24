@@ -131,6 +131,28 @@ def map_text_and_exclusions() -> tuple[str, dict[str, str]]:
     return text, exclusions
 
 
+def names_screen(text: str, title: str) -> bool:
+    """Does the map name this screen as a screen -- not merely mention its words?
+
+    A heading, a bold token, a backticked token, a mermaid node label, or a
+    line that begins with the title. Until audit #258 PL-021 the test was a
+    case-insensitive substring of the whole document, so a screen called
+    TOOLS was "mapped" by any sentence with the word tools in it. Exact
+    case: the map writes screen titles as the interface does, in capitals,
+    and a title in running prose is lower-case by the same convention.
+    """
+    t = re.escape(title)
+    shapes = [
+        r"^#{1,6}\s+.*\b" + t + r"\b",              # a heading naming it
+        r"\*\*" + t + r"\*\*",                     # **TITLE**
+        r"`" + t + r"`",                             # `TITLE`
+        r"[\[{(]\s*" + t + r"(?:<br/>|[\]})>])",     # a mermaid node label
+        r"^\s*[-*]?\s*" + t + r"\b",                # a line, or a list item, that begins with it
+        r"\b" + t + r"\b",                           # the title as a whole token, its own capitals
+    ]
+    return any(re.search(shape, text, re.M) for shape in shapes)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--es-src", default=os.environ.get("ES_SRC", str(DEFAULT_SRC)))
@@ -150,7 +172,7 @@ def main() -> int:
     for title, where in sorted(found.items()):
         if title in exclusions:
             continue
-        if title.lower() in text.lower():
+        if names_screen(text, title):
             continue
         missing[title] = where
 

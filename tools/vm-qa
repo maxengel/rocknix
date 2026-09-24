@@ -20,12 +20,17 @@
 #
 #   scripts     tools/last-good-scripts-test  -- the scripts under busybox shims, on the host
 #   lifetime    ES tests/cloud-oauth-lifetime.py -- the wizard's page lifetimes under ASan, on the host (ES_SRC)
+#   wrapper     tools/retroarch-wrapper-test -- RetroArch's threaded video wrapper runs a posted command exactly once
+#               (#211, #225; patch 0015), against the source in the build root, on the host
 #   vocabulary  tools/vocabulary-check       -- back up / backup as verb / noun, ES strings and script lines, on the host
 #   register    tools/register-check         -- the decision register: every ID once, every citation names a row, on the host (ES_SRC)
 #   french      tools/es-untranslated        -- every fork string in the interface has French (D-UI-051, #152), on the host (ES_SRC)
 #   menumap     tools/es-menu-map-check      -- docs/es-menu-map.md still describes the menus the image ships (D-UI-039), on the host (ES_SRC)
 #   pair-identity  the two guests' MACs, cloud_device_ids (#91) and hostnames (#50) differ, and each
 #               answers for its own name over mDNS (#50 box 6, #151 PL-01), over ssh
+#   fresh       a first boot of the image ended where an update ends: the three es_*.cfg the OS
+#               manages and the controller database are links into /usr/config, not copies
+#               (userconfig-setup vs post-update; audit #258 PL-001), over ssh to guest a
 #   round-trip  tools/cloud-round-trip        -- 27 steps over SSH against the QA cloud, guest a
 #   exit        tools/emulator-exit-test --vm -- the exit hotkey ends a game once, save written, guest a
 #   time-to-play tools/time-to-play --quick   -- UI to a game's first frame, and one game's exit to the
@@ -53,7 +58,7 @@ IMAGE=""; SKIP_UP=0; LINK=0; RA_OFFLINE=0; GUEST=a
 # to be a second, hand-typed list here -- and menumap, added to SUITES on
 # 2026-09-19, never ran because this copy was not updated. One list.
 ONLY=""
-SUITES="scripts lifetime vocabulary register french menumap pair-identity round-trip exit time-to-play link ra-offline walks frame-diff"
+SUITES="scripts lifetime wrapper vocabulary register french menumap pair-identity fresh round-trip exit time-to-play link ra-offline walks frame-diff"
 [ -n "$ONLY" ] || ONLY=$(printf '%s' "$SUITES" | tr ' ' '\n' | grep -vxE 'link|ra-offline' | paste -sd, -)
 # Which of the five QA clouds every suite here talks to (#133). It is one
 # variable and not a per-suite flag on purpose: the backend the endpoint is
@@ -148,6 +153,11 @@ case ",$ONLY," in *,lifetime,*)   run_suite lifetime   "$OUT/lifetime.log"   lif
 # "back up" two words as a verb, "backup" one as a noun, across every _("")
 # string in the ES checkout the image pins and every sentence the scripts
 # print for a player. On the host, in a second (2026-09-12, the maintainer's ask).
+# RetroArch's threaded video wrapper, extracted from the source the image was
+# built from and driven 2000 times (#211's crash, #225's gate): it had a test
+# and no suite ran it (audit #258 PL-020), which is the shape blindspot 14
+# names. Seconds, on the host; 2 when no source is found, which is not a pass.
+case ",$ONLY," in *,wrapper,*) run_suite wrapper "$OUT/wrapper.log" "$ROOT/tools/retroarch-wrapper-test" ;; esac
 case ",$ONLY," in *,vocabulary,*) run_suite vocabulary "$OUT/vocabulary.log" env ES_SRC="${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}" "$ROOT/tools/vocabulary-check" ;; esac
 # Every string the fork adds has French (D-UI-051): tools/es-untranslated lists the ones that do not and exits 1 while any remain (#152).
 case ",$ONLY," in *,french,*) run_suite french "$OUT/french.log" env ES_SRC="${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}" "$ROOT/tools/es-untranslated" ;; esac
@@ -230,6 +240,30 @@ pair_identity_suite() {
   echo "two devices, two names, each answering for its own over mDNS"
 }
 case ",$ONLY," in *,pair-identity,*) run_suite pair-identity "$OUT/pair-identity.log" pair_identity_suite ;; esac
+# A fresh boot lands where an update lands (upgrade-and-install.md, "The two
+# questions"). userconfig-setup copies /usr/config on first boot and then
+# links the files the OS manages; a file it did not exclude from the copy
+# stands where the link goes and the ln -s fails without a word, so a fresh
+# device carries a copy while an updated one carries a link. es_savestates.cfg
+# shipped that way for two weeks (audit #258 PL-001). Guest a is booted from
+# the image by this runner, so it is exactly the fresh device in question.
+fresh_suite() {
+  local bad=0 f target
+  for f in es_features.cfg es_systems.cfg es_savestates.cfg; do
+    target=$(ssh -n -i "$KEY" -p 10022 $SSHO root@127.0.0.1 "readlink /storage/.config/emulationstation/$f" 2>/dev/null)
+    echo "guest a: emulationstation/$f -> ${target:-(not a link)}"
+    [ "$target" = "/usr/config/emulationstation/$f" ] || { echo "FAIL: /storage/.config/emulationstation/$f is not a link to /usr/config/emulationstation/$f on a fresh boot -- userconfig-setup copied it and the link was not made"; bad=1; }
+  done
+  target=$(ssh -n -i "$KEY" -p 10022 $SSHO root@127.0.0.1 'readlink /storage/.config/SDL-GameControllerDB/gamecontrollerdb.txt' 2>/dev/null)
+  echo "guest a: SDL-GameControllerDB/gamecontrollerdb.txt -> ${target:-(not a link)}"
+  [ "$target" = "/usr/config/SDL-GameControllerDB/gamecontrollerdb.txt" ] || { echo "FAIL: the controller database is not a link on a fresh boot"; bad=1; }
+  local conf
+  conf=$(ssh -n -i "$KEY" -p 10022 $SSHO root@127.0.0.1 '[ -e /storage/.configured ] && echo yes || echo no' 2>/dev/null)
+  echo "guest a: /storage/.configured ${conf:-?}"
+  [ "$conf" = yes ] || { echo "FAIL: /storage/.configured is absent: first-boot configuration did not finish, or the guest did not answer"; bad=1; }
+  [ "$bad" = 0 ] || return 1
+}
+case ",$ONLY," in *,fresh,*) run_suite fresh "$OUT/fresh.log" fresh_suite ;; esac
 case ",$ONLY," in *,round-trip,*) run_suite round-trip "$OUT/round-trip.log" "$ROOT/tools/cloud-round-trip" --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --backend "$BACKEND" ;; esac
 case ",$ONLY," in *,exit,*)       run_suite exit       "$OUT/exit.log"       "$ROOT/tools/emulator-exit-test" --port "$PORT" --identity "$KEY" --vm ;; esac
 # Time to play (#135). --quick is the bounded form -- one repeat of the

@@ -22,7 +22,7 @@ Two things to know before you turn it on:
 
 A game can earn achievements offline once its achievement data is saved on the device. That happens in three ways:
 
-- **The scan.** **SCAN GAMES FOR OFFLINE ACHIEVEMENTS** on the offline achievements page looks at every game on the console and saves its achievement data. It takes a while for a large library. You can press **B** to keep it scanning in the background and carry on; the line under the row shows how far it is, and the page can be reopened from the row.
+- **The scan.** **SCAN GAMES FOR OFFLINE ACHIEVEMENTS** on the offline achievements page looks at every game on the console and saves its achievement data. It takes a while for a large library, and the page stays on screen until it is done, showing which game it is on. **CANCEL** is the one way out while it runs: it asks first, and games already saved stay saved -- the next scan carries on from there. The line under the row says how the last scan went.
 - **Starting a game while connected.** Any game you start while online is saved as you play it.
 - **New games.** When your device comes online it saves the achievement data of games it has indexed but not yet saved, so games you add later are ready the next time you are connected.
 

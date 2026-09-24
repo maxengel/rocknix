@@ -34,13 +34,26 @@ args = [a for a in sys.argv[1:] if not a.startswith("--")]
 if args:
     src_path = Path(args[0])
 else:
-    found = sorted(Path("/workspace/repos/rocknix.worktrees/devices").glob(
-        "build.ROCKNIX-H700.aarch64/build/retroarch-*/gfx/video_thread_wrapper.c"))
+    # The source the image was built from: the H700 build root first (the
+    # handheld's), else the GENERIC_X64 root's, else RETROARCH_SRC; the same
+    # tree is unpacked in each (one PKG_VERSION), and the newest unpack wins.
+    # It used to be the H700 root alone, which lives outside this tree and is
+    # absent on a host that builds only the VM image (audit #258 PL-020).
+    roots = [Path("/workspace/repos/rocknix.worktrees/devices/build.ROCKNIX-H700.aarch64"),
+             Path("/workspace/repos/rocknix.worktrees/generic-x64/build.ROCKNIX-GENERIC_X64.x86_64")]
+    import os
+    if os.environ.get("RETROARCH_SRC"):
+        roots.insert(0, Path(os.environ["RETROARCH_SRC"]))
+    found = []
+    for r in roots:
+        found += sorted(r.glob("build/retroarch-*/gfx/video_thread_wrapper.c"), key=lambda p: p.stat().st_mtime, reverse=True)
+        found += sorted(r.glob("gfx/video_thread_wrapper.c"))
     if not found:
-        print("retroarch-wrapper-test: no video_thread_wrapper.c given and none "
-              "in the H700 build root", file=sys.stderr)
+        print("retroarch-wrapper-test: no video_thread_wrapper.c given and none under "
+              + ", ".join(str(r) for r in roots) + " (RETROARCH_SRC names another tree)", file=sys.stderr)
         sys.exit(2)
     src_path = found[0]
+print(f"retroarch-wrapper-test: source {src_path}")
 gated = "--gated" in sys.argv
 source = src_path.read_text()
 

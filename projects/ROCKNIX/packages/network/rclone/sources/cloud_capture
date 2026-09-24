@@ -74,14 +74,19 @@
 #   cloud_capture -h | --help
 #
 # Exit codes: 0 recorded, or nothing to record; 1 could not record (the
-# reason is in the log and in capture-failures); 2 usage. EmulationStation
-# never branches on the code -- it logs a nonzero and carries on.
+# reason is in the log and in capture-failures); 2 usage; 3 (--adopt only)
+# the copy is not a state of this unit, so nothing was recorded -- distinct
+# from 0 so the caller does not log a recording that never happened (audit
+# #258 PL-016). EmulationStation never branches on the code beyond logging
+# it -- it logs a nonzero and carries on.
 #
 # What this script never does: take the transfer lock or touch /var/run, open
 # a socket, run rclone or cloud_sync_helper, source the conf or /etc/profile
 # (098-busybox would discard a staged PATH), or write anywhere under the
-# saves folder -- --unlink removes exactly the files --retire was handed, and
-# nothing else. CLOUD_CAPTURE_PINS is the one environment override, so the
+# saves folder -- --unlink removes exactly the files --retire accepted (plain
+# paths under the saves folder; one it refused to record it also refuses to
+# remove, audit #258 PL-002) and nothing else. CLOUD_CAPTURE_PINS is the one
+# environment override, so the
 # core-pins map can be proven on an image whose read-only /usr has none.
 #
 # Two writers are serialised by detection, not by a lock. The boot --full
@@ -233,10 +238,15 @@ finish() {
     # attempt to record it is over -- the deletion the player asked for
     # proceeds whatever the record said, as it did when EmulationStation held
     # the unlink (D-CLOUD-133). Not after a usage error: nothing was asked
-    # for properly, and the caller unlinks nothing it was refused.
+    # for properly, and the caller unlinks nothing it was refused. And only
+    # the paths retire_rel accepted (RETIRE_ACCEPTED, filled as the arguments
+    # are checked, before the manifest is opened): a path outside the saves
+    # folder, or not plain, was refused a row and is refused the rm as well
+    # -- this script writes nowhere but under the saves folder (D-CLOUD-053),
+    # and until audit #258 PL-002 this loop ran over every argument.
     if [ "${mode}" = "retire" ] && [ "${UNLINK:-0}" -eq 1 ] && [ "${rc}" != "2" ]; then
         local _n=0 _p
-        for _p in ${RETIRE_PATHS[@]+"${RETIRE_PATHS[@]}"}; do
+        for _p in ${RETIRE_ACCEPTED[@]+"${RETIRE_ACCEPTED[@]}"}; do
             [ -e "${_p}" ] || continue
             rm -f -- "${_p}" 2>/dev/null && _n=$(( _n + 1 ))
         done
@@ -262,6 +272,7 @@ usage_error() {
 SYSTEM=""; ROM=""; EMULATOR=""; CORE=""; STARTED=""; EXITCODE="?"
 HAVE_SYSTEM=0; HAVE_ROM=0; HAVE_EMU=0; HAVE_CORE=0; HAVE_STARTED=0; HAVE_EXIT=0
 RETIRE_PATHS=()
+RETIRE_ACCEPTED=()   # the --retire arguments retire_rel accepted; the only ones --unlink may remove
 UNLINK=0; ADOPT_DEST=""; ADOPT_SRC=""
 # The argv as given, kept whole for the one re-run a lost write earns.
 ORIG_ARGS=("$@")
@@ -393,6 +404,29 @@ ROOT="${ROOT%/}"
 if [ ! -d "${ROOT}" ]; then
     log_error "saves folder ${ROOT} is not present; nothing recorded"
     finish 1 "saves-root-missing"
+fi
+
+# The root-relative form of a --retire argument, or 1 for a path outside the
+# saves folder and 2 for one that is not plain (.., ., //).
+retire_rel() {
+    local p="$1"
+    case "${p}" in
+        "${ROOT}/"*) p="${p#"${ROOT}/"}" ;;
+        /*) return 1 ;;
+    esac
+    case "/${p}/" in *"/../"*|*"/./"*|"//"*) return 2 ;; esac
+    printf '%s' "${p}"
+}
+
+# --retire: which arguments this run may act on is decided here, before the
+# manifest is opened, so finish() knows what --unlink may remove however the
+# record goes -- D-CLOUD-133 keeps the deletion whatever the record said,
+# D-CLOUD-053 keeps every write of this script under the saves folder, and a
+# path that fails retire_rel is refused both the row (below) and the rm.
+if [ "${MODE}" = "retire" ]; then
+    for _raw in "${RETIRE_PATHS[@]}"; do
+        retire_rel "${_raw}" >/dev/null && RETIRE_ACCEPTED+=("${_raw}")
+    done
 fi
 
 # ---------------------------------------------------------------------------
@@ -548,11 +582,11 @@ if [ "${MODE}" = "adopt" ]; then
     ADOPT_SRC_REL="$(rel_of "${ADOPT_SRC}")" || { log_warn "${ADOPT_SRC} is not a plain path under ${ROOT}; nothing recorded"; finish 1 "adopt-outside-root"; }
     if [ -z "${M_KIND[${ADOPT_REL}]}" ]; then
         log_warn "${ADOPT_REL} is not a member of ${UNIT} on disk; nothing recorded"
-        finish 0
+        finish 3 "adopt-not-a-member"
     fi
     case "${M_KIND[${ADOPT_REL}]}" in
         state|auto) ;;
-        *) log_warn "${ADOPT_REL} is a ${M_KIND[${ADOPT_REL}]}, not a state; nothing recorded"; finish 0 ;;
+        *) log_warn "${ADOPT_REL} is a ${M_KIND[${ADOPT_REL}]}, not a state; nothing recorded"; finish 3 "adopt-not-a-member" ;;
     esac
 fi
 
@@ -1274,18 +1308,6 @@ fi
 # ---------------------------------------------------------------------------
 # STEP 8 -- --retire PATH...  (called BEFORE the files are unlinked)
 # ---------------------------------------------------------------------------
-# The root-relative form of a --retire argument, or 1 for a path outside the
-# saves folder and 2 for one that is not plain (.., ., //).
-retire_rel() {
-    local p="$1"
-    case "${p}" in
-        "${ROOT}/"*) p="${p#"${ROOT}/"}" ;;
-        /*) return 1 ;;
-    esac
-    case "/${p}/" in *"/../"*|*"/./"*|"//"*) return 2 ;; esac
-    printf '%s' "${p}"
-}
-
 # A thumbnail: <state>.png, by the name row_retroarch admits or by the kind
 # of the entry it sits beside.
 is_thumbnail() {

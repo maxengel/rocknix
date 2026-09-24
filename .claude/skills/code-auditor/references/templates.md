@@ -29,6 +29,11 @@ Authoritative templates for the Phase 4 analysis report and the Phase 5 punch li
 
 **Pass rate:** N/M criteria fully met (X%)
 
+A **Total** row, where the scorecard has one, is the column sums of the rows
+above it -- computed at the end, never typed from an earlier stage's figure.
+Three totals in one report disagreed once (blindspot 53), and the
+artifact-contract lint now adds the columns up.
+
 ## Code Quality Assessment
 
 ### Strengths
@@ -83,6 +88,16 @@ Authoritative templates for the Phase 4 analysis report and the Phase 5 punch li
 | ------- | -------- | -------------------- | ------------------------------------------------------ |
 | F-NN    | Critical | yes                  | [code path re-read / repro re-run / mitigation search] |
 
+## Second opinion (Phase 4.6)
+
+**Run:** `tools/council/run invoke --member gpt --prompt-file second-opinions/gpt-brief.md --output second-opinions/gpt-6-astra-audit.md` [and, at Milestone tier, the blind pass first: `--prompt-file second-opinions/gpt-brief-blind.md --output second-opinions/gpt-6-astra-blind.md`]. **Identity gate:** `declared_model` / `final.verification.observed` from `<output>.provenance.json` (must read `openai/gpt-6-astra`). **Calls:** [1 or 2]; **effort:** max.
+
+| Seat item | Orchestrator's grade | Evidence |
+| --- | --- | --- |
+| [the seat's finding or refutation, one line] | **confirmed** / **agree, re-graded X → Y** / **agree, narrowed** / **disagree, with the artifact** / **could not verify** | [`file:line`, a command's output, a frame -- the orchestrator's own read, never the packet's] |
+
+**Net effect:** [N new punch items (G-nn → PL-nnn), N re-graded, N folded into existing items, N disagreements recorded with their artifact; what the seat said it could not judge from the packet, carried into § Coverage Boundary].
+
 ## Quality Self-Check
 
 | Item                                                           | Status                    |
@@ -91,6 +106,7 @@ Authoritative templates for the Phase 4 analysis report and the Phase 5 punch li
 | Cornerstone conformance tables present                             | present / absent (reason) |
 | Coverage Boundary present (02 + 04)                            | present / absent (reason) |
 | Finding Verification recorded for all Crit/High                | present / absent (reason) |
+| Second opinion recorded (Phase 4.6; Epic/Milestone tiers)      | present / absent (reason: the seat's prerequisite that was missing) |
 | Instruction File Recommendations (epic/milestone)              | present / absent (reason) |
 | Tier B visual-QA consolidation present                         | present / absent (reason) |
 | Verdicts use the defined vocabulary only                       | yes / deviations listed   |
@@ -233,3 +249,45 @@ Covered in [`phases.md` § Phase 2](phases.md) as well. Reproduced here for quic
 **Test coverage:** [TESTED / UNTESTED / PARTIAL]
 **Finding:** [What was found — safe, risky, or broken]
 ```
+
+## Phase 4.6 -- the brief to the GPT seat (`second-opinions/gpt-brief.md`)
+
+```markdown
+# Second opinion on a code audit -- [scope], [tier] tier
+
+You are the second reader of a finished code audit. You cannot run
+commands or open the repository; everything you may cite is in the packet
+below, and every claim you make names the packet's `file:line` or the
+command output it rests on. The first reader's verdicts are in the packet;
+do not take them as given.
+
+Answer in three parts, in this order:
+
+1. **Your own findings first.** Read the packet's evidence -- the criteria,
+   the code and command excerpts, the reads -- and list every defect, gap,
+   or unsafe seam you find that is not already one of the first reader's
+   findings. One line each: an id (G-01, G-02, ...), a severity (Critical /
+   High / Medium / Low), the packet's `file:line`, what fails and when.
+2. **Refute the first reader.** For every finding at Medium or above (F-nn
+   in § Executive summary and § Risk assessment), and any Low you think
+   mis-graded: agree, disagree, re-grade, or narrow -- and in each case
+   say what would make the finding false and whether the packet shows it.
+3. **What you could not judge.** The claims the packet does not let you
+   verify, so the orchestrator knows where its evidence was thin.
+
+Everyday words, no hedging: a finding either survives your reading or it
+does not, and you say which.
+
+---
+[02-forward-audit.md, whole]
+---
+[03-retrospective.md, whole]
+---
+[04-analysis.md through § Finding Verification]
+---
+[05-punch-list.md through the punch items]
+```
+
+The blind pass's brief (Milestone tier) is the same packet with the
+verdict columns and the findings removed, and part 1 alone asked.
+

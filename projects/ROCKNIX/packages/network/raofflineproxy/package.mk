@@ -10,6 +10,7 @@ PKG_NAME="raofflineproxy"
 # is unchanged and APP_VERSION still reads 1.13.0-alpha1, forty-two commits
 # past that tag (docs/ra-offline/2026_09_13-phase-1-design-note.md, fork
 # #164, #227).
+# freshness: pinned -- the RC round (#236) is frozen at this client; upstream main has moved sixteen commits (59b167c123 scopes the daily refresh to recently played games and stops cached games expiring, 095867d2c6 moves rcheevos to 1433173, storage.py changes), each of which the twelve patches and the harness's section t have to be read against; the bump is #259, after the candidate (D-WORKFLOW-024)
 PKG_VERSION="4e9bab484e4d7be30b2dbc313aae94ca2f5f742a"
 PKG_SHA256="a0a39a155154b4d0a09ae813739b3d430dab579dc67d509659966d530b3b9c6a"
 # GPLv3 text with no "or any later version" grant in the sources.

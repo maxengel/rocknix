@@ -495,14 +495,32 @@ are D-CLOUD-058 to D-CLOUD-066.
   The residual is three writers within one second.
 - **A version found by a verify pass carries unknown provenance.**
   `cloud_capture --full` (the A2 pass: hash every claimed path) and
-  `--rescan` (one unit, after the save-state manager's renumber) hash paths
-  the manifest already claims; a new version they find records `emulator`,
-  `core` and `core_build` as `"unknown"` and `core_display_version` as `null`,
-  because the session that wrote those bytes was not observed. A move (same
-  hash, new path) carries its provenance, `captured_at` and `replaces`
-  unchanged. Neither pass adopts a path that has no entry; `--rescan`'s one
-  exception is a move onto a renumbered slot, from a version this device
-  already claimed in the same unit.
+  `--rescan` (one unit; written for the slots the save-state manager's
+  renumber moved, and no longer run by the manager since D-UI-069 ended the
+  renumber and D-CLOUD-132 dropped the call -- it remains a verb for a hand
+  or a harness) hash paths the manifest already claims; a new version they
+  find records `emulator`, `core` and `core_build` as `"unknown"` and
+  `core_display_version` as `null`, because the session that wrote those
+  bytes was not observed. A move (same hash, new path) carries its
+  provenance, `captured_at` and `replaces` unchanged. Neither pass adopts a
+  path that has no entry; `--rescan`'s one exception is a move onto a
+  renumbered slot, from a version this device already claimed in the same
+  unit.
+- **A copy the manager made is recorded as a `copy` op** (`cloud_capture
+  --adopt <copy> --from <source>`, D-CLOUD-134, #206; schema note owed by
+  D-CLOUD-132 and written under audit #258 PL-029). COPY TO FREE SLOT is
+  the one way a state is duplicated on purpose, and no other mode records
+  it: exit mode takes only what a launch wrote, the verify passes adopt
+  nothing new. The op carries `from`, `to`, `size`, `mtime`, `kind`, `slot`,
+  `screenshot` (or `null`), `at`, `local` and `synced`; the merge gives the
+  new path the source's entry -- `sha256`, `emulator`, `core`, `core_build`
+  -- with the copy's own `slot`, `size`, `mtime` and `screenshot`, a fresh
+  `captured_at`, and `replaces`, `pub` and `producer` set to `null`, since
+  nothing about the source's placement or publication is the copy's. When
+  the copy's bytes are not the source's recorded version, or the source has
+  no entry, the copy is recorded with the live hash and `"unknown"`
+  provenance, as a verify pass would. A copy of a path that is not a state
+  of the unit is refused (exit 3, nothing recorded).
 - **A member with no entry is recorded only if this session wrote it.** Exit
   mode receives `--started <epoch>` (ES's `tstart`) and records an unclaimed
   member only when its mtime is at or after it; an older file with no entry

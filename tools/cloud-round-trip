@@ -4328,6 +4328,24 @@ def fx_cap13(p):
     f += not check("rc=0" in out and out.strip().endswith("no") and bool(rows),
                    "(d) a SIGTERM as the run starts is ignored: it finishes, the row is written, the file goes",
                    f"out {out.strip()!r}; rows for state3: {len(rows)}")
+    # (e) A path outside the saves folder is refused a row and refused the rm
+    # (audit #258 PL-002): until 2026-09-24 finish() unlinked every argument
+    # once the record was over, refused or not, so a caller's bad path was
+    # deleted with a warning and no row. A sibling that is this unit's, given
+    # in the same call, is still retired and removed.
+    probe = "/tmp/cap13-outside-probe"
+    a.run(f"printf outside > {probe}")
+    st1 = "savestates/gba/Unit.state1"
+    rc, _ = run_rc(a, f"cloud_capture --retire --unlink {shlex.quote(probe)} {shlex.quote(p.path(st1))}")
+    m = manifest_of(a) or {}
+    rows = [r for r in m.get("retired") or [] if r.get("path") == st1]
+    probe_there = a.run(f"[ -e {probe} ] && echo yes || echo no").strip()
+    st1_there = a.run(f"[ -e {shlex.quote(p.path(st1))} ] && echo yes || echo no").strip()
+    warned = a.run(f"grep -c 'outside the saves folder' /var/log/cloud_sync.log 2>/dev/null || echo 0").strip()
+    f += not check(rc == 1 and probe_there == "yes" and st1_there == "no" and bool(rows) and warned not in ("", "0"),
+                   "(e) a path outside the saves folder is refused the row and the rm (exit 1, the warning logged); the sibling that is this unit's is retired and removed",
+                   f"rc {rc}; probe on disk: {probe_there}; state1 on disk: {st1_there}; rows for state1: {len(rows)}; warnings: {warned}")
+    a.run(f"rm -f {probe}")
     return f
 
 
@@ -4384,8 +4402,8 @@ def fx_cap14(p):
     plant(a, root, other, b"#RZIPv" + os.urandom(200))
     rc, _ = run_rc(a, f"cloud_capture --adopt {shlex.quote(p.path(other))} --from {shlex.quote(p.path(st3))} --system gba --rom {shlex.quote(rom)}")
     m = manifest_of(a) or {}
-    f += not check(rc == 0 and other not in (m.get("entries") or {}),
-                   "(c) a path that is not this unit's is not adopted (exit 0, nothing recorded)",
+    f += not check(rc == 3 and other not in (m.get("entries") or {}),
+                   "(c) a path that is not this unit's is not adopted (exit 3, nothing recorded; audit #258 PL-016)",
                    f"rc {rc}; recorded: {other in (m.get('entries') or {})}")
     rc, _ = run_rc(a, f"cloud_capture --retire --unlink {shlex.quote(p.path(st4))} {shlex.quote(p.path(st4 + '.png'))}")
     m = manifest_of(a) or {}
@@ -4411,7 +4429,7 @@ CAPTURE_FIXTURES = [
     ("CAP10", "the card context informs, it never silently refuses -- and a flip discards", fx_cap10),
     ("CAP11", "two writers of one manifest: the loser re-runs once and a first version is not lost", fx_cap11),
     ("CAP12", "last-capture keeps one line per mode: an exit survives the boot pass; the old one-line stamp is read", fx_cap12),
-    ("CAP13", "--retire --unlink is the manager's deletion as one unit: row, then files, SIGTERM ignored", fx_cap13),
+    ("CAP13", "--retire --unlink is the manager's deletion as one unit: row, then files, SIGTERM ignored; a path outside the saves folder is refused the rm", fx_cap13),
     ("CAP14", "--adopt records the copy the manager made: the source's version at the new path, or unknown provenance", fx_cap14),
 ]
 

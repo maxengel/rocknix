@@ -51,6 +51,8 @@ LIVE=(
     "${ROOT}/docs/es-menu-map.md" "${ROOT}/docs/device-testing-policy.md"
     "${ROOT}/docs/device-flashing-runbook.md"
     "${ROOT}/projects/ROCKNIX/packages/network/rclone/sources"
+    "${ROOT}/projects/ROCKNIX/packages/network/raofflineproxy/sources"
+    "${ROOT}/projects/ROCKNIX/packages/network/raofflineproxy/patches"
     "${ROOT}/projects/ROCKNIX/packages/rocknix/sources/scripts"
     "${ROOT}/projects/ROCKNIX/packages/sysutils/systemd/scripts"
     "${ROOT}/tools"
@@ -81,6 +83,17 @@ done < <(grep -rn -o -E "${CITE}" "${LIVE[@]}" 2>/dev/null \
 while IFS= read -r cite; do
     grep -qx "${cite}" <<< "${ids}" || { echo "MISSING ${cite}: cited inside the register"; missing=$((missing + 1)); }
 done < <(grep -o -E "${CITE}" "${REG}" | sort -u)
+# 3. a placeholder that was never filled in: an ID ending in "0" and two
+# letters shipped in the image-cache helper's header for six days, because
+# letters after the digit are not [0-9]+\b and the citation pattern walked
+# past it (audit #258 PL-011). A letter where the number goes is a row
+# somebody meant to write; name it. (The shape is not spelled out here: this
+# file is one of the inputs.)
+while IFS=: read -r file line cite; do
+    [ -n "${cite}" ] || continue
+    echo "PLACEHOLDER ${cite}: ${file#${ROOT}/}:${line} -- a decision ID with letters where its number goes"
+    missing=$((missing + 1))
+done < <(grep -rn -o -E 'D-[A-Z]+-[0-9]*[a-z?]+[0-9a-z?]*\b' "${LIVE[@]}" 2>/dev/null | grep -v -F "${REG}:" | sort -u)
 [ "${missing}" -eq 0 ] || FAIL=1
 
 n_rows=$(printf '%s\n' "${ids}" | grep -c .)

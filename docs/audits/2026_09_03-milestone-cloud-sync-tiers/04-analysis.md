@@ -20,8 +20,8 @@ the bug where a backup reported success while transferring nothing — on every 
 that has taken one backup since the change. That is the third interaction defect in
 this scope, after the two found during implementation.
 
-The second theme is verification debt. Of 22 acceptance criteria, **7 pass and 14 are
-PARTIAL or UNTESTABLE**, almost all because the image has not been flashed. Nothing is
+The second theme is verification debt. Of 22 acceptance criteria, **7 pass and 15 are
+PARTIAL or UNTESTABLE** (the figure read 14 until 2026-09-24; see the scorecard's note), almost all because the image has not been flashed. Nothing is
 failing; most of it is simply unmeasured. The risk is reading that as "nearly done" —
 blindspot 13, which this project has already committed.
 
@@ -32,7 +32,9 @@ blindspot 13, which this project has already committed.
 | #56 seeding | 4 | 2 | 3 | 1 | 0 |
 | #58 tar | 1 | 1 | 2 | 0 | 0 |
 | #59 selection | 2 | 6 | 1 | 0 | 0 |
-| **Total** | **7** | **9** | **5** | **1** | **0** |
+| **Total** | **7** | **9** | **6** | **1** | **0** |
+
+*(UNTESTABLE read **5** until 2026-09-24; the rows above sum to 6, and the sentence below said "14 are PARTIAL or UNTESTABLE" for the same reason. Found by the Total-row check `tools/lint-audit-artifacts` gained under #258 G-11; the rows themselves are unchanged.)*
 
 Pass rate 32%; unverified 64%. See `02-forward-audit.md` for per-criterion evidence.
 

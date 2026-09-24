@@ -30,7 +30,8 @@
 # Three rules it obeys, because this runs on somebody's game machine:
 #
 #   * It is bounded. A dump is streamed through gzip and cut off at
-#     CORE_MAX_BYTES of compressed output; the note says it was cut. The ring
+#     CORE_MAX_BYTES of the raw dump (head -c before gzip, so the cap is the
+#     dump's size, not the archive's); the note says it was cut. The ring
 #     keeps CORE_KEEP newest pairs and deletes the rest, oldest first.
 #   * It refuses rather than fills the card. Under CORE_MIN_FREE_KB free it
 #     writes only the note, saying so. A player who cannot save their game
@@ -82,7 +83,12 @@ CORE_MAX_BYTES_DEFAULT=$(( 256 * 1024 * 1024 ))
 CORE_MAX_BYTES_INTERFACE=$(( 1024 * 1024 * 1024 ))
 CORE_MAX_BYTES="${CORE_MAX_BYTES:-}"
 CORE_KEEP=3
-CORE_MIN_FREE_KB=$(( 512 * 1024 ))        # 512 MB of headroom, or we only write the note
+# 512 MB of headroom, or we only write the note. The test below adds the cap
+# to it: a dump is admitted only when the card could take the whole cap and
+# still keep the headroom, since gzip -1 over texture memory can be close to
+# incompressible and a 1 GiB dump admitted at 600 MB free would fill the
+# card (audit #258, the seat's G-03). Overridable for the harness.
+CORE_MIN_FREE_KB="${CORE_MIN_FREE_KB:-$(( 512 * 1024 ))}"
 
 case "${1:-}" in
     --on)
@@ -152,8 +158,9 @@ FREE_KB=$(df -k "${CORE_DIR}" 2>/dev/null | awk 'NR==2{print $4}')
 case "${FREE_KB}" in
   ''|*[!0-9]*) FREE_KB=0 ;;
 esac
-if [ "${FREE_KB}" -lt "${CORE_MIN_FREE_KB}" ]; then
-    note "dump         NOT KEPT -- only ${FREE_KB} KB free, under the ${CORE_MIN_FREE_KB} KB floor"
+NEED_KB=$(( CORE_MIN_FREE_KB + CORE_MAX_BYTES / 1024 ))
+if [ "${FREE_KB}" -lt "${NEED_KB}" ]; then
+    note "dump         NOT KEPT -- only ${FREE_KB} KB free, under the ${NEED_KB} KB needed (the ${CORE_MIN_FREE_KB} KB floor plus the ${CORE_MAX_BYTES} byte cap)"
     logger -t rocknix-corekeep "${EXE} died on signal ${SIG}; dump discarded, ${FREE_KB} KB free"
     exit 0
 fi
@@ -170,7 +177,11 @@ if head -c "${CORE_MAX_BYTES}" | gzip -1 > "${BASE}.gz" 2>/dev/null; then
     # process offered more than was kept.
     RAW=$(gzip -l "${BASE}.gz" 2>/dev/null | awk 'NR==2{print $2}')
     case "${RAW}" in ''|*[!0-9]*) RAW=0 ;; esac
-    if [ "${RAW}" -ge "${CORE_MAX_BYTES}" ]; then
+    # A dump of exactly the cap's size is whole, not cut: head stopped at the
+    # cap either way, so one more byte is asked of the stream -- present, the
+    # process offered more; absent, the cap was the size (the seat's G-06).
+    MORE=$(head -c 1 2>/dev/null | wc -c)
+    if [ "${RAW}" -ge "${CORE_MAX_BYTES}" ] && [ "${MORE:-0}" -ge 1 ]; then
         note "dump         ${BASE}.gz (CUT at the cap: ${RAW} raw bytes kept of more, ${SIZE} compressed; cap ${CORE_MAX_BYTES})"
     else
         note "dump         ${BASE}.gz (whole: ${RAW} raw bytes, ${SIZE} compressed)"

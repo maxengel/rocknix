@@ -12,6 +12,11 @@ on:
   schedule:
     - cron: '17 6 * * *'
   workflow_dispatch:
+    inputs:
+      ceremony_today:
+        description: "Run the ceremony check as of this date (yyyy-mm-dd) -- the guard's constructed positive: a far date makes an audit or a futro overdue and the run red (audit #258 PL-020)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -31,4 +36,5 @@ jobs:
       - name: ceremonies are not overdue
         env:
           GH_TOKEN: ${{ github.token }}
+          CEREMONY_TODAY: ${{ inputs.ceremony_today }}
         run: ./tools/ceremony-check

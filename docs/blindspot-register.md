@@ -691,3 +691,29 @@ is put to the maintainer as pending without its output; the register
 carrying a row for every decision the maintainer makes in an issue comment,
 the day it is made, so the grep that was run does find it; and an index over
 the work logs (`tools/work-log-index`) so a month reads in a minute. #253.
+
+## 53. An audit's own headline was typed, not summed (2026-09-24)
+
+Audit #258's report carried three totals that disagreed with each other: the
+headline (347 boxes, 184 PASS, 32 UNTESTABLE), the forward audit's
+per-section subtotals (346 / 188 / 27) and the per-issue scorecard's own rows
+(352 / 195 / 27). Each was transcribed from the previous stage's figures as
+they stood at the moment of writing, the per-issue table was built last and
+most carefully, and nothing ever added a column up. The audit's Phase 4.5
+refuted its eight Medium findings and its Phase 7 re-derived thirty outcomes
+from commands; the arithmetic of its own scorecard was the one claim in the
+report that a tool could have settled outright, and none did. The council's
+GPT seat, reading the report as text (Phase 4.6's first run, #260), found
+it in its eleventh finding.
+
+The shape is *a name is not a behaviour* turned on the auditor's own record:
+a total row is a claim by the author about the rows above it, and it was
+read as an observation of them. The two older audits with total rows were
+checked the same day and one of them had the same defect one column wide
+(2026-09-03, UNTESTABLE 5 for 6).
+
+**Guard:** `tools/lint-audit-artifacts` sums every `**Total**` row in
+`04-analysis.md` against the rows of its table and fails on a mismatch; its
+constructed positive was this folder. The scorecard template says the row
+is computed, never typed.
+

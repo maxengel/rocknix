@@ -2189,11 +2189,13 @@ the handheld took them.
   fast -- the startup and exit save sync. Maintainer, at the scan page:
   *"we should only allow things to run in the background when they're
   fast."*
+
 - **Found under it and fixed: a refreshed two-line row kept growing.** The
   OFFLINE ACHIEVEMENTS page came back with its scan row drawn a screen
   tall after a long scan, on this candidate and the one before it -- every
   refresh of the row's line moved its split by ten percent. Measured from
   the fonts now; a row refreshed a thousand times keeps its height.
+
 - **Offline, the achievements pages answer in seconds** (#242). With
   OFFLINE ACHIEVEMENTS on and the Wi-Fi off, VIEW THIS GAME'S ACHIEVEMENTS
   ended `An error occurred. Timeout was reached.` and a game's launch
@@ -2206,6 +2208,7 @@ the handheld took them.
   answer -- it says `THE OFFLINE ACHIEVEMENTS SERVICE DIDN'T ANSWER. TRY
   AGAIN IN A MOMENT.` instead. Confirmed by the maintainer on the RG35XX
   SP: the page, the offline sign-in toast, the badges.
+
 - **The interface no longer dies after a game in which an achievement was
   unlocked** (#246). Every unlock writes a screenshot, and the folder rescan
   that follows a game exit deleted the SCREENSHOTS entries and then reloaded
@@ -2215,6 +2218,25 @@ the handheld took them.
   now takes the view down before the files go and remakes it after. And
   when the interface does die, its log carries a backtrace and the crash
   keeper, once armed, keeps the fault itself rather than the teardown.
+
+- **Save-state thumbnails and screenshots are drawn at the shape of the
+  system that made them** (#243, D-UI-080). RetroArch writes both at the
+  core's native size, which for the NES and the SNES is the pixel grid and
+  not the 4:3 picture the game showed, so the SAVE STATE MANAGER's tiles
+  and the SCREENSHOTS entry's pictures were a fifth narrower than the game.
+  The interface now fits them at the system's display aspect -- 4:3 for
+  the consoles and computers whose pixels are not square; the Game Boy,
+  GBA and the other square-pixel handhelds as they are. RetroArch's
+  capture is left alone. Maintainer: *"It's odd to see certain things
+  stretched out of aspect ratio."*
+
+## The round goes on: upright arcade captures, the AUTO SAVE tile, the arrows, a frame gate, DO NOT INCREMENT, the device password, the core note (2026-09-23)
+
+The maintainer's device round on the sixteenth and seventeenth candidates; each
+landed on `next` on the 23rd and every one was proven on the VM before the
+RG35XX SP took it. (Written under the 22nd's heading until audit #258 PL-024
+moved them to the day they landed.)
+
 - **A vertical arcade game's thumbnails and screenshots are upright** (#245,
   D-UI-081). RetroArch turns such a game's frame for the display and its
   capture does not, so the SAVE STATE MANAGER's tiles and the SCREENSHOTS
@@ -2228,12 +2250,14 @@ the handheld took them.
   screenshot is right the moment the build is, with nothing to replay. The
   screenshot RetroArch takes at an achievement unlock is recognised too. The files stay as RetroArch wrote them. Maintainer: *"I think
   we do it on our side."*
+
 - **A game started from the SAVE STATE MANAGER's AUTO SAVE tile runs on
   RetroArch's Auto slot** (#249): the quick menu says `Auto` and the load
   hotkey reloads the auto save the game started from, as it reloads a
   numbered slot's state for a numbered tile. It had stayed on slot 0, so
   the hotkey loaded a different file. Maintainer: *"it doesn't reload the
   autosave."*
+
 - **The SAVE STATE MANAGER's arrow tiles are as they always were** (#250).
   The transform that fits a thumbnail to its system's shape (#243) and
   turns a vertical game's (#245) had been applied to every tile of the
@@ -2243,6 +2267,7 @@ the handheld took them.
   are pixel-identical to a build from before either change. Maintainer:
   *"the arrows should all remain exactly how they were. It's just the
   screenshot itself."*
+
 - **The VM now checks that a build changed only what it meant to** (#252,
   D-QA-038). Every screen the QA walks reach is compared, pixel for pixel,
   with the same screen on the last build accepted on a handheld; a change
@@ -2252,6 +2277,7 @@ the handheld took them.
   Game Boy game, a vertical arcade game) are the first added under it.
   Maintainer: *"I think your recommendation for 252 is a strong
   recommendation, and so we should roll that out as well."*
+
 - **DO NOT INCREMENT now means it** (#209, D-UI-083). With INCREMENTAL SAVE
   STATES set to DO NOT INCREMENT, the save-state hotkey writes the slot the
   game was started from; it had kept making new slots, because the launcher
@@ -2259,15 +2285,20 @@ the handheld took them.
   unchanged: a new slot on every save, the launched one untouched, which is
   what the row promises and what Batocera does. A device that still held
   the old "0" now shows DO NOT INCREMENT, which is what it was doing.
+
 - **A device password with a space, a `$` or a quote is set as typed** (#198).
   The interface handed it to the shell unquoted, so it was cut at the space
   or misread; it is quoted now, as the Wi-Fi key already was, and the script
   passes it to the file-sharing password whole.
+
 - **A core dump cut at the keeper's cap says so** (#247). The note compared
   the compressed size to the cap and called a truncated dump whole; it now
   reads the raw count, and the interface's core, mostly texture memory, gets
   a larger cap before its stacks are lost. Only for troubleshooting; the
   keeper stays off on a release candidate (D-QA-029).
+
+## RetroArch's notifications get a floor (2026-09-24)
+
 - **RetroArch's notifications are readable on small panels** (#251,
   D-UI-084). The message queue -- the sign-in banner, "saved state", the
   scan and sync notices -- was drawn at 10 pixels on a 640x480 handheld and
@@ -2276,13 +2307,72 @@ the handheld took them.
   Panels at 720p and above are unchanged. Maintainer: *"It just isn't
   nearly as easy to read that text overlay as it is, say, the top-left
   achievement banner."*
-- **Save-state thumbnails and screenshots are drawn at the shape of the
-  system that made them** (#243, D-UI-080). RetroArch writes both at the
-  core's native size, which for the NES and the SNES is the pixel grid and
-  not the 4:3 picture the game showed, so the SAVE STATE MANAGER's tiles
-  and the SCREENSHOTS entry's pictures were a fifth narrower than the game.
-  The interface now fits them at the system's display aspect -- 4:3 for
-  the consoles and computers whose pixels are not square; the Game Boy,
-  GBA and the other square-pixel handhelds as they are. RetroArch's
-  capture is left alone. Maintainer: *"It's odd to see certain things
-  stretched out of aspect ratio."*
+
+## The audit's punch list, fixed before the candidate is called one (2026-09-24)
+
+The milestone audit of the round (#258: 352 boxes re-derived -- the headline read 347 until the second opinion's G-11 -- thirty
+findings, none critical or high) was the maintainer's condition for a
+release candidate -- *"a full code audit using the code auditor's skill and
+being very rigorous"* -- and its punch list was fixed at every severity in
+one cut, proven on the VM first. What a player would notice:
+
+- **A fresh device and an updated one land in the same place** (#258
+  PL-001). The save-state layout file the OS manages was copied onto a
+  freshly flashed device where an updated one has a link, so a later change
+  to the shipped file would have reached the second and not the first; the
+  first boot now leaves it out of its copy and links it, as every update
+  does. `tools/vm-qa`'s new `fresh` suite reads the first-boot state on
+  every image.
+- **Deleting a save state never removes a file outside the saves folder**
+  (#258 PL-002, D-CLOUD-135). The deletion's script refused to record such a
+  path and then removed it anyway; it now refuses both.
+- **A crash restarts the interface instead of hanging it** (#258 PL-003,
+  D-SYS-009). The crash handler wrote to the log under a lock a faulting
+  thread could be holding; it writes the signal's name and the frames
+  straight to the journal now, and the interface is back in two seconds.
+- **The offline RETROACHIEVEMENTS page never waits on the web** (#258
+  PL-028, D-RA-028). Offline with nothing cached yet, it said PLEASE WAIT
+  for a bounded web request; it says `THE OFFLINE ACHIEVEMENTS SERVICE
+  DIDN'T ANSWER. TRY AGAIN IN A MOMENT.`, as the game page has since #242.
+- **A screenshot turns the moment its game's rotation is known** (#258
+  PL-019). A vertical game's screenshot viewed before its first session kept
+  the wrong turn until the interface restarted; the turn is read from the
+  record on every look. The grid's looping tiles (the copies drawn at the
+  far end of a wrapped SCREENSHOTS list) take the same turn and shape as
+  their originals (PL-017).
+- **RetroArch's message queue floor and the rest of the round stand**: the
+  build carries the seventeenth cut's changes unchanged; this cut is the
+  audit's corrections, the ES pin at `4fd019f04`.
+
+Under the surface: the offline-achievements ctl's `refresh` exits 64 on a
+bad argument instead of 0 and its `images` and `refresh` verbs can be
+stopped by `disable` (PL-012, PL-013); the five arcade rotation tables fail
+the build when empty (PL-018); the proxy pin says why it stays (PL-014,
+#259); thirty-two comments describe the code as it is (PL-006, PL-009,
+PL-010, PL-011, PL-026, PL-027); six tools are sharper and each was seen to
+fail once first (PL-004, PL-005, PL-015, PL-020, PL-021, PL-022, PL-030);
+and the record -- fourteen issue bodies, the change log's dates, the manifest
+schema, the menu map, the rocknix.org draft -- says what the tracker and the
+code say (PL-007, PL-008, PL-023, PL-024, PL-029).
+
+### The second opinion, and the twentieth cut (2026-09-24, #260)
+
+The maintainer asked whether the audit had an adversarial phase by default;
+it had not, and now does. The council's GPT seat read the whole audit and
+its items, and nine of its findings held against the tree (PL-031..PL-039).
+What a player would notice, in the twentieth cut `c041be7e98`:
+
+- **The crash keeper never fills the card** (PL-033). It kept a core dump
+  after checking for 512 MB free, and the dump itself could be up to the
+  cap, so a card with just over the floor ended under it. It now needs the
+  floor plus the cap before it writes, and says both when it refuses.
+- **A cached achievement badge is whole or it is not served** (PL-031). The
+  offline proxy checked a badge's signature and header; it now checks every
+  chunk and inflates the image, so a torn download is treated as a miss
+  rather than shown broken.
+- **A dead run's progress line does not linger** (PL-037). A `running` file
+  left by a killed image or refresh run is removed by the next run that
+  takes the lock.
+- **A core of exactly the cap is not called truncated** (PL-035), and a
+  screenshot's game is looked up from an index built once rather than a
+  walk of the whole library per new screenshot (PL-034).

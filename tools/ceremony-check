@@ -30,6 +30,7 @@
 #   weekly    docs/work-logs/<yyyy_mm>-work_logs/<yyyy>-W<ww>-summary.md
 #   monthly   docs/work-logs/<yyyy_mm>-work_logs/SUMMARY.md
 #   index     tools/work-log-index --check
+#   hygiene   no issue closed as completed since the clock carries an open box (audit #258 P-03; CI red)
 #   register  tools/register-check
 #   guards    docs/blindspot-register.md entries >= GUARD_FROM name a guard that exists
 
@@ -120,7 +121,10 @@ def main():
         lines.append('%s  %-9s %s' % ('ok  ' if ok else 'DUE ', name, text))
 
     # 1. mini-retro: every RETRO_ACTIVE_DAYS active days
-    last_retro = last_marker(days, r'\bretro\b|retrospective', 'retros')
+    # A heading counts as a retro when it *is* one -- it begins with the
+    # ceremony's name -- not when it mentions one ("notes for the retro
+    # later" reset the clock until audit #258 PL-004).
+    last_retro = last_marker(days, r'^(mini-?)?retro(spective)?\b', 'retros')
     start = max(SINCE, last_retro) if last_retro else SINCE
     since_retro = [d for d in active if d > start]
     n = len(since_retro)
@@ -139,12 +143,19 @@ def main():
         report(False, 'friction', 'no docs/friction-log.md')
     else:
         open_entries = []
+        guard_rx = re.compile(r'`(tools/[A-Za-z0-9_./-]+|\.githooks/[A-Za-z0-9_./-]+|\.claude/rules/[A-Za-z0-9_./-]+\.md)`')
         for line in open(fl, encoding='utf-8'):
             m = re.match(r'- (\d{4}-\d\d-\d\d) .*issue:\s*(#\d+|none|guard)', line.strip(), re.I)
             if not m:
                 continue
             d = dt.date.fromisoformat(m.group(1))
-            if m.group(2).lower() == 'none' and (today - d).days > FRICTION_ISSUE_DAYS and d >= SINCE:
+            what = m.group(2).lower()
+            # `issue: guard` is a claim that a tool, hook or rule now catches
+            # the shape; it holds only when the line names one, in backticks,
+            # that exists -- as a blindspot entry must (audit #258 PL-004).
+            if what == 'guard' and not any(os.path.exists(os.path.join(ROOT, g)) for g in guard_rx.findall(line)):
+                what = 'none'
+            if what == 'none' and (today - d).days > FRICTION_ISSUE_DAYS and d >= SINCE:
                 open_entries.append(line.strip()[:110])
         if open_entries:
             overdue.append(('block', 'friction: %d entrie(s) older than %d days without an issue or a guard' % (len(open_entries), FRICTION_ISSUE_DAYS)))
@@ -264,9 +275,27 @@ def main():
                 report(False, 'futro', 'OVERDUE for %s' % ' '.join(missing))
             else:
                 report(True, 'futro', 'last %s; no epic since %s without one' % (last_futro or 'none', SINCE))
+        # 7. issue hygiene (audit #258 PL-008, P-03): an issue closed as completed
+        # with a box still open is a delivered item nobody ticked, or a
+        # criterion nobody struck -- #225 closed with five of them. Read from
+        # the tracker since the clock; CI red, not push-blocking, since the fix
+        # is a tracker edit and not a file.
+        closed_bodies, err = gh_json(['issue', 'list', '--repo', REPO, '--state', 'closed', '--limit', '200',
+                                      '--search', 'closed:>=%s reason:completed' % SINCE.isoformat(), '--json', 'number,body'])
+        if err:
+            report(False, 'hygiene', 'gh failed: %s' % err[:80])
+        else:
+            with_open = ['#%d' % it['number'] for it in closed_bodies or []
+                         if re.search(r'^\s*- \[ \]', it.get('body') or '', re.M)]
+            if with_open:
+                overdue.append(('ci', 'hygiene: closed as completed with an open box: %s -- tick it with its evidence or strike it with the decision (issue-tracking.md)' % ' '.join(with_open)))
+                report(False, 'hygiene', 'closed-completed issues with an open box: %s' % ' '.join(with_open))
+            else:
+                report(True, 'hygiene', 'no issue closed completed since %s carries an open box' % SINCE)
     else:
         report(True, 'audit', 'not checked (--no-gh)')
         report(True, 'futro', 'not checked (--no-gh)')
+        report(True, 'hygiene', 'not checked (--no-gh)')
 
     blocking = [t for lv, t in overdue if lv == 'block']
     ci_only = [t for lv, t in overdue if lv == 'ci']

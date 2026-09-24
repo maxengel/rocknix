@@ -56,7 +56,61 @@ def main():
         else:
             bad(f"04-analysis.md missing section: {sec}")
 
+    # Phase 4.6 (skill v1.11, 2026-09-24): an Epic or Milestone audit carries a
+    # second opinion from the council's GPT seat, graded against the artifact,
+    # with the run's provenance beside it. Audits from before the phase are
+    # not held to it; one from today on that lacks it skipped a phase.
+    m = re.match(r"(\d{4})_(\d\d)_(\d\d)-(milestone|epic|issue)-", d.name)
+    if m and m.group(4) in ("milestone", "epic") and (m.group(1), m.group(2), m.group(3)) >= ("2026", "09", "24"):
+        if re.search(r"^##+ Second opinion", analysis, re.M):
+            ok("04 § Second opinion (Phase 4.6)")
+        else:
+            bad("04-analysis.md has no § Second opinion: Phase 4.6 (the GPT seat) was skipped or not recorded")
+        prov = list((d / "second-opinions").glob("*.provenance.json")) if (d / "second-opinions").is_dir() else []
+        if prov:
+            served = []
+            for pf in prov:
+                try:
+                    j = json.loads(pf.read_text())
+                    served.append(str(j.get("declared_model", "")) + " / " + str((j.get("final") or {}).get("verification", {}).get("observed", "")))
+                except Exception as e:  # noqa: BLE001
+                    served.append(f"unreadable ({e})")
+            if all("gpt-6-astra" in x for x in served):
+                ok(f"second-opinions/: {len(prov)} provenance file(s), the served model gpt-6-astra")
+            else:
+                bad(f"second-opinions/: a provenance file names another model or none: {served}")
+        else:
+            bad("second-opinions/ has no *.provenance.json: the seat's run left no record")
+
     punch = (d / "05-punch-list.md").read_text() if (d / "05-punch-list.md").exists() else ""
+    # A table whose last row is **Total** is the sum of the rows above it. The
+    # seat's G-11 under #258 (2026-09-24): the scorecard's printed total
+    # disagreed with its own rows by five boxes and eleven PASS verdicts, and
+    # the forward audit's per-section subtotals disagreed with both. Arithmetic
+    # is the one claim in an audit a tool can settle outright.
+    for tbl in re.findall(r"((?:^\|.*\n)+)", analysis + "\n", re.M):
+        rows = [r for r in tbl.strip().splitlines() if not re.match(r"^\|\s*:?-", r)]
+        tot = [r for r in rows if re.match(r"^\|\s*\*\*Total\*\*", r)]
+        if not tot:
+            continue
+
+        def nums(r):
+            return [int(c) if re.fullmatch(r"\d+", c) else None
+                    for c in [x.strip().strip("*").strip() for x in r.strip().strip("|").split("|")]]
+        body = [nums(r) for r in rows if r not in tot]
+        printed = nums(tot[-1])
+        off = []
+        for i, v in enumerate(printed):
+            if v is None:
+                continue
+            got = sum(r[i] for r in body if i < len(r) and r[i] is not None)
+            if got != v:
+                off.append(f"column {i}: printed {v}, the rows sum to {got}")
+        if off:
+            bad("04-analysis.md: a **Total** row is not the sum of its table -- " + "; ".join(off))
+        else:
+            ok(f"04-analysis.md: the **Total** row sums from its {len(body)} rows")
+
     items = re.findall(r"^## (PL-\d+)\b.*$", punch, re.M)
     if not items:
         bad("05-punch-list.md declares no PL- items")
@@ -67,24 +121,74 @@ def main():
     # Slice from the gate *heading*, not the first "Phase 7" mention: the
     # instructions and the tracked-scope section may name it earlier, and a
     # slice from there matches each item's own heading instead of its outcome.
-    m = re.search(r"^#+ .*Phase 7.*$", punch, re.M)
+    # The gate's own heading, not the first heading that names Phase 7: #258's
+    # PL-015 item was titled "...its Phase 7 outcomes table..." and the slice
+    # began there, reading the item bodies as the gate (2026-09-24).
+    m = re.search(r"^#+ .*Phase 7 resolution gate.*$", punch, re.M) or re.search(r"^#+ .*Phase 7.*$", punch, re.M)
     gate = punch[m.start():] if m else ""
     if not gate:
         bad("05-punch-list.md has no Phase 7 resolution gate")
+    # The outcome in force is the LAST cell that carries an outcome word: a
+    # table may grow a column per gate (2026-09-14's "Deferred -- fix stream",
+    # then 2026-09-24's "Resolved `abc`"), and the first word found would read
+    # the old one; the older tables put the word in a middle cell and the
+    # evidence after it (`| PL-01 | **Resolved** | 2b626195d8; ... |`), so the
+    # evidence is looked for from that cell to the row's end.
+    def outcome_cell(row):
+        cells = [c.strip() for c in row.strip().strip("|").split("|")]
+        idx = [i for i, c in enumerate(cells) if re.search(r"Resolved|Deferred|Withdrawn", c)]
+        return " | ".join(cells[idx[-1]:]) if idx else (cells[-1] if cells else row)
+
+    table_words = {}
     for pl in items:
-        row = next((l for l in gate.splitlines() if pl in l), None)
+        # A table row for the item first (`| PL-003 | ...`); a prose mention
+        # of the id -- the gate's lead may say which cut carried PL-003 --
+        # is not its outcome.
+        row = next((l for l in gate.splitlines() if re.match(r"^\|\s*" + re.escape(pl) + r"\s*\|", l)), None) \
+            or next((l for l in gate.splitlines() if re.search(r"\b" + re.escape(pl) + r"\b", l)), None)
         if row is None:
             bad(f"{pl} has no Phase 7 outcome"); continue
-        if "Resolved" in row and not re.search(r"`[0-9a-f]{7,40}`|#\d+", row):
+        cell = outcome_cell(row)
+        if "Resolved" in cell and not re.search(r"`[0-9a-f]{7,40}`|#\d+", cell):
             # A resolution can land as a commit or as a tracker edit; either is
             # evidence, memory is not.
             bad(f"{pl} marked Resolved but cites neither a commit nor an issue")
-        elif "Deferred" in row and not re.search(r"#\d+|`[0-9a-f]{7,40}`", row):
+        elif "Deferred" in cell and not re.search(r"#\d+|`[0-9a-f]{7,40}`", cell):
             bad(f"{pl} marked Deferred but names no follow-up issue or commit")
-        elif not re.search(r"Resolved|Deferred|Withdrawn", row):
+        elif not re.search(r"Resolved|Deferred|Withdrawn", cell):
             bad(f"{pl} outcome is not one of Resolved/Deferred/Withdrawn")
         else:
             ok(f"{pl} outcome recorded with evidence")
+        for w in ("Resolved", "Deferred", "Withdrawn"):
+            if w in cell:
+                table_words[pl] = w.lower(); break
+
+    # The YAML index is what begin-delivery parses; the Phase 7 table is what
+    # a reader sees. #186's index said `open` for 32 items while its table
+    # said Deferred and the issue said done (audit #258 PL-015), and this
+    # lint read the table alone. Each id's index outcome must agree with the
+    # table's word: resolved/deferred/withdrawn against Resolved/Deferred/
+    # Withdrawn; `open` only where the table has no outcome yet.
+    idx = re.search(r"^punch_index:\s*$(.*?)^```", punch, re.M | re.S)
+    if not idx:
+        # The YAML index arrived with the 2026-09-12 audit; the two folders
+        # before it have a table alone, which is what the checks above read.
+        ok("no punch_index YAML block (an audit from before the index; the table alone is checked)")
+    else:
+        for m in re.finditer(r"id:\s*(PL-\d+)\b(.*?)(?=\n-\s*(?:\{)?\s*id:|\Z)", idx.group(1), re.S):
+            pl, body = m.group(1), m.group(2)
+            # `outcome: deferred:#144`, `deferred (#N)`, `resolved (abc)`: the word is the first token
+            om = re.search(r"outcome:\s*['\"]?([A-Za-z]+)", body)
+            index_word = om.group(1).lower() if om else ""
+            table_word = table_words.get(pl, "")
+            if not index_word:
+                bad(f"{pl} has no outcome in the punch_index")
+            elif table_word and index_word != table_word:
+                bad(f"{pl} punch_index says {index_word!r} while the Phase 7 table says {table_word!r}")
+            elif not table_word and index_word != "open":
+                bad(f"{pl} punch_index says {index_word!r} while the Phase 7 table records no outcome")
+            else:
+                ok(f"{pl} index and table agree ({index_word})")
 
     if args.issue:
         try:

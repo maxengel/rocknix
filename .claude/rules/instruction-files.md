@@ -128,7 +128,7 @@ before writing a new rule; ten of twelve imported principles turned out to be.
 ## The fork's own tools, and which rule documents each
 
 Written because a tool nobody remembers is a tool nobody runs — and this
-estate now has twenty-nine of them. One line each; the rule named is where the
+estate now has thirty-three of them. One line each; the rule named is where the
 detail lives, so this stays an index rather than a second copy. `tools/` is
 otherwise upstream's, which is why the fork-only ones are enumerated by hand
 in `.githooks/pre-push` and in `fork-workflow.md`; **a new one is added to
@@ -137,6 +137,10 @@ both lists and to this table, or it is invisible.**
 | Tool | What it answers | Detail in |
 | --- | --- | --- |
 | `build-preflight` | has the machine the memory for a build, and what is holding it | `device-builds.md` |
+| `archaeology` | what the record already says about a question -- the registers, the work logs, the rules, `git log`, the issues -- before anything is called pending or new | `decision-register.md` |
+| `ceremony-check` | which ceremony is owed (a friction entry's issue, a retro, a weekly or monthly summary, the index, a blindspot's guard, an audit, a futro) and whether the push guard refuses | `ceremonies.md` |
+| `frame-diff` | did this build change any walk frame it did not mean to -- the boxes against the last accepted cut, the masks, the claims | `generic-x64-vm-testing.md` |
+| `work-log-index` | the day, week and month table of contents over the work logs, regenerated after every entry | `learning-capture.md` |
 | `watch-job` | is a long job still alive, stalled, finished, or killed — and is the watcher itself alive | `engineering-practices.md` |
 | `fork-worktree` | worktree list / remove / repair / sync, refusing to destroy build output | `worktrees.md` |
 | `fork-package-freshness` | are the packages the fork introduces at their latest upstream release, or pinned with a stated reason | `fork-workflow.md` |

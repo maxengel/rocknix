@@ -72,11 +72,20 @@ ssha 'backuptool backup >/dev/null 2>&1; ls /storage/roms/backup/ 2>/dev/null' >
 BK0=$(ssha 'ls /storage/roms/backup/ 2>/dev/null | wc -l'); echo "backups before: $BK0" >> "$LOG"
 
 say "stage $(basename "$NEW") and reboot guest a"
-scp -q -i /tmp/rocknix-vm-pair/qa-key -P 10022 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$NEW" root@127.0.0.1:/storage/.update/ 2>>"$LOG" || { say "scp FAILED"; fail=1; }
+# The pair's key and port come from vm-pair, not from literals here (they
+# were, and a pair on other settings would have gone unrehearsed -- audit
+# #258 PL-030); the wait for the reboot is a poll, not a guess.
+./tools/vm-pair scp a "$NEW" /storage/.update/ 2>>"$LOG" || { say "scp FAILED"; fail=1; }
 ssha 'sync; ls -la /storage/.update/' >>"$LOG" 2>&1
+BOOT0=$(ssha 'cat /proc/sys/kernel/random/boot_id' 2>/dev/null)
 ssha 'sync; reboot' >/dev/null 2>&1
-sleep 90
-BID1=""; for i in $(seq 1 40); do BID1=$(ssha 'grep ^BUILD_ID= /etc/os-release | cut -d\" -f2' 2>/dev/null); [ "${BID1:0:${#WANT}}" = "$WANT" ] && break; sleep 15; done
+# Down, then up: the boot id changes when the new boot answers. Up to five
+# minutes for the update to unpack and the guest to come back.
+BID1=""; for i in $(seq 1 60); do
+  B=$(ssha 'cat /proc/sys/kernel/random/boot_id' 2>/dev/null)
+  if [ -n "$B" ] && [ "$B" != "$BOOT0" ]; then BID1=$(ssha 'grep ^BUILD_ID= /etc/os-release | cut -d\" -f2' 2>/dev/null); [ "${BID1:0:${#WANT}}" = "$WANT" ] && break; fi
+  sleep 5
+done
 say "guest a back after $i polls"
 check "new build id is $WANT" "${BID1:0:${#WANT}}" "$WANT"
 SUMS1=$(ssha 'cd /storage/roms && sha256sum savestates/nes/Rehearsal.state.auto savestates/nes/Rehearsal.state1 savestates/nes/Rehearsal.state2 nes/Rehearsal.srm')
@@ -89,7 +98,11 @@ check "saves remote kept" "$(ssha "grep -E '^SAVES_REMOTE=' $CONFPATH 2>/dev/nul
 check "cloud conf gained the new defaults, kept the old values" "$(ssha "grep -cE '^(CONTENT_REMOTE|SAVES_REMOTE)=' $CONFPATH")" "2"
 check "backup archive kept" "$(ssha 'ls /storage/roms/backup/ 2>/dev/null | wc -l')" "$BK0"
 check "update queue empty" "$(ssha 'ls /storage/.update | wc -l')" "0"
-check "one libcairo.so.2.*" "$(ssha 'ls /usr/lib/libcairo.so.2.* | wc -l')" "1"
+# --- release checks: assertions about one release's defects, not about the
+# upgrade path. Each names its issue; drop it when the issue's cause is gone
+# upstream (audit #258 PL-030 asked that a generic tool label these).
+check "release check #226: one libcairo.so.2.* (pango's fetched cairo is gone)" "$(ssha 'ls /usr/lib/libcairo.so.2.* | wc -l')" "1"
+check "release check #226: libcairo.so.2 is a link to that one file (#226 box 1; the seat's G-10 under #258)" "$(ssha 'readlink /usr/lib/libcairo.so.2')" "$(ssha 'basename $(ls /usr/lib/libcairo.so.2.*)')"
 echo "rclone after: $(ssha 'rclone version | head -1')" | tee -a "$LOG"
 ssha 'journalctl -b -p err --no-pager | tail -30' > "$OUT/journal-err-after.txt" 2>&1
 ssha 'ls -la /storage/roms/savestates/nes /storage/roms/nes; cat /etc/os-release' > "$OUT/state-after.txt" 2>&1
