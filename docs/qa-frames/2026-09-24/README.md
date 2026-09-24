@@ -127,3 +127,11 @@ The 640x480 frame is RC-11's (`182-cloud-rows-dimmed-no-cloud-640x480-a6d032bf5e
   guest before #263 showed, #251's measurements included; the H700 ships
   `video_fullscreen_x = 640` and never drew this way. `video_windowed_fullscreen =
   true` alone did not change the surface.
+
+## #195 -- YESTERDAY on the save state tiles (2026-09-24, `d27858eb70`, guest d, 640x480)
+
+- `195-manager-yesterday-and-today-640x480` -- the SAVE STATE MANAGER for Bobl with
+  the auto save dated today 17:07 and slot 0 dated yesterday 14:03: the tiles read
+  `AUTO SAVE / 17:07` and `SLOT 0 / YESTERDAY 14:03` (D-UI-087; the day rule is
+  `Utils::Time::dayRelation`, the manager walk `tools/vm-walks/manager.steps`).
+  French (HIER) and the date form for older saves are owed on the next walk.

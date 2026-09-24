@@ -2376,3 +2376,28 @@ What a player would notice, in the twentieth cut `c041be7e98`:
 - **A core of exactly the cap is not called truncated** (PL-035), and a
   screenshot's game is looked up from an index built once rather than a
   walk of the whole library per new screenshot (PL-034).
+
+### The twenty-first cut (2026-09-24, `d27858eb70`)
+
+What a player would notice, each proven on the VM first (vm-qa run 27, rehearsal run 22):
+
+- **A save state tile says when in the player's terms** (#195, D-UI-087). A save
+  from today shows its time alone; one from yesterday reads YESTERDAY (HIER in
+  French) and the time; anything older shows the date and the time. The 12-hour
+  switch still decides the time's form.
+- **The startup card can say it is waiting for a network** (#192, D-CLOUD-136).
+  When Wi-Fi is still joining at boot, the card's first step reads WAITING FOR A
+  NETWORK, UP TO 60 SECONDS... until the route arrives or the wait ends; with the
+  radio off it still skips at once, so a boot on the plane costs nothing. A game
+  launched during the wait cancels the sync rather than waiting on it.
+- **The achievement banner and the sign-in toast are drawn at sizes whose stems
+  land on the pixel grid** (#255, D-UI-088): 18 px and 15 px on a 640x480 panel,
+  chosen from a table measured on the image's own FreeType, never smaller than
+  before. On 1280x800 and 1080p panels nothing moves.
+
+Under the surface: the QA guest's RetroArch draws at the panel's size (#263), so
+frames of RetroArch text taken on a guest are now what a device draws, and the QA
+runner refuses a run whose RetroArch surface was smaller than the screen.
+webkitgtk stays 2.52.6 (D-WORKFLOW-041); the 2.54 bump is the next candidate's
+first work (D-WORKFLOW-042).
+
