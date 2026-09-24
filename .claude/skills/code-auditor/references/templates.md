@@ -29,6 +29,11 @@ Authoritative templates for the Phase 4 analysis report and the Phase 5 punch li
 
 **Pass rate:** N/M criteria fully met (X%)
 
+A **Total** row, where the scorecard has one, is the column sums of the rows
+above it -- computed at the end, never typed from an earlier stage's figure.
+Three totals in one report disagreed once (blindspot 53), and the
+artifact-contract lint now adds the columns up.
+
 ## Code Quality Assessment
 
 ### Strengths
