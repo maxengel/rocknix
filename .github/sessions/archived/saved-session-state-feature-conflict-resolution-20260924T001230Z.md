@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-24T00:20:00Z
+> **Saved**: 2026-09-23T23:40:00Z
 > **Branch**: feature/conflict-resolution (this worktree holds only the session state; the work is on `next` in the primary checkout `/workspace/repos/rocknix`, head `e5065e18ee` + UNCOMMITTED #252 work: `tools/frame-diff`, `tools/vm-qa`, `tools/vm-walks/{suite.txt,masks.txt,claims.txt,manager.steps,fixtures/,README.md}`, `.githooks/pre-push`, `.claude/rules/{generic-x64-vm-testing,fork-workflow}.md`, `docs/{decision-register,cloud-sync-changelog}.md`, the work log)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-**The sixteenth cut `6205420b3d` is green end to end and waits on the maintainer's yes to copy and to reboot** (D-QA-011; asked 2026-09-24 00:20 UTC). It carries #209 (DO NOT INCREMENT off; a legacy `0`; `savestate_max_keep` only when set; D-UI-083), #198 (the password quoted at both `setrootpass` sites; printf to smbpasswd), #247 (the keeper's note from the raw count; raw caps per executable). ES `75ca1dac2` (`feature/rc-batch` merged to `test/qa-integration`), pin `b8def98ab2`, scripts `2337c07f73`. Proofs: harness section x (five checks that failed before the fix); guest d `check-209.sh`/`check-209c.sh`/`check-247.sh`; vm-qa run 22 twelve suites PASSED with `frame-diff` at 0 boxes; rehearsal 19/19; `h700-all-20260923-6205420b3d` with RECORD.txt; the fifteenth's record marked superseded-once-applied. `stage-rg35xxsp-6205420b3d.sh` is ready. **The RG35XX SP runs the fifteenth `aa8d525a8a`.** #251 has no pick and is not in the cut.
+**The RG35XX SP runs the fifteenth cut `aa8d525a8a`** (staged 23:16 UTC, rebooted 23:17 on the maintainer's yes, up 23:22, queue empty; RECORD.txt, the QA row, #250, #236 and the walk baseline say so). **The sixteenth cut is a batch, on the maintainer's direction** (*"get as close as we can to a potential release candidate build, as opposed to cutting lots of incremental builds"*): **#209** (launcher `set_savestates`: `0|2|false|none` -> off; `savestate_max_keep` only when set; the interface shows a legacy `0` as DO NOT INCREMENT -- D-UI-083), **#198** (`Utils::String::shellQuote` around the password at GuiMenu.cpp:3160 and :5993; `setrootpass` uses printf, not `echo -ne`; harness case), **#247** (rocknix-corekeep: the cut/whole note from the *uncompressed* size via `gzip -l` against the raw cap; a per-executable cap for emulationstation; harness cases proving both branches), and **#251 if the maintainer picks** (recommended: option 2, a 14 px floor for the message-queue font). Everything else open is verification or closure (#177/#178/#208/#182/#69 fixed earlier; #174 a cause not yet seen -- after this reboot tailscaled was up at 44 s). #254's gate and CI are live (both runs green); the audit gate goes red within days.
 
 ## Completed This Session (2026-09-23 04:55 -> 05:30 UTC)
 
@@ -17,15 +17,16 @@
 
 ## In Progress
 
-- The copy and reboot question for the sixteenth on the RG35XX SP.
-- #251: the maintainer's pick (a 14 px floor recommended). #198's end-to-end press through the on-screen keyboard is the maintainer's first box on the device.
+- The transfer and reboot question for the fifteenth on the RG35XX SP (asked 05:50, 16:20, 18:45 and 19:55 UTC).
+- #209's build waits on the maintainer's nod for a cut (the decision is settled): one `case` line in `setsettings.sh` (`0|2|false|none` -> `savestate_auto_index false`), the legacy `0` shown as DO NOT INCREMENT in the interface, `savestate_max_keep` never written empty.
+- #251: the maintainer's pick among the four options (numbers on the issue).
 
 ## Next Steps
 
-1. On the yes: `bash /workspace/tmp/rocknix-session/stage-rg35xxsp-6205420b3d.sh` (idle check, copy, sha256, mv); then the reboot through `tools/device-act rg35xxsp 'reboot to apply 6205420b3d -- the maintainer said yes' -- 'sync; (sleep 2; reboot) >/dev/null 2>&1 &'` after a second idle check; confirm BUILD_ID and the empty queue; RECORD.txt, the QA row, #236's box, the walk baseline (`tools/frame-diff accept <run22>/walks walk-baseline --build 6205420b3d` once it is on the device), work log.
-2. **Every session**: `tools/ceremony-check` first; `tools/archaeology <terms>` before anything is called pending; a friction line when something slows; `tools/work-log-index --write` after a log entry. Never edit a shell tool while a run of it is in flight.
-3. The audit gate goes red within days (the record says an audit is owed): `code-auditor` on the work since #186. Retro ~09-26 (`docs/retros/`), the 2026-W39 summary by 09-29.
-4. The maintainer's device boxes on the sixteenth: #209 (the save shortcut), #198 (a password with a space), #250, #249, #245, #246, #243; then the RG SP (D-QA-031), the Nova. #252 box 3b; #253's four-week box; #251 on a pick.
+1. **The sixteenth cut.** ES: worktree `~/Development/emulationstation-next.worktrees/rc-batch` on `feature/rc-batch` from `test/qa-integration` (`834bf069c`): #198's two `shellQuote` sites (+ a `SecurityText` helper with a unit test if cheap), #209's legacy-`0` display in GuiMenu.cpp:5323-5331; `tools/es-syntax-check --tree`; merge to `test/qa-integration`; push; pin bump. Distribution on `next`: `setsettings.sh` `set_savestates`; `setrootpass` printf; `rocknix-corekeep` cap/note; `tools/last-good-scripts-test` cases for all three (run against the unfixed code first: FAIL, then PASS). Then x64 run 31 + H700 run 20, `proof`: the scripts suite + a guest-d launch with DO NOT INCREMENT (`check-249.sh`'s shape) + `setrootpass 'a b$c'` on guest d and a `cryptpw` compare; vm-qa (now with frame-diff: claims for any walked screen the cut changes -- none expected); rehearsal; RECORD.txt; ask the maintainer for the transfer and the reboot.
+2. **Every session**: `tools/ceremony-check` first; `tools/archaeology <terms>` before anything is called pending; a friction line when something slows; `tools/work-log-index --write` after a log entry.
+3. When the audit gate goes red: `code-auditor` on the work since #186; retro ~09-26 (`docs/retros/`), the 2026-W39 summary by 09-29.
+4. The maintainer's device boxes on the fifteenth: #250, #249, #245, #246, #243; then the RG SP (D-QA-031), the Nova. #252 box 3b; #253's four-week box.
 
 ## Key Files Modified (this session)
 
