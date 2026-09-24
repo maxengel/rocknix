@@ -4,6 +4,14 @@
 # Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="cairo"
+# Why this override exists beside packages/graphics/cairo: the generic recipe
+# builds cairo for x11 alone (libXrender/libX11 under DISPLAYSERVER=x11, xcb
+# disabled); ROCKNIX's Wayland devices need the xcb and xlib-xcb surfaces and
+# the GL/GLES backends the devices' OPENGL/OPENGLES options name, and the
+# meson options below follow those. The version is the release the generic
+# recipe would have too -- 1.18.4 is what pango 1.58 requires (1e5b87963a;
+# upstream PR 3359 carries the same bump) -- so once that PR merges the
+# version line here is redundant and only the options keep the override.
 PKG_VERSION="1.18.4"
 PKG_SHA256="445ed8208a6e4823de1226a74ca319d3600e83f6369f99b14265006599c32ccb"
 PKG_LICENSE="LGPL-2.1-or-later OR MPL-1.1"

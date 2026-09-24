@@ -190,8 +190,10 @@
 #
 # The store this reads -- read-only, through the service's own sqlite3
 # module, never written here -- is the client's schema at the commit
-# package.mk pins (64d03d30633ca6e7719c26d732cef3c97dedcc27, storage.py
-# _initialize_sqlite): pending_awards(achievementId, queuedAt, status) for
+# package.mk pins (4e9bab484e4d7be30b2dbc313aae94ca2f5f742a, storage.py
+# _initialize_sqlite; byte-identical to the previous pin 64d03d30's, checked
+# 2026-09-24 for audit #258 PL-009): pending_awards(achievementId, queuedAt,
+# status) for
 # pending and pending-ids; api_cache(cacheKey, responseBody, sourceRomPath,
 # cachedAt) for account and for the scan's "already cached" test, the keys
 # as cache_keys.py spells them (login2::<user>, patch:<id>:<user>,
@@ -243,6 +245,7 @@ TOKEN_KEY="global.retroachievements.token"
 PASSWORD_KEY="global.retroachievements.password"
 
 # sysexits.h, as CloudExit.h names them: a run that did nothing, and why.
+EX_USAGE=64         # a bad argument; the usage line was printed (refresh, audit #258 PL-012)
 EX_UNAVAILABLE=69   # offline by the proxy's probe
 EX_TEMPFAIL=75      # another scan or top-up holds the lock
 EX_NOPERM=77        # no RetroAchievements account signed in
@@ -1275,12 +1278,23 @@ do_images() {
         tell "why NO_NETWORK"
         exit ${EX_UNAVAILABLE}
     fi
+    # The lock carries this pid, so `disable` can ask the run to stop
+    # (stop_running_run, #186 PL-30); the TERM trap ends the helper and
+    # the EXIT trap clears the progress file, as scan's do. The progress
+    # line is route=images at=<epoch>: RUN_ROUTE names the verb, and
+    # mark_running's argument is the rest of the line, not the verb --
+    # `mark_running images` wrote at=<epoch>images (audit #258 PL-013).
+    trap 'stopped images' TERM
+    RUN_ROUTE=images
     take_lock images
-    mark_running images
-    trap unmark_running EXIT
+    mark_running
+    trap 'unmark_running; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
     local RC=0
     # shellcheck disable=SC2086 -- MODE is one flag or empty, on purpose
-    "${IMAGE_HELPER}" --seconds "${IMAGE_PASS_SECONDS}" ${MODE} || RC=$?
+    "${IMAGE_HELPER}" --seconds "${IMAGE_PASS_SECONDS}" ${MODE} &
+    CLIENT=$!
+    wait "${CLIENT}" || RC=$?
+    CLIENT=""
     slog "images: rc=${RC}${MODE:+ (${MODE})}"
     exit "${RC}"
 }
@@ -1305,11 +1319,18 @@ do_refresh() {
         tell "why NO_NETWORK"
         exit ${EX_UNAVAILABLE}
     fi
+    # As images: the pid in the lock, a TERM trap over the helper, the
+    # verb in RUN_ROUTE (audit #258 PL-013).
+    trap 'stopped refresh' TERM
+    RUN_ROUTE=refresh
     take_lock refresh
-    mark_running refresh
-    trap unmark_running EXIT
+    mark_running
+    trap 'unmark_running; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
     local RC=0
-    "${REFRESH_HELPER}" --seconds "${TOPUP_TIMEOUT}" "${WHICH[@]}" || RC=$?
+    "${REFRESH_HELPER}" --seconds "${TOPUP_TIMEOUT}" "${WHICH[@]}" &
+    CLIENT=$!
+    wait "${CLIENT}" || RC=$?
+    CLIENT=""
     slog "refresh: rc=${RC} ${WHICH[*]}"
     exit "${RC}"
 }

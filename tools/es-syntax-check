@@ -20,15 +20,30 @@
 # (`ES_BUILD_ROOT`, default the generic-x64 worktree's), ask ninja for the
 # exact command it used on the object that corresponds to the file, point
 # that command at the edited file instead, drop the output and dependency
-# flags, add -fsyntax-only, and run it. Headers come from the build tree, so
-# a header the edit changed is not seen -- point at the edited tree with
-# `--with <dir>` (adds -iquote<dir>, which a `#include "..."` searches before
-# every -I of the build, so the edited header wins over the build tree's
-# copy; -I would come after them and lose) -- or, when headers changed in
-# both es-core and es-app, `--tree <worktree>`, which builds a farm of the
-# build tree's headers with only the changed ones pointed at the worktree,
-# so `#pragma once` sees each header once. Or accept that this checks the
-# .cpp alone.
+# flags, add -fsyntax-only, and run it.
+#
+# Include roots (audit #258 PL-005). Every `#include "..."` must resolve to
+# ONE file, or `#pragma once` lets the same header in twice and the check
+# fails on redefinitions the compiler never sees in a real build: a .cpp's
+# own directory is searched first, so `#include "GuiRetroAchievements.h"`
+# from beside it found the worktree's copy while `#include
+# "guis/GuiRetroAchievements.h"` through the build's -I found the build
+# tree's -- byte-identical, different inodes and mtimes, two files to GCC.
+# Three of fifty-five in-range units failed that way on 2026-09-24. So:
+#
+#   plain          the worktree's own es-app/src and es-core/src (found up
+#                  from each .cpp) go in as -I ahead of the build's own -I
+#                  (and as -iquote): every include of an ES header, quoted
+#                  or <angled> -- InputManager.h writes <utils/Delegate.h>,
+#                  Settings.h "utils/Delegate.h" -- resolves to the worktree.
+#   --with <dir>   one more -iquote, ahead of those.
+#   --tree <wt>    a farm of symlinks with every header the worktree has
+#                  pointed at the worktree (the build tree's for any it
+#                  lacks), in as -I ahead of the build's and as -iquote; for
+#                  a worktree that is not where the .cpp lives.
+#
+# Either way the compiler checks the edited .cpp against the edited
+# headers, and headers of the same name reach it through one inode.
 #
 # Exit 0 when every file passes, 1 when one does not (the compiler's errors
 # are printed), 2 when the check cannot run -- no build root, no ninja
@@ -39,6 +54,7 @@ ROOT_DEFAULT=/workspace/repos/rocknix.worktrees/generic-x64/build.ROCKNIX-GENERI
 BROOT="${ES_BUILD_ROOT:-$ROOT_DEFAULT}"
 WITH=""
 TREE=""
+PRE=""     # -I dirs to put ahead of the build's own (the header above)
 FILES=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -71,13 +87,18 @@ if [ -n "$TREE" ]; then
   ESB=$(dirname "$BD"); FARM=$(mktemp -d "${TMPDIR:-/tmp}/es-syntax-farm.XXXXXX"); trap 'rm -rf "$FARM"' EXIT
   for part in es-core es-app; do
     cp -rs "$ESB/$part/src" "$FARM/$part"
+    # Every header the worktree has points at the worktree, changed or not,
+    # so a header reached by two names is one inode (see the header above);
+    # only the changed ones are announced.
     while IFS= read -r h; do
       rel=${h#"$TREE/$part/src/"}
+      mkdir -p "$FARM/$part/$(dirname "$rel")"; ln -sfn "$h" "$FARM/$part/$rel"
       if [ ! -e "$ESB/$part/src/$rel" ] || ! cmp -s "$h" "$ESB/$part/src/$rel"; then
-        mkdir -p "$FARM/$part/$(dirname "$rel")"; ln -sfn "$h" "$FARM/$part/$rel"; echo "  (header) $part/src/$rel from the tree"
+        echo "  (header) $part/src/$rel from the tree"
       fi
     done < <(find "$TREE/$part/src" -name '*.h' -type f)
     WITH="$WITH -iquote$FARM/$part"
+    PRE="${PRE:-} -I$FARM/$part"
   done
 fi
 fail=0
@@ -103,7 +124,19 @@ for f in "${FILES[@]}"; do
   fi
   [ -n "$cmd" ] || { echo "  NO-CMD  $f: ninja has no command for $obj and no sibling to borrow from" >&2; fail=1; continue; }
   new=$(printf '%s' "$cmd" | sed -E "s#-c [^ ]+\.(cpp|cc|cxx)( |\$)#-c ${abs} #; s# -o [^ ]+\.o# #; s# -MF [^ ]+# #; s# -MD # #; s# -MT [^ ]+# #")
-  new="$new $WITH -fsyntax-only"
+  # The worktree this .cpp lives in: its es-app/src and es-core/src ahead of
+  # the build's -I, so every quoted include is the worktree's (the header
+  # above). --tree's farm already does this and comes first.
+  wt=${abs%/es-app/*}; [ "$wt" = "$abs" ] && wt=${abs%/es-core/*}
+  own=""; pre="$PRE"
+  if [ -z "$TREE" ] && [ -d "$wt/es-app/src" ] && [ -d "$wt/es-core/src" ]; then
+    own="-iquote$wt/es-core/src -iquote$wt/es-app/src"
+    pre="-I$wt/es-core/src -I$wt/es-app/src"
+  fi
+  # The worktree's (or the farm's) -I ahead of the build's first -I, so an
+  # <angled> include of an ES header finds the same file a quoted one does.
+  [ -n "$pre" ] && new=$(printf '%s' "$new" | sed -E "s# -I# ${pre} -I#")
+  new="$new $WITH $own -fsyntax-only"
   if out=$(cd "$BD" && eval "$new" 2>&1); then
     echo "  OK      $f"
   else

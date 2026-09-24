@@ -104,7 +104,9 @@
 #      run COULDN'T FINISH (PL-24); the helper's DONE is the verdict and a
 #      kill after it is not (#188); the progress file while the jobs run
 #      (#189); the walk's cap counts uncached files
-#      (PL-17); disable stops a running run (PL-30). And the client's own
+#      (PL-17); disable stops a running run (PL-30); refresh with a bad
+#      argument exits 64, an images run writes route=images at=<epoch> and
+#      disable ends its helper too (audit #258 PL-012/PL-013). And the client's own
 #      predicates, from the patched tree: the refresh bound and the
 #      surviving thread (patch 005, PL-01/PL-25), a game evicted whole
 #      (006, PL-02), the configured account's cached sign-in (007, PL-23),
@@ -2173,6 +2175,45 @@ wait "${TBG}" 2>/dev/null
 [ "${DRC}" -eq 0 ] && [ -n "${HPID}" ] && [ "${GONE}" -eq 1 ] && grep -q 'asking it to stop' "${ERR}" && grep -q 'scan or top-up stopped' "${ERR}" && ! grep -q '^end' "${TR}/helper-times"; check $? "disable during a scan: the run is asked to stop through its lock file's pid, the helper (pid ${HPID:-?}) is gone within ten seconds, disable exits 0 (the scan itself exited $(cat "${T}/bg.rc" 2>/dev/null))" "disable rc ${DRC}; helper ${HPID:-none} gone: ${GONE}; disable said: $(grep -i 'scan or top-up\|asking' "${ERR}" | tr '\n' '|' | cut -c1-200); helper times: $(tr '\n' ' ' < "${TR}/helper-times" 2>/dev/null) (#186 PL-30)"
 [ "$(tv global.retroachievements.offlineproxy)" = "0" ] && [ ! -e "${TSTAMP}" ]; check $? "and the toggle is 0 with no stamp from the stopped run" "toggle '$(tv global.retroachievements.offlineproxy)'; stamp: $(cat "${TSTAMP}" 2>/dev/null)"
 [ -n "${HPID}" ] && kill -9 "${HPID}" 2>/dev/null; rm -f "${TR}/helper-plan"; touch "${TR}/fast-sleep"
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\nglobal.retroachievements.username=QA\nglobal.retroachievements.token=FIXTURETOKEN\n' > "${TCFG}"
+# refresh with a bad argument (audit #258 PL-012): usage on stderr and exit
+# 64 -- EX_USAGE was never defined, so `exit ${EX_USAGE}` was `exit` and the
+# verb ended with the echo's 0.
+treset
+tctl refresh --bogus
+[ "${RC}" -eq 64 ] && grep -q '^usage: raofflineproxy-ctl refresh' "${ERR}"; check $? "refresh --bogus: usage on stderr, exit 64" "rc ${RC}; stderr: $(head -c 120 "${ERR}")"
+# images (audit #258 PL-013): the progress file names the verb -- it read
+# route=run at=<epoch>images -- and disable ends the image helper through the
+# lock's pid, as it ends a scan's. The helper beside the ctl records its pid
+# and waits the real seconds /run/images-plan says.
+cat > "${T}/repo/raofflineproxy-cache-images" <<'EOS'
+#!/bin/bash
+echo $$ > /run/images.pid
+trap 'echo end >> /run/images-times; exit 143' TERM
+echo start >> /run/images-times
+n=$(cat /run/images-plan 2>/dev/null || echo 0)
+i=0; while [ "$i" -lt "$n" ]; do /bin/sleep 1; i=$((i+1)); done
+echo done >> /run/images-times
+EOS
+chmod +x "${T}/repo/raofflineproxy-cache-images"
+treset; rm -f "${TR}/fast-sleep"; printf '20\n' > "${TR}/images-plan"; rm -f "${TR}/images.pid" "${TR}/images-times"
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\nglobal.retroachievements.username=QA\nglobal.retroachievements.token=FIXTURETOKEN\n' > "${TCFG}"
+( bwrap --die-with-parent --tmpfs / --tmpfs /usr "${USR_BINDS[@]}" "${TBB[@]}" \
+    --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+    --ro-bind /etc /etc --ro-bind "${T}/profile" /etc/profile \
+    --bind "${TS}" /storage --ro-bind "${T}/repo" /repo --ro-bind "${T}/shim" /shim --ro-bind "${CLIENT}" /client --ro-bind "${T}/pypath" /pypath \
+    --bind "${TR}" /run --tmpfs /var --bind "${T}/varrun" /var/run \
+    --dev /dev --proc /proc --tmpfs /tmp --setenv PYTHONPATH /client:/pypath \
+    bash /repo/raofflineproxy-ctl images > "${T}/bg.out" 2> "${T}/bg.err"; echo $? > "${T}/bg.rc" ) &
+TBG=$!
+for i in $(seq 1 50); do [ -s "${TR}/images.pid" ] && [ -s "${TPD}/running" ] && break; sleep 0.2; done
+IPID=$(cat "${TR}/images.pid" 2>/dev/null); IRUN=$(cat "${TPD}/running" 2>/dev/null)
+[[ "${IRUN}" =~ ^route=images\ at=[0-9]+$ ]]; check $? "images: the progress file reads route=images at=<epoch> while the helper runs" "running: '${IRUN}' (was route=run at=<epoch>images before #258 PL-013)"
+tctl disable; DRC=${RC}
+GONE=0; for i in $(seq 1 100); do kill -0 "${IPID}" 2>/dev/null || { GONE=1; break; }; sleep 0.1; done
+wait "${TBG}" 2>/dev/null
+[ "${DRC}" -eq 0 ] && [ -n "${IPID}" ] && [ "${GONE}" -eq 1 ] && grep -q 'asking it to stop' "${ERR}" && ! grep -q '^done' "${TR}/images-times" && [ ! -e "${TPD}/running" ]; check $? "disable during an images run: asked to stop through the lock's pid, the image helper (pid ${IPID:-?}) gone within ten seconds, the progress file removed (the run exited $(cat "${T}/bg.rc" 2>/dev/null))" "disable rc ${DRC}; helper ${IPID:-none} gone: ${GONE}; running left: $([ -e "${TPD}/running" ] && echo yes || echo no); helper times: $(tr '\n' ' ' < "${TR}/images-times" 2>/dev/null); disable said: $(grep -i 'asking\|stopped' "${ERR}" | tr '\n' '|' | cut -c1-160) (#258 PL-013)"
+[ -n "${IPID}" ] && kill -9 "${IPID}" 2>/dev/null; rm -f "${TR}/images-plan" "${TR}/images.pid" "${TR}/images-times"; touch "${TR}/fast-sleep"
 printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\nglobal.retroachievements.username=QA\nglobal.retroachievements.token=FIXTURETOKEN\n' > "${TCFG}"
 # The walk's cap counts uncached files (#186 PL-17): eleven ROMs in an
 # unindexed folder and a cap of ten -- the first scan takes ten and says

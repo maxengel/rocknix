@@ -30,7 +30,8 @@
 # Three rules it obeys, because this runs on somebody's game machine:
 #
 #   * It is bounded. A dump is streamed through gzip and cut off at
-#     CORE_MAX_BYTES of compressed output; the note says it was cut. The ring
+#     CORE_MAX_BYTES of the raw dump (head -c before gzip, so the cap is the
+#     dump's size, not the archive's); the note says it was cut. The ring
 #     keeps CORE_KEEP newest pairs and deletes the rest, oldest first.
 #   * It refuses rather than fills the card. Under CORE_MIN_FREE_KB free it
 #     writes only the note, saying so. A player who cannot save their game
