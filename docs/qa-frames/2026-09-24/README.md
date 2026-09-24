@@ -135,3 +135,14 @@ The 640x480 frame is RC-11's (`182-cloud-rows-dimmed-no-cloud-640x480-a6d032bf5e
   `AUTO SAVE / 17:07` and `SLOT 0 / YESTERDAY 14:03` (D-UI-087; the day rule is
   `Utils::Time::dayRelation`, the manager walk `tools/vm-walks/manager.steps`).
   French (HIER) and the date form for older saves are owed on the next walk.
+  Superseded the same evening by the `664ad9ac64` frame below (D-UI-089).
+- `195-manager-today-yesterday-older-at-640x480` -- the same manager on the
+  twenty-second cut (`664ad9ac64`, ES `296aa5966`) with the auto save dated today
+  09:07, slot 0 yesterday 14:03 and slot 1 on 2026-09-01 12:00: the tiles read
+  `TODAY at 09:07`, `YESTERDAY at 14:03` and `09/01/26 at 12:00` -- the three
+  forms of D-UI-089 in one frame, the year two digits, the lowercase `at` between
+  the day and the time. Guest d, `tools/vm-walks/manager.steps`; the states are
+  three 4 KB stubs with the fixture thumbnail, touched to those times, and the
+  guest was rebooted first because ES's file cache had already recorded the
+  savestates directory as absent (`es-native-ui.md`, the uncached-read trap).
+  French (HIER, AUJOURD'HUI, `à`) is still owed a frame.

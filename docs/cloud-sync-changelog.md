@@ -2377,6 +2377,20 @@ What a player would notice, in the twentieth cut `c041be7e98`:
   screenshot's game is looked up from an index built once rather than a
   walk of the whole library per new screenshot (PL-034).
 
+### The twenty-second cut (2026-09-24, `664ad9ac64`)
+
+One change over the twenty-first, made on the maintainer's word before the
+copy, and proven the same way (vm-qa run 28, rehearsal run 23):
+
+- **A save state tile says the day and the time in one breath** (#195,
+  D-UI-089). The second line reads `TODAY at 09:07`, `YESTERDAY at 14:03`, or
+  `09/01/26 at 12:00`: the day word or a two-digit-year date, a lowercase
+  *at*, then the time. In French: AUJOURD'HUI, HIER, and *à*. The 12-hour
+  switch still decides the time's form. The two-digit year is what made room
+  for the word on a 640x480 tile.
+
+The twenty-first cut was never staged; this one replaces it as the candidate.
+
 ### The twenty-first cut (2026-09-24, `d27858eb70`)
 
 What a player would notice, each proven on the VM first (vm-qa run 27, rehearsal run 22):
