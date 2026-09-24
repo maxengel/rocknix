@@ -29,7 +29,8 @@ import sys
 import time
 
 DEFAULT_URL = "https://www.dropbox.com/oauth2/authorize?client_id=rocknixqa&response_type=code&redirect_uri=http%3A%2F%2Flocalhost%3A53682%2F"
-PROCS = ("cloud-signin-wi", "WebKitWebProcess", "WebKitNetworkPro")
+# /proc/<pid>/comm is 15 characters: the helpers read WebKitWebProces and WebKitNetworkPr
+PROCS = ("cloud-signin-wi", "WebKitWebProces", "WebKitNetworkPr")
 
 
 def main():
@@ -74,7 +75,7 @@ def main():
     seen = {p: False for p in PROCS}
     samples = []
     for t in range(seconds):
-        rc, out, _ = ssh("for p in /proc/[0-9]*; do c=$(cat $p/comm 2>/dev/null); case \"$c\" in cloud-signin-wi|WebKitWebProcess|WebKitNetworkPro) "
+        rc, out, _ = ssh("for p in /proc/[0-9]*; do c=$(cat $p/comm 2>/dev/null); case \"$c\" in cloud-signin-wi|WebKitWebProces|WebKitNetworkPr) "
                          "echo \"$c $(awk '/^VmRSS/{r=$2} /^VmHWM/{h=$2} END{print r, h}' $p/status)\";; esac; done", timeout=20)
         row = {}
         for line in out.splitlines():
@@ -87,10 +88,10 @@ def main():
         samples.append(row)
         time.sleep(1)
     page = ssh("cat /tmp/sm-page 2>/dev/null; tail -2 /tmp/signin-memory.log 2>/dev/null | cut -c1-200")[1]
-    ssh("kill $(cat /tmp/signin-memory.pid) 2>/dev/null; sleep 1; pkill -x WebKitWebProcess 2>/dev/null; true", timeout=20)
+    ssh("kill $(cat /tmp/signin-memory.pid) 2>/dev/null; sleep 1; pkill -x WebKitWebProces 2>/dev/null; pkill -x WebKitNetworkPr 2>/dev/null; true", timeout=20)
     free_after = ssh("free -m | awk '/^Mem:/{print $7}'")[1]
     total_peak_rss = max((sum(r.values()) for r in samples), default=0)
-    ok = seen["cloud-signin-wi"] and seen["WebKitWebProcess"]
+    ok = seen["cloud-signin-wi"] and seen["WebKitWebProces"]
     out = {"port": port, "guest": build, "url": url, "seconds": seconds, "wayland": display,
            "peak_hwm_kb": peaks, "peak_total_rss_kb": total_peak_rss,
            "free_mb_before": free_before, "free_mb_after": free_after, "page": page, "pass": ok}
