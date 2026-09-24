@@ -2,8 +2,10 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="webkitgtk"
-# freshness: pinned -- 2.54.0 does not build with video off, and video needs gstreamer-mpegts and
-# gstreamer-gl the image lacks (fork #228); remove this line in the commit that bumps it
+# freshness: pinned -- 2.54.0 was attempted with the GStreamer it asks for (GL, mpegts) on
+# 2026-09-24 and stopped at its final link on a fourth option-graph wall past the three fixes
+# allowed (fork #228, D-WORKFLOW-041; branch build/webkit-254 holds the attempt); it returns
+# with the conflict-resolution candidate. Remove this line in the commit that bumps it.
 PKG_VERSION="2.52.6"
 PKG_SHA256="179a2ea3f8f6edd4be7f31fdc55afc57bd0729f1fba648c61d4181539ac116fc"
 PKG_LICENSE="LGPL-2.1-or-later AND BSD-2-Clause"
