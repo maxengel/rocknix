@@ -1,0 +1,30 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+
+### RetroArch draws at the panel's size, on whatever mode the guest has.
+#
+# The image used to ship video_fullscreen_x/y = 0 here, and under wayland
+# that gave RetroArch a fullscreen surface the size of the game's picture
+# (240x256 for an NES core) that sway then scaled to the 640x480 output.
+# Every RetroArch frame ever read off a QA guest -- text, widgets, the
+# achievement banner -- was that small surface resampled up, and every
+# stem in every letter was two grey columns wide whatever the font size
+# (fork #263; #251's measurements described the scaling). The H700 ships
+# 640/480 and never drew this way.
+#
+# The shipped cfg now says 640x480; a guest on another mode (the 1280x800
+# QA guest) gets its own here, from the connected output, when the values
+# are still the shipped ones. A value somebody set by hand is left alone,
+# and RetroArch does not write these back (config_save_on_exit is off).
+CFG="/storage/.config/retroarch/retroarch.cfg"
+MODE="$(cat /sys/class/drm/card*-*/modes 2>/dev/null | head -1)"
+if [ -f "${CFG}" ]; then
+  case "${MODE}" in
+    [0-9]*x[0-9]*)
+      W="${MODE%x*}"; H="${MODE#*x}"
+      grep -qE '^video_fullscreen_x = "(0|640)"$' "${CFG}" && sed -i "s/^video_fullscreen_x = .*/video_fullscreen_x = \"${W}\"/" "${CFG}"
+      grep -qE '^video_fullscreen_y = "(0|480)"$' "${CFG}" && sed -i "s/^video_fullscreen_y = .*/video_fullscreen_y = \"${H}\"/" "${CFG}"
+      ;;
+  esac
+fi

@@ -6,7 +6,7 @@
 # widget sizes a panel gets are numbers in the tree rather than a guess
 # (fork #255, D-UI-086; the method is #251's solidity.py).
 #
-#   tools/font-stems <font.ttf> [--sizes 9-32] [--text "..."] [--json]
+#   tools/font-stems <font.ttf> [--sizes 9-32] [--text "..."] [--json] [--no-hinting | --light] [--lib libfreetype.so]
 #
 # Renders the text with FreeType the way RetroArch's font driver does --
 # FT_Set_Pixel_Sizes at a whole number of pixels, FT_LOAD_DEFAULT hinting,
@@ -34,6 +34,9 @@ import sys
 FT_LOAD_DEFAULT = 0
 FT_LOAD_RENDER = 1 << 2
 FT_LOAD_NO_SCALE = 1 << 0
+FT_LOAD_NO_HINTING = 1 << 1
+FT_LOAD_TARGET_LIGHT = 1 << 16
+LOAD_FLAGS = FT_LOAD_RENDER  # --no-hinting / --light change it
 
 
 class FT_Generic(ctypes.Structure):
@@ -79,8 +82,11 @@ class FT_FaceRec(ctypes.Structure):
                 ("size", ctypes.c_void_p), ("charmap", ctypes.c_void_p)]
 
 
+LIB = None  # --lib path: another libfreetype, such as the image sysroot's
+
+
 def load_freetype():
-    name = ctypes.util.find_library("freetype") or "libfreetype.so.6"
+    name = LIB or ctypes.util.find_library("freetype") or "libfreetype.so.6"
     ft = ctypes.CDLL(name)
     ft.FT_Init_FreeType.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
     ft.FT_New_Face.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_long, ctypes.POINTER(ctypes.POINTER(FT_FaceRec))]
@@ -105,7 +111,7 @@ def render(ft, face, text, px):
     canvas = [[0] * width for _ in range(height)]
     pen = px
     for ch in text:
-        if ft.FT_Load_Char(face, ord(ch), FT_LOAD_RENDER):
+        if ft.FT_Load_Char(face, ord(ch), LOAD_FLAGS):
             continue
         slot = face.contents.glyph.contents
         bm = slot.bitmap
@@ -126,7 +132,7 @@ def render(ft, face, text, px):
 
 def x_height_px(ft, face, px):
     ft.FT_Set_Pixel_Sizes(face, 0, px)
-    if ft.FT_Load_Char(face, ord("x"), FT_LOAD_RENDER):
+    if ft.FT_Load_Char(face, ord("x"), LOAD_FLAGS):
         return px // 2
     return face.contents.glyph.contents.bitmap_top
 
@@ -172,6 +178,17 @@ def main():
             i += 2
         elif args[i] == "--json":
             as_json = True
+            i += 1
+        elif args[i] == "--lib":
+            global LIB
+            LIB = args[i + 1]
+            i += 2
+        elif args[i] == "--no-hinting":
+            global LOAD_FLAGS
+            LOAD_FLAGS = FT_LOAD_RENDER | FT_LOAD_NO_HINTING
+            i += 1
+        elif args[i] == "--light":
+            LOAD_FLAGS = FT_LOAD_RENDER | FT_LOAD_TARGET_LIGHT
             i += 1
         else:
             sys.exit("font-stems: unknown argument %s" % args[i])

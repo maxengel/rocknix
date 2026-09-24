@@ -717,3 +717,35 @@ checked the same day and one of them had the same defect one column wide
 constructed positive was this folder. The scorecard template says the row
 is computed, never typed.
 
+## 54. A measurement on a guest whose renderer was not the device's (2026-09-24)
+
+The #251 experiment measured the RetroArch sign-in toast's stem widths on
+guest d "at the H700's numbers" and concluded the face was soft below 14
+px because its stems fell between pixel columns. The numbers were real
+and the conclusion was drawn from the wrong picture: the GENERIC_X64 image
+shipped `video_fullscreen_x/y = 0`, and under wayland RetroArch took a
+fullscreen surface the size of the game (`Using resolution 240x256` in its
+own log, two lines under `Detecting screen resolution: 640x480`) that sway
+scaled to the panel. Every stem of every letter was two grey columns wide
+at every size, because a scaled 1 px stem is; the H700 ships 640/480 on
+KMS and never drew that way. `tools/font-stems`, rendering the same face
+through the image's own FreeType, found stems on the grid from 11 px up,
+and disagreed with the frames by fifty points until the surface was made
+1:1 and the frames agreed (#263).
+
+The shape: the guest was trusted as the device for a claim about pixels
+without anyone reading what the guest's renderer said it was drawing into,
+which it logged on every launch. Blindspot 39 was the same shape for a
+number that was never measured; this is the number measured on the wrong
+image. The maintainer's question on 2026-09-23 -- *"is the issue strictly
+the font size, or is the font size rendering cleanly related to the
+resolution of the screen"* -- was the right one and was answered from the
+frames rather than from the log.
+
+**Guard:** `tools/time-to-play` reads `Using resolution` from the guest's
+`exec.log` after its first launch and fails the run when the surface is
+under the panel (`surface_check`); the GENERIC_X64 cfg ships 640x480 and
+`quirks/platforms/GENERIC_X64/092-retroarch-surface` follows the guest's
+mode at boot. A frame-based claim about RetroArch text before this guard
+is a claim about a scaled image.
+

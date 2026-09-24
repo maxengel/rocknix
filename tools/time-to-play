@@ -98,6 +98,7 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import re
 import shutil
 import signal
 import statistics
@@ -233,6 +234,33 @@ class Guest:
     def kill_game(self):
         """The shipped execute_kill, from the installed input_sense."""
         return self.sh("/tmp/ttp-kill", timeout=20)[0]
+
+
+def ppm_size(data):
+    """Width and height from a P6 header, or None."""
+    m = re.match(rb"P6\s+(\d+)\s+(\d+)\s+", data or b"")
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def surface_check(g, fr):
+    """RetroArch draws at the panel's size, or the frames lie (fork #263).
+
+    The GENERIC_X64 image shipped video_fullscreen_x/y = 0, and under wayland
+    that gave RetroArch a surface the size of the game (240x256 for an NES
+    core) that sway scaled up to the 640x480 panel: every stem in every text
+    read off a guest was two grey columns, whatever the font size, and the
+    #251 measurements described that scaling. RetroArch's log says what it
+    used; the panel is what the screendump is. A surface under the panel is
+    not a pass, because nothing measured on its frames is what the device
+    draws."""
+    line = g.sh("grep -o 'Using resolution [0-9]*x[0-9]*' /var/log/exec.log 2>/dev/null | tail -1", timeout=20)[1]
+    m = re.search(r"(\d+)x(\d+)", line or "")
+    panel = ppm_size(fr.rest(timeout=10))
+    out = {"surface": ("%dx%d" % (int(m.group(1)), int(m.group(2)))) if m else None,
+           "panel": ("%dx%d" % panel) if panel else None, "scaled": None}
+    if m and panel:
+        out["scaled"] = int(m.group(1)) < panel[0] or int(m.group(2)) < panel[1]
+    return out
 
 
 GB_PROBE = "/storage/roms/gb/TTProbe.gb"
@@ -1042,6 +1070,8 @@ def main():
             # the reference a picture of the game -- and the card then
             # never "went", on any repeat.
             L, rest_ref = measure_launch(g, fr, tag + "-launch", rom=rom)
+            if "surface" not in report:
+                report["surface"] = surface_check(g, fr)
             L["payload_kib"] = size
             wait_drawing(g)
             E = measure_exit(g, fr, tag + "-exit", rest_ref, relaunch=relaunch,
@@ -1162,6 +1192,11 @@ def headline_missing(report):
               ("exit", "t_sync_stamp", "the exit sync's stamp"),
               ("g2g", "t_second_game_frame", "the next game's first frame")]
     out = []
+    surf = report.get("surface") or {}
+    if surf.get("scaled"):
+        out.append("RetroArch drew into a %s surface under a %s panel: the frames are scaled (#263)" % (surf.get("surface"), surf.get("panel")))
+    elif report.get("cells", {}).get("launch") and surf.get("surface") is None:
+        out.append("RetroArch's surface size could not be read from the guest's exec.log (#263)")
     for cell, field, what in checks:
         rows = report["cells"].get(cell) or []
         n = sum(1 for r in rows if r.get(field) is None)

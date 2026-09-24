@@ -112,3 +112,18 @@ rows are full; a second frame a second later was byte-identical (md5
 recolours every element every frame; ES `d9fa93bf2`'s `setDimmed` re-applies
 it). `...-cursor-moved-...png`: the cursor on RESTORE, the rows still dimmed.
 The 640x480 frame is RC-11's (`182-cloud-rows-dimmed-no-cloud-640x480-a6d032bf5e.png`).
+
+## #263 -- RetroArch's surface on the guest: 1:1 against scaled (2026-09-24, `c041be7e98`, guest d, `video_driver = gl`)
+
+- `263-saved-state-notification-14px-surface-640x480` -- `video_fullscreen_x/y` set to
+  640/480: RetroArch's log reads `Using resolution 640x480`, and the saved-state
+  notification (the message-queue font at the 14 px floor, widget factor 1.0) has
+  single-column stems in its letters -- FreeType's hinted output, as
+  `tools/font-stems` renders it on the host.
+- `263-saved-state-notification-surface-240x256-scaled` -- the shipped GENERIC_X64
+  values (`video_fullscreen_x/y = 0`): RetroArch's log reads `Using resolution
+  240x256`, sway scales the surface to the panel, and the same notification's stems
+  are two grey columns wide. This is the picture every RetroArch frame read off a
+  guest before #263 showed, #251's measurements included; the H700 ships
+  `video_fullscreen_x = 640` and never drew this way. `video_windowed_fullscreen =
+  true` alone did not change the surface.
