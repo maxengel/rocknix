@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# signin-memory - what the cloud sign-in window costs in memory on a QA guest:
+# the peak resident size of the window and WebKit's processes while a page
+# loads, and the guest's free memory before and after (fork #228,
+# D-WORKFLOW-038: the number the webkitgtk bump is decided on).
+#
+#   tools/signin-memory <ssh-port> [--url URL] [--seconds N] [--key PATH] [--json]
+#
+# Over ssh to root@127.0.0.1:<port> (the vm-pair key by default): reads the
+# image's webkitgtk version from /usr/lib, opens /usr/bin/cloud-signin-window
+# on the guest's sway session the way cloud_oauth does (XDG_RUNTIME_DIR and
+# WAYLAND_DISPLAY from the running session, GDK_BACKEND=wayland), samples
+# VmRSS and VmHWM of cloud-signin-window, WebKitWebProcess and
+# WebKitNetworkProcess once a second for N seconds (default 30), then closes
+# the window and reports. The URL defaults to a provider's authorize page
+# with a made-up client id: it renders a real sign-in form and signs nobody
+# in, and it touches no account -- the page is the load, not the login.
+#
+# Two runs, one per image, are two rows in docs/vm-qa-log.md; the tool
+# prints the row's cells. A guest that shows no wayland session, or a window
+# that never spawns a web process, is a FAIL, not an empty measurement.
+
+import json
+import subprocess
+import sys
+import time
+
+DEFAULT_URL = "https://www.dropbox.com/oauth2/authorize?client_id=rocknixqa&response_type=code&redirect_uri=http%3A%2F%2Flocalhost%3A53682%2F"
+PROCS = ("cloud-signin-wi", "WebKitWebProcess", "WebKitNetworkPro")
+
+
+def main():
+    args = sys.argv[1:]
+    if not args or args[0] in ("-h", "--help"):
+        print(open(__file__).read().split("\n\n")[1].replace("# ", "").replace("#", ""))
+        return 0
+    port = args[0]
+    url, seconds, key, as_json = DEFAULT_URL, 30, "/tmp/rocknix-vm-pair/qa-key", False
+    i = 1
+    while i < len(args):
+        if args[i] == "--url":
+            url = args[i + 1]; i += 2
+        elif args[i] == "--seconds":
+            seconds = int(args[i + 1]); i += 2
+        elif args[i] == "--key":
+            key = args[i + 1]; i += 2
+        elif args[i] == "--json":
+            as_json = True; i += 1
+        else:
+            sys.exit("signin-memory: unknown argument %s" % args[i])
+
+    def ssh(cmd, timeout=60):
+        r = subprocess.run(["ssh", "-n", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
+                            "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR",
+                            "-o", "ConnectTimeout=10", "-p", port, "-i", key, "root@127.0.0.1", cmd],
+                           capture_output=True, text=True, timeout=timeout)
+        return r.returncode, r.stdout.strip(), r.stderr.strip()
+
+    rc, build, _ = ssh("grep -E '^(BUILD_ID|VERSION)=' /etc/os-release | tr '\\n' ' '; ls /usr/lib/libwebkit2gtk-4.1.so.* 2>/dev/null | head -1")
+    if rc != 0:
+        sys.exit("signin-memory: FAIL -- cannot reach root@127.0.0.1:%s (%s)" % (port, _))
+    rc, sess, _ = ssh("for u in /run/user/* /var/run/*; do for d in \"$u\"/wayland-*; do case \"$d\" in *.lock) ;; *) [ -e \"$d\" ] && { echo \"$u $(basename \"$d\")\"; exit 0; }; esac; done; done; exit 1")
+    if rc != 0 or not sess:
+        sys.exit("signin-memory: FAIL -- no wayland session on the guest (is EmulationStation's sway up?)")
+    runtime, display = sess.split()
+    free_before = ssh("free -m | awk '/^Mem:/{print $7}'")[1]
+    # the window, detached, its pid recorded
+    ssh("XDG_RUNTIME_DIR=%s WAYLAND_DISPLAY=%s GDK_BACKEND=wayland CLOUD_SIGNIN_PAGE_FILE=/tmp/sm-page CLOUD_SIGNIN_DONE_FILE=/tmp/sm-done "
+        "nohup /usr/bin/cloud-signin-window '%s' dropbox.com --exit-hint '' >/tmp/signin-memory.log 2>&1 & echo $! > /tmp/signin-memory.pid" % (runtime, display, url), timeout=20)
+    peaks = {p: 0 for p in PROCS}
+    seen = {p: False for p in PROCS}
+    samples = []
+    for t in range(seconds):
+        rc, out, _ = ssh("for p in /proc/[0-9]*; do c=$(cat $p/comm 2>/dev/null); case \"$c\" in cloud-signin-wi|WebKitWebProcess|WebKitNetworkPro) "
+                         "echo \"$c $(awk '/^VmRSS/{r=$2} /^VmHWM/{h=$2} END{print r, h}' $p/status)\";; esac; done", timeout=20)
+        row = {}
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) == 3:
+                c, rss, hwm = parts[0], int(parts[1]), int(parts[2])
+                row[c] = row.get(c, 0) + rss
+                seen[c] = True
+                peaks[c] = max(peaks[c], hwm)
+        samples.append(row)
+        time.sleep(1)
+    page = ssh("cat /tmp/sm-page 2>/dev/null; tail -2 /tmp/signin-memory.log 2>/dev/null | cut -c1-200")[1]
+    ssh("kill $(cat /tmp/signin-memory.pid) 2>/dev/null; sleep 1; pkill -x WebKitWebProcess 2>/dev/null; true", timeout=20)
+    free_after = ssh("free -m | awk '/^Mem:/{print $7}'")[1]
+    total_peak_rss = max((sum(r.values()) for r in samples), default=0)
+    ok = seen["cloud-signin-wi"] and seen["WebKitWebProcess"]
+    out = {"port": port, "guest": build, "url": url, "seconds": seconds, "wayland": display,
+           "peak_hwm_kb": peaks, "peak_total_rss_kb": total_peak_rss,
+           "free_mb_before": free_before, "free_mb_after": free_after, "page": page, "pass": ok}
+    if as_json:
+        print(json.dumps(out, indent=1)); return 0 if ok else 1
+    print("guest: %s" % build)
+    print("window: %s for %d s on %s; page: %s" % (url.split("?")[0], seconds, display, page.replace("\n", " | ")[:160]))
+    print("peak resident (VmHWM), MB: " + ", ".join("%s %.0f" % (k, v / 1024.0) for k, v in peaks.items()))
+    print("peak of the three together (VmRSS summed per sample), MB: %.0f" % (total_peak_rss / 1024.0))
+    print("guest free memory, MB: %s before, %s after" % (free_before, free_after))
+    print("PASS" if ok else "FAIL -- the window or its web process never appeared; read /tmp/signin-memory.log on the guest")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
