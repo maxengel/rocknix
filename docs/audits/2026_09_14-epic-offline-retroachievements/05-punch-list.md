@@ -68,7 +68,7 @@ Seat attribution: PL-23..PL-33 are the GPT seat's (G-nn), each confirmed against
 - **Where:** `raofflineproxy-ctl:976-994`
 - **Why:** the first connect after boot is when a device that added games while offline should cache them; today that connect is refused and — the seat's correction — **nothing schedules a retry**: the next link change or an after-index run is the next chance, silently.
 - **Evidence (reproduction):** stage the resolver lag (the `/storage/.config/resolv.conf` override), link up → `scan.log` reads `topup refused: offline by the proxy's probe` and `stat -c %Y last-topup-attempt` is now; a second `topup` within 30 min exits 0 at once.
-- **Acceptance:** with the lag staged for 30 s, the top-up succeeds within 90 s of the link and the mark is set once; with no network at all, three probes and exit 69 with no mark.
+- **Acceptance:** with the lag staged for 30 s, the top-up succeeds within 90 s of the link and the mark is set once; with no network at all, three probes and exit 69 with no mark. *(Note, 2026-09-24, audit #258 PL-008: "three probes" here carried the pre-fix count into the acceptance by mistake; the fix gave the top-up the token check's patience -- nine probes ten seconds apart -- and the harness asserts nine. The item was resolved against the patience, not the number written here.)*
 
 ## PL-05 — a harness case for `scan`, `topup` and `ready`
 
@@ -94,6 +94,8 @@ Seat attribution: PL-23..PL-33 are the GPT seat's (G-nn), each confirmed against
 - **Acceptance:** on a fresh guest with the toggle turned on through the page and a new ROM added, the next boot online indexes it (hasher lines) and the next top-up caches it (`topup: cached 1 game(s), 1 from the index`); or the sentence is absent when the setting is off — one of the two, framed at 640x480 EN/FR.
 
 ## PL-07 — let a scan be left running, or bound a foreground pass
+
+*(Note, 2026-09-24, audit #258 PL-008: the first alternative was built on 2026-09-14 (ES `d86754c57`, D-UI-060) and reversed on 2026-09-21 by D-UI-078 -- the maintainer met the B prompt on the device and asked what would happen; the second alternative is what ships: a foreground pass bounded by CANCEL (#241, ES `acd7a6fee`). The item's Phase 7 row records that.)*
 
 - **Severity:** Medium
 - **Category:** Cornerstone Violation (es-native-ui tiers: "a job measured in minutes") / Improvement
