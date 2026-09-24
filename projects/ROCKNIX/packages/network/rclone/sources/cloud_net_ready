@@ -10,19 +10,26 @@
 #             in any connected state -- its connectivity word is only logged) and it
 #             has stayed up for GRACE seconds with a default route the
 #             whole time
-#   exit 69   no network: there is no default route -- at once, without
-#             waiting (D-CLOUD-072: no route means no wait, so a device
-#             booted offline never holds the launch gate) -- or N seconds
-#             (default 60) passed without a settled connection. 69 is
-#             EXIT_NO_NETWORK, the code the cloud scripts and
-#             EmulationStation share for "skipped, no network".
+#   exit 69   no network: there is no default route and nothing is coming
+#             up -- at once, without waiting (D-CLOUD-072: a device booted
+#             with its radio off never holds the card); or a link that was
+#             coming up (NetworkManager `connecting`, or a carrier with no
+#             NetworkManager to ask) had no route by the deadline
+#             (D-CLOUD-136, #192); or N seconds (default 60) passed without
+#             a settled connection. 69 is EXIT_NO_NETWORK, the code the
+#             cloud scripts and EmulationStation share for "skipped, no
+#             network".
 #
 # Prints ">>> doing network" once, the moment it starts waiting -- which
-# includes the grace -- so the sync card names its step: CHECKING THE CONNECTION...
-# when the interface sees a link, WAITING FOR A NETWORK, UP TO N SECONDS... when it does not (#192)
-# and a game launched meanwhile cancels the sync rather than being refused
-# (ThreadedCloudSync::cancelIfWaitingForNetwork). Nothing else on stdout
-# on success; one line saying why on a 69.
+# includes the grace, and the wait for a route while a link comes up -- so
+# the sync card names its step: CHECKING THE CONNECTION... when the
+# interface sees a link, WAITING FOR A NETWORK, UP TO N SECONDS... when it
+# does not (#192), and a game launched meanwhile cancels the sync rather
+# than being refused (ThreadedCloudSync::cancelIfWaitingForNetwork), which
+# is what keeps this wait off the time to play (D-CLOUD-136; maintainer,
+# 2026-09-24: "If we can add the reachable wait without adding a delay to
+# the time to play, we should do it."). Nothing else on stdout on success;
+# one line saying why on a 69.
 #
 # Why. The startup sync used to begin on the first ping that came back:
 # seconds after Wi-Fi associates, which on an SDIO module is the moment it
@@ -124,9 +131,37 @@ while :; do
     NOW=$(uptime_cs)
 
     if ! has_default_route; then
-        echo "Skipped: there's no network connection. Try again when you're online."
-        log "no default route after $(((NOW - START) / 100))s (NetworkManager: ${STATE:-not asked}); exit ${EXIT_NO_NETWORK}"
-        exit "${EXIT_NO_NETWORK}"
+        # No route yet. A link that is coming up -- NetworkManager says
+        # `connecting`, or with no NetworkManager to ask some interface has
+        # a carrier -- is waited for up to the deadline, so the card's
+        # WAITING FOR A NETWORK line can be reached (#192, D-CLOUD-136; it
+        # was written in RC-11 and this exit stood in front of it). A
+        # device that is disconnected, asleep, or has its radio off exits at
+        # once as before: on the plane the card ends in a successful sync's
+        # time (D-CLOUD-072, D-CLOUD-112).
+        STATE=$(nm_state)
+        case "${STATE}" in
+            connecting*) COMING_UP=1 ;;
+            '') if carrier_up; then COMING_UP=1; else COMING_UP=0; fi ;;
+            *) COMING_UP=0 ;;
+        esac
+        if [ "${COMING_UP}" = 0 ]; then
+            echo "Skipped: there's no network connection. Try again when you're online."
+            log "no default route after $(((NOW - START) / 100))s (NetworkManager: ${STATE:-not asked}); exit ${EXIT_NO_NETWORK}"
+            exit "${EXIT_NO_NETWORK}"
+        fi
+        if [ "${NOW}" -ge "${DEADLINE}" ]; then
+            echo "Skipped: your network didn't come up in time. Try again when you're online."
+            log "no default route after ${WAIT}s while ${STATE:-a carrier} was coming up; exit ${EXIT_NO_NETWORK}"
+            exit "${EXIT_NO_NETWORK}"
+        fi
+        SETTLED_SINCE=""
+        if [ "${ANNOUNCED}" = 0 ]; then
+            echo ">>> doing network"
+            ANNOUNCED=1
+        fi
+        sleep "${POLL}"
+        continue
     fi
 
     STATE=$(nm_state)

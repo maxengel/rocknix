@@ -161,6 +161,7 @@ both lists and to this table, or it is invisible.**
 | `retroarch-wrapper-test` | does the threaded video wrapper run a posted command exactly once | `engineering-practices.md` |
 | `es-menu-map-check` | does `docs/es-menu-map.md` still describe the menus that ship | `es-native-ui.md` |
 | `es-untranslated` | which fork strings have no French | `es-native-ui.md` |
+| `font-stems` | how sharp a widget face renders at each pixel size: strokes, solid cores, mean stem, per px, on FreeType | `es-native-ui.md` |
 | `vocabulary-check` | back up / backup, and the rest of the player vocabulary | `es-player-text.md` |
 | `register-check` | every decision ID once, every citation naming a real row | `decision-register.md` |
 | `lint-audit-artifacts` | the audit artifacts are well formed | `issue-tracking.md` |

@@ -733,6 +733,28 @@ printf '#!/bin/sh\ncase "$*" in *STATE*) echo "connecting" ;; *CONNECTIVITY*) ec
 t0=$(date +%s)
 PATH="${I}/shim:${PATH}" bash "${ROOT}/${RCLONE_REL}/cloud_net_ready" --wait 3 > "${I}/out" 2>&1; RC_I=$?
 [ "${RC_I}" -eq 69 ]; check $? "still connecting at the deadline exits 69" "rc ${RC_I}: $(tail -1 "${I}/out" | cut -c1-120)"
+# The reachable wait (#192, D-CLOUD-136): with no route, a link that is
+# coming up is waited for and announced, one that is not exits at once.
+printf '#!/bin/sh\ncase "$*" in *"route show default"*) [ -e "%s/route-up" ] && echo "default via 192.168.1.1 dev wlan0" ;; esac\n' "${I}" > "${I}/shim/ip"
+printf '#!/bin/sh\ncase "$*" in *STATE*) echo "connecting" ;; *CONNECTIVITY*) echo "unknown" ;; esac\n' > "${I}/shim/nmcli"
+chmod +x "${I}/shim"/*; rm -f "${I}/route-up"
+t0=$(date +%s)
+PATH="${I}/shim:${PATH}" bash "${ROOT}/${RCLONE_REL}/cloud_net_ready" --wait 3 > "${I}/out" 2>&1; RC_I=$?
+dt=$(( $(date +%s) - t0 ))
+[ "${RC_I}" -eq 69 ] && [ "${dt}" -ge 3 ] && grep -q '^>>> doing network' "${I}/out" && grep -q "didn't come up in time" "${I}/out"; check $? "no route while NetworkManager says connecting: announced, waited the bound, then 69 (rc ${RC_I}, ${dt}s)" "rc ${RC_I} after ${dt}s: $(tr '\n' '|' < "${I}/out" | cut -c1-160)"
+printf '#!/bin/sh\ncase "$*" in *STATE*) echo "disconnected" ;; *CONNECTIVITY*) echo "none" ;; esac\n' > "${I}/shim/nmcli"
+t0=$(date +%s)
+PATH="${I}/shim:${PATH}" bash "${ROOT}/${RCLONE_REL}/cloud_net_ready" --wait 12 > "${I}/out" 2>&1; RC_I=$?
+dt=$(( $(date +%s) - t0 ))
+[ "${RC_I}" -eq 69 ] && [ "${dt}" -le 1 ] && ! grep -q '^>>> doing network' "${I}/out" && grep -q "there's no network connection" "${I}/out"; check $? "no route and disconnected (the radio off): 69 at once, nothing announced (rc ${RC_I}, ${dt}s)" "rc ${RC_I} after ${dt}s: $(tr '\n' '|' < "${I}/out" | cut -c1-160)"
+printf '#!/bin/sh\ncase "$*" in *STATE*) [ -e "%s/route-up" ] && echo "connected" || echo "connecting" ;; *CONNECTIVITY*) echo "full" ;; esac\n' "${I}" > "${I}/shim/nmcli"
+( sleep 2; touch "${I}/route-up" ) &
+t0=$(date +%s)
+PATH="${I}/shim:${PATH}" bash "${ROOT}/${RCLONE_REL}/cloud_net_ready" --wait 12 > "${I}/out" 2>&1; RC_I=$?
+dt=$(( $(date +%s) - t0 ))
+wait
+[ "${RC_I}" -eq 0 ] && [ "${dt}" -ge 4 ] && [ "${dt}" -lt 12 ] && grep -q '^>>> doing network' "${I}/out"; check $? "a route that arrives while the link comes up: announced, then settled after the grace, before the deadline (rc ${RC_I}, ${dt}s)" "rc ${RC_I} after ${dt}s: $(tr '\n' '|' < "${I}/out" | cut -c1-160)"
+rm -f "${I}/route-up"
 
 echo "  j. cloud_sync_helper migrates the shipped retry bound once, and leaves a hand-tuned value alone (#107)"
 # The helper rewrites RCLONE_NET_OPTS only while it is exactly the value shipped

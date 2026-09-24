@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# font-stems - how sharp a face renders at each pixel size, measured, so the
+# widget sizes a panel gets are numbers in the tree rather than a guess
+# (fork #255, D-UI-086; the method is #251's solidity.py).
+#
+#   tools/font-stems <font.ttf> [--sizes 9-32] [--text "..."] [--json]
+#
+# Renders the text with FreeType the way RetroArch's font driver does --
+# FT_Set_Pixel_Sizes at a whole number of pixels, FT_LOAD_DEFAULT hinting,
+# FT_RENDER_MODE_NORMAL, every glyph composited at an integer pen position
+# with its integer advance -- then reads the x-height row of the result:
+# a stroke is a maximal run of lit columns, its width is the coverage
+# summed across the run, and it has a solid core when one of its columns
+# is fully lit (within 12 % of full). A face whose stems land on the grid
+# reads sharp; one whose stems fall between two columns is two grey
+# half-columns wide and reads soft. The geometric stem of the letter l, in
+# em, is printed too: pixel size times that number is where the stems
+# would land with no hinting at all.
+#
+# The host's libfreetype (2.14 on the build box) stands in for the image's
+# (2.14.3): the same series, and the five points #251 measured on the
+# image's own frames -- 10 px 0.76 / 0 solid of 41, 14 px 1.19 / 16 of 44,
+# 15 px 1.40 / 10 of 46, 17 px 1.37 / 21 of 56, 24 px 1.87 / 51 of 56 --
+# are what this tool is checked against before its table is believed.
+
+import ctypes
+import ctypes.util
+import json
+import sys
+
+FT_LOAD_DEFAULT = 0
+FT_LOAD_RENDER = 1 << 2
+FT_LOAD_NO_SCALE = 1 << 0
+
+
+class FT_Generic(ctypes.Structure):
+    _fields_ = [("data", ctypes.c_void_p), ("finalizer", ctypes.c_void_p)]
+
+
+class FT_BBox(ctypes.Structure):
+    _fields_ = [("xMin", ctypes.c_long), ("yMin", ctypes.c_long), ("xMax", ctypes.c_long), ("yMax", ctypes.c_long)]
+
+
+class FT_Vector(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+
+class FT_Glyph_Metrics(ctypes.Structure):
+    _fields_ = [(n, ctypes.c_long) for n in ("width", "height", "horiBearingX", "horiBearingY", "horiAdvance",
+                                             "vertBearingX", "vertBearingY", "vertAdvance")]
+
+
+class FT_Bitmap(ctypes.Structure):
+    _fields_ = [("rows", ctypes.c_uint), ("width", ctypes.c_uint), ("pitch", ctypes.c_int),
+                ("buffer", ctypes.POINTER(ctypes.c_ubyte)), ("num_grays", ctypes.c_ushort),
+                ("pixel_mode", ctypes.c_ubyte), ("palette_mode", ctypes.c_ubyte), ("palette", ctypes.c_void_p)]
+
+
+class FT_GlyphSlotRec(ctypes.Structure):
+    _fields_ = [("library", ctypes.c_void_p), ("face", ctypes.c_void_p), ("next", ctypes.c_void_p),
+                ("glyph_index", ctypes.c_uint), ("generic", FT_Generic), ("metrics", FT_Glyph_Metrics),
+                ("linearHoriAdvance", ctypes.c_long), ("linearVertAdvance", ctypes.c_long),
+                ("advance", FT_Vector), ("format", ctypes.c_int), ("bitmap", FT_Bitmap),
+                ("bitmap_left", ctypes.c_int), ("bitmap_top", ctypes.c_int)]
+
+
+class FT_FaceRec(ctypes.Structure):
+    _fields_ = [("num_faces", ctypes.c_long), ("face_index", ctypes.c_long), ("face_flags", ctypes.c_long),
+                ("style_flags", ctypes.c_long), ("num_glyphs", ctypes.c_long), ("family_name", ctypes.c_char_p),
+                ("style_name", ctypes.c_char_p), ("num_fixed_sizes", ctypes.c_int), ("available_sizes", ctypes.c_void_p),
+                ("num_charmaps", ctypes.c_int), ("charmaps", ctypes.c_void_p), ("generic", FT_Generic),
+                ("bbox", FT_BBox), ("units_per_EM", ctypes.c_ushort), ("ascender", ctypes.c_short),
+                ("descender", ctypes.c_short), ("height", ctypes.c_short), ("max_advance_width", ctypes.c_short),
+                ("max_advance_height", ctypes.c_short), ("underline_position", ctypes.c_short),
+                ("underline_thickness", ctypes.c_short), ("glyph", ctypes.POINTER(FT_GlyphSlotRec)),
+                ("size", ctypes.c_void_p), ("charmap", ctypes.c_void_p)]
+
+
+def load_freetype():
+    name = ctypes.util.find_library("freetype") or "libfreetype.so.6"
+    ft = ctypes.CDLL(name)
+    ft.FT_Init_FreeType.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+    ft.FT_New_Face.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_long, ctypes.POINTER(ctypes.POINTER(FT_FaceRec))]
+    ft.FT_Set_Pixel_Sizes.argtypes = [ctypes.POINTER(FT_FaceRec), ctypes.c_uint, ctypes.c_uint]
+    ft.FT_Load_Char.argtypes = [ctypes.POINTER(FT_FaceRec), ctypes.c_ulong, ctypes.c_int32]
+    ft.FT_Library_Version.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int)]
+    lib = ctypes.c_void_p()
+    if ft.FT_Init_FreeType(ctypes.byref(lib)):
+        sys.exit("font-stems: FT_Init_FreeType failed")
+    a, b, c = ctypes.c_int(), ctypes.c_int(), ctypes.c_int()
+    ft.FT_Library_Version(lib, a, b, c)
+    return ft, lib, "%d.%d.%d" % (a.value, b.value, c.value)
+
+
+def render(ft, face, text, px):
+    """The text at px, as RetroArch draws it: integer pen, integer advance. Returns rows of coverage 0..255 and the baseline row."""
+    if ft.FT_Set_Pixel_Sizes(face, 0, px):
+        sys.exit("font-stems: FT_Set_Pixel_Sizes(%d) failed" % px)
+    height = px * 3
+    baseline = px * 2
+    width = px * len(text) + 4 * px
+    canvas = [[0] * width for _ in range(height)]
+    pen = px
+    for ch in text:
+        if ft.FT_Load_Char(face, ord(ch), FT_LOAD_RENDER):
+            continue
+        slot = face.contents.glyph.contents
+        bm = slot.bitmap
+        for r in range(bm.rows):
+            y = baseline - slot.bitmap_top + r
+            if y < 0 or y >= height:
+                continue
+            row = canvas[y]
+            for c in range(bm.width):
+                x = pen + slot.bitmap_left + c
+                if 0 <= x < width:
+                    v = bm.buffer[r * bm.pitch + c]
+                    if v > row[x]:
+                        row[x] = v
+        pen += slot.advance.x >> 6
+    return canvas, baseline
+
+
+def x_height_px(ft, face, px):
+    ft.FT_Set_Pixel_Sizes(face, 0, px)
+    if ft.FT_Load_Char(face, ord("x"), FT_LOAD_RENDER):
+        return px // 2
+    return face.contents.glyph.contents.bitmap_top
+
+
+def measure_row(row, lit=25, solid_from=224):
+    """Strokes along one row: runs of columns lit above the threshold; each run's width is its coverage in pixels; solid when a column is fully lit."""
+    strokes = []
+    run = []
+    for v in row + [0]:
+        if v > lit:
+            run.append(v)
+        elif run:
+            strokes.append((sum(run) / 255.0, max(run) >= solid_from))
+            run = []
+    return strokes
+
+
+def stem_em(ft, face):
+    """The letter l's advance-free width in em: the stem, for a sans face, with nothing scaled or hinted."""
+    if ft.FT_Load_Char(face, ord("l"), FT_LOAD_NO_SCALE):
+        return None
+    m = face.contents.glyph.contents.metrics
+    return m.width / float(face.contents.units_per_EM)
+
+
+def main():
+    args = sys.argv[1:]
+    if not args or args[0] in ("-h", "--help"):
+        print(open(__file__).read().split("\n\n")[1].replace("# ", "").replace("#", ""))
+        return 0
+    font = args[0]
+    sizes = range(9, 33)
+    text = 'RetroAchievements: Logged in as "player" (offline).'
+    as_json = False
+    i = 1
+    while i < len(args):
+        if args[i] == "--sizes":
+            lo, hi = args[i + 1].split("-")
+            sizes = range(int(lo), int(hi) + 1)
+            i += 2
+        elif args[i] == "--text":
+            text = args[i + 1]
+            i += 2
+        elif args[i] == "--json":
+            as_json = True
+            i += 1
+        else:
+            sys.exit("font-stems: unknown argument %s" % args[i])
+    ft, lib, version = load_freetype()
+    face = ctypes.POINTER(FT_FaceRec)()
+    if ft.FT_New_Face(lib, font.encode(), 0, ctypes.byref(face)):
+        sys.exit("font-stems: cannot open %s" % font)
+    fam = (face.contents.family_name or b"?").decode(errors="replace")
+    sty = (face.contents.style_name or b"?").decode(errors="replace")
+    em = stem_em(ft, face)
+    out = {"font": font, "family": fam, "style": sty, "freetype": version, "stem_em": em, "text": text, "sizes": []}
+    for px in sizes:
+        canvas, baseline = render(ft, face, text, px)
+        xh = x_height_px(ft, face, px)
+        # the x-height row: half way up the lower-case letters, where every stem crosses
+        y = baseline - max(1, xh // 2)
+        strokes = measure_row(canvas[y])
+        n = len(strokes)
+        solid = sum(1 for _, s in strokes if s)
+        mean = (sum(w for w, _ in strokes) / n) if n else 0.0
+        out["sizes"].append({"px": px, "strokes": n, "solid": solid, "mean_stem": round(mean, 2),
+                             "geometric_stem": round(px * em, 2) if em else None})
+    if as_json:
+        print(json.dumps(out, indent=1))
+        return 0
+    print("%s %s (%s), FreeType %s, l stem %.4f em; text: %s" % (fam, sty, font, version, em or 0, text))
+    print("%4s %8s %6s %9s %10s  %s" % ("px", "strokes", "solid", "mean_stem", "geometric", "share solid"))
+    for r in out["sizes"]:
+        share = (100.0 * r["solid"] / r["strokes"]) if r["strokes"] else 0
+        print("%4d %8d %6d %9.2f %10s  %3.0f%% %s" % (r["px"], r["strokes"], r["solid"], r["mean_stem"],
+              ("%.2f" % r["geometric_stem"]) if r["geometric_stem"] is not None else "-", share, "#" * int(share / 5)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -83,7 +83,10 @@ A game's long-press menu > SAVE STATES, or before every launch under GAME
 SETTINGS > SAVE STATES > SHOW SAVE STATE MANAGER. The tiles are START NEW GAME,
 START NEW AUTO SAVE (only while no auto save exists), AUTO SAVE, and one per
 numbered slot -- dated and newest first under INCREMENT PER SAVE, `SLOT n` under
-DO NOT INCREMENT (D-UI-059). Since #196 (D-UI-057) the image ships Batocera's
+DO NOT INCREMENT (D-UI-059). A tile's time follows SHOW CLOCK IN 12-HOUR FORMAT
+(D-UI-058) and is said relative to today (D-UI-087): the time alone for a save
+from today, YESTERDAY (HIER) and the time for one from yesterday, the date and
+the time for anything older. Since #196 (D-UI-057) the image ships Batocera's
 `es_savestates.cfg` entry and the launcher carries Batocera's contract, so
 RetroArch does the loading and the saving itself and the interface never parks
 or restores a file: **LAUNCH on a numbered slot** starts RetroArch on that slot
