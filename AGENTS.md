@@ -204,6 +204,7 @@ every-session ones at the start of a session and a scoped one before touching it
 **Every session** (no `paths:` glob, or `**`):
 
 - `adversarial-council.md` -- Adversarial-analysis routing — never use the rubber-duck agent; use only the verified multi-model council process, with pinned Fable 5.1 and GPT-6 Astra seats. Read before requesting a challenge pass, independent adversarial analysis, or council deliberation.
+- `bugs-are-agent-first.md` -- What a bug is here: fixed to the best of our ability means fixed and closed; every criterion is verified on the VM by an agent; what the VM cannot verify is not a known bug but an item the community tests or a thing to keep an eye on; no known bug is open when a build is called a release candidate (D-QA-051).
 - `ceremonies.md` -- Which ceremony is owed and when -- a friction entry's issue, a mini-retro, the weekly and monthly summaries, the work-log index, the register lint, a blindspot's guard, a code audit, a futro -- as a state machine tools/ceremony-check reads from the record; what a missing one refuses (D-WORKFLOW-028, D-QA-040).
 - `decision-register.md` -- The append-only ledger of maintainer and operational decisions — when to write a row, when to read one, and why a settled choice should be cited rather than re-argued.
 - `device-builds.md` -- Building, publishing, and safely flashing images for the handheld devices we test on, as distinct from the GENERIC_X64 VM build.
