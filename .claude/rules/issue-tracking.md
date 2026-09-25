@@ -85,7 +85,11 @@ It also notes an open checkbox on an issue a decided register row cites: the
 row may have settled what the checkbox still asks (the hotspot drop and the
 Tailscale restart were put to the maintainer as open on 2026-09-25 with their
 rows a week old), so the checkbox is re-derived against the row before it is
-put to anyone.
+put to anyone. The same day the sweep reached 0, a decision ID cited in
+passing stopped counting as a fact, and a failing checkbox began to keep the
+fork CI red. D-QA-043, the same question put from the VM's side on
+2026-09-24 (is a frame at the panel's size the observation?), is answered by
+this rule.
 
 ## Say checkbox, not box (D-QA-045)
 
