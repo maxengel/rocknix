@@ -20,15 +20,24 @@
 # in, and it touches no account -- the page is the load, not the login.
 #
 # Two runs, one per image, are two rows in docs/vm-qa-log.md; the tool
-# prints the row's cells. A guest that shows no wayland session, or a window
-# that never spawns a web process, is a FAIL, not an empty measurement.
+# prints the row's cells. A guest that shows no wayland session, a window
+# that never spawns a web process, or a page that never finishes loading (the
+# window's own "load finished" line) is a FAIL, not an empty measurement.
+#
+# The page is the load. Until 2026-09-25 the default was Dropbox's authorize
+# page, and on a QA guest that load fails inside WebKit ("WebKit encountered
+# an internal error", right after libsoup's HTTP/2 warning) under 2.52.6 and
+# 2.54 alike, so the window sat on "Opening the sign-in page..." and the
+# 246 MB baseline of #228 measured a failed load; frames showed it. The
+# default is now a page that loads on the guest (example.org), the allowed
+# host is the URL's own, and a provider's page is still --url away.
 
 import json
 import subprocess
 import sys
 import time
 
-DEFAULT_URL = "https://www.dropbox.com/oauth2/authorize?client_id=rocknixqa&response_type=code&redirect_uri=http%3A%2F%2Flocalhost%3A53682%2F"
+DEFAULT_URL = "https://example.org/"
 # /proc/<pid>/comm is 15 characters: the helpers read WebKitWebProces and WebKitNetworkPr
 PROCS = ("cloud-signin-wi", "WebKitWebProces", "WebKitNetworkPr")
 
@@ -67,10 +76,14 @@ def main():
     if rc != 0 or not sess:
         sys.exit("signin-memory: FAIL -- no wayland session on the guest (is EmulationStation's sway up?)")
     runtime, display = sess.split()
+    import urllib.parse
+    host = urllib.parse.urlparse(url).hostname or ""
+    if host.startswith("www."):
+        host = host[4:]
     free_before = ssh("free -m | awk '/^Mem:/{print $7}'")[1]
     # the window, detached, its pid recorded
     ssh("XDG_RUNTIME_DIR=%s WAYLAND_DISPLAY=%s GDK_BACKEND=wayland CLOUD_SIGNIN_PAGE_FILE=/tmp/sm-page CLOUD_SIGNIN_DONE_FILE=/tmp/sm-done "
-        "nohup /usr/bin/cloud-signin-window '%s' dropbox.com --exit-hint '' >/tmp/signin-memory.log 2>&1 & echo $! > /tmp/signin-memory.pid" % (runtime, display, url), timeout=20)
+        "nohup /usr/bin/cloud-signin-window '%s' '%s' --exit-hint '' >/tmp/signin-memory.log 2>&1 & echo $! > /tmp/signin-memory.pid" % (runtime, display, url, host), timeout=20)
     peaks = {p: 0 for p in PROCS}
     seen = {p: False for p in PROCS}
     samples = []
@@ -88,11 +101,12 @@ def main():
         samples.append(row)
         time.sleep(1)
     page = ssh("cat /tmp/sm-page 2>/dev/null; tail -2 /tmp/signin-memory.log 2>/dev/null | cut -c1-200")[1]
+    loaded = ssh("grep -c 'load finished' /tmp/signin-memory.log 2>/dev/null")[1].strip() not in ("", "0")
     ssh("kill $(cat /tmp/signin-memory.pid) 2>/dev/null; sleep 1; pkill -x WebKitWebProces 2>/dev/null; pkill -x WebKitNetworkPr 2>/dev/null; true", timeout=20)
     free_after = ssh("free -m | awk '/^Mem:/{print $7}'")[1]
     total_peak_rss = max((sum(r.values()) for r in samples), default=0)
-    ok = seen["cloud-signin-wi"] and seen["WebKitWebProces"]
-    out = {"port": port, "guest": build, "url": url, "seconds": seconds, "wayland": display,
+    ok = seen["cloud-signin-wi"] and seen["WebKitWebProces"] and loaded
+    out = {"loaded": loaded, "port": port, "guest": build, "url": url, "seconds": seconds, "wayland": display,
            "peak_hwm_kb": peaks, "peak_total_rss_kb": total_peak_rss,
            "free_mb_before": free_before, "free_mb_after": free_after, "page": page, "pass": ok}
     if as_json:
@@ -102,7 +116,12 @@ def main():
     print("peak resident (VmHWM), MB: " + ", ".join("%s %.0f" % (k, v / 1024.0) for k, v in peaks.items()))
     print("peak of the three together (VmRSS summed per sample), MB: %.0f" % (total_peak_rss / 1024.0))
     print("guest free memory, MB: %s before, %s after" % (free_before, free_after))
-    print("PASS" if ok else "FAIL -- the window or its web process never appeared; read /tmp/signin-memory.log on the guest")
+    if ok:
+        print("PASS")
+    elif not loaded and seen["cloud-signin-wi"] and seen["WebKitWebProces"]:
+        print("FAIL -- the page never finished loading, so these numbers are a window on its placeholder; read /tmp/signin-memory.log on the guest")
+    else:
+        print("FAIL -- the window or its web process never appeared; read /tmp/signin-memory.log on the guest")
     return 0 if ok else 1
 
 

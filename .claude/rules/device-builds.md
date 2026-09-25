@@ -307,6 +307,40 @@ DNS, so upstream ships the same thing and cannot see it.
   a package built is in *that package's* `install_pkg/`, not the library's
   — cleaning cairo would not have removed it; cleaning pango did.
 
+## A link error the source contradicts is the compile cache's until shown otherwise
+
+ROCKNIX's ccache runs with `sloppiness = pch_defines,time_macros`
+(`build.*/.ccache/ccache.conf`), which is what lets it cache compiles that
+use a precompiled header -- and, in its manual's words, it "can't detect
+changes in #defines" around one. On 2026-09-24 webkitgtk 2.54.0 failed its
+final link on `undefined reference to
+Inspector::DOMFrontendDispatcher::powerEfficientPlaybackStateChanged`, was
+read as a fourth wall in WebKit's option graph, and was pinned for the
+candidate (D-WORKFLOW-041). It was JavaScriptCore's `.gch`, served from the
+cache under the configuration of the 2026-09-20 attempts, when video was
+off: `cmakeconfig.h` said `ENABLE_VIDEO 1`, the preprocessed bundle carried
+the definition, and the object compiled against the cached PCH did not; the
+same bundle against a freshly built `.gch` did (#228, 2026-09-25).
+
+So, when a build fails on a symbol, a type or a macro that the source and
+`cmakeconfig.h` say is there:
+
+- **Compare the object with the preprocessed source before the code.**
+  `-E` does not use a precompiled header and `-c` does; a definition in the
+  `-E` output and absent from `nm` of the object is a PCH, not a bug.
+- **Rebuild the package with the cache bypassed** --
+  `CCACHE_RECACHE=1 PACKAGE=<pkg> make docker-package` after a
+  `docker-package-clean` -- before any patch or option change is written
+  against the error. It recompiles everything and rewrites the cache, so the
+  next build of the same configuration is warm again.
+- **After a package's options change, expect it.** A recipe that flips a
+  feature switch, and a bump that follows a failed attempt with other
+  switches, are exactly when a cached PCH carries the old configuration.
+
+The rebuild with the cache bypassed (x64 run 47) linked, and its
+JavaScriptCore exported the method the cached one had not: 24 of the
+dispatcher's methods against 23 (D-WORKFLOW-048).
+
 ## A two-minute build can be a real one
 
 ccache sits under every compile, so a warm root that rebuilds one package

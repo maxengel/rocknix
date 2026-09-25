@@ -813,3 +813,50 @@ wifictl's connect, enable, join and forget) and fails on one not passed
 through `shellQuote` -- it named GuiMenu.cpp:7597 before ES `459fc168f` and
 passes after it -- and `tools/vm-qa` runs it as the `quoting` suite on every
 image.
+
+## 58. A link error the source contradicted, read as the code's (2026-09-25)
+
+On 2026-09-24 webkitgtk 2.54.0's final link failed on a symbol the DOM
+agent calls and the generated dispatcher lacked. It was read as a fourth
+wall in WebKit's option graph -- the configure summary even showed
+`ENABLE_VIDEO ... ON`, the guard the symbol sits behind -- and the version
+was pinned for the candidate (D-WORKFLOW-041) after a bounded spike of three
+fixes. It was ccache: ROCKNIX's cache runs with `sloppiness =
+pch_defines,time_macros` and served JavaScriptCore a precompiled header
+built under the 2026-09-20 attempts' configuration, when video was off.
+`cmakeconfig.h` said 1, the preprocessed source carried the definition, and
+only the object compiled against the cached `.gch` lacked it. A rebuild with
+`CCACHE_RECACHE=1` linked (#228, run 47).
+
+The shape: the build's own evidence contradicted the explanation (the
+feature was on; the source had the code), and the contradiction was not
+chased before a pin was paid for it. The spike's build directory was
+cleaned afterwards, which removed the only place the contradiction could be
+read.
+
+**Guard:** `.claude/rules/device-builds.md` § "A link error the source
+contradicts is the compile cache's until shown otherwise": compare the
+object with the preprocessed source, rebuild the package with
+`CCACHE_RECACHE=1` before writing a fix against the error, and expect it
+after a package's options change. No tool can detect a stale PCH from the
+outside; the rule is the guard.
+
+## 59. A memory measurement that passed on a page that never loaded (2026-09-25)
+
+`tools/signin-memory` reported PASS, and #228's 246 MB baseline for
+WebKitGTK 2.52.6 was taken from it, when the window had never shown a page:
+on a QA guest Dropbox's authorize page fails inside WebKit ("WebKit
+encountered an internal error", after libsoup's HTTP/2 warning) under 2.52.6
+and 2.54 alike, and the window sat on "Opening the sign-in page...". The
+tool passed on a window and a web process existing, and the comment that
+reported the baseline read libsoup's log chatter as the page loading. Frames
+showed the placeholder on every run until the page was changed to
+example.org. Blindspot 39's shape -- the tool judged its run by whether it
+ran, not by whether it measured -- in the tool the webkitgtk decision was to
+be made from (D-WORKFLOW-038).
+
+**Guard:** `tools/signin-memory` fails a run whose window never logs `load
+finished` ("the page never finished loading, so these numbers are a window
+on its placeholder"), defaults to a page that loads on the guest, and takes
+the allowed host from the URL. Proven 2026-09-25 on a 1 GB guest: the
+Dropbox URL FAILs, example.org PASSes.
