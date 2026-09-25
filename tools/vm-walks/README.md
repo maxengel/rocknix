@@ -146,6 +146,21 @@ reaches its screen is the first thing the next cycle finds, and the
 cheapest. Since #125 it is also the first thing the *walk* finds: the run
 fails on the press that stopped landing, rather than four frames later.
 
+## How a walk leaves a game
+
+Through the exit hotkey's own path: `execute_kill` from the image's
+`input_sense`, which touches the marker and stops RetroArch the way SELECT +
+START does on a handheld (`tools/emulator-exit-test` and `tools/time-to-play`
+quit the same way). Never through RetroArch's own exit -- Esc twice, or its
+menu's Quit. On the GENERIC_X64 guest that path leaves the screen black with
+EmulationStation alive (#239, seen three times on 2026-09-21), and a walk that
+takes it captures nothing afterwards. The guest is the only place it happens:
+ES's `HideWindow` defaults to false on x86, so ES keeps its window and GL
+context while a game runs and only raises it afterwards, where a handheld
+tears the renderer down and up (`Settings.cpp:366-370`, `Window.cpp:120-127`);
+that is the lead #239 works from, and until it is run down the hotkey's path
+is the one a walk may use.
+
 ## The frames are compared, not only counted
 
 Since #252 the `frame-diff` suite in `tools/vm-qa` diffs every frame a walk
