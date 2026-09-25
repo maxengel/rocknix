@@ -643,7 +643,7 @@ printf '#!/bin/sh\nexit 0\n' > "${B2}/shim/sleep"
 chmod +x "${B2}/shim"/*
 printf 'system.hostname=X\n' > "${ST2}/.config/system/configs/system.cfg"
 printf '[qa]\ntype = dropbox\ntoken = {"access_token":"QA-SECRET-TOKEN","refresh_token":"QA-REFRESH"}\n' > "${ST2}/.config/rclone/rclone.conf"
-printf 'name = probe\npass = QA-SECRET-PASS\n' > "${ST2}/.config/test/leaky.conf"
+printf 'name = probe\npass = QA-SECRET-PASS\npassword2 = QA-SECRET-SALT\n' > "${ST2}/.config/test/leaky.conf"
 echo plain > "${ST2}/.config/test/plain.txt"
 printf 'LOCATIONS=(\n  /storage/.config/system/configs/system.cfg\n  /storage/.config/test/*\n  /storage/.config/rclone/*\n)\n' > "${ST2}/.config/backuptool.conf"
 OUT2="${B2}/out"
@@ -659,7 +659,23 @@ arc=$(ls "${ST2}/roms/backup"/*.tar.gz 2>/dev/null | head -1)
 ! tar -xzOf "${arc}" 2>/dev/null | grep -q 'QA-SECRET-TOKEN'; check $? "and no token travelled in any member" "a member carries the token"
 tar -tzf "${arc}" 2>/dev/null | grep -q 'test/leaky.conf$' && tar -tzf "${arc}" 2>/dev/null | grep -q 'test/plain.txt$'; check $? "files that are not held back are archived as before" "leaky.conf or plain.txt missing"
 grep -q 'rclone.conf held back' "${OUT2}"; check $? "the log says rclone.conf was held back" "no held-back line: $(grep logger "${OUT2}" | tail -2 | tr '\n' ' ')"
-grep -q 'LOOK LIKE PASSWORDS OR KEYS' "${OUT2}"; check $? "the scanner reports the pass= line in a file it does not hold back" "scanner silent: $(grep -v '^logger' "${OUT2}" | tail -3 | tr '\n' ' ')"
+grep -q '2 LINE(S) IN THIS BACKUP LOOK LIKE PASSWORDS OR KEYS' "${OUT2}"; check $? "the scanner reports the pass= and password2= lines in a file it does not hold back (2 lines)" "scanner said: $(grep 'LOOK LIKE' "${OUT2}" | head -1 | cut -c1-80; grep -v '^logger' "${OUT2}" | tail -2 | tr '\n' ' ')"
+# #221: a clean backup is silent. The keys every shipped retroarch.cfg and
+# Amiberry's conf carry end in "key" or "pass" and are not credentials.
+B3="${TMP}/f3"; ST3="${B3}/storage"
+mkdir -p "${ST3}/.config/system/configs" "${ST3}/.config/test" "${ST3}/roms/backup"
+printf 'system.hostname=X\n' > "${ST3}/.config/system/configs/system.cfg"
+printf 'input_enable_hotkey = "nul"\ncore_info_savestate_bypass = "false"\ncheevos_password = ""\n' > "${ST3}/.config/test/retroarch.cfg"
+printf 'default_open_gui_key=F12\n' > "${ST3}/.config/test/adfdir.conf"
+printf 'LOCATIONS=(\n  /storage/.config/system/configs/system.cfg\n  /storage/.config/test/*\n)\n' > "${ST3}/.config/backuptool.conf"
+OUT3="${B3}/out"
+RC3=$( ( setsid -w bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr \
+    --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+    --ro-bind /etc /etc --ro-bind "${B2}/profile" /etc/profile \
+    --bind "${ST3}" /storage --ro-bind "${B2}/shim" /shim --ro-bind "${B2}/repo" /repo \
+    --dev /dev --proc /proc --tmpfs /tmp \
+    bash /repo/backuptool backup > "${OUT3}" 2>&1; echo $? ) 2>/dev/null )
+[ "${RC3}" -eq 0 ] && ! grep -q 'LOOK LIKE PASSWORDS OR KEYS' "${OUT3}"; check $? "a clean backup is silent: input_enable_hotkey, core_info_savestate_bypass and default_open_gui_key are not credentials (#221)" "rc ${RC3}: $(grep 'LOOK LIKE' "${OUT3}" | head -1 | cut -c1-80)"
 
 echo "  g. the in-script RCLONE_NET_OPTS fallback is the shipped value (#146)"
 # Four scripts carry a constant for a conf the helper has not reached, and

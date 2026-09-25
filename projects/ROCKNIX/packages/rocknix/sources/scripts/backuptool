@@ -833,10 +833,19 @@ case "${VERB}" in
             # Named, not matched case-insensitively, so a catalogue's
             # `Password = ...` stays out. A bare-token file (.dat, .txt) has
             # no key shape to match; those are held back by name instead.
+            # The credential word is a whole part of the key name -- after
+            # the start, a "_" or a "." -- and "key" alone is too common a
+            # word to be one: it counts bare, dotted (wifi.key) or behind a
+            # credential word (stream_key, secret_access_key). Until #221 a
+            # name that merely ended in "key" or "pass" counted, and every
+            # shipped retroarch.cfg carries input_enable_hotkey (on some
+            # families core_info_savestate_bypass too), so every clean backup
+            # warned -- which teaches people to ignore the one that matters.
+            # A trailing digit counts (rclone's password2).
             SCANDIR=$(mktemp -d)
             tar -xzf "${BACKUPFILE}" -C "${SCANDIR}" 2>/dev/null
             LEAKS=$(find "${SCANDIR}" -type f \( -name '*.cfg' -o -name '*.conf' -o -name '*.ini' \) \
-                -exec grep -hE '^([a-z_.]*(password|pass|token|secret|stream_key|key)|Token|ApiToken|RA_Token|RA_Password) *[=:] *"?[^"[:space:]]+' {} + 2>/dev/null \
+                -exec grep -hE '^(([a-z_.]*[_.])?(password|passwd|pass|token|secret|apikey|api_key|stream_key|access_key|secret_key|private_key|wifi_key)[0-9]*|key|[a-z_.]*\.key|Token|ApiToken|RA_Token|RA_Password) *[=:] *"?[^"[:space:]]+' {} + 2>/dev/null \
                 | wc -l)
             rm -rf "${SCANDIR}"
         else
