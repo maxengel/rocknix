@@ -749,3 +749,45 @@ under the panel (`surface_check`); the GENERIC_X64 cfg ships 640x480 and
 mode at boot. A frame-based claim about RetroArch text before this guard
 is a claim about a scaled image.
 
+
+## 55. Blindspot 54's own guard read a line it had not tied to its launch (2026-09-25)
+
+`tools/time-to-play`'s surface check -- the guard blindspot 54 installed --
+took the last `Using resolution` line in the guest's `exec.log`, whoever had
+written it. Runs 29 and 30 on `e506fcd8e5` read `240x256` and called the
+frames scaled; the run's own first-game frame shows RetroArch drawing at the
+panel's 1280x800, with the "Loading state" notification at panel scale, and
+240x256 is not a size the Game Boy probe's 160x144 scales to. Run 31, with
+the check made to keep the lines it judged, read `1280x800` from the probe's
+own launch. Where the 240x256 line came from is still unknown; the evidence
+now travels with every verdict, so the next one will say.
+
+The shape is blindspot 50's, committed inside the guard written to prevent
+blindspot 54: a check that reads a file must first establish that the lines
+it reads are this run's. A guard is code, and is held to the rules it
+enforces.
+
+**Guard:** `tools/time-to-play`'s `surface_check` reads only the first
+`Using resolution` after the last `Loading content file` that names the ROM
+it launched, keeps those lines in the report as `evidence`, and reads no
+line at all -- which fails the run -- when the launch has not logged one.
+Proven on four constructed logs (a stale 240x256 before the probe's launch
+reads the probe's 1280x800; a launch with no surface line, or another ROM's
+launch alone, read nothing and fail).
+
+## 56. A timing run passed over a sync that had no cloud to reach (2026-09-25)
+
+`tools/vm-qa --only time-to-play` on a freshly booted pair measured the exit
+sync at 0.54 s and reported PASS. The sync had ended at once with `YOUR CLOUD
+STORAGE ISN'T SET UP YET`: the full run's earlier suites leave a QA remote on
+guest a, and a lone run has none. Its exit and game-to-game numbers timed a
+sync that did nothing, and a sync that does nothing is always inside the
+3 s budget. "Success reported over a no-op" (engineering-practices.md, audit
+#258 P-04), in the one suite whose numbers are the time-to-play metric.
+
+**Guard:** `tools/time-to-play`'s `headline_missing` fails a run whose online
+exit or game-to-game cells ran with the QA cloud unreachable (`rclone lsd
+qa-cloud:` answered no) -- fired on run 31's record, silent on run 29's --
+and `tools/vm-qa` seeds the QA remote before the time-to-play suite
+(`ensure_remote`), as it already did before the walks. Run 32: seeded,
+reachable, the exit sync `completed`, PASS.

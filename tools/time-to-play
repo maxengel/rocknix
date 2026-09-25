@@ -242,7 +242,7 @@ def ppm_size(data):
     return (int(m.group(1)), int(m.group(2))) if m else None
 
 
-def surface_check(g, fr):
+def surface_check(g, fr, rom=None):
     """RetroArch draws at the panel's size, or the frames lie (fork #263).
 
     The GENERIC_X64 image shipped video_fullscreen_x/y = 0, and under wayland
@@ -253,11 +253,25 @@ def surface_check(g, fr):
     used; the panel is what the screendump is. A surface under the panel is
     not a pass, because nothing measured on its frames is what the device
     draws."""
-    line = g.sh("grep -o 'Using resolution [0-9]*x[0-9]*' /var/log/exec.log 2>/dev/null | tail -1", timeout=20)[1]
-    m = re.search(r"(\d+)x(\d+)", line or "")
+    # The line is this launch's or it is nothing (blindspot 50): the first
+    # "Using resolution" after the last "Loading content file" that names the
+    # ROM just launched. Runs 29 and 30 on e506fcd8e5 took the file's last
+    # "Using resolution" line whoever wrote it, and read 240x256 over frames
+    # that show RetroArch drawing at the panel's size (2026-09-25).
+    evidence = g.sh("grep -n 'Loading content file\\|Detecting screen resolution\\|Using resolution' /var/log/exec.log 2>/dev/null | tail -12; "
+                    "ls -la --time-style=+%T /var/log/exec.log 2>/dev/null; date +%T", timeout=20)[1]
+    line, seen_launch = "", rom is None
+    for raw in (evidence or "").splitlines():
+        if "Loading content file" in raw:
+            seen_launch = rom is None or rom in raw
+            line = ""
+        elif seen_launch and not line and "Using resolution" in raw:
+            line = raw
+    m = re.search(r"Using resolution (\d+)x(\d+)", line or "")
     panel = ppm_size(fr.rest(timeout=10))
     out = {"surface": ("%dx%d" % (int(m.group(1)), int(m.group(2)))) if m else None,
-           "panel": ("%dx%d" % panel) if panel else None, "scaled": None}
+           "panel": ("%dx%d" % panel) if panel else None, "scaled": None,
+           "evidence": (evidence or "").splitlines()}
     if m and panel:
         out["scaled"] = int(m.group(1)) < panel[0] or int(m.group(2)) < panel[1]
     return out
@@ -1071,7 +1085,7 @@ def main():
             # never "went", on any repeat.
             L, rest_ref = measure_launch(g, fr, tag + "-launch", rom=rom)
             if "surface" not in report:
-                report["surface"] = surface_check(g, fr)
+                report["surface"] = surface_check(g, fr, rom)
             L["payload_kib"] = size
             wait_drawing(g)
             E = measure_exit(g, fr, tag + "-exit", rest_ref, relaunch=relaunch,
@@ -1197,6 +1211,13 @@ def headline_missing(report):
         out.append("RetroArch drew into a %s surface under a %s panel: the frames are scaled (#263)" % (surf.get("surface"), surf.get("panel")))
     elif report.get("cells", {}).get("launch") and surf.get("surface") is None:
         out.append("RetroArch's surface size could not be read from the guest's exec.log (#263)")
+    # The online cells time a sync that reaches a cloud. On a guest whose cloud
+    # is not set up -- a lone --only run on a fresh pair, 2026-09-25 -- the sync
+    # ends at once with YOUR CLOUD STORAGE ISN'T SET UP YET, and its stamp
+    # comes in well under the budget for having done nothing.
+    if (report.get("cells", {}).get("exit") or report.get("cells", {}).get("g2g")) and report.get("remote_reachable") != "yes":
+        out.append("the exit sync had no cloud to reach (rclone lsd qa-cloud: %s): its stamp times a sync that did nothing"
+                   % (report.get("remote_reachable") or "not checked"))
     for cell, field, what in checks:
         rows = report["cells"].get(cell) or []
         n = sum(1 for r in rows if r.get(field) is None)

@@ -266,12 +266,35 @@ fresh_suite() {
 case ",$ONLY," in *,fresh,*) run_suite fresh "$OUT/fresh.log" fresh_suite ;; esac
 case ",$ONLY," in *,round-trip,*) run_suite round-trip "$OUT/round-trip.log" "$ROOT/tools/cloud-round-trip" --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --backend "$BACKEND" ;; esac
 case ",$ONLY," in *,exit,*)       run_suite exit       "$OUT/exit.log"       "$ROOT/tools/emulator-exit-test" --port "$PORT" --identity "$KEY" --vm ;; esac
+# The walks open pages that refuse without a remote (NO CLOUD STORAGE IS SET
+# UP ON THIS DEVICE YET. SET IT UP NOW?), and the round-trip suite, which runs
+# first, puts the guest's rclone.conf back to how it found it -- on a fresh
+# pair, absent. Seven walks failed at that dialog on af2db4ab09 (2026-09-11)
+# while the same suite had read PASS on the image before, whose fixed-wait
+# walks passed whenever the tool ran (#125). Seed the QA remote when there is
+# none, the way seed-device does, and the folders the transfer page expects.
+ensure_remote() {
+  [ -n "$(SSH 'rclone listremotes 2>/dev/null' 2>/dev/null)" ] && return 0
+  local conf; conf=$(mktemp)
+  "$ROOT/tools/cloud-test-backend" rclone-conf > "$conf"
+  SSH 'mkdir -p /storage/.config/rclone' 2>/dev/null
+  scp -q -i "$KEY" -P "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$conf" root@127.0.0.1:/storage/.config/rclone/rclone.conf
+  rm -f "$conf"
+  SSH 'chmod 600 /storage/.config/rclone/rclone.conf; /usr/bin/cloud_sync_helper >/dev/null 2>&1; r=$(rclone listremotes 2>/dev/null | head -1); rclone mkdir "${r}/ROCKNIX/Saves" >/dev/null 2>&1; rclone mkdir "${r}/ROCKNIX/Backups" >/dev/null 2>&1; echo "vm-qa: seeded the QA remote ${r} (the guest had none)"' 2>/dev/null
+}
 # Time to play (#135). --quick is the bounded form -- one repeat of the
 # launch, the exit sync and a game-to-game, no reboot and no host fixtures --
 # because this runs on every image and the offline and bounds cells are
 # minutes each. The full cell (--repeat 5, every condition) is run by hand
 # when a number is being proposed for a register row (D-CLOUD-116).
 case ",$ONLY," in *,time-to-play,*)
+  # Its online cells time a sync that reaches the QA cloud. In the full run
+  # an earlier suite has left a remote on guest a by now (run 29: reachable);
+  # alone (--only time-to-play) on a fresh pair there is none, and the exit
+  # sync ends at once with YOUR CLOUD STORAGE ISN'T SET UP YET (2026-09-25).
+  # tools/time-to-play now fails such a run; this keeps the suite from
+  # depending on its order.
+  ensure_remote
   run_suite time-to-play "$OUT/time-to-play.log" "$ROOT/tools/time-to-play" \
     --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --monitor "$MON" \
     --backend "$BACKEND" --out "$OUT/time-to-play" --quick --vm \
@@ -289,22 +312,6 @@ case ",$ONLY," in *,link,*)       run_suite link       "$OUT/link.log"       "$R
 # why it is opt-in. Timing-bound like link (the flush within 90 s), so never
 # while an image builds here.
 case ",$ONLY," in *,ra-offline,*) run_suite ra-offline "$OUT/ra-offline.log" "$ROOT/tools/ra-offline-test" --host root@127.0.0.1 --port "$PORT" --identity "$KEY" --monitor "$MON" --serial "$SERIAL" --frames "$OUT/ra-offline-frames" ;; esac
-# The walks open pages that refuse without a remote (NO CLOUD STORAGE IS SET
-# UP ON THIS DEVICE YET. SET IT UP NOW?), and the round-trip suite, which runs
-# first, puts the guest's rclone.conf back to how it found it -- on a fresh
-# pair, absent. Seven walks failed at that dialog on af2db4ab09 (2026-09-11)
-# while the same suite had read PASS on the image before, whose fixed-wait
-# walks passed whenever the tool ran (#125). Seed the QA remote when there is
-# none, the way seed-device does, and the folders the transfer page expects.
-ensure_remote() {
-  [ -n "$(SSH 'rclone listremotes 2>/dev/null' 2>/dev/null)" ] && return 0
-  local conf; conf=$(mktemp)
-  "$ROOT/tools/cloud-test-backend" rclone-conf > "$conf"
-  SSH 'mkdir -p /storage/.config/rclone' 2>/dev/null
-  scp -q -i "$KEY" -P "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$conf" root@127.0.0.1:/storage/.config/rclone/rclone.conf
-  rm -f "$conf"
-  SSH 'chmod 600 /storage/.config/rclone/rclone.conf; /usr/bin/cloud_sync_helper >/dev/null 2>&1; r=$(rclone listremotes 2>/dev/null | head -1); rclone mkdir "${r}/ROCKNIX/Saves" >/dev/null 2>&1; rclone mkdir "${r}/ROCKNIX/Backups" >/dev/null 2>&1; echo "walks: seeded the QA remote ${r} (the guest had none)"' 2>/dev/null
-}
 # And the transfer walks tick ROMS AND BIOS and continue to the systems page,
 # which on a device with no ROMs is the dialog NO SYSTEM ON THIS DEVICE HOLDS
 # WHAT YOU TICKED (two walks, af2db4ab09). The round-trip suite works in a
