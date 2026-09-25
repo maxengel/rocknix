@@ -415,6 +415,13 @@ anything anyone else can download is built without them.
 
 ## Publishing
 
+**A cut is called a release candidate only after `tools/rc-preflight`
+has run on its tree** (`release-candidates.md` step 0, #271): packages
+current, both bases level with ROCKNIX, no bug without a disposition, the
+record clean, or each finding accepted by a register row. Its last line --
+`rc-preflight: <branch> at <id> -- MAY BE CUT` or the findings -- is
+quoted on the round's issue and carried in the candidate's RECORD.txt.
+
 `tools/fork-publish-release <DEVICE> prerelease` works unchanged for handhelds:
 the `case` in it adds VM artifacts only for `GENERIC_X64` and `AMD64`, so a
 handheld publishes just `.img.gz` + `.sha256` under a tag like

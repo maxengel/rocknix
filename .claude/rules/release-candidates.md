@@ -32,10 +32,13 @@ it has its artifact.
    brought current now -- a bump, a merge -- or accepted for this candidate
    by a register row that names it. **A bump is never a fast follow**: ROCKNIX
    ships monthly, and a candidate called with a known bump outstanding costs
-   a round. `tools/rc-preflight` (#271) is the check; until it exists, the
-   same by hand: `tools/fork-package-freshness`, `git rev-list --count
-   next..upstream/next`, the ES pin against `rocknix/master`, `tools/box-check`,
-   `tools/release-catalog --check`.
+   a round. `tools/rc-preflight --tree <build worktree>` (#271) is the check:
+   one verdict per item, exit 1 on a finding no register row accepts, exit 2
+   on an item it could not answer. An acceptance is a line in
+   `docs/releases/rc-accept.txt` citing a decided row. The device facts have
+   no tool yet (#270): read them by hand and say so with `--allow-unchecked
+   device-facts`. Its verdict line is quoted on the round's issue and in the
+   candidate's RECORD.txt.
 1. **A clean baseline.** The current tree built and green before the bumps,
    so that a failure after them is theirs and not the tree's
    (`device-builds.md` § After rebasing onto upstream, `tools/build-preflight`).

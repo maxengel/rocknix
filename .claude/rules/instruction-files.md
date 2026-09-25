@@ -173,6 +173,7 @@ both lists and to this table, or it is invisible.**
 | `rules-check` | every rule file front-mattered per the standard, every file in this index, the counts in `CLAUDE.md` and `AGENTS.md` true, `AGENTS.md` within Codex's budget and naming every rule (D-WORKFLOW-045) | `instruction-files.md` |
 | `box-check` | is every open acceptance checkbox on the fork agent-verifiable -- names its artifact, and a physical fact when it asks for a device (D-QA-044; the checkbox checker, D-QA-045) | `issue-tracking.md` |
 | `release-catalog` | what each kept cut carried, what was proven on it and where it is, generated from the artifacts' RECORD.txt into `docs/releases/catalog.md` (D-WORKFLOW-044) | `issue-tracking.md` |
+| `rc-preflight` | may this tree be cut as a release candidate: packages current, the bases level with ROCKNIX, no bug without a disposition, the record clean -- or each finding accepted by a register row (#271, D-WORKFLOW-047) | `release-candidates.md` |
 | `pkgcheck` *(upstream's)* | a `package.mk` obeys late binding | `packaging-and-patches.md` |
 
 **When a rule earns its place, write it down.** `docs/blindspot-register.md`

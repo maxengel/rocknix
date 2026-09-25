@@ -1,0 +1,285 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# rc-preflight -- may this tree be cut as a release candidate? (#271,
+# D-WORKFLOW-047 step 0, release-candidates.md)
+#
+#   tools/rc-preflight                       # the tree this checkout is on
+#   tools/rc-preflight --tree <worktree>     # a build worktree
+#   tools/rc-preflight --es <checkout>       # the EmulationStation checkout
+#   tools/rc-preflight --no-fetch            # the remotes as last fetched (said so)
+#   tools/rc-preflight --allow-unchecked device-facts
+#
+# One verdict per item, printed and then summed:
+#
+#   packages       every package the fork introduces at its author's current
+#                  release (tools/fork-package-freshness on the tree): PINNED
+#                  and BEHIND are findings here, where freshness itself lets a
+#                  stated pin pass -- a reason that held for a round in progress
+#                  is not a reason for a build going upstream (#271)
+#   base: distribution   the tree's HEAD against upstream/next, in commits
+#   base: emulationstation  the ES pin against ROCKNIX's master, in commits
+#   bugs           open issues labelled bug on the fork
+#   checkboxes     tools/box-check: every open checkbox agent-verifiable
+#   catalog        tools/release-catalog --check
+#   device facts   no tool reads docs/releases/device-facts.md yet (#270):
+#                  UNCHECKED, which is not a pass unless the caller says
+#                  --allow-unchecked device-facts, having read it by hand
+#   ceremonies     tools/ceremony-check --gate refuses: a finding; owed only
+#                  at the CI level (an audit, a futro): noted, not a finding,
+#                  since the upstream audit is step 6 of the same procedure
+#
+# A finding is accepted for this candidate by a line in
+# docs/releases/rc-accept.txt naming it and a decided register row:
+#
+#   package <name> <register ID> -- why this candidate ships with the pin
+#   base emulationstation <register ID> -- why it is cut behind ROCKNIX
+#   bug #<number> <register ID> -- why this candidate ships with the bug
+#
+# (#271: "a PINNED line is a finding the maintainer accepts for this candidate
+# by a register row naming it, or the bump is done first"). A line whose ID is
+# not a decided row accepts nothing, and says so.
+#
+# Exit 0 when every item is current or accepted; 1 when any finding is not
+# accepted; 2 when any item could not be answered -- a remote that did not
+# answer is not "current" (engineering-practices.md, guards fail closed).
+# Fork-only.
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# RC_ACCEPT names another acceptance file, for proving the check (the guard's positive).
+ACCEPT = os.environ.get("RC_ACCEPT") or os.path.join(ROOT, "docs", "releases", "rc-accept.txt")
+REGISTER = os.path.join(ROOT, "docs", "decision-register.md")
+ES_PKG = "projects/ROCKNIX/packages/ui/emulationstation/package.mk"
+STATES = ("CURRENT", "PINNED", "BEHIND", "INHERITED", "LOCAL", "UNKNOWN")
+
+
+def run(cmd, cwd=None, timeout=600):
+    try:
+        p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+        return p.returncode, p.stdout, p.stderr
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return None, "", str(exc)
+
+
+def decided_ids():
+    try:
+        text = open(REGISTER, encoding="utf-8").read()
+    except OSError:
+        return None
+    decided = text.split("\n## Open decisions", 1)[0]
+    return set(re.findall(r"^\| (D-[A-Z]+-\d+) \|", decided, re.M))
+
+
+def acceptances(ids):
+    """{(kind, item): id} for every line whose ID is a decided row; and the
+    lines that accepted nothing, with why."""
+    ok, bad = {}, []
+    try:
+        lines = open(ACCEPT, encoding="utf-8").read().splitlines()
+    except FileNotFoundError:
+        return ok, bad
+    for n, raw in enumerate(lines, 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        line = line.split(" -- ", 1)[0]
+        parts = line.split()
+        if len(parts) < 3:
+            bad.append("line %d: '%s' names no register row" % (n, line.strip()))
+            continue
+        kind, item, rid = parts[0], parts[1], parts[2]
+        if ids is None or rid not in ids:
+            bad.append("line %d: %s %s cites %s, which is not a decided register row" % (n, kind, item, rid))
+            continue
+        ok[(kind, item.lstrip("#"))] = rid
+    return ok, bad
+
+
+class Report:
+    def __init__(self):
+        self.rows = []
+
+    def add(self, verdict, item, text):
+        self.rows.append((verdict, item, text))
+        print("%-9s %-24s %s" % (verdict, item, text), flush=True)
+
+
+def check_packages(r, tree, acc):
+    tool = os.path.join(tree, "tools", "fork-package-freshness")
+    if not os.access(tool, os.X_OK):
+        tool = os.path.join(ROOT, "tools", "fork-package-freshness")
+    rc, out, err = run([tool], cwd=tree, timeout=900)
+    if rc is None or rc == 2:
+        r.add("CANNOT", "packages", "fork-package-freshness did not answer (rc %s): %s" % (rc, (err or out).strip().splitlines()[-1:] or ""))
+        return
+    counts, findings = {}, []
+    for line in out.splitlines():
+        m = re.match(r"^(\S+)\s+.*?\b(%s)\b" % "|".join(STATES), line)
+        if not m:
+            continue
+        name, state = m.group(1), m.group(2)
+        counts[state] = counts.get(state, 0) + 1
+        if state in ("PINNED", "BEHIND"):
+            rid = acc.get(("package", name))
+            findings.append((name, state, rid))
+    if not counts:
+        r.add("CANNOT", "packages", "fork-package-freshness printed no package rows")
+        return
+    if counts.get("UNKNOWN"):
+        r.add("CANNOT", "packages", "%d package(s) UNKNOWN to fork-package-freshness" % counts["UNKNOWN"])
+        return
+    open_ = [f for f in findings if not f[2]]
+    summary = ", ".join("%d %s" % (v, k.lower()) for k, v in sorted(counts.items()))
+    accepted = ", ".join("%s (%s)" % (n, rid) for n, _, rid in findings if rid)
+    if open_:
+        r.add("FAIL", "packages", "%s; not accepted: %s%s" % (summary, ", ".join("%s %s" % (n, s) for n, s, _ in open_),
+                                                             "; accepted: " + accepted if accepted else ""))
+    else:
+        r.add("PASS", "packages", summary + ("; accepted: " + accepted if accepted else ""))
+
+
+def commits_behind(repo, base, target):
+    rc, out, err = run(["git", "-C", repo, "rev-list", "--count", "%s..%s" % (base, target)])
+    if rc != 0:
+        return None, (err or out).strip()
+    n = int(out.strip() or 0)
+    age = ""
+    if n:
+        rc2, out2, _ = run(["git", "-C", repo, "log", "--reverse", "--format=%cs", "%s..%s" % (base, target)])
+        first = (out2.split() or [""])[0] if rc2 == 0 else ""
+        age = ", the oldest from %s" % first if first else ""
+    return n, age
+
+
+def check_base(r, name, repo, base, target, acc, fetch_cmd, fetched):
+    if fetch_cmd and fetched:
+        rc, out, err = run(fetch_cmd, timeout=300)
+        if rc != 0:
+            r.add("CANNOT", "base: " + name, "the fetch did not answer (%s)" % (err or out).strip().splitlines()[-1:])
+            return
+    n, detail = commits_behind(repo, base, target)
+    if n is None:
+        r.add("CANNOT", "base: " + name, "git could not count %s..%s: %s" % (base[:12], target, detail))
+        return
+    note = "" if fetched else " (remotes as last fetched: --no-fetch)"
+    if n == 0:
+        r.add("PASS", "base: " + name, "level with %s%s" % (target, note))
+    elif acc.get(("base", name)):
+        r.add("PASS", "base: " + name, "%d behind %s%s -- accepted (%s)%s" % (n, target, detail, acc[("base", name)], note))
+    else:
+        r.add("FAIL", "base: " + name, "%d behind %s%s%s" % (n, target, detail, note))
+
+
+def check_bugs(r, acc):
+    rc, out, err = run(["gh", "issue", "list", "--repo", "maxengel/rocknix", "--state", "open", "--label", "bug",
+                        "--limit", "300", "--json", "number,title"], timeout=120)
+    if rc != 0:
+        r.add("CANNOT", "bugs", "the tracker did not answer: %s" % (err or out).strip().splitlines()[-1:])
+        return
+    try:
+        issues = json.loads(out)
+    except ValueError:
+        r.add("CANNOT", "bugs", "the tracker's answer was not JSON")
+        return
+    open_ = [i for i in issues if not acc.get(("bug", str(i["number"])))]
+    accepted = ["#%d (%s)" % (i["number"], acc[("bug", str(i["number"]))]) for i in issues if acc.get(("bug", str(i["number"])))]
+    if open_:
+        r.add("FAIL", "bugs", "%d open bug(s) with no disposition for this candidate: %s%s" % (
+            len(open_), " ".join("#%d" % i["number"] for i in sorted(open_, key=lambda i: i["number"])),
+            "; accepted: " + ", ".join(accepted) if accepted else ""))
+    else:
+        r.add("PASS", "bugs", "no open bug without a disposition" + ("; accepted: " + ", ".join(accepted) if accepted else ""))
+
+
+def check_tool(r, item, cmd, fail_text):
+    rc, out, err = run(cmd, cwd=ROOT, timeout=600)
+    last = ((out or err).strip().splitlines() or [""])[-1][:160]
+    if rc == 0:
+        r.add("PASS", item, last)
+    elif rc == 1:
+        r.add("FAIL", item, "%s: %s" % (fail_text, last))
+    else:
+        r.add("CANNOT", item, "did not answer (rc %s): %s" % (rc, last))
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--tree", default=ROOT, help="the tree about to be cut (default: this checkout)")
+    ap.add_argument("--es", default=os.path.expanduser("~/Development/emulationstation-next"))
+    ap.add_argument("--no-fetch", action="store_true")
+    ap.add_argument("--allow-unchecked", action="append", default=[], choices=["device-facts"])
+    a = ap.parse_args()
+    tree = os.path.abspath(a.tree)
+    fetch = not a.no_fetch
+    head = run(["git", "-C", tree, "rev-parse", "--short=10", "HEAD"])[1].strip() or "?"
+    branch = run(["git", "-C", tree, "branch", "--show-current"])[1].strip() or "(detached)"
+    print("rc-preflight: %s at %s (%s)" % (tree, head, branch), flush=True)
+
+    ids = decided_ids()
+    acc, bad = acceptances(ids)
+    r = Report()
+    for b in bad:
+        r.add("NOTE", "rc-accept.txt", b)
+
+    check_packages(r, tree, acc)
+    check_base(r, "distribution", tree, "HEAD", "upstream/next", acc,
+               ["git", "-C", tree, "fetch", "-q", "upstream", "next"], fetch)
+    pin = ""
+    try:
+        m = re.search(r'^PKG_VERSION="([0-9a-f]{7,40})"', open(os.path.join(tree, ES_PKG), encoding="utf-8").read(), re.M)
+        pin = m.group(1) if m else ""
+    except OSError:
+        pass
+    if not pin:
+        r.add("CANNOT", "base: emulationstation", "no PKG_VERSION commit in %s" % ES_PKG)
+    elif not os.path.isdir(os.path.join(a.es, ".git")) and not os.path.isfile(os.path.join(a.es, ".git")):
+        r.add("CANNOT", "base: emulationstation", "no EmulationStation checkout at %s (--es)" % a.es)
+    else:
+        if fetch:
+            run(["git", "-C", a.es, "fetch", "-q", "origin"], timeout=300)
+        if run(["git", "-C", a.es, "cat-file", "-e", pin + "^{commit}"])[0] != 0:
+            r.add("CANNOT", "base: emulationstation", "the pin %s is not in %s" % (pin[:10], a.es))
+        else:
+            check_base(r, "emulationstation", a.es, pin, "rocknix/master", acc,
+                       ["git", "-C", a.es, "fetch", "-q", "rocknix", "master"], fetch)
+    check_bugs(r, acc)
+    check_tool(r, "checkboxes", [os.path.join(ROOT, "tools", "box-check"), "--quiet"], "open checkboxes that are not agent-verifiable")
+    check_tool(r, "catalog", [os.path.join(ROOT, "tools", "release-catalog"), "--check"], "docs/releases/catalog.md is stale")
+    if "device-facts" in a.allow_unchecked:
+        r.add("UNCHECKED", "device facts", "no tool reads docs/releases/device-facts.md (#270); read by hand, --allow-unchecked given")
+    else:
+        r.add("CANNOT", "device facts", "no tool reads docs/releases/device-facts.md yet (#270): read it by hand, then --allow-unchecked device-facts")
+    rc, out, err = run([os.path.join(ROOT, "tools", "ceremony-check"), "--gate"], cwd=ROOT, timeout=300)
+    if rc == 0:
+        rc2, out2, _ = run([os.path.join(ROOT, "tools", "ceremony-check")], cwd=ROOT, timeout=300)
+        owed = [l.strip()[len("- [CI] "):] for l in (out2 or "").splitlines() if l.strip().startswith("- [CI] ")]
+        r.add("PASS", "ceremonies", "the push gate passes" + ("; owed at the CI level: " + "; ".join(o[:90] for o in owed) if rc2 == 1 and owed else ""))
+    elif rc == 1:
+        blocks = [l[len("ceremony-check: BLOCK "):] for l in (out or "").splitlines() if l.startswith("ceremony-check: BLOCK ")]
+        r.add("FAIL", "ceremonies", "the push gate refuses: %s" % ("; ".join(blocks) or ((out or err).strip().splitlines() or [""])[-1])[:200])
+    else:
+        r.add("CANNOT", "ceremonies", "ceremony-check did not answer (rc %s)" % rc)
+
+    fails = [x for x in r.rows if x[0] == "FAIL"]
+    cannot = [x for x in r.rows if x[0] == "CANNOT"]
+    unchecked = [x for x in r.rows if x[0] == "UNCHECKED"]
+    if cannot:
+        verdict, code = "CANNOT ANSWER: %s" % ", ".join(x[1] for x in cannot), 2
+    elif fails:
+        verdict, code = "NOT A CANDIDATE: %s" % ", ".join(x[1] for x in fails), 1
+    else:
+        verdict, code = "MAY BE CUT" + (" (unchecked by tool: %s)" % ", ".join(x[1] for x in unchecked) if unchecked else ""), 0
+    print("rc-preflight: %s at %s -- %s" % (branch, head, verdict), flush=True)
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())
