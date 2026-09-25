@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-25T21:29:14Z
+> **Saved**: 2026-09-25T21:15:36Z
 > **Branch**: feature/conflict-resolution (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the record lives on `next` in `/workspace/repos/rocknix`, pushed to `origin/next` at `154d722392`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-The release-candidate round (D-QA-049, the SOP `release-candidates.md`, D-WORKFLOW-047) has its **final candidate `a65da6c784`** built, proven on the VM and recorded. Steps 0-3 are done and step 4 has begun: a65da6c784 is on the RG35XX SP since 2026-09-25 21:26 UTC (the maintainer's yes for the copy and the reboot, both through the action log); the soak (D-QA-036) is the maintainer's play, its journal read afterwards. Step 6 (the two-agent upstream audit) waits on their decision about the Fable 5.1 seat's spend limit.
+The release-candidate round (D-QA-049, the SOP `release-candidates.md`, D-WORKFLOW-047) has its **final candidate `a65da6c784`** built, proven on the VM and recorded. Steps 0-3 are done; step 4 (play-testing on the RG35XX SP) waits on the maintainer's yes for the copy and a second yes for the reboot; step 6 (the two-agent upstream audit) waits on their decision about the Fable 5.1 seat's spend limit.
 
 ## Completed This Session
 
@@ -19,14 +19,14 @@ The release-candidate round (D-QA-049, the SOP `release-candidates.md`, D-WORKFL
 
 ## In Progress
 
-- **Step 4, the device**: staged 21:17-21:21 UTC (hash verified on the device), rebooted 21:21:53 UTC (boot id b16fc9f6 -> fde0ae20), back on a65da6c784 at 21:26 UTC with the interface up, the queue empty, tailscaled up. Device-facts rows, RECORD Device lines, catalog and #236 updated.
-  - **What remains**: the soak (the maintainer plays offline for hours, then Wi-Fi back); afterwards read `journalctl` on the device through the credential filter (the exit syncs, the proxy's flush, the save state captures), the sign-in window's memory on the handheld's GPU path (#228; ask by name before any action that is not a read), then the call (step 5) as a #236 comment with the device facts and the catalog updated in the same change (D-WORKFLOW-046).
+- **Step 4, the device**: `/workspace/tmp/rocknix-session/stage-rg35xxsp-a65da6c784.sh` is prepared and has NOT run (idle check, scp to `/storage/.update-staging/`, sha256 on the device, move into `/storage/.update/`, no reboot). The device runs `664ad9ac64` since 2026-09-25 01:46 UTC.
+  - **What remains**: the maintainer's yes for the copy; run the script; then ask for the reboot by name; then the soak (D-QA-036) and its journal read; then the call (step 5) as a #236 comment, with the device facts and the catalog updated in the same change (D-WORKFLOW-046).
 - **Step 6, the audit**: `docs/audits/2026_09_25-milestone-rc-round-since-258/` is an untracked, paused audit folder (Phase 1.3) in the primary checkout; the Fable seat returned HTTP 429 (monthly spend limit). Do not commit it until the audit runs.
 
 ## Next Steps
 
-1. After the soak: read the device's journal (through the credential filter) and the stamps; put any device-only measurement to the maintainer by name; the call on #236 (step 5); device-facts rows for what the soak showed; `release-catalog --write`.
-2. Nothing on the device without a per-action yes: no game launch, no sync, no reboot (D-QA-011/015).
+1. Ask the maintainer (by name) for the copy to the RG35XX SP; on yes run `stage-rg35xxsp-a65da6c784.sh`; ask for the reboot; on yes `tools/device-act rg35xxsp 'reboot into a65da6c784' -- reboot`.
+2. The soak and its journal read (`journalctl` through the credential filter); the call on #236 (step 5); `docs/releases/device-facts.md` rows for what the device showed; `release-catalog --write`.
 3. The audit (step 6) once the seat decision is made; `ceremony-check` reads it overdue (53 closures since 2026-09-24).
 4. The PR series by content in the named buckets (`fork-workflow.md`, D-WORKFLOW-034), #42's docs PR last; builds for the RG SP and the Retroid Pocket Nova (cold build, ~90 GB, hours; `tools/build-preflight` first); each staged on its own yes.
 5. #278's five harness gaps and #277's open items are the community's and the harness's follow-ups; #228 stays open on the device GPU-path number; #270 the catalog's preflight column.
@@ -59,5 +59,5 @@ The release-candidate round (D-QA-049, the SOP `release-candidates.md`, D-WORKFL
 
 ## Open Questions
 
-- After the soak, the maintainer's read of the play (the source of any new issue, D-QA-012).
+- The copy and the reboot on the RG35XX SP (each a yes).
 - The audit seat: raise the OpenRouter limit, Astra's blind pass first, or another Claude model.
