@@ -2299,34 +2299,42 @@ def verdict(ok, name, detail=""):
 from raofflineproxy import cache_keys, proxy_service, storage as storage_mod, auth, image_cache
 from raofflineproxy.storage import Storage
 H = 3600 * 1000; now = int(time.time() * 1000)
-# 005 / PL-01: only rows a day old are due, oldest first, at most the slice.
+# 59b167c / PL-01: the pass is bounded by what the player plays -- only the
+# cached games played in the last seven days are due. Upstream's scope; the
+# fork's own bound (oldest first, 50 a pass) retired with it (D-RA-029).
 try:
-    sel = proxy_service.select_games_to_refresh
-    rows = [{"cacheKey": "patch:1:qa", "cachedAt": now - 1 * H}, {"cacheKey": "patch:2:qa", "cachedAt": now - 23 * H},
-            {"cacheKey": "patch:3:qa", "cachedAt": now - 25 * H}, {"cacheKey": "patch:4:qa", "cachedAt": now - 30 * H},
-            {"cacheKey": "patch:5:qa", "cachedAt": now - 100 * H}, {"cacheKey": "patch:5:other", "cachedAt": now - 1 * H},
-            {"cacheKey": "patch:6:qa", "cachedAt": now - 200 * H}]
-    got = sel(rows, now)
-    verdict(got == [6, 4, 3], "PL-01 refresh: due = patch rows older than 24 h, oldest first (6, 4, 3); 1 h, 23 h and a game refreshed for another account an hour ago are not", f"got {got}")
-    verdict(sel(rows, now, max_games=2) == [6, 4] and sel(rows, now, max_games=0) == [], "PL-01 refresh: the per-pass slice caps the list (2 -> [6, 4]; 0 -> none)", f"got {sel(rows, now, max_games=2)}")
-    verdict(proxy_service.REFRESH_MAX_GAMES_PER_PASS <= 50 and proxy_service.REFRESH_MIN_AGE_SECONDS >= 24 * 3600, "PL-01 refresh: at most 50 games a pass (100 GETs an hour) and a day between refreshes of one game", f"{proxy_service.REFRESH_MAX_GAMES_PER_PASS}/{proxy_service.REFRESH_MIN_AGE_SECONDS}")
+    due = proxy_service.due_refresh_game_ids
+    rows = [{"cacheKey": "patch:1:qa", "cachedAt": now}, {"cacheKey": "patch:2:qa", "cachedAt": now - 900 * H},
+            {"cacheKey": "patch:3:qa", "cachedAt": now}]
+    got = due(rows, {2, 9})
+    verdict(got == [2], "PL-01 refresh: due = the cached games played recently (2); cached games nobody played (1, 3) and a played game with no cached set (9) are not", f"got {got}")
+    st = Storage(cfg / "p01.sqlite3")
+    st.upsert_cache(cache_keys.last_played(2), str(now - 24 * H), cached_at=now - 24 * H)
+    st.upsert_cache(cache_keys.last_played(3), str(now - 8 * 24 * H), cached_at=now - 8 * 24 * H)
+    played = proxy_service.load_recently_played_game_ids(st, now - proxy_service.REFRESH_PLAYED_WINDOW_MS)
+    st.close()
+    verdict(played == {2} and proxy_service.REFRESH_PLAYED_WINDOW_DAYS <= 7, "PL-01 refresh: a game played a day ago is recent, one played eight days ago is not, and the window is at most a week", f"played {sorted(played)}, window {proxy_service.REFRESH_PLAYED_WINDOW_DAYS} d")
 except AttributeError as exc:
-    verdict(False, "PL-01 refresh: due = patch rows older than 24 h, oldest first (6, 4, 3); 1 h, 23 h and a game refreshed for another account an hour ago are not", f"the client has no bound: {exc}")
-    verdict(False, "PL-01 refresh: the per-pass slice caps the list (2 -> [6, 4]; 0 -> none)", "no select_games_to_refresh")
-    verdict(False, "PL-01 refresh: at most 50 games a pass (100 GETs an hour) and a day between refreshes of one game", "no constants")
+    verdict(False, "PL-01 refresh: due = the cached games played recently (2); cached games nobody played (1, 3) and a played game with no cached set (9) are not", f"the client has no scope: {exc}")
+    verdict(False, "PL-01 refresh: a game played a day ago is recent, one played eight days ago is not, and the window is at most a week", "no load_recently_played_game_ids")
 # 005 / PL-25: a raising fetch costs one game, a refused sign-in ends the pass, the thread survives a raising pass.
+class FakeActivity:
+    def idle_delay_seconds(self): return 0
 class FakeServer:
-    def __init__(self, st): self.storage = st; self.config_data = {}
+    def __init__(self, st): self.storage = st; self.config_data = {}; self.activity = FakeActivity()
     def is_online(self): return True
 calls = []
 def fake_creds(*a, **k): return {"user": "qa", "token": "t"}
 def raising_refresh(game_id, *a, **k):
     calls.append(game_id)
-    if game_id == 6: raise proxy_service.CacheGameAuthError("401") if getattr(raising_refresh, "auth", False) else RuntimeError("boom")
+    if getattr(raising_refresh, "auth", False): raise proxy_service.CacheGameAuthError("401")
+    if game_id == 6: raise RuntimeError("boom")
 def noop(*a, **k): return None
 try:
     st = Storage(cfg / "p25.sqlite3")
-    for gid in (6, 4, 3): st.upsert_cache(cache_keys.patch(gid, "qa"), "{}", cached_at=now - gid * 30 * H)
+    for gid in (6, 4, 3):
+        st.upsert_cache(cache_keys.patch(gid, "qa"), "{}", cached_at=now - gid * 30 * H)
+        st.upsert_cache(cache_keys.last_played(gid), str(now), cached_at=now)
     evicted = []
     st.evict_cache_older_than = lambda before: evicted.append(before)
     saved = (proxy_service.resolve_credentials, proxy_service.refresh_game_patch, proxy_service.cache_unlocks, proxy_service.cache_session)
@@ -2334,10 +2342,10 @@ try:
     try:
         pr = proxy_service.PeriodicRefresh(FakeServer(st), interval_seconds=1)
         pr.run_pass()
-        verdict(calls == [6, 4, 3] and len(evicted) == 1, "PL-25 refresh: a fetch that raises costs that game only (6 raised, 4 and 3 refreshed) and the eviction still runs", f"calls {calls}, evictions {len(evicted)}")
+        verdict(sorted(calls) == [3, 4, 6] and len(evicted) == 1, "PL-25 refresh: a fetch that raises costs that game only (6 raised, 4 and 3 refreshed) and the eviction still runs", f"calls {calls}, evictions {len(evicted)}")
         calls.clear(); raising_refresh.auth = True
         pr.run_pass()
-        verdict(calls == [6], "PL-25 refresh: a refused sign-in ends the pass without a request for the remaining games", f"calls {calls}")
+        verdict(len(calls) == 1, "PL-25 refresh: a refused sign-in ends the pass without a request for the remaining games", f"calls {calls}")
         raising_refresh.auth = False
         seen = []
         def bad_pass(): seen.append(1); pr.stop_event.set(); raise RuntimeError("pass failed")
@@ -2350,7 +2358,9 @@ try:
 except Exception as exc:
     for n in ("a fetch that raises costs that game only (6 raised, 4 and 3 refreshed) and the eviction still runs", "a refused sign-in ends the pass without a request for the remaining games", "run() survives a pass that raises (the thread lives for the service's lifetime)"):
         verdict(False, "PL-25 refresh: " + n, f"{type(exc).__name__}: {exc}")
-# 006 / PL-02: a game is evicted whole or not at all.
+# e25b276 / PL-02: a cached game's rows are kept whole however old -- upstream
+# no longer expires game data, which covers what patch 006 did and more
+# (D-RA-029); an incidental row still ages out, so the eviction still runs.
 st = Storage(cfg / "p02.sqlite3"); old = now - 61 * 24 * H; before = now - 60 * 24 * H
 st.upsert_cache(cache_keys.patch(1, "qa"), '{"Success":true}', cached_at=now)
 st.upsert_cache(cache_keys.unlocks(1, "qa"), '{"Success":true}', cached_at=old)
@@ -2361,12 +2371,14 @@ st.upsert_cache(cache_keys.achievementsets("bbbb", "qa"), '{"Success":true,"Game
 st.upsert_cache(cache_keys.game_id("bbbb"), '{"GameID":2}', cached_at=old)
 st.upsert_cache(cache_keys.login("qa"), '{"Success":true,"User":"QA","Token":"t"}', cached_at=old)
 st.upsert_cache(cache_keys.USER_AGENT, "RetroArch/1.22", cached_at=old)
+st.upsert_cache(cache_keys.last_played(2), str(old), cached_at=old)
 st.evict_cache_older_than(before)
-keys = {e["cacheKey"] for p in ("patch:", "unlocks:", "achievementsets:", "gameid:", "login2::", "ua::") for e in st.get_all_cache_by_prefix(p)}
+keys = {e["cacheKey"] for p in ("patch:", "unlocks:", "achievementsets:", "gameid:", "login2::", "ua::", "lastplayed:") for e in st.get_all_cache_by_prefix(p)}
 g1 = {cache_keys.patch(1, "qa"), cache_keys.unlocks(1, "qa"), cache_keys.achievementsets("aaaa", "qa"), cache_keys.game_id("aaaa")}
 g2 = {cache_keys.patch(2, "qa"), cache_keys.achievementsets("bbbb", "qa"), cache_keys.game_id("bbbb")}
 verdict(g1 <= keys, "PL-02 eviction: a game with a fresh patch row keeps its 61-day-old achievementsets, gameid and unlocks rows", f"missing {sorted(g1 - keys)}")
-verdict(not (g2 & keys) and cache_keys.login("qa") in keys and cache_keys.USER_AGENT in keys, "PL-02 eviction: a game whose every row is stale goes whole; the login and User-Agent rows stay", f"left {sorted(g2 & keys)}")
+verdict(g2 <= keys and cache_keys.login("qa") in keys and cache_keys.USER_AGENT in keys, "PL-02 eviction: a game whose every row is 61 days old is kept whole (cached games no longer expire); the login and User-Agent rows stay", f"missing {sorted(g2 - keys)}")
+verdict(cache_keys.last_played(2) not in keys, "PL-02 eviction: an incidental row older than sixty days still goes (a last-played mark), so the eviction runs", "the 61-day-old lastplayed row survived")
 st.close()
 # 007 / PL-23: a cached sign-in of another account is not this account's.
 st = Storage(cfg / "p23.sqlite3")
@@ -2461,6 +2473,9 @@ class StoreOnlyServer:
     def handle_offline_request(self, path, raw_body, action): self.took = "offline"; return b"offline"
     def handle_offline_login(self, *a, **k): return None
     def handle_award_request(self, *a, **k): self.took = "award"; return b"award"
+    # 59b167c's activity tracking, which process_proxy_request calls first.
+    def note_game_request(self, *a, **k): pass
+    def record_game_activity(self, *a, **k): pass
 try:
     st = Storage(); srv = StoreOnlyServer(st)
     proxy_service.ProxyRuntimeServer.process_proxy_request(srv, "GET", "/dorequest.php?r=patch&g=1&u=qa", "", {"X-RA-Store-Only": "1", "User-Agent": "es"})

@@ -3,8 +3,8 @@
 
 PKG_NAME="raofflineproxy-rcheevos"
 # The commit RAOfflineProxy pins as its third_party/rcheevos submodule at the
-# proxy's own pinned commit (4e9bab48, fork #165; the submodule did not move
-# between 64d03d30 and it): read from the repository's
+# proxy's own pinned commit (0711f0b9, fork #259; upstream moved it from
+# 2ad0b86 in 095867d): read from the repository's
 # tree with `gh api repos/misantronic/RAOfflineProxy/contents/third_party`.
 # GitHub's tarball of the proxy carries the submodule as an empty directory,
 # so the sources that rc_hash is built from come in through this package and
@@ -12,8 +12,8 @@ PKG_NAME="raofflineproxy-rcheevos"
 # library the client's ROM hashing loads (fork #179). Source only: nothing
 # here is built or installed on its own.
 # freshness: pinned -- follows the third_party/rcheevos submodule commit RAOfflineProxy names (fork #179)
-PKG_VERSION="2ad0b8672f68a48148620164510b963039e49eb1"
-PKG_SHA256="b8e3e834d15c327085154315c49dea85b081ad48592ba1740f323ac953e1bfec"
+PKG_VERSION="1433173220a7eaede6a9ed7a18e94117be1821e0"
+PKG_SHA256="da635153d2dab228f3a3ef672bae56a7a6e5f57f1aacd420133521c5d3768cec"
 PKG_LICENSE="MIT"
 PKG_SITE="https://github.com/RetroAchievements/rcheevos"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"

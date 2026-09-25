@@ -11,9 +11,9 @@ backoff on 429) stays, so a full-library scan is as polite as the capped one,
 only longer.
 
 
---- a/linux/raofflineproxy/rom_browser.py	2026-09-14 13:40:37.034601743 +0000
-+++ b/linux/raofflineproxy/rom_browser.py	2026-09-14 13:40:37.050798440 +0000
-@@ -46,7 +46,10 @@
+--- a/linux/raofflineproxy/rom_browser.py
++++ b/linux/raofflineproxy/rom_browser.py
+@@ -46,7 +46,10 @@ SUPPORTED_ARCHIVE_EXTENSIONS = {".zip", ".7z"}
  # which bundles a 7z reader (third_party/lzma-sdk), so it never reaches zipfile.
  ZIP_READABLE_ARCHIVE_EXTENSIONS = {".zip"}
  EXCLUDED_BROWSER_DIR_NAMES = {"Imgs"}
@@ -24,4 +24,4 @@ only longer.
 +MAX_CACHED_GAMES = 1000000
  MAX_SCAN_ENTRIES = 5000
  MAX_SCAN_DEPTH = 12
- 
+ # RetroAchievements adds hashes over time, so a "no match" is only cached long enough to

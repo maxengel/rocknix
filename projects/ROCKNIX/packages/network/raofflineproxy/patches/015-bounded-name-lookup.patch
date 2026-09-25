@@ -28,9 +28,9 @@ Written for ROCKNIX (fork issue maxengel/rocknix#242). Offered upstream
 as-is (ROCKNIX D-RA-002, D-RA-016).
 
 diff -ruN a/linux/raofflineproxy/network.py b/linux/raofflineproxy/network.py
---- a/linux/raofflineproxy/network.py	2026-09-22 04:45:01.430738995 +0000
-+++ b/linux/raofflineproxy/network.py	2026-09-22 04:45:01.441863757 +0000
-@@ -3,6 +3,7 @@
+--- a/linux/raofflineproxy/network.py
++++ b/linux/raofflineproxy/network.py
+@@ -3,6 +3,7 @@ from __future__ import annotations
  import json
  import logging
  import os
@@ -38,7 +38,7 @@ diff -ruN a/linux/raofflineproxy/network.py b/linux/raofflineproxy/network.py
  import ssl
  import threading
  import time
-@@ -20,6 +21,16 @@
+@@ -20,6 +21,16 @@ REDACTED_QUERY_KEYS = {"p", "t", "token", "password"}
  REACHABILITY_INTERVAL_SECONDS = 30.0
  PROBE_ATTEMPTS = 3
  PROBE_RETRY_DELAY_SECONDS = 1.0
@@ -55,7 +55,7 @@ diff -ruN a/linux/raofflineproxy/network.py b/linux/raofflineproxy/network.py
  HTTP_TOO_MANY_REQUESTS = 429
  HTTP_GET_MAX_429_RETRIES = 4
  HTTP_GET_INITIAL_429_BACKOFF_SECONDS = 2.0
-@@ -251,7 +262,43 @@
+@@ -251,7 +262,43 @@ def probe_retroachievements(
      return False
  
  
@@ -99,10 +99,9 @@ diff -ruN a/linux/raofflineproxy/network.py b/linux/raofflineproxy/network.py
      request = urllib.request.Request(
          url,
          headers={
-diff -ruN a/linux/raofflineproxy/proxy_service.py b/linux/raofflineproxy/proxy_service.py
---- a/linux/raofflineproxy/proxy_service.py	2026-09-22 04:45:01.430799719 +0000
-+++ b/linux/raofflineproxy/proxy_service.py	2026-09-22 04:45:01.442146313 +0000
-@@ -44,6 +44,7 @@
+--- a/linux/raofflineproxy/proxy_service.py
++++ b/linux/raofflineproxy/proxy_service.py
+@@ -44,6 +44,7 @@ from .network import (
      mark_retroachievements_unreachable,
      probe_retroachievements,
      read_response_bytes,
@@ -110,7 +109,7 @@ diff -ruN a/linux/raofflineproxy/proxy_service.py b/linux/raofflineproxy/proxy_s
      response_content_type,
  )
  from .rom_cache import (
-@@ -294,15 +295,15 @@
+@@ -301,15 +302,15 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
          body = self.rfile.read(content_length).decode("utf-8") if content_length else ""
          headers = {key: value for key, value in self.headers.items()}
  
@@ -135,7 +134,7 @@ diff -ruN a/linux/raofflineproxy/proxy_service.py b/linux/raofflineproxy/proxy_s
          LOGGER.info(
              "Request: %s %s body=%s online=%s",
              self.command,
-@@ -829,6 +830,23 @@
+@@ -850,6 +851,23 @@ class ProxyRuntimeServer(ThreadingTCPServer):
      ) -> tuple[str, int, str, bytes, str | None, str | None]:
          url = f"{upstream_host(self.config_data)}{path}"
          request_headers = build_forward_headers(headers)
@@ -159,10 +158,9 @@ diff -ruN a/linux/raofflineproxy/proxy_service.py b/linux/raofflineproxy/proxy_s
          try:
              if method == "POST":
                  status, reason, response_body = http_post(
-diff -ruN a/linux/tests/test_linux_network.py b/linux/tests/test_linux_network.py
---- a/linux/tests/test_linux_network.py	2026-09-22 04:45:01.431490133 +0000
-+++ b/linux/tests/test_linux_network.py	2026-09-22 04:45:01.442214152 +0000
-@@ -16,6 +16,55 @@
+--- a/linux/tests/test_linux_network.py
++++ b/linux/tests/test_linux_network.py
+@@ -16,6 +16,55 @@ class LinuxNetworkTests(unittest.TestCase):
          os.environ.pop("RAOFFLINEPROXY_CA_FILE", None)
          os.environ.pop("SSL_CERT_FILE", None)
  

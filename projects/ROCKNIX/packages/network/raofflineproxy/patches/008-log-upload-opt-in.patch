@@ -25,7 +25,7 @@ decide.
 
 --- a/linux/raofflineproxy/config.py
 +++ b/linux/raofflineproxy/config.py
-@@ -260,6 +260,13 @@
+@@ -324,6 +324,13 @@ def load_config() -> dict:
      return data
  
  
@@ -41,7 +41,7 @@ decide.
      configured = config_data.get("cache_images")
 --- a/linux/raofflineproxy/proxy_service.py
 +++ b/linux/raofflineproxy/proxy_service.py
-@@ -22,6 +22,7 @@
+@@ -22,6 +22,7 @@ from .config import (
      FALLBACK_USER_AGENT,
      RA_MEDIA_HOST,
      image_caching_enabled,
@@ -49,8 +49,8 @@ decide.
      proxy_host,
      proxy_port,
      upstream_host,
-@@ -1145,7 +1146,7 @@
-         self.server.storage.evict_cache_older_than(before)
+@@ -1163,7 +1164,7 @@ def due_refresh_game_ids(patch_entries: list[dict], recently_played: set[int]) -
+     return due
  
  
 -def retry_storage_corruption_report() -> None:
@@ -58,7 +58,7 @@ decide.
      # The menu only ever attempts this once (on first open after the incident) and shows
      # the user the outcome regardless of success, so it doesn't nag them again — if that
      # one attempt happened while offline, the report would otherwise never reach us. The
-@@ -1153,6 +1154,14 @@
+@@ -1171,6 +1172,14 @@ def retry_storage_corruption_report() -> None:
      incident = storage_corruption.load_incident()
      if incident is None or incident.get("reported"):
          return
@@ -73,7 +73,7 @@ decide.
      try:
          upload_id = log_uploader.report_storage_corruption(incident)
      except Exception as exc:
-@@ -1192,7 +1201,7 @@
+@@ -1210,7 +1219,7 @@ def run_proxy_service(
          save_online_state(initial_online)
          if initial_online:
              server.flush_pending_awards()
