@@ -45,7 +45,6 @@ datets=$(date +%s%N | cut -b1-13)
 
 if [ -z "${zcheevos}" ]; then
     sed -i "\$a [Achievements]\nEnabled = true\nUsername = ${username}\nChallengeMode = ${hardcore}\nLoginTimestamp = ${datets}" ${ARMSX2_CFG}
-    sed -i "\$a [Achievements]\nToken = ${token}" ${ARMSX2_TOKEN}
 else
     sed -i '/\[Achievements\]/,/^\s*$/s/Enabled =.*/Enabled = true/' ${ARMSX2_CFG}
 
@@ -53,17 +52,6 @@ else
         sed -i "/^\[Achievements\]/a Username = ${username}" ${ARMSX2_CFG}
     else
         sed -i "/^\[Achievements\]/,/^\[/{s/^Username = .*/Username = ${username}/;}" ${ARMSX2_CFG}
-    fi
-
-    # The token lives in secrets.ini, so that is the file to test (fork #170:
-    # testing PCSX2.ini never matched, and a Token line was appended at every
-    # launch). A secrets.ini without the section yet gets the section once.
-    if ! grep -qFx "[Achievements]" ${ARMSX2_TOKEN} 2>/dev/null; then
-        sed -i "\$a [Achievements]\nToken = ${token}" ${ARMSX2_TOKEN}
-    elif ! grep -q "^Token = " ${ARMSX2_TOKEN}; then
-        sed -i "/^\[Achievements\]/a Token = ${token}" ${ARMSX2_TOKEN}
-    else
-        sed -i "/^\[Achievements\]/,/^\[/{s/^Token = .*/Token = ${token}/;}" ${ARMSX2_TOKEN}
     fi
 
     if ! grep -q "^ChallengeMode = " ${ARMSX2_CFG}; then
@@ -91,4 +79,20 @@ else
     fi
 
     sed -i "/^\[Achievements\]/,/^\[/{s/^LoginTimestamp = .*/LoginTimestamp = ${datets}/;}" ${ARMSX2_CFG}
+fi
+
+# The token lives in secrets.ini, whatever PCSX2.ini holds (fork #170: testing
+# PCSX2.ini never matched, and a Token line was appended at every launch). One
+# Token line, whatever the file held before: the shipped seed's "Token =" --
+# no value and no trailing space, which "^Token = " never matched, so every
+# fresh device carried the seed's line beside the written one -- and the lines
+# a pre-#170 image appended at every launch, which nothing cleaned on an
+# upgraded device. Every Token line in the section goes, then one is written
+# after the header (#273's trace of #170). ARMSX2 reads the first Token line
+# of the section, so the duplicates were harmless; they were still wrong.
+if ! grep -qFx "[Achievements]" ${ARMSX2_TOKEN} 2>/dev/null; then
+    sed -i "\$a [Achievements]\nToken = ${token}" ${ARMSX2_TOKEN}
+else
+    sed -i "/^\[Achievements\]/,/^\[/{/^Token *=/d;}" ${ARMSX2_TOKEN}
+    sed -i "/^\[Achievements\]/a Token = ${token}" ${ARMSX2_TOKEN}
 fi

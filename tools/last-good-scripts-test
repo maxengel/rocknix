@@ -280,18 +280,35 @@ chmod +x "${BT}"
 
 # busybox sed/mv/cp from the image when a build root is here, so the rename
 # semantics tested are the device's.
-BB=""
+BB_SRC=""
 for b in "${ROOT}"/../*/build.ROCKNIX-*/image/system/usr/bin/busybox "${ROOT}".worktrees/*/build.ROCKNIX-*/image/system/usr/bin/busybox "${ROOT}"/build.ROCKNIX-*/image/system/usr/bin/busybox; do
-    [ -x "${b}" ] && "${b}" sed --help >/dev/null 2>&1 && { BB="${b}"; break; }
+    [ -x "${b}" ] && "${b}" sed --help >/dev/null 2>&1 && { BB_SRC="${b}"; break; }
 done
-[ -n "${BB}" ] || BB="$(command -v busybox || true)"
+[ -n "${BB_SRC}" ] || BB_SRC="$(command -v busybox || true)"
+# The copy, not the build root's file. Every image step deletes image/system
+# and re-installs every package (scripts/image), so a build running beside the
+# harness pulls the busybox every sandbox here bind-mounts out from under it:
+# on 2026-09-25 section t's eighteen checks after the cancel failed with rc 1
+# and empty output while a GENERIC_X64 image step ran, and the log was read as
+# a race in the scripts (#272) until the timestamps were put side by side. A
+# bind of a file another process rewrites is a fixture the harness does not
+# own; the copy is. BB_HOST is the copy on the host; BB is where every sandbox
+# sees it -- a path of its own, since the sandboxes mount a tmpfs over /tmp
+# and a copy under the run directory would vanish with it. The wrappers try
+# the sandbox path first and fall back to the host copy, so the same wrapper
+# serves the host-side checks (sections a and b) and the sandboxed ones.
+BB=""; BB_HOST=""
+if [ -n "${BB_SRC}" ]; then
+    cp "${BB_SRC}" "${TMP}/busybox" || { echo "    FAIL  cannot copy ${BB_SRC} into the run (a build's image step?)"; exit 2; }
+    BB_HOST="${TMP}/busybox"; BB="/lgst/busybox"
+fi
 mkdir -p "${TMP}/bbin"
 if [ -n "${BB}" ]; then
-    for a in sed mv cp tr head wc cut awk; do printf '#!/bin/sh\nexec %s %s "$@"\n' "${BB}" "${a}" > "${TMP}/bbin/${a}"; chmod +x "${TMP}/bbin/${a}"; done
+    for a in sed mv cp tr head wc cut awk; do printf '#!/bin/sh\n[ -x %s ] && exec %s %s "$@"\nexec %s %s "$@"\n' "${BB}" "${BB}" "${a}" "${BB_HOST}" "${a}" > "${TMP}/bbin/${a}"; chmod +x "${TMP}/bbin/${a}"; done
 fi
 
 echo "last-good-scripts-test: $([ "${OLD}" -eq 1 ] && echo "scripts at ${BASE_REF} (expect FAILs)" || echo "scripts in ${ROOT}")"
-[ -n "${BB}" ] && echo "  sed/mv/cp/tr/head/wc/cut/awk: $("${BB}" 2>&1 | head -1)"
+[ -n "${BB}" ] && echo "  sed/mv/cp/tr/head/wc/cut/awk: $("${BB_HOST}" 2>&1 | head -1) -- a copy of ${BB_SRC}"
 
 # ---------------------------------------------------------------- a.
 echo "  a. chksysconfig keeps and restores the last good system.cfg"
@@ -634,7 +651,7 @@ echo "  f. backuptool: rclone.conf never enters an archive, and the scanner know
 # Its own staging tree: the cases above read "the newest archive" and must
 # not find this one.
 B2="${TMP}/f"; ST2="${B2}/storage"
-mkdir -p "${ST2}/.config/system/configs" "${ST2}/.config/test" "${ST2}/.config/rclone" "${ST2}/roms/backup" "${B2}/shim" "${B2}/repo"
+mkdir -p "${ST2}/.config/system/configs" "${ST2}/.config/test" "${ST2}/.config/rclone" "${ST2}/.config/emulationstation" "${ST2}/roms/backup" "${B2}/shim" "${B2}/repo"
 cp "${BT}" "${B2}/repo/backuptool"
 printf 'export PATH=/shim:/usr/bin:/bin\nexport OS_NAME=ROCKNIX\n' > "${B2}/profile"
 printf '#!/bin/sh\necho "logger $*" >&2\n' > "${B2}/shim/logger"
@@ -645,7 +662,12 @@ printf 'system.hostname=X\n' > "${ST2}/.config/system/configs/system.cfg"
 printf '[qa]\ntype = dropbox\ntoken = {"access_token":"QA-SECRET-TOKEN","refresh_token":"QA-REFRESH"}\n' > "${ST2}/.config/rclone/rclone.conf"
 printf 'name = probe\npass = QA-SECRET-PASS\npassword2 = QA-SECRET-SALT\n' > "${ST2}/.config/test/leaky.conf"
 echo plain > "${ST2}/.config/test/plain.txt"
-printf 'LOCATIONS=(\n  /storage/.config/system/configs/system.cfg\n  /storage/.config/test/*\n  /storage/.config/rclone/*\n)\n' > "${ST2}/.config/backuptool.conf"
+# es_settings.cfg is XML, which the line-anchored leak scan cannot read, so the
+# strip at the archive is its only guard: the ScreenScraper passwords (#64)
+# and the IGDB client secret (#274, found by #221's trace). No harness case
+# read this strip before 2026-09-25.
+printf '<?xml version="1.0"?>\n<config>\n<string name="ScreenScraperUser" value="qa-user" />\n<string name="ScreenScraperPass" value="QA-SECRET-SS" />\n<string name="ScreenScraperDevPass" value="QA-SECRET-DEV" />\n<string name="IGDBClientID" value="qa-client" />\n<string name="IGDBSecret" value="QA-SECRET-IGDB" />\n<string name="ThemeSet" value="art-book-next" />\n</config>\n' > "${ST2}/.config/emulationstation/es_settings.cfg"
+printf 'LOCATIONS=(\n  /storage/.config/system/configs/system.cfg\n  /storage/.config/test/*\n  /storage/.config/rclone/*\n  /storage/.config/emulationstation/*\n)\n' > "${ST2}/.config/backuptool.conf"
 OUT2="${B2}/out"
 RC2=$( ( setsid -w bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr \
     --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
@@ -676,6 +698,9 @@ RC3=$( ( setsid -w bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr \
     --dev /dev --proc /proc --tmpfs /tmp \
     bash /repo/backuptool backup > "${OUT3}" 2>&1; echo $? ) 2>/dev/null )
 [ "${RC3}" -eq 0 ] && ! grep -q 'LOOK LIKE PASSWORDS OR KEYS' "${OUT3}"; check $? "a clean backup is silent: input_enable_hotkey, core_info_savestate_bypass and default_open_gui_key are not credentials (#221)" "rc ${RC3}: $(grep 'LOOK LIKE' "${OUT3}" | head -1 | cut -c1-80)"
+ESARC=$(tar -xzOf "${arc}" --wildcards '*/emulationstation/es_settings.cfg' 2>/dev/null)
+[ -n "${ESARC}" ] && ! echo "${ESARC}" | grep -q 'QA-SECRET-SS\|QA-SECRET-DEV\|QA-SECRET-IGDB'; check $? "es_settings.cfg is archived without the ScreenScraper passwords or the IGDB client secret (#64, #274)" "archived es_settings.cfg: $(echo "${ESARC}" | grep -c 'QA-SECRET') secret value(s) present, $(echo "${ESARC}" | wc -l) lines"
+echo "${ESARC}" | grep -q 'name="ScreenScraperUser"' && echo "${ESARC}" | grep -q 'name="IGDBClientID"' && echo "${ESARC}" | grep -q 'name="ThemeSet"'; check $? "and its other settings travel (the user names, the client id, the theme)" "archived es_settings.cfg lost a harmless line: $(echo "${ESARC}" | grep -c 'name=') of 4 kept"
 
 echo "  g. the in-script RCLONE_NET_OPTS fallback is the shipped value (#146)"
 # Four scripts carry a constant for a conf the helper has not reached, and
@@ -811,11 +836,13 @@ echo "the player's own" > "${KS}/.config/test/own"
 # member of the archive; the settings files must arrive with the key kept
 # and the value gone.
 KTOK="QA-RA-TOKEN-PLANTED"; KTOK2="QA-SECRET-TOKEN-UNKNOWN"
-mkdir -p "${KS}/.config/dolphin-emu" "${KS}/.config/SkyEmu" "${KS}/.config/ARMSX2/inis" "${KS}/.config/duckstation" "${KS}/.config/melonDS" "${KS}/.config/flycast" "${KS}/.config/aethersx2/inis"
+mkdir -p "${KS}/.config/dolphin-emu" "${KS}/.config/SkyEmu" "${KS}/.config/ARMSX2/inis" "${KS}/.config/duckstation" "${KS}/.config/melonDS" "${KS}/.config/flycast" "${KS}/.config/aethersx2/inis" "${KS}/.config/gopher64"
 echo "${KTOK}" > "${KS}/.config/ppsspp/PSP/SYSTEM/ppsspp_retroachievements.dat"
 printf '[Achievements]\nEnabled = True\nUsername = qa\nApiToken = %s\n' "${KTOK}" > "${KS}/.config/dolphin-emu/RetroAchievements.ini"
 printf 'qa\n%s\n' "${KTOK}" > "${KS}/.config/SkyEmu/ra_token.txt"
 printf '[Achievements]\nToken = %s\n' "${KTOK}" > "${KS}/.config/ARMSX2/inis/secrets.ini"
+# gopher64 writes its own token file after the launcher's --ra-password login (#169's trace, #273)
+printf '{"username":"qa","token":"%s","enabled":true,"hardcore":false}\n' "${KTOK}" > "${KS}/.config/gopher64/retroachievements.json"
 printf '[Cheevos]\nEnabled = true\nUsername = qa\nToken = %s\nLoginTimestamp = 1\n' "${KTOK}" > "${KS}/.config/duckstation/settings.ini"
 printf 'RA_Enabled=1\nRA_Username=qa\nRA_Password=%s\nRA_Token=%s\nRA_HardcoreMode=0\n' "${KTOK}" "${KTOK}" > "${KS}/.config/melonDS/melonDS.ini"
 printf '[achievements]\nEnabled = yes\nUserName = qa\nToken = %s\n' "${KTOK}" > "${KS}/.config/flycast/emu.cfg"
@@ -831,7 +858,7 @@ head -c 32 /dev/urandom > "${KS}/.config/raofflineproxy/award_secret.key"
 printf '{"proxy_port": 8080}\n' > "${KS}/.config/raofflineproxy/config.json"
 printf 'service started\n' > "${KS}/.config/raofflineproxy/service.log"
 printf 'PNG\n' > "${KS}/.config/raofflineproxy/image_cache/games/1.png"
-printf 'LOCATIONS=(\n  /storage/.config/ppsspp/*\n  /storage/.config/test/*\n  /storage/.config/dolphin-emu/*\n  /storage/.config/SkyEmu/*\n  /storage/.config/ARMSX2/*\n  /storage/.config/duckstation/*\n  /storage/.config/melonDS/*\n  /storage/.config/flycast/*\n  /storage/.config/aethersx2/*\n  /storage/.config/raofflineproxy/*\n)\n' > "${KS}/.config/backuptool.conf"
+printf 'LOCATIONS=(\n  /storage/.config/ppsspp/*\n  /storage/.config/test/*\n  /storage/.config/dolphin-emu/*\n  /storage/.config/SkyEmu/*\n  /storage/.config/ARMSX2/*\n  /storage/.config/duckstation/*\n  /storage/.config/melonDS/*\n  /storage/.config/flycast/*\n  /storage/.config/aethersx2/*\n  /storage/.config/gopher64/*\n  /storage/.config/raofflineproxy/*\n)\n' > "${KS}/.config/backuptool.conf"
 UB=(); for d in /usr/*/; do d="${d%/}"; UB+=(--ro-bind "${d}" "${d}"); done
 # tar and unzip are the image's busybox here when a build root is on this
 # machine: the restore's -X and -x exclusion lists are what this case
@@ -841,8 +868,8 @@ UB=(); for d in /usr/*/; do d="${d%/}"; UB+=(--ro-bind "${d}" "${d}"); done
 # lines resolve inside the sandbox.
 mkdir -p "${K}/kshim"; KBB=()
 if [ -n "${BB}" ]; then
-    for a in tar unzip; do printf '#!/bin/sh\nexec %s %s "$@"\n' "${BB}" "${a}" > "${K}/kshim/${a}"; chmod +x "${K}/kshim/${a}"; done
-    KBB=(--ro-bind "${BB}" "${BB}")
+    for a in tar unzip; do printf '#!/bin/sh\n[ -x %s ] && exec %s %s "$@"\nexec %s %s "$@"\n' "${BB}" "${BB}" "${a}" "${BB_HOST}" "${a}" > "${K}/kshim/${a}"; chmod +x "${K}/kshim/${a}"; done
+    KBB=(--ro-bind "${BB_HOST}" "${BB}")
 fi
 printf 'export PATH=/kshim:/shim:/usr/bin:/bin\nexport OS_NAME=ROCKNIX\n' > "${K}/profile"
 btk() { # <verb...>; as bt, with /usr/config ours and the image's tar and unzip
@@ -862,14 +889,14 @@ echo "${klist}" | grep -q 'ppsspp/PSP/SYSTEM/ppsspp.ini$' && echo "${klist}" | g
 ! echo "${klist}" | grep -q -E 'cheat.db$|test/seed$'; check $? "shipped seeds identical to /usr/config do not (cheat.db, test/seed)" "a shipped seed is in the archive: $(echo "${klist}" | grep -E 'cheat.db$|test/seed$' | tr '\n' ' ')"
 ! echo "${klist}" | grep -q -E 'ppsspp/assets/|SYSTEM/CACHE/'; check $? "assets and the shader cache never do, edited or not" "the archive carries: $(echo "${klist}" | grep -E 'ppsspp/assets/|SYSTEM/CACHE/' | tr '\n' ' ')"
 grep -q 'left out 2 file(s) identical' "${OUT}"; check $? "and the log says two were left out as the image's own" "log: $(grep 'left out' "${OUT}" | head -1)"
-! echo "${klist}" | grep -q -E 'ppsspp_retroachievements.dat$|dolphin-emu/RetroAchievements.ini$|SkyEmu/ra_token.txt$|ARMSX2/inis/secrets.ini$'; check $? "the four files that hold only a RetroAchievements token are held back (PPSSPP's .dat, Dolphin's, SkyEmu's, ARMSX2's; #169)" "the archive carries: $(echo "${klist}" | grep -E 'ppsspp_retroachievements.dat$|RetroAchievements.ini$|ra_token.txt$|secrets.ini$' | tr '\n' ' ')"
+! echo "${klist}" | grep -q -E 'ppsspp_retroachievements.dat$|dolphin-emu/RetroAchievements.ini$|SkyEmu/ra_token.txt$|ARMSX2/inis/secrets.ini$|gopher64/retroachievements.json$'; check $? "the five files that hold only a RetroAchievements token are held back (PPSSPP's .dat, Dolphin's, SkyEmu's, ARMSX2's; #169)" "the archive carries: $(echo "${klist}" | grep -E 'ppsspp_retroachievements.dat$|RetroAchievements.ini$|ra_token.txt$|secrets.ini$' | tr '\n' ' ')"
 KX="${K}/extract"; rm -rf "${KX}"; mkdir -p "${KX}"; tar -xzf "${karch}" -C "${KX}" 2>/dev/null
 echo "${klist}" | grep -q 'duckstation/settings.ini$' && echo "${klist}" | grep -q 'melonDS/melonDS.ini$' && echo "${klist}" | grep -q 'flycast/emu.cfg$' && echo "${klist}" | grep -q 'aethersx2/inis/PCSX2.ini$' \
     && grep -qx 'Token = ' "${KX}/storage/.config/duckstation/settings.ini" && grep -qx 'Username = qa' "${KX}/storage/.config/duckstation/settings.ini" && grep -qx 'LoginTimestamp = 1' "${KX}/storage/.config/duckstation/settings.ini" \
     && grep -qx 'RA_Token=' "${KX}/storage/.config/melonDS/melonDS.ini" && grep -qx 'RA_Password=' "${KX}/storage/.config/melonDS/melonDS.ini" && grep -qx 'RA_Username=qa' "${KX}/storage/.config/melonDS/melonDS.ini" \
     && grep -qx 'Token = ' "${KX}/storage/.config/flycast/emu.cfg" && grep -qx 'Token = ' "${KX}/storage/.config/aethersx2/inis/PCSX2.ini"; check $? "the four settings files with a token line travel with the value blanked and every other line kept (DuckStation, melonDS, flycast, AetherSX2)" "duckstation: $(tr '\n' '|' < "${KX}/storage/.config/duckstation/settings.ini" 2>/dev/null) melonDS: $(tr '\n' '|' < "${KX}/storage/.config/melonDS/melonDS.ini" 2>/dev/null) flycast: $(tr '\n' '|' < "${KX}/storage/.config/flycast/emu.cfg" 2>/dev/null) aethersx2: $(tr '\n' '|' < "${KX}/storage/.config/aethersx2/inis/PCSX2.ini" 2>/dev/null)"
 ! grep -rqF "${KTOK}" "${KX}" 2>/dev/null; check $? "and the planted token appears in no member of the archive" "the token is in: $(grep -rlF "${KTOK}" "${KX}" 2>/dev/null | sed "s|${KX}/||" | tr '\n' ' ')"
-grep -q 'held back 4 file(s) that hold only a RetroAchievements token' "${OUT}" && grep -q 'blanked the RetroAchievements token in 4 emulator settings file(s)' "${OUT}"; check $? "and the log counts four held back and four blanked" "log: $(grep -oE '(held back|blanked)[^|]*' "${OUT}" | tr '\n' ' ')"
+grep -q 'held back 5 file(s) that hold only a RetroAchievements token' "${OUT}" && grep -q 'blanked the RetroAchievements token in 4 emulator settings file(s)' "${OUT}"; check $? "and the log counts five held back and four blanked" "log: $(grep -oE '(held back|blanked)[^|]*' "${OUT}" | tr '\n' ' ')"
 ! echo "${klist}" | grep -q 'storage/.config/raofflineproxy/'; check $? "the offline RetroAchievements proxy's folder travels in no shape: none of its five files is in the archive (#165)" "the archive carries: $(echo "${klist}" | grep 'raofflineproxy/' | tr '\n' ' ')"
 grep -q "held back 5 file(s) under the offline RetroAchievements proxy's folder" "${OUT}"; check $? "and the log counts the five held back under it" "log: $(grep -o "held back [0-9]* file(s) under the offline[^|]*" "${OUT}" | head -1 | grep . || echo silent)"
 grep -qE '[^0-9]1 LINE\(S\) IN THIS BACKUP LOOK LIKE PASSWORDS OR KEYS' "${OUT}"; check $? "the scanner sees a Token = line in a file the strip does not know (test/unknown.ini), and only that one" "scanner: $(grep -oE '[0-9]+ LINE\(S\) IN THIS BACKUP[^|]*' "${OUT}" | head -1 | grep . || echo silent) -- until #169 its anchor was lower-case only, and the emulators' keys are capitalised"
@@ -1006,6 +1033,33 @@ FEATURES=fail LSD_NOTFOUND=1 sp /QA/New 0; check $? "and the provider's own 'not
 [ -s "${LL}/fn.sh" ] && diff -q <(sed -n '/^absent_not_broken() {/,/^}/p' "${LL}/src/cloud_setup") "${LL}/fn.sh" >/dev/null; check $? "cloud_setup carries the identical function" "cloud_setup's absent_not_broken differs from cloud_content_restore's (or is missing)"
 awk '/^    rclone mkdir "\$\{TARGET\}"/{m=NR} /^    rclone copy "\$\{SRC\}" "\$\{TARGET\}"/{c=NR} END{exit !(m && c && m < c)}' "${LL}/src/cloud_content_backup"; check $? "cloud_content_backup makes the folder before it copies into it" "no rclone mkdir of the target ahead of the copy in cloud_content_backup"
 grep -q 'absent_not_broken "${ROOT}ROMs/"' "${LL}/src/cloud_content_restore" && grep -q 'absent_not_broken "${ROOT}BIOS/"' "${LL}/src/cloud_content_restore"; check $? "the scan asks it about ROMs and BIOS before calling the cloud unreadable" "the scan does not consult absent_not_broken for both folders"
+# cloud_setup --check WHOLE, inside bwrap, against a shim rclone that answers
+# listremotes with one remote, lsd with 0, and records every argv it was given:
+# the probe must carry the listing bound (one run, three low-level retries).
+# It carried only two timeouts until 2026-09-25, so rclone's defaults -- three
+# runs of ten retries -- applied under a blocking spinner on three interface
+# pages, the shape #113 bounded for the syncs (#273's trace of #113).
+LC="${LL}/check"; mkdir -p "${LC}/shim" "${LC}/rec" "${LC}/repo"
+cp "${LL}/src/cloud_setup" "${LC}/repo/cloud_setup"
+printf 'export PATH=/shim:/usr/bin:/bin\n' > "${LC}/profile"
+printf '#!/bin/sh\necho "logger $*" >&2\n' > "${LC}/shim/logger"
+cat > "${LC}/shim/rclone" <<'EOR'
+#!/bin/sh
+printf '%s\n' "$*" >> /rec/argv
+case "$1" in listremotes) echo "qa:" ;; esac
+exit 0
+EOR
+chmod +x "${LC}/shim"/*
+OUTC="${LC}/out"
+RCC=$( ( setsid -w bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr \
+    --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+    --ro-bind /etc /etc --ro-bind "${LC}/profile" /etc/profile \
+    --ro-bind "${LC}/shim" /shim --bind "${LC}/rec" /rec --ro-bind "${LC}/repo" /repo \
+    --dev /dev --proc /proc --tmpfs /tmp --tmpfs /storage \
+    bash /repo/cloud_setup --check > "${OUTC}" 2>&1; echo $? ) 2>/dev/null )
+[ "${RCC}" -eq 0 ] && grep -q '^OK qa:' "${OUTC}"; check $? "cloud_setup --check verifies the one remote the shim lists (rc ${RCC})" "rc ${RCC}; out: $(head -2 "${OUTC}" | tr '\n' ' ' | cut -c1-120)"
+LSD=$(grep '^lsd ' "${LC}/rec/argv" 2>/dev/null | head -1)
+echo "${LSD}" | grep -q -- '--retries 1' && echo "${LSD}" | grep -q -- '--low-level-retries 3'; check $? "its probe is bounded to one run and three low-level retries (RCLONE_LIST_OPTS), not rclone's three runs of ten" "lsd was called as: ${LSD:-(never)}"
 echo "  m. the shipped device name becomes this unit's own, once; a player's name is never touched (#50)"
 # network-base-setup whole, inside bwrap: a stub /etc/profile that loads the
 # image's 001-functions against a fake system.cfg, a fake /etc/os-release
@@ -1025,7 +1079,7 @@ src_of projects/ROCKNIX/packages/network/avahi/package.mk "${M}/repo/avahi-packa
 # it -- and the image's busybox applets (sed, tr, cut and head: the family
 # pipeline and clean_hostname run through all four) in front of the host's,
 # as case a has them. Until #151 PL-10 this case ran them under GNU.
-MBB=(); if [ -n "${BB}" ]; then MBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB}" "${BB}"); fi
+MBB=(); if [ -n "${BB}" ]; then MBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB_HOST}" "${BB}"); fi
 printf 'J_DIR=/storage/.config/system\n. /repo/001-functions\nexport PATH=/shim:/bbin:${PATH}\nJ_CONF=/storage/.config/system/configs/system.cfg\nJ_CONF_LOCK=/tmp/.system.cfg.lock\n' > "${M}/profile"
 printf 'NAME="ROCKNIX"\nHW_DEVICE="H700"\n' > "${M}/os-release"
 printf '#!/bin/sh\nexit 0\n' > "${M}/shim/hostnamectl"
@@ -1148,11 +1202,11 @@ rm -f "${M}/run/avahi-up" "${M}/run/avahi-set-host-name.log"
 # blindspot 34's shape). With a build root here the built unit is graded;
 # without one, the source, and the line says which.
 AVAHI_UNIT="${M}/repo/avahi-daemon.service"; AVAHI_WHERE="the source unit (no build root on this machine)"
-case "${BB}" in
+case "${BB_SRC}" in
     */image/system/usr/bin/busybox)
-        if [ -f "${BB%/usr/bin/busybox}/usr/lib/systemd/system/avahi-daemon.service" ]; then
-            AVAHI_UNIT="${BB%/usr/bin/busybox}/usr/lib/systemd/system/avahi-daemon.service"
-            AVAHI_WHERE="the built image $(basename "${BB%/image/system/usr/bin/busybox}")"
+        if [ -f "${BB_SRC%/usr/bin/busybox}/usr/lib/systemd/system/avahi-daemon.service" ]; then
+            AVAHI_UNIT="${BB_SRC%/usr/bin/busybox}/usr/lib/systemd/system/avahi-daemon.service"
+            AVAHI_WHERE="the built image $(basename "${BB_SRC%/image/system/usr/bin/busybox}")"
         fi ;;
 esac
 grep -q -E '^[[:space:]]*enable_service avahi-daemon.service' "${M}/repo/avahi-package.mk" && grep -q -E '^After=.*network-base\.service' "${AVAHI_UNIT}"; check $? "the mDNS responder is enabled, and its unit in ${AVAHI_WHERE} orders after network-base (D-NET-003)" "avahi: enabled=$(grep -c -E '^[[:space:]]*enable_service avahi-daemon.service' "${M}/repo/avahi-package.mk"); the unit in ${AVAHI_WHERE} has $(grep -E '^After=' "${AVAHI_UNIT}" || echo 'no After= line') -- avahi's stock unit ships over the fork's unless the recipe removes usr/lib/systemd (#151 PL-01); rebuild avahi and the image"
@@ -1239,8 +1293,8 @@ chmod +x "${N}/shim"/* "${N}/repo/cloud_device_id"
 # image (busybox ships no such applet) and the host's here.
 NBB=()
 if [ -n "${BB}" ]; then
-    for a in sed tr head wc cut awk tail tee mkfifo sleep flock stat md5sum; do printf '#!/bin/sh\nexec %s %s "$@"\n' "${BB}" "${a}" > "${N}/nbin/${a}"; chmod +x "${N}/nbin/${a}"; done
-    NBB=(--ro-bind "${N}/nbin" /nbin --ro-bind "${BB}" "${BB}")
+    for a in sed tr head wc cut awk tail tee mkfifo sleep flock stat md5sum; do printf '#!/bin/sh\n[ -x %s ] && exec %s %s "$@"\nexec %s %s "$@"\n' "${BB}" "${BB}" "${a}" "${BB_HOST}" "${a}" > "${N}/nbin/${a}"; chmod +x "${N}/nbin/${a}"; done
+    NBB=(--ro-bind "${N}/nbin" /nbin --ro-bind "${BB_HOST}" "${BB}")
 fi
 nb() { # cloud_backup --yes --system-only, whole; stdout+stderr to $OUT, rc in $RC, wall seconds in $DT
     local t0; t0=$(date +%s)
@@ -1338,7 +1392,7 @@ src_of "${CTL_REL}" "${P}/repo/raofflineproxy-ctl"
     sed -n '/^function get_setting() {/,/^}/p; /^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function set_setting() {/,/^}/p' "${FN}"
 } > "${P}/repo/fns.sh"
 PBB=(); PPATH="/shim:/usr/bin:/bin"
-if [ -n "${BB}" ]; then PBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB}" "${BB}"); PPATH="/shim:/bbin:/usr/bin:/bin"; fi
+if [ -n "${BB}" ]; then PBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB_HOST}" "${BB}"); PPATH="/shim:/bbin:/usr/bin:/bin"; fi
 printf 'export PATH=%s\nexport OS_NAME=ROCKNIX\nJ_CONF=/storage/.config/system/configs/system.cfg\nJ_CONF_LOCK=/tmp/.system.cfg.lock\n. /repo/fns.sh\n' "${PPATH}" > "${P}/profile"
 # One write can be made to fail: /run/fail-set names a key whose set_setting
 # writes nothing and returns 1 (PL-16's three sub-cases).
@@ -1580,7 +1634,7 @@ QUSR=(--tmpfs /usr); for u in bin sbin lib64 libexec share; do [ -e "/usr/${u}" 
 for e in /usr/lib/* /usr/lib/.[!.]*; do [ -e "${e}" ] && QUSR+=(--ro-bind "${e}" "${e}"); done
 QETC=(--tmpfs /etc); for e in /etc/ld.so.cache /etc/alternatives /etc/passwd /etc/group; do [ -e "${e}" ] && QETC+=(--ro-bind "${e}" "${e}"); done
 QBB=(); QPATH="/shim:/usr/bin:/bin"
-if [ -n "${BB}" ]; then QBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB}" "${BB}"); QPATH="/shim:/bbin:/usr/bin:/bin"; fi
+if [ -n "${BB}" ]; then QBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB_HOST}" "${BB}"); QPATH="/shim:/bbin:/usr/bin:/bin"; fi
 QOUT="${Q}/out"; QCFG="${QS}/.config/system/configs/system.cfg"; QSVC="${QS}/.cache/services"; QLOG="${Q}/run/systemctl.log"
 qpass() { # run the boot pass once; rc in $RC, output in $QOUT, systemctl's log in $QLOG
     : > "${QLOG}"
@@ -1751,7 +1805,7 @@ printf '#!/bin/sh\necho "logger $*" >&2\n' > "${S}/shim/logger"
 chmod +x "${S}/shim"/*
 SETC=(--tmpfs /etc); for e in /etc/ld.so.cache /etc/alternatives /etc/passwd /etc/group; do [ -e "${e}" ] && SETC+=(--ro-bind "${e}" "${e}"); done
 SBB=(); SPATH="/shim:/usr/bin:/bin"
-if [ -n "${BB}" ]; then SBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB}" "${BB}"); SPATH="/shim:/bbin:/usr/bin:/bin"; fi
+if [ -n "${BB}" ]; then SBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB_HOST}" "${BB}"); SPATH="/shim:/bbin:/usr/bin:/bin"; fi
 ev() { # <verb>: rc in $RC, output in $S/out/run
     RC=$( ( bwrap --die-with-parent --tmpfs / --tmpfs /usr "${USR_BINDS[@]}" "${SBB[@]}" \
         --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
@@ -1848,8 +1902,8 @@ CLIENT="${T}/patched/linux"
 } > "${T}/repo/fns.sh"
 TBB=(); TPATH="/shim:/usr/bin:/bin"
 if [ -n "${BB}" ]; then
-    mkdir -p "${T}/bbin"; for a in sed mv cp tr head wc cut awk tail flock mkfifo mktemp stat; do printf '#!/bin/sh\nexec %s %s "$@"\n' "${BB}" "${a}" > "${T}/bbin/${a}"; chmod +x "${T}/bbin/${a}"; done
-    TBB=(--ro-bind "${T}/bbin" /bbin --ro-bind "${BB}" "${BB}"); TPATH="/shim:/bbin:/usr/bin:/bin"
+    mkdir -p "${T}/bbin"; for a in sed mv cp tr head wc cut awk tail flock mkfifo mktemp stat; do printf '#!/bin/sh\n[ -x %s ] && exec %s %s "$@"\nexec %s %s "$@"\n' "${BB}" "${BB}" "${a}" "${BB_HOST}" "${a}" > "${T}/bbin/${a}"; chmod +x "${T}/bbin/${a}"; done
+    TBB=(--ro-bind "${T}/bbin" /bbin --ro-bind "${BB_HOST}" "${BB}"); TPATH="/shim:/bbin:/usr/bin:/bin"
 fi
 printf 'export PATH=%s\nexport OS_NAME=ROCKNIX\nJ_CONF=/storage/.config/system/configs/system.cfg\nJ_CONF_LOCK=/tmp/.system.cfg.lock\n. /repo/fns.sh\n' "${TPATH}" > "${T}/profile"
 printf '#!/bin/sh\necho "logger $*" >&2\n' > "${T}/shim/logger"
@@ -2638,7 +2692,7 @@ case "$*" in
 esac
 EOS
 chmod +x "${U}/shim/nmcli"
-UBB=(); if [ -n "${BB}" ]; then UBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB}" "${BB}"); fi
+UBB=(); if [ -n "${BB}" ]; then UBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB_HOST}" "${BB}"); fi
 wctl() { # <verb> [name]: wifictl whole; stdout to $OUT, stderr to $U/err, rc in $RC
     RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${UBB[@]}" \
         --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
@@ -2807,11 +2861,23 @@ wr() { # run the script once inside the sandbox; stdout+stderr to $OUT, rc in $R
 }
 OUT="${W}/out"
 wr; wr
-[ "${RC}" -eq 0 ] && [ "$(grep -c '^Token = ' "${WI}/secrets.ini")" -eq 1 ] && grep -q '^Token = TOKEN-NEW$' "${WI}/secrets.ini"; check $? "two launches leave exactly one Token line in secrets.ini, the current token" "rc ${RC}; secrets.ini: $(tr '\n' '|' < "${WI}/secrets.ini"); out: $(tail -2 "${OUT}" | tr '\n' '|')"
+[ "${RC}" -eq 0 ] && [ "$(grep -c '^Token *=' "${WI}/secrets.ini")" -eq 1 ] && grep -q '^Token = TOKEN-NEW$' "${WI}/secrets.ini"; check $? "two launches leave exactly one Token line in secrets.ini, the current token" "rc ${RC}; secrets.ini: $(tr '\n' '|' < "${WI}/secrets.ini"); out: $(tail -2 "${OUT}" | tr '\n' '|')"
 grep -q '^Username = player$' "${WI}/PCSX2.ini" && [ "$(grep -c '^\[Achievements\]' "${WI}/PCSX2.ini")" -eq 1 ]; check $? "and PCSX2.ini carries the account once, with no Token of its own" "PCSX2.ini: $(tr '\n' '|' < "${WI}/PCSX2.ini")"
 printf 'Something = 1\n' > "${WI}/secrets.ini"
 wr; wr
-[ "$(grep -c '^Token = ' "${WI}/secrets.ini")" -eq 1 ] && [ "$(grep -cFx '[Achievements]' "${WI}/secrets.ini")" -eq 1 ]; check $? "a secrets.ini without the section gains [Achievements] once and one Token line" "secrets.ini: $(tr '\n' '|' < "${WI}/secrets.ini")"
+[ "$(grep -c '^Token *=' "${WI}/secrets.ini")" -eq 1 ] && [ "$(grep -cFx '[Achievements]' "${WI}/secrets.ini")" -eq 1 ]; check $? "a secrets.ini without the section gains [Achievements] once and one Token line" "secrets.ini: $(tr '\n' '|' < "${WI}/secrets.ini")"
+
+# The shipped seed (config/common/ARMSX2/inis/secrets.ini) is "Token =" with no
+# value and no trailing space, which the script's "^Token = " never matched:
+# every fresh device carried the seed's line beside the written one. And a
+# device that ran a pre-#170 image holds the lines that image appended at every
+# launch. Both shapes leave one Token line after a run (#273's trace of #170).
+printf '[Achievements]\nToken =\n' > "${WI}/secrets.ini"
+wr; wr
+[ "$(grep -c '^Token *=' "${WI}/secrets.ini")" -eq 1 ] && grep -q '^Token = TOKEN-NEW$' "${WI}/secrets.ini"; check $? "the shipped seed's bare 'Token =' line is replaced, not kept beside the written one" "secrets.ini from the seed: $(tr '\n' '|' < "${WI}/secrets.ini")"
+printf '[Achievements]\nToken = TOKEN-A\nToken = TOKEN-B\nToken =\nToken = TOKEN-C\n' > "${WI}/secrets.ini"
+wr
+[ "$(grep -c '^Token *=' "${WI}/secrets.ini")" -eq 1 ] && grep -q '^Token = TOKEN-NEW$' "${WI}/secrets.ini" && [ "$(grep -cFx '[Achievements]' "${WI}/secrets.ini")" -eq 1 ]; check $? "an upgraded device's four stale Token lines collapse to one on the first launch" "secrets.ini after: $(tr '\n' '|' < "${WI}/secrets.ini")"
 
 echo "  x. the launcher's incremental-save modes, the password's handoff, and the keeper's cut/whole note (#209, #198, #247)"
 # x1. set_savestates maps the interface's three spellings as Batocera's launcher does
