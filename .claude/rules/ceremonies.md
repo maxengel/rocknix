@@ -1,4 +1,11 @@
+---
+description: "Which ceremony is owed and when -- a friction entry's issue, a mini-retro, the weekly and monthly summaries, the work-log index, the register lint, a blindspot's guard, a code audit, a futro -- as a state machine tools/ceremony-check reads from the record; what a missing one refuses (D-WORKFLOW-028, D-QA-040)."
+---
+
 # The ceremonies are a state machine, and a tool turns it
+
+*No `paths:` glob, so this file loads every session: a ceremony is owed by the
+calendar and the record, not by the file being edited.*
 
 The skills that look back and forward -- `mini-retro`, `futro`,
 `begin-delivery`, `code-auditor`, `council` -- ran at phase boundaries

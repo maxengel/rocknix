@@ -92,6 +92,7 @@ same change that adds a file; a rule nobody can find is a rule nobody applies.
 | `player-language.md` | clear, then brief, then sized to the space, for every string a player reads (D-UI-045) | every session |
 | `time-to-play.md` | interface → a game's first frame, and one game's exit → the next, as a first-class metric (D-CLOUD-098) | every session |
 | `vm-first.md` | *can this be done on the VM?* asked and answered in writing before any test, proof or measurement (D-QA-007) | every session |
+| `ceremonies.md` | which ceremony is owed and when -- friction entries, retros, the weekly and monthly summaries, the index, audits, futros -- as a state machine `tools/ceremony-check` turns (D-WORKFLOW-028) | every session |
 | `adversarial-council.md` | adversarial analysis routes through the verified multi-model council; never the rubber-duck agent | `**` |
 | `decision-register.md` | when a decision becomes a row, and why a settled one is cited rather than re-argued | `**` |
 | `device-builds.md` | building, publishing and flashing handheld images, and what a warm build root hides | `**` |
@@ -107,7 +108,9 @@ same change that adds a file; a rule nobody can find is a rule nobody applies.
 | `learning-capture.md` | a learning becomes a rule, a tool or a work-log entry — never only a memory | `**` |
 | `upgrade-and-install.md` | every change lands on a device that already has state; check the upgrade and the clean install | `**` |
 | `worktrees.md` | one worktree per branch under `../rocknix.worktrees/`, build worktrees on `build/*`, removal via `tools/fork-worktree` | `**` |
+| `working-principles.md` | the twelve principles and which rule enforces each -- an index, not a second copy; the pre-flight (read the rules the work touches, this session) and the enforcement ladder | `**` |
 | `packaging-and-patches.md` | `package.mk` fields, late binding, and how patches are produced and scoped | `packages/**`, `projects/**` |
+| `change-log.md` | the running change log (`docs/cloud-sync-changelog.md`) is written the day a player-visible change lands, as claims checked against the build | `projects/ROCKNIX/packages/**`, the change log |
 | `rclone-cloud-sync.md` | the cloud-sync subsystem: config conventions, the bounded automatic sync, last-good behaviour | the rclone package, `rocknix/sources/scripts/**`, the five cloud tools |
 | `generic-x64-vm-testing.md` | building and QA'ing the GENERIC_X64 VM image, and the harness that drives it | GENERIC_X64, `projects/ROCKNIX/packages/**`, `scripts/mkimage`, `scripts/image`, the VM tools, `docs/vm-qa-log.md` |
 | `handheld-evidence.md` | what a handheld keeps across a power cycle and what to capture first when one misbehaves | device packages and kernels, `docs/**` |
@@ -128,7 +131,7 @@ before writing a new rule; ten of twelve imported principles turned out to be.
 ## The fork's own tools, and which rule documents each
 
 Written because a tool nobody remembers is a tool nobody runs — and this
-estate now has thirty-three of them. One line each; the rule named is where the
+estate now has thirty-four of them. One line each; the rule named is where the
 detail lives, so this stays an index rather than a second copy. `tools/` is
 otherwise upstream's, which is why the fork-only ones are enumerated by hand
 in `.githooks/pre-push` and in `fork-workflow.md`; **a new one is added to
@@ -166,6 +169,7 @@ both lists and to this table, or it is invisible.**
 | `vocabulary-check` | back up / backup, and the rest of the player vocabulary | `es-player-text.md` |
 | `register-check` | every decision ID once, every citation naming a real row | `decision-register.md` |
 | `lint-audit-artifacts` | the audit artifacts are well formed | `issue-tracking.md` |
+| `rules-check` | every rule file front-mattered per the standard, every file in this index, the counts in `CLAUDE.md` and `AGENTS.md` true, `AGENTS.md` within Codex's budget and naming every rule (D-WORKFLOW-045) | `instruction-files.md` |
 | `pkgcheck` *(upstream's)* | a `package.mk` obeys late binding | `packaging-and-patches.md` |
 
 **When a rule earns its place, write it down.** `docs/blindspot-register.md`

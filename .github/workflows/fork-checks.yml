@@ -33,6 +33,8 @@ jobs:
         run: ./tools/work-log-index --check
       - name: decision register is a lookup table
         run: ./tools/register-check
+      - name: the instruction files are what their index says
+        run: ./tools/rules-check
       - name: ceremonies are not overdue
         env:
           GH_TOKEN: ${{ github.token }}
