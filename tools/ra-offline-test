@@ -229,6 +229,7 @@ cleanup() {
   S 'pgrep -f ^/usr/bin/retroarch >/dev/null && /tmp/ra-offline-kill; sleep 2; pkill -f ^/usr/bin/retroarch 2>/dev/null; rm -f /tmp/ra-offline-kill; true' >/dev/null 2>&1
   MON "set_link $NETDEV on"
   for i in $(seq 1 20); do S true 2>/dev/null && break; sleep 3; done
+  [ -n "${VD_WAS:-}" ] && S "sed -i 's/^video_driver = .*/${VD_WAS}/' /storage/.config/retroarch/retroarch.cfg" >/dev/null 2>&1
   if [ "${TOGGLE_WAS:-0}" = 1 ]; then S 'raofflineproxy-ctl enable' >/dev/null 2>&1; else S 'raofflineproxy-ctl disable' >/dev/null 2>&1; fi
   [ "$WE_ENABLED" = 1 ] && S 'raofflineproxy-ctl flushed >/dev/null 2>&1; rm -rf /storage/.config/raofflineproxy' >/dev/null 2>&1
   "$ROOT/tools/qa-accounts" "$PORT" clear 2>&1 | sed 's/^/  |     /'
@@ -276,6 +277,14 @@ eval "$(sed -n "/^execute_kill()/,/^}/p" /usr/bin/input_sense)"
 execute_kill
 H
 chmod +x /tmp/ra-offline-kill; pgrep -f ^/usr/bin/retroarch >/dev/null && { /tmp/ra-offline-kill; sleep 3; }; true' >/dev/null 2>&1
+# A QEMU guest has no Vulkan, and the image ships `video_driver = "vulkan"`
+# (GENERIC_X64 retroarch.cfg): left on it, RetroArch exits with 1 having
+# pushed no frame, and step 4 stops at "RetroArch running" (guest d on
+# 664ad9ac64, 2026-09-25 -- the 2026-09-21 PASS ran on a guest someone had
+# left on GL). time-to-play and the exit test swap the driver for their run;
+# so does this, and cleanup puts the guest's own line back.
+VD_WAS=$(S 'grep -E "^video_driver" /storage/.config/retroarch/retroarch.cfg' 2>/dev/null)
+S "sed -i 's/^video_driver = .*/video_driver = \"gl\"/' /storage/.config/retroarch/retroarch.cfg" >/dev/null 2>&1
 
 # --- 4 online launch -----------------------------------------------------------
 echo "4  the game launched online through the interface"
