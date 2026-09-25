@@ -33,6 +33,7 @@ are mandatory, as opposed to things that are just optional?"* Yes.
 | Blindspot guard | an entry from 52 on names a `tools/…`, `.githooks/…` or `.claude/rules/…` that exists | with the entry | refuses a push |
 | Code audit (epic/milestone tier) | an issue titled `Audit:` / `Code audit`, or `docs/audits/<date>-*/` | after 12 completed closures or 14 days | **CI red**, the push goes through |
 | Futro | `docs/futros/<date>-<scope>.md`, or a work-log heading that says futro | within 3 days of a new `epic` issue | CI red |
+| Open checkboxes agent-verifiable | `tools/box-check`: no open `- [ ]` names a person or a device without a physical fact (D-QA-044) | always | CI red -- the fix is a tracker edit, as with issue hygiene |
 
 The split is deliberate: a friction line, a retro, a summary and an index are
 minutes, so a missing one stops the push until it is written; an audit is

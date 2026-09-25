@@ -16,7 +16,11 @@
 # radio, a battery, a board's boot, a panel, a tailnet, a LAN, hours on the
 # hardware). A checkbox whose artifact is a register row -- the maintainer's
 # call, recorded -- passes too: a decision is theirs to make, and the row is
-# the artifact (D-QA-044: their feedback dictates the work). A failing
+# the artifact (D-QA-044: their feedback dictates the work). It has to say
+# so ("register row", "decision-register"): a decision ID cited in passing is
+# not an artifact, and until 2026-09-25 any ID let a checkbox through --
+# "One real captive network on a handheld (maintainer's yes, D-QA-015)" passed
+# on the ID alone and named no fact (#158). A failing
 # checkbox asks a person for a re-observation of what the VM can frame, which
 # is how 35 issues came to wait on the maintainer on 2026-09-24 (#266). A
 # checkbox that names the fact passes: it asks for a device on purpose.
@@ -39,7 +43,7 @@ REPO = 'maxengel/rocknix'
 
 PERSON = re.compile(r"maintainer'?s? (own |)(word|yes|confirmation|call|device|library|account)|\byour (word|yes|own|device|library)\b|\btheir word\b|per-device yes|\(the maintainer'?s?\.?\)|the maintainer (switches|sees|reports|confirms|does|tries|opens|starts|plays)", re.I)
 DEVICE = re.compile(r"\bon (the |a |your )?(H700|RG35XX SP|RG SP|RG351M|RG353M|Nova|device|handheld|handhelds|hardware)\b|\b(RG SP|RG35XX SP|H700|Nova|The RG SP|The RG35XX SP):", re.I)
-FACT = re.compile(r"\bradio\b|wi-?fi (switch|join|radio|network)|hotspot|battery|\bboot(loader|s|ing)?\b|\bboard\b|\bpanel\b|tailnet|tailscale|\bLAN\b|multicast|mDNS|\bGPU\b|DRAM|DDR[34]|\bcard\b|flash|\bsleep\b|watchdog|ramoops|hours of|\bsoak\b|real (pad|panel|provider|hotspot)|SM8550|device tree|power[- ]cycle|physical|router|on one network|two (same-family |)(handhelds|units)|the (VM|guest) (has|cannot|can't)|register row|decision-register|\bD-[A-Z]+-\d+\b", re.I)
+FACT = re.compile(r"\bradio\b|wi-?fi (switch|join|radio|network)|hotspot|battery|\bboot(loader|s|ing)?\b|\bboard\b|\bpanel\b|tailnet|tailscale|\bLAN\b|multicast|mDNS|\bGPU\b|DRAM|DDR[34]|\bcard\b|flash|\bsleep\b|watchdog|ramoops|hours of|\bsoak\b|real (pad|panel|provider|hotspot)|SM8550|device tree|power[- ]cycle|physical|router|on one network|two (same-family |)(handhelds|units)|the (VM|guest) (has|cannot|can't)|register row|decision-register", re.I)
 BOX = re.compile(r'^\s*- \[ \] (.*)$')
 
 
