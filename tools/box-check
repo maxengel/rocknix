@@ -2,26 +2,29 @@
 # SPDX-License-Identifier: GPL-2.0
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 #
-# Is every open acceptance box agent-verifiable? (D-QA-044, #268)
+# Is every open acceptance checkbox agent-verifiable? (D-QA-044, #268)
+# The checkbox checker: its output says "checkbox", never a bare "box",
+# which here means a machine (D-QA-045); the script keeps its name.
 #
-#   tools/box-check                 # every open issue on the fork; exit 1 when a box fails
+#   tools/box-check                 # every open issue on the fork; exit 1 when a checkbox fails
 #   tools/box-check --issue 266     # one issue
 #   tools/box-check --quiet         # failures only (CI)
 #
-# A box fails when it names a person or a device as the thing that ticks it
+# A checkbox fails when it names a person or a device as the thing that ticks it
 # ("the maintainer's word", "on the H700", "your yes", "RG SP:") and names no
 # physical fact the GENERIC_X64 guest cannot have (vm-first.md's list: a
 # radio, a battery, a board's boot, a panel, a tailnet, a LAN, hours on the
-# hardware). A box whose artifact is a register row -- the maintainer's call,
-# recorded -- passes too: a decision is theirs to make, and the row is the
-# artifact (D-QA-044: their feedback dictates the work). Such a box asks a person for a re-observation of what the VM can
-# frame, which is how 35 issues came to wait on the maintainer on 2026-09-24
-# (#266). A box that names the fact passes: it is a device box on purpose.
+# hardware). A checkbox whose artifact is a register row -- the maintainer's
+# call, recorded -- passes too: a decision is theirs to make, and the row is
+# the artifact (D-QA-044: their feedback dictates the work). A failing
+# checkbox asks a person for a re-observation of what the VM can frame, which
+# is how 35 issues came to wait on the maintainer on 2026-09-24 (#266). A
+# checkbox that names the fact passes: it asks for a device on purpose.
 #
-# It also notes, without failing, an open box on an issue that a decided
-# register row cites: the row may have settled what the box still asks
+# It also notes, without failing, an open checkbox on an issue that a decided
+# register row cites: the row may have settled what the checkbox still asks
 # (blindspot 52; the hotspot drop and the Tailscale restart, 2026-09-25), so
-# the box is re-derived against the row before it is put to anyone.
+# the checkbox is re-derived against the row before it is put to anyone.
 #
 # Reads the tracker with gh; the fork only (issue-tracking.md).
 
@@ -91,8 +94,8 @@ def main():
         print('FAIL  #%d: names a person or a device and no physical fact: %s' % (n, ' '.join(text.split())[:150]))
     if not quiet:
         for n, ids, k in notes:
-            print('note  #%d: %d open box(es); decided rows cite it: %s -- re-derive against them' % (n, k, ' '.join(ids[:6])))
-    print('box-check: %d issue(s), %d open box(es), %d fail, %d issue(s) with rows to re-derive against' % (len(issues), boxes, len(fails), len(notes)))
+            print('note  #%d: %d open checkbox(es); decided rows cite it: %s -- re-derive against them' % (n, k, ' '.join(ids[:6])))
+    print('box-check: %d issue(s), %d open checkbox(es), %d fail, %d issue(s) with rows to re-derive against' % (len(issues), boxes, len(fails), len(notes)))
     return 1 if fails else 0
 
 

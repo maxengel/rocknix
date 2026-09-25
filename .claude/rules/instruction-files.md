@@ -170,7 +170,7 @@ both lists and to this table, or it is invisible.**
 | `register-check` | every decision ID once, every citation naming a real row | `decision-register.md` |
 | `lint-audit-artifacts` | the audit artifacts are well formed | `issue-tracking.md` |
 | `rules-check` | every rule file front-mattered per the standard, every file in this index, the counts in `CLAUDE.md` and `AGENTS.md` true, `AGENTS.md` within Codex's budget and naming every rule (D-WORKFLOW-045) | `instruction-files.md` |
-| `box-check` | is every open acceptance box on the fork agent-verifiable -- names its artifact, and a physical fact when it is a device box (D-QA-044) | `issue-tracking.md` |
+| `box-check` | is every open acceptance checkbox on the fork agent-verifiable -- names its artifact, and a physical fact when it asks for a device (D-QA-044; the checkbox checker, D-QA-045) | `issue-tracking.md` |
 | `release-catalog` | what each kept cut carried, what was proven on it and where it is, generated from the artifacts' RECORD.txt into `docs/releases/catalog.md` (D-WORKFLOW-044) | `issue-tracking.md` |
 | `pkgcheck` *(upstream's)* | a `package.mk` obeys late binding | `packaging-and-patches.md` |
 

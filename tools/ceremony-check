@@ -30,10 +30,10 @@
 #   weekly    docs/work-logs/<yyyy_mm>-work_logs/<yyyy>-W<ww>-summary.md
 #   monthly   docs/work-logs/<yyyy_mm>-work_logs/SUMMARY.md
 #   index     tools/work-log-index --check
-#   hygiene   no issue closed as completed since the clock carries an open box (audit #258 P-03; CI red)
+#   hygiene   no issue closed as completed since the clock carries an open checkbox (audit #258 P-03; CI red)
 #   register  tools/register-check
 #   rules     tools/rules-check --quiet (the instruction files, D-WORKFLOW-045)
-#   boxes     tools/box-check --quiet (agent-first criteria, D-QA-044; reported, not yet blocking)
+#   checkboxes tools/box-check --quiet (agent-first criteria, D-QA-044/045; reported, not yet blocking)
 #   guards    docs/blindspot-register.md entries >= GUARD_FROM name a guard that exists
 
 import datetime as dt
@@ -237,10 +237,10 @@ def main():
         else:
             report(True, 'guards', 'every entry from %d names a guard in the tree' % GUARD_FROM)
 
-    # 5b. the open boxes (report only until #268's sweep is done; needs gh)
+    # 5b. the open checkboxes (report only until #268's sweep is done; needs gh)
     rc, out, err = sh([os.path.join(ROOT, 'tools/box-check'), '--quiet'])
     last = ((out or err).strip().splitlines() or ['box-check did not run'])[-1]
-    report(rc == 0, 'boxes', last[:140])
+    report(rc == 0, 'checkboxes', last[:140])
 
     # 6. audits and futros (the tracker)
     if use_gh:
@@ -289,7 +289,7 @@ def main():
             else:
                 report(True, 'futro', 'last %s; no epic since %s without one' % (last_futro or 'none', SINCE))
         # 7. issue hygiene (audit #258 PL-008, P-03): an issue closed as completed
-        # with a box still open is a delivered item nobody ticked, or a
+        # with a checkbox still open is a delivered item nobody ticked, or a
         # criterion nobody struck -- #225 closed with five of them. Read from
         # the tracker since the clock; CI red, not push-blocking, since the fix
         # is a tracker edit and not a file.
@@ -301,10 +301,10 @@ def main():
             with_open = ['#%d' % it['number'] for it in closed_bodies or []
                          if re.search(r'^\s*- \[ \]', it.get('body') or '', re.M)]
             if with_open:
-                overdue.append(('ci', 'hygiene: closed as completed with an open box: %s -- tick it with its evidence or strike it with the decision (issue-tracking.md)' % ' '.join(with_open)))
-                report(False, 'hygiene', 'closed-completed issues with an open box: %s' % ' '.join(with_open))
+                overdue.append(('ci', 'hygiene: closed as completed with an open checkbox: %s -- tick it with its evidence or strike it with the decision (issue-tracking.md)' % ' '.join(with_open)))
+                report(False, 'hygiene', 'closed-completed issues with an open checkbox: %s' % ' '.join(with_open))
             else:
-                report(True, 'hygiene', 'no issue closed completed since %s carries an open box' % SINCE)
+                report(True, 'hygiene', 'no issue closed completed since %s carries an open checkbox' % SINCE)
     else:
         report(True, 'audit', 'not checked (--no-gh)')
         report(True, 'futro', 'not checked (--no-gh)')
