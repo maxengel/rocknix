@@ -33,7 +33,7 @@
 #   hygiene   no issue closed as completed since the clock carries an open checkbox (audit #258 P-03; CI red)
 #   register  tools/register-check
 #   rules     tools/rules-check --quiet (the instruction files, D-WORKFLOW-045)
-#   checkboxes tools/box-check --quiet (agent-first criteria, D-QA-044/045; reported, not yet blocking)
+#   checkboxes tools/box-check --quiet (agent-first criteria, D-QA-044/045; CI red)
 #   guards    docs/blindspot-register.md entries >= GUARD_FROM name a guard that exists
 
 import datetime as dt
@@ -237,10 +237,15 @@ def main():
         else:
             report(True, 'guards', 'every entry from %d names a guard in the tree' % GUARD_FROM)
 
-    # 5b. the open checkboxes (report only until #268's sweep is done; needs gh)
+    # 5b. the open checkboxes (D-QA-044; needs gh). CI red, not push-blocking,
+    # like the hygiene check below: the fix is a tracker edit, not a file.
+    # Blocking since 2026-09-25, when #268's sweep reached 0; a checker that
+    # cannot run (gh down) has not passed either.
     rc, out, err = sh([os.path.join(ROOT, 'tools/box-check'), '--quiet'])
     last = ((out or err).strip().splitlines() or ['box-check did not run'])[-1]
     report(rc == 0, 'checkboxes', last[:140])
+    if rc != 0:
+        overdue.append(('ci', 'checkboxes: %s -- tick each with its evidence or reword it to the VM or a named physical fact (issue-tracking.md, D-QA-044)' % last[:100]))
 
     # 6. audits and futros (the tracker)
     if use_gh:
