@@ -93,6 +93,7 @@ same change that adds a file; a rule nobody can find is a rule nobody applies.
 | `time-to-play.md` | interface → a game's first frame, and one game's exit → the next, as a first-class metric (D-CLOUD-098) | every session |
 | `vm-first.md` | *can this be done on the VM?* asked and answered in writing before any test, proof or measurement (D-QA-007) | every session |
 | `ceremonies.md` | which ceremony is owed and when -- friction entries, retros, the weekly and monthly summaries, the index, audits, futros -- as a state machine `tools/ceremony-check` turns (D-WORKFLOW-028) | every session |
+| `release-candidates.md` | the standard operating procedure for every release candidate: nothing behind before the cut, a clean baseline, the candidate's build, every test, play-testing, the call, the two-agent upstream audit, then the submission and builds for every test device (D-WORKFLOW-047) | every session |
 | `adversarial-council.md` | adversarial analysis routes through the verified multi-model council; never the rubber-duck agent | `**` |
 | `decision-register.md` | when a decision becomes a row, and why a settled one is cited rather than re-argued | `**` |
 | `device-builds.md` | building, publishing and flashing handheld images, and what a warm build root hides | `**` |

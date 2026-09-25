@@ -219,6 +219,7 @@ every-session ones at the start of a session and a scoped one before touching it
 - `learning-capture.md` -- Capture-learning loop: when storing a memory, also consider an instruction-file abstraction and append to the dated work log.
 - `least-surprise.md` -- Surprise the player as little as possible: things work as they expect and the same way every time. The tie-breaker for interface and sync decisions.
 - `player-language.md` -- Player-facing language is clear first, then as short as it can be while still clear, and sized to the space it is shown in. Applies to every label, dialog, card line and script sentence.
+- `release-candidates.md` -- The standard operating procedure for every release candidate: nothing behind before the cut, a clean baseline, the candidate's build, every test, play-testing on the test device, the call, the two-agent upstream audit, then the submission and builds for every test device (D-WORKFLOW-047).
 - `time-to-play.md` -- Time to play -- from the interface to a game's first frame, and from one game's exit to the next -- is a first-class goal that weighs on every cloud, sync and interface decision.
 - `upgrade-and-install.md` -- Every change ships onto devices that already have state. Check the upgrade path and the clean-install path before a build goes out.
 - `vm-first.md` -- Before any test, build proof or measurement: can this be done on the VM? Written down, answered, and only a reasoned no moves it elsewhere.
