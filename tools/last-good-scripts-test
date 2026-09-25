@@ -2473,6 +2473,9 @@ class StoreOnlyServer:
     def handle_offline_request(self, path, raw_body, action): self.took = "offline"; return b"offline"
     def handle_offline_login(self, *a, **k): return None
     def handle_award_request(self, *a, **k): self.took = "award"; return b"award"
+    # 59b167c's activity tracking, which process_proxy_request calls first.
+    def note_game_request(self, *a, **k): pass
+    def record_game_activity(self, *a, **k): pass
 try:
     st = Storage(); srv = StoreOnlyServer(st)
     proxy_service.ProxyRuntimeServer.process_proxy_request(srv, "GET", "/dorequest.php?r=patch&g=1&u=qa", "", {"X-RA-Store-Only": "1", "User-Agent": "es"})
