@@ -12,7 +12,7 @@ emulators, userland) per device.
 - `packages/README.md` — the authoritative `package.mk` format reference.
 - `.claude/rules/*.md` — the canonical scoped guides, **loaded automatically**: a rule with a
   `paths:` glob loads when a matching file enters context, one without loads every session.
-  All 24 of them, indexed in `instruction-files.md` (which also carries the front-matter
+  All 27 of them, indexed in `instruction-files.md` (which also carries the front-matter
   standard, D-WORKFLOW-009), so nothing is reachable only by accident:
 
   | Always (no glob, or `paths: "**"`) | Scoped |
@@ -20,8 +20,9 @@ emulators, userland) per device.
   | `least-surprise` · `player-language` · `time-to-play` · `vm-first` — the four principles every interface and sync decision is weighed against | `packaging-and-patches` (`packages/**`, `projects/**`) |
   | `es-native-ui` · `es-player-text` · `es-ui-style-guide` · `es-code-traps` — the EmulationStation four: the mechanics · the words a player reads · how a screen looks · the codebase's sharp edges (D-WORKFLOW-007/008) | `rclone-cloud-sync` (the rclone package, `rocknix/sources/scripts`, the cloud tools) |
   | `engineering-practices` · `upgrade-and-install` · `documentation-accuracy` | `generic-x64-vm-testing` (GENERIC_X64, `projects/ROCKNIX/packages/**`, the VM tools) |
-  | `fork-workflow` · `worktrees` · `device-builds` · `issue-tracking` · `decision-register` · `learning-capture` · `instruction-files` | `handheld-evidence` (device packages, device kernels, `docs/**`) |
+  | `fork-workflow` · `worktrees` · `device-builds` · `issue-tracking` · `decision-register` · `learning-capture` · `instruction-files` · `ceremonies` · `working-principles` | `handheld-evidence` (device packages, device kernels, `docs/**`) |
   | `adversarial-council` | `council-substrate-integrity` (council artifacts and skills) |
+  | | `change-log` (`projects/ROCKNIX/packages/**`, the running change log) |
 
   Two more documents carry interface law and load *nowhere*: `docs/es-menu-map.md`
   (where a row belongs — and D-UI-039: a row added, moved or renamed updates it in the

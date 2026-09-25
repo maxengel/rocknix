@@ -32,6 +32,7 @@
 #   index     tools/work-log-index --check
 #   hygiene   no issue closed as completed since the clock carries an open box (audit #258 P-03; CI red)
 #   register  tools/register-check
+#   rules     tools/rules-check --quiet (the instruction files, D-WORKFLOW-045)
 #   guards    docs/blindspot-register.md entries >= GUARD_FROM name a guard that exists
 
 import datetime as dt
@@ -207,6 +208,12 @@ def main():
     else:
         overdue.append(('block', 'register: ' + ((out or err).splitlines() or ['failed'])[-1][:120]))
         report(False, 'register', 'FAIL')
+    rc, out, err = sh([os.path.join(ROOT, 'tools/rules-check'), '--quiet'])
+    if rc == 0:
+        report(True, 'rules', 'every rule file front-mattered and indexed')
+    else:
+        overdue.append(('block', 'rules: ' + ((out or err).splitlines() or ['failed'])[-1][:120]))
+        report(False, 'rules', (out or err).strip().replace('\n', '; ')[:160])
 
     # 5. blindspot guards
     bs = os.path.join(ROOT, 'docs/blindspot-register.md')
