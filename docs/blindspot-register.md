@@ -860,3 +860,31 @@ finished` ("the page never finished loading, so these numbers are a window
 on its placeholder"), defaults to a page that loads on the guest, and takes
 the allowed host from the URL. Proven 2026-09-25 on a 1 GB guest: the
 Dropbox URL FAILs, example.org PASSes.
+
+## 60. A harness fixture the harness did not own, and an issue filed on a log's last lines (2026-09-25)
+
+`tools/last-good-scripts-test` bind-mounted the busybox of whichever build
+root it found, into every sandbox, for the whole run. A GENERIC_X64 image
+step (`scripts/image`) deletes `image/system` and re-installs every package,
+so a build running beside the harness pulled that file out from under it:
+eighteen checks after section t's cancel check returned rc 1 with empty
+output at 08:10:44 UTC, twenty-five seconds after run 47's image step began.
+The log was read from its last lines, the adjacency to the cancel check was
+taken for a cause, and #272 was filed as a race in the scripts -- a cause
+no code path could produce, which the code trace of #273 showed by reading
+the ctl's traps and the harness's own writes, and then by putting the
+build's timestamps beside the run's. Blindspot 50's shape (a check that
+never asked whose file it read), committed by the harness itself, and
+blindspot 52's (a summary taken as the record) in the filing.
+
+**Guard:** the harness copies the busybox it chose into its run directory
+at start and binds the copy at a path no sandbox mounts over
+(`tools/last-good-scripts-test`, `BB_SRC` / `BB_HOST` / `BB`), refusing to
+run when the copy cannot be made. Proven 2026-09-25: with the build root's
+busybox renamed eight seconds into a run, `next`'s harness failed 140
+checks with `bwrap: Can't find source path`, the fixed one passed every
+check it had passed before. For the filing: an issue that names a cause
+names the line of evidence it rests on, and a log read for a cause is read
+with the clock beside it -- `tools/archaeology` finds the record, not a
+concurrent build's log; nothing mechanical catches this half, and that is
+said here in those words.
