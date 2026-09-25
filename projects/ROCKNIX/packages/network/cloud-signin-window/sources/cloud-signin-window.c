@@ -739,6 +739,18 @@ int main(int argc, char **argv)
             allowed_host = argv[i];
     }
 
+    /* WebKitGTK 2.54 renders through its DMABuf path once GStreamer GL is
+     * built (fork #228), and on a guest with 1 GB -- the handhelds' size --
+     * that path never finished loading even example.org and left the guest
+     * unanswering, while 2.52.6 loaded it. With the DMABuf renderer off,
+     * 2.54 takes the shared-memory path 2.52.6 took: example.org loaded on
+     * the 1 GB guest with the window at 87 MB and the web process at 35 MB,
+     * and on 8 GB the three processes came to 285 MB against 666 MB with it
+     * on (2026-09-25). A sign-in page gains nothing from GPU buffers; the
+     * memory it keeps is the game's. An environment that sets the variable
+     * keeps its own value, so the other path stays one export away. */
+    g_setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "1", FALSE);
+
     gtk_init(&argc, &argv);
 
     static Osk osk;
