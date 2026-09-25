@@ -7,9 +7,10 @@ PKG_GIT_CLONE_BRANCH="test/qa-integration"
 PKG_LICENSE="GPL"
 PKG_SITE="https://github.com/maxengel/emulationstation-next"
 PKG_URL="${PKG_SITE}.git"
-# noto-sans-cjk came from upstream 2026-09; the fork builds its own ES from
-# its own branch, so the clone form stays.
-PKG_DEPENDS_TARGET="boost toolchain SDL2 freetype curl freeimage bash rapidjson SDL2_mixer fping p7zip alsa vlc drm_tool pugixml noto-sans-cjk ${OPENGLES}"
+# noto-sans-cjk came from upstream 2026-09, and poppler with the PDF support
+# upstream's EmulationStation gained (e0e8b7ac33); the fork builds its own ES
+# from its own branch, so the clone form stays.
+PKG_DEPENDS_TARGET="boost toolchain SDL2 freetype curl freeimage bash rapidjson SDL2_mixer fping p7zip alsa vlc drm_tool poppler pugixml noto-sans-cjk ${OPENGLES}"
 PKG_NEED_UNPACK="busybox"
 PKG_LONGDESC="Emulationstation emulator frontend"
 PKG_BUILD_FLAGS="-gold"
