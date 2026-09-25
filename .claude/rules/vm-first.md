@@ -31,6 +31,11 @@ has been seen once, on the VM or on a device with its yes. Blindspot 8's rule
 (an assertion that only holds because nothing had happened yet) applied to
 the tick: a proof of the path is not a proof of the input.
 
+**And the criterion itself is written for an agent (D-QA-044).** The box
+names the artifact that ticks it; a device box names the fact and points at
+its row in `docs/releases/device-facts.md`; `tools/box-check` fails the rest
+(`issue-tracking.md` § A criterion is agent-first).
+
 A "no" names a physical fact the GENERIC_X64 guest cannot have: a real panel's
 scaling, a board's DRAM surviving a reset, a battery, a GPU driver's exit path, a
 bootloader on a given board. **"A real provider" is not a no**: the build host

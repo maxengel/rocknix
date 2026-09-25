@@ -63,6 +63,29 @@ register row or a comment, file the issue and point both ways.
 The paper trail is the point. A register row says what was decided; the
 issue says what was asked, by whom, in what words, and whether it was done.
 
+## A criterion is agent-first (D-QA-044)
+
+Maintainer, 2026-09-25: *"our instruction files and processes should be driven
+by agent-first acceptance criteria, and so human testing and feedback should
+become what dictates work streams and issues. The validation of that needs to
+be structured in a way that can be agentically verified."*
+
+So every `- [ ]` is written so an agent can tick it, and names the artifact
+that does: a frame at the panel's size, a suite's PASS line, a stamp, a
+journal line, a measurement. A person's observation on a handheld is the
+*source* of an issue (D-QA-012: filed the same session, their words quoted),
+never the *check* that closes one. A box that says "the maintainer's word",
+"your yes" or "on the H700" is a criterion only when it also names the
+physical fact the VM cannot have (`vm-first.md`'s list) -- and then it points
+at that fact's row in `docs/releases/device-facts.md`, so "have we checked
+this?" is a lookup. `tools/box-check` reads every open issue and fails a box
+that names a person or a device without a fact; on 2026-09-25, its first run,
+46 of 479 open boxes did, which is the sweep #268 works down. It also notes an
+open box on an issue a decided register row cites: the row may have settled
+what the box still asks (the hotspot drop and the Tailscale restart were put
+to the maintainer as open on 2026-09-25 with their rows a week old), so the box
+is re-derived against the row before it is put to anyone.
+
 ## An issue that proposes a test says where it runs
 
 Before a test, proof or measurement is run, the issue carries the line

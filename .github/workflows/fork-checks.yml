@@ -35,6 +35,11 @@ jobs:
         run: ./tools/register-check
       - name: the instruction files are what their index says
         run: ./tools/rules-check
+      - name: every open acceptance box is agent-verifiable (reported until #268's sweep is done)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./tools/box-check --quiet
       - name: ceremonies are not overdue
         env:
           GH_TOKEN: ${{ github.token }}
