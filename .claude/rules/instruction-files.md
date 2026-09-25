@@ -131,7 +131,7 @@ before writing a new rule; ten of twelve imported principles turned out to be.
 ## The fork's own tools, and which rule documents each
 
 Written because a tool nobody remembers is a tool nobody runs — and this
-estate now has thirty-four of them. One line each; the rule named is where the
+estate now has thirty-six of them. One line each; the rule named is where the
 detail lives, so this stays an index rather than a second copy. `tools/` is
 otherwise upstream's, which is why the fork-only ones are enumerated by hand
 in `.githooks/pre-push` and in `fork-workflow.md`; **a new one is added to
@@ -170,6 +170,8 @@ both lists and to this table, or it is invisible.**
 | `register-check` | every decision ID once, every citation naming a real row | `decision-register.md` |
 | `lint-audit-artifacts` | the audit artifacts are well formed | `issue-tracking.md` |
 | `rules-check` | every rule file front-mattered per the standard, every file in this index, the counts in `CLAUDE.md` and `AGENTS.md` true, `AGENTS.md` within Codex's budget and naming every rule (D-WORKFLOW-045) | `instruction-files.md` |
+| `box-check` | is every open acceptance box on the fork agent-verifiable -- names its artifact, and a physical fact when it is a device box (D-QA-044) | `issue-tracking.md` |
+| `release-catalog` | what each kept cut carried, what was proven on it and where it is, generated from the artifacts' RECORD.txt into `docs/releases/catalog.md` (D-WORKFLOW-044) | `issue-tracking.md` |
 | `pkgcheck` *(upstream's)* | a `package.mk` obeys late binding | `packaging-and-patches.md` |
 
 **When a rule earns its place, write it down.** `docs/blindspot-register.md`

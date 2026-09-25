@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+#
+# Is every open acceptance box agent-verifiable? (D-QA-044, #268)
+#
+#   tools/box-check                 # every open issue on the fork; exit 1 when a box fails
+#   tools/box-check --issue 266     # one issue
+#   tools/box-check --quiet         # failures only (CI)
+#
+# A box fails when it names a person or a device as the thing that ticks it
+# ("the maintainer's word", "on the H700", "your yes", "RG SP:") and names no
+# physical fact the GENERIC_X64 guest cannot have (vm-first.md's list: a
+# radio, a battery, a board's boot, a panel, a tailnet, a LAN, hours on the
+# hardware). Such a box asks a person for a re-observation of what the VM can
+# frame, which is how 35 issues came to wait on the maintainer on 2026-09-24
+# (#266). A box that names the fact passes: it is a device box on purpose.
+#
+# It also notes, without failing, an open box on an issue that a decided
+# register row cites: the row may have settled what the box still asks
+# (blindspot 52; the hotspot drop and the Tailscale restart, 2026-09-25), so
+# the box is re-derived against the row before it is put to anyone.
+#
+# Reads the tracker with gh; the fork only (issue-tracking.md).
+
+import json
+import os
+import re
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = 'maxengel/rocknix'
+
+PERSON = re.compile(r"maintainer'?s? (own |)(word|yes|confirmation|call|device|library|account)|\byour (word|yes|own|device|library)\b|\btheir word\b|per-device yes|\(the maintainer'?s?\.?\)|the maintainer (switches|sees|reports|confirms|does|tries|opens|starts|plays)", re.I)
+DEVICE = re.compile(r"\bon (the |a |your )?(H700|RG35XX SP|RG SP|RG351M|RG353M|Nova|device|handheld|handhelds|hardware)\b|\b(RG SP|RG35XX SP|H700|Nova|The RG SP|The RG35XX SP):", re.I)
+FACT = re.compile(r"\bradio\b|wi-?fi (switch|join|radio|network)|hotspot|battery|\bboot(loader|s|ing)?\b|\bboard\b|\bpanel\b|tailnet|tailscale|\bLAN\b|multicast|mDNS|\bGPU\b|DRAM|DDR[34]|\bcard\b|flash|\bsleep\b|watchdog|ramoops|hours of|\bsoak\b|real (pad|panel|provider|hotspot)|SM8550|device tree|power[- ]cycle|physical|router|on one network|two (same-family |)(handhelds|units)|the (VM|guest) (has|cannot|can't)", re.I)
+BOX = re.compile(r'^\s*- \[ \] (.*)$')
+
+
+def gh(args):
+    out = subprocess.run(['gh'] + args, capture_output=True, text=True)
+    if out.returncode != 0:
+        sys.exit('box-check: gh failed: %s' % out.stderr.strip()[:200])
+    return json.loads(out.stdout)
+
+
+def register_refs():
+    """issue number -> [decided row IDs whose text or refs cite it]."""
+    path = os.path.join(ROOT, 'docs/decision-register.md')
+    refs = {}
+    if not os.path.exists(path):
+        return refs
+    open_section = False
+    for line in open(path, encoding='utf-8'):
+        if line.startswith('## Open decisions'):
+            open_section = True
+        if open_section or not line.startswith('| D-'):
+            continue
+        did = line.split('|')[1].strip()
+        for n in set(re.findall(r'#(\d+)\b', line)):
+            refs.setdefault(int(n), []).append(did)
+    return refs
+
+
+def main():
+    quiet = '--quiet' in sys.argv
+    one = None
+    if '--issue' in sys.argv:
+        one = sys.argv[sys.argv.index('--issue') + 1]
+    if one:
+        issues = [gh(['issue', 'view', one, '--repo', REPO, '--json', 'number,title,body,state'])]
+    else:
+        issues = gh(['issue', 'list', '--repo', REPO, '--state', 'open', '--limit', '300', '--json', 'number,title,body,state'])
+    refs = register_refs()
+    fails, notes, boxes = [], [], 0
+    for it in issues:
+        n = it['number']
+        body = it.get('body') or ''
+        open_boxes = [m.group(1) for m in (BOX.match(l) for l in body.split('\n')) if m]
+        boxes += len(open_boxes)
+        for text in open_boxes:
+            asks_person = bool(PERSON.search(text) or DEVICE.search(text))
+            if asks_person and not FACT.search(text):
+                fails.append((n, text))
+        if open_boxes and n in refs:
+            notes.append((n, refs[n], len(open_boxes)))
+    for n, text in fails:
+        print('FAIL  #%d: names a person or a device and no physical fact: %s' % (n, ' '.join(text.split())[:150]))
+    if not quiet:
+        for n, ids, k in notes:
+            print('note  #%d: %d open box(es); decided rows cite it: %s -- re-derive against them' % (n, k, ' '.join(ids[:6])))
+    print('box-check: %d issue(s), %d open box(es), %d fail, %d issue(s) with rows to re-derive against' % (len(issues), boxes, len(fails), len(notes)))
+    return 1 if fails else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

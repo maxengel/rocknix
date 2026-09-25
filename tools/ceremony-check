@@ -33,6 +33,7 @@
 #   hygiene   no issue closed as completed since the clock carries an open box (audit #258 P-03; CI red)
 #   register  tools/register-check
 #   rules     tools/rules-check --quiet (the instruction files, D-WORKFLOW-045)
+#   boxes     tools/box-check --quiet (agent-first criteria, D-QA-044; reported, not yet blocking)
 #   guards    docs/blindspot-register.md entries >= GUARD_FROM name a guard that exists
 
 import datetime as dt
@@ -235,6 +236,11 @@ def main():
             report(False, 'guards', 'blindspots without a guard: %s' % unguarded)
         else:
             report(True, 'guards', 'every entry from %d names a guard in the tree' % GUARD_FROM)
+
+    # 5b. the open boxes (report only until #268's sweep is done; needs gh)
+    rc, out, err = sh([os.path.join(ROOT, 'tools/box-check'), '--quiet'])
+    last = ((out or err).strip().splitlines() or ['box-check did not run'])[-1]
+    report(rc == 0, 'boxes', last[:140])
 
     # 6. audits and futros (the tracker)
     if use_gh:
