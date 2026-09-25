@@ -2,14 +2,15 @@
 # Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="emulationstation"
-PKG_VERSION="296aa5966abe7734606126693010f8834fa69496"
+PKG_VERSION="370ebe416b5d33a972ee323ee2079743bcdeab87"
 PKG_GIT_CLONE_BRANCH="test/qa-integration"
 PKG_LICENSE="GPL"
 PKG_SITE="https://github.com/maxengel/emulationstation-next"
 PKG_URL="${PKG_SITE}.git"
-# noto-sans-cjk came from upstream 2026-09; the fork builds its own ES from
-# its own branch, so the clone form stays.
-PKG_DEPENDS_TARGET="boost toolchain SDL2 freetype curl freeimage bash rapidjson SDL2_mixer fping p7zip alsa vlc drm_tool pugixml noto-sans-cjk ${OPENGLES}"
+# noto-sans-cjk came from upstream 2026-09, and poppler with the PDF support
+# upstream's EmulationStation gained (e0e8b7ac33); the fork builds its own ES
+# from its own branch, so the clone form stays.
+PKG_DEPENDS_TARGET="boost toolchain SDL2 freetype curl freeimage bash rapidjson SDL2_mixer fping p7zip alsa vlc drm_tool poppler pugixml noto-sans-cjk ${OPENGLES}"
 PKG_NEED_UNPACK="busybox"
 PKG_LONGDESC="Emulationstation emulator frontend"
 PKG_BUILD_FLAGS="-gold"

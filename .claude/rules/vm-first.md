@@ -34,7 +34,9 @@ the tick: a proof of the path is not a proof of the input.
 **And the criterion itself is written for an agent (D-QA-044).** The checkbox
 names the artifact that ticks it; a device checkbox names the fact and points at
 its row in `docs/releases/device-facts.md`; `tools/box-check` fails the rest
-(`issue-tracking.md` § A criterion is agent-first).
+(`issue-tracking.md` § A criterion is agent-first). D-QA-043 asked the same
+from this file's side -- is a frame at the panel's size the observation? --
+and is answered by D-QA-044.
 
 A "no" names a physical fact the GENERIC_X64 guest cannot have: a real panel's
 scaling, a board's DRAM surviving a reset, a battery, a GPU driver's exit path, a
