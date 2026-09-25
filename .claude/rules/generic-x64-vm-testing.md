@@ -263,7 +263,8 @@ not resolve host` -- and to end the lag remove the override and put the
 symlink back (`rm -f /storage/.config/resolv.conf /run/rocknix/resolv.conf;
 ln -sf /run/systemd/resolve/stub-resolv.conf /run/rocknix/resolv.conf`). The
 override is a supported user setting, so leave the guest without it. ES logs
-to `/var/log/es_log.txt` (a `/storage/.cache/log/` copy beside it); there is
+to `/var/log/es_log.txt` (`/var/log` is `/storage/.cache/log` bind-mounted by
+`var-log.mount`, the same files under either path); there is
 no `es_log.txt` under `/storage/.config/emulationstation/`, and a `grep -c`
 on that path over serial returns an error line whose digits are none, which
 `tr -dc '0-9'` turns into an empty count -- a FAIL that names the harness.
@@ -643,20 +644,26 @@ sg kvm -c '<qemu command>'      # picks up the group with no re-login
   `/proc/uptime` and refuse the boot if it is not small.
 - **Live logs over SSH**: default login is `root` / `rocknix`; `PermitRootLogin yes`. No
   `sshpass` on the host — use `SSH_ASKPASS=<script-echoing-pw> SSH_ASKPASS_REQUIRE=force
-  setsid -w ssh -p 10022 root@127.0.0.1 …`. ES logs to tmpfs `/var/log/es_log.txt`,
-  sway to `/var/log/sway.log`.
-  **The ES log file is late, and its tail can be lost.** `AsyncLogger`
-  (`es-core/src/Log.cpp`) queues lines to a worker and flushes the stream
-  every 8 batches, so a line can sit unflushed for minutes on an idle
-  carousel -- on 2026-09-14 the token check's lines reached the file 100 s
-  after they were logged, and a live `grep -c` said 0 for a line that was
-  there. So a live check never gates on the file: read the count again
-  later, or take the line from a channel that is not buffered. **ERROR
-  lines also go to stderr, which is the journal** (`journalctl -b -u
-  emustation`, the unit's `start_es.sh[pid]` lines, immediate); WARNING and
-  INFO lines reach only the file, which is complete in `es_log.N.txt` after
-  the next boot (the SIGTERM handler flushes, with a 10 ms wait for the
-  worker that fork #178 asks about). And **the credential filter drops
+  setsid -w ssh -p 10022 root@127.0.0.1 …`. ES logs to `/var/log/es_log.txt`,
+  sway to `/var/log/sway.log`; `/var/log` is `/storage/.cache/log`
+  bind-mounted (`var-log.mount`), not tmpfs, so `es_log.0.txt`..`es_log.3.txt`
+  are the previous boots' files and survive a reboot.
+  **The ES log file was late until ES `469441d4d` (RC-11, 2026-09-15; fork
+  #178).** `AsyncLogger` (`es-core/src/Log.cpp`) flushed the stream every 8
+  batches, so a line could sit unflushed for minutes on an idle carousel --
+  on 2026-09-14 the token check's lines reached the file 100 s after they
+  were logged, and a live `grep -c` said 0 for a line that was there. Since
+  the fix the worker flushes after every batch: a WARNING line is in the
+  file 5-12 ms after it is logged (ten trials, 2026-09-25), and a `reboot`
+  2 s after one leaves it in `es_log.0.txt` (ten of ten). **ERROR and
+  WARNING lines also go to stderr, which is the journal** (`journalctl -b
+  -u essway` -- the unit is `essway.service`, whose `start_es.sh[pid]` lines
+  these are; there is no `emustation` unit); INFO lines reach only the
+  file and are not written at the shipped level. To provoke exactly one
+  WARNING line on a guest with nothing else logging, ask the interface's
+  API from a loopback address it does not treat as local:
+  `curl --interface 127.0.0.2 http://127.0.0.1:1234/caps` (one 403, one
+  `Access disabled for 127.0.0.2` line). And **the credential filter drops
   prose**: RetroAchievements' refusal reads `Invalid user/password
   combination`, so a `grep -v passw` read of the log or the journal says
   the line is not there when it is (the same run, twice). For a read whose
