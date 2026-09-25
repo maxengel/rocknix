@@ -888,3 +888,24 @@ names the line of evidence it rests on, and a log read for a cause is read
 with the clock beside it -- `tools/archaeology` finds the record, not a
 concurrent build's log; nothing mechanical catches this half, and that is
 said here in those words.
+
+## 61. The suite under test started as a shell background job, so the signal it tests was ignored before it began (2026-09-26)
+
+`tools/last-good-scripts-test` was launched from the harness as
+`setsid nohup bash -c '...' &` so a waiter could report its end. Its two
+scan-cancel checks failed twice, rc 0 and the scan completing, while the
+16:00 foreground run and vm-qa's run of the same file on the guest had
+passed. A POSIX shell starts an asynchronous list with SIGINT and SIGQUIT
+set to SIG_IGN, every sandboxed script inherited the disposition across
+exec, and bash cannot trap a signal ignored at entry -- so the fixture's
+own SIGINT, sent from inside the run as the 2026-09-22 lesson asked
+(memory `background-jobs-cannot-trap-sigint`), went to a process that could
+not hear it. Blindspot 22's family: a check whose failure looks exactly like
+the defect it exists to catch, and the second time the same signal rule was
+learned, one layer further out.
+
+**Guard:** the suite reads its own `SigIgn` at start and refuses to run,
+rc 2, naming the foreground and `setsid -f` (`tools/last-good-scripts-test`,
+the block before `set -u`). Proven 2026-09-26: started as `bash -c '...' &`
+it exits 2 at once with the sentence; started with `setsid -f` the third
+run passed 377 of 377 (work log, 00:05 UTC).
