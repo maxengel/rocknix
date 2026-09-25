@@ -212,6 +212,26 @@ update_cloud_sync_config() {
     migrate_key SYNCPATH        SAVES_REMOTE
     migrate_key SYNCPATH_BACKUP SETTINGS_REMOTE
     migrate_key CONTENTPATH     CONTENT_REMOTE
+    # A value that equals a superseded default is the default, not a choice
+    # (upgrade-and-install.md: a fix that changes what we write does nothing
+    # for what is already written). The append loop leaves a key that exists
+    # alone, so a device configured by an earlier image keeps its old number
+    # for ever unless it is moved here. The automatic sync's ceiling rose from
+    # 20 s to 90 s on 2026-09-25 (D-CLOUD-137, #282): the old default follows
+    # the new one; a value somebody changed is left as it is.
+    migrate_default() {
+      local key="$1" old="$2" new="$3" value
+      grep -q "^${key}=" "${work}" || return 0
+      value=$(grep -m1 "^${key}=" "${work}" | cut -d= -f2-)
+      if [ "${value}" = "${old}" ]; then
+        sed -i "s|^${key}=.*|${key}=${new}|" "${work}"
+        log_to_file "${log_file}" "Moved ${key} from the superseded default ${old} to ${new}"
+      fi
+    }
+    migrate_default SYNC_CEILING_SECONDS 20 90
+    migrate_default RCLONE_SYNC_NET_OPTS \
+      '"--contimeout 5s --timeout 5s --retries 1 --max-duration 20s --low-level-retries 5 --transfers 1"' \
+      '"--contimeout 5s --timeout 5s --retries 1 --max-duration 90s --low-level-retries 5 --transfers 1"'
     # The settings-only rows' last-run stamps carried the old name; move them
     # so the rows do not read "never" after the update.
     for pair in last-system-backup:last-settings-backup \
