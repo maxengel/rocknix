@@ -525,7 +525,12 @@ case "$1" in
             log_message "Cloud setup check: no remotes configured"
             exit 1
         fi
-        if rclone lsd --contimeout 10s --timeout 30s "${REMOTE}" >/dev/null 2>&1; then
+        # The probe is bounded like every other listing here (RCLONE_LIST_OPTS:
+        # one run, three low-level retries). It carried only the two timeouts,
+        # so rclone's own defaults applied -- three runs of ten retries each --
+        # under a blocking spinner on three interface pages; the shape #113
+        # bounded for the syncs (traced 2026-09-25, #273).
+        if rclone lsd "${REMOTE}" "${RCLONE_LIST_OPTS[@]}" >/dev/null 2>&1; then
             echo "OK ${REMOTE}"
             log_message "Cloud setup verified working remote: ${REMOTE}"
             exit 0
@@ -588,7 +593,7 @@ if [ -z "${REMOTE}" ]; then
 fi
 
 echo "Checking ${REMOTE} ..."
-if rclone lsd --contimeout 10s --timeout 30s "${REMOTE}" >/dev/null 2>&1; then
+if rclone lsd "${REMOTE}" "${RCLONE_LIST_OPTS[@]}" >/dev/null 2>&1; then
     echo -e "\e[32mCloud remote configured and working: ${REMOTE}\e[0m"
     echo "You can now use the cloud backup and restore tools."
     log_message "Cloud setup verified working remote: ${REMOTE}"

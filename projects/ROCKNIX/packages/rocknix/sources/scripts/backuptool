@@ -232,6 +232,7 @@ RATOKENFILES=(
     /storage/.config/ppsspp/PSP/SYSTEM/ppsspp_retroachievements.dat  # cheevos_ppsspp.sh
     /storage/.config/dolphin-emu/RetroAchievements.ini               # cheevos_dolphin.sh
     /storage/.config/SkyEmu/ra_token.txt                             # cheevos_skyemu.sh
+    /storage/.config/gopher64/retroachievements.json                 # written by gopher64 itself after --ra-password (#169's trace, #273)
     /storage/.config/ARMSX2/inis/secrets.ini                         # cheevos_armsx2.sh
 )
 RATOKENSETTINGS=(
@@ -468,12 +469,16 @@ write_archive() {
         fi
 
         # es_settings.cfg holds the ScreenScraper account password and, on
-        # fork builds, the developer password entered on the device (#64);
-        # strip both from the archived copy the same way.
+        # fork builds, the developer password entered on the device (#64),
+        # and the IGDB scraper's client secret (the CLIENT SECRET row of the
+        # scraper's ACCOUNTS tab; it travelled in every settings backup until
+        # 2026-09-25, #273's trace of #221); strip all three from the archived
+        # copy the same way. The file is XML, which the line-anchored leak
+        # scan below cannot read, so the strip is the only guard it has.
         if grep -qxF "${ESCFG}" "${SECRETLIST}"
         then
             mkdir -p "${STAGING}/storage/.config/emulationstation"
-            grep -v -e 'name="ScreenScraperPass"' -e 'name="ScreenScraperDevPass"' "${ESCFG}" \
+            grep -v -e 'name="ScreenScraperPass"' -e 'name="ScreenScraperDevPass"' -e 'name="IGDBSecret"' "${ESCFG}" \
                 > "${STAGING}/storage/.config/emulationstation/es_settings.cfg"
         fi
 
