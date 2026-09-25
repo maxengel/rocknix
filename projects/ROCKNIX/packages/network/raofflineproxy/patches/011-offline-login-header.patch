@@ -26,7 +26,7 @@ goes back); the headers are additive and cost a client nothing.
 
 --- a/linux/raofflineproxy/proxy_service.py
 +++ b/linux/raofflineproxy/proxy_service.py
-@@ -85,6 +85,14 @@ ALWAYS_TRY_UPSTREAM_ACTIONS = {"login", "login2"}
+@@ -92,6 +92,14 @@ ALWAYS_TRY_UPSTREAM_ACTIONS = {"login", "login2"}
  # through as it came. 401 and 403 do not: an auth failure keeps the 503, so
  # nothing about how credentials are handled changes here.
  AUTH_FAILURE_STATUSES = {401, 403}
@@ -41,7 +41,7 @@ goes back); the headers are additive and cost a client nothing.
  
  
  def is_passthrough_client_error(path: str, status: int) -> bool:
-@@ -153,16 +161,33 @@ def should_cache_action(action: str | None, path: str) -> bool:
+@@ -160,16 +168,33 @@ def should_cache_action(action: str | None, path: str) -> bool:
      )
  
  
@@ -84,7 +84,7 @@ goes back); the headers are additive and cost a client nothing.
  
  
  def raw_response_bytes(
-@@ -170,20 +195,14 @@ def raw_response_bytes(
+@@ -177,20 +202,14 @@ def raw_response_bytes(
      body: bytes,
      content_type: str | None,
      reason: str | None = None,
@@ -109,7 +109,7 @@ goes back); the headers are additive and cost a client nothing.
  
  
  def error_json(code: int, message: str) -> bytes:
-@@ -421,7 +440,9 @@ class ProxyRuntimeServer(ThreadingTCPServer):
+@@ -442,7 +461,9 @@ class ProxyRuntimeServer(ThreadingTCPServer):
          if cached is None:
              return None
  

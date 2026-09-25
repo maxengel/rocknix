@@ -19,7 +19,7 @@ upstream as-is (ROCKNIX D-RA-016).
 
 --- a/linux/raofflineproxy/image_cache.py
 +++ b/linux/raofflineproxy/image_cache.py
-@@ -2,7 +2,9 @@
+@@ -2,7 +2,9 @@ from __future__ import annotations
  
  import json
  import logging
@@ -29,7 +29,7 @@ upstream as-is (ROCKNIX D-RA-016).
  import urllib.request
  from concurrent.futures import ThreadPoolExecutor
  from pathlib import Path
-@@ -165,11 +167,20 @@
+@@ -165,11 +167,20 @@ def download_static_image(
                  headers={"User-Agent": user_agent, "Accept-Encoding": "identity"},
                  method="GET",
              )

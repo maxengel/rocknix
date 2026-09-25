@@ -4,16 +4,17 @@
 #
 # raofflineproxy-refresh -- re-read a game's RetroAchievements state now.
 #
-# The service already re-reads every cached game's patch and unlocks about
-# once a day while the device is online (patch 005: oldest patch row first,
-# 50 a pass, a 24 h floor). That covers the ordinary case and needs nobody's
-# attention. It does not cover the case a player is standing in front of:
-# they have just reset an achievement on retroachievements.org, or earned one
-# on another device, and they want to play this game offline in five minutes.
+# The service already re-reads, each online hour while the proxy is idle,
+# the patch, unlocks and session of every cached game played in the last
+# seven days (upstream 59b167c; D-RA-029). That covers the ordinary case and
+# needs nobody's attention. It does not cover the case a player is standing
+# in front of: they have just reset an achievement on retroachievements.org,
+# or earned one on another device, and they want to play this game offline in
+# five minutes -- possibly a game they have not played this week.
 #
-#   raofflineproxy-refresh --game <id>     one game, ignoring the age floor
-#   raofflineproxy-refresh --all           every cached game, floor ignored
-#   raofflineproxy-refresh                 what the daily pass would take now
+#   raofflineproxy-refresh --game <id>     one game
+#   raofflineproxy-refresh --all           every cached game
+#   raofflineproxy-refresh                 what the service's pass would take now
 #
 # It is the same work the service's own pass does -- refresh_game_patch for
 # the set and its images, then cache_unlocks for what the player has earned --
@@ -41,8 +42,6 @@ from raofflineproxy.storage import Storage
 from raofflineproxy.utils import proxy_user_agent, self_user_agent
 import raofflineproxy.proxy_service as proxy_service
 
-FLOOR_SECONDS = 86400
-
 
 def tell(text: str) -> None:
     print(f">>> {text}", flush=True)
@@ -53,7 +52,7 @@ def note(text: str) -> None:
 
 
 def cached_games(storage: Storage) -> list[dict]:
-    """Every patch row, as select_games_to_refresh wants them."""
+    """Every patch row, as due_refresh_game_ids wants them."""
     rows = []
     for row in storage.get_all_cache_by_prefix(cache_keys.PREFIX_PATCH):
         if row.get("responseBody"):
@@ -117,7 +116,7 @@ def row_ages(storage: Storage, game_id: int) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--game", type=int, help="one game id")
-    parser.add_argument("--all", action="store_true", help="every cached game, ignoring the age floor")
+    parser.add_argument("--all", action="store_true", help="every cached game")
     parser.add_argument("--seconds", type=float, default=300.0)
     args = parser.parse_args()
 
@@ -145,11 +144,15 @@ def main() -> int:
     elif args.all:
         wanted = game_ids(rows)
     else:
-        # Exactly what the daily pass would take, so this is also a way to
-        # make the next pass's work happen now.
-        wanted = proxy_service.select_games_to_refresh(rows, int(time.time() * 1000))
+        # Exactly what the service's pass would take, so this is also a way
+        # to make the next pass's work happen now.
+        played = proxy_service.load_recently_played_game_ids(
+            storage, int(time.time() * 1000) - proxy_service.REFRESH_PLAYED_WINDOW_MS
+        )
+        wanted = proxy_service.due_refresh_game_ids(rows, played)
     if not wanted:
-        note("nothing is due; every cached game was re-read within the last day")
+        note(f"nothing is due; no cached game was played in the last "
+             f"{proxy_service.REFRESH_PLAYED_WINDOW_DAYS} days")
         tell("note NOTHING_DUE")
         tell("done 0|0")
         return 0

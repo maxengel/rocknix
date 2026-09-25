@@ -36,7 +36,7 @@ the fork changes in the proxy goes back).
 
 --- a/linux/raofflineproxy/rom_cache.py
 +++ b/linux/raofflineproxy/rom_cache.py
-@@ -37,6 +37,12 @@
+@@ -37,6 +37,12 @@ def filter_warning_achievement_ids(ids: list[int]) -> list[int]:
  
  
  def filter_warning_achievement_definitions(payload: dict) -> dict:
@@ -49,7 +49,7 @@ the fork changes in the proxy goes back).
      filtered_payload = json.loads(json.dumps(payload))
  
      sets = filtered_payload.get("Sets")
-@@ -53,6 +59,7 @@
+@@ -53,6 +59,7 @@ def filter_warning_achievement_definitions(payload: dict) -> dict:
                  achievement
                  for achievement in achievements
                  if isinstance(achievement, dict)

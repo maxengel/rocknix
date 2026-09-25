@@ -2,17 +2,17 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="raofflineproxy"
-# Pinned by full commit (packages/README.md): main at 2026-09-20. Since the
-# previous pin (64d03d30, 2026-09-12) the Linux side gained retries on the
-# RetroAchievements reachability probe, tethered interfaces counting as
-# active, two menu fixes, darkOS 32-bit RetroArch config support, and the
-# libchdr submodule at 8e7b8bd (raofflineproxy-libchdr follows it); rcheevos
-# is unchanged and APP_VERSION still reads 1.13.0-alpha1, forty-two commits
-# past that tag (docs/ra-offline/2026_09_13-phase-1-design-note.md, fork
-# #164, #227).
-# freshness: pinned -- the RC round (#236) is frozen at this client; upstream main has moved sixteen commits (59b167c123 scopes the daily refresh to recently played games and stops cached games expiring, 095867d2c6 moves rcheevos to 1433173, storage.py changes), each of which the twelve patches and the harness's section t have to be read against; the bump is #259, after the candidate (D-WORKFLOW-024)
-PKG_VERSION="4e9bab484e4d7be30b2dbc313aae94ca2f5f742a"
-PKG_SHA256="a0a39a155154b4d0a09ae813739b3d430dab579dc67d509659966d530b3b9c6a"
+# Pinned by full commit (packages/README.md): main at 2026-09-23 (fork #259).
+# Since the previous pin (4e9bab48, 2026-09-20) the Linux side refreshes only
+# the games played in the last seven days (59b167c), keeps every cached
+# game's rows until the game is deleted rather than evicting them after sixty
+# days (59b167c, e25b276), caches gameid lookups, and moves the rcheevos
+# submodule to 1433173 (095867d; raofflineproxy-rcheevos follows it). libchdr
+# is unchanged at 8e7b8bd. Patch 005 kept its exception boundary and dropped
+# its bound on the pass; 006 retired, upstream now does more than it did
+# (D-RA-029). APP_VERSION still reads 1.13.0-alpha1.
+PKG_VERSION="0711f0b9b61e8cd75011200c518792605332f7b0"
+PKG_SHA256="56a6f1e9d4dbf5bebc55c2907a143a1a0f1cd434a3e2c28dd1015afc00f128c4"
 # GPLv3 text with no "or any later version" grant in the sources.
 PKG_LICENSE="GPL-3.0-only"
 PKG_SITE="https://github.com/misantronic/RAOfflineProxy"

@@ -27,9 +27,9 @@ as-is (ROCKNIX D-RA-002: whatever the fork changes in the proxy goes back).
 
 --- a/linux/raofflineproxy/proxy_service.py
 +++ b/linux/raofflineproxy/proxy_service.py
-@@ -77,6 +77,20 @@
- AWARD_ACTIONS = {"awardachievement", "submitlbentry"}
- FAKE_OFFLINE_SUCCESS_ACTIONS = {"ping", "postactivity"}
+@@ -81,6 +81,20 @@ REFRESH_PLAYED_WINDOW_DAYS = 7
+ ONLINE_REFRESH_IDLE_DELAY_SECONDS = 5 * 60
+ REFRESH_PLAYED_WINDOW_MS = REFRESH_PLAYED_WINDOW_DAYS * 24 * 60 * 60 * 1000
  ALWAYS_TRY_UPSTREAM_ACTIONS = {"login", "login2"}
 +# A 4xx RetroAchievements sends for a dorequest.php call it understood but
 +# cannot satisfy -- 404 "Unknown game" for a hash with no set, 400 for a bad
@@ -48,7 +48,7 @@ as-is (ROCKNIX D-RA-002: whatever the fork changes in the proxy goes back).
  
  
  def is_static_asset_request(path: str) -> bool:
-@@ -509,6 +523,12 @@
+@@ -527,6 +541,12 @@ class ProxyRuntimeServer(ThreadingTCPServer):
              return self.handle_offline_request(path, raw_body, action)
  
          if upstream[0] != "success":
