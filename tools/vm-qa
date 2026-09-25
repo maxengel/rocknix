@@ -25,6 +25,7 @@
 #   vocabulary  tools/vocabulary-check       -- back up / backup as verb / noun, ES strings and script lines, on the host
 #   register    tools/register-check         -- the decision register: every ID once, every citation names a row, on the host (ES_SRC)
 #   french      tools/es-untranslated        -- every fork string in the interface has French (D-UI-051, #152), on the host (ES_SRC)
+#   quoting     tests/credential-quoting.py  -- every command built from a typed credential reaches the shell quoted (#198), on the host (ES_SRC)
 #   menumap     tools/es-menu-map-check      -- docs/es-menu-map.md still describes the menus the image ships (D-UI-039), on the host (ES_SRC)
 #   pair-identity  the two guests' MACs, cloud_device_ids (#91) and hostnames (#50) differ, and each
 #               answers for its own name over mDNS (#50 box 6, #151 PL-01), over ssh
@@ -58,7 +59,7 @@ IMAGE=""; SKIP_UP=0; LINK=0; RA_OFFLINE=0; GUEST=a
 # to be a second, hand-typed list here -- and menumap, added to SUITES on
 # 2026-09-19, never ran because this copy was not updated. One list.
 ONLY=""
-SUITES="scripts lifetime wrapper vocabulary register french menumap pair-identity fresh round-trip exit time-to-play link ra-offline walks frame-diff"
+SUITES="scripts lifetime wrapper vocabulary register french quoting menumap pair-identity fresh round-trip exit time-to-play link ra-offline walks frame-diff"
 [ -n "$ONLY" ] || ONLY=$(printf '%s' "$SUITES" | tr ' ' '\n' | grep -vxE 'link|ra-offline' | paste -sd, -)
 # Which of the five QA clouds every suite here talks to (#133). It is one
 # variable and not a per-suite flag on purpose: the backend the endpoint is
@@ -161,6 +162,9 @@ case ",$ONLY," in *,wrapper,*) run_suite wrapper "$OUT/wrapper.log" "$ROOT/tools
 case ",$ONLY," in *,vocabulary,*) run_suite vocabulary "$OUT/vocabulary.log" env ES_SRC="${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}" "$ROOT/tools/vocabulary-check" ;; esac
 # Every string the fork adds has French (D-UI-051): tools/es-untranslated lists the ones that do not and exits 1 while any remain (#152).
 case ",$ONLY," in *,french,*) run_suite french "$OUT/french.log" env ES_SRC="${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}" "$ROOT/tools/es-untranslated" ;; esac
+# Every command built from a credential a player types reaches the shell quoted (fork #198):
+# the check reads the ES source the french suite reads.
+case ",$ONLY," in *,quoting,*) run_suite quoting "$OUT/quoting.log" python3 "${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}/tests/credential-quoting.py" "${ES_SRC:-$HOME/Development/emulationstation-next.worktrees/qa-integration}" ;; esac
 # The menu map still describes what ships (D-UI-039): tools/es-menu-map-check reads the
 # screens in the ES commit the package pins and fails on one the map neither maps nor
 # declares under "## Not mapped". The rule predates the check by a month, and 30 screens

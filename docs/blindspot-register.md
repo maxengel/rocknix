@@ -791,3 +791,25 @@ qa-cloud:` answered no) -- fired on run 31's record, silent on run 29's --
 and `tools/vm-qa` seeds the QA remote before the time-to-play suite
 (`ensure_remote`), as it already did before the walks. Run 32: seeded,
 reachable, the exit sync `completed`, PASS.
+
+## 57. A fix that covered fewer sites than its issue named (2026-09-25)
+
+#198 said "GuiMenu.cpp's three callers build `setrootpass` with the
+password unquoted". Its fix (ES `75ca1dac2`) quoted "both" call sites -- the
+SECURITY page and the wizard's SSH PASSWORD page -- and its first checkbox
+was ticked from a proof of the quoted form at the script. The third caller,
+FINISH RESTORE PROCESS > DEVICE PASSWORD, went on splicing the password in
+bare for two days, through three cuts, until a read of the open bugs for the
+release candidate compared the pinned source with the issue's own count. A
+space cut the password; `$ ; &` or a quote were the shell's.
+
+The shape: the issue's count was the spec, and nobody counted the diff
+against it. A proof at one layer (the script receives the quoted form)
+ticked a criterion about another (every place the interface builds it).
+
+**Guard:** `tests/credential-quoting.py` in the EmulationStation tree reads
+the source for every command built from a typed credential (setrootpass,
+wifictl's connect, enable, join and forget) and fails on one not passed
+through `shellQuote` -- it named GuiMenu.cpp:7597 before ES `459fc168f` and
+passes after it -- and `tools/vm-qa` runs it as the `quoting` suite on every
+image.
