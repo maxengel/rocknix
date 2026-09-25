@@ -398,7 +398,7 @@ size a label that fits is the finding, and a bar that is missing is one too.
 
 ## Driving EmulationStation blind: what the 2026-09-21 walks taught
 
-Twenty-three checklist boxes were walked on guest d in one night; about a
+Twenty-three checklist items were walked on guest d in one night; about a
 third of the walks landed somewhere other than intended. Every miss had the
 same shape -- a step count that assumed a starting state the interface did
 not have -- and each is now a rule for the next steps file:
@@ -426,7 +426,7 @@ not have -- and each is now a rule for the next steps file:
   button), so #82 on the VM is a file dropped into `/storage/roms/screenshots`
   during a session, not a key.
 - **Redact the QA account's name** from any frame before filing (the summary
-  title, the login toast): `docs/qa-frames/.../README.md` says where the box is.
+  title, the login toast): `docs/qa-frames/.../README.md` says where the painted band is.
 - **`scp` takes `-P` for the port**; `ssh -n` closes stdin, so a heredoc to a
   guest file needs a plain `ssh`. Both cost a walk each.
 
@@ -1051,9 +1051,9 @@ the handheld at the thirteenth (#250).
 So:
 
 - **A proof asserts what must not change, too**, and against the build
-  before the series' *first* change -- named in the acceptance box, with a
-  frame kept from it. The previous cut is not a baseline: it can already
-  carry the defect, and #250's first box named one that did.
+  before the series' *first* change -- named in the acceptance checkbox,
+  with a frame kept from it. The previous cut is not a baseline: it can
+  already carry the defect, and #250's first checkbox named one that did.
 - **Claim before you run.** A cut that changes a walked screen adds its
   claim line with the change, the way it adds its change-log line. An
   unclaimed box after the fact is the finding, not an inconvenience.

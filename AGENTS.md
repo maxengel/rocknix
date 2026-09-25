@@ -166,11 +166,12 @@ They are not style; each one exists because its absence cost somebody an evening
   test, proof or measurement. Only a named physical fact (a radio, a battery, a board's
   boot, a real panel, a tailnet) moves it off the VM; "a real provider" and "the device
   already has the history" are not a no (D-QA-007, D-QA-033).
-- **Acceptance criteria are agent-first.** Every box is written so an agent can verify it
-  and names the artifact that ticks it — a frame, a suite's PASS line, a stamp, a journal
+- **Acceptance criteria are agent-first.** Every checkbox is written so an agent can verify
+  it and names the artifact that ticks it — a frame, a suite's PASS line, a stamp, a journal
   line. A person's testing and feedback are the source of issues, never the check that
-  closes one; a box that says "the maintainer's word" without a physical fact is not a
-  criterion (D-QA-044).
+  closes one; a checkbox that says "the maintainer's word" without a physical fact is not a
+  criterion (D-QA-044). Say *checkbox* or *open item to verify*, never a bare *box*, which
+  here means a machine (D-QA-045).
 - **Every out-of-band request becomes a fork issue the same session**, quoting the
   maintainer's words verbatim, with what exists today and acceptance criteria (D-QA-012).
 - **Decisions go in `docs/decision-register.md` the same session**, cited by ID and never

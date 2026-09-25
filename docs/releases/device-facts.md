@@ -5,8 +5,9 @@ with when each was last seen and on which cut -- so "have we checked this?" is a
 lookup here, not a search of five records (D-WORKFLOW-044, #267). Kept by hand:
 a row is edited the day the fact is observed, with the evidence named. The cuts
 themselves are [catalog.md](catalog.md), generated from the artifacts' RECORD.txt.
-An open box on an issue that asks for a device observation points at a row here
-(`tools/box-check`, #268); a fact with no row is a fact nobody is tracking.
+An open checkbox on an issue that asks for a device observation points at a row
+here (`tools/box-check`, the checkbox checker, #268); a fact with no row is a fact
+nobody is tracking.
 
 | Fact | What only the device shows | Last seen | On cut | Evidence | Issue |
 | --- | --- | --- | --- | --- | --- |
@@ -21,4 +22,4 @@ An open box on an issue that asks for a device observation points at a row here
 | A real panel's rendering | the 640x480 3.5" panel's scaling and gamma; the VM's 640x480 frame is the same pixels but not the same glass | continuous (the maintainer's use); last named 2026-09-21 (#251's banner sizes on the H700) | `443028ff7a` | #251 | #251, #255 |
 | The Nova (SM8550) | a different board: the cold build, the flash, the first boot | never (no build yet) | -- | #150, D-QA-023 | #236 § D |
 | The H700 watchdog, panic-on-hang and ramoops | the sunxi watchdog and a reserved-memory node in the device tree | never (a change to make, not a check) | -- | #104 | #104 |
-| A device unreachable minutes after being put down | the panel's sleep and the radio's power state | 2026-09-13 | RC-11 | #161's third box (a runbook note, not a fault) | #161 (closed) |
+| A device unreachable minutes after being put down | the panel's sleep and the radio's power state | 2026-09-13 | RC-11 | #161's third checkbox (a runbook note, not a fault) | #161 (closed) |

@@ -21,18 +21,18 @@ of any kind, write the question and its answer **in the issue the work belongs t
 > Can this be done on the VM? **Yes** -- <how>. / **No** -- <the one thing only a
 > device or a person's account can show>.
 
-**A synthetic input is named, and keeps its box partial (audit #258, P-05).**
+**A synthetic input is named, and keeps its checkbox partial (audit #258, P-05).**
 When the VM cannot produce the real input -- a core that rotates, a process
 whose core exceeds the cap, a hotkey from a pad -- and the proof feeds a
 substitute (a hand-appended `SET_ROTATION` line, `/dev/zero` through the
 keeper, a command through the API where a button was meant), the tick names
-the substitute and the box stays `- [ ]` with that note until a real input
+the substitute and the checkbox stays `- [ ]` with that note until a real input
 has been seen once, on the VM or on a device with its yes. Blindspot 8's rule
 (an assertion that only holds because nothing had happened yet) applied to
 the tick: a proof of the path is not a proof of the input.
 
-**And the criterion itself is written for an agent (D-QA-044).** The box
-names the artifact that ticks it; a device box names the fact and points at
+**And the criterion itself is written for an agent (D-QA-044).** The checkbox
+names the artifact that ticks it; a device checkbox names the fact and points at
 its row in `docs/releases/device-facts.md`; `tools/box-check` fails the rest
 (`issue-tracking.md` § A criterion is agent-first).
 
