@@ -146,3 +146,12 @@ The 640x480 frame is RC-11's (`182-cloud-rows-dimmed-no-cloud-640x480-a6d032bf5e
   guest was rebooted first because ES's file cache had already recorded the
   savestates directory as absent (`es-native-ui.md`, the uncached-read trap).
   French (HIER, AUJOURD'HUI, `à`) is still owed a frame.
+- `245-250-manager-fbn-vertical-tile-and-arrow-1280x800` and
+  `250-manager-nes-horizontal-tile-and-arrow-1280x800` -- the SAVE STATE MANAGER
+  for a vertical FBNeo game (Ms. Pac-Man) and a horizontal NES one (Bobl), from
+  the walk baseline accepted on `664ad9ac64`: the capture tile upright at the
+  game's own aspect for both (#245, #243) and the START NEW GAME arrow the same
+  one arrow, one direction, one size on each (#250). These are the walks
+  `tools/vm-walks/manager.steps` produces on every vm-qa run, so a change to
+  either fails `frame-diff` against this baseline -- which is what closes the
+  two issues rather than a person looking at a handheld (D-QA-044).
