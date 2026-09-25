@@ -5,15 +5,3 @@
 # written against (the build in walk-baseline/BASELINE.txt), so it goes
 # stale -- and is reported as such -- when the baseline moves; prune it
 # then. A whole-frame rectangle claims a walk the baseline has not seen.
-# The twenty-second cut (664ad9ac64): a save state tile's second line reads
-# TODAY at HH:MM / YESTERDAY at HH:MM / MM/DD/YY at HH:MM (D-UI-089, #195);
-# the fixture's auto save is dated 2026-09-01, so the walked tile changed from
-# `09/01/2026 12:00` to `09/01/26 at 12:00`. Six boxes, the three systems'
-# manager frames and their next-tile frames. x1 y1 are half-open: one more
-# than the report prints (it shows 376..462, the box is 376 690 463 704).
-443028ff7a manager-fbn/04-3-manager.png 376 690 463 704 #195  # D-UI-089: the tile's date line, MM/DD/YY at HH:MM
-443028ff7a manager-fbn/05-4-manager-next-tile.png 376 690 463 704 #195  # D-UI-089: the same tile, next-tile frame
-443028ff7a manager-gb/04-3-manager.png 376 690 463 704 #195  # D-UI-089: the tile's date line, MM/DD/YY at HH:MM
-443028ff7a manager-gb/05-4-manager-next-tile.png 376 690 463 704 #195  # D-UI-089: the same tile, next-tile frame
-443028ff7a manager-nes/04-3-manager.png 376 690 463 704 #195  # D-UI-089: the tile's date line, MM/DD/YY at HH:MM
-443028ff7a manager-nes/05-4-manager-next-tile.png 376 690 463 704 #195  # D-UI-089: the same tile, next-tile frame
