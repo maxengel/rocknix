@@ -209,9 +209,17 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     hit="$(git show "${local_sha}:${f}" 2>/dev/null | grep -nE "$SECRET_PATTERNS" | sed -E "s/($SECRET_PATTERNS)/[REDACTED]/g" | head -3 || true)"
     [ -n "$hit" ] && leaks+="$(printf '%s\n' "$hit" | sed "s|^|  ${f}:|")"$'\n'
   done < "$names"
-  # <commit>:<file>:<added line>, for every + line under every +++ b/<file>
-  hit="$(awk '/^commit /{c=$2} /^\+\+\+ b\//{f=substr($0,7)} /^\+/ && !/^\+\+\+ /{print c ":" f ":" $0}' "$added" \
-         | grep -E "$SECRET_PATTERNS" | sed -E "s/($SECRET_PATTERNS)/[REDACTED]/g" | head -3 || true)"
+  # <commit>:<file>:<added line>, for every + line under every +++ b/<file>.
+  # The patterns are matched against the added line alone: the commit and the
+  # path come first, tab-separated, and a pattern has to match after the
+  # second tab. A file's NAME is not a credential: on 2026-09-25 merging
+  # upstream brought a kernel patch named `...mmc-mask-DATA0-when-updating-
+  # the-clock-on-H616-eMMC.patch`, its "sk-..." tail matched the OpenAI key
+  # shape, and every line of the file was refused for its name.
+  tab=$'\t'
+  hit="$(awk '/^commit /{c=$2} /^\+\+\+ b\//{f=substr($0,7)} /^\+/ && !/^\+\+\+ /{print c "\t" f "\t" $0}' "$added" \
+         | grep -E "^[^${tab}]*${tab}[^${tab}]*${tab}.*(${SECRET_PATTERNS})" \
+         | sed -E "s/($SECRET_PATTERNS)/[REDACTED]/g; s/${tab}/:/; s/${tab}/:/" | head -3 || true)"
   [ -n "$hit" ] && leaks+="$(printf '%s\n' "$hit" | sed 's|^|  |')"$'\n'
   rm -f "$names" "$added"
   if [ -n "$leaks" ]; then
