@@ -298,13 +298,24 @@ single-file push, and the exit-4 timing.
 EmulationStation runs the startup sync and the sync after a game with
 `--automatic`. Under it every rclone the script makes carries
 `RCLONE_SYNC_NET_OPTS` (`--contimeout 5s --timeout 5s --retries 1
---max-duration 20s --low-level-retries 5 --transfers 1`) after the caller's own flags, and runs under
+--max-duration 90s --low-level-retries 5 --transfers 1`) after the caller's own flags, and runs under
 `timeout` (coreutils' on the image -- busybox ships no such applet)
-against a deadline `SYNC_CEILING_SECONDS` (20) from the script's
+against a deadline `SYNC_CEILING_SECONDS` (90) from the script's
 start -- because `--max-duration` bounds transfers and nothing else, and a
 stalled listing retried ten times is what held the exit card for 321 s on
 the VM (#135). A run the ceiling ends returns 124 (timeout) or 10 (rclone),
 and `why_for` says THE CLOUD TOOK TOO LONG - IT'LL TRY AGAIN NEXT TIME.
+The ceiling was 20 s until 2026-09-25 (D-CLOUD-137, #282): the first exit
+sync after hours offline carried a two-hour backlog, Dropbox moved one
+file a second -- a changed file moved aside server-side and then
+uploaded, an unchanged one re-uploaded to set a time Dropbox cannot set
+-- and twelve operations were all twenty seconds allowed. The idle
+timeout still ends a stalled transfer in five, so the ceiling counts only
+while bytes move; a launch mid-sync still asks STOP IT AND PLAY / KEEP
+WAITING. `cloud_sync_helper` moves a config still on the old default to
+the new one and leaves a changed value alone: the append loop adds only
+a missing key, so without that a device the earlier images configured
+keeps 20 for ever.
 
 The back up and restore a player presses keep `RCLONE_NET_OPTS`, and since
 #153 (D-CLOUD-126) run under a **stall ceiling**: every rclone of a
