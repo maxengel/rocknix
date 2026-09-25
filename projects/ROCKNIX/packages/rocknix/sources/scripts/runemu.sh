@@ -83,12 +83,16 @@ function log() {
 }
 
 function loginit() {
+        # The launch log is one launch's, whatever the log level (fork #280).
+        # The emulator's output is appended to it below whether or not this
+        # script logs, and it used to be truncated only when the level was not
+        # none -- so on a device with system.loglevel=none every launch since
+        # the file was last removed sat in it, the interface read a rotated
+        # game's SET_ROTATION line as the next game's, and rocknix-evidence
+        # bundled weeks of launches as one. Truncate first, then the header.
+        rm -f ${LOG_DIRECTORY}/${LOG_FILE}
         if [ ${LOG} == true ]
         then
-                if [ -e ${LOG_DIRECTORY}/${LOG_FILE} ]
-                then
-                        rm -f ${LOG_DIRECTORY}/${LOG_FILE}
-                fi
                 redact_credentials <<EOF >${LOG_DIRECTORY}/${LOG_FILE}
 Emulation Run Log - Started at $(date)
 
@@ -108,6 +112,7 @@ GAME GUIDE PATH: ${GAME_GUIDE_PATH_CHECK}
 
 EOF
         else
+                : >${LOG_DIRECTORY}/${LOG_FILE}
                 log $0 "Emulation Run Log - Started at $(date)"
         fi
 }

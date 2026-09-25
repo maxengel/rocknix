@@ -1,0 +1,37 @@
+command: a configured Auto save slot survives content load
+
+ROCKNIX's launcher writes state_slot = "-1" -- RetroArch's Auto slot,
+the .state.auto file -- for a game started from its auto save, so that
+the load-state hotkey reloads the state the player launched with (fork
+#249). command_event_set_savestate_auto_index() ran at every content
+load and replaced it: with savestate_auto_index on, by the highest
+numbered slot it could find (0 when there is none, logged as
+"found_last_state_slot: #0"); with it off, by 0 outright. So the hotkey
+built its path from slot 0 and loaded a file that does not exist --
+"[State] Loading state ".../mspacman.state", 0 bytes. / Failed to load
+state" on an RG35XX SP, 2026-09-25, after a launch whose append config
+carried state_slot = "-1".
+
+A negative slot is left alone; a numbered slot is scanned or reset as
+before. RetroArch already treats a negative slot as the auto file in
+every other path (the quick menu shows it as Auto), so nothing else
+changes.
+
+--- a/command.c
++++ b/command.c
+@@ -1913,6 +1913,15 @@
+ {
+    unsigned max_idx          = 0;
+    bool savestate_auto_index = settings->bools.savestate_auto_index;
++   /* A negative slot is Auto, the .state.auto file, and it was configured
++    * on purpose: ROCKNIX's launcher sets state_slot = -1 for a game started
++    * from its auto save, so that the load-state hotkey reloads the state
++    * the player launched with. Resetting it here to 0, or to the last
++    * numbered slot, sent that hotkey to a slot 0 file that does not exist
++    * (fork #249). A configured Auto is left alone; a numbered slot is
++    * scanned or reset as before. */
++   if (settings->ints.state_slot < 0)
++      return;
+    if (savestate_auto_index)
+    {
+       command_scan_states(
