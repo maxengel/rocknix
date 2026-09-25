@@ -424,7 +424,12 @@ not have -- and each is now a rule for the next steps file:
 - **RetroArch quits on Esc twice** from the keyboard here; F8 did not take a
   screenshot (`input_screenshot` is unset; the hotkey enable is a pad
   button), so #82 on the VM is a file dropped into `/storage/roms/screenshots`
-  during a session, not a key.
+  during a session, not a key. **Esc twice is not dependable**: on
+  2026-09-25 (`664ad9ac64`, GL, `quit_press_twice = "true"`) two presses 1 s
+  and 0.4 s apart left RetroArch running. The exit hotkey's own
+  `execute_kill`, extracted from `input_sense` the way `tools/ra-offline-test`
+  does, quits it cleanly and writes the auto save -- use that, and read
+  `pgrep -f ^/usr/bin/retroarch` after, not the screen.
 - **Redact the QA account's name** from any frame before filing (the summary
   title, the login toast): `docs/qa-frames/.../README.md` says where the painted band is.
 - **`scp` takes `-P` for the port**; `ssh -n` closes stdin, so a heredoc to a
