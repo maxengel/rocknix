@@ -180,6 +180,17 @@ Values live in one place each, so a screen never makes its own decision.
   Full-*screen* is a modal takeover, not a wider card — do not reach for it
   for work the player can keep playing through.
 
+  **One floating surface at a time (D-UI-093, 2026-09-25).** The toast and
+  the card sit in the same place, and on the RG35XX SP the OFFLINE
+  ACHIEVEMENTS HAVE BEEN SENT toast drew over the saves sync's card.
+  Maintainer: *"it's confusing to have a pop-up over a pop-up. That should
+  be something we always avoid."* So `Window` shows them in turn: a queued
+  toast is not started while a card is up, and a card created while a
+  toast is up stops the toast and puts its words back on the queue, so
+  they show after the card. Nothing is dropped; the order is the order
+  things happened. A surface that must be seen at once is the fourth
+  tier's page, not a second card.
+
   **A fourth-tier page is sat in, with CANCEL (D-UI-078, 2026-09-21).** A
   job measured in minutes gets a page that owns the screen until the job
   ends, and the only way out while it runs is CANCEL: a confirmation that

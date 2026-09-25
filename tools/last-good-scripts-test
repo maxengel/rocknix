@@ -232,6 +232,18 @@
 # statement about that image and is left to fail rather than softened.
 #
 # Exit 0 when every check passes, 1 otherwise, 2 when it cannot run.
+# Refuse to run with SIGINT ignored at entry. A shell background job (`cmd &`
+# in a non-interactive shell -- a harness waiter, `setsid nohup ... &`) starts
+# with SIGINT set to SIG_IGN, every sandboxed script inherits it across exec,
+# and bash cannot trap a signal ignored at entry: the scan-cancel checks then
+# see the run complete with rc 0, twice on 2026-09-25, while the same file
+# passed in the foreground and on the guest. Start it in the foreground or
+# with `setsid -f`, which forks without a shell job.
+if [ $(( 0x$(awk '/^SigIgn/{print $2}' /proc/self/status) & 2 )) -ne 0 ]; then
+    echo "last-good-scripts-test: SIGINT is ignored in this process (started as a shell background job?); the cancel checks cannot run -- start it in the foreground or with setsid -f" >&2
+    exit 2
+fi
+
 set -u
 
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
@@ -811,6 +823,18 @@ printf 'SAVESPATH="/storage/roms"\nBACKUPMETHOD="copy"\nRCLONE_NET_OPTS="--conti
 rm -f "${DS}/.config/.cloud_sync-net-opts-retries-applied"
 sb bash /repo/cloud_sync_helper /tmp/helper.log
 grep -q -- '--low-level-retries 4 --retries 1"$' "${DS}/.config/cloud_sync.conf"; check $? "a hand-tuned bound (four retries) is left alone" "conf holds: $(grep ^RCLONE_NET_OPTS "${DS}/.config/cloud_sync.conf")"
+
+echo "  j2. cloud_sync_helper moves the automatic ceiling off the superseded default, and leaves a changed value alone (#282, D-CLOUD-137)"
+# The append loop adds only a missing key, so a device the earlier images
+# configured keeps SYNC_CEILING_SECONDS=20 for ever unless migrate_default
+# moves it; a number somebody chose is not ours to change.
+printf 'SAVESPATH="/storage/roms"\nBACKUPMETHOD="copy"\nRCLONE_SYNC_NET_OPTS="--contimeout 5s --timeout 5s --retries 1 --max-duration 20s --low-level-retries 5 --transfers 1"\nSYNC_CEILING_SECONDS=20\n' > "${DS}/.config/cloud_sync.conf"
+sb bash /repo/cloud_sync_helper /tmp/helper.log
+grep -q '^SYNC_CEILING_SECONDS=90$' "${DS}/.config/cloud_sync.conf"; check $? "the 20 s ceiling of an earlier image becomes 90" "conf holds: $(grep ^SYNC_CEILING_SECONDS "${DS}/.config/cloud_sync.conf")"
+grep -q '^RCLONE_SYNC_NET_OPTS="--contimeout 5s --timeout 5s --retries 1 --max-duration 90s --low-level-retries 5 --transfers 1"$' "${DS}/.config/cloud_sync.conf"; check $? "and the old option string follows to --max-duration 90s" "conf holds: $(grep ^RCLONE_SYNC_NET_OPTS "${DS}/.config/cloud_sync.conf")"
+printf 'SAVESPATH="/storage/roms"\nBACKUPMETHOD="copy"\nRCLONE_SYNC_NET_OPTS="--contimeout 5s --timeout 5s --retries 1 --max-duration 45s --low-level-retries 5 --transfers 1"\nSYNC_CEILING_SECONDS=45\n' > "${DS}/.config/cloud_sync.conf"
+sb bash /repo/cloud_sync_helper /tmp/helper.log
+grep -q '^SYNC_CEILING_SECONDS=45$' "${DS}/.config/cloud_sync.conf" && grep -q -- '--max-duration 45s ' "${DS}/.config/cloud_sync.conf"; check $? "a ceiling somebody set (45) is left alone, and so is its option string" "conf holds: $(grep -E '^(SYNC_CEILING_SECONDS|RCLONE_SYNC_NET_OPTS)' "${DS}/.config/cloud_sync.conf" | tr '\n' ' ')"
 
 
 echo "  k. backuptool: what the image ships does not travel, and an older archive's copy of it is not put back (#45); a RetroAchievements token travels in no shape (#169)"
