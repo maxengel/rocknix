@@ -20,7 +20,13 @@
 #                  is not a reason for a build going upstream (#271)
 #   base: distribution   the tree's HEAD against upstream/next, in commits
 #   base: emulationstation  the ES pin against ROCKNIX's master, in commits
-#   bugs           open issues labelled bug on the fork
+#   bugs           open issues labelled bug on the fork; an accepted one must
+#                  carry a "Code trace" comment on its issue -- how it was
+#                  found, the defect at source, the fix read in the candidate,
+#                  the siblings hunted, what reading cannot prove (#273,
+#                  maintainer 2026-09-25: "at a minimum, do code exploration of
+#                  every bug to see if we can track the source and validate it
+#                  just that way") -- or the acceptance is a finding
 #   checkboxes     tools/box-check: every open checkbox agent-verifiable
 #   catalog        tools/release-catalog --check
 #   device facts   no tool reads docs/releases/device-facts.md yet (#270):
@@ -191,6 +197,21 @@ def check_bugs(r, acc):
         return
     open_ = [i for i in issues if not acc.get(("bug", str(i["number"])))]
     accepted = ["#%d (%s)" % (i["number"], acc[("bug", str(i["number"]))]) for i in issues if acc.get(("bug", str(i["number"])))]
+    untraced = []
+    for i in issues:
+        if not acc.get(("bug", str(i["number"]))):
+            continue
+        rc2, out2, err2 = run(["gh", "api", "--paginate", "repos/maxengel/rocknix/issues/%d/comments" % i["number"],
+                               "--jq", ".[].body"], timeout=120)
+        if rc2 != 0:
+            r.add("CANNOT", "bugs", "the tracker did not answer for #%d's comments: %s" % (i["number"], (err2 or out2).strip().splitlines()[-1:]))
+            return
+        if not re.search(r"^\s*(#+\s*|\*\*)?code trace\b", out2 or "", re.I | re.M):
+            untraced.append("#%d" % i["number"])
+    if untraced:
+        r.add("FAIL", "bugs", "%d accepted bug(s) whose issue carries no \"Code trace\" comment (#273): %s%s" % (
+            len(untraced), " ".join(untraced), "; without a disposition: " + " ".join("#%d" % i["number"] for i in open_) if open_ else ""))
+        return
     if open_:
         r.add("FAIL", "bugs", "%d open bug(s) with no disposition for this candidate: %s%s" % (
             len(open_), " ".join("#%d" % i["number"] for i in sorted(open_, key=lambda i: i["number"])),

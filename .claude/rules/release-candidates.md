@@ -38,7 +38,16 @@ it has its artifact.
    `docs/releases/rc-accept.txt` citing a decided row. The device facts have
    no tool yet (#270): read them by hand and say so with `--allow-unchecked
    device-facts`. Its verdict line is quoted on the round's issue and in the
-   candidate's RECORD.txt.
+   candidate's RECORD.txt. **An open bug is accepted only on a code trace
+   posted on its issue** -- how it was found, in the issue's own words; the
+   defect at its source, as the code was before the fix; the fix read and
+   located in the candidate; every sibling call site or path hunted; and
+   what reading cannot prove, named (#273; maintainer, 2026-09-25: *"at a
+   minimum, do code exploration of every bug to see if we can track the
+   source and validate it just that way"*). `rc-preflight` refuses an
+   acceptance whose issue carries no "Code trace" comment. A fix found
+   incomplete by its trace is fixed in the candidate's tree, or the
+   uncovered path is named in the accepting row.
 1. **A clean baseline.** The current tree built and green before the bumps,
    so that a failure after them is theirs and not the tree's
    (`device-builds.md` § After rebasing onto upstream, `tools/build-preflight`).
