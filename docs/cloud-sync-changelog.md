@@ -2367,6 +2367,30 @@ Five things the maintainer met on the RG35XX SP in one evening's soak of the can
 
 Under the surface: the QA proofs for these live beside the runner and cost five harness lessons (a fresh guest's Vulkan driver, busybox's `pgrep -x`, the walks' open page, the exit sync's toggle read at start, and the suite launched as a background job), all in the rules and the work log; the QA WebDAV backend refuses a same-name replace of a large file with a 405 (#286).
 
+### The record's provenance cut (2026-09-26, `3f93dc4683`)
+
+One fix, from the maintainer's first look at `a8175c6193` on the RG35XX SP
+(*"the existing autosaves from before the upgrade for Doctor Mario and
+F-Zero remain rotated clockwise by 90°"*); every claim is what the VM showed
+on the image (vm-qa run 42, the #288 proof on two guests, rehearsal run 31,
+`docs/qa-frames/2026-09-26/288-*`).
+
+- **A save state's picture and a screenshot made before the fix are drawn
+  upright without the game being played again** (#288, D-UI-094). A rotation
+  record now says its turn came from the game's own launch; a record written
+  by the old reader, which could carry another game's turn (#280), is not
+  trusted, and the core's own table stands in until the game's next exit
+  rewrites it. Dr. Mario's, F-Zero's and Aladdin's captures read right the
+  moment the build boots; a vertical arcade game keeps its turn from the
+  table. Nothing is migrated or deleted, and the cloud's copies heal as the
+  rewritten record is newer.
+
+Under the surface: the record is two lines (`turns=N`, `from=own-launch`);
+`tools/vm-qa`'s manager fixture writes it; and the process change the case
+produced -- every fix answers what the old code had already written, as an
+`Already written` line of its code trace, checked by `rc-preflight`
+(D-WORKFLOW-050, #289) -- changes no image.
+
 ### The second opinion, and the twentieth cut (2026-09-24, #260)
 
 The maintainer asked whether the audit had an adversarial phase by default;

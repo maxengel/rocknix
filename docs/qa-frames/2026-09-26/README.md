@@ -49,5 +49,16 @@ Mario, F-Zero and Aladdin. The mark's side is measured against the picture (the 
 | `288-exit-capture-upright-a8175c6193.png` | after the game was launched through the API and left through the exit hotkey: RetroArch's own capture of the exit, drawn upright (131x98), the record rewritten `turns=0` -- the old reader's heal by play, and #280's exit-capture criterion |
 | `288-after-heal-by-play-a8175c6193.png` | the fixture picture put back over that capture, the healed record: the mark on the **right** (unturned) |
 
-The fixed reader's frames, the same seed unturned before any play, are taken on guest a from the `3f93dc4683` cut by the
-chain (`proof-288`), and filed here when it has run.
+## #288, the fix
+
+Guest d (640x480) rebuilt from `3f93dc4683` (EmulationStation `5644752aa`), the same seed, `proof-288-stale-record.sh` at
+03:45 UTC (`proof-288-d2`); the same on guest a at 1280x800 in the chain (`proof-288`, 03:29 UTC).
+
+| Frame | What it shows |
+| --- | --- |
+| `288-fixed-old-record-unturned-3f93dc4683.png` | the old record (`turns=3`, no line) still on disk and not trusted: the tile upright (131x98), the mark on the **right**, before any play |
+| `288-fixed-record-rewritten-3f93dc4683.png` | after the launch and the exit: the record reads `turns=0` and `from=own-launch`; the tile as before |
+| `288-fixed-arcade-table-over-old-record-3f93dc4683.png` | the table case (`proof-288-fbn.sh`): an old record of `turns=1` beside `mspacman`, whose fixture `arcade-vertical-raw-left.png` has its mark on the picture's left; the mark on the **top** is `fbneo.txt`'s 3, not the record's 1 (which would have put it on the bottom) and not no turn (the left) |
+
+The maintainer's Dr. Mario, F-Zero and Aladdin on the RG35XX SP are the first row: their records are unmarked `turns=3`,
+and this build draws them upright the moment it boots.
