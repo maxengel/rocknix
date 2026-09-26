@@ -13,3 +13,25 @@ as `tailscale0` is on a handheld.
 
 Before ES `0cc13be61` (the ROCKNIX merge's `bccd71570`), the third frame read the tunnel's address alone on the row --
 the maintainer's observation on the RG35XX SP with Wi-Fi off (#279).
+
+## #283, before the change (the control)
+
+Guest d (640x480) on `8db9042afa`, `proof-283-surfaces.sh` case B: a toast (`ONE SURFACE TEST: TOAST B`) fired through
+the interface's API half a second before a game exit, then the exit sync of a ~5 MiB payload. The toast never shows: it
+was drawn under the card and its ten seconds ran out there.
+
+| Frame | What it shows |
+| --- | --- |
+| `283-before-card-syncing-toast-queued-8db9042afa.png` | +0.5 s: SYNCING SAVES TO THE CLOUD, 1020 KB OF 5.2 MB -- no toast, although one is queued |
+| `283-before-card-outcome-8db9042afa.png` | +3.5 s: the card's outcome (COULDN'T FINISH here: the QA backend's 405 on a same-name replace, #286) |
+| `283-before-carousel-no-toast-8db9042afa.png` | +5 s: the carousel, and the toast never appears |
+
+## #283, after the change
+
+Guest d (640x480) on `a8175c6193` (EmulationStation `c1c0d6ddc`), the same case B, thirty seconds of frames.
+
+| Frame | What it shows |
+| --- | --- |
+| `283-after-card-syncing-toast-waiting-a8175c6193.png` | +14 s: SYNCING SAVES TO THE CLOUD, 12.4 MB OF 14.6 MB -- the queued toast is not drawn |
+| `283-after-card-outcome-a8175c6193.png` | +17.5 s: the card's outcome (COULDN'T FINISH here, the QA backend again, #286) |
+| `283-after-toast-after-the-card-a8175c6193.png` | +20 s: the toast, alone, once the card has gone -- it waited |

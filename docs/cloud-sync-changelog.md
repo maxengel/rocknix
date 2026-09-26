@@ -2355,6 +2355,18 @@ and the record -- fourteen issue bodies, the change log's dates, the manifest
 schema, the menu map, the rocknix.org draft -- says what the tracker and the
 code say (PL-007, PL-008, PL-023, PL-024, PL-029).
 
+### The device round's cut (2026-09-26, `a8175c6193`)
+
+Five things the maintainer met on the RG35XX SP in one evening's soak of the candidate, each read on the device and fixed the same night; every claim below is what the VM showed on the image (vm-qa run 41, the four proofs, `docs/qa-frames/2026-09-26/`).
+
+- **A save state's picture is never turned by another game's rotation** (#280, D-LAUNCH-004). The launcher writes one launch's output to the launch log whatever the log level, and the interface reads a game's rotation only from that launch. Dr. Mario's, F-Zero's and Aladdin's tiles had been turned a quarter turn by Ms. Pac-Man's line at the end of a two-week log; a wrong record heals the next time that game is played.
+- **NETWORK SETTINGS > IP ADDRESS reads NOT CONNECTED when the device has no link, even with a tunnel holding an address** (#279, D-UI-092). A tunnel's address is listed and named behind the row, never counted as a connection -- by the offline-achievements check, netplay and the carousel's RetroAchievements action too. The `(+)` beside the first address is upstream's shape and stays until the maintainer chooses words for it.
+- **The load-state hotkey reloads the auto save a game was launched from** (#249, D-LAUNCH-005). RetroArch reset the slot to 0 at every content load, from its scan and from its runtime log's memory; a configured Auto slot now survives both.
+- **A saves sync after hours offline gets 90 s, not 20** (#282, D-CLOUD-137), and a device on the old number is moved to the new one. One file at a time stays, for Dropbox's lock; why Dropbox is slow (a round trip per file, re-uploads to set a time it cannot set) is on #284 with the faster backends.
+- **One pop-up at a time** (#283, D-UI-093): a toast waits while a progress card is up and shows after it for its full time; a card created while a toast is up takes its place and the toast returns after. The SENT toast no longer draws over the sync card.
+
+Under the surface: the QA proofs for these live beside the runner and cost five harness lessons (a fresh guest's Vulkan driver, busybox's `pgrep -x`, the walks' open page, the exit sync's toggle read at start, and the suite launched as a background job), all in the rules and the work log; the QA WebDAV backend refuses a same-name replace of a large file with a 405 (#286).
+
 ### The second opinion, and the twentieth cut (2026-09-24, #260)
 
 The maintainer asked whether the audit had an adversarial phase by default;
