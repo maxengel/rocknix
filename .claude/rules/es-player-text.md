@@ -196,6 +196,17 @@ partial run from a total one; no screen ever shows it.
 | `COULDN'T FINISH - <why>` | nothing succeeded and it is not a sentinel | `COULDN'T FINISH - YOUR CLOUD STOPPED ANSWERING` | `COULDN'T FINISH` | `COULDN'T FINISH, YOUR CLOUD STOPPED ANSWERING` |
 | `SKIPPED - <reason>` | only 69, 75, and the launch cancel | `SKIPPED - YOU'RE NOT ONLINE` / `SKIPPED - A SYNC IS ALREADY RUNNING` / `SKIPPED - A GAME WAS STARTED` | same | `SKIPPED, NO NETWORK` / `SKIPPED, ANOTHER SYNC WAS RUNNING` / `SKIPPED, A GAME WAS STARTED` |
 
+The offline achievements' two cards (#292, #293; D-RA-030, D-UI-095) end in
+the same three words: the send card `COMPLETED` with OFFLINE ACHIEVEMENTS HAVE
+BEEN SENT (TO RETROACHIEVEMENTS where the line has room, D-UI-096) or
+`COULDN'T FINISH - RETROACHIEVEMENTS STOPPED ANSWERING` with IT'LL TRY AGAIN
+WHEN YOU'RE CONNECTED.; the top-up card `COMPLETED` with N GAMES ADDED FOR
+OFFLINE PLAY. or YOUR OFFLINE ACHIEVEMENTS ARE UP TO DATE., or `COULDN'T FINISH
+- <the ctl's why>` with IT'LL TRY AGAIN NEXT TIME YOU'RE CONNECTED. Their
+running lines: SENDING OFFLINE ACHIEVEMENTS... / N TO SEND, and UPDATING
+OFFLINE ACHIEVEMENTS... / N OF M. Their stamp is `last-sync-link`, in the
+same shape.
+
 **Why** comes from a `>>> why <sentence>` line the scripts print at the point
 of failure (rclone's own taxonomy stays in the log), else from rc: rclone 3/4
 `YOUR CLOUD FOLDER WASN'T FOUND`; 5 `YOUR CLOUD STOPPED ANSWERING`; 7/8 `YOUR

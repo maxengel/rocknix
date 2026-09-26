@@ -221,6 +221,25 @@ Values live in one place each, so a screen never makes its own decision.
   are (D-UI-079): the rule is for the lanes the fork works in, and an
   upstream surface outside them is not changed on the strength of it.
 
+  **Anything automatic that moves data over the network is shown while it
+  runs, and a launch over it asks (D-UI-095, 2026-09-26).** Maintainer:
+  *"if there's activity happening in the background around
+  RetroAchievements or save management, etc., we want to make sure we're
+  showing the user what's going on. We want to enact the right gates to
+  keep the user from proceeding without knowing what's going on."* So the
+  startup and exit syncs, the proxy's send of held awards and the ctl's
+  top-up each have a card in the third tier while they run, each stamps
+  what it said (`last-sync-<origin>`), and `FileData::launchGame` asks the
+  same shape of question over each -- the statement, one consequence, two
+  verbs with the safe one last (`es-player-text.md` § Conventions,
+  D-UI-096). A job the interface cannot stop (the proxy's own send) asks
+  PLAY NOW / KEEP WAITING; one it can asks STOP IT AND PLAY / KEEP WAITING.
+  Bookkeeping that reads the device and touches no network (the captures)
+  stays silent. `ProxyCards` is the unit for the proxy's two jobs; the
+  cards are one at a time (D-UI-093), the send card waiting for a sync
+  card and an automatic sync that reached the network asking for it as it
+  ends.
+
   **Duration decides between the last two, and the deciding column is
   "Ends".** A card is right for work somebody watches finish — a scrape, a
   hash, a two-second save sync. It is wrong for anything long enough to walk

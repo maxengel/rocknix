@@ -307,9 +307,15 @@ WRONG until it learns the word, audit #186 PL-24) and `cached_game_ids.txt`
 SKIPPED - YOU'RE NOT ONLINE / SKIPPED - A SCAN IS ALREADY RUNNING; 77 and 78
 (no account, switch off) COULDN'T FINISH with the reason on line 4. The
 automatic top-up (`raofflineproxy-ctl topup`, run by `NetworkThread` when the
-device comes online, bounded to one attempt per half hour) has no surface of
-its own: its result, when it added games or could not finish, is the same
-line under the row, with WHEN YOU CAME ONLINE in place of the date (D-UI-032).
+device comes online, bounded to one attempt per half hour) had no surface of
+its own until 2026-09-26 (#293, D-UI-095): now a card while it has work --
+UPDATING OFFLINE ACHIEVEMENTS... with N OF M, then COMPLETED and N GAMES ADDED
+FOR OFFLINE PLAY. or YOUR OFFLINE ACHIEVEMENTS ARE UP TO DATE., or COULDN'T
+FINISH with the ctl's why -- and a launch over it asks YOUR OFFLINE
+ACHIEVEMENTS ARE BEING UPDATED. / IF YOU STOP IT, IT'LL TRY AGAIN NEXT TIME
+YOU'RE CONNECTED. with STOP IT AND PLAY / KEEP WAITING. Its result is still the
+same line under the row, with WHEN YOU CAME ONLINE in place of the date
+(D-UI-032).
 
 Since the RC-5 round (#184 notes 3b/5b, D-RA-013) the scan and the top-up
 follow the interface's own game index: where a system's games carry a
@@ -335,7 +341,16 @@ DEVELOPER PASSWORD beside the account (#64). The startup sync is a card at
 boot; the exit sync a card after a game; both end on the card (D-UI-028, with
 `COMPLETED WITH GAPS` removed by D-UI-030 -- a run passes or fails). A launch
 cancels either **in what ships today** (D-CLOUD-076); **D-CLOUD-109 replaces
-that** with a bounded wait, so this line changes when #22/#135 land.
+that** with a bounded wait, so this line changes when #22/#135 land. Since
+2026-09-26 (#292, D-RA-030) the link's return has cards of its own: SENDING
+OFFLINE ACHIEVEMENTS... with the count, ending OFFLINE ACHIEVEMENTS HAVE BEEN
+SENT (or COULDN'T FINISH - RETROACHIEVEMENTS STOPPED ANSWERING), when the proxy
+holds awards or has just sent some; then SYNCING SAVES TO THE CLOUD when the
+last exit sync was skipped for no network. A launch over the send asks
+OFFLINE ACHIEVEMENTS ARE BEING SENT. / IT'LL BE A MOMENT. with PLAY NOW / KEEP
+WAITING (the send is the proxy's and goes on behind the game). The exit card
+no longer says anything about achievements. Each card stamps what it said
+(`last-sync-link`, beside `last-sync-exit` and `last-sync-startup`).
 
 Anything measured in minutes runs in `GuiCloudTransfer`, not a card
 (`es-native-ui.md`, the fourth *surface* tier -- not one of the four data
