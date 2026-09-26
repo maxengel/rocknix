@@ -1,63 +1,61 @@
 # Saved Session State
 
-> **Saved**: 2026-09-25T21:29:14Z
-> **Branch**: feature/conflict-resolution (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the record lives on `next` in `/workspace/repos/rocknix`, pushed to `origin/next` at `154d722392`)
+> **Saved**: 2026-09-26T01:34:59Z
+> **Branch**: feature/conflict-resolution (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the record lives on `next` in `/workspace/repos/rocknix`, pushed to `origin/next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-The release-candidate round (D-QA-049, the SOP `release-candidates.md`, D-WORKFLOW-047) has its **final candidate `a65da6c784`** built, proven on the VM and recorded. Steps 0-3 are done and step 4 has begun: a65da6c784 is on the RG35XX SP since 2026-09-25 21:26 UTC (the maintainer's yes for the copy and the reboot, both through the action log); the soak (D-QA-036) is the maintainer's play, its journal read afterwards. Step 6 (the two-agent upstream audit) waits on their decision about the Fable 5.1 seat's spend limit.
+The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047). The maintainer's soak of `a65da6c784` on the RG35XX SP found five things in one evening; all five are fixed and proven on the VM in the rebuilt candidate **`a8175c6193`** (x64 run 56, H700 run 36), every known bug is closed, the preflight reads MAY BE CUT. Step 4 waits on the maintainer's yes for the copy and a second yes for the reboot; then the soak again; then the call (step 5); step 6 (the two-agent audit) waits on the Fable seat's spend limit.
 
-## Completed This Session
+## Completed This Session (2026-09-25/26)
 
-- Bugs-are-agent-first policy written as `.claude/rules/bugs-are-agent-first.md` (D-QA-051); labels `bug` / `open item to test` / `keep an eye on`; `tools/rc-preflight` counts only `bug`-labelled open issues and requires a code-trace comment; `docs/releases/rc-accept.txt` now carries package lines only.
-- Every bug the round knew is closed: #178 (three VM proofs: a WARNING in the file within 5-12 ms via `curl --interface 127.0.0.2`, ten reboots kept it in `es_log.0.txt`, the journal carries it), #239 (ES `eacbc0b72`, HideWindow default), #249, #275 (ES `3d17b2fd6c`), #50/#113/#169/#170/#177 as open items (#277) with harness gaps (#278), #79 keep-an-eye-on; #276 closed with the table.
-- Final images: `x64-all-20260925-a65da6c784`, `h700-all-20260925-a65da6c784` with RECORD.txt; c939df737a pair SUPERSEDED; 865cb1bb8b pair recorded as never proven; catalog 32 cuts; vm-qa-log row; work log (`docs/work-logs/2026_09-work_logs/2026_09_25-work_log.md`, entries through 21:20 UTC).
-- Proofs on a65da6c784: vm-qa run 37 all fifteen suites (quoting 10/10, scripts 374/374, frame-diff identical to the 664ad9ac64 baseline), rehearsal run 26 20/20, sign-in window 283 MB; preflight `MAY BE CUT (unchecked by tool: device facts)`.
-- `generic-x64-vm-testing.md` corrected: the ES log is no longer late (since ES `469441d4d`), `/var/log` is `/storage/.cache/log` bind-mounted, the unit is `essway`.
-- #236 carries the final-candidate comment with the two asks.
+- D-QA-051 (bugs are agent-first); the ten earlier bugs dispositioned; #178 closed on three VM proofs.
+- The device round: #279 (a tunnel is not a link, ES `0cc13be61`), #280 (the launch log one launch's; the rotation reader on the last banner's section), #249 (RetroArch patch 0018 both halves: the auto-index scan and the runtime log's remembered slot), #282 (the 90 s ceiling with `migrate_default`, D-CLOUD-137), #283 (one floating surface at a time, ES `c1c0d6ddc`, D-UI-093). Register rows D-LAUNCH-004/005, D-UI-092/093, D-CLOUD-137/138. Blindspot 61 (a suite started as a shell background job cannot trap the signal it tests; the suite now refuses).
+- Records: `x64-all-20260926-a8175c6193`, `h700-all-20260926-a8175c6193` (RECORD.txt with the proofs and the preflight); the intermediates 8db9042afa, 82b91a4e3f and a65da6c784 marked superseded; catalog 38 cuts; the changelog's cut entry; the QA log row; `docs/qa-frames/2026-09-26/` (#279 four frames, #283 before/after).
+- Issues filed in the maintainer's words: #279-#286 (#281 the runaway process, #284 per-backend options, #285 RomM beside the engine, #286 the QA backend's 405).
+- #236 carries the state and the asks.
 
 ## In Progress
 
-- **Step 4, the device**: staged 21:17-21:21 UTC (hash verified on the device), rebooted 21:21:53 UTC (boot id b16fc9f6 -> fde0ae20), back on a65da6c784 at 21:26 UTC with the interface up, the queue empty, tailscaled up. Device-facts rows, RECORD Device lines, catalog and #236 updated.
-  - **What remains**: the soak (the maintainer plays offline for hours, then Wi-Fi back); afterwards read `journalctl` on the device through the credential filter (the exit syncs, the proxy's flush, the save state captures), the sign-in window's memory on the handheld's GPU path (#228; ask by name before any action that is not a read), then the call (step 5) as a #236 comment with the device facts and the catalog updated in the same change (D-WORKFLOW-046).
-- **Step 6, the audit**: `docs/audits/2026_09_25-milestone-rc-round-since-258/` is an untracked, paused audit folder (Phase 1.3) in the primary checkout; the Fable seat returned HTTP 429 (monthly spend limit). Do not commit it until the audit runs.
+- **Step 4, the device**: `/workspace/tmp/rocknix-session/stage-rg35xxsp-a8175c6193.sh` is prepared and has NOT run. The device runs `a65da6c784` since 2026-09-25 21:26 UTC.
+  - **What remains**: the yes for the copy; run the script; the yes for the reboot; `tools/device-act rg35xxsp 'reboot to apply a8175c6193' -- 'sync; reboot'`; read the state after (BUILD_ID, boot id, essway, the queue, the helper's migration line in `/var/log/cloud_sync.log` -- `Moved SYNC_CEILING_SECONDS from the superseded default 20 to 90`); device-facts rows; then the soak (theirs); then the call on #236.
 
 ## Next Steps
 
-1. After the soak: read the device's journal (through the credential filter) and the stamps; put any device-only measurement to the maintainer by name; the call on #236 (step 5); device-facts rows for what the soak showed; `release-catalog --write`.
-2. Nothing on the device without a per-action yes: no game launch, no sync, no reboot (D-QA-011/015).
-3. The audit (step 6) once the seat decision is made; `ceremony-check` reads it overdue (53 closures since 2026-09-24).
-4. The PR series by content in the named buckets (`fork-workflow.md`, D-WORKFLOW-034), #42's docs PR last; builds for the RG SP and the Retroid Pocket Nova (cold build, ~90 GB, hours; `tools/build-preflight` first); each staged on its own yes.
-5. #278's five harness gaps and #277's open items are the community's and the harness's follow-ups; #228 stays open on the device GPU-path number; #270 the catalog's preflight column.
+1. On the maintainer's yes: the copy, then the reboot, each through `tools/device-act`; the post-reboot reads; the device-facts page; `release-catalog --write`.
+2. After the soak: the journal read (through the credential filter), the call on #236 (step 5), the device facts.
+3. Step 6: the two-agent audit once the Fable seat's spend limit is decided (`docs/audits/2026_09_25-milestone-rc-round-since-258/` is the paused, uncommitted folder).
+4. Steps 7-8: the PR series by content, #42's docs last; builds for the RG SP and the Retroid Pocket Nova.
+5. Harness: promote the proof scripts (`proof-common.sh`, `proof-279-tunnel.sh` + `net-page.steps`, `proof-280-rotation-log.sh`, `proof-249-auto-slot.sh`, `proof-283-surfaces.sh`) from the session directory into `tools/` (#278); #286; #284's measurement.
 
 ## Key Files Modified
 
 | File | Change | Notes |
 | --- | --- | --- |
-| `.claude/rules/bugs-are-agent-first.md` | Created | D-QA-051 verbatim, the three classes, rules 1-6 |
-| `.claude/rules/generic-x64-vm-testing.md` | Modified | the ES log passage rewritten for the present |
-| `tools/rc-preflight` | Created | step 0's check; `--allow-unchecked device-facts` |
-| `docs/releases/rc-accept.txt` | Modified | package lines only |
-| `docs/releases/catalog.md`, `docs/vm-qa-log.md` | Modified | the a65da6c784 cut |
-| `/workspace/artifacts/rocknix-images/{x64,h700}-all-20260925-a65da6c784/RECORD.txt` | Created | outside the repo |
+| `projects/ROCKNIX/packages/emulators/libretro/retroarch/patches/0018-auto-slot-survives-content-load.patch` | Created | both halves (#249) |
+| `projects/ROCKNIX/packages/rocknix/sources/scripts/runemu.sh` | Modified | truncates the launch log at every launch (#280) |
+| `projects/ROCKNIX/packages/network/rclone/sources/{cloud_sync.conf,cloud_sync.conf.defaults,cloud_backup,cloud_restore,cloud_sync_helper}` | Modified | the 90 s ceiling and `migrate_default` (#282) |
+| `projects/ROCKNIX/packages/ui/emulationstation/package.mk` | Modified | pin `c1c0d6ddc` |
+| `tools/last-good-scripts-test` | Modified | case j2; refuses to run with SIGINT ignored |
+| `.claude/rules/{generic-x64-vm-testing,rclone-cloud-sync,es-native-ui}.md` | Modified | the ES log is no longer late; the 90 s numbers; D-UI-093; busybox `pgrep -x` |
 
 ## Related Context
 
-- **Tracker**: #236 (the round), #273 (code traces), #276 (closed), #277 (open items to test), #278 (harness gaps), #270, #228, #42.
-- **Register**: D-QA-049 (the plan), D-QA-050, D-QA-051, D-WORKFLOW-047, D-WORKFLOW-048, D-RA-029, D-UI-091.
-- **Session files**: `/workspace/tmp/rocknix-session/` (chain-4.log/.rc/.status, proof-178b/c logs, build scripts run52/run32, vmqa-run37, issue-bodies/).
-- **Guests**: pair a/b on a65da6c784 (vm-qa's), guest d at 640x480 on a65da6c784 (:10026, pidfile `/tmp/rocknix-qemu-d.pid`); stop by pidfile or monitor, never by pattern.
+- **Tracker**: #236 (the round), #277/#278 (open items, harness gaps), #284/#285/#286, #270, #228, #42.
+- **Register**: D-QA-049/050/051, D-WORKFLOW-047/048, D-LAUNCH-004/005, D-UI-091/092/093, D-CLOUD-137/138.
+- **Session files**: `/workspace/tmp/rocknix-session/` (chain-8.log, the proof scripts and logs, `proof-283-control/` and `proof-283-final/`, issue-bodies/).
+- **Guests**: the pair is down (the rehearsal downs it); guest d at 640x480 on a8175c6193 (:10026, pidfile `/tmp/rocknix-qemu-d.pid`).
 
 ## Notes for Next Session
 
-- The credential read filter (`grep -v -i -E 'key|pass|token|user|psk'`) drops a line reading `RESULT PASS`; read rc files, or spell verdicts so they cannot match.
-- `fork-worktree sync` skips a worktree with uncommitted changes; the build regenerates `documentation/PER_DEVICE_DOCUMENTATION/GENERIC_X64/SUPPORTED_EMULATORS_AND_CORES.md` in generic-x64 -- discard it (`git checkout --`) before syncing.
-- The ra-offline suite cannot be re-run until the QA account's Potato-tan Secret is reset again ("progress reset" was the maintainer's word for it).
-- ES `HideWindow` was the VM's black-screen cause (#239); `docs/qa-frames/2026-09-25/` holds the before/after frames.
-- The build worktrees and the primary are all at `a65da6c784`/`154d722392`; nothing is building.
+- Every guest-a proof starts from a rebooted carousel, sets RetroArch to GL (`vm_gl`), polls RetroArch with `pgrep -f 'retroarc[h] -L'` (busybox `-x` matches argv), and the one-surface proof seeds the remote and the exit-sync toggle before the reboot.
+- Start any signal-trapping suite in the foreground or with `setsid -f`, never as a shell `&` job.
+- The QA WebDAV backend refuses a same-name replace of a large file with a 405 (#286); the round trip's small files never hit it.
+- The feature worktree `rc-device-fixes` is merged into next; `tools/fork-worktree remove` it when the round closes.
 
 ## Open Questions
 
-- After the soak, the maintainer's read of the play (the source of any new issue, D-QA-012).
+- The copy and the reboot on the RG35XX SP (each a yes).
 - The audit seat: raise the OpenRouter limit, Astra's blind pass first, or another Claude model.
+- Words for the `(+)` on the IP ADDRESS row (#279 option 2), if wanted.
