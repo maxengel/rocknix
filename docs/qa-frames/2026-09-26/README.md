@@ -145,3 +145,25 @@ x=15). The QA account's name is painted out.
 
 The three earlier cuts of the patch, each measured the same way: the drawn size's own placement 57 px; the unfloored size as
 the reference 3 px (the image's widget scale of 0.4 makes that size 4 px); RetroArch's 9 px floor as the reference 29 px.
+
+## #295, the sixth cut: the text where the old build drew it
+
+`diag-295-flows.sh` (a fresh start, F2, F8, Escape once, the exit hotkey, a resume from the auto save) with `measure-boxes.py`
+reading each window's boxes at x=15 and x=25, on guest d on `6f0a974765` and on the 2026-09-10 build (guest e). What the eye
+reads is the text's centre, and that is the number that had been wrong: the earlier cuts matched the box's bottom edge under a
+taller box.
+
+| Build | the sign-in message's box (rows) | the text's centre above the bottom | "Press again to quit" |
+| --- | --- | --- | --- |
+| 2026-09-10, before the floor | 418..441 (24 px, 10 px text) | 50 px | not framed (the old image's F-keys differ) |
+| `d72084ccad` / `af3aaa3af0` | 383..422 / 400..439 (40 px) | 78 / 60 px | -- |
+| `6f0a974765` (this cut) | 418..442 (25 px, 14 px text) | 50 px | the same box rows |
+
+| Frame | What it shows |
+| --- | --- |
+| `295-signin-6f0a974765-640x480.png` | the sign-in message at rows 418..442, the readable text in a box one pixel taller than the old build's (the account name painted out); RetroArch's log: `placement reference 9.00 px, drawn 14.00 px, place scale 0.643`, `padding 9 (was 14), spacing 12 (was 12)` |
+| `295-press-again-6f0a974765-640x480.png` | "Press again to quit..." in the same place |
+
+Not produced by the run on either build: a task-style notification with a bar (F8's screenshot notice did not appear with
+`notification_show_screenshot` on); every message rides one queue and one placement, and the small size takes the same
+padding and spacing, but that shape has no frame yet.
