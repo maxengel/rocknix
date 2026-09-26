@@ -75,3 +75,20 @@ the emulator's going and the capture's start and end polled over ssh on the same
 | `290-before-black-3s-after-exit-3f93dc4683.png` | guest d (640x480) on `3f93dc4683`, 3.3 s after the press: still black -- the capture (0.3 s to 3.4 s) ran before the window came back |
 | `290-before-carousel-after-capture-3f93dc4683.png` | the same run at 4.4 s: the carousel, only once the capture had ended -- the maintainer's "long exit" |
 | `290-after-carousel-during-capture-86dc949300.png` | guest a (1280x800) on `86dc949300`, 1.2 s after the press: the carousel back while the capture still runs (0.6 s to 3.6 s) |
+
+## #293, the top-up's card and the launch question over it
+
+`proof-292-cards.sh` (session directory), run 1 on guest d (640x480, GL) on `88ee7de862` (ES `0ade9086b`): frames over VNC
+every half second (`vnc-grab.py`, a signature per frame so a card at the top or a dialog in the middle is found by number).
+The link cut on the monitor and restored; the ctl's scan started over ssh for the question.
+
+| Frame | What it shows |
+| --- | --- |
+| `293-topup-card-starting.png` | the link back: the ctl's top-up has work (one recently played game not yet cached), so the card is up -- UPDATING OFFLINE ACHIEVEMENTS... / STARTING... (D-UI-095) |
+| `293-topup-card-completed.png` | eight seconds later: UPDATE OFFLINE ACHIEVEMENTS / COMPLETED / 1 GAME ADDED FOR OFFLINE PLAY., the bar full; the ctl's stamp read `cached=1` |
+| `293-launch-over-topup-question.png` | a launch through the API while the scan runs: YOUR OFFLINE ACHIEVEMENTS ARE BEING UPDATED. / IF YOU STOP IT, IT'LL TRY AGAIN NEXT TIME YOU'RE CONNECTED. / STOP IT AND PLAY, KEEP WAITING -- the safe verb last, where back lands (D-UI-096) |
+
+Run 1's other phases were the harness's, not the interface's: the proof pressed `ret` for A where the image maps `x`
+(§ Driving EmulationStation from the monitor), wrote the exit-sync toggle after the interface had loaded its settings
+(§ A settings change made from the shell is invisible to the running interface), and drove Tobu's route to an
+achievement the QA account had already earned. Run 2 (`proof-292-cards-v2.sh`) is the send card's proof.
