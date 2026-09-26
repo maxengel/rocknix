@@ -133,3 +133,15 @@ second, the message boxes measured by their background rows at x=15 (the box col
 A one-line box is 40 px tall where it was 24, and the margin under the stack 57 px where it was 38: RetroArch sizes the
 queue's box and its spacing from the queue font's line height, so the 14 px floor (D-UI-084) moved the whole stack up
 by about a text line (19 px). "Press again to quit" rides the same queue.
+
+## #295 fixed: the stack back where it was, at the readable size
+
+`diag-295-osd.sh` again on guest d on `af3aaa3af0` (RetroArch patch `0019`, fourth cut; the same launch, the same rows read at
+x=15). The QA account's name is painted out.
+
+| Frame | What it shows |
+| --- | --- |
+| `295-notifications-af3aaa3af0-640x480.png` | the sign-in message's box at rows 400..439, 40 px above the panel's bottom (57 on `d72084ccad`, 38 on the 2026-09-10 build), the text still the 14 px the floor gives; RetroArch's own log for the frame: `msg_queue font: scaled 4.36 px, placement reference 11.00 px, drawn 14.00 px, place scale 0.786` and `msg_queue place: line height 21.00, scale 0.786, padding 11 (was 14), spacing 15 (was 20)` |
+
+The three earlier cuts of the patch, each measured the same way: the drawn size's own placement 57 px; the unfloored size as
+the reference 3 px (the image's widget scale of 0.4 makes that size 4 px); RetroArch's 9 px floor as the reference 29 px.
