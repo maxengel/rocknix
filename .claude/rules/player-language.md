@@ -48,6 +48,14 @@ are `es-player-text.md`; the surfaces they are shown on are `es-native-ui.md`.
 - **Present the short form for approval.** When strings go to the maintainer,
   they approve words, not paragraphs; a long draft is a draft that has not
   been cut yet.
+- **A small item whose only open question is its words is built with the
+  proposed words and put to the maintainer in the build, not deferred.**
+  Maintainer, 2026-09-26, on the capture-failure toast left out of a cut
+  because its sentence had not been approved: *"We shouldn't have left that
+  out. It was a relatively quick fix, and I would have rather included it in
+  the last build."* A deferral costs a build round and a device cycle; a
+  wrong word costs one string. Propose the sentence, ship it in the cut,
+  and let the approval change the word.
 - **A decision is put in terms of what they would see.** The same test the
   strings are held to applies to how a choice is asked. On 2026-09-12 nine
   council proposals went up as "budget", "stage" and "P-4"; none of those
