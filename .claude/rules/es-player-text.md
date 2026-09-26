@@ -71,6 +71,25 @@ Beside it: `es-native-ui.md` (the surfaces the words go on),
 - **"Wi-Fi", hyphenated**, in every user-visible string. The settings keys stay
   `wifi.key` / `wifi.ssid` — an identifier is not a reason to spell the label
   after it.
+- **A destination is named only when there is more than one it could be
+  (D-UI-096).** Saves go to this device or to the cloud, so the label says
+  which: BACK UP SAVES TO THE CLOUD. Achievements go nowhere but
+  RetroAchievements, so the sentence is OFFLINE ACHIEVEMENTS HAVE BEEN SENT,
+  and TO RETROACHIEVEMENTS is the longer candidate a card line tries first
+  where it has room (D-UI-035, longest first). Maintainer, 2026-09-26:
+  *"since there's nowhere else that achievements could go but
+  RetroAchievements, I think it's implied what the destination is."* The
+  service is still named where it is the actor or the account
+  (RETROACHIEVEMENTS STOPPED ANSWERING, SIGN IN TO RETROACHIEVEMENTS FIRST).
+- **A question over a running job is a statement, one consequence, and two
+  verbs** (D-CLOUD-130, D-UI-096). What is happening, in the present:
+  YOUR SAVES ARE SYNCING WITH THE CLOUD. / OFFLINE ACHIEVEMENTS ARE BEING
+  SENT. Then what the choice costs or how long it is: IF YOU STOP IT, THE
+  NEXT SYNC FINISHES WHAT THIS ONE DID NOT. / IT'LL BE A MOMENT. Then the
+  two buttons, each a verb the player does: STOP IT AND PLAY / KEEP WAITING
+  when the job is ours to stop, PLAY NOW / KEEP WAITING when it is not (the
+  proxy's own send). The safe verb goes last, where the back button lands
+  (`es-ui-style-guide.md` § Confirmations).
 
 ## Every fork string ships in English and French (D-UI-051)
 
