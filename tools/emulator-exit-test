@@ -126,8 +126,17 @@ launch() {  # start the game, wait for RetroArch, give the cartridge time to wri
   # no .srm -- a warm launch then passed three times (2026-09-11). Wait for
   # the process to have burnt two seconds of CPU, which means the core is
   # running, then a margin for the write itself.
+  # 200 ticks is a software-rendered RetroArch's signature: on hardware GL
+  # (fork #291) the process burns about five ticks a second after some
+  # thirty of init, and waited the whole loop out on every launch. In the
+  # VM the rule is also met at thirty ticks once four polls have seen the
+  # process up; a device keeps the two seconds.
+  local up=0 t
   for i in $(seq 1 40); do
-    S 'p=$(pgrep -f "^/usr/bin/retroarch" | head -1); [ -n "$p" ] && [ "$(awk "{print \$14+\$15}" /proc/$p/stat 2>/dev/null || echo 0)" -ge 200 ]' && break
+    t=$(S 'p=$(pgrep -f "^/usr/bin/retroarch" | head -1); [ -n "$p" ] && awk "{print \$14+\$15}" /proc/$p/stat 2>/dev/null || echo 0' | tr -d '\r'); t=${t:-0}
+    [ "$t" -ge 200 ] && break
+    [ "$t" -gt 0 ] && up=$((up+1))
+    [ "$VM" = 1 ] && [ "$up" -ge 4 ] && [ "$t" -ge 30 ] && break
     sleep 1
   done
   sleep 3

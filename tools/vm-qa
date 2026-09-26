@@ -447,7 +447,7 @@ if [ -f "$OUT/time-to-play/time-to-play.md" ]; then
   # rather than beside the report's.
   { echo; sed -e 's/^## /### /' -e '1s/^# /## /' "$OUT/time-to-play/time-to-play.md"; } >> "$REPORT"
 fi
-RENDERER=$(SSH 'grep -h -m1 "\[GL\] Renderer:" /var/log/exec.log 2>/dev/null' 2>/dev/null | sed 's/.*Renderer: //' | tr -d '\r')
+RENDERER=$(SSH 'grep -h -m1 "\[GL\].*Renderer:" /var/log/exec.log 2>/dev/null' 2>/dev/null | sed 's/.*Renderer: //' | tr -d '\r')
 { echo; echo "renderer: ${RENDERER:-(no RetroArch launch log on the guest)} -- the guest's Mesa, from the launch log; display: $DISPLAY_MODE"; } >> "$REPORT"
 echo; cat "$REPORT"; echo; echo "report: $REPORT"
 [ "$FAILS" = 0 ]

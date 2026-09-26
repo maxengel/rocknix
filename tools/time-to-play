@@ -268,12 +268,50 @@ def surface_check(g, fr, rom=None):
         elif seen_launch and not line and "Using resolution" in raw:
             line = raw
     m = re.search(r"Using resolution (\d+)x(\d+)", line or "")
+    # The size RetroArch's own GPU screenshot comes out at IS the surface it
+    # draws into: the GL framebuffer read back at the viewport's size
+    # (video_gpu_screenshot, which --vm switches on for the run). Since fork
+    # #291 it is the first source and the log line the fallback: under a GL
+    # context "Using resolution" is written before the compositor's
+    # fullscreen resize lands -- 240x256 on a 1280x800 guest whose game frame
+    # is drawn pixel-sharp at the panel -- so it says what the surface was
+    # for a few milliseconds, not what the frames are. Three presses of the
+    # screenshot key, half a second held (#278); the file is removed so the
+    # SCREENSHOTS walks that follow do not list it.
+    shot = None
+    if g.retroarch() is not None:
+        before = (g.sh("ls /storage/roms/screenshots/ 2>/dev/null | wc -l")[1] or "").strip() or "0"
+        probe = ('f=$(ls -t /storage/roms/screenshots/*.png 2>/dev/null | head -1); '
+                 'n=$(ls /storage/roms/screenshots/ 2>/dev/null | wc -l); '
+                 'if [ "$n" -gt BEFORE ] && [ -n "$f" ]; then python3 -c \'import struct,sys; d=open(sys.argv[1],"rb").read(24); '
+                 'print("%dx%d" % struct.unpack(">II", d[16:24]))\' "$f" && rm -f "$f"; fi').replace("BEFORE", before)
+        for _ in range(3):
+            fr.mon.cmd("sendkey f8 500", settle=0.2)
+            time.sleep(1.5)
+            got = (g.sh(probe, timeout=20)[1] or "").strip()
+            if re.match(r"^\d+x\d+$", got):
+                shot = got
+                break
+    if shot:
+        sw, sh = [int(v) for v in shot.split("x")]
+    elif m:
+        sw, sh = int(m.group(1)), int(m.group(2))
+    else:
+        sw = sh = None
     panel = ppm_size(fr.rest(timeout=10))
-    out = {"surface": ("%dx%d" % (int(m.group(1)), int(m.group(2)))) if m else None,
+    out = {"surface": ("%dx%d" % (sw, sh)) if sw else None,
+           "source": "RetroArch's GPU screenshot" if shot else ("the launch log's Using resolution line" if m else None),
            "panel": ("%dx%d" % panel) if panel else None, "scaled": None,
            "evidence": (evidence or "").splitlines()}
-    if m and panel:
-        out["scaled"] = int(m.group(1)) < panel[0] or int(m.group(2)) < panel[1]
+    if sw and panel:
+        # The GPU screenshot is the viewport: with aspect correction it fills
+        # one of the panel's dimensions (1067x800 under 1280x800 for a 4:3
+        # game), so a surface the compositor scaled is short on BOTH. The
+        # log line names the window, which is short on either when scaled.
+        if shot:
+            out["scaled"] = sw < panel[0] and sh < panel[1]
+        else:
+            out["scaled"] = sw < panel[0] or sh < panel[1]
     return out
 
 
@@ -487,7 +525,7 @@ def measure_launch(g, fr, tag, budget=45.0, rom=ROM):
                 if ra["seen"] is None:
                     ra["seen"] = now
                     ra["pid"] = st[0]
-                if ra["ticks200"] is None and st[1] >= 200:
+                if ra["ticks200"] is None and drawing(st, ra["seen"], now):
                     ra["ticks200"] = now
             time.sleep(0.08)
 
@@ -542,7 +580,7 @@ def measure_launch(g, fr, tag, budget=45.0, rom=ROM):
         st = g.retroarch()
         if st is None:
             break
-        if st[1] >= 200:
+        if drawing(st, ra["seen"], time.monotonic()):
             ra["ticks200"] = time.monotonic()
         time.sleep(0.1)
     result["t_ticks200"] = None if ra["ticks200"] is None else round(ra["ticks200"] - t0[0], 3)
@@ -568,12 +606,29 @@ def settle_sync(g, budget=60):
     return False
 
 
+def drawing(st, seen, now):
+    """The exit cell's readiness rule: RetroArch has burnt 2 s of CPU (200
+    ticks) -- a software-rendered RetroArch's signature. On hardware GL (fork
+    #291) the process burns about five ticks a second after some thirty of
+    init, so the rule is also met at thirty ticks four seconds after the
+    process was first seen; a guest on either path answers within seconds."""
+    if st is None:
+        return False
+    if st[1] >= 200:
+        return True
+    return st[1] >= 30 and seen is not None and now - seen >= 4.0
+
+
 def wait_drawing(g, budget=60):
-    """Until RetroArch has burnt 2 s of CPU: the exit cell's readiness rule."""
+    """Until RetroArch is drawing by the rule above."""
     end = time.monotonic() + budget
+    seen = None
     while time.monotonic() < end:
         st = g.retroarch()
-        if st is not None and st[1] >= 200:
+        now = time.monotonic()
+        if st is not None and seen is None:
+            seen = now
+        if drawing(st, seen, now):
             return True
         time.sleep(0.2)
     return False
@@ -1005,9 +1060,14 @@ def main():
     # runner's first dispatch of this cell reported as a PASS (2026-09-12).
     # The exit test has always swapped the driver for its run; so does this.
     saved_vd = ""
+    saved_gs = ""
     if args.vm:
         saved_vd = g.sh('grep -E "^video_driver" ' + RETROARCH_CFG)[1].strip()
         g.sh("sed -i 's/^video_driver = .*/video_driver = \"gl\"/' " + RETROARCH_CFG)
+        # The surface check reads RetroArch's GPU screenshot (surface_check):
+        # on for the run, put back after it.
+        saved_gs = g.sh('grep -E "^video_gpu_screenshot" ' + RETROARCH_CFG)[1].strip()
+        g.sh("grep -q '^video_gpu_screenshot' %s && sed -i 's/^video_gpu_screenshot = .*/video_gpu_screenshot = \"true\"/' %s || echo 'video_gpu_screenshot = \"true\"' >> %s" % (RETROARCH_CFG, RETROARCH_CFG, RETROARCH_CFG))
     fixtures = []
 
     def restore():
@@ -1026,6 +1086,12 @@ def main():
         if args.vm and saved_vd:
             g.sh("sed -i 's/^video_driver = .*/%s/' %s"
                  % (saved_vd.replace("\\", "\\\\").replace("/", "\\/").replace("&", "\\&"), RETROARCH_CFG))
+        if args.vm:
+            if saved_gs:
+                g.sh("sed -i 's/^video_gpu_screenshot = .*/%s/' %s"
+                     % (saved_gs.replace("\\", "\\\\").replace("/", "\\/").replace("&", "\\&"), RETROARCH_CFG))
+            else:
+                g.sh("sed -i '/^video_gpu_screenshot = \"true\"$/d' " + RETROARCH_CFG)
         if made["rom"]:
             g.sh("rm -f %s; rmdir /storage/roms/gb 2>/dev/null; true" % GB_PROBE)
 
@@ -1208,7 +1274,7 @@ def headline_missing(report):
     out = []
     surf = report.get("surface") or {}
     if surf.get("scaled"):
-        out.append("RetroArch drew into a %s surface under a %s panel: the frames are scaled (#263)" % (surf.get("surface"), surf.get("panel")))
+        out.append("RetroArch drew into a %s surface under a %s panel, by %s: the frames are scaled (#263)" % (surf.get("surface"), surf.get("panel"), surf.get("source")))
     elif report.get("cells", {}).get("launch") and surf.get("surface") is None:
         out.append("RetroArch's surface size could not be read from the guest's exec.log (#263)")
     # The online cells time a sync that reaches a cloud. On a guest whose cloud
@@ -1422,7 +1488,7 @@ def render(r):
              ["the handover (a black screen)", fmt(stats([x.get("t_screen_blank") for x in L])), len(L)],
              ["RetroArch existing", fmt(stats([x["t_retroarch_seen"] for x in L])), len(L)],
              ["**the game's first frame**", "**%s**" % fmt(stats([x["t_first_game_frame"] for x in L])), len(L)],
-             ["RetroArch drawing (200 CPU ticks)", fmt(stats([x["t_ticks200"] for x in L])), len(L)]]))
+             ["RetroArch drawing (200 CPU ticks, or 30 four seconds on)", fmt(stats([x["t_ticks200"] for x in L])), len(L)]]))
     if E:
         toks = {}
         for x in E:
