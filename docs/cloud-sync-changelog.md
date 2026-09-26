@@ -2454,6 +2454,22 @@ earned offline going up at the link with the card saying so -- the QA account's 
 (earned 2026-09-25 16:22 UTC), so the proof shims the proxy's count and the real-award run waits for the account's
 reset.
 
+### A capture that could not record says so; the proxy at upstream main (2026-09-26, `d72084ccad`)
+
+The maintainer approved the copy of `64a0934a5d` and then asked for #293's last item to be in the build (*"It was a
+relatively quick fix, and I would have rather included it in the last build"*), so the copy was held and the candidate
+cut again. Every claim is what the VM showed on the image (`proof-293-toast-v2` on guest d, 8 of 8;
+`docs/qa-frames/2026-09-26/293-capture-failed-*`).
+
+- **A capture that could not record says so, once.** The record of what a session saved (`cloud_capture`, the
+  bookkeeping behind the save manifest) used to fail into a log line nobody sees. Now, after the sync card has
+  gone, a toast says COULDN'T RECORD THIS SESSION'S SAVES. THEY'RE STILL ON THIS DEVICE. -- what did not happen and
+  what is in place, in the player's words. The sync card runs first and still runs. After the startup game the
+  same sentence is said once the interface is up. A session whose capture recorded shows nothing.
+- **RAOfflineProxy moves to upstream main** (`c1bd3724d1`, 2026-09-26; D-RA-032): spruce and Onion platform work
+  upstream, nothing the ROCKNIX image runs changed, every fork patch unchanged; taken once the maintainer reset the
+  QA account so the proxy's own proof could run on the image (the cut's record names the run).
+
 ### The second opinion, and the twentieth cut (2026-09-24, #260)
 
 The maintainer asked whether the audit had an adversarial phase by default;
