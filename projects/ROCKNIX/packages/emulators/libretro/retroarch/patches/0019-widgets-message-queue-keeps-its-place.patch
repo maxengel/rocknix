@@ -1,9 +1,11 @@
-The box too keeps the proportion the queue had before the floor: its
-height from the placement's line height rather than the drawn font's
-(about 32 px on a 640x480 panel; the floor alone made it 40, and it was
-24 before the floor). The fourth cut moved the stack down 17 px and the
-maintainer saw no change on the RG35XX SP: the box's own growth was the
-other half of the empty band under the text.
+The reference is RetroArch's own 9 px floor, and the box's height too
+comes from it. The eye reads the text, not the box's edge: on a 640x480
+guest the centre of the lowest message's text sits 50 px above the
+panel's bottom on the build before the floor, 77 with the drawn size as
+the reference, 60 with an 11 px reference (which matched the old box's
+bottom edge under a taller box and still read as a row too high on the
+RG35XX SP), 49 with 9 px. The two log lines say what was chosen and what
+the placement became.
 
 --- a/gfx/gfx_widgets.h	2026-09-26 21:28:16.038558573 +0000
 +++ b/gfx/gfx_widgets.h	2026-09-26 21:28:16.051989945 +0000
@@ -22,7 +24,7 @@ other half of the empty band under the text.
     unsigned msg_queue_internal_icon_size;
     unsigned msg_queue_icon_size_x;
 --- a/gfx/gfx_widgets.c	2026-09-26 21:28:16.038476097 +0000
-+++ b/gfx/gfx_widgets.c	2026-09-26 22:55:50.244570107 +0000
++++ b/gfx/gfx_widgets.c	2026-09-26 23:03:40.364840009 +0000
 @@ -29,6 +29,7 @@
  
  #include "gfx_display.h"
@@ -31,23 +33,26 @@ other half of the empty band under the text.
  #include "font_driver.h"
  
  #ifdef HAVE_MENU
-@@ -52,6 +53,15 @@
+@@ -52,6 +53,18 @@
   * readable on 480x320 and 640x480 panels and changes nothing where the
   * computed size is already larger (ROCKNIX fork, #251). */
  #define MSG_QUEUE_MIN_SIZE  14.0f
-+/* The size the message queue was drawn at on a 640x480 handheld before the
-+ * floor above (10.9 px scaled, 10 drawn -- #251's measurement), and the
-+ * reference for where the stack sits (ROCKNIX fork #295): the placement
-+ * uses the padding and spacing this size would have given when the scaled
-+ * size is below it, so the floor grows the text and its box without moving
-+ * the stack up the screen. Measured on a 640x480 guest: the empty screen
-+ * under the lowest box is 57 px with the drawn size as the reference, 29
-+ * with RetroArch's own 9 px floor, 38 on the build before the floor. */
-+#define MSG_QUEUE_PLACE_SIZE 11.0f
++/* The reference for where the stack sits (ROCKNIX fork #295): the placement
++ * and the box use the padding, spacing and height this size would have
++ * given when the scaled size is below it, so the floor above grows the
++ * text without moving it up the screen. It is RetroArch's own 9 px floor,
++ * the size the queue was drawn at on a 640x480 handheld before the fork's
++ * floor. Measured on a 640x480 guest, the centre of the lowest message's
++ * text above the panel's bottom: 50 px on the build before the floor, 77
++ * with the drawn size as the reference, 60 with 11 px, 49 with 9 -- the
++ * eye reads the text, not the box's edge, which is why an 11 px reference
++ * that matched the old box's bottom edge under a taller box still read as
++ * a row too high on the RG35XX SP. */
++#define MSG_QUEUE_PLACE_SIZE 9.0f
  
  /* The pixel sizes at which the widget faces' vertical stems land on the
   * grid, measured with FreeType 2.14 the way this file's font driver
-@@ -622,11 +632,14 @@
+@@ -622,11 +635,14 @@
  
        size_small             = (msg->task_ptr || (msg->flags & DISPWIDG_FLAG_SMALL));
  
@@ -64,7 +69,7 @@ other half of the empty band under the text.
              + floor(p_dispwidget->divider_width_1px);
  
        if (msg->offset_y != y)
-@@ -933,6 +946,7 @@
+@@ -933,6 +949,7 @@
  {
     int glyph_width               = 0;
     float scaled_size             = font_size * p_dispwidget->last_scale_factor;
@@ -72,7 +77,7 @@ other half of the empty band under the text.
  
     /* Limit minimum font size to keep it readable */
     if (scaled_size < min_size)
-@@ -943,6 +957,28 @@
+@@ -943,6 +960,28 @@
      * pixels, so the table's integers are what it draws. */
     scaled_size = gfx_widgets_sharp_size(scaled_size, sharp, sharp_n);
  
@@ -101,7 +106,7 @@ other half of the empty band under the text.
     /* Free existing font */
     if (font_data->font)
     {
-@@ -1075,9 +1111,36 @@
+@@ -1075,9 +1114,36 @@
     p_dispwidget->simple_widget_padding            = p_dispwidget->gfx_widget_fonts.regular.line_height * (2.0f / 3.0f) + 0.5f;
     p_dispwidget->simple_widget_height             = p_dispwidget->gfx_widget_fonts.regular.line_height + p_dispwidget->simple_widget_padding;
  
