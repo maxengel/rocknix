@@ -1,6 +1,6 @@
 # Saved Session State
 
-> **Saved**: 2026-09-26T15:25:51Z
+> **Saved**: 2026-09-26T15:06:53Z
 > **Branch**: feature/conflict-resolution (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the record lives on `next` in `/workspace/repos/rocknix`, pushed to `origin/next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
@@ -17,16 +17,15 @@ The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047).
 
 ## In Progress
 
-- **The soak on the RG35XX SP** (the maintainer's, on 86dc949300 since 15:00 UTC). Reads only; observations to #277.
-- **#291, the VM harness on hardware GL** (D-QA-052, blindspot 63; next `862acc9bf4`): `config/graphic` keeps a device's LLVM yes; `generic-x64-vm --gl auto` (virtio-gpu-gl + egl-headless on `renderD128`); `vm-visual-qa` and `cloud-round-trip` take frames over VNC when screendump has no surface; `vm-qa` reports the display and the renderer. Queued: x64 run 59 (LLVM for the target + Mesa with llvmpipe; started 15:17 UTC, ~34k LLVM steps, watched by pid in `build-x64-run59.status`) then `gl-run.sh` (keeps `x64-all-20260926-f483f215ad`, vm-qa run 44 with the pair on GL; a harness waiter on `gl-run.rc`).
-  - **What remains**: read run 44's report (the walks' time vs 1320 s, `display:`/`renderer:` lines, time-to-play); `frame-diff accept <run walks dir> <baseline> --build f483f215ad --note "the renderer: virgl"` once the boxes are read as the renderer's; the QA log row; RECORD.txt for the llvmpipe cut (a VM-only cut, the H700 unchanged); #291's checkboxes; `rebuild-d2.sh` keeps working (the launcher defaults to GL; `rebuild-d3.sh` has the explicit flags).
+- **The soak on the RG35XX SP** (the maintainer's, on 86dc949300). Reads only, through the credential filter; observations to #277.
 
 ## Next Steps
 
-1. After run 44: the accept, the QA log row, the record, #291 closed on the numbers; the injected-key press count on GL (proof-249 ten of ten).
-2. After the soak: the device reads, the exit's seconds on the A53 (#277), the call on #236 (step 5).
-3. Step 6: the audit through the Facilitator on OpenRouter; steps 7-8: the PR series by content (the `config/graphic` line is upstream-facing: one line, keeps every upstream device as it was -- include it or carry it as fork-only, the maintainer's call), the RG SP and Nova builds.
-4. Harness (#278): promote the proof scripts; RetroArch's command channel for the slot check; the press count in the report. `tools/fork-worktree remove ../rocknix.worktrees/rc-device-fixes` when the round closes.
+1. After the soak: the device reads, the exit's seconds on the A53 (a device-facts row after an exit the maintainer makes), the call on #236 (step 5) with the device facts and the catalog in the same change.
+2. #291 first step, on guest d: relaunch with `-device virtio-gpu-gl-pci` and `-display egl-headless,rendernode=/dev/dri/renderD128` (the iGPU under Mesa; renderD129 is the A1000 under the proprietary driver), read RetroArch's `[GL] Renderer:` and the dropped-frame ratio; then llvmpipe in the GENERIC_X64 Mesa (`llvmpipe` in the gallium drivers under LLVM).
+3. Step 6: the audit (`docs/audits/2026_09_25-milestone-rc-round-since-258/`, uncommitted, paused at Phase 1.3).
+4. Steps 7-8: the PR series by content, #42's docs last; builds for the RG SP and the Retroid Pocket Nova.
+5. Harness (#278): promote `proof-288-stale-record.sh`, `proof-288-fbn.sh`, `proof-290-exit-order.sh`, `proof-249`'s read-back; RetroArch's command channel for the slot check; the press count in the vm-qa report. `tools/fork-worktree remove ../rocknix.worktrees/rc-device-fixes` when the round closes.
 
 ## Key Files Modified
 
