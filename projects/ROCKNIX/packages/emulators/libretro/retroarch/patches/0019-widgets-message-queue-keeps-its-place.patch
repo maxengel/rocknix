@@ -1,0 +1,99 @@
+widgets: the message queue keeps its place on the screen at the readable size
+
+The 14 px floor (0016, fork #251) and the sharp-size step (0017, #255)
+grew the message-queue font from 10 to 15 px on a 640x480 panel, and
+with it every part of the queue's geometry, because RetroArch derives
+the box, the padding and the spacing from the queue font's line height.
+The margin under the lowest box is padding * 4 + spacing * 2 + 1
+(gfx_widgets_msg_queue_move), with nothing drawn in it: 38 px at the
+old size, 57 at the new -- the stack sat a text line higher, which the
+maintainer read as an empty row under "Loaded state", the sign-in line
+and "Press again to quit" (fork #295, 2026-09-26; measured on two
+640x480 guests, docs/qa-frames/2026-09-26/295-*).
+
+So the queue's vertical placement -- the margin under the stack and the
+gaps between its boxes -- uses the padding and spacing the unfloored
+size would have given (font init remembers unfloored / final for the
+queue font; 1.0 where nothing moved, 720p and up), while each box keeps
+the height of the text it draws. The horizontal metrics are untouched.
+
+--- a/gfx/gfx_widgets.h	2026-09-26 21:28:16.038558573 +0000
++++ b/gfx/gfx_widgets.h	2026-09-26 21:28:16.051989945 +0000
+@@ -241,6 +241,13 @@
+    unsigned msg_queue_height;
+    unsigned msg_queue_padding;
+    unsigned msg_queue_spacing;
++   /* ROCKNIX fork #295: the queue's vertical placement uses the padding
++    * and spacing the panel's unfloored font size would have given, so the
++    * 14 px floor (#251) and the sharp-size step (#255) grow the text and
++    * its box without moving the stack up the screen. */
++   unsigned msg_queue_place_padding;
++   unsigned msg_queue_place_spacing;
++   float    msg_queue_place_scale;
+    unsigned msg_queue_rect_start_x;
+    unsigned msg_queue_internal_icon_size;
+    unsigned msg_queue_icon_size_x;
+--- a/gfx/gfx_widgets.c	2026-09-26 21:28:16.038476097 +0000
++++ b/gfx/gfx_widgets.c	2026-09-26 21:28:58.689324805 +0000
+@@ -622,11 +622,14 @@
+ 
+       size_small             = (msg->task_ptr || (msg->flags & DISPWIDG_FLAG_SMALL));
+ 
++      /* ROCKNIX fork #295: the margin under the stack and the gaps between
++       * its boxes from the unfloored size (msg_queue_place_*); the boxes
++       * themselves (msg_queue_height) from the size that is drawn. */
+       if (y == 0)
+-         y += (p_dispwidget->msg_queue_padding * 4.0f);
++         y += (p_dispwidget->msg_queue_place_padding * 4.0f);
+ 
+       y +=    (p_dispwidget->msg_queue_height / 2.0f / (size_small ? 2.0f : 1.0f))
+-            + (p_dispwidget->msg_queue_spacing * (size_small ? 1.0f : 2.0f))
++            + (p_dispwidget->msg_queue_place_spacing * (size_small ? 1.0f : 2.0f))
+             + floor(p_dispwidget->divider_width_1px);
+ 
+       if (msg->offset_y != y)
+@@ -933,6 +936,7 @@
+ {
+    int glyph_width               = 0;
+    float scaled_size             = font_size * p_dispwidget->last_scale_factor;
++   float unfloored_size          = scaled_size;
+ 
+    /* Limit minimum font size to keep it readable */
+    if (scaled_size < min_size)
+@@ -943,6 +947,19 @@
+     * pixels, so the table's integers are what it draws. */
+    scaled_size = gfx_widgets_sharp_size(scaled_size, sharp, sharp_n);
+ 
++   /* ROCKNIX fork #295: the message queue's vertical placement is scaled
++    * from the queue font's line height (gfx_widgets_layout), so the floor
++    * and the sharp step above moved the whole stack up a text line on a
++    * 640x480 panel -- 57 px of empty screen under the lowest box where
++    * 38 had been, which read as an empty row. Remember how far the size
++    * moved; the layout places the queue with the padding and spacing the
++    * unfloored size would have given, and the box keeps the text's size.
++    * 1.0 where nothing moved (720p and up). */
++   if (font_data == &p_dispwidget->gfx_widget_fonts.msg_queue)
++      p_dispwidget->msg_queue_place_scale =
++            (scaled_size > 0.0f && unfloored_size < scaled_size)
++            ? unfloored_size / scaled_size : 1.0f;
++
+    /* Free existing font */
+    if (font_data->font)
+    {
+@@ -1078,6 +1095,16 @@
+    p_dispwidget->msg_queue_height                 = p_dispwidget->gfx_widget_fonts.msg_queue.line_height * 2.4f * (BASE_FONT_SIZE / MSG_QUEUE_FONT_SIZE);
+    p_dispwidget->msg_queue_padding                = (unsigned)(((float)p_dispwidget->gfx_widget_fonts.msg_queue.line_height * (2.0f / 3.0f)) + 0.5f);
+    p_dispwidget->msg_queue_spacing                = p_dispwidget->msg_queue_height / 4.0f;
++   /* ROCKNIX fork #295: where the stack sits, from the unfloored size. */
++   {
++      float place_scale = p_dispwidget->msg_queue_place_scale;
++      float place_line_height;
++      if (place_scale <= 0.0f || place_scale > 1.0f)
++         place_scale = 1.0f;
++      place_line_height                           = p_dispwidget->gfx_widget_fonts.msg_queue.line_height * place_scale;
++      p_dispwidget->msg_queue_place_padding       = (unsigned)((place_line_height * (2.0f / 3.0f)) + 0.5f);
++      p_dispwidget->msg_queue_place_spacing       = (unsigned)((place_line_height * 2.4f * (BASE_FONT_SIZE / MSG_QUEUE_FONT_SIZE)) / 4.0f);
++   }
+    p_dispwidget->msg_queue_rect_start_x           = ceil(p_dispwidget->msg_queue_padding - (p_dispwidget->simple_widget_padding * 0.10f));
+ 
+    gfx_widgets_update_icon_layout(p_dispwidget);
