@@ -6093,7 +6093,13 @@ class Monitor:
             os.remove(path)
         except OSError:
             pass
-        self.cmd("screendump " + path)
+        # A GL scanout (a guest on virgl, fork #291) has no surface for the
+        # monitor's screendump; the frame comes from QEMU's VNC server then,
+        # through vm-visual-qa's grabber, as the same P6 file.
+        if getattr(self, "_vnc", None):
+            return self._vnc_screendump(path)
+        if "no surface" in (self.cmd("screendump " + path) or ""):
+            return self._vnc_screendump(path)
         for _ in range(60):
             if os.path.exists(path) and os.path.getsize(path) > 0:
                 size = -1
@@ -6103,6 +6109,21 @@ class Monitor:
                 return True
             time.sleep(0.05)
         return False
+
+    def _vnc_screendump(self, path):
+        if getattr(self, "_vnc", None) is None:
+            m = re.search(r"Server:\s+([0-9.]+):(\d+)", self.cmd("info vnc") or "")
+            if not m:
+                return False
+            self._vnc = (m.group(1), int(m.group(2)))
+        try:
+            w, h, rgb = visual_qa().vnc_frame(self._vnc[0], self._vnc[1])
+        except (OSError, ValueError, Fail):
+            return False
+        with open(path, "wb") as fh:
+            fh.write(b"P6\n%d %d\n255\n" % (w, h))
+            fh.write(rgb)
+        return True
 
     def frame(self):
         """The framebuffer as bytes, for the walk's settle/wait-for-change

@@ -120,7 +120,12 @@ BUILD=$(SSH 'sed -n "s/^BUILD_ID=//p" /etc/os-release' 2>/dev/null | tr -d '"' |
 OUT="${ROCKNIX_ARTIFACTS:-/workspace/artifacts}/rocknix-images/qa-${BUILD}-${BACKEND}-${GUEST}-$(date +%Y%m%d-%H%M)"
 mkdir -p "$OUT/walks"
 REPORT="$OUT/report.md"
-{ echo "# vm-qa on $BUILD"; echo; echo "started $(date -u '+%Y-%m-%d %H:%M UTC'), guest $GUEST at :$PORT, cloud $BACKEND (port $("$ROOT/tools/cloud-test-backend" port), $("$ROOT/tools/cloud-test-backend" caps)), image ${IMAGE:-(already up)}"; echo; echo "| suite | result | time | log |"; echo "| --- | --- | --- | --- |"; } > "$REPORT"
+# The guest's display, read from its QEMU's own command line (#291): hardware GL through virgl on a host
+# render node, or the software path. The renderer the guest's Mesa then reports is read at the end, from
+# the launch log the exit suite leaves, so a guest that fell back to softpipe says so on its report.
+case "$GUEST" in a) PIDF=/tmp/rocknix-qemu.pid ;; b) PIDF=/tmp/rocknix-qemu-b.pid ;; *) PIDF=/tmp/rocknix-qemu-$GUEST.pid ;; esac
+DISPLAY_MODE=$(ps -o args= -p "$(cat "$PIDF" 2>/dev/null)" 2>/dev/null | grep -o -E 'egl-headless,rendernode=[^ ]+' | sed 's/^egl-headless,rendernode=/GL through virgl on /'); DISPLAY_MODE=${DISPLAY_MODE:-software rendering (no GL display)}
+{ echo "# vm-qa on $BUILD"; echo; echo "started $(date -u '+%Y-%m-%d %H:%M UTC'), guest $GUEST at :$PORT, cloud $BACKEND (port $("$ROOT/tools/cloud-test-backend" port), $("$ROOT/tools/cloud-test-backend" caps)), image ${IMAGE:-(already up)}, display: $DISPLAY_MODE"; echo; echo "| suite | result | time | log |"; echo "| --- | --- | --- | --- |"; } > "$REPORT"
 FAILS=0
 SKIPS=0  # a suite that could not run (rc 3) is shown as such, never folded into PASS
 run_suite() {  # name, log, command...
@@ -442,5 +447,7 @@ if [ -f "$OUT/time-to-play/time-to-play.md" ]; then
   # rather than beside the report's.
   { echo; sed -e 's/^## /### /' -e '1s/^# /## /' "$OUT/time-to-play/time-to-play.md"; } >> "$REPORT"
 fi
+RENDERER=$(SSH 'grep -h -m1 "\[GL\] Renderer:" /var/log/exec.log 2>/dev/null' 2>/dev/null | sed 's/.*Renderer: //' | tr -d '\r')
+{ echo; echo "renderer: ${RENDERER:-(no RetroArch launch log on the guest)} -- the guest's Mesa, from the launch log; display: $DISPLAY_MODE"; } >> "$REPORT"
 echo; cat "$REPORT"; echo; echo "report: $REPORT"
 [ "$FAILS" = 0 ]

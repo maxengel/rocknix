@@ -22,6 +22,24 @@ VM_DIR = Path(__file__).resolve().parent
 PROFILE_PATH = VM_DIR / "profile.json"
 
 
+def pick_render_node(choice):
+    """The host render node for --gl: None for the software path."""
+    if choice in (None, "", "none", "off"):
+        return None
+    if choice != "auto":
+        if not os.path.exists(choice):
+            raise ValueError(f"--gl {choice}: no such render node")
+        return choice
+    for node in sorted(Path("/dev/dri").glob("renderD*")):
+        driver = Path("/sys/class/drm") / node.name / "device" / "driver"
+        name = os.path.basename(os.path.realpath(driver)) if driver.exists() else ""
+        if name == "nvidia":
+            continue
+        if os.access(node, os.R_OK | os.W_OK):
+            return str(node)
+    return None
+
+
 def load_profile():
     with PROFILE_PATH.open(encoding="utf-8") as stream:
         profile = json.load(stream)
@@ -123,8 +141,21 @@ def qemu_command(profile, args):
     pidfile_args = []
     daemonize_args = []
     if args.headless:
-        display_device = display_device.replace("-gl-", "-")
-        display_arg = "none"
+        # Hardware GL for a headless guest (fork #291): virtio-gpu-gl-pci
+        # with egl-headless on a host render node, so the guest's Mesa
+        # renders through virgl on the host's GPU instead of softpipe --
+        # RetroArch dropped six frames in ten on the software path and
+        # one in two thousand on this one. --gl auto takes the first render
+        # node whose driver is not nvidia (virglrenderer wants Mesa's EGL);
+        # --gl none is the software path; --gl /dev/dri/renderDNNN names
+        # one. The monitor's screendump has no surface under a GL scanout;
+        # the VNC display stays and the harness takes its frames there.
+        gl_node = pick_render_node(args.gl)
+        if gl_node:
+            display_arg = f"egl-headless,rendernode={gl_node}"
+        else:
+            display_device = display_device.replace("-gl-", "-")
+            display_arg = "none"
         vnc_args = ["-vnc", f"127.0.0.1:{args.vnc}"]
         serial = Path(args.serial).resolve()
         serial.unlink(missing_ok=True)
@@ -495,6 +526,15 @@ def add_qemu_options(parser):
         ),
     )
     parser.add_argument("--serial", default="/tmp/rocknix-qemu-serial.sock", help="serial console socket with --headless")
+    parser.add_argument(
+        "--gl",
+        default=os.environ.get("ROCKNIX_QEMU_GL", "auto"),
+        help=(
+            "hardware GL for a --headless guest through virgl: auto (the first "
+            "host render node not driven by nvidia; the default, also "
+            "ROCKNIX_QEMU_GL), none (software rendering), or a /dev/dri/renderD* node"
+        ),
+    )
     parser.add_argument("--vnc", type=int, default=9, help="VNC display number with --headless (default: 9, port 5909)")
     parser.add_argument("--pidfile", default="/tmp/rocknix-qemu.pid", help="QEMU pidfile with --headless")
     parser.add_argument(

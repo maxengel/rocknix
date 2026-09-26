@@ -33,6 +33,9 @@ VM_TOOL="$ROOT/projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm"
 DIR="${VM_PAIR_DIR:-/tmp/rocknix-vm-pair}"
 KEY="$DIR/qa-key"
 
+# VM_GL=none puts the guests on the software renderer; the launcher's default
+# is hardware GL through virgl on the host's first Mesa render node (#291), and
+# the harness takes its frames over the VNC display when the monitor has no surface.
 # Per-guest settings: letter -> monitor serial pidfile vnc sshport mac
 # (every `read` below names all six: the last variable takes the rest of the
 # line, so a field added here without a slot there lands in the one before it)
@@ -67,7 +70,7 @@ case "${1:-}" in
     rm -f "$DIR/image.img"
     for g in a b; do
       read -r mon ser pid vnc port mac <<<"$(settings "$g")"
-      "$VM_TOOL" run --headless --daemonize --monitor "$mon" --serial "$ser" --pidfile "$pid" --vnc "$vnc" --ssh-port "$port" --mac "$mac" "$DIR/vm-$g.qcow2" 2>&1 | grep -v pw.conf || true
+      "$VM_TOOL" run --headless --daemonize ${VM_GL:+--gl "$VM_GL"} --monitor "$mon" --serial "$ser" --pidfile "$pid" --vnc "$vnc" --ssh-port "$port" --mac "$mac" "$DIR/vm-$g.qcow2" 2>&1 | grep -v pw.conf || true
       echo "up: $g (pid $(cat "$pid"), ssh :$port, serial $ser, mac $mac)"
     done
     for g in a b; do

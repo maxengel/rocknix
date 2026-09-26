@@ -269,6 +269,46 @@ no `es_log.txt` under `/storage/.config/emulationstation/`, and a `grep -c`
 on that path over serial returns an error line whose digits are none, which
 `tr -dc '0-9'` turns into an empty count -- a FAIL that names the harness.
 
+## The guests render in hardware, and the frames come over VNC (#291)
+
+Until 2026-09-26 every QA guest rendered with Mesa's **softpipe**: the
+image's options had said `LLVM_SUPPORT="yes"` for llvmpipe since the device
+was added, and `config/graphic` reset it to `no` before Mesa read it, so
+the interface, the compositor and RetroArch all drew on the CPU through the
+slowest software rasterizer -- RetroArch dropped six frames in ten, its
+udev poll could stall past a 100 ms key press (the #249 proof's misses),
+and the walks took twenty-two minutes. Nobody had read the renderer line;
+the options comment was taken as the behaviour.
+
+Two things changed, and both are the default now:
+
+- **`generic-x64-vm --headless` puts the guest on hardware GL through
+  virgl** (`--gl auto`): `virtio-gpu-gl-pci` with `-display
+  egl-headless,rendernode=<node>`, the node the first `/dev/dri/renderD*`
+  whose driver is not `nvidia` (virglrenderer wants Mesa's EGL; on the
+  build box that is the Intel iGPU, `renderD128`, with the RTX A1000 on
+  `renderD129` under the proprietary driver). The image's Mesa carries the
+  virgl driver, so RetroArch reports `Renderer: virgl (Mesa Intel(R)
+  Graphics (ARL))` and drops one frame in two thousand. `--gl none` (or
+  `VM_GL=none` through `vm-pair`) is the software path; the image also
+  carries **llvmpipe** now for that path (the `config/graphic` reset keeps a
+  device's explicit yes).
+- **The monitor's `screendump` has no surface under a GL scanout** (QEMU
+  answers `Error: no surface`; the frame is a texture the console never
+  reads back). `vm-visual-qa`'s `Monitor.screendump` -- and so `frame`,
+  `shot`, every walk, `time-to-play`, `ra-offline-test`'s frames and
+  `cloud-round-trip`'s walk steps -- takes the frame over the guest's VNC
+  display instead, the server `info vnc` names, as the same P6 file; once
+  seen, VNC is used for the rest of the session. The RFB client is in the
+  tool, standard library only, raw encoding, about 0.1 s a frame at 640x480.
+
+`vm-qa`'s report says which display the guest had (`display: GL through
+virgl on /dev/dri/renderD128`, read from QEMU's own command line) and which
+renderer its Mesa reported (`renderer: virgl (...)`, from the launch log the
+exit suite leaves). A report that reads `softpipe` is a guest on the wrong
+path, whatever the options say. Hardware rendering moves pixels against the
+accepted walk baseline once; that accept is named in `docs/vm-qa-log.md`.
+
 ## Driving EmulationStation from the monitor
 
 The keys the image maps (`/storage/.config/emulationstation/es_input.cfg`,
