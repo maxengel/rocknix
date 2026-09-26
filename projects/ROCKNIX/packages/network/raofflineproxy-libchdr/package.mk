@@ -3,7 +3,7 @@
 
 PKG_NAME="raofflineproxy-libchdr"
 # The commit RAOfflineProxy pins as its third_party/libchdr submodule at the
-# proxy's own pinned commit (4e9bab48, fork #165), read the same way as
+# proxy's own pinned commit (c1bd3724 since 2026-09-26; unchanged since 4e9bab48, fork #165), read the same way as
 # raofflineproxy-rcheevos. The proxy's tarball carries the submodule as an
 # empty directory; these sources (libchdr and the miniz, lzma and zstd
 # decoders it vendors under deps/) are compiled by raofflineproxy's recipe

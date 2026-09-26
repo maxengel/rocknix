@@ -3,7 +3,7 @@
 
 PKG_NAME="raofflineproxy-rcheevos"
 # The commit RAOfflineProxy pins as its third_party/rcheevos submodule at the
-# proxy's own pinned commit (0711f0b9, fork #259; upstream moved it from
+# proxy's own pinned commit (c1bd3724 since 2026-09-26, the same submodule commit as at 0711f0b9, fork #259; upstream moved it from
 # 2ad0b86 in 095867d): read from the repository's
 # tree with `gh api repos/misantronic/RAOfflineProxy/contents/third_party`.
 # GitHub's tarball of the proxy carries the submodule as an empty directory,

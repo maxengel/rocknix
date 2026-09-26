@@ -2,7 +2,7 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="raofflineproxy"
-# Pinned by full commit (packages/README.md): main at 2026-09-23 (fork #259).
+# Pinned by full commit (packages/README.md): main at 2026-09-26 (fork #293; 0711f0b of 2026-09-23 before, fork #259).
 # Since the previous pin (4e9bab48, 2026-09-20) the Linux side refreshes only
 # the games played in the last seven days (59b167c), keeps every cached
 # game's rows until the game is deleted rather than evicting them after sixty
@@ -11,8 +11,8 @@ PKG_NAME="raofflineproxy"
 # is unchanged at 8e7b8bd. Patch 005 kept its exception boundary and dropped
 # its bound on the pass; 006 retired, upstream now does more than it did
 # (D-RA-029). APP_VERSION still reads 1.13.0-alpha1.
-PKG_VERSION="0711f0b9b61e8cd75011200c518792605332f7b0"
-PKG_SHA256="56a6f1e9d4dbf5bebc55c2907a143a1a0f1cd434a3e2c28dd1015afc00f128c4"
+PKG_VERSION="c1bd3724d18e8c0ce67c3d62852e6eaf83e3a302"
+PKG_SHA256="0729719d8ea7fd23a4669f79849ce0c8d1d9d811e978ac1c60bc1ed97a9d5d19"
 # GPLv3 text with no "or any later version" grant in the sources.
 PKG_LICENSE="GPL-3.0-only"
 PKG_SITE="https://github.com/misantronic/RAOfflineProxy"
