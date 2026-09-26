@@ -2474,6 +2474,30 @@ cut again. Every claim is what the VM showed on the image (`proof-293-toast-v2` 
   upstream, nothing the ROCKNIX image runs changed, every fork patch unchanged; taken once the maintainer reset the
   QA account so the proxy's own proof could run on the image (the cut's record names the run).
 
+### Six changes of the round this log had not named (written 2026-09-26, #294)
+
+The maintainer asked for the running log to be fully up to date. Checked against every fork issue closed as
+completed since 2026-09-24: thirty were not named here by number; twenty-four are process, harness or older work the
+log already describes in words; these six changed what a player sees and had no entry. Each is a claim its issue
+closed on, against the cut named.
+
+- **The RetroAchievements pages open on fork builds.** RETROACHIEVEMENTS from the main menu and a game's context
+  menu answered 401 on every fork image, because the web API key is a build-time secret the fork does not carry;
+  the key is now entered on the device beside the account, as the ScreenScraper pair is (#68; frames on
+  `77e7e97515`, on the RG35XX SP since `664ad9ac64`).
+- **Screenshots taken during a session appear in the image viewer when the game ends**, not after UPDATE
+  GAMELISTS (#82; *"It is a bit bizarre that it takes an update to see it"*; frames on `664ad9ac64`).
+- **Rows that cannot run yet are drawn dimmed**, as the style guide always said: the menu recoloured every row
+  every frame, so a row dimmed once was normal by the first frame (#182; RC-11 build 2 `a6d032bf5e`, 640x480).
+- **An offline top-up that finished is COMPLETED**, even when the badge downloads after it outlive the bound; RC-7
+  stamped a run whose worker had reported DONE as TOOK TOO LONG (#188; the RG35XX SP's first full scan on the
+  fix, 238 games, COMPLETED).
+- **The offline achievements summary answers at once.** A game whose icon was not cached stalled the proxy about
+  34 s per image and the page waited behind it; images from the device path are store-only and an offline miss
+  answers immediately (#199; RC-11 build 2 `a6d032bf5e`, a 200-game list).
+- **A settings backup no longer carries the IGDB scraper's client secret** (`backuptool` strips it beside the two
+  ScreenScraper passwords; the strip has a test for the first time) (#274; `c939df737a`, the scripts suite).
+
 ### The second opinion, and the twentieth cut (2026-09-24, #260)
 
 The maintainer asked whether the audit had an adversarial phase by default;
