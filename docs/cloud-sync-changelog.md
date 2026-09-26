@@ -2412,6 +2412,48 @@ thread in `FileData::launchGame` (ES `e563e0024`), with a generation counter
 so a game launched and left in between owns the outcome; nothing about what
 is synced, or when the card asks STOP IT AND PLAY, changed.
 
+### The offline achievements' own cards (2026-09-26, `64a0934a5d`)
+
+Two asks from the maintainer's play-testing of `86dc949300`, the same evening: the offline achievements' send is
+invisible (*"I didn't see the RetroAchievements sync card actually displayed at any point"*, and no record says whether
+it ever was, #292), and every automatic process in the saves and achievements lanes should be shown and gated like a
+sync (*"if there's activity happening in the background around RetroAchievements or save management, etc., we want
+to make sure we're showing the user what's going on"*, #293). Every claim is what the VM showed on the image
+(`proof-292-cards-v3` on guest d at 640x480, 23 of 25 checks, the two failures the harness's own; run 1's frames of
+the top-up card; `docs/qa-frames/2026-09-26/292-*` and `293-*`).
+
+- **When the device comes back online with achievements waiting, a card says so** (#292, D-RA-030): SENDING OFFLINE
+  ACHIEVEMENTS... with the count (1 TO SEND), then COMPLETED and OFFLINE ACHIEVEMENTS HAVE BEEN SENT (TO
+  RETROACHIEVEMENTS where the line has room, D-UI-096). When RetroAchievements does not answer within 45 seconds the
+  card says COULDN'T FINISH - RETROACHIEVEMENTS STOPPED ANSWERING and IT'LL TRY AGAIN WHEN YOU'RE CONNECTED; the
+  proxy keeps the awards and sends them on its next connection, as before. The card's outcome is stamped
+  (`/storage/.cache/cloud_sync/last-sync-link`), so "was it shown?" is a read on the device.
+- **The exit sync that was skipped for want of a network now runs when the network returns**, with its own SYNC SAVES
+  card, after the send card. "SAVES WILL BE SYNCED NEXT TIME YOU'RE CONNECTED" on the exit card had no mechanism
+  behind it until now.
+- **Nothing about achievements is said when leaving a game.** The exit card says what happened to the saves and
+  nothing else; the awards' sentences (WILL BE SENT NEXT TIME..., HAVE BEEN SENT..., the two-part "awards and saves"
+  line, the toast after a failed sync) are gone from it, as the maintainer asked.
+- **The top-up of achievement data for recently played games is shown while it runs** (#293, D-UI-095): UPDATING
+  OFFLINE ACHIEVEMENTS... with N OF M, then COMPLETED and N GAMES ADDED FOR OFFLINE PLAY. (or YOUR OFFLINE
+  ACHIEVEMENTS ARE UP TO DATE.). A run with nothing to do shows nothing.
+- **A game launched over either asks, in the same shape as over a sync** (D-UI-096): OFFLINE ACHIEVEMENTS ARE BEING
+  SENT. IT'LL BE A MOMENT. with PLAY NOW (the send goes on behind the game) and KEEP WAITING; YOUR OFFLINE
+  ACHIEVEMENTS ARE BEING UPDATED. IF YOU STOP IT, IT'LL TRY AGAIN NEXT TIME YOU'RE CONNECTED. with STOP IT AND PLAY
+  and KEEP WAITING. The safe verb is last, where the back button lands.
+- **One floating surface at a time** (D-UI-093): the send card waits for a sync card to finish, and an automatic
+  sync that reached the network asks for it as it ends.
+
+Under the surface: a new `ProxyCards` unit in EmulationStation (ES `0ade9086b` to `6e6643687`); the send card follows
+the proxy's own queue (`raofflineproxy-ctl pending`) and takes its flush stamp; the top-up card reads the ctl's
+progress file, and STOP IT AND PLAY signals the run through the pid in the ctl's lock. Two findings of the proof were
+fixed before the cut: a sync that found no network no longer asks for the send card at its end (the link's return
+does), and PLAY NOW launches once instead of asking again. RAOfflineProxy stays at `0711f0b` for this cut
+(D-RA-031: upstream's same-day commit is spruce and Onion platform work). Not yet proven end to end: an award
+earned offline going up at the link with the card saying so -- the QA account's one routed achievement is spent
+(earned 2026-09-25 16:22 UTC), so the proof shims the proxy's count and the real-award run waits for the account's
+reset.
+
 ### The second opinion, and the twentieth cut (2026-09-24, #260)
 
 The maintainer asked whether the audit had an adversarial phase by default;

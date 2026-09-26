@@ -92,3 +92,18 @@ Run 1's other phases were the harness's, not the interface's: the proof pressed 
 (§ Driving EmulationStation from the monitor), wrote the exit-sync toggle after the interface had loaded its settings
 (§ A settings change made from the shell is invisible to the running interface), and drove Tobu's route to an
 achievement the QA account had already earned. Run 2 (`proof-292-cards-v2.sh`) is the send card's proof.
+
+## #292, the send card, the question over it, and the exit card without the achievements
+
+`proof-292-cards-v3.sh` (session directory) on guest d (640x480, GL) on `64a0934a5d` (ES `6e6643687`): the proxy's
+`pending` answer shimmed by a wrapper bind-mounted over the ctl (the QA account's one routed achievement is spent, so no
+real award could be queued -- a synthetic input, named), the link cut and restored on the monitor, frames over VNC every
+half second.
+
+| Frame | What it shows |
+| --- | --- |
+| `292-exit-card-offline.png` | a game exited with the link down: SYNC SAVES / SKIPPED - YOU'RE NOT ONLINE / SAVES WILL BE SYNCED NEXT TIME YOU'RE CONNECTED. -- and nothing about achievements, as the maintainer asked (D-RA-030) |
+| `292-send-card-to-send.png` | the link back with an award waiting: SENDING OFFLINE ACHIEVEMENTS... / 1 TO SEND |
+| `292-launch-over-send-question.png` | a launch through the API while it runs: OFFLINE ACHIEVEMENTS ARE BEING SENT. / IT'LL BE A MOMENT. / PLAY NOW, KEEP WAITING (D-UI-096) |
+| `292-send-card-couldnt-finish.png` | 45 s on with the queue still at 1: SEND OFFLINE ACHIEVEMENTS / COULDN'T FINISH - RETROACHIEVEMENTS STOPPED ANSWERING / IT'LL TRY AGAIN WHEN YOU'RE CONNECTED.; the stamp reads `5 not-sent`; the SYNC SAVES card that was owed followed it (`last-sync-exit` went from `69 no-network` to `0 completed`) |
+| `292-send-card-completed.png` | the link back with the proxy's flush stamp in place: SEND OFFLINE ACHIEVEMENTS / COMPLETED / OFFLINE ACHIEVEMENTS HAVE BEEN SENT TO RETROACHIEVEMENTS. (the longer candidate fits at 640x480); the stamp reads `0 sent` |
