@@ -2498,7 +2498,7 @@ closed on, against the cut named.
 - **A settings backup no longer carries the IGDB scraper's client secret** (`backuptool` strips it beside the two
   ScreenScraper passwords; the strip has a test for the first time) (#274; `c939df737a`, the scripts suite).
 
-### The notifications sit where they did, at the readable size (2026-09-26, `af3aaa3af0`)
+### The notifications sit where they did, at the readable size (2026-09-26, `6f0a974765`)
 
 From the maintainer's play-testing of `d72084ccad` (*"do the RetroAchievements login and save state load leave an extra
 row below them? They seem to be a bit higher up the screen than they previously used to be"*, and *"'Press again to
@@ -2508,12 +2508,15 @@ quit' also seemed like a row up"*; #295). Every claim is what the VM showed on t
 - **RetroArch's notifications sit where they did before the readable-size change, at the readable size** (D-UI-097).
   The floor that made the message text readable on small panels (2026-09-24) had scaled the whole message queue with
   the font, and the stack of notifications -- the save-state load, the sign-in line, "Press again to quit" -- sat a text
-  line higher, with an empty row under it. The lowest message now ends 40 px above the panel's bottom on a 640x480
-  panel (57 before this cut, 38 before the floor), the text still at the readable size.
+  line higher, with an empty row under it. The lowest message's text is now centred 50 px above the panel's bottom on a
+  640x480 panel, where the build before the floor drew it (78 on the cut that raised the size), in a box one pixel
+  taller than that build's, and the text keeps the readable size.
 
-Under the surface: RetroArch patch `0019` places the queue with the padding and spacing an 11 px queue font (the size
-the queue was drawn at before the floor) would have given, while each box keeps its text's height; two log lines print
-the sizes and the placement at every layout. Nothing else changed.
+Under the surface: RetroArch patch `0019` places the queue, and sizes each message's box, with the padding, spacing and
+height a 9 px queue font (RetroArch's own floor, the size the queue was drawn at before the fork's) would have given,
+while the text is drawn at the floored size; two log lines print the sizes and the placement at every layout. It took
+six cuts, each measured on the VM: four of them matched the box's bottom edge, which is not what the eye reads. Nothing
+else changed.
 
 ### The second opinion, and the twentieth cut (2026-09-24, #260)
 
