@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-26T18:58:00Z
+> **Saved**: 2026-09-26T20:00:00Z
 > **Branch**: feature/conflict-resolution (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the record lives on `next` in `/workspace/repos/rocknix`, pushed to `origin/next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047). The maintainer's play-testing of `86dc949300` on the RG35XX SP asked for #292 (the offline achievements' send shown when it happens) and #293 (every automatic process in the lanes shown and gated). Both are built and proven on the VM in the cut **`64a0934a5d`** (ES `6e6643687`; x64 run 62 at 18:05 UTC, H700 run 40 at 18:09 UTC, one synced head; records `x64-all-20260926-64a0934a5d`, `h700-all-20260926-64a0934a5d`). vm-qa run 45 over the x64 image: fourteen suites PASS, the scripts suite PASS in a foreground rerun (it had been started as a shell background job, SIGINT ignored); records, catalog (45 cuts) and QA log written and pushed. The H700 image is **not staged**: the copy and the reboot are the maintainer's two yeses (D-QA-011/015). The device runs `86dc949300` since 15:00 UTC.
+The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047). The maintainer approved the copy and reboot of `64a0934a5d`, then asked for #293's capture-failure toast to be in the build, so that cut was never staged; the candidate is **`d72084ccad`** (ES `d3ba4edca`: the toast; RAOfflineProxy `c1bd3724d1`, D-RA-032; x64 run 63 at 19:22, H700 run 41 at 19:25 UTC; records `x64-all-20260926-d72084ccad`, `h700-all-20260926-d72084ccad`, the `64a0934a5d` records superseded). Proven: the toast (`proof-293-toast-v2`, 8 of 8, frames `293-capture-failed-*`), the proxy (`tools/ra-offline-test` 32 of 32 on the bump), vm-qa run 46 fourteen of fifteen -- frame-diff failed on one walk screen (`run-transfer/08-transfer-done`: the cloud already held the fixture; #278), run 47 reruns the walks. `rc-preflight` MAY BE CUT at `4d757d4b63`. The H700 image is **not staged**: the copy and the reboot of `d72084ccad` are put to the maintainer (the yeses given were for `64a0934a5d`). The device runs `86dc949300` since 15:00 UTC.
 
 ## Completed This Session (2026-09-26, this stretch)
 
@@ -17,14 +17,14 @@ The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047).
 
 ## In Progress
 
-- **The call (#236, step 5)** after the maintainer's play-testing of `64a0934a5d`; the H700 copy and reboot wait on the two yeses.
+- **vm-qa run 47** (`/workspace/tmp/rocknix-session/vmqa-run47.{sh,log,rc}`: walks + frame-diff over `d72084ccad`): when it ends, replace `WALKS_RERUN_LINE` in both RECORD.txt files (artifacts), `tools/release-catalog --write`, amend the QA log row if the verdict changed, commit, push.
+- **The call (#236, step 5)** after the maintainer's play-testing of `d72084ccad`.
 
 ## Next Steps
 
-1. Put the H700 copy to the maintainer (one yes), then the reboot (a second yes): `/workspace/tmp/rocknix-session/stage-and-reboot-86dc949300.sh` is the shape (adapt to `64a0934a5d`; stage to `/storage/.update-staging`, sha256 on the device, move into `/storage/.update`; `tools/device-act rg35xxsp ...` for each step); device-facts row after.
-2. Ask the maintainer to reset the QA account's Tobu "Potato-tan Secret" (100359) on the site; then `tools/ra-offline-test` with the frame grabber (the real-award run for #292's first checkbox) and the RAOfflineProxy bump to `c1bd3724d1` with that test as its proof (D-RA-031).
+1. On the maintainer's yes for `d72084ccad`: the copy, then the reboot on a second yes: `/workspace/tmp/rocknix-session/stage-and-reboot-86dc949300.sh` is the shape (adapt to `d72084ccad`; stage to `/storage/.update-staging`, sha256 on the device, move into `/storage/.update`; `tools/device-act rg35xxsp ...` for each step); device-facts row after.
+2. The real-award frame of the send card: one more reset of Tobu's Potato-tan Secret (100359; the 19:33 UTC run earned it again), then `proof-292-real-award-v2` (the toggle on before the reboot, which v1 lacked and so showed no card). The proxy bump itself is proven (D-RA-032).
 3. #292's open item to verify: twenty PLAY NOW exits after a link flip with `Debug=true`, every one with a `cloud_backup` run.
-4. #293's item 3 (the capture-failure toast): words to the maintainer, then a small change.
 5. Step 6 (the audit through the Facilitator on OpenRouter; `docs/audits/2026_09_25-milestone-rc-round-since-258/` paused at Phase 1.3, uncommitted), steps 7-8 (the PR series by content; RG SP and Nova builds).
 6. Harness (#278): promote `proof-common.sh`, the proof scripts, `vnc-grab.py` and the ctl shim into `tools/`; `press_a`/`press_b`; `tools/fork-worktree remove ../rocknix.worktrees/rc-device-fixes` when the round closes.
 
@@ -35,7 +35,9 @@ The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047).
 | ES `es-app/src/ProxyCards.{h,cpp}` | Created | the send and top-up cards, the gates' answers |
 | ES `FileData.cpp`, `ThreadedCloudSync.cpp`, `OfflineAchievements.{h,cpp}`, `NetworkThread.cpp`, `ThreadedHasher.cpp`, `CloudText.{h,cpp}`, `CMakeLists.txt`, `locale/lang/fr/...po` | Modified | the questions, the exit card's cleanup, `exitSyncOwed`, the link's calls, French |
 | `projects/ROCKNIX/packages/ui/emulationstation/package.mk` | Modified | pin `6e6643687` |
-| `docs/decision-register.md`, `docs/releases/rc-accept.txt` | Modified | D-RA-031 |
+| `docs/decision-register.md`, `docs/releases/rc-accept.txt` | Modified | D-RA-031, D-RA-032 |
+| `projects/ROCKNIX/packages/network/raofflineproxy*/package.mk` | Modified | the proxy at `c1bd3724d1`; the three recipes' comments |
+| ES `main.cpp`, `FileData.cpp` (the toast), `.claude/rules/player-language.md` (the lesson) | Modified | #293 item 3 |
 | `.claude/rules/{es-player-text,es-native-ui}.md`, `docs/es-menu-map.md`, `docs/cloud-sync-changelog.md`, `docs/friction-log.md`, `docs/qa-frames/2026-09-26/`, the work log | Modified | the words, the rule, the map, the entry, the frames |
 
 ## Related Context
@@ -54,6 +56,6 @@ The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047).
 
 ## Open Questions
 
-- The two yeses for the H700 copy and reboot.
-- The QA account's achievement reset (the real-award proof and the proxy bump wait on it).
-- The capture-failure toast's words (#293 item 3).
+- The two yeses for the H700 copy and reboot of `d72084ccad`.
+- One more Tobu reset for the real-award frame of the send card.
+- vm-qa run 47's walk rerun (the transfer screen).
