@@ -107,3 +107,15 @@ half second.
 | `292-launch-over-send-question.png` | a launch through the API while it runs: OFFLINE ACHIEVEMENTS ARE BEING SENT. / IT'LL BE A MOMENT. / PLAY NOW, KEEP WAITING (D-UI-096) |
 | `292-send-card-couldnt-finish.png` | 45 s on with the queue still at 1: SEND OFFLINE ACHIEVEMENTS / COULDN'T FINISH - RETROACHIEVEMENTS STOPPED ANSWERING / IT'LL TRY AGAIN WHEN YOU'RE CONNECTED.; the stamp reads `5 not-sent`; the SYNC SAVES card that was owed followed it (`last-sync-exit` went from `69 no-network` to `0 completed`) |
 | `292-send-card-completed.png` | the link back with the proxy's flush stamp in place: SEND OFFLINE ACHIEVEMENTS / COMPLETED / OFFLINE ACHIEVEMENTS HAVE BEEN SENT TO RETROACHIEVEMENTS. (the longer candidate fits at 640x480); the stamp reads `0 sent` |
+
+## #293 item 3, a capture that could not record says so once
+
+`proof-293-toast-v2.sh` (session directory) on guest d (640x480, GL) on `d72084ccad` (ES `d3ba4edca`): `/usr/bin/cloud_capture`
+shadowed by a wrapper that exits 1 (a bind mount over the read-only image, gone at the next boot -- P-05's named substitute
+for a real failure), exit sync on, Ninoid launched through the API and left through the exit hotkey, frames over VNC every
+half second; then the wrapper lifted and a control exit (no toast, no warning). 8 of 8.
+
+| Frame | What it shows |
+| --- | --- |
+| `293-capture-failed-sync-card-first.png` | 1.5 s after the exit: SYNC SAVES / COMPLETED -- the sync card runs first and still runs (`last-sync-exit` `0 completed`) |
+| `293-capture-failed-toast.png` | 7.5 s after the exit, once the card has gone: COULDN'T RECORD THIS SESSION'S SAVES. THEY'RE STILL ON THIS DEVICE. -- said once, as a toast, the card's words put back on the queue by D-UI-093; the interface's log carries the `cloud_capture exited 1` line |
