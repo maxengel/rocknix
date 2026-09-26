@@ -35,3 +35,19 @@ Guest d (640x480) on `a8175c6193` (EmulationStation `c1c0d6ddc`), the same case 
 | `283-after-card-syncing-toast-waiting-a8175c6193.png` | +14 s: SYNCING SAVES TO THE CLOUD, 12.4 MB OF 14.6 MB -- the queued toast is not drawn |
 | `283-after-card-outcome-a8175c6193.png` | +17.5 s: the card's outcome (COULDN'T FINISH here, the QA backend again, #286) |
 | `283-after-toast-after-the-card-a8175c6193.png` | +20 s: the toast, alone, once the card has gone -- it waited |
+
+## #288, the defect reproduced (the control)
+
+Guest d (640x480) on `a8175c6193` -- the build on the RG35XX SP -- `proof-288-stale-record.sh`: the probe ROM as `Bobl`,
+the walk fixture `nes-256x240-right.png` (its green mark is the picture's right edge) as its auto-save capture, and beside
+it the record every build before ES `5644752aa` wrote, `turns=3` with no `from=own-launch` line -- the maintainer's Dr.
+Mario, F-Zero and Aladdin. The mark's side is measured against the picture (the one blue thing on the page).
+
+| Frame | What it shows |
+| --- | --- |
+| `288-before-old-record-turned-a8175c6193.png` | the SAVE STATE MANAGER with the old record in place: the tile turned three quarter turns counter-clockwise (portrait, 83x111), the mark on the **bottom** -- what the maintainer saw |
+| `288-exit-capture-upright-a8175c6193.png` | after the game was launched through the API and left through the exit hotkey: RetroArch's own capture of the exit, drawn upright (131x98), the record rewritten `turns=0` -- the old reader's heal by play, and #280's exit-capture criterion |
+| `288-after-heal-by-play-a8175c6193.png` | the fixture picture put back over that capture, the healed record: the mark on the **right** (unturned) |
+
+The fixed reader's frames, the same seed unturned before any play, are taken on guest a from the `3f93dc4683` cut by the
+chain (`proof-288`), and filed here when it has run.
