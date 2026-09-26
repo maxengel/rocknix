@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-26T20:00:00Z
+> **Saved**: 2026-09-26T20:50:00Z
 > **Branch**: feature/conflict-resolution (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the record lives on `next` in `/workspace/repos/rocknix`, pushed to `origin/next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047). The maintainer approved the copy and reboot of `64a0934a5d`, then asked for #293's capture-failure toast to be in the build, so that cut was never staged; the candidate is **`d72084ccad`** (ES `d3ba4edca`: the toast; RAOfflineProxy `c1bd3724d1`, D-RA-032; x64 run 63 at 19:22, H700 run 41 at 19:25 UTC; records `x64-all-20260926-d72084ccad`, `h700-all-20260926-d72084ccad`, the `64a0934a5d` records superseded). Proven: the toast (`proof-293-toast-v2`, 8 of 8, frames `293-capture-failed-*`), the proxy (`tools/ra-offline-test` 32 of 32 on the bump), vm-qa run 46 fourteen of fifteen -- frame-diff failed on one walk screen (`run-transfer/08-transfer-done`: the cloud already held the fixture; #278), run 47 reruns the walks. `rc-preflight` MAY BE CUT at `4d757d4b63`. The H700 image is **not staged**: the copy and the reboot of `d72084ccad` are put to the maintainer (the yeses given were for `64a0934a5d`). The device runs `86dc949300` since 15:00 UTC.
+The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047). The maintainer approved the copy and reboot of `64a0934a5d`, then asked for #293's capture-failure toast to be in the build, so that cut was never staged; the candidate is **`d72084ccad`** (ES `d3ba4edca`: the toast; RAOfflineProxy `c1bd3724d1`, D-RA-032; x64 run 63 at 19:22, H700 run 41 at 19:25 UTC; records `x64-all-20260926-d72084ccad`, `h700-all-20260926-d72084ccad`, the `64a0934a5d` records superseded). Proven: the toast (`proof-293-toast-v2`, 8 of 8, frames `293-capture-failed-*`), the proxy (`tools/ra-offline-test` 32 of 32 on the bump), vm-qa runs 46 and 48 (fresh pairs) fourteen of fifteen each, frame-diff on one transfer screen both times -- the second back-up of the same content ends in 2 s with NOTHING NEW where the `f483f215ad` reference held it still working at 90 s (the QA backend's same-name refusal, #286; the backend was restarted between runs 45 and 46) -- so run 48's walks are the new baseline (build `d72084ccad`, 20:40 UTC; the old one kept as `walk-baseline-f483f215ad-20260926-2040`) and frame-diff reads PASS against it; run 47 (`--only walks --skip-up`) met leftover guest state and proved nothing. `rc-preflight` MAY BE CUT at `4d757d4b63`; `next` at `8c848b915f`. The H700 image is **not staged**: the copy and the reboot of `d72084ccad` are put to the maintainer (the yeses given were for `64a0934a5d`). The device runs `86dc949300` since 15:00 UTC.
 
 ## Completed This Session (2026-09-26, this stretch)
 
@@ -17,8 +17,7 @@ The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047).
 
 ## In Progress
 
-- **vm-qa run 47** (`/workspace/tmp/rocknix-session/vmqa-run47.{sh,log,rc}`: walks + frame-diff over `d72084ccad`): when it ends, replace `WALKS_RERUN_LINE` in both RECORD.txt files (artifacts), `tools/release-catalog --write`, amend the QA log row if the verdict changed, commit, push.
-- **The call (#236, step 5)** after the maintainer's play-testing of `d72084ccad`.
+- **The call (#236, step 5)** after the maintainer's play-testing of `d72084ccad`; the copy and reboot wait on the two yeses.
 
 ## Next Steps
 
@@ -58,4 +57,3 @@ The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047).
 
 - The two yeses for the H700 copy and reboot of `d72084ccad`.
 - One more Tobu reset for the real-award frame of the send card.
-- vm-qa run 47's walk rerun (the transfer screen).
