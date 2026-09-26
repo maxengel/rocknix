@@ -1,31 +1,31 @@
 # Saved Session State
 
-> **Saved**: 2026-09-26T05:54:17Z
+> **Saved**: 2026-09-26T15:06:53Z
 > **Branch**: feature/conflict-resolution (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the record lives on `next` in `/workspace/repos/rocknix`, pushed to `origin/next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047). The device runs **`3f93dc4683`** (since 04:17 UTC; the soak found #290, the nine blank seconds after an exit). The fix (D-LAUNCH-006: the capture and the exit sync off the interface thread, ES `e563e0024`) is the cut **`86dc949300`**, proven on the VM (vm-qa run 43, the six proofs, rehearsal run 32) with `rc-preflight` MAY BE CUT; its copy and reboot to the RG35XX SP are each the maintainer's yes, asked for at 06:15 UTC. `upstream/next`'s two Steam-script commits were accepted for this cut (D-WORKFLOW-051) and merged into next afterwards.
+The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047). The device runs **`86dc949300`** since 2026-09-26 15:00 UTC (the cut rebuilt with #290, the exit path's order; proven on the VM, `rc-preflight` MAY BE CUT, the two upstream Steam-script commits accepted by D-WORKFLOW-051 and merged into next afterwards). The soak is the maintainer's; then the call (step 5) on #236; then the audit (step 6) through the Facilitator on OpenRouter. Two harness issues filed from the day's last proofs: #278 (the injected key, measured) and #291 (the QA guests render with softpipe; virgl via the build box's iGPU or A1000, llvmpipe as the fallback; no QEMU change needed).
 
-## Completed This Session (2026-09-26, 04:20-06:15 UTC)
+## Completed This Session (2026-09-26, to 15:15 UTC)
 
-- #290 filed in the maintainer's words with the device's exit timeline (no crash); fixed in `FileData::launchGame` (a worker for the capture, the sync's start posted back; a generation counter guards a launch in between); `proof-290-exit-order.sh` (the capture shadowed by a 3 s wrapper through a bind mount); closed on the VM proof with a code trace (`Already written: nothing inherited`).
-- Aladdin: no save by design, launched plainly on the 23rd, only a stale record (ignored); answered, nothing filed.
-- #249's injected key: a harness flake named on #278 (about half of first presses miss; `diag-249.sh`); the proof presses up to three times.
-- Records for `86dc949300` (both cuts), catalog 42, QA log, changelog, frames; D-LAUNCH-006, D-WORKFLOW-051; work log 05:50 UTC; #236 comments.
+- #288 (D-UI-094), #289 (D-WORKFLOW-050, the `already written` line and its check), #290 (D-LAUNCH-006) -- each fixed, proven on the VM, closed with a code trace; the cuts `3f93dc4683` and `86dc949300` built, recorded, staged and booted on the maintainer's yeses; a8175c6193 and 3f93dc4683 superseded; catalog 42 cuts.
+- The hygiene backlog cleared (#279 #280 #282 #283 ticked or struck; code traces on #280 and #282).
+- The injected key: 500 ms hold in `proof-common.sh`'s `monkey`, read-back and repeat in proof-249; the analysis on #278.
+- #291 filed: softpipe in the image (no llvmpipe despite the options), virgl present in the guest, the host's QEMU 10.2 with virtio-gpu-gl/egl-headless/virglrenderer 1.10, i915/xe on renderD128 and nvidia on renderD129.
 
 ## In Progress
 
-- **The copy and the reboot of 86dc949300** (each a yes). Then the maintainer's soak; then the call (step 5) with the device facts and the catalog.
+- **The soak on the RG35XX SP** (the maintainer's, on 86dc949300). Reads only, through the credential filter; observations to #277.
 
 ## Next Steps
 
-1. On the yeses: `stage-rg35xxsp-86dc949300.sh` (derive from the 3f93dc4683 one), the idle check, the reboot through `tools/device-act`, the post-boot reads, the device-facts rows, the records' Device lines, a8175c6193/3f93dc4683 SUPERSEDED, the catalog.
-2. After the soak: the call on #236 (step 5). The device-facts row for the exit's seconds on the H700 (#277) after an exit the maintainer makes.
-3. Step 6: the audit through the Facilitator on OpenRouter (`docs/audits/2026_09_25-milestone-rc-round-since-258/`, uncommitted, paused at Phase 1.3).
+1. After the soak: the device reads, the exit's seconds on the A53 (a device-facts row after an exit the maintainer makes), the call on #236 (step 5) with the device facts and the catalog in the same change.
+2. #291 first step, on guest d: relaunch with `-device virtio-gpu-gl-pci` and `-display egl-headless,rendernode=/dev/dri/renderD128` (the iGPU under Mesa; renderD129 is the A1000 under the proprietary driver), read RetroArch's `[GL] Renderer:` and the dropped-frame ratio; then llvmpipe in the GENERIC_X64 Mesa (`llvmpipe` in the gallium drivers under LLVM).
+3. Step 6: the audit (`docs/audits/2026_09_25-milestone-rc-round-since-258/`, uncommitted, paused at Phase 1.3).
 4. Steps 7-8: the PR series by content, #42's docs last; builds for the RG SP and the Retroid Pocket Nova.
-5. Harness (#278): promote `proof-288-stale-record.sh`, `proof-288-fbn.sh`, `proof-290-exit-order.sh`; the exit-to-carousel headline in `tools/time-to-play`; the injected key. `tools/fork-worktree remove ../rocknix.worktrees/rc-device-fixes` when the round closes.
+5. Harness (#278): promote `proof-288-stale-record.sh`, `proof-288-fbn.sh`, `proof-290-exit-order.sh`, `proof-249`'s read-back; RetroArch's command channel for the slot check; the press count in the vm-qa report. `tools/fork-worktree remove ../rocknix.worktrees/rc-device-fixes` when the round closes.
 
 ## Key Files Modified
 
