@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-26T04:20:48Z
+> **Saved**: 2026-09-26T03:07:07Z (refreshed from `date -u` when copied)
 > **Branch**: feature/conflict-resolution (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the record lives on `next` in `/workspace/repos/rocknix`, pushed to `origin/next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047). The candidate rebuilt with #288, **`3f93dc4683`**, is proven on the VM (vm-qa run 42, the five proofs, the FBNeo table case, rehearsal run 31) and **on the RG35XX SP since 2026-09-26 04:17 UTC** (staged and rebooted on the maintainer's two yeses; boot id 490ccd51). #288 is closed; `rc-preflight` reads MAY BE CUT (unchecked by tool: device facts) on next. The soak (D-QA-036) and the look at Dr. Mario's and F-Zero's captures are the maintainer's; then the call (step 5) on #236; then the audit (step 6) through the Facilitator on OpenRouter.
+The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047). The device is on **`a8175c6193`** (since 02:15 UTC); the maintainer's first look found #288 (the rotation records #280 fixed stayed wrong until each game is replayed), fixed as D-UI-094 (ES `5644752aa`: a record says `from=own-launch`, an unmarked one is not trusted, the table stands in) and rebuilt as **`3f93dc4683`** (x64 run 57, H700 run 37, both images carry the string). `chain-9` (pid 852939, `chain-9.status`, a harness waiter on `chain-9.rc`) is on vm-qa run 42, then the five proofs (#288 first), the rehearsal from a8175c6193, guest d and the sign-in window. The process change the maintainer asked for is wired: every fix answers what was already written (D-WORKFLOW-050, #289, `rc-preflight`'s `already written` item, proven to fire).
 
 ## Completed This Session (2026-09-26, after 02:20 UTC)
 
@@ -18,15 +18,16 @@ The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047).
 
 ## In Progress
 
-- **The soak on the RG35XX SP** (the maintainer's, on 3f93dc4683). Nothing runs on the device without a per-action yes; reads are free through the credential filter. Their observations go to #277.
+- **chain-9** (started 02:54 UTC): vm-qa run 42 (~29 min), proofs (`proof-288-stale-record.sh` on guest a expects the mark on the RIGHT with the old record and `turns=0 from=own-launch` after the exit), rehearsal run 31, guest d rebuild + signin.
+  - **What remains after it**: RECORD.txt for `x64-all-20260926-3f93dc4683` and `h700-all-20260926-3f93dc4683` (template: a8175c6193's), `tools/release-catalog --write`, the QA-log row, the changelog's cut entry, the `288-*` "after" frames + README; close #288 on the VM proof (tick its checkboxes with the artifacts); mark a8175c6193's records SUPERSEDED once 3f93dc4683 is staged; then ask the maintainer for the copy and the reboot (D-QA-011/015), each a yes.
 
 ## Next Steps
 
-1. After the soak: the device reads (the journal, the stamps, the four rotation records rewritten with `from=own-launch` as the games are played), the call on #236 (step 5) with the device facts and the catalog in the same change (D-WORKFLOW-046).
-2. Step 6: the audit through the Facilitator on OpenRouter (`docs/audits/2026_09_25-milestone-rc-round-since-258/`, uncommitted, paused at Phase 1.3; `. ~/.config/council/env && npx tsx tools/council/council-invoke.ts --member <seat> --provider openrouter ...`).
-3. Steps 7-8: the PR series by content, #42's docs last; builds for the RG SP and the Retroid Pocket Nova (cold; `tools/build-preflight` first), each staged on its own yes.
-4. Harness: promote the proof scripts into `tools/` (#278) -- `proof-288-stale-record.sh`, `proof-288-fbn.sh`, and the injected load-state key that a busy guest can miss (#249's chain-run flake); #286; #284; `tools/fork-worktree remove ../rocknix.worktrees/rc-device-fixes` when the round closes.
-5. The step-6 audit is owed at the CI level (`ceremony-check`); #279 option 2's words remain the maintainer's to choose.
+1. When `chain-9.rc` lands: read `chain-9.log`, `proof-288.log`, the vm-qa report dir, the rehearsal RESULT; the records above; close #288; `rc-preflight` (expect MAY BE CUT once #288 is closed); ask for the copy and the reboot of 3f93dc4683.
+2. After the maintainer's soak: the device reads (filtered), the call on #236 (step 5) with the device facts and the catalog in the same change.
+3. Step 6: the audit through the Facilitator on OpenRouter (`docs/audits/2026_09_25-milestone-rc-round-since-258/`, uncommitted, paused at Phase 1.3).
+4. Steps 7-8: the PR series by content, #42's docs last; builds for the RG SP and the Retroid Pocket Nova.
+5. Harness: promote the proof scripts into `tools/` (#278) -- `proof-288-stale-record.sh` included; #286; #284; `tools/fork-worktree remove ../rocknix.worktrees/rc-device-fixes` when the round closes.
 
 ## Key Files Modified
 
