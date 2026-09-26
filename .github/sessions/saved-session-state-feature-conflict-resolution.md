@@ -1,62 +1,60 @@
 # Saved Session State
 
-> **Saved**: 2026-09-26T02:18:01Z
+> **Saved**: 2026-09-26T03:07:07Z (refreshed from `date -u` when copied)
 > **Branch**: feature/conflict-resolution (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the record lives on `next` in `/workspace/repos/rocknix`, pushed to `origin/next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047). The candidate rebuilt with the device round's five fixes, **`a8175c6193`**, is proven on the VM (vm-qa run 41, four proofs, rehearsal run 30, the sign-in window), every known bug is closed, the preflight reads MAY BE CUT, and it is **on the RG35XX SP since 2026-09-26 02:15 UTC** (step 4). The soak (D-QA-036) is the maintainer's; then the call (step 5); then the audit (step 6) through the Facilitator on OpenRouter (D-WORKFLOW-049, both seats probed).
+The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047). The device is on **`a8175c6193`** (since 02:15 UTC); the maintainer's first look found #288 (the rotation records #280 fixed stayed wrong until each game is replayed), fixed as D-UI-094 (ES `5644752aa`: a record says `from=own-launch`, an unmarked one is not trusted, the table stands in) and rebuilt as **`3f93dc4683`** (x64 run 57, H700 run 37, both images carry the string). `chain-9` (pid 852939, `chain-9.status`, a harness waiter on `chain-9.rc`) is on vm-qa run 42, then the five proofs (#288 first), the rehearsal from a8175c6193, guest d and the sign-in window. The process change the maintainer asked for is wired: every fix answers what was already written (D-WORKFLOW-050, #289, `rc-preflight`'s `already written` item, proven to fire).
 
-## Completed This Session (2026-09-25/26)
+## Completed This Session (2026-09-26, after 02:20 UTC)
 
-- D-QA-051 (bugs are agent-first); the earlier ten bugs dispositioned; #178 closed on three VM proofs.
-- The device round, all closed on VM proofs: #279 (a tunnel is not a link, ES `0cc13be61`), #280 (the launch log one launch's; the rotation reader on the last banner's section), #249 (RetroArch patch 0018 both halves), #282 (the 90 s ceiling with `migrate_default`, D-CLOUD-137), #283 (one floating surface at a time, ES `c1c0d6ddc`, D-UI-093). Register rows D-LAUNCH-004/005, D-UI-092/093, D-CLOUD-137/138, D-WORKFLOW-049. Blindspot 61.
-- Records: `x64-all-20260926-a8175c6193`, `h700-all-20260926-a8175c6193` (RECORD.txt with the proofs, the preflight, the Device lines); the intermediates and a65da6c784 marked superseded; catalog 38 cuts; the changelog's cut entry; the QA log row; `docs/qa-frames/2026-09-26/` (#279 four frames, #283 before/after); the device-facts rows.
-- Routing: council and audit calls through OpenRouter (#287; the key `~/.config/council/env`, sourced first; both seats probed: `anthropic/claude-fable-5.1`, `openai/gpt-6-astra`).
-- Issues in the maintainer's words: #279-#287 (#281 the runaway process, #284 per-backend options, #285 RomM beside the engine with the dedicated-server shape, #286 the QA backend's 405, #287 the routing).
-- #236 carries the state through step 4.
+- #288 filed in the maintainer's words with the device reads (three records `turns=3`, no launch since the boot); the fix in ES (`5644752aa`, 126 unit tests), the pin (`3f93dc4683`), vm-qa's fixture writing the marked record; the code trace with its `Already written` line.
+- The defect reproduced on guest d (`proof-288-d`: the old record turns the tile, the mark on the bottom; the exit heals it by play): frames filed in `docs/qa-frames/2026-09-26/` (`288-*`), README section.
+- #289 (D-WORKFLOW-050): `tools/rc-preflight` `already written` item (open bugs with a trace and bugs closed completed since 2026-09-26 02:45 UTC must carry `Already written:`), proven FAIL then PASS on #288; `upgrade-and-install.md` new section, `release-candidates.md` step 0, `issue-tracking.md` closing discipline; blindspot 62; work log 03:05 UTC; next `e446f5a906`.
+- Hygiene: #279 #280 #282 #283 closed with open checkboxes -- ticked with evidence or struck with the decision; code traces posted on #280 and #282 (with `Already written`); `ceremony-check --gate` passes (the step-6 audit still owed at the CI level).
+- #236 comment: the rebuild and why; no device action until asked.
 
 ## In Progress
 
-- **The soak on the RG35XX SP** (the maintainer's). Nothing runs on the device without a per-action yes (D-QA-011/015); reads are free through the credential filter.
-  - **What remains**: after the soak, read the device's journal and the sync stamps (`last-sync-exit`, the ceiling in effect), the rotation records healing (`*.rotation` for Dr. Mario/F-Zero/Aladdin turn to 0 on their next exit), any new observation filed in the maintainer's words; the call on #236 (step 5) with the device facts and the catalog in the same change (D-WORKFLOW-046).
+- **chain-9** (started 02:54 UTC): vm-qa run 42 (~29 min), proofs (`proof-288-stale-record.sh` on guest a expects the mark on the RIGHT with the old record and `turns=0 from=own-launch` after the exit), rehearsal run 31, guest d rebuild + signin.
+  - **What remains after it**: RECORD.txt for `x64-all-20260926-3f93dc4683` and `h700-all-20260926-3f93dc4683` (template: a8175c6193's), `tools/release-catalog --write`, the QA-log row, the changelog's cut entry, the `288-*` "after" frames + README; close #288 on the VM proof (tick its checkboxes with the artifacts); mark a8175c6193's records SUPERSEDED once 3f93dc4683 is staged; then ask the maintainer for the copy and the reboot (D-QA-011/015), each a yes.
 
 ## Next Steps
 
-1. After the soak: the reads above, the call on #236, the device-facts page, `release-catalog --write`.
-2. Step 6: resume `docs/audits/2026_09_25-milestone-rc-round-since-258/` (paused at Phase 1.3, uncommitted) with both seats through `council-invoke.ts --provider openrouter` (source `~/.config/council/env` first); Phase 0 records the route and the served models.
-3. Steps 7-8: the PR series by content in the named buckets (`fork-workflow.md`, D-WORKFLOW-034), #42's docs PR last; builds for the RG SP and the Retroid Pocket Nova (cold, hours; `tools/build-preflight` first), each staged on its own yes.
-4. Harness: promote the proof scripts (`/workspace/tmp/rocknix-session/proof-common.sh`, `proof-279-tunnel.sh` + `net-page.steps`, `proof-280-rotation-log.sh`, `proof-249-auto-slot.sh`, `proof-283-surfaces.sh`) into `tools/` (#278); #286 (the WebDAV 405); #284's backlog measurement on the host backends.
-5. `tools/fork-worktree remove ../rocknix.worktrees/rc-device-fixes` once the round closes (merged into next).
+1. When `chain-9.rc` lands: read `chain-9.log`, `proof-288.log`, the vm-qa report dir, the rehearsal RESULT; the records above; close #288; `rc-preflight` (expect MAY BE CUT once #288 is closed); ask for the copy and the reboot of 3f93dc4683.
+2. After the maintainer's soak: the device reads (filtered), the call on #236 (step 5) with the device facts and the catalog in the same change.
+3. Step 6: the audit through the Facilitator on OpenRouter (`docs/audits/2026_09_25-milestone-rc-round-since-258/`, uncommitted, paused at Phase 1.3).
+4. Steps 7-8: the PR series by content, #42's docs last; builds for the RG SP and the Retroid Pocket Nova.
+5. Harness: promote the proof scripts into `tools/` (#278) -- `proof-288-stale-record.sh` included; #286; #284; `tools/fork-worktree remove ../rocknix.worktrees/rc-device-fixes` when the round closes.
 
 ## Key Files Modified
 
 | File | Change | Notes |
 | --- | --- | --- |
-| `projects/ROCKNIX/packages/emulators/libretro/retroarch/patches/0018-auto-slot-survives-content-load.patch` | Created | both halves (#249) |
-| `projects/ROCKNIX/packages/rocknix/sources/scripts/runemu.sh` | Modified | truncates the launch log at every launch (#280) |
-| `projects/ROCKNIX/packages/network/rclone/sources/{cloud_sync.conf,cloud_sync.conf.defaults,cloud_backup,cloud_restore,cloud_sync_helper}` | Modified | the 90 s ceiling and `migrate_default` (#282) |
-| `projects/ROCKNIX/packages/ui/emulationstation/package.mk` | Modified | pin `c1c0d6ddc` |
-| `tools/last-good-scripts-test` | Modified | case j2; refuses to run with SIGINT ignored |
-| `.claude/rules/{generic-x64-vm-testing,rclone-cloud-sync,es-native-ui,release-candidates,adversarial-council}.md` | Modified | the ES log no longer late; the 90 s numbers; D-UI-093; busybox `pgrep -x`; OpenRouter routing |
+| ES `es-app/src/CaptureRotation{,Text}.{cpp,h}`, `tests/unit/CaptureRotationTextTests.cpp` | Modified | `from=own-launch`; `recordFromOwnLaunch`; unmarked -> table; rewrite on exit (#288) |
+| `projects/ROCKNIX/packages/ui/emulationstation/package.mk` | Modified | pin `5644752aac74585645525712821ec2d4c623f09f` |
+| `tools/vm-qa` | Modified | the manager fixture's NES record carries the line |
+| `tools/rc-preflight` | Modified | `already written` item (#289) |
+| `.claude/rules/{upgrade-and-install,release-candidates,issue-tracking}.md` | Modified | D-WORKFLOW-050 |
+| `docs/decision-register.md`, `docs/blindspot-register.md`, work log, `docs/qa-frames/2026-09-26/` | Modified | D-UI-094, D-WORKFLOW-050, blindspot 62, the 03:05 entry, the 288 frames |
 
 ## Related Context
 
-- **Tracker**: #236 (the round), #277/#278 (open items, harness gaps), #284-#287, #270, #228, #42.
-- **Register**: D-QA-049/050/051, D-WORKFLOW-047/048/049, D-LAUNCH-004/005, D-UI-091/092/093, D-CLOUD-137/138.
-- **Session files**: `/workspace/tmp/rocknix-session/` (chain-8.log, the proof scripts and logs, `proof-283-control/` and `proof-283-final/`, `probe/`, issue-bodies/).
-- **Guests**: the pair is down; guest d at 640x480 on a8175c6193 (:10026, pidfile `/tmp/rocknix-qemu-d.pid`).
-- **The maintainer's infrastructure direction** (not fork work): a Vultr bare-metal server with attached block storage as the single master for saves, states and ROMs over SFTP; the NAS a one-way mirror; B2 or Dropbox the off-site copy; RomM beside the engine there later (#285).
+- **Tracker**: #236 (the round), #288, #289, #277/#278, #284-#287, #270, #42.
+- **Register**: D-UI-094, D-WORKFLOW-050, D-LAUNCH-004 (its heal clause superseded), D-UI-081/082, D-QA-049/050/051.
+- **Session files**: `/workspace/tmp/rocknix-session/` (chain-9.*, proof-288-stale-record.sh, proof-288-d{,-run1}/, rc-preflight-289-{before,after}.txt, issue-bodies/).
+- **Guests**: the pair up under vm-qa run 42 (a :10022, b :10023); guest d on a8175c6193 (:10026) until the chain rebuilds it.
+- **Device**: RG35XX SP on a8175c6193 (boot 2ea54cb6); reads only, through `grep -v -i -E 'key|pass|token|user|psk'`.
 
 ## Notes for Next Session
 
-- Every guest-a proof starts from a rebooted carousel, sets RetroArch to GL (`vm_gl`), polls RetroArch with `pgrep -f 'retroarc[h] -L'` (busybox `-x` matches argv); the one-surface proof seeds the remote, the exit-sync toggle and a size-jittered payload before the reboot.
-- Start any signal-trapping suite in the foreground or with `setsid -f`, never as a shell `&` job (the suite now refuses).
-- The QA WebDAV backend refuses a same-name replace of a large file with a 405 (#286).
-- An audit or council pass is a Facilitator call with `--provider openrouter`, never an Agent-tool subagent.
+- A record older than ES `5644752aa` reads `turns=N` alone; the fixed reader ignores it in favour of the table. `tools/vm-qa`'s fixture and any proof seeding a record must write `from=own-launch` on its own line.
+- `proof-288-stale-record.sh` measures the fixture's green mark against the picture's blue ground; RetroArch's own auto save replaces the fixture picture at every exit, so the picture is re-seeded before the second walk.
+- `rc-preflight`'s `bugs` item reads #288 open without a disposition until it is closed; that is correct.
 
 ## Open Questions
 
+- The copy and the reboot of 3f93dc4683 on the RG35XX SP (each a yes), once the chain has passed.
 - Words for the `(+)` on the IP ADDRESS row (#279 option 2), if wanted.
-- Whether the audit runs before or after the soak's read is the maintainer's order (after, today).
