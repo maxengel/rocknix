@@ -2441,8 +2441,12 @@ the top-up card; `docs/qa-frames/2026-09-26/292-*` and `293-*`).
   SENT. IT'LL BE A MOMENT. with PLAY NOW (the send goes on behind the game) and KEEP WAITING; YOUR OFFLINE
   ACHIEVEMENTS ARE BEING UPDATED. IF YOU STOP IT, IT'LL TRY AGAIN NEXT TIME YOU'RE CONNECTED. with STOP IT AND PLAY
   and KEEP WAITING. The safe verb is last, where the back button lands.
-- **One floating surface at a time** (D-UI-093): the send card waits for a sync card to finish, and an automatic
-  sync that reached the network asks for it as it ends.
+- **Alerts come one at a time, in order** (D-UI-093, #283; the maintainer on the device, 2026-09-26: *"I just saw the
+  new stacked alerts. Those were nice ... That's an elegant solution to the problem."*). A toast waits while a card
+  is up; a card made while a toast is up takes its place and puts the toast's words back on the queue to show after
+  it; the send card waits for a sync card to finish, and an automatic sync that reached the network asks for it as it
+  ends. So a reconnect reads as a sequence -- SYNC SAVES, then SEND OFFLINE ACHIEVEMENTS, then the top-up's card --
+  and a capture that could not record says so after the sync card, never over it (`292-*`, `293-capture-failed-*`).
 
 Under the surface: a new `ProxyCards` unit in EmulationStation (ES `0ade9086b` to `6e6643687`); the send card follows
 the proxy's own queue (`raofflineproxy-ctl pending`) and takes its flush stamp; the top-up card reads the ctl's
