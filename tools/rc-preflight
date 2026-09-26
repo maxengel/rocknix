@@ -27,6 +27,15 @@
 #                  maintainer 2026-09-25: "at a minimum, do code exploration of
 #                  every bug to see if we can track the source and validate it
 #                  just that way") -- or the acceptance is a finding
+#   already written  every bug fixed since the rule's clock (2026-09-26 02:45 UTC)
+#                  -- open with a code trace, or closed as completed -- answers in
+#                  its trace what the code before the fix had already written on
+#                  devices and in their clouds and how the fix treats it, as a
+#                  line "Already written: ... -- read both | migrated: how |
+#                  nothing inherited: why" (#289, D-WORKFLOW-050; maintainer,
+#                  2026-09-26: "when we push a fix, we ensure parity for the
+#                  existing system"); a trace without the line, or a bug closed
+#                  as completed since the clock with no trace, is a finding
 #   checkboxes     tools/box-check: every open checkbox agent-verifiable
 #   catalog        tools/release-catalog --check
 #   device facts   no tool reads docs/releases/device-facts.md yet (#270):
@@ -220,6 +229,68 @@ def check_bugs(r, acc):
         r.add("PASS", "bugs", "no open bug without a disposition" + ("; accepted: " + ", ".join(accepted) if accepted else ""))
 
 
+# D-WORKFLOW-050's clock: nothing closed before it is demanded, as ceremonies.md
+# starts its clock on 2026-09-21 -- a backlog nobody can pay at once is how a
+# gate gets switched off. The four device-round bugs closed at 01:25-01:31 UTC
+# that day predate it; #280's missing answer is #288.
+ALREADY_WRITTEN_SINCE = "2026-09-26T02:45:00Z"
+CODE_TRACE_RE = re.compile(r"^\s*(?:#+\s*|\*\*|[-*]\s*)?code trace\b", re.I | re.M)
+ALREADY_WRITTEN_RE = re.compile(r"^\s*(?:[-*]\s*)?(?:\*\*)?already written(?:\*\*)?\s*[:.]", re.I | re.M)
+
+
+def issue_text(number):
+    """The issue's body and every comment as one text, or (None, why)."""
+    rc, out, err = run(["gh", "api", "repos/maxengel/rocknix/issues/%d" % number, "--jq", ".body"], timeout=120)
+    if rc != 0:
+        return None, (err or out).strip().splitlines()[-1:]
+    rc2, out2, err2 = run(["gh", "api", "--paginate", "repos/maxengel/rocknix/issues/%d/comments" % number,
+                           "--jq", ".[].body"], timeout=120)
+    if rc2 != 0:
+        return None, (err2 or out2).strip().splitlines()[-1:]
+    return (out or "") + "\n" + (out2 or ""), ""
+
+
+def check_already_written(r):
+    listed = []
+    for state in ("open", "closed"):
+        rc, out, err = run(["gh", "issue", "list", "--repo", "maxengel/rocknix", "--state", state, "--label", "bug",
+                            "--limit", "300", "--json", "number,closedAt,stateReason"], timeout=120)
+        if rc != 0:
+            r.add("CANNOT", "already written", "the tracker did not answer: %s" % (err or out).strip().splitlines()[-1:])
+            return
+        try:
+            issues = json.loads(out)
+        except ValueError:
+            r.add("CANNOT", "already written", "the tracker's answer was not JSON")
+            return
+        for i in issues:
+            if state == "closed" and (i.get("stateReason") != "COMPLETED" or (i.get("closedAt") or "") < ALREADY_WRITTEN_SINCE):
+                continue
+            listed.append((state, i["number"]))
+    missing, untraced, read = [], [], 0
+    for state, n in sorted(listed, key=lambda t: t[1]):
+        text, why = issue_text(n)
+        if text is None:
+            r.add("CANNOT", "already written", "the tracker did not answer for #%d: %s" % (n, why))
+            return
+        if not CODE_TRACE_RE.search(text):
+            if state == "closed":
+                untraced.append("#%d" % n)   # an open bug without a trace is the bugs item's finding
+            continue
+        read += 1
+        if not ALREADY_WRITTEN_RE.search(text):
+            missing.append("#%d" % n)
+    if missing or untraced:
+        parts = []
+        if missing:
+            parts.append("%d code trace(s) with no \"Already written\" line: %s" % (len(missing), " ".join(missing)))
+        if untraced:
+            parts.append("%d bug(s) closed as completed since %s with no code trace: %s" % (len(untraced), ALREADY_WRITTEN_SINCE[:10], " ".join(untraced)))
+        r.add("FAIL", "already written", "; ".join(parts) + " (#289, D-WORKFLOW-050)")
+    else:
+        r.add("PASS", "already written", "%d code trace(s) since %s answer what the old code had already written" % (read, ALREADY_WRITTEN_SINCE[:10]))
+
+
 def check_tool(r, item, cmd, fail_text):
     rc, out, err = run(cmd, cwd=ROOT, timeout=600)
     last = ((out or err).strip().splitlines() or [""])[-1][:160]
@@ -272,6 +343,7 @@ def main():
             check_base(r, "emulationstation", a.es, pin, "rocknix/master", acc,
                        ["git", "-C", a.es, "fetch", "-q", "rocknix", "master"], fetch)
     check_bugs(r, acc)
+    check_already_written(r)
     check_tool(r, "checkboxes", [os.path.join(ROOT, "tools", "box-check"), "--quiet"], "open checkboxes that are not agent-verifiable")
     check_tool(r, "catalog", [os.path.join(ROOT, "tools", "release-catalog"), "--check"], "docs/releases/catalog.md is stale")
     if "device-facts" in a.allow_unchecked:

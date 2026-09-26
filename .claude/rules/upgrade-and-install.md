@@ -55,6 +55,43 @@ So when a format changes, ask separately:
 - Does old code read **new** data? (a downgrade, or a device that has not updated yet)
 - Does anything need to be **migrated**, and can that migration be interrupted?
 
+## Every fix answers what was already written (D-WORKFLOW-050)
+
+The section above was written in July and broken in September with every
+ceremony observed. #280 fixed the launcher's log and the reader of it, had
+a code trace, a VM proof and a staged candidate -- and the rotation records
+the old reader had already written stayed wrong on the device until each
+game was played again (#288; the register row even said so, as if it were
+fine). Maintainer, 2026-09-26: *"We should make sure that when we push a
+fix, we ensure parity for the existing system to leverage any new
+functionality. [...] This would have caught the need to rotate existing
+files if we'd followed this policy in place."*
+
+So the question is asked of every fix, in writing, and checked. A bug's
+code trace (#273; `release-candidates.md` step 0) carries a sixth part:
+
+```
+Already written: <what the code before the fix had written on devices and
+in their clouds> -- read both | migrated: <how> | nothing inherited: <why>
+```
+
+- **Read both, write the new one** is the answer to reach for (the next
+  section): the new code reads the old shape and writes a new one it can
+  tell apart. #288's answer: a record without `from=own-launch` is not
+  trusted, the core's table stands in, the next exit rewrites it.
+- **Migrated** names the migration (§ Migrations: non-destructive,
+  idempotent, interruptible) and adds the migrated piece to
+  `tools/vm-upgrade-rehearsal`'s seeds, so the next candidate proves it.
+- **Nothing inherited** is argued, not assumed: the old code wrote nothing
+  this fix reads. A record, a stamp, a config key, an archive, a cached
+  answer, a file name -- each is something the old code may have left.
+
+`tools/rc-preflight`'s `already written` item reads every open bug with a
+code trace and every bug closed as completed since 2026-09-26 02:45 UTC,
+and a trace without the line is a finding: the tree is not a candidate
+(#289). Proven to fire on 2026-09-26 against #288's trace before the line
+was added, and to pass once it was (work log, 03:05 UTC).
+
 ## An upgrade should be invisible
 
 Before deciding a change needs a migration, or a prompt, or a release note, ask

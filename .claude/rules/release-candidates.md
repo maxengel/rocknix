@@ -47,7 +47,12 @@ it has its artifact.
    source and validate it just that way"*). `rc-preflight` refuses an
    acceptance whose issue carries no "Code trace" comment. A fix found
    incomplete by its trace is fixed in the candidate's tree, or the
-   uncovered path is named in the accepting row.
+   uncovered path is named in the accepting row. **And every trace answers
+   what was already written** (D-WORKFLOW-050, #289): an `Already written:`
+   line saying what the code before the fix had left on devices and in
+   their clouds and how the fix treats it -- read both, migrated, or
+   nothing inherited, argued. `rc-preflight`'s `already written` item
+   fails a candidate whose fixed bugs lack it (`upgrade-and-install.md`).
 1. **A clean baseline.** The current tree built and green before the bumps,
    so that a failure after them is theirs and not the tree's
    (`device-builds.md` § After rebasing onto upstream, `tools/build-preflight`).

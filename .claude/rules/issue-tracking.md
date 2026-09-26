@@ -40,6 +40,10 @@ gh issue create --repo maxengel/rocknix --title "..." --body-file notes.md
 - **Closing discipline**: deliver → close `completed` with a comment naming the
   commits/build; consolidate → close `not planned` with a comment naming where the
   scope went. Never leave a delivered issue open or close one silently.
+- **A bug is closed as completed only with its `Already written:` line** in
+  its code trace -- what the code before the fix had left on devices and in
+  their clouds, and how the fix treats it (D-WORKFLOW-050,
+  `upgrade-and-install.md`); `tools/rc-preflight` reads the closed ones too.
 
 ## Every out-of-band request gets an issue, the same session (D-QA-012)
 

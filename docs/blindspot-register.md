@@ -909,3 +909,34 @@ rc 2, naming the foreground and `setsid -f` (`tools/last-good-scripts-test`,
 the block before `set -u`). Proven 2026-09-26: started as `bash -c '...' &`
 it exits 2 at once with the sentence; started with `setsid -f` the third
 run passed 377 of 377 (work log, 00:05 UTC).
+
+## 62. A fix corrected the writer and left what it had already written to heal by play (2026-09-26)
+
+#280 fixed the launcher's log and the reader of it, with every ceremony
+observed: a code trace, a VM proof of three cases, a candidate built,
+staged and recorded. Its register row (D-LAUNCH-004) said, as if it were
+fine, *"a wrong record heals on that game's next exit."* The records the
+old reader had already written -- Ms. Pac-Man's `turns=3` on Dr. Mario,
+F-Zero and Aladdin -- stayed on the device and in the cloud, and the
+maintainer's first look at the SAVE STATE MANAGER after the upgrade found
+the auto saves and the achievement screenshots turned exactly as before
+(#288): nothing had exited, so nothing had healed. `upgrade-and-install.md`
+§ "Fixing forward is not enough" had said it since July -- *a fix that
+changes what we write does nothing for what is already written* -- and
+D-UI-082 had been decided for this very case a week earlier, for a capture
+with no record; a wrong record is a record, and the record won over the
+table. A rule at the *written and routed* stage of `working-principles.md`'s
+ladder, broken with the rule loaded in the session that broke it.
+
+**Guard:** `tools/rc-preflight`'s `already written` item (#289,
+D-WORKFLOW-050): every bug's code trace answers, as an `Already written:`
+line, what the code before the fix had left on devices and in their clouds
+and how the fix treats it -- read both, migrated, or nothing inherited,
+argued -- for every open bug with a trace and every bug closed as completed
+since 2026-09-26 02:45 UTC; a trace without the line is a finding and the
+tree is not a candidate. Proven 2026-09-26: `tools/rc-preflight --no-fetch
+--allow-unchecked device-facts` read `FAIL already written 1 code trace(s)
+with no "Already written" line: #288` before the line was posted, and
+`PASS already written 1 code trace(s) since 2026-09-26 ...` after (work
+log, 03:05 UTC). The fix itself is the answer's first kind: a record says
+where its turn came from, and one that does not is not trusted (D-UI-094).
