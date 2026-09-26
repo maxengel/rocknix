@@ -205,7 +205,11 @@ OFFLINE PLAY. or YOUR OFFLINE ACHIEVEMENTS ARE UP TO DATE., or `COULDN'T FINISH
 - <the ctl's why>` with IT'LL TRY AGAIN NEXT TIME YOU'RE CONNECTED. Their
 running lines: SENDING OFFLINE ACHIEVEMENTS... / N TO SEND, and UPDATING
 OFFLINE ACHIEVEMENTS... / N OF M. Their stamp is `last-sync-link`, in the
-same shape.
+same shape. And a capture that could not record after a game says, once,
+as a toast after the sync card (D-UI-093): COULDN'T RECORD THIS SESSION'S
+SAVES. THEY'RE STILL ON THIS DEVICE. -- what did not happen and what is in
+place, no log path (#293 item 3; the maintainer would rather a proposed
+sentence ship in the cut than wait, `player-language.md`).
 
 **Why** comes from a `>>> why <sentence>` line the scripts print at the point
 of failure (rclone's own taxonomy stays in the log), else from rc: rclone 3/4
