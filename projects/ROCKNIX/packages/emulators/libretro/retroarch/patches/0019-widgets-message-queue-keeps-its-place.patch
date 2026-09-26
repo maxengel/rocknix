@@ -1,9 +1,10 @@
-The reference is the size the queue had before this fork's floor:
-RetroArch's own 9 px floor over the scaled size. On a 640x480 guest the
-scaled size is 4 px, so a first cut that used the unfloored size as the
-reference put the stack 3 px from the bottom (2026-09-26); the second cut
-guarded that and moved nothing. Two RARCH_LOG lines say what was chosen
-and what the placement became, so a frame is checked against numbers.
+The reference is MSG_QUEUE_PLACE_SIZE, 11 px: the size the queue was
+drawn at on a 640x480 handheld before the floor. The image ships a
+widget scale of 0.4, so the scaled size on that panel is 4 px, and
+neither it (a first cut: the stack 3 px from the bottom) nor RetroArch's
+9 px floor (a third cut: 29 px) reproduces the 38 px the build before
+the floor drew; the two log lines say what was chosen and what the
+placement became.
 
 --- a/gfx/gfx_widgets.h	2026-09-26 21:28:16.038558573 +0000
 +++ b/gfx/gfx_widgets.h	2026-09-26 21:28:16.051989945 +0000
@@ -22,7 +23,7 @@ and what the placement became, so a frame is checked against numbers.
     unsigned msg_queue_internal_icon_size;
     unsigned msg_queue_icon_size_x;
 --- a/gfx/gfx_widgets.c	2026-09-26 21:28:16.038476097 +0000
-+++ b/gfx/gfx_widgets.c	2026-09-26 21:42:59.910824646 +0000
++++ b/gfx/gfx_widgets.c	2026-09-26 21:50:36.844512644 +0000
 @@ -29,6 +29,7 @@
  
  #include "gfx_display.h"
@@ -31,7 +32,23 @@ and what the placement became, so a frame is checked against numbers.
  #include "font_driver.h"
  
  #ifdef HAVE_MENU
-@@ -622,11 +623,14 @@
+@@ -52,6 +53,15 @@
+  * readable on 480x320 and 640x480 panels and changes nothing where the
+  * computed size is already larger (ROCKNIX fork, #251). */
+ #define MSG_QUEUE_MIN_SIZE  14.0f
++/* The size the message queue was drawn at on a 640x480 handheld before the
++ * floor above (10.9 px scaled, 10 drawn -- #251's measurement), and the
++ * reference for where the stack sits (ROCKNIX fork #295): the placement
++ * uses the padding and spacing this size would have given when the scaled
++ * size is below it, so the floor grows the text and its box without moving
++ * the stack up the screen. Measured on a 640x480 guest: the empty screen
++ * under the lowest box is 57 px with the drawn size as the reference, 29
++ * with RetroArch's own 9 px floor, 38 on the build before the floor. */
++#define MSG_QUEUE_PLACE_SIZE 11.0f
+ 
+ /* The pixel sizes at which the widget faces' vertical stems land on the
+  * grid, measured with FreeType 2.14 the way this file's font driver
+@@ -622,11 +632,14 @@
  
        size_small             = (msg->task_ptr || (msg->flags & DISPWIDG_FLAG_SMALL));
  
@@ -48,7 +65,7 @@ and what the placement became, so a frame is checked against numbers.
              + floor(p_dispwidget->divider_width_1px);
  
        if (msg->offset_y != y)
-@@ -933,6 +937,7 @@
+@@ -933,6 +946,7 @@
  {
     int glyph_width               = 0;
     float scaled_size             = font_size * p_dispwidget->last_scale_factor;
@@ -56,7 +73,7 @@ and what the placement became, so a frame is checked against numbers.
  
     /* Limit minimum font size to keep it readable */
     if (scaled_size < min_size)
-@@ -943,6 +948,27 @@
+@@ -943,6 +957,28 @@
      * pixels, so the table's integers are what it draws. */
     scaled_size = gfx_widgets_sharp_size(scaled_size, sharp, sharp_n);
  
@@ -64,27 +81,28 @@ and what the placement became, so a frame is checked against numbers.
 +    * from the queue font's line height (gfx_widgets_layout), so the floor
 +    * above moved the whole stack up a text line on a 640x480 panel -- 57 px
 +    * of empty screen under the lowest box where 38 had been, which read as
-+    * an empty row. The size the queue had before this fork's floor is
-+    * RetroArch's own 9 px floor over the scaled size (on a 640x480 guest
-+    * the scaled size is 4 px, so "unfloored" is not the reference: a first
-+    * cut used it and put the stack 3 px from the bottom). Remember that
-+    * size against the drawn one; the layout places the queue with the
-+    * padding and spacing it would have given, and the box keeps the text's
-+    * size. 1.0 where nothing moved (720p and up). */
++    * an empty row. The reference is MSG_QUEUE_PLACE_SIZE, the size the
++    * queue was drawn at before the floor (the scaled size on a 640x480
++    * guest is 4 px under the image's widget scale of 0.4, so neither it
++    * nor RetroArch's 9 px floor reproduces the old margin: 3 and 29 px
++    * against the 38 measured on the build before the floor). Remember it
++    * against the drawn size; the layout places the queue with the padding
++    * and spacing it would have given, and the box keeps the text's size.
++    * 1.0 where nothing moved (720p and up). */
 +   if (font_data == &p_dispwidget->gfx_widget_fonts.msg_queue)
 +   {
-+      float before_size = (unfloored_size < 9.0f) ? 9.0f : unfloored_size;
++      float before_size = (unfloored_size < MSG_QUEUE_PLACE_SIZE) ? MSG_QUEUE_PLACE_SIZE : unfloored_size;
 +      p_dispwidget->msg_queue_place_scale =
 +            (scaled_size > 0.0f && before_size < scaled_size)
 +            ? before_size / scaled_size : 1.0f;
-+      RARCH_LOG("[Widgets] msg_queue font: scaled %.2f px, before the fork's floor %.2f px, drawn %.2f px, place scale %.3f (ROCKNIX #295)\n",
++      RARCH_LOG("[Widgets] msg_queue font: scaled %.2f px, placement reference %.2f px, drawn %.2f px, place scale %.3f (ROCKNIX #295)\n",
 +            unfloored_size, before_size, scaled_size, p_dispwidget->msg_queue_place_scale);
 +   }
 +
     /* Free existing font */
     if (font_data->font)
     {
-@@ -1078,6 +1104,20 @@
+@@ -1078,6 +1114,20 @@
     p_dispwidget->msg_queue_height                 = p_dispwidget->gfx_widget_fonts.msg_queue.line_height * 2.4f * (BASE_FONT_SIZE / MSG_QUEUE_FONT_SIZE);
     p_dispwidget->msg_queue_padding                = (unsigned)(((float)p_dispwidget->gfx_widget_fonts.msg_queue.line_height * (2.0f / 3.0f)) + 0.5f);
     p_dispwidget->msg_queue_spacing                = p_dispwidget->msg_queue_height / 4.0f;
