@@ -32,7 +32,14 @@ PROVENANCE (owner-directed + adopted reference):
    `begin-exploration` skills, the `council-member-*` agent definitions, and the
    Facilitator (`tools/council/council-invoke.ts`, OpenRouter route). Council is AVAILABLE
    wherever that corpus is seeded and `OPENROUTER_API_KEY` is configured — run it via
-   the `council` skill. Where the key is missing or a seat fails verification, pause
+   the `council` skill. On the build host the key is `~/.config/council/env`
+   (0600, one `export` line), sourced by hand before the Facilitator runs; it is
+   not in the session's environment on its own, so an "unset" read there says
+   nothing (2026-09-26). Every seat goes through OpenRouter -- the Claude seat
+   too, `--provider openrouter`, since D-WORKFLOW-049 (the maintainer: the
+   native harness's Fable is for the session's own work; the council and the
+   code audit are OpenRouter's) -- and the code audit's Fable passes are
+   Facilitator calls, not Claude Code subagents. Where the key is missing or a seat fails verification, pause
    and surface the missing prerequisite. Do not silently fall back to rubber-duck or
    another single-model critic. (#136 remains the CI/workflow-side adoption tracker.)
 

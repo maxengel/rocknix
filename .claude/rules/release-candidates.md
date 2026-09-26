@@ -68,8 +68,12 @@ it has its artifact.
 6. **The full upstream audit, by two agents**: the code auditor at milestone
    tier over everything going upstream -- the distribution's diff against
    `upstream/next` and the EmulationStation fork's against ROCKNIX's master --
-   by Fable 5.1 and GPT-6 Astra (D-QA-048), through the council's Facilitator
-   on OpenRouter when the Claude account cannot serve Fable. Its punch list is
+   by Fable 5.1 and GPT-6 Astra (D-QA-048), both through the council's
+   Facilitator on OpenRouter (D-WORKFLOW-049: every council and audit seat
+   goes that way; the native harness's Fable is for the session's own work).
+   The key is `~/.config/council/env`, sourced before the Facilitator runs;
+   a probe of each seat first, its provenance naming the served model. Its
+   punch list is
    resolved (Phase 7) before step 7; a fix that changes the build goes back to
    step 2, and the soak is re-read for what the fix touches.
 7. **Submission and the test devices**: the PR series cut by content along
