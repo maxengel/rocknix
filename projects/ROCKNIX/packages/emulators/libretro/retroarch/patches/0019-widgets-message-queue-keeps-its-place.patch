@@ -1,21 +1,9 @@
-widgets: the message queue keeps its place on the screen at the readable size
-
-The 14 px floor (0016, fork #251) and the sharp-size step (0017, #255)
-grew the message-queue font from 10 to 15 px on a 640x480 panel, and
-with it every part of the queue's geometry, because RetroArch derives
-the box, the padding and the spacing from the queue font's line height.
-The margin under the lowest box is padding * 4 + spacing * 2 + 1
-(gfx_widgets_msg_queue_move), with nothing drawn in it: 38 px at the
-old size, 57 at the new -- the stack sat a text line higher, which the
-maintainer read as an empty row under "Loaded state", the sign-in line
-and "Press again to quit" (fork #295, 2026-09-26; measured on two
-640x480 guests, docs/qa-frames/2026-09-26/295-*).
-
-So the queue's vertical placement -- the margin under the stack and the
-gaps between its boxes -- uses the padding and spacing the unfloored
-size would have given (font init remembers unfloored / final for the
-queue font; 1.0 where nothing moved, 720p and up), while each box keeps
-the height of the text it draws. The horizontal metrics are untouched.
+The ratio is taken only from an unfloored size of at least 9 px: a layout
+that runs before the panel's size is known carries a scale factor near
+zero, which the floor hides for the font and a first cut of this patch
+let through (the stack 3 px from the bottom on a 640x480 guest,
+2026-09-26). Two RARCH_LOG lines say what was chosen and what the
+placement became, so a frame is checked against numbers.
 
 --- a/gfx/gfx_widgets.h	2026-09-26 21:28:16.038558573 +0000
 +++ b/gfx/gfx_widgets.h	2026-09-26 21:28:16.051989945 +0000
@@ -34,8 +22,16 @@ the height of the text it draws. The horizontal metrics are untouched.
     unsigned msg_queue_internal_icon_size;
     unsigned msg_queue_icon_size_x;
 --- a/gfx/gfx_widgets.c	2026-09-26 21:28:16.038476097 +0000
-+++ b/gfx/gfx_widgets.c	2026-09-26 21:28:58.689324805 +0000
-@@ -622,11 +622,14 @@
++++ b/gfx/gfx_widgets.c	2026-09-26 21:36:59.926323932 +0000
+@@ -29,6 +29,7 @@
+ 
+ #include "gfx_display.h"
+ #include "gfx_widgets.h"
++#include "../verbosity.h" /* ROCKNIX fork #295: the placement log lines */
+ #include "font_driver.h"
+ 
+ #ifdef HAVE_MENU
+@@ -622,11 +623,14 @@
  
        size_small             = (msg->task_ptr || (msg->flags & DISPWIDG_FLAG_SMALL));
  
@@ -52,7 +48,7 @@ the height of the text it draws. The horizontal metrics are untouched.
              + floor(p_dispwidget->divider_width_1px);
  
        if (msg->offset_y != y)
-@@ -933,6 +936,7 @@
+@@ -933,6 +937,7 @@
  {
     int glyph_width               = 0;
     float scaled_size             = font_size * p_dispwidget->last_scale_factor;
@@ -60,7 +56,7 @@ the height of the text it draws. The horizontal metrics are untouched.
  
     /* Limit minimum font size to keep it readable */
     if (scaled_size < min_size)
-@@ -943,6 +947,19 @@
+@@ -943,6 +948,29 @@
      * pixels, so the table's integers are what it draws. */
     scaled_size = gfx_widgets_sharp_size(scaled_size, sharp, sharp_n);
  
@@ -73,14 +69,24 @@ the height of the text it draws. The horizontal metrics are untouched.
 +    * unfloored size would have given, and the box keeps the text's size.
 +    * 1.0 where nothing moved (720p and up). */
 +   if (font_data == &p_dispwidget->gfx_widget_fonts.msg_queue)
-+      p_dispwidget->msg_queue_place_scale =
-+            (scaled_size > 0.0f && unfloored_size < scaled_size)
-+            ? unfloored_size / scaled_size : 1.0f;
++   {
++      /* A layout can run before the panel's size is known, with a scale
++       * factor near zero; the floor hides that for the font, and this
++       * ratio must not carry it (a first cut placed the stack 3 px from
++       * the bottom). Below RetroArch's own 9 px floor the unfloored size
++       * is a transient: keep 1.0 until a real one comes. */
++      if (scaled_size > 0.0f && unfloored_size >= 9.0f && unfloored_size < scaled_size)
++         p_dispwidget->msg_queue_place_scale = unfloored_size / scaled_size;
++      else if (unfloored_size >= scaled_size)
++         p_dispwidget->msg_queue_place_scale = 1.0f;
++      RARCH_LOG("[Widgets] msg_queue font: unfloored %.2f px, drawn %.2f px, place scale %.3f (ROCKNIX #295)\n",
++            unfloored_size, scaled_size, p_dispwidget->msg_queue_place_scale);
++   }
 +
     /* Free existing font */
     if (font_data->font)
     {
-@@ -1078,6 +1095,16 @@
+@@ -1078,6 +1106,20 @@
     p_dispwidget->msg_queue_height                 = p_dispwidget->gfx_widget_fonts.msg_queue.line_height * 2.4f * (BASE_FONT_SIZE / MSG_QUEUE_FONT_SIZE);
     p_dispwidget->msg_queue_padding                = (unsigned)(((float)p_dispwidget->gfx_widget_fonts.msg_queue.line_height * (2.0f / 3.0f)) + 0.5f);
     p_dispwidget->msg_queue_spacing                = p_dispwidget->msg_queue_height / 4.0f;
@@ -93,6 +99,10 @@ the height of the text it draws. The horizontal metrics are untouched.
 +      place_line_height                           = p_dispwidget->gfx_widget_fonts.msg_queue.line_height * place_scale;
 +      p_dispwidget->msg_queue_place_padding       = (unsigned)((place_line_height * (2.0f / 3.0f)) + 0.5f);
 +      p_dispwidget->msg_queue_place_spacing       = (unsigned)((place_line_height * 2.4f * (BASE_FONT_SIZE / MSG_QUEUE_FONT_SIZE)) / 4.0f);
++      RARCH_LOG("[Widgets] msg_queue place: line height %.2f, scale %.3f, padding %u (was %u), spacing %u (was %u) (ROCKNIX #295)\n",
++            p_dispwidget->gfx_widget_fonts.msg_queue.line_height, place_scale,
++            p_dispwidget->msg_queue_place_padding, p_dispwidget->msg_queue_padding,
++            p_dispwidget->msg_queue_place_spacing, p_dispwidget->msg_queue_spacing);
 +   }
     p_dispwidget->msg_queue_rect_start_x           = ceil(p_dispwidget->msg_queue_padding - (p_dispwidget->simple_widget_padding * 0.10f));
  
