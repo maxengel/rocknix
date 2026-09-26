@@ -1,10 +1,9 @@
-The reference is MSG_QUEUE_PLACE_SIZE, 11 px: the size the queue was
-drawn at on a 640x480 handheld before the floor. The image ships a
-widget scale of 0.4, so the scaled size on that panel is 4 px, and
-neither it (a first cut: the stack 3 px from the bottom) nor RetroArch's
-9 px floor (a third cut: 29 px) reproduces the 38 px the build before
-the floor drew; the two log lines say what was chosen and what the
-placement became.
+The box too keeps the proportion the queue had before the floor: its
+height from the placement's line height rather than the drawn font's
+(about 32 px on a 640x480 panel; the floor alone made it 40, and it was
+24 before the floor). The fourth cut moved the stack down 17 px and the
+maintainer saw no change on the RG35XX SP: the box's own growth was the
+other half of the empty band under the text.
 
 --- a/gfx/gfx_widgets.h	2026-09-26 21:28:16.038558573 +0000
 +++ b/gfx/gfx_widgets.h	2026-09-26 21:28:16.051989945 +0000
@@ -23,7 +22,7 @@ placement became.
     unsigned msg_queue_internal_icon_size;
     unsigned msg_queue_icon_size_x;
 --- a/gfx/gfx_widgets.c	2026-09-26 21:28:16.038476097 +0000
-+++ b/gfx/gfx_widgets.c	2026-09-26 21:50:36.844512644 +0000
++++ b/gfx/gfx_widgets.c	2026-09-26 22:55:50.244570107 +0000
 @@ -29,6 +29,7 @@
  
  #include "gfx_display.h"
@@ -102,8 +101,25 @@ placement became.
     /* Free existing font */
     if (font_data->font)
     {
-@@ -1078,6 +1114,20 @@
-    p_dispwidget->msg_queue_height                 = p_dispwidget->gfx_widget_fonts.msg_queue.line_height * 2.4f * (BASE_FONT_SIZE / MSG_QUEUE_FONT_SIZE);
+@@ -1075,9 +1111,36 @@
+    p_dispwidget->simple_widget_padding            = p_dispwidget->gfx_widget_fonts.regular.line_height * (2.0f / 3.0f) + 0.5f;
+    p_dispwidget->simple_widget_height             = p_dispwidget->gfx_widget_fonts.regular.line_height + p_dispwidget->simple_widget_padding;
+ 
+-   p_dispwidget->msg_queue_height                 = p_dispwidget->gfx_widget_fonts.msg_queue.line_height * 2.4f * (BASE_FONT_SIZE / MSG_QUEUE_FONT_SIZE);
++   /* ROCKNIX fork #295: the box too keeps the proportion the queue had
++    * before the floor -- its height from the placement's line height, not
++    * the drawn font's, so a message's backdrop is about 32 px on a 640x480
++    * panel where the floor alone made it 40 (24 before the floor). The
++    * text is centred in it as before and at the drawn size; a two-line
++    * message keeps its 1.5x. On the RG35XX SP the fourth cut moved the
++    * stack down 17 px and the maintainer saw no change: the box's own
++    * growth was the other half of the empty band. */
++   {
++      float place_scale = p_dispwidget->msg_queue_place_scale;
++      if (place_scale <= 0.0f || place_scale > 1.0f)
++         place_scale = 1.0f;
++      p_dispwidget->msg_queue_height              = p_dispwidget->gfx_widget_fonts.msg_queue.line_height * place_scale * 2.4f * (BASE_FONT_SIZE / MSG_QUEUE_FONT_SIZE);
++   }
     p_dispwidget->msg_queue_padding                = (unsigned)(((float)p_dispwidget->gfx_widget_fonts.msg_queue.line_height * (2.0f / 3.0f)) + 0.5f);
     p_dispwidget->msg_queue_spacing                = p_dispwidget->msg_queue_height / 4.0f;
 +   /* ROCKNIX fork #295: where the stack sits, from the unfloored size. */
