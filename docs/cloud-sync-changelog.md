@@ -2391,6 +2391,27 @@ produced -- every fix answers what the old code had already written, as an
 `Already written` line of its code trace, checked by `rc-preflight`
 (D-WORKFLOW-050, #289) -- changes no image.
 
+### The exit path's cut (2026-09-26, `86dc949300`)
+
+One change, from the maintainer's first evening on `3f93dc4683` (*"It took a
+long time to exit from RetroArch"*; no crash -- the device's own timeline
+read nine seconds with nothing on screen before the sync card); every claim
+is what the VM showed on the image (vm-qa run 43, the #290 proof on two
+guests with the capture slowed to the handheld's seconds, rehearsal run 32,
+`docs/qa-frames/2026-09-26/290-*`).
+
+- **Leaving a game, the interface is back on screen at once** (#290,
+  D-LAUNCH-006). The record of what the session saved, which used to run
+  before the window came back and cost the RG35XX SP three blank seconds,
+  now runs behind the carousel, and the sync card follows it as before. A
+  game started in those seconds goes straight ahead; its own exit then
+  syncs both sessions' saves.
+
+Under the surface: the capture and the exit sync's start moved to a worker
+thread in `FileData::launchGame` (ES `e563e0024`), with a generation counter
+so a game launched and left in between owns the outcome; nothing about what
+is synced, or when the card asks STOP IT AND PLAY, changed.
+
 ### The second opinion, and the twentieth cut (2026-09-24, #260)
 
 The maintainer asked whether the audit had an adversarial phase by default;

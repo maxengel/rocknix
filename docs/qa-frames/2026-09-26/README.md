@@ -62,3 +62,16 @@ Guest d (640x480) rebuilt from `3f93dc4683` (EmulationStation `5644752aa`), the 
 
 The maintainer's Dr. Mario, F-Zero and Aladdin on the RG35XX SP are the first row: their records are unmarked `turns=3`,
 and this build draws them upright the moment it boots.
+
+## #290, the exit path's order
+
+`proof-290-exit-order.sh`: the probe ROM launched through the API and left through the exit hotkey, with
+`/usr/bin/cloud_capture` shadowed by a wrapper that sleeps three seconds first (P-05's named substitute for the RG35XX SP's
+own seconds; a bind mount over the read-only image, gone at the next boot). Frames about a second apart with host times;
+the emulator's going and the capture's start and end polled over ssh on the same clock.
+
+| Frame | What it shows |
+| --- | --- |
+| `290-before-black-3s-after-exit-3f93dc4683.png` | guest d (640x480) on `3f93dc4683`, 3.3 s after the press: still black -- the capture (0.3 s to 3.4 s) ran before the window came back |
+| `290-before-carousel-after-capture-3f93dc4683.png` | the same run at 4.4 s: the carousel, only once the capture had ended -- the maintainer's "long exit" |
+| `290-after-carousel-during-capture-86dc949300.png` | guest a (1280x800) on `86dc949300`, 1.2 s after the press: the carousel back while the capture still runs (0.6 s to 3.6 s) |
