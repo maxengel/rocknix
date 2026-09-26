@@ -940,3 +940,30 @@ with no "Already written" line: #288` before the line was posted, and
 `PASS already written 1 code trace(s) since 2026-09-26 ...` after (work
 log, 03:05 UTC). The fix itself is the answer's first kind: a record says
 where its turn came from, and one that does not is not trusted (D-UI-094).
+
+## 63. The options said llvmpipe, the renderer said softpipe, and nobody read the renderer for a month (2026-09-26)
+
+`projects/ROCKNIX/devices/GENERIC_X64/options` has carried *"software
+OpenGL via llvmpipe (LLVM_SUPPORT=yes)"* since the device was added on
+2026-08-21, and `config/graphic`'s `get_graphicdrivers` -- upstream's 2018
+reset of every graphics variable before the per-driver rules -- set
+`LLVM_SUPPORT="no"` before Mesa read it. So every GENERIC_X64 image was built
+with `-Dllvm=disabled` and `gallium-drivers=softpipe,svga,virgl`, and every QA
+guest rendered through Mesa's reference rasterizer: RetroArch dropped six
+frames in ten, the walks took twenty-two minutes, an injected key could fall
+between two polls (#249's misses, #278), and the virgl driver the image did
+carry was never handed a GL display. Sixty-odd vm-qa runs, four hundred
+frames a run, and RetroArch's own `[GL] Renderer: softpipe` line sat in every
+launch log unread. The options comment was taken as the behaviour: *a name is
+not a behaviour, and a summary is not the source* (`engineering-practices.md`),
+this time a configuration file's own comment about itself.
+
+**Guard:** `tools/vm-qa`'s report carries the guest's display (`display: GL
+through virgl on /dev/dri/renderD128`, from QEMU's own command line) and the
+renderer its Mesa reported (`renderer: virgl (...)`, from the launch log the
+exit suite leaves), so a guest on the software path says so on every report;
+and `generic-x64-vm --headless` defaults to hardware GL (`--gl auto`) with the
+image's Mesa carrying llvmpipe for the fallback (`config/graphic` keeps a
+device's explicit yes). Seen on 2026-09-26: guest d's report line reads virgl
+after the change where the same guest's launch log read softpipe before it
+(#291; D-QA-052).
