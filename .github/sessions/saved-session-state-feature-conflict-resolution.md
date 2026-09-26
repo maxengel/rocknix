@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-26T21:45:00Z
+> **Saved**: 2026-09-26T22:05:00Z
 > **Branch**: feature/conflict-resolution (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the record lives on `next` in `/workspace/repos/rocknix`, pushed to `origin/next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047). The maintainer approved the copy and reboot of `64a0934a5d`, then asked for #293's capture-failure toast to be in the build, so that cut was never staged; the candidate is **`d72084ccad`** (ES `d3ba4edca`: the toast; RAOfflineProxy `c1bd3724d1`, D-RA-032; x64 run 63 at 19:22, H700 run 41 at 19:25 UTC; records `x64-all-20260926-d72084ccad`, `h700-all-20260926-d72084ccad`, the `64a0934a5d` records superseded). Proven: the toast (`proof-293-toast-v2`, 8 of 8, frames `293-capture-failed-*`), the proxy (`tools/ra-offline-test` 32 of 32 on the bump), vm-qa runs 46 and 48 (fresh pairs) fourteen of fifteen each, frame-diff on one transfer screen both times -- the second back-up of the same content ends in 2 s with NOTHING NEW where the `f483f215ad` reference held it still working at 90 s (the QA backend's same-name refusal, #286; the backend was restarted between runs 45 and 46) -- so run 48's walks are the new baseline (build `d72084ccad`, 20:40 UTC; the old one kept as `walk-baseline-f483f215ad-20260926-2040`) and frame-diff reads PASS against it; run 47 (`--only walks --skip-up`) met leftover guest state and proved nothing. `rc-preflight` MAY BE CUT at `4d757d4b63`; `next` at `8c848b915f`. **`d72084ccad` is on the RG35XX SP since 21:05 UTC** (staged and rebooted on the maintainer's yeses; the play-testing is theirs). Their first observations on it: the stacked alerts (praise; #294 done -- the change log carries it and six missing entries), and RetroArch's notifications one text line higher since the readable-size floor (#295, measured: 57 px vs 38 px under the lowest box; two options put to them).
+The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047). The maintainer approved the copy and reboot of `64a0934a5d`, then asked for #293's capture-failure toast to be in the build, so that cut was never staged; the candidate is **`d72084ccad`** (ES `d3ba4edca`: the toast; RAOfflineProxy `c1bd3724d1`, D-RA-032; x64 run 63 at 19:22, H700 run 41 at 19:25 UTC; records `x64-all-20260926-d72084ccad`, `h700-all-20260926-d72084ccad`, the `64a0934a5d` records superseded). Proven: the toast (`proof-293-toast-v2`, 8 of 8, frames `293-capture-failed-*`), the proxy (`tools/ra-offline-test` 32 of 32 on the bump), vm-qa runs 46 and 48 (fresh pairs) fourteen of fifteen each, frame-diff on one transfer screen both times -- the second back-up of the same content ends in 2 s with NOTHING NEW where the `f483f215ad` reference held it still working at 90 s (the QA backend's same-name refusal, #286; the backend was restarted between runs 45 and 46) -- so run 48's walks are the new baseline (build `d72084ccad`, 20:40 UTC; the old one kept as `walk-baseline-f483f215ad-20260926-2040`) and frame-diff reads PASS against it; run 47 (`--only walks --skip-up`) met leftover guest state and proved nothing. `rc-preflight` MAY BE CUT at `4d757d4b63`; `next` at `8c848b915f`. **`d72084ccad` is on the RG35XX SP since 21:05 UTC** (staged and rebooted on the maintainer's yeses; the play-testing is theirs). Their observations on it: the stacked alerts (praise; #294 done), and RetroArch's notifications one text line higher since the readable-size floor (#295) -- they chose option two, and the fix is RetroArch patch `0019` (D-UI-097) in the cut **`af3aaa3af0`** (x64 run 67, H700 run 45, 21:50-21:55 UTC; records filed; the three earlier cuts of the patch 0e0ffbe3cf/5355c29f68/3251889cdd superseded, each measured: 3, 57, 29 px), proven on guest d: the lowest box 40 px above the bottom (57 before, 38 on the build before the floor), the log lines `placement reference 11.00 px ... place scale 0.786`. vm-qa run 50 over it was in flight at the save; run 49 (the first cut's image) passed all fifteen. The H700 image of `af3aaa3af0` is NOT staged: the copy and the reboot are put to the maintainer by name.
 
 ## Completed This Session (2026-09-26, this stretch)
 
@@ -18,7 +18,7 @@ The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047).
 ## In Progress
 
 - **The call (#236, step 5)** after the maintainer's play-testing of `d72084ccad`.
-- **#295**: the maintainer's choice between RetroArch's proportional margin and the old position with the new size (one line in patch `0016`); if the latter, a RetroArch rebuild, a 640x480 frame, the next cut.
+- **vm-qa run 50** over `af3aaa3af0` (`vmqa-run50.{sh,log,rc}`): when it ends, the PROOF_PENDING/PREFLIGHT_PENDING lines in both `*-af3aaa3af0` RECORD.txt files, `tools/release-catalog --write`, the QA log row, `rc-preflight --allow-unchecked device-facts`, push; then the ask for the copy and the reboot.
 - **#292's real-award frame**: the route missed twice on the reset account (the splash timing); fix the route to read the screen before its first press (#278), then `proof-292-real-award-v2` again.
 
 ## Next Steps
@@ -57,4 +57,4 @@ The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047).
 
 ## Open Questions
 
-- #295's choice (leave the margin, or the old position with the new size).
+- The two yeses for the H700 copy and reboot of `af3aaa3af0`.
