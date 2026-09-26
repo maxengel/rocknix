@@ -119,3 +119,17 @@ half second; then the wrapper lifted and a control exit (no toast, no warning). 
 | --- | --- |
 | `293-capture-failed-sync-card-first.png` | 1.5 s after the exit: SYNC SAVES / COMPLETED -- the sync card runs first and still runs (`last-sync-exit` `0 completed`) |
 | `293-capture-failed-toast.png` | 7.5 s after the exit, once the card has gone: COULDN'T RECORD THIS SESSION'S SAVES. THEY'RE STILL ON THIS DEVICE. -- said once, as a toast, the card's words put back on the queue by D-UI-093; the interface's log carries the `cloud_capture exited 1` line |
+
+## #295, RetroArch's notifications a row higher since the readable-size floor
+
+`diag-295-osd.sh` (session directory): Ninoid launched through the API on two 640x480 guests, frames over VNC every quarter
+second, the message boxes measured by their background rows at x=15 (the box colour, `#161616`).
+
+| Frame | What it shows |
+| --- | --- |
+| `295-notifications-d72084ccad-640x480.png` | the current build: the save-state message (box y 383..422) under the account message (302..381), the 15 px queue font -- 57 px of screen under the lowest box |
+| `295-notifications-e5ed60f3df-640x480.png` | the 2026-09-10 build, before `0016`/`0017`: one message at the 10 px font (box y 418..441) -- 38 px under it; the QA account's name painted out |
+
+A one-line box is 40 px tall where it was 24, and the margin under the stack 57 px where it was 38: RetroArch sizes the
+queue's box and its spacing from the queue font's line height, so the 14 px floor (D-UI-084) moved the whole stack up
+by about a text line (19 px). "Press again to quit" rides the same queue.
