@@ -466,8 +466,13 @@ that. Present: `mapfile` (bash), `stat -c`, `find -path`, `mktemp -d`,
 `find -printf`, `ls --time-style`, `realpath`. `comm ... | wc -l` reading 0
 on the image shipped once (2026-09-06, a difference count that said
 "identical"); `pgrep -c` prints usage and exits 1, which a `$(...)` reads as
-an empty string. When a script reaches for a coreutils name, run it on the VM
-before believing the host.
+an empty string. And **`pgrep -x` matches the whole command line**, not the
+name: `pgrep -x retroarch` reads 0 while `/usr/bin/retroarch -L ...` runs
+(2026-09-26, two proofs reported a launch that had happened as one that had
+not; the #239 experiment's "RetroArch up: no" was the same). Poll a process
+by its argv with a self-excluding bracket, `pgrep -f 'retroarc[h] -L'`, on the
+guest and on a handheld alike. When a script reaches for a coreutils name,
+run it on the VM before believing the host.
 
 ## Fixtures for the cloud tier
 
