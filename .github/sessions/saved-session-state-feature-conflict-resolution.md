@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-26T23:40:00Z
+> **Saved**: 2026-09-27T00:20:00Z
 > **Branch**: feature/conflict-resolution (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the record lives on `next` in `/workspace/repos/rocknix`, pushed to `origin/next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047). The candidate is **`6f0a974765`** (RetroArch patch `0019`'s sixth cut, #295: the notification text where the build before the readable-size floor drew it, 50 px above a 640x480 panel's bottom, at the readable size; x64 run 69 at 23:05, H700 run 47 at 23:08 UTC; records filed; vm-qa run 52 all fifteen suites; `rc-preflight` MAY BE CUT). The patch took six cuts (3, 57, 29, 40, 45 px under the box's edge before the text's centre was the number measured); the five earlier cuts' records are superseded. **The RG35XX SP runs `af3aaa3af0` since 22:47 UTC** (its text 60 px up, which the maintainer saw as unchanged); the copy and reboot of `6f0a974765` are put to the maintainer by name. Earlier tonight: `86dc949300` (15:00), `d72084ccad` (21:05), `af3aaa3af0` (22:47) each on its own yeses; #292/#293/#294/#295 done; #292's real-award frame open (the test's route, #278).
+The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047). The candidate is **`6f0a974765`** (RetroArch patch `0019`'s sixth cut, #295: the notification text where the build before the readable-size floor drew it, 50 px above a 640x480 panel's bottom, at the readable size; x64 run 69 at 23:05, H700 run 47 at 23:08 UTC; records filed; vm-qa run 52 all fifteen suites; `rc-preflight` MAY BE CUT). The patch took six cuts (3, 57, 29, 40, 45 px under the box's edge before the text's centre was the number measured); the five earlier cuts' records are superseded. **The RG35XX SP runs `6f0a974765` since 2026-09-27 00:06 UTC** (boot abdbfb8a -> 6a98d23b; staged 23:57-00:01 UTC, sha256 matched on the device, rebooted 00:01:26 UTC on the maintainer's yeses *"You can copy and reboot."*; queue empty, no failed unit, no crash backtrace); the device facts' H700 row, both records' Device lines, the QA log row, the catalog and #236 say so (`next` at `f6ffe4743a`). Before it: `af3aaa3af0` since 22:47 UTC (its text 60 px up, which the maintainer saw as unchanged). Earlier tonight: `86dc949300` (15:00), `d72084ccad` (21:05), `af3aaa3af0` (22:47) each on its own yeses; #292/#293/#294/#295 done; #292's real-award frame open (the test's route, #278).
 
 ## Completed This Session (2026-09-26, this stretch)
 
@@ -17,12 +17,12 @@ The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047).
 
 ## In Progress
 
-- **The copy and reboot of `6f0a974765`** on the maintainer's two yeses (`stage-and-reboot-af3aaa3af0.sh` is the shape; adapt to `6f0a974765`); then the device facts, the records' Device lines, the QA log, #236.
+- **The maintainer's play-testing of `6f0a974765`** on the RG35XX SP (D-QA-036): the notification stack's place, and anything else they meet. Nothing runs on the device from here without a per-action yes.
 - **The call (#236, step 5)** after the maintainer's play-testing.
 
 ## Next Steps
 
-1. On the maintainer's yes for `d72084ccad`: the copy, then the reboot on a second yes: `/workspace/tmp/rocknix-session/stage-and-reboot-86dc949300.sh` is the shape (adapt to `d72084ccad`; stage to `/storage/.update-staging`, sha256 on the device, move into `/storage/.update`; `tools/device-act rg35xxsp ...` for each step); device-facts row after.
+1. The call (#236 step 5) once the maintainer reports the play-testing: a comment naming the build (`6f0a974765`), the soak's read and step 0's verdict (`rc-preflight` MAY BE CUT at `7330e62d69`, the two post-cut drifts accepted by D-RA-033/D-WORKFLOW-052); the device facts and the catalog in the same change (D-WORKFLOW-046). Any further staging follows `stage-and-reboot-6f0a974765.sh`'s shape (`/workspace/tmp/rocknix-session/`), on two fresh yeses.
 2. The real-award frame of the send card: one more reset of Tobu's Potato-tan Secret (100359; the 19:33 UTC run earned it again), then `proof-292-real-award-v2` (the toggle on before the reboot, which v1 lacked and so showed no card). The proxy bump itself is proven (D-RA-032).
 3. #292's open item to verify: twenty PLAY NOW exits after a link flip with `Debug=true`, every one with a `cloud_backup` run.
 5. Step 6 (the audit through the Facilitator on OpenRouter; `docs/audits/2026_09_25-milestone-rc-round-since-258/` paused at Phase 1.3, uncommitted), steps 7-8 (the PR series by content; RG SP and Nova builds).
@@ -56,4 +56,4 @@ The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047).
 
 ## Open Questions
 
-- The two yeses for `6f0a974765`; the call after the play-testing (step 5).
+- The maintainer's read of `6f0a974765` on the device (the notification stack, the rest of the play); then the call (step 5). The ceremony check reports the code audit overdue (62 closures since 2026-09-24; CI red) -- that is step 6, which follows the call by the maintainer's order (D-QA-049).
