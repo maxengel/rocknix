@@ -69,3 +69,26 @@ column or grid? It shows it one for each."*): `296-grid-<moment>-4builds-1286x10
 line alone and the sign-in alone -- 1 `e5ed60f3df` before the sizing, 2 `d72084ccad` the floor, 3 `af3aaa3af0` the first
 cut and option 2's look, 4 `6f0a974765` the sixth cut, on the device. The outline overlay is kept for the numbers, not
 for the eye.
+
+## #296, the seventh cut: the 13 px face, the box following it, the stack's foot at a margin
+
+The maintainer's choice (D-UI-098, D-UI-099): *"Option 2 with the lower floor seems like what we'd want."* -- *"I'm
+interested to see what it looks like if we try 13 pixels. I'm also curious if we can just have the boxes sit lower so
+there's not as much room between the bottom of the bottom box and the bottom of the screen."* Guest d rebuilt from run
+70's image (`7fd4864597`), the same runner at the H700's widget scale (tag `d-v7`). RetroArch's own log: `scaled 10.89
+px, placement reference 11.00 px, drawn 13.00 px, place scale 0.846` on both layout passes.
+
+| Moment | rows | what it says |
+| --- | --- | --- |
+| the sign-in alone | box 423..458 (36 px), text 436..444 | the text's centre 40 px above the bottom; 21 px of screen under the box (42 on the old build, 45 on the sixth cut) |
+| the load line alone | 423..458 from its first frame at rest | no jump: both layout passes clamp to the 11 px reference |
+| the stack settled | 386..421 over 423..458 | a one-row seam (422); pitch 37 = box + 1 |
+| the slot save | 423..458 | one task line at the slot |
+
+The five-build grids `296-grid-<moment>-5builds-1286x1530.png` add the seventh cut as cell 5. The strips and overlays are
+regenerated over five builds (`*-5builds-*`); the four-build ones stay.
+
+**Mock-ups of the margin** (`296-mock-margin<NN>-7fd4864597-640x480-s1.png`, NN = 42, 32, 21, 12): the seventh cut's
+settled stack cut from its frame and pasted on the same scene so its bottom edge sits NN rows above the panel's bottom.
+A mock, labelled as such in the image: it says where the same boxes would sit, nothing about their size or text. 21 is
+the cut as built (`MSG_QUEUE_BOTTOM_MARGIN_LINES` 4/3 of the placement line height); 42 is where the old build put it.
