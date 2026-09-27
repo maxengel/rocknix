@@ -309,9 +309,9 @@ SKIPPED - YOU'RE NOT ONLINE / SKIPPED - A SCAN IS ALREADY RUNNING; 77 and 78
 automatic top-up (`raofflineproxy-ctl topup`, run by `NetworkThread` when the
 device comes online, bounded to one attempt per half hour) had no surface of
 its own until 2026-09-26 (#293, D-UI-095): now a card while it has work --
-UPDATING OFFLINE ACHIEVEMENTS... with N OF M, then COMPLETED and N GAMES ADDED
-FOR OFFLINE PLAY. or YOUR OFFLINE ACHIEVEMENTS ARE UP TO DATE., or COULDN'T
-FINISH with the ctl's why -- and a launch over it asks YOUR OFFLINE
+RETROACHIEVEMENTS (OFFLINE) over GETTING GAME N OF M READY..., then COMPLETED
+and N MORE GAMES ARE READY. or EVERYTHING'S UP TO DATE., or COULDN'T FINISH
+with the ctl's why (D-UI-107) -- and a launch over it asks YOUR OFFLINE
 ACHIEVEMENTS ARE BEING UPDATED. / IF YOU STOP IT, IT'LL TRY AGAIN NEXT TIME
 YOU'RE CONNECTED. with STOP IT AND PLAY / KEEP WAITING. Its result is still the
 same line under the row, with WHEN YOU CAME ONLINE in place of the date

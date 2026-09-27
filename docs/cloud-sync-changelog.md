@@ -2524,6 +2524,13 @@ the cards of #292/#293 (D-UI-101):
   D-RA-036): the RetroAchievements library fetch that the index starts with ends after thirty seconds without a
   byte. Before, on a connection the interface had used while online, it waited for the link -- twelve minutes on
   the VM -- with the screen frozen, and the toast above never showed.
+- **Every card's title names the thing and its line says what happened, with no word said twice** (#303, D-UI-107,
+  the maintainer's rule): the send card is titled RETROACHIEVEMENTS (`SENDING 3 EARNED OFFLINE...`, then `WHAT YOU
+  EARNED OFFLINE IS NOW ON YOUR ACCOUNT.`), the top-up card RETROACHIEVEMENTS (OFFLINE) (`GETTING GAME 2 OF 5
+  READY...`, then `3 MORE GAMES ARE READY.` or `EVERYTHING'S UP TO DATE.`), and the sync cards' offline lines read
+  `THEY'LL GO UP NEXT TIME YOU'RE CONNECTED(, WITH YOUR ACHIEVEMENTS).` under their unchanged titles. Before: SEND
+  OFFLINE ACHIEVEMENTS over OFFLINE ACHIEVEMENTS HAVE BEEN SENT TO RETROACHIEVEMENTS, UPDATE OFFLINE ACHIEVEMENTS
+  over YOUR OFFLINE ACHIEVEMENTS ARE UP TO DATE.
 - **Exiting a game offline with achievements earned, the card says so**: `SAVES WILL BE SYNCED AND ACHIEVEMENTS
   SENT NEXT TIME YOU'RE CONNECTED.` in place of the saves-only line, one card (*"game saves and Retro Achievements
   will be sent when you're next online"*).

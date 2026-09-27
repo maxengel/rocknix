@@ -159,7 +159,8 @@ free, so it follows or stacks under the send card.
 **And the top-up is two things (D-RA-035, D-UI-103).** At the link's return the
 control script asks one question -- was a game played since the last attempt
 (RetroArch's history newer than the mark)? -- and runs the recently played
-pass alone when yes, with its card (`UPDATING YOUR OFFLINE ACHIEVEMENTS...`),
+pass alone when yes, with its card (RETROACHIEVEMENTS (OFFLINE) over
+`GETTING GAME N OF M READY...`, D-UI-107),
 or exits before the probe when no. New games are the index's: the hasher at
 startup and after UPDATE GAMELISTS, which ends in the full top-up with its
 card stacked under the game list update's. So a wake after a night shows

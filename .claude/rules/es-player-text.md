@@ -74,9 +74,11 @@ Beside it: `es-native-ui.md` (the surfaces the words go on),
 - **A destination is named only when there is more than one it could be
   (D-UI-096).** Saves go to this device or to the cloud, so the label says
   which: BACK UP SAVES TO THE CLOUD. Achievements go nowhere but
-  RetroAchievements, so the sentence is OFFLINE ACHIEVEMENTS HAVE BEEN SENT,
-  and TO RETROACHIEVEMENTS is the longer candidate a card line tries first
-  where it has room (D-UI-035, longest first). Maintainer, 2026-09-26:
+  RetroAchievements, so the card's title says RETROACHIEVEMENTS and its line
+  says only what happened -- WHAT YOU EARNED OFFLINE IS NOW ON YOUR ACCOUNT.,
+  short NOW ON YOUR ACCOUNT. (D-UI-107; the longer candidate first, D-UI-035).
+  It read OFFLINE ACHIEVEMENTS HAVE BEEN SENT (TO RETROACHIEVEMENTS) under
+  SEND OFFLINE ACHIEVEMENTS until 2026-09-27. Maintainer, 2026-09-26:
   *"since there's nowhere else that achievements could go but
   RetroAchievements, I think it's implied what the destination is."* The
   service is still named where it is the actor or the account
@@ -91,17 +93,26 @@ Beside it: `es-native-ui.md` (the surfaces the words go on),
   proxy's own send). The safe verb goes last, where the back button lands
   (`es-ui-style-guide.md` § Confirmations).
 
-- **The offline achievements' cards (D-UI-095/096, D-UI-101).** The send card:
-  SENDING OFFLINE ACHIEVEMENTS..., `N TO SEND`, then COMPLETED with OFFLINE
-  ACHIEVEMENTS HAVE BEEN SENT. The top-up card: UPDATING YOUR OFFLINE
-  ACHIEVEMENTS... (D-UI-103), `I OF N`, then `N GAMES ADDED FOR OFFLINE PLAY.` **only of
-  games new to the store**; a run that re-read what was there says `N GAMES
-  READY FOR OFFLINE PLAY.` (maintainer, 2026-09-27: *"You should only really
-  say the games are added"*). The exit card offline, when awards wait in the
-  proxy's queue: `SAVES WILL BE SYNCED AND ACHIEVEMENTS SENT NEXT TIME YOU'RE
-  CONNECTED.`, short form `SAVES AND ACHIEVEMENTS GO UP NEXT TIME YOU'RE
-  CONNECTED.` -- *synced* for the saves, *sent* for the achievements, never
-  the other way round.
+- **A card's title names the thing; its line says what happened, and no
+  word twice (D-UI-107).** Maintainer, 2026-09-27: *"make sure it's not
+  duplicative in terms of what the title says and what the body text is
+  across the board"* -- and *"crisp, clear, and not too cold"*. The
+  offline achievements' cards (D-UI-095/096, D-UI-101, D-UI-103 reworded by
+  D-UI-107): the send card is titled RETROACHIEVEMENTS, reads `SENDING N
+  EARNED OFFLINE...` while it runs, then COMPLETED with `WHAT YOU EARNED
+  OFFLINE IS NOW ON YOUR ACCOUNT.` (short `NOW ON YOUR ACCOUNT.`), or
+  COULDN'T FINISH - IT STOPPED ANSWERING / THIS DEVICE'S OFFLINE SERVICE
+  DIDN'T ANSWER. The top-up card is titled RETROACHIEVEMENTS (OFFLINE),
+  reads `GETTING GAME I OF N READY...`, then COMPLETED with `N MORE GAMES ARE
+  READY.` **only of games new to the store**; a run that re-read what was
+  there says `N GAMES ARE READY.` (maintainer, 2026-09-27: *"You should only
+  really say the games are added"*), and nothing new says `EVERYTHING'S UP
+  TO DATE.` The exit card offline keeps its title (SYNCING SAVES TO THE
+  CLOUD, D-UI-040) and its line stops repeating it: `THEY'LL GO UP NEXT TIME
+  YOU'RE CONNECTED.`, with awards waiting `THEY'LL GO UP NEXT TIME YOU'RE
+  CONNECTED, WITH YOUR ACHIEVEMENTS.` (short `THEY GO UP WITH YOUR
+  ACHIEVEMENTS WHEN YOU'RE BACK.`); a launch over the exit sync: `THEY GO UP
+  WHEN YOU EXIT THE GAME.`
   A game list updated offline, with offline achievements on: a card, not a
   toast -- `RETROACHIEVEMENTS (OFFLINE)` behind the trophy, with `NEWLY
   ADDED GAMES WILL BE ENABLED ONCE YOU RECONNECT.` under it, five seconds
@@ -221,13 +232,14 @@ partial run from a total one; no screen ever shows it.
 
 The offline achievements' two cards (#292, #293; D-RA-030, D-UI-095) end in
 the same three words: the send card `COMPLETED` with OFFLINE ACHIEVEMENTS HAVE
-BEEN SENT (TO RETROACHIEVEMENTS where the line has room, D-UI-096) or
-`COULDN'T FINISH - RETROACHIEVEMENTS STOPPED ANSWERING` with IT'LL TRY AGAIN
-WHEN YOU'RE CONNECTED.; the top-up card `COMPLETED` with N GAMES ADDED FOR
-OFFLINE PLAY. or YOUR OFFLINE ACHIEVEMENTS ARE UP TO DATE., or `COULDN'T FINISH
-- <the ctl's why>` with IT'LL TRY AGAIN NEXT TIME YOU'RE CONNECTED. Their
-running lines: SENDING OFFLINE ACHIEVEMENTS... / N TO SEND, and UPDATING
-OFFLINE ACHIEVEMENTS... / N OF M. Their stamp is `last-sync-link`, in the
+BEEN SENT until D-UI-107 reworded it to WHAT YOU EARNED OFFLINE IS NOW ON
+YOUR ACCOUNT. under the title RETROACHIEVEMENTS) or `COULDN'T FINISH - IT
+STOPPED ANSWERING` with IT'LL TRY AGAIN WHEN YOU'RE CONNECTED.; the top-up
+card `COMPLETED` with N MORE GAMES ARE READY. or EVERYTHING'S UP TO DATE., or
+`COULDN'T FINISH - <the ctl's why>` with IT'LL TRY AGAIN NEXT TIME YOU'RE
+CONNECTED. Their running lines: RETROACHIEVEMENTS / SENDING N EARNED
+OFFLINE..., and RETROACHIEVEMENTS (OFFLINE) / GETTING GAME N OF M READY...
+Their stamp is `last-sync-link`, in the
 same shape. And a capture that could not record after a game says, once,
 as a toast after the sync card (D-UI-093): COULDN'T RECORD THIS SESSION'S
 SAVES. THEY'RE STILL ON THIS DEVICE. -- what did not happen and what is in
