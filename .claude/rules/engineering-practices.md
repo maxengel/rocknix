@@ -530,6 +530,21 @@ question, and is said in the report.
   to scrub. `docs/device-testing-policy.md` § "Reading a device's output" is
   the long form. (D-QA-021.)
 
+  **Except where the line's presence is the evidence.** A `PASS`/`FAIL`
+  verdict, a suite's summary, and an action-log line all match `pass` or
+  `user` by accident, and a read that drops them reports an absence that is
+  the filter's: on 2026-09-27 the reboot's own `device-act` lines were
+  looked for three times and "missing" -- their label quoted the
+  maintainer's *"fully tested and passing build"*. For those reads, mask the
+  value and keep the line:
+
+  ```bash
+  sed -E 's/((token|key|passw[a-z]*|psk|user)[=:][^ ]*)/\1***/Ig'
+  ```
+
+  and keep the dropping `grep -v` for config files and `get_setting` output,
+  where the line itself is the secret.
+
 ## If the VM can test it, the VM tests it first
 
 Maintainer, 2026-09-06: *"if we can test something on the VM, we should test on
