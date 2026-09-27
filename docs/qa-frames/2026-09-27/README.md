@@ -138,3 +138,13 @@ starts`, five and ten seconds apart.
 | `300-offline-index-toast-clipped-c9f5aa7de0-640x480.png` | the toast the moment the fetch ends: YOU'RE NOT ONLINE. NEW GAMES GET THEIR OFFLINE ACHIEVEMENTS NEXT TIME Y... -- the D-UI-104 sentence clips at 640x480 (D-UI-105 shortens it; the frame is kept as the evidence) |
 | `300-offline-index-toast-ed0fc38a22-640x480.png` | the same moment on `ed0fc38a22`: YOU'RE NOT ONLINE. NEW GAMES GET OFFLINE ACHIEVEMENTS ONCE YOU ARE. -- whole, with room (D-UI-105) |
 | `302-offline-index-card-463abbca2a-640x480.png` | the same moment on `463abbca2a`, as the card the maintainer asked for: the trophy, RETROACHIEVEMENTS (OFFLINE), and NEWLY ADDED GAMES WILL BE ENABLED ONCE YOU RECONNECT. under it, five seconds (D-UI-106, #302) |
+
+## #303: every card's title names the thing and its line says what happened, on `d39ccdfff3` (proof-298, guest d, D-UI-107)
+
+| Frame | What it shows |
+| --- | --- |
+| `303-cards-grid-d39ccdfff3-1286x2042.png` | the seven card moments of one proof run in a grid: the exit card offline, the send card running and done, the top-up card stacked under it, the saves card, the top-up card after an index, and the offline-update card |
+| `303-exit-card-offline-d39ccdfff3-640x480.png` | SYNC SAVES / SKIPPED - YOU'RE NOT ONLINE / THEY'LL GO UP NEXT TIME YOU'RE CONNECTED, WITH YOUR ACHIEVEMENTS. -- the line no longer repeats "saves" or "synced" |
+| `303-send-card-running-d39ccdfff3-640x480.png` | RETROACHIEVEMENTS / SENDING 1 EARNED OFFLINE... |
+| `303-send-card-done-d39ccdfff3-640x480.png` | RETROACHIEVEMENTS / COMPLETED / WHAT YOU EARNED OFFLINE IS NOW ON YOUR ACCOUNT. (was SEND OFFLINE ACHIEVEMENTS over OFFLINE ACHIEVEMENTS HAVE BEEN SENT TO RETROACHIEVEMENTS.) |
+| `303-send-and-topup-cards-d39ccdfff3-640x480.png` | the top-up card stacked under it: RETROACHIEVEMENTS (OFFLINE) / COMPLETED / 1 GAME IS READY. (was UPDATE OFFLINE ACHIEVEMENTS over 1 GAME READY FOR OFFLINE PLAY.) |
