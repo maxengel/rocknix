@@ -149,6 +149,12 @@
 #            and it waits for a top-up already running rather than giving
 #            way to one that read the index before it grew -- the wait
 #            spending from the same deadline.
+#   index-offline
+#            EmulationStation's index had games to identify and the hash
+#            library did not come: leaves index-pending, the marker the
+#            after-index run leaves when its probe fails, so the next
+#            link-return topup lists the library once for those games
+#            (fork #299, D-UI-104). No probe; exit 0.
 #   ready    how many games are cached: the count in the client's own
 #            cached_game_ids.txt export (one id per line, rewritten on every
 #            cache change by the service and the client alike), on one line.
@@ -1454,6 +1460,19 @@ do_scan() {
     exit "${RC}"
 }
 
+# index-offline: the interface's index had games to identify and
+# RetroAchievements' hash library did not come -- offline, nearly always
+# (fork #299, D-UI-104). The marker the after-index run leaves when its
+# probe fails is written here without a probe, since the interface already
+# knows the library did not come: the next link-return topup lists the
+# library once for those games, inside the half hour or not, and clears
+# it. Nothing else is touched; exit 0.
+do_index_offline() {
+    mkdir -p "${PROXY_DIR}" || fail "cannot create ${PROXY_DIR}"
+    touch "${INDEX_PENDING}" || fail "cannot write ${INDEX_PENDING}"
+    slog "index ran offline: the hash library did not come (index-pending); the library is listed once at the link's return"
+}
+
 # topup [--after-index]. --after-index is the run the interface starts as
 # its hasher finishes (ThreadedHasher, with the toggle on): it waits for a
 # top-up already running instead of giving way to it, and it does not count
@@ -1476,7 +1495,12 @@ do_topup() {
 
     # Bounded: one attempt per interval, whatever the link does. The mark
     # is read here and set only below, once a probe has reached the server.
-    if [ "${AFTER_INDEX}" -eq 0 ] && [ -e "${TOPUP_MARK}" ]; then
+    # An index that ran offline (index-pending, below) is the one reason to
+    # run inside the interval: the player added games and the toast said
+    # they are looked up next time the device is connected (fork #299,
+    # D-UI-104), and "next time" is this link, not the one after the half
+    # hour.
+    if [ "${AFTER_INDEX}" -eq 0 ] && [ -e "${TOPUP_MARK}" ] && [ ! -e "${INDEX_PENDING}" ]; then
         local AGE=$(( $(date +%s) - $(stat -c %Y "${TOPUP_MARK}" 2>/dev/null || echo 0) ))
         if [ "${AGE}" -ge 0 ] && [ "${AGE}" -lt "${TOPUP_INTERVAL}" ]; then
             exit 0
@@ -1650,11 +1674,12 @@ case "${1:-}" in
     flushed) do_flushed ;;
     scan)    do_scan ;;
     topup)   do_topup "${2:-}" ;;
+    index-offline) do_index_offline ;;
     ready)   do_ready ;;
     images)  do_images "${2:-}" ;;
     refresh) do_refresh "${2:-}" "${3:-}" ;;
     *)
-        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|pending-ids|account|flushed|scan|topup [--after-index]|images [--verify]|refresh [--all|--game <id>]|ready}" >&2
+        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|pending-ids|account|flushed|scan|topup [--after-index]|index-offline|images [--verify]|refresh [--all|--game <id>]|ready}" >&2
         exit 2
     ;;
 esac
