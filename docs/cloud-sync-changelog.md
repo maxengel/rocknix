@@ -2498,6 +2498,33 @@ closed on, against the cut named.
 - **A settings backup no longer carries the IGDB scraper's client secret** (`backuptool` strips it beside the two
   ScreenScraper passwords; the strip has a test for the first time) (#274; `c939df737a`, the scripts suite).
 
+### The notification face at 13 px, its box following it, the stack lower (2026-09-27, `7fd4864597`)
+
+The sixth cut's stack read wrong on the RG35XX SP: the maintainer, *"the save state load seems to come up and then be
+moved when the RetroAchievements alert comes up, and they're stacked directly on top of each other without any space
+between them."* Four builds were run side by side on the VM at the device's widget scale (#296,
+`docs/qa-frames/2026-09-27/`), and the cut that followed is what they chose: *"Option 2 with the lower floor"*, then
+*"I'm interested to see what it looks like if we try 13 pixels. I'm also curious if we can just have the boxes sit lower."*
+
+- **RetroArch's notifications are drawn at 13 px** where a panel would put them smaller (#296, D-UI-098; 14 px since
+  #251). Thirteen lands the face's stems on whole pixels as 14 does, and it is the smallest size that does.
+- **A message's box is sized by its text again** (36 px around the 13 px face on a 640x480 panel), as RetroArch draws it
+  (#296, D-UI-099). The sixth cut had shrunk the box to the old proportion around the larger face.
+- **The stack sits lower: 21 px of screen under the bottom box** on a 640x480 panel, where the build before the
+  readable-size floor left 42 and the sixth cut 45 (#296, D-UI-099). The number is a constant in the patch and is the
+  maintainer's to settle from the mock-ups on #296.
+- **The save-state line no longer lands low and jumps when the sign-in arrives** (#296): RetroArch lays its widgets out
+  twice at a launch, and the sixth cut's reference differed between the passes; the placement reference is now 11 px,
+  which both passes clamp to.
+- **Two stacked messages keep a one-row seam** (#296): the sixth cut's rounding closed it and the first placement cut
+  overlapped the boxes by four rows; every box now sits one divider above the one below.
+- **The order of the two lines is RetroArch's own and unchanged**: a save or load line is a task and sits at the bottom;
+  the sign-in is a regular message and sits above it, on every build since 2026-09-10.
+
+Checked on `7fd4864597`: vm-qa run 53 all fifteen suites; `diag-296-flows-v2` on guest d at the H700's widget scale
+(drawn 13 px, box 423..458, stack 386..421 over 423..458, no jump); RetroArch's log `placement reference 11.00 px, drawn
+13.00 px` on both layout passes.
+
 ### The notifications sit where they did, at the readable size (2026-09-26, `6f0a974765`)
 
 From the maintainer's play-testing of `d72084ccad` (*"do the RetroAchievements login and save state load leave an extra
