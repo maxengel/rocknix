@@ -1,6 +1,6 @@
 # Saved Session State
 
-> **Saved**: 2026-09-27T00:20:00Z
+> **Saved**: 2026-09-27T02:35:00Z
 > **Branch**: feature/conflict-resolution (worktree `/workspace/repos/rocknix.worktrees/conflict-resolution`; the record lives on `next` in `/workspace/repos/rocknix`, pushed to `origin/next`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
@@ -17,11 +17,13 @@ The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047).
 
 ## In Progress
 
-- **The maintainer's play-testing of `6f0a974765`** on the RG35XX SP (D-QA-036): the notification stack's place, and anything else they meet. Nothing runs on the device from here without a per-action yes.
+- **#296, the sixth cut's stacked notifications** (the maintainer, 2026-09-27 00:30 UTC: the save line comes up and is moved when the sign-in arrives; the two stacked with no space). Four guests, one per build (e `e5ed60f3df` :10027, f `d72084ccad` :10028, g `af3aaa3af0` :10029, d `6f0a974765` :10026; all up, at widget scale 1.0), `diag-296-flows-v2.sh` (reboot, A/B/C with the slot save), frames at 0.1 s, `timeline-boxes.py`, `file-296.py`, `compose-296.py` -> `docs/qa-frames/2026-09-27/` (36 files, README with the rows). Measured: the sixth cut's load line lands at 418..448 (14 px low) and jumps to 404..434 when the sign-in arrives (two layout passes, the 9 px reference differs between them, `gfx_widgets_layout` never re-places); its stacked boxes touch (pitch 31 under a 31 px box; the old build 29 under 28); the first cut overlapped by 4 rows. The order is RetroArch's (tasks below, regular above) on every build; a slot save is one line; nothing at exit. The options are on #296 (02:30 UTC comment): 1 keep the 31 px box, fix the seam and the jump; 2 (recommended) the floor's 40 px box at the old text height, 11 px reference, pitch 41, re-place at layout; 3 the floor build. **Waiting for the maintainer's choice.** #297 filed (a screenshot library per build).
+- **The maintainer's play-testing of `6f0a974765`** otherwise (D-QA-036). Nothing runs on the device from here without a per-action yes.
 - **The call (#236, step 5)** after the maintainer's play-testing.
 
 ## Next Steps
 
+0. On the maintainer's choice for #296: the seventh cut of patch `0019` (option 2: `msg_queue_height` from the drawn font, the pitch from the drawn spacing (box + 1), the bottom margin from an 11 px reference, and `gfx_widgets_msg_queue_move` at the end of `gfx_widgets_layout`); prove with `diag-296-flows-v2.sh` on guest d after an x64 build (the acceptance rows: seam 1, no jump, text centre 60), then vm-qa, then the H700 build and the two yeses. Harness debts for #278: the runner's helper-after-reboot rule, `scp -P`, the grabber's 2 s timeout (`vnc-grab.py`), the label face in `compose-296.py`.
 1. The call (#236 step 5) once the maintainer reports the play-testing: a comment naming the build (`6f0a974765`), the soak's read and step 0's verdict (`rc-preflight` MAY BE CUT at `7330e62d69`, the two post-cut drifts accepted by D-RA-033/D-WORKFLOW-052); the device facts and the catalog in the same change (D-WORKFLOW-046). Any further staging follows `stage-and-reboot-6f0a974765.sh`'s shape (`/workspace/tmp/rocknix-session/`), on two fresh yeses.
 2. The real-award frame of the send card: one more reset of Tobu's Potato-tan Secret (100359; the 19:33 UTC run earned it again), then `proof-292-real-award-v2` (the toggle on before the reboot, which v1 lacked and so showed no card). The proxy bump itself is proven (D-RA-032).
 3. #292's open item to verify: twenty PLAY NOW exits after a link flip with `Debug=true`, every one with a `cloud_backup` run.
@@ -56,4 +58,4 @@ The release-candidate round (D-QA-049, `release-candidates.md`, D-WORKFLOW-047).
 
 ## Open Questions
 
-- The maintainer's read of `6f0a974765` on the device (the notification stack, the rest of the play); then the call (step 5). The ceremony check reports the code audit overdue (62 closures since 2026-09-24; CI red) -- that is step 6, which follows the call by the maintainer's order (D-QA-049).
+- The maintainer's choice among the three looks on #296 (option 2 recommended), then the maintainer's read of the cut that follows; then the call (step 5). The ceremony check reports the code audit overdue (62 closures since 2026-09-24; CI red) -- that is step 6, which follows the call by the maintainer's order (D-QA-049).
