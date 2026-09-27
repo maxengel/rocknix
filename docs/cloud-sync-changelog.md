@@ -2513,8 +2513,8 @@ the cards of #292/#293 (D-UI-101):
   SENT NEXT TIME YOU'RE CONNECTED.` in place of the saves-only line, one card (*"game saves and Retro Achievements
   will be sent when you're next online"*).
 
-Checked on the build below its records: `proof-298` on guest d (the exit card's line offline with a pending award, the
-three stamps' order at the link's return, the top-up's line after a refresh) and vm-qa.
+Checked on `b4f90b815c`: `proof-298` on guest d (20 PASS, 0 FAIL: the exit card's line offline with a pending award, the send card then the
+top-up card then the owed saves in the interface's log, the top-up's 1 GAME READY after a refresh) and vm-qa run 56 (all 15 suites).
 
 ### The notification face at 13 px, its box following it, the stack's foot at its side margin (2026-09-27)
 
