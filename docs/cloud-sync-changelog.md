@@ -2498,6 +2498,24 @@ closed on, against the cut named.
 - **A settings backup no longer carries the IGDB scraper's client secret** (`backuptool` strips it beside the two
   ScreenScraper passwords; the strip has a test for the first time) (#274; `c939df737a`, the scripts suite).
 
+### The offline achievements' cards, after a night's play (2026-09-27, #298)
+
+The maintainer on the RG35XX SP: *"Everything's generally looking solid. A couple of minor UI notes."* Three, all in
+the cards of #292/#293 (D-UI-101):
+
+- **The top-up card says `N GAMES READY FOR OFFLINE PLAY` when it only refreshed**, and `N GAMES ADDED FOR OFFLINE
+  PLAY` only when games are new to the store (*"You should only really say the games are added"*). The proxy's
+  control script counts what was added; a stamp from before it is read as before.
+- **When the link returns, the RetroAchievements cards come together and the saves sync after them**: the send card,
+  the top-up and its outcome, then SYNCING SAVES TO THE CLOUD. Before, the saves card came between the achievements'
+  cards (*"they should be batched"*).
+- **Exiting a game offline with achievements earned, the card says so**: `SAVES WILL BE SYNCED AND ACHIEVEMENTS
+  SENT NEXT TIME YOU'RE CONNECTED.` in place of the saves-only line, one card (*"game saves and Retro Achievements
+  will be sent when you're next online"*).
+
+Checked on the build below its records: `proof-298` on guest d (the exit card's line offline with a pending award, the
+three stamps' order at the link's return, the top-up's line after a refresh) and vm-qa.
+
 ### The notification face at 13 px, its box following it, the stack's foot at its side margin (2026-09-27)
 
 The sixth cut's stack read wrong on the RG35XX SP: the maintainer, *"the save state load seems to come up and then be

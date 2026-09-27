@@ -91,6 +91,18 @@ Beside it: `es-native-ui.md` (the surfaces the words go on),
   proxy's own send). The safe verb goes last, where the back button lands
   (`es-ui-style-guide.md` § Confirmations).
 
+- **The offline achievements' cards (D-UI-095/096, D-UI-101).** The send card:
+  SENDING OFFLINE ACHIEVEMENTS..., `N TO SEND`, then COMPLETED with OFFLINE
+  ACHIEVEMENTS HAVE BEEN SENT. The top-up card: UPDATING OFFLINE
+  ACHIEVEMENTS..., `I OF N`, then `N GAMES ADDED FOR OFFLINE PLAY.` **only of
+  games new to the store**; a run that re-read what was there says `N GAMES
+  READY FOR OFFLINE PLAY.` (maintainer, 2026-09-27: *"You should only really
+  say the games are added"*). The exit card offline, when awards wait in the
+  proxy's queue: `SAVES WILL BE SYNCED AND ACHIEVEMENTS SENT NEXT TIME YOU'RE
+  CONNECTED.`, short form `SAVES AND ACHIEVEMENTS GO UP NEXT TIME YOU'RE
+  CONNECTED.` -- *synced* for the saves, *sent* for the achievements, never
+  the other way round.
+
 ## Every fork string ships in English and French (D-UI-051)
 
 The language is `system.language` (SYSTEM SETTINGS > LANGUAGE); every

@@ -141,6 +141,21 @@ Four screens still route left/right to their strips themselves
 (`GuiThemeInstaller`, `GuiBatoceraStore`, `GuiKeyMappingEditor`,
 `GuiKeyboardtopads`). They move to the same model with #63.
 
+## The cards at the link's return come in one batch (D-UI-101)
+
+When the link returns with awards to send, a top-up due and an exit sync
+owed, the player sees the RetroAchievements cards together and the saves
+card after them: the send card, then the top-up's card and outcome, then
+SYNCING SAVES TO THE CLOUD. `ProxyCards` keeps three flags for it -- the
+send card is showing, the top-up is running, the saves are owed -- and the
+send's end and the top-up's every return each call `handOff`, which starts
+the saves only when the other is gone. Before #298 the send's end started
+the saves and the top-up's outcome, waiting for a free screen, landed after
+the saves card: three achievements' surfaces with a saves card between them.
+Maintainer, 2026-09-27: *"they should be batched."* The order the top-up card
+takes against the send card is unchanged: it attaches when the screen is
+free, so it follows or stacks under the send card.
+
 ## Spacing (house style)
 
 Values live in one place each, so a screen never makes its own decision.
