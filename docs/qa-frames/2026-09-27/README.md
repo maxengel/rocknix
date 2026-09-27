@@ -63,3 +63,9 @@ What the rows say, at the device's scale:
 
 The resume window's timing, per build: the first box at +0.87, +0.92, +0.77, +0.84 s; the second message at +1.29,
 +1.22, +1.13, +1.47 s; the stack at rest at +1.56, +1.52, +1.59, +1.58 s; gone at about +4.2 s.
+
+Grids, one full frame per build with its label (the maintainer, 2026-09-27: *"Is it possible to have four images in a row or
+column or grid? It shows it one for each."*): `296-grid-<moment>-4builds-1286x1018.png` for the settled stack, the load
+line alone and the sign-in alone -- 1 `e5ed60f3df` before the sizing, 2 `d72084ccad` the floor, 3 `af3aaa3af0` the first
+cut and option 2's look, 4 `6f0a974765` the sixth cut, on the device. The outline overlay is kept for the numbers, not
+for the eye.
