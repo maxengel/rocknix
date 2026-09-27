@@ -237,6 +237,11 @@ SCAN_STAMP="${PROXY_DIR}/last-scan"
 SCAN_LOG="${PROXY_DIR}/scan.log"
 RUNNING="${PROXY_DIR}/running"
 TOPUP_MARK="${PROXY_DIR}/last-topup-attempt"
+# An index run that could not reach RetroAchievements (a game list updated
+# offline) leaves this, and the next link-return run lists the library
+# once for it, so the games added offline are cached when the device is
+# next online -- the promise the interface's toast makes (fork #299).
+INDEX_PENDING="${PROXY_DIR}/index-pending"
 READY_FILE="${PROXY_DIR}/cached_game_ids.txt"
 SCAN_LOCK="/var/run/raofflineproxy-scan.lock"
 ROMS_ROOT="/storage/roms"
@@ -1482,7 +1487,7 @@ do_topup() {
         # a nine-second check at wake with nothing to add).
         local HIST
         HIST="$(history_path)"
-        if [ ! -e "${HIST}" ] || [ ! "${HIST}" -nt "${TOPUP_MARK}" ]; then
+        if [ ! -e "${INDEX_PENDING}" ] && { [ ! -e "${HIST}" ] || [ ! "${HIST}" -nt "${TOPUP_MARK}" ]; }; then
             slog "topup: no game played since the last attempt (${HIST} is not newer than the mark); nothing to look for, skipped"
             exit 0
         fi
@@ -1505,6 +1510,10 @@ do_topup() {
     done
     if [ "${ONLINE}" -eq 0 ]; then
         slog "topup refused: offline by the proxy's probe (${TRY} probes); not counted as an attempt"
+        if [ "${AFTER_INDEX}" -eq 1 ]; then
+            touch "${INDEX_PENDING}"
+            slog "topup: the index's games wait for the link (index-pending)"
+        fi
         exit ${EX_UNAVAILABLE}
     fi
     touch "${TOPUP_MARK}"
@@ -1523,12 +1532,17 @@ do_topup() {
     if [ "${LEFT}" -le 0 ]; then
         WHY=TOOK_TOO_LONG
         slog "topup${AI_NOTE}: the deadline passed while waiting for the lock and the probe"
-    elif [ "${AFTER_INDEX}" -eq 0 ]; then
+    elif [ "${AFTER_INDEX}" -eq 0 ] && [ ! -e "${INDEX_PENDING}" ]; then
         # New games are the index's to find -- at startup and with UPDATE
         # GAMELISTS, both of which end in this run with --after-index -- so
-        # the link's return does not list the library (fork #299, D-RA-035).
+        # the link's return does not list the library (fork #299, D-RA-035),
+        # unless an index ran offline and left its marker: then once, below.
         slog "topup at the link's return: the recently played pass alone (new games are the index's)"
     else
+        if [ "${AFTER_INDEX}" -eq 0 ]; then
+            slog "topup at the link's return: an index ran offline (index-pending); the library listed once for it"
+            rm -f "${INDEX_PENDING}"
+        fi
         COUNTS="$(list_jobs "${LIST}" indexed "${LEFT}" 2>>"${SCAN_LOG}")"
         LRC=$?
         if [ "${LRC}" -eq 0 ]; then
