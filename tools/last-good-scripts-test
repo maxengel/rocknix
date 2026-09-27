@@ -2191,6 +2191,15 @@ tctl topup; [ "${RC}" -eq 0 ] && [ "$(grep -c '^probe ' "${TR}/probe.log")" -eq 
 grep -q "topup at the link's return: the recently played pass alone" "${TLOG}" && ! grep -q 'topup start: found=' "${TLOG}" && grep -q '^smart budget=' "${TR}/probe.log" && [ ! -e "${TSTAMP}" ]; check $? "the link's return runs the recently played pass alone: no listing, the smart pass, no stamp (nothing new)" "log: $(tr '\n' '|' < "${TLOG}" | cut -c1-300); stamp: $(cat "${TSTAMP}" 2>/dev/null)"
 # The link's return asks one question: was a game played since the mark? (#299)
 touch -d '2 hours ago' "${TMARK}"; touch -d '3 hours ago' "${THISTORY}"; : > "${TR}/probe.log"
+# RetroArch 1.22 keeps the history under playlist_directory/builtin, not at content_history_path (#306): with no override,
+# the builtin file newer than the mark makes the wake top-up run, and the config's absent file does not stop it
+TBUILTIN="${TS}/playlists/builtin/content_history.lpl"; mkdir -p "$(dirname "${TBUILTIN}")"
+touch -d '2 hours ago' "${TMARK}"; rm -f "${THISTORY}"; touch "${TBUILTIN}"; : > "${TR}/probe.log"
+TENV_SAVED=("${TENV[@]}"); TENV=()
+tctl topup; [ "${RC}" -eq 0 ] && grep -q '^smart budget=' "${TR}/probe.log"; check $? "with no override, the builtin history newer than the mark and the config's path absent: the wake top-up probes and runs (rc ${RC})" "rc ${RC}; probes: $(tr '\n' '|' < "${TR}/probe.log" | cut -c1-100); log: $(tail -1 "${TLOG}" | cut -c1-140)"
+touch -d '2 hours ago' "${TMARK}"; touch -d '3 hours ago' "${TBUILTIN}"; : > "${TR}/probe.log"
+tctl topup; [ "${RC}" -eq 0 ] && [ ! -s "${TR}/probe.log" ] && grep -q 'no game played since the last attempt' "${TLOG}"; check $? "and the builtin history older than the mark, nothing else: skipped, no probe (rc ${RC})" "rc ${RC}; probes: $(tr '\n' '|' < "${TR}/probe.log" | cut -c1-100)"
+TENV=("${TENV_SAVED[@]}"); rm -f "${TBUILTIN}"; touch -d '3 hours ago' "${THISTORY}"
 tctl topup; [ "${RC}" -eq 0 ] && [ ! -s "${TR}/probe.log" ] && grep -q 'no game played since the last attempt' "${TLOG}"; check $? "a link-return topup with no game played since the mark: exit 0 at once, no probe, the log says so" "rc ${RC}; probes: $(tr '\n' '|' < "${TR}/probe.log"); log: $(tail -n 1 "${TLOG}")"
 touch "${THISTORY}"; : > "${TR}/probe.log"
 tctl topup; [ "${RC}" -eq 0 ] && grep -q '^smart budget=' "${TR}/probe.log"; check $? "with a game played since the mark: the probe and the recently played pass (rc ${RC})" "probes: $(tr '\n' '|' < "${TR}/probe.log" | cut -c1-100)"

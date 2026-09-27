@@ -141,20 +141,25 @@ Four screens still route left/right to their strips themselves
 (`GuiThemeInstaller`, `GuiBatoceraStore`, `GuiKeyMappingEditor`,
 `GuiKeyboardtopads`). They move to the same model with #63.
 
-## The cards at the link's return come in one batch (D-UI-101)
+## The cards at the link's return: saves first, then one batch (D-UI-101, D-UI-109)
 
-When the link returns with awards to send, a top-up due and an exit sync
-owed, the player sees the RetroAchievements cards together and the saves
-card after them: the send card, then the top-up's card and outcome, then
-SYNCING SAVES TO THE CLOUD. `ProxyCards` keeps three flags for it -- the
-send card is showing, the top-up is running, the saves are owed -- and the
-send's end and the top-up's every return each call `handOff`, which starts
-the saves only when the other is gone. Before #298 the send's end started
-the saves and the top-up's outcome, waiting for a free screen, landed after
-the saves card: three achievements' surfaces with a saves card between them.
-Maintainer, 2026-09-27: *"they should be batched."* The order the top-up card
-takes against the send card is unchanged: it attaches when the screen is
-free, so it follows or stacks under the send card.
+When the link returns with an exit sync owed, awards to send and a top-up
+due, the player sees SYNCING SAVES TO THE CLOUD first, and then the
+RetroAchievements cards together: the send card, and the top-up's card
+stacked under it. `ProxyCards::linkReturned` starts the owed sync when
+there is one and marks the batch owed; `afterSync`, called as every
+automatic sync card ends, runs the batch then -- the send probe and the
+top-up -- and with no saves owed the batch runs at once. The send card
+takes the proxy's flush stamp itself, waiting up to ten seconds for it
+once the queue is empty, so the probe at a later sync card's end does not
+report the same batch again. Two rounds got here: before #298 the send's
+end started the saves and the top-up's outcome landed after them
+(*"they should be batched"*); #298 put the saves after both, and on the
+device the proxy's stamp, written four seconds after its queue emptied,
+was found by the probe at the saves card's end and shown as a second send
+card -- RetroAchievements, saves, RetroAchievements (#305, the maintainer:
+*"sync saves first (which makes sense), and then it would do the
+RetroAchievements following that"*).
 
 **And the top-up is two things (D-RA-035, D-UI-103).** At the link's return the
 control script asks one question -- was a game played since the last attempt
