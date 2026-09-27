@@ -164,10 +164,11 @@
 #   limit=<0|1> indexed=<i> errors=<e> added=<k>[ why=<TOKEN>]" -- how the last run
 #   went, read by the page for the line under the row
 #   (CloudText::parseScanStamp, which passes over keys it does not know).
-#   `added` is how many games are new to the store since the run began
-#   (ready after minus ready before, fork #298): the card says "added"
-#   of those and "ready" of the rest, since `cached` counts a re-read
-#   of a game already there as well as a game brought in.
+#   `added` is how many of `cached` are games new to the store (fork
+#   #298): every game a scan caches is new (its listing takes only games
+#   the client has not cached), and of a top-up the indexed pass brings
+#   new games while the recently played pass re-reads games already
+#   there. The card says "added" of those and "ready" otherwise.
 #   `skipped` is the ROMs RetroAchievements does not know, which the client
 #   refuses one at a time and the scan counts rather than reports (the
 #   proxy's own docs skip them silently); `indexed` is how many of `cached`
@@ -737,10 +738,11 @@ do_ready() {
 # and errors= are for the log and for whoever reads the file.
 write_stamp() {
     local RC="$1" ROUTE="$2" CACHED="$3" SKIPPED="$4" READY="$5" LIMIT="$6" INDEXED="${7:-0}" ERRORS="${8:-0}" WHY="${9:-}"
-    # added: games new to the store since the run began (fork #298); a run
-    # that never read the count before it (READY_BEFORE unset) reports 0.
-    local ADDED=$(( READY - ${READY_BEFORE:-${READY}} ))
-    [ "${ADDED}" -lt 0 ] && ADDED=0
+    # added (fork #298): the games new to the store among CACHED -- the
+    # tenth argument where a run knows better than "all of them" (a top-up
+    # after its recently played pass); a run that gives none added every
+    # game it cached.
+    local ADDED="${10:-${CACHED}}"
     local LINE="$(date +%s) ${RC} ${ROUTE} cached=${CACHED} skipped=${SKIPPED} ready=${READY} limit=${LIMIT} indexed=${INDEXED} errors=${ERRORS} added=${ADDED}"
     [ -n "${WHY}" ] && LINE="${LINE} why=${WHY}"
     mkdir -p "${PROXY_DIR}" || return 1
@@ -1356,7 +1358,6 @@ do_scan() {
     take_lock scan
     refuse_unless_ready scan
     mkdir -p "${PROXY_DIR}" || fail "cannot create ${PROXY_DIR}"
-    READY_BEFORE="$(count_ready)"   # for the stamp's added= (fork #298)
     if ! is_online; then
         say "scan: refused, RetroAchievements is not reachable"
         slog "scan refused: offline by the proxy's probe"
@@ -1455,7 +1456,6 @@ do_topup() {
     take_lock topup "${AFTER_INDEX}" "${START}"
     refuse_unless_ready topup >/dev/null
     mkdir -p "${PROXY_DIR}" || fail "cannot create ${PROXY_DIR}"
-    READY_BEFORE="$(count_ready)"   # for the stamp's added= (fork #298)
 
     # Bounded: one attempt per interval, whatever the link does. The mark
     # is read here and set only below, once a probe has reached the server.
@@ -1496,7 +1496,7 @@ do_topup() {
     # cached -- the games added and indexed since the last run, and with a
     # library nobody scanned, as many as the deadline allows (the rest next
     # time). Nothing is hashed here.
-    local COUNTS LRC NEW=0 CACHED=0 SKIPPED=0 INDEXED=0 LIMIT=0 ERRORS=0 WHY="" LEFT
+    local COUNTS LRC NEW=0 CACHED=0 SKIPPED=0 INDEXED=0 LIMIT=0 ERRORS=0 WHY="" LEFT ADDED=0
     LEFT="$(time_left "${START}")"
     if [ "${LEFT}" -le 0 ]; then
         WHY=TOOK_TOO_LONG
@@ -1521,6 +1521,7 @@ do_topup() {
         else
             run_jobs quiet "${LIST}" "${NEW}" "${LEFT}"
             CACHED="${R_CACHED}"; SKIPPED="${R_SKIPPED}"; INDEXED="${R_INDEXED}"; LIMIT="${R_LIMIT}"; ERRORS="${R_ERRORS}"; WHY="${R_WHY}"
+            ADDED="${CACHED}"   # the indexed pass brings games new to the store (fork #298)
             # A helper killed by the bound after its DONE finished its games
             # (fork #188: badge downloads kept it alive); only one cut before
             # DONE makes the run one that did not finish.
@@ -1580,7 +1581,7 @@ print(int(r.get("cached", 0)), int(r.get("skipped", 0)), 1 if r.get("limit_reach
     # say: games it added, or a run that could not finish. Nothing new
     # leaves the last scan's line as it was.
     if [ -n "${WHY}" ]; then
-        write_stamp 1 topup "${CACHED}" "${SKIPPED}" "${READY}" "${LIMIT}" "${INDEXED}" "${ERRORS}" "${WHY}"
+        write_stamp 1 topup "${CACHED}" "${SKIPPED}" "${READY}" "${LIMIT}" "${INDEXED}" "${ERRORS}" "${WHY}" "${ADDED}"
         say "topup could not finish (${WHY}); cached ${CACHED}, ${READY} ready"
         exit 1
     fi
@@ -1589,7 +1590,7 @@ print(int(r.get("cached", 0)), int(r.get("skipped", 0)), 1 if r.get("limit_reach
         # verified as well as filled: a slice per run from the cursor, so
         # the whole store comes round without any one run being long (#213).
         run_image_pass topup "$(time_left "${START}")" --verify || true
-        write_stamp 0 topup "${CACHED}" "${SKIPPED}" "${READY}" "${LIMIT}" "${INDEXED}" "${ERRORS}"
+        write_stamp 0 topup "${CACHED}" "${SKIPPED}" "${READY}" "${LIMIT}" "${INDEXED}" "${ERRORS}" "" "${ADDED}"
         say "topup: cached ${CACHED} game(s), ${INDEXED} from the index; ${READY} ready"
     fi
     exit 0
