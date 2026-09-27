@@ -716,6 +716,18 @@ slog() {
 # the count is the line count; absent means none yet. Falls back to asking
 # the client when the export is missing but a store exists, and to 0 when
 # even that cannot be read -- a number that is not known is never invented.
+# RetroArch's play history (fork #299): the link's return looks for games
+# played since the last attempt and nothing else, so a wake with no game
+# played costs nothing and shows nothing. The path is retroarch.cfg's
+# content_history_path (~ is /storage), the shipped default when unset;
+# RAOFFLINEPROXY_HISTORY overrides it (the scripts suite's fixture).
+history_path() {
+    local P
+    P="$(sed -n 's/^content_history_path = "\(.*\)"$/\1/p' /storage/.config/retroarch/retroarch.cfg 2>/dev/null | head -n 1)"
+    case "${P}" in "~/"*) P="/storage/${P#\~/}" ;; esac
+    printf '%s\n' "${RAOFFLINEPROXY_HISTORY:-${P:-/storage/.config/retroarch/content_history.lpl}}"
+}
+
 count_ready() {
     local N=""
     if [ -s "${READY_FILE}" ]; then
@@ -1464,6 +1476,16 @@ do_topup() {
         if [ "${AGE}" -ge 0 ] && [ "${AGE}" -lt "${TOPUP_INTERVAL}" ]; then
             exit 0
         fi
+        # The link's return has one question -- was a game played since the
+        # last attempt? -- and no game means nothing to look for: out before
+        # the probe, the mark untouched (fork #299, D-RA-035: the maintainer,
+        # a nine-second check at wake with nothing to add).
+        local HIST
+        HIST="$(history_path)"
+        if [ ! -e "${HIST}" ] || [ ! "${HIST}" -nt "${TOPUP_MARK}" ]; then
+            slog "topup: no game played since the last attempt (${HIST} is not newer than the mark); nothing to look for, skipped"
+            exit 0
+        fi
     fi
 
     # The hook fires when the address arrives, which can be well before the
@@ -1501,6 +1523,11 @@ do_topup() {
     if [ "${LEFT}" -le 0 ]; then
         WHY=TOOK_TOO_LONG
         slog "topup${AI_NOTE}: the deadline passed while waiting for the lock and the probe"
+    elif [ "${AFTER_INDEX}" -eq 0 ]; then
+        # New games are the index's to find -- at startup and with UPDATE
+        # GAMELISTS, both of which end in this run with --after-index -- so
+        # the link's return does not list the library (fork #299, D-RA-035).
+        slog "topup at the link's return: the recently played pass alone (new games are the index's)"
     else
         COUNTS="$(list_jobs "${LIST}" indexed "${LEFT}" 2>>"${SCAN_LOG}")"
         LRC=$?
