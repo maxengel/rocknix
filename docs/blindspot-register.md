@@ -993,3 +993,34 @@ and read that"), applied to a wait: before a poll is lengthened, the
 guest's log is read for the event's cause and the code for the event's
 path, and the proof grades the event's own line (`the index ran offline`,
 from `ProxyCards::indexRanOffline`) rather than a later consequence.
+
+## 65. A proof's substitute passed where the real input failed, twice in one day (2026-09-27)
+
+Two items closed on VM proofs came back from the maintainer's
+play-testing on the RG35XX SP the same evening, and neither proof had
+been wrong about the code it ran; each had been fed a substitute for the
+input that mattered. #298's proof shims `raofflineproxy-ctl`, and the
+shim's proxy writes its flush stamp the instant its queue empties, so
+the send card always took its stamp before the saves ran; the real proxy
+stamps at *Flush complete*, four seconds later, the card let go before
+it existed, and the probe at the saves card's end showed the same batch
+again (#305). D-RA-035's proof and the script suite set the history
+path by an environment override and made "a game played" a touched file
+at `content_history_path`; RetroArch 1.22 writes its history under
+`playlists/builtin/`, the device never had the config's file, and the
+wake check read "no game played" at every link (#306). The guest's proxy
+and RetroArch are the device's, and either would have shown the truth
+had the proof used them. `vm-first.md` already says a synthetic input is
+named and keeps its checkbox partial until a real input has been seen
+once; both checkboxes were ticked as done. The tell, both times: a
+fixture that stands in for a real component's *timing* or *location*,
+not only for its data.
+
+**Guard:** `.claude/rules/vm-first.md` § A synthetic input is named and
+keeps its checkbox partial -- applied at the tick: a proof that shims a
+component names the shim in the criterion, the checkbox stays `- [ ]`
+until the real component has been seen once on the VM (the guest has the
+real proxy and the real RetroArch), and a shim that stands in for timing
+or a path is made to match the real one before it is trusted (proof-298's
+shim stamps after the real proxy's delay from this round). No tool reads
+a proof for its shims; the sentence in the criterion is the check.
