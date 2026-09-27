@@ -2065,7 +2065,8 @@ if _cap:
 EOS
 chmod +x "${T}/shim"/*
 TCFG="${TS}/.config/system/configs/system.cfg"; TPD="${TS}/.config/raofflineproxy"; TSTAMP="${TPD}/last-scan"; TLOG="${TPD}/scan.log"; TMARK="${TPD}/last-topup-attempt"; TREADY="${TPD}/cached_game_ids.txt"; TSTATE="${TPD}/online_state.json"
-TENV=()
+THISTORY="${TS}/.config/retroarch/content_history.lpl"   # RetroArch's play history, for the link-return top-up's one question (fork #299)
+TENV=(--setenv RAOFFLINEPROXY_HISTORY /storage/.config/retroarch/content_history.lpl)
 tctl() { # <verb...>: stdout to $OUT, stderr to $ERR, rc in $RC
     RC=$( ( bwrap --die-with-parent --tmpfs / --tmpfs /usr "${USR_BINDS[@]}" "${TBB[@]}" \
         --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
@@ -2078,6 +2079,7 @@ tctl() { # <verb...>: stdout to $OUT, stderr to $ERR, rc in $RC
 OUT="${T}/out"; ERR="${T}/err"
 tv() { sed -n "s/^${1}=//p" "${TCFG}"; }
 treset() { # the store, the export, the stamps, the log and /run: a fresh device with the fixture's rows
+    mkdir -p "${TS}/.config/retroarch"; touch -d '3 hours ago' "${THISTORY}"
     rm -rf "${TPD}"; mkdir -p "${TPD}"; rm -f "${TR}"/* 2>/dev/null; rm -f "${T}/varrun"/* 2>/dev/null
     date +%s > "${TR}/clock"; touch "${TR}/fast-sleep"; echo true > "${TR}/probe-answers"
     PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
@@ -2186,8 +2188,16 @@ rm -f "${TR}/helper-plan"
 # answers leaves no mark; the half-hour rule; --after-index ignores it.
 treset; rm -f "${TMARK}"; printf 'false\nfalse\ntrue\n' > "${TR}/probe-answers"
 tctl topup; [ "${RC}" -eq 0 ] && [ "$(grep -c '^probe ' "${TR}/probe.log")" -eq 3 ] && [ "$(grep -c '^10$' "${TR}/sleep.log")" -eq 2 ] && [ -e "${TMARK}" ]; check $? "topup with the resolver two probes behind: three probes ten seconds apart, then the run and the mark (rc ${RC})" "rc ${RC}; probes: $(grep -c '^probe ' "${TR}/probe.log"); sleeps: $(tr '\n' ',' < "${TR}/sleep.log" 2>/dev/null); mark: $([ -e "${TMARK}" ] && echo set || echo none); log: $(tail -2 "${TLOG}" | tr '\n' '|' | cut -c1-200) (#186 PL-04)"
-grep -q 'topup start: found=3 new=2 cached=1 indexed=2 hashing=0' "${TLOG}" && grep -q 'topup indexed pass: cached=2' "${TLOG}" && grep -q '^smart budget=' "${TR}/probe.log" && grep -q ' 0 topup cached=2 skipped=0 ready=[0-9]* limit=0 indexed=2 errors=0 added=2$' "${TSTAMP}"; check $? "its indexed pass saw the index alone (found=3 new=2 cached=1 indexed=2 hashing=0), cached the two and hashed nothing; the recently played pass ran; the stamp says topup cached=2" "log: $(grep 'topup' "${TLOG}" | tr '\n' '|' | cut -c1-300); stamp: $(cat "${TSTAMP}" 2>/dev/null)"
-touch -d '2 hours ago' "${TMARK}"; MARK_M=$(stat -c %Y "${TMARK}"); echo false > "${TR}/probe-answers"; : > "${TR}/probe.log"; : > "${TR}/sleep.log"
+grep -q "topup at the link's return: the recently played pass alone" "${TLOG}" && ! grep -q 'topup start: found=' "${TLOG}" && grep -q '^smart budget=' "${TR}/probe.log" && [ ! -e "${TSTAMP}" ]; check $? "the link's return runs the recently played pass alone: no listing, the smart pass, no stamp (nothing new)" "log: $(tr '\n' '|' < "${TLOG}" | cut -c1-300); stamp: $(cat "${TSTAMP}" 2>/dev/null)"
+# The link's return asks one question: was a game played since the mark? (#299)
+touch -d '2 hours ago' "${TMARK}"; touch -d '3 hours ago' "${THISTORY}"; : > "${TR}/probe.log"
+tctl topup; [ "${RC}" -eq 0 ] && [ ! -s "${TR}/probe.log" ] && grep -q 'no game played since the last attempt' "${TLOG}"; check $? "a link-return topup with no game played since the mark: exit 0 at once, no probe, the log says so" "rc ${RC}; probes: $(tr '\n' '|' < "${TR}/probe.log"); log: $(tail -n 1 "${TLOG}")"
+touch "${THISTORY}"; : > "${TR}/probe.log"
+tctl topup; [ "${RC}" -eq 0 ] && grep -q '^smart budget=' "${TR}/probe.log"; check $? "with a game played since the mark: the probe and the recently played pass (rc ${RC})" "probes: $(tr '\n' '|' < "${TR}/probe.log" | cut -c1-100)"
+# The index pass, with --after-index: the listing, the indexed pass, the stamp
+treset; touch -d '2 hours ago' "${TMARK}"; echo true > "${TR}/probe-answers"; : > "${TR}/probe.log"
+tctl topup --after-index; [ "${RC}" -eq 0 ] && grep -q 'topup start (after the index): found=3 new=2 cached=1 indexed=2 hashing=0' "${TLOG}" && grep -q 'topup indexed pass: cached=2' "${TLOG}" && grep -q '^smart budget=' "${TR}/probe.log" && grep -q ' 0 topup cached=2 skipped=0 ready=[0-9]* limit=0 indexed=2 errors=0 added=2$' "${TSTAMP}"; check $? "topup --after-index: the listing (found=3 new=2), the indexed pass (cached=2), the recently played pass, the stamp with added=2" "rc ${RC}; log: $(tr '\n' '|' < "${TLOG}" | cut -c1-300); stamp: $(cat "${TSTAMP}" 2>/dev/null)"
+touch -d '2 hours ago' "${TMARK}"; MARK_M=$(stat -c %Y "${TMARK}"); touch "${THISTORY}"; echo false > "${TR}/probe-answers"; : > "${TR}/probe.log"; : > "${TR}/sleep.log"   # a game played since the mark: the link's return has something to look for
 tctl topup; [ "${RC}" -eq 69 ] && [ "$(grep -c '^probe ' "${TR}/probe.log")" -eq 9 ] && [ "$(stat -c %Y "${TMARK}")" = "${MARK_M}" ] && grep -q 'not counted as an attempt' "${TLOG}"; check $? "topup with no answer at all: nine probes, exit 69, and the mark untouched -- the next link event tries again" "rc ${RC}; probes: $(grep -c '^probe ' "${TR}/probe.log"); mark mtime $(stat -c %Y "${TMARK}") vs ${MARK_M} -- a probe that reached nothing was counted as the half hour's attempt (#186 PL-04)"
 echo true > "${TR}/probe-answers"; : > "${TR}/probe.log"
 tctl topup; [ "${RC}" -eq 0 ] && [ "$(stat -c %Y "${TMARK}")" != "${MARK_M}" ]; check $? "topup once the probe answers: the mark is set (rc ${RC})" "rc ${RC}; mark mtime $(stat -c %Y "${TMARK}") vs ${MARK_M}"
@@ -2199,7 +2209,7 @@ tctl topup --after-index; [ "${RC}" -eq 0 ] && grep -q '^probe ' "${TR}/probe.lo
 # TOOK_TOO_LONG, and the recently played pass is not started.
 treset; touch -d '2 hours ago' "${TMARK}"; echo 120 > "${TR}/listing-delay"; printf 'slow 900\n' > "${TR}/helper-plan"
 T0=$(cat "${TR}/clock")
-tctl topup; T1=$(cat "${TR}/clock"); TOOK=$(( T1 - T0 ))
+tctl topup --after-index; T1=$(cat "${TR}/clock"); TOOK=$(( T1 - T0 ))
 [ "${RC}" -eq 1 ] && [ "${TOOK}" -le 900 ] && grep -q 'why=TOOK_TOO_LONG$' "${TSTAMP}" && ! grep -q '^smart ' "${TR}/probe.log"; check $? "topup with the listing 120 s late and a helper that would run 900 s: ended at ${TOOK} s from its start (rc ${RC}), TOOK_TOO_LONG, no recently played pass" "rc ${RC}; took ${TOOK}s; stamp: $(cat "${TSTAMP}" 2>/dev/null); smart: $(grep -c '^smart ' "${TR}/probe.log"); log: $(grep topup "${TLOG}" | tr '\n' '|' | cut -c1-300) -- the fifteen minutes were not one bound (#186 PL-28)"
 rm -f "${TR}/listing-delay" "${TR}/helper-plan"
 # The helper's DONE is the verdict on the games (fork #188: on the RG SP the
@@ -2208,7 +2218,7 @@ rm -f "${TR}/listing-delay" "${TR}/helper-plan"
 # by the bound: the run finished -- rc 0, no why, the note in the log. The
 # case above (killed before DONE) stays TOOK_TOO_LONG.
 treset; touch -d '2 hours ago' "${TMARK}"; printf 'ok\nok\n' > "${TR}/helper-plan"; echo 'slow 1000' > "${TR}/helper-linger"
-tctl topup; [ "${RC}" -eq 0 ] && grep -qE ' 0 topup cached=2 skipped=0 ready=[0-9]+ limit=0 indexed=2 errors=0 added=2$' "${TSTAMP}" && grep -q 'had reported DONE and ended with rc 124' "${TLOG}"; check $? "topup whose helper reported DONE and was then killed by the bound: the run finished, rc 0, no why (#188)" "rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null); log: $(grep -E 'DONE|topup' "${TLOG}" | tail -3 | tr '\n' '|')"
+tctl topup --after-index; [ "${RC}" -eq 0 ] && grep -qE ' 0 topup cached=2 skipped=0 ready=[0-9]+ limit=0 indexed=2 errors=0 added=2$' "${TSTAMP}" && grep -q 'had reported DONE and ended with rc 124' "${TLOG}"; check $? "topup whose helper reported DONE and was then killed by the bound: the run finished, rc 0, no why (#188)" "rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null); log: $(grep -E 'DONE|topup' "${TLOG}" | tail -3 | tr '\n' '|')"
 rm -f "${TR}/helper-linger" "${TR}/helper-plan"
 # The same on the scan route: a helper that dies after its DONE.
 treset; printf 'ok\nok\n' > "${TR}/helper-plan"; echo die > "${TR}/helper-linger"
@@ -2217,7 +2227,7 @@ rm -f "${TR}/helper-linger" "${TR}/helper-plan"
 # While the jobs run the ctl keeps the progress file the page reads (fork
 # #189): route, the game it is on, the total; gone when the run ends.
 treset; touch -d '2 hours ago' "${TMARK}"; printf 'ok\nok\n' > "${TR}/helper-plan"
-tctl topup; [ "${RC}" -eq 0 ] && grep -qE '^route=topup at=[0-9]+ index=1 total=2 name=' "${TR}/running-seen" && grep -qE '^route=topup at=[0-9]+ index=2 total=2 name=' "${TR}/running-seen" && [ ! -e "${TPD}/running" ] && [ ! -e "${TPD}/running.tmp" ]; check $? "topup keeps running (route topup, game 1 then 2 of 2) while its jobs run and removes it after (#189)" "rc ${RC}; seen: $(tr '\n' '|' < "${TR}/running-seen" 2>/dev/null); left: $(ls "${TPD}" | tr '\n' ' ')"
+tctl topup --after-index; [ "${RC}" -eq 0 ] && grep -qE '^route=topup at=[0-9]+ index=1 total=2 name=' "${TR}/running-seen" && grep -qE '^route=topup at=[0-9]+ index=2 total=2 name=' "${TR}/running-seen" && [ ! -e "${TPD}/running" ] && [ ! -e "${TPD}/running.tmp" ]; check $? "topup keeps running (route topup, game 1 then 2 of 2) while its jobs run and removes it after (#189)" "rc ${RC}; seen: $(tr '\n' '|' < "${TR}/running-seen" 2>/dev/null); left: $(ls "${TPD}" | tr '\n' ' ')"
 treset; printf 'ok\nok\n' > "${TR}/helper-plan"
 tctl scan; [ "${RC}" -eq 0 ] && grep -qE '^route=scan at=[0-9]+ index=1 total=[0-9]+ name=' "${TR}/running-seen" && grep -qE '^route=scan at=[0-9]+ index=2 total=[0-9]+ name=' "${TR}/running-seen" && [ ! -e "${TPD}/running" ]; check $? "scan keeps running (route scan, game 1 then 2 of n) while its jobs run and removes it after (#189)" "rc ${RC}; seen: $(tr '\n' '|' < "${TR}/running-seen" 2>/dev/null); left: $(ls "${TPD}" | tr '\n' ' ')"
 rm -f "${TR}/helper-plan"

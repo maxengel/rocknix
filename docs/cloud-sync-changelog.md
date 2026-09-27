@@ -2509,10 +2509,12 @@ the cards of #292/#293 (D-UI-101):
 - **When the link returns, the RetroAchievements cards come together and the saves sync after them**: the send card,
   the top-up and its outcome, then SYNCING SAVES TO THE CLOUD. Before, the saves card came between the achievements'
   cards (*"they should be batched"*).
-- **Waking the console shows no achievements card unless there is something to add** (#299, D-UI-102): the top-up
-  at the link's return still re-reads recently played games, silently; its card comes only with games to add or a
-  run that could not finish (*"it should only happen when we know that there are achievements or other items to be
-  done"*).
+- **Waking the console asks one question and usually does nothing** (#299, D-RA-035, D-UI-103): at the link's return
+  the offline achievements' check runs only when a game was played since the last check, and then only over the games
+  played, with its card reading `UPDATING YOUR OFFLINE ACHIEVEMENTS...`; with no game played it exits in a moment and
+  shows nothing. Finding new games in the library is the index's job: at startup as before, and now also when
+  UPDATE GAMELISTS runs with INDEX NEW GAMES AT STARTUP on, where the achievements' card stacks under the game list
+  update's (*"a two-pronged approach"*).
 - **Exiting a game offline with achievements earned, the card says so**: `SAVES WILL BE SYNCED AND ACHIEVEMENTS
   SENT NEXT TIME YOU'RE CONNECTED.` in place of the saves-only line, one card (*"game saves and Retro Achievements
   will be sent when you're next online"*).

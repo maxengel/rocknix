@@ -93,8 +93,8 @@ Beside it: `es-native-ui.md` (the surfaces the words go on),
 
 - **The offline achievements' cards (D-UI-095/096, D-UI-101).** The send card:
   SENDING OFFLINE ACHIEVEMENTS..., `N TO SEND`, then COMPLETED with OFFLINE
-  ACHIEVEMENTS HAVE BEEN SENT. The top-up card: UPDATING OFFLINE
-  ACHIEVEMENTS..., `I OF N`, then `N GAMES ADDED FOR OFFLINE PLAY.` **only of
+  ACHIEVEMENTS HAVE BEEN SENT. The top-up card: UPDATING YOUR OFFLINE
+  ACHIEVEMENTS... (D-UI-103), `I OF N`, then `N GAMES ADDED FOR OFFLINE PLAY.` **only of
   games new to the store**; a run that re-read what was there says `N GAMES
   READY FOR OFFLINE PLAY.` (maintainer, 2026-09-27: *"You should only really
   say the games are added"*). The exit card offline, when awards wait in the
