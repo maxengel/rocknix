@@ -92,3 +92,22 @@ regenerated over five builds (`*-5builds-*`); the four-build ones stay.
 settled stack cut from its frame and pasted on the same scene so its bottom edge sits NN rows above the panel's bottom.
 A mock, labelled as such in the image: it says where the same boxes would sit, nothing about their size or text. 21 is
 the cut as built (`MSG_QUEUE_BOTTOM_MARGIN_LINES` 4/3 of the placement line height); 42 is where the old build put it.
+
+## #296, the eighth cut: the foot is the left margin
+
+The maintainer, from the four mock-ups: *"I think going with 12 pixels is the way to go. It makes it look more uniform
+in terms of space from the left edge and space from the bottom edge. I think using 13-point font as well is also how we
+should proceed. If we know exactly what the left spacing is, we could just set the bottom to be equivalent to it, if
+that's possible."* (D-UI-100). Guest d rebuilt from run 71's image (`9a64a4ad8f`), the same runner at the H700's widget
+scale (tag `d-v8`). RetroArch's own log: `drawn 13.00 px`; `box 36 px, pitch 37, left 12, under the bottom box 12`.
+
+| Moment | rows | what it says |
+| --- | --- | --- |
+| the sign-in alone | box 432..467 (36 px), text 445..453; the box's visible edge from x=12 | 12 px of screen to the box's left and 12 under it: one margin |
+| the load line alone | 431..466, then 432..467 as the sign-in arrives | one pixel between RetroArch's two layout passes (its regular face is smaller on the first), not fourteen |
+| the stack settled | 395..430 over 432..467 | a one-row seam; pitch 37 = box + 1 |
+| the slot save | 432..467 | one task line at the slot |
+
+The five-build grids `296-grid-<moment>-5builds-1286x1530.png` now carry the eighth cut as cell 5 (the seventh cut's
+frames, `*-7fd4864597-*`, stay filed; it was the 21 px cut the mock-ups were made from). The strips and overlays over
+five builds are regenerated with the eighth.
