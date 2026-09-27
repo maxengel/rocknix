@@ -2524,7 +2524,8 @@ between them."* Four builds were run side by side on the VM at the device's widg
 
 Checked on `7fd4864597` (the seventh cut, 21 px under the box): vm-qa run 53 all fifteen suites; `diag-296-flows-v2` on
 guest d at the H700's widget scale (drawn 13 px, box 423..458, stack 386..421 over 423..458, no jump). The eighth cut
-(12 px, the left margin's number) is checked the same way below its build.
+(`9a64a4ad8f`, 12 px, the left margin's number): vm-qa run 54 all 15 suites; `diag-296-flows-v2` on guest d at the H700's widget scale,
+RetroArch's own log `drawn 13.00 px`, `left 12, under the bottom box 12`, the stack 395..430 over 432..467 with a one-row seam.
 
 ### The notifications sit where they did, at the readable size (2026-09-26, `6f0a974765`)
 
