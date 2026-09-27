@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-27T20:00:00Z
+> **Saved**: 2026-09-27T20:40:00Z
 > **Branch**: feature/conflict-resolution (the session worktree; the work is on `next` at `9d3615430a` and `feature/rc-device-fixes`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-The release-candidate round (#236). `ed0fc38a22` (ES `341d0515a`, pin `341d0515a85f375a2070b8629bad51115d5efbab`) is on the RG35XX SP since 19:53 UTC on the maintainer's yes of 19:43 UTC ("My approval, both for the copy and for the reboot"); it carries #298, #299, #300 and D-UI-105 over this morning's `9a64a4ad8f`. Proven on the VM (vm-qa 63 all suites, proof-298 35/35); `tools/rc-preflight --allow-unchecked device-facts` reads MAY BE CUT at `58ea505cd3`. Next is step 4 of `release-candidates.md`: the maintainer's play-testing and the soak; then the call on #236 (step 5), the two-agent audit (step 6), the PRs and the other devices (7-8).
+The release-candidate round (#236). `ed0fc38a22` is on the RG35XX SP since 19:53 UTC. Two cuts follow it, both from the maintainer's words of 20:0x-20:3x UTC: `463abbca2a` (#302, the offline-update notice as a card: RETROACHIEVEMENTS (OFFLINE) / NEWLY ADDED GAMES WILL BE ENABLED ONCE YOU RECONNECT.; chain-82, vm-qa 64 running then proof-298; built and proven but not staged, superseded by the next) and `d39ccdfff3` (#303, D-UI-107: every fork card's title names the thing and its line says what happened, no word twice; chain-83 waits for chain-82, then x64 run 83, H700 run 61, vm-qa 65, proof-298). The maintainer's yes of 20:35 UTC -- "once we've done the redundancy sweep and made sure the language in toasts and our screens is crisp, clear, and not too cold, you're good to both transfer and reboot the device" -- covers `d39ccdfff3` once its round is green and its frames are read; `stage-and-reboot-d39ccdfff3.sh` carries those words and has not run.
 
 ## Completed This Session
 
@@ -16,14 +16,14 @@ The release-candidate round (#236). `ed0fc38a22` (ES `341d0515a`, pin `341d0515a
 
 ## In Progress
 
-- Nothing running. Guest d is on `ed0fc38a22` (port 10026); guests e/f/g down. No build in flight.
+- chain-82 (`463abbca2a`, pid 763971, `chain-82.status`): vm-qa 64 then proof-298 on guest d. Its phase E frame (the card alone) is #302's evidence.
+- chain-83 (`d39ccdfff3`, pid 1113204, waits on `chain-82.rc`; `chain-83.rc` when done): the sweep's round. `records-d39ccdfff3.py` and the staging scripts are prepared.
+  - **What remains**: on green -- the frames of every card from proof-298 (send card: phase B; top-up card: phase B/D; offline card: phase E; exit card offline: phase A) to `docs/qa-frames/2026-09-27/303-*` with README rows; read them for crisp/clear/warm; `python3 records-d39ccdfff3.py`, `tools/release-catalog --write`, commit/push; post the frames on #303 and #302; run `stage-and-reboot-d39ccdfff3.sh`; device facts, records' Device lines, #236 comment; close #302; #303 stays open for the settings pages' pass (not read in this sweep) unless the maintainer closes it; work log; stash.
 
 ## Next Steps
 
-1. Read the maintainer's play-testing on `ed0fc38a22` (their words go to fork issues the same session, D-QA-012); after the soak (hours offline, then Wi-Fi back, D-QA-036), read the device's journal for it (reads only, through the masking `sed`).
-2. The call on #236 (step 5): the build, the soak's read, step 0's verdict (`tools/rc-preflight`); the device facts and the catalog in the same change.
-3. Step 6: the two-agent audit through the council's Facilitator on OpenRouter (`docs/audits/2026_09_25-milestone-rc-round-since-258/` paused at Phase 1.3; `~/.config/council/env` sourced first, never printed); its punch list resolved before step 7.
-4. Steps 7-8: the PR series by content (`fork-workflow.md`, D-WORKFLOW-034), rocknix.org last (#42); builds for the RG SP and the Retroid Pocket Nova, each staged and rebooted on its own yes.
+1. Read `chain-82.rc` then `chain-83.rc`; on a FAIL read the guest's log and the frames before touching any wait (blindspot 64). Note: a Monitor with a `seen` set does not re-fire for `proof-298.rc`, which each chain removes and rewrites; read it by hand.
+2. The frames, records, posts and the staging as above; then the maintainer's play-testing (step 4), the call on #236 (step 5), the audit (step 6), the PRs and the other devices (7-8).
 
 ## Key Files Modified
 
@@ -37,14 +37,15 @@ The release-candidate round (#236). `ed0fc38a22` (ES `341d0515a`, pin `341d0515a
 
 ## Related Context
 
-- **Tracker**: #236 (the round), #301 (follow-up: the fetch off the interface thread), #278 (harness debts: `measure-toast.py`, a frame-text check, one sync per chain); #298, #299, #300 closed with their evidence.
+- **Tracker**: #236 (the round), #302 (the offline notice card, open until its frame is posted), #303 (the card sweep; the settings pages' rows are not in this pass), #301 (follow-up), #278 (harness debts); #298, #299, #300 closed.
 - **Session tools**: `/workspace/tmp/rocknix-session/` -- `proof-298.sh` (phase E grades the hasher's line, the marker, the listing inside the half hour, no re-index; frames 25 s past the toast), `measure-toast.py FONT PX STRING...`, `records-*.py`, `chain-8N.sh`, `stage-*.sh`.
 
 ## Notes for Next Session
 
 - Guest d is on the chain's latest image (port 10026, monitor `/tmp/rocknix-qemu-monitor-d.sock`); ssh with `/tmp/rocknix-vm-pair/qa-key`. A read of a log whose lines are the evidence uses the masking `sed`, not the dropping `grep -v` (the reboot's device-act lines "went missing" three times because the label quoted "passing build").
 - A chain syncs once at its start; `chain-8N.sh` still carries a second `merge --ff-only next` before the H700 build -- drop it in the next template, and never commit to `next` between a chain's sync and its last image (the twins' ids split otherwise).
-- Every yes was spent on the build it named; the next device action (any device) is asked for by name again.
+- The yes of 20:35 UTC is conditional (the sweep done, the language read); after `d39ccdfff3` every further device action is asked for by name again.
+- chain-8N scripts from chain-83 on sync once at their start (the second `merge --ff-only next` before the H700 build is gone); never commit to `next` between a chain's sync and its last image.
 - `tools/rc-preflight` needs `--allow-unchecked device-facts` (no tool reads the facts yet, #270); the `Already written` item reads a `Code trace` heading plus an `Already written:` line at a line's start in the issue (body or comments).
 
 ## Open Questions
