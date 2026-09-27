@@ -2531,6 +2531,21 @@ the cards of #292/#293 (D-UI-101):
   `THEY'LL GO UP NEXT TIME YOU'RE CONNECTED(, WITH YOUR ACHIEVEMENTS).` under their unchanged titles. Before: SEND
   OFFLINE ACHIEVEMENTS over OFFLINE ACHIEVEMENTS HAVE BEEN SENT TO RETROACHIEVEMENTS, UPDATE OFFLINE ACHIEVEMENTS
   over YOUR OFFLINE ACHIEVEMENTS ARE UP TO DATE.
+- **The sync card says which file is moving and how much of it** (#304, D-UI-108, the maintainer's principle:
+  *"show both the progress bar and that progress is happening, and situate the user about how much is being sent"*):
+  the line under SYNCING SAVES TO THE CLOUD reads `TRANSFERRING FILE 1 OF 2 (24.0 MB OF 24.0 MB)` -- `SENDING` or
+  `RECEIVING` where the sync has halves -- and drops to `FILE 1 OF 2 (...)`, then the sizes alone, where the panel is
+  too narrow. Before, the line was rclone's `24.0 MB / 24.0 MB` with nothing to say what or how many.
+- **At the link's return the saves go first, then the RetroAchievements cards together, and the send is reported
+  once** (#305, D-UI-109; the maintainer, on the device: *"To have it go RetroAchievements, saves, RetroAchievements
+  is confusing to a user"*): the owed saves sync runs and shows SYNC SAVES / COMPLETED, then the send card and the
+  top-up card follow as one batch. The send card waits up to ten seconds for the offline service's own "flushed"
+  stamp before saying COMPLETED, so a device no longer shows the send twice (the stamp lands a few seconds after the
+  queue empties).
+- **The top-up at the link's return runs on a device again** (#306, D-RA-038): the wake check read a history file
+  at a path RetroArch 1.22 never writes (`content_history_path` in the config), so on a handheld it always answered
+  "nothing played since the last check" and skipped. It now reads the newest of RetroArch's own
+  `playlists/builtin/content_history.lpl` and the configured path.
 - **Exiting a game offline with achievements earned, the card says so**: `SAVES WILL BE SYNCED AND ACHIEVEMENTS
   SENT NEXT TIME YOU'RE CONNECTED.` in place of the saves-only line, one card (*"game saves and Retro Achievements
   will be sent when you're next online"*).
