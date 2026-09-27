@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-27T20:40:00Z
+> **Saved**: 2026-09-27T21:45:00Z
 > **Branch**: feature/conflict-resolution (the session worktree; the work is on `next` at `9d3615430a` and `feature/rc-device-fixes`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-The release-candidate round (#236). `ed0fc38a22` is on the RG35XX SP since 19:53 UTC. Two cuts follow it, both from the maintainer's words of 20:0x-20:3x UTC: `463abbca2a` (#302, the offline-update notice as a card: RETROACHIEVEMENTS (OFFLINE) / NEWLY ADDED GAMES WILL BE ENABLED ONCE YOU RECONNECT.; chain-82, vm-qa 64 running then proof-298; built and proven but not staged, superseded by the next) and `d39ccdfff3` (#303, D-UI-107: every fork card's title names the thing and its line says what happened, no word twice; chain-83 waits for chain-82, then x64 run 83, H700 run 61, vm-qa 65, proof-298). The maintainer's yes of 20:35 UTC -- "once we've done the redundancy sweep and made sure the language in toasts and our screens is crisp, clear, and not too cold, you're good to both transfer and reboot the device" -- covers `d39ccdfff3` once its round is green and its frames are read; `stage-and-reboot-d39ccdfff3.sh` carries those words and has not run.
+The release-candidate round (#236). The RG35XX SP runs `ed0fc38a22` since 19:53 UTC. The cut that supersedes it, `d39ccdfff3` (ES `2178c9e6d`: the offline notice as a card, #302, and every fork card's title/body swept of repetition, #303, D-UI-107), is green (vm-qa 65 all suites, no walk frame moved; proof-298 35/35) and its seven card frames are read and filed. The maintainer's conditional yes of 20:35 UTC covers its copy and reboot; the harness's permission classifier refused the command that launches `stage-and-reboot-d39ccdfff3.sh` ("Interfere With Workloads"), so the device is untouched and the script waits for the maintainer to run it or allow it. Per the denial, the same outcome is not pursued another way.
 
 ## Completed This Session
 
@@ -16,14 +16,12 @@ The release-candidate round (#236). `ed0fc38a22` is on the RG35XX SP since 19:53
 
 ## In Progress
 
-- chain-82 (`463abbca2a`, pid 763971, `chain-82.status`): vm-qa 64 then proof-298 on guest d. Its phase E frame (the card alone) is #302's evidence.
-- chain-83 (`d39ccdfff3`, pid 1113204, waits on `chain-82.rc`; `chain-83.rc` when done): the sweep's round. `records-d39ccdfff3.py` and the staging scripts are prepared.
-  - **What remains**: on green -- the frames of every card from proof-298 (send card: phase B; top-up card: phase B/D; offline card: phase E; exit card offline: phase A) to `docs/qa-frames/2026-09-27/303-*` with README rows; read them for crisp/clear/warm; `python3 records-d39ccdfff3.py`, `tools/release-catalog --write`, commit/push; post the frames on #303 and #302; run `stage-and-reboot-d39ccdfff3.sh`; device facts, records' Device lines, #236 comment; close #302; #303 stays open for the settings pages' pass (not read in this sweep) unless the maintainer closes it; work log; stash.
+- Nothing running. Guest d is on `d39ccdfff3` (port 10026). No build in flight. All chains done (chain-83 rc 0).
 
 ## Next Steps
 
-1. Read `chain-82.rc` then `chain-83.rc`; on a FAIL read the guest's log and the frames before touching any wait (blindspot 64). Note: a Monitor with a `seen` set does not re-fire for `proof-298.rc`, which each chain removes and rewrites; read it by hand.
-2. The frames, records, posts and the staging as above; then the maintainer's play-testing (step 4), the call on #236 (step 5), the audit (step 6), the PRs and the other devices (7-8).
+1. The staging of `d39ccdfff3`: `/workspace/tmp/rocknix-session/stage-and-reboot-d39ccdfff3.sh` (copy, sha256 on the device, idle check, reboot through `tools/device-act` under a label quoting the yes, then the post-boot reads; ~12 min). Once it has run: the device fact row (`docs/releases/device-facts.md`, the H700 row: `d39ccdfff3`, the boot id from the script's read), both RECORD.txt Device lines (`x64-all-20260927-d39ccdfff3`, `h700-all-20260927-d39ccdfff3`), the QA row's last sentence, `tools/release-catalog --write`, a #236 comment, a work-log entry, then the maintainer's play-testing (step 4), the call (5), the audit (6), the PRs and other devices (7-8).
+2. #303 stays open for the settings pages' rows and descriptions (not read in the sweep) until the maintainer decides; #302 closed.
 
 ## Key Files Modified
 
@@ -50,4 +48,5 @@ The release-candidate round (#236). `ed0fc38a22` is on the RG35XX SP since 19:53
 
 ## Open Questions
 
-- None pending on the maintainer; the round waits on their play-testing.
+- The staging of `d39ccdfff3` needs the maintainer's hand (run the script, or allow the reboot command in the harness); the yes itself was given at 20:35 UTC.
+- Whether #303's second half (the settings pages' rows) is wanted before the call.
