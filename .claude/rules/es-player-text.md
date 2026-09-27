@@ -113,6 +113,15 @@ Beside it: `es-native-ui.md` (the surfaces the words go on),
   CONNECTED, WITH YOUR ACHIEVEMENTS.` (short `THEY GO UP WITH YOUR
   ACHIEVEMENTS WHEN YOU'RE BACK.`); a launch over the exit sync: `THEY GO UP
   WHEN YOU EXIT THE GAME.`
+- **A transfer says that it is one, which file of how many, and how much
+  (D-UI-108).** While bytes move the sync card's line reads `TRANSFERRING
+  FILE 4 OF 7 (12 KB OF 40 KB)` -- `SENDING` / `RECEIVING` for the verb where
+  the sync has halves -- falling back to `FILE 4 OF 7 (12 KB OF 40 KB)` and
+  then `12 KB OF 40 KB` where the line does not fit, with the bar drawing the
+  bytes. The file named is the one moving (rclone counts files done). Before
+  rclone has counted: `TRANSFERRING 12 KB OF 40 KB`. Maintainer, 2026-09-27:
+  *"show both the progress bar and that progress is happening, and situate
+  the user about how much is being sent or done in general."*
   A game list updated offline, with offline achievements on: a card, not a
   toast -- `RETROACHIEVEMENTS (OFFLINE)` behind the trophy, with `NEWLY
   ADDED GAMES WILL BE ENABLED ONCE YOU RECONNECT.` under it, five seconds
