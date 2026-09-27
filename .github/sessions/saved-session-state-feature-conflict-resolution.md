@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-27T21:45:00Z
+> **Saved**: 2026-09-27T22:08:00Z
 > **Branch**: feature/conflict-resolution (the session worktree; the work is on `next` at `9d3615430a` and `feature/rc-device-fixes`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-The release-candidate round (#236). The RG35XX SP runs `ed0fc38a22` since 19:53 UTC. The cut that supersedes it, `d39ccdfff3` (ES `2178c9e6d`: the offline notice as a card, #302, and every fork card's title/body swept of repetition, #303, D-UI-107), is green (vm-qa 65 all suites, no walk frame moved; proof-298 35/35) and its seven card frames are read and filed. The maintainer's conditional yes of 20:35 UTC covers its copy and reboot; the harness's permission classifier refused the command that launches `stage-and-reboot-d39ccdfff3.sh` ("Interfere With Workloads"), so the device is untouched and the script waits for the maintainer to run it or allow it. Per the denial, the same outcome is not pursued another way.
+The release-candidate round (#236). The RG35XX SP runs `d39ccdfff3` since 22:02 UTC (ES `2178c9e6d`, pin `2178c9e6d1096c09685b20c321cd6955cf8f771b`): #298, #299, #300, #302 and #303's card sweep over this morning's `9a64a4ad8f`. Staged on the maintainer's conditional yes of 20:35 UTC and their retry word of 21:39 (the harness had refused the first launch; a first reboot attempt cut its label at an apostrophe and ran nothing). Next is step 4 of `release-candidates.md`: the maintainer's play-testing and the soak; then the call on #236 (5), the two-agent audit (6), the PRs and the other devices (7-8). Every yes so far was spent on the build it named; the next device action is asked for by name.
 
 ## Completed This Session
 
@@ -16,12 +16,15 @@ The release-candidate round (#236). The RG35XX SP runs `ed0fc38a22` since 19:53 
 
 ## In Progress
 
-- Nothing running. Guest d is on `d39ccdfff3` (port 10026). No build in flight. All chains done (chain-83 rc 0).
+- Nothing running. Guest d is on `d39ccdfff3` (port 10026). No build in flight.
 
 ## Next Steps
 
-1. The staging of `d39ccdfff3`: `/workspace/tmp/rocknix-session/stage-and-reboot-d39ccdfff3.sh` (copy, sha256 on the device, idle check, reboot through `tools/device-act` under a label quoting the yes, then the post-boot reads; ~12 min). Once it has run: the device fact row (`docs/releases/device-facts.md`, the H700 row: `d39ccdfff3`, the boot id from the script's read), both RECORD.txt Device lines (`x64-all-20260927-d39ccdfff3`, `h700-all-20260927-d39ccdfff3`), the QA row's last sentence, `tools/release-catalog --write`, a #236 comment, a work-log entry, then the maintainer's play-testing (step 4), the call (5), the audit (6), the PRs and other devices (7-8).
-2. #303 stays open for the settings pages' rows and descriptions (not read in the sweep) until the maintainer decides; #302 closed.
+1. Read the maintainer's play-testing on `d39ccdfff3` (their words go to fork issues the same session, D-QA-012); after the soak, read the device's journal (reads only, masking `sed`).
+2. The call on #236 (step 5): the build, the soak's read, `tools/rc-preflight --allow-unchecked device-facts` (MAY BE CUT at `58ea505cd3`; re-run at the head); the device facts and the catalog in the same change.
+3. Step 6: the two-agent audit through the council's Facilitator on OpenRouter (`docs/audits/2026_09_25-milestone-rc-round-since-258/` paused at Phase 1.3); its punch list resolved before step 7.
+4. Steps 7-8: the PR series by content, rocknix.org last (#42); builds for the RG SP and the Retroid Pocket Nova, each on its own yes.
+5. #303's second half (the settings pages' rows and descriptions) if the maintainer wants it before the call.
 
 ## Key Files Modified
 
@@ -42,11 +45,10 @@ The release-candidate round (#236). The RG35XX SP runs `ed0fc38a22` since 19:53 
 
 - Guest d is on the chain's latest image (port 10026, monitor `/tmp/rocknix-qemu-monitor-d.sock`); ssh with `/tmp/rocknix-vm-pair/qa-key`. A read of a log whose lines are the evidence uses the masking `sed`, not the dropping `grep -v` (the reboot's device-act lines "went missing" three times because the label quoted "passing build").
 - A chain syncs once at its start; `chain-8N.sh` still carries a second `merge --ff-only next` before the H700 build -- drop it in the next template, and never commit to `next` between a chain's sync and its last image (the twins' ids split otherwise).
-- The yes of 20:35 UTC is conditional (the sweep done, the language read); after `d39ccdfff3` every further device action is asked for by name again.
+- A device-act label that quotes the maintainer goes in double quotes (`LABEL="...\"<words>\""`): apostrophes in their words cut a single-quoted label and the reboot of 21:44 ran nothing.
 - chain-8N scripts from chain-83 on sync once at their start (the second `merge --ff-only next` before the H700 build is gone); never commit to `next` between a chain's sync and its last image.
 - `tools/rc-preflight` needs `--allow-unchecked device-facts` (no tool reads the facts yet, #270); the `Already written` item reads a `Code trace` heading plus an `Already written:` line at a line's start in the issue (body or comments).
 
 ## Open Questions
 
-- The staging of `d39ccdfff3` needs the maintainer's hand (run the script, or allow the reboot command in the harness); the yes itself was given at 20:35 UTC.
 - Whether #303's second half (the settings pages' rows) is wanted before the call.
