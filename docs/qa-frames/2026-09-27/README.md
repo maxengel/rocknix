@@ -136,3 +136,4 @@ starts`, five and ten seconds apart.
 | --- | --- |
 | `300-offline-index-loading-c9f5aa7de0-640x480.png` | LOADING... -- the game list update's splash, which the interface sits on while the hash-library fetch runs on its thread; 35 s with the link down (the stall bound), where `48f940aa06` sat a minute and `9e9a9eda81` twelve |
 | `300-offline-index-toast-clipped-c9f5aa7de0-640x480.png` | the toast the moment the fetch ends: YOU'RE NOT ONLINE. NEW GAMES GET THEIR OFFLINE ACHIEVEMENTS NEXT TIME Y... -- the D-UI-104 sentence clips at 640x480 (D-UI-105 shortens it; the frame is kept as the evidence) |
+| `300-offline-index-toast-ed0fc38a22-640x480.png` | the same moment on `ed0fc38a22`: YOU'RE NOT ONLINE. NEW GAMES GET OFFLINE ACHIEVEMENTS ONCE YOU ARE. -- whole, with room (D-UI-105) |
