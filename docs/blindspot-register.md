@@ -967,3 +967,29 @@ image's Mesa carrying llvmpipe for the fallback (`config/graphic` keeps a
 device's explicit yes). Seen on 2026-09-26: guest d's report line reads virgl
 after the change where the same guest's launch log read softpipe before it
 (#291; D-QA-052).
+
+## 64. A wait was lengthened three times for an event the code had no path to produce (2026-09-27)
+
+The #299 proof's phase E waited for the interface's after-index top-up to
+run offline after a game list update, and it did not come inside 300 s.
+The wait was read as too short: the poll went to 660 s and the guest ran
+another eleven minutes, twice, before the hasher's offline path was read
+-- which throws at the hash library and never reaches the top-up. The run
+the first proof had seen at 300 s was the link's own re-index, started by
+the network thread when the link came back, and the twelve minutes before
+it were the interface thread blocked on a pooled connection with the link
+gone. Three runs and about forty minutes of guest time graded a timing
+where there was no path, and the two real defects (no stall bound on the
+fetch, no word from the hasher) waited behind the poll's length. The same
+shape as blindspot 8 (an assertion that holds because nothing had
+happened yet), turned on a wait: a wait that is lengthened is a claim that
+the event is late, and the claim was never checked against the code or
+the guest's own log, both of which were a read away.
+
+**Guard:** no tool can catch it: a proof's wait and the code's path are
+two files nothing diffs. The rule is `.claude/rules/engineering-practices.md`
+§ *A name is not a behaviour* ("name the artifact that would settle it,
+and read that"), applied to a wait: before a poll is lengthened, the
+guest's log is read for the event's cause and the code for the event's
+path, and the proof grades the event's own line (`the index ran offline`,
+from `ProxyCards::indexRanOffline`) rather than a later consequence.

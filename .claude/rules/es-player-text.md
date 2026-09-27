@@ -104,7 +104,8 @@ Beside it: `es-native-ui.md` (the surfaces the words go on),
   the other way round.
   A game list updated offline, with offline achievements on: the toast
   `YOU'RE NOT ONLINE. NEW GAMES GET THEIR OFFLINE ACHIEVEMENTS NEXT TIME
-  YOU'RE CONNECTED.` (D-UI-104), a promise the control script keeps.
+  YOU'RE CONNECTED.` (D-UI-104), shown by the index itself the moment the
+  library fails to come, a promise the control script keeps (D-RA-036).
 
 ## Every fork string ships in English and French (D-UI-051)
 
