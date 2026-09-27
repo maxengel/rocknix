@@ -156,6 +156,14 @@ Maintainer, 2026-09-27: *"they should be batched."* The order the top-up card
 takes against the send card is unchanged: it attaches when the screen is
 free, so it follows or stacks under the send card.
 
+**And the top-up's card is for games to add (D-UI-102).** The ctl's progress
+file carries `index` and `total` only while the indexed pass adds games;
+the recently played re-read runs with neither, and `runTopUp` counts work
+only on a total. So a wake after a night, where the half-hour mark is old
+and nothing is new, runs the re-read and shows nothing -- the maintainer met
+the card there (#299) and named the rule: a card only when there is
+something to do.
+
 ## Spacing (house style)
 
 Values live in one place each, so a screen never makes its own decision.

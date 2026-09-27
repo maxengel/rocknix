@@ -2509,6 +2509,10 @@ the cards of #292/#293 (D-UI-101):
 - **When the link returns, the RetroAchievements cards come together and the saves sync after them**: the send card,
   the top-up and its outcome, then SYNCING SAVES TO THE CLOUD. Before, the saves card came between the achievements'
   cards (*"they should be batched"*).
+- **Waking the console shows no achievements card unless there is something to add** (#299, D-UI-102): the top-up
+  at the link's return still re-reads recently played games, silently; its card comes only with games to add or a
+  run that could not finish (*"it should only happen when we know that there are achievements or other items to be
+  done"*).
 - **Exiting a game offline with achievements earned, the card says so**: `SAVES WILL BE SYNCED AND ACHIEVEMENTS
   SENT NEXT TIME YOU'RE CONNECTED.` in place of the saves-only line, one card (*"game saves and Retro Achievements
   will be sent when you're next online"*).
