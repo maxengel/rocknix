@@ -129,3 +129,10 @@ synthetic input, so a refresh has a count to say). The QA account's name is on n
 
 The order is also the interface's log: `the send card ended`, then `the top-up card ended`, then `the owed saves sync
 starts`, five and ten seconds apart.
+
+## #300: a game list updated with the link down, on `c9f5aa7de0` (proof-298 phase E, guest d)
+
+| Frame | What it shows |
+| --- | --- |
+| `300-offline-index-loading-c9f5aa7de0-640x480.png` | LOADING... -- the game list update's splash, which the interface sits on while the hash-library fetch runs on its thread; 35 s with the link down (the stall bound), where `48f940aa06` sat a minute and `9e9a9eda81` twelve |
+| `300-offline-index-toast-clipped-c9f5aa7de0-640x480.png` | the toast the moment the fetch ends: YOU'RE NOT ONLINE. NEW GAMES GET THEIR OFFLINE ACHIEVEMENTS NEXT TIME Y... -- the D-UI-104 sentence clips at 640x480 (D-UI-105 shortens it; the frame is kept as the evidence) |

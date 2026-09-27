@@ -103,9 +103,14 @@ Beside it: `es-native-ui.md` (the surfaces the words go on),
   CONNECTED.` -- *synced* for the saves, *sent* for the achievements, never
   the other way round.
   A game list updated offline, with offline achievements on: the toast
-  `YOU'RE NOT ONLINE. NEW GAMES GET THEIR OFFLINE ACHIEVEMENTS NEXT TIME
-  YOU'RE CONNECTED.` (D-UI-104), shown by the index itself the moment the
-  library fails to come, a promise the control script keeps (D-RA-036).
+  `YOU'RE NOT ONLINE. NEW GAMES GET OFFLINE ACHIEVEMENTS ONCE YOU ARE.`
+  (D-UI-104, cut to the 640x480 toast by D-UI-105: the first sentence,
+  `...GET THEIR OFFLINE ACHIEVEMENTS NEXT TIME YOU'RE CONNECTED.`, clipped
+  after NEXT TIME Y), shown by the index itself the moment the library
+  fails to come, a promise the control script keeps (D-RA-036). A toast is
+  one line at 0.9 of the screen and ends in an ellipsis past it: measure a
+  new one against the frame, or with the font (`measure-toast.py` in the
+  session's tools until it is promoted, #278).
 
 ## Every fork string ships in English and French (D-UI-051)
 

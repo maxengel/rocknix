@@ -2516,9 +2516,10 @@ the cards of #292/#293 (D-UI-101):
   UPDATE GAMELISTS runs with INDEX NEW GAMES AT STARTUP on, where the achievements' card stacks under the game list
   update's (*"a two-pronged approach"*).
 - **A game list updated offline says what happens to the new games** (#299, D-UI-104, D-RA-036): with offline
-  achievements on, a toast reads `YOU'RE NOT ONLINE. NEW GAMES GET THEIR OFFLINE ACHIEVEMENTS NEXT TIME YOU'RE
-  CONNECTED.` within about forty seconds of the update, and the next link's return lists the library once for
-  them, whether or not the half hour since the last check has passed (*"if that's a promise we can keep"* -- it is).
+  achievements on, a toast reads `YOU'RE NOT ONLINE. NEW GAMES GET OFFLINE ACHIEVEMENTS ONCE YOU ARE.` within
+  about forty seconds of the update (the first sentence clipped on a 640x480 toast; D-UI-105 cut it to fit), and
+  the next link's return lists the library once for them, whether or not the half hour since the last check has
+  passed (*"if that's a promise we can keep"* -- it is).
 - **A game list update with the Wi-Fi down no longer holds the interface until the link returns** (#299, #300,
   D-RA-036): the RetroAchievements library fetch that the index starts with ends after thirty seconds without a
   byte. Before, on a connection the interface had used while online, it waited for the link -- twelve minutes on
@@ -2527,8 +2528,9 @@ the cards of #292/#293 (D-UI-101):
   SENT NEXT TIME YOU'RE CONNECTED.` in place of the saves-only line, one card (*"game saves and Retro Achievements
   will be sent when you're next online"*).
 
-Checked on `b4f90b815c`: `proof-298` on guest d (20 PASS, 0 FAIL: the exit card's line offline with a pending award, the send card then the
-top-up card then the owed saves in the interface's log, the top-up's 1 GAME READY after a refresh) and vm-qa run 56 (all 15 suites).
+Checked on `c9f5aa7de0`: `proof-298` on guest d (35 PASS, 0 FAIL: the exit card's line offline with a pending award, the send card then the
+top-up card then the owed saves in the interface's log, the top-up's READY after a refresh, no card at a wake with nothing played, the index under
+UPDATE GAMELISTS with its top-up, and the offline update's toast within a minute with the marker listed at the link's return) and vm-qa run 62 (all 15 suites).
 
 ### The notification face at 13 px, its box following it, the stack's foot at its side margin (2026-09-27)
 
