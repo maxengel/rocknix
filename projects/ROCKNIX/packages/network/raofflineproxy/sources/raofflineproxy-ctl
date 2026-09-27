@@ -161,9 +161,13 @@
 #            and treats one older than the bound as gone.
 #   last-scan is /storage/.config/raofflineproxy/last-scan, one line:
 #   "<epoch> <rc> <scan|topup> cached=<n> skipped=<m> ready=<total>
-#   limit=<0|1> indexed=<i> errors=<e>[ why=<TOKEN>]" -- how the last run
+#   limit=<0|1> indexed=<i> errors=<e> added=<k>[ why=<TOKEN>]" -- how the last run
 #   went, read by the page for the line under the row
 #   (CloudText::parseScanStamp, which passes over keys it does not know).
+#   `added` is how many games are new to the store since the run began
+#   (ready after minus ready before, fork #298): the card says "added"
+#   of those and "ready" of the rest, since `cached` counts a re-read
+#   of a game already there as well as a game brought in.
 #   `skipped` is the ROMs RetroAchievements does not know, which the client
 #   refuses one at a time and the scan counts rather than reports (the
 #   proxy's own docs skip them silently); `indexed` is how many of `cached`
@@ -727,13 +731,17 @@ do_ready() {
 }
 
 # "<epoch> <rc> <route> cached=<n> skipped=<m> ready=<total> limit=<0|1>
-# indexed=<i> errors=<e> [why=<TOKEN>]", written whole or not at all (a
+# indexed=<i> errors=<e> added=<k> [why=<TOKEN>]", written whole or not at all (a
 # rename), so the page never reads half a line. The page reads the keys it
 # knows and passes over the rest (CloudText::parseScanStamp), so indexed=
 # and errors= are for the log and for whoever reads the file.
 write_stamp() {
     local RC="$1" ROUTE="$2" CACHED="$3" SKIPPED="$4" READY="$5" LIMIT="$6" INDEXED="${7:-0}" ERRORS="${8:-0}" WHY="${9:-}"
-    local LINE="$(date +%s) ${RC} ${ROUTE} cached=${CACHED} skipped=${SKIPPED} ready=${READY} limit=${LIMIT} indexed=${INDEXED} errors=${ERRORS}"
+    # added: games new to the store since the run began (fork #298); a run
+    # that never read the count before it (READY_BEFORE unset) reports 0.
+    local ADDED=$(( READY - ${READY_BEFORE:-${READY}} ))
+    [ "${ADDED}" -lt 0 ] && ADDED=0
+    local LINE="$(date +%s) ${RC} ${ROUTE} cached=${CACHED} skipped=${SKIPPED} ready=${READY} limit=${LIMIT} indexed=${INDEXED} errors=${ERRORS} added=${ADDED}"
     [ -n "${WHY}" ] && LINE="${LINE} why=${WHY}"
     mkdir -p "${PROXY_DIR}" || return 1
     printf '%s\n' "${LINE}" > "${SCAN_STAMP}.tmp" && mv -f "${SCAN_STAMP}.tmp" "${SCAN_STAMP}"
@@ -1348,6 +1356,7 @@ do_scan() {
     take_lock scan
     refuse_unless_ready scan
     mkdir -p "${PROXY_DIR}" || fail "cannot create ${PROXY_DIR}"
+    READY_BEFORE="$(count_ready)"   # for the stamp's added= (fork #298)
     if ! is_online; then
         say "scan: refused, RetroAchievements is not reachable"
         slog "scan refused: offline by the proxy's probe"
@@ -1446,6 +1455,7 @@ do_topup() {
     take_lock topup "${AFTER_INDEX}" "${START}"
     refuse_unless_ready topup >/dev/null
     mkdir -p "${PROXY_DIR}" || fail "cannot create ${PROXY_DIR}"
+    READY_BEFORE="$(count_ready)"   # for the stamp's added= (fork #298)
 
     # Bounded: one attempt per interval, whatever the link does. The mark
     # is read here and set only below, once a probe has reached the server.
