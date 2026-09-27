@@ -2515,6 +2515,9 @@ the cards of #292/#293 (D-UI-101):
   shows nothing. Finding new games in the library is the index's job: at startup as before, and now also when
   UPDATE GAMELISTS runs with INDEX NEW GAMES AT STARTUP on, where the achievements' card stacks under the game list
   update's (*"a two-pronged approach"*).
+- **A game list updated offline says what happens to the new games** (#299, D-UI-104): with offline achievements
+  on, a toast reads `YOU'RE NOT ONLINE. NEW GAMES GET THEIR OFFLINE ACHIEVEMENTS NEXT TIME YOU'RE CONNECTED.`, and
+  the next link's return lists the library once for them (*"if that's a promise we can keep"* -- it is).
 - **Exiting a game offline with achievements earned, the card says so**: `SAVES WILL BE SYNCED AND ACHIEVEMENTS
   SENT NEXT TIME YOU'RE CONNECTED.` in place of the saves-only line, one card (*"game saves and Retro Achievements
   will be sent when you're next online"*).

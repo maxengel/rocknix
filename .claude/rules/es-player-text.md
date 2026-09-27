@@ -102,6 +102,9 @@ Beside it: `es-native-ui.md` (the surfaces the words go on),
   CONNECTED.`, short form `SAVES AND ACHIEVEMENTS GO UP NEXT TIME YOU'RE
   CONNECTED.` -- *synced* for the saves, *sent* for the achievements, never
   the other way round.
+  A game list updated offline, with offline achievements on: the toast
+  `YOU'RE NOT ONLINE. NEW GAMES GET THEIR OFFLINE ACHIEVEMENTS NEXT TIME
+  YOU'RE CONNECTED.` (D-UI-104), a promise the control script keeps.
 
 ## Every fork string ships in English and French (D-UI-051)
 

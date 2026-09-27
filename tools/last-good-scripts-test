@@ -2194,6 +2194,12 @@ touch -d '2 hours ago' "${TMARK}"; touch -d '3 hours ago' "${THISTORY}"; : > "${
 tctl topup; [ "${RC}" -eq 0 ] && [ ! -s "${TR}/probe.log" ] && grep -q 'no game played since the last attempt' "${TLOG}"; check $? "a link-return topup with no game played since the mark: exit 0 at once, no probe, the log says so" "rc ${RC}; probes: $(tr '\n' '|' < "${TR}/probe.log"); log: $(tail -n 1 "${TLOG}")"
 touch "${THISTORY}"; : > "${TR}/probe.log"
 tctl topup; [ "${RC}" -eq 0 ] && grep -q '^smart budget=' "${TR}/probe.log"; check $? "with a game played since the mark: the probe and the recently played pass (rc ${RC})" "probes: $(tr '\n' '|' < "${TR}/probe.log" | cut -c1-100)"
+# A game list updated offline: the index's run is refused, leaves index-pending, and the next link-return run lists
+# the library once for it and removes the marker (#299: the toast's promise)
+treset; touch -d '2 hours ago' "${TMARK}"; touch -d '3 hours ago' "${THISTORY}"; echo false > "${TR}/probe-answers"; : > "${TR}/probe.log"; : > "${TR}/sleep.log"
+tctl topup --after-index; [ "${RC}" -eq 69 ] && [ -e "${TPD}/index-pending" ] && grep -q 'index-pending' "${TLOG}"; check $? "an index's top-up refused offline leaves index-pending (rc ${RC})" "rc ${RC}; $(ls "${TPD}" | tr '\n' ' ')"
+echo true > "${TR}/probe-answers"; : > "${TR}/probe.log"
+tctl topup; [ "${RC}" -eq 0 ] && grep -q 'the library listed once for it' "${TLOG}" && grep -q 'topup start: found=3 new=2' "${TLOG}" && [ ! -e "${TPD}/index-pending" ]; check $? "the next link-return run, with no game played, lists the library for the pending index and clears the marker (rc ${RC})" "rc ${RC}; log: $(tr '\n' '|' < "${TLOG}" | cut -c1-300)"
 # The index pass, with --after-index: the listing, the indexed pass, the stamp
 treset; touch -d '2 hours ago' "${TMARK}"; echo true > "${TR}/probe-answers"; : > "${TR}/probe.log"
 tctl topup --after-index; [ "${RC}" -eq 0 ] && grep -q 'topup start (after the index): found=3 new=2 cached=1 indexed=2 hashing=0' "${TLOG}" && grep -q 'topup indexed pass: cached=2' "${TLOG}" && grep -q '^smart budget=' "${TR}/probe.log" && grep -q ' 0 topup cached=2 skipped=0 ready=[0-9]* limit=0 indexed=2 errors=0 added=2$' "${TSTAMP}"; check $? "topup --after-index: the listing (found=3 new=2), the indexed pass (cached=2), the recently played pass, the stamp with added=2" "rc ${RC}; log: $(tr '\n' '|' < "${TLOG}" | cut -c1-300); stamp: $(cat "${TSTAMP}" 2>/dev/null)"
