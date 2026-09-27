@@ -1,12 +1,12 @@
 # Saved Session State
 
-> **Saved**: 2026-09-27T22:08:00Z
+> **Saved**: 2026-09-27T22:55:00Z
 > **Branch**: feature/conflict-resolution (the session worktree; the work is on `next` at `9d3615430a` and `feature/rc-device-fixes`)
 > **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution)
 
 ## Current Focus
 
-The release-candidate round (#236). The RG35XX SP runs `d39ccdfff3` since 22:02 UTC (ES `2178c9e6d`, pin `2178c9e6d1096c09685b20c321cd6955cf8f771b`): #298, #299, #300, #302 and #303's card sweep over this morning's `9a64a4ad8f`. Staged on the maintainer's conditional yes of 20:35 UTC and their retry word of 21:39 (the harness had refused the first launch; a first reboot attempt cut its label at an apostrophe and ran nothing). Next is step 4 of `release-candidates.md`: the maintainer's play-testing and the soak; then the call on #236 (5), the two-agent audit (6), the PRs and the other devices (7-8). Every yes so far was spent on the build it named; the next device action is asked for by name.
+The release-candidate round (#236). The RG35XX SP runs `d39ccdfff3` since 22:02 UTC. One change is built and pinned but not yet an image: #304 (ES `9d870eb81`, pin on `next` at `e649e339eb`), the sync card's transfer line `TRANSFERRING FILE n OF m (x OF y)` beside the bar (D-UI-108) -- the maintainer said "Generate a build yet, but ..." (read as: not yet), so the round for it (x64, H700, vm-qa with a transfer frame, proof) starts on their word. Then the maintainer's play-testing and the soak (step 4), the call on #236 (5), the audit (6), the PRs and the other devices (7-8). Every yes so far was spent on the build it named.
 
 ## Completed This Session
 
@@ -20,11 +20,8 @@ The release-candidate round (#236). The RG35XX SP runs `d39ccdfff3` since 22:02 
 
 ## Next Steps
 
-1. Read the maintainer's play-testing on `d39ccdfff3` (their words go to fork issues the same session, D-QA-012); after the soak, read the device's journal (reads only, masking `sed`).
-2. The call on #236 (step 5): the build, the soak's read, `tools/rc-preflight --allow-unchecked device-facts` (MAY BE CUT at `58ea505cd3`; re-run at the head); the device facts and the catalog in the same change.
-3. Step 6: the two-agent audit through the council's Facilitator on OpenRouter (`docs/audits/2026_09_25-milestone-rc-round-since-258/` paused at Phase 1.3); its punch list resolved before step 7.
-4. Steps 7-8: the PR series by content, rocknix.org last (#42); builds for the RG SP and the Retroid Pocket Nova, each on its own yes.
-5. #303's second half (the settings pages' rows and descriptions) if the maintainer wants it before the call.
+1. On the maintainer's word: chain-84 from the `next` head (derive from `chain-83.sh`: one sync at the start, x64 run 84, H700 run 62, vm-qa 66, proof-298), then a transfer frame of the sync card at 640x480 from the round-trip or the exit sync (proof phase A/B frames, or a walk) to `docs/qa-frames/`, tick #304, the change log's bullet, the records, and a staging on a yes of its own (`stage-*` scripts derived with the label in double quotes).
+2. Then steps 4-8 as above; #303's second half (the settings pages' rows) if wanted.
 
 ## Key Files Modified
 
@@ -38,7 +35,7 @@ The release-candidate round (#236). The RG35XX SP runs `d39ccdfff3` since 22:02 
 
 ## Related Context
 
-- **Tracker**: #236 (the round), #302 (the offline notice card, open until its frame is posted), #303 (the card sweep; the settings pages' rows are not in this pass), #301 (follow-up), #278 (harness debts); #298, #299, #300 closed.
+- **Tracker**: #236 (the round), #304 (the transfer line, built, no image yet), #303 (the card sweep; the settings pages' rows not read), #301 (follow-up), #278 (harness debts); #298, #299, #300, #302 closed.
 - **Session tools**: `/workspace/tmp/rocknix-session/` -- `proof-298.sh` (phase E grades the hasher's line, the marker, the listing inside the half hour, no re-index; frames 25 s past the toast), `measure-toast.py FONT PX STRING...`, `records-*.py`, `chain-8N.sh`, `stage-*.sh`.
 
 ## Notes for Next Session
@@ -51,4 +48,5 @@ The release-candidate round (#236). The RG35XX SP runs `d39ccdfff3` since 22:02 
 
 ## Open Questions
 
+- When to build the round for #304 (the maintainer's "not yet").
 - Whether #303's second half (the settings pages' rows) is wanted before the call.
