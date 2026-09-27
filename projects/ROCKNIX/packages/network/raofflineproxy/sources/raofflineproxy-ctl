@@ -729,14 +729,32 @@ slog() {
 # even that cannot be read -- a number that is not known is never invented.
 # RetroArch's play history (fork #299): the link's return looks for games
 # played since the last attempt and nothing else, so a wake with no game
-# played costs nothing and shows nothing. The path is retroarch.cfg's
-# content_history_path (~ is /storage), the shipped default when unset;
-# RAOFFLINEPROXY_HISTORY overrides it (the scripts suite's fixture).
+# played costs nothing and shows nothing. RetroArch 1.22 with
+# content_history_directory = "default" writes it under playlist_directory
+# as builtin/content_history.lpl, beside the video, music and image
+# histories -- not at content_history_path, which the config still names
+# and which the RG35XX SP never had (fork #306: the check read "no game
+# played" at every link for a day). Both are read from retroarch.cfg (~ is
+# /storage) and the newest file wins; a missing file loses to one that
+# exists. RAOFFLINEPROXY_HISTORY overrides both (the scripts suite's
+# fixture).
 history_path() {
-    local P
-    P="$(sed -n 's/^content_history_path = "\(.*\)"$/\1/p' /storage/.config/retroarch/retroarch.cfg 2>/dev/null | head -n 1)"
+    local CFG=/storage/.config/retroarch/retroarch.cfg P D BUILTIN NEWEST=""
+    if [ -n "${RAOFFLINEPROXY_HISTORY:-}" ]; then
+        printf '%s\n' "${RAOFFLINEPROXY_HISTORY}"
+        return 0
+    fi
+    P="$(sed -n 's/^content_history_path = "\(.*\)"$/\1/p' "${CFG}" 2>/dev/null | head -n 1)"
     case "${P}" in "~/"*) P="/storage/${P#\~/}" ;; esac
-    printf '%s\n' "${RAOFFLINEPROXY_HISTORY:-${P:-/storage/.config/retroarch/content_history.lpl}}"
+    P="${P:-/storage/.config/retroarch/content_history.lpl}"
+    D="$(sed -n 's/^playlist_directory = "\(.*\)"$/\1/p' "${CFG}" 2>/dev/null | head -n 1)"
+    case "${D}" in "~/"*) D="/storage/${D#\~/}" ;; esac
+    BUILTIN="${D:-/storage/playlists}/builtin/content_history.lpl"
+    for F in "${BUILTIN}" "${P}"; do
+        [ -e "${F}" ] || continue
+        if [ -z "${NEWEST}" ] || [ "${F}" -nt "${NEWEST}" ]; then NEWEST="${F}"; fi
+    done
+    printf '%s\n' "${NEWEST:-${BUILTIN}}"
 }
 
 count_ready() {
