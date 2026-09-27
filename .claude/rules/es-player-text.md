@@ -102,15 +102,17 @@ Beside it: `es-native-ui.md` (the surfaces the words go on),
   CONNECTED.`, short form `SAVES AND ACHIEVEMENTS GO UP NEXT TIME YOU'RE
   CONNECTED.` -- *synced* for the saves, *sent* for the achievements, never
   the other way round.
-  A game list updated offline, with offline achievements on: the toast
-  `YOU'RE NOT ONLINE. NEW GAMES GET OFFLINE ACHIEVEMENTS ONCE YOU ARE.`
-  (D-UI-104, cut to the 640x480 toast by D-UI-105: the first sentence,
-  `...GET THEIR OFFLINE ACHIEVEMENTS NEXT TIME YOU'RE CONNECTED.`, clipped
-  after NEXT TIME Y), shown by the index itself the moment the library
-  fails to come, a promise the control script keeps (D-RA-036). A toast is
-  one line at 0.9 of the screen and ends in an ellipsis past it: measure a
-  new one against the frame, or with the font (`measure-toast.py` in the
-  session's tools until it is promoted, #278).
+  A game list updated offline, with offline achievements on: a card, not a
+  toast -- `RETROACHIEVEMENTS (OFFLINE)` behind the trophy, with `NEWLY
+  ADDED GAMES WILL BE ENABLED ONCE YOU RECONNECT.` under it, five seconds
+  (D-UI-106, the maintainer's shape and words; D-UI-104's and D-UI-105's
+  one-line sentences before it), shown by the index itself the moment the
+  library fails to come, a promise the control script keeps (D-RA-036).
+  A toast is one line at 0.9 of the screen and ends in an ellipsis past
+  it, and none wraps: a notice that needs a title and a line is a card,
+  and the body does not repeat the title (#303, the maintainer's rule for
+  every card). Measure a toast against the frame, or with the font
+  (`measure-toast.py` in the session's tools until it is promoted, #278).
 
 ## Every fork string ships in English and French (D-UI-051)
 

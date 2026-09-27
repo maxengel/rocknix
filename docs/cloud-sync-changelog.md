@@ -2516,10 +2516,10 @@ the cards of #292/#293 (D-UI-101):
   UPDATE GAMELISTS runs with INDEX NEW GAMES AT STARTUP on, where the achievements' card stacks under the game list
   update's (*"a two-pronged approach"*).
 - **A game list updated offline says what happens to the new games** (#299, D-UI-104, D-RA-036): with offline
-  achievements on, a toast reads `YOU'RE NOT ONLINE. NEW GAMES GET OFFLINE ACHIEVEMENTS ONCE YOU ARE.` within
-  about forty seconds of the update (the first sentence clipped on a 640x480 toast; D-UI-105 cut it to fit), and
-  the next link's return lists the library once for them, whether or not the half hour since the last check has
-  passed (*"if that's a promise we can keep"* -- it is).
+  achievements on, a card reads `RETROACHIEVEMENTS (OFFLINE)` over `NEWLY ADDED GAMES WILL BE ENABLED ONCE YOU
+  RECONNECT.` within about forty seconds of the update (D-UI-106, the maintainer's shape and words; two one-line
+  toasts before it, one of which clipped at 640x480), and the next link's return lists the library once for them,
+  whether or not the half hour since the last check has passed (*"if that's a promise we can keep"* -- it is).
 - **A game list update with the Wi-Fi down no longer holds the interface until the link returns** (#299, #300,
   D-RA-036): the RetroAchievements library fetch that the index starts with ends after thirty seconds without a
   byte. Before, on a connection the interface had used while online, it waited for the link -- twelve minutes on
