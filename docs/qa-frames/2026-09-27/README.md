@@ -111,3 +111,21 @@ scale (tag `d-v8`). RetroArch's own log: `drawn 13.00 px`; `box 36 px, pitch 37,
 The five-build grids `296-grid-<moment>-5builds-1286x1530.png` now carry the eighth cut as cell 5 (the seventh cut's
 frames, `*-7fd4864597-*`, stay filed; it was the 21 px cut the mock-ups were made from). The strips and overlays over
 five builds are regenerated with the eighth.
+
+## #298, the offline achievements' cards after the maintainer's notes
+
+Guest d (640x480, GL) on `42afd5b10b` (EmulationStation `5bdf587c0`; the interface is the same on `b4f90b815c`, whose
+only change over it is the proxy control script's count), `proof-298.sh` with frames over VNC every half second: the exit
+sync on, one award waiting in the proxy's queue (the ctl shim, a synthetic input), one id in the proxy's ready file (a
+synthetic input, so a refresh has a count to say). The QA account's name is on no card here.
+
+| Frame | What it shows |
+| --- | --- |
+| `298-exit-card-offline-achievements-42afd5b10b-640x480.png` | the exit with the link down: SYNC SAVES / SKIPPED - YOU'RE NOT ONLINE / SAVES AND ACHIEVEMENTS GO UP NEXT TIME YOU'RE CONNECTED. (the shorter candidate; the longer one does not fit the line) |
+| `298-send-card-1-to-send-42afd5b10b-640x480.png` | the link back: SENDING OFFLINE ACHIEVEMENTS... / 1 TO SEND |
+| `298-send-and-topup-cards-stacked-42afd5b10b-640x480.png` | the send card's outcome (HAVE BEEN SENT TO RETROACHIEVEMENTS) with the top-up's card stacking in under it |
+| `298-topup-card-1-game-ready-42afd5b10b-640x480.png` | UPDATE OFFLINE ACHIEVEMENTS / COMPLETED / 1 GAME READY FOR OFFLINE PLAY. -- a refresh that added nothing says ready, not added |
+| `298-saves-card-after-the-achievements-42afd5b10b-640x480.png` | SYNC SAVES / COMPLETED, after both achievements' cards |
+
+The order is also the interface's log: `the send card ended`, then `the top-up card ended`, then `the owed saves sync
+starts`, five and ten seconds apart.
