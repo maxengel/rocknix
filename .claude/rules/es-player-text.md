@@ -237,7 +237,7 @@ partial run from a total one; no screen ever shows it.
 |---|---|---|---|---|
 | `COMPLETED` | every part of the run succeeded (rclone 9 counts as success) | `COMPLETED` | `COMPLETED` | `COMPLETED` |
 | `COULDN'T FINISH - <why>` | nothing succeeded and it is not a sentinel | `COULDN'T FINISH - YOUR CLOUD STOPPED ANSWERING` | `COULDN'T FINISH` | `COULDN'T FINISH, YOUR CLOUD STOPPED ANSWERING` |
-| `SKIPPED - <reason>` | only 69, 75, and the launch cancel | `SKIPPED - YOU'RE NOT ONLINE` / `SKIPPED - A SYNC IS ALREADY RUNNING` / `SKIPPED - A GAME WAS STARTED` | same | `SKIPPED, NO NETWORK` / `SKIPPED, ANOTHER SYNC WAS RUNNING` / `SKIPPED, A GAME WAS STARTED` |
+| `SKIPPED - <reason>` | only 69, 75, and the launch cancel | `SKIPPED - YOU'RE NOT ONLINE` / `SKIPPED - A SYNC IS ALREADY RUNNING` / `SKIPPED - YOU STARTED A GAME` | same | `SKIPPED, NO NETWORK` / `SKIPPED, ANOTHER SYNC WAS RUNNING` / `SKIPPED, A GAME WAS STARTED` |
 
 The offline achievements' two cards (#292, #293; D-RA-030, D-UI-095) end in
 the same three words: the send card `COMPLETED` with OFFLINE ACHIEVEMENTS HAVE
@@ -299,11 +299,16 @@ YOUR CLOUD. THE REST IS STILL ON THIS DEVICE.` / `NOTHING WAS SENT. YOUR CLOUD
 IS AS IT WAS.`; restore `WHAT ARRIVED IS ON THIS DEVICE. THE REST IS AS IT
 WAS.` / `NOTHING ARRIVED. THIS DEVICE IS AS IT WAS.`; saves sync `THE SAVES
 THAT MOVED ARE ON BOTH SIDES. THE REST ARE AS THEY WERE.` / `YOUR SAVES ARE AS
-THEY WERE.`; match `N FILES WERE REMOVED FROM THIS DEVICE. YOUR CLOUD STILL HAS
-THEM.` / `NOTHING WAS REMOVED.`
+THEY WERE.`; match `N FILES WERE REMOVED FROM THIS DEVICE.` / `NOTHING WAS REMOVED.` -- the
+count only: a match removes what the cloud does *not* have (D-CLOUD-023), so
+the old second sentence, YOUR CLOUD STILL HAS THEM, said the opposite of the
+truth (#308, E2's third pass, 2026-09-28)
 
-**Recover**: the page offers `TRY AGAIN` (the confirm button, south) beside `CLOSE` (the back button, east; buttons by position, never by letter -- `es-ui-style-guide.md` § Interaction rules) on line 7 when
-the run did not complete, re-running the same command; the card's action line
+**Recover**: the page offers `TRY AGAIN` (the confirm button, south) beside `CLOSE` (the back button, east; buttons by position, never by letter -- `es-ui-style-guide.md` § Interaction rules) on the page's help bar when
+the run did not complete, re-running the same command -- except a match, whose
+apply used up its preview's plan (PL-001, D-CLOUD-141): the same command again
+is always refused, so the page offers no TRY AGAIN for a match and line 7 points
+at the row that checks again, `TRY AGAIN: MATCH THIS DEVICE TO THE CLOUD`; the card's action line
 names the row (`TRY AGAIN: GAME SETTINGS > BACK UP SAVES TO THE CLOUD`), or for
 an automatic sync when it runs again (`IT RUNS AGAIN WHEN YOU EXIT A GAME`);
 no network `TRY AGAIN WHEN YOU'RE ONLINE.`; lock held `WAIT FOR IT TO FINISH,

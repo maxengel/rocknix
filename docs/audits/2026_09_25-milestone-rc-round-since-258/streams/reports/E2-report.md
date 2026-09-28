@@ -519,3 +519,135 @@ es-untranslated: 595 fork string(s), 595 with French, 0 without
 vocabulary-check: 156 judged, 0 wrong
 msgfmt -c: clean
 ```
+
+## Follow-up 4 (2026-09-28): the audit of the fixes, E2-claude.md and E2-gpt.md
+
+This round added 11 commits on `feature/pl-e2`. Before the last one (12aa39edb, which builds on E1's work) I merged `test/qa-integration` f7a520414 (E1's audit fixes) as a83937b7f; it merged without conflicts. Nothing was built, run on a guest, or pushed. Each fix below had its test run against the tree as it was and seen to fail before the fix, and each commit quotes that failure. The findings I withdrew each give the line of code that settles them.
+
+| Commit | What it does |
+| --- | --- |
+| b7b0927ff | ProxyCards: a top-up stopped for a game holds its queue for that game |
+| 1113aa8dc | CloudTransferJob: a stop's look and its mark are one step, under the lock |
+| 71a67ed1b | JourneyTiers: a record read whole, and one that cannot be replaced stops |
+| f4c9549ba | FileData: the capture gate refuses at its bound and takes no sync early |
+| 4313a8f53 | GuiMenu: a changed cloud folder brings the player back to its row |
+| 5a37c7981 | ApiSystem: a join's answer is a type that cannot read as a truth value |
+| e6c5cbbe3 | CloudText: the page names every part it composes; Wi-Fi says what failed |
+| 766caa3f4 | tests: two cases that held only for a non-root user and an idle runner |
+| df954c563 | CaptureRotationText: the own-launch claim of earlier builds is retired |
+| 9b89369dc | SaveStateBookkeeper: a deletion holds the transfer lock while it runs |
+| 12aa39edb | CloudTransferJob: a stop restamps against the stamps from before its run |
+
+### E2-claude.md
+
+- **G-E2-01** (`joinWifiNetwork`'s callers): **the caller question was already answered; the guard is new in 5a37c7981.**
+  - There is one caller, `GuiWifi::join`. It was rewritten for the integer answer in c0def453a, and 6caac243c then passes it the profile's name. No other caller exists in either tree.
+  - The risk the seat named, a later caller writing `if (joinWifiNetwork(x))`, is now blocked by the compiler. The function returns `WifiText::JoinAnswer`, which does not convert to bool. It has `code` and `joined()`, and two `static_assert`s pin that.
+  - The header's stale "True only when…" paragraph is rewritten.
+- **G-E2-02** (STOP IT AND PLAY over a queued top-up): **fixed in b7b0927ff.**
+  - One correction to the seat's reasoning: `topUpRunning()` reads the ctl's running file, not the watcher's flag.
+  - The bug is real all the same. When the stopped run's card ends, the game hasn't started yet, so the queued run started under the launch.
+  - `stopTopUp` now sets a hold. The watcher waits for that game to start and then end. If no game starts within a minute (the player backed out at a later question), the hold lets go.
+  - The watcher now waits before each run, not once before both. A hold with nothing queued behind it is cleared.
+- **G-E2-03** (a second `onFinalize`): **withdrawn, refuted.**
+  - `GuiSettings::onFinalize` is a single slot (GuiSettings.h:117). Neither kind of page registers a second finalizer.
+  - The three sign-in pages register only through `cloudOAuthOwnSession` (GuiMenu.cpp 7260, 7287, 7398). `cloudSetupPresent` and `cloudSetupSetButtons` register none.
+  - `cloudOpenTransfer` registers only at 4904.
+- **G-E2-04** (a temporary save state): **withdrawn, refuted.**
+  - `isSaveStateInfoTemporary` is never set true or read. It appears only at FileData.h:58 (initialised to false) and :72 (the declaration).
+  - Every save state handed to a launch comes from the repository: `GuiSaveState`'s callback (the repository's states plus the three shared ones) or `getGameAutoSave` (a state from `getSaveStates`).
+- **G-E2-05** (does `populateFolder` index?): **withdrawn, refuted.**
+  - `populateFolder` (SystemData.cpp:520–650) calls nothing that indexes.
+  - The filter index is filled only by `indexAllGameFilters`, from `getIndex(true)`, and by the named `addToIndex` callers. The merge's own `arrived()` is the only thing that indexes a fresh entry.
+- **G-E2-06**: **first half fixed in f4c9549ba; second half withdrawn by design.**
+  - First half: the exit generation now moves only when the capture gate actually lets the launch go. While a launch waits, the capture's post leaves the exit sync to the gate.
+  - Still open: if a later question's KEEP WAITING stops a launch this gate already let through, the last session's saves wait for the next exit sync (`--recent`) or the startup sync. They are delayed, not lost.
+  - The 300 ms wait on the interface thread is withdrawn by design. es-ui-style-guide.md § Waiting says "a spinner that flashes for 100 ms is worse than none", and the comment in the code says so.
+- **G-E2-07** (line 7 left empty): **withdrawn by design.**
+  - The offer is on the page's own help bar, drawn with the player's own buttons. That is the rule's "buttons by position, never by letter". Repeating it as text on line 7 would put one offer on two surfaces.
+  - A match's page does use line 7 now, for `TRY AGAIN: MATCH THIS DEVICE TO THE CLOUD` (4a0c77fa0).
+  - For the integrator: the rule's "on line 7" wants to say "on the page's help bar".
+- **G-E2-08**: **(b) and (c) fixed in e6c5cbbe3; (a) is the rule's to change.**
+  - (c) The page now translates every label EmulationStation composes (`CloudText::unitLabels`). Two of them are new msgids, with French.
+  - (b) FINISH RESTORE SETUP's WI-FI PASSWORD and NETWORK SETTINGS' Wi-Fi apply now say the picker's words, `COULDN'T CONNECT TO <network>. CHECK THE KEY AND TRY AGAIN.`, instead of upstream's WI-FI CONFIGURATION ERROR.
+  - (a) is for the integrator: the rule's outcome table still says `SKIPPED - A GAME WAS STARTED`, where the card, the page and the top-up all say `YOU STARTED A GAME`.
+- **G-E2-09**: **(a) and (b) fixed in 766caa3f4; (c) acknowledged, no change.**
+  - (a) The unopenable-lock case now uses a link that points at itself (ELOOP for everyone, root included). It still fails against the fail-open check it guards, as shown in the commit.
+  - (b) The stop-before-pid cases now retry up to five times and fail after five losses.
+  - (c) There was no unfixed version of FolderMerge, captureGate or AppWindow to run, because this stream wrote them. Their "failed first" lines were runs against a stand-in for the old behaviour, and the commits said so. The behaviour they replace is proved on the VM, which is the integrator's.
+
+### E2-gpt.md
+
+- **G-E2-01 and G-E2-02** (the journey record): **fixed in 71a67ed1b.**
+  - A record now counts only if all three tiers are present, each 0 or 1. A damaged one offers everything instead of silently consuming the marker.
+  - `JourneyTiers::replaceRecord` removes any old record before writing. If the write then fails, there is no record, so the start offers everything and names everything.
+  - If an old record can be neither replaced nor removed, the restore does not start. It says **(proposed words)** `COULDN'T SAVE WHAT YOU TICKED, SO NOTHING WAS RESTORED.`, with French.
+- **G-E2-03** (the capture gate): **fixed in f4c9549ba.**
+  - At the ten-second bound the launch is now refused. It says **(proposed words)** `YOUR LAST GAME'S SAVES ARE STILL BEING RECORDED. TRY AGAIN IN A MOMENT.`, with French. The next press waits again.
+  - `cloud_capture` ignores SIGTERM by design, so stopping it isn't an option.
+  - Only a capture older than 120 s, which is hung rather than slow, stops holding the device, and that is logged as a warning.
+- **G-E2-04**: fixed in b7b0927ff (same finding as claude's G-E2-02).
+- **G-E2-05** (a late stop): **fixed in 1113aa8dc.** The stop's check and its mark now both happen under the run's lock, which is the lock the run's end holds. A test pause at that point in the code reproduces the race.
+- **G-E2-06** (wrong own-launch records already on devices): **fixed in df954c563.**
+  - Records are now written, and trusted, only with a new line, `from=checked-launch`.
+  - An older `from=own-launch` record is read the way #288 read the unmarked ones: the core's table stands in until the game's next exit rewrites the record.
+  - **For the integrator:**
+    - `tools/vm-qa`'s fixture (line 346 on next) writes `turns=1\nfrom=own-launch\n` for Bobl.nes. It needs `from=checked-launch`, or frame-diff will show Bobl turned by the core's table instead of by the record.
+    - D-UI-094 needs a new row refining it.
+- **Coverage requests** (the seat's § 4 and sweep notes):
+  - The restamp policy is 8eb4c6821 plus 12aa39edb below; E1's 54d5699b2 holds the snapshot.
+  - PL-068's gap between checking the lock and acting is closed by 9b89369dc, below.
+  - The `joinWifiNetwork` type change is 5a37c7981.
+  - F-CS-15's script half was already fixed by stream A: at 4476f90394 both "Nothing to back up" branches exit 0.
+  - Still open: the notification card closed by direct call after the linger. I noted this in Follow-up 1 § Task 3.
+
+### The orchestrator's findings
+
+- **G-E2-O1**: **fixed in 4313a8f53.**
+  - `openCloud(window, onFolderRow)`: the folder editor's onDone reopens the hub with the cursor on CHANGE CLOUD FOLDER, using `setCursorHere` as the rebuilt wizard pages do.
+  - Test: `tests/cloud-folder-reopen.py` checks the shipped source and failed three ways before the fix.
+  - The real proof is the walk: confirm-cloud-folder frame 05 should show the hub with CHANGE CLOUD FOLDER focused and its new line visible.
+- **G-E2-O2**: **fixed in 12aa39edb.** The transfer page now snapshots the stamps with `ThreadedCloudSync::readStamps` before its command runs, and calls the snapshot restamp. The test is in jobs-tests.
+
+### Also fixed: 9b89369dc (gpt's PL-068 coverage note)
+
+- The bookkeeper checked that the transfer lock was free and then deleted. A transfer starting in that gap ran alongside the deletion, and `cloud_capture` takes only its own `.capture.lock`, so nothing else closed it.
+- The deletion now takes the lock, exclusive and non-blocking the way the scripts take it, and holds it through the retire and unlink. The scripts wait up to a second for a busy lock, which is longer than a deletion takes.
+- The manager's DELETE and COPY refusal now tells this process's own hold from a transfer's (`SaveStateBookkeeper::holdsTransferLock`). A press during a deletion is queued, not refused.
+- Test: a new bookkeeper-tests case tries `flock -n` from another process during the deletion. It failed against the old check.
+
+### Suites (from scratch, head 12aa39edb)
+
+```
+es-unit-tests:       test cases: 170 | 170 passed | 0 failed   assertions: 1801 | 1801 passed
+es-file-tests:       test cases:  21 |  21 passed | 0 failed   assertions: 3346 | 3346 passed
+es-file-tests-win32: test cases:   2 |   2 passed | 0 failed   assertions:   14 |   14 passed
+app-unit-tests:      test cases:  18 |  18 passed | 0 failed   assertions:  119 |  119 passed
+proxycards-tests:    test cases:   7 |   7 passed | 0 failed   assertions:   40 |   40 passed
+bookkeeper-tests:    test cases:   5 |   5 passed | 0 failed   assertions:   20 |   20 passed
+jobs-tests:          test cases:   6 |   6 passed | 0 failed   assertions:   28 |   28 passed
+tests/*.py: all 11 rc 0 (cloud-folder-reopen new; launch-capture-gate 15 ok;
+  credential-quoting 10 sites, 10 quoted, 0 bare)
+es-syntax-check: 15 of 15 .cpp changed since 42f9e8851 PASS (E1's merge included), and
+  85 of 85 sources that include one of the 11 headers changed since then
+es-untranslated: 599 fork string(s), 599 with French, 0 without
+vocabulary-check: 155 judged, 0 wrong
+msgfmt -c: clean
+ASCII comments in es-app/src: 0
+```
+
+### For the integrator
+
+- `tools/vm-qa` line 346: write `from=checked-launch` (df954c563).
+- D-UI-094: add a refining row (df954c563).
+- `es-player-text.md`:
+  - "on line 7" should say "on the page's help bar" (G-E2-07);
+  - `SKIPPED - A GAME WAS STARTED` should be `SKIPPED - YOU STARTED A GAME` (G-E2-08a);
+  - Follow-up 3's two match notes still stand.
+- Proposed words awaiting approval:
+  - `COULDN'T SAVE WHAT YOU TICKED, SO NOTHING WAS RESTORED.`
+  - `YOUR LAST GAME'S SAVES ARE STILL BEING RECORDED. TRY AGAIN IN A MOMENT.`
+- VM steps:
+  - walk confirm-cloud-folder frame 05 (G-E2-O1);
+  - a slow capture refused at the bound;
+  - STOP IT AND PLAY over a queued top-up, with the journal showing "the queued run waits for that game".
