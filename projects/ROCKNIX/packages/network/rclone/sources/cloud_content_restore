@@ -776,9 +776,14 @@ match_run() {
         fi
         rm -f "${MATCH_PLAN}" 2>/dev/null
         if [ -z "${MATCH_PLAN_TEXT}" ]; then
+            # No check behind this apply at all -- run on its own, or run
+            # again after the apply that spent the plan -- is not a change
+            # since a check; the why names what is missing (vm-qa run 68:
+            # the round-trip ran --apply alone and was told SOMETHING
+            # CHANGED SINCE YOU CHECKED).
             echo "Nothing was removed: check what would change first, then try again."
             log_message "match: refused, no preview plan to apply"
-            say_why "SOMETHING CHANGED SINCE YOU CHECKED"
+            say_why "CHECK WHAT WOULD CHANGE FIRST"
             record_outcome content-match 1
             return 1
         fi

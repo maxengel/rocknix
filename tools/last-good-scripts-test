@@ -4218,4 +4218,26 @@ echo s > "${OF}/storage/roms/saves/game2.srm"
 sa_run "${OF}" cloud_backup --yes --saves-only
 [ "${RC}" -ne 0 ] && [ ! -e "${OF}/cloud/ROCKNIX/Saves/saves/game2.srm" ]; check $? "the device's own allowlist without its catch-all is still refused (rc ${RC})" "rc ${RC}; game2.srm $([ -e "${OF}/cloud/ROCKNIX/Saves/saves/game2.srm" ] && echo SENT || echo home)"
 
+# A35. vm-qa run 68's round-trip, step "content transfers honour the
+#      system selection": the tool ran `--match --apply` with no `--match`
+#      before it, and the plan contract (PL-001) refused it -- saying
+#      SOMETHING CHANGED SINCE YOU CHECKED about a run that never checked.
+#      The contract: --apply is the second half of a check, as the page
+#      runs it (--match, the confirmation, then --match --apply). So the
+#      tool checks first, and an apply with no check behind it says that
+#      is what is missing.
+echo "    A35. an apply with no check behind it says the check is missing; checked first, every chosen system is an item"
+m_seed
+sa_run "${M}" cloud_content_restore --match --apply
+[ "${RC}" -ne 0 ] && [ -f "${M}/storage/roms/gb/B.gb" ] && grep -qx '>>> why CHECK WHAT WOULD CHANGE FIRST' "${M}/out" && ! grep -q 'SOMETHING CHANGED' "${M}/out"; check $? "--match --apply with no preview removes nothing and says to check first, not that something changed (rc ${RC})" "rc ${RC}; why: $(grep '^>>> why' "${M}/out" | tr '\n' '|'); B.gb $([ -f "${M}/storage/roms/gb/B.gb" ] && echo kept || echo gone)"
+# The round-trip's own sequence, checked first: a system present on both
+# sides and one that exists nowhere (its plan is none) are both announced.
+m_seed
+printf 'gb\nghost-never-a-system\n' > "${M}/storage/.cache/cloud_sync/content-systems"
+sa_run "${M}" cloud_content_restore --match
+m35_prc=${RC}
+sa_run "${M}" cloud_content_restore --match --apply
+[ "${m35_prc}" -eq 0 ] && [ "${RC}" -eq 0 ] && grep -qx '>>> unit gb|1|2' "${M}/out" && grep -qx '>>> unit ghost-never-a-system|2|2' "${M}/out" \
+    && grep -q 'Nothing to remove from ghost-never-a-system' "${M}/out"; check $? "checked first, --match --apply announces both chosen systems as ITEM i OF 2 and says Nothing to remove for the one with nothing to do (preview rc ${m35_prc}, apply rc ${RC})" "preview rc ${m35_prc}, apply rc ${RC}; units: $(grep '^>>> unit' "${M}/out" | tr '\n' '|'); out: $(sa_tail "${M}")"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

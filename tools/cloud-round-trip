@@ -1519,11 +1519,17 @@ echo "${saw:-0}/${all:-0}"
     # in neither the cloud nor the device: its plan is `none`.
     ghost = "ghost-never-a-system"
     dev.run(f"cloud_content_restore --set-systems {shlex.quote(CONTENT_DIR)} {ghost} >/dev/null 2>&1 || true", check=False)
+    # --apply is the second half of a check, as the page runs it: --match,
+    # the confirmation, then --match --apply, which acts on the plan the
+    # check wrote and refuses without one (audit #307 PL-001). This step
+    # used to run --apply alone, which the plan contract refuses (vm-qa run
+    # 68 on the fix build).
+    prc, pout = run_rc(dev, "cloud_content_restore --match")
     rc, out = run_rc(dev, "cloud_content_restore --match --apply")
     ok, items, detail = unit_protocol(out)
-    failures += not check(rc == 0 and ok and sorted(items) == sorted([CONTENT_DIR, ghost]),
+    failures += not check(prc == 0 and rc == 0 and ok and sorted(items) == sorted([CONTENT_DIR, ghost]),
                           f"--match --apply announced both chosen systems as ITEM i OF 2, the one with nothing to do included ({detail})",
-                          f"exit {rc}; {detail}; tail {out.strip()[-160:]!r}")
+                          f"check exit {prc}, apply exit {rc}; {detail}; tail {out.strip()[-160:]!r}")
     failures += not check(f"Nothing to remove from {ghost}" in out,
                           "and said so for the system that already matches",
                           "no 'Nothing to remove' line for the system with nothing to do")
