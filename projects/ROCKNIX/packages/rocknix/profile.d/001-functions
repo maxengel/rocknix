@@ -154,11 +154,50 @@ function wait_lock_say() {
   fi
 }
 
+# The settings lock: a file holding its holder's pid, shared with the
+# interface's PidLock (es-core AtomicFileUtil) on the same path.
+#
+#   Taken born with the pid: written to <lock>.<pid> and hard-linked into
+#   place, which fails when the lock exists -- so no waiter ever reads an
+#   empty lock that is really a holder between its open and its write, the
+#   window a noclobber create left (#307 PL-041). A shell without ln (a
+#   test's narrow PATH) falls back to that create.
+#
+#   Reaped once, under flock on <lock>.reap -- the lock the interface's
+#   reaper takes too -- by re-reading the holder and removing the file only
+#   if it still names the same holder and that holder is still not alive.
+#   Two waiters that read the same stale pid used to re-read and remove in
+#   two steps each, so the slower one removed the faster one's fresh lock
+#   and both held it (#307 PL-041, #308 claude F-PB-08); under the reap lock
+#   the second finds the lock changed and leaves it. Without flock (a
+#   narrow PATH), the reap runs unguarded, as before.
+#
+#   Given up on, not spun on, when it cannot be created at all: a create
+#   that fails with nothing at the path is retried at once once (released
+#   in between) and then each second, and after five such misses -- a lock
+#   folder that is missing, a read-only /tmp -- wait_lock says so and
+#   returns 1, where it used to retry with no sleep for ever and hold a
+#   core at 100% (#308 claude F-PB-06). A live holder is still waited on
+#   for as long as it lives.
+#
+# The pid-reuse half of F-PB-08 does not arise: J_CONF_LOCK is on /tmp, a
+# tmpfs, so no lock outlives the boot that wrote it.
 function wait_lock() {
-  local holder current waited_on="" held_for=0
+  local holder waited_on="" held_for=0 misses=0 took reaped
   while true
   do
-    if (set -o noclobber; echo "$$" > "${J_CONF_LOCK}") 2>/dev/null
+    took=""
+    if command -v ln >/dev/null 2>&1
+    then
+      if echo "$$" > "${J_CONF_LOCK}.$$" 2>/dev/null
+      then
+        ln "${J_CONF_LOCK}.$$" "${J_CONF_LOCK}" 2>/dev/null && took=1
+        rm -f "${J_CONF_LOCK}.$$"
+      fi
+    else
+      (set -o noclobber; echo "$$" > "${J_CONF_LOCK}") 2>/dev/null && took=1
+    fi
+    if [ -n "${took}" ]
     then
       # Save the exit status before anything else runs: 'exit $?' after rm
       # re-exited with rm's 0, so every script that ever took this lock (runemu.sh
@@ -166,24 +205,38 @@ function wait_lock() {
       # holds -- callers rm it themselves, the trap outlives them, and another
       # process may own the file by the time this one exits.
       trap 'rc=$?; [ "$(cat "${J_CONF_LOCK}" 2>/dev/null)" = "$$" ] && rm -f "${J_CONF_LOCK}"; exit "${rc}"' INT TERM EXIT
-      break
+      return 0
     fi
 
-    # The create failed, so the file is there and names its holder -- or named
-    # one. A holder that ends normally releases it through the trap above; one
-    # that is SIGKILLed, OOM-killed or dies with its terminal cannot, and until
+    # The create failed with nothing there: released in between (try again
+    # at once, the first time), or the lock cannot be made at all.
+    if [ ! -e "${J_CONF_LOCK}" ]
+    then
+      misses=$((misses + 1))
+      if [ "${misses}" -ge 5 ]
+      then
+        wait_lock_say "cannot create ${J_CONF_LOCK} (its folder missing or not writable); not waiting on it"
+        return 1
+      fi
+      [ "${misses}" -gt 1 ] && sleep 1
+      continue
+    fi
+    misses=0
+
+    # The file is there and names its holder -- or named one. A holder that
+    # ends normally releases it through the trap above; one that is
+    # SIGKILLed, OOM-killed or dies with its terminal cannot, and until
     # 2026-09-09 nothing read the pid in the file, so a stale lock stalled
     # every get_setting and set_setting on the device until reboot (4 min 43 s
     # for one set_setting on the VM, #98). Read the holder and ask the kernel.
-    [ -e "${J_CONF_LOCK}" ] || continue   # released since the create failed: try again at once
     holder=""
     read -r holder 2>/dev/null < "${J_CONF_LOCK}"
     case "${holder}" in
       ''|*[!0-9]*)
-        # Empty, or not a pid: nobody can be holding it. (An empty file is also
-        # what a holder's own create looks like between open and write, for a
-        # few microseconds; the re-read below is what stands between that and a
-        # theft.)
+        # Empty, or not a pid: nobody can be holding it. An empty file can
+        # still be a noclobber create between its open and its write (the
+        # fallback above, or an older writer), so give it a moment first.
+        [ -n "${holder}" ] || sleep 0.2 2>/dev/null || sleep 1
         ;;
       *)
         if kill -0 "${holder}" 2>/dev/null
@@ -208,18 +261,18 @@ function wait_lock() {
         ;;
     esac
 
-    # Stale. Remove it only if it still says what was read above: between that
-    # read and this rm the holder may have released it and another shell taken
-    # it, and an unconditional rm would steal the newcomer's lock. Re-reading
-    # just before the rm shrinks that window to a few instructions; it does not
-    # close it. Then retry at once -- there is nothing to wait for.
-    current=""
-    read -r current 2>/dev/null < "${J_CONF_LOCK}"
-    if [ -e "${J_CONF_LOCK}" ] && [ "${current}" = "${holder}" ]
-    then
-      rm -f "${J_CONF_LOCK}"
-      wait_lock_say "removed stale lock ${J_CONF_LOCK} held by pid ${holder:-<none>}"
-    fi
+    # Stale. Reap it once, under the reap lock, only if it still names the
+    # holder read above and that holder is still gone; then try again.
+    reaped=$( {
+        if command -v flock >/dev/null 2>&1; then flock -x 9 || exit 0; fi
+        now=""
+        [ -e "${J_CONF_LOCK}" ] || exit 0
+        read -r now 2>/dev/null < "${J_CONF_LOCK}"
+        [ "${now}" = "${holder}" ] || exit 0
+        case "${now}" in ''|*[!0-9]*) ;; *) kill -0 "${now}" 2>/dev/null && exit 0 ;; esac
+        rm -f "${J_CONF_LOCK}" && echo removed
+      } 9>"${J_CONF_LOCK}.reap" 2>/dev/null )
+    [ "${reaped}" = "removed" ] && wait_lock_say "removed stale lock ${J_CONF_LOCK} held by pid ${holder:-<none>}"
   done
 }
 

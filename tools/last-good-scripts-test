@@ -3617,4 +3617,39 @@ printf 'system.hostname=X\nfoo.bar=1\nfoo_bar=2\nfooXbar=3\n' > "${P7F}/cfg/syst
 p7set "set_setting foo.bar default"
 [ "$(tr '\n' '|' < "${P7F}/cfg/system.cfg")" = "system.hostname=X|foo_bar=2|fooXbar=3|" ]; check $? "#308 10-packages-and-build gpt F-PB-16: set_setting foo.bar default removes foo.bar alone, not foo_bar or fooXbar" "#308 F-PB-16: system.cfg: '$(tr '\n' '|' < "${P7F}/cfg/system.cfg")' -- the key was read as a pattern"
 
+# == PL-041: two waiters on one stale lock never both hold it
+# A stale lock (a pid that is not running). Waiter B is slowed at the moment
+# it removes that lock -- its rm of the lock sleeps first, the window the
+# re-read could not close -- and waiter C arrives in that window. Each holds
+# the lock two seconds and writes when it held it; the two spans must not
+# overlap. B's shadowed rm is the only difference between them.
+P7DEAD=$(( (1 << 22) - 1 )); while kill -0 "${P7DEAD}" 2>/dev/null; do P7DEAD=$((P7DEAD - 1)); done
+cat > "${P7F}/take.sh" <<'EOS'
+eval "${PREAMBLE:-}"
+wait_lock || { echo "nolock $$" >> "${SPANS}"; exit 1; }
+echo "start $$ $(date +%s%N)" >> "${SPANS}"
+sleep 2
+echo "end $$ $(date +%s%N)" >> "${SPANS}"
+rm -f "${J_CONF_LOCK}"
+EOS
+: > "${P7F}/spans"; echo "${P7DEAD}" > "${P7F}/lock"; rm -f "${P7F}/lock.reap"
+( SPANS="${P7F}/spans" PREAMBLE='rm() { case " $* " in *" ${J_CONF_LOCK} "*) [ -e "${J_CONF_LOCK}.p7slowed" ] || { : > "${J_CONF_LOCK}.p7slowed"; sleep 1; } ;; esac; command rm "$@"; }' \
+  PATH="${TMP}/bbin:${PATH}" timeout 20 bash -c ". '${P7F}/f.sh'; . '${P7F}/take.sh'" 2>>"${P7F}/err" ) &
+P7B=$!
+sleep 0.3
+( SPANS="${P7F}/spans" PATH="${TMP}/bbin:${PATH}" timeout 20 bash -c ". '${P7F}/f.sh'; . '${P7F}/take.sh'" 2>>"${P7F}/err" ) &
+P7C=$!
+wait "${P7B}" "${P7C}" 2>/dev/null
+rm -f "${P7F}/lock.p7slowed"
+p7over=$(awk '$1 == "start" { s[$2] = $3 } $1 == "end" { e[$2] = $3 } END { n = 0; for (a in s) for (b in s) if (a < b && s[a] < e[b] && s[b] < e[a]) n++; print n + 0 }' "${P7F}/spans")
+[ "$(grep -c '^start' "${P7F}/spans")" -eq 2 ] && [ "${p7over}" -eq 0 ]; check $? "#307 PL-041 / #308 claude F-PB-08: two waiters reaping one stale lock hold it one after the other, never at once (the reap re-reads and removes under flock on <lock>.reap)" "#307 PL-041: spans: $(tr '\n' '|' < "${P7F}/spans" | cut -c1-200); overlapping: ${p7over} -- the slower waiter removed the faster one's live lock"
+
+# == #308 10-packages-and-build claude F-PB-06: a lock that cannot be created is not waited on for ever
+printf 'system.hostname=X\n' > "${P7F}/cfg/system.cfg"
+sed "s|^J_CONF=.*|J_CONF=$(printf %q "${P7F}/cfg/system.cfg"); J_CONF_LOCK=$(printf %q "${P7F}/no-such-dir/lock")|" "${P7F}/f.sh" > "${P7F}/f-nodir.sh"
+p7t0=$(date +%s)
+PATH="${TMP}/bbin:${PATH}" timeout 20 bash -c ". '${P7F}/f-nodir.sh'; set_setting b 1" 2>"${P7F}/err"; p7rc=$?
+p7dt=$(( $(date +%s) - p7t0 ))
+[ "${p7rc}" -ne 0 ] && [ "${p7rc}" -ne 124 ] && [ "${p7dt}" -lt 15 ] && ! grep -q '^b=' "${P7F}/cfg/system.cfg" && grep -q 'wait_lock' "${P7F}/err"; check $? "#308 10-packages-and-build claude F-PB-06: a lock whose folder is missing ends the wait in ${p7dt}s (rc ${p7rc}), writes nothing and says why" "#308 F-PB-06: rc ${p7rc} after ${p7dt}s (124: still spinning at the timeout); b written: $(grep -c '^b=' "${P7F}/cfg/system.cfg")"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
