@@ -512,7 +512,7 @@ bt restore --then-cloud; rcg=${RC}
 echo "  c. set_setting is one rename; sort_settings refuses an empty result"
 C="${TMP}/c"; mkdir -p "${C}"
 {
-    sed -n '/^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function sort_settings() {/,/^}/p; /^function set_setting() {/,/^}/p; /^function clean_hostname() {/,/^}/p' "${FN}"
+    sed -n '/^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function settings_base() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function sort_settings() {/,/^}/p; /^function set_setting() {/,/^}/p; /^function clean_hostname() {/,/^}/p' "${FN}"
     printf 'J_CONF=%q; J_CONF_LOCK=%q\nlogger() { :; }\n' "${C}/system.cfg" "${C}/lock"
 } > "${C}/f.sh"
 printf 'system.hostname=X\nz.key=old\na=1\n' > "${C}/system.cfg"
@@ -1441,7 +1441,7 @@ if [ "${OLD}" -eq 1 ] && ! git -C "${ROOT}" cat-file -e "${BASE_REF}:${CTL_REL}"
 else
 src_of "${CTL_REL}" "${P}/repo/raofflineproxy-ctl"
 {
-    sed -n '/^function get_setting() {/,/^}/p; /^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function set_setting() {/,/^}/p' "${FN}"
+    sed -n '/^function get_setting() {/,/^}/p; /^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function settings_base() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function set_setting() {/,/^}/p' "${FN}"
 } > "${P}/repo/fns.sh"
 PBB=(); PPATH="/shim:/usr/bin:/bin"
 if [ -n "${BB}" ]; then PBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB_HOST}" "${BB}"); PPATH="/shim:/bbin:/usr/bin:/bin"; fi
@@ -1950,7 +1950,7 @@ done
 [ "${TPATCH_OK}" -eq 1 ]; check $? "the client at ${PIN:0:10} with $(echo "${TPATCHES}" | grep -c .) patch(es) applied in order, each compiled: $(cd "${T}/patched/linux/raofflineproxy" && python3 -m py_compile *.py 2>&1 | head -1 || true)ok" "a patch did not apply; the runs below are against a client the tree does not describe"
 CLIENT="${T}/patched/linux"
 {
-    sed -n '/^function get_setting() {/,/^}/p; /^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function set_setting() {/,/^}/p' "${FN}"
+    sed -n '/^function get_setting() {/,/^}/p; /^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function settings_base() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function set_setting() {/,/^}/p' "${FN}"
 } > "${T}/repo/fns.sh"
 TBB=(); TPATH="/shim:/usr/bin:/bin"
 if [ -n "${BB}" ]; then
@@ -7997,7 +7997,7 @@ touch "${P7W}/run/ssid-fails"; p7w saved --ssid
 # paths, the image's busybox applets first on PATH.
 P7="${P7:-${TMP}/p7}"; P7F="${P7}/fn"; mkdir -p "${P7F}/cfg"
 {
-    sed -n '/^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function sort_settings() {/,/^}/p; /^function set_setting() {/,/^}/p; /^function clean_hostname() {/,/^}/p' "${FN}"
+    sed -n '/^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function settings_base() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function sort_settings() {/,/^}/p; /^function set_setting() {/,/^}/p; /^function clean_hostname() {/,/^}/p' "${FN}"
     printf 'J_CONF=%q; J_CONF_LOCK=%q\nlogger() { echo "logger $*" >&2; }\n' "${P7F}/cfg/system.cfg" "${P7F}/lock"
 } > "${P7F}/f.sh"
 sed -n '/^function redact_credentials() {/,/^}/p' "${FN}" > "${P7F}/redact.sh"
@@ -10617,6 +10617,40 @@ done
 check "${p7zk}" "audit of the fix round (stream C's lead): key =, key=, b2.key =, access_key_id =, --b2-key and --s3-access-key-id are redacted in both modes" "stream C's lead: a value survived (listed above) -- no rule knew a key named key or an S3 access key id"
 p7forks=$(PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7F}/redact.sh'; sed() { echo fork >> '${P7F}/forks'; command sed \"\$@\"; }; : > '${P7F}/forks'; redact_credentials 'input_enable_hotkey = \"nul\"' >/dev/null; redact_credentials 'keyboard layout us' >/dev/null; redact_credentials 'the monkey key' >/dev/null; wc -l < '${P7F}/forks'")
 [ "${p7forks}" -eq 0 ] && [ "$(p7red 'input_enable_hotkey = "nul"')" = 'input_enable_hotkey = "nul"' ]; check $? "audit of the fix round (stream C's lead): and hotkey, keyboard and a sentence about a key take the fast path, unchanged" "stream C's lead: ${p7forks} sed fork(s); hotkey line '$(p7red 'input_enable_hotkey = "nul"')'"
+# == E1's lead G2-E-core-03: the shell's writers never complete a cut system.cfg, nor record one
+# The settings writer lifted as y3 lifts it, writing y4's system.cfg, so
+# chksysconfig's backup (y4's lifted functions) reads what it wrote.
+P7ZC="${P7K}/cfg/system/configs/system.cfg"
+# Its logger writes a file: the writers send their subshell's stderr to
+# /dev/null, and on a device logger goes to the journal, not stderr.
+{ sed "s|^J_CONF=.*|J_CONF=$(printf %q "${P7ZC}"); J_CONF_LOCK=$(printf %q "${P7F}/lock-z")|" "${P7F}/f.sh"
+  printf 'logger() { echo "logger $*" >> %q; }\n' "${P7F}/log-z"; } > "${P7F}/f-cut.sh"
+p7zcut() { PATH="${TMP}/bbin:${PATH}" timeout 20 bash -c ". '${P7F}/f-cut.sh'; $1" 2>"${P7F}/err"; }
+p7zchk() { PATH="${P7K}/bin:${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; $1" 2>"${P7K}/err"; }
+rm -f "${P7ZC}.backup" "${P7ZC}.tmp" "${P7F}/lock-z"; : > "${P7F}/log-z"
+printf 'system.hostname=X\na=1\nwifi.key=ab' > "${P7ZC}"
+p7zcut "set_setting b 2"; p7rc=$?
+[ "${p7rc}" -eq 0 ] && [ "$(tr '\n' '|' < "${P7ZC}")" = "system.hostname=X|a=1|b=2|" ] && grep -q 'logger -t system.cfg .*cut short' "${P7F}/log-z"; check $? "audit of the fix round (E1's lead G2-E-core-03): a set_setting onto a system.cfg cut mid-line, with no whole copy beside it, drops the half line (wifi.key=ab) rather than completing it, and says so" "E1's lead: rc ${p7rc}; system.cfg '$(tr '\n' '|' < "${P7ZC}")' -- the cut value was completed as the owner's"
+p7zchk backup
+[ ! -e "${P7ZC}.backup" ] || ! grep -q 'wifi.key=ab' "${P7ZC}.backup"; check $? "audit of the fix round (E1's lead G2-E-core-03): so the record the boot then writes carries no half line either" "E1's lead: the record holds '$(tr '\n' '|' < "${P7ZC}.backup" 2>/dev/null)'"
+printf 'system.hostname=X\na=1\nwifi.key=abcdef\nz=9\n' > "${P7ZC}.backup"
+printf 'system.hostname=X\na=5\nwifi.key=ab' > "${P7ZC}"
+p7zcut "set_setting b 2"; p7rc=$?
+[ "${p7rc}" -eq 0 ] && [ "$(sort "${P7ZC}" | tr '\n' '|')" = "a=5|b=2|system.hostname=X|wifi.key=abcdef|z=9|" ]; check $? "audit of the fix round (E1's lead G2-E-core-03): with a whole last good copy beside it, the write keeps the cut file's whole lines (a=5) and takes the rest from the copy (wifi.key=abcdef, z=9)" "E1's lead: rc ${p7rc}; system.cfg '$(tr '\n' '|' < "${P7ZC}")' -- the keys after the cut were gone and the half value kept"
+printf 'system.hostname=X\na=1\nwifi.key=abcdef\nz=9\n' > "${P7ZC}.backup"
+printf 'system.hostname=X\na=5\nwifi.key=ab' > "${P7ZC}"
+p7zchk backup
+[ "$(tr '\n' '|' < "${P7ZC}.backup")" = "system.hostname=X|a=1|wifi.key=abcdef|z=9|" ] && grep -q 'cut short' "${P7K}/err"; check $? "audit of the fix round (E1's lead G2-E-core-03): chksysconfig backup never records a system.cfg whose last line is cut (valid() alone passed wifi.key=ab), and says why" "E1's lead: the record now '$(tr '\n' '|' < "${P7ZC}.backup")'"
+p7zcut "sort_settings"; p7rc=$?
+[ "$(tr '\n' '|' < "${P7ZC}")" = "a=5|system.hostname=X|wifi.key=abcdef|z=9|" ]; check $? "audit of the fix round (E1's lead G2-E-core-03): and the boot's sort_settings, which ran before that backup, repairs the cut the same way instead of completing it" "E1's lead: rc ${p7rc}; system.cfg '$(tr '\n' '|' < "${P7ZC}")'"
+# Not a cut: the last keys removed on purpose (forget clears wifi.*, which
+# sort last) leave a file that is its record cut at a line's end, and must
+# be recorded as it is -- a prefix rule would bring the forgotten key back.
+printf 'a=1\nsystem.hostname=X\nwifi.key=k\nwifi.ssid=s\n' > "${P7ZC}"; cp "${P7ZC}" "${P7ZC}.backup"
+p7zcut "set_setting wifi.key default && set_setting wifi.ssid default"
+p7zchk verify; p7zchk backup
+[ "$(tr '\n' '|' < "${P7ZC}")" = "a=1|system.hostname=X|" ] && [ "$(tr '\n' '|' < "${P7ZC}.backup")" = "a=1|system.hostname=X|" ]; check $? "audit of the fix round (E1's lead G2-E-core-03): keys removed from the end on purpose stay removed through the boot's verify and backup" "E1's lead: system.cfg '$(tr '\n' '|' < "${P7ZC}")'; record '$(tr '\n' '|' < "${P7ZC}.backup")'"
+rm -f "${P7ZC}.backup" "${P7F}/lock-z" "${P7F}/log-z"; printf 'system.hostname=X\n' > "${P7ZC}"
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi

@@ -73,9 +73,23 @@ put() {
   return 1
 }
 
+# The record is written only from a whole file: valid, and ending in a
+# newline. Every writer ends system.cfg with one -- the interface's
+# SystemConf, the shell's awk and sort, the image's seed -- so a file that
+# does not was cut mid-line by a torn write, and its half line is not the
+# owner's; the shell's writers no longer complete such a line either
+# (settings_base in 001-functions). The last good copy stays as it is, and
+# the log says why (#307, the audit of the fix round; stream E1's lead
+# G2-E-core-03). A cut that fell exactly at a line's end cannot be told from
+# a file whose last keys were removed on purpose -- forget clears wifi.ssid
+# and wifi.key, which sort last -- and is taken as whole.
 backup() {
   if ! valid "${CFG}"; then
     say "not backing up system.cfg: it is empty, not text, or damaged; the last good copy stays as it is"
+    return 1
+  fi
+  if [ -n "$(tail -c 1 "${CFG}" 2>/dev/null)" ]; then
+    say "not backing up system.cfg: its last line was cut short; the last good copy stays as it is"
     return 1
   fi
   put "${CFG}" "${BACKUP}" || { say "could not write system.cfg.backup"; return 1; }
