@@ -3918,4 +3918,49 @@ DDEPS=" $(sed -n 's/^PKG_DEPENDS_TARGET="\(.*\)"$/\1/p' "${DD}/package.mk" | hea
 DMISS=""; for p in Python3 bash busybox coreutils grep systemd; do case "${DDEPS}" in *" ${p} "*) ;; *) DMISS="${DMISS} ${p}" ;; esac; done
 [ -z "${DMISS}" ]; check $? "#308 F-RA-23/24 package.mk: PKG_DEPENDS_TARGET names Python3, bash, busybox, coreutils, grep and systemd (${DDEPS# })" "#308 F-RA-23/24 package.mk: PKG_DEPENDS_TARGET is '${DDEPS# }', missing:${DMISS}"
 
+# D17. #308 1-raoffline gpt F-RA-10: a helper's budget bounds its blocking
+# work. The image helper waited in as_completed for a download to finish
+# before it could look at its deadline, and then for the running ones as the
+# pool closed: with downloads of five seconds and --seconds 1 it now returns
+# at its bound (D1's store and stand-in download, forty badges missing).
+# And the ctl's half: each helper the ctl runs is bounded at the process as
+# well as by its own --seconds -- the scan's and the top-up's image pass, the
+# `images` verb and the `refresh` verb run under `timeout` (the harness's shim
+# hands the budget to the child as FAKE_BUDGET).
+if [ "${DT_OK}" -eq 1 ]; then
+python3 - "${DD}/raofflineproxy-cache-images" "${CLIENT}" "${DD}/images" > "${DD}/d17.out" 2>&1 <<'EOS'
+import os, subprocess, sys, time
+from pathlib import Path
+helper, client, work = sys.argv[1], sys.argv[2], Path(sys.argv[3])
+calls = work / "calls"; calls.write_text("")
+env = dict(os.environ, PYTHONPATH=f"{work / 'site'}:{client}", RAOFFLINEPROXY_CONFIG_DIR=str(work / "cfg"), HOME=str(work), D_CALLS=str(calls), D_EACH="5")
+t0 = time.monotonic()
+p = subprocess.Popen([sys.executable, helper, "--seconds", "1"], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+try:
+    out, _ = p.communicate(timeout=30)
+except subprocess.TimeoutExpired:
+    p.kill(); out, _ = p.communicate()
+took = time.monotonic() - t0; out = out.decode(errors="replace")
+print(f"{'PASS' if p.returncode == 1 and took < 3.0 and '>>> why SOME_IMAGES_NOT_SAVED' in out else 'FAIL'} budget: --seconds 1 over five-second downloads -- exit {p.returncode} after {took:.2f}s")
+EOS
+grep -q '^PASS budget:' "${DD}/d17.out"; check $? "#308 gpt F-RA-10 cache-images: a pass of --seconds 1 returns at its bound with SOME_IMAGES_NOT_SAVED, not after the running downloads ($(sed -n 's/^PASS budget: //p' "${DD}/d17.out"))" "#308 gpt F-RA-10 cache-images: $(grep 'budget:' "${DD}/d17.out" || tail -3 "${DD}/d17.out" | tr '\n' '|') -- the deadline waited for the downloads"
+dfake_images; printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+treset; printf 'ok\n' > "${TR}/helper-plan"; echo ok > "${TR}/images-mode"; rm -f "${TR}/images-calls"
+tctl scan
+grep -q '^start [0-9.]* budget=[0-9][0-9]* --seconds [0-9][0-9]*' "${TR}/images-calls"; check $? "#308 gpt F-RA-10 ctl: the scan's image pass runs under a process bound ($(sed -n 's/^start [0-9.]* \(budget=[0-9]* --seconds [0-9]*\).*/\1/p' "${TR}/images-calls" | head -n 1))" "#308 gpt F-RA-10 ctl: the scan's image pass: $(tr '\n' '|' < "${TR}/images-calls" 2>/dev/null | cut -c1-160) -- no bound but the helper's own"
+rm -f "${TR}/images-calls"
+tctl images
+[ "${RC}" -eq 0 ] && grep -q '^start [0-9.]* budget=[0-9][0-9]* --seconds [0-9][0-9]*' "${TR}/images-calls"; check $? "#308 gpt F-RA-10 ctl: the images verb's helper runs under a process bound" "#308 gpt F-RA-10 ctl: images rc ${RC}: $(tr '\n' '|' < "${TR}/images-calls" 2>/dev/null | cut -c1-160)"
+cat > "${T}/repo/raofflineproxy-refresh" <<'EOS'
+#!/bin/bash
+echo "budget=${FAKE_BUDGET:-none} $*" > /run/refresh-calls
+EOS
+chmod +x "${T}/repo/raofflineproxy-refresh"; rm -f "${TR}/refresh-calls"
+tctl refresh --all
+[ "${RC}" -eq 0 ] && grep -q '^budget=[0-9][0-9]* --seconds [0-9][0-9]* --all$' "${TR}/refresh-calls"; check $? "#308 gpt F-RA-10 ctl: the refresh verb's helper runs under a process bound ($(cat "${TR}/refresh-calls" 2>/dev/null))" "#308 gpt F-RA-10 ctl: refresh rc ${RC}: $(cat "${TR}/refresh-calls" 2>/dev/null) -- no bound but the helper's own"
+rm -f "${TR}/images-mode" "${TR}/images-calls" "${TR}/refresh-calls" "${TR}/helper-plan"
+else
+    echo "    SKIP  #308 F-RA-10's ctl cases: section t did not run"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

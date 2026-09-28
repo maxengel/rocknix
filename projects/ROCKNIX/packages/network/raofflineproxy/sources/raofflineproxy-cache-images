@@ -73,6 +73,7 @@ import signal
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FuturesTimeout
 
 from pathlib import Path
 
@@ -335,8 +336,8 @@ def main() -> int:
     # run could stop (#307 PL-013). A cancel drops what has not started and
     # leaves at once (leave(), below).
     pool = ThreadPoolExecutor(max_workers=4)
+    futures = {}
     try:
-        futures = {}
         for path in missing:
             # extract_image_path hands back the path with its leading slash
             # ("/Badge/109361.png"), which is the shape the client's own
@@ -348,28 +349,35 @@ def main() -> int:
                 path,
                 user_agent,
             )] = path
-        for future in as_completed(futures):
-            path = futures[future]
-            done += 1
-            try:
-                future.result()
-            except Exception as exc:  # download_static_image swallows its own
-                note(f"{path}: {exc}")
-            if image_cache.resolve_cached_static_asset(path) is not None:
-                fetched += 1
-            if done % 25 == 0 or done == len(missing):
-                tell(f"image {done}|{len(missing)}")
-            if time.monotonic() > deadline:
-                stopped = True
-                # Drop what has not started; what is in flight carries its own
-                # timeout, and the next run picks up whatever did not land.
-                for pending in futures:
-                    pending.cancel()
-                break
+        # The deadline bounds the wait itself (#308 F-RA-10): as_completed
+        # with no timeout waited for the next download to finish before the
+        # deadline could be looked at, and a download that hangs holds that
+        # wait for as long as its own timeouts allow.
+        try:
+            for future in as_completed(futures, timeout=max(0.0, deadline - time.monotonic())):
+                path = futures[future]
+                done += 1
+                try:
+                    future.result()
+                except Exception as exc:  # download_static_image swallows its own
+                    note(f"{path}: {exc}")
+                if image_cache.resolve_cached_static_asset(path) is not None:
+                    fetched += 1
+                if done % 25 == 0 or done == len(missing):
+                    tell(f"image {done}|{len(missing)}")
+                if time.monotonic() > deadline:
+                    stopped = True
+                    break
+        except FuturesTimeout:
+            stopped = True
     except KeyboardInterrupt:
         pool.shutdown(wait=False, cancel_futures=True)
         raise
-    pool.shutdown(wait=True)
+    # Drop what has not started. What is in flight carries its own timeout
+    # and is not waited for either (leave(), below): the next run picks up
+    # whatever did not land.
+    pool.shutdown(wait=False, cancel_futures=True)
+    running = any(not future.done() for future in futures)
 
     left = [p for p in missing if image_cache.resolve_cached_static_asset(p) is None]
     note(
@@ -380,9 +388,10 @@ def main() -> int:
     if left:
         tell("why SOME_IMAGES_NOT_SAVED")
     tell(f"done {fetched}|{len(left)}")
-    if left:
-        return 1
-    return 3 if verify_left else 0
+    code = 1 if left else (3 if verify_left else 0)
+    if running:
+        leave(code)
+    return code
 
 
 def leave(code: int) -> None:

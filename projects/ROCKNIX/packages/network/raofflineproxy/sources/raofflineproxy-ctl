@@ -1645,8 +1645,12 @@ run_image_pass() {
     # pass before the run could answer either (#307 PL-013, #308 F-RA-11).
     # wait returns the moment a trapped signal arrives, and CLIENT is what
     # the EXIT trap ends.
+    # Bounded at the process as well (#308 F-RA-10): the helper checks its
+    # --seconds between one blocking call and the next, so it is given ten
+    # seconds less than the pass has and timeout ends it at the pass's
+    # bound whatever it is blocked on (a timeout is images not saved).
     # shellcheck disable=SC2086 -- MODE is one flag or empty, on purpose
-    "${IMAGE_HELPER}" --seconds "${SECONDS_LEFT}" ${MODE} >>"${SCAN_LOG}" 2>&1 &
+    timeout "${SECONDS_LEFT}" "${IMAGE_HELPER}" --seconds "$(( SECONDS_LEFT - 10 ))" ${MODE} >>"${SCAN_LOG}" 2>&1 &
     CLIENT=$!
     wait "${CLIENT}" || RC=$?
     unset CLIENT
@@ -1682,8 +1686,10 @@ do_images() {
     mark_running
     trap 'unmark_running; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
     local RC=0
+    # Bounded at the process too, a grace past the helper's own --seconds
+    # (#308 F-RA-10).
     # shellcheck disable=SC2086 -- MODE is one flag or empty, on purpose
-    "${IMAGE_HELPER}" --seconds "${IMAGE_PASS_SECONDS}" ${MODE} &
+    timeout "$(( IMAGE_PASS_SECONDS + 10 ))" "${IMAGE_HELPER}" --seconds "${IMAGE_PASS_SECONDS}" ${MODE} &
     CLIENT=$!
     wait "${CLIENT}" || RC=$?
     CLIENT=""
@@ -1719,7 +1725,10 @@ do_refresh() {
     mark_running
     trap 'unmark_running; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
     local RC=0
-    "${REFRESH_HELPER}" --seconds "${TOPUP_TIMEOUT}" "${WHICH[@]}" &
+    # The helper looks at its --seconds between games; a game's requests
+    # can block past it, so the process is bounded too, a minute's grace
+    # past the helper's own ceiling (#308 F-RA-10).
+    timeout "$(( TOPUP_TIMEOUT + 60 ))" "${REFRESH_HELPER}" --seconds "${TOPUP_TIMEOUT}" "${WHICH[@]}" &
     CLIENT=$!
     wait "${CLIENT}" || RC=$?
     CLIENT=""
