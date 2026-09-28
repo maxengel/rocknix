@@ -2728,12 +2728,14 @@ echo "  u. wifictl current, saved, forget and join read NetworkManager, not the 
 # access point that refuses the stored key does); -s -g ...psk connection
 # show id <name> answers the profile's key as psk-of-<name>; device show and
 # connection modify serve pin_wifi. The stub profile's set_setting records
-# each call in /run/settings. The image's busybox applets (sed, awk, head,
-# cut) stand in front of the host's, as in m: the pipelines under test run
-# under them on the device.
+# each call in /run/settings, and so does set_settings for each of its pairs
+# (the one write wifictl makes for the Wi-Fi pair since the audit of the fix
+# round, G2-B-11). The image's busybox applets (sed, awk, head, cut) stand
+# in front of the host's, as in m: the pipelines under test run under them
+# on the device.
 U="${TMP}/u"; mkdir -p "${U}/shim" "${U}/repo" "${U}/run"
 src_of "${WIFICTL_REL}" "${U}/repo/wifictl"
-printf 'get_setting() { :; }\nset_setting() { printf "%%s=%%s\\n" "$1" "$2" >> /run/settings; }\nexport PATH=/shim:/bbin:/usr/bin:/bin\n' > "${U}/profile"
+printf 'get_setting() { :; }\nset_setting() { printf "%%s=%%s\\n" "$1" "$2" >> /run/settings; }\nset_settings() { while [ $# -ge 2 ]; do set_setting "$1" "$2"; shift 2; done; }\nexport PATH=/shim:/bbin:/usr/bin:/bin\n' > "${U}/profile"
 cat > "${U}/shim/nmcli" <<'EOS'
 #!/bin/bash
 # NetworkManager as wifictl asks it: the profiles in /run/profiles (name,
@@ -10569,6 +10571,42 @@ chmod +x "${P7}/shim/tar"
 p7bt restore --no-restart; rm -f "${P7}/shim/tar"
 [ "${RC}" -ne 0 ] && [ "$(cat "${P7S}/.config/emulationstation/es_settings.cfg")" = "EDITED" ] && [ -n "$(p7why)" ] && ! p7zscreen | grep -q 'tar:'; check $? "audit of the fix round G2-B-09 (gpt): a seed list that cannot be read ends the restore before it writes -- never a restore that says it finished with the defaults not put back" "G2-B-09: rc ${RC}; es_settings.cfg '$(head -c 30 "${P7S}/.config/emulationstation/es_settings.cfg")'; why '$(p7why)'; screen: $(p7zscreen | tr '\n' '|' | cut -c1-160)"
 
+# == G2-B-11 (gpt): the Wi-Fi pair is written as one, or not at all
+# The real writer first: set_settings writes several keys in one rename.
+{ cat "${P7F}/f.sh"; sed -n '/^function set_settings() {/,/^}/p' "${FN}"; } > "${P7F}/f-z.sh"
+p7zset() { PATH="${TMP}/bbin:${PATH}" timeout 20 bash -c ". '${P7F}/f-z.sh'; $1" 2>"${P7F}/err"; }
+printf 'system.hostname=X\nwifi.ssid=A\nwifi.key=a-key\nother=1\n' > "${P7F}/cfg/system.cfg"
+p7zset "set_settings wifi.ssid B wifi.key b-key"; p7rc=$?
+[ "${p7rc}" -eq 0 ] && [ "$(sort "${P7F}/cfg/system.cfg" | tr '\n' '|')" = "other=1|system.hostname=X|wifi.key=b-key|wifi.ssid=B|" ] && [ ! -e "${P7F}/cfg/system.cfg.tmp" ]; check $? "audit of the fix round G2-B-11 (gpt): set_settings wifi.ssid B wifi.key b-key writes both in one rename (rc ${p7rc})" "G2-B-11: rc ${p7rc}; system.cfg '$(tr '\n' '|' < "${P7F}/cfg/system.cfg")'"
+chmod 555 "${P7F}/cfg"; p7zset "set_settings wifi.ssid C wifi.key c-key"; p7rc=$?; chmod 755 "${P7F}/cfg"
+[ "${p7rc}" -ne 0 ] && grep -qx 'wifi.ssid=B' "${P7F}/cfg/system.cfg" && grep -qx 'wifi.key=b-key' "${P7F}/cfg/system.cfg"; check $? "audit of the fix round G2-B-11 (gpt): a pair that cannot be written leaves both as they were and says so (rc ${p7rc})" "G2-B-11: rc ${p7rc}; system.cfg '$(tr '\n' '|' < "${P7F}/cfg/system.cfg")'"
+p7zset "set_settings wifi.ssid default wifi.key default"; p7rc=$?
+[ "${p7rc}" -eq 0 ] && [ "$(sort "${P7F}/cfg/system.cfg" | tr '\n' '|')" = "other=1|system.hostname=X|" ]; check $? "audit of the fix round G2-B-11 (gpt): set_settings k default removes both keys' lines in the one write" "G2-B-11: rc ${p7rc}; system.cfg '$(tr '\n' '|' < "${P7F}/cfg/system.cfg")'"
+p7zset "set_settings system.hostname default a 1"; p7rc=$?
+[ "${p7rc}" -eq 0 ] && grep -qx 'system.hostname=' "${P7F}/cfg/system.cfg" && grep -qx 'a=1' "${P7F}/cfg/system.cfg"; check $? "audit of the fix round G2-B-11 (gpt): system.hostname default keeps its empty line, as set_setting does (D-NET-009)" "G2-B-11: rc ${p7rc}; system.cfg '$(tr '\n' '|' < "${P7F}/cfg/system.cfg")'"
+p7zset "set_settings wifi.ssid D wifi.key"; p7rc=$?
+[ "${p7rc}" -ne 0 ] && ! grep -q 'wifi.ssid=D' "${P7F}/cfg/system.cfg"; check $? "audit of the fix round G2-B-11 (gpt): an odd number of arguments writes nothing (rc ${p7rc})" "G2-B-11: rc ${p7rc}; system.cfg '$(tr '\n' '|' < "${P7F}/cfg/system.cfg")'"
+# Then wifictl: the settings shim counts its calls and fails the Nth
+# (/run/set-fails-on); wifictl sends logger's stderr to /dev/null, so the
+# logger shim writes /run/log.
+printf '#!/bin/sh\necho "logger $*" >> /run/log\n' > "${P7W}/shim/logger"; chmod +x "${P7W}/shim/logger"; : > "${P7W}/run/log"
+p7wset 'A|802-11-wireless|-|A|a-key' 'B|802-11-wireless|-|B|b-key'
+printf 'wifi.ssid=A\nwifi.key=a-key\n' > "${P7W}/run/settings"; rm -f "${P7W}/run/set-calls"; echo 2 > "${P7W}/run/set-fails-on"
+p7w join "B"
+rm -f "${P7W}/run/set-fails-on"
+p7zpair="$(p7wssid)/$(p7wkey)"
+[ "${RC}" -eq 0 ] && { [ "${p7zpair}" = "A/a-key" ] || [ "${p7zpair}" = "B/b-key" ]; }; check $? "audit of the fix round G2-B-11 (gpt): a join whose second settings write would fail never leaves B's SSID with A's key (the pair is ${p7zpair})" "G2-B-11: rc ${RC}; the pair is ${p7zpair} -- the SSID moved to B and the key stayed A's"
+p7wset 'A|802-11-wireless|-|A|a-key' 'B|802-11-wireless|-|B|b-key'
+printf 'wifi.ssid=A\nwifi.key=a-key\n' > "${P7W}/run/settings"; touch "${P7W}/run/set-fails"
+p7w join "B"
+rm -f "${P7W}/run/set-fails"
+[ "${RC}" -eq 0 ] && [ "$(cat "${P7W}/out")" = "joined" ] && [ "$(p7wssid)/$(p7wkey)" = "A/a-key" ] && grep -q 'logger -t wifictl .*joined B.*could not be saved' "${P7W}/run/log"; check $? "audit of the fix round G2-B-11 (gpt): a join whose settings cannot be written says joined (it is), leaves the pair as it was, and logs that the settings were not saved" "G2-B-11: rc ${RC}; printed '$(tr '\n' '|' < "${P7W}/out")'; pair $(p7wssid)/$(p7wkey); log: $(tr '\n' '|' < "${P7W}/run/log" | cut -c1-200)"
+p7wset 'A|802-11-wireless|wlan0|A|a-key'
+printf 'wifi.ssid=A\nwifi.key=a-key\n' > "${P7W}/run/settings"; rm -f "${P7W}/run/set-calls"; echo 2 > "${P7W}/run/set-fails-on"; touch "${P7W}/run/delete-fails"
+p7w forget "A"
+rm -f "${P7W}/run/set-fails-on" "${P7W}/run/delete-fails"
+[ "${RC}" -eq 1 ] && [ ! -s "${P7W}/out" ] && grep -q '^A|' "${P7W}/run/profiles" && grep -q 'logger -t wifictl .*could not be put back' "${P7W}/run/log"; check $? "audit of the fix round G2-B-11 (gpt): a forget whose profile delete fails and whose settings cannot then be put back refuses (rc ${RC}) and logs what state the settings are in" "G2-B-11 (forget): rc ${RC}; printed '$(tr '\n' '|' < "${P7W}/out")'; profile: $(grep -c '^A|' "${P7W}/run/profiles"); log: $(tr '\n' '|' < "${P7W}/run/log" | cut -c1-200)"
+rm -f "${P7W}/shim/logger" "${P7W}/run/log"
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi

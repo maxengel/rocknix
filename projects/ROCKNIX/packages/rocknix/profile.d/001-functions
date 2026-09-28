@@ -471,6 +471,55 @@ function set_setting() {
   fi
 }
 
+# Several keys in one write and one rename, under one hold of the lock: a
+# pair that must agree -- wifi.ssid and wifi.key -- is never left half
+# written by a failure between two set_setting calls, where the network's
+# name moved and its key did not (#307, the audit of the fix round, gpt
+# G2-B-11). Arguments are key value pairs; "default" removes a key's line
+# as set_setting does, except system.hostname's, which is emptied
+# (D-NET-009). Returns 0 only when the new file is in place; nothing is
+# written when the arguments are not whole pairs of keys that start with a
+# letter or digit.
+function set_settings() {
+  local n=0 rc k v
+  local -a pairs=()
+  [ $# -gt 0 ] && [ $(( $# % 2 )) -eq 0 ] || return 1
+  while [ $# -gt 0 ]
+  do
+    k="${1}"; v="${2}"; shift 2
+    [[ "${k}" =~ ^[[:alnum:]] ]] || return 1
+    n=$((n + 1))
+    if [ "${v}" = "default" ] && [ "${k}" != "system.hostname" ]
+    then
+      pairs+=("SK${n}=${k}" "SV${n}=" "SD${n}=1")
+    else
+      [ "${v}" = "default" ] && v=""
+      pairs+=("SK${n}=${k}" "SV${n}=${v}" "SD${n}=0")
+    fi
+  done
+  if [ ! -d "/storage/.config/system/configs" ]
+  then
+    mkdir -p /storage/.config/system/configs
+  fi
+  if [ ! -e "/storage/.config/system/configs/system.cfg" ]
+  then
+    cp -f /usr/config/system/configs/system.cfg /storage/.config/system/configs/system.cfg
+  fi
+  wait_lock || return 1
+  if env "${pairs[@]}" SN="${n}" awk 'BEGIN { n = ENVIRON["SN"]; for (j = 1; j <= n; j++) { k[j] = ENVIRON["SK" j]; v[j] = ENVIRON["SV" j]; d[j] = ENVIRON["SD" j] } }
+                                     { for (j = 1; j <= n; j++) if (index($0, k[j] "=") == 1) next; print }
+                                     END { for (j = 1; j <= n; j++) if (d[j] != 1) print k[j] "=" v[j] }' "${J_CONF}" > "${J_CONF}.tmp" 2>/dev/null \
+     && mv -f "${J_CONF}.tmp" "${J_CONF}"
+  then
+    rc=0
+  else
+    rm -f "${J_CONF}.tmp"
+    rc=1
+  fi
+  rm -f "${J_CONF_LOCK}"
+  return ${rc}
+}
+
 function battery_percent() {
   if [ -f /tmp/battery.percent ]; then
     cat /tmp/battery.percent
