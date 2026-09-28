@@ -1,6 +1,7 @@
 # Analysis — the whole fix round for #307/#308, audited before the candidate (D-WORKFLOW-060)
 
-**Auditor:** Code Auditor skill (orchestrator: Claude Fable 5.1; the seats `anthropic/claude-fable-5.1` at xhigh and `openai/gpt-6-astra` at max through the council Facilitator on OpenRouter, D-QA-048/049)
+**Auditor:** Code Auditor skill (orchestrator: Claude Fable 5.1; the seats `anthropic/claude-fable-5.1` at xhigh and `openai/gpt-6-astra` at max through the council Facilitator on OpenRouter, D-QA-048/049)  
+**Issue:** #313 (Phase 6; the Phase 7 gate is its task list)
 **Date:** 2026-09-28 (opened 15:08 UTC)
 **Subject:** the distribution `417dcd8610..1b0d233657` and the EmulationStation fork `7eae8ed91..87b182fbe` -- the eight streams' first deliveries and follow-ups, and the integrator's own commits -- judged against #307's acceptance text, #308's rows and the first audit's 165 findings
 **Spec:** `01-research-notes.md`
