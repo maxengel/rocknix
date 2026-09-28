@@ -58,11 +58,18 @@ log_message() {
 # the environment, so nothing in them is interpreted. Returns non-zero when
 # the config could not be written.
 conf_set() {
-    local tmp="${SYNC_CONF}.tmp.$$" src="${SYNC_CONF}" n=0
-    local -a pairs=()
+    local tmp="${SYNC_CONF}.tmp.$$" src="${SYNC_CONF}" n=0 i
+    local -a pairs=() want=()
+    # Something at the config's path that is not a file is not a config this
+    # can write: read as "absent", `mv -f` then put the new file INSIDE a
+    # directory there and succeeded (audit of stream C, G-C-04).
+    if [ -e "${SYNC_CONF}" ] && [ ! -f "${SYNC_CONF}" ]; then
+        return 1
+    fi
     [ -f "${src}" ] || src=/dev/null
     while [ $# -ge 2 ]; do
-        n=$((n + 1)); pairs+=("CONF_K${n}=$1" "CONF_V${n}=$2"); shift 2
+        n=$((n + 1)); pairs+=("CONF_K${n}=$1" "CONF_V${n}=$2")
+        want+=("$1=\"$2\""); shift 2
     done
     if env "${pairs[@]}" CONF_N="${n}" awk '
         BEGIN {
@@ -79,6 +86,12 @@ conf_set() {
         }
         END { for (i = 1; i <= n; i++) if (!seen[i]) print line[i] }
     ' "${src}" > "${tmp}" 2>/dev/null && mv -f "${tmp}" "${SYNC_CONF}" 2>/dev/null; then
+        # Written is what the file says, not what mv returned: a regular
+        # file at the path, holding every line asked for.
+        [ -f "${SYNC_CONF}" ] || return 1
+        for i in "${want[@]}"; do
+            grep -qFx -- "${i}" "${SYNC_CONF}" 2>/dev/null || return 1
+        done
         return 0
     fi
     rm -f "${tmp}" 2>/dev/null
