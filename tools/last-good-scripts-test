@@ -4467,4 +4467,20 @@ au_stamp=$(cut -d' ' -f2- "${AU}/storage/.cache/cloud_sync/last-backup" 2>/dev/n
 [ "${RC}" -eq 69 ] && [ "${au_stamp}" = 69 ]; check $? "and one whose saves phase had nothing new to send stamps the bare 69 (rc ${RC}, stamp ${au_stamp:-none})" "rc ${RC}; stamp '${au_stamp:-none}'; out: $(sa_tail "${AU}")"
 rm -f "${AU}/ctl/noroute" "${AU}/ctl/noping"; : > "${AU}/ctl/post"; : > "${AU}/ctl/fail"
 
+# A45. The audit of the fixes (#307 follow-up 2; seats/A-claude.md G-A-09,
+#      Low): an automatic --system-only run's reachability probe that the
+#      ceiling ended (124) fell through to check_internet's "the internet
+#      answers" branch and was worded as a sign-in problem (COULDN'T REACH
+#      YOUR CLOUD - CHECK YOUR SIGN-IN), where the ceiling's own sentence is
+#      the true one.
+echo "    A45. G-A-09 (claude): a probe the automatic ceiling ended is worded as the ceiling"
+for ga9s in cloud_backup cloud_restore; do
+    sa_script "${CE}" "${ga9s}"
+    : > "${CE}/ctl/argv"; : > "${CE}/ctl/fail"
+    printf '%s\t%s\n' '^lsd qa: ' 30 > "${CE}/ctl/hang"
+    sa_run "${CE}" "${ga9s}" --yes --automatic --system-only
+    : > "${CE}/ctl/hang"
+    [ "${DT}" -le 12 ] && [ "${RC}" -ne 0 ] && grep -qx ">>> why THE CLOUD TOOK TOO LONG - IT'LL TRY AGAIN NEXT TIME" "${CE}/out" && ! grep -q 'SIGN-IN' "${CE}/out"; check $? "${ga9s} --automatic --system-only: a probe the ceiling ended says THE CLOUD TOOK TOO LONG, not a sign-in problem (${DT}s, rc ${RC})" "${DT}s, rc ${RC}; why: $(grep '^>>> why' "${CE}/out" | tr '\n' '|')"
+done
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

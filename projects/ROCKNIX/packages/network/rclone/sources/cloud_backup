@@ -882,11 +882,25 @@ check_rclone_config() {
 check_internet() {
     log_message "Checking cloud storage reachability..." "false"
 
-    local remote
+    local remote probe_rc=1
     remote=$(rclone listremotes 2>/dev/null | head -1)
-    if [ -n "${remote}" ] && rclone lsd "${remote}" "${RCLONE_PROBE_OPTS[@]}" >/dev/null 2>&1; then
-        log_message "Cloud storage ${remote} is reachable" "false"
-        return 0
+    if [ -n "${remote}" ]; then
+        rclone lsd "${remote}" "${RCLONE_PROBE_OPTS[@]}" >/dev/null 2>&1; probe_rc=$?
+        if [ "${probe_rc}" -eq 0 ]; then
+            log_message "Cloud storage ${remote} is reachable" "false"
+            return 0
+        fi
+    fi
+
+    # A probe the automatic ceiling ended (the wrapper's 124) is the
+    # ceiling's answer, not the sign-in's: it fell through to the branch
+    # below and read COULDN'T REACH YOUR CLOUD - CHECK YOUR SIGN-IN (the
+    # audit of the fixes, claude G-A-09).
+    if [ "${AUTOMATIC}" -eq 1 ] && [ "${probe_rc}" -eq 124 ]; then
+        log_message "the reachability probe was ended by the automatic ceiling; reporting that" "false"
+        log_message "Couldn't finish: the cloud took too long. It'll try again next time." "true" "ERROR"
+        say_why "$(why_for 124)"
+        clean_exit 124
     fi
 
     if ping -q -c1 -W 3 1.1.1.1 >/dev/null 2>&1 || ping -q -c1 -W 3 8.8.8.8 >/dev/null 2>&1; then
