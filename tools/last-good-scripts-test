@@ -4291,4 +4291,56 @@ tctl listening --wait abc
 [ "${RC}" -eq 64 ] && grep -q '^usage: raofflineproxy-ctl listening' "${ERR}"; check $? "claude G-D-07: listening --wait abc -- usage on stderr, exit 64" "claude G-D-07: rc ${RC}; stderr: $(head -c 160 "${ERR}")"
 fi
 
+# D28. claude G-D-08, gpt G-D-04, gpt G-D-05: one definition of a game ready
+# for the account -- its unlocks row and an achievementsets row of the game,
+# the rows a launch reads -- behind both added= and the walk's "already
+# cached", read from the head of each sets row rather than a parse of every
+# body (a sets row whose GameId sits past the head still counts). A game a
+# launch cached (sets and unlocks, no patch) was ready before a top-up gave
+# it a patch row, so it is not "more". And the count of games made ready
+# fails closed: a comparison that could not be read is no count at all.
+if [ "${DT_OK}" -eq 1 ]; then
+printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+GLSIZE=$(stat -c %s "${TS}/roms/nes/gamelist.xml")
+printf '<?xml version="1.0"?>\n<gameList parentHash="%s">\n  <game><path>./g.nes</path><name>G</name><cheevosHash>aaaa0201</cheevosHash><cheevosId>201</cheevosId></game>\n</gameList>\n' "${GLSIZE}" > "${TS}/.config/emulationstation/recovery/nes/g.xml"
+treset; touch -d '2 hours ago' "${TMARK}"; PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
+import json
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+# 201: a launch's rows (another dump's sets, the unlocks), no patch row; the
+# Title is long, so GameId sits past the first 512 bytes of the body.
+s.upsert_cache(cache_keys.achievementsets("feed0201", "qa"), json.dumps({"Success": True, "Title": "T" * 800, "GameId": 201, "Sets": []}))
+s.upsert_cache(cache_keys.unlocks(201, "qa"), '{"Success":true,"UserUnlocks":[]}')
+s.close()
+EOS
+: > "${TR}/helper-jobs.log"
+tctl topup --after-index
+[ "${RC}" -eq 0 ] && grep -qP '^I\t201\taaaa0201\t' "${TR}/helper-jobs.log" && grep -q ' 0 topup cached=3 .* added=2$' "${TSTAMP}"; check $? "gpt G-D-04: a game a launch had already cached (sets and unlocks, no patch row) is cached by the index and not counted as added -- cached=3 added=2" "gpt G-D-04: rc ${RC}; jobs: $(tr '\t' ',' < "${TR}/helper-jobs.log" | tr '\n' '|' | cut -c1-200); stamp: $(cat "${TSTAMP}" 2>/dev/null)"
+rm -f "${TS}/.config/emulationstation/recovery/nes/g.xml"
+# The walk's "already cached" is the same rule: patch and unlocks without a
+# sets row is a job; with the long-titled sets row it is not.
+treset; PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
+import json
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+s.upsert_cache(cache_keys.patch(152, "qa"), '{"Success":true,"PatchData":{"ID":152}}', source_rom_path="/gb/h.gb")
+s.upsert_cache(cache_keys.unlocks(152, "qa"), '{"Success":true,"UserUnlocks":[]}')
+s.upsert_cache(cache_keys.patch(153, "qa"), '{"Success":true,"PatchData":{"ID":153}}', source_rom_path="/gb/i.gb")
+s.upsert_cache(cache_keys.unlocks(153, "qa"), '{"Success":true,"UserUnlocks":[]}')
+s.upsert_cache(cache_keys.achievementsets("iiii", "qa"), json.dumps({"Success": True, "Title": "T" * 800, "GameId": 153, "Sets": []}))
+s.close()
+EOS
+: > "${TR}/helper-jobs.log"; dfake_images
+tctl scan
+grep -qP '^H\t\t\t/storage/roms/gb/h.gb$' "${TR}/helper-jobs.log" && ! grep -q '/storage/roms/gb/i.gb$' "${TR}/helper-jobs.log"; check $? "claude G-D-08: the walk's rule is the same -- patch and unlocks with no sets row is a job; a sets row whose GameId lies past the head still makes the game whole" "claude G-D-08: jobs: $(tr '\t' ',' < "${TR}/helper-jobs.log" | tr '\n' '|' | cut -c1-200)"
+fi
+# games_made_ready, lifted from the ctl: a before file that cannot be read.
+src_of "${CTL_REL:-projects/ROCKNIX/packages/network/raofflineproxy/sources/raofflineproxy-ctl}" "${DD}/ctl-for-gmr"
+sed -n '/^games_made_ready() {/,/^}/p' "${DD}/ctl-for-gmr" > "${DD}/gmr.sh"
+mkdir -p "${DD}/gmr-dir"; printf '101\n102\n' > "${DD}/gmr-after"
+DGM="$(bash -c ". '${DD}/gmr.sh'; games_made_ready '${DD}/gmr-dir' '${DD}/gmr-after'"; echo "rc=$?")"
+[ -s "${DD}/gmr.sh" ] && [ "${DGM}" = "rc=1" ]; check $? "gpt G-D-05: games_made_ready with a before file that cannot be read prints nothing and fails, so the caller keeps its own count" "gpt G-D-05: it answered '$(printf '%s' "${DGM}" | tr '\n' ' ')' -- a failed comparison read as a count"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
