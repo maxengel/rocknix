@@ -48,7 +48,10 @@ function log() {
 # token formats (devpassword=, &y=, AKIA, ghp_, github_pat_, xox., sk-, a
 # private-key block); setrootpass <value>; the password in a URL's
 # user:password@. An empty value is left empty: whether a credential is set
-# may be shown, only what it is may not. The word list is deliberately wide
+# may be shown, only what it is may not. An unquoted value runs to the next
+# space, quote, & or ; -- so a URL's next parameter survives -- and may
+# itself START with & or ; (root.password=&x): the class that stops at them
+# consumed nothing there and the whole value was kept (#307 PL-040). The word list is deliberately wide
 # (a value under a key merely named like a credential is hidden too): a
 # hidden setting in a debug log costs a question, a shown password costs an
 # account.
@@ -76,7 +79,7 @@ function redact_credentials() {
   sed -E \
     -e "s/(^|[^A-Za-z0-9_.-])(${key}\"?[[:space:]]*[=:][[:space:]]*)\"[^\"]+\"/\1\2\"<redacted>\"/Ig" \
     -e "s/(^|[^A-Za-z0-9_.-])(${key}\"?[[:space:]]*[=:][[:space:]]*)'[^']+'/\1\2'<redacted>'/Ig" \
-    -e "s/(^|[^A-Za-z0-9_.-])(${key}\"?[[:space:]]*[=:][[:space:]]*)[^[:space:]\"'&;]+/\1\2<redacted>/Ig" \
+    -e "s/(^|[^A-Za-z0-9_.-])(${key}\"?[[:space:]]*[=:][[:space:]]*)([&;]*[^[:space:]\"'&;]+|[&;]+)/\1\2<redacted>/Ig" \
     -e "s/(^|[[:space:]])(--?${key})[[:space:]]+(\"[^\"]+\"|'[^']+'|[^[:space:]\"']+)/\1\2 <redacted>/Ig" \
     -e "s/^(.*\"[^\"]*(${words})[^\"]*\".*\] \().*\)[[:space:]]*\$/\1<redacted>)/I" \
     -e '/[Rr]etro[Aa]chievements|raofflineproxy|dorequest|127\.0\.0\.1:8080/s/(^|[?&[:space:]])([pty]=)[^&[:space:]"'"'"']+/\1\2<redacted>/g' \

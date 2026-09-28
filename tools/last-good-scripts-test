@@ -3652,4 +3652,8 @@ PATH="${TMP}/bbin:${PATH}" timeout 20 bash -c ". '${P7F}/f-nodir.sh'; set_settin
 p7dt=$(( $(date +%s) - p7t0 ))
 [ "${p7rc}" -ne 0 ] && [ "${p7rc}" -ne 124 ] && [ "${p7dt}" -lt 15 ] && ! grep -q '^b=' "${P7F}/cfg/system.cfg" && grep -q 'wait_lock' "${P7F}/err"; check $? "#308 10-packages-and-build claude F-PB-06: a lock whose folder is missing ends the wait in ${p7dt}s (rc ${p7rc}), writes nothing and says why" "#308 F-PB-06: rc ${p7rc} after ${p7dt}s (124: still spinning at the timeout); b written: $(grep -c '^b=' "${P7F}/cfg/system.cfg")"
 
+# == PL-040: a value that starts with & or ; is still hidden
+[ "$(p7red 'root.password=&example-value')" = "root.password=<redacted>" ] && [ "$(p7red 'x.password=&y=QAKEY9')" = "x.password=<redacted>" ] && [ "$(p7red 'token=;semi')" = "token=<redacted>" ]; check $? "#307 PL-040: root.password=&example-value, x.password=&y=QAKEY9 and token=;semi are redacted whole" "#307 PL-040: '$(p7red 'root.password=&example-value')' / '$(p7red 'x.password=&y=QAKEY9')' / '$(p7red 'token=;semi')' -- the value class admitted no leading & or ;"
+[ "$(p7red "devpassword=$(printf 'abc123')&softname=es")" = "devpassword=<redacted>&softname=es" ]; check $? "#307 PL-040: and a value still ends at the & that starts the next parameter (devpassword=<redacted>&softname=es)" "#307 PL-040: '$(p7red "devpassword=$(printf 'abc123')&softname=es")'"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
