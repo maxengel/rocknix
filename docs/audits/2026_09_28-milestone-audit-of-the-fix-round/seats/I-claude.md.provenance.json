@@ -1,0 +1,143 @@
+{
+  "artifact_path": "docs/audits/2026_09_28-milestone-audit-of-the-fix-round/seats/I-claude.md",
+  "output_file_sha256": "1a2ce1821a5bb50213fd1cd37685c2eec08c3d0ec7242a6a85c5becebb7cbb0b",
+  "source_file_paths": [
+    "docs/audits/2026_09_28-milestone-audit-of-the-fix-round/seats/I.diff",
+    ".claude/rules/engineering-practices.md",
+    ".claude/rules/upgrade-and-install.md",
+    ".claude/rules/fork-workflow.md",
+    ".claude/rules/generic-x64-vm-testing.md"
+  ],
+  "source_file_hashes": [
+    "4c42ba0b028c1e215dc40aa11990982bf028cfa5cd8413f8017ec0d7a3ae02c1",
+    "7f1eb012edc986ee2975abacb44f1a662f2a111a6ded1a1a623a84af509eef7d",
+    "d79a1084e85117ba566d23af7fbf3633c44290a6c490f9125e1fd9df061f8cfd",
+    "5e10bbbf8cfb81bdb34412e54202a8310554ba677b653be636e174fca9211c3a",
+    "9ae148998b481417b86d6b84f03dfff94ac47d8f1159edb2c6c17f5e7c350202"
+  ],
+  "source_file_commits": [
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "read_timestamps": [
+    "2026-09-28T13:57:25Z",
+    "2026-09-28T13:57:25Z",
+    "2026-09-28T13:57:25Z",
+    "2026-09-28T13:57:25Z",
+    "2026-09-28T13:57:25Z"
+  ],
+  "facilitator_version": "council-facilitator@1.2.0",
+  "prev_verdict_sha256": null,
+  "member": "claude",
+  "declared_model": "anthropic/claude-fable-5.1 (OpenRouter, effort=xhigh)",
+  "substrate": "openrouter",
+  "transport": "buffered",
+  "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+  "request": {
+    "started_at": "2026-09-28T13:58:05.595Z",
+    "system_prompt_sha256": null,
+    "user_prompt_sha256": "4e1938a6a4f5e5f2a398ce2e6c34935740af4d848a2819d01e3900225c84c1df"
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "started_at": "2026-09-28T13:58:05.595Z",
+      "duration_ms": 816811,
+      "max_tokens": 128000,
+      "transport": "buffered",
+      "http_status": 200,
+      "outcome": "success",
+      "outcome_reason": null,
+      "model_field": "anthropic/claude-fable-5.1",
+      "finish_reason": null,
+      "content_length": 45601,
+      "tokens": {
+        "prompt": 70319,
+        "completion": 61818,
+        "total": 132137,
+        "reasoning": 43647
+      },
+      "model_identity_source": "provider_response",
+      "content_sha256": "1a2ce1821a5bb50213fd1cd37685c2eec08c3d0ec7242a6a85c5becebb7cbb0b",
+      "usage": {
+        "prompt_tokens": 70319,
+        "completion_tokens": 61818,
+        "total_tokens": 132137,
+        "cost": 3.79409,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 3.79409,
+          "upstream_inference_prompt_cost": 0.70319,
+          "upstream_inference_completions_cost": 3.0909
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 43647,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "response_headers": {
+        "content-type": "application/json"
+      },
+      "response_body_sha256": "16a04e3ed4b6a41485da42a6176732cdc3dd6e01dd6170adddfae70f4549e076"
+    }
+  ],
+  "final": {
+    "outcome": "success",
+    "assurance_tier": "local_capture_provider_attested",
+    "total_duration_ms": 816812,
+    "retries_used": 0,
+    "file_artifact_sha256": "1a2ce1821a5bb50213fd1cd37685c2eec08c3d0ec7242a6a85c5becebb7cbb0b",
+    "usage": {
+      "prompt_tokens": 70319,
+      "completion_tokens": 61818,
+      "total_tokens": 132137,
+      "cost": 3.79409,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 3.79409,
+        "upstream_inference_prompt_cost": 0.70319,
+        "upstream_inference_completions_cost": 3.0909
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 43647,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "tokens": {
+      "prompt": 70319,
+      "completion": 61818,
+      "total": 132137,
+      "reasoning": 43647
+    },
+    "verification": {
+      "result": "PASS",
+      "match_kind": "semantic",
+      "declared": "anthropic/claude-fable-5.1 (OpenRouter, effort=xhigh)",
+      "observed": "anthropic/claude-fable-5.1",
+      "model_identity_source": "provider_response"
+    },
+    "effort_verification": {
+      "result": "PASS",
+      "declared": "xhigh",
+      "evidence": "reasoning_tokens",
+      "observed_reasoning_tokens": 43647
+    }
+  }
+}

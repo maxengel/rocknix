@@ -112,3 +112,75 @@ _The orchestrator's own reads of the highest-risk follow-up hunks, made before t
 ### O-21 (seam: the settings lock, the scripts x the interface)
 **Read:** `profile.d/001-functions` (the scripts' side, B `f3622d3a2d`) and `es-core/src/utils/AtomicFileUtil.cpp` (the interface's side, E1 `5e390e128`) name the same lock (`/tmp/.system.cfg.lock`), the same contents (the holder's pid alone), the same birth (written to `<lock>.<pid>` and hard-linked), and the same reap guard (`<lock>.reap` under `flock`); the scripts' comment cites the interface's `PidLock` and the interface's cites the scripts. D-INFRA-012 (pid-only, bounded by `pid_max`) is written on both sides.
 **Verdict:** **the seam agrees.**
+
+_The seats' Highs, each re-read against the source on `next` (the distribution) or the ES branch at `87b182fbe`, with the command where one settles it._
+
+### G2-A-01 (claude, A) -- a tier whose pointer names its destination under another spelling is copied onto itself and its files deleted
+**Seat's claim:** the PL-026 guards compare the conf's raw string with the constant (`/ROCKNIX/Saves`); `SAVES_REMOTE="/ROCKNIX/Saves/"` is not equal, so the tier is treated as unmoved, copied onto itself, verified clean and its source files deleted -- the same folder.
+**Checked:** `cloud_migrate_layout` lines 447, 455, 531, 537, 546, 548, 565, 577, 594: every compare is `[ "${saves}" != "${NEW_SAVES}" ]` on the raw value; the `${1%/}` normalisations at 109, 188, 499-505 are inside helpers, not before these compares; `relocate` has no `src == dst` refusal (its first twelve lines read). A trailing slash in the conf reaches the compare as written. Whether `rclone copy X X` exits 0 was not run here; the delete that follows runs `rclone delete "${src}" --files-from-raw` on the same folder regardless.
+**Verdict:** **confirmed, High** -- a conf edited by hand or written by an older setup with a trailing slash loses every save on TIDY UP YOUR CLOUD FOLDERS. Fix: normalise the three pointers (strip trailing slashes, require a leading one) before every compare, and refuse `relocate` when `src` and `dst` name one folder after normalisation; a case with the trailing-slash conf.
+
+### G2-A-01 (gpt, A) -- `conf_valid` accepts an executable "comment" after a carriage return
+**Seat's claim:** `rest()` accepts `\r` as whitespace before `#`; bash does not, so `EXTRA="x"<CR>#$(cmd)` passes the validator and runs `cmd` when sourced.
+**Checked:** `cloud_backup:1017` `conf_valid`: `function rest(s, i) { if (substr(s, i) !~ /^([ \t\r]+(#.*)?)?$/) bad() }` -- a CR is in the class; `whole()` inspects the parsed value only; `bash -n` accepts the line. The same grammar is in `cloud_restore` and `cloud_sync_helper`. A33's seven shapes do not include a CR.
+**Verdict:** **confirmed, High** -- the non-executing contract (D-CLOUD-142) has a hole one byte wide. Fix: drop `\r` from `rest()`'s class (a CR anywhere in the file is bad), in all three copies; a case with the seat's line.
+
+### G2-A-02 (gpt, A) -- a failed safety copy can overwrite the valid configuration
+**Seat's claim:** the duplicate-cleanup fallback restores `.pre-cleanup.$$` on `-s` alone, so a `cp` that failed part-way (a full card) leaves a truncated prefix that then replaces the untouched valid file.
+**Checked:** `cloud_backup` (the block at the first `pre_cleanup`): `if cp -f ... && cleanup && conf_valid; then ... elif [ -s "${pre_cleanup}" ] && mv -f "${pre_cleanup}" "${conf_file}"; then` -- the `elif` runs when `cp` itself failed; nothing records that the copy completed and nothing validates the copy before the move. `cloud_restore` carries the same block (5 references).
+**Verdict:** **confirmed, High** -- the last-known-good rule (D-CLOUD-078) inverted by the fallback meant to keep it. Fix: a flag set only after `cp` succeeds, and `conf_valid "${pre_cleanup}"` before the move; a case that makes `cp` write a prefix and fail.
+
+### G2-B-01 (gpt, B) -- reading the backup-folder setting executes `cloud_sync.conf`
+**Seat's claim:** `backuptool` sources the configuration to read `SETTINGS_BACKUPS`, against the rule that the file is never sourced with a command in it.
+**Checked:** `backuptool:42`: `_configured=$( unset SETTINGS_BACKUPS BACKUPFOLDER; . /storage/.config/cloud_sync.conf >/dev/null 2>&1; printf ...)` -- a subshell, but a source; the `case` after it validates the string only. The cloud scripts gate their own sourcing on `conf_valid` (O-3); `backuptool` has no such gate.
+**Verdict:** **confirmed, High** -- the same file, one reader that still executes it. Fix: read the key with a non-executing reader (a `sed -n 's/^SETTINGS_BACKUPS="\([^"]*\)".*/\1/p' | head -1`, the first assignment as the cleanup keeps it), never `.`; a case with a command in the conf.
+
+### G2-B-02 (gpt, B) -- the redaction fast path lets `--pass value` through
+**Seat's claim:** the argument-mode detector recognises `pass` only before `=` or `:`; the flag form takes the fast path unredacted.
+**Checked by running it:** `source profile.d/001-functions; redact_credentials 'launcher --pass qa-value'` prints `launcher --pass qa-value`; `'x --RA_Pass qa-value'` prints unchanged; `'pass=qa-value'` is masked.
+**Verdict:** **confirmed, High** -- a credential given as a flag is logged. Fix: the fast-path trigger includes `--?[A-Za-z0-9_.-]*pass[[:space:]]`; the two lines as cases.
+
+### G2-B-04 (gpt, B) -- a failed snapshot worklist reads as "nothing to protect"
+**Seat's claim:** `snapshot_members`'s `KEEP=$(mktemp)` and its appends are unchecked; an empty worklist returns 4, which the caller reads as no members to protect, and the restore extracts without a snapshot.
+**Checked:** `backuptool` `snapshot_members` lines 3, 17, 24-27: `KEEP=$(mktemp)` unchecked, `printf ... >> "${KEEP}"` unchecked, `[ ! -s "${KEEP}" ]` returns 4 whatever emptied it.
+**Verdict:** **confirmed, High** -- the shape B fixed one stage earlier (G-B-01), at the next stage. Fix: `mktemp` and every append checked, a failure returning 2 (the restore refuses), 4 only for a genuinely empty selection; a case that makes `mktemp` fail.
+
+### G2-B-05 (gpt, B) -- extraction applies members the snapshot never covers
+**Seat's claim:** the snapshot lists `storage/*` regular files; extraction runs the whole archive minus a skip list, so a member outside `storage/` (a legacy or foreign archive's `tmp/...`) is written to `/` and never rolled back.
+**Checked:** `archive_members` filters `^storage/` (line 5's awk and the tar case at 479-480); `tar -xzf ... -C / -X "${SKIP}"` (1356) and the unzip equivalent extract everything not skipped; nothing refuses an archive with a member outside `storage/`.
+**Verdict:** **confirmed, Medium** (re-graded from High: it needs an archive this tool never writes -- a foreign or hand-made one -- and the rollback covers the settings it does list). Fix: refuse an archive whose member list holds a path not under `storage/` before anything is extracted; a case with such an archive.
+
+### G2-B-06 (gpt, B) -- an archive can overwrite the recovery marker that protects its own extraction
+**Seat's claim:** `RESTORE_MARK` is written and verified before extraction but not excluded from it; an archive carrying `storage/.config/.restore-in-progress` (a stale marker captured by an earlier broad backup) overwrites the fresh one.
+**Checked:** `backuptool:1302` sets the marker; the skip list at 1355 holds the ppsspp assets and the token files, not the marker; `grep -n RESTORE_MARK | grep -i skip` finds nothing.
+**Verdict:** **confirmed, High** -- the boot's revert then reads the archived marker. Fix: the marker (and the snapshot's own path) in every skip list, and the backup never lists them; a case with an archive carrying the marker.
+
+### G2-B-07 (gpt, B) -- a quoted password beginning with whitespace passes the key scan
+**Seat's claim:** the value suffix `"?[^"[:space:]]+` cannot consume a space after the opening quote.
+**Checked by running it:** `printf 'password = " leading-text"\npassword = "plain"\n' | grep -ciE "$CREDENTIAL_KEYS"` prints 1 -- the leading-space line does not match.
+**Verdict:** **confirmed, High** (a residual of the credential scan; an `.ini` a player added to their own list). Fix: `"?[[:space:]]*[^"[:space:]]+` after the quote; the line as a case.
+
+### G2-C-04 (gpt, C) -- dot components bypass the tier-separation guard
+**Seat's claim:** `/Mine/Backups/.` passes `syncpath_problem`; `dirname` makes the siblings `/Mine/Backups/Backups` and `/Mine/Backups/Content`, inside the saves folder.
+**Checked by running it:** `syncpath_problem '/Mine/Backups/.'` returns 0 (accepted) on `next`'s `cloud_setup`; the function rejects `"`, `$`, backtick, backslash and control characters, and the two sibling names, and nothing else.
+**Verdict:** **confirmed, High** -- the collision C closed (G-C-01) reopened by a path alias. Fix: reject any `.` or `..` component and any empty component, then the sibling check; a case with the seat's path.
+
+### G2-E-core-01 (gpt, E-core) -- an escaped inner quote ends the masked range
+**Seat's claim:** in `maskValueEnd`'s enclosing-quote branch the inner-quote test runs before the backslash escape, so `sh -c 'tool --password "front\" back"'` leaves `back` unmasked.
+**Checked:** `es-core/src/utils/StringUtil.cpp` `maskValueEnd`: the `inner != 0` branch (lines +31..+34 of the function: `if (c == inner) inner = 0`) precedes the single-quote backslash branch (+38..+40); the double-quote escape at +22..+25 applies only when the enclosing quote is `"`. Under a `'`-enclosing command an inner `\"` closes the inner quote.
+**Verdict:** **confirmed, High** -- a residual of E1's masking fix (`b036967fc`). Fix: inside an inner quote, a backslash skips the next character in both enclosing modes; a doctest with the seat's line.
+
+### G2-E-tests-01 (gpt, E-tests) and G2-I-02 (gpt, I) -- the hooks' scan fails open when its pipeline fails
+**Seat's claim:** `hits="$(git diff ... | awk | grep -E | sed | head -5 || true)"`; an invalid pattern, or a missing tool, yields an empty `hits` and the hook exits 0.
+**Checked by running it:** a copy of `.githooks/pre-commit` in a scratch repository with a staged `<credential-shaped example redacted>` line: with `SECRET_PATTERNS='devpassword=[A-Za-z0-9._%-]{4,}'` it refuses (rc 1); with `SECRET_PATTERNS='['` grep and sed print errors and the hook exits **0**.
+**Verdict:** **confirmed, High** -- the guard blindspot 67 added fails open on its own error. Fix: validate the pattern once (`printf '' | grep -E -e "$SECRET_PATTERNS"; [ $? -le 1 ]`) and read each stage's status from `PIPESTATUS`, refusing on any status above grep's 1; the constructed failure as the hook's own test.
+
+### G2-I-01 (claude and gpt, I) -- the audit-packet path exemption removes the scan from a pushed path
+**Seat's claim:** both hooks skip `docs/audits/*/seats/*.diff` by name on a comment's justification ("a verbatim copy of a range the guards have already read"), which nothing checks; a packet built from unpushed worktree branches, or a line appended to one, is never scanned.
+**Checked:** `.githooks/pre-commit` (`grep -v -E '^docs/audits/[^/:]+/seats/[^/:]+\.diff: '`) and `.githooks/pre-push` (`case "$f" in docs/audits/*/seats/*.diff) continue`) as the seat says; this very audit's packets were built from branches that were merged, but the exemption cannot tell that.
+**Verdict:** **confirmed, High** -- a guard weakened by its own author. Fix: remove the exemption from both hooks; stop committing the packet `.diff` copies (a `.gitignore` line for `docs/audits/*/seats/*.diff`; the manifests' sha256 and the branch ranges are the record, and a packet is regenerated from them); the ES fork's hooks the same.
+
+### G2-I-10 (gpt, I) -- the rule's log-redaction example preserves the secret
+**Seat's claim:** `engineering-practices.md`'s example `sed -E 's/((token|key|passw[a-z]*|psk|user)[=:][^ ]*)/\1***/Ig'` puts the value inside group 1 and prints it back with stars.
+**Checked:** the line is in the rule; the proof runner found the same on 2026-09-28 (its `common.sh` carries the corrected form); the session's memory was corrected this morning, the rule was not.
+**Verdict:** **confirmed, High** (the seat's grade; a transcript that follows the rule leaks the value). Fix: `s/((token|key|passw[a-z]*|psk|user)[=:])[^ ]*/\1***/Ig` in the rule, with the note that a masking pattern is proven on a fake `key=SECRET` line first.

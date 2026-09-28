@@ -1,0 +1,143 @@
+{
+  "artifact_path": "docs/audits/2026_09_28-milestone-audit-of-the-fix-round/seats/I-gpt.md",
+  "output_file_sha256": "39007791952d96d75fd0c1f0e4e522b73148287648dd69813a035d6170566b74",
+  "source_file_paths": [
+    "docs/audits/2026_09_28-milestone-audit-of-the-fix-round/seats/I.diff",
+    ".claude/rules/engineering-practices.md",
+    ".claude/rules/upgrade-and-install.md",
+    ".claude/rules/fork-workflow.md",
+    ".claude/rules/generic-x64-vm-testing.md"
+  ],
+  "source_file_hashes": [
+    "4c42ba0b028c1e215dc40aa11990982bf028cfa5cd8413f8017ec0d7a3ae02c1",
+    "7f1eb012edc986ee2975abacb44f1a662f2a111a6ded1a1a623a84af509eef7d",
+    "d79a1084e85117ba566d23af7fbf3633c44290a6c490f9125e1fd9df061f8cfd",
+    "5e10bbbf8cfb81bdb34412e54202a8310554ba677b653be636e174fca9211c3a",
+    "9ae148998b481417b86d6b84f03dfff94ac47d8f1159edb2c6c17f5e7c350202"
+  ],
+  "source_file_commits": [
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "read_timestamps": [
+    "2026-09-28T13:57:25Z",
+    "2026-09-28T13:57:25Z",
+    "2026-09-28T13:57:25Z",
+    "2026-09-28T13:57:25Z",
+    "2026-09-28T13:57:25Z"
+  ],
+  "facilitator_version": "council-facilitator@1.2.0",
+  "prev_verdict_sha256": null,
+  "member": "gpt",
+  "declared_model": "openai/gpt-6-astra (OpenRouter, via openai, effort=max)",
+  "substrate": "openrouter",
+  "transport": "buffered",
+  "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+  "request": {
+    "started_at": "2026-09-28T13:58:05.595Z",
+    "system_prompt_sha256": null,
+    "user_prompt_sha256": "4e1938a6a4f5e5f2a398ce2e6c34935740af4d848a2819d01e3900225c84c1df"
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "started_at": "2026-09-28T13:58:05.595Z",
+      "duration_ms": 1018997,
+      "max_tokens": 128000,
+      "transport": "buffered",
+      "http_status": 200,
+      "outcome": "success",
+      "outcome_reason": null,
+      "model_field": "openai/gpt-6-astra",
+      "finish_reason": null,
+      "content_length": 28174,
+      "tokens": {
+        "prompt": 48082,
+        "completion": 34603,
+        "total": 82685,
+        "reasoning": 27970
+      },
+      "model_identity_source": "provider_response",
+      "content_sha256": "39007791952d96d75fd0c1f0e4e522b73148287648dd69813a035d6170566b74",
+      "usage": {
+        "prompt_tokens": 48082,
+        "completion_tokens": 34603,
+        "total_tokens": 82685,
+        "cost": 0,
+        "is_byok": true,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 48079,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 2.3311675,
+          "upstream_inference_prompt_cost": 0.6010175,
+          "upstream_inference_completions_cost": 1.73015
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 27970,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "response_headers": {
+        "content-type": "application/json"
+      },
+      "response_body_sha256": "b49b6f362a8d5137debe5fed553ab52f0e12d1a39ef58a58c135b986869c839b"
+    }
+  ],
+  "final": {
+    "outcome": "success",
+    "assurance_tier": "local_capture_provider_attested",
+    "total_duration_ms": 1018999,
+    "retries_used": 0,
+    "file_artifact_sha256": "39007791952d96d75fd0c1f0e4e522b73148287648dd69813a035d6170566b74",
+    "usage": {
+      "prompt_tokens": 48082,
+      "completion_tokens": 34603,
+      "total_tokens": 82685,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 48079,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 2.3311675,
+        "upstream_inference_prompt_cost": 0.6010175,
+        "upstream_inference_completions_cost": 1.73015
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 27970,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "tokens": {
+      "prompt": 48082,
+      "completion": 34603,
+      "total": 82685,
+      "reasoning": 27970
+    },
+    "verification": {
+      "result": "PASS",
+      "match_kind": "semantic",
+      "declared": "openai/gpt-6-astra (OpenRouter, via openai, effort=max)",
+      "observed": "openai/gpt-6-astra",
+      "model_identity_source": "provider_response"
+    },
+    "effort_verification": {
+      "result": "PASS",
+      "declared": "max",
+      "evidence": "reasoning_tokens",
+      "observed_reasoning_tokens": 27970
+    }
+  }
+}
