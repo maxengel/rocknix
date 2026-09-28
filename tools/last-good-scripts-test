@@ -10414,6 +10414,53 @@ else
 skip "gpt G2-D-03: the ctl's runs need section t's pinned client"
 fi
 
+# D36. claude G2-D-01 / the blind pass's S-26: both listener checks (the
+# ctl's `listening`, the unit's ExecStartPost, and cheevos_ppsspp.sh's)
+# count 127.0.0.1, 0.0.0.0 and ::ffff:127.0.0.1 on 8080 and not `::`, whose
+# table line does not say whether it is dual-stack. That is right only if
+# the proxy never listens on `::`, and nothing showed it. The client's
+# sockets are IPv4: proxy_service's ThreadingTCPServer keeps socketserver's
+# address_family, AF_INET, and boot.py's prebind and adopt make AF_INET
+# sockets -- an AF_INET socket cannot bind `::`. This holds both readers to
+# the socket itself: the pinned, patched client's run-service -- the unit's
+# ExecStart, with the unit's environment -- runs in a network namespace of
+# its own (loopback alone, so nothing reaches RetroAchievements), and each
+# reader is asked of the real /proc/net inside it, as the unit asks, thirty
+# looks a second apart. A pin that moves the listener to a dual-stack `::`
+# fails here rather than at every boot. Constructed failure (2026-09-28):
+# the same run against a copy of the client whose ThreadingTCPServer has
+# address_family AF_INET6 and whose proxy_host is "::" -- every check below
+# FAILs, the one listener on tcp6.
+if [ "${DF_OK}" -eq 1 ] && bwrap --ro-bind / / --unshare-net true 2>/dev/null; then
+mkdir -p "${DF}/d36/cfg" "${DF}/d36/home"
+sed -n '/^port_listening() {/,/^}/p' "${DF}/ctl" > "${DF}/d36/readers.sh"
+sed -n '/^proxy_listening() {/,/^}/p' "${DF}/cheevos_ppsspp.sh" >> "${DF}/d36/readers.sh"
+cat > "${DF}/d36/run.sh" <<'EOS'
+#!/bin/bash
+D="$1"; cd /; unset RAOFFLINEPROXY_PROC_NET
+python3 -m raofflineproxy.main run-service > "${D}/service.out" 2>&1 &
+P=$!
+. "${D}/readers.sh"
+t=0; ctl=0; pp=0
+while [ "${t}" -lt 30 ]; do port_listening && { ctl=1; break; }; sleep 1; t=$((t + 1)); done
+proxy_listening && pp=1
+awk 'FNR > 1 && $4 == "0A" { n = split(FILENAME, f, "/"); print f[n], $2 }' /proc/net/tcp /proc/net/tcp6 > "${D}/listeners"
+kill -TERM "${P}" 2>/dev/null; wait "${P}" 2>/dev/null
+echo "ctl=${ctl} ppsspp=${pp} looks=$((t + 1))"
+EOS
+chmod +x "${DF}/d36/run.sh"
+timeout 120 bwrap --ro-bind / / --dev /dev --proc /proc --bind "${DF}/d36" "${DF}/d36" --unshare-net \
+    --setenv PYTHONPATH "${CLIENT}" --setenv RAOFFLINEPROXY_CONFIG_DIR "${DF}/d36/cfg" \
+    --setenv HOME "${DF}/d36/home" --setenv XDG_CONFIG_HOME "${DF}/d36/home/.config" --setenv MALLOC_ARENA_MAX 2 \
+    "${DF}/d36/run.sh" "${DF}/d36" > "${DF}/d36/out" 2>&1
+D36R="$(tail -n 1 "${DF}/d36/out")"; D36L="$(tr '\n' '|' < "${DF}/d36/listeners" 2>/dev/null)"
+case "${D36R}" in *"ctl=1 "*) true ;; *) false ;; esac; check $? "claude G2-D-01 / S-26: the pinned client's run-service, in a network namespace of its own, is listening where the ctl's listening check reads (${D36R}; ${D36L})" "claude G2-D-01 / S-26: the ctl's listening check never saw the proxy's own socket (${D36R:-no verdict}); listeners: ${D36L:-none}; service: $(tail -n 3 "${DF}/d36/service.out" 2>/dev/null | tr '\n' '|' | cut -c1-200)"
+case "${D36R}" in *"ppsspp=1 "*) true ;; *) false ;; esac; check $? "claude G2-D-01 / S-26: and cheevos_ppsspp.sh's reader agrees -- PPSSPP is routed to it" "claude G2-D-01 / S-26: cheevos_ppsspp.sh's reader did not see the proxy's socket (${D36R:-no verdict}); PPSSPP would launch direct"
+[ "$(grep -c '^tcp .*:1F90$' "${DF}/d36/listeners" 2>/dev/null)" -ge 1 ] && ! grep -q '^tcp6 .*:1F90$' "${DF}/d36/listeners"; check $? "claude G2-D-01 / S-26: the proxy listens on IPv4 alone -- no tcp6 line on 8080, so the readers' leaving out :: turns nothing away" "claude G2-D-01 / S-26: the proxy's listeners are '${D36L:-none}' -- a tcp6 listener on 8080 is one the readers may not count"
+else
+skip "claude G2-D-01 / S-26: the proxy's own socket needs section t's pinned client and a network namespace (bwrap --unshare-net)"
+fi
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi

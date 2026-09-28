@@ -907,8 +907,16 @@ do_ready() {
 # (1F90) in state LISTEN (0A) count -- the listeners that take the IPv4
 # connection to 127.0.0.1:8080 the emulators are given. ::1 does not take
 # it, and :: may be IPv6-only, which the table does not say, so neither
-# counts (audit of the fixes, gpt G-D-02). RAOFFLINEPROXY_PROC_NET stands in
-# for /proc/net (the scripts suite's fixture).
+# counts (audit of the fixes, gpt G-D-02). Leaving :: out turns the proxy
+# away never: its sockets are IPv4 -- proxy_service.py's ThreadingTCPServer
+# keeps socketserver.TCPServer's AF_INET (patched client, line 267), boot.py
+# makes and adopts AF_INET sockets (lines 32 and 58), and nothing here sets
+# proxy_host, whose default is 127.0.0.1 (config.py:367) -- and the scripts
+# suite runs the pinned client's run-service in a network namespace of its
+# own and holds this check to its socket, so a pin that moves to `::` fails
+# there first (audit of the fix round, claude G2-D-01, the blind pass's
+# S-26, PL-033). RAOFFLINEPROXY_PROC_NET stands in for /proc/net (the
+# scripts suite's fixture).
 port_listening() {
     local F SL LOCAL REM ST REST
     for F in "${RAOFFLINEPROXY_PROC_NET:-/proc/net}/tcp" "${RAOFFLINEPROXY_PROC_NET:-/proc/net}/tcp6"; do
