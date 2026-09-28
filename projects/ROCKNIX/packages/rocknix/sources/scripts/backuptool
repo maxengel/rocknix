@@ -237,6 +237,45 @@ glob_literal() {
     printf '%s' "${1}" | sed 's/[][*?]/[&]/g'
 }
 
+# The last line of defence (#52, #169, #221; #307 PL-005): the archive can be
+# synced to the cloud, so none is kept that carries a populated credential.
+# This reads the tree that is about to be archived -- every staged file, after
+# the strips -- rather than trusting the strips, so a newly-added config file
+# with secrets is caught the first time it is backed up instead of silently
+# leaking. It prints how many lines look like one, and names the files in the
+# log. Until #307 PL-005 it read the archive after it had been renamed into
+# place, printed a warning and let the run end in success, so the settings
+# tier's chain (backuptool backup && cloud_backup --system-only) uploaded the
+# archive anyway; now a hit ends the run before the archive is named.
+#
+# Text config files only, anchored to a config-key shape. Translation
+# catalogues ship lines like 'Password = Пароль', and scanning every file
+# found nothing while warning on every backup, which would be worse than not
+# warning at all. The capitalised keys are the ones the standalone emulators'
+# cheevos_*.sh scripts write (Token, ApiToken, RA_Token, RA_Password); until
+# #169 the anchor was lower-case only. A bare-token file (.dat, .txt) has no
+# key shape to match; those are held back by name instead. The credential
+# word is a whole part of the key name -- after the start, a "_" or a "." --
+# and "key" alone is too common a word to be one: it counts bare, dotted
+# (wifi.key) or behind a credential word (stream_key, secret_access_key).
+# Until #221 a name that merely ended in "key" or "pass" counted, and every
+# shipped retroarch.cfg carries input_enable_hotkey (on some families
+# core_info_savestate_bypass too), so every clean backup warned -- which
+# teaches people to ignore the one that matters. A trailing digit counts
+# (rclone's password2).
+credential_lines() {
+    local TREE="${1}" F N TOTAL=0 NAMES=""
+    while IFS= read -r -d '' F
+    do
+        N=$(grep -cE '^(([a-z_.]*[_.])?(password|passwd|pass|token|secret|apikey|api_key|stream_key|access_key|secret_key|private_key|wifi_key)[0-9]*|key|[a-z_.]*\.key|Token|ApiToken|RA_Token|RA_Password) *[=:] *"?[^"[:space:]]+' "${F}" 2>/dev/null)
+        [ "${N:-0}" -gt 0 ] 2>/dev/null || continue
+        TOTAL=$((TOTAL + N))
+        NAMES="${NAMES:+${NAMES}, }${F#${TREE}/}"
+    done < <(find "${TREE}" -type f \( -name '*.cfg' -o -name '*.conf' -o -name '*.ini' \) -print0)
+    [ "${TOTAL}" -gt 0 ] && logger -t backuptool "found ${TOTAL} line(s) that look like a password or key, in: ${NAMES}"
+    echo "${TOTAL}"
+}
+
 # Is this archive whole? tar lists every member or fails; busybox unzip has
 # no -t, so for a zip the listing is the test (a truncated zip has no central
 # directory to list) -- and the -t is tried first for an unzip that has it.
@@ -310,7 +349,8 @@ RATOKENDIRS=(
 # Returns 0 when TARGET holds a verified archive; 2 when the collection
 # failed (an unreadable input, a copy that did not finish); 3 when the
 # archive could not be written or did not list back; 4 when there was
-# nothing to collect; 6 when the list names something outside /storage.
+# nothing to collect; 5 when a backup (STRIP=1) holds what looks like a
+# password or key; 6 when the list names something outside /storage.
 # TARGET is untouched on every code but 0.
 write_archive() {
     local TARGET="${1}" STRIP="${2:-1}"
@@ -671,6 +711,16 @@ write_archive() {
         return 2
     fi
 
+    # A backup that may leave the device carries no sign-in (return 5), and
+    # the check reads the staged tree -- exactly what the archive is made
+    # from -- before the archive exists, so nothing credential-bearing is
+    # ever written under a name an uploader matches (#307 PL-005).
+    if [ "${STRIP}" = "1" ] && [ "$(credential_lines "${STAGING}")" -gt 0 ]
+    then
+        rm -rf "${STAGING}"
+        return 5
+    fi
+
     # Member names come out as storage/... exactly as the zip's did, so
     # anything reading the archive sees the same shape. To .partial first;
     # the name every reader looks for is given only to an archive that has
@@ -957,6 +1007,8 @@ case "${VERB}" in
                fail "THERE'S NOTHING TO BACK UP YET. YOUR LAST BACKUP IS UNCHANGED." "every location was absent, empty, or identical to the image's own copy" ;;
             2) why "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS"
                fail "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS. NOTHING WAS WRITTEN, AND YOUR LAST BACKUP IS UNCHANGED. TRY AGAIN." "collecting into staging failed" ;;
+            5) why "A SIGN-IN WAS FOUND IN THE BACKUP"
+               fail "A SIGN-IN WAS FOUND IN THE BACKUP, SO IT WASN'T KEPT. YOUR LAST BACKUP IS UNCHANGED." "a staged file holds a line shaped like a credential (the log names it); nothing written" ;;
             6) why "YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP CAN'T CARRY"
                fail "YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP CAN'T CARRY, SO NOTHING WAS WRITTEN. YOUR LAST BACKUP IS UNCHANGED." "a location in /storage/.config/backuptool.conf is outside /storage" ;;
             *) why "THE BACKUP COULDN'T FINISH"
@@ -983,61 +1035,6 @@ case "${VERB}" in
             esac
             mv "${PREVIOUS}" "${ARCHIVEFOLDER}/${PREVIOUS_NAME}"
             trim_archive
-        fi
-
-        # Last line of defence: the archive can be synced to the cloud, so
-        # never ship one carrying a populated credential. This greps what
-        # actually landed in the archive rather than trusting the strips above,
-        # so a newly-added config file with secrets is caught the first
-        # time it is backed up instead of silently leaking.
-        # Text config members only, case-sensitive, anchored to a config-key
-        # shape. Translation catalogues ship lines like 'Password = Пароль',
-        # and scanning every member found nothing while warning on every
-        # backup, which would be worse than not warning at all.
-        # busybox tar has no wildcard member selection, so the members are
-        # listed first and the text ones named explicitly. Same restriction as
-        # before, for the same reason: -O concatenates members without
-        # separators, so binary blobs run into the next file's first line and
-        # defeat the anchor.
-        SCANLIST=$(tar -tzf "${BACKUPFILE}" 2>/dev/null | grep -E '\.(cfg|conf|ini)$' || true)
-        if [ -n "${SCANLIST}" ]
-        then
-            # Extract once and scan the files, rather than expanding the
-            # member list into tar's arguments: unquoted, a member name
-            # containing a space split into two names that do not exist, tar
-            # errored into /dev/null, and those members went unscanned -- a
-            # credential check failing open.
-            # The capitalised keys are the ones the standalone emulators'
-            # cheevos_*.sh scripts write (Token, ApiToken, RA_Token,
-            # RA_Password); until #169 the anchor was lower-case only, so
-            # the token travelled in every backup of a device that had run
-            # PPSSPP with RetroAchievements on and this line never spoke.
-            # Named, not matched case-insensitively, so a catalogue's
-            # `Password = ...` stays out. A bare-token file (.dat, .txt) has
-            # no key shape to match; those are held back by name instead.
-            # The credential word is a whole part of the key name -- after
-            # the start, a "_" or a "." -- and "key" alone is too common a
-            # word to be one: it counts bare, dotted (wifi.key) or behind a
-            # credential word (stream_key, secret_access_key). Until #221 a
-            # name that merely ended in "key" or "pass" counted, and every
-            # shipped retroarch.cfg carries input_enable_hotkey (on some
-            # families core_info_savestate_bypass too), so every clean backup
-            # warned -- which teaches people to ignore the one that matters.
-            # A trailing digit counts (rclone's password2).
-            SCANDIR=$(mktemp -d)
-            tar -xzf "${BACKUPFILE}" -C "${SCANDIR}" 2>/dev/null
-            LEAKS=$(find "${SCANDIR}" -type f \( -name '*.cfg' -o -name '*.conf' -o -name '*.ini' \) \
-                -exec grep -hE '^(([a-z_.]*[_.])?(password|passwd|pass|token|secret|apikey|api_key|stream_key|access_key|secret_key|private_key|wifi_key)[0-9]*|key|[a-z_.]*\.key|Token|ApiToken|RA_Token|RA_Password) *[=:] *"?[^"[:space:]]+' {} + 2>/dev/null \
-                | wc -l)
-            rm -rf "${SCANDIR}"
-        else
-            LEAKS=0
-        fi
-        if [ "${LEAKS}" -gt 0 ] 2>/dev/null
-        then
-            WARN="${LEAKS} LINE(S) IN THIS BACKUP LOOK LIKE PASSWORDS OR KEYS. CHECK IT BEFORE SHARING IT OR SENDING IT TO THE CLOUD."
-            echo -e "\e[33m${WARN}\e[0m"
-            logger -t backuptool "${WARN} -- ${BACKUPFILE}"
         fi
 
         sync

@@ -672,7 +672,6 @@ printf '#!/bin/sh\nexit 0\n' > "${B2}/shim/sleep"
 chmod +x "${B2}/shim"/*
 printf 'system.hostname=X\n' > "${ST2}/.config/system/configs/system.cfg"
 printf '[qa]\ntype = dropbox\ntoken = {"access_token":"QA-SECRET-TOKEN","refresh_token":"QA-REFRESH"}\n' > "${ST2}/.config/rclone/rclone.conf"
-printf 'name = probe\npass = QA-SECRET-PASS\npassword2 = QA-SECRET-SALT\n' > "${ST2}/.config/test/leaky.conf"
 echo plain > "${ST2}/.config/test/plain.txt"
 # es_settings.cfg is XML, which the line-anchored leak scan cannot read, so the
 # strip at the archive is its only guard: the ScreenScraper passwords (#64)
@@ -691,9 +690,21 @@ arc=$(ls "${ST2}/roms/backup"/*.tar.gz 2>/dev/null | head -1)
 [ "${RC2}" -eq 0 ] && [ -n "${arc}" ]; check $? "a backup with rclone.conf in LOCATIONS completes (rc ${RC2})" "rc ${RC2}, archive: '${arc}'"
 ! tar -tzf "${arc}" 2>/dev/null | grep -q 'rclone/rclone.conf$'; check $? "rclone.conf is not in the archive" "the archive lists rclone.conf"
 ! tar -xzOf "${arc}" 2>/dev/null | grep -q 'QA-SECRET-TOKEN'; check $? "and no token travelled in any member" "a member carries the token"
-tar -tzf "${arc}" 2>/dev/null | grep -q 'test/leaky.conf$' && tar -tzf "${arc}" 2>/dev/null | grep -q 'test/plain.txt$'; check $? "files that are not held back are archived as before" "leaky.conf or plain.txt missing"
+tar -tzf "${arc}" 2>/dev/null | grep -q 'test/plain.txt$'; check $? "files that are not held back are archived as before" "plain.txt missing"
 grep -q 'rclone.conf held back' "${OUT2}"; check $? "the log says rclone.conf was held back" "no held-back line: $(grep logger "${OUT2}" | tail -2 | tr '\n' ' ')"
-grep -q '2 LINE(S) IN THIS BACKUP LOOK LIKE PASSWORDS OR KEYS' "${OUT2}"; check $? "the scanner reports the pass= and password2= lines in a file it does not hold back (2 lines)" "scanner said: $(grep 'LOOK LIKE' "${OUT2}" | head -1 | cut -c1-80; grep -v '^logger' "${OUT2}" | tail -2 | tr '\n' ' ')"
+# The scanner knows rclone's key names. Since #307 PL-005 a hit ends the
+# backup before the archive is named (it used to warn and upload): so the
+# file it must see is added for a second run, which leaves the first
+# archive as the only one and counts the two lines in the log.
+printf 'name = probe\npass = QA-SECRET-PASS\npassword2 = QA-SECRET-SALT\n' > "${ST2}/.config/test/leaky.conf"
+RC2B=$( ( setsid -w bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr \
+    --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+    --ro-bind /etc /etc --ro-bind "${B2}/profile" /etc/profile \
+    --bind "${ST2}" /storage --ro-bind "${B2}/shim" /shim --ro-bind "${B2}/repo" /repo \
+    --dev /dev --proc /proc --tmpfs /tmp \
+    bash /repo/backuptool backup > "${OUT2}.leak" 2>&1; echo $? ) 2>/dev/null )
+[ "${RC2B}" -ne 0 ] && grep -q '^>>> why A SIGN-IN WAS FOUND IN THE BACKUP' "${OUT2}.leak" && grep -q 'found 2 line(s) that look like a password or key' "${OUT2}.leak" && [ "$(ls "${ST2}/roms/backup"/*.tar.gz)" = "${arc}" ] && ! tar -xzOf "${arc}" 2>/dev/null | grep -q 'QA-SECRET-PASS'; check $? "the scanner sees the pass= and password2= lines in a file it does not hold back (2 lines), and the backup ends there with the last archive unchanged (#307 PL-005)" "rc ${RC2B}; said: $(grep -E '^>>> why|found [0-9]+ line' "${OUT2}.leak" | tr '\n' ' ' | cut -c1-200); archives: $(ls "${ST2}/roms/backup"/*.tar.gz 2>/dev/null | wc -l)"
+rm -f "${ST2}/.config/test/leaky.conf"
 # #221: a clean backup is silent. The keys every shipped retroarch.cfg and
 # Amiberry's conf carry end in "key" or "pass" and are not credentials.
 B3="${TMP}/f3"; ST3="${B3}/storage"
@@ -871,7 +882,6 @@ printf '[Cheevos]\nEnabled = true\nUsername = qa\nToken = %s\nLoginTimestamp = 1
 printf 'RA_Enabled=1\nRA_Username=qa\nRA_Password=%s\nRA_Token=%s\nRA_HardcoreMode=0\n' "${KTOK}" "${KTOK}" > "${KS}/.config/melonDS/melonDS.ini"
 printf '[achievements]\nEnabled = yes\nUserName = qa\nToken = %s\n' "${KTOK}" > "${KS}/.config/flycast/emu.cfg"
 printf '[Achievements]\nEnabled = true\nUsername = qa\nToken = %s\nLoginTimestamp = 1\n' "${KTOK}" > "${KS}/.config/aethersx2/inis/PCSX2.ini"
-printf '[Other]\nToken = %s\n' "${KTOK2}" > "${KS}/.config/test/unknown.ini"
 # The offline RetroAchievements proxy's folder (#165): its SQLite cache with
 # the token in a cached login row, the HMAC key that signs the award queue,
 # its config and its log -- every file under it is held back, whatever it is
@@ -923,7 +933,14 @@ echo "${klist}" | grep -q 'duckstation/settings.ini$' && echo "${klist}" | grep 
 grep -q 'held back 5 file(s) that hold only a RetroAchievements token' "${OUT}" && grep -q 'blanked the RetroAchievements token in 4 emulator settings file(s)' "${OUT}"; check $? "and the log counts five held back and four blanked" "log: $(grep -oE '(held back|blanked)[^|]*' "${OUT}" | tr '\n' ' ')"
 ! echo "${klist}" | grep -q 'storage/.config/raofflineproxy/'; check $? "the offline RetroAchievements proxy's folder travels in no shape: none of its five files is in the archive (#165)" "the archive carries: $(echo "${klist}" | grep 'raofflineproxy/' | tr '\n' ' ')"
 grep -q "held back 5 file(s) under the offline RetroAchievements proxy's folder" "${OUT}"; check $? "and the log counts the five held back under it" "log: $(grep -o "held back [0-9]* file(s) under the offline[^|]*" "${OUT}" | head -1 | grep . || echo silent)"
-grep -qE '[^0-9]1 LINE\(S\) IN THIS BACKUP LOOK LIKE PASSWORDS OR KEYS' "${OUT}"; check $? "the scanner sees a Token = line in a file the strip does not know (test/unknown.ini), and only that one" "scanner: $(grep -oE '[0-9]+ LINE\(S\) IN THIS BACKUP[^|]*' "${OUT}" | head -1 | grep . || echo silent) -- until #169 its anchor was lower-case only, and the emulators' keys are capitalised"
+# A Token = line in a file the strip does not know, with a value of its own.
+# Since #307 PL-005 the scanner's hit ends the backup before the archive is
+# named, so it is planted for a second run: that run is refused, the log
+# counts the one line, and the first archive stays the only one.
+printf '[Other]\nToken = %s\n' "${KTOK2}" > "${KS}/.config/test/unknown.ini"
+btk backup; rck1b=${RC}
+[ "${rck1b}" -ne 0 ] && grep -q '^>>> why A SIGN-IN WAS FOUND IN THE BACKUP' "${OUT}" && grep -q 'found 1 line(s) that look like a password or key, in: storage/.config/test/unknown.ini$' "${OUT}" && [ "$(ls "${KS}/roms/backup"/*.tar.gz)" = "${karch}" ]; check $? "the scanner sees a Token = line in a file the strip does not know (test/unknown.ini), and only that one: the backup ends there (#307 PL-005)" "rc ${rck1b}; scanner: $(grep -oE 'found [0-9]+ line[^|]*' "${OUT}" | head -1 | grep . || echo silent); archives: $(ls "${KS}/roms/backup"/*.tar.gz 2>/dev/null | wc -l) -- until #169 its anchor was lower-case only, and the emulators' keys are capitalised"
+rm -f "${KS}/.config/test/unknown.ini"
 # An archive from before #45: assets, cache, an ini and the player's file,
 # all older. Restoring it must put back the ini and the file and leave the
 # newer image's assets and cache alone.
@@ -3216,5 +3233,12 @@ p7bt backup
 p7reset '  /storage/.config/system/configs/system.cfg'
 p7bt backup
 [ "${RC}" -eq 0 ] && p7list | grep -qx 'storage/.config/system/configs/system.cfg' && ! tar -xzOf "$(p7arc | tail -1)" 2>/dev/null | grep -q SECRET; check $? "#308 4-backup-restore gpt F-BR-19: LOCATIONS=(system.cfg) alone writes an archive holding its sanitised copy (rc ${RC})" "#308 F-BR-19: rc ${RC}; why '$(p7why)'; archive: $(p7list | tr '\n' '|')"
+
+# == PL-005: a sign-in found in the backup ends the run before the archive is named
+p7reset '  /storage/.config/test/*'
+p7bt backup; p7first=$(p7arc)
+printf 'name = probe\npass = QA-SECRET-PASS\n' > "${P7S}/.config/test/leaky.conf"
+p7bt backup
+[ "${RC}" -ne 0 ] && [ "$(p7why)" = "A SIGN-IN WAS FOUND IN THE BACKUP" ] && [ "$(p7arc)" = "${p7first}" ] && ! tar -xzOf "${p7first}" 2>/dev/null | grep -q QA-SECRET && [ -z "$(ls "${P7S}/roms/backup"/*.partial 2>/dev/null)" ] && grep -q 'logger -t backuptool .*1 line' "${P7OUT}"; check $? "#307 PL-005: a pass = line in the selection ends the backup (rc ${RC}, why: $(p7why)); the last archive is the only one, unchanged, no partial left, the log counts one line" "#307 PL-005: rc ${RC}; why '$(p7why)'; archives: $(p7arc | xargs -n1 basename 2>/dev/null | tr '\n' ' '); secret in an archive: $(for a in $(p7arc); do tar -xzOf "$a" 2>/dev/null | grep -c QA-SECRET; done | tr '\n' ' ')"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
