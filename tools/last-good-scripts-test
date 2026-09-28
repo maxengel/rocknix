@@ -3524,7 +3524,7 @@ for d in "${SOURCES_DIR:-}" /workspace/cache/rocknix-sources "${ROOT}/sources" "
     [ -n "${d}" ] && [ -f "${d}/ppsspp-lr/ppsspp-lr-${PP_PIN}/CMakeLists.txt" ] && { PP_SRC="${d}/ppsspp-lr/ppsspp-lr-${PP_PIN}"; break; }
 done
 if [ -z "${PP_SRC}" ]; then
-    echo "    SKIP  the ppsspp-lr source ppsspp-lr-${PP_PIN:-?} is not under SOURCES_DIR, /workspace/cache/rocknix-sources or a build worktree's sources/"
+    check 1 "" "the ppsspp-lr source ppsspp-lr-${PP_PIN:-?} is not under SOURCES_DIR, /workspace/cache/rocknix-sources or a build worktree's sources/ -- F2-6 did not run (a check that cannot run has not passed)"
 else
 PX="${F2}/ppsspp"; mkdir -p "${PX}/pkg/patches"
 src_of "${F2P}/emulators/libretro/ppsspp-lr/package.mk" "${PX}/pkg/package.mk"
@@ -3543,6 +3543,16 @@ for arch in x86_64 aarch64; do
 done
 [ "${PP_x86_64}" = "0" ] && [ "${PP_aarch64}" = "1" ]; check $? "x86_64's CMakeLists.txt ends without the flag, aarch64's keeps it" "after unpack, patches and hooks: x86_64 has ${PP_x86_64:-?} add_compile_options(-mno-outline-atomics) line(s), aarch64 ${PP_aarch64:-?} -- the strip ran before the patch that adds it"
 fi
+# The case above calls the hooks itself; that the build calls post_patch,
+# and after the patches, is scripts/unpack's to say (the audit of the
+# fixes, claude G-F2-03): its own lines are read for the order post_unpack
+# -> the patch loop's patch command -> post_patch.
+src_of scripts/unpack "${F2}/unpack"
+U_PU=$(grep -n 'pkg_call_exists_opt post_unpack && pkg_call' "${F2}/unpack" | head -1 | cut -d: -f1)
+U_PA=$(grep -n 'patch -d "${PKG_BUILD}" -p1' "${F2}/unpack" | head -1 | cut -d: -f1)
+U_PP=$(grep -n 'pkg_call_exists_opt post_patch && pkg_call' "${F2}/unpack" | head -1 | cut -d: -f1)
+[ -n "${U_PU}" ] && [ -n "${U_PA}" ] && [ -n "${U_PP}" ] && [ "${U_PU}" -lt "${U_PA}" ] && [ "${U_PA}" -lt "${U_PP}" ]
+check $? "scripts/unpack calls post_unpack (line ${U_PU}), applies the patches (${U_PA}), then calls post_patch (${U_PP})" "scripts/unpack's order is not post_unpack < patch < post_patch: lines ${U_PU:-none}, ${U_PA:-none}, ${U_PP:-none}"
 
 # F2-7. #308 9-emulators claude F-EM-05: amiberry and yabasanshiro-sa were
 # restricted to aarch64 for every device to keep the fork's GENERIC_X64
