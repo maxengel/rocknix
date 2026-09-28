@@ -3011,4 +3011,139 @@ ckf() { # ckf <raw bytes> <exe> <CORE_MIN_FREE_KB>
 ckf 65536 retroarch $(( XFREE - 512 )); printf '%s' "${NOTE}" | grep '^dump' | grep -q 'NOT KEPT' && printf '%s' "${NOTE}" | grep '^dump' | grep -q 'plus the 1048576 byte cap'; check $? "with free space above the floor but under the floor plus the cap, the dump is refused and the note names both (audit #258, the seat's G-03; the old test admitted it)" "free ${XFREE} KB; note: $(printf '%s' "${NOTE}" | grep '^dump' | cut -c1-140)"
 ckf 65536 retroarch 1024;                printf '%s' "${NOTE}" | grep '^dump' | grep -q 'whole'; check $? "and with a floor the card clears by more than the cap, the same dump is kept" "note: $(printf '%s' "${NOTE}" | grep '^dump' | cut -c1-100)" "note: $(printf '%s' "${NOTE}" | grep '^dump')"
 
+# ---- audit #307, stream A ----
+# The cloud scripts against the real rclone the image ships (a copy, as the
+# busybox above is a copy), over an alias remote whose "cloud" is a folder
+# of the fixture's, inside bwrap -- so every filter, listing, --max-delete,
+# check and delete is rclone's own, not a shim's idea of it. A shim in front
+# of it records every argv to /ctl/argv and, for a line of /ctl/fail
+# ("<ERE over the argv>|<exit code>"), fails that call instead: the one
+# listing a flaky link loses, the endpoint that answers nothing. The host's
+# rclone stands in when no build root is here. The image's busybox serves
+# the applets it serves on the device (find, stat, awk, sed, tr, flock, cmp,
+# unzip, tar, ...), as in case n. Written before each fix and seen to FAIL
+# on the scripts at 417dcd8610 (BASE_REF=417dcd8610 ... --old).
+echo "  A. audit #307/#308, stream A: the cloud scripts against the image's rclone"
+SA="${TMP}/sa"; mkdir -p "${SA}/shim" "${SA}/nbin"
+SA_RCLONE_SRC=""
+for r in "${ROOT}"/../*/build.ROCKNIX-*/image/system/usr/bin/rclone "${ROOT}".worktrees/*/build.ROCKNIX-*/image/system/usr/bin/rclone "${ROOT}"/build.ROCKNIX-*/image/system/usr/bin/rclone; do
+    [ -x "${r}" ] && "${r}" version >/dev/null 2>&1 && { SA_RCLONE_SRC="${r}"; break; }
+done
+[ -n "${SA_RCLONE_SRC}" ] || SA_RCLONE_SRC="$(command -v rclone || true)"
+if [ -z "${SA_RCLONE_SRC}" ] || ! cp "${SA_RCLONE_SRC}" "${SA}/rclone.real"; then
+    echo "    FAIL  no rclone to run the stream A cases against (none in a build root, none on the host)"; FAIL=$((FAIL + 1))
+    : > "${SA}/rclone.real"
+fi
+chmod +x "${SA}/rclone.real" 2>/dev/null
+echo "    rclone: $("${SA}/rclone.real" version 2>/dev/null | head -1) -- a copy of ${SA_RCLONE_SRC:-nothing}"
+cat > "${SA}/shim/rclone" <<'EOR'
+#!/bin/bash
+# The image's rclone, with the calls /ctl/fail names failed instead.
+printf '%s\n' "$*" >> /ctl/argv
+if [ -s /ctl/fail ]; then
+    while IFS='|' read -r pat code; do
+        [ -n "${pat}" ] || continue
+        if printf '%s' "$*" | grep -qE -- "${pat}"; then
+            echo "ERROR : injected failure ${code}" >&2
+            exit "${code}"
+        fi
+    done < /ctl/fail
+fi
+exec /sa/rclone.real "$@"
+EOR
+printf '#!/bin/sh\ncase "$*" in *"route show default"*) [ -e /ctl/noroute ] || echo "default via 10.0.2.2 dev eth0" ;; esac\n' > "${SA}/shim/ip"
+printf '#!/bin/sh\n[ -e /ctl/noping ] && exit 1\nexit 0\n' > "${SA}/shim/ping"
+printf '#!/bin/sh\nexit 0\n' > "${SA}/shim/logger"
+printf '#!/bin/sh\nexit 0\n' > "${SA}/shim/systemd-tmpfiles"
+chmod +x "${SA}/shim"/*
+printf 'export PATH=/shim:/nbin:/usr/bin:/bin\nexport HOME=/storage\n' > "${SA}/profile"
+SA_BB=()
+if [ -n "${BB}" ]; then
+    for a in sed tr head wc cut awk tail tee mkfifo sleep flock stat md5sum find cmp mktemp unzip tar; do
+        printf '#!/bin/sh\n[ -x %s ] && exec %s %s "$@"\nexec %s %s "$@"\n' "${BB}" "${BB}" "${a}" "${BB_HOST}" "${a}" > "${SA}/nbin/${a}"
+        chmod +x "${SA}/nbin/${a}"
+    done
+    SA_BB=(--ro-bind "${BB_HOST}" "${BB}")
+fi
+sa_new() { # <name>: a fresh fixture directory; its path on stdout
+    local d="${SA}/f-$1"
+    rm -rf "${d}"; mkdir -p "${d}"/storage/.config/rclone "${d}"/storage/.cache/cloud_sync "${d}"/storage/roms \
+        "${d}"/cloud "${d}"/ctl "${d}"/log "${d}"/varrun "${d}"/repo
+    printf '[qa]\ntype = alias\nremote = /cloud\n' > "${d}/storage/.config/rclone/rclone.conf"
+    : > "${d}/ctl/argv"; : > "${d}/ctl/fail"
+    printf '#!/bin/sh\ncase "$1" in --label) echo QA ;; --previous|--legacy) ;; *) echo QA-deadbeef01 ;; esac\n' > "${d}/repo/cloud_device_id"
+    chmod +x "${d}/repo/cloud_device_id"
+    printf '%s' "${d}"
+}
+sa_script() { # <fixture> <script...>: the scripts under test into its /repo (working tree, or BASE_REF under --old)
+    local d="$1" s; shift
+    for s in "$@"; do src_of "${RCLONE_REL}/${s}" "${d}/repo/${s}"; chmod +x "${d}/repo/${s}"; done
+}
+sa_run() { # <fixture> <script> [args...]: the script whole, in the sandbox; stdout+stderr to ${d}/out, rc in RC, seconds in DT
+    local d="$1" s="$2" t0; shift 2
+    t0=$(date +%s)
+    RC=$( ( cd "${d}/storage" && setsid -w timeout 180 bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${SA_BB[@]}" \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${SA}/profile" /etc/profile \
+        --bind "${d}/storage" /storage --bind "${d}/cloud" /cloud --bind "${d}/ctl" /ctl \
+        --ro-bind "${SA}/shim" /shim --ro-bind "${SA}/nbin" /nbin --ro-bind "${SA}/rclone.real" /sa/rclone.real \
+        --ro-bind "${d}/repo" /repo --bind "${d}/log" /var/log --bind "${d}/varrun" /var/run \
+        --dev /dev --proc /proc --tmpfs /tmp --chdir "${SA_CWD:-/storage}" \
+        --setenv PATH "/shim:/nbin:/usr/bin:/bin" --setenv HOME /storage \
+        bash "/repo/${s}" "$@" > "${d}/out" 2>&1; echo $? ) 2>/dev/null )
+    DT=$(( $(date +%s) - t0 ))
+}
+sa_tail() { sed 's/\x1b\[[0-9;]*m//g' "$1/out" | grep -v '^\s*$' | tail -${2:-4} | tr '\n' '|' | cut -c1-240; }
+
+# A1. PL-001 (#307, F-CS-01 both seats + F-CS-03 gpt): --match --apply acts
+#     only on the plan the preview showed. A system whose listing fails is
+#     neither planned nor removed; the preview writes its per-system plan and
+#     apply reads it -- a system whose verb changed, or with more to remove
+#     than the preview counted, or no plan at all, is refused, and
+#     --max-delete is the preview's count.
+echo "    A1. PL-001: --match --apply enforces the preview, and a failed listing plans nothing"
+M=$(sa_new pl001); sa_script "${M}" cloud_content_restore
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/ROCKNIX/Content"\n' > "${M}/storage/.config/cloud_sync.conf"
+MPLAN="${M}/storage/.cache/cloud_sync/content-match-plan"
+m_seed() { # the cloud holds gb/A.gb and nes/N.nes; the device gb/A.gb, gb/B.gb, nes/N.nes and a save
+    rm -rf "${M}/cloud/ROCKNIX" "${M}/storage/roms"/*
+    mkdir -p "${M}/cloud/ROCKNIX/Content/ROMs/gb" "${M}/cloud/ROCKNIX/Content/ROMs/nes" "${M}/storage/roms/gb" "${M}/storage/roms/nes"
+    echo a > "${M}/cloud/ROCKNIX/Content/ROMs/gb/A.gb"; echo a > "${M}/storage/roms/gb/A.gb"; echo bb > "${M}/storage/roms/gb/B.gb"
+    echo n > "${M}/cloud/ROCKNIX/Content/ROMs/nes/N.nes"; echo n > "${M}/storage/roms/nes/N.nes"; echo s > "${M}/storage/roms/nes/N.srm"
+    printf 'gb\nnes\n' > "${M}/storage/.cache/cloud_sync/content-systems"
+    rm -f "${MPLAN}"; : > "${M}/ctl/fail"; : > "${M}/ctl/argv"
+}
+m_seed
+printf '^lsf qa:/ROCKNIX/Content/ROMs/nes |5\n' > "${M}/ctl/fail"
+sa_run "${M}" cloud_content_restore --match
+! grep -q '^nes|remove' "${M}/out" && [ "${RC}" -ne 0 ] && [ ! -e "${MPLAN}" ]; check $? "a preview whose nes listing fails (5) plans nothing for nes, exits non-zero and leaves no plan (rc ${RC})" "rc ${RC}; plan lines: $(grep '|' "${M}/out" | tr '\n' ' '); plan file: $([ -e "${MPLAN}" ] && echo written || echo none) -- a failed listing read as an absent system (F-CS-01)"
+m_seed
+sa_run "${M}" cloud_content_restore --match
+grep -qx 'nes|sync|0|0' "${M}/out" && [ -s "${MPLAN}" ]; check $? "a clean preview plans nes as sync|0|0 and writes the plan" "rc ${RC}; out: $(sa_tail "${M}"); plan: $(tr '\n' ' ' 2>/dev/null < "${MPLAN}")"
+printf '^lsf qa:/ROCKNIX/Content/ROMs/nes |5\n' > "${M}/ctl/fail"
+sa_run "${M}" cloud_content_restore --match --apply
+[ -f "${M}/storage/roms/nes/N.nes" ] && [ "${RC}" -ne 0 ] && grep -q '^>>> why ' "${M}/out"; check $? "an apply whose nes listing fails (5) removes nothing from nes and ends non-zero with a why (rc ${RC})" "N.nes: $([ -f "${M}/storage/roms/nes/N.nes" ] && echo kept || echo DELETED); rc ${RC}; out: $(sa_tail "${M}") -- the failed listing became 'absent from the cloud' and apply deleted the system (F-CS-01)"
+m_seed
+sa_run "${M}" cloud_content_restore --match
+rm -rf "${M}/cloud/ROCKNIX/Content/ROMs/nes"
+sa_run "${M}" cloud_content_restore --match --apply
+[ -f "${M}/storage/roms/nes/N.nes" ] && [ "${RC}" -ne 0 ] && grep -q "^>>> why SOMETHING CHANGED SINCE YOU CHECKED$" "${M}/out"; check $? "a system previewed as sync and found absent at apply is refused, not removed (rc ${RC})" "N.nes: $([ -f "${M}/storage/roms/nes/N.nes" ] && echo kept || echo DELETED); rc ${RC}; out: $(sa_tail "${M}") -- apply recomputed the plan instead of enforcing the preview (F-CS-03)"
+m_seed
+sa_run "${M}" cloud_content_restore --match
+sa_run "${M}" cloud_content_restore --match --apply
+grep -E '^sync qa:/ROCKNIX/Content/ROMs/gb ' "${M}/ctl/argv" | grep -v -- '--dry-run' | grep -q -- '--max-delete 1\b' && [ ! -e "${M}/storage/roms/gb/B.gb" ] && [ -f "${M}/storage/roms/gb/A.gb" ] && [ "${RC}" -eq 0 ]; check $? "an apply that matches its preview runs gb with --max-delete 1, the preview's count, and removes B.gb only (rc ${RC})" "rc ${RC}; gb's sync: $(grep -E '^sync qa:/ROCKNIX/Content/ROMs/gb ' "${M}/ctl/argv" | grep -v -- '--dry-run' | grep -o -- '--max-delete [0-9]*'); B.gb $([ -e "${M}/storage/roms/gb/B.gb" ] && echo kept || echo gone); out: $(sa_tail "${M}")"
+m_seed
+sa_run "${M}" cloud_content_restore --match
+echo cc > "${M}/storage/roms/gb/C.gb"
+sa_run "${M}" cloud_content_restore --match --apply
+[ -f "${M}/storage/roms/gb/B.gb" ] && [ -f "${M}/storage/roms/gb/C.gb" ] && [ "${RC}" -ne 0 ]; check $? "a system with more to remove at apply than the preview counted (a ROM added since) is refused whole (rc ${RC})" "B.gb $([ -f "${M}/storage/roms/gb/B.gb" ] && echo kept || echo gone), C.gb $([ -f "${M}/storage/roms/gb/C.gb" ] && echo kept || echo gone); rc ${RC} -- apply counted again and let --max-delete follow (F-CS-03)"
+m_seed
+sa_run "${M}" cloud_content_restore --match --apply
+[ -f "${M}/storage/roms/gb/B.gb" ] && [ "${RC}" -ne 0 ]; check $? "an apply with no preview behind it removes nothing (rc ${RC})" "B.gb $([ -f "${M}/storage/roms/gb/B.gb" ] && echo kept || echo gone); rc ${RC}; out: $(sa_tail "${M}")"
+m_seed
+sa_run "${M}" cloud_content_restore --match
+sa_run "${M}" cloud_content_restore --match --apply
+sa_run "${M}" cloud_content_restore --match --apply
+[ "${RC}" -ne 0 ] && [ ! -e "${MPLAN}" ]; check $? "a plan is spent by the apply that used it: a second apply is refused (rc ${RC})" "second apply rc ${RC}; plan: $([ -e "${MPLAN}" ] && echo still there || echo gone)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

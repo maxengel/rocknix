@@ -13,8 +13,10 @@
 #   cloud_content_restore --list           print top-level remote directories
 #   cloud_content_restore <dir> [<dir>..]  copy remote dirs into /storage/roms
 #   cloud_content_restore --all            copy the whole remote content root
-#   cloud_content_restore --match          preview making this device match
-#   cloud_content_restore --match --apply  do it (the only mode that deletes)
+#   cloud_content_restore --match          preview making this device match;
+#                                          writes the plan --apply is held to
+#   cloud_content_restore --match --apply  do what the preview planned, no
+#                                          more (the only mode that deletes)
 #
 # The remote content root defaults to the remote's root; set CONTENT_REMOTE in
 # /storage/.config/cloud_sync.conf to point somewhere else (e.g. "GAMES").
@@ -556,24 +558,58 @@ cloud_root_populated() {
     return 1
 }
 
-# What one system would gain and lose. Prints "<sys>|<verb>|<files>|<bytes>".
+# What one system would gain and lose. Prints "<sys>|<verb>|<files>|<bytes>",
+# or "<sys>|fail|<rclone exit>|0" when it cannot be told.
 #
 # The counting uses rclone against the local path with the very same exclude
 # arrays the transfer uses, rather than a second hand-written find predicate:
 # a deletion predicate that can drift from the transfer predicate is how saves
 # get deleted by a tool that believes it is only touching ROMs.
+#
+# Absent is something the cloud says, never something a failure implies
+# (rule 3, audit #307 PL-001). The system's listing is read apart from its
+# emptiness: exit 0 with nothing listed, or rclone's 3/4 ("not found"), is a
+# system the cloud does not have. Any other exit -- a 429 after rclone's own
+# retries, the link dropping between two calls -- is asked of the parent
+# (absent_not_broken, #142's walk, for a server whose "missing" rclone does
+# not map to 3); a parent that lists the system, or will not list at all,
+# makes the answer "could not tell", and a system that cannot be told is
+# neither planned nor touched. The listing used to be `lsf | grep -q .`,
+# which read a failed call as an empty folder and planned `remove`; apply
+# then deleted the whole system on a transient error. The dry run and the
+# local count are read the same way: a count that failed is not a zero.
 match_plan_one() {
-    local sys="$1" src local_dir n b out
+    local sys="$1" src local_dir n b out listing lrc
     src="$(remote_for "${sys}")"
     local_dir="${DEST}/${sys}"
 
     [ -d "${local_dir}" ] || { printf '%s|none|0|0\n' "${sys}"; return 0; }
 
-    if rclone lsf "${src}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | grep -q .; then
+    listing=$(rclone lsf "${src}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); lrc=$?
+    case "${lrc}" in
+        0|3|4) ;;
+        *)
+            if absent_not_broken "${src}"; then
+                log_message "match: ${sys} listing failed (rclone exit ${lrc}); its parent lists and lacks it, so it is absent"
+                lrc=3
+            else
+                log_message "match: ${sys} could not be listed (rclone exit ${lrc}); not planned"
+                printf '%s|fail|%s|0\n' "${sys}" "${lrc}"
+                return 0
+            fi ;;
+    esac
+
+    if [ "${lrc}" -eq 0 ] && [ -n "${listing}" ]; then
         # Present in the cloud: sync reconciles both directions of difference.
         out=$(rclone sync "${src}" "${local_dir}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
                 "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${METADATA_EXCLUDES[@]}" \
                 --dry-run --stats 0 2>&1)
+        lrc=$?
+        if [ "${lrc}" -ne 0 ]; then
+            log_message "match: ${sys} dry run failed (rclone exit ${lrc}); not planned"
+            printf '%s|fail|%s|0\n' "${sys}" "${lrc}"
+            return 0
+        fi
         # "NOTICE: Game3.zip: Skipped delete as --dry-run is set (size 5)" --
         # the exact wording on rclone 1.75.0, read off the real output rather
         # than taken from the documentation. The size in the tail is what lets
@@ -586,13 +622,41 @@ match_plan_one() {
         # Absent from the cloud entirely: its content goes, its saves stay.
         out=$(rclone size "${local_dir}" \
                 "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${METADATA_EXCLUDES[@]}" 2>/dev/null)
+        lrc=$?
         n=$(printf '%s\n' "${out}" | sed -n 's/^Total objects: *\([0-9]*\).*/\1/p' | head -1)
         b=$(printf '%s\n' "${out}" | sed -n 's/^Total size: .*(\([0-9]*\) Byte).*/\1/p' | head -1)
-        [ -n "${n}" ] || n=0
+        if [ "${lrc}" -ne 0 ] || [ -z "${n}" ]; then
+            log_message "match: ${sys} could not be counted on this device (rclone exit ${lrc}); not planned"
+            printf '%s|fail|%s|0\n' "${sys}" "${lrc}"
+            return 0
+        fi
         [ -n "${b}" ] || b=0
         [ "${n}" -eq 0 ] && { printf '%s|none|0|0\n' "${sys}"; return 0; }
         printf '%s|remove|%s|%s\n' "${sys}" "${n}" "${b}"
     fi
+}
+
+# The plan the player agreed to (audit #307 PL-001, F-CS-03). The preview
+# writes one line per system it checked -- "<sys>|<verb>|<files>|<bytes>",
+# none included -- under a header naming the moment, whole or not at all,
+# and only when every system could be told; apply reads it and holds each
+# system to it: the same verb, no more to remove than the preview counted,
+# and that count, not its own, is --max-delete. A system the plan does not
+# name, or whose verb changed since, is refused rather than recomputed and
+# run. The plan is spent by the apply that reads it, so each apply stands on
+# the preview that immediately led to it. Device-local, under /storage/.cache
+# like the stamps: a plan restored onto another device would describe
+# another card.
+MATCH_PLAN="/storage/.cache/cloud_sync/content-match-plan"
+match_plan_write() { # <plan lines>
+    mkdir -p "$(dirname "${MATCH_PLAN}")" 2>/dev/null
+    { printf 'plan %s\n' "$(date +%s)"; printf '%s\n' "$1" | grep '|'; } > "${MATCH_PLAN}.tmp.$$" 2>/dev/null \
+        && mv -f "${MATCH_PLAN}.tmp.$$" "${MATCH_PLAN}" 2>/dev/null \
+        || { rm -f "${MATCH_PLAN}.tmp.$$" 2>/dev/null; return 1; }
+}
+match_plan_of() { # <sys>: its line from the plan, or nothing
+    [ -n "${MATCH_PLAN_TEXT}" ] || return 1
+    printf '%s\n' "${MATCH_PLAN_TEXT}" | awk -F'|' -v s="$1" '$1 == s { print; exit }'
 }
 
 match_run() {
@@ -636,6 +700,27 @@ match_run() {
         return 1
     fi
 
+    # The plan (PL-001): a preview starts from none and writes its own at the
+    # end; an apply reads the one the preview left and spends it before
+    # anything runs, so a second apply cannot stand on the same agreement.
+    MATCH_PLAN_TEXT=""
+    local plan_lines="" pverb pfiles pbytes
+    if [ "${apply}" = "1" ]; then
+        if [ -s "${MATCH_PLAN}" ] && head -1 "${MATCH_PLAN}" | grep -q '^plan [0-9][0-9]*$'; then
+            MATCH_PLAN_TEXT=$(tail -n +2 "${MATCH_PLAN}")
+        fi
+        rm -f "${MATCH_PLAN}" 2>/dev/null
+        if [ -z "${MATCH_PLAN_TEXT}" ]; then
+            echo "Nothing was removed: check what would change first, then try again."
+            log_message "match: refused, no preview plan to apply"
+            say_why "SOMETHING CHANGED SINCE YOU CHECKED"
+            record_outcome content-match 1
+            return 1
+        fi
+    else
+        rm -f "${MATCH_PLAN}" 2>/dev/null
+    fi
+
     # What the page that runs this shows when it is done. A match is mostly
     # deletion, and rclone's own totals for a deletion read "0 B / 0 B" --
     # true and useless (maintainer, 2026-09-07). So each system is announced
@@ -660,7 +745,48 @@ match_run() {
         [ "${apply}" = "1" ] && echo ">>> unit ${sys}|${unit_i}|${unit_n}"
         planned=$(match_plan_one "${sys}")
         IFS='|' read -r _ verb files bytes <<< "${planned}"
+        if [ "${apply}" = "1" ] && [ "${verb}" != "fail" ] && [ "${verb}" != "none" ]; then
+            # Held to the preview: the same verb, and no more to remove than
+            # it counted -- a ROM added since, or a system gone from the
+            # cloud since, is not what the player agreed to. The preview's
+            # count, not this one, is what --max-delete is given.
+            pverb=""; pfiles=""; pbytes=""
+            IFS='|' read -r _ pverb pfiles pbytes <<< "$(match_plan_of "${sys}")"
+            if [ -z "${pverb}" ] || [ "${verb}" != "${pverb}" ] \
+               || ! [ "${files}" -le "${pfiles:-0}" ] 2>/dev/null; then
+                echo "Nothing was removed from ${sys}: it changed since you checked. Check again to see what would change."
+                log_message "match: ${sys} refused: previewed ${pverb:-nothing}|${pfiles:--}, now ${verb}|${files}"
+                say_why "SOMETHING CHANGED SINCE YOU CHECKED"
+                rc=1
+                continue
+            fi
+            files="${pfiles}"; bytes="${pbytes}"
+        fi
+        [ "${apply}" = "1" ] || plan_lines="${plan_lines}${planned}"$'\n'
         case "${verb}" in
+            fail)
+                # A system that could not be told is neither planned nor
+                # touched (PL-001). With the network gone the run is the
+                # no-network skip, as everywhere else here; otherwise the
+                # preview says so and plans nothing, and an apply says why.
+                if [ "${apply}" = "1" ]; then
+                    echo "Couldn't check ${sys} against your cloud, so nothing was removed from it."
+                else
+                    echo "Couldn't check ${sys} against your cloud. Try again."
+                fi
+                if network_gone; then
+                    if [ "${apply}" = "1" ]; then
+                        echo ">>> removed ${total_removed}|${total_bytes}|${removed_detail}"
+                        stop_no_network match "${files}" "checking ${sys} against the cloud"
+                    fi
+                    echo "Skipped: there's no network connection. Try again when you're online."
+                    exit "${EXIT_NO_NETWORK}"
+                fi
+                [ "${apply}" = "1" ] && say_why "$(why_for "${files}")"
+                rc=${files}
+                [ "${rc}" -ne 0 ] 2>/dev/null || rc=1
+                continue
+            ;;
             none)
                 [ "${apply}" = "1" ] && echo "Nothing to remove from ${sys}: it already matches the cloud."
                 continue
@@ -747,6 +873,16 @@ match_run() {
             ;;
         esac
     done
+
+    # The preview's plan, only when every system could be told: a preview
+    # that could not see one system offers nothing to apply.
+    if [ "${apply}" != "1" ] && [ "${rc}" -eq 0 ]; then
+        if ! match_plan_write "${plan_lines}"; then
+            echo "Couldn't keep track of what would change, so nothing can be removed yet. Try again."
+            log_message "match: the plan could not be written to ${MATCH_PLAN}"
+            rc=1
+        fi
+    fi
 
     if [ "${apply}" = "1" ]; then
         # ">>> removed 14|314572800|snes:12:300000000,gb:2:14572800" -- the
