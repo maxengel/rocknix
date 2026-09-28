@@ -36,7 +36,10 @@
 # standard folder used.
 SETTINGS_BACKUPS="/storage/roms/backup"
 if [ -f /storage/.config/cloud_sync.conf ]; then
-    _configured=$( . /storage/.config/cloud_sync.conf >/dev/null 2>&1; printf '%s' "${SETTINGS_BACKUPS:-${BACKUPFOLDER:-}}" )
+    # Both names unset first: the subshell inherits the default set above,
+    # and "${SETTINGS_BACKUPS:-${BACKUPFOLDER}}" never reached the legacy name
+    # (#307, the audit of the fixes, claude G-B-02, gpt G-B-09).
+    _configured=$( unset SETTINGS_BACKUPS BACKUPFOLDER; . /storage/.config/cloud_sync.conf >/dev/null 2>&1; printf '%s' "${SETTINGS_BACKUPS:-${BACKUPFOLDER:-}}" )
     case "${_configured}" in
         "") ;;
         /storage/*) SETTINGS_BACKUPS="${_configured%/}" ;;

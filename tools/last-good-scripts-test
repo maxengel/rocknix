@@ -3570,6 +3570,12 @@ mkdir -p "${P7S}/roms/backup/archive"; echo blocker > "${P7S}/roms/backup/archiv
 p7bt backup
 [ "${RC}" -ne 0 ] && [ "$(p7arc | xargs -rn1 basename)" = "2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz" ]; check $? "#307 audit G-B-06 (gpt): an upstream-era zip that cannot be moved off the root ends the backup before anything is written (rc ${RC}), so the chain uploads nothing" "#307 audit G-B-06: rc ${RC}; root archives: $(p7arc | xargs -rn1 basename | tr '\n' ' ') -- a new backup was made and the credential-era zip stayed where the upload reads"
 
+# == AUD claude G-B-02 (#307 audit of the fixes; gpt G-B-09): a conf that still says BACKUPFOLDER is read
+p7reset '  /storage/.config/test/*'
+printf 'BACKUPFOLDER="/storage/roms/mybackups"\n' > "${P7S}/.config/cloud_sync.conf"
+p7bt backup
+[ "${RC}" -eq 0 ] && [ -n "$(ls "${P7S}/roms/mybackups"/*.tar.gz 2>/dev/null)" ] && [ -z "$(p7arc)" ]; check $? "#307 audit G-B-02 (claude) / G-B-09 (gpt): an un-migrated conf with BACKUPFOLDER alone puts the backup in that folder, where the upload reads" "#307 audit G-B-02: rc ${RC}; mybackups: $(ls "${P7S}/roms/mybackups" 2>/dev/null | tr '\n' ' '); standard folder: $(p7arc | wc -l)"
+
 # y2. wifictl whole, against an nmcli that answers as the target's does
 # (probed on guest d for the psk, 2026-09-27): terse and get-values output
 # escapes ':' and '\' unless --escape no; two wireless devices, each profile
