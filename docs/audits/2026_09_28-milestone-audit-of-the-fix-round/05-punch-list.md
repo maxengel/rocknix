@@ -368,18 +368,18 @@ Recorded per item as it is resolved: the outcome (resolved / deferred / rejected
 | PL-016 | Medium | | |
 | PL-017 | Medium | | |
 | PL-018 | Medium | Resolved | Resolved ES `0c6665bf1` + `f297007de` (amended per R-04) -- the Backup fallback requires `backupWhole`; two es-file-tests cases (a whole `.tmp` beside a cut record recovers; no `.tmp` -> the defaults, the cut record not recorded) and es-conf-tests on the shipped SystemConf: 11 of 19 FAIL before (`CHECK( c.source == Temporary )`), all PASS after; the integrator ran es-file-tests 3389/3389 and es-conf-tests 98/98; already written: a cut record from an earlier build is no longer loaded and the next whole record replaces it |
-| PL-019 | Medium | | |
+| PL-019 | Medium | Resolved | ES `bf00e91c9` -- BIOS alone now opens the CONTENT TO BACK UP / RESTORE page (SYSTEMS reading NONE, a BIOS FILES group, BACK and the verb) and the run starts only on the verb; `cloudSaveSelection` runs `--set-systems`, reads the file back and continues only when rc is 0 and the file names exactly what was ticked, else `COULDN'T SAVE WHAT YOU TICKED, SO NOTHING WAS BACKED UP.` (proposed words, D-UI-116) and the page stays; `tests/cloud-content-selection.py` 0 of 5 before, 13 of 13 after, a mutation trusting rc alone fails 3; the integrator ran app-unit-tests 119/119; es-syntax-check PASS; French appended, es-untranslated 603/603; already written: a selection file from an earlier build is read as before and replaced on the next press; the 640x480 frame is the next cut's |
 | PL-020 | Medium | | |
 | PL-021 | Medium | | |
 | PL-022 | Medium | | |
 | PL-023 | Medium | Resolved | Resolved `f3d19dc8fb` -- `skip()` counts the 25 sites; the verdict reads `PASSED, N SKIPPED` and exits 3 when FAIL = 0 and N > 0 (`vm-qa` `run_suite` reads 3 as SKIP, line 137). Proof: the committed harness on the host `PASSED` rc 0 (1002 PASS, 0 SKIP; `harness-pl023-normal.log`); in a worktree whose client pin names no tarball `PASSED, 22 SKIPPED -- a check that did not run has not passed` rc 3 (839 PASS, 22 SKIP; `harness-pl023-skip.log`) |
-| PL-024 | Medium | | |
+| PL-024 | Medium | Resolved | Resolved `104433dbe8` (merged `e3394a893f`) -- the rehearsal's wait polls the guest's boot id and `systemctl is-active rocknix-autostart.service` and ends only on `<this boot's id> active`; `failed` ends it early, a wait that runs out records what it last read and the check FAILs; `/var/log/boot.log` is no longer read. Harness case F1r-a lifts the wait's lines against a fixture guest whose boot.log already holds the previous boot's line: FAIL before (`the wait ended on 'polls=1 autostarted=yes' where autostart finished on poll 4`, stream F1's run at `f3d19dc8fb`), PASS after; the integrator's harness run on the merged tree: `PASSED` rc 0 (16:40 UTC); already written: nothing, the rehearsal keeps no state; the rehearsal itself runs on the next cut (PL-029) |
 | PL-025 | Low | Resolved | Resolved `f3d19dc8fb` -- `tools/vm-qa`'s exec wrapper resets SIGPIPE beside SIGINT; the harness prints its inherited dispositions first (`signals: SigIgn=… SIGINT ignored=N SIGPIPE ignored=N`; under a detached run it read `SIGPIPE ignored=1`, which is the line doing its job) |
 | PL-026 | Low | Resolved | Resolved `3e70ef9239` -- `guard_scan` anchors every pattern after the label (`^([^\t]*\t)+.*(…)`); `hooks-test`: "a file NAMED like a key, clean inside (the label is not scanned): allowed" in pre-commit and at push |
 | PL-027 | Low | Resolved | Resolved `f3d19dc8fb` -- `es-player-text.md`'s why list carries `CHECK WHAT WOULD CHANGE FIRST` (`cloud_content_restore`) and `YOUR CLOUD SYNC SETTINGS COULDN'T BE SAVED` (`cloud_migrate_layout`); `tools/rules-check` clean |
 | PL-028 | Medium | | |
 | PL-029 | Medium | | |
-| PL-030 | Medium | | |
+| PL-030 | Medium | Withdrawn | refuted from the source (E2, checked by the integrator): the COPY's only write to the saves tree is `copyToSlot` at the press (`GuiSaveState.cpp:516`) behind `savesTreeBusy` (`:499`, `:33`); the queued record (`:524`) is `cloud_capture --adopt`, which writes only under `/storage/.cache/cloud_sync` (`cloud_capture:674` MANIFEST, `:115` STAGE) under `capture_lock` (`:1559`); its only saves-folder write is `--retire --unlink`, the DELETE's; no transfer script reads the manifests or the stage (`grep -n "manifest-\|cloud_capture\|/stage\|\.capture"` over the five cloud scripts: 0 lines). Adding DELETE's guard would drop a copy's record whenever a transfer holds the lock. The false `TransferLock` comment goes to E1 |
 | PL-031 | Medium | | |
 | PL-032 | Medium | | |
 | PL-033 | Medium | | |
@@ -532,7 +532,7 @@ punch_index:
   owner_area: 'stream E2, GuiMenu'
   where: 'es-app/src/guis/GuiMenu.cpp:4211-4215'
   acceptance: 'the write''s status is checked (a failure ends with its why) and the continuation is a press on the verb as on every other path; an app-unit case; a frame at 640x480 of the page with only BIOS to move'
-  outcome: open
+  outcome: resolved
 - id: PL-020
   severity: 'Medium'
   category: 'Wrong table row from a dead branch'
@@ -572,7 +572,7 @@ punch_index:
   owner_area: 'stream F1, tools/vm-upgrade-rehearsal'
   where: 'tools/vm-upgrade-rehearsal:129-132; autostart appends to /var/log/boot.log; /var/log persists'
   acceptance: 'the wait reads the current boot (journalctl -b, or a line stamped with the boot id); a case with a stale line planted asserts the wait waits'
-  outcome: open
+  outcome: resolved
 - id: PL-028
   severity: 'Medium'
   category: 'Restore/rollback write-set mismatch (a member the snapshot never covers)'
@@ -604,7 +604,7 @@ punch_index:
   owner_area: 'stream E2, SaveStateBookkeeper'
   where: 'es-app/src/SaveStateBookkeeper.cpp `runCopy` (after the delete''s lock logic at 64-156)'
   acceptance: 'the whole COPY operation is protected by the same guard as DELETE, with an app-unit case that fails first; or a source-backed refutation names the line that already serialises it'
-  outcome: open
+  outcome: withdrawn
 - id: PL-031
   severity: 'Medium (verification-first)'
   category: 'Fail-open measurement (a substituted number)'

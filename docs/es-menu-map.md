@@ -131,7 +131,7 @@ flowchart TD
     HUB --> BR[BACKUP AND RESTORE]
     BR --> BU[BACK UP TO THE CLOUD] --> TICK[tick: SAVES · ROMS AND BIOS · GAME CONTENT · SETTINGS<br/>CONTINUE]
     BR --> RE[RESTORE FROM THE CLOUD] --> TICK
-    TICK -->|ROMS AND BIOS ticked| PICK[systems page<br/>select all · badge per system]
+    TICK -->|ROMS AND BIOS ticked| PICK[systems page<br/>select all · badge per system<br/>BIOS alone: SYSTEMS reads NONE · a BIOS FILES group · no SELECT ALL · the verb still waits, D-UI-116]
     TICK --> XFER[GuiCloudTransfer<br/>full-screen; live line, elapsed, outcome; stays until dismissed]
     PICK --> XFER
     XFER -.->|saves folder absent| OFFER[create-folder offer<br/><i>on dismissal</i>]
