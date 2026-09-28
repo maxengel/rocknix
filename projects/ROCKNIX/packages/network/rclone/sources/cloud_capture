@@ -89,15 +89,22 @@
 # environment override, so the
 # core-pins map can be proven on an image whose read-only /usr has none.
 #
-# Two writers are serialised by detection, not by a lock. The boot --full
-# runs detached and can overlap the first game's exit capture; whichever
-# lands second sees the manifest's inode or mtime differ from what it loaded
-# and discards its own document rather than clobber the other's. An exit,
-# --rescan or --retire that loses then re-runs itself ONCE against the
-# winner's document (CLOUD_CAPTURE_RETRY marks the second attempt; seals are
-# content-addressed, so it re-uses them); a second loss, or a --full that
-# loses, is recorded as manifest-moved and left to the next run. The
-# residual: three writers in one second would drop one first version.
+# Two writers are serialised by detection, and their commits by a lock of
+# this script's own. The boot --full runs detached and can overlap the first
+# game's exit capture; whichever lands second sees the manifest's inode or
+# mtime differ from what it loaded and discards its own document rather than
+# clobber the other's. An exit, --rescan or --retire that loses then re-runs
+# itself ONCE against the winner's document (CLOUD_CAPTURE_RETRY marks the
+# second attempt; seals are content-addressed, so it re-uses them); a second
+# loss, or a --full that loses, is recorded as manifest-moved and left to the
+# next run. The commit itself -- the final check, the rename, the stage's
+# GC, the stamp -- runs under /storage/.cache/cloud_sync/.capture.lock (audit
+# #307 PL-067): the check and the rename were two steps another capture
+# could land between, and one capture's GC could collect a seal another had
+# just placed and not yet published. The lock is waited for, briefly -- a
+# commit holds it for milliseconds -- and a run that cannot have it goes on
+# under detection alone, as every run did before. It is not the transfer
+# lock, which this script never takes.
 
 CACHE="/storage/.cache/cloud_sync"
 STAGE="${CACHE}/stage"
@@ -192,6 +199,37 @@ UNIT=""
 RC=0
 REASON=""
 
+# The commit lock (PL-067, header). Up to five seconds in tenths -- busybox
+# flock has no -w -- and then the run goes on without it, logged. fd 8,
+# append-opened, so taking it never truncates anything; released before the
+# re-run's exec, which would otherwise carry it into a process that then
+# waits on itself.
+CAPTURE_LOCK="${CACHE}/.capture.lock"
+LOCK_HELD=0
+capture_lock() {
+    local n=0
+    [ "${LOCK_HELD}" = 1 ] && return 0
+    mkdir -p "${CACHE}" 2>/dev/null
+    # The group's redirection is the group's alone; exec's own (fd 8) stays.
+    { exec 8>>"${CAPTURE_LOCK}"; } 2>/dev/null || return 1
+    while ! flock -n 8 2>/dev/null; do
+        n=$(( n + 1 ))
+        if [ "${n}" -ge 50 ]; then
+            exec 8>&-
+            log_message "another capture has held ${CAPTURE_LOCK} for five seconds; going on under detection alone" "false" "WARN"
+            return 1
+        fi
+        sleep 0.1
+    done
+    LOCK_HELD=1
+    return 0
+}
+capture_unlock() {
+    [ "${LOCK_HELD}" = 1 ] || return 0
+    exec 8>&-
+    LOCK_HELD=0
+}
+
 finish() {
     local rc="${1:-${RC}}" reason="${2:-${REASON}}" now emu core mode
     now="$(date +%s)"
@@ -212,6 +250,8 @@ finish() {
     # never grow past one line per mode. Assembled in a temp file in the same
     # directory and moved into place, so a reader never sees a torn stamp; a
     # one-line stamp from before this is simply its mode's line.
+    # Under the commit lock (PL-067): the stamp is a read-modify-rename too.
+    capture_lock
     {
         awk -v m="${mode}" 'NF >= 3 { f = $3; sub(/!.*$/, "", f); if (f != m) print }' \
             "${CACHE}/last-capture" 2>/dev/null
@@ -222,9 +262,13 @@ finish() {
         || rm -f "${CACHE}/.last-capture.$$" 2>/dev/null
     # A run that completed is the last known good state; the manifests moved
     # aside as unreadable before it (manifest-<id>.json.corrupt-<epoch>) are
-    # the previous one and go (D-CLOUD-078). The log line that set each aside
-    # stays.
-    if [ "${rc}" = "0" ] && [ -n "${MANIFEST:-}" ]; then
+    # the previous one and go (D-CLOUD-078) -- once a good manifest stands in
+    # their place, and not before (#308 gpt F-CS-21): a --full pass that set
+    # an unreadable manifest aside and then had nothing to write completed
+    # with rc 0 and no manifest at all, and the only copy of the old record
+    # went with it. The log line that set each aside stays.
+    if [ "${rc}" = "0" ] && [ -n "${MANIFEST:-}" ] && [ -s "${MANIFEST}" ] \
+        && "${JQ:-jq}" -e 'type == "object" and ((.entries // {}) | type) == "object"' "${MANIFEST}" >/dev/null 2>&1; then
         rm -f "${MANIFEST}".corrupt-* 2>/dev/null
     fi
     if [ "${rc}" != "0" ]; then
@@ -406,13 +450,16 @@ if [ ! -d "${ROOT}" ]; then
     finish 1 "saves-root-missing"
 fi
 
-# The root-relative form of a --retire argument, or 1 for a path outside the
-# saves folder and 2 for one that is not plain (.., ., //).
+# The root-relative form of a --retire argument, or 1 for a path that is not
+# under the saves folder and 2 for one that is not plain (.., ., //). Only an
+# absolute path under the saves folder is one (audit #307 PL-052): a relative
+# argument used to pass unchanged, be recorded as a saves-folder path, and be
+# unlinked against whatever the working directory was.
 retire_rel() {
     local p="$1"
     case "${p}" in
         "${ROOT}/"*) p="${p#"${ROOT}/"}" ;;
-        /*) return 1 ;;
+        *) return 1 ;;
     esac
     case "/${p}/" in *"/../"*|*"/./"*|"//"*) return 2 ;; esac
     printf '%s' "${p}"
@@ -422,10 +469,12 @@ retire_rel() {
 # manifest is opened, so finish() knows what --unlink may remove however the
 # record goes -- D-CLOUD-133 keeps the deletion whatever the record said,
 # D-CLOUD-053 keeps every write of this script under the saves folder, and a
-# path that fails retire_rel is refused both the row (below) and the rm.
+# path that fails retire_rel is refused both the row (below) and the rm. What
+# --unlink removes is the saves folder's path rebuilt from the relative form,
+# never the argument as given (PL-052).
 if [ "${MODE}" = "retire" ]; then
     for _raw in "${RETIRE_PATHS[@]}"; do
-        retire_rel "${_raw}" >/dev/null && RETIRE_ACCEPTED+=("${_raw}")
+        _rel="$(retire_rel "${_raw}")" && RETIRE_ACCEPTED+=("${ROOT}/${_rel}")
     done
 fi
 
@@ -569,6 +618,10 @@ case "${MODE}" in
         fi
         if [ "${#M_PATHS[@]}" -eq 0 ]; then
             log_debug "no members on disk for ${UNIT}"
+            # An adopt answers for the copy it was given: with no member of
+            # the unit on disk the copy is not one, and 0 would be read as
+            # "recorded" (#308 gpt F-CS-22; the code audit #258 PL-016 gave).
+            [ "${MODE}" = "adopt" ] && finish 3 "adopt-not-a-member"
             finish 0
         fi
         ;;
@@ -734,8 +787,14 @@ fi
 NOW="$(date -u +%FT%TZ)"
 _z="$(date +%z)"
 LOCAL_NOW="$(date +%FT%T)${_z:0:3}:${_z:3:2}"
+# Bounded, as cloud_net_ready bounds nmcli (#308 claude F-CS-20): a D-Bus
+# call timedated does not answer waits sd-bus's 25 s, and the exit capture
+# runs synchronously on the game-exit path. Two seconds, then "not synced"
+# -- the answer the entry already gives when it cannot tell. With KILL: this
+# script ignores SIGTERM (the trap at the top) and timedatectl inherits
+# that, so timeout's default signal would end nothing.
 SYNCED="false"
-[ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" = "yes" ] && SYNCED="true"
+[ "$(timeout -s KILL 2 timedatectl show -p NTPSynchronized --value 2>/dev/null)" = "yes" ] && SYNCED="true"
 
 DEVICE_LABEL=""
 [ -x "${DEVICE_ID_BIN}" ] && DEVICE_LABEL="$("${DEVICE_ID_BIN}" --label 2>/dev/null | tr -cd 'A-Za-z0-9_.-')"
@@ -1290,7 +1349,13 @@ if [ "${MODE}" = "adopt" ]; then
     else
         finish 1 "seal-failed"
     fi
-    if [ -n "${E_SHA[${_srcrel}]}" ] && [ "${E_SHA[${_srcrel}]}" != "-" ] && [ "${E_SHA[${_srcrel}]}" = "${_dsha}" ]; then
+    # The source's version is inherited only from a source of this unit:
+    # the same bytes recorded for another game's state are that game's
+    # history, and copying its entry filed this copy under the other game's
+    # unit, system and ROM (#308 gpt F-CS-22). Otherwise the copy is a
+    # version of unknown provenance of this unit, below.
+    if [ -n "${E_SHA[${_srcrel}]}" ] && [ "${E_SHA[${_srcrel}]}" != "-" ] && [ "${E_SHA[${_srcrel}]}" = "${_dsha}" ] \
+        && [ "${E_UNIT[${_srcrel}]}" = "${UNIT}" ]; then
         op_copy "${_srcrel}" "${_dest}" "${_dsize}" "${_dmt}" "${M_KIND[${_dest}]}" "${M_SLOT[${_dest}]}" "${_dshot}"
         N_COPY=1
         log_info "${_dest} is a copy of ${_srcrel}: the same version, recorded at the new path"
@@ -1301,7 +1366,7 @@ if [ "${MODE}" = "adopt" ]; then
         [ -n "${_entry}" ] || { log_error "could not render the entry for ${_dest}; not recorded this run"; finish 1 "render-failed"; }
         op_put "${_dest}" "${_entry}"
         N_PUT=1
-        log_info "${_dest} was copied from ${_srcrel}, which has no recorded version with these bytes: recorded with unknown provenance"
+        log_info "${_dest} was copied from ${_srcrel}, which has no recorded version of this game with these bytes: recorded with unknown provenance"
     fi
 fi
 
@@ -1330,7 +1395,7 @@ if [ "${MODE}" = "retire" ]; then
     for _raw in "${RETIRE_PATHS[@]}"; do
         _p="$(retire_rel "${_raw}")"
         case $? in
-            1)  log_warn "${_raw} is outside the saves folder ${ROOT}; not recorded"
+            1)  log_warn "${_raw} is not a path under the saves folder ${ROOT}; not recorded"
                 RC=1; REASON="retire-outside-root"
                 continue ;;
             2)  log_warn "${_raw} is not a plain path under ${ROOT}; not recorded"
@@ -1470,6 +1535,9 @@ if [ ! -s "${TMP}" ] || ! "${JQ}" -e . "${TMP}" >/dev/null 2>&1; then
     finish 1 "render-failed"
 fi
 
+# The check, the rename and the GC below are one step under the commit lock
+# (PL-067); detection still decides who wins.
+capture_lock
 if [ "$(stat -c '%i %Y' "${MANIFEST}" 2>/dev/null)" != "${LIVE0}" ]; then
     rm -f "${TMP}" 2>/dev/null
     if [ -z "${CLOUD_CAPTURE_RETRY}" ] && [ "${MODE}" != "full" ]; then
@@ -1482,6 +1550,7 @@ if [ "$(stat -c '%i %Y' "${MANIFEST}" 2>/dev/null)" != "${LIVE0}" ]; then
         # re-uses them. exec runs no EXIT trap, hence cleanup by hand.
         log_info "${MANIFEST} changed underneath; re-running once against the new document"
         cleanup
+        capture_unlock
         CLOUD_CAPTURE_RETRY=1 exec "$0" "${ORIG_ARGS[@]}"
     fi
     log_error "${MANIFEST} changed underneath; this run was discarded"
@@ -1508,11 +1577,21 @@ declare -A STAGE_REF
 while IFS= read -r _ref; do
     [ -n "${_ref}" ] && STAGE_REF["${_ref}"]=1
 done < <("${JQ}" -r '.entries[] | select(.pub == null) | .sha256 // empty' "${MANIFEST}" 2>/dev/null)
+# A seal placed in the last ten minutes is spared (PL-067): it may be
+# another capture's, sealed and not yet published, and collecting it would
+# leave that capture's entry naming a copy that is gone. By its change time,
+# which the seal's rename sets -- its modification time is the save's own
+# (cp -p). The next capture's GC takes it if nothing claims it.
+_now=$(date +%s)
 for _f in "${STAGE}"/*; do
     [ -f "${_f}" ] || continue
     _n="${_f##*/}"
     case "${_n}" in .tmp.*) continue ;; esac
-    [ -n "${STAGE_REF[${_n}]}" ] || rm -f "${_f}" 2>/dev/null
+    [ -n "${STAGE_REF[${_n}]}" ] && continue
+    _ct=$(stat -c %Z "${_f}" 2>/dev/null)
+    case "${_ct}" in ''|*[!0-9]*) continue ;; esac
+    [ $(( _now - _ct )) -lt 600 ] && continue
+    rm -f "${_f}" 2>/dev/null
 done
 _kb="$(du -sk "${STAGE}" 2>/dev/null | cut -f1)"
 case "${_kb}" in ''|*[!0-9]*) _kb=0 ;; esac

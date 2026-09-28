@@ -97,7 +97,22 @@ if [ ! -e "/storage/.config/rclone/rclone.conf" ]; then
     exit 1
 fi
 
-[ -f /storage/.config/cloud_sync.conf ] && source /storage/.config/cloud_sync.conf
+# The two values this script needs from cloud_sync.conf, read as text and
+# never sourced (audit #307 PL-051's script half): a folder value an earlier
+# build wrote with "$(...)" in it ran on every `source`. A CONTENT_REMOTE
+# that carries a $, a backtick, a backslash or a control character is not a
+# folder name, and the run refuses it rather than use it as a path.
+conf_get() { # <KEY>: its value, quotes off; nothing when absent
+    sed -n "s/^$1=\"\{0,1\}\([^\"]*\)\"\{0,1\}\$/\1/p" /storage/.config/cloud_sync.conf 2>/dev/null | head -1
+}
+CONTENT_REMOTE=$(conf_get CONTENT_REMOTE)
+RCLONE_NET_OPTS=$(conf_get RCLONE_NET_OPTS)
+case "${CONTENT_REMOTE}" in
+    *[\$\`\\]*|*[[:cntrl:]]*)
+        echo ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"
+        echo "Your cloud sync settings couldn't be read. Set up cloud storage again under GAME SETTINGS > MANAGE CLOUD STORAGE."
+        exit 1 ;;
+esac
 
 REMOTENAME=$(rclone listremotes | head -1)
 if [ -z "${REMOTENAME}" ]; then
@@ -201,11 +216,20 @@ network_gone() {
 # further unit is attempted: each would stall for another minute against
 # the same dead link. rclone copy writes each file under a temporary name
 # and renames it when complete, so nothing partial is left in the cloud.
+#
+# SKIPPED means nothing was touched (#308 claude F-CS-24): once a unit has
+# completed, a run the network then ends stamps "69 gaps <why>", which the
+# rows read as COULDN'T FINISH; the exit stays 69.
+PROGRESS_MADE=0
 stop_no_network() {
     local rc="$1" unit="$2"
     echo "Couldn't finish: lost the network while backing up ${unit}. Try again when you're online."
     log_message "stopped: the network went away while backing up ${unit} (rclone exit ${rc}); exit ${EXIT_NO_NETWORK}"
-    record_outcome content-backup "${EXIT_NO_NETWORK}"
+    if [ "${PROGRESS_MADE}" = 1 ]; then
+        write_stamp "/storage/.cache/cloud_sync/last-content-backup" "$(date +%s) ${EXIT_NO_NETWORK} gaps YOU WENT OFFLINE PART-WAY THROUGH"
+    else
+        record_outcome content-backup "${EXIT_NO_NETWORK}"
+    fi
     exit "${EXIT_NO_NETWORK}"
 }
 
@@ -279,10 +303,11 @@ content_files() {
     find "${dir}" -type f \
         ! -name '*.srm' ! -name '*.sav' ! -name '*.fs' ! -name '*.state*' \
         ! -name '*.auto' ! -name '*.dsv*' ! -name '*.eep' ! -name '*.mpk' \
-        ! -name '*.sra' ! -name '*.mcd' ! -name '*.mcr' \
+        ! -name '*.sra' ! -name '*.fla' ! -name '*.mcd' ! -name '*.mcr' \
         ! -path '*/save/*' ! -path '*/memcards/*' \
         ! -path '*/shared/savefiles/*' ! -path '*/PPSSPP/*' \
         ! -path '*conflicted copy*' ! -name '*.sync-conflict-*' \
+        ! -path "${dir%/}/README.txt" \
         "${media[@]}" "$@" 2>/dev/null
 }
 
@@ -351,9 +376,13 @@ remote_for() {
 # down does not want it going up either, so both directions read the same file.
 SELECTION="/storage/.cache/cloud_sync/content-systems"
 
+# Only a system folder's name is ever acted on (audit #307 PL-030):
+# --set-systems refuses any other since that change, and a selection an
+# earlier build wrote without the check is read past a line that is not
+# one, never with it.
 selected_systems() {
     [ -r "${SELECTION}" ] || return 0
-    grep -v '^[[:space:]]*$' "${SELECTION}" 2>/dev/null
+    grep -E '^[A-Za-z0-9_][A-Za-z0-9._-]*$' "${SELECTION}" 2>/dev/null
 }
 
 # --with-media: include scraped game content (D-CLOUD-048). Off by default:
@@ -397,9 +426,14 @@ case "${1}" in
             && ! printf '%s\n' "${DIRS[@]}" | grep -qx bios; then
             DIRS+=("bios")
         fi
+        # Nothing here to send is nothing to do -- a run that completed, not
+        # one that failed (#308 claude F-CS-15): it exited 1, and the page
+        # read COULDN'T FINISH - SOMETHING WENT WRONG. Exit 0, the sentence,
+        # and the stamp saying the last press completed.
         if [ ${#DIRS[@]} -eq 0 ]; then
             echo "Nothing to back up: none of the systems you picked have anything on this device."
-            exit 1
+            record_outcome content-backup 0
+            exit 0
         fi
     ;;
     --list)
@@ -419,8 +453,9 @@ case "${1}" in
     --all)
         mapfile -t DIRS < <(list_local_dirs)
         if [ ${#DIRS[@]} -eq 0 ]; then
-            echo "There are no ROMs or BIOS files on this device to back up."
-            exit 1
+            echo "Nothing to back up: there are no ROMs or BIOS files on this device."
+            record_outcome content-backup 0
+            exit 0
         fi
     ;;
     "")
@@ -502,11 +537,13 @@ GAMELIST_ONLY=( --include "gamelist.xml" --include "**/gamelist.xml" )
 # The earlier allowlist fix (d77d4ea44d) covered directories another tier
 # owns. This is the same rule one level down, for files. Kept in step with
 # cloud_sync-rules.txt by hand -- there is no shared parser, and a pattern
-# added there must be added here.
+# added there must be added here. .fla was added there (#89, N64's flash
+# saves beside the ROM) and not here, so a content backup uploaded it and
+# a match removed it as content (the audit's gpt F-CS-02).
 SAVE_EXCLUDES=(
     --exclude "*.srm" --exclude "*.sav" --exclude "*.fs"
     --exclude "*.state*" --exclude "*.auto" --exclude "*.dsv*"
-    --exclude "*.eep" --exclude "*.mpk" --exclude "*.sra"
+    --exclude "*.eep" --exclude "*.mpk" --exclude "*.sra" --exclude "*.fla"
     --exclude "*.mcd" --exclude "*.mcr"
     --exclude "save/**" --exclude "memcards/**"
     --exclude "shared/savefiles/**" --exclude "PPSSPP/**"
@@ -562,19 +599,32 @@ for DIR in "${DIRS[@]}"; do
     # under directory markers it writes the marker the folder's parent then
     # lists (D-CLOUD-120). Its own failure is left to the copy to report.
     rclone mkdir "${TARGET}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null
+    # The setup's note at a unit's root (BIOS/README.txt, cloud_setup
+    # --seed-folders) is not content, and neither side counts it (#308 gpt
+    # F-CS-30): it came down into /storage/roms/bios and read ever after as a
+    # file this device has and the cloud does not.
     rclone copy "${SRC}" "${TARGET}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
         "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${MEDIA_EXCLUDES[@]}" \
-        --exclude "gamelist.xml" --exclude "**/gamelist.xml" \
+        --exclude "gamelist.xml" --exclude "**/gamelist.xml" --exclude "/README.txt" \
         --progress --stats 1s \
         --log-file "${LOG_FILE}" --log-level INFO
     RC=$?
 
     # The game list: newest wins, rather than whoever ran last. Game content
-    # only (D-CLOUD-049) -- under ROMs alone the file stays where it is.
-    [ "${MEDIA_MODE}" != roms ] && rclone copy "${SRC}" "${TARGET}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
-        "${GAMELIST_ONLY[@]}" --update \
-        --stats 0 \
-        --log-file "${LOG_FILE}" --log-level INFO || true
+    # only (D-CLOUD-049) -- under ROMs alone the file stays where it is. Its
+    # result is the unit's, by the same 0|9 rule (audit #307 PL-066): it
+    # was discarded with `|| true`, so a game list that did not move left a
+    # unit, a stamp and a page that said the unit had.
+    if [ "${MEDIA_MODE}" != roms ]; then
+        rclone copy "${SRC}" "${TARGET}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
+            "${GAMELIST_ONLY[@]}" --update \
+            --stats 0 \
+            --log-file "${LOG_FILE}" --log-level INFO
+        GL_RC=$?
+        case "${RC}" in
+            0|9) case "${GL_RC}" in 0|9) ;; *) RC=${GL_RC} ;; esac ;;
+        esac
+    fi
 
     if [ ${RC} -ne 0 ] && [ ${RC} -ne 9 ]; then
         # A failed unit says why: the network gone ends the run as 69 here,
@@ -586,6 +636,7 @@ for DIR in "${DIRS[@]}"; do
         STATUS=${RC}
     else
         echo "Backed up ${DIR:-everything}."
+        PROGRESS_MADE=1
     fi
 done
 

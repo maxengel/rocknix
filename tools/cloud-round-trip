@@ -720,12 +720,19 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     arch_before = dev.sha(archive)
     backend("reset")
     # As the settings tier runs it (backuptool backup && cloud_backup --yes --system-only).
-    dev.run("cloud_backup --yes --system-only >/dev/null 2>&1 || true", check=False)
+    rc_sb, out_sb = run_rc(dev, "cloud_backup --yes --system-only")
     listing = backend("ls")
     uploaded_archive = ARCHIVE_NAME in listing
     failures += not check(uploaded_archive,
                           "the settings backup archive reached the cloud",
                           "the archive was not uploaded")
+    # And the run says so: its exit and its own last line are the settings
+    # phase's outcome, not the skipped saves phase's (audit #307 PL-028,
+    # whose 9-beside-a-failure case is tools/last-good-scripts-test A6).
+    last_sb = [l for l in out_sb.splitlines() if l.strip() and not l.startswith(">>> ") and not l.strip().startswith("=")]
+    failures += not check(rc_sb == 0 and bool(last_sb) and last_sb[-1].strip().endswith("Completed."),
+                          "the settings backup exited 0 and ended on Completed.",
+                          f"the settings backup exited {rc_sb}, last line {last_sb[-1].strip() if last_sb else '(none)'!r}")
 
     # It must land under this device's own folder. A single shared filename is
     # what let the second device to run replace the first device's archive,
@@ -741,8 +748,10 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
             "device would overwrite it")
     dev.run(f"rm -f {shlex.quote(archive)}")
     mark = log_mark(dev)
-    dev.run("cloud_restore --yes --system-only >/dev/null 2>&1 || true", check=False)
+    rc_sr, _ = run_rc(dev, "cloud_restore --yes --system-only")
     if uploaded_archive:
+        failures += not check(rc_sr == 0, "the settings restore exited 0",
+                              f"the settings restore exited {rc_sr}")
         arch_after = dev.sha(archive)
         failures += not check(arch_after is not None and arch_after == arch_before,
                               "the archive came back byte-identical",
@@ -1201,6 +1210,38 @@ echo "${saw:-0}/${all:-0}"
                           f"only {len(csame)}/{len(CONTENT_FIXTURES)} matched")
 
     dev.run(f"rm -rf {shlex.quote(croot)}")
+
+    # --all is the journey's first restore (main.cpp's first-device prompt).
+    # It restored ROMs/ as one unit and never BIOS, and said "Restored
+    # everything." (audit #307 PL-012). Every system the cloud holds and
+    # BIOS, each a unit of its own. The BIOS file is the harness's own, by
+    # a name nobody's BIOS folder carries, and it is removed afterwards; the
+    # endpoint is reset first, so the cloud holds only the fixture.
+    step("--all restores every system and BIOS, each a unit of its own")
+    backend("reset")
+    bios_name = f"qa-bios-{os.getpid()}.bin"
+    bios_body = b"qa bios, the ROMs and BIOS tier owns this"
+    bstage = subprocess.run(["mktemp", "-d"], capture_output=True, text=True).stdout.strip()
+    open(os.path.join(bstage, bios_name), "wb").write(bios_body)
+    backend("put", os.path.join(stage, CONTENT_DIR), f"{cpath}/ROMs/{CONTENT_DIR}")
+    backend("put", bstage, f"{cpath}/BIOS")
+    subprocess.run(["rm", "-rf", bstage])
+    bdest = f"/storage/roms/bios/{bios_name}"
+    dev.run(f"rm -rf {shlex.quote(croot)}; rm -f {shlex.quote(bdest)}")
+    rc, out = run_rc(dev, "cloud_content_restore --all")
+    ok, items, detail = unit_protocol(out)
+    failures += not check(rc == 0, "--all exited 0", f"--all exited {rc}: {out.strip()[-200:]!r}")
+    failures += not check(dev.sha(bdest) == sha(bios_body),
+                          "the BIOS file came down with --all",
+                          f"the BIOS file is not on the device after --all ({detail}) (#307 PL-012)")
+    aafter = {rel: dev.sha(f"{croot}/{rel}") for rel in CONTENT_FIXTURES}
+    failures += not check(all(aafter[r] and aafter[r] == cbefore[r] for r in CONTENT_FIXTURES),
+                          f"and {CONTENT_DIR}'s {len(CONTENT_FIXTURES)} files, byte-identical",
+                          f"{CONTENT_DIR} after --all: {sum(1 for r in CONTENT_FIXTURES if aafter[r] == cbefore[r])}/{len(CONTENT_FIXTURES)} matched")
+    failures += not check(ok and "bios" in items and CONTENT_DIR in items,
+                          f"each announced as a unit, numbered across the run ({detail})",
+                          f"the units do not name the system and BIOS, or do not add up (#95): {detail}")
+    dev.run(f"rm -rf {shlex.quote(croot)}; rm -f {shlex.quote(bdest)}")
 
     # --- tier boundaries ----------------------------------------------------
     # The regression test for blindspot 21. Content sync and the saves sync

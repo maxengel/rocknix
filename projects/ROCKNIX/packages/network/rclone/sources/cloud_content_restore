@@ -13,8 +13,10 @@
 #   cloud_content_restore --list           print top-level remote directories
 #   cloud_content_restore <dir> [<dir>..]  copy remote dirs into /storage/roms
 #   cloud_content_restore --all            copy the whole remote content root
-#   cloud_content_restore --match          preview making this device match
-#   cloud_content_restore --match --apply  do it (the only mode that deletes)
+#   cloud_content_restore --match          preview making this device match;
+#                                          writes the plan --apply is held to
+#   cloud_content_restore --match --apply  do what the preview planned, no
+#                                          more (the only mode that deletes)
 #
 # The remote content root defaults to the remote's root; set CONTENT_REMOTE in
 # /storage/.config/cloud_sync.conf to point somewhere else (e.g. "GAMES").
@@ -98,7 +100,22 @@ if [ ! -e "/storage/.config/rclone/rclone.conf" ]; then
     exit 1
 fi
 
-[ -f /storage/.config/cloud_sync.conf ] && source /storage/.config/cloud_sync.conf
+# The two values this script needs from cloud_sync.conf, read as text and
+# never sourced (audit #307 PL-051's script half): a folder value an earlier
+# build wrote with "$(...)" in it ran on every `source`. A CONTENT_REMOTE
+# that carries a $, a backtick, a backslash or a control character is not a
+# folder name, and the run refuses it rather than use it as a path.
+conf_get() { # <KEY>: its value, quotes off; nothing when absent
+    sed -n "s/^$1=\"\{0,1\}\([^\"]*\)\"\{0,1\}\$/\1/p" /storage/.config/cloud_sync.conf 2>/dev/null | head -1
+}
+CONTENT_REMOTE=$(conf_get CONTENT_REMOTE)
+RCLONE_NET_OPTS=$(conf_get RCLONE_NET_OPTS)
+case "${CONTENT_REMOTE}" in
+    *[\$\`\\]*|*[[:cntrl:]]*)
+        echo ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"
+        echo "Your cloud sync settings couldn't be read. Set up cloud storage again under GAME SETTINGS > MANAGE CLOUD STORAGE."
+        exit 1 ;;
+esac
 
 REMOTENAME=$(rclone listremotes | head -1)
 if [ -z "${REMOTENAME}" ]; then
@@ -207,12 +224,26 @@ network_gone() {
 # stall for another minute against the same dead link. rclone copy and sync
 # write each file under a temporary name and rename it when complete, so
 # nothing partial is left on the card; a match's deletions had already
-# happened when the sync ran, and the cloud still holds what they removed.
+# happened when the sync ran, and they are final -- a match removes only
+# what the cloud does not have (D-CLOUD-023; #308 gpt F-CS-26: this said
+# the cloud still held them).
+#
+# SKIPPED means nothing was touched (#308 claude F-CS-24): when something had
+# already moved -- a unit completed, a match removed files -- before the
+# network went, the stamp still carries 69 and adds the gaps token and a why,
+# "<epoch> 69 gaps YOU WENT OFFLINE PART-WAY THROUGH", which the rows read as
+# COULDN'T FINISH (CloudText::parseLastRun takes the token before the code).
+# The exit stays 69; the page reads a 69 after progress the same way.
+PROGRESS_MADE=0
 stop_no_network() {
     local stamp="$1" rc="$2" doing="$3"
     echo "Couldn't finish: lost the network while ${doing}. Try again when you're online."
     log_message "stopped: the network went away while ${doing} (rclone exit ${rc}); exit ${EXIT_NO_NETWORK}"
-    record_outcome "content-${stamp}" "${EXIT_NO_NETWORK}"
+    if [ "${PROGRESS_MADE}" = 1 ]; then
+        write_stamp "/storage/.cache/cloud_sync/last-content-${stamp}" "$(date +%s) ${EXIT_NO_NETWORK} gaps YOU WENT OFFLINE PART-WAY THROUGH"
+    else
+        record_outcome "content-${stamp}" "${EXIT_NO_NETWORK}"
+    fi
     exit "${EXIT_NO_NETWORK}"
 }
 
@@ -355,9 +386,13 @@ absent_not_broken() {
 # opened the picker behaves exactly as it did before.
 SELECTION="/storage/.cache/cloud_sync/content-systems"
 
+# Only a system folder's name is ever acted on (audit #307 PL-030):
+# --set-systems refuses any other since that change, and a selection an
+# earlier build wrote without the check is read past a line that is not
+# one, never with it.
 selected_systems() {
     [ -r "${SELECTION}" ] || return 0
-    grep -v '^[[:space:]]*$' "${SELECTION}" 2>/dev/null
+    grep -E '^[A-Za-z0-9_][A-Za-z0-9._-]*$' "${SELECTION}" 2>/dev/null
 }
 
 # The systems this image can actually run, from its own EmulationStation
@@ -446,11 +481,13 @@ sizes_under() {
 # The earlier allowlist fix (d77d4ea44d) covered directories another tier
 # owns. This is the same rule one level down, for files. Kept in step with
 # cloud_sync-rules.txt by hand -- there is no shared parser, and a pattern
-# added there must be added here.
+# added there must be added here. .fla was added there (#89, N64's flash
+# saves beside the ROM) and not here, so a content backup uploaded it and
+# a match removed it as content (the audit's gpt F-CS-02).
 SAVE_EXCLUDES=(
     --exclude "*.srm" --exclude "*.sav" --exclude "*.fs"
     --exclude "*.state*" --exclude "*.auto" --exclude "*.dsv*"
-    --exclude "*.eep" --exclude "*.mpk" --exclude "*.sra"
+    --exclude "*.eep" --exclude "*.mpk" --exclude "*.sra" --exclude "*.fla"
     --exclude "*.mcd" --exclude "*.mcr"
     --exclude "save/**" --exclude "memcards/**"
     --exclude "shared/savefiles/**" --exclude "PPSSPP/**"
@@ -556,24 +593,58 @@ cloud_root_populated() {
     return 1
 }
 
-# What one system would gain and lose. Prints "<sys>|<verb>|<files>|<bytes>".
+# What one system would gain and lose. Prints "<sys>|<verb>|<files>|<bytes>",
+# or "<sys>|fail|<rclone exit>|0" when it cannot be told.
 #
 # The counting uses rclone against the local path with the very same exclude
 # arrays the transfer uses, rather than a second hand-written find predicate:
 # a deletion predicate that can drift from the transfer predicate is how saves
 # get deleted by a tool that believes it is only touching ROMs.
+#
+# Absent is something the cloud says, never something a failure implies
+# (rule 3, audit #307 PL-001). The system's listing is read apart from its
+# emptiness: exit 0 with nothing listed, or rclone's 3/4 ("not found"), is a
+# system the cloud does not have. Any other exit -- a 429 after rclone's own
+# retries, the link dropping between two calls -- is asked of the parent
+# (absent_not_broken, #142's walk, for a server whose "missing" rclone does
+# not map to 3); a parent that lists the system, or will not list at all,
+# makes the answer "could not tell", and a system that cannot be told is
+# neither planned nor touched. The listing used to be `lsf | grep -q .`,
+# which read a failed call as an empty folder and planned `remove`; apply
+# then deleted the whole system on a transient error. The dry run and the
+# local count are read the same way: a count that failed is not a zero.
 match_plan_one() {
-    local sys="$1" src local_dir n b out
+    local sys="$1" src local_dir n b out listing lrc
     src="$(remote_for "${sys}")"
     local_dir="${DEST}/${sys}"
 
     [ -d "${local_dir}" ] || { printf '%s|none|0|0\n' "${sys}"; return 0; }
 
-    if rclone lsf "${src}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | grep -q .; then
+    listing=$(rclone lsf "${src}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); lrc=$?
+    case "${lrc}" in
+        0|3|4) ;;
+        *)
+            if absent_not_broken "${src}"; then
+                log_message "match: ${sys} listing failed (rclone exit ${lrc}); its parent lists and lacks it, so it is absent"
+                lrc=3
+            else
+                log_message "match: ${sys} could not be listed (rclone exit ${lrc}); not planned"
+                printf '%s|fail|%s|0\n' "${sys}" "${lrc}"
+                return 0
+            fi ;;
+    esac
+
+    if [ "${lrc}" -eq 0 ] && [ -n "${listing}" ]; then
         # Present in the cloud: sync reconciles both directions of difference.
         out=$(rclone sync "${src}" "${local_dir}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
                 "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${METADATA_EXCLUDES[@]}" \
                 --dry-run --stats 0 2>&1)
+        lrc=$?
+        if [ "${lrc}" -ne 0 ]; then
+            log_message "match: ${sys} dry run failed (rclone exit ${lrc}); not planned"
+            printf '%s|fail|%s|0\n' "${sys}" "${lrc}"
+            return 0
+        fi
         # "NOTICE: Game3.zip: Skipped delete as --dry-run is set (size 5)" --
         # the exact wording on rclone 1.75.0, read off the real output rather
         # than taken from the documentation. The size in the tail is what lets
@@ -586,13 +657,71 @@ match_plan_one() {
         # Absent from the cloud entirely: its content goes, its saves stay.
         out=$(rclone size "${local_dir}" \
                 "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${METADATA_EXCLUDES[@]}" 2>/dev/null)
+        lrc=$?
         n=$(printf '%s\n' "${out}" | sed -n 's/^Total objects: *\([0-9]*\).*/\1/p' | head -1)
         b=$(printf '%s\n' "${out}" | sed -n 's/^Total size: .*(\([0-9]*\) Byte).*/\1/p' | head -1)
-        [ -n "${n}" ] || n=0
+        if [ "${lrc}" -ne 0 ] || [ -z "${n}" ]; then
+            log_message "match: ${sys} could not be counted on this device (rclone exit ${lrc}); not planned"
+            printf '%s|fail|%s|0\n' "${sys}" "${lrc}"
+            return 0
+        fi
         [ -n "${b}" ] || b=0
         [ "${n}" -eq 0 ] && { printf '%s|none|0|0\n' "${sys}"; return 0; }
         printf '%s|remove|%s|%s\n' "${sys}" "${n}" "${b}"
     fi
+}
+
+# The plan the player agreed to (audit #307 PL-001, F-CS-03). The preview
+# writes one line per system it checked -- "<sys>|<verb>|<files>|<bytes>",
+# none included -- under a header naming the moment, whole or not at all,
+# and only when every system could be told; apply reads it and holds each
+# system to it: the same verb, no more to remove than the preview counted,
+# and that count, not its own, is --max-delete. A system the plan does not
+# name, or whose verb changed since, is refused rather than recomputed and
+# run. The plan is spent by the apply that reads it, so each apply stands on
+# the preview that immediately led to it. Device-local, under /storage/.cache
+# like the stamps: a plan restored onto another device would describe
+# another card.
+MATCH_PLAN="/storage/.cache/cloud_sync/content-match-plan"
+match_plan_write() { # <plan lines>
+    mkdir -p "$(dirname "${MATCH_PLAN}")" 2>/dev/null
+    { printf 'plan %s\n' "$(date +%s)"; printf '%s\n' "$1" | grep '|'; } > "${MATCH_PLAN}.tmp.$$" 2>/dev/null \
+        && mv -f "${MATCH_PLAN}.tmp.$$" "${MATCH_PLAN}" 2>/dev/null \
+        || { rm -f "${MATCH_PLAN}.tmp.$$" 2>/dev/null; return 1; }
+}
+match_plan_of() { # <sys>: its line from the plan, or nothing
+    [ -n "${MATCH_PLAN_TEXT}" ] || return 1
+    printf '%s\n' "${MATCH_PLAN_TEXT}" | awk -F'|' -v s="$1" '$1 == s { print; exit }'
+}
+
+# What a match removed, as rclone reports it (#308 gpt F-CS-26). Before a
+# system runs, its content files are listed with their sizes by the same
+# excludes the run uses; its rclone writes a log of its own, whose
+# "<path>: Deleted" lines name what went; the count and the bytes are
+# those names looked up in the list, added to the run's totals. The log is
+# then appended to the script's own.
+MATCH_LOG=""
+MATCH_BEFORE=""
+match_before() { # <sys>
+    MATCH_LOG=$(mktemp /tmp/cloud-match-log.XXXXXX 2>/dev/null) || MATCH_LOG="/tmp/cloud-match-log.$$"
+    MATCH_BEFORE=$(mktemp /tmp/cloud-match-before.XXXXXX 2>/dev/null) || MATCH_BEFORE="/tmp/cloud-match-before.$$"
+    : > "${MATCH_LOG}"
+    rclone lsf -R --files-only --format "sp" --separator "|" "${DEST}/$1" \
+        "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${METADATA_EXCLUDES[@]}" > "${MATCH_BEFORE}" 2>/dev/null
+}
+match_count() { # <sys>: adds what the log says went to the totals
+    local counted cfiles cbytes
+    counted=$(awk -F'|' -v L="${MATCH_BEFORE}" '
+        BEGIN { while ((getline x < L) > 0) { i = index(x, "|"); sz[substr(x, i + 1)] = substr(x, 1, i - 1) } }
+        / : .*: Deleted$/ { p = $0; sub(/^.* : /, "", p); sub(/: Deleted$/, "", p); n++; b += sz[p] }
+        END { print n + 0 "|" b + 0 }' "${MATCH_LOG}" 2>/dev/null)
+    IFS='|' read -r cfiles cbytes <<< "${counted:-0|0}"
+    [ "${cfiles}" -gt 0 ] 2>/dev/null && PROGRESS_MADE=1
+    total_removed=$((total_removed + cfiles))
+    total_bytes=$((total_bytes + cbytes))
+    removed_detail="${removed_detail}${removed_detail:+,}$1:${cfiles}:${cbytes}"
+    cat "${MATCH_LOG}" >> "${LOG_FILE}" 2>/dev/null
+    rm -f "${MATCH_LOG}" "${MATCH_BEFORE}"
 }
 
 match_run() {
@@ -636,6 +765,27 @@ match_run() {
         return 1
     fi
 
+    # The plan (PL-001): a preview starts from none and writes its own at the
+    # end; an apply reads the one the preview left and spends it before
+    # anything runs, so a second apply cannot stand on the same agreement.
+    MATCH_PLAN_TEXT=""
+    local plan_lines="" pverb pfiles pbytes
+    if [ "${apply}" = "1" ]; then
+        if [ -s "${MATCH_PLAN}" ] && head -1 "${MATCH_PLAN}" | grep -q '^plan [0-9][0-9]*$'; then
+            MATCH_PLAN_TEXT=$(tail -n +2 "${MATCH_PLAN}")
+        fi
+        rm -f "${MATCH_PLAN}" 2>/dev/null
+        if [ -z "${MATCH_PLAN_TEXT}" ]; then
+            echo "Nothing was removed: check what would change first, then try again."
+            log_message "match: refused, no preview plan to apply"
+            say_why "SOMETHING CHANGED SINCE YOU CHECKED"
+            record_outcome content-match 1
+            return 1
+        fi
+    else
+        rm -f "${MATCH_PLAN}" 2>/dev/null
+    fi
+
     # What the page that runs this shows when it is done. A match is mostly
     # deletion, and rclone's own totals for a deletion read "0 B / 0 B" --
     # true and useless (maintainer, 2026-09-07). So each system is announced
@@ -660,22 +810,62 @@ match_run() {
         [ "${apply}" = "1" ] && echo ">>> unit ${sys}|${unit_i}|${unit_n}"
         planned=$(match_plan_one "${sys}")
         IFS='|' read -r _ verb files bytes <<< "${planned}"
+        if [ "${apply}" = "1" ] && [ "${verb}" != "fail" ] && [ "${verb}" != "none" ]; then
+            # Held to the preview: the same verb, and no more to remove than
+            # it counted -- a ROM added since, or a system gone from the
+            # cloud since, is not what the player agreed to. The preview's
+            # count, not this one, is what --max-delete is given.
+            pverb=""; pfiles=""; pbytes=""
+            IFS='|' read -r _ pverb pfiles pbytes <<< "$(match_plan_of "${sys}")"
+            if [ -z "${pverb}" ] || [ "${verb}" != "${pverb}" ] \
+               || ! [ "${files}" -le "${pfiles:-0}" ] 2>/dev/null; then
+                echo "Nothing was removed from ${sys}: it changed since you checked. Check again to see what would change."
+                log_message "match: ${sys} refused: previewed ${pverb:-nothing}|${pfiles:--}, now ${verb}|${files}"
+                say_why "SOMETHING CHANGED SINCE YOU CHECKED"
+                rc=1
+                continue
+            fi
+            files="${pfiles}"; bytes="${pbytes}"
+        fi
+        [ "${apply}" = "1" ] || plan_lines="${plan_lines}${planned}"$'\n'
         case "${verb}" in
+            fail)
+                # A system that could not be told is neither planned nor
+                # touched (PL-001). With the network gone the run is the
+                # no-network skip, as everywhere else here; otherwise the
+                # preview says so and plans nothing, and an apply says why.
+                if [ "${apply}" = "1" ]; then
+                    echo "Couldn't check ${sys} against your cloud, so nothing was removed from it."
+                else
+                    echo "Couldn't check ${sys} against your cloud. Try again."
+                fi
+                if network_gone; then
+                    if [ "${apply}" = "1" ]; then
+                        echo ">>> removed ${total_removed}|${total_bytes}|${removed_detail}"
+                        stop_no_network match "${files}" "checking ${sys} against the cloud"
+                    fi
+                    echo "Skipped: there's no network connection. Try again when you're online."
+                    exit "${EXIT_NO_NETWORK}"
+                fi
+                [ "${apply}" = "1" ] && say_why "$(why_for "${files}")"
+                rc=${files}
+                [ "${rc}" -ne 0 ] 2>/dev/null || rc=1
+                continue
+            ;;
             none)
                 [ "${apply}" = "1" ] && echo "Nothing to remove from ${sys}: it already matches the cloud."
                 continue
             ;;
             remove)
-                total_removed=$((total_removed + files))
-                total_bytes=$((total_bytes + bytes))
-                removed_detail="${removed_detail}${removed_detail:+,}${sys}:${files}:${bytes}"
                 if [ "${apply}" = "1" ]; then
                     echo "Removing ${files} files from ${sys} that aren't in your cloud..."
+                    match_before "${sys}"
                     rclone delete "${DEST}/${sys}" \
                         "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${METADATA_EXCLUDES[@]}" \
                         --max-delete "${files}" \
-                        --log-file "${LOG_FILE}" --log-level INFO
+                        --log-file "${MATCH_LOG}" --log-level INFO
                     del_rc=$?
+                    match_count "${sys}"
                     if [ ${del_rc} -ne 0 ]; then
                         rc=${del_rc}
                         log_message "match: removing ${sys}: rclone exit ${del_rc}"
@@ -688,9 +878,6 @@ match_run() {
                 fi
             ;;
             sync)
-                total_removed=$((total_removed + files))
-                total_bytes=$((total_bytes + bytes))
-                removed_detail="${removed_detail}${removed_detail:+,}${sys}:${files}:${bytes}"
                 if [ "${apply}" = "1" ]; then
                     echo "Matching ${sys} to the cloud..."
                     # --max-delete is the fail-closed half: if reality has
@@ -701,27 +888,29 @@ match_run() {
                     # 1.75.0: given three deletions and --max-delete 2, it
                     # exits 7 having already removed two. So it bounds the
                     # damage to what was previewed and does not undo it --
-                    # which is the right trade here, because the cloud still
-                    # holds everything this could remove.
+                    # the removals are final (D-CLOUD-023), which is why a
+                    # count above the preview's is refused before this runs.
+                    match_before "${sys}"
                     rclone sync "$(remote_for "${sys}")" "${DEST}/${sys}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
                         "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${METADATA_EXCLUDES[@]}" \
                         --max-delete "${files}" \
                         --progress --stats 1s \
-                        --log-file "${LOG_FILE}" --log-level INFO
+                        --log-file "${MATCH_LOG}" --log-level INFO
                     sync_rc=$?
+                    match_count "${sys}"
                     if [ ${sync_rc} -ne 0 ]; then
                         rc=${sync_rc}
                         # A failed unit says why: the network gone ends the
                         # run as 69 here, anything else carries rclone's own
                         # code up as before. Before the 69 exit, the running
                         # totals go out on the same `>>> removed` line the
-                        # completed run prints, so the page can report
-                        # COMPLETED WITH GAPS over the deletions that did
-                        # happen -- a match is mostly deletion, and it had
-                        # already run for every system before this one
-                        # (D-UI-028; #105). The counts are the preview's,
-                        # what the player agreed to and --max-delete held
-                        # each system to; the cloud still holds every file.
+                        # completed run prints, so the page can report the
+                        # deletions that did happen -- a match is mostly
+                        # deletion, and it had already run for every system
+                        # before this one (D-UI-028; #105). The totals are
+                        # what rclone reports removed (match_count), within
+                        # what the player agreed to; what was removed is what
+                        # the cloud does not have, so it is gone (D-CLOUD-023).
                         if network_gone; then
                             echo ">>> removed ${total_removed}|${total_bytes}|${removed_detail}"
                             stop_no_network match "${sync_rc}" "matching ${sys} to the cloud"
@@ -748,11 +937,23 @@ match_run() {
         esac
     done
 
+    # The preview's plan, only when every system could be told: a preview
+    # that could not see one system offers nothing to apply.
+    if [ "${apply}" != "1" ] && [ "${rc}" -eq 0 ]; then
+        if ! match_plan_write "${plan_lines}"; then
+            echo "Couldn't keep track of what would change, so nothing can be removed yet. Try again."
+            log_message "match: the plan could not be written to ${MATCH_PLAN}"
+            rc=1
+        fi
+    fi
+
     if [ "${apply}" = "1" ]; then
         # ">>> removed 14|314572800|snes:12:300000000,gb:2:14572800" -- the
-        # page renders it on its last screen. The counts are the preview's,
-        # which is what the player agreed to; --max-delete holds the run to
-        # them, and a run that could not is a FAILED page, not a smaller number.
+        # page renders it on its last screen. The counts are the files rclone
+        # reports it removed, with the sizes listed before it ran (#308 gpt
+        # F-CS-26); they were the preview's, and a system one of whose
+        # deletions failed was reported as though all of them had happened.
+        # --max-delete holds each system to the preview's count.
         echo ">>> removed ${total_removed}|${total_bytes}|${removed_detail}"
         log_message "match: applied, removed ${total_removed} files, rc=${rc}"
         # The page that ran it fades; the row in the menu has to be able to
@@ -785,10 +986,11 @@ content_files() {
     find "${dir}" -type f \
         ! -name '*.srm' ! -name '*.sav' ! -name '*.fs' ! -name '*.state*' \
         ! -name '*.auto' ! -name '*.dsv*' ! -name '*.eep' ! -name '*.mpk' \
-        ! -name '*.sra' ! -name '*.mcd' ! -name '*.mcr' \
+        ! -name '*.sra' ! -name '*.fla' ! -name '*.mcd' ! -name '*.mcr' \
         ! -path '*/save/*' ! -path '*/memcards/*' \
         ! -path '*/shared/savefiles/*' ! -path '*/PPSSPP/*' \
         ! -path '*conflicted copy*' ! -name '*.sync-conflict-*' \
+        ! -path "${dir%/}/README.txt" \
         "${media[@]}" "$@" 2>/dev/null
 }
 # Local systems that hold content, for the union scan.
@@ -828,6 +1030,16 @@ delta_of() {
 }
 # Drop from a cloud "size|path" listing what content_files drops locally, so
 # the two sides are counted by one rule.
+#
+# The same set content_files and the transfers describe (#308 gpt F-CS-30):
+# a save folder at any depth -- save/, memcards/, PPSSPP/ and dc's
+# shared/savefiles/, as the local find and the unanchored rclone excludes
+# have them -- and the setup's note at a unit's root (a README.txt directly
+# in a system's folder), which neither side carries. A README deeper in a
+# game's folder is that game's, and is content on both sides. This used to
+# look for save folders one level down only, missed shared/savefiles, and
+# dropped every README at any depth, so a restored system read as differing
+# from its own cloud copy.
 cloud_content_filter() {
     local dirs; dirs="^($(echo ${MEDIA_DIRS} | tr ' ' '|'))$"
     awk -F'|' -v dirs="${dirs}" -v mode="${MEDIA_MODE}" '
@@ -836,10 +1048,13 @@ cloud_content_filter() {
           game = (n > 2 && seg[2] ~ dirs) || (n == 2 && f == "gamelist.xml")
           if (mode == "roms" && game) next
           if (mode == "only" && !game) next
-          if (f ~ /\.(srm|sav|fs|auto|eep|mpk|sra|mcd|mcr)$/ || f ~ /\.state/ || f ~ /\.dsv/) next
+          if (f ~ /\.(srm|sav|fs|auto|eep|mpk|sra|fla|mcd|mcr)$/ || f ~ /\.state/ || f ~ /\.dsv/) next
           if ($2 ~ /conflicted copy/ || f ~ /\.sync-conflict-/) next
-          if (f == "README.txt") next
-          if (n > 2 && (seg[2] == "save" || seg[2] == "memcards" || seg[2] == "PPSSPP")) next
+          if (n == 2 && f == "README.txt") next
+          for (i = 2; i < n; i++) {
+              if (seg[i] == "save" || seg[i] == "memcards" || seg[i] == "PPSSPP") next
+              if (seg[i] == "shared" && i + 1 < n && seg[i + 1] == "savefiles") next
+          }
           print }'
 }
 # --with-media: include scraped game content (D-CLOUD-048). Off by default:
@@ -904,7 +1119,7 @@ case "${1}" in
         # this device" under game content alone, RG35XX SP, 2026-09-06).
         if [ "${MEDIA_MODE}" != only ]; then
             rclone lsf -R --files-only --format "sp" --separator "|" "${ROOT}BIOS/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null \
-                | grep -v '|README\.txt$' | sed 's/|/|bios\//' >> "${TMP}/cloud"
+                | grep -v '^[0-9]*|README\.txt$' | sed 's/|/|bios\//' >> "${TMP}/cloud"
             bios_rc=${PIPESTATUS[0]}
             if [ "${bios_rc}" -ne 0 ] && [ "${bios_rc}" -ne 3 ] && absent_not_broken "${ROOT}BIOS/"; then
                 log_message "scan: BIOS is not there yet (rclone exit ${bios_rc}; its nearest listable parent lacks it)"
@@ -998,28 +1213,53 @@ case "${1}" in
     ;;
     --set-systems)
         shift
+        # System folder names, and nothing else (audit #307 PL-030). The
+        # picker passes the names it read from the cloud, joined by spaces,
+        # and every one of them goes on to name a folder under /storage/roms
+        # and in the cloud; one that is not a folder's name -- a character
+        # the shell would act on, a glob, "..", a leading dash a later grep
+        # would take as an option -- is refused, and the whole selection
+        # with it, so nothing is half-written. The names are split with
+        # globbing off: `printf $*` expanded "*" against the working folder.
+        local_names=()
+        set -f
+        read -r -a local_names <<< "$*"
+        set +f
+        for _n in "${local_names[@]}"; do
+            if ! [[ "${_n}" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*$ ]]; then
+                echo "Nothing was changed: \"${_n}\" isn't the name of a system folder."
+                log_message "set-systems: refused, not a system folder name: ${_n}"
+                exit 1
+            fi
+        done
         mkdir -p "$(dirname "${SELECTION}")" 2>/dev/null
         # An empty selection is a real answer ("none"), distinct from never
         # having chosen; the file exists either way. Which is exactly why it
         # is written whole or not at all: a kill mid-write left an empty
         # file, and an empty file is a different valid choice -- every later
         # --selected then said no systems were selected (D-CLOUD-078, #105).
-        printf '%s\n' $* | grep -v '^[[:space:]]*$' > "${SELECTION}.tmp.$$" 2>/dev/null
+        { [ ${#local_names[@]} -eq 0 ] || printf '%s\n' "${local_names[@]}"; } > "${SELECTION}.tmp.$$" 2>/dev/null
         mv -f "${SELECTION}.tmp.$$" "${SELECTION}" 2>/dev/null || rm -f "${SELECTION}.tmp.$$"
         echo "OK $(selected_systems | wc -l) selected"
         exit 0
     ;;
     --selected)
         mapfile -t DIRS < <(selected_systems)
+        # BIOS is not a system and is no longer a pick (maintainer, 2026-09-06):
+        # it comes with the tier whenever the cloud has it. The tier's own
+        # switch already says ROMS AND BIOS; nothing runs without them. A
+        # "bios" line in the selection -- the placeholder the interface wrote
+        # so that BIOS alone was not refused -- is the same thing: remote_for
+        # sends it to BIOS/, one unit, never to a system folder under ROMs/.
+        if [ "${MEDIA_MODE}" != only ] && exists_remote "${ROOT}BIOS" && ! printf '%s\n' "${DIRS[@]}" | grep -qx bios; then
+            DIRS+=("bios")
+        fi
+        # Refused only when there is nothing at all -- after BIOS is added,
+        # not before: "BIOS and no system" is a selection, and was refused
+        # as none (coordinator's row under audit #307 PL-012).
         if [ ${#DIRS[@]} -eq 0 ]; then
             echo "You haven't picked any systems for this device."
             exit 1
-        fi
-        # BIOS is not a system and is no longer a pick (maintainer, 2026-09-06):
-        # it comes with the tier whenever the cloud has it. The tier's own
-        # switch already says ROMS AND BIOS; nothing runs without them.
-        if [ "${MEDIA_MODE}" != only ] && exists_remote "${ROOT}BIOS" && ! printf '%s\n' "${DIRS[@]}" | grep -qx bios; then
-            DIRS+=("bios")
         fi
     ;;
     --list)
@@ -1042,7 +1282,56 @@ case "${1}" in
         exit 0
     ;;
     --all)
-        DIRS=("")
+        # Every system the cloud holds, and BIOS, each a unit of its own --
+        # the journey's first restore (main.cpp, the first-device prompt).
+        # It used to be one unit, DIRS=(""), which remote_for resolved to
+        # the ROMs container: BIOS never came down though the page said
+        # everything had, and the scraper-folder excludes, anchored at a
+        # system's root ("/images/**"), matched nothing under ROMs/ (audit
+        # #307 PL-012). Now the systems are enumerated as the picker lists
+        # them and each resolves as --selected resolves it (resolve_src:
+        # ROMs/<system>, then the flat layout, then the remote root), so
+        # every anchor sits where it does for --selected.
+        #
+        # The ROMs listing is read fail-closed: a listing that failed is not
+        # an empty cloud. The two older layouts are consulted only for names
+        # this device knows as systems -- ES declares them, or it holds the
+        # folder -- because an older layout's root is somebody's account,
+        # and a folder there is not a system because it is a folder.
+        ALL_ROMS=$(rclone lsf --dirs-only "${ROOT}ROMs/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); all_rc=$?
+        if [ "${all_rc}" -ne 0 ] && [ "${all_rc}" -ne 3 ] && ! absent_not_broken "${ROOT}ROMs/"; then
+            log_message "restore --all: the ROMs folder could not be listed (rclone exit ${all_rc})"
+            if network_gone; then
+                echo "Skipped: there's no network connection. Try again when you're online."
+                exit "${EXIT_NO_NETWORK}"
+            fi
+            echo "Couldn't finish: your cloud couldn't be read, so nothing was restored. Try again."
+            say_why "$(why_for "${all_rc}")"
+            record_outcome content-restore "${all_rc}"
+            exit "${all_rc}"
+        fi
+        ALL_KNOWN=$( { supported_systems; legacy_dirs; echo bios; } | sort -u )
+        mapfile -t DIRS < <(
+            {
+                printf '%s\n' "${ALL_ROMS}" | sed 's:/$::'
+                rclone lsf --dirs-only "${ROOT}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | sed 's:/$::' \
+                    | grep -vxE 'ROMs|BIOS' | grep -Fxf <(printf '%s\n' "${ALL_KNOWN}")
+                if [ -n "${CONTENT_REMOTE}" ]; then
+                    rclone lsf --dirs-only "${LEGACY_ROOT}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | sed 's:/$::' \
+                        | grep -Fxf <(legacy_dirs)
+                fi
+            } 2>/dev/null | grep -v '^$' | sort -u)
+        # BIOS as --selected brings it: whenever the cloud has it, and not
+        # with game content alone.
+        if [ "${MEDIA_MODE}" != only ] && exists_remote "${ROOT}BIOS" && ! printf '%s\n' "${DIRS[@]}" | grep -qx bios; then
+            DIRS+=("bios")
+        fi
+        if [ ${#DIRS[@]} -eq 0 ]; then
+            echo "Nothing to restore: your cloud has no ROMs or BIOS files yet."
+            log_message "restore --all: nothing in the cloud's ROMs or BIOS folders"
+            record_outcome content-restore 0
+            exit 0
+        fi
     ;;
     "")
         echo "Usage: ${SCRIPT_NAME} --list | --all | <dir> [<dir>...]" >&2
@@ -1090,19 +1379,32 @@ for DIR in "${DIRS[@]}"; do
     # before using it), and an unknown flag is a usage error that transfers
     # nothing. rclone pads the file name out to a guessed width; the reader
     # trims it, so the flag bought nothing worth a version check.
+    # The setup's note at a unit's root (BIOS/README.txt, cloud_setup
+    # --seed-folders) is not content, and neither side counts it (#308 gpt
+    # F-CS-30): it came down into /storage/roms/bios and read ever after as a
+    # file this device has and the cloud does not.
     rclone copy "${SRC}" "${TARGET}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
         "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${MEDIA_EXCLUDES[@]}" \
-        --exclude "gamelist.xml" --exclude "**/gamelist.xml" \
+        --exclude "gamelist.xml" --exclude "**/gamelist.xml" --exclude "/README.txt" \
         --progress --stats 1s \
         --log-file "${LOG_FILE}" --log-level INFO
     RC=$?
 
     # The game list: newest wins, rather than whoever ran last. Game content
-    # only (D-CLOUD-049) -- under ROMs alone the file stays where it is.
-    [ "${MEDIA_MODE}" != roms ] && rclone copy "${SRC}" "${TARGET}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
-        "${GAMELIST_ONLY[@]}" --update \
-        --stats 0 \
-        --log-file "${LOG_FILE}" --log-level INFO || true
+    # only (D-CLOUD-049) -- under ROMs alone the file stays where it is. Its
+    # result is the unit's, by the same 0|9 rule (audit #307 PL-066): it
+    # was discarded with `|| true`, so a game list that did not move left a
+    # unit, a stamp and a page that said the unit had.
+    if [ "${MEDIA_MODE}" != roms ]; then
+        rclone copy "${SRC}" "${TARGET}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
+            "${GAMELIST_ONLY[@]}" --update \
+            --stats 0 \
+            --log-file "${LOG_FILE}" --log-level INFO
+        GL_RC=$?
+        case "${RC}" in
+            0|9) case "${GL_RC}" in 0|9) ;; *) RC=${GL_RC} ;; esac ;;
+        esac
+    fi
 
     if [ ${RC} -ne 0 ] && [ ${RC} -ne 9 ]; then
         # A failed unit says why: the network gone ends the run as 69 here,
@@ -1114,6 +1416,7 @@ for DIR in "${DIRS[@]}"; do
         STATUS=${RC}
     else
         echo "Restored ${DIR:-everything}."
+        PROGRESS_MADE=1
     fi
 done
 
