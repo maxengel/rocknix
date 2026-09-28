@@ -244,7 +244,7 @@ Built 2026-09-28 06:20 UTC from the sixteen outputs (an agent's extraction, then
 **Verdict:** **High stood; fixed as an exception said aloud** `3c10446acb`, D-CLOUD-146 -- the console and the Completed line say no replaced copies are kept on that layout.
 
 ### G-B-01 (gpt, B) -- a failed member listing reads as nothing to protect
-**Seat's claim:** `archive_members` failing (an empty listing returns 4 and is treated as no members) makes the credential scan see nothing to protect.
+**Seat's claim:** `archive_members` failing (an empty listing returns 4 and is treated as no members) lets the restore proceed without the snapshot and the marker that the pre-restore copy rests on -- the index's own words; an earlier draft of this entry said "the credential scan", which is G-B-03, corrected on the second opinion.
 **Checked:** read against `backuptool`, `chksysconfig` and `rocknix-evidence` on `next` at the packet: the shape `engineering-practices.md` § Guards must fail closed names, without the positive check. Routed to B with the other six.
 **Verdict:** **High stood; fixed** `34c7eac1ef` -- a listing that fails is a failed check, whatever it printed.
 
@@ -259,7 +259,7 @@ Built 2026-09-28 06:20 UTC from the sixteen outputs (an agent's extraction, then
 **Verdict:** **High stood; fixed** `a7163034df` -- a failed walk or a grep exit of 2 or more ends the backup with nothing written.
 
 ### G-B-04 (gpt, B) -- the backup-directory exclusion's failure leaves the original list usable
-**Seat's claim:** the awk and mv of the exclusion are unchecked, so a failed exclusion restores over the backup directory too.
+**Seat's claim:** the awk and mv of the own-folder exclusion are unchecked, so when the filter fails the original list stays usable and earlier archives under the backup directory are collected into the new one -- the index's own words; an earlier draft said "restores over the backup directory", corrected on the second opinion.
 **Checked:** read against `backuptool`, `chksysconfig` and `rocknix-evidence` on `next` at the packet: the shape `engineering-practices.md` § Guards must fail closed names, without the positive check. Routed to B with the other six.
 **Verdict:** **High stood; fixed** `316bb02e5d` -- the exclusions are one checked filter, cores and evidence too.
 
