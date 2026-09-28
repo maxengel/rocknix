@@ -3622,4 +3622,53 @@ else
     echo "    SKIP  the d13a predicates: section t did not run"
 fi
 
+# D13b. #308 1-raoffline claude F-RA-13 (patch 013, cache-images): a PNG with
+# bytes after its IEND is a whole PNG -- published, and left alone by
+# --verify -- since the chunk walk, not the last twelve bytes, is the test;
+# and gpt F-RA-12 (cache-images): --verify applies the test a download passes,
+# CRCs and the image data included (image_cache.png_problem, patch 013), so a
+# file damaged inside before patch 013 existed is found and re-fetched.
+if [ "${DT_OK}" -eq 1 ]; then
+RAOFFLINEPROXY_CONFIG_DIR="${DD}/d13b-cfg" PYTHONPATH="${CLIENT}" python3 - "${DD}/raofflineproxy-cache-images" > "${DD}/d13b.out" 2>&1 <<'EOS'
+import json, os, socket, struct, sys, threading, time, zlib, importlib.machinery, importlib.util
+from pathlib import Path
+Path(os.environ["RAOFFLINEPROXY_CONFIG_DIR"]).mkdir(parents=True, exist_ok=True)
+def verdict(ok, name, detail=""):
+    print(("PASS " if ok else "FAIL ") + name + (f" -- {detail}" if detail and not ok else ""))
+from raofflineproxy import image_cache, network, proxy_service, storage_corruption
+# 013 / F-RA-13 and cache-images / F-RA-12
+def _chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+PNG = b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)) + _chunk(b"IDAT", zlib.compress(b"\x00\xff\x00\x00" * 40)) + _chunk(b"IEND", b"")
+TRAILING = PNG + b"\x00" * 16 + b"encoder note"
+bad = bytearray(zlib.compress(b"\x00\xff\x00\x00" * 40)); bad[6] ^= 0xFF
+BAD_IDAT = b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)) + _chunk(b"IDAT", bytes(bad)) + _chunk(b"IEND", b"")
+saved_fetch = image_cache.fetch_static_asset
+try:
+    image_cache.fetch_static_asset = lambda url, headers, timeout=10.0, _redirects=3: ({"Content-Length": str(len(TRAILING))}, TRAILING)
+    image_cache.download_static_image("https://media.retroachievements.org/Badge/d13-trailing.png", "/Badge/d13-trailing.png", "ua")
+    verdict((image_cache.STATIC_DIR / "Badge" / "d13-trailing.png").exists(), "F-RA-13 patch 013: a whole PNG with bytes after its IEND is published")
+finally:
+    image_cache.fetch_static_asset = saved_fetch
+spec = importlib.util.spec_from_loader("images_helper", importlib.machinery.SourceFileLoader("images_helper", sys.argv[1]))
+helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(helper)
+badge = image_cache.STATIC_DIR / "Badge"; badge.mkdir(parents=True, exist_ok=True)
+(badge / "d13-verify-trailing.png").write_bytes(TRAILING)
+(badge / "d13-verify-good.png").write_bytes(PNG)
+(badge / "d13-verify-bad-idat.png").write_bytes(BAD_IDAT)
+(badge / "d13-verify-bad-crc.png").write_bytes(PNG[:-1] + bytes([PNG[-1] ^ 1]))
+got = {n: helper.damaged(f"/Badge/d13-verify-{n}.png") for n in ("good", "trailing", "bad-idat", "bad-crc")}
+verdict(got["trailing"] is None, "F-RA-13 --verify: a cached PNG with bytes after its IEND is whole, never deleted", f"damaged() said {got['trailing']!r}")
+verdict(got["good"] is None and got["bad-idat"] is not None and got["bad-crc"] is not None, "F-RA-12 --verify: a cached PNG whose image data or a chunk's CRC is damaged is found; a whole one is not", f"damaged(): {got}")
+EOS
+grep -q '^\(PASS\|FAIL\) ' "${DD}/d13b.out"; check $? "stream D's d13b predicates ran ($(grep -c '^PASS' "${DD}/d13b.out") PASS / $(grep -c '^FAIL' "${DD}/d13b.out") FAIL)" "stream D's d13b predicates printed no verdicts: $(tail -5 "${DD}/d13b.out" | tr '\n' '|' | cut -c1-300)"
+while IFS= read -r line; do
+    case "${line}" in
+        PASS\ *) check 0 "#308 ${line#PASS }" "" ;;
+        FAIL\ *) check 1 "" "#308 ${line#FAIL }" ;;
+    esac
+done < "${DD}/d13b.out"
+else
+    echo "    SKIP  the d13b predicates: section t did not run"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

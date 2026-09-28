@@ -32,8 +32,10 @@
 #   * it is resumable -- nothing marks a game done but its own files, so a
 #     run that stops at its ceiling leaves the rest for the next one.
 #
-# With --verify the files that are there are read as well as counted: the PNG
-# signature, an IEND trailer, and a plausible size. Presence is what every
+# With --verify the files that are there are read as well as counted, and a
+# PNG is put to the test a download passes (image_cache.png_problem, patch
+# 013: every chunk's CRC up to IEND, image data that inflates) behind a
+# plausible size (#308 F-RA-12). Presence is what every
 # other check in this subsystem tests, so a file that is there and wrong is
 # never looked at again -- patch 013 stops one being written from now on, and
 # this finds the ones written before it, and anything a card or a filesystem
@@ -87,7 +89,6 @@ ROW_PREFIXES = (
 # Where --verify left off, so each run takes the next slice (#213).
 CURSOR = image_cache.IMAGE_CACHE_DIR / "verify-cursor"
 
-PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 # Smaller than any real badge: a PNG needs a signature, an IHDR and an IEND,
 # and the smallest one RetroAchievements serves is a few hundred bytes (of a
 # 4,000-badge sample on the maintainer's device the smallest was 266).
@@ -95,7 +96,16 @@ PNG_FLOOR = 68
 
 
 def damaged(path: str) -> str | None:
-    """Why the cached file for path is not a whole image, or None if it is."""
+    """Why the cached file for path is not a whole image, or None if it is.
+
+    A .png is put to the test a download passes before it is published
+    (image_cache.png_problem, patch 013): every chunk's CRC up to IEND and
+    image data that inflates, so a file damaged inside -- written before
+    patch 013 checked anything, or by a card since -- is found and fetched
+    again, not only one cut short; and a whole PNG with bytes after its
+    IEND is whole, where a trailer test called it damaged and deleted it at
+    every pass (#308 F-RA-12, F-RA-13).
+    """
     target = image_cache.resolve_cached_static_asset(path)
     if target is None:
         return "absent"
@@ -105,15 +115,9 @@ def damaged(path: str) -> str | None:
             return None if size > 0 else "empty"
         if size < PNG_FLOOR:
             return f"tiny({size})"
-        with target.open("rb") as handle:
-            if handle.read(8) != PNG_MAGIC:
-                return "not a PNG"
-            handle.seek(-12, 2)
-            if b"IEND" not in handle.read(12):
-                return "no IEND"
+        return image_cache.png_problem(target.read_bytes())
     except OSError as exc:
         return f"unreadable ({exc})"
-    return None
 
 
 # The cursor holds a path in the same shape as the rest of this script --
