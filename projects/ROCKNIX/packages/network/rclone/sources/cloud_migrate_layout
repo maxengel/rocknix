@@ -191,6 +191,18 @@ exists() {
     printf '%s\n' "${LISTING}" | grep -qxF -- "${name}/"
 }
 
+# Did a `rclone check` find the two sides the same? Only when it says so
+# both ways: its exit status is 0, and its count of differences is exactly
+# zero. The count alone was the test here, as a substring -- and "10
+# differences found" contains "0 differences found", so a check that found
+# ten changed files let the pointer move and the old folder go, and a new
+# folder holding ten other versions of the same names read as a partial
+# copy to resume into (the audit of the fixes to #307, G-A-01).
+check_clean() { # <rclone check's exit status> <its output>
+    [ "$1" -eq 0 ] 2>/dev/null || return 1
+    printf '%s\n' "$2" | grep -qE '(^|[^0-9])0 differences found'
+}
+
 # Relocate a folder by copy, verify, delete -- never `rclone move`.
 #
 # move deletes as it goes, so an interruption -- a handheld dropping off wifi is
@@ -228,13 +240,17 @@ exists() {
 # save another device wrote into it between the check and the purge was
 # lost; now it is not on the list, stays where it was written, and is
 # still there for that device's own migration.
+#
+# 0 when the tier moved; 1 when its copy or check failed, the old folder
+# whole; 2 when its pointer could not be written, which set_pointer has
+# said, the old folder whole too.
 relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
     local src="$1" dst="$2" what="$3" key="$4" out list
     shift 4
     local -a filt=("$@")
     list_or_stop "${src}" -R --files-only "${filt[@]}"
     if [ -z "${LISTING}" ]; then
-        set_pointer "${key}" "${dst#*:}"
+        set_pointer "${key}" "${dst#*:}" || return 2
         return 0
     fi
     list=$(mktemp /tmp/cloud_migrate_layout.XXXXXX) || { say "Couldn't make a working file on this device; nothing was moved."; return 1; }
@@ -242,19 +258,28 @@ relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
     say "Copying ${what}..."
     if ! out=$(rclone copy "${src}" "${dst}" --files-from-raw "${list}" --create-empty-src-dirs=false "${RCLONE_NET_OPTS_ARRAY[@]}" 2>&1); then
         printf '%s\n' "${out}" | tail -3
-        say "Couldn't finish copying ${what}. Both folders are as they were; nothing was removed."
+        # A copy that stopped part-way has put some files in the new
+        # folder; only the old one is as it was (G-A-12).
+        say "Couldn't finish copying ${what}. Nothing was removed from the old folder; some files may already be in the new one."
         rm -f "${list}"
         return 1
     fi
     say "Verifying ${what}..."
     out=$(rclone check "${src}" "${dst}" --files-from-raw "${list}" --one-way "${CHECK_OPTS[@]}" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>&1)
-    if ! printf '%s\n' "${out}" | grep -q "0 differences found"; then
+    if ! check_clean $? "${out}"; then
         printf '%s\n' "${out}" | grep -iE "differ|missing|error" | head -3
-        say "The copy of ${what} didn't match, so the old folder was kept. Both folders are as they were."
+        say "The copy of ${what} didn't match, so nothing was removed from the old folder."
         rm -f "${list}"
         return 1
     fi
-    set_pointer "${key}" "${dst#*:}"
+    # The source goes only once the pointer has landed (G-A-02): a pointer
+    # that could not be written leaves the device on the old folder, so the
+    # old folder must still hold everything -- the next run finds the copy
+    # already there and resumes.
+    if ! set_pointer "${key}" "${dst#*:}"; then
+        rm -f "${list}"
+        return 2
+    fi
     say "Removing the old ${what} folder..."
     { rclone delete "${src}" --files-from-raw "${list}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
         && rclone rmdirs "${src}" "${RCLONE_NET_OPTS_ARRAY[@]}"; } >/dev/null 2>&1 \
@@ -264,14 +289,38 @@ relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
 }
 
 # Point a key of the conf at a tier's new folder: the line rewritten in
-# place, or added when the conf has none.
+# place, or added when the conf has none -- and then read back. A write
+# that did not land (a full or read-only /storage, a path sed's
+# replacement would mangle) is a failure the caller must stop on, before
+# anything is removed (the audit of the fixes to #307, G-A-02): its result
+# used to go unread, and relocate deleted the old folder after it either
+# way, leaving the device pointed at a folder the run had just emptied.
+# 0 when the conf now says <remote path>, 1 when it does not.
 set_pointer() { # <key> <remote path>
     if grep -q "^$1=" "${SYNC_CONF}" 2>/dev/null; then
-        sed -i "s|^$1=.*|$1=\"$2\"|" "${SYNC_CONF}"
+        sed -i "s|^$1=.*|$1=\"$2\"|" "${SYNC_CONF}" 2>/dev/null
     else
-        printf '%s="%s"\n' "$1" "$2" >> "${SYNC_CONF}"
+        printf '%s="%s"\n' "$1" "$2" >> "${SYNC_CONF}" 2>/dev/null
     fi
-    say "Now using ${2} for ${1}."
+    if [ "$(conf_value "$1")" != "$2" ]; then
+        say "Couldn't save the new folder in this device's settings. It still uses the old one, and nothing was removed from it."
+        [ "${MODE}" = "--apply" ] && echo ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE SAVED"
+        logger -t cloud_migrate_layout "could not write $1 to ${SYNC_CONF}; stopped before removing anything" 2>/dev/null
+        return 1
+    fi
+    say "Now using ${2} for your $(tier_words "$1")."
+}
+
+# A tier as the player knows it (es-player-text.md: the four tiers), for
+# the tidy page's lines -- which named the config key (audit of the fixes,
+# claude G-A-11).
+tier_words() { # <pointer key>
+    case "$1" in
+        SAVES_REMOTE) echo "saves" ;;
+        SETTINGS_REMOTE) echo "settings backups" ;;
+        CONTENT_REMOTE) echo "ROMs, BIOS, and game content" ;;
+        *) echo "files" ;;
+    esac
 }
 
 # Is an existing destination a partial copy of this source, and nothing else?
@@ -286,7 +335,7 @@ set_pointer() { # <key> <remote path>
 resumable() {
     local src="$1" dst="$2" out
     out=$(rclone check "${dst}" "${src}" --one-way "${CHECK_OPTS[@]}" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>&1)
-    printf '%s\n' "${out}" | grep -q "0 differences found"
+    check_clean $? "${out}"
 }
 
 # What cloud_sync_helper would have derived CONTENT_REMOTE to be for a given
@@ -325,9 +374,14 @@ migrate_content() {
             say "Nothing has been changed. Run with --apply to do it."
             return 0
         fi
-        if ! relocate "${remote}${content}" "${remote}${NEW_CONTENT}" "content" CONTENT_REMOTE; then
-            say "The config is unchanged."
-            echo ">>> why SOME FILES DIDN'T FINISH"
+        local rrc=0
+        relocate "${remote}${content}" "${remote}${NEW_CONTENT}" "content" CONTENT_REMOTE || rrc=$?
+        if [ "${rrc}" -ne 0 ]; then
+            # 2 is a pointer that could not be written, which has said so.
+            if [ "${rrc}" -ne 2 ]; then
+                say "The config is unchanged."
+                echo ">>> why SOME FILES DIDN'T FINISH"
+            fi
             return 5
         fi
         say "Content is now at ${remote}${NEW_CONTENT}."
@@ -340,7 +394,7 @@ migrate_content() {
         fi
     fi
 
-    set_pointer CONTENT_REMOTE "${NEW_CONTENT}"
+    set_pointer CONTENT_REMOTE "${NEW_CONTENT}" || return 5
     say "Content is now at ${remote}${NEW_CONTENT}."
     return 0
 }
@@ -368,7 +422,11 @@ main() {
     net_opts=$(conf_value RCLONE_NET_OPTS | tr -s ' ' | sed 's/^ //; s/ $//')
     [ -n "${net_opts}" ] || net_opts="${RCLONE_NET_OPTS_FALLBACK}"
     read -r -a RCLONE_NET_OPTS_ARRAY <<< "${net_opts}"
-    if ! rclone backend features "${remote}" 2>/dev/null | tr -d ' \t\n' | grep -q '"Hashes":\["'; then
+    # The query creates the remote, a round trip on most backends, so it
+    # carries the listing bound like every other call here (audit of the
+    # fixes, G-A-11/G-A-10); one that fails or times out reads as "no
+    # hashes", the safe side.
+    if ! rclone backend features "${remote}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | tr -d ' \t\n' | grep -q '"Hashes":\["'; then
         CHECK_OPTS=(--download)
     fi
 
@@ -511,7 +569,7 @@ main() {
                 return 5
             fi
         else
-            set_pointer SETTINGS_REMOTE "${NEW_BACKUPS}"
+            set_pointer SETTINGS_REMOTE "${NEW_BACKUPS}" || return 5
         fi
     fi
 
@@ -521,7 +579,7 @@ main() {
             relocate "${remote}${saves_src}" "${remote}${NEW_SAVES}" "saves" SAVES_REMOTE "${SAVES_EXCLUDES[@]}" || return 5
             moved_saves=1
         else
-            set_pointer SAVES_REMOTE "${NEW_SAVES}"
+            set_pointer SAVES_REMOTE "${NEW_SAVES}" || return 5
         fi
     fi
 

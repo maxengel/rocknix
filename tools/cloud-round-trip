@@ -729,10 +729,13 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     # And the run says so: its exit and its own last line are the settings
     # phase's outcome, not the skipped saves phase's (audit #307 PL-028,
     # whose 9-beside-a-failure case is tools/last-good-scripts-test A6).
-    last_sb = [l for l in out_sb.splitlines() if l.strip() and not l.startswith(">>> ") and not l.strip().startswith("=")]
-    failures += not check(rc_sb == 0 and bool(last_sb) and last_sb[-1].strip().endswith("Completed."),
+    # Read by the vocabulary gate's own reader (colour, protocol markers,
+    # rclone's lines and rules off), not a filter of its own (the audit of
+    # the fixes, claude G-A-04).
+    last_sb = last_player_line(out_sb)
+    failures += not check(rc_sb == 0 and last_sb == "Completed.",
                           "the settings backup exited 0 and ended on Completed.",
-                          f"the settings backup exited {rc_sb}, last line {last_sb[-1].strip() if last_sb else '(none)'!r}")
+                          f"the settings backup exited {rc_sb}, last line {last_sb or '(none)'!r}")
 
     # It must land under this device's own folder. A single shared filename is
     # what let the second device to run replace the first device's archive,
@@ -1519,11 +1522,17 @@ echo "${saw:-0}/${all:-0}"
     # in neither the cloud nor the device: its plan is `none`.
     ghost = "ghost-never-a-system"
     dev.run(f"cloud_content_restore --set-systems {shlex.quote(CONTENT_DIR)} {ghost} >/dev/null 2>&1 || true", check=False)
+    # --apply is the second half of a check, as the page runs it: --match,
+    # the confirmation, then --match --apply, which acts on the plan the
+    # check wrote and refuses without one (audit #307 PL-001). This step
+    # used to run --apply alone, which the plan contract refuses (vm-qa run
+    # 68 on the fix build).
+    prc, pout = run_rc(dev, "cloud_content_restore --match")
     rc, out = run_rc(dev, "cloud_content_restore --match --apply")
     ok, items, detail = unit_protocol(out)
-    failures += not check(rc == 0 and ok and sorted(items) == sorted([CONTENT_DIR, ghost]),
+    failures += not check(prc == 0 and rc == 0 and ok and sorted(items) == sorted([CONTENT_DIR, ghost]),
                           f"--match --apply announced both chosen systems as ITEM i OF 2, the one with nothing to do included ({detail})",
-                          f"exit {rc}; {detail}; tail {out.strip()[-160:]!r}")
+                          f"check exit {prc}, apply exit {rc}; {detail}; tail {out.strip()[-160:]!r}")
     failures += not check(f"Nothing to remove from {ghost}" in out,
                           "and said so for the system that already matches",
                           "no 'Nothing to remove' line for the system with nothing to do")

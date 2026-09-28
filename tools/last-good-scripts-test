@@ -8094,7 +8094,13 @@ chmod +x "${SA}/shim"/*
 printf 'export PATH=/shim:/nbin:/usr/bin:/bin\nexport HOME=/storage\n' > "${SA}/profile"
 SA_BB=()
 if [ -n "${BB}" ]; then
-    for a in sed tr head wc cut awk tail tee mkfifo sleep flock stat md5sum find cmp mktemp unzip tar; do
+    # Every applet the image's /usr/bin links to busybox that these scripts
+    # call -- cp, mv, rm and the rest joined the list after the audit of the
+    # fixes (gpt coverage note 3: the sandbox ran the host's cp and mv).
+    # grep, sort and timeout are real binaries on the image, and the host's
+    # stand in for them.
+    for a in sed tr head wc cut awk tail tee mkfifo sleep flock stat md5sum find cmp mktemp unzip tar \
+             cp mv rm mkdir cat date ls readlink uniq basename dirname touch chmod ln xargs; do
         printf '#!/bin/sh\n[ -x %s ] && exec %s %s "$@"\nexec %s %s "$@"\n' "${BB}" "${BB}" "${a}" "${BB_HOST}" "${a}" > "${SA}/nbin/${a}"
         chmod +x "${SA}/nbin/${a}"
     done
@@ -8117,10 +8123,13 @@ sa_script() { # <fixture> <script...>: the scripts under test into its /repo (wo
     local d="$1" s; shift
     for s in "$@"; do src_of "${RCLONE_REL}/${s}" "${d}/repo/${s}"; chmod +x "${d}/repo/${s}"; done
 }
+# SA_EXTRA: more bwrap arguments for the next runs, after /usr -- a file
+# the image ships under /usr/bin, overlaid for a case (A47); empty otherwise.
+SA_EXTRA=()
 sa_run() { # <fixture> <script> [args...]: the script whole, in the sandbox; stdout+stderr to ${d}/out, rc in RC, seconds in DT
     local d="$1" s="$2" t0; shift 2
     t0=$(date +%s)
-    RC=$( ( cd "${d}/storage" && setsid -w timeout 180 bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${SA_BB[@]}" \
+    RC=$( ( cd "${d}/storage" && setsid -w timeout 180 bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr ${SA_EXTRA[@]+"${SA_EXTRA[@]}"} "${SA_BB[@]}" \
         --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
         --ro-bind /etc /etc --ro-bind "${SA}/profile" /etc/profile \
         --bind "${d}/storage" /storage --bind "${d}/cloud" /cloud --bind "${d}/ctl" /ctl \
@@ -8413,7 +8422,7 @@ sa_run "${MG}" cloud_migrate_layout --apply
 # a hashless remote, and the exclusion pattern reaching rclone unexpanded.
 mg_seed
 sa_run "${MG}" cloud_migrate_layout --apply
-unbounded=$(grep -vE '^(listremotes|backend features|version)' "${MG}/ctl/argv" | grep -v -- '--low-level-retries' | head -2)
+unbounded=$(grep -vE '^(listremotes|version)' "${MG}/ctl/argv" | grep -v -- '--low-level-retries' | head -2)
 [ -z "${unbounded}" ] && [ -s "${MG}/ctl/argv" ]; check $? "F-CS-23: every rclone call the migration makes against the cloud carries a bound" "unbounded: ${unbounded:-none} (rclone's defaults: ten low-level retries, three runs)"
 mg_seed
 # The holder execs its sleep, so the pid killed below is the one holding
@@ -8537,7 +8546,7 @@ cp_seed; cp_exit
 echo "a seal another capture just placed" > "${CP}/storage/.cache/cloud_sync/stage/$(printf 'x%.0s' 1 | sha256sum | cut -c1-64)"
 echo "state one, rewritten" > "${CP}/storage/roms/savestates/gb/Game.state1"
 cp_exit
-[ -f "${CP}/storage/.cache/cloud_sync/stage/$(printf 'x%.0s' 1 | sha256sum | cut -c1-64)" ]; check $? "PL-067: a stage seal placed moments ago and not yet in the manifest survives another capture's GC" "the fresh seal was collected -- another capture's pending version (F-CS-14)"
+[ "${RC}" -eq 0 ] && [ -f "${CP}/storage/.cache/cloud_sync/stage/$(printf 'x%.0s' 1 | sha256sum | cut -c1-64)" ]; check $? "PL-067: a stage seal placed moments ago and not yet in the manifest survives another capture's GC (rc ${RC}: the capture ran its GC)" "rc ${RC}; the fresh seal was collected -- another capture's pending version (F-CS-14) -- or the capture ended before its GC"
 
 # #308 claude F-CS-20: the clock query on the game-exit path is bounded.
 cp_seed; touch "${CP}/ctl/slowclock"
@@ -9000,8 +9009,7 @@ of_stamp=$(cut -d' ' -f2- "${OF}/storage/.cache/cloud_sync/last-backup" 2>/dev/n
 [ "${RC}" -eq 69 ] && [ -f "${OF}/cloud/ROCKNIX/Saves/gb/New.srm" ] && echo "${of_stamp}" | grep -q '^69 gaps .'; check $? "a deliberate backup whose saves phase sent a file before the network went exits 69 and stamps '69 gaps <why>' (stamp: ${of_stamp:-none})" "rc ${RC}; New.srm in the cloud: $([ -f "${OF}/cloud/ROCKNIX/Saves/gb/New.srm" ] && echo yes || echo no); stamp '${of_stamp:-none}'"
 rm -f "${OF}/ctl/noroute" "${OF}/ctl/noping"; : > "${OF}/ctl/post"; : > "${OF}/ctl/fail"
 touch "${OF}/ctl/noroute" "${OF}/ctl/noping"
-printf '%s	%s
-' '^copy qa:/ROCKNIX/Content/ROMs/gb ' 1 > "${OF}/ctl/fail"
+printf '%s\t%s\n' '^copy qa:/ROCKNIX/Content/ROMs/gb ' 1 > "${OF}/ctl/fail"
 sa_run "${OF}" cloud_content_restore gb
 of_stamp=$(cut -d' ' -f2- "${OF}/storage/.cache/cloud_sync/last-content-restore" 2>/dev/null)
 [ "${RC}" -eq 69 ] && [ "${of_stamp}" = 69 ]; check $? "while a run the network ends before any unit completed is still the skip: a bare 69 (rc ${RC}, stamp ${of_stamp:-none})" "rc ${RC}; stamp '${of_stamp:-none}'"
@@ -9344,5 +9352,565 @@ RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${DABB[@]}" \
 DLEFT="$(ls "${DAI}" | /usr/bin/grep -c '^secrets\.ini\.tmp' || true)"
 [ "${DLEFT}" -eq 0 ] && cmp -s "${DA}/before" "${DAI}/secrets.ini" && /usr/bin/grep -q "could not be rewritten" "${DA}/storage/cheevos.log" 2>/dev/null; check $? "gpt G-F2-07 cheevos_armsx2.sh: a rename that fails leaves no temp file, secrets.ini as it was, and says so in the log" "gpt G-F2-07: rc ${RC}; temp files left: ${DLEFT}; secrets.ini: $(tr '\n' '|' < "${DAI}/secrets.ini"); log: $(tr '\n' '|' < "${DA}/storage/cheevos.log" 2>/dev/null | cut -c1-160) -- the failed rename was not handled"
 rm -f "${DAI}"/secrets.ini.tmp.* "${DA}/storage/cheevos.log"
+# A31. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-01,
+#      High): a verification is the check's exit status and an exact count.
+#      Both `relocate` and `resumable` grepped the output for "0 differences
+#      found", which "10 differences found" contains, and never read the
+#      exit status -- so a check that found ten changed files moved the
+#      pointer and deleted them, and a destination holding ten other
+#      versions of the same names read as a partial copy to resume into.
+echo "    A31. G-A-01 (gpt): a check that found 10 differences is a failed check"
+mg_seed
+rm -rf "${MG}/cloud/GAMES/savefiles"; mkdir -p "${MG}/cloud/GAMES/savefiles/gb"
+for n in 0 1 2 3 4 5 6 7 8 9; do echo "save ${n}" > "${MG}/cloud/GAMES/savefiles/gb/S${n}.srm"; done
+# Ten saves change between the copy and the check: the check finds exactly
+# ten differences, and says so in a line that ends "0 differences found".
+printf '%s\t%s\n' '^copy qa:/GAMES qa:/ROCKNIX/Saves' 'for f in /cloud/GAMES/savefiles/gb/S*.srm; do echo newer >> "${f}"; done' > "${MG}/ctl/post"
+sa_run "${MG}" cloud_migrate_layout --apply
+ga01_left=$(ls "${MG}/cloud/GAMES/savefiles/gb" 2>/dev/null | grep -c '^S[0-9]\.srm$')
+[ "${ga01_left}" -eq 10 ] && [ "$(mg_ptr SAVES_REMOTE)" = "/GAMES" ] && [ "${RC}" -ne 0 ]; check $? "G-A-01: a check that found 10 differences keeps all ten saves and SAVES_REMOTE where they were (rc ${RC})" "${ga01_left} of 10 saves left in the old folder; SAVES_REMOTE '$(mg_ptr SAVES_REMOTE)'; rc ${RC}; out: $(sa_tail "${MG}") -- '10 differences found' matched the substring '0 differences found'"
+mg_seed
+rm -rf "${MG}/cloud/GAMES/savefiles"; mkdir -p "${MG}/cloud/GAMES/savefiles/gb" "${MG}/cloud/ROCKNIX/Saves/savefiles/gb"
+for n in 0 1 2 3 4 5 6 7 8 9; do
+    echo "this device ${n}" > "${MG}/cloud/GAMES/savefiles/gb/S${n}.srm"
+    echo "another library ${n}" > "${MG}/cloud/ROCKNIX/Saves/savefiles/gb/S${n}.srm"
+done
+sa_run "${MG}" cloud_migrate_layout --apply
+[ "${RC}" -eq 4 ] && [ "$(cat "${MG}/cloud/ROCKNIX/Saves/savefiles/gb/S3.srm" 2>/dev/null)" = "another library 3" ] && [ -f "${MG}/cloud/GAMES/savefiles/gb/S3.srm" ]; check $? "G-A-01: a new folder holding ten other versions of the same names is not a copy to resume into: refused, both untouched (rc ${RC})" "rc ${RC}; new folder's S3.srm reads '$(cat "${MG}/cloud/ROCKNIX/Saves/savefiles/gb/S3.srm" 2>/dev/null)'; out: $(sa_tail "${MG}") -- resumable() read '10 differences found' as none"
+
+# A32. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-02,
+#      High): the old folder goes only once the pointer has landed.
+#      set_pointer's write was not checked and relocate deleted the source
+#      after it whatever it did, so a device whose settings folder could
+#      not be written kept pointing at a folder the run then emptied --
+#      the state PL-026 exists to prevent. The settings folder read-only
+#      (sed -i cannot make its temporary file) stands in for a full or
+#      read-only /storage.
+echo "    A32. G-A-02 (gpt): a pointer that could not be written stops the run before the delete"
+mg_seed
+chmod 555 "${MG}/storage/.config"
+sa_run "${MG}" cloud_migrate_layout --apply
+chmod 755 "${MG}/storage/.config"
+if [ "$(id -u)" -eq 0 ]; then
+    check 1 "-" "G-A-02: run as root, a read-only folder does not stop the write, so this case cannot construct its failure -- not a pass"
+else
+    [ -f "${MG}/cloud/GAMES/backup/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ "$(mg_ptr SETTINGS_REMOTE)" = "/GAMES/backup" ] && [ "${RC}" -ne 0 ] \
+        && [ -f "${MG}/cloud/GAMES/savefiles/gb/A.srm" ]; check $? "G-A-02: with the settings unwritable the backups stay in the old folder, the pointer where it was, nothing else moved (rc ${RC})" "rc ${RC}; SETTINGS_REMOTE '$(mg_ptr SETTINGS_REMOTE)'; cloud: $(mg_tree); out: $(sa_tail "${MG}") -- the source was deleted after a pointer write that failed"
+    grep -qx '>>> why YOUR CLOUD SYNC SETTINGS COULDN.T BE SAVED' "${MG}/out"; check $? "G-A-02: and the run says why, in the player's words" "no why line; out: $(sa_tail "${MG}" 6)"
+fi
+
+# A33. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-05,
+#      High): conf_valid is a grammar a command cannot pass. It refused $(
+#      and a backtick, and let a backslash-continued line through without
+#      its shape checks -- so a double-quoted value continued onto a line
+#      that closed the quote and went on (the seat's counterexample) ran
+#      whatever followed, and so did a value closed and followed by ; on
+#      one line. The three copies (cloud_backup, cloud_restore,
+#      cloud_sync_helper) are lifted and put to the same files; the shipped
+#      conf and the forms a hand edit leaves must still pass.
+echo "    A33. G-A-05 (gpt): nothing in a conf that passes conf_valid runs when it is sourced"
+CV="${TMP}/ga05"; mkdir -p "${CV}"
+for s in cloud_backup cloud_restore cloud_sync_helper; do
+    src_of "${RCLONE_REL}/${s}" "${CV}/${s}"
+    awk '/^conf_valid\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${CV}/${s}" > "${CV}/${s}.fn"
+done
+cv_head='SAVESPATH="/storage/roms"
+SAVES_REMOTE="/ROCKNIX/Saves"'
+cv_bad() { # <name> <body>: a conf every copy must refuse
+    printf '%s\n%s\n' "${cv_head}" "$2" > "${CV}/bad-$1"
+}
+cv_bad continued 'RCLONEOPTS="--progress \
+"; touch /ctl/pwned; : ""'
+cv_bad semicolon 'RCLONEOPTS="--progress" ; touch /ctl/pwned'
+cv_bad bare 'LOG_LEVEL=INFO;touch /ctl/pwned'
+cv_bad single "BACKUPMETHOD='copy'; touch /ctl/pwned"
+cv_bad escaped 'RCLONEOPTS="a \\"; touch /ctl/pwned; : ""'
+cv_bad prompt "Y='\$'
+Z='(touch /ctl/pwned)'"'
+W="${Y}${Z}"
+RCLONEOPTS="${W@P}"'
+cv_bad and 'LOG_LEVEL="INFO" && touch /ctl/pwned'
+cv_good() { printf '%s\n%s\n' "${cv_head}" "$2" > "${CV}/good-$1"; }
+cv_good comment 'LOG_LEVEL="INFO"   # chatty while this is new'
+cv_good single "BACKUPMETHOD='copy'"
+cv_good bare 'SYNC_CEILING_SECONDS=90'
+cv_good empty 'SETTINGS_REMOTE=
+CONTENT_REMOTE=""'
+cv_good append 'RCLONEOPTS="${RCLONEOPTS} --verbose $LOG_LEVEL"'
+src_of "${RCLONE_REL}/cloud_sync.conf" "${CV}/good-shipped"
+src_of "${RCLONE_REL}/cloud_sync.conf.defaults" "${CV}/defaults"; sed 's/^DEFAULT_//' "${CV}/defaults" > "${CV}/good-fresh"
+# The fixtures are real: each one, sourced, runs its command.
+cv_inert=""
+for f in "${CV}"/bad-*; do
+    rm -f "${CV}/pwned"; sed "s|/ctl/pwned|${CV}/pwned|" "${f}" > "${CV}/sourced"
+    (cd "${CV}" && env -i PATH=/usr/bin:/bin bash -c ". '${CV}/sourced'" >/dev/null 2>&1)
+    [ -e "${CV}/pwned" ] || cv_inert="${cv_inert} ${f##*/bad-}"
+done
+[ -z "${cv_inert}" ]; check $? "G-A-05: each of the seven refused shapes, sourced, does run its command (the fixtures are real)" "inert when sourced:${cv_inert} -- a fixture that runs nothing proves nothing about the guard"
+for s in cloud_backup cloud_restore cloud_sync_helper; do
+    cv_pass=""; cv_fail=""
+    for f in "${CV}"/bad-*; do
+        bash -c ". '${CV}/${s}.fn'; conf_valid '${f}'" >/dev/null 2>&1 && cv_pass="${cv_pass} ${f##*/bad-}"
+    done
+    for f in "${CV}"/good-*; do
+        bash -c ". '${CV}/${s}.fn'; conf_valid '${f}'" >/dev/null 2>&1 || cv_fail="${cv_fail} ${f##*/good-}"
+    done
+    [ -s "${CV}/${s}.fn" ] && [ -z "${cv_pass}" ]; check $? "G-A-05: ${s}'s conf_valid refuses all seven shapes that run a command when sourced" "${s} passed:${cv_pass:- (its conf_valid was not found)} -- sourcing those runs touch /ctl/pwned"
+    [ -s "${CV}/${s}.fn" ] && [ -z "${cv_fail}" ]; check $? "G-A-05: ${s}'s conf_valid still passes the shipped conf, a fresh device's, and a hand edit's comment, single quotes, bare number, empty value and \${NAME} append" "${s} refused:${cv_fail} -- a conf that ran before would now be refused, and every sync with it"
+done
+# And end to end: the seat's counterexample in a live conf runs nothing.
+PX=$(sa_new ga05); sa_script "${PX}" cloud_backup cloud_saves_root
+printf -- '+ /**/*.srm\n- /**\n' > "${PX}/storage/.config/cloud_sync-rules.txt"
+mkdir -p "${PX}/storage/roms/gb"; echo s > "${PX}/storage/roms/gb/A.srm"
+cat > "${PX}/storage/.config/cloud_sync.conf" <<'EOS'
+SAVESPATH="/storage/roms"
+SAVES_REMOTE="/ROCKNIX/Saves"
+SETTINGS_BACKUPS="/storage/roms/backup"
+SETTINGS_REMOTE="/ROCKNIX/Backups"
+BACKUPMETHOD="copy"
+RESTOREMETHOD="copy"
+BACKUPFILE_BACKUP_OPTION="no"
+RCLONEOPTS="--progress \
+"; touch /ctl/pwned; : ""
+RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"
+EOS
+sa_run "${PX}" cloud_backup --yes --saves-only
+[ ! -e "${PX}/ctl/pwned" ] && [ "${RC}" -eq 1 ] && grep -qx ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ" "${PX}/out"; check $? "G-A-05: cloud_backup with the seat's counterexample in its conf runs nothing and refuses (rc ${RC})" "ran it: $([ -e "${PX}/ctl/pwned" ] && echo YES || echo no); rc ${RC}; out: $(sa_tail "${PX}")"
+
+# A34. vm-qa run 68's round-trip, step "an edited RCLONEOPTS without
+#      --filter-from still keeps the allowlist", last check (#71's
+#      contract): a player who names their own --filter-from file keeps
+#      control of it. PL-020's catch-all test is for the allowlist this
+#      device manages (/storage/.config/cloud_sync-rules.txt); it was
+#      applied to every named file, so the round-trip's own rules --
+#      "- /**/own-rule-victim.srm" then "+ /**", no catch-all -- refused
+#      the backup outright (exit 1).
+echo "    A34. a rules file the player names themselves is theirs: honoured as written"
+OF=$(sa_new ownrules); sa_script "${OF}" cloud_backup cloud_restore cloud_saves_root
+cat > "${OF}/storage/.config/cloud_sync.conf" <<'EOS'
+SAVESPATH="/storage/roms"
+SAVES_REMOTE="/ROCKNIX/Saves"
+SETTINGS_BACKUPS="/storage/roms/backup"
+SETTINGS_REMOTE="/ROCKNIX/Backups"
+BACKUPMETHOD="copy"
+RESTOREMETHOD="copy"
+BACKUPFILE_BACKUP_OPTION="no"
+BACKUPFILE_RESTORE_OPTION="no"
+RCLONEOPTS="--progress --filter-from /storage/my-rules.txt"
+RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"
+LOG_LEVEL="INFO"
+EOS
+printf -- '- /**/own-rule-victim.srm\n+ /**\n' > "${OF}/storage/my-rules.txt"
+printf -- '+ /**/*.srm\n' > "${OF}/storage/.config/cloud_sync-rules.txt"
+mkdir -p "${OF}/storage/roms/saves" "${OF}/cloud/ROCKNIX/Saves/saves"
+echo s > "${OF}/storage/roms/saves/game1.srm"; echo victim > "${OF}/storage/roms/saves/own-rule-victim.srm"
+sa_run "${OF}" cloud_backup --yes --saves-only
+[ "${RC}" -eq 0 ] && [ -f "${OF}/cloud/ROCKNIX/Saves/saves/game1.srm" ] && [ ! -e "${OF}/cloud/ROCKNIX/Saves/saves/own-rule-victim.srm" ]; check $? "cloud_backup with the player's own --filter-from (no catch-all) runs by their rules: the save goes, the file they excluded stays (rc ${RC})" "rc ${RC}; game1.srm $([ -f "${OF}/cloud/ROCKNIX/Saves/saves/game1.srm" ] && echo sent || echo missing), victim $([ -e "${OF}/cloud/ROCKNIX/Saves/saves/own-rule-victim.srm" ] && echo SENT || echo home); out: $(sa_tail "${OF}") -- PL-020's catch-all test refused a file the player named (#71)"
+rm -f "${OF}/storage/roms/saves/game1.srm"
+echo cloudvictim > "${OF}/cloud/ROCKNIX/Saves/saves/own-rule-victim.srm"; rm -f "${OF}/storage/roms/saves/own-rule-victim.srm"
+sa_run "${OF}" cloud_restore --yes --saves-only
+[ "${RC}" -eq 0 ] && [ -f "${OF}/storage/roms/saves/game1.srm" ] && [ ! -e "${OF}/storage/roms/saves/own-rule-victim.srm" ]; check $? "cloud_restore with the same file brings the save down and leaves the excluded one in the cloud (rc ${RC})" "rc ${RC}; game1.srm $([ -f "${OF}/storage/roms/saves/game1.srm" ] && echo restored || echo missing), victim $([ -e "${OF}/storage/roms/saves/own-rule-victim.srm" ] && echo RESTORED || echo left); out: $(sa_tail "${OF}")"
+# And the managed allowlist, named in the options as it ships, is still
+# held to its catch-all (A3's refusal, by the path the conf names it by).
+sed -i 's|--filter-from /storage/my-rules.txt|--filter-from /storage/.config/cloud_sync-rules.txt|' "${OF}/storage/.config/cloud_sync.conf"
+echo s > "${OF}/storage/roms/saves/game2.srm"
+sa_run "${OF}" cloud_backup --yes --saves-only
+[ "${RC}" -ne 0 ] && [ ! -e "${OF}/cloud/ROCKNIX/Saves/saves/game2.srm" ]; check $? "the device's own allowlist without its catch-all is still refused (rc ${RC})" "rc ${RC}; game2.srm $([ -e "${OF}/cloud/ROCKNIX/Saves/saves/game2.srm" ] && echo SENT || echo home)"
+
+# A35. vm-qa run 68's round-trip, step "content transfers honour the
+#      system selection": the tool ran `--match --apply` with no `--match`
+#      before it, and the plan contract (PL-001) refused it -- saying
+#      SOMETHING CHANGED SINCE YOU CHECKED about a run that never checked.
+#      The contract: --apply is the second half of a check, as the page
+#      runs it (--match, the confirmation, then --match --apply). So the
+#      tool checks first, and an apply with no check behind it says that
+#      is what is missing.
+echo "    A35. an apply with no check behind it says the check is missing; checked first, every chosen system is an item"
+m_seed
+sa_run "${M}" cloud_content_restore --match --apply
+[ "${RC}" -ne 0 ] && [ -f "${M}/storage/roms/gb/B.gb" ] && grep -qx '>>> why CHECK WHAT WOULD CHANGE FIRST' "${M}/out" && ! grep -q 'SOMETHING CHANGED' "${M}/out"; check $? "--match --apply with no preview removes nothing and says to check first, not that something changed (rc ${RC})" "rc ${RC}; why: $(grep '^>>> why' "${M}/out" | tr '\n' '|'); B.gb $([ -f "${M}/storage/roms/gb/B.gb" ] && echo kept || echo gone)"
+# The round-trip's own sequence, checked first: a system present on both
+# sides and one that exists nowhere (its plan is none) are both announced.
+m_seed
+printf 'gb\nghost-never-a-system\n' > "${M}/storage/.cache/cloud_sync/content-systems"
+sa_run "${M}" cloud_content_restore --match
+m35_prc=${RC}
+sa_run "${M}" cloud_content_restore --match --apply
+[ "${m35_prc}" -eq 0 ] && [ "${RC}" -eq 0 ] && grep -qx '>>> unit gb|1|2' "${M}/out" && grep -qx '>>> unit ghost-never-a-system|2|2' "${M}/out" \
+    && grep -q 'Nothing to remove from ghost-never-a-system' "${M}/out"; check $? "checked first, --match --apply announces both chosen systems as ITEM i OF 2 and says Nothing to remove for the one with nothing to do (preview rc ${m35_prc}, apply rc ${RC})" "preview rc ${m35_prc}, apply rc ${RC}; units: $(grep '^>>> unit' "${M}/out" | tr '\n' '|'); out: $(sa_tail "${M}")"
+
+# A36. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-09,
+#      High): a saves folder at the cloud's root backs up with no record
+#      of what it replaced -- rclone refuses any --backup-dir there, since
+#      every folder of that remote is inside the destination (A22) -- and
+#      that was said only in the log. The player is told, on the console
+#      and in the run's outcome line; the register carries the exception.
+echo "    A36. G-A-09 (gpt): a backup that can keep no record of what it replaced says so where it is read"
+RX=$(sa_new ga09); sa_script "${RX}" cloud_backup cloud_saves_root
+cat > "${RX}/storage/.config/cloud_sync.conf" <<'EOS'
+SAVESPATH="/storage/roms"
+SAVES_REMOTE="/"
+SETTINGS_BACKUPS="/storage/roms/backup"
+SETTINGS_REMOTE="/Backups"
+BACKUPMETHOD="copy"
+RESTOREMETHOD="copy"
+BACKUPFILE_BACKUP_OPTION="no"
+RCLONEOPTS="--progress --log-file /var/log/cloud_sync.log --filter-from /storage/.config/cloud_sync-rules.txt"
+RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"
+LOG_LEVEL="INFO"
+EOS
+printf -- '+ /**/*.srm\n- /**\n' > "${RX}/storage/.config/cloud_sync-rules.txt"
+mkdir -p "${RX}/storage/roms/gb" "${RX}/cloud/gb"; echo "played here" > "${RX}/storage/roms/gb/A.srm"; echo "older" > "${RX}/cloud/gb/A.srm"
+ga09_line="Your saves folder is your cloud's top folder, so no replaced cloud saves are kept."
+sa_run "${RX}" cloud_backup --yes --saves-only
+[ "${RC}" -eq 0 ] && grep -qx "played here" "${RX}/cloud/gb/A.srm" && sed 's/\x1b\[[0-9;]*m//g' "${RX}/out" | grep -qxF "${ga09_line}"; check $? "a backup to a saves folder at the root says on the console that no replaced cloud saves are kept (rc ${RC})" "rc ${RC}; out: $(sa_tail "${RX}" 8) -- the loss of the one-cycle record was said only in the log"
+[ "$(sa_outcome "${RX}")" = "Completed. ${ga09_line}" ]; check $? "and its outcome line says it too: '$(sa_outcome "${RX}")'" "outcome line '$(sa_outcome "${RX}")'"
+sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE="/ROCKNIX/Saves"|' "${RX}/storage/.config/cloud_sync.conf"
+mkdir -p "${RX}/cloud/ROCKNIX/Saves/gb"; echo "older" > "${RX}/cloud/ROCKNIX/Saves/gb/A.srm"
+sa_run "${RX}" cloud_backup --yes --saves-only
+[ "${RC}" -eq 0 ] && [ "$(sa_outcome "${RX}")" = "Completed." ] && ! grep -qF "top folder" "${RX}/out"; check $? "a saves folder with a sibling keeps its record and says nothing of the kind (rc ${RC})" "rc ${RC}; outcome '$(sa_outcome "${RX}")'"
+
+# A37. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-12,
+#      Low; seats/A-claude.md G-A-11, Low): what the tidy page says. A copy
+#      that stopped part-way, or a check that failed, left files in the new
+#      folder, and the page said "Both folders are as they were"; a moved
+#      tier was announced by its config key ("Now using /ROCKNIX/Saves for
+#      SAVES_REMOTE").
+echo "    A37. G-A-12 (gpt) and G-A-11 (claude): the tidy's lines say what is true, in the player's words"
+mg_seed
+chmod 000 "${MG}/cloud/GAMES/gb/B.srm"
+sa_run "${MG}" cloud_migrate_layout --apply
+chmod 644 "${MG}/cloud/GAMES/gb/B.srm"
+[ "${RC}" -ne 0 ] && [ -f "${MG}/cloud/ROCKNIX/Saves/savefiles/gb/A.srm" ] && ! grep -q 'Both folders are as they were' "${MG}/out" \
+    && grep -qF "some files may already be in the new one" "${MG}/out"; check $? "a saves copy that stopped part-way (one file unreadable) says the new folder may already hold some files, not that both are as they were (rc ${RC})" "rc ${RC}; A.srm copied: $([ -f "${MG}/cloud/ROCKNIX/Saves/savefiles/gb/A.srm" ] && echo yes || echo no); out: $(sa_tail "${MG}" 5)"
+mg_seed
+rm -rf "${MG}/cloud/GAMES/savefiles"; mkdir -p "${MG}/cloud/GAMES/savefiles/gb"; echo s > "${MG}/cloud/GAMES/savefiles/gb/S1.srm"
+printf '%s\t%s\n' '^copy qa:/GAMES qa:/ROCKNIX/Saves' 'echo newer >> /cloud/GAMES/savefiles/gb/S1.srm' > "${MG}/ctl/post"
+sa_run "${MG}" cloud_migrate_layout --apply
+[ "${RC}" -ne 0 ] && ! grep -q 'Both folders are as they were' "${MG}/out" && grep -qF "nothing was removed from the old folder" "${MG}/out"; check $? "a check that failed says nothing was removed from the old folder, not that both are as they were (rc ${RC})" "rc ${RC}; out: $(sa_tail "${MG}" 5)"
+mg_seed
+sa_run "${MG}" cloud_migrate_layout --apply
+[ "${RC}" -eq 0 ] && ! grep -qE 'for (SAVES|SETTINGS|CONTENT)_REMOTE' "${MG}/out" && grep -qF 'Now using /ROCKNIX/Saves for your saves.' "${MG}/out"; check $? "a tier that moved is named in words, not by its config key (rc ${RC})" "rc ${RC}; lines: $(grep 'Now using' "${MG}/out" | tr '\n' '|')"
+
+# A38. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-11 and
+#      seats/A-claude.md G-A-10, Medium/Low): the hash query the migration
+#      added (`rclone backend features`) creates the remote, which on most
+#      backends is a round trip, and it ran on rclone's defaults -- A5's
+#      bound check was written around it.
+echo "    A38. G-A-11 (gpt) / G-A-10 (claude): the migration's hash query carries the listing bound"
+mg_seed
+sa_run "${MG}" cloud_migrate_layout --apply
+ga11=$(grep '^backend features' "${MG}/ctl/argv" | head -1)
+[ -n "${ga11}" ] && printf '%s' "${ga11}" | grep -q -- '--contimeout' && printf '%s' "${ga11}" | grep -q -- '--low-level-retries'; check $? "the migration's backend features call carries a connect timeout and a retry bound (rc ${RC})" "the call: '${ga11:-none made}' -- rclone's 60 s connect and ten retries"
+
+# A39. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-06 and
+#      seats/A-claude.md G-A-02, Medium): the content scripts read the conf
+#      as text since PL-051, and their reader took only KEY=value or
+#      KEY="value" whole -- a trailing comment, single quotes, or anything
+#      it could not read gave an empty CONTENT_REMOTE, the cloud's root,
+#      where `source` had given the folder. And it took the first of two
+#      lines where `source` takes the last.
+echo "    A39. G-A-06 (gpt) / G-A-02 (claude): the content scripts read CONTENT_REMOTE as source would, or refuse"
+CG=$(sa_new ga06); sa_script "${CG}" cloud_content_backup
+mkdir -p "${CG}/storage/roms/nes" "${CG}/storage/.config/emulationstation"; echo n > "${CG}/storage/roms/nes/N.nes"
+printf '<system><path>/storage/roms/nes</path></system>\n' > "${CG}/storage/.config/emulationstation/es_systems.cfg"
+cg_run() { # <CONTENT_REMOTE line(s)>: a content backup of nes, from an empty cloud
+    rm -rf "${CG}/cloud"/*
+    printf 'SAVESPATH="/storage/roms"\n%s\nRCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"\n' "$1" > "${CG}/storage/.config/cloud_sync.conf"
+    sa_run "${CG}" cloud_content_backup nes
+}
+cg_run 'CONTENT_REMOTE="/ROCKNIX/Content"   # where the ROMs live'
+[ "${RC}" -eq 0 ] && [ -f "${CG}/cloud/ROCKNIX/Content/ROMs/nes/N.nes" ] && [ ! -e "${CG}/cloud/ROMs" ]; check $? "a CONTENT_REMOTE with a trailing comment is the folder it names, not the cloud's root (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' ')"
+cg_run "CONTENT_REMOTE='/ROCKNIX/Content'"
+[ "${RC}" -eq 0 ] && [ -f "${CG}/cloud/ROCKNIX/Content/ROMs/nes/N.nes" ]; check $? "a single-quoted CONTENT_REMOTE is the folder it names (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' ')"
+# Of two lines the first counts: every saves run EmulationStation starts
+# is --yes, which runs cloud_sync_cleanup_duplicates.sh, which keeps the
+# first -- so the first is the value the saves scripts run with, and the
+# one the file is left holding.
+cg_run 'CONTENT_REMOTE="/ROCKNIX/Content"
+CONTENT_REMOTE="/Old/Content"'
+[ "${RC}" -eq 0 ] && [ -f "${CG}/cloud/ROCKNIX/Content/ROMs/nes/N.nes" ] && [ ! -e "${CG}/cloud/Old" ]; check $? "of two CONTENT_REMOTE lines the first counts, as the duplicate cleanup keeps it (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' ')"
+cg_run 'CONTENT_REMOTE="/ROCKNIX/Content" ; echo'
+[ "${RC}" -ne 0 ] && [ -z "$(cd "${CG}/cloud" && find . -type f)" ] && grep -qx ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ" "${CG}/out"; check $? "a CONTENT_REMOTE line it cannot read as plain text is refused, not read as the root (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' '); why: $(grep '^>>> why' "${CG}/out")"
+
+# A40. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-07 and
+#      seats/A-claude.md G-A-03, Medium): --all read its ROMs listing
+#      fail-closed and its two older-layout listings -- the flat layout's
+#      root and, with a CONTENT_REMOTE, the remote root -- fail-open, and
+#      BIOS by exists_remote, fail-open too. A cloud still on an older
+#      layout whose one listing failed restored nothing and said "Nothing
+#      to restore", stamped completed.
+echo "    A40. G-A-07 (gpt) / G-A-03 (claude): every listing --all stands on is read fail-closed"
+AF=$(sa_new ga07); sa_script "${AF}" cloud_content_restore
+mkdir -p "${AF}/storage/roms/nes" "${AF}/storage/.config/emulationstation" "${AF}/storage/.cache/cloud_sync"
+printf '<system><path>/storage/roms/nes</path></system>\n' > "${AF}/storage/.config/emulationstation/es_systems.cfg"
+af_run() { # <CONTENT_REMOTE> <where nes sits in the cloud> <the listing to fail>
+    rm -rf "${AF}/cloud"/* "${AF}/storage/roms/nes"/* "${AF}/storage/.cache/cloud_sync/last-content-restore"
+    printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="%s"\n' "$1" > "${AF}/storage/.config/cloud_sync.conf"
+    mkdir -p "${AF}/cloud$2"; echo n > "${AF}/cloud$2/N.nes"
+    printf '%s\t%s\n' "$3" 5 > "${AF}/ctl/fail"
+    sa_run "${AF}" cloud_content_restore --all
+}
+af_run /ROCKNIX/Content /ROCKNIX/Content/nes '^lsf --dirs-only qa:/ROCKNIX/Content/ '
+af_stamp=$(awk '{print $2}' "${AF}/storage/.cache/cloud_sync/last-content-restore" 2>/dev/null)
+[ "${RC}" -ne 0 ] && [ "${af_stamp:-none}" != 0 ] && ! grep -q '^Nothing to restore' "${AF}/out" && grep -q '^>>> why ' "${AF}/out"; check $? "--all on the flat layout whose root listing fails (5) ends Couldn't finish, not Nothing to restore (rc ${RC}, stamp ${af_stamp:-none})" "rc ${RC}, stamp ${af_stamp:-none}; out: $(sa_tail "${AF}")"
+af_run /ROCKNIX/Content /nes '^lsf --dirs-only qa: '
+af_stamp=$(awk '{print $2}' "${AF}/storage/.cache/cloud_sync/last-content-restore" 2>/dev/null)
+[ "${RC}" -ne 0 ] && [ "${af_stamp:-none}" != 0 ] && ! grep -q '^Nothing to restore' "${AF}/out"; check $? "--all whose legacy root listing fails (5) ends Couldn't finish too (rc ${RC}, stamp ${af_stamp:-none})" "rc ${RC}, stamp ${af_stamp:-none}; out: $(sa_tail "${AF}")"
+af_run /ROCKNIX/Content /ROCKNIX/Content/nes '^never$'
+[ "${RC}" -eq 0 ] && [ -f "${AF}/storage/roms/nes/N.nes" ]; check $? "and with nothing failing the flat layout's nes comes down (rc ${RC})" "rc ${RC}; out: $(sa_tail "${AF}")"
+
+# A41. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-10,
+#      Medium): a game list below a system's own folder travels as game
+#      content -- the ROMs pass excludes "**/gamelist.xml", the game-list
+#      pass includes it -- and was counted as ROMs, on both sides, by the
+#      scan (cloud_content_filter's n == 2, content_files' root-only path).
+#      So after a ROMs-only restore the scan's cloud total carried a file
+#      the restore had rightly left in the cloud.
+echo "    A41. G-A-10 (gpt): a nested game list is game content in the count as in the transfer"
+NG=$(sa_new ga10); sa_script "${NG}" cloud_content_restore
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/ROCKNIX/Content"\n' > "${NG}/storage/.config/cloud_sync.conf"
+mkdir -p "${NG}/storage/.config/emulationstation" "${NG}/cloud/ROCKNIX/Content/ROMs/scummvm/title"
+printf '<system><path>/storage/roms/scummvm</path></system>\n' > "${NG}/storage/.config/emulationstation/es_systems.cfg"
+echo game-data > "${NG}/cloud/ROCKNIX/Content/ROMs/scummvm/title/game.dat"
+echo '<gameList><game><path>./x</path></game></gameList>' > "${NG}/cloud/ROCKNIX/Content/ROMs/scummvm/title/gamelist.xml"
+sa_run "${NG}" cloud_content_restore scummvm
+ng_rrc=${RC}
+sa_run "${NG}" cloud_content_restore --scan
+ng_row=$(grep '^scummvm|' "${NG}/out" | head -1)
+[ "${ng_rrc}" -eq 0 ] && [ ! -e "${NG}/storage/roms/scummvm/title/gamelist.xml" ] && [ -n "${ng_row}" ] \
+    && [ "$(printf '%s' "${ng_row}" | cut -d'|' -f2)" = "$(printf '%s' "${ng_row}" | cut -d'|' -f4)" ]; check $? "after a ROMs-only restore the scan counts the same ROMs on both sides: the nested game list is not in the cloud's ROMs total (restore rc ${ng_rrc})" "restore rc ${ng_rrc}; scan row '${ng_row}' (name|cloud|sup|device|...) -- the list below title/ was counted as a ROM"
+sa_run "${NG}" cloud_content_restore --media-only scummvm
+sa_run "${NG}" cloud_content_restore --scan --media-only
+ng_row=$(grep '^scummvm|' "${NG}/out" | head -1)
+[ -f "${NG}/storage/roms/scummvm/title/gamelist.xml" ] && [ -n "${ng_row}" ] && [ "$(printf '%s' "${ng_row}" | cut -d'|' -f2)" != 0 ] \
+    && [ "$(printf '%s' "${ng_row}" | cut -d'|' -f2)" = "$(printf '%s' "${ng_row}" | cut -d'|' -f4)" ]; check $? "and under game content alone the same list is counted, on both sides, once it has come down" "list on the device: $([ -f "${NG}/storage/roms/scummvm/title/gamelist.xml" ] && echo yes || echo no); scan row '${ng_row}'"
+
+# A42. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-04,
+#      Medium): the capture's commit lock was waited for five seconds and
+#      then gone on without -- the check, the rename and the GC ran
+#      unlocked beside the capture that held it. A commit that cannot have
+#      the lock does not commit: an exit capture re-runs once, as it does
+#      when it loses to another writer, and then leaves it to the next run.
+echo "    A42. G-A-04 (gpt): a capture that cannot have the commit lock does not commit"
+cp_seed
+( exec 8>>"${CP}/storage/.cache/cloud_sync/.capture.lock"; flock -x 8; exec sleep 25 ) & cp_holder=$!
+sleep 0.5
+cp_exit
+cp_held=0; kill -0 "${cp_holder}" 2>/dev/null && cp_held=1
+kill "${cp_holder}" 2>/dev/null; wait "${cp_holder}" 2>/dev/null
+[ "${cp_held}" -eq 1 ] && [ "${RC}" -ne 0 ] && [ ! -e "${CPM}" ] && grep -q 'lock-busy' "${CP}/storage/.cache/cloud_sync/capture-failures" 2>/dev/null; check $? "an exit capture against a lock held past its waits commits nothing and records lock-busy (rc ${RC}, ${DT}s)" "holder alive at the end: ${cp_held}; rc ${RC}; manifest: $([ -e "${CPM}" ] && echo WRITTEN || echo none); failures: $(tail -1 "${CP}/storage/.cache/cloud_sync/capture-failures" 2>/dev/null) -- the commit went on unlocked after five seconds"
+cp_exit
+[ "${RC}" -eq 0 ] && jq -e '.entries["gb/Game.srm"]' "${CPM}" >/dev/null 2>&1; check $? "and once the lock is free the next capture records what that one could not (rc ${RC})" "rc ${RC}; entries: $(jq -c '.entries | keys' "${CPM}" 2>/dev/null)"
+
+# A43. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-08 and
+#      seats/A-claude.md G-A-13, Medium/Low): the content scripts' progress
+#      was "a unit completed" -- so files a unit moved before its own
+#      failure did not count (a bare 69, SKIPPED, over a ROM that arrived),
+#      and a unit that moved nothing did (69 gaps, COULDN'T FINISH, over an
+#      untouched cloud). Progress is what rclone logged moving.
+echo "    A43. G-A-08 (gpt) / G-A-13 (claude): progress is files moved, not units completed"
+PG=$(sa_new ga08); sa_script "${PG}" cloud_content_restore cloud_content_backup
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/ROCKNIX/Content"\n' > "${PG}/storage/.config/cloud_sync.conf"
+mkdir -p "${PG}/storage/.config/emulationstation"
+printf '<system><path>/storage/roms/nes</path></system>\n<system><path>/storage/roms/gb</path></system>\n' > "${PG}/storage/.config/emulationstation/es_systems.cfg"
+pg_reset() {
+    rm -rf "${PG}/cloud"/* "${PG}/storage/roms"/* "${PG}/storage/.cache/cloud_sync"/last-* "${PG}/ctl/noroute" "${PG}/ctl/noping"
+    : > "${PG}/ctl/fail"; : > "${PG}/ctl/post"
+    mkdir -p "${PG}/cloud/ROCKNIX/Content/ROMs/nes" "${PG}/cloud/ROCKNIX/Content/ROMs/gb" "${PG}/storage/roms/nes" "${PG}/storage/roms/gb"
+}
+pg_stamp() { cut -d' ' -f2- "${PG}/storage/.cache/cloud_sync/last-content-$1" 2>/dev/null; }
+# A restore whose one unit lands its ROM and then loses the network in the
+# game-list pass.
+pg_reset
+echo n > "${PG}/cloud/ROCKNIX/Content/ROMs/nes/N.nes"; echo '<gameList/>' > "${PG}/cloud/ROCKNIX/Content/ROMs/nes/gamelist.xml"
+printf '%s\t%s\n' '^copy qa:/ROCKNIX/Content/ROMs/nes .*--progress' 'touch /ctl/noroute /ctl/noping' > "${PG}/ctl/post"
+printf '%s\t%s\n' '^copy .*--update' 5 > "${PG}/ctl/fail"
+sa_run "${PG}" cloud_content_restore --with-media nes
+[ "${RC}" -eq 69 ] && [ -f "${PG}/storage/roms/nes/N.nes" ] && pg_stamp restore | grep -q '^69 gaps .'; check $? "a restore whose unit landed its ROM and then lost the network in its game-list pass stamps '69 gaps', not a bare skip (rc ${RC}, stamp $(pg_stamp restore))" "rc ${RC}; N.nes $([ -f "${PG}/storage/roms/nes/N.nes" ] && echo arrived || echo missing); stamp '$(pg_stamp restore)'"
+# The same, backing up (the content backup's gaps stamp had no case).
+pg_reset
+echo n > "${PG}/storage/roms/nes/N.nes"; echo '<gameList/>' > "${PG}/storage/roms/nes/gamelist.xml"
+printf '%s\t%s\n' '^copy /storage/roms/nes .*--progress' 'touch /ctl/noroute /ctl/noping' > "${PG}/ctl/post"
+printf '%s\t%s\n' '^copy .*--update' 5 > "${PG}/ctl/fail"
+sa_run "${PG}" cloud_content_backup --with-media nes
+[ "${RC}" -eq 69 ] && [ -f "${PG}/cloud/ROCKNIX/Content/ROMs/nes/N.nes" ] && pg_stamp backup | grep -q '^69 gaps .'; check $? "a content backup that sent its ROM and then lost the network stamps '69 gaps' (rc ${RC}, stamp $(pg_stamp backup))" "rc ${RC}; N.nes in the cloud $([ -f "${PG}/cloud/ROCKNIX/Content/ROMs/nes/N.nes" ] && echo yes || echo no); stamp '$(pg_stamp backup)'"
+# A first unit with nothing to move, then the network gone: nothing was
+# touched, so the skip.
+pg_reset
+echo a > "${PG}/cloud/ROCKNIX/Content/ROMs/gb/A.gb"; cp -p "${PG}/cloud/ROCKNIX/Content/ROMs/gb/A.gb" "${PG}/storage/roms/gb/A.gb"
+echo n > "${PG}/cloud/ROCKNIX/Content/ROMs/nes/N.nes"
+printf '%s\t%s\n' '^copy qa:/ROCKNIX/Content/ROMs/gb .*--progress' 'touch /ctl/noroute /ctl/noping' > "${PG}/ctl/post"
+printf '%s\t%s\n' '^copy qa:/ROCKNIX/Content/ROMs/nes ' 1 > "${PG}/ctl/fail"
+sa_run "${PG}" cloud_content_restore gb nes
+[ "${RC}" -eq 69 ] && [ "$(pg_stamp restore)" = 69 ]; check $? "a restore whose first unit had nothing to move, then lost the network, is the skip: a bare 69 (rc ${RC}, stamp $(pg_stamp restore))" "rc ${RC}; stamp '$(pg_stamp restore)' -- a unit that moved nothing counted as progress"
+
+# A44. The audit of the fixes (#307 follow-up 2; seats/A-claude.md G-A-01,
+#      Medium): #308 claude F-CS-24's "69 gaps" knew a file had moved only
+#      from the deliberate run's stall-ceiling trace, so the automatic
+#      syncs -- the ones the finding was filed about -- stamped a bare 69,
+#      SKIPPED on the row, over saves that did go up. An automatic run's
+#      rclone logs what it moves too, and that is read.
+echo "    A44. G-A-01 (claude): an automatic run cut by the network after it sent a save is not a skip"
+AU=$(sa_new ga01c); sa_script "${AU}" cloud_backup cloud_saves_root
+cp "${PR}/storage/.config/cloud_sync.conf" "${PR}/storage/.config/cloud_sync-rules.txt" "${AU}/storage/.config/"
+sed -i 's/^BACKUPFILE_BACKUP_OPTION=.*/BACKUPFILE_BACKUP_OPTION="yes"/' "${AU}/storage/.config/cloud_sync.conf"
+mkdir -p "${AU}/storage/roms/gb" "${AU}/storage/roms/backup/x/storage/.config" "${AU}/cloud/ROCKNIX/Saves"
+echo "a save" > "${AU}/storage/roms/gb/New.srm"; echo cfg > "${AU}/storage/roms/backup/x/storage/.config/blob"
+tar -C "${AU}/storage/roms/backup/x" -czf "${AU}/storage/roms/backup/2026_09_28-120000-QA-ROCKNIX_SETTINGS.tar.gz" storage; rm -rf "${AU}/storage/roms/backup/x"
+printf '%s\t%s\n' '^copy .* /storage/roms/ qa:/ROCKNIX/Saves/' 'touch /ctl/noroute /ctl/noping' > "${AU}/ctl/post"
+printf '%s\t%s\n' '^mkdir qa:/ROCKNIX/Backups/' 1 > "${AU}/ctl/fail"
+sa_run "${AU}" cloud_backup --yes --automatic
+au_stamp=$(cut -d' ' -f2- "${AU}/storage/.cache/cloud_sync/last-backup" 2>/dev/null)
+[ "${RC}" -eq 69 ] && [ -f "${AU}/cloud/ROCKNIX/Saves/gb/New.srm" ] && echo "${au_stamp}" | grep -q '^69 gaps .'; check $? "an automatic backup whose saves phase sent a file before the network went stamps '69 gaps <why>' (rc ${RC}, stamp ${au_stamp:-none})" "rc ${RC}; New.srm in the cloud: $([ -f "${AU}/cloud/ROCKNIX/Saves/gb/New.srm" ] && echo yes || echo no); stamp '${au_stamp:-none}'; out: $(sa_tail "${AU}")"
+# And one that sent nothing before the network went is still the skip.
+rm -f "${AU}/ctl/noroute" "${AU}/ctl/noping" "${AU}/storage/.cache/cloud_sync/last-backup"
+sa_run "${AU}" cloud_backup --yes --automatic
+au_stamp=$(cut -d' ' -f2- "${AU}/storage/.cache/cloud_sync/last-backup" 2>/dev/null)
+[ "${RC}" -eq 69 ] && [ "${au_stamp}" = 69 ]; check $? "and one whose saves phase had nothing new to send stamps the bare 69 (rc ${RC}, stamp ${au_stamp:-none})" "rc ${RC}; stamp '${au_stamp:-none}'; out: $(sa_tail "${AU}")"
+rm -f "${AU}/ctl/noroute" "${AU}/ctl/noping"; : > "${AU}/ctl/post"; : > "${AU}/ctl/fail"
+
+# A45. The audit of the fixes (#307 follow-up 2; seats/A-claude.md G-A-09,
+#      Low): an automatic --system-only run's reachability probe that the
+#      ceiling ended (124) fell through to check_internet's "the internet
+#      answers" branch and was worded as a sign-in problem (COULDN'T REACH
+#      YOUR CLOUD - CHECK YOUR SIGN-IN), where the ceiling's own sentence is
+#      the true one.
+echo "    A45. G-A-09 (claude): a probe the automatic ceiling ended is worded as the ceiling"
+for ga9s in cloud_backup cloud_restore; do
+    sa_script "${CE}" "${ga9s}"
+    : > "${CE}/ctl/argv"; : > "${CE}/ctl/fail"
+    printf '%s\t%s\n' '^lsd qa: ' 30 > "${CE}/ctl/hang"
+    sa_run "${CE}" "${ga9s}" --yes --automatic --system-only
+    : > "${CE}/ctl/hang"
+    [ "${DT}" -le 12 ] && [ "${RC}" -ne 0 ] && grep -qx ">>> why THE CLOUD TOOK TOO LONG - IT'LL TRY AGAIN NEXT TIME" "${CE}/out" && ! grep -q 'SIGN-IN' "${CE}/out"; check $? "${ga9s} --automatic --system-only: a probe the ceiling ended says THE CLOUD TOOK TOO LONG, not a sign-in problem (${DT}s, rc ${RC})" "${DT}s, rc ${RC}; why: $(grep '^>>> why' "${CE}/out" | tr '\n' '|')"
+done
+
+# A46. The audit of the fixes (#307 follow-up 2; seats/A-claude.md G-A-08,
+#      Low): the nested-folder warning skipped a saves folder of "" and
+#      fired for "/" -- the same root (F-CS-25 treats them alike) -- where
+#      every folder is "inside" the saves folder, and told the player TIDY
+#      UP YOUR CLOUD FOLDERS would move it out, which it cannot do for a
+#      root. A root saves folder gets A36's sentence instead.
+echo "    A46. G-A-08 (claude): a saves folder at the root is not warned about as a nesting"
+NR=$(sa_new ga08c); sa_script "${NR}" cloud_backup cloud_saves_root
+sed 's|^SAVES_REMOTE=.*|SAVES_REMOTE="/"|' "${RX}/storage/.config/cloud_sync.conf" > "${NR}/storage/.config/cloud_sync.conf"
+cp "${RX}/storage/.config/cloud_sync-rules.txt" "${NR}/storage/.config/"
+mkdir -p "${NR}/storage/roms/gb"; echo s > "${NR}/storage/roms/gb/A.srm"
+sa_run "${NR}" cloud_backup --yes --saves-only
+[ "${RC}" -eq 0 ] && ! grep -q 'sits inside your saves folder' "${NR}/out" && ! grep -q 'is inside SAVES_REMOTE' "${NR}/log/cloud_sync.log"; check $? "SAVES_REMOTE=\"/\" with SETTINGS_REMOTE=\"/Backups\": no nesting warning on the screen or in the log (rc ${RC})" "rc ${RC}; screen: $(grep 'sits inside' "${NR}/out" | head -1); log: $(grep 'is inside SAVES_REMOTE' "${NR}/log/cloud_sync.log" | head -1 | cut -c1-120)"
+
+# A47. The audit of the fixes (#307 follow-up 2; seats/A-claude.md G-A-14,
+#      Low): after the duplicate cleanup rewrote cloud_sync.conf, both saves
+#      scripts sourced the rewritten file unchecked -- the one `source`
+#      PL-051 left. A cleanup that leaves a file conf_valid refuses puts the
+#      copy from before it back and the run goes on with that (it was
+#      checked); nothing in the rewritten file runs. The cleanup here is a
+#      stand-in overlaid at /usr/bin/cloud_sync_cleanup_duplicates.sh (the
+#      sandbox's /usr is the host's, which has none) that writes such a file.
+echo "    A47. G-A-14 (claude): a conf the duplicate cleanup rewrote is checked before it is sourced"
+DC=$(sa_new ga14c); sa_script "${DC}" cloud_backup cloud_restore cloud_saves_root
+cat > "${DC}/dupclean" <<'EOS'
+#!/bin/sh
+# A cleanup that leaves a command behind.
+printf 'RCLONEOPTS="--progress"; touch /ctl/pwned\n' >> "$1"
+EOS
+chmod +x "${DC}/dupclean"
+cp "${PR}/storage/.config/cloud_sync-rules.txt" "${DC}/storage/.config/"
+sed '/^LOG_LEVEL=/d' "${PR}/storage/.config/cloud_sync.conf" > "${DC}/conf0"
+printf 'LOG_LEVEL="INFO"\nLOG_LEVEL="INFO"\n' >> "${DC}/conf0"
+mkdir -p "${DC}/storage/roms/gb"; echo s > "${DC}/storage/roms/gb/A.srm"
+SA_EXTRA=(--overlay-src /usr/bin --tmp-overlay /usr/bin --ro-bind "${DC}/dupclean" /usr/bin/cloud_sync_cleanup_duplicates.sh)
+for dc_s in cloud_backup cloud_restore; do
+    cp "${DC}/conf0" "${DC}/storage/.config/cloud_sync.conf"; rm -f "${DC}/ctl/pwned"
+    sa_run "${DC}" "${dc_s}" --yes --saves-only
+    [ ! -e "${DC}/ctl/pwned" ] && cmp -s "${DC}/conf0" "${DC}/storage/.config/cloud_sync.conf" && [ "${RC}" -eq 0 ]; check $? "${dc_s}: a cleanup that leaves a command in the conf runs nothing; the conf from before it is put back and the run goes on (rc ${RC})" "ran it: $([ -e "${DC}/ctl/pwned" ] && echo YES || echo no); conf $(cmp -s "${DC}/conf0" "${DC}/storage/.config/cloud_sync.conf" && echo restored || echo 'NOT the one from before'); rc ${RC}; out: $(sa_tail "${DC}")"
+done
+SA_EXTRA=()
+
+# A48. Found while working G-A-14: cloud_sync_cleanup_duplicates.sh drops
+#      a repeated KEY= line and keeps the lines that continued it, so a
+#      repeated backslash-continued value (RCLONEOPTS is written that way)
+#      left its tail behind as bare lines -- a conf that no longer parses,
+#      which every run after then refused or fell back from.
+echo "    A48. the duplicate cleanup removes a repeated value whole, continuation and all"
+src_of "${RCLONE_REL}/cloud_sync_cleanup_duplicates.sh" "${DC}/cleanup-real"; chmod +x "${DC}/cleanup-real"
+sed '/^RCLONEOPTS=/d' "${DC}/conf0" > "${DC}/conf1"
+cat >> "${DC}/conf1" <<'EOS'
+RCLONEOPTS="--progress \
+--log-file /var/log/cloud_sync.log \
+--filter-from /storage/.config/cloud_sync-rules.txt"
+RCLONEOPTS="--progress \
+--bwlimit 1M \
+--filter-from /storage/.config/cloud_sync-rules.txt"
+EOS
+cp "${DC}/conf1" "${DC}/cleaned"
+PATH="${SA}/nbin:${PATH}" bash "${DC}/cleanup-real" "${DC}/cleaned" >/dev/null 2>&1
+bash -n "${DC}/cleaned" 2>/dev/null && [ "$(grep -c '^RCLONEOPTS=' "${DC}/cleaned")" -eq 1 ] && ! grep -q -- '--bwlimit' "${DC}/cleaned" && grep -q -- '--log-file /var/log/cloud_sync.log' "${DC}/cleaned"; check $? "a repeated three-line RCLONEOPTS is removed whole; the first stays whole and the file parses" "cleaned file: $(grep -A3 '^RCLONEOPTS=' "${DC}/cleaned" | tr '\n' '|'); bash -n: $(bash -n "${DC}/cleaned" 2>&1 | head -1)"
+# And end to end, the real cleanup overlaid where the image has it.
+SA_EXTRA=(--overlay-src /usr/bin --tmp-overlay /usr/bin --ro-bind "${DC}/cleanup-real" /usr/bin/cloud_sync_cleanup_duplicates.sh)
+cp "${DC}/conf1" "${DC}/storage/.config/cloud_sync.conf"
+sa_run "${DC}" cloud_backup --yes --saves-only
+SA_EXTRA=()
+[ "${RC}" -eq 0 ] && [ "$(grep -c '^RCLONEOPTS=' "${DC}/storage/.config/cloud_sync.conf")" -eq 1 ] && ! grep -q "Couldn't clean up" "${DC}/out" && bash -n "${DC}/storage/.config/cloud_sync.conf"; check $? "cloud_backup --yes with that conf cleans it and goes on (rc ${RC})" "rc ${RC}; RCLONEOPTS lines $(grep -c '^RCLONEOPTS=' "${DC}/storage/.config/cloud_sync.conf"); out: $(sa_tail "${DC}")"
+
+# A49. The audit of the fixes (#307 follow-up 2; seats/A-claude.md G-A-07,
+#      Low): the restore's "tree is clean" record (F-CS-08) is kept by the
+#      saves restore alone, and a content restore writes into the same tree:
+#      one cut part-way left <name>.<8>.partial under /storage/roms with the
+#      record still saying clean, so the next saves restore did not look,
+#      and the next content backup sent the partial as a ROM.
+echo "    A49. G-A-07 (claude): a content transfer's leftovers are swept and never sent"
+cp "${RP}/storage/.config/cloud_sync.conf" "${SW}/storage/.config/cloud_sync.conf"
+grep -q '^CONTENT_REMOTE=' "${SW}/storage/.config/cloud_sync.conf" || printf 'CONTENT_REMOTE="/ROCKNIX/Content"\n' >> "${SW}/storage/.config/cloud_sync.conf"
+sa_script "${SW}" cloud_content_restore cloud_content_backup
+mkdir -p "${SW}/storage/.config/emulationstation" "${SW}/cloud/ROCKNIX/Content/ROMs/nes"
+printf '<system><path>/storage/roms/nes</path></system>\n' > "${SW}/storage/.config/emulationstation/es_systems.cfg"
+echo n > "${SW}/cloud/ROCKNIX/Content/ROMs/nes/N.nes"
+: > "${SW}/ctl/fail"; : > "${SW}/ctl/post"
+sa_run "${SW}" cloud_restore --yes --saves-only
+sw_clean_before=$([ -e "${SW}/storage/.cache/cloud_sync/restore-tree-clean" ] && echo yes || echo no)
+# The content restore is cut at its copy (the process group killed), and
+# the file rclone was writing is left behind.
+printf '%s\t%s\n' '^copy qa:/ROCKNIX/Content/ROMs/nes ' 1 > "${SW}/ctl/kill"; rm -f "${SW}/ctl/kill.count"
+sa_run "${SW}" cloud_content_restore nes
+: > "${SW}/ctl/kill"; rm -f "${SW}/ctl/kill.count"
+echo litter > "${SWP}"
+sa_run "${SW}" cloud_restore --yes --saves-only
+[ "${sw_clean_before}" = yes ] && [ ! -e "${SWP}" ]; check $? "after a content restore was cut, the next saves restore sweeps the tree (the record said clean before it: ${sw_clean_before})" "the partial is still there: the tree was recorded clean across a content restore that was cut"
+echo litter > "${SWP}"; echo n > "${SW}/storage/roms/nes/N.nes"
+sa_run "${SW}" cloud_content_backup nes
+[ "${RC}" -eq 0 ] && [ -z "$(find "${SW}/cloud/ROCKNIX/Content" -name '*.partial' | head -1)" ]; check $? "a content backup never sends a transfer's leftover as a ROM (rc ${RC})" "rc ${RC}; in the cloud: $(find "${SW}/cloud/ROCKNIX/Content" -name '*.partial' | sed "s|${SW}/cloud||" | tr '\n' ' ')"
+rm -f "${SWP}"
+# And a content restore that ends by itself gives the record back, so the
+# saves restore after it still walks nothing (F-CS-08's saving kept).
+sa_run "${SW}" cloud_restore --yes --saves-only
+sa_run "${SW}" cloud_content_restore nes
+[ "${RC}" -eq 0 ] && [ -e "${SW}/storage/.cache/cloud_sync/restore-tree-clean" ]; check $? "a content restore that completes leaves the tree recorded clean as it found it (rc ${RC})" "rc ${RC}; the record is gone -- every saves restore after a content restore would walk the library"
+
+# A50. The audit of the fixes (#307 follow-up 2; seats/A-claude.md G-A-04,
+#      Medium): tools/cloud-round-trip's settings step, added for PL-028,
+#      read the run's last line with a filter of its own that stripped no
+#      colour; it now uses the vocabulary gate's reader. It runs only on a
+#      guest, so here the tool's own reader is put to this sandbox's real
+#      output of the same command, and to that output coloured.
+echo "    A50. claude G-A-04: the round-trip reads a settings run's last line with its gate's reader"
+RT_TOOL="${TMP}/cloud-round-trip.py"; src_of tools/cloud-round-trip "${RT_TOOL}"
+SB=$(sa_new ga04c); sa_script "${SB}" cloud_backup cloud_saves_root
+cp "${PR}/storage/.config/cloud_sync.conf" "${PR}/storage/.config/cloud_sync-rules.txt" "${SB}/storage/.config/"
+sed -i 's/^BACKUPFILE_BACKUP_OPTION=.*/BACKUPFILE_BACKUP_OPTION="yes"/' "${SB}/storage/.config/cloud_sync.conf"
+mkdir -p "${SB}/storage/roms/backup/x/storage/.config"; echo cfg > "${SB}/storage/roms/backup/x/storage/.config/blob"
+tar -C "${SB}/storage/roms/backup/x" -czf "${SB}/storage/roms/backup/2026_09_28-120000-QA-ROCKNIX_SETTINGS.tar.gz" storage; rm -rf "${SB}/storage/roms/backup/x"
+sa_run "${SB}" cloud_backup --yes --system-only
+sb_last=$(python3 - "${RT_TOOL}" "${SB}/out" <<'EOP' 2>&1
+import importlib.machinery, importlib.util, sys
+loader = importlib.machinery.SourceFileLoader("crt", sys.argv[1])
+spec = importlib.util.spec_from_loader("crt", loader); m = importlib.util.module_from_spec(spec); loader.exec_module(m)
+out = open(sys.argv[2], errors="replace").read()
+coloured = out.replace("Completed.", "\x1b[32mCompleted.\x1b[0m")
+print(repr(m.last_player_line(out)), repr(m.last_player_line(coloured)))
+EOP
+)
+[ "${RC}" -eq 0 ] && [ "${sb_last}" = "'Completed.' 'Completed.'" ]; check $? "the tool's reader takes 'Completed.' from a real --system-only run's output, plain and coloured (rc ${RC})" "rc ${RC}; the reader gave ${sb_last}"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

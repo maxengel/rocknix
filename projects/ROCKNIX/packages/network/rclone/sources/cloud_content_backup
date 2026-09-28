@@ -102,11 +102,44 @@ fi
 # build wrote with "$(...)" in it ran on every `source`. A CONTENT_REMOTE
 # that carries a $, a backtick, a backslash or a control character is not a
 # folder name, and the run refuses it rather than use it as a path.
-conf_get() { # <KEY>: its value, quotes off; nothing when absent
-    sed -n "s/^$1=\"\{0,1\}\([^\"]*\)\"\{0,1\}\$/\1/p" /storage/.config/cloud_sync.conf 2>/dev/null | head -1
+#
+# Read in the forms `source` reads (the audit of the fixes, G-A-06/G-A-02):
+# the value double quoted, single quoted or bare; after it nothing, or
+# blanks and a # comment. The first cut took only KEY=value or KEY="value"
+# whole: a trailing comment or single quotes gave an empty CONTENT_REMOTE --
+# the cloud's root -- where the folder had been, and the backup went there.
+# A line it cannot read as plain text exits 2, and CONTENT_REMOTE's refuses
+# the run; nothing is read as the root that did not say the root. Of two
+# lines for one key, the first: every saves run EmulationStation starts is
+# --yes, which runs cloud_sync_cleanup_duplicates.sh, which keeps the first,
+# so that is the value the saves scripts run with and the file is left with.
+conf_get() { # <KEY>: its value, quotes off; nothing when absent; exit 2 when unreadable
+    [ -f /storage/.config/cloud_sync.conf ] || return 0
+    awk -v k="$1" '
+        index($0, k "=") == 1 {
+            s = substr($0, length(k) + 2); v = ""; r = ""; ok = 1
+            c = substr(s, 1, 1)
+            if (c == "\"" || c == "'"'"'") {
+                j = index(substr(s, 2), c)
+                if (j) { v = substr(s, 2, j - 1); r = substr(s, j + 2) } else ok = 0
+            } else {
+                match(s, /^[A-Za-z0-9_.\/:@%+,=-]*/); v = substr(s, 1, RLENGTH); r = substr(s, RLENGTH + 1)
+            }
+            if (r !~ /^([ \t\r]+(#.*)?)?$/) ok = 0
+            if (c == "\"" && v ~ /[$`\\]/) ok = 0
+            if (!found) { found = 1; first = v; firstok = ok }
+        }
+        END { if (found && !firstok) exit 2; if (found) print first }
+    ' /storage/.config/cloud_sync.conf
 }
-CONTENT_REMOTE=$(conf_get CONTENT_REMOTE)
-RCLONE_NET_OPTS=$(conf_get RCLONE_NET_OPTS)
+if ! CONTENT_REMOTE=$(conf_get CONTENT_REMOTE); then
+    echo ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"
+    echo "Your cloud sync settings couldn't be read. Set up cloud storage again under GAME SETTINGS > MANAGE CLOUD STORAGE."
+    exit 1
+fi
+# The bound falls back to the shipped value below when this is empty; a
+# line it cannot read is that too.
+RCLONE_NET_OPTS=$(conf_get RCLONE_NET_OPTS) || RCLONE_NET_OPTS=""
 case "${CONTENT_REMOTE}" in
     *[\$\`\\]*|*[[:cntrl:]]*)
         echo ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"
@@ -220,6 +253,20 @@ network_gone() {
 # SKIPPED means nothing was touched (#308 claude F-CS-24): once a unit has
 # completed, a run the network then ends stamps "69 gaps <why>", which the
 # rows read as COULDN'T FINISH; the exit stays 69.
+# Did this run's rclone move a file since <offset> into the log? Progress,
+# for the stamp stop_no_network writes, is what rclone logged moving --
+# "<path>: Copied (...)", "Moved (...)", "Deleted" -- not a unit that
+# completed (the audit of the fixes, G-A-08/G-A-13): files a unit moved
+# before its own failure did not count, and a unit that moved nothing did.
+# Every transfer here logs at INFO to LOG_FILE, and the transfer lock
+# keeps any other cloud script from writing it meanwhile.
+log_offset() { stat -c %s "${LOG_FILE}" 2>/dev/null || echo 0; }
+moved_since() { # <byte offset into LOG_FILE>
+    local now
+    now=$(stat -c %s "${LOG_FILE}" 2>/dev/null) || return 1
+    [ "${now}" -gt "$1" ] 2>/dev/null || return 1
+    tail -c +$(( $1 + 1 )) "${LOG_FILE}" 2>/dev/null | grep -qE ': (Copied|Moved) \(|: Deleted$'
+}
 PROGRESS_MADE=0
 stop_no_network() {
     local rc="$1" unit="$2"
@@ -290,13 +337,16 @@ content_files() {
     #   only  -- game content alone: the scraper's folders and gamelist.xml
     # The game list is game content (D-CLOUD-049): the scraper writes it
     # beside the artwork, and a restored-then-scraped device must read as
-    # matching its cloud under ROMs alone.
+    # matching its cloud under ROMs alone. At any depth, as the transfers
+    # move it (the ROMs pass excludes "**/gamelist.xml", the game-list pass
+    # includes it): a list below a system's own folder was counted as a ROM
+    # (the audit of the fixes, G-A-10).
     local -a media=()
     local d
     case "${MEDIA_MODE:-roms}" in
         roms) for d in ${MEDIA_DIRS:-images videos manuals screenshots fanart boxart wheel mix maps media}; do media+=( ! -path "${dir%/}/${d}/*" ); done
-              media+=( ! -path "${dir%/}/gamelist.xml" ) ;;
-        only) media+=( "(" -path "${dir%/}/gamelist.xml" )
+              media+=( ! -name gamelist.xml ) ;;
+        only) media+=( "(" -name gamelist.xml )
               for d in ${MEDIA_DIRS:-images videos manuals screenshots fanart boxart wheel mix maps media}; do media+=( -o -path "${dir%/}/${d}/*" ); done
               media+=( ")" ) ;;
     esac
@@ -307,6 +357,7 @@ content_files() {
         ! -path '*/save/*' ! -path '*/memcards/*' \
         ! -path '*/shared/savefiles/*' ! -path '*/PPSSPP/*' \
         ! -path '*conflicted copy*' ! -name '*.sync-conflict-*' \
+        ! -name '*.????????.partial' \
         ! -path "${dir%/}/README.txt" \
         "${media[@]}" "$@" 2>/dev/null
 }
@@ -484,6 +535,7 @@ esac
 CONFLICT_EXCLUDES=(
     --exclude "**conflicted copy**"
     --exclude "**.sync-conflict-**"
+    --exclude "*.????????.partial"
 )
 
 # gamelist.xml travels on its own terms.
@@ -599,6 +651,7 @@ for DIR in "${DIRS[@]}"; do
     # under directory markers it writes the marker the folder's parent then
     # lists (D-CLOUD-120). Its own failure is left to the copy to report.
     rclone mkdir "${TARGET}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null
+    UNIT_LOG0=$(log_offset)
     # The setup's note at a unit's root (BIOS/README.txt, cloud_setup
     # --seed-folders) is not content, and neither side counts it (#308 gpt
     # F-CS-30): it came down into /storage/roms/bios and read ever after as a
@@ -626,6 +679,8 @@ for DIR in "${DIRS[@]}"; do
         esac
     fi
 
+    # What moved in this unit, whatever its result (G-A-08/G-A-13).
+    moved_since "${UNIT_LOG0}" && PROGRESS_MADE=1
     if [ ${RC} -ne 0 ] && [ ${RC} -ne 9 ]; then
         # A failed unit says why: the network gone ends the run as 69 here,
         # anything else carries rclone's own code up as before.
@@ -636,7 +691,6 @@ for DIR in "${DIRS[@]}"; do
         STATUS=${RC}
     else
         echo "Backed up ${DIR:-everything}."
-        PROGRESS_MADE=1
     fi
 done
 

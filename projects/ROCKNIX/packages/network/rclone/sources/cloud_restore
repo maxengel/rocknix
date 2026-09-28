@@ -325,6 +325,22 @@ bounded_rclone() {
     return "${rc}"
 }
 
+# Did rclone log moving a file -- "<path>: Copied (...)", "Moved (...)",
+# "Deleted" -- since <offset> into LOG_FILE, or in <file> (its stderr, when
+# the options carry no --log-file)? An automatic run's rclone runs under
+# timeout, not the stall ceiling, so it has no trace for progress_mark to
+# read; what it logs is how RCLONE_MOVED is known for it (the audit of the
+# fixes, claude G-A-01: the game-exit sync stamped a bare 69, SKIPPED, over
+# saves that went up).
+logged_moved() { # <offset into LOG_FILE> [file]
+    local now
+    {
+        now=$(stat -c %s "${LOG_FILE}" 2>/dev/null) && [ "${now}" -gt "$1" ] 2>/dev/null \
+            && tail -c +$(( $1 + 1 )) "${LOG_FILE}" 2>/dev/null
+        [ -n "${2:-}" ] && cat "$2" 2>/dev/null
+    } | grep -qE ': (Copied|Moved) \(|: Deleted$'
+}
+
 rclone() {
     if [ "${AUTOMATIC}" -eq 1 ]; then
         if [ "${SYNC_DEADLINE}" -gt 0 ]; then
@@ -338,7 +354,11 @@ rclone() {
                 log_message "rclone $1 not started: the automatic ceiling had passed" "false"
                 return 124
             fi
-            command timeout -k 3 "${left}" rclone "$@" "${RCLONE_SYNC_NET_OPTS_ARRAY[@]}"
+            local log0 rc
+            log0=$(stat -c %s "${LOG_FILE}" 2>/dev/null || echo 0)
+            command timeout -k 3 "${left}" rclone "$@" "${RCLONE_SYNC_NET_OPTS_ARRAY[@]}"; rc=$?
+            logged_moved "${log0}" && RCLONE_MOVED=1
+            return "${rc}"
         else
             command rclone "$@"
         fi
@@ -710,8 +730,8 @@ record_last_run() {
     # SKIPPED means nothing was touched (#308 claude F-CS-24): a run the
     # network ended after a transfer of this run had moved a file keeps its
     # 69 and adds the gaps token and a why, which the rows read as COULDN'T
-    # FINISH. Known for the deliberate runs, whose rclone reports its
-    # counts through the stall ceiling's trace.
+    # FINISH. Known for the deliberate runs from the stall ceiling's trace,
+    # and for the automatic ones from what their rclone logs (logged_moved).
     if [ "${exit_code}" = "${EXIT_NO_NETWORK}" ] && [ "${RCLONE_MOVED}" -eq 1 ]; then
         why=" gaps YOU WENT OFFLINE PART-WAY THROUGH"
     fi
@@ -927,11 +947,25 @@ check_rclone_config() {
 check_internet() {
     log_message "Checking cloud storage reachability..." "false"
 
-    local remote
+    local remote probe_rc=1
     remote=$(rclone listremotes 2>/dev/null | head -1)
-    if [ -n "${remote}" ] && rclone lsd "${remote}" "${RCLONE_PROBE_OPTS[@]}" >/dev/null 2>&1; then
-        log_message "Cloud storage ${remote} is reachable" "false"
-        return 0
+    if [ -n "${remote}" ]; then
+        rclone lsd "${remote}" "${RCLONE_PROBE_OPTS[@]}" >/dev/null 2>&1; probe_rc=$?
+        if [ "${probe_rc}" -eq 0 ]; then
+            log_message "Cloud storage ${remote} is reachable" "false"
+            return 0
+        fi
+    fi
+
+    # A probe the automatic ceiling ended (the wrapper's 124) is the
+    # ceiling's answer, not the sign-in's: it fell through to the branch
+    # below and read COULDN'T REACH YOUR CLOUD - CHECK YOUR SIGN-IN (the
+    # audit of the fixes, claude G-A-09).
+    if [ "${AUTOMATIC}" -eq 1 ] && [ "${probe_rc}" -eq 124 ]; then
+        log_message "the reachability probe was ended by the automatic ceiling; reporting that" "false"
+        log_message "Couldn't finish: the cloud took too long. It'll try again next time." "true" "ERROR"
+        say_why "$(why_for 124)"
+        clean_exit 124
     fi
 
     if ping -q -c1 -W 3 1.1.1.1 >/dev/null 2>&1 || ping -q -c1 -W 3 8.8.8.8 >/dev/null 2>&1; then
@@ -1012,42 +1046,95 @@ network_lost_during_run() {
 rules_whole() {
     [ -s "$1" ] && grep -qx -- '- /\*\*' "$1"
 }
+# The allowlist this device writes and keeps (cloud_sync_helper).
+MANAGED_RULES=/storage/.config/cloud_sync-rules.txt
 
-# Is this a cloud_sync.conf that can be run with? bash -n, and the file's own
-# shape: every line blank, a comment, KEY=value with its double quotes
-# balanced, or the continuation of a value whose previous line ended in a
-# backslash (RCLONEOPTS is written that way). The shape check matters
+# Is this a cloud_sync.conf that can be run with? bash -n, and a grammar
+# nothing but assignments of text can pass. Every line is blank, a
+# comment, or KEY=value, where the value is
+#   - "double quoted": any text but a backtick, a backslash that is not
+#     the line's last character (the continuation RCLONEOPTS is written
+#     with), and a $ that is not a plain $NAME or ${NAME};
+#   - 'single quoted' on one line, with no $( or backtick in it;
+#   - or a bare word of letters, digits and . / : @ % + , = _ -;
+# and after it nothing, or blanks and a # comment. The shape check matters
 # because a torn line -- SAVES_REMOTE="/ROCK, cut mid-value -- can have its
 # quote closed by whatever is appended after it, and then parses.
 #
 # And nothing in it runs when it is sourced (audit #307 PL-051's script
-# half): a command substitution -- $( or a backtick -- on any line that is
-# not a comment is refused, and a folder value (SAVESPATH, SETTINGS_BACKUPS,
-# SAVES_REMOTE, SETTINGS_REMOTE, CONTENT_REMOTE) may carry no $, backtick,
-# backslash or control character at all. The setup page writes those values
-# from what a player typed or picked, and an earlier build wrote one that
-# held "$(...)" as it stood, which every `source` of this file then ran. A
-# config that fails is not sourced: the caller falls back to the good copy
-# or refuses (YOUR CLOUD SYNC SETTINGS COULDN'T BE READ).
+# half). The setup page writes the folder values from what a player typed
+# or picked, and an earlier build wrote one that held "$(...)" as it
+# stood, which every `source` of this file then ran; a folder value
+# (SAVESPATH, SETTINGS_BACKUPS, SAVES_REMOTE, SETTINGS_REMOTE,
+# CONTENT_REMOTE) is plain text on one line, with no $, backtick,
+# backslash or control character. The first cut of this refused only $(
+# and a backtick, and let a continued line through unchecked: a quoted
+# value continued onto a line that closed the quote and went on
+# (`RCLONEOPTS="--progress \` then `"; touch x; : ""`), a value closed and
+# followed by `; command`, and ${W@P}, which runs the command a value
+# spells out, all passed and ran (the audit of the fixes, G-A-05). A
+# config that fails is not sourced: the caller falls back to the good
+# copy or refuses (YOUR CLOUD SYNC SETTINGS COULDN'T BE READ).
 conf_valid() {
     [ -s "$1" ] || return 1
     bash -n "$1" 2>/dev/null || return 1
     awk '
-        cont { if ($0 ~ /\$\(|`/) exit 1; cont = ($0 ~ /\\$/); next }
-        /^[[:space:]]*(#|$)/ { next }
-        /^[A-Za-z_][A-Za-z0-9_]*=/ {
-            if ($0 ~ /\$\(|`/) exit 1
-            if ($0 ~ /^(SAVESPATH|SETTINGS_BACKUPS|SAVES_REMOTE|SETTINGS_REMOTE|CONTENT_REMOTE)=/) {
-                v = $0; sub(/^[^=]*=/, "", v)
-                if (v ~ /^".*"$/) v = substr(v, 2, length(v) - 2)
-                if (v ~ /[$`\\]/ || v ~ /[[:cntrl:]]/) exit 1
+        function bad() { failed = 1; exit 1 }
+        # A double-quoted value from position i of s: the position after
+        # its closing quote, or 0 when the line ends in a continuation.
+        function dq(s, i,    n, c, d) {
+            n = length(s)
+            while (i <= n) {
+                c = substr(s, i, 1)
+                if (c == "\"") return i + 1
+                if (c == "`") bad()
+                if (c == "\\") { if (i == n) return 0; bad() }
+                if (c == "$") {
+                    d = substr(s, i + 1)
+                    if (match(d, /^[A-Za-z_][A-Za-z0-9_]*/) || match(d, /^\{[A-Za-z_][A-Za-z0-9_]*\}/)) {
+                        val = val c substr(d, 1, RLENGTH); i += 1 + RLENGTH; continue
+                    }
+                    bad()
+                }
+                val = val c; i++
             }
-            n = gsub(/"/, "\"")
-            if ($0 ~ /\\$/) { cont = 1; next }
-            if (n % 2) exit 1
-            next
+            bad()
         }
-        { exit 1 }
+        # After a value: nothing, or blanks and a comment.
+        function rest(s, i) { if (substr(s, i) !~ /^([ \t\r]+(#.*)?)?$/) bad() }
+        function whole() {
+            if (key ~ /^(SAVESPATH|SETTINGS_BACKUPS|SAVES_REMOTE|SETTINGS_REMOTE|CONTENT_REMOTE)$/ \
+                && (val ~ /[$`\\]/ || val ~ /[[:cntrl:]]/ || lines > 1)) bad()
+        }
+        {
+            s = $0
+            if (indq) {
+                lines++
+                j = dq(s, 1)
+                if (j == 0) next
+                indq = 0; rest(s, j); whole(); next
+            }
+            if (s ~ /^[[:space:]]*(#|$)/) next
+            if (!match(s, /^[A-Za-z_][A-Za-z0-9_]*=/)) bad()
+            key = substr(s, 1, RLENGTH - 1); i = RLENGTH + 1; val = ""; lines = 1
+            c = substr(s, i, 1)
+            if (c == "\"") {
+                j = dq(s, i + 1)
+                if (j == 0) { indq = 1; next }
+                rest(s, j); whole(); next
+            }
+            if (c == "'"'"'") {
+                j = index(substr(s, i + 1), "'"'"'")
+                if (!j) bad()
+                val = substr(s, i + 1, j - 1)
+                if (val ~ /\$\(|`/) bad()
+                rest(s, i + j + 1); whole(); next
+            }
+            match(substr(s, i), /^[A-Za-z0-9_.\/:@%+,=-]*/)
+            val = substr(s, i, RLENGTH)
+            rest(s, i + RLENGTH); whole()
+        }
+        END { if (failed || indq) exit 1 }
     ' "$1"
 }
 
@@ -1125,12 +1212,33 @@ load_config() {
         if [ $cleanup_choice -eq 0 ]; then
             # User selected Yes - cleanup duplicates
             echo -e "\e[34m> Running duplicate cleanup...\e[0m"
-            /usr/bin/cloud_sync_cleanup_duplicates.sh "$conf_file"
-            echo -e "\e[34m> Duplicates cleaned.\e[0m"
-            echo ""
-            pause 2
-            # Reload config after cleanup
-            source /storage/.config/cloud_sync.conf
+            # The cleanup rewrites the file this run has already checked, so
+            # what it leaves is checked again before it is sourced -- the one
+            # `source` PL-051 left unchecked (the audit of the fixes, claude
+            # G-A-14). A cleanup that fails, or leaves a file conf_valid
+            # refuses, has the copy from before it put back, and the run goes
+            # on with that: the last known good state (D-CLOUD-078).
+            local pre_cleanup="${conf_file}.pre-cleanup.$$"
+            if cp -f "${conf_file}" "${pre_cleanup}" 2>/dev/null \
+               && /usr/bin/cloud_sync_cleanup_duplicates.sh "$conf_file" \
+               && conf_valid "${conf_file}"; then
+                rm -f "${pre_cleanup}"
+                echo -e "\e[34m> Duplicates cleaned.\e[0m"
+                echo ""
+                pause 2
+                # Reload config after cleanup
+                source "${conf_file}"
+            elif [ -s "${pre_cleanup}" ] && mv -f "${pre_cleanup}" "${conf_file}"; then
+                log_message "the duplicate cleanup failed or left cloud_sync.conf not whole; the copy from before it is back" "false" "WARN"
+                log_message "Couldn't clean up the duplicate settings, so they were left as they were." "true" "WARN"
+                pause 2
+            else
+                rm -f "${pre_cleanup}"
+                log_message "the duplicate cleanup left cloud_sync.conf not whole and the copy from before it could not be put back" "false" "ERROR"
+                log_message "Your cloud sync settings couldn't be read. Nothing was changed.\nSet up cloud storage again under GAME SETTINGS > MANAGE CLOUD STORAGE." "true" "ERROR"
+                say_why "YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"
+                clean_exit 1
+            fi
         else
             # User selected No or cancelled - skip cleanup
             echo -e "\e[34m> Skipped duplicate cleanup.\e[0m"
@@ -1338,6 +1446,9 @@ execute_rclone_with_error_handling() {
     # stdout goes to terminal (shows progress), stderr goes to temp file for logging
     rclone "${method}" "${extra_opts[@]}" "${RCLONE_NET_OPTS_ARRAY[@]}" "${source}" "${dest}" 2>"$stderr_file"
     local rclone_exit_code=$?
+    # With no --log-file in the options rclone's own lines, the ones that
+    # say what moved, are on stderr (claude G-A-01).
+    logged_moved "$(stat -c %s "${LOG_FILE}" 2>/dev/null || echo 0)" "$stderr_file" && RCLONE_MOVED=1
     
     # Log any stderr output for debugging
     if [ -s "$stderr_file" ]; then
@@ -1560,17 +1671,29 @@ restore_game_saves() {
     # before that line admits all of it, so a rules file without the line,
     # whole and alone on it, is refused rather than run with. The helper no
     # longer installs such a file; this is for one it did not write.
-    local rules_file="" next_is_rules=0 rules_bad=""
+    #
+    # The device's own allowlist only: a filter file the player named
+    # themselves is theirs to write, catch-all or not (#71's contract, the
+    # round-trip's "a user's own --filter-from is honoured"). The first cut
+    # held every named file to the catch-all and refused the player's.
+    local next_is_rules=0 rules_bad="" named
     for opt in "${all_opts[@]}"; do
+        named=""
         if [ "${next_is_rules}" = 1 ]; then
             next_is_rules=0
-            rules_whole "${opt}" || rules_bad="${opt}"
-            continue
+            named="${opt}"
+        else
+            case "${opt}" in
+                --filter-from|--filters-file) next_is_rules=1 ;;
+                --filter-from=*|--filters-file=*) named="${opt#*=}" ;;
+            esac
         fi
-        case "${opt}" in
-            --filter-from|--filters-file) next_is_rules=1 ;;
-            --filter-from=*|--filters-file=*) rules_file="${opt#*=}"; rules_whole "${rules_file}" || rules_bad="${rules_file}" ;;
-        esac
+        [ -n "${named}" ] || continue
+        if [ "$(readlink -f -- "${named}" 2>/dev/null || printf '%s' "${named}")" = "${MANAGED_RULES}" ]; then
+            rules_whole "${named}" || rules_bad="${named}"
+        else
+            log_message "the saves rules are the player's own file ${named}; used as written" "false"
+        fi
     done
     if [ -n "${rules_bad}" ]; then
         log_message "the rules file ${rules_bad} has no catch-all line (- /**); refusing the saves restore" "false" "ERROR"
