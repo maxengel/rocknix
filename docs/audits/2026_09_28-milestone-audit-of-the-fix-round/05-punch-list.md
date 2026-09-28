@@ -313,9 +313,9 @@ Recorded per item as it is resolved: the outcome (resolved / deferred / rejected
 | PL-008 | High | | |
 | PL-009 | High | | |
 | PL-010 | High | | |
-| PL-011 | High | | |
-| PL-012 | High | | |
-| PL-013 | High | | |
+| PL-011 | High | Resolved | Resolved `3e70ef9239` (ES `7d999fd15`) -- `.githooks/guard-lib` compiles both lists before use and reads every grep's status (1 = nothing, 0 = hits, else refuse); `.githooks/hooks-test` 27 cases PASS incl. "a credential list that does not compile: refused" for pre-commit and pre-push; the ES fork's `pre-push-test` 21 cases PASS with the same case |
+| PL-012 | High | Resolved | Resolved `3e70ef9239` + `f3d19dc8fb` -- the exemption is gone from both hooks (`hooks-test`: "the same line under an audit packet (no path is exempt): refused"); `.gitignore` `/docs/audits/*/seats/*.diff`; the 30 tracked packets untracked (`git rm --cached`, kept on disk); the manifests carry sha256 and range |
+| PL-013 | High | Resolved | Resolved `f3d19dc8fb` -- `engineering-practices.md` line 554 closes the group at the delimiter (`((…)[=:])[^ ]*` -> `\1***`) with the proof paragraph (a fake `key=SECRET` line, `SECRET` absent from the output); `tools/rules-check` clean |
 | PL-014 | High | | |
 | PL-015 | Medium | | |
 | PL-016 | Medium | | |
@@ -325,11 +325,11 @@ Recorded per item as it is resolved: the outcome (resolved / deferred / rejected
 | PL-020 | Medium | | |
 | PL-021 | Medium | | |
 | PL-022 | Medium | | |
-| PL-023 | Medium | | |
+| PL-023 | Medium | Resolved | Resolved `f3d19dc8fb` -- `skip()` counts the 25 sites; the verdict reads `PASSED, N SKIPPED` and exits 3 when FAIL = 0 and N > 0 (`vm-qa` `run_suite` reads 3 as SKIP, line 137). Proof: the committed harness on the host `PASSED` rc 0 (1002 PASS, 0 SKIP; `harness-pl023-normal.log`); in a worktree whose client pin names no tarball `PASSED, 22 SKIPPED -- a check that did not run has not passed` rc 3 (839 PASS, 22 SKIP; `harness-pl023-skip.log`) |
 | PL-024 | Medium | | |
-| PL-025 | Low | | |
-| PL-026 | Low | | |
-| PL-027 | Low | | |
+| PL-025 | Low | Resolved | Resolved `f3d19dc8fb` -- `tools/vm-qa`'s exec wrapper resets SIGPIPE beside SIGINT; the harness prints its inherited dispositions first (`signals: SigIgn=… SIGINT ignored=N SIGPIPE ignored=N`; under a detached run it read `SIGPIPE ignored=1`, which is the line doing its job) |
+| PL-026 | Low | Resolved | Resolved `3e70ef9239` -- `guard_scan` anchors every pattern after the label (`^([^\t]*\t)+.*(…)`); `hooks-test`: "a file NAMED like a key, clean inside (the label is not scanned): allowed" in pre-commit and at push |
+| PL-027 | Low | Resolved | Resolved `f3d19dc8fb` -- `es-player-text.md`'s why list carries `CHECK WHAT WOULD CHANGE FIRST` (`cloud_content_restore`) and `YOUR CLOUD SYNC SETTINGS COULDN'T BE SAVED` (`cloud_migrate_layout`); `tools/rules-check` clean |
 | PL-028 | Medium | | |
 | PL-029 | Medium | | |
 
@@ -424,7 +424,7 @@ punch_index:
   owner_area: "the integrator, .githooks in both repositories"
   where: ".githooks/pre-commit and pre-push (the `hits=$(... | head -5 || true)` pipelines) in the distribution and in the ES fork"
   acceptance: "the pattern is validated once before use and each stage's status is read (`PIPESTATUS`), any status above grep's 1 refusing; the constructed failure is the hook's own test, in both repositories"
-  outcome: open
+  outcome: resolved
 - id: PL-012
   severity: High
   category: "A scanner exemption keyed on a path"
@@ -432,7 +432,7 @@ punch_index:
   owner_area: "the integrator, .githooks"
   where: ".githooks/pre-push:211,228; .githooks/pre-commit:20"
   acceptance: "the exemption is removed from both hooks; packet `.diff` copies are no longer committed (a `.gitignore` line; the manifests' sha256 and the ranges are the record, a packet is regenerated from them); the hooks' test covers a credential-shaped line in such a file, refused"
-  outcome: open
+  outcome: resolved
 - id: PL-013
   severity: High
   category: "A rule that leaks what it says it masks"
@@ -440,7 +440,7 @@ punch_index:
   owner_area: "the integrator, engineering-practices.md"
   where: ".claude/rules/engineering-practices.md:555"
   acceptance: "the example closes its group at the delimiter (`((token|key|passw[a-z]*|psk|user)[=:])[^ ]*` -> `\1***`) and says a masking pattern is proven on a fake `key=SECRET` line first; `tools/rules-check` clean"
-  outcome: open
+  outcome: resolved
 - id: PL-014
   severity: High
   category: "A credential at rest, unanswered by the fix"
@@ -520,7 +520,7 @@ punch_index:
   owner_area: "the integrator, tools/last-good-scripts-test"
   where: "tools/last-good-scripts-test:10224"
   acceptance: "the summary reads `PASSED, N SKIPPED` and exits 3 when N > 0 and FAIL = 0 (vm-qa's run_suite reads 3 as SKIP); a run with a tarball hidden shows it"
-  outcome: open
+  outcome: resolved
 - id: PL-024
   severity: Medium
   category: "A wait a stale line satisfies"
@@ -536,7 +536,7 @@ punch_index:
   owner_area: "the integrator, tools/vm-qa"
   where: "tools/vm-qa (the python exec wrapper)"
   acceptance: "the wrapper resets SIGPIPE beside SIGINT; a check in the harness prints both dispositions"
-  outcome: open
+  outcome: resolved
 - id: PL-026
   severity: Low
   category: "A false refusal"
@@ -544,7 +544,7 @@ punch_index:
   owner_area: "the integrator, .githooks/pre-commit"
   where: ".githooks/pre-commit (the awk label)"
   acceptance: "the grep is anchored past the label as pre-push's is; the hooks' test adds a file named like a key"
-  outcome: open
+  outcome: resolved
 - id: PL-027
   severity: Low
   category: "The rule behind the round"
@@ -552,7 +552,7 @@ punch_index:
   owner_area: "the integrator, es-player-text.md"
   where: ".claude/rules/es-player-text.md (the why list)"
   acceptance: "the two sentences in the list, with their scripts; rules-check clean"
-  outcome: open
+  outcome: resolved
 - id: PL-028
   severity: Medium
   category: "Restore/rollback write-set mismatch (a member the snapshot never covers)"
