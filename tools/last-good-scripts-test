@@ -3394,4 +3394,10 @@ printf '%s\t%s\n' '^check qa:/GAMES qa:/ROCKNIX/Saves' 'mkdir -p /cloud/GAMES/sa
 sa_run "${MG}" cloud_migrate_layout --apply
 [ -n "$(cd "${MG}/cloud" && find . -name LATE.srm | head -1)" ]; check $? "PL-053: a save another device writes into the old folder after the check survives the move (rc ${RC})" "LATE.srm is gone: the old folder was purged after a point-in-time check (F-CS-07); cloud: $(mg_tree)"
 
+# PL-071 (F-CS-18 gpt): a content move that fails fails the run.
+mg_seed
+printf '%s\t%s\n' '^copy qa:/GAMES/Content ' 5 > "${MG}/ctl/fail"
+sa_run "${MG}" cloud_migrate_layout --apply
+[ "${RC}" -ne 0 ] && [ "$(mg_ptr CONTENT_REMOTE)" = "/GAMES/Content" ]; check $? "PL-071: a content move that fails ends the run non-zero, with CONTENT_REMOTE where it was (rc ${RC})" "rc ${RC}; CONTENT_REMOTE '$(mg_ptr CONTENT_REMOTE)'; out: $(sa_tail "${MG}") -- main said Done. over migrate_content's failure (F-CS-18)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

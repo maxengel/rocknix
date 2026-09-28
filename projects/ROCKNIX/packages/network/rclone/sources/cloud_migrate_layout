@@ -283,6 +283,7 @@ migrate_content() {
             say "REFUSING: ${remote}${NEW_CONTENT} already exists, and ${remote}${content}"
             say "holds files. Nothing moved and the config is unchanged -- merging two"
             say "content folders is not something to do without being asked."
+            [ "${mode}" = "--apply" ] && echo ">>> why THE NEW FOLDER ALREADY HAS FILES IN IT"
             return 4
         fi
         say "Would copy, verify, then remove  ${remote}${content}  ->  ${remote}${NEW_CONTENT}"
@@ -292,6 +293,7 @@ migrate_content() {
         fi
         if ! relocate "${remote}${content}" "${remote}${NEW_CONTENT}" "content" CONTENT_REMOTE; then
             say "The config is unchanged."
+            echo ">>> why SOME FILES DIDN'T FINISH"
             return 5
         fi
         say "Content is now at ${remote}${NEW_CONTENT}."
@@ -474,13 +476,21 @@ main() {
 
     # ROMs move with the saves they belong to, when the pointer is one we
     # derived. A CONTENT_REMOTE the owner set themselves is theirs, and stays.
+    # Its result is the run's (audit #307 PL-071): a content move that was
+    # refused or failed used to be followed by "Done." and exit 0, so the
+    # card said the tidy had completed while the ROMs stayed behind.
+    local content_rc=0
     if [ -n "${content}" ] && [ "${content}" = "$(derived_content "${saves}")" ]; then
-        migrate_content "${remote}" "${content}" "${mode}"
+        migrate_content "${remote}" "${content}" "${mode}" || content_rc=$?
     elif [ -n "${content}" ] && [ "${content}" != "${NEW_CONTENT}" ]; then
         say "Leaving CONTENT_REMOTE at ${content} -- it is not a path this migration set."
     fi
 
     say ""
+    if [ "${content_rc}" -ne 0 ]; then
+        say "Saves are at ${remote}${NEW_SAVES} and backups at ${remote}${NEW_BACKUPS}, but your ROMs and BIOS files didn't move. Try again."
+        return "${content_rc}"
+    fi
     say "Done. Saves are at ${remote}${NEW_SAVES}, backups at ${remote}${NEW_BACKUPS}."
     [ "${moved_saves}" = "1" ] && say "Old folders were left in place if anything else was in them."
     return 0
