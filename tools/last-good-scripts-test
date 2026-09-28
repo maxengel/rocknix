@@ -10652,6 +10652,34 @@ echo archive > "${TL}/cloud/ROCKNIX/backup/QA-deadbeef01/2026_09_01-000000-QA-RO
 sa2_run "${TL}" cloud_migrate_layout --apply
 [ "${RC}" -eq 0 ] && [ -f "${TL}/cloud/ROCKNIX/Saves/gb/A.srm" ] && [ -f "${TL}/cloud/ROCKNIX/Saves/gb/C.srm" ] && [ ! -e "${TL}/cloud/ROCKNIX/Saves/Saves" ] \
     && [ -f "${TL}/cloud/ROCKNIX/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ -f "${TL}/cloud/ROCKNIX/Content/ROMs/gb/A.gb" ]; check $? "PL-001: a resumed move into a folder inside the old one moves the rest and never the copy already there, and a content folder already at /ROCKNIX/Content is not moved onto itself (rc ${RC})" "PL-001: nested resume: rc ${RC}; cloud now: $(tl_tree); out: $(sa_tail "${TL}" 3)"
+
+# A56. Lead G2-A-04 (seats/A-gpt.md, Medium): --match --apply read the
+#      preview's plan and removed it without looking whether it went. A
+#      cache that would not let it go kept the plan, the apply ran on it,
+#      and the next apply stood on the same preview -- where each is to
+#      stand on the one that immediately led to it (D-CLOUD-141). Now an
+#      apply that cannot spend its plan removes nothing.
+echo "    A56. G2-A-04 (gpt): an apply that cannot spend its plan removes nothing"
+MP=$(sa_new g2a04); sa_script "${MP}" cloud_content_restore
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/ROCKNIX/Content"\n' > "${MP}/storage/.config/cloud_sync.conf"
+MPP="${MP}/storage/.cache/cloud_sync/content-match-plan"
+mp_seed() { # the cloud holds gb/A.gb; the device gb/A.gb and gb/B.gb
+    rm -rf "${MP}/cloud/ROCKNIX" "${MP}/storage/roms"/*
+    mkdir -p "${MP}/cloud/ROCKNIX/Content/ROMs/gb" "${MP}/storage/roms/gb"
+    echo a > "${MP}/cloud/ROCKNIX/Content/ROMs/gb/A.gb"; echo a > "${MP}/storage/roms/gb/A.gb"; echo bb > "${MP}/storage/roms/gb/B.gb"
+    printf 'gb\n' > "${MP}/storage/.cache/cloud_sync/content-systems"
+    rm -f "${MPP}"; : > "${MP}/ctl/fail"; : > "${MP}/ctl/argv"; : > "${MP}/ctl/rmfail"
+}
+mp_seed
+sa2_run "${MP}" cloud_content_restore --match
+mp_planned=$([ -s "${MPP}" ] && echo yes || echo no)
+printf '%s\n' 'content-match-plan$' > "${MP}/ctl/rmfail"
+sa2_run "${MP}" cloud_content_restore --match --apply
+: > "${MP}/ctl/rmfail"
+[ "${mp_planned}" = yes ] && [ -f "${MP}/storage/roms/gb/B.gb" ] && [ "${RC}" -ne 0 ] && grep -qx '>>> why SOMETHING WENT WRONG' "${MP}/out"; check $? "G2-A-04 (gpt): an apply whose plan cannot be removed removes nothing and ends with a why (rc ${RC})" "G2-A-04 (gpt): plan written: ${mp_planned}; B.gb $([ -f "${MP}/storage/roms/gb/B.gb" ] && echo kept || echo REMOVED); rc ${RC}; out: $(sa_tail "${MP}") -- the plan stayed for the next apply, and this one ran on it"
+sa2_run "${MP}" cloud_content_restore --match
+sa2_run "${MP}" cloud_content_restore --match --apply
+[ ! -e "${MP}/storage/roms/gb/B.gb" ] && [ -f "${MP}/storage/roms/gb/A.gb" ] && [ "${RC}" -eq 0 ] && [ ! -e "${MPP}" ]; check $? "G2-A-04 (gpt): and once the plan can be spent, the preview and the apply go through as before (rc ${RC})" "G2-A-04 (gpt): B.gb $([ -e "${MP}/storage/roms/gb/B.gb" ] && echo kept || echo removed); plan $([ -e "${MPP}" ] && echo left || echo spent); rc ${RC}; out: $(sa_tail "${MP}")"
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi

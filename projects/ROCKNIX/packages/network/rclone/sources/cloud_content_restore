@@ -887,6 +887,17 @@ match_run() {
             MATCH_PLAN_TEXT=$(tail -n +2 "${MATCH_PLAN}")
         fi
         rm -f "${MATCH_PLAN}" 2>/dev/null
+        # Spent means gone (the audit of the fix round, lead G2-A-04): a
+        # plan the cache would not let go stayed for the next apply, which
+        # then stood on a preview it did not follow. One that cannot be
+        # removed is not used.
+        if [ -e "${MATCH_PLAN}" ]; then
+            echo "Nothing was removed: something went wrong on this device. Try again."
+            log_message "match: refused, the preview plan ${MATCH_PLAN} could not be removed, so it could not be spent"
+            say_why "SOMETHING WENT WRONG"
+            record_outcome content-match 1
+            return 1
+        fi
         if [ -z "${MATCH_PLAN_TEXT}" ]; then
             # No check behind this apply at all -- run on its own, or run
             # again after the apply that spent the plan -- is not a change
