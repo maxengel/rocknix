@@ -23,72 +23,57 @@ first half alone patched (2026-09-26), where the log's remembered 0 was
 the second half. With both halves, on the QA guest (image a8175c6193,
 2026-09-26): no found_last_state_slot line, and the load-state key --
 sent through the guest's monitor, not a pad -- loaded Probe.state.auto.
+That run carried the first cut, which kept any negative slot. The
+narrower guard below passed the same run on a guest at 1b0d233657,
+while it still read the append files a second time; reading the answer
+from the load's own entries (2026-09-28) has not yet run on a guest.
 
 Both leave the slot alone only when this launch's append config sets it
-negative, and say so in the log. The answer is taken when the
-configuration loads: config_load_file hands command.c the --appendconfig
-list right after appending its files, and the last file that sets
-state_slot wins, as it does in the load -- so the answer describes the
-files RetroArch read, not whatever is at those paths by the time content
-loads, and a file that cannot be read says nothing. A -1 that reached
-the main config instead -- a configuration saved while Auto was
-selected -- is not this launch's request: it is scanned, reset or
-restored over as upstream does, so a launch that asks for no slot
-behaves as it always has.
+negative, and say so in the log. The answer is read from the load
+itself: config_load_file notes the state_slot entry the main config
+holds before it reads the --appendconfig files, and config_append_file
+points the key at the entry of the last file that sets it, so an entry
+that differs afterwards is an append file's and carries the value the
+load applies. Nothing is read twice: a file removed or rewritten after
+the load cannot change the answer, and a file that could not be read
+set nothing. A -1 that reached the main config instead -- a
+configuration saved while Auto was selected -- is not this launch's
+request: it is scanned, reset or restored over as upstream does, so a
+launch that asks for no slot behaves as it always has.
 
 diff --git a/command.c b/command.c
 --- a/command.c
 +++ b/command.c
-@@ -1903,6 +1903,60 @@ int command_event_get_next_savestate_auto_index(settings_t *settings)
+@@ -1903,6 +1903,40 @@ int command_event_get_next_savestate_auto_index(settings_t *settings)
     return new_state_slot;
  }
  
 +/* ROCKNIX: append auto slot begin */
 +/* Whether a launch's append config (--appendconfig, where ROCKNIX's
 + * launcher writes one launch's settings) asks for RetroArch's Auto slot,
-+ * the .state.auto file. The answer is taken when the configuration is
-+ * loaded -- config_load_file hands the list over right after appending its
-+ * files -- so it describes the files RetroArch read, not whatever is at
-+ * those paths by the time content loads. A negative that reached the main
-+ * config instead (a configuration saved while Auto was selected) is not a
-+ * launch's request and does not count. */
++ * the .state.auto file. The answer is read from the load itself:
++ * config_load_file notes the state_slot entry the main config holds before
++ * it reads the append files, and config_append_file points the key at the
++ * entry of the last file that sets it -- so an entry that differs
++ * afterwards is an append file's, and its value is the one the load
++ * applies. Nothing is read a second time, so a file removed or rewritten
++ * after the load cannot change the answer. A negative that reached the
++ * main config instead (a configuration saved while Auto was selected) is
++ * not a launch's request and does not count. */
 +static bool command_append_auto_slot = false;
 +
-+/* The '|'-separated list read as RetroArch reads it: the last file that
-+ * sets state_slot wins; a file that cannot be read, or has no state_slot,
-+ * says nothing. True when the winning value is negative. */
-+bool command_append_list_sets_auto_slot(const char *list)
++/* conf: the configuration as loaded, append files included (NULL when
++ * there were none); main_slot: its state_slot entry before the append
++ * files were read (NULL when it had none). */
++void command_record_append_config(config_file_t *conf,
++      const struct config_entry_list *main_slot)
 +{
-+   char tmp[PATH_MAX_LENGTH];
-+   char *ptr    = NULL;
-+   bool is_auto = false;
++   int slot = 0;
 +
-+   if (!list || !*list)
-+      return false;
-+
-+   strlcpy(tmp, list, sizeof(tmp));
-+   for (ptr = tmp; ptr && *ptr; )
-+   {
-+      char *delim         = strchr(ptr, '|');
-+      config_file_t *conf = NULL;
-+      int slot            = 0;
-+
-+      if (delim)
-+         *delim = '\0';
-+      if (*ptr && (conf = config_file_new_from_path_to_string(ptr)))
-+      {
-+         if (config_get_int(conf, "state_slot", &slot))
-+            is_auto = (slot < 0);
-+         config_file_free(conf);
-+      }
-+      ptr = delim ? delim + 1 : NULL;
-+   }
-+   return is_auto;
-+}
-+
-+void command_record_append_config(const char *list)
-+{
-+   command_append_auto_slot = command_append_list_sets_auto_slot(list);
++   command_append_auto_slot = conf
++         && config_get_entry(conf, "state_slot") != main_slot
++         && config_get_int(conf, "state_slot", &slot)
++         && slot < 0;
 +}
 +
 +bool command_append_config_sets_auto_slot(void)
@@ -100,7 +85,7 @@ diff --git a/command.c b/command.c
  /**
   * Determines most recent savestate slot in case of content load.
   *
-@@ -1913,6 +1967,18 @@ void command_event_set_savestate_auto_index(settings_t *settings)
+@@ -1913,6 +1947,18 @@ void command_event_set_savestate_auto_index(settings_t *settings)
  {
     unsigned max_idx          = 0;
     bool savestate_auto_index = settings->bools.savestate_auto_index;
@@ -122,14 +107,15 @@ diff --git a/command.c b/command.c
 diff --git a/command.h b/command.h
 --- a/command.h
 +++ b/command.h
-@@ -400,6 +400,12 @@ bool command_event_load_auto_state(void);
+@@ -400,6 +400,13 @@ bool command_event_load_auto_state(void);
  void command_event_set_savestate_auto_index(
        settings_t *settings);
  
 +/* ROCKNIX: whether a launch's append config asks for the Auto slot --
-+ * recorded by config_load_file as it loads the list, read at content load */
-+bool command_append_list_sets_auto_slot(const char *list);
-+void command_record_append_config(const char *list);
++ * recorded by config_load_file from the entries it loaded, read at
++ * content load */
++void command_record_append_config(config_file_t *conf,
++      const struct config_entry_list *main_slot);
 +bool command_append_config_sets_auto_slot(void);
 +
  int command_event_get_next_savestate_auto_index(
@@ -138,18 +124,31 @@ diff --git a/command.h b/command.h
 diff --git a/configuration.c b/configuration.c
 --- a/configuration.c
 +++ b/configuration.c
-@@ -4016,6 +4016,11 @@ static bool config_load_file(global_t *global,
-       check_verbosity_settings(conf, settings);
-    }
- 
-+   /* ROCKNIX: whether the append files just read ask for the Auto slot,
-+    * noted now, while they are the files RetroArch loaded (command.c) */
-+   command_record_append_config(path_is_empty(RARCH_PATH_CONFIG_APPEND)
-+         ? NULL : path_get(RARCH_PATH_CONFIG_APPEND));
-+
-    if (!path_is_empty(RARCH_PATH_CONFIG_OVERRIDE) && !without_overrides)
+@@ -3974,6 +3974,10 @@ static bool config_load_file(global_t *global,
     {
        char tmp_append_path[PATH_MAX_LENGTH];
+       const char *ptr         = NULL;
++      /* ROCKNIX: the main config's state_slot entry, before the append
++       * files are read (command.c) */
++      const struct config_entry_list *main_slot =
++            config_get_entry(conf, "state_slot");
+ 
+       strlcpy(tmp_append_path, path_get(RARCH_PATH_CONFIG_APPEND),
+             sizeof(tmp_append_path));
+@@ -4014,7 +4018,13 @@ static bool config_load_file(global_t *global,
+ 
+       /* Re-check verbosity settings */
+       check_verbosity_settings(conf, settings);
++
++      /* ROCKNIX: whether the append files just read ask for the Auto
++       * slot, from the entries this load chose (command.c) */
++      command_record_append_config(conf, main_slot);
+    }
++   else
++      command_record_append_config(NULL, NULL);
+ 
+    if (!path_is_empty(RARCH_PATH_CONFIG_OVERRIDE) && !without_overrides)
+    {
 diff --git a/runtime_file.c b/runtime_file.c
 --- a/runtime_file.c
 +++ b/runtime_file.c

@@ -4006,7 +4006,10 @@ check $? "the placement line is written after the divider is set and from the di
 # own config parser and asked about a matrix of append lists -- none; one
 # file at -1, at 3, without the key, missing; the last of two winning either
 # way; a file without the key after a -1 -- and about a -1 whose file is
-# deleted after the load recorded it.
+# deleted after the load recorded it. Each list is recorded as
+# config_load_file records it, from the entries the load chose (the audit
+# of the fix round, gpt G2-F2-02; F2-22 below replaces a file between the
+# load and the answer).
 F2_BAD=""
 grep -Eq 'command_record_append_config\(' <(awk '/^static bool config_load_file\(/,/^}/' "${RX}/src/configuration.c") || F2_BAD+=" configuration.c-records-nothing-at-load"
 tr -s ' \t\n' ' ' < "${RX}/src/command.c" | grep -q 'if (settings->ints.state_slot < 0 && command_append_config_sets_auto_slot())' || F2_BAD+=" command.c-guard"
@@ -4021,6 +4024,29 @@ cat > "${RX}/autoslot_test.c" <<'EOC'
 #include <compat/strl.h>
 #include <file/config_file.h>
 #include "autoslot.inc"
+/* a list recorded as config_load_file records it: an empty main config,
+ * its state_slot entry noted, each file appended with config_append_file,
+ * then the answer taken from the entries the load chose; NULL for none */
+static void record(const char *list)
+{
+   char tmp[PATH_MAX_LENGTH], *ptr, *delim;
+   config_file_t *conf = config_file_new_alloc();
+   const struct config_entry_list *main_slot = config_get_entry(conf, "state_slot");
+   if (!list)
+      command_record_append_config(NULL, NULL);
+   else
+   {
+      strlcpy(tmp, list, sizeof(tmp));
+      for (ptr = tmp; ptr && *ptr; ptr = delim ? delim + 1 : NULL)
+      {
+         if ((delim = strchr(ptr, '|')))
+            *delim = '\0';
+         config_append_file(conf, ptr);
+      }
+      command_record_append_config(conf, main_slot);
+   }
+   config_file_free(conf);
+}
 /* each argument is an append list, "-" none; "--rr <list> <file>" records
  * the list, removes the file, then asks */
 int main(int argc, char **argv)
@@ -4030,12 +4056,12 @@ int main(int argc, char **argv)
    {
       if (!strcmp(argv[i], "--rr") && i + 2 < argc)
       {
-         command_record_append_config(argv[i + 1]);
+         record(argv[i + 1]);
          remove(argv[i + 2]);
          i += 2;
       }
       else
-         command_record_append_config(strcmp(argv[i], "-") ? argv[i] : NULL);
+         record(strcmp(argv[i], "-") ? argv[i] : NULL);
       printf("%d", command_append_config_sets_auto_slot() ? 1 : 0);
    }
    printf("\n");
@@ -11522,6 +11548,275 @@ case "${D36R}" in *"ppsspp=1 "*) true ;; *) false ;; esac; check $? "claude G2-D
 else
 skip "claude G2-D-01 / S-26: the proxy's own socket needs section t's pinned client and a network namespace (bwrap --unshare-net)"
 fi
+
+# ---- audit #307, stream F2 ----
+# Stream F2's second block: the audit of the fix round
+# (docs/audits/2026_09_28-milestone-audit-of-the-fix-round/), its PL-020, the
+# leads G2-F2-02 and G2-F2-03 (gpt), and two Lows the audit left unrouted in
+# the same generators (gpt G2-F2-04, claude G2-F2-10). The files are read
+# through src_of, so under
+#     BASE_REF=f3d19dc8fb tools/last-good-scripts-test --old
+# these cases grade the tree that audit read: every check FAILs there except
+# the ones each case names as its control.
+F2B="${TMP}/f2b"; mkdir -p "${F2B}"
+F2B_LR=projects/ROCKNIX/packages/emulators/libretro
+
+# F2-20. PL-020 (G2-F2-01, gpt): the generators read a literal #elif as the
+# compiler does. drop_dead knew a literal 0 or 1 only where it opened an
+# #if, so every #elif after an arm not yet taken read as live: an #elif 0
+# arm reached the table, and so did the #else after an #elif 1, where a
+# ROT0 or a flagless driver writes 0 over the #elif's turn and the row goes.
+# Four shapes, each in an FBA driver file and a MAME driver file:
+#   A  #if 0 / #elif 0 / #else   the #elif arm dead, the #else live
+#   B  #if 0 / #elif 1 / #else   the #elif arm live, the #else dead (the
+#                                seat's case)
+#   C  #if X / #elif 0 / #else   an #elif 0 dead after a condition the
+#                                build decides; the #if and #else arms live
+#   D  #if 0 / #elif X / #else   the control: an #elif the build decides is
+#                                read as live, and so is its #else, on the
+#                                base as well
+#   E  #if 1 / #elifdef X        C23's #elifdef is an arm too: after a taken
+#                                #if 1 it is never compiled (the old reader
+#                                did not know the word and kept the arm)
+echo "  F2-20. the generators read a literal #elif as the compiler does: #elif 0 never compiled, #elif 1 taken, any other #elif live (audit of the fix round PL-020)"
+GE="${F2B}/gen"
+src_of "${F2B_LR}/rotation-table-fba.py" "${F2B}/rotation-table-fba.py"
+src_of "${F2B_LR}/rotation-table-mame.py" "${F2B}/rotation-table-mame.py"
+f2b_fba() { # <name> [flags]: one BurnDriver in the shape the FBA cores write
+    printf 'struct BurnDriver BurnDrv%s = {\n\t"%s", NULL, NULL, NULL, "1984",\n\tBDF_GAME_WORKING%s, 2, 0, 0, 0,\n};\n' "$1" "$1" "${2:-}"
+}
+f2b_mame() { # <name> <ROT>: one GAME()
+    printf 'GAME( 1984, %s, 0, m, i, 0, %s, "M", "%s", 0 )\n' "$1" "$2" "$1"
+}
+F2B_V=" | BDF_ORIENTATION_VERTICAL"; F2B_F=" | BDF_ORIENTATION_FLIPPED"
+for s in A B C D E; do mkdir -p "${GE}/fba-${s}/src/burn/drv" "${GE}/mame-${s}/src/drivers"; done
+{ echo '#if 0'; echo '#elif 0'; f2b_fba adead "${F2B_V}"; echo '#else'; f2b_fba aelse "${F2B_F}"; echo '#endif'; } > "${GE}/fba-A/src/burn/drv/d_a.cpp"
+{ echo '#if 0'; echo '#elif 0'; f2b_mame adead ROT90; echo '#else'; f2b_mame aelse ROT180; echo '#endif'; } > "${GE}/mame-A/src/drivers/a.c"
+{ echo '#if 0'; echo '#elif 1'; f2b_fba bchoice "${F2B_V}"; echo '#else'; f2b_fba bchoice; echo '#endif'; } > "${GE}/fba-B/src/burn/drv/d_b.cpp"
+{ echo '#if 0'; echo '#elif 1'; f2b_mame bchoice ROT90; echo '#else'; f2b_mame bchoice ROT0; echo '#endif'; } > "${GE}/mame-B/src/drivers/b.c"
+{ echo '#if defined(FBNEO_DEBUG)'; f2b_fba cif "${F2B_V}"; echo '#elif 0'; f2b_fba cdead "${F2B_F}"; echo '#else'; f2b_fba celse "${F2B_V}${F2B_F}"; echo '#endif'; } > "${GE}/fba-C/src/burn/drv/d_c.cpp"
+{ echo '#if HAS_EXTRA'; f2b_mame cif ROT270; echo '#elif 0'; f2b_mame cdead ROT90; echo '#else'; f2b_mame celse ROT180; echo '#endif'; } > "${GE}/mame-C/src/drivers/c.c"
+{ echo '#if 0'; f2b_fba ddead "${F2B_V}"; echo '#elif defined(BUILD_X)'; f2b_fba delif "${F2B_F}"; echo '#else'; f2b_fba delse "${F2B_V}"; echo '#endif'; } > "${GE}/fba-D/src/burn/drv/d_d.cpp"
+{ echo '#if 0'; f2b_mame ddead ROT90; echo '#elif HAS_EXTRA'; f2b_mame delif ROT180; echo '#else'; f2b_mame delse ROT270; echo '#endif'; } > "${GE}/mame-D/src/drivers/d.c"
+{ echo '#if 1'; f2b_fba etaken "${F2B_V}"; echo '#elifdef FBNEO_DEBUG'; f2b_fba egone "${F2B_F}"; echo '#endif'; } > "${GE}/fba-E/src/burn/drv/d_e.cpp"
+{ echo '#if 1'; f2b_mame etaken ROT270; echo '#elifdef HAS_EXTRA'; f2b_mame egone ROT90; echo '#endif'; } > "${GE}/mame-E/src/drivers/e.c"
+f2b_table() { # <fba|mame> <shape>: the table for that fixture, rows joined by |
+    if [ "$1" = fba ]; then python3 "${F2B}/rotation-table-fba.py" "${GE}/fba-$2" 2>/dev/null
+    else python3 "${F2B}/rotation-table-mame.py" "${GE}/mame-$2" src/drivers 2>/dev/null; fi | tr '\n' '|'
+}
+declare -A F2B_WANT=( [fba-A]='aelse 2|' [mame-A]='aelse 2|' [fba-B]='bchoice 1|' [mame-B]='bchoice 3|'
+                      [fba-C]='celse 3|cif 1|' [mame-C]='celse 2|cif 1|' [fba-D]='delif 2|delse 1|' [mame-D]='delif 2|delse 1|'
+                      [fba-E]='etaken 1|' [mame-E]='etaken 1|' )
+declare -A F2B_SAYS=( [A]='#if 0 / #elif 0 / #else: the #elif arm gives no row, the #else does'
+                      [B]='#if 0 / #elif 1 / #else: the #elif arm is taken, its turn kept, the #else never read'
+                      [C]='#if X / #elif 0 / #else: the #elif 0 arm gives no row, the #if and #else arms do'
+                      [D]='#if 0 / #elif X / #else: an #elif the build decides is live, and its #else (the control)'
+                      [E]='#if 1 / #elifdef X: the #elifdef arm after a taken #if 1 gives no row' )
+for s in A B C D E; do
+    for g in fba mame; do
+        out="$(f2b_table "${g}" "${s}")"
+        [ "${out}" = "${F2B_WANT[${g}-${s}]}" ]
+        check $? "${g^^} ${F2B_SAYS[${s}]}" "${g^^} shape ${s} (${F2B_SAYS[${s}]%%:*}): table '${out}', expected '${F2B_WANT[${g}-${s}]}'"
+    done
+done
+
+# F2-21. G2-F2-03 (gpt): the gstreamer payload guards matched a directory
+# entry, compgen -G '<name>*', which a link whose file is missing satisfies,
+# and so does a name with the right prefix and another suffix; cp -a then
+# keeps the dead link and the package passes without what WebKit loads.
+# The guards now ask for the name the loader asks for -- a library's soname,
+# lib<name>-1.0.so.0 (soversion 0 in both 1.29.2 meson.build files), and
+# the appsink plugin's file, gstreamer-1.0/libgstapp.so -- to resolve to a
+# file, before the keep and again in what was kept. The install trees are
+# built the way meson installs a library (the versioned file and two links)
+# and then broken one way each. The two whole installs are the controls.
+echo "  F2-21. the gstreamer overrides fail unless each name WebKit loads resolves to a file in what they keep (audit of the fix round G2-F2-03)"
+GB="${F2B}/gst"
+f2b_gst() { # <gst-plugins-bad|gst-plugins-base> <f:path | l:path:target>...: rc, then every name the loader needs that resolves in what is kept
+    rm -rf "${GB}"; mkdir -p "${GB}/inst/usr/lib/gstreamer-1.0" "${GB}/inst/usr/bin" "${GB}/b"
+    local pkg="$1" spec; shift
+    for spec in "$@"; do
+        case "${spec}" in
+            f:*) echo payload > "${GB}/inst/${spec#f:}" ;;
+            l:*) spec="${spec#l:}"; ln -s "${spec#*:}" "${GB}/inst/${spec%%:*}" ;;
+        esac
+    done
+    F2_CALL="INSTALL='${GB}/inst'; PKG_BUILD='${GB}/b'; post_makeinstall_target; echo rc=\$?"
+    printf '%s' "$(f2_source "${GR}/${F2P}/multimedia/gstreamer/${pkg}/package.mk" H700 aarch64 "${GR}" | tr '\n' ' ')"
+    local n; for n in libgstmpegts-1.0.so.0 libgstapp-1.0.so.0 libgstfft-1.0.so.0 gstreamer-1.0/libgstapp.so; do
+        [ -f "${GB}/inst/usr/lib/${n}" ] && printf ' has:%s' "${n}"
+    done
+}
+f2b_lib() { # <lib name without .so>: the three entries meson installs for it
+    echo "f:usr/lib/$1.so.0.2902.0 l:usr/lib/$1.so.0:$1.so.0.2902.0 l:usr/lib/$1.so:$1.so.0"
+}
+F2B_BASE=""; for l in libgstapp-1.0 libgstaudio-1.0 libgstvideo-1.0 libgsttag-1.0 libgstpbutils-1.0 libgstallocators-1.0 libgstfft-1.0; do F2B_BASE+=" $(f2b_lib "${l}")"; done
+out="$(f2b_gst gst-plugins-bad $(f2b_lib libgstmpegts-1.0) f:usr/lib/libgstcodecs-1.0.so.0)"
+[[ "${out}" == *rc=0* ]] && [[ "${out}" == *has:libgstmpegts-1.0.so.0* ]]
+check $? "gst-plugins-bad as meson installs it (a file and two links) passes, and its soname resolves in what it keeps (the control)" "gst-plugins-bad, a whole install: '${out:0:160}'"
+out="$(f2b_gst gst-plugins-bad l:usr/lib/libgstmpegts-1.0.so.0:libgstmpegts-1.0.so.0.2902.0 l:usr/lib/libgstmpegts-1.0.so:libgstmpegts-1.0.so.0)"
+[[ "${out}" == DIE:* ]] || [[ "${out}" == *rc=3* ]]
+check $? "gst-plugins-bad with libgstmpegts-1.0's links and no file fails the package" "gst-plugins-bad with two links and no library: '${out:0:160}' -- the package passed without libgstmpegts-1.0"
+out="$(f2b_gst gst-plugins-base ${F2B_BASE} f:usr/lib/gstreamer-1.0/libgstapp.so f:usr/lib/gstreamer-1.0/libgstrawparse.so)"
+[[ "${out}" == *rc=0* ]] && [[ "${out}" == *has:libgstapp-1.0.so.0*has:libgstfft-1.0.so.0*has:gstreamer-1.0/libgstapp.so* ]]
+check $? "gst-plugins-base as meson installs it passes, and the libraries and appsink resolve in what it keeps (the control)" "gst-plugins-base, a whole install: '${out:0:200}'"
+out="$(f2b_gst gst-plugins-base ${F2B_BASE/f:usr\/lib\/libgstapp-1.0.so.0.2902.0/} f:usr/lib/gstreamer-1.0/libgstapp.so)"
+[[ "${out}" == DIE:* ]] || [[ "${out}" == *rc=3* ]]
+check $? "gst-plugins-base whose libgstapp-1.0 is links without a file fails the package" "gst-plugins-base, libgstapp-1.0.so.0 a dead link: '${out:0:160}' -- the package passed"
+out="$(f2b_gst gst-plugins-base ${F2B_BASE} l:usr/lib/gstreamer-1.0/libgstapp.so:libgstapp.so.0 f:usr/lib/gstreamer-1.0/libgstrawparse.so)"
+[[ "${out}" == DIE:* ]] || [[ "${out}" == *rc=3* ]]
+check $? "gst-plugins-base whose appsink plugin is a dead link fails the package" "gst-plugins-base, gstreamer-1.0/libgstapp.so a dead link: '${out:0:160}' -- the package passed without appsink"
+out="$(f2b_gst gst-plugins-base ${F2B_BASE} f:usr/lib/gstreamer-1.0/libgstapp.so.debug f:usr/lib/gstreamer-1.0/libgstrawparse.so)"
+[[ "${out}" == DIE:* ]] || [[ "${out}" == *rc=3* ]]
+check $? "gst-plugins-base with only a libgstapp.so.debug beside the plugins fails the package -- the name is the plugin's, not a prefix of it" "gst-plugins-base with libgstapp.so.debug and no libgstapp.so: '${out:0:160}' -- the package passed without appsink"
+
+# F2-22. G2-F2-02 (gpt): 0018 answered "does this launch's append config ask
+# for the Auto slot?" by opening the append files a second time, after
+# config_load_file had read them, so a file removed or rewritten between the
+# two reads gave an answer the load never saw -- and the Auto slot was reset
+# at content load, the defect 0018 exists to stop. It now answers from the
+# load's own entries: the state_slot entry the main config holds is noted
+# before the append files are read, and an entry that differs afterwards is
+# an append file's, carrying the value the load applies. The helper block is
+# driven through the load's own sequence -- libretro-common's
+# config_append_file -- with the file replaced or removed the moment after
+# the load read it; a block from before the change (a list it reads again)
+# is driven the same way, so the case fails on the base by behaviour, not by
+# a missing name. The last two lists are the controls: a -1 left in the main
+# config is not the launch's, and a launch's -1 over a numbered main slot is.
+# Then config_load_file is read for where the two calls sit.
+echo "  F2-22. 0018 answers from the configuration the load read, not from a second read of the files (audit of the fix round G2-F2-02)"
+# The tree F2-4 patched, by its path: RX names another stream's fixture by now
+F2B_RX="${TMP}/f2/ra"
+if [ ! -s "${F2B_RX}/src/command.c" ]; then
+    check 1 "" "the RetroArch tree F2-4 patches is not here (no retroarch-${RA_PIN:-?}.tar.gz?) -- F2-22 did not run"
+else
+    awk '/ROCKNIX: append auto slot begin/,/ROCKNIX: append auto slot end/' "${F2B_RX}/src/command.c" > "${F2B}/autoslot.inc"
+    cat > "${F2B}/autoslot_load.c" <<'EOC'
+#include <stdio.h>
+#include <string.h>
+#include <boolean.h>
+#include <retro_miscellaneous.h>
+#include <compat/strl.h>
+#include <file/config_file.h>
+#include "autoslot.inc"
+/* <main cfg or -> <append list> <file> <replacement or ->: the main config
+ * and the list loaded as config_load_file loads them; then <file> is
+ * replaced by <replacement> (removed, for -), the moment after the load
+ * read it; then the answer is recorded as the patch records it. Prints the
+ * state_slot the load applies and the answer: "-1:1". */
+int main(int argc, char **argv)
+{
+   char list[PATH_MAX_LENGTH], *ptr, *delim;
+   config_file_t *conf;
+   int slot = 99;
+#ifndef FROM_LIST
+   const struct config_entry_list *main_slot;
+#endif
+   if (argc != 5)
+      return 2;
+   conf = strcmp(argv[1], "-") ? config_file_new_from_path_to_string(argv[1]) : config_file_new_alloc();
+   if (!conf)
+      return 2;
+#ifndef FROM_LIST
+   main_slot = config_get_entry(conf, "state_slot");
+#endif
+   strlcpy(list, argv[2], sizeof(list));
+   for (ptr = list; ptr && *ptr; ptr = delim ? delim + 1 : NULL)
+   {
+      if ((delim = strchr(ptr, '|')))
+         *delim = '\0';
+      config_append_file(conf, ptr);
+   }
+   if (strcmp(argv[4], "-"))
+      rename(argv[4], argv[3]);
+   else
+      remove(argv[3]);
+#ifdef FROM_LIST
+   command_record_append_config(argv[2]);
+#else
+   command_record_append_config(conf, main_slot);
+#endif
+   config_get_int(conf, "state_slot", &slot);
+   printf("%d:%d", slot, command_append_config_sets_auto_slot() ? 1 : 0);
+   config_file_free(conf);
+   return 0;
+}
+EOC
+    # the block from before G2-F2-02 records from a list it reads again
+    F2B_FL=""; grep -q 'command_record_append_config(const char' "${F2B}/autoslot.inc" && F2B_FL="-DFROM_LIST"
+    L="${F2B_RX}/src/libretro-common"; AL="${F2B}/al"
+    if [ -s "${F2B}/autoslot.inc" ] && gcc -std=gnu99 ${F2B_FL} -o "${F2B}/autoslot_load" -I"${L}/include" -I"${F2B}" "${F2B}/autoslot_load.c" \
+          "${L}"/file/config_file.c "${L}"/file/file_path.c "${L}"/file/file_path_io.c "${L}"/streams/file_stream.c "${L}"/string/stdstring.c \
+          "${L}"/compat/compat_strl.c "${L}"/compat/fopen_utf8.c "${L}"/compat/compat_posix_string.c "${L}"/compat/compat_strcasestr.c \
+          "${L}"/encodings/encoding_utf.c "${L}"/vfs/vfs_implementation.c "${L}"/time/rtime.c > "${F2B}/autoslot_load.log" 2>&1; then
+        f2b_al() { # <main or -> <append file> <then: three|gone|same>: the driver's slot:answer
+            rm -rf "${AL}"; mkdir -p "${AL}"
+            printf 'state_slot = "-1"\nsavestate_auto_load = "true"\n' > "${AL}/auto.cfg"
+            printf 'state_slot = "3"\n' > "${AL}/three.cfg"; printf 'savestate_auto_save = "true"\n' > "${AL}/nokey.cfg"
+            printf 'state_slot = "-1"\n' > "${AL}/main-auto.cfg"; printf 'state_slot = "3"\n' > "${AL}/main-three.cfg"
+            local m="-"; [ "$1" != - ] && m="${AL}/$1"
+            case "$3" in
+                three) cp "${AL}/three.cfg" "${AL}/next.cfg"; "${F2B}/autoslot_load" "${m}" "${AL}/$2" "${AL}/$2" "${AL}/next.cfg" ;;
+                gone)  "${F2B}/autoslot_load" "${m}" "${AL}/$2" "${AL}/$2" - ;;
+                same)  cp "${AL}/$2" "${AL}/next.cfg"; "${F2B}/autoslot_load" "${m}" "${AL}/$2" "${AL}/$2" "${AL}/next.cfg" ;;
+            esac
+        }
+        out="$(f2b_al - auto.cfg three)"
+        [ "${out}" = "-1:1" ]; check $? "a launch's -1, its file rewritten to slot 3 after the load read it: the load applies -1 and the answer is Auto" "append -1, rewritten to 3 after the load: '${out}' (load's slot:answer), expected '-1:1' -- the answer came from a second read"
+        out="$(f2b_al - auto.cfg gone)"
+        [ "${out}" = "-1:1" ]; check $? "a launch's -1, its file removed after the load read it: the answer is still Auto" "append -1, removed after the load: '${out}', expected '-1:1' -- the answer came from a second read"
+        out="$(f2b_al main-auto.cfg nokey.cfg same) $(f2b_al main-three.cfg auto.cfg same)"
+        [ "${out}" = "-1:0 -1:1" ]; check $? "a -1 left in the main config is not the launch's; a launch's -1 over a numbered main slot is (the controls)" "main -1 with an append that sets nothing, then main 3 with an append -1: '${out}', expected '-1:0 -1:1'"
+    else
+        check 1 "" "the append-slot block does not build with libretro-common's config parser: $(grep -m1 'error' "${F2B}/autoslot_load.log" | cut -c1-160)"
+    fi
+    awk '/^static bool config_load_file\(/,/^}/' "${F2B_RX}/src/configuration.c" > "${F2B}/clf.c"
+    n_main=$(grep -n 'config_get_entry(conf, "state_slot")' "${F2B}/clf.c" | head -1 | cut -d: -f1)
+    n_app1=$(grep -n 'config_append_file(conf, config_path)' "${F2B}/clf.c" | head -1 | cut -d: -f1)
+    n_app2=$(grep -n 'config_append_file(conf, config_path)' "${F2B}/clf.c" | tail -1 | cut -d: -f1)
+    n_rec=$(grep -n 'command_record_append_config(conf, main_slot)' "${F2B}/clf.c" | head -1 | cut -d: -f1)
+    n_ovr=$(grep -n 'RARCH_PATH_CONFIG_OVERRIDE' "${F2B}/clf.c" | head -1 | cut -d: -f1)
+    [ -n "${n_main}" ] && [ -n "${n_app1}" ] && [ -n "${n_rec}" ] && [ -n "${n_ovr}" ] \
+      && [ "${n_main}" -lt "${n_app1}" ] && [ "${n_app2}" -lt "${n_rec}" ] && [ "${n_rec}" -lt "${n_ovr}" ] \
+      && ! grep -q 'config_file_new_from_path' "${F2B}/autoslot.inc"
+    check $? "config_load_file notes the main config's state_slot entry before the append files, records from the entries after them and before the overrides, and the block opens no file" "config_load_file: entry noted at ${n_main:-none}, appends ${n_app1:-none}-${n_app2:-none}, recorded from the entries at ${n_rec:-none}, overrides at ${n_ovr:-none}; the block opens files: $(grep -c 'config_file_new_from_path' "${F2B}/autoslot.inc")"
+fi
+
+# F2-23. gpt G2-F2-04 (a Low the audit left unrouted, in the same
+# generators): the lexer let a quote open a character literal unless a
+# decimal digit stood before it, so a C++14 separator after a hex digit
+# (0xFF'00) opened one, which ran to the next quote on the line and hid a
+# comment opener inside it -- a driver commented out after such a number
+# was read as live. A number is now read whole, its separators with it,
+# and a quote outside one opens a literal. The FBA fixture's second driver
+# follows a character literal holding /* (the control: a literal is still
+# a literal).
+echo "  F2-23. the generators read a number whole, so a separator after a hex digit hides no comment opener (gpt G2-F2-04)"
+mkdir -p "${GE}/fba-H/src/burn/drv" "${GE}/mame-H/src/drivers"
+{ echo "static unsigned nSep = 0xFF'00; /* retired: 0xEE'00,"; f2b_fba hghost "${F2B_V}"; echo '*/'; f2b_fba hkept "${F2B_V}"
+  echo "static int nMark = '/*';"; f2b_fba afterlit "${F2B_F}"; } > "${GE}/fba-H/src/burn/drv/d_h.cpp"
+{ echo "static const int sep = 0xAB'CD; /* retired: 0xEF'01,"; f2b_mame hghost ROT90; echo '*/'; f2b_mame hkept ROT270; } > "${GE}/mame-H/src/drivers/h.c"
+out="$(f2b_table fba H)"
+[ "${out}" = 'afterlit 2|hkept 1|' ]; check $? "FBA: a driver inside a /* */ opened after 0xFF'00 gives no row; one after a '/*' character literal does" "FBA hex-separator fixture: table '${out}', expected 'afterlit 2|hkept 1|'"
+out="$(f2b_table mame H)"
+[ "${out}" = 'hkept 1|' ]; check $? "MAME: a GAME() inside a /* */ opened after 0xAB'CD gives no row" "MAME hex-separator fixture: table '${out}', expected 'hkept 1|'"
+
+# F2-24. claude G2-F2-10 (a Low the audit left unrouted, in the same
+# generator): the FBA generator looked for a driver's closing }; in text
+# whose strings were intact, so a }; inside a title cut the driver short
+# before its flags, and the driver lost its row; the MAME generator already
+# blanked strings first. Both now blank the inside of every string -- with
+# the lexer, so a '"' character literal opens none -- and the FBA one reads
+# the driver's name and fields from the source at the same offsets.
+echo "  F2-24. the FBA generator finds a driver's end outside its strings (claude G2-F2-10)"
+mkdir -p "${GE}/fba-S/src/burn/drv"
+{ printf 'struct BurnDriver BurnDrvBrace = {\n\t"brace", NULL, NULL, NULL, "1984",\n\t"Brace };\\0", NULL, "Maker", "Misc",\n\tBDF_GAME_WORKING%s, 2, 0, 0, 0,\n};\n' "${F2B_V}"
+  # the literal and the next driver on one line, as a string opened at the
+  # literal's quote would run to the driver's name and swallow its opening
+  printf "static const char Keys[] = { '\"', 0 }; %s\n" "$(f2b_fba afterq "${F2B_F}" | tr '\n' ' ')"; } > "${GE}/fba-S/src/burn/drv/d_s.cpp"
+out="$(f2b_table fba S)"
+[ "${out}" = 'afterq 2|brace 1|' ]; check $? "FBA: a }; inside a driver's title does not end the driver, and a '\"' character literal opens no string" "FBA strings fixture: table '${out}', expected 'afterq 2|brace 1|'"
 
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3

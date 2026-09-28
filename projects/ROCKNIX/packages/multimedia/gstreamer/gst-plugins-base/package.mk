@@ -85,12 +85,16 @@ post_makeinstall_target() {
   # paragraph above. What WebKit loads and cannot start without -- the
   # libraries it links and the plugin that provides appsink -- has to be
   # there, so its absence fails the package here rather than the sign-in
-  # window at load or a second after it.
+  # window at load or a second after it. Each is checked by the name the
+  # loader asks for -- a library's soname, lib<name>-1.0.so.0, and the
+  # plugin's own file -- resolving to a file, before the keep and again in
+  # what was kept: a link whose file is missing matches a glob and loads
+  # nothing, and neither does a file whose name only starts the same way.
   local keep="${PKG_BUILD}/.rocknix-keep" f
-  for f in libgstapp-1.0.so libgstaudio-1.0.so libgstvideo-1.0.so libgsttag-1.0.so \
-           libgstpbutils-1.0.so libgstallocators-1.0.so libgstfft-1.0.so gstreamer-1.0/libgstapp.so; do
-    compgen -G "${INSTALL}/usr/lib/${f}*" > /dev/null \
-      || die "gst-plugins-base: ${f##*/} was not built -- WebKit needs it"
+  local needs="libgstapp-1.0.so.0 libgstaudio-1.0.so.0 libgstvideo-1.0.so.0 libgsttag-1.0.so.0
+               libgstpbutils-1.0.so.0 libgstallocators-1.0.so.0 libgstfft-1.0.so.0 gstreamer-1.0/libgstapp.so"
+  for f in ${needs}; do
+    [ -f "${INSTALL}/usr/lib/${f}" ] || die "gst-plugins-base: ${f##*/} was not built -- WebKit needs it"
   done
   rm -rf "${keep}" && mkdir -p "${keep}/lib" "${keep}/plugins"
   cp -a ${INSTALL}/usr/lib/libgst*.so* "${keep}/lib"/
@@ -100,4 +104,7 @@ post_makeinstall_target() {
   cp -a "${keep}/lib"/. ${INSTALL}/usr/lib/
   cp -a "${keep}/plugins"/. ${INSTALL}/usr/lib/gstreamer-1.0/
   rm -rf "${keep}"
+  for f in ${needs}; do
+    [ -f "${INSTALL}/usr/lib/${f}" ] || die "gst-plugins-base: ${f##*/} was not kept -- WebKit needs it"
+  done
 }
