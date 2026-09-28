@@ -254,8 +254,14 @@ function write_setting_line() {
   rm -f "${J_CONF}.tmp"
   return 1
 }
+#
+# Any other key's line is removed by the same literal match the writer uses:
+# `sed -i "/^${1}=/d"` read the key as a pattern, so deleting foo.bar also
+# removed foo_bar and fooXbar (#308, the gpt seat's F-PB-16) -- and through
+# one temporary and one rename, with the status returned, as the writer.
 function del_setting() {
-  wait_lock
+  local rc=0
+  wait_lock || return 1
   if [[ "${1}" =~ ^[[:alnum:]] ]]
   then
     if [ "${1}" = "system.hostname" ]
@@ -269,16 +275,24 @@ function del_setting() {
       # already reads empty as the shipped default and gives the unit its
       # own name at the next boot (D-NET-002, D-NET-009). The sentinel
       # itself is not loosened.
-      write_setting_line "${1}" ""
+      write_setting_line "${1}" "" || rc=1
     else
-      sed -i "/^${1}=/d" "${J_CONF}"
+      if K="${1}" awk 'index($0, ENVIRON["K"] "=") != 1' "${J_CONF}" > "${J_CONF}.tmp" 2>/dev/null \
+         && mv -f "${J_CONF}.tmp" "${J_CONF}"
+      then
+        :
+      else
+        rm -f "${J_CONF}.tmp"
+        rc=1
+      fi
     fi
   fi
   rm -f "${J_CONF_LOCK}"
+  return ${rc}
 }
 
 function sort_settings() {
-  wait_lock
+  wait_lock || return 1
   # The sorted copy replaces the live file only when it is plainly a config:
   # non-empty and still carrying the hostname line every image writes. An
   # unreadable source (EIO, a card on its way out) gives grep nothing, and

@@ -3612,4 +3612,9 @@ p7set "set_setting a 2"; p7rc=$?
 chmod 755 "${P7F}/cfg"
 [ "${p7rc}" -ne 0 ] && [ "$(tr '\n' '|' < "${P7F}/cfg/system.cfg")" = "system.hostname=X|a=1|" ]; check $? "#307 PL-011: set_setting whose write cannot land (a read-only folder) exits non-zero (rc ${p7rc}) and the file is as it was" "#307 PL-011: rc ${p7rc}; system.cfg: '$(tr '\n' '|' < "${P7F}/cfg/system.cfg")' -- the rm of the temporary's status was returned as the write's"
 
+# == #308 10-packages-and-build gpt F-PB-16: deleting a key matches it literally
+printf 'system.hostname=X\nfoo.bar=1\nfoo_bar=2\nfooXbar=3\n' > "${P7F}/cfg/system.cfg"
+p7set "set_setting foo.bar default"
+[ "$(tr '\n' '|' < "${P7F}/cfg/system.cfg")" = "system.hostname=X|foo_bar=2|fooXbar=3|" ]; check $? "#308 10-packages-and-build gpt F-PB-16: set_setting foo.bar default removes foo.bar alone, not foo_bar or fooXbar" "#308 F-PB-16: system.cfg: '$(tr '\n' '|' < "${P7F}/cfg/system.cfg")' -- the key was read as a pattern"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
