@@ -97,7 +97,22 @@ if [ ! -e "/storage/.config/rclone/rclone.conf" ]; then
     exit 1
 fi
 
-[ -f /storage/.config/cloud_sync.conf ] && source /storage/.config/cloud_sync.conf
+# The two values this script needs from cloud_sync.conf, read as text and
+# never sourced (audit #307 PL-051's script half): a folder value an earlier
+# build wrote with "$(...)" in it ran on every `source`. A CONTENT_REMOTE
+# that carries a $, a backtick, a backslash or a control character is not a
+# folder name, and the run refuses it rather than use it as a path.
+conf_get() { # <KEY>: its value, quotes off; nothing when absent
+    sed -n "s/^$1=\"\{0,1\}\([^\"]*\)\"\{0,1\}\$/\1/p" /storage/.config/cloud_sync.conf 2>/dev/null | head -1
+}
+CONTENT_REMOTE=$(conf_get CONTENT_REMOTE)
+RCLONE_NET_OPTS=$(conf_get RCLONE_NET_OPTS)
+case "${CONTENT_REMOTE}" in
+    *[\$\`\\]*|*[[:cntrl:]]*)
+        echo ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"
+        echo "Your cloud sync settings couldn't be read. Set up cloud storage again under GAME SETTINGS > MANAGE CLOUD STORAGE."
+        exit 1 ;;
+esac
 
 REMOTENAME=$(rclone listremotes | head -1)
 if [ -z "${REMOTENAME}" ]; then

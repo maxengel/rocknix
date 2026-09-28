@@ -3717,4 +3717,43 @@ mkdir -p "${NW}/storage/roms/gb" "${NW}/cloud/GAMES"; echo s > "${NW}/storage/ro
 sa_run "${NW}" cloud_backup --yes --saves-only
 grep -q 'CONTENT_REMOTE=/GAMES/Content is inside SAVES_REMOTE=/GAMES' "${NW}/log/cloud_sync.log" && grep -qi 'ROMs and BIOS folder in the cloud sits inside your saves folder' <(sed 's/\x1b\[[0-9;]*m//g' "${NW}/out"); check $? "cloud_backup warns about a ROMs and BIOS folder nested in the saves folder, in the log and on a deliberate run's screen (rc ${RC})" "log: $(grep -i 'inside' "${NW}/log/cloud_sync.log" | head -2 | tr '\n' '|') -- the warning covered the settings folder only, and only under a condition that can no longer hold"
 
+# A15. PL-051's script half (coordinator's row, from stream C): a folder
+#      value an earlier build wrote with a command in it is never run. The
+#      saves scripts refuse a config whose path values carry $, a backtick,
+#      a backslash or a control character, or whose any line carries a
+#      command substitution, before it is sourced; the content scripts read
+#      the values they need as text.
+echo "    A15. PL-051 (script half): a command written into the conf's folder values never runs"
+PW=$(sa_new pl051); sa_script "${PW}" cloud_backup cloud_restore cloud_saves_root cloud_content_backup cloud_content_restore
+pw_conf() {
+    cat > "${PW}/storage/.config/cloud_sync.conf" <<'EOS'
+SAVESPATH="/storage/roms"
+SAVES_REMOTE="/x$(touch /ctl/pwned)"
+SETTINGS_BACKUPS="/storage/roms/backup"
+SETTINGS_REMOTE="/ROCKNIX/Backups"
+CONTENT_REMOTE="/y`touch /ctl/pwned`"
+BACKUPMETHOD="copy"
+RESTOREMETHOD="copy"
+BACKUPFILE_BACKUP_OPTION="no"
+BACKUPFILE_RESTORE_OPTION="no"
+RCLONEOPTS="--progress --log-file /var/log/cloud_sync.log --filter-from /storage/.config/cloud_sync-rules.txt"
+RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"
+LOG_LEVEL="INFO"
+EOS
+    rm -f "${PW}/storage/.config/cloud_sync.conf.bak" "${PW}/ctl/pwned"
+}
+printf -- '+ /**/*.srm\n- /**\n' > "${PW}/storage/.config/cloud_sync-rules.txt"
+mkdir -p "${PW}/storage/roms/gb" "${PW}/storage/.config/emulationstation"; echo s > "${PW}/storage/roms/gb/A.srm"; echo r > "${PW}/storage/roms/gb/A.gb"
+printf '<system><path>/storage/roms/gb</path></system>\n' > "${PW}/storage/.config/emulationstation/es_systems.cfg"
+for pw_cmd in "cloud_backup --yes --saves-only" "cloud_restore --yes --saves-only"; do
+    pw_conf
+    sa_run "${PW}" ${pw_cmd}
+    [ ! -e "${PW}/ctl/pwned" ] && [ "${RC}" -eq 1 ] && grep -qx ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ" "${PW}/out" && ! grep -q '^lsd \|^copy ' "${PW}/ctl/argv"; check $? "${pw_cmd%% *}: a \$( ) in SAVES_REMOTE runs nothing and moves nothing; exit 1 with YOUR CLOUD SYNC SETTINGS COULDN'T BE READ on the why line, which the card reads as COULDN'T FINISH (rc ${RC})" "ran it: $([ -e "${PW}/ctl/pwned" ] && echo YES || echo no); rc ${RC}; why: $(grep '^>>> why' "${PW}/out" | head -1); outcome '$(sa_outcome "${PW}")' -- the conf was sourced with the command in it"
+done
+for pw_cmd in "cloud_content_backup gb" "cloud_content_restore --scan"; do
+    pw_conf
+    sa_run "${PW}" ${pw_cmd}
+    [ ! -e "${PW}/ctl/pwned" ]; check $? "${pw_cmd%% *}: a command in CONTENT_REMOTE runs nothing (rc ${RC})" "ran it: YES -- the content script sourced the conf"
+done
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

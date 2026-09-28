@@ -984,13 +984,29 @@ rules_whole() {
 # backslash (RCLONEOPTS is written that way). The shape check matters
 # because a torn line -- SAVES_REMOTE="/ROCK, cut mid-value -- can have its
 # quote closed by whatever is appended after it, and then parses.
+#
+# And nothing in it runs when it is sourced (audit #307 PL-051's script
+# half): a command substitution -- $( or a backtick -- on any line that is
+# not a comment is refused, and a folder value (SAVESPATH, SETTINGS_BACKUPS,
+# SAVES_REMOTE, SETTINGS_REMOTE, CONTENT_REMOTE) may carry no $, backtick,
+# backslash or control character at all. The setup page writes those values
+# from what a player typed or picked, and an earlier build wrote one that
+# held "$(...)" as it stood, which every `source` of this file then ran. A
+# config that fails is not sourced: the caller falls back to the good copy
+# or refuses (YOUR CLOUD SYNC SETTINGS COULDN'T BE READ).
 conf_valid() {
     [ -s "$1" ] || return 1
     bash -n "$1" 2>/dev/null || return 1
     awk '
-        cont { cont = ($0 ~ /\\$/); next }
+        cont { if ($0 ~ /\$\(|`/) exit 1; cont = ($0 ~ /\\$/); next }
         /^[[:space:]]*(#|$)/ { next }
         /^[A-Za-z_][A-Za-z0-9_]*=/ {
+            if ($0 ~ /\$\(|`/) exit 1
+            if ($0 ~ /^(SAVESPATH|SETTINGS_BACKUPS|SAVES_REMOTE|SETTINGS_REMOTE|CONTENT_REMOTE)=/) {
+                v = $0; sub(/^[^=]*=/, "", v)
+                if (v ~ /^".*"$/) v = substr(v, 2, length(v) - 2)
+                if (v ~ /[$`\\]/ || v ~ /[[:cntrl:]]/) exit 1
+            }
             n = gsub(/"/, "\"")
             if ($0 ~ /\\$/) { cont = 1; next }
             if (n % 2) exit 1
