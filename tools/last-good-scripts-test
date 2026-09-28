@@ -4708,6 +4708,36 @@ missing = "".join(sorted(set(chr(c) for c in range(32, 127)) - chars))
 ragged = [n for n, t in zip(("OSK_UPPER", "OSK_SYMBOLS"), layouts[1:]) if [len(r) for r in t] != [len(r) for r in lower]]
 print("missing=%s|ragged=%s" % (missing, ",".join(ragged)))
 EOPY
+# G-C-07 (claude) and the gpt seat's sweep note: the table alone would pass
+# with the symbols key never built or never wired. Read what builds and
+# drives it: the extras row is built over every OSK_EXTRAS entry (not a
+# count), the layout key is one of them, the rows it builds fit OSK_COLS,
+# osk_press toggles the layout on that key's label, and osk_relabel draws
+# OSK_SYMBOLS when it is on. Static reads of the source -- the frames at
+# 640x480 are still the proof the keyboard draws it.
+cat > "${C8}/osk_wiring.py" <<'EOPY'
+import re, sys
+src = open(sys.argv[1]).read()
+bad = []
+extras = re.search(r"static const char \*OSK_EXTRAS\[\] = \{(.*?)\};", src, re.S)
+cols = re.search(r"#define OSK_COLS (\d+)", src)
+if not extras or "OSK_TO_SYMBOLS" not in extras.group(1):
+    bad.append("OSK_EXTRAS holds no OSK_TO_SYMBOLS key")
+elif cols and len(re.findall(r'"[^"]*"|OSK_TO_\w+', extras.group(1))) > int(cols.group(1)):
+    bad.append("OSK_EXTRAS is wider than OSK_COLS")
+build = re.search(r"static GtkWidget \*osk_build\([^;{]*\)\s*\{.*?\n\}", src, re.S)
+if not build or not re.search(r"for \(guint i = 0; i < G_N_ELEMENTS\(OSK_EXTRAS\)", build.group(0)):
+    bad.append("osk_build does not build the extras row over G_N_ELEMENTS(OSK_EXTRAS)")
+press = re.search(r"static void osk_press\([^;{]*\)\s*\{.*?\n\}", src, re.S)
+if not press or not re.search(r"g_strcmp0\(label, OSK_TO_SYMBOLS\) == 0.*?osk->symbols = !osk->symbols", press.group(0), re.S):
+    bad.append("osk_press has no branch that toggles the symbols on OSK_TO_SYMBOLS")
+relabel = re.search(r"static void osk_relabel\([^;{]*\)\s*\{.*?\n\}", src, re.S)
+if not relabel or "osk->symbols ? OSK_SYMBOLS" not in relabel.group(0):
+    bad.append("osk_relabel never draws OSK_SYMBOLS")
+print("; ".join(bad) or "wired")
+EOPY
+C8W=$(python3 "${C8}/osk_wiring.py" "${C8}/window.c" 2>&1)
+[ "${C8W}" = "wired" ]; check $? "the symbols key is built with the extras row and wired: osk_press toggles on it, osk_relabel draws OSK_SYMBOLS" "the symbols key: ${C8W} (G-C-07 claude)"
 C8K=$(python3 "${C8}/osk.py" "${C8}/window.c" 2>&1)
 [ "${C8K}" = "missing=|ragged=" ]; check $? "the on-screen keyboard reaches every printable ASCII character, each layout's rows as long as the keys built for them" "the on-screen keyboard: ${C8K} -- a password with one of those cannot be typed on the handheld (#308 gpt F-RS-12)"
 
