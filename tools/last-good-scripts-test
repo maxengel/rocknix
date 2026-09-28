@@ -3816,6 +3816,68 @@ def authorize_wait_is_bounded():
     if s.proc and s.proc.poll() is None:
         s.proc.kill()
 EOPY
+# #308 gpt F-RS-18: a body too large, a stalled request, one connection too many.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+@test
+def requests_are_bounded():
+    """#308 gpt F-RS-18: a body too large is refused unread; a stalled request
+    is dropped; connections are capped."""
+    m, d = load("rs18")
+    m.REQUEST_TIMEOUT = 1
+    m.browser_stack_available = lambda: True
+    holder = m.SessionHolder("dropbox", None, None, 60)
+    server, port = start_server(m, holder)
+    c = socket.create_connection(("127.0.0.1", port), timeout=3)
+    c.sendall(b"POST /%s HTTP/1.1\r\nHost: x\r\nContent-Length: 100000000\r\n\r\n" % holder.pin.encode())
+    try:
+        answer = c.recv(64)
+    except socket.timeout:
+        answer = b"(no answer in 3 s)"
+    c.close()
+    result(answer.startswith(b"HTTP/1.0 413") or answer.startswith(b"HTTP/1.1 413"),
+           "a 100 MB Content-Length is answered 413 without reading the body",
+           "a 100 MB Content-Length got %r -- the handler read the body before the PIN (#308 gpt F-RS-18)" % answer[:40])
+    c = socket.create_connection(("127.0.0.1", port), timeout=4)
+    c.sendall(b"POST / HTTP/1.1\r\n")
+    t0 = time.time()
+    try:
+        closed = c.recv(64) == b""
+    except socket.timeout:
+        closed = False
+    except OSError:
+        closed = True
+    c.close()
+    result(closed and time.time() - t0 < 3.5,
+           "a request that stops mid-headers is dropped at the request timeout (%.1f s)" % (time.time() - t0),
+           "a stalled request was still open after %.1f s (#308 gpt F-RS-18)" % (time.time() - t0))
+    cap = getattr(m, "MAX_CONNECTIONS", None)
+    held = []
+    if cap:
+        m.REQUEST_TIMEOUT = 30
+        server2, port2 = start_server(m, holder)
+        for _ in range(cap):
+            s2 = socket.create_connection(("127.0.0.1", port2), timeout=3)
+            s2.sendall(b"GET / HTTP/1.1\r\n")
+            held.append(s2)
+        time.sleep(0.3)
+        extra = socket.create_connection(("127.0.0.1", port2), timeout=3)
+        try:
+            refused = extra.recv(64) == b""
+        except socket.timeout:
+            refused = False
+        except OSError:
+            refused = True
+        extra.close()
+        for s2 in held:
+            s2.close()
+        server2.shutdown()
+    else:
+        refused = False
+    result(bool(cap) and refused,
+           "with %s connections held, the next is closed at once" % cap,
+           "no cap on concurrent connections (MAX_CONNECTIONS %r, refused %r) (#308 gpt F-RS-18)" % (cap, refused))
+    server.shutdown()
+EOPY
 # C3: new test groups go above this line
 cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
 if MODE == "drive":
