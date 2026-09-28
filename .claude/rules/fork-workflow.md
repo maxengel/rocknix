@@ -108,6 +108,8 @@ tree must not hold would itself hold them. It is not reproduced, quoted or
 described in anything the fork carries, the maintainer's request included
 (#312, D-WORKFLOW-061): a refusal names the file and the line, never the word.
 `tools/forbidden-terms-check` reads a whole tree (or `--stdin`) against it.
+The runner half is `.github/workflows/fork-wordlist.yml`: every push of every
+branch, the tree and the pushed messages, red without the secret.
 
 Every scan fails closed: a list that cannot be read, a pattern that does not
 compile, a grep that dies, a diff or a message that cannot be read each
