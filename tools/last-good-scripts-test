@@ -3486,6 +3486,32 @@ F2_OUT="$(awk -F' *= *' '/^\[/{sec=$0; next} /^[A-Za-z]/{ if (sec=="[Input-SDL-C
     END { d=""; for (k in n) if (n[k]>1) d=d" "k"x"n[k]; print xsec "|" (("DPad R" in n) ? "dpad" : "no-dpad") "|" d }' "${M64}")"
 [ "${F2_OUT}" = "[Input-SDL-Control1]|dpad|" ]; check $? "Control1's DPad and axis mappings are read under [Input-SDL-Control1], each key once" "Control1 read as '${F2_OUT}' (section of the first X Axis | DPad R present | keys seen twice) -- a section header is spliced into it"
 
+# F2-5b. The audit of the fixes, claude G-F2-08 and gpt G-F2-04: the seed
+# is fixed, but start_mupen64plus.sh copies it only when the player has no
+# mupen64plus.cfg, so a GENERIC_X64 guest that ran mupen64plus before keeps
+# the splice. The launcher's repair block is taken out of the script and run
+# under the image's awk and mv against the audited seed with two settings
+# the player changed: the six pasted lines go, every other byte stays, a
+# second run changes nothing, and another device's copy -- SM8250's seed
+# carries the same splice, upstream's file -- is left alone.
+echo "  F2-5b. a GENERIC_X64 guest's existing mupen64plus.cfg loses the splice at the next launch and keeps everything else (#307 follow-up: claude G-F2-08, gpt G-F2-04)"
+MR="${F2}/m64repair"; mkdir -p "${MR}"
+src_of "${F2P}/emulators/standalone/mupen64plus-sa/mupen64plus-sa-core/scripts/start_mupen64plus.sh" "${MR}/start_mupen64plus.sh"
+awk '/# ROCKNIX: GENERIC_X64 repair begin/,/# ROCKNIX: GENERIC_X64 repair end/' "${MR}/start_mupen64plus.sh" > "${MR}/repair.sh"
+git -C "${ROOT}" show "417dcd8610:${F2P}/emulators/standalone/mupen64plus-sa/mupen64plus-sa-core/config/GENERIC_X64/mupen64plus.cfg" > "${MR}/spliced.cfg" 2>/dev/null
+sed -e '0,/^plugin = 2$/s//plugin = 5/' -e 's/^ScreenWidth = .*/ScreenWidth = 1280/' "${MR}/spliced.cfg" > "${MR}/player.cfg"
+f2_m64() { # <HW_DEVICE> <cfg>: run the repair block as the launcher would
+    ( set +u; HW_DEVICE="$1"; M64PCONF="$2"; PATH="${TMP}/bbin:${PATH}"; . "${MR}/repair.sh" ) > /dev/null 2>&1
+}
+cp "${MR}/player.cfg" "${MR}/g.cfg"; f2_m64 GENERIC_X64 "${MR}/g.cfg"
+F2_OUT="$(diff "${MR}/player.cfg" "${MR}/g.cfg" | grep '^[<>]' | tr '\n' '|')"
+[ -s "${MR}/repair.sh" ] && [ "${F2_OUT}" = "< ; Retroid Pocket Gamepad - default.ini|< [Retroid Pocket Gamepad]|< plugged = True|< mouse = False|< AnalogDeadzone = 0,0|< AnalogPeak = 32768,32768|" ]
+check $? "GENERIC_X64: exactly the six pasted lines leave the player's copy; plugin = 5 and ScreenWidth = 1280 stay" "the repair changed: '${F2_OUT:-nothing}' $([ -s "${MR}/repair.sh" ] || echo '(start_mupen64plus.sh has no repair block)')"
+cp "${MR}/g.cfg" "${MR}/g1.cfg"; f2_m64 GENERIC_X64 "${MR}/g.cfg"
+cmp -s "${MR}/g.cfg" "${MR}/g1.cfg" && grep -q '^plugin = 5$' "${MR}/g.cfg"; check $? "a second launch changes nothing" "a second run changed the repaired copy"
+cp "${MR}/player.cfg" "${MR}/s.cfg"; f2_m64 SM8250 "${MR}/s.cfg"
+cmp -s "${MR}/s.cfg" "${MR}/player.cfg"; check $? "another device's copy is left as it is" "the repair touched a copy on HW_DEVICE=SM8250"
+
 # F2-6. #308 9-emulators claude F-EM-02: ppsspp-lr's strip of the
 # aarch64-only -mno-outline-atomics ran in post_unpack, before scripts/unpack
 # applies the patches (005 adds the flag), so it never found it. The recipe's
