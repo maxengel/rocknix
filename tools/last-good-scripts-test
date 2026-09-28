@@ -3749,4 +3749,66 @@ p7ev collect; p7rc1=${RC}; p7ev collect
 [ "${p7rc1}" -eq 0 ] && [ "${RC}" -eq 0 ] && [ "$(p7evarcs | wc -l)" -eq 2 ]; check $? "#307 PL-077 (evidence half): two collections in one second leave two archives" "#307 PL-077: rc ${p7rc1}/${RC}; archives: $(p7evarcs | xargs -rn1 basename | tr '\n' ' ')"
 rm -f "${P7E}/shim/date"
 
+# == #308 10-packages-and-build claude F-PB-16: the core keeper, disarmed, reads nothing; a dump one byte over the cap is cut
+P7C="${P7M}/core"; mkdir -p "${P7C}/storage/.config" "${P7C}/shim" "${P7C}/repo" "${P7C}/bb"
+src_of projects/ROCKNIX/packages/rocknix/sources/scripts/rocknix-corekeep "${P7C}/repo/rocknix-corekeep"
+printf '#!/bin/bash\nexit 0\n' > "${P7C}/shim/logger"; chmod +x "${P7C}/shim/logger"
+if [ -n "${BB}" ]; then printf '#!/bin/sh\nexec %s head "$@"\n' "${BB}" > "${P7C}/bb/head"; chmod +x "${P7C}/bb/head"; fi
+p7ck() { # <stdin producer> <exe> <epoch> [env...]: the keeper under the image's head; the note of <exe>.<epoch> in $P7NOTE
+    local prod="$1" exe="$2" when="$3"; shift 3
+    ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --bind "${P7C}/storage" /storage --ro-bind "${P7C}/shim" /shim --ro-bind "${P7C}/bb" /p7bb --ro-bind "${P7C}/repo" /repo "${P7MBB[@]}" \
+        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --setenv PATH /shim:/p7bb:/usr/bin:/bin "$@" \
+        bash -c "${prod} | bash /repo/rocknix-corekeep ${exe} 4242 ${when} 11 '!usr!bin!${P7EXEPATH:-${exe}}'" ) > "${P7C}/out" 2>&1
+    P7NOTE="$(cat "${P7C}"/storage/.cache/log/cores/core.*."${when}".4242.txt 2>/dev/null)"
+}
+rm -f "${P7C}/storage/.config/keep-core-dumps"
+p7consumed=$(python3 - "${P7C}" "$(printf '%q ' bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 --ro-bind /etc /etc --bind "${P7C}/storage" /storage --ro-bind "${P7C}/shim" /shim --ro-bind "${P7C}/repo" /repo --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --setenv PATH /shim:/usr/bin:/bin bash /repo/rocknix-corekeep retroarch 1 1 11 '!usr!bin!retroarch')" <<'EOS'
+import subprocess, sys
+p = subprocess.Popen(sys.argv[2], shell=True, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+chunk = b"\0" * 65536; sent = 0
+try:
+    for _ in range(1024):              # 64 MiB offered
+        p.stdin.write(chunk); p.stdin.flush(); sent += len(chunk)
+except (BrokenPipeError, OSError):
+    pass
+try: p.stdin.close()
+except Exception: pass
+p.wait(); print(sent)
+EOS
+)
+[ -n "${p7consumed}" ] && [ "${p7consumed}" -lt 16777216 ]; check $? "#308 10-packages-and-build claude F-PB-16: disarmed, the keeper exits without reading the dump (${p7consumed} of 67108864 bytes taken before the pipe closed)" "#308 F-PB-16: ${p7consumed} bytes were read and dropped -- the whole dump, while the crashed process waited"
+date -u '+armed %Y-%m-%d' > "${P7C}/storage/.config/keep-core-dumps"
+p7ck "head -c 3001 /dev/zero" retroarch 5000 --setenv CORE_MAX_BYTES 3000
+printf '%s' "${P7NOTE}" | grep '^dump' | grep -qi 'cut' && ! printf '%s' "${P7NOTE}" | grep '^dump' | grep -q 'whole'; check $? "#308 10-packages-and-build claude F-PB-16: a dump one byte over a 3000-byte cap is noted CUT under the image's head (which reads ahead past the cap)" "#308 F-PB-16: note: $(printf '%s' "${P7NOTE}" | grep '^dump' | cut -c1-140)"
+p7ck "head -c 3000 /dev/zero" retroarch 5001 --setenv CORE_MAX_BYTES 3000
+printf '%s' "${P7NOTE}" | grep '^dump' | grep -q 'whole'; check $? "#308 10-packages-and-build claude F-PB-16: and one of exactly the cap is noted whole" "#308 F-PB-16: note: $(printf '%s' "${P7NOTE}" | grep '^dump' | cut -c1-140)"
+
+# == #308 10-packages-and-build gpt F-PB-15: the ring keeps the newest crashes, by time, notes included
+rm -rf "${P7C}/storage/.cache"; mkdir -p "${P7C}/storage/.cache/log/cores"
+for w in 1000 2000 3000; do echo x | gzip > "${P7C}/storage/.cache/log/cores/core.retroarch.${w}.1.gz"; echo note > "${P7C}/storage/.cache/log/cores/core.retroarch.${w}.1.txt"; done
+p7ck "head -c 100 /dev/zero" emulationstation 4000 --setenv CORE_MAX_BYTES 1048576
+[ -e "${P7C}/storage/.cache/log/cores/core.emulationstation.4000.4242.gz" ] && [ ! -e "${P7C}/storage/.cache/log/cores/core.retroarch.1000.1.gz" ] && [ -e "${P7C}/storage/.cache/log/cores/core.retroarch.3000.1.gz" ]; check $? "#308 10-packages-and-build gpt F-PB-15: the newest crash (the interface's, epoch 4000) is kept and the oldest (1000) goes, whatever the names sort to" "#308 F-PB-15: left: $(ls "${P7C}/storage/.cache/log/cores" | tr '\n' ' ') -- sorted by executable, the newest dump went first"
+rm -rf "${P7C}/storage/.cache"; mkdir -p "${P7C}/storage/.cache/log"
+P7FREE=$(df -k "${P7C}/storage" | awk 'NR==2{print $4}')
+for w in 6001 6002 6003 6004 6005; do p7ck "head -c 100 /dev/zero" retroarch "${w}" --setenv CORE_MAX_BYTES 1048576 --setenv CORE_MIN_FREE_KB "${P7FREE}"; done
+[ "$(ls "${P7C}/storage/.cache/log/cores"/*.txt 2>/dev/null | wc -l)" -le 3 ] && [ -e "${P7C}/storage/.cache/log/cores/core.retroarch.6005.4242.txt" ]; check $? "#308 10-packages-and-build gpt F-PB-15: five crashes refused for space leave at most three notes, the newest kept" "#308 F-PB-15: notes: $(ls "${P7C}/storage/.cache/log/cores" 2>/dev/null | tr '\n' ' ')"
+
+# == #308 10-packages-and-build gpt F-PB-20 (via stream F2): the interface's cap follows its path, not its truncated name
+rm -rf "${P7C}/storage/.cache"; mkdir -p "${P7C}/storage/.cache/log"
+P7FREE=$(df -k "${P7C}/storage" | awk 'NR==2{print $4}')
+P7EXEPATH=emulationstation p7ck "head -c 100 /dev/zero" emulationstatio 7000 --setenv CORE_MIN_FREE_KB "$(( P7FREE - 400000 ))"
+printf '%s' "${P7NOTE}" | grep '^dump' | grep -q 'plus the 1073741824 byte cap'; check $? "#308 10-packages-and-build gpt F-PB-20: a crash reported as 'emulationstatio' (the kernel's 15-character name) from /usr/bin/emulationstation gets the interface's 1 GiB cap" "#308 F-PB-20: note: $(printf '%s' "${P7NOTE}" | grep '^dump' | cut -c1-140) -- the 256 MiB cap was applied"
+P7EXEPATH=""
+
+# == #308 10-packages-and-build gpt F-PB-21: one dump is written at a time
+rm -rf "${P7C}/storage/.cache"; mkdir -p "${P7C}/storage/.cache/log"
+p7ck "{ head -c 1000 /dev/zero; sleep 3; head -c 1000 /dev/zero; }" retroarch 8000 --setenv CORE_MAX_BYTES 1048576 &
+P7A=$!; sleep 1
+p7ck "head -c 100 /dev/zero" emulationstation 8001 --setenv CORE_MAX_BYTES 1048576 &
+P7BK=$!; sleep 1
+p7mid=$([ -e "${P7C}/storage/.cache/log/cores/core.emulationstation.8001.4242.txt" ] && echo yes || echo no)
+wait "${P7A}" "${P7BK}" 2>/dev/null
+[ "${p7mid}" = "no" ] && [ -e "${P7C}/storage/.cache/log/cores/core.emulationstation.8001.4242.gz" ] && [ -e "${P7C}/storage/.cache/log/cores/core.retroarch.8000.4242.gz" ]; check $? "#308 10-packages-and-build gpt F-PB-21: a second crash's handler waits while the first is still writing, then keeps its own" "#308 F-PB-21: the second note existed mid-way through the first dump: ${p7mid}; left: $(ls "${P7C}/storage/.cache/log/cores" | tr '\n' ' ')"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
