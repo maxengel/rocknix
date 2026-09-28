@@ -9,9 +9,14 @@
 # push guard refused the whole range, and only a history rewrite -- which the
 # harness cannot run -- cleared it. A refusal at commit time costs the
 # committer one edit; at push time it costs a rewrite.
+#
+# One exemption, shared with pre-push: an audit packet under
+# docs/audits/<audit>/seats/*.diff is a verbatim copy of a range the guards
+# have already read line by line, so the copy is not read again.
 . "$(dirname "$(readlink -f "$0")")/secret-patterns"
 hits="$(git diff --cached -U0 --no-color --diff-filter=ACMRT \
   | awk '/^\+\+\+ b\//{f=substr($0,7); next} /^\+\+\+ /{next} /^\+/{print f ": " $0}' \
+  | grep -v -E '^docs/audits/[^/:]+/seats/[^/:]+\.diff: ' \
   | grep -E "${SECRET_PATTERNS}" | sed -E "s/(${SECRET_PATTERNS})/[REDACTED]/g" | head -5 || true)"
 if [ -n "${hits}" ]; then
   echo "✖ pre-commit: this commit would add a credential-shaped line:" >&2

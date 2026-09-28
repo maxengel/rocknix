@@ -207,6 +207,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   leaks=''
   while IFS= read -r f; do
     [ -n "$f" ] || continue
+    case "$f" in docs/audits/*/seats/*.diff) continue ;; esac   # a packet copy of a range already guarded (2026-09-28)
     hit="$(git show "${local_sha}:${f}" 2>/dev/null | grep -nE "$SECRET_PATTERNS" | sed -E "s/($SECRET_PATTERNS)/[REDACTED]/g" | head -3 || true)"
     [ -n "$hit" ] && leaks+="$(printf '%s\n' "$hit" | sed "s|^|  ${f}:|")"$'\n'
   done < "$names"
@@ -216,9 +217,14 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   # second tab. A file's NAME is not a credential: on 2026-09-25 merging
   # upstream brought a kernel patch named `...mmc-mask-DATA0-when-updating-
   # the-clock-on-H616-eMMC.patch`, its "sk-..." tail matched the OpenAI key
-  # shape, and every line of the file was refused for its name.
+  # shape, and every line of the file was refused for its name. An audit
+  # packet under docs/audits/<audit>/seats/*.diff is a verbatim copy of a
+  # range this guard, or the EmulationStation fork's, has already read line
+  # by line, so it is not read again -- it carried the ES guard's own FAKE=
+  # fixture and refused the push twice on 2026-09-28.
   tab=$'\t'
   hit="$(awk '/^commit /{c=$2} /^\+\+\+ b\//{f=substr($0,7)} /^\+/ && !/^\+\+\+ /{print c "\t" f "\t" $0}' "$added" \
+         | grep -v -E "^[^${tab}]*${tab}docs/audits/[^/${tab}]+/seats/[^/${tab}]+\.diff${tab}" \
          | grep -E "^[^${tab}]*${tab}[^${tab}]*${tab}.*(${SECRET_PATTERNS})" \
          | sed -E "s/($SECRET_PATTERNS)/[REDACTED]/g; s/${tab}/:/; s/${tab}/:/" | head -3 || true)"
   [ -n "$hit" ] && leaks+="$(printf '%s\n' "$hit" | sed 's|^|  |')"$'\n'
