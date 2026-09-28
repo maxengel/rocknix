@@ -1029,7 +1029,7 @@ list_jobs() {
     local -a BOUND=()
     [ "${BUDGET}" -gt 0 ] && BOUND=(timeout "${BUDGET}")
     RA_SCAN_USER="$(setting "${USER_KEY}")" "${BOUND[@]}" python3 - "$1" "${2:-all}" "${ROMS_ROOT}" "${ES_DIR}" "${SCAN_SYSTEMS}" "${SCAN_CURSOR}" <<'PY'
-import os, sys
+import json, os, sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from raofflineproxy import cache_keys
@@ -1193,12 +1193,36 @@ def is_cached(game_id, hash_value):
 
 
 # The ROMs this account's patch rows name (rom_browser.load_cached_rom_paths,
-# narrowed to the account), in the client's own two-component form.
+# narrowed to the account), in the client's own two-component form -- where
+# the game is whole for this account: its unlocks row and an achievementsets
+# row of the game beside the patch row, as is_cached asks of an indexed
+# game. A patch row alone (a fetch that failed after the first write, or
+# rows an older client's eviction thinned) used to pass the ROM over for
+# ever; now it is a job again (#308 F-RA-14). The dump's own sets row cannot
+# be asked here -- an unindexed ROM's hash is what the job finds out.
+def whole_games():
+    unlocks, sets = set(), set()
+    for entry in storage.get_all_cache_by_prefix(cache_keys.PREFIX_UNLOCKS):
+        parts = str(entry.get("cacheKey") or "").split(":")
+        if len(parts) == 4 and parts[2] == user and parts[3] == "0" and parts[1].isdigit():
+            unlocks.add(int(parts[1]))
+    for entry in storage.get_all_cache_by_prefix(cache_keys.PREFIX_ACHIEVEMENTSETS):
+        if not str(entry.get("cacheKey") or "").endswith(":" + user):
+            continue
+        try:
+            sets.add(int((json.loads(entry.get("responseBody") or "{}") or {}).get("GameId") or 0))
+        except Exception:
+            continue
+    return unlocks & sets
+
+
+whole = whole_games()
 cached_paths = {
     normalize_cached_rom_path(entry["sourceRomPath"])
     for entry in storage.get_all_cache_by_prefix(cache_keys.PREFIX_PATCH)
     if isinstance(entry.get("sourceRomPath"), str) and entry["sourceRomPath"].strip()
     and entry["cacheKey"].endswith(":" + user)
+    and cache_keys.parse_game_id_from_patch_key(entry["cacheKey"]) in whole
 }
 try:
     history = [str(p) for p in load_content_history_paths(config)]

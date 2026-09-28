@@ -3425,4 +3425,30 @@ else
     echo "    SKIP  #308 F-RA-06's cases: section t did not run"
 fi
 
+# D8. #308 1-raoffline gpt F-RA-14: in an unindexed folder, a ROM is passed
+# over as cached only when its game is whole for this account -- the patch
+# row that names its path, the unlocks row, and an achievementsets row of
+# the game -- as the index's test (is_cached) already asks. A patch row alone
+# (a fetch that failed after the first write, or rows the eviction thinned
+# on an older client) used to mark the ROM done for ever.
+if [ "${DT_OK}" -eq 1 ]; then
+printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+treset; PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+# h.gb: a patch row naming it and nothing else. i.gb: whole (patch, unlocks, sets).
+s.upsert_cache(cache_keys.patch(150, "qa"), '{"Success":true,"PatchData":{"ID":150}}', source_rom_path="/gb/h.gb")
+s.upsert_cache(cache_keys.patch(151, "qa"), '{"Success":true,"PatchData":{"ID":151}}', source_rom_path="/gb/i.gb")
+s.upsert_cache(cache_keys.unlocks(151, "qa"), '{"Success":true,"UserUnlocks":[]}')
+s.upsert_cache(cache_keys.achievementsets("iiii", "qa"), '{"Success":true,"GameId":151,"Sets":[]}')
+s.close()
+EOS
+: > "${TR}/helper-jobs.log"
+tctl scan
+grep -qP '^H\t\t\t/storage/roms/gb/h.gb$' "${TR}/helper-jobs.log" && ! grep -q '/storage/roms/gb/i.gb$' "${TR}/helper-jobs.log"; check $? "#308 gpt F-RA-14: a ROM whose game has a patch row and nothing else is a job again; one whose game is whole is passed over" "#308 gpt F-RA-14: jobs: $(tr '\t' ',' < "${TR}/helper-jobs.log" | tr '\n' '|' | cut -c1-240) -- a patch path alone read as a complete cache"
+else
+    echo "    SKIP  #308 F-RA-14's case: section t did not run"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
