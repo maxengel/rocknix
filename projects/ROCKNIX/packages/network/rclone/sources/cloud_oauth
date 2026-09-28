@@ -832,6 +832,12 @@ REMOTE_PAGE = """<!doctype html><meta name=viewport content="width=device-width,
 <button type=button class=minor data-key=f2>Page up</button>
 <button type=button class=minor data-key=f3>Page down</button>
 </div>
+<!-- A way off the handheld's page that does not depend on its gamepad: a
+     pad the bridge cannot read (#308 gpt F-RS-16) leaves this, and the
+     window quits on Escape. -->
+<div class=keys>
+<button type=button class=minor data-key=escape>Close page</button>
+</div>
 
 <h2>Pointer</h2>
 <div class=pad id=pad>drag to move &middot; tap to click</div>

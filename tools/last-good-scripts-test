@@ -4214,6 +4214,18 @@ group(async function passwordsAreMasked() {
     "nothing on the page says the keystrokes cross the network unencrypted (the audit's F-RS-01 verdict)");
 });
 EOJS
+cat >> "${C4}/page_test.js" <<'EOJS'
+// ------------------------------------------------ #308 gpt F-RS-16
+group(async function aWayToCloseFromThePhone() {
+  const p = page("open a1");
+  await p.poll();
+  let ok = true, why = "";
+  try { await p.key("escape"); } catch (e) { ok = false; why = e.message; }
+  result(ok && p.device().closed,
+    "the phone can close the page on the handheld (Escape, which the window quits on)",
+    "no way to close the handheld's page from the phone: " + (why || "Escape was not sent") + " (#308 gpt F-RS-16)");
+});
+EOJS
 # C4: new page groups go above this line
 cat >> "${C4}/page_test.js" <<'EOJS'
 (async () => {
