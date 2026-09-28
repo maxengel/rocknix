@@ -4180,6 +4180,21 @@ group(async function namedKeysKeepTheModel() {
     "x, Backspace key, y: the field holds " + JSON.stringify(d.field) + ", the box " + JSON.stringify(p.box.value));
 });
 EOJS
+cat >> "${C4}/page_test.js" <<'EOJS'
+// ------------------------------------------------ #308 claude F-RS-16, gpt F-RS-13
+group(async function untypableCharactersSaySo() {
+  const p = page("open a1");
+  await p.poll();
+  await p.type("Été2026!");
+  const d = p.device();
+  const warn = Object.values(p.byId).filter((e) => !e.hidden && /can.t type/i.test(e.textContent));
+  result(d.field === p.box.value && warn.length === 1,
+    "characters the handheld cannot type are taken out of the box, and the page says so: " +
+    JSON.stringify(warn.length ? warn[0].textContent : ""),
+    "typed Été2026!: the field holds " + JSON.stringify(d.field) + ", the box " + JSON.stringify(p.box.value) +
+    ", and " + warn.length + " line(s) say why -- a credential went across altered, silently (#308 claude F-RS-16, gpt F-RS-13)");
+});
+EOJS
 # C4: new page groups go above this line
 cat >> "${C4}/page_test.js" <<'EOJS'
 (async () => {

@@ -812,6 +812,7 @@ REMOTE_PAGE = """<!doctype html><meta name=viewport content="width=device-width,
 
 <input id=kb placeholder="Type here" autocapitalize=off autocorrect=off
        spellcheck=false autofocus>
+<div id=warn class=err hidden></div>
 <div class=keys>
 <button type=button class=minor data-key=backspace>Back</button>
 <button type=button class=minor data-key=tab>Tab</button>
@@ -843,6 +844,7 @@ info.</p>
 (function () {
   var pin = "%(pin)s";
   var box = document.getElementById("kb");
+  var warn = document.getElementById("warn");
   var state = document.getElementById("state");
   var pad = document.getElementById("pad");
 
@@ -907,13 +909,29 @@ info.</p>
     }
     if (!ready) return;
     send("key=" + named);
-    if (named !== "f2" && named !== "f3") { box.value = ""; sent = ""; }
+    if (named !== "f2" && named !== "f3") { box.value = ""; sent = ""; warn.hidden = true; }
+  }
+
+  // Only what the handheld can type goes in the box: printable ASCII,
+  // [ -~], the US layout cloud_oauth types with. Anything else used to be
+  // sent, dropped at the other end without a word, and left showing here
+  // -- a credential altered in silence (#308 claude F-RS-16, gpt F-RS-13).
+  // It is taken out of the box instead, and the page says which.
+  function typable() {
+    var v = box.value, kept = v.replace(/[^ -~]/g, "");
+    if (kept === v) return;
+    var gone = v.replace(/[ -~]/g, "").split("");
+    warn.textContent = "The handheld can't type " + gone.join(" ") + ", so "
+      + (gone.length > 1 ? "they were" : "it was") + " left out.";
+    warn.hidden = false;
+    box.value = kept;
   }
 
   // What you typed stays visible. Clearing the box after every keystroke made
   // a keyboard that looked broken -- you type and nothing appears anywhere
   // you can see.
   box.addEventListener("input", function () {
+    typable();
     if (ready) deliver(box.value);
   });
   box.addEventListener("keydown", function (e) {
@@ -926,7 +944,7 @@ info.</p>
   // Local only: the handheld has moved to another field and this box still
   // holds what went into the last one.
   document.getElementById("clear").addEventListener("click", function () {
-    box.value = ""; sent = ""; box.focus();
+    box.value = ""; sent = ""; warn.hidden = true; box.focus();
   });
 
   Array.prototype.forEach.call(document.querySelectorAll("[data-key]"), function (b) {
@@ -1966,7 +1984,10 @@ def make_handler(holder, shutdown):
                 self.send_response(204)
                 self.send_header("Content-Length", "0")
                 self.end_headers()
-                log("typed %d characters%s" % (sent, " + " + named if named else ""))
+                # Counts only: what was typed may be a password.
+                log("typed %d characters%s%s" % (
+                    sent, " + " + named if named else "",
+                    ", %d not on the keyboard" % (len(text) - sent) if len(text) > sent else ""))
                 return
 
             if fields.get("restart"):
