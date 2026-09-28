@@ -1,0 +1,61 @@
+22:17:47 === X-size-same on guest d, BUILD_ID="8196071ff52b59eaea0058f35faf6b9db4b5a43d"
+22:17:47   PASS  guest d's SAVES tier is its own folder (/QA307d/Saves)
+22:17:47 -- 1. a fresh 64 KiB save, synced
+    local md5: 82aa19a8a074b0cfe12bfa6cf948dd1f
+    sync rc=0
+    log: Checks:                 2 / 2, 100%, Listed 136
+    log: Transferred:            1 / 1, 100%
+    log: [2026-09-28 18:17:48] [INFO] [cloud_backup] Script completed in 0 seconds with exit code 0
+22:17:48     cloud md5: 82aa19a8a074b0cfe12bfa6cf948dd1f
+22:17:48   PASS  the first sync put the save in the cloud (md5 equal)
+    cloud lsl (size, modtime as the backend reports it):     65536 2026-09-28 18:17:48.000000000 QA307-size-same.srm
+22:17:48 -- 2. the same size, new bytes, two seconds later; the exit sync's command again
+ls: unrecognized option '--time-style=+%H:%M:%S'
+BusyBox v1.36.1 (2026-09-19 04:00:01 UTC) multi-call binary.
+
+Usage: ls [-1AaCxdLHRFplinshrSXvctu] [FILE]...
+
+List directory contents
+
+	-1	One column output
+	-a	Include names starting with .
+	-A	Like -a, but exclude . and ..
+	-x	List by lines
+	-d	List directory names, not contents
+	-L	Follow symlinks
+	-H	Follow symlinks on command line
+	-R	Recurse
+	-p	Append / to directory names
+	-F	Append indicator (one of */=@|) to names
+	-l	Long format
+	-i	List inode numbers
+	-n	List numeric UIDs and GIDs instead of names
+	-s	List allocated blocks
+	-lc	List ctime
+	-lu	List atime
+	--full-time	List full date/time
+	-h	Human readable sizes (1K 243M 2G)
+	--group-directories-first
+	-S	Sort by size
+	-X	Sort by extension
+	-v	Sort by version
+	-t	Sort by mtime
+	-tc	Sort by ctime
+	-tu	Sort by atime
+	-r	Reverse sort order
+	--color[={always,never,auto}]
+    local: ccdaceec27814384b5359112026b0672
+    sync rc=0
+    log: Checks:                 3 / 3, 100%, Listed 136
+    log: [2026-09-28 18:17:51] [INFO] [cloud_backup] Script completed in 0 seconds with exit code 0
+22:17:51     local md5 ccdaceec27814384b5359112026b0672, cloud md5 82aa19a8a074b0cfe12bfa6cf948dd1f
+22:17:51   FAIL  a changed save of unchanged size was NOT sent: the cloud still holds the first bytes (#53's shape on the saves tier)
+22:17:51 -- 3. rclone's own reason, dry run at -vv with the same flags rclone copy gets from the script (no comparison flags)
+    rclone -vv: 2026/09/28 18:17:51 DEBUG : rclone: Version "v1.75.1" starting with parameters ["rclone" "copy" "-vv" "--dry-run" "/storage/roms/gb/QA307-size-same.srm" "qa-cloud:/QA307d/Saves/gb/"]
+    rclone -vv: 2026/09/28 18:17:51 DEBUG : Creating backend with remote "/storage/roms/gb/QA307-size-same.srm"
+    rclone -vv: 2026/09/28 18:17:51 DEBUG : fs cache: renaming child cache item "/storage/roms/gb/QA307-size-same.srm" to be canonical for parent "/storage/roms/gb"
+    rclone -vv: 2026/09/28 18:17:51 DEBUG : QA307-size-same.srm: size = 65536 OK
+    rclone -vv --checksum: 2026/09/28 18:17:51 DEBUG : rclone: Version "v1.75.1" starting with parameters ["rclone" "copy" "-vv" "--dry-run" "--checksum" "/storage/roms/gb/QA307-size-same.srm" "qa-cloud:/QA307d/Saves/gb/"]
+    rclone -vv --checksum: 2026/09/28 18:17:51 DEBUG : Creating backend with remote "/storage/roms/gb/QA307-size-same.srm"
+    rclone -vv --checksum: 2026/09/28 18:17:51 DEBUG : fs cache: renaming child cache item "/storage/roms/gb/QA307-size-same.srm" to be canonical for parent "/storage/roms/gb"
+22:17:52 === done: 2 PASS, 1 FAIL

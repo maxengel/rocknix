@@ -664,15 +664,23 @@ A fixture that stages "the cloud's copy is newer" or "the same size" has to
 know what the shipped `copy` does on each backend. Measured on the VM pair
 in a fourteen-case matrix, not inferred:
 
-- **WebDAV (`rclone serve webdav`)** reports every file's modtime as its
-  *upload* time — a local mtime does not survive the trip — and offers no
-  hashes. A plain `copy` replaces the destination whenever size **or** mtime
-  differ, in either direction; `copy --update` keeps whichever side has the
-  later mtime; an equal-size, equal-mtime byte change is skipped outright
-  (#53's shape, and A2's). So "the cloud's copy is newer" is staged by
-  making the local file *older* (`touch -d` an hour back), never by touching
-  the cloud. A PUT killed mid-transfer leaves a partial file at the
-  endpoint, hash-equal to nothing.
+- **WebDAV (`rclone serve webdav`, `vendor = other`)** reports every file's
+  modtime as its *upload* time — a local mtime does not survive the trip —
+  and offers no hashes. **Measured again on 2026-09-28 (rclone 1.75.1,
+  `8196071ff5`, #315): a plain `copy` decides on size alone there.** rclone
+  cannot *set* a modtime on this vendor, so its precision is "not supported"
+  and the comparison never reaches the mtime: `-vv` says `size = 65536 OK`,
+  `Sizes identical`, and a changed save of unchanged size is not sent by
+  the exit sync or the full pass, with or without `--no-traverse`. The
+  earlier reading of this paragraph ("replaces whenever size **or** mtime
+  differ") was wrong for this vendor; `copy --update` compares the two
+  modtimes only inside a `--modify-window`, which is the whole width when
+  precision is unsupported. So "the cloud's copy is newer" is still staged
+  by making the local file *older* (`touch -d` an hour back), never by
+  touching the cloud, and a same-size change needs a content-based
+  transport (#315: `--ignore-times` on the recent set, or the capture
+  manifest's changed set) to move at all. A PUT killed mid-transfer leaves
+  a partial file at the endpoint, hash-equal to nothing.
 - **MinIO** keeps modtimes and offers hashes: the equal-size, equal-mtime
   change is transferred, and a killed upload leaves nothing behind. `rclone
   cat` of a missing key exits 0 with no output — a missing key is an empty

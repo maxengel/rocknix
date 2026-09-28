@@ -1,0 +1,28 @@
+22:10:59 === X-gaps-card on guest d, BUILD_ID="8196071ff52b59eaea0058f35faf6b9db4b5a43d"
+22:10:59   PASS  guest d's SAVES tier is its own folder (/QA307d/Saves)
+22:11:40 -- fixture: 400 x 64 KiB fresh saves (25 MiB) so the exit sync has files to move for seconds
+    seeded: 400
+22:11:43   PASS  Ninoid running (POST 200)
+22:11:47 -- the exit sync starts; cut the link on the first moved file
+22:11:48     link cut at poll 4 after 10 moved line(s)
+22:12:09     last-sync-exit (over serial): 1790633521 69 gaps YOU WENT OFFLINE PART-WAY THROUGH
+22:12:09   PASS  the exit stamp reads 69 with the gaps token (1790633521 69 gaps YOU WENT OFFLINE PART-WAY THROUGH)
+    log: 2026/09/28 18:12:01 ERROR : gb/QA307-gap-369.srm: Failed to copy: Update mkParentDir failed: Mkcol "http://10.0.2.2:9010/QA307d/Saves/gb/": dial tcp 10.0.2.2:9010: connect: network is unreachable
+    log: 2026/09/28 18:12:01 ERROR : Attempt 1/1 failed with 174 errors and: Update mkParentDir failed: Mkcol "http://10.0.2.2:9010/QA307d/Saves/savestates/gb/": dial tcp 10.0.2.2:9010: connect: network is unreachable
+    log: Transferred:   	      704 KiB / 704 KiB, 100%, 63.997 KiB/s, ETA 0s
+    log: Transferred:           10 / 10, 100%
+    log: 2026/09/28 18:12:01 NOTICE: Failed to copy with 174 errors: last error was: Update mkParentDir failed: Mkcol "http://10.0.2.2:9010/QA307d/Saves/savestates/gb/": dial tcp 10.0.2.2:9010: connect: network is unreachable
+    log: [2026-09-28 18:12:01] [INFO] [cloud_backup] Script completed in 14 seconds with exit code 69
+    es_log: 
+22:12:10     (no es_log line names the sentence; read the frames under /workspace/tmp/rocknix-session/proofs-307/frames/X-gaps-card/ for the card)
+22:12:10 -- the link back: the owed sync runs (the owed set thinned to 20 files first; the automatic ceiling is 90 s)
+    seeded files left: 20
+22:12:14     last-sync-exit after the link's return: 1790633533 0 completed (the 69 stamp: 1790633521 69 gaps YOU WENT OFFLINE PART-WAY THROUGH); 'the owed saves sync starts' journal lines 0 -> 1
+22:12:14   PASS  the interface started the owed saves sync at the link's return (journal: ProxyCards: the owed saves sync starts)
+22:12:14   PASS  the owed sync ran and stamped (last-sync-exit 1790633533 0 completed)
+22:12:14   PASS  and it completed (rc 0)
+    log: Transferred:           10 / 10, 100%
+    log: [2026-09-28 18:12:01] [INFO] [cloud_backup] Script completed in 14 seconds with exit code 69
+    log: Transferred:            1 / 1, 100%
+    log: [2026-09-28 18:12:13] [INFO] [cloud_backup] Script completed in 1 seconds with exit code 0
+22:12:14 === done: 6 PASS, 0 FAIL

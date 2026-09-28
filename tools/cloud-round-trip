@@ -1405,6 +1405,24 @@ echo "${saw:-0}/${all:-0}"
                           "and it was the only file transferred",
                           "more than one file moved for one changed save")
 
+    step("a changed save of the same size still reaches the cloud (#315)")
+    # A battery save is the same size every time it is written. On a backend
+    # with neither hashes nor a settable modtime (WebDAV, vendor=other) rclone
+    # decides on size alone -- "Sizes identical" at -vv -- and the saves tier
+    # carries no content marker: D-CLOUD-005 guards only the settings archive
+    # (the archive's twin of this step is above). Found by X-size-same on
+    # 8196071ff5, 2026-09-28; the pair fixture A2 covers it but vm-qa does not
+    # run the pair. Expected to FAIL on webdav until #315 is fixed: the suite
+    # stays red over a known defect rather than green.
+    dev.write(f"{root}/savestates/recent-probe.state", b"RECENT")   # six bytes again, new ones
+    dev.run("sync", check=False)
+    out = dev.run("cloud_backup --yes --saves-only --recent >/dev/null 2>&1; echo rc=$?", check=False)
+    got = backend_bytes("savestates/recent-probe.state")
+    failures += not check("rc=0" in out and got == b"RECENT",
+                          "the same-size change reached the bucket as the new bytes",
+                          f"the same-size change was not sent: the bucket holds {got!r} (exit {out.strip()[-4:]}; "
+                          "#315, size-only comparison on this backend)")
+
     step("with no network the exit sync returns 69 at once and stamps nothing")
     out = dev.run(
         "mkdir -p /tmp/noroute && printf '#!/bin/sh\nexit 0\n' > /tmp/noroute/ip && chmod +x /tmp/noroute/ip; "
