@@ -4248,4 +4248,38 @@ done < "${C4}/out"
 C4N=$(sed -n 's/^END //p' "${C4}/out")
 [ -n "${C4N}" ]; check $? "the phone page groups ran to the end (${C4N} groups, node $(node --version 2>/dev/null))" "the phone page groups did not run -- they need node and python3 on this machine: $(tail -2 "${C4}/err" 2>/dev/null | tr '\n' '|')"
 
+# C5. cloud_device_id heals a poisoned id only once the old one is recorded
+# (#308 gpt F-RS-21): healing went ahead when .previous could not be
+# written, so an id with a prefix of its own -- which previous_ids cannot
+# guess -- was lost to cloud_restore's --previous. Against a fake
+# /sys/class/net with a sit0 and a wlan0 whose permanent address ethtool
+# reports.
+C5="${CS}/c5"; mkdir -p "${C5}/storage/.config" "${C5}/net/sit0" "${C5}/net/wlan0/device" "${C5}/shim" "${C5}/repo"
+cp "${CS}/src/cloud_device_id" "${C5}/repo/cloud_device_id"
+echo 776 > "${C5}/net/sit0/type"; echo 1 > "${C5}/net/wlan0/type"
+printf 'HW_DEVICE="H700"\n' > "${C5}/os-release"
+printf '0123456789abcdef0123456789abcdef\n' > "${C5}/machine-id"
+printf '#!/bin/sh\necho "Permanent address: 02:aa:bb:cc:dd:ee"\n' > "${C5}/shim/ethtool"
+printf '#!/bin/sh\nexit 0\n' > "${C5}/shim/logger"; chmod +x "${C5}/shim"/*
+C5ID="${C5}/storage/.config/cloud_sync-device-id"
+c5() { # <args...>: cloud_device_id in the sandbox; stdout to C5/out, rc in RC
+    RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${C5}/os-release" /etc/os-release --ro-bind "${C5}/machine-id" /etc/machine-id \
+        --tmpfs /sys --ro-bind "${C5}/net" /sys/class/net "${CSBB[@]}" \
+        --bind "${C5}/storage" /storage --ro-bind "${C5}/shim" /shim --ro-bind "${C5}/repo" /repo \
+        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --dir /var/log \
+        --unsetenv DEVICE --unsetenv HW_DEVICE --setenv PATH "${CSPATH}" \
+        bash /repo/cloud_device_id "$@" > "${C5}/out" 2>/dev/null; echo $? ) 2>/dev/null )
+}
+C5P="$(printf 'notset|unknown' | md5sum | cut -c1-10)"
+C5H="H700-$(printf '%s|%s' 02:aa:bb:cc:dd:ee unknown | md5sum | cut -c1-10)"
+echo "Custom-${C5P}" > "${C5ID}"; rm -rf "${C5ID}.previous"
+c5
+[ "$(cat "${C5}/out")" = "${C5H}" ] && [ "$(cat "${C5ID}")" = "${C5H}" ] && grep -qx "Custom-${C5P}" "${C5ID}.previous"; check $? "a poisoned id is healed (${C5H}) and the old one kept in .previous" "healing: printed '$(cat "${C5}/out")', stored '$(cat "${C5ID}")', .previous '$(tr '\n' ' ' < "${C5ID}.previous" 2>/dev/null)'"
+echo "Custom-${C5P}" > "${C5ID}"; rm -f "${C5ID}.previous"; mkdir "${C5ID}.previous"
+c5
+[ "$(cat "${C5ID}")" = "Custom-${C5P}" ] && [ "$(cat "${C5}/out")" = "Custom-${C5P}" ]; check $? "with .previous unwritable, the poisoned id is kept as it is, not healed away unrecorded" "with .previous unwritable: printed '$(cat "${C5}/out")', stored '$(cat "${C5ID}")' -- the only record of Custom-${C5P} is gone (#308 gpt F-RS-21)"
+rmdir "${C5ID}.previous"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

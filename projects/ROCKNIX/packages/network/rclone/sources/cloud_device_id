@@ -292,11 +292,14 @@ write_id() {
         || { rm -f "${ID_FILE}.tmp.$$" 2>/dev/null; return 1; }
 }
 
-# Append an id to the .previous file unless it is already there.
+# Append an id to the .previous file unless it is already there. Succeeds
+# only when the line is there afterwards: healing rests on it. Braced for the
+# reason write_id is.
 remember_previous() {
     mkdir -p "$(dirname "${PREVIOUS_FILE}")" 2>/dev/null
     grep -qxF -- "${1}" "${PREVIOUS_FILE}" 2>/dev/null && return 0
-    printf '%s\n' "${1}" >> "${PREVIOUS_FILE}" 2>/dev/null
+    { printf '%s\n' "${1}" >> "${PREVIOUS_FILE}"; } 2>/dev/null || return 1
+    grep -qxF -- "${1}" "${PREVIOUS_FILE}" 2>/dev/null
 }
 
 # A stored id ending in the poisoned hash was not derived from this hardware,
@@ -316,7 +319,17 @@ heal_poisoned() {
     seed=$(permanent_address) || return 1
     healed="$(device_label)-$(hash_of "${seed}")"
     [ "${healed}" != "${stored}" ] || return 1
-    remember_previous "${stored}"
+    # The old id first, or no healing. .previous is where cloud_restore finds
+    # the folder the archives were written under, and previous_ids guesses
+    # only the two standard shapes -- a stored id with a prefix of its own
+    # (the file is the player's to edit) is recorded nowhere else. Healing
+    # went ahead when this failed, and that id was gone for good (#308 gpt
+    # F-RS-21). Not healing costs nothing that was working: the stored id is
+    # the one every backup so far went under, and the next run tries again.
+    if ! remember_previous "${stored}"; then
+        log_message "device id NOT healed: ${stored} could not be recorded in ${PREVIOUS_FILE}; keeping it until it can be" "WARN"
+        return 1
+    fi
     if write_id "${healed}"; then
         log_message "device id healed: ${stored} -> ${healed} (the stored hash was the shared constant $(poisoned_hash), #86; the old id is kept in ${PREVIOUS_FILE})"
     else
