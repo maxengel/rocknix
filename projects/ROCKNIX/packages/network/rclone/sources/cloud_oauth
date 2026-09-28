@@ -810,14 +810,15 @@ REMOTE_PAGE = """<!doctype html><meta name=viewport content="width=device-width,
 
 <div id=state class=note>Checking&hellip;</div>
 
-<input id=kb placeholder="Type here" autocapitalize=off autocorrect=off
-       spellcheck=false autofocus>
+<input id=kb type=password placeholder="Type here" autocapitalize=off
+       autocorrect=off spellcheck=false autofocus>
 <div id=warn class=err hidden></div>
 <div class=keys>
 <button type=button class=minor data-key=backspace>Back</button>
 <button type=button class=minor data-key=tab>Tab</button>
 <button type=button class=minor data-key=enter>Enter</button>
 <button type=button class=minor id=clear>Clear</button>
+<button type=button class=minor id=show>Show</button>
 </div>
 
 
@@ -837,7 +838,8 @@ REMOTE_PAGE = """<!doctype html><meta name=viewport content="width=device-width,
 
 <p class=note>The sign-in page is on your handheld&rsquo;s screen, not here.
 This types for it, so you can more easily retrieve and type your login
-info.</p>
+info. What you type crosses your network unencrypted, so use this on a
+network you trust.</p>
 </div>
 
 <script>
@@ -939,6 +941,17 @@ info.</p>
     if (!named) return;
     e.preventDefault();
     act(named);
+  });
+
+  // Masked, because what goes through this box is mostly a password, and
+  // it stayed readable on the phone's screen after it was sent (#308 gpt
+  // F-RS-14). Show reveals it for checking; it hides again on a second
+  // press.
+  var show = document.getElementById("show");
+  show.addEventListener("click", function () {
+    var hidden = box.type === "password";
+    box.type = hidden ? "text" : "password";
+    show.textContent = hidden ? "Hide" : "Show";
   });
 
   // Local only: the handheld has moved to another field and this box still

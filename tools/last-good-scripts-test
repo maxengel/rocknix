@@ -4195,6 +4195,25 @@ group(async function untypableCharactersSaySo() {
     ", and " + warn.length + " line(s) say why -- a credential went across altered, silently (#308 claude F-RS-16, gpt F-RS-13)");
 });
 EOJS
+cat >> "${C4}/page_test.js" <<'EOJS'
+// ------------------------------------------------ #308 gpt F-RS-14
+group(async function passwordsAreMasked() {
+  const p = page("open a1");
+  await p.poll();
+  const masked = p.box.type === "password";
+  const toggle = p.byId.show;
+  let flipped = false;
+  if (toggle) { toggle.fire("click"); flipped = p.box.type === "text"; toggle.fire("click"); }
+  result(masked && flipped && p.box.type === "password",
+    "the phone's box is masked, with a Show button that reveals it and hides it again",
+    "the box's type is " + JSON.stringify(p.box.type) + " and " + (toggle ? "Show did not flip it" : "there is no Show button") +
+    " -- a password typed on the phone sits on its screen in the clear (#308 gpt F-RS-14)");
+  const text = html.replace(/<[^>]+>/g, " ");
+  result(/network you trust/i.test(text),
+    "the page says its keystrokes cross the network unencrypted",
+    "nothing on the page says the keystrokes cross the network unencrypted (the audit's F-RS-01 verdict)");
+});
+EOJS
 # C4: new page groups go above this line
 cat >> "${C4}/page_test.js" <<'EOJS'
 (async () => {
