@@ -10374,6 +10374,46 @@ else
 skip "gpt G2-D-02 / S-24: the ctl's runs need section t's pinned client"
 fi
 
+# D35. gpt G2-D-03: the top-up read index-pending, found the token its
+# listing was made for, and removed the file -- two operations. An index
+# that wrote its own marker between them (write, then rename over) had its
+# newer marker removed by the older run, and the games that index
+# identified offline waited for a listing nobody would ask for. The check
+# and the removal are now one step under the marker's own lock, which the
+# write takes too. The moment between them is made here: an rm shim, at the
+# removal of index-pending, starts `raofflineproxy-ctl index-offline` and
+# lets the removal go ahead once that write has landed or two seconds have
+# passed. The lock's wait is in real seconds, so the virtual clock's fast
+# sleep is off for the case.
+if [ "${DF_OK}" -eq 1 ]; then
+printf "${DCFG_ON}" > "${TCFG}"; TENV=(--setenv RAOFFLINEPROXY_HISTORY /storage/.config/retroarch/content_history.lpl)
+treset; rm -f "${TR}/fast-sleep"; touch -d '3 hours ago' "${THISTORY}"; touch -d '2 hours ago' "${TMARK}"
+tctl index-offline; DTOKA="$(cat "${TPD}/index-pending" 2>/dev/null)"
+cat > "${T}/shim/rm" <<'EOS'
+#!/bin/sh
+for a in "$@"; do
+    case "${a}" in */index-pending)
+        if [ ! -e /run/d35-writer.started ]; then
+            : > /run/d35-writer.started
+            ( bash /repo/raofflineproxy-ctl index-offline; echo $? > /run/d35-writer.rc ) >/dev/null 2>&1 &
+            i=0; while [ "${i}" -lt 20 ] && [ ! -e /run/d35-writer.rc ]; do /usr/bin/sleep 0.1; i=$((i + 1)); done
+        fi ;;
+    esac
+done
+exec /usr/bin/rm "$@"
+EOS
+chmod +x "${T}/shim/rm"
+tctl topup
+for _ in $(seq 1 100); do [ -e "${TR}/d35-writer.rc" ] && break; sleep 0.1; done
+rm -f "${T}/shim/rm"
+DTOKB="$(cat "${TPD}/index-pending" 2>/dev/null)"
+[ "${RC}" -eq 0 ] && [ -e "${TR}/d35-writer.started" ] && [ "$(cat "${TR}/d35-writer.rc" 2>/dev/null)" = "0" ] && [ -n "${DTOKA}" ] && [ -n "${DTOKB}" ] && [ "${DTOKB}" != "${DTOKA}" ]; check $? "gpt G2-D-03: an index that writes its marker between the top-up's token check and its removal keeps it -- the older run removed only its own" "gpt G2-D-03: top-up rc ${RC}; the writer $([ -e "${TR}/d35-writer.started" ] && echo "ran (rc $(cat "${TR}/d35-writer.rc" 2>/dev/null || echo none))" || echo "never ran: the removal was not reached"); marker: '${DTOKB:-gone}' (listed for '${DTOKA}') -- the newer notification was removed by the older run"
+grep -q 'index-pending removed' "${TLOG}"; check $? "gpt G2-D-03: and the top-up still says it removed the marker it listed for" "gpt G2-D-03: $(grep 'index-pending' "${TLOG}" | tail -n 2 | tr '\n' '|' | cut -c1-240)"
+rm -f "${TR}/d35-writer.started" "${TR}/d35-writer.rc"; touch "${TR}/fast-sleep"; TENV=()
+else
+skip "gpt G2-D-03: the ctl's runs need section t's pinned client"
+fi
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi

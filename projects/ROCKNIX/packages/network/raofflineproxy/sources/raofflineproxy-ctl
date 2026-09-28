@@ -2085,9 +2085,51 @@ do_scan() {
 # an index writes while it runs (audit of the fixes, gpt G-D-03). Whole or
 # not at all. A marker an earlier build left is an empty file, and reads as
 # one token like any other.
+#
+# The marker has a lock of its own (audit of the fix round, gpt G2-D-03):
+# the top-up's token check and its removal are one step under it
+# (ack_index_pending), and a write takes it too, so an index's newer marker
+# cannot land between that check and that removal and go with the older
+# one. It is held for a read, a rename or an unlink, never across anything
+# that waits. Busybox flock has no -w: five tries a second apart. A lock
+# that cannot be had leaves the safe side -- the write goes ahead, since a
+# notification lost leaves the player's games uncached, and the removal
+# does not, since a marker kept costs one more listing.
+PENDING_LOCK="/var/run/raofflineproxy-index-pending.lock"
+pending_lock() {
+    local TRY=0
+    exec 6<>"${PENDING_LOCK}" 2>/dev/null || return 1
+    until flock -n 6; do
+        TRY=$((TRY + 1))
+        if [ "${TRY}" -ge 5 ]; then exec 6>&-; return 1; fi
+        sleep 1
+    done
+}
+
+pending_unlock() {
+    exec 6>&-
+}
+
 write_index_pending() {
+    local LOCKED=0 RC=0
+    if pending_lock; then LOCKED=1; else say "index-pending: its lock could not be had; written without it"; fi
     printf '%s %s %s\n' "$(date +%s)" "$$" "${RANDOM}" > "${INDEX_PENDING}.tmp" 2>/dev/null \
-        && mv -f "${INDEX_PENDING}.tmp" "${INDEX_PENDING}"
+        && mv -f "${INDEX_PENDING}.tmp" "${INDEX_PENDING}" || RC=1
+    [ "${LOCKED}" -eq 1 ] && pending_unlock
+    return "${RC}"
+}
+
+# ack_index_pending <token>: remove index-pending if it is still the marker
+# the caller's listing was made for. 0 removed, 1 kept (a newer marker), 2
+# kept because the lock could not be had.
+ack_index_pending() {
+    local RC=1
+    pending_lock || return 2
+    if [ "$(cat "${INDEX_PENDING}" 2>/dev/null)" = "${1}" ]; then
+        rm -f "${INDEX_PENDING}" && [ ! -e "${INDEX_PENDING}" ] && RC=0
+    fi
+    pending_unlock
+    return "${RC}"
 }
 
 do_index_offline() {
@@ -2249,13 +2291,16 @@ do_topup() {
     # The index's games are handled -- listed, and each cached or passed
     # over -- so whatever index-pending stood for is done; after-index runs
     # included, since their listing is the same (#307 PL-055).
+    # The check and the removal are one step under the marker's lock
+    # (ack_index_pending, gpt G2-D-03).
     if [ "${LISTED}" -eq 1 ] && [ -z "${WHY}" ] && [ -e "${INDEX_PENDING}" ]; then
-        if [ "${PENDING_SEEN}" -eq 1 ] && [ "$(cat "${INDEX_PENDING}" 2>/dev/null)" = "${PENDING_TOKEN}" ]; then
-            rm -f "${INDEX_PENDING}"
-            slog "topup: the pending index's listing and its games are handled; index-pending removed"
-        else
-            slog "topup: an index left index-pending while this run was at its jobs; kept for the next run"
-        fi
+        local ACK=1
+        [ "${PENDING_SEEN}" -eq 1 ] && { ack_index_pending "${PENDING_TOKEN}"; ACK=$?; }
+        case "${ACK}" in
+            0) slog "topup: the pending index's listing and its games are handled; index-pending removed" ;;
+            1) slog "topup: an index left index-pending while this run was at its jobs; kept for the next run" ;;
+            *) slog "topup: index-pending's lock could not be had; the marker is kept and the next run lists for it again" ;;
+        esac
     fi
 
     # Then the client's own recently-played pass for what the index missed
