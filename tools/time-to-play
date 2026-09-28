@@ -1054,11 +1054,14 @@ def main():
                    [g.host + ":" + RCLONE_CONF, saved_conf], capture_output=True)
     subprocess.run(["scp", "-q", "-P", g.port] + g._opts() +
                    [g.host + ":" + CLOUD_CONF, saved_cloud], capture_output=True)
-    # A QEMU guest has no Vulkan. Left on the image's default, RetroArch
-    # exists for a fifth of a second and never draws, the exit sync never
-    # runs, and every headline number below is a dash -- which is what the
-    # runner's first dispatch of this cell reported as a PASS (2026-09-12).
-    # The exit test has always swapped the driver for its run; so does this.
+    # A QEMU guest has no Vulkan. On the vulkan the GENERIC_X64 profile
+    # shipped until a5a03bd9fa, RetroArch exists for a fifth of a second and
+    # never draws, the exit sync never runs, and every headline number below
+    # is a dash -- which is what the runner's first dispatch of this cell
+    # reported as a PASS (2026-09-12). The profile ships gl now, and the boot
+    # quirk 092-retroarch-surface moves a cfg still on vulkan to gl while the
+    # image has no Vulkan driver; the swap stays, for a guest whose cfg says
+    # otherwise. The exit test has always swapped the driver for its run.
     saved_vd = ""
     saved_gs = ""
     if args.vm:

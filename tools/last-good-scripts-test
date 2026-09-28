@@ -3939,4 +3939,38 @@ else
 fi
 [ "${F2_OUT}" -eq 1 ]; check $? "one zip recipe (projects/ROCKNIX/packages/compress/zip)" "${F2_OUT} zip recipes in the tree -- the generic copy is shadowed by the project one and never built"
 
+# F1i. #308 claude F-VM-08 and F-VM-16: the GENERIC_X64 emulator configs the
+#      image installs carried other devices' hardware. (Cemu, RPCS3, xemu,
+#      Dolphin and Supermodel, the rest the seats named, are not in the
+#      GENERIC_X64 SYSTEM at 7911c53bb4.)
+F1I="${F1}/i"; mkdir -p "${F1I}"; F1EMU=projects/ROCKNIX/packages/emulators/standalone
+# mupen64plus: [Input-SDL-Control1] named SM8250's pad. Under mode = 2
+# (fully automatic) input-sdl never looks the name up -- it compares it in
+# mode 1 only -- and writes "" itself when no pad is found, so "" is the
+# value the file means.
+src_of "${F1EMU}/mupen64plus-sa/mupen64plus-sa-core/config/GENERIC_X64/mupen64plus.cfg" "${F1I}/mupen64plus.cfg"
+F1_M64N=$(awk '/^\[/{s=$0} s=="[Input-SDL-Control1]" && /^name = /{print; exit}' "${F1I}/mupen64plus.cfg")
+[ "${F1_M64N}" = 'name = ""' ]; check $? "mupen64plus's Control1 names no handheld's pad: name = \"\", what mode 2 writes itself (#308 claude F-VM-08)" "mupen64plus's Control1: ${F1_M64N:-no name line}"
+# flycast: [window] carried a 1080p handheld's 1920x1080. On this build
+# (USE_GLES off) fullscreen is SDL's desktop fullscreen, which takes the
+# output's size, so the numbers only ever sized a window nobody opens; the
+# window keeps fullscreen and loses the handheld's size.
+src_of "${F1EMU}/flycast-sa/config/GENERIC_X64/emu.cfg" "${F1I}/emu.cfg"
+F1_FW=$(awk '/^\[/{s=$0} s=="[window]" && /^(width|height) = /' "${F1I}/emu.cfg" | tr '\n' ' ')
+[ -z "${F1_FW}" ] && awk '/^\[/{s=$0} s=="[window]" && $0=="fullscreen = yes"{f=1} END{exit !f}' "${F1I}/emu.cfg"
+check $? "flycast's [window] keeps fullscreen and carries no handheld's 1920x1080 (#308 claude F-VM-16)" "flycast's [window]: ${F1_FW:-no size}, fullscreen $(grep -c '^fullscreen = yes$' "${F1I}/emu.cfg")"
+# m8c: the Anbernic INIs are chosen by QUIRK_DEVICE (the model the device
+# reports), which no x86_64 machine reports; GENERIC_X64 ships config.ini.
+F1M8=projects/ROCKNIX/packages/apps/m8c/config/GENERIC_X64
+if [ "${OLD}" -eq 1 ]; then F1_M8=$(git -C "${ROOT}" ls-tree --name-only "${BASE_REF}:${F1M8}" 2>/dev/null | tr '\n' '|')
+else F1_M8=$(ls -1 "${ROOT}/${F1M8}" 2>/dev/null | tr '\n' '|'); fi
+[ "${F1_M8}" = "config.ini|" ]; check $? "m8c's GENERIC_X64 config is config.ini alone, no pad file for an Anbernic model (#308 claude F-VM-08)" "m8c's GENERIC_X64 config: ${F1_M8}"
+
+# F1j. #307 PL-076: the x64 RetroArch profile carried the armhf buildbot as
+#      core_updater_buildbot_url, a key the pinned RetroArch (1.22.2) does
+#      not read -- it reads core_updater_buildbot_cores_url, which the
+#      profile sets to "". The dead line goes.
+src_of "${F1RA:-projects/ROCKNIX/packages/emulators/libretro/retroarch/sources/GENERIC_X64/retroarch.cfg}" "${F1}/retroarch-076.cfg"
+! grep -q '^core_updater_buildbot_url' "${F1}/retroarch-076.cfg"; check $? "the GENERIC_X64 RetroArch profile carries no core_updater_buildbot_url, a key RetroArch does not read (#307 PL-076)" "the GENERIC_X64 profile still carries $(grep '^core_updater_buildbot_url' "${F1}/retroarch-076.cfg")"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
