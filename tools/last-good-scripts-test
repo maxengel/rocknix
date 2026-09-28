@@ -10300,6 +10300,56 @@ for s in A B C D E; do
     done
 done
 
+# F2-21. G2-F2-03 (gpt): the gstreamer payload guards matched a directory
+# entry, compgen -G '<name>*', which a link whose file is missing satisfies,
+# and so does a name with the right prefix and another suffix; cp -a then
+# keeps the dead link and the package passes without what WebKit loads.
+# The guards now ask for the name the loader asks for -- a library's soname,
+# lib<name>-1.0.so.0 (soversion 0 in both 1.29.2 meson.build files), and
+# the appsink plugin's file, gstreamer-1.0/libgstapp.so -- to resolve to a
+# file, before the keep and again in what was kept. The install trees are
+# built the way meson installs a library (the versioned file and two links)
+# and then broken one way each. The two whole installs are the controls.
+echo "  F2-21. the gstreamer overrides fail unless each name WebKit loads resolves to a file in what they keep (audit of the fix round G2-F2-03)"
+GB="${F2B}/gst"
+f2b_gst() { # <gst-plugins-bad|gst-plugins-base> <f:path | l:path:target>...: rc, then every name the loader needs that resolves in what is kept
+    rm -rf "${GB}"; mkdir -p "${GB}/inst/usr/lib/gstreamer-1.0" "${GB}/inst/usr/bin" "${GB}/b"
+    local pkg="$1" spec; shift
+    for spec in "$@"; do
+        case "${spec}" in
+            f:*) echo payload > "${GB}/inst/${spec#f:}" ;;
+            l:*) spec="${spec#l:}"; ln -s "${spec#*:}" "${GB}/inst/${spec%%:*}" ;;
+        esac
+    done
+    F2_CALL="INSTALL='${GB}/inst'; PKG_BUILD='${GB}/b'; post_makeinstall_target; echo rc=\$?"
+    printf '%s' "$(f2_source "${GR}/${F2P}/multimedia/gstreamer/${pkg}/package.mk" H700 aarch64 "${GR}" | tr '\n' ' ')"
+    local n; for n in libgstmpegts-1.0.so.0 libgstapp-1.0.so.0 libgstfft-1.0.so.0 gstreamer-1.0/libgstapp.so; do
+        [ -f "${GB}/inst/usr/lib/${n}" ] && printf ' has:%s' "${n}"
+    done
+}
+f2b_lib() { # <lib name without .so>: the three entries meson installs for it
+    echo "f:usr/lib/$1.so.0.2902.0 l:usr/lib/$1.so.0:$1.so.0.2902.0 l:usr/lib/$1.so:$1.so.0"
+}
+F2B_BASE=""; for l in libgstapp-1.0 libgstaudio-1.0 libgstvideo-1.0 libgsttag-1.0 libgstpbutils-1.0 libgstallocators-1.0 libgstfft-1.0; do F2B_BASE+=" $(f2b_lib "${l}")"; done
+out="$(f2b_gst gst-plugins-bad $(f2b_lib libgstmpegts-1.0) f:usr/lib/libgstcodecs-1.0.so.0)"
+[[ "${out}" == *rc=0* ]] && [[ "${out}" == *has:libgstmpegts-1.0.so.0* ]]
+check $? "gst-plugins-bad as meson installs it (a file and two links) passes, and its soname resolves in what it keeps (the control)" "gst-plugins-bad, a whole install: '${out:0:160}'"
+out="$(f2b_gst gst-plugins-bad l:usr/lib/libgstmpegts-1.0.so.0:libgstmpegts-1.0.so.0.2902.0 l:usr/lib/libgstmpegts-1.0.so:libgstmpegts-1.0.so.0)"
+[[ "${out}" == DIE:* ]] || [[ "${out}" == *rc=3* ]]
+check $? "gst-plugins-bad with libgstmpegts-1.0's links and no file fails the package" "gst-plugins-bad with two links and no library: '${out:0:160}' -- the package passed without libgstmpegts-1.0"
+out="$(f2b_gst gst-plugins-base ${F2B_BASE} f:usr/lib/gstreamer-1.0/libgstapp.so f:usr/lib/gstreamer-1.0/libgstrawparse.so)"
+[[ "${out}" == *rc=0* ]] && [[ "${out}" == *has:libgstapp-1.0.so.0*has:libgstfft-1.0.so.0*has:gstreamer-1.0/libgstapp.so* ]]
+check $? "gst-plugins-base as meson installs it passes, and the libraries and appsink resolve in what it keeps (the control)" "gst-plugins-base, a whole install: '${out:0:200}'"
+out="$(f2b_gst gst-plugins-base ${F2B_BASE/f:usr\/lib\/libgstapp-1.0.so.0.2902.0/} f:usr/lib/gstreamer-1.0/libgstapp.so)"
+[[ "${out}" == DIE:* ]] || [[ "${out}" == *rc=3* ]]
+check $? "gst-plugins-base whose libgstapp-1.0 is links without a file fails the package" "gst-plugins-base, libgstapp-1.0.so.0 a dead link: '${out:0:160}' -- the package passed"
+out="$(f2b_gst gst-plugins-base ${F2B_BASE} l:usr/lib/gstreamer-1.0/libgstapp.so:libgstapp.so.0 f:usr/lib/gstreamer-1.0/libgstrawparse.so)"
+[[ "${out}" == DIE:* ]] || [[ "${out}" == *rc=3* ]]
+check $? "gst-plugins-base whose appsink plugin is a dead link fails the package" "gst-plugins-base, gstreamer-1.0/libgstapp.so a dead link: '${out:0:160}' -- the package passed without appsink"
+out="$(f2b_gst gst-plugins-base ${F2B_BASE} f:usr/lib/gstreamer-1.0/libgstapp.so.debug f:usr/lib/gstreamer-1.0/libgstrawparse.so)"
+[[ "${out}" == DIE:* ]] || [[ "${out}" == *rc=3* ]]
+check $? "gst-plugins-base with only a libgstapp.so.debug beside the plugins fails the package -- the name is the plugin's, not a prefix of it" "gst-plugins-base with libgstapp.so.debug and no libgstapp.so: '${out:0:160}' -- the package passed without appsink"
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi

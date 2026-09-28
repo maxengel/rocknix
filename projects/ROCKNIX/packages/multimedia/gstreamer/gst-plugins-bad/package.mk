@@ -35,9 +35,12 @@ pre_configure_target() {
 post_makeinstall_target() {
   # Only libgstmpegts-1.0 is kept, and it has to be there: WebKit cannot
   # start without it, so its absence fails the package here rather than
-  # the sign-in window at load.
+  # the sign-in window at load. The name checked is the one the loader
+  # asks for, the soname libgstmpegts-1.0.so.0, and it has to resolve to a
+  # file -- a link whose file is missing matches a glob and loads nothing --
+  # before the keep and again in what was kept.
   local keep="${PKG_BUILD}/.rocknix-keep"
-  compgen -G "${INSTALL}/usr/lib/libgstmpegts-1.0.so*" > /dev/null \
+  [ -f "${INSTALL}/usr/lib/libgstmpegts-1.0.so.0" ] \
     || die "gst-plugins-bad: libgstmpegts-1.0 was not built -- WebKit needs it"
   rm -rf "${keep}" && mkdir -p "${keep}/lib"
   cp -a ${INSTALL}/usr/lib/libgstmpegts-1.0.so* "${keep}/lib"/
@@ -45,4 +48,6 @@ post_makeinstall_target() {
   mkdir -p ${INSTALL}/usr/lib
   cp -a "${keep}/lib"/. ${INSTALL}/usr/lib/
   rm -rf "${keep}"
+  [ -f "${INSTALL}/usr/lib/libgstmpegts-1.0.so.0" ] \
+    || die "gst-plugins-bad: libgstmpegts-1.0 was not kept -- WebKit needs it"
 }
