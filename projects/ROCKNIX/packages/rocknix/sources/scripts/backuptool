@@ -27,24 +27,49 @@
 # harness on 2026-09-06 (Gate 0, #35): the value was a constant here.
 # BACKUPFOLDER is the name an un-migrated conf still carries (D-UI-022).
 #
-# Read the way cloud_backup reads it -- the file sourced, in a subshell so
-# nothing else it sets leaks here -- so a value written with a reference
-# ("${CONTENTPATH}/backup") means the same folder to both. The sed that read
-# it before took the text literally, and mkdir made a folder called
-# ${CONTENTPATH} under the working directory (#308 claude F-BR-18). The
-# result must be a folder under /storage; anything else is logged and the
-# standard folder used.
+# Read as text, never run (D-CLOUD-142). This used to source the file in a
+# subshell, so a line of the conf that was a command ran here as root on
+# every backup and restore, before anything was checked (#307, the audit of
+# the fix round, PL-003). The first assignment is the one read, as
+# cloud_sync_cleanup_duplicates.sh keeps it -- and cloud_backup runs that
+# cleanup before it reads the file, so both read the same line. The value is
+# taken the way the shell would take it -- double-quoted, single-quoted or
+# bare, a trailing comment allowed -- and only when it is plain text: a "$",
+# a backtick, a backslash or a control character is what cloud_backup's
+# conf_valid refuses in a folder value, so a value written with a reference
+# ("${CONTENTPATH}/backup", #308 claude F-BR-18) or a command is not taken,
+# literally or otherwise. The result must be a folder under /storage;
+# anything else is logged and the standard folder used.
+conf_text_value() { # <file> <key>: the first assignment's value, as text; 1 when it is not plain
+    awk -v k="$2" '
+        index($0, k "=") != 1 { next }
+        {
+            v = substr($0, length(k) + 2); done = 1
+            # A comment starts only after a blank, as the shell reads one.
+            if (v ~ /^"[^"]*"([ \t]+(#.*)?)?$/) { sub(/^"/, "", v); sub(/"([ \t]+(#.*)?)?$/, "", v) }
+            else if (v ~ /^'"'"'[^'"'"']*'"'"'([ \t]+(#.*)?)?$/) { sub(/^'"'"'/, "", v); sub(/'"'"'([ \t]+(#.*)?)?$/, "", v) }
+            else if (v ~ /^[^ \t"'"'"';&|<>()]*([ \t]+(#.*)?)?$/) { sub(/[ \t].*$/, "", v) }
+            else bad = 1
+            if (v ~ /[$`\\]/ || v ~ /[[:cntrl:]]/) bad = 1
+            exit
+        }
+        END { if (bad) exit 1; if (done) printf "%s", v }' "$1"
+}
 SETTINGS_BACKUPS="/storage/roms/backup"
 if [ -f /storage/.config/cloud_sync.conf ]; then
-    # Both names unset first: the subshell inherits the default set above,
-    # and "${SETTINGS_BACKUPS:-${BACKUPFOLDER}}" never reached the legacy name
-    # (#307, the audit of the fixes, claude G-B-02, gpt G-B-09).
-    _configured=$( unset SETTINGS_BACKUPS BACKUPFOLDER; . /storage/.config/cloud_sync.conf >/dev/null 2>&1; printf '%s' "${SETTINGS_BACKUPS:-${BACKUPFOLDER:-}}" )
-    case "${_configured}" in
-        "") ;;
-        /storage/*) SETTINGS_BACKUPS="${_configured%/}" ;;
-        *) logger -t backuptool "SETTINGS_BACKUPS in cloud_sync.conf reads '${_configured}', not a folder under /storage; ${SETTINGS_BACKUPS} used" ;;
-    esac
+    # The new name first, then the legacy one (#307, the audit of the fixes,
+    # claude G-B-02, gpt G-B-09).
+    if _configured=$(conf_text_value /storage/.config/cloud_sync.conf SETTINGS_BACKUPS) \
+       && { [ -n "${_configured}" ] || _configured=$(conf_text_value /storage/.config/cloud_sync.conf BACKUPFOLDER); }
+    then
+        case "${_configured}" in
+            "") ;;
+            /storage/*) SETTINGS_BACKUPS="${_configured%/}" ;;
+            *) logger -t backuptool "SETTINGS_BACKUPS in cloud_sync.conf reads '${_configured}', not a folder under /storage; ${SETTINGS_BACKUPS} used" ;;
+        esac
+    else
+        logger -t backuptool "SETTINGS_BACKUPS in cloud_sync.conf is not a plain folder name (a reference, a command, or a quote left open); ${SETTINGS_BACKUPS} used"
+    fi
     unset _configured
 fi
 ARCHIVEFOLDER="${SETTINGS_BACKUPS}/archive"

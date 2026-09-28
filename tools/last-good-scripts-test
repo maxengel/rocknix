@@ -7825,13 +7825,20 @@ rmdir "${P7S}/.config/.restore-in-progress" 2>/dev/null
 # so a name may hold a tab);
 # /run/nm-down makes every call fail and /run/psk-fails the key read. The
 # settings live in /run/settings, one key=value per line, the last one
-# winning; set_setting <k> default removes the key. The image's busybox
-# applets stand in front of the host's, as in u.
+# winning; set_setting <k> default removes the key, and set_settings takes
+# pairs and writes all of them or none, as 001-functions' does. Each settings
+# call is counted in /run/set-calls; /run/set-fails fails every one and
+# /run/set-fails-on <n> the nth; /run/delete-fails fails a profile's delete
+# (the audit of the fix round, G2-B-11). The image's busybox applets stand in
+# front of the host's, as in u.
 P7="${P7:-${TMP}/p7}"; P7W="${P7}/wifi"; mkdir -p "${P7W}/shim" "${P7W}/repo" "${P7W}/run"
 src_of "${WIFICTL_REL}" "${P7W}/repo/wifictl"
 cat > "${P7W}/profile" <<'EOS'
 get_setting() { awk -v k="$1" 'index($0, k "=") == 1 { v = substr($0, length(k) + 2) } END { printf "%s", v }' /run/settings 2>/dev/null; }
-set_setting() { [ -e /run/set-fails ] && return 1; if [ "$2" = "default" ]; then awk -v k="$1" 'index($0, k "=") != 1' /run/settings > /run/settings.new; mv /run/settings.new /run/settings; else printf '%s=%s\n' "$1" "$2" >> /run/settings; fi; }
+p7gate() { [ -e /run/set-fails ] && return 1; n=$(( $(cat /run/set-calls 2>/dev/null || echo 0) + 1 )); echo "${n}" > /run/set-calls; [ "$(cat /run/set-fails-on 2>/dev/null)" != "${n}" ]; }
+p7put() { if [ "$2" = "default" ]; then awk -v k="$1" 'index($0, k "=") != 1' /run/settings > /run/settings.new; mv /run/settings.new /run/settings; else printf '%s=%s\n' "$1" "$2" >> /run/settings; fi; }
+set_setting() { p7gate || return 1; p7put "$1" "$2"; }
+set_settings() { p7gate || return 1; while [ $# -ge 2 ]; do p7put "$1" "$2"; shift 2; done; }
 export PATH=/shim:/bbin:/usr/bin:/bin
 EOS
 cat > "${P7W}/shim/iwctl" <<'EOS'
@@ -7876,6 +7883,7 @@ case "${all}" in
   *"connection delete id "*)
     name="${all#*connection delete id }"; printf '%s\n' "${name}" >> /run/deleted
     [ -n "$(row "${name}")" ] || exit 10
+    [ -e /run/delete-fails ] && { echo "Error: Connection deletion failed." >&2; exit 1; }
     NAME="${name}" awk -F'|' '$1 != ENVIRON["NAME"]' /run/profiles > /run/profiles.new && mv /run/profiles.new /run/profiles ;;
   *"connection show"*)
     while IFS='|' read -r name type dev ssid psk; do
@@ -10229,6 +10237,53 @@ printf '#!/bin/sh\necho "flock: cannot lock" >&2\nexit 1\n' > "${P7C}/shim/flock
 p7ck "head -c 100 /dev/zero" retroarch 9000 --setenv CORE_MAX_BYTES 1048576
 rm -f "${P7C}/shim/flock"
 printf '%s' "${P7NOTE}" | grep '^dump' | grep -q 'NOT KEPT' && [ ! -e "${P7C}/storage/.cache/log/cores/core.retroarch.9000.4242.gz" ]; check $? "#307 audit G-B-14 (gpt): when the cores folder cannot be locked the dump is not kept, and the note says why" "#307 audit G-B-14: note: $(printf '%s' "${P7NOTE}" | grep '^dump' | cut -c1-120); dump: $([ -e "${P7C}/storage/.cache/log/cores/core.retroarch.9000.4242.gz" ] && echo kept || echo none)"
+
+# ---- audit #307, stream B ----
+# The audit of the fix round (D-WORKFLOW-060, audit #307's third pass),
+# Phase 7: stream B's punch items PL-003, PL-005, PL-006, PL-007, PL-008,
+# PL-016, PL-017, PL-022 and PL-028, and the leads G2-B-02 (claude), G2-B-03,
+# G2-B-09 and G2-B-11 (gpt), in the files the stream owns. Every case names
+# its item and was seen to FAIL against the scripts at f3d19dc8fb, the tree
+# the stream was cut from:
+#
+#     BASE_REF=f3d19dc8fb tools/last-good-scripts-test --old
+#
+# The tools each part runs under are y1-y4's: backuptool whole under bwrap
+# with the image's applets (crc32 now among them, for PL-022), chksysconfig's
+# functions and the settings writer lifted into a fresh bash with the image's
+# sed, mv, cp, tr, head, wc, cut and awk first on PATH (and the image's ln for
+# the lock, G2-B-03), wifictl whole against the nmcli y2 describes.
+echo "  z. the audit of the fix round, stream B: the conf read as text, a flag's password redacted, the restore's lists and its own control files, a quoted password, the roms mount, the upstream-era move, a zip's stored members, members outside storage/, the lock's path, the seed list, the Wi-Fi pair"
+P7Z="${P7}/z"; mkdir -p "${P7Z}"
+p7zclear() { rm -f "${P7}/shim/tar" "${P7}/shim/unzip" "${P7}/shim/mktemp" "${P7}/shim/mv" "${P7}/shim/date"; P7X=(); }
+p7zclear
+# The busybox crc32 applet the zip check reads (PL-022), the image's, beside
+# the others y1 gave backuptool.
+if [ -n "${BB}" ]; then
+    printf '#!/bin/sh\n[ -x %s ] && exec %s %s "$@"\nexec %s %s "$@"\n' "${BB}" "${BB}" crc32 "${BB_HOST}" crc32 > "${P7}/bb/crc32"; chmod +x "${P7}/bb/crc32"
+fi
+p7zscreen() { grep -vE '^logger |^>>> ' "${P7OUT}"; }
+
+# == PL-003: cloud_sync.conf is read as text, and nothing in it runs
+p7zclear; p7reset '  /storage/.config/test/*'
+printf 'SETTINGS_BACKUPS="/storage/roms/mybk"\ntouch /storage/.p7-conf-ran\n' > "${P7S}/.config/cloud_sync.conf"
+p7bt backup
+[ "${RC}" -eq 0 ] && [ ! -e "${P7S}/.p7-conf-ran" ] && [ -n "$(ls "${P7S}/roms/mybk"/*.tar.gz 2>/dev/null)" ]; check $? "audit of the fix round PL-003: a conf with a command on a line of its own -- nothing runs, and the backup lands in the folder SETTINGS_BACKUPS names (rc ${RC})" "PL-003: rc ${RC}; the conf's command ran: $([ -e "${P7S}/.p7-conf-ran" ] && echo yes || echo no); mybk: $(ls "${P7S}/roms/mybk" 2>/dev/null | wc -l) archive(s) -- backuptool sourced the file"
+p7reset '  /storage/.config/test/*'
+printf 'SETTINGS_BACKUPS="/storage/roms/mybk$(touch /storage/.p7-conf-ran)"\n' > "${P7S}/.config/cloud_sync.conf"
+p7bt backup
+[ "${RC}" -eq 0 ] && [ ! -e "${P7S}/.p7-conf-ran" ] && [ -n "$(p7arc)" ] && [ ! -d "${P7S}/roms/mybk" ] && grep -q '^logger -t backuptool SETTINGS_BACKUPS' "${P7OUT}"; check $? "audit of the fix round PL-003: a command inside the value is not run -- the standard folder is used and the log says why" "PL-003: rc ${RC}; ran: $([ -e "${P7S}/.p7-conf-ran" ] && echo yes || echo no); standard folder: $(p7arc | wc -l); mybk: $([ -d "${P7S}/roms/mybk" ] && echo made || echo none); log: $(grep -c '^logger -t backuptool SETTINGS_BACKUPS' "${P7OUT}")"
+p7reset '  /storage/.config/test/*'
+printf '# comment\nSETTINGS_BACKUPS="/storage/roms/first"   # the one the cleanup keeps\nSETTINGS_BACKUPS="/storage/roms/second"\n' > "${P7S}/.config/cloud_sync.conf"
+p7bt backup
+[ "${RC}" -eq 0 ] && [ -n "$(ls "${P7S}/roms/first"/*.tar.gz 2>/dev/null)" ] && [ ! -d "${P7S}/roms/second" ]; check $? "audit of the fix round PL-003: of two SETTINGS_BACKUPS lines the first is read, as cloud_sync_cleanup_duplicates.sh keeps it (a trailing comment allowed)" "PL-003: rc ${RC}; first: $(ls "${P7S}/roms/first" 2>/dev/null | wc -l); second: $(ls "${P7S}/roms/second" 2>/dev/null | wc -l) -- the source took the last"
+p7reset '  /storage/.config/test/*'
+printf "SETTINGS_BACKUPS='/storage/roms/single'\n" > "${P7S}/.config/cloud_sync.conf"
+p7bt backup; p7rc1=${RC}; p7ok1=$(ls "${P7S}/roms/single"/*.tar.gz 2>/dev/null | wc -l)
+p7reset '  /storage/.config/test/*'
+printf 'SETTINGS_BACKUPS=/storage/roms/bare\n' > "${P7S}/.config/cloud_sync.conf"
+p7bt backup
+[ "${p7rc1}" -eq 0 ] && [ "${p7ok1}" -eq 1 ] && [ "${RC}" -eq 0 ] && [ -n "$(ls "${P7S}/roms/bare"/*.tar.gz 2>/dev/null)" ]; check $? "audit of the fix round PL-003: a single-quoted and a bare value are read as the shell would read them" "PL-003: single-quoted rc ${p7rc1}, ${p7ok1} archive(s); bare rc ${RC}, $(ls "${P7S}/roms/bare" 2>/dev/null | wc -l)"
 
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
