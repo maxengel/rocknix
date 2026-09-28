@@ -1821,7 +1821,26 @@ def cmd_serve(backend, remote_name, label, port, timeout):
     stop_other_serves()
     reset_state(status="starting", backend=backend)
 
+    # SIGTERM is how `cancel` and the next serve end this one
+    # (stop_other_serves). With no handler Python died on it at once: the
+    # teardown below never ran, and the fullscreen window -- a plain child
+    # with no death signal -- stayed on the screen with the gamepad bridge
+    # gone, nothing left on the device to drive it or close it (audit #307
+    # PL-049). Raising here unwinds through the finally instead; a second
+    # SIGTERM while the teardown runs is ignored so that it finishes.
+    def on_term(signum, frame):
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        raise SystemExit(128 + signum)
+    signal.signal(signal.SIGTERM, on_term)
+
     holder = SessionHolder(backend, remote_name, label, timeout)
+    try:
+        return serve_with(holder, backend, port, timeout)
+    finally:
+        holder.end()
+
+
+def serve_with(holder, backend, port, timeout):
     ok, error = holder.start()
     if not ok:
         sys.stderr.write("%s\n" % error)
@@ -1841,7 +1860,6 @@ def cmd_serve(backend, remote_name, label, port, timeout):
         log("sign-in could not start: %s (%s)" % (why, exc.strerror or exc))
         sys.stderr.write("%s\n" % why)
         write_state(status="failed", error=why)
-        holder.end()
         return 2
 
     def shutdown():
@@ -1908,7 +1926,6 @@ def cmd_serve(backend, remote_name, label, port, timeout):
     finally:
         timer.cancel()
         server.server_close()
-        holder.end()
 
     final = read_state().get("status")
     if final == "signed-in":

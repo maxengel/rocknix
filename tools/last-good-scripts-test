@@ -3622,6 +3622,31 @@ def remote_create_logs_no_secret():
            "rc %r; cloud_sync.log: %r -- the password reached the log (gpt F-RS-04, PL-074)"
            % (rc, [l for l in text.splitlines() if "SECRETPASS9" in l][:1] or text.splitlines()[-1:]))
 EOPY
+# PL-049: cancel's SIGTERM unwinds the serve, and its window goes with it.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+@test
+def cancel_closes_the_window():
+    """#307 PL-049: cancel SIGTERMs the serve; its window goes with it."""
+    d = serve_dir("pl049")
+    serve = drive(d, "serve", "dropbox", "--port", "8431", "--timeout", "60", wait=False)
+    up = wait_for(lambda: state_of(d).get("status") == "waiting", 15)
+    open(os.path.join(d, "state", "open-browser"), "w").close()
+    pidfile = os.path.join(d, "state", "window.pid")
+    opened = wait_for(lambda: os.path.exists(pidfile), 10)
+    winpid = int(open(pidfile).read()) if opened else 0
+    rc, out, err = drive(d, "cancel")
+    gone = wait_for(lambda: not pid_alive(winpid), 8) if winpid else False
+    ended = wait_for(lambda: serve.poll() is not None, 5)
+    result(up and opened and gone and ended,
+           "cloud_oauth cancel with the window up ends the serve and closes the window",
+           "serve up %r, window opened %r, window gone after cancel %r, serve ended %r -- the window outlived the serve (PL-049); serve stderr: %s"
+           % (up, opened, gone, ended, (serve.stderr.read() if serve.poll() is not None else "")[-200:]))
+    for p in [winpid] + procs_with("rclone authorize"):
+        if p and pid_alive(p):
+            os.kill(p, signal.SIGKILL)
+    if serve.poll() is None:
+        serve.kill()
+EOPY
 # C3: new test groups go above this line
 cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
 if MODE == "drive":
