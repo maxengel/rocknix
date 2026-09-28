@@ -174,10 +174,13 @@ docker-image-pull:
 # included when a build has them (scripts/get_env drops the rest). It is
 # written here, in the recipe, and not as a prerequisite: a $(shell) there
 # ran whenever make read this file, for any target. rm first, so an older
-# copy's mode is never reused and umask 077 makes it owner-only; the trap
-# removes it when the container exits or the recipe is interrupted, and a
-# get_env that fails starts no container.
+# copy's mode is never reused and umask 077 makes it owner-only -- and an
+# older copy that cannot be removed stops the recipe, since umask does not
+# tighten a file that already exists (set -C refuses to write into one); the
+# trap removes it when the container exits or the recipe is interrupted, and
+# a get_env that fails starts no container.
 docker-%:
-	rm -f .env; trap 'rm -f .env' EXIT; trap 'exit 130' INT TERM HUP; \
-	( umask 077 && ./scripts/get_env > .env ) || { echo "scripts/get_env failed: no container started" >&2; exit 1; }; \
+	rm -f .env && [ ! -e .env ] || { echo "an older .env cannot be removed: no container started" >&2; exit 1; }; \
+	trap 'rm -f .env' EXIT; trap 'exit 130' INT TERM HUP; \
+	( umask 077 && set -C && ./scripts/get_env > .env ) || { echo "scripts/get_env failed: no container started" >&2; exit 1; }; \
 	BUILD_DIR=$(DOCKER_WORK_DIR) $(DOCKER_CMD) run $(PODMAN_ARGS) $(INTERACTIVE) --init --env-file .env --rm --user $(UID):$(GID) $(GLOBAL_SETTINGS) $(LOCAL_SSH_KEYS_FILE) $(EMULATIONSTATION_SRC) -v $(PWD):$(DOCKER_WORK_DIR) -w $(DOCKER_WORK_DIR) $(DOCKER_EXTRA_OPTS) $(DOCKER_IMAGE) $(COMMAND)

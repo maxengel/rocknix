@@ -3220,6 +3220,26 @@ check $? "the container is handed a fresh .env, mode 600, though a 0644 one was 
 printf '#!/bin/sh\necho PARTIAL=1\nexit 3\n' > "${MX}/scripts/get_env"; rm -f "${MX}/seen"
 f2_recipe; rc=$?
 [ ! -e "${MX}/seen" ] && [ ! -e "${MX}/.env" ] && [ "${rc}" -ne 0 ]; check $? "a get_env that fails starts no container and leaves no .env" "get_env failed: container $([ -e "${MX}/seen" ] && echo started || echo 'not started'); .env $([ -e "${MX}/.env" ] && echo left || echo gone); rc ${rc}"
+# F2-3b. The audit of the fixes, gpt G-F2-01: the recipe's rm -f was
+# unchecked, and umask governs only a file being created -- in a directory
+# the builder cannot write, a 0644 .env it can write survives the rm and is
+# truncated and filled with the forwarded environment. The recipe is run in
+# such a directory: it must start no container and leave the file's old
+# contents alone.
+echo "  F2-3b. an .env the recipe cannot remove stops the build before any credential is written into it (#307 follow-up: gpt G-F2-01)"
+if [ "$(id -u)" -eq 0 ]; then
+    check 1 "" "run as root, the harness cannot make an .env its user cannot remove -- F2-3b did not run"
+else
+    RO="${MX}/ro"; rm -rf "${RO}"; mkdir -p "${RO}/scripts"
+    printf '#!/bin/sh\necho F2_FORWARDED=yes\n' > "${RO}/scripts/get_env"; chmod +x "${RO}/scripts/get_env"
+    cp "${MX}/recipe.sh" "${RO}/recipe.sh"
+    printf 'STALE=1\n' > "${RO}/.env"; chmod 0644 "${RO}/.env"; chmod 0555 "${RO}"; rm -f "${MX}/seen"
+    ( cd "${RO}" && while IFS= read -r line; do /bin/sh -c "${line}" || exit $?; done < recipe.sh ) > /dev/null 2>&1; rc=$?
+    chmod 0755 "${RO}"
+    [ ! -e "${MX}/seen" ] && [ "${rc}" -ne 0 ] && [ "$(cat "${RO}/.env" 2>/dev/null)" = "STALE=1" ]
+    check $? "an unremovable 0644 .env: no container, a non-zero status, and nothing forwarded written into it" "unremovable .env: container $([ -e "${MX}/seen" ] && echo "started with '$(tr '\n' '|' < "${MX}/seen")'" || echo 'not started'); rc ${rc}; .env now '$(tr '\n' '|' < "${RO}/.env" 2>/dev/null)'"
+fi
+
 # F2-4. RetroArch's patch stack as the package applies it, over the pinned
 # tarball (#307 PL-032; #308 6-retroarch-widgets: claude F-RW-02/05/06/07/
 # 08/09/10, gpt F-RW-01/03/04). scripts/unpack applies patches/*.patch in
