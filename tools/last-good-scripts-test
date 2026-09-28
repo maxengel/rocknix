@@ -3536,4 +3536,13 @@ cp_exit
 rm -f "${CP}/ctl/slowclock"
 [ "${DT}" -lt 10 ] && [ "${RC}" -eq 0 ] && jq -e '.entries["gb/Game.srm"].clock_synced == false' "${CPM}" >/dev/null 2>&1; check $? "F-CS-20: a clock service that never answers holds the exit capture ${DT}s, not its 30, and the version records clock_synced false (rc ${RC})" "took ${DT}s, rc ${RC} -- timedatectl ran unbounded on the synchronous game-exit path"
 
+# #308 gpt F-CS-21: a manifest set aside as unreadable is kept until a good
+# one has been written in its place.
+cp_seed
+echo '{ this is not json' > "${CPM}"
+sa_run "${CP}" cloud_capture --full
+[ -n "$(ls "${CP}/storage/.cache/cloud_sync/" | grep -F 'manifest-QA-deadbeef01.json.corrupt-')" ]; check $? "gpt F-CS-21: a --full pass that set an unreadable manifest aside and wrote nothing keeps the set-aside copy (rc ${RC})" "the quarantined manifest was deleted by a run that committed nothing: $(ls "${CP}/storage/.cache/cloud_sync" | tr '\n' ' ')"
+cp_exit
+[ -s "${CPM}" ] && [ -z "$(ls "${CP}/storage/.cache/cloud_sync/" | grep -F 'manifest-QA-deadbeef01.json.corrupt-')" ]; check $? "and the next run that writes a good manifest removes it (rc ${RC})" "manifest: $([ -s "${CPM}" ] && echo written || echo missing); cache: $(ls "${CP}/storage/.cache/cloud_sync" | tr '\n' ' ')"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
