@@ -133,7 +133,8 @@
 #            a game runs it and says it the same way). The walk over an unindexed folder
 #            stops at the client's cap of files (rom_browser
 #            MAX_SCAN_ENTRIES), counted over the files not yet cached and
-#            begun where the last walk the cap cut stopped (scan-cursor), so
+#            begun where the last walk the cap cut stopped (scan-cursor,
+#            kept only by a run that worked through its jobs), so
 #            a second scan reaches what the first did not, past files that
 #            never cache too (#186 PL-17, #307 PL-059); a walk the cap cut
 #            says `note TRUNCATED` to the page and truncated=1 in the stamp.
@@ -995,6 +996,25 @@ write_stamp() {
     printf '%s\n' "${LINE}" > "${SCAN_STAMP}.tmp" && mv -f "${SCAN_STAMP}.tmp" "${SCAN_STAMP}"
 }
 
+# The walk's proposed cursor (scan-cursor.next, from list_jobs) becomes the
+# cursor: a path to walk on from, or none when the walk came round. Kept
+# only after a run that worked through its jobs (audit of the fixes, claude
+# G-D-06), and read back once written, since the continuation the page
+# promises rests on it (gpt G-D-06). Exit 1 when it could not be kept.
+commit_cursor() {
+    local WANT
+    [ -f "${SCAN_CURSOR}.next" ] || return 1
+    WANT="$(cat "${SCAN_CURSOR}.next" 2>/dev/null)" || return 1
+    if [ -z "${WANT}" ]; then
+        rm -f "${SCAN_CURSOR}.next"
+        rm -f "${SCAN_CURSOR}" 2>/dev/null
+        [ ! -e "${SCAN_CURSOR}" ]
+        return
+    fi
+    [ ! -d "${SCAN_CURSOR}" ] && mv -f "${SCAN_CURSOR}.next" "${SCAN_CURSOR}" 2>/dev/null \
+        && [ "$(cat "${SCAN_CURSOR}" 2>/dev/null)" = "${WANT}" ]
+}
+
 # The account EmulationStation signed in with: a user name and either the
 # token it wrote after the sign-in or the password it will sign in with.
 # Presence only; the values stay in system.cfg.
@@ -1394,19 +1414,29 @@ def read_cursor():
         return ""
 
 
-def write_cursor(value):
-    """The cursor, whole or not at all; gone when the walk came round."""
+def propose_cursor(value):
+    """The cursor this walk proposes -- the path of the last file it took,
+    or nothing when the walk came round -- written whole to
+    scan-cursor.next for the ctl to keep once the run has worked through its
+    jobs (commit_cursor): a run cancelled or stopped after its listing
+    leaves the cursor where it was, so the next scan takes the same slice
+    (audit of the fixes, claude G-D-06). False when it could not be written
+    -- and the ctl says so rather than promising a continuation it cannot
+    keep (gpt G-D-06)."""
     if cursor_file is None:
-        return
+        return True
+    proposal = cursor_file.with_name(cursor_file.name + ".next")
+    tmp = proposal.with_name(proposal.name + ".tmp")
     try:
-        if value:
-            tmp = cursor_file.with_name(cursor_file.name + ".tmp")
-            tmp.write_text(value + "\n", encoding="utf-8", errors="surrogateescape")
-            os.replace(tmp, cursor_file)
-        else:
-            cursor_file.unlink(missing_ok=True)
+        tmp.write_text(value + "\n" if value else "", encoding="utf-8", errors="surrogateescape")
+        os.replace(tmp, proposal)
+        return True
     except OSError:
-        pass
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        return False
 
 
 # The walk is a circle from a cursor (#307 PL-059). Cached files are passed
@@ -1414,14 +1444,16 @@ def write_cursor(value):
 # ROM RetroAchievements does not know is skipped, and stays uncached --
 # counted every run, so the first MAX_SCAN_ENTRIES such files held the front
 # of the walk for ever and the files past them were never reached. So a walk
-# the cap cuts leaves the path of the last file it took in scan-cursor, and
-# the next walk takes the files after it first, then comes round to the
+# the cap cuts proposes the path of the last file it took (scan-cursor.next),
+# the ctl keeps it as scan-cursor once the run has worked through its jobs,
+# and the next walk takes the files after it first, then comes round to the
 # start. A walk that fits under the cap removes the cursor; a cursor that
 # names a file the walk no longer meets (deleted, or its folder now indexed)
 # starts the circle from the top.
 walked = []
 walked_cached = 0
 truncated = 0
+cursor_saved = 1
 if mode == "all":
     cursor = read_cursor()
     passed = not cursor
@@ -1472,7 +1504,7 @@ if mode == "all":
     candidates = after + before
     walked = candidates[:MAX_SCAN_ENTRIES]
     truncated = 1 if len(candidates) > MAX_SCAN_ENTRIES else 0
-    write_cursor(str(walked[-1]) if truncated and walked else "")
+    cursor_saved = 1 if propose_cursor(str(walked[-1]) if truncated and walked else "") else 0
 
 hash_jobs = walked
 
@@ -1481,7 +1513,7 @@ lines += [f"H\t\t\t{p}\n" for p in by_history(hash_jobs)]
 out.write_text("".join(lines), encoding="utf-8")
 found = indexed_seen + len(walked) + walked_cached
 new = len(lines)
-print(f"found={found} new={new} cached={found - new} indexed={len(indexed_jobs)} hashing={len(hash_jobs)} truncated={truncated}")
+print(f"found={found} new={new} cached={found - new} indexed={len(indexed_jobs)} hashing={len(hash_jobs)} truncated={truncated} cursor_saved={cursor_saved}")
 PY
 }
 
@@ -1779,7 +1811,7 @@ do_scan() {
     local LIST
     LIST="$(mktemp /tmp/raofflineproxy-scan.XXXXXX)" || fail "cannot create the list"
     # Everything of the run's goes when the run does, however it ends.
-    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}" "${READY_BEFORE:-}" "${READY_AFTER:-}" "${RUNNING}" "${RUNNING}.tmp"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
+    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}" "${READY_BEFORE:-}" "${READY_AFTER:-}" "${SCAN_CURSOR}.next" "${RUNNING}" "${RUNNING}.tmp"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
 
     local COUNTS
     R_IMAGES_WHY=""
@@ -1811,6 +1843,7 @@ do_scan() {
     tell "total ${NEW}"
     if [ "${NEW}" -eq 0 ]; then
         tell "note NOTHING_NEW"
+        commit_cursor || slog "scan: an old cursor could not be removed; the next walk starts from the top all the same"
         # No game to cache, but the images of what is cached may still be
         # missing -- a pass the last run cut, a badge that did not come --
         # and pressing SCAN again is how a player asks for them (#307
@@ -1863,6 +1896,25 @@ do_scan() {
         RC=1; WHY="${R_IMAGES_WHY}"
     fi
 
+    # The walk's cursor is kept once the run has worked through its jobs; a
+    # run stopped short leaves it where it was (claude G-D-06). A cut walk
+    # whose cursor could not be kept promises no continuation: the run could
+    # not finish, and neither the page nor the stamp says TRUNCATED (gpt
+    # G-D-06).
+    if [ "${R_DONE}" -eq 1 ] && [ "${R_STOPPED}" -eq 0 ]; then
+        if [ "${TRUNC}" -eq 1 ]; then
+            if [ "$(count_of "${COUNTS}" cursor_saved)" -ne 1 ] || ! commit_cursor; then
+                slog "scan: the walk's cursor could not be saved; the next scan would take the same slice"
+                TRUNC=0
+                [ -z "${WHY}" ] && { RC=1; WHY=SOMETHING_WENT_WRONG; }
+            fi
+        else
+            commit_cursor || slog "scan: an old cursor could not be removed; the next walk starts from the top all the same"
+        fi
+    elif [ "${TRUNC}" -eq 1 ]; then
+        slog "scan: the run stopped short of its jobs; the cursor stays where it was"
+    fi
+    rm -f "${SCAN_CURSOR}.next"
     [ "${R_LIMIT}" -eq 1 ] && tell "note LIMIT_REACHED"
     # Not every folder was walked: the page says so (GuiOfflineScan's
     # NOT EVERY FOLDER WAS LOOKED AT. SCAN AGAIN TO CONTINUE.) and the stamp

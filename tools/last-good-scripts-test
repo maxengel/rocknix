@@ -4252,4 +4252,35 @@ DIV="$(awk -F= '/^StartLimitIntervalSec=/{print $2}' "${DU}")"; DBU="$(awk -F= '
 DRS="$(awk -F= '/^RestartSec=/{print $2}' "${DU}")"; DWA="$(sed -n 's/^ExecStartPost=.* --wait \([0-9]*\)$/\1/p' "${DU}")"
 [ -n "${DIV}" ] && [ -n "${DBU}" ] && [ -n "${DRS}" ] && [ -n "${DWA}" ] && [ "${DIV%s}" -ge $(( DBU * (DWA + ${DRS%s}) )) ]; check $? "claude G-D-05: the start limit's interval (${DIV}s) holds its burst of failed starts (${DBU} x (wait ${DWA}s + RestartSec ${DRS}s) = $(( ${DBU:-0} * (${DWA:-0} + ${DRS:-0}) ))s)" "claude G-D-05: StartLimitIntervalSec=${DIV:-?} < StartLimitBurst=${DBU:-?} x (--wait ${DWA:-?} + RestartSec=${DRS:-?}) -- five in sixty never trips"
 
+# D26. claude G-D-06 and gpt G-D-06: the scan's cursor is the walk's promise
+# to continue, so it moves only when kept: the listing proposes it
+# (scan-cursor.next), and the run commits it once it has worked through its
+# jobs (the helper's DONE) -- a scan cancelled after its listing starts the
+# next one where it started -- and a cursor that could not be written is
+# said, not passed over: the run ends COULDN'T FINISH (SOMETHING_WENT_WRONG)
+# with no TRUNCATED promise, and the cursor that was there stays.
+if [ "${DT_OK}" -eq 1 ]; then
+dfake_images; printf "${DCFG_ON}" > "${TCFG}"
+dgbc() { rm -rf "${TS}/roms/gbc"; mkdir -p "${TS}/roms/gbc"; for i in $(seq -w 1 11); do printf 'GBC %s' "${i}" > "${TS}/roms/gbc/g${i}.gbc"; done; }
+treset; dgbc; TENV=(--setenv RA_TEST_SCAN_CAP 10)
+{ echo skip; echo cancel; } > "${TR}/helper-plan"; : > "${TR}/helper-jobs.log"
+tctl scan; grep '^H' "${TR}/helper-jobs.log" | sort > "${DD}/d26-1.jobs"
+for _ in $(seq 1 20); do echo skip; done > "${TR}/helper-plan"; : > "${TR}/helper-jobs.log"
+tctl scan; grep '^H' "${TR}/helper-jobs.log" | sort > "${DD}/d26-2.jobs"
+cmp -s "${DD}/d26-1.jobs" "${DD}/d26-2.jobs"; check $? "claude G-D-06: a scan cancelled after its listing does not move the cursor -- the next scan takes the same slice" "claude G-D-06: after a cancelled scan the next took $(sed 's|.*/||' "${DD}/d26-2.jobs" | tr '\n' ' ')against $(sed 's|.*/||' "${DD}/d26-1.jobs" | tr '\n' ' ')-- the cursor moved at the listing"
+# A cursor that cannot be written: scan-cursor is a directory.
+treset; dgbc; rm -rf "${TPD}/scan-cursor"; mkdir -p "${TPD}/scan-cursor"
+for _ in $(seq 1 20); do echo skip; done > "${TR}/helper-plan"
+tctl scan
+[ "${RC}" -eq 1 ] && grep -qx '>>> why SOMETHING_WENT_WRONG' "${OUT}" && ! grep -q 'note TRUNCATED' "${OUT}"; check $? "gpt G-D-06: a truncated walk whose cursor cannot be saved ends rc 1, why SOMETHING_WENT_WRONG, and promises no continuation (no note TRUNCATED)" "gpt G-D-06: rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | tail -c 200) -- a cursor write failure passed over"
+rm -rf "${TPD}/scan-cursor"
+# The proposal cannot be written: the cursor a previous scan kept stays.
+treset; dgbc; for _ in $(seq 1 20); do echo skip; done > "${TR}/helper-plan"
+tctl scan; DKEPT="$(cat "${TPD}/scan-cursor" 2>/dev/null)"
+rm -rf "${TPD}/scan-cursor.next"; mkdir -p "${TPD}/scan-cursor.next"
+tctl scan
+[ "${RC}" -eq 1 ] && [ -n "${DKEPT}" ] && [ "$(cat "${TPD}/scan-cursor" 2>/dev/null)" = "${DKEPT}" ]; check $? "gpt G-D-06: when the new cursor cannot be written the run ends rc 1 and the cursor the last scan kept stays (${DKEPT##*/})" "gpt G-D-06: rc ${RC}; cursor before '${DKEPT##*/}', after '$(cat "${TPD}/scan-cursor" 2>/dev/null | sed 's|.*/||')'"
+rm -rf "${TPD}/scan-cursor.next" "${TS}/roms/gbc"; TENV=(); rm -f "${TR}/helper-plan"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
