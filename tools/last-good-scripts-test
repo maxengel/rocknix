@@ -3211,4 +3211,49 @@ F1_INIT="${F1}/init"; src_of projects/ROCKNIX/packages/sysutils/busybox/scripts/
 grep -q '^update_bootloader() {' "${F1_INIT}" && grep -q 'if \[ -f ${SYSTEM_ROOT}/usr/share/bootloader/update.sh \]; then' "${F1_INIT}" && grep -A1 '^  update_bootloader$' "${F1_INIT}" | grep -q 'echo "UPDATE" >/storage/.boot.hint'
 check $? "and init skips a missing updater and writes the boot hint itself after update_bootloader" "init no longer skips a missing update.sh or no longer writes the hint itself -- deleting the updater would lose the hint"
 
+# F1f. The launcher, projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm,
+#      run inside bwrap with a /tmp of its own, so no default path can reach
+#      a live guest's sockets on this host. QEMU is a shim that records its
+#      argv (qemu-args never starts it; run execs it); qemu-img is the
+#      host's, for disks it makes here.
+F1V="${F1}/v"; mkdir -p "${F1V}/vm" "${F1V}/bin" "${F1V}/a,b"
+for f in generic-x64-vm profile.json utm-bundle-readme.txt; do src_of "projects/ROCKNIX/devices/GENERIC_X64/vm/${f}" "${F1V}/vm/${f}"; done
+chmod +x "${F1V}/vm/generic-x64-vm"
+printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "%s/qemu.argv"\nexit 0\n' "${F1V}" > "${F1V}/bin/qemu-system-x86_64"; chmod +x "${F1V}/bin/qemu-system-x86_64"
+echo code > "${F1V}/code.fd"; echo vars-template > "${F1V}/vars-template.fd"
+F1_QIMG=$(command -v qemu-img)
+f1_vm() { # <args...>: the launcher in its sandbox; stdout+stderr to ${F1V}/out, the status in F1_RC
+    bwrap --die-with-parent --ro-bind / / --tmpfs /tmp --bind "${F1V}" "${F1V}" --dev /dev --proc /proc \
+        --setenv QEMU_SYSTEM_X86_64 "${F1V}/bin/qemu-system-x86_64" \
+        python3 "${F1V}/vm/generic-x64-vm" "$@" > "${F1V}/out" 2>&1
+    F1_RC=$?
+}
+f1_sock() { python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1])' "${1}"; }
+f1_disk() { rm -f "${1}"; "${F1_QIMG}" create -q -f qcow2 "${1}" "${2}" >/dev/null 2>&1; }
+F1_OVMF=(--ovmf-code "${F1V}/code.fd" --ovmf-vars-template "${F1V}/vars-template.fd")
+[ -n "${F1_QIMG}" ] || check 1 "-" "qemu-img is not on this host; the launcher checks cannot run"
+if [ -n "${F1_QIMG}" ]; then
+f1_disk "${F1V}/disk.qcow2" 16G
+# #307 PL-033 (and #308 claude F-VM-06): printing the arguments touches
+# nothing -- not a running guest's monitor or serial socket, not the OVMF
+# vars file.
+rm -f "${F1V}/m.sock" "${F1V}/s.sock" "${F1V}/vars.fd"; f1_sock "${F1V}/m.sock"; f1_sock "${F1V}/s.sock"
+f1_vm qemu-args --headless --gl none --monitor "${F1V}/m.sock" --serial "${F1V}/s.sock" --pidfile "${F1V}/pid" --ovmf-vars "${F1V}/vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
+[ "${F1_RC}" -eq 0 ] && [ -S "${F1V}/m.sock" ] && [ -S "${F1V}/s.sock" ] && [ ! -e "${F1V}/vars.fd" ]
+check $? "qemu-args prints the command and leaves a running guest's monitor and serial sockets, and makes no OVMF vars file (#307 PL-033)" "qemu-args (rc ${F1_RC}): monitor socket $([ -S "${F1V}/m.sock" ] && echo kept || echo REMOVED), serial socket $([ -S "${F1V}/s.sock" ] && echo kept || echo REMOVED), vars file $([ -e "${F1V}/vars.fd" ] && echo CREATED || echo absent)"
+grep -qF -- "unix:${F1V}/m.sock,server,nowait" "${F1V}/out"; check $? "and what it prints is the command run would start" "the printed command: $(head -c 300 "${F1V}/out")"
+# run still does the start's work before it execs QEMU: a stale socket
+# removed so QEMU can bind it, the vars file made from the template.
+f1_vm run --headless --gl none --monitor "${F1V}/m.sock" --serial "${F1V}/s.sock" --pidfile "${F1V}/pid" --ovmf-vars "${F1V}/vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
+[ "${F1_RC}" -eq 0 ] && [ -s "${F1V}/qemu.argv" ] && [ ! -e "${F1V}/m.sock" ] && [ ! -e "${F1V}/s.sock" ] && [ "$(cat "${F1V}/vars.fd" 2>/dev/null)" = vars-template ]
+check $? "and run still clears the stale sockets and makes the vars file from its template before it starts QEMU" "run (rc ${F1_RC}): QEMU $([ -s "${F1V}/qemu.argv" ] && echo started || echo NOT started), sockets $(ls "${F1V}"/*.sock 2>/dev/null | tr '\n' ' '), vars '$(cat "${F1V}/vars.fd" 2>/dev/null)'; $(head -c 200 "${F1V}/out")"
+# The gpt seat's input: the disk given as the monitor path. A start removes
+# only a socket; anything else at a socket path is refused, and the disk
+# stays.
+cp "${F1V}/disk.qcow2" "${F1V}/victim.qcow2"; rm -f "${F1V}/qemu.argv"
+f1_vm run --monitor "${F1V}/victim.qcow2" --ovmf-vars "${F1V}/vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
+[ "${F1_RC}" -ne 0 ] && [ -f "${F1V}/victim.qcow2" ] && [ ! -e "${F1V}/qemu.argv" ]
+check $? "a start refuses a socket path that holds a file, and the file stays (the gpt seat's disk-as---monitor input)" "run --monitor <a qcow2> (rc ${F1_RC}): the file $([ -f "${F1V}/victim.qcow2" ] && echo kept || echo DELETED), QEMU $([ -e "${F1V}/qemu.argv" ] && echo started || echo not started)"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

@@ -12,7 +12,11 @@ The host acceleration differs by necessity: Linux uses KVM when available,
 while an x86_64 guest on Apple silicon uses QEMU TCG. The fixed CPU model and
 devices keep the guest-visible environment equivalent.
 
-Print or run the Linux QEMU command:
+Print or run the Linux QEMU command. `qemu-args` only prints: it touches no
+socket, vars store or disk, so it is safe beside a running guest. `run` clears
+a previous QEMU's monitor and serial sockets (a socket only -- any other file
+at those paths is refused) and makes the guest's UEFI vars store from the
+firmware's template, then starts QEMU:
 
 ```bash
 projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm \

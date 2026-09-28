@@ -9,6 +9,7 @@ import plistlib
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -79,16 +80,8 @@ def find_ovmf(explicit, candidates, label):
     raise FileNotFoundError(f"could not locate {label}; pass its path explicitly")
 
 
-def qemu_command(profile, args):
-    disk = Path(args.disk).resolve()
-    if not disk.is_file():
-        raise FileNotFoundError(f"disk does not exist: {disk}")
-
-    qemu = shutil.which(os.environ.get("QEMU_SYSTEM_X86_64", "qemu-system-x86_64"))
-    if not qemu:
-        raise RuntimeError("qemu-system-x86_64 is required")
-
-    code = find_ovmf(
+def find_ovmf_code(args):
+    return find_ovmf(
         args.ovmf_code,
         (
             "/usr/share/OVMF/OVMF_CODE_4M.fd",
@@ -97,7 +90,10 @@ def qemu_command(profile, args):
         ),
         "OVMF code",
     )
-    vars_template = find_ovmf(
+
+
+def find_ovmf_vars_template(args):
+    return find_ovmf(
         args.ovmf_vars_template,
         (
             "/usr/share/OVMF/OVMF_VARS_4M.fd",
@@ -106,13 +102,63 @@ def qemu_command(profile, args):
         ),
         "OVMF vars template",
     )
+
+
+def run_paths(args):
+    """The files a start makes or replaces: the OVMF vars store, the monitor
+    socket, and the serial socket with --headless (None otherwise)."""
+    disk = Path(args.disk).resolve()
     vars_path = (
         Path(args.ovmf_vars).resolve()
         if args.ovmf_vars
         else disk.with_name(f"{disk.stem}.ovmf-vars.fd")
     )
+    serial = Path(args.serial).resolve() if args.headless else None
+    return vars_path, Path(args.monitor).resolve(), serial
+
+
+def claim_socket_path(path):
+    """Make way for QEMU to bind a unix socket at path: a stale socket there is
+    removed; anything else -- a disk image given as --monitor, a symlink -- is
+    refused, never deleted."""
+    try:
+        mode = os.lstat(path).st_mode
+    except FileNotFoundError:
+        return
+    if not stat.S_ISSOCK(mode):
+        raise ValueError(f"{path} exists and is not a socket; refusing to remove it")
+    path.unlink()
+
+
+def prepare_run(profile, args):
+    """What a start does before QEMU runs, and only a start: the vars store
+    made from its template if the guest has none yet, and the socket paths
+    cleared of a previous QEMU's sockets. qemu-args never calls this -- it
+    prints, and touches nothing."""
+    vars_path, monitor, serial = run_paths(args)
+    vars_template = find_ovmf_vars_template(args)
+    for sock in (monitor, serial):
+        if sock is not None:
+            claim_socket_path(sock)
     if not vars_path.exists():
         shutil.copyfile(vars_template, vars_path)
+
+
+def qemu_command(profile, args):
+    """The QEMU command for this profile and these arguments. It reads and
+    checks; it creates, removes and changes nothing (prepare_run does that,
+    for a start)."""
+    disk = Path(args.disk).resolve()
+    if not disk.is_file():
+        raise FileNotFoundError(f"disk does not exist: {disk}")
+
+    qemu = shutil.which(os.environ.get("QEMU_SYSTEM_X86_64", "qemu-system-x86_64"))
+    if not qemu:
+        raise RuntimeError("qemu-system-x86_64 is required")
+
+    code = find_ovmf_code(args)
+    find_ovmf_vars_template(args)
+    vars_path, monitor, serial = run_paths(args)
 
     disk_info = qemu_img_info(disk)
     disk_profile = profile["disk"]
@@ -122,8 +168,6 @@ def qemu_command(profile, args):
     accel = args.accel
     if accel == "auto":
         accel = "kvm" if os.access("/dev/kvm", os.R_OK | os.W_OK) else "tcg,thread=multi"
-
-    monitor = Path(args.monitor).resolve()
 
     # Headless (a build host with no desktop): virtio-gpu-gl-pci refuses
     # -display none, so the GL-less device stands in; a VNC display on
@@ -157,8 +201,6 @@ def qemu_command(profile, args):
             display_device = display_device.replace("-gl-", "-")
             display_arg = "none"
         vnc_args = ["-vnc", f"127.0.0.1:{args.vnc}"]
-        serial = Path(args.serial).resolve()
-        serial.unlink(missing_ok=True)
         serial_arg = f"unix:{serial},server,nowait"
         pidfile_args = ["-pidfile", str(Path(args.pidfile).resolve())]
         for sock in (monitor, serial):
@@ -199,7 +241,6 @@ def qemu_command(profile, args):
     # same manifest, and two-device fixtures agreeing with themselves.
     if args.mac:
         network["mac_address"] = args.mac
-    monitor.unlink(missing_ok=True)
 
     command = [
         qemu,
@@ -626,12 +667,13 @@ def main():
         if args.command == "qemu-args":
             print(shlex.join(command))
         else:
+            prepare_run(profile, args)
             os.execv(command[0], command)
 
 
 if __name__ == "__main__":
     try:
         main()
-    except (FileNotFoundError, RuntimeError, ValueError, subprocess.CalledProcessError) as error:
+    except (FileNotFoundError, PermissionError, RuntimeError, ValueError, subprocess.CalledProcessError) as error:
         print(f"error: {error}", file=sys.stderr)
         sys.exit(1)
