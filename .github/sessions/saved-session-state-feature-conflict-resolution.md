@@ -1,29 +1,29 @@
 # Saved Session State
 
-> **Saved**: 2026-09-28T18:42:00Z
-> **Branch**: feature/conflict-resolution (the session worktree; the work is on `next`, pushed at 8196071ff5, which is chain 88's BUILD_ID)
-> **Repo**: maxengel/rocknix; EmulationStation fork `test/qa-integration` at c15c698367 (the distribution's pin, three bumps today)
+> **Saved**: 2026-09-28T21:15:35Z
+> **Branch**: feature/conflict-resolution (the session worktree; the work is on `next`, pushed at ee5e0e8d25 -- upstream/next fe127fad01 merged in 4c291eec63)
+> **Repo**: maxengel/rocknix; EmulationStation fork `test/qa-integration` at c15c698367 (the distribution's pin)
 
 ## Current Focus
 
-Phase 7 of the audit of the fix round (#313, 34 items) is merged and recorded: 33 of 34 resolved or withdrawn on `next`, PL-029 (the candidate's own proofs) open until the cut. Chain 88 started 18:40 UTC from `8196071ff5` (`/workspace/tmp/rocknix-session/chain-88.sh`, log `chain-88.log`, rc `chain-88.rc`): sync -> x64 run 88 -> H700 run 66 -> images kept under `/workspace/artifacts/rocknix-images/{x64,h700}-all-20260928-8196071ff5/` -> vm-qa run 70 -> guest d rebuilt -> proof-298 -> proofs-307 run 3 (`proofs-307/run3.md`) -> the upgrade rehearsal from `d39ccdfff3` (`rehearsal-88.log/.rc`). No commit to `next` between the chain's sync and the H700 image ("H700 done" in `chain-88.log`).
+The candidate for #236 after the audit of the fix round (#313: 33 of 34 items closed; PL-029 open until the cut is proven). Chain 88's cut `8196071ff5` proved clean (vm-qa 70 fifteen suites PASS; proof-298 35 PASS; the upgrade rehearsal from `d39ccdfff3` PASS; proofs-307 run 3 + 3b: every stream script clean but E1-pl069 and its control, which fail on #310's known growth). Step 0 of `release-candidates.md` on that head found `upstream/next` 8 commits ahead (merged, `4c291eec63`) and `raofflineproxy` 23 commits behind its author (stream D bumping it on `feature/pl-d2`, agent resumed 20:46 UTC); #305/#306 closed completed, #310 carried (D-QA-055). The candidate is chain 89's cut from the head the bump lands on.
+
+## In Progress
+
+- `proofs-307/run3c.sh E2-pl062 X-socket X-legacy-zip X-gaps-card X-migrate` running on guest d (started 21:14; rc to `/workspace/tmp/rocknix-session/run3c.rc`); `X-bios-alone.sh` corrected (the page's ticks set through `cloudsync.pick.backup.*`, `to_hub`, two walks) and to run after it: `run3c.sh X-bios-alone`. The six X proofs are this cut's own (PL-029 and the streams' owed VM proofs); their first run failed on the scripts, not the code (a 1 GiB stand-in disk, a tar.gz archive, an unmade cloud root, a launch under an open page, a walk off the carousel).
+- Stream D's proxy bump: verify (the 13 patches re-applied, section t green, PKG_SHA256), merge with `merge-stream.sh d2 <merge-base> ""`, then `tools/build-preflight --stop-vms` and `chain-89.sh` (written; it sets guest d's fixtures after the rebuild) with a waiter; no commit to `next` between its sync and the H700 image.
 
 ## Next Steps
 
-1. When chain 88 ends: read every step's rc and log; vm-qa 70's report (fifteen suites, `frame-diff` boxes claimed or filed), proof-298, run3.md (expect PL-001's proofs unchanged, `E2-pl061` for PL-034, `F2-autoslot` for D-LAUNCH-007), the rehearsal (PL-024's fix seen: `is-active` on the image). Then PL-029's remaining proofs: the migration on a guest against the QA cloud, the E1/E2 follow-ups' proofs (the BIOS-alone page frame at 640x480, the 69-gaps card with the link cut mid exit sync, STOP IT AND PLAY, the downgrade-and-return two boots, the socket refusal, `wifictl join` on guest d, the cut `system.cfg` repaired at boot, a legacy zip with stored members), `tools/time-to-play` for `settings_base`'s two forks per shell settings write.
-2. Records: RECORD.txt x2, the QA log row, `tools/release-catalog`, `docs/cloud-sync-changelog.md`'s entry for the round (the change-log rule: written the day the change lands, claims checked against the build), the Phase 7 work-log entry, PL-029's outcome, `tools/lint-audit-artifacts <folder> --issue 313` PASS, #313 closed with the evidence, D-WORKFLOW-060's round retro (mini-retro).
-3. The candidate call on #236; the RG35XX SP's copy and reboot, each asked for by name (D-QA-011).
-4. The maintainer's own: the CI secret `FORBIDDEN_PATTERNS`, #260's two edits, the history rewrite.
+1. When run 3c ends: read the X proofs (view `frames/X-bios-alone-systems-page.png` and the `X-gaps-card/` series with the Read tool), re-run any that still fail on the script; then `python3 /workspace/tmp/rocknix-session/records-8196071ff5.py` (RECORD.txt x2 and the QA-log row for 8196071ff5), `tools/release-catalog`, commit.
+2. When D reports: merge, preflight, chain 89 (~3 h: kernels rebuild after the upstream merge); then its records, PL-029's outcome (the rehearsal, the migration on a guest, the proofs' run 4, the frames; the Wi-Fi adapter named as the fact the VM cannot hold), the change-log entry (`changelog-313.md`, BUILD_ID to chain 89's), `tools/lint-audit-artifacts <folder> --issue 313` PASS, #313 closed, the candidate call on #236 (the build, step 0's verdict, the soak's read is the maintainer's), the RG35XX SP's copy and reboot each asked.
+3. The maintainer's own: the CI secret, #260's two edits, the history rewrite.
 
 ## Notes for Next Session
 
-- The merge chain script is `merge-stream.sh <x> <base> <wait-rc>`; its busy check is `primary_harness_running` (a `|| pgrep | while read` always read busy). Kill a chain only by a pattern anchored at its argv start (`^/bin/bash /workspace/tmp/rocknix-session/merge-stream\.sh`); a plain literal elsewhere in the same command killed the tool shell once today.
-- B's `--old` runs need stdin closed (`< /dev/null`); both harness calls in the chain have it.
-- Never write the wordlist's words anywhere the fork carries; the list is `~/.config/rocknix/forbidden-terms`.
-- A commit is gated on a test's own rc, never through a pipe ending in a filter.
-- `date -u '+%Y-%m-%d %H:%M'` needs its quotes; twice today the friction line got an empty date.
-
-## Open Questions
-
-- The `awecelot` references; the ES fork's runner half of the wordlist check; whether guest d (5.9 GB) should be stopped for builds (the chain rebuilds it).
+- `merge-stream.sh` has the fixed busy check; kill a chain only by `^/bin/bash /workspace/tmp/rocknix-session/merge-stream\.sh`.
+- The harness and the proofs need stdin closed (`< /dev/null`).
+- A proof on guest d starts with `debug_reboot; sleep 30` to be on the carousel; a POST /launch under an open page returns 200 and starts nothing.
+- Guest d's fixtures: `/workspace/tmp/rocknix-session/fixtures-d.sh` (its own cloud folder /QA307d, seeded, the RA QA account).
+- Never write the wordlist's words anywhere the fork carries.
 
