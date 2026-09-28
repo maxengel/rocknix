@@ -3266,6 +3266,23 @@ cp "${F1V}/disk.qcow2" "${F1V}/victim.qcow2"; rm -f "${F1V}/qemu.argv"
 f1_vm run --monitor "${F1V}/victim.qcow2" --ovmf-vars "${F1V}/vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
 [ "${F1_RC}" -ne 0 ] && [ -f "${F1V}/victim.qcow2" ] && [ ! -e "${F1V}/qemu.argv" ]
 check $? "a start refuses a socket path that holds a file, and the file stays (the gpt seat's disk-as---monitor input)" "run --monitor <a qcow2> (rc ${F1_RC}): the file $([ -f "${F1V}/victim.qcow2" ] && echo kept || echo DELETED), QEMU $([ -e "${F1V}/qemu.argv" ] && echo started || echo not started)"
+# The audit of the fixes, gpt G-F1-01: a --monitor that is a symlink to
+# another guest's live socket. The path was resolved before the check, so
+# the check saw a socket and removed the other guest's; a link is refused
+# and both stay.
+rm -f "${F1V}/other.sock" "${F1V}/link.sock" "${F1V}/qemu.argv"; f1_sock "${F1V}/other.sock"; ln -s "${F1V}/other.sock" "${F1V}/link.sock"
+f1_vm run --monitor "${F1V}/link.sock" --ovmf-vars "${F1V}/vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
+[ "${F1_RC}" -ne 0 ] && [ -S "${F1V}/other.sock" ] && [ -L "${F1V}/link.sock" ] && [ ! -e "${F1V}/qemu.argv" ]
+check $? "a start refuses a socket path that is a symlink, and the socket it points at stays (the audit's G-F1-01)" "run --monitor <a link to another socket> (rc ${F1_RC}): the other guest's socket $([ -S "${F1V}/other.sock" ] && echo kept || echo REMOVED), QEMU $([ -e "${F1V}/qemu.argv" ] && echo started || echo not started)"
+# The audit of the fixes, gpt G-F1-05: a vars store already there from
+# another firmware build (a 2 MiB store beside a 4 MiB code image) is
+# refused, named, and kept -- a start used to run on it as it was.
+head -c 131072 /dev/zero > "${F1V}/wrong-vars.fd"; head -c 540672 /dev/zero > "${F1V}/template-4m.fd"; rm -f "${F1V}/qemu.argv"
+f1_vm run --ovmf-code "${F1V}/code.fd" --ovmf-vars-template "${F1V}/template-4m.fd" --ovmf-vars "${F1V}/wrong-vars.fd" --monitor "${F1V}/m2.sock" "${F1V}/disk.qcow2"
+F1_WV=${F1_RC}; F1_WVO=$(head -c 200 "${F1V}/out")
+cp "${F1V}/template-4m.fd" "${F1V}/right-vars.fd"; f1_vm run --ovmf-code "${F1V}/code.fd" --ovmf-vars-template "${F1V}/template-4m.fd" --ovmf-vars "${F1V}/right-vars.fd" --monitor "${F1V}/m2.sock" "${F1V}/disk.qcow2"
+[ "${F1_WV}" -ne 0 ] && [ "$(stat -c %s "${F1V}/wrong-vars.fd")" = 131072 ] && echo "${F1_WVO}" | grep -q 'wrong-vars.fd' && [ "${F1_RC}" -eq 0 ]
+check $? "a vars store whose size is not its firmware template's is refused and kept, one that matches is used (the audit's G-F1-05)" "a 128 KiB store with a 528 KiB template: rc ${F1_WV}, '${F1_WVO}'; a matching store: rc ${F1_RC}"
 fi
 
 if [ -n "${F1_QIMG}" ]; then
@@ -3351,12 +3368,35 @@ check $? "a qcow2 with a backing file or an external data file is refused for a 
 # #308 gpt F-VM-12: the archive is written under a name of its own, so a
 # second build for the same output cannot take -- or publish -- another's
 # unfinished archive at <output>.tmp.
+# A temporary of the build's own is a dotfile (.bundle.zip.<random>.partial):
+# ls -A, and a pattern that starts with the dot (the audit's G-F1-08 on the
+# gpt side, G-F1-04 on the claude side -- the first version of this check
+# listed with plain ls and could see nothing). Proven able to see one first.
+f1_partials() { ls -A "${F1V}" | grep -E "^\.${1//./\\.}\..*\.partial\$"; }
+: > "${F1V}/.probe.zip.leaked.partial"
+[ -n "$(f1_partials probe.zip)" ]; check $? "the leftover check sees a planted .probe.zip.<x>.partial (the check can fail)" "the leftover check cannot see a planted .partial -- it proves nothing"
+rm -f "${F1V}/.probe.zip.leaked.partial"
 echo "another build's archive, still being written" > "${F1V}/bundle.zip.tmp"
 f1_vm utm "${F1V}/disk.qcow2" --output "${F1V}/bundle.zip"
 [ "${F1_RC}" -eq 0 ] && [ "$(cat "${F1V}/bundle.zip.tmp" 2>/dev/null)" = "another build's archive, still being written" ] \
     && python3 -c 'import sys,zipfile; n=sorted(zipfile.ZipFile(sys.argv[1]).namelist()); sys.exit(0 if n==["READ ME FIRST.txt","bundle.utm/Data/ROCKNIX-GENERIC_X64.qcow2","bundle.utm/config.plist"] else 1)' "${F1V}/bundle.zip" \
-    && [ -z "$(ls "${F1V}" | grep -E '^bundle\.zip\..+' | grep -v '^bundle\.zip\.tmp$')" ]
+    && [ -z "$(f1_partials bundle.zip)" ]
 check $? "a UTM build leaves another build's <output>.tmp alone, publishes a whole bundle, and leaves no temporary of its own (#308 gpt F-VM-12)" "rc ${F1_RC}; <output>.tmp: '$(cat "${F1V}/bundle.zip.tmp" 2>/dev/null || echo GONE)'; left: $(ls "${F1V}" | grep '^bundle' | tr '\n' ' '); $(head -c 200 "${F1V}/out")"
+# A build whose archive write fails -- the quick-start file it packs is
+# missing -- publishes nothing and leaves no temporary behind.
+mkdir -p "${F1V}/vm-noreadme"; cp "${F1V}/vm/generic-x64-vm" "${F1V}/vm/profile.json" "${F1V}/vm-noreadme/"
+rm -f "${F1V}/broken.zip"
+bwrap --die-with-parent --ro-bind / / --tmpfs /tmp --bind "${F1V}" "${F1V}" --dev /dev --proc /proc \
+    python3 "${F1V}/vm-noreadme/generic-x64-vm" utm "${F1V}/disk.qcow2" --output "${F1V}/broken.zip" > "${F1V}/out" 2>&1; F1_RC=$?
+[ "${F1_RC}" -ne 0 ] && [ ! -e "${F1V}/broken.zip" ] && [ -z "$(f1_partials broken.zip)" ] && [ ! -e "${F1V}/broken.zip.tmp" ]
+check $? "a UTM build whose archive write fails publishes nothing and leaves no temporary (the audit's G-F1-08)" "a failed write (rc ${F1_RC}): output $([ -e "${F1V}/broken.zip" ] && echo MADE || echo none), left: $(ls -A "${F1V}" | grep '^\.\?broken' | tr '\n' ' ')"
+# The caller's umask decides who may read the bundle (the audit's G-F1-06):
+# a build under umask 077 publishes a file only its owner can read.
+rm -f "${F1V}/private.zip"
+bwrap --die-with-parent --ro-bind / / --tmpfs /tmp --bind "${F1V}" "${F1V}" --dev /dev --proc /proc \
+    bash -c 'umask 077; exec python3 "$1" utm "$2" --output "$3"' _ "${F1V}/vm/generic-x64-vm" "${F1V}/disk.qcow2" "${F1V}/private.zip" > "${F1V}/out" 2>&1; F1_RC=$?
+[ "${F1_RC}" -eq 0 ] && [ "$(stat -c %a "${F1V}/private.zip" 2>/dev/null)" = 600 ]
+check $? "a UTM build under umask 077 publishes a bundle of mode 600 (the audit's G-F1-06)" "under umask 077 (rc ${F1_RC}): mode $(stat -c %a "${F1V}/private.zip" 2>/dev/null || echo none)"
 fi
 
 # F1g. #307 PL-034, #308 claude F-VM-10 and gpt F-VM-09: 092-retroarch-surface
