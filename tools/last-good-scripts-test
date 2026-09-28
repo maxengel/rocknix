@@ -3540,4 +3540,12 @@ else
     echo "    SKIP  #308 F-RA-18's cases: section p did not run"
 fi
 
+# D12a. #308 1-raoffline claude F-RA-20: the unit's start limit sits in
+# [Unit], as StartLimitIntervalSec= and StartLimitBurst=, where systemd has
+# read it since 230 (in [Service] it is the old spelling, accepted for
+# compatibility with a deprecation line in the journal).
+UNIT_REL=projects/ROCKNIX/packages/network/raofflineproxy/system.d/raofflineproxy.service
+src_of "${UNIT_REL}" "${DD}/raofflineproxy.service"
+awk '/^\[/{s=$0} s=="[Unit]" && /^StartLimitIntervalSec=60$/{a=1} s=="[Unit]" && /^StartLimitBurst=5$/{b=1} s=="[Service]" && /^StartLimit/{c=1} END{exit !(a && b && !c)}' "${DD}/raofflineproxy.service"; check $? "#308 claude F-RA-20 unit: StartLimitIntervalSec=60 and StartLimitBurst=5 in [Unit], nothing of the start limit in [Service]" "#308 claude F-RA-20 unit: $(grep -n 'StartLimit\|^\[' "${DD}/raofflineproxy.service" | tr '\n' '|')"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

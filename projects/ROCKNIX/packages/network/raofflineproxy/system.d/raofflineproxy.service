@@ -13,6 +13,10 @@ After=network.target network-base.service rocknix-sysconfig.service
 # call finds the port listening rather than refused -- a refused connection
 # makes rcheevos disable achievements for the whole session.
 Before=emustation.service essway.service
+# Five starts in sixty seconds, then no more: in [Unit], where systemd has
+# read the start limit since 230 (#308 F-RA-20).
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -25,8 +29,6 @@ ExecStart=/usr/bin/python3 -m raofflineproxy.main run-service
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=15
-StartLimitInterval=60
-StartLimitBurst=5
 
 [Install]
 WantedBy=multi-user.target
