@@ -1279,11 +1279,15 @@ load_config() {
     # and only while RCLONEOPTS carried --delete-excluded, which load_config
     # strips above -- so it could never fire (#308 claude F-CS-17). Logged on
     # every run; on the screen for a run somebody pressed, not the automatic
-    # syncs, where it would sit on every game-exit card.
+    # syncs, where it would sit on every game-exit card. Not for a saves
+    # folder at the root ("" or "/", one root as F-CS-25 reads it): every
+    # folder is inside that one, the tidy cannot move a folder out of it, and
+    # the backup says what such a folder costs instead (the audit of the
+    # fixes, claude G-A-08: "/" was warned about on every run, "" never).
     local nested_key nested_val nested_what
     for nested_key in SETTINGS_REMOTE CONTENT_REMOTE; do
         nested_val="${!nested_key}"
-        [ -n "${nested_val}" ] && [ -n "${SAVES_REMOTE}" ] || continue
+        [ -n "${nested_val}" ] && [ -n "${SAVES_REMOTE%/}" ] || continue
         case "${nested_val%/}/" in
             "${SAVES_REMOTE%/}/"?*)
                 log_message "${nested_key}=${nested_val} is inside SAVES_REMOTE=${SAVES_REMOTE}" "false" "WARN"

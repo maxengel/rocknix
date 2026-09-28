@@ -4483,4 +4483,18 @@ for ga9s in cloud_backup cloud_restore; do
     [ "${DT}" -le 12 ] && [ "${RC}" -ne 0 ] && grep -qx ">>> why THE CLOUD TOOK TOO LONG - IT'LL TRY AGAIN NEXT TIME" "${CE}/out" && ! grep -q 'SIGN-IN' "${CE}/out"; check $? "${ga9s} --automatic --system-only: a probe the ceiling ended says THE CLOUD TOOK TOO LONG, not a sign-in problem (${DT}s, rc ${RC})" "${DT}s, rc ${RC}; why: $(grep '^>>> why' "${CE}/out" | tr '\n' '|')"
 done
 
+# A46. The audit of the fixes (#307 follow-up 2; seats/A-claude.md G-A-08,
+#      Low): the nested-folder warning skipped a saves folder of "" and
+#      fired for "/" -- the same root (F-CS-25 treats them alike) -- where
+#      every folder is "inside" the saves folder, and told the player TIDY
+#      UP YOUR CLOUD FOLDERS would move it out, which it cannot do for a
+#      root. A root saves folder gets A36's sentence instead.
+echo "    A46. G-A-08 (claude): a saves folder at the root is not warned about as a nesting"
+NR=$(sa_new ga08c); sa_script "${NR}" cloud_backup cloud_saves_root
+sed 's|^SAVES_REMOTE=.*|SAVES_REMOTE="/"|' "${RX}/storage/.config/cloud_sync.conf" > "${NR}/storage/.config/cloud_sync.conf"
+cp "${RX}/storage/.config/cloud_sync-rules.txt" "${NR}/storage/.config/"
+mkdir -p "${NR}/storage/roms/gb"; echo s > "${NR}/storage/roms/gb/A.srm"
+sa_run "${NR}" cloud_backup --yes --saves-only
+[ "${RC}" -eq 0 ] && ! grep -q 'sits inside your saves folder' "${NR}/out" && ! grep -q 'is inside SAVES_REMOTE' "${NR}/log/cloud_sync.log"; check $? "SAVES_REMOTE=\"/\" with SETTINGS_REMOTE=\"/Backups\": no nesting warning on the screen or in the log (rc ${RC})" "rc ${RC}; screen: $(grep 'sits inside' "${NR}/out" | head -1); log: $(grep 'is inside SAVES_REMOTE' "${NR}/log/cloud_sync.log" | head -1 | cut -c1-120)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
