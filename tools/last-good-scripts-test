@@ -3524,8 +3524,21 @@ F1H="${F1}/h"; mkdir -p "${F1H}/q"
 src_of "${F1_QREL}/platforms/GENERIC_X64/095-cloud-ssh" "${F1H}/q/095-cloud-ssh"
 f1_sys "${F1H}/p10022"; f1_sys "${F1H}/p10023"; printf '10023' > "${F1H}/p10023/firmware/qemu_fw_cfg/by_name/opt/org.rocknix.cloud_ssh_port/raw"
 f1_sys "${F1H}/none"; rm -rf "${F1H}/none/firmware/qemu_fw_cfg"
-f1_ssh() { # <storage> <sys>: one boot's run of the quirk
-    bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${F1BB[@]}" \
+# An mv that dies with the quirk right after it puts cloud_setup_ssh in
+# place: a boot cut short between the command and its record (the audit's
+# G-F1-04). Every other mv passes through.
+mkdir -p "${F1H}/killmv"
+cat > "${F1H}/killmv/mv" <<'EOS'
+#!/bin/bash
+for a in "$@"; do last="$a"; done
+if [ -x /lgst/busybox ]; then /lgst/busybox mv "$@"; else /usr/bin/mv "$@"; fi; rc=$?
+[ "${last##*/}" = cloud_setup_ssh ] && kill -9 "${PPID}"
+exit "${rc}"
+EOS
+chmod +x "${F1H}/killmv/mv"
+f1_ssh() { # <storage> <sys> [kill]: one boot's run of the quirk
+    local kill=(); [ "${3:-}" = kill ] && kill=(--ro-bind "${F1H}/killmv" /shim)
+    bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${F1BB[@]}" "${kill[@]}" \
         --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
         --bind "${1}" /storage --ro-bind "${2}" /sys --ro-bind "${F1H}/q" /q \
         --tmpfs /run --tmpfs /tmp --dev /dev --proc /proc --setenv PATH "${F1PATH}" \
@@ -3542,11 +3555,29 @@ f1_storage "${F1H}/b"; echo "${F1_HAND}" > "${F1H}/b/.config/cloud_setup_ssh"; f
 check $? "a command written by hand survives a boot with the port on fw_cfg and one without (the README's manual fallback)" "the hand-written '${F1_HAND}' became '${F1_S2}' with the port and '$(f1_ov "${F1H}/b")' without"
 f1_storage "${F1H}/c"; f1_ssh "${F1H}/c" "${F1H}/p10022"; echo "${F1_HAND}" > "${F1H}/c/.config/cloud_setup_ssh"; f1_ssh "${F1H}/c" "${F1H}/p10022"
 [ "$(f1_ov "${F1H}/c")" = "${F1_HAND}" ]; check $? "and so does one written over the quirk's own command" "the quirk's command, then a hand edit: '$(f1_ov "${F1H}/c")' after a boot"
-# Already written: an earlier build's command, with no record, is the
-# quirk's -- it follows the port, and goes without one.
-f1_storage "${F1H}/d"; echo "${F1_GEN}" > "${F1H}/d/.config/cloud_setup_ssh"; f1_ssh "${F1H}/d" "${F1H}/p10023"; F1_S3=$(f1_ov "${F1H}/d")
-f1_storage "${F1H}/e"; echo "${F1_GEN}" > "${F1H}/e/.config/cloud_setup_ssh"; f1_ssh "${F1H}/e" "${F1H}/none"
-[ "${F1_S3}" = "${F1_GEN/10022/10023}" ] && [ "$(f1_ov "${F1H}/e")" = "(no file)" ]; check $? "an earlier build's unrecorded command follows the port and goes without one" "port 10023: ${F1_S3}; no port: $(f1_ov "${F1H}/e")"
+# Already written: an earlier build's command has no record, and its shape
+# is one a tester may write by hand (the audit's G-F1-03). With no record,
+# the file is taken only when it is exactly the command this boot writes --
+# taking it changes nothing now, and the record starts; then it follows the
+# port. A loopback command on another port, or with no port on fw_cfg, is
+# left as somebody's.
+f1_storage "${F1H}/d"; echo "${F1_GEN}" > "${F1H}/d/.config/cloud_setup_ssh"; f1_ssh "${F1H}/d" "${F1H}/p10022"; f1_ssh "${F1H}/d" "${F1H}/p10023"; F1_S3=$(f1_ov "${F1H}/d")
+[ "${F1_S3}" = "${F1_GEN/10022/10023}" ]; check $? "an earlier build's unrecorded command, met on its own port, is taken and then follows the port" "the unrecorded 10022 command after a 10022 boot and a 10023 boot: ${F1_S3}"
+F1_OWN="ssh -L 53682:localhost:53682 -p 2222 root@127.0.0.1"
+f1_storage "${F1H}/e"; echo "${F1_OWN}" > "${F1H}/e/.config/cloud_setup_ssh"; f1_ssh "${F1H}/e" "${F1H}/p10022"; F1_S4=$(f1_ov "${F1H}/e"); f1_ssh "${F1H}/e" "${F1H}/none"
+[ "${F1_S4}" = "${F1_OWN}" ] && [ "$(f1_ov "${F1H}/e")" = "${F1_OWN}" ]
+check $? "a loopback command a tester wrote for a forward of their own survives a boot with a port and one without (the audit's G-F1-03)" "the tester's '-p 2222 root@127.0.0.1' became '${F1_S4}' with port 10022 and '$(f1_ov "${F1H}/e")' without"
+# fw_cfg's value is a port or it is not one: six digits are refused, not
+# cut to five (the audit's G-F1-07 on the gpt side, G-F1-06 on the claude
+# side).
+f1_sys "${F1H}/p6"; printf '100000' > "${F1H}/p6/firmware/qemu_fw_cfg/by_name/opt/org.rocknix.cloud_ssh_port/raw"
+f1_storage "${F1H}/g"; f1_ssh "${F1H}/g" "${F1H}/p6"
+[ "$(f1_ov "${F1H}/g")" = "(no file)" ]; check $? "a six-digit fw_cfg port is refused, not cut to five digits (the audit's G-F1-07)" "fw_cfg 100000 gave: $(f1_ov "${F1H}/g")"
+# A boot cut short right after the new command is in place leaves the next
+# boot still knowing the command is the quirk's (the audit's G-F1-04).
+f1_storage "${F1H}/k"; f1_ssh "${F1H}/k" "${F1H}/p10022"; f1_ssh "${F1H}/k" "${F1H}/p10023" kill; F1_S5=$(f1_ov "${F1H}/k"); f1_ssh "${F1H}/k" "${F1H}/none"
+[ "${F1_S5}" = "${F1_GEN/10022/10023}" ] && [ "$(f1_ov "${F1H}/k")" = "(no file)" ]
+check $? "a boot killed right after it put a new command in place leaves it the quirk's: the next boot without a port removes it (the audit's G-F1-04)" "killed after the 10023 write: '${F1_S5}'; the next boot with no port: '$(f1_ov "${F1H}/k")'"
 f1_storage "${F1H}/f"; f1_ssh "${F1H}/f" "${F1H}/p10022"; F1_F0=$(cd "${F1H}/f/.config" && ls -A | LC_ALL=C sort | xargs sha256sum 2>/dev/null); f1_ssh "${F1H}/f" "${F1H}/p10022"
 [ "${F1_F0}" = "$(cd "${F1H}/f/.config" && ls -A | LC_ALL=C sort | xargs sha256sum 2>/dev/null)" ] && [ ! -s "${F1H}/out" ]; check $? "a second boot on the same port changes nothing and says nothing" "a second boot changed /storage/.config or said: $(head -c 160 "${F1H}/out")"
 
