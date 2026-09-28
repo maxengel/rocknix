@@ -3019,7 +3019,9 @@ ckf 65536 retroarch 1024;                printf '%s' "${NOTE}" | grep '^dump' | 
 #
 #   C1. cloud_setup --set-saves-remote: a one-level saves folder is refused
 #       with the reason, where it would have nested the settings and content
-#       folders inside itself (PL-015); the siblings of a two-level one. The
+#       folders inside itself (PL-015), or one named like its own sibling
+#       (/Mine/Backups), which would alias two tiers (G-C-01); the siblings
+#       of a two-level one. The
 #       config is written as text, not through a sed replacement: & and |
 #       round-trip, a name that would run when the config is sourced is
 #       refused, a write that fails says so, and --info reads the config
@@ -3097,6 +3099,21 @@ c1 --set-saves-remote Mine/Saves/
 [ "${RC}" -eq 0 ] && [ "$(conf1)" = 'SAVES_REMOTE="/Mine/Saves" SETTINGS_REMOTE="/Mine/Backups" CONTENT_REMOTE="/Mine/Content" ' ]; check $? "a two-level folder (Mine/Saves/) is stored with its settings and content folders beside it" "rc ${RC}; config: $(conf1); said: $(head -1 "${C1}/out")"
 c1 --set-saves-remote /a/b/Saves
 [ "${RC}" -eq 0 ] && [ "$(conf1)" = 'SAVES_REMOTE="/a/b/Saves" SETTINGS_REMOTE="/a/b/Backups" CONTENT_REMOTE="/a/b/Content" ' ]; check $? "and a deeper one (/a/b/Saves) likewise" "rc ${RC}; config: $(conf1)"
+# G-C-01 (the audit of stream C): the three destinations must be three
+# folders. A saves folder named like its own sibling -- /Mine/Backups,
+# /Mine/Content -- derives that sibling onto itself, so two tiers alias one
+# folder. Refused where it is typed, case-folded (Dropbox and OneDrive fold
+# case), with the folder to use instead; /Mine/Saves still derives its two.
+cp "${ROOT}/${RCLONE_REL}/cloud_sync.conf" "${CONF1}"; cp "${CONF1}" "${C1}/conf.before"
+for alias in /Mine/Backups /Mine/Content /Mine/backups; do
+    cp "${C1}/conf.before" "${CONF1}"
+    c1 --set-saves-remote "${alias}"
+    [ "${RC}" -ne 0 ] && cmp -s "${CONF1}" "${C1}/conf.before" && grep -qx 'Try /Mine/Saves.' "${C1}/out"; check $? "a saves folder that would share a folder with its own siblings (${alias}) is refused, config untouched: $(head -1 "${C1}/out")" "${alias}: rc ${RC}; config: $(conf1); said: $(tr '\n' ' ' < "${C1}/out" | cut -c1-140) -- two tiers alias one folder (G-C-01)"
+done
+c1 --check-syncpath /Mine/Content
+[ "${RC}" -ne 0 ] && grep -qx 'Try /Mine/Saves.' "${C1}/out"; check $? "--check-syncpath refuses /Mine/Content too" "--check-syncpath /Mine/Content: rc ${RC}; said '$(tr '\n' ' ' < "${C1}/out" | cut -c1-120)' (G-C-01)"
+c1 --set-saves-remote /Mine/Saves
+[ "${RC}" -eq 0 ] && [ "$(conf1)" = 'SAVES_REMOTE="/Mine/Saves" SETTINGS_REMOTE="/Mine/Backups" CONTENT_REMOTE="/Mine/Content" ' ]; check $? "while /Mine/Saves still derives /Mine/Backups and /Mine/Content beside it" "rc ${RC}; config: $(conf1)"
 
 # PL-051: the config is written as text. & and | used to reach sed's
 # replacement: & pasted the matched line into the value, | ended the

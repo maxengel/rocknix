@@ -245,6 +245,21 @@ syncpath_problem() {
             return 1
             ;;
     esac
+    # And the three have to be three folders. The settings and content
+    # folders are <parent>/Backups and <parent>/Content, so a saves folder
+    # called Backups or Content is its own sibling: two tiers in one folder,
+    # and the saves sync walking the other tier's files (audit #307, G-C-01).
+    # Compared case-folded, because Dropbox and OneDrive fold case.
+    local parent="${path%/*}" folded
+    folded="$(printf '%s' "${path}" | tr 'A-Z' 'a-z')"
+    local sibling=""
+    [ "${folded}" = "$(printf '%s' "${parent}/Backups" | tr 'A-Z' 'a-z')" ] && sibling="your settings backups"
+    [ "${folded}" = "$(printf '%s' "${parent}/Content" | tr 'A-Z' 'a-z')" ] && sibling="your ROMs and BIOS"
+    if [ -n "${sibling}" ]; then
+        echo "Your saves folder can't be called ${path##*/}: ${sibling} go in a folder of that name beside it."
+        echo "Try ${parent}/Saves."
+        return 1
+    fi
     [ -n "${remote}" ] || return 0
 
     # No provider rules are encoded here on purpose. rclone does not validate
