@@ -3332,4 +3332,32 @@ else
     echo "    SKIP  #308 F-RA-12/19's cases: section t did not run"
 fi
 
+# D5. #307 PL-059 (F-RA-07 gpt): the walk over unindexed folders keeps a
+# cursor between runs, so files that never cache (a ROM RetroAchievements does
+# not know is skipped, and stays uncached) cannot hold the front of the walk
+# for ever; and a walk cut at the cap says so to the page (note TRUNCATED)
+# and in the stamp (truncated=1). The cap is lowered to ten, as in t's PL-17
+# case, over thirteen files nobody can cache (gb's two and gbc's eleven): the
+# second scan reaches the ones the first did not, the thirteenth included.
+if [ "${DT_OK}" -eq 1 ]; then
+printf "${DCFG_ON}" > "${TCFG}"
+treset; rm -rf "${TS}/roms/gbc"; mkdir -p "${TS}/roms/gbc"; for i in $(seq -w 1 11); do printf 'GBC %s' "${i}" > "${TS}/roms/gbc/g${i}.gbc"; done
+TENV=(--setenv RA_TEST_SCAN_CAP 10)
+for _ in $(seq 1 20); do echo skip; done > "${TR}/helper-plan"
+: > "${TR}/helper-jobs.log"
+tctl scan; cp "${OUT}" "${DD}/scan1.out"; cp "${TR}/helper-jobs.log" "${DD}/scan1.jobs"
+[ "${RC}" -eq 0 ] && grep -qx '>>> note TRUNCATED' "${DD}/scan1.out" && grep -q ' 0 scan .* truncated=1' "${TSTAMP}"; check $? "PL-059: a walk cut at the cap tells the page (note TRUNCATED) and the stamp (truncated=1)" "PL-059: rc ${RC}; out: $(grep '^>>>' "${DD}/scan1.out" | tr '\n' '|' | cut -c1-200); stamp: $(cat "${TSTAMP}" 2>/dev/null) -- the truncation was in the log alone"
+: > "${TR}/helper-jobs.log"
+tctl scan; cp "${TR}/helper-jobs.log" "${DD}/scan2.jobs"
+grep -qP '^H\t\t\t/storage/roms/gbc/g11.gbc$' "${DD}/scan2.jobs" && grep -qP '^H\t\t\t/storage/roms/gbc/g09.gbc$' "${DD}/scan2.jobs"; check $? "PL-059: the second scan walks on from where the first stopped -- g09, g10 and g11, none of which can be cached, are its jobs" "PL-059: second scan's jobs: $(sed 's|.*/||' "${DD}/scan2.jobs" | tr '\n' ' ') -- the same first ten files held the front of the walk"
+[ "$(sort "${DD}/scan1.jobs" "${DD}/scan2.jobs" | uniq | grep -c "^H")" -eq 13 ]; check $? "PL-059: two scans together have tried all thirteen uncacheable files" "PL-059: $(sort "${DD}/scan1.jobs" "${DD}/scan2.jobs" | uniq | grep -c "^H") distinct files over two scans"
+# Under the cap the walk comes round whole: no note, no cursor left behind.
+rm -f "${TS}"/roms/gbc/g0[1-9].gbc; : > "${TR}/helper-jobs.log"
+tctl scan
+[ "${RC}" -eq 0 ] && ! grep -q 'note TRUNCATED' "${OUT}" && ! grep -q 'truncated=1' "${TSTAMP}" && [ ! -e "${TPD}/scan-cursor" ]; check $? "PL-059: a walk that fits under the cap says nothing of truncation and leaves no cursor" "PL-059: rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-160); stamp: $(cat "${TSTAMP}" 2>/dev/null); cursor: $(cat "${TPD}/scan-cursor" 2>/dev/null || echo none)"
+TENV=(); rm -rf "${TS}/roms/gbc"; rm -f "${TR}/helper-plan"
+else
+    echo "    SKIP  PL-059's cases: section t did not run"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

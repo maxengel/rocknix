@@ -124,9 +124,11 @@
 #            PL-24): the next scan or top-up tries those games again, since
 #            nothing marks them cached. The walk over an unindexed folder
 #            stops at the client's cap of files (rom_browser
-#            MAX_SCAN_ENTRIES), counted over the files not yet cached, so
-#            a second scan reaches what the first did not (`truncated=1`
-#            in the log; #186 PL-17).
+#            MAX_SCAN_ENTRIES), counted over the files not yet cached and
+#            begun where the last walk the cap cut stopped (scan-cursor), so
+#            a second scan reaches what the first did not, past files that
+#            never cache too (#186 PL-17, #307 PL-059); a walk the cap cut
+#            says `note TRUNCATED` to the page and truncated=1 in the stamp.
 #   topup    every game the index knows and the client has not cached, then
 #            the client's `run-smart-cache` (RetroArch's recent history,
 #            PPSSPP's recent list) for what the index missed -- so a game
@@ -172,7 +174,7 @@
 #            and treats one older than the bound as gone.
 #   last-scan is /storage/.config/raofflineproxy/last-scan, one line:
 #   "<epoch> <rc> <scan|topup> cached=<n> skipped=<m> ready=<total>
-#   limit=<0|1> indexed=<i> errors=<e> added=<k>[ why=<TOKEN>]" -- how the last run
+#   limit=<0|1> indexed=<i> errors=<e> added=<k>[ truncated=1][ why=<TOKEN>]" -- how the last run
 #   went, read by the page for the line under the row
 #   (CloudText::parseScanStamp, which passes over keys it does not know).
 #   `added` is how many of `cached` are games new to the store (fork
@@ -245,6 +247,9 @@ FLUSH_STAMP="${PROXY_DIR}/last-flush"
 # The scan's files, all beside the proxy's own so backuptool holds them back
 # with the rest (D-INFRA-010) and `disable` leaves them where the cache is.
 SCAN_STAMP="${PROXY_DIR}/last-scan"
+# Where the walk over unindexed folders stopped at the cap, so the next scan
+# walks on from there (#307 PL-059): the path of the last file it took.
+SCAN_CURSOR="${PROXY_DIR}/scan-cursor"
 SCAN_LOG="${PROXY_DIR}/scan.log"
 RUNNING="${PROXY_DIR}/running"
 TOPUP_MARK="${PROXY_DIR}/last-topup-attempt"
@@ -859,7 +864,12 @@ write_stamp() {
     # after its recently played pass); a run that gives none added every
     # game it cached.
     local ADDED="${10:-${CACHED}}"
+    # truncated=1 (#307 PL-059): the walk over unindexed folders stopped at
+    # the cap, and the games past it are the next scan's. Written only when
+    # it is 1; CloudText::parseScanStamp reads it.
+    local TRUNCATED="${11:-0}"
     local LINE="$(date +%s) ${RC} ${ROUTE} cached=${CACHED} skipped=${SKIPPED} ready=${READY} limit=${LIMIT} indexed=${INDEXED} errors=${ERRORS} added=${ADDED}"
+    [ "${TRUNCATED}" = "1" ] && LINE="${LINE} truncated=1"
     [ -n "${WHY}" ] && LINE="${LINE} why=${WHY}"
     mkdir -p "${PROXY_DIR}" || return 1
     printf '%s\n' "${LINE}" > "${SCAN_STAMP}.tmp" && mv -f "${SCAN_STAMP}.tmp" "${SCAN_STAMP}"
@@ -1002,16 +1012,18 @@ take_lock() {
 # own custom, user or image copy, in the order it reads them); the walk's
 # folders from SCAN_SYSTEMS as before, less any folder an indexed system
 # owns. The walk stops at the client's cap of files (MAX_SCAN_ENTRIES),
-# counted over the files not yet cached, so the cap bounds one run's work
-# and never the library: a second run walks past what the first cached
-# (#186 PL-17). $3 bounds the listing in seconds (0: no bound). Prints
+# counted over the files not yet cached and begun from the cursor the last
+# cut walk left (scan-cursor, $6), so the cap bounds one run's work and never
+# the library: a second run walks past what the first cached (#186 PL-17)
+# and past what the first could not cache (#307 PL-059). $3 bounds the
+# listing in seconds (0: no bound). Prints
 # "found=<seen> new=<jobs> cached=<seen-jobs> indexed=<I> hashing=<H>
 # truncated=<0|1>" on stdout.
 list_jobs() {
     local BUDGET="${3:-0}"
     local -a BOUND=()
     [ "${BUDGET}" -gt 0 ] && BOUND=(timeout "${BUDGET}")
-    RA_SCAN_USER="$(setting "${USER_KEY}")" "${BOUND[@]}" python3 - "$1" "${2:-all}" "${ROMS_ROOT}" "${ES_DIR}" "${SCAN_SYSTEMS}" <<'PY'
+    RA_SCAN_USER="$(setting "${USER_KEY}")" "${BOUND[@]}" python3 - "$1" "${2:-all}" "${ROMS_ROOT}" "${ES_DIR}" "${SCAN_SYSTEMS}" "${SCAN_CURSOR}" <<'PY'
 import os, sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -1025,6 +1037,7 @@ from raofflineproxy.storage import Storage
 
 out, mode, roms_root, es_dir = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3]), Path(sys.argv[4])
 walk_systems = sys.argv[5].split()
+cursor_file = Path(sys.argv[6]) if len(sys.argv) > 6 and sys.argv[6] else None
 user = cache_keys.normalize_user(os.environ.get("RA_SCAN_USER", ""))
 SKIP_DIRS = {
     "images", "videos", "manuals", "media", "downloaded_images", "downloaded_videos",
@@ -1181,10 +1194,46 @@ for name, folder in es_systems():
         indexed_jobs[path] = (game_id, hash_value)
 storage.close()
 
+def read_cursor():
+    try:
+        return cursor_file.read_text(encoding="utf-8", errors="surrogateescape").rstrip("\n") if cursor_file else ""
+    except OSError:
+        return ""
+
+
+def write_cursor(value):
+    """The cursor, whole or not at all; gone when the walk came round."""
+    if cursor_file is None:
+        return
+    try:
+        if value:
+            tmp = cursor_file.with_name(cursor_file.name + ".tmp")
+            tmp.write_text(value + "\n", encoding="utf-8", errors="surrogateescape")
+            os.replace(tmp, cursor_file)
+        else:
+            cursor_file.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+# The walk is a circle from a cursor (#307 PL-059). Cached files are passed
+# over before the cap counts (#186 PL-17), but a file that never caches -- a
+# ROM RetroAchievements does not know is skipped, and stays uncached --
+# counted every run, so the first MAX_SCAN_ENTRIES such files held the front
+# of the walk for ever and the files past them were never reached. So a walk
+# the cap cuts leaves the path of the last file it took in scan-cursor, and
+# the next walk takes the files after it first, then comes round to the
+# start. A walk that fits under the cap removes the cursor; a cursor that
+# names a file the walk no longer meets (deleted, or its folder now indexed)
+# starts the circle from the top.
 walked = []
 walked_cached = 0
 truncated = 0
 if mode == "all":
+    cursor = read_cursor()
+    passed = not cursor
+    before, after = [], []   # the candidates up to the cursor, and past it
+    full = False
     for name in walk_systems:
         root = roms_root / name
         if not root.is_dir():
@@ -1201,28 +1250,36 @@ if mode == "all":
                 if fn.startswith("."):
                     continue
                 path = Path(dirpath) / fn
-                if not is_supported_browser_file(path):
+                at_cursor = not passed and str(path) == cursor
+                # Before the cursor only the first cap's worth is ever
+                # taken (the circle's tail), so past that the walk only
+                # looks for the cursor.
+                if not passed and len(before) > MAX_SCAN_ENTRIES:
+                    passed = passed or at_cursor
                     continue
-                if has_sheet and fn.lower().endswith(".bin"):
-                    continue
-                try:
-                    if not path.is_file() or path.stat().st_size == 0:
-                        continue
-                except OSError:
-                    continue
-                # Cached files are passed over here, before the cap counts,
-                # so every run's cap is spent on files not yet done.
-                if normalize_cached_rom_path(path) in cached_paths:
+                take = False
+                if is_supported_browser_file(path) and not (has_sheet and fn.lower().endswith(".bin")):
+                    try:
+                        take = path.is_file() and path.stat().st_size > 0
+                    except OSError:
+                        take = False
+                if take and normalize_cached_rom_path(path) in cached_paths:
                     walked_cached += 1
-                    continue
-                walked.append(path)
-                if len(walked) >= MAX_SCAN_ENTRIES:
-                    truncated = 1
+                    take = False
+                if take:
+                    (after if passed else before).append(path)
+                passed = passed or at_cursor
+                if len(after) > MAX_SCAN_ENTRIES:
+                    full = True
                     break
-            if truncated:
+            if full:
                 break
-        if truncated:
+        if full:
             break
+    candidates = after + before
+    walked = candidates[:MAX_SCAN_ENTRIES]
+    truncated = 1 if len(candidates) > MAX_SCAN_ENTRIES else 0
+    write_cursor(str(walked[-1]) if truncated and walked else "")
 
 hash_jobs = walked
 
@@ -1504,12 +1561,13 @@ do_scan() {
         write_stamp 1 scan 0 0 "$(count_ready)" 0 0 0 LIBRARY_UNREADABLE
         exit 1
     fi
-    local FOUND NEW
+    local FOUND NEW TRUNC
     FOUND="$(count_of "${COUNTS}" found)"
     NEW="$(count_of "${COUNTS}" new)"
+    TRUNC="$(count_of "${COUNTS}" truncated)"
     slog "scan start: ${COUNTS}"
-    if [ "$(count_of "${COUNTS}" truncated)" -eq 1 ]; then
-        slog "scan: the walk stopped at the client's cap of files per run; the games past it are the next run's"
+    if [ "${TRUNC}" -eq 1 ]; then
+        slog "scan: the walk stopped at the client's cap of files per run; the next scan walks on from ${SCAN_CURSOR}"
     fi
 
     local READY
@@ -1554,9 +1612,13 @@ do_scan() {
     [ "${R_CACHED}" -gt 0 ] && run_image_pass scan "${IMAGE_PASS_SECONDS}" || true
 
     [ "${R_LIMIT}" -eq 1 ] && tell "note LIMIT_REACHED"
+    # Not every folder was walked: the page says so (GuiOfflineScan's
+    # NOT EVERY FOLDER WAS LOOKED AT. SCAN AGAIN TO CONTINUE.) and the stamp
+    # carries it -- the log alone said it before (#307 PL-059).
+    [ "${TRUNC}" -eq 1 ] && tell "note TRUNCATED"
     [ "${R_ERRORS}" -gt 0 ] && tell "errors ${R_ERRORS}"
     [ -n "${WHY}" ] && tell "why ${WHY}"
-    write_stamp "${RC}" scan "${R_CACHED}" "${R_SKIPPED}" "${READY}" "${R_LIMIT}" "${R_INDEXED}" "${R_ERRORS}" "${WHY}"
+    write_stamp "${RC}" scan "${R_CACHED}" "${R_SKIPPED}" "${READY}" "${R_LIMIT}" "${R_INDEXED}" "${R_ERRORS}" "${WHY}" "" "${TRUNC}"
     slog "scan done: rc=${RC} cached=${R_CACHED} indexed=${R_INDEXED} skipped=${R_SKIPPED} errors=${R_ERRORS} ready=${READY} limit=${R_LIMIT}${WHY:+ why=${WHY}}"
     say "scan: cached ${R_CACHED} (${R_INDEXED} from the index), skipped ${R_SKIPPED}, ${READY} ready${WHY:+; ${WHY}}"
     tell "done ${R_CACHED}|${R_SKIPPED}|${READY}|${R_LIMIT}"
