@@ -240,13 +240,17 @@ check_clean() { # <rclone check's exit status> <its output>
 # save another device wrote into it between the check and the purge was
 # lost; now it is not on the list, stays where it was written, and is
 # still there for that device's own migration.
+#
+# 0 when the tier moved; 1 when its copy or check failed, the old folder
+# whole; 2 when its pointer could not be written, which set_pointer has
+# said, the old folder whole too.
 relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
     local src="$1" dst="$2" what="$3" key="$4" out list
     shift 4
     local -a filt=("$@")
     list_or_stop "${src}" -R --files-only "${filt[@]}"
     if [ -z "${LISTING}" ]; then
-        set_pointer "${key}" "${dst#*:}"
+        set_pointer "${key}" "${dst#*:}" || return 2
         return 0
     fi
     list=$(mktemp /tmp/cloud_migrate_layout.XXXXXX) || { say "Couldn't make a working file on this device; nothing was moved."; return 1; }
@@ -266,7 +270,14 @@ relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
         rm -f "${list}"
         return 1
     fi
-    set_pointer "${key}" "${dst#*:}"
+    # The source goes only once the pointer has landed (G-A-02): a pointer
+    # that could not be written leaves the device on the old folder, so the
+    # old folder must still hold everything -- the next run finds the copy
+    # already there and resumes.
+    if ! set_pointer "${key}" "${dst#*:}"; then
+        rm -f "${list}"
+        return 2
+    fi
     say "Removing the old ${what} folder..."
     { rclone delete "${src}" --files-from-raw "${list}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
         && rclone rmdirs "${src}" "${RCLONE_NET_OPTS_ARRAY[@]}"; } >/dev/null 2>&1 \
@@ -276,12 +287,24 @@ relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
 }
 
 # Point a key of the conf at a tier's new folder: the line rewritten in
-# place, or added when the conf has none.
+# place, or added when the conf has none -- and then read back. A write
+# that did not land (a full or read-only /storage, a path sed's
+# replacement would mangle) is a failure the caller must stop on, before
+# anything is removed (the audit of the fixes to #307, G-A-02): its result
+# used to go unread, and relocate deleted the old folder after it either
+# way, leaving the device pointed at a folder the run had just emptied.
+# 0 when the conf now says <remote path>, 1 when it does not.
 set_pointer() { # <key> <remote path>
     if grep -q "^$1=" "${SYNC_CONF}" 2>/dev/null; then
-        sed -i "s|^$1=.*|$1=\"$2\"|" "${SYNC_CONF}"
+        sed -i "s|^$1=.*|$1=\"$2\"|" "${SYNC_CONF}" 2>/dev/null
     else
-        printf '%s="%s"\n' "$1" "$2" >> "${SYNC_CONF}"
+        printf '%s="%s"\n' "$1" "$2" >> "${SYNC_CONF}" 2>/dev/null
+    fi
+    if [ "$(conf_value "$1")" != "$2" ]; then
+        say "Couldn't save the new folder in this device's settings. It still uses the old one, and nothing was removed from it."
+        [ "${MODE}" = "--apply" ] && echo ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE SAVED"
+        logger -t cloud_migrate_layout "could not write $1 to ${SYNC_CONF}; stopped before removing anything" 2>/dev/null
+        return 1
     fi
     say "Now using ${2} for ${1}."
 }
@@ -337,9 +360,14 @@ migrate_content() {
             say "Nothing has been changed. Run with --apply to do it."
             return 0
         fi
-        if ! relocate "${remote}${content}" "${remote}${NEW_CONTENT}" "content" CONTENT_REMOTE; then
-            say "The config is unchanged."
-            echo ">>> why SOME FILES DIDN'T FINISH"
+        local rrc=0
+        relocate "${remote}${content}" "${remote}${NEW_CONTENT}" "content" CONTENT_REMOTE || rrc=$?
+        if [ "${rrc}" -ne 0 ]; then
+            # 2 is a pointer that could not be written, which has said so.
+            if [ "${rrc}" -ne 2 ]; then
+                say "The config is unchanged."
+                echo ">>> why SOME FILES DIDN'T FINISH"
+            fi
             return 5
         fi
         say "Content is now at ${remote}${NEW_CONTENT}."
@@ -352,7 +380,7 @@ migrate_content() {
         fi
     fi
 
-    set_pointer CONTENT_REMOTE "${NEW_CONTENT}"
+    set_pointer CONTENT_REMOTE "${NEW_CONTENT}" || return 5
     say "Content is now at ${remote}${NEW_CONTENT}."
     return 0
 }
@@ -523,7 +551,7 @@ main() {
                 return 5
             fi
         else
-            set_pointer SETTINGS_REMOTE "${NEW_BACKUPS}"
+            set_pointer SETTINGS_REMOTE "${NEW_BACKUPS}" || return 5
         fi
     fi
 
@@ -533,7 +561,7 @@ main() {
             relocate "${remote}${saves_src}" "${remote}${NEW_SAVES}" "saves" SAVES_REMOTE "${SAVES_EXCLUDES[@]}" || return 5
             moved_saves=1
         else
-            set_pointer SAVES_REMOTE "${NEW_SAVES}"
+            set_pointer SAVES_REMOTE "${NEW_SAVES}" || return 5
         fi
     fi
 

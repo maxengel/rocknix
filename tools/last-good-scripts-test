@@ -4079,4 +4079,25 @@ done
 sa_run "${MG}" cloud_migrate_layout --apply
 [ "${RC}" -eq 4 ] && [ "$(cat "${MG}/cloud/ROCKNIX/Saves/savefiles/gb/S3.srm" 2>/dev/null)" = "another library 3" ] && [ -f "${MG}/cloud/GAMES/savefiles/gb/S3.srm" ]; check $? "G-A-01: a new folder holding ten other versions of the same names is not a copy to resume into: refused, both untouched (rc ${RC})" "rc ${RC}; new folder's S3.srm reads '$(cat "${MG}/cloud/ROCKNIX/Saves/savefiles/gb/S3.srm" 2>/dev/null)'; out: $(sa_tail "${MG}") -- resumable() read '10 differences found' as none"
 
+# A32. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-02,
+#      High): the old folder goes only once the pointer has landed.
+#      set_pointer's write was not checked and relocate deleted the source
+#      after it whatever it did, so a device whose settings folder could
+#      not be written kept pointing at a folder the run then emptied --
+#      the state PL-026 exists to prevent. The settings folder read-only
+#      (sed -i cannot make its temporary file) stands in for a full or
+#      read-only /storage.
+echo "    A32. G-A-02 (gpt): a pointer that could not be written stops the run before the delete"
+mg_seed
+chmod 555 "${MG}/storage/.config"
+sa_run "${MG}" cloud_migrate_layout --apply
+chmod 755 "${MG}/storage/.config"
+if [ "$(id -u)" -eq 0 ]; then
+    check 1 "-" "G-A-02: run as root, a read-only folder does not stop the write, so this case cannot construct its failure -- not a pass"
+else
+    [ -f "${MG}/cloud/GAMES/backup/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ "$(mg_ptr SETTINGS_REMOTE)" = "/GAMES/backup" ] && [ "${RC}" -ne 0 ] \
+        && [ -f "${MG}/cloud/GAMES/savefiles/gb/A.srm" ]; check $? "G-A-02: with the settings unwritable the backups stay in the old folder, the pointer where it was, nothing else moved (rc ${RC})" "rc ${RC}; SETTINGS_REMOTE '$(mg_ptr SETTINGS_REMOTE)'; cloud: $(mg_tree); out: $(sa_tail "${MG}") -- the source was deleted after a pointer write that failed"
+    grep -qx '>>> why YOUR CLOUD SYNC SETTINGS COULDN.T BE SAVED' "${MG}/out"; check $? "G-A-02: and the run says why, in the player's words" "no why line; out: $(sa_tail "${MG}" 6)"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
