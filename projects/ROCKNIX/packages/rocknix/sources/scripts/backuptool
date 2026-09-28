@@ -455,18 +455,54 @@ credential_lines() {
 }
 
 # Is this archive whole? tar lists every member or fails. A zip is read
-# through, every member's bytes to nowhere (unzip -p), which checks each
-# member's CRC: busybox unzip has no -t, and the listing that stood in for it
-# reads only the central directory, so a zip whose directory was intact and
-# whose payload was not passed, and the restore found out part-way through
-# the live tree (#308, the gpt seat's F-BR-14; the -t that ran first could
-# not be told apart from "no -t here" either). Until 2026-09-10 the check was
-# `unzip -t` alone, which busybox answers with its usage text and exit 1, so
-# every legacy .zip on a device read as damaged.
+# through, every member's bytes to nowhere (unzip -p): the listing reads only
+# the central directory, so a zip whose directory was intact and whose
+# payload was not passed, and the restore found out part-way through the
+# live tree (#308, the gpt seat's F-BR-14). Until 2026-09-10 the check was
+# `unzip -t` alone, which the busybox of the time answered with its usage
+# text and exit 1, so every legacy .zip on a device read as damaged.
+#
+# unzip -p checks a member's CRC only where it inflates one. A STORED member
+# -- Info-ZIP stores a file deflate cannot shrink: a PNG, a tiny config --
+# busybox copies byte for byte and never checks: measured on the image's
+# busybox 1.36.1, a stored member with a flipped byte passes unzip -t and
+# unzip -p with 0, and the restore wrote the damaged bytes as settings,
+# while a damaged deflated member fails both (#307, the audit of the fix
+# round, PL-022; blindspots 8 and 43). So each stored member is read on its
+# own and its CRC-32 computed with busybox's crc32 -- zip's own CRC, the same
+# polynomial -- and compared with the one unzip -lv lists. Stored members
+# only: the deflated ones are checked by the read above, and a member at a
+# time costs a few milliseconds each on a handheld's core.
+zip_stored_ok() { # <zip>: 0 when every stored member's bytes match its listed CRC
+    local L CRC NAME GOT RC=0
+    L=$(tmp_file) || return 1
+    if ! ( set -o pipefail
+           unzip -lv "${1}" 2>/dev/null | awk '
+               $2 == "Stored" && match($0, /[0-9][0-9]:[0-9][0-9] [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]  /) {
+                   print substr($0, RSTART + 6, 8) "\t" substr($0, RSTART + RLENGTH)
+               }' ) 2>/dev/null > "${L}"
+    then
+        rm -f "${L}"
+        return 1
+    fi
+    while IFS=$'\t' read -r CRC NAME
+    do
+        case "${NAME}" in ''|*/) continue ;; esac
+        if ! GOT=$( set -o pipefail; unzip -p "${1}" "$(glob_literal "${NAME}")" 2>/dev/null | crc32 2>/dev/null ) \
+           || [ "${GOT%% *}" != "${CRC,,}" ]
+        then
+            logger -t backuptool "${NAME} in $(basename "${1}") does not match its CRC (${CRC} listed, ${GOT%% *} read)"
+            RC=1
+            break
+        fi
+    done < "${L}"
+    rm -f "${L}"
+    return ${RC}
+}
 archive_ok() {
     case "${1}" in
         *.tar.gz) tar -tzf "${1}" >/dev/null 2>&1 ;;
-        *)        unzip -l "${1}" >/dev/null 2>&1 && unzip -p "${1}" >/dev/null 2>&1 ;;
+        *)        unzip -l "${1}" >/dev/null 2>&1 && unzip -p "${1}" >/dev/null 2>&1 && zip_stored_ok "${1}" ;;
     esac
 }
 
@@ -1358,6 +1394,14 @@ case "${VERB}" in
             *.tar.gz) ARCHIVE_KIND="tar" ;;
             *)        ARCHIVE_KIND="zip" ;;
         esac
+        # A zip's stored members are checked with busybox's crc32 (see
+        # zip_stored_ok); a build without it cannot tell a damaged one from
+        # a whole one, and says so rather than guessing.
+        if [ "${ARCHIVE_KIND}" = "zip" ] && ! command -v crc32 >/dev/null 2>&1
+        then
+            why "THIS DEVICE CAN'T RESTORE SETTINGS"
+            fail "THIS DEVICE CAN'T RESTORE SETTINGS. SOMETHING IT NEEDS IS MISSING FROM THIS BUILD." "'crc32' is not on PATH, so a zip's stored members cannot be checked"
+        fi
 
         note "CHECKING YOUR SETTINGS BACKUP..." "${BACKUPFILE}"
         if ! archive_ok "${BACKUPFILE}"

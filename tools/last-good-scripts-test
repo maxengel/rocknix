@@ -911,7 +911,9 @@ UB=(); for d in /usr/*/; do d="${d%/}"; UB+=(--ro-bind "${d}" "${d}"); done
 # lines resolve inside the sandbox.
 mkdir -p "${K}/kshim"; KBB=()
 if [ -n "${BB}" ]; then
-    for a in tar unzip; do printf '#!/bin/sh\n[ -x %s ] && exec %s %s "$@"\nexec %s %s "$@"\n' "${BB}" "${BB}" "${a}" "${BB_HOST}" "${a}" > "${K}/kshim/${a}"; chmod +x "${K}/kshim/${a}"; done
+    # crc32: the zip check reads a stored member's CRC with it (the audit of
+    # the fix round, PL-022).
+    for a in tar unzip crc32; do printf '#!/bin/sh\n[ -x %s ] && exec %s %s "$@"\nexec %s %s "$@"\n' "${BB}" "${BB}" "${a}" "${BB_HOST}" "${a}" > "${K}/kshim/${a}"; chmod +x "${K}/kshim/${a}"; done
     KBB=(--ro-bind "${BB_HOST}" "${BB}")
 fi
 printf 'export PATH=/kshim:/shim:/usr/bin:/bin\nexport OS_NAME=ROCKNIX\n' > "${K}/profile"
@@ -7219,7 +7221,7 @@ done
 # names its item (#307 PL-NNN, or #308 <packet> <seat> <id>) and was seen to
 # FAIL against the script before its fix. Which tools each part runs under,
 # when the image's busybox is found (BB): backuptool (y1) whole under bwrap
-# with the image's tar, unzip, find, readlink, mktemp, flock, stat, mv, cp,
+# with the image's tar, unzip, crc32, find, readlink, mktemp, flock, stat, mv, cp,
 # ln, touch, chmod, sed, awk, head, tail, wc, cut, tr, cmp, dirname,
 # basename, mkdir, rm and date; the evidence collector and the core keeper
 # (y4) whole under bwrap with the image's applets for every one they call,
@@ -7245,7 +7247,7 @@ printf '#!/bin/sh\necho "sleep $*" >> /storage/.p7-sleeps\nexit 0\n' > "${P7}/sh
 chmod +x "${P7}/shim"/*
 P7BB=()
 if [ -n "${BB}" ]; then
-    for a in tar unzip find readlink mktemp flock stat mv cp ln touch chmod sed awk head tail wc cut tr cmp dirname basename mkdir rm date; do
+    for a in tar unzip crc32 find readlink mktemp flock stat mv cp ln touch chmod sed awk head tail wc cut tr cmp dirname basename mkdir rm date; do
         printf '#!/bin/sh\n[ -x %s ] && exec %s %s "$@"\nexec %s %s "$@"\n' "${BB}" "${BB}" "${a}" "${BB_HOST}" "${a}" > "${P7}/bb/${a}"; chmod +x "${P7}/bb/${a}"
     done
     P7BB=(--ro-bind "${BB_HOST}" "${BB}")
@@ -10251,7 +10253,7 @@ printf '%s' "${P7NOTE}" | grep '^dump' | grep -q 'NOT KEPT' && [ ! -e "${P7C}/st
 #     BASE_REF=f3d19dc8fb tools/last-good-scripts-test --old
 #
 # The tools each part runs under are y1-y4's: backuptool whole under bwrap
-# with the image's applets (crc32 now among them, for PL-022), chksysconfig's
+# with the image's applets (crc32 among them since PL-022), chksysconfig's
 # functions and the settings writer lifted into a fresh bash with the image's
 # sed, mv, cp, tr, head, wc, cut and awk first on PATH (and the image's ln for
 # the lock, G2-B-03), wifictl whole against the nmcli y2 describes.
@@ -10259,11 +10261,6 @@ echo "  z. the audit of the fix round, stream B: the conf read as text, a flag's
 P7Z="${P7}/z"; mkdir -p "${P7Z}"
 p7zclear() { rm -f "${P7}/shim/tar" "${P7}/shim/unzip" "${P7}/shim/mktemp" "${P7}/shim/mv" "${P7}/shim/date"; P7X=(); }
 p7zclear
-# The busybox crc32 applet the zip check reads (PL-022), the image's, beside
-# the others y1 gave backuptool.
-if [ -n "${BB}" ]; then
-    printf '#!/bin/sh\n[ -x %s ] && exec %s %s "$@"\nexec %s %s "$@"\n' "${BB}" "${BB}" crc32 "${BB_HOST}" crc32 > "${P7}/bb/crc32"; chmod +x "${P7}/bb/crc32"
-fi
 p7zscreen() { grep -vE '^logger |^>>> ' "${P7OUT}"; }
 
 # == PL-003: cloud_sync.conf is read as text, and nothing in it runs
@@ -10454,6 +10451,55 @@ echo ARCHIVE-B > "${P7S}/roms/backup/ARCHIVED_ROCKNIX_BACKUP-20-01-01_00_00_00.z
 p7bt backup
 p7ue="${P7S}/roms/backup/archive/upstream-era"
 [ "${RC}" -eq 0 ] && [ -z "$(ls "${P7S}/roms/backup"/ARCHIVED_*.zip 2>/dev/null)" ] && [ "$(ls "${p7ue}" | wc -l)" -eq 2 ] && [ "$(cat "${p7ue}"/*.zip | sort | tr '\n' ' ')" = "ARCHIVE-A ARCHIVE-B " ] && [ "$(cat "${p7ue}/ARCHIVED_ROCKNIX_BACKUP-20-01-01_00_00_00.zip")" = "ARCHIVE-A" ]; check $? "audit of the fix round PL-017: a root ARCHIVED_*.zip whose name archive/upstream-era/ already holds is kept beside it under a dated name, and the one there is untouched" "PL-017: rc ${RC}; upstream-era: $(ls "${p7ue}" 2>/dev/null | tr '\n' ' '); contents: $(cat "${p7ue}"/*.zip 2>/dev/null | tr '\n' ' '); root: $(ls "${P7S}/roms/backup" | tr '\n' ' ')"
+
+# == PL-022: a zip's stored members are checked against the CRC the zip lists
+# A zip made by python: STORED and DEFLATED members, and a byte of one
+# member's payload flipped where asked -- the central directory untouched.
+p7zipm() { # <archive name under roms/backup> <damage: name or -> <name|method|content>...
+    local n="$1" dmg="$2"; shift 2
+    python3 - "${P7S}/roms/backup/${n}" "${dmg}" "$@" <<'EOS'
+import sys, zipfile, struct
+out, dmg, specs = sys.argv[1], sys.argv[2], sys.argv[3:]
+z = zipfile.ZipFile(out, "w")
+for s in specs:
+    name, meth, data = s.split("|", 2)
+    z.writestr(name, data.encode(), compress_type=zipfile.ZIP_STORED if meth == "stored" else zipfile.ZIP_DEFLATED)
+z.close()
+if dmg != "-":
+    b = bytearray(open(out, "rb").read())
+    zi = zipfile.ZipFile(out).getinfo(dmg)
+    o = zi.header_offset; nl, el = struct.unpack("<HH", b[o + 26:o + 30]); start = o + 30 + nl + el
+    b[start + 2] ^= 0x20
+    open(out, "wb").write(b)
+EOS
+}
+P7ZLONG=$(printf 'retroarch_setting_%s = "value"\n' $(seq 1 60) | tr -d '\n')
+if [ -n "${BB}" ]; then
+    p7reset '  /storage/.config/test/*'
+    p7zipm m.zip storage/.config/test/s.cfg "storage/.config/test/s.cfg|stored|STORED-ORIGINAL-CONTENT" "storage/.config/test/d.cfg|deflated|${P7ZLONG}"
+    "${BB_HOST}" unzip -t "${P7S}/roms/backup/m.zip" >/dev/null 2>&1; p7t=$?
+    "${BB_HOST}" unzip -p "${P7S}/roms/backup/m.zip" >/dev/null 2>&1; p7p=$?
+    p7zipm m2.zip storage/.config/test/d.cfg "storage/.config/test/s.cfg|stored|STORED-ORIGINAL-CONTENT" "storage/.config/test/d.cfg|deflated|${P7ZLONG}"
+    "${BB_HOST}" unzip -p "${P7S}/roms/backup/m2.zip" >/dev/null 2>&1; p7p2=$?
+    [ "${p7t}" -eq 0 ] && [ "${p7p}" -eq 0 ] && [ "${p7p2}" -ne 0 ]; check $? "audit of the fix round PL-022 (the measurement, BS-3): the image's busybox unzip passes a damaged STORED member (-t rc ${p7t}, -p rc ${p7p}) and fails a damaged DEFLATED one (-p rc ${p7p2})" "PL-022 measurement: -t ${p7t}, -p ${p7p} on the stored damage; -p ${p7p2} on the deflated -- busybox's behaviour is not what this case was written against"
+    p7reset '  /storage/.config/test/*'
+    echo LIVE > "${P7S}/.config/test/f1"
+    p7zipm 20260101000000-ROCKNIX_BACKUP.zip storage/.config/test/f1 "storage/.config/test/f1|stored|STORED-ORIGINAL-CONTENT" "storage/.config/test/d.cfg|deflated|${P7ZLONG}"
+    p7bt restore --no-restart
+    [ "${RC}" -ne 0 ] && [ "$(p7why)" = "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED" ] && [ "$(cat "${P7S}/.config/test/f1")" = "LIVE" ] && [ ! -e "${P7S}/.config/test/d.cfg" ] && [ -z "$(ls "${P7S}/roms/backup/archive"/*PRE_RESTORE* 2>/dev/null)" ]; check $? "audit of the fix round PL-022: a legacy zip whose STORED member's bytes do not match its listed CRC is refused as damaged before anything is written" "PL-022 (stored, damaged): rc ${RC}; why '$(p7why)'; f1 '$(head -c 30 "${P7S}/.config/test/f1")'; d.cfg $([ -e "${P7S}/.config/test/d.cfg" ] && echo written || echo absent) -- the corrupted bytes were restored as settings"
+    p7reset '  /storage/.config/test/*'
+    echo LIVE > "${P7S}/.config/test/f1"
+    p7zipm 20260101000000-ROCKNIX_BACKUP.zip storage/.config/test/d.cfg "storage/.config/test/f1|stored|STORED-ORIGINAL-CONTENT" "storage/.config/test/d.cfg|deflated|${P7ZLONG}"
+    p7bt restore --no-restart
+    [ "${RC}" -ne 0 ] && [ "$(p7why)" = "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED" ] && [ "$(cat "${P7S}/.config/test/f1")" = "LIVE" ]; check $? "audit of the fix round PL-022: a legacy zip with a damaged DEFLATED member is refused as damaged" "PL-022 (deflated, damaged): rc ${RC}; why '$(p7why)'; f1 '$(head -c 30 "${P7S}/.config/test/f1")'"
+    p7reset '  /storage/.config/test/*'
+    echo LIVE > "${P7S}/.config/test/f1"
+    p7zipm 20260101000000-ROCKNIX_BACKUP.zip - "storage/.config/test/f1|stored|STORED-ORIGINAL-CONTENT" "storage/.config/test/my [x] *file?.cfg|stored|BRACKETS" "storage/.config/test/d.cfg|deflated|${P7ZLONG}" "storage/.config/test/empty.cfg|stored|"
+    p7bt restore --no-restart
+    [ "${RC}" -eq 0 ] && [ "$(cat "${P7S}/.config/test/f1")" = "STORED-ORIGINAL-CONTENT" ] && [ "$(cat "${P7S}/.config/test/my [x] *file?.cfg")" = "BRACKETS" ] && [ "$(cat "${P7S}/.config/test/d.cfg")" = "${P7ZLONG}" ] && [ -e "${P7S}/.config/test/empty.cfg" ]; check $? "audit of the fix round PL-022: a whole legacy zip -- stored and deflated members, a stored name with brackets, a star and a space, an empty stored file -- restores (rc ${RC})" "PL-022 (healthy): rc ${RC}; why '$(p7why)'; f1 '$(head -c 30 "${P7S}/.config/test/f1")'; brackets '$(cat "${P7S}/.config/test/my [x] *file?.cfg" 2>/dev/null)'"
+else
+    skip "audit of the fix round PL-022: the image's busybox is not on this machine, and the case is its behaviour"
+fi
 
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
