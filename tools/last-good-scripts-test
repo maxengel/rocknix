@@ -3117,10 +3117,13 @@ sa_script() { # <fixture> <script...>: the scripts under test into its /repo (wo
     local d="$1" s; shift
     for s in "$@"; do src_of "${RCLONE_REL}/${s}" "${d}/repo/${s}"; chmod +x "${d}/repo/${s}"; done
 }
+# SA_EXTRA: more bwrap arguments for the next runs, after /usr -- a file
+# the image ships under /usr/bin, overlaid for a case (A47); empty otherwise.
+SA_EXTRA=()
 sa_run() { # <fixture> <script> [args...]: the script whole, in the sandbox; stdout+stderr to ${d}/out, rc in RC, seconds in DT
     local d="$1" s="$2" t0; shift 2
     t0=$(date +%s)
-    RC=$( ( cd "${d}/storage" && setsid -w timeout 180 bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${SA_BB[@]}" \
+    RC=$( ( cd "${d}/storage" && setsid -w timeout 180 bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr ${SA_EXTRA[@]+"${SA_EXTRA[@]}"} "${SA_BB[@]}" \
         --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
         --ro-bind /etc /etc --ro-bind "${SA}/profile" /etc/profile \
         --bind "${d}/storage" /storage --bind "${d}/cloud" /cloud --bind "${d}/ctl" /ctl \
@@ -4496,5 +4499,33 @@ cp "${RX}/storage/.config/cloud_sync-rules.txt" "${NR}/storage/.config/"
 mkdir -p "${NR}/storage/roms/gb"; echo s > "${NR}/storage/roms/gb/A.srm"
 sa_run "${NR}" cloud_backup --yes --saves-only
 [ "${RC}" -eq 0 ] && ! grep -q 'sits inside your saves folder' "${NR}/out" && ! grep -q 'is inside SAVES_REMOTE' "${NR}/log/cloud_sync.log"; check $? "SAVES_REMOTE=\"/\" with SETTINGS_REMOTE=\"/Backups\": no nesting warning on the screen or in the log (rc ${RC})" "rc ${RC}; screen: $(grep 'sits inside' "${NR}/out" | head -1); log: $(grep 'is inside SAVES_REMOTE' "${NR}/log/cloud_sync.log" | head -1 | cut -c1-120)"
+
+# A47. The audit of the fixes (#307 follow-up 2; seats/A-claude.md G-A-14,
+#      Low): after the duplicate cleanup rewrote cloud_sync.conf, both saves
+#      scripts sourced the rewritten file unchecked -- the one `source`
+#      PL-051 left. A cleanup that leaves a file conf_valid refuses puts the
+#      copy from before it back and the run goes on with that (it was
+#      checked); nothing in the rewritten file runs. The cleanup here is a
+#      stand-in overlaid at /usr/bin/cloud_sync_cleanup_duplicates.sh (the
+#      sandbox's /usr is the host's, which has none) that writes such a file.
+echo "    A47. G-A-14 (claude): a conf the duplicate cleanup rewrote is checked before it is sourced"
+DC=$(sa_new ga14c); sa_script "${DC}" cloud_backup cloud_restore cloud_saves_root
+cat > "${DC}/dupclean" <<'EOS'
+#!/bin/sh
+# A cleanup that leaves a command behind.
+printf 'RCLONEOPTS="--progress"; touch /ctl/pwned\n' >> "$1"
+EOS
+chmod +x "${DC}/dupclean"
+cp "${PR}/storage/.config/cloud_sync-rules.txt" "${DC}/storage/.config/"
+sed '/^LOG_LEVEL=/d' "${PR}/storage/.config/cloud_sync.conf" > "${DC}/conf0"
+printf 'LOG_LEVEL="INFO"\nLOG_LEVEL="INFO"\n' >> "${DC}/conf0"
+mkdir -p "${DC}/storage/roms/gb"; echo s > "${DC}/storage/roms/gb/A.srm"
+SA_EXTRA=(--overlay-src /usr/bin --tmp-overlay /usr/bin --ro-bind "${DC}/dupclean" /usr/bin/cloud_sync_cleanup_duplicates.sh)
+for dc_s in cloud_backup cloud_restore; do
+    cp "${DC}/conf0" "${DC}/storage/.config/cloud_sync.conf"; rm -f "${DC}/ctl/pwned"
+    sa_run "${DC}" "${dc_s}" --yes --saves-only
+    [ ! -e "${DC}/ctl/pwned" ] && cmp -s "${DC}/conf0" "${DC}/storage/.config/cloud_sync.conf" && [ "${RC}" -eq 0 ]; check $? "${dc_s}: a cleanup that leaves a command in the conf runs nothing; the conf from before it is put back and the run goes on (rc ${RC})" "ran it: $([ -e "${DC}/ctl/pwned" ] && echo YES || echo no); conf $(cmp -s "${DC}/conf0" "${DC}/storage/.config/cloud_sync.conf" && echo restored || echo 'NOT the one from before'); rc ${RC}; out: $(sa_tail "${DC}")"
+done
+SA_EXTRA=()
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

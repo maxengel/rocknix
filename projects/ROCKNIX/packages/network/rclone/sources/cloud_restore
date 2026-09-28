@@ -1212,12 +1212,33 @@ load_config() {
         if [ $cleanup_choice -eq 0 ]; then
             # User selected Yes - cleanup duplicates
             echo -e "\e[34m> Running duplicate cleanup...\e[0m"
-            /usr/bin/cloud_sync_cleanup_duplicates.sh "$conf_file"
-            echo -e "\e[34m> Duplicates cleaned.\e[0m"
-            echo ""
-            pause 2
-            # Reload config after cleanup
-            source /storage/.config/cloud_sync.conf
+            # The cleanup rewrites the file this run has already checked, so
+            # what it leaves is checked again before it is sourced -- the one
+            # `source` PL-051 left unchecked (the audit of the fixes, claude
+            # G-A-14). A cleanup that fails, or leaves a file conf_valid
+            # refuses, has the copy from before it put back, and the run goes
+            # on with that: the last known good state (D-CLOUD-078).
+            local pre_cleanup="${conf_file}.pre-cleanup.$$"
+            if cp -f "${conf_file}" "${pre_cleanup}" 2>/dev/null \
+               && /usr/bin/cloud_sync_cleanup_duplicates.sh "$conf_file" \
+               && conf_valid "${conf_file}"; then
+                rm -f "${pre_cleanup}"
+                echo -e "\e[34m> Duplicates cleaned.\e[0m"
+                echo ""
+                pause 2
+                # Reload config after cleanup
+                source "${conf_file}"
+            elif [ -s "${pre_cleanup}" ] && mv -f "${pre_cleanup}" "${conf_file}"; then
+                log_message "the duplicate cleanup failed or left cloud_sync.conf not whole; the copy from before it is back" "false" "WARN"
+                log_message "Couldn't clean up the duplicate settings, so they were left as they were." "true" "WARN"
+                pause 2
+            else
+                rm -f "${pre_cleanup}"
+                log_message "the duplicate cleanup left cloud_sync.conf not whole and the copy from before it could not be put back" "false" "ERROR"
+                log_message "Your cloud sync settings couldn't be read. Nothing was changed.\nSet up cloud storage again under GAME SETTINGS > MANAGE CLOUD STORAGE." "true" "ERROR"
+                say_why "YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"
+                clean_exit 1
+            fi
         else
             # User selected No or cancelled - skip cleanup
             echo -e "\e[34m> Skipped duplicate cleanup.\e[0m"
