@@ -259,6 +259,9 @@ syncpath_problem() {
             return 1
             ;;
     esac
+    # Player-facing, these call it the cloud folder, which is what the
+    # interface's row and its refusal dialog call it (G-C-03 claude).
+    #
     # The saves folder has to sit inside another folder. Its settings
     # backups and games are kept beside it -- <parent>/Backups and
     # <parent>/Content -- and a saves folder at the top of the cloud has no
@@ -272,7 +275,7 @@ syncpath_problem() {
     case "${path#/}" in
         */*) ;;
         *)
-            echo "Your saves folder needs to sit inside another folder, so your settings backups and games can go beside it."
+            echo "Your cloud folder needs to sit inside another folder, so your settings backups and games can go beside it."
             echo "Try ${path}/Saves."
             return 1
             ;;
@@ -288,7 +291,7 @@ syncpath_problem() {
     [ "${folded}" = "$(printf '%s' "${parent}/Backups" | tr 'A-Z' 'a-z')" ] && sibling="your settings backups"
     [ "${folded}" = "$(printf '%s' "${parent}/Content" | tr 'A-Z' 'a-z')" ] && sibling="your ROMs and BIOS"
     if [ -n "${sibling}" ]; then
-        echo "Your saves folder can't be called ${path##*/}: ${sibling} go in a folder of that name beside it."
+        echo "Your cloud folder can't be called ${path##*/}: ${sibling} go in a folder of that name beside it."
         echo "Try ${parent}/Saves."
         return 1
     fi
@@ -519,7 +522,9 @@ case "$1" in
         if ! conf_set SAVES_REMOTE "${NEWPATH}" \
                       SETTINGS_REMOTE "${SP_PARENT}/Backups" \
                       CONTENT_REMOTE "${SP_PARENT}/Content"; then
-            echo "The cloud sync settings could not be saved, so the folder was not changed."
+            # Under the interface's "THE CLOUD FOLDER WAS NOT CHANGED": this line
+            # says why, and nothing the title already said (G-C-03 claude).
+            echo "Your cloud sync settings couldn't be saved."
             log_message "Sync path NOT changed to ${NEWPATH}: ${SYNC_CONF} could not be written"
             exit 1
         fi

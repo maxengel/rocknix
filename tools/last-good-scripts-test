@@ -3156,7 +3156,7 @@ C1RO=1 c1 --use-content-root
 # own diagnostic -- a line number, the temp file's path, "Read-only file
 # system" -- ahead of the sentence.
 C1RO=1 c1 --set-saves-remote /Other/Saves
-[ "$(cat "${C1}/out")" = "The cloud sync settings could not be saved, so the folder was not changed." ]; check $? "a write that fails prints its one sentence and no shell diagnostic" "read-only /storage printed: '$(tr '\n' '|' < "${C1}/out" | cut -c1-200)' (G-C-07)"
+[ "$(cat "${C1}/out")" = "Your cloud sync settings couldn't be saved." ]; check $? "a write that fails prints its one sentence and no shell diagnostic" "read-only /storage printed: '$(tr '\n' '|' < "${C1}/out" | cut -c1-200)' (G-C-07)"
 # G-C-03 (gpt) and G-C-06 (claude): cloud_setup reads the config as a
 # sourcing script would, minus the running: the LAST assignment of a key
 # wins, and a value may be double-quoted, single-quoted or bare with a
@@ -3175,6 +3175,13 @@ sed -i "s|^CONTENT_REMOTE=.*|CONTENT_REMOTE='/Mine/Content'|" "${CONF1}"
 c1 --content-location
 grep -qx 'CONTENT_REMOTE=/Mine/Content' "${C1}/out"; check $? "--content-location reads the config the same way" "CONTENT_REMOTE='/Mine/Content', --content-location said: $(grep '^CONTENT_REMOTE=' "${C1}/out") (G-C-03)"
 cp "${ROOT}/${RCLONE_REL}/cloud_sync.conf" "${CONF1}"
+# G-C-03 (claude): one name for one folder. The interface's row and its
+# refusal dialog call it the CLOUD FOLDER; the refusals said "saves folder"
+# in two of their four sentences.
+for p1 in /GAMES /Mine/Backups; do
+    c1 --check-syncpath "${p1}"
+    [ "${RC}" -ne 0 ] && grep -q '^Your cloud folder' "${C1}/out" && ! grep -qi 'saves folder' "${C1}/out"; check $? "the refusal of ${p1} calls it the cloud folder, as the interface's row does" "${p1} refused as: $(head -1 "${C1}/out") (G-C-03 claude)"
+done
 # G-C-04 (gpt, the audit of stream C): a config path that is a directory is
 # not a config. conf_set read it as absent and `mv -f` put the new file
 # INSIDE it, then said OK; the artifact is what says whether it worked.
@@ -4028,6 +4035,33 @@ def remote_listremotes_failure_is_not_absence():
            "cloud_remote create refuses when the existing remotes cannot be listed (rc %d)" % rc,
            "rc %r; rclone was asked: %r -- a failed listremotes read as 'no remote called saves' and the create ran (#308 gpt F-RS-23)"
            % (rc, [l for l in argv.splitlines() if l.startswith("config create")][:1]))
+EOPY
+# G-C-03 (claude): the state's error is words, not a port number.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+@test
+def taken_port_error_is_words():
+    """G-C-03 (claude seat): a serve whose port is taken records a reason
+    with no number in it -- the log keeps the port."""
+    d = serve_dir("gc03")
+    for p in procs_with("rclone authorize"):
+        os.kill(p, signal.SIGKILL)
+    blocker = socket.socket()
+    blocker.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    blocker.bind(("0.0.0.0", 8435))
+    blocker.listen()
+    rc, out, err = drive(d, "serve", "dropbox", "--port", "8435", "--timeout", "20")
+    blocker.close()
+    st = state_of(d)
+    try:
+        logged = open(os.path.join(d, "cloud_sync.log")).read()
+    except OSError:
+        logged = ""
+    error = st.get("error") or ""
+    result(rc == 2 and error and not any(c.isdigit() for c in error) and "8435" in logged,
+           "a taken port's recorded reason is words (%s); the log keeps the port" % error,
+           "taken port: rc %r, error %r, port in the log %r (G-C-03 claude)" % (rc, error, "8435" in logged))
+    for p in procs_with("rclone authorize"):
+        os.kill(p, signal.SIGKILL)
 EOPY
 # C3: new test groups go above this line
 cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
