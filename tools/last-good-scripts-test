@@ -3011,4 +3011,135 @@ ckf() { # ckf <raw bytes> <exe> <CORE_MIN_FREE_KB>
 ckf 65536 retroarch $(( XFREE - 512 )); printf '%s' "${NOTE}" | grep '^dump' | grep -q 'NOT KEPT' && printf '%s' "${NOTE}" | grep '^dump' | grep -q 'plus the 1048576 byte cap'; check $? "with free space above the floor but under the floor plus the cap, the dump is refused and the note names both (audit #258, the seat's G-03; the old test admitted it)" "free ${XFREE} KB; note: $(printf '%s' "${NOTE}" | grep '^dump' | cut -c1-140)"
 ckf 65536 retroarch 1024;                printf '%s' "${NOTE}" | grep '^dump' | grep -q 'whole'; check $? "and with a floor the card clears by more than the cap, the same dump is kept" "note: $(printf '%s' "${NOTE}" | grep '^dump' | cut -c1-100)" "note: $(printf '%s' "${NOTE}" | grep '^dump')"
 
+
+# ---- audit #307, stream B ----
+# Stream B's cases for audit #307's punch list and #308's sweep, in the
+# files the stream owns: backuptool, wifictl, 001-functions (the settings
+# writer, the lock, the redaction), factoryreset, chksysconfig,
+# rocknix-evidence, rocknix-corekeep, runemu.sh and automount. Every case
+# names its item (#307 PL-NNN, or #308 <packet> <seat> <id>) and was seen to
+# FAIL against the script before its fix. The scripts run whole under bwrap
+# with the image's busybox standing in for every applet the device has
+# (tar, unzip, find, readlink, mktemp, flock, stat, mv, cp, ln, touch, chmod,
+# sed, awk, head, tail, wc, cut, tr, cmp, dirname, basename, mkdir, rm, date)
+# -- grep, sort and gzip are the device's GNU ones, the host's here.
+echo "  y. audit #307 / #308, stream B: backuptool, wifictl, the settings writer and lock, factoryreset, chksysconfig, rocknix-evidence, rocknix-corekeep, runemu and automount"
+P7="${TMP}/p7"; mkdir -p "${P7}"
+
+# y1. backuptool whole, the device's applets in front of the host's, a fake
+# /usr/config beside the real /usr (bound a subdirectory at a time, as k does).
+P7S="${P7}/storage"; P7U="${P7}/usrconfig"
+mkdir -p "${P7}/repo" "${P7}/shim" "${P7}/bb" "${P7}/flash" "${P7U}/emulationstation" "${P7U}/test" "${P7U}/system/configs"
+src_of "${BT_REL}" "${P7}/repo/backuptool"
+printf 'export PATH=/p7shim:/p7bb:/usr/bin:/bin\nexport OS_NAME=ROCKNIX\n' > "${P7}/profile"
+printf '#!/bin/sh\necho "logger $*" >&2\n' > "${P7}/shim/logger"
+printf '#!/bin/sh\necho "systemctl $*"\n' > "${P7}/shim/systemctl"
+printf '#!/bin/sh\necho "sleep $*" >> /storage/.p7-sleeps\nexit 0\n' > "${P7}/shim/sleep"
+chmod +x "${P7}/shim"/*
+P7BB=()
+if [ -n "${BB}" ]; then
+    for a in tar unzip find readlink mktemp flock stat mv cp ln touch chmod sed awk head tail wc cut tr cmp dirname basename mkdir rm date; do
+        printf '#!/bin/sh\n[ -x %s ] && exec %s %s "$@"\nexec %s %s "$@"\n' "${BB}" "${BB}" "${a}" "${BB_HOST}" "${a}" > "${P7}/bb/${a}"; chmod +x "${P7}/bb/${a}"
+    done
+    P7BB=(--ro-bind "${BB_HOST}" "${BB}")
+fi
+P7UB=(); for d in /usr/*/; do d="${d%/}"; [ "${d}" = /usr/config ] && continue; P7UB+=(--ro-bind "${d}" "${d}"); done
+printf '<?xml version="1.0"?>\n<config>\n<string name="ThemeSet" value="art-book-next" />\n</config>\n' > "${P7U}/emulationstation/es_settings.cfg"
+echo "shipped seed" > "${P7U}/test/seed"
+printf 'system.hostname=@DEVICENAME@\n' > "${P7U}/system/configs/system.cfg"
+P7OUT="${P7}/out"; P7X=()
+p7bt() { # <verb...>: backuptool whole; stdout+stderr to $P7OUT, rc in $RC
+    RC=$( ( setsid -w bwrap --die-with-parent --tmpfs / "${P7UB[@]}" --ro-bind "${P7U}" /usr/config "${P7BB[@]}" \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${P7}/profile" /etc/profile \
+        --bind "${P7S}" /storage --ro-bind "${P7}/shim" /p7shim --ro-bind "${P7}/bb" /p7bb --ro-bind "${P7}/repo" /repo \
+        "${P7X[@]}" --dev /dev --proc /proc --tmpfs /tmp --chdir /storage/.p7cwd \
+        bash /repo/backuptool "$@" > "${P7OUT}" 2>&1; echo $? ) 2>/dev/null )
+}
+p7reset() { # a device with a system.cfg carrying a Wi-Fi key and the given backuptool.conf body (none when empty)
+    chmod -R u+rwX "${P7S}" 2>/dev/null; rm -rf "${P7S}"
+    mkdir -p "${P7S}/.config/system/configs" "${P7S}/.config/test" "${P7S}/.config/emulationstation" "${P7S}/roms/backup" "${P7S}/.p7cwd"
+    printf 'system.hostname=X\nwifi.key=SECRET\n' > "${P7S}/.config/system/configs/system.cfg"
+    echo file1 > "${P7S}/.config/test/f1"
+    [ -n "${1:-}" ] && printf 'LOCATIONS=(\n%s\n)\n' "$1" > "${P7S}/.config/backuptool.conf"
+    P7X=()
+    return 0
+}
+p7arc() { ls "${P7S}/roms/backup"/*.tar.gz 2>/dev/null; }
+p7list() { tar -tzf "$(p7arc | tail -1)" 2>/dev/null; }
+p7why() { grep '^>>> why ' "${P7OUT}" | tail -1 | cut -c9-; }
+p7screen() { grep -vE '^logger |^>>> ' "${P7OUT}" | tr '\n' '|' | cut -c1-240; }
+
+p7tree() { # <dir> <relpath=content>...: a fixture tree
+    local d="$1" pair p; shift; rm -rf "${d}"; mkdir -p "${d}"
+    for pair in "$@"; do p="${pair%%=*}"; mkdir -p "${d}/$(dirname "${p}")"; printf '%s\n' "${pair#*=}" > "${d}/${p}"; done
+}
+p7tar() { # <archive name under roms/backup> <relpath=content>...: a tar archive made by the host's tar
+    local n="$1"; shift; p7tree "${P7}/tree" "$@"; tar -C "${P7}/tree" -czf "${P7S}/roms/backup/${n}" storage
+}
+p7zip() { # <archive name under roms/backup> <relpath=content>...: a zip archive, the shape before 2026-08-26
+    local n="$1"; shift; p7tree "${P7}/tree" "$@"
+    (cd "${P7}/tree" && python3 -c 'import zipfile, os, sys
+z = zipfile.ZipFile(sys.argv[1], "w", zipfile.ZIP_DEFLATED)
+for r, _, fs in os.walk("storage"):
+    for f in sorted(fs): z.write(os.path.join(r, f))
+z.close()' "${P7S}/roms/backup/${n}")
+}
+# A tar that extracts for real and then fails -- the restore's extraction cut
+# part-way; every other tar call (the snapshot's own extraction included) is
+# the image's. It keeps a copy of the marker as the extraction found it.
+p7failtar() {
+    cat > "${P7}/shim/tar" <<'EOS'
+#!/bin/bash
+if [ "$1" = "-xzf" ] && [[ "$2" != */archive/* ]] && [ "$3" = "-C" ] && [ "$4" = "/" ]; then
+    cp /storage/.config/.restore-in-progress /storage/.p7-marker-seen 2>/dev/null
+    /p7bb/tar "$@"
+    echo "tar: can't open 'storage/.config/test/f1': No space left on device" >&2
+    exit 1
+fi
+exec /p7bb/tar "$@"
+EOS
+    chmod +x "${P7}/shim/tar"
+}
+
+# == PL-004: a location with a space is backed up whole (the array was re-split)
+p7reset '  "/storage/roms/my games/"
+  /storage/.config/emulationstation/collections/*
+  /storage/.config/test/*'
+mkdir -p "${P7S}/roms/my games" "${P7S}/.config/emulationstation/collections"
+echo mine > "${P7S}/roms/my games/save.cfg"; echo col > "${P7S}/.config/emulationstation/collections/custom-Best Games.cfg"
+p7bt backup
+[ "${RC}" -eq 0 ] && p7list | grep -qx 'storage/roms/my games/save.cfg' && p7list | grep -qx 'storage/.config/emulationstation/collections/custom-Best Games.cfg'; check $? "#307 PL-004: a location named 'my games/' and a collection 'custom-Best Games.cfg' are in the archive (rc ${RC})" "#307 PL-004: rc ${RC}; the archive lists: $(p7list | tr '\n' '|' | cut -c1-200) -- a path with a space split into two that do not exist"
+# The standard list's theme folders, found by a command substitution that split
+# on spaces too.
+p7reset ''
+mkdir -p "${P7S}/.config/emulationstation/themes/My Theme"; echo x > "${P7S}/.config/emulationstation/themes/My Theme/theme.xml"
+echo '<inputList />' > "${P7S}/.config/emulationstation/es_input.cfg"
+p7bt backup
+[ "${RC}" -eq 0 ] && p7list | grep -qx 'storage/.config/emulationstation/themes/My Theme/theme.xml'; check $? "#307 PL-004: the standard list's theme folder 'My Theme' is in the archive" "#307 PL-004: rc ${RC}; archive: $(p7list | tr '\n' '|' | cut -c1-200)"
+# A location find cannot read: the collection fails, nothing is written and
+# the last backup stays -- never a short archive announced as a success.
+p7reset '  /storage/.config/test/*
+  /storage/.config/locked'
+mkdir -p "${P7S}/.config/locked/inner"; echo x > "${P7S}/.config/locked/inner/a.cfg"; chmod 000 "${P7S}/.config/locked/inner"
+p7bt backup
+[ "${RC}" -ne 0 ] && [ -z "$(p7arc)" ] && [ "$(p7why)" = "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS" ]; check $? "#307 PL-004: a location find cannot read ends the backup with nothing written (rc ${RC}, why: $(p7why))" "#307 PL-004: rc ${RC}; archives: $(p7arc | wc -l); why: '$(p7why)' -- find's error went to /dev/null and a short archive was announced"
+chmod 755 "${P7S}/.config/locked/inner"
+# The collector that drops a file and says nothing: the staged tree is counted
+# against the list it was given, and the archive against the tree.
+p7reset '  /storage/.config/test/*'
+echo file2 > "${P7S}/.config/test/f2"
+cat > "${P7}/shim/tar" <<'EOS'
+#!/bin/bash
+# The collecting tar (-cf - -T <list>) leaves out f2 and exits 0.
+if [ "$1" = "-cf" ] && [ "$2" = "-" ] && [ "$3" = "-T" ]; then
+    grep -v '/f2$' "$4" > /tmp/p7-short; exec /p7bb/tar -cf - -T /tmp/p7-short
+fi
+exec /p7bb/tar "$@"
+EOS
+chmod +x "${P7}/shim/tar"
+p7bt backup
+[ "${RC}" -ne 0 ] && [ -z "$(p7arc)" ]; check $? "#307 PL-004: a collector that silently leaves a file out is caught by the member count (rc ${RC}, nothing written)" "#307 PL-004: rc ${RC}; archive lists: $(p7list | tr '\n' '|') -- a short archive was written and announced"
+rm -f "${P7}/shim/tar"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

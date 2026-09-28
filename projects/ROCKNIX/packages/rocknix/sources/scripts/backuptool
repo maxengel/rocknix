@@ -161,7 +161,6 @@ DEFAULT=(
     ${ESPATH}/scripts/*
     ${ESPATH}/themesettings/*
     ${ESPATH}/collections/*
-    $(find ${ESPATH}/themes/* -type d -maxdepth 0 -not -path "*es-theme-art-book-next" -not -path "*system-theme" 2>/dev/null)
     # Player-supplied presentation assets. Not ROMs and not BIOS, so content
     # sync does not carry them; not saves either. They were in no tier at all
     # until this line, which is the kind of gap that is only discovered when
@@ -185,20 +184,33 @@ DEFAULT=(
     /storage/.config/modules/*
     /storage/.config/scummvm/games/*
 )
+# The player's own theme folders, not the two the image ships. One line per
+# folder, so a name with a space in it stays one location: this was a command
+# substitution inside the list above, which split "My Theme" into two paths
+# that do not exist (#307 PL-004).
+while IFS= read -r THEME
+do
+    DEFAULT+=("${THEME}")
+done < <(find "${ESPATH}"/themes/* -maxdepth 0 -type d -not -path "*es-theme-art-book-next" -not -path "*system-theme" 2>/dev/null)
 
+# Every copy of a location list is quoted: "${LOCATIONS[@]}", never
+# ${LOCATIONS[@]}. Unquoted, each element was split again on spaces, so a
+# custom collection called "custom-Best Games.cfg" or a folder called
+# "my games" became two paths that do not exist, find's error went to
+# /dev/null, and the backup was announced whole without them (#307 PL-004).
 if [ -e "/storage/.config/backuptool.conf" ]
 then
     if source /storage/.config/backuptool.conf
     then
-        COMPRESSLOCATIONS=(${LOCATIONS[@]})
+        COMPRESSLOCATIONS=("${LOCATIONS[@]}")
     else
         WARN="YOUR OWN BACKUP LIST COULDN'T BE READ, SO THE STANDARD ONE WAS USED."
         echo "${WARN}"
         logger -t backuptool "${WARN} -- /storage/.config/backuptool.conf failed to source"
-        COMPRESSLOCATIONS=(${DEFAULT[@]})
+        COMPRESSLOCATIONS=("${DEFAULT[@]}")
     fi
 else
-    COMPRESSLOCATIONS=(${DEFAULT[@]})
+    COMPRESSLOCATIONS=("${DEFAULT[@]}")
 fi
 
 # Is this archive whole? tar lists every member or fails; busybox unzip has
@@ -295,7 +307,30 @@ write_archive() {
     FILELIST=$(mktemp)
     SECRETLIST=$(mktemp)
     SENDLIST=$(mktemp)
-    find ${COMPRESSLOCATIONS[@]} -type f 2>/dev/null > "${FILELIST}"
+    # One location at a time, each passed whole. A location that is not on
+    # this device is nothing to collect -- the standard list names folders
+    # only some devices have, and a glob that matched nothing stays literal.
+    # A location that is there and cannot be walked (a folder find cannot
+    # read) is a failed collection, not a smaller one: find's status was
+    # never read, its error went to /dev/null, and the archive was written
+    # short and announced as a success (#307 PL-004).
+    local LOC FIND_RC=0
+    for LOC in "${COMPRESSLOCATIONS[@]}"
+    do
+        [ -n "${LOC}" ] || continue
+        [ -e "${LOC}" ] || [ -L "${LOC}" ] || continue
+        find "${LOC}" -type f >> "${FILELIST}" 2>/dev/null || FIND_RC=$?
+    done
+    if [ "${FIND_RC}" -ne 0 ]
+    then
+        logger -t backuptool "a location in the backup list could not be read (find exit ${FIND_RC}); nothing written"
+        rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
+        return 2
+    fi
+    # Overlapping locations (a folder and a file inside it) list a file
+    # twice; the archive holds it once, and the counts below compare like
+    # with like.
+    awk '!seen[$0]++' "${FILELIST}" > "${FILELIST}.unique" && mv -f "${FILELIST}.unique" "${FILELIST}"
 
     # Inside a configured location, what the image ships is not the player's
     # configuration and does not travel (#45). A stock device's archive was
@@ -457,6 +492,9 @@ write_archive() {
         return 2
     fi
 
+    # How many sanitised copies were staged in place of a file held back,
+    # for the member count below.
+    local SANITISED=0
     if [ "${STRIP}" = "1" ]
     then
         # Wifi keys, the root password, and account passwords/tokens must
@@ -466,6 +504,7 @@ write_archive() {
             mkdir -p "${STAGING}/storage/.config/system/configs"
             sed -E '/^[^#]*\.(key|password|token)=/d' "${SYSCFG}" \
                 > "${STAGING}/storage/.config/system/configs/system.cfg"
+            SANITISED=$((SANITISED + 1))
         fi
 
         # es_settings.cfg holds the ScreenScraper account password and, on
@@ -480,6 +519,7 @@ write_archive() {
             mkdir -p "${STAGING}/storage/.config/emulationstation"
             grep -v -e 'name="ScreenScraperPass"' -e 'name="ScreenScraperDevPass"' -e 'name="IGDBSecret"' "${ESCFG}" \
                 > "${STAGING}/storage/.config/emulationstation/es_settings.cfg"
+            SANITISED=$((SANITISED + 1))
         fi
 
         # retroarch.cfg carries its own credentials when RetroArch's own UI
@@ -493,6 +533,7 @@ write_archive() {
             mkdir -p "${STAGING}/storage/.config/retroarch"
             sed -E 's/^([a-z_]*(password|token|stream_key)) = ".*"$/\1 = ""/' "${RACFG}" \
                 > "${STAGING}/storage/.config/retroarch/retroarch.cfg"
+            SANITISED=$((SANITISED + 1))
         fi
 
         # The standalone emulators' settings files carry the token as a
@@ -514,16 +555,39 @@ write_archive() {
             fi
         done
         [ "${BLANKED}" -gt 0 ] && logger -t backuptool "blanked the RetroAchievements token in ${BLANKED} emulator settings file(s) (#169)"
+        SANITISED=$((SANITISED + BLANKED))
     fi
+
+    # The staged tree is counted against what it was handed: every file
+    # the collector was given, plus each sanitised copy. A collector that
+    # leaves a file out and exits 0 is caught here rather than trusted
+    # (#307 PL-004); the archive is then counted against the tree.
+    local SENT STAGED LISTED
+    SENT=$(wc -l < "${SENDLIST}")
+    STAGED=$(find "${STAGING}" -type f | wc -l)
     rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
+    if [ "${STAGED}" -ne $((SENT + SANITISED)) ]
+    then
+        logger -t backuptool "the staged copy holds ${STAGED} file(s) where $((SENT + SANITISED)) were collected; nothing written"
+        rm -rf "${STAGING}"
+        return 2
+    fi
 
     # Member names come out as storage/... exactly as the zip's did, so
     # anything reading the archive sees the same shape. To .partial first;
     # the name every reader looks for is given only to an archive that has
-    # listed back whole.
-    if ! tar -czf "${TARGET}.partial" -C "${STAGING}" storage \
-       || ! tar -tzf "${TARGET}.partial" >/dev/null 2>&1
+    # listed back whole -- every staged file, counted, not only a listing
+    # that ends without an error.
+    if ! tar -czf "${TARGET}.partial" -C "${STAGING}" storage
     then
+        rm -rf "${STAGING}"
+        rm -f "${TARGET}.partial"
+        return 3
+    fi
+    LISTED=$(tar -tzf "${TARGET}.partial" 2>/dev/null | grep -vc '/$')
+    if [ "${LISTED}" -ne "${STAGED}" ]
+    then
+        logger -t backuptool "the archive lists ${LISTED} file(s) of the ${STAGED} staged; nothing written"
         rm -rf "${STAGING}"
         rm -f "${TARGET}.partial"
         return 3
