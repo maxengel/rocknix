@@ -3610,4 +3610,28 @@ PATH="${SA}/nbin:${PATH}" unzip -l "${UZ}/damaged.zip" >/dev/null 2>&1; check $?
 uz "${UZ}/whole.zip"; check $? "a whole zip is whole" "a whole zip was refused"
 ! uz "${UZ}/damaged.zip"; check $? "a zip whose member's bytes are damaged is not whole: the failed -t stands" "the damaged zip passed: unzip -t failed and unzip -l listed it (F-CS-17)"
 
+# A11. PL-012's sibling (coordinator, from stream E2's reading; recorded as
+#      #308 5-cloud-sync-and-saves gpt F-CS-15's script half): BIOS comes
+#      with the ROMs tier whenever the cloud has it, so "BIOS and no system"
+#      is a selection -- the empty-selection refusal is made after BIOS is
+#      added, not before. A placeholder "bios" line an earlier interface
+#      wrote into the selection reads as BIOS wanted, one unit, never a
+#      system folder called bios under ROMs/.
+echo "    A11. PL-012's sibling: --selected with no system picked restores BIOS alone"
+BS=$(sa_new bios); sa_script "${BS}" cloud_content_restore
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/ROCKNIX/Content"\n' > "${BS}/storage/.config/cloud_sync.conf"
+mkdir -p "${BS}/cloud/ROCKNIX/Content/ROMs/gb" "${BS}/cloud/ROCKNIX/Content/BIOS"
+echo a > "${BS}/cloud/ROCKNIX/Content/ROMs/gb/A.gb"; echo bios > "${BS}/cloud/ROCKNIX/Content/BIOS/bios.bin"
+: > "${BS}/storage/.cache/cloud_sync/content-systems"
+sa_run "${BS}" cloud_content_restore --selected
+[ "${RC}" -eq 0 ] && [ -f "${BS}/storage/roms/bios/bios.bin" ] && [ ! -e "${BS}/storage/roms/gb" ]; check $? "a selection with no system and BIOS in the cloud restores BIOS alone, exit 0 (rc ${RC})" "rc ${RC}; bios.bin $([ -f "${BS}/storage/roms/bios/bios.bin" ] && echo here || echo missing); out: $(sa_tail "${BS}") -- the empty selection was refused before BIOS was added"
+rm -rf "${BS}/storage/roms"/*
+printf 'bios\n' > "${BS}/storage/.cache/cloud_sync/content-systems"
+sa_run "${BS}" cloud_content_restore --selected
+[ "${RC}" -eq 0 ] && [ -f "${BS}/storage/roms/bios/bios.bin" ] && [ "$(grep -c '^>>> unit ' "${BS}/out")" -eq 1 ] && ! grep -q 'ROMs/bios' "${BS}/ctl/argv"; check $? "the placeholder 'bios' line an earlier interface wrote reads as BIOS wanted: one unit, from BIOS/, never ROMs/bios (rc ${RC})" "rc ${RC}; units: $(grep '^>>> unit' "${BS}/out" | tr '\n' ' '); argv: $(grep -o 'ROMs/bios[^ ]*' "${BS}/ctl/argv" | head -2 | tr '\n' ' ')"
+rm -rf "${BS}/storage/roms"/* "${BS}/cloud/ROCKNIX/Content/BIOS"
+: > "${BS}/storage/.cache/cloud_sync/content-systems"
+sa_run "${BS}" cloud_content_restore --selected
+[ "${RC}" -ne 0 ] && grep -q "haven't picked any systems" "${BS}/out"; check $? "with no system picked and no BIOS in the cloud there is still nothing to do, and it says so (rc ${RC})" "rc ${RC}; out: $(sa_tail "${BS}")"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

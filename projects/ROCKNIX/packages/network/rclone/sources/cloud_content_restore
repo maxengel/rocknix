@@ -1170,15 +1170,21 @@ case "${1}" in
     ;;
     --selected)
         mapfile -t DIRS < <(selected_systems)
+        # BIOS is not a system and is no longer a pick (maintainer, 2026-09-06):
+        # it comes with the tier whenever the cloud has it. The tier's own
+        # switch already says ROMS AND BIOS; nothing runs without them. A
+        # "bios" line in the selection -- the placeholder the interface wrote
+        # so that BIOS alone was not refused -- is the same thing: remote_for
+        # sends it to BIOS/, one unit, never to a system folder under ROMs/.
+        if [ "${MEDIA_MODE}" != only ] && exists_remote "${ROOT}BIOS" && ! printf '%s\n' "${DIRS[@]}" | grep -qx bios; then
+            DIRS+=("bios")
+        fi
+        # Refused only when there is nothing at all -- after BIOS is added,
+        # not before: "BIOS and no system" is a selection, and was refused
+        # as none (coordinator's row under audit #307 PL-012).
         if [ ${#DIRS[@]} -eq 0 ]; then
             echo "You haven't picked any systems for this device."
             exit 1
-        fi
-        # BIOS is not a system and is no longer a pick (maintainer, 2026-09-06):
-        # it comes with the tier whenever the cloud has it. The tier's own
-        # switch already says ROMS AND BIOS; nothing runs without them.
-        if [ "${MEDIA_MODE}" != only ] && exists_remote "${ROOT}BIOS" && ! printf '%s\n' "${DIRS[@]}" | grep -qx bios; then
-            DIRS+=("bios")
         fi
     ;;
     --list)
