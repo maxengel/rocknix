@@ -350,40 +350,40 @@ Recorded per item as it is resolved: the outcome (resolved / deferred / rejected
 
 | Item | Severity | Outcome | Evidence |
 | --- | --- | --- | --- |
-| PL-001 | High | | |
-| PL-002 | High | | |
-| PL-003 | High | | |
-| PL-004 | High | | |
-| PL-005 | High | | |
-| PL-006 | High | | |
-| PL-007 | High | | |
-| PL-008 | High | | |
+| PL-001 | High | Resolved | `26195fd867` -- the three pointers are cleaned once and every guard compares them as folders; case folded where `rclone backend features` says case-insensitive or when the features cannot be read; a pointer with `..` refused (rc 4); `relocate` refuses a folder onto itself; two related defects in the same commit (a resumed move into a folder inside the old one, a content folder already at its destination moved onto itself). Case A55: rclone v1.75.1's copy of a folder onto itself exits 0 and changes nothing (kept as the first check), the old script with `SAVES_REMOTE="/ROCKNIX/Saves/"` ran copy, check, pointer, delete and rmdirs on the saves and the content and said Done; no leading slash, `//`, `/./` and `..` did the same; 12 FAIL before, 13 PASS after; D-CLOUD-152; already written: a pointer in another spelling is left as written, no tidy offered; a cloud this bug emptied is not recoverable from here; the integrator: the harness behind A's merge (`60cc624709`) failed one check that was the merged tree's, not A's (C's nine-form case found cloud_setup's reader and A's content reader refusing `"/A$HOME/Saves"` with different messages; fixed forward in `04ee5c1a41`, cloud_setup's reader mirrored from the content scripts'), after which the harness read `PASSED` (1215 PASS); at `f3d19dc8fb` in `pl-a` `43 CHECK(S) FAILED`, all A's |
+| PL-002 | High | Resolved | `7a6b8c7bb2` -- any control character but a tab is refused in all five copies (the seat's `EXTRA="x"<CR>#$(cmd)`, a bare value before a CR, comment lines starting with CR, VT or FF -- the line-start test was `[[:space:]]`, a second hole); case A51 with six shapes each proven to run its command when sourced: 9 FAIL before (`cloud_backup: ran it: YES; rc 0`), 14 PASS after; `cloud_backup`, `cloud_restore` gate a `source`, `cloud_sync_helper` gates its merge and `.bak`, the content scripts only parse and refuse the same file; the integrator: the harness behind A's merge (`60cc624709`) failed one check that was the merged tree's, not A's (C's nine-form case found cloud_setup's reader and A's content reader refusing `"/A$HOME/Saves"` with different messages; fixed forward in `04ee5c1a41`, cloud_setup's reader mirrored from the content scripts'), after which the harness read `PASSED` (1215 PASS); at `f3d19dc8fb` in `pl-a` `43 CHECK(S) FAILED`, all A's |
+| PL-003 | High | Resolved | `8d12d90a9b` -- `backuptool` reads `cloud_sync.conf` as text, never sourced: the first assignment in any of the three quote forms, `BACKUPFOLDER` as the fallback; a value with `$`, a backtick, a backslash or a control character is refused as `cloud_backup`'s grammar refuses it; FAIL before: `the conf's command ran: yes`, `first: 0; second: 1`; already written: an existing conf is read where it was sourced; the integrator: the harness behind B's merge (`59c3c1da0e`) carried the same one interaction failure and no other; after `04ee5c1a41` `PASSED` (1215 PASS); at `f3d19dc8fb` in `pl-b` `41 CHECK(S) FAILED`, the 41 all B's (its report's count) |
+| PL-004 | High | Resolved | `3362b615f9` -- the safety copy is kept only when `cp` succeeded, `cmp` matches the live file and `conf_valid` passes the copy; otherwise the copy is removed, the cleanup does not run and the run continues on the file it already checked; case A54: a `cp` that failed part-way or claimed success left a 40-byte prefix that replaced the conf with the run saying COMPLETED, 4 FAIL before, 4 PASS after; the integrator: the harness behind A's merge (`60cc624709`) failed one check that was the merged tree's, not A's (C's nine-form case found cloud_setup's reader and A's content reader refusing `"/A$HOME/Saves"` with different messages; fixed forward in `04ee5c1a41`, cloud_setup's reader mirrored from the content scripts'), after which the harness read `PASSED` (1215 PASS); at `f3d19dc8fb` in `pl-a` `43 CHECK(S) FAILED`, all A's |
+| PL-005 | High | Resolved | `1d423613a9` -- the fast path recognises a password given as a flag (`--pass X`), the shape the stream-mode sed already redacted; with `d49beb2b7c` (a passphrase) and `3de380a86e` (a key named `key`, an S3 `access_key_id`; C's lead) the detector and the sed agree on the same names (D-SYS-013); FAIL before: `'launcher --pass qa-value' … the fast path knew pass only before = or :`; the integrator: the harness behind B's merge (`59c3c1da0e`) carried the same one interaction failure and no other; after `04ee5c1a41` `PASSED` (1215 PASS); at `f3d19dc8fb` in `pl-b` `41 CHECK(S) FAILED`, the 41 all B's (its report's count) |
+| PL-006 | High | Resolved | `88c4eaa1b6` -- one checked `tmp_file` helper makes every temporary list, every write is checked and counted, and a failure refuses the restore with code 3, never 4; covers the widened acceptance (failed appends, the final list move, tar's exclusion file, the backup's lists); FAIL before: `rc 0; f1='ARCHIVE'; new.cfg written`; a genuinely empty selection still returns 4; the integrator: the harness behind B's merge (`59c3c1da0e`) carried the same one interaction failure and no other; after `04ee5c1a41` `PASSED` (1215 PASS); at `f3d19dc8fb` in `pl-b` `41 CHECK(S) FAILED`, the 41 all B's (its report's count) |
+| PL-007 | High | Resolved | `f4669bcc42` -- the restore's control files, the backups folder and the copy by name are never extracted, never collected by a backup and never removed by a revert; FAIL before: `mark's first line … 'STALE-COPY.tar.gz'; copy's f1 ''`; the integrator: the harness behind B's merge (`59c3c1da0e`) carried the same one interaction failure and no other; after `04ee5c1a41` `PASSED` (1215 PASS); at `f3d19dc8fb` in `pl-b` `41 CHECK(S) FAILED`, the 41 all B's (its report's count) |
+| PL-008 | High | Resolved | `8a9c2bc6a9` -- the key scan catches a quoted value that starts with blanks (`password = " x"`); quotes holding only blanks are still not a sign-in; FAIL before: `rc 0; why ''; archives: 1` (published); the integrator: the harness behind B's merge (`59c3c1da0e`) carried the same one interaction failure and no other; after `04ee5c1a41` `PASSED` (1215 PASS); at `f3d19dc8fb` in `pl-b` `41 CHECK(S) FAILED`, the 41 all B's (its report's count) |
 | PL-009 | High | Resolved | Resolved `505dae63aa` (merged `8840998047`) -- `syncpath_problem` refuses an empty, `.` or `..` part before any other check and offers the folder the path meant (`Try /Mine/Saves.`); harness case CF1: 8 FAIL before (`--set-saves-remote /Mine/Backups/. rc 0; config: SAVES_REMOTE="/Mine/Backups/." …`), 10 PASS after with two controls (`/Mine/.hidden/Saves`, `/Mine/..x/Saves` accepted); already written: a stored folder and its derived siblings are left, the next change is refused with a clean one offered; the integrator: the harness on the merged tree `PASSED` (1065 PASS, 16:59 UTC), and at `f3d19dc8fb` in `pl-c` `40 CHECK(S) FAILED`, all C's |
 | PL-010 | High | Resolved | Resolved ES `3157d1a69` (with `107597312` for shellQuote's `'\''` form) -- `maskValueEnd` reads the inner command as its shell would; MaskSecretsTests "an escaped quote inside an inner quoted value does not end it": 4 of 6 FAIL before, 6/6 after; the integrator ran the branch's binaries: es-unit-tests 1824/1824; `tools/es-syntax-check` PASS on StringUtil.cpp; already written: the mask runs at log time, lines logged before stay in es_log's four archives until rotated |
 | PL-011 | High | Resolved | Resolved `3e70ef9239` (ES `7d999fd15`) -- `.githooks/guard-lib` compiles both lists before use and reads every grep's status (1 = nothing, 0 = hits, else refuse); `.githooks/hooks-test` 27 cases PASS incl. "a credential list that does not compile: refused" for pre-commit and pre-push; the ES fork's `pre-push-test` 21 cases PASS with the same case |
 | PL-012 | High | Resolved | Resolved `3e70ef9239` + `f3d19dc8fb` -- the exemption is gone from both hooks (`hooks-test`: "the same line under an audit packet (no path is exempt): refused"); `.gitignore` `/docs/audits/*/seats/*.diff`; the 30 tracked packets untracked (`git rm --cached`, kept on disk); the reviewed bytes stay retrievable from history (`git show cba6ae23f2~1:<path>`, sha256 per manifest; R-05: the regeneration claim is dropped); the ES test's FAKE= exemption is gone too (ES `3cd229a51`, the fixture built at run time); the one exemption left is a unit test's `maskSecrets(` line, E1 asked to split its literals |
 | PL-013 | Medium | Resolved | Resolved `f3d19dc8fb` -- `engineering-practices.md` line 554 closes the group at the delimiter (`((…)[=:])[^ ]*` -> `\1***`) with the proof paragraph (a fake `key=SECRET` line, `SECRET` absent from the output); `tools/rules-check` clean |
 | PL-014 | High | Resolved | Resolved `790011706a` (merged `8840998047`) -- `cloud_log_scrub`, installed by one `package.mk` line and run in the foreground by `autostart/102-cloud-saves` before the capture pass: once per device it rewrites every `cloud_sync.log*` under `/storage/.cache/log` through `redact_credentials` (old `cloud_remote` failure lines become `rclone config create failed (1)`, rclone's words in `cloud_oauth` failures `<redacted>`), never changing a line count, and stamps `/storage/.cache/cloud_sync/log-scrubbed` (`scrubbed=<epoch> files=<n> lines=<n>`; no stamp without the filter, so the next boot retries); case CF3: 7 FAIL before (`still in the cloud log: PLANT…`), 8 PASS after; 0.16 s over 0.66 MB with the image's busybox, at boot, never on the launch path; `tools/pkgcheck rclone` 0; already written: this item IS what earlier builds wrote, masked in place on the first boot of this build; the rehearsal with a planted line is PL-029's. The interface's own log too (`19bf68c6f9`, merged `6dee098783`): `es_log*.txt` in the same directory, the `cloud_remote create:` output after the record `<redacted>`, `OK=<name>` kept, a second stamp line `es_log_scrubbed=…`; 3 FAIL before (`still in es_log*.txt: PLANT…`), 4 PASS after; the integrator's harness behind that merge `PASSED` (17:15 UTC) and at `5389e1841a` in `pl-c` `3 CHECK(S) FAILED`, the three es_log cases; the integrator: the harness on the merged tree `PASSED` (1065 PASS, 16:59 UTC), and at `f3d19dc8fb` in `pl-c` `40 CHECK(S) FAILED`, all C's |
-| PL-015 | Medium | | |
-| PL-016 | Medium | | |
-| PL-017 | Medium | | |
+| PL-015 | Medium | Resolved | `e232071e7d` -- `\"`, `\\`, `\$` and `` \` `` inside double quotes are read as bash reads them in all five copies; an escape that closes the quote or opens `$(`, a backslash before anything else, and an escape in a folder value are still refused (D-CLOUD-142); a refusal logs its line number and shape, never the value; case A52: 10 FAIL before (`rc 1 … COULDN'T BE READ`), 14 PASS after; already written: a hand-edited conf with `\"` reads on the upgraded device; the integrator: the harness behind A's merge (`60cc624709`) failed one check that was the merged tree's, not A's (C's nine-form case found cloud_setup's reader and A's content reader refusing `"/A$HOME/Saves"` with different messages; fixed forward in `04ee5c1a41`, cloud_setup's reader mirrored from the content scripts'), after which the harness read `PASSED` (1215 PASS); at `f3d19dc8fb` in `pl-a` `43 CHECK(S) FAILED`, all A's |
+| PL-016 | Medium | Resolved | `4e38b619cb` -- an unreadable mount table waits and says so (the mark kept); the earlier case asserting the old fallback reversed in place; with `bd48cc545a` the mark ends `roms-mounted=yes|no|unknown` and a `no` mark is judged by its folders (D-SYS-010); FAIL before: `mark removed; new.cfg removed; said 'reverted'`; the integrator: the harness behind B's merge (`59c3c1da0e`) carried the same one interaction failure and no other; after `04ee5c1a41` `PASSED` (1215 PASS); at `f3d19dc8fb` in `pl-b` `41 CHECK(S) FAILED`, the 41 all B's (its report's count) |
+| PL-017 | Medium | Resolved | `a138e02b11` -- `mv -n` plus a check; on a name clash both archives are kept, the new one under a dated name; FAIL before: `contents: ARCHIVE-B` (A overwritten); the integrator: the harness behind B's merge (`59c3c1da0e`) carried the same one interaction failure and no other; after `04ee5c1a41` `PASSED` (1215 PASS); at `f3d19dc8fb` in `pl-b` `41 CHECK(S) FAILED`, the 41 all B's (its report's count) |
 | PL-018 | Medium | Resolved | Resolved ES `0c6665bf1` + `f297007de` (amended per R-04) -- the Backup fallback requires `backupWhole`; two es-file-tests cases (a whole `.tmp` beside a cut record recovers; no `.tmp` -> the defaults, the cut record not recorded) and es-conf-tests on the shipped SystemConf: 11 of 19 FAIL before (`CHECK( c.source == Temporary )`), all PASS after; the integrator ran es-file-tests 3389/3389 and es-conf-tests 98/98; already written: a cut record from an earlier build is no longer loaded and the next whole record replaces it |
 | PL-019 | Medium | Resolved | ES `bf00e91c9` -- BIOS alone now opens the CONTENT TO BACK UP / RESTORE page (SYSTEMS reading NONE, a BIOS FILES group, BACK and the verb) and the run starts only on the verb; `cloudSaveSelection` runs `--set-systems`, reads the file back and continues only when rc is 0 and the file names exactly what was ticked, else `COULDN'T SAVE WHAT YOU TICKED, SO NOTHING WAS BACKED UP.` (proposed words, D-UI-116) and the page stays; `tests/cloud-content-selection.py` 0 of 5 before, 13 of 13 after, a mutation trusting rc alone fails 3; the integrator ran app-unit-tests 119/119; es-syntax-check PASS; French appended, es-untranslated 603/603; already written: a selection file from an earlier build is read as before and replaced on the next press; the 640x480 frame is the next cut's |
 | PL-020 | Medium | Resolved | Resolved `dcb88d933e` (merged `60e3b94ee0`) -- `drop_dead` in both generators tracks whether an arm is compiled and whether any arm was taken: a literal `#elif 0`/`#elif 1` is read as a literal `#if`, an arm after a taken arm is blanked, other conditions stay live, `#elifdef`/`#elifndef` recognised; harness case F2-20, five shapes in an FBA and a MAME fixture: 8 FAIL before (`MAME shape A (#if 0 / #elif 0 / #else): table 'adead 3|aelse 2|', expected 'aelse 2|'`), 10 PASS after; the five tables regenerated from the pinned tarballs are a 0-line diff with the same sha256 (852/1923/2543/1642/2180 rows; no pinned driver holds a literal `#elif`); the integrator: the harness on the merged tree `PASSED` (1104 PASS, 17:34 UTC), and at `f3d19dc8fb` in `pl-f2` `19 CHECK(S) FAILED`, all F2's (18 cases and F2-4's driver, which cannot build against the old block); already written: nothing, the tables are byte-identical to the previous build's |
 | PL-021 | Medium | Resolved | Resolved `9c9951798b` (merged `8840998047`) -- `conf_get` reads the first assignment as the cleanup and the content scripts do (D-CLOUD-149, reversing the first round's last-wins); case CF2: 2 FAIL before (`--info names '/Second/Saves', the saves scripts after the cleanup '/ROCKNIX/Saves'`), PASS after; already written: nothing is written; the integrator: the harness on the merged tree `PASSED` (1065 PASS, 16:59 UTC), and at `f3d19dc8fb` in `pl-c` `40 CHECK(S) FAILED`, all C's |
-| PL-022 | Medium | | |
+| PL-022 | Medium | Resolved | `db64d901c6` -- each stored zip member is checked against its listed CRC with busybox's `crc32` applet (zlib's CRC-32; `CONFIG_CRC32=y`, `/usr/bin/crc32` in the GENERIC_X64 and H700 images), not POSIX `cksum` (R-01); the case runs the image's busybox `unzip` over the BS-3 measurement, a damaged stored member, a damaged deflated member and a whole zip; FAIL before: `rc 0; f1 'SToRED-ORIGINAL-CONTENT'; d.cfg written`; the integrator: the harness behind B's merge (`59c3c1da0e`) carried the same one interaction failure and no other; after `04ee5c1a41` `PASSED` (1215 PASS); at `f3d19dc8fb` in `pl-b` `41 CHECK(S) FAILED`, the 41 all B's (its report's count) |
 | PL-023 | Medium | Resolved | Resolved `f3d19dc8fb` -- `skip()` counts the 25 sites; the verdict reads `PASSED, N SKIPPED` and exits 3 when FAIL = 0 and N > 0 (`vm-qa` `run_suite` reads 3 as SKIP, line 137). Proof: the committed harness on the host `PASSED` rc 0 (1002 PASS, 0 SKIP; `harness-pl023-normal.log`); in a worktree whose client pin names no tarball `PASSED, 22 SKIPPED -- a check that did not run has not passed` rc 3 (839 PASS, 22 SKIP; `harness-pl023-skip.log`) |
 | PL-024 | Medium | Resolved | Resolved `104433dbe8` (merged `e3394a893f`) -- the rehearsal's wait polls the guest's boot id and `systemctl is-active rocknix-autostart.service` and ends only on `<this boot's id> active`; `failed` ends it early, a wait that runs out records what it last read and the check FAILs; `/var/log/boot.log` is no longer read. Harness case F1r-a lifts the wait's lines against a fixture guest whose boot.log already holds the previous boot's line: FAIL before (`the wait ended on 'polls=1 autostarted=yes' where autostart finished on poll 4`, stream F1's run at `f3d19dc8fb`, and the integrator's own re-run there at 16:48 UTC: `11 CHECK(S) FAILED, 0 SKIPPED`, every one an F1 case), PASS after; the integrator's harness run on the merged tree: `PASSED` rc 0 (16:40 UTC); already written: nothing, the rehearsal keeps no state; the rehearsal itself runs on the next cut (PL-029) |
 | PL-025 | Low | Resolved | Resolved `f3d19dc8fb` -- `tools/vm-qa`'s exec wrapper resets SIGPIPE beside SIGINT; the harness prints its inherited dispositions first (`signals: SigIgn=… SIGINT ignored=N SIGPIPE ignored=N`; the first cut of the line read `/proc/self/status` inside `$(awk …)`, awk's own process, which reads SIGPIPE ignored where the harness's bash has it default; it reads `/proc/$$/status` since 17:00 UTC, and the wrapper's reset was checked by hand: through it into `bash -c grep`, SigIgn `0x1000001`, SIGPIPE clear) |
 | PL-026 | Low | Resolved | Resolved `3e70ef9239` -- `guard_scan` anchors every pattern after the label (`^([^\t]*\t)+.*(…)`); `hooks-test`: "a file NAMED like a key, clean inside (the label is not scanned): allowed" in pre-commit and at push |
 | PL-027 | Low | Resolved | Resolved `f3d19dc8fb` -- `es-player-text.md`'s why list carries `CHECK WHAT WOULD CHANGE FIRST` (`cloud_content_restore`) and `YOUR CLOUD SYNC SETTINGS COULDN'T BE SAVED` (`cloud_migrate_layout`); `tools/rules-check` clean |
-| PL-028 | Medium | | |
+| PL-028 | Medium | Resolved | `c1fbf658ab` -- an archive with any member outside `storage/`, or with a `.`/`..` part, is refused before the copy, the mark or any extraction, the zip lister lists every member, and the console says the proposed sentence of D-UI-117; FAIL before: `rc 0; outside: p7-foreign`; the integrator: the harness behind B's merge (`59c3c1da0e`) carried the same one interaction failure and no other; after `04ee5c1a41` `PASSED` (1215 PASS); at `f3d19dc8fb` in `pl-b` `41 CHECK(S) FAILED`, the 41 all B's (its report's count) |
 | PL-029 | Medium | | |
 | PL-030 | Medium | Withdrawn | refuted from the source (E2, checked by the integrator): the COPY's only write to the saves tree is `copyToSlot` at the press (`GuiSaveState.cpp:516`) behind `savesTreeBusy` (`:499`, `:33`); the queued record (`:524`) is `cloud_capture --adopt`, which writes only under `/storage/.cache/cloud_sync` (`cloud_capture:674` MANIFEST, `:115` STAGE) under `capture_lock` (`:1559`); its only saves-folder write is `--retire --unlink`, the DELETE's; no transfer script reads the manifests or the stage (`grep -n "manifest-\|cloud_capture\|/stage\|\.capture"` over the five cloud scripts: 0 lines). Adding DELETE's guard would drop a copy's record whenever a transfer holds the lock. The false `TransferLock` comment goes to E1 |
 | PL-031 | Medium | Resolved | the script side `3bc003dde8` (merged `a566bcc2df`): `added=` in the scan/top-up stamp is the measured count, `0` when nothing was cached, the word `unknown` when the store could not be read, the cache-count fallback gone; harness case D34: 4 FAIL before (`stamp: … 0 topup cached=3 … added=3 -- a failed measurement replaced by the cache count`), 4 PASS after (`added=unknown`); the interface side ES `6d8bdab4e` (pin `2b377f0fbe`): `parseScanStamp` reads `unknown` as its own answer and the top-up card says how many games are ready, never a count it cannot know -- es-unit-tests `CHECK( -1 == -2 )` before, 1825/1825 after; proxycards-tests `5 MORE GAMES ARE READY. == 14 GAMES ARE READY.` before, 67/67 after; the integrator ran both binaries and the harness on the merged tree (`PASSED`, 1077 PASS, 17:12 UTC) and the harness at `f3d19dc8fb` in `pl-d` (`7 CHECK(S) FAILED`, the seven all D's: D34's four, D33's two, D35's one); already written: an old stamp with a number reads as that number, one with none as before |
 | PL-032 | Medium | Resolved | Resolved `f945f4182a` (merged `8840998047`) -- each attempt has its own id; `write_owned` takes `owner=` and `from_status=`: `waiting` only from `starting`, `signed-in` only from `starting`/`waiting` by the current attempt, the closing `failed` only from those; a refused success deletes the remote it made and writes no marker; `holder.end()` waits up to 45 s for a collector still saving (D-CLOUD-150); case CF4: 7 FAIL before (`a dead attempt republished as waiting`; `after A finished behind B: … marker True, A's remote removed False`), 7 PASS after plus a control; already written: the state lives in `/var/run`, nothing persists; the integrator: the harness on the merged tree `PASSED` (1065 PASS, 16:59 UTC), and at `f3d19dc8fb` in `pl-c` `40 CHECK(S) FAILED`, all C's |
 | PL-033 | Medium | Withdrawn | on the source, with a guard (`759b65b5c5`, merged `a566bcc2df`): the pinned client listens on IPv4 only -- `proxy_service.py:267` keeps socketserver's `AF_INET` (line 208 unpatched), `boot.py:32` and `:58` make `AF_INET` sockets, `config.py:367` defaults `proxy_host` to `127.0.0.1` and nothing sets it -- so leaving `::` out of the listener checks never turns the shipped proxy away; harness case D36 runs the pinned client's `run-service` in a network namespace (bwrap `--unshare-net`) and asks both listener checks of the real socket (`ctl=1 ppsspp=1 looks=2; tcp 0100007F:1F90`), so a pin that moves the listener to `::` fails the suite rather than the unit at every boot; the constructed failure read `ctl=0 ppsspp=0 looks=31; tcp6 …:1F90` |
-| PL-034 | Medium | | |
+| PL-034 | Medium | Resolved | `70c7a50143` -- an exit capture that has run past 100 s commits nothing, the clock from its first start across its one re-run, checked before the lock wait and again with the lock, rc 1 `too-slow` (D-CLOUD-151); already true on the base and kept as checks: a capture blocked on its commit lock gives up after two 5 s waits (11 s against a 40 s holder), an exit capture writes no save; case A59 with the bound shortened to 6 s against an 8 s holder: `rc 0 after 8s; manifest WRITTEN` before, commits nothing after; within the bound the same wait still records; the 120 s policy untouched; `E2-pl061` re-run on the next cut; the integrator: the harness behind A's merge (`60cc624709`) failed one check that was the merged tree's, not A's (C's nine-form case found cloud_setup's reader and A's content reader refusing `"/A$HOME/Saves"` with different messages; fixed forward in `04ee5c1a41`, cloud_setup's reader mirrored from the content scripts'), after which the harness read `PASSED` (1215 PASS); at `f3d19dc8fb` in `pl-a` `43 CHECK(S) FAILED`, all A's |
 
 ## Punch index
 
@@ -396,7 +396,7 @@ punch_index:
   owner_area: 'stream A, cloud_migrate_layout'
   where: 'projects/ROCKNIX/packages/network/rclone/sources/cloud_migrate_layout lines 447, 455, 531, 537, 546, 548, 565, 577, 594; relocate()'
   acceptance: 'the three pointers are normalised (a leading slash, no trailing slash, no dot components) before every compare, and relocate refuses when src and dst name one folder; a harness case with the trailing-slash conf asserts nothing is copied or deleted and the pointer is left; run 2 of the proofs on the next cut unchanged'
-  outcome: open
+  outcome: resolved
 - id: PL-002
   severity: 'High'
   category: 'Configuration executed (fail-open validation)'
@@ -404,7 +404,7 @@ punch_index:
   owner_area: 'stream A, the cloud scripts'
   where: 'cloud_backup:1043, cloud_restore:1104, cloud_sync_helper:247, cloud_content_backup:128, cloud_content_restore:131 (`rest()`)'
   acceptance: 'a CR anywhere in the file is refused by all five copies (the class loses `\r`, or the file is refused when it holds one); a case with the seat''s line fails first and then passes in each script'
-  outcome: open
+  outcome: resolved
 - id: PL-003
   severity: 'High'
   category: 'Configuration executed'
@@ -412,7 +412,7 @@ punch_index:
   owner_area: 'stream B, backuptool'
   where: 'projects/ROCKNIX/packages/rocknix/sources/scripts/backuptool:42'
   acceptance: 'the key is read as text (the first `SETTINGS_BACKUPS="..."` line, as the cleanup keeps it), never sourced; a case with a command in the conf shows nothing runs and the folder is read'
-  outcome: open
+  outcome: resolved
 - id: PL-004
   severity: 'High'
   category: 'Last-known-good destroyed by its own fallback'
@@ -420,7 +420,7 @@ punch_index:
   owner_area: 'stream A, cloud_backup and cloud_restore'
   where: 'cloud_backup:1170, cloud_restore:1231 (the `elif [ -s pre_cleanup ] && mv -f`)'
   acceptance: 'the copy is restored only when `cp` succeeded and `conf_valid` passes on the copy; a case that makes `cp` write a prefix and fail asserts the live file is byte-identical afterwards, in both scripts'
-  outcome: open
+  outcome: resolved
 - id: PL-005
   severity: 'High'
   category: 'Credential in a log'
@@ -428,7 +428,7 @@ punch_index:
   owner_area: 'stream B, 001-functions'
   where: 'projects/ROCKNIX/packages/rocknix/profile.d/001-functions (`redact_credentials`, `passkey=`)'
   acceptance: 'the fast-path trigger includes the flag form (`--?[A-Za-z0-9_.-]*pass` followed by whitespace); the two lines as cases, masked'
-  outcome: open
+  outcome: resolved
 - id: PL-006
   severity: 'High'
   category: 'Restore without its snapshot (guard fails open)'
@@ -436,7 +436,7 @@ punch_index:
   owner_area: 'stream B, backuptool'
   where: 'backuptool snapshot_members (KEEP=$(mktemp), the appends, `return 4`); mktemp at 207, 473, 650-652, 758, 775, 1093'
   acceptance: 'one checked helper for every temporary file in backuptool; a failure returns a code the restore refuses (not 4); a case that makes mktemp fail asserts the restore refuses, and so does a failure after a successful mktemp (an append to KEEP, the final list write -- the refutation''s widening); a genuinely empty selection still returns 4'
-  outcome: open
+  outcome: resolved
 - id: PL-007
   severity: 'High'
   category: 'Restore control file overwritten'
@@ -444,7 +444,7 @@ punch_index:
   owner_area: 'stream B, backuptool'
   where: 'backuptool:1302 (RESTORE_MARK), the skip lists at 1355 and the unzip equivalent'
   acceptance: 'the marker and the snapshot path are in every skip list and never listed by the backup; a case with an archive carrying both asserts the fresh marker and the snapshot survive extraction'
-  outcome: open
+  outcome: resolved
 - id: PL-008
   severity: 'High'
   category: 'Credential published'
@@ -452,7 +452,7 @@ punch_index:
   owner_area: 'stream B, backuptool'
   where: 'backuptool CREDENTIAL_KEYS'
   acceptance: 'the value class allows whitespace after the opening quote; the line as a case, refused'
-  outcome: open
+  outcome: resolved
 - id: PL-009
   severity: 'High'
   category: 'Tier separation bypassed'
@@ -500,7 +500,7 @@ punch_index:
   owner_area: 'stream A, conf_valid (five copies)'
   where: 'the same five copies as PL-002'
   acceptance: 'bash''s own escapes inside double quotes (`\"`, `\\`, `\$`) are accepted by all five copies; the line as a case, accepted; a still-refused shape names why in the log'
-  outcome: open
+  outcome: resolved
 - id: PL-016
   severity: 'Medium'
   category: 'Guard fails open'
@@ -508,7 +508,7 @@ punch_index:
   owner_area: 'stream B, chksysconfig'
   where: 'chksysconfig:144-147'
   acceptance: 'an unreadable table waits (fails closed) with its say line; a case with PROC_MOUNTS pointing at a missing file asserts the revert is deferred and the mark kept'
-  outcome: open
+  outcome: resolved
 - id: PL-017
   severity: 'Medium'
   category: 'Data loss (an archived backup overwritten)'
@@ -516,7 +516,7 @@ punch_index:
   owner_area: 'stream B, backuptool'
   where: 'backuptool:1479'
   acceptance: 'a collision keeps both (`mv -n`, then a dated suffix); a case with two same-named zips asserts both survive'
-  outcome: open
+  outcome: resolved
 - id: PL-018
   severity: 'Medium'
   category: 'Last-known-good (an incomplete record chosen)'
@@ -556,7 +556,7 @@ punch_index:
   owner_area: 'stream B, backuptool'
   where: 'backuptool''s ZIP verification (the `unzip -t` / `unzip -p` comment)'
   acceptance: 'each member is verified against its listed CRC-32 with a ZIP-compatible CRC-32 the image has (python3''s `zlib.crc32`; POSIX `cksum` is a different checksum -- amended, R-01), or a legacy ZIP with stored members is refused with its why; healthy and damaged, stored and deflated members as cases, run with the image''s busybox'
-  outcome: open
+  outcome: resolved
 - id: PL-023
   severity: 'Medium'
   category: 'A harness that says PASSED over unrun checks'
@@ -580,7 +580,7 @@ punch_index:
   owner_area: 'stream B, backuptool'
   where: 'backuptool `archive_members` (the `^storage/` filter, line 5''s awk and the tar case at 479-480); the extraction `tar -xzf ... -C / -X "${SKIP}"` (1356) and the unzip equivalent'
   acceptance: 'an archive whose member list holds a path not under `storage/` is refused before anything is extracted, with its why; a case with such an archive (tar and zip) asserts nothing outside `storage/` is written and the refusal is printed'
-  outcome: open
+  outcome: resolved
 - id: PL-029
   severity: 'Medium'
   category: 'Verification gap (S-30)'
@@ -636,7 +636,7 @@ punch_index:
   owner_area: 'stream A, cloud_capture (and the gate in E2''s FileData, read only)'
   where: 'the capture gate''s 120 s age escape (D-UI-115''s policy stands); `cloud_capture`''s lock'
   acceptance: 'a harness case with a capture blocked on the lock, the launch released, and what the capture does when it gets the lock -- safe overlap or cancellation shown; or the precise accepted risk recorded with the line (the 120 s policy is not reopened)'
-  outcome: open
+  outcome: resolved
 - id: PL-025
   severity: 'Low'
   category: 'Runner divergence'
