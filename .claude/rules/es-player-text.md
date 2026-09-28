@@ -297,12 +297,14 @@ not complete and was not a sentinel; a reader turns the underscores back into
 spaces.
 
 **In place**, one per verb, true because rclone renames on completion and the
-content scripts never delete outside a match: back up `WHAT WAS SENT IS IN
-YOUR CLOUD. THE REST IS STILL ON THIS DEVICE.` / `NOTHING WAS SENT. YOUR CLOUD
-IS AS IT WAS.`; restore `WHAT ARRIVED IS ON THIS DEVICE. THE REST IS AS IT
-WAS.` / `NOTHING ARRIVED. THIS DEVICE IS AS IT WAS.`; saves sync `THE SAVES
-THAT MOVED ARE ON BOTH SIDES. THE REST ARE AS THEY WERE.` / `YOUR SAVES ARE AS
-THEY WERE.`; match `N FILES WERE REMOVED FROM THIS DEVICE.` / `NOTHING WAS REMOVED FROM THIS DEVICE.` -- the
+content scripts never delete outside a match: back up `WHAT MADE IT IS IN
+YOUR CLOUD. THE REST IS STILL HERE.` / `DON'T WORRY, NOTHING CHANGED.`; restore
+`WHAT MADE IT IS ON THIS DEVICE. NOTHING ELSE CHANGED.` / `DON'T WORRY, NOTHING
+CHANGED.`; saves sync `THE SAVES THAT MADE IT ARE ON BOTH SIDES. NOTHING ELSE
+CHANGED.` / `DON'T WORRY, NOTHING CHANGED.` (the shipped strings,
+`ThreadedCloudSync.cpp:135-137`, since the plain-language pass #108; this
+paragraph carried the pre-#108 wording until 2026-09-28, when stream E1 found
+the drift while reusing the sync clause for a run the network cut part-way); match `N FILES WERE REMOVED FROM THIS DEVICE.` / `NOTHING WAS REMOVED FROM THIS DEVICE.` -- the
 count only: a match removes what the cloud does *not* have (D-CLOUD-023), so
 the old second sentence, YOUR CLOUD STILL HAS THEM, said the opposite of the
 truth (#308, E2's third pass, 2026-09-28)
