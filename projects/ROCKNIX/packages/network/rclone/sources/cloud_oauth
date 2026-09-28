@@ -1540,7 +1540,17 @@ class SessionHolder:
         reads as a crash rather than as progress. The window switches itself
         to "Finishing up" when it sees this marker, and is closed once ES is
         drawing again and asks for it.
+
+        The pad is handed back first, though, before the marker exists.
+        "Finishing up" takes no input, and `wait` returns on this marker --
+        after which EmulationStation re-opens the joystick, which it cannot
+        do while the bridge holds EVIOCGRAB (pad_is_free). The bridge used to
+        let go only when the window died, which is after that re-open (audit
+        #307 PL-018).
         """
+        gamepad, self.gamepad = self.gamepad, None
+        if gamepad:
+            gamepad.stop()
         os.makedirs(STATE_DIR, exist_ok=True)
         try:
             open(state_path("signed-in"), "w").close()
@@ -2003,12 +2013,13 @@ def main(argv):
         # so a serve that died without tidying up cannot strand the caller.
         deadline = time.time() + 1800
         while time.time() < deadline and signin_window_running():
-            # A finished sign-in releases the caller immediately: the window
-            # stays up saying so while the caller rebuilds itself, and asks
-            # for it to be closed afterwards. Waiting for the window to go
-            # first is what produced a black screen.
+            # A finished sign-in releases the caller without waiting for the
+            # window: it stays up saying so while the caller rebuilds itself,
+            # and asks for it to be closed afterwards. Waiting for the window
+            # to go first is what produced a black screen. Not without the
+            # pad, though -- the settle below runs on this path too (PL-018).
             if os.path.exists(state_path("signed-in")):
-                return 0
+                break
             time.sleep(0.3)
 
         # And not a moment before the pad is handed back -- see pad_is_free.

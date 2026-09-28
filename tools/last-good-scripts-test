@@ -3647,6 +3647,42 @@ def cancel_closes_the_window():
     if serve.poll() is None:
         serve.kill()
 EOPY
+# PL-018: the pad is released before the signed-in marker; wait waits for it.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+@test
+def grab_released_before_signed_in():
+    """#307 PL-018: the bridge lets go of the pad before the marker says done,
+    and wait's marker branch waits for the pad."""
+    m, d = load("pl018")
+    import fcntl as real_fcntl
+    fifo, writer = pad_fifo(d)
+    fake = FakeFcntl(real_fcntl, m.state_path("signed-in"))
+    m.fcntl = fake
+    m.find_gamepad = lambda *a, **k: (fifo, {m.BTN_SOUTH, m.BTN_EAST, m.BTN_DPAD_UP})
+    holder = m.SessionHolder("dropbox", None, None, 60)
+    holder.keyboard = FakeKeyboard()
+    holder.gamepad = m.GamepadBridge(holder.keyboard, holder.stop_browser, alive=lambda: True)
+    holder.gamepad.start()
+    wait_for(lambda: fake.grabs, 2)
+    holder.signed_in()
+    time.sleep(0.8)
+    released = [g for g in fake.grabs if g[0] == 0]
+    result(fake.grabs[:1] == [(1, False)] and released and released[0][1] is False
+           and os.path.exists(m.state_path("signed-in")),
+           "the pad's grab is released before the signed-in marker is written",
+           "grabs %r (arg, marker present) -- the bridge still held EVIOCGRAB when wait was told the sign-in was done (PL-018)" % fake.grabs)
+    os.close(writer)
+
+    m, d = load("pl018b")
+    polls = []
+    m.signin_window_running = lambda: True
+    m.pad_is_free = lambda: polls.append(1) or len(polls) >= 3
+    open(m.state_path("signed-in"), "w").close()
+    rc = m.main(["cloud_oauth", "wait"])
+    result(rc == 0 and len(polls) >= 3,
+           "wait, on the signed-in marker, returns only once the pad is free (%d polls)" % len(polls),
+           "wait returned %r after %d pad_is_free polls -- the marker branch skipped the loop (PL-018)" % (rc, len(polls)))
+EOPY
 # C3: new test groups go above this line
 cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
 if MODE == "drive":
