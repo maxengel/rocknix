@@ -75,7 +75,7 @@ Each item is one change with its acceptance named. None blocks the candidate: th
 - **Owner area:** cloud_oauth (the window) and EmulationStation
 - **Where:** projects/ROCKNIX/packages/network/rclone/sources/cloud_oauth; es-app/src/guis/GuiCloudOAuth*.cpp
 - **What:** the sign-in window's help bar hard-codes CHOOSE WITH A and a Nintendo layout, and the window reads a fixed binding rather than the player's es_input.cfg (es-ui-style-guide.md, Interaction rules: never a console letter).
-- **Acceptance:** the help bar names buttons by position from the player's own bindings (a doctest over the label builder; a 640x480 frame with swapped buttons); the H700's es_input.cfg entry is a device fact (docs/releases/device-facts.md row) read on the maintainer's yes
+- **Acceptance:** the help bar names buttons by position from the player's own bindings (a doctest over the label builder; a 640x480 frame with swapped buttons); the binding the window must honour on the RG35XX SP is the board's own pad, a fact the VM cannot have (its es_input.cfg entry, read once from the device into a docs/releases/device-facts.md row; D-QA-015)
 
 ## PL-008: The RetroAchievements web API key's exclusion from settings backups is asserted, not shown
 - **Severity:** Low
@@ -225,7 +225,7 @@ punch_index:
   source_finding: "#308 rows 3-rclone-setup claude F-RS-10; 3-rclone-setup gpt F-RS-15; 8b-es-core gpt F-ES-13"
   owner_area: "cloud_oauth (the window) and EmulationStation"
   where: "projects/ROCKNIX/packages/network/rclone/sources/cloud_oauth; es-app/src/guis/GuiCloudOAuth*.cpp"
-  acceptance: "the help bar names buttons by position from the player's own bindings (a doctest over the label builder; a 640x480 frame with swapped buttons); the H700's es_input.cfg entry is a device fact (docs/releases/device-facts.md row) read on the maintainer's yes"
+  acceptance: "the help bar names buttons by position from the player's own bindings (a doctest over the label builder; a 640x480 frame with swapped buttons); the binding the window must honour on the RG35XX SP is the board's own pad, a fact the VM cannot have (its es_input.cfg entry, read once from the device into a docs/releases/device-facts.md row; D-QA-015)"
   outcome: deferred
   outcome_ref: "#309"
 - id: PL-008
