@@ -359,7 +359,7 @@ Recorded per item as it is resolved: the outcome (resolved / deferred / rejected
 | PL-007 | High | | |
 | PL-008 | High | | |
 | PL-009 | High | | |
-| PL-010 | High | | |
+| PL-010 | High | Resolved | Resolved ES `3157d1a69` (with `107597312` for shellQuote's `'\''` form) -- `maskValueEnd` reads the inner command as its shell would; MaskSecretsTests "an escaped quote inside an inner quoted value does not end it": 4 of 6 FAIL before, 6/6 after; the integrator ran the branch's binaries: es-unit-tests 1824/1824; `tools/es-syntax-check` PASS on StringUtil.cpp; already written: the mask runs at log time, lines logged before stay in es_log's four archives until rotated |
 | PL-011 | High | Resolved | Resolved `3e70ef9239` (ES `7d999fd15`) -- `.githooks/guard-lib` compiles both lists before use and reads every grep's status (1 = nothing, 0 = hits, else refuse); `.githooks/hooks-test` 27 cases PASS incl. "a credential list that does not compile: refused" for pre-commit and pre-push; the ES fork's `pre-push-test` 21 cases PASS with the same case |
 | PL-012 | High | Resolved | Resolved `3e70ef9239` + `f3d19dc8fb` -- the exemption is gone from both hooks (`hooks-test`: "the same line under an audit packet (no path is exempt): refused"); `.gitignore` `/docs/audits/*/seats/*.diff`; the 30 tracked packets untracked (`git rm --cached`, kept on disk); the reviewed bytes stay retrievable from history (`git show cba6ae23f2~1:<path>`, sha256 per manifest; R-05: the regeneration claim is dropped); the ES test's FAKE= exemption is gone too (ES `3cd229a51`, the fixture built at run time); the one exemption left is a unit test's `maskSecrets(` line, E1 asked to split its literals |
 | PL-013 | Medium | Resolved | Resolved `f3d19dc8fb` -- `engineering-practices.md` line 554 closes the group at the delimiter (`((…)[=:])[^ ]*` -> `\1***`) with the proof paragraph (a fake `key=SECRET` line, `SECRET` absent from the output); `tools/rules-check` clean |
@@ -367,7 +367,7 @@ Recorded per item as it is resolved: the outcome (resolved / deferred / rejected
 | PL-015 | Medium | | |
 | PL-016 | Medium | | |
 | PL-017 | Medium | | |
-| PL-018 | Medium | | |
+| PL-018 | Medium | Resolved | Resolved ES `0c6665bf1` + `f297007de` (amended per R-04) -- the Backup fallback requires `backupWhole`; two es-file-tests cases (a whole `.tmp` beside a cut record recovers; no `.tmp` -> the defaults, the cut record not recorded) and es-conf-tests on the shipped SystemConf: 11 of 19 FAIL before (`CHECK( c.source == Temporary )`), all PASS after; the integrator ran es-file-tests 3389/3389 and es-conf-tests 98/98; already written: a cut record from an earlier build is no longer loaded and the next whole record replaces it |
 | PL-019 | Medium | | |
 | PL-020 | Medium | | |
 | PL-021 | Medium | | |
@@ -468,7 +468,7 @@ punch_index:
   owner_area: 'stream E1, StringUtil::maskValueEnd'
   where: 'es-core/src/utils/StringUtil.cpp maskValueEnd (the inner-quote branch before the escape)'
   acceptance: 'inside an inner quote a backslash skips the next character in both enclosing modes; a doctest with the seat''s line, masked whole; es-syntax-check'
-  outcome: open
+  outcome: resolved
 - id: PL-011
   severity: 'High'
   category: 'A scanner that passes on its own error'
@@ -524,7 +524,7 @@ punch_index:
   owner_area: 'stream E1, AtomicFileUtil'
   where: 'es-core/src/utils/AtomicFileUtil.cpp:370 (`backupOk && isUsableKeyValues(backup)`; `backupWhole` at 308 unused there)'
   acceptance: 'the fallback requires `backupWhole`; two es-file-tests cases (amended, R-04): a cut backup, no usable live file and a whole `.tmp` -> the `.tmp` recovers; a cut backup, no usable live file and no `.tmp` -> the defaults load and the cut backup is not recorded as last-known-good'
-  outcome: open
+  outcome: resolved
 - id: PL-019
   severity: 'Medium'
   category: 'Consent skipped; a write unchecked'
