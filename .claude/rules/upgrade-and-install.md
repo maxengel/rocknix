@@ -161,8 +161,13 @@ than a local one, and each has cost somebody their data somewhere.
 - **Ask first, and let "leave it alone" be the default.** Cloud layout is
   usually cosmetic; the risk of moving is not. If the tidier layout cannot
   justify the failure mode, offer the no-op resolution and stop there.
-- **Another device may be syncing at the same time.** One player, many devices
-  is this project's model, so a migration cannot assume it is the only writer.
+- **The model is one player, one console at a time (D-CLOUD-102, D-CLOUD-103):**
+  no other device writes the same cloud folder while a migration runs, and no
+  lock or marker tries to stop one. What a migration cannot assume is that the
+  *previous* run finished -- interruption is the normal case above -- so it
+  reads the cloud's state before every step rather than remembering it.
+  (This bullet said "another device may be syncing at the same time" until
+  2026-09-28; it predated D-CLOUD-102 and contradicted it -- stream A, #307.)
 
 ## Verify on a device, not on the host
 

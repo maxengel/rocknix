@@ -258,3 +258,107 @@ Both fell through #307 and #308 — the forward audit tabled them and no punch o
 - The ES halves (PL-030 quoting, F-CS-26 wording) and all docs and rules updates are outside my files.
 - Busybox `unzip -t` cannot see damage to a STORED member's bytes. This residual is documented in the code.
 - The harness's own default `--old` base (`1d1503180d`) already exits 2 at section s ("cannot read … rocknix-evidence"), before it reaches my block. That is a pre-existing state and not caused by this branch.
+
+## Follow-up 2 — the audit of the fixes (seats A-gpt, A-claude) and vm-qa run 68
+
+Branch `feature/pl-a`, 23 commits on top of `fd6878278a`, HEAD `32aa3a0c65`. Every commit carries the item, the finding, the test and an `Already written:` line, with the Co-Authored-By trailer. Every title is under 72 characters. Nothing was pushed. The pre-commit hook from `next` ran on each commit.
+
+For every fix, the case went into my block first (A31–A50) and was seen to FAIL on the unfixed script before the fix, then PASS. The FAIL lines are in `streams/A/evidence.txt`.
+
+**Rules and registers read this session:**
+- `engineering-practices`, `upgrade-and-install`, `es-player-text`, `player-language`, `least-surprise`, `time-to-play`, `vm-first`, `working-principles`, `decision-register`.
+- Register rows D-CLOUD-102/103/104, 118/119/121, 136/137 and 122.
+- ES's `CloudText.cpp` (`parseLastRun`, `whySentences`) and `GuiMenu.cpp`'s match calls, from the GENERIC_X64 build root.
+- I did not re-read `rclone-cloud-sync.md` this session.
+
+### Suite
+- `tools/last-good-scripts-test`, the whole file: **559 PASS, 0 FAIL, exit 0** at HEAD `32aa3a0c65`, and the same at `e402e41453`.
+  - The stream A block alone is 173 checks.
+  - The run was from a copy of the harness with ROOT pinned (`streams/A/run-full.sh`); its log is `streams/A/full-h.log`.
+- `tools/cloud-capture-stamp-test`: PASSED.
+- `tools/vocabulary-check` over the cloud scripts: 155 judged, 0 wrong.
+
+### The four the GPT seat filed High
+
+| Finding | Outcome | Commit | Case and FAIL-before |
+|---|---|---|---|
+| G-A-01: `relocate`/`resumable` substring "0 differences found" and the exit status ignored | **Fixed.** `check_clean` requires exit 0 and a count of exactly zero. | `91231adf43` | A31. Ten saves changed between copy and check: FAIL rc 0, all ten deleted and the pointer moved. A new folder holding ten other versions of the same names: FAIL rc 0, the other library's `S3.srm` overwritten. After the fix: rc 5 with all kept, and rc 4 refused. |
+| G-A-02: `set_pointer` unchecked, delete regardless | **Fixed.** The pointer is read back. `relocate` returns 2 before anything is removed, and every caller stops (5). The player line is new, with why `YOUR CLOUD SYNC SETTINGS COULDN'T BE SAVED` (proposed). | `79c2f15725` | A32. Settings folder read-only: FAIL rc 0, every old folder emptied, all pointers left on them. |
+| G-A-05: `conf_valid`'s continuation branch | **Fixed.** `conf_valid` is now a grammar, one text in all three copies: blank / comment / `KEY=value`. The value is double-quoted (no backtick; a backslash only as the line's last character; `$` only as `$NAME`/`${NAME}`), single-quoted on one line, or a bare word, with nothing after it but blanks and a comment. | `d5f24b05aa` | A33. Seven shapes, each first shown to run its command when sourced: the seat's counterexample, `"; cmd`, bare `;`, single-quoted `;`, an escaped backslash closing the quote, `&&`, and `${W@P}` (runs what another value spells out, with no `$(` anywhere). All seven passed the old validator in all three copies, and the counterexample ran through `cloud_backup`. The shipped conf, a fresh device's conf, and hand edits (comment, single quotes, number, empty, `${NAME}` append) still pass. |
+| G-A-09: root saves folder, no record, said only in the log | **Fixed as the coordinator asked.** The console says "Your saves folder is your cloud's top folder, so no replaced cloud saves are kept." and a completed run ends "Completed. " + the same sentence, which the round-trip's outcome gate still accepts. **The register is to carry the exception** (rclone refuses any `--backup-dir` on that remote). | `3c10446acb` | A36. FAIL: only "Completed.". |
+
+### vm-qa run 68's two round-trip failures
+
+**1. "an edited RCLONEOPTS without --filter-from still keeps the allowlist", last check.**
+- **Cause:** PL-020's catch-all test was applied to every `--filter-from`, including the player's own.
+- **Fix:** the test now applies to `/storage/.config/cloud_sync-rules.txt` only (`MANAGED_RULES`, compared after `readlink -f`). A named file is used as written, and the log says so. Commit `72ea073ca8`.
+- **Case A34:** the player's file with no catch-all. The backup sends the save and keeps the excluded file home; the restore leaves it in the cloud. The managed file without its catch-all is still refused. The first two FAILed with rc 1 ("couldn't be read").
+- **`tools/cloud-round-trip` needs no change for this step**: it asserts exactly this contract.
+
+**2. "content transfers honour the system selection".**
+- **Contract decided:** `--apply` is the second half of a check, as ES runs it (`GuiMenu.cpp`: `--match`, then the confirmation, then `--match --apply`). So:
+  - **The tool changed** (`18dae2347e`): the step runs `--match` first and requires both exits 0.
+  - **The script's planless-apply why** is now `CHECK WHAT WOULD CHANGE FIRST` (proposed words). It was `SOMETHING CHANGED SINCE YOU CHECKED`, which stays for a real change.
+- **Case A35:**
+  - An apply with no preview says check first. This FAILed on the old why.
+  - The round-trip's own sequence (gb plus a ghost system, checked first) announces ITEM 1 OF 2 and ITEM 2 OF 2 and "Nothing to remove from ghost-never-a-system". This passes on either script: it guards the tool's new sequence.
+- **Not run on a guest:** the brief forbids ssh to any guest. Both round-trip steps are untested there until the integrator's vm-qa run.
+
+### Every other finding
+
+**GPT seat**
+
+| Finding | Outcome |
+|---|---|
+| **G-A-03** (newer version at a listed name deleted) | **Withdrawn, recorded as a residual.** D-CLOUD-102 (maintainer, 2026-09-12): *"sync is never happening between two boxes or consoles at the same time"*. The seat's scenario is two consoles writing one save during a tidy the player started. rclone offers no version-conditional delete on these remotes. A per-file `rclone move` compare narrows the window, but on a size-only remote it would still delete a same-size newer save. PL-053's fix covers the new-name case exactly because the file list makes it free. **For the coordinator:** `upgrade-and-install.md`'s "Another device may be syncing at the same time" predates D-CLOUD-102 (`336fad373a`, 2026-08-25) and says the opposite. |
+| **G-A-04** (capture commits after the lock times out) | **Fixed** (`b251bf6021`). A run that cannot get the lock does not commit. An exit, `--rescan`, `--retire` or `--adopt` re-runs once, as it does on losing to another writer; a second failure, or a `--full`, records `lock-busy`. That run's stamp line is not written, which `LOCK_BUSY` makes explicit, so the lifted-`finish()` stamp test still passes. **Time to play:** unchanged with the lock free. Against a commit holding it more than 5 s, the exit capture waits about 10 s instead of 5 s and then racing. A42 FAILed: rc 0, manifest written unlocked. |
+| **G-A-06** (= claude G-A-02, `conf_get`) | **Fixed** (`7f3a3eaaca`, corrected by `32aa3a0c65`). The content scripts now read the forms `source` reads: double-quoted, single-quoted or bare, with an optional trailing comment. A line they cannot read is refused rather than read as the root. Against the old reader, A39 FAILed three ways: the trailing comment and the `; echo` line sent the ROMs to the cloud's root, and the single-quoted value sent them to a path with its quotes in it. **Of two lines the first counts.** `7f3a3eaaca` took the last; `32aa3a0c65` takes the first, which is what the old reader and the migration's `conf_value` did. Every ES-started saves run is `--yes`, which runs the duplicate cleanup, and the cleanup keeps the first. So Claude's first-versus-last half is **withdrawn**: the saves scripts run with the first line. |
+| **G-A-07** (= claude G-A-03, `--all` fallback listings) | **Fixed** (`1fa2a26a16`). `all_listing` reads the flat root and the legacy root fail-closed. BIOS is read from the content root's own listing. A40 FAILed: rc 0, stamp 0, "Nothing to restore". |
+| **G-A-08** (+ claude G-A-13, content progress) | **Fixed** (`b7ffaf0e15`). Progress is what rclone logged moving since the unit began (Copied, Moved, Deleted), whatever the unit's result. A match counts its sync's copies too. A43 FAILed on all three shapes: a bare 69 over a ROM that arrived, in both restore and backup; and "69 gaps" over a unit that moved nothing. |
+| **G-A-10** (nested `gamelist.xml`) | **Fixed** (`26e6c7bb40`). The name counts at any depth as game content, in both content scripts' `content_files` and in `cloud_content_filter`. A41 FAILed: row `scummvm\|61\|1\|10`, and no row under game content. |
+| **G-A-11** (= claude G-A-10, `backend features` unbounded) | **Fixed** (`cc61218a6d`). The call carries `RCLONE_LIST_OPTS`, and A5's bound check no longer excepts it. A38 FAILed. No hanging-query case: the shim's hang is a sleeping process that no rclone flag bounds. The bound is the same argv check every other call is held to. Claude's note that `take_cloud_lock` uses `>` is **withdrawn**: every cloud script opens the lock that way, and nothing is stored in the file. |
+| **G-A-12** (migration "Both folders are as they were") | **Fixed** (`ef93a127ba`, together with claude G-A-11's first half). A37 FAILed 3/3. |
+
+**Claude seat**
+
+| Finding | Outcome |
+|---|---|
+| **G-A-01** (automatic runs stamp a bare 69 after moving files) | **Fixed** (`f1d1657b24`). The automatic branch of the rclone wrapper, and `execute_rclone_with_error_handling`'s stderr, are read for moved-file lines. A44 FAILed: stamp "69". |
+| **G-A-02** | See GPT G-A-06. |
+| **G-A-03** | See GPT G-A-07. |
+| **G-A-04** (round-trip assertion strips no colour; `run_rc` defined?) | **Fixed** (`4eb42166e3`). The step uses the gate's own `last_player_line`. `run_rc` exists (`tools/cloud-round-trip:1830`), so that doubt is refuted. A50 puts the tool's reader to this sandbox's real `--system-only` output, plain and coloured. The old filter gives False on the coloured line and True on the plain one, which is the run's real shape, so this is robustness rather than a false result seen. |
+| **G-A-05** (the `gaps` why has spaces) | **Withdrawn.** `CloudText.cpp` `parseLastRun`: for one of its own tokens (`gaps` is in `isOutcomeToken`), `for (size_t i = ours ? 3 : 2; …) why += " " + parts[i]`. ES's own unit test asserts `parseLastRun("1789000000 1 gaps NES DID NOT FINISH").why == "NES DID NOT FINISH"`. |
+| **G-A-06** (the plan's epoch is unread; a same-count substitution passes) | **Withdrawn, recorded as a residual.** The seat itself calls it "a residual to record, not a defect": `--max-delete` is a count. ES never applies without the preview it just showed. A cancelled preview's plan is removed by the next preview, and an apply spends its plan. |
+| **G-A-07** (the partial marker ignores content-restore leftovers) | **Fixed** (`4dbd3a5dc8`). The content restore and match apply take the tree-clean record down while they write, sweep a failed unit's folder, and give the record back only when they end by themselves. rclone's `*.????????.partial` is excluded from every content count and transfer. A49 FAILed 2/2. A completed content restore still leaves the record, so F-CS-08's saving is kept. |
+| **G-A-08** (nesting warning for `SAVES_REMOTE="/"`) | **Fixed** (`2ae07161bb`). Skipped for either spelling of the root. A46 FAILed. |
+| **G-A-09** | **Shape (b) fixed** (`f6a94ba8f0`): an automatic `--system-only` probe the ceiling ended now says THE CLOUD TOOK TOO LONG, not CHECK YOUR SIGN-IN. A45 FAILed 2/2. **Shape (a) withdrawn**: a failure in the ceiling's last second is reported as YOUR CLOUD STOPPED ANSWERING or as the no-network skip, and both are true of that moment. |
+| **G-A-11** | **First half fixed** (`ef93a127ba`): the tier is named in words, not by its key. **Second half withdrawn**: the tidy makes no sign-in probe, the page's why is YOUR CLOUD STOPPED ANSWERING, and being offline is the common case. |
+| **G-A-12** (restore's saves path lost the sign-in wording) | **Withdrawn.** The saves restore now has `cloud_backup`'s shape (F-CS-04). Both saves paths report a mid-run refusal through `network_lost_during_run`, whose console line still says "You may need to sign in again". Making the two agree was F-CS-04's point (least surprise). |
+| **G-A-13** | See GPT G-A-08. |
+| **G-A-14** (raw `source` after the duplicate cleanup) | **Fixed** (`2447ff320f`). The rewritten conf is checked. If the cleanup fails or leaves an invalid file, the copy from before it goes back and the run continues. A47 overlays a stand-in cleanup at `/usr/bin` (`sa_run` gained `SA_EXTRA`). It FAILed 2/2: the command ran. |
+| **G-A-15** (two harness checks) | **Fixed** (`33f1f54f76`). |
+
+### Found while working, and fixed
+- **The duplicate cleanup tore repeated multi-line values** (`0fa4c6c196`). A repeated backslash-continued `RCLONEOPTS` lost its first line and left the rest as bare lines, producing a conf that does not parse. A48 FAILed. `A48`'s end-to-end half runs the real cleanup overlaid at `/usr/bin`.
+- **GPT coverage note 3** (`e402e41453`). The sandbox now runs the image's busybox `cp`, `mv`, `rm`, `mkdir`, `cat`, `date`, `ls`, `readlink`, `uniq`, `basename`, `dirname`, `touch`, `chmod`, `ln` and `xargs`. grep, sort and timeout are real binaries on the image. All 173 A checks pass.
+
+### Found, not fixed
+**A migration whose verification failed cannot be resumed by the next run.**
+- The new folder then holds copies that differ from the source. `resumable` (every destination file present and identical in the source) refuses it as "already exists", and the player must clear the new folder by hand.
+- This predates this stream; G-A-01's fix makes the refusal exact rather than lucky.
+- Telling a stale copy of our own file from another library's version of the same name needs a record, kept on the device, of what the run copied. That is a design change beyond these findings, and it is left to the coordinator.
+
+### New words for ES and the docs (proposed; not in my files)
+**Why sentences.** ES's `whySentences()` must gain these, with French, or the card shows them in English. `CloudTextTests`' emitter table fails on a why a script prints that is not in that table.
+- `YOUR CLOUD SYNC SETTINGS COULDN'T BE SAVED` (the migration's pointer write).
+- `CHECK WHAT WOULD CHANGE FIRST` (a planless match apply).
+
+**Console lines:**
+- "Your saves folder is your cloud's top folder, so no replaced cloud saves are kept."
+- "Couldn't save the new folder in this device's settings. It still uses the old one, and nothing was removed from it."
+- "Couldn't clean up the duplicate settings, so they were left as they were."
+- "Couldn't finish: the cloud took too long. It'll try again next time."
+- The migration's copy and verify lines.
+- "Now using … for your saves / settings backups / ROMs, BIOS, and game content."
+
+**ES (stream E2's lane).** TRY AGAIN after a match apply re-runs `--match --apply`, which is now refused with CHECK WHAT WOULD CHANGE FIRST. The retry should re-run the preview (GPT coverage note 5).
