@@ -135,7 +135,7 @@ def write_state(**fields):
         _write_whole(existing)
 
 
-def write_owned(attempt, **fields):
+def write_owned(attempt, owner=None, from_status=None, **fields):
     """write_state, if the state still belongs to this serve's attempt.
 
     Each serve stamps the state with an attempt id of its own (cmd_serve's
@@ -144,11 +144,25 @@ def write_owned(attempt, **fields):
     down -- would otherwise write its failure over the new attempt's state,
     and the merge kept that error beside the new attempt's "waiting" (G-C-02
     claude). An attempt of None owns whatever is there: a Session made
-    outside a serve. Returns whether it wrote.
+    outside a serve.
+
+    owner, when given, is the session within the serve that must still be
+    the one the state names (SessionHolder.start writes it): a restart
+    replaces the session and keeps the serve. from_status, when given, is
+    the statuses this write may move the state from. Together they keep the
+    state moving forward: a dead attempt is not republished as waiting, and
+    an attempt that was replaced, cancelled or timed out is not reopened as
+    signed-in (the audit of the fix round, PL-032). A state with no status
+    yet -- a Session made outside a serve -- counts as None. Checked and
+    written under the state's lock. Returns whether it wrote.
     """
     with _state_locked():
         existing = read_state()
         if attempt is not None and existing.get("attempt") != attempt:
+            return False
+        if owner is not None and existing.get("session") != owner:
+            return False
+        if from_status is not None and existing.get("status") not in from_status:
             return False
         existing.update(fields)
         _write_whole(existing)
@@ -252,8 +266,14 @@ class Session:
         # one's collector is woken by a death it must not report as a
         # failed sign-in (PL-050, G-C-02).
         self.superseded = False
-        # The serve's attempt id, which the state carries (write_owned).
+        # The serve's attempt id, which the state carries (write_owned), and
+        # this session's own within it (SessionHolder.start): a restart keeps
+        # the serve and replaces the session (PL-032).
         self.attempt = None
+        self.gen = None
+        # The thread that collects rclone's output and finishes the job;
+        # SessionHolder.end lets one that is saving a remote finish.
+        self.collector = None
         self.error = None
         # rclone's own last words. It exits fatally when the exchange fails,
         # and what it says -- "code doesn't exist or has expired" against
@@ -320,7 +340,8 @@ class Session:
         # Everything after this point is rclone waiting for the redirect, so
         # collect its output off-thread; the token appears there when the
         # replay lands.
-        threading.Thread(target=self._collect, daemon=True).start()
+        self.collector = threading.Thread(target=self._collect, daemon=True)
+        self.collector.start()
         log("sign-in started for %s" % self.backend)
         return True
 
@@ -382,6 +403,8 @@ class Session:
         with _state_locked():
             existing = read_state()
             if self.attempt is not None and existing.get("attempt") != self.attempt:
+                return False
+            if self.gen is not None and existing.get("session") != self.gen:
                 return False
             if existing.get("status") not in from_status:
                 return False
@@ -463,7 +486,19 @@ class Session:
             return self._config_result
 
     def _create_remote(self):
+        # One create at a time within the serve: an attempt that finishes
+        # late removes what it made (below) before a newer one asks whether
+        # that name is taken.
+        with _CREATE_LOCK:
+            return self._create_remote_locked()
+
+    def _create_remote_locked(self):
         name = self.remote_name or self.backend
+        # Replaced or closed before its token could be saved: nothing is
+        # made (PL-032).
+        if self.superseded:
+            log("the sign-in was closed before its remote was saved; nothing was saved")
+            return False, CLOSED_EARLY
         # Which remotes exist, or no create at all: a listing that failed
         # read as "none of that name" and the create went ahead over
         # whatever was there (#308 gpt F-RS-23).
@@ -502,9 +537,35 @@ class Session:
                            capture_output=True)
             return False, "signed in, but the remote did not respond"
 
+        # Published only while this attempt still speaks for the state, and
+        # only from starting or waiting. The write's answer used to be
+        # dropped: an attempt a restart had replaced, or one the serve had
+        # already closed -- its timeout's failed, a cancel's idle -- went on
+        # to return success, and its caller stopped the pad and wrote the
+        # signed-in marker `wait` returns on, over a state that said
+        # otherwise; a remote no screen had reported stayed, and the next
+        # sign-in of that name was refused as already there (the audit of
+        # the fix round, PL-032: gpt G2-C-03, the blind pass's S-25, claude
+        # G2-C-03). Refused, the remote this attempt made is taken away
+        # again, so what the device holds is what the state says.
+        if not write_owned(self.attempt, owner=self.gen,
+                           from_status=(None, "starting", "waiting"),
+                           status="signed-in", remote=name):
+            subprocess.run([RCLONE, "config", "delete", name],
+                           capture_output=True)
+            log("the sign-in finished after it had been closed or replaced; "
+                "the remote it made was removed")
+            return False, CLOSED_EARLY
         log("remote %s created for %s" % (name, self.backend))
-        write_owned(self.attempt, status="signed-in", remote=name)
         return True, name
+
+
+# What a closed or replaced attempt's own late ending says, on the phone and
+# in the log, when it has one to say.
+CLOSED_EARLY = "That sign-in was closed before it finished."
+
+# One remote created at a time in this process (Session._create_remote).
+_CREATE_LOCK = threading.Lock()
 
 
 # rclone's backend names are lowercase identifiers ("dropbox", "onedrive").
@@ -1765,11 +1826,29 @@ class SessionHolder:
         # on a screen with no way out but a button combination.
         session.on_signed_in = self.signed_in
         session.attempt = self.attempt
+        # The state names this session from here, and moves to starting:
+        # the old session's collector can write nothing more, whatever
+        # wakes it, and this one's own failure -- its rclone dying before
+        # anybody says waiting -- is recorded where the caller's waiting
+        # write will find it (PL-032). Not over a sign-in that has landed,
+        # a cancel's idle, or another serve's state.
+        session.gen = secrets.token_hex(4)
+        if not write_owned(self.attempt, from_status=(None, "starting", "waiting", "failed"),
+                           status="starting", session=session.gen, error=""):
+            if read_state().get("status") == "signed-in":
+                return False, "You're signed in already."
+            return False, "Another sign-in has taken over from this one."
         # Before the new attempt kills the old one's rclone (Session.start),
         # so the old collector knows its end is not a failure to report.
         if self.session:
             self.session.superseded = True
         if not session.start():
+            # Said in the state as well as to the caller: a restart whose
+            # rclone offered no link left the handheld reading waiting, with
+            # the old rclone killed and nothing able to finish it (claude
+            # G2-C-04).
+            write_owned(self.attempt, owner=session.gen, status="failed",
+                        error=session.error)
             return False, session.error
         with self.lock:
             self.stop_browser()
@@ -1839,6 +1918,14 @@ class SessionHolder:
         if self.session and self.session.proc \
                 and self.session.proc.poll() is None:
             self.session.proc.send_signal(signal.SIGTERM)
+        # A collector that had its token and is saving the remote is let
+        # finish -- bounded by rclone's own create and the check's 20 s --
+        # so what it made is published or taken away again (PL-032), not
+        # left half made by a process that exits under it. One without a
+        # token ends as soon as its rclone does.
+        collector = self.session.collector if self.session else None
+        if collector and collector is not threading.current_thread():
+            collector.join(timeout=45)
 
     def stop_browser(self):
         gamepad, self.gamepad = self.gamepad, None
@@ -2105,13 +2192,27 @@ def make_handler(holder, shutdown):
 
             if fields.get("restart"):
                 ok, error = holder.start()
-                if ok:
-                    write_owned(holder.attempt, status="waiting",
-                                provider=holder.session.provider)
+                # Waiting only from the starting the new attempt began with:
+                # its rclone may already have died, and its collector said
+                # so, before this line ran (PL-032, gpt G2-C-02).
+                if ok and write_owned(holder.attempt, owner=holder.session.gen,
+                                      from_status=("starting",),
+                                      status="waiting",
+                                      provider=holder.session.provider):
                     self._render('<div class=ok>Ready for another go. '
                                  'Sign in below.</div>')
-                else:
-                    self._render('<div class=err>%s</div>' % error)
+                    return
+                if ok:
+                    error = read_state().get("error") or \
+                        "That sign-in ended before it could start."
+                again = ""
+                if read_state().get("status") != "signed-in":
+                    again = ('<form method=post>'
+                             '<input type=hidden name=pin value="%s">'
+                             '<input type=hidden name=restart value="1">'
+                             '<button class=minor type=submit>'
+                             'Start a new sign-in</button></form>' % holder.pin)
+                self._render('<div class=err>%s</div>%s' % (error, again))
                 return
 
             session = holder.session
@@ -2217,9 +2318,20 @@ def serve_with(holder, backend, port, timeout):
 
     bare = "http://%s:%d" % (address, port)
     url = "%s/%s" % (bare, holder.pin)
-    write_owned(holder.attempt, status="waiting", backend=backend, url=url, address=bare,
-                provider=holder.session.provider, pin=holder.pin,
-                name=holder.name)
+    # Waiting only from starting, and only while this session is the one
+    # the state names. Authorize can print its link and die at once; its
+    # collector records failed while this was still binding, and this write
+    # used to put waiting over it -- a dead attempt republished, the
+    # handheld reading STILL WAITING until the serve's timeout (PL-032, gpt
+    # G2-C-02). What the state says then stands, and the serve ends.
+    if not write_owned(holder.attempt, owner=holder.session.gen,
+                       from_status=("starting",), status="waiting",
+                       backend=backend, url=url, address=bare,
+                       provider=holder.session.provider, pin=holder.pin,
+                       name=holder.name):
+        log("the sign-in ended before it could be offered")
+        server.server_close()
+        return 2
 
     # The window is not opened here. It covers the screen the moment it
     # appears, and the address and QR the handheld is showing are how
@@ -2275,11 +2387,13 @@ def serve_with(holder, backend, port, timeout):
         timer.cancel()
         server.server_close()
 
-    final = read_state().get("status")
-    if final == "signed-in":
-        return 0
-    write_owned(holder.attempt, status="failed", error="sign-in did not complete")
-    return 1
+    # One write, checked under the lock: failed only from starting or
+    # waiting, so a sign-in that lands between a read and the write is not
+    # turned back (PL-032).
+    if write_owned(holder.attempt, from_status=("starting", "waiting"),
+                   status="failed", error="sign-in did not complete"):
+        return 1
+    return 0 if read_state().get("status") == "signed-in" else 1
 
 
 def main(argv):
