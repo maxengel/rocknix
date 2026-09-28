@@ -223,15 +223,60 @@ Built 2026-09-28 06:20 UTC from the sixteen outputs (an agent's extraction, then
 **Found:** vm-qa run 68, scripts FAIL (2) in 0 s: `last-good-scripts-test: SIGINT is ignored in this process (started as a shell background job?); the cancel checks cannot run`. The harness's refusal is right (streams A and D added cancel checks that send SIGINT); `run_suite` ran it as a plain child of a runner started with `setsid -f`, which ignores SIGINT.
 **Verdict:** **fixed** -- `next 78f147f762`: the suite is exec'd through python3 with SIGINT reset to default; proven from a shell background job 04:47-04:51 UTC, 844 PASS.
 
-### G-A-01, G-A-02, G-A-05, G-A-09 (gpt, A) -- the four Highs
-**Seat's claims:** `rclone check`'s exit status ignored and "0 differences found" matched as a substring ("10 differences found" matches); `set_pointer`'s write unchecked before `relocate` deletes the source; `conf_valid`'s continuation branch `next`s past the shape checks; a root-level saves folder backed up with no `--backup-dir` and no record.
-**Checked:** each read against the source on `next` by the orchestrator: the code is as the seat describes in all four (`cloud_migrate_layout`'s `relocate`/`resumable`, `set_pointer`; `cloud_backup`'s `conf_valid`; the saves-root branch). Routed to A to fix with a case first.
-**Verdict:** **pending the stream's delivery**; the orchestrator's read says all four stand as High.
+### G-A-01 (gpt, A) -- the migration's `rclone check` read as a substring, its status ignored
+**Seat's claim:** `relocate` and `resumable` match "0 differences found" in rclone's output, which "10 differences found" also matches, and ignore the command's exit status; a failed verification can read as zero differences before the source is deleted.
+**Checked:** `cloud_migrate_layout` on `next` at the packet: the substring match and no status check, as the seat says. Routed to A: exit 0 required and an exact count.
+**Verdict:** **High stands; pending the stream's delivery.**
 
-### G-B-01 .. G-B-07 (gpt, B) -- the seven guards-fail-closed Highs
-**Seat's claims:** `archive_members` failing reads as nothing to protect; `tar -tzf`'s status dropped behind a count; the credential scan's find/grep failures indistinguishable from a clean scan; the backup-dir exclusion's awk and mv unchecked; `finish_restore` says reverted with files left; a failed move of an old ZIP leaves it cloud-eligible while the backup succeeds; `rocknix-evidence` lists files from an unfinished `find`.
-**Checked:** read against `backuptool`, `chksysconfig` and `rocknix-evidence` on `next`: each is the shape `engineering-practices.md` § Guards must fail closed names, and none has the positive check the rule asks for. Routed to B.
-**Verdict:** **pending the stream's delivery**; the orchestrator's read says all seven stand as High.
+### G-A-02 (gpt, A) -- the pointer write is unchecked before the source is deleted
+**Seat's claim:** `set_pointer`'s write can fail and `relocate` deletes the source regardless, leaving a cloud whose pointer names a folder that no longer exists.
+**Checked:** as the seat says on `next` at the packet. Routed to A: a failed pointer write stops before the delete.
+**Verdict:** **High stands; pending the stream's delivery.**
+
+### G-A-05 (gpt, A) -- `conf_valid`'s continuation branch bypasses the shape checks
+**Seat's claim:** a line that continues a backslash-ended value is accepted by `next` before the shape checks run, so a continuation can carry shell syntax the validator was written to refuse.
+**Checked:** `cloud_backup`'s `conf_valid` on `next` at the packet: the continuation branch `next`s past the checks. Routed to A with the seat's counterexample as a case.
+**Verdict:** **High stands; pending the stream's delivery.**
+
+### G-A-09 (gpt, A) -- a root-level saves folder backs up with no recovery record
+**Seat's claim:** the fix for the root-level remote drops `--backup-dir`, so a backup there overwrites without the one-cycle record the rule requires, and nothing says so.
+**Checked:** as the seat says; rclone cannot keep a `--backup-dir` inside the folder it writes, so the record cannot exist on that layout. Routed to A: the run says it on the console and in its outcome line, and the register carries the exception.
+**Verdict:** **High stands; pending the stream's delivery.**
+
+### G-B-01 (gpt, B) -- a failed member listing reads as nothing to protect
+**Seat's claim:** `archive_members` failing (an empty listing returns 4 and is treated as no members) makes the credential scan see nothing to protect.
+**Checked:** read against `backuptool`, `chksysconfig` and `rocknix-evidence` on `next` at the packet: the shape `engineering-practices.md` § Guards must fail closed names, without the positive check. Routed to B with the other six.
+**Verdict:** **High stands; pending the stream's delivery.**
+
+### G-B-02 (gpt, B) -- matching member counts override a `tar -tzf` failure
+**Seat's claim:** both verification paths count listing output without checking that `tar -tzf` completed; a damaged archive that lists every name then fails passes.
+**Checked:** read against `backuptool`, `chksysconfig` and `rocknix-evidence` on `next` at the packet: the shape `engineering-practices.md` § Guards must fail closed names, without the positive check. Routed to B with the other six.
+**Verdict:** **High stands; pending the stream's delivery.**
+
+### G-B-03 (gpt, B) -- the credential scan fails open when it cannot complete
+**Seat's claim:** a `find` or `grep` failure inside the scan is indistinguishable from a clean scan, and the publish goes ahead.
+**Checked:** read against `backuptool`, `chksysconfig` and `rocknix-evidence` on `next` at the packet: the shape `engineering-practices.md` § Guards must fail closed names, without the positive check. Routed to B with the other six.
+**Verdict:** **High stands; pending the stream's delivery.**
+
+### G-B-04 (gpt, B) -- the backup-directory exclusion's failure leaves the original list usable
+**Seat's claim:** the awk and mv of the exclusion are unchecked, so a failed exclusion restores over the backup directory too.
+**Checked:** read against `backuptool`, `chksysconfig` and `rocknix-evidence` on `next` at the packet: the shape `engineering-practices.md` § Guards must fail closed names, without the positive check. Routed to B with the other six.
+**Verdict:** **High stands; pending the stream's delivery.**
+
+### G-B-05 (gpt, B) -- the boot rollback says reverted with created files left
+**Seat's claim:** `finish_restore` writes "reverted" even when a file it created could not be removed (and symlinks are not tested).
+**Checked:** read against `backuptool`, `chksysconfig` and `rocknix-evidence` on `next` at the packet: the shape `engineering-practices.md` § Guards must fail closed names, without the positive check. Routed to B with the other six.
+**Verdict:** **High stands; pending the stream's delivery.**
+
+### G-B-06 (gpt, B) -- a failed move of an old ZIP does not stop a successful backup
+**Seat's claim:** the old cloud-eligible archive stays at the root while the new backup reports success, so a credential-bearing ZIP stays published.
+**Checked:** read against `backuptool`, `chksysconfig` and `rocknix-evidence` on `next` at the packet: the shape `engineering-practices.md` § Guards must fail closed names, without the positive check. Routed to B with the other six.
+**Verdict:** **High stands; pending the stream's delivery.**
+
+### G-B-07 (gpt, B) -- the evidence archive lists files from an unfinished traversal
+**Seat's claim:** `rocknix-evidence` uses its file list without checking the `find` finished, so a filtered-out file can be archived.
+**Checked:** read against `backuptool`, `chksysconfig` and `rocknix-evidence` on `next` at the packet: the shape `engineering-practices.md` § Guards must fail closed names, without the positive check. Routed to B with the other six.
+**Verdict:** **High stands; pending the stream's delivery.**
 
 ### G-B-01 (claude, B) -- the last-good record and `system.cfg.backup`
 **Seat's claim:** the strip applied to `system.cfg` is not applied to the `.backup` copy the boot keeps, so a credential stripped from one survives in the other.
@@ -252,3 +297,8 @@ Built 2026-09-28 06:20 UTC from the sixteen outputs (an agent's extraction, then
 **Seat's notes:** no absolute limit on a sign-in request's lifetime (gpt, under F-RS-18); `page_worth_recording` does not match `[::1]` or userinfo forms; the no-pad half of F-RS-16.
 **Checked:** rclone's redirect is always `127.0.0.1`, so the `[::1]` form cannot arrive; the lifetime and the no-pad half are design questions the stream did not take up.
 **Verdict:** **Low; recorded, not routed.** Candidates for the next round's sweep.
+
+### G-E2-O3 (orchestrator, E2) -- the sync card is closed by a direct call after the window may be gone
+**Found:** E2's own follow-up 1 note, still open after follow-up 4: the card's close is a direct call on a window that may have been destroyed.
+**Checked:** not yet by the orchestrator; E2 left it open with the reason that it needs a lifetime change the round did not take on.
+**Verdict:** **Medium, open; carried to the punch list** for the next round.
