@@ -17,3 +17,7 @@ The skill copy on `next` verified current (`diff -q` clean). Maintainer's call r
 ### [Phase 1] 13:54 -- research notes written
 
 01-research-notes.md: the spec (the three criterion sets; the prior seats' per-item verdicts sequestered), the issues, the history (the ranges, the merges, the integrator's 46 first-parent commits with five that touch the product or the harness -- packet I), the rules by glob, the provenance map with trust signals (the follow-ups had one reader; the integrator's commits had none), the red flags. Nine packets: A, B, C, D, F1, F2, I, E-src, E-tests; both seats each.
+
+### [Phase 2] 13:58 -- twenty seat calls dispatched over ten packets
+
+Packets under `seats/`: A (504 KB), B (415), C (357), D (368), F1 (396), F2 (282), E-core (352), E-app (430), E-tests (367), I (165) -- each stream's whole branch diff from `417dcd8610` (D-WORKFLOW-058), its report with follow-ups, the first audit's findings for it with the stream's claimed answer (no prior verdicts), the punch items it owned with their acceptance text, the plan where it fits the size; the ES range split by path into core, application and tests; the integrator's commits as packet I with no prior seat. Each brief asks for a verdict per item, a verdict per first-audit answer (the follow-up review), findings `G2-<X>-NN`, five sweep spot-checks, the seams, and a coverage boundary. Both seats on every packet, through the Facilitator on OpenRouter; outputs `seats/<X>-<seat>.md` with provenance.

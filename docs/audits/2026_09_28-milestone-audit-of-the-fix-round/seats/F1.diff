@@ -1,0 +1,4210 @@
+diff --git a/packages/hardware/quirks/platforms/GENERIC_X64/001-virtualization-setup b/packages/hardware/quirks/platforms/GENERIC_X64/001-virtualization-setup
+deleted file mode 100644
+index 8c2a7a983e..0000000000
+--- a/packages/hardware/quirks/platforms/GENERIC_X64/001-virtualization-setup
++++ /dev/null
+@@ -1,26 +0,0 @@
+-#!/bin/sh
+-# SPDX-License-Identifier: GPL-2.0
+-# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+-
+-### GENERIC_X64 Virtualization Setup
+-### Optimized for VirtualBox and QEMU environments
+-
+-echo "Configuring ROCKNIX for virtualized environments..."
+-
+-# Set UI service for virtualized x64 environments
+-cat <<EOF >/storage/.config/profile.d/001-virtualization
+-# Virtualization-specific configuration
+-VIRTUALIZED="yes"
+-UI_SERVICE="sway.service"
+-DISPLAY_DRIVER="virtio"
+-EOF
+-
+-# Configure optimal kernel parameters for VMs
+-mkdir -p /etc/tmpfiles.d
+-cat <<EOF >/etc/tmpfiles.d/vm-optimization.conf
+-# VM-specific optimizations
+-w /proc/sys/vm/swappiness - - - - 10
+-w /proc/sys/kernel/sched_migration_cost_ns - - - - 5000000
+-EOF
+-
+-echo "Virtualization setup complete"
+\ No newline at end of file
+diff --git a/packages/hardware/quirks/platforms/GENERIC_X64/090-ui_service b/packages/hardware/quirks/platforms/GENERIC_X64/090-ui_service
+deleted file mode 100755
+index 386644ab45..0000000000
+--- a/packages/hardware/quirks/platforms/GENERIC_X64/090-ui_service
++++ /dev/null
+@@ -1,10 +0,0 @@
+-#!/bin/bash
+-# SPDX-License-Identifier: GPL-2.0-or-later
+-# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+-
+-# ROCKNIX GENERIC_X64 UI Service Configuration
+-# This script sets the appropriate UI service for Generic x86_64 devices
+-
+-# For GENERIC_X64 with Wayland displayserver, use Sway compositor
+-# This matches the WINDOWMANAGER="swaywm-env" setting in device options
+-UI_SERVICE="sway.service"
+diff --git a/packages/hardware/quirks/platforms/GENERIC_X64/091-systemd-fixes b/packages/hardware/quirks/platforms/GENERIC_X64/091-systemd-fixes
+deleted file mode 100755
+index 613bc698f2..0000000000
+--- a/packages/hardware/quirks/platforms/GENERIC_X64/091-systemd-fixes
++++ /dev/null
+@@ -1,107 +0,0 @@
+-#!/bin/sh
+-# SPDX-License-Identifier: GPL-2.0
+-# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+-
+-### GENERIC_X64 systemd service configuration fixes
+-### Addresses service startup failures seen during boot
+-
+-# Create systemd drop-in directories for service overrides
+-mkdir -p /storage/.config/systemd/system/systemd-hostnamed.service.d
+-mkdir -p /storage/.config/systemd/system/systemd-journald.service.d
+-mkdir -p /storage/.config/systemd/system/dbus.service.d
+-
+-# Fix systemd-hostnamed service stability
+-cat <<EOF >/storage/.config/systemd/system/systemd-hostnamed.service.d/10-generic-x64.conf
+-[Unit]
+-# Ensure D-Bus is available before starting hostnamed
+-After=dbus.service
+-Wants=dbus.service
+-
+-[Service]
+-# Increase restart tolerance for PID churn issues
+-Restart=on-failure
+-RestartSec=1
+-StartLimitInterval=30
+-StartLimitBurst=5
+-# Reduce memory pressure
+-MemoryMax=32M
+-EOF
+-
+-# Fix systemd-journald stability for desktop environment
+-cat <<EOF >/storage/.config/systemd/system/systemd-journald.service.d/10-generic-x64.conf
+-[Service]
+-# Increase file descriptor limits for journald
+-LimitNOFILE=8192
+-# Reduce restart sensitivity
+-Restart=on-failure
+-RestartSec=2
+-StartLimitInterval=60
+-StartLimitBurst=3
+-# Desktop-appropriate memory limits
+-MemoryMax=64M
+-EOF
+-
+-# Ensure D-Bus starts early and stays stable
+-cat <<EOF >/storage/.config/systemd/system/dbus.service.d/10-generic-x64.conf
+-[Unit]
+-# Ensure D-Bus starts early in boot process
+-DefaultDependencies=false
+-After=sysinit.target
+-Before=multi-user.target
+-
+-[Service]
+-# Increase D-Bus stability for desktop services
+-Restart=on-failure
+-RestartSec=1
+-StartLimitInterval=30
+-StartLimitBurst=5
+-# Appropriate memory limits for desktop environment
+-MemoryMax=48M
+-EOF
+-
+-# Fix Samba service issues that prevent graphical.target
+-mkdir -p /storage/.config/systemd/system/smbd.service.d
+-mkdir -p /storage/.config/systemd/system/nmbd.service.d
+-
+-cat <<EOF >/storage/.config/systemd/system/smbd.service.d/10-generic-x64.conf
+-[Unit]
+-# Reduce Samba service restart issues
+-After=dbus.service network.target
+-
+-[Service]
+-# Increase tolerance for connection issues
+-Restart=on-failure
+-RestartSec=5
+-StartLimitInterval=60
+-StartLimitBurst=3
+-# Reduce memory usage
+-MemoryMax=64M
+-EOF
+-
+-cat <<EOF >/storage/.config/systemd/system/nmbd.service.d/10-generic-x64.conf
+-[Unit]
+-# Reduce NetBIOS service restart issues
+-After=network.target
+-
+-[Service]
+-# Increase tolerance for network issues
+-Restart=on-failure
+-RestartSec=5
+-StartLimitInterval=60
+-StartLimitBurst=3
+-# Reduce memory usage
+-MemoryMax=32M
+-EOF
+-
+-# Set platform-specific service ordering
+-cat <<EOF >/storage/.config/profile.d/091-generic-x64-services
+-# GENERIC_X64 service configuration
+-# Ensure proper service startup order for desktop environment
+-
+-# Desktop environment needs D-Bus early
+-SYSTEM_SERVICE_DEPS="dbus.service"
+-
+-# UI service dependency order
+-UI_SERVICE_AFTER="dbus.service systemd-logind.service"
+-UI_SERVICE_WANTS="dbus.service"
+-EOF
+diff --git a/packages/hardware/quirks/platforms/GENERIC_X64/092-journald-config b/packages/hardware/quirks/platforms/GENERIC_X64/092-journald-config
+deleted file mode 100755
+index d7416cfa26..0000000000
+--- a/packages/hardware/quirks/platforms/GENERIC_X64/092-journald-config
++++ /dev/null
+@@ -1,56 +0,0 @@
+-#!/bin/sh
+-# SPDX-License-Identifier: GPL-2.0
+-# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+-
+-### GENERIC_X64 journald configuration fixes
+-### Addresses journald EPOLLHUP and file descriptor issues
+-
+-# Create journald configuration override in system location for early boot
+-mkdir -p /etc/systemd/journald.conf.d
+-
+-cat <<EOF >/etc/systemd/journald.conf.d/10-generic-x64.conf
+-[Journal]
+-# Fix EPOLLHUP issues on stored fd
+-Storage=persistent
+-Compress=no
+-Seal=no
+-SplitMode=none
+-
+-# Desktop-appropriate limits (less aggressive than embedded defaults)
+-SystemMaxUse=32M
+-SystemKeepFree=64M
+-SystemMaxFileSize=8M
+-RuntimeMaxUse=16M
+-RuntimeKeepFree=32M
+-RuntimeMaxFileSize=4M
+-
+-# Reduce file descriptor pressure
+-MaxFileSec=1day
+-MaxRetentionSec=1week
+-
+-# Increase socket buffer for desktop workloads  
+-ForwardToSocket=no
+-ForwardToWall=no
+-ForwardToConsole=no
+-
+-# Reduce sync frequency to avoid fd issues
+-SyncIntervalSec=5min
+-RateLimitInterval=30s
+-RateLimitBurst=10000
+-EOF
+-
+-# Create tmpfiles configuration for journald directories in system location
+-mkdir -p /etc/tmpfiles.d
+-
+-cat <<EOF >/etc/tmpfiles.d/10-generic-x64-journald.conf
+-# GENERIC_X64 journald directory setup
+-# Ensure proper permissions and ownership
+-
+-d /var/log/journal 0755 root systemd-journal - -
+-d /run/log/journal 0755 root systemd-journal - -
+-d /run/systemd/journal 0755 root systemd-journal - -
+-
+-# Fix socket permissions
+-z /run/systemd/journal/socket 0666 root systemd-journal - -
+-z /run/systemd/journal/stdout 0666 root systemd-journal - -
+-EOF
+diff --git a/packages/hardware/quirks/platforms/GENERIC_X64/093-rocknix-service-fixes b/packages/hardware/quirks/platforms/GENERIC_X64/093-rocknix-service-fixes
+deleted file mode 100755
+index 6407d4788d..0000000000
+--- a/packages/hardware/quirks/platforms/GENERIC_X64/093-rocknix-service-fixes
++++ /dev/null
+@@ -1,114 +0,0 @@
+-#!/bin/sh
+-# SPDX-License-Identifier: GPL-2.0
+-# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+-
+-### GENERIC_X64 ROCKNIX service fixes
+-### Addresses ROCKNIX-specific service failures seen in boot logs
+-
+-# Fix rocknix-automount service issues
+-if [ -f /usr/lib/systemd/system/rocknix-automount.service ]; then
+-    # Create override directory
+-    mkdir -p /etc/systemd/system/rocknix-automount.service.d
+-    
+-    cat <<EOF >/etc/systemd/system/rocknix-automount.service.d/10-generic-x64.conf
+-[Unit]
+-# Add dependencies to ensure proper startup order
+-After=systemd-udevd.service systemd-journald.service
+-Wants=systemd-udevd.service
+-
+-[Service]
+-# Increase timeout for slower desktop hardware
+-TimeoutStartSec=30s
+-TimeoutStopSec=15s
+-
+-# Restart policy for failed mounts
+-Restart=on-failure
+-RestartSec=5s
+-EOF
+-fi
+-
+-# Fix plymouth communication issues
+-if [ -f /usr/lib/systemd/system/plymouth-start.service ]; then
+-    mkdir -p /etc/systemd/system/plymouth-start.service.d
+-    
+-    cat <<EOF >/etc/systemd/system/plymouth-start.service.d/10-generic-x64.conf
+-[Unit]
+-# Reduce plymouth dependency conflicts
+-ConditionKernelCommandLine=!plymouth.enable=0
+-
+-[Service]
+-# Handle communication failures gracefully
+-ExecStartPre=/bin/sh -c 'test -e /dev/fb0 || exit 0'
+-TimeoutStartSec=10s
+-EOF
+-fi
+-
+-# Create additional D-Bus service coordination
+-mkdir -p /etc/systemd/system/dbus.service.d
+-
+-cat <<EOF >/etc/systemd/system/dbus.service.d/10-generic-x64.conf
+-[Unit]
+-# Improve D-Bus startup coordination with systemd services
+-After=systemd-journald.service systemd-hostnamed.service
+-Before=systemd-logind.service
+-
+-[Service]
+-# Handle D-Bus communication timeouts better
+-TimeoutStartSec=15s
+-Restart=on-failure
+-RestartSec=2s
+-EOF
+-
+-# Fix systemd-hostnamed persistent issues
+-mkdir -p /etc/systemd/system/systemd-hostnamed.service.d
+-
+-cat <<EOF >/etc/systemd/system/systemd-hostnamed.service.d/20-generic-x64-enhanced.conf
+-[Unit]
+-# Enhanced coordination with D-Bus and journald
+-After=systemd-journald.service dbus.service
+-Requisite=dbus.service
+-
+-[Service]
+-# More aggressive restart and timeout handling
+-TimeoutStartSec=10s
+-TimeoutStopSec=5s
+-Restart=always
+-RestartSec=1s
+-StartLimitBurst=10
+-StartLimitIntervalSec=60s
+-
+-# Ensure clean process management
+-KillMode=mixed
+-KillSignal=SIGTERM
+-FinalKillSignal=SIGKILL
+-SendSIGKILL=yes
+-EOF
+-
+-# Enhanced journald configuration for early boot
+-mkdir -p /etc/systemd/journald.conf.d
+-
+-cat <<EOF >/etc/systemd/journald.conf.d/10-generic-x64-early.conf
+-[Journal]
+-# Early boot journald fixes for EPOLLHUP issues
+-Storage=persistent
+-Compress=no
+-Seal=no
+-SplitMode=none
+-
+-# Conservative limits to avoid file descriptor exhaustion
+-SystemMaxUse=32M
+-SystemKeepFree=64M
+-RuntimeMaxUse=16M
+-RuntimeKeepFree=32M
+-
+-# Reduce EPOLLHUP triggers
+-SyncIntervalSec=10min
+-RateLimitInterval=60s
+-RateLimitBurst=1000
+-
+-# Disable problematic features
+-ForwardToSocket=no
+-Audit=no
+-EOF
+-
+-echo "ROCKNIX service fixes applied for GENERIC_X64"
+diff --git a/packages/hardware/quirks/platforms/GENERIC_X64/094-core-systemd-fixes b/packages/hardware/quirks/platforms/GENERIC_X64/094-core-systemd-fixes
+deleted file mode 100755
+index f958332daa..0000000000
+--- a/packages/hardware/quirks/platforms/GENERIC_X64/094-core-systemd-fixes
++++ /dev/null
+@@ -1,123 +0,0 @@
+-#!/bin/sh
+-# SPDX-License-Identifier: GPL-2.0
+-# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+-
+-### GENERIC_X64 Core systemd architecture fixes
+-### Addresses systemd/D-Bus incompatibility issues fundamental to ROCKNIX
+-
+-echo "Applying core systemd fixes for GENERIC_X64..."
+-
+-# Fix 1: Disable problematic D-Bus dependent services entirely
+-mkdir -p /etc/systemd/system
+-
+-# Mask systemd-hostnamed since it requires D-Bus but systemd was built without D-Bus
+-cat <<EOF >/etc/systemd/system/systemd-hostnamed.service
+-[Unit]
+-Description=Hostname Service (masked for ROCKNIX)
+-
+-[Service]
+-Type=oneshot
+-ExecStart=/bin/true
+-RemainAfterExit=yes
+-
+-[Install]
+-WantedBy=multi-user.target
+-EOF
+-
+-# Fix 2: Create robust journald configuration for GENERIC_X64
+-mkdir -p /etc/systemd/journald.conf.d
+-
+-cat <<EOF >/etc/systemd/journald.conf.d/00-generic-x64-base.conf
+-[Journal]
+-# Base configuration for GENERIC_X64
+-Storage=persistent
+-Compress=no
+-Seal=no
+-SplitMode=none
+-
+-# Prevent EPOLLHUP errors by using conservative limits
+-SystemMaxUse=32M
+-SystemKeepFree=64M
+-SystemMaxFileSize=4M
+-RuntimeMaxUse=16M
+-RuntimeKeepFree=32M
+-RuntimeMaxFileSize=2M
+-
+-# Reduce sync pressure that causes fd issues
+-SyncIntervalSec=30s
+-MaxRetentionSec=1week
+-MaxFileSec=1day
+-
+-# Disable features that require D-Bus or cause issues
+-ForwardToSocket=no
+-ForwardToWall=no
+-Audit=no
+-EOF
+-
+-# Fix 3: Plymouth alternatives for systems without proper D-Bus
+-mkdir -p /etc/systemd/system/plymouth-start.service.d
+-
+-cat <<EOF >/etc/systemd/system/plymouth-start.service.d/10-generic-x64.conf
+-[Unit]
+-# Make plymouth optional to prevent communication failures
+-ConditionPathExists=/dev/fb0
+-ConditionKernelCommandLine=!plymouth.enable=0
+-
+-[Service]
+-ExecStartPre=-/bin/sh -c 'test -e /dev/fb0'
+-TimeoutStartSec=5s
+-TimeoutStopSec=5s
+-KillMode=mixed
+-StandardOutput=null
+-StandardError=null
+-EOF
+-
+-# Fix 4: Enhanced rocknix-automount service configuration
+-mkdir -p /etc/systemd/system/rocknix-automount.service.d
+-
+-cat <<EOF >/etc/systemd/system/rocknix-automount.service.d/10-generic-x64.conf
+-[Unit]
+-# Better dependency management
+-After=systemd-tmpfiles-setup.service systemd-journald.service
+-Wants=systemd-tmpfiles-setup.service
+-
+-[Service]
+-# More robust execution for desktop hardware
+-TimeoutStartSec=30s
+-TimeoutStopSec=10s
+-Restart=on-failure
+-RestartSec=5s
+-StandardOutput=journal
+-StandardError=journal
+-EOF
+-
+-# Fix 5: Create minimal system state management without D-Bus
+-mkdir -p /etc/systemd/system/rocknix-autostart.service.d
+-
+-cat <<EOF >/etc/systemd/system/rocknix-autostart.service.d/10-generic-x64.conf
+-[Service]
+-# Ensure proper startup sequence
+-TimeoutStartSec=60s
+-Restart=on-failure
+-RestartSec=10s
+-EOF
+-
+-# Fix 6: Basic system recovery mechanisms
+-cat <<EOF >/etc/systemd/system/generic-x64-recovery.service
+-[Unit]
+-Description=GENERIC_X64 System Recovery
+-After=multi-user.target
+-
+-[Service]
+-Type=oneshot
+-ExecStart=/bin/sh -c 'systemctl --failed --no-legend | grep -q . && echo "Failed services detected, attempting recovery..." || echo "System stable"'
+-RemainAfterExit=yes
+-StandardOutput=journal
+-
+-[Install]
+-WantedBy=multi-user.target
+-EOF
+-
+-systemctl enable generic-x64-recovery.service 2>/dev/null || true
+-
+-echo "Core systemd fixes applied for GENERIC_X64"
+diff --git a/packages/hardware/quirks/platforms/GENERIC_X64/095-kernel-early-boot-fixes b/packages/hardware/quirks/platforms/GENERIC_X64/095-kernel-early-boot-fixes
+deleted file mode 100755
+index 3486507189..0000000000
+--- a/packages/hardware/quirks/platforms/GENERIC_X64/095-kernel-early-boot-fixes
++++ /dev/null
+@@ -1,74 +0,0 @@
+-#!/bin/sh
+-# SPDX-License-Identifier: GPL-2.0
+-# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+-
+-### GENERIC_X64 Kernel parameter and early boot fixes
+-
+-echo "Applying kernel and early boot fixes for GENERIC_X64..."
+-
+-# Fix 1: Create kernel parameter overrides for systemd stability
+-mkdir -p /etc/kernel
+-
+-cat <<EOF >/etc/kernel/cmdline.d/10-generic-x64.conf
+-# GENERIC_X64 kernel parameters for systemd stability
+-systemd.log_level=info
+-systemd.log_target=console
+-systemd.journald.forward_to_console=no
+-quiet splash
+-mitigations=off
+-EOF
+-
+-# Fix 2: Create early boot environment setup
+-mkdir -p /etc/systemd/system/sysinit.target.wants
+-
+-cat <<EOF >/etc/systemd/system/generic-x64-early-setup.service
+-[Unit]
+-Description=GENERIC_X64 Early System Setup
+-DefaultDependencies=no
+-Before=sysinit.target
+-After=systemd-journald.service
+-
+-[Service]
+-Type=oneshot
+-ExecStart=/bin/sh -c 'echo "GENERIC_X64 early setup complete" > /var/log/generic-x64-setup.log'
+-RemainAfterExit=yes
+-StandardOutput=null
+-StandardError=null
+-
+-[Install]
+-WantedBy=sysinit.target
+-EOF
+-
+-ln -sf /etc/systemd/system/generic-x64-early-setup.service /etc/systemd/system/sysinit.target.wants/
+-
+-# Fix 3: Memory and resource management for x86_64 desktop
+-mkdir -p /etc/sysctl.d
+-
+-cat <<EOF >/etc/sysctl.d/10-generic-x64.conf
+-# GENERIC_X64 system tuning
+-vm.swappiness=10
+-vm.dirty_ratio=15
+-vm.dirty_background_ratio=5
+-kernel.pid_max=32768
+-fs.file-max=65536
+-EOF
+-
+-# Fix 4: Process management improvements
+-mkdir -p /etc/systemd/system.conf.d
+-
+-cat <<EOF >/etc/systemd/system.conf.d/10-generic-x64.conf
+-[Manager]
+-# Improved process management for desktop workloads
+-DefaultTimeoutStartSec=30s
+-DefaultTimeoutStopSec=15s
+-DefaultDeviceTimeoutSec=30s
+-DefaultRestartSec=100ms
+-DefaultLimitNOFILE=4096
+-DefaultLimitNPROC=2048
+-
+-# Reduce systemd overhead
+-RuntimeWatchdogSec=0
+-KExecWatchdogSec=0
+-EOF
+-
+-echo "Kernel and early boot fixes applied for GENERIC_X64"
+diff --git a/projects/ROCKNIX/devices/GENERIC_X64/bootloader/update.sh b/projects/ROCKNIX/devices/GENERIC_X64/bootloader/update.sh
+deleted file mode 100755
+index 5133a13d5f..0000000000
+--- a/projects/ROCKNIX/devices/GENERIC_X64/bootloader/update.sh
++++ /dev/null
+@@ -1,34 +0,0 @@
+-#!/bin/sh
+-# SPDX-License-Identifier: GPL-2.0
+-# Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
+-#
+-# In-place bootloader update for GENERIC_X64 (syslinux BIOS + GRUB UEFI on a
+-# FAT/ESP boot partition). Every copy is guarded so a missing file is a no-op.
+-
+-[ -z "$SYSTEM_ROOT" ] && SYSTEM_ROOT=""
+-[ -z "$BOOT_ROOT" ] && BOOT_ROOT="/flash"
+-
+-BL="$SYSTEM_ROOT/usr/share/bootloader"
+-
+-# mount $BOOT_ROOT rw
+-mount -o remount,rw "$BOOT_ROOT"
+-
+-# syslinux (BIOS) support files at the FAT root
+-for f in ldlinux.c32 ldlinux.sys libcom32.c32 libutil.c32; do
+-  [ -f "$BL/$f" ] && echo "Updating $f..." && cp "$BL/$f" "$BOOT_ROOT/"
+-done
+-[ -f "$BL/syslinux.cfg" ] && echo "Updating syslinux.cfg..." && cp "$BL/syslinux.cfg" "$BOOT_ROOT/"
+-
+-# GRUB/syslinux UEFI loader + config on the ESP
+-if [ -f "$BL/bootx64.efi" ] || [ -f "$BL/ldlinux.e64" ] || [ -f "$BL/grub.cfg" ]; then
+-  mkdir -p "$BOOT_ROOT/EFI/BOOT"
+-  [ -f "$BL/bootx64.efi" ] && echo "Updating UEFI loader..." && cp "$BL/bootx64.efi" "$BOOT_ROOT/EFI/BOOT/"
+-  [ -f "$BL/ldlinux.e64" ] && cp "$BL/ldlinux.e64" "$BOOT_ROOT/EFI/BOOT/"
+-  [ -f "$BL/grub.cfg" ] && echo "Updating grub.cfg..." && cp "$BL/grub.cfg" "$BOOT_ROOT/EFI/BOOT/"
+-fi
+-
+-# mount $BOOT_ROOT ro
+-sync
+-mount -o remount,ro "$BOOT_ROOT"
+-
+-echo "UPDATE" > /storage/.boot.hint
+diff --git a/projects/ROCKNIX/devices/GENERIC_X64/filesystem/usr/lib/systemd/system/serial-debug-shell.service b/projects/ROCKNIX/devices/GENERIC_X64/filesystem/usr/lib/systemd/system/serial-debug-shell.service
+index 0ea3399475..1e08b193df 100644
+--- a/projects/ROCKNIX/devices/GENERIC_X64/filesystem/usr/lib/systemd/system/serial-debug-shell.service
++++ b/projects/ROCKNIX/devices/GENERIC_X64/filesystem/usr/lib/systemd/system/serial-debug-shell.service
+@@ -1,13 +1,26 @@
+-# GENERIC_X64 is a VM/QA target: provide an autologin root shell on the
+-# serial console (ttyS0, already on the kernel cmdline via EXTRA_CMDLINE) so
+-# contributors can inspect boot/graphics state in QEMU/UTM/VirtualBox. ROCKNIX
+-# strips all getty units, so this uses systemd's debug-shell pattern (a plain
+-# /bin/sh bound to the tty) instead of a getty/login.
++# SPDX-License-Identifier: GPL-2.0
++# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
++#
++# A root shell on the serial console, with no login: the developers' way into
++# a QA guest (tools/vm-serial; SSH is off on a fresh image). GENERIC_X64 is a
++# developer's tool and never a gameplay image (D-QA-053), and this unit is why
++# it must not become one unchanged. ROCKNIX strips every getty unit, so this is
++# systemd's debug-shell pattern -- a plain /bin/sh bound to the tty -- rather
++# than a getty and a login.
++#
++# It starts only on a virtual machine: ConditionVirtualization=vm has no |, so
++# it must hold as well as one of the console conditions (both always met here,
++# since EXTRA_CMDLINE puts console=ttyS0,115200 on every boot). GENERIC_X64
++# installed on hardware with a serial header does not open the shell.
+ [Unit]
+ Description=Serial debug root shell on ttyS0 (GENERIC_X64 VM testing)
+ After=rocknix-automount.service
++ConditionVirtualization=vm
+ ConditionKernelCommandLine=|console=ttyS0
+ ConditionKernelCommandLine=|console=ttyS0,115200
++# A [Unit] key: the shell outlives an isolate (it sat under [Service] until
++# 2026-09, where systemd ignores it).
++IgnoreOnIsolate=yes
+ 
+ [Service]
+ Environment=TERM=vt100
+@@ -23,7 +36,6 @@ TTYPath=/dev/ttyS0
+ TTYReset=yes
+ TTYVHangup=yes
+ KillMode=process
+-IgnoreOnIsolate=yes
+ 
+ [Install]
+ WantedBy=rocknix.target
+diff --git a/projects/ROCKNIX/devices/GENERIC_X64/options b/projects/ROCKNIX/devices/GENERIC_X64/options
+index 7c0ba3328a..5f94718161 100644
+--- a/projects/ROCKNIX/devices/GENERIC_X64/options
++++ b/projects/ROCKNIX/devices/GENERIC_X64/options
+@@ -8,6 +8,10 @@
+       x86_64)
+         TARGET_KERNEL_ARCH="x86"
+         TARGET_KERNEL_PATCH_ARCH="x86_64"
++        # x86-64-v3 (Haswell/Excavator or newer: AVX2, BMI2, FMA). The VM
++        # profile's CPU model is Haswell-v4 for this reason; an older CPU
++        # stops with SIGILL at the first v3 instruction. GENERIC_X64 is a
++        # developers' QA device, not a PC image (D-QA-053).
+         TARGET_CPU="x86-64-v3"
+         TARGET_FEATURES="64bit"
+         ;;
+@@ -23,17 +27,21 @@
+     BOOTLOADER="syslinux"
+ 
+   # Graphics drivers for x86_64.
+-  # VM QA target: software OpenGL via llvmpipe (LLVM_SUPPORT=yes) with virtio (virgl)
+-  # and vmware (svga) kept for VM display; llvmpipe is the reliable fallback in any VM.
+-  # NOTE: iris (Intel HW GL/Vulkan) is intentionally omitted — it pulls in the
+-  # intel_clc/SPIR-V toolchain cascade. Hardware accel is a follow-up (see issue #16).
++  # VM QA target: virtio (virgl) is the guest's GL -- generic-x64-vm --headless
++  # renders it on the host's GPU (D-QA-052) -- and vmware (svga) is kept for
++  # other hypervisors. llvmpipe (LLVM_SUPPORT below) is the software GL path
++  # (--gl none). iris (Intel HW GL/Vulkan) is intentionally omitted: it pulls in
++  # the intel_clc/SPIR-V toolchain cascade (issue #16). None of these is a
++  # Vulkan driver.
+     GRAPHIC_DRIVERS="virtio vmware"
+ 
+   # OpenGL support
+     OPENGL_SUPPORT="yes"
+     OPENGL="mesa"
+ 
+-  # Vulkan support - re-enabled for x86_64 with proper Mesa configuration
++  # Vulkan: the loader and headers only. GRAPHIC_DRIVERS builds no Vulkan
++  # driver, so the image carries no ICD and a Vulkan renderer has no device on
++  # a guest; RetroArch's GENERIC_X64 profile draws with gl.
+     VULKAN_SUPPORT="yes"
+     VULKAN="vulkan-loader vulkan-headers"
+ 
+@@ -69,11 +77,14 @@
+   # Disable joypad driver for x86_64
+     ROCKNIX_JOYPAD="no"
+ 
+-  # Enable LLVM support for iris graphics driver compute shaders
++  # LLVM for llvmpipe, the software GL path (config/graphic keeps this
++  # device's explicit yes; D-QA-052)
+     LLVM_SUPPORT="yes"
+ 
+-  # Disable swap support for virtualized environments
++  # No swap: the QA guest has 8 GiB (vm/profile.json)
+     SWAP_SUPPORT="no"
+ 
+-  # Enable installer support for GENERIC_X64 (allows installation to disk)
++  # Enable installer support for GENERIC_X64 (allows installation to disk; a
++  # developer's install -- the serial root shell stays off on hardware, see
++  # serial-debug-shell.service)
+     INSTALLER_SUPPORT="yes"
+diff --git a/projects/ROCKNIX/devices/GENERIC_X64/vm/README.md b/projects/ROCKNIX/devices/GENERIC_X64/vm/README.md
+index 4d88e83ff3..fecdf7182c 100644
+--- a/projects/ROCKNIX/devices/GENERIC_X64/vm/README.md
++++ b/projects/ROCKNIX/devices/GENERIC_X64/vm/README.md
+@@ -12,7 +12,16 @@ The host acceleration differs by necessity: Linux uses KVM when available,
+ while an x86_64 guest on Apple silicon uses QEMU TCG. The fixed CPU model and
+ devices keep the guest-visible environment equivalent.
+ 
+-Print or run the Linux QEMU command:
++Print or run the Linux QEMU command. `qemu-args` only prints: it touches no
++socket, vars store or disk, so it is safe beside a running guest. `run` clears
++a previous QEMU's monitor and serial sockets (a socket only -- a symlink or
++any other file at those paths is refused) and makes the guest's UEFI vars
++store from the firmware's template when it has none, then starts QEMU. A vars
++store whose size is not the template's was made for another firmware build
++and is refused with its name: move it aside and the next start makes a new
++one. Both refuse a disk under the profile's
++16 GiB, and take the OVMF code image and vars template from one firmware
++directory (`--ovmf-code` with `--ovmf-vars-template` names another pair):
+ 
+ ```bash
+ projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm \
+@@ -33,7 +42,9 @@ projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm \
+   run --headless --res 640x480 target/ROCKNIX-GENERIC_X64.x86_64-<date>.qcow2
+ ```
+ 
+-Generate the UTM bundle:
++Generate the UTM bundle (a qcow2 that needs another file -- a backing image,
++an external data file -- is refused: the bundle carries the one file; flatten
++it with `qemu-img convert -O qcow2` first):
+ 
+ ```bash
+ projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm utm \
+@@ -75,11 +86,18 @@ ssh -L 53682:localhost:53682 -p 10022 root@127.0.0.1
+ 
+ The `-L` tunnel carries rclone's OAuth sign-in page (guest port 53682) to the
+ browser of the machine running SSH, so the full `rclone config` auto flow
+-works from the host. Bridged VMs omit the injection: the guest is on the LAN
+-under its own address, and the screen correctly shows it.
++works from the host. A bundle generated for Bridged (and `--net bridged` on
++Linux) omits the injection: the guest is on the LAN under its own address,
++and the screen correctly shows it. The injection is fixed when the bundle is
++made, though: a bundle switched to Bridged, or to a vmnet host network, in
++UTM's settings keeps its two `-fw_cfg` entries under QEMU > Arguments, and
++the screen keeps showing the loopback command, which does not reach the
++guest there. Remove those two entries when you switch.
+ 
+ Manual fallback: write a full SSH command into
+-`/storage/.config/cloud_setup_ssh` in the guest.
++`/storage/.config/cloud_setup_ssh` in the guest (from the serial console).
++It is kept across boots: `095-cloud-ssh` replaces or removes only the
++command it wrote itself. Delete the file to go back to the automatic one.
+ 
+ ### Troubleshooting: bridged mode hangs forever (UTM)
+ 
+diff --git a/projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm b/projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm
+index 9e8d4ac3fe..3ab13bf700 100755
+--- a/projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm
++++ b/projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm
+@@ -5,10 +5,12 @@
+ import argparse
+ import json
+ import os
++import platform
+ import plistlib
+ import re
+ import shlex
+ import shutil
++import stat
+ import subprocess
+ import sys
+ import tempfile
+@@ -79,51 +81,150 @@ def find_ovmf(explicit, candidates, label):
+     raise FileNotFoundError(f"could not locate {label}; pass its path explicitly")
+ 
+ 
+-def qemu_command(profile, args):
+-    disk = Path(args.disk).resolve()
+-    if not disk.is_file():
+-        raise FileNotFoundError(f"disk does not exist: {disk}")
++# OVMF code and its vars template come as a pair from one firmware build: a
++# 4 MiB code image with a 2 MiB vars store does not boot. Each entry is one
++# distribution's pair; the first whose two files both exist is taken.
++OVMF_PAIRS = (
++    ("/usr/share/OVMF/OVMF_CODE_4M.fd", "/usr/share/OVMF/OVMF_VARS_4M.fd"),
++    ("/usr/share/edk2/x64/OVMF_CODE.fd", "/usr/share/edk2/x64/OVMF_VARS.fd"),
++    ("/usr/share/edk2/ovmf/OVMF_CODE.fd", "/usr/share/edk2/ovmf/OVMF_VARS.fd"),
++)
++
++
++def find_ovmf_pair(code_arg, vars_arg):
++    """The OVMF code image and vars template, as one pair. Both given: taken as
++    given. One given: its partner from the same pair, or the other flag is
++    needed. Neither: the first pair whose two files exist."""
++    if code_arg and vars_arg:
++        return (
++            find_ovmf(code_arg, (), "OVMF code"),
++            find_ovmf(vars_arg, (), "OVMF vars template"),
++        )
++    if code_arg or vars_arg:
++        given = Path(code_arg or vars_arg).resolve()
++        side = 0 if code_arg else 1
++        for pair in OVMF_PAIRS:
++            if Path(pair[side]).resolve() == given:
++                partner = find_ovmf(None, (pair[1 - side],), "OVMF vars template" if side == 0 else "OVMF code")
++                found = find_ovmf(str(given), (), "OVMF code" if side == 0 else "OVMF vars template")
++                return (found, partner) if side == 0 else (partner, found)
++        raise FileNotFoundError(
++            f"{given} is not a known OVMF pair's; pass --ovmf-code and --ovmf-vars-template together"
++        )
++    for code, vars_template in OVMF_PAIRS:
++        if Path(code).is_file() and Path(vars_template).is_file():
++            return Path(code), Path(vars_template)
++    raise FileNotFoundError(
++        "could not locate an OVMF code image and vars template from one firmware build; "
++        "pass --ovmf-code and --ovmf-vars-template"
++    )
+ 
+-    qemu = shutil.which(os.environ.get("QEMU_SYSTEM_X86_64", "qemu-system-x86_64"))
+-    if not qemu:
+-        raise RuntimeError("qemu-system-x86_64 is required")
+ 
+-    code = find_ovmf(
+-        args.ovmf_code,
+-        (
+-            "/usr/share/OVMF/OVMF_CODE_4M.fd",
+-            "/usr/share/edk2/x64/OVMF_CODE.fd",
+-            "/usr/share/edk2/ovmf/OVMF_CODE.fd",
+-        ),
+-        "OVMF code",
+-    )
+-    vars_template = find_ovmf(
+-        args.ovmf_vars_template,
+-        (
+-            "/usr/share/OVMF/OVMF_VARS_4M.fd",
+-            "/usr/share/edk2/x64/OVMF_VARS.fd",
+-            "/usr/share/edk2/ovmf/OVMF_VARS.fd",
+-        ),
+-        "OVMF vars template",
+-    )
++def qemu_opt(value):
++    """A value inside one of QEMU's comma-separated option strings: a comma in
++    it is doubled, which is how QEMU reads a literal one (a path is otherwise
++    split at it into an option that does not exist)."""
++    return str(value).replace(",", ",,")
++
++
++def auto_accel():
++    """KVM when this host can accelerate an x86_64 guest with it: the host is
++    x86_64 and /dev/kvm is open to us. /dev/kvm on an aarch64 host is ARM KVM,
++    which cannot run this guest; TCG emulates it instead."""
++    host = platform.machine().lower()
++    if host in ("x86_64", "amd64") and os.access("/dev/kvm", os.R_OK | os.W_OK):
++        return "kvm"
++    return "tcg,thread=multi"
++
++
++def run_paths(args):
++    """The files a start makes or replaces: the OVMF vars store, the monitor
++    socket, and the serial socket with --headless (None otherwise). The
++    socket paths are made absolute but not resolved: a symlink there must
++    be seen as one (claim_socket_path), not followed to whatever it names."""
++    disk = Path(args.disk).resolve()
+     vars_path = (
+         Path(args.ovmf_vars).resolve()
+         if args.ovmf_vars
+         else disk.with_name(f"{disk.stem}.ovmf-vars.fd")
+     )
++    serial = Path(os.path.abspath(args.serial)) if args.headless else None
++    return vars_path, Path(os.path.abspath(args.monitor)), serial
++
++
++def claim_socket_path(path):
++    """Make way for QEMU to bind a unix socket at path: a stale socket there is
++    removed; anything else -- a disk image given as --monitor, a symlink -- is
++    refused, never deleted."""
++    try:
++        mode = os.lstat(path).st_mode
++    except FileNotFoundError:
++        return
++    if stat.S_ISLNK(mode):
++        raise ValueError(f"{path} is a symlink; refusing to remove what it points at")
++    if not stat.S_ISSOCK(mode):
++        raise ValueError(f"{path} exists and is not a socket; refusing to remove it")
++    path.unlink()
++
++
++def prepare_run(profile, args):
++    """What a start does before QEMU runs, and only a start: the vars store
++    made from its template if the guest has none yet, and the socket paths
++    cleared of a previous QEMU's sockets. qemu-args never calls this -- it
++    prints, and touches nothing."""
++    vars_path, monitor, serial = run_paths(args)
++    _, vars_template = find_ovmf_pair(args.ovmf_code, args.ovmf_vars_template)
++    for sock in (monitor, serial):
++        if sock is not None:
++            claim_socket_path(sock)
+     if not vars_path.exists():
+         shutil.copyfile(vars_template, vars_path)
+ 
++
++def qemu_command(profile, args):
++    """The QEMU command for this profile and these arguments. It reads and
++    checks; it creates, removes and changes nothing (prepare_run does that,
++    for a start)."""
++    disk = Path(args.disk).resolve()
++    if not disk.is_file():
++        raise FileNotFoundError(f"disk does not exist: {disk}")
++
++    qemu = shutil.which(os.environ.get("QEMU_SYSTEM_X86_64", "qemu-system-x86_64"))
++    if not qemu:
++        raise RuntimeError("qemu-system-x86_64 is required")
++
++    code, vars_template = find_ovmf_pair(args.ovmf_code, args.ovmf_vars_template)
++    vars_path, monitor, serial = run_paths(args)
++    # A vars store the guest already has is its UEFI settings and is kept --
++    # unless it was made from another firmware build's template (a 2 MiB
++    # store beside a 4 MiB code image, from before the code and template
++    # were chosen as a pair), which this firmware cannot use. Refused, named
++    # and left in place: moving it aside is the owner's call.
++    if vars_path.exists() and vars_path.stat().st_size != vars_template.stat().st_size:
++        raise ValueError(
++            f"{vars_path} is {vars_path.stat().st_size} bytes and this firmware's vars template "
++            f"({vars_template}) is {vars_template.stat().st_size}: it was made for another OVMF build. "
++            "Move it aside and the next start makes a new one from the template (the guest's UEFI "
++            "settings start over; the image boots from its default EFI path)"
++        )
++
+     disk_info = qemu_img_info(disk)
++    # The canonical disk size is a floor for a Linux launch as for a UTM
++    # bundle: under it the first boot's copy of the interface's resources
++    # runs out of space and the menus come up broken (generic-x64-vm-testing).
++    if disk_info["virtual-size"] < profile["disk"]["virtual_size_bytes"]:
++        raise ValueError(
++            f"{disk} is {disk_info['virtual-size']} bytes, under the profile's 16 GiB "
++            f"({profile['disk']['virtual_size_bytes']} bytes); grow it before the first boot: "
++            f"qemu-img resize {disk} 16G"
++        )
+     disk_profile = profile["disk"]
+     display = profile["display"]
+     network = profile["network"]
+     sound = profile["sound"]
+     accel = args.accel
+     if accel == "auto":
+-        accel = "kvm" if os.access("/dev/kvm", os.R_OK | os.W_OK) else "tcg,thread=multi"
+-
+-    monitor = Path(args.monitor).resolve()
++        accel = auto_accel()
+ 
+     # Headless (a build host with no desktop): virtio-gpu-gl-pci refuses
+     # -display none, so the GL-less device stands in; a VNC display on
+@@ -157,9 +258,7 @@ def qemu_command(profile, args):
+             display_device = display_device.replace("-gl-", "-")
+             display_arg = "none"
+         vnc_args = ["-vnc", f"127.0.0.1:{args.vnc}"]
+-        serial = Path(args.serial).resolve()
+-        serial.unlink(missing_ok=True)
+-        serial_arg = f"unix:{serial},server,nowait"
++        serial_arg = f"unix:{qemu_opt(serial)},server,nowait"
+         pidfile_args = ["-pidfile", str(Path(args.pidfile).resolve())]
+         for sock in (monitor, serial):
+             if len(str(sock).encode()) > 107:
+@@ -199,7 +298,6 @@ def qemu_command(profile, args):
+     # same manifest, and two-device fixtures agreeing with themselves.
+     if args.mac:
+         network["mac_address"] = args.mac
+-    monitor.unlink(missing_ok=True)
+ 
+     command = [
+         qemu,
+@@ -216,13 +314,13 @@ def qemu_command(profile, args):
+         "-m",
+         str(profile["memory_mib"]),
+         "-drive",
+-        f"if=pflash,unit=0,readonly=on,format=raw,file={code}",
++        f"if=pflash,unit=0,readonly=on,format=raw,file={qemu_opt(code)}",
+         "-drive",
+-        f"if=pflash,unit=1,format=raw,file={vars_path}",
++        f"if=pflash,unit=1,format=raw,file={qemu_opt(vars_path)}",
+         "-drive",
+         (
+             f"if=none,id=rocknix,format={disk_info['format']},"
+-            f"file={disk}"
++            f"file={qemu_opt(disk)}"
+         ),
+         "-device",
+         (
+@@ -264,7 +362,7 @@ def qemu_command(profile, args):
+         "-device",
+         sound["codec"],
+         "-monitor",
+-        f"unix:{monitor},server,nowait",
++        f"unix:{qemu_opt(monitor)},server,nowait",
+         # Behind the NAT forward the guest's own address is unreachable, so
+         # the cloud-setup screen must show the loopback SSH command instead.
+         # Only the forwarded port is injected (a space-free token: UTM
+@@ -463,6 +561,21 @@ def build_utm(profile, args):
+         raise ValueError("UTM bundle input must be qcow2")
+     if info["virtual-size"] < profile["disk"]["virtual_size_bytes"]:
+         raise ValueError("qcow2 is smaller than the canonical 16 GiB VM disk")
++    # The bundle carries this one file, so a disk that needs another -- an
++    # overlay's backing image, an external data file -- would arrive on the
++    # other machine unable to open. Flatten it first (qemu-img convert).
++    backing = info.get("full-backing-filename") or info.get("backing-filename")
++    if backing:
++        raise ValueError(
++            f"qcow2 has a backing file ({backing}); a UTM bundle carries one file -- "
++            "flatten it first: qemu-img convert -O qcow2 <in> <out>"
++        )
++    data_file = ((info.get("format-specific") or {}).get("data") or {}).get("data-file")
++    if data_file:
++        raise ValueError(
++            f"qcow2 keeps its data in another file ({data_file}); a UTM bundle carries one file -- "
++            "convert it first: qemu-img convert -O qcow2 <in> <out>"
++        )
+ 
+     output = Path(args.output).resolve()
+     output.parent.mkdir(parents=True, exist_ok=True)
+@@ -479,19 +592,36 @@ def build_utm(profile, args):
+         with config_path.open("wb") as stream:
+             plistlib.dump(config, stream, fmt=plistlib.FMT_XML, sort_keys=False)
+ 
+-        temporary_output = output.with_suffix(f"{output.suffix}.tmp")
+-        temporary_output.unlink(missing_ok=True)
+-        with zipfile.ZipFile(
+-            temporary_output, "w", compression=zipfile.ZIP_STORED, allowZip64=True
+-        ) as archive:
+-            archive.write(config_path, f"{bundle_name}/config.plist")
+-            archive.write(disk, f"{bundle_name}/Data/{image_name}")
+-            # Quick-start notes shipped next to the bundle (not inside it:
+-            # macOS treats .utm as an opaque document).
+-            archive.write(
+-                VM_DIR / "utm-bundle-readme.txt", "READ ME FIRST.txt"
+-            )
+-        os.replace(temporary_output, output)
++        # The archive is written under a name only this build holds, beside
++        # the output (so the final rename stays on one filesystem), and
++        # renamed over the output once whole. A fixed name here let a second
++        # build for the same output remove the first one's unfinished file,
++        # or have its own published by the first.
++        handle, temporary_name = tempfile.mkstemp(
++            dir=output.parent, prefix=f".{output.name}.", suffix=".partial"
++        )
++        os.close(handle)
++        temporary_output = Path(temporary_name)
++        try:
++            with zipfile.ZipFile(
++                temporary_output, "w", compression=zipfile.ZIP_STORED, allowZip64=True
++            ) as archive:
++                archive.write(config_path, f"{bundle_name}/config.plist")
++                archive.write(disk, f"{bundle_name}/Data/{image_name}")
++                # Quick-start notes shipped next to the bundle (not inside it:
++                # macOS treats .utm as an opaque document).
++                archive.write(
++                    VM_DIR / "utm-bundle-readme.txt", "READ ME FIRST.txt"
++                )
++            # mkstemp makes the file 0600; give it what a plain create would
++            # have had under the caller's umask, no more.
++            umask = os.umask(0)
++            os.umask(umask)
++            os.chmod(temporary_output, 0o666 & ~umask)
++            os.replace(temporary_output, output)
++        except BaseException:
++            temporary_output.unlink(missing_ok=True)
++            raise
+     print(output)
+ 
+ 
+@@ -544,7 +674,7 @@ def add_qemu_options(parser):
+     )
+     parser.add_argument(
+         "--ssh-port",
+-        type=int,
++        type=tcp_port,
+         default=None,
+         help=(
+             "host port to forward to the guest's SSH (default: the profile's). "
+@@ -588,6 +718,19 @@ def resolution(value):
+     return int(m.group(1)), int(m.group(2))
+ 
+ 
++def tcp_port(value):
++    """A TCP port, 1 to 65535. QEMU rejects anything else only once it starts,
++    after the sockets and pidfile have been claimed; argparse says no before
++    that."""
++    try:
++        port = int(value, 10)
++    except ValueError:
++        port = 0
++    if not 1 <= port <= 65535:
++        raise argparse.ArgumentTypeError(f"not a TCP port (1-65535): {value!r}")
++    return port
++
++
+ def mac_address(value):
+     """Six hex pairs joined by colons. QEMU rejects anything else only once it
+     starts, after the sockets and pidfile have been claimed; argparse says no
+@@ -626,12 +769,13 @@ def main():
+         if args.command == "qemu-args":
+             print(shlex.join(command))
+         else:
++            prepare_run(profile, args)
+             os.execv(command[0], command)
+ 
+ 
+ if __name__ == "__main__":
+     try:
+         main()
+-    except (FileNotFoundError, RuntimeError, ValueError, subprocess.CalledProcessError) as error:
++    except (FileNotFoundError, PermissionError, RuntimeError, ValueError, subprocess.CalledProcessError) as error:
+         print(f"error: {error}", file=sys.stderr)
+         sys.exit(1)
+diff --git a/projects/ROCKNIX/devices/GENERIC_X64/vm/utm-bundle-readme.txt b/projects/ROCKNIX/devices/GENERIC_X64/vm/utm-bundle-readme.txt
+index 7eedb1baaf..bba61fca3a 100644
+--- a/projects/ROCKNIX/devices/GENERIC_X64/vm/utm-bundle-readme.txt
++++ b/projects/ROCKNIX/devices/GENERIC_X64/vm/utm-bundle-readme.txt
+@@ -26,7 +26,9 @@ Troubleshooting
+ 
+ - "Connection refused" from ssh: the VM must be running, and the VM's
+   network mode must be Emulated VLAN (the shipped default) - UTM does
+-  not apply port forwards in other NAT modes.
++  not apply port forwards in other NAT modes. If you switch the mode,
++  also remove the two -fw_cfg entries under the VM's QEMU > Arguments;
++  ROCKNIX then shows the VM's own address instead of this command.
+ - ssh warns about a changed host key after replacing the VM: run
+   ssh-keygen -R "[127.0.0.1]:10022" and connect again.
+ - The sign-in link never loads: make sure you connected with the full
+diff --git a/projects/ROCKNIX/packages/apps/m8c/config/GENERIC_X64/Anbernic RG CubeXX.ini b/projects/ROCKNIX/packages/apps/m8c/config/GENERIC_X64/Anbernic RG CubeXX.ini
+deleted file mode 100644
+index dd125a307a..0000000000
+--- a/projects/ROCKNIX/packages/apps/m8c/config/GENERIC_X64/Anbernic RG CubeXX.ini	
++++ /dev/null
+@@ -1,50 +0,0 @@
+-[graphics]
+-fullscreen=false
+-use_gpu=true
+-idle_ms=10
+-wait_for_device=true
+-wait_packets=1024
+-[audio]
+-audio_enabled=false
+-audio_buffer_size=1024
+-audio_device_name=Default
+-[keyboard]
+-;Ref: https://wiki.libsdl.org/SDL2/SDL_Scancode
+-key_up=82
+-key_left=80
+-key_down=81
+-key_right=79
+-key_select=225
+-key_select_alt=29
+-key_start=44
+-key_start_alt=27
+-key_opt=226
+-key_opt_alt=4
+-key_edit=224
+-key_edit_alt=22
+-key_delete=76
+-key_reset=21
+-key_jazz_inc_octave=85
+-key_jazz_dec_octave=84
+-key_jazz_inc_velocity=86
+-key_jazz_dec_velocity=69
+-key_toggle_audio=69
+-[gamepad]
+-gamepad_up=11
+-gamepad_left=13
+-gamepad_down=12
+-gamepad_right=14
+-gamepad_select=9 ; L1
+-gamepad_start=10 ; R1
+-gamepad_opt=0    ; B
+-gamepad_edit=1   ; A
+-gamepad_quit=5   ; Menu/Guide
+-gamepad_reset=7  ; R2
+-gamepad_analog_threshold=30000
+-gamepad_analog_invert=false
+-gamepad_analog_axis_updown=1
+-gamepad_analog_axis_leftright=0
+-gamepad_analog_axis_select=4
+-gamepad_analog_axis_start=5
+-gamepad_analog_axis_opt=-1
+-gamepad_analog_axis_edit=-1
+diff --git a/projects/ROCKNIX/packages/apps/m8c/config/GENERIC_X64/Anbernic RG34XX.ini b/projects/ROCKNIX/packages/apps/m8c/config/GENERIC_X64/Anbernic RG34XX.ini
+deleted file mode 120000
+index 4c7e7a42fa..0000000000
+--- a/projects/ROCKNIX/packages/apps/m8c/config/GENERIC_X64/Anbernic RG34XX.ini	
++++ /dev/null
+@@ -1 +0,0 @@
+-Anbernic RG CubeXX.ini
+\ No newline at end of file
+diff --git a/projects/ROCKNIX/packages/apps/m8c/config/GENERIC_X64/Anbernic RG40XX H.ini b/projects/ROCKNIX/packages/apps/m8c/config/GENERIC_X64/Anbernic RG40XX H.ini
+deleted file mode 120000
+index 4c7e7a42fa..0000000000
+--- a/projects/ROCKNIX/packages/apps/m8c/config/GENERIC_X64/Anbernic RG40XX H.ini	
++++ /dev/null
+@@ -1 +0,0 @@
+-Anbernic RG CubeXX.ini
+\ No newline at end of file
+diff --git a/projects/ROCKNIX/packages/emulators/libretro/retroarch/sources/GENERIC_X64/retroarch.cfg b/projects/ROCKNIX/packages/emulators/libretro/retroarch/sources/GENERIC_X64/retroarch.cfg
+index 1d68b5f1f6..50dd7607c3 100644
+--- a/projects/ROCKNIX/packages/emulators/libretro/retroarch/sources/GENERIC_X64/retroarch.cfg
++++ b/projects/ROCKNIX/packages/emulators/libretro/retroarch/sources/GENERIC_X64/retroarch.cfg
+@@ -111,7 +111,6 @@ core_updater_auto_backup_history_size = "1"
+ core_updater_auto_extract_archive = "true"
+ core_updater_buildbot_assets_url = "http://buildbot.libretro.com/assets/"
+ core_updater_buildbot_cores_url = ""
+-core_updater_buildbot_url = "http://buildbot.libretro.com/nightly/linux/armhf/latest/"
+ core_updater_show_experimental_cores = "false"
+ cpu_main_gov = "performance"
+ cpu_max_freq = "-1"
+@@ -765,7 +764,7 @@ video_context_driver = ""
+ video_crop_overscan = "true"
+ video_ctx_scaling = "false"
+ video_disable_composition = "false"
+-video_driver = "vulkan"
++video_driver = "gl"
+ video_filter = ""
+ video_filter_dir = "/usr/share/retroarch/filters/64bit/video"
+ video_font_enable = "true"
+diff --git a/projects/ROCKNIX/packages/emulators/standalone/flycast-sa/config/GENERIC_X64/emu.cfg b/projects/ROCKNIX/packages/emulators/standalone/flycast-sa/config/GENERIC_X64/emu.cfg
+index eb221fc9ef..d2b1b2405e 100644
+--- a/projects/ROCKNIX/packages/emulators/standalone/flycast-sa/config/GENERIC_X64/emu.cfg
++++ b/projects/ROCKNIX/packages/emulators/standalone/flycast-sa/config/GENERIC_X64/emu.cfg
+@@ -19,5 +19,3 @@ device2.2 = 1
+ 
+ [window]
+ fullscreen = yes
+-height = 1080
+-width = 1920
+diff --git a/projects/ROCKNIX/packages/emulators/standalone/mupen64plus-sa/mupen64plus-sa-core/config/GENERIC_X64/mupen64plus.cfg b/projects/ROCKNIX/packages/emulators/standalone/mupen64plus-sa/mupen64plus-sa-core/config/GENERIC_X64/mupen64plus.cfg
+index 80fddb807b..c92110ab4e 100644
+--- a/projects/ROCKNIX/packages/emulators/standalone/mupen64plus-sa/mupen64plus-sa-core/config/GENERIC_X64/mupen64plus.cfg
++++ b/projects/ROCKNIX/packages/emulators/standalone/mupen64plus-sa/mupen64plus-sa-core/config/GENERIC_X64/mupen64plus.cfg
+@@ -172,7 +172,7 @@ mode = 2
+ # Specifies which joystick is bound to this controller: -1=No joystick, 0 or more= SDL Joystick number
+ device = 0
+ # SDL joystick name (or Keyboard)
+-name = "rg552_joypad"
++name = ""
+ # Specifies whether this controller is 'plugged in' to the simulated N64
+ plugged = True
+ # Specifies which type of expansion pak is in the controller: 1=None, 2=Mem pak, 4=Transfer pak, 5=Rumble pak
+@@ -186,12 +186,6 @@ AnalogDeadzone = "0,0"
+ # An absolute value of the SDL joystick axis >= AnalogPeak will saturate the N64 controller axis value (at 80).  For X, Y axes. For each axis, this must be greater than the corresponding AnalogDeadzone value
+ AnalogPeak = "32768,32768"
+ # Digital button configuration mappings
+-; Retroid Pocket Gamepad - default.ini
+-[Retroid Pocket Gamepad]
+-plugged = True
+-mouse = False
+-AnalogDeadzone = 0,0
+-AnalogPeak = 32768,32768
+ DPad R = button(14)
+ DPad L = button(13)
+ DPad D = button(12)
+diff --git a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/091-retired-vm-fixes b/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/091-retired-vm-fixes
+new file mode 100755
+index 0000000000..7a77d651fb
+--- /dev/null
++++ b/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/091-retired-vm-fixes	
+@@ -0,0 +1,59 @@
++#!/bin/sh
++# SPDX-License-Identifier: GPL-2.0
++# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
++
++### Takes back, once, what the retired QEMU quirks left in /storage.
++#
++# Until 2026-09 this directory held eleven more scripts (091 to 101) that
++# wrote systemd units, drop-ins, a D-Bus policy and a generator into /etc and
++# /usr. Those are the read-only image, so none of it ever existed on a guest;
++# the journal kept only the "Read-only file system" lines. What did land went
++# through the image's links into /storage, and some of it acts on every later
++# boot: three tmpfiles.d rules (one makes a regular file where D-Bus's socket
++# goes, one a directory where journald's does), a sysctl.d file (pid_max,
++# file-max), a modules-load.d list, a udev file under a name udev never
++# reads, and drop-ins under /storage/.config/systemd/system, which systemd
++# never reads either (its unit directory here is /storage/.config/system.d).
++#
++# The list below is exactly the paths those scripts wrote -- 091-systemd-fixes
++# and 092-vm-service-fixes for the drop-ins, the others through /etc -- and
++# nothing else in those directories is touched. It runs until they are all
++# gone, says on the journal what it removed, and then stops for good
++# (STAMP): a file somebody puts under one of these names afterwards is
++# theirs. (A downgrade to a build that still has the old quirks writes them
++# again, and they then stay; remove STAMP to take them back once more.)
++STAMP=/storage/.cache/retired-vm-fixes
++[ -e "${STAMP}" ] && exit 0
++C=/storage/.config
++set -- tmpfiles.d/10-generic-x64-journald.conf \
++       tmpfiles.d/20-x64-fd-improvements.conf \
++       tmpfiles.d/30-x64-mount-points.conf \
++       sysctl.d/10-generic-x64.conf \
++       modules-load.d/x64-virtual-modules.conf \
++       udev.rules.d/90-x64-virtual-devices.conf \
++       profile.d/091-generic-x64-services \
++       systemd/system/systemd-hostnamed.service.d/10-generic-x64.conf \
++       systemd/system/systemd-journald.service.d/10-generic-x64.conf \
++       systemd/system/dbus.service.d/10-generic-x64.conf \
++       systemd/system/smbd.service.d/10-generic-x64.conf \
++       systemd/system/nmbd.service.d/10-generic-x64.conf \
++       systemd/system/smbd.service.d/10-vm-config.conf \
++       systemd/system/nmbd.service.d/10-vm-config.conf \
++       systemd/system/weston.service.d/10-vm-config.conf \
++       systemd/system/dbus.service.d/20-vm-enhanced.conf
++GONE=""
++for f in "$@"; do
++  [ -e "${C}/${f}" ] || continue
++  rm -f "${C}/${f}"
++  [ -e "${C}/${f}" ] || GONE="${GONE} ${f}"
++done
++for unit in systemd-hostnamed systemd-journald dbus smbd nmbd weston; do
++  rmdir "${C}/systemd/system/${unit}.service.d" 2>/dev/null
++done
++rmdir "${C}/systemd/system" "${C}/systemd" 2>/dev/null
++[ -n "${GONE}" ] && echo "091-retired-vm-fixes: removed what the retired QEMU quirks left in ${C}:${GONE}" >&2
++for f in "$@"; do
++  [ -e "${C}/${f}" ] && exit 0
++done
++mkdir -p "${STAMP%/*}" && echo "the files the retired QEMU quirks left in ${C} were taken back" > "${STAMP}"
++exit 0
+diff --git a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/091-systemd-fixes b/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/091-systemd-fixes
+deleted file mode 100755
+index 613bc698f2..0000000000
+--- a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/091-systemd-fixes	
++++ /dev/null
+@@ -1,107 +0,0 @@
+-#!/bin/sh
+-# SPDX-License-Identifier: GPL-2.0
+-# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+-
+-### GENERIC_X64 systemd service configuration fixes
+-### Addresses service startup failures seen during boot
+-
+-# Create systemd drop-in directories for service overrides
+-mkdir -p /storage/.config/systemd/system/systemd-hostnamed.service.d
+-mkdir -p /storage/.config/systemd/system/systemd-journald.service.d
+-mkdir -p /storage/.config/systemd/system/dbus.service.d
+-
+-# Fix systemd-hostnamed service stability
+-cat <<EOF >/storage/.config/systemd/system/systemd-hostnamed.service.d/10-generic-x64.conf
+-[Unit]
+-# Ensure D-Bus is available before starting hostnamed
+-After=dbus.service
+-Wants=dbus.service
+-
+-[Service]
+-# Increase restart tolerance for PID churn issues
+-Restart=on-failure
+-RestartSec=1
+-StartLimitInterval=30
+-StartLimitBurst=5
+-# Reduce memory pressure
+-MemoryMax=32M
+-EOF
+-
+-# Fix systemd-journald stability for desktop environment
+-cat <<EOF >/storage/.config/systemd/system/systemd-journald.service.d/10-generic-x64.conf
+-[Service]
+-# Increase file descriptor limits for journald
+-LimitNOFILE=8192
+-# Reduce restart sensitivity
+-Restart=on-failure
+-RestartSec=2
+-StartLimitInterval=60
+-StartLimitBurst=3
+-# Desktop-appropriate memory limits
+-MemoryMax=64M
+-EOF
+-
+-# Ensure D-Bus starts early and stays stable
+-cat <<EOF >/storage/.config/systemd/system/dbus.service.d/10-generic-x64.conf
+-[Unit]
+-# Ensure D-Bus starts early in boot process
+-DefaultDependencies=false
+-After=sysinit.target
+-Before=multi-user.target
+-
+-[Service]
+-# Increase D-Bus stability for desktop services
+-Restart=on-failure
+-RestartSec=1
+-StartLimitInterval=30
+-StartLimitBurst=5
+-# Appropriate memory limits for desktop environment
+-MemoryMax=48M
+-EOF
+-
+-# Fix Samba service issues that prevent graphical.target
+-mkdir -p /storage/.config/systemd/system/smbd.service.d
+-mkdir -p /storage/.config/systemd/system/nmbd.service.d
+-
+-cat <<EOF >/storage/.config/systemd/system/smbd.service.d/10-generic-x64.conf
+-[Unit]
+-# Reduce Samba service restart issues
+-After=dbus.service network.target
+-
+-[Service]
+-# Increase tolerance for connection issues
+-Restart=on-failure
+-RestartSec=5
+-StartLimitInterval=60
+-StartLimitBurst=3
+-# Reduce memory usage
+-MemoryMax=64M
+-EOF
+-
+-cat <<EOF >/storage/.config/systemd/system/nmbd.service.d/10-generic-x64.conf
+-[Unit]
+-# Reduce NetBIOS service restart issues
+-After=network.target
+-
+-[Service]
+-# Increase tolerance for network issues
+-Restart=on-failure
+-RestartSec=5
+-StartLimitInterval=60
+-StartLimitBurst=3
+-# Reduce memory usage
+-MemoryMax=32M
+-EOF
+-
+-# Set platform-specific service ordering
+-cat <<EOF >/storage/.config/profile.d/091-generic-x64-services
+-# GENERIC_X64 service configuration
+-# Ensure proper service startup order for desktop environment
+-
+-# Desktop environment needs D-Bus early
+-SYSTEM_SERVICE_DEPS="dbus.service"
+-
+-# UI service dependency order
+-UI_SERVICE_AFTER="dbus.service systemd-logind.service"
+-UI_SERVICE_WANTS="dbus.service"
+-EOF
+diff --git a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/092-journald-config b/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/092-journald-config
+deleted file mode 100755
+index d7416cfa26..0000000000
+--- a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/092-journald-config	
++++ /dev/null
+@@ -1,56 +0,0 @@
+-#!/bin/sh
+-# SPDX-License-Identifier: GPL-2.0
+-# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+-
+-### GENERIC_X64 journald configuration fixes
+-### Addresses journald EPOLLHUP and file descriptor issues
+-
+-# Create journald configuration override in system location for early boot
+-mkdir -p /etc/systemd/journald.conf.d
+-
+-cat <<EOF >/etc/systemd/journald.conf.d/10-generic-x64.conf
+-[Journal]
+-# Fix EPOLLHUP issues on stored fd
+-Storage=persistent
+-Compress=no
+-Seal=no
+-SplitMode=none
+-
+-# Desktop-appropriate limits (less aggressive than embedded defaults)
+-SystemMaxUse=32M
+-SystemKeepFree=64M
+-SystemMaxFileSize=8M
+-RuntimeMaxUse=16M
+-RuntimeKeepFree=32M
+-RuntimeMaxFileSize=4M
+-
+-# Reduce file descriptor pressure
+-MaxFileSec=1day
+-MaxRetentionSec=1week
+-
+-# Increase socket buffer for desktop workloads  
+-ForwardToSocket=no
+-ForwardToWall=no
+-ForwardToConsole=no
+-
+-# Reduce sync frequency to avoid fd issues
+-SyncIntervalSec=5min
+-RateLimitInterval=30s
+-RateLimitBurst=10000
+-EOF
+-
+-# Create tmpfiles configuration for journald directories in system location
+-mkdir -p /etc/tmpfiles.d
+-
+-cat <<EOF >/etc/tmpfiles.d/10-generic-x64-journald.conf
+-# GENERIC_X64 journald directory setup
+-# Ensure proper permissions and ownership
+-
+-d /var/log/journal 0755 root systemd-journal - -
+-d /run/log/journal 0755 root systemd-journal - -
+-d /run/systemd/journal 0755 root systemd-journal - -
+-
+-# Fix socket permissions
+-z /run/systemd/journal/socket 0666 root systemd-journal - -
+-z /run/systemd/journal/stdout 0666 root systemd-journal - -
+-EOF
+diff --git a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/092-vm-service-fixes b/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/092-vm-service-fixes
+deleted file mode 100755
+index a086aec265..0000000000
+--- a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/092-vm-service-fixes	
++++ /dev/null
+@@ -1,100 +0,0 @@
+-#!/bin/sh
+-# SPDX-License-Identifier: GPL-2.0
+-# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+-
+-### QEMU VM systemd service fixes
+-### Proper VM-specific service configuration without conflicts
+-
+-echo "Applying VM-specific service fixes for QEMU..."
+-
+-# VM Detection: Only apply these fixes in virtual machine environments
+-if systemd-detect-virt --vm >/dev/null 2>&1; then
+-    echo "Virtual machine detected, applying VM-specific optimizations..."
+-    
+-    # Create VM-specific Samba configuration (don't mask, just disable gracefully)
+-    mkdir -p /storage/.config/systemd/system/smbd.service.d
+-    cat <<EOF >/storage/.config/systemd/system/smbd.service.d/10-vm-config.conf
+-[Unit]
+-# VM-optimized Samba configuration
+-ConditionVirtualization=vm
+-After=dbus.service network.target
+-
+-[Service]
+-# VM-specific Samba optimizations
+-Restart=on-failure
+-RestartSec=10
+-StartLimitInterval=120
+-StartLimitBurst=2
+-# Reduced memory usage for VMs
+-MemoryMax=32M
+-# Skip network discovery in VMs
+-ExecStartPre=-/bin/sh -c 'test -f /storage/.config/samba/smb.conf'
+-EOF
+-
+-    mkdir -p /storage/.config/systemd/system/nmbd.service.d
+-    cat <<EOF >/storage/.config/systemd/system/nmbd.service.d/10-vm-config.conf
+-[Unit]
+-# VM-optimized NetBIOS configuration
+-ConditionVirtualization=vm
+-After=network.target
+-
+-[Service]
+-# VM-specific NetBIOS optimizations
+-Restart=on-failure
+-RestartSec=15
+-StartLimitInterval=120
+-StartLimitBurst=2
+-# Minimal memory for VMs
+-MemoryMax=16M
+-EOF
+-
+-else
+-    echo "Physical hardware detected, skipping VM-specific optimizations..."
+-fi
+-
+-# Improve weston.service startup reliability in VMs
+-mkdir -p /storage/.config/systemd/system/weston.service.d
+-cat <<EOF >/storage/.config/systemd/system/weston.service.d/10-vm-config.conf
+-[Unit]
+-# Ensure proper ordering for VM environment
+-After=multi-user.target systemd-logind.service dbus.service
+-Wants=systemd-logind.service dbus.service
+-# Only start if we have proper graphics
+-ConditionPathExists=/dev/dri/card0
+-
+-[Service]
+-# VM-specific environment variables
+-Environment="WLR_BACKENDS=drm,wayland,x11"
+-Environment="WLR_RENDERER=gles2"
+-Environment="WLR_NO_HARDWARE_CURSORS=1"
+-# Increase startup timeout for VMs
+-TimeoutStartSec=45
+-# More aggressive restart policy for VMs
+-Restart=on-failure
+-RestartSec=5
+-StartLimitBurst=3
+-StartLimitInterval=120
+-EOF
+-
+-# Create unified D-Bus configuration for VMs
+-mkdir -p /storage/.config/systemd/system/dbus.service.d
+-cat <<EOF >/storage/.config/systemd/system/dbus.service.d/20-vm-enhanced.conf
+-[Unit]
+-# VM-optimized D-Bus configuration
+-DefaultDependencies=false
+-After=sysinit.target systemd-journald.service
+-Before=multi-user.target systemd-logind.service
+-
+-[Service]
+-# VM-specific D-Bus optimizations
+-Restart=on-failure
+-RestartSec=2
+-StartLimitInterval=60
+-StartLimitBurst=3
+-# VM-appropriate memory limits
+-MemoryMax=32M
+-# Improved timeout handling for VMs
+-TimeoutStartSec=20
+-EOF
+-
+-echo "VM-specific service fixes applied successfully"
+diff --git a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/093-rocknix-service-fixes b/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/093-rocknix-service-fixes
+deleted file mode 100755
+index 6407d4788d..0000000000
+--- a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/093-rocknix-service-fixes	
++++ /dev/null
+@@ -1,114 +0,0 @@
+-#!/bin/sh
+-# SPDX-License-Identifier: GPL-2.0
+-# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+-
+-### GENERIC_X64 ROCKNIX service fixes
+-### Addresses ROCKNIX-specific service failures seen in boot logs
+-
+-# Fix rocknix-automount service issues
+-if [ -f /usr/lib/systemd/system/rocknix-automount.service ]; then
+-    # Create override directory
+-    mkdir -p /etc/systemd/system/rocknix-automount.service.d
+-    
+-    cat <<EOF >/etc/systemd/system/rocknix-automount.service.d/10-generic-x64.conf
+-[Unit]
+-# Add dependencies to ensure proper startup order
+-After=systemd-udevd.service systemd-journald.service
+-Wants=systemd-udevd.service
+-
+-[Service]
+-# Increase timeout for slower desktop hardware
+-TimeoutStartSec=30s
+-TimeoutStopSec=15s
+-
+-# Restart policy for failed mounts
+-Restart=on-failure
+-RestartSec=5s
+-EOF
+-fi
+-
+-# Fix plymouth communication issues
+-if [ -f /usr/lib/systemd/system/plymouth-start.service ]; then
+-    mkdir -p /etc/systemd/system/plymouth-start.service.d
+-    
+-    cat <<EOF >/etc/systemd/system/plymouth-start.service.d/10-generic-x64.conf
+-[Unit]
+-# Reduce plymouth dependency conflicts
+-ConditionKernelCommandLine=!plymouth.enable=0
+-
+-[Service]
+-# Handle communication failures gracefully
+-ExecStartPre=/bin/sh -c 'test -e /dev/fb0 || exit 0'
+-TimeoutStartSec=10s
+-EOF
+-fi
+-
+-# Create additional D-Bus service coordination
+-mkdir -p /etc/systemd/system/dbus.service.d
+-
+-cat <<EOF >/etc/systemd/system/dbus.service.d/10-generic-x64.conf
+-[Unit]
+-# Improve D-Bus startup coordination with systemd services
+-After=systemd-journald.service systemd-hostnamed.service
+-Before=systemd-logind.service
+-
+-[Service]
+-# Handle D-Bus communication timeouts better
+-TimeoutStartSec=15s
+-Restart=on-failure
+-RestartSec=2s
+-EOF
+-
+-# Fix systemd-hostnamed persistent issues
+-mkdir -p /etc/systemd/system/systemd-hostnamed.service.d
+-
+-cat <<EOF >/etc/systemd/system/systemd-hostnamed.service.d/20-generic-x64-enhanced.conf
+-[Unit]
+-# Enhanced coordination with D-Bus and journald
+-After=systemd-journald.service dbus.service
+-Requisite=dbus.service
+-
+-[Service]
+-# More aggressive restart and timeout handling
+-TimeoutStartSec=10s
+-TimeoutStopSec=5s
+-Restart=always
+-RestartSec=1s
+-StartLimitBurst=10
+-StartLimitIntervalSec=60s
+-
+-# Ensure clean process management
+-KillMode=mixed
+-KillSignal=SIGTERM
+-FinalKillSignal=SIGKILL
+-SendSIGKILL=yes
+-EOF
+-
+-# Enhanced journald configuration for early boot
+-mkdir -p /etc/systemd/journald.conf.d
+-
+-cat <<EOF >/etc/systemd/journald.conf.d/10-generic-x64-early.conf
+-[Journal]
+-# Early boot journald fixes for EPOLLHUP issues
+-Storage=persistent
+-Compress=no
+-Seal=no
+-SplitMode=none
+-
+-# Conservative limits to avoid file descriptor exhaustion
+-SystemMaxUse=32M
+-SystemKeepFree=64M
+-RuntimeMaxUse=16M
+-RuntimeKeepFree=32M
+-
+-# Reduce EPOLLHUP triggers
+-SyncIntervalSec=10min
+-RateLimitInterval=60s
+-RateLimitBurst=1000
+-
+-# Disable problematic features
+-ForwardToSocket=no
+-Audit=no
+-EOF
+-
+-echo "ROCKNIX service fixes applied for GENERIC_X64"
+diff --git a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/094-core-systemd-fixes b/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/094-core-systemd-fixes
+deleted file mode 100755
+index f958332daa..0000000000
+--- a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/094-core-systemd-fixes	
++++ /dev/null
+@@ -1,123 +0,0 @@
+-#!/bin/sh
+-# SPDX-License-Identifier: GPL-2.0
+-# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+-
+-### GENERIC_X64 Core systemd architecture fixes
+-### Addresses systemd/D-Bus incompatibility issues fundamental to ROCKNIX
+-
+-echo "Applying core systemd fixes for GENERIC_X64..."
+-
+-# Fix 1: Disable problematic D-Bus dependent services entirely
+-mkdir -p /etc/systemd/system
+-
+-# Mask systemd-hostnamed since it requires D-Bus but systemd was built without D-Bus
+-cat <<EOF >/etc/systemd/system/systemd-hostnamed.service
+-[Unit]
+-Description=Hostname Service (masked for ROCKNIX)
+-
+-[Service]
+-Type=oneshot
+-ExecStart=/bin/true
+-RemainAfterExit=yes
+-
+-[Install]
+-WantedBy=multi-user.target
+-EOF
+-
+-# Fix 2: Create robust journald configuration for GENERIC_X64
+-mkdir -p /etc/systemd/journald.conf.d
+-
+-cat <<EOF >/etc/systemd/journald.conf.d/00-generic-x64-base.conf
+-[Journal]
+-# Base configuration for GENERIC_X64
+-Storage=persistent
+-Compress=no
+-Seal=no
+-SplitMode=none
+-
+-# Prevent EPOLLHUP errors by using conservative limits
+-SystemMaxUse=32M
+-SystemKeepFree=64M
+-SystemMaxFileSize=4M
+-RuntimeMaxUse=16M
+-RuntimeKeepFree=32M
+-RuntimeMaxFileSize=2M
+-
+-# Reduce sync pressure that causes fd issues
+-SyncIntervalSec=30s
+-MaxRetentionSec=1week
+-MaxFileSec=1day
+-
+-# Disable features that require D-Bus or cause issues
+-ForwardToSocket=no
+-ForwardToWall=no
+-Audit=no
+-EOF
+-
+-# Fix 3: Plymouth alternatives for systems without proper D-Bus
+-mkdir -p /etc/systemd/system/plymouth-start.service.d
+-
+-cat <<EOF >/etc/systemd/system/plymouth-start.service.d/10-generic-x64.conf
+-[Unit]
+-# Make plymouth optional to prevent communication failures
+-ConditionPathExists=/dev/fb0
+-ConditionKernelCommandLine=!plymouth.enable=0
+-
+-[Service]
+-ExecStartPre=-/bin/sh -c 'test -e /dev/fb0'
+-TimeoutStartSec=5s
+-TimeoutStopSec=5s
+-KillMode=mixed
+-StandardOutput=null
+-StandardError=null
+-EOF
+-
+-# Fix 4: Enhanced rocknix-automount service configuration
+-mkdir -p /etc/systemd/system/rocknix-automount.service.d
+-
+-cat <<EOF >/etc/systemd/system/rocknix-automount.service.d/10-generic-x64.conf
+-[Unit]
+-# Better dependency management
+-After=systemd-tmpfiles-setup.service systemd-journald.service
+-Wants=systemd-tmpfiles-setup.service
+-
+-[Service]
+-# More robust execution for desktop hardware
+-TimeoutStartSec=30s
+-TimeoutStopSec=10s
+-Restart=on-failure
+-RestartSec=5s
+-StandardOutput=journal
+-StandardError=journal
+-EOF
+-
+-# Fix 5: Create minimal system state management without D-Bus
+-mkdir -p /etc/systemd/system/rocknix-autostart.service.d
+-
+-cat <<EOF >/etc/systemd/system/rocknix-autostart.service.d/10-generic-x64.conf
+-[Service]
+-# Ensure proper startup sequence
+-TimeoutStartSec=60s
+-Restart=on-failure
+-RestartSec=10s
+-EOF
+-
+-# Fix 6: Basic system recovery mechanisms
+-cat <<EOF >/etc/systemd/system/generic-x64-recovery.service
+-[Unit]
+-Description=GENERIC_X64 System Recovery
+-After=multi-user.target
+-
+-[Service]
+-Type=oneshot
+-ExecStart=/bin/sh -c 'systemctl --failed --no-legend | grep -q . && echo "Failed services detected, attempting recovery..." || echo "System stable"'
+-RemainAfterExit=yes
+-StandardOutput=journal
+-
+-[Install]
+-WantedBy=multi-user.target
+-EOF
+-
+-systemctl enable generic-x64-recovery.service 2>/dev/null || true
+-
+-echo "Core systemd fixes applied for GENERIC_X64"
+diff --git a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/095-kernel-early-boot-fixes b/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/095-kernel-early-boot-fixes
+deleted file mode 100755
+index 3486507189..0000000000
+--- a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/095-kernel-early-boot-fixes	
++++ /dev/null
+@@ -1,74 +0,0 @@
+-#!/bin/sh
+-# SPDX-License-Identifier: GPL-2.0
+-# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+-
+-### GENERIC_X64 Kernel parameter and early boot fixes
+-
+-echo "Applying kernel and early boot fixes for GENERIC_X64..."
+-
+-# Fix 1: Create kernel parameter overrides for systemd stability
+-mkdir -p /etc/kernel
+-
+-cat <<EOF >/etc/kernel/cmdline.d/10-generic-x64.conf
+-# GENERIC_X64 kernel parameters for systemd stability
+-systemd.log_level=info
+-systemd.log_target=console
+-systemd.journald.forward_to_console=no
+-quiet splash
+-mitigations=off
+-EOF
+-
+-# Fix 2: Create early boot environment setup
+-mkdir -p /etc/systemd/system/sysinit.target.wants
+-
+-cat <<EOF >/etc/systemd/system/generic-x64-early-setup.service
+-[Unit]
+-Description=GENERIC_X64 Early System Setup
+-DefaultDependencies=no
+-Before=sysinit.target
+-After=systemd-journald.service
+-
+-[Service]
+-Type=oneshot
+-ExecStart=/bin/sh -c 'echo "GENERIC_X64 early setup complete" > /var/log/generic-x64-setup.log'
+-RemainAfterExit=yes
+-StandardOutput=null
+-StandardError=null
+-
+-[Install]
+-WantedBy=sysinit.target
+-EOF
+-
+-ln -sf /etc/systemd/system/generic-x64-early-setup.service /etc/systemd/system/sysinit.target.wants/
+-
+-# Fix 3: Memory and resource management for x86_64 desktop
+-mkdir -p /etc/sysctl.d
+-
+-cat <<EOF >/etc/sysctl.d/10-generic-x64.conf
+-# GENERIC_X64 system tuning
+-vm.swappiness=10
+-vm.dirty_ratio=15
+-vm.dirty_background_ratio=5
+-kernel.pid_max=32768
+-fs.file-max=65536
+-EOF
+-
+-# Fix 4: Process management improvements
+-mkdir -p /etc/systemd/system.conf.d
+-
+-cat <<EOF >/etc/systemd/system.conf.d/10-generic-x64.conf
+-[Manager]
+-# Improved process management for desktop workloads
+-DefaultTimeoutStartSec=30s
+-DefaultTimeoutStopSec=15s
+-DefaultDeviceTimeoutSec=30s
+-DefaultRestartSec=100ms
+-DefaultLimitNOFILE=4096
+-DefaultLimitNPROC=2048
+-
+-# Reduce systemd overhead
+-RuntimeWatchdogSec=0
+-KExecWatchdogSec=0
+-EOF
+-
+-echo "Kernel and early boot fixes applied for GENERIC_X64"
+diff --git a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/096-plymouth-communication-fixes b/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/096-plymouth-communication-fixes
+deleted file mode 100755
+index 4d80ad3b86..0000000000
+--- a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/096-plymouth-communication-fixes	
++++ /dev/null
+@@ -1,150 +0,0 @@
+-#!/bin/sh
+-# SPDX-License-Identifier: GPL-2.0
+-# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+-
+-### Phase 1: Enhanced Plymouth Communication Fixes
+-### Addresses Plymouth communication failures and boot splash coordination
+-
+-# Create plymouth service overrides to handle communication issues
+-mkdir -p /etc/systemd/system/plymouth-start.service.d
+-
+-cat <<EOF >/etc/systemd/system/plymouth-start.service.d/10-x64-communication-fixes.conf
+-[Unit]
+-# Ensure D-Bus is ready before starting plymouth
+-After=dbus.socket dbus.service systemd-journald.service
+-Wants=dbus.socket
+-
+-[Service]
+-# Handle communication failures gracefully with fallback
+-ExecStartPre=/bin/sh -c 'systemctl is-active dbus.socket || sleep 2'
+-ExecStartPre=/bin/sh -c 'test -S /run/dbus/system_bus_socket || exit 0'
+-
+-# Increase timeout for slower systems
+-TimeoutStartSec=15s
+-TimeoutStopSec=10s
+-
+-# Don't fail if plymouth can't communicate
+-RemainAfterExit=yes
+-Type=forking
+-
+-# Restart policy
+-Restart=no
+-EOF
+-
+-# Create plymouth-quit overrides for proper shutdown coordination
+-mkdir -p /etc/systemd/system/plymouth-quit.service.d
+-
+-cat <<EOF >/etc/systemd/system/plymouth-quit.service.d/10-x64-communication-fixes.conf
+-[Unit]
+-# Proper coordination with other services during shutdown
+-Before=getty@tty1.service
+-
+-[Service]
+-# Handle communication failures during shutdown
+-ExecStart=
+-ExecStart=/bin/sh -c '/usr/bin/plymouth quit --retain-splash || true'
+-ExecStartPost=/bin/sh -c '/usr/bin/plymouth quit || true'
+-
+-# Don't block shutdown on plymouth issues
+-TimeoutStartSec=5s
+-RemainAfterExit=no
+-EOF
+-
+-# Create systemd-ask-password-plymouth overrides
+-mkdir -p /etc/systemd/system/systemd-ask-password-plymouth.service.d
+-
+-cat <<EOF >/etc/systemd/system/systemd-ask-password-plymouth.service.d/10-x64-communication-fixes.conf
+-[Unit]
+-# Only start if plymouth is actually running and D-Bus is available
+-ConditionPathExists=/run/plymouth/pid
+-After=dbus.socket plymouth-start.service
+-Wants=dbus.socket
+-
+-[Service]
+-# Handle communication failures gracefully
+-ExecStartPre=/bin/sh -c 'test -S /run/dbus/system_bus_socket || exit 0'
+-ExecStartPre=/bin/sh -c '/usr/bin/plymouth --ping || exit 0'
+-
+-# Don't fail the boot if plymouth communication fails
+-Restart=no
+-TimeoutStartSec=10s
+-EOF
+-
+-# Create D-Bus configuration for plymouth communication
+-mkdir -p /etc/dbus-1/system.d
+-
+-cat <<EOF >/etc/dbus-1/system.d/plymouth-x64-fixes.conf
+-<!DOCTYPE busconfig PUBLIC
+- "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+- "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+-<busconfig>
+-  <!-- Allow plymouth to communicate properly -->
+-  <policy user="root">
+-    <allow own="org.freedesktop.Plymouth"/>
+-    <allow send_destination="org.freedesktop.Plymouth"/>
+-    <allow receive_sender="org.freedesktop.Plymouth"/>
+-  </policy>
+-  
+-  <policy context="default">
+-    <allow send_destination="org.freedesktop.Plymouth"/>
+-    <allow receive_sender="org.freedesktop.Plymouth"/>
+-  </policy>
+-  
+-  <!-- Enhanced socket communication -->
+-  <policy user="root">
+-    <allow own="*"/>
+-    <allow send_destination="*"/>
+-    <allow receive_sender="*"/>
+-  </policy>
+-</busconfig>
+-EOF
+-
+-# Create plymouth early setup script for better initialization
+-mkdir -p /usr/lib/systemd/system-generators
+-
+-cat <<EOF >/usr/lib/systemd/system-generators/plymouth-x64-generator
+-#!/bin/sh
+-# Plymouth generator for x64 systems to handle communication issues
+-
+-# Only run for x64 systems
+-if [ ! -f /sys/firmware/dmi/tables/DMI ] && [ ! -d /sys/firmware/efi ]; then
+-    exit 0
+-fi
+-
+-# Check if we're in a virtual machine
+-if grep -q "QEMU\|VMware\|VirtualBox\|Hyper-V" /proc/cpuinfo 2>/dev/null || \
+-   grep -q "QEMU\|VMware\|VirtualBox" /sys/devices/virtual/dmi/id/product_name 2>/dev/null; then
+-    
+-    # Create VM-specific plymouth configuration
+-    mkdir -p "\$1"
+-    
+-    cat > "\$1/plymouth-vm-setup.service" <<VMEOF
+-[Unit]
+-Description=Plymouth VM Setup
+-Before=plymouth-start.service
+-After=systemd-journald.service dbus.socket
+-Wants=dbus.socket
+-
+-[Service]
+-Type=oneshot
+-RemainAfterExit=yes
+-ExecStart=/bin/sh -c 'echo "Plymouth VM setup complete"'
+-ExecStart=/bin/mkdir -p /run/plymouth
+-ExecStart=/bin/chmod 755 /run/plymouth
+-
+-[Install]
+-WantedBy=sysinit.target
+-VMEOF
+-
+-    # Link the service
+-    mkdir -p "\$1/sysinit.target.wants"
+-    ln -sf "../plymouth-vm-setup.service" "\$1/sysinit.target.wants/plymouth-vm-setup.service"
+-fi
+-
+-exit 0
+-EOF
+-
+-chmod +x /usr/lib/systemd/system-generators/plymouth-x64-generator
+-
+-# Log completion
+-echo "Phase 1: Plymouth communication fixes applied for Generic x86_64"
+diff --git a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/097-systemd-security-overrides b/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/097-systemd-security-overrides
+deleted file mode 100755
+index 61a05691aa..0000000000
+--- a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/097-systemd-security-overrides	
++++ /dev/null
+@@ -1,144 +0,0 @@
+-#!/bin/sh
+-# SPDX-License-Identifier: GPL-2.0
+-# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+-
+-### Phase 2: SystemD Configuration Cleanup
+-### Removes unsupported compile-time security options that cause warnings
+-
+-# Create overrides for systemd services with unsupported security options
+-mkdir -p /etc/systemd/system/systemd-udevd.service.d
+-
+-cat <<EOF >/etc/systemd/system/systemd-udevd.service.d/10-x64-security-overrides.conf
+-[Service]
+-# Remove unsupported compile-time security options that cause warnings
+-MemoryDenyWriteExecute=
+-RestrictAddressFamilies=
+-RestrictRealtime=
+-RestrictSUIDSGID=
+-SystemCallFilter=
+-SystemCallErrorNumber=
+-SystemCallArchitectures=
+-LockPersonality=
+-
+-# Use alternative security measures that work with this build
+-PrivateNetwork=no
+-PrivateDevices=no
+-ProtectHome=no
+-ProtectSystem=no
+-
+-# Maintain functionality while removing warnings
+-NoNewPrivileges=no
+-EOF
+-
+-# Create overrides for systemd-hostnamed service
+-mkdir -p /etc/systemd/system/systemd-hostnamed.service.d
+-
+-cat <<EOF >/etc/systemd/system/systemd-hostnamed.service.d/10-x64-security-overrides.conf
+-[Service]
+-# Remove unsupported compile-time security options
+-LockPersonality=
+-MemoryDenyWriteExecute=
+-RestrictAddressFamilies=
+-RestrictNamespaces=
+-RestrictRealtime=
+-RestrictSUIDSGID=
+-SystemCallFilter=
+-SystemCallErrorNumber=
+-SystemCallArchitectures=
+-
+-# Alternative security where supported
+-PrivateNetwork=no
+-PrivateDevices=no
+-ProtectHome=no
+-ProtectSystem=no
+-NoNewPrivileges=no
+-EOF
+-
+-# Create overrides for systemd-logind service
+-mkdir -p /etc/systemd/system/systemd-logind.service.d
+-
+-cat <<EOF >/etc/systemd/system/systemd-logind.service.d/10-x64-security-overrides.conf
+-[Service]
+-# Remove unsupported compile-time security options
+-SystemCallFilter=
+-SystemCallArchitectures=
+-SystemCallErrorNumber=
+-MemoryDenyWriteExecute=
+-RestrictAddressFamilies=
+-RestrictNamespaces=
+-RestrictRealtime=
+-RestrictSUIDSGID=
+-LockPersonality=
+-
+-# Maintain logind functionality
+-PrivateNetwork=no
+-PrivateDevices=no
+-ProtectHome=no
+-ProtectSystem=no
+-EOF
+-
+-# Create overrides for systemd-ask-password services
+-for service in systemd-ask-password-console.service systemd-ask-password-wall.service; do
+-    mkdir -p "/etc/systemd/system/${service}.d"
+-    
+-    cat <<EOF >"/etc/systemd/system/${service}.d/10-x64-security-overrides.conf"
+-[Service]
+-# Remove unsupported compile-time security options
+-SystemCallArchitectures=
+-SystemCallFilter=
+-SystemCallErrorNumber=
+-MemoryDenyWriteExecute=
+-RestrictAddressFamilies=
+-RestrictNamespaces=
+-RestrictRealtime=
+-RestrictSUIDSGID=
+-LockPersonality=
+-
+-# Maintain password prompt functionality
+-PrivateNetwork=no
+-PrivateDevices=no
+-EOF
+-done
+-
+-# Create a general security options cleanup script
+-mkdir -p /usr/lib/systemd/system
+-
+-cat <<EOF >/usr/lib/systemd/system/x64-security-cleanup.service
+-[Unit]
+-Description=x64 SystemD Security Options Cleanup
+-Before=sysinit.target
+-DefaultDependencies=no
+-
+-[Service]
+-Type=oneshot
+-RemainAfterExit=yes
+-ExecStart=/bin/sh -c 'echo "SystemD security options cleanup completed for x64"'
+-
+-# This service documents that we've applied security option overrides
+-# to prevent compile-time warnings on x64 systems where certain
+-# security features are not available in the systemd build
+-
+-[Install]
+-WantedBy=sysinit.target
+-EOF
+-
+-# Enable the cleanup service
+-mkdir -p /etc/systemd/system/sysinit.target.wants
+-ln -sf /usr/lib/systemd/system/x64-security-cleanup.service /etc/systemd/system/sysinit.target.wants/x64-security-cleanup.service
+-
+-# Create a comprehensive list of services that may need security option cleanup
+-cat <<EOF >/etc/systemd/system/x64-security-services.list
+-# Services that commonly have unsupported security options on x64 builds
+-systemd-udevd.service
+-systemd-hostnamed.service
+-systemd-logind.service
+-systemd-ask-password-console.service
+-systemd-ask-password-wall.service
+-systemd-timesyncd.service
+-systemd-resolved.service
+-systemd-networkd.service
+-systemd-journald.service
+-EOF
+-
+-# Log completion
+-echo "Phase 2: SystemD security configuration cleanup applied for Generic x86_64"
+diff --git a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/098-dbus-fd-improvements b/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/098-dbus-fd-improvements
+deleted file mode 100755
+index e4878e4cd5..0000000000
+--- a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/098-dbus-fd-improvements	
++++ /dev/null
+@@ -1,193 +0,0 @@
+-#!/bin/sh
+-# SPDX-License-Identifier: GPL-2.0
+-# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+-
+-### Phase 3: File Descriptor & D-Bus Improvements
+-### Addresses EPOLLHUP, connection reset, and D-Bus stability issues
+-
+-# Enhanced journald configuration to handle file descriptor issues
+-mkdir -p /etc/systemd/journald.conf.d
+-
+-cat <<EOF >/etc/systemd/journald.conf.d/20-x64-fd-improvements.conf
+-[Journal]
+-# Enhanced file descriptor management
+-Storage=persistent
+-Compress=no
+-Seal=no
+-SplitMode=none
+-
+-# Conservative limits to prevent fd issues
+-SystemMaxUse=64M
+-SystemKeepFree=128M
+-SystemMaxFileSize=16M
+-RuntimeMaxUse=32M
+-RuntimeKeepFree=64M
+-RuntimeMaxFileSize=8M
+-
+-# Reduce file descriptor pressure
+-MaxFileSec=1day
+-MaxRetentionSec=1week
+-MaxLevelStore=warning
+-MaxLevelSyslog=info
+-MaxLevelKMsg=notice
+-MaxLevelConsole=warning
+-
+-# Enhanced socket management
+-ForwardToSocket=no
+-ForwardToWall=no
+-ForwardToConsole=yes
+-ForwardToSyslog=no
+-
+-# Reduce sync frequency and improve fd handling
+-SyncIntervalSec=10min
+-RateLimitInterval=60s
+-RateLimitBurst=5000
+-
+-# Improve socket buffer handling
+-LineMax=65536
+-EOF
+-
+-# Create D-Bus service improvements
+-mkdir -p /etc/systemd/system/dbus.service.d
+-
+-cat <<EOF >/etc/systemd/system/dbus.service.d/20-x64-fd-improvements.conf
+-[Unit]
+-# Ensure proper startup order to prevent connection issues
+-After=systemd-journald.service systemd-journald.socket
+-Wants=systemd-journald.service
+-
+-[Service]
+-# Enhanced connection handling
+-ExecStartPre=/bin/sh -c 'mkdir -p /run/dbus && chmod 755 /run/dbus'
+-ExecStartPre=/bin/sh -c 'rm -f /run/dbus/system_bus_socket'
+-
+-# Improved restart handling
+-Restart=on-failure
+-RestartSec=3s
+-TimeoutStartSec=30s
+-TimeoutStopSec=15s
+-
+-# Enhanced service coordination
+-NotifyAccess=main
+-Type=notify
+-
+-# File descriptor limits
+-LimitNOFILE=65536
+-EOF
+-
+-# Create systemd-journald service improvements
+-mkdir -p /etc/systemd/system/systemd-journald.service.d
+-
+-cat <<EOF >/etc/systemd/system/systemd-journald.service.d/20-x64-fd-improvements.conf
+-[Service]
+-# Enhanced file descriptor management
+-LimitNOFILE=32768
+-ExecStartPre=/bin/sh -c 'mkdir -p /var/log/journal /run/log/journal'
+-ExecStartPre=/bin/sh -c 'chmod 755 /var/log/journal /run/log/journal'
+-
+-# Improved restart and error handling
+-Restart=on-failure
+-RestartSec=5s
+-TimeoutStartSec=30s
+-TimeoutStopSec=15s
+-
+-# Enhanced communication
+-NotifyAccess=all
+-WatchdogSec=60s
+-
+-# Prevent fd issues on restart
+-ExecStopPost=/bin/sh -c 'sleep 2'
+-EOF
+-
+-# Create tmpfiles configuration for proper directory setup
+-mkdir -p /etc/tmpfiles.d
+-
+-cat <<EOF >/etc/tmpfiles.d/20-x64-fd-improvements.conf
+-# Enhanced directory setup for fd management
+-d /var/log/journal 0755 root systemd-journal - -
+-d /run/log/journal 0755 root systemd-journal - -
+-d /run/dbus 0755 messagebus messagebus - -
+-d /run/systemd/ask-password 0755 root root - -
+-d /run/systemd/seats 0755 root root - -
+-d /run/systemd/sessions 0755 root root - -
+-d /run/systemd/users 0755 root root - -
+-d /run/systemd/inhibit 0755 root root - -
+-d /run/systemd/shutdown 0755 root root - -
+-
+-# Socket files with proper permissions
+-f /run/dbus/system_bus_socket 0666 messagebus messagebus - -
+-EOF
+-
+-# Create connection retry service for critical D-Bus services
+-mkdir -p /usr/lib/systemd/system
+-
+-cat <<EOF >/usr/lib/systemd/system/x64-dbus-connection-monitor.service
+-[Unit]
+-Description=x64 D-Bus Connection Monitor
+-After=dbus.service
+-Wants=dbus.service
+-PartOf=dbus.service
+-
+-[Service]
+-Type=simple
+-Restart=always
+-RestartSec=10s
+-ExecStart=/bin/sh -c 'while true; do if ! /usr/bin/dbus-send --system --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus.Ping >/dev/null 2>&1; then echo "D-Bus connection lost, restarting..."; systemctl restart dbus.service; fi; sleep 30; done'
+-
+-# Resource limits
+-MemoryLimit=16M
+-CPUQuota=5%
+-
+-[Install]
+-WantedBy=multi-user.target
+-EOF
+-
+-# Create enhanced logind restart coordination
+-mkdir -p /etc/systemd/system/systemd-logind.service.d
+-
+-cat <<EOF >/etc/systemd/system/systemd-logind.service.d/20-x64-fd-improvements.conf
+-[Unit]
+-# Better dependency management to prevent premature shutdown
+-After=dbus.service systemd-journald.service
+-Wants=dbus.service
+-PartOf=dbus.service
+-
+-[Service]
+-# Enhanced restart and signal handling
+-Restart=on-failure
+-RestartSec=5s
+-KillMode=mixed
+-KillSignal=SIGTERM
+-TimeoutStopSec=30s
+-
+-# Prevent connection reset issues
+-ExecStartPre=/bin/sh -c 'sleep 2'
+-ExecStopPost=/bin/sh -c 'sleep 2'
+-
+-# File descriptor management
+-LimitNOFILE=16384
+-EOF
+-
+-# Create a service to monitor and handle connection resets
+-cat <<EOF >/usr/lib/systemd/system/x64-connection-monitor.service
+-[Unit]
+-Description=x64 Connection Monitor and Recovery
+-After=dbus.service systemd-logind.service
+-Wants=dbus.service
+-
+-[Service]
+-Type=simple
+-Restart=always
+-RestartSec=15s
+-ExecStart=/bin/sh -c 'while true; do sleep 60; if ! systemctl is-active dbus.service >/dev/null 2>&1; then echo "D-Bus service inactive, recovering..."; systemctl restart dbus.service; fi; done'
+-
+-# Minimal resource usage
+-MemoryLimit=8M
+-CPUQuota=2%
+-
+-[Install]
+-WantedBy=multi-user.target
+-EOF
+-
+-# Log completion
+-echo "Phase 3: File descriptor and D-Bus improvements applied for Generic x86_64"
+diff --git a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/099-mount-configuration-fixes b/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/099-mount-configuration-fixes
+deleted file mode 100755
+index ccaa1ca03e..0000000000
+--- a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/099-mount-configuration-fixes	
++++ /dev/null
+@@ -1,224 +0,0 @@
+-#!/bin/sh
+-# SPDX-License-Identifier: GPL-2.0
+-# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+-
+-### Phase 4: Mount Configuration Management
+-### Creates proper mount unit configurations for required mountpoints
+-
+-# Create systemd mount units for missing configurations
+-mkdir -p /etc/systemd/system
+-
+-# Create run-systemd-journal-socket.mount
+-cat <<EOF >/etc/systemd/system/run-systemd-journal-socket.mount
+-[Unit]
+-Description=Runtime Directory for systemd journal socket
+-Before=systemd-journald.service
+-ConditionPathExists=!/run/systemd/journal/socket
+-
+-[Mount]
+-What=tmpfs
+-Where=/run/systemd/journal/socket
+-Type=tmpfs
+-Options=mode=0755,nosuid,nodev,noexec,size=1M
+-
+-[Install]
+-WantedBy=sysinit.target
+-EOF
+-
+-# Create var-lib.mount for persistent data
+-cat <<EOF >/etc/systemd/system/var-lib.mount
+-[Unit]
+-Description=Variable Library Data
+-Before=local-fs.target
+-ConditionPathExists=!/var/lib
+-
+-[Mount]
+-What=tmpfs
+-Where=/var/lib
+-Type=tmpfs
+-Options=mode=0755,nosuid,nodev,size=128M
+-
+-[Install]
+-WantedBy=local-fs.target
+-EOF
+-
+-# Create var-lib-systemd.mount
+-cat <<EOF >/etc/systemd/system/var-lib-systemd.mount
+-[Unit]
+-Description=SystemD Variable Data
+-After=var-lib.mount
+-Before=systemd-journald.service
+-ConditionPathExists=!/var/lib/systemd
+-
+-[Mount]
+-What=tmpfs
+-Where=/var/lib/systemd
+-Type=tmpfs
+-Options=mode=0755,nosuid,nodev,size=32M
+-
+-[Install]
+-WantedBy=local-fs.target
+-EOF
+-
+-# Create var-lib-systemd-linger.mount
+-cat <<EOF >/etc/systemd/system/var-lib-systemd-linger.mount
+-[Unit]
+-Description=SystemD Linger Data
+-After=var-lib-systemd.mount
+-ConditionPathExists=!/var/lib/systemd/linger
+-
+-[Mount]
+-What=tmpfs
+-Where=/var/lib/systemd/linger
+-Type=tmpfs
+-Options=mode=0755,nosuid,nodev,noexec,size=1M
+-
+-[Install]
+-WantedBy=local-fs.target
+-EOF
+-
+-# Create run-systemd-users.mount
+-cat <<EOF >/etc/systemd/system/run-systemd-users.mount
+-[Unit]
+-Description=Runtime Directory for systemd users
+-Before=systemd-logind.service
+-ConditionPathExists=!/run/systemd/users
+-
+-[Mount]
+-What=tmpfs
+-Where=/run/systemd/users
+-Type=tmpfs
+-Options=mode=0755,nosuid,nodev,noexec,size=4M
+-
+-[Install]
+-WantedBy=sysinit.target
+-EOF
+-
+-# Create run-systemd-shutdown.mount
+-cat <<EOF >/etc/systemd/system/run-systemd-shutdown.mount
+-[Unit]
+-Description=Runtime Directory for systemd shutdown
+-ConditionPathExists=!/run/systemd/shutdown
+-
+-[Mount]
+-What=tmpfs
+-Where=/run/systemd/shutdown
+-Type=tmpfs
+-Options=mode=0755,nosuid,nodev,noexec,size=1M
+-
+-[Install]
+-WantedBy=sysinit.target
+-EOF
+-
+-# Create run-systemd-sessions.mount
+-cat <<EOF >/etc/systemd/system/run-systemd-sessions.mount
+-[Unit]
+-Description=Runtime Directory for systemd sessions
+-Before=systemd-logind.service
+-ConditionPathExists=!/run/systemd/sessions
+-
+-[Mount]
+-What=tmpfs
+-Where=/run/systemd/sessions
+-Type=tmpfs
+-Options=mode=0755,nosuid,nodev,noexec,size=4M
+-
+-[Install]
+-WantedBy=sysinit.target
+-EOF
+-
+-# Create run-systemd-journal.mount
+-cat <<EOF >/etc/systemd/system/run-systemd-journal.mount
+-[Unit]
+-Description=Runtime Directory for systemd journal
+-Before=systemd-journald.service
+-ConditionPathExists=!/run/systemd/journal
+-
+-[Mount]
+-What=tmpfs
+-Where=/run/systemd/journal
+-Type=tmpfs
+-Options=mode=0755,nosuid,nodev,size=16M
+-
+-[Install]
+-WantedBy=sysinit.target
+-EOF
+-
+-# Create run-systemd-journal-stdout.mount
+-cat <<EOF >/etc/systemd/system/run-systemd-journal-stdout.mount
+-[Unit]
+-Description=Runtime Directory for systemd journal stdout
+-After=run-systemd-journal.mount
+-Before=systemd-journald.service
+-ConditionPathExists=!/run/systemd/journal/stdout
+-
+-[Mount]
+-What=tmpfs
+-Where=/run/systemd/journal/stdout
+-Type=tmpfs
+-Options=mode=0755,nosuid,nodev,noexec,size=8M
+-
+-[Install]
+-WantedBy=sysinit.target
+-EOF
+-
+-# Create mount dependency ordering service
+-cat <<EOF >/etc/systemd/system/x64-mount-setup.service
+-[Unit]
+-Description=x64 Mount Setup Coordination
+-Before=local-fs.target sysinit.target
+-DefaultDependencies=no
+-
+-[Service]
+-Type=oneshot
+-RemainAfterExit=yes
+-ExecStart=/bin/sh -c 'mkdir -p /run/systemd/journal /run/systemd/sessions /run/systemd/users /run/systemd/shutdown /var/lib/systemd /var/lib/systemd/linger'
+-ExecStart=/bin/sh -c 'chmod 755 /run/systemd/journal /run/systemd/sessions /run/systemd/users /run/systemd/shutdown /var/lib/systemd /var/lib/systemd/linger'
+-
+-[Install]
+-WantedBy=sysinit.target
+-EOF
+-
+-# Create enhanced tmpfiles configuration for mount points
+-mkdir -p /etc/tmpfiles.d
+-
+-cat <<EOF >/etc/tmpfiles.d/30-x64-mount-points.conf
+-# x64 mount point setup
+-d /run/systemd/journal 0755 root root - -
+-d /run/systemd/journal/socket 0755 root root - -
+-d /run/systemd/journal/stdout 0755 root root - -
+-d /run/systemd/sessions 0755 root root - -
+-d /run/systemd/users 0755 root root - -
+-d /run/systemd/shutdown 0755 root root - -
+-d /run/systemd/seats 0755 root root - -
+-d /run/systemd/inhibit 0755 root root - -
+-d /var/lib/systemd 0755 root root - -
+-d /var/lib/systemd/linger 0755 root root - -
+-
+-# Additional runtime directories
+-d /run/avahi-daemon 0755 avahi avahi - -
+-d /run/dbus 0755 messagebus messagebus - -
+-d /run/initctl 0600 root root - -
+-d /storage/.cache 0755 root root - -
+-d /storage/.cache/log 0755 root root - -
+-f /var/log/wtmp 0664 root utmp - -
+-d /var/tmp 1777 root root - -
+-EOF
+-
+-# Enable all mount units
+-mkdir -p /etc/systemd/system/sysinit.target.wants
+-mkdir -p /etc/systemd/system/local-fs.target.wants
+-
+-# Link mount units to appropriate targets
+-ln -sf /etc/systemd/system/x64-mount-setup.service /etc/systemd/system/sysinit.target.wants/x64-mount-setup.service
+-ln -sf /etc/systemd/system/run-systemd-journal.mount /etc/systemd/system/sysinit.target.wants/run-systemd-journal.mount
+-ln -sf /etc/systemd/system/run-systemd-sessions.mount /etc/systemd/system/sysinit.target.wants/run-systemd-sessions.mount
+-ln -sf /etc/systemd/system/run-systemd-users.mount /etc/systemd/system/sysinit.target.wants/run-systemd-users.mount
+-ln -sf /etc/systemd/system/run-systemd-shutdown.mount /etc/systemd/system/sysinit.target.wants/run-systemd-shutdown.mount
+-
+-ln -sf /etc/systemd/system/var-lib.mount /etc/systemd/system/local-fs.target.wants/var-lib.mount
+-ln -sf /etc/systemd/system/var-lib-systemd.mount /etc/systemd/system/local-fs.target.wants/var-lib-systemd.mount
+-ln -sf /etc/systemd/system/var-lib-systemd-linger.mount /etc/systemd/system/local-fs.target.wants/var-lib-systemd-linger.mount
+-
+-# Log completion
+-echo "Phase 4: Mount configuration management applied for Generic x86_64"
+diff --git a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/100-service-lifecycle-coordination b/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/100-service-lifecycle-coordination
+deleted file mode 100755
+index b03090d7c3..0000000000
+--- a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/100-service-lifecycle-coordination	
++++ /dev/null
+@@ -1,241 +0,0 @@
+-#!/bin/sh
+-# SPDX-License-Identifier: GPL-2.0
+-# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+-
+-### Phase 5: Service Lifecycle Coordination
+-### Prevents premature service shutdowns and improves dependency management
+-
+-# Enhanced systemd-logind service coordination
+-mkdir -p /etc/systemd/system/systemd-logind.service.d
+-
+-cat <<EOF >/etc/systemd/system/systemd-logind.service.d/30-x64-lifecycle-coordination.conf
+-[Unit]
+-# Stronger dependency chains to prevent premature shutdown
+-After=dbus.service systemd-journald.service basic.target
+-Wants=dbus.service systemd-journald.service
+-Requisite=dbus.service
+-PartOf=graphical-session.target
+-
+-# Prevent conflicts with other services
+-Conflicts=
+-Before=
+-BindsTo=
+-
+-[Service]
+-# Enhanced lifecycle management
+-Restart=on-failure
+-RestartSec=10s
+-StartLimitInterval=60s
+-StartLimitBurst=3
+-
+-# Prevent premature termination
+-KillMode=mixed
+-KillSignal=SIGTERM
+-SendSIGKILL=no
+-TimeoutStopSec=45s
+-FinalKillSignal=SIGKILL
+-
+-# Service coordination delays
+-ExecStartPre=/bin/sh -c 'sleep 3'
+-ExecStartPost=/bin/sh -c 'sleep 2' 
+-ExecStopPre=/bin/sh -c 'sleep 2'
+-ExecStopPost=/bin/sh -c 'sleep 3'
+-
+-# Enhanced D-Bus coordination
+-BusName=org.freedesktop.login1
+-Type=notify
+-NotifyAccess=main
+-
+-# Resource limits to prevent issues
+-MemoryLimit=64M
+-TasksMax=256
+-EOF
+-
+-# Create service dependency coordination manager
+-mkdir -p /usr/lib/systemd/system
+-
+-cat <<EOF >/usr/lib/systemd/system/x64-service-coordinator.service
+-[Unit]
+-Description=x64 Service Lifecycle Coordinator
+-After=dbus.service systemd-journald.service
+-Before=multi-user.target
+-Wants=dbus.service
+-
+-[Service]
+-Type=forking
+-Restart=on-failure
+-RestartSec=15s
+-ExecStart=/bin/sh -c '
+-    # Monitor and coordinate critical service lifecycle
+-    (
+-        while true; do
+-            # Check critical services and restart if needed
+-            for service in dbus.service systemd-journald.service systemd-logind.service; do
+-                if ! systemctl is-active \$service >/dev/null 2>&1; then
+-                    echo "Service \$service is not active, coordinating restart..."
+-                    systemctl restart \$service
+-                    sleep 5
+-                fi
+-            done
+-            sleep 30
+-        done
+-    ) &
+-    echo \$! > /run/x64-service-coordinator.pid
+-'
+-ExecStop=/bin/sh -c 'if [ -f /run/x64-service-coordinator.pid ]; then kill \$(cat /run/x64-service-coordinator.pid); rm -f /run/x64-service-coordinator.pid; fi'
+-PIDFile=/run/x64-service-coordinator.pid
+-
+-# Resource limits
+-MemoryLimit=16M
+-CPUQuota=5%
+-
+-[Install]
+-WantedBy=multi-user.target
+-EOF
+-
+-# Create D-Bus name ownership stability service
+-cat <<EOF >/usr/lib/systemd/system/x64-dbus-ownership-monitor.service
+-[Unit]
+-Description=x64 D-Bus Name Ownership Monitor
+-After=dbus.service
+-Wants=dbus.service
+-PartOf=dbus.service
+-
+-[Service]
+-Type=simple
+-Restart=always
+-RestartSec=20s
+-ExecStart=/bin/sh -c '
+-    # Monitor D-Bus name ownership stability
+-    while true; do
+-        sleep 45
+-        
+-        # Check if critical D-Bus names are properly owned
+-        for name in org.freedesktop.login1 org.freedesktop.systemd1; do
+-            if ! dbus-send --system --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner string:\$name >/dev/null 2>&1; then
+-                echo "D-Bus name \$name ownership issue detected"
+-                # Allow systemd to handle service restart naturally
+-                sleep 5
+-            fi
+-        done
+-    done
+-'
+-
+-# Minimal resource usage
+-MemoryLimit=8M
+-CPUQuota=2%
+-
+-[Install]
+-WantedBy=multi-user.target
+-EOF
+-
+-# Enhanced service restart policies
+-for service in systemd-hostnamed.service systemd-timesyncd.service connman.service; do
+-    if [ -d "/usr/lib/systemd/system" ]; then
+-        mkdir -p "/etc/systemd/system/${service}.d"
+-        
+-        cat <<EOF >"/etc/systemd/system/${service}.d/30-x64-lifecycle-coordination.conf"
+-[Unit]
+-# Improved dependency management
+-After=dbus.service systemd-journald.service
+-Wants=dbus.service
+-
+-[Service]
+-# Enhanced restart policies
+-Restart=on-failure
+-RestartSec=15s
+-StartLimitInterval=120s
+-StartLimitBurst=3
+-
+-# Graceful lifecycle management
+-TimeoutStartSec=30s
+-TimeoutStopSec=20s
+-KillMode=mixed
+-SendSIGKILL=no
+-
+-# Service coordination
+-ExecStartPre=/bin/sh -c 'sleep 2'
+-ExecStopPost=/bin/sh -c 'sleep 1'
+-EOF
+-    fi
+-done
+-
+-# Create rocknix-automount service enhancements
+-mkdir -p /etc/systemd/system/rocknix-automount.service.d
+-
+-cat <<EOF >/etc/systemd/system/rocknix-automount.service.d/30-x64-lifecycle-coordination.conf
+-[Unit]
+-# Enhanced dependency management for automount
+-After=dbus.service systemd-journald.service local-fs.target
+-Wants=dbus.service local-fs.target
+-Requisite=local-fs.target
+-
+-[Service]
+-# Improved restart and error handling
+-Restart=on-failure
+-RestartSec=10s
+-StartLimitInterval=300s
+-StartLimitBurst=5
+-
+-# Enhanced coordination
+-ExecStartPre=/bin/sh -c 'sleep 5'
+-ExecStartPre=/bin/sh -c 'systemctl is-active dbus.service || sleep 10'
+-
+-# Prevent premature failure
+-TimeoutStartSec=60s
+-TimeoutStopSec=30s
+-KillMode=control-group
+-
+-# Better error handling
+-RemainAfterExit=no
+-Type=simple
+-EOF
+-
+-# Create systemd target coordination service
+-cat <<EOF >/usr/lib/systemd/system/x64-target-coordinator.service
+-[Unit]
+-Description=x64 Target Coordination Service
+-After=sysinit.target basic.target
+-Before=multi-user.target
+-DefaultDependencies=no
+-
+-[Service]
+-Type=oneshot
+-RemainAfterExit=yes
+-ExecStart=/bin/sh -c '
+-    # Ensure proper target progression
+-    echo "Starting x64 target coordination..."
+-    
+-    # Wait for critical services to be ready
+-    timeout=60
+-    while [ \$timeout -gt 0 ]; do
+-        if systemctl is-active dbus.service systemd-journald.service >/dev/null 2>&1; then
+-            echo "Critical services ready"
+-            break
+-        fi
+-        sleep 1
+-        timeout=\$((timeout - 1))
+-    done
+-    
+-    if [ \$timeout -eq 0 ]; then
+-        echo "Warning: Timeout waiting for critical services"
+-    fi
+-    
+-    echo "x64 target coordination complete"
+-'
+-
+-# Minimal resources
+-MemoryLimit=8M
+-
+-[Install]
+-WantedBy=multi-user.target
+-EOF
+-
+-# Enable coordination services
+-mkdir -p /etc/systemd/system/multi-user.target.wants
+-ln -sf /usr/lib/systemd/system/x64-service-coordinator.service /etc/systemd/system/multi-user.target.wants/x64-service-coordinator.service
+-ln -sf /usr/lib/systemd/system/x64-dbus-ownership-monitor.service /etc/systemd/system/multi-user.target.wants/x64-dbus-ownership-monitor.service
+-ln -sf /usr/lib/systemd/system/x64-target-coordinator.service /etc/systemd/system/multi-user.target.wants/x64-target-coordinator.service
+-
+-# Log completion
+-echo "Phase 5: Service lifecycle coordination applied for Generic x86_64"
+diff --git a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/101-virtualization-fixes b/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/101-virtualization-fixes
+deleted file mode 100755
+index 53e546e63c..0000000000
+--- a/projects/ROCKNIX/packages/hardware/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)/101-virtualization-fixes	
++++ /dev/null
+@@ -1,286 +0,0 @@
+-#!/bin/sh
+-# SPDX-License-Identifier: GPL-2.0
+-# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+-
+-### Phase 6: Virtualization-Specific Fixes  
+-### Addresses NBD device issues and VM-specific hardware detection
+-
+-# Create udev rules for virtual block devices
+-mkdir -p /etc/udev/rules.d
+-
+-cat <<EOF >/etc/udev/rules.d/90-x64-virtual-devices.conf
+-# x64 Virtual Device Rules
+-
+-# NBD (Network Block Device) handling
+-SUBSYSTEM=="block", KERNEL=="nbd*", ACTION=="add", ENV{SYSTEMD_READY}="1"
+-SUBSYSTEM=="block", KERNEL=="nbd*", ACTION=="change", ENV{SYSTEMD_READY}="1"
+-SUBSYSTEM=="block", KERNEL=="nbd*", ATTRS{size}=="0", ENV{SYSTEMD_READY}="0"
+-
+-# Virtual RAM disks
+-SUBSYSTEM=="block", KERNEL=="ram*", ACTION=="add", ENV{SYSTEMD_READY}="1"
+-
+-# Virtual CD/DVD devices  
+-SUBSYSTEM=="block", KERNEL=="sr*", ACTION=="add", ENV{SYSTEMD_READY}="1"
+-
+-# QEMU virtual devices
+-SUBSYSTEM=="block", KERNELS=="*virtio*", ACTION=="add", ENV{SYSTEMD_READY}="1"
+-SUBSYSTEM=="net", KERNELS=="*virtio*", ACTION=="add", ENV{SYSTEMD_READY}="1"
+-
+-# VMware virtual devices
+-SUBSYSTEM=="block", ATTRS{vendor}=="VMware*", ACTION=="add", ENV{SYSTEMD_READY}="1"
+-SUBSYSTEM=="net", ATTRS{vendor}=="VMware*", ACTION=="add", ENV{SYSTEMD_READY}="1"
+-
+-# VirtualBox devices
+-SUBSYSTEM=="block", ATTRS{vendor}=="VBOX*", ACTION=="add", ENV{SYSTEMD_READY}="1"
+-SUBSYSTEM=="net", ATTRS{vendor}=="VBOX*", ACTION=="add", ENV{SYSTEMD_READY}="1"
+-
+-# Hyper-V devices
+-SUBSYSTEM=="block", ATTRS{vendor}=="Msft*", ACTION=="add", ENV{SYSTEMD_READY}="1"
+-SUBSYSTEM=="net", ATTRS{vendor}=="Msft*", ACTION=="add", ENV{SYSTEMD_READY}="1"
+-EOF
+-
+-# Create virtualization detection and optimization service
+-mkdir -p /usr/lib/systemd/system
+-
+-cat <<EOF >/usr/lib/systemd/system/x64-virtualization-setup.service
+-[Unit]
+-Description=x64 Virtualization Setup and Optimization
+-After=systemd-udevd.service
+-Before=multi-user.target
+-ConditionVirtualization=!no
+-
+-[Service]
+-Type=oneshot
+-RemainAfterExit=yes
+-ExecStart=/bin/sh -c '
+-    # Detect virtualization environment
+-    VIRT_TYPE=\$(systemd-detect-virt)
+-    echo "Detected virtualization: \$VIRT_TYPE"
+-    
+-    # Create virtualization-specific optimizations
+-    case "\$VIRT_TYPE" in
+-        qemu|kvm)
+-            echo "Applying QEMU/KVM optimizations..."
+-            # Optimize for QEMU/KVM
+-            echo "nbd" > /etc/modules-load.d/virtio-modules.conf
+-            echo "virtio_blk" >> /etc/modules-load.d/virtio-modules.conf
+-            echo "virtio_net" >> /etc/modules-load.d/virtio-modules.conf
+-            echo "virtio_scsi" >> /etc/modules-load.d/virtio-modules.conf
+-            ;;
+-        vmware)
+-            echo "Applying VMware optimizations..."
+-            # VMware-specific optimizations
+-            modprobe vmw_balloon 2>/dev/null || true
+-            modprobe vmw_vmci 2>/dev/null || true
+-            ;;
+-        oracle)
+-            echo "Applying VirtualBox optimizations..."
+-            # VirtualBox-specific optimizations  
+-            modprobe vboxguest 2>/dev/null || true
+-            modprobe vboxsf 2>/dev/null || true
+-            ;;
+-        microsoft)
+-            echo "Applying Hyper-V optimizations..."
+-            # Hyper-V specific optimizations
+-            modprobe hv_vmbus 2>/dev/null || true
+-            modprobe hv_balloon 2>/dev/null || true
+-            ;;
+-    esac
+-    
+-    # Universal virtual device optimizations
+-    echo "Applying universal VM optimizations..."
+-    
+-    # Disable unnecessary hardware services in VMs
+-    systemctl mask hardware-detection.service 2>/dev/null || true
+-    systemctl mask acpid.service 2>/dev/null || true
+-    
+-    # Optimize storage for VMs
+-    echo deadline > /sys/block/*/queue/scheduler 2>/dev/null || true
+-    
+-    echo "Virtualization setup complete for \$VIRT_TYPE"
+-'
+-
+-[Install]
+-WantedBy=multi-user.target
+-EOF
+-
+-# Create NBD device monitoring service
+-cat <<EOF >/usr/lib/systemd/system/x64-nbd-monitor.service
+-[Unit]
+-Description=x64 NBD Device Monitor
+-After=systemd-udevd.service x64-virtualization-setup.service
+-ConditionVirtualization=!no
+-
+-[Service]
+-Type=simple
+-Restart=always
+-RestartSec=30s
+-ExecStart=/bin/sh -c '
+-    # Monitor NBD devices and ensure proper state
+-    while true; do
+-        for nbd in /dev/nbd*; do
+-            if [ -b "\$nbd" ]; then
+-                nbd_num=\$(basename "\$nbd" | sed "s/nbd//")
+-                
+-                # Check if NBD device has content
+-                if [ -r "\$nbd" ]; then
+-                    size=\$(blockdev --getsize64 "\$nbd" 2>/dev/null || echo "0")
+-                    if [ "\$size" = "0" ]; then
+-                        # Device exists but is empty - mark as not ready
+-                        udevadm trigger --action=change --property=SYSTEMD_READY=0 "\$nbd" 2>/dev/null || true
+-                    else
+-                        # Device has content - mark as ready
+-                        udevadm trigger --action=change --property=SYSTEMD_READY=1 "\$nbd" 2>/dev/null || true
+-                    fi
+-                fi
+-            fi
+-        done
+-        sleep 60
+-    done
+-'
+-
+-# Resource limits
+-MemoryLimit=16M
+-CPUQuota=5%
+-
+-[Install]
+-WantedBy=multi-user.target
+-EOF
+-
+-# Create virtual hardware detection service
+-cat <<EOF >/usr/lib/systemd/system/x64-virtual-hardware-detection.service
+-[Unit]
+-Description=x64 Virtual Hardware Detection
+-After=systemd-udevd.service
+-Before=hardware-setup.service
+-
+-[Service]
+-Type=oneshot
+-RemainAfterExit=yes
+-ExecStart=/bin/sh -c '
+-    # Enhanced virtual hardware detection
+-    mkdir -p /run/rocknix
+-    
+-    # Detect virtual hardware and create appropriate configurations
+-    if [ -f /sys/devices/virtual/dmi/id/product_name ]; then
+-        PRODUCT=\$(cat /sys/devices/virtual/dmi/id/product_name 2>/dev/null || echo "unknown")
+-        echo "Detected virtual product: \$PRODUCT"
+-        echo "\$PRODUCT" > /run/rocknix/virtual_product
+-    fi
+-    
+-    if [ -f /sys/devices/virtual/dmi/id/sys_vendor ]; then
+-        VENDOR=\$(cat /sys/devices/virtual/dmi/id/sys_vendor 2>/dev/null || echo "unknown")
+-        echo "Detected virtual vendor: \$VENDOR"  
+-        echo "\$VENDOR" > /run/rocknix/virtual_vendor
+-    fi
+-    
+-    # Create virtual device optimizations
+-    case "\$VENDOR" in
+-        QEMU*)
+-            echo "qemu" > /run/rocknix/vm_type
+-            ;;
+-        VMware*)
+-            echo "vmware" > /run/rocknix/vm_type
+-            ;;
+-        innotek*)
+-            echo "virtualbox" > /run/rocknix/vm_type
+-            ;;
+-        Microsoft*)
+-            echo "hyperv" > /run/rocknix/vm_type
+-            ;;
+-        *)
+-            echo "generic" > /run/rocknix/vm_type
+-            ;;
+-    esac
+-    
+-    echo "Virtual hardware detection complete"
+-'
+-
+-[Install]
+-WantedBy=sysinit.target
+-EOF
+-
+-# Create device readiness coordination service
+-cat <<EOF >/usr/lib/systemd/system/x64-device-readiness.service
+-[Unit]
+-Description=x64 Device Readiness Coordinator
+-After=systemd-udevd.service x64-virtual-hardware-detection.service
+-Before=local-fs.target
+-
+-[Service]
+-Type=oneshot
+-RemainAfterExit=yes
+-ExecStart=/bin/sh -c '
+-    # Coordinate device readiness for virtual environments
+-    echo "Starting device readiness coordination..."
+-    
+-    # Wait for critical virtual devices
+-    timeout=60
+-    while [ \$timeout -gt 0 ]; do
+-        ready=true
+-        
+-        # Check if virtual storage devices are ready
+-        for dev in /dev/vd[a-z] /dev/sd[a-z]; do
+-            if [ -b "\$dev" ]; then
+-                if ! udevadm info "\$dev" | grep -q "SYSTEMD_READY=1"; then
+-                    ready=false
+-                    break
+-                fi
+-            fi
+-        done
+-        
+-        if [ "\$ready" = "true" ]; then
+-            echo "Virtual devices ready"
+-            break
+-        fi
+-        
+-        sleep 1
+-        timeout=\$((timeout - 1))
+-    done
+-    
+-    if [ \$timeout -eq 0 ]; then
+-        echo "Warning: Timeout waiting for device readiness"
+-    fi
+-    
+-    echo "Device readiness coordination complete"
+-'
+-
+-[Install]
+-WantedBy=sysinit.target
+-EOF
+-
+-# Create enhanced modules loading for virtual environments
+-mkdir -p /etc/modules-load.d
+-
+-cat <<EOF >/etc/modules-load.d/x64-virtual-modules.conf
+-# Virtual environment modules for x64 systems
+-
+-# NBD (Network Block Device) support
+-nbd
+-
+-# VirtIO modules for QEMU/KVM
+-virtio
+-virtio_pci
+-virtio_blk
+-virtio_net
+-virtio_scsi
+-virtio_console
+-virtio_balloon
+-
+-# Virtual graphics
+-virtio_gpu
+-qxl
+-bochs_drm
+-EOF
+-
+-# Enable virtualization services
+-mkdir -p /etc/systemd/system/sysinit.target.wants
+-mkdir -p /etc/systemd/system/multi-user.target.wants
+-
+-ln -sf /usr/lib/systemd/system/x64-virtual-hardware-detection.service /etc/systemd/system/sysinit.target.wants/x64-virtual-hardware-detection.service
+-ln -sf /usr/lib/systemd/system/x64-device-readiness.service /etc/systemd/system/sysinit.target.wants/x64-device-readiness.service
+-ln -sf /usr/lib/systemd/system/x64-virtualization-setup.service /etc/systemd/system/multi-user.target.wants/x64-virtualization-setup.service
+-ln -sf /usr/lib/systemd/system/x64-nbd-monitor.service /etc/systemd/system/multi-user.target.wants/x64-nbd-monitor.service
+-
+-# Log completion
+-echo "Phase 6: Virtualization-specific fixes applied for Generic x86_64"
+diff --git a/projects/ROCKNIX/packages/hardware/quirks/platforms/GENERIC_X64/092-retroarch-surface b/projects/ROCKNIX/packages/hardware/quirks/platforms/GENERIC_X64/092-retroarch-surface
+index 9f6a600332..15dacad33f 100755
+--- a/projects/ROCKNIX/packages/hardware/quirks/platforms/GENERIC_X64/092-retroarch-surface
++++ b/projects/ROCKNIX/packages/hardware/quirks/platforms/GENERIC_X64/092-retroarch-surface
+@@ -13,18 +13,98 @@
+ # (fork #263; #251's measurements described the scaling). The H700 ships
+ # 640/480 and never drew this way.
+ #
+-# The shipped cfg now says 640x480; a guest on another mode (the 1280x800
+-# QA guest) gets its own here, from the connected output, when the values
+-# are still the shipped ones. A value somebody set by hand is left alone,
+-# and RetroArch does not write these back (config_save_on_exit is off).
++# The shipped cfg says 640x480; a guest on another mode (the 1280x800 QA
++# guest) gets its own here, and keeps following it -- a guest kept and
++# re-run at another --res gets the new size -- for as long as the values
++# are this quirk's:
++#   - a size RECORD (beside the cfg, so a settings backup carries it with
++#     the values it describes) names as its own;
++#   - the shipped values, 640x480 or 0x0, with or without a record: that is
++#     the cfg after RESET RETROARCH CONFIG TO DEFAULT, which replaces
++#     retroarch.cfg and leaves RECORD, and either on another mode is the
++#     scaling this quirk exists to end -- so a hand-set 640x480 or 0x0
++#     follows the mode too;
++#   - with no RECORD yet, exactly the size this boot writes: an earlier
++#     build's write for this mode, or a hand-set pair equal to it, and
++#     taking it changes nothing now.
++# Anything else was set by somebody, or by an earlier build at a mode it
++# can no longer be told from, and is left alone; setting the two values to 0
++# hands them back. The cfg is only ever rewritten with RECORD already naming
++# both the old size and the new one, so a boot cut short between the two
++# writes still knows the cfg's size is its own. RetroArch does not write
++# these back (config_save_on_exit is off).
+ CFG="/storage/.config/retroarch/retroarch.cfg"
+-MODE="$(cat /sys/class/drm/card*-*/modes 2>/dev/null | head -1)"
+-if [ -f "${CFG}" ]; then
+-  case "${MODE}" in
+-    [0-9]*x[0-9]*)
+-      W="${MODE%x*}"; H="${MODE#*x}"
+-      grep -qE '^video_fullscreen_x = "(0|640)"$' "${CFG}" && sed -i "s/^video_fullscreen_x = .*/video_fullscreen_x = \"${W}\"/" "${CFG}"
+-      grep -qE '^video_fullscreen_y = "(0|480)"$' "${CFG}" && sed -i "s/^video_fullscreen_y = .*/video_fullscreen_y = \"${H}\"/" "${CFG}"
+-      ;;
+-  esac
++RECORD="/storage/.config/retroarch/.fullscreen-surface"
++[ -f "${CFG}" ] || exit 0
++
++# RetroArch's driver. This device's cfg named vulkan until 2026-09, and the
++# image carries no Vulkan driver, so RetroArch exited without drawing a
++# frame; gl is what a guest draws with (virgl, or llvmpipe with --gl none).
++# A cfg still naming vulkan moves to gl -- only while no Vulkan ICD exists
++# in the loader's system directories or in root's own (home is /storage).
++ICD=no
++for f in /usr/share/vulkan/icd.d/*.json /usr/local/share/vulkan/icd.d/*.json \
++         /etc/vulkan/icd.d/*.json /storage/.local/share/vulkan/icd.d/*.json \
++         /storage/.config/vulkan/icd.d/*.json; do
++  [ -e "${f}" ] && ICD=yes
++done
++if [ "${ICD}" = no ] && grep -q '^video_driver = "vulkan"$' "${CFG}"; then
++  sed -i 's/^video_driver = "vulkan"$/video_driver = "gl"/' "${CFG}"
++fi
++
++# The mode sway will take: the preferred (first) mode of the connected
++# output. The compositor has not started at this point of the boot, so
++# there is no current mode to read, and sway takes the preferred one. An
++# interlaced mode is named 1920x1080i; its height is still 1080.
++MODE=""
++for c in /sys/class/drm/card*-*; do
++  [ "$(cat "${c}/status" 2>/dev/null)" = connected ] || continue
++  MODE="$(head -n 1 "${c}/modes" 2>/dev/null)"
++  [ -n "${MODE}" ] && break
++done
++MODE="${MODE%i}"
++case "${MODE}" in
++  [1-9]*x[1-9]*) W="${MODE%%x*}"; H="${MODE#*x}" ;;
++  *) exit 0 ;;
++esac
++case "${W}${H}" in *[!0-9]*) exit 0 ;; esac
++WANT="${W}x${H}"
++
++value() { sed -n "s/^$1 = \"\\([0-9]*\\)\"\$/\\1/p" "${CFG}" | head -n 1; }
++X="$(value video_fullscreen_x)"; Y="$(value video_fullscreen_y)"
++[ -n "${X}" ] && [ -n "${Y}" ] || exit 0
++SIZE="${X}x${Y}"
++
++# The sizes RECORD names: surface=WxH lines, or its first form (a5a03bd9fa),
++# one video_fullscreen_x= and one video_fullscreen_y= line.
++recorded() {
++  [ -f "${RECORD}" ] || return 1
++  grep -qx "surface=${1}" "${RECORD}" && return 0
++  [ "$(sed -n 's/^video_fullscreen_x=\([0-9]*\)$/\1/p' "${RECORD}")x$(sed -n 's/^video_fullscreen_y=\([0-9]*\)$/\1/p' "${RECORD}")" = "${1}" ]
++}
++record() {
++  { echo "# 092-retroarch-surface (GENERIC_X64): the fullscreen sizes of its own that retroarch.cfg may hold"
++    for s in "$@"; do echo "surface=${s}"; done; } > "${RECORD}.new" && mv "${RECORD}.new" "${RECORD}"
++}
++
++OURS=no
++if recorded "${SIZE}"; then
++  OURS=yes
++elif { [ "${X}" = 0 ] || [ "${X}" = 640 ]; } && { [ "${Y}" = 0 ] || [ "${Y}" = 480 ]; }; then
++  OURS=yes
++elif [ ! -f "${RECORD}" ] && [ "${SIZE}" = "${WANT}" ]; then
++  OURS=yes
++fi
++[ "${OURS}" = yes ] || exit 0
++
++if [ "${SIZE}" != "${WANT}" ]; then
++  record "${SIZE}" "${WANT}" || exit 0
++  sed -i -e "s/^video_fullscreen_x = .*/video_fullscreen_x = \"${W}\"/" \
++         -e "s/^video_fullscreen_y = .*/video_fullscreen_y = \"${H}\"/" "${CFG}"
++  [ "$(value video_fullscreen_x)x$(value video_fullscreen_y)" = "${WANT}" ] || exit 0
++fi
++# The cfg holds WANT: the record names it alone from here.
++if [ "$(grep -v '^#' "${RECORD}" 2>/dev/null)" != "surface=${WANT}" ]; then
++  record "${WANT}"
+ fi
++exit 0
+diff --git a/projects/ROCKNIX/packages/hardware/quirks/platforms/GENERIC_X64/095-cloud-ssh b/projects/ROCKNIX/packages/hardware/quirks/platforms/GENERIC_X64/095-cloud-ssh
+index 9f17f25d22..43b575cc34 100755
+--- a/projects/ROCKNIX/packages/hardware/quirks/platforms/GENERIC_X64/095-cloud-ssh
++++ b/projects/ROCKNIX/packages/hardware/quirks/platforms/GENERIC_X64/095-cloud-ssh
+@@ -9,23 +9,68 @@
+ # - only the port: UTM splits QEMU arguments on whitespace, so a full
+ # command string cannot survive the trip). Assemble the command here and
+ # publish it as the cloud-setup connection override; never leave a stale
+-# override behind.
++# one of ours behind.
++#
++# The same file is the manual fallback the VM README documents: a tester
++# whose guest is reached some other way (a bridged or host-network UTM mode,
++# a forward of their own) writes the command that works into it. That one
++# is theirs. This quirk replaces or removes only a command it wrote itself:
++# one RECORD names (RECORD names the old command and the new one before the
++# file changes, so a boot cut short between the two still knows it), or --
++# with no RECORD yet -- exactly the command this boot would write: an
++# earlier build wrote that very line, and taking it changes nothing now. A
++# loopback command on another port with no record could be a tester's own
++# forward and is left, as is anything else. Delete the file to go back to
++# the automatic command.
+ 
+ FWCFG="/sys/firmware/qemu_fw_cfg/by_name/opt/org.rocknix.cloud_ssh_port/raw"
+ TARGET="/storage/.config/cloud_setup_ssh"
++RECORD="/storage/.config/.cloud_setup_ssh.generated"
+ 
++# Retired override from the web-GUI era; clean up so no stale file lingers.
++rm -f /storage/.config/cloud_setup_url
++
++# A port is one to five digits, 1 to 65535; anything else on fw_cfg is no
++# port at all, never a shortened one.
+ PORT=""
+ if [ -r "${FWCFG}" ]; then
+-  PORT=$(tr -cd '0-9' < "${FWCFG}")
++  RAW=$(tr -cd '0-9' < "${FWCFG}")
++  case "${#RAW}" in
++    1|2|3|4|5) [ "${RAW}" -ge 1 ] && [ "${RAW}" -le 65535 ] && PORT="${RAW}" ;;
++  esac
+ fi
++# The -L tunnel carries rclone's provider sign-in page (guest port 53682)
++# to the browser of the machine running SSH - see rclone.org/remote_setup.
++CMD=""
++[ -n "${PORT}" ] && CMD="ssh -L 53682:localhost:53682 -p ${PORT} root@127.0.0.1"
++
++ours() {
++  [ -e "${TARGET}" ] || return 0
++  [ "$(wc -l < "${TARGET}")" -le 1 ] || return 1
++  LINE="$(cat "${TARGET}")"
++  [ -n "${LINE}" ] || return 1
++  if [ -f "${RECORD}" ]; then
++    grep -qxF -- "${LINE}" "${RECORD}"
++    return
++  fi
++  [ -n "${CMD}" ] && [ "${LINE}" = "${CMD}" ]
++}
++record() { printf '%s\n' "$@" > "${RECORD}.new" && mv "${RECORD}.new" "${RECORD}"; }
+ 
+-if [ -n "${PORT}" ] && [ "${PORT}" -ge 1 ] && [ "${PORT}" -le 65535 ]; then
+-  # The -L tunnel carries rclone's provider sign-in page (guest port 53682)
+-  # to the browser of the machine running SSH - see rclone.org/remote_setup.
+-  echo "ssh -L 53682:localhost:53682 -p ${PORT} root@127.0.0.1" > "${TARGET}"
+-else
++if [ -n "${CMD}" ]; then
++  ours || exit 0
++  if [ "$(cat "${TARGET}" 2>/dev/null)" != "${CMD}" ]; then
++    if [ -e "${TARGET}" ]; then
++      record "$(cat "${TARGET}")" "${CMD}" || exit 0
++    else
++      record "${CMD}" || exit 0
++    fi
++    echo "${CMD}" > "${TARGET}.new" && mv "${TARGET}.new" "${TARGET}" || exit 0
++  fi
++  # The file holds CMD: the record names it alone from here.
++  [ "$(cat "${TARGET}")" = "${CMD}" ] && [ "$(cat "${RECORD}" 2>/dev/null)" != "${CMD}" ] && record "${CMD}"
++elif ours; then
+   rm -f "${TARGET}"
++  [ -e "${TARGET}" ] || rm -f "${RECORD}"
+ fi
+-
+-# Retired override from the web-GUI era; clean up so no stale file lingers.
+-rm -f /storage/.config/cloud_setup_url
++exit 0
+diff --git a/projects/ROCKNIX/packages/hardware/quirks/platforms/GENERIC_X64/097-disable-rescue-completely b/projects/ROCKNIX/packages/hardware/quirks/platforms/GENERIC_X64/097-disable-rescue-completely
+deleted file mode 100755
+index 2fd6f28b81..0000000000
+--- a/projects/ROCKNIX/packages/hardware/quirks/platforms/GENERIC_X64/097-disable-rescue-completely
++++ /dev/null
+@@ -1,45 +0,0 @@
+-#!/bin/sh
+-# SPDX-License-Identifier: GPL-2.0
+-# Copyright (C) 2024 ROCKNIX (https://github.com/ROCKNIX)
+-
+-### GENERIC_X64 Complete Rescue Mode Disable
+-### Prevents hardcoded path issues by completely disabling rescue functionality
+-
+-echo "Completely disabling rescue modes for GENERIC_X64..."
+-
+-# Remove rescue and emergency targets/services entirely
+-systemctl mask rescue.target
+-systemctl mask emergency.target
+-systemctl mask rescue.service
+-systemctl mask emergency.service
+-
+-# Create stub services that just continue to default.target
+-mkdir -p /lib/systemd/system
+-
+-# Replace rescue.target with a stub that goes to default.target
+-cat <<EOF >/lib/systemd/system/rescue.target
+-[Unit]
+-Description=Rescue Mode (Disabled - GENERIC_X64)
+-Requires=sysinit.target
+-After=sysinit.target
+-AllowIsolate=yes
+-DefaultDependencies=no
+-
+-[Install]
+-Alias=rescue.target
+-EOF
+-
+-# Replace emergency.target with a stub that goes to default.target
+-cat <<EOF >/lib/systemd/system/emergency.target
+-[Unit]
+-Description=Emergency Mode (Disabled - GENERIC_X64)
+-Requires=sysinit.target
+-After=sysinit.target
+-AllowIsolate=yes
+-DefaultDependencies=no
+-
+-[Install]
+-Alias=emergency.target
+-EOF
+-
+-echo "Rescue modes completely disabled for GENERIC_X64"
+\ No newline at end of file
+diff --git a/projects/ROCKNIX/packages/hardware/quirks/platforms/GENERIC_X64/097-retired-rescue-masks b/projects/ROCKNIX/packages/hardware/quirks/platforms/GENERIC_X64/097-retired-rescue-masks
+new file mode 100755
+index 0000000000..71d8838556
+--- /dev/null
++++ b/projects/ROCKNIX/packages/hardware/quirks/platforms/GENERIC_X64/097-retired-rescue-masks
+@@ -0,0 +1,35 @@
++#!/bin/sh
++# SPDX-License-Identifier: GPL-2.0
++# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
++
++### Takes back, once, the rescue and emergency masks an earlier quirk set.
++#
++# Until 2026-09, 097-disable-rescue-completely ran `systemctl mask` on
++# rescue.target, emergency.target, rescue.service and emergency.service at
++# every boot. systemctl writes a mask into this image's unit directory,
++# /storage/.config/system.d, so the masks outlived the quirk, and a boot whose
++# local filesystems fail stops with no emergency target to reach -- the
++# behaviour every other ROCKNIX device keeps. (Its stub targets under /lib
++# never existed: /lib is the read-only image.) Only a mask -- a link to
++# /dev/null -- is removed; a unit of somebody's own under one of these names
++# is theirs. It runs until the four are gone, says on the journal what it
++# unmasked, and then stops for good (STAMP): a mask somebody makes afterwards
++# is theirs. (A downgrade to a build that still has the old quirk masks them
++# again, and they then stay; remove STAMP to take them back once more.)
++STAMP=/storage/.cache/retired-rescue-masks
++[ -e "${STAMP}" ] && exit 0
++D=/storage/.config/system.d
++masked() { [ -L "${D}/${1}" ] && [ "$(readlink "${D}/${1}")" = /dev/null ]; }
++GONE=""
++for unit in rescue.target emergency.target rescue.service emergency.service; do
++  if masked "${unit}"; then
++    rm -f "${D}/${unit}"
++    masked "${unit}" || GONE="${GONE} ${unit}"
++  fi
++done
++[ -n "${GONE}" ] && echo "097-retired-rescue-masks: unmasked what an earlier build masked:${GONE}" >&2
++for unit in rescue.target emergency.target rescue.service emergency.service; do
++  masked "${unit}" && exit 0
++done
++mkdir -p "${STAMP%/*}" && echo "the rescue and emergency masks an earlier build set were taken back" > "${STAMP}"
++exit 0
+diff --git a/tools/last-good-scripts-test b/tools/last-good-scripts-test
+index 15d2cf4550..e8223ae9d6 100755
+--- a/tools/last-good-scripts-test
++++ b/tools/last-good-scripts-test
+@@ -3011,4 +3011,608 @@ ckf() { # ckf <raw bytes> <exe> <CORE_MIN_FREE_KB>
+ ckf 65536 retroarch $(( XFREE - 512 )); printf '%s' "${NOTE}" | grep '^dump' | grep -q 'NOT KEPT' && printf '%s' "${NOTE}" | grep '^dump' | grep -q 'plus the 1048576 byte cap'; check $? "with free space above the floor but under the floor plus the cap, the dump is refused and the note names both (audit #258, the seat's G-03; the old test admitted it)" "free ${XFREE} KB; note: $(printf '%s' "${NOTE}" | grep '^dump' | cut -c1-140)"
+ ckf 65536 retroarch 1024;                printf '%s' "${NOTE}" | grep '^dump' | grep -q 'whole'; check $? "and with a floor the card clears by more than the cap, the same dump is kept" "note: $(printf '%s' "${NOTE}" | grep '^dump' | cut -c1-100)" "note: $(printf '%s' "${NOTE}" | grep '^dump')"
+ 
++# ---- audit #307, stream F1 ----
++# GENERIC_X64, the developers' QA device (D-QA-053): its boot quirks, its
++# serial shell, its launcher and its RetroArch surface. Every script here runs
++# the way the image runs it -- under bash, which is the image's /bin/sh, with
++# the image's busybox for the applets it has -- inside bwrap, against a /etc
++# built from the recipes' own links into /storage and a /usr that is the
++# read-only image it is on a guest. Under --old the scripts come from
++# BASE_REF; `BASE_REF=417dcd8610 tools/last-good-scripts-test --old` is the
++# tree before this stream, and every F1 check below that names a fix FAILs
++# against it.
++echo "  F1. GENERIC_X64, the developers' QA device (D-QA-053): the boot quirks write only what a guest keeps, the serial shell stays on a VM, the launcher's print verb touches nothing (#307 PL-019, PL-022, PL-023, PL-033, PL-034, PL-073; #308)"
++F1="${TMP}/f1"; mkdir -p "${F1}"
++F1_PREV=417dcd8610     # the tree before stream F1: what the earlier builds installed, and so wrote
++F1_QEMU="QEMU Standard PC (Q35 + ICH9, 2009)"
++F1_QREL=projects/ROCKNIX/packages/hardware/quirks
++# A directory's files: the working tree's, or BASE_REF's under --old, or a
++# named ref's (f1_tree_at) -- an absent directory copies nothing.
++f1_tree_at() { # <ref|""> <repo-relative dir> <destination>
++    mkdir -p "${3}"
++    if [ -n "${1}" ]; then
++        git -C "${ROOT}" ls-tree --name-only "${1}:${2}" 2>/dev/null | while IFS= read -r f; do
++            git -C "${ROOT}" show "${1}:${2}/${f}" > "${3}/${f}" || { echo "cannot read ${2}/${f} at ${1}" >&2; exit 2; }
++        done
++    elif [ -d "${ROOT}/${2}" ]; then
++        cp -a "${ROOT}/${2}/." "${3}/"
++    fi
++    chmod +x "${3}"/* 2>/dev/null; true
++}
++f1_tree() { if [ "${OLD}" -eq 1 ]; then f1_tree_at "${BASE_REF}" "$@"; else f1_tree_at "" "$@"; fi; }
++F1BB=(); F1PATH="/shim:/usr/bin:/bin"
++if [ -n "${BB}" ]; then F1BB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB_HOST}" "${BB}"); F1PATH="/shim:/bbin:/usr/bin:/bin"; fi
++# /etc as the image has it: read-only, with the links the systemd and kmod
++# recipes make into /storage (tmpfiles.d, sysctl.d, modules-load.d, the udev
++# rules, the *.conf.d of logind and friends), and no /etc/systemd/system --
++# the systemd recipe removes it and points systemd's own unit directory at
++# /storage/.config/system.d instead (its patch 0001).
++F1ETC="${F1}/etc"; mkdir -p "${F1ETC}/systemd/system.conf.d" "${F1ETC}/udev" "${F1ETC}/dbus-1/system.d"
++: > "${F1ETC}/systemd/journald.conf"; : > "${F1ETC}/systemd/system.conf"
++cat "${ROOT}/projects/ROCKNIX/packages/sysutils/systemd/package.mk" "${ROOT}/projects/ROCKNIX/packages/sysutils/kmod/package.mk" \
++    | sed -n 's#^ *ln -sf \(/storage/[^ ]*\) ${INSTALL}/etc/\([^ ]*\)$#\1 \2#p' > "${F1}/etc-links"
++while read -r tgt rel; do mkdir -p "$(dirname "${F1ETC}/${rel}")"; ln -sfn "${tgt}" "${F1ETC}/${rel}"; done < "${F1}/etc-links"
++[ -L "${F1ETC}/tmpfiles.d" ] && [ -L "${F1ETC}/sysctl.d" ] && [ -L "${F1ETC}/udev/rules.d" ] && [ -L "${F1ETC}/modules-load.d" ]
++check $? "the fixture's /etc carries the recipes' links into /storage ($(wc -l < "${F1}/etc-links") of them)" "the recipes' /etc links were not found; the fixture is not the image's /etc: $(tr '\n' ' ' < "${F1}/etc-links")"
++# The shims: systemctl as the patched systemd behaves -- mask and unmask
++# write a /dev/null link in /storage/.config/system.d, its unit directory --
++# and the tools a quirk may call that do nothing here.
++mkdir -p "${F1}/shim"
++cat > "${F1}/shim/systemctl" <<'EOS'
++#!/bin/bash
++case "$1" in
++    mask)   shift; for u in "$@"; do mkdir -p /storage/.config/system.d; ln -sfn /dev/null "/storage/.config/system.d/${u}"; done ;;
++    unmask) shift; for u in "$@"; do [ "$(readlink "/storage/.config/system.d/${u}")" = /dev/null ] && rm -f "/storage/.config/system.d/${u}"; done ;;
++esac
++exit 0
++EOS
++for t in systemd-detect-virt modprobe udevadm plymouth logger blockdev; do printf '#!/bin/sh\nexit 0\n' > "${F1}/shim/${t}"; done
++chmod +x "${F1}/shim"/*
++# /storage as a guest's first boot leaves it: the /usr/config directories the
++# links point into (each with its README), the shipped retroarch.cfg.
++f1_storage() { # <dir>: a fresh /storage
++    rm -rf "${1}"; mkdir -p "${1}/.config/profile.d" "${1}/.config/retroarch" "${1}/.cache"
++    for d in tmpfiles.d sysctl.d modules-load.d modprobe.d udev.rules.d hwdb.d system.d logind.conf.d resolved.conf.d sleep.conf.d timesyncd.conf.d; do
++        mkdir -p "${1}/.config/${d}"; echo "shipped" > "${1}/.config/${d}/README"
++    done
++    printf 'video_driver = "vulkan"\nvideo_fullscreen = "true"\nvideo_fullscreen_x = "640"\nvideo_fullscreen_y = "480"\n' > "${1}/.config/retroarch/retroarch.cfg"
++}
++# /sys: one connected virtio output at 1280x800 (QEMU's default), fw_cfg's
++# SSH port, the DMI names.
++f1_sys() { # <dir> [<connector>:<status>:<mode>[,<mode>...]]...
++    local d="${1}" c name st modes; shift
++    rm -rf "${d}"; mkdir -p "${d}/class/drm" "${d}/firmware/qemu_fw_cfg/by_name/opt/org.rocknix.cloud_ssh_port" "${d}/class/dmi/id"
++    printf '10022' > "${d}/firmware/qemu_fw_cfg/by_name/opt/org.rocknix.cloud_ssh_port/raw"
++    echo QEMU > "${d}/class/dmi/id/sys_vendor"; echo "Standard PC (Q35 + ICH9, 2009)" > "${d}/class/dmi/id/product_name"
++    [ $# -eq 0 ] && set -- "card0-Virtual-1:connected:1280x800,1024x768,640x480"
++    for c in "$@"; do
++        name="${c%%:*}"; c="${c#*:}"; st="${c%%:*}"; modes="${c#*:}"
++        mkdir -p "${d}/class/drm/${name}"
++        echo "${st}" > "${d}/class/drm/${name}/status"
++        if [ "${st}" = connected ]; then echo enabled; else echo disabled; fi > "${d}/class/drm/${name}/enabled"
++        echo "${modes}" | tr ',' '\n' > "${d}/class/drm/${name}/modes"
++    done
++}
++# One boot's quirk pass, as autostart runs it: the platform's scripts, then
++# the device's, each "${script}" 2>&1 >>boot.log -- so what a script says on
++# stderr is what the journal holds, and that is what lands in <journal>.
++f1_pass() { # <storage> <sys> <quirks dir> <journal>
++    ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${F1BB[@]}" \
++        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 --symlink usr/sbin /sbin \
++        --ro-bind "${F1ETC}" /etc --bind "${1}" /storage --ro-bind "${2}" /sys --ro-bind "${3}" /quirks \
++        --ro-bind "${F1}/shim" /shim --tmpfs /run --tmpfs /tmp --tmpfs /var --dev /dev --proc /proc \
++        --setenv PATH "${F1PATH}" --setenv HOME /storage \
++        bash -c 'for s in /quirks/platforms/GENERIC_X64/* "/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)"/*; do
++                     [ -f "${s}" ] && bash "${s}" 2>&1 >>/run/boot.log
++                 done; exit 0' ) > "${4}" 2>&1
++}
++f1_quirks() { # <ref|""> <destination>: the platform and QEMU device quirks a build installs
++    rm -rf "${2}"; mkdir -p "${2}/platforms" "${2}/devices"
++    f1_tree_at "${1}" "${F1_QREL}/platforms/GENERIC_X64" "${2}/platforms/GENERIC_X64"
++    f1_tree_at "${1}" "${F1_QREL}/devices/${F1_QEMU}" "${2}/devices/${F1_QEMU}"
++}
++f1_new_files() { # <storage> <reference listing> -> files and links under <storage> not in the listing
++    ( cd "${1}" && find . \( -type f -o -type l \) | LC_ALL=C sort ) | LC_ALL=C comm -13 "${2}" -
++}
++f1_storage "${F1}/fresh"; ( cd "${F1}/fresh" && find . \( -type f -o -type l \) | LC_ALL=C sort ) > "${F1}/fresh.list"
++f1_sys "${F1}/sys"
++F1_UNDER=""; [ "${OLD}" -eq 1 ] && F1_UNDER="${BASE_REF}"
++
++# F1a. #307 PL-019 (and #308 F-VM-07, both seats): one boot's quirk pass on a
++#      guest writes nothing into the read-only image -- the acceptance's own
++#      `journalctl -b | grep -c 'Read-only file system'` -- says nothing on
++#      the journal at all, and leaves /storage no file that changes a later
++#      boot: no tmpfiles.d, sysctl.d, modules-load.d or udev rule, no unit or
++#      mask in system.d.
++f1_quirks "${F1_UNDER}" "${F1}/quirks.now"
++f1_storage "${F1}/a"; f1_pass "${F1}/a" "${F1}/sys" "${F1}/quirks.now" "${F1}/a.journal"
++F1_RO=$(grep -c 'Read-only file system' "${F1}/a.journal")
++[ "${F1_RO}" -eq 0 ]; check $? "the quirk pass writes nothing into the read-only image: 0 'Read-only file system' lines on the journal" "the quirk pass writes into the read-only image: ${F1_RO} 'Read-only file system' lines, e.g. $(grep -m2 'Read-only file system' "${F1}/a.journal" | tr '\n' '|' | cut -c1-240)"
++[ ! -s "${F1}/a.journal" ]; check $? "and says nothing else on the journal" "the pass says $(wc -l < "${F1}/a.journal") line(s) on the journal: $(head -3 "${F1}/a.journal" | tr '\n' '|' | cut -c1-240)"
++F1_BOOT=$(f1_new_files "${F1}/a" "${F1}/fresh.list" | grep -E '^\./\.config/(tmpfiles\.d|sysctl\.d|modules-load\.d|modprobe\.d|udev\.rules\.d|hwdb\.d|system\.d|systemd)/')
++[ -z "${F1_BOOT}" ]; check $? "and leaves /storage no file that changes a later boot (tmpfiles, sysctl, modules, udev, units, masks)" "the pass leaves /storage files that change later boots: $(echo "${F1_BOOT}" | tr '\n' ' ' | cut -c1-300)"
++
++# F1b. #307 PL-019's Already written: a guest that ran the earlier builds'
++#      quirks carries what they wrote into /storage. The fixture is exactly
++#      that: the pass of the tree before this stream (F1_PREV), run on a
++#      fresh /storage beside a file of the owner's own in each of those
++#      directories. One boot of the tree under test takes back every file
++#      the retired quirks wrote -- by name, so the owner's files stay -- and
++#      a second boot changes nothing.
++f1_quirks "${F1_PREV}" "${F1}/quirks.prev"
++f1_storage "${F1}/b"
++echo "mine" > "${F1}/b/.config/tmpfiles.d/50-mine.conf"; echo "mine" > "${F1}/b/.config/sysctl.d/99-mine.conf"
++echo "mine" > "${F1}/b/.config/modules-load.d/mine.conf"; ln -s /dev/null "${F1}/b/.config/system.d/mine.service"
++# and one under a drop-in directory the retired writers used, with a name
++# none of them wrote (weston got 10-vm-config.conf, never 10-generic-x64.conf)
++mkdir -p "${F1}/b/.config/systemd/system/weston.service.d"; echo "mine" > "${F1}/b/.config/systemd/system/weston.service.d/10-generic-x64.conf"
++( cd "${F1}/b" && find . \( -type f -o -type l \) | LC_ALL=C sort ) > "${F1}/b.before"
++f1_pass "${F1}/b" "${F1}/sys" "${F1}/quirks.prev" "${F1}/b.prev.journal"
++F1_WROTE=$(f1_new_files "${F1}/b" "${F1}/b.before" | grep -vE '^\./\.config/(profile\.d/(001-device_config|090-ui_service|091-ui_shader)|cloud_setup_ssh)$')
++[ -n "${F1_WROTE}" ]; check $? "the earlier builds' pass wrote $(echo "${F1_WROTE}" | grep -c .) file(s) into /storage the fixture can take back (the fixture holds what a guest holds)" "the earlier builds' pass wrote nothing -- the fixture proves nothing"
++f1_pass "${F1}/b" "${F1}/sys" "${F1}/quirks.now" "${F1}/b.now.journal"
++F1_LEFT=""; while IFS= read -r f; do [ -e "${F1}/b/${f}" ] || [ -L "${F1}/b/${f}" ] && F1_LEFT="${F1_LEFT} ${f}"; done <<< "${F1_WROTE}"
++[ -z "${F1_LEFT}" ]; check $? "one boot of the tree under test takes back every one of them" "still on /storage after a boot: $(echo "${F1_LEFT}" | cut -c1-300)"
++F1_MINE=0
++for f in tmpfiles.d/50-mine.conf sysctl.d/99-mine.conf modules-load.d/mine.conf systemd/system/weston.service.d/10-generic-x64.conf; do [ "$(cat "${F1}/b/.config/${f}" 2>/dev/null)" = mine ] || F1_MINE=1; done
++[ "$(readlink "${F1}/b/.config/system.d/mine.service")" = /dev/null ] || F1_MINE=1
++check ${F1_MINE} "and the owner's own files beside them stay, a mask of their own and a drop-in under a name no retired quirk wrote included (the audit's G-F1-09)" "an owner's file was taken: $(ls "${F1}/b/.config/tmpfiles.d" "${F1}/b/.config/sysctl.d" "${F1}/b/.config/modules-load.d" "${F1}/b/.config/system.d" "${F1}/b/.config/systemd/system/weston.service.d" 2>&1 | tr '\n' ' ')"
++grep -q 'retired' "${F1}/b.now.journal"; check $? "and the boot that takes them back says so on the journal" "the take-back boot's journal: '$(head -c 160 "${F1}/b.now.journal")'"
++# Content, not names (the audit's second seat, G-F1-07): every file's bytes
++# and every link's target, before and after a second boot.
++f1_state() { ( cd "${1}" && find . \( -type f -o -type l \) | LC_ALL=C sort | while IFS= read -r f; do if [ -L "${f}" ]; then echo "${f} -> $(readlink "${f}")"; else echo "${f} $(sha256sum < "${f}" | cut -c1-16)"; fi; done ); }
++f1_state "${F1}/b" > "${F1}/b.once"
++f1_pass "${F1}/b" "${F1}/sys" "${F1}/quirks.now" "${F1}/b.twice.journal"
++f1_state "${F1}/b" | cmp -s - "${F1}/b.once" && [ ! -s "${F1}/b.twice.journal" ]
++check $? "and a second boot changes no file's bytes and says nothing" "a second boot changed /storage or spoke: $(f1_state "${F1}/b" | diff - "${F1}/b.once" | tr '\n' ' ' | cut -c1-200) $(head -c 120 "${F1}/b.twice.journal")"
++# The take-back is once (the audit's second seat, G-F1-05): a mask the owner
++# makes afterwards under one of the four names is theirs, and stays.
++ln -sfn /dev/null "${F1}/b/.config/system.d/emergency.target"
++f1_pass "${F1}/b" "${F1}/sys" "${F1}/quirks.now" "${F1}/b.third.journal"
++[ "$(readlink "${F1}/b/.config/system.d/emergency.target")" = /dev/null ]; check $? "a mask of emergency.target the owner makes after the take-back survives the next boot" "the owner's emergency.target mask was removed by a later boot"
++
++# F1c. #307 PL-022: no quirk tree outside the recipe that installs it. The
++#      only quirks recipe is projects/ROCKNIX/packages/hardware/quirks, so a
++#      packages/hardware/quirks/ with no package.mk is a tree nothing installs.
++F1_ORPHAN=""
++if [ "${OLD}" -eq 1 ]; then F1_ORPHAN=$(git -C "${ROOT}" ls-tree -r --name-only "${BASE_REF}" -- packages/hardware/quirks 2>/dev/null)
++else F1_ORPHAN=$(cd "${ROOT}" && git ls-files -- packages/hardware/quirks; [ -d packages/hardware/quirks ] && find packages/hardware/quirks -type f); fi
++F1_ORPHAN=$(echo "${F1_ORPHAN}" | sed '/^$/d' | grep -v '/package\.mk$' | sort -u)
++[ -z "${F1_ORPHAN}" ] || { [ "${OLD}" -eq 0 ] && [ -f "${ROOT}/packages/hardware/quirks/package.mk" ]; }
++check $? "no quirk tree outside the recipe that installs it (packages/hardware/quirks is empty)" "a quirk tree no recipe installs: $(echo "${F1_ORPHAN}" | wc -l) file(s), e.g. $(echo "${F1_ORPHAN}" | head -3 | tr '\n' ' ')"
++
++# F1d. #307 PL-023: the serial root shell is the developers' channel on a
++#      VM (D-QA-053) and nowhere else: a plain ConditionVirtualization=vm
++#      beside the console conditions (a condition without | must hold as well
++#      as one of the | ones), the console conditions kept, and the unit says
++#      what it is in its header.
++F1U="${F1}/serial-debug-shell.service"
++src_of projects/ROCKNIX/devices/GENERIC_X64/filesystem/usr/lib/systemd/system/serial-debug-shell.service "${F1U}"
++grep -qx 'ConditionVirtualization=vm' "${F1U}"; check $? "serial-debug-shell.service carries ConditionVirtualization=vm, a condition every start must meet" "serial-debug-shell.service has no plain ConditionVirtualization=vm: $(grep '^Condition' "${F1U}" | tr '\n' ' ')"
++[ "$(grep -c '^ConditionKernelCommandLine=|console=ttyS0' "${F1U}")" -ge 1 ]; check $? "and keeps the console conditions tools/vm-serial depends on" "the console conditions are gone: $(grep '^Condition' "${F1U}" | tr '\n' ' ')"
++head -3 "${F1U}" | grep -q 'SPDX-License-Identifier' && grep -q 'D-QA-053' "${F1U}"; check $? "and its header carries the SPDX line and the decision that keeps it (D-QA-053)" "the unit's header: $(head -3 "${F1U}" | tr '\n' '|')"
++
++F1_IOI=$(awk '/^\[/{sec=$0} /^IgnoreOnIsolate=/{print sec}' "${F1U}")
++[ "${F1_IOI}" = "[Unit]" ]; check $? "and IgnoreOnIsolate sits in [Unit], where systemd reads it" "IgnoreOnIsolate is under ${F1_IOI:-no section}, where systemd ignores it (systemd-analyze verify: Unknown key)"
++
++# F1e. #307 PL-073: the in-place bootloader updater. The SYSTEM image's
++#      /usr/share/bootloader holds update.sh alone (projects/ROCKNIX/
++#      bootloader/install copies the syslinux files after the squashfs is
++#      made, into the release's 3rdparty/bootloader), so every guarded copy
++#      in it is false: it copies nothing and then writes UPDATE to
++#      /storage/.boot.hint, which init writes itself after
++#      update_bootloader. The acceptance: an update changes /flash, or the
++#      script is gone.
++F1E="${F1}/e"; F1BL=projects/ROCKNIX/devices/GENERIC_X64/bootloader/update.sh
++if { [ "${OLD}" -eq 1 ] && git -C "${ROOT}" cat-file -e "${BASE_REF}:${F1BL}" 2>/dev/null; } || { [ "${OLD}" -eq 0 ] && [ -e "${ROOT}/${F1BL}" ]; }; then
++    mkdir -p "${F1E}/update/usr/share/bootloader" "${F1E}/flash/EFI/BOOT" "${F1E}/storage" "${F1E}/shim"
++    src_of "${F1BL}" "${F1E}/update/usr/share/bootloader/update.sh"
++    for f in ldlinux.sys ldlinux.c32 syslinux.cfg EFI/BOOT/bootx64.efi EFI/BOOT/grub.cfg EFI/BOOT/ldlinux.e64; do echo "installed ${f}" > "${F1E}/flash/${f}"; done
++    printf '#!/bin/sh\nexit 0\n' > "${F1E}/shim/mount"; chmod +x "${F1E}/shim/mount"
++    F1_FL0=$(cd "${F1E}/flash" && find . -type f -exec sha256sum {} + | LC_ALL=C sort)
++    bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
++        --ro-bind "${F1E}/update" /update --bind "${F1E}/flash" /flash --bind "${F1E}/storage" /storage --ro-bind "${F1E}/shim" /shim \
++        --dev /dev --proc /proc --tmpfs /tmp --setenv PATH /shim:/usr/bin:/bin --setenv SYSTEM_ROOT /update --setenv BOOT_ROOT /flash \
++        bash /update/usr/share/bootloader/update.sh > "${F1E}/out" 2>&1
++    F1_FL1=$(cd "${F1E}/flash" && find . -type f -exec sha256sum {} + | LC_ALL=C sort)
++    [ "${F1_FL0}" != "${F1_FL1}" ]; check $? "the bootloader updater changes /flash on an update" "the bootloader updater copied nothing to /flash (the image ships it alone in /usr/share/bootloader) and wrote '$(cat "${F1E}/storage/.boot.hint" 2>/dev/null)' to the boot hint all the same"
++else
++    check 0 "GENERIC_X64 ships no bootloader updater that has nothing to copy"
++fi
++F1_INIT="${F1}/init"; src_of projects/ROCKNIX/packages/sysutils/busybox/scripts/init "${F1_INIT}"
++grep -q '^update_bootloader() {' "${F1_INIT}" && grep -q 'if \[ -f ${SYSTEM_ROOT}/usr/share/bootloader/update.sh \]; then' "${F1_INIT}" && grep -A1 '^  update_bootloader$' "${F1_INIT}" | grep -q 'echo "UPDATE" >/storage/.boot.hint'
++check $? "and init skips a missing updater and writes the boot hint itself after update_bootloader" "init no longer skips a missing update.sh or no longer writes the hint itself -- deleting the updater would lose the hint"
++
++# F1f. The launcher, projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm,
++#      run inside bwrap with a /tmp of its own, so no default path can reach
++#      a live guest's sockets on this host. QEMU is a shim that records its
++#      argv (qemu-args never starts it; run execs it); qemu-img is the
++#      host's, for disks it makes here.
++F1V="${F1}/v"; mkdir -p "${F1V}/vm" "${F1V}/bin" "${F1V}/a,b"
++for f in generic-x64-vm profile.json utm-bundle-readme.txt; do src_of "projects/ROCKNIX/devices/GENERIC_X64/vm/${f}" "${F1V}/vm/${f}"; done
++chmod +x "${F1V}/vm/generic-x64-vm"
++printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "%s/qemu.argv"\nexit 0\n' "${F1V}" > "${F1V}/bin/qemu-system-x86_64"; chmod +x "${F1V}/bin/qemu-system-x86_64"
++echo code > "${F1V}/code.fd"; echo vars-template > "${F1V}/vars-template.fd"
++F1_QIMG=$(command -v qemu-img)
++f1_vm() { # <args...>: the launcher in its sandbox; stdout+stderr to ${F1V}/out, the status in F1_RC
++    bwrap --die-with-parent --ro-bind / / --tmpfs /tmp --bind "${F1V}" "${F1V}" --dev /dev --proc /proc \
++        --setenv QEMU_SYSTEM_X86_64 "${F1V}/bin/qemu-system-x86_64" \
++        python3 "${F1V}/vm/generic-x64-vm" "$@" > "${F1V}/out" 2>&1
++    F1_RC=$?
++}
++f1_sock() { python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1])' "${1}"; }
++f1_disk() { rm -f "${1}"; "${F1_QIMG}" create -q -f qcow2 "${1}" "${2}" >/dev/null 2>&1; }
++F1_OVMF=(--ovmf-code "${F1V}/code.fd" --ovmf-vars-template "${F1V}/vars-template.fd")
++[ -n "${F1_QIMG}" ] || check 1 "-" "qemu-img is not on this host; the launcher checks cannot run"
++if [ -n "${F1_QIMG}" ]; then
++f1_disk "${F1V}/disk.qcow2" 16G
++# #307 PL-033 (and #308 claude F-VM-06): printing the arguments touches
++# nothing -- not a running guest's monitor or serial socket, not the OVMF
++# vars file.
++rm -f "${F1V}/m.sock" "${F1V}/s.sock" "${F1V}/vars.fd"; f1_sock "${F1V}/m.sock"; f1_sock "${F1V}/s.sock"
++f1_vm qemu-args --headless --gl none --monitor "${F1V}/m.sock" --serial "${F1V}/s.sock" --pidfile "${F1V}/pid" --ovmf-vars "${F1V}/vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
++[ "${F1_RC}" -eq 0 ] && [ -S "${F1V}/m.sock" ] && [ -S "${F1V}/s.sock" ] && [ ! -e "${F1V}/vars.fd" ]
++check $? "qemu-args prints the command and leaves a running guest's monitor and serial sockets, and makes no OVMF vars file (#307 PL-033)" "qemu-args (rc ${F1_RC}): monitor socket $([ -S "${F1V}/m.sock" ] && echo kept || echo REMOVED), serial socket $([ -S "${F1V}/s.sock" ] && echo kept || echo REMOVED), vars file $([ -e "${F1V}/vars.fd" ] && echo CREATED || echo absent)"
++grep -qF -- "unix:${F1V}/m.sock,server,nowait" "${F1V}/out"; check $? "and what it prints is the command run would start" "the printed command: $(head -c 300 "${F1V}/out")"
++# run still does the start's work before it execs QEMU: a stale socket
++# removed so QEMU can bind it, the vars file made from the template.
++f1_vm run --headless --gl none --monitor "${F1V}/m.sock" --serial "${F1V}/s.sock" --pidfile "${F1V}/pid" --ovmf-vars "${F1V}/vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
++[ "${F1_RC}" -eq 0 ] && [ -s "${F1V}/qemu.argv" ] && [ ! -e "${F1V}/m.sock" ] && [ ! -e "${F1V}/s.sock" ] && [ "$(cat "${F1V}/vars.fd" 2>/dev/null)" = vars-template ]
++check $? "and run still clears the stale sockets and makes the vars file from its template before it starts QEMU" "run (rc ${F1_RC}): QEMU $([ -s "${F1V}/qemu.argv" ] && echo started || echo NOT started), sockets $(ls "${F1V}"/*.sock 2>/dev/null | tr '\n' ' '), vars '$(cat "${F1V}/vars.fd" 2>/dev/null)'; $(head -c 200 "${F1V}/out")"
++# The gpt seat's input: the disk given as the monitor path. A start removes
++# only a socket; anything else at a socket path is refused, and the disk
++# stays.
++cp "${F1V}/disk.qcow2" "${F1V}/victim.qcow2"; rm -f "${F1V}/qemu.argv"
++f1_vm run --monitor "${F1V}/victim.qcow2" --ovmf-vars "${F1V}/vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
++[ "${F1_RC}" -ne 0 ] && [ -f "${F1V}/victim.qcow2" ] && [ ! -e "${F1V}/qemu.argv" ]
++check $? "a start refuses a socket path that holds a file, and the file stays (the gpt seat's disk-as---monitor input)" "run --monitor <a qcow2> (rc ${F1_RC}): the file $([ -f "${F1V}/victim.qcow2" ] && echo kept || echo DELETED), QEMU $([ -e "${F1V}/qemu.argv" ] && echo started || echo not started)"
++# The audit of the fixes, gpt G-F1-01: a --monitor that is a symlink to
++# another guest's live socket. The path was resolved before the check, so
++# the check saw a socket and removed the other guest's; a link is refused
++# and both stay.
++rm -f "${F1V}/other.sock" "${F1V}/link.sock" "${F1V}/qemu.argv"; f1_sock "${F1V}/other.sock"; ln -s "${F1V}/other.sock" "${F1V}/link.sock"
++f1_vm run --monitor "${F1V}/link.sock" --ovmf-vars "${F1V}/vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
++[ "${F1_RC}" -ne 0 ] && [ -S "${F1V}/other.sock" ] && [ -L "${F1V}/link.sock" ] && [ ! -e "${F1V}/qemu.argv" ]
++check $? "a start refuses a socket path that is a symlink, and the socket it points at stays (the audit's G-F1-01)" "run --monitor <a link to another socket> (rc ${F1_RC}): the other guest's socket $([ -S "${F1V}/other.sock" ] && echo kept || echo REMOVED), QEMU $([ -e "${F1V}/qemu.argv" ] && echo started || echo not started)"
++# The audit of the fixes, gpt G-F1-05: a vars store already there from
++# another firmware build (a 2 MiB store beside a 4 MiB code image) is
++# refused, named, and kept -- a start used to run on it as it was.
++head -c 131072 /dev/zero > "${F1V}/wrong-vars.fd"; head -c 540672 /dev/zero > "${F1V}/template-4m.fd"; rm -f "${F1V}/qemu.argv"
++f1_vm run --ovmf-code "${F1V}/code.fd" --ovmf-vars-template "${F1V}/template-4m.fd" --ovmf-vars "${F1V}/wrong-vars.fd" --monitor "${F1V}/m2.sock" "${F1V}/disk.qcow2"
++F1_WV=${F1_RC}; F1_WVO=$(head -c 200 "${F1V}/out")
++cp "${F1V}/template-4m.fd" "${F1V}/right-vars.fd"; f1_vm run --ovmf-code "${F1V}/code.fd" --ovmf-vars-template "${F1V}/template-4m.fd" --ovmf-vars "${F1V}/right-vars.fd" --monitor "${F1V}/m2.sock" "${F1V}/disk.qcow2"
++[ "${F1_WV}" -ne 0 ] && [ "$(stat -c %s "${F1V}/wrong-vars.fd")" = 131072 ] && echo "${F1_WVO}" | grep -q 'wrong-vars.fd' && [ "${F1_RC}" -eq 0 ]
++check $? "a vars store whose size is not its firmware template's is refused and kept, one that matches is used (the audit's G-F1-05)" "a 128 KiB store with a 528 KiB template: rc ${F1_WV}, '${F1_WVO}'; a matching store: rc ${F1_RC}"
++fi
++
++if [ -n "${F1_QIMG}" ]; then
++# #308 gpt F-VM-13: a path with a comma reaches QEMU's option syntax with
++# the comma doubled, which is how QEMU reads a literal one.
++f1_disk "${F1V}/a,b/disk.qcow2" 16G
++f1_vm qemu-args --monitor "${F1V}/a,b/m.sock" --ovmf-vars "${F1V}/a,b/vars.fd" "${F1_OVMF[@]}" "${F1V}/a,b/disk.qcow2"
++grep -qF -- "file=${F1V}/a,,b/disk.qcow2" "${F1V}/out" && grep -qF -- "file=${F1V}/a,,b/vars.fd" "${F1V}/out" && grep -qF -- "unix:${F1V}/a,,b/m.sock,server,nowait" "${F1V}/out"
++check $? "a comma in the disk, vars and monitor paths is doubled in QEMU's option strings (#308 gpt F-VM-13)" "rc ${F1_RC}; the option strings: $(tr ' ' '\n' < "${F1V}/out" | grep -E 'file=|unix:' | tr '\n' ' ' | cut -c1-300)"
++# #308 gpt F-VM-15: a disk under the profile's 16 GiB is refused by a Linux
++# launch as the UTM builder refuses it (the rule: under 16 GiB the first
++# boot's copy of the interface's resources runs out of space).
++f1_disk "${F1V}/small.qcow2" 1G
++f1_vm qemu-args --ovmf-vars "${F1V}/vars.fd" "${F1_OVMF[@]}" "${F1V}/small.qcow2"
++[ "${F1_RC}" -ne 0 ] && grep -q '16 GiB' "${F1V}/out"; check $? "a 1 GiB disk is refused before QEMU, naming the 16 GiB the profile needs (#308 gpt F-VM-15)" "a 1 GiB disk (rc ${F1_RC}): $(head -c 200 "${F1V}/out")"
++# #308 claude F-VM-14: --ssh-port is a port.
++f1_vm qemu-args --ssh-port 70000 --ovmf-vars "${F1V}/vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
++F1_P1=${F1_RC}; f1_vm qemu-args --ssh-port 0 --ovmf-vars "${F1V}/vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
++[ "${F1_P1}" -ne 0 ] && [ "${F1_RC}" -ne 0 ]; check $? "--ssh-port 70000 and 0 are refused as the argument parser reads them (#308 claude F-VM-14)" "--ssh-port 70000 rc ${F1_P1}, 0 rc ${F1_RC}"
++# The choices that need the host's architecture and firmware directories
++# faked are made through the module: platform.machine() and os.access for
++# /dev/kvm (#308 gpt F-VM-14), Path.is_file for the OVMF candidates (#308
++# claude F-VM-14, a code image paired with another directory's vars).
++cat > "${F1V}/probe.py" <<'EOP'
++import importlib.machinery, importlib.util, os, pathlib, platform, shutil, sys
++path = sys.argv[1]; case = sys.argv[2]; disk = sys.argv[3]
++loader = importlib.machinery.SourceFileLoader("gx64vm", path)
++spec = importlib.util.spec_from_loader("gx64vm", loader); mod = importlib.util.module_from_spec(spec); loader.exec_module(mod)
++real_access = os.access
++parser = mod.argparse.ArgumentParser(); mod.add_qemu_options(parser)
++copied = []
++shutil.copyfile = lambda src, dst, **k: copied.append(str(src))   # a start's vars file, recorded, not made
++if case in ("arm", "x86"):
++    platform.machine = (lambda: "aarch64") if case == "arm" else (lambda: "x86_64")
++    os.access = lambda p, m, **k: True if str(p) == "/dev/kvm" else real_access(p, m, **k)
++    args = parser.parse_args(["--ovmf-code", sys.argv[4], "--ovmf-vars-template", sys.argv[5], "--ovmf-vars", sys.argv[6], disk])
++    cmd = mod.qemu_command(mod.load_profile(), args)
++    print("accel=" + cmd[cmd.index("-accel") + 1])
++elif case in ("mixed", "paired"):
++    # Which vars template a start copies: the unfixed launcher copies it
++    # while building the command, the fixed one in prepare_run.
++    have = {"/usr/share/OVMF/OVMF_CODE_4M.fd", "/usr/share/edk2/x64/OVMF_VARS.fd"}
++    if case == "paired": have |= {"/usr/share/OVMF/OVMF_VARS_4M.fd", "/usr/share/edk2/x64/OVMF_CODE.fd"}
++    real_is_file = pathlib.Path.is_file
++    pathlib.Path.is_file = lambda self: True if str(self) in have else (False if str(self).startswith("/usr/share/") else real_is_file(self))
++    args = parser.parse_args(["--ovmf-vars", sys.argv[6], disk])
++    try:
++        cmd = mod.qemu_command(mod.load_profile(), args)
++        if hasattr(mod, "prepare_run"):
++            mod.prepare_run(mod.load_profile(), args)
++    except FileNotFoundError as e:
++        print("refused: %s" % e); sys.exit(0)
++    code = next(a for a in cmd if a.startswith("if=pflash,unit=0")).split("file=")[1]
++    print("code=%s vars-template=%s" % (code, copied))
++EOP
++f1_probe() { # <case>: the probe in the launcher's sandbox; output in F1_PR. Its vars store never exists, so a start would copy one.
++    rm -f "${F1V}/probe-vars.fd"
++    F1_PR=$(bwrap --die-with-parent --ro-bind / / --tmpfs /tmp --bind "${F1V}" "${F1V}" --dev /dev --proc /proc \
++        --setenv QEMU_SYSTEM_X86_64 "${F1V}/bin/qemu-system-x86_64" \
++        python3 "${F1V}/probe.py" "${F1V}/vm/generic-x64-vm" "${1}" "${F1V}/disk.qcow2" "${F1V}/code.fd" "${F1V}/vars-template.fd" "${F1V}/probe-vars.fd" 2>&1 | tail -1)
++}
++f1_probe arm; F1_ARM="${F1_PR}"; f1_probe x86
++[ "${F1_ARM}" = "accel=tcg,thread=multi" ] && [ "${F1_PR}" = "accel=kvm" ]
++check $? "--accel auto takes KVM only on an x86_64 host: TCG on aarch64 with /dev/kvm open, KVM on x86_64 (#308 gpt F-VM-14)" "aarch64 with /dev/kvm: ${F1_ARM}; x86_64: ${F1_PR}"
++f1_probe mixed; F1_MIX="${F1_PR}"; f1_probe paired
++case "${F1_MIX}" in refused:*) F1_M=0 ;; *) F1_M=1 ;; esac
++[ "${F1_M}" -eq 0 ] && [ "${F1_PR}" = "code=/usr/share/OVMF/OVMF_CODE_4M.fd vars-template=['/usr/share/OVMF/OVMF_VARS_4M.fd']" ]
++check $? "OVMF code and vars come from one directory: a 4M code image with only another directory's vars is refused, and a matched pair is taken (#308 claude F-VM-14)" "only OVMF_CODE_4M.fd and edk2's OVMF_VARS.fd: ${F1_MIX}; both pairs: ${F1_PR}"
++fi
++
++if [ -n "${F1_QIMG}" ]; then
++# #308 gpt F-VM-11: the UTM bundle carries the disk file alone, so a qcow2
++# that needs another file -- a backing image, an external data file -- is
++# refused rather than packed into a bundle that cannot open it elsewhere.
++f1_disk "${F1V}/base.qcow2" 16G
++"${F1_QIMG}" create -q -f qcow2 -b "${F1V}/base.qcow2" -F qcow2 "${F1V}/overlay.qcow2" 16G >/dev/null 2>&1
++"${F1_QIMG}" create -q -f qcow2 -o "data_file=${F1V}/data.raw" "${F1V}/datafile.qcow2" 16G >/dev/null 2>&1
++rm -f "${F1V}"/bundle*.zip
++f1_vm utm "${F1V}/overlay.qcow2" --output "${F1V}/bundle-overlay.zip"; F1_U1=${F1_RC}
++f1_vm utm "${F1V}/datafile.qcow2" --output "${F1V}/bundle-datafile.zip"; F1_U2=${F1_RC}
++[ "${F1_U1}" -ne 0 ] && [ ! -e "${F1V}/bundle-overlay.zip" ] && [ "${F1_U2}" -ne 0 ] && [ ! -e "${F1V}/bundle-datafile.zip" ]
++check $? "a qcow2 with a backing file or an external data file is refused for a UTM bundle (#308 gpt F-VM-11)" "overlay rc ${F1_U1}, bundle $([ -e "${F1V}/bundle-overlay.zip" ] && echo MADE || echo none); data-file rc ${F1_U2}, bundle $([ -e "${F1V}/bundle-datafile.zip" ] && echo MADE || echo none)"
++# #308 gpt F-VM-12: the archive is written under a name of its own, so a
++# second build for the same output cannot take -- or publish -- another's
++# unfinished archive at <output>.tmp.
++# A temporary of the build's own is a dotfile (.bundle.zip.<random>.partial):
++# ls -A, and a pattern that starts with the dot (the audit's G-F1-08 on the
++# gpt side, G-F1-04 on the claude side -- the first version of this check
++# listed with plain ls and could see nothing). Proven able to see one first.
++f1_partials() { ls -A "${F1V}" | grep -E "^\.${1//./\\.}\..*\.partial\$"; }
++: > "${F1V}/.probe.zip.leaked.partial"
++[ -n "$(f1_partials probe.zip)" ]; check $? "the leftover check sees a planted .probe.zip.<x>.partial (the check can fail)" "the leftover check cannot see a planted .partial -- it proves nothing"
++rm -f "${F1V}/.probe.zip.leaked.partial"
++echo "another build's archive, still being written" > "${F1V}/bundle.zip.tmp"
++f1_vm utm "${F1V}/disk.qcow2" --output "${F1V}/bundle.zip"
++[ "${F1_RC}" -eq 0 ] && [ "$(cat "${F1V}/bundle.zip.tmp" 2>/dev/null)" = "another build's archive, still being written" ] \
++    && python3 -c 'import sys,zipfile; n=sorted(zipfile.ZipFile(sys.argv[1]).namelist()); sys.exit(0 if n==["READ ME FIRST.txt","bundle.utm/Data/ROCKNIX-GENERIC_X64.qcow2","bundle.utm/config.plist"] else 1)' "${F1V}/bundle.zip" \
++    && [ -z "$(f1_partials bundle.zip)" ]
++check $? "a UTM build leaves another build's <output>.tmp alone, publishes a whole bundle, and leaves no temporary of its own (#308 gpt F-VM-12)" "rc ${F1_RC}; <output>.tmp: '$(cat "${F1V}/bundle.zip.tmp" 2>/dev/null || echo GONE)'; left: $(ls "${F1V}" | grep '^bundle' | tr '\n' ' '); $(head -c 200 "${F1V}/out")"
++# A build whose archive write fails -- the quick-start file it packs is
++# missing -- publishes nothing and leaves no temporary behind.
++mkdir -p "${F1V}/vm-noreadme"; cp "${F1V}/vm/generic-x64-vm" "${F1V}/vm/profile.json" "${F1V}/vm-noreadme/"
++rm -f "${F1V}/broken.zip"
++bwrap --die-with-parent --ro-bind / / --tmpfs /tmp --bind "${F1V}" "${F1V}" --dev /dev --proc /proc \
++    python3 "${F1V}/vm-noreadme/generic-x64-vm" utm "${F1V}/disk.qcow2" --output "${F1V}/broken.zip" > "${F1V}/out" 2>&1; F1_RC=$?
++[ "${F1_RC}" -ne 0 ] && [ ! -e "${F1V}/broken.zip" ] && [ -z "$(f1_partials broken.zip)" ] && [ ! -e "${F1V}/broken.zip.tmp" ]
++check $? "a UTM build whose archive write fails publishes nothing and leaves no temporary (the audit's G-F1-08)" "a failed write (rc ${F1_RC}): output $([ -e "${F1V}/broken.zip" ] && echo MADE || echo none), left: $(ls -A "${F1V}" | grep '^\.\?broken' | tr '\n' ' ')"
++# The caller's umask decides who may read the bundle (the audit's G-F1-06):
++# a build under umask 077 publishes a file only its owner can read.
++rm -f "${F1V}/private.zip"
++bwrap --die-with-parent --ro-bind / / --tmpfs /tmp --bind "${F1V}" "${F1V}" --dev /dev --proc /proc \
++    bash -c 'umask 077; exec python3 "$1" utm "$2" --output "$3"' _ "${F1V}/vm/generic-x64-vm" "${F1V}/disk.qcow2" "${F1V}/private.zip" > "${F1V}/out" 2>&1; F1_RC=$?
++[ "${F1_RC}" -eq 0 ] && [ "$(stat -c %a "${F1V}/private.zip" 2>/dev/null)" = 600 ]
++check $? "a UTM build under umask 077 publishes a bundle of mode 600 (the audit's G-F1-06)" "under umask 077 (rc ${F1_RC}): mode $(stat -c %a "${F1V}/private.zip" 2>/dev/null || echo none)"
++fi
++
++# F1g. #307 PL-034, #308 claude F-VM-10 and gpt F-VM-09: 092-retroarch-surface
++#      sizes RetroArch's fullscreen surface to the guest's mode. It used to
++#      rewrite video_fullscreen_x/y only while they read the shipped 0|640 and
++#      0|480, so its own first write (1280x800) read as a player's value and a
++#      kept guest re-run at 640x480 kept a 1280x800 surface; it took the first
++#      mode of every connector's modes file, disconnected ones included, and a
++#      "1920x1080i" gave a height of "1080i". Now it records what it wrote
++#      (beside the cfg, so a settings backup carries the record with the
++#      values it describes), follows the mode while the values are its own
++#      -- shipped, recorded, or an earlier build's unrecorded write -- and
++#      leaves anything else, which is somebody's. And #308 claude F-VM-11,
++#      RetroArch's part: the device's shipped video_driver was vulkan on an
++#      image with no Vulkan driver, so RetroArch exited without a frame; a
++#      cfg that still names vulkan, on an image with no Vulkan ICD, moves to
++#      gl.
++F1G="${F1}/g"; F1GS=platforms/GENERIC_X64/092-retroarch-surface; mkdir -p "${F1G}/q" "${F1G}/icd/vulkan/icd.d" "${F1G}/noicd"
++echo '{}' > "${F1G}/icd/vulkan/icd.d/lvp_icd.json"
++if { [ "${OLD}" -eq 1 ] && ! git -C "${ROOT}" cat-file -e "${BASE_REF}:${F1_QREL}/${F1GS}" 2>/dev/null; }; then
++    check 1 "-" "092-retroarch-surface does not exist at ${BASE_REF}"
++else
++src_of "${F1_QREL}/${F1GS}" "${F1G}/q/092-retroarch-surface"
++F1VK=(); [ -d /usr/share/vulkan ] && F1VK=(--tmpfs /usr/share/vulkan)   # the host's ICDs are not the image's
++# A sed that dies with the quirk right after it rewrites retroarch.cfg in
++# place: a boot cut short between the cfg and the record (the audit's
++# G-F1-04). Every other sed call passes through.
++mkdir -p "${F1G}/killsed"
++cat > "${F1G}/killsed/sed" <<'EOS'
++#!/bin/bash
++for a in "$@"; do last="$a"; done
++real() { if [ -x /lgst/busybox ]; then /lgst/busybox sed "$@"; else /usr/bin/sed "$@"; fi; }
++case " $* " in *" -i "*) if [ "${last##*/}" = retroarch.cfg ]; then real "$@"; rc=$?; kill -9 "${PPID}"; exit "${rc}"; fi ;; esac
++real "$@"
++EOS
++chmod +x "${F1G}/killsed/sed"
++f1_surface() { # <storage> <sys> [icd|kill]: one boot's run of the quirk
++    local etc="${F1G}/noicd" kill=(); [ "${3:-}" = icd ] && etc="${F1G}/icd"
++    [ "${3:-}" = kill ] && kill=(--ro-bind "${F1G}/killsed" /shim)
++    bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${F1VK[@]}" "${F1BB[@]}" "${kill[@]}" \
++        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
++        --ro-bind "${etc}" /etc --bind "${1}" /storage --ro-bind "${2}" /sys --ro-bind "${F1G}/q" /q \
++        --tmpfs /run --tmpfs /tmp --dev /dev --proc /proc --setenv PATH "${F1PATH}" \
++        bash /q/092-retroarch-surface > "${F1G}/out" 2>&1
++}
++f1_wh() { printf '%sx%s' "$(sed -n 's/^video_fullscreen_x = "\(.*\)"$/\1/p' "${1}/.config/retroarch/retroarch.cfg")" "$(sed -n 's/^video_fullscreen_y = "\(.*\)"$/\1/p' "${1}/.config/retroarch/retroarch.cfg")"; }
++f1_set() { sed -i "s/^video_fullscreen_x = .*/video_fullscreen_x = \"${2%x*}\"/; s/^video_fullscreen_y = .*/video_fullscreen_y = \"${2#*x}\"/" "${1}/.config/retroarch/retroarch.cfg"; }
++f1_sys "${F1G}/s1280" "card0-Virtual-1:connected:1280x800,1024x768,640x480"
++f1_sys "${F1G}/s640"  "card0-Virtual-1:connected:640x480,1280x800,1024x768"
++f1_sys "${F1G}/s2"    "card0-DP-1:disconnected:1920x1080,1280x720" "card0-Virtual-1:connected:1280x800,640x480"
++f1_sys "${F1G}/si"    "card0-Virtual-1:connected:1920x1080i,1280x720"
++# A fresh guest at QEMU's 1280x800, then the same guest re-run at 640x480.
++f1_storage "${F1G}/a"; f1_surface "${F1G}/a" "${F1G}/s1280"; F1_W1=$(f1_wh "${F1G}/a")
++f1_surface "${F1G}/a" "${F1G}/s640"; F1_W2=$(f1_wh "${F1G}/a")
++[ "${F1_W1}" = 1280x800 ] && [ "${F1_W2}" = 640x480 ]
++check $? "the shipped 640x480 follows a 1280x800 guest, and follows it back when the kept guest is re-run at 640x480 (#307 PL-034)" "1280x800 boot: ${F1_W1}; the same guest at 640x480: ${F1_W2}; $(head -c 160 "${F1G}/out")"
++f1_surface "${F1G}/a" "${F1G}/s1280"; [ "$(f1_wh "${F1G}/a")" = 1280x800 ]; check $? "and back again at 1280x800" "a third boot at 1280x800: $(f1_wh "${F1G}/a")"
++# Somebody's own value is left, whatever the mode does.
++f1_set "${F1G}/a" 1024x768; f1_surface "${F1G}/a" "${F1G}/s640"; F1_W3=$(f1_wh "${F1G}/a"); f1_surface "${F1G}/a" "${F1G}/s1280"
++[ "${F1_W3}" = 1024x768 ] && [ "$(f1_wh "${F1G}/a")" = 1024x768 ]; check $? "a value set by hand (1024x768) is left at 640x480 and at 1280x800" "the hand-set 1024x768 became ${F1_W3} at 640x480 and $(f1_wh "${F1G}/a") at 1280x800"
++# The connected connector's preferred mode, not the first line of every
++# connector's list; an interlaced mode's height is a number.
++f1_storage "${F1G}/c"; f1_surface "${F1G}/c" "${F1G}/s2"
++[ "$(f1_wh "${F1G}/c")" = 1280x800 ]; check $? "a disconnected DP-1 listing 1920x1080 first is passed over for the connected output's 1280x800 (#308 claude F-VM-10, gpt F-VM-09)" "with a disconnected DP-1 before the connected output: $(f1_wh "${F1G}/c")"
++f1_storage "${F1G}/i"; f1_surface "${F1G}/i" "${F1G}/si"
++[ "$(f1_wh "${F1G}/i")" = 1920x1080 ]; check $? "an interlaced 1920x1080i gives a height of 1080 (#308 claude F-VM-10)" "1920x1080i gave $(f1_wh "${F1G}/i")"
++# Already written: a guest an earlier build's quirk sized has the values and
++# no record, and they cannot be told from a hand-set pair (the audit's
++# G-F1-02 on the gpt side, G-F1-03 on the claude side). Unrecorded values
++# are taken only when they are exactly the size this boot writes -- taking
++# them changes nothing now, and the record starts -- and anything else is
++# left as somebody's; setting the two values to 0 hands them back.
++f1_storage "${F1G}/o"; f1_set "${F1G}/o" 1280x800; f1_surface "${F1G}/o" "${F1G}/s640"
++[ "$(f1_wh "${F1G}/o")" = 1280x800 ]; check $? "an unrecorded 1280x800 met at a 640x480 boot is left: it cannot be told from a hand-set pair (the audit's G-F1-02)" "an unrecorded 1280x800 became $(f1_wh "${F1G}/o") at 640x480"
++f1_storage "${F1G}/o2"; f1_set "${F1G}/o2" 1280x800; f1_surface "${F1G}/o2" "${F1G}/s1280"; f1_surface "${F1G}/o2" "${F1G}/s640"
++[ "$(f1_wh "${F1G}/o2")" = 640x480 ]; check $? "an unrecorded 1280x800 met at a 1280x800 boot is taken, and follows a later 640x480" "an unrecorded 1280x800 first met at 1280x800 stayed $(f1_wh "${F1G}/o2") at 640x480"
++# The shipped values follow with a record beside them: that is the cfg
++# after RESET RETROARCH CONFIG TO DEFAULT, which replaces retroarch.cfg and
++# leaves the record (factoryreset retroarch). A 640x480 or 0x0 surface on
++# another mode is the #263 scaling this quirk exists to end.
++f1_storage "${F1G}/r"; f1_surface "${F1G}/r" "${F1G}/s1280"; f1_set "${F1G}/r" 640x480; f1_surface "${F1G}/r" "${F1G}/s1280"
++[ "$(f1_wh "${F1G}/r")" = 1280x800 ]; check $? "the shipped 640x480 put back by a RetroArch reset, beside the record, follows the mode again" "after a reset to the shipped cfg: $(f1_wh "${F1G}/r") at 1280x800"
++# A boot cut short right after the cfg is rewritten leaves the next boot
++# still knowing the new size is its own (the audit's G-F1-04).
++f1_storage "${F1G}/k"; sed -i 's/^video_driver = .*/video_driver = "gl"/' "${F1G}/k/.config/retroarch/retroarch.cfg"
++f1_sys "${F1G}/s1024" "card0-Virtual-1:connected:1024x768,640x480"
++f1_surface "${F1G}/k" "${F1G}/s1280"; f1_surface "${F1G}/k" "${F1G}/s1024" kill; F1_K1=$(f1_wh "${F1G}/k")
++f1_surface "${F1G}/k" "${F1G}/s1280"
++[ "${F1_K1}" = 1024x768 ] && [ "$(f1_wh "${F1G}/k")" = 1280x800 ]; check $? "a boot killed right after it rewrote the cfg leaves the size its own: the next boot follows (the audit's G-F1-04)" "killed after the cfg write: ${F1_K1}; the next boot at 1280x800: $(f1_wh "${F1G}/k")"
++# The record's first form (a5a03bd9fa: video_fullscreen_x/y lines) is read.
++f1_storage "${F1G}/l"; f1_set "${F1G}/l" 1280x800
++printf '# 092-retroarch-surface (GENERIC_X64): the values it last wrote to retroarch.cfg\nvideo_fullscreen_x=1280\nvideo_fullscreen_y=800\n' > "${F1G}/l/.config/retroarch/.fullscreen-surface"
++f1_surface "${F1G}/l" "${F1G}/s640"; [ "$(f1_wh "${F1G}/l")" = 640x480 ]; check $? "a record in its first form (two lines, x and y) is read" "with a first-form record of 1280x800: $(f1_wh "${F1G}/l") at 640x480"
++f1_storage "${F1G}/p"; f1_set "${F1G}/p" 1024x768; f1_surface "${F1G}/p" "${F1G}/s640"
++[ "$(f1_wh "${F1G}/p")" = 1024x768 ]; check $? "and an unrecorded 1024x768 is left" "an unrecorded 1024x768 became $(f1_wh "${F1G}/p")"
++# A boot that changes nothing writes nothing: the cfg and the record keep
++# their bytes.
++f1_storage "${F1G}/n"; f1_surface "${F1G}/n" "${F1G}/s1280"
++F1_N0=$(cd "${F1G}/n/.config/retroarch" && ls -A | LC_ALL=C sort | xargs sha256sum 2>/dev/null); f1_surface "${F1G}/n" "${F1G}/s1280"
++[ "${F1_N0}" = "$(cd "${F1G}/n/.config/retroarch" && ls -A | LC_ALL=C sort | xargs sha256sum 2>/dev/null)" ]; check $? "a second boot at the same mode leaves the cfg and the record as they were" "a second boot changed the retroarch directory"
++# The driver: vulkan moves to gl only on an image with no Vulkan ICD.
++f1_storage "${F1G}/v"; f1_surface "${F1G}/v" "${F1G}/s1280"; F1_VD1=$(grep '^video_driver' "${F1G}/v/.config/retroarch/retroarch.cfg")
++f1_storage "${F1G}/w"; f1_surface "${F1G}/w" "${F1G}/s1280" icd; F1_VD2=$(grep '^video_driver' "${F1G}/w/.config/retroarch/retroarch.cfg")
++[ "${F1_VD1}" = 'video_driver = "gl"' ] && [ "${F1_VD2}" = 'video_driver = "vulkan"' ]
++check $? "a cfg naming vulkan moves to gl on an image with no Vulkan ICD, and is left where one exists (#308 claude F-VM-11)" "no ICD: ${F1_VD1}; with an ICD: ${F1_VD2}"
++# An ICD a developer put in root's own loader directory counts too (the
++# audit's second seat, G-F1-03 (d)): root's home here is /storage.
++f1_storage "${F1G}/u"; mkdir -p "${F1G}/u/.local/share/vulkan/icd.d"; echo '{}' > "${F1G}/u/.local/share/vulkan/icd.d/mine_icd.json"
++f1_surface "${F1G}/u" "${F1G}/s1280"; F1_VD3=$(grep '^video_driver' "${F1G}/u/.config/retroarch/retroarch.cfg")
++[ "${F1_VD3}" = 'video_driver = "vulkan"' ]; check $? "an ICD under /storage/.local/share/vulkan/icd.d leaves vulkan alone" "with an ICD in root's own loader directory: ${F1_VD3}"
++fi
++F1RA=projects/ROCKNIX/packages/emulators/libretro/retroarch/sources/GENERIC_X64/retroarch.cfg
++src_of "${F1RA}" "${F1G}/retroarch.cfg"
++[ "$(grep '^video_driver' "${F1G}/retroarch.cfg")" = 'video_driver = "gl"' ]; check $? "and the GENERIC_X64 profile ships gl, the driver a guest can draw with (#308 claude F-VM-11)" "the GENERIC_X64 profile ships $(grep '^video_driver' "${F1G}/retroarch.cfg")"
++
++# F1h. #308 claude F-VM-05 and gpt F-VM-10: 095-cloud-ssh writes the cloud
++#      setup screen's SSH command when fw_cfg carries the host's forwarded
++#      port, and removes the file when it does not. Both branches used to
++#      replace whatever was there, so the manual override the README tells a
++#      tester to write lasted until the next boot. Now the quirk replaces or
++#      removes only the command it wrote itself (recorded, or -- with no
++#      record -- the one line an earlier build wrote); anything else is
++#      somebody's and stays.
++F1H="${F1}/h"; mkdir -p "${F1H}/q"
++src_of "${F1_QREL}/platforms/GENERIC_X64/095-cloud-ssh" "${F1H}/q/095-cloud-ssh"
++f1_sys "${F1H}/p10022"; f1_sys "${F1H}/p10023"; printf '10023' > "${F1H}/p10023/firmware/qemu_fw_cfg/by_name/opt/org.rocknix.cloud_ssh_port/raw"
++f1_sys "${F1H}/none"; rm -rf "${F1H}/none/firmware/qemu_fw_cfg"
++# An mv that dies with the quirk right after it puts cloud_setup_ssh in
++# place: a boot cut short between the command and its record (the audit's
++# G-F1-04). Every other mv passes through.
++mkdir -p "${F1H}/killmv"
++cat > "${F1H}/killmv/mv" <<'EOS'
++#!/bin/bash
++for a in "$@"; do last="$a"; done
++if [ -x /lgst/busybox ]; then /lgst/busybox mv "$@"; else /usr/bin/mv "$@"; fi; rc=$?
++[ "${last##*/}" = cloud_setup_ssh ] && kill -9 "${PPID}"
++exit "${rc}"
++EOS
++chmod +x "${F1H}/killmv/mv"
++f1_ssh() { # <storage> <sys> [kill]: one boot's run of the quirk
++    local kill=(); [ "${3:-}" = kill ] && kill=(--ro-bind "${F1H}/killmv" /shim)
++    bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${F1BB[@]}" "${kill[@]}" \
++        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
++        --bind "${1}" /storage --ro-bind "${2}" /sys --ro-bind "${F1H}/q" /q \
++        --tmpfs /run --tmpfs /tmp --dev /dev --proc /proc --setenv PATH "${F1PATH}" \
++        bash /q/095-cloud-ssh > "${F1H}/out" 2>&1
++}
++F1_GEN="ssh -L 53682:localhost:53682 -p 10022 root@127.0.0.1"; F1_HAND="ssh -p 2222 root@192.168.64.5"
++f1_ov() { cat "${1}/.config/cloud_setup_ssh" 2>/dev/null || echo "(no file)"; }
++f1_storage "${F1H}/a"; f1_ssh "${F1H}/a" "${F1H}/p10022"
++[ "$(f1_ov "${F1H}/a")" = "${F1_GEN}" ]; check $? "with the forwarded port on fw_cfg the guest gets the loopback command" "the override: $(f1_ov "${F1H}/a"); $(head -c 120 "${F1H}/out")"
++f1_ssh "${F1H}/a" "${F1H}/p10023"; F1_S1=$(f1_ov "${F1H}/a"); f1_ssh "${F1H}/a" "${F1H}/none"
++[ "${F1_S1}" = "${F1_GEN/10022/10023}" ] && [ "$(f1_ov "${F1H}/a")" = "(no file)" ]; check $? "and its own command follows the port, and goes when fw_cfg carries none" "port 10023: ${F1_S1}; no port: $(f1_ov "${F1H}/a")"
++f1_storage "${F1H}/b"; echo "${F1_HAND}" > "${F1H}/b/.config/cloud_setup_ssh"; f1_ssh "${F1H}/b" "${F1H}/p10022"; F1_S2=$(f1_ov "${F1H}/b"); f1_ssh "${F1H}/b" "${F1H}/none"
++[ "${F1_S2}" = "${F1_HAND}" ] && [ "$(f1_ov "${F1H}/b")" = "${F1_HAND}" ]
++check $? "a command written by hand survives a boot with the port on fw_cfg and one without (the README's manual fallback)" "the hand-written '${F1_HAND}' became '${F1_S2}' with the port and '$(f1_ov "${F1H}/b")' without"
++f1_storage "${F1H}/c"; f1_ssh "${F1H}/c" "${F1H}/p10022"; echo "${F1_HAND}" > "${F1H}/c/.config/cloud_setup_ssh"; f1_ssh "${F1H}/c" "${F1H}/p10022"
++[ "$(f1_ov "${F1H}/c")" = "${F1_HAND}" ]; check $? "and so does one written over the quirk's own command" "the quirk's command, then a hand edit: '$(f1_ov "${F1H}/c")' after a boot"
++# Already written: an earlier build's command has no record, and its shape
++# is one a tester may write by hand (the audit's G-F1-03). With no record,
++# the file is taken only when it is exactly the command this boot writes --
++# taking it changes nothing now, and the record starts; then it follows the
++# port. A loopback command on another port, or with no port on fw_cfg, is
++# left as somebody's.
++f1_storage "${F1H}/d"; echo "${F1_GEN}" > "${F1H}/d/.config/cloud_setup_ssh"; f1_ssh "${F1H}/d" "${F1H}/p10022"; f1_ssh "${F1H}/d" "${F1H}/p10023"; F1_S3=$(f1_ov "${F1H}/d")
++[ "${F1_S3}" = "${F1_GEN/10022/10023}" ]; check $? "an earlier build's unrecorded command, met on its own port, is taken and then follows the port" "the unrecorded 10022 command after a 10022 boot and a 10023 boot: ${F1_S3}"
++F1_OWN="ssh -L 53682:localhost:53682 -p 2222 root@127.0.0.1"
++f1_storage "${F1H}/e"; echo "${F1_OWN}" > "${F1H}/e/.config/cloud_setup_ssh"; f1_ssh "${F1H}/e" "${F1H}/p10022"; F1_S4=$(f1_ov "${F1H}/e"); f1_ssh "${F1H}/e" "${F1H}/none"
++[ "${F1_S4}" = "${F1_OWN}" ] && [ "$(f1_ov "${F1H}/e")" = "${F1_OWN}" ]
++check $? "a loopback command a tester wrote for a forward of their own survives a boot with a port and one without (the audit's G-F1-03)" "the tester's '-p 2222 root@127.0.0.1' became '${F1_S4}' with port 10022 and '$(f1_ov "${F1H}/e")' without"
++# fw_cfg's value is a port or it is not one: six digits are refused, not
++# cut to five (the audit's G-F1-07 on the gpt side, G-F1-06 on the claude
++# side).
++f1_sys "${F1H}/p6"; printf '100000' > "${F1H}/p6/firmware/qemu_fw_cfg/by_name/opt/org.rocknix.cloud_ssh_port/raw"
++f1_storage "${F1H}/g"; f1_ssh "${F1H}/g" "${F1H}/p6"
++[ "$(f1_ov "${F1H}/g")" = "(no file)" ]; check $? "a six-digit fw_cfg port is refused, not cut to five digits (the audit's G-F1-07)" "fw_cfg 100000 gave: $(f1_ov "${F1H}/g")"
++# A boot cut short right after the new command is in place leaves the next
++# boot still knowing the command is the quirk's (the audit's G-F1-04).
++f1_storage "${F1H}/k"; f1_ssh "${F1H}/k" "${F1H}/p10022"; f1_ssh "${F1H}/k" "${F1H}/p10023" kill; F1_S5=$(f1_ov "${F1H}/k"); f1_ssh "${F1H}/k" "${F1H}/none"
++[ "${F1_S5}" = "${F1_GEN/10022/10023}" ] && [ "$(f1_ov "${F1H}/k")" = "(no file)" ]
++check $? "a boot killed right after it put a new command in place leaves it the quirk's: the next boot without a port removes it (the audit's G-F1-04)" "killed after the 10023 write: '${F1_S5}'; the next boot with no port: '$(f1_ov "${F1H}/k")'"
++f1_storage "${F1H}/f"; f1_ssh "${F1H}/f" "${F1H}/p10022"; F1_F0=$(cd "${F1H}/f/.config" && ls -A | LC_ALL=C sort | xargs sha256sum 2>/dev/null); f1_ssh "${F1H}/f" "${F1H}/p10022"
++[ "${F1_F0}" = "$(cd "${F1H}/f/.config" && ls -A | LC_ALL=C sort | xargs sha256sum 2>/dev/null)" ] && [ ! -s "${F1H}/out" ]; check $? "a second boot on the same port changes nothing and says nothing" "a second boot changed /storage/.config or said: $(head -c 160 "${F1H}/out")"
++
++# F1i. #308 claude F-VM-08 and F-VM-16: the GENERIC_X64 emulator configs the
++#      image installs carried other devices' hardware. (Cemu, RPCS3, xemu,
++#      Dolphin and Supermodel, the rest the seats named, are not in the
++#      GENERIC_X64 SYSTEM at 7911c53bb4.)
++F1I="${F1}/i"; mkdir -p "${F1I}"; F1EMU=projects/ROCKNIX/packages/emulators/standalone
++# mupen64plus: [Input-SDL-Control1] named SM8250's pad. Under mode = 2
++# (fully automatic) input-sdl never looks the name up -- it compares it in
++# mode 1 only -- and writes "" itself when no pad is found, so "" is the
++# value the file means.
++src_of "${F1EMU}/mupen64plus-sa/mupen64plus-sa-core/config/GENERIC_X64/mupen64plus.cfg" "${F1I}/mupen64plus.cfg"
++F1_M64N=$(awk '/^\[/{s=$0} s=="[Input-SDL-Control1]" && /^name = /{print; exit}' "${F1I}/mupen64plus.cfg")
++[ "${F1_M64N}" = 'name = ""' ]; check $? "mupen64plus's Control1 names no handheld's pad: name = \"\", what mode 2 writes itself (#308 claude F-VM-08)" "mupen64plus's Control1: ${F1_M64N:-no name line}"
++# flycast: [window] carried a 1080p handheld's 1920x1080. On this build
++# (USE_GLES off) fullscreen is SDL's desktop fullscreen, which takes the
++# output's size, so the numbers only ever sized a window nobody opens; the
++# window keeps fullscreen and loses the handheld's size.
++src_of "${F1EMU}/flycast-sa/config/GENERIC_X64/emu.cfg" "${F1I}/emu.cfg"
++F1_FW=$(awk '/^\[/{s=$0} s=="[window]" && /^(width|height) = /' "${F1I}/emu.cfg" | tr '\n' ' ')
++[ -z "${F1_FW}" ] && awk '/^\[/{s=$0} s=="[window]" && $0=="fullscreen = yes"{f=1} END{exit !f}' "${F1I}/emu.cfg"
++check $? "flycast's [window] keeps fullscreen and carries no handheld's 1920x1080 (#308 claude F-VM-16)" "flycast's [window]: ${F1_FW:-no size}, fullscreen $(grep -c '^fullscreen = yes$' "${F1I}/emu.cfg")"
++# m8c: the Anbernic INIs are chosen by QUIRK_DEVICE (the model the device
++# reports), which no x86_64 machine reports; GENERIC_X64 ships config.ini.
++F1M8=projects/ROCKNIX/packages/apps/m8c/config/GENERIC_X64
++if [ "${OLD}" -eq 1 ]; then F1_M8=$(git -C "${ROOT}" ls-tree --name-only "${BASE_REF}:${F1M8}" 2>/dev/null | tr '\n' '|')
++else F1_M8=$(ls -1 "${ROOT}/${F1M8}" 2>/dev/null | tr '\n' '|'); fi
++[ "${F1_M8}" = "config.ini|" ]; check $? "m8c's GENERIC_X64 config is config.ini alone, no pad file for an Anbernic model (#308 claude F-VM-08)" "m8c's GENERIC_X64 config: ${F1_M8}"
++
++# F1j. #307 PL-076: the x64 RetroArch profile carried the armhf buildbot as
++#      core_updater_buildbot_url, a key the pinned RetroArch (1.22.2) does
++#      not read -- it reads core_updater_buildbot_cores_url, which the
++#      profile sets to "". The dead line goes.
++src_of "${F1RA:-projects/ROCKNIX/packages/emulators/libretro/retroarch/sources/GENERIC_X64/retroarch.cfg}" "${F1}/retroarch-076.cfg"
++! grep -q '^core_updater_buildbot_url' "${F1}/retroarch-076.cfg"; check $? "the GENERIC_X64 RetroArch profile carries no core_updater_buildbot_url, a key RetroArch does not read (#307 PL-076)" "the GENERIC_X64 profile still carries $(grep '^core_updater_buildbot_url' "${F1}/retroarch-076.cfg")"
++
+ if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
+diff --git a/tools/ra-offline-test b/tools/ra-offline-test
+index 1b08eea970..aad8ef0ec3 100755
+--- a/tools/ra-offline-test
++++ b/tools/ra-offline-test
+@@ -277,12 +277,15 @@ eval "$(sed -n "/^execute_kill()/,/^}/p" /usr/bin/input_sense)"
+ execute_kill
+ H
+ chmod +x /tmp/ra-offline-kill; pgrep -f ^/usr/bin/retroarch >/dev/null && { /tmp/ra-offline-kill; sleep 3; }; true' >/dev/null 2>&1
+-# A QEMU guest has no Vulkan, and the image ships `video_driver = "vulkan"`
+-# (GENERIC_X64 retroarch.cfg): left on it, RetroArch exits with 1 having
+-# pushed no frame, and step 4 stops at "RetroArch running" (guest d on
+-# 664ad9ac64, 2026-09-25 -- the 2026-09-21 PASS ran on a guest someone had
+-# left on GL). time-to-play and the exit test swap the driver for their run;
+-# so does this, and cleanup puts the guest's own line back.
++# A QEMU guest has no Vulkan. Until a5a03bd9fa the GENERIC_X64 profile
++# shipped `video_driver = "vulkan"`: left on it, RetroArch exits with 1
++# having pushed no frame, and step 4 stops at "RetroArch running" (guest d
++# on 664ad9ac64, 2026-09-25 -- the 2026-09-21 PASS ran on a guest someone
++# had left on GL). The profile ships gl now, and the boot quirk
++# 092-retroarch-surface moves a cfg still on vulkan to gl while the image
++# has no Vulkan driver. time-to-play and the exit test still swap the
++# driver for their run, for a guest whose cfg says otherwise; so does this,
++# and cleanup puts the guest's own line back.
+ VD_WAS=$(S 'grep -E "^video_driver" /storage/.config/retroarch/retroarch.cfg' 2>/dev/null)
+ S "sed -i 's/^video_driver = .*/video_driver = \"gl\"/' /storage/.config/retroarch/retroarch.cfg" >/dev/null 2>&1
+ 
+diff --git a/tools/time-to-play b/tools/time-to-play
+index 072c5d6f37..855d2ee936 100755
+--- a/tools/time-to-play
++++ b/tools/time-to-play
+@@ -1054,11 +1054,14 @@ def main():
+                    [g.host + ":" + RCLONE_CONF, saved_conf], capture_output=True)
+     subprocess.run(["scp", "-q", "-P", g.port] + g._opts() +
+                    [g.host + ":" + CLOUD_CONF, saved_cloud], capture_output=True)
+-    # A QEMU guest has no Vulkan. Left on the image's default, RetroArch
+-    # exists for a fifth of a second and never draws, the exit sync never
+-    # runs, and every headline number below is a dash -- which is what the
+-    # runner's first dispatch of this cell reported as a PASS (2026-09-12).
+-    # The exit test has always swapped the driver for its run; so does this.
++    # A QEMU guest has no Vulkan. On the vulkan the GENERIC_X64 profile
++    # shipped until a5a03bd9fa, RetroArch exists for a fifth of a second and
++    # never draws, the exit sync never runs, and every headline number below
++    # is a dash -- which is what the runner's first dispatch of this cell
++    # reported as a PASS (2026-09-12). The profile ships gl now, and the boot
++    # quirk 092-retroarch-surface moves a cfg still on vulkan to gl while the
++    # image has no Vulkan driver; the swap stays, for a guest whose cfg says
++    # otherwise. The exit test has always swapped the driver for its run.
+     saved_vd = ""
+     saved_gs = ""
+     if args.vm:
+diff --git a/tools/vm-upgrade-rehearsal b/tools/vm-upgrade-rehearsal
+index 962db95ff6..5585d3caab 100755
+--- a/tools/vm-upgrade-rehearsal
++++ b/tools/vm-upgrade-rehearsal
+@@ -71,6 +71,31 @@ say "a settings backup"
+ ssha 'backuptool backup >/dev/null 2>&1; ls /storage/roms/backup/ 2>/dev/null' >>"$LOG" 2>&1
+ BK0=$(ssha 'ls /storage/roms/backup/ 2>/dev/null | wc -l'); echo "backups before: $BK0" >> "$LOG"
+ 
++say "seed what the retired GENERIC_X64 quirks left in /storage (#307 PL-019)"
++# Until 2026-09 the QEMU quirks 091-101 wrote these through the image's links
++# into /storage, and 097-disable-rescue-completely masked emergency.target
++# into /storage/.config/system.d; a guest that ran them keeps them across an
++# update. The new image's 091-retired-vm-fixes and 097-retired-rescue-masks
++# take them back by name, once per guest (their stamps under /storage/.cache).
++# The fixture writes them itself, and removes those stamps, so the check does
++# not depend on which quirks the previous image carried -- a guest that ran
++# the old quirks has no stamp -- and beside them a file of the owner's own,
++# which must stay.
++RETIRED=".config/tmpfiles.d/20-x64-fd-improvements.conf .config/sysctl.d/10-generic-x64.conf .config/modules-load.d/x64-virtual-modules.conf .config/profile.d/091-generic-x64-services"
++ssha "cd /storage && rm -f .cache/retired-vm-fixes .cache/retired-rescue-masks && for f in $RETIRED; do mkdir -p \$(dirname \$f); echo '# seeded by vm-upgrade-rehearsal (#307 PL-019)' > \$f; done
++mkdir -p .config/system.d && ln -sfn /dev/null .config/system.d/emergency.target
++echo '# the owner'\''s own (vm-upgrade-rehearsal)' > .config/tmpfiles.d/50-rehearsal-owner.conf; sync" >>"$LOG" 2>&1
++check "retired quirk files seeded before the update" "$(ssha "cd /storage && ls $RETIRED .config/tmpfiles.d/50-rehearsal-owner.conf 2>/dev/null | wc -l; readlink .config/system.d/emergency.target" | tr '\n' ' ')" "5 /dev/null "
++
++say "seed a RetroArch cfg an owner changed, on a vulkan-era cfg (#307 PL-034, #308 claude F-VM-11)"
++# The fullscreen size set by hand must survive the update and the new
++# 092-retroarch-surface, which follows the guest's mode only for values of
++# its own; the driver the device shipped until 2026-09, vulkan, moves to gl
++# on an image with no Vulkan driver.
++RACFG=/storage/.config/retroarch/retroarch.cfg
++ssha "sed -i -e 's/^video_fullscreen_x = .*/video_fullscreen_x = \"1024\"/' -e 's/^video_fullscreen_y = .*/video_fullscreen_y = \"768\"/' -e 's/^video_driver = .*/video_driver = \"vulkan\"/' $RACFG; sync" >>"$LOG" 2>&1
++check "RetroArch cfg seeded before the update" "$(ssha "grep -E '^(video_fullscreen_x|video_fullscreen_y|video_driver) = ' $RACFG | sort | tr '\n' ' '")" 'video_driver = "vulkan" video_fullscreen_x = "1024" video_fullscreen_y = "768" '
++
+ say "stage $(basename "$NEW") and reboot guest a"
+ # The pair's key and port come from vm-pair, not from literals here (they
+ # were, and a pair on other settings would have gone unrehearsed -- audit
+@@ -98,6 +123,16 @@ check "saves remote kept" "$(ssha "grep -E '^SAVES_REMOTE=' $CONFPATH 2>/dev/nul
+ check "cloud conf gained the new defaults, kept the old values" "$(ssha "grep -cE '^(CONTENT_REMOTE|SAVES_REMOTE)=' $CONFPATH")" "2"
+ check "backup archive kept" "$(ssha 'ls /storage/roms/backup/ 2>/dev/null | wc -l')" "$BK0"
+ check "update queue empty" "$(ssha 'ls /storage/.update | wc -l')" "0"
++# The quirk pass runs from autostart, which may still be running when SSH
++# first answers: wait for its last line before reading what it removed.
++AUTOSTARTED=no
++for i in $(seq 1 30); do ssha 'grep -q "Autostart complete" /var/log/boot.log && echo done' | grep -q done && { AUTOSTARTED=yes; break; }; sleep 2; done
++# A wait that ran out is not a reading: say so, rather than grade the
++# take-back on a quirk pass that may not have run yet.
++check "autostart finished before the take-back is read (its 'Autostart complete' line in /var/log/boot.log)" "$AUTOSTARTED" "yes"
++check "retired quirk files taken back after the update (#307 PL-019)" "$(ssha "cd /storage && ls $RETIRED 2>/dev/null | wc -l; [ -L .config/system.d/emergency.target ] && echo masked || echo unmasked" | tr '\n' ' ')" "0 unmasked "
++check "and the owner's file beside them kept" "$(ssha 'cat /storage/.config/tmpfiles.d/50-rehearsal-owner.conf')" "# the owner's own (vm-upgrade-rehearsal)"
++check "RetroArch fullscreen size set by hand kept, driver moved to gl (#307 PL-034, #308 claude F-VM-11)" "$(ssha "grep -E '^(video_fullscreen_x|video_fullscreen_y|video_driver) = ' $RACFG | sort | tr '\n' ' '")" 'video_driver = "gl" video_fullscreen_x = "1024" video_fullscreen_y = "768" '
+ # --- release checks: assertions about one release's defects, not about the
+ # upgrade path. Each names its issue; drop it when the issue's cause is gone
+ # upstream (audit #258 PL-030 asked that a generic tool label these).

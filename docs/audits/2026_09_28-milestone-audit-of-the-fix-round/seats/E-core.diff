@@ -1,0 +1,3125 @@
+diff --git a/es-app/src/ApiSystem.cpp b/es-app/src/ApiSystem.cpp
+index 48a53ac40..4bcb0300b 100644
+--- a/es-app/src/ApiSystem.cpp
++++ b/es-app/src/ApiSystem.cpp
+@@ -674,12 +674,14 @@ bool ApiSystem::getSavedWifiNetworks(std::vector<WifiText::SavedNetwork>& networ
+ // NetworkManager holds, through wifictl join -- bounded past the 90 s
+ // association wait the script allows itself, as enableWifi's connect is. The
+ // name is the player's and carries anything: shellQuote.
+-bool ApiSystem::joinWifiNetwork(const std::string& name)
++WifiText::JoinAnswer ApiSystem::joinWifiNetwork(const std::string& name)
+ {
+ 	std::vector<std::string> lines;
+ 	auto result = executeScript("timeout 120 wifictl join " + Utils::String::shellQuote(name),
+ 		[&lines](const std::string line) { lines.push_back(line); });
+-	return result.second == 0 && WifiText::parseJoin(lines);
++	WifiText::JoinAnswer answer;
++	answer.code = result.second != 0 ? result.second : WifiText::parseJoin(lines) ? 0 : 1;
++	return answer;
+ }
+ 
+ bool ApiSystem::forgetWifiNetwork(const std::string& name, bool& disconnected)
+diff --git a/es-app/src/ApiSystem.h b/es-app/src/ApiSystem.h
+index dcc955e96..5775e58a8 100644
+--- a/es-app/src/ApiSystem.h
++++ b/es-app/src/ApiSystem.h
+@@ -271,11 +271,15 @@ public:
+ 	// dropped with it.
+ 	bool forgetWifiNetwork(const std::string& name, bool& disconnected);
+ 	// Join a network NetworkManager holds a profile for, with the key it
+-	// holds (`wifictl join <name>`): the picker's press on a SAVED row (fork
+-	// #191). True only when the script said "joined"; the settings wifi.ssid
+-	// and wifi.key then follow the profile on disk, so a caller re-reads
+-	// SystemConf before trusting either.
+-	bool joinWifiNetwork(const std::string& name);
++	// holds (`wifictl join <name>`, name the profile's): the picker's press
++	// on a SAVED row (fork #191). Joined only when the script said
++	// "joined"; the settings wifi.ssid and wifi.key then follow the profile
++	// on disk, so a caller re-reads SystemConf before trusting either.
++	// Otherwise the script's exit code -- 2 NetworkManager not answering,
++	// 1 not joined -- and 1 for a 0 that printed no "joined";
++	// WifiText::joinFailure reads it. A WifiText::JoinAnswer, not an int or
++	// a bool: see its comment.
++	WifiText::JoinAnswer joinWifiNetwork(const std::string& name);
+ 
+ 	virtual std::vector<std::string> getIpAddresses();
+ 	virtual std::string getIpAddress();
+diff --git a/es-app/src/AppWindow.h b/es-app/src/AppWindow.h
+new file mode 100644
+index 000000000..37dda1f30
+--- /dev/null
++++ b/es-app/src/AppWindow.h
+@@ -0,0 +1,56 @@
++#pragma once
++#ifndef ES_APP_APP_WINDOW_H
++#define ES_APP_APP_WINDOW_H
++
++// A worker thread's post to the interface thread, and main()'s letting go of
++// the window (#308 8-es-menus-and-core claude F-ES-26).
++//
++// The window is a local of main(). Detached workers -- the network page's
++// address and SSID readers, the cloud hub's tidy-folders check, the exit's
++// capture, the offline achievements' cards -- post to it when their script
++// ends, and nothing joins them: one that ends after main() has torn the
++// window down posts into freed memory, a mutex and a vector in a dead
++// frame. So a worker posts through here, and main() calls closing() before
++// the teardown. The lock is held across the post, so closing() waits for
++// one in progress and no post begins after it: the check and the post are
++// one step, not two with a gap between.
++//
++// Templated on the window so the rule has a test without SDL.
++#include <functional>
++#include <mutex>
++
++namespace AppWindow
++{
++	inline std::mutex& gate()
++	{
++		static std::mutex m;
++		return m;
++	}
++
++	inline bool& open()
++	{
++		static bool isOpen = true;
++		return isOpen;
++	}
++
++	// Posts `task` unless the window is closing; false when it was not posted.
++	template <class W>
++	bool post(W* window, const std::function<void()>& task)
++	{
++		std::lock_guard<std::mutex> lock(gate());
++		if (!open() || window == nullptr)
++			return false;
++		window->postToUiThread(task);
++		return true;
++	}
++
++	// main(), once its loop has ended and before the window goes: every post
++	// from here on is dropped.
++	inline void closing()
++	{
++		std::lock_guard<std::mutex> lock(gate());
++		open() = false;
++	}
++}
++
++#endif // ES_APP_APP_WINDOW_H
+diff --git a/es-app/src/CaptureRotation.cpp b/es-app/src/CaptureRotation.cpp
+index dc710190c..bf9cc915e 100644
+--- a/es-app/src/CaptureRotation.cpp
++++ b/es-app/src/CaptureRotation.cpp
+@@ -136,7 +136,7 @@ namespace CaptureRotation
+ 		sKnownAt.clear();
+ 	}
+ 
+-	void recordAfterSession(FileData* game, const std::string& emulator)
++	void recordAfterSession(FileData* game, const std::string& emulator, time_t started)
+ 	{
+ 		if (emulator != "retroarch")
+ 			return;
+@@ -145,25 +145,31 @@ namespace CaptureRotation
+ 			return;
+ 		if (!Utils::FileSystem::exists(LAUNCH_LOG, false))
+ 			return;
++		// A log older than the launch is not this session's: a launcher that
++		// did not truncate it left the previous game's section there (#308
++		// 8-es claude F-ES-08). Same clock, whole seconds: equal is this one.
++		const time_t logTime = recordMtime(LAUNCH_LOG);
++		if (logTime < started)
++		{
++			LOG(LogInfo) << "CaptureRotation: " << game->getName() << " -- the launch log predates this session; nothing recorded";
++			return;
++		}
+ 
+-		const int coreTurns = CaptureRotationText::turnsFromLog(Utils::FileSystem::readAllText(LAUNCH_LOG));
++		const std::string log = Utils::FileSystem::readAllText(LAUNCH_LOG);
++		const int coreTurns = CaptureRotationText::turnsFromLog(log);
+ 		std::string config;
+ 		if (Utils::FileSystem::exists(RETROARCH_CONFIG, false))
+ 			config = Utils::FileSystem::readAllText(RETROARCH_CONFIG);
+ 		const int turns = CaptureRotationText::fold(coreTurns, config);
+ 
+-		const bool had = Utils::FileSystem::exists(path, false);
+-		if (!had && turns == 0)
++		// The decision is CaptureRotationText's (a test reaches it): nothing
++		// from a log with no launch in it, a zero only where a record or the
++		// table would otherwise say something else, and an unchanged record
++		// left alone -- a record from before fork #288 is rewritten even when
++		// its turn agrees, so that it says where the turn came from.
++		const std::string record = Utils::FileSystem::exists(path, false) ? Utils::FileSystem::readAllText(path) : std::string();
++		if (!CaptureRotationText::shouldRecord(log, record, turns, fromTable(game)))
+ 			return;
+-		if (had)
+-		{
+-			// A record from before fork #288 is rewritten even when its turn
+-			// agrees, so that it says where the turn came from and is
+-			// trusted from then on.
+-			const std::string record = Utils::FileSystem::readAllText(path);
+-			if (CaptureRotationText::recordFromOwnLaunch(record) && CaptureRotationText::parseRecord(record) == turns)
+-				return;
+-		}
+ 
+ 		Utils::FileSystem::createDirectory(Utils::FileSystem::getParent(path));
+ 		Utils::FileSystem::writeAllText(path, CaptureRotationText::recordText(turns));
+diff --git a/es-app/src/CaptureRotation.h b/es-app/src/CaptureRotation.h
+index 5f2358f81..10e96ae5e 100644
+--- a/es-app/src/CaptureRotation.h
++++ b/es-app/src/CaptureRotation.h
+@@ -2,6 +2,7 @@
+ #ifndef ES_APP_CAPTURE_ROTATION_H
+ #define ES_APP_CAPTURE_ROTATION_H
+ 
++#include <ctime>
+ #include <string>
+ 
+ class FileData;
+@@ -20,7 +21,9 @@ namespace CaptureRotation
+ 	// After a session: read the launch log and RetroArch's config, and
+ 	// write the record when it is new or has changed. Only RetroArch
+ 	// sessions write one; nothing else captures through the interface.
+-	void recordAfterSession(FileData* game, const std::string& emulator);
++	// `started` is when the launch began: a launch log older than that is
++	// not this session's, and nothing is read from it (#308 F-ES-08).
++	void recordAfterSession(FileData* game, const std::string& emulator, time_t started);
+ 
+ 	// Where the record lives, "" when the game's system keeps no states.
+ 	std::string recordPath(FileData* game);
+diff --git a/es-app/src/CaptureRotationText.cpp b/es-app/src/CaptureRotationText.cpp
+index e26676f14..2be0aff28 100644
+--- a/es-app/src/CaptureRotationText.cpp
++++ b/es-app/src/CaptureRotationText.cpp
+@@ -6,7 +6,12 @@ namespace
+ {
+ 	// The record's second line since fork #288: the turn was read from a
+ 	// log that held this game's launch alone.
+-	const char* OWN_LAUNCH_LINE = "from=own-launch";
++	// The writer's claim about what it read. "from=own-launch" (fork #288)
++	// was written from a launch that failed and from a log with no launch
++	// in it, until the reading was checked (187ff9f1c, 190f62550): nothing
++	// can tell those records from good ones, so the claim this build
++	// trusts is a new one (audit of the fixes, E2 gpt G-E2-06).
++	const char* OWN_LAUNCH_LINE = "from=checked-launch";
+ 
+ 	// The value of `key = "value"` in a RetroArch config, or "" when absent.
+ 	std::string configValue(const std::string& config, const std::string& key)
+@@ -41,6 +46,20 @@ namespace
+ 
+ namespace CaptureRotationText
+ {
++	bool logHasLaunch(const std::string& launchLog)
++	{
++		return launchLog.find("=== Build ") != std::string::npos;
++	}
++
++	bool shouldRecord(const std::string& launchLog, const std::string& existingRecord, int turns, int tableTurns)
++	{
++		if (!logHasLaunch(launchLog))
++			return false;
++		if (existingRecord.empty())
++			return turns != 0 || tableTurns != 0;
++		return !(recordFromOwnLaunch(existingRecord) && parseRecord(existingRecord) == turns);
++	}
++
+ 	int turnsFromLog(const std::string& launchLog)
+ 	{
+ 		// Only the last launch's lines count (fork #280): the file held
+diff --git a/es-app/src/CaptureRotationText.h b/es-app/src/CaptureRotationText.h
+index 848a37a6c..9856331eb 100644
+--- a/es-app/src/CaptureRotationText.h
++++ b/es-app/src/CaptureRotationText.h
+@@ -29,7 +29,7 @@ namespace CaptureRotationText
+ 	// game: the turns, or 0 when the game is not in it.
+ 	int turnsFromTable(const std::string& table, const std::string& romName);
+ 
+-	// The record's text -- "turns=N", then "from=own-launch" -- and reading
++	// The record's text -- "turns=N", then "from=checked-launch" -- and reading
+ 	// it back: N is 0-3 and anything else reads as 0. A bare digit reads
+ 	// too. The first line is longer than three bytes on purpose --
+ 	// readAllText skips a UTF-8 byte-order mark by reading three bytes
+@@ -38,14 +38,31 @@ namespace CaptureRotationText
+ 	int parseRecord(const std::string& text);
+ 
+ 	// Whether the record says its turn was read from the game's own launch:
+-	// a line "from=own-launch" of its own. The reader before fork #288 took
+-	// the last rotation line of a log that held every launch since the file
+-	// was last removed (fork #280), so a record it wrote may carry another
+-	// game's turn -- Ms. Pac-Man's 3 on Dr. Mario -- and it wrote no such
+-	// line. A record without one is not trusted: the core's table stands in
+-	// until the game's next exit rewrites it. The line is the writer's claim
+-	// about what it read, which is the one thing a migration could not know.
++	// a line "from=checked-launch" of its own. The reader before fork #288
++	// took the last rotation line of a log that held every launch since the
++	// file was last removed (fork #280), so a record it wrote may carry
++	// another game's turn -- Ms. Pac-Man's 3 on Dr. Mario -- and it wrote no
++	// such line. The builds after it wrote "from=own-launch", also over a
++	// launch that failed and a log with no launch in it (audit of the fixes,
++	// E2 gpt G-E2-06). A record without the checked line is not trusted: the
++	// core's table stands in until the game's next exit rewrites it. The
++	// line is the writer's claim about what it read, which is the one thing
++	// a migration could not know.
+ 	bool recordFromOwnLaunch(const std::string& text);
++
++	// Whether the launch log holds a launch at all: RetroArch's build banner.
++	bool logHasLaunch(const std::string& launchLog);
++
++	// Whether a session's reading is written as the game's record (#308
++	// 8-es claude F-ES-08, 8a gpt F-ES-08). `existingRecord` is "" when there
++	// is none; `turns` is what fold made of the log; `tableTurns` what the
++	// core's table would say without a record. Never from a log with no
++	// launch in it -- turnsFromLog's -1 there is "no evidence", which fold
++	// makes 0, and a record written from it said from=own-launch over a
++	// turn nobody read. A zero with no record is written only when the table
++	// would say otherwise: rotation turned off in RetroArch, a core that did
++	// not ask, and the table's 3 went on answering. Unchanged, never rewritten.
++	bool shouldRecord(const std::string& launchLog, const std::string& existingRecord, int turns, int tableTurns);
+ }
+ 
+ #endif // ES_APP_CAPTURE_ROTATION_TEXT_H
+diff --git a/es-app/src/CheevosRetry.cpp b/es-app/src/CheevosRetry.cpp
+index bc46b4f94..c896c1ef1 100644
+--- a/es-app/src/CheevosRetry.cpp
++++ b/es-app/src/CheevosRetry.cpp
+@@ -15,4 +15,17 @@ namespace CheevosRetry
+ 
+ 		return IntervalMs;
+ 	}
++
++	// The save used to sign in whenever the switch was on and the token
++	// empty or the account changed: every close while offline was a
++	// request on the interface thread. Only a change the player made is
++	// answered here, and only when there is an address to send it from.
++	SaveSignIn saveSignIn(bool on, bool accountChanged, bool tokenEmpty, bool hasAddress)
++	{
++		if (!on)
++			return SaveSignIn::None;
++		if (accountChanged)
++			return hasAddress ? SaveSignIn::Now : SaveSignIn::Offline;
++		return tokenEmpty ? SaveSignIn::InBackground : SaveSignIn::None;
++	}
+ }
+diff --git a/es-app/src/CheevosRetry.h b/es-app/src/CheevosRetry.h
+index bcb97a724..411f3bd48 100644
+--- a/es-app/src/CheevosRetry.h
++++ b/es-app/src/CheevosRetry.h
+@@ -28,4 +28,20 @@ namespace CheevosRetry
+ 	// schedule: a refusal is the account's problem and no retry fixes it,
+ 	// and a device with no link has nothing to retry against.
+ 	int nextDelayMs(bool unreachable, bool online, int unreachableInARow);
++
++	// What closing RETROACHIEVEMENTS SETTINGS does about the token
++	// (#308 1-raoffline claude F-RA-19). The page's save runs on the
++	// interface thread, so a sign-in there is a request the screen waits on.
++	//   Now          sign in here: the player changed the switch or the
++	//                account, and is told how it went
++	//   Offline      the same change with no address to send from: no
++	//                request, the "couldn't reach" answer at once, and the
++	//                token check asked to run -- which, failing, retries
++	//                when the network comes up
++	//   InBackground nothing changed and there is no token: the token
++	//                check (NetworkThread, on its own thread) is asked to
++	//                run now instead
++	//   None         nothing to do
++	enum class SaveSignIn { None, Now, Offline, InBackground };
++	SaveSignIn saveSignIn(bool on, bool accountChanged, bool tokenEmpty, bool hasAddress);
+ }
+diff --git a/es-app/src/CloudOffer.cpp b/es-app/src/CloudOffer.cpp
+index ccd070b7a..115aceb84 100644
+--- a/es-app/src/CloudOffer.cpp
++++ b/es-app/src/CloudOffer.cpp
+@@ -1,5 +1,6 @@
+ #include "CloudOffer.h"
+ 
++#include "AppWindow.h"
+ #include "ApiSystem.h"
+ #include "Window.h"
+ #include "guis/GuiLoading.h"
+@@ -73,8 +74,11 @@ void present(Window* window, const std::string& offer, const std::vector<std::st
+ 	// worker and asks from its own input handler, having just deleted
+ 	// itself. Posting covers both -- and on the page it also puts the
+ 	// dialog up on the frame after the one that took the press, rather than
+-	// inside the input dispatch of a component that is gone.
+-	window->postToUiThread([window, args]() { createSavesFolder(window, args); });
++	// inside the input dispatch of a component that is gone. Through
++	// AppWindow: the card's worker is detached and asks after its linger,
++	// which can be after main() has let the window go (#308 8-es claude
++	// F-ES-26's rule).
++	AppWindow::post(window, [window, args]() { createSavesFolder(window, args); });
+ }
+ 
+ }
+diff --git a/es-app/src/CloudText.cpp b/es-app/src/CloudText.cpp
+index ab23f10f2..1513c946e 100644
+--- a/es-app/src/CloudText.cpp
++++ b/es-app/src/CloudText.cpp
+@@ -1,6 +1,7 @@
+ #include "CloudText.h"
+ 
+ #include "CloudExit.h"
++#include "LocaleES.h"
+ #include "utils/StringUtil.h"
+ 
+ #include <cctype>
+@@ -152,6 +153,85 @@ bool isOutcomeToken(const std::string& token)
+ 	return ourTokens.find(token) != ourTokens.cend();
+ }
+ 
++// A field that is a whole number and nothing else -- an optional minus,
++// then digits -- within [lo, hi]. atoi read "garbage" as 0, and 0 is
++// success; a status that cannot be read is not one (#308 F-CS-27).
++static bool wholeNumber(const std::string& field, long long lo, long long hi, long long& out)
++{
++	const std::string f = Utils::String::trim(field);
++	size_t i = (!f.empty() && f[0] == '-') ? 1 : 0;
++	if (i >= f.size() || f.size() - i > 12)
++		return false;
++	for (size_t j = i; j < f.size(); j++)
++		if (f[j] < '0' || f[j] > '9')
++			return false;
++	const long long value = atoll(f.c_str());
++	if (value < lo || value > hi)
++		return false;
++	out = value;
++	return true;
++}
++
++// Every stamp each script can write, whichever flags it ran with: a
++// composed command runs cloud_backup twice (saves, then --system-only
++// settings), so which stamp a part wrote is the stamp's to say, not the
++// command line's. The table used to map cloud_backup to last-backup alone,
++// and a stopped settings part left its trap's 130 under the settings row.
++std::vector<std::string> scriptStampNames(const std::string& command)
++{
++	struct Part { const char* script; std::vector<const char*> stamps; };
++	static const std::vector<Part> PARTS = {
++		{ "cloud_content_backup",  { "last-content-backup" } },
++		{ "cloud_content_restore", { "last-content-restore", "last-content-match" } },
++		{ "cloud_restore",         { "last-restore", "last-settings-restore" } },
++		{ "cloud_backup",          { "last-backup", "last-settings-backup" } },
++	};
++	std::vector<std::string> names;
++	for (const Part& part : PARTS)
++		if (command.find(part.script) != std::string::npos)
++			for (const char* stamp : part.stamps)
++				names.push_back(stamp);
++	return names;
++}
++
++// The part the stop interrupted, and nothing else: a stamp this run wrote
++// with the trap's code. A part that finished before the stop keeps its
++// outcome, one that failed on its own keeps its why -- the table and a
++// time test used to restamp every stamp the run had written, so a saves
++// part that completed read as stopped once the settings part after it
++// was. A part that never started keeps its last real run's stamp.
++std::vector<std::string> stampsToRestamp(const std::vector<StampText>& stamps, time_t runStarted,
++	const std::vector<StampText>* before)
++{
++	std::vector<std::string> names;
++	for (auto& s : stamps)
++	{
++		const LastRun r = parseLastRun(s.text);
++		// The trap's stop: 130, and none of this interface's tokens -- a
++		// stamp that carries one was restamped after an earlier stop, and is
++		// that run's (audit of the fixes G-E1-06: by the time alone, one
++		// written in the second this run began qualified).
++		if (!r.ran || r.code != CloudExit::Stopped || r.knownToken)
++			continue;
++		if (before != nullptr)
++		{
++			// Written since the run began: the file is not the one read then
++			// (the scripts write a new file and rename it), whatever the
++			// clock -- a device booting with its clock behind made
++			// yesterday's stop look like today's (G-E1-04, the claude seat).
++			std::string was;
++			for (auto& b : *before)
++				if (b.name == s.name)
++					was = b.version;
++			if (!s.version.empty() && s.version != was)
++				names.push_back(s.name);
++		}
++		else if (r.when >= runStarted)
++			names.push_back(s.name);
++	}
++	return names;
++}
++
+ bool exitSyncOwed(const std::string& exitStamp, const std::string& startupStamp, const std::string& backupStamp)
+ {
+ 	const LastRun e = parseLastRun(exitStamp);
+@@ -172,9 +252,12 @@ LastRun parseLastRun(const std::string& text)
+ 	auto parts = Utils::String::split(Utils::String::trim(text), ' ', true);
+ 	if (parts.size() < 2)
+ 		return r;
+-	time_t when = (time_t) atoll(parts[0].c_str());
+-	if (when <= 0)
++	// Both fields whole numbers, or this is not a stamp: the epoch positive,
++	// the code an exit status (-1 where there was none) (#308 F-CS-27).
++	long long epoch = 0, status = 0;
++	if (!wholeNumber(parts[0], 1, 99999999999LL, epoch) || !wholeNumber(parts[1], -1, 255, status))
+ 		return r;
++	time_t when = (time_t) epoch;
+ 	r.ran = true;
+ 	r.when = when;
+ 	// "<epoch> <rc>[ <token>[ <why...>]]" (D-UI-028). The first two fields
+@@ -192,7 +275,7 @@ LastRun parseLastRun(const std::string& text)
+ 	// (last-sync-startup, -exit, -manual; fork #94) do, because under SYNC
+ 	// SAVES DURING STARTUP the player's question is what happened this
+ 	// morning, and "nothing, there was no network" answers it.
+-	const int code = atoi(parts[1].c_str());
++	const int code = (int) status;
+ 	r.code = code;
+ 	//
+ 	// Two writers, two shapes of third field. EmulationStation's stamps
+@@ -291,6 +374,143 @@ std::vector<std::string> outcomeCandidates(const std::string& outcome)
+ 	return candidates;
+ }
+ 
++std::vector<std::pair<std::string, std::string>> whySentences()
++{
++	// Each sentence twice: as the script prints it, to match, and inside
++	// _(""), so xgettext carries it into the catalog and the French in
++	// locale/lang/fr reaches the card. Built on each call, after the
++	// language is chosen. The list is the emitter table in
++	// es-app/tests/unit/CloudTextTests.cpp, which fails on a why a script
++	// prints that is not here; a sentence a script changes wants its pair
++	// changed in the same change, or the card shows it in English again.
++	return {
++		{ "YOUR CLOUD STORAGE ISN'T SET UP YET", _("YOUR CLOUD STORAGE ISN'T SET UP YET") },
++		{ "COULDN'T REACH YOUR CLOUD - CHECK YOUR SIGN-IN", _("COULDN'T REACH YOUR CLOUD - CHECK YOUR SIGN-IN") },
++		{ "YOUR CLOUD STOPPED ANSWERING", _("YOUR CLOUD STOPPED ANSWERING") },
++		{ "YOUR CLOUD SYNC SETTINGS COULDN'T BE READ", _("YOUR CLOUD SYNC SETTINGS COULDN'T BE READ") },
++		{ "YOUR CLOUD SYNC SETTINGS COULDN'T BE SAVED", _("YOUR CLOUD SYNC SETTINGS COULDN'T BE SAVED") },
++		{ "CHECK WHAT WOULD CHANGE FIRST", _("CHECK WHAT WOULD CHANGE FIRST") },
++		{ "AN OLD FOLDER SETTING IS IN THE WAY", _("AN OLD FOLDER SETTING IS IN THE WAY") },
++		{ "YOUR SAVES FOLDER ISN'T ON THIS DEVICE", _("YOUR SAVES FOLDER ISN'T ON THIS DEVICE") },
++		{ "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED", _("THIS DEVICE'S SETTINGS BACKUP IS DAMAGED") },
++		{ "THE COPY IN YOUR CLOUD ISN'T COMPLETE", _("THE COPY IN YOUR CLOUD ISN'T COMPLETE") },
++		{ "COULDN'T FIND YOUR CLOUD FOLDER", _("COULDN'T FIND YOUR CLOUD FOLDER") },
++		{ "SOME FILES DIDN'T FINISH", _("SOME FILES DIDN'T FINISH") },
++		{ "YOUR CLOUD WOULDN'T TAKE THE FILES", _("YOUR CLOUD WOULDN'T TAKE THE FILES") },
++		{ "IT WAS STOPPED", _("IT WAS STOPPED") },
++		{ "THE CLOUD TOOK TOO LONG - IT'LL TRY AGAIN NEXT TIME", _("THE CLOUD TOOK TOO LONG - IT'LL TRY AGAIN NEXT TIME") },
++		{ "SOMETHING WENT WRONG", _("SOMETHING WENT WRONG") },
++		{ "COULDN'T TELL WHICH CARD YOUR SAVES ARE ON", _("COULDN'T TELL WHICH CARD YOUR SAVES ARE ON") },
++		{ "YOUR SAVES ARE ON A DIFFERENT CARD", _("YOUR SAVES ARE ON A DIFFERENT CARD") },
++		{ "YOUR SAVES CHANGED CARDS PART-WAY THROUGH", _("YOUR SAVES CHANGED CARDS PART-WAY THROUGH") },
++		{ "THERE'S NO SETTINGS BACKUP ON THIS DEVICE YET", _("THERE'S NO SETTINGS BACKUP ON THIS DEVICE YET") },
++		{ "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS", _("COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS") },
++		{ "THE RESTORE COULDN'T FINISH", _("THE RESTORE COULDN'T FINISH") },
++		{ "THIS DEVICE CAN'T MAKE A SETTINGS BACKUP", _("THIS DEVICE CAN'T MAKE A SETTINGS BACKUP") },
++		{ "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS", _("THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS") },
++		{ "THE BACKUP COULDN'T FINISH", _("THE BACKUP COULDN'T FINISH") },
++		// Added with the table at next 4476f90394 (#308 follow-up): stream
++		// A's match, card record and layout migration, the stamp's offline
++		// why (a 69 with the gaps token, read by the rows), and backuptool's
++		// five since f0f263b8cc.
++		{ "SOMETHING CHANGED SINCE YOU CHECKED", _("SOMETHING CHANGED SINCE YOU CHECKED") },
++		{ "COULDN'T RECORD WHICH CARD YOUR SAVES ARE ON", _("COULDN'T RECORD WHICH CARD YOUR SAVES ARE ON") },
++		{ "THE NEW FOLDER ALREADY HAS FILES IN IT", _("THE NEW FOLDER ALREADY HAS FILES IN IT") },
++		{ "YOU WENT OFFLINE PART-WAY THROUGH", _("YOU WENT OFFLINE PART-WAY THROUGH") },
++		{ "THIS DEVICE CAN'T RESTORE SETTINGS", _("THIS DEVICE CAN'T RESTORE SETTINGS") },
++		{ "A SETTINGS BACKUP OR RESTORE IS ALREADY RUNNING", _("A SETTINGS BACKUP OR RESTORE IS ALREADY RUNNING") },
++		{ "THERE'S NOTHING TO BACK UP YET", _("THERE'S NOTHING TO BACK UP YET") },
++		{ "A SIGN-IN WAS FOUND IN THE BACKUP", _("A SIGN-IN WAS FOUND IN THE BACKUP") },
++		{ "YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP CAN'T CARRY", _("YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP CAN'T CARRY") },
++	};
++}
++
++std::string localizedWhy(const std::string& why)
++{
++	for (auto& sentence : whySentences())
++		if (sentence.first == why)
++			return sentence.second;
++	return why;
++}
++
++bool isKnownWhy(const std::string& why)
++{
++	for (auto& sentence : whySentences())
++		if (sentence.first == why)
++			return true;
++	return false;
++}
++
++std::string cleanLine(const std::string& raw)
++{
++	// The transfer page's rule (CloudTransferJob::cleanLine, #85), which the
++	// card did not share: it kept printable ASCII only, and a folder name in
++	// the player's language lost its accented letters on the way to the
++	// offer (#308 F-CS-19). A terminal escape is an instruction to a
++	// terminal that is not here, and goes whole -- and only itself, by its
++	// own grammar (ECMA-48), not "to the next letter", which swallowed the
++	// start of a protocol line after a window title or a two-byte escape
++	// (audit of the fixes, claude G-E1-07):
++	//   ESC [ ...   CSI: parameter and intermediate bytes, then one final
++	//               byte in 0x40-0x7E (what rclone prints);
++	//   ESC ] ...   OSC (and P, X, ^, _ strings): to BEL, or ESC and a backslash;
++	//   ESC <byte>  any other escape: that one byte, when it is ASCII;
++	//   ESC         before a UTF-8 byte or at the end: the ESC alone.
++	std::string clean;
++	for (size_t i = 0; i < raw.size(); ++i)
++	{
++		const unsigned char c = (unsigned char) raw[i];
++		if (c == 0x1B)
++		{
++			if (i + 1 >= raw.size())
++				break;
++			const unsigned char kind = (unsigned char) raw[i + 1];
++			if (kind == '[')
++			{
++				size_t j = i + 2;
++				while (j < raw.size() && ((unsigned char) raw[j] < 0x40 || (unsigned char) raw[j] > 0x7E)
++					&& (unsigned char) raw[j] >= 0x20)
++					j++;
++				i = j;   // the final byte, skipped by the loop's ++i
++			}
++			else if (kind == ']' || kind == 'P' || kind == 'X' || kind == '^' || kind == '_')
++			{
++				size_t j = i + 2;
++				while (j < raw.size() && raw[j] != '\x07' && !(raw[j] == 0x1B && j + 1 < raw.size() && raw[j + 1] == '\\'))
++					j++;
++				// at BEL, or at the backslash of the ESC-backslash that ends it
++				i = (j < raw.size() && raw[j] == 0x1B) ? j + 1 : j;
++			}
++			else if (kind >= 0x20 && kind < 0x7F)
++				i++;       // a two-byte escape
++			continue;      // before a UTF-8 byte or a control: the ESC alone
++		}
++		if ((c >= 32 && c < 127) || c >= 0x80)
++			clean += (char) c;
++	}
++	return Utils::String::trim(clean);
++}
++
++std::vector<std::string> actionCandidates(const std::string& inPlace,
++	const std::vector<std::string>& recoveries, bool keepInPlace)
++{
++	std::vector<std::string> out;
++	if (keepInPlace && !inPlace.empty())
++	{
++		// The recovery gives way instead (#307 PL-072): each of its forms
++		// with the in-place clause, then the clause alone.
++		for (auto& r : recoveries)
++			out.push_back(inPlace + " " + r);
++		out.push_back(inPlace);
++		return out;
++	}
++	if (!inPlace.empty() && !recoveries.empty())
++		out.push_back(inPlace + " " + recoveries.front());
++	for (auto& r : recoveries)
++		out.push_back(r);
++	return out;
++}
++
+ ProtocolLine classifyProtocolLine(const std::string& clean)
+ {
+ 	ProtocolLine out;
+@@ -330,7 +550,10 @@ ProtocolLine classifyProtocolLine(const std::string& clean)
+ 		out.kind = ProtocolKind::Tier;
+ 		auto parts = Utils::String::split(clean.substr(9), '|', false);
+ 		out.text = parts.size() > 0 ? Utils::String::toUpper(Utils::String::trim(parts[0])) : "";
+-		out.number = parts.size() > 1 ? atoi(Utils::String::trim(parts[1]).c_str()) : -1;
++		// The part's exit status, 0-255; anything else -- nothing, junk -- is
++		// -1, which is not a success and not one of rclone's (#308 F-CS-27).
++		long long code = -1;
++		out.number = (parts.size() > 1 && wholeNumber(parts[1], 0, 255, code)) ? (int) code : -1;
+ 	}
+ 	// ">>> unit nes|2|5" -- an item starts: a system, or a phase whose
+ 	// counts are empty ("SAVES||"). The label keeps the case it came in,
+@@ -748,6 +971,110 @@ CloudText::FlushStamp CloudText::parseFlushStamp(const std::string& text)
+ 	return stamp;
+ }
+ 
++// Moved from OfflineAchievements::scanWhy and ProxyCards' topUpWhy, so the
++// table has a case (#308 follow-up): those two now ask here.
++std::string CloudText::scanWhy(const std::string& token)
++{
++	if (token == "TOGGLE_OFF")
++		return _("TURN ON OFFLINE ACHIEVEMENTS FIRST.");
++	if (token == "NO_ACCOUNT")
++		return _("SIGN IN TO RETROACHIEVEMENTS FIRST.");
++	if (token == "SIGN_IN_REFUSED")
++		return _("RETROACHIEVEMENTS DIDN'T ACCEPT YOUR SIGN-IN");
++	if (token == "RETROACHIEVEMENTS_STOPPED_ANSWERING")
++		return _("RETROACHIEVEMENTS STOPPED ANSWERING");
++	if (token == "NO_GAMES_FOUND")
++		return _("NO GAMES WERE FOUND ON THIS CONSOLE");
++	if (token == "LIBRARY_UNREADABLE")
++		return _("YOUR GAMES COULDN'T BE READ");
++	if (token == "TOOK_TOO_LONG")
++		return _("IT TOOK TOO LONG");
++	// A fetch failed for some game, even among many that went through
++	// (audit #186 PL-24): the run could not finish, and the next scan tries
++	// those games again, since nothing marks them cached.
++	if (token == "SOME_GAMES_NOT_SAVED")
++		return _("SOME GAMES COULDN'T BE SAVED. TRY THE SCAN AGAIN.");
++	// The image pass left achievement images behind (#307 PL-060; the ctl
++	// stamps it only for a failure that may pass, so a scan can fetch them):
++	// the games are cached, and the next scan tries the images again.
++	// Proposed words, for the maintainer to approve.
++	if (token == "SOME_IMAGES_NOT_SAVED")
++		return _("SOME ACHIEVEMENT IMAGES COULDN'T BE SAVED. TRY THE SCAN AGAIN.");
++	// The player's CANCEL on the scan page (D-UI-078): the ctl's INT trap
++	// stamps it so the row says so; not a failure, and the next scan
++	// carries on from what was saved.
++	if (token == "CANCELLED")
++		return _("YOU CANCELLED IT");
++	return _("SOMETHING WENT WRONG");
++}
++
++std::string CloudText::topUpWhy(const std::string& token)
++{
++	if (token == "SOME_GAMES_NOT_SAVED")
++		return _("SOME GAMES COULDN'T BE SAVED");
++	if (token == "SOME_IMAGES_NOT_SAVED")
++		return _("SOME ACHIEVEMENT IMAGES COULDN'T BE SAVED");
++	return scanWhy(token);
++}
++
++// What a match that did not complete removed. The count is the one
++// cloud_content_restore's ">>> removed" reports from rclone's own Deleted
++// lines (stream A's 258b5eca38), no longer its plan. Nothing about the
++// cloud: a match removes only what the cloud does not have (D-CLOUD-023),
++// and the clause that followed -- YOUR CLOUD STILL HAS THEM -- said the
++// opposite of what had happened.
++std::string CloudText::matchRemovedNote(int removedFiles)
++{
++	if (removedFiles <= 0)
++		return _("NOTHING WAS REMOVED FROM THIS DEVICE.");
++	if (removedFiles == 1)
++		return _("1 FILE WAS REMOVED FROM THIS DEVICE.");
++	return Utils::String::format(_("%d FILES WERE REMOVED FROM THIS DEVICE.").c_str(), removedFiles);
++}
++
++// The way on, named as the card names its row (TRY AGAIN: <row>): an apply
++// spends its preview's plan (PL-001), so the same command again is refused
++// with SOMETHING CHANGED SINCE YOU CHECKED; the match's own row checks
++// again first.
++std::string CloudText::matchRecovery()
++{
++	return _("TRY AGAIN: MATCH THIS DEVICE TO THE CLOUD");
++}
++
++// The composers' labels (the case in CloudTextTests lists where each is
++// printed). The page knew SETTINGS and SAVES alone, and a French page named
++// its other parts in English (audit of the fixes, E2 claude G-E2-08).
++std::vector<std::pair<std::string, std::string>> CloudText::unitLabels()
++{
++	return {
++		{ "SETTINGS", _("SETTINGS") },
++		{ "SAVES", _("SAVES") },
++		{ "ROMS AND BIOS", _("ROMS AND BIOS") },
++		{ "GAME CONTENT", _("GAME CONTENT") },
++		{ "ROMS, BIOS, AND GAME CONTENT", _("ROMS, BIOS, AND GAME CONTENT") },
++		{ "RESTORING SAVES", _("RESTORING SAVES") },
++		{ "BACKING UP SAVES", _("BACKING UP SAVES") },
++		{ "RESTORING ROMS AND BIOS", _("RESTORING ROMS AND BIOS") },
++	};
++}
++
++std::string CloudText::unitLabel(const std::string& label)
++{
++	const std::string upper = Utils::String::toUpper(label);
++	for (auto& l : unitLabels())
++		if (l.first == upper)
++			return l.second;
++	return upper;
++}
++
++bool CloudText::isKnownUnitLabel(const std::string& label)
++{
++	for (auto& l : unitLabels())
++		if (l.first == label)
++			return true;
++	return false;
++}
++
+ CloudText::ScanStamp CloudText::parseScanStamp(const std::string& text)
+ {
+ 	ScanStamp stamp;
+diff --git a/es-app/src/CloudText.h b/es-app/src/CloudText.h
+index dc0d0a5e9..28fc6239c 100644
+--- a/es-app/src/CloudText.h
++++ b/es-app/src/CloudText.h
+@@ -120,6 +120,26 @@ namespace CloudText
+ 	// whole texts; an absent stamp is "".
+ 	bool exitSyncOwed(const std::string& exitStamp, const std::string& startupStamp, const std::string& backupStamp);
+ 
++	// A stopped run's stamps (#203; #308 5-cloud-sync-and-saves claude
++	// F-CS-05, gpt F-CS-23). The scripts' INT/TERM trap stamps the part it
++	// was inside with 130 and no token, which a row reads as COULDN'T
++	// FINISH; the process that stopped the run knows why and restamps it.
++	//
++	// The stamps the scripts a command names can write, by name under
++	// /storage/.cache/cloud_sync.
++	std::vector<std::string> scriptStampNames(const std::string& command);
++	// Of those (each name with the file's whole text, "" when there is
++	// none, and the file's identity when it was read -- inode and change
++	// time -- "" when there was no file or it was not asked), the ones to
++	// restamp for a run that began at runStarted. With `before`, the same
++	// stamps read as the run began, a stamp is this run's when its file was
++	// written since -- the scripts write each stamp to a new file and rename
++	// it into place -- whatever the clocks said; without it (a caller that
++	// took no snapshot), when its epoch is not older than runStarted.
++	struct StampText { std::string name; std::string text; std::string version; };
++	std::vector<std::string> stampsToRestamp(const std::vector<StampText>& stamps, time_t runStarted,
++		const std::vector<StampText>* before = nullptr);
++
+ 	// Which run a stamp describes. EmulationStation stamps last-sync-exit
+ 	// and last-sync-startup as each automatic run ends, within a second or
+ 	// two of the script writing its own last-backup or last-restore, so a
+@@ -143,6 +163,33 @@ namespace CloudText
+ 	// gets the single candidate it has today.
+ 	std::vector<std::string> outcomeCandidates(const std::string& outcome);
+ 
++	// The sentences the cloud scripts print as ">>> why <SENTENCE>" -- and
++	// the rc-keyed ones their why_for prints -- each paired with its
++	// translation in the interface's language (#308 F-CS-31). The scripts
++	// speak English whatever the language; the card put their sentence
++	// beside a translated outcome word. localizedWhy returns the pair's
++	// translation, or the sentence as it came for one this build does not
++	// list (a script newer than the interface): never worse than before.
++	// The stamps keep the English: their readers translate.
++	std::vector<std::pair<std::string, std::string>> whySentences();
++	std::string localizedWhy(const std::string& why);
++	bool isKnownWhy(const std::string& why);
++
++	// One line of a cloud script's output as the card reads it: ANSI escape
++	// sequences and C0 controls and DEL dropped, every other byte kept --
++	// UTF-8 included, since a folder name in the player's language arrives
++	// in a ">>> offer" line and must reach the offer whole -- then trimmed.
++	std::string cleanLine(const std::string& raw);
++
++	// The sync card's action line when a run did not complete (D-CLOUD-077),
++	// longest first: what is in place and how to recover, then the recovery
++	// alone. `recoveries` are the recovery sentence's own forms, longest
++	// first. The in-place clause is the part that goes first when the line
++	// is short of room (es-player-text.md) -- unless keepInPlace, when every
++	// candidate carries it and the in-place clause alone is the last.
++	std::vector<std::string> actionCandidates(const std::string& inPlace,
++		const std::vector<std::string>& recoveries, bool keepInPlace);
++
+ 	// The ">>> " lines are the scripts talking to the interface, not to the
+ 	// player. Classification only: what the line is and what it carries.
+ 	// Acting on it -- the pid to signal, the card's waiting text, the why
+@@ -431,6 +478,31 @@ namespace CloudText
+ 	};
+ 	ScanStamp parseScanStamp(const std::string& text);
+ 
++	// The ctl's why tokens (raofflineproxy-ctl's scan and top-up), in the
++	// player's words (es-player-text.md: everyday, not formal): scanWhy for
++	// the scan page and the row under SCAN GAMES, topUpWhy for the top-up's
++	// card -- the same, except where the scan's sentence sends the player to
++	// the scan page, since that card's action line already says it tries
++	// again by itself (#308 1-raoffline F-RA-09). A token neither knows is
++	// SOMETHING WENT WRONG.
++	std::string scanWhy(const std::string& token);
++	std::string topUpWhy(const std::string& token);
++
++	// A match that did not complete, on the transfer page's done lines
++	// (#308 5-cloud-sync-and-saves gpt F-CS-26, the page's half): what it
++	// removed, and the way on.
++	std::string matchRemovedNote(int removedFiles);
++	std::string matchRecovery();
++
++	// The names the transfer page gives its items, from the ">>> unit" and
++	// ">>> tier" labels: the ones EmulationStation composes (the transfer
++	// form's parts, the journey's continuation, the startup sync) paired,
++	// English and _(""), as whySentences pairs the scripts' whys; a label
++	// not listed -- a system's folder -- is shown upper-cased, as it came.
++	std::vector<std::pair<std::string, std::string>> unitLabels();
++	std::string unitLabel(const std::string& label);
++	bool isKnownUnitLabel(const std::string& label);
++
+ 	// "route=<scan|topup> at=<epoch> index=<i> total=<n> name=<game>" from
+ 	// raofflineproxy-ctl's running file (fork #189): the one line the ctl
+ 	// keeps beside its stamp while a scan or top-up runs its jobs, rewritten
+diff --git a/es-app/src/CloudTransferJob.cpp b/es-app/src/CloudTransferJob.cpp
+index 80f0ef686..f98890025 100644
+--- a/es-app/src/CloudTransferJob.cpp
++++ b/es-app/src/CloudTransferJob.cpp
+@@ -14,10 +14,10 @@
+ #include <cstdlib>
+ #include <thread>
+ #include <signal.h>
+-#include <sys/stat.h>
+ #include <sys/wait.h>
+ 
+ std::mutex CloudTransferJob::sMutex;
++std::function<void()> CloudTransferJob::testPauseInStop;
+ std::shared_ptr<CloudTransferJob> CloudTransferJob::sCurrent;
+ 
+ // The run's starting state: every counter at its starting value. Once, at
+@@ -62,7 +62,7 @@ std::shared_ptr<CloudTransferJob> CloudTransferJob::start(const std::string& com
+ 	sCurrent = job;
+ 	// Detached, and holding its own reference: the run ends when the command
+ 	// does, not when a page closes -- the scan job's shape.
+-	std::thread([job] { job->run(job); }).detach();
++	std::thread([job] { job->run(); }).detach();
+ 	return job;
+ }
+ 
+@@ -76,32 +76,91 @@ void CloudTransferJob::dismiss(const std::shared_ptr<CloudTransferJob>& job)
+ 		sCurrent = nullptr;
+ }
+ 
++// The look and the mark are one step (audit of the fixes, E2 gpt
++// G-E2-05): under the run's own lock, which its end holds while it
++// decides whether it was stopped and says it has finished. A stop that
++// looked, found the run going, and was descheduled while it finished on
++// its own used to mark a completed run stopped after the end had cleared
++// the flags; now the end waits for the mark, sees it with the command's
++// own 0, and says COMPLETED. The signal is sent under the lock too:
++// deliverStop takes nothing, and a kill does not block.
+ bool CloudTransferJob::stopForLaunch(bool hard)
+ {
+ 	auto job = current();
+-	if (job == nullptr || job->finished())
++	if (job == nullptr)
+ 		return false;
+-	job->mStoppedForGame = true;
+-	const pid_t pid = job->mPid;
+-	if (pid > 0)
+-		::kill(-pid, hard ? SIGKILL : SIGTERM);
+-	LOG(LogInfo) << "CloudTransferJob: stopped for a game (" << (hard ? "SIGKILL" : "SIGTERM") << ", group " << pid << ")";
++	pid_t pid = 0;
++	{
++		std::unique_lock<std::mutex> lock(job->mMutex);
++		if (job->mFinished)
++			return false;
++		if (testPauseInStop)
++			testPauseInStop();
++		job->mStoppedForGame = true;
++		job->requestStop(hard ? SIGKILL : SIGTERM);
++		pid = job->mPid;
++	}
++	LOG(LogInfo) << "CloudTransferJob: stopped for a game (" << (hard ? "SIGKILL" : "SIGTERM") << ", group " << pid
++		<< (pid > 0 ? ")" : "; sent when the run says its pid)");
+ 	return true;
+ }
+ 
+ bool CloudTransferJob::stopByPlayer()
+ {
+ 	auto job = current();
+-	if (job == nullptr || job->finished())
++	if (job == nullptr)
+ 		return false;
+-	job->mStoppedByPlayer = true;
+-	const pid_t pid = job->mPid;
+-	if (pid > 0)
+-		::kill(-pid, SIGTERM);
+-	LOG(LogInfo) << "CloudTransferJob: cancelled by the player (SIGTERM, group " << pid << ")";
++	pid_t pid = 0;
++	{
++		std::unique_lock<std::mutex> lock(job->mMutex);
++		if (job->mFinished)
++			return false;
++		if (testPauseInStop)
++			testPauseInStop();
++		job->mStoppedByPlayer = true;
++		job->requestStop(SIGTERM);
++		pid = job->mPid;
++	}
++	LOG(LogInfo) << "CloudTransferJob: cancelled by the player (SIGTERM, group " << pid
++		<< (pid > 0 ? ")" : "; sent when the run says its pid)");
+ 	return true;
+ }
+ 
++// A stop is a request the run keeps, not a signal sent once (#308
++// 5-cloud-sync-and-saves gpt F-CS-24, claude F-CS-26). The run's pid
++// arrives on its first line; a stop that came before it used to set the
++// flag and signal nothing, and the command ran to its end under a page
++// that then called it stopped. Now the stop and the reader both call
++// deliverStop, and whichever sees the request and the pid together sends
++// it: the stop sets the request before it reads the pid, the reader the
++// pid before it reads the request, so at least one of them sees both.
++// A SIGKILL replaces a SIGTERM that has not got through; nothing replaces
++// a SIGKILL.
++void CloudTransferJob::requestStop(int sig)
++{
++	if (sig == SIGKILL)
++		mStopSignal = SIGKILL;
++	else
++	{
++		int none = 0;
++		mStopSignal.compare_exchange_strong(none, sig);
++	}
++	deliverStop();
++}
++
++// Each signal once: the stop and the reader can both arrive here with the
++// same request, and the second finds it sent.
++void CloudTransferJob::deliverStop()
++{
++	const int sig = mStopSignal;
++	const pid_t pid = mPid;
++	if (sig == 0 || pid <= 0)
++		return;
++	if (mSignalSent.exchange(sig) == sig)
++		return;
++	::kill(-pid, sig);
++}
++
+ bool CloudTransferJob::finished() const
+ {
+ 	std::unique_lock<std::mutex> lock(mMutex);
+@@ -208,8 +267,12 @@ void CloudTransferJob::handleLine(const std::string& line)
+ 		switch (protocol.kind)
+ 		{
+ 		case CloudText::ProtocolKind::Pid:
+-			// run()'s own first line: the group stopForLaunch signals.
++			// run()'s own first line: the group a stop signals -- and a
++			// stop that came before it is sent now (requestStop).
+ 			mPid = protocol.number;
++			if (mStopSignal != 0)
++				LOG(LogInfo) << "CloudTransferJob: the run said its pid (" << protocol.number << "); sending the stop that came before it";
++			deliverStop();
+ 			break;
+ 		case CloudText::ProtocolKind::Why:
+ 		{
+@@ -535,7 +598,7 @@ void CloudTransferJob::refreshPercent()
+ 		mPercent = p;
+ }
+ 
+-void CloudTransferJob::run(std::shared_ptr<CloudTransferJob> self)
++void CloudTransferJob::run()
+ {
+ 	int ret = -1;
+ 	// Braces around the whole command, not just " 2>&1" after it. The command
+@@ -560,6 +623,10 @@ void CloudTransferJob::run(std::shared_ptr<CloudTransferJob> self)
+ 	// together -- the shape ThreadedCloudSync gives its commands, for the
+ 	// same cancel (D-CLOUD-129). shellQuote, so a command with a quote in it
+ 	// survives the trip.
++	// The stamps before anything runs, on this thread rather than the
++	// interface's (a stat and a short read a stamp): what a stop's restamp
++	// compares against (G-E2-O2).
++	mStampsBefore = ThreadedCloudSync::readStamps(mCommand);
+ 	const std::string wrapped = "setsid sh -c "
+ 		+ Utils::String::shellQuote("echo \">>> pid $$\"; { trap '' PIPE; " + mCommand + " ; }") + " 2>&1";
+ 	FILE* pipe = popen(wrapped.c_str(), "r");
+@@ -610,6 +677,17 @@ void CloudTransferJob::run(std::shared_ptr<CloudTransferJob> self)
+ 
+ 	std::unique_lock<std::mutex> lock(mMutex);
+ 	foldUnit();   // the last unit: no ">>> unit" follows it
++	// A stop that came as the command was ending, and found it done: the
++	// command's own 0 (or rclone's 9, nothing to move) says it completed,
++	// and a completed run is not called stopped (#308 gpt F-CS-24). A run
++	// the stop did end exits by the signal or by the scripts' trap, 130 --
++	// never 0.
++	if ((mStoppedForGame || mStoppedByPlayer) && (ret == 0 || ret == 9))
++	{
++		LOG(LogInfo) << "CloudTransferJob: the stop came after the command had finished; it completed";
++		mStoppedForGame = false;
++		mStoppedByPlayer = false;
++	}
+ 	// Stopped for a game, or by the player (D-UI-078): SIGTERM shows up as
+ 	// a signal or as 143, and neither is what happened. CloudExit::Stopped
+ 	// is the scripts' own word for being stopped, whoever did the stopping
+@@ -643,57 +721,25 @@ void CloudTransferJob::run(std::shared_ptr<CloudTransferJob> self)
+ 	mFinished = true;
+ 	LOG(LogInfo) << "CloudTransferJob: " << mTitle << " exited " << ret
+ 		<< " (" << mRunFiles << " files, " << mRunBytes << " bytes, " << mTiers.size() << " tiers reported)";
+-	(void) self;
+ }
+ 
+-// Only over a stamp this run wrote: a part the command names that never
+-// started keeps the stamp of its last real run, which is the truth about
+-// it. The scripts each own one stamp under /storage/.cache/cloud_sync; the
+-// content restore's depends on the verb it ran with.
++// The part the stop interrupted, and only it: ThreadedCloudSync's rule,
++// shared with the card (#308 claude F-CS-05, gpt F-CS-23). This page's
++// table named cloud_backup's last-backup and cloud_restore's last-restore
++// alone, so a stopped settings part kept its trap's 130 under the settings
++// row, and restamped every stamp the run had written, so a saves part that
++// finished before the stop read as stopped.
+ void CloudTransferJob::restampStoppedParts(const char* token)
+ {
+-	struct Part { const char* script; const char* stamp; };
+-	static const Part PARTS[] = {
+-		{ "cloud_content_backup",  "last-content-backup" },
+-		{ "cloud_content_restore", "last-content-restore" },
+-		{ "cloud_restore",         "last-restore" },
+-		{ "cloud_backup",          "last-backup" },
+-	};
+-	for (const Part& part : PARTS)
+-	{
+-		if (mCommand.find(part.script) == std::string::npos)
+-			continue;
+-		std::string stamp = part.stamp;
+-		if (stamp == "last-content-restore" && mCommand.find("--match") != std::string::npos)
+-			stamp = "last-content-match";
+-		const std::string path = std::string("/storage/.cache/cloud_sync/") + stamp;
+-		struct stat st;
+-		if (stat(path.c_str(), &st) != 0 || st.st_mtime < mStartedAt - 1)
+-			continue;   // not this run's: the part never got as far as its trap
+-		ThreadedCloudSync::writeStamp(path, CloudExit::Stopped, token, "");
+-		LOG(LogInfo) << "CloudTransferJob: " << stamp << " restamped as " << token;
+-	}
++	ThreadedCloudSync::restampStoppedParts(mCommand, mStampsBefore, mStartedAt, token);
+ }
+ 
+-// Drop ANSI escapes and anything unprintable, then trim. A terminal-attached
+-// rclone moves the cursor to redraw in place; those sequences are instructions
+-// to a terminal that is not here.
++// One line of a script's output: ANSI escapes, C0 controls and DEL dropped,
++// every UTF-8 byte kept, then trimmed -- CloudText::cleanLine, the rule the
++// sync card reads by since #308 F-CS-19. This page carried a copy of its
++// own; the two gave the same line for every input, and one copy is one
++// rule to change.
+ std::string CloudTransferJob::cleanLine(const std::string& raw)
+ {
+-	std::string clean;
+-	for (size_t i = 0; i < raw.size(); ++i)
+-	{
+-		if (raw[i] == 0x1B)
+-		{
+-			while (i < raw.size() && !isalpha((unsigned char) raw[i]))
+-				i++;
+-			continue;
+-		}
+-		// Printable ASCII and every UTF-8 byte: rclone shortens a long name
+-		// with U+2026, and dropping it as "unprintable" turned "Ikari n...ge"
+-		// into "Ikari nge" on the page. Only C0 controls and DEL are noise.
+-		if (((unsigned char) raw[i] >= 32 && (unsigned char) raw[i] < 127) || (unsigned char) raw[i] >= 0x80)
+-			clean += raw[i];
+-	}
+-	return Utils::String::trim(clean);
++	return CloudText::cleanLine(raw);
+ }
+diff --git a/es-app/src/CloudTransferJob.h b/es-app/src/CloudTransferJob.h
+index caa791f19..cd2fceb6d 100644
+--- a/es-app/src/CloudTransferJob.h
++++ b/es-app/src/CloudTransferJob.h
+@@ -2,10 +2,13 @@
+ #ifndef ES_APP_CLOUD_TRANSFER_JOB_H
+ #define ES_APP_CLOUD_TRANSFER_JOB_H
+ 
++#include "CloudText.h"
++
+ #include <atomic>
+ #include <chrono>
+ #include <ctime>
+ #include <sys/types.h>
++#include <functional>
+ #include <memory>
+ #include <mutex>
+ #include <string>
+@@ -78,6 +81,10 @@ public:
+ 	// inside are restamped with the player's own token. False when no run
+ 	// is in flight.
+ 	static bool stopByPlayer();
++	// Tests only: run inside a stop between its look at whether the run
++	// has finished and its marking the run stopped -- the seam audit G-E2-05
++	// named. Empty, and never set, in the application.
++	static std::function<void()> testPauseInStop;
+ 
+ 	const std::string& command() const { return mCommand; }
+ 	const std::string& title() const { return mTitle; }
+@@ -95,7 +102,8 @@ private:
+ 	friend class GuiCloudTransfer;
+ 
+ 	CloudTransferJob(const std::string& command, const std::string& title, int itemsExpected, int itemsAfterContent);
+-	void run(std::shared_ptr<CloudTransferJob> self);
++	// The thread that runs it holds the job (start()), so nothing here does.
++	void run();
+ 	void handleLine(const std::string& line);
+ 	void refreshPercent();
+ 	void foldUnit();
+@@ -175,7 +183,12 @@ private:
+ 	// ticked only while a page was up read 0:05 after ten minutes; the
+ 	// run's own clock is right in either design.
+ 	std::chrono::steady_clock::time_point mStarted;
+-	time_t mStartedAt;   // wall clock, to tell a stamp this run wrote from an older one
++	time_t mStartedAt;   // wall clock, for a stamp the snapshot below cannot place
++	// The script stamps as they were before the command ran
++	// (ThreadedCloudSync::readStamps): a stop restamps only the files
++	// written since, not what the clock calls this run's (orchestrator
++	// finding G-E2-O2; E1's G-E1-04 on the card, 54d5699b2).
++	std::vector<CloudText::StampText> mStampsBefore;
+ 
+ 	// Stopped for a game or by the player: the scripts' trap stamped each
+ 	// part it was inside with 130 and no token; say what happened in their
+@@ -190,6 +203,12 @@ private:
+ 	std::atomic<pid_t> mPid{0};
+ 	std::atomic<bool> mStoppedForGame{false};
+ 	std::atomic<bool> mStoppedByPlayer{false};
++	// The signal a stop asked for (0 for none), and the last one sent: a
++	// stop before the pid line is kept and sent when the line arrives.
++	std::atomic<int> mStopSignal{0};
++	std::atomic<int> mSignalSent{0};
++	void requestStop(int sig);
++	void deliverStop();
+ 
+ 	static std::mutex sMutex;
+ 	static std::shared_ptr<CloudTransferJob> sCurrent;
+diff --git a/es-core/src/Settings.cpp b/es-core/src/Settings.cpp
+index 174301587..b890f548a 100644
+--- a/es-core/src/Settings.cpp
++++ b/es-core/src/Settings.cpp
+@@ -529,7 +529,8 @@ bool Settings::saveFile()
+ 		mWasChanged = true;
+ 		return false;
+ 	}
+-	if (!Utils::AtomicFile::writeText(path + ".backup", writer.out))
++	// The record is made no less private than the live file (#308 F-ES-08).
++	if (!Utils::AtomicFile::writeText(path + ".backup", writer.out, Utils::AtomicFile::modeOf(path, 0644)))
+ 		LOG(LogWarning) << "Settings::saveFile() : could not write the last-known-good record " << path << ".backup";
+ 
+ 	Scripting::fireEvent("config-changed");
+@@ -623,8 +624,11 @@ void Settings::loadFile()
+ 		// only when the record would change -- this runs at every start.
+ 		bool ok = false;
+ 		const std::string live = Utils::AtomicFile::readText(path, &ok);
+-		if (ok && live != Utils::AtomicFile::readText(backup)
+-			&& !Utils::AtomicFile::writeText(backup, live))
++		// No less private than the live file, and rewritten for its mode
++		// alone where an earlier build made it wider (#308 F-ES-08).
++		const int mode = Utils::AtomicFile::modeOf(path, 0644);
++		if (ok && (live != Utils::AtomicFile::readText(backup) || Utils::AtomicFile::modeOf(backup, mode) != mode)
++			&& !Utils::AtomicFile::writeText(backup, live, mode))
+ 			LOG(LogWarning) << "Could not write the last-known-good record " << backup;
+ 	}
+ }
+diff --git a/es-core/src/SystemConf.cpp b/es-core/src/SystemConf.cpp
+index 92ebc32bc..1453145df 100644
+--- a/es-core/src/SystemConf.cpp
++++ b/es-core/src/SystemConf.cpp
+@@ -68,43 +68,13 @@ SystemConf *SystemConf::getInstance()
+     return sInstance;
+ }
+ 
+-// Whether a system.cfg text is one worth reading and worth keeping as the
+-// last-known-good record: something in it, no NUL bytes (a file cut by a
+-// power failure reads as a run of them, which is what the boot check's
+-// "binary" test used to catch), and at least one key=value line. A file that
+-// is merely truncated at the tail still passes -- there is no way to tell a
+-// short file from a shorter configuration -- so this is the floor, not a
+-// proof; the shell's boot check applies its own on top (D-CLOUD-079).
+-static bool isUsableSystemConf(const std::string& text)
+-{
+-	if (text.empty() || text.find('\0') != std::string::npos)
+-		return false;
+-	std::istringstream in(text);
+-	std::string line;
+-	while (std::getline(in, line))
+-	{
+-		auto idx = line.find('=');
+-		if (idx != std::string::npos && idx > 0 && line[0] != '#' && line[0] != ';')
+-			return true;
+-	}
+-	return false;
+-}
+-
+ void SystemConf::parseSystemConf(const std::string& text)
+ {
+-	std::istringstream in(text);
+-	std::string line;
+-	while (std::getline(in, line))
+-	{
+-		int idx = line.find("=");
+-		if (idx == std::string::npos || line.find("#") == 0 || line.find(";") == 0)
+-			continue;
+-
+-		std::string key = line.substr(0, idx);
+-		std::string value = line.substr(idx + 1);
+-		if (!key.empty() && !value.empty())
+-			confMap[key] = value;
+-	}
++	// The same reading as ever (Utils::AtomicFile::parseKeyValues), kept
++	// alone as well for a reload's comparison (G-E1-03).
++	mOnDisk = Utils::AtomicFile::parseKeyValues(text);
++	for (const auto& kv : mOnDisk)
++		confMap[kv.first] = kv.second;
+ }
+ 
+ // One record at rest, under the name the boot scripts already use
+@@ -113,66 +83,145 @@ void SystemConf::parseSystemConf(const std::string& text)
+ // every start and after every save, and most of those change nothing.
+ void SystemConf::recordLastGood(const std::string& text)
+ {
++	// No less private than the live file it copies (#308 F-ES-08): a record
++	// an earlier build made 0644 beside a 0600 file is rewritten for its mode
++	// even when its text is the same.
+ 	const std::string backup = mSystemConfFile + ".backup";
+-	if (Utils::AtomicFile::readText(backup) == text)
++	const int mode = Utils::AtomicFile::modeOf(mSystemConfFile, 0644);
++	if (Utils::AtomicFile::readText(backup) == text && Utils::AtomicFile::modeOf(backup, mode) == mode)
+ 		return;
+-	if (!Utils::AtomicFile::writeText(backup, text))
++	if (!Utils::AtomicFile::writeText(backup, text, mode))
+ 		LOG(LogWarning) << "Unable to write the last-known-good record " << backup;
+ }
+ 
+-// Read the live file if it is usable; else the last-known-good record, and
+-// put that back as the live file; else whatever is there, so a device whose
+-// file fails this check but was fine for years reads exactly as before, and
+-// nothing is written over it (D-CLOUD-078: never defaults over a file that
+-// failed to parse before the recovery was tried).
+-bool SystemConf::loadSystemConf()
++// Read the live file if it is usable; else an unfinished save's whole
++// temporary where the live file was cut (PL-064); else the last-known-good
++// record, and put that back as the live file; else whatever is there, so a
++// device whose file fails this check but was fine for years reads exactly as
++// before, and nothing is written over it (D-CLOUD-078: never defaults over a
++// file that failed to parse before the recovery was tried). Which one is
++// Utils::AtomicFile::chooseConfig's call; the writes and the words are here.
++bool SystemConf::loadSystemConf(bool keepPending)
+ {
+ 	if (mSystemConfFile.empty())
+ 		return true;
+ 
++	// The changes not saved yet, with what each key held when it was
++	// changed (G-E1-03).
++	std::map<std::string, Utils::AtomicFile::PendingChange> pending;
++	if (keepPending)
++	{
++		for (const auto& key : changedConf)
++		{
++			Utils::AtomicFile::PendingChange change;
++			change.value = confMap[key];
++			const auto base = mPendingBase.find(key);
++			if (base != mPendingBase.cend())
++			{
++				change.hadBase = base->second.first;
++				change.base = base->second.second;
++			}
++			pending[key] = change;
++		}
++	}
++	const auto bases = mPendingBase;
++	const std::set<std::string> unsaved = changedConf;
++
+ 	changedConf.clear();
++	mPendingBase.clear();
++	mOnDisk.clear();
++	const bool loaded = loadFromDisk();
++
++	const auto kept = Utils::AtomicFile::pendingAfterReload(pending, mOnDisk);
++	// A change dropped here must not linger in memory where the file has no
++	// such key: the parse only adds, so the interface would go on showing a
++	// value nothing will ever save.
++	for (const auto& key : unsaved)
++		if (kept.find(key) == kept.cend() && mOnDisk.find(key) == mOnDisk.cend())
++			confMap.erase(key);
++
++	if (!pending.empty())
++	{
++		for (const auto& change : pending)
++			if (kept.find(change.first) == kept.cend())
++				LOG(LogInfo) << "loadSystemConf: " << change.first << " was changed in " << mSystemConfFile
++					<< " since this interface changed it -- the file's value stands";
++		for (const auto& kv : kept)
++		{
++			confMap[kv.first] = kv.second;
++			changedConf.insert(kv.first);
++			const auto base = bases.find(kv.first);
++			mPendingBase[kv.first] = base != bases.cend() ? base->second : std::make_pair(false, std::string());
++		}
++		if (!kept.empty())
++			LOG(LogInfo) << "loadSystemConf: " << kept.size() << " change(s) not saved yet are kept for the next save";
++	}
++	return loaded;
++}
+ 
+-	// A temporary left by a save that never reached its rename is litter,
+-	// not a record: nothing reads it, and the next save replaces it. The
+-	// record's own temporary likewise.
+-	std::remove((mSystemConfFile + ".tmp").c_str());
++bool SystemConf::loadFromDisk()
++{
++
++	// The record's own temporary, from a build before PL-063 gave every
++	// write a temporary of its own, is litter: nothing else writes that name.
++	// system.cfg.tmp is not removed any more (PL-064): it is read below, and
++	// it is also the name the shell's set_setting writes and renames -- a
++	// start that deleted it under a script's write made the script's rename
++	// fail and its key vanish. chksysconfig sweeps it at boot, before any
++	// script runs.
+ 	std::remove((mSystemConfFile + ".backup.tmp").c_str());
+ 
+-	bool liveOpened = false;
+-	const std::string live = Utils::AtomicFile::readText(mSystemConfFile, &liveOpened);
+-	if (liveOpened && isUsableSystemConf(live))
++	const Utils::AtomicFile::LoadedConfig chosen = Utils::AtomicFile::chooseConfig(mSystemConfFile);
++	// No less private than any copy it came from (G-E1-05).
++	const int mode = chosen.mode;
++
++	switch (chosen.source)
+ 	{
+-		parseSystemConf(live);
+-		recordLastGood(live);
++	case Utils::AtomicFile::LoadedConfig::Source::Live:
++		parseSystemConf(chosen.text);
++		// "Usable" for the record means complete too: a file that stops part
++		// way through a line is read -- nothing better is there -- but never
++		// replaces a whole record (PL-064, PL-065).
++		if (chosen.record)
++			recordLastGood(chosen.text);
++		else
++			LOG(LogWarning) << mSystemConfFile << " does not end in a line end -- read as it is, and not recorded as the last known good";
+ 		return true;
+-	}
+ 
+-	const std::string backupPath = mSystemConfFile + ".backup";
+-	bool backupOpened = false;
+-	const std::string backup = Utils::AtomicFile::readText(backupPath, &backupOpened);
+-	if (backupOpened && isUsableSystemConf(backup))
+-	{
+-		LOG(LogWarning) << mSystemConfFile << " is " << (liveOpened ? (live.empty() ? "empty" : "damaged") : "missing")
+-			<< " -- loading the last-known-good record " << backupPath << " and writing it back";
+-		parseSystemConf(backup);
+-		if (!Utils::AtomicFile::writeText(mSystemConfFile, backup))
++	case Utils::AtomicFile::LoadedConfig::Source::Temporary:
++		LOG(LogWarning) << mSystemConfFile << " is cut short or unreadable beside a whole " << mSystemConfFile
++			<< ".tmp that an interrupted save left -- loading that and writing it back";
++		parseSystemConf(chosen.text);
++		if (!Utils::AtomicFile::writeText(mSystemConfFile, chosen.text, mode))
++			LOG(LogError) << "Unable to write " << mSystemConfFile << " back from " << mSystemConfFile << ".tmp";
++		recordLastGood(chosen.text);
++		sRecovered = true;
++		return true;
++
++	case Utils::AtomicFile::LoadedConfig::Source::Backup:
++		LOG(LogWarning) << mSystemConfFile << " is missing, empty, unreadable, damaged or cut short of the record -- loading the last-known-good record "
++			<< mSystemConfFile << ".backup and writing it back";
++		parseSystemConf(chosen.text);
++		if (!Utils::AtomicFile::writeText(mSystemConfFile, chosen.text, mode))
+ 			LOG(LogError) << "Unable to write " << mSystemConfFile << " back from its last-known-good record";
+ 		sRecovered = true;
+ 		return true;
+-	}
+ 
+-	if (!liveOpened)
+-	{
+-		LOG(LogError) << "Unable to open " << mSystemConfFile;
+-		return false;
++	case Utils::AtomicFile::LoadedConfig::Source::Damaged:
++		// Unusable by the check, with no usable record and no whole
++		// temporary. Read the live file as it always was read -- a file this
++		// check is wrong about still works -- and record nothing: there is no
++		// good copy to record.
++		LOG(LogError) << mSystemConfFile << " has no usable key=value line and no usable last-known-good record; reading it as it is";
++		parseSystemConf(chosen.text);
++		return true;
++
++	case Utils::AtomicFile::LoadedConfig::Source::Missing:
++		break;
+ 	}
+ 
+-	// Both unusable by the check above. Read the live file as it always was
+-	// read -- a file this check is wrong about still works -- and record
+-	// nothing: there is no good copy to record.
+-	LOG(LogError) << mSystemConfFile << " has no usable key=value line and no usable last-known-good record; reading it as it is";
+-	parseSystemConf(live);
+-	return true;
++	LOG(LogError) << "Unable to open " << mSystemConfFile;
++	return false;
+ }
+ 
+ bool SystemConf::saveSystemConf()
+@@ -183,39 +232,67 @@ bool SystemConf::saveSystemConf()
+ 	if (changedConf.empty())
+ 		return false;
+ 
+-	// The shell's settings lock (wait_lock in profile.d/001-functions), taken
+-	// around the read-modify-write below: set_setting deletes a key and
+-	// re-adds it under the same lock, and a save that read the file between
+-	// its two steps would write the key's absence back over its new value.
+-	// Five seconds is the budget, on the interface thread; a live holder
+-	// still on the lock past it is logged and the save goes ahead -- the
+-	// player's change dropped on the floor is the worse outcome, and the
+-	// shell side's writes are a few milliseconds long.
+-	Utils::AtomicFile::PidLock lock("/tmp/.system.cfg.lock");
+-	if (!lock.acquire(5000))
+-		LOG(LogWarning) << "saveSystemConf: the settings lock was not free within 5s; saving without it";
+-
+-	bool opened = false;
+-	const std::string current = Utils::AtomicFile::readText(mSystemConfFile, &opened);
+-
+-#ifndef WIN32
+-	if (!opened)
++	// The shell's settings lock (wait_lock in profile.d/001-functions), held
++	// across the read-modify-write: set_setting reads the file, writes a
++	// temporary and renames it under the same lock, and a save that read or
++	// renamed beside it put one writer's snapshot over the other's. Five
++	// seconds is the budget, on the interface thread. A live holder still on
++	// the lock past it is logged and nothing is written (PL-024): this used to
++	// save anyway, and lost either the script's key or the player's. The
++	// changes stay in changedConf, and the next save -- any page closing,
++	// any set-and-save -- writes them over whatever the script left.
++	std::string out;
++	bool baseWhole = true;
++	const Utils::AtomicFile::LockedSave saved = Utils::AtomicFile::saveUnderLock(mSystemConfFile, "/tmp/.system.cfg.lock", 5000,
++		[this](const std::string& current) { return applyChanges(current); }, &out, &baseWhole);
++
++	switch (saved)
+ 	{
+-		LOG(LogError) << "Unable to open for saving :  " << mSystemConfFile << "\n";
++	case Utils::AtomicFile::LockedSave::LockBusy:
++		LOG(LogWarning) << "saveSystemConf: the settings lock was not free within 5s; nothing written -- the changes are kept for the next save";
+ 		return false;
++	case Utils::AtomicFile::LockedSave::Unreadable:
++		LOG(LogError) << "Unable to open for saving :  " << mSystemConfFile << " -- the changes are kept for the next save";
++		return false;
++	case Utils::AtomicFile::LockedSave::WriteFailed:
++		// Written to a temporary of its own, synced, and renamed over the
++		// live file (D-CLOUD-079, PL-063); a failure leaves the file whole.
++		LOG(LogError) << "Unable to write " << mSystemConfFile << " -- the changes are kept for the next save";
++		return false;
++	case Utils::AtomicFile::LockedSave::Written:
++		break;
+ 	}
+-#endif
+ 
++	changedConf.clear();
++	mPendingBase.clear();
++
++	// What was just written is, by construction, the newest good state, so
++	// it becomes the record (D-CLOUD-078: a success becomes the last known
++	// good). Outside the lock: the shell never takes it for the record.
++	// Unless it was merged onto a file cut short: the record then keeps the
++	// keys the cut lost (audit of the fixes G-E1-04).
++	if (baseWhole)
++		recordLastGood(out);
++	else
++		LOG(LogWarning) << "saveSystemConf: " << mSystemConfFile << " was cut short when this save read it -- written, and not recorded as the last known good";
++
++	return true;
++}
++
++// This save's keys, applied to the file as it is on disk now (read under
++// the lock): a key already there is rewritten in place, or removed when it
++// went back to its default or to nothing; a new one goes at the end. Every
++// other line is left exactly as the file had it -- the shell's writes
++// included.
++std::string SystemConf::applyChanges(const std::string& current)
++{
+ 	/* Read all lines in a vector */
+ 	std::vector<std::string> fileLines;
+ 	std::string line;
+ 
+-	if (opened)
+-	{
+-		std::istringstream filein(current);
+-		while (std::getline(filein, line))
+-			fileLines.push_back(line);
+-	}
++	std::istringstream filein(current);
++	while (std::getline(filein, line))
++		fileLines.push_back(line);
+ 
+ 	static std::string removeID = "$^�(p$^mpv$�rpver$^vper$vper$^vper$vper$vper$^vperv^pervncvizn";
+ 
+@@ -278,27 +355,7 @@ bool SystemConf::saveSystemConf()
+ 		if (fileLines[i] != removeID)
+ 			out += fileLines[i] + "\n";
+ 	}
+-
+-	// Written to system.cfg.tmp, synced, and renamed over the live file
+-	// (D-CLOUD-079). This used to write the temporary and then copy it into
+-	// the live file through a truncating stream, which bought nothing: a
+-	// process killed during the copy left an empty system.cfg beside a
+-	// complete .tmp that nothing read.
+-	if (!Utils::AtomicFile::writeText(mSystemConfFile, out))
+-	{
+-		LOG(LogError) << "Unable to write " << mSystemConfFile << " -- the changes are kept for the next save";
+-		return false;
+-	}
+-	lock.release();
+-
+-	changedConf.clear();
+-
+-	// What was just written is, by construction, the newest good state, so
+-	// it becomes the record (D-CLOUD-078: a success becomes the last known
+-	// good). Outside the lock: the shell never takes it for the record.
+-	recordLastGood(out);
+-
+-	return true;
++	return out;
+ }
+ 
+ std::string SystemConf::get(const std::string &name) 
+@@ -324,6 +381,13 @@ bool SystemConf::set(const std::string &name, const std::string &value)
+ 
+ 	if (confMap.count(name) == 0 || confMap[name] != value)
+ 	{
++		// What the key held before this run of changes, once: a reload
++		// compares it with the file (G-E1-03).
++		if (changedConf.find(name) == changedConf.cend())
++		{
++			const auto it = confMap.find(name);
++			mPendingBase[name] = it == confMap.cend() ? std::make_pair(false, std::string()) : std::make_pair(true, it->second);
++		}
+ 		confMap[name] = value;
+ 		changedConf.insert(name);
+ 		return true;
+diff --git a/es-core/src/SystemConf.h b/es-core/src/SystemConf.h
+index c3fd48b5f..b9088dbda 100644
+--- a/es-core/src/SystemConf.h
++++ b/es-core/src/SystemConf.h
+@@ -5,6 +5,7 @@
+ #include <string>
+ #include <map>
+ #include <set>
++#include <utility>
+ 
+ class SystemConf 
+ {
+@@ -14,7 +15,14 @@ public:
+ 	static bool getIncrementalSaveStates();
+ 	static bool getIncrementalSaveStatesUseCurrentSlot();
+ 
+-    bool loadSystemConf();
++	// Read system.cfg (again). keepPending keeps the changes a save has not
++	// made yet -- one the lock refused (PL-024) -- except where the file now
++	// holds a key differently than when it was changed (audit of the fixes
++	// G-E1-03, Utils::AtomicFile::pendingAfterReload): the Wi-Fi picker's
++	// reload after wifictl join wrote the network. Without it every change
++	// is dropped and the file's values stand, which is what a reload after
++	// a settings restore or a factory reset is for.
++    bool loadSystemConf(bool keepPending = false);
+     bool saveSystemConf();
+ 
+ 	// True when this start found system.cfg missing, empty or damaged and
+@@ -41,9 +49,21 @@ private:
+ 	// text that has just been read whole and found well-formed, or that this
+ 	// process has just written -- never from whatever happens to be on disk.
+ 	void recordLastGood(const std::string& text);
++	// changedConf's keys applied to the file's text as read under the lock.
++	std::string applyChanges(const std::string& current);
++
++	// The file as read, and the load itself (loadSystemConf wraps it).
++	bool loadFromDisk();
+ 
+ 	std::map<std::string, std::string> confMap;
+ 	std::set<std::string> changedConf;
++	// For each key in changedConf: what it held when it was first changed
++	// since the last save (false: nothing), for a reload to tell the player's
++	// change from somebody else's newer write (G-E1-03).
++	std::map<std::string, std::pair<bool, std::string>> mPendingBase;
++	// The values of the text the last load parsed, alone -- confMap also
++	// carries keys the file no longer has.
++	std::map<std::string, std::string> mOnDisk;
+ 
+ 
+ 	std::string mSystemConfFile;
+diff --git a/es-core/src/resources/Font.cpp b/es-core/src/resources/Font.cpp
+index 062de73ea..6d97fbf96 100644
+--- a/es-core/src/resources/Font.cpp
++++ b/es-core/src/resources/Font.cpp
+@@ -1,4 +1,5 @@
+ #include "resources/Font.h"
++#include "resources/TabStops.h"
+ 
+ #include "renderers/Renderer.h"
+ #include "utils/FileSystemUtil.h"
+@@ -831,24 +832,27 @@ Vector2f Font::sizeWrappedText(const std::string& text, float xLen, float lineSp
+ 
+ std::map<int, float> Font::getTabStops(const std::string& text, float lineSpacing)
+ {
+-	std::map<int, float> stops;
+ 	if (text.find('\t') == std::string::npos)
+-		return stops;
+-
+-	// Each line is scanned on its own, from its own start. The scan this
+-	// replaces walked the whole text once per line, so every column's stop
+-	// was the FIRST line's text before its tab: a longer label on a later
+-	// line ("Achievements (hardcore): ", "Succes (mode difficile): ") ran
+-	// into the value beside it.
++		return std::map<int, float>();
++
++	// Each line is measured on its own, piece by piece between its tabs:
++	// the widths of what sits in each column, from which TabStops works the
++	// stops out column by column (#308 F-ES-11). The scan before this
++	// measured the run of text before each tab from the line's own start --
++	// right for one tab, and for two a stop that fell inside another line's
++	// column. The one before that walked the whole text once per line, so
++	// every stop was the FIRST line's ("Achievements (hardcore): ", "Succes
++	// (mode difficile): " ran into the value beside it).
+ 	const float lineHeight = getHeight(lineSpacing);
+ 
++	std::vector<std::vector<float>> columns;
+ 	for (auto line : Utils::String::split(text, '\n', true))
+ 	{
+ 		if (line.find('\t') == std::string::npos)
+ 			continue;
+ 
+-		int tabIndex = 0;
+-		float xpos = 0.0f;
++		std::vector<float> pieces;
++		float width = 0.0f;
+ 
+ 		size_t pos = 0;
+ 		while (pos < line.length())
+@@ -857,30 +861,27 @@ std::map<int, float> Font::getTabStops(const std::string& text, float lineSpacin
+ 			if (character == 0 || character == '\r')
+ 				continue;
+ 
+-			if (substituableChars.find(character) != substituableChars.cend())
++			if (character == '\t')
+ 			{
+-				xpos += lineHeight;
++				pieces.push_back(width);   // the piece before this tab is a column
++				width = 0.0f;
+ 				continue;
+ 			}
+ 
+-			if (character == '\t')
++			if (substituableChars.find(character) != substituableChars.cend())
+ 			{
+-				auto it = stops.find(tabIndex);
+-				if (it != stops.cend())
+-					it->second = Math::max(it->second, xpos);
+-				else
+-					stops[tabIndex] = xpos;
+-
+-				tabIndex++;
++				width += lineHeight;
++				continue;
+ 			}
+ 
+ 			Glyph* glyph = getGlyph(character);
+ 			if (glyph != NULL)
+-				xpos += glyph->advance.x();
++				width += glyph->advance.x();
+ 		}
++		columns.push_back(pieces);   // what follows the last tab is no column's
+ 	}
+ 
+-	return stops;
++	return TabStops::fromColumns(columns, TAB_STOP_GAP);
+ }
+ 
+ Vector2f Font::sizeTabbedText(const std::string& text, float lineSpacing)
+diff --git a/es-core/src/resources/Font.h b/es-core/src/resources/Font.h
+index e09d48946..454c61fd8 100644
+--- a/es-core/src/resources/Font.h
++++ b/es-core/src/resources/Font.h
+@@ -157,7 +157,8 @@ private:
+ 
+ 	float getNewlineStartOffset(const std::string& text, const unsigned int& charStart, const float& xLen, const Alignment& alignment);
+ 	// One stop per tab column, in pixels from the start of a line: the widest
+-	// text before that tab on any line. Empty when the text has no tab.
++	// first column, then each stop the last plus the gap plus its own column's
++	// widest text (TabStops::fromColumns). Empty when the text has no tab.
+ 	std::map<int, float> getTabStops(const std::string& text, float lineSpacing);
+ 
+ 	friend TextCache;
+diff --git a/es-core/src/resources/TabStops.h b/es-core/src/resources/TabStops.h
+new file mode 100644
+index 000000000..f885bb42d
+--- /dev/null
++++ b/es-core/src/resources/TabStops.h
+@@ -0,0 +1,49 @@
++#pragma once
++#ifndef ES_CORE_RESOURCES_TAB_STOPS_H
++#define ES_CORE_RESOURCES_TAB_STOPS_H
++
++#include <map>
++#include <vector>
++
++// Where a tabbed text's columns start, from what is in them (Font's
++// getTabStops, sizeTabbedText and buildTextCache): pure, so es-unit-tests
++// reaches it without a font (es-app/tests/unit/TabStopsTests.cpp).
++namespace TabStops
++{
++	// `lines` holds, for each line, the width of each piece before a tab --
++	// the piece after a line's last tab is no column's and is not listed.
++	// The answer is one stop per tab index, in pixels from the line's start:
++	// text after tab k is drawn at stop k plus `gap`.
++	//
++	// Column by column (#308 F-ES-11): stop 0 is the widest first column,
++	// and each later stop is the one before it plus the gap plus the widest
++	// text in its own column -- because that is where the drawing puts the
++	// column, at the previous stop plus the gap. The stops used to be the
++	// widest run of text before each tab measured along each line from its
++	// own start, which is right for one tab and wrong for two: a short first
++	// column beside a long second one gave a second stop that fell inside
++	// another line's second column, and its third column was drawn over it.
++	inline std::map<int, float> fromColumns(const std::vector<std::vector<float>>& lines, float gap)
++	{
++		std::vector<float> widest;
++		for (auto& pieces : lines)
++		{
++			if (pieces.size() > widest.size())
++				widest.resize(pieces.size(), 0.0f);
++			for (size_t k = 0; k < pieces.size(); k++)
++				if (pieces[k] > widest[k])
++					widest[k] = pieces[k];
++		}
++
++		std::map<int, float> stops;
++		float x = 0.0f;
++		for (size_t k = 0; k < widest.size(); k++)
++		{
++			x += (k == 0 ? 0.0f : gap) + widest[k];
++			stops[(int) k] = x;
++		}
++		return stops;
++	}
++}
++
++#endif // ES_CORE_RESOURCES_TAB_STOPS_H
+diff --git a/es-core/src/utils/AtomicFileUtil.cpp b/es-core/src/utils/AtomicFileUtil.cpp
+index 5cac99221..aa0b74fae 100644
+--- a/es-core/src/utils/AtomicFileUtil.cpp
++++ b/es-core/src/utils/AtomicFileUtil.cpp
+@@ -1,5 +1,6 @@
+ #include "utils/AtomicFileUtil.h"
+ 
++#include <atomic>
+ #include <chrono>
+ #include <cstdio>
+ #include <cstdlib>
+@@ -10,6 +11,7 @@
+ #if !defined(_WIN32)
+ #include <fcntl.h>
+ #include <signal.h>
++#include <sys/file.h>
+ #include <sys/stat.h>
+ #include <sys/types.h>
+ #include <unistd.h>
+@@ -34,12 +36,51 @@ namespace Utils
+ 			::fsync(fd);
+ 			::close(fd);
+ 		}
++
++		// A name beside `path` that no other call -- in this process or any
++		// other -- is using: `path`.tmp.<pid>.<n>, created O_EXCL so a name
++		// left behind by a process that died and whose pid came round again
++		// is stepped over rather than truncated. Every writer used to share
++		// `path`.tmp under O_TRUNC (PL-063), and so did the shell: set_setting
++		// writes system.cfg.tmp with awk and renames it. Two saves at once
++		// truncated each other's temporary; the first renamed the shared file
++		// into place -- empty or half written -- and the second's rename found
++		// the name gone and reported a save that had not happened. The fd is
++		// returned open for writing, -1 on failure.
++		static int createTemporary(const std::string& path, std::string& tmp, int mode)
++		{
++			static std::atomic<unsigned long> counter(0);
++			const std::string stem = path + ".tmp." + std::to_string((long long) ::getpid()) + ".";
++			for (int attempt = 0; attempt < 100; attempt++)
++			{
++				tmp = stem + std::to_string(counter++);
++				int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, (mode_t) mode);
++				if (fd >= 0)
++					return fd;
++				if (errno != EEXIST)
++					return -1;
++			}
++			return -1;
++		}
+ #endif
+ 
+-		bool writeText(const std::string& path, const std::string& text)
++		int modeOf(const std::string& path, int fallback)
++		{
++#if defined(_WIN32)
++			(void) path;
++			return fallback;
++#else
++			struct stat st;
++			if (::stat(path.c_str(), &st) != 0 || !S_ISREG(st.st_mode))
++				return fallback;
++			return (int) (st.st_mode & 07777);
++#endif
++		}
++
++		bool writeText(const std::string& path, const std::string& text, int mode)
+ 		{
+-			const std::string tmp = path + ".tmp";
+ #if defined(_WIN32)
++			const std::string tmp = path + ".tmp";
+ 			{
+ 				std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+ 				if (!out)
+@@ -60,11 +101,50 @@ namespace Utils
+ 			}
+ 			return true;
+ #else
+-			// 0644 before umask, as the shell's redirections make it; the
+-			// rename then carries the mode over to the live name.
+-			int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
++			// The rename puts the temporary's mode and owner on the live name,
++			// so a file being replaced gives the temporary its own first
++			// (#308 F-ES-08): system.cfg and es_settings.cfg carry the Wi-Fi
++			// key and the account passwords, and a file somebody had made 0600
++			// came back 0644 from the next save. A new file is made 0644,
++			// before umask, as the shell's redirections make one -- unless the
++			// caller names the mode, which a record of a private file does.
++			struct stat existing;
++			const bool replacing = ::stat(path.c_str(), &existing) == 0 && S_ISREG(existing.st_mode);
++
++			std::string tmp;
++			int fd = createTemporary(path, tmp, mode >= 0 ? 0600 : replacing ? 0600 : 0644);
+ 			if (fd < 0)
+ 				return false;
++			if (mode >= 0)
++			{
++				if (::fchmod(fd, (mode_t) (mode & 07777)) != 0)
++				{
++					::close(fd);
++					::unlink(tmp.c_str());
++					return false;
++				}
++			}
++			else if (replacing)
++			{
++				// The owner only where it differs and only as root, which is
++				// how ROCKNIX runs the interface; best effort, since a caller
++				// that cannot give a file away still wrote what it meant to.
++				// The mode is not best effort: a file that would come out less
++				// private than it was is not written.
++				if ((existing.st_uid != ::geteuid() || existing.st_gid != ::getegid()) && ::geteuid() == 0)
++				{
++					if (::fchown(fd, existing.st_uid, existing.st_gid) != 0)
++					{
++						// kept as it is: root that cannot chown is a filesystem without owners
++					}
++				}
++				if (::fchmod(fd, existing.st_mode & 07777) != 0)
++				{
++					::close(fd);
++					::unlink(tmp.c_str());
++					return false;
++				}
++			}
+ 
+ 			const char* data = text.data();
+ 			size_t left = text.size();
+@@ -104,20 +184,75 @@ namespace Utils
+ #endif
+ 		}
+ 
++		// Read whole, or say it was not (PL-065). This used to say ok once the
++		// stream had opened, whatever the read then did: an I/O error part way
++		// through a failing card returned the prefix as the whole file, and
++		// SystemConf parsed it and recorded it as the last known good. Now ok
++		// means every read succeeded to the end, and for a regular file that
++		// the end was no shorter than the size it had when it was opened -- a
++		// file cut under the reader is not the file. On any failure the text
++		// is "", as for a file that would not open.
+ 		std::string readText(const std::string& path, bool* ok)
+ 		{
+-			std::ifstream in(path, std::ios::binary);
+-			if (!in)
++			if (ok != nullptr)
++				*ok = false;
++#if defined(_WIN32)
++			// C stdio, whose ferror says whether a read failed. The stream
++			// version read failbit on its ostringstream as a failure, and
++			// `ss << in.rdbuf()` sets it when nothing is inserted: an empty
++			// file came back not read (audit of the fixes G-E1-06, claude).
++			FILE* file = std::fopen(path.c_str(), "rb");
++			if (file == nullptr)
++				return "";
++			std::string text;
++			char buffer[65536];
++			size_t n;
++			while ((n = std::fread(buffer, 1, sizeof(buffer), file)) > 0)
++				text.append(buffer, n);
++			const bool failed = std::ferror(file) != 0;
++			std::fclose(file);
++			if (failed)
++				return "";
++			if (ok != nullptr)
++				*ok = true;
++			return text;
++#else
++			int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
++			if (fd < 0)
++				return "";
++			struct stat st;
++			if (::fstat(fd, &st) != 0)
+ 			{
+-				if (ok != nullptr)
+-					*ok = false;
++				::close(fd);
+ 				return "";
+ 			}
+-			std::ostringstream ss;
+-			ss << in.rdbuf();
++
++			std::string text;
++			if (S_ISREG(st.st_mode) && st.st_size > 0)
++				text.reserve((size_t) st.st_size);
++			char buffer[65536];
++			for (;;)
++			{
++				const ssize_t n = ::read(fd, buffer, sizeof(buffer));
++				if (n < 0)
++				{
++					if (errno == EINTR)
++						continue;
++					::close(fd);   // EIO part way, EISDIR on a directory: not a read
++					return "";
++				}
++				if (n == 0)
++					break;
++				text.append(buffer, (size_t) n);
++			}
++			::close(fd);
++
++			if (S_ISREG(st.st_mode) && (off_t) text.size() < st.st_size)
++				return "";
+ 			if (ok != nullptr)
+ 				*ok = true;
+-			return ss.str();
++			return text;
++#endif
+ 		}
+ 
+ 		bool copy(const std::string& src, const std::string& dst)
+@@ -126,7 +261,222 @@ namespace Utils
+ 			const std::string text = readText(src, &ok);
+ 			if (!ok)
+ 				return false;
+-			return writeText(dst, text);
++			return writeText(dst, text, modeOf(src, 0644));
++		}
++
++		bool isUsableKeyValues(const std::string& text)
++		{
++			if (text.empty() || text.find('\0') != std::string::npos)
++				return false;
++			std::istringstream in(text);
++			std::string line;
++			while (std::getline(in, line))
++			{
++				auto idx = line.find('=');
++				if (idx != std::string::npos && idx > 0 && line[0] != '#' && line[0] != ';')
++					return true;
++			}
++			return false;
++		}
++
++		// Whole, as every writer of these files leaves one: each line ends in
++		// a line end -- ours, the shell's awk and sed, echo >>. A text that
++		// stops part way through a line was cut. (A cut exactly at a line end
++		// cannot be told from a shorter file; nothing here pretends to.)
++		static bool isComplete(const std::string& text)
++		{
++			return !text.empty() && text.back() == '\n';
++		}
++
++		LoadedConfig chooseConfig(const std::string& path)
++		{
++			// PL-064. The start used to delete `path`.tmp unread and take the
++			// live file whenever one key=value line survived in it. The writer
++			// before #102 wrote the temporary whole, then truncated the live
++			// file and copied the temporary in: killed in the copy, it left the
++			// live file cut short beside a whole temporary, on a device that
++			// may never have run a build that keeps the record. So the
++			// temporary is read first, and wins when it is whole and the live
++			// file is gone, unusable, or a cut prefix of it; and "usable" for
++			// the record means complete as well.
++			LoadedConfig out;
++			bool liveOk = false, tmpOk = false, backupOk = false;
++			const std::string live = readText(path, &liveOk);
++			const std::string tmp = readText(path + ".tmp", &tmpOk);
++			const std::string backup = readText(path + ".backup", &backupOk);
++			const bool tmpWhole = tmpOk && isUsableKeyValues(tmp) && isComplete(tmp);
++			const bool backupWhole = backupOk && isUsableKeyValues(backup) && isComplete(backup);
++
++			// The mode the chosen text goes back with, and the record: the
++			// permission bits every copy on disk shares, so a recovery is never
++			// less private than a copy it came from (audit of the fixes
++			// G-E1-05: a 0600 temporary came back as a 0644 file and record).
++			int mode = 07777;
++			bool any = false;
++			for (const std::string& copy : { path, path + ".tmp", path + ".backup" })
++			{
++				const int m = modeOf(copy, -1);
++				if (m >= 0)
++				{
++					mode &= m;
++					any = true;
++				}
++			}
++			out.mode = any ? mode : 0644;
++
++			// The copy stopped part way: what is there is the start of the
++			// temporary, short of its end.
++			const bool liveCut = liveOk && tmpWhole && !isComplete(live)
++				&& live.size() < tmp.size() && tmp.compare(0, live.size(), live) == 0;
++
++			// Or the live file stops part way through a line and is the start
++			// of the whole record beside it, written no earlier than the live
++			// file was (G-E1-04): the file was cut after the record was made
++			// from it, and the record is the file. A live file changed after
++			// the record -- a hand edit that left off the last line end -- is
++			// the owner's, and is read as it is.
++			bool cutOfRecord = false;
++#if defined(_WIN32)
++			(void) backupWhole;   // the mtime test below is POSIX's
++#else
++			if (liveOk && backupWhole && !isComplete(live) && live.size() < backup.size()
++				&& backup.compare(0, live.size(), live) == 0)
++			{
++				struct stat ls, bs;
++				cutOfRecord = ::stat(path.c_str(), &ls) == 0 && ::stat((path + ".backup").c_str(), &bs) == 0
++					&& ls.st_mtime <= bs.st_mtime + 1;
++			}
++#endif
++
++			if (liveOk && isUsableKeyValues(live) && !liveCut && !cutOfRecord)
++			{
++				// A temporary beside a whole file is a save that never reached
++				// its rename, or the shell's own write in flight; neither is the
++				// file. A live file that is not whole is still read -- there is
++				// nothing better -- but it does not become the record.
++				out.source = LoadedConfig::Source::Live;
++				out.text = live;
++				out.record = isComplete(live);
++				return out;
++			}
++			if (liveCut)
++			{
++				out.source = LoadedConfig::Source::Temporary;
++				out.text = tmp;
++				out.record = true;
++				return out;
++			}
++
++			if (backupOk && isUsableKeyValues(backup))
++			{
++				out.source = LoadedConfig::Source::Backup;
++				out.text = backup;
++				return out;
++			}
++			if (tmpWhole)
++			{
++				out.source = LoadedConfig::Source::Temporary;
++				out.text = tmp;
++				out.record = true;
++				return out;
++			}
++			if (liveOk)
++			{
++				out.source = LoadedConfig::Source::Damaged;
++				out.text = live;
++			}
++			return out;
++		}
++
++		bool isFlockHeld(const std::string& path)
++		{
++#if defined(_WIN32)
++			(void) path;
++			return false;
++#else
++			int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
++			if (fd < 0)
++				return errno != ENOENT;
++			int r;
++			do
++				r = ::flock(fd, LOCK_EX | LOCK_NB);
++			while (r != 0 && errno == EINTR);
++			const bool held = r != 0;   // EWOULDBLOCK: somebody has it; anything else: cannot tell
++			::close(fd);                // and the lock, if this took it, with it
++			return held;
++#endif
++		}
++
++		std::map<std::string, std::string> parseKeyValues(const std::string& text)
++		{
++			std::map<std::string, std::string> values;
++			std::istringstream in(text);
++			std::string line;
++			while (std::getline(in, line))
++			{
++				const size_t idx = line.find('=');
++				if (idx == std::string::npos || line.find('#') == 0 || line.find(';') == 0)
++					continue;
++				const std::string key = line.substr(0, idx);
++				const std::string value = line.substr(idx + 1);
++				if (!key.empty() && !value.empty())
++					values[key] = value;
++			}
++			return values;
++		}
++
++		std::map<std::string, std::string> pendingAfterReload(const std::map<std::string, PendingChange>& pending,
++			const std::map<std::string, std::string>& reloaded)
++		{
++			std::map<std::string, std::string> kept;
++			for (const auto& change : pending)
++			{
++				const auto now = reloaded.find(change.first);
++				const bool hasNow = now != reloaded.cend();
++				if (hasNow != change.second.hadBase)
++					continue;   // added or removed by somebody since
++				if (hasNow && now->second != change.second.base)
++					continue;   // rewritten by somebody since
++				kept[change.first] = change.second.value;
++			}
++			return kept;
++		}
++
++		LockedSave saveUnderLock(const std::string& path, const std::string& lockPath, int timeoutMs,
++			const std::function<std::string(const std::string& current)>& merge, std::string* written,
++			bool* baseComplete)
++		{
++
++			// Not without the lock (PL-024). This used to log and go ahead once
++			// the budget ran out -- "the player's change dropped on the floor
++			// is the worse outcome" -- and the change was dropped anyway,
++			// under the other writer's rename, or it dropped theirs. Refused,
++			// the change is not lost: the caller keeps it and writes it at the
++			// next save, which reads the other writer's file first.
++			PidLock lock(lockPath);
++			if (!lock.acquire(timeoutMs))
++				return LockedSave::LockBusy;
++
++			bool opened = false;
++			const std::string current = readText(path, &opened);
++#if !defined(_WIN32)
++			if (!opened)
++				return LockedSave::Unreadable;
++#endif
++			// (On Windows a file not there yet is merged onto nothing and made,
++			// as SystemConf always did there.)
++
++			// A save merged onto a cut file lands (the change is the player's)
++			// but is not a record (G-E1-04).
++			if (baseComplete != nullptr)
++				*baseComplete = current.empty() || current.back() == '\n';
++
++			const std::string out = merge(current);
++			if (!writeText(path, out))
++				return LockedSave::WriteFailed;
++			if (written != nullptr)
++				*written = out;
++			return LockedSave::Written;
+ 		}
+ 
+ 		PidLock::PidLock(const std::string& path) : mPath(path), mHeld(false)
+@@ -138,6 +488,65 @@ namespace Utils
+ 			release();
+ 		}
+ 
++#if !defined(_WIN32)
++		// The first line of a lock file, without its line end: the holder's
++		// pid as both sides write it ("$$\n" from the shell).
++		static std::string lockHolder(const std::string& text)
++		{
++			std::string holder = text.substr(0, text.find('\n'));
++			while (!holder.empty() && (holder.back() == '\r' || holder.back() == ' '))
++				holder.pop_back();
++			return holder;
++		}
++
++		// Remove the lock at `path` only if it still names `holder`, with no
++		// other remover between that look and the unlink (PL-041). Every
++		// remover of a stale lock -- this process on any thread, and the
++		// shell's wait_lock, which takes the same guard -- takes an flock on
++		// `path`.reap for the few instructions this lasts. Under it nothing
++		// else can change what `path` names: a stale holder is gone and cannot
++		// release it, a live holder only ever releases a lock naming itself,
++		// and every other remover waits. So the re-read and the unlink are one
++		// step as far as the lock's users are concerned. The guard is an
++		// flock, so a remover that dies holding it frees it with its last
++		// descriptor -- there is no stale guard to clear.
++		//
++		// The guard is asked without waiting, until `deadline` (audit of the
++		// fixes G-E1-01: a blocking flock here held the interface thread past
++		// its budget for as long as another holder kept the guard). And a
++		// guard that cannot be had -- the file cannot be opened, the flock
++		// fails, the deadline comes -- removes nothing (G-E1-02): the re-read
++		// and unlink without it are the race the guard is for. False then;
++		// the caller waits on as for a live holder, and its budget ends it.
++		static bool removeIfStill(const std::string& path, const std::string& holder,
++			std::chrono::steady_clock::time_point deadline)
++		{
++			const std::string guard = path + ".reap";
++			int gfd = ::open(guard.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
++			if (gfd < 0)
++				return false;
++			for (;;)
++			{
++				if (::flock(gfd, LOCK_EX | LOCK_NB) == 0)
++					break;
++				if (errno == EINTR)
++					continue;
++				if (errno != EWOULDBLOCK || std::chrono::steady_clock::now() >= deadline)
++				{
++					::close(gfd);
++					return false;
++				}
++				std::this_thread::sleep_for(std::chrono::milliseconds(5));
++			}
++			bool again = false;
++			const std::string current = readText(path, &again);
++			if (again && lockHolder(current) == holder)
++				::unlink(path.c_str());
++			::close(gfd);   // and the flock with it
++			return true;
++		}
++#endif
++
+ 		bool PidLock::acquire(int timeoutMs)
+ 		{
+ #if defined(_WIN32)
+@@ -148,32 +557,123 @@ namespace Utils
+ 				return true;
+ 
+ 			const auto started = std::chrono::steady_clock::now();
+-			const std::string mine = std::to_string((long long) ::getpid()) + "\n";
++			const std::string mine = std::to_string((long long) ::getpid());
++
++			// The lock is made whole before anybody can see it (PL-041): the
++			// pid goes into a file of this call's own beside it, and that file
++			// is hard-linked to the lock's name, which fails with EEXIST exactly
++			// as the O_EXCL create did. The lock used to be created empty and
++			// the pid written after, with the write's result thrown away, so a
++			// waiter reading in between saw an empty lock -- which both sides
++			// take for nobody's -- and a failed write left one for good.
++			static std::atomic<unsigned long> counter(0);
++			const std::string staging = mPath + ".new." + mine + "." + std::to_string(counter++);
++			bool linkable = true;
++			{
++				int fd = ::open(staging.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
++				if (fd < 0)
++					return false;   // the directory is missing or not writable: nothing to hold
++				const std::string line = mine + "\n";
++				ssize_t n;
++				do
++					n = ::write(fd, line.data(), line.size());
++				while (n < 0 && errno == EINTR);
++				const bool written = n == (ssize_t) line.size();
++				if (::close(fd) != 0 || !written)
++				{
++					::unlink(staging.c_str());
++					return false;
++				}
++			}
++
++			// The clock is read on every pass, whichever way the pass went
++			// (#308 F-ES-07): the budget used to be checked only after a live
++			// holder was found, so a lock that could never be read or never
++			// be removed -- a directory where the lock goes -- kept the
++			// interface thread in this loop for good.
++			auto expired = [&]() {
++				const long elapsed = (long) std::chrono::duration_cast<std::chrono::milliseconds>(
++					std::chrono::steady_clock::now() - started).count();
++				if (elapsed < timeoutMs)
++					return false;
++				::unlink(staging.c_str());
++				return true;
++			};
++
+ 			for (;;)
+ 			{
+-				int fd = ::open(mPath.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0644);
+-				if (fd >= 0)
++				int made = -1;
++				if (linkable)
+ 				{
+-					// The pid is what tells the next waiter whether to wait
+-					// or to clear a lock its owner never released.
+-					ssize_t n = ::write(fd, mine.data(), mine.size());
+-					::close(fd);
+-					(void) n;
++					made = ::link(staging.c_str(), mPath.c_str());
++					if (made != 0 && errno != EEXIST)
++					{
++						// A filesystem with no hard links (EPERM, ENOTSUP): the
++						// create the shell makes, then the pid, and the write's
++						// result checked this time.
++						if (errno == EPERM || errno == ENOTSUP || errno == EOPNOTSUPP || errno == EXDEV || errno == EMLINK)
++							linkable = false;
++						else
++						{
++							::unlink(staging.c_str());
++							return false;
++						}
++					}
++				}
++				if (!linkable)
++				{
++					int fd = ::open(mPath.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
++					if (fd >= 0)
++					{
++						const std::string line = mine + "\n";
++						const bool written = ::write(fd, line.data(), line.size()) == (ssize_t) line.size();
++						if (::close(fd) != 0 || !written)
++						{
++							::unlink(mPath.c_str());
++							::unlink(staging.c_str());
++							return false;
++						}
++						made = 0;
++					}
++					else if (errno != EEXIST)
++					{
++						::unlink(staging.c_str());
++						return false;
++					}
++				}
++				if (made == 0)
++				{
++					::unlink(staging.c_str());
+ 					mHeld = true;
+ 					return true;
+ 				}
+-				// Not "already there": the directory is missing, or the path
+-				// is not writable. Nothing to wait for and nothing to hold.
+-				if (errno != EEXIST)
++
++				// Held -- or was. Something that is not a file where the lock
++				// goes is nobody's lock and never will be: nothing here or in
++				// the shell removes a directory, so there is nothing to wait
++				// for.
++				struct stat st;
++				if (::lstat(mPath.c_str(), &st) == 0 && !S_ISREG(st.st_mode))
++				{
++					::unlink(staging.c_str());
+ 					return false;
++				}
+ 
+-				// Held -- or was. Read who by, and ask the kernel.
++				// Read who by, and ask the kernel.
+ 				bool ok = false;
+-				std::string holder = readText(mPath, &ok);
++				const std::string holder = lockHolder(readText(mPath, &ok));
+ 				if (!ok)
+-					continue;   // released between the create and the read: try again at once
+-				while (!holder.empty() && (holder.back() == '\n' || holder.back() == '\r' || holder.back() == ' '))
+-					holder.pop_back();
++				{
++					if (expired())
++						return false;
++					// Released between the create and the read: try again at
++					// once. Anything else that stops the read -- a lock this
++					// process may not read -- is tried again after a pause,
++					// until the budget is spent.
++					if (::access(mPath.c_str(), F_OK) == 0)
++						std::this_thread::sleep_for(std::chrono::milliseconds(50));
++					continue;
++				}
+ 
+ 				bool numeric = !holder.empty();
+ 				for (char c : holder)
+@@ -184,10 +684,11 @@ namespace Utils
+ 				if (!numeric)
+ 				{
+ 					// Empty, or not a pid: nobody can be holding it. An
+-					// empty file is also what a holder's own create looks
++					// empty file is also what the shell's own create looks
+ 					// like between its open and its write, for a few
+ 					// microseconds -- so give it a moment before deciding,
+-					// and re-read before removing (below).
++					// and re-read before removing (below). This process's
++					// own locks are never empty (above).
+ 					std::this_thread::sleep_for(std::chrono::milliseconds(20));
+ 					stale = true;
+ 				}
+@@ -202,22 +703,27 @@ namespace Utils
+ 
+ 				if (stale)
+ 				{
+-					// Only if it still says what was read above: between
+-					// that read and this remove the holder may have released
+-					// it and another process taken it, and an unconditional
+-					// remove would steal the newcomer's lock.
+-					bool again = false;
+-					std::string current = readText(mPath, &again);
+-					while (!current.empty() && (current.back() == '\n' || current.back() == '\r' || current.back() == ' '))
+-						current.pop_back();
+-					if (again && current == holder)
+-						::unlink(mPath.c_str());
+-					continue;   // retry at once: there is nothing to wait for
++					// Only if it still says what was read above, and with no
++					// other waiter between that look and the remove: two
++					// waiters that both judged one dead holder's lock stale
++					// used to be able to remove each other's new one -- the
++					// first removed it and took it, and the second's remove,
++					// two steps after its re-read, took the first's new lock
++					// with it (PL-041).
++					const bool reaped = removeIfStill(mPath, holder, started + std::chrono::milliseconds(timeoutMs));
++					if (expired())
++						return false;
++					// Retry at once, there is nothing to wait for -- unless the
++					// guard could not be had (G-E1-02), or the remove did not
++					// take (a directory that will not let go of the name),
++					// which a pause keeps from spinning.
++					bool still = false;
++					if (!reaped || (lockHolder(readText(mPath, &still)) == holder && still))
++						std::this_thread::sleep_for(std::chrono::milliseconds(50));
++					continue;
+ 				}
+ 
+-				const long elapsed = (long) std::chrono::duration_cast<std::chrono::milliseconds>(
+-					std::chrono::steady_clock::now() - started).count();
+-				if (elapsed >= timeoutMs)
++				if (expired())
+ 					return false;
+ 				std::this_thread::sleep_for(std::chrono::milliseconds(50));
+ 			}
+@@ -231,13 +737,25 @@ namespace Utils
+ 			mHeld = false;
+ #if !defined(_WIN32)
+ 			// Only a lock this process still holds: another process may own
+-			// the file by now if this one's was removed as stale.
+-			bool ok = false;
+-			std::string holder = readText(mPath, &ok);
+-			while (!holder.empty() && (holder.back() == '\n' || holder.back() == '\r' || holder.back() == ' '))
+-				holder.pop_back();
+-			if (ok && holder == std::to_string((long long) ::getpid()))
+-				::unlink(mPath.c_str());
++			// the file by now if this one's was removed as stale. A lock that
++			// is not there at all is looked for again for a moment: a waiter
++			// that moves a lock aside to judge it (the shell's own reaper may)
++			// puts a live holder's back within microseconds, and a release
++			// that gave up in that instant would leave a lock naming this
++			// process -- alive, and never going to release it.
++			const std::string mine = std::to_string((long long) ::getpid());
++			for (int attempt = 0; attempt < 20; attempt++)
++			{
++				bool ok = false;
++				const std::string holder = lockHolder(readText(mPath, &ok));
++				if (ok)
++				{
++					if (holder == mine)
++						::unlink(mPath.c_str());
++					return;
++				}
++				std::this_thread::sleep_for(std::chrono::milliseconds(1));
++			}
+ #endif
+ 		}
+ 	}
+diff --git a/es-core/src/utils/AtomicFileUtil.h b/es-core/src/utils/AtomicFileUtil.h
+index 84545d658..add434d18 100644
+--- a/es-core/src/utils/AtomicFileUtil.h
++++ b/es-core/src/utils/AtomicFileUtil.h
+@@ -2,6 +2,8 @@
+ #ifndef ES_CORE_UTILS_ATOMIC_FILE_UTIL_H
+ #define ES_CORE_UTILS_ATOMIC_FILE_UTIL_H
+ 
++#include <functional>
++#include <map>
+ #include <string>
+ 
+ // Whole-file writes that leave either the old file or the new one on disk,
+@@ -14,33 +16,154 @@
+ // copy with it (fork #102, D-CLOUD-078). Written to a temporary name, synced,
+ // and renamed into place, the file on disk is always a complete one; the
+ // directory is synced afterwards so the rename itself survives a power cut.
++//
++// Every guarantee in this file is POSIX's, and holds on Linux, which is all
++// ROCKNIX builds (#307 PL-075). The _WIN32 branches keep upstream's Windows
++// build compiling and nothing more: writeText there removes `path` before it
++// renames the temporary into place, so a crash between the two leaves no file
++// at all; its temporary is the shared `path`.tmp; the lock is never taken
++// (acquire answers true); and the mode is not kept.
+ namespace Utils
+ {
+ 	namespace AtomicFile
+ 	{
+-		// Write `text` to `path` through `path`.tmp: write, fsync, rename over
+-		// `path`, fsync the directory. True only once the rename has landed;
+-		// on any failure the temporary is removed and `path` is untouched.
+-		bool writeText(const std::string& path, const std::string& text);
++		// Write `text` to `path` through a temporary of this call's own beside
++		// it (`path`.tmp.<pid>.<n>, never the shared `path`.tmp the shell's
++		// set_setting writes): write, fsync, rename over `path`, fsync the
++		// directory. True only once the rename has landed; on any failure the
++		// temporary is removed and `path` is untouched. Two calls at once, from
++		// two threads or two processes, each leave one whole file (PL-063).
++		// With mode -1, a file being replaced keeps its mode, and its owner
++		// where this process may set it (#308 F-ES-08), and a new one is made
++		// 0644 before umask, as the shell makes files. A mode given is the
++		// file's mode whether it is new or replaced: a record written beside
++		// a private file passes that file's (modeOf), so the copy is never
++		// less private than what it copies.
++		bool writeText(const std::string& path, const std::string& text, int mode = -1);
++
++		// The permission bits of the regular file at `path`, or `fallback`
++		// when there is none: what a record written beside a file should be
++		// made with, so the copy is no less private than the original.
++		int modeOf(const std::string& path, int fallback);
+ 
+-		// Read `path` whole. `ok` (when given) says whether it could be
+-		// opened at all, since an empty file and a missing one both read "".
++		// Read `path` whole. `ok` (when given) says whether it was: opened,
++		// read to the end without an error, and -- for a regular file -- no
++		// shorter than its size at the open (PL-065). An empty file and a
++		// missing one both read ""; only the first is ok. On failure "".
+ 		std::string readText(const std::string& path, bool* ok = nullptr);
+ 
+ 		// readText(src) then writeText(dst): dst is replaced whole or not at
+-		// all. False when src could not be read or dst could not be written.
++		// all, with src's mode. False when src could not be read or dst could
++		// not be written.
+ 		bool copy(const std::string& src, const std::string& dst);
+ 
++		// Whether a key=value configuration text is one worth reading and
++		// worth keeping as the last-known-good record: something in it, no
++		// NUL bytes (a file cut by a power failure reads as a run of them),
++		// and at least one key=value line that is not a comment.
++		bool isUsableKeyValues(const std::string& text);
++
++		// Where a configuration's text comes from at load (SystemConf's
++		// system.cfg), and whether it is whole enough to become the record.
++		struct LoadedConfig
++		{
++			enum class Source
++			{
++				Live,        // the file itself
++				Temporary,   // `path`.tmp: an unfinished save's whole text, the file cut or unusable
++				Backup,      // `path`.backup: the last-known-good record
++				Damaged,     // the file, unusable, with nothing better: read as it is, recorded nowhere
++				Missing      // nothing could be read at all
++			};
++			Source source = Source::Missing;
++			std::string text;
++			bool record = false;   // may replace the last-known-good record
++			// The mode to write the chosen text back with, and the record:
++			// never less private than any copy of it on disk (G-E1-05).
++			int mode = 0644;
++		};
++
++		// The choice, from what is on disk now. Reads; writes nothing.
++		LoadedConfig chooseConfig(const std::string& path);
++
++		// Whether another process holds an flock on `path` now: the cloud
++		// scripts' transfer lock, /var/run/cloud_sync.lock, which every
++		// cloud_backup, cloud_restore and content run takes for its whole
++		// length (PL-068). Asked the way `flock -n <path> true` asks: an
++		// exclusive lock tried without waiting and let go at once -- the
++		// scripts give a busy lock a second before they give up, so the
++		// instant this holds it costs them nothing. No file is nobody's lock;
++		// a file that cannot be opened or asked is taken as held, since the
++		// callers refuse on held.
++		bool isFlockHeld(const std::string& path);
++
++		// A key=value text as SystemConf reads it: comment lines (# or ;)
++		// and lines without a key or a value skipped, the last of a repeated
++		// key kept.
++		std::map<std::string, std::string> parseKeyValues(const std::string& text);
++
++		// A change the interface made and has not saved yet (a save refused
++		// for the lock keeps it, PL-024): its value, and what the key held
++		// when the change was made -- hadBase false when it held nothing.
++		struct PendingChange
++		{
++			std::string value;
++			bool hadBase = false;
++			std::string base;
++		};
++
++		// Which pending changes a reload of the file keeps (audit of the fixes
++		// G-E1-03): each whose key the file still holds as it was when the
++		// change was made, which is then made again at the next save. A key
++		// the file now holds differently was written by somebody else since --
++		// wifictl join's wifi.ssid, a script's set_setting -- and that newer
++		// write wins. The answer is the changes to keep, key to value.
++		std::map<std::string, std::string> pendingAfterReload(const std::map<std::string, PendingChange>& pending,
++			const std::map<std::string, std::string>& reloaded);
++
++		// What a read-modify-write under the settings lock came to.
++		enum class LockedSave
++		{
++			Written,       // read, merged, written whole, with the lock held throughout
++			LockBusy,      // the lock stayed with a live holder past the budget: nothing read, nothing written
++			Unreadable,    // the lock was held and the file could not be read whole: nothing written
++			WriteFailed    // read and merged, and the write did not land: the file is as it was
++		};
++
++		// system.cfg's save (SystemConf): take the lock at `lockPath` within
++		// `timeoutMs`, read `path`, hand its text to `merge`, write what comes
++		// back whole, release. `written`, when given, gets the text that went
++		// to disk on Written. Nothing is written without the lock (PL-024):
++		// the shell's set_setting reads, writes a temporary and renames it
++		// under that lock, and a save made beside it -- the interface's
++		// snapshot of the file renamed over the shell's new one, or the other
++		// way round -- lost one of the two writers' keys. The caller keeps its
++		// changes on any answer but Written and makes them at its next save.
++		// `baseComplete`, when given, says whether the text read under the lock
++		// was whole (empty, or ending in a line end): a save merged onto a cut
++		// file is written, and must not become the last-known-good record
++		// (audit of the fixes G-E1-04).
++		LockedSave saveUnderLock(const std::string& path, const std::string& lockPath, int timeoutMs,
++			const std::function<std::string(const std::string& current)>& merge, std::string* written = nullptr,
++			bool* baseComplete = nullptr);
++
+ 		// The settings lock the shell takes around every get_setting and
+-		// set_setting (wait_lock in profile.d/001-functions): a file created
+-		// with O_EXCL holding the owner's pid. Same rules, so both sides can
+-		// wait on each other: a lock whose pid is alive is waited for; one
+-		// whose pid is gone, or that names no pid, is stale and removed --
+-		// after a re-read, so a lock released and retaken by another process
+-		// between the read and the remove is not stolen from it. Released
+-		// only while it still carries this process's pid, for the same
+-		// reason. The shell waits forever; acquire() takes a budget, because
+-		// it runs on the interface thread.
++		// set_setting (wait_lock in profile.d/001-functions): a file holding
++		// the owner's pid, whose creation fails when it is already there.
++		// Same rules, so both sides can wait on each other: a lock whose pid
++		// is alive is waited for; one whose pid is gone, or that names no pid,
++		// is stale and removed. Released only while it still carries this
++		// process's pid.
++		//
++		// This side's lock is linked into place already holding the pid, so
++		// no waiter ever sees it empty (PL-041); and a stale lock is removed
++		// under an flock on `path`.reap, re-read first, so two waiters that
++		// both judged one dead holder's lock stale cannot remove each other's
++		// new one; the shell's wait_lock takes the same flock. The guard is
++		// asked without waiting past the budget, and a guard that cannot be
++		// had removes nothing (audit of the fixes G-E1-01/02). The shell
++		// waits forever; acquire() takes a budget, because it runs on the
++		// interface thread.
+ 		class PidLock
+ 		{
+ 		public:
+diff --git a/es-core/src/utils/CommandLineUtil.h b/es-core/src/utils/CommandLineUtil.h
+new file mode 100644
+index 000000000..a53b2b1ff
+--- /dev/null
++++ b/es-core/src/utils/CommandLineUtil.h
+@@ -0,0 +1,104 @@
++#pragma once
++#ifndef ES_CORE_UTILS_COMMAND_LINE_UTIL_H
++#define ES_CORE_UTILS_COMMAND_LINE_UTIL_H
++
++#include <string>
++
++// A launch command's option, replaced in place (the save state manager's
++// "this state was made with another core": SaveState::setupSaveState).
++// Header-only and pure, so es-unit-tests reaches it without SaveState's
++// FileData and SystemConf (es-app/tests/unit/CommandLineTests.cpp).
++namespace Utils
++{
++	namespace CommandLine
++	{
++		// Where each shell word of `line` starts and ends, outside quotes:
++		// single quotes take everything to the next one, double quotes and a
++		// bare word honour a backslash, and unquoted whitespace ends a word.
++		// An unterminated quote runs to the end of the line.
++		inline size_t wordEnd(const std::string& line, size_t pos)
++		{
++			char quote = 0;
++			for (size_t i = pos; i < line.size(); i++)
++			{
++				const char c = line[i];
++				if (quote == '\'')
++				{
++					if (c == '\'')
++						quote = 0;
++					continue;
++				}
++				if (c == '\\')
++				{
++					i++;   // the next character, whatever it is
++					continue;
++				}
++				if (quote == '"')
++				{
++					if (c == '"')
++						quote = 0;
++					continue;
++				}
++				if (c == '\'' || c == '"')
++					quote = c;
++				else if (c == ' ' || c == '\t')
++					return i;
++			}
++			return line.size();
++		}
++
++		// `line` with the value of the option `parameter` ("-core",
++		// "-emulator") replaced by `value`. ROCKNIX passes it joined --
++		// --core=<v> -- and the legacy launchers separate, -core <v>; either
++		// is found only as a whole word of the command, never inside a quoted
++		// argument such as the ROM's path (#308 F-CS-33: the joined form was
++		// the last "--core=" anywhere in the line, its value ending at the
++		// next literal space, so a ROM name spelling the same letters after
++		// the real option was rewritten and could lose its closing quote).
++		// The joined form's last word wins, as before; the separate form's
++		// first. A line with neither comes back as it was.
++		inline std::string replaceOptionValue(const std::string& line, const std::string& parameter, const std::string& value)
++		{
++			const std::string joined = "-" + parameter + "=";   // "-core" -> "--core="
++
++			size_t joinedAt = std::string::npos;
++			size_t separateAt = std::string::npos, separateValue = std::string::npos, separateEnd = std::string::npos;
++			size_t i = 0;
++			while (i < line.size())
++			{
++				if (line[i] == ' ' || line[i] == '\t')
++				{
++					i++;
++					continue;
++				}
++				const size_t end = wordEnd(line, i);
++				if (line.compare(i, joined.size(), joined) == 0)
++					joinedAt = i;
++				else if (separateAt == std::string::npos && end - i == parameter.size() && line.compare(i, parameter.size(), parameter) == 0)
++				{
++					size_t v = end;
++					while (v < line.size() && (line[v] == ' ' || line[v] == '\t'))
++						v++;
++					if (v < line.size())
++					{
++						separateAt = i;
++						separateValue = v;
++						separateEnd = wordEnd(line, v);
++					}
++				}
++				i = end;
++			}
++
++			if (joinedAt != std::string::npos)
++			{
++				const size_t from = joinedAt + joined.size();
++				return line.substr(0, from) + value + line.substr(wordEnd(line, joinedAt));
++			}
++			if (separateAt != std::string::npos)
++				return line.substr(0, separateValue) + value + line.substr(separateEnd);
++			return line;
++		}
++	}
++}
++
++#endif // ES_CORE_UTILS_COMMAND_LINE_UTIL_H
+diff --git a/es-core/src/utils/StringUtil.cpp b/es-core/src/utils/StringUtil.cpp
+index be74cffca..dcc3fdf45 100644
+--- a/es-core/src/utils/StringUtil.cpp
++++ b/es-core/src/utils/StringUtil.cpp
+@@ -473,10 +473,12 @@ namespace Utils
+ 		//                                      keys: the web API key, the token,
+ 		//                                      the login password
+ 		//
+-		// A value is one shell word: a single-quoted run as shellQuote writes it
+-		// (with the '\'' escape), a double-quoted run with backslash escapes, or
+-		// an unquoted run to the next space, &, ;, | or quote. The quotes go with
+-		// the value, so a passphrase with spaces is masked whole. An unterminated
++		// A value is one shell word: every single-quoted, double-quoted and bare
++		// piece of it and every backslash-escaped character, to the next
++		// unquoted space, &, ; or | (#308 F-ES-09) -- shellQuote's '\'' escape
++		// is three such pieces. The quotes go with the value, so a passphrase
++		// with spaces is masked whole. Inside a quoted string (a URL in double
++		// quotes) the value ends at that string's closing quote. An unterminated
+ 		// quote takes the rest of the line: where the shape is unclear, more is
+ 		// masked rather than less.
+ 
+@@ -518,38 +520,124 @@ namespace Utils
+ 			return false;
+ 		}
+ 
+-		// The end of the one shell word starting at pos.
++		// What quote `pos` sits inside, reading the line from its start as the
++		// shell would: 0 at the top level, else the quote character.
++		static char maskQuoteAt(const std::string& s, size_t pos)
++		{
++			char quote = 0;
++			for (size_t i = 0; i < pos && i < s.size(); ++i)
++			{
++				const char c = s[i];
++				if (quote == '\'')
++				{
++					if (c == '\'')
++						quote = 0;
++					continue;
++				}
++				if (c == '\\')
++				{
++					++i;
++					continue;
++				}
++				if (quote == '"')
++				{
++					if (c == '"')
++						quote = 0;
++					continue;
++				}
++				if (c == '\'' || c == '"')
++					quote = c;
++			}
++			return quote;
++		}
++
++		// The end of the one shell word starting at pos (#308 F-ES-09). At the
++		// top level a word runs across every quoted and bare piece of it, and
++		// every backslash-escaped character, until unquoted whitespace or &, ;
++		// or |: `--password 'front'back` passes the shell frontback, and the
++		// mask used to stop at the first closing quote and log "back". Inside
++		// a quoted string -- a URL in double quotes, a command in single ones
++		// -- the value ends where it always did: at the string's own closing
++		// quote, or at whitespace, &, ; or |.
+ 		static size_t maskValueEnd(const std::string& s, size_t pos)
+ 		{
+ 			if (pos >= s.size())
+ 				return pos;
+ 
+-			const char quote = s[pos];
+-			if (quote == '\'' || quote == '"')
++			// Inside a quoted string -- the command of an sh -c, a URL -- the
++			// value is a word of the command the string holds: the string's
++			// own closing quote ends it, and so does the inner command's
++			// unquoted whitespace, &, ; or |, but the inner command's own quotes
++			// keep a word whole. They used to end it before it began, and
++			// `sh -c 'tool --password "front back"'` logged the password
++			// (audit of the fixes of #307, gpt's coverage note on F-ES-09).
++			// In a double-quoted string the inner double quote is written \".
++			const char enclosing = maskQuoteAt(s, pos);
++			if (enclosing != 0)
+ 			{
+-				for (size_t i = pos + 1; i < s.size(); ++i)
++				char inner = 0;
++				size_t i = pos;
++				while (i < s.size())
+ 				{
+-					if (quote == '"' && s[i] == '\\')
++					const char c = s[i];
++					if (enclosing == '"' && c == '\\' && i + 1 < s.size())
+ 					{
+-						++i; // an escaped character, whatever it is
++						if (s[i + 1] == '"' && inner != '\'')
++							inner = inner == '"' ? 0 : '"';
++						i += 2;
+ 						continue;
+ 					}
+-					if (s[i] != quote)
++					if (c == enclosing)
++						return i; // the string itself ends
++					if (inner != 0)
++					{
++						if (c == inner)
++							inner = 0;
++						++i;
+ 						continue;
+-					if (quote == '\'' && s.compare(i, 4, "'\\''") == 0)
++					}
++					if (enclosing == '\'' && c == '\\')
+ 					{
+-						i += 3; // shellQuote's embedded quote: close, \', reopen
++						i += 2; // the inner command's escaped character
+ 						continue;
+ 					}
+-					return i + 1;
++					if (c == '\'' || c == '"')
++						inner = c;
++					else if (maskIsSpace(c) || c == '&' || c == ';' || c == '|')
++						return i;
++					++i;
+ 				}
+-				return s.size(); // unterminated: the value is the rest of the line
++				return s.size();
+ 			}
+ 
++			char quote = 0;
+ 			size_t i = pos;
+-			while (i < s.size() && !maskEndsValue(s[i]))
+-				++i;
+-			return i;
++			for (; i < s.size(); ++i)
++			{
++				const char c = s[i];
++				if (quote == '\'')
++				{
++					if (c == '\'')
++						quote = 0;
++					continue;
++				}
++				if (c == '\\')
++				{
++					++i; // an escaped character, whatever it is
++					continue;
++				}
++				if (quote == '"')
++				{
++					if (c == '"')
++						quote = 0;
++					continue;
++				}
++				if (c == '\'' || c == '"')
++					quote = c;
++				else if (maskIsSpace(c) || c == '&' || c == ';' || c == '|')
++					return i;
++			}
++			return s.size(); // the end of the line, or an unterminated quote: the value is the rest
+ 		}
+ 
+ 		static bool maskIsPlaceholder(const std::string& s, size_t pos, size_t end)
+diff --git a/locale/lang/fr/LC_MESSAGES/emulationstation2.po b/locale/lang/fr/LC_MESSAGES/emulationstation2.po
+index dfc8ade6d..b54d9cd27 100644
+--- a/locale/lang/fr/LC_MESSAGES/emulationstation2.po
++++ b/locale/lang/fr/LC_MESSAGES/emulationstation2.po
+@@ -6286,3 +6286,174 @@ msgstr "ENVOI DE %s SUR %s"
+ 
+ msgid "RECEIVING %s OF %s"
+ msgstr "RÉCEPTION DE %s SUR %s"
++
++msgid "YOUR CLOUD STORAGE ISN'T SET UP YET"
++msgstr "VOTRE STOCKAGE CLOUD N’EST PAS ENCORE CONFIGURÉ"
++
++msgid "COULDN'T REACH YOUR CLOUD - CHECK YOUR SIGN-IN"
++msgstr "IMPOSSIBLE DE JOINDRE VOTRE CLOUD - VÉRIFIEZ VOTRE CONNEXION"
++
++msgid "YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"
++msgstr "IMPOSSIBLE DE LIRE VOS PARAMÈTRES DE SYNCHRONISATION CLOUD"
++
++msgid "YOUR CLOUD SYNC SETTINGS COULDN'T BE SAVED"
++msgstr "IMPOSSIBLE D’ENREGISTRER VOS PARAMÈTRES DE SYNCHRONISATION CLOUD"
++
++msgid "CHECK WHAT WOULD CHANGE FIRST"
++msgstr "VÉRIFIEZ D’ABORD CE QUI CHANGERAIT"
++
++msgid "AN OLD FOLDER SETTING IS IN THE WAY"
++msgstr "UN ANCIEN RÉGLAGE DE DOSSIER GÊNE"
++
++msgid "YOUR SAVES FOLDER ISN'T ON THIS DEVICE"
++msgstr "VOTRE DOSSIER DE SAUVEGARDES N’EST PAS SUR CET APPAREIL"
++
++msgid "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED"
++msgstr "LA SAUVEGARDE DES PARAMÈTRES DE CET APPAREIL EST ENDOMMAGÉE"
++
++msgid "THE COPY IN YOUR CLOUD ISN'T COMPLETE"
++msgstr "LA COPIE DANS VOTRE CLOUD EST INCOMPLÈTE"
++
++msgid "SOME FILES DIDN'T FINISH"
++msgstr "CERTAINS FICHIERS N’ONT PAS ABOUTI"
++
++msgid "THE CLOUD TOOK TOO LONG - IT'LL TRY AGAIN NEXT TIME"
++msgstr "LE CLOUD A MIS TROP DE TEMPS - NOUVEL ESSAI LA PROCHAINE FOIS"
++
++msgid "COULDN'T TELL WHICH CARD YOUR SAVES ARE ON"
++msgstr "IMPOSSIBLE DE SAVOIR SUR QUELLE CARTE SONT VOS SAUVEGARDES"
++
++msgid "YOUR SAVES ARE ON A DIFFERENT CARD"
++msgstr "VOS SAUVEGARDES SONT SUR UNE AUTRE CARTE"
++
++msgid "YOUR SAVES CHANGED CARDS PART-WAY THROUGH"
++msgstr "VOS SAUVEGARDES ONT CHANGÉ DE CARTE EN COURS DE ROUTE"
++
++msgid "THERE'S NO SETTINGS BACKUP ON THIS DEVICE YET"
++msgstr "IL N’Y A PAS ENCORE DE SAUVEGARDE DES PARAMÈTRES SUR CET APPAREIL"
++
++msgid "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS"
++msgstr "IMPOSSIBLE DE GARDER UNE COPIE DE VOS PARAMÈTRES ACTUELS"
++
++msgid "THE RESTORE COULDN'T FINISH"
++msgstr "LA RESTAURATION N’A PAS PU SE TERMINER"
++
++msgid "THIS DEVICE CAN'T MAKE A SETTINGS BACKUP"
++msgstr "CET APPAREIL NE PEUT PAS SAUVEGARDER SES PARAMÈTRES"
++
++msgid "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS"
++msgstr "LA SAUVEGARDE N’A PAS PU SE TERMINER PENDANT LA COLLECTE DE VOS PARAMÈTRES"
++
++msgid "THE BACKUP COULDN'T FINISH"
++msgstr "LA SAUVEGARDE N’A PAS PU SE TERMINER"
++
++msgid "COULDN'T CHECK WHICH NETWORKS ARE SAVED."
++msgstr "IMPOSSIBLE DE VÉRIFIER QUELS RÉSEAUX SONT ENREGISTRÉS."
++
++msgid "CHECK AGAIN NOW?"
++msgstr "VÉRIFIER DE NOUVEAU MAINTENANT ?"
++msgid "SOME GAMES COULDN'T BE SAVED"
++msgstr "CERTAINS JEUX N’ONT PAS PU ÊTRE ENREGISTRÉS"
++
++msgid "RESTORE SETTINGS, THEN RESTART?\n\nYOUR EXISTING CONFIGURATION IS REPLACED. WI-FI AND ACCOUNT PASSWORDS MUST BE RE-ENTERED."
++msgstr "RESTAURER LES PARAMÈTRES, PUIS REDÉMARRER ?\n\nVOTRE CONFIGURATION ACTUELLE EST REMPLACÉE. LES MOTS DE PASSE WI-FI ET DES COMPTES DEVRONT ÊTRE RESSAISIS."
++
++msgid "YOUR SETTINGS WERE RESTORED.\n\nRESTORE YOUR SAVES, ROMS, BIOS, AND GAME CONTENT FROM THE CLOUD NOW?"
++msgstr "VOS PARAMÈTRES ONT ÉTÉ RESTAURÉS.\n\nRESTAURER VOS SAUVEGARDES, VOS ROMS, VOS BIOS ET LE CONTENU DE VOS JEUX DEPUIS LE CLOUD MAINTENANT ?"
++
++msgid "YOUR SETTINGS WERE RESTORED.\n\nRESTORE YOUR SAVES, ROMS, AND BIOS FROM THE CLOUD NOW?"
++msgstr "VOS PARAMÈTRES ONT ÉTÉ RESTAURÉS.\n\nRESTAURER VOS SAUVEGARDES, VOS ROMS ET VOS BIOS DEPUIS LE CLOUD MAINTENANT ?"
++
++msgid "YOUR SETTINGS WERE RESTORED.\n\nRESTORE YOUR SAVES AND GAME CONTENT FROM THE CLOUD NOW?"
++msgstr "VOS PARAMÈTRES ONT ÉTÉ RESTAURÉS.\n\nRESTAURER VOS SAUVEGARDES ET LE CONTENU DE VOS JEUX DEPUIS LE CLOUD MAINTENANT ?"
++
++msgid "YOUR SETTINGS WERE RESTORED.\n\nRESTORE YOUR ROMS, BIOS, AND GAME CONTENT FROM THE CLOUD NOW?"
++msgstr "VOS PARAMÈTRES ONT ÉTÉ RESTAURÉS.\n\nRESTAURER VOS ROMS, VOS BIOS ET LE CONTENU DE VOS JEUX DEPUIS LE CLOUD MAINTENANT ?"
++
++msgid "YOUR SETTINGS WERE RESTORED.\n\nRESTORE YOUR SAVES FROM THE CLOUD NOW?"
++msgstr "VOS PARAMÈTRES ONT ÉTÉ RESTAURÉS.\n\nRESTAURER VOS SAUVEGARDES DEPUIS LE CLOUD MAINTENANT ?"
++
++msgid "YOUR SETTINGS WERE RESTORED.\n\nRESTORE YOUR ROMS AND BIOS FROM THE CLOUD NOW?"
++msgstr "VOS PARAMÈTRES ONT ÉTÉ RESTAURÉS.\n\nRESTAURER VOS ROMS ET VOS BIOS DEPUIS LE CLOUD MAINTENANT ?"
++
++msgid "YOUR SETTINGS WERE RESTORED.\n\nRESTORE YOUR GAME CONTENT FROM THE CLOUD NOW?"
++msgstr "VOS PARAMÈTRES ONT ÉTÉ RESTAURÉS.\n\nRESTAURER LE CONTENU DE VOS JEUX DEPUIS LE CLOUD MAINTENANT ?"
++
++msgid "RECORDING YOUR LAST GAME'S SAVES..."
++msgstr "ENREGISTREMENT DES SAUVEGARDES DE VOTRE DERNIÈRE PARTIE…"
++
++msgid "YOUR SAVES ARE IN:"
++msgstr "VOS SAUVEGARDES SONT DANS :"
++
++msgid "YOUR PHONE BECOMES THE KEYBOARD. SCAN THE CODE, THEN CONTINUE."
++msgstr "VOTRE TÉLÉPHONE DEVIENT LE CLAVIER. SCANNEZ LE CODE, PUIS CONTINUEZ."
++
++msgid "YOUR SAVES ALREADY SYNC"
++msgstr "VOS SAUVEGARDES SE SYNCHRONISENT DÉJÀ"
++
++msgid "THIS DEVICE WAS SET TO SYNC THEM, SO FROM NOW ON THEY GO TO THIS CLOUD."
++msgstr "CET APPAREIL ÉTAIT RÉGLÉ POUR LES SYNCHRONISER : DÉSORMAIS, ELLES VONT DANS CE CLOUD."
++
++msgid "CONNECTING ONLY GIVES THIS DEVICE SOMEWHERE TO PUT THINGS. TO SYNC SAVES ON THEIR OWN, TURN IT ON UNDER MANAGE CLOUD STORAGE."
++msgstr "SE CONNECTER NE FAIT QUE DONNER À CET APPAREIL UN ENDROIT OÙ RANGER LES CHOSES. POUR SYNCHRONISER LES SAUVEGARDES D’ELLES-MÊMES, ACTIVEZ-LE DANS GÉRER LE STOCKAGE CLOUD."
++
++msgid "THE WI-FI SERVICE DIDN'T ANSWER. TRY AGAIN IN A MOMENT."
++msgstr "LE SERVICE WI-FI N’A PAS RÉPONDU. RÉESSAYEZ DANS UN INSTANT."
++
++msgid "SOME ACHIEVEMENT IMAGES COULDN'T BE SAVED. TRY THE SCAN AGAIN."
++msgstr "CERTAINES IMAGES DE SUCCÈS N’ONT PAS PU ÊTRE ENREGISTRÉES. RELANCEZ L’ANALYSE."
++
++msgid "SOME ACHIEVEMENT IMAGES COULDN'T BE SAVED"
++msgstr "CERTAINES IMAGES DE SUCCÈS N’ONT PAS PU ÊTRE ENREGISTRÉES"
++
++msgid "YOUR PROGRESS COULDN'T BE READ"
++msgstr "VOTRE PROGRESSION N’A PAS PU ÊTRE LUE"
++
++msgid "SOMETHING CHANGED SINCE YOU CHECKED"
++msgstr "QUELQUE CHOSE A CHANGÉ DEPUIS VOTRE VÉRIFICATION"
++
++msgid "COULDN'T RECORD WHICH CARD YOUR SAVES ARE ON"
++msgstr "IMPOSSIBLE D’ENREGISTRER SUR QUELLE CARTE SONT VOS SAUVEGARDES"
++
++msgid "THE NEW FOLDER ALREADY HAS FILES IN IT"
++msgstr "LE NOUVEAU DOSSIER CONTIENT DÉJÀ DES FICHIERS"
++
++msgid "YOU WENT OFFLINE PART-WAY THROUGH"
++msgstr "VOUS AVEZ ÉTÉ DÉCONNECTÉ EN COURS DE ROUTE"
++
++msgid "THIS DEVICE CAN'T RESTORE SETTINGS"
++msgstr "CET APPAREIL NE PEUT PAS RESTAURER SES PARAMÈTRES"
++
++msgid "A SETTINGS BACKUP OR RESTORE IS ALREADY RUNNING"
++msgstr "UNE SAUVEGARDE OU UNE RESTAURATION DES PARAMÈTRES EST DÉJÀ EN COURS"
++
++msgid "THERE'S NOTHING TO BACK UP YET"
++msgstr "IL N’Y A ENCORE RIEN À SAUVEGARDER"
++
++msgid "A SIGN-IN WAS FOUND IN THE BACKUP"
++msgstr "UNE CONNEXION A ÉTÉ TROUVÉE DANS LA SAUVEGARDE"
++
++msgid "YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP CAN'T CARRY"
++msgstr "VOTRE LISTE DE SAUVEGARDE NOMME UN DOSSIER QU’UNE SAUVEGARDE NE PEUT PAS CONTENIR"
++
++msgid "1 FILE WAS REMOVED FROM THIS DEVICE."
++msgstr "1 FICHIER A ÉTÉ SUPPRIMÉ DE CET APPAREIL."
++
++#, c-format
++msgid "%d FILES WERE REMOVED FROM THIS DEVICE."
++msgstr "%d FICHIERS ONT ÉTÉ SUPPRIMÉS DE CET APPAREIL."
++
++msgid "TRY AGAIN: MATCH THIS DEVICE TO THE CLOUD"
++msgstr "RÉESSAYEZ : ALIGNER CET APPAREIL SUR LE CLOUD"
++
++msgid "COULDN'T SAVE WHAT YOU TICKED, SO NOTHING WAS RESTORED."
++msgstr "IMPOSSIBLE D’ENREGISTRER CE QUE VOUS AVEZ COCHÉ, DONC RIEN N’A ÉTÉ RESTAURÉ."
++
++msgid "YOUR LAST GAME'S SAVES ARE STILL BEING RECORDED. TRY AGAIN IN A MOMENT."
++msgstr "LES SAUVEGARDES DE VOTRE DERNIÈRE PARTIE SONT ENCORE EN COURS D’ENREGISTREMENT. RÉESSAYEZ DANS UN INSTANT."
++
++msgid "ROMS, BIOS, AND GAME CONTENT"
++msgstr "ROMS, BIOS ET CONTENU DES JEUX"
++
++msgid "RESTORING ROMS AND BIOS"
++msgstr "RESTAURATION DES ROMS ET BIOS"

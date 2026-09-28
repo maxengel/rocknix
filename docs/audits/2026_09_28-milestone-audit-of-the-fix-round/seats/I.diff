@@ -1,0 +1,555 @@
+
+#### commit cdd8f1e63c -- docs: the drift the fix streams found -- CONNECTED on the map, buttons by position, the sign-in window is the one browser; D-RA-039/040, D-UI-112, D-NET-012 open
+diff --git a/.claude/rules/es-player-text.md b/.claude/rules/es-player-text.md
+index 92cf6c24e0..800c396b6b 100644
+--- a/.claude/rules/es-player-text.md
++++ b/.claude/rules/es-player-text.md
+@@ -291,7 +291,7 @@ THAT MOVED ARE ON BOTH SIDES. THE REST ARE AS THEY WERE.` / `YOUR SAVES ARE AS
+ THEY WERE.`; match `N FILES WERE REMOVED FROM THIS DEVICE. YOUR CLOUD STILL HAS
+ THEM.` / `NOTHING WAS REMOVED.`
+ 
+-**Recover**: the page offers `TRY AGAIN` (A) beside `CLOSE` (B) on line 7 when
++**Recover**: the page offers `TRY AGAIN` (the confirm button, south) beside `CLOSE` (the back button, east; buttons by position, never by letter -- `es-ui-style-guide.md` § Interaction rules) on line 7 when
+ the run did not complete, re-running the same command; the card's action line
+ names the row (`TRY AGAIN: GAME SETTINGS > BACK UP SAVES TO THE CLOUD`), or for
+ an automatic sync when it runs again (`IT RUNS AGAIN WHEN YOU EXIT A GAME`);
+@@ -303,6 +303,6 @@ drop the in-place clause first.
+ ## Anti-patterns (observed, avoid)
+ 
+ - Developer/QA concepts in product text: no QEMU/VM/port-forward mentions, no
+-  "open this link on the device" (there is no browser). Console-first: player +
++  "open this link on the device" (the sign-in window is the only browser, and it opens only a provider's sign-in page). Console-first: player +
+   handheld + phone companion is the only assumed environment.
+ - Dialog text promising behavior the backend doesn't do (pre-P1 backup dialogs).
+diff --git a/.claude/rules/rclone-cloud-sync.md b/.claude/rules/rclone-cloud-sync.md
+index cca545fe43..eecf8e2dac 100644
+--- a/.claude/rules/rclone-cloud-sync.md
++++ b/.claude/rules/rclone-cloud-sync.md
+@@ -48,8 +48,10 @@ gamesave sync flows; if it ever belongs anywhere, it's the settings backup/resto
+ 
+ **Console-first (hard rule, 2026-07-25):** ROCKNIX is a handheld gaming OS. Product
+ surfaces — UI labels, dialogs, script output, on-device help, public docs — must assume a
+-player holding the handheld with, at most, a phone as the companion device. There is no
+-browser on the device; never instruct users to "open a link" on it. QEMU/VMs are a QA
++player holding the handheld with, at most, a phone as the companion device. The only
++browser on the device is the cloud sign-in window `cloud_oauth` opens for a provider's
++page (since #228, 2026-09), and nothing else may send a player to a link on the device;
++never instruct users to "open a link" on it. QEMU/VMs are a QA
+ vehicle only: no product-facing text may mention QEMU, VMs, port forwards, or emulator
+ setups (that guidance belongs in dev docs/release notes). A computer may be referenced
+ only where technically unavoidable (e.g. rclone's OAuth `authorize` step).
+
+#### commit 6e7e2551cc -- docs: the streams' decisions as register rows, the why list, PL-079/080 for the two findings that fell through
+diff --git a/.claude/rules/es-player-text.md b/.claude/rules/es-player-text.md
+index 800c396b6b..0d3c9cf13e 100644
+--- a/.claude/rules/es-player-text.md
++++ b/.claude/rules/es-player-text.md
+@@ -272,7 +272,18 @@ SETTINGS BACKUP IS DAMAGED`, `THE COPY IN YOUR CLOUD ISN'T COMPLETE`, `YOUR
+ CLOUD SYNC SETTINGS COULDN'T BE READ`, `AN OLD FOLDER SETTING IS IN THE WAY`,
+ `COULDN'T TELL WHICH CARD YOUR SAVES ARE ON`, `YOUR SAVES CHANGED CARDS
+ PART-WAY THROUGH`, and `SOME FILES DIDN'T FINISH` for rclone 6 (2026-09-10,
+-#105 tranche A; reworded into everyday words 2026-09-10, #108); `backuptool`
++#105 tranche A; reworded into everyday words 2026-09-10, #108); since the
++audit's fixes (2026-09-28, #307): `SOMETHING CHANGED SINCE YOU CHECKED` (a match
++refused because the cloud no longer matches the preview), `COULDN'T RECORD WHICH
++CARD YOUR SAVES ARE ON`, `THE NEW FOLDER ALREADY HAS FILES IN IT` (the layout
++migration's refusal), the stamp why `YOU WENT OFFLINE PART-WAY THROUGH` (a run the
++network cut after files moved, stamped `69 gaps`), `SOME ACHIEVEMENT IMAGES
++COULDN'T BE SAVED` (the scan page adds `TRY THE SCAN AGAIN.`), and `backuptool`'s
++`A SIGN-IN WAS FOUND IN THE BACKUP`, `THERE'S NOTHING TO BACK UP YET`, `A SETTINGS
++BACKUP OR RESTORE IS ALREADY RUNNING`, `YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP
++CAN'T CARRY`, `THIS DEVICE CAN'T RESTORE SETTINGS. SOMETHING IT NEEDS IS MISSING FROM
++THIS BUILD.` -- proposed by the fix streams, built with the proposed words, and put
++to the maintainer (D-UI-112); `backuptool`
+ prints its own on the console flows (`THERE'S NO SETTINGS BACKUP ON THIS
+ DEVICE YET`, `THIS DEVICE'S SETTINGS BACKUP IS DAMAGED`, `COULDN'T KEEP A COPY
+ OF YOUR CURRENT SETTINGS`, `THE RESTORE COULDN'T FINISH`, ...). **The stamp's
+
+#### commit 59135a1dd7 -- docs, lint: the streams integrated; blindspot 66 and the seat-keyed verification check; the cloud-sync rule brought current
+diff --git a/.claude/rules/rclone-cloud-sync.md b/.claude/rules/rclone-cloud-sync.md
+index eecf8e2dac..a9d5fd6dfb 100644
+--- a/.claude/rules/rclone-cloud-sync.md
++++ b/.claude/rules/rclone-cloud-sync.md
+@@ -155,6 +155,16 @@ seeded from the `/usr/config/*.defaults` templates:
+   `--delete-excluded` unconditionally (like the `--verbose` strip); `sync` restores keep
+   mirror semantics *within* the allowlist but can never delete outside it. Preserve that
+   strip in any refactor, and treat any restore-side `--delete-excluded` as a bug.
++  **Since the audit's fixes (2026-09-28, #307):** the shipped `RCLONEOPTS` no longer carries
++  `--delete-excluded` at all, and `cloud_backup` strips it as `cloud_restore` does, whatever
++  the file says -- the shipped conf's comment now says `copy` is the default (sends what
++  differs, deletes nothing, keeps what it replaces for one cycle in `<saves folder>-replaced`)
++  and that no menu offers `sync`. The nesting warning covers both the settings folder and
++  the content folder, always logs, and shows on screen on deliberate runs (it used to fire
++  only while the flag was present, which the strip removed a few lines earlier, so it never
++  fired: #308 F-CS-17). The prune of `<saves folder>-replaced` and of the settings
++  archives keeps the folder and archive this run wrote by name and prunes the rest by count
++  (D-CLOUD-141's sibling in `cloud_backup`, #307 PL-021).
+ - **The two phases have different transfer roots, so filter rules do not carry
+   between them.** Phase 1 runs from `SAVESPATH` (`/storage/roms`); phase 2 runs
+   from `SETTINGS_BACKUPS` (`/storage/roms/backup`) to `SETTINGS_REMOTE`, and on
+@@ -182,8 +192,12 @@ seeded from the `/usr/config/*.defaults` templates:
+   syncs `SAVES_REMOTE` with `--delete-excluded` and the archive is an excluded file,
+   so a nested path is deleted there. A full run hides this -- phase 2 re-uploads
+   moments later -- but a `--saves-only` run (or `BACKUPFILE_BACKUP_OPTION="no"`)
+-  deletes the archives and puts nothing back. `cloud_backup` now warns when the
+-  two are nested and the method can actually delete.
++  deletes the archives and puts nothing back. `cloud_backup` warns when either the
++  settings folder or the content folder is nested in the saves folder; `cloud_setup`
++  refuses a one-level saves folder where it is typed and derives `<parent>/Backups` and
++  `<parent>/Content` beside a deeper one; `cloud_sync_helper` derives no content folder
++  for a top-level saves folder on an upgraded config (`CONTENT_REMOTE` is written empty,
++  the remote's root, for the owner to set) -- #307 PL-015, D-CLOUD-143's neighbours.
+ 
+ - **Reachability means the remote, not the internet.** `check_internet` used to
+   ping `google.com`, wrong in both directions: it fails for a self-hosted or LAN
+@@ -695,3 +709,21 @@ So a card that wants to say which run it is in has to be told by the composition
+ that runs both -- `main.cpp`'s startup command echoes `>>> doing receive` and
+ `>>> doing send` before each half (D-UI-052), and `CloudText::phaseBar` maps the
+ run's percentage into its half of the bar.
++
++## What the audit's fixes changed in the scripts' quiet behaviour (2026-09-28, #307/#308)
++
++- **`cloud_capture` keeps a set-aside manifest** (`manifest-<id>.json.corrupt-<epoch>`) until a
++  manifest that parses stands in its place (D-CLOUD-078 (2) then (3)); its commit runs under a
++  lock of its own (`/storage/.cache/cloud_sync/.capture.lock`, bounded at 5 s), never the
++  transfer lock, and the garbage collection spares any seal changed in the last ten minutes.
++- **`cloud_restore` walks the saves tree for partial files only when a transfer may have left
++  one**: a record `restore-tree-clean` under `/storage/.cache/cloud_sync` is removed as the
++  transfer starts and written back once it has ended and been swept if it needed to be; a clean
++  run after a clean run walks nothing. The first restore on this build sweeps once.
++- **The rules merge on an upgraded device keeps a rule that never took effect inert**: a
++  non-default rule found below the catch-all on the first merge this build makes (marker
++  `.cloud_sync-rules-user-first-applied`) is written after the defaults as `# inert: <rule>`
++  rather than woken; a rules file cut short is never installed, and the saves scripts refuse
++  one that lacks the anchored catch-all (#307 PL-020).
++- **`cloud_sync.conf` is never sourced with a command in it** (D-CLOUD-142); the content
++  scripts read their values as text.
+diff --git a/tools/lint-audit-artifacts b/tools/lint-audit-artifacts
+index afaa1c3bbd..9d01c94bc2 100755
+--- a/tools/lint-audit-artifacts
++++ b/tools/lint-audit-artifacts
+@@ -82,6 +82,48 @@ def main():
+         else:
+             bad("second-opinions/ has no *.provenance.json: the seat's run left no record")
+ 
++    # Every Critical/High row of the findings index has a verification entry of
++    # its own, keyed by seat and number, not by number. On 2026-09-28 the GPT
++    # seat's F-CS-02 (Critical: a match could delete N64 .fla saves) shared its
++    # number with the Claude seat's F-CS-02 (High, a different defect); the
++    # pass listed ids, saw a mention, and moved on. Stream A found and fixed it
++    # because the file was its own (blindspot 66). An entry names its seat in
++    # the parenthesis after the id -- `F-CS-02 (gpt, ...)`, `(claude and gpt`,
++    # `(both seats` -- or sits under a seat heading such as `### 3-rclone-setup (gpt):`.
++    forward = (d / "02-forward-audit.md").read_text() if (d / "02-forward-audit.md").exists() else ""
++    fi, vi = forward.find("## Findings index"), forward.find("## Verification")
++    if fi >= 0 and vi > fi:
++        index, ver = forward[fi:vi], forward[vi:]
++        need = set()
++        for row in index.splitlines():
++            if row.startswith("| ") and not row.startswith("| bucket") and not re.match(r"^\|\s*-", row):
++                c = [x.strip() for x in row.strip("|").split("|")]
++                if len(c) > 3 and c[3] in ("Critical", "High") and re.match(r"F-[A-Z]+-\d+$", c[2]) and c[1] in ("claude", "gpt"):
++                    need.add((c[1], c[2]))
++        have = set()
++        ctx = None
++        for line in ver.splitlines():
++            if line.startswith("### ") and not re.search(r"\bF-[A-Z]+-\d+\b", line):
++                m = re.search(r"\((claude|gpt)\)", line)
++                ctx = m.group(1) if m else None
++                continue
++            if not (line.startswith("### ") or line.startswith("- **F-")):
++                continue
++            for m in re.finditer(r"\b(F-[A-Z]+-\d+)\b\**\s*(?:\(([^)]*)\))?", line):
++                fid, par = m.group(1), (m.group(2) or "").lower()
++                seats = [x for x in ("claude", "gpt") if x in par]
++                if "both seats" in par:
++                    seats = ["claude", "gpt"]
++                if not seats and ctx:
++                    seats = [ctx]
++                for x in seats:
++                    have.add((x, fid))
++        short = sorted(need - have)
++        if need and not short:
++            ok(f"every Critical/High of the index has a verification entry for its seat ({len(need)} seat-and-number pairs)")
++        for seat, fid in short:
++            bad(f"02 § Verification has no entry for {fid} ({seat}) -- a number two seats used is two findings")
++
+     punch = (d / "05-punch-list.md").read_text() if (d / "05-punch-list.md").exists() else ""
+     # A table whose last row is **Total** is the sum of the rows above it. The
+     # seat's G-11 under #258 (2026-09-24): the scorecard's printed total
+
+#### commit 4e858bebe8 -- emulationstation: bump package -- the audit's fixes (#307/#308)
+diff --git a/projects/ROCKNIX/packages/ui/emulationstation/package.mk b/projects/ROCKNIX/packages/ui/emulationstation/package.mk
+index 61a4b4bd3c..c0f408021d 100644
+--- a/projects/ROCKNIX/packages/ui/emulationstation/package.mk
++++ b/projects/ROCKNIX/packages/ui/emulationstation/package.mk
+@@ -2,7 +2,7 @@
+ # Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
+ 
+ PKG_NAME="emulationstation"
+-PKG_VERSION="7eae8ed9135ce8747a1d9c9e0a04fb2c137677e5"
++PKG_VERSION="c0f4f4da0aa6d2ed72ab15ee83c342ad2e5cbbcd"
+ PKG_GIT_CLONE_BRANCH="test/qa-integration"
+ PKG_LICENSE="GPL"
+ PKG_SITE="https://github.com/maxengel/emulationstation-next"
+
+#### commit 6f9d43a467 -- rocknix: install the bootloader updater only where the device ships one
+diff --git a/projects/ROCKNIX/packages/rocknix/package.mk b/projects/ROCKNIX/packages/rocknix/package.mk
+index 5b99ae6754..aaf53af86c 100644
+--- a/projects/ROCKNIX/packages/rocknix/package.mk
++++ b/projects/ROCKNIX/packages/rocknix/package.mk
+@@ -48,7 +48,12 @@ EOF
+   fi
+   # Always install the update script
+   mkdir -p $INSTALL/usr/share/bootloader
+-  find_file_path bootloader/update.sh && cp -av ${FOUND_PATH} ${INSTALL}/usr/share/bootloader
++  # A device without an in-place bootloader updater ships none: GENERIC_X64's
++  # copied nothing and was removed (#307 PL-073). A bare `a && b` as the
++  # function's last statement returns a's failure and fails the install.
++  if find_file_path bootloader/update.sh; then
++    cp -av ${FOUND_PATH} ${INSTALL}/usr/share/bootloader
++  fi
+ }
+ 
+ post_install() {
+
+#### commit 9e104c65f3 -- .githooks: a pre-commit scan with the push guard's patterns; blindspot 67
+diff --git a/.claude/rules/engineering-practices.md b/.claude/rules/engineering-practices.md
+index 6e0676d775..e5085aee59 100644
+--- a/.claude/rules/engineering-practices.md
++++ b/.claude/rules/engineering-practices.md
+@@ -304,6 +304,19 @@ So:
+ An assertion that cannot fail is not evidence. Ask what input would produce a
+ FAIL; if you cannot name one, the check proves nothing.
+ 
++**A fixture for a secret scanner is built at run time, never written as a
++literal (2026-09-28, #307).** `tools/last-good-scripts-test`'s cases for the
++credential scan and the redaction feed values that look like a private key,
++an OAuth token and a `devpassword=`; three were committed as literals by a
++fix stream, the push guard read them in history, and the unpushed range had
++to be rewritten by the maintainer before `next` could move. So a fixture is
++assembled when the case runs -- `printf '%s' 'OPENSSH PRIVATE KEY'` into a
++format string, a value passed through `$(printf ...)` -- and the file at rest
++carries no line the guard would match. `.githooks/pre-commit` (both
++repositories) now refuses such a line at commit time with the same patterns
++the push guard uses (`.githooks/secret-patterns`, one definition); a
++refusal there costs one edit, at push time it costs a rewrite.
++
+ **The positive is recorded where the guard is wired (audit #258, P-02).** A
+ hook line, a CI step, a suite line or a `check` in a script is committed
+ with a work-log line naming the constructed failure it was seen to catch,
+diff --git a/.claude/rules/fork-workflow.md b/.claude/rules/fork-workflow.md
+index 1867b559a8..1b57dfbcf5 100644
+--- a/.claude/rules/fork-workflow.md
++++ b/.claude/rules/fork-workflow.md
+@@ -93,7 +93,13 @@ with **no spaces before the colon** (`rclone - cloud-sync: …` and `SM8250 - li
+ styles FAIL). Also enforced: title ≤ 72 chars, blank line between title and body, body
+ lines ≤ 72 chars, and no merge commits in the PR.
+ 
+-## Safety net: pre-push guard
++## Safety net: pre-push guard, and the pre-commit scan
++
++`.githooks/pre-commit` refuses a commit that would add a credential-shaped
++line, with the patterns both hooks read from `.githooks/secret-patterns`; it
++runs in every worktree because the hooks path is absolute (below). It exists
++because the push guard reads history, and a line that reaches history costs a
++rewrite to remove (2026-09-28, #307).
+ 
+ `.githooks/pre-push` blocks pushing any `pr/*` branch that still differs from `upstream/next`
+ in a personal path (e.g. you forgot to rebase). Enable it once per clone — the setting is
+diff --git a/.githooks/pre-commit b/.githooks/pre-commit
+new file mode 100755
+index 0000000000..5acfadaab0
+--- /dev/null
++++ b/.githooks/pre-commit
+@@ -0,0 +1,22 @@
++#!/bin/bash
++# pre-commit: refuse a commit that would ADD a credential-shaped line, so the
++# push guard never meets one in history. The same patterns as pre-push
++# (.githooks/secret-patterns); the check reads the index, not the working
++# tree, so what is refused is exactly what would be committed.
++#
++# Written 2026-09-28 (#307): eight fix streams committed in worktrees that
++# share this hooks path; one wrote three scanner fixtures as literals, the
++# push guard refused the whole range, and only a history rewrite -- which the
++# harness cannot run -- cleared it. A refusal at commit time costs the
++# committer one edit; at push time it costs a rewrite.
++. "$(dirname "$(readlink -f "$0")")/secret-patterns"
++hits="$(git diff --cached -U0 --no-color --diff-filter=ACMRT \
++  | awk '/^\+\+\+ b\//{f=substr($0,7); next} /^\+\+\+ /{next} /^\+/{print f ": " $0}' \
++  | grep -E "${SECRET_PATTERNS}" | sed -E "s/(${SECRET_PATTERNS})/[REDACTED]/g" | head -5 || true)"
++if [ -n "${hits}" ]; then
++  echo "✖ pre-commit: this commit would add a credential-shaped line:" >&2
++  echo "${hits}" | sed 's/^/    /' >&2
++  echo "  A placeholder belongs in <angle brackets>; a scanner's test fixture is built at run time (printf pieces), never written as a literal." >&2
++  exit 1
++fi
++exit 0
+diff --git a/.githooks/pre-push b/.githooks/pre-push
+index f769fdb4d8..c921c0b744 100755
+--- a/.githooks/pre-push
++++ b/.githooks/pre-push
+@@ -139,7 +139,7 @@ status=0
+ # enough -- `export SCREENSCRAPER_DEV_LOGIN="devid=<id>&devpassword=<..>"` is
+ # documentation -- so every pattern demands a real-looking value; placeholders
+ # in <angle brackets> never match.
+-SECRET_PATTERNS='devpassword=[A-Za-z0-9._%-]{4,}|[?&]y=[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY|"(access|refresh)_token" *: *"[A-Za-z0-9._-]{16,}|sk-[A-Za-z0-9_-]{24,}|(API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD)[A-Z_]* *[:=] *["'"'"']?[A-Za-z0-9+/=_-]{16,}'
++. "$(dirname "$(readlink -f "$0")")/secret-patterns"
+ 
+ # A relative hooksPath means pr/* pushes from a worktree run unguarded. We can
+ # only say so from a push that did reach the hook, which is the point: say it
+diff --git a/.githooks/secret-patterns b/.githooks/secret-patterns
+new file mode 100755
+index 0000000000..3088112978
+--- /dev/null
++++ b/.githooks/secret-patterns
+@@ -0,0 +1,8 @@
++# The credential shapes the fork's guards refuse, one place for both hooks:
++# .githooks/pre-commit reads the lines a commit would add, .githooks/pre-push
++# reads every line every pushed commit added. A placeholder in <angle brackets>
++# never matches by construction -- every pattern demands a real-looking value.
++# A test fixture for a scanner is built at run time (printf pieces), never
++# written as a literal (2026-09-28, #307: three fixtures a fix stream wrote
++# reached history and the range had to be rewritten to push).
++SECRET_PATTERNS='devpassword=[A-Za-z0-9._%-]{4,}|[?&]y=[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY|"(access|refresh)_token" *: *"[A-Za-z0-9._-]{16,}|sk-[A-Za-z0-9_-]{24,}|(API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD)[A-Z_]* *[:=] *["'"'"']?[A-Za-z0-9+/=_-]{16,}'
+
+#### commit 04b5f66d92 -- .githooks: an audit packet's diff copy is not scanned twice
+diff --git a/.githooks/pre-commit b/.githooks/pre-commit
+index 5acfadaab0..6f793a3107 100755
+--- a/.githooks/pre-commit
++++ b/.githooks/pre-commit
+@@ -9,9 +9,14 @@
+ # push guard refused the whole range, and only a history rewrite -- which the
+ # harness cannot run -- cleared it. A refusal at commit time costs the
+ # committer one edit; at push time it costs a rewrite.
++#
++# One exemption, shared with pre-push: an audit packet under
++# docs/audits/<audit>/seats/*.diff is a verbatim copy of a range the guards
++# have already read line by line, so the copy is not read again.
+ . "$(dirname "$(readlink -f "$0")")/secret-patterns"
+ hits="$(git diff --cached -U0 --no-color --diff-filter=ACMRT \
+   | awk '/^\+\+\+ b\//{f=substr($0,7); next} /^\+\+\+ /{next} /^\+/{print f ": " $0}' \
++  | grep -v -E '^docs/audits/[^/:]+/seats/[^/:]+\.diff: ' \
+   | grep -E "${SECRET_PATTERNS}" | sed -E "s/(${SECRET_PATTERNS})/[REDACTED]/g" | head -5 || true)"
+ if [ -n "${hits}" ]; then
+   echo "✖ pre-commit: this commit would add a credential-shaped line:" >&2
+diff --git a/.githooks/pre-push b/.githooks/pre-push
+index c921c0b744..55088c966f 100755
+--- a/.githooks/pre-push
++++ b/.githooks/pre-push
+@@ -207,6 +207,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
+   leaks=''
+   while IFS= read -r f; do
+     [ -n "$f" ] || continue
++    case "$f" in docs/audits/*/seats/*.diff) continue ;; esac   # a packet copy of a range already guarded (2026-09-28)
+     hit="$(git show "${local_sha}:${f}" 2>/dev/null | grep -nE "$SECRET_PATTERNS" | sed -E "s/($SECRET_PATTERNS)/[REDACTED]/g" | head -3 || true)"
+     [ -n "$hit" ] && leaks+="$(printf '%s\n' "$hit" | sed "s|^|  ${f}:|")"$'\n'
+   done < "$names"
+@@ -216,9 +217,14 @@ while read -r local_ref local_sha remote_ref remote_sha; do
+   # second tab. A file's NAME is not a credential: on 2026-09-25 merging
+   # upstream brought a kernel patch named `...mmc-mask-DATA0-when-updating-
+   # the-clock-on-H616-eMMC.patch`, its "sk-..." tail matched the OpenAI key
+-  # shape, and every line of the file was refused for its name.
++  # shape, and every line of the file was refused for its name. An audit
++  # packet under docs/audits/<audit>/seats/*.diff is a verbatim copy of a
++  # range this guard, or the EmulationStation fork's, has already read line
++  # by line, so it is not read again -- it carried the ES guard's own FAKE=
++  # fixture and refused the push twice on 2026-09-28.
+   tab=$'\t'
+   hit="$(awk '/^commit /{c=$2} /^\+\+\+ b\//{f=substr($0,7)} /^\+/ && !/^\+\+\+ /{print c "\t" f "\t" $0}' "$added" \
++         | grep -v -E "^[^${tab}]*${tab}docs/audits/[^/${tab}]+/seats/[^/${tab}]+\.diff${tab}" \
+          | grep -E "^[^${tab}]*${tab}[^${tab}]*${tab}.*(${SECRET_PATTERNS})" \
+          | sed -E "s/($SECRET_PATTERNS)/[REDACTED]/g; s/${tab}/:/; s/${tab}/:/" | head -3 || true)"
+   [ -n "$hit" ] && leaks+="$(printf '%s\n' "$hit" | sed 's|^|  |')"$'\n'
+
+#### commit 78f147f762 -- vm-qa: launch the scripts suite with SIGINT deliverable; claims for the #307 fix build's frames
+diff --git a/tools/vm-qa b/tools/vm-qa
+index 295c1d697f..17853bd18d 100755
+--- a/tools/vm-qa
++++ b/tools/vm-qa
+@@ -138,7 +138,11 @@ run_suite() {  # name, log, command...
+   printf '| %s | %s | %ds | `%s` |\n' "$name" "$res" "$dt" "$(basename "$log")" >> "$REPORT"
+   echo "$name: $res in ${dt}s"
+ }
+-case ",$ONLY," in *,scripts,*)    run_suite scripts    "$OUT/scripts.log"    "$ROOT/tools/last-good-scripts-test" ;; esac
++# The scripts harness carries cancel checks that send SIGINT to a run; a
++# background job (this runner under setsid -f, or a harness waiter) has
++# SIGINT ignored at entry, which a child shell cannot undo. Python can:
++# reset the disposition and exec the harness in its place (2026-09-28).
++case ",$ONLY," in *,scripts,*)    run_suite scripts    "$OUT/scripts.log"    python3 -c 'import os, signal, sys; signal.signal(signal.SIGINT, signal.SIG_DFL); os.execv(sys.argv[1], sys.argv[1:])' "$ROOT/tools/last-good-scripts-test" ;; esac
+ # EmulationStation's page-lifetime check (#144): the wizard's page-replacement
+ # callbacks compiled under AddressSanitizer against small doubles, on the
+ # host, in seconds. It had not compiled for a day and nothing ran it, so
+diff --git a/tools/vm-walks/claims.txt b/tools/vm-walks/claims.txt
+index 5a7201ca0a..cbb002d73d 100644
+--- a/tools/vm-walks/claims.txt
++++ b/tools/vm-walks/claims.txt
+@@ -5,3 +5,13 @@
+ # written against (the build in walk-baseline/BASELINE.txt), so it goes
+ # stale -- and is reported as such -- when the baseline moves; prune it
+ # then. A whole-frame rectangle claims a walk the baseline has not seen.
++
++# The #307 fix build (4234be0b6b, vm-qa run 68), against the d72084ccad baseline:
++d72084ccad confirm-cloud-folder/02-hub-change-folder-row.png 240 545 1040 575 #308  # CHANGE CLOUD FOLDER's line is YOUR SAVES ARE IN: <folder> -- one line under the row (ES 39d5a9d6d, 8-es claude F-ES-14, D-UI-023)
++d72084ccad to-change-cloud-folder/02-hub-change-folder-row.png 240 545 1040 575 #308  # the same row on the other walk
++d72084ccad run-transfer/07-transfer-running.png 400 555 880 580 #308  # the transfer page's footer no longer names a console letter: THIS CAN TAKE A WHILE. (ES 5a7afc4ca, F-RA-14/F-CS-07; es-ui-style-guide Interaction rules)
++d72084ccad run-transfer-frames/07-t02.png 400 555 880 580 #308  # the same footer, the frames walk
++d72084ccad continue-to-systems/05-systems-page.png 230 470 1050 680 #308  # PICO-8 listed, 1 FILE NOT YET IN YOUR CLOUD: a system whose only file is empty (the 0-byte Splore.png) was read as nothing to move and left out (ES 52ba93160, 8a gpt); the rows below it shift down
++d72084ccad run-transfer-frames/05-systems-page.png 230 470 1050 680 #308  # the same page on the frames walk
++d72084ccad run-transfer-frames/06-selected-all.png 230 470 1050 680 #308  # the same page, all selected
++d72084ccad run-transfer-frames/07-t02.png 670 320 710 345 #308  # ITEM 1 OF 5: the PICO-8 unit counted (same change)
+
+#### commit a9c624f551 -- audit #307 fix audit: the forward audit opened with the verification so far; the lint keys G-stream-NN ids; the day's log
+diff --git a/tools/lint-audit-artifacts b/tools/lint-audit-artifacts
+index 9d01c94bc2..2661e7c91a 100755
+--- a/tools/lint-audit-artifacts
++++ b/tools/lint-audit-artifacts
+@@ -98,18 +98,18 @@ def main():
+         for row in index.splitlines():
+             if row.startswith("| ") and not row.startswith("| bucket") and not re.match(r"^\|\s*-", row):
+                 c = [x.strip() for x in row.strip("|").split("|")]
+-                if len(c) > 3 and c[3] in ("Critical", "High") and re.match(r"F-[A-Z]+-\d+$", c[2]) and c[1] in ("claude", "gpt"):
++                if len(c) > 3 and c[3] in ("Critical", "High") and re.match(r"[FG]-[A-Z][A-Z0-9]*-\d+$", c[2]) and c[1] in ("claude", "gpt"):
+                     need.add((c[1], c[2]))
+         have = set()
+         ctx = None
+         for line in ver.splitlines():
+-            if line.startswith("### ") and not re.search(r"\bF-[A-Z]+-\d+\b", line):
++            if line.startswith("### ") and not re.search(r"\b[FG]-[A-Z][A-Z0-9]*-\d+\b", line):
+                 m = re.search(r"\((claude|gpt)\)", line)
+                 ctx = m.group(1) if m else None
+                 continue
+             if not (line.startswith("### ") or line.startswith("- **F-")):
+                 continue
+-            for m in re.finditer(r"\b(F-[A-Z]+-\d+)\b\**\s*(?:\(([^)]*)\))?", line):
++            for m in re.finditer(r"\b([FG]-[A-Z][A-Z0-9]*-\d+)\b\**\s*(?:\(([^)]*)\))?", line):
+                 fid, par = m.group(1), (m.group(2) or "").lower()
+                 seats = [x for x in ("claude", "gpt") if x in par]
+                 if "both seats" in par:
+
+#### commit 380cbf7dc4 -- githooks: refuse when secret-patterns is missing; register D-WORKFLOW-058/059 and D-QA-054
+diff --git a/.githooks/pre-commit b/.githooks/pre-commit
+index 6f793a3107..d1e3c2f1e9 100755
+--- a/.githooks/pre-commit
++++ b/.githooks/pre-commit
+@@ -14,6 +14,7 @@
+ # docs/audits/<audit>/seats/*.diff is a verbatim copy of a range the guards
+ # have already read line by line, so the copy is not read again.
+ . "$(dirname "$(readlink -f "$0")")/secret-patterns"
++[ -n "${SECRET_PATTERNS:-}" ] || { echo "✖ $(basename "$0"): .githooks/secret-patterns is missing or empty; nothing is scanned, so nothing is allowed" >&2; exit 1; }
+ hits="$(git diff --cached -U0 --no-color --diff-filter=ACMRT \
+   | awk '/^\+\+\+ b\//{f=substr($0,7); next} /^\+\+\+ /{next} /^\+/{print f ": " $0}' \
+   | grep -v -E '^docs/audits/[^/:]+/seats/[^/:]+\.diff: ' \
+diff --git a/.githooks/pre-push b/.githooks/pre-push
+index 55088c966f..6aea7c74ca 100755
+--- a/.githooks/pre-push
++++ b/.githooks/pre-push
+@@ -140,6 +140,7 @@ status=0
+ # documentation -- so every pattern demands a real-looking value; placeholders
+ # in <angle brackets> never match.
+ . "$(dirname "$(readlink -f "$0")")/secret-patterns"
++[ -n "${SECRET_PATTERNS:-}" ] || { echo "✖ $(basename "$0"): .githooks/secret-patterns is missing or empty; nothing is scanned, so nothing is allowed" >&2; exit 1; }
+ 
+ # A relative hooksPath means pr/* pushes from a worktree run unguarded. We can
+ # only say so from a push that did reach the hook, which is the point: say it
+
+#### commit 1edb7f5d73 -- vm-qa: the rotation fixture says from=checked-launch; es-player-text follows E2's match and help-bar changes; D-UI-114/115
+diff --git a/.claude/rules/es-player-text.md b/.claude/rules/es-player-text.md
+index 0d3c9cf13e..6fbe263a9c 100644
+--- a/.claude/rules/es-player-text.md
++++ b/.claude/rules/es-player-text.md
+@@ -237,7 +237,7 @@ partial run from a total one; no screen ever shows it.
+ |---|---|---|---|---|
+ | `COMPLETED` | every part of the run succeeded (rclone 9 counts as success) | `COMPLETED` | `COMPLETED` | `COMPLETED` |
+ | `COULDN'T FINISH - <why>` | nothing succeeded and it is not a sentinel | `COULDN'T FINISH - YOUR CLOUD STOPPED ANSWERING` | `COULDN'T FINISH` | `COULDN'T FINISH, YOUR CLOUD STOPPED ANSWERING` |
+-| `SKIPPED - <reason>` | only 69, 75, and the launch cancel | `SKIPPED - YOU'RE NOT ONLINE` / `SKIPPED - A SYNC IS ALREADY RUNNING` / `SKIPPED - A GAME WAS STARTED` | same | `SKIPPED, NO NETWORK` / `SKIPPED, ANOTHER SYNC WAS RUNNING` / `SKIPPED, A GAME WAS STARTED` |
++| `SKIPPED - <reason>` | only 69, 75, and the launch cancel | `SKIPPED - YOU'RE NOT ONLINE` / `SKIPPED - A SYNC IS ALREADY RUNNING` / `SKIPPED - YOU STARTED A GAME` | same | `SKIPPED, NO NETWORK` / `SKIPPED, ANOTHER SYNC WAS RUNNING` / `SKIPPED, A GAME WAS STARTED` |
+ 
+ The offline achievements' two cards (#292, #293; D-RA-030, D-UI-095) end in
+ the same three words: the send card `COMPLETED` with OFFLINE ACHIEVEMENTS HAVE
+@@ -299,11 +299,16 @@ YOUR CLOUD. THE REST IS STILL ON THIS DEVICE.` / `NOTHING WAS SENT. YOUR CLOUD
+ IS AS IT WAS.`; restore `WHAT ARRIVED IS ON THIS DEVICE. THE REST IS AS IT
+ WAS.` / `NOTHING ARRIVED. THIS DEVICE IS AS IT WAS.`; saves sync `THE SAVES
+ THAT MOVED ARE ON BOTH SIDES. THE REST ARE AS THEY WERE.` / `YOUR SAVES ARE AS
+-THEY WERE.`; match `N FILES WERE REMOVED FROM THIS DEVICE. YOUR CLOUD STILL HAS
+-THEM.` / `NOTHING WAS REMOVED.`
++THEY WERE.`; match `N FILES WERE REMOVED FROM THIS DEVICE.` / `NOTHING WAS REMOVED.` -- the
++count only: a match removes what the cloud does *not* have (D-CLOUD-023), so
++the old second sentence, YOUR CLOUD STILL HAS THEM, said the opposite of the
++truth (#308, E2's third pass, 2026-09-28)
+ 
+-**Recover**: the page offers `TRY AGAIN` (the confirm button, south) beside `CLOSE` (the back button, east; buttons by position, never by letter -- `es-ui-style-guide.md` § Interaction rules) on line 7 when
+-the run did not complete, re-running the same command; the card's action line
++**Recover**: the page offers `TRY AGAIN` (the confirm button, south) beside `CLOSE` (the back button, east; buttons by position, never by letter -- `es-ui-style-guide.md` § Interaction rules) on the page's help bar when
++the run did not complete, re-running the same command -- except a match, whose
++apply used up its preview's plan (PL-001, D-CLOUD-141): the same command again
++is always refused, so the page offers no TRY AGAIN for a match and line 7 points
++at the row that checks again, `TRY AGAIN: MATCH THIS DEVICE TO THE CLOUD`; the card's action line
+ names the row (`TRY AGAIN: GAME SETTINGS > BACK UP SAVES TO THE CLOUD`), or for
+ an automatic sync when it runs again (`IT RUNS AGAIN WHEN YOU EXIT A GAME`);
+ no network `TRY AGAIN WHEN YOU'RE ONLINE.`; lock held `WAIT FOR IT TO FINISH,
+diff --git a/tools/vm-qa b/tools/vm-qa
+index 17853bd18d..bf0681bb14 100755
+--- a/tools/vm-qa
++++ b/tools/vm-qa
+@@ -343,7 +343,7 @@ ensure_manager_fixture() {
+   SSH 'test -f /storage/roms/savestates/fbn/mspacman.state.auto.png' 2>/dev/null && return 0
+   local F="$ROOT/tools/vm-walks/fixtures" put
+   put() { scp -q -i "$KEY" -P "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$1" "root@127.0.0.1:$2"; }
+-  SSH 'mkdir -p /storage/roms/nes /storage/roms/gb /storage/roms/fbneo /storage/roms/savestates/nes /storage/roms/savestates/gb /storage/roms/savestates/fbn /storage/roms/screenshots; for f in nes/Bobl.nes gb/Ninoid.gb fbneo/mspacman.zip; do head -c 4096 /dev/urandom > /storage/roms/$f; done; for s in nes/Bobl gb/Ninoid fbn/mspacman; do head -c 4096 /dev/urandom > /storage/roms/savestates/$s.state.auto; done; printf "turns=1\nfrom=own-launch\n" > /storage/roms/savestates/nes/Bobl.rotation' 2>/dev/null
++  SSH 'mkdir -p /storage/roms/nes /storage/roms/gb /storage/roms/fbneo /storage/roms/savestates/nes /storage/roms/savestates/gb /storage/roms/savestates/fbn /storage/roms/screenshots; for f in nes/Bobl.nes gb/Ninoid.gb fbneo/mspacman.zip; do head -c 4096 /dev/urandom > /storage/roms/$f; done; for s in nes/Bobl gb/Ninoid fbn/mspacman; do head -c 4096 /dev/urandom > /storage/roms/savestates/$s.state.auto; done; printf "turns=1\nfrom=checked-launch\n" > /storage/roms/savestates/nes/Bobl.rotation' 2>/dev/null
+   put "$F/nes-256x240-right.png" /storage/roms/savestates/nes/Bobl.state.auto.png
+   put "$F/gb-160x144.png" /storage/roms/savestates/gb/Ninoid.state.auto.png
+   put "$F/arcade-vertical-raw-left.png" /storage/roms/savestates/fbn/mspacman.state.auto.png
+
+#### commit 79bcaf55a6 -- emulationstation: bump package -- the fix audit's follow-ups (#307/#308)
+diff --git a/projects/ROCKNIX/packages/ui/emulationstation/package.mk b/projects/ROCKNIX/packages/ui/emulationstation/package.mk
+index c0f408021d..0a1a08258a 100644
+--- a/projects/ROCKNIX/packages/ui/emulationstation/package.mk
++++ b/projects/ROCKNIX/packages/ui/emulationstation/package.mk
+@@ -2,7 +2,7 @@
+ # Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
+ 
+ PKG_NAME="emulationstation"
+-PKG_VERSION="c0f4f4da0aa6d2ed72ab15ee83c342ad2e5cbbcd"
++PKG_VERSION="b05aa7064d1bfd5e9ace22329be86ac639eefc04"
+ PKG_GIT_CLONE_BRANCH="test/qa-integration"
+ PKG_LICENSE="GPL"
+ PKG_SITE="https://github.com/maxengel/emulationstation-next"
+
+#### commit 74af928b3c -- register D-CLOUD-146 (a root-level saves folder keeps no set-aside copy); upgrade-and-install on D-CLOUD-102; A report; running log
+diff --git a/.claude/rules/upgrade-and-install.md b/.claude/rules/upgrade-and-install.md
+index c80cc44184..a199680e3c 100644
+--- a/.claude/rules/upgrade-and-install.md
++++ b/.claude/rules/upgrade-and-install.md
+@@ -161,8 +161,13 @@ than a local one, and each has cost somebody their data somewhere.
+ - **Ask first, and let "leave it alone" be the default.** Cloud layout is
+   usually cosmetic; the risk of moving is not. If the tidier layout cannot
+   justify the failure mode, offer the no-op resolution and stop there.
+-- **Another device may be syncing at the same time.** One player, many devices
+-  is this project's model, so a migration cannot assume it is the only writer.
++- **The model is one player, one console at a time (D-CLOUD-102, D-CLOUD-103):**
++  no other device writes the same cloud folder while a migration runs, and no
++  lock or marker tries to stop one. What a migration cannot assume is that the
++  *previous* run finished -- interruption is the normal case above -- so it
++  reads the cloud's state before every step rather than remembering it.
++  (This bullet said "another device may be syncing at the same time" until
++  2026-09-28; it predated D-CLOUD-102 and contradicted it -- stream A, #307.)
+ 
+ ## Verify on a device, not on the host
+ 
+
+#### commit 1b0d233657 -- emulationstation: bump package -- stream A's two whys in the card's table (87b182fbe)
+diff --git a/projects/ROCKNIX/packages/ui/emulationstation/package.mk b/projects/ROCKNIX/packages/ui/emulationstation/package.mk
+index 0a1a08258a..648d13731e 100644
+--- a/projects/ROCKNIX/packages/ui/emulationstation/package.mk
++++ b/projects/ROCKNIX/packages/ui/emulationstation/package.mk
+@@ -2,7 +2,7 @@
+ # Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
+ 
+ PKG_NAME="emulationstation"
+-PKG_VERSION="b05aa7064d1bfd5e9ace22329be86ac639eefc04"
++PKG_VERSION="87b182fbee31c79b71fef49e012e48bf04f9268a"
+ PKG_GIT_CLONE_BRANCH="test/qa-integration"
+ PKG_LICENSE="GPL"
+ PKG_SITE="https://github.com/maxengel/emulationstation-next"
