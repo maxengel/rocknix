@@ -506,18 +506,42 @@ archive_ok() {
     esac
 }
 
-# An archive's members, one per line and each whole, for either kind. The zip
-# listing's name is everything from its fourth column on (#307 PL-036). Its
+# An archive's members, one per line and each whole, for either kind. Its
 # status is the lister's (pipefail for the zip's pipe): a listing that stops
 # part-way is a failure, never a shorter list -- the copy before a restore is
 # built from it, and a short list left files unprotected, an empty one read
 # as "nothing to protect" (#307, the audit of the fixes, gpt G-B-01).
+#
+# Every member, whatever its path: the zip's listing used to keep only
+# names under storage/, so a member elsewhere was extracted to / and nobody
+# saw it (#307, the audit of the fix round, PL-028). A zip listing's name is
+# everything after its time column, between the two dashed rules (#307
+# PL-036 read it from the fourth column on, which only a name under
+# storage/ made safe).
 archive_members() {
     case "${1}" in
         *.tar.gz) tar -tzf "${1}" 2>/dev/null ;;
         *)        ( set -o pipefail
-                    unzip -l "${1}" 2>/dev/null | awk 'NF > 3 && $4 ~ /^storage\// { print substr($0, index($0, $4)) }' ) ;;
+                    unzip -l "${1}" 2>/dev/null | awk '/^ *-+ +-+/ { n++; next } n == 1 && match($0, /[0-9][0-9]:[0-9][0-9]   /) { print substr($0, RSTART + RLENGTH) }' ) ;;
     esac
+}
+
+# The first member a settings restore cannot put back, and 0 when there is
+# one; 1 when there is none; anything else when the list cannot be read.
+# Every member of an archive this tool writes is a file under storage/,
+# named with no "." or ".." part. Extraction runs the whole archive into /
+# less a list of exclusions, while the copy taken before it covers only
+# storage/ -- so a member elsewhere (a foreign or hand-made archive's
+# tmp/..., or storage/../x) was written and never put back when a restore
+# failed, and a failed restore still said the settings were unchanged
+# (#307, the audit of the fix round, PL-028, from gpt G2-B-05).
+foreign_member() { # <members file>
+    # busybox awk ends a file it cannot open in END, as "none found".
+    [ -r "${1}" ] || return 2
+    awk '{ m = $0; sub(/^\.\//, "", m) }
+         m == "" || m == "." || m == "storage" || m == "storage/" { next }
+         m !~ /^storage\// || ("/" m "/") ~ /\/\.\.?\// { print; found = 1; exit }
+         END { exit !found }' "${1}" 2>/dev/null
 }
 
 # How many file members an archive lists, or nothing and 1 when it does not
@@ -1445,6 +1469,19 @@ case "${VERB}" in
             why "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED"
             fail "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED. NOTHING WAS CHANGED. RESTORE SETTINGS FROM THE CLOUD AGAIN, OR BACK UP SETTINGS TO REPLACE IT." "${BACKUPFILE} did not list its members whole"
         fi
+        # Nothing is written from an archive that holds a member a settings
+        # restore cannot put back (foreign_member; #307, the audit of the fix
+        # round, PL-028). The words are proposed (D-UI-112's register).
+        FOREIGN=$(foreign_member "${MEMBERS}")
+        case $? in
+            0) rm -f "${MEMBERS}" "${NEWLIST}" "${SEEDS}"
+               why "THIS BACKUP HOLDS FILES A RESTORE CAN'T PUT BACK"
+               fail "THIS BACKUP HOLDS FILES A RESTORE CAN'T PUT BACK, SO NOTHING WAS CHANGED. RESTORE SETTINGS FROM THE CLOUD AGAIN, OR BACK UP SETTINGS TO REPLACE IT." "${BACKUPFILE} holds '${FOREIGN}', which a settings restore does not write (not a file under storage/)" ;;
+            1) ;;
+            *) rm -f "${MEMBERS}" "${NEWLIST}" "${SEEDS}"
+               why "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS"
+               fail "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS, SO NOTHING WAS CHANGED. TRY AGAIN." "the member list of ${BACKUPFILE} could not be read back" ;;
+        esac
         # The files the backup left out as the image's own (SEEDLIST), to
         # be put back to this image's copy after the extraction: a path under
         # /storage/.config that walks nowhere else, that this image ships,

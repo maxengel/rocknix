@@ -10501,6 +10501,47 @@ else
     skip "audit of the fix round PL-022: the image's busybox is not on this machine, and the case is its behaviour"
 fi
 
+# == PL-028: an archive with a member outside storage/ is refused before anything is written
+mkdir -p "${P7Z}/outside"
+p7zforeign() { # <verb...>: backuptool with /outside bound from the host, so a write there is seen
+    rm -rf "${P7Z}/outside"; mkdir -p "${P7Z}/outside"
+    P7X=(--bind "${P7Z}/outside" /outside)
+    p7bt "$@"
+    P7X=()
+}
+p7zfstate() { echo "rc ${RC}; why '$(p7why)'; outside: $(ls -A "${P7Z}/outside" | tr '\n' ' '); f1 '$(cat "${P7S}/.config/test/f1")'; copies: $(ls "${P7S}/roms/backup/archive" 2>/dev/null | wc -l)"; }
+p7zforeignok() {
+    [ "${RC}" -ne 0 ] && [ "$(p7why)" = "THIS BACKUP HOLDS FILES A RESTORE CAN'T PUT BACK" ] && [ -z "$(ls -A "${P7Z}/outside")" ] \
+        && [ "$(cat "${P7S}/.config/test/f1")" = "LIVE" ] && [ -z "$(ls "${P7S}/roms/backup/archive" 2>/dev/null)" ] && p7zscreen | grep -q "NOTHING WAS CHANGED"
+}
+p7zclear; p7reset '  /storage/.config/test/*'
+echo LIVE > "${P7S}/.config/test/f1"
+p7tree "${P7}/tree" "storage/.config/test/f1=ARCHIVE" "outside/p7-foreign=FOREIGN"
+tar -C "${P7}/tree" -czf "${P7S}/roms/backup/2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz" storage outside
+p7zforeign restore --no-restart
+p7zforeignok; check $? "audit of the fix round PL-028: a tar archive with a member outside storage/ is refused before anything is written, and says so" "PL-028 (tar): $(p7zfstate)"
+p7reset '  /storage/.config/test/*'
+echo LIVE > "${P7S}/.config/test/f1"
+python3 - "${P7S}/roms/backup/20260101000000-ROCKNIX_BACKUP.zip" <<'EOS'
+import sys, zipfile
+z = zipfile.ZipFile(sys.argv[1], "w", zipfile.ZIP_DEFLATED)
+z.writestr("storage/.config/test/f1", "ARCHIVE"); z.writestr("outside/p7-foreign", "FOREIGN")
+z.close()
+EOS
+p7zforeign restore --no-restart
+p7zforeignok; check $? "audit of the fix round PL-028: so is a legacy zip" "PL-028 (zip): $(p7zfstate)"
+p7reset '  /storage/.config/test/*'
+echo LIVE > "${P7S}/.config/test/f1"
+python3 - "${P7S}/roms/backup/2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz" <<'EOS'
+import sys, tarfile, io
+t = tarfile.open(sys.argv[1], "w:gz")
+for name, data in (("storage/.config/test/f1", b"ARCHIVE"), ("storage/../outside/p7-dotdot", b"FOREIGN")):
+    i = tarfile.TarInfo(name); i.size = len(data); t.addfile(i, io.BytesIO(data))
+t.close()
+EOS
+p7zforeign restore --no-restart
+p7zforeignok; check $? "audit of the fix round PL-028: and so is one whose member walks out of storage/ through .." "PL-028 (..): $(p7zfstate)"
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
