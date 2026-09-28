@@ -21,6 +21,7 @@
 #include <gtk/gtk.h>
 #include <webkit2/webkit2.h>
 #include <string.h>
+#include <strings.h>
 
 #define OSK_ROWS 4
 #define OSK_COLS 11
@@ -556,6 +557,25 @@ static gboolean on_key(GtkWidget *widget, GdkEventKey *event, gpointer data)
     return FALSE;
 }
 
+/* Whether an address goes in the page file. Not rclone's loopback redirect:
+ * http://127.0.0.1:53682/?state=...&code=... carries the OAuth code, a
+ * credential even once redeemed, and the file is read by another process
+ * and lives in /var/run with whatever mode the umask gives it (#308 claude
+ * F-RS-20). The phone loses nothing -- the window turns to "Finishing up"
+ * there. Plain C, host by host, so it can be tested without GTK. */
+static int page_worth_recording(const char *uri)
+{
+    const char *host = uri ? strstr(uri, "://") : NULL;
+    if (!host)
+        return 1;
+    host += 3;
+    size_t n = strcspn(host, ":/?#");
+    if (n == 9 && (strncmp(host, "127.0.0.1", 9) == 0
+                   || strncasecmp(host, "localhost", 9) == 0))
+        return 0;
+    return 1;
+}
+
 /* WebKit only routes keys to the page when the WebView itself holds GTK
  * focus. A window can be focused by the compositor -- sway reported
  * focused=true -- while the widget inside it never took focus, which looks
@@ -586,7 +606,7 @@ static void on_load_changed(WebKitWebView *view, WebKitLoadEvent event,
      * which is already watching this directory. */
     const char *page_file = g_getenv("CLOUD_SIGNIN_PAGE_FILE");
     const char *uri = webkit_web_view_get_uri(view);
-    if (page_file && uri) {
+    if (page_file && uri && page_worth_recording(uri)) {
         GError *werr = NULL;
         if (!g_file_set_contents(page_file, uri, -1, &werr)) {
             if (werr) {

@@ -4369,4 +4369,29 @@ EOJS
 C8F=$( [ -s "${C8}/focus_first.js" ] && command -v node >/dev/null && node "${C8}/focus_test.js" "${C8}/focus_first.js" 2>&1 )
 [ "${C8F}" = "0 1 0" ]; check $? "focus_first adopts a field only when the body holds the focus -- a button the player reached keeps it (${C8F})" "focus_first moved focus (button, body, field): '${C8F:-did not run: needs node}' -- a control the player had reached lost the focus to the first field (#308 claude F-RS-17)"
 
+# The page file (the address the window shows, for the phone to notice a
+# change) is not written for rclone's loopback redirect, whose query carries
+# the OAuth code (#308 claude F-RS-20). page_worth_recording is plain C, so
+# it is lifted out and compiled with the host's cc against the addresses.
+sed -n '/^static int page_worth_recording(/,/^}/p' "${C8}/window.c" > "${C8}/pwr.c"
+cat > "${C8}/pwr_main.c" <<'EOC'
+#include <stdio.h>
+#include <string.h>
+#include <strings.h>
+#include "pwr.c"
+int main(void)
+{
+    const char *keep[] = { "https://www.dropbox.com/oauth2/authorize?state=x",
+                           "https://login.live.com/ppsecure", "https://127.0.0.1.example.com/", 0 };
+    const char *skip[] = { "http://127.0.0.1:53682/?state=abc&code=SECRET",
+                           "http://localhost:53682/?code=SECRET", "http://LOCALHOST/", 0 };
+    int bad = 0;
+    for (int i = 0; keep[i]; i++) if (!page_worth_recording(keep[i])) { printf("dropped %s\n", keep[i]); bad++; }
+    for (int i = 0; skip[i]; i++) if (page_worth_recording(skip[i])) { printf("recorded %s\n", skip[i]); bad++; }
+    return bad;
+}
+EOC
+C8P=$( [ -s "${C8}/pwr.c" ] && command -v cc >/dev/null && cc -std=gnu99 -o "${C8}/pwr" "${C8}/pwr_main.c" 2>&1 && "${C8}/pwr" 2>&1 )
+[ -s "${C8}/pwr.c" ] && [ -x "${C8}/pwr" ] && "${C8}/pwr" >/dev/null 2>&1; check $? "the page file is not written for rclone's loopback redirect, which carries the code; a provider's own pages still are" "page_worth_recording: $([ -s "${C8}/pwr.c" ] || echo 'no such function in cloud-signin-window.c -- every URI, the loopback redirect with its code included, goes to the page file'; echo "${C8P}" | head -3 | tr '\n' ' ') (#308 claude F-RS-20)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
