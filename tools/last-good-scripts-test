@@ -3624,6 +3624,14 @@ p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/seed=ARCHI
 p7bt restore --no-restart
 [ "${RC}" -eq 0 ] && [ "$(cat "${P7S}/.config/test/seed")" = "ARCHIVE COPY" ]; check $? "#307 audit G-B-09 (claude): an archive holding test/seed and a stale seed list naming it restores the archive's copy" "#307 audit G-B-09: rc ${RC}; test/seed='$(cat "${P7S}/.config/test/seed")' -- the seed list overwrote the archive's own file"
 
+# == AUD claude G-B-08 (#307 audit of the fixes): a folder where the restore mark goes stops the restore
+p7reset '  /storage/.config/test/*'
+echo LIVE > "${P7S}/.config/test/f1"; mkdir -p "${P7S}/.config/.restore-in-progress"
+p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/f1=ARCHIVE"
+p7bt restore --no-restart
+[ "${RC}" -ne 0 ] && [ "$(cat "${P7S}/.config/test/f1")" = "LIVE" ] && [ "$(p7why)" = "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS" ] && [ -z "$(ls -A "${P7S}/.config/.restore-in-progress")" ]; check $? "#307 audit G-B-08 (claude): with a folder where the mark goes, the image's mv -fT refuses to move the mark into it and the restore stops before the extraction" "#307 audit G-B-08: rc ${RC}; f1='$(cat "${P7S}/.config/test/f1")'; why '$(p7why)'; the folder holds: $(ls -A "${P7S}/.config/.restore-in-progress" | tr '\n' ' ')"
+rmdir "${P7S}/.config/.restore-in-progress" 2>/dev/null
+
 # y2. wifictl whole, against an nmcli that answers as the target's does
 # (probed on guest d for the psk, 2026-09-27): terse and get-values output
 # escapes ':' and '\' unless --escape no; two wireless devices, each profile
