@@ -307,10 +307,11 @@ RATOKENDIRS=(
 # pre-restore snapshot passes 0: it never leaves the device, and putting it
 # back must give the player exactly the settings they had, passwords too.
 #
-# Returns 0 when TARGET holds a verified archive; 2 when nothing could be
-# collected (an unreadable input, or nothing to collect); 3 when the archive
-# could not be written or did not list back; 6 when the list names something
-# outside /storage. TARGET is untouched on every code but 0.
+# Returns 0 when TARGET holds a verified archive; 2 when the collection
+# failed (an unreadable input, a copy that did not finish); 3 when the
+# archive could not be written or did not list back; 4 when there was
+# nothing to collect; 6 when the list names something outside /storage.
+# TARGET is untouched on every code but 0.
 write_archive() {
     local TARGET="${1}" STRIP="${2:-1}"
     local SYSCFG="/storage/.config/system/configs/system.cfg"
@@ -458,9 +459,13 @@ write_archive() {
 
     if [ ! -s "${FILELIST}" ]
     then
-        # busybox tar given an empty list writes nothing readable.
+        # Nothing to collect -- every location absent, empty, or the
+        # image's own -- is its own answer (4), never the 2 a failed
+        # collection gives: a restore reads 4 as "nothing on this device to
+        # keep" and goes on, and it read a FAILED copy the same way until
+        # #307 PL-009, extracting over a tree it had no copy of.
         rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
-        return 2
+        return 4
     fi
 
     # Only hold back what this backup was actually going to contain. A user
@@ -775,9 +780,12 @@ case "${VERB}" in
         write_archive "${SNAPSHOT}" 0
         case $? in
             0) trim_archive ;;
-            2) # Nothing on the device to keep: a fresh install, or nothing
-               # readable. There is nothing a failed restore could revert to
-               # and nothing it could damage, so go on without a copy.
+            4) # Nothing on the device to keep: a fresh install. There is
+               # nothing a failed restore could revert to and nothing it
+               # could damage, so go on without a copy. A copy that FAILED
+               # (2, 3) is not this: the tree is there and could not be
+               # kept, so the restore stops below before writing anything
+               # (#307 PL-009).
                SNAPSHOT=""
                logger -t backuptool "no current settings to copy aside before the restore" ;;
             *) why "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS"
@@ -931,7 +939,7 @@ case "${VERB}" in
         write_archive "${BACKUPFILE}" 1
         case $? in
             0) ;;
-            2) why "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS"
+            2|4) why "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS"
                fail "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS. NOTHING WAS WRITTEN, AND YOUR LAST BACKUP IS UNCHANGED. TRY AGAIN." "collecting into staging failed" ;;
             6) why "YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP CAN'T CARRY"
                fail "YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP CAN'T CARRY, SO NOTHING WAS WRITTEN. YOUR LAST BACKUP IS UNCHANGED." "a location in /storage/.config/backuptool.conf is outside /storage" ;;
