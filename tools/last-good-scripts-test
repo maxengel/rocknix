@@ -4004,7 +4004,10 @@ check $? "the placement line is written after the divider is set and from the di
 # own config parser and asked about a matrix of append lists -- none; one
 # file at -1, at 3, without the key, missing; the last of two winning either
 # way; a file without the key after a -1 -- and about a -1 whose file is
-# deleted after the load recorded it.
+# deleted after the load recorded it. Each list is recorded as
+# config_load_file records it, from the entries the load chose (the audit
+# of the fix round, gpt G2-F2-02; F2-22 below replaces a file between the
+# load and the answer).
 F2_BAD=""
 grep -Eq 'command_record_append_config\(' <(awk '/^static bool config_load_file\(/,/^}/' "${RX}/src/configuration.c") || F2_BAD+=" configuration.c-records-nothing-at-load"
 tr -s ' \t\n' ' ' < "${RX}/src/command.c" | grep -q 'if (settings->ints.state_slot < 0 && command_append_config_sets_auto_slot())' || F2_BAD+=" command.c-guard"
@@ -4019,6 +4022,29 @@ cat > "${RX}/autoslot_test.c" <<'EOC'
 #include <compat/strl.h>
 #include <file/config_file.h>
 #include "autoslot.inc"
+/* a list recorded as config_load_file records it: an empty main config,
+ * its state_slot entry noted, each file appended with config_append_file,
+ * then the answer taken from the entries the load chose; NULL for none */
+static void record(const char *list)
+{
+   char tmp[PATH_MAX_LENGTH], *ptr, *delim;
+   config_file_t *conf = config_file_new_alloc();
+   const struct config_entry_list *main_slot = config_get_entry(conf, "state_slot");
+   if (!list)
+      command_record_append_config(NULL, NULL);
+   else
+   {
+      strlcpy(tmp, list, sizeof(tmp));
+      for (ptr = tmp; ptr && *ptr; ptr = delim ? delim + 1 : NULL)
+      {
+         if ((delim = strchr(ptr, '|')))
+            *delim = '\0';
+         config_append_file(conf, ptr);
+      }
+      command_record_append_config(conf, main_slot);
+   }
+   config_file_free(conf);
+}
 /* each argument is an append list, "-" none; "--rr <list> <file>" records
  * the list, removes the file, then asks */
 int main(int argc, char **argv)
@@ -4028,12 +4054,12 @@ int main(int argc, char **argv)
    {
       if (!strcmp(argv[i], "--rr") && i + 2 < argc)
       {
-         command_record_append_config(argv[i + 1]);
+         record(argv[i + 1]);
          remove(argv[i + 2]);
          i += 2;
       }
       else
-         command_record_append_config(strcmp(argv[i], "-") ? argv[i] : NULL);
+         record(strcmp(argv[i], "-") ? argv[i] : NULL);
       printf("%d", command_append_config_sets_auto_slot() ? 1 : 0);
    }
    printf("\n");
@@ -10349,6 +10375,119 @@ check $? "gst-plugins-base whose appsink plugin is a dead link fails the package
 out="$(f2b_gst gst-plugins-base ${F2B_BASE} f:usr/lib/gstreamer-1.0/libgstapp.so.debug f:usr/lib/gstreamer-1.0/libgstrawparse.so)"
 [[ "${out}" == DIE:* ]] || [[ "${out}" == *rc=3* ]]
 check $? "gst-plugins-base with only a libgstapp.so.debug beside the plugins fails the package -- the name is the plugin's, not a prefix of it" "gst-plugins-base with libgstapp.so.debug and no libgstapp.so: '${out:0:160}' -- the package passed without appsink"
+
+# F2-22. G2-F2-02 (gpt): 0018 answered "does this launch's append config ask
+# for the Auto slot?" by opening the append files a second time, after
+# config_load_file had read them, so a file removed or rewritten between the
+# two reads gave an answer the load never saw -- and the Auto slot was reset
+# at content load, the defect 0018 exists to stop. It now answers from the
+# load's own entries: the state_slot entry the main config holds is noted
+# before the append files are read, and an entry that differs afterwards is
+# an append file's, carrying the value the load applies. The helper block is
+# driven through the load's own sequence -- libretro-common's
+# config_append_file -- with the file replaced or removed the moment after
+# the load read it; a block from before the change (a list it reads again)
+# is driven the same way, so the case fails on the base by behaviour, not by
+# a missing name. The last two lists are the controls: a -1 left in the main
+# config is not the launch's, and a launch's -1 over a numbered main slot is.
+# Then config_load_file is read for where the two calls sit.
+echo "  F2-22. 0018 answers from the configuration the load read, not from a second read of the files (audit of the fix round G2-F2-02)"
+# The tree F2-4 patched, by its path: RX names another stream's fixture by now
+F2B_RX="${TMP}/f2/ra"
+if [ ! -s "${F2B_RX}/src/command.c" ]; then
+    check 1 "" "the RetroArch tree F2-4 patches is not here (no retroarch-${RA_PIN:-?}.tar.gz?) -- F2-22 did not run"
+else
+    awk '/ROCKNIX: append auto slot begin/,/ROCKNIX: append auto slot end/' "${F2B_RX}/src/command.c" > "${F2B}/autoslot.inc"
+    cat > "${F2B}/autoslot_load.c" <<'EOC'
+#include <stdio.h>
+#include <string.h>
+#include <boolean.h>
+#include <retro_miscellaneous.h>
+#include <compat/strl.h>
+#include <file/config_file.h>
+#include "autoslot.inc"
+/* <main cfg or -> <append list> <file> <replacement or ->: the main config
+ * and the list loaded as config_load_file loads them; then <file> is
+ * replaced by <replacement> (removed, for -), the moment after the load
+ * read it; then the answer is recorded as the patch records it. Prints the
+ * state_slot the load applies and the answer: "-1:1". */
+int main(int argc, char **argv)
+{
+   char list[PATH_MAX_LENGTH], *ptr, *delim;
+   config_file_t *conf;
+   int slot = 99;
+#ifndef FROM_LIST
+   const struct config_entry_list *main_slot;
+#endif
+   if (argc != 5)
+      return 2;
+   conf = strcmp(argv[1], "-") ? config_file_new_from_path_to_string(argv[1]) : config_file_new_alloc();
+   if (!conf)
+      return 2;
+#ifndef FROM_LIST
+   main_slot = config_get_entry(conf, "state_slot");
+#endif
+   strlcpy(list, argv[2], sizeof(list));
+   for (ptr = list; ptr && *ptr; ptr = delim ? delim + 1 : NULL)
+   {
+      if ((delim = strchr(ptr, '|')))
+         *delim = '\0';
+      config_append_file(conf, ptr);
+   }
+   if (strcmp(argv[4], "-"))
+      rename(argv[4], argv[3]);
+   else
+      remove(argv[3]);
+#ifdef FROM_LIST
+   command_record_append_config(argv[2]);
+#else
+   command_record_append_config(conf, main_slot);
+#endif
+   config_get_int(conf, "state_slot", &slot);
+   printf("%d:%d", slot, command_append_config_sets_auto_slot() ? 1 : 0);
+   config_file_free(conf);
+   return 0;
+}
+EOC
+    # the block from before G2-F2-02 records from a list it reads again
+    F2B_FL=""; grep -q 'command_record_append_config(const char' "${F2B}/autoslot.inc" && F2B_FL="-DFROM_LIST"
+    L="${F2B_RX}/src/libretro-common"; AL="${F2B}/al"
+    if [ -s "${F2B}/autoslot.inc" ] && gcc -std=gnu99 ${F2B_FL} -o "${F2B}/autoslot_load" -I"${L}/include" -I"${F2B}" "${F2B}/autoslot_load.c" \
+          "${L}"/file/config_file.c "${L}"/file/file_path.c "${L}"/file/file_path_io.c "${L}"/streams/file_stream.c "${L}"/string/stdstring.c \
+          "${L}"/compat/compat_strl.c "${L}"/compat/fopen_utf8.c "${L}"/compat/compat_posix_string.c "${L}"/compat/compat_strcasestr.c \
+          "${L}"/encodings/encoding_utf.c "${L}"/vfs/vfs_implementation.c "${L}"/time/rtime.c > "${F2B}/autoslot_load.log" 2>&1; then
+        f2b_al() { # <main or -> <append file> <then: three|gone|same>: the driver's slot:answer
+            rm -rf "${AL}"; mkdir -p "${AL}"
+            printf 'state_slot = "-1"\nsavestate_auto_load = "true"\n' > "${AL}/auto.cfg"
+            printf 'state_slot = "3"\n' > "${AL}/three.cfg"; printf 'savestate_auto_save = "true"\n' > "${AL}/nokey.cfg"
+            printf 'state_slot = "-1"\n' > "${AL}/main-auto.cfg"; printf 'state_slot = "3"\n' > "${AL}/main-three.cfg"
+            local m="-"; [ "$1" != - ] && m="${AL}/$1"
+            case "$3" in
+                three) cp "${AL}/three.cfg" "${AL}/next.cfg"; "${F2B}/autoslot_load" "${m}" "${AL}/$2" "${AL}/$2" "${AL}/next.cfg" ;;
+                gone)  "${F2B}/autoslot_load" "${m}" "${AL}/$2" "${AL}/$2" - ;;
+                same)  cp "${AL}/$2" "${AL}/next.cfg"; "${F2B}/autoslot_load" "${m}" "${AL}/$2" "${AL}/$2" "${AL}/next.cfg" ;;
+            esac
+        }
+        out="$(f2b_al - auto.cfg three)"
+        [ "${out}" = "-1:1" ]; check $? "a launch's -1, its file rewritten to slot 3 after the load read it: the load applies -1 and the answer is Auto" "append -1, rewritten to 3 after the load: '${out}' (load's slot:answer), expected '-1:1' -- the answer came from a second read"
+        out="$(f2b_al - auto.cfg gone)"
+        [ "${out}" = "-1:1" ]; check $? "a launch's -1, its file removed after the load read it: the answer is still Auto" "append -1, removed after the load: '${out}', expected '-1:1' -- the answer came from a second read"
+        out="$(f2b_al main-auto.cfg nokey.cfg same) $(f2b_al main-three.cfg auto.cfg same)"
+        [ "${out}" = "-1:0 -1:1" ]; check $? "a -1 left in the main config is not the launch's; a launch's -1 over a numbered main slot is (the controls)" "main -1 with an append that sets nothing, then main 3 with an append -1: '${out}', expected '-1:0 -1:1'"
+    else
+        check 1 "" "the append-slot block does not build with libretro-common's config parser: $(grep -m1 'error' "${F2B}/autoslot_load.log" | cut -c1-160)"
+    fi
+    awk '/^static bool config_load_file\(/,/^}/' "${F2B_RX}/src/configuration.c" > "${F2B}/clf.c"
+    n_main=$(grep -n 'config_get_entry(conf, "state_slot")' "${F2B}/clf.c" | head -1 | cut -d: -f1)
+    n_app1=$(grep -n 'config_append_file(conf, config_path)' "${F2B}/clf.c" | head -1 | cut -d: -f1)
+    n_app2=$(grep -n 'config_append_file(conf, config_path)' "${F2B}/clf.c" | tail -1 | cut -d: -f1)
+    n_rec=$(grep -n 'command_record_append_config(conf, main_slot)' "${F2B}/clf.c" | head -1 | cut -d: -f1)
+    n_ovr=$(grep -n 'RARCH_PATH_CONFIG_OVERRIDE' "${F2B}/clf.c" | head -1 | cut -d: -f1)
+    [ -n "${n_main}" ] && [ -n "${n_app1}" ] && [ -n "${n_rec}" ] && [ -n "${n_ovr}" ] \
+      && [ "${n_main}" -lt "${n_app1}" ] && [ "${n_app2}" -lt "${n_rec}" ] && [ "${n_rec}" -lt "${n_ovr}" ] \
+      && ! grep -q 'config_file_new_from_path' "${F2B}/autoslot.inc"
+    check $? "config_load_file notes the main config's state_slot entry before the append files, records from the entries after them and before the overrides, and the block opens no file" "config_load_file: entry noted at ${n_main:-none}, appends ${n_app1:-none}-${n_app2:-none}, recorded from the entries at ${n_rec:-none}, overrides at ${n_ovr:-none}; the block opens files: $(grep -c 'config_file_new_from_path' "${F2B}/autoslot.inc")"
+fi
 
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
