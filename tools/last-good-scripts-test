@@ -3011,4 +3011,60 @@ ckf() { # ckf <raw bytes> <exe> <CORE_MIN_FREE_KB>
 ckf 65536 retroarch $(( XFREE - 512 )); printf '%s' "${NOTE}" | grep '^dump' | grep -q 'NOT KEPT' && printf '%s' "${NOTE}" | grep '^dump' | grep -q 'plus the 1048576 byte cap'; check $? "with free space above the floor but under the floor plus the cap, the dump is refused and the note names both (audit #258, the seat's G-03; the old test admitted it)" "free ${XFREE} KB; note: $(printf '%s' "${NOTE}" | grep '^dump' | cut -c1-140)"
 ckf 65536 retroarch 1024;                printf '%s' "${NOTE}" | grep '^dump' | grep -q 'whole'; check $? "and with a floor the card clears by more than the cap, the same dump is kept" "note: $(printf '%s' "${NOTE}" | grep '^dump' | cut -c1-100)" "note: $(printf '%s' "${NOTE}" | grep '^dump')"
 
+# ---- audit #307, stream C ----
+# The cloud sign-in broker and setup (audit #307 stream C: PL-015..018,
+# PL-047..051, PL-074; the #308 sweep rows of packet 3-rclone-setup). Every
+# case below was written before its fix and seen to FAIL against the script
+# it grades; the commit that added it says which.
+#
+#   C1. cloud_setup --set-saves-remote: a one-level saves folder is refused
+#       with the reason, where it would have nested the settings and content
+#       folders inside itself (PL-015); the siblings of a two-level one.
+echo "  C. the cloud sign-in broker and setup (audit #307 stream C)"
+CS="${TMP}/C"; mkdir -p "${CS}/src"
+for rel in cloud_setup cloud_oauth cloud_remote cloud_device_id; do
+    src_of "${RCLONE_REL}/${rel}" "${CS}/src/${rel}"
+done
+# busybox for the applets the device has, where this machine has the image's.
+CSBB=(); CSPATH="/shim:/usr/bin:/bin"
+if [ -n "${BB}" ]; then CSBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB_HOST}" "${BB}"); CSPATH="/shim:/bbin:/usr/bin:/bin"; fi
+
+# C1. cloud_setup WHOLE inside bwrap: a stub profile, the shipped
+# cloud_sync.conf as the device's, and a shim rclone whose remote "qa:" is
+# path-based and holds no folder yet (lsd answers "directory not found").
+C1="${CS}/c1"; mkdir -p "${C1}/shim" "${C1}/repo" "${C1}/storage/.config"
+cp "${CS}/src/cloud_setup" "${C1}/repo/cloud_setup"
+printf 'export PATH=%s\n' "${CSPATH}" > "${C1}/profile"
+printf '#!/bin/sh\nexit 0\n' > "${C1}/shim/logger"
+cat > "${C1}/shim/rclone" <<'EOR'
+#!/bin/sh
+case "$1" in
+  listremotes) echo "qa:" ;;
+  lsd) echo 'ERROR : directory not found' >&2; exit 3 ;;
+  backend) printf '{\n\t"Features": {\n\t\t"BucketBased": false\n\t}\n}\n' ;;
+  *) exit 0 ;;
+esac
+EOR
+chmod +x "${C1}/shim"/*
+CONF1="${C1}/storage/.config/cloud_sync.conf"
+c1() { # <args...>: cloud_setup in the sandbox; output to C1/out, rc in RC
+    RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${C1}/profile" /etc/profile "${CSBB[@]}" \
+        --ro-bind "${C1}/shim" /shim --ro-bind "${C1}/repo" /repo --bind "${C1}/storage" /storage \
+        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --dir /var/log \
+        bash /repo/cloud_setup "$@" > "${C1}/out" 2>&1; echo $? ) 2>/dev/null )
+}
+conf1() { grep -E '^(SAVES|SETTINGS|CONTENT)_REMOTE=' "${CONF1}" | tr '\n' ' '; }
+cp "${ROOT}/${RCLONE_REL}/cloud_sync.conf" "${CONF1}"; cp "${CONF1}" "${C1}/conf.before"
+c1 --set-saves-remote /GAMES
+[ "${RC}" -ne 0 ] && cmp -s "${CONF1}" "${C1}/conf.before"; check $? "a one-level saves folder (/GAMES) is refused and the config is left as it was (rc ${RC})" "rc ${RC}; the config now reads: $(conf1)-- the settings and content folders nested inside the saves folder a mirror deletes in (PL-015)"
+grep -q '/GAMES/Saves' "${C1}/out" && ! grep -qi 'error' "${C1}/out"; check $? "and says why, in words, with the folder to use instead (/GAMES/Saves): $(head -1 "${C1}/out")" "said: '$(tr '\n' ' ' < "${C1}/out" | cut -c1-160)'"
+c1 --check-syncpath /GAMES
+[ "${RC}" -ne 0 ] && grep -q '/GAMES/Saves' "${C1}/out"; check $? "--check-syncpath refuses it too, where the folder is typed" "--check-syncpath /GAMES: rc ${RC}; said '$(tr '\n' ' ' < "${C1}/out" | cut -c1-120)'"
+c1 --set-saves-remote Mine/Saves/
+[ "${RC}" -eq 0 ] && [ "$(conf1)" = 'SAVES_REMOTE="/Mine/Saves" SETTINGS_REMOTE="/Mine/Backups" CONTENT_REMOTE="/Mine/Content" ' ]; check $? "a two-level folder (Mine/Saves/) is stored with its settings and content folders beside it" "rc ${RC}; config: $(conf1); said: $(head -1 "${C1}/out")"
+c1 --set-saves-remote /a/b/Saves
+[ "${RC}" -eq 0 ] && [ "$(conf1)" = 'SAVES_REMOTE="/a/b/Saves" SETTINGS_REMOTE="/a/b/Backups" CONTENT_REMOTE="/a/b/Content" ' ]; check $? "and a deeper one (/a/b/Saves) likewise" "rc ${RC}; config: $(conf1)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

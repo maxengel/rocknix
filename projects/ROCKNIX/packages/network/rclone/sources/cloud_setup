@@ -160,14 +160,38 @@ absent_not_broken() {
     return 1
 }
 
-syncpath_problem() {
-    local path="$1" remote="$2" bucket probe
-    path="/$(echo "${path}" | sed 's:^/*::; s:/*$::')"
-
+# The saves folder has to sit inside another folder. Its settings backups
+# and games are kept beside it -- <parent>/Backups and <parent>/Content -- and
+# a saves folder at the top of the cloud has no parent to keep them in. The
+# setter used to put them INSIDE it instead (/GAMES/Backups, /GAMES/Content):
+# the nesting a mirror of the saves folder deletes, because to the saves
+# allowlist every file in them is excluded (audit #307 PL-015,
+# rclone-cloud-sync.md). So it is refused where it is typed, with the folder
+# to use instead -- on a bucket remote that is the bucket and a folder in it,
+# which is the shape the bucket message below asks for anyway. Plain string
+# checks, no rclone: they hold with no remote configured at all.
+saves_folder_problem() {
+    local path="/$(echo "$1" | sed 's:^/*::; s:/*$::')"
     if [ "${path}" = "/" ]; then
         echo "Your cloud folder can't be empty."
         return 1
     fi
+    case "${path#/}" in
+        */*) ;;
+        *)
+            echo "Your saves folder needs to sit inside another folder, so your settings backups and games can go beside it."
+            echo "Try ${path}/Saves."
+            return 1
+            ;;
+    esac
+    return 0
+}
+
+syncpath_problem() {
+    local path="$1" remote="$2" bucket probe
+    path="/$(echo "${path}" | sed 's:^/*::; s:/*$::')"
+
+    saves_folder_problem "${path}" || return 1
 
     # No provider rules are encoded here on purpose. rclone does not validate
     # bucket names itself - it hands them to the provider and relays the
@@ -361,9 +385,11 @@ case "$1" in
         # This used to write SETTINGS_REMOTE="<saves>/backup", which is the
         # first-layout nesting cloud_migrate_layout exists to undo and the
         # trap cloud_backup warns about: a mirror of the saves folder can
-        # delete the archives kept beneath it. Same derivation as
-        # cloud_sync_helper uses for CONTENT_REMOTE: the saves folder's
-        # parent, or the folder itself when it sits at the root.
+        # delete the archives kept beneath it. The siblings are the saves
+        # folder's parent's: <parent>/Backups and <parent>/Content. A saves
+        # folder at the top of the cloud has no parent and is refused
+        # (saves_folder_problem) -- it used to adopt the folder itself as the
+        # parent, which nested both inside it (audit #307 PL-015).
         NEWPATH="$2"
         if [ -z "${NEWPATH}" ]; then
             echo "ERROR empty path"
@@ -375,6 +401,9 @@ case "$1" in
             echo "ERROR root path not allowed"
             exit 1
         fi
+        # Whatever the remote, a saves folder needs a parent for its
+        # siblings (PL-015) -- checked before, and without, the remote.
+        saves_folder_problem "${NEWPATH}" || exit 1
         # Refuse a path this remote cannot use, rather than storing it and
         # letting the next sync fail with a provider error naming nothing the
         # player recognises.
@@ -383,7 +412,6 @@ case "$1" in
             exit 1
         fi
         SP_PARENT="$(dirname "${NEWPATH}")"
-        [ "${SP_PARENT}" = "/" ] && SP_PARENT="${NEWPATH}"
         for key in SAVES_REMOTE SETTINGS_REMOTE CONTENT_REMOTE; do
             value="${NEWPATH}"
             [ "${key}" = "SETTINGS_REMOTE" ] && value="${SP_PARENT}/Backups"
