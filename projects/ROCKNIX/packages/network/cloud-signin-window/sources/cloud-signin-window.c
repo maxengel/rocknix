@@ -65,6 +65,7 @@ typedef struct {
     GtkWidget *keys[OSK_ROWS + 1][OSK_COLS];   /* +1: the extras row */
     int row, col;
     gboolean shift;
+    gboolean symbols;
     char last_field[256];
 } Osk;
 
@@ -77,7 +78,21 @@ static const char *OSK_LOWER[OSK_ROWS] = {
 static const char *OSK_UPPER[OSK_ROWS] = {
     "!@#$%^&*()", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM+?/",
 };
-static const char *OSK_EXTRAS[] = { "shift", "space", "@", "del", "enter", "hide" };
+/* The rest of printable ASCII. The two layouts above lacked
+ * = : ; ' " , < > [ ] { } \ | ` and ~, so a password holding any of them
+ * could not be typed on the handheld at all (#308 gpt F-RS-12). A third
+ * layout, reached from its own key, rather than a longer shift cycle: the
+ * letters stay one press from wherever you are. Each row is as long as the
+ * lower-case one, because the keys are built from that one and relabelled;
+ * the last row repeats the punctuation an address or a password reaches
+ * for most. */
+static const char *OSK_SYMBOLS[OSK_ROWS] = {
+    "!@#$%^&*()", "-_=+[]{}\\|", ";:'\",.<>/", "?~`.,-_@/:",
+};
+#define OSK_TO_SYMBOLS "#+="
+#define OSK_TO_LETTERS "abc"
+static const char *OSK_EXTRAS[] = { "shift", "space", "@", "del", "enter", "hide",
+                                    OSK_TO_SYMBOLS };
 
 /* Sized for a four-inch screen held at arm's length, and dark because it sits
  * under a page that is usually white -- a keyboard that flashes the screen
@@ -184,8 +199,17 @@ static void osk_show(Osk *osk)
 static void osk_press(Osk *osk, const char *label)
 {
     if (g_strcmp0(label, "hide") == 0)       { osk_hide(osk); return; }
-    if (g_strcmp0(label, "shift") == 0)      { osk->shift = !osk->shift;
+    if (g_strcmp0(label, "shift") == 0)      { if (osk->symbols)
+                                                   osk->symbols = FALSE;
+                                               else
+                                                   osk->shift = !osk->shift;
                                                osk_relabel(osk); return; }
+    if (g_strcmp0(label, OSK_TO_SYMBOLS) == 0
+        || g_strcmp0(label, OSK_TO_LETTERS) == 0) {
+        osk->symbols = !osk->symbols;
+        osk_relabel(osk);
+        return;
+    }
     if (g_strcmp0(label, "space") == 0)      { osk_type(osk, GDK_KEY_space); return; }
     if (g_strcmp0(label, "del") == 0)        { osk_type(osk, GDK_KEY_BackSpace); return; }
     if (g_strcmp0(label, "enter") == 0)      { osk_type(osk, GDK_KEY_Return); return; }
@@ -201,7 +225,8 @@ static void on_osk_clicked(GtkButton *button, gpointer data)
 
 static void osk_relabel(Osk *osk)
 {
-    const char **rows = osk->shift ? OSK_UPPER : OSK_LOWER;
+    const char **rows = osk->symbols ? OSK_SYMBOLS
+                      : osk->shift ? OSK_UPPER : OSK_LOWER;
     for (int r = 0; r < OSK_ROWS; r++)
         for (int c = 0; c < OSK_COLS && osk->keys[r][c]; c++) {
             const char *src = rows[r];
@@ -210,6 +235,13 @@ static void osk_relabel(Osk *osk)
             char label[2] = { src[c], 0 };
             gtk_button_set_label(GTK_BUTTON(osk->keys[r][c]), label);
         }
+    /* The layout key says where it goes: to the symbols, or back. */
+    for (int c = 0; c < OSK_COLS && osk->keys[OSK_ROWS][c]; c++) {
+        const char *now = gtk_button_get_label(GTK_BUTTON(osk->keys[OSK_ROWS][c]));
+        if (g_strcmp0(now, OSK_TO_SYMBOLS) == 0 || g_strcmp0(now, OSK_TO_LETTERS) == 0)
+            gtk_button_set_label(GTK_BUTTON(osk->keys[OSK_ROWS][c]),
+                                 osk->symbols ? OSK_TO_LETTERS : OSK_TO_SYMBOLS);
+    }
 }
 
 /* The selected key is drawn by us, not by GTK's focus ring, because nothing

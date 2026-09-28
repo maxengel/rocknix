@@ -4394,4 +4394,30 @@ EOC
 C8P=$( [ -s "${C8}/pwr.c" ] && command -v cc >/dev/null && cc -std=gnu99 -o "${C8}/pwr" "${C8}/pwr_main.c" 2>&1 && "${C8}/pwr" 2>&1 )
 [ -s "${C8}/pwr.c" ] && [ -x "${C8}/pwr" ] && "${C8}/pwr" >/dev/null 2>&1; check $? "the page file is not written for rclone's loopback redirect, which carries the code; a provider's own pages still are" "page_worth_recording: $([ -s "${C8}/pwr.c" ] || echo 'no such function in cloud-signin-window.c -- every URI, the loopback redirect with its code included, goes to the page file'; echo "${C8P}" | head -3 | tr '\n' ' ') (#308 claude F-RS-20)"
 
+# The on-screen keyboard reaches every printable character a password may
+# hold: the two layouts lacked = : ; ' " , < > [ ] { } \ | ` ~ (#308 gpt
+# F-RS-12). Read from the layout tables themselves: every layout's rows are
+# as long as the lower-case one's (the keys are built from it, and a shorter
+# row would leave the last layout's labels on the rest), and the extras row
+# holds the key that reaches the symbols.
+cat > "${C8}/osk.py" <<'EOPY'
+import re, sys
+src = open(sys.argv[1]).read()
+def table(name):
+    m = re.search(r"static const char \*%s\[[^\]]*\] = \{(.*?)\};" % name, src, re.S)
+    if not m:
+        return None
+    return [bytes(t, "utf-8").decode("unicode_escape") for t in re.findall(r'"((?:[^"\\]|\\.)*)"', m.group(1))]
+lower, extras = table("OSK_LOWER"), table("OSK_EXTRAS") or []
+layouts = [t for t in (table(n) for n in ("OSK_LOWER", "OSK_UPPER", "OSK_SYMBOLS")) if t]
+chars = set("".join("".join(t) for t in layouts)) | {e for e in extras if len(e) == 1}
+if "space" in extras:
+    chars.add(" ")
+missing = "".join(sorted(set(chr(c) for c in range(32, 127)) - chars))
+ragged = [n for n, t in zip(("OSK_UPPER", "OSK_SYMBOLS"), layouts[1:]) if [len(r) for r in t] != [len(r) for r in lower]]
+print("missing=%s|ragged=%s" % (missing, ",".join(ragged)))
+EOPY
+C8K=$(python3 "${C8}/osk.py" "${C8}/window.c" 2>&1)
+[ "${C8K}" = "missing=|ragged=" ]; check $? "the on-screen keyboard reaches every printable ASCII character, each layout's rows as long as the keys built for them" "the on-screen keyboard: ${C8K} -- a password with one of those cannot be typed on the handheld (#308 gpt F-RS-12)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
