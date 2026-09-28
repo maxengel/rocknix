@@ -328,3 +328,70 @@ The block needs `python3`, `node`, `cc` and `patch` on the host, plus bwrap with
   - A register row accepting plaintext on the LAN, which the audit's F-RS-01 verdict asks for.
   - `rclone-cloud-sync.md`'s now-false "There is no browser on the device".
 - **Scratch material:** the scratch tests, the evidence log (`evidence.md`) and the helper scripts are in `/workspace/tmp/rocknix-session/streams/C-work/`. The block logs against the base and the branch are `old-block.log` and `new-block.log`, and the final full run is `final.log`.
+
+## Follow-up: the audit of stream C's fixes (G-C findings, both seats)
+
+This covers the coordinator's High (tier collision, gpt G-C-01) and every other G-C finding in `docs/audits/2026_09_28-milestone-audit-of-the-fixes-307/seats/C-claude.md` and `C-gpt.md`. The two seats number their findings independently, so each is named with its seat.
+
+**Result:** 16 more commits on `feature/pl-c` (47 since `417dcd8610`); HEAD is now `d88e053112`. The full `tools/last-good-scripts-test` run on that tree ends `PASSED` with 492 PASS, 0 FAIL, 0 SKIP (stream C's block: 106). It was 465 before this follow-up.
+
+- Every title matches `^[a-zA-Z0-9_*./-]+:[[:space:]].+$` and is at most 72 characters. Two of my own titles broke that; each was amended while it was HEAD. The trees are unchanged.
+- Every commit passed the new `.githooks/pre-commit` (shared hooks path).
+- The whole branch diff since `417dcd8610` matches none of `.githooks/secret-patterns`.
+
+### Fixed, each with a case written first and seen to FAIL
+
+| Finding | Commit | FAIL seen first | After |
+| --- | --- | --- | --- |
+| **gpt G-C-01** (High): a saves folder named like its own sibling aliases two tiers | `8b5655a4dc` | `FAIL /Mine/Backups: rc 0; config: SAVES_REMOTE="/Mine/Backups" SETTINGS_REMOTE="/Mine/Backups" CONTENT_REMOTE="/Mine/Content"` (also `/Mine/Content`, `/Mine/backups`, and `--check-syncpath` saying OK) | 5 PASS, including the control that `/Mine/Saves` still derives `/Mine/Backups` and `/Mine/Content` |
+| **gpt G-C-02** and **claude G-C-02**: a collector wrote the state after its attempt no longer owned it | `db843bf27d` | `FAIL after A's create failed behind B the state reads {'status': 'failed', …}`; `FAIL the old serve's collector turned the new attempt's state into {'status': 'failed', 'attempt': 'NEW', …}`; `FAIL after holder.end() the state reads {'status': 'failed', …}` | 3 PASS |
+| **gpt G-C-03** and **claude G-C-06**: `conf_get` read the first assignment and double quotes only | `dde630672b` | `FAIL SAVES_REMOTE assigned twice, --info said: SAVES_REMOTE=/ROCKNIX/Saves` (also a single-quoted value, a bare value with a comment, and `--content-location`) | 4 PASS |
+| **gpt G-C-04**: a directory at the config path was reported as a successful save | `9434dbd4e1` | `FAIL config path a directory: rc 0; said 'OK /Other/Saves '; inside it: cloud_sync.conf.tmp.682295` | PASS |
+| **gpt G-C-05**: while the box was masked, the untypable-character warning showed the characters | `b4f6c45a83` | `FAIL masked, the warning reads "The handheld can't type é é, so they were left out."` | PASS |
+| **gpt G-C-06**: with no route, the serve still listened on every interface | `b87ac8b13f` | `FAIL no route (127.0.0.1 advertised): reachable there True, on 127.0.0.2 True` | PASS |
+| **gpt G-C-07**: a failed config write printed a raw shell diagnostic | `6fe579f0a5` | `FAIL read-only /storage printed: '/repo/cloud_setup: line 74: /storage/.config/cloud_sync.conf.tmp.741325: Read-only file system|…'` | PASS |
+| **claude G-C-03**: two names for one folder, and a port number in the state | `0fdef2a019` | `FAIL /GAMES refused as: Your saves folder needs…`; `FAIL taken port: rc 2, error 'port 8435 is already in use on this device'` | 4 PASS |
+| **claude G-C-04**: the harness header claimed every case failed first | `d88e053112` | Header text only; no check possible | The header now says which checks are guards |
+| **claude G-C-09**: `cloud_remote` passed rclone's stderr, password included, to the interface's dialog | `4b1dbb116c` | `FAIL rc 2; cloud_remote said 'Failed to create remote: bad option pass=SECRETPASS9'` | PASS (`pass=<hidden>`) |
+| **claude G-C-10**: rclone's words that arrived in the same read as its link were never checked | `8b06475a82` | `FAIL started True; state {'status': 'failed', 'error': 'The provider did not accept that address.'}` | PASS |
+
+How each fix treats what earlier builds already wrote:
+
+- **gpt G-C-01:** a config with aliased tiers is read as it stands, and stream A's widened nesting warning in `cloud_backup` covers it. It is never rewritten.
+- **gpt G-C-03 / claude G-C-06:** read both. Configs the scripts wrote read as before; hand-edited ones now read as the sync reads them. Nothing is rewritten.
+- **gpt G-C-02 / claude G-C-02:** nothing inherited. An old `session.json` has no attempt id, and the next serve resets it.
+- **All the others:** nothing is written.
+
+### Withdrawn, each refuted by the lines named, with the check the finding asked for added as a guard
+
+- **claude G-C-01** (whether the serve maps the phone's Close page to Escape):
+  - The mapping exists: `NAMED_KEYS = {… "escape": 1, …}` (`cloud_oauth:1199`), every code in that table is enabled when the keyboard opens, and `do_POST` presses the named key.
+  - Guard `db7bc182d2`: a POST of `key=escape` through the real handler and the real keyboard reads back KEY_ESC pressed and released.
+  - It passes here and on the audited tree (`19e3a852b0`).
+- **claude G-C-05** (whether other `cloud_setup` readers still source the config):
+  - No subcommand sources or evals the config. The grep for `. "${SYNC_CONF}"`, `source` and `eval` finds only a comment; the one file sourced is `/etc/profile`.
+  - Guard `9bdd46f98e`: `--content-location`, `--check-syncpath` and `--use-content-root` run over a config whose values hold commands, and nothing runs. It passes on the audited tree too.
+- **claude G-C-07** (the symbols key proven only in the table):
+  - `osk_build` builds the extras row with `for (guint i = 0; i < G_N_ELEMENTS(OSK_EXTRAS) && i < OSK_COLS; i++)`, and the symbols key is one of those entries.
+  - Guard `78ec558925` reads the build loop, the toggle in `osk_press`, and the symbols layout in `osk_relabel`.
+    - "wired" on this tree and on the audited tree.
+    - At `417dcd8610` it names three missing pieces.
+    - With the loop's bound replaced by a literal 6 (the seat's scenario, constructed) it FAILs.
+  - The 640x480 frames are still the real proof.
+- **claude G-C-08** (the `DRIVABLE_OAUTH` constant deleted without a reader check):
+  - `git grep DRIVABLE_OAUTH 417dcd8610` finds only the definition, and the EmulationStation checkout never names it.
+  - Guard `e458e5f51d`: `cloud_remote providers`, `fields` and `choices` each run, exit 0 and list.
+- **claude G-C-11** (a stored path re-validated somewhere else):
+  - `syncpath_problem` has exactly two callers, `--check-syncpath` (`cloud_setup:482`) and `--set-saves-remote` (`:516`).
+  - In this tree and the EmulationStation checkout, the only caller of either flag is the interface's folder editor (`GuiMenu.cpp:6274`), which checks the value the player just typed.
+  - So a stored folder is never re-checked. No commit.
+
+### Not worked
+
+Notes in the seats' sweep tables that carry no G-C number are not worked here. Examples:
+
+- gpt F-RS-18 has no absolute limit on a request's lifetime.
+- `page_worth_recording` does not match `[::1]` or userinfo forms, although rclone's redirect is always `127.0.0.1`.
+- gpt F-RS-16's "no pad at all" half.
+
+They remain as the seats wrote them.
