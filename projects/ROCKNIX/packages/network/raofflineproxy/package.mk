@@ -23,7 +23,13 @@ PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
 # raofflineproxy-rcheevos and raofflineproxy-libchdr are the two submodules
 # the proxy's tarball leaves empty, pinned to the commits it names; make_target
 # below compiles them with the glue into libraproxy_rchash.so (fork #179).
-PKG_DEPENDS_TARGET="toolchain Python3 raofflineproxy-rcheevos raofflineproxy-libchdr"
+# And the packages whose tools the shipped scripts call (packaging-and-patches:
+# a shipped script's tools are dependencies too; #308 F-RA-23, F-RA-24): bash,
+# raofflineproxy-ctl's interpreter; busybox for flock, mkfifo, mktemp, stat,
+# logger, sed, awk, head, tail, date and sleep; coreutils for timeout (the
+# image's is coreutils', not a busybox link); grep, GNU's (the image's busybox
+# has no grep applet); systemd for systemctl.
+PKG_DEPENDS_TARGET="toolchain Python3 bash busybox coreutils grep systemd raofflineproxy-rcheevos raofflineproxy-libchdr"
 PKG_LONGDESC="RAOfflineProxy: a loopback proxy between the emulators and retroachievements.org that caches game data and queues casual awards earned without a connection, and sends them when one returns. Approved by RetroAchievements.org; casual (softcore) achievements only."
 PKG_TOOLCHAIN="manual"
 PKG_BUILD_FLAGS="+pic"

@@ -3906,4 +3906,16 @@ grep -qx 'AchievementsHost = ' "${DPS}/ppsspp.ini" && grep -q 'nothing is listen
 dppini; dpp /nonexistent
 grep -qx 'AchievementsHost = ' "${DPS}/ppsspp.ini" && grep -q "couldn't tell whether" "${DP}/storage/cheevos.log" && ! grep -q 'nothing is listening' "${DP}/storage/cheevos.log"; check $? "#308 claude F-EM-04 cheevos_ppsspp.sh: a socket table it cannot read launches direct and says it couldn't tell -- not that nothing answers" "#308 claude F-EM-04: ppsspp.ini: $(grep AchievementsHost "${DPS}/ppsspp.ini"); log: $(cat "${DP}/storage/cheevos.log" 2>/dev/null | tr '\n' '|')"
 
+# D16. #308 1-raoffline claude F-RA-23 = gpt F-RA-24: the recipe declares the
+# packages that provide the tools its shipped scripts call
+# (packaging-and-patches.md, "A shipped script's tools are dependencies too"):
+# bash (the ctl's interpreter), busybox (flock, mkfifo, mktemp, stat, logger,
+# sed, awk, head, tail, date, sleep), coreutils (timeout: the image's is
+# coreutils', a file in /usr/bin, not a busybox link), grep (GNU grep; the
+# image's busybox has no grep applet) and systemd (systemctl).
+src_of "${PKG_REL:-projects/ROCKNIX/packages/network/raofflineproxy/package.mk}" "${DD}/package.mk"
+DDEPS=" $(sed -n 's/^PKG_DEPENDS_TARGET="\(.*\)"$/\1/p' "${DD}/package.mk" | head -n 1) "
+DMISS=""; for p in Python3 bash busybox coreutils grep systemd; do case "${DDEPS}" in *" ${p} "*) ;; *) DMISS="${DMISS} ${p}" ;; esac; done
+[ -z "${DMISS}" ]; check $? "#308 F-RA-23/24 package.mk: PKG_DEPENDS_TARGET names Python3, bash, busybox, coreutils, grep and systemd (${DDEPS# })" "#308 F-RA-23/24 package.mk: PKG_DEPENDS_TARGET is '${DDEPS# }', missing:${DMISS}"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
