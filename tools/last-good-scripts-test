@@ -4097,4 +4097,20 @@ EXTRACT_ROOT="${P7KR}" ROMS_ROOT="${P7K}/roms" PATH="${P7K}/mvfail:${P7K}/bin:${
 [ "$(tr '\n' '|' < "${P7K}/cfg/system/configs/system.cfg.tmp" 2>/dev/null)" = "system.hostname=MINE|a.b=1|" ]; check $? "#307 audit G-B-10 (gpt): when the whole .tmp cannot be moved into place it is kept, not deleted" "#307 audit G-B-10: .tmp $([ -e "${P7K}/cfg/system/configs/system.cfg.tmp" ] && echo kept || echo deleted) -- the only good copy was removed after its move failed"
 rm -f "${P7K}/cfg/system/configs/system.cfg.tmp"
 
+# == AUD ev (#307 audit of the fixes: gpt G-B-07, claude G-B-15): the filter's list is whole, and a killed collection's pieces are swept
+p7evreset
+cat > "${P7E}/shim/find" <<'EOS'
+#!/bin/bash
+# The filter's walk fails part-way (a full /tmp); every other find is the real one.
+case "$*" in *-evidence*-print0*) echo "find: write error" >&2; exit 1 ;; esac
+exec /usr/bin/find "$@"
+EOS
+chmod +x "${P7E}/shim/find"
+p7ev collect
+rm -f "${P7E}/shim/find"
+[ "${RC}" -ne 0 ] && [ -z "$(p7evarcs)" ]; check $? "#307 audit G-B-07 (gpt): a filter whose file list cannot be made whole writes no archive (rc ${RC})" "#307 audit G-B-07: rc ${RC}; archives: $(p7evarcs | wc -l); plant in one: $(for a in $(p7evarcs); do tar -xzOf "$a" 2>/dev/null; done | grep -c QA-EV-PLANT)"
+p7evreset; mkdir -p "${P7ES}/.cache/log/evidence/.collect.p7dead/x-evidence/logs"; echo raw > "${P7ES}/.cache/log/evidence/.collect.p7dead/x-evidence/logs/exec.log"
+p7ev collect
+[ "${RC}" -eq 0 ] && [ ! -e "${P7ES}/.cache/log/evidence/.collect.p7dead" ]; check $? "#307 audit G-B-15 (claude): a collection killed before its filter leaves pieces the next collection clears" "#307 audit G-B-15: rc ${RC}; left: $(ls -A "${P7ES}/.cache/log/evidence" | tr '\n' ' ')"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
