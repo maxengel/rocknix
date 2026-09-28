@@ -63,7 +63,10 @@ function log() {
 # line that names a credential: setsettings writes a hundred lines a launch
 # in verbose mode and a fork for each would be felt on a handheld.
 function redact_credentials() {
-  local words='passw|token|api_?key|secret|psk|wifi\.key|retroachievements\.key'
+  # passphrase: iwd's Passphrase= and a --passphrase flag, which neither
+  # passw nor a key ending in pass reached (found fixing #307's audit of the
+  # fix round, PL-005; backuptool's key scan always had it).
+  local words='passw|passphrase|token|api_?key|secret|psk|wifi\.key|retroachievements\.key'
   local marks='(^|[?&[:space:]])[pty]=|AKIA|gh[pousr]_|github_pat_|xox[baprs]-|(^|[^A-Za-z0-9])sk-|PRIVATE KEY|setrootpass|://[^/[:space:]@]+:[^/[:space:]@]+@'
   if [ $# -gt 0 ]; then
     local line="$*" nocase=0

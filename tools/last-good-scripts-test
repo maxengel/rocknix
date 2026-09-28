@@ -10290,6 +10290,9 @@ p7bt backup
 p7forks=$(PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7F}/redact.sh'; sed() { echo fork >> '${P7F}/forks'; command sed \"\$@\"; }; : > '${P7F}/forks'; redact_credentials 'test passed: 3 of 3' >/dev/null; redact_credentials 'bypass mode on' >/dev/null; redact_credentials 'the --passes flag' >/dev/null; wc -l < '${P7F}/forks'")
 [ "${p7forks}" -eq 0 ]; check $? "audit of the fix round PL-005: and 'test passed', 'bypass mode' and '--passes' still take the fast path (no sed)" "PL-005: ${p7forks} sed fork(s) for lines with no credential"
 
+# == 001-functions, found fixing PL-005: a passphrase is a credential
+[ "$(p7red 'Passphrase=qa-phrase')" = "Passphrase=<redacted>" ] && [ "$(p7red 'iwd --passphrase qa-phrase')" = "iwd --passphrase <redacted>" ] && [ "$(printf 'Passphrase=qa-phrase\n' | PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7F}/redact.sh'; redact_credentials")" = "Passphrase=<redacted>" ]; check $? "audit of the fix round (PL-005's sibling): Passphrase=, iwd's key, and --passphrase are redacted in both modes" "PL-005 sibling: '$(p7red 'Passphrase=qa-phrase')' / '$(p7red 'iwd --passphrase qa-phrase')' -- passphrase is in the backup's key list and not in the log's"
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
