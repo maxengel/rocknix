@@ -1675,16 +1675,33 @@ case "${VERB}" in
         # the backup, which would otherwise succeed and let the chain upload
         # it (gpt G-B-06). Idempotent; a move cut part-way leaves the file in
         # one place or the other.
+        #
+        # Never over a file already there: a name upstream-era/ holds (the
+        # names carry the second they were rotated, and a clock reset on an
+        # RTC-less handheld repeats them) keeps its file, and the one from
+        # the root goes beside it under the name with this run's stamp added
+        # -- mv -n, then a check that the root's file is gone and the new one
+        # is there, since mv -n succeeds without moving (#307, the audit of
+        # the fix round, PL-017; mv -f replaced the older archive).
         for OLD in "${SETTINGS_BACKUPS}"/ARCHIVED_*.zip
         do
             [ -f "${OLD}" ] || continue
-            if ! { mkdir -p "${ARCHIVEFOLDER}/upstream-era" 2>/dev/null \
-                   && mv -f "${OLD}" "${ARCHIVEFOLDER}/upstream-era/" 2>/dev/null; }
+            ERA="${ARCHIVEFOLDER}/upstream-era"
+            DEST="${ERA}/$(basename "${OLD}")"
+            N=1
+            while [ -e "${DEST}" ] || [ -L "${DEST}" ]
+            do
+                DEST="${ERA}/$(basename "${OLD}" .zip)-kept-${BACKUP_STAMP}$([ "${N}" -gt 1 ] && echo "-${N}").zip"
+                N=$((N + 1))
+            done
+            if ! { mkdir -p "${ERA}" 2>/dev/null \
+                   && mv -n "${OLD}" "${DEST}" 2>/dev/null \
+                   && [ ! -e "${OLD}" ] && [ -f "${DEST}" ]; }
             then
                 why "THE BACKUP COULDN'T FINISH"
                 fail "THE BACKUP COULDN'T FINISH. NOTHING WAS WRITTEN, AND YOUR LAST BACKUP IS UNCHANGED. TRY AGAIN." "$(basename "${OLD}") could not be moved off the backups folder's root, where the settings upload would send it"
             fi
-            logger -t backuptool "moved $(basename "${OLD}") from the backups folder's root to archive/upstream-era/: nothing uploads it there"
+            logger -t backuptool "moved $(basename "${OLD}") from the backups folder's root to archive/upstream-era/$(basename "${DEST}"): nothing uploads it there"
         done
 
         # A name already taken moves on a second (see STAMP_EPOCH).

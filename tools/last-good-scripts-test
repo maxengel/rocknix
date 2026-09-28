@@ -10446,6 +10446,15 @@ EXTRACT_ROOT="${P7KR}" ROMS_ROOT="${P7KR}/storage/roms" PATH="${P7K}/bin:${TMP}/
 [ -e "${P7K}/cfg/.restore-in-progress" ] && [ "$(cat "${P7KR}/storage/.config/test/y.cfg")" = "HALF" ] && [ ! -e "${P7K}/cfg/.restore-reverted" ]; check $? "audit of the fix round G2-B-02 (claude): and one saying it was a mount still waits for the mount" "G2-B-02 (mounted): mark $([ -e "${P7K}/cfg/.restore-in-progress" ] && echo kept || echo removed); y.cfg '$(cat "${P7KR}/storage/.config/test/y.cfg")'"
 rm -f "${P7K}/cfg/.restore-in-progress" "${P7K}/cfg/.restore-reverted"
 
+# == PL-017: the upstream-era move keeps both of two archives with one name
+p7zclear; p7reset '  /storage/.config/test/*'
+mkdir -p "${P7S}/roms/backup/archive/upstream-era"
+echo ARCHIVE-A > "${P7S}/roms/backup/archive/upstream-era/ARCHIVED_ROCKNIX_BACKUP-20-01-01_00_00_00.zip"
+echo ARCHIVE-B > "${P7S}/roms/backup/ARCHIVED_ROCKNIX_BACKUP-20-01-01_00_00_00.zip"
+p7bt backup
+p7ue="${P7S}/roms/backup/archive/upstream-era"
+[ "${RC}" -eq 0 ] && [ -z "$(ls "${P7S}/roms/backup"/ARCHIVED_*.zip 2>/dev/null)" ] && [ "$(ls "${p7ue}" | wc -l)" -eq 2 ] && [ "$(cat "${p7ue}"/*.zip | sort | tr '\n' ' ')" = "ARCHIVE-A ARCHIVE-B " ] && [ "$(cat "${p7ue}/ARCHIVED_ROCKNIX_BACKUP-20-01-01_00_00_00.zip")" = "ARCHIVE-A" ]; check $? "audit of the fix round PL-017: a root ARCHIVED_*.zip whose name archive/upstream-era/ already holds is kept beside it under a dated name, and the one there is untouched" "PL-017: rc ${RC}; upstream-era: $(ls "${p7ue}" 2>/dev/null | tr '\n' ' '); contents: $(cat "${p7ue}"/*.zip 2>/dev/null | tr '\n' ' '); root: $(ls "${P7S}/roms/backup" | tr '\n' ' ')"
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
