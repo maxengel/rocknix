@@ -776,3 +776,22 @@ run's percentage into its half of the bar.
   with a stamp per log family in `/storage/.cache/cloud_sync/log-scrubbed`.
 - **The cloud sign-in's state only moves forward** (D-CLOUD-150; PL-032).
 
+- **A remote that compares by size alone gets a comparison of its own** (D-CLOUD-153;
+  #315, found by PL-029's proofs on `8196071ff5`). On WebDAV with any vendor but
+  Nextcloud, ownCloud, SharePoint or rclone's own serve, rclone cannot set modtimes
+  and has no hashes, so two files of one size are equal to it whatever their bytes,
+  and a battery save -- the same size every time it is written -- never moved again
+  after its first upload, in either direction, while the cards said COMPLETED.
+  `remote_compares_by_size` (the same function in `cloud_backup` and
+  `cloud_restore`, reading the remote's `type` and `vendor` from `rclone.conf`, never
+  starting rclone) now decides: the exit sync's recent set goes with `--ignore-times`
+  (it is newer than the cloud by construction), and every other saves pass, both
+  scripts, compares the local mtime with the cloud's upload time (`--update
+  --modify-window 1s`). Nothing changes on any other remote. Two consequences to
+  know: a save written while the device's clock was wrong is "older" than its cloud
+  copy and is not sent by the full pass on these remotes (#317, the content-based
+  transport, is the answer); and after an upload the next startup restore fetches
+  that save once more, which sets its local mtime to the upload time -- one small
+  transfer per changed save, then quiet. The harness's section S315 proves where the
+  flags land; `proofs-307/X-size-same.sh` proves the bytes, both directions, on the
+  QA WebDAV.

@@ -12801,6 +12801,89 @@ p7zcut "set_setting wifi.key default && set_setting wifi.ssid default"
 p7zchk verify; p7zchk backup
 [ "$(tr '\n' '|' < "${P7ZC}")" = "a=1|system.hostname=X|" ] && [ "$(tr '\n' '|' < "${P7ZC}.backup")" = "a=1|system.hostname=X|" ]; check $? "audit of the fix round (E1's lead G2-E-core-03): keys removed from the end on purpose stay removed through the boot's verify and backup" "E1's lead: system.cfg '$(tr '\n' '|' < "${P7ZC}")'; record '$(tr '\n' '|' < "${P7ZC}.backup")'"
 rm -f "${P7ZC}.backup" "${P7F}/lock-z" "${P7F}/log-z"; printf 'system.hostname=X\n' > "${P7ZC}"
+# ---------------------------------------------------------------- S315.
+# #315 (D-CLOUD-153): on a remote rclone can neither set modtimes on nor
+# hash (WebDAV, vendor other) it compares by size alone, so a save whose
+# bytes changed but whose size did not never moved. The exit sync's recent
+# set now goes with --ignore-times, every other saves pass (both scripts,
+# both directions) with --update --modify-window 1s; a remote that keeps
+# modtimes or hashes gets neither. The claim is the rclone command line, so
+# every rclone call is answered by the shim without running (a WebDAV url
+# nobody serves would only add retries); the argv is recorded first.
+echo "  S315. #315: the size-only remote's flags -- --ignore-times on the recent set, --update --modify-window 1s elsewhere, nothing on other remotes"
+SZ=$(sa_new s315); sa_script "${SZ}" cloud_backup cloud_restore cloud_saves_root
+cat > "${SZ}/storage/.config/cloud_sync.conf" <<'EOS'
+SAVESPATH="/storage/roms"
+SAVES_REMOTE="/ROCKNIX/Saves"
+SETTINGS_BACKUPS="/storage/roms/backup"
+SETTINGS_REMOTE="/ROCKNIX/Backups"
+BACKUPMETHOD="copy"
+RESTOREMETHOD="copy"
+BACKUPFILE_BACKUP_OPTION="no"
+BACKUPFILE_RESTORE_OPTION="no"
+RCLONEOPTS="--progress --log-file /var/log/cloud_sync.log --filter-from /storage/.config/cloud_sync-rules.txt"
+RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"
+LOG_LEVEL="INFO"
+EOS
+mkdir -p "${SZ}/storage/roms/gb" "${SZ}/cloud/ROCKNIX/Saves/gb"
+echo save > "${SZ}/storage/roms/gb/A.srm"
+printf -- '+ /**/*.srm\n- /**\n' > "${SZ}/storage/.config/cloud_sync-rules.txt"
+printf '^(copy|sync|mkdir|lsd|lsf|lsjson|ls|size|backend|cat|check|md5sum|sha1sum|hashsum|deletefile|delete|purge|moveto|copyto|rcat) \t0\n' > "${SZ}/ctl/fail"
+sz_copy() { grep -E '^(copy|sync) ' "${SZ}/ctl/argv" | grep -v -- '--files-from' | tail -1; }
+sz_conf() { printf '[qa]\ntype = %s\n%s' "$1" "${2:-}" > "${SZ}/storage/.config/rclone/rclone.conf"; : > "${SZ}/ctl/argv"; }
+sz_stamp() { printf '%s 0\n' "$(( $(date +%s) - 60 ))" > "${SZ}/storage/.cache/cloud_sync/last-backup"; }
+sz_has() { printf '%s' "$1" | grep -q -- "$2"; }
+sz_count() { printf '%s\n' "$1" | tr ' ' '\n' | grep -c -x -- "$2"; }
+
+sz_conf webdav $'url = http://127.0.0.1:1/\nvendor = other\n'; sz_stamp
+sa_run "${SZ}" cloud_backup --yes --saves-only --recent
+c=$(sz_copy); sz_has "${c}" '--max-age' && sz_has "${c}" '--ignore-times' && ! sz_has "${c}" '--modify-window'
+check $? "webdav/other, the recent set: --max-age with --ignore-times, no --modify-window" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"
+rm -f "${SZ}/storage/.cache/cloud_sync/last-backup"; : > "${SZ}/ctl/argv"
+sa_run "${SZ}" cloud_backup --yes --saves-only --recent
+c=$(sz_copy); ! sz_has "${c}" '--max-age' && ! sz_has "${c}" '--ignore-times' && sz_has "${c}" '--update' && sz_has "${c}" '--modify-window 1s'
+check $? "webdav/other, --recent with no backup on record (a full pass): --update --modify-window 1s, no --ignore-times" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"
+: > "${SZ}/ctl/argv"; sa_run "${SZ}" cloud_backup --yes --saves-only
+c=$(sz_copy); sz_has "${c}" '--update' && sz_has "${c}" '--modify-window 1s' && ! sz_has "${c}" '--ignore-times'
+check $? "webdav/other, the deliberate saves backup: --update --modify-window 1s" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"
+: > "${SZ}/ctl/argv"; sa_run "${SZ}" cloud_backup --yes --saves-only --update
+c=$(sz_copy); [ "$(sz_count "${c}" '--update')" = 1 ] && sz_has "${c}" '--modify-window 1s'
+check $? "webdav/other, the startup pair's --update given: --update once, with the window" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"
+: > "${SZ}/ctl/argv"; sa_run "${SZ}" cloud_restore --yes --saves-only
+c=$(sz_copy); sz_has "${c}" '--update' && sz_has "${c}" '--modify-window 1s'
+check $? "webdav/other, cloud_restore's saves pass: --update --modify-window 1s (the cloud's upload time against this device's copy)" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"
+: > "${SZ}/ctl/argv"; sa_run "${SZ}" cloud_restore --yes --method=copy --update --saves-only --automatic
+c=$(sz_copy); [ "$(sz_count "${c}" '--update')" = 1 ] && sz_has "${c}" '--modify-window 1s'
+check $? "webdav/other, the startup restore (--update given): --update once, with the window" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"
+
+sz_conf webdav $'url = http://127.0.0.1:1/\nvendor = nextcloud\n'; sz_stamp
+sa_run "${SZ}" cloud_backup --yes --saves-only --recent
+c=$(sz_copy); sz_has "${c}" '--max-age' && ! sz_has "${c}" '--ignore-times' && ! sz_has "${c}" '--modify-window'
+check $? "webdav/nextcloud (modtimes and checksums): the recent set as before, neither flag" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"
+: > "${SZ}/ctl/argv"; sa_run "${SZ}" cloud_restore --yes --saves-only
+c=$(sz_copy); ! sz_has "${c}" '--update' && ! sz_has "${c}" '--modify-window'
+check $? "webdav/nextcloud, cloud_restore: no --update, no window (the manual row's shape kept)" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"
+sz_conf dropbox $'token = {"access_token":"x"}\n'; sz_stamp
+sa_run "${SZ}" cloud_backup --yes --saves-only --recent
+c=$(sz_copy); sz_has "${c}" '--max-age' && ! sz_has "${c}" '--ignore-times' && ! sz_has "${c}" '--modify-window'
+check $? "dropbox: the recent set as before, neither flag" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"
+: > "${SZ}/ctl/argv"; sa_run "${SZ}" cloud_backup --yes --saves-only
+c=$(sz_copy); ! sz_has "${c}" '--update' && ! sz_has "${c}" '--modify-window'
+check $? "dropbox, the deliberate backup: neither flag" "rc ${RC}; copy: $(printf '%s' "${c}" | cut -c1-220)"
+
+# The detection itself, from both scripts, the same text.
+awk '/^remote_compares_by_size\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${SZ}/repo/cloud_backup" > "${SZ}/fn-b.sh"
+awk '/^remote_compares_by_size\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${SZ}/repo/cloud_restore" > "${SZ}/fn-r.sh"
+[ -s "${SZ}/fn-b.sh" ] && cmp -s "${SZ}/fn-b.sh" "${SZ}/fn-r.sh"; check $? "remote_compares_by_size is one function, the same text in cloud_backup and cloud_restore" "the two copies differ, or one is missing"
+sz_fn() { RCLONE_CONF_FILE="$1" bash -c ". '${SZ}/fn-b.sh'; remote_compares_by_size '$2'"; }
+printf '[qa]\ntype = webdav\nvendor = other\n\n[other]\ntype = webdav\nvendor = owncloud\n' > "${SZ}/c1.conf"
+sz_fn "${SZ}/c1.conf" "qa:"; check $? "the name with rclone's trailing colon, webdav/other: by size" "returned non-zero"
+! sz_fn "${SZ}/c1.conf" "other"; check $? "a second section, webdav/owncloud: not by size (the section, not the file, is read)" "returned zero"
+printf '[qa]\ntype = webdav\n' > "${SZ}/c2.conf"; sz_fn "${SZ}/c2.conf" qa; check $? "webdav with no vendor line: by size" "returned non-zero"
+! sz_fn "${SZ}/c1.conf" "nope"; check $? "a remote the file does not name: not by size (no flags added on a guess)" "returned zero"
+! sz_fn "${SZ}/none.conf" qa; check $? "an unreadable config: not by size" "returned zero"
+! sz_fn "${SZ}/c1.conf" 'qa;rm'; check $? "a name with a character outside rclone's: not by size, and never a sed pattern" "returned zero"
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi

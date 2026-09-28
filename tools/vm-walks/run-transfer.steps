@@ -34,7 +34,10 @@
 # job ends and the page reads PRESS ANY BUTTON TO CLOSE -- which makes "the
 # screen stopped moving" the same event as "the transfer finished", for a
 # small fixture and for a real library alike. The bound is the give-up, not
-# the expectation.
+# the expectation. Three quiet seconds, not the default 1.2: on vm-qa run 71
+# (320d2b2bea, 2026-09-28) the default returned at ELAPSED 0:02 with the
+# page still on ITEM 2 OF 4 -- the once-a-second repaint hid between the
+# polls -- and the done frame was the running page, an unclaimed box.
 key up
 wait-for-change
 key right
@@ -48,7 +51,7 @@ wait-for-change
 key x
 wait-for-change 25 0
 shot transfer-running
-settle 90
+settle 90 3
 shot transfer-done
 key x
 wait-for-change 15

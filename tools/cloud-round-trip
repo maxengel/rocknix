@@ -1417,11 +1417,18 @@ echo "${saw:-0}/${all:-0}"
     dev.write(f"{root}/savestates/recent-probe.state", b"RECENT")   # six bytes again, new ones
     dev.run("sync", check=False)
     out = dev.run("cloud_backup --yes --saves-only --recent >/dev/null 2>&1; echo rc=$?", check=False)
-    got = backend_bytes("savestates/recent-probe.state")
-    failures += not check("rc=0" in out and got == b"RECENT",
-                          "the same-size change reached the bucket as the new bytes",
-                          f"the same-size change was not sent: the bucket holds {got!r} (exit {out.strip()[-4:]}; "
-                          "#315, size-only comparison on this backend)")
+    # The bucket path carries the remote folder; find the copy by its tail
+    # in the listing rather than guessing the prefix (run 71 read None).
+    paths = [l.split(None, 1)[1] for l in backend("ls").splitlines()
+             if len(l.split(None, 1)) == 2 and l.split(None, 1)[1].endswith("savestates/recent-probe.state")]
+    got = backend_bytes(paths[0]) if paths else None
+    if got is None:
+        failures += not check(False, "", f"could not read the bucket's copy back (listing paths: {paths}); nothing proven")
+    else:
+        failures += not check("rc=0" in out and got == b"RECENT",
+                              "the same-size change reached the bucket as the new bytes",
+                              f"the same-size change was not sent: the bucket holds {got!r} (exit {out.strip()[-4:]}; "
+                              "#315, size-only comparison on this backend)")
 
     step("with no network the exit sync returns 69 at once and stamps nothing")
     out = dev.run(

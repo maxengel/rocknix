@@ -169,11 +169,15 @@ echo "1  the games with RetroAchievements sets are on the guest"
 copied=0
 for g in $GAMES; do
   dst="${DST[$g]}"
-  if ! S "test -f '$dst'"; then
+  # Copy when the file is missing OR carries other bytes: on chain 89 a
+  # proof's own Ninoid.gb (a different build of the same title) sat at the
+  # path and the test refused to launch instead of replacing it; the QA
+  # guest's copy of these three titles is this test's to write.
+  if [ "$(S "sha256sum '$dst' 2>/dev/null | cut -c1-16")" != "${SHA[$g]}" ]; then
     # Over ssh's stdin, not scp: the destination has spaces, and scp's two
     # protocols disagree about whether the remote path is quoted.
     ssh "${SSHO[@]}" "$HOST" "mkdir -p '$(dirname "$dst")' && cat > '$dst'" < "$ROMS/${SRC[$g]}"
-    copied=1; say "copied ${SRC[$g]} -> $dst"
+    copied=1; say "copied ${SRC[$g]} -> $dst (missing, or other bytes were there)"
   fi
   got=$(S "sha256sum '$dst' 2>/dev/null | cut -c1-16")
   check "$([ "$got" = "${SHA[$g]}" ]; echo $?)" "$g: $dst sha256 ${SHA[$g]}... (got ${got:-none})"

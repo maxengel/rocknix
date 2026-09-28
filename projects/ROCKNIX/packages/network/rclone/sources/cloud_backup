@@ -483,6 +483,32 @@ first_remote() {
     fi
 }
 
+# Does the remote compare files by size alone? rclone decides equality by
+# size, then modtime, then hash. On a WebDAV remote it cannot set modtimes
+# on -- every vendor but nextcloud, owncloud, sharepoint and rclone's own
+# serve -- the modtime is "not supported" and never consulted, and a plain
+# WebDAV server offers no hash, so two files of one size are equal to it
+# whatever their bytes: a battery save, the same size every time it is
+# written, never moved again after its first upload (#315, D-CLOUD-153;
+# measured on 8196071ff5, `Sizes identical` at -vv). Read from the config
+# file's section, never by starting rclone (a second on a handheld). The
+# answer is "no" for a remote this cannot read, so every other remote
+# keeps its passes as they were; over-detecting is harmless, since the
+# flags it enables are what rclone does with real modtimes anyway.
+remote_compares_by_size() {
+    # RCLONE_CONF_FILE: the harness points it at a fixture (tools/last-good-scripts-test).
+    local remote="${1%:}" conf="${RCLONE_CONF_FILE:-/storage/.config/rclone/rclone.conf}" type vendor
+    [ -n "${remote}" ] && [ -r "${conf}" ] || return 1
+    case "${remote}" in *[!A-Za-z0-9_.-]*) return 1 ;; esac
+    type=$(sed -n "/^\[${remote}\]/,/^\[/{s/^type *= *//p}" "${conf}" | head -1 | tr -d '[:space:]')
+    [ "${type}" = webdav ] || return 1
+    vendor=$(sed -n "/^\[${remote}\]/,/^\[/{s/^vendor *= *//p}" "${conf}" | head -1 | tr -d '[:space:]')
+    case "${vendor}" in
+        nextcloud|owncloud|sharepoint|sharepoint-ntlm|rclone) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
 # Exit EXIT_NO_NETWORK (69) means "skipped: no network". Answered locally,
 # before any remote probe: with no default route there is nothing to sync to,
 # and somebody exiting a game should not wait for rclone to time out learning
@@ -1694,6 +1720,7 @@ backup_game_saves() {
     # a wrong mtime -- written before the clock was set, on a device with no
     # RTC -- is caught there. And --recent always copies: a filtered sync
     # would weigh deleting whatever the filter hid.
+    local recent_window=0
     if [ "${RECENT}" -eq 1 ]; then
         local stamp_file=/storage/.cache/cloud_sync/last-backup
         local stamp_epoch="" stamp_rc="" now
@@ -1703,6 +1730,7 @@ backup_game_saves() {
            && [ "${stamp_epoch}" -le "${now}" ]; then
             local age=$(( now - stamp_epoch + 600 ))
             all_opts+=("--max-age" "${age}s" "--no-traverse")
+            recent_window=1
             log_message "recent: only files changed in the last ${age}s, since the last successful backup" "false"
         else
             log_message "recent: no successful backup on record, doing a full pass" "false"
@@ -1710,6 +1738,28 @@ backup_game_saves() {
         if [ "${BACKUPMETHOD}" != "copy" ]; then
             log_message "recent: BACKUPMETHOD=${BACKUPMETHOD} overridden to copy for a filtered run" "false"
             BACKUPMETHOD="copy"
+        fi
+    fi
+    # #315 (D-CLOUD-153): on a remote that compares by size alone the
+    # comparison is decided here. The recent set is newer than the cloud
+    # by construction -- files changed since the last backup that worked --
+    # so it is sent unconditionally (--ignore-times; --backup-dir keeps
+    # the cloud's copy). Every other pass compares the local mtime with the
+    # cloud's upload time (--update --modify-window 1s): a save written
+    # after its upload is sent, one written before it is skipped. The one
+    # case this cannot see is a save written while the device's clock was
+    # wrong; #317 (the content-based transport) is its answer. A remote
+    # that keeps modtimes or hashes gets neither flag.
+    if remote_compares_by_size "${REMOTENAME}"; then
+        if [ "${recent_window}" = 1 ]; then
+            all_opts+=("--ignore-times")
+            log_message "the remote compares by size alone (#315): the recent set is sent unconditionally (--ignore-times)" "false"
+        else
+            local has_update=0
+            for opt in "${all_opts[@]}"; do [ "${opt}" = "--update" ] && has_update=1; done
+            [ "${has_update}" = 1 ] || all_opts+=("--update")
+            all_opts+=("--modify-window" "1s")
+            log_message "the remote compares by size alone (#315): the local mtime is compared with the cloud's upload time (--update --modify-window 1s)" "false"
         fi
     fi
     local backup_rel="${SETTINGS_BACKUPS#${SAVESPATH%/}/}"

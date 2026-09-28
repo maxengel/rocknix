@@ -926,6 +926,33 @@ first_remote() {
     fi
 }
 
+# Does the remote compare files by size alone? rclone decides equality by
+# size, then modtime, then hash. On a WebDAV remote it cannot set modtimes
+# on -- every vendor but nextcloud, owncloud, sharepoint and rclone's own
+# serve -- the modtime is "not supported" and never consulted, and a plain
+# WebDAV server offers no hash, so two files of one size are equal to it
+# whatever their bytes: a battery save, the same size every time it is
+# written, never moved again after its first upload (#315, D-CLOUD-153;
+# measured on 8196071ff5, `Sizes identical` at -vv; the same function as
+# cloud_backup's). Read from the config
+# file's section, never by starting rclone (a second on a handheld). The
+# answer is "no" for a remote this cannot read, so every other remote
+# keeps its passes as they were; over-detecting is harmless, since the
+# flags it enables are what rclone does with real modtimes anyway.
+remote_compares_by_size() {
+    # RCLONE_CONF_FILE: the harness points it at a fixture (tools/last-good-scripts-test).
+    local remote="${1%:}" conf="${RCLONE_CONF_FILE:-/storage/.config/rclone/rclone.conf}" type vendor
+    [ -n "${remote}" ] && [ -r "${conf}" ] || return 1
+    case "${remote}" in *[!A-Za-z0-9_.-]*) return 1 ;; esac
+    type=$(sed -n "/^\[${remote}\]/,/^\[/{s/^type *= *//p}" "${conf}" | head -1 | tr -d '[:space:]')
+    [ "${type}" = webdav ] || return 1
+    vendor=$(sed -n "/^\[${remote}\]/,/^\[/{s/^vendor *= *//p}" "${conf}" | head -1 | tr -d '[:space:]')
+    case "${vendor}" in
+        nextcloud|owncloud|sharepoint|sharepoint-ntlm|rclone) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
 # Verifies rclone is properly configured before attempting operations
 # Exits with error if configuration file is missing
 check_rclone_config() {
@@ -1786,6 +1813,20 @@ restore_game_saves() {
     local replaced_root="/storage/.cache/cloud_sync/replaced" replaced_stamp
     replaced_stamp=$(date +%Y_%m_%d-%H%M%S)
     all_opts+=("--backup-dir=${replaced_root}/${replaced_stamp}")
+    # #315 (D-CLOUD-153): on a remote that compares by size alone, the
+    # cloud's upload time stands in for its modtime: a copy uploaded after
+    # this device's was written is fetched, one uploaded before it is not
+    # (--update --modify-window 1s). Without it a same-size change in the
+    # cloud reads as "already here" whatever its bytes, so the second
+    # device never received the first device's save. The manual RESTORE
+    # SAVES row keeps its --update-less shape on every other remote.
+    if remote_compares_by_size "${REMOTENAME}"; then
+        local has_update=0 opt
+        for opt in "${all_opts[@]}"; do [ "${opt}" = "--update" ] && has_update=1; done
+        [ "${has_update}" = 1 ] || all_opts+=("--update")
+        all_opts+=("--modify-window" "1s")
+        log_message "the remote compares by size alone (#315): the cloud's upload time is compared with this device's copy (--update --modify-window 1s)" "false"
+    fi
 
     # Check if the rclone version supports the terminal width flag
     if rclone help | grep -q progress-terminal-width; then
