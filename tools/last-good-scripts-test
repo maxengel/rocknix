@@ -3264,4 +3264,62 @@ else
     echo "    SKIP  #308 F-RA-09's cases: section t did not run"
 fi
 
+# D4. #307 PL-058 (F-RA-06 gpt): raofflineproxy-refresh counts a game whose
+# startsession row could not be dropped as failed -- the row carries the
+# unlocks a launch reads, so a refresh that could not remove it did not do
+# its job. The real helper, loaded against the patched client, its network
+# calls replaced (the driver also runs 04b's two cases).
+src_of "projects/ROCKNIX/packages/network/raofflineproxy/sources/raofflineproxy-refresh" "${DD}/raofflineproxy-refresh"
+if [ "${DT_OK}" -eq 1 ]; then
+RAOFFLINEPROXY_CONFIG_DIR="${DD}/refresh-cfg" PYTHONPATH="${CLIENT}" python3 - "${DD}/raofflineproxy-refresh" > "${DD}/d4.out" 2>&1 <<'EOS'
+import contextlib, io, os, sys, importlib.machinery, importlib.util
+from pathlib import Path
+Path(os.environ["RAOFFLINEPROXY_CONFIG_DIR"]).mkdir(parents=True, exist_ok=True)
+spec = importlib.util.spec_from_loader("refresh_helper", importlib.machinery.SourceFileLoader("refresh_helper", sys.argv[1]))
+helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(helper)
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+helper.resolve_credentials = lambda *a, **k: {"user": "qa", "token": "t"}
+fails = set()
+def fake_patch(gid, *a, **k):
+    if gid in fails: raise RuntimeError(f"patch request failed for {gid}")
+    return '{"PatchData":{"Title":"G%d"}}' % gid
+helper.proxy_service.refresh_game_patch = fake_patch
+helper.proxy_service.cache_unlocks = lambda *a, **k: None
+def run(args):
+    sys.argv = ["raofflineproxy-refresh"] + args
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = helper.main()
+    return rc, buf.getvalue()
+st = Storage()
+for gid in range(1, 7):
+    st.upsert_cache(cache_keys.patch(gid, "qa"), '{"Success":true,"PatchData":{"ID":%d}}' % gid)
+st.upsert_cache(cache_keys.start_session(5, "qa"), '{"Success":true,"Unlocks":[1]}')
+st.close()
+# The drop fails: the store refuses the delete.
+real_delete = Storage.delete_cache
+def refusing(self, key):
+    raise OSError("disk I/O error")
+Storage.delete_cache = refusing
+rc, out = run(["--game", "5", "--seconds", "30"])
+Storage.delete_cache = real_delete
+ok = rc == 1 and "re-read 0 game(s), 1 failed" in out and ">>> done 0|1" in out
+print(("PASS" if ok else "FAIL") + f" drop: rc {rc}; " + " | ".join(l for l in out.splitlines() if "re-read" in l or l.startswith(">>> done") or "startsession" in l))
+# Three failures, never two in a row: every game is tried.
+fails.clear(); fails.update({1, 3, 5})
+rc, out = run(["--all", "--seconds", "30"])
+ok = rc == 1 and "re-read 3 game(s), 3 failed" in out and "REPEATED_FAILURES" not in out
+print(("PASS" if ok else "FAIL") + f" apart: rc {rc}; " + " | ".join(l for l in out.splitlines() if "re-read" in l and "game(s)" in l or "REPEATED" in l or "in a row" in l))
+# Three in a row: it stops.
+fails.clear(); fails.update({2, 3, 4})
+rc, out = run(["--all", "--seconds", "30"])
+ok = rc == 1 and "REPEATED_FAILURES" in out and "re-read 5/6" not in out and "re-read 6/6" not in out
+print(("PASS" if ok else "FAIL") + f" row: rc {rc}; " + " | ".join(l for l in out.splitlines() if "REPEATED" in l or "in a row" in l or l.startswith(">>> done")))
+EOS
+grep -q '^PASS drop:' "${DD}/d4.out"; check $? "PL-058 refresh: a startsession row that could not be dropped makes the game failed -- re-read 0 game(s), 1 failed, exit 1" "PL-058 refresh: $(grep 'drop:' "${DD}/d4.out" || tail -3 "${DD}/d4.out" | tr '\n' '|') -- a failed drop was reported as a game re-read"
+else
+    echo "    SKIP  PL-058's cases: section t did not run"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

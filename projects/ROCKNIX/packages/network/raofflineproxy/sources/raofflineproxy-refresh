@@ -71,7 +71,13 @@ def game_ids(rows: list[dict]) -> list[int]:
 
 
 def drop_startsession(storage: Storage, game_id: int) -> int:
-    """Remove the cached session response for a game. Returns rows removed."""
+    """Remove the cached session response for a game. Returns rows removed.
+
+    Raises when a row could not be removed: the session response carries the
+    player's unlocks, so a refresh that leaves a stale one has not done its
+    job, and the game is counted failed rather than re-read (#307 PL-058 --
+    the same shape as 2026-09-19, when this helper reported half its work as
+    all of it)."""
     removed = 0
     prefix = f"{cache_keys.PREFIX_STARTSESSION}{game_id}:"
     try:
@@ -81,7 +87,7 @@ def drop_startsession(storage: Storage, game_id: int) -> int:
                 storage.delete_cache(key)
                 removed += 1
     except Exception as exc:
-        note(f"game {game_id}: the startsession row could not be dropped ({exc})")
+        raise RuntimeError(f"the startsession row could not be dropped ({exc})") from exc
     return removed
 
 
