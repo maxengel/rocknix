@@ -3718,6 +3718,47 @@ def state_writes_are_whole():
            "a read during a write sees the whole previous state, and the write lands whole",
            "read during the write: %r; after: %r -- session.json is truncated in place (#308 claude F-RS-23, gpt F-RS-17)" % (seen, after))
 EOPY
+# #308 claude F-RS-19, gpt F-RS-25: the pointer's hide timeout comes back however the window ends.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+@test
+def cursor_timeout_is_restored():
+    """#308 claude F-RS-19, gpt F-RS-25."""
+    m, d = load("rs19")
+    calls = []
+    m.BrowserSession._cursor_timeout = staticmethod(lambda ms: calls.append(ms))
+    win = os.path.join(d, "fakewin-exits")
+    with open(win, "w") as h:
+        h.write("#!/bin/sh\nexit 0\n")
+    os.chmod(win, 0o755)
+    m.SIGNIN_WINDOW = win
+    m.running_session = lambda: (d, "wayland-1")
+    b = m.BrowserSession("https://www.dropbox.com/x", "www.dropbox.com")
+    try:
+        b.start()
+    except Exception as exc:                # the old code writes under /var/run
+        result(False, "", "BrowserSession.start could not run in the sandbox: %s" % exc)
+        return
+    b.proc.wait(5)
+    b.stop()
+    result(calls[:1] == [0] and calls[-1:] == [1000],
+           "a window that closed by itself still gets the pointer's hide timeout back (%s)" % calls,
+           "cursor timeouts set: %r -- the override stays at 0 when the window ends on its own (#308 claude F-RS-19)" % calls)
+
+    m, d = load("rs19b")
+    calls = []
+    m.BrowserSession._cursor_timeout = staticmethod(lambda ms: calls.append(ms))
+    m.SIGNIN_WINDOW = os.path.join(d, "fakewin")
+    m.pad_is_free = lambda: True
+    proc = subprocess.Popen(["bash", "-c", 'exec -a "%s" sleep 60' % m.SIGNIN_WINDOW])
+    wait_for(lambda: m.signin_window_running(), 3)
+    rc = m.main(["cloud_oauth", "close"])
+    gone = wait_for(lambda: proc.poll() is not None, 3)
+    result(rc == 0 and gone and 1000 in calls,
+           "close's own kill of a window that outlived its server restores the timeout too",
+           "close: rc %r, window gone %r, cursor timeouts %r (#308 claude F-RS-19)" % (rc, gone, calls))
+    if proc.poll() is None:
+        proc.kill()
+EOPY
 # C3: new test groups go above this line
 cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
 if MODE == "drive":

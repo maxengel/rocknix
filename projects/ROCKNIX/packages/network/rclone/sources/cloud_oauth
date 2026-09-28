@@ -667,6 +667,9 @@ class BrowserSession:
         self.log_file = None
         self.log_path = None
         self.error = None
+        # Whether start() turned sway's pointer hiding off, so stop() knows
+        # to turn it back on whatever became of the window.
+        self.cursor_overridden = False
 
     def is_running(self):
         return self.proc is not None and self.proc.poll() is None
@@ -677,8 +680,8 @@ class BrowserSession:
             self.error = "no display session to show the sign-in page on"
             return False
 
-        os.makedirs("/var/run/cloud_oauth", exist_ok=True)
-        self.log_path = "/var/run/cloud_oauth/window.log"
+        os.makedirs(STATE_DIR, exist_ok=True)
+        self.log_path = state_path("window.log")
         # Kept rather than discarded: a window that fails to start otherwise
         # looks exactly like one that started and was never asked for.
         self.log_file = open(self.log_path, "w")
@@ -702,6 +705,7 @@ class BrowserSession:
         # Somebody may be about to drag a pointer at this page from their
         # phone, and cannot aim what they cannot see.
         BrowserSession._cursor_timeout(0)
+        self.cursor_overridden = True
         log("sign-in window opened on %s for %s" % (display, self.host))
         return True
 
@@ -724,8 +728,14 @@ class BrowserSession:
             log("could not set the cursor timeout: %s" % exc)
 
     def stop(self):
-        if self.proc and self.proc.poll() is None:
+        # Restored whenever start() set it -- also when the window has
+        # already gone by itself (Escape, a crash). It used to sit inside
+        # the still-running test, so a window that ended on its own left
+        # sway never hiding the pointer (#308 claude F-RS-19, gpt F-RS-25).
+        if self.cursor_overridden:
             BrowserSession._cursor_timeout(1000)
+            self.cursor_overridden = False
+        if self.proc and self.proc.poll() is None:
             self.proc.terminate()
             try:
                 self.proc.wait(timeout=5)
@@ -2085,6 +2095,9 @@ def main(argv):
                     time.sleep(0.2)
                 if not signin_window_running():
                     break
+            # The serve that set the pointer's hide timeout to never is not
+            # there to set it back (#308 claude F-RS-19).
+            BrowserSession._cursor_timeout(1000)
 
         settle = time.time() + 5
         while time.time() < settle and not pad_is_free():
