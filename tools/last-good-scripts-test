@@ -3154,4 +3154,58 @@ else
     echo "    SKIP  PL-013's cases: section t did not run (the pinned client is not on this machine)"
 fi
 
+# D2. #307 PL-055 (F-RA-02 gpt = F-RA-03 claude): index-pending, the promise
+# that the link's return lists the library once for an index that ran
+# offline, is kept until that listing and its games have been handled: a
+# listing that fails (an error, or the deadline), a run stopped part-way and a
+# game whose fetch failed all leave it; only a run whose indexed pass ended
+# with nothing wrong removes it. A marker that survives a failed attempt waits
+# out the half hour like any other run (it bypasses the interval only when it
+# was written after the last attempt), so a flapping link does not turn it
+# into a request storm.
+if [ "${DT_OK}" -eq 1 ]; then
+# The listing fails on demand: /run/listing-fail holds the exit code.
+grep -q 'listing-fail' "${T}/shim/python3" || sed -i 's|^if \[ "\$1" = "-" \] && \[ -s /run/listing-delay \]|if [ "$1" = "-" ] \&\& [ -s /run/listing-fail ]; then exit "$(cat /run/listing-fail)"; fi\n&|' "${T}/shim/python3"
+grep -q 'listing-fail' "${T}/shim/python3"; check $? "the python3 shim fails a listing on demand (/run/listing-fail)" "the shim edit did not take: $(grep -n 'listing' "${T}/shim/python3" | tr '\n' '|')"
+TENV=(--setenv RAOFFLINEPROXY_HISTORY /storage/.config/retroarch/content_history.lpl)
+dpending() { # the marker, the mark two hours old, no game played since
+    treset; touch -d '3 hours ago' "${THISTORY}"; touch -d '2 hours ago' "${TMARK}"
+    tctl index-offline; : > "${TR}/probe.log"; : > "${TR}/helper-jobs.log"; : > "${TLOG}"
+}
+dpending; echo 1 > "${TR}/listing-fail"
+tctl topup; rm -f "${TR}/listing-fail"
+[ "${RC}" -eq 0 ] && grep -q "index could not be read" "${TLOG}" && [ -e "${TPD}/index-pending" ]; check $? "PL-055: a link-return listing for the marker that fails (rc 1) leaves index-pending (rc ${RC})" "PL-055: rc ${RC}; marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone); log: $(tr '\n' '|' < "${TLOG}" | cut -c1-240) -- the marker was consumed before the listing"
+dpending; echo 124 > "${TR}/listing-fail"
+tctl topup; rm -f "${TR}/listing-fail"
+[ "${RC}" -eq 1 ] && grep -q 'why=TOOK_TOO_LONG$' "${TSTAMP}" && [ -e "${TPD}/index-pending" ]; check $? "PL-055: a listing cut by the deadline (124): TOOK_TOO_LONG, index-pending kept" "PL-055: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null); marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone)"
+# The same link flapping a minute later: the marker is older than the attempt
+# the failed run made, so the half hour holds -- no probe, no listing.
+# (On the virtual clock: the failed attempt a minute ago, the marker written before it.)
+touch -d "@$(( $(cat "${TR}/clock") - 60 ))" "${TMARK}"; [ -e "${TPD}/index-pending" ] && touch -d "@$(( $(cat "${TR}/clock") - 120 ))" "${TPD}/index-pending"
+: > "${TR}/probe.log"; : > "${TLOG}"
+tctl topup
+[ "${RC}" -eq 0 ] && [ ! -s "${TR}/probe.log" ] && ! grep -q 'listed once' "${TLOG}" && [ -e "${TPD}/index-pending" ]; check $? "PL-055: the next link event inside the half hour after a failed attempt waits (no probe, no listing), the marker still there" "PL-055: rc ${RC}; probes: $(grep -c . "${TR}/probe.log"); log: $(tr '\n' '|' < "${TLOG}" | cut -c1-200); marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone)"
+# Past the half hour it lists again, and a run that handled the games clears it.
+touch -d "@$(( $(cat "${TR}/clock") - 3600 ))" "${TMARK}"; : > "${TLOG}"
+tctl topup
+[ "${RC}" -eq 0 ] && grep -q 'listed once' "${TLOG}" && grep -q 'topup start: found=3 new=2' "${TLOG}" && [ ! -e "${TPD}/index-pending" ]; check $? "PL-055: past the half hour the marker's listing runs again, caches the games and removes the marker" "PL-055: rc ${RC}; log: $(tr '\n' '|' < "${TLOG}" | cut -c1-240); marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone)"
+# A game whose fetch failed in the marker's pass: SOME_GAMES_NOT_SAVED, kept.
+dpending; printf 'fail\nok\n' > "${TR}/helper-plan"
+tctl topup; rm -f "${TR}/helper-plan"
+[ "${RC}" -eq 1 ] && grep -q 'why=SOME_GAMES_NOT_SAVED$' "${TSTAMP}" && [ -e "${TPD}/index-pending" ]; check $? "PL-055: a failed game in the marker's pass: SOME_GAMES_NOT_SAVED, index-pending kept" "PL-055: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null); marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone)"
+# A run stopped part-way (STOP IT AND PLAY, disable: SIGTERM to the pid in
+# the lock) keeps it too.
+dpending; rm -f "${TR}/fast-sleep"; printf 'wait 20\n' > "${TR}/helper-plan"; rm -f "${TR}/helper.pid"
+dbg topup
+for _ in $(seq 1 100); do [ -s "${TR}/helper.pid" ] && break; sleep 0.1; done; sleep 0.3
+DHP="$(cat "${TR}/helper.pid" 2>/dev/null)"
+kill -TERM "$(head -n 1 "${T}/varrun/raofflineproxy-scan.lock" 2>/dev/null)" 2>/dev/null
+for _ in $(seq 1 100); do [ -s "${DD}/bg.rc" ] && break; sleep 0.1; done
+wait "${DBG}" 2>/dev/null
+[ "$(cat "${DD}/bg.rc" 2>/dev/null)" = "143" ] && [ -e "${TPD}/index-pending" ]; check $? "PL-055: a marker's run stopped part-way (TERM, exit 143) keeps index-pending" "PL-055: the run exited $(cat "${DD}/bg.rc" 2>/dev/null); marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone)"
+[ -n "${DHP}" ] && kill -9 "${DHP}" 2>/dev/null; touch "${TR}/fast-sleep"; rm -f "${TR}/helper-plan"
+else
+    echo "    SKIP  PL-055's cases: section t did not run"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

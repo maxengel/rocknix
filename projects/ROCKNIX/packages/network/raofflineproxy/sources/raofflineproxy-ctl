@@ -246,7 +246,10 @@ TOPUP_MARK="${PROXY_DIR}/last-topup-attempt"
 # An index run that could not reach RetroAchievements (a game list updated
 # offline) leaves this, and the next link-return run lists the library
 # once for it, so the games added offline are cached when the device is
-# next online -- the promise the interface's toast makes (fork #299).
+# next online -- the promise the interface's toast makes (fork #299). It is
+# removed only by a run whose listing and indexed pass both went through, so
+# a run that fails or is stopped part-way leaves it for the next (#307
+# PL-055).
 INDEX_PENDING="${PROXY_DIR}/index-pending"
 READY_FILE="${PROXY_DIR}/cached_game_ids.txt"
 SCAN_LOCK="/var/run/raofflineproxy-scan.lock"
@@ -1527,8 +1530,15 @@ do_topup() {
     # run inside the interval: the player added games and the toast said
     # they are looked up next time the device is connected (fork #299,
     # D-UI-104), and "next time" is this link, not the one after the half
-    # hour.
-    if [ "${AFTER_INDEX}" -eq 0 ] && [ -e "${TOPUP_MARK}" ] && [ ! -e "${INDEX_PENDING}" ]; then
+    # hour. Only a marker written since the last attempt: one a failed
+    # attempt left behind (#307 PL-055, below) waits out the half hour like
+    # any other run, so a link that flaps does not turn it into a request
+    # storm.
+    local PENDING_DUE=0
+    if [ -e "${INDEX_PENDING}" ] && { [ ! -e "${TOPUP_MARK}" ] || [ "${INDEX_PENDING}" -nt "${TOPUP_MARK}" ]; }; then
+        PENDING_DUE=1
+    fi
+    if [ "${AFTER_INDEX}" -eq 0 ] && [ -e "${TOPUP_MARK}" ] && [ "${PENDING_DUE}" -eq 0 ]; then
         local AGE=$(( $(date +%s) - $(stat -c %Y "${TOPUP_MARK}" 2>/dev/null || echo 0) ))
         if [ "${AGE}" -ge 0 ] && [ "${AGE}" -lt "${TOPUP_INTERVAL}" ]; then
             exit 0
@@ -1579,7 +1589,7 @@ do_topup() {
     # cached -- the games added and indexed since the last run, and with a
     # library nobody scanned, as many as the deadline allows (the rest next
     # time). Nothing is hashed here.
-    local COUNTS LRC NEW=0 CACHED=0 SKIPPED=0 INDEXED=0 LIMIT=0 ERRORS=0 WHY="" LEFT ADDED=0
+    local COUNTS LRC NEW=0 CACHED=0 SKIPPED=0 INDEXED=0 LIMIT=0 ERRORS=0 WHY="" LEFT ADDED=0 LISTED=0
     LEFT="$(time_left "${START}")"
     if [ "${LEFT}" -le 0 ]; then
         WHY=TOOK_TOO_LONG
@@ -1591,13 +1601,18 @@ do_topup() {
         # unless an index ran offline and left its marker: then once, below.
         slog "topup at the link's return: the recently played pass alone (new games are the index's)"
     else
+        # The marker stays until the listing it stands for, and the games
+        # that listing found, have been handled -- removed below, never
+        # here: a listing that failed, a run cut by the deadline or stopped
+        # part-way (STOP IT AND PLAY, disable), a game whose fetch failed,
+        # each left no marker and so no retry (#307 PL-055).
         if [ "${AFTER_INDEX}" -eq 0 ]; then
             slog "topup at the link's return: an index ran offline (index-pending); the library listed once for it"
-            rm -f "${INDEX_PENDING}"
         fi
         COUNTS="$(list_jobs "${LIST}" indexed "${LEFT}" 2>>"${SCAN_LOG}")"
         LRC=$?
         if [ "${LRC}" -eq 0 ]; then
+            LISTED=1
             NEW="$(count_of "${COUNTS}" new)"
             slog "topup start${AI_NOTE}: ${COUNTS}"
         elif [ "${LRC}" -eq 124 ]; then
@@ -1627,6 +1642,14 @@ do_topup() {
             [ -z "${WHY}" ] && [ "${ERRORS}" -gt 0 ] && WHY=SOME_GAMES_NOT_SAVED
             slog "topup indexed pass: cached=${CACHED} indexed=${INDEXED} skipped=${SKIPPED} errors=${ERRORS} rc=${R_CLIENT_RC}${WHY:+ why=${WHY}}"
         fi
+    fi
+
+    # The index's games are handled -- listed, and each cached or passed
+    # over -- so whatever index-pending stood for is done; after-index runs
+    # included, since their listing is the same (#307 PL-055).
+    if [ "${LISTED}" -eq 1 ] && [ -z "${WHY}" ] && [ -e "${INDEX_PENDING}" ]; then
+        rm -f "${INDEX_PENDING}"
+        slog "topup: the pending index's listing and its games are handled; index-pending removed"
     fi
 
     # Then the client's own recently-played pass for what the index missed
