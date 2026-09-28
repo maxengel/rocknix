@@ -3259,7 +3259,10 @@ for d in "${SOURCES_DIR:-}" /workspace/cache/rocknix-sources "${ROOT}/sources" "
     [ -n "${d}" ] && [ -f "${d}/retroarch/retroarch-${RA_PIN}.tar.gz" ] && { RA_TAR="${d}/retroarch/retroarch-${RA_PIN}.tar.gz"; break; }
 done
 if [ -z "${RA_TAR}" ]; then
-    echo "    SKIP  retroarch-${RA_PIN:-?}.tar.gz is not under SOURCES_DIR, /workspace/cache/rocknix-sources or a build worktree's sources/ -- F2-4 needs the pinned tree"
+    # A check that cannot run has not passed (the audit of the fixes, claude
+    # G-F2-10, gpt G-F2-06): with no pinned tree none of F2-4 runs, and the
+    # run says so as a FAIL rather than a SKIP an aggregate PASSED hides.
+    check 1 "" "retroarch-${RA_PIN:-?}.tar.gz is not under SOURCES_DIR, /workspace/cache/rocknix-sources or a build worktree's sources/ -- F2-4's eleven-plus checks did not run (an empty pin reads the same)"
 else
 RX="${F2}/ra"; mkdir -p "${RX}/patches/batteryplus" "${RX}/src"
 if [ "${OLD}" -eq 1 ]; then
@@ -3285,14 +3288,14 @@ done
 GW="${RX}/src/gfx/gfx_widgets.c"
 if command -v gcc > /dev/null; then
     F2_CC=""
-    for c in gfx/gfx_widgets.c gfx/video_thread_wrapper.c command.c runtime_file.c; do
+    for c in gfx/gfx_widgets.c gfx/video_thread_wrapper.c command.c runtime_file.c configuration.c; do
         gcc -fsyntax-only -std=gnu99 -Werror=implicit-function-declaration -I"${RX}/src" -I"${RX}/src/libretro-common/include" -I"${RX}/src/deps" \
             -DHAVE_GFX_WIDGETS -DHAVE_MENU -DHAVE_XMB -DHAVE_OZONE -DHAVE_THREADS -DHAVE_CHEEVOS -DHAVE_CONFIGFILE -DHAVE_NETWORKING -DRARCH_INTERNAL \
             "${RX}/src/${c}" > "${RX}/cc.log" 2>&1 || F2_CC+=" ${c}: $(grep -m1 'error' "${RX}/cc.log" | cut -c1-160)"
     done
-    [ -z "${F2_CC}" ]; check $? "the patched gfx_widgets.c, video_thread_wrapper.c, command.c and runtime_file.c compile (host gcc, -fsyntax-only)" "does not compile:${F2_CC}"
+    [ -z "${F2_CC}" ]; check $? "the patched gfx_widgets.c, video_thread_wrapper.c, command.c, runtime_file.c and configuration.c compile (host gcc, -fsyntax-only)" "does not compile:${F2_CC}"
 else
-    echo "    SKIP  no gcc on this host: the patched tree was not compiled"
+    check 1 "" "no gcc on this host: the patched tree was not compiled, and the checks that compile below cannot run"
 fi
 # PL-032: which sharp-size table a face gets is decided by the face that is
 # drawn -- the resolved font file -- in both of gfx_widgets_layout's
@@ -3320,7 +3323,8 @@ static const char *face(const char *path)
 int main(void)
 {
    const gfx_widgets_sharp_face_t *r = gfx_widgets_sharp_face("/usr/share/retroarch/assets/ozone/regular.ttf");
-   printf("%s|%s|%s|%s|%s|%.0f|%.1f\n",
+   printf("%s|%s|%s|%s|%s|%s|%.0f|%.1f\n",
+         face("C:\\RetroArch\\assets\\ozone\\regular.ttf"),
          face("/usr/share/retroarch/assets/ozone/regular.ttf"),
          face("/usr/share/retroarch/assets/ozone/bold.ttf"),
          face("/usr/share/retroarch-assets/xmb/monochrome/font.ttf"),
@@ -3335,18 +3339,42 @@ if command -v gcc > /dev/null && [ -s "${RX}/sharp.inc" ] && gcc -std=gnu99 -o "
 else
     F2_OUT="(the sharp-size step is not marked out in gfx_widgets.c, or does not compile alone: $(grep -m1 error "${RX}/sharp.log" 2>/dev/null | cut -c1-120))"
 fi
-[ "${F2_OUT}" = "Inter UI Regular|Inter UI Bold|none|none|none|18|11.0" ]
-check $? "the table is the drawn face's: ozone/regular.ttf -> Inter UI Regular, ozone/bold.ttf -> Inter UI Bold, the shipped xmb/monochrome/font.ttf -> none; 17.4 px moves to 18, 11 stays (15 is past the band)" "the face step answered '${F2_OUT}' -- expected 'Inter UI Regular|Inter UI Bold|none|none|none|18|11.0'"
+[ "${F2_OUT}" = "Inter UI Regular|Inter UI Regular|Inter UI Bold|none|none|none|18|11.0" ]
+check $? "the table is the drawn face's: ozone/regular.ttf -> Inter UI Regular (a backslash path too), ozone/bold.ttf -> Inter UI Bold, the shipped xmb/monochrome/font.ttf -> none; 17.4 px moves to 18, 11 stays (15 is past the band)" "the face step answered '${F2_OUT}' -- expected 'Inter UI Regular|Inter UI Regular|Inter UI Bold|none|none|none|18|11.0'"
 # Both branches ask the drawn face; the message queue takes no table in
 # either (D-UI-098: 13 is drawn at 13); every face logs what it was drawn at.
-F2_BAD=""
-grep -q 'font_file == p_dispwidget->ozone_regular_font_path' "${GW}" && F2_BAD+=" the-pointer-comparison-is-still-there"
-grep -Eq 'gfx_widget_fonts\.regular,[^;]*font_path, BASE_FONT_SIZE, 9\.0f, NULL, 0\)' "${GW}" && F2_BAD+=" user-path-regular-passes-no-table"
-[ "$(grep -c 'MSG_QUEUE_FONT_SIZE, MSG_QUEUE_MIN_SIZE, false)' "${GW}")" -eq 2 ] || F2_BAD+=" msg_queue-not-explicitly-tableless-in-both-branches"
-grep -q 'RARCH_LOG("\[Widgets\] font %s: ' "${GW}" || F2_BAD+=" no-font-log-line"
-grep -q 'RARCH_LOG([^;]*ROCKNIX' "${GW}" && F2_BAD+=" a-log-string-carries-a-fork-issue-number"
-grep -q 'define MSG_QUEUE_MIN_SIZE  13\.0f' "${GW}" || F2_BAD+=" floor-not-13"
-[ -z "${F2_BAD}" ]; check $? "both branches ask the drawn face for its table, the message queue takes none (D-UI-098), each face's size is logged, and no log string carries a fork issue number" "gfx_widgets.c:${F2_BAD}"
+# Read as whole calls, whitespace folded -- the calls span lines, and a
+# line-bound grep asserted nothing about them (the audit of the fixes,
+# claude G-F2-06, gpt G-F2-05): each of gfx_widgets_layout's four regular
+# and bold calls passes sharp = true, both message-queue calls false.
+F2_BAD="$(python3 - "${GW}" <<'EOPY'
+import re, sys
+src = open(sys.argv[1], errors='replace').read()
+flat = re.sub(r'\s+', ' ', src)
+m = re.search(r'static void gfx_widgets_layout\(.*?\n}\n', src, re.S)
+lay = re.sub(r'\s+', ' ', m.group(0)) if m else ''
+bad = []
+if 'font_file == p_dispwidget->ozone_regular_font_path' in flat:
+    bad.append('the-pointer-comparison-is-still-there')
+for want, tag in [
+        ('gfx_widget_fonts.regular, is_threaded, p_dispwidget->ozone_regular_font_path, BASE_FONT_SIZE, 9.0f, true)', 'ozone-regular-not-sharp'),
+        ('gfx_widget_fonts.bold, is_threaded, p_dispwidget->ozone_bold_font_path, BASE_FONT_SIZE, 9.0f, true)', 'ozone-bold-not-sharp'),
+        ('gfx_widget_fonts.regular, is_threaded, font_path, BASE_FONT_SIZE, 9.0f, true)', 'user-path-regular-not-sharp'),
+        ('gfx_widget_fonts.bold, is_threaded, font_path, BASE_FONT_SIZE, 9.0f, true)', 'user-path-bold-not-sharp')]:
+    if want not in lay:
+        bad.append(tag)
+if lay.count('MSG_QUEUE_FONT_SIZE, MSG_QUEUE_MIN_SIZE, false)') != 2:
+    bad.append('msg_queue-not-explicitly-tableless-in-both-branches')
+if 'RARCH_LOG("[Widgets] font %s: ' not in flat:
+    bad.append('no-font-log-line')
+if any('ROCKNIX' in c for c in re.findall(r'RARCH_LOG\(.*?\);', flat)):
+    bad.append('a-log-string-carries-a-fork-issue-number')
+if '#define MSG_QUEUE_MIN_SIZE  13.0f' not in src:
+    bad.append('floor-not-13')
+print(' '.join(bad))
+EOPY
+)"
+[ -z "${F2_BAD}" ]; check $? "both branches ask the drawn face for its table (all four regular and bold calls sharp, whole calls read), the message queue takes none (D-UI-098), each face's size is logged, and no log call carries a fork issue number" "gfx_widgets.c: ${F2_BAD}"
 # 0016's and 0017's messages describe the code they carry (the floor is 13
 # since D-UI-098; the tables apply to the faces they were measured on).
 F2_BAD=""
@@ -3370,11 +3398,61 @@ check $? "the placement line is written after the divider is set and from the di
 [ -n "${L_MOV}" ] && [ -n "${L_DIV}" ] && [ "${L_MOV}" -gt "${L_DIV}" ]; check $? "gfx_widgets_layout places the messages on screen again once the margin and divider are new" "no gfx_widgets_msg_queue_move after the layout's new metrics (a message pushed between the two passes kept the first pass's place)"
 # F-RW-05: a negative slot is kept only when this launch's append config
 # asked for it; one left in the main config is reset as upstream resets it.
+# The answer is taken when the configuration is loaded, not re-read at
+# content load (the audit of the fixes, claude G-F2-02), and it is run, not
+# grepped (gpt G-F2-05): the helper block is compiled with libretro-common's
+# own config parser and asked about a matrix of append lists -- none; one
+# file at -1, at 3, without the key, missing; the last of two winning either
+# way; a file without the key after a -1 -- and about a -1 whose file is
+# deleted after the load recorded it.
 F2_BAD=""
-grep -q 'command_append_config_sets_auto_slot' "${RX}/src/command.h" || F2_BAD+=" no-helper-in-command.h"
-awk '/^void command_event_set_savestate_auto_index\(/,/^}/' "${RX}/src/command.c" | grep -q 'command_append_config_sets_auto_slot()' || F2_BAD+=" command.c-keys-on-the-sign-alone"
-grep -q 'command_append_config_sets_auto_slot()' "${RX}/src/runtime_file.c" || F2_BAD+=" runtime_file.c-keys-on-the-sign-alone"
-[ -z "${F2_BAD}" ]; check $? "0018 keeps Auto only when this launch's append config sets it -- a -1 saved into retroarch.cfg is reset as upstream does" "0018:${F2_BAD}"
+grep -Eq 'command_record_append_config\(' <(awk '/^static bool config_load_file\(/,/^}/' "${RX}/src/configuration.c") || F2_BAD+=" configuration.c-records-nothing-at-load"
+tr -s ' \t\n' ' ' < "${RX}/src/command.c" | grep -q 'if (settings->ints.state_slot < 0 && command_append_config_sets_auto_slot())' || F2_BAD+=" command.c-guard"
+tr -s ' \t\n' ' ' < "${RX}/src/runtime_file.c" | grep -q 'config_get_ptr()->ints.state_slot >= 0 || !command_append_config_sets_auto_slot()' || F2_BAD+=" runtime_file.c-guard"
+tr -s ' \t\n' ' ' < "${RX}/src/command.c" | grep -q '@return \\c The most recent savestate slot\. \*/ void command_event_set_savestate_auto_index(settings_t \*settings)' || F2_BAD+=" command.c-doc-block-not-over-its-function"
+awk '/ROCKNIX: append auto slot begin/,/ROCKNIX: append auto slot end/' "${RX}/src/command.c" > "${RX}/autoslot.inc"
+cat > "${RX}/autoslot_test.c" <<'EOC'
+#include <stdio.h>
+#include <string.h>
+#include <boolean.h>
+#include <retro_miscellaneous.h>
+#include <compat/strl.h>
+#include <file/config_file.h>
+#include "autoslot.inc"
+/* each argument is an append list, "-" none; "--rr <list> <file>" records
+ * the list, removes the file, then asks */
+int main(int argc, char **argv)
+{
+   int i;
+   for (i = 1; i < argc; i++)
+   {
+      if (!strcmp(argv[i], "--rr") && i + 2 < argc)
+      {
+         command_record_append_config(argv[i + 1]);
+         remove(argv[i + 2]);
+         i += 2;
+      }
+      else
+         command_record_append_config(strcmp(argv[i], "-") ? argv[i] : NULL);
+      printf("%d", command_append_config_sets_auto_slot() ? 1 : 0);
+   }
+   printf("\n");
+   return 0;
+}
+EOC
+AS="${RX}/as"; mkdir -p "${AS}"
+printf 'state_slot = "-1"\nsavestate_auto_load = "true"\n' > "${AS}/a.cfg"; cp "${AS}/a.cfg" "${AS}/a2.cfg"
+printf 'state_slot = "3"\n' > "${AS}/b.cfg"; printf 'savestate_auto_save = "true"\n' > "${AS}/c.cfg"
+L="${RX}/src/libretro-common"
+F2_OUT="(the append-slot block is not marked out in command.c, or does not build with libretro-common)"
+if [ -s "${RX}/autoslot.inc" ] && gcc -std=gnu99 -o "${RX}/autoslot_test" -I"${L}/include" -I"${RX}" "${RX}/autoslot_test.c" \
+      "${L}"/file/config_file.c "${L}"/file/file_path.c "${L}"/file/file_path_io.c "${L}"/streams/file_stream.c "${L}"/string/stdstring.c \
+      "${L}"/compat/compat_strl.c "${L}"/compat/fopen_utf8.c "${L}"/compat/compat_posix_string.c "${L}"/compat/compat_strcasestr.c \
+      "${L}"/encodings/encoding_utf.c "${L}"/vfs/vfs_implementation.c "${L}"/time/rtime.c > "${RX}/autoslot.log" 2>&1; then
+    F2_OUT="$("${RX}/autoslot_test" - "${AS}/a.cfg" "${AS}/b.cfg" "${AS}/c.cfg" "${AS}/missing.cfg" "${AS}/a.cfg|${AS}/b.cfg" "${AS}/b.cfg|${AS}/a.cfg" "${AS}/a.cfg|${AS}/c.cfg" "${AS}/a.cfg|${AS}/missing.cfg" --rr "${AS}/a2.cfg" "${AS}/a2.cfg")"
+fi
+[ "${F2_OUT}" = "0100001111" ] || F2_BAD+=" matrix:'${F2_OUT}'(expected-0100001111)"
+[ -z "${F2_BAD}" ]; check $? "0018 keeps Auto only when a launch's append config sets it, answered when the configuration loads -- run over ten append lists, a file deleted after the load included" "0018:${F2_BAD}"
 # F-RW-06 and F-RW-10: the headers say what was proved and where upstream is.
 grep -q 'Probe.state.auto' "${RX}/patches/0018-auto-slot-survives-content-load.patch"
 check $? "0018's message records the passing observation with both halves applied" "0018's message records two failures and no pass"

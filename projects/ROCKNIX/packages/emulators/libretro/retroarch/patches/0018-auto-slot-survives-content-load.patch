@@ -25,36 +25,48 @@ the second half. With both halves, on the QA guest (image a8175c6193,
 sent through the guest's monitor, not a pad -- loaded Probe.state.auto.
 
 Both leave the slot alone only when this launch's append config sets it
-negative (command_append_config_sets_auto_slot reads the --appendconfig
-files as RetroArch loads them, the last one winning), and say so in the
-log. A -1 that reached the main config instead -- a configuration saved
-while Auto was selected -- is not this launch's request: it is scanned,
-reset or restored over as upstream does, so a launch that asks for no
-slot behaves as it always has.
+negative, and say so in the log. The answer is taken when the
+configuration loads: config_load_file hands command.c the --appendconfig
+list right after appending its files, and the last file that sets
+state_slot wins, as it does in the load -- so the answer describes the
+files RetroArch read, not whatever is at those paths by the time content
+loads, and a file that cannot be read says nothing. A -1 that reached
+the main config instead -- a configuration saved while Auto was
+selected -- is not this launch's request: it is scanned, reset or
+restored over as upstream does, so a launch that asks for no slot
+behaves as it always has.
 
 diff --git a/command.c b/command.c
 --- a/command.c
 +++ b/command.c
-@@ -1909,10 +1909,57 @@ int command_event_get_next_savestate_auto_index(settings_t *settings)
-  * @param settings The usual RetroArch settings ptr.
-  * @return \c The most recent savestate slot.
-  */
-+/* ROCKNIX: whether this launch's append config (--appendconfig, where the
-+ * launcher writes one launch's settings) sets state_slot to a negative --
-+ * RetroArch's Auto slot, the .state.auto file. A later file in the list
-+ * wins, as it does when the list is loaded. A negative that reached the
-+ * main config instead (a configuration saved while Auto was selected) is
-+ * not this launch's request and does not count. */
-+bool command_append_config_sets_auto_slot(void)
+@@ -1903,6 +1903,60 @@ int command_event_get_next_savestate_auto_index(settings_t *settings)
+    return new_state_slot;
+ }
+ 
++/* ROCKNIX: append auto slot begin */
++/* Whether a launch's append config (--appendconfig, where ROCKNIX's
++ * launcher writes one launch's settings) asks for RetroArch's Auto slot,
++ * the .state.auto file. The answer is taken when the configuration is
++ * loaded -- config_load_file hands the list over right after appending its
++ * files -- so it describes the files RetroArch read, not whatever is at
++ * those paths by the time content loads. A negative that reached the main
++ * config instead (a configuration saved while Auto was selected) is not a
++ * launch's request and does not count. */
++static bool command_append_auto_slot = false;
++
++/* The '|'-separated list read as RetroArch reads it: the last file that
++ * sets state_slot wins; a file that cannot be read, or has no state_slot,
++ * says nothing. True when the winning value is negative. */
++bool command_append_list_sets_auto_slot(const char *list)
 +{
 +   char tmp[PATH_MAX_LENGTH];
 +   char *ptr    = NULL;
 +   bool is_auto = false;
 +
-+   if (path_is_empty(RARCH_PATH_CONFIG_APPEND))
++   if (!list || !*list)
 +      return false;
 +
-+   strlcpy(tmp, path_get(RARCH_PATH_CONFIG_APPEND), sizeof(tmp));
++   strlcpy(tmp, list, sizeof(tmp));
 +   for (ptr = tmp; ptr && *ptr; )
 +   {
 +      char *delim         = strchr(ptr, '|');
@@ -74,7 +86,21 @@ diff --git a/command.c b/command.c
 +   return is_auto;
 +}
 +
- void command_event_set_savestate_auto_index(settings_t *settings)
++void command_record_append_config(const char *list)
++{
++   command_append_auto_slot = command_append_list_sets_auto_slot(list);
++}
++
++bool command_append_config_sets_auto_slot(void)
++{
++   return command_append_auto_slot;
++}
++/* ROCKNIX: append auto slot end */
++
+ /**
+  * Determines most recent savestate slot in case of content load.
+  *
+@@ -1913,6 +1967,18 @@ void command_event_set_savestate_auto_index(settings_t *settings)
  {
     unsigned max_idx          = 0;
     bool savestate_auto_index = settings->bools.savestate_auto_index;
@@ -96,16 +122,34 @@ diff --git a/command.c b/command.c
 diff --git a/command.h b/command.h
 --- a/command.h
 +++ b/command.h
-@@ -400,6 +400,9 @@ bool command_event_load_auto_state(void);
+@@ -400,6 +400,12 @@ bool command_event_load_auto_state(void);
  void command_event_set_savestate_auto_index(
        settings_t *settings);
  
-+/* ROCKNIX: whether this launch's append config sets the Auto slot */
++/* ROCKNIX: whether a launch's append config asks for the Auto slot --
++ * recorded by config_load_file as it loads the list, read at content load */
++bool command_append_list_sets_auto_slot(const char *list);
++void command_record_append_config(const char *list);
 +bool command_append_config_sets_auto_slot(void);
 +
  int command_event_get_next_savestate_auto_index(
        settings_t *settings);
  
+diff --git a/configuration.c b/configuration.c
+--- a/configuration.c
++++ b/configuration.c
+@@ -4016,6 +4016,11 @@ static bool config_load_file(global_t *global,
+       check_verbosity_settings(conf, settings);
+    }
+ 
++   /* ROCKNIX: whether the append files just read ask for the Auto slot,
++    * noted now, while they are the files RetroArch loaded (command.c) */
++   command_record_append_config(path_is_empty(RARCH_PATH_CONFIG_APPEND)
++         ? NULL : path_get(RARCH_PATH_CONFIG_APPEND));
++
+    if (!path_is_empty(RARCH_PATH_CONFIG_OVERRIDE) && !without_overrides)
+    {
+       char tmp_append_path[PATH_MAX_LENGTH];
 diff --git a/runtime_file.c b/runtime_file.c
 --- a/runtime_file.c
 +++ b/runtime_file.c

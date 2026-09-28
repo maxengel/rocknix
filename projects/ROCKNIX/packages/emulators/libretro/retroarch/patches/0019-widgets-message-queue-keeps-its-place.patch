@@ -35,7 +35,7 @@ diff --git a/gfx/gfx_widgets.c b/gfx/gfx_widgets.c
  #include "font_driver.h"
  
  #ifdef HAVE_MENU
-@@ -671,12 +671,26 @@ static void gfx_widgets_msg_queue_move(dispgfx_widget_t *p_dispwidget)
+@@ -685,12 +685,26 @@ static void gfx_widgets_msg_queue_move(dispgfx_widget_t *p_dispwidget)
  
        size_small             = (msg->task_ptr || (msg->flags & DISPWIDG_FLAG_SMALL));
  
@@ -68,7 +68,7 @@ diff --git a/gfx/gfx_widgets.c b/gfx/gfx_widgets.c
  
        if (msg->offset_y != y)
        {
-@@ -1143,6 +1157,13 @@ static void gfx_widgets_layout(
+@@ -1157,6 +1171,13 @@ static void gfx_widgets_layout(
     p_dispwidget->msg_queue_padding                = (unsigned)(((float)p_dispwidget->gfx_widget_fonts.msg_queue.line_height * (2.0f / 3.0f)) + 0.5f);
     p_dispwidget->msg_queue_spacing                = p_dispwidget->msg_queue_height / 4.0f;
     p_dispwidget->msg_queue_rect_start_x           = ceil(p_dispwidget->msg_queue_padding - (p_dispwidget->simple_widget_padding * 0.10f));
@@ -82,7 +82,7 @@ diff --git a/gfx/gfx_widgets.c b/gfx/gfx_widgets.c
  
     gfx_widgets_update_icon_layout(p_dispwidget);
  
-@@ -1166,6 +1187,24 @@ static void gfx_widgets_layout(
+@@ -1180,6 +1201,24 @@ static void gfx_widgets_layout(
     if (p_dispwidget->last_scale_factor > 1.0f)
        p_dispwidget->divider_width_1px             = (unsigned)(p_dispwidget->last_scale_factor + 0.5f);
  
