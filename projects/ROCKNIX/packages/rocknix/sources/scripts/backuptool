@@ -46,7 +46,16 @@ ARCHIVEFOLDER="${SETTINGS_BACKUPS}/archive"
 # the archive holds emulator and interface settings and nothing else, and
 # calling it a system backup had people expecting their saves to be in it.
 # Every reader below still accepts the three earlier names.
-BACKUP_STAMP="$(date +%Y_%m_%d-%H%M%S)"
+#
+# The stamp is kept as a count of seconds too, so a name already taken -- a
+# second run in the same second -- moves on to the next second's name rather
+# than overwriting the first run's archive (#307 PL-077). stamp_at falls back
+# to the clock as it reads now if the date applet cannot convert.
+stamp_at() {
+    date -d "@${1}" +%Y_%m_%d-%H%M%S 2>/dev/null || date +%Y_%m_%d-%H%M%S
+}
+STAMP_EPOCH="$(date +%s)"
+BACKUP_STAMP="$(stamp_at "${STAMP_EPOCH}")"
 # The device's name sits between the stamp and -${OS_NAME}_SETTINGS.
 #
 # Every device used to write <stamp>-ROCKNIX_SETTINGS.tar.gz, so two
@@ -138,6 +147,20 @@ fail() {
 note() {
     echo -e "\e[32m${1}\e[0m"
     logger -t backuptool "${1}${2:+ -- ${2}}"
+}
+
+# One backup or restore at a time (#307 PL-077, #308 claude F-BR-15). The
+# console flow and the interface's chains can each start one, and two runs
+# shared the stamp, the .partial name and the startup sweep of .partials: one
+# run removed the other's file in flight, or two renames clobbered each
+# other. A lock on the settings backups folder itself -- an flock on a
+# descriptor opened on the directory, so there is no lock file to leave
+# behind or to upload -- held until this process exits. A second run does not
+# wait: it says so and ends.
+take_lock() {
+    # The braces keep the 2>/dev/null to this one exec: on exec itself it
+    # would redirect the whole script's stderr for the rest of the run.
+    { exec 9<"${SETTINGS_BACKUPS}"; } 2>/dev/null && flock -n 9
 }
 
 # The one protocol line the transfer page and the sync card read for why a
@@ -952,6 +975,15 @@ done
 
 case "${VERB}" in
     "restore")
+        command -v flock >/dev/null 2>&1 || {
+            why "THIS DEVICE CAN'T RESTORE SETTINGS"
+            fail "THIS DEVICE CAN'T RESTORE SETTINGS. SOMETHING IT NEEDS IS MISSING FROM THIS BUILD." "'flock' is not on PATH"
+        }
+        if ! take_lock
+        then
+            why "A SETTINGS BACKUP OR RESTORE IS ALREADY RUNNING"
+            fail "A SETTINGS BACKUP OR RESTORE IS ALREADY RUNNING. WAIT FOR IT TO FINISH, THEN TRY AGAIN." "another run holds the lock on ${SETTINGS_BACKUPS}"
+        fi
         BACKUPFILE="$(newest_backup)"
         if [ -z "${BACKUPFILE}" ] || [ ! -f "${BACKUPFILE}" ]
         then
@@ -984,6 +1016,11 @@ case "${VERB}" in
         # stays bounded.
         mkdir -p "${ARCHIVEFOLDER}"
         SNAPSHOT="${ARCHIVEFOLDER}/${BACKUP_STAMP}-PRE_RESTORE-${DEVICE_LABEL:+${DEVICE_LABEL}-}${OS_NAME}_SETTINGS.tar.gz"
+        while [ -e "${SNAPSHOT}" ]
+        do
+            STAMP_EPOCH=$((STAMP_EPOCH + 1)); BACKUP_STAMP="$(stamp_at "${STAMP_EPOCH}")"
+            SNAPSHOT="${ARCHIVEFOLDER}/${BACKUP_STAMP}-PRE_RESTORE-${DEVICE_LABEL:+${DEVICE_LABEL}-}${OS_NAME}_SETTINGS.tar.gz"
+        done
         MEMBERS=$(mktemp); NEWLIST=$(mktemp); SEEDS=$(mktemp)
         archive_members "${BACKUPFILE}" > "${MEMBERS}"
         # The files the backup left out as the image's own (SEEDLIST), to
@@ -1178,17 +1215,30 @@ case "${VERB}" in
         # Guard the tool this whole path depends on. busybox provides unzip but
         # not zip, so a missing package means backup dies with a bare
         # "zip: not found" after the user has already chosen to back up.
-        for TOOL in tar gzip
+        for TOOL in tar gzip flock
         do
             command -v "${TOOL}" >/dev/null 2>&1 || {
                 why "THIS DEVICE CAN'T MAKE A SETTINGS BACKUP"
                 fail "THIS DEVICE CAN'T MAKE A SETTINGS BACKUP. SOMETHING IT NEEDS IS MISSING FROM THIS BUILD." "'${TOOL}' is not on PATH"
             }
         done
+        if ! take_lock
+        then
+            why "A SETTINGS BACKUP OR RESTORE IS ALREADY RUNNING"
+            fail "A SETTINGS BACKUP OR RESTORE IS ALREADY RUNNING. WAIT FOR IT TO FINISH, THEN TRY AGAIN." "another run holds the lock on ${SETTINGS_BACKUPS}"
+        fi
 
         # A .partial left by a run that was killed mid-write is not a backup
         # and nothing reads it; clear it so it does not sit there for ever.
+        # Under the lock, so it is never another run's file in flight.
         rm -f "${SETTINGS_BACKUPS}"/*.tar.gz.partial 2>/dev/null
+
+        # A name already taken moves on a second (see STAMP_EPOCH).
+        while [ -e "${BACKUPFILE}" ]
+        do
+            STAMP_EPOCH=$((STAMP_EPOCH + 1)); BACKUP_STAMP="$(stamp_at "${STAMP_EPOCH}")"
+            BACKUPFILE="${SETTINGS_BACKUPS}/${BACKUP_STAMP}-${DEVICE_LABEL:+${DEVICE_LABEL}-}${OS_NAME}_SETTINGS.tar.gz"
+        done
 
         # The archive at the root right now, named before the new one exists
         # so that newest_backup cannot return the new one. It stays exactly

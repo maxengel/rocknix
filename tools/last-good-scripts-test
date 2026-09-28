@@ -3320,4 +3320,27 @@ p7bt restore --no-restart
 [ "${RC}" -eq 0 ] && cmp -s "${P7U}/emulationstation/es_settings.cfg" "${P7S}/.config/emulationstation/es_settings.cfg"; check $? "#307 PL-037: es_settings.cfg, left out of the backup as the image's own, is reset to it by the restore" "#307 PL-037: rc ${RC}; es_settings.cfg after the restore: '$(head -c 80 "${P7S}/.config/emulationstation/es_settings.cfg")'"
 [ ! -e "${P7S}/.config/.backuptool-seeds" ]; check $? "#307 PL-037: and the list of such files is not left on the device" "#307 PL-037: .backuptool-seeds left in /storage/.config"
 
+# == PL-077 / #308 claude F-BR-15: one run at a time, and two in one second keep two archives
+p7reset '  /storage/.config/test/*'
+( flock -n "${P7S}/roms/backup" sleep 4 ) & P7HOLD=$!
+sleep 0.5
+p7bt backup
+wait "${P7HOLD}" 2>/dev/null
+[ "${RC}" -ne 0 ] && [ -z "$(p7arc)" ] && [ "$(p7why)" = "A SETTINGS BACKUP OR RESTORE IS ALREADY RUNNING" ]; check $? "#307 PL-077 / #308 F-BR-15: a backup while another holds the backup folder's lock is refused (why: $(p7why))" "#307 PL-077: rc ${RC}; archives $(p7arc | wc -l); why '$(p7why)' -- two writers shared one stamp and one .partial"
+p7reset '  /storage/.config/test/*'
+cat > "${P7}/shim/date" <<'EOS'
+#!/bin/bash
+# The clock stopped at one second: two runs share it.
+case "$*" in
+    +%s) echo 1790000000 ;;
+    +%Y_%m_%d-%H%M%S) echo 2026_09_21-140000 ;;
+    *) exec /p7bb/date "$@" ;;
+esac
+EOS
+chmod +x "${P7}/shim/date"
+p7bt backup; p7rc1=${RC}; echo two > "${P7S}/.config/test/f1"; p7bt backup
+p7n=$(( $(ls "${P7S}/roms/backup"/*.tar.gz 2>/dev/null | wc -l) + $(ls "${P7S}/roms/backup/archive"/*.tar.gz 2>/dev/null | wc -l) ))
+[ "${p7rc1}" -eq 0 ] && [ "${RC}" -eq 0 ] && [ "${p7n}" -eq 2 ]; check $? "#307 PL-077: two backups in one second leave two archives" "#307 PL-077: rc ${p7rc1}/${RC}; archives: ${p7n} -- the second took the first one's name"
+rm -f "${P7}/shim/date"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
