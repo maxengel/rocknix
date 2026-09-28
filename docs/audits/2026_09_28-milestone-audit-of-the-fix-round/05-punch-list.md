@@ -1,7 +1,7 @@
 # Punch List — the whole fix round for #307/#308, before the candidate (D-WORKFLOW-060)
 **Generated:** 2026-09-28
 **Source Audit:** `docs/audits/2026_09_28-milestone-audit-of-the-fix-round/04-analysis.md`
-**Total Items:** 27 (Critical: 0, High: 14, Medium: 10, Low: 3). Every item is a defect this audit discovered, confirmed by the orchestrator against the source (`02-forward-audit.md` § Verification); the seats' remaining Mediums and Lows go to their streams as leads, listed at the end, and the first audit's carried items stay on #309.
+**Total Items:** 29 (Critical: 0, High: 14, Medium: 12, Low: 3); PL-028 and PL-029 were added after the blind second opinion (S-06, S-30). Every item is a defect this audit discovered, confirmed by the orchestrator against the source (`02-forward-audit.md` § Verification); the seats' remaining Mediums and Lows go to their streams as leads, listed at the end, and the first audit's carried items stay on #309.
 ---
 
 ## Instructions for Executing Agent
@@ -228,6 +228,24 @@ The FIX-NOW set is every High and Medium here: each lands in its stream's files 
 - **What:** the "Autostart complete" wait passes at once on the previous boot's line; the check cannot fail.
 - **Acceptance:** the wait reads the current boot (journalctl -b, or a line stamped with the boot id); a case with a stale line planted asserts the wait waits
 
+## PL-028: an archive member outside storage/ is extracted and never rolled back
+- **Severity:** Medium
+- **Category:** Restore/rollback write-set mismatch (a member the snapshot never covers)
+- **Source Finding:** G2-B-05 (gpt, B); the blind pass's S-06
+- **Owner area:** stream B, backuptool
+- **Where:** backuptool `archive_members` (the `^storage/` filter, line 5's awk and the tar case at 479-480); the extraction `tar -xzf ... -C / -X "${SKIP}"` (1356) and the unzip equivalent
+- **What:** the snapshot lists `storage/*` regular files; extraction runs the whole archive minus a skip list, so a member outside `storage/` (a legacy or foreign archive's `tmp/...`) is written to `/` and never rolled back. Confirmed Medium in § Verification and then carried nowhere -- neither a punch item nor a lead -- until the blind pass named it (S-06, High there); the grade stays Medium: it needs an archive this tool never writes.
+- **Acceptance:** an archive whose member list holds a path not under `storage/` is refused before anything is extracted, with its why; a case with such an archive (tar and zip) asserts nothing outside `storage/` is written and the refusal is printed
+
+## PL-029: the candidate's own proofs are not yet on the candidate
+- **Severity:** Medium
+- **Category:** Verification gap (S-30)
+- **Source Finding:** the blind pass's S-30; § 3.5-3.6
+- **Owner area:** the integrator, the next cut
+- **Where:** `tools/vm-upgrade-rehearsal` (not run on `1b0d233657`), the layout migration proved in harness cases and not on a guest, the E1/E2 follow-up proofs, the proofs runner's 3 NOT RUN, the Wi-Fi stand-in without an adapter
+- **What:** clean-image and harness results were read as covering the kept-`/storage` upgrade and the endpoint-dependent journeys; on the cut the candidate is called from, each of those has its own artifact or is named as a gap the VM cannot close.
+- **Acceptance:** on the next cut: `tools/vm-upgrade-rehearsal` from the previous device build passes and its stamp is in the QA log; the migration runs on a guest against the QA cloud with its before/after listings filed; the E1/E2 follow-ups' proofs run under `proofs-307/`; the runner's NOT RUN count is 0 or each is named with what only a device can show (`vm-first.md`); the Wi-Fi item names the physical fact
+
 ## Low Priority
 ## PL-025: the harness under vm-qa runs with SIGPIPE ignored
 - **Severity:** Low
@@ -312,6 +330,8 @@ Recorded per item as it is resolved: the outcome (resolved / deferred / rejected
 | PL-025 | Low | | |
 | PL-026 | Low | | |
 | PL-027 | Low | | |
+| PL-028 | Medium | | |
+| PL-029 | Medium | | |
 
 ## Punch index
 
@@ -532,5 +552,21 @@ punch_index:
   owner_area: "the integrator, es-player-text.md"
   where: ".claude/rules/es-player-text.md (the why list)"
   acceptance: "the two sentences in the list, with their scripts; rules-check clean"
+  outcome: open
+- id: PL-028
+  severity: Medium
+  category: "Restore/rollback write-set mismatch (a member the snapshot never covers)"
+  source_finding: "G2-B-05 (gpt, B); the blind pass's S-06"
+  owner_area: "stream B, backuptool"
+  where: "backuptool archive_members (the ^storage/ filter); the extraction tar -xzf ... -C / -X SKIP (1356) and the unzip equivalent"
+  acceptance: "an archive whose member list holds a path not under storage/ is refused before anything is extracted, with its why; a case with such an archive (tar and zip) asserts nothing outside storage/ is written and the refusal is printed"
+  outcome: open
+- id: PL-029
+  severity: Medium
+  category: "Verification gap (S-30)"
+  source_finding: "the blind pass's S-30; § 3.5-3.6"
+  owner_area: "the integrator, the next cut"
+  where: "tools/vm-upgrade-rehearsal; the layout migration on a guest; the E1/E2 follow-up proofs; the proofs runner's 3 NOT RUN; the Wi-Fi stand-in"
+  acceptance: "on the next cut: the upgrade rehearsal from the previous device build passes with its stamp in the QA log; the migration runs on a guest against the QA cloud with its listings filed; the E1/E2 follow-ups' proofs run under proofs-307/; the runner's NOT RUN count is 0 or each is named with what only a device can show; the Wi-Fi item names the physical fact"
   outcome: open
 ```

@@ -101,6 +101,15 @@ Each item below is a defect the orchestrator confirmed against the source, with 
 - **What:** measured on the image's busybox 1.36.1: a damaged stored member passes `unzip -t` and `unzip -p` (rc 0); a damaged deflated one fails (rc 1).
 - **Acceptance:** each member is verified against its listed CRC (`unzip -lv` and `cksum`), or a legacy ZIP with stored members is refused with its why; the measurement as the case, run with the image's busybox
 
+## PL-028: an archive member outside storage/ is extracted and never rolled back
+- **Severity:** Medium
+- **Category:** Restore/rollback write-set mismatch (a member the snapshot never covers)
+- **Source Finding:** G2-B-05 (gpt, B); the blind pass's S-06
+- **Owner area:** stream B, backuptool
+- **Where:** backuptool `archive_members` (the `^storage/` filter, line 5's awk and the tar case at 479-480); the extraction `tar -xzf ... -C / -X "${SKIP}"` (1356) and the unzip equivalent
+- **What:** the snapshot lists `storage/*` regular files; extraction runs the whole archive minus a skip list, so a member outside `storage/` (a legacy or foreign archive's `tmp/...`) is written to `/` and never rolled back. Confirmed Medium in § Verification and then carried nowhere -- neither a punch item nor a lead -- until the blind pass named it (S-06, High there); the grade stays Medium: it needs an archive this tool never writes.
+- **Acceptance:** an archive whose member list holds a path not under `storage/` is refused before anything is extracted, with its why; a case with such an archive (tar and zip) asserts nothing outside `storage/` is written and the refusal is printed
+
 ## The leads (the seats' remaining findings in your files; not gated, every one gets an outcome)
 
 Read each under its id in `docs/audits/2026_09_28-milestone-audit-of-the-fix-round/seats/B-claude.md` and `B-gpt.md` (part 2 of the seat's output), then the code it names. Then either **fix** it -- the same rule, a case first -- or **withdraw** it with the line that refutes it, in the report. Ids: G2-B-02 (claude); G2-B-03, G2-B-09, G2-B-11 (gpt). In short: a device whose roms folder is never a mount point waits for ever; `ln` into a directory at the lock path; the seed manifest's unchecked read; persistence failures of the SSID/key pair.

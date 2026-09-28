@@ -152,7 +152,31 @@ Phase 4.5 lives in `02-forward-audit.md` § Verification: every Critical and Hig
 
 ## Second opinion
 
-_(Phase 4.6, two calls at milestone tier: the blind pass over the evidence packet with the verdicts withheld, dispatched 15:08 UTC; then the refutation pass over 02, 03, this document and the punch list; the grading table follows)_
+Phase 4.6, two calls at milestone tier through the council Facilitator on OpenRouter (D-WORKFLOW-049), the GPT seat both times.
+
+### The blind pass
+
+**Command:** `tools/council/council-invoke.ts --member gpt --prompt-file second-opinions/blind.brief.md --source-manifest second-opinions/blind.manifest.json --output second-opinions/blind-gpt.md --provider openrouter --max-retries 2`, dispatched 15:06 UTC over `blind-packet.md` (the evidence with the verdicts withheld, sha256 `94f565b7…`). **Provenance** (`blind-gpt.md.provenance.json`): served model `openai/gpt-6-astra` (`model_identity_source: provider_response`), effort max, buffered, HTTP 200, one attempt, 835 s, 14,834 prompt and 29,902 completion tokens (24,344 reasoning), output sha256 `281875ff…`.
+
+**What it returned:** 31 findings, S-01..S-31, each with the packet's reference, a failure scenario and what would refute it; a list of #307 items whose acceptance-specific demonstration the packet did not carry; a `gaps_for_orchestrator` block. Graded against the punch list as it stood (27 items):
+
+| S | Its reading | Disposition |
+| --- | --- | --- |
+| S-01..S-05, S-07 | High | already PL-001, PL-002, PL-004, PL-003, PL-006, PL-007 -- **agree**, same grade |
+| S-09, S-10, S-11, S-13, S-14, S-15, S-12 | High | already PL-008, PL-005, PL-010, PL-009, PL-011, PL-012, PL-014 -- **agree**, same grade |
+| S-08, S-16, S-17, S-18, S-19, S-20, S-22, S-23, S-28, S-29, S-31 | Medium | already PL-022, PL-021, PL-015, PL-016, PL-017, PL-018, PL-019, PL-020, PL-023, PL-024, PL-013 -- **agree** (S-31 is High here: a rule that leaks; the difference is the surface, not the defect) |
+| S-21, S-24, S-25, S-26 | Medium | the leads G2-E-app-01, G2-D-02, G2-C-03 and O-15's `::` case -- **agree as leads**, carried to E2, D, C, D by name in their briefs |
+| **S-06** | High | G2-B-05: **confirmed Medium in § Verification and then carried nowhere** -- neither a punch item nor a lead, the one finding the punch list dropped. Added as **PL-028** (Medium: it needs an archive this tool never writes), stream B, its brief amended |
+| **S-27** | Medium | O-6's gap: a capture blocked on the lock past the 120 s age is released for the launch with no proof it cannot write afterwards. **New lead** for stream A, in its brief |
+| **S-30** | Medium | no candidate-specific proofs on the cut: the upgrade rehearsal, the migration on a guest, the E1/E2 follow-up proofs, the runner's 3 NOT RUN, the Wi-Fi stand-in. **Added as PL-029**, the integrator's, on the next cut |
+
+**Its list of acceptance checks not reached by the packet** (58 #307 items) is a statement about the packet: the acceptance-specific runs live in `docs/qa-frames/2026-09-28/proofs-307/run2.md` (32 PASS / 1 FAIL (#310) / 4 cannot run / 3 no script on `1b0d233657`) and in the harness's named cases, neither of which the packet embedded. The 4 + 3 are PL-029's subject. Its note that the brief said 81 items against 80 ids is the packet's rendering: #307 carries 81 checkboxes and 81 distinct ids (counted).
+
+**Net effect of the blind pass:** two items added (PL-028, PL-029), one lead added (S-27 to A), no grade changed, no item withdrawn. The list it produced independently matches the orchestrator's on 29 of 31, which is the corroboration the pass exists to give -- and the one it caught (S-06) is exactly the shape a blind read is for: a verdict written and then not carried forward.
+
+### The refutation pass
+
+_(dispatched 15:45 UTC over 02, 03, this document, 05 and `blind-gpt.md` -- `refutation.manifest.json`, 335 KB; graded below when it returns)_
 
 ## Instruction File Recommendations
 
@@ -195,7 +219,7 @@ _(Phase 4.6, two calls at milestone tier: the blind pass over the evidence packe
 | Risk assessment | yes | confirmed findings only |
 | Coverage boundary | yes | |
 | Finding verification | yes | in 02 § Verification, summarised here |
-| Second opinion | pending the two calls | the section is filled before Phase 5's list is final |
+| Second opinion | the blind pass graded (two items, one lead added); the refutation pass pending | the list is final when the second is graded |
 | Instruction File Recommendations | yes | milestone tier |
 | Traceability / evidence / reproducibility | yes | every confirmed finding names a file and a line or a command and its output; the seats' outputs and provenance are under `seats/` |
 | Complete (every stated criterion evaluated) | yes for #307's 81; #308's rows spot-checked (stated) | |
