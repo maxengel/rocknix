@@ -289,24 +289,25 @@ forget_wifi() {
   # settings said "forgotten" while the settings-driven paths could still
   # rebuild it; an SSID that could not be read is not guessed at (exit 2)
   # (#307, the audit of the fixes, gpt G-B-11).
+  #
+  # The pair is cleared, and put back, in one write each (set_settings): two
+  # set_setting calls could fail between them, and the put-back after a
+  # failed delete was not checked at all (#307, the audit of the fix round,
+  # gpt G2-B-11). A put-back that fails is said in the log, with the state
+  # it leaves.
   local key clear=0
   ssid=$("${NMCLI}" --escape no -g 802-11-wireless.ssid connection show id "${name}" 2>/dev/null) || return 2
   named=$(get_setting wifi.ssid 2>/dev/null)
   if [ -n "${named}" ] && { [ "${named}" = "${name}" ] || [ "${named}" = "${ssid}" ]; }; then
     clear=1
     key=$(get_setting wifi.key 2>/dev/null)
-    if ! set_setting wifi.ssid default; then
-      return 1
-    fi
-    if ! set_setting wifi.key default; then
-      set_setting wifi.ssid "${named}"
+    if ! set_settings wifi.ssid default wifi.key default; then
       return 1
     fi
   fi
   if ! "${NMCLI}" connection delete id "${name}" >/dev/null 2>&1; then
-    if [ "${clear}" -eq 1 ]; then
-      set_setting wifi.ssid "${named}"
-      set_setting wifi.key "${key}"
+    if [ "${clear}" -eq 1 ] && ! set_settings wifi.ssid "${named}" wifi.key "${key}"; then
+      logger -t wifictl "forget ${name}: its profile could not be deleted, and the Wi-Fi settings cleared for it could not be put back; wifi.ssid and wifi.key are unset while the profile remains" 2>/dev/null
     fi
     return 1
   fi
@@ -376,9 +377,12 @@ join_wifi() {
     fi
     if [ -z "${psk}" ] && [ -n "${keyed}" ]; then
       logger -t wifictl "joined ${name}; its key did not come back from NetworkManager, so the Wi-Fi settings were left as they were" 2>/dev/null
-    else
-      set_setting wifi.ssid "${ssid}"
-      set_setting wifi.key "${psk}"
+    elif ! set_settings wifi.ssid "${ssid}" wifi.key "${psk}"; then
+      # One write for the pair (set_settings): a second write failing after
+      # the first left this network's SSID with the last network's key, and
+      # nothing said so (#307, the audit of the fix round, gpt G2-B-11).
+      # The device is joined either way, and says so.
+      logger -t wifictl "joined ${name}; its Wi-Fi settings could not be saved, so they were left as they were" 2>/dev/null
     fi
   else
     logger -t wifictl "joined ${name}; its key or SSID could not be read from NetworkManager, so the Wi-Fi settings were left as they were" 2>/dev/null

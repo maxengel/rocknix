@@ -514,7 +514,7 @@ bt restore --then-cloud; rcg=${RC}
 echo "  c. set_setting is one rename; sort_settings refuses an empty result"
 C="${TMP}/c"; mkdir -p "${C}"
 {
-    sed -n '/^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function sort_settings() {/,/^}/p; /^function set_setting() {/,/^}/p; /^function clean_hostname() {/,/^}/p' "${FN}"
+    sed -n '/^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function settings_base() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function sort_settings() {/,/^}/p; /^function set_setting() {/,/^}/p; /^function clean_hostname() {/,/^}/p' "${FN}"
     printf 'J_CONF=%q; J_CONF_LOCK=%q\nlogger() { :; }\n' "${C}/system.cfg" "${C}/lock"
 } > "${C}/f.sh"
 printf 'system.hostname=X\nz.key=old\na=1\n' > "${C}/system.cfg"
@@ -913,7 +913,9 @@ UB=(); for d in /usr/*/; do d="${d%/}"; UB+=(--ro-bind "${d}" "${d}"); done
 # lines resolve inside the sandbox.
 mkdir -p "${K}/kshim"; KBB=()
 if [ -n "${BB}" ]; then
-    for a in tar unzip; do printf '#!/bin/sh\n[ -x %s ] && exec %s %s "$@"\nexec %s %s "$@"\n' "${BB}" "${BB}" "${a}" "${BB_HOST}" "${a}" > "${K}/kshim/${a}"; chmod +x "${K}/kshim/${a}"; done
+    # crc32: the zip check reads a stored member's CRC with it (the audit of
+    # the fix round, PL-022).
+    for a in tar unzip crc32; do printf '#!/bin/sh\n[ -x %s ] && exec %s %s "$@"\nexec %s %s "$@"\n' "${BB}" "${BB}" "${a}" "${BB_HOST}" "${a}" > "${K}/kshim/${a}"; chmod +x "${K}/kshim/${a}"; done
     KBB=(--ro-bind "${BB_HOST}" "${BB}")
 fi
 printf 'export PATH=/kshim:/shim:/usr/bin:/bin\nexport OS_NAME=ROCKNIX\n' > "${K}/profile"
@@ -1441,7 +1443,7 @@ if [ "${OLD}" -eq 1 ] && ! git -C "${ROOT}" cat-file -e "${BASE_REF}:${CTL_REL}"
 else
 src_of "${CTL_REL}" "${P}/repo/raofflineproxy-ctl"
 {
-    sed -n '/^function get_setting() {/,/^}/p; /^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function set_setting() {/,/^}/p' "${FN}"
+    sed -n '/^function get_setting() {/,/^}/p; /^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function settings_base() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function set_setting() {/,/^}/p' "${FN}"
 } > "${P}/repo/fns.sh"
 PBB=(); PPATH="/shim:/usr/bin:/bin"
 if [ -n "${BB}" ]; then PBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB_HOST}" "${BB}"); PPATH="/shim:/bbin:/usr/bin:/bin"; fi
@@ -1950,7 +1952,7 @@ done
 [ "${TPATCH_OK}" -eq 1 ]; check $? "the client at ${PIN:0:10} with $(echo "${TPATCHES}" | grep -c .) patch(es) applied in order, each compiled: $(cd "${T}/patched/linux/raofflineproxy" && python3 -m py_compile *.py 2>&1 | head -1 || true)ok" "a patch did not apply; the runs below are against a client the tree does not describe"
 CLIENT="${T}/patched/linux"
 {
-    sed -n '/^function get_setting() {/,/^}/p; /^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function set_setting() {/,/^}/p' "${FN}"
+    sed -n '/^function get_setting() {/,/^}/p; /^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function settings_base() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function set_setting() {/,/^}/p' "${FN}"
 } > "${T}/repo/fns.sh"
 TBB=(); TPATH="/shim:/usr/bin:/bin"
 if [ -n "${BB}" ]; then
@@ -2728,12 +2730,14 @@ echo "  u. wifictl current, saved, forget and join read NetworkManager, not the 
 # access point that refuses the stored key does); -s -g ...psk connection
 # show id <name> answers the profile's key as psk-of-<name>; device show and
 # connection modify serve pin_wifi. The stub profile's set_setting records
-# each call in /run/settings. The image's busybox applets (sed, awk, head,
-# cut) stand in front of the host's, as in m: the pipelines under test run
-# under them on the device.
+# each call in /run/settings, and so does set_settings for each of its pairs
+# (the one write wifictl makes for the Wi-Fi pair since the audit of the fix
+# round, G2-B-11). The image's busybox applets (sed, awk, head, cut) stand
+# in front of the host's, as in m: the pipelines under test run under them
+# on the device.
 U="${TMP}/u"; mkdir -p "${U}/shim" "${U}/repo" "${U}/run"
 src_of "${WIFICTL_REL}" "${U}/repo/wifictl"
-printf 'get_setting() { :; }\nset_setting() { printf "%%s=%%s\\n" "$1" "$2" >> /run/settings; }\nexport PATH=/shim:/bbin:/usr/bin:/bin\n' > "${U}/profile"
+printf 'get_setting() { :; }\nset_setting() { printf "%%s=%%s\\n" "$1" "$2" >> /run/settings; }\nset_settings() { while [ $# -ge 2 ]; do set_setting "$1" "$2"; shift 2; done; }\nexport PATH=/shim:/bbin:/usr/bin:/bin\n' > "${U}/profile"
 cat > "${U}/shim/nmcli" <<'EOS'
 #!/bin/bash
 # NetworkManager as wifictl asks it: the profiles in /run/profiles (name,
@@ -7253,7 +7257,7 @@ done
 # names its item (#307 PL-NNN, or #308 <packet> <seat> <id>) and was seen to
 # FAIL against the script before its fix. Which tools each part runs under,
 # when the image's busybox is found (BB): backuptool (y1) whole under bwrap
-# with the image's tar, unzip, find, readlink, mktemp, flock, stat, mv, cp,
+# with the image's tar, unzip, crc32, find, readlink, mktemp, flock, stat, mv, cp,
 # ln, touch, chmod, sed, awk, head, tail, wc, cut, tr, cmp, dirname,
 # basename, mkdir, rm and date; the evidence collector and the core keeper
 # (y4) whole under bwrap with the image's applets for every one they call,
@@ -7279,7 +7283,7 @@ printf '#!/bin/sh\necho "sleep $*" >> /storage/.p7-sleeps\nexit 0\n' > "${P7}/sh
 chmod +x "${P7}/shim"/*
 P7BB=()
 if [ -n "${BB}" ]; then
-    for a in tar unzip find readlink mktemp flock stat mv cp ln touch chmod sed awk head tail wc cut tr cmp dirname basename mkdir rm date; do
+    for a in tar unzip crc32 find readlink mktemp flock stat mv cp ln touch chmod sed awk head tail wc cut tr cmp dirname basename mkdir rm date; do
         printf '#!/bin/sh\n[ -x %s ] && exec %s %s "$@"\nexec %s %s "$@"\n' "${BB}" "${BB}" "${a}" "${BB_HOST}" "${a}" > "${P7}/bb/${a}"; chmod +x "${P7}/bb/${a}"
     done
     P7BB=(--ro-bind "${BB_HOST}" "${BB}")
@@ -7859,13 +7863,20 @@ rmdir "${P7S}/.config/.restore-in-progress" 2>/dev/null
 # so a name may hold a tab);
 # /run/nm-down makes every call fail and /run/psk-fails the key read. The
 # settings live in /run/settings, one key=value per line, the last one
-# winning; set_setting <k> default removes the key. The image's busybox
-# applets stand in front of the host's, as in u.
+# winning; set_setting <k> default removes the key, and set_settings takes
+# pairs and writes all of them or none, as 001-functions' does. Each settings
+# call is counted in /run/set-calls; /run/set-fails fails every one and
+# /run/set-fails-on <n> the nth; /run/delete-fails fails a profile's delete
+# (the audit of the fix round, G2-B-11). The image's busybox applets stand in
+# front of the host's, as in u.
 P7="${P7:-${TMP}/p7}"; P7W="${P7}/wifi"; mkdir -p "${P7W}/shim" "${P7W}/repo" "${P7W}/run"
 src_of "${WIFICTL_REL}" "${P7W}/repo/wifictl"
 cat > "${P7W}/profile" <<'EOS'
 get_setting() { awk -v k="$1" 'index($0, k "=") == 1 { v = substr($0, length(k) + 2) } END { printf "%s", v }' /run/settings 2>/dev/null; }
-set_setting() { [ -e /run/set-fails ] && return 1; if [ "$2" = "default" ]; then awk -v k="$1" 'index($0, k "=") != 1' /run/settings > /run/settings.new; mv /run/settings.new /run/settings; else printf '%s=%s\n' "$1" "$2" >> /run/settings; fi; }
+p7gate() { [ -e /run/set-fails ] && return 1; n=$(( $(cat /run/set-calls 2>/dev/null || echo 0) + 1 )); echo "${n}" > /run/set-calls; [ "$(cat /run/set-fails-on 2>/dev/null)" != "${n}" ]; }
+p7put() { if [ "$2" = "default" ]; then awk -v k="$1" 'index($0, k "=") != 1' /run/settings > /run/settings.new; mv /run/settings.new /run/settings; else printf '%s=%s\n' "$1" "$2" >> /run/settings; fi; }
+set_setting() { p7gate || return 1; p7put "$1" "$2"; }
+set_settings() { p7gate || return 1; while [ $# -ge 2 ]; do p7put "$1" "$2"; shift 2; done; }
 export PATH=/shim:/bbin:/usr/bin:/bin
 EOS
 cat > "${P7W}/shim/iwctl" <<'EOS'
@@ -7910,6 +7921,7 @@ case "${all}" in
   *"connection delete id "*)
     name="${all#*connection delete id }"; printf '%s\n' "${name}" >> /run/deleted
     [ -n "$(row "${name}")" ] || exit 10
+    [ -e /run/delete-fails ] && { echo "Error: Connection deletion failed." >&2; exit 1; }
     NAME="${name}" awk -F'|' '$1 != ENVIRON["NAME"]' /run/profiles > /run/profiles.new && mv /run/profiles.new /run/profiles ;;
   *"connection show"*)
     while IFS='|' read -r name type dev ssid psk; do
@@ -8019,7 +8031,7 @@ touch "${P7W}/run/ssid-fails"; p7w saved --ssid
 # paths, the image's busybox applets first on PATH.
 P7="${P7:-${TMP}/p7}"; P7F="${P7}/fn"; mkdir -p "${P7F}/cfg"
 {
-    sed -n '/^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function sort_settings() {/,/^}/p; /^function set_setting() {/,/^}/p; /^function clean_hostname() {/,/^}/p' "${FN}"
+    sed -n '/^function wait_lock_say() {/,/^}/p; /^function wait_lock() {/,/^}/p; /^function settings_base() {/,/^}/p; /^function write_setting_line() {/,/^}/p; /^function del_setting() {/,/^}/p; /^function sort_settings() {/,/^}/p; /^function set_setting() {/,/^}/p; /^function clean_hostname() {/,/^}/p' "${FN}"
     printf 'J_CONF=%q; J_CONF_LOCK=%q\nlogger() { echo "logger $*" >&2; }\n' "${P7F}/cfg/system.cfg" "${P7F}/lock"
 } > "${P7F}/f.sh"
 sed -n '/^function redact_credentials() {/,/^}/p' "${FN}" > "${P7F}/redact.sh"
@@ -10231,7 +10243,9 @@ bwrap --dev-bind / / --bind "${P7KR}/storage/roms" "${P7KR}/storage/roms" env EX
 rm -f "${P7K}/cfg/.restore-in-progress"
 echo CREATED > "${P7KR}/storage/roms/backup/new.cfg"; p7mark "" /storage/roms/backup/new.cfg
 EXTRACT_ROOT="${P7KR}" ROMS_ROOT="${P7KR}/storage/roms" PROC_MOUNTS=/nonexistent PATH="${P7K}/bin:${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; verify" 2>"${P7K}/err"
-[ ! -e "${P7K}/cfg/.restore-in-progress" ] && [ "$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)" = "reverted" ] && grep -q 'mount table cannot be read' "${P7K}/err"; check $? "#307 audit G-B-04 (claude): with no readable mount table the boot falls back to the folder test and says so, rather than waiting for ever" "#307 audit G-B-04: mark $([ -e "${P7K}/cfg/.restore-in-progress" ] && echo kept || echo removed); said '$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)'; log: $(tr '\n' '|' < "${P7K}/err" | cut -c1-160)"
+# The audit of the fix round's PL-016 reversed this case: an unreadable
+# table now waits (the folder test it fell back to is what PL-045 removed).
+[ -e "${P7K}/cfg/.restore-in-progress" ] && [ -e "${P7KR}/storage/roms/backup/new.cfg" ] && [ ! -e "${P7K}/cfg/.restore-reverted" ] && grep -q 'mount table cannot be read' "${P7K}/err"; check $? "#307 audit G-B-04 (claude), as the audit of the fix round's PL-016 has it: with no readable mount table the boot waits and says so -- it does not fall back to the folder test" "#307 audit G-B-04 / PL-016: mark $([ -e "${P7K}/cfg/.restore-in-progress" ] && echo kept || echo removed); said '$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)'; log: $(tr '\n' '|' < "${P7K}/err" | cut -c1-160)"
 rm -f "${P7K}/cfg/.restore-in-progress" "${P7K}/cfg/.restore-reverted"
 printf 'system.hostn' > "${P7K}/cfg/system/configs/system.cfg"; rm -f "${P7K}/cfg/system/configs/system.cfg.backup"
 printf 'system.hostname=MINE\na.b=1\n' > "${P7K}/cfg/system/configs/system.cfg.tmp"
@@ -12379,6 +12393,414 @@ hc_seed; hc_hold 8
 hc_exit
 kill "${HC_HOLDER}" 2>/dev/null; wait "${HC_HOLDER}" 2>/dev/null
 [ "${RC}" -eq 0 ] && jq -e '.entries["gb/Game.srm"]' "${HCM}" >/dev/null 2>&1; check $? "PL-034: within its bound the same wait ends in a record, on the re-run (rc ${RC}, ${DT}s)" "PL-034: within the bound: rc ${RC} after ${DT}s; manifest $([ -e "${HCM}" ] && echo written || echo none); failures: $(tail -1 "${HC}/storage/.cache/cloud_sync/capture-failures" 2>/dev/null)"
+
+# ---- audit #307, stream B ----
+# The audit of the fix round (D-WORKFLOW-060, audit #307's third pass),
+# Phase 7: stream B's punch items PL-003, PL-005, PL-006, PL-007, PL-008,
+# PL-016, PL-017, PL-022 and PL-028, and the leads G2-B-02 (claude), G2-B-03,
+# G2-B-09 and G2-B-11 (gpt), in the files the stream owns. Every case names
+# its item and was seen to FAIL against the scripts at f3d19dc8fb, the tree
+# the stream was cut from:
+#
+#     BASE_REF=f3d19dc8fb tools/last-good-scripts-test --old
+#
+# The tools each part runs under are y1-y4's: backuptool whole under bwrap
+# with the image's applets (crc32 among them since PL-022), chksysconfig's
+# functions and the settings writer lifted into a fresh bash with the image's
+# sed, mv, cp, tr, head, wc, cut and awk first on PATH (and the image's ln for
+# the lock, G2-B-03), wifictl whole against the nmcli y2 describes.
+echo "  z. the audit of the fix round, stream B: the conf read as text, a flag's password redacted, the restore's lists and its own control files, a quoted password, the roms mount, the upstream-era move, a zip's stored members, members outside storage/, the lock's path, the seed list, the Wi-Fi pair"
+P7Z="${P7}/z"; mkdir -p "${P7Z}"
+p7zclear() { rm -f "${P7}/shim/tar" "${P7}/shim/unzip" "${P7}/shim/mktemp" "${P7}/shim/mv" "${P7}/shim/date"; P7X=(); }
+p7zclear
+p7zscreen() { grep -vE '^logger |^>>> ' "${P7OUT}"; }
+
+# == PL-003: cloud_sync.conf is read as text, and nothing in it runs
+p7zclear; p7reset '  /storage/.config/test/*'
+printf 'SETTINGS_BACKUPS="/storage/roms/mybk"\ntouch /storage/.p7-conf-ran\n' > "${P7S}/.config/cloud_sync.conf"
+p7bt backup
+[ "${RC}" -eq 0 ] && [ ! -e "${P7S}/.p7-conf-ran" ] && [ -n "$(ls "${P7S}/roms/mybk"/*.tar.gz 2>/dev/null)" ]; check $? "audit of the fix round PL-003: a conf with a command on a line of its own -- nothing runs, and the backup lands in the folder SETTINGS_BACKUPS names (rc ${RC})" "PL-003: rc ${RC}; the conf's command ran: $([ -e "${P7S}/.p7-conf-ran" ] && echo yes || echo no); mybk: $(ls "${P7S}/roms/mybk" 2>/dev/null | wc -l) archive(s) -- backuptool sourced the file"
+p7reset '  /storage/.config/test/*'
+printf 'SETTINGS_BACKUPS="/storage/roms/mybk$(touch /storage/.p7-conf-ran)"\n' > "${P7S}/.config/cloud_sync.conf"
+p7bt backup
+[ "${RC}" -eq 0 ] && [ ! -e "${P7S}/.p7-conf-ran" ] && [ -n "$(p7arc)" ] && [ ! -d "${P7S}/roms/mybk" ] && grep -q '^logger -t backuptool SETTINGS_BACKUPS' "${P7OUT}"; check $? "audit of the fix round PL-003: a command inside the value is not run -- the standard folder is used and the log says why" "PL-003: rc ${RC}; ran: $([ -e "${P7S}/.p7-conf-ran" ] && echo yes || echo no); standard folder: $(p7arc | wc -l); mybk: $([ -d "${P7S}/roms/mybk" ] && echo made || echo none); log: $(grep -c '^logger -t backuptool SETTINGS_BACKUPS' "${P7OUT}")"
+p7reset '  /storage/.config/test/*'
+printf '# comment\nSETTINGS_BACKUPS="/storage/roms/first"   # the one the cleanup keeps\nSETTINGS_BACKUPS="/storage/roms/second"\n' > "${P7S}/.config/cloud_sync.conf"
+p7bt backup
+[ "${RC}" -eq 0 ] && [ -n "$(ls "${P7S}/roms/first"/*.tar.gz 2>/dev/null)" ] && [ ! -d "${P7S}/roms/second" ]; check $? "audit of the fix round PL-003: of two SETTINGS_BACKUPS lines the first is read, as cloud_sync_cleanup_duplicates.sh keeps it (a trailing comment allowed)" "PL-003: rc ${RC}; first: $(ls "${P7S}/roms/first" 2>/dev/null | wc -l); second: $(ls "${P7S}/roms/second" 2>/dev/null | wc -l) -- the source took the last"
+p7reset '  /storage/.config/test/*'
+printf "SETTINGS_BACKUPS='/storage/roms/single'\n" > "${P7S}/.config/cloud_sync.conf"
+p7bt backup; p7rc1=${RC}; p7ok1=$(ls "${P7S}/roms/single"/*.tar.gz 2>/dev/null | wc -l)
+p7reset '  /storage/.config/test/*'
+printf 'SETTINGS_BACKUPS=/storage/roms/bare\n' > "${P7S}/.config/cloud_sync.conf"
+p7bt backup
+[ "${p7rc1}" -eq 0 ] && [ "${p7ok1}" -eq 1 ] && [ "${RC}" -eq 0 ] && [ -n "$(ls "${P7S}/roms/bare"/*.tar.gz 2>/dev/null)" ]; check $? "audit of the fix round PL-003: a single-quoted and a bare value are read as the shell would read them" "PL-003: single-quoted rc ${p7rc1}, ${p7ok1} archive(s); bare rc ${RC}, $(ls "${P7S}/roms/bare" 2>/dev/null | wc -l)"
+
+# == PL-005: a credential given as a flag is redacted on the fast path too
+[ "$(p7red 'launcher --pass qa-value')" = "launcher --pass <redacted>" ] && [ "$(p7red 'x --RA_Pass qa-value')" = "x --RA_Pass <redacted>" ] && [ "$(p7red 'x -pass qa-value')" = "x -pass <redacted>" ]; check $? "audit of the fix round PL-005: 'launcher --pass qa-value', 'x --RA_Pass qa-value' and 'x -pass qa-value' are redacted in argument mode as in stream mode" "PL-005: '$(p7red 'launcher --pass qa-value')' / '$(p7red 'x --RA_Pass qa-value')' / '$(p7red 'x -pass qa-value')' -- the fast path knew pass only before = or :"
+p7forks=$(PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7F}/redact.sh'; sed() { echo fork >> '${P7F}/forks'; command sed \"\$@\"; }; : > '${P7F}/forks'; redact_credentials 'test passed: 3 of 3' >/dev/null; redact_credentials 'bypass mode on' >/dev/null; redact_credentials 'the --passes flag' >/dev/null; wc -l < '${P7F}/forks'")
+[ "${p7forks}" -eq 0 ]; check $? "audit of the fix round PL-005: and 'test passed', 'bypass mode' and '--passes' still take the fast path (no sed)" "PL-005: ${p7forks} sed fork(s) for lines with no credential"
+
+# == 001-functions, found fixing PL-005: a passphrase is a credential
+[ "$(p7red 'Passphrase=qa-phrase')" = "Passphrase=<redacted>" ] && [ "$(p7red 'iwd --passphrase qa-phrase')" = "iwd --passphrase <redacted>" ] && [ "$(printf 'Passphrase=qa-phrase\n' | PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7F}/redact.sh'; redact_credentials")" = "Passphrase=<redacted>" ]; check $? "audit of the fix round (PL-005's sibling): Passphrase=, iwd's key, and --passphrase are redacted in both modes" "PL-005 sibling: '$(p7red 'Passphrase=qa-phrase')' / '$(p7red 'iwd --passphrase qa-phrase')' -- passphrase is in the backup's key list and not in the log's"
+
+# == PL-006: every list the restore builds is written whole, or the restore refuses
+# A mktemp that fails, or hands back a file no write reaches, at the Nth plain
+# call of the run (a -d is not counted): "fail N" or "ro N" in /storage/.p7-mk.
+# The tar restore of an archive with no seed list calls it for MEMBERS (1),
+# NEWLIST (2), SEEDS (3) and snapshot_members' KEEP (4), then the copy's own.
+cat > "${P7Z}/mktemp" <<'EOS'
+#!/bin/bash
+case " $* " in *" -d "*) exec /p7bb/mktemp "$@" ;; esac
+n=$(( $(cat /storage/.p7-mk-n 2>/dev/null || echo 0) + 1 )); echo "${n}" > /storage/.p7-mk-n
+read -r how at < /storage/.p7-mk 2>/dev/null
+if [ "${n}" = "${at:-}" ]; then
+    case "${how}" in
+        fail) echo "mktemp: (null): No space left on device" >&2; exit 1 ;;
+        ro) t=$(/p7bb/mktemp "$@") || exit 1; chmod 444 "${t}"; echo "${t}"; exit 0 ;;
+    esac
+fi
+exec /p7bb/mktemp "$@"
+EOS
+chmod +x "${P7Z}/mktemp"
+p7zmk() { # <fail|ro> <N> <verb...>: backuptool with the Nth temporary broken
+    local how="$1" at="$2"; shift 2
+    cp "${P7Z}/mktemp" "${P7}/shim/mktemp"; printf '%s %s\n' "${how}" "${at}" > "${P7S}/.p7-mk"; rm -f "${P7S}/.p7-mk-n"
+    p7bt "$@"
+    rm -f "${P7}/shim/mktemp" "${P7S}/.p7-mk" "${P7S}/.p7-mk-n"
+}
+p7zrs() { # a device with f1 LIVE and an archive replacing it, plus one member new to the device
+    p7reset '  /storage/.config/test/*'
+    echo LIVE > "${P7S}/.config/test/f1"
+    p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/f1=ARCHIVE" "storage/.config/test/new.cfg=NEW"
+}
+p7zrefused() { # the restore refused before it wrote: rc, f1, new.cfg, why, no tool's words on the screen
+    [ "${RC}" -ne 0 ] && [ "$(cat "${P7S}/.config/test/f1")" = "LIVE" ] && [ ! -e "${P7S}/.config/test/new.cfg" ] \
+        && [ "$(p7why)" = "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS" ] && ! p7zscreen | grep -qiE 'mktemp|no such file|permission denied|No space'
+}
+p7zstate() { echo "rc ${RC}; f1='$(cat "${P7S}/.config/test/f1")'; new.cfg $([ -e "${P7S}/.config/test/new.cfg" ] && echo written || echo absent); why '$(p7why)'; screen: $(p7zscreen | tr '\n' '|' | cut -c1-160)"; }
+p7zrs; p7zmk fail 4 restore --no-restart
+p7zrefused; check $? "audit of the fix round PL-006: the copy's worklist that cannot be made (KEEP's mktemp fails) refuses the restore before it writes -- not 'nothing to protect' (4)" "PL-006 (KEEP's mktemp): $(p7zstate)"
+p7zrs; p7zmk ro 4 restore --no-restart
+p7zrefused; check $? "audit of the fix round PL-006: a worklist made and then not written (every append to KEEP fails) refuses the restore" "PL-006 (KEEP's appends): $(p7zstate)"
+p7zrs; p7zmk ro 2 restore --no-restart
+p7zrefused; check $? "audit of the fix round PL-006: the list of files the restore would create that cannot be written (NEWLIST) refuses the restore" "PL-006 (NEWLIST): $(p7zstate)"
+p7zrs; printf '#!/bin/bash\ncase "$*" in *.unique*) echo "mv: cannot move: No space left on device" >&2; exit 1 ;; esac\nexec /p7bb/mv "$@"\n' > "${P7}/shim/mv"; chmod +x "${P7}/shim/mv"
+p7bt restore --no-restart; rm -f "${P7}/shim/mv"
+p7zrefused; check $? "audit of the fix round PL-006: the worklist's final write (the de-duplicated list moved into place) that fails refuses the restore" "PL-006 (the final list): $(p7zstate)"
+p7zrs; p7zmk fail 1 restore --no-restart
+p7zrefused; check $? "audit of the fix round PL-006: the member list's own temporary that cannot be made refuses the restore in the player's words" "PL-006 (MEMBERS): $(p7zstate)"
+p7reset '  /storage/.config/test/*'
+rm -f "${P7S}/.config/test/f1"
+p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/f1=ARCHIVE" "storage/.config/test/new.cfg=NEW"
+p7bt restore --no-restart
+[ "${RC}" -eq 0 ] && [ "$(cat "${P7S}/.config/test/f1")" = "ARCHIVE" ] && grep -q 'nothing on this device for the restore to replace' "${P7OUT}"; check $? "audit of the fix round PL-006: a selection with nothing on the device yet is still 'no copy needed' (4), and the restore runs" "PL-006 (empty selection): rc ${RC}; f1='$(cat "${P7S}/.config/test/f1" 2>/dev/null)'; screen: $(p7zscreen | tr '\n' '|' | cut -c1-160)"
+p7reset '  /storage/.config/test/*'
+p7zmk fail 1 backup
+[ "${RC}" -ne 0 ] && [ -z "$(p7arc)" ] && [ -n "$(p7why)" ] && ! p7zscreen | grep -qiE 'mktemp|no such file|No space'; check $? "audit of the fix round PL-006: a backup whose file list cannot be made writes nothing and says so in the player's words" "PL-006 (backup): rc ${RC}; archives $(p7arc | wc -l); why '$(p7why)'; screen: $(p7zscreen | tr '\n' '|' | cut -c1-160)"
+p7reset '  /storage/.config/system/configs/system.cfg
+  /storage/.config/test/*'
+p7zmk ro 2 backup
+[ "${RC}" -ne 0 ] && [ -z "$(p7arc)" ] && [ "$(p7why)" = "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS" ] && grep -q 'held back could not be written whole' "${P7OUT}"; check $? "audit of the fix round PL-006: a backup whose held-back list cannot be written (system.cfg would go whole) is a collection that failed, said as one" "PL-006 (held back): rc ${RC}; archives $(p7arc | wc -l); why '$(p7why)'"
+
+# == PL-007: an archive never writes the restore's own mark or its copy
+# The clock stopped, so the copy's name is known; a tar that extracts for real
+# and is then cut keeps the mark and the copy as the extraction left them.
+cat > "${P7Z}/date" <<'EOS'
+#!/bin/bash
+case "$*" in
+    +%s) echo 1790000000 ;;
+    *+%Y_%m_%d-%H%M%S) echo 2026_09_21-140000 ;;
+    *) exec /p7bb/date "$@" ;;
+esac
+EOS
+chmod +x "${P7Z}/date"
+P7ZSNAP="storage/roms/backup/archive/2026_09_21-140000-PRE_RESTORE-ROCKNIX_SETTINGS.tar.gz"
+cat > "${P7Z}/cuttar" <<'EOS'
+#!/bin/bash
+if [ "$1" = "-xzf" ] && [[ "$2" != */archive/* ]] && [ "$3" = "-C" ] && [ "$4" = "/" ]; then
+    /p7bb/tar "$@"
+    cp /storage/.config/.restore-in-progress /storage/.p7-mark-after 2>/dev/null
+    cp /storage/roms/backup/archive/2026_09_21-140000-PRE_RESTORE-ROCKNIX_SETTINGS.tar.gz /storage/.p7-snap-after 2>/dev/null
+    echo "tar: write error: No space left on device" >&2; exit 1
+fi
+exec /p7bb/tar "$@"
+EOS
+cat > "${P7Z}/cutunzip" <<'EOS'
+#!/bin/bash
+if [ "$1" = "-o" ] && [ "$3" = "-d" ] && [ "$4" = "/" ]; then
+    /p7bb/unzip "$@"
+    cp /storage/.config/.restore-in-progress /storage/.p7-mark-after 2>/dev/null
+    cp /storage/roms/backup/archive/2026_09_21-140000-PRE_RESTORE-ROCKNIX_SETTINGS.tar.gz /storage/.p7-snap-after 2>/dev/null
+    echo "unzip: write error" >&2; exit 1
+fi
+exec /p7bb/unzip "$@"
+EOS
+chmod +x "${P7Z}/cuttar" "${P7Z}/cutunzip"
+p7zmark() { # the mark and the copy as the cut extraction left them, and what the revert said
+    local m s
+    m=$(head -n 1 "${P7S}/.p7-mark-after" 2>/dev/null)
+    s=$(tar -xzOf "${P7S}/.p7-snap-after" storage/.config/test/f1 2>/dev/null)
+    [ "${m}" = "/${P7ZSNAP}" ] && [ "${s}" = "LIVE" ] && [ "$(cat "${P7S}/.config/test/f1")" = "LIVE" ] && grep -q 'YOUR SETTINGS ARE UNCHANGED' "${P7OUT}"
+}
+p7zmarkstate() { echo "rc ${RC}; mark's first line after the extraction '$(head -n 1 "${P7S}/.p7-mark-after" 2>/dev/null)'; copy's f1 '$(tar -xzOf "${P7S}/.p7-snap-after" storage/.config/test/f1 2>/dev/null | head -c 40)'; f1 now '$(cat "${P7S}/.config/test/f1")'; screen: $(p7zscreen | tr '\n' '|' | cut -c1-160)"; }
+p7zclear; p7reset '  /storage/.config/test/*'
+echo LIVE > "${P7S}/.config/test/f1"
+p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/f1=ARCHIVE" "storage/.config/.restore-in-progress=/storage/roms/backup/archive/STALE-COPY.tar.gz" "${P7ZSNAP}=NOT A COPY"
+cp "${P7Z}/date" "${P7}/shim/date"; cp "${P7Z}/cuttar" "${P7}/shim/tar"
+p7bt restore --no-restart
+p7zmark; check $? "audit of the fix round PL-007: a tar archive carrying .restore-in-progress and a file at the copy's own path writes neither -- the fresh mark and the copy stand through the extraction, and the cut restore is undone" "PL-007 (tar): $(p7zmarkstate)"
+p7zclear; p7reset '  /storage/.config/test/*'
+echo LIVE > "${P7S}/.config/test/f1"
+p7zip 20260101000000-ROCKNIX_BACKUP.zip "storage/.config/test/f1=ARCHIVE" "storage/.config/.restore-in-progress=/storage/roms/backup/archive/STALE-COPY.tar.gz" "${P7ZSNAP}=NOT A COPY"
+cp "${P7Z}/date" "${P7}/shim/date"; cp "${P7Z}/cutunzip" "${P7}/shim/unzip"
+p7bt restore --no-restart
+p7zmark; check $? "audit of the fix round PL-007: so does a legacy zip" "PL-007 (zip): $(p7zmarkstate)"
+p7zclear; p7reset '  /storage/.config'
+printf '/storage/roms/backup/archive/old.tar.gz\n' > "${P7S}/.config/.restore-in-progress"; echo reverted > "${P7S}/.config/.restore-reverted"
+touch "${P7S}/.config/.restore-finish-pending" "${P7S}/.config/.cloud-journey-pending"
+p7bt backup
+[ "${RC}" -eq 0 ] && ! p7list | grep -qE '\.restore-in-progress|\.restore-reverted|\.restore-finish-pending|\.cloud-journey-pending'; check $? "audit of the fix round PL-007: and a backup of /storage/.config never carries the restore's mark or the other one-shot markers a restore leaves" "PL-007 (backup): rc ${RC}; archive holds: $(p7list | grep -E 'restore|journey' | tr '\n' ' ')"
+
+# == PL-008: a quoted password that begins with a space is still a password
+p7sign odd.ini "$(printf '%s = " %s"' password leading-text)"; check $? "audit of the fix round PL-008: password = \" leading-text\" in a custom location is caught" "PL-008: rc ${RC}; why '$(p7why)'; archives: $(p7arc | wc -l) -- the value class could not take the space after the quote"
+p7reset '  /storage/.config/test/*'
+printf 'password = "   "\npassword = ""\n' > "${P7S}/.config/test/blank.ini"
+p7bt backup
+[ "${RC}" -eq 0 ] && [ -n "$(p7arc)" ]; check $? "audit of the fix round PL-008: and a quoted value of spaces alone is not a sign-in: the backup completes" "PL-008: rc ${RC}; why '$(p7why)'"
+
+# == PL-016: a mount table that cannot be read waits, it does not guess
+echo CREATED > "${P7KR}/storage/roms/backup/new.cfg"; p7mark "" /storage/roms/backup/new.cfg
+EXTRACT_ROOT="${P7KR}" ROMS_ROOT="${P7KR}/storage/roms" PROC_MOUNTS=/nonexistent PATH="${P7K}/bin:${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; verify" 2>"${P7K}/err"
+[ -e "${P7K}/cfg/.restore-in-progress" ] && [ -e "${P7KR}/storage/roms/backup/new.cfg" ] && [ ! -e "${P7K}/cfg/.restore-reverted" ] && grep -q 'mount table cannot be read' "${P7K}/err"; check $? "audit of the fix round PL-016: with the mount table unreadable, a mark whose files are under the roms folder is left for a later check, nothing removed, and the log says why" "PL-016: mark $([ -e "${P7K}/cfg/.restore-in-progress" ] && echo kept || echo removed); new.cfg $([ -e "${P7KR}/storage/roms/backup/new.cfg" ] && echo there || echo removed); said '$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)' -- an existing folder was taken for a mounted one"
+mkdir -p "${P7KR}/storage/roms/backup/archive"; cp "${P7K}/cfg/pre2.tar.gz" "${P7KR}/storage/roms/backup/archive/pre4.tar.gz"
+p7mark "${P7KR}/storage/roms/backup/archive/pre4.tar.gz"
+EXTRACT_ROOT="${P7KR}" ROMS_ROOT="${P7KR}/storage/roms" PROC_MOUNTS=/nonexistent PATH="${P7K}/bin:${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; verify" 2>"${P7K}/err"
+[ -e "${P7K}/cfg/.restore-in-progress" ] && [ ! -e "${P7K}/cfg/.restore-reverted" ] && grep -q 'mount table cannot be read' "${P7K}/err"; check $? "audit of the fix round PL-016: and a copy under the roms folder waits the same way" "PL-016 (copy): mark $([ -e "${P7K}/cfg/.restore-in-progress" ] && echo kept || echo removed); said '$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)'"
+rm -f "${P7K}/cfg/.restore-in-progress" "${P7K}/cfg/.restore-reverted" "${P7KR}/storage/roms/backup/new.cfg"
+
+# == G2-B-02 (claude): a restore made while the roms folder was not a mount is undone without waiting for one
+p7zclear; p7reset '  /storage/.config/test/*'
+p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/f1=ARCHIVE"
+p7failtar; p7bt restore --no-restart; rm -f "${P7}/shim/tar"
+grep -qx 'roms-mounted=no' "${P7S}/.p7-marker-seen" 2>/dev/null; check $? "audit of the fix round G2-B-02 (claude): the mark records whether the roms folder was a mount when the restore ran (here it was not: roms-mounted=no)" "G2-B-02: the mark at extraction: '$(tr '\n' '|' < "${P7S}/.p7-marker-seen" 2>/dev/null)'"
+mkdir -p "${P7KR}/storage/roms/backup/archive" "${P7KR}/storage/.config/test"; cp "${P7K}/cfg/pre2.tar.gz" "${P7KR}/storage/roms/backup/archive/pre5.tar.gz"
+echo HALF > "${P7KR}/storage/.config/test/y.cfg"; echo CREATED > "${P7KR}/storage/roms/backup/new2.cfg"
+rm -f "${P7K}/cfg/.restore-reverted"; printf '%s\n+/storage/roms/backup/new2.cfg\nroms-mounted=no\n' "${P7KR}/storage/roms/backup/archive/pre5.tar.gz" > "${P7K}/cfg/.restore-in-progress"
+EXTRACT_ROOT="${P7KR}" ROMS_ROOT="${P7KR}/storage/roms" PATH="${P7K}/bin:${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; verify" 2>"${P7K}/err"
+[ "$(cat "${P7KR}/storage/.config/test/y.cfg")" = "LIVE" ] && [ ! -e "${P7KR}/storage/roms/backup/new2.cfg" ] && [ "$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)" = "reverted" ] && [ ! -e "${P7K}/cfg/.restore-in-progress" ]; check $? "audit of the fix round G2-B-02 (claude): a mark saying the roms folder was not a mount is acted on by its folders, though that folder is not a mount now -- it never waits for a mount that was never there" "G2-B-02: y.cfg '$(cat "${P7KR}/storage/.config/test/y.cfg")'; new2.cfg $([ -e "${P7KR}/storage/roms/backup/new2.cfg" ] && echo there || echo removed); said '$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)'; mark $([ -e "${P7K}/cfg/.restore-in-progress" ] && echo kept || echo removed)"
+echo HALF > "${P7KR}/storage/.config/test/y.cfg"; rm -f "${P7K}/cfg/.restore-reverted"
+printf '%s\nroms-mounted=yes\n' "${P7KR}/storage/roms/backup/archive/pre5.tar.gz" > "${P7K}/cfg/.restore-in-progress"
+EXTRACT_ROOT="${P7KR}" ROMS_ROOT="${P7KR}/storage/roms" PATH="${P7K}/bin:${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; verify" 2>"${P7K}/err"
+[ -e "${P7K}/cfg/.restore-in-progress" ] && [ "$(cat "${P7KR}/storage/.config/test/y.cfg")" = "HALF" ] && [ ! -e "${P7K}/cfg/.restore-reverted" ]; check $? "audit of the fix round G2-B-02 (claude): and one saying it was a mount still waits for the mount" "G2-B-02 (mounted): mark $([ -e "${P7K}/cfg/.restore-in-progress" ] && echo kept || echo removed); y.cfg '$(cat "${P7KR}/storage/.config/test/y.cfg")'"
+rm -f "${P7K}/cfg/.restore-in-progress" "${P7K}/cfg/.restore-reverted"
+
+# == PL-017: the upstream-era move keeps both of two archives with one name
+p7zclear; p7reset '  /storage/.config/test/*'
+mkdir -p "${P7S}/roms/backup/archive/upstream-era"
+echo ARCHIVE-A > "${P7S}/roms/backup/archive/upstream-era/ARCHIVED_ROCKNIX_BACKUP-20-01-01_00_00_00.zip"
+echo ARCHIVE-B > "${P7S}/roms/backup/ARCHIVED_ROCKNIX_BACKUP-20-01-01_00_00_00.zip"
+p7bt backup
+p7ue="${P7S}/roms/backup/archive/upstream-era"
+[ "${RC}" -eq 0 ] && [ -z "$(ls "${P7S}/roms/backup"/ARCHIVED_*.zip 2>/dev/null)" ] && [ "$(ls "${p7ue}" | wc -l)" -eq 2 ] && [ "$(cat "${p7ue}"/*.zip | sort | tr '\n' ' ')" = "ARCHIVE-A ARCHIVE-B " ] && [ "$(cat "${p7ue}/ARCHIVED_ROCKNIX_BACKUP-20-01-01_00_00_00.zip")" = "ARCHIVE-A" ]; check $? "audit of the fix round PL-017: a root ARCHIVED_*.zip whose name archive/upstream-era/ already holds is kept beside it under a dated name, and the one there is untouched" "PL-017: rc ${RC}; upstream-era: $(ls "${p7ue}" 2>/dev/null | tr '\n' ' '); contents: $(cat "${p7ue}"/*.zip 2>/dev/null | tr '\n' ' '); root: $(ls "${P7S}/roms/backup" | tr '\n' ' ')"
+
+# == PL-022: a zip's stored members are checked against the CRC the zip lists
+# A zip made by python: STORED and DEFLATED members, and a byte of one
+# member's payload flipped where asked -- the central directory untouched.
+p7zipm() { # <archive name under roms/backup> <damage: name or -> <name|method|content>...
+    local n="$1" dmg="$2"; shift 2
+    python3 - "${P7S}/roms/backup/${n}" "${dmg}" "$@" <<'EOS'
+import sys, zipfile, struct
+out, dmg, specs = sys.argv[1], sys.argv[2], sys.argv[3:]
+z = zipfile.ZipFile(out, "w")
+for s in specs:
+    name, meth, data = s.split("|", 2)
+    z.writestr(name, data.encode(), compress_type=zipfile.ZIP_STORED if meth == "stored" else zipfile.ZIP_DEFLATED)
+z.close()
+if dmg != "-":
+    b = bytearray(open(out, "rb").read())
+    zi = zipfile.ZipFile(out).getinfo(dmg)
+    o = zi.header_offset; nl, el = struct.unpack("<HH", b[o + 26:o + 30]); start = o + 30 + nl + el
+    b[start + 2] ^= 0x20
+    open(out, "wb").write(b)
+EOS
+}
+P7ZLONG=$(printf 'retroarch_setting_%s = "value"\n' $(seq 1 60) | tr -d '\n')
+if [ -n "${BB}" ]; then
+    p7reset '  /storage/.config/test/*'
+    p7zipm m.zip storage/.config/test/s.cfg "storage/.config/test/s.cfg|stored|STORED-ORIGINAL-CONTENT" "storage/.config/test/d.cfg|deflated|${P7ZLONG}"
+    "${BB_HOST}" unzip -t "${P7S}/roms/backup/m.zip" >/dev/null 2>&1; p7t=$?
+    "${BB_HOST}" unzip -p "${P7S}/roms/backup/m.zip" >/dev/null 2>&1; p7p=$?
+    p7zipm m2.zip storage/.config/test/d.cfg "storage/.config/test/s.cfg|stored|STORED-ORIGINAL-CONTENT" "storage/.config/test/d.cfg|deflated|${P7ZLONG}"
+    "${BB_HOST}" unzip -p "${P7S}/roms/backup/m2.zip" >/dev/null 2>&1; p7p2=$?
+    [ "${p7t}" -eq 0 ] && [ "${p7p}" -eq 0 ] && [ "${p7p2}" -ne 0 ]; check $? "audit of the fix round PL-022 (the measurement, BS-3): the image's busybox unzip passes a damaged STORED member (-t rc ${p7t}, -p rc ${p7p}) and fails a damaged DEFLATED one (-p rc ${p7p2})" "PL-022 measurement: -t ${p7t}, -p ${p7p} on the stored damage; -p ${p7p2} on the deflated -- busybox's behaviour is not what this case was written against"
+    p7reset '  /storage/.config/test/*'
+    echo LIVE > "${P7S}/.config/test/f1"
+    p7zipm 20260101000000-ROCKNIX_BACKUP.zip storage/.config/test/f1 "storage/.config/test/f1|stored|STORED-ORIGINAL-CONTENT" "storage/.config/test/d.cfg|deflated|${P7ZLONG}"
+    p7bt restore --no-restart
+    [ "${RC}" -ne 0 ] && [ "$(p7why)" = "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED" ] && [ "$(cat "${P7S}/.config/test/f1")" = "LIVE" ] && [ ! -e "${P7S}/.config/test/d.cfg" ] && [ -z "$(ls "${P7S}/roms/backup/archive"/*PRE_RESTORE* 2>/dev/null)" ]; check $? "audit of the fix round PL-022: a legacy zip whose STORED member's bytes do not match its listed CRC is refused as damaged before anything is written" "PL-022 (stored, damaged): rc ${RC}; why '$(p7why)'; f1 '$(head -c 30 "${P7S}/.config/test/f1")'; d.cfg $([ -e "${P7S}/.config/test/d.cfg" ] && echo written || echo absent) -- the corrupted bytes were restored as settings"
+    p7reset '  /storage/.config/test/*'
+    echo LIVE > "${P7S}/.config/test/f1"
+    p7zipm 20260101000000-ROCKNIX_BACKUP.zip storage/.config/test/d.cfg "storage/.config/test/f1|stored|STORED-ORIGINAL-CONTENT" "storage/.config/test/d.cfg|deflated|${P7ZLONG}"
+    p7bt restore --no-restart
+    [ "${RC}" -ne 0 ] && [ "$(p7why)" = "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED" ] && [ "$(cat "${P7S}/.config/test/f1")" = "LIVE" ]; check $? "audit of the fix round PL-022: a legacy zip with a damaged DEFLATED member is refused as damaged" "PL-022 (deflated, damaged): rc ${RC}; why '$(p7why)'; f1 '$(head -c 30 "${P7S}/.config/test/f1")'"
+    p7reset '  /storage/.config/test/*'
+    echo LIVE > "${P7S}/.config/test/f1"
+    p7zipm 20260101000000-ROCKNIX_BACKUP.zip - "storage/.config/test/f1|stored|STORED-ORIGINAL-CONTENT" "storage/.config/test/my [x] *file?.cfg|stored|BRACKETS" "storage/.config/test/d.cfg|deflated|${P7ZLONG}" "storage/.config/test/empty.cfg|stored|"
+    p7bt restore --no-restart
+    [ "${RC}" -eq 0 ] && [ "$(cat "${P7S}/.config/test/f1")" = "STORED-ORIGINAL-CONTENT" ] && [ "$(cat "${P7S}/.config/test/my [x] *file?.cfg")" = "BRACKETS" ] && [ "$(cat "${P7S}/.config/test/d.cfg")" = "${P7ZLONG}" ] && [ -e "${P7S}/.config/test/empty.cfg" ]; check $? "audit of the fix round PL-022: a whole legacy zip -- stored and deflated members, a stored name with brackets, a star and a space, an empty stored file -- restores (rc ${RC})" "PL-022 (healthy): rc ${RC}; why '$(p7why)'; f1 '$(head -c 30 "${P7S}/.config/test/f1")'; brackets '$(cat "${P7S}/.config/test/my [x] *file?.cfg" 2>/dev/null)'"
+else
+    skip "audit of the fix round PL-022: the image's busybox is not on this machine, and the case is its behaviour"
+fi
+
+# == PL-028: an archive with a member outside storage/ is refused before anything is written
+mkdir -p "${P7Z}/outside"
+p7zforeign() { # <verb...>: backuptool with /outside bound from the host, so a write there is seen
+    rm -rf "${P7Z}/outside"; mkdir -p "${P7Z}/outside"
+    P7X=(--bind "${P7Z}/outside" /outside)
+    p7bt "$@"
+    P7X=()
+}
+p7zfstate() { echo "rc ${RC}; why '$(p7why)'; outside: $(ls -A "${P7Z}/outside" | tr '\n' ' '); f1 '$(cat "${P7S}/.config/test/f1")'; copies: $(ls "${P7S}/roms/backup/archive" 2>/dev/null | wc -l)"; }
+p7zforeignok() {
+    [ "${RC}" -ne 0 ] && [ "$(p7why)" = "THIS BACKUP HOLDS FILES A RESTORE CAN'T PUT BACK" ] && [ -z "$(ls -A "${P7Z}/outside")" ] \
+        && [ "$(cat "${P7S}/.config/test/f1")" = "LIVE" ] && [ -z "$(ls "${P7S}/roms/backup/archive" 2>/dev/null)" ] && p7zscreen | grep -q "NOTHING WAS CHANGED"
+}
+p7zclear; p7reset '  /storage/.config/test/*'
+echo LIVE > "${P7S}/.config/test/f1"
+p7tree "${P7}/tree" "storage/.config/test/f1=ARCHIVE" "outside/p7-foreign=FOREIGN"
+tar -C "${P7}/tree" -czf "${P7S}/roms/backup/2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz" storage outside
+p7zforeign restore --no-restart
+p7zforeignok; check $? "audit of the fix round PL-028: a tar archive with a member outside storage/ is refused before anything is written, and says so" "PL-028 (tar): $(p7zfstate)"
+p7reset '  /storage/.config/test/*'
+echo LIVE > "${P7S}/.config/test/f1"
+python3 - "${P7S}/roms/backup/20260101000000-ROCKNIX_BACKUP.zip" <<'EOS'
+import sys, zipfile
+z = zipfile.ZipFile(sys.argv[1], "w", zipfile.ZIP_DEFLATED)
+z.writestr("storage/.config/test/f1", "ARCHIVE"); z.writestr("outside/p7-foreign", "FOREIGN")
+z.close()
+EOS
+p7zforeign restore --no-restart
+p7zforeignok; check $? "audit of the fix round PL-028: so is a legacy zip" "PL-028 (zip): $(p7zfstate)"
+p7reset '  /storage/.config/test/*'
+echo LIVE > "${P7S}/.config/test/f1"
+python3 - "${P7S}/roms/backup/2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz" <<'EOS'
+import sys, tarfile, io
+t = tarfile.open(sys.argv[1], "w:gz")
+for name, data in (("storage/.config/test/f1", b"ARCHIVE"), ("storage/../outside/p7-dotdot", b"FOREIGN")):
+    i = tarfile.TarInfo(name); i.size = len(data); t.addfile(i, io.BytesIO(data))
+t.close()
+EOS
+p7zforeign restore --no-restart
+p7zforeignok; check $? "audit of the fix round PL-028: and so is one whose member walks out of storage/ through .." "PL-028 (..): $(p7zfstate)"
+
+# == G2-B-03 (gpt): a folder at the lock's path is not a lock anybody holds
+mkdir -p "${P7Z}/lnbb"
+if [ -n "${BB}" ]; then printf '#!/bin/sh\nexec %s ln "$@"\n' "${BB_HOST}" > "${P7Z}/lnbb/ln"; chmod +x "${P7Z}/lnbb/ln"; fi
+rm -rf "${P7F}/dirlock"; mkdir -p "${P7F}/dirlock/lock"
+sed "s|^J_CONF=.*|J_CONF=$(printf %q "${P7F}/cfg/system.cfg"); J_CONF_LOCK=$(printf %q "${P7F}/dirlock/lock")|" "${P7F}/f.sh" > "${P7F}/f-dir.sh"
+p7t0=$(date +%s)
+PATH="${P7Z}/lnbb:${TMP}/bbin:${PATH}" timeout 20 bash -c ". '${P7F}/f-dir.sh'; wait_lock" 2>"${P7F}/err"; p7rc=$?
+p7dt=$(( $(date +%s) - p7t0 ))
+[ "${p7rc}" -ne 0 ] && [ "${p7rc}" -ne 124 ] && [ "${p7dt}" -lt 15 ] && [ -z "$(ls -A "${P7F}/dirlock/lock")" ] && grep -q 'wait_lock' "${P7F}/err"; check $? "audit of the fix round G2-B-03 (gpt): with a folder at the lock's path, wait_lock takes nothing (rc ${p7rc}, ${p7dt}s), links nothing into the folder, and says why" "G2-B-03: rc ${p7rc} after ${p7dt}s; in the folder: $(ls -A "${P7F}/dirlock/lock" | tr '\n' ' ') -- ln linked the pid file inside it and every contender took the lock"
+rm -rf "${P7F}/dirlock"
+
+# == G2-B-09 (gpt): the seed list is read whole, or the restore refuses
+p7zclear; p7reset '  /storage/.config/emulationstation/es_settings.cfg
+  /storage/.config/test/*'
+cp "${P7U}/emulationstation/es_settings.cfg" "${P7S}/.config/emulationstation/es_settings.cfg"
+p7bt backup
+echo EDITED > "${P7S}/.config/emulationstation/es_settings.cfg"
+cat > "${P7}/shim/tar" <<'EOS'
+#!/bin/bash
+# The seed list's read fails part-way: nothing of it reaches the reader.
+if [ "$1" = "-xzOf" ] && [ "$3" = "storage/.config/.backuptool-seeds" ]; then echo "tar: read error" >&2; exit 1; fi
+exec /p7bb/tar "$@"
+EOS
+chmod +x "${P7}/shim/tar"
+p7bt restore --no-restart; rm -f "${P7}/shim/tar"
+[ "${RC}" -ne 0 ] && [ "$(cat "${P7S}/.config/emulationstation/es_settings.cfg")" = "EDITED" ] && [ -n "$(p7why)" ] && ! p7zscreen | grep -q 'tar:'; check $? "audit of the fix round G2-B-09 (gpt): a seed list that cannot be read ends the restore before it writes -- never a restore that says it finished with the defaults not put back" "G2-B-09: rc ${RC}; es_settings.cfg '$(head -c 30 "${P7S}/.config/emulationstation/es_settings.cfg")'; why '$(p7why)'; screen: $(p7zscreen | tr '\n' '|' | cut -c1-160)"
+
+# == G2-B-11 (gpt): the Wi-Fi pair is written as one, or not at all
+# The real writer first: set_settings writes several keys in one rename.
+{ cat "${P7F}/f.sh"; sed -n '/^function set_settings() {/,/^}/p' "${FN}"; } > "${P7F}/f-z.sh"
+p7zset() { PATH="${TMP}/bbin:${PATH}" timeout 20 bash -c ". '${P7F}/f-z.sh'; $1" 2>"${P7F}/err"; }
+printf 'system.hostname=X\nwifi.ssid=A\nwifi.key=a-key\nother=1\n' > "${P7F}/cfg/system.cfg"
+p7zset "set_settings wifi.ssid B wifi.key b-key"; p7rc=$?
+[ "${p7rc}" -eq 0 ] && [ "$(sort "${P7F}/cfg/system.cfg" | tr '\n' '|')" = "other=1|system.hostname=X|wifi.key=b-key|wifi.ssid=B|" ] && [ ! -e "${P7F}/cfg/system.cfg.tmp" ]; check $? "audit of the fix round G2-B-11 (gpt): set_settings wifi.ssid B wifi.key b-key writes both in one rename (rc ${p7rc})" "G2-B-11: rc ${p7rc}; system.cfg '$(tr '\n' '|' < "${P7F}/cfg/system.cfg")'"
+chmod 555 "${P7F}/cfg"; p7zset "set_settings wifi.ssid C wifi.key c-key"; p7rc=$?; chmod 755 "${P7F}/cfg"
+[ "${p7rc}" -ne 0 ] && grep -qx 'wifi.ssid=B' "${P7F}/cfg/system.cfg" && grep -qx 'wifi.key=b-key' "${P7F}/cfg/system.cfg"; check $? "audit of the fix round G2-B-11 (gpt): a pair that cannot be written leaves both as they were and says so (rc ${p7rc})" "G2-B-11: rc ${p7rc}; system.cfg '$(tr '\n' '|' < "${P7F}/cfg/system.cfg")'"
+p7zset "set_settings wifi.ssid default wifi.key default"; p7rc=$?
+[ "${p7rc}" -eq 0 ] && [ "$(sort "${P7F}/cfg/system.cfg" | tr '\n' '|')" = "other=1|system.hostname=X|" ]; check $? "audit of the fix round G2-B-11 (gpt): set_settings k default removes both keys' lines in the one write" "G2-B-11: rc ${p7rc}; system.cfg '$(tr '\n' '|' < "${P7F}/cfg/system.cfg")'"
+p7zset "set_settings system.hostname default a 1"; p7rc=$?
+[ "${p7rc}" -eq 0 ] && grep -qx 'system.hostname=' "${P7F}/cfg/system.cfg" && grep -qx 'a=1' "${P7F}/cfg/system.cfg"; check $? "audit of the fix round G2-B-11 (gpt): system.hostname default keeps its empty line, as set_setting does (D-NET-009)" "G2-B-11: rc ${p7rc}; system.cfg '$(tr '\n' '|' < "${P7F}/cfg/system.cfg")'"
+p7zset "set_settings wifi.ssid D wifi.key"; p7rc=$?
+[ "${p7rc}" -ne 0 ] && ! grep -q 'wifi.ssid=D' "${P7F}/cfg/system.cfg"; check $? "audit of the fix round G2-B-11 (gpt): an odd number of arguments writes nothing (rc ${p7rc})" "G2-B-11: rc ${p7rc}; system.cfg '$(tr '\n' '|' < "${P7F}/cfg/system.cfg")'"
+# Then wifictl: the settings shim counts its calls and fails the Nth
+# (/run/set-fails-on); wifictl sends logger's stderr to /dev/null, so the
+# logger shim writes /run/log.
+printf '#!/bin/sh\necho "logger $*" >> /run/log\n' > "${P7W}/shim/logger"; chmod +x "${P7W}/shim/logger"; : > "${P7W}/run/log"
+p7wset 'A|802-11-wireless|-|A|a-key' 'B|802-11-wireless|-|B|b-key'
+printf 'wifi.ssid=A\nwifi.key=a-key\n' > "${P7W}/run/settings"; rm -f "${P7W}/run/set-calls"; echo 2 > "${P7W}/run/set-fails-on"
+p7w join "B"
+rm -f "${P7W}/run/set-fails-on"
+p7zpair="$(p7wssid)/$(p7wkey)"
+[ "${RC}" -eq 0 ] && { [ "${p7zpair}" = "A/a-key" ] || [ "${p7zpair}" = "B/b-key" ]; }; check $? "audit of the fix round G2-B-11 (gpt): a join whose second settings write would fail never leaves B's SSID with A's key (the pair is ${p7zpair})" "G2-B-11: rc ${RC}; the pair is ${p7zpair} -- the SSID moved to B and the key stayed A's"
+p7wset 'A|802-11-wireless|-|A|a-key' 'B|802-11-wireless|-|B|b-key'
+printf 'wifi.ssid=A\nwifi.key=a-key\n' > "${P7W}/run/settings"; touch "${P7W}/run/set-fails"
+p7w join "B"
+rm -f "${P7W}/run/set-fails"
+[ "${RC}" -eq 0 ] && [ "$(cat "${P7W}/out")" = "joined" ] && [ "$(p7wssid)/$(p7wkey)" = "A/a-key" ] && grep -q 'logger -t wifictl .*joined B.*could not be saved' "${P7W}/run/log"; check $? "audit of the fix round G2-B-11 (gpt): a join whose settings cannot be written says joined (it is), leaves the pair as it was, and logs that the settings were not saved" "G2-B-11: rc ${RC}; printed '$(tr '\n' '|' < "${P7W}/out")'; pair $(p7wssid)/$(p7wkey); log: $(tr '\n' '|' < "${P7W}/run/log" | cut -c1-200)"
+p7wset 'A|802-11-wireless|wlan0|A|a-key'
+printf 'wifi.ssid=A\nwifi.key=a-key\n' > "${P7W}/run/settings"; rm -f "${P7W}/run/set-calls"; echo 2 > "${P7W}/run/set-fails-on"; touch "${P7W}/run/delete-fails"
+p7w forget "A"
+rm -f "${P7W}/run/set-fails-on" "${P7W}/run/delete-fails"
+[ "${RC}" -eq 1 ] && [ ! -s "${P7W}/out" ] && grep -q '^A|' "${P7W}/run/profiles" && grep -q 'logger -t wifictl .*could not be put back' "${P7W}/run/log"; check $? "audit of the fix round G2-B-11 (gpt): a forget whose profile delete fails and whose settings cannot then be put back refuses (rc ${RC}) and logs what state the settings are in" "G2-B-11 (forget): rc ${RC}; printed '$(tr '\n' '|' < "${P7W}/out")'; profile: $(grep -c '^A|' "${P7W}/run/profiles"); log: $(tr '\n' '|' < "${P7W}/run/log" | cut -c1-200)"
+rm -f "${P7W}/shim/logger" "${P7W}/run/log"
+# == 001-functions, stream C's lead: a key named key, and an S3 access key id, are credentials
+p7zk=0
+for l in 'key = K002-qa-value' 'key=K002-qa-value' 'b2.key = K002-qa-value' 'access_key_id = QAKEYID123' 'rclone --b2-key qa-value' 'rclone --s3-access-key-id QAKEYID123'; do
+    a=$(p7red "${l}"); s=$(printf '%s\n' "${l}" | PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7F}/redact.sh'; redact_credentials")
+    case "${a}" in *qa-value*|*QAKEYID*) p7zk=1; echo "      argument mode kept it: ${a}" ;; esac
+    case "${s}" in *qa-value*|*QAKEYID*) p7zk=1; echo "      stream mode kept it: ${s}" ;; esac
+done
+check "${p7zk}" "audit of the fix round (stream C's lead): key =, key=, b2.key =, access_key_id =, --b2-key and --s3-access-key-id are redacted in both modes" "stream C's lead: a value survived (listed above) -- no rule knew a key named key or an S3 access key id"
+p7forks=$(PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7F}/redact.sh'; sed() { echo fork >> '${P7F}/forks'; command sed \"\$@\"; }; : > '${P7F}/forks'; redact_credentials 'input_enable_hotkey = \"nul\"' >/dev/null; redact_credentials 'keyboard layout us' >/dev/null; redact_credentials 'the monkey key' >/dev/null; wc -l < '${P7F}/forks'")
+[ "${p7forks}" -eq 0 ] && [ "$(p7red 'input_enable_hotkey = "nul"')" = 'input_enable_hotkey = "nul"' ]; check $? "audit of the fix round (stream C's lead): and hotkey, keyboard and a sentence about a key take the fast path, unchanged" "stream C's lead: ${p7forks} sed fork(s); hotkey line '$(p7red 'input_enable_hotkey = "nul"')'"
+# == E1's lead G2-E-core-03: the shell's writers never complete a cut system.cfg, nor record one
+# The settings writer lifted as y3 lifts it, writing y4's system.cfg, so
+# chksysconfig's backup (y4's lifted functions) reads what it wrote.
+P7ZC="${P7K}/cfg/system/configs/system.cfg"
+# Its logger writes a file: the writers send their subshell's stderr to
+# /dev/null, and on a device logger goes to the journal, not stderr.
+{ sed "s|^J_CONF=.*|J_CONF=$(printf %q "${P7ZC}"); J_CONF_LOCK=$(printf %q "${P7F}/lock-z")|" "${P7F}/f.sh"
+  printf 'logger() { echo "logger $*" >> %q; }\n' "${P7F}/log-z"; } > "${P7F}/f-cut.sh"
+p7zcut() { PATH="${TMP}/bbin:${PATH}" timeout 20 bash -c ". '${P7F}/f-cut.sh'; $1" 2>"${P7F}/err"; }
+p7zchk() { PATH="${P7K}/bin:${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; $1" 2>"${P7K}/err"; }
+rm -f "${P7ZC}.backup" "${P7ZC}.tmp" "${P7F}/lock-z"; : > "${P7F}/log-z"
+printf 'system.hostname=X\na=1\nwifi.key=ab' > "${P7ZC}"
+p7zcut "set_setting b 2"; p7rc=$?
+[ "${p7rc}" -eq 0 ] && [ "$(tr '\n' '|' < "${P7ZC}")" = "system.hostname=X|a=1|b=2|" ] && grep -q 'logger -t system.cfg .*cut short' "${P7F}/log-z"; check $? "audit of the fix round (E1's lead G2-E-core-03): a set_setting onto a system.cfg cut mid-line, with no whole copy beside it, drops the half line (wifi.key=ab) rather than completing it, and says so" "E1's lead: rc ${p7rc}; system.cfg '$(tr '\n' '|' < "${P7ZC}")' -- the cut value was completed as the owner's"
+p7zchk backup
+[ ! -e "${P7ZC}.backup" ] || ! grep -q 'wifi.key=ab' "${P7ZC}.backup"; check $? "audit of the fix round (E1's lead G2-E-core-03): so the record the boot then writes carries no half line either" "E1's lead: the record holds '$(tr '\n' '|' < "${P7ZC}.backup" 2>/dev/null)'"
+printf 'system.hostname=X\na=1\nwifi.key=abcdef\nz=9\n' > "${P7ZC}.backup"
+printf 'system.hostname=X\na=5\nwifi.key=ab' > "${P7ZC}"
+p7zcut "set_setting b 2"; p7rc=$?
+[ "${p7rc}" -eq 0 ] && [ "$(sort "${P7ZC}" | tr '\n' '|')" = "a=5|b=2|system.hostname=X|wifi.key=abcdef|z=9|" ]; check $? "audit of the fix round (E1's lead G2-E-core-03): with a whole last good copy beside it, the write keeps the cut file's whole lines (a=5) and takes the rest from the copy (wifi.key=abcdef, z=9)" "E1's lead: rc ${p7rc}; system.cfg '$(tr '\n' '|' < "${P7ZC}")' -- the keys after the cut were gone and the half value kept"
+printf 'system.hostname=X\na=1\nwifi.key=abcdef\nz=9\n' > "${P7ZC}.backup"
+printf 'system.hostname=X\na=5\nwifi.key=ab' > "${P7ZC}"
+p7zchk backup
+[ "$(tr '\n' '|' < "${P7ZC}.backup")" = "system.hostname=X|a=1|wifi.key=abcdef|z=9|" ] && grep -q 'cut short' "${P7K}/err"; check $? "audit of the fix round (E1's lead G2-E-core-03): chksysconfig backup never records a system.cfg whose last line is cut (valid() alone passed wifi.key=ab), and says why" "E1's lead: the record now '$(tr '\n' '|' < "${P7ZC}.backup")'"
+p7zcut "sort_settings"; p7rc=$?
+[ "$(tr '\n' '|' < "${P7ZC}")" = "a=5|system.hostname=X|wifi.key=abcdef|z=9|" ]; check $? "audit of the fix round (E1's lead G2-E-core-03): and the boot's sort_settings, which ran before that backup, repairs the cut the same way instead of completing it" "E1's lead: rc ${p7rc}; system.cfg '$(tr '\n' '|' < "${P7ZC}")'"
+# Not a cut: the last keys removed on purpose (forget clears wifi.*, which
+# sort last) leave a file that is its record cut at a line's end, and must
+# be recorded as it is -- a prefix rule would bring the forgotten key back.
+printf 'a=1\nsystem.hostname=X\nwifi.key=k\nwifi.ssid=s\n' > "${P7ZC}"; cp "${P7ZC}" "${P7ZC}.backup"
+p7zcut "set_setting wifi.key default && set_setting wifi.ssid default"
+p7zchk verify; p7zchk backup
+[ "$(tr '\n' '|' < "${P7ZC}")" = "a=1|system.hostname=X|" ] && [ "$(tr '\n' '|' < "${P7ZC}.backup")" = "a=1|system.hostname=X|" ]; check $? "audit of the fix round (E1's lead G2-E-core-03): keys removed from the end on purpose stay removed through the boot's verify and backup" "E1's lead: system.cfg '$(tr '\n' '|' < "${P7ZC}")'; record '$(tr '\n' '|' < "${P7ZC}.backup")'"
+rm -f "${P7ZC}.backup" "${P7F}/lock-z" "${P7F}/log-z"; printf 'system.hostname=X\n' > "${P7ZC}"
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi

@@ -73,9 +73,23 @@ put() {
   return 1
 }
 
+# The record is written only from a whole file: valid, and ending in a
+# newline. Every writer ends system.cfg with one -- the interface's
+# SystemConf, the shell's awk and sort, the image's seed -- so a file that
+# does not was cut mid-line by a torn write, and its half line is not the
+# owner's; the shell's writers no longer complete such a line either
+# (settings_base in 001-functions). The last good copy stays as it is, and
+# the log says why (#307, the audit of the fix round; stream E1's lead
+# G2-E-core-03). A cut that fell exactly at a line's end cannot be told from
+# a file whose last keys were removed on purpose -- forget clears wifi.ssid
+# and wifi.key, which sort last -- and is taken as whole.
 backup() {
   if ! valid "${CFG}"; then
     say "not backing up system.cfg: it is empty, not text, or damaged; the last good copy stays as it is"
+    return 1
+  fi
+  if [ -n "$(tail -c 1 "${CFG}" 2>/dev/null)" ]; then
+    say "not backing up system.cfg: its last line was cut short; the last good copy stays as it is"
     return 1
   fi
   put "${CFG}" "${BACKUP}" || { say "could not write system.cfg.backup"; return 1; }
@@ -127,31 +141,48 @@ finish_restore() {
   # one-card device /storage/roms is a bind of /storage/games-internal/roms
   # -- the same filesystem -- so it never reads as mounted there, and the
   # first cut of PL-045 would have deferred every revert for ever (found
-  # answering the audit of the fixes, claude G-B-04). A table that cannot be
-  # read falls back to the directory test and says so.
-  local roms="${ROMS_ROOT:-/storage/roms}" pending=0 mounted="" p
+  # answering the audit of the fixes, claude G-B-04).
+  #
+  # A table that cannot be read waits, and says so: it used to fall back to
+  # the directory test, the very test PL-045 removed -- an existing folder
+  # on the internal card read as the mounted one, the copy on the card not
+  # mounted yet read as missing, and the mark was consumed (#307, the audit
+  # of the fix round, PL-016). Waiting keeps the mark for a check that can
+  # read the table; guessing loses it.
+  #
+  # Unless the restore said the roms folder was not a mount when it ran
+  # (backuptool's last line, roms-mounted=no): then its copy and the files
+  # it made are in the folder itself, not on a card a mount will bring, and
+  # waiting for a mount was waiting for ever on a device whose automount
+  # never made one (#307, the audit of the fix round, claude G2-B-02). Such
+  # a mark is judged by its folders, as a copy anywhere else is. A mark
+  # without the line (an older backuptool) or with "unknown" waits as above.
+  local roms="${ROMS_ROOT:-/storage/roms}" pending=0 mounted="" p told="" was
+  was=$(sed -n 's/^roms-mounted=//p' "${mark}" 2>/dev/null | head -n 1)
   if [ -r "${PROC_MOUNTS:-/proc/mounts}" ]; then
-    if awk -v m="${roms}" '$2 == m { f = 1 } END { exit !f }' "${PROC_MOUNTS:-/proc/mounts}" 2>/dev/null; then
-      mounted=1
-    else
-      mounted=0
-    fi
+    awk -v m="${roms}" '$2 == m { f = 1 } END { exit !f }' "${PROC_MOUNTS:-/proc/mounts}" 2>/dev/null
+    case $? in
+      0) mounted=1 ;;
+      1) mounted=0 ;;
+    esac
   fi
   under_roms() { # <path>: 0 when it waits for the roms mount
+    [ "${was}" = "no" ] && return 1
     case "${1}" in
       "${roms}"/*)
         if [ -z "${mounted}" ]; then
-          say "the mount table cannot be read; the roms folder's mount is judged by its folders instead"
-          [ -d "$(dirname "${1}")" ] || return 0
-          return 1
+          [ -n "${told}" ] || say "the mount table cannot be read, so whether the roms folder is mounted is not known; a restore's files there wait for a later check"
+          told=1
+          return 0
         fi
         [ "${mounted}" -eq 0 ] ;;
       *) return 1 ;;
     esac
   }
   if [ -n "${snap}" ]; then
-    case "${snap}" in
-      "${roms}"/*) under_roms "${snap}" && pending=1 ;;
+    case "${was}:${snap}" in
+      no:*) [ -d "$(dirname "${snap}")" ] || pending=1 ;;
+      *:"${roms}"/*) under_roms "${snap}" && pending=1 ;;
       *) [ -d "$(dirname "${snap}")" ] || pending=1 ;;
     esac
   fi

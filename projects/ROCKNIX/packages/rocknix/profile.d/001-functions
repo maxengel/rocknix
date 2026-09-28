@@ -49,7 +49,11 @@ function log() {
 # word's start -- "disk-" and "task-" are not keys, and forked a sed for
 # nothing (#308 claude F-PB-18) -- a
 # private-key block); setrootpass <value>; the password in a URL's
-# user:password@. An empty value is left empty: whether a credential is set
+# user:password@; a key named key, or ending in _key, .key or -key (rclone's
+# B2 key = ..., --b2-key X) and an S3 access key id (access_key_id,
+# --s3-access-key-id), which neither the word list nor the fast path knew
+# (#307, the audit of the fix round; stream C's lead). "hotkey" and
+# "keyboard" are not keys. An empty value is left empty: whether a credential is set
 # may be shown, only what it is may not. An unquoted value runs to the next
 # space, quote, & or ; -- so a URL's next parameter survives -- and may
 # itself START with & or ; (root.password=&x): the class that stops at them
@@ -63,7 +67,10 @@ function log() {
 # line that names a credential: setsettings writes a hundred lines a launch
 # in verbose mode and a fork for each would be felt on a handheld.
 function redact_credentials() {
-  local words='passw|token|api_?key|secret|psk|wifi\.key|retroachievements\.key'
+  # passphrase: iwd's Passphrase= and a --passphrase flag, which neither
+  # passw nor a key ending in pass reached (found fixing #307's audit of the
+  # fix round, PL-005; backuptool's key scan always had it).
+  local words='passw|passphrase|token|api_?key|access[_-]?key|secret|psk|wifi\.key|retroachievements\.key'
   local marks='(^|[?&[:space:]])[pty]=|AKIA|gh[pousr]_|github_pat_|xox[baprs]-|(^|[^A-Za-z0-9])sk-|PRIVATE KEY|setrootpass|://[^/[:space:]@]+:[^/[:space:]@]+@'
   if [ $# -gt 0 ]; then
     local line="$*" nocase=0
@@ -73,7 +80,17 @@ function redact_credentials() {
     # every "test passed" and "bypass" line through sed (#307, the audit of
     # the fixes, claude G-B-07).
     local passkey='pass"?[[:space:]]*[=:]'
-    if [[ "${line}" =~ (${words}|${passkey}|${marks}) ]]; then
+    # And a flag whose name ends in "pass", followed by its value (--pass
+    # X, --RA_Pass X, -pass X): the sed below has always redacted that shape,
+    # but a line that only it would catch took this path and was printed
+    # whole (#307, the audit of the fix round, PL-005).
+    local passflag='(^|[[:space:]])--?[A-Za-z0-9_.-]*pass[[:space:]]'
+    # A key named key, or ending in [_.-]key, as a key or a flag -- the same
+    # set the sed's key below takes, so the two never disagree (the rule
+    # PL-005 set).
+    local keyname='(^|[^A-Za-z0-9_.-])([A-Za-z0-9_.-]*[_.-])?key"?[[:space:]]*[=:]'
+    local keyflag='(^|[[:space:]])--?([A-Za-z0-9_.-]*[_.-])?key[[:space:]]'
+    if [[ "${line}" =~ (${words}|${passkey}|${passflag}|${keyname}|${keyflag}|${marks}) ]]; then
       [ "${nocase}" -eq 1 ] || shopt -u nocasematch
       printf '%s\n' "${line}" | redact_credentials
     else
@@ -86,7 +103,7 @@ function redact_credentials() {
   # (ScreenScraperPass, RA_Pass, rclone's pass): passw alone missed the
   # batocera-style ...Pass spellings (#308 claude F-PB-18). "pass" only at
   # the key's end, so "passed:" in a log line is not a key.
-  local key="([A-Za-z0-9_.-]*(${words})[A-Za-z0-9_.-]*|[A-Za-z0-9_.-]*pass)"
+  local key="([A-Za-z0-9_.-]*(${words})[A-Za-z0-9_.-]*|[A-Za-z0-9_.-]*pass|([A-Za-z0-9_.-]*[_.-])?key)"
   sed -E \
     -e "s/(^|[^A-Za-z0-9_.-])(${key}\"?[[:space:]]*[=:][[:space:]]*)\"[^\"]+\"/\1\2\"<redacted>\"/Ig" \
     -e "s/(^|[^A-Za-z0-9_.-])(${key}\"?[[:space:]]*[=:][[:space:]]*)'[^']+'/\1\2'<redacted>'/Ig" \
@@ -175,7 +192,12 @@ function wait_lock_say() {
 #   place, which fails when the lock exists -- so no waiter ever reads an
 #   empty lock that is really a holder between its open and its write, the
 #   window a noclobber create left (#307 PL-041). A shell without ln (a
-#   test's narrow PATH) falls back to that create.
+#   test's narrow PATH) falls back to that create. ln -T: a folder at the
+#   lock's path is a file that exists, not a place to link into -- plain
+#   ln made <lock>/<lock>.<pid> inside it and returned 0, so every
+#   contender "took" the lock at once (#307, the audit of the fix round,
+#   gpt G2-B-03); now the link fails, and the stale-lock reap below, which
+#   cannot remove a folder, gives up after five tries and says so.
 #
 #   Reaped once, under flock on <lock>.reap -- the lock the interface's
 #   reaper takes too -- by re-reading the holder and removing the file only
@@ -217,7 +239,7 @@ function wait_lock() {
     then
       if echo "$$" > "${J_CONF_LOCK}.$$" 2>/dev/null
       then
-        ln "${J_CONF_LOCK}.$$" "${J_CONF_LOCK}" 2>/dev/null && took=1
+        ln -T "${J_CONF_LOCK}.$$" "${J_CONF_LOCK}" 2>/dev/null && took=1
         rm -f "${J_CONF_LOCK}.$$"
       fi
     else
@@ -309,12 +331,55 @@ function wait_lock() {
       unreaped=$((unreaped + 1))
       if [ "${unreaped}" -ge 5 ]
       then
-        wait_lock_say "cannot remove stale lock ${J_CONF_LOCK} held by pid ${holder:-<none>} (its folder not writable); not waiting on it"
+        wait_lock_say "cannot remove stale lock ${J_CONF_LOCK} held by pid ${holder:-<none>} (its folder not writable, or a folder in its place); not waiting on it"
         return 1
       fi
       [ "${unreaped}" -gt 1 ] && sleep 1
     fi
   done
+}
+
+# The lines a settings write starts from, on stdout (#307, the audit of the
+# fix round; stream E1's lead G2-E-core-03). Every writer reads system.cfg,
+# changes its key and renames the result over it -- so a file a torn write
+# had cut short, its last line half there, came out of the rename looking
+# whole: the half line completed as if it were the owner's (wifi.key=ab from
+# a cut wifi.key=abcdef), and one save later the boot recorded it as the
+# last good copy, the keys after the cut gone from both files. Every writer
+# ends the file with a newline, so a file that does not end in one was cut:
+#
+#   - its half line is dropped -- a value cut short is not the owner's;
+#   - when the last good copy (system.cfg.backup) is whole -- non-empty,
+#     ending in a newline, carrying the hostname line -- the keys the cut
+#     took, and the half line's, come back from it;
+#   - an empty file with a whole copy beside it starts from the copy.
+#
+# The journal says which. A whole file is its own lines, unchanged. Returns
+# non-zero when the file cannot be read (a missing one included: the
+# callers' temporary then holds nothing they would rename).
+function settings_base() {
+  local rec="${J_CONF}.backup" n say=""
+  [ -r "${J_CONF}" ] || return 1
+  if [ -s "${J_CONF}" ] && [ -z "$(tail -c 1 "${J_CONF}" 2>/dev/null)" ]
+  then
+    cat "${J_CONF}"
+    return
+  fi
+  n=$(wc -l < "${J_CONF}") || return 1
+  if [ -s "${rec}" ] && [ -z "$(tail -c 1 "${rec}" 2>/dev/null)" ] && grep -q '^system\.hostname=' "${rec}" 2>/dev/null
+  then
+    awk -v n="${n}" 'FILENAME == ARGV[1] { if (FNR <= n) { print; k = $0; sub(/=.*/, "", k); have[k] = 1 } next }
+                     { k = $0; sub(/=.*/, "", k); if (!(k in have)) print }' "${J_CONF}" "${rec}" || return 1
+    say="system.cfg was cut short; this write starts from its whole lines and takes the rest from system.cfg.backup"
+  else
+    head -n "${n}" "${J_CONF}" || return 1
+    [ -s "${J_CONF}" ] && say="system.cfg was cut short and has no whole copy beside it; this write keeps its whole lines and drops the cut one"
+  fi
+  if [ -n "${say}" ]
+  then
+    if command -v logger >/dev/null 2>&1; then logger -t system.cfg "${say}"; else echo "system.cfg: ${say}" >&2; fi
+  fi
+  return 0
 }
 
 # One key, one write, one rename, under a lock the caller holds: awk prints
@@ -337,10 +402,13 @@ function wait_lock() {
 # the function's status was the rm's -- 0 -- and a write that never landed
 # (a full card, a read-only folder) was reported to every caller as done
 # (#307 PL-011).
+#
+# It writes onto settings_base's lines, not the file's bytes: see there.
 function write_setting_line() {
-  if K="${1}" V="${2}" awk 'BEGIN { k = ENVIRON["K"]; v = ENVIRON["V"] }
-                            index($0, k "=") != 1 { print }
-                            END { print k "=" v }' "${J_CONF}" > "${J_CONF}.tmp" 2>/dev/null \
+  if ( set -o pipefail
+       settings_base | K="${1}" V="${2}" awk 'BEGIN { k = ENVIRON["K"]; v = ENVIRON["V"] }
+                                              index($0, k "=") != 1 { print }
+                                              END { print k "=" v }' ) > "${J_CONF}.tmp" 2>/dev/null \
      && mv -f "${J_CONF}.tmp" "${J_CONF}"
   then
     return 0
@@ -371,7 +439,7 @@ function del_setting() {
       # itself is not loosened.
       write_setting_line "${1}" "" || rc=1
     else
-      if K="${1}" awk 'index($0, ENVIRON["K"] "=") != 1' "${J_CONF}" > "${J_CONF}.tmp" 2>/dev/null \
+      if ( set -o pipefail; settings_base | K="${1}" awk 'index($0, ENVIRON["K"] "=") != 1' ) > "${J_CONF}.tmp" 2>/dev/null \
          && mv -f "${J_CONF}.tmp" "${J_CONF}"
       then
         :
@@ -391,8 +459,10 @@ function sort_settings() {
   # non-empty and still carrying the hostname line every image writes. An
   # unreadable source (EIO, a card on its way out) gives grep nothing, and
   # the mv below then installed an empty system.cfg -- the shape #102's
-  # "defaults won" started from (D-CLOUD-078).
-  grep '^[a-z0-9]' "${J_CONF}" | sort >"${J_CONF}.tmp"
+  # "defaults won" started from (D-CLOUD-078). It sorts settings_base's
+  # lines, so a cut half line is never completed here either (the audit of
+  # the fix round, E1's lead G2-E-core-03).
+  settings_base | grep '^[a-z0-9]' | sort >"${J_CONF}.tmp"
   if [ -s "${J_CONF}.tmp" ] && grep -q '^system\.hostname=' "${J_CONF}.tmp"
   then
     mv -f "${J_CONF}.tmp" "${J_CONF}"
@@ -456,6 +526,56 @@ function set_setting() {
       return ${rc}
     fi
   fi
+}
+
+# Several keys in one write and one rename, under one hold of the lock: a
+# pair that must agree -- wifi.ssid and wifi.key -- is never left half
+# written by a failure between two set_setting calls, where the network's
+# name moved and its key did not (#307, the audit of the fix round, gpt
+# G2-B-11). Arguments are key value pairs; "default" removes a key's line
+# as set_setting does, except system.hostname's, which is emptied
+# (D-NET-009). Returns 0 only when the new file is in place; nothing is
+# written when the arguments are not whole pairs of keys that start with a
+# letter or digit.
+function set_settings() {
+  local n=0 rc k v
+  local -a pairs=()
+  [ $# -gt 0 ] && [ $(( $# % 2 )) -eq 0 ] || return 1
+  while [ $# -gt 0 ]
+  do
+    k="${1}"; v="${2}"; shift 2
+    [[ "${k}" =~ ^[[:alnum:]] ]] || return 1
+    n=$((n + 1))
+    if [ "${v}" = "default" ] && [ "${k}" != "system.hostname" ]
+    then
+      pairs+=("SK${n}=${k}" "SV${n}=" "SD${n}=1")
+    else
+      [ "${v}" = "default" ] && v=""
+      pairs+=("SK${n}=${k}" "SV${n}=${v}" "SD${n}=0")
+    fi
+  done
+  if [ ! -d "/storage/.config/system/configs" ]
+  then
+    mkdir -p /storage/.config/system/configs
+  fi
+  if [ ! -e "/storage/.config/system/configs/system.cfg" ]
+  then
+    cp -f /usr/config/system/configs/system.cfg /storage/.config/system/configs/system.cfg
+  fi
+  wait_lock || return 1
+  if ( set -o pipefail
+       settings_base | env "${pairs[@]}" SN="${n}" awk 'BEGIN { n = ENVIRON["SN"]; for (j = 1; j <= n; j++) { k[j] = ENVIRON["SK" j]; v[j] = ENVIRON["SV" j]; d[j] = ENVIRON["SD" j] } }
+                                                     { for (j = 1; j <= n; j++) if (index($0, k[j] "=") == 1) next; print }
+                                                     END { for (j = 1; j <= n; j++) if (d[j] != 1) print k[j] "=" v[j] }' ) > "${J_CONF}.tmp" 2>/dev/null \
+     && mv -f "${J_CONF}.tmp" "${J_CONF}"
+  then
+    rc=0
+  else
+    rm -f "${J_CONF}.tmp"
+    rc=1
+  fi
+  rm -f "${J_CONF_LOCK}"
+  return ${rc}
 }
 
 function battery_percent() {
