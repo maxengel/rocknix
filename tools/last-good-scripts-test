@@ -3287,6 +3287,18 @@ L_MOV=$(grep -n 'gfx_widgets_msg_queue_move(p_dispwidget)' "${RX}/layout.c" | he
 [ -n "${L_DIV}" ] && [ -n "${L_LOG}" ] && [ "${L_LOG}" -gt "${L_DIV}" ] && sed -n "${L_LOG},\$p" "${RX}/layout.c" | grep -m1 -A6 'msg_queue place' | grep -q 'divider_width_1px'
 check $? "the placement line is written after the divider is set and from the divider the placement adds" "placement log at line ${L_LOG:-none} of gfx_widgets_layout, divider set at ${L_DIV:-none}; or its pitch is not the placement's"
 [ -n "${L_MOV}" ] && [ -n "${L_DIV}" ] && [ "${L_MOV}" -gt "${L_DIV}" ]; check $? "gfx_widgets_layout places the messages on screen again once the margin and divider are new" "no gfx_widgets_msg_queue_move after the layout's new metrics (a message pushed between the two passes kept the first pass's place)"
+# F-RW-05: a negative slot is kept only when this launch's append config
+# asked for it; one left in the main config is reset as upstream resets it.
+F2_BAD=""
+grep -q 'command_append_config_sets_auto_slot' "${RX}/src/command.h" || F2_BAD+=" no-helper-in-command.h"
+awk '/^void command_event_set_savestate_auto_index\(/,/^}/' "${RX}/src/command.c" | grep -q 'command_append_config_sets_auto_slot()' || F2_BAD+=" command.c-keys-on-the-sign-alone"
+grep -q 'command_append_config_sets_auto_slot()' "${RX}/src/runtime_file.c" || F2_BAD+=" runtime_file.c-keys-on-the-sign-alone"
+[ -z "${F2_BAD}" ]; check $? "0018 keeps Auto only when this launch's append config sets it -- a -1 saved into retroarch.cfg is reset as upstream does" "0018:${F2_BAD}"
+# F-RW-06 and F-RW-10: the headers say what was proved and where upstream is.
+grep -q 'Probe.state.auto' "${RX}/patches/0018-auto-slot-survives-content-load.patch"
+check $? "0018's message records the passing observation with both halves applied" "0018's message records two failures and no pass"
+grep -q 'libretro/RetroArch/pull/19518\|libretro/RetroArch#19518' "${RX}/patches/0011-video-thread-wrapper-serialise-posters.patch"
+check $? "0011's message names the upstream fix it stands in for (libretro/RetroArch#19518)" "0011's message does not say it is the 1.22.2 stand-in for libretro/RetroArch#19518"
 fi
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
