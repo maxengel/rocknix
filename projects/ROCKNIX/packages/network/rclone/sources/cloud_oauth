@@ -178,7 +178,11 @@ class Session:
         # Set by the holder, so a sign-in that finishes on the device can
         # close the window without this needing to know what a window is.
         self.on_signed_in = None
+        # True once the remote exists and has answered -- never earlier (see
+        # _write_config).
         self.configured = False
+        self._config_lock = threading.Lock()
+        self._config_result = None
         self.error = None
         # rclone's own last words. It exits fatally when the exchange fails,
         # and what it says -- "code doesn't exist or has expired" against
@@ -318,12 +322,23 @@ class Session:
         return False, "Timed out waiting for the provider."
 
     def _write_config(self):
-        # Guarded because two paths can reach it now -- the redirect landing
-        # on rclone directly, and a code pasted back from a phone -- and the
-        # second would be told the remote already exists.
-        if self.configured:
-            return True, self.remote_name or self.backend
-        self.configured = True
+        """Create the remote, once per attempt, and say how it went.
+
+        Two paths can reach this -- the redirect landing on rclone directly
+        (the collector) and a code pasted back from a phone (submit) -- and
+        they can overlap. The first does the work; the second waits for it
+        and is handed the same answer. `configured` used to be set on the
+        way in, so a second caller was told "Connected" while the first was
+        still creating and checking the remote, and even when that then
+        failed (audit #307 PL-048). It is set now only from the result.
+        """
+        with self._config_lock:
+            if self._config_result is None:
+                self._config_result = self._create_remote()
+                self.configured = bool(self._config_result[0])
+            return self._config_result
+
+    def _create_remote(self):
         name = self.remote_name or self.backend
         existing = subprocess.run([RCLONE, "listremotes"],
                                   capture_output=True, text=True).stdout

@@ -3219,4 +3219,330 @@ sed -i '/^CONTENT_REMOTE=/d' "${CONF2}"
 c2 --seed-folders
 [ -f "${C2}/cloud/ROCKNIX/Content/ROMs/README.txt" ]; check $? "while a config with no CONTENT_REMOTE line at all still gets the default /ROCKNIX/Content" "READMEs: $(readmes)"
 
+# C3. cloud_oauth, in-process and as processes. A Python file of test groups,
+# each printing P or F lines, runs in a sandbox with its own pid and network
+# namespaces, so the script's /proc walks and kills and its port binds reach
+# nothing outside it; sysfs, uinput and sway are patched per group, never
+# reached. `drive` runs cloud_oauth's own main() with those patches, for the
+# groups that need a serve as a process of its own.
+C3="${CS}/c3"; mkdir -p "${C3}/scratch"; cp "${CS}/src/cloud_oauth" "${C3}/cloud_oauth"
+cat > "${C3}/cloud_oauth_test.py" <<'EOPY'
+#!/usr/bin/env python3
+# cloud_oauth, graded in-process and as processes, inside a bwrap sandbox with
+# its own pid and network namespaces (so the /proc walks, the port binds and
+# the kills reach nothing outside it). No uinput, no sysfs, no sway: those are
+# patched per test.
+#
+#   cloud_oauth_test.py run <cloud_oauth> <workdir>     every test, P/F lines, END
+#   cloud_oauth_test.py drive <cloud_oauth> <workdir> <command...>
+#                                                       cloud_oauth's main() with
+#                                                       the sandbox patches
+import http.client
+import importlib.machinery
+import importlib.util
+import json as real_json
+import os
+import signal
+import socket
+import struct
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+
+MODE, REPO, WORK = sys.argv[1], sys.argv[2], sys.argv[3]
+TESTS = []
+
+def test(fn):
+    TESTS.append(fn)
+    return fn
+
+def load(tag="t"):
+    """A fresh copy of the module, its paths pointed into the sandbox."""
+    loader = importlib.machinery.SourceFileLoader("cloud_oauth_" + tag, REPO)
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    m = importlib.util.module_from_spec(spec)
+    loader.exec_module(m)
+    d = tempfile.mkdtemp(dir=WORK, prefix=tag + ".")
+    m.STATE_DIR = os.path.join(d, "state")
+    os.makedirs(m.STATE_DIR)
+    m.LOG_FILE = os.path.join(d, "cloud_sync.log")
+    m.UINPUT = "/nonexistent/uinput"
+    return m, d
+
+def result(ok, good, bad):
+    print(("P " + good) if ok else ("F " + bad), flush=True)
+
+def completed(args, rc, out="", err=""):
+    return subprocess.CompletedProcess(args, rc, out, err)
+
+class FakeSP:
+    """subprocess, with run() answered by a table: (argv prefix) -> callable."""
+    PIPE, STDOUT, DEVNULL = subprocess.PIPE, subprocess.STDOUT, subprocess.DEVNULL
+    TimeoutExpired, SubprocessError = subprocess.TimeoutExpired, subprocess.SubprocessError
+    CompletedProcess = subprocess.CompletedProcess
+    Popen = subprocess.Popen
+
+    def __init__(self, answers):
+        self.answers = answers
+        self.calls = []
+
+    def run(self, args, **kw):
+        self.calls.append(list(args))
+        for prefix, answer in self.answers:
+            if list(args[1:1 + len(prefix)]) == list(prefix):
+                return answer(args)
+        return completed(args, 0)
+
+def log_text(m):
+    try:
+        return open(m.LOG_FILE).read()
+    except OSError:
+        return ""
+
+def pid_alive(pid):
+    try:
+        with open("/proc/%d/stat" % pid) as h:
+            return h.read().split(") ")[-1].split()[0] != "Z"
+    except OSError:
+        return False
+
+def wait_for(pred, seconds, step=0.1):
+    end = time.time() + seconds
+    while time.time() < end:
+        if pred():
+            return True
+        time.sleep(step)
+    return pred()
+
+def fake_authorize(script):
+    return subprocess.Popen(["sh", "-c", script], stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True)
+
+# ---------------------------------------------------------------- gamepad
+EV_KEY, EV_ABS, EV_SYN = 1, 3, 0
+
+def event(etype, code, value):
+    return struct.pack("llHHi", 0, 0, etype, code, value)
+
+class FakeKeyboard:
+    def __init__(self):
+        self.pressed = []
+
+    def press(self, name):
+        self.pressed.append(name)
+        return True
+
+    def type_text(self, text):
+        return len(text)
+
+    def open(self):
+        return True
+
+    def close(self):
+        pass
+
+class FakeFcntl:
+    def __init__(self, real, marker):
+        self.real = real
+        self.marker = marker
+        self.grabs = []
+
+    def ioctl(self, fd, req, arg=0, *rest):
+        if req == 0x40044590:           # EVIOCGRAB
+            self.grabs.append((arg, os.path.exists(self.marker)))
+            return 0
+        return self.real.ioctl(fd, req, arg, *rest)
+
+def pad_fifo(d):
+    fifo = os.path.join(d, "pad")
+    os.mkfifo(fifo)
+    writer = os.open(fifo, os.O_RDWR)       # keeps a reader's open from blocking
+    return fifo, writer
+
+def fake_sysfs(d, key_codes, abs_codes, name="Test Pad"):
+    root = os.path.join(d, "sys-input")
+    dev = os.path.join(root, "event3", "device")
+    os.makedirs(os.path.join(dev, "capabilities"))
+
+    def words(codes):
+        top = max(codes) if codes else 0
+        out = []
+        for w in range(top // 64, -1, -1):
+            value = sum(1 << (c - w * 64) for c in codes if w * 64 <= c < (w + 1) * 64)
+            out.append("%x" % value)
+        return " ".join(out) + "\n"
+    with open(os.path.join(dev, "capabilities", "key"), "w") as h:
+        h.write(words(key_codes))
+    with open(os.path.join(dev, "capabilities", "abs"), "w") as h:
+        h.write(words(abs_codes))
+    with open(os.path.join(dev, "name"), "w") as h:
+        h.write(name + "\n")
+    return root
+
+def start_server(m, holder):
+    if hasattr(m, "make_server"):
+        server = m.make_server("127.0.0.1", 0, holder, lambda: None)
+    else:
+        import http.server
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), m.make_handler(holder, lambda: None))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, server.server_address[1]
+
+# ---------------------------------------------------------------- serve processes
+
+def driver_env(d, lan="127.0.0.1"):
+    env = dict(os.environ)
+    env.update({"COT_DIR": d, "COT_LAN": lan})
+    return env
+
+def drive(d, *args, lan="127.0.0.1", wait=True, **kw):
+    cmd = [sys.executable, os.path.abspath(__file__), "drive", REPO, WORK] + list(args)
+    p = subprocess.Popen(cmd, env=driver_env(d, lan), stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE, text=True, **kw)
+    if wait:
+        out, err = p.communicate(timeout=60)
+        return p.returncode, out, err
+    return p
+
+def state_of(d):
+    try:
+        with open(os.path.join(d, "state", "session.json")) as h:
+            return real_json.load(h)
+    except (OSError, ValueError):
+        return {}
+
+def procs_named(name):
+    found = []
+    for e in os.listdir("/proc"):
+        if not e.isdigit():
+            continue
+        try:
+            with open("/proc/%s/cmdline" % e, "rb") as h:
+                argv = h.read().split(b"\0")
+        except OSError:
+            continue
+        if argv and argv[0].decode("utf-8", "replace") == name and pid_alive(int(e)):
+            found.append(int(e))
+    return found
+
+def serve_dir(tag):
+    d = tempfile.mkdtemp(dir=WORK, prefix=tag + ".")
+    os.makedirs(os.path.join(d, "state"))
+    return d
+
+# ---------------------------------------------------------------- driver
+
+def driver():
+    """cloud_oauth main() with the sandbox's patches: its state under COT_DIR,
+    a shim rclone that prints an authorize link and waits, a fake window that
+    records its pid, no pad, no uinput, no sway."""
+    d = os.environ["COT_DIR"]
+    loader = importlib.machinery.SourceFileLoader("cloud_oauth", REPO)
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    m = importlib.util.module_from_spec(spec)
+    loader.exec_module(m)
+    m.STATE_DIR = os.path.join(d, "state")
+    m.LOG_FILE = os.path.join(d, "cloud_sync.log")
+    m.UINPUT = "/nonexistent/uinput"
+    shim = os.path.join(d, "rclone")
+    with open(shim, "w") as h:
+        h.write('#!/bin/bash\n'
+                'echo "Please go to http://127.0.0.1:53682/auth?state=abc123"\n'
+                'exec -a rclone-authorize-shim sleep 60\n')
+    os.chmod(shim, 0o755)
+    m.RCLONE = shim
+    win = os.path.join(d, "cloud-signin-window")
+    with open(win, "w") as h:
+        h.write('#!/bin/bash\necho $$ > "$(dirname "${CLOUD_SIGNIN_PAGE_FILE}")/window.pid"\n'
+                'exec -a "$0" sleep 60\n')
+    os.chmod(win, 0o755)
+    m.SIGNIN_WINDOW = win
+    m.running_session = lambda: (d, "wayland-1")
+    m.find_gamepad = lambda *a, **k: (None, set())
+    m.lan_address = lambda: os.environ.get("COT_LAN", "127.0.0.1")
+    m.provider_url = lambda local: "https://www.dropbox.com/oauth2/authorize?state=abc123"
+    m.BrowserSession._cursor_timeout = staticmethod(lambda ms: None)
+    return m.main(["cloud_oauth"] + sys.argv[4:])
+EOPY
+# PL-048: configured only after the remote is created and verified.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+@test
+def configured_only_after_verification():
+    """#307 PL-048: two callers race into _write_config; the second must get
+    the first's final result, not an early success."""
+    m, d = load("pl048")
+    sp = FakeSP([
+        (["listremotes"], lambda a: completed(a, 0, "")),
+        (["config", "create"], lambda a: (time.sleep(0.6), completed(a, 0))[1]),
+        (["lsd"], lambda a: completed(a, 1, "", "unreachable")),
+    ])
+    m.subprocess = sp
+    s = m.Session("dropbox", "qa", 60)
+    s.token = '{"access_token":"t"}'
+    got = {}
+    t = threading.Thread(target=lambda: got.__setitem__("collector", s._write_config()))
+    t.start()
+    time.sleep(0.15)
+    got["submit"] = s._write_config()
+    t.join(10)
+    ok = (got.get("submit", (None,))[0] is False and got.get("collector", (None,))[0] is False
+          and not s.configured and m.read_state().get("status") != "signed-in")
+    result(ok, "a second caller of _write_config waits for the first and gets its failure; configured stays False (PL-048)",
+           "submit got %r while the collector got %r; configured=%r -- Connected was reported before the remote was verified (PL-048)"
+           % (got.get("submit"), got.get("collector"), s.configured))
+    creates = [c for c in sp.calls if c[1:3] == ["config", "create"]]
+    result(len(creates) == 1, "and the remote was created once, not twice",
+           "config create ran %d times" % len(creates))
+
+    m, d = load("pl048b")
+    m.subprocess = FakeSP([
+        (["listremotes"], lambda a: completed(a, 0, "")),
+        (["config", "create"], lambda a: (time.sleep(0.3), completed(a, 0))[1]),
+        (["lsd"], lambda a: completed(a, 0)),
+    ])
+    s = m.Session("dropbox", "qa", 60)
+    s.token = '{"access_token":"t"}'
+    got = {}
+    t = threading.Thread(target=lambda: got.__setitem__("collector", s._write_config()))
+    t.start()
+    time.sleep(0.1)
+    got["submit"] = s._write_config()
+    t.join(10)
+    ok = got.get("submit") == (True, "qa") and got.get("collector") == (True, "qa") and s.configured \
+        and m.read_state().get("status") == "signed-in"
+    result(ok, "a verified remote is reported to both callers, configured True, status signed-in",
+           "success path: submit %r collector %r configured %r status %r"
+           % (got.get("submit"), got.get("collector"), s.configured, m.read_state().get("status")))
+EOPY
+# C3: new test groups go above this line
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+if MODE == "drive":
+    sys.exit(driver())
+
+for fn in TESTS:
+    try:
+        fn()
+    except Exception as exc:
+        import traceback
+        result(False, "", "%s raised %s: %s" % (fn.__name__, type(exc).__name__,
+                                               traceback.format_exc().strip().splitlines()[-3:]))
+print("END %d" % len(TESTS), flush=True)
+EOPY
+if command -v python3 >/dev/null; then
+    ( timeout 300 bwrap --unshare-pid --unshare-net --die-with-parent --tmpfs / --ro-bind /usr /usr \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 --ro-bind /etc /etc \
+        --dev /dev --proc /proc --tmpfs /tmp --bind "${C3}" /work \
+        python3 /work/cloud_oauth_test.py run /work/cloud_oauth /work/scratch ) > "${C3}/out" 2> "${C3}/err"
+fi
+while IFS= read -r line; do
+    case "${line}" in
+        "P "*) check 0 "${line#P }" "" ;;
+        "F "*) check 1 "" "${line#F }" ;;
+    esac
+done < "${C3}/out"
+C3N=$(sed -n 's/^END //p' "${C3}/out")
+[ -n "${C3N}" ]; check $? "the cloud_oauth groups ran to the end (${C3N} groups, python3 in a sandbox of its own)" "the cloud_oauth groups did not finish -- a check that did not run has not passed: $(tail -3 "${C3}/err" 2>/dev/null | tr '\n' '|')"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
