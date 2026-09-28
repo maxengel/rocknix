@@ -3427,5 +3427,11 @@ chmod +x "${P7}/shim/mktemp"
 p7bt backup
 [ "${RC}" -eq 0 ] && grep -q '^mktemp -d /storage/.cache/backuptool-staging\.' "${P7S}/.p7-mktemp" && [ "$(grep -c -- '-d' "${P7S}/.p7-mktemp")" -eq 1 ]; check $? "#308 claude F-BR-09: a backup stages once, on the storage card (not in RAM), and makes no second copy to scan" "#308 F-BR-09: rc ${RC}; mktemp calls: $(tr '\n' '|' < "${P7S}/.p7-mktemp")"
 rm -f "${P7}/shim/mktemp"
+# == #308 4-backup-restore gpt F-BR-17: what a killed run left is cleared by the next
+p7reset '  /storage/.config/test/*'
+mkdir -p "${P7S}/roms/backup/archive" "${P7S}/.cache/backuptool-staging.p7dead"
+echo half > "${P7S}/roms/backup/archive/2026_01_01-000000-PRE_RESTORE-ROCKNIX_SETTINGS.tar.gz.partial"; echo half > "${P7S}/.cache/backuptool-staging.p7dead/x"
+p7bt backup
+[ "${RC}" -eq 0 ] && [ ! -e "${P7S}/roms/backup/archive/2026_01_01-000000-PRE_RESTORE-ROCKNIX_SETTINGS.tar.gz.partial" ] && [ ! -e "${P7S}/.cache/backuptool-staging.p7dead" ]; check $? "#308 gpt F-BR-17: a snapshot's .partial and a staging folder left by a killed run are cleared by the next run" "#308 gpt F-BR-17: rc ${RC}; left: $(ls -a "${P7S}/roms/backup/archive" "${P7S}/.cache" 2>/dev/null | tr '\n' ' ')"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

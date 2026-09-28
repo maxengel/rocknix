@@ -163,6 +163,20 @@ take_lock() {
     { exec 9<"${SETTINGS_BACKUPS}"; } 2>/dev/null && flock -n 9
 }
 
+# What a run killed part-way left behind, cleared by the next run under the
+# lock -- where it cannot be another run's file in flight: the backup's
+# .partial at the root, a pre-restore copy's .partial in archive/ (which
+# neither the old sweep nor the trim ever matched, so repeated cut restores
+# grew archive/ without bound), and a staging folder. A run that is only
+# interrupted (INT, TERM) removes its own staging folder on the way out
+# (#308, the gpt seat's F-BR-17).
+sweep_leftovers() {
+    rm -f "${SETTINGS_BACKUPS}"/*.tar.gz.partial "${ARCHIVEFOLDER}"/*.tar.gz.partial 2>/dev/null
+    rm -rf "${STAGING_PREFIX}"* 2>/dev/null
+    return 0
+}
+trap '[ -n "${STAGING:-}" ] && rm -rf "${STAGING}"' EXIT
+
 # A tool's own words go to the log, never to the screen: a failing tar printed
 # "tar: can't open 'storage/.config/...'" on the console flow, a tool's name
 # and a path, above the sentence written for the player (#308 claude
@@ -1056,6 +1070,7 @@ case "${VERB}" in
             why "A SETTINGS BACKUP OR RESTORE IS ALREADY RUNNING"
             fail "A SETTINGS BACKUP OR RESTORE IS ALREADY RUNNING. WAIT FOR IT TO FINISH, THEN TRY AGAIN." "another run holds the lock on ${SETTINGS_BACKUPS}"
         fi
+        sweep_leftovers
         BACKUPFILE="$(newest_backup)"
         if [ -z "${BACKUPFILE}" ] || [ ! -f "${BACKUPFILE}" ]
         then
@@ -1311,8 +1326,7 @@ case "${VERB}" in
 
         # A .partial left by a run that was killed mid-write is not a backup
         # and nothing reads it; clear it so it does not sit there for ever.
-        # Under the lock, so it is never another run's file in flight.
-        rm -f "${SETTINGS_BACKUPS}"/*.tar.gz.partial 2>/dev/null
+        sweep_leftovers
 
         # A name already taken moves on a second (see STAMP_EPOCH).
         while [ -e "${BACKUPFILE}" ]
