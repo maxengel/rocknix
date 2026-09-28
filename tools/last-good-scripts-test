@@ -3387,4 +3387,11 @@ mkdir -p "${MG}/cloud/ROCKNIX/Saves"; mv "${MG}/cloud/GAMES/savefiles" "${MG}/cl
 sa_run "${MG}" cloud_migrate_layout --apply
 [ "${RC}" -eq 0 ] && [ "$(mg_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content" ] && [ -f "${MG}/cloud/ROCKNIX/Content/ROMs/gb/A.gb" ]; check $? "PL-026: a device an earlier build left moved but not repointed is repointed, and its content moved, by the next run (rc ${RC})" "rc ${RC}; pointers '$(mg_ptrs)'; out: $(sa_tail "${MG}")"
 
+# PL-053 (F-CS-07 gpt): a save written into the old folder after the
+# verification is not purged with it.
+mg_seed
+printf '%s\t%s\n' '^check qa:/GAMES qa:/ROCKNIX/Saves' 'mkdir -p /cloud/GAMES/savefiles/gb && echo late > /cloud/GAMES/savefiles/gb/LATE.srm' > "${MG}/ctl/post"
+sa_run "${MG}" cloud_migrate_layout --apply
+[ -n "$(cd "${MG}/cloud" && find . -name LATE.srm | head -1)" ]; check $? "PL-053: a save another device writes into the old folder after the check survives the move (rc ${RC})" "LATE.srm is gone: the old folder was purged after a point-in-time check (F-CS-07); cloud: $(mg_tree)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

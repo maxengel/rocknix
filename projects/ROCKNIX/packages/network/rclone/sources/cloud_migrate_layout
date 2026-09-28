@@ -182,33 +182,50 @@ exists() {
 # was (not yet verified) or where it went (pointer written), and the next
 # run moves only what has not landed.
 #
-# Any filter arguments after the fourth are the tier's own (PL-025): the
-# copy, the check and the removal all carry them, so a folder nested in the
-# source that belongs to another tier -- the original layout's backup/ and
-# Content/ inside the saves folder -- is neither moved with it nor deleted
-# with it. The removal is a filtered delete and then the empty folders,
-# rather than a purge, which would take the nested tiers too.
+# Any filter arguments after the fourth are the tier's own (PL-025): they
+# decide which files are the tier's, so a folder nested in the source that
+# belongs to another tier -- the original layout's backup/ and Content/
+# inside the saves folder -- is neither moved with it nor deleted with it.
+#
+# And the source loses only what was copied and verified (audit #307
+# PL-053). The files are listed once, by those filters, and the list is the
+# whole job: the copy, the check and the deletion each take exactly it
+# (--files-from-raw, which keeps a name's spaces), and the empty folders go
+# after. The old folder used to be purged after a point-in-time check, so a
+# save another device wrote into it between the check and the purge was
+# lost; now it is not on the list, stays where it was written, and is
+# still there for that device's own migration.
 relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
-    local src="$1" dst="$2" what="$3" key="$4" out
+    local src="$1" dst="$2" what="$3" key="$4" out list
     shift 4
     local -a filt=("$@")
+    list_or_stop "${src}" -R --files-only "${filt[@]}"
+    if [ -z "${LISTING}" ]; then
+        set_pointer "${key}" "${dst#*:}"
+        return 0
+    fi
+    list=$(mktemp /tmp/cloud_migrate_layout.XXXXXX) || { say "Couldn't make a working file on this device; nothing was moved."; return 1; }
+    printf '%s\n' "${LISTING}" > "${list}"
     say "Copying ${what}..."
-    if ! out=$(rclone copy "${src}" "${dst}" "${filt[@]}" --create-empty-src-dirs=false 2>&1); then
+    if ! out=$(rclone copy "${src}" "${dst}" --files-from-raw "${list}" --create-empty-src-dirs=false 2>&1); then
         printf '%s\n' "${out}" | tail -3
         say "Couldn't finish copying ${what}. Both folders are as they were; nothing was removed."
+        rm -f "${list}"
         return 1
     fi
     say "Verifying ${what}..."
-    out=$(rclone check "${src}" "${dst}" "${filt[@]}" --one-way 2>&1)
+    out=$(rclone check "${src}" "${dst}" --files-from-raw "${list}" --one-way 2>&1)
     if ! printf '%s\n' "${out}" | grep -q "0 differences found"; then
         printf '%s\n' "${out}" | grep -iE "differ|missing|error" | head -3
         say "The copy of ${what} didn't match, so the old folder was kept. Both folders are as they were."
+        rm -f "${list}"
         return 1
     fi
     set_pointer "${key}" "${dst#*:}"
     say "Removing the old ${what} folder..."
-    { rclone delete "${src}" "${filt[@]}" && rclone rmdirs "${src}"; } >/dev/null 2>&1 \
+    { rclone delete "${src}" --files-from-raw "${list}" && rclone rmdirs "${src}"; } >/dev/null 2>&1 \
         || say "(could not remove the old folder; the copy is complete and verified)"
+    rm -f "${list}"
     return 0
 }
 
