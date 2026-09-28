@@ -194,3 +194,58 @@ The other extra commit, `4cb57c8739`, fixed a flaky test of my own. The refresh 
   - the busybox section of generic-x64-vm-testing
   - es-player-text
   - decision-register (plus rows D-RA-024, 027, 029, 035 and 038, D-UI-030 and 107, D-WORKFLOW-050/054/055)
+
+## Follow-up (the coordinator's message, 2026-09-28)
+
+Two more commits on `feature/pl-d`, on top of `8bd2fddcae`:
+
+```
+66370fab6b raofflineproxy-ctl: the usage line names summary
+fa9af93285 raofflineproxy: a badge the image server lacks is absent, not a failure
+```
+
+**Suite:** `tools/last-good-scripts-test` at `66370fab6b` ends `PASSED` with 469 PASS lines and 0 FAIL. The cases were written first; against the scripts at `8bd2fddcae` they gave `6 CHECK(S) FAILED`, all in the new cases D19 and D20.
+
+### 1. PL-060 regression: a badge the server lacks must not fail every scan (`fa9af93285`)
+
+**Resolved.** A badge the image server does not have is now recorded as absent and no longer fails the scan; a transient failure still does.
+
+**The fix:**
+- A new client patch, `016-say-what-became-of-a-download.patch`, makes `download_static_image` return what happened to the image:
+  - `cached`: already there, or fetched whole;
+  - `absent`: the server answered 404 or 410;
+  - `transient`: anything else (a timeout, a 5xx, a refused connection, a short or damaged body).
+- The same patch logs every image it did not cache, at info level, with the class, the URL and the HTTP status. It used to log at debug with no class.
+- The image helper (`raofflineproxy-cache-images`) writes absent images to a new record, `image_cache/absent`, one `<epoch> <path>` per line, written to a temp file and renamed. It does not ask for them again and does not count them as left behind.
+- Transient failures are not recorded. They still exit 1, fail the pass, and are asked for next time.
+- So the ctl's `SOME_IMAGES_NOT_SAVED` now means transient failures only, and the ctl's comment says so.
+- The series still applies to the pinned proxy source (`c1bd3724`) with no offset or fuzz.
+
+**One addition you did not ask for:** an absent entry older than 30 days is asked for once more, so an image the server adds later is not missed for ever. The cost is one request per absent badge per month. Say if you want absent to be permanent instead.
+
+**Before the fix:**
+- `FAIL  PL-060 follow-up, patch 016: FAIL outcome: {'404': None, '410': None, '503': None, 'timeout': None, 'ok': None} -- the reason was swallowed`
+- `FAIL  PL-060 follow-up, patch 016: FAIL logged: ` (nothing above debug)
+- `FAIL  PL-060 follow-up: rc 1; out: ... >>> why SOME_IMAGES_NOT_SAVED ... stamp: ... 1 scan cached=4 ... why=S…` (a scan with a 404 badge and a 410 badge)
+- `FAIL  PL-060 follow-up: rc 1; requested: /Badge/9301.png /Badge/9303.png  -- an absent badge was asked for at every pass`
+
+**After the fix, case D19 (6 checks):**
+- `PASS  PL-060 follow-up, patch 016: download_static_image says what became of an image -- 404 and 410 absent, a 503 and a timeout transient, a whole PNG cached`
+- `PASS  PL-060 follow-up, patch 016: the outcome class, the HTTP status and the URL are logged`
+- `PASS  PL-060 follow-up: a scan whose image server answers 404 and 410 for two badges completes (rc 0, no why) -- they are absent, not a failure of the run`
+- `PASS  PL-060 follow-up: the next scan does not ask for the absent badges again (rc 0)`
+- `PASS  PL-060 follow-up: a badge that timed out and one the server answered 503 end the scan COULDN'T FINISH (rc 1, why SOME_IMAGES_NOT_SAVED)`. This one also passed before; it guards that the fix did not turn transient failures into absent ones.
+- `PASS  PL-060 follow-up: the next scan asks for the timed-out and the 503 badges again, and with the server answering, completes`
+
+**How D19 runs:** it drives the real ctl and the real image helper through section t's sandbox. The image server is answered from a plan file, `/run/image-plan`, read by a hook D19 appends to section t's `sitecustomize.py` that only acts while that file exists. D19 puts the image-helper stand-in back when it ends.
+
+**Already written:** an image cache from an earlier build has no absent record and is read as before. A badge it lacks is asked for once more, and if the server answers 404 or 410 it is recorded then.
+
+**Decision-register row owed:** the image pass separates absent from transient, with a 30-day recheck.
+
+### 2. claude F-RA-17: `summary` missing from the usage line (`66370fab6b`)
+
+**Fixed.** The usage line now reads `...|account|summary|flushed|...`. This supersedes the "Noticed, not done" line above.
+- Before: `FAIL  #308 claude F-RA-17: rc 2; usage: Usage: raofflineproxy-ctl {enable|...|pending-ids|account|flushed|scan|...}`
+- After: `PASS  #308 claude F-RA-17: the usage line names summary with the other verbs`
+- Already written: nothing.
