@@ -357,9 +357,13 @@ absent_not_broken() {
 # opened the picker behaves exactly as it did before.
 SELECTION="/storage/.cache/cloud_sync/content-systems"
 
+# Only a system folder's name is ever acted on (audit #307 PL-030):
+# --set-systems refuses any other since that change, and a selection an
+# earlier build wrote without the check is read past a line that is not
+# one, never with it.
 selected_systems() {
     [ -r "${SELECTION}" ] || return 0
-    grep -v '^[[:space:]]*$' "${SELECTION}" 2>/dev/null
+    grep -E '^[A-Za-z0-9_][A-Za-z0-9._-]*$' "${SELECTION}" 2>/dev/null
 }
 
 # The systems this image can actually run, from its own EmulationStation
@@ -1134,13 +1138,32 @@ case "${1}" in
     ;;
     --set-systems)
         shift
+        # System folder names, and nothing else (audit #307 PL-030). The
+        # picker passes the names it read from the cloud, joined by spaces,
+        # and every one of them goes on to name a folder under /storage/roms
+        # and in the cloud; one that is not a folder's name -- a character
+        # the shell would act on, a glob, "..", a leading dash a later grep
+        # would take as an option -- is refused, and the whole selection
+        # with it, so nothing is half-written. The names are split with
+        # globbing off: `printf $*` expanded "*" against the working folder.
+        local_names=()
+        set -f
+        read -r -a local_names <<< "$*"
+        set +f
+        for _n in "${local_names[@]}"; do
+            if ! [[ "${_n}" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*$ ]]; then
+                echo "Nothing was changed: \"${_n}\" isn't the name of a system folder."
+                log_message "set-systems: refused, not a system folder name: ${_n}"
+                exit 1
+            fi
+        done
         mkdir -p "$(dirname "${SELECTION}")" 2>/dev/null
         # An empty selection is a real answer ("none"), distinct from never
         # having chosen; the file exists either way. Which is exactly why it
         # is written whole or not at all: a kill mid-write left an empty
         # file, and an empty file is a different valid choice -- every later
         # --selected then said no systems were selected (D-CLOUD-078, #105).
-        printf '%s\n' $* | grep -v '^[[:space:]]*$' > "${SELECTION}.tmp.$$" 2>/dev/null
+        { [ ${#local_names[@]} -eq 0 ] || printf '%s\n' "${local_names[@]}"; } > "${SELECTION}.tmp.$$" 2>/dev/null
         mv -f "${SELECTION}.tmp.$$" "${SELECTION}" 2>/dev/null || rm -f "${SELECTION}.tmp.$$"
         echo "OK $(selected_systems | wc -l) selected"
         exit 0

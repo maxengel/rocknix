@@ -351,9 +351,13 @@ remote_for() {
 # down does not want it going up either, so both directions read the same file.
 SELECTION="/storage/.cache/cloud_sync/content-systems"
 
+# Only a system folder's name is ever acted on (audit #307 PL-030):
+# --set-systems refuses any other since that change, and a selection an
+# earlier build wrote without the check is read past a line that is not
+# one, never with it.
 selected_systems() {
     [ -r "${SELECTION}" ] || return 0
-    grep -v '^[[:space:]]*$' "${SELECTION}" 2>/dev/null
+    grep -E '^[A-Za-z0-9_][A-Za-z0-9._-]*$' "${SELECTION}" 2>/dev/null
 }
 
 # --with-media: include scraped game content (D-CLOUD-048). Off by default:

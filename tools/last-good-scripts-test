@@ -3459,4 +3459,34 @@ sa_run "${OV}" cloud_restore --yes
 ov_stamp=$(awk '{print $2}' "${OV}/storage/.cache/cloud_sync/last-restore" 2>/dev/null)
 [ "${RC}" -ne 0 ] && [ "${RC}" -ne 9 ] && sa_outcome "${OV}" | grep -q "^Couldn't finish" && [ "${ov_stamp}" != 0 ] && [ "${ov_stamp}" != 9 ]; check $? "cloud_restore: saves 9 and the archive's download failing (5) end Couldn't finish, exit ${RC}, stamp ${ov_stamp:-none}" "exit ${RC}, stamp '${ov_stamp:-none}', outcome '$(sa_outcome "${OV}")'"
 
+# A7. PL-030 (#307, F-ES-03 gpt; the script's half -- the C++ quoting is
+#     stream E2's): --set-systems takes system folder names and nothing
+#     else. A name outside [A-Za-z0-9._-], one led by a dot or a dash, or a
+#     glob is refused whole, the selection left as it was.
+echo "    A7. PL-030: --set-systems refuses a name that is not a system folder's"
+SS=$(sa_new pl030); sa_script "${SS}" cloud_content_restore
+SSEL="${SS}/storage/.cache/cloud_sync/content-systems"
+: > "${SS}/storage/cwd-marker"; mkdir -p "${SS}/storage/roms/gb" "${SS}/storage/roms/nes"
+printf 'gb\n' > "${SSEL}"
+sa_run "${SS}" cloud_content_restore --set-systems 'gb nes pc-88 mame2003_plus 3do.v2'
+[ "${RC}" -eq 0 ] && [ "$(tr '\n' ' ' < "${SSEL}")" = "gb nes pc-88 mame2003_plus 3do.v2 " ]; check $? "system folder names are taken as given (gb nes pc-88 mame2003_plus 3do.v2)" "rc ${RC}; selection: $(tr '\n' ' ' < "${SSEL}"); out: $(sa_tail "${SS}")"
+for bad in 'gb a$(touch /tmp/x)b' 'gb `id`' 'nes *' 'gb ..' 'gb -rf' 'gb a"b' "gb a;b"; do
+    printf 'gb\n' > "${SSEL}"
+    SA_CWD=/storage sa_run "${SS}" cloud_content_restore --set-systems "${bad}"
+    [ "${RC}" -ne 0 ] && [ "$(cat "${SSEL}")" = "gb" ]; check $? "refused whole, selection unchanged: --set-systems '${bad}' (rc ${RC})" "rc ${RC}; selection now: $(tr '\n' ' ' < "${SSEL}") -- a name that is not a system folder's was written into the selection (F-ES-03)"
+done
+grep -qi "system" "${SS}/out" && ! grep -q '>>> ' "${SS}/out"; check $? "and the refusal says what it wanted, in a sentence" "out: $(sa_tail "${SS}")"
+
+# What an earlier build already wrote: its selection was never checked, so
+# a bad name may be in the file. It is read past, never acted on.
+printf 'gb\n..\nnes\na$(id)b\n' > "${SSEL}"
+sa_run "${SS}" cloud_content_restore --systems
+[ "$(tr '\n' ' ' < "${SS}/out")" = "gb nes " ]; check $? "a selection an earlier build wrote with a bad name in it is read past that name (--systems: gb nes)" "--systems printed: $(tr '\n' ' ' < "${SS}/out")"
+sa_script "${SS}" cloud_content_backup
+mkdir -p "${SS}/storage/roms/gb"; echo g > "${SS}/storage/roms/gb/G.gb"
+mkdir -p "${SS}/storage/.config/emulationstation"; printf '<system><path>/storage/roms/gb</path></system>\n' > "${SS}/storage/.config/emulationstation/es_systems.cfg"
+printf '..\ngb\n' > "${SSEL}"
+sa_run "${SS}" cloud_content_backup --selected
+grep -q '^>>> unit gb|1|1$' "${SS}/out" && ! grep -q '^>>> unit \.\.' "${SS}/out"; check $? "and cloud_content_backup --selected acts on gb alone" "units: $(grep '^>>> unit' "${SS}/out" | tr '\n' ' '); out: $(sa_tail "${SS}")"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
