@@ -422,7 +422,11 @@ main() {
     net_opts=$(conf_value RCLONE_NET_OPTS | tr -s ' ' | sed 's/^ //; s/ $//')
     [ -n "${net_opts}" ] || net_opts="${RCLONE_NET_OPTS_FALLBACK}"
     read -r -a RCLONE_NET_OPTS_ARRAY <<< "${net_opts}"
-    if ! rclone backend features "${remote}" 2>/dev/null | tr -d ' \t\n' | grep -q '"Hashes":\["'; then
+    # The query creates the remote, a round trip on most backends, so it
+    # carries the listing bound like every other call here (audit of the
+    # fixes, G-A-11/G-A-10); one that fails or times out reads as "no
+    # hashes", the safe side.
+    if ! rclone backend features "${remote}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | tr -d ' \t\n' | grep -q '"Hashes":\["'; then
         CHECK_OPTS=(--download)
     fi
 

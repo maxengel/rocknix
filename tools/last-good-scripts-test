@@ -3413,7 +3413,7 @@ sa_run "${MG}" cloud_migrate_layout --apply
 # a hashless remote, and the exclusion pattern reaching rclone unexpanded.
 mg_seed
 sa_run "${MG}" cloud_migrate_layout --apply
-unbounded=$(grep -vE '^(listremotes|backend features|version)' "${MG}/ctl/argv" | grep -v -- '--low-level-retries' | head -2)
+unbounded=$(grep -vE '^(listremotes|version)' "${MG}/ctl/argv" | grep -v -- '--low-level-retries' | head -2)
 [ -z "${unbounded}" ] && [ -s "${MG}/ctl/argv" ]; check $? "F-CS-23: every rclone call the migration makes against the cloud carries a bound" "unbounded: ${unbounded:-none} (rclone's defaults: ten low-level retries, three runs)"
 mg_seed
 # The holder execs its sleep, so the pid killed below is the one holding
@@ -4292,5 +4292,16 @@ sa_run "${MG}" cloud_migrate_layout --apply
 mg_seed
 sa_run "${MG}" cloud_migrate_layout --apply
 [ "${RC}" -eq 0 ] && ! grep -qE 'for (SAVES|SETTINGS|CONTENT)_REMOTE' "${MG}/out" && grep -qF 'Now using /ROCKNIX/Saves for your saves.' "${MG}/out"; check $? "a tier that moved is named in words, not by its config key (rc ${RC})" "rc ${RC}; lines: $(grep 'Now using' "${MG}/out" | tr '\n' '|')"
+
+# A38. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-11 and
+#      seats/A-claude.md G-A-10, Medium/Low): the hash query the migration
+#      added (`rclone backend features`) creates the remote, which on most
+#      backends is a round trip, and it ran on rclone's defaults -- A5's
+#      bound check was written around it.
+echo "    A38. G-A-11 (gpt) / G-A-10 (claude): the migration's hash query carries the listing bound"
+mg_seed
+sa_run "${MG}" cloud_migrate_layout --apply
+ga11=$(grep '^backend features' "${MG}/ctl/argv" | head -1)
+[ -n "${ga11}" ] && printf '%s' "${ga11}" | grep -q -- '--contimeout' && printf '%s' "${ga11}" | grep -q -- '--low-level-retries'; check $? "the migration's backend features call carries a connect timeout and a retry bound (rc ${RC})" "the call: '${ga11:-none made}' -- rclone's 60 s connect and ten retries"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
