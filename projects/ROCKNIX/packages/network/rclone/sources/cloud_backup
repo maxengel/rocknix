@@ -1915,7 +1915,8 @@ MANIFEST
             local uploaded
             for uploaded in "${uploaded_names[@]}"; do
                 local one
-                one=$(rclone size "${device_dest}/${uploaded}" --json "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null \
+                # A listing's bound, not a transfer's (#308 claude F-CS-21).
+                one=$(rclone size "${device_dest}/${uploaded}" --json "${RCLONE_LIST_OPTS[@]}" 2>/dev/null \
                     | sed -n 's/.*"bytes":[[:space:]]*\([0-9]*\).*/\1/p')
                 [ -n "${one}" ] || continue
                 remote_bytes=$((remote_bytes + one))

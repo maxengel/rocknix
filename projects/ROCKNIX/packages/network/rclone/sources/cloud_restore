@@ -1651,7 +1651,10 @@ restore_system_files() {
     if [ "${BACKUPFILE_RESTORE_OPTION}" == "yes" ]; then
         # Verify remote backup directory has content before attempting restore
         log_message "Checking remote backup directory: ${REMOTENAME}${SETTINGS_REMOTE}" "false"
-        REMOTE_FILES=$(rclone ls ${REMOTENAME}${SETTINGS_REMOTE}/ "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null)
+        # A listing, so the listing bound (#308 claude F-CS-21): three
+        # low-level retries, never a transfer's (rclone-cloud-sync.md: a
+        # refused S3 endpoint rides the SDK's backoff for minutes at ten).
+        REMOTE_FILES=$(rclone ls "${REMOTENAME}${SETTINGS_REMOTE}/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null)
         local remote_ls_status=$?
         
         if [ $remote_ls_status -ne 0 ]; then

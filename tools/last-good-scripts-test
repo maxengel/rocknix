@@ -3815,4 +3815,24 @@ rh_run
 [ "$(sed -n 's/^RCLONE_SYNC_NET_OPTS=//p' "${RH}/storage/.config/cloud_sync.conf")" = '"--contimeout 5s --timeout 5s --retries 1 --max-duration 90s --low-level-retries 5 --transfers 1"' ] \
     && [ "$(sed -n 's/^SYNC_CEILING_SECONDS=//p' "${RH}/storage/.config/cloud_sync.conf")" = 90 ]; check $? "one helper run takes the first-cut bound to --max-duration 90s with five retries and one transfer, and the ceiling to 90" "after one run: $(grep -E '^(RCLONE_SYNC_NET_OPTS|SYNC_CEILING_SECONDS)=' "${RH}/storage/.config/cloud_sync.conf" | tr '\n' ' ') -- the older migration ran after the newer and wrote the intermediate 20 s"
 
+# A20. #308 claude F-CS-21: a listing carries the listing bound (three
+#      low-level retries), never the transfer's -- the settings restore's
+#      `rclone ls` of the settings folder and the backup's `rclone size` of
+#      the archive it just sent.
+echo "    A20. #308 claude F-CS-21: the settings phase's listings carry the listing bound"
+LS=$(sa_new ccs21); sa_script "${LS}" cloud_backup cloud_restore cloud_saves_root
+sed 's/^RCLONE_NET_OPTS=.*/RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 7 --retries 1"/' "${OV}/storage/.config/cloud_sync.conf" \
+    | sed 's/ --error-on-no-transfer//' > "${LS}/storage/.config/cloud_sync.conf"
+cp "${OV}/storage/.config/cloud_sync-rules.txt" "${LS}/storage/.config/"
+mkdir -p "${LS}/storage/roms/backup/x/storage/.config" "${LS}/cloud/ROCKNIX/Backups/QA-deadbeef01"
+echo cfg > "${LS}/storage/roms/backup/x/storage/.config/blob"
+tar -C "${LS}/storage/roms/backup/x" -czf "${LS}/storage/roms/backup/2026_09_28-120000-QA-ROCKNIX_SETTINGS.tar.gz" storage; rm -rf "${LS}/storage/roms/backup/x"
+sa_run "${LS}" cloud_backup --yes --system-only
+ls_size=$(grep '^size ' "${LS}/ctl/argv" | head -1)
+[ -n "${ls_size}" ] && echo "${ls_size}" | grep -q -- '--low-level-retries 3' && ! echo "${ls_size}" | grep -q -- '--low-level-retries 7'; check $? "cloud_backup's size check of the uploaded archive carries three low-level retries, not the transfer's (rc ${RC})" "size call: ${ls_size:-(none)}"
+rm -f "${LS}/storage/roms/backup"/*.tar.gz
+sa_run "${LS}" cloud_restore --yes --system-only
+ls_ls=$(grep '^ls ' "${LS}/ctl/argv" | head -1)
+[ -n "${ls_ls}" ] && echo "${ls_ls}" | grep -q -- '--low-level-retries 3' && ! echo "${ls_ls}" | grep -q -- '--low-level-retries 7'; check $? "cloud_restore's listing of the settings folder carries three low-level retries, not the transfer's (rc ${RC})" "ls call: ${ls_ls:-(none)}"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
