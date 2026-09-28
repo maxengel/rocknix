@@ -2498,6 +2498,245 @@ closed on, against the cut named.
 - **A settings backup no longer carries the IGDB scraper's client secret** (`backuptool` strips it beside the two
   ScreenScraper passwords; the strip has a test for the first time) (#274; `c939df737a`, the scripts suite).
 
+### The milestone audit's fixes, and the audit of the fixes (2026-09-28, #307/#308/#309)
+
+The audit's punch list (#307) and the seats' remaining findings (#308) were worked through by eight streams in one day
+(D-WORKFLOW-054, D-WORKFLOW-055/056), built once as `4234be0b6b`, audited by two seats (D-WORKFLOW-057; 165 findings,
+every one fixed with a case first or withdrawn with its refuting line the same day, #309 for the six carried), and
+built again with the follow-ups as `1b0d233657`. What a player would notice, by where they meet it, each item with its
+stream. Words marked proposed are built in and wait on the maintainer's approval (D-UI-112, D-UI-115).
+
+#### The cloud pages
+
+- **A content match removes only what its preview showed** (PL-001, stream A, D-CLOUD-141): YES carries out the
+  preview's plan, and a system not in it, or whose count grew, is refused with `SOMETHING CHANGED SINCE YOU CHECKED`.
+  Before, YES counted again, and a system whose cloud listing failed read as absent and had its games deleted.
+- **A match never deletes N64 `.fla` saves** (PL-079, #308 gpt F-CS-02, stream A), and the done page's `REMOVED N
+  FILES FROM THIS DEVICE` counts what rclone deleted, not the plan (#308 gpt F-CS-26).
+- **Restoring all ROMs and BIOS brings the BIOS too** (PL-012, stream A), where it brought the ROMs alone and let
+  through images the media filter should have kept out. BIOS picked alone is a selection (#308 gpt F-ES-10, streams E2
+  and A), and an empty cloud ends `Nothing to restore` as a completed run, where it exited 3.
+- **Content runs end with the outcome that happened** (stream A): nothing to back up is `COMPLETED`, not a failure
+  (#308 claude F-CS-15); a game list that did not move fails its system (PL-066); a restore the network cut after
+  files moved is `COULDN'T FINISH` with `YOU WENT OFFLINE PART-WAY THROUGH`, not a skip (#308 claude F-CS-24).
+- **A saves folder at the top of the cloud is refused where it is typed** (PL-015, streams C and A): `Your saves
+  folder needs to sit inside another folder, so your settings backups and games can go beside it.` `Try /GAMES/Saves.`
+  Before, they went inside it (`/GAMES/Backups`, `/GAMES/Content`).
+- **A cloud folder name with `&` or `|` works, and one with `"`, `$`, a backtick, or `\` is refused where it is
+  typed** (PL-051, streams C and A, D-CLOUD-142), where `/R&D/Saves` garbled the config. A config holding a command no
+  longer runs it: the run ends `COULDN'T FINISH` with `YOUR CLOUD SYNC SETTINGS COULDN'T BE READ`.
+- **Moving the cloud to the new layout copies, checks, and only then deletes** (PL-025/026/027/053/071, stream A,
+  D-CLOUD-143): the backups go first and never into `Saves`, a listing that fails stops it, and a failed move ends
+  `THE NEW FOLDER ALREADY HAS FILES IN IT` or `SOME FILES DIDN'T FINISH`, where it said `Done.`
+- **Cloud setup writes a README only into a folder that has none** (PL-047, stream C): a failed check overwrote the
+  owner's own README with ours, and a bucket got none.
+- **A dim cloud row works as soon as setup is done** (PL-062, stream E2), where it offered setup again and stayed dim.
+  After CHANGE CLOUD FOLDER succeeds, the hub reopens with the new folder (#308 claude F-ES-03/F-ES-27).
+- **After a folder change the hub comes back on CHANGE CLOUD FOLDER** (the fix audit's G-E2-O1, stream E2): the
+  reopened page put the cursor on its first row with the changed row off the screen; the walk found it.
+- **The match's done page counts what it removed, and its retry is the row that checks again** (#308 gpt F-CS-26,
+  stream E2): `N FILES WERE REMOVED FROM THIS DEVICE.` alone -- `YOUR CLOUD STILL HAS THEM` said the opposite of what a
+  match does (D-CLOUD-023) -- and line 7 reads `TRY AGAIN: MATCH THIS DEVICE TO THE CLOUD`, since a bare apply is
+  refused: `CHECK WHAT WOULD CHANGE FIRST` (fix audit G-A-O2, stream A), in French too.
+- **A filter file the player names is used as written** (fix audit G-A-O1, stream A): the catch-all check applies to
+  the managed rules file only; a player's own `--filter-from` without `- /**` no longer stops the saves backup.
+- **A saves folder named like its own sibling is refused where it is typed** (fix audit gpt G-C-01, stream C):
+  `/Mine/Backups` put the saves and the settings backups in one folder; now `Try /Mine/Saves.` The masked box's
+  can't-type warning gives a count, not the characters (gpt G-C-05), and every refusal says "cloud folder", the
+  row's own name (claude G-C-03).
+- **A saves folder at the top of the cloud keeps no copy of what it replaces, and says so** (fix audit gpt G-A-09,
+  stream A, D-CLOUD-146): rclone cannot keep the set-aside folder inside the folder it writes; the console and the
+  Completed line say it. Moving the folder inside another brings the copy back.
+- **Moving the cloud to the new layout checks exactly, and stops before it deletes** (fix audit gpt G-A-01/02, stream
+  A): the check must exit 0 with zero differences (ten differences once read as none and deleted ten saves), and a
+  pointer that did not land -- `YOUR CLOUD SYNC SETTINGS COULDN'T BE SAVED` -- stops the run with both copies kept.
+- **The CONNECTED page says whether saves already sync** (#308 gpt F-ES-19, stream E2) and no longer says ROMs and
+  BIOS are never included. WITH MY PHONE's and CHANGE CLOUD FOLDER's descriptions fit one line again (#308 claude
+  F-ES-14), and the sync row's confirmation explains the run the row shows (#308 gpt F-ES-16).
+- **Why a run failed is in French in a French interface** (#308 gpt F-CS-31, streams E1 and E2), on the sync card, the
+  cloud rows, and the transfer page's done line; the maintenance dialogs still show it in English.
+- **The long-job pages name no button letters and draw their own help bar** (#308 claude F-RA-14, F-CS-07, F-ES-05,
+  stream E2): the transfer, scan, and scraper pages; no line is cut inside a character (#308 gpt F-RA-23).
+- **CANCEL stops a transfer even before its script starts** (#308 claude F-CS-26, stream E2), a completed run is not
+  called stopped, and a backup cancelled before it began keeps the row's last run (#308 claude F-CS-05).
+
+#### The saves sync
+
+- **A sync that moved saves and then lost the link says what moved** (PL-072, stream E1): the card still reads SKIPPED
+  and now keeps `THE SAVES THAT MADE IT ARE ON BOTH SIDES. NOTHING ELSE CHANGED.`, where it had no in-place clause.
+- **The automatic sync ends inside its ceiling** (#308 gpt F-CS-34, stream A), its probe included (31 s became 3 s in
+  the harness), and a long cloud listing is no longer ended as a stall (PL-080).
+- **Saves in a folder at the root of the remote back up** (#308 claude F-CS-25, stream A), without the set-aside copy
+  rclone cannot keep inside the folder it writes; before, rclone refused the whole run (exit 7).
+- **A run whose settings part failed reads `COULDN'T FINISH`** (PL-028, stream A), not `Completed.`; a sync that could
+  not record its saves' card ends `COULDN'T RECORD WHICH CARD YOUR SAVES ARE ON` (#308 gpt F-CS-20).
+- **Save-state DELETE and COPY wait for a cloud transfer, not just the interface's sync** (PL-068, streams E1 and E2):
+  refused with `A SYNC IS ALREADY RUNNING.` `WAIT FOR IT TO FINISH, THEN TRY AGAIN.`, and a queued deletion waits.
+
+#### Backup and restore of settings
+
+- **A settings backup that finds a sign-in is refused before it is written** (PL-005, PL-006, stream B, D-CLOUD-144):
+  `A SIGN-IN WAS FOUND IN THE BACKUP, SO IT WASN'T KEPT. YOUR LAST BACKUP IS UNCHANGED.` (proposed words, for the
+  maintainer's approval). Before, the scan warned and the archive was kept and published, and it missed `Password=`.
+- **A backup list's problems are said for what they are** (PL-038, PL-035, #308 claude F-BR-17, stream B): `YOUR OWN
+  BACKUP LIST NAMES A FOLDER A BACKUP CAN'T CARRY, SO NOTHING WAS WRITTEN. YOUR LAST BACKUP IS UNCHANGED.` where a
+  folder outside `/storage` was dropped silently; `YOUR OWN BACKUP LIST IS EMPTY, SO THE STANDARD ONE WAS USED.`;
+  `THERE'S NOTHING TO BACK UP YET. YOUR LAST BACKUP IS UNCHANGED.` where it said `THE BACKUP COULDN'T FINISH WHILE
+  GATHERING YOUR SETTINGS` (proposed words, for the maintainer's approval).
+- **A backup carries every listed folder, never earlier backups** (PL-004, PL-008, stream B): a folder whose name had
+  a space was dropped, and a list with `/storage/roms` nested earlier backups, sign-ins and all, in the new one.
+- **One settings backup or restore at a time** (PL-077, #308 claude F-BR-15, stream B): a second is refused with `A
+  SETTINGS BACKUP OR RESTORE IS ALREADY RUNNING. WAIT FOR IT TO FINISH, THEN TRY AGAIN.` (proposed words, for the
+  maintainer's approval), where two in the same second took one archive's name.
+- **A restore keeps this device's cloud sign-in and name** (PL-010, stream B), which restoring a legacy archive
+  replaced, and an undated legacy archive in the cloud no longer outranks a dated one (#308 gpt F-CS-35, stream A).
+- **A restore that stops part-way puts the device back as it was** (PL-007, PL-009, PL-039, PL-045, stream B,
+  D-CLOUD-144): the first copy covers every file the archive replaces and records the ones it creates, a copy or mark
+  that cannot be written stops the restore, and a revert is not skipped when the copy's card is not yet mounted.
+- **A restore resets a file the backup left out as the image's own** (PL-037, stream B), and a tar archive no longer
+  replaces a file the system provides as a link (#308 gpt F-BR-13): `KEEPING N FILE(S) THE SYSTEM PROVIDES THAT THIS
+  BACKUP WOULD HAVE REPLACED.` (proposed words, for the maintainer's approval).
+- **The backup's messages say why in the player's words** (#308 claude F-BR-12, stream B; claude F-ES-13, stream E2):
+  `THIS DEVICE'S SETTINGS BACKUP IS DAMAGED. NOTHING WAS CHANGED. RESTORE SETTINGS FROM THE CLOUD AGAIN, OR BACK UP
+  SETTINGS TO REPLACE IT.`, `THIS DEVICE CAN'T RESTORE SETTINGS. SOMETHING IT NEEDS IS MISSING FROM THIS BUILD.`, and
+  the note `COPY IT SOMEWHERE SAFE, OR BACK UP SETTINGS TO THE CLOUD UNDER GAME SETTINGS > MANAGE CLOUD STORAGE.`
+  (proposed words, for the maintainer's approval), where a dialog read `tar: short read`.
+- **Nothing waits on a console nobody reads** (#308 claude F-BR-19, F-CS-04, streams B and A), and old
+  `ARCHIVED_ROCKNIX_BACKUP-*.zip` files go to `archive/`, not to the cloud with every backup (#308 claude F-BR-07).
+- **The settings-first restore restores what was ticked** (PL-029, stream E2, D-UI-113): after the restart it restores
+  the ticked tiers alone, where it also ran `cloud_content_restore --all`. FINISH RESTORE PROCESS's RetroAchievements,
+  ScreenScraper, and netplay passwords now reach the disk (a restart lost them).
+- **Settings survive two writers and a cut write** (PL-024, PL-063, PL-064, streams E1 and B, D-CLOUD-145): a save
+  that cannot take the lock writes nothing and keeps the change for the next save, and a whole `system.cfg.tmp` left
+  by a cut write is loaded, not replaced by the defaults.
+- **A restore cut off on a one-card device is put back at the next boot** (fix audit gpt G-B-05/08/10 and B's own
+  reading, stream B): the boot's revert reads the mount table, where busybox `mountpoint` never saw `/storage/roms`
+  (a bind on the same card) as mounted and deferred the revert for ever -- the VM proof of PL-045 on `4234be0b6b`
+  found exactly that. Old `ARCHIVED_ROCKNIX_BACKUP-*.zip` files go to `archive/upstream-era/`, trimmed by nothing and
+  uploaded by nothing (D-CLOUD-148).
+- **A settings backup refuses, rather than guesses, when it cannot check itself** (fix audit gpt G-B-01..07, stream
+  B): a listing that fails is a failed check, a sign-in scan that cannot finish stops the backup with nothing written,
+  and the last-good copies beside a stripped file (`.backup`, `.bak`, `.tmp`, `.old`) are held back with it
+  (D-CLOUD-147). A cut `system.cfg` that is the start of its record loads the record (fix audit claude G-E1-02,
+  stream E1), and the Wi-Fi picker keeps a refused save's changes until the join rewrites them (gpt G-03).
+- **A restore whose record of what was ticked cannot be written does not start** (fix audit gpt G-E2-01/02, stream
+  E2): `COULDN'T SAVE WHAT YOU TICKED, SO NOTHING WAS RESTORED.` (proposed words, D-UI-115).
+- **A factory reset that cannot clear a folder stops before copying** (PL-044, stream B), with `THE DEFAULT SETTINGS
+  COULDN'T BE PUT BACK.`, where it copied the defaults into the folder it had not cleared.
+
+#### The RetroAchievements cards and pages
+
+- **The send card says the awards are on the account only when the service says so** (PL-054, stream E2): with the
+  queue empty and no flush stamp it reads `COMPLETED` alone, not `WHAT YOU EARNED OFFLINE IS NOW ON YOUR ACCOUNT.`
+- **A top-up stopped for a game says so** (#308 claude F-RA-09, gpt F-RA-17, stream E2): `SKIPPED - YOU STARTED A
+  GAME`, with a why from this run's stamp only, and `SOME GAMES COULDN'T BE SAVED` without the scan's instruction. Two
+  top-ups asked for at once run one after the other, where they shared one progress file (PL-056, D-UI-113).
+- **The scan and the top-up say when achievement images could not be saved** (PL-060, streams D and E2, D-UI-112):
+  `SOME ACHIEVEMENT IMAGES COULDN'T BE SAVED. TRY THE SCAN AGAIN.` and `SOME ACHIEVEMENT IMAGES COULDN'T BE SAVED`
+  (proposed words, for the maintainer's approval). A badge the server lacks is absent, not a failure (D-RA-039).
+- **A scan's outcome is what its passes did** (fix audit, stream D, D-RA-042): the image pass runs whenever the scan
+  worked through its jobs, and a scan whose images still fail ends with the sentence above rather than COMPLETED; a
+  pass with no time left, a library that could not be listed, or a cursor that could not be kept each end as a
+  failure with its own why. A badge the server lacks is asked for again after a day (D-RA-041), and CANCEL during
+  the image pass is proven at 0.02 s where the old scripts took 20 s.
+- **Closing the RetroAchievements settings page offline no longer waits on a sign-in** (#308 claude F-RA-19, stream
+  E2), and a top-up stopped for a game holds its queued run until that game has ended (fix audit claude G-E2-02).
+- **A PSP game reaches the offline proxy only over an address PPSSPP can use** (fix audit gpt G-D-02, streams D and
+  F2, D-RA-043): a listener on `::1` alone no longer counts as the proxy.
+- **The offline summary lists games that were only launched, and says when progress could not be read** (PL-057,
+  streams D and E2, D-UI-112): `YOUR PROGRESS COULDN'T BE READ` with no bar (proposed words, for the maintainer's
+  approval), where an unreadable count showed as none unlocked.
+- **CANCEL during the scan's image pass ends the scan at once** (PL-013, stream D): 0.02 s in the harness, where every
+  queued download ran first (20 s). Turning offline achievements off keeps the hardcore setting (#308 gpt F-RA-18).
+- **A big library's scan walks on from where the last one stopped** (PL-059, stream D), and the page says when a scan
+  was cut short; the same first files held the front of every walk.
+- **A PSP game counts as played for the top-up at the link's return** (#308 gpt F-RA-13, stream D): the wake check
+  reads `ppsspp.ini`, where a PPSSPP session read as nothing played.
+- **An offline game index toasts nothing** (#308 claude F-RA-05, stream E2), where it said `INDEXING COMPLETED. UPDATE
+  GAMELISTS TO APPLY CHANGES.`; its retry at a link's return runs at most once in ten minutes (#308 claude F-ES-09).
+- **With offline achievements on, the interface waits for the service to be listening** (#308 gpt F-RA-26, stream D,
+  D-RA-040), so a first launch no longer races it; boot to the carousel is measured on the next cut.
+
+#### Wi-Fi and the cloud sign-in
+
+- **A saved network's password is stored as typed** (PL-003, #308 claude F-WF-02, stream B), where one with `:` or `\`
+  was stored escaped (`ab\:cd\\ef12345`). Forgetting a network forgets the settings' copy of its name and password
+  (#308 claude F-WF-01), and a join writes the network's SSID, not its profile's name (#308 claude F-WF-12).
+- **The connected row joins by its SSID, not its profile's name** (#308 claude F-WF-12 / gpt F-WF-03, stream E2),
+  and `wifictl saved --ssid` gives the picker the SSID beside the name for the next round (fix audit gpt G-B-11).
+- **The scan shows names with `:` as they are** (#308 claude F-WF-05, stream B), a saved name with a tab can be joined
+  and forgotten (#308 claude F-WF-06), and a join is judged on this device's adapter (PL-031).
+- **The picker tells "could not ask" from "none"** (#308 claude F-WF-03, streams E1 and E2) and offers `CHECK AGAIN
+  NOW?`; a failed join says `THE WI-FI SERVICE DIDN'T ANSWER. TRY AGAIN IN A MOMENT.` when it did not answer.
+- **Joined reads CONNECTED everywhere** (#308 gpt F-WF-08, stream E1; claude F-WF-11, stream E2): the toast is
+  `<glyph> <name> : CONNECTED`, and MANAGE SAVED NETWORKS says CONNECTED where it said IN USE.
+- **Signing in on the device works with offline achievements on** (#308 claude F-RS-18, stream C): both wanted port
+  8080 and every on-device sign-in failed; the sign-in now listens on the LAN address.
+- **What is typed on the phone arrives, and Back deletes what the box shows** (PL-016, PL-017, stream C): text typed
+  before the window opened is sent when the page opens, where the field stayed empty, and `abc`, Back, `d` no longer
+  gives `abd` in the field and `abcd` in the box.
+- **The phone page masks the box and says keystrokes cross the network unencrypted** (#308 gpt F-RS-14, stream C;
+  D-NET-012 open), names the characters the handheld cannot type (#308 claude F-RS-16), and has a Close page key (#308
+  gpt F-RS-16). The on-screen keyboard gains a symbols layout, `#+=` (#308 gpt F-RS-12).
+- **After a sign-in the pad is handed back before the interface is told** (PL-018, stream C), so the menu moves
+  without a restart. Leaving the page cancels the sign-in and closes its window (#308 gpt F-ES-17, stream E2; PL-049),
+  and a sign-in that died reads failed rather than waiting (PL-050).
+
+#### The game launch and the game lists
+
+- **A game started while the last one's saves are being recorded waits for them** (PL-061, stream E2): unseen for 300
+  ms, then up to 10 s behind `RECORDING YOUR LAST GAME'S SAVES...`, and then the game starts anyway.
+- **At the ten-second bound the launch is refused, not let through over an unfinished record** (fix audit gpt
+  G-E2-03, stream E2): `YOUR LAST GAME'S SAVES ARE STILL BEING RECORDED. TRY AGAIN IN A MOMENT.` (proposed words,
+  D-UI-115); a capture older than two minutes is treated as hung and stops holding launches.
+- **A game's rotation record is trusted only when the launch it came from was checked** (fix audit gpt G-E2-06,
+  stream E2, D-UI-114): records an earlier build stamped from a failed or empty launch fall back to the core's own
+  table until the game's next exit rewrites them.
+- **A kept guest's N64 controls are repaired at the next launch** (fix audit claude G-F2-08, stream F2): the six
+  pasted Control1 lines are removed from an existing copy, on GENERIC_X64 only, with the player's other settings kept.
+- **START NEW GAME no longer lands on the Auto slot because a `-1` was saved in RetroArch's main config** (#308 claude
+  F-RW-05, stream F2): patch 0018 keeps Auto only when this launch's own configuration asks for it.
+- **A launch reads its platform right when a netplay nickname has `-P` in it** (#308 claude F-ES-20, streams B and
+  E2): `My-Player` after `-Psnes` made the launcher read `layer'`.
+- **A folder rescan keeps the games still on disk** (PL-014, stream E2, D-UI-113), merging where it cleared and
+  reloaded while the collections still pointed at the old entries.
+
+#### GENERIC_X64, the developers' harness (D-QA-053)
+
+- **A guest's boot writes nothing into the image** (PL-019, PL-042, PL-022, stream F1): the quirk scripts behind 51
+  `Read-only file system` lines a boot are gone, and the 20 files they left in `/storage` are removed by name. A guest
+  whose local filesystems fail now stops at the emergency target, as every other device does.
+- **The serial root shell starts only on a virtual machine** (PL-023, stream F1), and the bootloader updater that
+  copied nothing is gone (PL-073).
+- **RetroArch on a guest follows the guest's mode and draws with `gl`** (PL-034, #308 claude F-VM-10/F-VM-11, stream
+  F1), keeping a size set by hand; a config on `vulkan` moves to `gl` while the image has no Vulkan driver.
+- **`generic-x64-vm qemu-args` prints and touches nothing** (PL-033, stream F1), where it removed the sockets, and a
+  disk passed as `--monitor`; a fresh guest's N64 Control1 mappings are live (#308 claude F-VM-09, stream F2).
+
+Under the surface: the cloud scripts install a rules file only whole (PL-020), spare the set-aside folder and archive
+a run just wrote when they prune (PL-021), commit a capture under a lock of its own (PL-067), and log no rclone
+arguments or `pass=` (PL-074); backuptool stages on the storage card, not in RAM (#308 claude F-BR-09); the offline
+service keeps its index marker until a listing succeeds (PL-055, D-RA-040); a sync no longer leaks about 8 MiB of
+thread stack (PL-069). Patch 0017's font tables now apply to the faces they were measured for, and the face every
+shipped profile draws has none, so nothing changes on screen (PL-032, D-UI-110). Where a test could reach a fix, it
+came with a case seen to fail first, in `tools/last-good-scripts-test` or the EmulationStation unit suites.
+
+Checked on `1b0d233657`: vm-qa run 69 (`qa-1b0d233657-webdav-a-20260928-0622`, 06:22-06:47 UTC) -- the scripts harness
+(844+ checks, the cancel checks included), the round trip with its two changed steps (the player's own filter file honoured,
+the match checked before it applies), the exit test, time to play 0.58 s to a game's first frame and 1.01 s game to game, the
+walks, and frame-diff against the d72084ccad baseline with twelve claimed boxes and none unclaimed (the hub reopened on CHANGE
+CLOUD FOLDER after a folder change, the PICO-8 row, the footer without a console letter, the folder row's new line); the
+French and vocabulary suites clean. The streams' named proofs on guest d: run 2 on guest d rebuilt from the image (`docs/qa-frames/2026-09-28/proofs-307/run2.md`), 38 rows: 32 PASS,
+1 FAIL (the launch/exit cycle's 10 MiB of address space a game, #310, the same with the sync off), 4 that this guest cannot
+run (no Wi-Fi adapter for the join and the second adapter; the rehearsal takes the QA pair; frame-diff frames no RetroArch
+widget), 3 with no script yet (E1's follow-up, three of E2's, the migration on WebDAV). Among the passes on this cut: the
+one-card revert after a cut restore (7 PASS, where the first cut deferred it for ever), the launch refused at the capture
+gate's ten-second bound with its sentence on the frame, the hub reopened on CHANGE CLOUD FOLDER, the truncated scan's page
+and its kept cursor, an unrecorded RetroArch size left alone, the auto slot kept and a saved -1 not sticking, the settings
+lock's refused save landing after the join. proof-298 on the same guest: 35 PASS, 0 FAIL. Some passes rest on named
+stand-ins (a provider bound over rclone authorize, a uinput pad, a delayed capture, a black-holed media host); each is
+named in the run's row, and a stand-in keeps its checkbox open until the real input has been seen once (audit #258, P-05).
+
 ### The offline achievements' cards, after a night's play (2026-09-27, #298)
 
 The maintainer on the RG35XX SP: *"Everything's generally looking solid. A couple of minor UI notes."* Three, all in
