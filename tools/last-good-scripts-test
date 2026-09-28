@@ -3416,4 +3416,16 @@ p7bt backup
 p7mode=$(tar -tvzf "$(p7arc | tail -1)" 2>/dev/null | awk '$NF == "storage/.config/system/configs/system.cfg" { print $1 }')
 [ "${RC}" -eq 0 ] && [ "${p7mode}" = "-rw-------" ] && ! p7list | grep -q '/$'; check $? "#308 gpt F-BR-16: the sanitised system.cfg keeps its 0600, and the archive carries no directory entries to impose on a restore" "#308 gpt F-BR-16: rc ${RC}; system.cfg in the archive: '${p7mode}'; directory entries: $(p7list | grep -c '/$')"
 
+# == #308 4-backup-restore claude F-BR-09: one working copy, on the backup's own card
+p7reset '  /storage/.config/test/*'
+cat > "${P7}/shim/mktemp" <<'EOS'
+#!/bin/bash
+echo "mktemp $*" >> /storage/.p7-mktemp
+exec /p7bb/mktemp "$@"
+EOS
+chmod +x "${P7}/shim/mktemp"
+p7bt backup
+[ "${RC}" -eq 0 ] && grep -q '^mktemp -d /storage/.cache/backuptool-staging\.' "${P7S}/.p7-mktemp" && [ "$(grep -c -- '-d' "${P7S}/.p7-mktemp")" -eq 1 ]; check $? "#308 claude F-BR-09: a backup stages once, on the storage card (not in RAM), and makes no second copy to scan" "#308 F-BR-09: rc ${RC}; mktemp calls: $(tr '\n' '|' < "${P7S}/.p7-mktemp")"
+rm -f "${P7}/shim/mktemp"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

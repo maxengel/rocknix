@@ -515,6 +515,9 @@ DEVICEONLY=(
 # Never extracted onto the device itself; an image from before the change
 # extracts it as an inert file, and a backup never collects one.
 SEEDLIST="/storage/.config/.backuptool-seeds"
+# Where a backup is staged (see write_archive); a run killed part-way leaves
+# one behind, swept by the next run under the lock.
+STAGING_PREFIX="/storage/.cache/backuptool-staging."
 
 # Write one settings archive to TARGET, whole or not at all.
 #
@@ -621,6 +624,9 @@ write_archive() {
     # twice; the archive holds it once, and the counts below compare like
     # with like.
     awk '!seen[$0]++' "${FILELIST}" > "${FILELIST}.unique" && mv -f "${FILELIST}.unique" "${FILELIST}"
+    # A staging folder is never collected either (a run killed part-way
+    # leaves one; a selection of /storage would find it).
+    STAGE="${STAGING_PREFIX}" awk 'index($0, ENVIRON["STAGE"]) != 1' "${FILELIST}" > "${FILELIST}.stage" && mv -f "${FILELIST}.stage" "${FILELIST}"
     local OWNED
     OWNED=$(OWN="${OWN}/" awk 'index($0, ENVIRON["OWN"]) == 1' "${FILELIST}" | wc -l)
     if [ "${OWNED}" -gt 0 ]
@@ -788,7 +794,16 @@ write_archive() {
     # anyway: the sanitized file is the only version that ever exists in
     # the tree being archived, so there is no ordering in which a real
     # credential is written and later overwritten.
-    STAGING=$(mktemp -d)
+    #
+    # On the storage card, not in /tmp: /tmp is RAM on the device, and the
+    # standard list now carries whole bezel and theme folders, so a large
+    # selection staged there could exhaust the memory of a 1 GB handheld
+    # mid-backup (#308 claude F-BR-09). /storage is the internal card's own
+    # filesystem, which keeps file modes -- the backups folder can be on a
+    # FAT games card, which does not. There is one copy: the scan reads
+    # the staged tree itself (PL-005) rather than a second extraction.
+    mkdir -p "${STAGING_PREFIX%/*}"
+    STAGING=$(mktemp -d "${STAGING_PREFIX}XXXXXX") || { rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}" "${SEEDED}"; return 2; }
     # pipefail, in a subshell so it does not leak into the rest of the
     # script: a pipeline's status is its LAST command's, so without this
     # the guard tested the extracting tar and ignored the collecting one.
