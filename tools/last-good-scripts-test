@@ -4230,6 +4230,28 @@ def close_page_reaches_the_keyboard_as_escape():
            "the serve turns the phone's Close page into an Escape press and release on its keyboard",
            "POST key=escape: status %r, key events %r -- the window never hears Escape (G-C-01 claude)" % (status, keys))
 EOPY
+# G-C-08 (claude): cloud_remote's listing commands after DRIVABLE_OAUTH went.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+@test
+def remote_listings_run_without_the_old_constant():
+    """G-C-08 (claude seat): DRIVABLE_OAUTH was removed as dead; the commands
+    that sort providers into tiers and list a backend's fields still run."""
+    import contextlib, io
+    outs = {}
+    for cmd in (["providers"], ["fields", "webdav"], ["choices", "webdav", "pass"]):
+        m, d = load_remote("gc08")
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                rc = m.main(["cloud_remote"] + cmd)
+        except Exception as exc:
+            rc = "%s: %s" % (type(exc).__name__, exc)
+        outs[cmd[0]] = (rc, buf.getvalue())
+    ok = all(rc == 0 for rc, _ in outs.values()) and "keys\twebdav" in outs["providers"][1] \
+        and outs["fields"][1].startswith("url\t")
+    result(ok, "cloud_remote providers, fields and choices run and list (providers: %r)" % outs["providers"][1].strip(),
+           "cloud_remote after DRIVABLE_OAUTH's removal: %r (G-C-08 claude)" % outs)
+EOPY
 # C3: new test groups go above this line
 cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
 if MODE == "drive":
