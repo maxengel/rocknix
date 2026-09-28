@@ -4304,4 +4304,30 @@ sa_run "${MG}" cloud_migrate_layout --apply
 ga11=$(grep '^backend features' "${MG}/ctl/argv" | head -1)
 [ -n "${ga11}" ] && printf '%s' "${ga11}" | grep -q -- '--contimeout' && printf '%s' "${ga11}" | grep -q -- '--low-level-retries'; check $? "the migration's backend features call carries a connect timeout and a retry bound (rc ${RC})" "the call: '${ga11:-none made}' -- rclone's 60 s connect and ten retries"
 
+# A39. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-06 and
+#      seats/A-claude.md G-A-02, Medium): the content scripts read the conf
+#      as text since PL-051, and their reader took only KEY=value or
+#      KEY="value" whole -- a trailing comment, single quotes, or anything
+#      it could not read gave an empty CONTENT_REMOTE, the cloud's root,
+#      where `source` had given the folder. And it took the first of two
+#      lines where `source` takes the last.
+echo "    A39. G-A-06 (gpt) / G-A-02 (claude): the content scripts read CONTENT_REMOTE as source would, or refuse"
+CG=$(sa_new ga06); sa_script "${CG}" cloud_content_backup
+mkdir -p "${CG}/storage/roms/nes" "${CG}/storage/.config/emulationstation"; echo n > "${CG}/storage/roms/nes/N.nes"
+printf '<system><path>/storage/roms/nes</path></system>\n' > "${CG}/storage/.config/emulationstation/es_systems.cfg"
+cg_run() { # <CONTENT_REMOTE line(s)>: a content backup of nes, from an empty cloud
+    rm -rf "${CG}/cloud"/*
+    printf 'SAVESPATH="/storage/roms"\n%s\nRCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"\n' "$1" > "${CG}/storage/.config/cloud_sync.conf"
+    sa_run "${CG}" cloud_content_backup nes
+}
+cg_run 'CONTENT_REMOTE="/ROCKNIX/Content"   # where the ROMs live'
+[ "${RC}" -eq 0 ] && [ -f "${CG}/cloud/ROCKNIX/Content/ROMs/nes/N.nes" ] && [ ! -e "${CG}/cloud/ROMs" ]; check $? "a CONTENT_REMOTE with a trailing comment is the folder it names, not the cloud's root (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' ')"
+cg_run "CONTENT_REMOTE='/ROCKNIX/Content'"
+[ "${RC}" -eq 0 ] && [ -f "${CG}/cloud/ROCKNIX/Content/ROMs/nes/N.nes" ]; check $? "a single-quoted CONTENT_REMOTE is the folder it names (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' ')"
+cg_run 'CONTENT_REMOTE="/Old/Content"
+CONTENT_REMOTE="/ROCKNIX/Content"'
+[ "${RC}" -eq 0 ] && [ -f "${CG}/cloud/ROCKNIX/Content/ROMs/nes/N.nes" ] && [ ! -e "${CG}/cloud/Old" ]; check $? "of two CONTENT_REMOTE lines the last one counts, as source counts it (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' ')"
+cg_run 'CONTENT_REMOTE="/ROCKNIX/Content" ; echo'
+[ "${RC}" -ne 0 ] && [ -z "$(cd "${CG}/cloud" && find . -type f)" ] && grep -qx ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ" "${CG}/out"; check $? "a CONTENT_REMOTE line it cannot read as plain text is refused, not read as the root (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' '); why: $(grep '^>>> why' "${CG}/out")"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
