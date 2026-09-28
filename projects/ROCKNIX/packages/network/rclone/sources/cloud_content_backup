@@ -103,14 +103,16 @@ fi
 # that carries a $, a backtick, a backslash or a control character is not a
 # folder name, and the run refuses it rather than use it as a path.
 #
-# Read as `source` would read it (the audit of the fixes, G-A-06/G-A-02):
-# the last line that sets the key; the value double quoted, single quoted
-# or bare; after it nothing, or blanks and a # comment. The first cut took
-# only KEY=value or KEY="value" whole, and the first line: a trailing
-# comment or single quotes gave an empty CONTENT_REMOTE -- the cloud's root
-# -- where the folder had been, and the backup went there. A line it cannot
-# read as plain text exits 2, and CONTENT_REMOTE's refuses the run; nothing
-# is read as the root that did not say the root.
+# Read in the forms `source` reads (the audit of the fixes, G-A-06/G-A-02):
+# the value double quoted, single quoted or bare; after it nothing, or
+# blanks and a # comment. The first cut took only KEY=value or KEY="value"
+# whole: a trailing comment or single quotes gave an empty CONTENT_REMOTE --
+# the cloud's root -- where the folder had been, and the backup went there.
+# A line it cannot read as plain text exits 2, and CONTENT_REMOTE's refuses
+# the run; nothing is read as the root that did not say the root. Of two
+# lines for one key, the first: every saves run EmulationStation starts is
+# --yes, which runs cloud_sync_cleanup_duplicates.sh, which keeps the first,
+# so that is the value the saves scripts run with and the file is left with.
 conf_get() { # <KEY>: its value, quotes off; nothing when absent; exit 2 when unreadable
     [ -f /storage/.config/cloud_sync.conf ] || return 0
     awk -v k="$1" '
@@ -125,9 +127,9 @@ conf_get() { # <KEY>: its value, quotes off; nothing when absent; exit 2 when un
             }
             if (r !~ /^([ \t\r]+(#.*)?)?$/) ok = 0
             if (c == "\"" && v ~ /[$`\\]/) ok = 0
-            found = 1; last = v; lastok = ok
+            if (!found) { found = 1; first = v; firstok = ok }
         }
-        END { if (found && !lastok) exit 2; if (found) print last }
+        END { if (found && !firstok) exit 2; if (found) print first }
     ' /storage/.config/cloud_sync.conf
 }
 if ! CONTENT_REMOTE=$(conf_get CONTENT_REMOTE); then

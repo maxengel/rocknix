@@ -4332,9 +4332,13 @@ cg_run 'CONTENT_REMOTE="/ROCKNIX/Content"   # where the ROMs live'
 [ "${RC}" -eq 0 ] && [ -f "${CG}/cloud/ROCKNIX/Content/ROMs/nes/N.nes" ] && [ ! -e "${CG}/cloud/ROMs" ]; check $? "a CONTENT_REMOTE with a trailing comment is the folder it names, not the cloud's root (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' ')"
 cg_run "CONTENT_REMOTE='/ROCKNIX/Content'"
 [ "${RC}" -eq 0 ] && [ -f "${CG}/cloud/ROCKNIX/Content/ROMs/nes/N.nes" ]; check $? "a single-quoted CONTENT_REMOTE is the folder it names (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' ')"
-cg_run 'CONTENT_REMOTE="/Old/Content"
-CONTENT_REMOTE="/ROCKNIX/Content"'
-[ "${RC}" -eq 0 ] && [ -f "${CG}/cloud/ROCKNIX/Content/ROMs/nes/N.nes" ] && [ ! -e "${CG}/cloud/Old" ]; check $? "of two CONTENT_REMOTE lines the last one counts, as source counts it (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' ')"
+# Of two lines the first counts: every saves run EmulationStation starts
+# is --yes, which runs cloud_sync_cleanup_duplicates.sh, which keeps the
+# first -- so the first is the value the saves scripts run with, and the
+# one the file is left holding.
+cg_run 'CONTENT_REMOTE="/ROCKNIX/Content"
+CONTENT_REMOTE="/Old/Content"'
+[ "${RC}" -eq 0 ] && [ -f "${CG}/cloud/ROCKNIX/Content/ROMs/nes/N.nes" ] && [ ! -e "${CG}/cloud/Old" ]; check $? "of two CONTENT_REMOTE lines the first counts, as the duplicate cleanup keeps it (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' ')"
 cg_run 'CONTENT_REMOTE="/ROCKNIX/Content" ; echo'
 [ "${RC}" -ne 0 ] && [ -z "$(cd "${CG}/cloud" && find . -type f)" ] && grep -qx ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ" "${CG}/out"; check $? "a CONTENT_REMOTE line it cannot read as plain text is refused, not read as the root (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' '); why: $(grep '^>>> why' "${CG}/out")"
 
