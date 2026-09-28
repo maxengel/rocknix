@@ -45,3 +45,5 @@ The three tables from the twenty outputs are in 02 (192 findings, 212 item verdi
 Phase 7 opened ahead of the gate at the maintainer's word (fix everything before the build, D-WORKFLOW-054): the integrator's own items landed on `next` (`3e70ef9239` PL-011/012/026 with the wordlist hooks, `f3d19dc8fb` PL-012's second half, PL-013, PL-023, PL-025, PL-027); eight Opus stream agents dispatched at 15:53 UTC on `feature/pl-{a,b,c,d,f1,f2}` (from `next` `f3d19dc8fb`) and `feature/pl-e{1,2}` (from `test/qa-integration` `7d999fd15`), briefs under `streams/briefs/`, reports to `/workspace/tmp/rocknix-session/streams2/`. PL-023's proof runs detached (`harness-pl023.sh`: the committed harness, then the throwaway worktree `skip-proof` whose client pin names no tarball).
 
 Correction, 15:55: #307 carries 81 checkboxes and 81 distinct PL ids (`gh issue view 307`, counted); the blind pass saw 80 in the packet as embedded. The 80/81 note above is the packet's rendering, not a gap in the criteria.
+
+### [tooling] 16:01 — the lint gains the carried-verdict check (blindspot 68); proven on the pre-PL-028 punch list, 28 ids carried now

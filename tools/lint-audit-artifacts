@@ -125,6 +125,41 @@ def main():
             bad(f"02 § Verification has no entry for {fid} ({seat}) -- a number two seats used is two findings")
 
     punch = (d / "05-punch-list.md").read_text() if (d / "05-punch-list.md").exists() else ""
+
+    # Every finding § Verification confirms is carried into 05 -- as an item's
+    # Source Finding or in the leads table -- or the confirmation was written
+    # and then lost. On 2026-09-28 G2-B-05 (gpt) was re-graded from High to
+    # "confirmed, Medium" with its fix stated, and reached neither the punch
+    # list nor a lead; the blind second opinion found it (S-06), this lint did
+    # not. A confirmed verdict is a `### <id> (<seat>...)` block whose
+    # `**Verdict:**` starts `**confirmed`, or a triage-table row whose grade
+    # cell does. 05's short forms are expanded: `G2-E-core-02, -03` names two
+    # ids, `G2-I-05..09` five.
+    if fi >= 0 and vi > fi:
+        confirmed = set()
+        for b in re.split(r"^(?=### )", ver, flags=re.M):
+            if b.startswith("### ") and re.search(r"^\*\*Verdict:\*\* \*\*confirmed", b, re.M):
+                for m in re.finditer(r"\b(G?[FG]2?-[A-Z][A-Za-z0-9-]*?-\d+|BS-\d+)\b", b.splitlines()[0]):
+                    confirmed.add(m.group(1))
+        for row in ver.splitlines():
+            if row.startswith("| ") and "**confirmed" in row:
+                c = [x.strip() for x in row.strip("|").split("|")]
+                if len(c) >= 2 and c[-1].startswith("**confirmed"):
+                    for m in re.finditer(r"\b(G?[FG]2?-[A-Z][A-Za-z0-9-]*?-\d+|BS-\d+)\b", c[0]):
+                        confirmed.add(m.group(1))
+        carried = set()
+        for m in re.finditer(r"\b(G?[FG]2?-[A-Z][A-Za-z0-9-]*?-)(\d+)(?:\.\.(\d+))?((?:,\s*-\d+(?:\.\.\d+)?)*)", punch):
+            pre, a, b, more = m.group(1), m.group(2), m.group(3), m.group(4) or ""
+            nums = [(a, b)] + [(x.group(1), x.group(2)) for x in re.finditer(r"-(\d+)(?:\.\.(\d+))?", more)]
+            for lo, hi in nums:
+                for n in range(int(lo), int(hi or lo) + 1):
+                    carried.add(f"{pre}{n:0{len(lo)}d}")
+        carried |= set(re.findall(r"\bBS-\d+\b", punch))
+        lost = sorted(confirmed - carried)
+        if confirmed and not lost:
+            ok(f"every confirmed verdict of 02 § Verification is carried in 05 ({len(confirmed)} ids)")
+        for fid in lost:
+            bad(f"02 § Verification confirms {fid} and 05 carries it nowhere -- neither an item's Source Finding nor a lead")
     # A table whose last row is **Total** is the sum of the rows above it. The
     # seat's G-11 under #258 (2026-09-24): the scorecard's printed total
     # disagreed with its own rows by five boxes and eleven PASS verdicts, and

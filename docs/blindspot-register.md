@@ -1066,3 +1066,25 @@ repository, before this entry was written. The rule is
 `engineering-practices.md` § Guards must fail closed, the paragraph on
 scanner fixtures.
 
+
+## 68. A verdict was confirmed, re-graded, and then carried nowhere (2026-09-28)
+
+The milestone audit of the fix round re-read every High against the source.
+G2-B-05 (gpt, B) -- an archive member outside `storage/` is extracted to `/`
+and never rolled back -- was confirmed, re-graded from High to Medium with
+its fix stated in the same entry, and then reached neither the punch list
+nor the leads table: the Highs went to items, the Mediums went through a
+triage table, and a High re-graded to Medium sat in the Highs' section
+where the triage never looked. The blind second opinion found it (S-06,
+graded High there) on a packet that carried the verdict's own text. The
+tell: a document with two paths for one kind of row, and a row that moved
+from one path to the other.
+
+**Guard:** `tools/lint-audit-artifacts` reads every `### <id>` block of
+02 § Verification whose verdict starts `**confirmed` and every triage row
+graded so, expands 05's short forms, and fails on an id that is in neither
+an item's Source Finding nor the leads table; seen to fail on the punch
+list as it stood before PL-028 (`git show cba6ae23f2~1`) and to pass with
+28 ids carried, before this entry was written. The rule is the
+code-auditor skill's Phase 5: every confirmed finding becomes an item or a
+named lead.
