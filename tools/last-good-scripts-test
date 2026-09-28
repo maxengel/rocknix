@@ -10230,6 +10230,87 @@ p7ck "head -c 100 /dev/zero" retroarch 9000 --setenv CORE_MAX_BYTES 1048576
 rm -f "${P7C}/shim/flock"
 printf '%s' "${P7NOTE}" | grep '^dump' | grep -q 'NOT KEPT' && [ ! -e "${P7C}/storage/.cache/log/cores/core.retroarch.9000.4242.gz" ]; check $? "#307 audit G-B-14 (gpt): when the cores folder cannot be locked the dump is not kept, and the note says why" "#307 audit G-B-14: note: $(printf '%s' "${P7NOTE}" | grep '^dump' | cut -c1-120); dump: $([ -e "${P7C}/storage/.cache/log/cores/core.retroarch.9000.4242.gz" ] && echo kept || echo none)"
 
+
+# ---- audit #307, stream D ----
+# The milestone audit of the fix round (2026-09-28, docs/audits/
+# 2026_09_28-milestone-audit-of-the-fix-round), stream D's leads: G2-D-01
+# (claude), G2-D-01, G2-D-02 and G2-D-03 (gpt), and the blind pass's S-24 and
+# S-26 (PL-031, PL-033). Each case was seen to FAIL against the scripts
+# from before its fix except D36, a guard over the pinned client, whose
+# failure was constructed (its comment says how); to watch them fire again:
+#
+#     BASE_REF=f3d19dc8fb tools/last-good-scripts-test --old
+#
+# (f3d19dc8fb is next where this stream was cut.) The ctl's cases run in
+# section t's sandbox, as block D's do, and SKIP when the pinned client's
+# tarball is not on this machine.
+echo "  D (the fix round). stream D's leads of the audit of the fix round: G2-D-01 (claude), G2-D-01, G2-D-02 and G2-D-03 (gpt), S-24 and S-26 (PL-031, PL-033)"
+DF="${TMP}/stream-d-fix-round"; mkdir -p "${DF}"
+DF_OK=0
+if declare -F tctl >/dev/null && [ -n "${CLIENT:-}" ] && [ -d "${CLIENT}/raofflineproxy" ]; then DF_OK=1; fi
+src_of "${CTL_REL:-projects/ROCKNIX/packages/network/raofflineproxy/sources/raofflineproxy-ctl}" "${DF}/ctl"
+src_of "projects/ROCKNIX/packages/emulators/standalone/ppsspp-sa/scripts/cheevos_ppsspp.sh" "${DF}/cheevos_ppsspp.sh"
+
+# D33. gpt G2-D-01 (and claude G2-D-08, the same reader): a sets row's
+# GameId was taken from the first 512 characters by a regex, and any match
+# was believed. A number the cut ends inside -- "GameId":153 with the 3 at
+# character 513 -- read as game 15, and a nested set's GameId ahead of the
+# body's own (Sets[].GameId, a bonus set's id) read as the body's. Either
+# way the ready set named a game that is not ready and missed one that is:
+# added= and the walk's "already cached" were wrong together. The head now
+# answers only with the body's own key and a number that ends inside it;
+# anything else is the whole body's parse, as before. Both readers: the
+# shell's ready_games_into (lifted and run against a store the pinned
+# client's Storage wrote) and the walk's whole_games (a scan's jobs).
+if [ "${DF_OK}" -eq 1 ]; then
+mkdir -p "${DF}/d33/cfg"
+sed -n '/^ready_games_into() {/,/^}/p' "${DF}/ctl" > "${DF}/d33/rgi.sh"
+PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${DF}/d33/cfg" python3 - > "${DF}/d33/seed.out" 2>&1 <<'EOS'
+import json
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+straddle = '{"Title":"' + "T" * 489 + '","GameId":153,"Sets":[]}'
+assert straddle[:512].endswith('"GameId":15'), straddle[500:515]
+nested = json.dumps({"Success": True, "Sets": [{"GameId": 9160, "Title": "Bonus"}], "GameId": 160}, separators=(",", ":"))
+s.upsert_cache(cache_keys.achievementsets("d33a", "qa"), straddle)
+s.upsert_cache(cache_keys.achievementsets("d33b", "qa"), nested)
+for g in (153, 15, 160, 9160):
+    s.upsert_cache(cache_keys.unlocks(g, "qa"), '{"Success":true,"UserUnlocks":[]}')
+s.close()
+print("seeded")
+EOS
+bash -c ". '${DF}/d33/rgi.sh'; QUEUE='${DF}/d33/cfg/proxy.sqlite3'; USER_KEY=u; setting() { echo QA; }; ready_games_into '${DF}/d33/ready'" 2>"${DF}/d33/err"
+DRGI=$?; DREADY="$(tr '\n' ' ' < "${DF}/d33/ready" 2>/dev/null)"
+[ "${DRGI}" -eq 0 ] && [ "${DREADY}" = "153 160 " ]; check $? "gpt G2-D-01 / claude G2-D-08: ready_games_into reads 153 (its GameId cut at the 512th character) and 160 (a nested set's GameId first), and invents neither 15 nor 9160" "gpt G2-D-01 / claude G2-D-08: ready_games_into rc ${DRGI} read '${DREADY}' -- expected '153 160 '; seed: $(tr '\n' '|' < "${DF}/d33/seed.out" | cut -c1-120); err: $(tr '\n' '|' < "${DF}/d33/err" | cut -c1-160)"
+# The walk: four gb ROMs whose patch rows are this account's. 153 and 160
+# are whole (unlocks and a sets row of the game) and passed over; 15 and
+# 9160 have no sets row of their own and are jobs.
+printf 'GB k' > "${TS}/roms/gb/k.gb"; printf 'GB l' > "${TS}/roms/gb/l.gb"
+printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+treset; PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
+import json
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+straddle = '{"Title":"' + "T" * 489 + '","GameId":153,"Sets":[]}'
+nested = json.dumps({"Success": True, "Sets": [{"GameId": 9160, "Title": "Bonus"}], "GameId": 160}, separators=(",", ":"))
+for g, rom in ((153, "/gb/i.gb"), (15, "/gb/h.gb"), (160, "/gb/k.gb"), (9160, "/gb/l.gb")):
+    s.upsert_cache(cache_keys.patch(g, "qa"), '{"Success":true,"PatchData":{"ID":%d}}' % g, source_rom_path=rom)
+    s.upsert_cache(cache_keys.unlocks(g, "qa"), '{"Success":true,"UserUnlocks":[]}')
+s.upsert_cache(cache_keys.achievementsets("d33a", "qa"), straddle)
+s.upsert_cache(cache_keys.achievementsets("d33b", "qa"), nested)
+s.close()
+EOS
+: > "${TR}/helper-jobs.log"; dfake_images
+tctl scan
+DJOBS="$(grep -o '/storage/roms/gb/[a-z]*\.gb$' "${TR}/helper-jobs.log" | sort | tr '\n' ' ')"
+[ "${DJOBS}" = "/storage/roms/gb/h.gb /storage/roms/gb/l.gb " ]; check $? "gpt G2-D-01 / claude G2-D-08: the walk passes over i.gb (153) and k.gb (160) and lists h.gb (15) and l.gb (9160), which have no sets row of their own" "gpt G2-D-01 / claude G2-D-08: the walk's gb jobs were '${DJOBS}' (rc ${RC}) -- expected h.gb and l.gb; a head's partial or nested GameId made the wrong game whole"
+rm -f "${TS}/roms/gb/k.gb" "${TS}/roms/gb/l.gb"
+else
+skip "gpt G2-D-01 / claude G2-D-08: the ready readers need section t's pinned client"
+fi
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi

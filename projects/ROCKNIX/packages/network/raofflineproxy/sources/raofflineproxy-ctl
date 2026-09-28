@@ -946,11 +946,17 @@ do_listening() {
 # "already cached" (list_jobs whole_games) is the same rule (audit of the
 # fixes, claude G-D-08, gpt G-D-04). A sets row's GameId is read from the
 # first 512 characters, where the service writes it, and from the whole body
-# only when it is not there, so the store's bodies are not parsed whole at
-# every run. added= is how many ids a run adds to this set -- the games that
-# became ready for this player (fork #298's "games new to the store"),
-# counted from the store rather than from the run's cache operations (#308
-# F-RA-10, F-RA-15). Exit non-zero when the store cannot be read.
+# only when they do not hold it, so the store's bodies are not parsed whole
+# at every run. The head answers only with the body's own key -- not a
+# nested set's (Sets[].GameId) -- and a number that ends inside it -- not
+# one the cut ends in ("GameId":15 of 153); anything less is the whole
+# body's parse, so the two ways of reading a row cannot disagree (audit of
+# the fix round, gpt G2-D-01, claude G2-D-08). head_game_id is the same text
+# in list_jobs' whole_games. added= is how many ids a run adds to this set
+# -- the games that became ready for this player (fork #298's "games new to
+# the store"), counted from the store rather than from the run's cache
+# operations (#308 F-RA-10, F-RA-15). Exit non-zero when the store cannot
+# be read.
 ready_games_into() {
     : > "$1" || return 1
     [ -e "${QUEUE}" ] || return 0
@@ -958,7 +964,32 @@ ready_games_into() {
 import json, re, sqlite3, sys
 store, user = sys.argv[1], sys.argv[2].strip().lower()
 db = sqlite3.connect("file:%s?mode=ro" % store, uri=True, timeout=1.0)
-game = re.compile(r"\"GameId\"\s*:\s*(\d+)")
+HEAD_VALUE = re.compile(r"\s*:\s*(\d+)\s*[,}]")
+HEAD_COLON = re.compile(r"\s*:")
+def head_game_id(head):
+    depth, i, n = 0, 0, len(head)
+    while i < n:
+        c = head[i]
+        if c == "\"":
+            j = i + 1
+            while j < n and head[j] != "\"":
+                j += 2 if head[j] == "\\" else 1
+            if j >= n:
+                return None
+            if depth == 1 and head[i + 1:j] == "GameId":
+                whole = HEAD_VALUE.match(head, j + 1)
+                if whole:
+                    return int(whole.group(1))
+                if HEAD_COLON.match(head, j + 1):
+                    return None
+            i = j + 1
+            continue
+        if c in "{[":
+            depth += 1
+        elif c in "}]":
+            depth -= 1
+        i += 1
+    return None
 unlocks, sets = set(), set()
 for key, head in db.execute("SELECT cacheKey, substr(responseBody, 1, 512) FROM api_cache WHERE cacheKey LIKE ? OR cacheKey LIKE ?", ("unlocks:%", "achievementsets:%")).fetchall():
     parts = key.split(":")
@@ -968,15 +999,13 @@ for key, head in db.execute("SELECT cacheKey, substr(responseBody, 1, 512) FROM 
         continue
     if len(parts) != 3 or parts[2] != user:
         continue
-    found = game.search(head or "")
-    if found:
-        sets.add(int(found.group(1)))
-        continue
-    try:
-        body = db.execute("SELECT responseBody FROM api_cache WHERE cacheKey = ?", (key,)).fetchone()[0]
-        gid = int((json.loads(body) or {}).get("GameId") or 0)
-    except Exception:
-        gid = 0
+    gid = head_game_id(head or "")
+    if gid is None:
+        try:
+            body = db.execute("SELECT responseBody FROM api_cache WHERE cacheKey = ?", (key,)).fetchone()[0]
+            gid = int((json.loads(body) or {}).get("GameId") or 0)
+        except Exception:
+            gid = 0
     if gid > 0:
         sets.add(gid)
 for g in sorted(unlocks & sets):
@@ -1363,15 +1392,45 @@ def is_cached(game_id, hash_value):
 # rows an older client's eviction thinned) used to pass the ROM over for
 # ever; now it is a job again (#308 F-RA-14). The dump's own sets row cannot
 # be asked here -- an unindexed ROM's hash is what the job finds out.
+HEAD_VALUE = re.compile(r"\s*:\s*(\d+)\s*[,}]")
+HEAD_COLON = re.compile(r"\s*:")
+def head_game_id(head):
+    depth, i, n = 0, 0, len(head)
+    while i < n:
+        c = head[i]
+        if c == "\"":
+            j = i + 1
+            while j < n and head[j] != "\"":
+                j += 2 if head[j] == "\\" else 1
+            if j >= n:
+                return None
+            if depth == 1 and head[i + 1:j] == "GameId":
+                whole = HEAD_VALUE.match(head, j + 1)
+                if whole:
+                    return int(whole.group(1))
+                if HEAD_COLON.match(head, j + 1):
+                    return None
+            i = j + 1
+            continue
+        if c in "{[":
+            depth += 1
+        elif c in "}]":
+            depth -= 1
+        i += 1
+    return None
+
+
 def whole_games():
     """The games ready for this account -- the unlocks row and an
     achievementsets row of the game, the rows a launch reads -- by the same
     rule as the shell's ready_games_into (audit of the fixes, claude G-D-08,
     gpt G-D-04). A sets row's GameId is read from its first 512 characters,
-    where the service writes it, and from the whole body only when it is not
-    there: every body parsed whole at every listing was tens of megabytes
-    on a large store."""
-    game = re.compile(r'"GameId"\s*:\s*(\d+)')
+    where the service writes it, and from the whole body only when they do
+    not hold it: every body parsed whole at every listing was tens of
+    megabytes on a large store. The head answers only with the body's own
+    key and a number that ends inside it (head_game_id above, the same text
+    as in the shell's ready_games_into; audit of the fix round, gpt
+    G2-D-01, claude G2-D-08)."""
     unlocks, sets = set(), set()
     try:
         db = sqlite3.connect("file:%s?mode=ro" % DATABASE_FILE, uri=True, timeout=1.0)
@@ -1387,15 +1446,13 @@ def whole_games():
             continue
         if len(parts) != 3 or parts[2] != user:
             continue
-        found = game.search(head or "")
-        if found:
-            sets.add(int(found.group(1)))
-            continue
-        try:
-            body = db.execute("SELECT responseBody FROM api_cache WHERE cacheKey = ?", (key,)).fetchone()[0] if db is not None else head
-            gid = int((json.loads(body) or {}).get("GameId") or 0)
-        except Exception:
-            gid = 0
+        gid = head_game_id((head or "")[:512])
+        if gid is None:
+            try:
+                body = db.execute("SELECT responseBody FROM api_cache WHERE cacheKey = ?", (key,)).fetchone()[0] if db is not None else head
+                gid = int((json.loads(body) or {}).get("GameId") or 0)
+            except Exception:
+                gid = 0
         if gid > 0:
             sets.add(gid)
     if db is not None:
