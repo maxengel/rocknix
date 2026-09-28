@@ -2,17 +2,22 @@
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="raofflineproxy"
-# Pinned by full commit (packages/README.md): main at 2026-09-26 (fork #293; 0711f0b of 2026-09-23 before, fork #259).
-# Since the previous pin (4e9bab48, 2026-09-20) the Linux side refreshes only
-# the games played in the last seven days (59b167c), keeps every cached
-# game's rows until the game is deleted rather than evicting them after sixty
-# days (59b167c, e25b276), caches gameid lookups, and moves the rcheevos
-# submodule to 1433173 (095867d; raofflineproxy-rcheevos follows it). libchdr
-# is unchanged at 8e7b8bd. Patch 005 kept its exception boundary and dropped
-# its bound on the pass; 006 retired, upstream now does more than it did
-# (D-RA-029). APP_VERSION still reads 1.13.0-alpha1.
-PKG_VERSION="c1bd3724d18e8c0ce67c3d62852e6eaf83e3a302"
-PKG_SHA256="0729719d8ea7fd23a4669f79849ce0c8d1d9d811e978ac1c60bc1ed97a9d5d19"
+# Pinned by full commit (packages/README.md): main at 2026-09-28 (248ce5a,
+# step 0 of the release candidate; c1bd3724 of 2026-09-26 before, fork #293).
+# The 23 commits since c1bd3724 are the Android app (the stale login token's
+# 401 on award sync, #182; NetherSX2's host-override broadcast, #190; the
+# caching budget, #174), dependabot, and nightly CI. On the Linux side the
+# updater learned a nightly channel (update.py, #176/#179) -- reached only
+# from the CLI's update commands, which nothing on this image runs -- and
+# config.py stops taking the dArkOS path on spruce (#178), neither of which
+# is this image. The store, the proxy service and the cache keys are
+# unchanged; the login key was already lower-cased on Linux, which is the
+# half of #182 the Android app lacked. Both submodules are unchanged
+# (rcheevos 1433173, libchdr 8e7b8bd; D-RA-029, D-RA-037). Every patch
+# applies as it did; 008's config.py hunk header is moved eight lines to
+# where #178 left load_config. APP_VERSION still reads 1.13.0-alpha1.
+PKG_VERSION="248ce5acae75113d09500cd7c6661a12fee4b93c"
+PKG_SHA256="5a430a6bc75d4d101ef983ea1c67897613387148f991daafac5a035637ec7cf5"
 # GPLv3 text with no "or any later version" grant in the sources.
 PKG_LICENSE="GPL-3.0-only"
 PKG_SITE="https://github.com/misantronic/RAOfflineProxy"

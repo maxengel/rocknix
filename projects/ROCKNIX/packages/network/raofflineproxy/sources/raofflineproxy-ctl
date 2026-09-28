@@ -237,9 +237,10 @@
 #
 # The store this reads -- read-only, through the service's own sqlite3
 # module, never written here -- is the client's schema at the commit
-# package.mk pins (c1bd3724d18e8c0ce67c3d62852e6eaf83e3a302, storage.py
-# _initialize_sqlite, read 2026-09-28 for audit #308 F-RA-07; the header
-# named 4e9bab48, two pins back, until then): pending_awards(id,
+# package.mk pins (248ce5acae75113d09500cd7c6661a12fee4b93c, storage.py
+# _initialize_sqlite, read 2026-09-28 for audit #308 F-RA-07 at c1bd3724
+# and unchanged since, as are cache_keys.py and proxy_service.py; the
+# header named 4e9bab48, three pins back, until then): pending_awards(id,
 # achievementId, queryString, requestBody, queuedAt, status) for pending,
 # pending-ids and summary; api_cache(cacheKey, responseBody, sourceRomPath,
 # cachedAt) for account, summary, the ready set behind added= and the
