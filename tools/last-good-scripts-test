@@ -4330,4 +4330,31 @@ CONTENT_REMOTE="/ROCKNIX/Content"'
 cg_run 'CONTENT_REMOTE="/ROCKNIX/Content" ; echo'
 [ "${RC}" -ne 0 ] && [ -z "$(cd "${CG}/cloud" && find . -type f)" ] && grep -qx ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ" "${CG}/out"; check $? "a CONTENT_REMOTE line it cannot read as plain text is refused, not read as the root (rc ${RC})" "rc ${RC}; cloud: $(cd "${CG}/cloud" && find . -type f | tr '\n' ' '); why: $(grep '^>>> why' "${CG}/out")"
 
+# A40. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-07 and
+#      seats/A-claude.md G-A-03, Medium): --all read its ROMs listing
+#      fail-closed and its two older-layout listings -- the flat layout's
+#      root and, with a CONTENT_REMOTE, the remote root -- fail-open, and
+#      BIOS by exists_remote, fail-open too. A cloud still on an older
+#      layout whose one listing failed restored nothing and said "Nothing
+#      to restore", stamped completed.
+echo "    A40. G-A-07 (gpt) / G-A-03 (claude): every listing --all stands on is read fail-closed"
+AF=$(sa_new ga07); sa_script "${AF}" cloud_content_restore
+mkdir -p "${AF}/storage/roms/nes" "${AF}/storage/.config/emulationstation" "${AF}/storage/.cache/cloud_sync"
+printf '<system><path>/storage/roms/nes</path></system>\n' > "${AF}/storage/.config/emulationstation/es_systems.cfg"
+af_run() { # <CONTENT_REMOTE> <where nes sits in the cloud> <the listing to fail>
+    rm -rf "${AF}/cloud"/* "${AF}/storage/roms/nes"/* "${AF}/storage/.cache/cloud_sync/last-content-restore"
+    printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="%s"\n' "$1" > "${AF}/storage/.config/cloud_sync.conf"
+    mkdir -p "${AF}/cloud$2"; echo n > "${AF}/cloud$2/N.nes"
+    printf '%s\t%s\n' "$3" 5 > "${AF}/ctl/fail"
+    sa_run "${AF}" cloud_content_restore --all
+}
+af_run /ROCKNIX/Content /ROCKNIX/Content/nes '^lsf --dirs-only qa:/ROCKNIX/Content/ '
+af_stamp=$(awk '{print $2}' "${AF}/storage/.cache/cloud_sync/last-content-restore" 2>/dev/null)
+[ "${RC}" -ne 0 ] && [ "${af_stamp:-none}" != 0 ] && ! grep -q '^Nothing to restore' "${AF}/out" && grep -q '^>>> why ' "${AF}/out"; check $? "--all on the flat layout whose root listing fails (5) ends Couldn't finish, not Nothing to restore (rc ${RC}, stamp ${af_stamp:-none})" "rc ${RC}, stamp ${af_stamp:-none}; out: $(sa_tail "${AF}")"
+af_run /ROCKNIX/Content /nes '^lsf --dirs-only qa: '
+af_stamp=$(awk '{print $2}' "${AF}/storage/.cache/cloud_sync/last-content-restore" 2>/dev/null)
+[ "${RC}" -ne 0 ] && [ "${af_stamp:-none}" != 0 ] && ! grep -q '^Nothing to restore' "${AF}/out"; check $? "--all whose legacy root listing fails (5) ends Couldn't finish too (rc ${RC}, stamp ${af_stamp:-none})" "rc ${RC}, stamp ${af_stamp:-none}; out: $(sa_tail "${AF}")"
+af_run /ROCKNIX/Content /ROCKNIX/Content/nes '^never$'
+[ "${RC}" -eq 0 ] && [ -f "${AF}/storage/roms/nes/N.nes" ]; check $? "and with nothing failing the flat layout's nes comes down (rc ${RC})" "rc ${RC}; out: $(sa_tail "${AF}")"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

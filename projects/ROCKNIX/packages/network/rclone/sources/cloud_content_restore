@@ -1329,37 +1329,49 @@ case "${1}" in
         # ROMs/<system>, then the flat layout, then the remote root), so
         # every anchor sits where it does for --selected.
         #
-        # The ROMs listing is read fail-closed: a listing that failed is not
-        # an empty cloud. The two older layouts are consulted only for names
-        # this device knows as systems -- ES declares them, or it holds the
-        # folder -- because an older layout's root is somebody's account,
-        # and a folder there is not a system because it is a folder.
-        ALL_ROMS=$(rclone lsf --dirs-only "${ROOT}ROMs/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); all_rc=$?
-        if [ "${all_rc}" -ne 0 ] && [ "${all_rc}" -ne 3 ] && ! absent_not_broken "${ROOT}ROMs/"; then
-            log_message "restore --all: the ROMs folder could not be listed (rclone exit ${all_rc})"
+        # Every listing this stands on is read fail-closed: a listing that
+        # failed is not an empty cloud. The ROMs listing was; the two older
+        # layouts' and BIOS's were not, so a cloud still on an older layout
+        # whose one listing failed restored nothing and said "Nothing to
+        # restore" (the audit of the fixes, G-A-07/G-A-03). The two older
+        # layouts are consulted only for names this device knows as
+        # systems -- ES declares them, or it holds the folder -- because an
+        # older layout's root is somebody's account, and a folder there is
+        # not a system because it is a folder.
+        all_listing() { # <path>: LISTED=its folders; the run stops when it cannot be read
+            local path="$1" lrc
+            LISTED=$(rclone lsf --dirs-only "${path}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); lrc=$?
+            [ "${lrc}" -eq 0 ] && return 0
+            LISTED=""
+            { [ "${lrc}" -eq 3 ] || [ "${lrc}" -eq 4 ] || absent_not_broken "${path}"; } && return 0
+            log_message "restore --all: ${path} could not be listed (rclone exit ${lrc})"
             if network_gone; then
                 echo "Skipped: there's no network connection. Try again when you're online."
                 exit "${EXIT_NO_NETWORK}"
             fi
             echo "Couldn't finish: your cloud couldn't be read, so nothing was restored. Try again."
-            say_why "$(why_for "${all_rc}")"
-            record_outcome content-restore "${all_rc}"
-            exit "${all_rc}"
-        fi
+            say_why "$(why_for "${lrc}")"
+            record_outcome content-restore "${lrc}"
+            exit "${lrc}"
+        }
+        all_listing "${ROOT}ROMs/"
+        ALL_ROMS=$(printf '%s\n' "${LISTED}" | sed 's:/$::')
         ALL_KNOWN=$( { supported_systems; legacy_dirs; echo bios; } | sort -u )
-        mapfile -t DIRS < <(
-            {
-                printf '%s\n' "${ALL_ROMS}" | sed 's:/$::'
-                rclone lsf --dirs-only "${ROOT}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | sed 's:/$::' \
-                    | grep -vxE 'ROMs|BIOS' | grep -Fxf <(printf '%s\n' "${ALL_KNOWN}")
-                if [ -n "${CONTENT_REMOTE}" ]; then
-                    rclone lsf --dirs-only "${LEGACY_ROOT}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | sed 's:/$::' \
-                        | grep -Fxf <(legacy_dirs)
-                fi
-            } 2>/dev/null | grep -v '^$' | sort -u)
+        all_listing "${ROOT}"
+        # BIOS is there when the content root lists it (a folder with files,
+        # or a directory marker) -- what exists_remote asked, from the same
+        # listing, read fail-closed.
+        ALL_BIOS=0; printf '%s\n' "${LISTED}" | grep -qx 'BIOS/' && ALL_BIOS=1
+        ALL_FLAT=$(printf '%s\n' "${LISTED}" | sed 's:/$::' | grep -vxE 'ROMs|BIOS' | grep -Fxf <(printf '%s\n' "${ALL_KNOWN}"))
+        ALL_LEGACY=""
+        if [ -n "${CONTENT_REMOTE}" ]; then
+            all_listing "${LEGACY_ROOT}"
+            ALL_LEGACY=$(printf '%s\n' "${LISTED}" | sed 's:/$::' | grep -Fxf <(legacy_dirs))
+        fi
+        mapfile -t DIRS < <(printf '%s\n' "${ALL_ROMS}" "${ALL_FLAT}" "${ALL_LEGACY}" | grep -v '^$' | sort -u)
         # BIOS as --selected brings it: whenever the cloud has it, and not
         # with game content alone.
-        if [ "${MEDIA_MODE}" != only ] && exists_remote "${ROOT}BIOS" && ! printf '%s\n' "${DIRS[@]}" | grep -qx bios; then
+        if [ "${MEDIA_MODE}" != only ] && [ "${ALL_BIOS}" -eq 1 ] && ! printf '%s\n' "${DIRS[@]}" | grep -qx bios; then
             DIRS+=("bios")
         fi
         if [ ${#DIRS[@]} -eq 0 ]; then
