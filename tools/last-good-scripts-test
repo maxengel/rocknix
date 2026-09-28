@@ -3534,6 +3534,28 @@ p7bt restore --no-restart
 [ "${RC}" -ne 0 ] && [ "$(cat "${P7S}/.config/test/f2")" = "LIVE2" ] && [ "$(cat "${P7S}/.config/test/f1")" = "LIVE1" ]; check $? "#307 audit G-B-01 (gpt): a member listing that fails after the archive checked whole ends the restore before anything is written (why: $(p7why))" "#307 audit G-B-01: rc ${RC}; f1='$(cat "${P7S}/.config/test/f1")' f2='$(cat "${P7S}/.config/test/f2")' -- the partial listing was taken as the whole"
 rm -f "${P7}/shim/tar" "${P7S}/.p7-tzf"
 
+# == AUD gpt G-B-04 (#307 audit of the fixes): an exclusion that cannot be applied is a failed collection
+p7reset '  /storage/roms'
+p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/f1=old"
+cat > "${P7}/shim/awk" <<'EOS'
+#!/bin/bash
+# The filter that takes the backups folder out of the list fails; every other awk is the image's.
+case "$*" in *'ENVIRON["OWN"]'*) echo "awk: write error" >&2; exit 2 ;; esac
+exec /p7bb/awk "$@"
+EOS
+chmod +x "${P7}/shim/awk"
+p7bt backup
+[ "${RC}" -ne 0 ] && [ "$(p7arc | wc -l)" -eq 1 ] && ! tar -tzf "$(p7arc | tail -1)" 2>/dev/null | grep -q '^storage/roms/backup/'; check $? "#307 audit G-B-04 (gpt): when the backup folder cannot be filtered out, nothing is written (rc ${RC})" "#307 audit G-B-04: rc ${RC}; archives $(p7arc | wc -l); members under the backup folder: $(for a in $(p7arc); do tar -tzf "$a" 2>/dev/null; done | grep -c '^storage/roms/backup/')"
+rm -f "${P7}/shim/awk"
+
+# == AUD claude G-B-12 (#307 audit of the fixes): core dumps and evidence bundles never go into a backup
+p7reset '  /storage/.cache'
+mkdir -p "${P7S}/.cache/log/cores" "${P7S}/.cache/log/evidence"
+echo dump | gzip > "${P7S}/.cache/log/cores/core.retroarch.1.2.gz"; echo note > "${P7S}/.cache/log/cores/core.retroarch.1.2.txt"
+echo bundle > "${P7S}/.cache/log/evidence/2026_01_01-000000-device-evidence.tar.gz"; echo mine > "${P7S}/.cache/other.cfg"
+p7bt backup
+[ "${RC}" -eq 0 ] && p7list | grep -qx 'storage/.cache/other.cfg' && ! p7list | grep -qE '/log/(cores|evidence)/'; check $? "#307 audit G-B-12 (claude): LOCATIONS=(/storage/.cache) carries other.cfg and no core dump, note or evidence bundle" "#307 audit G-B-12: rc ${RC}; members: $(p7list | grep -E '/log/(cores|evidence)/' | tr '\n' ' ')"
+
 # y2. wifictl whole, against an nmcli that answers as the target's does
 # (probed on guest d for the psk, 2026-09-27): terse and get-values output
 # escapes ':' and '\' unless --escape no; two wireless devices, each profile

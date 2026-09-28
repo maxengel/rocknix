@@ -705,16 +705,30 @@ write_archive() {
     # twice; the archive holds it once, and the counts below compare like
     # with like.
     awk '!seen[$0]++' "${FILELIST}" > "${FILELIST}.unique" && mv -f "${FILELIST}.unique" "${FILELIST}"
-    # A staging folder is never collected either (a run killed part-way
-    # leaves one; a selection of /storage would find it).
-    STAGE="${STAGING_PREFIX}" awk 'index($0, ENVIRON["STAGE"]) != 1' "${FILELIST}" > "${FILELIST}.stage" && mv -f "${FILELIST}.stage" "${FILELIST}"
-    local OWNED
-    OWNED=$(OWN="${OWN}/" awk 'index($0, ENVIRON["OWN"]) == 1' "${FILELIST}" | wc -l)
-    if [ "${OWNED}" -gt 0 ]
+    # Nor, whatever the list says: a staging folder (a run killed part-way
+    # leaves one; a selection of /storage would find it), and the core dumps
+    # and evidence bundles under /storage/.cache/log -- a core is process
+    # memory, credentials and all, and rocknix-corekeep promises it is never
+    # collected (#307, the audit of the fixes, claude G-B-12).
+    #
+    # One filter, checked: the kept list is written whole and moved into
+    # place, or the collection fails (return 2). An exclusion that could not
+    # be applied left the unfiltered list in place, and a selection of
+    # /storage/roms archived the password-keeping pre-restore copies it
+    # exists to keep out (gpt G-B-04).
+    local KEPTN DROPPED
+    if ! OWN="${OWN}/" STAGE="${STAGING_PREFIX}" CORES=/storage/.cache/log/cores/ EVID=/storage/.cache/log/evidence/ \
+           awk 'index($0, ENVIRON["OWN"]) == 1 || index($0, ENVIRON["STAGE"]) == 1 || index($0, ENVIRON["CORES"]) == 1 || index($0, ENVIRON["EVID"]) == 1 { next } { print }' \
+           "${FILELIST}" > "${FILELIST}.kept" \
+       || ! KEPTN=$(wc -l < "${FILELIST}.kept") \
+       || ! DROPPED=$(( $(wc -l < "${FILELIST}") - KEPTN )) \
+       || ! mv -f "${FILELIST}.kept" "${FILELIST}"
     then
-        OWN="${OWN}/" awk 'index($0, ENVIRON["OWN"]) != 1' "${FILELIST}" > "${FILELIST}.own" && mv -f "${FILELIST}.own" "${FILELIST}"
-        logger -t backuptool "left out ${OWNED} file(s) under the settings backups folder: a backup never holds another backup"
+        logger -t backuptool "the list could not be filtered of the backups folder, staging, cores and evidence; nothing written"
+        rm -f "${FILELIST}" "${FILELIST}.kept" "${SECRETLIST}" "${SENDLIST}"
+        return 2
     fi
+    [ "${DROPPED}" -gt 0 ] && logger -t backuptool "left out ${DROPPED} file(s) a backup never holds: another backup, a staging folder, a core dump or an evidence bundle"
 
     # Inside a configured location, what the image ships is not the player's
     # configuration and does not travel (#45). A stock device's archive was
