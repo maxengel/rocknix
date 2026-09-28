@@ -73,7 +73,12 @@ function redact_credentials() {
     # every "test passed" and "bypass" line through sed (#307, the audit of
     # the fixes, claude G-B-07).
     local passkey='pass"?[[:space:]]*[=:]'
-    if [[ "${line}" =~ (${words}|${passkey}|${marks}) ]]; then
+    # And a flag whose name ends in "pass", followed by its value (--pass
+    # X, --RA_Pass X, -pass X): the sed below has always redacted that shape,
+    # but a line that only it would catch took this path and was printed
+    # whole (#307, the audit of the fix round, PL-005).
+    local passflag='(^|[[:space:]])--?[A-Za-z0-9_.-]*pass[[:space:]]'
+    if [[ "${line}" =~ (${words}|${passkey}|${passflag}|${marks}) ]]; then
       [ "${nocase}" -eq 1 ] || shopt -u nocasematch
       printf '%s\n' "${line}" | redact_credentials
     else

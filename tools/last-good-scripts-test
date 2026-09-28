@@ -10285,6 +10285,11 @@ printf 'SETTINGS_BACKUPS=/storage/roms/bare\n' > "${P7S}/.config/cloud_sync.conf
 p7bt backup
 [ "${p7rc1}" -eq 0 ] && [ "${p7ok1}" -eq 1 ] && [ "${RC}" -eq 0 ] && [ -n "$(ls "${P7S}/roms/bare"/*.tar.gz 2>/dev/null)" ]; check $? "audit of the fix round PL-003: a single-quoted and a bare value are read as the shell would read them" "PL-003: single-quoted rc ${p7rc1}, ${p7ok1} archive(s); bare rc ${RC}, $(ls "${P7S}/roms/bare" 2>/dev/null | wc -l)"
 
+# == PL-005: a credential given as a flag is redacted on the fast path too
+[ "$(p7red 'launcher --pass qa-value')" = "launcher --pass <redacted>" ] && [ "$(p7red 'x --RA_Pass qa-value')" = "x --RA_Pass <redacted>" ] && [ "$(p7red 'x -pass qa-value')" = "x -pass <redacted>" ]; check $? "audit of the fix round PL-005: 'launcher --pass qa-value', 'x --RA_Pass qa-value' and 'x -pass qa-value' are redacted in argument mode as in stream mode" "PL-005: '$(p7red 'launcher --pass qa-value')' / '$(p7red 'x --RA_Pass qa-value')' / '$(p7red 'x -pass qa-value')' -- the fast path knew pass only before = or :"
+p7forks=$(PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7F}/redact.sh'; sed() { echo fork >> '${P7F}/forks'; command sed \"\$@\"; }; : > '${P7F}/forks'; redact_credentials 'test passed: 3 of 3' >/dev/null; redact_credentials 'bypass mode on' >/dev/null; redact_credentials 'the --passes flag' >/dev/null; wc -l < '${P7F}/forks'")
+[ "${p7forks}" -eq 0 ]; check $? "audit of the fix round PL-005: and 'test passed', 'bypass mode' and '--passes' still take the fast path (no sed)" "PL-005: ${p7forks} sed fork(s) for lines with no credential"
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
