@@ -830,6 +830,55 @@ Built 2026-09-28 14:5x UTC from the twenty outputs (an agent's extraction, then 
 | G-E2-05 (gpt) | E-app | gpt | other: cannot tell | `CloudTransferJob.cpp` and its test are not embedded. |
 | G-E2-06 (gpt) | E-app | gpt | other: cannot tell | The `from=checked-launch` change is not embedded, and the `exitCode == 0` gate is forward protection, not a repair of existing records. |
 
+## Cross-check (Phase 2.5): this audit's per-item verdicts against the fix audit's, opened only now
+
+The fix audit's per-item verdicts (its seats over the first deliveries, sequestered until this section) beside this audit's (both seats over the whole branches). 61 item-seat pairs differ; 48 read weaker now (a holds became holds in part or cannot tell -- the follow-up hunks and the whole-branch diff gave the seat more to doubt, or a packet without the plan gave it less to rest on), 13 stronger. **No item drew "does not hold" from any seat in either audit.** A weaker reading is a lead for § Verification, not a defect in itself; the ones that name a mechanism are read there.
+
+| item | fix audit claude | fix audit gpt | this audit claude | this audit gpt | change |
+|---|---|---|---|---|---|
+| PL-003 | holds | holds | cannot tell | holds in part | weaker |
+| PL-005 | holds | holds in part | holds | holds | stronger |
+| PL-006 | holds in part | holds | holds | holds | stronger |
+| PL-008 | holds | holds in part | holds | holds | stronger |
+| PL-012 | holds | holds in part | holds | holds | stronger |
+| PL-014 | holds in part | holds in part | cannot tell | cannot tell / holds in part | weaker |
+| PL-015 | holds | holds in part | holds / holds in part | cannot tell / holds in part | weaker |
+| PL-016 | holds | holds in part | holds in part | holds in part | weaker |
+| PL-022 | holds | holds in part | cannot tell | holds in part | weaker |
+| PL-023 | holds | holds in part | holds in part | holds in part | weaker |
+| PL-024 | holds | holds in part | cannot tell / holds | cannot tell / holds in part | weaker |
+| PL-026 | holds | holds in part | holds | holds | stronger |
+| PL-029 | holds | holds in part | cannot tell | cannot tell / holds in part | weaker |
+| PL-030 | holds | holds in part | cannot tell / holds / holds in part | cannot tell / holds in part | weaker |
+| PL-036 | holds | holds in part | holds | holds | stronger |
+| PL-037 | holds | holds | holds | holds in part | weaker |
+| PL-041 | holds in part | holds in part | cannot tell / holds in part | cannot tell / holds in part | weaker |
+| PL-043 | holds | holds in part | holds | holds | stronger |
+| PL-044 | holds | holds | holds | holds in part | weaker |
+| PL-046 | holds | holds in part | holds | holds | stronger |
+| PL-050 | holds | holds in part | holds | holds | stronger |
+| PL-051 | holds | holds in part | holds / holds in part | cannot tell / holds | weaker |
+| PL-053 | holds | holds in part | holds | holds | stronger |
+| PL-054 | holds | holds | cannot tell / holds | cannot tell / holds in part | weaker |
+| PL-056 | holds | holds | cannot tell | cannot tell / holds in part | weaker |
+| PL-060 | holds in part | holds in part | holds | holds | stronger |
+| PL-061 | holds in part | holds in part | cannot tell / holds | cannot tell / holds in part | weaker |
+| PL-062 | holds | holds | cannot tell / holds | cannot tell / holds in part | weaker |
+| PL-063 | holds | holds | cannot tell / holds | cannot tell / holds in part | weaker |
+| PL-064 | holds in part | holds in part | cannot tell / holds in part | cannot tell / holds in part | weaker |
+| PL-065 | holds | holds in part | cannot tell / holds | cannot tell / holds in part | weaker |
+| PL-067 | holds | holds in part | holds | holds | stronger |
+| PL-068 | holds in part | holds in part | cannot tell / holds / holds in part | cannot tell / holds in part | weaker |
+| PL-069 | holds | holds in part | cannot tell / holds | cannot tell / holds in part | weaker |
+| PL-072 | holds | holds in part | holds in part | holds in part | weaker |
+| PL-075 | holds | holds | cannot tell / holds | cannot tell / holds | weaker |
+| PL-076 | holds | holds | cannot tell / holds | cannot tell / holds | weaker |
+| PL-077 | holds | holds | holds | holds in part | weaker |
+| PL-078 | holds | holds | cannot tell | cannot tell | weaker |
+| PL-080 | - | holds | holds | holds in part | weaker |
+
+_(the items whose verdicts agree in both audits are omitted from this table; the full per-item table is § Punch-item verdicts above)_
+
 ## Verification (Phase 4.5, running; a finding is written here the moment it is checked)
 
 _The orchestrator's own reads of the highest-risk follow-up hunks, made before the seat outputs were opened (so they are independent of them); each names the artifact and what would have refuted it._
