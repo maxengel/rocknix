@@ -23,6 +23,7 @@
  */
 
 #include <gtk/gtk.h>
+#include <glib/gstdio.h>
 #include <webkit2/webkit2.h>
 #include <string.h>
 #include <strings.h>
@@ -71,6 +72,9 @@ typedef struct {
     gboolean shift;
     gboolean symbols;
     char last_field[256];
+    /* Whether this page's field record (CLOUD_SIGNIN_FIELD_FILE) has been
+     * written; each new page starts without one. */
+    gboolean field_recorded;
 } Osk;
 
 /* Two layouts rather than a modifier: a sign-in needs capitals for an address
@@ -381,6 +385,16 @@ static void on_probe(GObject *source, GAsyncResult *result, gpointer data)
 
     if (osk && text && g_str_has_prefix(text, "text:")) {
         const char *field = text + 5;
+        /* A field on this page has the caret: say so, once per page, for
+         * the phone. Its text goes across from here -- not from the moment
+         * this window's process started, while the page was still loading
+         * and nothing could take a keystroke (the audit of the fix round,
+         * claude G2-C-01). The load of the next page takes the record away. */
+        if (!osk->field_recorded) {
+            const char *field_file = g_getenv("CLOUD_SIGNIN_FIELD_FILE");
+            if (field_file && g_file_set_contents(field_file, field, -1, NULL))
+                osk->field_recorded = TRUE;
+        }
         /* Only on a change of field. Re-raising a keyboard the player just
          * dismissed, every half second (probe_tick), would be worse than
          * never raising it. */
@@ -648,6 +662,15 @@ static void on_load_changed(WebKitWebView *view, WebKitLoadEvent event,
     const char *page_file = g_getenv("CLOUD_SIGNIN_PAGE_FILE");
     const char *uri = webkit_web_view_get_uri(view);
     if (page_file && uri && page_worth_recording(uri)) {
+        /* A new page has nothing with the caret yet. The last page's field
+         * record goes first, so the phone never reads this page's name
+         * beside that page's caret (claude G2-C-01); the probe writes a new
+         * one when a field here has it. */
+        const char *field_file = g_getenv("CLOUD_SIGNIN_FIELD_FILE");
+        if (field_file)
+            g_remove(field_file);
+        if (data)
+            ((Osk *) data)->field_recorded = FALSE;
         GError *werr = NULL;
         if (!g_file_set_contents(page_file, uri, -1, &werr)) {
             if (werr) {

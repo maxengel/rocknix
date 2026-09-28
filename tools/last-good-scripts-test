@@ -10778,6 +10778,62 @@ def the_serves_last_write_never_turns_a_sign_in_back():
            "PL-032: the serve's closing write, which may move only from starting or waiting, leaves a signed-in as it is",
            "write_owned from starting/waiting over signed-in: returned %r, state %r (PL-032)" % (wrote, st))
 EOPY
+# CF5's serve half, claude G2-C-01: the probe says open once a field has had the caret.
+cat >> "${CF4}/cf_oauth_test.py" <<'EOPY'
+@test
+def the_probe_waits_for_a_field():
+    """claude G2-C-01: the phone's probe said open the moment the window's
+    process existed; the page loads, and focus_first places the caret,
+    seconds later."""
+    m, d = load("g2c01a")
+    holder = m.SessionHolder("dropbox", None, None, 60)
+    holder.browser = object()                   # the window's process is up
+    server, port = start_server(m, holder)
+    with open(m.state_path("page"), "w") as h:
+        h.write("https://www.dropbox.com/login")
+    _, before = request(port, "GET", "/%s?probe=1" % holder.pin)
+    with open(m.state_path("field"), "w") as h:
+        h.write("INPUT/email/login_email")
+    _, after = request(port, "GET", "/%s?probe=1" % holder.pin)
+    holder.browser = None
+    _, gone = request(port, "GET", "/%s?probe=1" % holder.pin)
+    server.shutdown()
+    b, a = before.split(), after.split()
+    result(b[:1] == ["loading"] and a[:1] == ["open"] and b[1:] == a[1:] and len(a) == 2 and gone == "waiting",
+           "claude G2-C-01: the probe says loading while no field has had the caret, open (with the page's token) once one has, waiting with no window",
+           "probe answers: before a field %r, after %r, no window %r -- open before anything can be typed into (claude G2-C-01)" % (before, after, gone))
+
+
+@test
+def the_window_is_told_where_to_say_so():
+    """claude G2-C-01: the window records the caret in a file the serve
+    names; a file a previous window left says nothing about this one, and a
+    reset clears it with the other markers."""
+    m, d = load("g2c01b")
+    seen = {}
+
+    class Proc:
+        def __init__(self, args, env=None, **kw):
+            seen["env"] = env or {}
+
+        def poll(self):
+            return None
+    m.subprocess = types.SimpleNamespace(Popen=Proc, STDOUT=subprocess.STDOUT, PIPE=subprocess.PIPE,
+                                         run=subprocess.run, DEVNULL=subprocess.DEVNULL)
+    m.running_session = lambda: (d, "wayland-1")
+    m.BrowserSession._cursor_timeout = staticmethod(lambda ms: None)
+    field = m.state_path("field")
+    open(field, "w").close()
+    b = m.BrowserSession("https://www.dropbox.com/oauth2/authorize?state=abc", "dropbox.com")
+    ok = b.start()
+    stale_gone = not os.path.exists(field)
+    open(field, "w").close()
+    m.reset_state(status="idle")
+    result(ok and seen.get("env", {}).get("CLOUD_SIGNIN_FIELD_FILE") == field and stale_gone and not os.path.exists(field),
+           "claude G2-C-01: the window is given CLOUD_SIGNIN_FIELD_FILE, a stale one is removed before it starts, and a reset clears it",
+           "window env CLOUD_SIGNIN_FIELD_FILE=%r (want %r); stale file removed %r; after reset_state %r (claude G2-C-01)"
+           % (seen.get("env", {}).get("CLOUD_SIGNIN_FIELD_FILE"), field, stale_gone, os.path.exists(field)))
+EOPY
 cat >> "${CF4}/cf_oauth_test.py" <<'EOPY'
 for fn in TESTS:
     try:
@@ -10803,6 +10859,180 @@ while IFS= read -r line; do
 done < "${CF4}/out"
 CF4N=$(sed -n 's/^END //p' "${CF4}/out")
 [ -n "${CF4N}" ]; check $? "the audit of the fix round's cloud_oauth groups ran to the end (${CF4N} groups)" "the audit of the fix round's cloud_oauth groups did not finish -- a check that did not run has not passed: $(tail -3 "${CF4}/err" 2>/dev/null | tr '\n' '|')"
+
+# CF5. The page half and the window half of claude G2-C-01.
+#
+# The page's own script under node, as C4 runs it, against a handheld that
+# behaves like one: a keystroke that arrives while no field on its page has
+# the caret goes nowhere, and a new page starts with an empty field. The
+# probe answers what the serve now answers -- waiting, loading <page> (the
+# window is up, nothing has the caret yet), open <page>.
+CF5="${CF}/5"; mkdir -p "${CF5}"
+cat > "${CF5}/render.py" <<'EOPY'
+import importlib.machinery, importlib.util, sys
+loader = importlib.machinery.SourceFileLoader("cloud_oauth_page", sys.argv[1])
+spec = importlib.util.spec_from_loader(loader.name, loader)
+m = importlib.util.module_from_spec(spec)
+loader.exec_module(m)
+sys.stdout.write(m.REMOTE_PAGE % {"style": m.STYLE, "name": "Dropbox", "pin": "1234"})
+EOPY
+cat > "${CF5}/page_test.js" <<'EOJS'
+"use strict";
+const fs = require("fs");
+const vm = require("vm");
+const html = fs.readFileSync(process.argv[2], "utf8");
+const script = html.split("<script>").pop().split("</script>")[0];
+function result(ok, good, bad) { console.log(ok ? "P " + good : "F " + bad); }
+function attrs(text) {
+  const out = {}; const re = /([\w-]+)(?:=("[^"]*"|'[^']*'|[^\s>]+))?/g; let m;
+  while ((m = re.exec(text))) {
+    let v = m[2] === undefined ? "" : m[2];
+    if (v[0] === '"' || v[0] === "'") v = v.slice(1, -1);
+    out[m[1].toLowerCase()] = v;
+  }
+  return out;
+}
+// The handheld: `page` is what its window shows, `caret` whether a field on
+// it has the caret. Each request the phone makes is stamped with both as it
+// arrives; the field is rebuilt from them.
+function phone() {
+  const byId = {}, keys = [], posts = [], timers = [];
+  const hh = { probe: "waiting", page: "", caret: false };
+  function el(tag, a) {
+    const e = {
+      tagName: tag.toUpperCase(), id: a.id || "", type: a.type || "", className: a.class || "",
+      hidden: "hidden" in a, value: "", textContent: "", dataset: {}, listeners: {},
+      classList: { add() {}, remove() {} },
+      addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
+      fire(ev, extra) {
+        const e2 = Object.assign({ preventDefault() {}, touches: null, clientX: 0, clientY: 0 }, extra || {});
+        (this.listeners[ev] || []).forEach((fn) => fn(e2));
+      },
+      focus() {}, setAttribute(k, v) { this[k] = v; }, getAttribute(k) { return this[k]; },
+    };
+    if (a["data-key"] !== undefined) e.dataset.key = a["data-key"];
+    return e;
+  }
+  const tagRe = /<(input|button|div|span|p)\b([^>]*)>/gi; let m;
+  while ((m = tagRe.exec(html))) {
+    const a = attrs(m[2]); const e = el(m[1], a);
+    if (a.id) byId[a.id] = e;
+    if (a["data-key"] !== undefined) keys.push(e);
+  }
+  const sandbox = {
+    document: {
+      getElementById: (id) => byId[id] || null,
+      querySelectorAll: (sel) => (sel === "[data-key]" ? keys : []),
+      querySelector: () => null,
+    },
+    window: { addEventListener() {} },
+    setTimeout: (fn) => timers.push(fn),
+    fetch: (url, opts) => {
+      if (opts && opts.method === "POST") {
+        posts.push({ body: opts.body, page: hh.page, caret: hh.caret });
+        return Promise.resolve({ text: () => Promise.resolve("") });
+      }
+      return Promise.resolve({ text: () => Promise.resolve(hh.probe) });
+    },
+    Promise, URLSearchParams, encodeURIComponent, decodeURIComponent, Math, Array, String, Object, JSON, RegExp,
+  };
+  vm.runInNewContext(script, sandbox);
+  const box = byId.kb;
+  return {
+    posts, box,
+    async settle() { for (let i = 0; i < 50; i++) await new Promise((r) => setImmediate(r)); },
+    // The handheld moves on, then the phone's next poll hears of it.
+    async now(probe, page, caret) { hh.probe = probe; hh.page = page; hh.caret = caret; const run = timers.splice(0); run.forEach((fn) => fn()); await this.settle(); },
+    async add(t) { box.value += t; box.fire("input"); await this.settle(); },
+    async key(name) { keys.find((k) => k.dataset.key === name).fire("click"); await this.settle(); },
+    named() { return posts.map((p) => new URLSearchParams(p.body).get("key")).filter(Boolean); },
+    field(page) {
+      let f = "";
+      for (const p of posts) {
+        if (p.page !== page) continue;
+        const q = new URLSearchParams(p.body);
+        if (q.has("type") && p.caret) f += q.get("type");
+        if (q.get("key") === "backspace" && p.caret) f = f.slice(0, -1);
+      }
+      return f;
+    },
+  };
+}
+(async () => {
+  let n = 0;
+  // (a control) typed before the window, held through the page's load,
+  // sent once the field has the caret -- as the old page did once the
+  // serve's probe told it the truth.
+  n++; {
+    const p = phone();
+    await p.now("waiting", "", false);
+    await p.add("me@ex");
+    await p.now("loading A", "A", false);
+    const early = p.posts.length;
+    await p.now("open A", "A", true);
+    result(early === 0 && p.field("A") === "me@ex",
+      "claude G2-C-01 (a control): text typed before the window opens is held while its page loads and lands in the field once it has the caret",
+      "sent while loading: " + early + " request(s); field on A: '" + p.field("A") + "'");
+  }
+  // The phone's named keys drive the handheld while nothing has the caret:
+  // Tab is how a player reaches a field focus_first did not find.
+  n++; {
+    const p = phone();
+    await p.now("loading A", "A", false);
+    await p.key("tab");
+    await p.key("down");
+    const k = p.named();
+    result(k.indexOf("tab") >= 0 && k.indexOf("down") >= 0,
+      "claude G2-C-01: the phone's Tab and arrows reach the handheld while its page has nothing with the caret",
+      "keys posted while the page loaded: " + JSON.stringify(k) + " -- the phone's keys dead until a field had the caret (claude G2-C-01)");
+  }
+  // The provider moves on: what is typed while the next page loads is for
+  // that page's field, and goes to it once it has the caret.
+  n++; {
+    const p = phone();
+    await p.now("open A", "A", true);
+    await p.add("abc");
+    await p.now("loading B", "B", false);
+    await p.add("xyz");
+    const held = p.posts.filter((q) => q.page === "B" && q.body.indexOf("type=") === 0).length;
+    await p.now("open B", "B", true);
+    result(p.field("A") === "abc" && held === 0 && p.field("B") === "xyz",
+      "claude G2-C-01: typed while the next page loads, held, then into that page's field once it has the caret (A 'abc', B 'xyz')",
+      "field A '" + p.field("A") + "', typed into B before its caret: " + held + ", field B '" + p.field("B") + "' -- what was typed for the new page lost (claude G2-C-01)");
+  }
+  console.log("END " + n);
+})().catch((e) => { console.log("F the page groups threw: " + e); console.log("END 0"); });
+EOJS
+: > "${CF5}/out"
+if [ -e "${CF}/src/cloud_oauth" ] && command -v node >/dev/null && command -v python3 >/dev/null; then
+    python3 "${CF5}/render.py" "${CF}/src/cloud_oauth" > "${CF5}/page.html" 2> "${CF5}/err" \
+        && timeout 60 node "${CF5}/page_test.js" "${CF5}/page.html" > "${CF5}/out" 2>> "${CF5}/err"
+fi
+while IFS= read -r line; do
+    case "${line}" in
+        "P "*) check 0 "${line#P }" "" ;;
+        "F "*) check 1 "" "${line#F }" ;;
+    esac
+done < "${CF5}/out"
+CF5N=$(sed -n 's/^END //p' "${CF5}/out")
+[ "${CF5N:-0}" -gt 0 ]; check $? "the phone page's groups ran to the end (${CF5N} groups, node)" "the phone page's groups did not run -- no node, or they threw: $(tail -3 "${CF5}/err" 2>/dev/null | tr '\n' '|')"
+
+# The window half, read from its source: a field with the caret is recorded
+# in CLOUD_SIGNIN_FIELD_FILE, once per page, from the probe that sees it;
+# each new page's load removes the record before it writes the page's name.
+# The window is C that only the image build compiles, so this reads what it
+# does.
+CFW="${CF}/cloud-signin-window.c"
+src_of projects/ROCKNIX/packages/network/cloud-signin-window/sources/cloud-signin-window.c "${CFW}"
+cf_fn() { awk -v f="$1" 'index($0, f) == 1 {p = 1} p {print} p && /^}/ {exit}' "${CFW}"; }
+cf_probe=$(cf_fn 'static void on_probe(')
+cf_load=$(cf_fn 'static void on_load_changed(')
+cf_text=$(printf '%s\n' "${cf_probe}" | awk '/g_str_has_prefix\(text, "text:"\)/ {p = 1} p {print} /} else if \(osk\)/ {exit}')
+printf '%s\n' "${cf_text}" | grep -q 'CLOUD_SIGNIN_FIELD_FILE' && printf '%s\n' "${cf_text}" | grep -q 'g_file_set_contents' \
+    && printf '%s\n' "${cf_text}" | grep -q 'field_recorded'; check $? "claude G2-C-01: the window records a field with the caret in CLOUD_SIGNIN_FIELD_FILE, from the probe's text: answer, once per page" "claude G2-C-01: on_probe's text: branch writes no field record"
+cf_rm=$(printf '%s\n' "${cf_load}" | grep -n 'g_remove\|g_unlink' | head -1 | cut -d: -f1)
+cf_pg=$(printf '%s\n' "${cf_load}" | grep -n 'g_file_set_contents(page_file' | head -1 | cut -d: -f1)
+[ -n "${cf_rm}" ] && [ -n "${cf_pg}" ] && [ "${cf_rm}" -lt "${cf_pg}" ] && printf '%s\n' "${cf_load}" | grep -q 'field_recorded = FALSE'; check $? "claude G2-C-01: every new page's load removes the record, and forgets it was made, before it writes the page's name" "claude G2-C-01: on_load_changed: the record's removal at line '${cf_rm}', the page file at '${cf_pg}'"
 
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
