@@ -3661,4 +3661,28 @@ p7dt=$(( $(date +%s) - p7t0 ))
 p7forks=$(PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7F}/redact.sh'; sed() { echo fork >> '${P7F}/forks'; command sed \"\$@\"; }; : > '${P7F}/forks'; redact_credentials 'disk-full on /storage' >/dev/null; redact_credentials 'task-manager started' >/dev/null; wc -l < '${P7F}/forks'")
 [ "${p7forks}" -eq 0 ]; check $? "#308 10-packages-and-build claude F-PB-18: 'disk-full' and 'task-manager' lines take the fast path (no sed)" "#308 F-PB-18: ${p7forks} sed fork(s) for two lines with no credential in them -- the unanchored sk- matched inside 'disk-'"
 
+# y4. chksysconfig's boot pass, factoryreset, rocknix-evidence,
+# rocknix-corekeep, runemu.sh's argument parsers and automount's
+# internal-disk test.
+P7="${P7:-${TMP}/p7}"; P7M="${P7}/misc"; mkdir -p "${P7M}"
+P7ETC=(--tmpfs /etc); for e in /etc/ld.so.cache /etc/alternatives /etc/passwd /etc/group /etc/localtime; do [ -e "${e}" ] && P7ETC+=(--ro-bind "${e}" "${e}"); done
+P7USR=(); for u in bin sbin lib lib64 libexec share; do [ -e "/usr/${u}" ] && P7USR+=(--ro-bind "/usr/${u}" "/usr/${u}"); done
+P7MBB=(); if [ -n "${BB}" ]; then P7MBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB_HOST}" "${BB}"); fi
+# chksysconfig's functions, lifted as a lifts them.
+P7K="${P7M}/chk"; mkdir -p "${P7K}/cfg/system/configs" "${P7K}/def/system/configs"
+src_of "${CHK_REL}" "${P7K}/chksysconfig"
+{ awk '/^[a-z_]+\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${P7K}/chksysconfig"
+  printf 'logger() { echo "logger $*" >&2; }\nCONFIG_ROOT=%q; DEFAULT_ROOT=%q\nCFG_PATH="${CONFIG_ROOT}/system/configs"; CFG="${CFG_PATH}/system.cfg"; BACKUP="${CFG}.backup"\nrsync() { :; }\n' "${P7K}/cfg" "${P7K}/def"
+} > "${P7K}/fns.sh"
+printf 'system.hostname=DEFAULT\n' > "${P7K}/def/system/configs/system.cfg"
+p7chk() { EXTRACT_ROOT="${P7K}/root" ROMS_ROOT="${P7K}/roms" PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; verify" 2>"${P7K}/err"; }
+
+# == PL-045: a copy on a folder that is there but not mounted yet is not called missing
+mkdir -p "${P7K}/roms/backup/archive" "${P7K}/root"
+printf 'system.hostname=X\n' > "${P7K}/cfg/system/configs/system.cfg"; cp "${P7K}/cfg/system/configs/system.cfg" "${P7K}/cfg/system/configs/system.cfg.backup"
+printf '%s\n' "${P7K}/roms/backup/archive/2026_01_01-000000-PRE_RESTORE-ROCKNIX_SETTINGS.tar.gz" > "${P7K}/cfg/.restore-in-progress"
+rm -f "${P7K}/cfg/.restore-reverted"
+p7chk
+[ -e "${P7K}/cfg/.restore-in-progress" ] && [ ! -e "${P7K}/cfg/.restore-reverted" ] && grep -q 'not mounted yet' "${P7K}/err"; check $? "#307 PL-045 / #308 claude F-PB-11: a copy under the roms folder while that folder is not a mountpoint (its internal-card directory present) leaves the mark for the later check and says nothing" "#307 PL-045: mark: $([ -e "${P7K}/cfg/.restore-in-progress" ] && echo kept || echo removed); said: '$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)' -- the directory test read an unmounted card as a missing copy"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

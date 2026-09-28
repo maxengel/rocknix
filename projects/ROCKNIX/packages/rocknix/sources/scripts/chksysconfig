@@ -106,11 +106,25 @@ finish_restore() {
   # The copy lives under the settings backups folder, which is on
   # /storage/roms -- a bind mount rocknix-automount makes at about 2.5 s,
   # after the sysinit verify has run at 1.7 s (D-CLOUD-080). A copy whose
-  # folder is not there yet is not missing, it is not mounted yet: leave the
-  # marker for the verify the autostart chain runs once the mounts are up
-  # (001-setup), and say nothing. Only a folder that is there without the
+  # folder is not mounted yet is not missing: leave the marker for the
+  # verify the autostart chain runs once the mounts are up (001-setup), and
+  # say nothing. "Mounted" is asked of the mount, not of the directory:
+  # automount always mounts /storage/roms (a bind of games-internal or
+  # games-external, or the overlay), and before it does the path is the
+  # internal card's own directory, which on a device that once used it
+  # already holds roms/backup/archive -- so the directory test passed, the
+  # copy read as missing and the marker was consumed while the copy sat on
+  # the card not mounted yet (#307 PL-045, #308 claude F-PB-11). A copy
+  # elsewhere keeps the directory test. Only a mounted folder without the
   # copy in it, or a copy that does not list, is a failure to report.
-  if [ -n "${snap}" ] && [ ! -d "$(dirname "${snap}")" ]; then
+  local roms="${ROMS_ROOT:-/storage/roms}" pending=0
+  if [ -n "${snap}" ]; then
+    case "${snap}" in
+      "${roms}"/*) mountpoint -q "${roms}" 2>/dev/null || pending=1 ;;
+      *) [ -d "$(dirname "${snap}")" ] || pending=1 ;;
+    esac
+  fi
+  if [ "${pending}" -eq 1 ]; then
     say "a settings restore was cut off; the copy taken before it (${snap}) is on a folder not mounted yet, so it goes back at the next check this boot"
     return 0
   fi
