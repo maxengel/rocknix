@@ -21,7 +21,7 @@
 # from the text of its strings.
 import os, re, sys
 
-LEXEME = re.compile(r'//[^\n]*|/\*.*?(?:\*/|\Z)|"(?:\\.|[^"\\\n])*"|(?<![0-9])\'(?:\\.|[^\'\\\n])*\'', re.S)
+LEXEME = re.compile(r'//[^\n]*|/\*.*?(?:\*/|\Z)|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'|(?<!\w)\.?[0-9](?:[eEpP][+-]|\'\w|[\w.])*', re.S)
 STRING = re.compile(r'"(?:\\.|[^"\\\n])*"')
 DIRECTIVE = re.compile(r'\s*#\s*(ifdef|ifndef|if|elifdef|elifndef|elif|else|endif)\b(.*)')
 KNOWN = {'0': 'no', '1': 'yes'}   # the only conditions read without the build's defines
@@ -30,8 +30,10 @@ DRIVER = re.compile(r'struct\s+BurnDriver[D]?\s+BurnDrv\w+\s*=\s*\{(.*?)\};', re
 
 def strip_comments(text):
     """The source with its comments blanked, literals kept (a block comment
-    keeps its newlines, so nothing after it moves line). A quote after a
-    digit is a C++14 digit separator (1'000), not a character literal."""
+    keeps its newlines, so nothing after it moves line). A number is read
+    whole, the way the preprocessor reads one, so a quote inside it is a
+    C++14 digit separator (1'000, 0xFF'00), not a character literal; any
+    other quote opens one."""
     return LEXEME.sub(lambda m: (' ' + '\n' * m.group(0).count('\n')) if m.group(0)[0] == '/' else m.group(0), text)
 
 

@@ -10258,9 +10258,10 @@ printf '%s' "${P7NOTE}" | grep '^dump' | grep -q 'NOT KEPT' && [ ! -e "${P7C}/st
 
 # ---- audit #307, stream F2 ----
 # Stream F2's second block: the audit of the fix round
-# (docs/audits/2026_09_28-milestone-audit-of-the-fix-round/), its PL-020 and
-# the leads G2-F2-02 and G2-F2-03 (gpt). The files are read through src_of,
-# so under
+# (docs/audits/2026_09_28-milestone-audit-of-the-fix-round/), its PL-020, the
+# leads G2-F2-02 and G2-F2-03 (gpt), and two Lows the audit left unrouted in
+# the same generators (gpt G2-F2-04, claude G2-F2-10). The files are read
+# through src_of, so under
 #     BASE_REF=f3d19dc8fb tools/last-good-scripts-test --old
 # these cases grade the tree that audit read: every check FAILs there except
 # the ones each case names as its control.
@@ -10488,6 +10489,25 @@ EOC
       && ! grep -q 'config_file_new_from_path' "${F2B}/autoslot.inc"
     check $? "config_load_file notes the main config's state_slot entry before the append files, records from the entries after them and before the overrides, and the block opens no file" "config_load_file: entry noted at ${n_main:-none}, appends ${n_app1:-none}-${n_app2:-none}, recorded from the entries at ${n_rec:-none}, overrides at ${n_ovr:-none}; the block opens files: $(grep -c 'config_file_new_from_path' "${F2B}/autoslot.inc")"
 fi
+
+# F2-23. gpt G2-F2-04 (a Low the audit left unrouted, in the same
+# generators): the lexer let a quote open a character literal unless a
+# decimal digit stood before it, so a C++14 separator after a hex digit
+# (0xFF'00) opened one, which ran to the next quote on the line and hid a
+# comment opener inside it -- a driver commented out after such a number
+# was read as live. A number is now read whole, its separators with it,
+# and a quote outside one opens a literal. The FBA fixture's second driver
+# follows a character literal holding /* (the control: a literal is still
+# a literal).
+echo "  F2-23. the generators read a number whole, so a separator after a hex digit hides no comment opener (gpt G2-F2-04)"
+mkdir -p "${GE}/fba-H/src/burn/drv" "${GE}/mame-H/src/drivers"
+{ echo "static unsigned nSep = 0xFF'00; /* retired: 0xEE'00,"; f2b_fba hghost "${F2B_V}"; echo '*/'; f2b_fba hkept "${F2B_V}"
+  echo "static int nMark = '/*';"; f2b_fba afterlit "${F2B_F}"; } > "${GE}/fba-H/src/burn/drv/d_h.cpp"
+{ echo "static const int sep = 0xAB'CD; /* retired: 0xEF'01,"; f2b_mame hghost ROT90; echo '*/'; f2b_mame hkept ROT270; } > "${GE}/mame-H/src/drivers/h.c"
+out="$(f2b_table fba H)"
+[ "${out}" = 'afterlit 2|hkept 1|' ]; check $? "FBA: a driver inside a /* */ opened after 0xFF'00 gives no row; one after a '/*' character literal does" "FBA hex-separator fixture: table '${out}', expected 'afterlit 2|hkept 1|'"
+out="$(f2b_table mame H)"
+[ "${out}" = 'hkept 1|' ]; check $? "MAME: a GAME() inside a /* */ opened after 0xAB'CD gives no row" "MAME hex-separator fixture: table '${out}', expected 'hkept 1|'"
 
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
