@@ -237,15 +237,22 @@ function wait_lock() {
 # 2026-09-10). The key is matched literally (a dot in it is a dot), and the
 # value crosses through the environment, so `/`, `&`, `\` and spaces are
 # nobody's to interpret.
+#
+# Returns 0 only when the new file is in place: the awk and the rename both
+# succeeded. The failure branch used to end in the rm of the temporary, so
+# the function's status was the rm's -- 0 -- and a write that never landed
+# (a full card, a read-only folder) was reported to every caller as done
+# (#307 PL-011).
 function write_setting_line() {
   if K="${1}" V="${2}" awk 'BEGIN { k = ENVIRON["K"]; v = ENVIRON["V"] }
                             index($0, k "=") != 1 { print }
-                            END { print k "=" v }' "${J_CONF}" > "${J_CONF}.tmp" 2>/dev/null
+                            END { print k "=" v }' "${J_CONF}" > "${J_CONF}.tmp" 2>/dev/null \
+     && mv -f "${J_CONF}.tmp" "${J_CONF}"
   then
-    mv -f "${J_CONF}.tmp" "${J_CONF}"
-  else
-    rm -f "${J_CONF}.tmp"
+    return 0
   fi
+  rm -f "${J_CONF}.tmp"
+  return 1
 }
 function del_setting() {
   wait_lock
@@ -332,10 +339,13 @@ function set_setting() {
       # Removes the line -- or, for system.hostname, empties it: see there.
       del_setting "${1}"
     else
-      # One write under one lock hold (write_setting_line says why).
-      wait_lock
-      write_setting_line "${1}" "${2}"
+      # One write under one lock hold (write_setting_line says why), and the
+      # write's own status returned past the lock's release (#307 PL-011).
+      local rc
+      wait_lock || return 1
+      write_setting_line "${1}" "${2}"; rc=$?
       rm -f "${J_CONF_LOCK}"
+      return ${rc}
     fi
   fi
 }
