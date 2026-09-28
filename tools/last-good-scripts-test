@@ -3183,4 +3183,32 @@ head -3 "${F1U}" | grep -q 'SPDX-License-Identifier' && grep -q 'D-QA-053' "${F1
 F1_IOI=$(awk '/^\[/{sec=$0} /^IgnoreOnIsolate=/{print sec}' "${F1U}")
 [ "${F1_IOI}" = "[Unit]" ]; check $? "and IgnoreOnIsolate sits in [Unit], where systemd reads it" "IgnoreOnIsolate is under ${F1_IOI:-no section}, where systemd ignores it (systemd-analyze verify: Unknown key)"
 
+# F1e. #307 PL-073: the in-place bootloader updater. The SYSTEM image's
+#      /usr/share/bootloader holds update.sh alone (projects/ROCKNIX/
+#      bootloader/install copies the syslinux files after the squashfs is
+#      made, into the release's 3rdparty/bootloader), so every guarded copy
+#      in it is false: it copies nothing and then writes UPDATE to
+#      /storage/.boot.hint, which init writes itself after
+#      update_bootloader. The acceptance: an update changes /flash, or the
+#      script is gone.
+F1E="${F1}/e"; F1BL=projects/ROCKNIX/devices/GENERIC_X64/bootloader/update.sh
+if { [ "${OLD}" -eq 1 ] && git -C "${ROOT}" cat-file -e "${BASE_REF}:${F1BL}" 2>/dev/null; } || { [ "${OLD}" -eq 0 ] && [ -e "${ROOT}/${F1BL}" ]; }; then
+    mkdir -p "${F1E}/update/usr/share/bootloader" "${F1E}/flash/EFI/BOOT" "${F1E}/storage" "${F1E}/shim"
+    src_of "${F1BL}" "${F1E}/update/usr/share/bootloader/update.sh"
+    for f in ldlinux.sys ldlinux.c32 syslinux.cfg EFI/BOOT/bootx64.efi EFI/BOOT/grub.cfg EFI/BOOT/ldlinux.e64; do echo "installed ${f}" > "${F1E}/flash/${f}"; done
+    printf '#!/bin/sh\nexit 0\n' > "${F1E}/shim/mount"; chmod +x "${F1E}/shim/mount"
+    F1_FL0=$(cd "${F1E}/flash" && find . -type f -exec sha256sum {} + | LC_ALL=C sort)
+    bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind "${F1E}/update" /update --bind "${F1E}/flash" /flash --bind "${F1E}/storage" /storage --ro-bind "${F1E}/shim" /shim \
+        --dev /dev --proc /proc --tmpfs /tmp --setenv PATH /shim:/usr/bin:/bin --setenv SYSTEM_ROOT /update --setenv BOOT_ROOT /flash \
+        bash /update/usr/share/bootloader/update.sh > "${F1E}/out" 2>&1
+    F1_FL1=$(cd "${F1E}/flash" && find . -type f -exec sha256sum {} + | LC_ALL=C sort)
+    [ "${F1_FL0}" != "${F1_FL1}" ]; check $? "the bootloader updater changes /flash on an update" "the bootloader updater copied nothing to /flash (the image ships it alone in /usr/share/bootloader) and wrote '$(cat "${F1E}/storage/.boot.hint" 2>/dev/null)' to the boot hint all the same"
+else
+    check 0 "GENERIC_X64 ships no bootloader updater that has nothing to copy"
+fi
+F1_INIT="${F1}/init"; src_of projects/ROCKNIX/packages/sysutils/busybox/scripts/init "${F1_INIT}"
+grep -q '^update_bootloader() {' "${F1_INIT}" && grep -q 'if \[ -f ${SYSTEM_ROOT}/usr/share/bootloader/update.sh \]; then' "${F1_INIT}" && grep -A1 '^  update_bootloader$' "${F1_INIT}" | grep -q 'echo "UPDATE" >/storage/.boot.hint'
+check $? "and init skips a missing updater and writes the boot hint itself after update_bootloader" "init no longer skips a missing update.sh or no longer writes the hint itself -- deleting the updater would lose the hint"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
