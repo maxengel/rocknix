@@ -222,14 +222,35 @@ sweep_leftovers() {
 }
 trap '[ -n "${STAGING:-}" ] && rm -rf "${STAGING}"' EXIT
 
+# Every temporary file this script writes a list into comes from here, and
+# every caller checks the answer (#307, the audit of the fix round, PL-006).
+# The copy a restore takes was built from a list in a temporary whose mktemp
+# was never checked: a mktemp that failed gave an empty name, every write to
+# it went nowhere, and the empty list read as "nothing here to protect" -- so
+# the restore extracted over the settings with no copy taken, and a cut one
+# then said they were unchanged. Prints the path of a new, empty, regular
+# file, or nothing and returns 1; mktemp's own words go to the log.
+tmp_file() {
+    local T
+    if T=$(mktemp 2>/dev/null) && [ -n "${T}" ] && [ -f "${T}" ] && [ ! -L "${T}" ] && [ ! -s "${T}" ]
+    then
+        printf '%s\n' "${T}"
+        return 0
+    fi
+    logger -t backuptool "a temporary file could not be made (mktemp failed or gave no file)"
+    return 1
+}
+
 # A tool's own words go to the log, never to the screen: a failing tar printed
 # "tar: can't open 'storage/.config/...'" on the console flow, a tool's name
 # and a path, above the sentence written for the player (#308 claude
 # F-BR-12(e), gpt F-BR-20). Runs the command with its stderr kept aside,
-# logs what it said, and returns its status.
+# logs what it said, and returns its status -- or 125 without running it when
+# there is nowhere to keep those words, a status no caller reads as a tool's
+# own "no match" (grep's 1, which the es_settings.cfg copy accepts).
 to_log() {
     local ERR RC
-    ERR=$(mktemp)
+    ERR=$(tmp_file) || return 125
     "$@" 2> "${ERR}"; RC=$?
     [ -s "${ERR}" ] && logger -t backuptool "${1}: $(tr '\n' ' ' < "${ERR}" | cut -c1-500)"
     rm -f "${ERR}"
@@ -402,7 +423,7 @@ CREDENTIAL_TOKENS='devpassword=[A-Za-z0-9._%-]{4,}|[?&]y=[A-Za-z0-9]{16,}|AKIA[0
 # when every file was read.
 credential_lines() {
     local TREE="${1}" F N T RC TOTAL=0 NAMES="" LIST
-    LIST=$(mktemp) || return 1
+    LIST=$(tmp_file) || return 1
     if ! find "${TREE}" -type f -print0 > "${LIST}" 2>/dev/null
     then
         logger -t backuptool "the credential scan could not walk what it was to read"
@@ -466,7 +487,7 @@ archive_members() {
 # audit of the fixes, gpt G-B-02).
 listed_files() {
     local L N
-    L=$(mktemp) || return 1
+    L=$(tmp_file) || return 1
     if ! tar -tzf "${1}" > "${L}" 2>/dev/null
     then
         rm -f "${L}"
@@ -493,10 +514,20 @@ listed_files() {
 # member exists on this device (nothing to copy; NEWLIST may still name
 # files); anything else when the copy could not be taken, which ends the
 # restore before it writes (#307 PL-009).
+#
+# 4 is said only when both lists were written whole and the copy's is empty
+# because nothing is there -- never because its file could not be made or
+# written (3). Each line is counted as it is written and the files are
+# counted after, so a list cut short by a full /tmp is a failure however its
+# writes reported themselves (#307, the audit of the fix round, PL-006).
 snapshot_members() { # <members file> <target> <newlist file>
-    local MEMBERS="${1}" TARGET="${2}" NEWLIST="${3}" KEEP M LIVE LISTED
-    KEEP=$(mktemp)
-    : > "${NEWLIST}"
+    local MEMBERS="${1}" TARGET="${2}" NEWLIST="${3}" KEEP M LIVE LISTED NKEEP=0 NNEW=0 WHOLE=1
+    KEEP=$(tmp_file) || return 3
+    if ! [ -r "${MEMBERS}" ] || ! : 2>/dev/null > "${NEWLIST}"
+    then
+        rm -f "${KEEP}"
+        return 3
+    fi
     while IFS= read -r M
     do
         M="${M#./}"
@@ -509,13 +540,26 @@ snapshot_members() { # <members file> <target> <newlist file>
         LIVE="/${M}"
         if [ -L "${LIVE}" ] || [ -f "${LIVE}" ]
         then
-            printf '%s\n' "${M}" >> "${KEEP}"
+            printf '%s\n' "${M}" 2>/dev/null >> "${KEEP}" || { WHOLE=0; break; }
+            NKEEP=$((NKEEP + 1))
         elif [ ! -e "${LIVE}" ]
         then
-            printf '%s\n' "${LIVE}" >> "${NEWLIST}"
+            printf '%s\n' "${LIVE}" 2>/dev/null >> "${NEWLIST}" || { WHOLE=0; break; }
+            NNEW=$((NNEW + 1))
         fi
     done < "${MEMBERS}"
-    awk '!seen[$0]++' "${KEEP}" > "${KEEP}.unique" && mv -f "${KEEP}.unique" "${KEEP}"
+    # One chain that only success gets through: a count that could not be
+    # read, or a test that errors on it, is a list not known to be whole.
+    local NKEEP_FILE NNEW_FILE
+    if ! { [ "${WHOLE}" -eq 1 ] \
+           && NKEEP_FILE=$(wc -l 2>/dev/null < "${KEEP}") && [ "${NKEEP_FILE}" -eq "${NKEEP}" ] 2>/dev/null \
+           && NNEW_FILE=$(wc -l 2>/dev/null < "${NEWLIST}") && [ "${NNEW_FILE}" -eq "${NNEW}" ] 2>/dev/null \
+           && awk '!seen[$0]++' "${KEEP}" 2>/dev/null > "${KEEP}.unique" && mv -f "${KEEP}.unique" "${KEEP}" 2>/dev/null; }
+    then
+        logger -t backuptool "the list of what the restore would replace or create could not be written whole; nothing written"
+        rm -f "${KEEP}" "${KEEP}.unique"
+        return 3
+    fi
     if [ ! -s "${KEEP}" ]
     then
         rm -f "${KEEP}"
@@ -526,8 +570,8 @@ snapshot_members() { # <members file> <target> <newlist file>
         rm -f "${KEEP}" "${TARGET}.partial"
         return 2
     fi
-    if ! LISTED=$(listed_files "${TARGET}.partial") \
-       || [ "${LISTED}" -ne "$(wc -l < "${KEEP}")" ] || ! mv -f "${TARGET}.partial" "${TARGET}"
+    if ! { LISTED=$(listed_files "${TARGET}.partial") && NKEEP_FILE=$(wc -l 2>/dev/null < "${KEEP}") \
+           && [ "${LISTED}" -eq "${NKEEP_FILE}" ] 2>/dev/null && mv -f "${TARGET}.partial" "${TARGET}"; }
     then
         rm -f "${KEEP}" "${TARGET}.partial"
         return 3
@@ -672,9 +716,17 @@ write_archive() {
     # refused to overwrite the still-present symlink ("exists but is not
     # a regular file") and aborted the whole restore partway. Symlinks
     # are the OS's to provide, not the backup's to carry.
-    FILELIST=$(mktemp)
-    SECRETLIST=$(mktemp)
-    SENDLIST=$(mktemp)
+    #
+    # Every list below is a checked temporary, and every write to one is
+    # checked: a list that could not be made or written is a collection that
+    # failed (2), never a smaller one (#307, the audit of the fix round,
+    # PL-006).
+    FILELIST=""; SECRETLIST=""; SENDLIST=""
+    if ! { FILELIST=$(tmp_file) && SECRETLIST=$(tmp_file) && SENDLIST=$(tmp_file); }
+    then
+        for T in "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"; do [ -n "${T}" ] && rm -f "${T}"; done
+        return 2
+    fi
     # One location at a time, each passed whole. A location that is not on
     # this device is nothing to collect -- the standard list names folders
     # only some devices have, and a glob that matched nothing stays literal.
@@ -780,8 +832,13 @@ write_archive() {
     # match wherever they occur in a line), so a custom LOCATIONS that names
     # one of these on purpose is still pruned -- they are the OS's to provide.
     local REGENERABLE PRUNED KEPT F REL
-    REGENERABLE=$(mktemp)
-    printf '%s\n' /storage/.config/ppsspp/assets/ /storage/.config/ppsspp/PSP/SYSTEM/CACHE/ > "${REGENERABLE}"
+    if ! { REGENERABLE=$(tmp_file) \
+           && printf '%s\n' /storage/.config/ppsspp/assets/ /storage/.config/ppsspp/PSP/SYSTEM/CACHE/ 2>/dev/null > "${REGENERABLE}"; }
+    then
+        [ -n "${REGENERABLE}" ] && rm -f "${REGENERABLE}"
+        rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
+        return 2
+    fi
     GREP_RC=0
     grep -v -F -f "${REGENERABLE}" "${FILELIST}" > "${FILELIST}.pruned" || GREP_RC=$?
     rm -f "${REGENERABLE}"
@@ -797,7 +854,14 @@ write_archive() {
         rm -f "${FILELIST}" "${FILELIST}.pruned" "${SECRETLIST}" "${SENDLIST}"
         return 2
     fi
-    KEPT=$(mktemp); PRUNED=0; SEEDED=$(mktemp)
+    local LISTS_RC=0
+    KEPT=""; SEEDED=""; PRUNED=0
+    if ! { KEPT=$(tmp_file) && SEEDED=$(tmp_file); }
+    then
+        for T in "${KEPT}" "${SEEDED}"; do [ -n "${T}" ] && rm -f "${T}"; done
+        rm -f "${FILELIST}" "${FILELIST}.pruned" "${SECRETLIST}" "${SENDLIST}"
+        return 2
+    fi
     while IFS= read -r F
     do
         [ "${F}" = "${SEEDLIST}" ] && continue
@@ -807,14 +871,19 @@ write_archive() {
                 if [ -f "/usr/config/${REL}" ] && cmp -s "/usr/config/${REL}" "${F}"
                 then
                     PRUNED=$((PRUNED + 1))
-                    printf '%s\n' "${REL}" >> "${SEEDED}"
+                    printf '%s\n' "${REL}" 2>/dev/null >> "${SEEDED}" || { LISTS_RC=1; break; }
                     continue
                 fi
                 ;;
         esac
-        printf '%s\n' "${F}" >> "${KEPT}"
+        printf '%s\n' "${F}" 2>/dev/null >> "${KEPT}" || { LISTS_RC=1; break; }
     done < "${FILELIST}.pruned"
-    mv "${KEPT}" "${FILELIST}"
+    if [ "${LISTS_RC}" -ne 0 ] || ! mv -f "${KEPT}" "${FILELIST}" 2>/dev/null
+    then
+        logger -t backuptool "the list of what to back up could not be written whole; nothing written"
+        rm -f "${KEPT}" "${SEEDED}" "${FILELIST}" "${FILELIST}.pruned" "${SECRETLIST}" "${SENDLIST}"
+        return 2
+    fi
     rm -f "${FILELIST}.pruned"
     [ "${PRUNED}" -gt 0 ] && logger -t backuptool "left out ${PRUNED} file(s) identical to the image's own copies under /usr/config"
 
@@ -833,13 +902,22 @@ write_archive() {
     # with custom LOCATIONS may have left these out on purpose, and adding a
     # sanitized copy regardless would put a file in their backup that they
     # had deliberately excluded.
+    #
+    # Each line held back is written by hold_back_line and counted: a list
+    # that lost a line would send that file whole -- its credentials with it
+    # -- where a sanitised copy or nothing was meant (#307, the audit of the
+    # fix round, PL-006).
+    local HOLD_RC=0 NHOLD=0 NHOLD_FILE
+    hold_back_line() {
+        if printf '%s\n' "${1}" 2>/dev/null >> "${SECRETLIST}"; then NHOLD=$((NHOLD + 1)); else HOLD_RC=1; fi
+    }
     if [ "${STRIP}" = "1" ]
     then
         for CANDIDATE in "${SYSCFG}" "${ESCFG}" "${RACFG}" "${RCLONECFG}"
         do
             if grep -qxF "${CANDIDATE}" "${FILELIST}"
             then
-                echo "${CANDIDATE}" >> "${SECRETLIST}"
+                hold_back_line "${CANDIDATE}"
             fi
         done
         # rclone.conf is live OAuth access and refresh tokens for the
@@ -858,7 +936,7 @@ write_archive() {
             [ "${CANDIDATE}" = "${RCLONECFG}" ] && continue
             if grep -qxF "${CANDIDATE}" "${FILELIST}"
             then
-                echo "${CANDIDATE}" >> "${SECRETLIST}"
+                hold_back_line "${CANDIDATE}"
                 logger -t backuptool "${CANDIDATE##*/} held back from the archive: a device's cloud name never travels (#307 PL-010)"
             fi
         done
@@ -872,7 +950,7 @@ write_archive() {
         do
             if grep -qxF "${CANDIDATE}" "${FILELIST}"
             then
-                echo "${CANDIDATE}" >> "${SECRETLIST}"
+                hold_back_line "${CANDIDATE}"
                 HELD=$((HELD + 1))
             fi
         done
@@ -881,7 +959,7 @@ write_archive() {
         do
             if grep -qxF "${CANDIDATE}" "${FILELIST}"
             then
-                echo "${CANDIDATE}" >> "${SECRETLIST}"
+                hold_back_line "${CANDIDATE}"
             fi
         done
         # The proxy's folder, every file under it (#165). grep -F on the
@@ -892,7 +970,7 @@ write_archive() {
         do
             while IFS= read -r F
             do
-                echo "${F}" >> "${SECRETLIST}"
+                hold_back_line "${F}"
                 HELD=$((HELD + 1))
             done < <(grep -F "${CANDIDATE}" "${FILELIST}" || true)
         done
@@ -913,12 +991,18 @@ write_archive() {
             do
                 if grep -qxF "${CANDIDATE}${SUFFIX}" "${FILELIST}"
                 then
-                    echo "${CANDIDATE}${SUFFIX}" >> "${SECRETLIST}"
+                    hold_back_line "${CANDIDATE}${SUFFIX}"
                     HELD=$((HELD + 1))
                 fi
             done
         done
         [ "${HELD}" -gt 0 ] && logger -t backuptool "held back ${HELD} last-good record(s) or temporaries beside files that are stripped or held back"
+    fi
+    if ! { [ "${HOLD_RC}" -eq 0 ] && NHOLD_FILE=$(wc -l 2>/dev/null < "${SECRETLIST}") && [ "${NHOLD_FILE}" -eq "${NHOLD}" ] 2>/dev/null; }
+    then
+        logger -t backuptool "the list of files held back could not be written whole; nothing written"
+        rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}" "${SEEDED}"
+        return 2
     fi
 
     # grep -f with an EMPTY pattern file matches nothing under busybox and
@@ -928,11 +1012,27 @@ write_archive() {
     # membership check above exists to support. Skip the filter when there
     # is nothing to hold back rather than relying on grep to agree across
     # implementations.
+    #
+    # And the send list is counted: every file listed but those held back
+    # (each of which is on the list by construction, the list having no
+    # repeats). grep's 1 means "every file held back", but it is also what
+    # a redirect that could not be opened returns, so the status alone could
+    # not tell an empty send list from a failed one (#307, the audit of the
+    # fix round, PL-006).
+    local SEND_RC=0 NSEND NFILES NHELD_UNIQUE
     if [ -s "${SECRETLIST}" ]
     then
-        grep -vxF -f "${SECRETLIST}" "${FILELIST}" > "${SENDLIST}"
+        grep -vxF -f "${SECRETLIST}" "${FILELIST}" 2>/dev/null > "${SENDLIST}"
+        [ $? -le 1 ] || SEND_RC=1
     else
-        cp "${FILELIST}" "${SENDLIST}"
+        cp "${FILELIST}" "${SENDLIST}" 2>/dev/null || SEND_RC=1
+    fi
+    if ! { [ "${SEND_RC}" -eq 0 ] && NSEND=$(wc -l 2>/dev/null < "${SENDLIST}") && NFILES=$(wc -l 2>/dev/null < "${FILELIST}") \
+           && NHELD_UNIQUE=$(sort -u "${SECRETLIST}" 2>/dev/null | wc -l) && [ "${NSEND}" -eq $((NFILES - NHELD_UNIQUE)) ] 2>/dev/null; }
+    then
+        logger -t backuptool "the list of files to send could not be written whole (${NSEND:-?} of $((${NFILES:-0} - ${NHELD_UNIQUE:-0}))); nothing written"
+        rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}" "${SEEDED}"
+        return 2
     fi
 
     # Staged, then archived once.
@@ -1114,17 +1214,18 @@ write_archive() {
     # made by the collecting tar and by mkdir, not copied, and archiving
     # them put their modes into the archive for a restore to impose on the
     # device's own folders (#308, the gpt seat's F-BR-16).
-    local MEMBERLIST
-    MEMBERLIST=$(mktemp)
-    ( cd "${STAGING}" && find storage -type f ) > "${MEMBERLIST}"
-    if ! to_log tar -czf "${TARGET}.partial" -C "${STAGING}" -T "${MEMBERLIST}"
+    local MEMBERLIST=""
+    if ! { MEMBERLIST=$(tmp_file) && ( cd "${STAGING}" && find storage -type f ) 2>/dev/null > "${MEMBERLIST}" \
+           && to_log tar -czf "${TARGET}.partial" -C "${STAGING}" -T "${MEMBERLIST}"; }
     then
         rm -rf "${STAGING}"
-        rm -f "${TARGET}.partial" "${MEMBERLIST}"
+        rm -f "${TARGET}.partial"
+        [ -n "${MEMBERLIST}" ] && rm -f "${MEMBERLIST}"
         return 3
     fi
     rm -f "${MEMBERLIST}"
-    if ! LISTED=$(listed_files "${TARGET}.partial") || [ "${LISTED}" -ne "${STAGED}" ]
+    # One chain only success gets through (a count that errors is not one).
+    if ! { LISTED=$(listed_files "${TARGET}.partial") && [ "${LISTED}" -eq "${STAGED}" ] 2>/dev/null; }
     then
         logger -t backuptool "the archive does not list back whole (${LISTED:-no listing} of the ${STAGED} staged); nothing written"
         rm -rf "${STAGING}"
@@ -1255,7 +1356,16 @@ case "${VERB}" in
             STAMP_EPOCH=$((STAMP_EPOCH + 1)); BACKUP_STAMP="$(stamp_at "${STAMP_EPOCH}")"
             SNAPSHOT="${ARCHIVEFOLDER}/${BACKUP_STAMP}-PRE_RESTORE-${DEVICE_LABEL:+${DEVICE_LABEL}-}${OS_NAME}_SETTINGS.tar.gz"
         done
-        MEMBERS=$(mktemp); NEWLIST=$(mktemp); SEEDS=$(mktemp)
+        # The restore's own lists, each checked (#307, the audit of the fix
+        # round, PL-006): with none, the copy cannot be built, so nothing is
+        # written.
+        MEMBERS=""; NEWLIST=""; SEEDS=""
+        if ! { MEMBERS=$(tmp_file) && NEWLIST=$(tmp_file) && SEEDS=$(tmp_file); }
+        then
+            for T in "${MEMBERS}" "${NEWLIST}" "${SEEDS}"; do [ -n "${T}" ] && rm -f "${T}"; done
+            why "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS"
+            fail "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS, SO NOTHING WAS CHANGED. TRY AGAIN." "the restore's lists could not be made (a temporary file)"
+        fi
         if ! archive_members "${BACKUPFILE}" > "${MEMBERS}"
         then
             rm -f "${MEMBERS}" "${NEWLIST}" "${SEEDS}"
@@ -1376,10 +1486,24 @@ case "${VERB}" in
             # the emulator, which rewrites them at launch; tar cannot edit a
             # member on the way past, and the archive is where the token
             # must not be.
-            SKIP=$(mktemp)
-            printf '%s\n' 'storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIR_PATTERNS[@]}" "${DEVICEONLY[@]#/}" "${SEEDLIST#/}" "${LINKS[@]}" > "${SKIP}"
-            to_log tar -xzf "${BACKUPFILE}" -C / -X "${SKIP}" >/dev/null
-            EXTRACT_RC=$?; rm -f "${SKIP}"
+            #
+            # tar reads the exclusions from a file, and that file is written
+            # whole and counted, or nothing is extracted: an exclusion file
+            # made empty or short by a full /tmp excluded nothing, and
+            # rclone.conf, the token files and the rest came off the archive
+            # (#307, the audit of the fix round, PL-006).
+            SKIPS=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIR_PATTERNS[@]}" "${DEVICEONLY[@]#/}" "${SEEDLIST#/}" "${LINKS[@]}")
+            SKIP=""
+            if SKIP=$(tmp_file) && printf '%s\n' "${SKIPS[@]}" 2>/dev/null > "${SKIP}" \
+               && [ "$(wc -l 2>/dev/null < "${SKIP}")" -eq "${#SKIPS[@]}" ] 2>/dev/null
+            then
+                to_log tar -xzf "${BACKUPFILE}" -C / -X "${SKIP}" >/dev/null
+                EXTRACT_RC=$?
+            else
+                logger -t backuptool "the list of what the restore leaves alone could not be written whole; nothing extracted"
+                EXTRACT_RC=1
+            fi
+            [ -n "${SKIP}" ] && rm -f "${SKIP}"
         else
             # Archives written before backups switched to regular files only
             # hold the *contents* of symlinked paths. Extracting one of those
@@ -1398,10 +1522,10 @@ case "${VERB}" in
             # PL-036 this branch split them on spaces, so "my link.cfg" was
             # tested as "my" and a live symlink with a space in its name was
             # not skipped -- the abort this list exists to prevent.
-            SKIP=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIR_PATTERNS[@]}" "${DEVICEONLY[@]#/}" "${SEEDLIST#/}" "${LINKS[@]}")
+            SKIPS=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIR_PATTERNS[@]}" "${DEVICEONLY[@]#/}" "${SEEDLIST#/}" "${LINKS[@]}")
             # -x is a mode switch: every argument after it is an exclusion,
             # so it goes last. busybox and Info-ZIP both take the patterns.
-            to_log unzip -o "${BACKUPFILE}" -d / -x "${SKIP[@]}" >/dev/null
+            to_log unzip -o "${BACKUPFILE}" -d / -x "${SKIPS[@]}" >/dev/null
             EXTRACT_RC=$?
         fi
         # Then each file the backup held at its default goes back to this

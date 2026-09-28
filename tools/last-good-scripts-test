@@ -10293,6 +10293,65 @@ p7forks=$(PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7F}/redact.sh'; sed() { echo
 # == 001-functions, found fixing PL-005: a passphrase is a credential
 [ "$(p7red 'Passphrase=qa-phrase')" = "Passphrase=<redacted>" ] && [ "$(p7red 'iwd --passphrase qa-phrase')" = "iwd --passphrase <redacted>" ] && [ "$(printf 'Passphrase=qa-phrase\n' | PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7F}/redact.sh'; redact_credentials")" = "Passphrase=<redacted>" ]; check $? "audit of the fix round (PL-005's sibling): Passphrase=, iwd's key, and --passphrase are redacted in both modes" "PL-005 sibling: '$(p7red 'Passphrase=qa-phrase')' / '$(p7red 'iwd --passphrase qa-phrase')' -- passphrase is in the backup's key list and not in the log's"
 
+# == PL-006: every list the restore builds is written whole, or the restore refuses
+# A mktemp that fails, or hands back a file no write reaches, at the Nth plain
+# call of the run (a -d is not counted): "fail N" or "ro N" in /storage/.p7-mk.
+# The tar restore of an archive with no seed list calls it for MEMBERS (1),
+# NEWLIST (2), SEEDS (3) and snapshot_members' KEEP (4), then the copy's own.
+cat > "${P7Z}/mktemp" <<'EOS'
+#!/bin/bash
+case " $* " in *" -d "*) exec /p7bb/mktemp "$@" ;; esac
+n=$(( $(cat /storage/.p7-mk-n 2>/dev/null || echo 0) + 1 )); echo "${n}" > /storage/.p7-mk-n
+read -r how at < /storage/.p7-mk 2>/dev/null
+if [ "${n}" = "${at:-}" ]; then
+    case "${how}" in
+        fail) echo "mktemp: (null): No space left on device" >&2; exit 1 ;;
+        ro) t=$(/p7bb/mktemp "$@") || exit 1; chmod 444 "${t}"; echo "${t}"; exit 0 ;;
+    esac
+fi
+exec /p7bb/mktemp "$@"
+EOS
+chmod +x "${P7Z}/mktemp"
+p7zmk() { # <fail|ro> <N> <verb...>: backuptool with the Nth temporary broken
+    local how="$1" at="$2"; shift 2
+    cp "${P7Z}/mktemp" "${P7}/shim/mktemp"; printf '%s %s\n' "${how}" "${at}" > "${P7S}/.p7-mk"; rm -f "${P7S}/.p7-mk-n"
+    p7bt "$@"
+    rm -f "${P7}/shim/mktemp" "${P7S}/.p7-mk" "${P7S}/.p7-mk-n"
+}
+p7zrs() { # a device with f1 LIVE and an archive replacing it, plus one member new to the device
+    p7reset '  /storage/.config/test/*'
+    echo LIVE > "${P7S}/.config/test/f1"
+    p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/f1=ARCHIVE" "storage/.config/test/new.cfg=NEW"
+}
+p7zrefused() { # the restore refused before it wrote: rc, f1, new.cfg, why, no tool's words on the screen
+    [ "${RC}" -ne 0 ] && [ "$(cat "${P7S}/.config/test/f1")" = "LIVE" ] && [ ! -e "${P7S}/.config/test/new.cfg" ] \
+        && [ "$(p7why)" = "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS" ] && ! p7zscreen | grep -qiE 'mktemp|no such file|permission denied|No space'
+}
+p7zstate() { echo "rc ${RC}; f1='$(cat "${P7S}/.config/test/f1")'; new.cfg $([ -e "${P7S}/.config/test/new.cfg" ] && echo written || echo absent); why '$(p7why)'; screen: $(p7zscreen | tr '\n' '|' | cut -c1-160)"; }
+p7zrs; p7zmk fail 4 restore --no-restart
+p7zrefused; check $? "audit of the fix round PL-006: the copy's worklist that cannot be made (KEEP's mktemp fails) refuses the restore before it writes -- not 'nothing to protect' (4)" "PL-006 (KEEP's mktemp): $(p7zstate)"
+p7zrs; p7zmk ro 4 restore --no-restart
+p7zrefused; check $? "audit of the fix round PL-006: a worklist made and then not written (every append to KEEP fails) refuses the restore" "PL-006 (KEEP's appends): $(p7zstate)"
+p7zrs; p7zmk ro 2 restore --no-restart
+p7zrefused; check $? "audit of the fix round PL-006: the list of files the restore would create that cannot be written (NEWLIST) refuses the restore" "PL-006 (NEWLIST): $(p7zstate)"
+p7zrs; printf '#!/bin/bash\ncase "$*" in *.unique*) echo "mv: cannot move: No space left on device" >&2; exit 1 ;; esac\nexec /p7bb/mv "$@"\n' > "${P7}/shim/mv"; chmod +x "${P7}/shim/mv"
+p7bt restore --no-restart; rm -f "${P7}/shim/mv"
+p7zrefused; check $? "audit of the fix round PL-006: the worklist's final write (the de-duplicated list moved into place) that fails refuses the restore" "PL-006 (the final list): $(p7zstate)"
+p7zrs; p7zmk fail 1 restore --no-restart
+p7zrefused; check $? "audit of the fix round PL-006: the member list's own temporary that cannot be made refuses the restore in the player's words" "PL-006 (MEMBERS): $(p7zstate)"
+p7reset '  /storage/.config/test/*'
+rm -f "${P7S}/.config/test/f1"
+p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/f1=ARCHIVE" "storage/.config/test/new.cfg=NEW"
+p7bt restore --no-restart
+[ "${RC}" -eq 0 ] && [ "$(cat "${P7S}/.config/test/f1")" = "ARCHIVE" ] && grep -q 'nothing on this device for the restore to replace' "${P7OUT}"; check $? "audit of the fix round PL-006: a selection with nothing on the device yet is still 'no copy needed' (4), and the restore runs" "PL-006 (empty selection): rc ${RC}; f1='$(cat "${P7S}/.config/test/f1" 2>/dev/null)'; screen: $(p7zscreen | tr '\n' '|' | cut -c1-160)"
+p7reset '  /storage/.config/test/*'
+p7zmk fail 1 backup
+[ "${RC}" -ne 0 ] && [ -z "$(p7arc)" ] && [ -n "$(p7why)" ] && ! p7zscreen | grep -qiE 'mktemp|no such file|No space'; check $? "audit of the fix round PL-006: a backup whose file list cannot be made writes nothing and says so in the player's words" "PL-006 (backup): rc ${RC}; archives $(p7arc | wc -l); why '$(p7why)'; screen: $(p7zscreen | tr '\n' '|' | cut -c1-160)"
+p7reset '  /storage/.config/system/configs/system.cfg
+  /storage/.config/test/*'
+p7zmk ro 2 backup
+[ "${RC}" -ne 0 ] && [ -z "$(p7arc)" ] && [ "$(p7why)" = "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS" ] && grep -q 'held back could not be written whole' "${P7OUT}"; check $? "audit of the fix round PL-006: a backup whose held-back list cannot be written (system.cfg would go whole) is a collection that failed, said as one" "PL-006 (held back): rc ${RC}; archives $(p7arc | wc -l); why '$(p7why)'"
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
