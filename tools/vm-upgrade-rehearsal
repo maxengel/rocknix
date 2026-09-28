@@ -71,6 +71,20 @@ say "a settings backup"
 ssha 'backuptool backup >/dev/null 2>&1; ls /storage/roms/backup/ 2>/dev/null' >>"$LOG" 2>&1
 BK0=$(ssha 'ls /storage/roms/backup/ 2>/dev/null | wc -l'); echo "backups before: $BK0" >> "$LOG"
 
+say "seed what the retired GENERIC_X64 quirks left in /storage (#307 PL-019)"
+# Until 2026-09 the QEMU quirks 091-101 wrote these through the image's links
+# into /storage, and 097-disable-rescue-completely masked emergency.target
+# into /storage/.config/system.d; a guest that ran them keeps them across an
+# update. The new image's 091-retired-vm-fixes and 097-retired-rescue-masks
+# take them back by name. The fixture writes them itself, so the check does
+# not depend on which quirks the previous image carried, and beside them a
+# file of the owner's own, which must stay.
+RETIRED=".config/tmpfiles.d/20-x64-fd-improvements.conf .config/sysctl.d/10-generic-x64.conf .config/modules-load.d/x64-virtual-modules.conf .config/profile.d/091-generic-x64-services"
+ssha "cd /storage && for f in $RETIRED; do mkdir -p \$(dirname \$f); echo '# seeded by vm-upgrade-rehearsal (#307 PL-019)' > \$f; done
+mkdir -p .config/system.d && ln -sfn /dev/null .config/system.d/emergency.target
+echo '# the owner'\''s own (vm-upgrade-rehearsal)' > .config/tmpfiles.d/50-rehearsal-owner.conf; sync" >>"$LOG" 2>&1
+check "retired quirk files seeded before the update" "$(ssha "cd /storage && ls $RETIRED .config/tmpfiles.d/50-rehearsal-owner.conf 2>/dev/null | wc -l; readlink .config/system.d/emergency.target" | tr '\n' ' ')" "5 /dev/null "
+
 say "stage $(basename "$NEW") and reboot guest a"
 # The pair's key and port come from vm-pair, not from literals here (they
 # were, and a pair on other settings would have gone unrehearsed -- audit
@@ -98,6 +112,11 @@ check "saves remote kept" "$(ssha "grep -E '^SAVES_REMOTE=' $CONFPATH 2>/dev/nul
 check "cloud conf gained the new defaults, kept the old values" "$(ssha "grep -cE '^(CONTENT_REMOTE|SAVES_REMOTE)=' $CONFPATH")" "2"
 check "backup archive kept" "$(ssha 'ls /storage/roms/backup/ 2>/dev/null | wc -l')" "$BK0"
 check "update queue empty" "$(ssha 'ls /storage/.update | wc -l')" "0"
+# The quirk pass runs from autostart, which may still be running when SSH
+# first answers: wait for its last line before reading what it removed.
+for i in $(seq 1 30); do ssha 'grep -q "Autostart complete" /var/log/boot.log && echo done' | grep -q done && break; sleep 2; done
+check "retired quirk files taken back after the update (#307 PL-019)" "$(ssha "cd /storage && ls $RETIRED 2>/dev/null | wc -l; [ -L .config/system.d/emergency.target ] && echo masked || echo unmasked" | tr '\n' ' ')" "0 unmasked "
+check "and the owner's file beside them kept" "$(ssha 'cat /storage/.config/tmpfiles.d/50-rehearsal-owner.conf')" "# the owner's own (vm-upgrade-rehearsal)"
 # --- release checks: assertions about one release's defects, not about the
 # upgrade path. Each names its issue; drop it when the issue's cause is gone
 # upstream (audit #258 PL-030 asked that a generic tool label these).

@@ -3118,6 +3118,47 @@ f1_storage "${F1}/fresh"; ( cd "${F1}/fresh" && find . \( -type f -o -type l \) 
 f1_sys "${F1}/sys"
 F1_UNDER=""; [ "${OLD}" -eq 1 ] && F1_UNDER="${BASE_REF}"
 
+# F1a. #307 PL-019 (and #308 F-VM-07, both seats): one boot's quirk pass on a
+#      guest writes nothing into the read-only image -- the acceptance's own
+#      `journalctl -b | grep -c 'Read-only file system'` -- says nothing on
+#      the journal at all, and leaves /storage no file that changes a later
+#      boot: no tmpfiles.d, sysctl.d, modules-load.d or udev rule, no unit or
+#      mask in system.d.
+f1_quirks "${F1_UNDER}" "${F1}/quirks.now"
+f1_storage "${F1}/a"; f1_pass "${F1}/a" "${F1}/sys" "${F1}/quirks.now" "${F1}/a.journal"
+F1_RO=$(grep -c 'Read-only file system' "${F1}/a.journal")
+[ "${F1_RO}" -eq 0 ]; check $? "the quirk pass writes nothing into the read-only image: 0 'Read-only file system' lines on the journal" "the quirk pass writes into the read-only image: ${F1_RO} 'Read-only file system' lines, e.g. $(grep -m2 'Read-only file system' "${F1}/a.journal" | tr '\n' '|' | cut -c1-240)"
+[ ! -s "${F1}/a.journal" ]; check $? "and says nothing else on the journal" "the pass says $(wc -l < "${F1}/a.journal") line(s) on the journal: $(head -3 "${F1}/a.journal" | tr '\n' '|' | cut -c1-240)"
+F1_BOOT=$(f1_new_files "${F1}/a" "${F1}/fresh.list" | grep -E '^\./\.config/(tmpfiles\.d|sysctl\.d|modules-load\.d|modprobe\.d|udev\.rules\.d|hwdb\.d|system\.d|systemd)/')
+[ -z "${F1_BOOT}" ]; check $? "and leaves /storage no file that changes a later boot (tmpfiles, sysctl, modules, udev, units, masks)" "the pass leaves /storage files that change later boots: $(echo "${F1_BOOT}" | tr '\n' ' ' | cut -c1-300)"
+
+# F1b. #307 PL-019's Already written: a guest that ran the earlier builds'
+#      quirks carries what they wrote into /storage. The fixture is exactly
+#      that: the pass of the tree before this stream (F1_PREV), run on a
+#      fresh /storage beside a file of the owner's own in each of those
+#      directories. One boot of the tree under test takes back every file
+#      the retired quirks wrote -- by name, so the owner's files stay -- and
+#      a second boot changes nothing.
+f1_quirks "${F1_PREV}" "${F1}/quirks.prev"
+f1_storage "${F1}/b"
+echo "mine" > "${F1}/b/.config/tmpfiles.d/50-mine.conf"; echo "mine" > "${F1}/b/.config/sysctl.d/99-mine.conf"
+echo "mine" > "${F1}/b/.config/modules-load.d/mine.conf"; ln -s /dev/null "${F1}/b/.config/system.d/mine.service"
+( cd "${F1}/b" && find . \( -type f -o -type l \) | LC_ALL=C sort ) > "${F1}/b.before"
+f1_pass "${F1}/b" "${F1}/sys" "${F1}/quirks.prev" "${F1}/b.prev.journal"
+F1_WROTE=$(f1_new_files "${F1}/b" "${F1}/b.before" | grep -vE '^\./\.config/(profile\.d/(001-device_config|090-ui_service|091-ui_shader)|cloud_setup_ssh)$')
+[ -n "${F1_WROTE}" ]; check $? "the earlier builds' pass wrote $(echo "${F1_WROTE}" | grep -c .) file(s) into /storage the fixture can take back (the fixture holds what a guest holds)" "the earlier builds' pass wrote nothing -- the fixture proves nothing"
+f1_pass "${F1}/b" "${F1}/sys" "${F1}/quirks.now" "${F1}/b.now.journal"
+F1_LEFT=""; while IFS= read -r f; do [ -e "${F1}/b/${f}" ] || [ -L "${F1}/b/${f}" ] && F1_LEFT="${F1_LEFT} ${f}"; done <<< "${F1_WROTE}"
+[ -z "${F1_LEFT}" ]; check $? "one boot of the tree under test takes back every one of them" "still on /storage after a boot: $(echo "${F1_LEFT}" | cut -c1-300)"
+F1_MINE=0
+for f in tmpfiles.d/50-mine.conf sysctl.d/99-mine.conf modules-load.d/mine.conf; do [ "$(cat "${F1}/b/.config/${f}" 2>/dev/null)" = mine ] || F1_MINE=1; done
+[ "$(readlink "${F1}/b/.config/system.d/mine.service")" = /dev/null ] || F1_MINE=1
+check ${F1_MINE} "and the owner's own files beside them stay, a mask of their own included" "an owner's file was taken: $(ls "${F1}/b/.config/tmpfiles.d" "${F1}/b/.config/sysctl.d" "${F1}/b/.config/modules-load.d" "${F1}/b/.config/system.d" 2>&1 | tr '\n' ' ')"
+( cd "${F1}/b" && find . \( -type f -o -type l \) | LC_ALL=C sort ) > "${F1}/b.once"
+f1_pass "${F1}/b" "${F1}/sys" "${F1}/quirks.now" "${F1}/b.twice.journal"
+( cd "${F1}/b" && find . \( -type f -o -type l \) | LC_ALL=C sort ) | cmp -s - "${F1}/b.once"
+check $? "and a second boot changes nothing" "a second boot changed /storage: $(( cd "${F1}/b" && find . \( -type f -o -type l \) | LC_ALL=C sort ) | diff - "${F1}/b.once" | tr '\n' ' ' | cut -c1-200)"
+
 # F1c. #307 PL-022: no quirk tree outside the recipe that installs it. The
 #      only quirks recipe is projects/ROCKNIX/packages/hardware/quirks, so a
 #      packages/hardware/quirks/ with no package.mk is a tree nothing installs.
