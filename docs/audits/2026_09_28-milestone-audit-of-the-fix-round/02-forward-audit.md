@@ -64,3 +64,31 @@ _The orchestrator's own reads of the highest-risk follow-up hunks, made before t
 ### O-9 (D, `ebcbf19817`) -- the scan cursor is kept only after the run's jobs
 **Read:** `raofflineproxy-ctl` and `cache-images`: the listing writes `scan-cursor.next` (`propose_cursor`); `commit_cursor` moves it into place after the jobs and reads it back against the proposed value, failing the run (exit 1, `SOMETHING_WENT_WRONG`) when it cannot; the exit trap removes `.next`, so a cancelled run leaves the old cursor. Proven on the guest (run 2, `D-pl059` PASS: the cursor kept only after the jobs, no `.next` left).
 **Verdict:** **sound, and proven on the VM.**
+
+### O-10 (B, `316bb02e5d`) -- the exclusions are one checked filter
+**Read:** `backuptool`: one awk pass drops the own backups folder, the staging prefix, the cores and the evidence folders from the file list into `.kept`; the count of kept lines, the count of dropped ones and the `mv` into place are each checked in one `||` chain, and any failure logs, removes every list and returns 2 -- nothing written. Before, two unchecked passes and a count that only logged.
+**Verdict:** **sound.**
+
+### O-11 (B, `97db4608d4`) -- the last-good records beside a stripped file are held back
+**Read:** `backuptool`: the key scan's file classes now include `*.backup`, `*.bak`, `*.cfg.*`, `*.conf.*`, `*.ini.*`; for every file the backup strips or holds back (`system.cfg`, `es_settings.cfg`, the RetroArch config, the token files, the device-only set) its `.backup`, `.bak`, `.tmp` and `.old` neighbours present in the list are added to the held-back list, with a count logged. D-CLOUD-147.
+**Verdict:** **sound.** Already written: archives already made are not rewritten (the stream's line), which is the right answer -- the next backup omits them.
+
+### O-12 (E1, ES `44705df2d`) -- a cut live file against a whole record
+**Read:** `es-core` `AtomicFile`: a live file that is not complete, shorter than a whole `.backup`, a prefix of it, and no newer than the record (`st_mtime <= backup + 1`) is treated as cut of the record and the record loads; a save made onto such a base is written and not recorded as last known good (`baseWhole`); the recovered file's mode is the most private of the copies on disk. A live file cut *after* the record was made has a newer mtime and falls to the existing `liveCut` handling.
+**Verdict:** **sound.** The unit suites carry it (es-file-tests 21/3346 on the merged tree, run by the orchestrator at 14:0x: es-unit-tests 1813/1813).
+
+### O-13 (E1, ES `5e390e128`) -- the reap guard is tried without blocking
+**Read:** `removeIfStill` takes the guard with `LOCK_NB` in a loop until the acquire's own deadline; when it cannot, it returns false and the acquire fails rather than removing the holder's lock -- nothing is removed without the guard.
+**Verdict:** **sound; fails closed.**
+
+### O-14 (D, `dfdc3a6891`) -- one rule for a ready game
+**Read:** `raofflineproxy-ctl`'s comparison: a game is ready when the account's unlocks row exists and an achievement-set row names its `GameId` (parsed from the first 512 characters of the row, else from the whole body; a body that cannot be parsed contributes nothing). The stream reports the count going from 3 to the correct 2, and a `grep` that cannot read now fails the comparison rather than counting zero (below the read's cut; the seats' to confirm).
+**Verdict:** **sound as far as read.**
+
+### O-15 (D, `adf852a4b7`) -- only a listener PPSSPP can reach counts
+**Read:** the `/proc/net/tcp{,6}` match accepts `127.0.0.1:8080`, `0.0.0.0:8080` and `::ffff:127.0.0.1:8080` and no longer `::` or `::1`; the harness case constructs each. **A question for the seats:** a service bound to `::` on a dual-stack kernel (`bindv6only=0`) does serve `127.0.0.1`, so dropping `::` is stricter than the fact; it is harmless only if the proxy never binds `::`, which the packet's `raofflineproxy` bind should show.
+**Verdict:** **sound for the shipped bind; the `::` case is Low and open until a seat or the source answers.**
+
+### O-16 (C, `8b5655a4dc`) -- a saves folder named like its own sibling is refused
+**Read:** `cloud_setup`'s `syncpath_problem`: the typed path, case-folded, is refused when it equals `<parent>/Backups` or `<parent>/Content`, with the folder to use (`Try <parent>/Saves.`); the derived siblings are exactly those two names, so the collision set is complete. An already-aliased configuration is read as it stands (the accepted-risk ledger of the fix audit).
+**Verdict:** **sound.**
