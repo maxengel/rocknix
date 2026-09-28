@@ -1130,12 +1130,29 @@ case "${VERB}" in
         fi
 
         note "RESTORING SETTINGS..." "from ${BACKUPFILE}"
+        # A member whose path is a symlink here is the OS's to provide
+        # (es_systems.cfg and es_features.cfg point into /usr/config), in
+        # either kind of archive. Backups hold regular files only, so an
+        # archive member at such a path is a flattened copy -- from a zip
+        # written before backups skipped symlinks, or a tar from a device
+        # where the link had been flattened -- and extracting it would freeze
+        # that file at the archive's version. busybox unzip refuses and
+        # aborts the whole restore; tar replaced the link without a word,
+        # which is why the tar branch had no such list until #308 (the gpt
+        # seat's F-BR-13). Skipped by exact name (glob_literal) in both.
+        LINKS=()
+        while IFS= read -r ENTRY
+        do
+            ENTRY="${ENTRY#./}"
+            [ -L "/${ENTRY}" ] && LINKS+=("$(glob_literal "${ENTRY}")")
+        done < "${MEMBERS}"
+        if [ "${#LINKS[@]}" -gt 0 ]
+        then
+            note "KEEPING ${#LINKS[@]} FILE(S) THE SYSTEM PROVIDES THAT THIS BACKUP WOULD HAVE REPLACED."
+        fi
         if [ "${ARCHIVE_KIND}" = "tar" ]
         then
-            # No symlink skip-list here, and none needed: tar replaces a
-            # symlink with whatever the archive holds instead of refusing and
-            # aborting, and what the archive holds is the symlink itself. What
-            # IS skipped is the OS's: an archive written before #45 carries
+            # What is skipped is the OS's: an archive written before #45 carries
             # PPSSPP's assets and shader cache, and extracting them over a
             # newer image's would put an older emulator's program data under a
             # newer emulator (upgrade-and-install: fixing what is written does
@@ -1143,13 +1160,15 @@ case "${VERB}" in
             # only a RetroAchievements token, which every archive written
             # before #169 carries: a token from before is not put on this
             # device, and the emulator writes a current one from system.cfg
-            # at its next start. That is all a restore strips. The settings
+            # at its next start. Beside those, this device's cloud sign-in
+            # and name (DEVICEONLY), the seed list (SEEDLIST) and the live
+            # symlinks above are never extracted. The settings
             # files' token lines an older archive still carries are left to
             # the emulator, which rewrites them at launch; tar cannot edit a
             # member on the way past, and the archive is where the token
             # must not be.
             SKIP=$(mktemp)
-            printf '%s\n' 'storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIR_PATTERNS[@]}" "${DEVICEONLY[@]#/}" "${SEEDLIST#/}" > "${SKIP}"
+            printf '%s\n' 'storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIR_PATTERNS[@]}" "${DEVICEONLY[@]#/}" "${SEEDLIST#/}" "${LINKS[@]}" > "${SKIP}"
             to_log tar -xzf "${BACKUPFILE}" -C / -X "${SKIP}" >/dev/null
             EXTRACT_RC=$?; rm -f "${SKIP}"
         else
@@ -1166,25 +1185,11 @@ case "${VERB}" in
             # likely to carry them -- and until #151 PL-03 this branch skipped
             # neither, while D-CLOUD-008 said "from any archive". The token-only
             # files are skipped here too (#169), as in the tar branch.
-            SKIP=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIR_PATTERNS[@]}" "${DEVICEONLY[@]#/}" "${SEEDLIST#/}")
-            SKIPPED=0
-            # One member per line, each whole: the name is everything from
-            # the fourth column on. Until #307 PL-036 this read $4 and split
-            # the result again, so "my link.cfg" was tested as "my" and a
-            # live symlink with a space in its name was not skipped -- the
-            # abort this branch exists to prevent.
-            while IFS= read -r ENTRY
-            do
-                if [ -L "/${ENTRY}" ]
-                then
-                    SKIP+=("$(glob_literal "${ENTRY}")")
-                    SKIPPED=$((SKIPPED + 1))
-                fi
-            done < "${MEMBERS}"
-            if [ "${SKIPPED}" -gt 0 ]
-            then
-                note "KEEPING ${SKIPPED} FILE(S) THE SYSTEM PROVIDES THAT THIS OLDER BACKUP WOULD HAVE REPLACED."
-            fi
+            # The member names are read whole (archive_members): until #307
+            # PL-036 this branch split them on spaces, so "my link.cfg" was
+            # tested as "my" and a live symlink with a space in its name was
+            # not skipped -- the abort this list exists to prevent.
+            SKIP=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIR_PATTERNS[@]}" "${DEVICEONLY[@]#/}" "${SEEDLIST#/}" "${LINKS[@]}")
             # -x is a mode switch: every argument after it is an exclusion,
             # so it goes last. busybox and Info-ZIP both take the patterns.
             to_log unzip -o "${BACKUPFILE}" -d / -x "${SKIP[@]}" >/dev/null
