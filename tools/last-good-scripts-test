@@ -4143,6 +4143,30 @@ for h in raofflineproxy-ctl raofflineproxy-cache-indexed raofflineproxy-cache-im
 done
 ! printf '%s' "${DMODES}" | grep -q '=\(100644\|none\)'; check $? "#308 claude F-RA-17: the four scripts under sources/ are mode 100755 in the tree" "#308 claude F-RA-17: modes:${DMODES}"
 
+# D22. Audit of the fixes (2026_09_28, seats D): claude G-D-02 = gpt G-D-01.
+# The scan ran its image pass only when it had cached a game: a library with
+# one ROM RetroAchievements does not know lists a job at every scan, every
+# job skipped, and the scan stamped COMPLETED over badges it never looked at.
+# The pass now runs whenever the run worked through its jobs (not when it
+# stopped on a refused sign-in or a server that stopped answering). And a
+# top-up that reaches its image pass with ten seconds or less of its
+# deadline left says it did not get to it (TOOK_TOO_LONG), where it said
+# COMPLETED over images nobody checked.
+if [ "${DT_OK}" -eq 1 ]; then
+dfake_images; printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+treset; for _ in 1 2 3 4; do echo skip; done > "${TR}/helper-plan"; echo fail > "${TR}/images-mode"; rm -f "${TR}/images-calls"
+tctl scan
+[ "${RC}" -eq 1 ] && grep -qx '>>> why SOME_IMAGES_NOT_SAVED' "${OUT}" && grep -q '^start' "${TR}/images-calls" 2>/dev/null; check $? "gpt G-D-01 / claude G-D-02: a scan whose jobs were all skipped still runs the image pass, and its failure is the run's (rc 1, SOME_IMAGES_NOT_SAVED)" "G-D-01/02: rc ${RC}; image pass run: $(grep -c '^start' "${TR}/images-calls" 2>/dev/null || echo 0) time(s); out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-200) -- COMPLETED over images nobody looked at"
+treset; for _ in 1 2 3 4; do echo skip; done > "${TR}/helper-plan"; echo ok > "${TR}/images-mode"; rm -f "${TR}/images-calls"
+tctl scan
+[ "${RC}" -eq 0 ] && grep -q '^start' "${TR}/images-calls" 2>/dev/null; check $? "gpt G-D-01 / claude G-D-02: and with the pass fetching what was missing, that scan completes (rc 0)" "G-D-01/02: rc ${RC}; image pass run: $(grep -c '^start' "${TR}/images-calls" 2>/dev/null || echo 0)"
+# The top-up with seven seconds left at its image pass.
+treset; touch -d '2 hours ago' "${TMARK}"; printf 'ok\nslow 893\n' > "${TR}/helper-plan"; echo ok > "${TR}/images-mode"; rm -f "${TR}/images-calls"
+tctl topup --after-index
+[ "${RC}" -eq 1 ] && grep -q ' 1 topup cached=2 .*why=TOOK_TOO_LONG$' "${TSTAMP}" && [ ! -e "${TR}/images-calls" ]; check $? "gpt G-D-01: a top-up with seven seconds left at its image pass ends rc 1, why TOOK_TOO_LONG -- the images were not checked" "gpt G-D-01: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null); image pass: $(grep -c '^start' "${TR}/images-calls" 2>/dev/null || echo 0) -- a pass that never ran read as done"
+rm -f "${TR}/helper-plan" "${TR}/images-mode" "${TR}/images-calls"
+fi
+
 # D23. claude G-D-03: the shipped topology of a cancel during the image pass,
 # under the real timeout rather than the harness's shim. GNU timeout puts
 # itself and the helper in a process group of their own, so the interface's

@@ -1653,7 +1653,9 @@ run_image_pass() {
     local VERB="$1" SECONDS_LEFT="${2:-${IMAGE_PASS_SECONDS}}" MODE="${3:-}" RC=0
     R_IMAGES_WHY=""
     [ -x "${IMAGE_HELPER}" ] || { slog "${VERB}: no image helper at ${IMAGE_HELPER}"; return 0; }
-    [ "${SECONDS_LEFT}" -gt 10 ] 2>/dev/null || { slog "${VERB}: no time left for the image pass (${SECONDS_LEFT}s)"; return 0; }
+    # No time left is no pass: the images were not looked at, and the run
+    # does not say it finished (audit of the fixes, gpt G-D-01).
+    [ "${SECONDS_LEFT}" -gt 10 ] 2>/dev/null || { slog "${VERB}: no time left for the image pass (${SECONDS_LEFT}s); not run"; R_IMAGES_WHY=TOOK_TOO_LONG; return 0; }
     slog "${VERB}: image pass, up to ${SECONDS_LEFT}s${MODE:+ (${MODE})}"
     # In the background and waited for, as the jobs and the recently played
     # pass are: bash runs a trap only once the foreground command has
@@ -1848,7 +1850,13 @@ do_scan() {
     # that is still missing one (#212): the same action, finished.
     # The scan has no deadline of its own (the top-up's TOPUP_TIMEOUT is the
     # one clock here), so the pass gets its own ceiling.
-    [ "${R_CACHED}" -gt 0 ] && run_image_pass scan "${IMAGE_PASS_SECONDS}"
+    # Whenever the run worked through its jobs -- cached one or not: a
+    # library with a ROM RetroAchievements does not know lists a job at
+    # every scan, and gating the pass on a cached game left such a scan
+    # COMPLETED over badges it never looked at (audit of the fixes, claude
+    # G-D-02 = gpt G-D-01). Not after a stop on a refused sign-in or a
+    # server that stopped answering.
+    [ "${R_STOPPED}" -eq 0 ] && run_image_pass scan "${IMAGE_PASS_SECONDS}"
     # The games' own why comes first; a pass that left images behind is the
     # run's why when the games went through (#307 PL-060).
     if [ -z "${WHY}" ] && [ -n "${R_IMAGES_WHY}" ]; then
