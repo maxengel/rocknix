@@ -3353,4 +3353,10 @@ p7bt restore --no-restart
 [ "${RC}" -ne 0 ] && [ "$(cat "${P7S}/.config/test/f1")" = "file1" ] && grep -q 'YOUR SETTINGS ARE UNCHANGED' "${P7OUT}"; check $? "#308 claude F-BR-08 / gpt F-BR-15: with the clock behind three archives' dates the fresh copy survives the trim and the cut restore is undone" "#308 F-BR-08: rc ${RC}; f1='$(cat "${P7S}/.config/test/f1")'; screen: $(p7screen)"
 rm -f "${P7}/shim/tar"
 
+# == #308 4-backup-restore claude F-BR-07: an upstream-era ARCHIVED_*.zip at the root is rotated, not uploaded for ever
+p7reset '  /storage/.config/test/*'
+echo old > "${P7S}/roms/backup/ARCHIVED_ROCKNIX_BACKUP-20-01-01_00_00_00.zip"
+p7bt backup
+[ "${RC}" -eq 0 ] && [ -z "$(ls "${P7S}/roms/backup"/ARCHIVED_*.zip 2>/dev/null)" ] && ls "${P7S}/roms/backup/archive"/*ARCHIVED_ROCKNIX_BACKUP-20-01-01_00_00_00.zip >/dev/null 2>&1; check $? "#308 claude F-BR-07: ARCHIVED_*.zip left at the root by the old code moves into archive/ under a dated name" "#308 F-BR-07: rc ${RC}; root: $(ls "${P7S}/roms/backup" | tr '\n' ' '); archive/: $(ls "${P7S}/roms/backup/archive" 2>/dev/null | tr '\n' ' ')"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

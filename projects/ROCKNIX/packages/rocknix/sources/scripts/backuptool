@@ -1299,6 +1299,25 @@ case "${VERB}" in
             trim_archive
         fi
 
+        # The archives upstream's backuptool rotated -- before this fork's
+        # first rewrite of it (747362fe36, 2026-07-25) -- went to the ROOT of
+        # the backups folder as ARCHIVED_<OS>_BACKUP-<yy-mm-dd_H_M_S>.zip,
+        # where no reader here looks and cloud_backup's --include=/*.zip
+        # uploads every one on every settings backup: the whole config tree
+        # of that era, keys and all. They move into archive/ under the date
+        # they were written, where the trim bounds them with the rest and
+        # nothing uploads them (#308 claude F-BR-07). Idempotent; a move cut
+        # part-way leaves the file in one place or the other.
+        for OLD in "${SETTINGS_BACKUPS}"/ARCHIVED_*.zip
+        do
+            [ -f "${OLD}" ] || continue
+            mkdir -p "${ARCHIVEFOLDER}"
+            mv "${OLD}" "${ARCHIVEFOLDER}/$(date -r "${OLD}" +%Y_%m_%d-%H%M%S 2>/dev/null || stamp_at "${STAMP_EPOCH}")-$(basename "${OLD}")" \
+                && logger -t backuptool "moved $(basename "${OLD}") from the backups folder's root into archive/: nothing uploads it there"
+            ROTATED_OLD=1
+        done
+        [ -n "${ROTATED_OLD:-}" ] && trim_archive
+
         sync
         note "SETTINGS BACKED UP TO THIS DEVICE." "${BACKUPFILE}"
         note "COPY IT SOMEWHERE SAFE, OR BACK UP TO THE CLOUD UNDER GAME SETTINGS > MANAGE CLOUD STORAGE."
