@@ -3060,5 +3060,77 @@ for p in mame2003-plus-lr mame2010-lr; do
     s="$(f2_stamp ${p})"; [ -n "${s}" ] && [ "${s}" != "${F2_S0[${p}]}" ]
     check $? "an edit to rotation-table-mame.py moves ${p}'s stamp" "${p}'s stamp did not move when rotation-table-mame.py changed: a warm root keeps the old table"
 done
+# F2-2. The rotation generators read only live source, carry their own row
+# floor, and say who they are (#308 9-emulators: gpt F-EM-04, claude F-EM-10,
+# F-EM-11, F-EM-12, gpt F-EM-06). Two fixture trees: an FBA driver file and a
+# MAME driver file, each holding live declarations beside commented-out ones
+# and strings that look like code. The pinned cores carry six such rows
+# (FBNeo, fbalpha2012 and fbalpha2019's sbdk, inside a /* */ block;
+# mame2003-plus's nrallyv, mame2010's dambust, kkgalax and mrkougr2, behind
+# //); the fixtures are those shapes.
+echo "  F2-2. the rotation generators read live source only, fail under their floor, and carry a licence header (#308 F-EM-04, F-EM-10, F-EM-11, F-EM-12)"
+GX="${F2}/gen"; mkdir -p "${GX}/fba/src/burn/drv/misc" "${GX}/mame/src/drivers" "${GX}/few/src/burn/drv"
+src_of "${F2_LR}/rotation-table-fba.py" "${GX}/rotation-table-fba.py"
+src_of "${F2_LR}/rotation-table-mame.py" "${GX}/rotation-table-mame.py"
+cat > "${GX}/fba/src/burn/drv/misc/d_fixture.cpp" <<'EOC'
+struct BurnDriver BurnDrvLive = {
+	"live", NULL, NULL, NULL, "1984",
+	"Live\0", NULL, "Maker", "Misc",
+	NULL, NULL, NULL, NULL,
+	BDF_GAME_WORKING | BDF_ORIENTATION_VERTICAL, 2, HARDWARE_MISC_PRE90S, GBF_MAZE, 0,
+};
+struct BurnDriver BurnDrvBoth = {
+	"both", NULL, NULL, NULL, "1984",
+	"Both\0", NULL, "Maker", "Misc",
+	BDF_GAME_WORKING | BDF_ORIENTATION_VERTICAL | BDF_ORIENTATION_FLIPPED, 2, 0, 0, 0,
+};
+/*
+struct BurnDriverD BurnDrvGhost = {
+	"ghost", NULL, NULL, NULL, "1984",
+	"Ghost\0", NULL, "Maker", "Misc",
+	BDF_GAME_WORKING | BDF_ORIENTATION_VERTICAL, 2, 0, 0, 0,
+};
+*/
+struct BurnDriver BurnDrvPlain = {
+	"plain", NULL, NULL, NULL, "1984",
+	"Plain\0", NULL, "Maker", "Misc",
+	BDF_GAME_WORKING, 2, 0, 0, 0, // BDF_ORIENTATION_FLIPPED was a guess
+};
+struct BurnDriver BurnDrvQuoted = {
+	"quoted", NULL, NULL, NULL, "1984",
+	"Quoted: not BDF_ORIENTATION_VERTICAL /* really\0", NULL, "Maker", "Misc",
+	BDF_GAME_WORKING, 2, 0, 0, 0,
+};
+EOC
+cat > "${GX}/mame/src/drivers/fixture.c" <<'EOC'
+/*GAME( 1990, demo,  0, m, i, 0, ROT90,  "M", "Demo (the old vertical set)", 0 )*/
+GAME( 1990, demo,  0, m, i, 0, ROT0,   "M", "Demo", 0 )
+//GAME( 1981, gone,  0, m, i, 0, ROT270, "M", "Gone", 0 )
+GAME( 1981, turn,  0, m, i, 0, ROT270, "M", "Turn // not a comment", 0 )
+GAMEX( 1982, flip, 0, m, i, 0, ROT90 | ORIENTATION_FLIP_X, "M", "Flip", 0 )
+EOC
+for n in one two; do printf 'struct BurnDriver BurnDrv%s = {\n\t"%s", NULL, NULL, NULL, "1984",\n\tBDF_GAME_WORKING | BDF_ORIENTATION_VERTICAL, 2, 0, 0, 0,\n};\n' "${n}" "${n}" >> "${GX}/few/src/burn/drv/d_few.cpp"; done
+F2_OUT="$(python3 "${GX}/rotation-table-fba.py" "${GX}/fba" 2>/dev/null)"
+[ "${F2_OUT}" = "$(printf 'both 3\nlive 1')" ]; check $? "FBA: live drivers only -- a driver inside /* */, a flag after //, a flag named in a string give no row" "FBA fixture table: '$(printf '%s' "${F2_OUT}" | tr '\n' '|')' -- expected 'both 3|live 1'"
+F2_OUT="$(python3 "${GX}/rotation-table-mame.py" "${GX}/mame" src/drivers 2>/dev/null)"
+[ "${F2_OUT}" = "turn 1" ]; check $? "MAME: a commented-out GAME() gives no row, a live ROT0 wins over a commented ROT90, and // inside a string is text" "MAME fixture table: '$(printf '%s' "${F2_OUT}" | tr '\n' '|')' -- expected 'turn 1'"
+python3 "${GX}/rotation-table-fba.py" --min 3 "${GX}/few" > "${GX}/few.txt" 2>/dev/null; rc=$?
+python3 "${GX}/rotation-table-fba.py" --min 2 "${GX}/few" > /dev/null 2>&1; rc2=$?
+[ "${rc}" -ne 0 ] && [ "${rc2}" -eq 0 ]; check $? "--min N fails a table under N rows (two rows, --min 3) and passes one at N" "--min 3 over two rows: rc ${rc}; --min 2: rc ${rc2} -- the floor has to live in the generator, not in five recipes"
+python3 "${GX}/rotation-table-mame.py" --min 2 "${GX}/mame" src/drivers > /dev/null 2>&1; rc=$?
+[ "${rc}" -ne 0 ]; check $? "and the MAME generator's --min fails its one-row fixture under 2" "rotation-table-mame.py --min 2 over one row: rc ${rc}"
+for g in fba mame; do
+    head -4 "${GX}/rotation-table-${g}.py" | grep -q '^# SPDX-License-Identifier: ' && head -4 "${GX}/rotation-table-${g}.py" | grep -q '^# Copyright (C) .*ROCKNIX'
+    check $? "rotation-table-${g}.py opens with an SPDX line and a copyright line" "rotation-table-${g}.py has no SPDX/copyright header in its first lines"
+done
+grep -q "^# rotation-table-fba.py " "${GX}/rotation-table-fba.py" && ! grep -q 'fbneo-rotation-table.py' "${GX}/rotation-table-fba.py" && ! grep -q '^macro = re.compile' "${GX}/rotation-table-mame.py"
+check $? "the usage lines name the files they are in, and the MAME generator compiles no regex it does not use" "a usage line names another file, or the unused 'macro' regex is still there"
+F2_BAD=""
+for p in fbalpha2012-lr fbalpha2019-lr fbneo-lr mame2003-plus-lr mame2010-lr; do
+    src_of "${F2_LR}/${p}/package.mk" "${GX}/${p}.mk"
+    grep -q '^rotation_table_check()' "${GX}/${p}.mk" && F2_BAD+=" ${p}:copy"
+    grep -q 'rotation-table-[a-z]*\.py --min [0-9]' "${GX}/${p}.mk" || F2_BAD+=" ${p}:no-floor"
+done
+[ -z "${F2_BAD}" ]; check $? "the five recipes hand the generator its floor (--min) and carry no copy of the row check" "recipes:${F2_BAD}"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

@@ -7,9 +7,8 @@ PKG_SHA256="96812000a349e413d63bc5ef04ab7a330bb0b4194047c048ed6ec549b8274936"
 PKG_LICENSE="Non-commercial"
 PKG_SITE="https://github.com/libretro/fbalpha"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
-# Python3:host for the rotation-table generator the install step runs
-# (audit #258 PL-018): the interpreter the build's PATH finds, not whatever
-# the container happens to carry.
+# Python3:host runs the rotation-table generator in the install step: the
+# interpreter the build's PATH finds, not whatever the container carries.
 PKG_DEPENDS_TARGET="toolchain Python3:host"
 # The rotation-table generator is shared with the other FBA-family cores and
 # sits one directory up, outside PKG_DIR, which is all calculate_stamp
@@ -21,30 +20,17 @@ PKG_TOOLCHAIN="make"
 
 PKG_MAKE_OPTS_TARGET="-f makefile.libretro"
 
-# The generated table has to have found the drivers: a generator pointed at
-# the wrong directory writes an empty file and the build went green with it
-# (audit #258 PL-018). The five tables carried 853 to 2544 rows on 2026-09-24;
-# under 100 is a wrong path, not a smaller core. The generators live one
-# directory up, shared by the fba cores and by the mame cores; the one this
-# core runs is in its stamp through PKG_NEED_UNPACK.
-rotation_table_check() {
-  local table="${INSTALL}/usr/config/emulationstation/rotation/${1}.txt" rows
-  rows=$(wc -l < "${table}")
-  echo "USING: ${1} rotation table: ${rows} games with a turn"
-  [ "${rows}" -ge 100 ] || die "rotation table ${1}.txt has ${rows} rows -- the generator found no drivers; check the source path handed to it"
-}
-
 makeinstall_target() {
   mkdir -p ${INSTALL}/usr/lib/libretro
     cp -a ${PKG_DIR}/fbalpha2019_libretro.info ${INSTALL}/usr/lib/libretro
     cp -a fbalpha_libretro.so ${INSTALL}/usr/lib/libretro/fbalpha2019_libretro.so
 
-  # The quarter turns this core asks the display for, per game, from the
-  # driver table in the source this build compiles (fork #248, D-UI-082):
-  # EmulationStation turns a game's captures by it when no session has
-  # recorded the rotation yet, so what is already on a device is right the
-  # moment the build is. The generator mirrors the core's own mapping.
+  # The quarter turns this core asks the display for, per game, read from
+  # the driver table of the source this build compiles. EmulationStation
+  # reads it from /usr/config/emulationstation/rotation/<core>.txt on the
+  # system partition, so a device has the table of the core it runs as soon
+  # as the build is installed. Every pinned core's table has over 800 rows:
+  # under 100 is a wrong source path, and --min fails the build on it.
   mkdir -p ${INSTALL}/usr/config/emulationstation/rotation
-  python3 ${PKG_DIR}/../rotation-table-fba.py ${PKG_BUILD} > ${INSTALL}/usr/config/emulationstation/rotation/fbalpha2019.txt
-  rotation_table_check fbalpha2019
+  python3 ${PKG_DIR}/../rotation-table-fba.py --min 100 ${PKG_BUILD} > ${INSTALL}/usr/config/emulationstation/rotation/fbalpha2019.txt
 }
