@@ -3183,4 +3183,19 @@ p7bt backup
 [ "${RC}" -ne 0 ] && [ -z "$(p7arc)" ] && [ "$(p7why)" = "YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP CAN'T CARRY" ]; check $? "#307 PL-038: /flash/x in LOCATIONS ends the backup with the refusal (rc ${RC}, why: $(p7why))" "#307 PL-038: rc ${RC}; archives: $(p7arc | wc -l); why: '$(p7why)' -- it was staged and silently left out of the archive"
 P7X=()
 
+# == PL-008: the backup folder never goes into a backup, whatever the selection
+p7reset '  /storage/roms'
+p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/f1=old"
+mkdir -p "${P7S}/roms/backup/archive" "${P7S}/roms/snes"; echo game > "${P7S}/roms/snes/game.sfc"
+printf 'wifi.key=PRE-RESTORE-SECRET\n' > "${P7}/snapsecret"; tar -C "${P7}" -czf "${P7S}/roms/backup/archive/2026_01_01-000001-PRE_RESTORE-ROCKNIX_SETTINGS.tar.gz" snapsecret
+p7bt backup
+[ "${RC}" -eq 0 ] && p7list | grep -q 'storage/roms/snes/game.sfc' && ! p7list | grep -q '^storage/roms/backup/'; check $? "#307 PL-008: LOCATIONS=(/storage/roms) archives the ROMs but nothing under the backup folder" "#307 PL-008: rc ${RC}; members under the backup folder: $(p7list | grep '^storage/roms/backup/' | tr '\n' ' ' | cut -c1-200)"
+p7reset '  /storage/.config'
+printf 'SETTINGS_BACKUPS="/storage/.config/sbk"\n' > "${P7S}/.config/cloud_sync.conf"
+mkdir -p "${P7S}/.config/sbk/archive"; cp "${P7S}/roms/backup/"*.tar.gz "${P7S}/.config/sbk/" 2>/dev/null
+tar -C "${P7}" -czf "${P7S}/.config/sbk/archive/2026_01_01-000001-PRE_RESTORE-ROCKNIX_SETTINGS.tar.gz" snapsecret
+p7bt backup
+p7arc2=$(ls "${P7S}/.config/sbk"/*.tar.gz 2>/dev/null | tail -1)
+[ "${RC}" -eq 0 ] && [ -n "${p7arc2}" ] && tar -tzf "${p7arc2}" | grep -q 'storage/.config/test/f1' && ! tar -tzf "${p7arc2}" | grep -q '^storage/.config/sbk/'; check $? "#307 PL-008: LOCATIONS=(/storage/.config) with the backup folder inside it holds no member under the backup folder" "#307 PL-008: rc ${RC}; members under it: $(tar -tzf "${p7arc2}" 2>/dev/null | grep '^storage/.config/sbk/' | tr '\n' ' ' | cut -c1-200)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

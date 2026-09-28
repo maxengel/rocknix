@@ -352,7 +352,17 @@ write_archive() {
     # archive is written from the staging tree's storage/ and put back
     # under /storage, so anything else was staged and then silently left
     # out while the backup read as whole (#307 PL-038).
-    local LOC CANON FIND_RC=0 OUTSIDE=""
+    #
+    # The settings backups folder is never collected, whatever the list
+    # says: it holds the previous archives and the pre-restore copies,
+    # which keep every password (STRIP=0), and a custom list such as
+    # /storage/roms or /storage swept them into an archive bound for the
+    # cloud, where the scan below reads no .tar.gz (#307 PL-008). A
+    # location inside it is passed over, and files under it are taken out
+    # of a location that contains it.
+    local LOC CANON FIND_RC=0 OUTSIDE="" OWN
+    OWN=$(readlink -f "${SETTINGS_BACKUPS}" 2>/dev/null)
+    [ -n "${OWN}" ] || OWN="${SETTINGS_BACKUPS}"
     for LOC in "${COMPRESSLOCATIONS[@]}"
     do
         [ -n "${LOC}" ] || continue
@@ -362,6 +372,9 @@ write_archive() {
         case "${CANON}" in
             /storage|/storage/*) ;;
             *) OUTSIDE="${LOC}"; continue ;;
+        esac
+        case "${CANON}" in
+            "${OWN}"|"${OWN}"/*) continue ;;
         esac
         find "${CANON}" -type f >> "${FILELIST}" 2>/dev/null || FIND_RC=$?
     done
@@ -381,6 +394,13 @@ write_archive() {
     # twice; the archive holds it once, and the counts below compare like
     # with like.
     awk '!seen[$0]++' "${FILELIST}" > "${FILELIST}.unique" && mv -f "${FILELIST}.unique" "${FILELIST}"
+    local OWNED
+    OWNED=$(OWN="${OWN}/" awk 'index($0, ENVIRON["OWN"]) == 1' "${FILELIST}" | wc -l)
+    if [ "${OWNED}" -gt 0 ]
+    then
+        OWN="${OWN}/" awk 'index($0, ENVIRON["OWN"]) != 1' "${FILELIST}" > "${FILELIST}.own" && mv -f "${FILELIST}.own" "${FILELIST}"
+        logger -t backuptool "left out ${OWNED} file(s) under the settings backups folder: a backup never holds another backup"
+    fi
 
     # Inside a configured location, what the image ships is not the player's
     # configuration and does not travel (#45). A stock device's archive was
