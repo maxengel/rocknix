@@ -3132,5 +3132,32 @@ for p in fbalpha2012-lr fbalpha2019-lr fbneo-lr mame2003-plus-lr mame2010-lr; do
     grep -q 'rotation-table-[a-z]*\.py --min [0-9]' "${GX}/${p}.mk" || F2_BAD+=" ${p}:no-floor"
 done
 [ -z "${F2_BAD}" ]; check $? "the five recipes hand the generator its floor (--min) and carry no copy of the row check" "recipes:${F2_BAD}"
+# F2-3. make docker-* writes .env in its recipe, owner-only over any older
+# copy, and removes it when the container is gone (#307 PL-043; #308
+# 10-packages claude F-PB-12). The docker-% recipe is taken out of the
+# Makefile and run as make would -- one /bin/sh -c per logical line, $$ as $,
+# every $(VAR) empty except $(DOCKER_CMD), a stub that records what the
+# container would have been handed -- in a directory holding a 0644 .env
+# left by an older tree and a get_env that prints one variable. No make and
+# no docker run; the recipe's own shell does the work.
+echo "  F2-3. make docker-* writes .env owner-only in its recipe, over an older 0644 copy, and removes it after (#307 PL-043)"
+MX="${F2}/mk"; mkdir -p "${MX}/scripts" "${MX}/bin"
+src_of Makefile "${MX}/Makefile"
+printf '#!/bin/sh\necho F2_FORWARDED=yes\n' > "${MX}/scripts/get_env"; chmod +x "${MX}/scripts/get_env"
+printf '#!/bin/sh\n{ stat -c %%a .env 2>/dev/null || echo absent; cat .env 2>/dev/null; } > "%s/seen"\nexit 7\n' "${MX}" > "${MX}/bin/docker"; chmod +x "${MX}/bin/docker"
+! grep -Eq '^docker-%:.*\$\(shell[^)]*>[[:space:]]*\.env' "${MX}/Makefile"
+check $? "no prerequisite list writes .env as make reads the file (it did for every target, native builds included)" "a docker-% prerequisite still runs \$(shell ... > .env) at parse time: $(grep -E '^docker-%:.*\.env' "${MX}/Makefile" | head -1)"
+awk '/^docker-%:[[:space:]]*$/{p=1; next} p&&/^\t/{print; next} p{exit}' "${MX}/Makefile" \
+  | sed -e 's/^\t@\{0,1\}//' | awk '{ if (sub(/\\$/, "")) { buf = buf $0 } else { print buf $0; buf = "" } }' \
+  | sed -e "s|\$(DOCKER_CMD)|${MX}/bin/docker|g" -e 's/\$([A-Z_]*)//g' -e 's/\$\$/$/g' > "${MX}/recipe.sh"
+f2_recipe() { ( cd "${MX}" && while IFS= read -r line; do /bin/sh -c "${line}" || exit $?; done < recipe.sh ) > /dev/null 2>&1; }
+printf 'STALE=1\n' > "${MX}/.env"; chmod 0644 "${MX}/.env"; rm -f "${MX}/seen"
+f2_recipe; rc=$?
+[ "$(head -1 "${MX}/seen" 2>/dev/null)" = "600" ] && grep -qx 'F2_FORWARDED=yes' "${MX}/seen" && ! grep -q STALE "${MX}/seen"
+check $? "the container is handed a fresh .env, mode 600, though a 0644 one was there before" "what the container got: '$(tr '\n' '|' < "${MX}/seen" 2>/dev/null)' -- expected mode 600 and this run's F2_FORWARDED=yes"
+[ ! -e "${MX}/.env" ] && [ "${rc}" -eq 7 ]; check $? "and .env is gone afterwards, the container's status the recipe's (7)" ".env after the recipe: $([ -e "${MX}/.env" ] && echo "present, mode $(stat -c %a "${MX}/.env")" || echo gone); rc ${rc}"
+printf '#!/bin/sh\necho PARTIAL=1\nexit 3\n' > "${MX}/scripts/get_env"; rm -f "${MX}/seen"
+f2_recipe; rc=$?
+[ ! -e "${MX}/seen" ] && [ ! -e "${MX}/.env" ] && [ "${rc}" -ne 0 ]; check $? "a get_env that fails starts no container and leaves no .env" "get_env failed: container $([ -e "${MX}/seen" ] && echo started || echo 'not started'); .env $([ -e "${MX}/.env" ] && echo left || echo gone); rc ${rc}"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
