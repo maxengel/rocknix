@@ -49,6 +49,7 @@ import errno
 import fcntl
 import hashlib
 import http.server
+import itertools
 import json
 import os
 import re
@@ -324,8 +325,14 @@ class Session:
         return True
 
     def _collect(self):
-        buffer = getattr(self, "early_output", "")
-        for line in self.proc.stdout:
+        # What start() read past the link comes first, through the same
+        # checks: a provider that refuses at once puts rclone's last words in
+        # that first read, and they went into the buffer without being looked
+        # at, so the failure said nothing of why (the audit of stream C,
+        # G-C-10).
+        buffer = ""
+        early = getattr(self, "early_output", "")
+        for line in itertools.chain(early.splitlines(True), self.proc.stdout):
             buffer += line
             if line.startswith("Error: ") or "Fatal error:" in line:
                 self.rclone_says = line.split("error: ")[-1].strip() or line.strip()

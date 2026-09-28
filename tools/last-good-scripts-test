@@ -4157,6 +4157,31 @@ def no_route_listens_on_loopback_only():
            "with no route the serve listens on the loopback address it advertises and nowhere else",
            "no route (127.0.0.1 advertised): reachable there %r, on 127.0.0.2 %r -- the fallback bound 0.0.0.0 (G-C-06 gpt)" % (here, other))
 EOPY
+# G-C-10 (claude): rclone's last words, when they arrive with the link.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+@test
+def last_words_in_the_first_read_count():
+    """G-C-10 (claude seat): an authorize that prints its link and its error
+    in one write -- a provider that rejects at once -- keeps its words."""
+    m, d = load("gc10")
+    shim = os.path.join(d, "rclone")
+    with open(shim, "w") as h:
+        h.write('#!/bin/bash\n'
+                'printf "Please go to http://127.0.0.1:53682/auth?state=abc\\n'
+                'Error: failed to get token: oauth2: \\"invalid_grant\\"\\n"\n'
+                'sleep 0.3\nexit 1\n')
+    os.chmod(shim, 0o755)
+    m.RCLONE = shim
+    m.provider_url = lambda local: "https://www.dropbox.com/oauth2/authorize?state=abc"
+    m.reset_state(status="waiting")
+    s = m.Session("dropbox", None, 60)
+    started = s.start()
+    wait_for(lambda: m.read_state().get("status") == "failed", 6)
+    st = m.read_state()
+    result(started and st.get("status") == "failed" and "expired" in (st.get("error") or ""),
+           "rclone's words in the same read as its link still say why the attempt died (%s)" % st.get("error"),
+           "started %r; state %r -- the error that came with the link was never read (G-C-10 claude)" % (started, st))
+EOPY
 # C3: new test groups go above this line
 cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
 if MODE == "drive":
