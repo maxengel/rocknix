@@ -2124,7 +2124,7 @@ case "${1:-}" in
     images)  do_images "${2:-}" ;;
     refresh) do_refresh "${2:-}" "${3:-}" ;;
     *)
-        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|pending-ids|account|flushed|scan|topup [--after-index]|index-offline|images [--verify]|refresh [--all|--game <id>]|listening [--wait <seconds>]|ready}" >&2
+        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|pending-ids|account|summary|flushed|scan|topup [--after-index]|index-offline|images [--verify]|refresh [--all|--game <id>]|listening [--wait <seconds>]|ready}" >&2
         exit 2
     ;;
 esac

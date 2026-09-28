@@ -4088,4 +4088,11 @@ else
     echo "    SKIP  the PL-060 follow-up's cases: section t did not run"
 fi
 
+# D20. #308 1-raoffline claude F-RA-17's part in this file: the usage line
+# names every verb the ctl answers -- summary was missing from it.
+if [ "${DT_OK}" -eq 1 ]; then
+tctl no-such-verb
+[ "${RC}" -eq 2 ] && grep -q '|summary|' "${ERR}"; check $? "#308 claude F-RA-17: the usage line names summary with the other verbs" "#308 claude F-RA-17: rc ${RC}; usage: $(head -c 300 "${ERR}")"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
