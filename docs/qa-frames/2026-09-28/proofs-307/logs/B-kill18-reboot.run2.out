@@ -1,0 +1,24 @@
+09:03:42 === B-kill18-reboot on guest d, BUILD_ID="1b0d2336578fb3b9a10a30cd23c7c1de577df740"
+09:03:43 settings backups folder before:  archive/: none; backuptool.conf existed: no
+    /storage/roms is not a mountpoint
+    /games-internal/roms /storage/roms ext4 /dev/vda2
+    -rw-r--r--    1 root     root        201242 Sep 28 05:03 /storage/roms/backup/2098_01_01-000000-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz
+/tmp/k18-run: line 12:  4018 Killed                     backuptool restore > /tmp/k18.out 2>&1 < /dev/null
+09:03:44 the watcher: landed 188 small files in
+09:03:46   PASS  the kill landed mid-extract (landed 188 small files in; a=ARCHIVE b=LIVE c=absent many=188)
+09:03:47 the mark: line 1 '/storage/roms/backup/archive/2026_09_28-050344-PRE_RESTORE-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz'; 20001 '+' line(s); c.cfg among them: 1
+09:03:47   PASS  the restore mark names a pre-restore copy that exists (/storage/roms/backup/archive/2026_09_28-050344-PRE_RESTORE-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz)
+09:03:47   PASS  the mark carries c.cfg as a file the restore creates (+/storage/qa307-k18/live/c.cfg; PL-007 marker v2)
+    k18.out: [32mCHECKING YOUR SETTINGS BACKUP...[0m
+    k18.out: [32mKEEPING A COPY OF YOUR CURRENT SETTINGS...[0m
+    k18.out: [32mRESTORING SETTINGS...[0m
+09:03:47 reboot (the kill left the tree half restored and the mark in place)
+    [    2.087823] ROCKNIX chksysconfig[512]: a settings restore was cut off; the copy taken before it (/storage/roms/backup/archive/2026_09_28-050344-PRE_RESTORE-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz) or the files it made are on a folder not mounted yet, so it goes back at the next check this boot
+    [   14.283454] GENERIC-X64-474c chksysconfig[20874]: a settings restore was cut off; the copy taken before it was put back (/storage/roms/backup/archive/2026_09_28-050344-PRE_RESTORE-GENERIC-X64-ROCKNIX_SETTINGS.tar.gz) and the 20001 file(s) it created removed
+    [    3.638991] GENERIC-X64-474c automount[757]: Executing bind mount of /storage/games-internal to /storage/roms
+09:04:29 after the boot: a=LIVE b=LIVE c=absent many=0; .restore-reverted 'reverted'; mark gone
+09:04:29   PASS  PL-045: a pass kept the mark while the folder read as not mounted (1 line(s) 'not mounted yet')
+09:04:29   PASS  PL-045: a later pass this boot put the copy back (1 'was put back' line)
+09:04:29   PASS  PL-007: the tree is as it was (a, b LIVE) and every file the restore created is gone (c.cfg, many/): a=LIVE b=LIVE c=absent many=0
+09:04:29   PASS  EmulationStation is left 'reverted' and the mark is gone (said 'reverted', mark gone)
+    cleanup: /storage/roms/backup: archive  /storage/roms/backup/archive: 09:04:30 === done: 7 PASS, 0 FAIL
