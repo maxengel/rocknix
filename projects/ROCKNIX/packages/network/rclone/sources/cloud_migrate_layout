@@ -44,9 +44,73 @@ conf_value() {
     grep -m1 "^$1=" "${SYNC_CONF}" 2>/dev/null | cut -d'"' -f2
 }
 
+# A listing's bound (#143): three low-level retries, the value every other
+# cloud script lists with.
+readonly -a RCLONE_LIST_OPTS=(--contimeout 15s --timeout 30s --low-level-retries 3 --retries 1)
+
+# A cloud that did not answer is not an empty cloud (audit #307 PL-027).
+# Every presence test here used to be `[ -n "$(rclone lsf ... 2>/dev/null |
+# head -1)" ]`, which discards rclone's exit: a listing that failed read as
+# a folder with nothing in it, and --apply went on to rewrite the pointers
+# with nothing copied. A listing now ends one of three ways: it listed
+# (LISTING holds what it said, perhaps nothing), the folder is not there
+# (rclone's 3/4, or the nearest listable parent lacks it -- #142's walk,
+# for a server whose "missing" rclone does not map to 3), or the cloud
+# could not be read -- and then the run stops where it is, saying so, with
+# every pointer that has not already landed left where it was.
+unreadable() { # <path> <rclone exit>
+    local rc="$2"
+    [ "${rc}" -gt 0 ] 2>/dev/null || rc=1
+    say "Couldn't read your cloud, so nothing more was changed. Try again when you're online."
+    [ "${MODE}" = "--apply" ] && echo ">>> why YOUR CLOUD STOPPED ANSWERING"
+    logger -t cloud_migrate_layout "could not list $1 (rclone exit $2); stopped" 2>/dev/null
+    exit "${rc}"
+}
+
+# Is this remote path missing, rather than unreadable? cloud_content_restore's
+# walk, verbatim: up to the nearest level that lists; a level that lists and
+# lacks the next name is a path not created yet (0), one that holds it means
+# the failure was something else (1), and a root that will not list is
+# broken (1).
+absent_not_broken() {
+    local path="${1%/}" remote rel name parent listing
+    remote="${path%%:*}:"; rel="${path#*:}"; rel="${rel#/}"
+    while [ -n "${rel}" ]; do
+        name="${rel##*/}"; parent="${rel%/*}"
+        [ "${parent}" = "${rel}" ] && parent=""
+        if listing=$(rclone lsf --dirs-only "${remote}/${parent:+${parent}/}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); then
+            printf '%s\n' "${listing}" | grep -qFx -- "${name}/" && return 1
+            return 0
+        fi
+        [ -n "${parent}" ] || return 1
+        rel="${parent}"
+    done
+    return 1
+}
+
+# LISTING=what rclone lsf [args] <path> lists; nothing for a folder that is
+# not there; the run stops for one that cannot be read. Never called inside
+# $(...), so the stop is the script's.
+LISTING=""
+list_or_stop() { # <path> [lsf args...]
+    local path="$1" rc
+    shift
+    LISTING=$(rclone lsf "$@" "${path}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); rc=$?
+    case "${rc}" in
+        0) return 0 ;;
+        3|4) LISTING=""; return 0 ;;
+    esac
+    if absent_not_broken "${path}"; then
+        LISTING=""
+        return 0
+    fi
+    unreadable "${path}" "${rc}"
+}
+
 # Does a remote path exist and hold anything?
 has_entries() {
-    [ -n "$(rclone lsf "$1" 2>/dev/null | head -1)" ]
+    list_or_stop "$1"
+    [ -n "${LISTING}" ]
 }
 
 # Does it hold actual files, ignoring the backup folder underneath it?
@@ -57,9 +121,9 @@ has_entries() {
 # here" would move the backups into the middle of the saves.
 has_files() {
     local extra="$2"
-    [ -n "$(rclone lsf --files-only -R \
-            --exclude 'backup/**' --exclude 'Backups/**' ${extra} \
-            "$1" 2>/dev/null | head -1)" ]
+    list_or_stop "$1" --files-only -R \
+            --exclude 'backup/**' --exclude 'Backups/**' ${extra}
+    [ -n "${LISTING}" ]
 }
 
 # Does a remote path exist?
@@ -75,11 +139,13 @@ has_files() {
 # without holding files: does it contain anything, or does its parent list it
 # (which is what an --s3-directory-markers marker object produces)?
 exists() {
-    [ -n "$(rclone lsf "$1" 2>/dev/null | head -1)" ] && return 0
+    list_or_stop "$1"
+    [ -n "${LISTING}" ] && return 0
     local parent name
     parent="${1%/}"; name="${parent##*/}"; parent="${parent%/*}"
     [ -n "${name}" ] || return 1
-    rclone lsf --dirs-only "${parent}/" 2>/dev/null | grep -qx "${name}/"
+    list_or_stop "${parent}/" --dirs-only
+    printf '%s\n' "${LISTING}" | grep -qxF -- "${name}/"
 }
 
 # Relocate a folder by copy, verify, delete -- never `rclone move`.
@@ -183,15 +249,24 @@ migrate_content() {
     return 0
 }
 
+MODE="--check"
 main() {
     local mode="${1:---check}"
     local remote saves backups content old_root
+    MODE="${mode}"
 
     remote=$(remote_name)
     if [ -z "${remote}" ]; then
         say "No cloud remote is configured; nothing to migrate."
         return 1
     fi
+
+    # The cloud answers before anything is asked of it (PL-027): a remote
+    # that does not list at its root is unreadable, and nothing below --
+    # a presence test, a pointer -- is reached.
+    local probe_rc
+    rclone lsd "${remote}" "${RCLONE_LIST_OPTS[@]}" >/dev/null 2>&1; probe_rc=$?
+    [ "${probe_rc}" -eq 0 ] || unreadable "${remote}" "${probe_rc}"
 
     saves=$(conf_value SAVES_REMOTE)
     backups=$(conf_value SETTINGS_REMOTE)

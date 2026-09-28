@@ -3017,7 +3017,7 @@ ckf 65536 retroarch 1024;                printf '%s' "${NOTE}" | grep '^dump' | 
 # of the fixture's, inside bwrap -- so every filter, listing, --max-delete,
 # check and delete is rclone's own, not a shim's idea of it. A shim in front
 # of it records every argv to /ctl/argv and, for a line of /ctl/fail
-# ("<ERE over the argv>|<exit code>"), fails that call instead: the one
+# ("<ERE over the argv><tab><exit code>"), fails that call instead: the one
 # listing a flaky link loses, the endpoint that answers nothing. The host's
 # rclone stands in when no build root is here. The image's busybox serves
 # the applets it serves on the device (find, stat, awk, sed, tr, flock, cmp,
@@ -3038,16 +3038,42 @@ chmod +x "${SA}/rclone.real" 2>/dev/null
 echo "    rclone: $("${SA}/rclone.real" version 2>/dev/null | head -1) -- a copy of ${SA_RCLONE_SRC:-nothing}"
 cat > "${SA}/shim/rclone" <<'EOR'
 #!/bin/bash
-# The image's rclone, with the calls /ctl/fail names failed instead.
+# The image's rclone, with the calls /ctl/fail names ("<ERE><tab><exit>")
+# failed instead; /ctl/kill ("<ERE><tab><n>") kills the caller's whole
+# process group at the n-th matching call, before it runs -- a kill, not a
+# failure; /ctl/post ("<ERE><tab><command>") runs a command after a
+# matching call -- another
+# writer landing between two steps; /ctl/nohash makes `backend features`
+# describe a remote with no hashes (WebDAV, SFTP, SMB, FTP).
 printf '%s\n' "$*" >> /ctl/argv
 if [ -s /ctl/fail ]; then
-    while IFS='|' read -r pat code; do
+    while IFS=$'\t' read -r pat code; do
         [ -n "${pat}" ] || continue
         if printf '%s' "$*" | grep -qE -- "${pat}"; then
             echo "ERROR : injected failure ${code}" >&2
             exit "${code}"
         fi
     done < /ctl/fail
+fi
+if [ -s /ctl/kill ]; then
+    while IFS=$'\t' read -r pat nth; do
+        [ -n "${pat}" ] || continue
+        printf '%s' "$*" | grep -qE -- "${pat}" || continue
+        n=$(( $(cat /ctl/kill.count 2>/dev/null || echo 0) + 1 )); echo "${n}" > /ctl/kill.count
+        [ "${n}" -eq "${nth}" ] && kill -9 -- "-$(cut -d' ' -f5 /proc/self/stat)"
+    done < /ctl/kill
+fi
+if [ -e /ctl/nohash ] && [ "$1" = backend ] && [ "$2" = features ]; then
+    printf '{\n\t"Name": "qa",\n\t"Hashes": [],\n\t"Features": {\n\t\t"BucketBased": false\n\t}\n}\n'
+    exit 0
+fi
+if [ -s /ctl/post ]; then
+    /sa/rclone.real "$@"; rc=$?
+    while IFS=$'\t' read -r pat cmd; do
+        [ -n "${pat}" ] || continue
+        printf '%s' "$*" | grep -qE -- "${pat}" && eval "${cmd}"
+    done < /ctl/post
+    exit "${rc}"
 fi
 exec /sa/rclone.real "$@"
 EOR
@@ -3073,7 +3099,7 @@ sa_new() { # <name>: a fresh fixture directory; its path on stdout
     rm -rf "${d}"; mkdir -p "${d}"/storage/.config/rclone "${d}"/storage/.cache/cloud_sync "${d}"/storage/roms \
         "${d}"/cloud "${d}"/ctl "${d}"/log "${d}"/varrun "${d}"/repo
     printf '[qa]\ntype = alias\nremote = /cloud\n' > "${d}/storage/.config/rclone/rclone.conf"
-    : > "${d}/ctl/argv"; : > "${d}/ctl/fail"
+    : > "${d}/ctl/argv"; : > "${d}/ctl/fail"; : > "${d}/ctl/kill"; : > "${d}/ctl/post"
     printf '#!/bin/sh\ncase "$1" in --label) echo QA ;; --previous|--legacy) ;; *) echo QA-deadbeef01 ;; esac\n' > "${d}/repo/cloud_device_id"
     chmod +x "${d}/repo/cloud_device_id"
     printf '%s' "${d}"
@@ -3122,13 +3148,13 @@ m_seed() { # the cloud holds gb/A.gb and nes/N.nes; the device gb/A.gb, gb/B.gb,
     rm -f "${MPLAN}"; : > "${M}/ctl/fail"; : > "${M}/ctl/argv"
 }
 m_seed
-printf '^lsf qa:/ROCKNIX/Content/ROMs/nes |5\n' > "${M}/ctl/fail"
+printf '%s\t%s\n' '^lsf qa:/ROCKNIX/Content/ROMs/nes ' 5 > "${M}/ctl/fail"
 sa_run "${M}" cloud_content_restore --match
 ! grep -q '^nes|remove' "${M}/out" && [ "${RC}" -ne 0 ] && [ ! -e "${MPLAN}" ]; check $? "a preview whose nes listing fails (5) plans nothing for nes, exits non-zero and leaves no plan (rc ${RC})" "rc ${RC}; plan lines: $(grep '|' "${M}/out" | tr '\n' ' '); plan file: $([ -e "${MPLAN}" ] && echo written || echo none) -- a failed listing read as an absent system (F-CS-01)"
 m_seed
 sa_run "${M}" cloud_content_restore --match
 grep -qx 'nes|sync|0|0' "${M}/out" && [ -s "${MPLAN}" ]; check $? "a clean preview plans nes as sync|0|0 and writes the plan" "rc ${RC}; out: $(sa_tail "${M}"); plan: $(tr '\n' ' ' 2>/dev/null < "${MPLAN}")"
-printf '^lsf qa:/ROCKNIX/Content/ROMs/nes |5\n' > "${M}/ctl/fail"
+printf '%s\t%s\n' '^lsf qa:/ROCKNIX/Content/ROMs/nes ' 5 > "${M}/ctl/fail"
 sa_run "${M}" cloud_content_restore --match --apply
 [ -f "${M}/storage/roms/nes/N.nes" ] && [ "${RC}" -ne 0 ] && grep -q '^>>> why ' "${M}/out"; check $? "an apply whose nes listing fails (5) removes nothing from nes and ends non-zero with a why (rc ${RC})" "N.nes: $([ -f "${M}/storage/roms/nes/N.nes" ] && echo kept || echo DELETED); rc ${RC}; out: $(sa_tail "${M}") -- the failed listing became 'absent from the cloud' and apply deleted the system (F-CS-01)"
 m_seed
@@ -3177,7 +3203,7 @@ sa_run "${AL}" cloud_content_restore --all
 grep -q '^>>> unit bios|' "${AL}/out" && grep -q '^>>> unit gb|' "${AL}/out" && grep -q '^>>> unit nes|' "${AL}/out" && ! grep -q '^>>> unit everything' "${AL}/out"; check $? "each system and BIOS is announced as a unit of its own, as the journey page counts them" "units: $(grep '^>>> unit' "${AL}/out" | tr '\n' ' ')"
 [ ! -e "${AL}/storage/roms/Photos" ]; check $? "a folder beside the content folder (the owner's Photos) is not a system and is not restored" "Photos was restored into the ROMs folder"
 al_seed
-printf '^lsf( --dirs-only)? qa:/ROCKNIX/Content/ROMs/ |5\n' > "${AL}/ctl/fail"
+printf '%s\t%s\n' '^lsf( --dirs-only)? qa:/ROCKNIX/Content/ROMs/ ' 5 > "${AL}/ctl/fail"
 sa_run "${AL}" cloud_content_restore --all
 [ "${RC}" -ne 0 ] && [ -z "$(find "${AL}/storage/roms" -type f 2>/dev/null | head -1)" ] && grep -q '^>>> why ' "${AL}/out"; check $? "a ROMs listing that fails (5) restores nothing and ends non-zero with a why (rc ${RC})" "rc ${RC}; on the device: $(cd "${AL}/storage/roms" && find . -type f | head -3 | tr '\n' ' '); out: $(sa_tail "${AL}")"
 rm -rf "${AL}/cloud"/*; mkdir -p "${AL}/cloud/ROCKNIX/Content"; : > "${AL}/ctl/fail"
@@ -3304,5 +3330,35 @@ sa_script "${PR}" cloud_restore
 sa_run "${PR}" cloud_restore --yes --saves-only
 kept=$(grep -rlx "the copy on this device" "${PR}/storage/.cache/cloud_sync/replaced" 2>/dev/null | head -1)
 [ -n "${kept}" ] && grep -qx "the cloud's newer copy" "${PR}/storage/roms/gb/A.srm" && [ "${RC}" -eq 0 ]; check $? "cloud_restore keeps the local copy it replaced though a future-dated folder sorts after its own (rc ${RC})" "rc ${RC}; replaced holds: $(cd "${PR}/storage/.cache/cloud_sync/replaced" 2>/dev/null && find . -type f | tr '\n' ' ') (F-CS-06 gpt, prune_replaced_local)"
+
+# A5. The layout migration (cloud_migrate_layout): #307 PL-025, PL-026,
+#     PL-027, PL-053 and PL-071, and #308 claude F-CS-23. The original
+#     layout: saves at /GAMES with the settings backups nested in it at
+#     /GAMES/backup and the derived content folder at /GAMES/Content.
+echo "    A5. the layout migration moves each tier whole, to its own place, and resumably"
+MG=$(sa_new migrate); sa_script "${MG}" cloud_migrate_layout
+MGC="${MG}/storage/.config/cloud_sync.conf"
+mg_seed() {
+    rm -rf "${MG}/cloud"/* "${MG}/ctl/kill.count"
+    : > "${MG}/ctl/fail"; : > "${MG}/ctl/kill"; : > "${MG}/ctl/post"; : > "${MG}/ctl/argv"; rm -f "${MG}/ctl/nohash"
+    printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/GAMES"\nSETTINGS_REMOTE="/GAMES/backup"\nCONTENT_REMOTE="/GAMES/Content"\nRCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"\n' > "${MGC}"
+    mkdir -p "${MG}/cloud/GAMES/savefiles/gb" "${MG}/cloud/GAMES/gb" "${MG}/cloud/GAMES/backup/QA-deadbeef01" \
+        "${MG}/cloud/GAMES/Content/ROMs/gb" "${MG}/cloud/GAMES/Content/BIOS"
+    echo sa > "${MG}/cloud/GAMES/savefiles/gb/A.srm"; echo sb > "${MG}/cloud/GAMES/gb/B.srm"
+    echo archive > "${MG}/cloud/GAMES/backup/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz"
+    echo rom > "${MG}/cloud/GAMES/Content/ROMs/gb/A.gb"; echo bios > "${MG}/cloud/GAMES/Content/BIOS/bios.bin"
+}
+mg_ptr() { sed -n "s/^$1=\"\\(.*\\)\"$/\\1/p" "${MGC}" | head -1; }
+mg_ptrs() { echo "$(mg_ptr SAVES_REMOTE) $(mg_ptr SETTINGS_REMOTE) $(mg_ptr CONTENT_REMOTE)"; }
+mg_tree() { (cd "${MG}/cloud" && find . -type f | sort | tr '\n' ' '); }
+# PL-027 (F-CS-10 gpt): a cloud that does not answer is not an empty one.
+mg_seed
+printf '%s\t%s\n' '^(lsf|lsd|lsjson|copy|check|purge|delete|rmdirs|mkdir|size) ' 1 > "${MG}/ctl/fail"
+sa_run "${MG}" cloud_migrate_layout --apply
+[ "$(mg_ptrs)" = "/GAMES /GAMES/backup /GAMES/Content" ] && [ "${RC}" -ne 0 ]; check $? "PL-027: against an endpoint that answers nothing, --apply changes no pointer and ends non-zero (rc ${RC})" "pointers now '$(mg_ptrs)'; rc ${RC}; out: $(sa_tail "${MG}") -- every listing read as an empty folder and the pointers moved with nothing copied (F-CS-10)"
+mg_seed
+printf '%s\t%s\n' '^lsf .*qa:/GAMES/backup/ ' 1 > "${MG}/ctl/fail"
+sa_run "${MG}" cloud_migrate_layout --apply
+[ "$(mg_ptr SETTINGS_REMOTE)" = "/GAMES/backup" ] && [ -f "${MG}/cloud/GAMES/backup/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ "${RC}" -ne 0 ]; check $? "PL-027: one failed listing (the backups folder's) stops the run with that tier's pointer where it was (rc ${RC})" "SETTINGS_REMOTE now '$(mg_ptr SETTINGS_REMOTE)'; rc ${RC}; cloud: $(mg_tree)"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
