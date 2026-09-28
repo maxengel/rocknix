@@ -1013,41 +1013,92 @@ rules_whole() {
     [ -s "$1" ] && grep -qx -- '- /\*\*' "$1"
 }
 
-# Is this a cloud_sync.conf that can be run with? bash -n, and the file's own
-# shape: every line blank, a comment, KEY=value with its double quotes
-# balanced, or the continuation of a value whose previous line ended in a
-# backslash (RCLONEOPTS is written that way). The shape check matters
+# Is this a cloud_sync.conf that can be run with? bash -n, and a grammar
+# nothing but assignments of text can pass. Every line is blank, a
+# comment, or KEY=value, where the value is
+#   - "double quoted": any text but a backtick, a backslash that is not
+#     the line's last character (the continuation RCLONEOPTS is written
+#     with), and a $ that is not a plain $NAME or ${NAME};
+#   - 'single quoted' on one line, with no $( or backtick in it;
+#   - or a bare word of letters, digits and . / : @ % + , = _ -;
+# and after it nothing, or blanks and a # comment. The shape check matters
 # because a torn line -- SAVES_REMOTE="/ROCK, cut mid-value -- can have its
 # quote closed by whatever is appended after it, and then parses.
 #
 # And nothing in it runs when it is sourced (audit #307 PL-051's script
-# half): a command substitution -- $( or a backtick -- on any line that is
-# not a comment is refused, and a folder value (SAVESPATH, SETTINGS_BACKUPS,
-# SAVES_REMOTE, SETTINGS_REMOTE, CONTENT_REMOTE) may carry no $, backtick,
-# backslash or control character at all. The setup page writes those values
-# from what a player typed or picked, and an earlier build wrote one that
-# held "$(...)" as it stood, which every `source` of this file then ran. A
-# config that fails is not sourced: the caller falls back to the good copy
-# or refuses (YOUR CLOUD SYNC SETTINGS COULDN'T BE READ).
+# half). The setup page writes the folder values from what a player typed
+# or picked, and an earlier build wrote one that held "$(...)" as it
+# stood, which every `source` of this file then ran; a folder value
+# (SAVESPATH, SETTINGS_BACKUPS, SAVES_REMOTE, SETTINGS_REMOTE,
+# CONTENT_REMOTE) is plain text on one line, with no $, backtick,
+# backslash or control character. The first cut of this refused only $(
+# and a backtick, and let a continued line through unchecked: a quoted
+# value continued onto a line that closed the quote and went on
+# (`RCLONEOPTS="--progress \` then `"; touch x; : ""`), a value closed and
+# followed by `; command`, and ${W@P}, which runs the command a value
+# spells out, all passed and ran (the audit of the fixes, G-A-05). A
+# config that fails is not sourced: the caller falls back to the good
+# copy or refuses (YOUR CLOUD SYNC SETTINGS COULDN'T BE READ).
 conf_valid() {
     [ -s "$1" ] || return 1
     bash -n "$1" 2>/dev/null || return 1
     awk '
-        cont { if ($0 ~ /\$\(|`/) exit 1; cont = ($0 ~ /\\$/); next }
-        /^[[:space:]]*(#|$)/ { next }
-        /^[A-Za-z_][A-Za-z0-9_]*=/ {
-            if ($0 ~ /\$\(|`/) exit 1
-            if ($0 ~ /^(SAVESPATH|SETTINGS_BACKUPS|SAVES_REMOTE|SETTINGS_REMOTE|CONTENT_REMOTE)=/) {
-                v = $0; sub(/^[^=]*=/, "", v)
-                if (v ~ /^".*"$/) v = substr(v, 2, length(v) - 2)
-                if (v ~ /[$`\\]/ || v ~ /[[:cntrl:]]/) exit 1
+        function bad() { failed = 1; exit 1 }
+        # A double-quoted value from position i of s: the position after
+        # its closing quote, or 0 when the line ends in a continuation.
+        function dq(s, i,    n, c, d) {
+            n = length(s)
+            while (i <= n) {
+                c = substr(s, i, 1)
+                if (c == "\"") return i + 1
+                if (c == "`") bad()
+                if (c == "\\") { if (i == n) return 0; bad() }
+                if (c == "$") {
+                    d = substr(s, i + 1)
+                    if (match(d, /^[A-Za-z_][A-Za-z0-9_]*/) || match(d, /^\{[A-Za-z_][A-Za-z0-9_]*\}/)) {
+                        val = val c substr(d, 1, RLENGTH); i += 1 + RLENGTH; continue
+                    }
+                    bad()
+                }
+                val = val c; i++
             }
-            n = gsub(/"/, "\"")
-            if ($0 ~ /\\$/) { cont = 1; next }
-            if (n % 2) exit 1
-            next
+            bad()
         }
-        { exit 1 }
+        # After a value: nothing, or blanks and a comment.
+        function rest(s, i) { if (substr(s, i) !~ /^([ \t\r]+(#.*)?)?$/) bad() }
+        function whole() {
+            if (key ~ /^(SAVESPATH|SETTINGS_BACKUPS|SAVES_REMOTE|SETTINGS_REMOTE|CONTENT_REMOTE)$/ \
+                && (val ~ /[$`\\]/ || val ~ /[[:cntrl:]]/ || lines > 1)) bad()
+        }
+        {
+            s = $0
+            if (indq) {
+                lines++
+                j = dq(s, 1)
+                if (j == 0) next
+                indq = 0; rest(s, j); whole(); next
+            }
+            if (s ~ /^[[:space:]]*(#|$)/) next
+            if (!match(s, /^[A-Za-z_][A-Za-z0-9_]*=/)) bad()
+            key = substr(s, 1, RLENGTH - 1); i = RLENGTH + 1; val = ""; lines = 1
+            c = substr(s, i, 1)
+            if (c == "\"") {
+                j = dq(s, i + 1)
+                if (j == 0) { indq = 1; next }
+                rest(s, j); whole(); next
+            }
+            if (c == "'"'"'") {
+                j = index(substr(s, i + 1), "'"'"'")
+                if (!j) bad()
+                val = substr(s, i + 1, j - 1)
+                if (val ~ /\$\(|`/) bad()
+                rest(s, i + j + 1); whole(); next
+            }
+            match(substr(s, i), /^[A-Za-z0-9_.\/:@%+,=-]*/)
+            val = substr(s, i, RLENGTH)
+            rest(s, i + RLENGTH); whole()
+        }
+        END { if (failed || indq) exit 1 }
     ' "$1"
 }
 

@@ -4100,4 +4100,82 @@ else
     grep -qx '>>> why YOUR CLOUD SYNC SETTINGS COULDN.T BE SAVED' "${MG}/out"; check $? "G-A-02: and the run says why, in the player's words" "no why line; out: $(sa_tail "${MG}" 6)"
 fi
 
+# A33. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-05,
+#      High): conf_valid is a grammar a command cannot pass. It refused $(
+#      and a backtick, and let a backslash-continued line through without
+#      its shape checks -- so a double-quoted value continued onto a line
+#      that closed the quote and went on (the seat's counterexample) ran
+#      whatever followed, and so did a value closed and followed by ; on
+#      one line. The three copies (cloud_backup, cloud_restore,
+#      cloud_sync_helper) are lifted and put to the same files; the shipped
+#      conf and the forms a hand edit leaves must still pass.
+echo "    A33. G-A-05 (gpt): nothing in a conf that passes conf_valid runs when it is sourced"
+CV="${TMP}/ga05"; mkdir -p "${CV}"
+for s in cloud_backup cloud_restore cloud_sync_helper; do
+    src_of "${RCLONE_REL}/${s}" "${CV}/${s}"
+    awk '/^conf_valid\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${CV}/${s}" > "${CV}/${s}.fn"
+done
+cv_head='SAVESPATH="/storage/roms"
+SAVES_REMOTE="/ROCKNIX/Saves"'
+cv_bad() { # <name> <body>: a conf every copy must refuse
+    printf '%s\n%s\n' "${cv_head}" "$2" > "${CV}/bad-$1"
+}
+cv_bad continued 'RCLONEOPTS="--progress \
+"; touch /ctl/pwned; : ""'
+cv_bad semicolon 'RCLONEOPTS="--progress" ; touch /ctl/pwned'
+cv_bad bare 'LOG_LEVEL=INFO;touch /ctl/pwned'
+cv_bad single "BACKUPMETHOD='copy'; touch /ctl/pwned"
+cv_bad escaped 'RCLONEOPTS="a \\"; touch /ctl/pwned; : ""'
+cv_bad prompt "Y='\$'
+Z='(touch /ctl/pwned)'"'
+W="${Y}${Z}"
+RCLONEOPTS="${W@P}"'
+cv_bad and 'LOG_LEVEL="INFO" && touch /ctl/pwned'
+cv_good() { printf '%s\n%s\n' "${cv_head}" "$2" > "${CV}/good-$1"; }
+cv_good comment 'LOG_LEVEL="INFO"   # chatty while this is new'
+cv_good single "BACKUPMETHOD='copy'"
+cv_good bare 'SYNC_CEILING_SECONDS=90'
+cv_good empty 'SETTINGS_REMOTE=
+CONTENT_REMOTE=""'
+cv_good append 'RCLONEOPTS="${RCLONEOPTS} --verbose $LOG_LEVEL"'
+src_of "${RCLONE_REL}/cloud_sync.conf" "${CV}/good-shipped"
+src_of "${RCLONE_REL}/cloud_sync.conf.defaults" "${CV}/defaults"; sed 's/^DEFAULT_//' "${CV}/defaults" > "${CV}/good-fresh"
+# The fixtures are real: each one, sourced, runs its command.
+cv_inert=""
+for f in "${CV}"/bad-*; do
+    rm -f "${CV}/pwned"; sed "s|/ctl/pwned|${CV}/pwned|" "${f}" > "${CV}/sourced"
+    (cd "${CV}" && env -i PATH=/usr/bin:/bin bash -c ". '${CV}/sourced'" >/dev/null 2>&1)
+    [ -e "${CV}/pwned" ] || cv_inert="${cv_inert} ${f##*/bad-}"
+done
+[ -z "${cv_inert}" ]; check $? "G-A-05: each of the seven refused shapes, sourced, does run its command (the fixtures are real)" "inert when sourced:${cv_inert} -- a fixture that runs nothing proves nothing about the guard"
+for s in cloud_backup cloud_restore cloud_sync_helper; do
+    cv_pass=""; cv_fail=""
+    for f in "${CV}"/bad-*; do
+        bash -c ". '${CV}/${s}.fn'; conf_valid '${f}'" >/dev/null 2>&1 && cv_pass="${cv_pass} ${f##*/bad-}"
+    done
+    for f in "${CV}"/good-*; do
+        bash -c ". '${CV}/${s}.fn'; conf_valid '${f}'" >/dev/null 2>&1 || cv_fail="${cv_fail} ${f##*/good-}"
+    done
+    [ -s "${CV}/${s}.fn" ] && [ -z "${cv_pass}" ]; check $? "G-A-05: ${s}'s conf_valid refuses all seven shapes that run a command when sourced" "${s} passed:${cv_pass:- (its conf_valid was not found)} -- sourcing those runs touch /ctl/pwned"
+    [ -s "${CV}/${s}.fn" ] && [ -z "${cv_fail}" ]; check $? "G-A-05: ${s}'s conf_valid still passes the shipped conf, a fresh device's, and a hand edit's comment, single quotes, bare number, empty value and \${NAME} append" "${s} refused:${cv_fail} -- a conf that ran before would now be refused, and every sync with it"
+done
+# And end to end: the seat's counterexample in a live conf runs nothing.
+PX=$(sa_new ga05); sa_script "${PX}" cloud_backup cloud_saves_root
+printf -- '+ /**/*.srm\n- /**\n' > "${PX}/storage/.config/cloud_sync-rules.txt"
+mkdir -p "${PX}/storage/roms/gb"; echo s > "${PX}/storage/roms/gb/A.srm"
+cat > "${PX}/storage/.config/cloud_sync.conf" <<'EOS'
+SAVESPATH="/storage/roms"
+SAVES_REMOTE="/ROCKNIX/Saves"
+SETTINGS_BACKUPS="/storage/roms/backup"
+SETTINGS_REMOTE="/ROCKNIX/Backups"
+BACKUPMETHOD="copy"
+RESTOREMETHOD="copy"
+BACKUPFILE_BACKUP_OPTION="no"
+RCLONEOPTS="--progress \
+"; touch /ctl/pwned; : ""
+RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"
+EOS
+sa_run "${PX}" cloud_backup --yes --saves-only
+[ ! -e "${PX}/ctl/pwned" ] && [ "${RC}" -eq 1 ] && grep -qx ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ" "${PX}/out"; check $? "G-A-05: cloud_backup with the seat's counterexample in its conf runs nothing and refuses (rc ${RC})" "ran it: $([ -e "${PX}/ctl/pwned" ] && echo YES || echo no); rc ${RC}; out: $(sa_tail "${PX}")"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
