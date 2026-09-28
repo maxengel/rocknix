@@ -10748,6 +10748,48 @@ rm -f "${GC}/ctl/statcount" "${GC}/ctl/oldctime"
 gc_claimed=$(jq -r '.entries[] | .sha256 // empty' "${GCM}" 2>/dev/null | head -1)
 [ "${RC}" -eq 0 ] && [ $(( gc_large - gc_small )) -le 2 ]; check $? "G2-A-06 (claude): 301 more seals in the stage cost the commit $(( gc_large - gc_small )) more stat call(s), not one each (${gc_small} against ${gc_large}, rc ${RC})" "G2-A-06 (claude): ${gc_small} stat calls with the stage small, ${gc_large} with 301 more seals, rc ${RC}; the most frequent: ${gc_calls} -- the walk under the commit lock forks a stat per seal"
 [ ! -e "${GCS}/$(printf 'o%063d' 1)" ] && [ -f "${GCS}/$(printf 'f%063d' 300)" ] && [ -n "${gc_claimed}" ] && [ -f "${GCS}/${gc_claimed}" ]; check $? "G2-A-06 (claude): and it collects as before: the unclaimed seal older than ten minutes goes, a fresh one and a claimed one stay" "G2-A-06 (claude): old unclaimed $([ -e "${GCS}/$(printf 'o%063d' 1)" ] && echo KEPT || echo gone); fresh $([ -f "${GCS}/$(printf 'f%063d' 300)" ] && echo kept || echo COLLECTED); claimed ${gc_claimed:-none} $([ -n "${gc_claimed}" ] && [ -f "${GCS}/${gc_claimed}" ] && echo kept || echo MISSING)"
+
+# A59. PL-034 (the blind pass's S-27, numbered by the refutation pass):
+#      EmulationStation lets a launch go over an exit capture older than
+#      120 s, taking it as hung (O-6, D-UI-115), and age is not proof the
+#      capture is finished or cannot write what the new game writes. Three
+#      facts, each a check: a capture blocked on its commit lock gives up
+#      within two five-second waits and commits nothing, so it never reaches
+#      120 s at the lock; an exit capture writes nothing under the saves
+#      folder -- it records whole with that folder read-only; and an exit
+#      capture whose run, counted from its first start across its one
+#      re-run, has passed its bound (100 s, under the interface's 120) when
+#      it gets the lock commits nothing. The bound is shortened to 6 s here
+#      through CLOUD_CAPTURE_EXIT_BOUND, the holder keeping the lock 8 s.
+echo "    A59. PL-034: a capture the launch was let over commits nothing, and writes no save"
+HC=$(sa_new pl034); sa_script "${HC}" cloud_capture cloud_saves_root
+printf 'SAVESPATH="/storage/roms"\n' > "${HC}/storage/.config/cloud_sync.conf"
+HCM="${HC}/storage/.cache/cloud_sync/manifest-QA-deadbeef01.json"
+hc_seed() { rm -rf "${HC}/storage/roms"/* "${HC}/storage/.cache/cloud_sync"/*; mkdir -p "${HC}/storage/roms/gb"; echo "the save" > "${HC}/storage/roms/gb/Game.srm"; }
+hc_exit() { sa2_run "${HC}" cloud_capture --system gb --rom /storage/roms/gb/Game.gb --emulator retroarch --core gambatte --started 0 --exit 0; }
+hc_hold() { # <seconds>: a holder of the commit lock, its pid in HC_HOLDER
+    ( exec 8>>"${HC}/storage/.cache/cloud_sync/.capture.lock"; flock -x 8; exec sleep "$1" ) & HC_HOLDER=$!
+    sleep 0.5
+}
+hc_seed; hc_hold 40
+hc_exit
+kill "${HC_HOLDER}" 2>/dev/null; wait "${HC_HOLDER}" 2>/dev/null
+[ "${RC}" -ne 0 ] && [ "${DT}" -le 15 ] && [ ! -e "${HCM}" ] && grep -q 'lock-busy' "${HC}/storage/.cache/cloud_sync/capture-failures" 2>/dev/null; check $? "PL-034: a capture blocked on the commit lock gives up in ${DT}s -- far under the interface's 120 -- and commits nothing (rc ${RC})" "PL-034: blocked on the lock: rc ${RC} after ${DT}s; manifest $([ -e "${HCM}" ] && echo WRITTEN || echo none); failures: $(tail -1 "${HC}/storage/.cache/cloud_sync/capture-failures" 2>/dev/null)"
+hc_seed
+SA2_EXTRA=(--ro-bind "${HC}/storage/roms" /storage/roms)
+hc_exit
+SA2_EXTRA=()
+[ "${RC}" -eq 0 ] && jq -e '.entries["gb/Game.srm"]' "${HCM}" >/dev/null 2>&1; check $? "PL-034: an exit capture records with the saves folder read-only: it writes no save the next game owns (rc ${RC})" "PL-034: read-only saves folder: rc ${RC}; entries: $(jq -c '.entries | keys' "${HCM}" 2>/dev/null); out: $(sa_tail "${HC}" 3)"
+hc_seed; hc_hold 8
+SA2_EXTRA=(--setenv CLOUD_CAPTURE_EXIT_BOUND 6)
+hc_exit
+SA2_EXTRA=()
+kill "${HC_HOLDER}" 2>/dev/null; wait "${HC_HOLDER}" 2>/dev/null
+[ "${RC}" -ne 0 ] && [ ! -e "${HCM}" ] && grep -q 'too-slow' "${HC}/storage/.cache/cloud_sync/capture-failures" 2>/dev/null; check $? "PL-034: past its bound when it gets the lock (6 s here, the holder's 8), an exit capture commits nothing and says so (rc ${RC}, ${DT}s)" "PL-034: past the bound: rc ${RC} after ${DT}s; manifest $([ -e "${HCM}" ] && echo WRITTEN || echo none); failures: $(tail -1 "${HC}/storage/.cache/cloud_sync/capture-failures" 2>/dev/null)"
+hc_seed; hc_hold 8
+hc_exit
+kill "${HC_HOLDER}" 2>/dev/null; wait "${HC_HOLDER}" 2>/dev/null
+[ "${RC}" -eq 0 ] && jq -e '.entries["gb/Game.srm"]' "${HCM}" >/dev/null 2>&1; check $? "PL-034: within its bound the same wait ends in a record, on the re-run (rc ${RC}, ${DT}s)" "PL-034: within the bound: rc ${RC} after ${DT}s; manifest $([ -e "${HCM}" ] && echo written || echo none); failures: $(tail -1 "${HC}/storage/.cache/cloud_sync/capture-failures" 2>/dev/null)"
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi

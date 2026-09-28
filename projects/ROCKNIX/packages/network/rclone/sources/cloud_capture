@@ -85,9 +85,10 @@
 # (098-busybox would discard a staged PATH), or write anywhere under the
 # saves folder -- --unlink removes exactly the files --retire accepted (plain
 # paths under the saves folder; one it refused to record it also refuses to
-# remove, audit #258 PL-002) and nothing else. CLOUD_CAPTURE_PINS is the one
-# environment override, so the
-# core-pins map can be proven on an image whose read-only /usr has none.
+# remove, audit #258 PL-002) and nothing else. Two environment overrides,
+# each for a proof: CLOUD_CAPTURE_PINS, so the core-pins map can be proven
+# on an image whose read-only /usr has none, and CLOUD_CAPTURE_EXIT_BOUND,
+# so the exit capture's bound (PL-034, below) can be proven in seconds.
 #
 # Two writers are serialised by detection, and their commits by a lock of
 # this script's own. The boot --full runs detached and can overlap the first
@@ -136,6 +137,15 @@ trap '' TERM
 ECHO_TO_SCREEN="false"
 read -r _UP0 _ < /proc/uptime 2>/dev/null || _UP0="0"
 _UP0_MS=$(( 10#${_UP0/./}0 ))
+# A re-run (CLOUD_CAPTURE_RETRY, below) counts from the first run's start,
+# which it is handed as CLOUD_CAPTURE_UP0_MS: the exit bound is the whole
+# capture's, not the second attempt's (the audit of the fix round, PL-034).
+if [ -n "${CLOUD_CAPTURE_RETRY:-}" ]; then
+    case "${CLOUD_CAPTURE_UP0_MS:-}" in
+        ''|*[!0-9]*) ;;
+        *) [ "${CLOUD_CAPTURE_UP0_MS}" -le "${_UP0_MS}" ] && _UP0_MS="${CLOUD_CAPTURE_UP0_MS}" ;;
+    esac
+fi
 
 # ---------------------------------------------------------------------------
 # Logging: the same 3-arg log_message every cloud script carries (there is no
@@ -192,6 +202,29 @@ elapsed_ms() {
     read -r up _ < /proc/uptime 2>/dev/null || up="0"
     up="${up/./}0"
     echo $(( 10#${up} - _UP0_MS ))
+}
+
+# An exit capture's bound (the audit of the fix round, PL-034).
+# EmulationStation holds a launch behind the last game's exit capture and
+# lets it go over one older than 120 s, taking it as hung (FileData's
+# CaptureHungSeconds, D-UI-115). A capture still going then, which went on
+# to commit, would record as the last session's the saves the new game may
+# be writing while it read them. So an exit capture whose run -- from its
+# first start, across its one re-run -- has passed 100 s commits nothing:
+# checked before it waits for the commit lock and again once it has it. It
+# never writes a save (nothing under the saves folder but what --retire
+# --unlink was asked to remove), and the lock itself is never waited for
+# past two five-second tries, so a capture blocked on the lock gives up
+# long before the 120 s. Its saves are still on the device, the interface
+# says so, and the next capture of that game records them.
+# CLOUD_CAPTURE_EXIT_BOUND (whole seconds) shortens it for the harness.
+EXIT_BOUND_MS=100000
+case "${CLOUD_CAPTURE_EXIT_BOUND:-}" in
+    ''|*[!0-9]*) ;;
+    *) EXIT_BOUND_MS=$(( 10#${CLOUD_CAPTURE_EXIT_BOUND} * 1000 )) ;;
+esac
+past_exit_bound() {
+    [ "${MODE}" = "exit" ] && [ "$(elapsed_ms)" -ge "${EXIT_BOUND_MS}" ]
 }
 
 # ---------------------------------------------------------------------------
@@ -1558,15 +1591,25 @@ fi
 # (PL-067); detection still decides who wins. A run that cannot have the
 # lock does not commit (G-A-04): it re-runs once, as a run that lost to
 # another writer does, and then is left to the next run.
+if past_exit_bound; then
+    rm -f "${TMP}" 2>/dev/null
+    log_error "this exit capture has run $(( $(elapsed_ms) / 1000 )) s, past its $(( EXIT_BOUND_MS / 1000 )) s bound: a game may have been started over it, so nothing was recorded (PL-034)"
+    finish 1 "too-slow"
+fi
 if ! capture_lock; then
     rm -f "${TMP}" 2>/dev/null
     if [ -z "${CLOUD_CAPTURE_RETRY}" ] && [ "${MODE}" != "full" ]; then
         log_info "the commit lock is busy; re-running once"
         cleanup
-        CLOUD_CAPTURE_RETRY=1 exec "$0" "${ORIG_ARGS[@]}"
+        CLOUD_CAPTURE_RETRY=1 CLOUD_CAPTURE_UP0_MS="${_UP0_MS}" exec "$0" "${ORIG_ARGS[@]}"
     fi
     log_error "the commit lock stayed busy; this run was discarded, and the next run records what it would have"
     finish 1 "lock-busy"
+fi
+if past_exit_bound; then
+    rm -f "${TMP}" 2>/dev/null
+    log_error "this exit capture had the commit lock only after $(( $(elapsed_ms) / 1000 )) s, past its $(( EXIT_BOUND_MS / 1000 )) s bound: a game may have been started over it, so nothing was recorded (PL-034)"
+    finish 1 "too-slow"
 fi
 if [ "$(stat -c '%i %Y' "${MANIFEST}" 2>/dev/null)" != "${LIVE0}" ]; then
     rm -f "${TMP}" 2>/dev/null
@@ -1581,7 +1624,7 @@ if [ "$(stat -c '%i %Y' "${MANIFEST}" 2>/dev/null)" != "${LIVE0}" ]; then
         log_info "${MANIFEST} changed underneath; re-running once against the new document"
         cleanup
         capture_unlock
-        CLOUD_CAPTURE_RETRY=1 exec "$0" "${ORIG_ARGS[@]}"
+        CLOUD_CAPTURE_RETRY=1 CLOUD_CAPTURE_UP0_MS="${_UP0_MS}" exec "$0" "${ORIG_ARGS[@]}"
     fi
     log_error "${MANIFEST} changed underneath; this run was discarded"
     finish 1 "manifest-moved"
