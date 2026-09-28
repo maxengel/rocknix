@@ -3408,4 +3408,12 @@ EOS
 p7bt restore --no-restart
 [ "$(p7why)" = "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED" ] && [ "$(cat "${P7S}/.config/test/f1")" = "LIVE" ] && [ -z "$(ls "${P7S}/roms/backup/archive"/*PRE_RESTORE* 2>/dev/null)" ]; check $? "#308 gpt F-BR-14: a zip with a damaged member and an intact directory is refused as damaged before anything is written" "#308 gpt F-BR-14: why '$(p7why)'; f1='$(head -c 20 "${P7S}/.config/test/f1")'; snapshots: $(ls "${P7S}/roms/backup/archive" 2>/dev/null | wc -l)"
 
+# == #308 4-backup-restore gpt F-BR-16: the archive carries the files' own modes, and no invented folders
+p7reset '  /storage/.config/system/configs/system.cfg
+  /storage/.config/test/*'
+chmod 600 "${P7S}/.config/system/configs/system.cfg"
+p7bt backup
+p7mode=$(tar -tvzf "$(p7arc | tail -1)" 2>/dev/null | awk '$NF == "storage/.config/system/configs/system.cfg" { print $1 }')
+[ "${RC}" -eq 0 ] && [ "${p7mode}" = "-rw-------" ] && ! p7list | grep -q '/$'; check $? "#308 gpt F-BR-16: the sanitised system.cfg keeps its 0600, and the archive carries no directory entries to impose on a restore" "#308 gpt F-BR-16: rc ${RC}; system.cfg in the archive: '${p7mode}'; directory entries: $(p7list | grep -c '/$')"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

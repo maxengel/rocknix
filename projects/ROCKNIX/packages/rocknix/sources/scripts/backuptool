@@ -267,6 +267,15 @@ else
     COMPRESSLOCATIONS=("${DEFAULT[@]}")
 fi
 
+# A sanitised copy is written new, by a redirection; give it the original's
+# mode and time, so the archive does not carry the staging's 0644 for a file
+# that was 0600 on the device (#308, the gpt seat's F-BR-16).
+keep_meta() {
+    chmod "$(stat -c %a "${1}" 2>/dev/null)" "${2}" 2>/dev/null
+    touch -r "${1}" "${2}" 2>/dev/null
+    return 0
+}
+
 # A member name as a pattern that matches only itself: tar's -X and unzip's
 # -x read their arguments as globs, so a name holding [, ], * or ? would
 # match something else, or nothing.
@@ -821,6 +830,7 @@ write_archive() {
             mkdir -p "${STAGING}/storage/.config/system/configs"
             sed -E '/^[^#]*\.(key|password|token)=/d' "${SYSCFG}" \
                 > "${STAGING}/storage/.config/system/configs/system.cfg" || SANITISE_RC=1
+            keep_meta "${SYSCFG}" "${STAGING}/storage/.config/system/configs/system.cfg"
             SANITISED=$((SANITISED + 1))
         fi
 
@@ -838,6 +848,7 @@ write_archive() {
             grep -v -e 'name="ScreenScraperPass"' -e 'name="ScreenScraperDevPass"' -e 'name="IGDBSecret"' "${ESCFG}" \
                 > "${STAGING}/storage/.config/emulationstation/es_settings.cfg"
             [ $? -le 1 ] || SANITISE_RC=1
+            keep_meta "${ESCFG}" "${STAGING}/storage/.config/emulationstation/es_settings.cfg"
             SANITISED=$((SANITISED + 1))
         fi
 
@@ -852,6 +863,7 @@ write_archive() {
             mkdir -p "${STAGING}/storage/.config/retroarch"
             sed -E 's/^([a-z_]*(password|token|stream_key)) = ".*"$/\1 = ""/' "${RACFG}" \
                 > "${STAGING}/storage/.config/retroarch/retroarch.cfg" || SANITISE_RC=1
+            keep_meta "${RACFG}" "${STAGING}/storage/.config/retroarch/retroarch.cfg"
             SANITISED=$((SANITISED + 1))
         fi
 
@@ -870,6 +882,7 @@ write_archive() {
                 mkdir -p "${STAGING}${CANDIDATE%/*}"
                 sed -E 's/^([A-Za-z_]*(Token|Password)[[:space:]]*=[[:space:]]*).*$/\1/' "${CANDIDATE}" \
                     > "${STAGING}${CANDIDATE}" || SANITISE_RC=1
+                keep_meta "${CANDIDATE}" "${STAGING}${CANDIDATE}"
                 BLANKED=$((BLANKED + 1))
             fi
         done
@@ -923,12 +936,21 @@ write_archive() {
     # the name every reader looks for is given only to an archive that has
     # listed back whole -- every staged file, counted, not only a listing
     # that ends without an error.
-    if ! to_log tar -czf "${TARGET}.partial" -C "${STAGING}" storage
+    #
+    # Files only, named from a list: the folders in the staging tree were
+    # made by the collecting tar and by mkdir, not copied, and archiving
+    # them put their modes into the archive for a restore to impose on the
+    # device's own folders (#308, the gpt seat's F-BR-16).
+    local MEMBERLIST
+    MEMBERLIST=$(mktemp)
+    ( cd "${STAGING}" && find storage -type f ) > "${MEMBERLIST}"
+    if ! to_log tar -czf "${TARGET}.partial" -C "${STAGING}" -T "${MEMBERLIST}"
     then
         rm -rf "${STAGING}"
-        rm -f "${TARGET}.partial"
+        rm -f "${TARGET}.partial" "${MEMBERLIST}"
         return 3
     fi
+    rm -f "${MEMBERLIST}"
     LISTED=$(tar -tzf "${TARGET}.partial" 2>/dev/null | grep -vc '/$')
     if [ "${LISTED}" -ne "${STAGED}" ]
     then
