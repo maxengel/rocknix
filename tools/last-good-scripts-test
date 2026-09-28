@@ -3696,4 +3696,18 @@ printf 'system.hostname=TMP\n' > "${P7K}/cfg/system/configs/system.cfg.tmp"
 p7chk
 [ "$(cat "${P7K}/cfg/system/configs/system.cfg")" = "system.hostname=REC" ] && [ ! -e "${P7K}/cfg/system/configs/system.cfg.tmp" ]; check $? "#307 PL-064 (upgrade half, E1): with a good .backup the record wins over a .tmp, which is swept" "#307 PL-064: system.cfg '$(cat "${P7K}/cfg/system/configs/system.cfg")'"
 
+# == PL-044: factoryreset stops when the old folder will not go
+P7R="${P7M}/reset"; mkdir -p "${P7R}/repo" "${P7R}/shim" "${P7R}/usrconfig/retroarch" "${P7R}/storage/.config/retroarch/stuck"
+src_of projects/ROCKNIX/packages/rocknix/sources/scripts/factoryreset "${P7R}/repo/factoryreset"
+printf '#!/bin/sh\nexit 0\n' > "${P7R}/shim/logger"; chmod +x "${P7R}/shim/logger"
+echo shipped > "${P7R}/usrconfig/retroarch/retroarch.cfg"; echo mine > "${P7R}/storage/.config/retroarch/retroarch.cfg"
+echo held > "${P7R}/storage/.config/retroarch/stuck/file"; chmod 555 "${P7R}/storage/.config/retroarch/stuck"
+RC=$( ( bwrap --die-with-parent --tmpfs / --tmpfs /usr "${P7USR[@]}" --ro-bind "${P7R}/usrconfig" /usr/config "${P7MBB[@]}" \
+    --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 "${P7ETC[@]}" \
+    --bind "${P7R}/storage" /storage --ro-bind "${P7R}/shim" /shim --ro-bind "${P7R}/repo" /repo \
+    --dev /dev --proc /proc --tmpfs /tmp --setenv PATH /shim:/bbin:/usr/bin:/bin \
+    bash /repo/factoryreset retroarch-full > "${P7R}/out" 2>&1; echo $? ) 2>/dev/null )
+chmod 755 "${P7R}/storage/.config/retroarch/stuck"
+[ "${RC}" -ne 0 ] && [ ! -e "${P7R}/storage/.config/retroarch/retroarch" ] && [ "$(tail -1 "${P7R}/out" | sed 's/\x1b\[[0-9;]*m//g')" = "THE DEFAULT SETTINGS COULDN'T BE PUT BACK." ]; check $? "#307 PL-044: a retroarch folder that cannot be removed ends the reset (rc ${RC}) with the sentence, and the defaults are not copied inside it" "#307 PL-044: rc ${RC}; nested copy: $([ -e "${P7R}/storage/.config/retroarch/retroarch" ] && echo yes || echo no); last line: '$(tail -1 "${P7R}/out")'"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
