@@ -178,8 +178,12 @@ child_running() {
 }
 
 # The furthest rclone's stats block in the tail of a trace has got: bytes
-# transferred, checks done, files transferred, files deleted -- four
-# integers on one line. The bytes line is the Transferred: with a unit in
+# transferred, checks done, files transferred, files deleted, entries
+# listed -- five integers on one line. The listed count is the Checks line's
+# "Listed N" (#308, the seats' claude F-CS-13): a first backup against a
+# folder of tens of thousands of files lists for longer than the ceiling
+# before its first check completes, and a count that only read checks
+# ended that run as a stall. The bytes line is the Transferred: with a unit in
 # it; the one without is the file count. A block's last line is glued to
 # the next block's Transferred: (the rule's "Progress output" section),
 # which the sed unglues. Rates, ETAs, percentages and the elapsed time are
@@ -199,9 +203,10 @@ progress_mark() {
             if (n >= 2) { b = w[1] * unit(w[2]); if (b > bytes) bytes = b }
             else if (n == 1 && w[1] ~ /^[0-9]+$/ && w[1] + 0 > files) files = w[1] + 0
         }
-        /^Checks:/  { s = $0; sub(/^Checks:[ \t]*/, "", s);  sub(/[^0-9].*$/, "", s); if (s + 0 > checks)  checks  = s + 0 }
+        /^Checks:/  { s = $0; sub(/^Checks:[ \t]*/, "", s);  sub(/[^0-9].*$/, "", s); if (s + 0 > checks)  checks  = s + 0
+                      if ($0 ~ /Listed [0-9]/) { l = $0; sub(/^.*Listed /, "", l); sub(/[^0-9].*$/, "", l); if (l + 0 > listed) listed = l + 0 } }
         /^Deleted:/ { s = $0; sub(/^Deleted:[ \t]*/, "", s); sub(/[^0-9].*$/, "", s); if (s + 0 > deleted) deleted = s + 0 }
-        END { printf "%d %d %d %d\n", bytes, checks, files, deleted }'
+        END { printf "%d %d %d %d %d\n", bytes, checks, files, deleted, listed }'
 }
 
 # Did any count in <mark> exceed <high water>? Prints the new high water --
@@ -209,8 +214,8 @@ progress_mark() {
 # that starts over) never lets an old level read as new progress -- and
 # returns 0 when something grew.
 advance_mark() {
-    local a=($1) b=(${2:-0 0 0 0}) i grew=1
-    for i in 0 1 2 3; do
+    local a=($1) b=(${2:-0 0 0 0 0}) i grew=1
+    for i in 0 1 2 3 4; do
         if [ "${a[$i]:-0}" -gt "${b[$i]:-0}" ] 2>/dev/null; then
             b[$i]="${a[$i]}"
             grew=0
@@ -232,7 +237,7 @@ advance_mark() {
 # printed afterwards overtakes rclone's last block.
 bounded_rclone() {
     local dir="${CEILING_DIR_ROOT}/cloud_sync.${$}.${RANDOM}" fifo trace pid tee_pid rc
-    local mark high="0 0 0 0" new since now ticks=0 ended=0 n progress_verb=0
+    local mark high="0 0 0 0 0" new since now ticks=0 ended=0 n progress_verb=0
     if ! mkdir -p "${dir}" 2>/dev/null || ! mkfifo "${dir}/fifo" 2>/dev/null; then
         # Nowhere to trace through. On a device /var/run is tmpfs and this
         # does not happen; when it does, the call runs as it did before the
@@ -309,8 +314,8 @@ bounded_rclone() {
     fi
     # Whether this call moved anything -- a file transferred or deleted --
     # for the stamp of a run the network later ends (#308 claude F-CS-24).
-    local moved_bytes moved_checks moved_files moved_deleted
-    read -r moved_bytes moved_checks moved_files moved_deleted <<< "$(progress_mark "${trace}")"
+    local moved_bytes moved_checks moved_files moved_deleted moved_listed
+    read -r moved_bytes moved_checks moved_files moved_deleted moved_listed <<< "$(progress_mark "${trace}")"
     { [ "${moved_files:-0}" -gt 0 ] || [ "${moved_deleted:-0}" -gt 0 ]; } 2>/dev/null && RCLONE_MOVED=1
     rm -rf "${dir}" 2>/dev/null
     if [ "${ended}" -eq 1 ]; then

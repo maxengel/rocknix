@@ -4028,4 +4028,29 @@ ce_after=$(awk '/^copy /{c=1; next} c' "${CE}/ctl/argv" | grep -c .)
 [ "${RC}" -ne 0 ] && [ "${ce_after}" -eq 0 ]; check $? "after the ceiling ends the saves copy, no further rclone call is started (${ce_after} after it, rc ${RC}, ${DT}s)" "${ce_after} call(s) after the copy the ceiling ended: $(awk '/^copy /{c=1; next} c' "${CE}/ctl/argv" | cut -c1-50 | tr '\n' '|') -- each was given a second more"
 grep -qx ">>> why THE CLOUD TOOK TOO LONG - IT'LL TRY AGAIN NEXT TIME" "${CE}/out"; check $? "and the why is the ceiling's own, not a probe's guess at the network" "why: $(grep '^>>> why' "${CE}/out" | head -1)"
 
+# A30. The seats' claude F-CS-13 (Medium; in no stream's brief, in this
+#      stream's files): the deliberate stall ceiling counts rclone's Listed
+#      count as progress. A first backup against a folder of tens of
+#      thousands of files lists for longer than the ceiling before its first
+#      check completes; "Checks: 0 / 0, -, Listed N" growing is the run
+#      working, and was read as a stall.
+echo "    A30. claude F-CS-13: a listing that keeps growing is progress to the stall ceiling"
+LG="${TMP}/ccs13"; mkdir -p "${LG}/shim"
+src_of "${RCLONE_REL}/cloud_backup" "${LG}/cloud_backup"
+awk '/^(child_running|progress_mark|advance_mark|bounded_rclone)\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${LG}/cloud_backup" > "${LG}/fns.sh"
+cat > "${LG}/shim/rclone" <<'EOR'
+#!/bin/bash
+# Eight seconds of a listing: no bytes, no checks, the Listed count climbing.
+for i in 1 2 3 4 5 6 7 8; do
+    printf 'Transferred:   \t          0 B / 0 B, -, 0 B/s, ETA -\nChecks:                 0 / 0, -, Listed %d\nElapsed time:  %d.0s\n' $((i * 1000)) "${i}"
+    sleep 1
+done
+exit 0
+EOR
+chmod +x "${LG}/shim/rclone"
+lg_t0=$(date +%s)
+PATH="${LG}/shim:${SA}/nbin:${PATH}" bash -c ". '${LG}/fns.sh'; log_message() { :; }; DELIBERATE_CEILING_SECONDS=3; CEILING_DIR_ROOT='${LG}'; RCLONE_CHILD=''; RCLONE_MOVED=0; bounded_rclone copy /a qa:/b" >/dev/null 2>&1
+lg_rc=$?; lg_dt=$(( $(date +%s) - lg_t0 ))
+[ "${lg_rc}" -eq 0 ] && [ "${lg_dt}" -ge 7 ]; check $? "a copy that lists for 8 s with the Listed count climbing is not ended by a 3 s stall ceiling (rc ${lg_rc}, ${lg_dt}s)" "rc ${lg_rc} after ${lg_dt}s -- the listing read as no progress and the run was ended as a stall (claude F-CS-13)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
