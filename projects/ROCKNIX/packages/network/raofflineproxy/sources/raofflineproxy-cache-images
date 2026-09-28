@@ -65,6 +65,21 @@
 # Everything else goes to stderr for the log. No value from system.cfg is
 # printed: the credentials pass through the client's resolve_credentials and
 # no further, and only paths under the media host are ever fetched.
+"""usage: raofflineproxy-cache-images [--seconds N] [--verify]
+
+Fetch the images of the achievements the offline service has cached, until
+none is missing: every image path in the cached patch, achievementsets and
+login rows whose file is not in the image cache.
+
+  --seconds N  the pass's ceiling, in seconds (default 300)
+  --verify     also put the cached images to the test a download passes,
+               a slice a run from where the last one stopped, and fetch
+               again what fails it
+
+Exit 0 when nothing is left, 1 when images were left behind, 2 when the
+store or the account could not be read, 3 when every image is there but the
+verify sweep did not come round this run, 130 when cancelled.
+"""
 from __future__ import annotations
 
 import argparse
@@ -292,10 +307,6 @@ def main() -> int:
     damaged_found: list[str] = []
     verify_left = 0
     if args.verify:
-        try:
-            _, _, _rows = missing_paths(storage)  # warm the same read the counts use
-        except Exception:
-            pass
         try:
             paths = sorted(all_paths(storage))
         except Exception as exc:

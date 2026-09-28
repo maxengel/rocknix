@@ -4095,4 +4095,48 @@ tctl no-such-verb
 [ "${RC}" -eq 2 ] && grep -q '|summary|' "${ERR}"; check $? "#308 claude F-RA-17: the usage line names summary with the other verbs" "#308 claude F-RA-17: rc ${RC}; usage: $(head -c 300 "${ERR}")"
 fi
 
+# D21. #308 1-raoffline claude F-RA-17's remaining parts in this package:
+# raofflineproxy-cache-images read the whole store once more before --verify
+# and threw the answer away ("warm the same read"); its -h printed
+# `__doc__ or "usage: ... [--seconds N]"` from a file with no docstring, so
+# the help left out --verify; and raofflineproxy-cache-indexed, which is
+# executed, was mode 100644 among 100755 siblings.
+if [ "${DT_OK}" -eq 1 ]; then
+RAOFFLINEPROXY_CONFIG_DIR="${DD}/d21-cfg" PYTHONPATH="${CLIENT}" python3 - "${DD}/raofflineproxy-cache-images" > "${DD}/d21.out" 2>&1 <<'EOS'
+import contextlib, io, os, sys, importlib.machinery, importlib.util
+from pathlib import Path
+Path(os.environ["RAOFFLINEPROXY_CONFIG_DIR"]).mkdir(parents=True, exist_ok=True)
+spec = importlib.util.spec_from_loader("images_helper", importlib.machinery.SourceFileLoader("images_helper", sys.argv[1]))
+helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(helper)
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+st = Storage(); st.upsert_cache(cache_keys.patch(1, "qa"), '{"Success":true,"PatchData":{"ID":1,"Achievements":[]}}'); st.close()
+helper.resolve_credentials = lambda *a, **k: {"user": "qa", "token": "t"}
+walks = []
+real = helper.missing_paths
+helper.missing_paths = lambda storage: walks.append(1) or real(storage)
+sys.argv = ["raofflineproxy-cache-images", "--seconds", "5", "--verify"]
+with contextlib.redirect_stdout(io.StringIO()):
+    rc = helper.main()
+print(("PASS" if len(walks) == 1 else "FAIL") + f" walks: --verify walked the store's missing images {len(walks)} time(s), rc {rc}")
+buf = io.StringIO()
+sys.argv = ["raofflineproxy-cache-images", "-h"]
+with contextlib.redirect_stdout(buf):
+    rc = helper.main()
+text = buf.getvalue()
+print(("PASS" if rc == 0 and "--seconds" in text and "--verify" in text else "FAIL") + " help: " + " | ".join(text.strip().splitlines()[:2])[:200])
+EOS
+grep -q '^PASS walks:' "${DD}/d21.out"; check $? "#308 claude F-RA-17: --verify walks the store once, not once more to throw away" "#308 claude F-RA-17: $(grep 'walks:' "${DD}/d21.out" || tail -3 "${DD}/d21.out" | tr '\n' '|')"
+grep -q '^PASS help:' "${DD}/d21.out"; check $? "#308 claude F-RA-17: cache-images -h names --seconds and --verify (a docstring of its own)" "#308 claude F-RA-17: $(grep 'help:' "${DD}/d21.out" || tail -3 "${DD}/d21.out" | tr '\n' '|')"
+fi
+# The helpers the ctl runs are executable in the tree (the index's mode, or
+# BASE_REF's under --old), as package.mk installs them.
+DMODES=""
+for h in raofflineproxy-ctl raofflineproxy-cache-indexed raofflineproxy-cache-images raofflineproxy-refresh; do
+    rel="projects/ROCKNIX/packages/network/raofflineproxy/sources/${h}"
+    if [ "${OLD}" -eq 1 ]; then m="$(git -C "${ROOT}" ls-tree "${BASE_REF}" -- "${rel}" | awk '{print $1}')"; else m="$(git -C "${ROOT}" ls-files -s -- "${rel}" | awk '{print $1}')"; fi
+    DMODES="${DMODES} ${h}=${m:-none}"
+done
+! printf '%s' "${DMODES}" | grep -q '=\(100644\|none\)'; check $? "#308 claude F-RA-17: the four scripts under sources/ are mode 100755 in the tree" "#308 claude F-RA-17: modes:${DMODES}"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
