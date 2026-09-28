@@ -24,6 +24,16 @@ decides something. Three tests: a lookup that hangs returns within the
 bound, a failed lookup names its error, and the HEAD is never attempted
 after a failed lookup.
 
+The bounded lookup is followed by the connection's own, by name, which
+nothing bounded: a resolver that answered once and then stopped held the
+request as long as ever (ROCKNIX audit #308 F-RA-20). So the answer the
+bounded lookup got is kept for REMEMBER_SECONDS (30), and socket.getaddrinfo
+answers that host from it -- the port and socket type the caller asks for
+put in -- while every other lookup goes to the resolver as before. The
+bounded lookup itself always asks the resolver, so it is still the probe
+it was, and a hotspot whose uplink has gone is still found out in three
+seconds.
+
 Written for ROCKNIX (fork issue maxengel/rocknix#242). Offered upstream
 as-is (ROCKNIX D-RA-002, D-RA-016).
 
@@ -55,10 +65,57 @@ diff -ruN a/linux/raofflineproxy/network.py b/linux/raofflineproxy/network.py
  HTTP_TOO_MANY_REQUESTS = 429
  HTTP_GET_MAX_429_RETRIES = 4
  HTTP_GET_INITIAL_429_BACKOFF_SECONDS = 2.0
-@@ -251,7 +262,43 @@ def probe_retroachievements(
+@@ -251,7 +262,94 @@ def probe_retroachievements(
      return False
  
  
++# ROCKNIX (audit #308 F-RA-20): the answer the bounded lookup got, kept for
++# the connection that follows. The lookup is bounded, and then the request
++# opens its connection by name -- a second lookup, which nothing bounded and
++# nothing caches on a handheld (no nscd): a resolver that answered once and
++# stopped would hold the request for the twenty seconds the first lookup is
++# bounded against. So socket.getaddrinfo answers a host the bounded lookup
++# resolved in the last REMEMBER_SECONDS from that answer (the port and the
++# socket type the caller asks for put in); every other lookup, and the
++# bounded lookup itself -- which asks the resolver every time, so it stays
++# the probe it was -- goes to the resolver as before.
++REMEMBER_SECONDS = 30.0
++_remembered: dict[str, tuple[float, list]] = {}
++_remembered_lock = threading.Lock()
++_asking_resolver = threading.local()
++# The resolver's own function, even when this module is loaded a second time.
++_resolver_getaddrinfo = getattr(socket.getaddrinfo, "__wrapped__", socket.getaddrinfo)
++
++
++def _getaddrinfo_remembering(host, port, family=0, type=0, proto=0, flags=0):
++    if isinstance(host, str) and not getattr(_asking_resolver, "active", False):
++        with _remembered_lock:
++            entry = _remembered.get(host.lower())
++        if entry is not None and time.monotonic() - entry[0] < REMEMBER_SECONDS:
++            try:
++                number = 0 if port is None else int(port)
++            except (TypeError, ValueError):
++                number = None
++            answer = []
++            for fam, kind, prot, canon, address in entry[1] if number is not None else ():
++                if family and fam != family:
++                    continue
++                if type and kind and kind != type:
++                    continue
++                if proto and prot and prot != proto:
++                    continue
++                item = (fam, kind or type, prot or proto, canon, (address[0], number, *address[2:]))
++                if item not in answer:
++                    answer.append(item)
++            if answer:
++                return answer
++    return _resolver_getaddrinfo(host, port, family, type, proto, flags)
++
++
++_getaddrinfo_remembering.__wrapped__ = _resolver_getaddrinfo
++socket.getaddrinfo = _getaddrinfo_remembering
++
++
 +def resolve_host_bounded(host: str, seconds: float = LOOKUP_SECONDS) -> tuple[bool, str]:
 +    """Look the host up in a thread of its own and give it `seconds`.
 +
@@ -66,16 +123,20 @@ diff -ruN a/linux/raofflineproxy/network.py b/linux/raofflineproxy/network.py
 +    why) when it did not or could not. A lookup still running when the time
 +    is up is left to finish on its own daemon thread; the answer it was going
 +    to give is "unreachable" either way, and the caller must not wait for it.
-+    A lookup that succeeded here is answered again at once by the resolver
-+    for the connection that follows.
++    The resolver is asked every time, and a lookup that succeeded is kept for
++    REMEMBER_SECONDS, so the connection that follows is answered from it
++    rather than by a second lookup nothing bounds (audit #308 F-RA-20).
 +    """
 +    if not host:
 +        return False, "no host to look up"
 +    result: dict[str, str | bool] = {}
 +
 +    def work() -> None:
++        _asking_resolver.active = True
 +        try:
-+            socket.getaddrinfo(host, None)
++            answer = socket.getaddrinfo(host, None)
++            with _remembered_lock:
++                _remembered[host.lower()] = (time.monotonic(), list(answer))
 +            result["ok"] = True
 +        except Exception as error:  # noqa: BLE001 - every resolver error is the same answer
 +            result["error"] = str(error)

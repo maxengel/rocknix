@@ -71,7 +71,13 @@ def game_ids(rows: list[dict]) -> list[int]:
 
 
 def drop_startsession(storage: Storage, game_id: int) -> int:
-    """Remove the cached session response for a game. Returns rows removed."""
+    """Remove the cached session response for a game. Returns rows removed.
+
+    Raises when a row could not be removed: the session response carries the
+    player's unlocks, so a refresh that leaves a stale one has not done its
+    job, and the game is counted failed rather than re-read (#307 PL-058 --
+    the same shape as 2026-09-19, when this helper reported half its work as
+    all of it)."""
     removed = 0
     prefix = f"{cache_keys.PREFIX_STARTSESSION}{game_id}:"
     try:
@@ -81,7 +87,7 @@ def drop_startsession(storage: Storage, game_id: int) -> int:
                 storage.delete_cache(key)
                 removed += 1
     except Exception as exc:
-        note(f"game {game_id}: the startsession row could not be dropped ({exc})")
+        raise RuntimeError(f"the startsession row could not be dropped ({exc})") from exc
     return removed
 
 
@@ -162,6 +168,10 @@ def main() -> int:
     deadline = time.monotonic() + max(1.0, args.seconds)
     done = 0
     failed = 0
+    # Failures in a row, reset by a game that goes through: three unrelated
+    # failures across a long --all are not the server refusing, and the
+    # message says "in a row" (#308 F-RA-12, F-RA-19). failed stays the total.
+    in_a_row = 0
     for index, gid in enumerate(wanted, 1):
         if time.monotonic() > deadline:
             left = len(wanted) - done - failed
@@ -199,6 +209,7 @@ def main() -> int:
             # session from the unlocks row (build_unlocks_array).
             dropped = drop_startsession(storage, gid)
             done += 1
+            in_a_row = 0
             # It is documented as returning the title and returns the patch
             # body, so take the title out of it rather than printing a page
             # of JSON into the ctl's output.
@@ -214,8 +225,9 @@ def main() -> int:
             tell(f"refresh {index}|{len(wanted)}")
         except Exception as exc:
             failed += 1
+            in_a_row += 1
             note(f"game {gid}: {exc}")
-            if failed >= 3:
+            if in_a_row >= 3:
                 note("three failures in a row; stopping rather than hammering")
                 tell("why REPEATED_FAILURES")
                 tell(f"done {done}|{len(wanted) - done}")
