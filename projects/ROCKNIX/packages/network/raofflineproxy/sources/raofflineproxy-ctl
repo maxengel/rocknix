@@ -49,7 +49,9 @@
 #   And two read-only answers for the achievements pages, which read the
 #   proxy's cache when the device is offline (fork #180, D-RA-009):
 #
-#   pending-ids  the casual awards still waiting, one per line as
+#   pending-ids  the signed-in account's casual awards still waiting (an
+#            award's request names the account that earned it; one that
+#            names none counts, #308 F-RA-09), one per line as
 #            "<achievementId> <epoch>" (when it was earned, in seconds),
 #            oldest first; exit 0 with at least one, 1 with none. The page
 #            marks those achievements as earned and waiting to be sent. The
@@ -544,13 +546,26 @@ do_pending_ids() {
     if [ "$(as_flag "$(setting "${KEY}")")" != "1" ] || [ ! -e "${QUEUE}" ]; then
         return 1
     fi
+    # The signed-in account's awards, and those that name no account: the
+    # page marks these as this player's, so another account's award on this
+    # device is not among them (#308 gpt F-RA-09). No account set: all, as
+    # before.
     local ROWS
     ROWS="$(python3 -c '
 import sqlite3, sys
+from urllib.parse import parse_qs
+user = sys.argv[2].strip().lower()
+def owner(query, body):
+    for text in ((query or "").split("?", 1)[-1], body or ""):
+        values = parse_qs(text, keep_blank_values=True).get("u")
+        if values and values[0].strip():
+            return values[0].strip().lower()
+    return ""
 db = sqlite3.connect("file:%s?mode=ro" % sys.argv[1], uri=True, timeout=1.0)
-for aid, queued in db.execute("SELECT achievementId, queuedAt FROM pending_awards WHERE status = ? ORDER BY queuedAt ASC, id ASC", ("pending",)):
-    print(int(aid), int(queued) // 1000)
-' "${QUEUE}" 2>/dev/null)" || cannot_tell "the award queue at ${QUEUE} could not be read"
+for aid, queued, query, body in db.execute("SELECT achievementId, queuedAt, queryString, requestBody FROM pending_awards WHERE status = ? ORDER BY queuedAt ASC, id ASC", ("pending",)):
+    if not user or owner(query, body) in ("", user):
+        print(int(aid), int(queued) // 1000)
+' "${QUEUE}" "$(setting "${USER_KEY}")" 2>/dev/null)" || cannot_tell "the award queue at ${QUEUE} could not be read"
     [ -n "${ROWS}" ] || return 1
     printf '%s\n' "${ROWS}"
     return 0
@@ -587,7 +602,7 @@ do_summary() {
     [ -n "${USER}" ] || return 1
     python3 - "${QUEUE}" "${USER}" <<'PY_SUMMARY'
 import json, sqlite3, sys
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 store, user = sys.argv[1], sys.argv[2].strip().lower()
 base = "http://127.0.0.1:8080"
 def icon_url(text):
@@ -621,9 +636,21 @@ try:
     patches = db.execute("SELECT cacheKey, responseBody FROM api_cache WHERE cacheKey LIKE ? ORDER BY cacheKey", ("patch:%:" + user,)).fetchall()
     sets = db.execute("SELECT cacheKey, responseBody FROM api_cache WHERE cacheKey LIKE ? ORDER BY cacheKey", ("achievementsets:%:" + user,)).fetchall()
     unlock_rows = dict(db.execute("SELECT cacheKey, responseBody FROM api_cache WHERE cacheKey LIKE ?", ("unlocks:%:" + user + ":0",)).fetchall())
-    pending = {int(aid) for (aid,) in db.execute("SELECT achievementId FROM pending_awards WHERE status = 'pending'")}
+    awards = db.execute("SELECT achievementId, queryString, requestBody FROM pending_awards WHERE status = 'pending'").fetchall()
 except Exception:
     sys.exit(3)
+def owner(query, body):
+    # The account an award was earned by: its request's u=, in the query or
+    # the body, as the service reads it (utils.extract_request_param).
+    for text in ((query or "").split("?", 1)[-1], body or ""):
+        values = parse_qs(text, keep_blank_values=True).get("u")
+        if values and values[0].strip():
+            return values[0].strip().lower()
+    return ""
+# Awards waiting for this account, or naming none: another account's award
+# on this device is that account's, not whoever is signed in now (#308 gpt
+# F-RA-09).
+pending = {int(aid) for aid, query, body in awards if owner(query, body) in ("", user)}
 found = {}   # id -> (title, icon, core set)
 for key, body in patches:
     parts = key.split(":")

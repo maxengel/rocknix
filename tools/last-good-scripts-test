@@ -3249,4 +3249,19 @@ else
     echo "    SKIP  PL-057's cases: section t did not run"
 fi
 
+# D3b. #308 1-raoffline gpt F-RA-09: a waiting award is counted for the account
+# that earned it -- its request's u=, in the query or the body -- and not for
+# whoever is signed in now, in the summary and in pending-ids alike; an
+# award whose request names no account is counted as before. D3's store:
+# 1002 earned by "Other" on this device, 3002 by "QA".
+if [ "${DT_OK}" -eq 1 ]; then
+grep -qx '{"id":102,"title":"Bee","icon":"http://127.0.0.1:8080/Images/000102.png","achievements":2,"points":15,"unlocked":1,"unlockedPoints":5,"pending":0}' "${DD}/summary.out"; check $? "#308 gpt F-RA-09 summary: another account's waiting award (1002, u=Other) is not counted as this account's -- 102 reads 1 unlocked, none waiting" "#308 gpt F-RA-09: $(grep '"id":102,' "${DD}/summary.out") -- the queue was merged into whoever is signed in"
+tctl pending-ids
+[ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "3002 1789400001" ]; check $? "#308 gpt F-RA-09 pending-ids: only this account's waiting award (3002, u=QA in the body), not the other account's 1002" "#308 gpt F-RA-09 pending-ids: rc ${RC}; out: $(tr '\n' '|' < "${OUT}")"
+tctl pending
+[ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "2" ]; check $? "pending still counts every award the queue holds for sending (2): the service sends each with its own account" "pending: rc ${RC}; out: $(tr '\n' '|' < "${OUT}")"
+else
+    echo "    SKIP  #308 F-RA-09's cases: section t did not run"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
