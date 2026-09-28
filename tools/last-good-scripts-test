@@ -3440,4 +3440,10 @@ printf 'SETTINGS_BACKUPS="${CONTENTPATH}/backup"\n' > "${P7S}/.config/cloud_sync
 p7bt backup
 [ "${RC}" -eq 0 ] && [ -n "$(p7arc)" ]; check $? "#308 claude F-BR-18: SETTINGS_BACKUPS=\"\${CONTENTPATH}/backup\" falls back to the standard folder" "#308 F-BR-18: rc ${RC}; archives at /storage/roms/backup: $(p7arc | wc -l); why '$(p7why)'"
 
+# == #308 4-backup-restore claude F-BR-19: nothing waits on a screen nobody is reading
+p7reset '  /storage/.config/test/*'
+p7bt backup; p7bt restore --no-restart
+cp "${P7U}/test/seed" "${P7S}/.config/test/seed"; printf 'LOCATIONS=(\n  /storage/.config/test/seed\n)\n' > "${P7S}/.config/backuptool.conf"; p7bt backup
+[ ! -s "${P7S}/.p7-sleeps" ]; check $? "#308 claude F-BR-19: with no terminal on stdout (the interface's pipe) neither the outcome nor a failure sleeps" "#308 F-BR-19: sleeps: $(tr '\n' '|' < "${P7S}/.p7-sleeps")"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

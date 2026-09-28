@@ -148,10 +148,16 @@ mkdir -p "${SETTINGS_BACKUPS}"
 # the system log only. Until 2026-09-10 these printed "Restore reported
 # errors. Check 'logger' output" and paths under /storage to a 3.5-inch
 # screen.
+#
+# The pauses are for a person reading a console (the fullscreen console flows
+# run on a terminal); the interface reads this through a pipe and has its own
+# outcome to show, so nothing waits there (#308 claude F-BR-19: the transfer
+# page and the maintenance dialog were held three to five seconds with
+# nothing to read).
 fail() {
     echo -e "\e[31m${1}\e[0m"
     logger -t backuptool "${1}${2:+ -- ${2}}"
-    sleep 5
+    if [ -t 1 ]; then sleep 5; fi
     exit 1
 }
 
@@ -1418,7 +1424,7 @@ case "${VERB}" in
         sync
         note "SETTINGS BACKED UP TO THIS DEVICE." "${BACKUPFILE}"
         note "COPY IT SOMEWHERE SAFE, OR BACK UP SETTINGS TO THE CLOUD UNDER GAME SETTINGS > MANAGE CLOUD STORAGE."
-        sleep 3
+        if [ -t 1 ]; then sleep 3; fi
     ;;
     *)
         echo "Usage: backuptool {backup|restore [--then-cloud] [--no-restart]}" >&2
