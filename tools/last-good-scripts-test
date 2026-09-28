@@ -4402,6 +4402,21 @@ group(async function aWayToCloseFromThePhone() {
     "no way to close the handheld's page from the phone: " + (why || "Escape was not sent") + " (#308 gpt F-RS-16)");
 });
 EOJS
+cat >> "${C4}/page_test.js" <<'EOJS'
+// ------------------------------------------------ G-C-05 (gpt, the audit of stream C)
+group(async function theWarningKeepsTheMask() {
+  const p = page("open a1");
+  await p.poll();
+  await p.type("été!");
+  const warn = Object.values(p.byId).find((e) => !e.hidden && /can.t type/i.test(e.textContent));
+  const masked = warn ? warn.textContent : "";
+  p.byId.show.fire("click");
+  const shown = warn ? warn.textContent : "";
+  result(warn && !/[éÉ]/.test(masked) && /é/.test(shown),
+    "with the box masked, the warning counts the characters it left out and names them only once Show is on: " + JSON.stringify(masked),
+    "masked, the warning reads " + JSON.stringify(masked) + " -- it shows what the masked box hides (G-C-05 gpt)");
+});
+EOJS
 # C4: new page groups go above this line
 cat >> "${C4}/page_test.js" <<'EOJS'
 (async () => {

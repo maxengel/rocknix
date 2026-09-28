@@ -977,7 +977,7 @@ network you trust.</p>
     }
     if (!ready) return;
     send("key=" + named);
-    if (named !== "f2" && named !== "f3") { box.value = ""; sent = ""; warn.hidden = true; }
+    if (named !== "f2" && named !== "f3") { box.value = ""; sent = ""; dropped = []; warnSay(); }
   }
 
   // Only what the handheld can type goes in the box: printable ASCII,
@@ -985,14 +985,28 @@ network you trust.</p>
   // sent, dropped at the other end without a word, and left showing here
   // -- a credential altered in silence (#308 claude F-RS-16, gpt F-RS-13).
   // It is taken out of the box instead, and the page says which.
+  //
+  // The line names the characters only while Show is on. With the box
+  // masked it counts them: a password's characters written out under a
+  // box that hides them is the box's masking undone (G-C-05, the audit of
+  // stream C).
+  var dropped = [];
+  function warnSay() {
+    if (!dropped.length) { warn.hidden = true; return; }
+    var many = dropped.length > 1;
+    warn.textContent = box.type === "password"
+      ? "The handheld can't type " + (many ? dropped.length + " of the characters you entered"
+          : "one of the characters you entered") + ", so " + (many ? "they were" : "it was") + " left out."
+      : "The handheld can't type " + dropped.join(" ") + ", so "
+          + (many ? "they were" : "it was") + " left out.";
+    warn.hidden = false;
+  }
   function typable() {
     var v = box.value, kept = v.replace(/[^ -~]/g, "");
     if (kept === v) return;
-    var gone = v.replace(/[ -~]/g, "").split("");
-    warn.textContent = "The handheld can't type " + gone.join(" ") + ", so "
-      + (gone.length > 1 ? "they were" : "it was") + " left out.";
-    warn.hidden = false;
+    dropped = v.replace(/[ -~]/g, "").split("");
     box.value = kept;
+    warnSay();
   }
 
   // What you typed stays visible. Clearing the box after every keystroke made
@@ -1018,12 +1032,13 @@ network you trust.</p>
     var hidden = box.type === "password";
     box.type = hidden ? "text" : "password";
     show.textContent = hidden ? "Hide" : "Show";
+    warnSay();
   });
 
   // Local only: the handheld has moved to another field and this box still
   // holds what went into the last one.
   document.getElementById("clear").addEventListener("click", function () {
-    box.value = ""; sent = ""; warn.hidden = true; box.focus();
+    box.value = ""; sent = ""; dropped = []; warnSay(); box.focus();
   });
 
   Array.prototype.forEach.call(document.querySelectorAll("[data-key]"), function (b) {
