@@ -16,7 +16,9 @@ Print or run the Linux QEMU command. `qemu-args` only prints: it touches no
 socket, vars store or disk, so it is safe beside a running guest. `run` clears
 a previous QEMU's monitor and serial sockets (a socket only -- any other file
 at those paths is refused) and makes the guest's UEFI vars store from the
-firmware's template, then starts QEMU:
+firmware's template, then starts QEMU. Both refuse a disk under the profile's
+16 GiB, and take the OVMF code image and vars template from one firmware
+directory (`--ovmf-code` with `--ovmf-vars-template` names another pair):
 
 ```bash
 projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm \
@@ -37,7 +39,9 @@ projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm \
   run --headless --res 640x480 target/ROCKNIX-GENERIC_X64.x86_64-<date>.qcow2
 ```
 
-Generate the UTM bundle:
+Generate the UTM bundle (a qcow2 that needs another file -- a backing image,
+an external data file -- is refused: the bundle carries the one file; flatten
+it with `qemu-img convert -O qcow2` first):
 
 ```bash
 projects/ROCKNIX/devices/GENERIC_X64/vm/generic-x64-vm utm \

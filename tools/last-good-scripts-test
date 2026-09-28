@@ -3256,4 +3256,95 @@ f1_vm run --monitor "${F1V}/victim.qcow2" --ovmf-vars "${F1V}/vars.fd" "${F1_OVM
 check $? "a start refuses a socket path that holds a file, and the file stays (the gpt seat's disk-as---monitor input)" "run --monitor <a qcow2> (rc ${F1_RC}): the file $([ -f "${F1V}/victim.qcow2" ] && echo kept || echo DELETED), QEMU $([ -e "${F1V}/qemu.argv" ] && echo started || echo not started)"
 fi
 
+if [ -n "${F1_QIMG}" ]; then
+# #308 gpt F-VM-13: a path with a comma reaches QEMU's option syntax with
+# the comma doubled, which is how QEMU reads a literal one.
+f1_disk "${F1V}/a,b/disk.qcow2" 16G
+f1_vm qemu-args --monitor "${F1V}/a,b/m.sock" --ovmf-vars "${F1V}/a,b/vars.fd" "${F1_OVMF[@]}" "${F1V}/a,b/disk.qcow2"
+grep -qF -- "file=${F1V}/a,,b/disk.qcow2" "${F1V}/out" && grep -qF -- "file=${F1V}/a,,b/vars.fd" "${F1V}/out" && grep -qF -- "unix:${F1V}/a,,b/m.sock,server,nowait" "${F1V}/out"
+check $? "a comma in the disk, vars and monitor paths is doubled in QEMU's option strings (#308 gpt F-VM-13)" "rc ${F1_RC}; the option strings: $(tr ' ' '\n' < "${F1V}/out" | grep -E 'file=|unix:' | tr '\n' ' ' | cut -c1-300)"
+# #308 gpt F-VM-15: a disk under the profile's 16 GiB is refused by a Linux
+# launch as the UTM builder refuses it (the rule: under 16 GiB the first
+# boot's copy of the interface's resources runs out of space).
+f1_disk "${F1V}/small.qcow2" 1G
+f1_vm qemu-args --ovmf-vars "${F1V}/vars.fd" "${F1_OVMF[@]}" "${F1V}/small.qcow2"
+[ "${F1_RC}" -ne 0 ] && grep -q '16 GiB' "${F1V}/out"; check $? "a 1 GiB disk is refused before QEMU, naming the 16 GiB the profile needs (#308 gpt F-VM-15)" "a 1 GiB disk (rc ${F1_RC}): $(head -c 200 "${F1V}/out")"
+# #308 claude F-VM-14: --ssh-port is a port.
+f1_vm qemu-args --ssh-port 70000 --ovmf-vars "${F1V}/vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
+F1_P1=${F1_RC}; f1_vm qemu-args --ssh-port 0 --ovmf-vars "${F1V}/vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
+[ "${F1_P1}" -ne 0 ] && [ "${F1_RC}" -ne 0 ]; check $? "--ssh-port 70000 and 0 are refused as the argument parser reads them (#308 claude F-VM-14)" "--ssh-port 70000 rc ${F1_P1}, 0 rc ${F1_RC}"
+# The choices that need the host's architecture and firmware directories
+# faked are made through the module: platform.machine() and os.access for
+# /dev/kvm (#308 gpt F-VM-14), Path.is_file for the OVMF candidates (#308
+# claude F-VM-14, a code image paired with another directory's vars).
+cat > "${F1V}/probe.py" <<'EOP'
+import importlib.machinery, importlib.util, os, pathlib, platform, shutil, sys
+path = sys.argv[1]; case = sys.argv[2]; disk = sys.argv[3]
+loader = importlib.machinery.SourceFileLoader("gx64vm", path)
+spec = importlib.util.spec_from_loader("gx64vm", loader); mod = importlib.util.module_from_spec(spec); loader.exec_module(mod)
+real_access = os.access
+parser = mod.argparse.ArgumentParser(); mod.add_qemu_options(parser)
+copied = []
+shutil.copyfile = lambda src, dst, **k: copied.append(str(src))   # a start's vars file, recorded, not made
+if case in ("arm", "x86"):
+    platform.machine = (lambda: "aarch64") if case == "arm" else (lambda: "x86_64")
+    os.access = lambda p, m, **k: True if str(p) == "/dev/kvm" else real_access(p, m, **k)
+    args = parser.parse_args(["--ovmf-code", sys.argv[4], "--ovmf-vars-template", sys.argv[5], "--ovmf-vars", sys.argv[6], disk])
+    cmd = mod.qemu_command(mod.load_profile(), args)
+    print("accel=" + cmd[cmd.index("-accel") + 1])
+elif case in ("mixed", "paired"):
+    # Which vars template a start copies: the unfixed launcher copies it
+    # while building the command, the fixed one in prepare_run.
+    have = {"/usr/share/OVMF/OVMF_CODE_4M.fd", "/usr/share/edk2/x64/OVMF_VARS.fd"}
+    if case == "paired": have |= {"/usr/share/OVMF/OVMF_VARS_4M.fd", "/usr/share/edk2/x64/OVMF_CODE.fd"}
+    real_is_file = pathlib.Path.is_file
+    pathlib.Path.is_file = lambda self: True if str(self) in have else (False if str(self).startswith("/usr/share/") else real_is_file(self))
+    args = parser.parse_args(["--ovmf-vars", sys.argv[6], disk])
+    try:
+        cmd = mod.qemu_command(mod.load_profile(), args)
+        if hasattr(mod, "prepare_run"):
+            mod.prepare_run(mod.load_profile(), args)
+    except FileNotFoundError as e:
+        print("refused: %s" % e); sys.exit(0)
+    code = next(a for a in cmd if a.startswith("if=pflash,unit=0")).split("file=")[1]
+    print("code=%s vars-template=%s" % (code, copied))
+EOP
+f1_probe() { # <case>: the probe in the launcher's sandbox; output in F1_PR. Its vars store never exists, so a start would copy one.
+    rm -f "${F1V}/probe-vars.fd"
+    F1_PR=$(bwrap --die-with-parent --ro-bind / / --tmpfs /tmp --bind "${F1V}" "${F1V}" --dev /dev --proc /proc \
+        --setenv QEMU_SYSTEM_X86_64 "${F1V}/bin/qemu-system-x86_64" \
+        python3 "${F1V}/probe.py" "${F1V}/vm/generic-x64-vm" "${1}" "${F1V}/disk.qcow2" "${F1V}/code.fd" "${F1V}/vars-template.fd" "${F1V}/probe-vars.fd" 2>&1 | tail -1)
+}
+f1_probe arm; F1_ARM="${F1_PR}"; f1_probe x86
+[ "${F1_ARM}" = "accel=tcg,thread=multi" ] && [ "${F1_PR}" = "accel=kvm" ]
+check $? "--accel auto takes KVM only on an x86_64 host: TCG on aarch64 with /dev/kvm open, KVM on x86_64 (#308 gpt F-VM-14)" "aarch64 with /dev/kvm: ${F1_ARM}; x86_64: ${F1_PR}"
+f1_probe mixed; F1_MIX="${F1_PR}"; f1_probe paired
+case "${F1_MIX}" in refused:*) F1_M=0 ;; *) F1_M=1 ;; esac
+[ "${F1_M}" -eq 0 ] && [ "${F1_PR}" = "code=/usr/share/OVMF/OVMF_CODE_4M.fd vars-template=['/usr/share/OVMF/OVMF_VARS_4M.fd']" ]
+check $? "OVMF code and vars come from one directory: a 4M code image with only another directory's vars is refused, and a matched pair is taken (#308 claude F-VM-14)" "only OVMF_CODE_4M.fd and edk2's OVMF_VARS.fd: ${F1_MIX}; both pairs: ${F1_PR}"
+fi
+
+if [ -n "${F1_QIMG}" ]; then
+# #308 gpt F-VM-11: the UTM bundle carries the disk file alone, so a qcow2
+# that needs another file -- a backing image, an external data file -- is
+# refused rather than packed into a bundle that cannot open it elsewhere.
+f1_disk "${F1V}/base.qcow2" 16G
+"${F1_QIMG}" create -q -f qcow2 -b "${F1V}/base.qcow2" -F qcow2 "${F1V}/overlay.qcow2" 16G >/dev/null 2>&1
+"${F1_QIMG}" create -q -f qcow2 -o "data_file=${F1V}/data.raw" "${F1V}/datafile.qcow2" 16G >/dev/null 2>&1
+rm -f "${F1V}"/bundle*.zip
+f1_vm utm "${F1V}/overlay.qcow2" --output "${F1V}/bundle-overlay.zip"; F1_U1=${F1_RC}
+f1_vm utm "${F1V}/datafile.qcow2" --output "${F1V}/bundle-datafile.zip"; F1_U2=${F1_RC}
+[ "${F1_U1}" -ne 0 ] && [ ! -e "${F1V}/bundle-overlay.zip" ] && [ "${F1_U2}" -ne 0 ] && [ ! -e "${F1V}/bundle-datafile.zip" ]
+check $? "a qcow2 with a backing file or an external data file is refused for a UTM bundle (#308 gpt F-VM-11)" "overlay rc ${F1_U1}, bundle $([ -e "${F1V}/bundle-overlay.zip" ] && echo MADE || echo none); data-file rc ${F1_U2}, bundle $([ -e "${F1V}/bundle-datafile.zip" ] && echo MADE || echo none)"
+# #308 gpt F-VM-12: the archive is written under a name of its own, so a
+# second build for the same output cannot take -- or publish -- another's
+# unfinished archive at <output>.tmp.
+echo "another build's archive, still being written" > "${F1V}/bundle.zip.tmp"
+f1_vm utm "${F1V}/disk.qcow2" --output "${F1V}/bundle.zip"
+[ "${F1_RC}" -eq 0 ] && [ "$(cat "${F1V}/bundle.zip.tmp" 2>/dev/null)" = "another build's archive, still being written" ] \
+    && python3 -c 'import sys,zipfile; n=sorted(zipfile.ZipFile(sys.argv[1]).namelist()); sys.exit(0 if n==["READ ME FIRST.txt","bundle.utm/Data/ROCKNIX-GENERIC_X64.qcow2","bundle.utm/config.plist"] else 1)' "${F1V}/bundle.zip" \
+    && [ -z "$(ls "${F1V}" | grep -E '^bundle\.zip\..+' | grep -v '^bundle\.zip\.tmp$')" ]
+check $? "a UTM build leaves another build's <output>.tmp alone, publishes a whole bundle, and leaves no temporary of its own (#308 gpt F-VM-12)" "rc ${F1_RC}; <output>.tmp: '$(cat "${F1V}/bundle.zip.tmp" 2>/dev/null || echo GONE)'; left: $(ls "${F1V}" | grep '^bundle' | tr '\n' ' '); $(head -c 200 "${F1V}/out")"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

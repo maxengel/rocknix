@@ -5,6 +5,7 @@
 import argparse
 import json
 import os
+import platform
 import plistlib
 import re
 import shlex
@@ -80,28 +81,60 @@ def find_ovmf(explicit, candidates, label):
     raise FileNotFoundError(f"could not locate {label}; pass its path explicitly")
 
 
-def find_ovmf_code(args):
-    return find_ovmf(
-        args.ovmf_code,
-        (
-            "/usr/share/OVMF/OVMF_CODE_4M.fd",
-            "/usr/share/edk2/x64/OVMF_CODE.fd",
-            "/usr/share/edk2/ovmf/OVMF_CODE.fd",
-        ),
-        "OVMF code",
+# OVMF code and its vars template come as a pair from one firmware build: a
+# 4 MiB code image with a 2 MiB vars store does not boot. Each entry is one
+# distribution's pair; the first whose two files both exist is taken.
+OVMF_PAIRS = (
+    ("/usr/share/OVMF/OVMF_CODE_4M.fd", "/usr/share/OVMF/OVMF_VARS_4M.fd"),
+    ("/usr/share/edk2/x64/OVMF_CODE.fd", "/usr/share/edk2/x64/OVMF_VARS.fd"),
+    ("/usr/share/edk2/ovmf/OVMF_CODE.fd", "/usr/share/edk2/ovmf/OVMF_VARS.fd"),
+)
+
+
+def find_ovmf_pair(code_arg, vars_arg):
+    """The OVMF code image and vars template, as one pair. Both given: taken as
+    given. One given: its partner from the same pair, or the other flag is
+    needed. Neither: the first pair whose two files exist."""
+    if code_arg and vars_arg:
+        return (
+            find_ovmf(code_arg, (), "OVMF code"),
+            find_ovmf(vars_arg, (), "OVMF vars template"),
+        )
+    if code_arg or vars_arg:
+        given = Path(code_arg or vars_arg).resolve()
+        side = 0 if code_arg else 1
+        for pair in OVMF_PAIRS:
+            if Path(pair[side]).resolve() == given:
+                partner = find_ovmf(None, (pair[1 - side],), "OVMF vars template" if side == 0 else "OVMF code")
+                found = find_ovmf(str(given), (), "OVMF code" if side == 0 else "OVMF vars template")
+                return (found, partner) if side == 0 else (partner, found)
+        raise FileNotFoundError(
+            f"{given} is not a known OVMF pair's; pass --ovmf-code and --ovmf-vars-template together"
+        )
+    for code, vars_template in OVMF_PAIRS:
+        if Path(code).is_file() and Path(vars_template).is_file():
+            return Path(code), Path(vars_template)
+    raise FileNotFoundError(
+        "could not locate an OVMF code image and vars template from one firmware build; "
+        "pass --ovmf-code and --ovmf-vars-template"
     )
 
 
-def find_ovmf_vars_template(args):
-    return find_ovmf(
-        args.ovmf_vars_template,
-        (
-            "/usr/share/OVMF/OVMF_VARS_4M.fd",
-            "/usr/share/edk2/x64/OVMF_VARS.fd",
-            "/usr/share/edk2/ovmf/OVMF_VARS.fd",
-        ),
-        "OVMF vars template",
-    )
+def qemu_opt(value):
+    """A value inside one of QEMU's comma-separated option strings: a comma in
+    it is doubled, which is how QEMU reads a literal one (a path is otherwise
+    split at it into an option that does not exist)."""
+    return str(value).replace(",", ",,")
+
+
+def auto_accel():
+    """KVM when this host can accelerate an x86_64 guest with it: the host is
+    x86_64 and /dev/kvm is open to us. /dev/kvm on an aarch64 host is ARM KVM,
+    which cannot run this guest; TCG emulates it instead."""
+    host = platform.machine().lower()
+    if host in ("x86_64", "amd64") and os.access("/dev/kvm", os.R_OK | os.W_OK):
+        return "kvm"
+    return "tcg,thread=multi"
 
 
 def run_paths(args):
@@ -136,7 +169,7 @@ def prepare_run(profile, args):
     cleared of a previous QEMU's sockets. qemu-args never calls this -- it
     prints, and touches nothing."""
     vars_path, monitor, serial = run_paths(args)
-    vars_template = find_ovmf_vars_template(args)
+    _, vars_template = find_ovmf_pair(args.ovmf_code, args.ovmf_vars_template)
     for sock in (monitor, serial):
         if sock is not None:
             claim_socket_path(sock)
@@ -156,18 +189,26 @@ def qemu_command(profile, args):
     if not qemu:
         raise RuntimeError("qemu-system-x86_64 is required")
 
-    code = find_ovmf_code(args)
-    find_ovmf_vars_template(args)
+    code, _ = find_ovmf_pair(args.ovmf_code, args.ovmf_vars_template)
     vars_path, monitor, serial = run_paths(args)
 
     disk_info = qemu_img_info(disk)
+    # The canonical disk size is a floor for a Linux launch as for a UTM
+    # bundle: under it the first boot's copy of the interface's resources
+    # runs out of space and the menus come up broken (generic-x64-vm-testing).
+    if disk_info["virtual-size"] < profile["disk"]["virtual_size_bytes"]:
+        raise ValueError(
+            f"{disk} is {disk_info['virtual-size']} bytes, under the profile's 16 GiB "
+            f"({profile['disk']['virtual_size_bytes']} bytes); grow it before the first boot: "
+            f"qemu-img resize {disk} 16G"
+        )
     disk_profile = profile["disk"]
     display = profile["display"]
     network = profile["network"]
     sound = profile["sound"]
     accel = args.accel
     if accel == "auto":
-        accel = "kvm" if os.access("/dev/kvm", os.R_OK | os.W_OK) else "tcg,thread=multi"
+        accel = auto_accel()
 
     # Headless (a build host with no desktop): virtio-gpu-gl-pci refuses
     # -display none, so the GL-less device stands in; a VNC display on
@@ -201,7 +242,7 @@ def qemu_command(profile, args):
             display_device = display_device.replace("-gl-", "-")
             display_arg = "none"
         vnc_args = ["-vnc", f"127.0.0.1:{args.vnc}"]
-        serial_arg = f"unix:{serial},server,nowait"
+        serial_arg = f"unix:{qemu_opt(serial)},server,nowait"
         pidfile_args = ["-pidfile", str(Path(args.pidfile).resolve())]
         for sock in (monitor, serial):
             if len(str(sock).encode()) > 107:
@@ -257,13 +298,13 @@ def qemu_command(profile, args):
         "-m",
         str(profile["memory_mib"]),
         "-drive",
-        f"if=pflash,unit=0,readonly=on,format=raw,file={code}",
+        f"if=pflash,unit=0,readonly=on,format=raw,file={qemu_opt(code)}",
         "-drive",
-        f"if=pflash,unit=1,format=raw,file={vars_path}",
+        f"if=pflash,unit=1,format=raw,file={qemu_opt(vars_path)}",
         "-drive",
         (
             f"if=none,id=rocknix,format={disk_info['format']},"
-            f"file={disk}"
+            f"file={qemu_opt(disk)}"
         ),
         "-device",
         (
@@ -305,7 +346,7 @@ def qemu_command(profile, args):
         "-device",
         sound["codec"],
         "-monitor",
-        f"unix:{monitor},server,nowait",
+        f"unix:{qemu_opt(monitor)},server,nowait",
         # Behind the NAT forward the guest's own address is unreachable, so
         # the cloud-setup screen must show the loopback SSH command instead.
         # Only the forwarded port is injected (a space-free token: UTM
@@ -504,6 +545,21 @@ def build_utm(profile, args):
         raise ValueError("UTM bundle input must be qcow2")
     if info["virtual-size"] < profile["disk"]["virtual_size_bytes"]:
         raise ValueError("qcow2 is smaller than the canonical 16 GiB VM disk")
+    # The bundle carries this one file, so a disk that needs another -- an
+    # overlay's backing image, an external data file -- would arrive on the
+    # other machine unable to open. Flatten it first (qemu-img convert).
+    backing = info.get("full-backing-filename") or info.get("backing-filename")
+    if backing:
+        raise ValueError(
+            f"qcow2 has a backing file ({backing}); a UTM bundle carries one file -- "
+            "flatten it first: qemu-img convert -O qcow2 <in> <out>"
+        )
+    data_file = ((info.get("format-specific") or {}).get("data") or {}).get("data-file")
+    if data_file:
+        raise ValueError(
+            f"qcow2 keeps its data in another file ({data_file}); a UTM bundle carries one file -- "
+            "convert it first: qemu-img convert -O qcow2 <in> <out>"
+        )
 
     output = Path(args.output).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -520,19 +576,32 @@ def build_utm(profile, args):
         with config_path.open("wb") as stream:
             plistlib.dump(config, stream, fmt=plistlib.FMT_XML, sort_keys=False)
 
-        temporary_output = output.with_suffix(f"{output.suffix}.tmp")
-        temporary_output.unlink(missing_ok=True)
-        with zipfile.ZipFile(
-            temporary_output, "w", compression=zipfile.ZIP_STORED, allowZip64=True
-        ) as archive:
-            archive.write(config_path, f"{bundle_name}/config.plist")
-            archive.write(disk, f"{bundle_name}/Data/{image_name}")
-            # Quick-start notes shipped next to the bundle (not inside it:
-            # macOS treats .utm as an opaque document).
-            archive.write(
-                VM_DIR / "utm-bundle-readme.txt", "READ ME FIRST.txt"
-            )
-        os.replace(temporary_output, output)
+        # The archive is written under a name only this build holds, beside
+        # the output (so the final rename stays on one filesystem), and
+        # renamed over the output once whole. A fixed name here let a second
+        # build for the same output remove the first one's unfinished file,
+        # or have its own published by the first.
+        handle, temporary_name = tempfile.mkstemp(
+            dir=output.parent, prefix=f".{output.name}.", suffix=".partial"
+        )
+        os.close(handle)
+        temporary_output = Path(temporary_name)
+        try:
+            with zipfile.ZipFile(
+                temporary_output, "w", compression=zipfile.ZIP_STORED, allowZip64=True
+            ) as archive:
+                archive.write(config_path, f"{bundle_name}/config.plist")
+                archive.write(disk, f"{bundle_name}/Data/{image_name}")
+                # Quick-start notes shipped next to the bundle (not inside it:
+                # macOS treats .utm as an opaque document).
+                archive.write(
+                    VM_DIR / "utm-bundle-readme.txt", "READ ME FIRST.txt"
+                )
+            os.chmod(temporary_output, 0o644)
+            os.replace(temporary_output, output)
+        except BaseException:
+            temporary_output.unlink(missing_ok=True)
+            raise
     print(output)
 
 
@@ -585,7 +654,7 @@ def add_qemu_options(parser):
     )
     parser.add_argument(
         "--ssh-port",
-        type=int,
+        type=tcp_port,
         default=None,
         help=(
             "host port to forward to the guest's SSH (default: the profile's). "
@@ -627,6 +696,19 @@ def resolution(value):
     if not m or "0" in (m.group(1).lstrip("0") or "0", m.group(2).lstrip("0") or "0"):
         raise argparse.ArgumentTypeError(f"not a resolution (WxH, e.g. 640x480): {value!r}")
     return int(m.group(1)), int(m.group(2))
+
+
+def tcp_port(value):
+    """A TCP port, 1 to 65535. QEMU rejects anything else only once it starts,
+    after the sockets and pidfile have been claimed; argparse says no before
+    that."""
+    try:
+        port = int(value, 10)
+    except ValueError:
+        port = 0
+    if not 1 <= port <= 65535:
+        raise argparse.ArgumentTypeError(f"not a TCP port (1-65535): {value!r}")
+    return port
 
 
 def mac_address(value):
