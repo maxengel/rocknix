@@ -92,3 +92,15 @@ _The orchestrator's own reads of the highest-risk follow-up hunks, made before t
 ### O-16 (C, `8b5655a4dc`) -- a saves folder named like its own sibling is refused
 **Read:** `cloud_setup`'s `syncpath_problem`: the typed path, case-folded, is refused when it equals `<parent>/Backups` or `<parent>/Content`, with the folder to use (`Try <parent>/Saves.`); the derived siblings are exactly those two names, so the collision set is complete. An already-aliased configuration is read as it stands (the accepted-risk ledger of the fix audit).
 **Verdict:** **sound.**
+
+### O-17 (F1, `16ae2219ca`) -- the take-backs remove exact names, once
+**Read:** the two take-back scripts list the exact paths the retired quirks wrote and remove those; each runs until its files are gone, then writes a stamp under `/storage/.cache` and exits early on every later boot; the rescue and emergency masks are removed by name. The harness's F1 cases: an owner's own drop-in (`weston.service.d/10-generic-x64.conf` named after the pattern but the owner's) survives; the take-back boot's journal says so; a second boot changes nothing.
+**Verdict:** **sound.** Already written: a downgrade to a build with the old quirks writes the files again and they then stay -- the stream's own line, and the honest one.
+
+### O-18 (F2, `f53264dcb0`) -- 0018 decides Auto when the configuration loads
+**Read:** the patch's answer is taken in `config_load_file` from the `--appendconfig` list right after RetroArch appends those files, the last file that sets `state_slot` winning as in the load, so the answer describes what RetroArch read, not what is at those paths by content-load time; a `-1` in the main config is not this launch's request and is scanned, reset or restored over as upstream does. The harness compiles the helper with RetroArch's own config parser over ten append lists (expects `0100001111`); the runner's `F2-autoslot` on `1b0d233657`: 9 PASS, the log's `Keeping the Auto slot` line and the `-1` not sticking.
+**Verdict:** **sound, and proven on the VM.**
+
+### O-19 (F2, `9f1d126d24`) -- a kept guest's Control1 splice is repaired
+**Read:** `start_mupen64plus.sh` on GENERIC_X64 only, when the config holds the `[Retroid Pocket Gamepad]` header: an awk pass drops exactly the six pasted lines as a block, writes a temporary, and replaces the config only if the temporary is non-empty; the case F2-5b asserts that exactly those six lines leave a player's copy and that the player's own `plugin = 5` and `ScreenWidth = 1280` stay.
+**Verdict:** **sound.**
