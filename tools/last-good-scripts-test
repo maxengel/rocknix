@@ -4199,6 +4199,37 @@ def remote_create_stderr_holds_no_password():
            "a failed create passes rclone's reason on with the password taken out: %r" % said.strip(),
            "rc %r; cloud_remote said %r -- a password value reaches the interface's dialog (G-C-09 claude)" % (rc, said.strip()))
 EOPY
+# G-C-01 (claude): the serve's side of the phone's Close page -- a guard.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+@test
+def close_page_reaches_the_keyboard_as_escape():
+    """G-C-01 (claude seat): the phone's Close page posts key=escape; the
+    serve's own handler, through the real RemoteKeyboard, must press
+    KEY_ESC (1) -- the key the window quits on."""
+    m, d = load("gcc01")
+    holder = m.SessionHolder("dropbox", None, None, 60)
+    holder.browser = object()                 # a window is up
+    rfd, wfd = os.pipe()
+    holder.keyboard.fd = wfd                  # open() is then a no-op
+    server, port = start_server(m, holder)
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    c.request("POST", "/" + holder.pin, body="key=escape&pin=" + holder.pin,
+              headers={"Content-Type": "application/x-www-form-urlencoded"})
+    status = c.getresponse().status
+    c.close()
+    server.shutdown()
+    size = struct.calcsize("llHHi")
+    os.set_blocking(rfd, False)
+    try:
+        data = os.read(rfd, size * 16)
+    except BlockingIOError:
+        data = b""
+    events = [struct.unpack("llHHi", data[i:i + size])[2:] for i in range(0, len(data) - size + 1, size)]
+    keys = [(code, value) for etype, code, value in events if etype == 1]
+    result(status == 204 and keys == [(1, 1), (1, 0)],
+           "the serve turns the phone's Close page into an Escape press and release on its keyboard",
+           "POST key=escape: status %r, key events %r -- the window never hears Escape (G-C-01 claude)" % (status, keys))
+EOPY
 # C3: new test groups go above this line
 cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
 if MODE == "drive":
