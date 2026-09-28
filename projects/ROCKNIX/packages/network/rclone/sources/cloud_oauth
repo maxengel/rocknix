@@ -68,6 +68,8 @@ import urllib.request
 STATE_DIR = "/var/run/cloud_oauth"
 RCLONE = "/usr/bin/rclone"
 LOCAL_AUTH = "http://127.0.0.1:53682"
+# How long `rclone authorize` has to print its local link.
+AUTHORIZE_WAIT = 20
 LOG_FILE = "/var/log/cloud_sync.log"
 
 
@@ -230,18 +232,39 @@ class Session:
             [RCLONE, "authorize", self.backend, "--auth-no-open-browser"],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
-        deadline = time.time() + 20
+        # The wait for the link is bounded by the clock, not by rclone. It
+        # was a readline() under a deadline checked between lines, so an
+        # authorize that printed nothing held this -- and the interface's
+        # sign-in page -- for as long as it cared to (#308 gpt F-RS-19).
+        # Raw reads under select(), then: whatever arrived after the link
+        # goes to the collector with the rest.
+        deadline = time.time() + AUTHORIZE_WAIT
+        fd = self.proc.stdout.fileno()
+        pending = b""
         local = None
-        while time.time() < deadline:
-            line = self.proc.stdout.readline()
-            if not line:
+        while local is None:
+            left = deadline - time.time()
+            if left <= 0:
                 break
-            match = re.search(r"http://127\.0\.0\.1:53682/auth\?state=\S+", line)
+            ready, _, _ = select.select([fd], [], [], left)
+            if not ready:
+                break
+            chunk = os.read(fd, 4096)
+            if not chunk:
+                break
+            pending += chunk
+            match = re.search(rb"(http://127\.0\.0\.1:53682/auth\?state=\S+)\s", pending)
             if match:
-                local = match.group(0)
-                break
+                local = match.group(1).decode()
+        self.early_output = pending.decode("utf-8", "replace")
         if not local:
             self.error = "rclone did not offer a sign-in link"
+            if self.proc.poll() is None:
+                self.proc.terminate()
+                try:
+                    self.proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    self.proc.kill()
             return False
 
         self.provider = provider_url(local)
@@ -257,7 +280,7 @@ class Session:
         return True
 
     def _collect(self):
-        buffer = ""
+        buffer = getattr(self, "early_output", "")
         for line in self.proc.stdout:
             buffer += line
             if line.startswith("Error: ") or "Fatal error:" in line:

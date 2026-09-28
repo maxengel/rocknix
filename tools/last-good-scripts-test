@@ -3791,6 +3791,31 @@ def hat_dpad_is_found_and_bridged():
            "and its hat presses reach the page as arrows (up, right, down, left), buttons as before",
            "the bridge pressed %r for hat up, right, down+left and A" % kb.pressed)
 EOPY
+# #308 gpt F-RS-19: the wait for rclone's link is bounded by the clock.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+@test
+def authorize_wait_is_bounded():
+    """#308 gpt F-RS-19: a silent authorize cannot hold start() past its bound."""
+    m, d = load("rs19g")
+    shim = os.path.join(d, "rclone")
+    with open(shim, "w") as h:
+        h.write('#!/bin/bash\nexec -a rclone-authorize-silent sleep 30\n')
+    os.chmod(shim, 0o755)
+    m.RCLONE = shim
+    m.AUTHORIZE_WAIT = 2
+    s = m.Session("dropbox", None, 60)
+    got = {}
+    t0 = time.time()
+    t = threading.Thread(target=lambda: got.__setitem__("ok", s.start()), daemon=True)
+    t.start()
+    t.join(8)
+    took = time.time() - t0
+    result(not t.is_alive() and got.get("ok") is False and s.proc.poll() is not None,
+           "an authorize that prints nothing is given up at its bound (%.1f s) and ended" % took,
+           "start() still blocked after %.1f s on an authorize that printed nothing (#308 gpt F-RS-19)" % took)
+    if s.proc and s.proc.poll() is None:
+        s.proc.kill()
+EOPY
 # C3: new test groups go above this line
 cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
 if MODE == "drive":
