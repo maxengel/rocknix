@@ -11,7 +11,7 @@
 
 ### 3.1 Architectural coherence
 
-_(after the seats: orphaned files, dead code, coupling; what the round added as structure -- the plan file, the attempt id, the journey record, the capture gate, the settings lock's reap guard, the retired quirks' take-backs)_
+The round adds structure rather than removing it: a plan file between a match's preview and its apply (D-CLOUD-141), an attempt id and a file lock on the sign-in state, a journey record read whole, a capture gate with a bound and a hung rule, a settings lock born by hard link with a reap guard on both sides, take-back scripts with stamps for the retired quirks, one grammar for `cloud_sync.conf` in five copies. The five copies are the coherence cost: the seats found the same hole in each (G2-A-01 gpt), and a sixth reader that never got the grammar (`backuptool`, G2-B-01). The harness is one file of 844 checks with six appended blocks; it held through two hand merges. Nothing orphaned was found: F1's deletions are complete (`pkgcheck` rc 0 on every recipe), the ES test binary is untracked, the retired quirk tree never shipped (the blindspot screen's row 23). Coupling worth naming: the cloud scripts' outcome words and the interface's tables are a byte-for-byte contract kept by a unit test (the emitter table) -- the two sentences the integrator added the same day show the contract is live and that its guard works.
 
 ### 3.2 Project conformance
 
@@ -29,7 +29,7 @@ _(after the seats: orphaned files, dead code, coupling; what the round added as 
 | `change-log.md` | the round | the entry exists (`docs/cloud-sync-changelog.md`, 238 lines, checked on `1b0d233657`) |
 | `documentation-accuracy.md` (the public docs change with user-facing behaviour) | the round | **not met yet, tracked**: #42 carries the rocknix.org cloud-sync page; the round's player-visible changes (the plan file's refusal words, the folder collision refusal, the root-level exception) are not on the public page -- pre-existing tracked scope, the PR-prep gate |
 
-**Blindspot register**: _(the 67 entries screened for the round's shape -- the agent's screen is a lead; the REPEATED rows are re-read by the orchestrator and become findings)_
+**Blindspot register**: the 67 entries screened against the round's diffs by shape (an agent's pre-screen, `/workspace/tmp/rocknix-session/blindspot-screen-fix-round.md`: 15 repeated in 10 instances, 32 avoided, 21 not relevant; the register numbers 29 twice). Five repeats survived the orchestrator's read and are BS-1..BS-5 in `02-forward-audit.md` (a credential left in a persistent log; two readers of one file; a check that cannot see a damaged stored member; skipped checks counted as passed; a wait that a stale line satisfies); the other five are the fixture-size proofs already kept partial (44), the `.fla` list restated in four copies (21, Low), tools used without a declared package (16, Low -- busybox has `flock` and `timeout`, systemd `timedatectl`), a failed listing read as empty by `--content-location` (22, Low), and a shell-out on the interface thread beside one that was already there (45, Low). The avoidances worth naming: 67 (a pre-commit scan in both repositories -- with the fail-open the seats then found in it, G2-I-02), 66 (the lint keyed by seat), 61 (SIGINT reset for the harness), 60, 32, 11, 23.
 
 **Project invariants**:
 
@@ -42,7 +42,7 @@ _(after the seats: orphaned files, dead code, coupling; what the round added as 
 
 ### 3.3 Spec fidelity
 
-_(pending the seats: where a fix diverged from its acceptance text and the divergence was or was not recorded -- known: PL-034 implemented differently from the item's text, F1's part (a) of G-F1-02 decided the other way with a test, E2's "a match is never retried from the page")_
+Where the implementation diverged from the acceptance text and said so: PL-034 ("implemented differently from the item's text", F1's report); F1's part (a) of G-F1-02 (the shipped 640x480 and 0x0 follow the mode even with a record, because RESET RETROARCH CONFIG TO DEFAULT leaves exactly that -- a test case records it); E2's match page (no TRY AGAIN for a match, since its plan is used up -- `es-player-text.md` updated the same day); PL-077 (two concurrent evidence runs are refused rather than both completed, where the acceptance said two archives -- gpt's "holds in part", the stream's choice the safer one); PL-076 credited to F1 by F2. Where it diverged and did not say so: the two seats' 48 weaker readings in § Cross-check are mostly packet scope (the other half of a split item, a plan not in the packet), and the ones that name a mechanism are Mediums in 02. Scope added without a record: none found -- the integrator's rule edits and the vm-qa launch are in packet I and were read.
 
 ### 3.4 Platform architecture conformance
 
@@ -126,4 +126,22 @@ Verdict on the prescription check: **PARTIAL until the fixes land** -- every sit
 
 ### 3.7 Retrospective Summary
 
-_(written after the seats)_
+### Architectural Assessment
+
+Sound as a set of guards added to four subsystems by eight hands in one night, with the cost that shape carries: the same grammar in five copies with the same hole, one reader that never got it, two readers of one file that disagree, and guards whose own failure paths were not written (the snapshot worklist, the safety copy, the hooks' scan). The seats' sixteen Highs are almost all that shape -- a guard added in the round that fails open on its own error -- which is the register's oldest lesson (blindspots 13, 22, 33) applied to the fixes for the register's oldest lesson.
+
+### Cornerstone Alignment
+
+MEDIUM. `engineering-practices.md` § Guards must fail closed is met by the first deliveries and broken by their follow-ups in seven places (02 § Verification); `upgrade-and-install.md`'s Already-written answer is missing for two things earlier builds left (a credential in a persistent log, BS-1; a hand-edited conf the new grammar refuses, G2-A-05); the outcome vocabulary is kept (`vocabulary-check` 0 wrong; the two integrator sentences in the table, `es-player-text.md` behind by those two, G2-A-04); the public docs gate (`documentation-accuracy.md`) is unmet and tracked (#42).
+
+### Cross-System Interactions
+
+Seven pairs identified and read (§ 3.5); the seats named the same ones. Two intersections the VM has not shown on `1b0d233657`: the upgrade rehearsal (the QA pair was busy; its own wait cannot fail, BS-5) and a capture blocked on `cloud_capture`'s lock (bounded by the hung rule). One seam defect confirmed (BS-2, the two config readers); one seam the seats disputed and the orchestrator holds as accepted risk (the pid-only settings lock, D-INFRA-012).
+
+### Spec Drift
+
+Recorded divergences, none silent (§ 3.3). The acceptance text of #307 was met on the streams' reports and the fix audit's verdicts; this audit's seats, given the whole branches and no plan, read 48 item-seat pairs weaker -- packet scope for most, and mechanism for the Mediums listed.
+
+### Missing Artifacts
+
+The upgrade rehearsal on `1b0d233657`; a second seat over the follow-ups (this audit); the public docs (#42); scripts for E1's follow-up proofs, three of E2's and the migration on a backend; a case for the CR hole and for each of the seven fail-open follow-ups; the lint's coverage of this audit's own ids (fixed while it ran).
