@@ -4053,4 +4053,30 @@ PATH="${LG}/shim:${SA}/nbin:${PATH}" bash -c ". '${LG}/fns.sh'; log_message() { 
 lg_rc=$?; lg_dt=$(( $(date +%s) - lg_t0 ))
 [ "${lg_rc}" -eq 0 ] && [ "${lg_dt}" -ge 7 ]; check $? "a copy that lists for 8 s with the Listed count climbing is not ended by a 3 s stall ceiling (rc ${lg_rc}, ${lg_dt}s)" "rc ${lg_rc} after ${lg_dt}s -- the listing read as no progress and the run was ended as a stall (claude F-CS-13)"
 
+# A31. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-01,
+#      High): a verification is the check's exit status and an exact count.
+#      Both `relocate` and `resumable` grepped the output for "0 differences
+#      found", which "10 differences found" contains, and never read the
+#      exit status -- so a check that found ten changed files moved the
+#      pointer and deleted them, and a destination holding ten other
+#      versions of the same names read as a partial copy to resume into.
+echo "    A31. G-A-01 (gpt): a check that found 10 differences is a failed check"
+mg_seed
+rm -rf "${MG}/cloud/GAMES/savefiles"; mkdir -p "${MG}/cloud/GAMES/savefiles/gb"
+for n in 0 1 2 3 4 5 6 7 8 9; do echo "save ${n}" > "${MG}/cloud/GAMES/savefiles/gb/S${n}.srm"; done
+# Ten saves change between the copy and the check: the check finds exactly
+# ten differences, and says so in a line that ends "0 differences found".
+printf '%s\t%s\n' '^copy qa:/GAMES qa:/ROCKNIX/Saves' 'for f in /cloud/GAMES/savefiles/gb/S*.srm; do echo newer >> "${f}"; done' > "${MG}/ctl/post"
+sa_run "${MG}" cloud_migrate_layout --apply
+ga01_left=$(ls "${MG}/cloud/GAMES/savefiles/gb" 2>/dev/null | grep -c '^S[0-9]\.srm$')
+[ "${ga01_left}" -eq 10 ] && [ "$(mg_ptr SAVES_REMOTE)" = "/GAMES" ] && [ "${RC}" -ne 0 ]; check $? "G-A-01: a check that found 10 differences keeps all ten saves and SAVES_REMOTE where they were (rc ${RC})" "${ga01_left} of 10 saves left in the old folder; SAVES_REMOTE '$(mg_ptr SAVES_REMOTE)'; rc ${RC}; out: $(sa_tail "${MG}") -- '10 differences found' matched the substring '0 differences found'"
+mg_seed
+rm -rf "${MG}/cloud/GAMES/savefiles"; mkdir -p "${MG}/cloud/GAMES/savefiles/gb" "${MG}/cloud/ROCKNIX/Saves/savefiles/gb"
+for n in 0 1 2 3 4 5 6 7 8 9; do
+    echo "this device ${n}" > "${MG}/cloud/GAMES/savefiles/gb/S${n}.srm"
+    echo "another library ${n}" > "${MG}/cloud/ROCKNIX/Saves/savefiles/gb/S${n}.srm"
+done
+sa_run "${MG}" cloud_migrate_layout --apply
+[ "${RC}" -eq 4 ] && [ "$(cat "${MG}/cloud/ROCKNIX/Saves/savefiles/gb/S3.srm" 2>/dev/null)" = "another library 3" ] && [ -f "${MG}/cloud/GAMES/savefiles/gb/S3.srm" ]; check $? "G-A-01: a new folder holding ten other versions of the same names is not a copy to resume into: refused, both untouched (rc ${RC})" "rc ${RC}; new folder's S3.srm reads '$(cat "${MG}/cloud/ROCKNIX/Saves/savefiles/gb/S3.srm" 2>/dev/null)'; out: $(sa_tail "${MG}") -- resumable() read '10 differences found' as none"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

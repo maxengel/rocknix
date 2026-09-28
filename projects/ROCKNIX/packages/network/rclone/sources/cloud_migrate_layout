@@ -191,6 +191,18 @@ exists() {
     printf '%s\n' "${LISTING}" | grep -qxF -- "${name}/"
 }
 
+# Did a `rclone check` find the two sides the same? Only when it says so
+# both ways: its exit status is 0, and its count of differences is exactly
+# zero. The count alone was the test here, as a substring -- and "10
+# differences found" contains "0 differences found", so a check that found
+# ten changed files let the pointer move and the old folder go, and a new
+# folder holding ten other versions of the same names read as a partial
+# copy to resume into (the audit of the fixes to #307, G-A-01).
+check_clean() { # <rclone check's exit status> <its output>
+    [ "$1" -eq 0 ] 2>/dev/null || return 1
+    printf '%s\n' "$2" | grep -qE '(^|[^0-9])0 differences found'
+}
+
 # Relocate a folder by copy, verify, delete -- never `rclone move`.
 #
 # move deletes as it goes, so an interruption -- a handheld dropping off wifi is
@@ -248,7 +260,7 @@ relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
     fi
     say "Verifying ${what}..."
     out=$(rclone check "${src}" "${dst}" --files-from-raw "${list}" --one-way "${CHECK_OPTS[@]}" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>&1)
-    if ! printf '%s\n' "${out}" | grep -q "0 differences found"; then
+    if ! check_clean $? "${out}"; then
         printf '%s\n' "${out}" | grep -iE "differ|missing|error" | head -3
         say "The copy of ${what} didn't match, so the old folder was kept. Both folders are as they were."
         rm -f "${list}"
@@ -286,7 +298,7 @@ set_pointer() { # <key> <remote path>
 resumable() {
     local src="$1" dst="$2" out
     out=$(rclone check "${dst}" "${src}" --one-way "${CHECK_OPTS[@]}" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>&1)
-    printf '%s\n' "${out}" | grep -q "0 differences found"
+    check_clean $? "${out}"
 }
 
 # What cloud_sync_helper would have derived CONTENT_REMOTE to be for a given
