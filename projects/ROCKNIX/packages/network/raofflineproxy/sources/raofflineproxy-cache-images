@@ -116,11 +116,13 @@ CURSOR = image_cache.IMAGE_CACHE_DIR / "verify-cursor"
 # line. A pass does not ask for them again and they are no failure of it: a
 # badge the server never had used to fail every scan for good (#307 PL-060's
 # follow-up). A timeout, a 5xx, a refused connection or a short read is not
-# recorded: it fails the pass and is asked for next time. An entry older than
-# ABSENT_RECHECK_SECONDS is asked for once more, so an image the server adds
-# later is not missed for ever -- one request a month for each.
+# recorded: it fails the pass and is asked for next time. An entry a day old
+# is asked for once more: a badge answered 404 while a new set's images were
+# still reaching the image server comes the next day rather than a month on
+# (audit of the fixes, claude G-D-14), for one request a badge a day at most,
+# and only on a day a pass runs.
 ABSENT_FILE = image_cache.IMAGE_CACHE_DIR / "absent"
-ABSENT_RECHECK_SECONDS = 30 * 24 * 3600
+ABSENT_RECHECK_SECONDS = 24 * 3600
 IMAGE_ABSENT = getattr(image_cache, "IMAGE_ABSENT", "absent")
 
 # Smaller than any real badge: a PNG needs a signature, an IHDR and an IEND,

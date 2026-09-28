@@ -4375,4 +4375,45 @@ else
     echo "    SKIP  claude G-D-11's source check: PPSSPP ${PPV:0:10} is not in a sources cache on this machine"
 fi
 
+# D31. claude G-D-14: a badge answered 404 while a new set's images were
+# still reaching the image server is asked for again the next day, not a
+# month on -- a day's wait is one request a badge, and a new set's badges
+# land within it. An absent entry a day old or more is asked for once more;
+# one younger is not.
+if [ "${DT_OK}" -eq 1 ]; then
+python3 - "${DD}/raofflineproxy-cache-images" "${CLIENT}" "${DD}/d31" > "${DD}/d31.out" 2>&1 <<'EOS'
+import json, os, subprocess, sys, time
+from pathlib import Path
+helper, client, work = sys.argv[1], sys.argv[2], Path(sys.argv[3])
+cfg = work / "cfg"; site = work / "site"
+for d in (cfg, site): d.mkdir(parents=True, exist_ok=True)
+(site / "sitecustomize.py").write_text(
+    "import os, urllib.error\n"
+    "import raofflineproxy.auth as _auth\n"
+    "_auth.resolve_credentials = lambda *a, **k: {'user': 'qa', 'token': 't'}\n"
+    "import raofflineproxy.image_cache as _ic\n"
+    "def _fetch(url, headers, timeout=10.0, _redirects=3):\n"
+    "    with open(os.environ['D_CALLS'], 'a') as f: f.write(url.rsplit('/', 1)[-1] + '\\n')\n"
+    "    raise urllib.error.HTTPError(url, 404, 'Not Found', {}, None)\n"
+    "_ic.fetch_static_asset = _fetch\n")
+os.environ["RAOFFLINEPROXY_CONFIG_DIR"] = str(cfg)
+sys.path.insert(0, client)
+from raofflineproxy import cache_keys, image_cache
+from raofflineproxy.storage import Storage
+st = Storage()
+badges = [{"ID": 9400 + i, "Flags": 3, "BadgeURL": f"https://media.retroachievements.org/Badge/{9400 + i}.png"} for i in (1, 2)]
+st.upsert_cache(cache_keys.patch(3, "qa"), json.dumps({"Success": True, "PatchData": {"ID": 3, "Achievements": badges}}))
+st.close()
+now = int(time.time())
+image_cache.IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+(image_cache.IMAGE_CACHE_DIR / "absent").write_text(f"{now - 2 * 86400} /Badge/9401.png\n{now - 3600} /Badge/9402.png\n")
+calls = work / "calls"; calls.write_text("")
+env = dict(os.environ, PYTHONPATH=f"{site}:{client}", HOME=str(work), D_CALLS=str(calls))
+p = subprocess.run([sys.executable, helper, "--seconds", "20"], env=env, capture_output=True, text=True, timeout=60)
+asked = calls.read_text().split()
+print(("PASS" if "9401.png" in asked and "9402.png" not in asked and p.returncode == 0 else "FAIL") + f" recheck: asked {asked}, exit {p.returncode}")
+EOS
+grep -q '^PASS recheck:' "${DD}/d31.out"; check $? "claude G-D-14: an absent badge found two days ago is asked for again; one found an hour ago is not ($(sed -n 's/^PASS recheck: //p' "${DD}/d31.out"))" "claude G-D-14: $(grep 'recheck:' "${DD}/d31.out" || tail -3 "${DD}/d31.out" | tr '\n' '|') -- a 404 during a set's arrival silenced for a month"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
