@@ -3813,4 +3813,53 @@ else
     echo "    SKIP  the d13c predicates: section t did not run"
 fi
 
+# D14. #308 9-emulators claude F-EM-03 = gpt F-EM-03, claude F-EM-09 = gpt
+# F-EM-05: cheevos_armsx2.sh leaves secrets.ini with one [Achievements]
+# section holding one Token line, whatever it held before -- a second
+# [Achievements] header (the shape the pre-#170 script appended on a device
+# whose PCSX2.ini lacked the section), an empty file, no file -- and keeps
+# every other line; a second launch changes nothing. Run whole, with the
+# image's busybox for sed and awk (the device's), as section w runs it.
+src_of "projects/ROCKNIX/packages/emulators/standalone/armsx2-sa/scripts/cheevos_armsx2.sh" "${DD}/cheevos_armsx2.sh"
+DA="${DD}/armsx2"; DAI="${DA}/storage/.config/ARMSX2/inis"; mkdir -p "${DAI}" "${DA}/repo" "${DA}/shim"
+cp "${DD}/cheevos_armsx2.sh" "${DA}/repo/cheevos_armsx2.sh"
+DABB=(); DAPATH="/shim:/usr/bin:/bin"
+if [ -n "${BB}" ]; then DABB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB_HOST}" "${BB}"); DAPATH="/shim:/bbin:/usr/bin:/bin"; fi
+cat > "${DA}/profile" <<PEOF
+export PATH=${DAPATH}
+get_setting() {
+    case "\$1" in
+        global.retroachievements) echo 1 ;;
+        global.retroachievements.username) echo player ;;
+        global.retroachievements.token) echo TOKEN-NEW ;;
+        *) echo 0 ;;
+    esac
+}
+PEOF
+dar() { # one launch's script; rc in $RC
+    RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${DABB[@]}" \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${DA}/profile" /etc/profile \
+        --bind "${DA}/storage" /storage --ro-bind "${DA}/shim" /shim --ro-bind "${DA}/repo" /repo \
+        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var \
+        bash /repo/cheevos_armsx2.sh > "${DA}/out" 2>&1; echo $? ) 2>/dev/null )
+}
+dasecrets() { printf "$1" > "${DAI}/secrets.ini"; }
+dashape() { # <name> <expected other lines, | separated>: one header, one Token, the others kept, a second launch a no-op
+    local want="$2" n_hdr n_tok other
+    n_hdr=$(grep -cFx '[Achievements]' "${DAI}/secrets.ini" 2>/dev/null); n_tok=$(grep -c '^Token *=' "${DAI}/secrets.ini" 2>/dev/null)
+    other="$(grep -v '^Token *=' "${DAI}/secrets.ini" 2>/dev/null | grep -vFx '[Achievements]' | grep -v '^$' | tr '\n' '|')"
+    cp "${DAI}/secrets.ini" "${DA}/first" 2>/dev/null; dar
+    [ "${n_hdr:-0}" -eq 1 ] && [ "${n_tok:-0}" -eq 1 ] && grep -qx 'Token = TOKEN-NEW' "${DAI}/secrets.ini" && [ "${other}" = "${want}" ] && cmp -s "${DA}/first" "${DAI}/secrets.ini" \
+        && awk '/^\[Achievements\]$/{a=1; next} /^\[/{a=0} /^Token *=/{exit !a} END{}' "${DAI}/secrets.ini"
+    check $? "#308 F-EM-03/05/09 cheevos_armsx2.sh, $1: one [Achievements], one Token (the current one) inside it, the rest kept, the next launch changes nothing" "#308 F-EM-03/05/09 cheevos_armsx2.sh, $1: rc ${RC}; secrets.ini: $( { tr '\n' '|' < "${DAI}/secrets.ini"; } 2>/dev/null || echo absent) (want the other lines '${want}')"
+}
+printf '[Achievements]\nEnabled = true\nUsername = player\n' > "${DAI}/PCSX2.ini"
+dasecrets '[Achievements]\nToken = old\n[Achievements]\nToken = old\n'; dar; dashape "two headers, a Token under each (claude's shape)" ""
+dasecrets '[Achievements]\nToken =\n[Achievements]\nToken = old\n'; dar; dashape "the seed's bare Token, then a second header (gpt's shape)" ""
+dasecrets '[Other]\nKey = 1\n[Achievements]\nToken = x\nFoo = bar\n[More]\nZ = 2\n[Achievements]\nToken = y\nBaz = 3\n'; dar; dashape "two sections apart, other sections and keys" "[Other]|Key = 1|Foo = bar|Baz = 3|[More]|Z = 2|"
+: > "${DAI}/secrets.ini"; dar; dashape "an empty file" ""
+rm -f "${DAI}/secrets.ini"; dar; dashape "no file" ""
+dasecrets '[Achievements]\nToken = old\n'; dar; dashape "the ordinary file" ""
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
