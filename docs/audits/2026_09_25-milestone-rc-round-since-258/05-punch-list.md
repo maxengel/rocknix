@@ -1,7 +1,7 @@
 # Punch List — the whole feature drop, both repositories, against upstream
 **Generated:** 2026-09-28
 **Source Audit:** `docs/audits/2026_09_25-milestone-rc-round-since-258/04-analysis.md`
-**Total Items:** 78 (Critical: 1, High: 29, Medium: 42, Low: 6)
+**Total Items:** 80 (Critical: 1, High: 30, Medium: 43, Low: 6) -- PL-079 and PL-080 added 2026-09-28 from stream A's reading
 ---
 
 ## Instructions for Executing Agent
@@ -642,6 +642,24 @@ Each item is one fix with its acceptance named; items are ordered by severity, t
 - **What:** Fix in the fork's hook; never ships.
 - **Acceptance:** the hook's own test
 
+## PL-079: A content match could delete N64 `.fla` saves
+- **Severity:** High
+- **Category:** Data loss
+- **Source Finding:** gpt F-CS-02 (Critical as filed; missed by the verification pass -- its number is shared with the Claude seat's F-CS-02)
+- **Owner area:** cloud_content_backup / cloud_content_restore
+- **Where:** projects/ROCKNIX/packages/network/rclone/sources/cloud_sync-rules.txt:27; cloud_content_backup (the content excludes); cloud_content_restore (`--match`)
+- **What:** The saves allowlist adds `.fla`, but the content tier's exclusions did not, so a `.fla` game save under a system folder counted as content to upload, overwrite or delete on a match. Fixed by stream A (`ff2bdc65a6`): `.fla` is the saves tier's in both content scripts.
+- **Acceptance:** the scripts test's case A25: a match over a system holding `Game.fla` plans no removal of it (FAIL on the old tree: `plan 'n64|remove|2|15'; Game.fla DELETED`)
+
+## PL-080: A long cloud listing was read as a stall and ended the automatic run
+- **Severity:** Medium
+- **Category:** Correctness
+- **Source Finding:** claude F-CS-13 (fell through both lists)
+- **Owner area:** cloud_backup
+- **Where:** cloud_backup (the automatic run's stall ceiling)
+- **What:** The stall bound saw no bytes moving during a large listing and ended the run at the ceiling. Fixed by stream A (`fd6878278a`): a growing listing is progress towards the ceiling.
+- **Acceptance:** the scripts test's case A30: a listing that grows for longer than the stall bound completes (FAIL on the old tree: `rc 124 after 4s`)
+
 ---
 
 ## Phase 7 resolution gate
@@ -728,6 +746,8 @@ Recorded per item as it is resolved: the outcome (resolved / deferred / rejected
 | PL-076 | Low | | |
 | PL-077 | Low | | |
 | PL-078 | Low | | |
+| PL-079 | High | | |
+| PL-080 | Medium | | |
 
 ## Punch index
 
@@ -1356,5 +1376,21 @@ punch_index:
   owner_area: "EmulationStation fork's pre-push"
   where: "the ES fork's `.githooks/pre-push`"
   acceptance: "the hook's own test"
+  outcome: open
+- id: PL-079
+  severity: High
+  category: "Data loss"
+  source_finding: "gpt F-CS-02 (Critical as filed; missed by the verification pass -- its number is shared with the Claude seat's F-CS-02)"
+  owner_area: "cloud_content_backup / cloud_content_restore"
+  where: "projects/ROCKNIX/packages/network/rclone/sources/cloud_sync-rules.txt:27; cloud_content_backup (the content excludes); cloud_content_restore (`--match`)"
+  acceptance: "the scripts test's case A25: a match over a system holding `Game.fla` plans no removal of it (FAIL on the old tree: `plan 'n64|remove|2|15'; Game.fla DELETED`)"
+  outcome: open
+- id: PL-080
+  severity: Medium
+  category: "Correctness"
+  source_finding: "claude F-CS-13 (fell through both lists)"
+  owner_area: "cloud_backup"
+  where: "cloud_backup (the automatic run's stall ceiling)"
+  acceptance: "the scripts test's case A30: a listing that grows for longer than the stall bound completes (FAIL on the old tree: `rc 124 after 4s`)"
   outcome: open
 ```

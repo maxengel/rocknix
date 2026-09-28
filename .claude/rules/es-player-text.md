@@ -272,7 +272,18 @@ SETTINGS BACKUP IS DAMAGED`, `THE COPY IN YOUR CLOUD ISN'T COMPLETE`, `YOUR
 CLOUD SYNC SETTINGS COULDN'T BE READ`, `AN OLD FOLDER SETTING IS IN THE WAY`,
 `COULDN'T TELL WHICH CARD YOUR SAVES ARE ON`, `YOUR SAVES CHANGED CARDS
 PART-WAY THROUGH`, and `SOME FILES DIDN'T FINISH` for rclone 6 (2026-09-10,
-#105 tranche A; reworded into everyday words 2026-09-10, #108); `backuptool`
+#105 tranche A; reworded into everyday words 2026-09-10, #108); since the
+audit's fixes (2026-09-28, #307): `SOMETHING CHANGED SINCE YOU CHECKED` (a match
+refused because the cloud no longer matches the preview), `COULDN'T RECORD WHICH
+CARD YOUR SAVES ARE ON`, `THE NEW FOLDER ALREADY HAS FILES IN IT` (the layout
+migration's refusal), the stamp why `YOU WENT OFFLINE PART-WAY THROUGH` (a run the
+network cut after files moved, stamped `69 gaps`), `SOME ACHIEVEMENT IMAGES
+COULDN'T BE SAVED` (the scan page adds `TRY THE SCAN AGAIN.`), and `backuptool`'s
+`A SIGN-IN WAS FOUND IN THE BACKUP`, `THERE'S NOTHING TO BACK UP YET`, `A SETTINGS
+BACKUP OR RESTORE IS ALREADY RUNNING`, `YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP
+CAN'T CARRY`, `THIS DEVICE CAN'T RESTORE SETTINGS. SOMETHING IT NEEDS IS MISSING FROM
+THIS BUILD.` -- proposed by the fix streams, built with the proposed words, and put
+to the maintainer (D-UI-112); `backuptool`
 prints its own on the console flows (`THERE'S NO SETTINGS BACKUP ON THIS
 DEVICE YET`, `THIS DEVICE'S SETTINGS BACKUP IS DAMAGED`, `COULDN'T KEEP A COPY
 OF YOUR CURRENT SETTINGS`, `THE RESTORE COULDN'T FINISH`, ...). **The stamp's
