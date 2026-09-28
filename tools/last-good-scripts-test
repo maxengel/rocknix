@@ -3540,7 +3540,7 @@ cp_seed; cp_exit
 echo "a seal another capture just placed" > "${CP}/storage/.cache/cloud_sync/stage/$(printf 'x%.0s' 1 | sha256sum | cut -c1-64)"
 echo "state one, rewritten" > "${CP}/storage/roms/savestates/gb/Game.state1"
 cp_exit
-[ -f "${CP}/storage/.cache/cloud_sync/stage/$(printf 'x%.0s' 1 | sha256sum | cut -c1-64)" ]; check $? "PL-067: a stage seal placed moments ago and not yet in the manifest survives another capture's GC" "the fresh seal was collected -- another capture's pending version (F-CS-14)"
+[ "${RC}" -eq 0 ] && [ -f "${CP}/storage/.cache/cloud_sync/stage/$(printf 'x%.0s' 1 | sha256sum | cut -c1-64)" ]; check $? "PL-067: a stage seal placed moments ago and not yet in the manifest survives another capture's GC (rc ${RC}: the capture ran its GC)" "rc ${RC}; the fresh seal was collected -- another capture's pending version (F-CS-14) -- or the capture ended before its GC"
 
 # #308 claude F-CS-20: the clock query on the game-exit path is bounded.
 cp_seed; touch "${CP}/ctl/slowclock"
@@ -4003,8 +4003,7 @@ of_stamp=$(cut -d' ' -f2- "${OF}/storage/.cache/cloud_sync/last-backup" 2>/dev/n
 [ "${RC}" -eq 69 ] && [ -f "${OF}/cloud/ROCKNIX/Saves/gb/New.srm" ] && echo "${of_stamp}" | grep -q '^69 gaps .'; check $? "a deliberate backup whose saves phase sent a file before the network went exits 69 and stamps '69 gaps <why>' (stamp: ${of_stamp:-none})" "rc ${RC}; New.srm in the cloud: $([ -f "${OF}/cloud/ROCKNIX/Saves/gb/New.srm" ] && echo yes || echo no); stamp '${of_stamp:-none}'"
 rm -f "${OF}/ctl/noroute" "${OF}/ctl/noping"; : > "${OF}/ctl/post"; : > "${OF}/ctl/fail"
 touch "${OF}/ctl/noroute" "${OF}/ctl/noping"
-printf '%s	%s
-' '^copy qa:/ROCKNIX/Content/ROMs/gb ' 1 > "${OF}/ctl/fail"
+printf '%s\t%s\n' '^copy qa:/ROCKNIX/Content/ROMs/gb ' 1 > "${OF}/ctl/fail"
 sa_run "${OF}" cloud_content_restore gb
 of_stamp=$(cut -d' ' -f2- "${OF}/storage/.cache/cloud_sync/last-content-restore" 2>/dev/null)
 [ "${RC}" -eq 69 ] && [ "${of_stamp}" = 69 ]; check $? "while a run the network ends before any unit completed is still the skip: a bare 69 (rc ${RC}, stamp ${of_stamp:-none})" "rc ${RC}; stamp '${of_stamp:-none}'"
