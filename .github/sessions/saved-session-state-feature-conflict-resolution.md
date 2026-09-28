@@ -1,42 +1,28 @@
 # Saved Session State
 
-> **Saved**: 2026-09-28T00:31:06Z
+> **Saved**: 2026-09-28T03:47:32Z
 > **Branch**: feature/conflict-resolution (the session worktree; the work lives on `next` in /workspace/repos/rocknix)
 > **Repo**: maxengel/rocknix (upstream ROCKNIX/distribution)
 
 ## Current Focus
 
-Audit Phase 7 is running as eight Opus 5.5 subagent streams (D-WORKFLOW-054/055/056), launched 00:27 UTC 2026-09-28, each in its own worktree on the punch items (#307, 78) and the sweep rows (#308, 297) of its area. This lane integrates when they report, builds one chain, runs the QA, records every outcome, then runs the code-auditor over the fixes (D-WORKFLOW-057) before the candidate is rebuilt. The RG35XX SP copy and reboot of `7911c53bb4` still await the maintainer's yes.
+Audit Phase 7 (#307, 81 items; #308, 297 rows): all eight Opus streams delivered and are merged -- `next` at the pin bump `3d833e0639` (local; its push is refused by the guard on two of stream B's fixture commits in history, the maintainer's call), the ES branch `test/qa-integration` at `c0f4f4da0` pushed. `chain-86.sh` (x64 run 86, H700 run 64, vm-qa 68, proof-298) started 03:46 UTC on BUILD_ID `3d833e0639`; a harness waiter (`chain-86.rc`) wakes the lane. Then the proofs in `/workspace/tmp/rocknix-session/proofs-307.md`, the Phase 7 outcomes in `05-punch-list.md` (table + YAML, `tools/lint-audit-artifacts ... --issue 307`), the ticks on #307 and the tables on #308, then the fix audit (D-WORKFLOW-057, task #12).
 
 ## Completed This Session
 
-- `7911c53bb4` proven on the VM (#304/#305/#306 ticked with frames); the milestone audit through Phase 6 (#307, #308); D-QA-053 settled (GENERIC_X64 is a developer's tool); D-WORKFLOW-054..057 recorded; the eight briefs generated from the audit's verdicts and kept under the audit folder's `streams/briefs/`; `next` at `9b7bdf8da1`, pushed.
-
-## In Progress
-
-- **The streams** (worktrees `/workspace/repos/rocknix.worktrees/pl-{a,b,c,d,f1,f2}` from `next` at `417dcd8610`; `~/Development/emulationstation-next.worktrees/pl-{e1,e2}` from `test/qa-integration` at `7eae8ed91`); each writes `/workspace/tmp/rocknix-session/streams/<X>-report.md` when done.
-  - **What remains**: read each report; `./integrate-pl.sh a b c d f1 f2` and `e1 e2` from /workspace/tmp/rocknix-session (merges, pkgcheck, es-syntax-check, the scripts test); resolve the scripts test's appended blocks by keeping all; push ES, bump the pin in `projects/ROCKNIX/packages/ui/emulationstation/package.mk`; a chain (x64 + H700 from one sync); vm-qa all suites, frame-diff, proof-298, cloud-round-trip; the Phase 7 table and YAML in `05-punch-list.md` (`tools/lint-audit-artifacts ... --issue 307`), tick #307, fill #308's tables; then task #12 (the fix audit).
+- The eight streams' reports are under the audit folder's `streams/reports/`; every merge logged in `00-running-log.md` with the harness result (scripts test 841 PASS; ES suites 160/1706 etc.).
+- Two corrections to the audit recorded (F-RS-04's refutation wrong for cloud_remote; gpt F-CS-02 missed -- blindspot 66, `tools/lint-audit-artifacts` keyed by seat and number).
+- Register: D-QA-053 settled, D-WORKFLOW-054..057, D-RA-039/040, D-UI-110..113, D-CLOUD-141..145, D-NET-012/013 open; the rules' drift corrected.
 
 ## Next Steps
 
-1. When a stream reports: review its diff against its brief (the verdict's lines), integrate, run the harness, record.
-2. When all eight are in and the harnesses pass: the chain, the QA, the outcomes, the fix audit (code-auditor, two seats, #307/#308 acceptances as criteria).
-3. The device: only on the maintainer's yes, `stage-and-reboot-7911c53bb4.sh` (or the next cut's twin once the fixes are built).
-
-## Key Files Modified
-
-| File | Change | Notes |
-| --- | --- | --- |
-| `docs/audits/2026_09_25-milestone-rc-round-since-258/streams/briefs/*.md` | Created | the plan the streams execute |
-| `docs/decision-register.md` | Modified | D-QA-053 decided; D-WORKFLOW-054..057 |
-| `/workspace/tmp/rocknix-session/integrate-pl.sh` | Created | merge + harness per stream, stops at the first failure |
+1. When chain-86.rc lands: read chain-86.log, vmqa-run68.log, proof-298.rc; write records (`records-<bid>.py` from records-7911c53bb4.py), the QA log row, the catalog; run `proofs-307.md`'s items on guest d (frames at 640x480 to `docs/qa-frames/2026-09-28/`); the rehearsal from the 7911c53bb4 image (`tools/vm-upgrade-rehearsal`).
+2. Record every PL outcome (resolved with the stream's commit and the proof; deferred #256 for PL-081; open where a proof failed) in the Phase 7 table and YAML; lint with `--issue 307`; tick #307; fill #308's tables from the reports (fixed/withdrawn per row).
+3. The fix audit (task #12): code-auditor over `417dcd8610..<head>` and `7eae8ed91..c0f4f4da0`, both seats.
+4. Put to the maintainer: the history rewrite for the push (index-filter over `9b7bdf8da1..next`, blob map in `blob-map.json`), D-UI-111 (M+ 1p), D-NET-012/013, the proposed player words (D-UI-112, B's ten), and the copy/reboot yes for the rebuilt candidate.
 
 ## Notes for Next Session
 
-- The Agent tool notifies on each stream's completion; a Monitor on `/workspace/tmp/rocknix-session/streams/` is the second channel. If a stream's result is null, read its transcript (memory: recover a timed-out agent from its transcript) before re-running anything.
-- Timestamps come from `date -u` at the moment of writing, never estimated (twice wrong tonight).
-- The gpt seat refuses `--transport sse`; packets over ~500 KB are split by path.
-
-## Open Questions
-
-- The maintainer's yes for the copy and the reboot of `7911c53bb4` (or of the rebuilt candidate after the fixes).
+- The pl-* worktrees (6 distribution, 2 ES) stay until the fix audit is done; remove with `tools/fork-worktree remove`.
+- `integrate-pl.sh` merges a stream and runs the harness; conflicts are the appended harness blocks (keep all).
+- Never rewrite history without the maintainer's word: the harness refused `git filter-branch` as destructive, rightly.
