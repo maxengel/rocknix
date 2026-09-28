@@ -3600,7 +3600,7 @@ def load_remote(tag="r"):
                 'd="$(dirname "$0")"; printf "%s\\n" "$*" >> "$d/argv"\n'
                 'case "$1 $2" in\n'
                 '  "config providers") echo \'[{"Name":"webdav","Options":[{"Name":"url"},{"Name":"pass","IsPassword":true}]}]\' ;;\n'
-                '  "listremotes "*) [ -e "$d/listremotes-fails" ] && { echo "Failed to load config file" >&2; exit 1; }; cat "$d/remotes" 2>/dev/null ;;\n'
+                '  "listremotes "*) [ -e "$d/listremotes-fails" ] && { echo "Failed to load config file" >&2; exit 1; }; cat "$d/remotes" 2>/dev/null; exit 0 ;;\n'
                 '  "config create") echo "Failed to create remote: bad option pass=$(echo "$*" | sed -n "s/.*pass=\\([^ ]*\\).*/\\1/p")" >&2; exit 1 ;;\n'
                 '  *) exit 0 ;;\n'
                 'esac\n')
@@ -3924,6 +3924,35 @@ def coexists_with_the_offline_proxy():
     result(up and st.get("status") == "waiting",
            "with something on 127.0.0.1 of the same port (the offline achievements proxy's 127.0.0.1:8080), the serve still comes up on the LAN address",
            "with 127.0.0.1:8434 held the serve reached %r (%s) -- a 0.0.0.0 bind cannot share a port with the proxy" % (st.get("status"), st.get("error")))
+EOPY
+# #308 gpt F-RS-23: a listremotes that fails is not an absent remote, in both creators.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+@test
+def listremotes_failure_is_not_absence():
+    """#308 gpt F-RS-23 (the cloud_oauth half): a listremotes that fails is
+    not "no remote of that name"."""
+    m, d = load("rs23")
+    sp = FakeSP([(["listremotes"], lambda a: completed(a, 1, "", "config file unreadable"))])
+    m.subprocess = sp
+    s = m.Session("dropbox", "qa", 60)
+    s.token = '{"access_token":"t"}'
+    ok, detail = s._write_config()
+    creates = [c for c in sp.calls if c[1:3] == ["config", "create"]]
+    result(not ok and not creates, "a listremotes that fails stops the create (%s)" % detail,
+           "listremotes failed and the create ran anyway (%d create call(s)) -- an enumeration error read as absence (#308 gpt F-RS-23)" % len(creates))
+
+
+@test
+def remote_listremotes_failure_is_not_absence():
+    """#308 gpt F-RS-23 (the cloud_remote half)."""
+    m, d = load_remote("rs23r")
+    open(os.path.join(d, "listremotes-fails"), "w").close()
+    rc = m.main(["cloud_remote", "create", "saves", "webdav", "url=https://dav.example"])
+    argv = open(os.path.join(d, "argv")).read() if os.path.exists(os.path.join(d, "argv")) else ""
+    result(rc != 0 and "config create" not in argv,
+           "cloud_remote create refuses when the existing remotes cannot be listed (rc %d)" % rc,
+           "rc %r; rclone was asked: %r -- a failed listremotes read as 'no remote called saves' and the create ran (#308 gpt F-RS-23)"
+           % (rc, [l for l in argv.splitlines() if l.startswith("config create")][:1]))
 EOPY
 # C3: new test groups go above this line
 cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'

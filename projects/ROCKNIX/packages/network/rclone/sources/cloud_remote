@@ -248,10 +248,13 @@ def cmd_choices(backend_type, field, subprovider=""):
 
 
 def existing_remotes():
-    """Configured remote names, without the trailing colon."""
+    """Configured remote names, without the trailing colon -- or None when
+    rclone could not say. A listing that failed used to read as "no remotes",
+    and cmd_create's refusal to touch an existing remote fell open exactly
+    when rclone could not be asked (#308 gpt F-RS-23)."""
     code, out, _ = rclone("listremotes", check=False)
     if code != 0:
-        return []
+        return None
     return [line.strip().rstrip(":") for line in out.splitlines() if line.strip()]
 
 
@@ -276,7 +279,11 @@ def cmd_create(name, backend_type, settings):
     match it; silently rewriting that is how someone loses access to their
     own files (see fork issue #51).
     """
-    if name in existing_remotes():
+    existing = existing_remotes()
+    if existing is None:
+        sys.stderr.write("could not read the configured remotes; not creating one\n")
+        return 2
+    if name in existing:
         sys.stderr.write(
             "remote '%s' already exists; not modifying it\n" % name)
         return 1

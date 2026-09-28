@@ -397,9 +397,17 @@ class Session:
 
     def _create_remote(self):
         name = self.remote_name or self.backend
-        existing = subprocess.run([RCLONE, "listremotes"],
-                                  capture_output=True, text=True).stdout
-        if "%s:" % name in existing.split():
+        # Which remotes exist, or no create at all: a listing that failed
+        # read as "none of that name" and the create went ahead over
+        # whatever was there (#308 gpt F-RS-23).
+        listed = subprocess.run([RCLONE, "listremotes"],
+                                capture_output=True, text=True)
+        if listed.returncode != 0:
+            log("could not list the configured remotes (exit %d); not creating one"
+                % listed.returncode)
+            return False, ("The sign-in worked, but your handheld's cloud "
+                           "settings couldn't be read.")
+        if "%s:" % name in listed.stdout.split():
             return False, "a remote called '%s' already exists" % name
 
         result = subprocess.run(
