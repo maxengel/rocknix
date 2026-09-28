@@ -3359,4 +3359,23 @@ done
 [ "${PP_x86_64}" = "0" ] && [ "${PP_aarch64}" = "1" ]; check $? "x86_64's CMakeLists.txt ends without the flag, aarch64's keeps it" "after unpack, patches and hooks: x86_64 has ${PP_x86_64:-?} add_compile_options(-mno-outline-atomics) line(s), aarch64 ${PP_aarch64:-?} -- the strip ran before the patch that adds it"
 fi
 
+# F2-7. #308 9-emulators claude F-EM-05: amiberry and yabasanshiro-sa were
+# restricted to aarch64 for every device to keep the fork's GENERIC_X64
+# build green, which also takes them off upstream's AMD64 images, where
+# upstream's cleanup (28e750db32) had opened them. The restriction is the
+# QA device's alone; AMD64 builds them as upstream does.
+echo "  F2-7. amiberry and yabasanshiro-sa stay off GENERIC_X64 without leaving upstream's AMD64 (#308 F-EM-05)"
+F2_BAD=""
+for p in amiberry yabasanshiro-sa; do
+    src_of "${F2P}/emulators/standalone/${p}/package.mk" "${F2}/${p}.mk"
+    F2_CALL='echo "${PKG_ARCH}"'
+    g="$(f2_source "${F2}/${p}.mk" GENERIC_X64 x86_64)"; a="$(f2_source "${F2}/${p}.mk" AMD64 x86_64)"; h="$(f2_source "${F2}/${p}.mk" H700 aarch64)"
+    # scripts/build: listcontains PKG_ARCH TARGET_ARCH || listcontains PKG_ARCH any || skip -- an empty PKG_ARCH builds everywhere
+    builds() { [ -z "$1" ] || [[ " $1 " == *" $2 "* ]] || [[ " $1 " == *" any "* ]]; }
+    builds "${g}" x86_64 && F2_BAD+=" ${p}:GENERIC_X64-builds"
+    builds "${a}" x86_64 || F2_BAD+=" ${p}:AMD64-skipped(PKG_ARCH=${a})"
+    builds "${h}" aarch64 || F2_BAD+=" ${p}:H700-skipped"
+done
+[ -z "${F2_BAD}" ]; check $? "GENERIC_X64 skips both, AMD64 and H700 build both" "${F2_BAD}"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
