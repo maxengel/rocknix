@@ -555,6 +555,7 @@ SAVE_EXCLUDES=(
 CONFLICT_EXCLUDES=(
     --exclude "**conflicted copy**"
     --exclude "**.sync-conflict-**"
+    --exclude "*.????????.partial"
 )
 
 # gamelist.xml travels on its own terms.
@@ -716,6 +717,21 @@ match_plan_one() {
     fi
 }
 
+# The saves restore's record that the tree under it holds no leftover of a
+# cut transfer (cloud_restore's PARTIALS_CLEAN, #308 claude F-CS-08): this
+# script writes into the same tree, so it takes the record down while it
+# writes and puts it back only when it ended by itself with nothing of its
+# own left over -- a failed unit's folder is swept for rclone's
+# <name>.<8>.partial before that. A run of this cut part-way leaves the
+# record down, and the next saves restore walks the tree (the audit of the
+# fixes, claude G-A-07: the record said clean across a content restore
+# that was cut, and the next content backup sent the leftover as a ROM).
+TREE_CLEAN=/storage/.cache/cloud_sync/restore-tree-clean
+TREE_CLEAN_AT_START=0
+tree_record_take() { [ -e "${TREE_CLEAN}" ] && TREE_CLEAN_AT_START=1; rm -f "${TREE_CLEAN}" 2>/dev/null; }
+tree_record_give() { [ "${TREE_CLEAN_AT_START}" = 1 ] && : > "${TREE_CLEAN}" 2>/dev/null; return 0; }
+sweep_partials() { [ -d "$1" ] || return 0; find "$1" -type f -name '*.????????.partial' -exec rm -f {} + 2>/dev/null; }
+
 # The plan the player agreed to (audit #307 PL-001, F-CS-03). The preview
 # writes one line per system it checked -- "<sys>|<verb>|<files>|<bytes>",
 # none included -- under a header naming the moment, whole or not at all,
@@ -834,6 +850,8 @@ match_run() {
             record_outcome content-match 1
             return 1
         fi
+        # It writes into the saves restore's tree (G-A-07).
+        tree_record_take
     else
         rm -f "${MATCH_PLAN}" 2>/dev/null
     fi
@@ -952,6 +970,7 @@ match_run() {
                     match_count "${sys}"
                     if [ ${sync_rc} -ne 0 ]; then
                         rc=${sync_rc}
+                        sweep_partials "${DEST}/${sys}"
                         # A failed unit says why: the network gone ends the
                         # run as 69 here, anything else carries rclone's own
                         # code up as before. Before the 69 exit, the running
@@ -1008,6 +1027,7 @@ match_run() {
         # --max-delete holds each system to the preview's count.
         echo ">>> removed ${total_removed}|${total_bytes}|${removed_detail}"
         log_message "match: applied, removed ${total_removed} files, rc=${rc}"
+        tree_record_give
         # The page that ran it fades; the row in the menu has to be able to
         # answer "did that work?" afterwards, like every other cloud action.
         record_outcome content-match "${rc}"
@@ -1045,6 +1065,7 @@ content_files() {
         ! -path '*/save/*' ! -path '*/memcards/*' \
         ! -path '*/shared/savefiles/*' ! -path '*/PPSSPP/*' \
         ! -path '*conflicted copy*' ! -name '*.sync-conflict-*' \
+        ! -name '*.????????.partial' \
         ! -path "${dir%/}/README.txt" \
         "${media[@]}" "$@" 2>/dev/null
 }
@@ -1105,6 +1126,7 @@ cloud_content_filter() {
           if (mode == "only" && !game) next
           if (f ~ /\.(srm|sav|fs|auto|eep|mpk|sra|fla|mcd|mcr)$/ || f ~ /\.state/ || f ~ /\.dsv/) next
           if ($2 ~ /conflicted copy/ || f ~ /\.sync-conflict-/) next
+          if (f ~ /\.[^.\/][^.\/][^.\/][^.\/][^.\/][^.\/][^.\/][^.\/]\.partial$/) next
           if (n == 2 && f == "README.txt") next
           for (i = 2; i < n; i++) {
               if (seg[i] == "save" || seg[i] == "memcards" || seg[i] == "PPSSPP") next
@@ -1420,6 +1442,7 @@ take_cloud_lock
 # exactly as they did.
 {
 UNIT_N=${#DIRS[@]}; UNIT_I=0
+tree_record_take
 for DIR in "${DIRS[@]}"; do
     SRC="$(resolve_src "${DIR}")"
     TARGET="${DEST}/${DIR}"
@@ -1477,6 +1500,9 @@ for DIR in "${DIRS[@]}"; do
     # What moved in this unit, whatever its result (G-A-08/G-A-13).
     moved_since "${UNIT_LOG0}" && PROGRESS_MADE=1
     if [ ${RC} -ne 0 ] && [ ${RC} -ne 9 ]; then
+        # What a failed transfer may have left in this unit's folder goes
+        # now (G-A-07).
+        sweep_partials "${TARGET}"
         # A failed unit says why: the network gone ends the run as 69 here,
         # anything else carries rclone's own code up as before.
         network_gone && stop_no_network restore "${RC}" "restoring ${DIR:-everything}"
@@ -1488,6 +1514,8 @@ for DIR in "${DIRS[@]}"; do
         echo "Restored ${DIR:-everything}."
     fi
 done
+
+tree_record_give
 
 # The progress card is gone by the time somebody who walked away comes back, so
 # leave the outcome where the menu can read it later. Device-local state, so it

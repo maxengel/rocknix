@@ -4554,4 +4554,38 @@ sa_run "${DC}" cloud_backup --yes --saves-only
 SA_EXTRA=()
 [ "${RC}" -eq 0 ] && [ "$(grep -c '^RCLONEOPTS=' "${DC}/storage/.config/cloud_sync.conf")" -eq 1 ] && ! grep -q "Couldn't clean up" "${DC}/out" && bash -n "${DC}/storage/.config/cloud_sync.conf"; check $? "cloud_backup --yes with that conf cleans it and goes on (rc ${RC})" "rc ${RC}; RCLONEOPTS lines $(grep -c '^RCLONEOPTS=' "${DC}/storage/.config/cloud_sync.conf"); out: $(sa_tail "${DC}")"
 
+# A49. The audit of the fixes (#307 follow-up 2; seats/A-claude.md G-A-07,
+#      Low): the restore's "tree is clean" record (F-CS-08) is kept by the
+#      saves restore alone, and a content restore writes into the same tree:
+#      one cut part-way left <name>.<8>.partial under /storage/roms with the
+#      record still saying clean, so the next saves restore did not look,
+#      and the next content backup sent the partial as a ROM.
+echo "    A49. G-A-07 (claude): a content transfer's leftovers are swept and never sent"
+cp "${RP}/storage/.config/cloud_sync.conf" "${SW}/storage/.config/cloud_sync.conf"
+grep -q '^CONTENT_REMOTE=' "${SW}/storage/.config/cloud_sync.conf" || printf 'CONTENT_REMOTE="/ROCKNIX/Content"\n' >> "${SW}/storage/.config/cloud_sync.conf"
+sa_script "${SW}" cloud_content_restore cloud_content_backup
+mkdir -p "${SW}/storage/.config/emulationstation" "${SW}/cloud/ROCKNIX/Content/ROMs/nes"
+printf '<system><path>/storage/roms/nes</path></system>\n' > "${SW}/storage/.config/emulationstation/es_systems.cfg"
+echo n > "${SW}/cloud/ROCKNIX/Content/ROMs/nes/N.nes"
+: > "${SW}/ctl/fail"; : > "${SW}/ctl/post"
+sa_run "${SW}" cloud_restore --yes --saves-only
+sw_clean_before=$([ -e "${SW}/storage/.cache/cloud_sync/restore-tree-clean" ] && echo yes || echo no)
+# The content restore is cut at its copy (the process group killed), and
+# the file rclone was writing is left behind.
+printf '%s\t%s\n' '^copy qa:/ROCKNIX/Content/ROMs/nes ' 1 > "${SW}/ctl/kill"; rm -f "${SW}/ctl/kill.count"
+sa_run "${SW}" cloud_content_restore nes
+: > "${SW}/ctl/kill"; rm -f "${SW}/ctl/kill.count"
+echo litter > "${SWP}"
+sa_run "${SW}" cloud_restore --yes --saves-only
+[ "${sw_clean_before}" = yes ] && [ ! -e "${SWP}" ]; check $? "after a content restore was cut, the next saves restore sweeps the tree (the record said clean before it: ${sw_clean_before})" "the partial is still there: the tree was recorded clean across a content restore that was cut"
+echo litter > "${SWP}"; echo n > "${SW}/storage/roms/nes/N.nes"
+sa_run "${SW}" cloud_content_backup nes
+[ "${RC}" -eq 0 ] && [ -z "$(find "${SW}/cloud/ROCKNIX/Content" -name '*.partial' | head -1)" ]; check $? "a content backup never sends a transfer's leftover as a ROM (rc ${RC})" "rc ${RC}; in the cloud: $(find "${SW}/cloud/ROCKNIX/Content" -name '*.partial' | sed "s|${SW}/cloud||" | tr '\n' ' ')"
+rm -f "${SWP}"
+# And a content restore that ends by itself gives the record back, so the
+# saves restore after it still walks nothing (F-CS-08's saving kept).
+sa_run "${SW}" cloud_restore --yes --saves-only
+sa_run "${SW}" cloud_content_restore nes
+[ "${RC}" -eq 0 ] && [ -e "${SW}/storage/.cache/cloud_sync/restore-tree-clean" ]; check $? "a content restore that completes leaves the tree recorded clean as it found it (rc ${RC})" "rc ${RC}; the record is gone -- every saves restore after a content restore would walk the library"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

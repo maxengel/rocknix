@@ -355,6 +355,7 @@ content_files() {
         ! -path '*/save/*' ! -path '*/memcards/*' \
         ! -path '*/shared/savefiles/*' ! -path '*/PPSSPP/*' \
         ! -path '*conflicted copy*' ! -name '*.sync-conflict-*' \
+        ! -name '*.????????.partial' \
         ! -path "${dir%/}/README.txt" \
         "${media[@]}" "$@" 2>/dev/null
 }
@@ -532,6 +533,7 @@ esac
 CONFLICT_EXCLUDES=(
     --exclude "**conflicted copy**"
     --exclude "**.sync-conflict-**"
+    --exclude "*.????????.partial"
 )
 
 # gamelist.xml travels on its own terms.
