@@ -3180,7 +3180,7 @@ dpending() { # the marker, the mark two hours old, no game played since
 }
 dpending; echo 1 > "${TR}/listing-fail"
 tctl topup; rm -f "${TR}/listing-fail"
-[ "${RC}" -eq 0 ] && grep -q "index could not be read" "${TLOG}" && [ -e "${TPD}/index-pending" ]; check $? "PL-055: a link-return listing for the marker that fails (rc 1) leaves index-pending (rc ${RC})" "PL-055: rc ${RC}; marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone); log: $(tr '\n' '|' < "${TLOG}" | cut -c1-240) -- the marker was consumed before the listing"
+[ "${RC}" -eq 1 ] && grep -q "index could not be read" "${TLOG}" && grep -q 'why=LIBRARY_UNREADABLE$' "${TSTAMP}" && grep -q '^smart budget=' "${TR}/probe.log" && [ -e "${TPD}/index-pending" ]; check $? "PL-055: a link-return listing for the marker that fails (rc 1) leaves index-pending; the run still does the recently played pass and ends COULDN'T FINISH, why LIBRARY_UNREADABLE (claude G-D-13) (rc ${RC})" "PL-055 / claude G-D-13: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null); marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone); log: $(tr '\n' '|' < "${TLOG}" | cut -c1-200) -- a listing that failed was stamped COMPLETED, or the marker went"
 dpending; echo 124 > "${TR}/listing-fail"
 tctl topup; rm -f "${TR}/listing-fail"
 [ "${RC}" -eq 1 ] && grep -q 'why=TOOK_TOO_LONG$' "${TSTAMP}" && [ -e "${TPD}/index-pending" ]; check $? "PL-055: a listing cut by the deadline (124): TOOK_TOO_LONG, index-pending kept" "PL-055: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null); marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone)"

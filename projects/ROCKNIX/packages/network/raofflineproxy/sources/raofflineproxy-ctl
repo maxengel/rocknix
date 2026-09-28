@@ -1973,7 +1973,7 @@ do_topup() {
     # cached -- the games added and indexed since the last run, and with a
     # library nobody scanned, as many as the deadline allows (the rest next
     # time). Nothing is hashed here.
-    local COUNTS LRC NEW=0 CACHED=0 SKIPPED=0 INDEXED=0 LIMIT=0 ERRORS=0 WHY="" LEFT ADDED=0 LISTED=0
+    local COUNTS LRC NEW=0 CACHED=0 SKIPPED=0 INDEXED=0 LIMIT=0 ERRORS=0 WHY="" LEFT ADDED=0 LISTED=0 LIST_WHY=""
     LEFT="$(time_left "${START}")"
     if [ "${LEFT}" -le 0 ]; then
         WHY=TOOK_TOO_LONG
@@ -2003,7 +2003,12 @@ do_topup() {
             WHY=TOOK_TOO_LONG
             slog "topup${AI_NOTE}: the listing did not finish inside the deadline"
         else
+            # The recently played pass still runs -- it needs no index -- but
+            # a run a part of which failed is one that could not finish
+            # (D-UI-030): the why is kept for the stamp below (audit of the
+            # fixes, claude G-D-13; it read COMPLETED before).
             slog "topup${AI_NOTE}: the interface's index could not be read; the recently played pass runs alone"
+            LIST_WHY=LIBRARY_UNREADABLE
         fi
     fi
     if [ -z "${WHY}" ] && [ "${NEW}" -gt 0 ]; then
@@ -2075,6 +2080,9 @@ print(int(r.get("cached", 0)), int(r.get("skipped", 0)), 1 if r.get("limit_reach
         slog "topup: no time left for the recently played pass (${LEFT}s)"
     fi
 
+    # A listing that could not be read is the run's why when nothing later
+    # had one of its own.
+    [ -z "${WHY}" ] && [ -n "${LIST_WHY}" ] && WHY="${LIST_WHY}"
     local READY MADE
     READY="$(count_ready)"
     # added=: the games the two passes made ready for this account, from the
