@@ -224,7 +224,9 @@ network_gone() {
 # stall for another minute against the same dead link. rclone copy and sync
 # write each file under a temporary name and rename it when complete, so
 # nothing partial is left on the card; a match's deletions had already
-# happened when the sync ran, and the cloud still holds what they removed.
+# happened when the sync ran, and they are final -- a match removes only
+# what the cloud does not have (D-CLOUD-023; #308 gpt F-CS-26: this said
+# the cloud still held them).
 stop_no_network() {
     local stamp="$1" rc="$2" doing="$3"
     echo "Couldn't finish: lost the network while ${doing}. Try again when you're online."
@@ -678,6 +680,35 @@ match_plan_of() { # <sys>: its line from the plan, or nothing
     printf '%s\n' "${MATCH_PLAN_TEXT}" | awk -F'|' -v s="$1" '$1 == s { print; exit }'
 }
 
+# What a match removed, as rclone reports it (#308 gpt F-CS-26). Before a
+# system runs, its content files are listed with their sizes by the same
+# excludes the run uses; its rclone writes a log of its own, whose
+# "<path>: Deleted" lines name what went; the count and the bytes are
+# those names looked up in the list, added to the run's totals. The log is
+# then appended to the script's own.
+MATCH_LOG=""
+MATCH_BEFORE=""
+match_before() { # <sys>
+    MATCH_LOG=$(mktemp /tmp/cloud-match-log.XXXXXX 2>/dev/null) || MATCH_LOG="/tmp/cloud-match-log.$$"
+    MATCH_BEFORE=$(mktemp /tmp/cloud-match-before.XXXXXX 2>/dev/null) || MATCH_BEFORE="/tmp/cloud-match-before.$$"
+    : > "${MATCH_LOG}"
+    rclone lsf -R --files-only --format "sp" --separator "|" "${DEST}/$1" \
+        "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${METADATA_EXCLUDES[@]}" > "${MATCH_BEFORE}" 2>/dev/null
+}
+match_count() { # <sys>: adds what the log says went to the totals
+    local counted cfiles cbytes
+    counted=$(awk -F'|' -v L="${MATCH_BEFORE}" '
+        BEGIN { while ((getline x < L) > 0) { i = index(x, "|"); sz[substr(x, i + 1)] = substr(x, 1, i - 1) } }
+        / : .*: Deleted$/ { p = $0; sub(/^.* : /, "", p); sub(/: Deleted$/, "", p); n++; b += sz[p] }
+        END { print n + 0 "|" b + 0 }' "${MATCH_LOG}" 2>/dev/null)
+    IFS='|' read -r cfiles cbytes <<< "${counted:-0|0}"
+    total_removed=$((total_removed + cfiles))
+    total_bytes=$((total_bytes + cbytes))
+    removed_detail="${removed_detail}${removed_detail:+,}$1:${cfiles}:${cbytes}"
+    cat "${MATCH_LOG}" >> "${LOG_FILE}" 2>/dev/null
+    rm -f "${MATCH_LOG}" "${MATCH_BEFORE}"
+}
+
 match_run() {
     local apply="$1" sys line verb files bytes rc=0 sync_rc=0 del_rc=0 total_removed=0
 
@@ -811,16 +842,15 @@ match_run() {
                 continue
             ;;
             remove)
-                total_removed=$((total_removed + files))
-                total_bytes=$((total_bytes + bytes))
-                removed_detail="${removed_detail}${removed_detail:+,}${sys}:${files}:${bytes}"
                 if [ "${apply}" = "1" ]; then
                     echo "Removing ${files} files from ${sys} that aren't in your cloud..."
+                    match_before "${sys}"
                     rclone delete "${DEST}/${sys}" \
                         "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${METADATA_EXCLUDES[@]}" \
                         --max-delete "${files}" \
-                        --log-file "${LOG_FILE}" --log-level INFO
+                        --log-file "${MATCH_LOG}" --log-level INFO
                     del_rc=$?
+                    match_count "${sys}"
                     if [ ${del_rc} -ne 0 ]; then
                         rc=${del_rc}
                         log_message "match: removing ${sys}: rclone exit ${del_rc}"
@@ -833,9 +863,6 @@ match_run() {
                 fi
             ;;
             sync)
-                total_removed=$((total_removed + files))
-                total_bytes=$((total_bytes + bytes))
-                removed_detail="${removed_detail}${removed_detail:+,}${sys}:${files}:${bytes}"
                 if [ "${apply}" = "1" ]; then
                     echo "Matching ${sys} to the cloud..."
                     # --max-delete is the fail-closed half: if reality has
@@ -846,27 +873,29 @@ match_run() {
                     # 1.75.0: given three deletions and --max-delete 2, it
                     # exits 7 having already removed two. So it bounds the
                     # damage to what was previewed and does not undo it --
-                    # which is the right trade here, because the cloud still
-                    # holds everything this could remove.
+                    # the removals are final (D-CLOUD-023), which is why a
+                    # count above the preview's is refused before this runs.
+                    match_before "${sys}"
                     rclone sync "$(remote_for "${sys}")" "${DEST}/${sys}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
                         "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${METADATA_EXCLUDES[@]}" \
                         --max-delete "${files}" \
                         --progress --stats 1s \
-                        --log-file "${LOG_FILE}" --log-level INFO
+                        --log-file "${MATCH_LOG}" --log-level INFO
                     sync_rc=$?
+                    match_count "${sys}"
                     if [ ${sync_rc} -ne 0 ]; then
                         rc=${sync_rc}
                         # A failed unit says why: the network gone ends the
                         # run as 69 here, anything else carries rclone's own
                         # code up as before. Before the 69 exit, the running
                         # totals go out on the same `>>> removed` line the
-                        # completed run prints, so the page can report
-                        # COMPLETED WITH GAPS over the deletions that did
-                        # happen -- a match is mostly deletion, and it had
-                        # already run for every system before this one
-                        # (D-UI-028; #105). The counts are the preview's,
-                        # what the player agreed to and --max-delete held
-                        # each system to; the cloud still holds every file.
+                        # completed run prints, so the page can report the
+                        # deletions that did happen -- a match is mostly
+                        # deletion, and it had already run for every system
+                        # before this one (D-UI-028; #105). The totals are
+                        # what rclone reports removed (match_count), within
+                        # what the player agreed to; what was removed is what
+                        # the cloud does not have, so it is gone (D-CLOUD-023).
                         if network_gone; then
                             echo ">>> removed ${total_removed}|${total_bytes}|${removed_detail}"
                             stop_no_network match "${sync_rc}" "matching ${sys} to the cloud"
@@ -905,9 +934,11 @@ match_run() {
 
     if [ "${apply}" = "1" ]; then
         # ">>> removed 14|314572800|snes:12:300000000,gb:2:14572800" -- the
-        # page renders it on its last screen. The counts are the preview's,
-        # which is what the player agreed to; --max-delete holds the run to
-        # them, and a run that could not is a FAILED page, not a smaller number.
+        # page renders it on its last screen. The counts are the files rclone
+        # reports it removed, with the sizes listed before it ran (#308 gpt
+        # F-CS-26); they were the preview's, and a system one of whose
+        # deletions failed was reported as though all of them had happened.
+        # --max-delete holds each system to the preview's count.
         echo ">>> removed ${total_removed}|${total_bytes}|${removed_detail}"
         log_message "match: applied, removed ${total_removed} files, rc=${rc}"
         # The page that ran it fades; the row in the menu has to be able to

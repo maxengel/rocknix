@@ -3885,4 +3885,19 @@ sa_run "${SR}" cloud_backup --yes --saves-only
 sa_run "${SR}" cloud_backup --yes --saves-only
 [ "${RC}" -eq 0 ] && [ -s "${SR}/storage/.cache/cloud_sync/saves-root" ]; check $? "and the next run that moves the saves records it (rc ${RC})" "saves-root: $(cat "${SR}/storage/.cache/cloud_sync/saves-root" 2>/dev/null)"
 
+# A24. #308 gpt F-CS-26 (the script's half; the done page's wording is
+#      EmulationStation's): `>>> removed` reports the files a match actually
+#      removed, counted from rclone's own "Deleted" lines against the sizes
+#      listed before, not the count it planned.
+echo "    A24. #308 gpt F-CS-26: a match reports what it removed, not what it planned"
+m_seed
+mkdir -p "${M}/storage/roms/gb/sub"; echo ccc > "${M}/storage/roms/gb/sub/C.gb"
+sa_run "${M}" cloud_content_restore --match
+grep -qx 'gb|sync|2|7' "${M}/out"; check $? "the preview plans two removals from gb (B.gb, sub/C.gb; 7 bytes)" "preview: $(grep '|' "${M}/out" | tr '\n' ' ')"
+chmod 555 "${M}/storage/roms/gb/sub"
+sa_run "${M}" cloud_content_restore --match --apply
+chmod 755 "${M}/storage/roms/gb/sub"
+gm_removed=$(sed -n 's/^>>> removed //p' "${M}/out" | tail -1)
+[ ! -e "${M}/storage/roms/gb/B.gb" ] && [ -e "${M}/storage/roms/gb/sub/C.gb" ] && [ "${gm_removed%%|*}" = 1 ] && [ "$(echo "${gm_removed}" | cut -d'|' -f2)" = 3 ]; check $? "one of the two could not be removed: >>> removed says 1 file, 3 bytes, not the plan's 2 (rc ${RC})" "removed line '${gm_removed}'; B.gb $([ -e "${M}/storage/roms/gb/B.gb" ] && echo kept || echo gone), sub/C.gb $([ -e "${M}/storage/roms/gb/sub/C.gb" ] && echo kept || echo gone) -- the totals were the plan's, counted before the delete ran (F-CS-26)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
