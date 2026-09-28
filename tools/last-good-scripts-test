@@ -3514,4 +3514,30 @@ else
     echo "    SKIP  #308 F-RA-13's cases: section t did not run"
 fi
 
+# D11. #308 1-raoffline gpt F-RA-18: disable verifies each step before it
+# consumes what the step's recovery needs. The toggle is read back before
+# anything is stopped (a toggle that would not clear leaves the device on,
+# service and marker included, consistently); hardcore is read back before
+# the record of what it was is removed, so a disable that could not put it
+# back leaves the record for the next one. Section p's sandbox and its
+# /run/fail-set, which makes one key's write fail.
+if declare -F ctl >/dev/null && [ -n "${PCFG:-}" ]; then
+rm -f "${P}/run/fail-set" "${P}/run/fail-start"
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.hardcore=1\n' > "${PCFG}"
+ctl enable
+echo global.retroachievements.hardcore > "${P}/run/fail-set"
+ctl disable; rm -f "${P}/run/fail-set"
+[ "${RC}" -eq 1 ] && [ "$(pv global.retroachievements.offlineproxy.hardcore_was)" = "1" ]; check $? "#308 gpt F-RA-18: a disable whose hardcore write fails exits 1 and keeps the record (hardcore_was=1)" "#308 gpt F-RA-18: rc ${RC}; system.cfg: $(tr '\n' '|' < "${PCFG}") -- the record went before the restore was verified"
+ctl disable
+[ "${RC}" -eq 0 ] && [ "$(pv global.retroachievements.hardcore)" = "1" ] && [ -z "$(pv global.retroachievements.offlineproxy.hardcore_was)" ]; check $? "#308 gpt F-RA-18: the next disable puts hardcore back to 1 from the kept record and then removes it" "#308 gpt F-RA-18: rc ${RC}; system.cfg: $(tr '\n' '|' < "${PCFG}") -- the player's hardcore setting was lost"
+printf 'system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.hardcore=1\n' > "${PCFG}"; : > "${P}/run/systemctl.log"
+ctl enable
+echo global.retroachievements.offlineproxy > "${P}/run/fail-set"; : > "${P}/run/systemctl.log"
+ctl disable; rm -f "${P}/run/fail-set"
+[ "${RC}" -eq 1 ] && [ "$(pv global.retroachievements.offlineproxy)" = "1" ] && [ -e "${PMARK}" ] && ! grep -q 'systemctl stop' "${P}/run/systemctl.log" && [ "$(pv global.retroachievements.offlineproxy.hardcore_was)" = "1" ]; check $? "#308 gpt F-RA-18: a toggle that will not clear stops nothing -- the service, the marker and the record stay, exit 1" "#308 gpt F-RA-18: rc ${RC}; toggle '$(pv global.retroachievements.offlineproxy)'; marker $([ -e "${PMARK}" ] && echo kept || echo gone); systemctl: $(tr '\n' '|' < "${P}/run/systemctl.log")"
+ctl disable
+else
+    echo "    SKIP  #308 F-RA-18's cases: section p did not run"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

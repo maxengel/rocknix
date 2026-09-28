@@ -19,7 +19,10 @@
 #            signalled through the pid in its lock file and given STOP_WAIT
 #            seconds; #186 PL-30), stop the service, remove the marker, and
 #            put hardcore back the way the record says it was; the record
-#            goes.
+#            goes. Each step is read back before the next uses it up: a
+#            toggle that will not clear stops nothing, and a hardcore that
+#            will not go back keeps the record for the next disable (#308
+#            F-RA-18).
 #   start    systemctl start; the marker must already be there.
 #   stop     systemctl stop.
 #   status   enabled=, marker=, service=, hardcore= on stdout; exit 0 when the
@@ -485,26 +488,30 @@ stop_running_run() {
 do_disable() {
     # The toggle first: a scan or top-up starting from now on is refused by
     # its own check, and the launchers route direct from the next launch.
+    # Each step is read back before the next one uses it up (#308 F-RA-18):
+    # a toggle that did not clear stops nothing, so the device stays on --
+    # service, marker and record together -- rather than half off.
     set_setting "${KEY}" 0
+    [ "$(setting "${KEY}")" = "0" ] || fail "${KEY} did not clear; the service, the marker and the hardcore record are left as they were"
     stop_running_run
     do_stop
     rm -f "${MARKER}"
 
-    # Put hardcore back as the record says. No record -- a device that never
-    # had the toggle on, or a second disable -- leaves it alone.
+    # Put hardcore back as the record says, and remove the record only once
+    # hardcore reads back as it says: a write that did not hold keeps the
+    # record, so the next disable can still put the player's setting back
+    # (#308 F-RA-18). No record -- a device that never had the toggle on, or
+    # a second disable -- leaves it alone.
     local WAS
     WAS="$(setting "${HARDCORE_WAS_KEY}")"
     if [ -n "${WAS}" ]; then
         set_setting "${HARDCORE_KEY}" "$(as_flag "${WAS}")"
+        [ "$(setting "${HARDCORE_KEY}")" = "$(as_flag "${WAS}")" ] || fail "${HARDCORE_KEY} was not put back; the record is kept for the next disable"
         set_setting "${HARDCORE_WAS_KEY}" default
-    fi
-
-    [ "$(setting "${KEY}")" = "0" ] || fail "${KEY} did not clear"
-    [ ! -e "${MARKER}" ] || fail "${MARKER} could not be removed"
-    if [ -n "${WAS}" ]; then
-        [ "$(setting "${HARDCORE_KEY}")" = "$(as_flag "${WAS}")" ] || fail "${HARDCORE_KEY} was not put back"
         [ -z "$(setting "${HARDCORE_WAS_KEY}")" ] || fail "${HARDCORE_WAS_KEY} was not cleared"
     fi
+
+    [ ! -e "${MARKER}" ] || fail "${MARKER} could not be removed"
 
     say "offline RetroAchievements off: hardcore ${WAS:+put back to }${WAS:-left as it was}; ${UNIT} $(service_state)"
     echo "hardcore=$(as_flag "$(setting "${HARDCORE_KEY}")")"
