@@ -3637,9 +3637,10 @@ TENV=(--setenv RAOFFLINEPROXY_PROC_NET /storage/procnet)
 dproc 0100007F:1F90 ""; tctl listening; DL1=${RC}
 dproc 00000000:1F90 ""; tctl listening; DL2=${RC}
 dproc "" 00000000000000000000000001000000:1F90; tctl listening; DL3=${RC}
+dproc "" 0000000000000000FFFF00000100007F:1F90; tctl listening; DL6=${RC}
 dproc 0100007F:1F91 ""; tctl listening; DL4=${RC}
 printf '  sl  local_address rem_address   st\n   0: 0100007F:1F90 0100007F:9C40 01 00000000:00000000\n' > "${DPN}/tcp"; : > "${DPN}/tcp6"; tctl listening; DL5=${RC}
-[ "${DL1}" -eq 0 ] && [ "${DL2}" -eq 0 ] && [ "${DL3}" -eq 0 ] && [ "${DL4}" -eq 1 ] && [ "${DL5}" -eq 1 ]; check $? "#308 gpt F-RA-26 listening: 127.0.0.1:8080, 0.0.0.0:8080 and [::1]:8080 in LISTEN read as listening; another port, or 8080 only as a connection's end, do not" "#308 gpt F-RA-26 listening: rc ${DL1}/${DL2}/${DL3} (want 0/0/0), ${DL4}/${DL5} (want 1/1)"
+[ "${DL1}" -eq 0 ] && [ "${DL2}" -eq 0 ] && [ "${DL6}" -eq 0 ] && [ "${DL3}" -eq 1 ] && [ "${DL4}" -eq 1 ] && [ "${DL5}" -eq 1 ]; check $? "#308 gpt F-RA-26 listening: 127.0.0.1:8080, 0.0.0.0:8080 and ::ffff:127.0.0.1:8080 in LISTEN read as listening; [::1]:8080 does not -- it cannot take the IPv4 connection the emulators make (gpt G-D-02) -- nor another port, nor 8080 only as a connection's end" "#308 gpt F-RA-26 / G-D-02 listening: rc ${DL1}/${DL2}/${DL6} (want 0/0/0), ${DL3}/${DL4}/${DL5} (want 1/1/1)"
 dproc "" ""; : > "${TR}/sleep.log"
 tctl listening --wait 5
 [ "${RC}" -eq 1 ] && [ "$(grep -c . "${TR}/sleep.log")" -eq 4 ]; check $? "#308 gpt F-RA-26 listening --wait 5 with nothing listening: five looks a second apart, then exit 1" "#308 gpt F-RA-26: rc ${RC}; sleeps: $(tr '\n' ',' < "${TR}/sleep.log")"
@@ -3903,7 +3904,10 @@ dppini; dpp
 grep -qx 'AchievementsHost = 127.0.0.1:8080' "${DPS}/ppsspp.ini"; check $? "#308 claude F-EM-04 cheevos_ppsspp.sh: 127.0.0.1:8080 in LISTEN in the socket table routes PPSSPP to the proxy (no netstat)" "#308 claude F-EM-04: rc ${RC}; ppsspp.ini: $(grep AchievementsHost "${DPS}/ppsspp.ini"); log: $(cat "${DP}/storage/cheevos.log" 2>/dev/null | tr '\n' '|')"
 printf '  sl  local_address                         remote_address                        st\n   0: 00000000000000000000000001000000:1F90 00000000000000000000000000000000:0000 0A 00000000:00000000\n' > "${DP}/procnet/tcp6"; : > "${DP}/procnet/tcp"
 dppini; dpp
-grep -qx 'AchievementsHost = 127.0.0.1:8080' "${DPS}/ppsspp.ini"; check $? "#308 claude F-EM-04 cheevos_ppsspp.sh: [::1]:8080 in LISTEN (tcp6) counts too" "#308 claude F-EM-04: ppsspp.ini: $(grep AchievementsHost "${DPS}/ppsspp.ini")"
+grep -qx 'AchievementsHost = ' "${DPS}/ppsspp.ini" && grep -q 'nothing is listening on 127.0.0.1:8080' "${DP}/storage/cheevos.log"; check $? "gpt G-D-02 cheevos_ppsspp.sh: [::1]:8080 alone in LISTEN (tcp6) is not the IPv4 endpoint PPSSPP is pointed at -- launched direct" "gpt G-D-02: ppsspp.ini: $(grep AchievementsHost "${DPS}/ppsspp.ini") -- an IPv6-loopback listener read as 127.0.0.1:8080"
+printf '  sl  local_address                         remote_address                        st\n   0: 0000000000000000FFFF00000100007F:1F90 00000000000000000000000000000000:0000 0A 00000000:00000000\n' > "${DP}/procnet/tcp6"; : > "${DP}/procnet/tcp"
+dppini; dpp
+grep -qx 'AchievementsHost = 127.0.0.1:8080' "${DPS}/ppsspp.ini"; check $? "gpt G-D-02 cheevos_ppsspp.sh: ::ffff:127.0.0.1:8080 in LISTEN (tcp6, an IPv4-mapped socket) routes to the proxy" "gpt G-D-02: ppsspp.ini: $(grep AchievementsHost "${DPS}/ppsspp.ini")"
 printf '  sl  local_address rem_address   st\n   0: 0100007F:1F91 00000000:0000 0A 00000000:00000000\n' > "${DP}/procnet/tcp"; : > "${DP}/procnet/tcp6"
 dppini; dpp
 grep -qx 'AchievementsHost = ' "${DPS}/ppsspp.ini" && grep -q 'nothing is listening on 127.0.0.1:8080' "${DP}/storage/cheevos.log"; check $? "#308 claude F-EM-04 cheevos_ppsspp.sh: nothing on 8080 launches direct, and the log says nothing is listening" "#308 claude F-EM-04: ppsspp.ini: $(grep AchievementsHost "${DPS}/ppsspp.ini"); log: $(cat "${DP}/storage/cheevos.log" 2>/dev/null | tr '\n' '|')"

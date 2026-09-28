@@ -179,7 +179,8 @@
 #            session and INDEX NEW GAMES AT STARTUP is on) and the topup
 #            --after-index that follows it (#308 F-RA-22).
 #   listening [--wait N]
-#            whether the proxy's port, 127.0.0.1:8080, is in LISTEN: exit 0
+#            whether something takes an IPv4 connection to 127.0.0.1:8080, the
+#            proxy's address -- a listener on it in LISTEN: exit 0
 #            when it is, 1 when not -- read from /proc/net/tcp and tcp6, no
 #            tool run. With --wait it looks N times a second apart. The
 #            unit's ExecStartPost, so the service is started when it can be
@@ -899,9 +900,12 @@ do_ready() {
 # which makes rcheevos give up achievements for the session. The unit's
 # ExecStartPost runs this, bounded, so "started" means "listening". The
 # socket table is read, not a tool's output (netstat is not a dependency
-# of anything here); 127.0.0.1, any address, ::1 and ::ffff:127.0.0.1 on
-# port 8080 (1F90) in state LISTEN (0A) count. RAOFFLINEPROXY_PROC_NET
-# stands in for /proc/net (the scripts suite's fixture).
+# of anything here); 127.0.0.1, 0.0.0.0 and ::ffff:127.0.0.1 on port 8080
+# (1F90) in state LISTEN (0A) count -- the listeners that take the IPv4
+# connection to 127.0.0.1:8080 the emulators are given. ::1 does not take
+# it, and :: may be IPv6-only, which the table does not say, so neither
+# counts (audit of the fixes, gpt G-D-02). RAOFFLINEPROXY_PROC_NET stands in
+# for /proc/net (the scripts suite's fixture).
 port_listening() {
     local F SL LOCAL REM ST REST
     for F in "${RAOFFLINEPROXY_PROC_NET:-/proc/net}/tcp" "${RAOFFLINEPROXY_PROC_NET:-/proc/net}/tcp6"; do
@@ -909,7 +913,7 @@ port_listening() {
         while read -r SL LOCAL REM ST REST; do
             [ "${ST}" = "0A" ] || continue
             case "${LOCAL}" in
-                0100007F:1F90|00000000:1F90|00000000000000000000000000000000:1F90|00000000000000000000000001000000:1F90|0000000000000000FFFF00000100007F:1F90) return 0 ;;
+                0100007F:1F90|00000000:1F90|0000000000000000FFFF00000100007F:1F90) return 0 ;;
             esac
         done < "${F}"
     done

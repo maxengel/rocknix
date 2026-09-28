@@ -61,8 +61,11 @@ fi
 #
 # Whether the proxy is listening is read from the kernel's socket tables with
 # bash's own read, not from netstat, which nothing PPSSPP ships declares and
-# whose absence read as "nothing answers" (#308 F-EM-04): 127.0.0.1, any
-# address, ::1 or ::ffff:127.0.0.1 on port 8080 (1F90) in state LISTEN (0A).
+# whose absence read as "nothing answers" (#308 F-EM-04): 127.0.0.1, 0.0.0.0
+# or ::ffff:127.0.0.1 on port 8080 (1F90) in state LISTEN (0A) -- the
+# listeners that take the IPv4 connection to 127.0.0.1:8080 PPSSPP is
+# given. ::1 does not take it, and :: may be IPv6-only, which the table does
+# not say, so neither counts (audit of the fixes, gpt G-D-02, gpt G-F2-02).
 # 0 listening, 1 not, 2 when neither table could be read -- said apart in the
 # log, since "couldn't tell" is not "nothing there". RAOFFLINEPROXY_PROC_NET
 # stands in for /proc/net in the scripts suite, as it does for
@@ -75,7 +78,7 @@ proxy_listening() {
     while read -r sl addr rem st rest; do
       [ "${st}" = "0A" ] || continue
       case "${addr}" in
-        0100007F:1F90|00000000:1F90|00000000000000000000000000000000:1F90|00000000000000000000000001000000:1F90|0000000000000000FFFF00000100007F:1F90) return 0 ;;
+        0100007F:1F90|00000000:1F90|0000000000000000FFFF00000100007F:1F90) return 0 ;;
       esac
     done < "${f}"
   done
