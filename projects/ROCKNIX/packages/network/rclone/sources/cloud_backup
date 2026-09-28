@@ -338,6 +338,22 @@ bounded_rclone() {
     return "${rc}"
 }
 
+# Did rclone log moving a file -- "<path>: Copied (...)", "Moved (...)",
+# "Deleted" -- since <offset> into LOG_FILE, or in <file> (its stderr, when
+# the options carry no --log-file)? An automatic run's rclone runs under
+# timeout, not the stall ceiling, so it has no trace for progress_mark to
+# read; what it logs is how RCLONE_MOVED is known for it (the audit of the
+# fixes, claude G-A-01: the game-exit sync stamped a bare 69, SKIPPED, over
+# saves that went up).
+logged_moved() { # <offset into LOG_FILE> [file]
+    local now
+    {
+        now=$(stat -c %s "${LOG_FILE}" 2>/dev/null) && [ "${now}" -gt "$1" ] 2>/dev/null \
+            && tail -c +$(( $1 + 1 )) "${LOG_FILE}" 2>/dev/null
+        [ -n "${2:-}" ] && cat "$2" 2>/dev/null
+    } | grep -qE ': (Copied|Moved) \(|: Deleted$'
+}
+
 rclone() {
     if [ "${AUTOMATIC}" -eq 1 ]; then
         if [ "${SYNC_DEADLINE}" -gt 0 ]; then
@@ -351,7 +367,11 @@ rclone() {
                 log_message "rclone $1 not started: the automatic ceiling had passed" "false"
                 return 124
             fi
-            command timeout -k 3 "${left}" rclone "$@" "${RCLONE_SYNC_NET_OPTS_ARRAY[@]}"
+            local log0 rc
+            log0=$(stat -c %s "${LOG_FILE}" 2>/dev/null || echo 0)
+            command timeout -k 3 "${left}" rclone "$@" "${RCLONE_SYNC_NET_OPTS_ARRAY[@]}"; rc=$?
+            logged_moved "${log0}" && RCLONE_MOVED=1
+            return "${rc}"
         else
             command rclone "$@"
         fi
@@ -664,8 +684,8 @@ record_last_run() {
     # SKIPPED means nothing was touched (#308 claude F-CS-24): a run the
     # network ended after a transfer of this run had moved a file keeps its
     # 69 and adds the gaps token and a why, which the rows read as COULDN'T
-    # FINISH. Known for the deliberate runs, whose rclone reports its
-    # counts through the stall ceiling's trace.
+    # FINISH. Known for the deliberate runs from the stall ceiling's trace,
+    # and for the automatic ones from what their rclone logs (logged_moved).
     if [ "${exit_code}" = "${EXIT_NO_NETWORK}" ] && [ "${RCLONE_MOVED}" -eq 1 ]; then
         why=" gaps YOU WENT OFFLINE PART-WAY THROUGH"
     fi
@@ -1359,6 +1379,9 @@ execute_rclone_with_error_handling() {
     # stdout goes to terminal (shows progress), stderr goes to temp file for logging
     rclone "${method}" "${extra_opts[@]}" "${RCLONE_NET_OPTS_ARRAY[@]}" "${source}" "${dest}" 2>"$stderr_file"
     local rclone_exit_code=$?
+    # With no --log-file in the options rclone's own lines, the ones that
+    # say what moved, are on stderr (claude G-A-01).
+    logged_moved "$(stat -c %s "${LOG_FILE}" 2>/dev/null || echo 0)" "$stderr_file" && RCLONE_MOVED=1
     
     # Log any stderr output for debugging
     if [ -s "$stderr_file" ]; then

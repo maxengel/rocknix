@@ -4442,4 +4442,29 @@ printf '%s\t%s\n' '^copy qa:/ROCKNIX/Content/ROMs/nes ' 1 > "${PG}/ctl/fail"
 sa_run "${PG}" cloud_content_restore gb nes
 [ "${RC}" -eq 69 ] && [ "$(pg_stamp restore)" = 69 ]; check $? "a restore whose first unit had nothing to move, then lost the network, is the skip: a bare 69 (rc ${RC}, stamp $(pg_stamp restore))" "rc ${RC}; stamp '$(pg_stamp restore)' -- a unit that moved nothing counted as progress"
 
+# A44. The audit of the fixes (#307 follow-up 2; seats/A-claude.md G-A-01,
+#      Medium): #308 claude F-CS-24's "69 gaps" knew a file had moved only
+#      from the deliberate run's stall-ceiling trace, so the automatic
+#      syncs -- the ones the finding was filed about -- stamped a bare 69,
+#      SKIPPED on the row, over saves that did go up. An automatic run's
+#      rclone logs what it moves too, and that is read.
+echo "    A44. G-A-01 (claude): an automatic run cut by the network after it sent a save is not a skip"
+AU=$(sa_new ga01c); sa_script "${AU}" cloud_backup cloud_saves_root
+cp "${PR}/storage/.config/cloud_sync.conf" "${PR}/storage/.config/cloud_sync-rules.txt" "${AU}/storage/.config/"
+sed -i 's/^BACKUPFILE_BACKUP_OPTION=.*/BACKUPFILE_BACKUP_OPTION="yes"/' "${AU}/storage/.config/cloud_sync.conf"
+mkdir -p "${AU}/storage/roms/gb" "${AU}/storage/roms/backup/x/storage/.config" "${AU}/cloud/ROCKNIX/Saves"
+echo "a save" > "${AU}/storage/roms/gb/New.srm"; echo cfg > "${AU}/storage/roms/backup/x/storage/.config/blob"
+tar -C "${AU}/storage/roms/backup/x" -czf "${AU}/storage/roms/backup/2026_09_28-120000-QA-ROCKNIX_SETTINGS.tar.gz" storage; rm -rf "${AU}/storage/roms/backup/x"
+printf '%s\t%s\n' '^copy .* /storage/roms/ qa:/ROCKNIX/Saves/' 'touch /ctl/noroute /ctl/noping' > "${AU}/ctl/post"
+printf '%s\t%s\n' '^mkdir qa:/ROCKNIX/Backups/' 1 > "${AU}/ctl/fail"
+sa_run "${AU}" cloud_backup --yes --automatic
+au_stamp=$(cut -d' ' -f2- "${AU}/storage/.cache/cloud_sync/last-backup" 2>/dev/null)
+[ "${RC}" -eq 69 ] && [ -f "${AU}/cloud/ROCKNIX/Saves/gb/New.srm" ] && echo "${au_stamp}" | grep -q '^69 gaps .'; check $? "an automatic backup whose saves phase sent a file before the network went stamps '69 gaps <why>' (rc ${RC}, stamp ${au_stamp:-none})" "rc ${RC}; New.srm in the cloud: $([ -f "${AU}/cloud/ROCKNIX/Saves/gb/New.srm" ] && echo yes || echo no); stamp '${au_stamp:-none}'; out: $(sa_tail "${AU}")"
+# And one that sent nothing before the network went is still the skip.
+rm -f "${AU}/ctl/noroute" "${AU}/ctl/noping" "${AU}/storage/.cache/cloud_sync/last-backup"
+sa_run "${AU}" cloud_backup --yes --automatic
+au_stamp=$(cut -d' ' -f2- "${AU}/storage/.cache/cloud_sync/last-backup" 2>/dev/null)
+[ "${RC}" -eq 69 ] && [ "${au_stamp}" = 69 ]; check $? "and one whose saves phase had nothing new to send stamps the bare 69 (rc ${RC}, stamp ${au_stamp:-none})" "rc ${RC}; stamp '${au_stamp:-none}'; out: $(sa_tail "${AU}")"
+rm -f "${AU}/ctl/noroute" "${AU}/ctl/noping"; : > "${AU}/ctl/post"; : > "${AU}/ctl/fail"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
