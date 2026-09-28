@@ -26,11 +26,22 @@
 # archives into one folder and uploads from another. Found by the round-trip
 # harness on 2026-09-06 (Gate 0, #35): the value was a constant here.
 # BACKUPFOLDER is the name an un-migrated conf still carries (D-UI-022).
+#
+# Read the way cloud_backup reads it -- the file sourced, in a subshell so
+# nothing else it sets leaks here -- so a value written with a reference
+# ("${CONTENTPATH}/backup") means the same folder to both. The sed that read
+# it before took the text literally, and mkdir made a folder called
+# ${CONTENTPATH} under the working directory (#308 claude F-BR-18). The
+# result must be a folder under /storage; anything else is logged and the
+# standard folder used.
 SETTINGS_BACKUPS="/storage/roms/backup"
 if [ -f /storage/.config/cloud_sync.conf ]; then
-    _configured=$(sed -n 's/^SETTINGS_BACKUPS="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' /storage/.config/cloud_sync.conf | head -1)
-    [ -z "${_configured}" ] && _configured=$(sed -n 's/^BACKUPFOLDER="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' /storage/.config/cloud_sync.conf | head -1)
-    [ -n "${_configured}" ] && SETTINGS_BACKUPS="${_configured}"
+    _configured=$( . /storage/.config/cloud_sync.conf >/dev/null 2>&1; printf '%s' "${SETTINGS_BACKUPS:-${BACKUPFOLDER:-}}" )
+    case "${_configured}" in
+        "") ;;
+        /storage/*) SETTINGS_BACKUPS="${_configured%/}" ;;
+        *) logger -t backuptool "SETTINGS_BACKUPS in cloud_sync.conf reads '${_configured}', not a folder under /storage; ${SETTINGS_BACKUPS} used" ;;
+    esac
     unset _configured
 fi
 ARCHIVEFOLDER="${SETTINGS_BACKUPS}/archive"

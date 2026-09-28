@@ -3434,4 +3434,10 @@ echo half > "${P7S}/roms/backup/archive/2026_01_01-000000-PRE_RESTORE-ROCKNIX_SE
 p7bt backup
 [ "${RC}" -eq 0 ] && [ ! -e "${P7S}/roms/backup/archive/2026_01_01-000000-PRE_RESTORE-ROCKNIX_SETTINGS.tar.gz.partial" ] && [ ! -e "${P7S}/.cache/backuptool-staging.p7dead" ]; check $? "#308 gpt F-BR-17: a snapshot's .partial and a staging folder left by a killed run are cleared by the next run" "#308 gpt F-BR-17: rc ${RC}; left: $(ls -a "${P7S}/roms/backup/archive" "${P7S}/.cache" 2>/dev/null | tr '\n' ' ')"
 
+# == #308 4-backup-restore claude F-BR-18: a SETTINGS_BACKUPS with an unexpanded reference is not taken literally
+p7reset '  /storage/.config/test/*'
+printf 'SETTINGS_BACKUPS="${CONTENTPATH}/backup"\n' > "${P7S}/.config/cloud_sync.conf"
+p7bt backup
+[ "${RC}" -eq 0 ] && [ -n "$(p7arc)" ]; check $? "#308 claude F-BR-18: SETTINGS_BACKUPS=\"\${CONTENTPATH}/backup\" falls back to the standard folder" "#308 F-BR-18: rc ${RC}; archives at /storage/roms/backup: $(p7arc | wc -l); why '$(p7why)'"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
