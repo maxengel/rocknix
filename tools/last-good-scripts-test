@@ -3424,4 +3424,39 @@ mkdir -p "${MG}/storage/cwd/saves"; : > "${MG}/storage/cwd/saves/x"
 SA_CWD=/storage/cwd sa_run "${MG}" cloud_migrate_layout --apply
 [ -f "${MG}/cloud/ROCKNIX/Saves/savefiles/gb/A.srm" ] && [ ! -e "${MG}/cloud/ROCKNIX/Saves/saves" ]; check $? "F-CS-23: with a saves/ folder in the working directory the saves subfolder is still found and moved as the saves (rc ${RC})" "under Saves: $(cd "${MG}/cloud" && find ROCKNIX/Saves -type f 2>/dev/null | tr '\n' ' ') -- an unquoted --exclude saves/** was expanded by the shell"
 
+# A6. PL-028 (#307, F-CS-12 gpt) with #308 claude F-CS-16: rclone's 9 (with
+#     --error-on-no-transfer, "nothing needed moving") is a completion, and
+#     a saves phase that returns it does not hide a settings phase that
+#     failed.
+echo "    A6. PL-028: saves 9 beside a failed settings phase is a run that couldn't finish"
+OV=$(sa_new pl028); sa_script "${OV}" cloud_backup cloud_restore cloud_saves_root
+cat > "${OV}/storage/.config/cloud_sync.conf" <<'EOS'
+SAVESPATH="/storage/roms"
+SAVES_REMOTE="/ROCKNIX/Saves"
+SETTINGS_BACKUPS="/storage/roms/backup"
+SETTINGS_REMOTE="/ROCKNIX/Backups"
+BACKUPMETHOD="copy"
+RESTOREMETHOD="copy"
+BACKUPFILE_BACKUP_OPTION="yes"
+BACKUPFILE_RESTORE_OPTION="yes"
+RCLONEOPTS="--progress --log-file /var/log/cloud_sync.log --filter-from /storage/.config/cloud_sync-rules.txt --error-on-no-transfer"
+RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"
+LOG_LEVEL="INFO"
+EOS
+printf -- '+ /**/*.srm\n- /**\n' > "${OV}/storage/.config/cloud_sync-rules.txt"
+mkdir -p "${OV}/storage/roms/gb" "${OV}/cloud/ROCKNIX/Saves/gb" "${OV}/storage/roms/backup/x/storage/.config" "${OV}/cloud/ROCKNIX/Backups/QA-deadbeef01"
+echo same > "${OV}/storage/roms/gb/A.srm"; cp -p "${OV}/storage/roms/gb/A.srm" "${OV}/cloud/ROCKNIX/Saves/gb/A.srm"
+echo cfg > "${OV}/storage/roms/backup/x/storage/.config/blob"
+tar -C "${OV}/storage/roms/backup/x" -czf "${OV}/storage/roms/backup/2026_09_28-120000-QA-ROCKNIX_SETTINGS.tar.gz" storage; rm -rf "${OV}/storage/roms/backup/x"
+cp "${OV}/storage/roms/backup/2026_09_28-120000-QA-ROCKNIX_SETTINGS.tar.gz" "${OV}/cloud/ROCKNIX/Backups/QA-deadbeef01/"
+printf '%s\t%s\n' '^copyto ' 5 > "${OV}/ctl/fail"
+sa_run "${OV}" cloud_backup --yes
+ov_stamp=$(awk '{print $2}' "${OV}/storage/.cache/cloud_sync/last-backup" 2>/dev/null)
+[ "${RC}" -ne 0 ] && [ "${RC}" -ne 9 ] && sa_outcome "${OV}" | grep -q "^Couldn't finish" && [ "${ov_stamp}" != 0 ] && [ "${ov_stamp}" != 9 ]; check $? "cloud_backup: saves 9 and the archive's upload failing (5) end Couldn't finish, exit ${RC}, stamp ${ov_stamp:-none}" "exit ${RC}, stamp '${ov_stamp:-none}', outcome '$(sa_outcome "${OV}")' -- [ overall -eq 0 ] skipped the settings phase when the saves returned 9 (F-CS-12 gpt, F-CS-16 claude)"
+grep -q 'nothing needed moving' "${OV}/log/cloud_sync.log"; check $? "and the saves phase did return 9 (the case is the one it names)" "the saves phase never reported 9; log: $(grep -i 'saves:' "${OV}/log/cloud_sync.log" | tail -1)"
+rm -f "${OV}/storage/roms/backup"/*.tar.gz
+sa_run "${OV}" cloud_restore --yes
+ov_stamp=$(awk '{print $2}' "${OV}/storage/.cache/cloud_sync/last-restore" 2>/dev/null)
+[ "${RC}" -ne 0 ] && [ "${RC}" -ne 9 ] && sa_outcome "${OV}" | grep -q "^Couldn't finish" && [ "${ov_stamp}" != 0 ] && [ "${ov_stamp}" != 9 ]; check $? "cloud_restore: saves 9 and the archive's download failing (5) end Couldn't finish, exit ${RC}, stamp ${ov_stamp:-none}" "exit ${RC}, stamp '${ov_stamp:-none}', outcome '$(sa_outcome "${OV}")'"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

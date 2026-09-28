@@ -1902,8 +1902,15 @@ main() {
     
     # The run's exit, decided by both phases (the note below the summary
     # says why); computed here because the outcome line reads it.
+    # rclone's 9 -- nothing needed moving -- is a completion wherever a
+    # phase is judged (outcome_word, run_outcome_line), so it is here too: a
+    # saves phase that returned 9 used to keep a settings phase's failure
+    # out of the exit and the stamp, and the run said Completed. over an
+    # archive that never moved (audit #307 PL-028).
     local overall=${RESTORE_STATUS}
-    [ "${overall}" -eq 0 ] && overall=${RESTORE_SYSTEM_STATUS}
+    case "${overall}" in
+        0|9) overall=${RESTORE_SYSTEM_STATUS} ;;
+    esac
 
     # Provide final summary of all operations
     log_message "====================================" "true"

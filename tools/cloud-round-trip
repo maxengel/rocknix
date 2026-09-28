@@ -720,12 +720,19 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     arch_before = dev.sha(archive)
     backend("reset")
     # As the settings tier runs it (backuptool backup && cloud_backup --yes --system-only).
-    dev.run("cloud_backup --yes --system-only >/dev/null 2>&1 || true", check=False)
+    rc_sb, out_sb = run_rc(dev, "cloud_backup --yes --system-only")
     listing = backend("ls")
     uploaded_archive = ARCHIVE_NAME in listing
     failures += not check(uploaded_archive,
                           "the settings backup archive reached the cloud",
                           "the archive was not uploaded")
+    # And the run says so: its exit and its own last line are the settings
+    # phase's outcome, not the skipped saves phase's (audit #307 PL-028,
+    # whose 9-beside-a-failure case is tools/last-good-scripts-test A6).
+    last_sb = [l for l in out_sb.splitlines() if l.strip() and not l.startswith(">>> ") and not l.strip().startswith("=")]
+    failures += not check(rc_sb == 0 and bool(last_sb) and last_sb[-1].strip().endswith("Completed."),
+                          "the settings backup exited 0 and ended on Completed.",
+                          f"the settings backup exited {rc_sb}, last line {last_sb[-1].strip() if last_sb else '(none)'!r}")
 
     # It must land under this device's own folder. A single shared filename is
     # what let the second device to run replace the first device's archive,
@@ -741,8 +748,10 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
             "device would overwrite it")
     dev.run(f"rm -f {shlex.quote(archive)}")
     mark = log_mark(dev)
-    dev.run("cloud_restore --yes --system-only >/dev/null 2>&1 || true", check=False)
+    rc_sr, _ = run_rc(dev, "cloud_restore --yes --system-only")
     if uploaded_archive:
+        failures += not check(rc_sr == 0, "the settings restore exited 0",
+                              f"the settings restore exited {rc_sr}")
         arch_after = dev.sha(archive)
         failures += not check(arch_after is not None and arch_after == arch_before,
                               "the archive came back byte-identical",
