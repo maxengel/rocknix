@@ -4201,4 +4201,46 @@ else
     echo "    SKIP  claude G-D-03's case: needs section t and GNU coreutils' timeout on this machine"
 fi
 
+# D24. claude G-D-04: patch 016's classification against the real
+# fetch_static_asset and a real HTTP server on loopback -- 404, 410, a 301 to
+# a 404, a 503, a refused connection and a whole PNG -- not a stubbed
+# fetcher. And claude G-D-12: an image already in the cache is "cached" (the
+# function falls through its `if not target.exists()` to the one return).
+if [ "${DT_OK}" -eq 1 ]; then
+RAOFFLINEPROXY_CONFIG_DIR="${DD}/d24-cfg" PYTHONPATH="${CLIENT}" python3 - > "${DD}/d24.out" 2>&1 <<'EOS'
+import http.server, os, socket, struct, threading, zlib
+from pathlib import Path
+Path(os.environ["RAOFFLINEPROXY_CONFIG_DIR"]).mkdir(parents=True, exist_ok=True)
+from raofflineproxy import image_cache
+def _chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+PNG = b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)) + _chunk(b"IDAT", zlib.compress(b"\x00\xff\x00\x00")) + _chunk(b"IEND", b"")
+class Handler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_GET(self):
+        name = self.path.rsplit("/", 1)[-1]
+        if name == "ok.png":
+            self.send_response(200); self.send_header("Content-Length", str(len(PNG))); self.end_headers(); self.wfile.write(PNG); return
+        if name == "moved.png":
+            self.send_response(301); self.send_header("Location", "/Badge/gone404.png"); self.send_header("Content-Length", "0"); self.end_headers(); return
+        code = {"gone404.png": 404, "gone410.png": 410, "busy503.png": 503}.get(name, 404)
+        self.send_response(code); self.send_header("Content-Length", "0"); self.end_headers()
+server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+threading.Thread(target=server.serve_forever, daemon=True).start()
+base = f"http://127.0.0.1:{server.server_address[1]}"
+closed = socket.socket(); closed.bind(("127.0.0.1", 0)); dead = closed.getsockname()[1]; closed.close()
+got = {}
+for name in ("gone404", "gone410", "moved", "busy503", "ok"):
+    got[name] = image_cache.download_static_image(f"{base}/Badge/{name}.png", f"/Badge/d24-{name}.png", "ua")
+got["refused"] = image_cache.download_static_image(f"http://127.0.0.1:{dead}/Badge/refused.png", "/Badge/d24-refused.png", "ua")
+want = {"gone404": "absent", "gone410": "absent", "moved": "absent", "busy503": "transient", "ok": "cached", "refused": "transient"}
+print(("PASS" if got == want else "FAIL") + f" real: {got}")
+seeded = image_cache.STATIC_DIR / "Badge" / "d24-seeded.png"; seeded.parent.mkdir(parents=True, exist_ok=True); seeded.write_bytes(PNG)
+there = image_cache.download_static_image(f"http://127.0.0.1:{dead}/Badge/seeded.png", "/Badge/d24-seeded.png", "ua")
+print(("PASS" if there == "cached" else "FAIL") + f" there: an image already cached returned {there!r}")
+server.shutdown()
+EOS
+grep -q '^PASS real:' "${DD}/d24.out"; check $? "claude G-D-04: against a real HTTP server and the real fetcher, 404, 410 and a 301 to a 404 are absent; a 503 and a refused connection transient; a whole PNG cached" "claude G-D-04: $(grep 'real:' "${DD}/d24.out" || tail -3 "${DD}/d24.out" | tr '\n' '|')"
+grep -q '^PASS there:' "${DD}/d24.out"; check $? "claude G-D-12: an image already in the cache returns cached" "claude G-D-12: $(grep 'there:' "${DD}/d24.out" || tail -3 "${DD}/d24.out" | tr '\n' '|')"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
