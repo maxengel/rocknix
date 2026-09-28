@@ -3327,4 +3327,36 @@ F2_OUT="$(awk -F' *= *' '/^\[/{sec=$0; next} /^[A-Za-z]/{ if (sec=="[Input-SDL-C
     END { d=""; for (k in n) if (n[k]>1) d=d" "k"x"n[k]; print xsec "|" (("DPad R" in n) ? "dpad" : "no-dpad") "|" d }' "${M64}")"
 [ "${F2_OUT}" = "[Input-SDL-Control1]|dpad|" ]; check $? "Control1's DPad and axis mappings are read under [Input-SDL-Control1], each key once" "Control1 read as '${F2_OUT}' (section of the first X Axis | DPad R present | keys seen twice) -- a section header is spliced into it"
 
+# F2-6. #308 9-emulators claude F-EM-02: ppsspp-lr's strip of the
+# aarch64-only -mno-outline-atomics ran in post_unpack, before scripts/unpack
+# applies the patches (005 adds the flag), so it never found it. The recipe's
+# hooks and its patches are run in scripts/unpack's order over the pinned
+# source's files: x86_64 comes out without the flag, aarch64 with it.
+echo "  F2-6. ppsspp-lr: the x86_64 strip of -mno-outline-atomics runs after the patches that add it (#308 F-EM-02)"
+PP_PIN="$(sed -n 's/^PKG_VERSION="\([0-9a-f]*\)".*/\1/p' "${ROOT}/${F2P}/emulators/libretro/ppsspp-lr/package.mk" | head -1)"
+PP_SRC=""
+for d in "${SOURCES_DIR:-}" /workspace/cache/rocknix-sources "${ROOT}/sources" "${ROOT}"/../*/sources; do
+    [ -n "${d}" ] && [ -f "${d}/ppsspp-lr/ppsspp-lr-${PP_PIN}/CMakeLists.txt" ] && { PP_SRC="${d}/ppsspp-lr/ppsspp-lr-${PP_PIN}"; break; }
+done
+if [ -z "${PP_SRC}" ]; then
+    echo "    SKIP  the ppsspp-lr source ppsspp-lr-${PP_PIN:-?} is not under SOURCES_DIR, /workspace/cache/rocknix-sources or a build worktree's sources/"
+else
+PX="${F2}/ppsspp"; mkdir -p "${PX}/pkg/patches"
+src_of "${F2P}/emulators/libretro/ppsspp-lr/package.mk" "${PX}/pkg/package.mk"
+if [ "${OLD}" -eq 1 ]; then
+    git -C "${ROOT}" ls-tree --name-only "${BASE_REF}" "${F2P}/emulators/libretro/ppsspp-lr/patches/" | while read -r f; do git -C "${ROOT}" show "${BASE_REF}:${f}" > "${PX}/pkg/patches/${f##*/}"; done
+else
+    cp "${ROOT}/${F2P}"/emulators/libretro/ppsspp-lr/patches/*.patch "${PX}/pkg/patches/"
+fi
+for arch in x86_64 aarch64; do
+    B="${PX}/build-${arch}"; rm -rf "${B}"
+    for f in CMakeLists.txt Common/ArmCPUDetect.cpp Core/Util/PathUtil.cpp ffmpeg/linux_arm64.sh libretro/libretro_vulkan.cpp ext/glew/glew.c; do
+        mkdir -p "$(dirname "${B}/${f}")"; cp "${PP_SRC}/${f}" "${B}/${f}"
+    done
+    F2_CALL="PKG_BUILD='${B}'; declare -F post_unpack >/dev/null && post_unpack; for p in '${PX}'/pkg/patches/*.patch; do patch -d '${B}' -p1 -s --no-backup-if-mismatch < \"\${p}\" || exit 4; done; declare -F post_patch >/dev/null && post_patch; grep -c 'mno-outline-atomics' '${B}/CMakeLists.txt'"
+    eval "PP_${arch}=\"\$(f2_source '${PX}/pkg/package.mk' GENERIC_X64 ${arch} 2>/dev/null)\""
+done
+[ "${PP_x86_64}" = "0" ] && [ "${PP_aarch64}" = "1" ]; check $? "x86_64's CMakeLists.txt ends without the flag, aarch64's keeps it" "after unpack, patches and hooks: x86_64 has ${PP_x86_64:-?} add_compile_options(-mno-outline-atomics) line(s), aarch64 ${PP_aarch64:-?} -- the strip ran before the patch that adds it"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
