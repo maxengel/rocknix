@@ -119,10 +119,18 @@ fi
 # the fix round, PL-002): this reader never sources the file, but a blank
 # is a space or a tab to both, so the tiers run with one reading of one
 # file -- a carriage return after a value used to pass here as a blank.
+#
+# The key set in a form `source` reads and this does not -- indented,
+# exported, declared, appended to, or with a blank before the = -- is
+# unreadable, never absent (the audit of the fix round, lead G2-A-03):
+# read as absent it was the cloud's root, and a content backup went there.
+# The saves scripts' conf_valid refuses such a file whole.
 conf_get() { # <KEY>: its value, quotes off; nothing when absent; exit 2 when unreadable, and why on stdout
     [ -f /storage/.config/cloud_sync.conf ] || return 0
     awk -v k="$1" '
         { t = $0; gsub(/\t/, "", t); if (t ~ /[[:cntrl:]]/ && !cntrl) cntrl = NR }
+        index($0, k "=") != 1 && !other \
+            && $0 ~ ("^[ \t]*((export|declare|typeset|readonly|local)([ \t]+-[A-Za-z]+)*[ \t]+)?" k "[ \t]*[+]?=") { other = NR }
         index($0, k "=") == 1 {
             s = substr($0, length(k) + 2); v = ""; r = ""; ok = 1; why = ""
             c = substr(s, 1, 1)
@@ -159,6 +167,7 @@ conf_get() { # <KEY>: its value, quotes off; nothing when absent; exit 2 when un
         }
         END {
             if (cntrl) { print "line " cntrl ": a control character other than a tab"; exit 2 }
+            if (other) { print "line " other ": " k " set in a form this reader does not read"; exit 2 }
             if (found && !firstok) { print firstwhy; exit 2 }
             if (found) print first
         }

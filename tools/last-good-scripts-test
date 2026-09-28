@@ -10485,6 +10485,33 @@ printf '<system><path>/storage/roms/nes</path></system>\n' > "${CQC}/storage/.co
 echo n > "${CQC}/storage/roms/nes/N.nes"
 sa2_run "${CQC}" cloud_content_backup nes
 grep -E '^copy ' "${CQC}/ctl/argv" | grep -q -- '--timeout 7s' && [ "${RC}" -eq 0 ]; check $? "PL-015: cloud_content_backup reads RCLONE_NET_OPTS with an escaped quote in it, and its copy carries --timeout 7s (rc ${RC})" "PL-015: rc ${RC}; the copy's bound: $(grep -E '^copy ' "${CQC}/ctl/argv" | grep -o -- '--timeout [0-9a-z]*' | head -1) -- the escaped quote read as the value's end and the shipped bound stood in"
+
+# A53. Lead G2-A-03 (seats/A-gpt.md, Medium): the content scripts read a key
+#      only at the start of a line and followed at once by =, and took any
+#      other assignment of it -- indented, exported, declared, appended to --
+#      for no assignment at all, which is the cloud's root, and the backup
+#      went there. `source` reads those forms and the saves scripts'
+#      conf_valid refuses the file; the content scripts now refuse it too,
+#      with the saves scripts' words, and read the root only when the file
+#      says the root.
+echo "    A53. G2-A-03 (gpt): a content folder set in a form the reader does not read is refused, never read as the root"
+CA3=$(sa_new g2a03); sa_script "${CA3}" cloud_content_backup cloud_content_restore
+mkdir -p "${CA3}/storage/.config/emulationstation" "${CA3}/storage/roms/nes"
+printf '<system><path>/storage/roms/nes</path></system>\n' > "${CA3}/storage/.config/emulationstation/es_systems.cfg"
+echo n > "${CA3}/storage/roms/nes/N.nes"
+for form in '  CONTENT_REMOTE="/ROCKNIX/Content"' 'export CONTENT_REMOTE="/ROCKNIX/Content"' 'declare -x CONTENT_REMOTE="/ROCKNIX/Content"' 'CONTENT_REMOTE+="/ROCKNIX/Content"'; do
+    sa2_conf "${CA3}"; sed -i '/^CONTENT_REMOTE=/d' "${CA3}/storage/.config/cloud_sync.conf"
+    printf '%s\n' "${form}" >> "${CA3}/storage/.config/cloud_sync.conf"
+    rm -rf "${CA3}/cloud"/*; : > "${CA3}/ctl/argv"
+    sa2_run "${CA3}" cloud_content_backup nes
+    [ "${RC}" -eq 1 ] && grep -qx ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ" "${CA3}/out" && [ -z "$(find "${CA3}/cloud" -type f | head -1)" ]; check $? "G2-A-03 (gpt): cloud_content_backup refuses '${form}' and sends nothing (rc ${RC})" "G2-A-03 (gpt): '${form}': rc ${RC}; in the cloud: $(cd "${CA3}/cloud" && find . -type f | tr '\n' ' ') -- read as absent, the content went to the cloud's root"
+done
+sa2_run "${CA3}" cloud_content_restore --scan
+[ "${RC}" -eq 1 ] && grep -qx ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ" "${CA3}/out"; check $? "G2-A-03 (gpt): and cloud_content_restore refuses the same file (rc ${RC})" "G2-A-03 (gpt): cloud_content_restore --scan: rc ${RC}; out: $(sa_tail "${CA3}")"
+sa2_conf "${CA3}"; printf '%s\n' '# CONTENT_REMOTE="/Somewhere/Else"' >> "${CA3}/storage/.config/cloud_sync.conf"
+rm -rf "${CA3}/cloud"/*
+sa2_run "${CA3}" cloud_content_backup nes
+[ "${RC}" -eq 0 ] && [ -f "${CA3}/cloud/ROCKNIX/Content/ROMs/nes/N.nes" ]; check $? "G2-A-03 (gpt): a commented-out assignment beside the real one is no refusal: the ROM goes to /ROCKNIX/Content (rc ${RC})" "G2-A-03 (gpt): rc ${RC}; in the cloud: $(cd "${CA3}/cloud" && find . -type f | tr '\n' ' '); out: $(sa_tail "${CA3}")"
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
