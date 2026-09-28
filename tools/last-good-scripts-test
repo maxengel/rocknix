@@ -10311,6 +10311,69 @@ else
 skip "gpt G2-D-01 / claude G2-D-08: the ready readers need section t's pinned client"
 fi
 
+# D34. gpt G2-D-02 / the blind pass's S-24: when the store could not be read
+# before or after a run, games_made_ready failed as it should -- and its
+# callers put the run's cache operations in its place: the top-up kept
+# added=<cached>, the scan and the cancel's stamp fell to write_stamp's
+# default, which is the same number. A second dump of a game already ready
+# is cached and not added, so that number can be a game that was not "more";
+# the top-up card says N MORE GAMES ARE READY from it. added= is now the
+# measurement or the word unknown -- 0 only when the run cached nothing,
+# since a run that cached nothing made nothing ready. The read fails here
+# the way sqlite fails on a device (a locked store), on the call the case
+# names: 1 is the run's before, 2 its after.
+if [ "${DF_OK}" -eq 1 ]; then
+mv -f "${T}/shim/python3" "${T}/shim/python3.t"
+cat > "${T}/shim/python3" <<'EOS'
+#!/bin/sh
+if [ "$1" = "-c" ] && [ -s /run/ready-fail ]; then
+    case "$2" in *"unlocks & sets"*)
+        n=$(( $(cat /run/ready-calls 2>/dev/null || echo 0) + 1 )); echo "${n}" > /run/ready-calls
+        if grep -qx "${n}" /run/ready-fail; then echo "sqlite3.OperationalError: database is locked" >&2; exit 1; fi ;;
+    esac
+fi
+exec /shim/python3.t "$@"
+EOS
+chmod +x "${T}/shim/python3"
+printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+GLSIZE=$(stat -c %s "${TS}/roms/nes/gamelist.xml")
+d34_topup() { # <call that fails>: the D28 top-up -- game 201 already ready under another dump, indexed again
+    printf '<?xml version="1.0"?>\n<gameList parentHash="%s">\n  <game><path>./g.nes</path><name>G</name><cheevosHash>aaaa0201</cheevosHash><cheevosId>201</cheevosId></game>\n</gameList>\n' "${GLSIZE}" > "${TS}/.config/emulationstation/recovery/nes/g.xml"
+    treset; touch -d '2 hours ago' "${TMARK}"; PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+s.upsert_cache(cache_keys.achievementsets("feed0201", "qa"), '{"Success":true,"GameId":201,"Sets":[]}')
+s.upsert_cache(cache_keys.unlocks(201, "qa"), '{"Success":true,"UserUnlocks":[]}')
+s.close()
+EOS
+    echo "$1" > "${TR}/ready-fail"
+    tctl topup --after-index
+    rm -f "${TS}/.config/emulationstation/recovery/nes/g.xml" "${TR}/ready-fail" "${TR}/ready-calls"
+}
+d34_topup 1
+[ "${RC}" -eq 0 ] && grep -q ' 0 topup cached=3 .* added=unknown$' "${TSTAMP}"; check $? "gpt G2-D-02 / S-24: a top-up whose before-read of the store failed stamps added=unknown, not its three cache operations" "gpt G2-D-02 / S-24: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null) -- a failed measurement replaced by the cache count"
+d34_topup 2
+[ "${RC}" -eq 0 ] && grep -q ' 0 topup cached=3 .* added=unknown$' "${TSTAMP}" && grep -q 'topup done: cached=3 added=unknown' "${TLOG}"; check $? "gpt G2-D-02 / S-24: and one whose after-read failed says unknown too, in the stamp and the log" "gpt G2-D-02 / S-24: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null); log: $(grep 'topup done' "${TLOG}" | tail -n 1 | cut -c1-160)"
+# The scan: the fixture's four jobs cached, the before-read failed.
+treset; echo 1 > "${TR}/ready-fail"; dfake_images
+tctl scan
+[ "${RC}" -eq 0 ] && grep -q '^[0-9]* 0 scan cached=4 .* added=unknown$' "${TSTAMP}"; check $? "gpt G2-D-02 / S-24: a scan whose before-read failed stamps added=unknown, not write_stamp's default of its cached count" "gpt G2-D-02 / S-24: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null)"
+# The cancel's stamp is the scan's too: measured when the store answers
+# (the section t check that reads added=1 after a cancel), unknown when not.
+treset; printf 'ok\ncancel\nok\nok\n' > "${TR}/helper-plan"; echo 1 > "${TR}/ready-fail"
+tctl scan
+[ "${RC}" -eq 130 ] && grep -q '^[0-9]* 130 scan cached=1 .* added=unknown why=CANCELLED$' "${TSTAMP}"; check $? "gpt G2-D-02 / S-24: a cancelled scan whose before-read failed stamps added=unknown why=CANCELLED" "gpt G2-D-02 / S-24: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null)"
+# A run that cached nothing made nothing ready, read or not: 0, not unknown.
+treset; for _ in 1 2 3 4; do echo skip; done > "${TR}/helper-plan"; echo 1 > "${TR}/ready-fail"
+tctl scan
+[ "${RC}" -eq 0 ] && grep -q '^[0-9]* 0 scan cached=0 .* added=0$' "${TSTAMP}"; check $? "gpt G2-D-02 / S-24: a scan that cached nothing stamps added=0 whether or not the store could be read" "gpt G2-D-02 / S-24: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null)"
+rm -f "${TR}/ready-fail" "${TR}/ready-calls" "${TR}/helper-plan"
+mv -f "${T}/shim/python3.t" "${T}/shim/python3"
+else
+skip "gpt G2-D-02 / S-24: the ctl's runs need section t's pinned client"
+fi
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi

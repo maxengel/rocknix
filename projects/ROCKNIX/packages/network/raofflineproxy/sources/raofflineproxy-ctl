@@ -202,12 +202,15 @@
 #   (CloudText::parseScanStamp, which passes over keys it does not know).
 #   `added` is how many games the run made ready for this account (fork
 #   #298), read from the store before and after -- a game is ready with the
-#   account's patch and unlocks rows -- rather than counted from the run's
-#   cache operations: a game the recently played pass (the client's
+#   account's unlocks row and an achievementsets row of the game (audit of
+#   the fixes, claude G-D-08) -- rather than counted from the run's cache
+#   operations: a game the recently played pass (the client's
 #   run-smart-cache, which takes only games not yet cached) caches for the
 #   first time is added, and a second dump of a game already ready is
 #   cached but not added (#308 F-RA-10, F-RA-15). The card says "added" of
-#   those and "ready" otherwise.
+#   those and "ready" otherwise. When the store could not be read before or
+#   after a run that cached games, added=unknown: a count nobody measured
+#   is never written as one (PL-031).
 #   `skipped` is the ROMs RetroAchievements does not know, which the client
 #   refuses one at a time and the scan counts rather than reports (the
 #   proxy's own docs skip them silently); `indexed` is how many of `cached`
@@ -1014,8 +1017,9 @@ for g in sorted(unlocks & sets):
 }
 
 # How many games a run made ready: the ids in the after file ($2) that the
-# before file ($1) does not hold. Prints nothing when either could not be
-# read, and the caller keeps its own count.
+# before file ($1) does not hold. Prints nothing and fails when either could
+# not be read; the caller says so through added_count, and never puts a
+# count of its own in this one's place.
 games_made_ready() {
     [ -n "${1}" ] && [ -n "${2}" ] && [ -e "${1}" ] && [ -e "${2}" ] || return 1
     local NEWIDS RC N=0
@@ -1030,6 +1034,24 @@ games_made_ready() {
     echo "${N}"
 }
 
+# added= as the stamp and the log say it: the measured count ($1) when there
+# is one; 0 when the run cached nothing ($2), since a run that cached
+# nothing made nothing ready; otherwise the word unknown. Never the run's
+# cache operations: they count a second dump of a game already ready, and
+# the top-up card says MORE GAMES ARE READY from this number (audit of the
+# fix round, gpt G2-D-02, the blind pass's S-24, PL-031). The interface's
+# reader (CloudText::parseScanStamp) passes over a value that is not a
+# number, as for a stamp that does not say.
+added_count() { # <measured count, or empty> <cached>
+    if [ -n "${1}" ]; then
+        echo "${1}"
+    elif [ "${2:-0}" -gt 0 ] 2>/dev/null; then
+        echo unknown
+    else
+        echo 0
+    fi
+}
+
 # "<epoch> <rc> <route> cached=<n> skipped=<m> ready=<total> limit=<0|1>
 # indexed=<i> errors=<e> added=<k> [why=<TOKEN>]", written whole or not at all (a
 # rename), so the page never reads half a line. The page reads the keys it
@@ -1037,11 +1059,12 @@ games_made_ready() {
 # and errors= are for the log and for whoever reads the file.
 write_stamp() {
     local RC="$1" ROUTE="$2" CACHED="$3" SKIPPED="$4" READY="$5" LIMIT="$6" INDEXED="${7:-0}" ERRORS="${8:-0}" WHY="${9:-}"
-    # added (fork #298): the games new to the store among CACHED -- the
-    # tenth argument where a run knows better than "all of them" (a top-up
-    # after its recently played pass); a run that gives none added every
-    # game it cached.
-    local ADDED="${10:-${CACHED}}"
+    # added (fork #298): the games this run made ready for the account, as
+    # measured -- the tenth argument; a run that gives none, or whose
+    # measurement failed, is said by added_count, never counted as every
+    # game it cached (PL-031).
+    local ADDED
+    ADDED="$(added_count "${10:-}" "${CACHED}")"
     # truncated=1 (#307 PL-059): the walk over unindexed folders stopped at
     # the cap, and the games past it are the next scan's. Written only when
     # it is 1; CloudText::parseScanStamp reads it.
@@ -1751,12 +1774,18 @@ stopped() {
 # ready count is right -- the page is told why, and the run exits 130
 # through its EXIT trap (the helper ended, the run's files gone). R_CACHED
 # and the rest are the run's so far; before run_jobs they are unset, and
-# read as 0.
+# read as 0. added= is measured as the run's own end measures it -- the
+# ready set the run took before its jobs against the store now -- and is
+# unknown when either cannot be read, never the games cached so far
+# (PL-031).
 cancelled() {
-    local READY
+    local READY MADE=""
     READY="$(count_ready)"
+    if [ -n "${READY_BEFORE:-}" ] && READY_AFTER="$(mktemp /tmp/raofflineproxy-ready.XXXXXX 2>/dev/null)" && ready_games_into "${READY_AFTER}"; then
+        MADE="$(games_made_ready "${READY_BEFORE}" "${READY_AFTER}")"
+    fi
     tell "why CANCELLED"
-    write_stamp 130 "${1}" "${R_CACHED:-0}" "${R_SKIPPED:-0}" "${READY}" 0 "${R_INDEXED:-0}" "${R_ERRORS:-0}" CANCELLED
+    write_stamp 130 "${1}" "${R_CACHED:-0}" "${R_SKIPPED:-0}" "${READY}" 0 "${R_INDEXED:-0}" "${R_ERRORS:-0}" CANCELLED "${MADE}"
     slog "${1} cancelled by the player: cached=${R_CACHED:-0} skipped=${R_SKIPPED:-0} errors=${R_ERRORS:-0} ready=${READY}"
     say "${1}: cancelled"
     exit 130
@@ -1973,6 +2002,9 @@ do_scan() {
     local ADDED=""
     READY_AFTER="$(mktemp /tmp/raofflineproxy-ready.XXXXXX 2>/dev/null)" && ready_games_into "${READY_AFTER}" && ADDED="$(games_made_ready "${READY_BEFORE}" "${READY_AFTER}")"
     rm -f "${READY_BEFORE}" "${READY_AFTER}"; READY_BEFORE=""; READY_AFTER=""
+    # A measurement that failed is said as one (added_count, PL-031).
+    ADDED="$(added_count "${ADDED}" "${R_CACHED}")"
+    [ "${ADDED}" = "unknown" ] && slog "scan: the store could not be read before or after the jobs; how many games they made ready is not known (added=unknown)"
     local RC=0 WHY="${R_WHY}"
     if [ -n "${WHY}" ]; then
         RC=1
@@ -2151,7 +2183,7 @@ do_topup() {
     # cached -- the games added and indexed since the last run, and with a
     # library nobody scanned, as many as the deadline allows (the rest next
     # time). Nothing is hashed here.
-    local COUNTS LRC NEW=0 CACHED=0 SKIPPED=0 INDEXED=0 LIMIT=0 ERRORS=0 WHY="" LEFT ADDED=0 LISTED=0 LIST_WHY=""
+    local COUNTS LRC NEW=0 CACHED=0 SKIPPED=0 INDEXED=0 LIMIT=0 ERRORS=0 WHY="" LEFT ADDED="" LISTED=0 LIST_WHY=""
     local PENDING_SEEN=0 PENDING_TOKEN=""
     LEFT="$(time_left "${START}")"
     if [ "${LEFT}" -le 0 ]; then
@@ -2200,9 +2232,6 @@ do_topup() {
         else
             run_jobs quiet "${LIST}" "${NEW}" "${LEFT}"
             CACHED="${R_CACHED}"; SKIPPED="${R_SKIPPED}"; INDEXED="${R_INDEXED}"; LIMIT="${R_LIMIT}"; ERRORS="${R_ERRORS}"; WHY="${R_WHY}"
-            # The count the store's before-and-after replaces below, kept
-            # for when the store cannot be read (fork #298).
-            ADDED="${CACHED}"
             # A helper killed by the bound after its DONE finished its games
             # (fork #188: badge downloads kept it alive); only one cut before
             # DONE makes the run one that did not finish.
@@ -2272,10 +2301,13 @@ print(int(r.get("cached", 0)), int(r.get("skipped", 0)), 1 if r.get("limit_reach
     local READY MADE
     READY="$(count_ready)"
     # added=: the games the two passes made ready for this account, from the
-    # store before and after (#308 F-RA-10, F-RA-15); the indexed pass's own
-    # count when the store could not be read.
+    # store before and after (#308 F-RA-10, F-RA-15); unknown when the store
+    # could not be read, never the passes' cache operations in its place
+    # (added_count, PL-031).
     READY_AFTER="$(mktemp /tmp/raofflineproxy-ready.XXXXXX 2>/dev/null)" && ready_games_into "${READY_AFTER}" && MADE="$(games_made_ready "${READY_BEFORE}" "${READY_AFTER}")" && ADDED="${MADE}"
     rm -f "${READY_BEFORE}" "${READY_AFTER}"; READY_BEFORE=""; READY_AFTER=""
+    ADDED="$(added_count "${ADDED}" "${CACHED}")"
+    [ "${ADDED}" = "unknown" ] && slog "topup${AI_NOTE}: the store could not be read before or after the passes; how many games they made ready is not known (added=unknown)"
     slog "topup done: cached=${CACHED} added=${ADDED} indexed=${INDEXED} skipped=${SKIPPED} errors=${ERRORS} ready=${READY} limit=${LIMIT} took=$(( $(date +%s) - START ))s${WHY:+ why=${WHY}}"
 
     # The line under the row changes only when the top-up has something to
