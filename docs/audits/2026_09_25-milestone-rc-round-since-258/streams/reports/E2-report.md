@@ -260,3 +260,138 @@ Withdrawn rows marked "no stream" name files that appear in no stream's list: Cl
 - **gpt F-ES-14:** no Windows toolchain to prove a WIN32 path.
 - **Files in no stream's list:** CloudTransferJob, CaptureRotation*, DisplayAspect*, NetworkThread, GuiScraperRun, GuiScraperStart, GuiBios, LaunchCommand.h, OfflineScanJob, `tests/credential-quoting.py`. The rows that live there are the integrator's (see the table).
 - **Unproven here, left for the integrator's VM steps** (each named in its commit): the PL-014 soak; the PL-029 journal; the PL-061 journal order; the PL-062 walk; PL-068 with a held lock; the frames at 640x480 for the long-job pages' help bar and the two shortened descriptions.
+
+## Follow-up (2026-09-28, on test/qa-integration da702d8b6)
+
+`git merge test/qa-integration` fast-forwarded `feature/pl-e2` to da702d8b6. `build-tests/` was deleted and rebuilt from scratch, as was the app-unit build directory. The follow-up adds 18 commits on `feature/pl-e2`, da702d8b6..435a506b5, all local: no image builds, no guests, no pushes. Every commit whose change has a testable seam had its test seen to FAIL first, with the failure quoted in the body; the commits with no test say why (a word, prose, a signature, or a frame the VM should take). Every body carries an `Already written:` line. Every title matches `^[a-zA-Z0-9_*./-]+: ` and is 72 characters or fewer. One title had a space before its colon. I renamed it to `es-app:` with `filter-branch --msg-filter` over this range and removed the backup refs.
+
+### Commits
+
+| Commit | Title | Seen to fail first |
+| --- | --- | --- |
+| e30e4dcb9 | GuiMenu: MANAGE SAVED NETWORKS says CONNECTED, as the picker does | a word (no test) |
+| c0def453a | GuiWifi: a join that failed says why, by wifictl's exit code | WifiTextTests.cpp:221 `CHECK( 1 == 0 )` |
+| d17a68460 | es-app: the scripts' whys in the player's language; one cleanLine | adopts E1's tested helpers |
+| 4a87044e7 | GuiScraperRun: the player's own buttons, and a line cut on characters | TextFit's cases |
+| 6ae936577 | GuiScraperStart: two comments back to ASCII | the ASCII-comment grep: 2 lines, then 0 |
+| 72ef97b54 | GuiBios: file paths as the system expects them; DETAILS only with rows | none (frames) |
+| 96da6e7d6 | tests/unit: the README names every source; no count to go stale | prose |
+| df44e0ab9 | DisplayAspectText: an extensionless dotted name keeps its dot | `CHECK(  == Dr. Mario )` |
+| 190f62550 | CaptureRotation: no record without a launch; a zero where it corrects | CaptureRotationTextTests.cpp:129, 130, 135 |
+| d388c2800 | tests: credential-quoting no longer passes std::string(value) | self-test 2 of 9 failed, rc 2; a constructed site read quoted (rc 0) |
+| 6b806dd50 | CloudTransferJob: a stop before the pid line reaches the run | jobs-tests 3 of 3 failed (4020 ms, 4021 ms, `CHECK_FALSE( true )`) |
+| 8eb4c6821 | ThreadedCloudSync: restamp only the part a stop interrupted, everywhere | CloudTextTests.cpp: 5 assertions in 2 cases |
+| 451a2bbd8 | OfflineScanJob: run() without a self it never used | signature only (no test) |
+| 4d1ddebc1 | OfflineScanJob: post through AppWindow, as the offer the card asks does | JobsTests.cpp:155 `CHECK( {?} == 1 )` |
+| 760458b82 | LaunchCommand: tokens are whole words; its cases join es-unit-tests | LaunchCommandTests.cpp:82-84 (`ro`, `x`, `y'`) |
+| 5b6d2e638 | SaveStateBookkeeper: ask the transfer lock the way the manager does | BookkeeperTests.cpp:142 |
+| cb32a0481 | CloudText: words for SOME_IMAGES_NOT_SAVED; the scan's why table tested | CloudTextTests.cpp:1443, 1444 |
+| 435a506b5 | OfflineAchievementsText: a null unlock count is unknown, not none | OfflineAchievementsTextTests.cpp:332 |
+
+### Task 1: E1's helpers
+
+- **`CloudText::localizedWhy`** is now used on the cloud rows (`cloudReadLastRun` in GuiMenu) and on the transfer page's done line (GuiCloudTransfer): d17a68460. CloudTransferJob keeps the scripts' English why in its failed items and hands it to the page, and the page localizes it where it draws. ThreadedCloudSync already used it (E1).
+- **`CloudText::cleanLine`** is now used by CloudTransferJob and OfflineScanJob; their own `cleanLine` only delegates to it: d17a68460.
+- **`ApiSystem::joinWifiNetwork` returns the join's exit code** (the other half of claude F-WF-03 / gpt F-WF-06): c0def453a. It returns the script's code when that is non-zero, else 0 or 1 from `WifiText::parseJoin`. GuiWifi picks the words with `WifiText::joinFailure`:
+  - code 2: THE WI-FI SERVICE DIDN'T ANSWER. TRY AGAIN IN A MOMENT.
+  - any other failure: the forget-and-rejoin key advice.
+  - French added.
+- **F-WF-11:** MANAGE SAVED NETWORKS marks the joined network CONNECTED instead of IN USE: e30e4dcb9.
+  - **For the integrator:** `docs/es-menu-map.md` line 221 still reads "IN USE beside the one the device is on". It should read CONNECTED.
+  - No other row's words changed. The msgid CONNECTED already existed with its French.
+
+### Task 2: the 18 rows withdrawn as "not in my files", and the halves
+
+| Row | Finding | Outcome |
+| --- | --- | --- |
+| 7 | 1-raoffline claude F-RA-17, the OfflineScanJob part | fixed 451a2bbd8. `(void) self` is gone from OfflineScanJob and from CloudTransferJob, which had the same copy. |
+| 9 | 5-cloud claude F-CS-05 | fixed 8eb4c6821. The settings stamps are restamped, and the card restamps for every cancelled origin, not only a manual backup or restore. |
+| 11 | 5-cloud claude F-CS-15 | ES half withdrawn: **no ES change is needed.** The page already reads a script's exit 0 as COMPLETED and a `>>> why` line as COULDN'T FINISH - <why>. The fix is the script's two `exit 1` "Nothing to back up" branches in `cloud_content_backup` (`--selected` and `--all`). **For the integrator:** that script half is in no stream's brief. I recommend `exit 0` with the sentence, as the finding suggests and as `backup_game_saves` does. |
+| 12 | 5-cloud claude F-CS-26 | fixed 6b806dd50. A stop that arrives before the pid is kept and sent when the pid arrives. |
+| 16 | 8-es claude F-ES-05 | fixed 4a87044e7 |
+| 17 | 8-es claude F-ES-06 | fixed 72ef97b54 |
+| 19 | 8-es claude F-ES-08, the CaptureRotation part | fixed 190f62550. A log with no launch banner writes no record, a log older than the launch is not read, and a zero is written where it corrects an earlier turn or the table. |
+| 31 | 8-es claude F-ES-20 | now fixed in full, 760458b82. The header reads whole shell words (the words `replaceOptionValue` reads), and its cases moved into es-unit-tests with a netplay-nick case, an escaped-ROM case and a save-state-rewrite case. |
+| 33 | 8-es claude F-ES-22 | fixed 6ae936577 |
+| 34 | 8-es claude F-ES-23 | still withdrawn, refuted: GuiBios.cpp:28-30 hold raw UTF-8. |
+| 38 | 8-es claude F-ES-28 | fixed 72ef97b54 |
+| 39 | 8-es claude F-ES-29 | fixed 96da6e7d6. The README since also names LaunchCommand.h and jobs-tests (760458b82). |
+| 47 | 5-cloud gpt F-CS-23 | fixed 8eb4c6821. Only the part the trap stamped 130 this run is restamped; a finished part keeps its outcome. |
+| 48 | 5-cloud gpt F-CS-24 | fixed 6b806dd50. This also stops a run that had already completed from being called stopped. |
+| 54 | 8a gpt F-ES-08 | fixed 190f62550 |
+| 58 | 8a gpt F-ES-12 | withdrawn, refuted. The page scales its line pitches by design, within bounds. GuiCloudTransfer's constructor derives it: `getHeight` includes line spacing and a glyph is about 2/3 of its row. The tallest real theme uses 0.88 of the screen height, under the 0.9 threshold. |
+| 59 | 8a gpt F-ES-13 | fixed 4a87044e7 |
+| 61 | 8a gpt F-ES-15 | fixed 4a87044e7 |
+| 67 | 8a gpt F-ES-21 | fixed df44e0ab9 |
+| 68 | 8a gpt F-ES-22 | fixed 6ae936577 |
+| 69 | 8b gpt F-ES-10 | fixed d388c2800 |
+| 70 | 8b gpt F-ES-13, the GuiScraperRun part | fixed 4a87044e7. The sign-in window's CHOOSE WITH A is left as it is: that binding is `cloud-signin-window.c`'s (ROCKNIX repo, stream C). |
+| NetworkThread | 8-es claude F-ES-09 (row 20) | nothing remains. The back-off is in `SystemData::startIndexesAtStart` (c48d8d469), which NetworkThread's post calls. |
+
+### Task 3: routing the posts through `AppWindow::post`
+
+Done in 4d1ddebc1.
+
+- **OfflineScanJob:** `changed()` posts through AppWindow now. A dropped post clears the pending mark.
+- **ThreadedCloudSync:** its one post is `CloudOffer::present`'s, which the card calls from its worker after the linger. That post now goes through AppWindow. The card's other hand-off, `ProxyCards::afterSync`, already did.
+- **CloudTransferJob:** posts nothing. The page reads the job under its lock each frame, so there is nothing to route.
+- **Left, and why:** ThreadedCloudSync updates its own AsyncNotificationComponent and closes it from its destructor by direct call, not by post. A run still lingering when main() tears the window down touches a component the window owned. AppWindow cannot gate a direct call. Fixing it means tying the thread's life to the window's, which changes who owns the card. **This is for the integrator.**
+
+### Beyond the list
+
+- **5b6d2e638:** the note from my first report ("point the bookkeeper at E1's `isFlockHeld` once merged") is done. The bookkeeper and the manager's refusal now ask one check, and it fails closed on a lock file that cannot be opened.
+  - `RunLock::held` has no application caller left. It stays, pinned by its own cases; retiring it is the integrator's call.
+- **Found and fixed on the way (cb32a0481):** at 640x480 the scan page showed the French of SOME GAMES COULDN'T BE SAVED. TRY THE SCAN AGAIN. cut off with an ellipsis: 521 px on a 499 px line. The page now drops the trailing instruction instead of clipping (`shortenWhy` / `chooseThatFits`).
+- **Behaviour change to know (8eb4c6821):** a manual backup cancelled before its script wrote any stamp no longer gets `cancelled` written over the last real run's stamp. It keeps that run's stamp, as the transfer page always did.
+
+### Coordinator items (stream D)
+
+1. **SOME_IMAGES_NOT_SAVED** (cb32a0481). **PROPOSED words, for the maintainer to approve:**
+   - Scan page and the SCAN GAMES question: `SOME ACHIEVEMENT IMAGES COULDN'T BE SAVED. TRY THE SCAN AGAIN.`
+   - Top-up card: `SOME ACHIEVEMENT IMAGES COULDN'T BE SAVED`, without the instruction, as the card already does for SOME_GAMES_NOT_SAVED (F-RA-09).
+   - French for both: CERTAINES IMAGES DE SUCCÈS N’ONT PAS PU ÊTRE ENREGISTRÉES[. RELANCEZ L’ANALYSE.]
+   - The table moved to `CloudText::scanWhy` / `topUpWhy`, so it now has a doctest case. OfflineAchievements and ProxyCards delegate to it, and proxycards-tests now read the shipped words.
+   - Measured at 15 px against the scan page's 499 px line: the whole sentence is 516 px, so the page shows its first sentence (351 px); the French short form is 471 px. At 1280x800 the whole sentence fits.
+   - Already written: no stamp an earlier build wrote carries the token.
+2. **`unlocked: null`** (435a506b5):
+   - `parseStoreGame` reads null as unknown (`StoreGame::unlockedKnown`). A 0 is still a count, and a count the summary leaves out still reads 0, as its existing case pins.
+   - The game's row on the offline summary says `YOUR PROGRESS COULDN'T BE READ` with no bar, instead of the points line and "0 of 12". **This is also proposed wording.** French: VOTRE PROGRESSION N’A PAS PU ÊTRE LUE. It is 257 px English and 306 px French, one line on both panels.
+   - Already written: nothing to migrate. The summary is read fresh each time the page opens, and a ctl from before D's change never writes null.
+
+### Suite lines (final, from scratch, head 435a506b5)
+
+```
+es-unit-tests:    test cases: 159 | 159 passed | 0 failed   assertions: 1646 | 1646 passed
+es-file-tests:    test cases:  12 |  12 passed | 0 failed   assertions: 3291 | 3291 passed
+app-unit-tests:   test cases:  16 |  16 passed | 0 failed   assertions:  106 |  106 passed
+proxycards-tests: test cases:   6 |   6 passed | 0 failed   assertions:   31 |   31 passed
+bookkeeper-tests: test cases:   4 |   4 passed | 0 failed   assertions:   15 |   15 passed
+jobs-tests (new): test cases:   4 |   4 passed | 0 failed   assertions:   21 |   21 passed
+tests/*.py (10 scripts, every one rc 0): cloud-gated-row PASS; cloud-oauth-await PASS;
+  cloud-oauth-lifetime PASS; cloud-set-systems-quoting 5 of 5; cloud-sync-last-run PASS;
+  credential-quoting 10 sites, 10 quoted, 0 bare; hasher-offline-index PASS;
+  launch-capture-gate PASS; launch-deferred-state PASS; maintenance-why PASS
+es-syntax-check: 24 of 24 .cpp touched since da702d8b6 PASS; and at the head, 43 of 43
+  other sources that include one of the 11 changed headers (ApiSystem, CaptureRotation,
+  CaptureRotationText, CloudText, CloudTransferJob, LaunchCommand, OfflineAchievementsText,
+  OfflineScanJob, RetroAchievements, ThreadedCloudSync, WifiText) PASS
+es-untranslated: 585 fork string(s) in the source, 585 with French, 0 without (rc 0)
+vocabulary-check: 153 string(s) judged, 0 wrong (rc 0)
+msgfmt -c (toolchain) on the French catalogue: clean
+ASCII comments: es-app/src 0; the 9 in es-core are upstream's (present in base bccd71570)
+```
+
+### For the integrator
+
+- `docs/es-menu-map.md:221`: IN USE should read CONNECTED.
+- `cloud_content_backup`: exit 0 on "Nothing to back up" (claude F-CS-15's script half; unassigned).
+- `runemu.sh` still reads `${ARGUMENTS##*-P}`, which finds a `-P` inside a quoted netplay nick (stream B). The manifest now reads whole words, so for such a nick the launcher and the manifest disagree until runemu.sh changes. The case is pinned in es-app/tests/unit/LaunchCommandTests.cpp.
+- The sync card's direct calls from a thread that outlives the window (Task 3, above).
+- Three strings wait on the maintainer's approval: SOME ACHIEVEMENT IMAGES COULDN'T BE SAVED[. TRY THE SCAN AGAIN.] and YOUR PROGRESS COULDN'T BE READ.
+- Frames at 640x480 the VM should take:
+  - the scan page ending on SOME_IMAGES_NOT_SAVED, in English and French;
+  - the offline summary with a null row;
+  - the cloud rows in a French interface;
+  - the scraper run's help bar;
+  - BIOS CHECK with no rows (no DETAILS).
+- Rules read for this pass: es-player-text.md (outcome vocabulary, register), player-language.md (brevity is not clipping), es-native-ui.md, es-code-traps.md (ASCII comments, pure text's home), engineering-practices.md (guards fail closed; before deleting a duplicate), and upgrade-and-install.md (the `Already written:` lines).
