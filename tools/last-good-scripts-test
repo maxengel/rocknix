@@ -4343,4 +4343,21 @@ mkdir -p "${DD}/gmr-dir"; printf '101\n102\n' > "${DD}/gmr-after"
 DGM="$(bash -c ". '${DD}/gmr.sh'; games_made_ready '${DD}/gmr-dir' '${DD}/gmr-after'"; echo "rc=$?")"
 [ -s "${DD}/gmr.sh" ] && [ "${DGM}" = "rc=1" ]; check $? "gpt G-D-05: games_made_ready with a before file that cannot be read prints nothing and fails, so the caller keeps its own count" "gpt G-D-05: it answered '$(printf '%s' "${DGM}" | tr '\n' ' ')' -- a failed comparison read as a count"
 
+# D29. gpt G-D-03: the top-up removes index-pending only if it is the
+# marker its listing was made for -- one an index writes while the run is at
+# its jobs is a newer promise, and it stays. claude G-D-10: the log says the
+# listing is repeated after the half hour when a run does not finish.
+if [ "${DT_OK}" -eq 1 ]; then
+printf "${DCFG_ON}" > "${TCFG}"; TENV=(--setenv RAOFFLINEPROXY_HISTORY /storage/.config/retroarch/content_history.lpl)
+treset; touch -d '3 hours ago' "${THISTORY}"; touch -d '2 hours ago' "${TMARK}"
+tctl index-offline; printf 'wait 3\nok\n' > "${TR}/helper-plan"; rm -f "${TR}/helper.pid" "${TR}/helper-times"
+dbg topup
+for _ in $(seq 1 100); do grep -q '^start' "${TR}/helper-times" 2>/dev/null && break; sleep 0.1; done
+tctl index-offline; DIO=${RC}
+for _ in $(seq 1 150); do [ -s "${DD}/bg.rc" ] && break; sleep 0.1; done; wait "${DBG}" 2>/dev/null
+[ "${DIO}" -eq 0 ] && [ "$(cat "${DD}/bg.rc" 2>/dev/null)" = "0" ] && [ -e "${TPD}/index-pending" ]; check $? "gpt G-D-03: a marker an index writes while a top-up is at its jobs outlives that top-up (it was not the one the run listed for)" "gpt G-D-03: the run exited $(cat "${DD}/bg.rc" 2>/dev/null); marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone) -- the older run acknowledged the newer notification"
+grep -q 'listed once for it.*again' "${TLOG}"; check $? "claude G-D-10: the log line says the marker's listing is repeated when a run does not finish" "claude G-D-10: $(grep 'listed once' "${TLOG}" | tail -n 1 | cut -c1-200)"
+rm -f "${TR}/helper-plan"; TENV=()
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

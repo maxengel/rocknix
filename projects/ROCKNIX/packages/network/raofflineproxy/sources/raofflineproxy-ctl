@@ -1987,9 +1987,19 @@ do_scan() {
 # gives them one; the interface runs that index when the link comes up, and
 # its topup --after-index caches them (#308 F-RA-22). Nothing else is
 # touched; exit 0.
+# index-pending holds a token -- when it was written and by which process --
+# so a top-up can tell the marker its listing was made for from a newer one
+# an index writes while it runs (audit of the fixes, gpt G-D-03). Whole or
+# not at all. A marker an earlier build left is an empty file, and reads as
+# one token like any other.
+write_index_pending() {
+    printf '%s %s %s\n' "$(date +%s)" "$$" "${RANDOM}" > "${INDEX_PENDING}.tmp" 2>/dev/null \
+        && mv -f "${INDEX_PENDING}.tmp" "${INDEX_PENDING}"
+}
+
 do_index_offline() {
     mkdir -p "${PROXY_DIR}" || fail "cannot create ${PROXY_DIR}"
-    touch "${INDEX_PENDING}" || fail "cannot write ${INDEX_PENDING}"
+    write_index_pending || fail "cannot write ${INDEX_PENDING}"
     slog "index ran offline: the hash library did not come (index-pending); the library is listed once at the link's return"
 }
 
@@ -2062,7 +2072,7 @@ do_topup() {
     if [ "${ONLINE}" -eq 0 ]; then
         slog "topup refused: offline by the proxy's probe (${TRY} probes); not counted as an attempt"
         if [ "${AFTER_INDEX}" -eq 1 ]; then
-            touch "${INDEX_PENDING}"
+            write_index_pending
             slog "topup: the index's games wait for the link (index-pending)"
         fi
         exit ${EX_UNAVAILABLE}
@@ -2081,6 +2091,7 @@ do_topup() {
     # library nobody scanned, as many as the deadline allows (the rest next
     # time). Nothing is hashed here.
     local COUNTS LRC NEW=0 CACHED=0 SKIPPED=0 INDEXED=0 LIMIT=0 ERRORS=0 WHY="" LEFT ADDED=0 LISTED=0 LIST_WHY=""
+    local PENDING_SEEN=0 PENDING_TOKEN=""
     LEFT="$(time_left "${START}")"
     if [ "${LEFT}" -le 0 ]; then
         WHY=TOOK_TOO_LONG
@@ -2098,8 +2109,11 @@ do_topup() {
         # part-way (STOP IT AND PLAY, disable), a game whose fetch failed,
         # each left no marker and so no retry (#307 PL-055).
         if [ "${AFTER_INDEX}" -eq 0 ]; then
-            slog "topup at the link's return: an index ran offline (index-pending); the library listed once for it"
+            slog "topup at the link's return: an index ran offline (index-pending); the library listed once for it -- again after the half hour if this run does not finish"
         fi
+        # The marker this listing answers, as it reads now: one written
+        # after this moment is a newer promise, and stays (gpt G-D-03).
+        if [ -e "${INDEX_PENDING}" ]; then PENDING_SEEN=1; PENDING_TOKEN="$(cat "${INDEX_PENDING}" 2>/dev/null)"; fi
         COUNTS="$(list_jobs "${LIST}" indexed "${LEFT}" 2>>"${SCAN_LOG}")"
         LRC=$?
         if [ "${LRC}" -eq 0 ]; then
@@ -2146,8 +2160,12 @@ do_topup() {
     # over -- so whatever index-pending stood for is done; after-index runs
     # included, since their listing is the same (#307 PL-055).
     if [ "${LISTED}" -eq 1 ] && [ -z "${WHY}" ] && [ -e "${INDEX_PENDING}" ]; then
-        rm -f "${INDEX_PENDING}"
-        slog "topup: the pending index's listing and its games are handled; index-pending removed"
+        if [ "${PENDING_SEEN}" -eq 1 ] && [ "$(cat "${INDEX_PENDING}" 2>/dev/null)" = "${PENDING_TOKEN}" ]; then
+            rm -f "${INDEX_PENDING}"
+            slog "topup: the pending index's listing and its games are handled; index-pending removed"
+        else
+            slog "topup: an index left index-pending while this run was at its jobs; kept for the next run"
+        fi
     fi
 
     # Then the client's own recently-played pass for what the index missed
