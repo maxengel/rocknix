@@ -3390,4 +3390,39 @@ else
     echo "    SKIP  PL-060's cases: section t did not run"
 fi
 
+# D7. #308 1-raoffline claude F-RA-06: the listing reads the systems the
+# interface reads. SystemData::getConfigPath takes the first of
+# es_systems_custom.cfg, the user's es_systems.cfg and the image's as the base
+# -- a custom file IS the base there too, so the seat's scenario is the
+# interface's own rule -- and then loadAdditionnalConfig merges every
+# es_systems_*.cfg in the user's folder and beside the binary into it, by
+# system name. The listing read the base alone: a system added by an
+# es_systems_<name>.cfg was never indexed, and one whose <path> the file moved
+# was looked for where it no longer is.
+if [ "${DT_OK}" -eq 1 ]; then
+printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+ESD="${TS}/.config/emulationstation"
+treset; touch -d '2 hours ago' "${TMARK}"
+mkdir -p "${TS}/roms/snes" "${TS}/roms/nes2"
+printf 'SNES x' > "${TS}/roms/snes/x.sfc"
+printf '<?xml version="1.0"?>\n<gameList>\n  <game><path>./x.sfc</path><name>X</name><cheevosHash>ssss</cheevosHash><cheevosId>301</cheevosId></game>\n</gameList>\n' > "${TS}/roms/snes/gamelist.xml"
+# gb's folder moved by the extra file: its games are looked for in nes2.
+printf 'GB m' > "${TS}/roms/nes2/m.gb"
+printf '<?xml version="1.0"?>\n<gameList>\n  <game><path>./m.gb</path><name>M</name><cheevosHash>mmmm</cheevosHash><cheevosId>302</cheevosId></game>\n</gameList>\n' > "${TS}/roms/nes2/gamelist.xml"
+cat > "${ESD}/es_systems_extra.cfg" <<'EOS'
+<?xml version="1.0"?>
+<systemList>
+  <system><name>snes</name><fullname>SNES</fullname><path>/storage/roms/snes</path></system>
+  <system><name>gb</name><path>/storage/roms/nes2</path></system>
+</systemList>
+EOS
+: > "${TR}/helper-jobs.log"
+tctl topup --after-index
+grep -qP '^I\t301\tssss\t/storage/roms/snes/x.sfc$' "${TR}/helper-jobs.log"; check $? "#308 claude F-RA-06: a system an es_systems_<name>.cfg adds is read with the rest -- its indexed game is a job (rc ${RC})" "#308 claude F-RA-06: rc ${RC}; jobs: $(tr '\t' ',' < "${TR}/helper-jobs.log" | tr '\n' '|' | cut -c1-240) -- the listing read the base file alone"
+grep -qP '^I\t302\tmmmm\t/storage/roms/nes2/m.gb$' "${TR}/helper-jobs.log"; check $? "#308 claude F-RA-06: a system whose <path> an es_systems_<name>.cfg moves is read at the new path" "#308 claude F-RA-06: jobs: $(tr '\t' ',' < "${TR}/helper-jobs.log" | tr '\n' '|' | cut -c1-240)"
+rm -f "${ESD}/es_systems_extra.cfg"; rm -rf "${TS}/roms/snes" "${TS}/roms/nes2"
+else
+    echo "    SKIP  #308 F-RA-06's cases: section t did not run"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

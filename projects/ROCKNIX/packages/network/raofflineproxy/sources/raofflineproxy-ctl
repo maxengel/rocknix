@@ -1012,8 +1012,9 @@ take_lock() {
 # command line. The walk's "already done" stays the client's own record
 # (the ROM's path on this account's patch rows).
 #
-# The systems and their folders come from es_systems.cfg (the interface's
-# own custom, user or image copy, in the order it reads them); the walk's
+# The systems and their folders come from the interface's own files, read
+# as it reads them: the base es_systems.cfg (custom, user or image copy) and
+# the es_systems_*.cfg merged into it (#308 F-RA-06); the walk's
 # folders from SCAN_SYSTEMS as before, less any folder an indexed system
 # owns. The walk stops at the client's cap of files (MAX_SCAN_ENTRIES),
 # counted over the files not yet cached and begun from the cursor the last
@@ -1051,8 +1052,18 @@ DISC_SHEETS = (".cue", ".gdi", ".m3u")
 
 
 def es_systems():
-    """(name, folder) per <system> of the interface's es_systems.cfg."""
+    """(name, folder) per <system>, read as the interface reads them (#308
+    F-RA-06): SystemData::getConfigPath takes the first of the user's
+    es_systems_custom.cfg, the user's es_systems.cfg, the one beside the
+    binary and the image's as the base -- a custom file is the whole base
+    there too -- and loadAdditionnalConfig then merges every es_systems_*.cfg
+    in the user's folder and beside the binary into it by name: a known
+    system's tags replaced (a tag with no text dropped, <emulators> kept), a
+    new one appended, and a file that does not parse ends the merging, as it
+    does there."""
+    root = None
     for cfg in (es_dir / "es_systems_custom.cfg", es_dir / "es_systems.cfg",
+                Path("/usr/bin/es_systems.cfg"), Path("/etc/emulationstation/es_systems.cfg"),
                 Path("/usr/config/emulationstation/es_systems.cfg")):
         if not cfg.is_file():
             continue
@@ -1060,14 +1071,52 @@ def es_systems():
             root = ET.parse(cfg).getroot()
         except Exception:
             continue
-        found = []
-        for system in root.iter("system"):
-            name = (system.findtext("name") or "").strip()
-            folder = (system.findtext("path") or "").strip()
-            if name and folder:
-                found.append((name, Path(os.path.expanduser(folder))))
-        return found
-    return []
+        break
+    if root is None:
+        return []
+    order, tags = [], {}
+    for system in root.iter("system"):
+        name = (system.findtext("name") or "").strip()
+        if name and name not in tags:
+            order.append(name)
+            tags[name] = {child.tag: child.text or "" for child in system}
+    merging = True
+    for folder in dict.fromkeys((es_dir, Path("/usr/bin"))):
+        if not merging:
+            break
+        try:
+            extras = sorted(e for e in folder.iterdir() if e.name.startswith("es_systems_") and e.suffix == ".cfg")
+        except OSError:
+            continue
+        for extra in extras:
+            try:
+                extra_root = ET.parse(extra).getroot()
+            except Exception:
+                merging = False
+                break
+            if extra_root.tag != "systemList":
+                merging = False
+                break
+            for system in extra_root.findall("system"):
+                name = (system.findtext("name") or "").strip()
+                if not name:
+                    continue
+                if name not in tags:
+                    order.append(name)
+                    tags[name] = {child.tag: child.text or "" for child in system}
+                    continue
+                for child in system:
+                    if child.tag == "name":
+                        continue
+                    tags[name].pop(child.tag, None)
+                    if child.tag == "emulators" or (child.text or ""):
+                        tags[name][child.tag] = child.text or ""
+    found = []
+    for name in order:
+        folder = (tags[name].get("path") or "").strip()
+        if folder:
+            found.append((name, Path(os.path.expanduser(folder))))
+    return found
 
 
 def game_path(folder, text):
