@@ -181,11 +181,14 @@
 #   limit=<0|1> indexed=<i> errors=<e> added=<k>[ truncated=1][ why=<TOKEN>]" -- how the last run
 #   went, read by the page for the line under the row
 #   (CloudText::parseScanStamp, which passes over keys it does not know).
-#   `added` is how many of `cached` are games new to the store (fork
-#   #298): every game a scan caches is new (its listing takes only games
-#   the client has not cached), and of a top-up the indexed pass brings
-#   new games while the recently played pass re-reads games already
-#   there. The card says "added" of those and "ready" otherwise.
+#   `added` is how many games the run made ready for this account (fork
+#   #298), read from the store before and after -- a game is ready with the
+#   account's patch and unlocks rows -- rather than counted from the run's
+#   cache operations: a game the recently played pass (the client's
+#   run-smart-cache, which takes only games not yet cached) caches for the
+#   first time is added, and a second dump of a game already ready is
+#   cached but not added (#308 F-RA-10, F-RA-15). The card says "added" of
+#   those and "ready" otherwise.
 #   `skipped` is the ROMs RetroAchievements does not know, which the client
 #   refuses one at a time and the scan counts rather than reports (the
 #   proxy's own docs skip them silently); `indexed` is how many of `cached`
@@ -854,6 +857,44 @@ count_ready() {
 
 do_ready() {
     count_ready
+}
+
+# The games ready for the signed-in account, one id a line into $1: those
+# with the account's patch and unlocks rows, read from the keys alone in one
+# read-only query. added= is how many ids a run adds to this set -- the
+# games that became ready for this player (fork #298's "games new to the
+# store"), counted from the store rather than from the run's cache
+# operations: a game the recently played pass cached for the first time is
+# one, a second dump of a game already ready is not (#308 F-RA-10, F-RA-15).
+# Exit non-zero when the store cannot be read.
+ready_games_into() {
+    : > "$1" || return 1
+    [ -e "${QUEUE}" ] || return 0
+    python3 -c '
+import sqlite3, sys
+store, user = sys.argv[1], sys.argv[2].strip().lower()
+db = sqlite3.connect("file:%s?mode=ro" % store, uri=True, timeout=1.0)
+patch, unlocks = set(), set()
+for (key,) in db.execute("SELECT cacheKey FROM api_cache WHERE cacheKey LIKE ? OR cacheKey LIKE ?", ("patch:%", "unlocks:%")):
+    parts = key.split(":")
+    if len(parts) == 3 and parts[0] == "patch" and parts[2] == user and parts[1].isdigit():
+        patch.add(int(parts[1]))
+    elif len(parts) == 4 and parts[0] == "unlocks" and parts[2] == user and parts[3] == "0" and parts[1].isdigit():
+        unlocks.add(int(parts[1]))
+for game in sorted(patch & unlocks):
+    print(game)
+' "${QUEUE}" "$(setting "${USER_KEY}")" > "$1" 2>/dev/null
+}
+
+# How many games a run made ready: the ids in the after file ($2) that the
+# before file ($1) does not hold. Prints nothing when either could not be
+# read, and the caller keeps its own count.
+games_made_ready() {
+    [ -n "${1}" ] && [ -n "${2}" ] && [ -e "${1}" ] && [ -e "${2}" ] || return 1
+    local N
+    N="$(grep -vxF -f "$1" "$2" 2>/dev/null | grep -c .)"
+    case "${N}" in ''|*[!0-9]*) return 1 ;; esac
+    echo "${N}"
 }
 
 # "<epoch> <rc> <route> cached=<n> skipped=<m> ready=<total> limit=<0|1>
@@ -1647,7 +1688,7 @@ do_scan() {
     local LIST
     LIST="$(mktemp /tmp/raofflineproxy-scan.XXXXXX)" || fail "cannot create the list"
     # Everything of the run's goes when the run does, however it ends.
-    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}" "${IMAGES_OUT:-}" "${RUNNING}" "${RUNNING}.tmp"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
+    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}" "${IMAGES_OUT:-}" "${READY_BEFORE:-}" "${READY_AFTER:-}" "${RUNNING}" "${RUNNING}.tmp"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
 
     local COUNTS
     R_IMAGES_WHY=""
@@ -1693,9 +1734,13 @@ do_scan() {
         exit "${RC0}"
     fi
 
+    READY_BEFORE="$(mktemp /tmp/raofflineproxy-ready.XXXXXX 2>/dev/null)" && { ready_games_into "${READY_BEFORE}" || { rm -f "${READY_BEFORE}"; READY_BEFORE=""; }; }
     run_jobs page "${LIST}" "${NEW}" 0
 
     READY="$(count_ready)"
+    local ADDED=""
+    READY_AFTER="$(mktemp /tmp/raofflineproxy-ready.XXXXXX 2>/dev/null)" && ready_games_into "${READY_AFTER}" && ADDED="$(games_made_ready "${READY_BEFORE}" "${READY_AFTER}")"
+    rm -f "${READY_BEFORE}" "${READY_AFTER}"; READY_BEFORE=""; READY_AFTER=""
     local RC=0 WHY="${R_WHY}"
     if [ -n "${WHY}" ]; then
         RC=1
@@ -1728,7 +1773,7 @@ do_scan() {
     [ "${TRUNC}" -eq 1 ] && tell "note TRUNCATED"
     [ "${R_ERRORS}" -gt 0 ] && tell "errors ${R_ERRORS}"
     [ -n "${WHY}" ] && tell "why ${WHY}"
-    write_stamp "${RC}" scan "${R_CACHED}" "${R_SKIPPED}" "${READY}" "${R_LIMIT}" "${R_INDEXED}" "${R_ERRORS}" "${WHY}" "" "${TRUNC}"
+    write_stamp "${RC}" scan "${R_CACHED}" "${R_SKIPPED}" "${READY}" "${R_LIMIT}" "${R_INDEXED}" "${R_ERRORS}" "${WHY}" "${ADDED}" "${TRUNC}"
     slog "scan done: rc=${RC} cached=${R_CACHED} indexed=${R_INDEXED} skipped=${R_SKIPPED} errors=${R_ERRORS} ready=${READY} limit=${R_LIMIT}${WHY:+ why=${WHY}}"
     say "scan: cached ${R_CACHED} (${R_INDEXED} from the index), skipped ${R_SKIPPED}, ${READY} ready${WHY:+; ${WHY}}"
     tell "done ${R_CACHED}|${R_SKIPPED}|${READY}|${R_LIMIT}"
@@ -1826,8 +1871,10 @@ do_topup() {
 
     local LIST
     LIST="$(mktemp /tmp/raofflineproxy-topup.XXXXXX)" || fail "cannot create the list"
-    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}" "${SC_OUT:-}" "${IMAGES_OUT:-}" "${RUNNING}" "${RUNNING}.tmp"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
+    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}" "${SC_OUT:-}" "${IMAGES_OUT:-}" "${READY_BEFORE:-}" "${READY_AFTER:-}" "${RUNNING}" "${RUNNING}.tmp"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
     mark_running
+    # The games ready for this account before either pass, for added=.
+    READY_BEFORE="$(mktemp /tmp/raofflineproxy-ready.XXXXXX 2>/dev/null)" && { ready_games_into "${READY_BEFORE}" || { rm -f "${READY_BEFORE}"; READY_BEFORE=""; }; }
 
     # First, every game the interface's index knows and the client has not
     # cached -- the games added and indexed since the last run, and with a
@@ -1873,7 +1920,9 @@ do_topup() {
         else
             run_jobs quiet "${LIST}" "${NEW}" "${LEFT}"
             CACHED="${R_CACHED}"; SKIPPED="${R_SKIPPED}"; INDEXED="${R_INDEXED}"; LIMIT="${R_LIMIT}"; ERRORS="${R_ERRORS}"; WHY="${R_WHY}"
-            ADDED="${CACHED}"   # the indexed pass brings games new to the store (fork #298)
+            # The count the store's before-and-after replaces below, kept
+            # for when the store cannot be read (fork #298).
+            ADDED="${CACHED}"
             # A helper killed by the bound after its DONE finished its games
             # (fork #188: badge downloads kept it alive); only one cut before
             # DONE makes the run one that did not finish.
@@ -1933,9 +1982,14 @@ print(int(r.get("cached", 0)), int(r.get("skipped", 0)), 1 if r.get("limit_reach
         slog "topup: no time left for the recently played pass (${LEFT}s)"
     fi
 
-    local READY
+    local READY MADE
     READY="$(count_ready)"
-    slog "topup done: cached=${CACHED} indexed=${INDEXED} skipped=${SKIPPED} errors=${ERRORS} ready=${READY} limit=${LIMIT} took=$(( $(date +%s) - START ))s${WHY:+ why=${WHY}}"
+    # added=: the games the two passes made ready for this account, from the
+    # store before and after (#308 F-RA-10, F-RA-15); the indexed pass's own
+    # count when the store could not be read.
+    READY_AFTER="$(mktemp /tmp/raofflineproxy-ready.XXXXXX 2>/dev/null)" && ready_games_into "${READY_AFTER}" && MADE="$(games_made_ready "${READY_BEFORE}" "${READY_AFTER}")" && ADDED="${MADE}"
+    rm -f "${READY_BEFORE}" "${READY_AFTER}"; READY_BEFORE=""; READY_AFTER=""
+    slog "topup done: cached=${CACHED} added=${ADDED} indexed=${INDEXED} skipped=${SKIPPED} errors=${ERRORS} ready=${READY} limit=${LIMIT} took=$(( $(date +%s) - START ))s${WHY:+ why=${WHY}}"
 
     # The line under the row changes only when the top-up has something to
     # say: games it added, or a run that could not finish. Nothing new

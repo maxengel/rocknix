@@ -3451,4 +3451,44 @@ else
     echo "    SKIP  #308 F-RA-14's case: section t did not run"
 fi
 
+# D9. #308 1-raoffline claude F-RA-10 = gpt F-RA-15: added= is the games that
+# became ready for this account during the run -- read from the store before
+# and after (a game is ready with its patch and unlocks rows) -- not the count
+# of cache operations. A game the recently played pass caches for the first
+# time is added (the client's run-smart-cache counts only games it newly
+# cached); a second dump of a game already ready is cached and is not "more
+# games" (D-UI-107's N MORE GAMES ARE READY).
+if [ "${DT_OK}" -eq 1 ]; then
+printf "${DCFG_ON}" > "${TCFG}"
+# The recently played pass writes a game's rows on demand: /run/smart-rows.py
+# runs through the client before the shim prints its result.
+grep -q 'smart-rows' "${T}/shim/python3" || sed -i 's|^    "-m raofflineproxy.main run-smart-cache")$|&\n        [ -s /run/smart-rows.py ] \&\& /usr/bin/python3 /run/smart-rows.py|' "${T}/shim/python3"
+grep -q 'smart-rows' "${T}/shim/python3"; check $? "the python3 shim's recently played pass can write rows (/run/smart-rows.py)" "the shim edit did not take"
+TENV=(--setenv RAOFFLINEPROXY_HISTORY /storage/.config/retroarch/content_history.lpl)
+treset; touch -d '2 hours ago' "${TMARK}"; touch "${THISTORY}"
+cat > "${TR}/smart-rows.py" <<'EOS'
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+s.upsert_cache(cache_keys.patch(160, "qa"), '{"Success":true,"PatchData":{"ID":160}}', source_rom_path="/gb/h.gb")
+s.upsert_cache(cache_keys.unlocks(160, "qa"), '{"Success":true,"UserUnlocks":[]}')
+s.upsert_cache(cache_keys.achievementsets("hhhh", "qa"), '{"Success":true,"GameId":160,"Sets":[]}')
+s.close()
+EOS
+echo '{"type":"result","scanned":1,"total":1,"cached":1,"skipped":0,"limit_reached":false}' > "${TR}/smart-result"
+tctl topup
+[ "${RC}" -eq 0 ] && grep -q ' 0 topup cached=1 .* added=1$' "${TSTAMP}"; check $? "#308 claude F-RA-10: a game the recently played pass caches for the first time is added (cached=1 added=1)" "#308 claude F-RA-10: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null) -- the recently played pass's new game was not counted as added"
+rm -f "${TR}/smart-rows.py" "${TR}/smart-result"
+# A second dump of game 102 (already ready) among the index's jobs: cached,
+# not added.
+GLSIZE=$(stat -c %s "${TS}/roms/nes/gamelist.xml")
+printf '<?xml version="1.0"?>\n<gameList parentHash="%s">\n  <game><path>./g.nes</path><name>G</name><cheevosHash>gggg</cheevosHash><cheevosId>102</cheevosId></game>\n</gameList>\n' "${GLSIZE}" > "${TS}/.config/emulationstation/recovery/nes/g.xml"
+treset; touch -d '2 hours ago' "${TMARK}"; : > "${TR}/helper-jobs.log"
+tctl topup --after-index
+[ "${RC}" -eq 0 ] && grep -qP '^I\t102\tgggg\t' "${TR}/helper-jobs.log" && grep -q ' 0 topup cached=3 .* added=2$' "${TSTAMP}"; check $? "#308 gpt F-RA-15: three games cached by the index, one a second dump of a game already ready -- added=2" "#308 gpt F-RA-15: rc ${RC}; jobs: $(tr '\t' ',' < "${TR}/helper-jobs.log" | tr '\n' '|' | cut -c1-200); stamp: $(cat "${TSTAMP}" 2>/dev/null) -- a cache operation was counted as a new game"
+rm -f "${TS}/.config/emulationstation/recovery/nes/g.xml"; TENV=()
+else
+    echo "    SKIP  #308 F-RA-10/15's cases: section t did not run"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
