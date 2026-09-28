@@ -102,11 +102,26 @@ conf_set() {
     return 1
 }
 
-# One value from the config, read as text: the first KEY= line, one pair of
-# surrounding double quotes removed. Never by sourcing or eval -- a value an
-# earlier build wrote with $( ) in it would run (PL-051).
+# One value from the config, read as text -- never by sourcing or eval, since
+# a value an earlier build wrote with $( ) in it would run (PL-051) -- but
+# otherwise as the scripts that do source it read it, so this and they never
+# disagree about a player's folder: the LAST assignment of the key wins, and
+# the value is double-quoted, single-quoted, or a bare word that a space or
+# a comment ends. The first cut took the first line and only "...", so a
+# config with a default and an override below it, or a single-quoted value,
+# read differently here and in the sync (audit of stream C: G-C-03 gpt,
+# G-C-06 claude). What a shell would expand inside double quotes is read
+# literally: running it is what this exists to avoid.
 conf_get() {
-    sed -n "s/^$1=//p" "${SYNC_CONF}" 2>/dev/null | head -1 | sed 's/^"\(.*\)"$/\1/'
+    local value
+    value="$(grep "^$1=" "${SYNC_CONF}" 2>/dev/null | tail -n 1)"
+    value="${value#*=}"
+    case "${value}" in
+        \"*) value="${value#\"}"; value="${value%%\"*}" ;;
+        \'*) value="${value#\'}"; value="${value%%\'*}" ;;
+        *)   value="${value%%[[:space:]]*}" ;;
+    esac
+    printf '%s\n' "${value}"
 }
 
 # Wait for any confirm/cancel input: controller (evtest) or keyboard.
@@ -394,7 +409,7 @@ case "$1" in
         # thing to do behind their back.
         REMOTE=$(rclone listremotes 2>/dev/null | head -1)
         [ -z "${REMOTE}" ] && { echo "STATE=no-remote"; exit 2; }
-        CP=$(grep -m1 '^CONTENT_REMOTE=' "${SYNC_CONF}" 2>/dev/null | cut -d'"' -f2)
+        CP="$(conf_get CONTENT_REMOTE)"
 
         # Only directories this device could actually have put there count as
         # ours. Anything else at the root is the owner's own business.
@@ -455,7 +470,7 @@ case "$1" in
         # Validate a candidate cloud folder without changing anything, so the
         # UI can refuse a bad one where it is typed rather than letting it
         # fail later inside a sync.
-        CAND="${2:-$(grep -m1 '^SAVES_REMOTE=' "${SYNC_CONF}" 2>/dev/null | cut -d'"' -f2)}"
+        CAND="${2:-$(conf_get SAVES_REMOTE)}"
         REMOTE=$(rclone listremotes 2>/dev/null | head -1)
         if [ -z "${REMOTE}" ]; then
             echo "No cloud remote configured."

@@ -3149,6 +3149,24 @@ C1RO=1 c1 --use-content-root
 # system" -- ahead of the sentence.
 C1RO=1 c1 --set-saves-remote /Other/Saves
 [ "$(cat "${C1}/out")" = "The cloud sync settings could not be saved, so the folder was not changed." ]; check $? "a write that fails prints its one sentence and no shell diagnostic" "read-only /storage printed: '$(tr '\n' '|' < "${C1}/out" | cut -c1-200)' (G-C-07)"
+# G-C-03 (gpt) and G-C-06 (claude): cloud_setup reads the config as a
+# sourcing script would, minus the running: the LAST assignment of a key
+# wins, and a value may be double-quoted, single-quoted or bare with a
+# trailing comment. The first reader took the first line and only "...".
+cp "${ROOT}/${RCLONE_REL}/cloud_sync.conf" "${CONF1}"
+printf 'SAVES_REMOTE="/Mine/Saves"\n' >> "${CONF1}"
+c1 --info
+grep -qx 'SAVES_REMOTE=/Mine/Saves' "${C1}/out"; check $? "a key assigned twice reads as its last assignment, as the scripts that source the config read it" "SAVES_REMOTE assigned twice, --info said: $(grep '^SAVES_REMOTE=' "${C1}/out") (G-C-03)"
+sed -i "s|^SAVES_REMOTE=.*|SAVES_REMOTE='/Q/Saves'|" "${CONF1}"
+c1 --info
+grep -qx 'SAVES_REMOTE=/Q/Saves' "${C1}/out"; check $? "a single-quoted value reads without its quotes" "SAVES_REMOTE='/Q/Saves', --info said: $(grep '^SAVES_REMOTE=' "${C1}/out") (G-C-03)"
+sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE=/B/Saves  # mine|' "${CONF1}"
+c1 --info
+grep -qx 'SAVES_REMOTE=/B/Saves' "${C1}/out"; check $? "a bare value with a trailing comment reads as the word" "SAVES_REMOTE=/B/Saves  # mine, --info said: $(grep '^SAVES_REMOTE=' "${C1}/out") (G-C-03)"
+sed -i "s|^CONTENT_REMOTE=.*|CONTENT_REMOTE='/Mine/Content'|" "${CONF1}"
+c1 --content-location
+grep -qx 'CONTENT_REMOTE=/Mine/Content' "${C1}/out"; check $? "--content-location reads the config the same way" "CONTENT_REMOTE='/Mine/Content', --content-location said: $(grep '^CONTENT_REMOTE=' "${C1}/out") (G-C-03)"
+cp "${ROOT}/${RCLONE_REL}/cloud_sync.conf" "${CONF1}"
 # G-C-04 (gpt, the audit of stream C): a config path that is a directory is
 # not a config. conf_set read it as absent and `mv -f` put the new file
 # INSIDE it, then said OK; the artifact is what says whether it worked.
