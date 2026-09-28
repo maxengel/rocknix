@@ -10607,6 +10607,16 @@ p7w forget "A"
 rm -f "${P7W}/run/set-fails-on" "${P7W}/run/delete-fails"
 [ "${RC}" -eq 1 ] && [ ! -s "${P7W}/out" ] && grep -q '^A|' "${P7W}/run/profiles" && grep -q 'logger -t wifictl .*could not be put back' "${P7W}/run/log"; check $? "audit of the fix round G2-B-11 (gpt): a forget whose profile delete fails and whose settings cannot then be put back refuses (rc ${RC}) and logs what state the settings are in" "G2-B-11 (forget): rc ${RC}; printed '$(tr '\n' '|' < "${P7W}/out")'; profile: $(grep -c '^A|' "${P7W}/run/profiles"); log: $(tr '\n' '|' < "${P7W}/run/log" | cut -c1-200)"
 rm -f "${P7W}/shim/logger" "${P7W}/run/log"
+# == 001-functions, stream C's lead: a key named key, and an S3 access key id, are credentials
+p7zk=0
+for l in 'key = K002-qa-value' 'key=K002-qa-value' 'b2.key = K002-qa-value' 'access_key_id = QAKEYID123' 'rclone --b2-key qa-value' 'rclone --s3-access-key-id QAKEYID123'; do
+    a=$(p7red "${l}"); s=$(printf '%s\n' "${l}" | PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7F}/redact.sh'; redact_credentials")
+    case "${a}" in *qa-value*|*QAKEYID*) p7zk=1; echo "      argument mode kept it: ${a}" ;; esac
+    case "${s}" in *qa-value*|*QAKEYID*) p7zk=1; echo "      stream mode kept it: ${s}" ;; esac
+done
+check "${p7zk}" "audit of the fix round (stream C's lead): key =, key=, b2.key =, access_key_id =, --b2-key and --s3-access-key-id are redacted in both modes" "stream C's lead: a value survived (listed above) -- no rule knew a key named key or an S3 access key id"
+p7forks=$(PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7F}/redact.sh'; sed() { echo fork >> '${P7F}/forks'; command sed \"\$@\"; }; : > '${P7F}/forks'; redact_credentials 'input_enable_hotkey = \"nul\"' >/dev/null; redact_credentials 'keyboard layout us' >/dev/null; redact_credentials 'the monkey key' >/dev/null; wc -l < '${P7F}/forks'")
+[ "${p7forks}" -eq 0 ] && [ "$(p7red 'input_enable_hotkey = "nul"')" = 'input_enable_hotkey = "nul"' ]; check $? "audit of the fix round (stream C's lead): and hotkey, keyboard and a sentence about a key take the fast path, unchanged" "stream C's lead: ${p7forks} sed fork(s); hotkey line '$(p7red 'input_enable_hotkey = "nul"')'"
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
