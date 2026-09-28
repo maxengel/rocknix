@@ -727,3 +727,44 @@ run's percentage into its half of the bar.
   one that lacks the anchored catch-all (#307 PL-020).
 - **`cloud_sync.conf` is never sourced with a command in it** (D-CLOUD-142); the content
   scripts read their values as text.
+
+## What the audit of the fix round changed (2026-09-28, #313)
+
+- **The three cloud pointers are compared as folders, never as strings** (D-CLOUD-152):
+  `cloud_migrate_layout` cleans each once (a leading slash, no trailing slash, no `.`
+  parts), folds case where `rclone backend features` says the cloud is case-insensitive
+  or when the features cannot be read (the safe side), refuses a pointer with `..` in it
+  (rc 4, the existing couldn't-be-read why) and refuses to copy a folder onto itself.
+  `SAVES_REMOTE="/ROCKNIX/Saves/"` used to be copied onto itself, verified clean and
+  deleted (#313 PL-001; rclone's own copy of a folder onto itself exits 0 and changes
+  nothing, measured with the image's v1.75.1 -- the deletion was the script's).
+- **`cloud_sync.conf` refuses any control character but a tab, in all five readers**
+  (#313 PL-002): a carriage return before `#` let a command through the grammar and
+  into `source`. Bash's own escapes inside double quotes (`\"`, `\\`, `\$`, `` \` ``)
+  are accepted (PL-015); an escape that closes the quote or opens `$(`, and any escape
+  in a folder value, are still refused (D-CLOUD-142); a refusal logs the line number
+  and the shape, never the value. Only `cloud_backup`, `cloud_restore` and the helper
+  gate a `source`; the content scripts parse and now refuse the same file.
+- **The duplicate cleanup's safety copy is kept only when whole** (PL-004): `cp` must
+  succeed, `cmp` match the live file and `conf_valid` pass the copy; otherwise the copy
+  is removed, the cleanup does not run and the run continues on the file it checked.
+- **A key written twice means its first assignment, for every reader** (D-CLOUD-149;
+  PL-021): `cloud_setup`'s `conf_get` reads the first as the cleanup keeps it; a value
+  it cannot read as text exits 2 and its callers refuse, so a `CONTENT_REMOTE` written
+  in another form (indented, exported, `+=`) is unreadable, never the cloud's root.
+- **A saves folder with an empty, `.` or `..` part is refused** before any other check,
+  with the folder it would have meant offered (PL-009).
+- **An exit capture that has run past 100 s commits nothing** (D-CLOUD-151; PL-034,
+  the blind pass's S-27): counted from its first start across its one re-run, checked
+  before the lock wait and again with the lock, rc 1 with reason `too-slow`; the launch
+  gate's 120 s policy (D-UI-115) is untouched, and a capture blocked on its commit lock
+  gives up after two 5 s waits regardless. The stage's cleanup under that lock is one
+  `stat` and one `rm`, not one per seal.
+- **A match apply whose plan file cannot be removed removes nothing** and ends with
+  `SOMETHING WENT WRONG` (G2-A-04).
+- **`cloud_log_scrub` runs once per device at boot** (PL-014), before the capture pass,
+  and masks the credentials earlier builds wrote to `cloud_sync.log*` and `es_log*.txt`
+  under the persistent `/storage/.cache/log` (D-SYS-001), never changing a line count,
+  with a stamp per log family in `/storage/.cache/cloud_sync/log-scrubbed`.
+- **The cloud sign-in's state only moves forward** (D-CLOUD-150; PL-032).
+
