@@ -3165,6 +3165,9 @@ f1_quirks "${F1_PREV}" "${F1}/quirks.prev"
 f1_storage "${F1}/b"
 echo "mine" > "${F1}/b/.config/tmpfiles.d/50-mine.conf"; echo "mine" > "${F1}/b/.config/sysctl.d/99-mine.conf"
 echo "mine" > "${F1}/b/.config/modules-load.d/mine.conf"; ln -s /dev/null "${F1}/b/.config/system.d/mine.service"
+# and one under a drop-in directory the retired writers used, with a name
+# none of them wrote (weston got 10-vm-config.conf, never 10-generic-x64.conf)
+mkdir -p "${F1}/b/.config/systemd/system/weston.service.d"; echo "mine" > "${F1}/b/.config/systemd/system/weston.service.d/10-generic-x64.conf"
 ( cd "${F1}/b" && find . \( -type f -o -type l \) | LC_ALL=C sort ) > "${F1}/b.before"
 f1_pass "${F1}/b" "${F1}/sys" "${F1}/quirks.prev" "${F1}/b.prev.journal"
 F1_WROTE=$(f1_new_files "${F1}/b" "${F1}/b.before" | grep -vE '^\./\.config/(profile\.d/(001-device_config|090-ui_service|091-ui_shader)|cloud_setup_ssh)$')
@@ -3173,13 +3176,22 @@ f1_pass "${F1}/b" "${F1}/sys" "${F1}/quirks.now" "${F1}/b.now.journal"
 F1_LEFT=""; while IFS= read -r f; do [ -e "${F1}/b/${f}" ] || [ -L "${F1}/b/${f}" ] && F1_LEFT="${F1_LEFT} ${f}"; done <<< "${F1_WROTE}"
 [ -z "${F1_LEFT}" ]; check $? "one boot of the tree under test takes back every one of them" "still on /storage after a boot: $(echo "${F1_LEFT}" | cut -c1-300)"
 F1_MINE=0
-for f in tmpfiles.d/50-mine.conf sysctl.d/99-mine.conf modules-load.d/mine.conf; do [ "$(cat "${F1}/b/.config/${f}" 2>/dev/null)" = mine ] || F1_MINE=1; done
+for f in tmpfiles.d/50-mine.conf sysctl.d/99-mine.conf modules-load.d/mine.conf systemd/system/weston.service.d/10-generic-x64.conf; do [ "$(cat "${F1}/b/.config/${f}" 2>/dev/null)" = mine ] || F1_MINE=1; done
 [ "$(readlink "${F1}/b/.config/system.d/mine.service")" = /dev/null ] || F1_MINE=1
-check ${F1_MINE} "and the owner's own files beside them stay, a mask of their own included" "an owner's file was taken: $(ls "${F1}/b/.config/tmpfiles.d" "${F1}/b/.config/sysctl.d" "${F1}/b/.config/modules-load.d" "${F1}/b/.config/system.d" 2>&1 | tr '\n' ' ')"
-( cd "${F1}/b" && find . \( -type f -o -type l \) | LC_ALL=C sort ) > "${F1}/b.once"
+check ${F1_MINE} "and the owner's own files beside them stay, a mask of their own and a drop-in under a name no retired quirk wrote included (the audit's G-F1-09)" "an owner's file was taken: $(ls "${F1}/b/.config/tmpfiles.d" "${F1}/b/.config/sysctl.d" "${F1}/b/.config/modules-load.d" "${F1}/b/.config/system.d" "${F1}/b/.config/systemd/system/weston.service.d" 2>&1 | tr '\n' ' ')"
+grep -q 'retired' "${F1}/b.now.journal"; check $? "and the boot that takes them back says so on the journal" "the take-back boot's journal: '$(head -c 160 "${F1}/b.now.journal")'"
+# Content, not names (the audit's second seat, G-F1-07): every file's bytes
+# and every link's target, before and after a second boot.
+f1_state() { ( cd "${1}" && find . \( -type f -o -type l \) | LC_ALL=C sort | while IFS= read -r f; do if [ -L "${f}" ]; then echo "${f} -> $(readlink "${f}")"; else echo "${f} $(sha256sum < "${f}" | cut -c1-16)"; fi; done ); }
+f1_state "${F1}/b" > "${F1}/b.once"
 f1_pass "${F1}/b" "${F1}/sys" "${F1}/quirks.now" "${F1}/b.twice.journal"
-( cd "${F1}/b" && find . \( -type f -o -type l \) | LC_ALL=C sort ) | cmp -s - "${F1}/b.once"
-check $? "and a second boot changes nothing" "a second boot changed /storage: $(( cd "${F1}/b" && find . \( -type f -o -type l \) | LC_ALL=C sort ) | diff - "${F1}/b.once" | tr '\n' ' ' | cut -c1-200)"
+f1_state "${F1}/b" | cmp -s - "${F1}/b.once" && [ ! -s "${F1}/b.twice.journal" ]
+check $? "and a second boot changes no file's bytes and says nothing" "a second boot changed /storage or spoke: $(f1_state "${F1}/b" | diff - "${F1}/b.once" | tr '\n' ' ' | cut -c1-200) $(head -c 120 "${F1}/b.twice.journal")"
+# The take-back is once (the audit's second seat, G-F1-05): a mask the owner
+# makes afterwards under one of the four names is theirs, and stays.
+ln -sfn /dev/null "${F1}/b/.config/system.d/emergency.target"
+f1_pass "${F1}/b" "${F1}/sys" "${F1}/quirks.now" "${F1}/b.third.journal"
+[ "$(readlink "${F1}/b/.config/system.d/emergency.target")" = /dev/null ]; check $? "a mask of emergency.target the owner makes after the take-back survives the next boot" "the owner's emergency.target mask was removed by a later boot"
 
 # F1c. #307 PL-022: no quirk tree outside the recipe that installs it. The
 #      only quirks recipe is projects/ROCKNIX/packages/hardware/quirks, so a
@@ -3276,6 +3288,23 @@ cp "${F1V}/disk.qcow2" "${F1V}/victim.qcow2"; rm -f "${F1V}/qemu.argv"
 f1_vm run --monitor "${F1V}/victim.qcow2" --ovmf-vars "${F1V}/vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
 [ "${F1_RC}" -ne 0 ] && [ -f "${F1V}/victim.qcow2" ] && [ ! -e "${F1V}/qemu.argv" ]
 check $? "a start refuses a socket path that holds a file, and the file stays (the gpt seat's disk-as---monitor input)" "run --monitor <a qcow2> (rc ${F1_RC}): the file $([ -f "${F1V}/victim.qcow2" ] && echo kept || echo DELETED), QEMU $([ -e "${F1V}/qemu.argv" ] && echo started || echo not started)"
+# The audit of the fixes, gpt G-F1-01: a --monitor that is a symlink to
+# another guest's live socket. The path was resolved before the check, so
+# the check saw a socket and removed the other guest's; a link is refused
+# and both stay.
+rm -f "${F1V}/other.sock" "${F1V}/link.sock" "${F1V}/qemu.argv"; f1_sock "${F1V}/other.sock"; ln -s "${F1V}/other.sock" "${F1V}/link.sock"
+f1_vm run --monitor "${F1V}/link.sock" --ovmf-vars "${F1V}/vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
+[ "${F1_RC}" -ne 0 ] && [ -S "${F1V}/other.sock" ] && [ -L "${F1V}/link.sock" ] && [ ! -e "${F1V}/qemu.argv" ]
+check $? "a start refuses a socket path that is a symlink, and the socket it points at stays (the audit's G-F1-01)" "run --monitor <a link to another socket> (rc ${F1_RC}): the other guest's socket $([ -S "${F1V}/other.sock" ] && echo kept || echo REMOVED), QEMU $([ -e "${F1V}/qemu.argv" ] && echo started || echo not started)"
+# The audit of the fixes, gpt G-F1-05: a vars store already there from
+# another firmware build (a 2 MiB store beside a 4 MiB code image) is
+# refused, named, and kept -- a start used to run on it as it was.
+head -c 131072 /dev/zero > "${F1V}/wrong-vars.fd"; head -c 540672 /dev/zero > "${F1V}/template-4m.fd"; rm -f "${F1V}/qemu.argv"
+f1_vm run --ovmf-code "${F1V}/code.fd" --ovmf-vars-template "${F1V}/template-4m.fd" --ovmf-vars "${F1V}/wrong-vars.fd" --monitor "${F1V}/m2.sock" "${F1V}/disk.qcow2"
+F1_WV=${F1_RC}; F1_WVO=$(head -c 200 "${F1V}/out")
+cp "${F1V}/template-4m.fd" "${F1V}/right-vars.fd"; f1_vm run --ovmf-code "${F1V}/code.fd" --ovmf-vars-template "${F1V}/template-4m.fd" --ovmf-vars "${F1V}/right-vars.fd" --monitor "${F1V}/m2.sock" "${F1V}/disk.qcow2"
+[ "${F1_WV}" -ne 0 ] && [ "$(stat -c %s "${F1V}/wrong-vars.fd")" = 131072 ] && echo "${F1_WVO}" | grep -q 'wrong-vars.fd' && [ "${F1_RC}" -eq 0 ]
+check $? "a vars store whose size is not its firmware template's is refused and kept, one that matches is used (the audit's G-F1-05)" "a 128 KiB store with a 528 KiB template: rc ${F1_WV}, '${F1_WVO}'; a matching store: rc ${F1_RC}"
 fi
 
 if [ -n "${F1_QIMG}" ]; then
@@ -3361,12 +3390,35 @@ check $? "a qcow2 with a backing file or an external data file is refused for a 
 # #308 gpt F-VM-12: the archive is written under a name of its own, so a
 # second build for the same output cannot take -- or publish -- another's
 # unfinished archive at <output>.tmp.
+# A temporary of the build's own is a dotfile (.bundle.zip.<random>.partial):
+# ls -A, and a pattern that starts with the dot (the audit's G-F1-08 on the
+# gpt side, G-F1-04 on the claude side -- the first version of this check
+# listed with plain ls and could see nothing). Proven able to see one first.
+f1_partials() { ls -A "${F1V}" | grep -E "^\.${1//./\\.}\..*\.partial\$"; }
+: > "${F1V}/.probe.zip.leaked.partial"
+[ -n "$(f1_partials probe.zip)" ]; check $? "the leftover check sees a planted .probe.zip.<x>.partial (the check can fail)" "the leftover check cannot see a planted .partial -- it proves nothing"
+rm -f "${F1V}/.probe.zip.leaked.partial"
 echo "another build's archive, still being written" > "${F1V}/bundle.zip.tmp"
 f1_vm utm "${F1V}/disk.qcow2" --output "${F1V}/bundle.zip"
 [ "${F1_RC}" -eq 0 ] && [ "$(cat "${F1V}/bundle.zip.tmp" 2>/dev/null)" = "another build's archive, still being written" ] \
     && python3 -c 'import sys,zipfile; n=sorted(zipfile.ZipFile(sys.argv[1]).namelist()); sys.exit(0 if n==["READ ME FIRST.txt","bundle.utm/Data/ROCKNIX-GENERIC_X64.qcow2","bundle.utm/config.plist"] else 1)' "${F1V}/bundle.zip" \
-    && [ -z "$(ls "${F1V}" | grep -E '^bundle\.zip\..+' | grep -v '^bundle\.zip\.tmp$')" ]
+    && [ -z "$(f1_partials bundle.zip)" ]
 check $? "a UTM build leaves another build's <output>.tmp alone, publishes a whole bundle, and leaves no temporary of its own (#308 gpt F-VM-12)" "rc ${F1_RC}; <output>.tmp: '$(cat "${F1V}/bundle.zip.tmp" 2>/dev/null || echo GONE)'; left: $(ls "${F1V}" | grep '^bundle' | tr '\n' ' '); $(head -c 200 "${F1V}/out")"
+# A build whose archive write fails -- the quick-start file it packs is
+# missing -- publishes nothing and leaves no temporary behind.
+mkdir -p "${F1V}/vm-noreadme"; cp "${F1V}/vm/generic-x64-vm" "${F1V}/vm/profile.json" "${F1V}/vm-noreadme/"
+rm -f "${F1V}/broken.zip"
+bwrap --die-with-parent --ro-bind / / --tmpfs /tmp --bind "${F1V}" "${F1V}" --dev /dev --proc /proc \
+    python3 "${F1V}/vm-noreadme/generic-x64-vm" utm "${F1V}/disk.qcow2" --output "${F1V}/broken.zip" > "${F1V}/out" 2>&1; F1_RC=$?
+[ "${F1_RC}" -ne 0 ] && [ ! -e "${F1V}/broken.zip" ] && [ -z "$(f1_partials broken.zip)" ] && [ ! -e "${F1V}/broken.zip.tmp" ]
+check $? "a UTM build whose archive write fails publishes nothing and leaves no temporary (the audit's G-F1-08)" "a failed write (rc ${F1_RC}): output $([ -e "${F1V}/broken.zip" ] && echo MADE || echo none), left: $(ls -A "${F1V}" | grep '^\.\?broken' | tr '\n' ' ')"
+# The caller's umask decides who may read the bundle (the audit's G-F1-06):
+# a build under umask 077 publishes a file only its owner can read.
+rm -f "${F1V}/private.zip"
+bwrap --die-with-parent --ro-bind / / --tmpfs /tmp --bind "${F1V}" "${F1V}" --dev /dev --proc /proc \
+    bash -c 'umask 077; exec python3 "$1" utm "$2" --output "$3"' _ "${F1V}/vm/generic-x64-vm" "${F1V}/disk.qcow2" "${F1V}/private.zip" > "${F1V}/out" 2>&1; F1_RC=$?
+[ "${F1_RC}" -eq 0 ] && [ "$(stat -c %a "${F1V}/private.zip" 2>/dev/null)" = 600 ]
+check $? "a UTM build under umask 077 publishes a bundle of mode 600 (the audit's G-F1-06)" "under umask 077 (rc ${F1_RC}): mode $(stat -c %a "${F1V}/private.zip" 2>/dev/null || echo none)"
 fi
 
 # F1g. #307 PL-034, #308 claude F-VM-10 and gpt F-VM-09: 092-retroarch-surface
@@ -3391,9 +3443,22 @@ if { [ "${OLD}" -eq 1 ] && ! git -C "${ROOT}" cat-file -e "${BASE_REF}:${F1_QREL
 else
 src_of "${F1_QREL}/${F1GS}" "${F1G}/q/092-retroarch-surface"
 F1VK=(); [ -d /usr/share/vulkan ] && F1VK=(--tmpfs /usr/share/vulkan)   # the host's ICDs are not the image's
-f1_surface() { # <storage> <sys> [icd]: one boot's run of the quirk
-    local etc="${F1G}/noicd"; [ "${3:-}" = icd ] && etc="${F1G}/icd"
-    bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${F1VK[@]}" "${F1BB[@]}" \
+# A sed that dies with the quirk right after it rewrites retroarch.cfg in
+# place: a boot cut short between the cfg and the record (the audit's
+# G-F1-04). Every other sed call passes through.
+mkdir -p "${F1G}/killsed"
+cat > "${F1G}/killsed/sed" <<'EOS'
+#!/bin/bash
+for a in "$@"; do last="$a"; done
+real() { if [ -x /lgst/busybox ]; then /lgst/busybox sed "$@"; else /usr/bin/sed "$@"; fi; }
+case " $* " in *" -i "*) if [ "${last##*/}" = retroarch.cfg ]; then real "$@"; rc=$?; kill -9 "${PPID}"; exit "${rc}"; fi ;; esac
+real "$@"
+EOS
+chmod +x "${F1G}/killsed/sed"
+f1_surface() { # <storage> <sys> [icd|kill]: one boot's run of the quirk
+    local etc="${F1G}/noicd" kill=(); [ "${3:-}" = icd ] && etc="${F1G}/icd"
+    [ "${3:-}" = kill ] && kill=(--ro-bind "${F1G}/killsed" /shim)
+    bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${F1VK[@]}" "${F1BB[@]}" "${kill[@]}" \
         --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
         --ro-bind "${etc}" /etc --bind "${1}" /storage --ro-bind "${2}" /sys --ro-bind "${F1G}/q" /q \
         --tmpfs /run --tmpfs /tmp --dev /dev --proc /proc --setenv PATH "${F1PATH}" \
@@ -3420,12 +3485,33 @@ f1_storage "${F1G}/c"; f1_surface "${F1G}/c" "${F1G}/s2"
 [ "$(f1_wh "${F1G}/c")" = 1280x800 ]; check $? "a disconnected DP-1 listing 1920x1080 first is passed over for the connected output's 1280x800 (#308 claude F-VM-10, gpt F-VM-09)" "with a disconnected DP-1 before the connected output: $(f1_wh "${F1G}/c")"
 f1_storage "${F1G}/i"; f1_surface "${F1G}/i" "${F1G}/si"
 [ "$(f1_wh "${F1G}/i")" = 1920x1080 ]; check $? "an interlaced 1920x1080i gives a height of 1080 (#308 claude F-VM-10)" "1920x1080i gave $(f1_wh "${F1G}/i")"
-# Already written: a guest the earlier builds' quirk sized at 1280x800 has
-# the values and no record. Its known footprint -- QEMU's 1280x800, or the
-# mode the guest has now -- is taken as the quirk's, and follows the mode;
-# an unrecorded value that is neither is somebody's.
+# Already written: a guest an earlier build's quirk sized has the values and
+# no record, and they cannot be told from a hand-set pair (the audit's
+# G-F1-02 on the gpt side, G-F1-03 on the claude side). Unrecorded values
+# are taken only when they are exactly the size this boot writes -- taking
+# them changes nothing now, and the record starts -- and anything else is
+# left as somebody's; setting the two values to 0 hands them back.
 f1_storage "${F1G}/o"; f1_set "${F1G}/o" 1280x800; f1_surface "${F1G}/o" "${F1G}/s640"
-[ "$(f1_wh "${F1G}/o")" = 640x480 ]; check $? "an earlier build's unrecorded 1280x800 follows a re-run at 640x480" "the earlier builds' 1280x800 stayed $(f1_wh "${F1G}/o") at 640x480"
+[ "$(f1_wh "${F1G}/o")" = 1280x800 ]; check $? "an unrecorded 1280x800 met at a 640x480 boot is left: it cannot be told from a hand-set pair (the audit's G-F1-02)" "an unrecorded 1280x800 became $(f1_wh "${F1G}/o") at 640x480"
+f1_storage "${F1G}/o2"; f1_set "${F1G}/o2" 1280x800; f1_surface "${F1G}/o2" "${F1G}/s1280"; f1_surface "${F1G}/o2" "${F1G}/s640"
+[ "$(f1_wh "${F1G}/o2")" = 640x480 ]; check $? "an unrecorded 1280x800 met at a 1280x800 boot is taken, and follows a later 640x480" "an unrecorded 1280x800 first met at 1280x800 stayed $(f1_wh "${F1G}/o2") at 640x480"
+# The shipped values follow with a record beside them: that is the cfg
+# after RESET RETROARCH CONFIG TO DEFAULT, which replaces retroarch.cfg and
+# leaves the record (factoryreset retroarch). A 640x480 or 0x0 surface on
+# another mode is the #263 scaling this quirk exists to end.
+f1_storage "${F1G}/r"; f1_surface "${F1G}/r" "${F1G}/s1280"; f1_set "${F1G}/r" 640x480; f1_surface "${F1G}/r" "${F1G}/s1280"
+[ "$(f1_wh "${F1G}/r")" = 1280x800 ]; check $? "the shipped 640x480 put back by a RetroArch reset, beside the record, follows the mode again" "after a reset to the shipped cfg: $(f1_wh "${F1G}/r") at 1280x800"
+# A boot cut short right after the cfg is rewritten leaves the next boot
+# still knowing the new size is its own (the audit's G-F1-04).
+f1_storage "${F1G}/k"; sed -i 's/^video_driver = .*/video_driver = "gl"/' "${F1G}/k/.config/retroarch/retroarch.cfg"
+f1_sys "${F1G}/s1024" "card0-Virtual-1:connected:1024x768,640x480"
+f1_surface "${F1G}/k" "${F1G}/s1280"; f1_surface "${F1G}/k" "${F1G}/s1024" kill; F1_K1=$(f1_wh "${F1G}/k")
+f1_surface "${F1G}/k" "${F1G}/s1280"
+[ "${F1_K1}" = 1024x768 ] && [ "$(f1_wh "${F1G}/k")" = 1280x800 ]; check $? "a boot killed right after it rewrote the cfg leaves the size its own: the next boot follows (the audit's G-F1-04)" "killed after the cfg write: ${F1_K1}; the next boot at 1280x800: $(f1_wh "${F1G}/k")"
+# The record's first form (a5a03bd9fa: video_fullscreen_x/y lines) is read.
+f1_storage "${F1G}/l"; f1_set "${F1G}/l" 1280x800
+printf '# 092-retroarch-surface (GENERIC_X64): the values it last wrote to retroarch.cfg\nvideo_fullscreen_x=1280\nvideo_fullscreen_y=800\n' > "${F1G}/l/.config/retroarch/.fullscreen-surface"
+f1_surface "${F1G}/l" "${F1G}/s640"; [ "$(f1_wh "${F1G}/l")" = 640x480 ]; check $? "a record in its first form (two lines, x and y) is read" "with a first-form record of 1280x800: $(f1_wh "${F1G}/l") at 640x480"
 f1_storage "${F1G}/p"; f1_set "${F1G}/p" 1024x768; f1_surface "${F1G}/p" "${F1G}/s640"
 [ "$(f1_wh "${F1G}/p")" = 1024x768 ]; check $? "and an unrecorded 1024x768 is left" "an unrecorded 1024x768 became $(f1_wh "${F1G}/p")"
 # A boot that changes nothing writes nothing: the cfg and the record keep
@@ -3438,6 +3524,11 @@ f1_storage "${F1G}/v"; f1_surface "${F1G}/v" "${F1G}/s1280"; F1_VD1=$(grep '^vid
 f1_storage "${F1G}/w"; f1_surface "${F1G}/w" "${F1G}/s1280" icd; F1_VD2=$(grep '^video_driver' "${F1G}/w/.config/retroarch/retroarch.cfg")
 [ "${F1_VD1}" = 'video_driver = "gl"' ] && [ "${F1_VD2}" = 'video_driver = "vulkan"' ]
 check $? "a cfg naming vulkan moves to gl on an image with no Vulkan ICD, and is left where one exists (#308 claude F-VM-11)" "no ICD: ${F1_VD1}; with an ICD: ${F1_VD2}"
+# An ICD a developer put in root's own loader directory counts too (the
+# audit's second seat, G-F1-03 (d)): root's home here is /storage.
+f1_storage "${F1G}/u"; mkdir -p "${F1G}/u/.local/share/vulkan/icd.d"; echo '{}' > "${F1G}/u/.local/share/vulkan/icd.d/mine_icd.json"
+f1_surface "${F1G}/u" "${F1G}/s1280"; F1_VD3=$(grep '^video_driver' "${F1G}/u/.config/retroarch/retroarch.cfg")
+[ "${F1_VD3}" = 'video_driver = "vulkan"' ]; check $? "an ICD under /storage/.local/share/vulkan/icd.d leaves vulkan alone" "with an ICD in root's own loader directory: ${F1_VD3}"
 fi
 F1RA=projects/ROCKNIX/packages/emulators/libretro/retroarch/sources/GENERIC_X64/retroarch.cfg
 src_of "${F1RA}" "${F1G}/retroarch.cfg"
@@ -3455,8 +3546,21 @@ F1H="${F1}/h"; mkdir -p "${F1H}/q"
 src_of "${F1_QREL}/platforms/GENERIC_X64/095-cloud-ssh" "${F1H}/q/095-cloud-ssh"
 f1_sys "${F1H}/p10022"; f1_sys "${F1H}/p10023"; printf '10023' > "${F1H}/p10023/firmware/qemu_fw_cfg/by_name/opt/org.rocknix.cloud_ssh_port/raw"
 f1_sys "${F1H}/none"; rm -rf "${F1H}/none/firmware/qemu_fw_cfg"
-f1_ssh() { # <storage> <sys>: one boot's run of the quirk
-    bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${F1BB[@]}" \
+# An mv that dies with the quirk right after it puts cloud_setup_ssh in
+# place: a boot cut short between the command and its record (the audit's
+# G-F1-04). Every other mv passes through.
+mkdir -p "${F1H}/killmv"
+cat > "${F1H}/killmv/mv" <<'EOS'
+#!/bin/bash
+for a in "$@"; do last="$a"; done
+if [ -x /lgst/busybox ]; then /lgst/busybox mv "$@"; else /usr/bin/mv "$@"; fi; rc=$?
+[ "${last##*/}" = cloud_setup_ssh ] && kill -9 "${PPID}"
+exit "${rc}"
+EOS
+chmod +x "${F1H}/killmv/mv"
+f1_ssh() { # <storage> <sys> [kill]: one boot's run of the quirk
+    local kill=(); [ "${3:-}" = kill ] && kill=(--ro-bind "${F1H}/killmv" /shim)
+    bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${F1BB[@]}" "${kill[@]}" \
         --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
         --bind "${1}" /storage --ro-bind "${2}" /sys --ro-bind "${F1H}/q" /q \
         --tmpfs /run --tmpfs /tmp --dev /dev --proc /proc --setenv PATH "${F1PATH}" \
@@ -3473,11 +3577,29 @@ f1_storage "${F1H}/b"; echo "${F1_HAND}" > "${F1H}/b/.config/cloud_setup_ssh"; f
 check $? "a command written by hand survives a boot with the port on fw_cfg and one without (the README's manual fallback)" "the hand-written '${F1_HAND}' became '${F1_S2}' with the port and '$(f1_ov "${F1H}/b")' without"
 f1_storage "${F1H}/c"; f1_ssh "${F1H}/c" "${F1H}/p10022"; echo "${F1_HAND}" > "${F1H}/c/.config/cloud_setup_ssh"; f1_ssh "${F1H}/c" "${F1H}/p10022"
 [ "$(f1_ov "${F1H}/c")" = "${F1_HAND}" ]; check $? "and so does one written over the quirk's own command" "the quirk's command, then a hand edit: '$(f1_ov "${F1H}/c")' after a boot"
-# Already written: an earlier build's command, with no record, is the
-# quirk's -- it follows the port, and goes without one.
-f1_storage "${F1H}/d"; echo "${F1_GEN}" > "${F1H}/d/.config/cloud_setup_ssh"; f1_ssh "${F1H}/d" "${F1H}/p10023"; F1_S3=$(f1_ov "${F1H}/d")
-f1_storage "${F1H}/e"; echo "${F1_GEN}" > "${F1H}/e/.config/cloud_setup_ssh"; f1_ssh "${F1H}/e" "${F1H}/none"
-[ "${F1_S3}" = "${F1_GEN/10022/10023}" ] && [ "$(f1_ov "${F1H}/e")" = "(no file)" ]; check $? "an earlier build's unrecorded command follows the port and goes without one" "port 10023: ${F1_S3}; no port: $(f1_ov "${F1H}/e")"
+# Already written: an earlier build's command has no record, and its shape
+# is one a tester may write by hand (the audit's G-F1-03). With no record,
+# the file is taken only when it is exactly the command this boot writes --
+# taking it changes nothing now, and the record starts; then it follows the
+# port. A loopback command on another port, or with no port on fw_cfg, is
+# left as somebody's.
+f1_storage "${F1H}/d"; echo "${F1_GEN}" > "${F1H}/d/.config/cloud_setup_ssh"; f1_ssh "${F1H}/d" "${F1H}/p10022"; f1_ssh "${F1H}/d" "${F1H}/p10023"; F1_S3=$(f1_ov "${F1H}/d")
+[ "${F1_S3}" = "${F1_GEN/10022/10023}" ]; check $? "an earlier build's unrecorded command, met on its own port, is taken and then follows the port" "the unrecorded 10022 command after a 10022 boot and a 10023 boot: ${F1_S3}"
+F1_OWN="ssh -L 53682:localhost:53682 -p 2222 root@127.0.0.1"
+f1_storage "${F1H}/e"; echo "${F1_OWN}" > "${F1H}/e/.config/cloud_setup_ssh"; f1_ssh "${F1H}/e" "${F1H}/p10022"; F1_S4=$(f1_ov "${F1H}/e"); f1_ssh "${F1H}/e" "${F1H}/none"
+[ "${F1_S4}" = "${F1_OWN}" ] && [ "$(f1_ov "${F1H}/e")" = "${F1_OWN}" ]
+check $? "a loopback command a tester wrote for a forward of their own survives a boot with a port and one without (the audit's G-F1-03)" "the tester's '-p 2222 root@127.0.0.1' became '${F1_S4}' with port 10022 and '$(f1_ov "${F1H}/e")' without"
+# fw_cfg's value is a port or it is not one: six digits are refused, not
+# cut to five (the audit's G-F1-07 on the gpt side, G-F1-06 on the claude
+# side).
+f1_sys "${F1H}/p6"; printf '100000' > "${F1H}/p6/firmware/qemu_fw_cfg/by_name/opt/org.rocknix.cloud_ssh_port/raw"
+f1_storage "${F1H}/g"; f1_ssh "${F1H}/g" "${F1H}/p6"
+[ "$(f1_ov "${F1H}/g")" = "(no file)" ]; check $? "a six-digit fw_cfg port is refused, not cut to five digits (the audit's G-F1-07)" "fw_cfg 100000 gave: $(f1_ov "${F1H}/g")"
+# A boot cut short right after the new command is in place leaves the next
+# boot still knowing the command is the quirk's (the audit's G-F1-04).
+f1_storage "${F1H}/k"; f1_ssh "${F1H}/k" "${F1H}/p10022"; f1_ssh "${F1H}/k" "${F1H}/p10023" kill; F1_S5=$(f1_ov "${F1H}/k"); f1_ssh "${F1H}/k" "${F1H}/none"
+[ "${F1_S5}" = "${F1_GEN/10022/10023}" ] && [ "$(f1_ov "${F1H}/k")" = "(no file)" ]
+check $? "a boot killed right after it put a new command in place leaves it the quirk's: the next boot without a port removes it (the audit's G-F1-04)" "killed after the 10023 write: '${F1_S5}'; the next boot with no port: '$(f1_ov "${F1H}/k")'"
 f1_storage "${F1H}/f"; f1_ssh "${F1H}/f" "${F1H}/p10022"; F1_F0=$(cd "${F1H}/f/.config" && ls -A | LC_ALL=C sort | xargs sha256sum 2>/dev/null); f1_ssh "${F1H}/f" "${F1H}/p10022"
 [ "${F1_F0}" = "$(cd "${F1H}/f/.config" && ls -A | LC_ALL=C sort | xargs sha256sum 2>/dev/null)" ] && [ ! -s "${F1H}/out" ]; check $? "a second boot on the same port changes nothing and says nothing" "a second boot changed /storage/.config or said: $(head -c 160 "${F1H}/out")"
 # ---- audit #307, stream F2 ----

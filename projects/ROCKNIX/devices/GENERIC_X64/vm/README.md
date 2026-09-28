@@ -14,9 +14,12 @@ devices keep the guest-visible environment equivalent.
 
 Print or run the Linux QEMU command. `qemu-args` only prints: it touches no
 socket, vars store or disk, so it is safe beside a running guest. `run` clears
-a previous QEMU's monitor and serial sockets (a socket only -- any other file
-at those paths is refused) and makes the guest's UEFI vars store from the
-firmware's template, then starts QEMU. Both refuse a disk under the profile's
+a previous QEMU's monitor and serial sockets (a socket only -- a symlink or
+any other file at those paths is refused) and makes the guest's UEFI vars
+store from the firmware's template when it has none, then starts QEMU. A vars
+store whose size is not the template's was made for another firmware build
+and is refused with its name: move it aside and the next start makes a new
+one. Both refuse a disk under the profile's
 16 GiB, and take the OVMF code image and vars template from one firmware
 directory (`--ovmf-code` with `--ovmf-vars-template` names another pair):
 

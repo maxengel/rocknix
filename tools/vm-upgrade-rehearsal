@@ -76,11 +76,13 @@ say "seed what the retired GENERIC_X64 quirks left in /storage (#307 PL-019)"
 # into /storage, and 097-disable-rescue-completely masked emergency.target
 # into /storage/.config/system.d; a guest that ran them keeps them across an
 # update. The new image's 091-retired-vm-fixes and 097-retired-rescue-masks
-# take them back by name. The fixture writes them itself, so the check does
-# not depend on which quirks the previous image carried, and beside them a
-# file of the owner's own, which must stay.
+# take them back by name, once per guest (their stamps under /storage/.cache).
+# The fixture writes them itself, and removes those stamps, so the check does
+# not depend on which quirks the previous image carried -- a guest that ran
+# the old quirks has no stamp -- and beside them a file of the owner's own,
+# which must stay.
 RETIRED=".config/tmpfiles.d/20-x64-fd-improvements.conf .config/sysctl.d/10-generic-x64.conf .config/modules-load.d/x64-virtual-modules.conf .config/profile.d/091-generic-x64-services"
-ssha "cd /storage && for f in $RETIRED; do mkdir -p \$(dirname \$f); echo '# seeded by vm-upgrade-rehearsal (#307 PL-019)' > \$f; done
+ssha "cd /storage && rm -f .cache/retired-vm-fixes .cache/retired-rescue-masks && for f in $RETIRED; do mkdir -p \$(dirname \$f); echo '# seeded by vm-upgrade-rehearsal (#307 PL-019)' > \$f; done
 mkdir -p .config/system.d && ln -sfn /dev/null .config/system.d/emergency.target
 echo '# the owner'\''s own (vm-upgrade-rehearsal)' > .config/tmpfiles.d/50-rehearsal-owner.conf; sync" >>"$LOG" 2>&1
 check "retired quirk files seeded before the update" "$(ssha "cd /storage && ls $RETIRED .config/tmpfiles.d/50-rehearsal-owner.conf 2>/dev/null | wc -l; readlink .config/system.d/emergency.target" | tr '\n' ' ')" "5 /dev/null "
@@ -123,7 +125,11 @@ check "backup archive kept" "$(ssha 'ls /storage/roms/backup/ 2>/dev/null | wc -
 check "update queue empty" "$(ssha 'ls /storage/.update | wc -l')" "0"
 # The quirk pass runs from autostart, which may still be running when SSH
 # first answers: wait for its last line before reading what it removed.
-for i in $(seq 1 30); do ssha 'grep -q "Autostart complete" /var/log/boot.log && echo done' | grep -q done && break; sleep 2; done
+AUTOSTARTED=no
+for i in $(seq 1 30); do ssha 'grep -q "Autostart complete" /var/log/boot.log && echo done' | grep -q done && { AUTOSTARTED=yes; break; }; sleep 2; done
+# A wait that ran out is not a reading: say so, rather than grade the
+# take-back on a quirk pass that may not have run yet.
+check "autostart finished before the take-back is read (its 'Autostart complete' line in /var/log/boot.log)" "$AUTOSTARTED" "yes"
 check "retired quirk files taken back after the update (#307 PL-019)" "$(ssha "cd /storage && ls $RETIRED 2>/dev/null | wc -l; [ -L .config/system.d/emergency.target ] && echo masked || echo unmasked" | tr '\n' ' ')" "0 unmasked "
 check "and the owner's file beside them kept" "$(ssha 'cat /storage/.config/tmpfiles.d/50-rehearsal-owner.conf')" "# the owner's own (vm-upgrade-rehearsal)"
 check "RetroArch fullscreen size set by hand kept, driver moved to gl (#307 PL-034, #308 claude F-VM-11)" "$(ssha "grep -E '^(video_fullscreen_x|video_fullscreen_y|video_driver) = ' $RACFG | sort | tr '\n' ' '")" 'video_driver = "gl" video_fullscreen_x = "1024" video_fullscreen_y = "768" '

@@ -139,15 +139,17 @@ def auto_accel():
 
 def run_paths(args):
     """The files a start makes or replaces: the OVMF vars store, the monitor
-    socket, and the serial socket with --headless (None otherwise)."""
+    socket, and the serial socket with --headless (None otherwise). The
+    socket paths are made absolute but not resolved: a symlink there must
+    be seen as one (claim_socket_path), not followed to whatever it names."""
     disk = Path(args.disk).resolve()
     vars_path = (
         Path(args.ovmf_vars).resolve()
         if args.ovmf_vars
         else disk.with_name(f"{disk.stem}.ovmf-vars.fd")
     )
-    serial = Path(args.serial).resolve() if args.headless else None
-    return vars_path, Path(args.monitor).resolve(), serial
+    serial = Path(os.path.abspath(args.serial)) if args.headless else None
+    return vars_path, Path(os.path.abspath(args.monitor)), serial
 
 
 def claim_socket_path(path):
@@ -158,6 +160,8 @@ def claim_socket_path(path):
         mode = os.lstat(path).st_mode
     except FileNotFoundError:
         return
+    if stat.S_ISLNK(mode):
+        raise ValueError(f"{path} is a symlink; refusing to remove what it points at")
     if not stat.S_ISSOCK(mode):
         raise ValueError(f"{path} exists and is not a socket; refusing to remove it")
     path.unlink()
@@ -189,8 +193,20 @@ def qemu_command(profile, args):
     if not qemu:
         raise RuntimeError("qemu-system-x86_64 is required")
 
-    code, _ = find_ovmf_pair(args.ovmf_code, args.ovmf_vars_template)
+    code, vars_template = find_ovmf_pair(args.ovmf_code, args.ovmf_vars_template)
     vars_path, monitor, serial = run_paths(args)
+    # A vars store the guest already has is its UEFI settings and is kept --
+    # unless it was made from another firmware build's template (a 2 MiB
+    # store beside a 4 MiB code image, from before the code and template
+    # were chosen as a pair), which this firmware cannot use. Refused, named
+    # and left in place: moving it aside is the owner's call.
+    if vars_path.exists() and vars_path.stat().st_size != vars_template.stat().st_size:
+        raise ValueError(
+            f"{vars_path} is {vars_path.stat().st_size} bytes and this firmware's vars template "
+            f"({vars_template}) is {vars_template.stat().st_size}: it was made for another OVMF build. "
+            "Move it aside and the next start makes a new one from the template (the guest's UEFI "
+            "settings start over; the image boots from its default EFI path)"
+        )
 
     disk_info = qemu_img_info(disk)
     # The canonical disk size is a floor for a Linux launch as for a UTM
@@ -597,7 +613,11 @@ def build_utm(profile, args):
                 archive.write(
                     VM_DIR / "utm-bundle-readme.txt", "READ ME FIRST.txt"
                 )
-            os.chmod(temporary_output, 0o644)
+            # mkstemp makes the file 0600; give it what a plain create would
+            # have had under the caller's umask, no more.
+            umask = os.umask(0)
+            os.umask(umask)
+            os.chmod(temporary_output, 0o666 & ~umask)
             os.replace(temporary_output, output)
         except BaseException:
             temporary_output.unlink(missing_ok=True)
