@@ -98,18 +98,18 @@ def main():
         for row in index.splitlines():
             if row.startswith("| ") and not row.startswith("| bucket") and not re.match(r"^\|\s*-", row):
                 c = [x.strip() for x in row.strip("|").split("|")]
-                if len(c) > 3 and c[3] in ("Critical", "High") and re.match(r"[FG]-[A-Z][A-Z0-9]*-\d+$", c[2]) and c[1] in ("claude", "gpt"):
+                if len(c) > 3 and c[3] in ("Critical", "High") and re.match(r"G?[FG]2?-[A-Z][A-Z0-9-]*?-\d+$", c[2]) and c[1] in ("claude", "gpt"):
                     need.add((c[1], c[2]))
         have = set()
         ctx = None
         for line in ver.splitlines():
-            if line.startswith("### ") and not re.search(r"\b[FG]-[A-Z][A-Z0-9]*-\d+\b", line):
+            if line.startswith("### ") and not re.search(r"\bG?[FG]2?-[A-Z][A-Z0-9-]*?-\d+\b", line):
                 m = re.search(r"\((claude|gpt)\)", line)
                 ctx = m.group(1) if m else None
                 continue
-            if not (line.startswith("### ") or line.startswith("- **F-")):
+            if not (line.startswith("### ") or re.match(r"- \*\*G?[FG]2?-", line)):
                 continue
-            for m in re.finditer(r"\b([FG]-[A-Z][A-Z0-9]*-\d+)\b\**\s*(?:\(([^)]*)\))?", line):
+            for m in re.finditer(r"\b(G?[FG]2?-[A-Z][A-Z0-9-]*?-\d+)\b\**\s*(?:\(([^)]*)\))?", line):
                 fid, par = m.group(1), (m.group(2) or "").lower()
                 seats = [x for x in ("claude", "gpt") if x in par]
                 if "both seats" in par:
