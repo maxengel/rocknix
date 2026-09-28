@@ -184,3 +184,30 @@ _The seats' Highs, each re-read against the source on `next` (the distribution) 
 **Seat's claim:** `engineering-practices.md`'s example `sed -E 's/((token|key|passw[a-z]*|psk|user)[=:][^ ]*)/\1***/Ig'` puts the value inside group 1 and prints it back with stars.
 **Checked:** the line is in the rule; the proof runner found the same on 2026-09-28 (its `common.sh` carries the corrected form); the session's memory was corrected this morning, the rule was not.
 **Verdict:** **confirmed, High** (the seat's grade; a transcript that follows the rule leaks the value). Fix: `s/((token|key|passw[a-z]*|psk|user)[=:])[^ ]*/\1***/Ig` in the rule, with the note that a masking pattern is proven on a fake `key=SECRET` line first.
+
+_The blindspot screen's repeats (an agent's pre-screen of the 67 entries against the round's diffs, `/workspace/tmp/rocknix-session/blindspot-screen-fix-round.md`: 15 repeated, 32 avoided, 21 not relevant), the ones that survived the orchestrator's read:_
+
+### BS-1 (blindspots 10, 35, 62; C) -- passwords already written to a persistent log stay on the card
+**Screen's claim:** C stopped `cloud_remote` logging rclone's failure output with `pass=<password>` in it, but did nothing about lines already in `cloud_sync.log`; `/var/log` is persistent (D-SYS-001), so a device that ever had a failed `config create` keeps a plaintext cloud password.
+**Checked:** `packages/sysutils/busybox/system.d/var-log.mount` binds `/var/log` to `/storage/.cache/log` (D-SYS-001, on by default); C's diff replaces `log("rclone %s failed (%d): %s" % (...))` with a line without the output; no scrub of the existing log anywhere (`grep -n 'scrub\|pass=' cloud_sync_helper` finds nothing).
+**Verdict:** **confirmed, High** -- the Already-written answer is missing for a credential at rest. Fix: on the first run of the new scripts, rewrite `/var/log/cloud_sync.log` (and its rotations) with the password shapes masked, once, recorded by a stamp; a case over a planted line.
+
+### BS-2 (blindspots 12, 46; C x A) -- two readers of one file disagree on a duplicated key
+**Screen's claim:** C's `conf_get` takes the last assignment; the automatic sync's duplicate cleanup keeps the first, so after a cleanup the scripts use the first while the hub's line named the last.
+**Checked:** `cloud_setup:117` `value="$(grep "^$1=" ... | tail -n 1)"`; `cloud_sync_cleanup_duplicates.sh`'s header: "keeping only the first occurrence".
+**Verdict:** **confirmed, Medium** -- a seam the two streams did not know they shared. Fix: `conf_get` takes the first (`head -n 1`), matching what the file becomes; a case with a duplicated key.
+
+### BS-3 (blindspot 8, 43; B) -- the ZIP check passes a damaged stored member
+**Screen's claim:** B's comment says busybox has no `-t` and that `unzip -p` verifies every member's CRC; both false on busybox 1.36.1.
+**Checked by running it:** the image's own busybox (`build.ROCKNIX-GENERIC_X64.x86_64/image/system/usr/bin/busybox`, 1.36.1) on a ZIP with a damaged *stored* member: `unzip -t` rc 0, `unzip -p` rc 0; on a damaged *deflated* member: rc 1 and 1; the host's Info-ZIP reports both (rc 2 and 9).
+**Verdict:** **confirmed, Medium** -- a legacy ZIP with a damaged stored member passes the pre-restore check and fails mid-extraction (the snapshot then covers the rollback, which is why not High). Fix: verify each member against the listed CRC (`unzip -lv`'s column, `cksum`), or refuse stored members in a legacy ZIP; the measurement above as the case.
+
+### BS-4 (blindspot 39; D, C) -- skipped checks count as PASSED
+**Screen's claim:** D adds 23 SKIP branches (a pinned tarball absent) and C one; the harness's verdict counts only FAILs.
+**Checked:** `tools/last-good-scripts-test:10224`: `if [ "${FAIL}" -eq 0 ]; then echo "PASSED"`; a SKIP is printed and not counted; vm-qa run 69's scripts.log carries the count printed above.
+**Verdict:** **confirmed, Medium** -- a harness that says PASSED over unrun checks. Fix: the summary says `PASSED, N SKIPPED` and exits 3 when N > 0 and FAIL = 0, which vm-qa's `run_suite` already reads as SKIP; the block headers name what a skip needs.
+
+### BS-5 (blindspots 50, 55; F1) -- the rehearsal's wait reads the previous boot's line
+**Screen's claim:** `tools/vm-upgrade-rehearsal` waits for "Autostart complete" in `/var/log/boot.log`, which is appended and persistent, so the previous boot's line satisfies the wait at once and the "autostart finished" check cannot fail.
+**Checked:** `tools/vm-upgrade-rehearsal:129-132`; `packages/sysutils/autostart/sources/autostart:7,10` appends (`>>`) to `/var/log/boot.log` and never truncates it; `/var/log` is persistent (BS-1).
+**Verdict:** **confirmed, Medium** -- the rehearsal's own guard is an assertion that cannot fail (the rule in `engineering-practices.md`). Fix: wait on `journalctl -b` for the autostart unit's completion, or on a line stamped with this boot's id; a case with a stale line planted.
