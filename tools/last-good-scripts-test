@@ -4182,6 +4182,23 @@ def last_words_in_the_first_read_count():
            "rclone's words in the same read as its link still say why the attempt died (%s)" % st.get("error"),
            "started %r; state %r -- the error that came with the link was never read (G-C-10 claude)" % (started, st))
 EOPY
+# G-C-09 (claude): what cloud_remote passes on of rclone's words.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+@test
+def remote_create_stderr_holds_no_password():
+    """G-C-09 (claude seat): cloud_remote hands rclone's error to the
+    interface, which shows it under THE CONNECTION COULDN'T BE SAVED. A
+    password value in it is taken out; the rest of the reason stays."""
+    m, d = load_remote("gc09")
+    import contextlib, io
+    buf = io.StringIO()
+    with contextlib.redirect_stderr(buf):
+        rc = m.main(["cloud_remote", "create", "qa", "webdav", "url=https://dav.example", "pass=SECRETPASS9"])
+    said = buf.getvalue()
+    result(rc != 0 and "SECRETPASS9" not in said and "bad option" in said,
+           "a failed create passes rclone's reason on with the password taken out: %r" % said.strip(),
+           "rc %r; cloud_remote said %r -- a password value reaches the interface's dialog (G-C-09 claude)" % (rc, said.strip()))
+EOPY
 # C3: new test groups go above this line
 cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
 if MODE == "drive":
