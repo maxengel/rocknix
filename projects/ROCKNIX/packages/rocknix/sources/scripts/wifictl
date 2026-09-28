@@ -280,19 +280,27 @@ join_wifi() {
   # when the profile has no key management -- an open network; a keyed one
   # whose key did not come back leaves the settings as they were. Either
   # way the device is joined, and says so.
-  local keyed
-  if psk=$("${NMCLI}" --escape no -s -g 802-11-wireless-security.psk connection show id "${name}" 2>/dev/null); then
+  #
+  # And wifi.ssid is the network's SSID, not the profile's name: the two
+  # differ for a renamed profile or one NetworkManager deduplicated ("Home
+  # 1"), and connect -- which the settings-driven paths run -- looks the
+  # SSID up in the scan, where a profile's name is not found (#308 claude
+  # F-WF-12, gpt F-WF-03).
+  local keyed ssid
+  if psk=$("${NMCLI}" --escape no -s -g 802-11-wireless-security.psk connection show id "${name}" 2>/dev/null) \
+     && ssid=$("${NMCLI}" --escape no -g 802-11-wireless.ssid connection show id "${name}" 2>/dev/null) \
+     && [ -n "${ssid}" ]; then
     if [ -z "${psk}" ]; then
       keyed=$("${NMCLI}" --escape no -g 802-11-wireless-security.key-mgmt connection show id "${name}" 2>/dev/null) || keyed="unread"
     fi
     if [ -z "${psk}" ] && [ -n "${keyed}" ]; then
       logger -t wifictl "joined ${name}; its key did not come back from NetworkManager, so the Wi-Fi settings were left as they were" 2>/dev/null
     else
-      set_setting wifi.ssid "${name}"
+      set_setting wifi.ssid "${ssid}"
       set_setting wifi.key "${psk}"
     fi
   else
-    logger -t wifictl "joined ${name}; its key could not be read from NetworkManager, so the Wi-Fi settings were left as they were" 2>/dev/null
+    logger -t wifictl "joined ${name}; its key or SSID could not be read from NetworkManager, so the Wi-Fi settings were left as they were" 2>/dev/null
   fi
   pin_wifi
   echo "joined"

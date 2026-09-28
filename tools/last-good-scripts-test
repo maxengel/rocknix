@@ -2735,6 +2735,11 @@ case "$*" in
     all="$*"; name="${all#*connection show id }"
     cut -f1 /run/profiles | grep -q -x -F -- "${name}" || { echo "Error: unknown connection '${name}'." >&2; exit 10; }
     printf 'psk-of-%s\n' "${name}" ;;
+  *"-g 802-11-wireless.ssid connection show id "*)
+    # A profile here is named after its network (#308 F-WF-12 reads the SSID).
+    all="$*"; name="${all#*connection show id }"
+    cut -f1 /run/profiles | grep -q -x -F -- "${name}" || { echo "Error: unknown connection '${name}'." >&2; exit 10; }
+    printf '%s\n' "${name}" ;;
   *"device show "*)
     active=$(awk -F'\t' '$2 ~ /wireless/ && $3 == "yes" { print $1 }' /run/profiles | head -n 1)
     printf 'GENERAL.CONNECTION:%s\n' "$(esc "${active}")" ;;
@@ -3558,5 +3563,10 @@ p7w join "Cafe"
 p7wset 'A|802-11-wireless|wlan0|A|a-key-1' 'B|802-11-wireless|wlan1|B|b-key-1'
 p7w join "B"
 [ "${RC}" -eq 0 ] && [ "$(cat "${P7W}/out")" = "joined" ] && grep -qx 'B ifname wlan0' "${P7W}/run/up" && [ "$(awk -F'|' '$3 == "wlan0" { print $1 }' "${P7W}/run/profiles")" = "B" ]; check $? "#307 PL-031: joining B while B is up on another adapter brings it up on this one (ifname wlan0) and says joined only once wlan0 is on B" "#307 PL-031: rc ${RC}; printed '$(tr '\n' '|' < "${P7W}/out")'; up: '$(tr '\n' '|' < "${P7W}/run/up")'; wlan0 is on '$(awk -F'|' '$3 == "wlan0" { print $1 }' "${P7W}/run/profiles")' -- joined was said while wlan0 stayed on A"
+
+# == #308 2-wifi claude F-WF-12 / gpt F-WF-03: wifi.ssid is the network's SSID, not the profile's name
+p7wset 'Home|802-11-wireless|-|Home|home-key-1' 'Home profile|802-11-wireless|-|Home Wi-Fi|hw-key-1'
+p7w join "Home profile"
+[ "${RC}" -eq 0 ] && [ "$(p7wssid)" = "Home Wi-Fi" ] && [ "$(p7wkey)" = "hw-key-1" ]; check $? "#308 2-wifi claude F-WF-12 / gpt F-WF-03: joining the profile 'Home profile' (SSID 'Home Wi-Fi') writes wifi.ssid=Home Wi-Fi, which the settings-driven connect can find" "#308 F-WF-12: rc ${RC}; wifi.ssid '$(p7wssid)'"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
