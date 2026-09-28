@@ -969,10 +969,26 @@ case "${VERB}" in
         # first line alone, as it always did. Removed below once the extract
         # has finished, or once this script's own revert has put the tree
         # back; left in place if that revert failed, so the boot tries again.
+        #
+        # The mark is a precondition of the extraction, read back before the
+        # first file is written: a mark that could not be written means a
+        # power cut would leave the tree half restored with nothing to put
+        # it back, so the restore stops here instead (#307 PL-039; until
+        # then the write was unchecked and the extraction went on without
+        # it). -T, so a folder in the mark's place is a failure, not a
+        # destination the mark moves into.
         RESTORE_MARK="/storage/.config/.restore-in-progress"
         if [ -n "${SNAPSHOT}" ] || [ -s "${NEWLIST}" ]
         then
-            { printf '%s\n' "${SNAPSHOT}"; sed 's/^/+/' "${NEWLIST}"; } > "${RESTORE_MARK}.tmp" && mv -f "${RESTORE_MARK}.tmp" "${RESTORE_MARK}"
+            if ! { { printf '%s\n' "${SNAPSHOT}"; sed 's/^/+/' "${NEWLIST}"; } > "${RESTORE_MARK}.tmp" 2>/dev/null \
+                   && mv -fT "${RESTORE_MARK}.tmp" "${RESTORE_MARK}" 2>/dev/null \
+                   && [ "$(head -n 1 "${RESTORE_MARK}" 2>/dev/null)" = "${SNAPSHOT}" ] \
+                   && [ "$(wc -l < "${RESTORE_MARK}")" -eq $(( 1 + $(wc -l < "${NEWLIST}") )) ]; }
+            then
+                rm -f "${RESTORE_MARK}.tmp" "${MEMBERS}" "${NEWLIST}" 2>/dev/null
+                why "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS"
+                fail "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS, SO NOTHING WAS CHANGED. TRY AGAIN." "the restore mark ${RESTORE_MARK} could not be written"
+            fi
         fi
 
         note "RESTORING SETTINGS..." "from ${BACKUPFILE}"

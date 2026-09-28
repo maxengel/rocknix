@@ -3288,4 +3288,11 @@ printf '\n+/storage/.config/test/only-new.cfg\n' > "${P7C}/cfg/.restore-in-progr
 EXTRACT_ROOT="${P7C}/root" PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7C}/fns.sh'; verify" 2>/dev/null
 [ ! -e "${P7C}/root/storage/.config/test/only-new.cfg" ] && [ "$(cat "${P7C}/cfg/.restore-reverted" 2>/dev/null)" = "reverted" ]; check $? "#307 PL-007: a mark with no copy (every member was new) still removes what the cut restore created, and says reverted" "#307 PL-007: only-new.cfg: $([ -e "${P7C}/root/storage/.config/test/only-new.cfg" ] && echo left || echo gone); said: '$(cat "${P7C}/cfg/.restore-reverted" 2>/dev/null)'"
 
+# == PL-039: the restore mark is written, or the restore does not start
+p7reset '  /storage/.config/test/*'
+echo LIVE > "${P7S}/.config/test/f1"; mkdir -p "${P7S}/.config/.restore-in-progress.tmp"
+p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/f1=ARCHIVE"
+p7bt restore --no-restart
+[ "${RC}" -ne 0 ] && [ "$(cat "${P7S}/.config/test/f1")" = "LIVE" ] && ! grep -q 'systemctl reboot' "${P7OUT}" && [ "$(p7why)" = "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS" ]; check $? "#307 PL-039: an unwritable restore mark ends the restore before the extraction and the restart (rc ${RC})" "#307 PL-039: rc ${RC}; f1='$(cat "${P7S}/.config/test/f1")'; why: '$(p7why)' -- the extraction ran with no mark for the boot to finish"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
