@@ -3841,6 +3841,16 @@ p7dt=$(( $(date +%s) - p7t0 ))
 p7forks=$(PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7F}/redact.sh'; sed() { echo fork >> '${P7F}/forks'; command sed \"\$@\"; }; : > '${P7F}/forks'; redact_credentials 'disk-full on /storage' >/dev/null; redact_credentials 'task-manager started' >/dev/null; wc -l < '${P7F}/forks'")
 [ "${p7forks}" -eq 0 ]; check $? "#308 10-packages-and-build claude F-PB-18: 'disk-full' and 'task-manager' lines take the fast path (no sed)" "#308 F-PB-18: ${p7forks} sed fork(s) for two lines with no credential in them -- the unanchored sk- matched inside 'disk-'"
 
+# == AUD fn (#307 audit of the fixes: claude G-B-07 and G-B-13): the fast path, and a stale lock nobody can reap
+p7forks=$(PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7F}/redact.sh'; sed() { echo fork >> '${P7F}/forks'; command sed \"\$@\"; }; : > '${P7F}/forks'; redact_credentials 'test passed: 3 of 3' >/dev/null; redact_credentials 'bypass mode on' >/dev/null; wc -l < '${P7F}/forks'")
+[ "${p7forks}" -eq 0 ] && [ "$(p7red 'ScreenScraperPass=hunter2')" = "ScreenScraperPass=<redacted>" ]; check $? "#307 audit G-B-07 (claude): 'test passed' and 'bypass' lines take the fast path, and ScreenScraperPass= is still redacted" "#307 audit G-B-07: ${p7forks} sed fork(s) for two lines with no credential in them"
+mkdir -p "${P7F}/rolock"; echo "${P7DEAD:-4194303}" > "${P7F}/rolock/lock"; chmod 555 "${P7F}/rolock"
+sed "s|^J_CONF=.*|J_CONF=$(printf %q "${P7F}/cfg/system.cfg"); J_CONF_LOCK=$(printf %q "${P7F}/rolock/lock")|" "${P7F}/f.sh" > "${P7F}/f-ro.sh"
+p7t0=$(date +%s)
+PATH="${TMP}/bbin:${PATH}" timeout 20 bash -c ". '${P7F}/f-ro.sh'; wait_lock" 2>"${P7F}/err"; p7rc=$?
+p7dt=$(( $(date +%s) - p7t0 )); chmod 755 "${P7F}/rolock"
+[ "${p7rc}" -ne 0 ] && [ "${p7rc}" -ne 124 ] && [ "${p7dt}" -lt 15 ] && grep -q 'wait_lock' "${P7F}/err"; check $? "#307 audit G-B-13 (claude): a stale lock in a read-only folder, which no reap can remove, ends the wait in ${p7dt}s (rc ${p7rc}) and says why" "#307 audit G-B-13: rc ${p7rc} after ${p7dt}s (124: still spinning at the timeout)"
+
 # y4. chksysconfig's boot pass, factoryreset, rocknix-evidence,
 # rocknix-corekeep, runemu.sh's argument parsers and automount's
 # internal-disk test.
