@@ -358,30 +358,30 @@ Recorded per item as it is resolved: the outcome (resolved / deferred / rejected
 | PL-006 | High | | |
 | PL-007 | High | | |
 | PL-008 | High | | |
-| PL-009 | High | | |
+| PL-009 | High | Resolved | Resolved `505dae63aa` (merged `8840998047`) -- `syncpath_problem` refuses an empty, `.` or `..` part before any other check and offers the folder the path meant (`Try /Mine/Saves.`); harness case CF1: 8 FAIL before (`--set-saves-remote /Mine/Backups/. rc 0; config: SAVES_REMOTE="/Mine/Backups/." …`), 10 PASS after with two controls (`/Mine/.hidden/Saves`, `/Mine/..x/Saves` accepted); already written: a stored folder and its derived siblings are left, the next change is refused with a clean one offered; the integrator: the harness on the merged tree `PASSED` (1065 PASS, 16:59 UTC), and at `f3d19dc8fb` in `pl-c` `40 CHECK(S) FAILED`, all C's |
 | PL-010 | High | Resolved | Resolved ES `3157d1a69` (with `107597312` for shellQuote's `'\''` form) -- `maskValueEnd` reads the inner command as its shell would; MaskSecretsTests "an escaped quote inside an inner quoted value does not end it": 4 of 6 FAIL before, 6/6 after; the integrator ran the branch's binaries: es-unit-tests 1824/1824; `tools/es-syntax-check` PASS on StringUtil.cpp; already written: the mask runs at log time, lines logged before stay in es_log's four archives until rotated |
 | PL-011 | High | Resolved | Resolved `3e70ef9239` (ES `7d999fd15`) -- `.githooks/guard-lib` compiles both lists before use and reads every grep's status (1 = nothing, 0 = hits, else refuse); `.githooks/hooks-test` 27 cases PASS incl. "a credential list that does not compile: refused" for pre-commit and pre-push; the ES fork's `pre-push-test` 21 cases PASS with the same case |
 | PL-012 | High | Resolved | Resolved `3e70ef9239` + `f3d19dc8fb` -- the exemption is gone from both hooks (`hooks-test`: "the same line under an audit packet (no path is exempt): refused"); `.gitignore` `/docs/audits/*/seats/*.diff`; the 30 tracked packets untracked (`git rm --cached`, kept on disk); the reviewed bytes stay retrievable from history (`git show cba6ae23f2~1:<path>`, sha256 per manifest; R-05: the regeneration claim is dropped); the ES test's FAKE= exemption is gone too (ES `3cd229a51`, the fixture built at run time); the one exemption left is a unit test's `maskSecrets(` line, E1 asked to split its literals |
 | PL-013 | Medium | Resolved | Resolved `f3d19dc8fb` -- `engineering-practices.md` line 554 closes the group at the delimiter (`((…)[=:])[^ ]*` -> `\1***`) with the proof paragraph (a fake `key=SECRET` line, `SECRET` absent from the output); `tools/rules-check` clean |
-| PL-014 | High | | |
+| PL-014 | High | Resolved | Resolved `790011706a` (merged `8840998047`) -- `cloud_log_scrub`, installed by one `package.mk` line and run in the foreground by `autostart/102-cloud-saves` before the capture pass: once per device it rewrites every `cloud_sync.log*` under `/storage/.cache/log` through `redact_credentials` (old `cloud_remote` failure lines become `rclone config create failed (1)`, rclone's words in `cloud_oauth` failures `<redacted>`), never changing a line count, and stamps `/storage/.cache/cloud_sync/log-scrubbed` (`scrubbed=<epoch> files=<n> lines=<n>`; no stamp without the filter, so the next boot retries); case CF3: 7 FAIL before (`still in the cloud log: PLANT…`), 8 PASS after; 0.16 s over 0.66 MB with the image's busybox, at boot, never on the launch path; `tools/pkgcheck rclone` 0; already written: this item IS what earlier builds wrote, masked in place on the first boot of this build; the rehearsal with a planted line is PL-029's; the integrator: the harness on the merged tree `PASSED` (1065 PASS, 16:59 UTC), and at `f3d19dc8fb` in `pl-c` `40 CHECK(S) FAILED`, all C's |
 | PL-015 | Medium | | |
 | PL-016 | Medium | | |
 | PL-017 | Medium | | |
 | PL-018 | Medium | Resolved | Resolved ES `0c6665bf1` + `f297007de` (amended per R-04) -- the Backup fallback requires `backupWhole`; two es-file-tests cases (a whole `.tmp` beside a cut record recovers; no `.tmp` -> the defaults, the cut record not recorded) and es-conf-tests on the shipped SystemConf: 11 of 19 FAIL before (`CHECK( c.source == Temporary )`), all PASS after; the integrator ran es-file-tests 3389/3389 and es-conf-tests 98/98; already written: a cut record from an earlier build is no longer loaded and the next whole record replaces it |
 | PL-019 | Medium | Resolved | ES `bf00e91c9` -- BIOS alone now opens the CONTENT TO BACK UP / RESTORE page (SYSTEMS reading NONE, a BIOS FILES group, BACK and the verb) and the run starts only on the verb; `cloudSaveSelection` runs `--set-systems`, reads the file back and continues only when rc is 0 and the file names exactly what was ticked, else `COULDN'T SAVE WHAT YOU TICKED, SO NOTHING WAS BACKED UP.` (proposed words, D-UI-116) and the page stays; `tests/cloud-content-selection.py` 0 of 5 before, 13 of 13 after, a mutation trusting rc alone fails 3; the integrator ran app-unit-tests 119/119; es-syntax-check PASS; French appended, es-untranslated 603/603; already written: a selection file from an earlier build is read as before and replaced on the next press; the 640x480 frame is the next cut's |
 | PL-020 | Medium | | |
-| PL-021 | Medium | | |
+| PL-021 | Medium | Resolved | Resolved `9c9951798b` (merged `8840998047`) -- `conf_get` reads the first assignment as the cleanup and the content scripts do (D-CLOUD-149, reversing the first round's last-wins); case CF2: 2 FAIL before (`--info names '/Second/Saves', the saves scripts after the cleanup '/ROCKNIX/Saves'`), PASS after; already written: nothing is written; the integrator: the harness on the merged tree `PASSED` (1065 PASS, 16:59 UTC), and at `f3d19dc8fb` in `pl-c` `40 CHECK(S) FAILED`, all C's |
 | PL-022 | Medium | | |
 | PL-023 | Medium | Resolved | Resolved `f3d19dc8fb` -- `skip()` counts the 25 sites; the verdict reads `PASSED, N SKIPPED` and exits 3 when FAIL = 0 and N > 0 (`vm-qa` `run_suite` reads 3 as SKIP, line 137). Proof: the committed harness on the host `PASSED` rc 0 (1002 PASS, 0 SKIP; `harness-pl023-normal.log`); in a worktree whose client pin names no tarball `PASSED, 22 SKIPPED -- a check that did not run has not passed` rc 3 (839 PASS, 22 SKIP; `harness-pl023-skip.log`) |
 | PL-024 | Medium | Resolved | Resolved `104433dbe8` (merged `e3394a893f`) -- the rehearsal's wait polls the guest's boot id and `systemctl is-active rocknix-autostart.service` and ends only on `<this boot's id> active`; `failed` ends it early, a wait that runs out records what it last read and the check FAILs; `/var/log/boot.log` is no longer read. Harness case F1r-a lifts the wait's lines against a fixture guest whose boot.log already holds the previous boot's line: FAIL before (`the wait ended on 'polls=1 autostarted=yes' where autostart finished on poll 4`, stream F1's run at `f3d19dc8fb`, and the integrator's own re-run there at 16:48 UTC: `11 CHECK(S) FAILED, 0 SKIPPED`, every one an F1 case), PASS after; the integrator's harness run on the merged tree: `PASSED` rc 0 (16:40 UTC); already written: nothing, the rehearsal keeps no state; the rehearsal itself runs on the next cut (PL-029) |
-| PL-025 | Low | Resolved | Resolved `f3d19dc8fb` -- `tools/vm-qa`'s exec wrapper resets SIGPIPE beside SIGINT; the harness prints its inherited dispositions first (`signals: SigIgn=… SIGINT ignored=N SIGPIPE ignored=N`; under a detached run it read `SIGPIPE ignored=1`, which is the line doing its job) |
+| PL-025 | Low | Resolved | Resolved `f3d19dc8fb` -- `tools/vm-qa`'s exec wrapper resets SIGPIPE beside SIGINT; the harness prints its inherited dispositions first (`signals: SigIgn=… SIGINT ignored=N SIGPIPE ignored=N`; the first cut of the line read `/proc/self/status` inside `$(awk …)`, awk's own process, which reads SIGPIPE ignored where the harness's bash has it default; it reads `/proc/$$/status` since 17:00 UTC, and the wrapper's reset was checked by hand: through it into `bash -c grep`, SigIgn `0x1000001`, SIGPIPE clear) |
 | PL-026 | Low | Resolved | Resolved `3e70ef9239` -- `guard_scan` anchors every pattern after the label (`^([^\t]*\t)+.*(…)`); `hooks-test`: "a file NAMED like a key, clean inside (the label is not scanned): allowed" in pre-commit and at push |
 | PL-027 | Low | Resolved | Resolved `f3d19dc8fb` -- `es-player-text.md`'s why list carries `CHECK WHAT WOULD CHANGE FIRST` (`cloud_content_restore`) and `YOUR CLOUD SYNC SETTINGS COULDN'T BE SAVED` (`cloud_migrate_layout`); `tools/rules-check` clean |
 | PL-028 | Medium | | |
 | PL-029 | Medium | | |
 | PL-030 | Medium | Withdrawn | refuted from the source (E2, checked by the integrator): the COPY's only write to the saves tree is `copyToSlot` at the press (`GuiSaveState.cpp:516`) behind `savesTreeBusy` (`:499`, `:33`); the queued record (`:524`) is `cloud_capture --adopt`, which writes only under `/storage/.cache/cloud_sync` (`cloud_capture:674` MANIFEST, `:115` STAGE) under `capture_lock` (`:1559`); its only saves-folder write is `--retire --unlink`, the DELETE's; no transfer script reads the manifests or the stage (`grep -n "manifest-\|cloud_capture\|/stage\|\.capture"` over the five cloud scripts: 0 lines). Adding DELETE's guard would drop a copy's record whenever a transfer holds the lock. The false `TransferLock` comment goes to E1 |
 | PL-031 | Medium | | |
-| PL-032 | Medium | | |
+| PL-032 | Medium | Resolved | Resolved `f945f4182a` (merged `8840998047`) -- each attempt has its own id; `write_owned` takes `owner=` and `from_status=`: `waiting` only from `starting`, `signed-in` only from `starting`/`waiting` by the current attempt, the closing `failed` only from those; a refused success deletes the remote it made and writes no marker; `holder.end()` waits up to 45 s for a collector still saving (D-CLOUD-150); case CF4: 7 FAIL before (`a dead attempt republished as waiting`; `after A finished behind B: … marker True, A's remote removed False`), 7 PASS after plus a control; already written: the state lives in `/var/run`, nothing persists; the integrator: the harness on the merged tree `PASSED` (1065 PASS, 16:59 UTC), and at `f3d19dc8fb` in `pl-c` `40 CHECK(S) FAILED`, all C's |
 | PL-033 | Medium | | |
 | PL-034 | Medium | | |
 
@@ -460,7 +460,7 @@ punch_index:
   owner_area: 'stream C, cloud_setup'
   where: 'cloud_setup syncpath_problem'
   acceptance: 'any `.` or `..` or empty component is refused before the sibling check; the seat''s path as a case, refused with the folder to use'
-  outcome: open
+  outcome: resolved
 - id: PL-010
   severity: 'High'
   category: 'Credential in a log'
@@ -492,7 +492,7 @@ punch_index:
   owner_area: 'stream C, the cloud scripts'' startup'
   where: 'the rclone package (cloud_sync_helper''s startup, or the package''s autostart); /var/log is a bind of /storage/.cache/log (D-SYS-001)'
   acceptance: 'the first run of the new scripts rewrites cloud_sync.log and its rotations with the password shapes masked, once, recorded by a stamp under /storage/.cache; a case over a planted line; the Already-written line names it'
-  outcome: open
+  outcome: resolved
 - id: PL-015
   severity: 'Medium'
   category: 'Upgrade path (a working configuration refused)'
@@ -548,7 +548,7 @@ punch_index:
   owner_area: 'stream C, cloud_setup'
   where: 'cloud_setup:117 (`tail -n 1`); cloud_sync_cleanup_duplicates.sh keeps the first'
   acceptance: '`conf_get` takes the first assignment; a case with a duplicated key asserts both readers agree'
-  outcome: open
+  outcome: resolved
 - id: PL-022
   severity: 'Medium'
   category: 'A check that cannot see a damaged stored member'
@@ -620,7 +620,7 @@ punch_index:
   owner_area: 'stream C, cloud_oauth'
   where: 'cloud_oauth ~506 `write_owned(self.attempt, status="signed-in")`; the `failed -> waiting` transition within one attempt'
   acceptance: 'terminal-state ordering is gated together with its callback and marker side effects, including a close without a successor attempt, with a case that fails first; or a source-backed refutation naming the line'
-  outcome: open
+  outcome: resolved
 - id: PL-033
   severity: 'Medium (conditional, verification-first)'
   category: 'Wrong predicate (a reachable service read as absent)'

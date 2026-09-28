@@ -269,8 +269,10 @@ SKIPPED=0
 # when nothing failed but something was skipped -- vm-qa reads 3 as SKIP.
 skip() { SKIPPED=$((SKIPPED + 1)); echo "    SKIP  $*"; }
 # The signal dispositions this run inherited (PL-025): vm-qa's wrapper resets
-# SIGINT and SIGPIPE before exec; SigIgn bit 1 is SIGINT, bit 12 SIGPIPE.
-sigign="$(awk '/^SigIgn:/{print $2}' /proc/self/status)"
+# SIGINT and SIGPIPE before exec; SigIgn bit 1 is SIGINT, bit 12 SIGPIPE. Read
+# from /proc/$$ -- the first cut read /proc/self inside $( ), which is awk's own
+# process, and awk reads SIGPIPE ignored where this shell has it default.
+sigign="$(awk '/^SigIgn:/{print $2}' "/proc/$$/status")"   # $$ is this script, not the awk
 echo "signals: SigIgn=${sigign} SIGINT ignored=$(( (16#${sigign} >> 1) & 1 )) SIGPIPE ignored=$(( (16#${sigign} >> 12) & 1 ))"
 check() { # <0|nonzero> ok-text bad-text
     if [ "$1" -eq 0 ]; then echo "    PASS  $2"; else echo "    FAIL  $3"; FAIL=$((FAIL + 1)); fi
