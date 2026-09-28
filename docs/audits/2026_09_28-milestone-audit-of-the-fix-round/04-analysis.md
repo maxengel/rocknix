@@ -15,6 +15,8 @@
 
 **What to do before the candidate.** The fourteen Highs and the six confirmed Mediums are the punch list's FIX-NOW set (`05-punch-list.md`), each with a case first; they touch five scripts, one C++ file, the two hooks in two repositories and one rule. The fixes go back to the streams that own the files (their agents keep their context) and to the integrator for the hooks and the lint; then one more cut, vm-qa and the proofs' scripts on it, and the candidate is called from that. The seats' Mediums that are leads go to the streams with the same instruction (read, fix with a case, or withdraw with the line); the test and lint gaps are the next round's. Nothing here changes the design decisions of the round; it changes their guards.
 
+**Corrected after the second opinion (Phase 4.6, both passes; the sentences above are left as written, this paragraph governs).** Thirteen Highs, not fourteen (PL-013 is Medium), and eighteen Mediums, not six: 34 items in `05-punch-list.md`. "The 81 punch items are implemented" reads: 79 of #307's items are claimed implemented at the evidence levels the seats read -- no item drew "does not hold" -- and two (PL-081, the PR-prep pass, and one other) are struck on the issue as outside the round; implemented is not acceptance-complete, and the per-item table in 02 is the ledger. "21 proven on the VM" is 20 rows plus PL-032 (partial) and PL-069's leak measurement. "Every fix came with a case seen to fail first" holds per fix where the report says so and has O-2's read-only exception; a suite total proves nothing about it. "Five copies" of the validator: three gate a `source`, two are readers. The fixes' scope is the items' own file inventory. O-16 is qualified in 02 (complete for spelled siblings; the dot case is PL-009). The capture interaction is O-6 plus PL-034, not "safe by the bound". "Answered" for the first audit's findings means a response received, and 02's cross-check separates verified fixes, substantiated withdrawals and accepted risks. The unread leads are pending, five of them gated as PL-030..034. D-INFRA-012 accepts PID reuse; `pid_max` is not a wait bound. And "no VM proof named" does not make an item incomplete whose criterion is a host, unit or build test.
+
 ## Acceptance-criteria scorecard
 
 81 items. "first delivery" is the fix audit's seats (opened after this audit's verdicts were written, Phase 2.5); "whole branch" is this audit's; the VM column is the streams' proofs' second run on `1b0d233657` where a script names the item; the orchestrator's column is the verdict that stands. Pass rate: 79 implemented (21 VM-proven, 56 on the harness and the reports, 2 the VM could not run), 1 partial, 1 not this round's. No item fails.
@@ -101,7 +103,7 @@
 | PL-078 | Low | E1 | holds / holds | cannot tell / cannot tell | - | implemented on the reports and the seats; no VM proof named |
 | PL-079 | High | A | - / holds ("present"; a paragraph, not an index row) | holds / holds | - | implemented on the reports and the seats; no VM proof named |
 | PL-080 | Medium | A | - / holds ("present"; "A30 is a constructed progress-stream test, not a measurement") | holds / in part | - | implemented on the reports and the seats; no VM proof named |
-| PL-081 | High | - | - / - | holds / holds | - | the PR-prep pass (#256) |
+| PL-081 | High | - | - / - | struck on #307 (the PR-prep pass, #256; outside this round) | - | not assessed here; the "holds / holds" it carried was unsupported (the refutation pass) |
 
 ## Code-quality assessment
 
@@ -176,7 +178,31 @@ Phase 4.6, two calls at milestone tier through the council Facilitator on OpenRo
 
 ### The refutation pass
 
-_(dispatched 15:45 UTC over 02, 03, this document, 05 and `blind-gpt.md` -- `refutation.manifest.json`, 335 KB; graded below when it returns)_
+**Command:** the same Facilitator call with `--prompt-file second-opinions/refutation.brief.md --source-manifest second-opinions/refutation.manifest.json --output second-opinions/refutation-gpt.md`, dispatched 15:45 UTC over 02, 03, this document, 05 (27 items then) and `blind-gpt.md` (335 KB; the five sha256 in the manifest). **Provenance** (`refutation-gpt.md.provenance.json`): served model `openai/gpt-6-astra` (`model_identity_source: provider_response`), effort max, buffered, HTTP 200, one attempt, 1,216 s, 94,391 prompt and 40,000 completion tokens (29,524 reasoning; the completion cap, and the document is whole: five sections, the closing paragraph complete), output sha256 `b2dfdee1…`.
+
+**Its own findings (R-01..R-05), each about a prescription or an artifact, none a new defect in shipped code:**
+
+| R | What it says | Disposition |
+| --- | --- | --- |
+| R-01 | PL-022's `cksum` is not ZIP's CRC-32 | **agree**; PL-022's acceptance amended (a ZIP-compatible CRC-32 the image has, or the refusal branch; healthy and damaged, stored and deflated); stream B told |
+| R-02 | PL-011's "any status above grep's 1 refusing" is not stage-correct | **agree**; the acceptance amended (a producer, parser or redactor failure of any status refuses; grep's 1 only at the matching stage; statuses read in the shell that ran the pipeline) -- `.githooks/guard-lib` already does this (`set -o pipefail` around the producer, each grep's own status) |
+| R-03 | the punch index was invalid YAML (`\1`, `\$`) and drifted from the prose on PL-003 and PL-015 | **agree, confirmed** (`yaml.safe_load` failed at PL-013's acceptance); the index is regenerated from the prose with single-quoted scalars and checked identical, 34 ids |
+| R-04 | PL-018's oracle would discard a whole `.tmp` recovery | **agree**; the acceptance split into two cases; stream E1 told |
+| R-05 | removing packet copies loses the reviewed bytes | **agree in part**: the copies are untracked, not destroyed -- history keeps them (`git show cba6ae23f2~1:<path>`) against the manifests' sha256, and the "regenerated from the range" claim is dropped from PL-012; the ES test's FAKE= exemption it also names is gone (ES `3cd229a51`) |
+
+**The punch items:** 24 agree (some with the acceptance sharpened, folded in above and into the items), 3 narrowed (PL-001: the deletion is conditional on rclone's same-directory copy, unrun; PL-002: three of five copies gate a `source`; PL-019: the unchecked write and the missing press, not the preceding consent), 1 re-graded (PL-013 High -> Medium: a guide a person runs, not a shipped disclosure path; accepted, the fix stands), PL-027 "re-grade to Low" (it was Low). PL-006 widened (a failure after a successful mktemp). Every High of the list survives.
+
+**The leads it would not leave where the triage put them:** G2-C-03 (gpt) and G2-D-01 (gpt) Medium not Low; G2-I-09 (gpt) into PL-011's scope (guard-lib refuses an unreadable list before reading a non-empty variable); G2-A-10 (claude) a Medium lead (size-only comparison before a destructive migration) -- carried to stream A by this note; the rest of § 2.2 are the leads the streams already hold, each with the refutation's sharper acceptance, which the streams read from this file.
+
+**The blind list:** S-06 -> PL-028 and S-30 -> PL-029 as graded above; the refutation asks that five leads be gated rather than left as leads, because "unread leads cannot safely be summarized as either fixed or definitively non-blocking": **PL-030** (S-21, COPY outside the lock, E2), **PL-031** (S-24, the substituted readiness count, D), **PL-032** (S-25, a closed sign-in state reopened, C), **PL-033** (S-26, the `::` listener, conditional, D), **PL-034** (S-27, the capture released past the age bound, A) -- each verification-first: a fix with a case, or a source-backed refutation naming the line. (Its own numbering, PL-029..034 for S-21..S-30, differs by one from this list's.) The streams were told the same hour.
+
+**Its corrections to this document's summary**, applied as the paragraph appended to the executive summary above: "81 implemented" is "79 claimed implemented at the seats' evidence levels" (PL-081 and one other are struck on #307 as outside the round; implemented is not acceptance-complete); "21 proven on the VM" is 20 rows plus PL-032 partial and PL-069's leak measurement; "every fix came with a case seen to fail first" has O-2's read-only exception and is per-fix, not per-suite; "five copies" is three validators and two readers; "fourteen Highs and six Mediums" is now 13 Highs and 18 Mediums after the second opinion; the fixes' scope is the items' file inventory, not "five scripts, one C++ file"; O-16 is amended in 02 (the collision set is complete for spelled siblings; the dot case is PL-009); "safe by the bound" is O-6 plus PL-034; "answered" separates response received from fix verified, withdrawal substantiated and risk accepted; unread leads are pending, not non-blocking. Two distinctions kept: D-INFRA-012 accepts PID reuse, and `pid_max` is not an elapsed-time bound; "no VM proof named" does not make an item incomplete when its criterion is a host, unit or build test.
+
+**What it could not judge** (§ 4.1): the implementations behind the excerpts, the original criteria (PL-081's), the raw artifacts of the cut, rclone's same-directory behaviour, the shipped bind, the ZIP tools' capabilities, the configuration grammar, the archive trust boundary, the log-rotation facts PL-014's scrub needs, the packet-generation procedure. Each is either an item's case (PL-001, PL-022, PL-033, PL-014) or a limit of a document-only pass, stated.
+
+**Net effect of the refutation pass:** five items added (PL-030..034), one re-graded (PL-013), five acceptance texts amended, the index made valid and identical to the prose, ten summary claims corrected, one verification entry qualified (O-16), and the ES fork's last line-shape exemption removed. No High withdrawn.
+
+**Its closing paragraph, pasted as asked:** *"The refutation pass narrows several conclusions: total loss in the migration remains conditional on unrun rclone behavior; the packet establishes three sourcing validators, not five execution sinks; and the guide-only masking example is Medium rather than High. The ZIP-checksum prescription, hook status rule, recovery test oracle, punch YAML, and packet-retention plan need correction. G2-B-05 is a confirmed Medium missing from the numbered gate, while unresolved COPY, lifecycle, readiness, capture, and upgrade evidence cannot be declared non-blocking merely because it was not fully read. Most remaining blocker mechanisms are supported by the quoted inspections and reported probes, but 'implemented' is not 'acceptance-complete,' and suite totals do not prove every fix failed first. Keep the candidate unready until the corrected requirements, owner dispositions, and required final-cut evidence are recorded; accepted design risks should remain explicit exceptions, not be presented as correctness proofs."*
 
 ## Instruction File Recommendations
 
@@ -219,7 +245,7 @@ _(dispatched 15:45 UTC over 02, 03, this document, 05 and `blind-gpt.md` -- `ref
 | Risk assessment | yes | confirmed findings only |
 | Coverage boundary | yes | |
 | Finding verification | yes | in 02 § Verification, summarised here |
-| Second opinion | the blind pass graded (two items, one lead added); the refutation pass pending | the list is final when the second is graded |
+| Second opinion | both passes graded: 7 items added, 1 re-graded, 5 acceptance texts amended, the summary corrected | milestone tier |
 | Instruction File Recommendations | yes | milestone tier |
 | Traceability / evidence / reproducibility | yes | every confirmed finding names a file and a line or a command and its output; the seats' outputs and provenance are under `seats/` |
 | Complete (every stated criterion evaluated) | yes for #307's 81; #308's rows spot-checked (stated) | |

@@ -948,6 +948,7 @@ _The orchestrator's own reads of the highest-risk follow-up hunks, made before t
 ### O-16 (C, `8b5655a4dc`) -- a saves folder named like its own sibling is refused
 **Read:** `cloud_setup`'s `syncpath_problem`: the typed path, case-folded, is refused when it equals `<parent>/Backups` or `<parent>/Content`, with the folder to use (`Try <parent>/Saves.`); the derived siblings are exactly those two names, so the collision set is complete. An already-aliased configuration is read as it stands (the accepted-risk ledger of the fix audit).
 **Verdict:** **sound.**
+Amended after the refutation pass (16:10 UTC): sound for the check it names -- the collision set is complete for the two spelled siblings; `/Mine/Backups/.` walks past it by normalisation, not by name (G2-C-04, PL-009), so "complete" holds only once PL-009 lands.
 
 ### O-17 (F1, `16ae2219ca`) -- the take-backs remove exact names, once
 **Read:** the two take-back scripts list the exact paths the retired quirks wrote and remove those; each runs until its files are gone, then writes a stamp under `/storage/.cache` and exits early on every later boot; the rescue and emergency masks are removed by name. The harness's F1 cases: an owner's own drop-in (`weston.service.d/10-generic-x64.conf` named after the pattern but the owner's) survives; the take-back boot's journal says so; a second boot changes nothing.

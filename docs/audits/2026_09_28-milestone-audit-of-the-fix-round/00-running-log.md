@@ -47,3 +47,7 @@ Phase 7 opened ahead of the gate at the maintainer's word (fix everything before
 Correction, 15:55: #307 carries 81 checkboxes and 81 distinct PL ids (`gh issue view 307`, counted); the blind pass saw 80 in the packet as embedded. The 80/81 note above is the packet's rendering, not a gap in the criteria.
 
 ### [tooling] 16:01 — the lint gains the carried-verdict check (blindspot 68); proven on the pre-PL-028 punch list, 28 ids carried now
+
+### [Phase 4.6 done] 16:11 — the refutation pass graded; 34 items; the streams told
+
+`second-opinions/refutation-gpt.md`: `openai/gpt-6-astra` served, 1,216 s, 94,391 prompt / 40,000 completion tokens, five sections whole. R-01..R-05 (prescription and artifact defects, no new code defect) all taken: PL-022's checksum, PL-011's status rule, the punch index (was invalid YAML with two drifted acceptance texts -- regenerated from the prose, `yaml.safe_load` clean, 34 ids identical to the prose), PL-018's oracle, PL-012's retention wording. PL-013 re-graded Medium; PL-001/002/019 narrowed; PL-006 widened; five leads gated as PL-030..034 (S-21, S-24, S-25, S-26, S-27); O-16 qualified in 02; the executive summary's ten claims corrected in an appended paragraph; the PL-081 scorecard row corrected (struck on #307, not "holds / holds"). The ES fork's FAKE= exemption removed (ES `3cd229a51`). Streams A, B, C, D, E1, E2 messaged with their corrections and new items. The lint: 27 failures, exactly the 27 open outcomes of Phase 7; everything else passes. Phase 6 next.
