@@ -1,5 +1,6 @@
 # Punch List — the whole fix round for #307/#308, before the candidate (D-WORKFLOW-060)
-**Generated:** 2026-09-28
+**Generated:** 2026-09-28  
+**Issue:** #313 (Phase 6; the Phase 7 gate below is its task list)
 **Source Audit:** `docs/audits/2026_09_28-milestone-audit-of-the-fix-round/04-analysis.md`
 **Total Items:** 34 (Critical: 0, High: 13, Medium: 18, Low: 3). PL-028 and PL-029 were added after the blind second opinion (S-06, S-30); PL-030..PL-034 after the refutation pass, which gated five leads as verification-first items (S-21, S-24, S-25, S-26, S-27) and re-graded PL-013 Medium; five acceptance texts were amended there (R-01, R-02, R-04, R-05 and the PL-006 widening), each marked in place. Every item is a defect this audit discovered, confirmed by the orchestrator against the source (`02-forward-audit.md` § Verification); the seats' remaining Mediums and Lows go to their streams as leads, listed at the end, and the first audit's carried items stay on #309.
 ---
