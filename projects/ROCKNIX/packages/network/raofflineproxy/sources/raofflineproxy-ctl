@@ -122,7 +122,11 @@
 #            even one among many that went through, is a run that could
 #            not finish (`why SOME_GAMES_NOT_SAVED`, `errors <n>`; #186
 #            PL-24): the next scan or top-up tries those games again, since
-#            nothing marks them cached. The walk over an unindexed folder
+#            nothing marks them cached. Every scan ends with the image pass
+#            (a scan with nothing new included), and a pass that left
+#            images behind makes the scan one that could not finish too,
+#            `why SOME_IMAGES_NOT_SAVED` (#307 PL-060; a top-up that cached
+#            a game runs it and says it the same way). The walk over an unindexed folder
 #            stops at the client's cap of files (rom_browser
 #            MAX_SCAN_ENTRIES), counted over the files not yet cached and
 #            begun where the last walk the cap cut stopped (scan-cursor), so
@@ -1442,13 +1446,19 @@ cancelled() {
 # stops at its ceiling costs the next one nothing. Bounded by what is left of
 # the caller's deadline, or IMAGE_PASS_SECONDS on its own.
 #
-# Its exit code is not the caller's: a scan that cached every game and left
-# an image behind cached every game. The line it writes to the log says what
-# happened, and the `images` verb is where a non-zero exit is the answer.
+# Its verdict is part of the run's (#307 PL-060). A game whose badges are
+# missing offline reads as half working (D-RA-027), and a run whose parts
+# disagree is COULDN'T FINISH (D-UI-030), so a pass that left images behind
+# -- the helper's `why` line, or an exit it gives no reason for -- leaves
+# R_IMAGES_WHY=SOME_IMAGES_NOT_SAVED for the caller to stamp, the games
+# still counted as cached. A verify slice that did not come round the store
+# (exit 1 with no why) is the sweep doing its work a slice a run, by design
+# (D-RA-024), and is no failure.
 IMAGE_PASS_SECONDS="${RAOFFLINEPROXY_IMAGE_PASS_SECONDS:-300}"
 
 run_image_pass() {
-    local VERB="$1" SECONDS_LEFT="${2:-${IMAGE_PASS_SECONDS}}" MODE="${3:-}" RC=0
+    local VERB="$1" SECONDS_LEFT="${2:-${IMAGE_PASS_SECONDS}}" MODE="${3:-}" RC=0 WHY_LINE=""
+    R_IMAGES_WHY=""
     [ -x "${IMAGE_HELPER}" ] || { slog "${VERB}: no image helper at ${IMAGE_HELPER}"; return 0; }
     [ "${SECONDS_LEFT}" -gt 10 ] 2>/dev/null || { slog "${VERB}: no time left for the image pass (${SECONDS_LEFT}s)"; return 0; }
     slog "${VERB}: image pass, up to ${SECONDS_LEFT}s${MODE:+ (${MODE})}"
@@ -1459,12 +1469,26 @@ run_image_pass() {
     # pass before the run could answer either (#307 PL-013, #308 F-RA-11).
     # wait returns the moment a trapped signal arrives, and CLIENT is what
     # the EXIT trap ends.
+    # Its protocol lines go to a file of their own first, so the verdict can
+    # be read from them, then to the log. The EXIT traps remove the file.
+    IMAGES_OUT="$(mktemp /tmp/raofflineproxy-images.XXXXXX 2>/dev/null)" || IMAGES_OUT=""
     # shellcheck disable=SC2086 -- MODE is one flag or empty, on purpose
-    "${IMAGE_HELPER}" --seconds "${SECONDS_LEFT}" ${MODE} >>"${SCAN_LOG}" 2>&1 &
+    "${IMAGE_HELPER}" --seconds "${SECONDS_LEFT}" ${MODE} >"${IMAGES_OUT:-/dev/null}" 2>>"${SCAN_LOG}" &
     CLIENT=$!
     wait "${CLIENT}" || RC=$?
     unset CLIENT
-    slog "${VERB}: image pass rc=${RC}"
+    if [ -n "${IMAGES_OUT}" ]; then
+        cat "${IMAGES_OUT}" >> "${SCAN_LOG}" 2>/dev/null
+        WHY_LINE="$(sed -n 's/^>>> why //p' "${IMAGES_OUT}" | tail -n 1)"
+        rm -f "${IMAGES_OUT}"
+    fi
+    # rc 1 with no why is a verify slice left; any other failure -- or a
+    # rc 1 whose lines could not be kept to read -- is images left behind.
+    if [ "${RC}" -ne 0 ] && { [ "${RC}" -ne 1 ] || [ -n "${WHY_LINE}" ] || [ -z "${IMAGES_OUT}" ]; }; then
+        R_IMAGES_WHY=SOME_IMAGES_NOT_SAVED
+    fi
+    IMAGES_OUT=""
+    slog "${VERB}: image pass rc=${RC}${R_IMAGES_WHY:+ why=${R_IMAGES_WHY}}"
     return "${RC}"
 }
 
@@ -1550,9 +1574,10 @@ do_scan() {
     local LIST
     LIST="$(mktemp /tmp/raofflineproxy-scan.XXXXXX)" || fail "cannot create the list"
     # Everything of the run's goes when the run does, however it ends.
-    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}" "${RUNNING}" "${RUNNING}.tmp"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
+    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}" "${IMAGES_OUT:-}" "${RUNNING}" "${RUNNING}.tmp"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
 
     local COUNTS
+    R_IMAGES_WHY=""
     mark_running
     tell "doing listing"
     if ! COUNTS="$(list_jobs "${LIST}" all 0 2>>"${SCAN_LOG}")"; then
@@ -1580,12 +1605,19 @@ do_scan() {
     fi
     tell "total ${NEW}"
     if [ "${NEW}" -eq 0 ]; then
-        READY="$(count_ready)"
-        slog "scan done: nothing new, ready=${READY}"
         tell "note NOTHING_NEW"
-        write_stamp 0 scan 0 0 "${READY}" 0 0 0
+        # No game to cache, but the images of what is cached may still be
+        # missing -- a pass the last run cut, a badge that did not come --
+        # and pressing SCAN again is how a player asks for them (#307
+        # PL-060). The same pass, the same verdict.
+        run_image_pass scan "${IMAGE_PASS_SECONDS}"
+        READY="$(count_ready)"
+        local RC0=0 WHY0="${R_IMAGES_WHY}"
+        [ -n "${WHY0}" ] && { RC0=1; tell "why ${WHY0}"; }
+        slog "scan done: nothing new, ready=${READY}${WHY0:+ why=${WHY0}}"
+        write_stamp "${RC0}" scan 0 0 "${READY}" 0 0 0 "${WHY0}"
         tell "done 0|0|${READY}|0"
-        exit 0
+        exit "${RC0}"
     fi
 
     run_jobs page "${LIST}" "${NEW}" 0
@@ -1609,7 +1641,12 @@ do_scan() {
     # that is still missing one (#212): the same action, finished.
     # The scan has no deadline of its own (the top-up's TOPUP_TIMEOUT is the
     # one clock here), so the pass gets its own ceiling.
-    [ "${R_CACHED}" -gt 0 ] && run_image_pass scan "${IMAGE_PASS_SECONDS}" || true
+    [ "${R_CACHED}" -gt 0 ] && run_image_pass scan "${IMAGE_PASS_SECONDS}"
+    # The games' own why comes first; a pass that left images behind is the
+    # run's why when the games went through (#307 PL-060).
+    if [ -z "${WHY}" ] && [ -n "${R_IMAGES_WHY}" ]; then
+        RC=1; WHY="${R_IMAGES_WHY}"
+    fi
 
     [ "${R_LIMIT}" -eq 1 ] && tell "note LIMIT_REACHED"
     # Not every folder was walked: the page says so (GuiOfflineScan's
@@ -1716,7 +1753,7 @@ do_topup() {
 
     local LIST
     LIST="$(mktemp /tmp/raofflineproxy-topup.XXXXXX)" || fail "cannot create the list"
-    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}" "${SC_OUT:-}" "${RUNNING}" "${RUNNING}.tmp"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
+    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}" "${SC_OUT:-}" "${IMAGES_OUT:-}" "${RUNNING}" "${RUNNING}.tmp"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
     mark_running
 
     # First, every game the interface's index knows and the client has not
@@ -1839,7 +1876,14 @@ print(int(r.get("cached", 0)), int(r.get("skipped", 0)), 1 if r.get("limit_reach
         # The top-up is the background run, so it is where the store is
         # verified as well as filled: a slice per run from the cursor, so
         # the whole store comes round without any one run being long (#213).
-        run_image_pass topup "$(time_left "${START}")" --verify || true
+        run_image_pass topup "$(time_left "${START}")" --verify
+        if [ -n "${R_IMAGES_WHY}" ]; then
+            # The games are cached; their images are not all there (#307
+            # PL-060): a run whose parts disagree could not finish.
+            write_stamp 1 topup "${CACHED}" "${SKIPPED}" "${READY}" "${LIMIT}" "${INDEXED}" "${ERRORS}" "${R_IMAGES_WHY}" "${ADDED}"
+            say "topup could not finish (${R_IMAGES_WHY}); cached ${CACHED}, ${READY} ready"
+            exit 1
+        fi
         write_stamp 0 topup "${CACHED}" "${SKIPPED}" "${READY}" "${LIMIT}" "${INDEXED}" "${ERRORS}" "" "${ADDED}"
         say "topup: cached ${CACHED} game(s), ${INDEXED} from the index; ${READY} ready"
     fi

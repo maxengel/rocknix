@@ -3360,4 +3360,34 @@ else
     echo "    SKIP  PL-059's cases: section t did not run"
 fi
 
+# D6. #307 PL-060 (F-RA-08 gpt): the image pass is part of the scan and the
+# top-up (D-RA-027: a game whose badges are missing offline reads as half
+# working), so a pass that left images behind makes the run COULDN'T FINISH
+# with its why (SOME_IMAGES_NOT_SAVED, D-UI-030) -- and a scan with no new
+# game still runs it, so pressing SCAN again repairs what the last pass left.
+# A verify slice the pass did not finish (exit 1 with no why) is the sweep
+# working through the store a slice a run, by design (D-RA-024), not a failure.
+if [ "${DT_OK}" -eq 1 ]; then
+dfake_images; printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+treset; printf 'ok\nok\n' > "${TR}/helper-plan"; echo fail > "${TR}/images-mode"; rm -f "${TR}/images-calls"
+tctl scan
+[ "${RC}" -eq 1 ] && grep -qx '>>> why SOME_IMAGES_NOT_SAVED' "${OUT}" && grep -q ' 1 scan cached=4 .*why=SOME_IMAGES_NOT_SAVED$' "${TSTAMP}" && grep -qE '^>>> done 4\|' "${OUT}"; check $? "PL-060: a scan that cached its games and whose image pass left images behind ends COULDN'T FINISH (rc 1, why SOME_IMAGES_NOT_SAVED), the games still counted" "PL-060: rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-200); stamp: $(cat "${TSTAMP}" 2>/dev/null) -- the image pass's failure was dropped"
+rm -f "${TR}/helper-plan" "${TR}/images-calls"
+tctl scan
+[ "${RC}" -eq 1 ] && grep -qx '>>> note NOTHING_NEW' "${OUT}" && grep -qx '>>> why SOME_IMAGES_NOT_SAVED' "${OUT}" && [ -s "${TR}/images-calls" ]; check $? "PL-060: a scan with nothing new still runs the image pass, and its failure is the run's (rc 1, why SOME_IMAGES_NOT_SAVED)" "PL-060: rc ${RC}; image pass run: $(grep -c '^start' "${TR}/images-calls" 2>/dev/null || echo 0) time(s); out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-200) -- the nothing-new branch exited before the pass"
+echo ok > "${TR}/images-mode"; rm -f "${TR}/images-calls"
+tctl scan
+[ "${RC}" -eq 0 ] && grep -qx '>>> note NOTHING_NEW' "${OUT}" && [ -s "${TR}/images-calls" ] && grep -q ' 0 scan cached=0 ' "${TSTAMP}"; check $? "PL-060: and once the pass fetches what was missing, the same scan reads COMPLETED with nothing new (rc 0)" "PL-060: rc ${RC}; image pass run: $(grep -c '^start' "${TR}/images-calls" 2>/dev/null || echo 0); stamp: $(cat "${TSTAMP}" 2>/dev/null)"
+# The top-up: a failed pass is the run's too; a verify slice left is not.
+treset; touch -d '2 hours ago' "${TMARK}"; echo fail > "${TR}/images-mode"
+tctl topup --after-index
+[ "${RC}" -eq 1 ] && grep -q ' 1 topup cached=2 .*why=SOME_IMAGES_NOT_SAVED$' "${TSTAMP}"; check $? "PL-060: a top-up whose image pass left images behind ends rc 1, why SOME_IMAGES_NOT_SAVED" "PL-060: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null)"
+treset; touch -d '2 hours ago' "${TMARK}"; echo verify-left > "${TR}/images-mode"
+tctl topup --after-index
+[ "${RC}" -eq 0 ] && grep -q ' 0 topup cached=2 ' "${TSTAMP}" && ! grep -q 'why=' "${TSTAMP}"; check $? "PL-060: a top-up whose verify slice did not come round the store (exit 1, no why) finished (rc 0) -- the sweep takes several runs by design" "PL-060: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null)"
+rm -f "${TR}/images-mode" "${TR}/images-calls"
+else
+    echo "    SKIP  PL-060's cases: section t did not run"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
