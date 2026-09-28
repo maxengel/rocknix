@@ -4271,4 +4271,26 @@ mkdir -p "${RX}/cloud/ROCKNIX/Saves/gb"; echo "older" > "${RX}/cloud/ROCKNIX/Sav
 sa_run "${RX}" cloud_backup --yes --saves-only
 [ "${RC}" -eq 0 ] && [ "$(sa_outcome "${RX}")" = "Completed." ] && ! grep -qF "top folder" "${RX}/out"; check $? "a saves folder with a sibling keeps its record and says nothing of the kind (rc ${RC})" "rc ${RC}; outcome '$(sa_outcome "${RX}")'"
 
+# A37. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-12,
+#      Low; seats/A-claude.md G-A-11, Low): what the tidy page says. A copy
+#      that stopped part-way, or a check that failed, left files in the new
+#      folder, and the page said "Both folders are as they were"; a moved
+#      tier was announced by its config key ("Now using /ROCKNIX/Saves for
+#      SAVES_REMOTE").
+echo "    A37. G-A-12 (gpt) and G-A-11 (claude): the tidy's lines say what is true, in the player's words"
+mg_seed
+chmod 000 "${MG}/cloud/GAMES/gb/B.srm"
+sa_run "${MG}" cloud_migrate_layout --apply
+chmod 644 "${MG}/cloud/GAMES/gb/B.srm"
+[ "${RC}" -ne 0 ] && [ -f "${MG}/cloud/ROCKNIX/Saves/savefiles/gb/A.srm" ] && ! grep -q 'Both folders are as they were' "${MG}/out" \
+    && grep -qF "some files may already be in the new one" "${MG}/out"; check $? "a saves copy that stopped part-way (one file unreadable) says the new folder may already hold some files, not that both are as they were (rc ${RC})" "rc ${RC}; A.srm copied: $([ -f "${MG}/cloud/ROCKNIX/Saves/savefiles/gb/A.srm" ] && echo yes || echo no); out: $(sa_tail "${MG}" 5)"
+mg_seed
+rm -rf "${MG}/cloud/GAMES/savefiles"; mkdir -p "${MG}/cloud/GAMES/savefiles/gb"; echo s > "${MG}/cloud/GAMES/savefiles/gb/S1.srm"
+printf '%s\t%s\n' '^copy qa:/GAMES qa:/ROCKNIX/Saves' 'echo newer >> /cloud/GAMES/savefiles/gb/S1.srm' > "${MG}/ctl/post"
+sa_run "${MG}" cloud_migrate_layout --apply
+[ "${RC}" -ne 0 ] && ! grep -q 'Both folders are as they were' "${MG}/out" && grep -qF "nothing was removed from the old folder" "${MG}/out"; check $? "a check that failed says nothing was removed from the old folder, not that both are as they were (rc ${RC})" "rc ${RC}; out: $(sa_tail "${MG}" 5)"
+mg_seed
+sa_run "${MG}" cloud_migrate_layout --apply
+[ "${RC}" -eq 0 ] && ! grep -qE 'for (SAVES|SETTINGS|CONTENT)_REMOTE' "${MG}/out" && grep -qF 'Now using /ROCKNIX/Saves for your saves.' "${MG}/out"; check $? "a tier that moved is named in words, not by its config key (rc ${RC})" "rc ${RC}; lines: $(grep 'Now using' "${MG}/out" | tr '\n' '|')"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

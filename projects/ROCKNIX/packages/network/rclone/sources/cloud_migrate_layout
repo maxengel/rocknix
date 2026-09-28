@@ -258,7 +258,9 @@ relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
     say "Copying ${what}..."
     if ! out=$(rclone copy "${src}" "${dst}" --files-from-raw "${list}" --create-empty-src-dirs=false "${RCLONE_NET_OPTS_ARRAY[@]}" 2>&1); then
         printf '%s\n' "${out}" | tail -3
-        say "Couldn't finish copying ${what}. Both folders are as they were; nothing was removed."
+        # A copy that stopped part-way has put some files in the new
+        # folder; only the old one is as it was (G-A-12).
+        say "Couldn't finish copying ${what}. Nothing was removed from the old folder; some files may already be in the new one."
         rm -f "${list}"
         return 1
     fi
@@ -266,7 +268,7 @@ relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
     out=$(rclone check "${src}" "${dst}" --files-from-raw "${list}" --one-way "${CHECK_OPTS[@]}" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>&1)
     if ! check_clean $? "${out}"; then
         printf '%s\n' "${out}" | grep -iE "differ|missing|error" | head -3
-        say "The copy of ${what} didn't match, so the old folder was kept. Both folders are as they were."
+        say "The copy of ${what} didn't match, so nothing was removed from the old folder."
         rm -f "${list}"
         return 1
     fi
@@ -306,7 +308,19 @@ set_pointer() { # <key> <remote path>
         logger -t cloud_migrate_layout "could not write $1 to ${SYNC_CONF}; stopped before removing anything" 2>/dev/null
         return 1
     fi
-    say "Now using ${2} for ${1}."
+    say "Now using ${2} for your $(tier_words "$1")."
+}
+
+# A tier as the player knows it (es-player-text.md: the four tiers), for
+# the tidy page's lines -- which named the config key (audit of the fixes,
+# claude G-A-11).
+tier_words() { # <pointer key>
+    case "$1" in
+        SAVES_REMOTE) echo "saves" ;;
+        SETTINGS_REMOTE) echo "settings backups" ;;
+        CONTENT_REMOTE) echo "ROMs, BIOS, and game content" ;;
+        *) echo "files" ;;
+    esac
 }
 
 # Is an existing destination a partial copy of this source, and nothing else?
