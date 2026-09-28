@@ -3446,4 +3446,112 @@ p7bt backup; p7bt restore --no-restart
 cp "${P7U}/test/seed" "${P7S}/.config/test/seed"; printf 'LOCATIONS=(\n  /storage/.config/test/seed\n)\n' > "${P7S}/.config/backuptool.conf"; p7bt backup
 [ ! -s "${P7S}/.p7-sleeps" ]; check $? "#308 claude F-BR-19: with no terminal on stdout (the interface's pipe) neither the outcome nor a failure sleeps" "#308 F-BR-19: sleeps: $(tr '\n' '|' < "${P7S}/.p7-sleeps")"
 
+
+# y2. wifictl whole, against an nmcli that answers as the target's does
+# (probed on guest d for the psk, 2026-09-27): terse and get-values output
+# escapes ':' and '\' unless --escape no; two wireless devices, each profile
+# with its own SSID, key and the device it is active on (a '|'-separated
+# table in /run/profiles: name, type, active device or -, SSID, key -- '|',
+# so a name may hold a tab);
+# /run/nm-down makes every call fail and /run/psk-fails the key read. The
+# settings live in /run/settings, one key=value per line, the last one
+# winning; set_setting <k> default removes the key. The image's busybox
+# applets stand in front of the host's, as in u.
+P7="${P7:-${TMP}/p7}"; P7W="${P7}/wifi"; mkdir -p "${P7W}/shim" "${P7W}/repo" "${P7W}/run"
+src_of "${WIFICTL_REL}" "${P7W}/repo/wifictl"
+cat > "${P7W}/profile" <<'EOS'
+get_setting() { awk -v k="$1" 'index($0, k "=") == 1 { v = substr($0, length(k) + 2) } END { printf "%s", v }' /run/settings 2>/dev/null; }
+set_setting() { if [ "$2" = "default" ]; then awk -v k="$1" 'index($0, k "=") != 1' /run/settings > /run/settings.new; mv /run/settings.new /run/settings; else printf '%s=%s\n' "$1" "$2" >> /run/settings; fi; }
+export PATH=/shim:/bbin:/usr/bin:/bin
+EOS
+cat > "${P7W}/shim/iwctl" <<'EOS'
+#!/bin/sh
+echo "wlan0"; echo "wlan1"
+EOS
+cat > "${P7W}/shim/nmcli" <<'EOS'
+#!/bin/bash
+[ -e /run/nm-down ] && { echo "Error: NetworkManager is not running." >&2; exit 8; }
+echo "$*" >> /run/calls
+ESC=1
+case " $* " in *" --escape no "*) ESC=0 ;; esac
+esc() { if [ "${ESC}" -eq 1 ]; then printf '%s' "$1" | sed 's/\\/\\\\/g; s/:/\\:/g'; else printf '%s' "$1"; fi; }
+tesc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/:/\\:/g'; }
+row() { NAME="$1" awk -F'|' '$1 == ENVIRON["NAME"]' /run/profiles; }
+field() { printf '%s\n' "$1" | cut -d'|' -f"$2"; }
+all="$*"
+case "${all}" in
+  *"802-11-wireless-security.psk connection show id "*)
+    name="${all#*connection show id }"; r=$(row "${name}"); [ -n "${r}" ] || { echo "Error: unknown connection '${name}'." >&2; exit 10; }
+    [ -e /run/psk-fails ] && { echo "Error: secrets were not returned." >&2; exit 7; }
+    esc "$(field "${r}" 5)"; echo ;;
+  *"802-11-wireless-security.key-mgmt connection show id "*)
+    name="${all#*connection show id }"; r=$(row "${name}"); [ -n "${r}" ] || exit 10
+    [ -n "$(field "${r}" 5)" ] && echo wpa-psk || echo ;;
+  *"802-11-wireless.ssid connection show id "*)
+    name="${all#*connection show id }"; r=$(row "${name}"); [ -n "${r}" ] || exit 10
+    esc "$(field "${r}" 4)"; echo ;;
+  *"device show "*)
+    dev="${all#*device show }"; dev="${dev%% *}"
+    active=$(DEV="${dev}" awk -F'|' '$2 ~ /wireless/ && $3 == ENVIRON["DEV"] { print $1 }' /run/profiles | head -n 1)
+    printf 'GENERAL.CONNECTION:%s\n' "$(tesc "${active}")" ;;
+  *"connection modify "*) exit 0 ;;
+  *"connection up id "*)
+    rest="${all#*connection up id }"; name="${rest% ifname *}"; dev=wlan0
+    case "${rest}" in *" ifname "*) dev="${rest##* ifname }" ;; esac
+    printf '%s\n' "${rest}" >> /run/up
+    r=$(row "${name}"); [ -n "${r}" ] || exit 10
+    [ -e /run/up-fails ] && exit 4
+    NAME="${name}" DEV="${dev}" awk -F'|' 'BEGIN { OFS = FS } $2 ~ /wireless/ { if ($1 == ENVIRON["NAME"]) $3 = ENVIRON["DEV"]; else if ($3 == ENVIRON["DEV"]) $3 = "-" } { print }' /run/profiles > /run/profiles.new && mv /run/profiles.new /run/profiles ;;
+  *"connection delete id "*)
+    name="${all#*connection delete id }"; printf '%s\n' "${name}" >> /run/deleted
+    [ -n "$(row "${name}")" ] || exit 10
+    NAME="${name}" awk -F'|' '$1 != ENVIRON["NAME"]' /run/profiles > /run/profiles.new && mv /run/profiles.new /run/profiles ;;
+  *"connection show"*)
+    while IFS='|' read -r name type dev ssid psk; do
+      printf '%s:%s:%s\n' "$(tesc "${name}")" "${type}" "$([ "${dev}" != "-" ] && echo yes || echo no)"
+    done < /run/profiles ;;
+  *"wifi rescan"*) exit 0 ;;
+  *"-f ACTIVE,SSID device wifi list ifname "*)
+    dev="${all#*ifname }"; dev="${dev%% *}"
+    while IFS='|' read -r name type adev ssid psk; do
+      case "${type}" in *wireless*) printf '%s:%s\n' "$([ "${adev}" = "${dev}" ] && echo yes || echo no)" "$(tesc "${ssid}")" ;; esac
+    done < /run/profiles
+    echo "no:Neighbour" ;;
+  *"-f SSID dev wifi list ifname "*|*"-f SSID device wifi list ifname "*)
+    while IFS='|' read -r name type adev ssid psk; do
+      case "${type}" in *wireless*) printf '%s\n' "$(tesc "${ssid}")" ;; esac
+    done < /run/profiles
+    echo "Neighbour" ;;
+  *) echo "nmcli shim: unexpected call: $*" >&2; exit 2 ;;
+esac
+EOS
+chmod +x "${P7W}/shim"/*
+P7WBB=(); if [ -n "${BB}" ]; then P7WBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB_HOST}" "${BB}"); fi
+p7w() { # <verb> [name]: wifictl whole; stdout to $P7W/out, rc in $RC
+    RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${P7WBB[@]}" \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${P7W}/profile" /etc/profile \
+        --ro-bind "${P7W}/shim" /shim --ro-bind "${P7W}/repo" /repo --bind "${P7W}/run" /run \
+        --dir /sys/class/net/wlan0 --dir /sys/class/net/wlan1 --dev /dev --proc /proc --tmpfs /tmp \
+        bash /repo/wifictl "$@" > "${P7W}/out" 2> "${P7W}/err"; echo $? ) 2>/dev/null )
+}
+p7wset() { # <profile rows, one per argument, fields separated by |>: the table, fresh settings and records
+    printf '%s\n' "$@" > "${P7W}/run/profiles"
+    : > "${P7W}/run/settings"; : > "${P7W}/run/up"; : > "${P7W}/run/deleted"; : > "${P7W}/run/calls"
+    rm -f "${P7W}/run/nm-down" "${P7W}/run/psk-fails" "${P7W}/run/up-fails"
+}
+p7wkey() { awk 'index($0, "wifi.key=") == 1 { v = substr($0, 10); n = 1 } END { if (n) printf "%s", v; else printf "<unset>" }' "${P7W}/run/settings"; }
+p7wssid() { awk 'index($0, "wifi.ssid=") == 1 { v = substr($0, 11); n = 1 } END { if (n) printf "%s", v; else printf "<unset>" }' "${P7W}/run/settings"; }
+
+# == PL-003: the saved-network join stores the passphrase byte for byte
+p7wset 'Home|802-11-wireless|wlan0|Home|home-key-1' 'Cafe: Guest|802-11-wireless|-|Cafe: Guest|ab:cd\ef12345'
+p7w join "Cafe: Guest"
+[ "${RC}" -eq 0 ] && [ "$(p7wkey)" = 'ab:cd\ef12345' ]; check $? "#307 PL-003: a passphrase with ':' and '\\' (ab:cd\\ef12345) reaches wifi.key byte for byte" "#307 PL-003: rc ${RC}; wifi.key is '$(p7wkey)' -- nmcli -g escaped it and the escaped form was stored"
+
+# == #308 2-wifi claude F-WF-02: a key that could not be read is not written as an empty one
+p7wset 'Home|802-11-wireless|wlan0|Home|home-key-1' 'Cafe|802-11-wireless|-|Cafe|cafe-key-1'
+printf 'wifi.ssid=Home\nwifi.key=home-key-1\n' > "${P7W}/run/settings"; touch "${P7W}/run/psk-fails"
+p7w join "Cafe"
+[ "${RC}" -eq 0 ] && [ "$(cat "${P7W}/out")" = "joined" ] && [ "$(p7wkey)" = "home-key-1" ] && [ "$(p7wssid)" = "Home" ]; check $? "#308 2-wifi claude F-WF-02: when the key cannot be read after the join, the device is joined and the settings are left as they were, never wifi.key=\"\"" "#308 F-WF-02: rc ${RC}; printed '$(tr '\n' '|' < "${P7W}/out")'; wifi.ssid '$(p7wssid)' wifi.key '$(p7wkey)'"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

@@ -258,9 +258,30 @@ join_wifi() {
   if [ "${state}" != "active" ]; then
     "${NMCLI}" -w 90 connection up id "${name}" >/dev/null 2>&1 || return 1
   fi
-  psk=$("${NMCLI}" -s -g 802-11-wireless-security.psk connection show id "${name}" 2>/dev/null)
-  set_setting wifi.ssid "${name}"
-  set_setting wifi.key "${psk}"
+  # The key as NetworkManager holds it, byte for byte. -g is terse output,
+  # which escapes ':' and '\' in a value -- ab:cd\ef12345 came back as
+  # ab\:cd\\ef12345 on the target's nmcli (guest d, 2026-09-27) and that was
+  # stored as wifi.key -- so --escape no (#307 PL-003). Its status is read
+  # before anything is written: a read that failed is not an open network,
+  # and writing its empty answer over wifi.key cleared the key of a network
+  # the device is on (#308 claude F-WF-02). An empty key is written only
+  # when the profile has no key management -- an open network; a keyed one
+  # whose key did not come back leaves the settings as they were. Either
+  # way the device is joined, and says so.
+  local keyed
+  if psk=$("${NMCLI}" --escape no -s -g 802-11-wireless-security.psk connection show id "${name}" 2>/dev/null); then
+    if [ -z "${psk}" ]; then
+      keyed=$("${NMCLI}" --escape no -g 802-11-wireless-security.key-mgmt connection show id "${name}" 2>/dev/null) || keyed="unread"
+    fi
+    if [ -z "${psk}" ] && [ -n "${keyed}" ]; then
+      logger -t wifictl "joined ${name}; its key did not come back from NetworkManager, so the Wi-Fi settings were left as they were" 2>/dev/null
+    else
+      set_setting wifi.ssid "${name}"
+      set_setting wifi.key "${psk}"
+    fi
+  else
+    logger -t wifictl "joined ${name}; its key could not be read from NetworkManager, so the Wi-Fi settings were left as they were" 2>/dev/null
+  fi
   pin_wifi
   echo "joined"
   return 0
