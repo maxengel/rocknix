@@ -104,3 +104,11 @@ _The orchestrator's own reads of the highest-risk follow-up hunks, made before t
 ### O-19 (F2, `9f1d126d24`) -- a kept guest's Control1 splice is repaired
 **Read:** `start_mupen64plus.sh` on GENERIC_X64 only, when the config holds the `[Retroid Pocket Gamepad]` header: an awk pass drops exactly the six pasted lines as a block, writes a temporary, and replaces the config only if the temporary is non-empty; the case F2-5b asserts that exactly those six lines leave a player's copy and that the player's own `plugin = 5` and `ScreenWidth = 1280` stay.
 **Verdict:** **sound.**
+
+### O-20 (seam: the proxy's outcome tokens x the interface's tables)
+**Read:** `raofflineproxy-ctl` prints `SOME_IMAGES_NOT_SAVED`, `TOOK_TOO_LONG`, `LIBRARY_UNREADABLE`, `SOMETHING_WENT_WRONG` and `CANCELLED` as its why tokens; `CloudText.cpp` maps the first three (lines 988-1000) and `CANCELLED`; `SOMETHING_WENT_WRONG` has no row of its own, and needs none: the stamp's why is read back with its underscores as spaces (`CloudText.cpp:285-288`) and anything the table does not know reads as `SOMETHING WENT WRONG` (`:1008`, `:1124`), which is the same sentence.
+**Verdict:** **the seam agrees.**
+
+### O-21 (seam: the settings lock, the scripts x the interface)
+**Read:** `profile.d/001-functions` (the scripts' side, B `f3622d3a2d`) and `es-core/src/utils/AtomicFileUtil.cpp` (the interface's side, E1 `5e390e128`) name the same lock (`/tmp/.system.cfg.lock`), the same contents (the holder's pid alone), the same birth (written to `<lock>.<pid>` and hard-linked), and the same reap guard (`<lock>.reap` under `flock`); the scripts' comment cites the interface's `PidLock` and the interface's cites the scripts. D-INFRA-012 (pid-only, bounded by `pid_max`) is written on both sides.
+**Verdict:** **the seam agrees.**
