@@ -166,6 +166,7 @@ DELIBERATE_CEILING_GRACE=6
 DELIBERATE_CEILING_SECONDS=36
 CEILING_DIR_ROOT=/var/run
 RCLONE_CHILD=""
+RCLONE_MOVED=0
 
 # Is this child still running? kill -0 says yes of one that has exited and
 # not been waited for, so the state in /proc is read: Z is done. The comm
@@ -306,6 +307,11 @@ bounded_rclone() {
     if [ "${progress_verb}" -eq 1 ] && [ -s "${trace}" ] && [ -n "$(tail -c1 "${trace}")" ]; then
         printf '\n'
     fi
+    # Whether this call moved anything -- a file transferred or deleted --
+    # for the stamp of a run the network later ends (#308 claude F-CS-24).
+    local moved_bytes moved_checks moved_files moved_deleted
+    read -r moved_bytes moved_checks moved_files moved_deleted <<< "$(progress_mark "${trace}")"
+    { [ "${moved_files:-0}" -gt 0 ] || [ "${moved_deleted:-0}" -gt 0 ]; } 2>/dev/null && RCLONE_MOVED=1
     rm -rf "${dir}" 2>/dev/null
     if [ "${ended}" -eq 1 ]; then
         log_message "rclone $1 made no progress for ${DELIBERATE_CEILING_SECONDS}s and was ended (it returned ${rc}); reporting 124" "false" "WARN"
@@ -688,6 +694,14 @@ record_last_run() {
         0|9|"${EXIT_NO_NETWORK}"|"${EXIT_LOCK_HELD}") ;;
         *) [ -n "${LAST_WHY}" ] && why=" $(printf '%s' "${LAST_WHY}" | tr ' ' '_')" ;;
     esac
+    # SKIPPED means nothing was touched (#308 claude F-CS-24): a run the
+    # network ended after a transfer of this run had moved a file keeps its
+    # 69 and adds the gaps token and a why, which the rows read as COULDN'T
+    # FINISH. Known for the deliberate runs, whose rclone reports its
+    # counts through the stall ceiling's trace.
+    if [ "${exit_code}" = "${EXIT_NO_NETWORK}" ] && [ "${RCLONE_MOVED}" -eq 1 ]; then
+        why=" gaps YOU WENT OFFLINE PART-WAY THROUGH"
+    fi
     write_stamp "/storage/.cache/cloud_sync/last-${name}" "$(date +%s) ${exit_code}${why}"
 }
 

@@ -3962,4 +3962,40 @@ for nb_cmd in "--selected" "--all"; do
     [ "${RC}" -eq 0 ] && [ "${nb_stamp}" = 0 ] && grep -qi '^Nothing to back up' "${NB}/out" && ! grep -q '^>>> why' "${NB}/out"; check $? "cloud_content_backup ${nb_cmd} with nothing here to send exits 0, says so, and stamps completed (rc ${RC}, stamp ${nb_stamp:-none})" "rc ${RC}, stamp '${nb_stamp:-none}'; out: $(sa_tail "${NB}") -- a run with nothing to do read as COULDN'T FINISH"
 done
 
+# A28. #308 claude F-CS-24: SKIPPED means nothing was touched. A run the
+#      network cut after files had moved -- a content restore that landed a
+#      system before the link went, a deliberate backup whose saves phase
+#      sent a file -- exits 69 as before, and stamps the gaps token with a
+#      why, which the rows read as COULDN'T FINISH, not SKIPPED.
+echo "    A28. #308 claude F-CS-24: a run cut by the network after it moved files is not a skip"
+OF=$(sa_new ccs24); sa_script "${OF}" cloud_content_restore cloud_backup cloud_saves_root
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/ROCKNIX/Content"\n' > "${OF}/storage/.config/cloud_sync.conf"
+mkdir -p "${OF}/cloud/ROCKNIX/Content/ROMs/gb" "${OF}/cloud/ROCKNIX/Content/ROMs/nes"
+echo a > "${OF}/cloud/ROCKNIX/Content/ROMs/gb/A.gb"; echo n > "${OF}/cloud/ROCKNIX/Content/ROMs/nes/N.nes"
+printf '%s\t%s\n' '^copy qa:/ROCKNIX/Content/ROMs/gb ' 'touch /ctl/noroute' > "${OF}/ctl/post"
+printf '%s\t%s\n' '^copy qa:/ROCKNIX/Content/ROMs/nes ' 1 > "${OF}/ctl/fail"
+touch "${OF}/ctl/noping"
+sa_run "${OF}" cloud_content_restore gb nes
+of_stamp=$(cut -d' ' -f2- "${OF}/storage/.cache/cloud_sync/last-content-restore" 2>/dev/null)
+[ "${RC}" -eq 69 ] && [ -f "${OF}/storage/roms/gb/A.gb" ] && [ "${of_stamp%% *}" = 69 ] && echo "${of_stamp}" | grep -q '^69 gaps .'; check $? "a content restore that landed gb before the network went exits 69 and stamps '69 gaps <why>', not a bare skip (stamp: ${of_stamp:-none})" "rc ${RC}; stamp '${of_stamp:-none}' -- a bare 69 reads SKIPPED, NO NETWORK on the row over a system that did arrive (F-CS-24)"
+rm -f "${OF}/ctl/noroute" "${OF}/ctl/noping"; : > "${OF}/ctl/post"; : > "${OF}/ctl/fail"
+cp "${PR}/storage/.config/cloud_sync.conf" "${PR}/storage/.config/cloud_sync-rules.txt" "${OF}/storage/.config/"
+sed -i 's/^BACKUPFILE_BACKUP_OPTION=.*/BACKUPFILE_BACKUP_OPTION="yes"/' "${OF}/storage/.config/cloud_sync.conf"
+mkdir -p "${OF}/storage/roms/gb" "${OF}/storage/roms/backup/x/storage/.config" "${OF}/cloud/ROCKNIX/Saves"
+echo "a save" > "${OF}/storage/roms/gb/New.srm"; echo cfg > "${OF}/storage/roms/backup/x/storage/.config/blob"
+tar -C "${OF}/storage/roms/backup/x" -czf "${OF}/storage/roms/backup/2026_09_28-120000-QA-ROCKNIX_SETTINGS.tar.gz" storage; rm -rf "${OF}/storage/roms/backup/x"
+printf '%s\t%s\n' '^copy .* /storage/roms/ qa:/ROCKNIX/Saves/' 'touch /ctl/noroute /ctl/noping' > "${OF}/ctl/post"
+printf '%s\t%s\n' '^mkdir qa:/ROCKNIX/Backups/' 1 > "${OF}/ctl/fail"
+sa_run "${OF}" cloud_backup --yes
+of_stamp=$(cut -d' ' -f2- "${OF}/storage/.cache/cloud_sync/last-backup" 2>/dev/null)
+[ "${RC}" -eq 69 ] && [ -f "${OF}/cloud/ROCKNIX/Saves/gb/New.srm" ] && echo "${of_stamp}" | grep -q '^69 gaps .'; check $? "a deliberate backup whose saves phase sent a file before the network went exits 69 and stamps '69 gaps <why>' (stamp: ${of_stamp:-none})" "rc ${RC}; New.srm in the cloud: $([ -f "${OF}/cloud/ROCKNIX/Saves/gb/New.srm" ] && echo yes || echo no); stamp '${of_stamp:-none}'"
+rm -f "${OF}/ctl/noroute" "${OF}/ctl/noping"; : > "${OF}/ctl/post"; : > "${OF}/ctl/fail"
+touch "${OF}/ctl/noroute" "${OF}/ctl/noping"
+printf '%s	%s
+' '^copy qa:/ROCKNIX/Content/ROMs/gb ' 1 > "${OF}/ctl/fail"
+sa_run "${OF}" cloud_content_restore gb
+of_stamp=$(cut -d' ' -f2- "${OF}/storage/.cache/cloud_sync/last-content-restore" 2>/dev/null)
+[ "${RC}" -eq 69 ] && [ "${of_stamp}" = 69 ]; check $? "while a run the network ends before any unit completed is still the skip: a bare 69 (rc ${RC}, stamp ${of_stamp:-none})" "rc ${RC}; stamp '${of_stamp:-none}'"
+rm -f "${OF}/ctl/noroute" "${OF}/ctl/noping"; : > "${OF}/ctl/fail"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

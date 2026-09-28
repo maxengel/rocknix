@@ -216,11 +216,20 @@ network_gone() {
 # further unit is attempted: each would stall for another minute against
 # the same dead link. rclone copy writes each file under a temporary name
 # and renames it when complete, so nothing partial is left in the cloud.
+#
+# SKIPPED means nothing was touched (#308 claude F-CS-24): once a unit has
+# completed, a run the network then ends stamps "69 gaps <why>", which the
+# rows read as COULDN'T FINISH; the exit stays 69.
+PROGRESS_MADE=0
 stop_no_network() {
     local rc="$1" unit="$2"
     echo "Couldn't finish: lost the network while backing up ${unit}. Try again when you're online."
     log_message "stopped: the network went away while backing up ${unit} (rclone exit ${rc}); exit ${EXIT_NO_NETWORK}"
-    record_outcome content-backup "${EXIT_NO_NETWORK}"
+    if [ "${PROGRESS_MADE}" = 1 ]; then
+        write_stamp "/storage/.cache/cloud_sync/last-content-backup" "$(date +%s) ${EXIT_NO_NETWORK} gaps YOU WENT OFFLINE PART-WAY THROUGH"
+    else
+        record_outcome content-backup "${EXIT_NO_NETWORK}"
+    fi
     exit "${EXIT_NO_NETWORK}"
 }
 
@@ -627,6 +636,7 @@ for DIR in "${DIRS[@]}"; do
         STATUS=${RC}
     else
         echo "Backed up ${DIR:-everything}."
+        PROGRESS_MADE=1
     fi
 done
 

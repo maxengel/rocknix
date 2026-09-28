@@ -227,11 +227,23 @@ network_gone() {
 # happened when the sync ran, and they are final -- a match removes only
 # what the cloud does not have (D-CLOUD-023; #308 gpt F-CS-26: this said
 # the cloud still held them).
+#
+# SKIPPED means nothing was touched (#308 claude F-CS-24): when something had
+# already moved -- a unit completed, a match removed files -- before the
+# network went, the stamp still carries 69 and adds the gaps token and a why,
+# "<epoch> 69 gaps YOU WENT OFFLINE PART-WAY THROUGH", which the rows read as
+# COULDN'T FINISH (CloudText::parseLastRun takes the token before the code).
+# The exit stays 69; the page reads a 69 after progress the same way.
+PROGRESS_MADE=0
 stop_no_network() {
     local stamp="$1" rc="$2" doing="$3"
     echo "Couldn't finish: lost the network while ${doing}. Try again when you're online."
     log_message "stopped: the network went away while ${doing} (rclone exit ${rc}); exit ${EXIT_NO_NETWORK}"
-    record_outcome "content-${stamp}" "${EXIT_NO_NETWORK}"
+    if [ "${PROGRESS_MADE}" = 1 ]; then
+        write_stamp "/storage/.cache/cloud_sync/last-content-${stamp}" "$(date +%s) ${EXIT_NO_NETWORK} gaps YOU WENT OFFLINE PART-WAY THROUGH"
+    else
+        record_outcome "content-${stamp}" "${EXIT_NO_NETWORK}"
+    fi
     exit "${EXIT_NO_NETWORK}"
 }
 
@@ -704,6 +716,7 @@ match_count() { # <sys>: adds what the log says went to the totals
         / : .*: Deleted$/ { p = $0; sub(/^.* : /, "", p); sub(/: Deleted$/, "", p); n++; b += sz[p] }
         END { print n + 0 "|" b + 0 }' "${MATCH_LOG}" 2>/dev/null)
     IFS='|' read -r cfiles cbytes <<< "${counted:-0|0}"
+    [ "${cfiles}" -gt 0 ] 2>/dev/null && PROGRESS_MADE=1
     total_removed=$((total_removed + cfiles))
     total_bytes=$((total_bytes + cbytes))
     removed_detail="${removed_detail}${removed_detail:+,}$1:${cfiles}:${cbytes}"
@@ -1403,6 +1416,7 @@ for DIR in "${DIRS[@]}"; do
         STATUS=${RC}
     else
         echo "Restored ${DIR:-everything}."
+        PROGRESS_MADE=1
     fi
 done
 
