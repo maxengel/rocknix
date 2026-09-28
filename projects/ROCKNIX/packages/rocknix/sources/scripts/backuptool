@@ -163,6 +163,20 @@ take_lock() {
     { exec 9<"${SETTINGS_BACKUPS}"; } 2>/dev/null && flock -n 9
 }
 
+# A tool's own words go to the log, never to the screen: a failing tar printed
+# "tar: can't open 'storage/.config/...'" on the console flow, a tool's name
+# and a path, above the sentence written for the player (#308 claude
+# F-BR-12(e), gpt F-BR-20). Runs the command with its stderr kept aside,
+# logs what it said, and returns its status.
+to_log() {
+    local ERR RC
+    ERR=$(mktemp)
+    "$@" 2> "${ERR}"; RC=$?
+    [ -s "${ERR}" ] && logger -t backuptool "${1}: $(tr '\n' ' ' < "${ERR}" | cut -c1-500)"
+    rm -f "${ERR}"
+    return ${RC}
+}
+
 # The one protocol line the transfer page and the sync card read for why a
 # run did not finish (D-UI-028): upper case, the player's words. This tool's
 # output is discarded in EmulationStation's chains today and shown verbatim
@@ -897,7 +911,7 @@ write_archive() {
     # the name every reader looks for is given only to an archive that has
     # listed back whole -- every staged file, counted, not only a listing
     # that ends without an error.
-    if ! tar -czf "${TARGET}.partial" -C "${STAGING}" storage
+    if ! to_log tar -czf "${TARGET}.partial" -C "${STAGING}" storage
     then
         rm -rf "${STAGING}"
         rm -f "${TARGET}.partial"
@@ -1012,7 +1026,11 @@ case "${VERB}" in
         if ! archive_ok "${BACKUPFILE}"
         then
             why "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED"
-            fail "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED. NOTHING WAS CHANGED. BACK UP SETTINGS AGAIN." "${BACKUPFILE} does not list"
+            # The newest archive may have come down from the cloud (the
+            # fresh-device journey), where backing up again neither mends it
+            # nor helps; either way a good copy has to replace it (#308
+            # claude F-BR-12(f)).
+            fail "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED. NOTHING WAS CHANGED. RESTORE SETTINGS FROM THE CLOUD AGAIN, OR BACK UP SETTINGS TO REPLACE IT." "${BACKUPFILE} does not list"
         fi
 
         # Before anything is written over the live tree, what the archive
@@ -1123,7 +1141,7 @@ case "${VERB}" in
             # must not be.
             SKIP=$(mktemp)
             printf '%s\n' 'storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIRS[@]#/}"'*' "${DEVICEONLY[@]#/}" "${SEEDLIST#/}" > "${SKIP}"
-            tar -xzf "${BACKUPFILE}" -C / -X "${SKIP}" >/dev/null
+            to_log tar -xzf "${BACKUPFILE}" -C / -X "${SKIP}" >/dev/null
             EXTRACT_RC=$?; rm -f "${SKIP}"
         else
             # Archives written before backups switched to regular files only
@@ -1160,7 +1178,7 @@ case "${VERB}" in
             fi
             # -x is a mode switch: every argument after it is an exclusion,
             # so it goes last. busybox and Info-ZIP both take the patterns.
-            unzip -o "${BACKUPFILE}" -d / -x "${SKIP[@]}" >/dev/null
+            to_log unzip -o "${BACKUPFILE}" -d / -x "${SKIP[@]}" >/dev/null
             EXTRACT_RC=$?
         fi
         # Then each file the backup held at its default goes back to this
@@ -1320,7 +1338,7 @@ case "${VERB}" in
 
         sync
         note "SETTINGS BACKED UP TO THIS DEVICE." "${BACKUPFILE}"
-        note "COPY IT SOMEWHERE SAFE, OR BACK UP TO THE CLOUD UNDER GAME SETTINGS > MANAGE CLOUD STORAGE."
+        note "COPY IT SOMEWHERE SAFE, OR BACK UP SETTINGS TO THE CLOUD UNDER GAME SETTINGS > MANAGE CLOUD STORAGE."
         sleep 3
     ;;
     *)

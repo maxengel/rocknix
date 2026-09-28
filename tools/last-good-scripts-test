@@ -3359,4 +3359,19 @@ echo old > "${P7S}/roms/backup/ARCHIVED_ROCKNIX_BACKUP-20-01-01_00_00_00.zip"
 p7bt backup
 [ "${RC}" -eq 0 ] && [ -z "$(ls "${P7S}/roms/backup"/ARCHIVED_*.zip 2>/dev/null)" ] && ls "${P7S}/roms/backup/archive"/*ARCHIVED_ROCKNIX_BACKUP-20-01-01_00_00_00.zip >/dev/null 2>&1; check $? "#308 claude F-BR-07: ARCHIVED_*.zip left at the root by the old code moves into archive/ under a dated name" "#308 F-BR-07: rc ${RC}; root: $(ls "${P7S}/roms/backup" | tr '\n' ' '); archive/: $(ls "${P7S}/roms/backup/archive" 2>/dev/null | tr '\n' ' ')"
 
+# == #308 4-backup-restore claude F-BR-12 / gpt F-BR-20: the player's words, and no tool's
+p7reset '  /storage/.config/test/*'
+p7bt backup
+grep -q 'OR BACK UP SETTINGS TO THE CLOUD' "${P7OUT}"; check $? "#308 claude F-BR-12: the closing line names the tier: BACK UP SETTINGS TO THE CLOUD" "#308 F-BR-12: screen: $(p7screen)"
+p7reset '  /storage/.config/test/*'
+printf 'not a tar\n' > "${P7S}/roms/backup/2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz"
+p7bt restore --no-restart
+[ "$(p7why)" = "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED" ] && grep -q 'RESTORE SETTINGS FROM THE CLOUD AGAIN' "${P7OUT}"; check $? "#308 claude F-BR-12: a damaged backup says to restore from the cloud again or back up to replace it" "#308 F-BR-12: why '$(p7why)'; screen: $(p7screen)"
+p7reset '  /storage/.config/test/*'
+p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/f1=ARCHIVE"
+p7failtar
+p7bt restore --no-restart
+! grep -vE '^logger |^>>> ' "${P7OUT}" | grep -q 'tar:'; check $? "#308 claude F-BR-12(e) / gpt F-BR-20: a failing extraction's own error goes to the log, not the screen" "#308 F-BR-20: the screen shows: $(grep -vE '^logger |^>>> ' "${P7OUT}" | grep 'tar:' | head -1)"
+rm -f "${P7}/shim/tar"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
