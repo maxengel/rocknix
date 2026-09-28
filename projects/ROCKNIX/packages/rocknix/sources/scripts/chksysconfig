@@ -117,15 +117,50 @@ finish_restore() {
   # the card not mounted yet (#307 PL-045, #308 claude F-PB-11). A copy
   # elsewhere keeps the directory test. Only a mounted folder without the
   # copy in it, or a copy that does not list, is a failure to report.
-  local roms="${ROMS_ROOT:-/storage/roms}" pending=0
+  #
+  # The files the restore created ("+" lines, below) wait for the same mount
+  # when they are under it: a mark with no copy (every member was new) used
+  # to be acted on at sysinit, removing nothing from the card about to be
+  # mounted and saying reverted (#307, the audit of the fixes, gpt G-B-08).
+  # The mount is read from the mount table, not from mountpoint: busybox's
+  # mountpoint compares the folder's device with its parent's, and on a
+  # one-card device /storage/roms is a bind of /storage/games-internal/roms
+  # -- the same filesystem -- so it never reads as mounted there, and the
+  # first cut of PL-045 would have deferred every revert for ever (found
+  # answering the audit of the fixes, claude G-B-04). A table that cannot be
+  # read falls back to the directory test and says so.
+  local roms="${ROMS_ROOT:-/storage/roms}" pending=0 mounted="" p
+  if [ -r "${PROC_MOUNTS:-/proc/mounts}" ]; then
+    if awk -v m="${roms}" '$2 == m { f = 1 } END { exit !f }' "${PROC_MOUNTS:-/proc/mounts}" 2>/dev/null; then
+      mounted=1
+    else
+      mounted=0
+    fi
+  fi
+  under_roms() { # <path>: 0 when it waits for the roms mount
+    case "${1}" in
+      "${roms}"/*)
+        if [ -z "${mounted}" ]; then
+          say "the mount table cannot be read; the roms folder's mount is judged by its folders instead"
+          [ -d "$(dirname "${1}")" ] || return 0
+          return 1
+        fi
+        [ "${mounted}" -eq 0 ] ;;
+      *) return 1 ;;
+    esac
+  }
   if [ -n "${snap}" ]; then
     case "${snap}" in
-      "${roms}"/*) mountpoint -q "${roms}" 2>/dev/null || pending=1 ;;
+      "${roms}"/*) under_roms "${snap}" && pending=1 ;;
       *) [ -d "$(dirname "${snap}")" ] || pending=1 ;;
     esac
   fi
+  while IFS= read -r p; do
+    case "${p}" in +/storage/*) ;; *) continue ;; esac
+    under_roms "${EXTRACT_ROOT%/}${p#+}" && pending=1
+  done < <(tail -n +2 "${mark}" 2>/dev/null)
   if [ "${pending}" -eq 1 ]; then
-    say "a settings restore was cut off; the copy taken before it (${snap}) is on a folder not mounted yet, so it goes back at the next check this boot"
+    say "a settings restore was cut off; the copy taken before it (${snap:-none needed}) or the files it made are on a folder not mounted yet, so it goes back at the next check this boot"
     return 0
   fi
   # The lines after the first name, as "+<path>", the files the restore
@@ -148,10 +183,19 @@ finish_restore() {
       p="${p#+}"
       case "${p}/" in */../*) continue ;; esac
       rm -f "${EXTRACT_ROOT%/}${p}" 2>/dev/null
-      [ -e "${EXTRACT_ROOT%/}${p}" ] && bad=$((bad + 1))
+      { [ -e "${EXTRACT_ROOT%/}${p}" ] || [ -L "${EXTRACT_ROOT%/}${p}" ]; } && bad=$((bad + 1))
     done < <(tail -n +2 "${mark}" 2>/dev/null)
-    say "a settings restore was cut off; the copy taken before it was put back (${snap:-none needed}) and ${created} file(s) it created removed ($((created - bad)) gone)"
-    echo reverted > "${said}"
+    # "reverted" only when every created file is gone too -- a dangling
+    # link counts as there -- as backuptool's own revert says "unchanged"
+    # only when both halves happened (#307, the audit of the fixes, claude
+    # G-B-06, gpt G-B-05).
+    if [ "${bad}" -eq 0 ]; then
+      say "a settings restore was cut off; the copy taken before it was put back (${snap:-none needed}) and the ${created} file(s) it created removed"
+      echo reverted > "${said}"
+    else
+      say "a settings restore was cut off; the copy taken before it was put back (${snap:-none needed}) but ${bad} of the ${created} file(s) it created could not be removed"
+      echo failed > "${said}"
+    fi
   else
     say "a settings restore was cut off and the copy taken before it is missing or damaged (${snap:-none}); the tree is as the restore left it"
     echo failed > "${said}"
@@ -160,7 +204,7 @@ finish_restore() {
 }
 
 verify() {
-  local state="" recovered=0
+  local state="" recovered=0 kept_tmp=""
 
   finish_restore
 
@@ -175,12 +219,20 @@ verify() {
   # (#307 PL-064, stream E1), but this runs first at sysinit and deleted it,
   # so the defaults were reseeded over a whole copy of the player's settings.
   # A .tmp that is itself usable is put in place instead, and said.
+  #
+  # A .tmp that could not be moved into place is kept, not swept: it was the
+  # only good copy (#307, the audit of the fixes, gpt G-B-10).
   if [ -e "${CFG}.tmp" ]; then
-    if ! valid "${CFG}" && ! valid "${BACKUP}" && valid "${CFG}.tmp" \
-       && mv -f "${CFG}.tmp" "${CFG}"; then
-      say "system.cfg was cut and had no good copy; the whole one a write left beside it (system.cfg.tmp) was put in place"
+    if ! valid "${CFG}" && ! valid "${BACKUP}" && valid "${CFG}.tmp"; then
+      if mv -f "${CFG}.tmp" "${CFG}"; then
+        say "system.cfg was cut and had no good copy; the whole one a write left beside it (system.cfg.tmp) was put in place"
+      else
+        say "system.cfg was cut and had no good copy; the whole one beside it (system.cfg.tmp) could not be put in place and is kept"
+        kept_tmp=1
+      fi
+    else
+      rm -f "${CFG}.tmp"
     fi
-    rm -f "${CFG}.tmp"
   fi
 
   if ! valid "${CFG}"; then
@@ -194,6 +246,11 @@ verify() {
     say "system.cfg is ${state}; recovering"
     if restore; then
       recovered=1
+    elif [ -n "${kept_tmp}" ]; then
+      # Not reseeded: the defaults would be written through system.cfg.tmp,
+      # the very file that is the good copy. The interface reads a whole
+      # .tmp when the live file is cut (#307 PL-064).
+      say "system.cfg is left as it is; system.cfg.tmp beside it is the good copy"
     else
       # Neither the live file nor the record is usable: the image's copy is
       # all that is left. The one file, not the whole config tree.

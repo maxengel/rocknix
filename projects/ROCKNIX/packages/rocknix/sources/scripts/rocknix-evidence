@@ -113,7 +113,15 @@ FILTERED=0; LEFT_OUT=0; RAW=0
 filter_tree() {
   local f list
   list=$(mktemp) || return 1
-  find "$1" -type f -print0 > "${list}"
+  # The list is whole or nothing is archived: a walk that failed part-way
+  # (a full /tmp) left files off it, and those went into the archive raw
+  # (#307, the audit of the fixes, gpt G-B-07).
+  if ! find "$1" -type f -print0 > "${list}" 2>/dev/null; then
+    rm -f "${list}"
+    RAW=$((RAW + 1))
+    echo "Couldn't list every file to filter."
+    return 1
+  fi
   while IFS= read -r -d '' f; do
     if redact_credentials < "${f}" > "${f}.redacting" 2>/dev/null; then
       touch -r "${f}" "${f}.redacting" 2>/dev/null
@@ -158,6 +166,11 @@ collect() {
     exit 1
   fi
   mkdir -p "${EVIDENCE_DIR}" || { echo "Couldn't write to ${EVIDENCE_DIR}."; exit 1; }
+  # One collection at a time, and the pieces of one killed before its
+  # filter -- raw journals and logs in a .collect.* folder -- cleared by the
+  # next (#307, the audit of the fixes, claude G-B-15).
+  { exec 7<"${EVIDENCE_DIR}"; } 2>/dev/null && flock -n 7 || { echo "Another collection is running."; exit 1; }
+  rm -rf "${EVIDENCE_DIR}"/.collect.* 2>/dev/null
   local stamp label name stage dir tmp out n
   stamp=$(date '+%Y_%m_%d-%H%M%S'); label=$(device_label)
   name="${stamp}-${label}-evidence"
@@ -206,7 +219,7 @@ collect() {
   # is applied to the tree, not trusted of each writer. Then the count goes
   # into the summary -- our own words and numbers, nothing that needs the pass.
   if ! filter_tree "${dir}"; then
-    echo "Nothing was archived: ${RAW} file(s) could be neither filtered nor removed. The pieces are in ${dir}."
+    echo "Nothing was archived: the credential filter couldn't finish. The pieces are in ${dir}."
     exit 1
   fi
   printf '\ncredential filter: %s file(s) rewritten, %s left out\n' "${FILTERED}" "${LEFT_OUT}" >> "${dir}/summary.txt"

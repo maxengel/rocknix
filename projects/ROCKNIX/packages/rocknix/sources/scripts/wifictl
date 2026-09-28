@@ -19,6 +19,9 @@ NMCLI="$(command -v nmcli 2>/dev/null)"
 ###     wifictl current           the network joined now; nothing and exit 1 when none,
 ###                               exit 2 when NetworkManager could not be asked
 ###     wifictl saved             the remembered networks, one per line: <name><TAB>active|saved
+###     wifictl saved --ssid      the same with each profile's SSID between: <name><TAB><ssid><TAB>active|saved,
+###                               a tab or backslash inside the name or the SSID written \t or \\;
+###                               nothing and exit 1 when any of it could not be read
 ###     wifictl forget <name>     forget one: prints "forgotten", then "disconnected" on a
 ###                               second line when it was the one in use, and clears wifi.ssid /
 ###                               wifi.key when they name it; exit 1, nothing printed, when it is
@@ -231,6 +234,30 @@ saved_wifi() {
     }' | nm_unescape
 }
 
+# saved with each profile's SSID (--ssid): a profile's name need not be its
+# SSID (renamed, or NetworkManager's own "Home 1"), and the picker marks a
+# scanned network SAVED by its SSID (stream E2's 6caac243c, #308 F-WF-12).
+# A third column, not a change to saved's own shape, which the interface's
+# parser and join and forget read: <name><TAB><ssid><TAB>active|saved, with
+# a tab or backslash inside the name or the SSID written \t or \\ so the
+# three fields split cleanly. Buffered: an SSID that cannot be read prints
+# nothing and exits 1, never a list short of one.
+field_escape() {
+  local v="${1//\\/\\\\}"
+  printf '%s' "${v//$'\t'/\\t}"
+}
+saved_with_ssids() {
+  local rows line name state ssid out=""
+  rows=$(saved_wifi) || return 1
+  while IFS= read -r line; do
+    [ -n "${line}" ] || continue
+    name="${line%$'\t'*}"; state="${line##*$'\t'}"
+    ssid=$("${NMCLI}" --escape no -g 802-11-wireless.ssid connection show id "${name}" 2>/dev/null) || return 1
+    out="${out}$(field_escape "${name}")"$'\t'"$(field_escape "${ssid}")"$'\t'"${state}"$'\n'
+  done <<< "${rows}"
+  printf '%s' "${out}"
+}
+
 # Forget a remembered network: delete its profile, and say when that dropped
 # the connection. Prints "forgotten" once the profile is gone, then
 # "disconnected" on a second line when it was the one in use --
@@ -256,12 +283,32 @@ forget_wifi() {
   rows=$(saved_wifi) || return 2
   state=$(saved_state "${rows}" "${name}")
   [ -n "${state}" ] || return 1
-  ssid=$("${NMCLI}" --escape no -g 802-11-wireless.ssid connection show id "${name}" 2>/dev/null)
-  "${NMCLI}" connection delete id "${name}" >/dev/null 2>&1 || return 1
+  #
+  # And the settings go first, checked, and come back if the delete then
+  # fails: a forget that deleted the profile and could not clear the
+  # settings said "forgotten" while the settings-driven paths could still
+  # rebuild it; an SSID that could not be read is not guessed at (exit 2)
+  # (#307, the audit of the fixes, gpt G-B-11).
+  local key clear=0
+  ssid=$("${NMCLI}" --escape no -g 802-11-wireless.ssid connection show id "${name}" 2>/dev/null) || return 2
   named=$(get_setting wifi.ssid 2>/dev/null)
   if [ -n "${named}" ] && { [ "${named}" = "${name}" ] || [ "${named}" = "${ssid}" ]; }; then
-    set_setting wifi.ssid default
-    set_setting wifi.key default
+    clear=1
+    key=$(get_setting wifi.key 2>/dev/null)
+    if ! set_setting wifi.ssid default; then
+      return 1
+    fi
+    if ! set_setting wifi.key default; then
+      set_setting wifi.ssid "${named}"
+      return 1
+    fi
+  fi
+  if ! "${NMCLI}" connection delete id "${name}" >/dev/null 2>&1; then
+    if [ "${clear}" -eq 1 ]; then
+      set_setting wifi.ssid "${named}"
+      set_setting wifi.key "${key}"
+    fi
+    return 1
   fi
   echo "forgotten"
   case "${state}" in *active*) echo "disconnected" ;; esac
@@ -405,7 +452,11 @@ case "${1}" in
     current_wifi
     ;;
   saved)
-    saved_wifi
+    if [ "${2:-}" = "--ssid" ]; then
+      saved_with_ssids
+    else
+      saved_wifi
+    fi
     ;;
   forget)
     forget_wifi "${2}"

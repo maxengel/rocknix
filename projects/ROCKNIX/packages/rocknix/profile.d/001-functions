@@ -69,7 +69,11 @@ function redact_credentials() {
     local line="$*" nocase=0
     shopt -q nocasematch && nocase=1
     shopt -s nocasematch
-    if [[ "${line}" =~ (${words}|pass|${marks}) ]]; then
+    # "pass" only as a key's end followed by its = or : -- bare, it sent
+    # every "test passed" and "bypass" line through sed (#307, the audit of
+    # the fixes, claude G-B-07).
+    local passkey='pass"?[[:space:]]*[=:]'
+    if [[ "${line}" =~ (${words}|${passkey}|${marks}) ]]; then
       [ "${nocase}" -eq 1 ] || shopt -u nocasematch
       printf '%s\n' "${line}" | redact_credentials
     else
@@ -187,13 +191,25 @@ function wait_lock_say() {
 #   in between) and then each second, and after five such misses -- a lock
 #   folder that is missing, a read-only /tmp -- wait_lock says so and
 #   returns 1, where it used to retry with no sleep for ever and hold a
-#   core at 100% (#308 claude F-PB-06). A live holder is still waited on
-#   for as long as it lives.
+#   core at 100% (#308 claude F-PB-06). The same holds for a stale lock the
+#   reap cannot remove -- a read-only /tmp holding one, where <lock>.reap
+#   cannot be made (#307, the audit of the fixes, claude G-B-13). A live
+#   holder is still waited on for as long as it lives.
 #
-# The pid-reuse half of F-PB-08 does not arise: J_CONF_LOCK is on /tmp, a
-# tmpfs, so no lock outlives the boot that wrote it.
+# A holder's pid reused by another process within the same boot would be
+# waited on as live: the lock holds only the pid (the interface's PidLock
+# reads it as a number), so nothing else identifies the holder. The bound
+# is the pid space: the image sets kernel.pid_max to 4194304 (systemd's
+# 50-pid-max.conf), so the pid of a holder that died must come round again
+# after about four million process creations in one boot, and then the
+# wait lasts only as long as that process, logged at 30 s with its pid. A
+# start-time test was not used: the lock's time is the wall clock, which a
+# handheld with no RTC steps at its first network time, and a false
+# "stale" would take a live holder's lock -- worse than the bounded wait.
+# (#307, the audit of the fixes, claude G-B-05 and gpt G-B-12: tmpfs, the
+# reason given here before, only rules out a lock outliving its boot.)
 function wait_lock() {
-  local holder waited_on="" held_for=0 misses=0 took reaped
+  local holder waited_on="" held_for=0 misses=0 unreaped=0 took reaped
   while true
   do
     took=""
@@ -251,6 +267,7 @@ function wait_lock() {
       *)
         if kill -0 "${holder}" 2>/dev/null
         then
+          unreaped=0
           # Alive: wait, as ever, and never take a live holder's lock. After
           # 30 s of the same holder, say who it is -- once, not every second --
           # so the next person to find a stalled set_setting has a pid to look
@@ -282,7 +299,21 @@ function wait_lock() {
         case "${now}" in ''|*[!0-9]*) ;; *) kill -0 "${now}" 2>/dev/null && exit 0 ;; esac
         rm -f "${J_CONF_LOCK}" && echo removed
       } 9>"${J_CONF_LOCK}.reap" 2>/dev/null )
-    [ "${reaped}" = "removed" ] && wait_lock_say "removed stale lock ${J_CONF_LOCK} held by pid ${holder:-<none>}"
+    if [ "${reaped}" = "removed" ]
+    then
+      wait_lock_say "removed stale lock ${J_CONF_LOCK} held by pid ${holder:-<none>}"
+      unreaped=0
+    else
+      # Not removed: another reaper got there first (the next pass sees the
+      # new holder), or the reap cannot run at all -- which must not spin.
+      unreaped=$((unreaped + 1))
+      if [ "${unreaped}" -ge 5 ]
+      then
+        wait_lock_say "cannot remove stale lock ${J_CONF_LOCK} held by pid ${holder:-<none>} (its folder not writable); not waiting on it"
+        return 1
+      fi
+      [ "${unreaped}" -gt 1 ] && sleep 1
+    fi
   done
 }
 

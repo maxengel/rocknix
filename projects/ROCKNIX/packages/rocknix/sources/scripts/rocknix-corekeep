@@ -158,8 +158,13 @@ chmod 0700 "${CORE_DIR}" 2>/dev/null
 # that each saw room for one dump could together fill the card, the floor
 # notwithstanding (#308, the gpt seat's F-PB-21). An flock on the folder
 # itself; a second handler waits (the kernel holds its dump in the pipe
-# meanwhile), and a device without flock is not refused a dump for it.
-exec 8<"${CORE_DIR}" && { command -v flock >/dev/null 2>&1 && flock 8; }
+# meanwhile). The lock is a precondition of keeping a dump, not a
+# convenience: without it (no flock, a folder that cannot be opened) the
+# crash gets its note and no dump, since two unserialised dumps are the
+# failure the floor exists to prevent (#307, the audit of the fixes, gpt
+# G-B-14).
+LOCKED=0
+{ exec 8<"${CORE_DIR}"; } 2>/dev/null && command -v flock >/dev/null 2>&1 && flock 8 && LOCKED=1
 
 # The ring: the newest CORE_KEEP crashes stay, by the time in their names --
 # core.<exe>.<epoch>.<pid>.txt, read from the right because the name may
@@ -187,6 +192,12 @@ note "when         ${WHEN} ($(date -u -d "@${WHEN}" '+%Y-%m-%d %H:%M:%S UTC' 2>/
 note "build        $(sed -n 's/^BUILD_ID=//p' /etc/os-release 2>/dev/null | tr -d '"' | tr '\n' ' ')"
 note "version      $(sed -n 's/^VERSION_ID=//p;s/^VERSION=//p' /etc/os-release 2>/dev/null | tr -d '"' | tr '\n' ' ')"
 note "kernel       $(uname -r 2>/dev/null)"
+
+if [ "${LOCKED}" -ne 1 ]; then
+    note "dump         NOT KEPT -- the cores folder could not be locked, and one dump at a time is what keeps the free-space floor"
+    logger -t rocknix-corekeep "${EXE} died on signal ${SIG}; dump discarded, the cores folder could not be locked"
+    exit 0
+fi
 
 # Free space first: the dump is the thing we can do without, the player's
 # saves are not.

@@ -36,7 +36,10 @@
 # standard folder used.
 SETTINGS_BACKUPS="/storage/roms/backup"
 if [ -f /storage/.config/cloud_sync.conf ]; then
-    _configured=$( . /storage/.config/cloud_sync.conf >/dev/null 2>&1; printf '%s' "${SETTINGS_BACKUPS:-${BACKUPFOLDER:-}}" )
+    # Both names unset first: the subshell inherits the default set above,
+    # and "${SETTINGS_BACKUPS:-${BACKUPFOLDER}}" never reached the legacy name
+    # (#307, the audit of the fixes, claude G-B-02, gpt G-B-09).
+    _configured=$( unset SETTINGS_BACKUPS BACKUPFOLDER; . /storage/.config/cloud_sync.conf >/dev/null 2>&1; printf '%s' "${SETTINGS_BACKUPS:-${BACKUPFOLDER:-}}" )
     case "${_configured}" in
         "") ;;
         /storage/*) SETTINGS_BACKUPS="${_configured%/}" ;;
@@ -308,10 +311,14 @@ fi
 # A sanitised copy is written new, by a redirection; give it the original's
 # mode and time, so the archive does not carry the staging's 0644 for a file
 # that was 0600 on the device (#308, the gpt seat's F-BR-16).
+# Its status is the three steps': a copy whose mode could not be kept is a
+# sanitiser that did not finish, not a success (#307, the audit of the fixes,
+# gpt G-B-13).
 keep_meta() {
-    chmod "$(stat -c %a "${1}" 2>/dev/null)" "${2}" 2>/dev/null
-    touch -r "${1}" "${2}" 2>/dev/null
-    return 0
+    local MODE
+    MODE=$(stat -c %a "${1}" 2>/dev/null) && [ -n "${MODE}" ] \
+        && chmod "${MODE}" "${2}" 2>/dev/null \
+        && touch -r "${1}" "${2}" 2>/dev/null
 }
 
 # A member name as a pattern that matches only itself: tar's -X and unzip's
@@ -335,7 +342,8 @@ glob_literal() {
 # Two shapes, the same two the pre-push guard knows (#307 PL-006):
 #
 #   A key and a value, in a text config file (.cfg, .conf, .ini, and the
-#   network's .nmconnection and .psk). The key word is matched in any case --
+#   network's .nmconnection and .psk) or a copy of one (.backup, .bak, or
+#   any <name>.cfg.<something>: a last-good record is a config too). The key word is matched in any case --
 #   Password=, TOKEN=, PrivateKey = and ClientSecret= were all passed by a
 #   pattern whose prefix class admitted no capital. It stays a whole part of
 #   the key: at the start, or after a "_", "." or "-" -- so "bypass",
@@ -357,22 +365,42 @@ glob_literal() {
 # A bare-token file (.dat, .txt) has no key shape to match; those are held
 # back by name instead.
 CREDENTIAL_KEYS='^[[:space:]]*(([a-z0-9_.-]*[_.-])?(password|passwd|pass|passphrase|token|secret|apikey|api_key|privatekey|private_key|presharedkey|preshared_key|access_key|secret_key|stream_key|wifi_key|clientsecret|client_secret|apitoken|psk)|key|[a-z0-9_.-]*\.key)[0-9]*[[:space:]]*[=:][[:space:]]*"?[^"[:space:]]+'
-CREDENTIAL_TOKENS='devpassword=[A-Za-z0-9._%-]{4,}|[?&]y=[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY|"(access|refresh)_token" *: *"[A-Za-z0-9._-]{16,}|sk-[A-Za-z0-9_-]{24,}|(API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD)[A-Z_]* *[:=] *["'"'"']?[A-Za-z0-9+/=_-]{16,}'
+CREDENTIAL_TOKENS='devpassword=[A-Za-z0-9._%-]{4,}|[?&]y=[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY|"(access|refresh)_token" *: *"[A-Za-z0-9._-]{16,}|(^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]{24,}|(API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD)[A-Z_]* *[:=] *["'"'"']?[A-Za-z0-9+/=_-]{16,}'
+#
+# "sk-" counts only at a word's start: unanchored, any kebab-case name with
+# 24 characters after an "sk-" -- a theme's "mask-controller-overlay-..."
+# asset -- refused every backup as a sign-in (#307, the audit of the fixes,
+# claude G-B-03). And a scan that cannot finish is not a clean scan: the
+# walk's status and each grep's are read (grep's 2 is an error, 1 only "no
+# match"), and a failure returns 1 with nothing on stdout, which the caller
+# turns into a refusal (gpt G-B-03, claude G-B-10). It prints the count only
+# when every file was read.
 credential_lines() {
-    local TREE="${1}" F N TOTAL=0 NAMES=""
+    local TREE="${1}" F N T RC TOTAL=0 NAMES="" LIST
+    LIST=$(mktemp) || return 1
+    if ! find "${TREE}" -type f -print0 > "${LIST}" 2>/dev/null
+    then
+        logger -t backuptool "the credential scan could not walk what it was to read"
+        rm -f "${LIST}"
+        return 1
+    fi
     while IFS= read -r -d '' F
     do
         N=0
         case "${F}" in
             */lang/*|*/locale/*|*/translations/*) ;;
-            *.cfg|*.conf|*.ini|*.nmconnection|*.psk)
-                N=$(grep -ciE "${CREDENTIAL_KEYS}" "${F}" 2>/dev/null) ;;
+            *.cfg|*.conf|*.ini|*.nmconnection|*.psk|*.backup|*.bak|*.cfg.*|*.conf.*|*.ini.*)
+                N=$(grep -ciE "${CREDENTIAL_KEYS}" "${F}" 2>/dev/null); RC=$?
+                [ "${RC}" -le 1 ] && [ -n "${N}" ] || { logger -t backuptool "the credential scan could not read ${F#${TREE}/}"; rm -f "${LIST}"; return 1; } ;;
         esac
-        N=$(( ${N:-0} + $(grep -IcE "${CREDENTIAL_TOKENS}" "${F}" 2>/dev/null || true) ))
+        T=$(grep -IcE "${CREDENTIAL_TOKENS}" "${F}" 2>/dev/null); RC=$?
+        [ "${RC}" -le 1 ] && [ -n "${T}" ] || { logger -t backuptool "the credential scan could not read ${F#${TREE}/}"; rm -f "${LIST}"; return 1; }
+        N=$((N + T))
         [ "${N}" -gt 0 ] || continue
         TOTAL=$((TOTAL + N))
         NAMES="${NAMES:+${NAMES}, }${F#${TREE}/}"
-    done < <(find "${TREE}" -type f -print0)
+    done < "${LIST}"
+    rm -f "${LIST}"
     [ "${TOTAL}" -gt 0 ] && logger -t backuptool "found ${TOTAL} line(s) that look like a password or key, in: ${NAMES}"
     echo "${TOTAL}"
 }
@@ -394,12 +422,34 @@ archive_ok() {
 }
 
 # An archive's members, one per line and each whole, for either kind. The zip
-# listing's name is everything from its fourth column on (#307 PL-036).
+# listing's name is everything from its fourth column on (#307 PL-036). Its
+# status is the lister's (pipefail for the zip's pipe): a listing that stops
+# part-way is a failure, never a shorter list -- the copy before a restore is
+# built from it, and a short list left files unprotected, an empty one read
+# as "nothing to protect" (#307, the audit of the fixes, gpt G-B-01).
 archive_members() {
     case "${1}" in
         *.tar.gz) tar -tzf "${1}" 2>/dev/null ;;
-        *)        unzip -l "${1}" 2>/dev/null | awk 'NF > 3 && $4 ~ /^storage\// { print substr($0, index($0, $4)) }' ;;
+        *)        ( set -o pipefail
+                    unzip -l "${1}" 2>/dev/null | awk 'NF > 3 && $4 ~ /^storage\// { print substr($0, index($0, $4)) }' ) ;;
     esac
+}
+
+# How many file members an archive lists, or nothing and 1 when it does not
+# list back whole: the count supplements tar's status, never replaces it (a
+# listing can print every name and then fail on a damaged tail; #307, the
+# audit of the fixes, gpt G-B-02).
+listed_files() {
+    local L N
+    L=$(mktemp) || return 1
+    if ! tar -tzf "${1}" > "${L}" 2>/dev/null
+    then
+        rm -f "${L}"
+        return 1
+    fi
+    N=$(grep -vc '/$' "${L}")
+    rm -f "${L}"
+    echo "${N}"
 }
 
 # The copy a restore takes before it writes anything, of exactly what it is
@@ -451,8 +501,8 @@ snapshot_members() { # <members file> <target> <newlist file>
         rm -f "${KEEP}" "${TARGET}.partial"
         return 2
     fi
-    LISTED=$(tar -tzf "${TARGET}.partial" 2>/dev/null | grep -vc '/$')
-    if [ "${LISTED}" -ne "$(wc -l < "${KEEP}")" ] || ! mv -f "${TARGET}.partial" "${TARGET}"
+    if ! LISTED=$(listed_files "${TARGET}.partial") \
+       || [ "${LISTED}" -ne "$(wc -l < "${KEEP}")" ] || ! mv -f "${TARGET}.partial" "${TARGET}"
     then
         rm -f "${KEEP}" "${TARGET}.partial"
         return 3
@@ -662,16 +712,30 @@ write_archive() {
     # twice; the archive holds it once, and the counts below compare like
     # with like.
     awk '!seen[$0]++' "${FILELIST}" > "${FILELIST}.unique" && mv -f "${FILELIST}.unique" "${FILELIST}"
-    # A staging folder is never collected either (a run killed part-way
-    # leaves one; a selection of /storage would find it).
-    STAGE="${STAGING_PREFIX}" awk 'index($0, ENVIRON["STAGE"]) != 1' "${FILELIST}" > "${FILELIST}.stage" && mv -f "${FILELIST}.stage" "${FILELIST}"
-    local OWNED
-    OWNED=$(OWN="${OWN}/" awk 'index($0, ENVIRON["OWN"]) == 1' "${FILELIST}" | wc -l)
-    if [ "${OWNED}" -gt 0 ]
+    # Nor, whatever the list says: a staging folder (a run killed part-way
+    # leaves one; a selection of /storage would find it), and the core dumps
+    # and evidence bundles under /storage/.cache/log -- a core is process
+    # memory, credentials and all, and rocknix-corekeep promises it is never
+    # collected (#307, the audit of the fixes, claude G-B-12).
+    #
+    # One filter, checked: the kept list is written whole and moved into
+    # place, or the collection fails (return 2). An exclusion that could not
+    # be applied left the unfiltered list in place, and a selection of
+    # /storage/roms archived the password-keeping pre-restore copies it
+    # exists to keep out (gpt G-B-04).
+    local KEPTN DROPPED
+    if ! OWN="${OWN}/" STAGE="${STAGING_PREFIX}" CORES=/storage/.cache/log/cores/ EVID=/storage/.cache/log/evidence/ \
+           awk 'index($0, ENVIRON["OWN"]) == 1 || index($0, ENVIRON["STAGE"]) == 1 || index($0, ENVIRON["CORES"]) == 1 || index($0, ENVIRON["EVID"]) == 1 { next } { print }' \
+           "${FILELIST}" > "${FILELIST}.kept" \
+       || ! KEPTN=$(wc -l < "${FILELIST}.kept") \
+       || ! DROPPED=$(( $(wc -l < "${FILELIST}") - KEPTN )) \
+       || ! mv -f "${FILELIST}.kept" "${FILELIST}"
     then
-        OWN="${OWN}/" awk 'index($0, ENVIRON["OWN"]) != 1' "${FILELIST}" > "${FILELIST}.own" && mv -f "${FILELIST}.own" "${FILELIST}"
-        logger -t backuptool "left out ${OWNED} file(s) under the settings backups folder: a backup never holds another backup"
+        logger -t backuptool "the list could not be filtered of the backups folder, staging, cores and evidence; nothing written"
+        rm -f "${FILELIST}" "${FILELIST}.kept" "${SECRETLIST}" "${SENDLIST}"
+        return 2
     fi
+    [ "${DROPPED}" -gt 0 ] && logger -t backuptool "left out ${DROPPED} file(s) a backup never holds: another backup, a staging folder, a core dump or an evidence bundle"
 
     # Inside a configured location, what the image ships is not the player's
     # configuration and does not travel (#45). A stock device's archive was
@@ -808,6 +872,28 @@ write_archive() {
             done < <(grep -F "${CANDIDATE}" "${FILELIST}" || true)
         done
         [ "${HELD}" -gt 0 ] && logger -t backuptool "held back ${HELD} file(s) under the offline RetroAchievements proxy's folder: its token cache and award queue never travel (#165)"
+        # The copies a writer keeps beside a file that is stripped or held
+        # back carry the same keys: chksysconfig's and the interface's
+        # last-good record (system.cfg.backup, es_settings.cfg.backup), a
+        # writer's temporary (.tmp), and a .bak or .old. The strips go by
+        # exact path, so a selection covering the folder carried the record
+        # whole -- the Wi-Fi key and the root password -- and the key scan
+        # read no .backup (#307, the audit of the fixes, claude G-B-01). They
+        # are held back: the record is rebuilt from the live file at the next
+        # boot and on the next write, so holding it back loses nothing.
+        HELD=0
+        for CANDIDATE in "${SYSCFG}" "${ESCFG}" "${RACFG}" "${RATOKENFILES[@]}" "${RATOKENSETTINGS[@]}" "${DEVICEONLY[@]}"
+        do
+            for SUFFIX in .backup .bak .tmp .old
+            do
+                if grep -qxF "${CANDIDATE}${SUFFIX}" "${FILELIST}"
+                then
+                    echo "${CANDIDATE}${SUFFIX}" >> "${SECRETLIST}"
+                    HELD=$((HELD + 1))
+                fi
+            done
+        done
+        [ "${HELD}" -gt 0 ] && logger -t backuptool "held back ${HELD} last-good record(s) or temporaries beside files that are stripped or held back"
     fi
 
     # grep -f with an EMPTY pattern file matches nothing under busybox and
@@ -881,9 +967,9 @@ write_archive() {
         if grep -qxF "${SYSCFG}" "${SECRETLIST}"
         then
             mkdir -p "${STAGING}/storage/.config/system/configs"
-            sed -E '/^[^#]*\.(key|password|token)=/d' "${SYSCFG}" \
+            to_log sed -E '/^[^#]*\.(key|password|token)=/d' "${SYSCFG}" \
                 > "${STAGING}/storage/.config/system/configs/system.cfg" || SANITISE_RC=1
-            keep_meta "${SYSCFG}" "${STAGING}/storage/.config/system/configs/system.cfg"
+            keep_meta "${SYSCFG}" "${STAGING}/storage/.config/system/configs/system.cfg" || SANITISE_RC=1
             SANITISED=$((SANITISED + 1))
         fi
 
@@ -898,10 +984,10 @@ write_archive() {
         then
             mkdir -p "${STAGING}/storage/.config/emulationstation"
             # grep's 1 is "no line survived" (an empty copy), not a failure.
-            grep -v -e 'name="ScreenScraperPass"' -e 'name="ScreenScraperDevPass"' -e 'name="IGDBSecret"' "${ESCFG}" \
+            to_log grep -v -e 'name="ScreenScraperPass"' -e 'name="ScreenScraperDevPass"' -e 'name="IGDBSecret"' "${ESCFG}" \
                 > "${STAGING}/storage/.config/emulationstation/es_settings.cfg"
             [ $? -le 1 ] || SANITISE_RC=1
-            keep_meta "${ESCFG}" "${STAGING}/storage/.config/emulationstation/es_settings.cfg"
+            keep_meta "${ESCFG}" "${STAGING}/storage/.config/emulationstation/es_settings.cfg" || SANITISE_RC=1
             SANITISED=$((SANITISED + 1))
         fi
 
@@ -914,9 +1000,9 @@ write_archive() {
         if grep -qxF "${RACFG}" "${SECRETLIST}"
         then
             mkdir -p "${STAGING}/storage/.config/retroarch"
-            sed -E 's/^([a-z_]*(password|token|stream_key)) = ".*"$/\1 = ""/' "${RACFG}" \
+            to_log sed -E 's/^([a-z_]*(password|token|stream_key)) = ".*"$/\1 = ""/' "${RACFG}" \
                 > "${STAGING}/storage/.config/retroarch/retroarch.cfg" || SANITISE_RC=1
-            keep_meta "${RACFG}" "${STAGING}/storage/.config/retroarch/retroarch.cfg"
+            keep_meta "${RACFG}" "${STAGING}/storage/.config/retroarch/retroarch.cfg" || SANITISE_RC=1
             SANITISED=$((SANITISED + 1))
         fi
 
@@ -933,9 +1019,9 @@ write_archive() {
             if grep -qxF "${CANDIDATE}" "${SECRETLIST}"
             then
                 mkdir -p "${STAGING}${CANDIDATE%/*}"
-                sed -E 's/^([A-Za-z_]*(Token|Password)[[:space:]]*=[[:space:]]*).*$/\1/' "${CANDIDATE}" \
+                to_log sed -E 's/^([A-Za-z_]*(Token|Password)[[:space:]]*=[[:space:]]*).*$/\1/' "${CANDIDATE}" \
                     > "${STAGING}${CANDIDATE}" || SANITISE_RC=1
-                keep_meta "${CANDIDATE}" "${STAGING}${CANDIDATE}"
+                keep_meta "${CANDIDATE}" "${STAGING}${CANDIDATE}" || SANITISE_RC=1
                 BLANKED=$((BLANKED + 1))
             fi
         done
@@ -978,10 +1064,19 @@ write_archive() {
     # the check reads the staged tree -- exactly what the archive is made
     # from -- before the archive exists, so nothing credential-bearing is
     # ever written under a name an uploader matches (#307 PL-005).
-    if [ "${STRIP}" = "1" ] && [ "$(credential_lines "${STAGING}")" -gt 0 ]
+    if [ "${STRIP}" = "1" ]
     then
-        rm -rf "${STAGING}"
-        return 5
+        local LEAKS
+        if ! LEAKS=$(credential_lines "${STAGING}")
+        then
+            rm -rf "${STAGING}"
+            return 3
+        fi
+        if [ "${LEAKS}" -gt 0 ]
+        then
+            rm -rf "${STAGING}"
+            return 5
+        fi
     fi
 
     # Member names come out as storage/... exactly as the zip's did, so
@@ -1004,10 +1099,9 @@ write_archive() {
         return 3
     fi
     rm -f "${MEMBERLIST}"
-    LISTED=$(tar -tzf "${TARGET}.partial" 2>/dev/null | grep -vc '/$')
-    if [ "${LISTED}" -ne "${STAGED}" ]
+    if ! LISTED=$(listed_files "${TARGET}.partial") || [ "${LISTED}" -ne "${STAGED}" ]
     then
-        logger -t backuptool "the archive lists ${LISTED} file(s) of the ${STAGED} staged; nothing written"
+        logger -t backuptool "the archive does not list back whole (${LISTED:-no listing} of the ${STAGED} staged); nothing written"
         rm -rf "${STAGING}"
         rm -f "${TARGET}.partial"
         return 3
@@ -1137,7 +1231,12 @@ case "${VERB}" in
             SNAPSHOT="${ARCHIVEFOLDER}/${BACKUP_STAMP}-PRE_RESTORE-${DEVICE_LABEL:+${DEVICE_LABEL}-}${OS_NAME}_SETTINGS.tar.gz"
         done
         MEMBERS=$(mktemp); NEWLIST=$(mktemp); SEEDS=$(mktemp)
-        archive_members "${BACKUPFILE}" > "${MEMBERS}"
+        if ! archive_members "${BACKUPFILE}" > "${MEMBERS}"
+        then
+            rm -f "${MEMBERS}" "${NEWLIST}" "${SEEDS}"
+            why "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED"
+            fail "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED. NOTHING WAS CHANGED. RESTORE SETTINGS FROM THE CLOUD AGAIN, OR BACK UP SETTINGS TO REPLACE IT." "${BACKUPFILE} did not list its members whole"
+        fi
         # The files the backup left out as the image's own (SEEDLIST), to
         # be put back to this image's copy after the extraction: a path under
         # /storage/.config that walks nowhere else, that this image ships,
@@ -1151,6 +1250,12 @@ case "${VERB}" in
             esac | while IFS= read -r REL
             do
                 case "${REL}" in ''|/*|*..*) continue ;; esac
+                # A file the archive holds itself is restored from the
+                # archive: a new backup never lists one it carries, so a list
+                # that names one is stale -- an older image extracted a list
+                # and later archived it (#307, the audit of the fixes, claude
+                # G-B-09).
+                grep -qxF "storage/.config/${REL}" "${MEMBERS}" && continue
                 case "/storage/.config/${REL}" in
                     /storage/.config/ppsspp/assets/*|/storage/.config/ppsspp/PSP/SYSTEM/CACHE/*) continue ;;
                 esac
@@ -1281,7 +1386,7 @@ case "${VERB}" in
         then
             while IFS= read -r REL
             do
-                mkdir -p "$(dirname "/storage/.config/${REL}")" && cp -f "/usr/config/${REL}" "/storage/.config/${REL}" || { EXTRACT_RC=1; break; }
+                to_log mkdir -p "$(dirname "/storage/.config/${REL}")" && to_log cp -f "/usr/config/${REL}" "/storage/.config/${REL}" || { EXTRACT_RC=1; break; }
             done < "${SEEDS}"
             [ -s "${SEEDS}" ] && [ "${EXTRACT_RC}" -eq 0 ] && logger -t backuptool "put $(wc -l < "${SEEDS}") file(s) the backup held at their defaults back to this image's copies"
         fi
@@ -1353,6 +1458,32 @@ case "${VERB}" in
         # and nothing reads it; clear it so it does not sit there for ever.
         sweep_leftovers
 
+        # The archives upstream's backuptool rotated -- before this fork's
+        # first rewrite of it (747362fe36, 2026-07-25) -- went to the ROOT of
+        # the backups folder as ARCHIVED_<OS>_BACKUP-<yy-mm-dd_H_M_S>.zip,
+        # where no reader here looks and cloud_backup's --include=/*.zip
+        # uploads every one on every settings backup: the whole config tree
+        # of that era, keys and all (#308 claude F-BR-07). They move under
+        # archive/upstream-era/, where nothing uploads them and the trim does
+        # not reach -- the first cut moved them into archive/ itself, where
+        # the trim deleted all but the newest few on the first backup after
+        # the update (#307, the audit of the fixes, claude G-B-11). Moved
+        # first, before anything is written: one that cannot be moved ends
+        # the backup, which would otherwise succeed and let the chain upload
+        # it (gpt G-B-06). Idempotent; a move cut part-way leaves the file in
+        # one place or the other.
+        for OLD in "${SETTINGS_BACKUPS}"/ARCHIVED_*.zip
+        do
+            [ -f "${OLD}" ] || continue
+            if ! { mkdir -p "${ARCHIVEFOLDER}/upstream-era" 2>/dev/null \
+                   && mv -f "${OLD}" "${ARCHIVEFOLDER}/upstream-era/" 2>/dev/null; }
+            then
+                why "THE BACKUP COULDN'T FINISH"
+                fail "THE BACKUP COULDN'T FINISH. NOTHING WAS WRITTEN, AND YOUR LAST BACKUP IS UNCHANGED. TRY AGAIN." "$(basename "${OLD}") could not be moved off the backups folder's root, where the settings upload would send it"
+            fi
+            logger -t backuptool "moved $(basename "${OLD}") from the backups folder's root to archive/upstream-era/: nothing uploads it there"
+        done
+
         # A name already taken moves on a second (see STAMP_EPOCH).
         while [ -e "${BACKUPFILE}" ]
         do
@@ -1411,24 +1542,6 @@ case "${VERB}" in
             trim_archive
         fi
 
-        # The archives upstream's backuptool rotated -- before this fork's
-        # first rewrite of it (747362fe36, 2026-07-25) -- went to the ROOT of
-        # the backups folder as ARCHIVED_<OS>_BACKUP-<yy-mm-dd_H_M_S>.zip,
-        # where no reader here looks and cloud_backup's --include=/*.zip
-        # uploads every one on every settings backup: the whole config tree
-        # of that era, keys and all. They move into archive/ under the date
-        # they were written, where the trim bounds them with the rest and
-        # nothing uploads them (#308 claude F-BR-07). Idempotent; a move cut
-        # part-way leaves the file in one place or the other.
-        for OLD in "${SETTINGS_BACKUPS}"/ARCHIVED_*.zip
-        do
-            [ -f "${OLD}" ] || continue
-            mkdir -p "${ARCHIVEFOLDER}"
-            mv "${OLD}" "${ARCHIVEFOLDER}/$(date -r "${OLD}" +%Y_%m_%d-%H%M%S 2>/dev/null || stamp_at "${STAMP_EPOCH}")-$(basename "${OLD}")" \
-                && logger -t backuptool "moved $(basename "${OLD}") from the backups folder's root into archive/: nothing uploads it there"
-            ROTATED_OLD=1
-        done
-        [ -n "${ROTATED_OLD:-}" ] && trim_archive
 
         sync
         note "SETTINGS BACKED UP TO THIS DEVICE." "${BACKUPFILE}"
