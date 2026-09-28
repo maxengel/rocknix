@@ -1525,10 +1525,24 @@ backup_game_saves() {
     # is one record at rest (D-CLOUD-078 (3)). The folder is shared by every
     # device using the saves folder, so "one cycle" is one cycle of whichever
     # device ran last.
-    local replaced_root="${SAVES_REMOTE%/}-replaced" replaced_stamp
-    replaced_stamp=$(date +%Y_%m_%d-%H%M%S)
-    all_opts+=("--backup-dir=${REMOTENAME}${replaced_root}/${replaced_stamp}")
-    log_message "anything replaced (or, in sync mode, removed) in the cloud goes to ${replaced_root}" "false"
+    local replaced_root="${SAVES_REMOTE%/}-replaced" replaced_stamp=""
+    # A saves folder at the remote's root ("" or "/") has no sibling: the
+    # folder above would be "-replaced" under the root, inside the
+    # destination, and rclone refuses the run outright ("destination and
+    # parameter to --backup-dir mustn't overlap", exit 7) -- every saves
+    # backup failed for such a config (#308 claude F-CS-25). The backup goes
+    # on without the one-cycle record, and the log says so.
+    case "${SAVES_REMOTE}" in
+        ""|"/")
+            replaced_root=""
+            log_message "the saves folder is the cloud's root: no replaced-saves folder is kept (it would sit inside the saves folder)" "false" "WARN"
+            ;;
+        *)
+            replaced_stamp=$(date +%Y_%m_%d-%H%M%S)
+            all_opts+=("--backup-dir=${REMOTENAME}${replaced_root}/${replaced_stamp}")
+            log_message "anything replaced (or, in sync mode, removed) in the cloud goes to ${replaced_root}" "false"
+            ;;
+    esac
 
     # Check if the rclone version supports the terminal width flag
 
@@ -1570,7 +1584,7 @@ backup_game_saves() {
     # The replaced files of the run that just completed are the one record
     # kept; older stamp folders go. Not on a --recent run: a remote round
     # trip the game-exit sync should not pay (the next full pass trims).
-    if [ "${RECENT}" -eq 0 ] && { [ $BACKUP_STATUS -eq 0 ] || [ $BACKUP_STATUS -eq 9 ]; }; then
+    if [ -n "${replaced_root}" ] && [ "${RECENT}" -eq 0 ] && { [ $BACKUP_STATUS -eq 0 ] || [ $BACKUP_STATUS -eq 9 ]; }; then
         prune_replaced_remote "${REMOTENAME}${replaced_root}" "${replaced_stamp}"
     fi
 

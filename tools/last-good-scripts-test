@@ -3850,4 +3850,16 @@ rm -f "${UA}/cloud/ROCKNIX/Backups/QA-deadbeef01/2026_09_01-120000-Other-Handhel
 sa_run "${UA}" cloud_restore --yes --system-only
 [ -f "${UA}/storage/roms/backup/ROCKNIX_BACKUP.zip" ]; check $? "and with nothing dated there, the undated archive is still restored (rc ${RC})" "restored: $(ls "${UA}/storage/roms/backup" | tr '\n' ' ')"
 
+# A22. #308 claude F-CS-25: a saves folder at the remote's root has no
+#      sibling for the replaced-saves folder; a --backup-dir under the root
+#      overlaps the destination. The backup goes on without that record
+#      (and says so in the log) rather than failing every run.
+echo "    A22. #308 claude F-CS-25: a saves folder at the root backs up without a replaced-saves folder"
+RT=$(sa_new ccs25); sa_script "${RT}" cloud_backup cloud_saves_root
+sed 's|^SAVES_REMOTE=.*|SAVES_REMOTE="/"|; s|^SETTINGS_REMOTE=.*|SETTINGS_REMOTE="/Backups"|' "${PR}/storage/.config/cloud_sync.conf" > "${RT}/storage/.config/cloud_sync.conf"
+cp "${PR}/storage/.config/cloud_sync-rules.txt" "${RT}/storage/.config/"
+mkdir -p "${RT}/storage/roms/gb" "${RT}/cloud/gb"; echo "played here" > "${RT}/storage/roms/gb/A.srm"; echo "older" > "${RT}/cloud/gb/A.srm"
+sa_run "${RT}" cloud_backup --yes --saves-only
+[ "${RC}" -eq 0 ] && grep -qx "played here" "${RT}/cloud/gb/A.srm" && grep -q 'no replaced-saves folder' "${RT}/log/cloud_sync.log"; check $? "a backup to a saves folder at the root completes, replaces the cloud's copy, and logs that no replaced-saves folder is kept (rc ${RC})" "rc ${RC}; cloud A.srm: $(cat "${RT}/cloud/gb/A.srm"); out: $(sa_tail "${RT}"); log: $(grep -i 'overlap\|replaced' "${RT}/log/cloud_sync.log" | tail -2 | tr '\n' '|')"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
