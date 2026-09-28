@@ -1012,6 +1012,8 @@ network_lost_during_run() {
 rules_whole() {
     [ -s "$1" ] && grep -qx -- '- /\*\*' "$1"
 }
+# The allowlist this device writes and keeps (cloud_sync_helper).
+MANAGED_RULES=/storage/.config/cloud_sync-rules.txt
 
 # Is this a cloud_sync.conf that can be run with? bash -n, and a grammar
 # nothing but assignments of text can pass. Every line is blank, a
@@ -1611,17 +1613,29 @@ restore_game_saves() {
     # before that line admits all of it, so a rules file without the line,
     # whole and alone on it, is refused rather than run with. The helper no
     # longer installs such a file; this is for one it did not write.
-    local rules_file="" next_is_rules=0 rules_bad=""
+    #
+    # The device's own allowlist only: a filter file the player named
+    # themselves is theirs to write, catch-all or not (#71's contract, the
+    # round-trip's "a user's own --filter-from is honoured"). The first cut
+    # held every named file to the catch-all and refused the player's.
+    local next_is_rules=0 rules_bad="" named
     for opt in "${all_opts[@]}"; do
+        named=""
         if [ "${next_is_rules}" = 1 ]; then
             next_is_rules=0
-            rules_whole "${opt}" || rules_bad="${opt}"
-            continue
+            named="${opt}"
+        else
+            case "${opt}" in
+                --filter-from|--filters-file) next_is_rules=1 ;;
+                --filter-from=*|--filters-file=*) named="${opt#*=}" ;;
+            esac
         fi
-        case "${opt}" in
-            --filter-from|--filters-file) next_is_rules=1 ;;
-            --filter-from=*|--filters-file=*) rules_file="${opt#*=}"; rules_whole "${rules_file}" || rules_bad="${rules_file}" ;;
-        esac
+        [ -n "${named}" ] || continue
+        if [ "$(readlink -f -- "${named}" 2>/dev/null || printf '%s' "${named}")" = "${MANAGED_RULES}" ]; then
+            rules_whole "${named}" || rules_bad="${named}"
+        else
+            log_message "the saves rules are the player's own file ${named}; used as written" "false"
+        fi
     done
     if [ -n "${rules_bad}" ]; then
         log_message "the rules file ${rules_bad} has no catch-all line (- /**); refusing the saves restore" "false" "ERROR"

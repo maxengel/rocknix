@@ -4178,4 +4178,44 @@ EOS
 sa_run "${PX}" cloud_backup --yes --saves-only
 [ ! -e "${PX}/ctl/pwned" ] && [ "${RC}" -eq 1 ] && grep -qx ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ" "${PX}/out"; check $? "G-A-05: cloud_backup with the seat's counterexample in its conf runs nothing and refuses (rc ${RC})" "ran it: $([ -e "${PX}/ctl/pwned" ] && echo YES || echo no); rc ${RC}; out: $(sa_tail "${PX}")"
 
+# A34. vm-qa run 68's round-trip, step "an edited RCLONEOPTS without
+#      --filter-from still keeps the allowlist", last check (#71's
+#      contract): a player who names their own --filter-from file keeps
+#      control of it. PL-020's catch-all test is for the allowlist this
+#      device manages (/storage/.config/cloud_sync-rules.txt); it was
+#      applied to every named file, so the round-trip's own rules --
+#      "- /**/own-rule-victim.srm" then "+ /**", no catch-all -- refused
+#      the backup outright (exit 1).
+echo "    A34. a rules file the player names themselves is theirs: honoured as written"
+OF=$(sa_new ownrules); sa_script "${OF}" cloud_backup cloud_restore cloud_saves_root
+cat > "${OF}/storage/.config/cloud_sync.conf" <<'EOS'
+SAVESPATH="/storage/roms"
+SAVES_REMOTE="/ROCKNIX/Saves"
+SETTINGS_BACKUPS="/storage/roms/backup"
+SETTINGS_REMOTE="/ROCKNIX/Backups"
+BACKUPMETHOD="copy"
+RESTOREMETHOD="copy"
+BACKUPFILE_BACKUP_OPTION="no"
+BACKUPFILE_RESTORE_OPTION="no"
+RCLONEOPTS="--progress --filter-from /storage/my-rules.txt"
+RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"
+LOG_LEVEL="INFO"
+EOS
+printf -- '- /**/own-rule-victim.srm\n+ /**\n' > "${OF}/storage/my-rules.txt"
+printf -- '+ /**/*.srm\n' > "${OF}/storage/.config/cloud_sync-rules.txt"
+mkdir -p "${OF}/storage/roms/saves" "${OF}/cloud/ROCKNIX/Saves/saves"
+echo s > "${OF}/storage/roms/saves/game1.srm"; echo victim > "${OF}/storage/roms/saves/own-rule-victim.srm"
+sa_run "${OF}" cloud_backup --yes --saves-only
+[ "${RC}" -eq 0 ] && [ -f "${OF}/cloud/ROCKNIX/Saves/saves/game1.srm" ] && [ ! -e "${OF}/cloud/ROCKNIX/Saves/saves/own-rule-victim.srm" ]; check $? "cloud_backup with the player's own --filter-from (no catch-all) runs by their rules: the save goes, the file they excluded stays (rc ${RC})" "rc ${RC}; game1.srm $([ -f "${OF}/cloud/ROCKNIX/Saves/saves/game1.srm" ] && echo sent || echo missing), victim $([ -e "${OF}/cloud/ROCKNIX/Saves/saves/own-rule-victim.srm" ] && echo SENT || echo home); out: $(sa_tail "${OF}") -- PL-020's catch-all test refused a file the player named (#71)"
+rm -f "${OF}/storage/roms/saves/game1.srm"
+echo cloudvictim > "${OF}/cloud/ROCKNIX/Saves/saves/own-rule-victim.srm"; rm -f "${OF}/storage/roms/saves/own-rule-victim.srm"
+sa_run "${OF}" cloud_restore --yes --saves-only
+[ "${RC}" -eq 0 ] && [ -f "${OF}/storage/roms/saves/game1.srm" ] && [ ! -e "${OF}/storage/roms/saves/own-rule-victim.srm" ]; check $? "cloud_restore with the same file brings the save down and leaves the excluded one in the cloud (rc ${RC})" "rc ${RC}; game1.srm $([ -f "${OF}/storage/roms/saves/game1.srm" ] && echo restored || echo missing), victim $([ -e "${OF}/storage/roms/saves/own-rule-victim.srm" ] && echo RESTORED || echo left); out: $(sa_tail "${OF}")"
+# And the managed allowlist, named in the options as it ships, is still
+# held to its catch-all (A3's refusal, by the path the conf names it by).
+sed -i 's|--filter-from /storage/my-rules.txt|--filter-from /storage/.config/cloud_sync-rules.txt|' "${OF}/storage/.config/cloud_sync.conf"
+echo s > "${OF}/storage/roms/saves/game2.srm"
+sa_run "${OF}" cloud_backup --yes --saves-only
+[ "${RC}" -ne 0 ] && [ ! -e "${OF}/cloud/ROCKNIX/Saves/saves/game2.srm" ]; check $? "the device's own allowlist without its catch-all is still refused (rc ${RC})" "rc ${RC}; game2.srm $([ -e "${OF}/cloud/ROCKNIX/Saves/saves/game2.srm" ] && echo SENT || echo home)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
