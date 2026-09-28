@@ -3065,6 +3065,9 @@ if [ -n "${BB}" ]; then
     done
     SA_BB=(--ro-bind "${BB_HOST}" "${BB}")
 fi
+# /usr as a tmpfs of the host's directories, for a case that needs /usr/config
+# to be the fixture's (the helper reads its defaults there).
+SA_USR=(); for u in bin sbin lib lib64 libexec share; do [ -e "/usr/${u}" ] && SA_USR+=(--ro-bind "/usr/${u}" "/usr/${u}"); done
 sa_new() { # <name>: a fresh fixture directory; its path on stdout
     local d="${SA}/f-$1"
     rm -rf "${d}"; mkdir -p "${d}"/storage/.config/rclone "${d}"/storage/.cache/cloud_sync "${d}"/storage/roms \
@@ -3094,6 +3097,11 @@ sa_run() { # <fixture> <script> [args...]: the script whole, in the sandbox; std
     DT=$(( $(date +%s) - t0 ))
 }
 sa_tail() { sed 's/\x1b\[[0-9;]*m//g' "$1/out" | grep -v '^\s*$' | tail -${2:-4} | tr '\n' '|' | cut -c1-240; }
+# The run's own outcome line, as case n reads it: colour off, no protocol
+# marker, no rclone stats, no rule of dashes.
+sa_outcome() {
+    sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$1/out" | tr '\r' '\n' | grep -vE '^>>> |^(Transferred:|Checks:|Elapsed time:|Errors:|Deleted:|Renamed:|Transferring:|Checking:)|^[[:space:]]*\*[[:space:]]|^[=-]{4,}$|^[[:space:]]*$' | tail -1
+}
 
 # A1. PL-001 (#307, F-CS-01 both seats + F-CS-03 gpt): --match --apply acts
 #     only on the plan the preview showed. A system whose listing fails is
@@ -3175,5 +3183,76 @@ sa_run "${AL}" cloud_content_restore --all
 rm -rf "${AL}/cloud"/*; mkdir -p "${AL}/cloud/ROCKNIX/Content"; : > "${AL}/ctl/fail"
 sa_run "${AL}" cloud_content_restore --all
 [ "${RC}" -eq 0 ] && grep -qi "nothing to restore" "${AL}/out"; check $? "a cloud with no ROMs and no BIOS yet is nothing to restore, not a failure (rc ${RC})" "rc ${RC}; out: $(sa_tail "${AL}")"
+
+# A3. PL-020 (#307, F-CS-05 gpt) with #308 claude F-CS-06: the rules file is
+#     an allowlist whose last rule, "- /**", is what keeps the ROMs out of
+#     the saves sync. The helper installs a merged file only when it is
+#     whole; the .bak is taken only from a whole file (a line that merely
+#     starts "- /**" -- "- /**/*.db" -- is not the catch-all); and the saves
+#     scripts refuse a rules file without it.
+echo "    A3. PL-020: an incomplete rules file is never installed, and never synced with"
+RH=$(sa_new pl020h); sa_script "${RH}" cloud_sync_helper
+mkdir -p "${RH}/usrconfig"; src_of "${RCLONE_REL}/cloud_sync-rules.txt.defaults" "${RH}/usrconfig/cloud_sync-rules.txt.defaults"
+src_of "${RCLONE_REL}/cloud_sync.conf.defaults" "${RH}/usrconfig/cloud_sync.conf.defaults"
+cat > "${RH}/repo/cat" <<'EOR'
+#!/bin/bash
+# The defaults cut short: a write that fails part-way, as on a full card.
+if [ -e /ctl/cutcat ] && [ "$1" = /usr/config/cloud_sync-rules.txt.defaults ]; then head -n 20 "$1"; exit 1; fi
+exec /usr/bin/cat "$@"
+EOR
+chmod +x "${RH}/repo/cat"
+rh_run() { # the helper, with /usr/config the fixture's and the cutting cat first on PATH
+    : > "${RH}/out"
+    RC=$( ( setsid -w bwrap --die-with-parent --tmpfs / --tmpfs /usr "${SA_USR[@]}" "${SA_BB[@]}" \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${RH}/usrconfig" /usr/config \
+        --bind "${RH}/storage" /storage --ro-bind "${RH}/repo" /repo --bind "${RH}/ctl" /ctl --ro-bind "${SA}/nbin" /nbin \
+        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var \
+        --setenv PATH "/repo:/nbin:/usr/bin:/bin" \
+        bash /repo/cloud_sync_helper /ctl/helper.log > "${RH}/out" 2>&1; echo $? ) 2>/dev/null )
+    cat "${RH}/ctl/helper.log" >> "${RH}/out" 2>/dev/null; rm -f "${RH}/ctl/helper.log"
+}
+RRULES="${RH}/storage/.config/cloud_sync-rules.txt"
+printf 'SAVESPATH="/storage/roms"\nBACKUPMETHOD="copy"\n' > "${RH}/storage/.config/cloud_sync.conf"
+printf -- '+ /mine/**\n- /**\n' > "${RRULES}"
+rh_run
+good_rules="$(cat "${RRULES}")"
+grep -q 'Checking cloud sync rules file' "${RH}/out" && grep -qx -- '- /\*\*' "${RRULES}" && grep -qx -- '+ /mine/\*\*' "${RRULES}"; check $? "the helper ran, and a whole merge is installed, catch-all and all (rc ${RC})" "rc ${RC}; helper log: $(tail -2 "${RH}/out" | tr '\n' '|'); rules end: $(tail -2 "${RRULES}" | tr '\n' '|')"
+touch "${RH}/ctl/cutcat"
+rh_run
+grep -q 'Checking cloud sync rules file' "${RH}/out" && [ "$(cat "${RRULES}")" = "${good_rules}" ] && [ ! -e "${RRULES}.new" ]; check $? "a merge whose defaults were cut short (the write failed at line 20) is not installed; the live file is as it was" "the live rules file now ends: '$(tail -2 "${RRULES}" | tr '\n' '|')' -- a cut candidate was renamed over the allowlist (F-CS-05)"
+grep -q 'not whole\|was not installed\|left as it was' "${RH}/out"; check $? "and the helper says so in the log" "no log line about the refused candidate; log: $(grep -i rules "${RH}/out" | tail -2 | tr '\n' '|')"
+rm -f "${RH}/ctl/cutcat"
+cp "${RRULES}" "${RRULES}.bak"; good_bak="$(cat "${RRULES}.bak")"
+awk '{ print } /^- \/\*\*\/\*\.sqlite3$/ { exit }' "${RH}/usrconfig/cloud_sync-rules.txt.defaults" > "${RRULES}"
+rh_run
+grep -q 'Checking cloud sync rules file' "${RH}/out" && [ "$(cat "${RRULES}.bak")" = "${good_bak}" ]; check $? "a rules file cut after its database lines ('- /**/*.db' present, '- /**' not) does not replace the good .bak" "the .bak was replaced by the cut file: '^- /\\*\\*' matched '- /**/*.db' (#308 claude F-CS-06)"
+# The consumers: a rules file with no catch-all is refused, not synced with.
+RB=$(sa_new pl020b); sa_script "${RB}" cloud_backup cloud_restore cloud_saves_root
+cat > "${RB}/storage/.config/cloud_sync.conf" <<'EOS'
+SAVESPATH="/storage/roms"
+SAVES_REMOTE="/ROCKNIX/Saves"
+SETTINGS_BACKUPS="/storage/roms/backup"
+SETTINGS_REMOTE="/ROCKNIX/Backups"
+BACKUPMETHOD="copy"
+RESTOREMETHOD="copy"
+BACKUPFILE_BACKUP_OPTION="no"
+BACKUPFILE_RESTORE_OPTION="no"
+RCLONEOPTS="--progress --log-file /var/log/cloud_sync.log --filter-from /storage/.config/cloud_sync-rules.txt"
+RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"
+LOG_LEVEL="INFO"
+EOS
+mkdir -p "${RB}/storage/roms/gb" "${RB}/storage/roms/savefiles" "${RB}/cloud/ROCKNIX/Saves/gb"
+echo rom > "${RB}/storage/roms/gb/A.gb"; echo save > "${RB}/storage/roms/gb/A.srm"
+echo cloudrom > "${RB}/cloud/ROCKNIX/Saves/gb/B.gb"; echo cloudsave > "${RB}/cloud/ROCKNIX/Saves/gb/B.srm"
+printf -- '+ /**/*.srm\n+ /savefiles/**\n' > "${RB}/storage/.config/cloud_sync-rules.txt"
+sa_run "${RB}" cloud_backup --yes --saves-only
+[ ! -e "${RB}/cloud/ROCKNIX/Saves/gb/A.gb" ] && [ "${RC}" -ne 0 ] && sa_outcome "${RB}" | grep -q "^Couldn't finish"; check $? "cloud_backup with a rules file that has no catch-all sends nothing and ends Couldn't finish (rc ${RC})" "A.gb in the cloud: $([ -e "${RB}/cloud/ROCKNIX/Saves/gb/A.gb" ] && echo YES || echo no); rc ${RC}; out: $(sa_tail "${RB}") -- the allowlist without its last line let the ROMs into the saves sync (F-CS-05)"
+sa_run "${RB}" cloud_restore --yes --saves-only
+[ ! -e "${RB}/storage/roms/gb/B.gb" ] && [ "${RC}" -ne 0 ] && sa_outcome "${RB}" | grep -q "^Couldn't finish"; check $? "cloud_restore with the same file brings nothing down and ends Couldn't finish (rc ${RC})" "B.gb on the device: $([ -e "${RB}/storage/roms/gb/B.gb" ] && echo YES || echo no); rc ${RC}; out: $(sa_tail "${RB}")"
+printf -- '+ /**/*.srm\n+ /savefiles/**\n- /**\n' > "${RB}/storage/.config/cloud_sync-rules.txt"
+rm -rf "${RB}/cloud/ROCKNIX/Saves" "${RB}/cloud/ROCKNIX/Saves-replaced"; mkdir -p "${RB}/cloud/ROCKNIX/Saves"
+sa_run "${RB}" cloud_backup --yes --saves-only
+[ -e "${RB}/cloud/ROCKNIX/Saves/gb/A.srm" ] && [ ! -e "${RB}/cloud/ROCKNIX/Saves/gb/A.gb" ] && [ "${RC}" -eq 0 ]; check $? "with the catch-all in place the same backup sends the save and not the ROM (rc ${RC})" "A.srm $([ -e "${RB}/cloud/ROCKNIX/Saves/gb/A.srm" ] && echo sent || echo missing), A.gb $([ -e "${RB}/cloud/ROCKNIX/Saves/gb/A.gb" ] && echo SENT || echo not sent); rc ${RC}; out: $(sa_tail "${RB}")"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

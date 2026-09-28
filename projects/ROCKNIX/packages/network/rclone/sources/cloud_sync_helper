@@ -24,6 +24,16 @@ log_to_file() {
   echo "[${timestamp}] [${level}] [${script_name}] ${message}" >> ${log_file}
 }
 
+# Is this rules file whole? The allowlist's last rule is the catch-all
+# "- /**", written last, so a file cut anywhere lacks it -- and without it
+# the allowlist admits everything under the saves folder, the ROMs
+# included. The line itself, whole: "- /**/*.db" starts the same way and
+# stands near the top of every rules file (audit #308, claude F-CS-06; the
+# test was an unanchored '^- /\*\*', which it matched).
+rules_whole() {
+  [ -s "$1" ] && grep -qx -- '- /\*\*' "$1"
+}
+
 # Merges default rules with user-customized rules
 # 
 # This function preserves user customizations while adding new default rules.
@@ -48,7 +58,7 @@ update_cloud_sync_rules() {
     # whatever was there put a truncated file over the last good copy on
     # the very next run (D-CLOUD-078, #105). Written beside the copy and
     # renamed, so the copy itself is never half-written either.
-    if grep -q '^- /\*\*' "${rules}"; then
+    if rules_whole "${rules}"; then
       cp -f "${rules}" "${rules}.bak.tmp" && mv -f "${rules}.bak.tmp" "${rules}.bak"
     else
       rm -f "${rules}.bak.tmp"
@@ -87,8 +97,15 @@ update_cloud_sync_rules() {
     # mv was a copy and an unlink -- a truncate-then-write of the live rules
     # file, with the catch-all (written last) the first line to be missing
     # from a cut copy (D-CLOUD-078, #105). Same directory, so it is a rename.
-    : > "${rules}.new"
-    if [ -s /tmp/cloud_sync-rules.user ]; then
+    #
+    # And only a whole candidate replaces it (audit #307 PL-020). Every write
+    # below is checked, and the candidate must carry the catch-all before
+    # the rename: a card that fills while the defaults are being appended
+    # used to leave a candidate cut before "- /**", and the unconditional
+    # rename made that the live allowlist -- one that admits the ROMs.
+    local built=0
+    : > "${rules}.new" && built=1
+    if [ "${built}" = 1 ] && [ -s /tmp/cloud_sync-rules.user ]; then
       {
         echo "# ----------------------------------------------------------------"
         echo "# Your own rules, kept across updates."
@@ -98,19 +115,30 @@ update_cloud_sync_rules() {
         cat /tmp/cloud_sync-rules.user
         echo
         echo "# ----------------------------- defaults -------------------------"
-      } >> "${rules}.new"
+      } >> "${rules}.new" || built=0
     fi
-    cat /usr/config/cloud_sync-rules.txt.defaults >> "${rules}.new"
+    [ "${built}" = 1 ] && { cat /usr/config/cloud_sync-rules.txt.defaults >> "${rules}.new" || built=0; }
+    rm -f /tmp/cloud_sync-rules.user
+    if [ "${built}" != 1 ] || ! rules_whole "${rules}.new"; then
+      rm -f "${rules}.new"
+      log_to_file "${log_file}" "the merged rules file was not whole (a write failed before its catch-all line); it was not installed and the rules file was left as it was" "WARN"
+      return 1
+    fi
 
     # Replace the user's file with the merged version -- one rename.
     mv -f "${rules}.new" "${rules}"
-    rm -f /tmp/cloud_sync-rules.user
     
     log_to_file "${log_file}" "Updated cloud_sync-rules.txt with new defaults while preserving custom rules"
   else
     # No existing rules file, just copy the defaults
     log_to_file "${log_file}" "No existing rules file, copying defaults"
-    cp -f /usr/config/cloud_sync-rules.txt.defaults "${rules}.new" && mv -f "${rules}.new" "${rules}"
+    if cp -f /usr/config/cloud_sync-rules.txt.defaults "${rules}.new" && rules_whole "${rules}.new"; then
+      mv -f "${rules}.new" "${rules}"
+    else
+      rm -f "${rules}.new"
+      log_to_file "${log_file}" "the default rules file could not be copied whole; no rules file was installed" "WARN"
+      return 1
+    fi
   fi
   
   return 0

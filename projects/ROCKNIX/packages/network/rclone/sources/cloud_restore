@@ -939,6 +939,14 @@ network_lost_during_run() {
     clean_exit "${EXIT_NO_NETWORK}"
 }
 
+# Is this saves allowlist whole? Its last rule is the catch-all "- /**",
+# and a file cut before it admits everything under the saves folder. The
+# line itself, whole: "- /**/*.db" starts the same way (audit #307 PL-020,
+# the same test cloud_sync_helper makes before it installs a rules file).
+rules_whole() {
+    [ -s "$1" ] && grep -qx -- '- /\*\*' "$1"
+}
+
 # Is this a cloud_sync.conf that can be run with? bash -n, and the file's own
 # shape: every line blank, a comment, KEY=value with its double quotes
 # balanced, or the continuation of a value whose previous line ended in a
@@ -1435,6 +1443,30 @@ restore_game_saves() {
     if [ "${has_filter}" = 0 ]; then
         all_opts+=("--filter-from" "/storage/.config/cloud_sync-rules.txt")
         log_message "RCLONEOPTS carried no --filter-from; the saves allowlist was added (#71)" "false" "WARN"
+    fi
+    # And the allowlist is whole (audit #307 PL-020): its last rule, the
+    # catch-all "- /**", is what keeps everything the rules do not name --
+    # the ROMs, the BIOS, the artwork -- out of the saves restore. A file cut
+    # before that line admits all of it, so a rules file without the line,
+    # whole and alone on it, is refused rather than run with. The helper no
+    # longer installs such a file; this is for one it did not write.
+    local rules_file="" next_is_rules=0 rules_bad=""
+    for opt in "${all_opts[@]}"; do
+        if [ "${next_is_rules}" = 1 ]; then
+            next_is_rules=0
+            rules_whole "${opt}" || rules_bad="${opt}"
+            continue
+        fi
+        case "${opt}" in
+            --filter-from|--filters-file) next_is_rules=1 ;;
+            --filter-from=*|--filters-file=*) rules_file="${opt#*=}"; rules_whole "${rules_file}" || rules_bad="${rules_file}" ;;
+        esac
+    done
+    if [ -n "${rules_bad}" ]; then
+        log_message "the rules file ${rules_bad} has no catch-all line (- /**); refusing the saves restore" "false" "ERROR"
+        log_message "The list of what to sync is damaged, so nothing was restored. Try again." "true" "ERROR"
+        say_why "YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"
+        return 1
     fi
     # Add debug logging if enabled
     if [ -n "$rclone_debug" ]; then
