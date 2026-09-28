@@ -249,3 +249,25 @@ fa9af93285 raofflineproxy: a badge the image server lacks is absent, not a failu
 - Before: `FAIL  #308 claude F-RA-17: rc 2; usage: Usage: raofflineproxy-ctl {enable|...|pending-ids|account|flushed|scan|...}`
 - After: `PASS  #308 claude F-RA-17: the usage line names summary with the other verbs`
 - Already written: nothing.
+
+## Follow-up 2 (the coordinator's second message, 2026-09-28)
+
+One commit on `feature/pl-d`, on top of `66370fab6b`. The new pre-commit hook ran and passed.
+
+```
+156c2acffa raofflineproxy: no discarded store walk, a docstring, an executable helper
+```
+
+**Suite:** `tools/last-good-scripts-test` at `156c2acffa` ends `PASSED` with 472 PASS lines and 0 FAIL. The cases were written first; against the scripts at `66370fab6b` they gave `3 CHECK(S) FAILED`, all in the new case D21.
+
+**claude F-RA-17 is now fixed in full.** Its other parts went in earlier: the header and summary's exit code in `8bd2fddcae`, the usage line in `66370fab6b`. This commit fixes the last three, each with its own check in D21:
+
+| Part | Before (FAIL) | After (PASS) |
+| --- | --- | --- |
+| The image helper re-read the whole store before `--verify` and threw the result away. That read is removed. | `FAIL  #308 claude F-RA-17: FAIL walks: --verify walked the store's missing images 2 time(s), rc 0` | `PASS  #308 claude F-RA-17: --verify walks the store once, not once more to throw away` |
+| The image helper's `-h` printed a fallback usage without `--verify`, because the file had no docstring. It now has one, naming both flags and the exit codes. | `FAIL  #308 claude F-RA-17: FAIL help: usage: raofflineproxy-cache-images [--seconds N]` | `PASS  #308 claude F-RA-17: cache-images -h names --seconds and --verify (a docstring of its own)` |
+| `raofflineproxy-cache-indexed` was mode 100644 while its three siblings under `sources/` are 100755. Fixed with `git update-index --chmod=+x` plus `chmod 0755` in the worktree. The install step (`chmod 0755` in `package.mk`) was already right. | `FAIL  #308 claude F-RA-17: modes: raofflineproxy-ctl=100755 raofflineproxy-cache-indexed=100644 raofflineproxy-cache-images=100755 raofflineproxy-refresh=100755` | `PASS  #308 claude F-RA-17: the four scripts under sources/ are mode 100755 in the tree` |
+
+The mode check reads the git index, or `BASE_REF`'s tree under `--old`, so it also runs when section t is skipped.
+
+**Already written:** nothing on a device.
