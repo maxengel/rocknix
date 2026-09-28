@@ -4291,4 +4291,30 @@ rmdir "${C5ID}.previous"
 WK="${CS}/webkitgtk.mk"; src_of packages/web/webkitgtk/package.mk "${WK}"
 grep -q -- '-DENABLE_MINIBROWSER=OFF' "${WK}" && ! grep -q -- '-DENABLE_MINIBROWSER=ON' "${WK}"; check $? "the webkitgtk recipe builds no MiniBrowser (-DENABLE_MINIBROWSER=OFF)" "the webkitgtk recipe has $(grep -o -- '-DENABLE_MINIBROWSER=[A-Z]*' "${WK}") -- a general-purpose browser ships in the image (#308 claude F-RS-04)"
 
+# Each of webkitgtk's patches says what it fixes before its first hunk --
+# 0001 was a bare hunk (#308 claude F-RS-26) -- and every one still applies
+# to the pinned release, dry, as scripts/unpack applies it: `patch` reads
+# the prose before the first --- as a comment. The release's tarball comes
+# from the sources cache; without it the dry run is skipped and says so.
+WKP="${ROOT}/packages/web/webkitgtk/patches"
+for wp in "${WKP}"/*.patch; do
+    [ -n "$(sed -n '/^--- /q; /[^[:space:]]/p' "${wp}")" ]; check $? "$(basename "${wp}") says what it fixes before its first hunk" "$(basename "${wp}") is a bare hunk: nothing says which build error it fixes, or why it is carried (#308 claude F-RS-26)"
+done
+WKV="$(sed -n 's/^PKG_VERSION="\(.*\)"$/\1/p' "${ROOT}/packages/web/webkitgtk/package.mk" | head -1)"
+WKT=""
+for d in "${SOURCES_DIR:-}" /workspace/cache/rocknix-sources "${ROOT}/sources" "${ROOT}"/../*/sources; do
+    [ -n "${d}" ] && [ -f "${d}/webkitgtk/webkitgtk-${WKV}.tar.xz" ] && { WKT="${d}/webkitgtk/webkitgtk-${WKV}.tar.xz"; break; }
+done
+if [ -z "${WKT}" ]; then
+    echo "    SKIP  webkitgtk-${WKV}.tar.xz is not under SOURCES_DIR, /workspace/cache/rocknix-sources or a build worktree's sources/ -- the patches' dry run needs the release they apply to"
+else
+    WKD="${CS}/wk"; mkdir -p "${WKD}"
+    wkfiles=$(sed -n 's|^+++ b/\([^[:space:]]*\).*|webkitgtk-'"${WKV}"'/\1|p' "${WKP}"/*.patch | sort -u)
+    # shellcheck disable=SC2086
+    tar -xJf "${WKT}" -C "${WKD}" ${wkfiles} 2>/dev/null
+    for wp in "${WKP}"/*.patch; do
+        patch -d "${WKD}/webkitgtk-${WKV}" -p1 --dry-run < "${wp}" > "${WKD}/out" 2>&1; check $? "$(basename "${wp}") applies to webkitgtk ${WKV}" "$(basename "${wp}") does not apply to ${WKV}: $(tail -2 "${WKD}/out" | tr '\n' ' ')"
+    done
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
