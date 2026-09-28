@@ -3942,4 +3942,24 @@ sa_run "${SC}" cloud_content_restore --scan
 sc_bad=$(awk -F'|' '($1 == "dc" || $1 == "scummvm" || $1 == "bios") && ($5 != 0 || $6 != 0) { print $1 ":" $5 "/" $6 }' "${SC}/out" | tr '\n' ' ')
 [ -z "${sc_bad}" ] && grep -q '^dc|' "${SC}/out" && grep -q '^bios|' "${SC}/out"; check $? "and --scan reads dc, scummvm and bios as matching their cloud copies (0 and 0 differing files)" "scan disagrees (system:cloud-only/here-only): ${sc_bad} -- the cloud-side count and the transfer describe different sets (F-CS-30); lines: $(grep -E '^(dc|scummvm|bios)\|' "${SC}/out" | tr '\n' ' ')"
 
+# A27. #308 claude F-CS-15 (the coordinator's row, from the ES stream's
+#      reading): a content backup that finds nothing on this device to send
+#      -- the picked systems hold nothing here, or the device holds no ROMs
+#      or BIOS at all -- has nothing to do, which is a run that completed:
+#      exit 0, the sentence, and the stamp reading completed. It exited 1,
+#      and the page read COULDN'T FINISH - SOMETHING WENT WRONG.
+echo "    A27. #308 claude F-CS-15: a content backup with nothing to send completes"
+NB=$(sa_new ccs15); sa_script "${NB}" cloud_content_backup
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/ROCKNIX/Content"\n' > "${NB}/storage/.config/cloud_sync.conf"
+mkdir -p "${NB}/storage/.config/emulationstation" "${NB}/storage/roms/gba"
+printf '<system><path>/storage/roms/gba</path></system>\n' > "${NB}/storage/.config/emulationstation/es_systems.cfg"
+echo "only a save" > "${NB}/storage/roms/gba/Game.srm"
+printf 'gba\n' > "${NB}/storage/.cache/cloud_sync/content-systems"
+for nb_cmd in "--selected" "--all"; do
+    rm -f "${NB}/storage/.cache/cloud_sync/last-content-backup"
+    sa_run "${NB}" cloud_content_backup ${nb_cmd}
+    nb_stamp=$(awk '{print $2}' "${NB}/storage/.cache/cloud_sync/last-content-backup" 2>/dev/null)
+    [ "${RC}" -eq 0 ] && [ "${nb_stamp}" = 0 ] && grep -qi '^Nothing to back up' "${NB}/out" && ! grep -q '^>>> why' "${NB}/out"; check $? "cloud_content_backup ${nb_cmd} with nothing here to send exits 0, says so, and stamps completed (rc ${RC}, stamp ${nb_stamp:-none})" "rc ${RC}, stamp '${nb_stamp:-none}'; out: $(sa_tail "${NB}") -- a run with nothing to do read as COULDN'T FINISH"
+done
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

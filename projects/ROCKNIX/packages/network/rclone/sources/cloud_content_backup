@@ -417,9 +417,14 @@ case "${1}" in
             && ! printf '%s\n' "${DIRS[@]}" | grep -qx bios; then
             DIRS+=("bios")
         fi
+        # Nothing here to send is nothing to do -- a run that completed, not
+        # one that failed (#308 claude F-CS-15): it exited 1, and the page
+        # read COULDN'T FINISH - SOMETHING WENT WRONG. Exit 0, the sentence,
+        # and the stamp saying the last press completed.
         if [ ${#DIRS[@]} -eq 0 ]; then
             echo "Nothing to back up: none of the systems you picked have anything on this device."
-            exit 1
+            record_outcome content-backup 0
+            exit 0
         fi
     ;;
     --list)
@@ -439,8 +444,9 @@ case "${1}" in
     --all)
         mapfile -t DIRS < <(list_local_dirs)
         if [ ${#DIRS[@]} -eq 0 ]; then
-            echo "There are no ROMs or BIOS files on this device to back up."
-            exit 1
+            echo "Nothing to back up: there are no ROMs or BIOS files on this device."
+            record_outcome content-backup 0
+            exit 0
         fi
     ;;
     "")
