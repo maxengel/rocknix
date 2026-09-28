@@ -3991,4 +3991,101 @@ else
     echo "    SKIP  #308 F-RA-07's case: section t did not run"
 fi
 
+# D19. Follow-up to #307 PL-060 (the coordinator, 2026-09-28): a badge the
+# RetroAchievements image server does not have -- 404 or 410, a permanent
+# "not there" -- is recorded as absent, is not asked for again, and does not
+# fail the run; a transient failure (a timeout, a 5xx, a refused connection,
+# a short read) still fails it with SOME_IMAGES_NOT_SAVED and is tried again
+# next time. download_static_image says which, and logs the URL's outcome
+# class with the HTTP status, where it used to swallow the reason (patch
+# 016). First on the patched client; then a scan through the ctl with the
+# real image helper beside it and the image server answered from a plan
+# (/run/image-plan, read by a hook in section t's sitecustomize).
+if [ "${DT_OK}" -eq 1 ]; then
+RAOFFLINEPROXY_CONFIG_DIR="${DD}/d19-cfg" PYTHONPATH="${CLIENT}" python3 - > "${DD}/d19.out" 2>&1 <<'EOS'
+import io, logging, os, struct, urllib.error, zlib
+from pathlib import Path
+Path(os.environ["RAOFFLINEPROXY_CONFIG_DIR"]).mkdir(parents=True, exist_ok=True)
+from raofflineproxy import image_cache
+def _chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+PNG = b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)) + _chunk(b"IDAT", zlib.compress(b"\x00\xff\x00\x00")) + _chunk(b"IEND", b"")
+log = io.StringIO(); handler = logging.StreamHandler(log)
+logger = logging.getLogger("raofflineproxy"); logger.addHandler(handler); logger.setLevel(logging.INFO)
+def answer(kind):
+    def fetch(url, headers, timeout=10.0, _redirects=3):
+        if kind.isdigit():
+            raise urllib.error.HTTPError(url, int(kind), "status", {}, None)
+        if kind == "timeout":
+            raise TimeoutError("timed out")
+        return ({"Content-Length": str(len(PNG))}, PNG)
+    return fetch
+got = {}
+saved = image_cache.fetch_static_asset
+try:
+    for kind in ("404", "410", "503", "timeout", "ok"):
+        image_cache.fetch_static_asset = answer(kind)
+        got[kind] = image_cache.download_static_image(f"https://media.retroachievements.org/Badge/d19-{kind}.png", f"/Badge/d19-{kind}.png", "ua")
+finally:
+    image_cache.fetch_static_asset = saved
+text = log.getvalue()
+ok = got == {"404": "absent", "410": "absent", "503": "transient", "timeout": "transient", "ok": "cached"}
+print(("PASS" if ok else "FAIL") + f" outcome: {got}")
+ok = all(s in text for s in ("absent", "HTTP 404", "HTTP 410", "HTTP 503", "https://media.retroachievements.org/Badge/d19-404.png", "transient"))
+print(("PASS" if ok else "FAIL") + " logged: " + " | ".join(l for l in text.splitlines() if "d19-" in l)[:400])
+EOS
+grep -q '^PASS outcome:' "${DD}/d19.out"; check $? "PL-060 follow-up, patch 016: download_static_image says what became of an image -- 404 and 410 absent, a 503 and a timeout transient, a whole PNG cached" "PL-060 follow-up, patch 016: $(grep 'outcome:' "${DD}/d19.out" || tail -3 "${DD}/d19.out" | tr '\n' '|') -- the reason was swallowed"
+grep -q '^PASS logged:' "${DD}/d19.out"; check $? "PL-060 follow-up, patch 016: the outcome class, the HTTP status and the URL are logged" "PL-060 follow-up, patch 016: $(grep 'logged:' "${DD}/d19.out" | cut -c1-300 || echo 'no verdict')"
+# Through the ctl: the real helper beside it, the image server a plan.
+src_of "projects/ROCKNIX/packages/network/raofflineproxy/sources/raofflineproxy-cache-images" "${T}/repo/raofflineproxy-cache-images"; chmod +x "${T}/repo/raofflineproxy-cache-images"
+grep -q 'image-plan' "${T}/pypath/sitecustomize.py" || cat >> "${T}/pypath/sitecustomize.py" <<'EOS'
+if os.path.exists("/run/image-plan"):
+    import json as _json, struct as _struct, urllib.error as _ue, zlib as _zlib
+    import raofflineproxy.auth as _auth
+    import raofflineproxy.image_cache as _ic
+    _auth.resolve_credentials = lambda *a, **k: {"user": "qa", "token": "t"}
+    def _chunk(t, d): return _struct.pack(">I", len(d)) + t + d + _struct.pack(">I", _zlib.crc32(t + d) & 0xFFFFFFFF)
+    _PNG = b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", _struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)) + _chunk(b"IDAT", _zlib.compress(b"\x00\xff\x00\x00")) + _chunk(b"IEND", b"")
+    def _fetch(url, headers, timeout=10.0, _redirects=3):
+        path = "/" + url.split("://", 1)[-1].split("/", 1)[-1]
+        with open("/run/image-fetches", "a") as f:
+            f.write(path + "\n")
+        what = _json.load(open("/run/image-plan")).get(path, "ok")
+        if what.isdigit():
+            raise _ue.HTTPError(url, int(what), "status", {}, None)
+        if what == "timeout":
+            raise TimeoutError("timed out")
+        return ({"Content-Length": str(len(_PNG))}, _PNG)
+    _ic.fetch_static_asset = _fetch
+EOS
+printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+treset; PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
+import json
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+badges = [{"ID": 9300 + i, "Flags": 3, "BadgeURL": f"https://media.retroachievements.org/Badge/{9300 + i}.png"} for i in (1, 2, 3, 4)]
+s.upsert_cache(cache_keys.patch(102, "qa"), json.dumps({"Success": True, "PatchData": {"ID": 102, "Achievements": badges}}), source_rom_path="/nes/b.nes")
+s.close()
+EOS
+DSTATIC="${TPD}/image_cache/static/Badge"
+# 9301 404, 9303 410, 9302 and 9304 served.
+echo '{"/Badge/9301.png": "404", "/Badge/9303.png": "410"}' > "${TR}/image-plan"; : > "${TR}/image-fetches"
+tctl scan
+[ "${RC}" -eq 0 ] && ! grep -q '>>> why' "${OUT}" && [ -s "${DSTATIC}/9302.png" ] && [ ! -e "${DSTATIC}/9301.png" ]; check $? "PL-060 follow-up: a scan whose image server answers 404 and 410 for two badges completes (rc 0, no why) -- they are absent, not a failure of the run" "PL-060 follow-up: rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-200); stamp: $(cat "${TSTAMP}" 2>/dev/null) -- a badge the server does not have failed the scan"
+: > "${TR}/image-fetches"
+tctl scan
+[ "${RC}" -eq 0 ] && ! grep -qx '/Badge/9301.png' "${TR}/image-fetches" && ! grep -qx '/Badge/9303.png' "${TR}/image-fetches"; check $? "PL-060 follow-up: the next scan does not ask for the absent badges again (rc ${RC})" "PL-060 follow-up: rc ${RC}; requested: $(tr '\n' ' ' < "${TR}/image-fetches") -- an absent badge was asked for at every pass"
+# A timeout and a 503: a failure of the run, not recorded as absent, asked again.
+rm -f "${DSTATIC}/9302.png" "${DSTATIC}/9304.png"
+echo '{"/Badge/9301.png": "404", "/Badge/9302.png": "timeout", "/Badge/9303.png": "410", "/Badge/9304.png": "503"}' > "${TR}/image-plan"; : > "${TR}/image-fetches"
+tctl scan
+[ "${RC}" -eq 1 ] && grep -qx '>>> why SOME_IMAGES_NOT_SAVED' "${OUT}" && grep -q ' 1 scan .*why=SOME_IMAGES_NOT_SAVED$' "${TSTAMP}"; check $? "PL-060 follow-up: a badge that timed out and one the server answered 503 end the scan COULDN'T FINISH (rc 1, why SOME_IMAGES_NOT_SAVED)" "PL-060 follow-up: rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-200)"
+: > "${TR}/image-fetches"; echo '{"/Badge/9301.png": "404", "/Badge/9303.png": "410"}' > "${TR}/image-plan"
+tctl scan
+[ "${RC}" -eq 0 ] && grep -qx '/Badge/9302.png' "${TR}/image-fetches" && grep -qx '/Badge/9304.png' "${TR}/image-fetches" && [ -s "${DSTATIC}/9302.png" ] && [ -s "${DSTATIC}/9304.png" ]; check $? "PL-060 follow-up: the next scan asks for the timed-out and the 503 badges again, and with the server answering, completes" "PL-060 follow-up: rc ${RC}; requested: $(tr '\n' ' ' < "${TR}/image-fetches")"
+rm -f "${TR}/image-plan" "${TR}/image-fetches"; dfake_images
+else
+    echo "    SKIP  the PL-060 follow-up's cases: section t did not run"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
