@@ -10391,7 +10391,11 @@ EOF
 # a rotated one, beside lines that must come through byte for byte. The
 # functions file is 001-functions' redact_credentials lifted as section r
 # lifts it, or a file without it. The planted values are built here, never
-# written as literals (the hooks' rule for scanner fixtures).
+# written as literals (the hooks' rule for scanner fixtures). The same
+# folder holds the interface's es_log*.txt, which carried cloud_remote's
+# whole output at the Info level (ES cf09fc2f8 to 731252c61): a
+# "cloud_remote create: <output>" record and the raw lines of a multi-line
+# output after it, up to the next timestamped record.
 CF3="${CF}/3"; mkdir -p "${CF3}/repo" "${CF3}/fn"
 [ -e "${CF}/src/cloud_log_scrub" ] && cp "${CF}/src/cloud_log_scrub" "${CF3}/repo/"
 sed -n '/^function redact_credentials() {/,/^}/p' "${FN}" > "${CF3}/fn/with"
@@ -10443,12 +10447,34 @@ cf3_plant() { # the log as an earlier build left it, and CF3/want as the scrub m
     printf '%s1] [INFO] [cloud_remote] rclone config create qa sftp host=<redacted> pass=<redacted> key_file_pass=<redacted>' "${r}" > "${CF3}/want/cloud_sync.log.1"
     # Not the cloud log: left alone.
     printf 'boot line pass=%s\n' "$(cfv pw 81)" > "${CFL}/boot.log"; cp "${CFL}/boot.log" "${CF3}/want/boot.log"
+    # The interface's logs, as ES writes a record: "%F %T<TAB>[tid]<TAB>LEVEL<TAB>".
+    rm -rf "${CF3}/want_es"; mkdir -p "${CF3}/want_es"
+    local e="2026-09-20 10:00:0" t="$(printf '\t')"
+    {
+        printf '%s0%s[4242]%sINFO%scloud_remote create: Failed to create remote: bad option pass=%s\n' "${e}" "${t}" "${t}" "${t}" "$(cfv pw 83)"
+        printf 'Failed to load: key=%s account=%s\n' "$(cfv b2key 84)" "$(cfv acct 85)"
+        printf '%s1%s[4242]%sINFO%scloud_remote create: OK=qa\n' "${e}" "${t}" "${t}" "${t}"
+        printf '%s2%s[4242]%sINFO%sGuiMenu: cloud setup page opened, 3 rows\n' "${e}" "${t}" "${t}" "${t}"
+        printf '%s3%s[4242]%sINFO%sScraper pass 2 of 3 done\n' "${e}" "${t}" "${t}" "${t}"
+    } > "${CFL}/es_log.txt"
+    {
+        printf '%s0%s[4242]%sINFO%scloud_remote create: <redacted>\n' "${e}" "${t}" "${t}" "${t}"
+        printf '<redacted>\n'
+        printf '%s1%s[4242]%sINFO%scloud_remote create: OK=qa\n' "${e}" "${t}" "${t}" "${t}"
+        printf '%s2%s[4242]%sINFO%sGuiMenu: cloud setup page opened, 3 rows\n' "${e}" "${t}" "${t}" "${t}"
+        printf '%s3%s[4242]%sINFO%sScraper pass 2 of 3 done\n' "${e}" "${t}" "${t}" "${t}"
+    } > "${CF3}/want_es/es_log.txt"
+    # A rotation from the day before, ending mid-line.
+    printf '2026-09-19 09:00:00%s[17]%sINFO%scloud_remote create: Failed to create file system: secret_access_key=%s rejected\n2026-09-19 09:00:02%s[17]%sINFO%sLaunching Mario' "${t}" "${t}" "${t}" "$(cfv sak 86)" "${t}" "${t}" "${t}" > "${CFL}/es_log.0.txt"
+    printf '2026-09-19 09:00:00%s[17]%sINFO%scloud_remote create: <redacted>\n2026-09-19 09:00:02%s[17]%sINFO%sLaunching Mario' "${t}" "${t}" "${t}" "${t}" "${t}" "${t}" > "${CF3}/want_es/es_log.0.txt"
 }
+cf3_left_es() { cat "${CFL}"/es_log*.txt 2>/dev/null | grep -o "${CFP}[a-z0-9]*" | sort -u | tr '\n' ' '; }
+cf3_same_es() { local f bad=""; for f in "${CF3}"/want_es/*; do cmp -s "${f}" "${CFL}/${f##*/}" || bad="${bad}${f##*/} "; done; printf '%s' "${bad}"; }
 cf3_left() { cat "${CFL}"/cloud_sync.log* 2>/dev/null | grep -o "${CFP}[a-z0-9]*" | sort -u | tr '\n' ' '; }
 cf3_same() { # every file under the log folder is what CF3/want says
     local f bad=""
     for f in "${CF3}"/want/*; do cmp -s "${f}" "${CFL}/${f##*/}" || bad="${bad}${f##*/} "; done
-    [ "$(ls -A "${CFL}" | sort | tr '\n' ' ')" = "$(ls -A "${CF3}/want" | sort | tr '\n' ' ')" ] || bad="${bad}[the folder holds: $(ls -A "${CFL}" | tr '\n' ' ')]"
+    [ "$(ls -A "${CFL}" | sort | tr '\n' ' ')" = "$( { ls -A "${CF3}/want"; ls -A "${CF3}/want_es"; } | sort | tr '\n' ' ')" ] || bad="${bad}[the folder holds: $(ls -A "${CFL}" | tr '\n' ' ')]"
     printf '%s' "${bad}"
 }
 CFSTAMP="${CF3}/storage/.cache/cloud_sync/log-scrubbed"
@@ -10456,11 +10482,25 @@ cf3_plant; cf3 "${CF3}/fn/with"
 cf_bad=$(cf3_same)
 [ "${RC}" -eq 0 ] && [ -z "$(cf3_left)" ]; check $? "PL-014: the scrub leaves no planted credential in cloud_sync.log, its trim leftover or its rotation (rc ${RC})" "PL-014: rc ${RC}; still in the cloud log: $(cf3_left); said: $(tr '\n' ' ' < "${CF3}/out" | cut -c1-160)"
 [ -z "${cf_bad}" ]; check $? "PL-014: an old cloud_remote line now reads as this build writes it (rclone config create failed (1)), rclone's words after cloud_oauth's are <redacted>, every other line is byte for byte as it was, and boot.log is untouched" "PL-014: files not as they should be: ${cf_bad:-none} -- $(diff "${CF3}/want/cloud_sync.log" "${CFL}/cloud_sync.log" 2>&1 | grep '^[<>]' | head -4 | cut -c1-140 | tr '\n' '|')"
-grep -qE '^scrubbed=[0-9]+ files=3 lines=[0-9]+$' "${CFSTAMP}" 2>/dev/null; check $? "PL-014: the stamp under /storage/.cache records it: $(cat "${CFSTAMP}" 2>/dev/null)" "PL-014: stamp: '$(cat "${CFSTAMP}" 2>/dev/null)' -- nothing records that the scrub ran"
+grep -qE '^scrubbed=[0-9]+ files=3 lines=[0-9]+$' "${CFSTAMP}" 2>/dev/null; check $? "PL-014: the stamp under /storage/.cache records it: $(head -1 "${CFSTAMP}" 2>/dev/null)" "PL-014: stamp: '$(cat "${CFSTAMP}" 2>/dev/null)' -- nothing records that the scrub ran"
+cf_bad=$(cf3_same_es)
+[ -z "$(cf3_left_es)" ] && [ -z "${cf_bad}" ]; check $? "PL-014 (the interface's log): a planted cloud_remote create: record in es_log.txt and in a rotation reads cloud_remote create: <redacted>, the raw lines of its output after it <redacted>, OK=qa and every other record byte for byte, a line count unchanged" "PL-014 (the interface's log): still in es_log*.txt: $(cf3_left_es); files not as they should be: ${cf_bad:-none} -- $(diff "${CF3}/want_es/es_log.txt" "${CFL}/es_log.txt" 2>&1 | grep '^[<>]' | head -3 | cut -c1-140 | tr '\n' '|')"
+grep -qE '^es_log_scrubbed=[0-9]+ files=2 lines=3$' "${CFSTAMP}" 2>/dev/null; check $? "PL-014 (the interface's log): the stamp records the interface's logs on a line of their own: $(grep '^es_log' "${CFSTAMP}" 2>/dev/null)" "PL-014 (the interface's log): stamp: '$(tr '\n' '|' < "${CFSTAMP}" 2>/dev/null)' -- no record of the interface's logs"
 printf '[2026-09-21 09:00:00] [INFO] [cloud_remote] rclone config create qa webdav pass=%s failed (1): x\n' "$(cfv pw 82)" >> "${CFL}/cloud_sync.log"
 cp "${CFL}/cloud_sync.log" "${CF3}/after-first"
 cf3 "${CF3}/fn/with"
 [ "${RC}" -eq 0 ] && cmp -s "${CFL}/cloud_sync.log" "${CF3}/after-first"; check $? "PL-014: once: with the stamp there, a second run reads nothing and writes nothing" "PL-014: second run rc ${RC}; the log changed: $(diff "${CF3}/after-first" "${CFL}/cloud_sync.log" 2>&1 | head -3 | tr '\n' '|')"
+printf '2026-09-21 09:00:00\t[9]\tINFO\tcloud_remote create: bad option pass=%s\n' "$(cfv pw 87)" >> "${CFL}/es_log.txt"
+cp "${CFL}/es_log.txt" "${CF3}/after-first-es"
+cf3 "${CF3}/fn/with"
+[ "${RC}" -eq 0 ] && cmp -s "${CFL}/es_log.txt" "${CF3}/after-first-es"; check $? "PL-014 (the interface's log; a control -- the scrub before it never read them): once, for the interface's logs too" "PL-014 (the interface's log): a third run rc ${RC} changed es_log.txt: $(diff "${CF3}/after-first-es" "${CFL}/es_log.txt" 2>&1 | head -3 | tr '\n' '|')"
+# A device that ran the scrub before it covered the interface's logs has the
+# cloud log's line alone in the stamp: its es_log files are scrubbed, and the
+# cloud log, already done, is not read again.
+cf3_plant; mkdir -p "${CFSTAMP%/*}"; printf 'scrubbed=1790000000 files=3 lines=6\n' > "${CFSTAMP}"
+cf3 "${CF3}/fn/with"
+cf_bad=$(cf3_same_es)
+[ "${RC}" -eq 0 ] && [ -z "${cf_bad}" ] && [ "$(cf3_left | wc -w)" -eq 10 ] && [ "$(head -1 "${CFSTAMP}")" = "scrubbed=1790000000 files=3 lines=6" ] && grep -qE '^es_log_scrubbed=[0-9]+ files=2 lines=3$' "${CFSTAMP}"; check $? "PL-014 (the interface's log): a device whose stamp has only the cloud log's line gets its es_log files scrubbed, the cloud log not read again, and the second line added" "PL-014 (the interface's log): first-version stamp: rc ${RC}; es files not as they should be: ${cf_bad:-none}; planted values left in cloud_sync.log*: $(cf3_left | wc -w) of 10; stamp: '$(tr '\n' '|' < "${CFSTAMP}" 2>/dev/null)'"
 cf3_plant; cf3 "${CF3}/fn/without"
 cf_bad=$(cf3_same)
 [ "${RC}" -ne 0 ] && [ ! -e "${CFSTAMP}" ] && [ -n "${cf_bad}" ] && cmp -s "${CFL}/boot.log" "${CF3}/want/boot.log" && [ "$(cf3_left | wc -w)" -eq 10 ]; check $? "PL-014 (a control, the fix's own guard): without its credential filter it fails closed -- nothing rewritten, no stamp, so the next boot tries again (rc ${RC})" "PL-014: filter missing: rc ${RC}; stamp: $([ -e "${CFSTAMP}" ] && echo written || echo none); left: $(cf3_left)"
