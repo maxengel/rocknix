@@ -3656,4 +3656,9 @@ p7dt=$(( $(date +%s) - p7t0 ))
 [ "$(p7red 'root.password=&example-value')" = "root.password=<redacted>" ] && [ "$(p7red 'x.password=&y=QAKEY9')" = "x.password=<redacted>" ] && [ "$(p7red 'token=;semi')" = "token=<redacted>" ]; check $? "#307 PL-040: root.password=&example-value, x.password=&y=QAKEY9 and token=;semi are redacted whole" "#307 PL-040: '$(p7red 'root.password=&example-value')' / '$(p7red 'x.password=&y=QAKEY9')' / '$(p7red 'token=;semi')' -- the value class admitted no leading & or ;"
 [ "$(p7red "devpassword=$(printf 'abc123')&softname=es")" = "devpassword=<redacted>&softname=es" ]; check $? "#307 PL-040: and a value still ends at the & that starts the next parameter (devpassword=<redacted>&softname=es)" "#307 PL-040: '$(p7red "devpassword=$(printf 'abc123')&softname=es")'"
 
+# == #308 10-packages-and-build claude F-PB-18: Pass= is a credential; a line about a disk is not a reason to fork
+[ "$(p7red 'ScreenScraperPass=hunter2')" = "ScreenScraperPass=<redacted>" ] && [ "$(p7red 'RA_Pass = hunter2')" = "RA_Pass = <redacted>" ]; check $? "#308 10-packages-and-build claude F-PB-18: ScreenScraperPass=hunter2 and RA_Pass = hunter2 are redacted" "#308 F-PB-18: '$(p7red 'ScreenScraperPass=hunter2')' / '$(p7red 'RA_Pass = hunter2')'"
+p7forks=$(PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7F}/redact.sh'; sed() { echo fork >> '${P7F}/forks'; command sed \"\$@\"; }; : > '${P7F}/forks'; redact_credentials 'disk-full on /storage' >/dev/null; redact_credentials 'task-manager started' >/dev/null; wc -l < '${P7F}/forks'")
+[ "${p7forks}" -eq 0 ]; check $? "#308 10-packages-and-build claude F-PB-18: 'disk-full' and 'task-manager' lines take the fast path (no sed)" "#308 F-PB-18: ${p7forks} sed fork(s) for two lines with no credential in them -- the unanchored sk- matched inside 'disk-'"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

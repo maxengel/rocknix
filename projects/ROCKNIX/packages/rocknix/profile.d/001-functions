@@ -45,13 +45,16 @@ function log() {
 # parameters on a line about RetroAchievements (or from its proxy), after
 # ?, & or a space -- a log line pastes them bare as often as it joins them
 # (#186 PL-29); the pre-push guard's fixed
-# token formats (devpassword=, &y=, AKIA, ghp_, github_pat_, xox., sk-, a
+# token formats (devpassword=, &y=, AKIA, ghp_, github_pat_, xox., sk- at a
+# word's start -- "disk-" and "task-" are not keys, and forked a sed for
+# nothing (#308 claude F-PB-18) -- a
 # private-key block); setrootpass <value>; the password in a URL's
 # user:password@. An empty value is left empty: whether a credential is set
 # may be shown, only what it is may not. An unquoted value runs to the next
 # space, quote, & or ; -- so a URL's next parameter survives -- and may
 # itself START with & or ; (root.password=&x): the class that stops at them
-# consumed nothing there and the whole value was kept (#307 PL-040). The word list is deliberately wide
+# consumed nothing there and the whole value was kept (#307 PL-040). The
+# word list is deliberately wide
 # (a value under a key merely named like a credential is hidden too): a
 # hidden setting in a debug log costs a question, a shown password costs an
 # account.
@@ -61,12 +64,12 @@ function log() {
 # in verbose mode and a fork for each would be felt on a handheld.
 function redact_credentials() {
   local words='passw|token|api_?key|secret|psk|wifi\.key|retroachievements\.key'
-  local marks='(^|[?&[:space:]])[pty]=|AKIA|gh[pousr]_|github_pat_|xox[baprs]-|sk-|PRIVATE KEY|setrootpass|://[^/[:space:]@]+:[^/[:space:]@]+@'
+  local marks='(^|[?&[:space:]])[pty]=|AKIA|gh[pousr]_|github_pat_|xox[baprs]-|(^|[^A-Za-z0-9])sk-|PRIVATE KEY|setrootpass|://[^/[:space:]@]+:[^/[:space:]@]+@'
   if [ $# -gt 0 ]; then
     local line="$*" nocase=0
     shopt -q nocasematch && nocase=1
     shopt -s nocasematch
-    if [[ "${line}" =~ (${words}|${marks}) ]]; then
+    if [[ "${line}" =~ (${words}|pass|${marks}) ]]; then
       [ "${nocase}" -eq 1 ] || shopt -u nocasematch
       printf '%s\n' "${line}" | redact_credentials
     else
@@ -75,7 +78,11 @@ function redact_credentials() {
     fi
     return
   fi
-  local key="[A-Za-z0-9_.-]*(${words})[A-Za-z0-9_.-]*"
+  # A key naming a credential word anywhere, or ENDING in "pass"
+  # (ScreenScraperPass, RA_Pass, rclone's pass): passw alone missed the
+  # batocera-style ...Pass spellings (#308 claude F-PB-18). "pass" only at
+  # the key's end, so "passed:" in a log line is not a key.
+  local key="([A-Za-z0-9_.-]*(${words})[A-Za-z0-9_.-]*|[A-Za-z0-9_.-]*pass)"
   sed -E \
     -e "s/(^|[^A-Za-z0-9_.-])(${key}\"?[[:space:]]*[=:][[:space:]]*)\"[^\"]+\"/\1\2\"<redacted>\"/Ig" \
     -e "s/(^|[^A-Za-z0-9_.-])(${key}\"?[[:space:]]*[=:][[:space:]]*)'[^']+'/\1\2'<redacted>'/Ig" \
