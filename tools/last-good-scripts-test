@@ -3617,6 +3617,13 @@ p7bt backup
 rm -f "${P7}/shim/sed"
 [ "${RC}" -ne 0 ] && ! grep -vE '^logger |^>>> ' "${P7OUT}" | grep -q '^sed:'; check $? "#307 audit G-B-16 (gpt): a sanitiser's own error goes to the log, not the screen" "#307 audit G-B-16: the screen shows: $(grep -vE '^logger |^>>> ' "${P7OUT}" | grep '^sed:' | head -1)"
 
+# == AUD claude G-B-09 (#307 audit of the fixes): a file the archive holds is restored from it, whatever a seed list says
+p7reset '  /storage/.config/test/*'
+echo "device copy" > "${P7S}/.config/test/seed"
+p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/seed=ARCHIVE COPY" "storage/.config/.backuptool-seeds=test/seed"
+p7bt restore --no-restart
+[ "${RC}" -eq 0 ] && [ "$(cat "${P7S}/.config/test/seed")" = "ARCHIVE COPY" ]; check $? "#307 audit G-B-09 (claude): an archive holding test/seed and a stale seed list naming it restores the archive's copy" "#307 audit G-B-09: rc ${RC}; test/seed='$(cat "${P7S}/.config/test/seed")' -- the seed list overwrote the archive's own file"
+
 # y2. wifictl whole, against an nmcli that answers as the target's does
 # (probed on guest d for the psk, 2026-09-27): terse and get-values output
 # escapes ':' and '\' unless --escape no; two wireless devices, each profile

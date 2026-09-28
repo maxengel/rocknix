@@ -1250,6 +1250,12 @@ case "${VERB}" in
             esac | while IFS= read -r REL
             do
                 case "${REL}" in ''|/*|*..*) continue ;; esac
+                # A file the archive holds itself is restored from the
+                # archive: a new backup never lists one it carries, so a list
+                # that names one is stale -- an older image extracted a list
+                # and later archived it (#307, the audit of the fixes, claude
+                # G-B-09).
+                grep -qxF "storage/.config/${REL}" "${MEMBERS}" && continue
                 case "/storage/.config/${REL}" in
                     /storage/.config/ppsspp/assets/*|/storage/.config/ppsspp/PSP/SYSTEM/CACHE/*) continue ;;
                 esac
