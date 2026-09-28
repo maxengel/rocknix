@@ -4130,6 +4130,33 @@ def teardown_is_not_a_failure():
            "the serve's own teardown, killing rclone, is not recorded as a failed sign-in",
            "after holder.end() the state reads %r -- the teardown woke the collector into writing a failure (G-C-02 claude)" % st)
 EOPY
+# G-C-06 (gpt): with no route, the loopback address it advertises, not all.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+@test
+def no_route_listens_on_loopback_only():
+    """G-C-06 (gpt seat): lan_address answers 127.0.0.1 when there is no
+    route; the serve listened on every interface in that case."""
+    d = serve_dir("gc06")
+    serve = drive(d, "serve", "dropbox", "--port", "8436", "--timeout", "60", lan="127.0.0.1", wait=False)
+    up = wait_for(lambda: state_of(d).get("status") == "waiting", 15)
+
+    def reach(addr):
+        try:
+            socket.create_connection((addr, 8436), timeout=2).close()
+            return True
+        except OSError:
+            return False
+    here, other = reach("127.0.0.1"), reach("127.0.0.2")
+    drive(d, "cancel")
+    wait_for(lambda: serve.poll() is not None, 5)
+    if serve.poll() is None:
+        serve.kill()
+    for p in procs_with("rclone authorize"):
+        os.kill(p, signal.SIGKILL)
+    result(up and here and not other,
+           "with no route the serve listens on the loopback address it advertises and nowhere else",
+           "no route (127.0.0.1 advertised): reachable there %r, on 127.0.0.2 %r -- the fallback bound 0.0.0.0 (G-C-06 gpt)" % (here, other))
+EOPY
 # C3: new test groups go above this line
 cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
 if MODE == "drive":

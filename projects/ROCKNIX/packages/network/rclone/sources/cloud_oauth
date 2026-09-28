@@ -2178,9 +2178,12 @@ def serve_with(holder, backend, port, timeout):
     # proxy, which listens on 127.0.0.1:8080 -- a wildcard bind cannot share
     # a port with a socket on a specific address, so with offline
     # achievements on, every sign-in ended in EADDRINUSE. 127.0.0.1 is
-    # lan_address's answer when there is no route, and the one case that
-    # keeps the wildcard.
-    listen = "0.0.0.0" if address == "127.0.0.1" else address
+    # lan_address's answer when there is no route, and it is bound as it is:
+    # the wildcard it used to keep for that case listened on every
+    # interface while advertising loopback, which no phone can reach anyway
+    # (the audit of stream C, G-C-06). With no route there is no provider to
+    # sign in to either.
+    listen = address
     # A port something else holds used to end the serve with a traceback and
     # the status left at "starting", rclone's authorize still running, and
     # the interface waiting on a sign-in that could never be reached (audit
