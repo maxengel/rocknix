@@ -1202,6 +1202,38 @@ echo "${saw:-0}/${all:-0}"
 
     dev.run(f"rm -rf {shlex.quote(croot)}")
 
+    # --all is the journey's first restore (main.cpp's first-device prompt).
+    # It restored ROMs/ as one unit and never BIOS, and said "Restored
+    # everything." (audit #307 PL-012). Every system the cloud holds and
+    # BIOS, each a unit of its own. The BIOS file is the harness's own, by
+    # a name nobody's BIOS folder carries, and it is removed afterwards; the
+    # endpoint is reset first, so the cloud holds only the fixture.
+    step("--all restores every system and BIOS, each a unit of its own")
+    backend("reset")
+    bios_name = f"qa-bios-{os.getpid()}.bin"
+    bios_body = b"qa bios, the ROMs and BIOS tier owns this"
+    bstage = subprocess.run(["mktemp", "-d"], capture_output=True, text=True).stdout.strip()
+    open(os.path.join(bstage, bios_name), "wb").write(bios_body)
+    backend("put", os.path.join(stage, CONTENT_DIR), f"{cpath}/ROMs/{CONTENT_DIR}")
+    backend("put", bstage, f"{cpath}/BIOS")
+    subprocess.run(["rm", "-rf", bstage])
+    bdest = f"/storage/roms/bios/{bios_name}"
+    dev.run(f"rm -rf {shlex.quote(croot)}; rm -f {shlex.quote(bdest)}")
+    rc, out = run_rc(dev, "cloud_content_restore --all")
+    ok, items, detail = unit_protocol(out)
+    failures += not check(rc == 0, "--all exited 0", f"--all exited {rc}: {out.strip()[-200:]!r}")
+    failures += not check(dev.sha(bdest) == sha(bios_body),
+                          "the BIOS file came down with --all",
+                          f"the BIOS file is not on the device after --all ({detail}) (#307 PL-012)")
+    aafter = {rel: dev.sha(f"{croot}/{rel}") for rel in CONTENT_FIXTURES}
+    failures += not check(all(aafter[r] and aafter[r] == cbefore[r] for r in CONTENT_FIXTURES),
+                          f"and {CONTENT_DIR}'s {len(CONTENT_FIXTURES)} files, byte-identical",
+                          f"{CONTENT_DIR} after --all: {sum(1 for r in CONTENT_FIXTURES if aafter[r] == cbefore[r])}/{len(CONTENT_FIXTURES)} matched")
+    failures += not check(ok and "bios" in items and CONTENT_DIR in items,
+                          f"each announced as a unit, numbered across the run ({detail})",
+                          f"the units do not name the system and BIOS, or do not add up (#95): {detail}")
+    dev.run(f"rm -rf {shlex.quote(croot)}; rm -f {shlex.quote(bdest)}")
+
     # --- tier boundaries ----------------------------------------------------
     # The regression test for blindspot 21. Content sync and the saves sync
     # both operate over /storage/roms; a save file living next to a ROM must

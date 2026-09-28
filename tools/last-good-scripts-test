@@ -3146,4 +3146,34 @@ sa_run "${M}" cloud_content_restore --match --apply
 sa_run "${M}" cloud_content_restore --match --apply
 [ "${RC}" -ne 0 ] && [ ! -e "${MPLAN}" ]; check $? "a plan is spent by the apply that used it: a second apply is refused (rc ${RC})" "second apply rc ${RC}; plan: $([ -e "${MPLAN}" ] && echo still there || echo gone)"
 
+# A2. PL-012 (#307, F-CS-02 claude = F-CS-13 gpt): --all -- the journey's
+#     first restore -- brings BIOS down with the systems, one unit each, so
+#     a system's scraper folders are excluded where --selected excludes them.
+echo "    A2. PL-012: --all restores every system and BIOS, each its own unit"
+AL=$(sa_new pl012); sa_script "${AL}" cloud_content_restore
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/ROCKNIX/Content"\n' > "${AL}/storage/.config/cloud_sync.conf"
+al_seed() {
+    rm -rf "${AL}/cloud"/* "${AL}/storage/roms"/*
+    mkdir -p "${AL}/cloud/ROCKNIX/Content/ROMs/gb" "${AL}/cloud/ROCKNIX/Content/ROMs/nes/images" "${AL}/cloud/ROCKNIX/Content/BIOS/psx" "${AL}/cloud/Photos"
+    echo a > "${AL}/cloud/ROCKNIX/Content/ROMs/gb/A.gb"; echo n > "${AL}/cloud/ROCKNIX/Content/ROMs/nes/N.nes"
+    echo png > "${AL}/cloud/ROCKNIX/Content/ROMs/nes/images/N.png"
+    echo bios > "${AL}/cloud/ROCKNIX/Content/BIOS/scph1001.bin"; echo sub > "${AL}/cloud/ROCKNIX/Content/BIOS/psx/sub.bin"
+    echo holiday > "${AL}/cloud/Photos/beach.jpg"
+    : > "${AL}/ctl/fail"; : > "${AL}/ctl/argv"
+}
+al_seed
+sa_run "${AL}" cloud_content_restore --all
+[ -f "${AL}/storage/roms/bios/scph1001.bin" ] && [ -f "${AL}/storage/roms/bios/psx/sub.bin" ]; check $? "--all brings BIOS down, subfolders and all (rc ${RC})" "bios on the device: $(cd "${AL}/storage/roms" 2>/dev/null && find bios -type f 2>/dev/null | tr '\n' ' ')(none?); out: $(sa_tail "${AL}") -- --all copied ROMs/ and never BIOS (F-CS-02)"
+[ -f "${AL}/storage/roms/gb/A.gb" ] && [ -f "${AL}/storage/roms/nes/N.nes" ] && [ "${RC}" -eq 0 ]; check $? "and every system the cloud holds, exit 0" "gb/A.gb $([ -f "${AL}/storage/roms/gb/A.gb" ] && echo here || echo missing), nes/N.nes $([ -f "${AL}/storage/roms/nes/N.nes" ] && echo here || echo missing); rc ${RC}"
+[ ! -e "${AL}/storage/roms/nes/images/N.png" ]; check $? "a system's scraper folder stays in the cloud under ROMs alone: the media exclude is anchored at the system, as for --selected" "nes/images/N.png was restored: /images/** was anchored at ROMs/, which --all used as its one transfer root (F-CS-13)"
+grep -q '^>>> unit bios|' "${AL}/out" && grep -q '^>>> unit gb|' "${AL}/out" && grep -q '^>>> unit nes|' "${AL}/out" && ! grep -q '^>>> unit everything' "${AL}/out"; check $? "each system and BIOS is announced as a unit of its own, as the journey page counts them" "units: $(grep '^>>> unit' "${AL}/out" | tr '\n' ' ')"
+[ ! -e "${AL}/storage/roms/Photos" ]; check $? "a folder beside the content folder (the owner's Photos) is not a system and is not restored" "Photos was restored into the ROMs folder"
+al_seed
+printf '^lsf( --dirs-only)? qa:/ROCKNIX/Content/ROMs/ |5\n' > "${AL}/ctl/fail"
+sa_run "${AL}" cloud_content_restore --all
+[ "${RC}" -ne 0 ] && [ -z "$(find "${AL}/storage/roms" -type f 2>/dev/null | head -1)" ] && grep -q '^>>> why ' "${AL}/out"; check $? "a ROMs listing that fails (5) restores nothing and ends non-zero with a why (rc ${RC})" "rc ${RC}; on the device: $(cd "${AL}/storage/roms" && find . -type f | head -3 | tr '\n' ' '); out: $(sa_tail "${AL}")"
+rm -rf "${AL}/cloud"/*; mkdir -p "${AL}/cloud/ROCKNIX/Content"; : > "${AL}/ctl/fail"
+sa_run "${AL}" cloud_content_restore --all
+[ "${RC}" -eq 0 ] && grep -qi "nothing to restore" "${AL}/out"; check $? "a cloud with no ROMs and no BIOS yet is nothing to restore, not a failure (rc ${RC})" "rc ${RC}; out: $(sa_tail "${AL}")"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
