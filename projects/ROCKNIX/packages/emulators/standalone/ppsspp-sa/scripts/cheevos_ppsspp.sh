@@ -66,6 +66,10 @@ fi
 # listeners that take the IPv4 connection to 127.0.0.1:8080 PPSSPP is
 # given. ::1 does not take it, and :: may be IPv6-only, which the table does
 # not say, so neither counts (audit of the fixes, gpt G-D-02, gpt G-F2-02).
+# That turns the proxy away never: its sockets are IPv4 (AF_INET in the
+# client's proxy_service.py and boot.py), and the scripts suite holds this
+# check and raofflineproxy-ctl's to the pinned client's own socket (audit of
+# the fix round, claude G2-D-01, PL-033).
 # 0 listening, 1 not, 2 when neither table could be read -- said apart in the
 # log, since "couldn't tell" is not "nothing there". RAOFFLINEPROXY_PROC_NET
 # stands in for /proc/net in the scripts suite, as it does for

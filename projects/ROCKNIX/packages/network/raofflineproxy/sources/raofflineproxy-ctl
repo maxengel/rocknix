@@ -202,12 +202,15 @@
 #   (CloudText::parseScanStamp, which passes over keys it does not know).
 #   `added` is how many games the run made ready for this account (fork
 #   #298), read from the store before and after -- a game is ready with the
-#   account's patch and unlocks rows -- rather than counted from the run's
-#   cache operations: a game the recently played pass (the client's
+#   account's unlocks row and an achievementsets row of the game (audit of
+#   the fixes, claude G-D-08) -- rather than counted from the run's cache
+#   operations: a game the recently played pass (the client's
 #   run-smart-cache, which takes only games not yet cached) caches for the
 #   first time is added, and a second dump of a game already ready is
 #   cached but not added (#308 F-RA-10, F-RA-15). The card says "added" of
-#   those and "ready" otherwise.
+#   those and "ready" otherwise. When the store could not be read before or
+#   after a run that cached games, added=unknown: a count nobody measured
+#   is never written as one (PL-031).
 #   `skipped` is the ROMs RetroAchievements does not know, which the client
 #   refuses one at a time and the scan counts rather than reports (the
 #   proxy's own docs skip them silently); `indexed` is how many of `cached`
@@ -904,8 +907,16 @@ do_ready() {
 # (1F90) in state LISTEN (0A) count -- the listeners that take the IPv4
 # connection to 127.0.0.1:8080 the emulators are given. ::1 does not take
 # it, and :: may be IPv6-only, which the table does not say, so neither
-# counts (audit of the fixes, gpt G-D-02). RAOFFLINEPROXY_PROC_NET stands in
-# for /proc/net (the scripts suite's fixture).
+# counts (audit of the fixes, gpt G-D-02). Leaving :: out turns the proxy
+# away never: its sockets are IPv4 -- proxy_service.py's ThreadingTCPServer
+# keeps socketserver.TCPServer's AF_INET (patched client, line 267), boot.py
+# makes and adopts AF_INET sockets (lines 32 and 58), and nothing here sets
+# proxy_host, whose default is 127.0.0.1 (config.py:367) -- and the scripts
+# suite runs the pinned client's run-service in a network namespace of its
+# own and holds this check to its socket, so a pin that moves to `::` fails
+# there first (audit of the fix round, claude G2-D-01, the blind pass's
+# S-26, PL-033). RAOFFLINEPROXY_PROC_NET stands in for /proc/net (the
+# scripts suite's fixture).
 port_listening() {
     local F SL LOCAL REM ST REST
     for F in "${RAOFFLINEPROXY_PROC_NET:-/proc/net}/tcp" "${RAOFFLINEPROXY_PROC_NET:-/proc/net}/tcp6"; do
@@ -946,11 +957,17 @@ do_listening() {
 # "already cached" (list_jobs whole_games) is the same rule (audit of the
 # fixes, claude G-D-08, gpt G-D-04). A sets row's GameId is read from the
 # first 512 characters, where the service writes it, and from the whole body
-# only when it is not there, so the store's bodies are not parsed whole at
-# every run. added= is how many ids a run adds to this set -- the games that
-# became ready for this player (fork #298's "games new to the store"),
-# counted from the store rather than from the run's cache operations (#308
-# F-RA-10, F-RA-15). Exit non-zero when the store cannot be read.
+# only when they do not hold it, so the store's bodies are not parsed whole
+# at every run. The head answers only with the body's own key -- not a
+# nested set's (Sets[].GameId) -- and a number that ends inside it -- not
+# one the cut ends in ("GameId":15 of 153); anything less is the whole
+# body's parse, so the two ways of reading a row cannot disagree (audit of
+# the fix round, gpt G2-D-01, claude G2-D-08). head_game_id is the same text
+# in list_jobs' whole_games. added= is how many ids a run adds to this set
+# -- the games that became ready for this player (fork #298's "games new to
+# the store"), counted from the store rather than from the run's cache
+# operations (#308 F-RA-10, F-RA-15). Exit non-zero when the store cannot
+# be read.
 ready_games_into() {
     : > "$1" || return 1
     [ -e "${QUEUE}" ] || return 0
@@ -958,7 +975,32 @@ ready_games_into() {
 import json, re, sqlite3, sys
 store, user = sys.argv[1], sys.argv[2].strip().lower()
 db = sqlite3.connect("file:%s?mode=ro" % store, uri=True, timeout=1.0)
-game = re.compile(r"\"GameId\"\s*:\s*(\d+)")
+HEAD_VALUE = re.compile(r"\s*:\s*(\d+)\s*[,}]")
+HEAD_COLON = re.compile(r"\s*:")
+def head_game_id(head):
+    depth, i, n = 0, 0, len(head)
+    while i < n:
+        c = head[i]
+        if c == "\"":
+            j = i + 1
+            while j < n and head[j] != "\"":
+                j += 2 if head[j] == "\\" else 1
+            if j >= n:
+                return None
+            if depth == 1 and head[i + 1:j] == "GameId":
+                whole = HEAD_VALUE.match(head, j + 1)
+                if whole:
+                    return int(whole.group(1))
+                if HEAD_COLON.match(head, j + 1):
+                    return None
+            i = j + 1
+            continue
+        if c in "{[":
+            depth += 1
+        elif c in "}]":
+            depth -= 1
+        i += 1
+    return None
 unlocks, sets = set(), set()
 for key, head in db.execute("SELECT cacheKey, substr(responseBody, 1, 512) FROM api_cache WHERE cacheKey LIKE ? OR cacheKey LIKE ?", ("unlocks:%", "achievementsets:%")).fetchall():
     parts = key.split(":")
@@ -968,15 +1010,13 @@ for key, head in db.execute("SELECT cacheKey, substr(responseBody, 1, 512) FROM 
         continue
     if len(parts) != 3 or parts[2] != user:
         continue
-    found = game.search(head or "")
-    if found:
-        sets.add(int(found.group(1)))
-        continue
-    try:
-        body = db.execute("SELECT responseBody FROM api_cache WHERE cacheKey = ?", (key,)).fetchone()[0]
-        gid = int((json.loads(body) or {}).get("GameId") or 0)
-    except Exception:
-        gid = 0
+    gid = head_game_id(head or "")
+    if gid is None:
+        try:
+            body = db.execute("SELECT responseBody FROM api_cache WHERE cacheKey = ?", (key,)).fetchone()[0]
+            gid = int((json.loads(body) or {}).get("GameId") or 0)
+        except Exception:
+            gid = 0
     if gid > 0:
         sets.add(gid)
 for g in sorted(unlocks & sets):
@@ -985,8 +1025,9 @@ for g in sorted(unlocks & sets):
 }
 
 # How many games a run made ready: the ids in the after file ($2) that the
-# before file ($1) does not hold. Prints nothing when either could not be
-# read, and the caller keeps its own count.
+# before file ($1) does not hold. Prints nothing and fails when either could
+# not be read; the caller says so through added_count, and never puts a
+# count of its own in this one's place.
 games_made_ready() {
     [ -n "${1}" ] && [ -n "${2}" ] && [ -e "${1}" ] && [ -e "${2}" ] || return 1
     local NEWIDS RC N=0
@@ -1001,6 +1042,24 @@ games_made_ready() {
     echo "${N}"
 }
 
+# added= as the stamp and the log say it: the measured count ($1) when there
+# is one; 0 when the run cached nothing ($2), since a run that cached
+# nothing made nothing ready; otherwise the word unknown. Never the run's
+# cache operations: they count a second dump of a game already ready, and
+# the top-up card says MORE GAMES ARE READY from this number (audit of the
+# fix round, gpt G2-D-02, the blind pass's S-24, PL-031). The interface's
+# reader (CloudText::parseScanStamp) passes over a value that is not a
+# number, as for a stamp that does not say.
+added_count() { # <measured count, or empty> <cached>
+    if [ -n "${1}" ]; then
+        echo "${1}"
+    elif [ "${2:-0}" -gt 0 ] 2>/dev/null; then
+        echo unknown
+    else
+        echo 0
+    fi
+}
+
 # "<epoch> <rc> <route> cached=<n> skipped=<m> ready=<total> limit=<0|1>
 # indexed=<i> errors=<e> added=<k> [why=<TOKEN>]", written whole or not at all (a
 # rename), so the page never reads half a line. The page reads the keys it
@@ -1008,11 +1067,12 @@ games_made_ready() {
 # and errors= are for the log and for whoever reads the file.
 write_stamp() {
     local RC="$1" ROUTE="$2" CACHED="$3" SKIPPED="$4" READY="$5" LIMIT="$6" INDEXED="${7:-0}" ERRORS="${8:-0}" WHY="${9:-}"
-    # added (fork #298): the games new to the store among CACHED -- the
-    # tenth argument where a run knows better than "all of them" (a top-up
-    # after its recently played pass); a run that gives none added every
-    # game it cached.
-    local ADDED="${10:-${CACHED}}"
+    # added (fork #298): the games this run made ready for the account, as
+    # measured -- the tenth argument; a run that gives none, or whose
+    # measurement failed, is said by added_count, never counted as every
+    # game it cached (PL-031).
+    local ADDED
+    ADDED="$(added_count "${10:-}" "${CACHED}")"
     # truncated=1 (#307 PL-059): the walk over unindexed folders stopped at
     # the cap, and the games past it are the next scan's. Written only when
     # it is 1; CloudText::parseScanStamp reads it.
@@ -1363,15 +1423,45 @@ def is_cached(game_id, hash_value):
 # rows an older client's eviction thinned) used to pass the ROM over for
 # ever; now it is a job again (#308 F-RA-14). The dump's own sets row cannot
 # be asked here -- an unindexed ROM's hash is what the job finds out.
+HEAD_VALUE = re.compile(r"\s*:\s*(\d+)\s*[,}]")
+HEAD_COLON = re.compile(r"\s*:")
+def head_game_id(head):
+    depth, i, n = 0, 0, len(head)
+    while i < n:
+        c = head[i]
+        if c == "\"":
+            j = i + 1
+            while j < n and head[j] != "\"":
+                j += 2 if head[j] == "\\" else 1
+            if j >= n:
+                return None
+            if depth == 1 and head[i + 1:j] == "GameId":
+                whole = HEAD_VALUE.match(head, j + 1)
+                if whole:
+                    return int(whole.group(1))
+                if HEAD_COLON.match(head, j + 1):
+                    return None
+            i = j + 1
+            continue
+        if c in "{[":
+            depth += 1
+        elif c in "}]":
+            depth -= 1
+        i += 1
+    return None
+
+
 def whole_games():
     """The games ready for this account -- the unlocks row and an
     achievementsets row of the game, the rows a launch reads -- by the same
     rule as the shell's ready_games_into (audit of the fixes, claude G-D-08,
     gpt G-D-04). A sets row's GameId is read from its first 512 characters,
-    where the service writes it, and from the whole body only when it is not
-    there: every body parsed whole at every listing was tens of megabytes
-    on a large store."""
-    game = re.compile(r'"GameId"\s*:\s*(\d+)')
+    where the service writes it, and from the whole body only when they do
+    not hold it: every body parsed whole at every listing was tens of
+    megabytes on a large store. The head answers only with the body's own
+    key and a number that ends inside it (head_game_id above, the same text
+    as in the shell's ready_games_into; audit of the fix round, gpt
+    G2-D-01, claude G2-D-08)."""
     unlocks, sets = set(), set()
     try:
         db = sqlite3.connect("file:%s?mode=ro" % DATABASE_FILE, uri=True, timeout=1.0)
@@ -1387,15 +1477,13 @@ def whole_games():
             continue
         if len(parts) != 3 or parts[2] != user:
             continue
-        found = game.search(head or "")
-        if found:
-            sets.add(int(found.group(1)))
-            continue
-        try:
-            body = db.execute("SELECT responseBody FROM api_cache WHERE cacheKey = ?", (key,)).fetchone()[0] if db is not None else head
-            gid = int((json.loads(body) or {}).get("GameId") or 0)
-        except Exception:
-            gid = 0
+        gid = head_game_id((head or "")[:512])
+        if gid is None:
+            try:
+                body = db.execute("SELECT responseBody FROM api_cache WHERE cacheKey = ?", (key,)).fetchone()[0] if db is not None else head
+                gid = int((json.loads(body) or {}).get("GameId") or 0)
+            except Exception:
+                gid = 0
         if gid > 0:
             sets.add(gid)
     if db is not None:
@@ -1694,12 +1782,18 @@ stopped() {
 # ready count is right -- the page is told why, and the run exits 130
 # through its EXIT trap (the helper ended, the run's files gone). R_CACHED
 # and the rest are the run's so far; before run_jobs they are unset, and
-# read as 0.
+# read as 0. added= is measured as the run's own end measures it -- the
+# ready set the run took before its jobs against the store now -- and is
+# unknown when either cannot be read, never the games cached so far
+# (PL-031).
 cancelled() {
-    local READY
+    local READY MADE=""
     READY="$(count_ready)"
+    if [ -n "${READY_BEFORE:-}" ] && READY_AFTER="$(mktemp /tmp/raofflineproxy-ready.XXXXXX 2>/dev/null)" && ready_games_into "${READY_AFTER}"; then
+        MADE="$(games_made_ready "${READY_BEFORE}" "${READY_AFTER}")"
+    fi
     tell "why CANCELLED"
-    write_stamp 130 "${1}" "${R_CACHED:-0}" "${R_SKIPPED:-0}" "${READY}" 0 "${R_INDEXED:-0}" "${R_ERRORS:-0}" CANCELLED
+    write_stamp 130 "${1}" "${R_CACHED:-0}" "${R_SKIPPED:-0}" "${READY}" 0 "${R_INDEXED:-0}" "${R_ERRORS:-0}" CANCELLED "${MADE}"
     slog "${1} cancelled by the player: cached=${R_CACHED:-0} skipped=${R_SKIPPED:-0} errors=${R_ERRORS:-0} ready=${READY}"
     say "${1}: cancelled"
     exit 130
@@ -1916,6 +2010,9 @@ do_scan() {
     local ADDED=""
     READY_AFTER="$(mktemp /tmp/raofflineproxy-ready.XXXXXX 2>/dev/null)" && ready_games_into "${READY_AFTER}" && ADDED="$(games_made_ready "${READY_BEFORE}" "${READY_AFTER}")"
     rm -f "${READY_BEFORE}" "${READY_AFTER}"; READY_BEFORE=""; READY_AFTER=""
+    # A measurement that failed is said as one (added_count, PL-031).
+    ADDED="$(added_count "${ADDED}" "${R_CACHED}")"
+    [ "${ADDED}" = "unknown" ] && slog "scan: the store could not be read before or after the jobs; how many games they made ready is not known (added=unknown)"
     local RC=0 WHY="${R_WHY}"
     if [ -n "${WHY}" ]; then
         RC=1
@@ -1996,9 +2093,51 @@ do_scan() {
 # an index writes while it runs (audit of the fixes, gpt G-D-03). Whole or
 # not at all. A marker an earlier build left is an empty file, and reads as
 # one token like any other.
+#
+# The marker has a lock of its own (audit of the fix round, gpt G2-D-03):
+# the top-up's token check and its removal are one step under it
+# (ack_index_pending), and a write takes it too, so an index's newer marker
+# cannot land between that check and that removal and go with the older
+# one. It is held for a read, a rename or an unlink, never across anything
+# that waits. Busybox flock has no -w: five tries a second apart. A lock
+# that cannot be had leaves the safe side -- the write goes ahead, since a
+# notification lost leaves the player's games uncached, and the removal
+# does not, since a marker kept costs one more listing.
+PENDING_LOCK="/var/run/raofflineproxy-index-pending.lock"
+pending_lock() {
+    local TRY=0
+    exec 6<>"${PENDING_LOCK}" 2>/dev/null || return 1
+    until flock -n 6; do
+        TRY=$((TRY + 1))
+        if [ "${TRY}" -ge 5 ]; then exec 6>&-; return 1; fi
+        sleep 1
+    done
+}
+
+pending_unlock() {
+    exec 6>&-
+}
+
 write_index_pending() {
+    local LOCKED=0 RC=0
+    if pending_lock; then LOCKED=1; else say "index-pending: its lock could not be had; written without it"; fi
     printf '%s %s %s\n' "$(date +%s)" "$$" "${RANDOM}" > "${INDEX_PENDING}.tmp" 2>/dev/null \
-        && mv -f "${INDEX_PENDING}.tmp" "${INDEX_PENDING}"
+        && mv -f "${INDEX_PENDING}.tmp" "${INDEX_PENDING}" || RC=1
+    [ "${LOCKED}" -eq 1 ] && pending_unlock
+    return "${RC}"
+}
+
+# ack_index_pending <token>: remove index-pending if it is still the marker
+# the caller's listing was made for. 0 removed, 1 kept (a newer marker), 2
+# kept because the lock could not be had.
+ack_index_pending() {
+    local RC=1
+    pending_lock || return 2
+    if [ "$(cat "${INDEX_PENDING}" 2>/dev/null)" = "${1}" ]; then
+        rm -f "${INDEX_PENDING}" && [ ! -e "${INDEX_PENDING}" ] && RC=0
+    fi
+    pending_unlock
+    return "${RC}"
 }
 
 do_index_offline() {
@@ -2094,7 +2233,7 @@ do_topup() {
     # cached -- the games added and indexed since the last run, and with a
     # library nobody scanned, as many as the deadline allows (the rest next
     # time). Nothing is hashed here.
-    local COUNTS LRC NEW=0 CACHED=0 SKIPPED=0 INDEXED=0 LIMIT=0 ERRORS=0 WHY="" LEFT ADDED=0 LISTED=0 LIST_WHY=""
+    local COUNTS LRC NEW=0 CACHED=0 SKIPPED=0 INDEXED=0 LIMIT=0 ERRORS=0 WHY="" LEFT ADDED="" LISTED=0 LIST_WHY=""
     local PENDING_SEEN=0 PENDING_TOKEN=""
     LEFT="$(time_left "${START}")"
     if [ "${LEFT}" -le 0 ]; then
@@ -2143,9 +2282,6 @@ do_topup() {
         else
             run_jobs quiet "${LIST}" "${NEW}" "${LEFT}"
             CACHED="${R_CACHED}"; SKIPPED="${R_SKIPPED}"; INDEXED="${R_INDEXED}"; LIMIT="${R_LIMIT}"; ERRORS="${R_ERRORS}"; WHY="${R_WHY}"
-            # The count the store's before-and-after replaces below, kept
-            # for when the store cannot be read (fork #298).
-            ADDED="${CACHED}"
             # A helper killed by the bound after its DONE finished its games
             # (fork #188: badge downloads kept it alive); only one cut before
             # DONE makes the run one that did not finish.
@@ -2163,13 +2299,16 @@ do_topup() {
     # The index's games are handled -- listed, and each cached or passed
     # over -- so whatever index-pending stood for is done; after-index runs
     # included, since their listing is the same (#307 PL-055).
+    # The check and the removal are one step under the marker's lock
+    # (ack_index_pending, gpt G2-D-03).
     if [ "${LISTED}" -eq 1 ] && [ -z "${WHY}" ] && [ -e "${INDEX_PENDING}" ]; then
-        if [ "${PENDING_SEEN}" -eq 1 ] && [ "$(cat "${INDEX_PENDING}" 2>/dev/null)" = "${PENDING_TOKEN}" ]; then
-            rm -f "${INDEX_PENDING}"
-            slog "topup: the pending index's listing and its games are handled; index-pending removed"
-        else
-            slog "topup: an index left index-pending while this run was at its jobs; kept for the next run"
-        fi
+        local ACK=1
+        [ "${PENDING_SEEN}" -eq 1 ] && { ack_index_pending "${PENDING_TOKEN}"; ACK=$?; }
+        case "${ACK}" in
+            0) slog "topup: the pending index's listing and its games are handled; index-pending removed" ;;
+            1) slog "topup: an index left index-pending while this run was at its jobs; kept for the next run" ;;
+            *) slog "topup: index-pending's lock could not be had; the marker is kept and the next run lists for it again" ;;
+        esac
     fi
 
     # Then the client's own recently-played pass for what the index missed
@@ -2215,10 +2354,13 @@ print(int(r.get("cached", 0)), int(r.get("skipped", 0)), 1 if r.get("limit_reach
     local READY MADE
     READY="$(count_ready)"
     # added=: the games the two passes made ready for this account, from the
-    # store before and after (#308 F-RA-10, F-RA-15); the indexed pass's own
-    # count when the store could not be read.
+    # store before and after (#308 F-RA-10, F-RA-15); unknown when the store
+    # could not be read, never the passes' cache operations in its place
+    # (added_count, PL-031).
     READY_AFTER="$(mktemp /tmp/raofflineproxy-ready.XXXXXX 2>/dev/null)" && ready_games_into "${READY_AFTER}" && MADE="$(games_made_ready "${READY_BEFORE}" "${READY_AFTER}")" && ADDED="${MADE}"
     rm -f "${READY_BEFORE}" "${READY_AFTER}"; READY_BEFORE=""; READY_AFTER=""
+    ADDED="$(added_count "${ADDED}" "${CACHED}")"
+    [ "${ADDED}" = "unknown" ] && slog "topup${AI_NOTE}: the store could not be read before or after the passes; how many games they made ready is not known (added=unknown)"
     slog "topup done: cached=${CACHED} added=${ADDED} indexed=${INDEXED} skipped=${SKIPPED} errors=${ERRORS} ready=${READY} limit=${LIMIT} took=$(( $(date +%s) - START ))s${WHY:+ why=${WHY}}"
 
     # The line under the row changes only when the top-up has something to

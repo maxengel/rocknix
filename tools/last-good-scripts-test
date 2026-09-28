@@ -11252,6 +11252,237 @@ cf_rm=$(printf '%s\n' "${cf_load}" | grep -n 'g_remove\|g_unlink' | head -1 | cu
 cf_pg=$(printf '%s\n' "${cf_load}" | grep -n 'g_file_set_contents(page_file' | head -1 | cut -d: -f1)
 [ -n "${cf_rm}" ] && [ -n "${cf_pg}" ] && [ "${cf_rm}" -lt "${cf_pg}" ] && printf '%s\n' "${cf_load}" | grep -q 'field_recorded = FALSE'; check $? "claude G2-C-01: every new page's load removes the record, and forgets it was made, before it writes the page's name" "claude G2-C-01: on_load_changed: the record's removal at line '${cf_rm}', the page file at '${cf_pg}'"
 
+
+# ---- audit #307, stream D ----
+# The milestone audit of the fix round (2026-09-28, docs/audits/
+# 2026_09_28-milestone-audit-of-the-fix-round), stream D's leads: G2-D-01
+# (claude), G2-D-01, G2-D-02 and G2-D-03 (gpt), and the blind pass's S-24 and
+# S-26 (PL-031, PL-033). Each case was seen to FAIL against the scripts
+# from before its fix except D36, a guard over the pinned client, whose
+# failure was constructed (its comment says how); to watch them fire again:
+#
+#     BASE_REF=f3d19dc8fb tools/last-good-scripts-test --old
+#
+# (f3d19dc8fb is next where this stream was cut.) The ctl's cases run in
+# section t's sandbox, as block D's do, and SKIP when the pinned client's
+# tarball is not on this machine.
+echo "  D (the fix round). stream D's leads of the audit of the fix round: G2-D-01 (claude), G2-D-01, G2-D-02 and G2-D-03 (gpt), S-24 and S-26 (PL-031, PL-033)"
+DF="${TMP}/stream-d-fix-round"; mkdir -p "${DF}"
+DF_OK=0
+if declare -F tctl >/dev/null && [ -n "${CLIENT:-}" ] && [ -d "${CLIENT}/raofflineproxy" ]; then DF_OK=1; fi
+src_of "${CTL_REL:-projects/ROCKNIX/packages/network/raofflineproxy/sources/raofflineproxy-ctl}" "${DF}/ctl"
+src_of "projects/ROCKNIX/packages/emulators/standalone/ppsspp-sa/scripts/cheevos_ppsspp.sh" "${DF}/cheevos_ppsspp.sh"
+
+# D33. gpt G2-D-01 (and claude G2-D-08, the same reader): a sets row's
+# GameId was taken from the first 512 characters by a regex, and any match
+# was believed. A number the cut ends inside -- "GameId":153 with the 3 at
+# character 513 -- read as game 15, and a nested set's GameId ahead of the
+# body's own (Sets[].GameId, a bonus set's id) read as the body's. Either
+# way the ready set named a game that is not ready and missed one that is:
+# added= and the walk's "already cached" were wrong together. The head now
+# answers only with the body's own key and a number that ends inside it;
+# anything else is the whole body's parse, as before. Both readers: the
+# shell's ready_games_into (lifted and run against a store the pinned
+# client's Storage wrote) and the walk's whole_games (a scan's jobs).
+if [ "${DF_OK}" -eq 1 ]; then
+mkdir -p "${DF}/d33/cfg"
+sed -n '/^ready_games_into() {/,/^}/p' "${DF}/ctl" > "${DF}/d33/rgi.sh"
+PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${DF}/d33/cfg" python3 - > "${DF}/d33/seed.out" 2>&1 <<'EOS'
+import json
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+straddle = '{"Title":"' + "T" * 489 + '","GameId":153,"Sets":[]}'
+assert straddle[:512].endswith('"GameId":15'), straddle[500:515]
+nested = json.dumps({"Success": True, "Sets": [{"GameId": 9160, "Title": "Bonus"}], "GameId": 160}, separators=(",", ":"))
+s.upsert_cache(cache_keys.achievementsets("d33a", "qa"), straddle)
+s.upsert_cache(cache_keys.achievementsets("d33b", "qa"), nested)
+for g in (153, 15, 160, 9160):
+    s.upsert_cache(cache_keys.unlocks(g, "qa"), '{"Success":true,"UserUnlocks":[]}')
+s.close()
+print("seeded")
+EOS
+bash -c ". '${DF}/d33/rgi.sh'; QUEUE='${DF}/d33/cfg/proxy.sqlite3'; USER_KEY=u; setting() { echo QA; }; ready_games_into '${DF}/d33/ready'" 2>"${DF}/d33/err"
+DRGI=$?; DREADY="$(tr '\n' ' ' < "${DF}/d33/ready" 2>/dev/null)"
+[ "${DRGI}" -eq 0 ] && [ "${DREADY}" = "153 160 " ]; check $? "gpt G2-D-01 / claude G2-D-08: ready_games_into reads 153 (its GameId cut at the 512th character) and 160 (a nested set's GameId first), and invents neither 15 nor 9160" "gpt G2-D-01 / claude G2-D-08: ready_games_into rc ${DRGI} read '${DREADY}' -- expected '153 160 '; seed: $(tr '\n' '|' < "${DF}/d33/seed.out" | cut -c1-120); err: $(tr '\n' '|' < "${DF}/d33/err" | cut -c1-160)"
+# The walk: four gb ROMs whose patch rows are this account's. 153 and 160
+# are whole (unlocks and a sets row of the game) and passed over; 15 and
+# 9160 have no sets row of their own and are jobs.
+printf 'GB k' > "${TS}/roms/gb/k.gb"; printf 'GB l' > "${TS}/roms/gb/l.gb"
+printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+treset; PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
+import json
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+straddle = '{"Title":"' + "T" * 489 + '","GameId":153,"Sets":[]}'
+nested = json.dumps({"Success": True, "Sets": [{"GameId": 9160, "Title": "Bonus"}], "GameId": 160}, separators=(",", ":"))
+for g, rom in ((153, "/gb/i.gb"), (15, "/gb/h.gb"), (160, "/gb/k.gb"), (9160, "/gb/l.gb")):
+    s.upsert_cache(cache_keys.patch(g, "qa"), '{"Success":true,"PatchData":{"ID":%d}}' % g, source_rom_path=rom)
+    s.upsert_cache(cache_keys.unlocks(g, "qa"), '{"Success":true,"UserUnlocks":[]}')
+s.upsert_cache(cache_keys.achievementsets("d33a", "qa"), straddle)
+s.upsert_cache(cache_keys.achievementsets("d33b", "qa"), nested)
+s.close()
+EOS
+: > "${TR}/helper-jobs.log"; dfake_images
+tctl scan
+DJOBS="$(grep -o '/storage/roms/gb/[a-z]*\.gb$' "${TR}/helper-jobs.log" | sort | tr '\n' ' ')"
+[ "${DJOBS}" = "/storage/roms/gb/h.gb /storage/roms/gb/l.gb " ]; check $? "gpt G2-D-01 / claude G2-D-08: the walk passes over i.gb (153) and k.gb (160) and lists h.gb (15) and l.gb (9160), which have no sets row of their own" "gpt G2-D-01 / claude G2-D-08: the walk's gb jobs were '${DJOBS}' (rc ${RC}) -- expected h.gb and l.gb; a head's partial or nested GameId made the wrong game whole"
+rm -f "${TS}/roms/gb/k.gb" "${TS}/roms/gb/l.gb"
+else
+skip "gpt G2-D-01 / claude G2-D-08: the ready readers need section t's pinned client"
+fi
+
+# D34. gpt G2-D-02 / the blind pass's S-24: when the store could not be read
+# before or after a run, games_made_ready failed as it should -- and its
+# callers put the run's cache operations in its place: the top-up kept
+# added=<cached>, the scan and the cancel's stamp fell to write_stamp's
+# default, which is the same number. A second dump of a game already ready
+# is cached and not added, so that number can be a game that was not "more";
+# the top-up card says N MORE GAMES ARE READY from it. added= is now the
+# measurement or the word unknown -- 0 only when the run cached nothing,
+# since a run that cached nothing made nothing ready. The read fails here
+# the way sqlite fails on a device (a locked store), on the call the case
+# names: 1 is the run's before, 2 its after.
+if [ "${DF_OK}" -eq 1 ]; then
+mv -f "${T}/shim/python3" "${T}/shim/python3.t"
+cat > "${T}/shim/python3" <<'EOS'
+#!/bin/sh
+if [ "$1" = "-c" ] && [ -s /run/ready-fail ]; then
+    case "$2" in *"unlocks & sets"*)
+        n=$(( $(cat /run/ready-calls 2>/dev/null || echo 0) + 1 )); echo "${n}" > /run/ready-calls
+        if grep -qx "${n}" /run/ready-fail; then echo "sqlite3.OperationalError: database is locked" >&2; exit 1; fi ;;
+    esac
+fi
+exec /shim/python3.t "$@"
+EOS
+chmod +x "${T}/shim/python3"
+printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+GLSIZE=$(stat -c %s "${TS}/roms/nes/gamelist.xml")
+d34_topup() { # <call that fails>: the D28 top-up -- game 201 already ready under another dump, indexed again
+    printf '<?xml version="1.0"?>\n<gameList parentHash="%s">\n  <game><path>./g.nes</path><name>G</name><cheevosHash>aaaa0201</cheevosHash><cheevosId>201</cheevosId></game>\n</gameList>\n' "${GLSIZE}" > "${TS}/.config/emulationstation/recovery/nes/g.xml"
+    treset; touch -d '2 hours ago' "${TMARK}"; PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+s.upsert_cache(cache_keys.achievementsets("feed0201", "qa"), '{"Success":true,"GameId":201,"Sets":[]}')
+s.upsert_cache(cache_keys.unlocks(201, "qa"), '{"Success":true,"UserUnlocks":[]}')
+s.close()
+EOS
+    echo "$1" > "${TR}/ready-fail"
+    tctl topup --after-index
+    rm -f "${TS}/.config/emulationstation/recovery/nes/g.xml" "${TR}/ready-fail" "${TR}/ready-calls"
+}
+d34_topup 1
+[ "${RC}" -eq 0 ] && grep -q ' 0 topup cached=3 .* added=unknown$' "${TSTAMP}"; check $? "gpt G2-D-02 / S-24: a top-up whose before-read of the store failed stamps added=unknown, not its three cache operations" "gpt G2-D-02 / S-24: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null) -- a failed measurement replaced by the cache count"
+d34_topup 2
+[ "${RC}" -eq 0 ] && grep -q ' 0 topup cached=3 .* added=unknown$' "${TSTAMP}" && grep -q 'topup done: cached=3 added=unknown' "${TLOG}"; check $? "gpt G2-D-02 / S-24: and one whose after-read failed says unknown too, in the stamp and the log" "gpt G2-D-02 / S-24: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null); log: $(grep 'topup done' "${TLOG}" | tail -n 1 | cut -c1-160)"
+# The scan: the fixture's four jobs cached, the before-read failed.
+treset; echo 1 > "${TR}/ready-fail"; dfake_images
+tctl scan
+[ "${RC}" -eq 0 ] && grep -q '^[0-9]* 0 scan cached=4 .* added=unknown$' "${TSTAMP}"; check $? "gpt G2-D-02 / S-24: a scan whose before-read failed stamps added=unknown, not write_stamp's default of its cached count" "gpt G2-D-02 / S-24: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null)"
+# The cancel's stamp is the scan's too: measured when the store answers
+# (the section t check that reads added=1 after a cancel), unknown when not.
+treset; printf 'ok\ncancel\nok\nok\n' > "${TR}/helper-plan"; echo 1 > "${TR}/ready-fail"
+tctl scan
+[ "${RC}" -eq 130 ] && grep -q '^[0-9]* 130 scan cached=1 .* added=unknown why=CANCELLED$' "${TSTAMP}"; check $? "gpt G2-D-02 / S-24: a cancelled scan whose before-read failed stamps added=unknown why=CANCELLED" "gpt G2-D-02 / S-24: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null)"
+# A run that cached nothing made nothing ready, read or not: 0, not unknown.
+treset; for _ in 1 2 3 4; do echo skip; done > "${TR}/helper-plan"; echo 1 > "${TR}/ready-fail"
+tctl scan
+[ "${RC}" -eq 0 ] && grep -q '^[0-9]* 0 scan cached=0 .* added=0$' "${TSTAMP}"; check $? "gpt G2-D-02 / S-24: a scan that cached nothing stamps added=0 whether or not the store could be read" "gpt G2-D-02 / S-24: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null)"
+rm -f "${TR}/ready-fail" "${TR}/ready-calls" "${TR}/helper-plan"
+mv -f "${T}/shim/python3.t" "${T}/shim/python3"
+else
+skip "gpt G2-D-02 / S-24: the ctl's runs need section t's pinned client"
+fi
+
+# D35. gpt G2-D-03: the top-up read index-pending, found the token its
+# listing was made for, and removed the file -- two operations. An index
+# that wrote its own marker between them (write, then rename over) had its
+# newer marker removed by the older run, and the games that index
+# identified offline waited for a listing nobody would ask for. The check
+# and the removal are now one step under the marker's own lock, which the
+# write takes too. The moment between them is made here: an rm shim, at the
+# removal of index-pending, starts `raofflineproxy-ctl index-offline` and
+# lets the removal go ahead once that write has landed or two seconds have
+# passed. The lock's wait is in real seconds, so the virtual clock's fast
+# sleep is off for the case.
+if [ "${DF_OK}" -eq 1 ]; then
+printf "${DCFG_ON}" > "${TCFG}"; TENV=(--setenv RAOFFLINEPROXY_HISTORY /storage/.config/retroarch/content_history.lpl)
+treset; rm -f "${TR}/fast-sleep"; touch -d '3 hours ago' "${THISTORY}"; touch -d '2 hours ago' "${TMARK}"
+tctl index-offline; DTOKA="$(cat "${TPD}/index-pending" 2>/dev/null)"
+cat > "${T}/shim/rm" <<'EOS'
+#!/bin/sh
+for a in "$@"; do
+    case "${a}" in */index-pending)
+        if [ ! -e /run/d35-writer.started ]; then
+            : > /run/d35-writer.started
+            ( bash /repo/raofflineproxy-ctl index-offline; echo $? > /run/d35-writer.rc ) >/dev/null 2>&1 &
+            i=0; while [ "${i}" -lt 20 ] && [ ! -e /run/d35-writer.rc ]; do /usr/bin/sleep 0.1; i=$((i + 1)); done
+        fi ;;
+    esac
+done
+exec /usr/bin/rm "$@"
+EOS
+chmod +x "${T}/shim/rm"
+tctl topup
+for _ in $(seq 1 100); do [ -e "${TR}/d35-writer.rc" ] && break; sleep 0.1; done
+rm -f "${T}/shim/rm"
+DTOKB="$(cat "${TPD}/index-pending" 2>/dev/null)"
+[ "${RC}" -eq 0 ] && [ -e "${TR}/d35-writer.started" ] && [ "$(cat "${TR}/d35-writer.rc" 2>/dev/null)" = "0" ] && [ -n "${DTOKA}" ] && [ -n "${DTOKB}" ] && [ "${DTOKB}" != "${DTOKA}" ]; check $? "gpt G2-D-03: an index that writes its marker between the top-up's token check and its removal keeps it -- the older run removed only its own" "gpt G2-D-03: top-up rc ${RC}; the writer $([ -e "${TR}/d35-writer.started" ] && echo "ran (rc $(cat "${TR}/d35-writer.rc" 2>/dev/null || echo none))" || echo "never ran: the removal was not reached"); marker: '${DTOKB:-gone}' (listed for '${DTOKA}') -- the newer notification was removed by the older run"
+grep -q 'index-pending removed' "${TLOG}"; check $? "gpt G2-D-03: and the top-up still says it removed the marker it listed for" "gpt G2-D-03: $(grep 'index-pending' "${TLOG}" | tail -n 2 | tr '\n' '|' | cut -c1-240)"
+rm -f "${TR}/d35-writer.started" "${TR}/d35-writer.rc"; touch "${TR}/fast-sleep"; TENV=()
+else
+skip "gpt G2-D-03: the ctl's runs need section t's pinned client"
+fi
+
+# D36. claude G2-D-01 / the blind pass's S-26: both listener checks (the
+# ctl's `listening`, the unit's ExecStartPost, and cheevos_ppsspp.sh's)
+# count 127.0.0.1, 0.0.0.0 and ::ffff:127.0.0.1 on 8080 and not `::`, whose
+# table line does not say whether it is dual-stack. That is right only if
+# the proxy never listens on `::`, and nothing showed it. The client's
+# sockets are IPv4: proxy_service's ThreadingTCPServer keeps socketserver's
+# address_family, AF_INET, and boot.py's prebind and adopt make AF_INET
+# sockets -- an AF_INET socket cannot bind `::`. This holds both readers to
+# the socket itself: the pinned, patched client's run-service -- the unit's
+# ExecStart, with the unit's environment -- runs in a network namespace of
+# its own (loopback alone, so nothing reaches RetroAchievements), and each
+# reader is asked of the real /proc/net inside it, as the unit asks, thirty
+# looks a second apart. A pin that moves the listener to a dual-stack `::`
+# fails here rather than at every boot. Constructed failure (2026-09-28):
+# the same run against a copy of the client whose ThreadingTCPServer has
+# address_family AF_INET6 and whose proxy_host is "::" -- every check below
+# FAILs, the one listener on tcp6.
+if [ "${DF_OK}" -eq 1 ] && bwrap --ro-bind / / --unshare-net true 2>/dev/null; then
+mkdir -p "${DF}/d36/cfg" "${DF}/d36/home"
+sed -n '/^port_listening() {/,/^}/p' "${DF}/ctl" > "${DF}/d36/readers.sh"
+sed -n '/^proxy_listening() {/,/^}/p' "${DF}/cheevos_ppsspp.sh" >> "${DF}/d36/readers.sh"
+cat > "${DF}/d36/run.sh" <<'EOS'
+#!/bin/bash
+D="$1"; cd /; unset RAOFFLINEPROXY_PROC_NET
+python3 -m raofflineproxy.main run-service > "${D}/service.out" 2>&1 &
+P=$!
+. "${D}/readers.sh"
+t=0; ctl=0; pp=0
+while [ "${t}" -lt 30 ]; do port_listening && { ctl=1; break; }; sleep 1; t=$((t + 1)); done
+proxy_listening && pp=1
+awk 'FNR > 1 && $4 == "0A" { n = split(FILENAME, f, "/"); print f[n], $2 }' /proc/net/tcp /proc/net/tcp6 > "${D}/listeners"
+kill -TERM "${P}" 2>/dev/null; wait "${P}" 2>/dev/null
+echo "ctl=${ctl} ppsspp=${pp} looks=$((t + 1))"
+EOS
+chmod +x "${DF}/d36/run.sh"
+timeout 120 bwrap --ro-bind / / --dev /dev --proc /proc --bind "${DF}/d36" "${DF}/d36" --unshare-net \
+    --setenv PYTHONPATH "${CLIENT}" --setenv RAOFFLINEPROXY_CONFIG_DIR "${DF}/d36/cfg" \
+    --setenv HOME "${DF}/d36/home" --setenv XDG_CONFIG_HOME "${DF}/d36/home/.config" --setenv MALLOC_ARENA_MAX 2 \
+    "${DF}/d36/run.sh" "${DF}/d36" > "${DF}/d36/out" 2>&1
+D36R="$(tail -n 1 "${DF}/d36/out")"; D36L="$(tr '\n' '|' < "${DF}/d36/listeners" 2>/dev/null)"
+case "${D36R}" in *"ctl=1 "*) true ;; *) false ;; esac; check $? "claude G2-D-01 / S-26: the pinned client's run-service, in a network namespace of its own, is listening where the ctl's listening check reads (${D36R}; ${D36L})" "claude G2-D-01 / S-26: the ctl's listening check never saw the proxy's own socket (${D36R:-no verdict}); listeners: ${D36L:-none}; service: $(tail -n 3 "${DF}/d36/service.out" 2>/dev/null | tr '\n' '|' | cut -c1-200)"
+case "${D36R}" in *"ppsspp=1 "*) true ;; *) false ;; esac; check $? "claude G2-D-01 / S-26: and cheevos_ppsspp.sh's reader agrees -- PPSSPP is routed to it" "claude G2-D-01 / S-26: cheevos_ppsspp.sh's reader did not see the proxy's socket (${D36R:-no verdict}); PPSSPP would launch direct"
+[ "$(grep -c '^tcp .*:1F90$' "${DF}/d36/listeners" 2>/dev/null)" -ge 1 ] && ! grep -q '^tcp6 .*:1F90$' "${DF}/d36/listeners"; check $? "claude G2-D-01 / S-26: the proxy listens on IPv4 alone -- no tcp6 line on 8080, so the readers' leaving out :: turns nothing away" "claude G2-D-01 / S-26: the proxy's listeners are '${D36L:-none}' -- a tcp6 listener on 8080 is one the readers may not count"
+else
+skip "claude G2-D-01 / S-26: the proxy's own socket needs section t's pinned client and a network namespace (bwrap --unshare-net)"
+fi
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
