@@ -3613,7 +3613,7 @@ fi
 # compatibility with a deprecation line in the journal).
 UNIT_REL=projects/ROCKNIX/packages/network/raofflineproxy/system.d/raofflineproxy.service
 src_of "${UNIT_REL}" "${DD}/raofflineproxy.service"
-awk '/^\[/{s=$0} s=="[Unit]" && /^StartLimitIntervalSec=60$/{a=1} s=="[Unit]" && /^StartLimitBurst=5$/{b=1} s=="[Service]" && /^StartLimit/{c=1} END{exit !(a && b && !c)}' "${DD}/raofflineproxy.service"; check $? "#308 claude F-RA-20 unit: StartLimitIntervalSec=60 and StartLimitBurst=5 in [Unit], nothing of the start limit in [Service]" "#308 claude F-RA-20 unit: $(grep -n 'StartLimit\|^\[' "${DD}/raofflineproxy.service" | tr '\n' '|')"
+awk '/^\[/{s=$0} s=="[Unit]" && /^StartLimitIntervalSec=[0-9]+$/{a=1} s=="[Unit]" && /^StartLimitBurst=5$/{b=1} s=="[Service]" && /^StartLimit/{c=1} END{exit !(a && b && !c)}' "${DD}/raofflineproxy.service"; check $? "#308 claude F-RA-20 unit: StartLimitIntervalSec and StartLimitBurst=5 in [Unit], nothing of the start limit in [Service] (the interval sized in D25)" "#308 claude F-RA-20 unit: $(grep -n 'StartLimit\|^\[' "${DD}/raofflineproxy.service" | tr '\n' '|')"
 
 # D12b. #308 1-raoffline gpt F-RA-26: the unit is started when the proxy is
 # listening, not when its process has forked. Type=simple made `systemctl
@@ -4242,5 +4242,14 @@ EOS
 grep -q '^PASS real:' "${DD}/d24.out"; check $? "claude G-D-04: against a real HTTP server and the real fetcher, 404, 410 and a 301 to a 404 are absent; a 503 and a refused connection transient; a whole PNG cached" "claude G-D-04: $(grep 'real:' "${DD}/d24.out" || tail -3 "${DD}/d24.out" | tr '\n' '|')"
 grep -q '^PASS there:' "${DD}/d24.out"; check $? "claude G-D-12: an image already in the cache returns cached" "claude G-D-12: $(grep 'there:' "${DD}/d24.out" || tail -3 "${DD}/d24.out" | tr '\n' '|')"
 fi
+
+# D25. claude G-D-05: the start limit bounds a proxy that never listens. A
+# failed start now lasts the readiness wait plus RestartSec, so the limit's
+# interval has to hold StartLimitBurst of them, or five-in-sixty never trips
+# and the unit restarts for ever.
+DU="${DD}/raofflineproxy.service"
+DIV="$(awk -F= '/^StartLimitIntervalSec=/{print $2}' "${DU}")"; DBU="$(awk -F= '/^StartLimitBurst=/{print $2}' "${DU}")"
+DRS="$(awk -F= '/^RestartSec=/{print $2}' "${DU}")"; DWA="$(sed -n 's/^ExecStartPost=.* --wait \([0-9]*\)$/\1/p' "${DU}")"
+[ -n "${DIV}" ] && [ -n "${DBU}" ] && [ -n "${DRS}" ] && [ -n "${DWA}" ] && [ "${DIV%s}" -ge $(( DBU * (DWA + ${DRS%s}) )) ]; check $? "claude G-D-05: the start limit's interval (${DIV}s) holds its burst of failed starts (${DBU} x (wait ${DWA}s + RestartSec ${DRS}s) = $(( ${DBU:-0} * (${DWA:-0} + ${DRS:-0}) ))s)" "claude G-D-05: StartLimitIntervalSec=${DIV:-?} < StartLimitBurst=${DBU:-?} x (--wait ${DWA:-?} + RestartSec=${DRS:-?}) -- five in sixty never trips"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
