@@ -3734,4 +3734,83 @@ else
     echo "    SKIP  the d13b predicates: section t did not run"
 fi
 
+# D13c. #308 1-raoffline gpt F-RA-20 (patch 015): a host the bounded lookup
+# has just resolved is answered from that answer when the connection looks it
+# up again, so a resolver that stops answering between the two cannot hold
+# the request; and claude F-RA-11 (patch 015): the upstream forwarder's half,
+# untested before -- a lookup that fails returns the 503 network_error at
+# once and opens no connection (its urlsplit is the module's own import,
+# proxy_service.py line 14 at the pin). Then the client's own network tests.
+if [ "${DT_OK}" -eq 1 ]; then
+RAOFFLINEPROXY_CONFIG_DIR="${DD}/d13c-cfg" PYTHONPATH="${CLIENT}" python3 -  > "${DD}/d13c.out" 2>&1 <<'EOS'
+import json, os, socket, struct, sys, threading, time, zlib, importlib.machinery, importlib.util
+from pathlib import Path
+Path(os.environ["RAOFFLINEPROXY_CONFIG_DIR"]).mkdir(parents=True, exist_ok=True)
+def verdict(ok, name, detail=""):
+    print(("PASS " if ok else "FAIL ") + name + (f" -- {detail}" if detail and not ok else ""))
+from raofflineproxy import image_cache, network, proxy_service, storage_corruption
+# 015 / F-RA-20: the connection's second lookup of a host just resolved.
+real = socket._socket.getaddrinfo
+calls = []
+def resolver(host, port, family=0, type=0, proto=0, flags=0):
+    calls.append((host, port))
+    if len(calls) == 1:
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.7", 0))]
+    time.sleep(5)
+    raise OSError("the resolver stopped answering")
+socket._socket.getaddrinfo = resolver
+try:
+    ok, why = network.resolve_host_bounded("dns-test.invalid", seconds=1.0)
+    result = {}
+    def connect_lookup():
+        try:
+            result["answer"] = socket.getaddrinfo("dns-test.invalid", 443, 0, socket.SOCK_STREAM)
+        except Exception as exc:
+            result["error"] = repr(exc)
+    t0 = time.monotonic(); th = threading.Thread(target=connect_lookup, daemon=True); th.start(); th.join(2.0); took = time.monotonic() - t0
+    answer = result.get("answer") or []
+    verdict(ok and not th.is_alive() and any(a[4][:2] == ("192.0.2.7", 443) and a[1] == socket.SOCK_STREAM for a in answer),
+            "F-RA-20 patch 015: the connection's own lookup of a host the bounded lookup just resolved is answered at once from that answer (port 443), not from a resolver that has stopped",
+            f"bounded ok={ok} ({why}); second lookup {'still waiting' if th.is_alive() else result} after {took:.2f}s")
+finally:
+    socket._socket.getaddrinfo = real
+# 015 / claude F-RA-11: the forwarder with a lookup that fails.
+opened = []
+saved_urlopen = proxy_service.urllib.request.urlopen if hasattr(proxy_service, "urllib") else None
+import urllib.request
+saved_global_urlopen = urllib.request.urlopen
+urllib.request.urlopen = lambda *a, **k: opened.append(a) or (_ for _ in ()).throw(AssertionError("no connection may be opened"))
+def failing(host, port, family=0, type=0, proto=0, flags=0):
+    raise OSError("Temporary failure in name resolution")
+socket._socket.getaddrinfo = failing
+class Srv:
+    config_data = {"upstream_host": "https://forward-test.invalid"}
+try:
+    t0 = time.monotonic()
+    res = proxy_service.ProxyRuntimeServer.forward_to_upstream_result(Srv(), "GET", "/dorequest.php?r=login2&u=qa", "", {"User-Agent": "ra"})
+    took = time.monotonic() - t0
+    verdict(res[0] == "network_error" and res[1] == 503 and opened == [] and took < 2.0 and b"name lookup" in res[3],
+            "F-RA-11 patch 015: the forwarder with a failed lookup returns network_error 503 at once and opens no connection",
+            f"{res[:3]} after {took:.2f}s, opened {len(opened)}")
+except Exception as exc:
+    verdict(False, "F-RA-11 patch 015: the forwarder with a failed lookup returns network_error 503 at once and opens no connection", repr(exc))
+finally:
+    socket._socket.getaddrinfo = real; urllib.request.urlopen = saved_global_urlopen
+    network.reset_retroachievements_reachability_for_tests()
+EOS
+grep -q '^\(PASS\|FAIL\) ' "${DD}/d13c.out"; check $? "stream D's d13c predicates ran ($(grep -c '^PASS' "${DD}/d13c.out") PASS / $(grep -c '^FAIL' "${DD}/d13c.out") FAIL)" "stream D's d13c predicates printed no verdicts: $(tail -5 "${DD}/d13c.out" | tr '\n' '|' | cut -c1-300)"
+while IFS= read -r line; do
+    case "${line}" in
+        PASS\ *) check 0 "#308 ${line#PASS }" "" ;;
+        FAIL\ *) check 1 "" "#308 ${line#FAIL }" ;;
+    esac
+done < "${DD}/d13c.out"
+# The patched client's own tests for patch 015's network half still pass
+# with the lookup's answer remembered.
+( cd "${T}/patched" && PYTHONPATH=. RAOFFLINEPROXY_CONFIG_DIR="${DD}/unittest-cfg" python3 -m unittest linux.tests.test_linux_network > "${DD}/unittest.out" 2>&1 ); DUT=$?
+[ "${DUT}" -eq 0 ]; check $? "the patched client's tests/test_linux_network.py pass ($(tail -n 3 "${DD}/unittest.out" | grep -o 'Ran [0-9]* tests\?' || echo '?'))" "the client's network tests: rc ${DUT}: $(grep -E '^(FAIL|ERROR):' "${DD}/unittest.out" | head -3 | tr '\n' '|') $(tail -n 3 "${DD}/unittest.out" | tr '\n' '|')"
+else
+    echo "    SKIP  the d13c predicates: section t did not run"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
