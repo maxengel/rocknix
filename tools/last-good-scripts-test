@@ -3295,4 +3295,19 @@ p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/f1=ARCHIVE
 p7bt restore --no-restart
 [ "${RC}" -ne 0 ] && [ "$(cat "${P7S}/.config/test/f1")" = "LIVE" ] && ! grep -q 'systemctl reboot' "${P7OUT}" && [ "$(p7why)" = "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS" ]; check $? "#307 PL-039: an unwritable restore mark ends the restore before the extraction and the restart (rc ${RC})" "#307 PL-039: rc ${RC}; f1='$(cat "${P7S}/.config/test/f1")'; why: '$(p7why)' -- the extraction ran with no mark for the boot to finish"
 
+# == PL-010: a restore never takes the device's cloud sign-in or its cloud name
+p7reset '  /storage/.config/test/*'
+mkdir -p "${P7S}/.config/rclone"; echo MINE > "${P7S}/.config/rclone/rclone.conf"; echo this-device > "${P7S}/.config/cloud_sync-device-id"
+p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/f1=ARCHIVE" "storage/.config/rclone/rclone.conf=ARCHIVE CLOUD" "storage/.config/cloud_sync-device-id=other-device"
+p7bt restore --no-restart
+[ "${RC}" -eq 0 ] && [ "$(cat "${P7S}/.config/test/f1")" = "ARCHIVE" ] && [ "$(cat "${P7S}/.config/rclone/rclone.conf")" = "MINE" ] && [ "$(cat "${P7S}/.config/cloud_sync-device-id")" = "this-device" ]; check $? "#307 PL-010: a tar archive carrying rclone.conf and a device id leaves the device's own (rc ${RC})" "#307 PL-010: rc ${RC}; rclone.conf='$(cat "${P7S}/.config/rclone/rclone.conf")' id='$(cat "${P7S}/.config/cloud_sync-device-id")'"
+rm -f "${P7S}/roms/backup"/*.tar.gz; echo MINE > "${P7S}/.config/rclone/rclone.conf"; echo this-device > "${P7S}/.config/cloud_sync-device-id"
+p7zip 20260101000000-ROCKNIX_BACKUP.zip "storage/.config/test/f1=ZIP" "storage/.config/rclone/rclone.conf=ZIP CLOUD" "storage/.config/cloud_sync-device-id=zip-device"
+p7bt restore --no-restart
+[ "${RC}" -eq 0 ] && [ "$(cat "${P7S}/.config/test/f1")" = "ZIP" ] && [ "$(cat "${P7S}/.config/rclone/rclone.conf")" = "MINE" ] && [ "$(cat "${P7S}/.config/cloud_sync-device-id")" = "this-device" ]; check $? "#307 PL-010: so does a legacy zip (rc ${RC})" "#307 PL-010: rc ${RC}; rclone.conf='$(cat "${P7S}/.config/rclone/rclone.conf")' id='$(cat "${P7S}/.config/cloud_sync-device-id")'"
+p7reset '  /storage/.config'
+echo this-device > "${P7S}/.config/cloud_sync-device-id"
+p7bt backup
+[ "${RC}" -eq 0 ] && ! p7list | grep -q 'cloud_sync-device-id'; check $? "#307 PL-010: and a backup of /storage/.config does not carry the device id" "#307 PL-010: rc ${RC}; archive: $(p7list | grep device-id)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

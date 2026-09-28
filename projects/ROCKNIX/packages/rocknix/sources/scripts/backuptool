@@ -434,6 +434,21 @@ RATOKENSETTINGS=(
 RATOKENDIRS=(
     /storage/.config/raofflineproxy/
 )
+# This device's cloud sign-in and its name in the cloud: never in an archive,
+# never put back from one, whichever archive it is (#307 PL-010). rclone.conf
+# is live OAuth tokens (#52); cloud_device_id's record is the name this
+# device's backups live under, and a restore that put another device's over
+# it made two devices one identity in the cloud (cloud_device_id's own
+# header: "a restore cannot clone one device's identity onto another. Keep
+# it that way."). Held back at backup time -- rclone.conf already was, the
+# id files now are too -- and skipped on restore, which neither branch did:
+# an archive from before the hold-back, or from another device, put its
+# rclone.conf over this one's and the restore reported success.
+DEVICEONLY=(
+    /storage/.config/rclone/rclone.conf
+    /storage/.config/cloud_sync-device-id
+    /storage/.config/cloud_sync-device-id.previous
+)
 
 # Write one settings archive to TARGET, whole or not at all.
 #
@@ -637,6 +652,15 @@ write_archive() {
         then
             logger -t backuptool "rclone.conf held back from the archive: cloud tokens never travel in a backup (#52)"
         fi
+        for CANDIDATE in "${DEVICEONLY[@]}"
+        do
+            [ "${CANDIDATE}" = "${RCLONECFG}" ] && continue
+            if grep -qxF "${CANDIDATE}" "${FILELIST}"
+            then
+                echo "${CANDIDATE}" >> "${SECRETLIST}"
+                logger -t backuptool "${CANDIDATE##*/} held back from the archive: a device's cloud name never travels (#307 PL-010)"
+            fi
+        done
         # The emulators' copies of the RetroAchievements token (#169; the
         # lists above write_archive). The token-only files are held back
         # outright, and the count goes to the log the way the pruned seeds'
@@ -1011,7 +1035,7 @@ case "${VERB}" in
             # member on the way past, and the archive is where the token
             # must not be.
             SKIP=$(mktemp)
-            printf '%s\n' 'storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIRS[@]#/}"'*' > "${SKIP}"
+            printf '%s\n' 'storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIRS[@]#/}"'*' "${DEVICEONLY[@]#/}" > "${SKIP}"
             tar -xzf "${BACKUPFILE}" -C / -X "${SKIP}" >/dev/null
             RC_TAR=$?; rm -f "${SKIP}"; (exit ${RC_TAR})
         else
@@ -1028,7 +1052,7 @@ case "${VERB}" in
             # likely to carry them -- and until #151 PL-03 this branch skipped
             # neither, while D-CLOUD-008 said "from any archive". The token-only
             # files are skipped here too (#169), as in the tar branch.
-            SKIP=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIRS[@]#/}"'*')
+            SKIP=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIRS[@]#/}"'*' "${DEVICEONLY[@]#/}")
             SKIPPED=0
             # One member per line, each whole: the name is everything from
             # the fourth column on. Until #307 PL-036 this read $4 and split
