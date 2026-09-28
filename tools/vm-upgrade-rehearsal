@@ -76,7 +76,9 @@ say "seed what the retired GENERIC_X64 quirks left in /storage (#307 PL-019)"
 # into /storage, and 097-disable-rescue-completely masked emergency.target
 # into /storage/.config/system.d; a guest that ran them keeps them across an
 # update. The new image's 091-retired-vm-fixes and 097-retired-rescue-masks
-# take them back by name, once per guest (their stamps under /storage/.cache).
+# take them back by name until their stamps under /storage/.cache are
+# written; after that, only a file with an old quirk's own bytes (a
+# downgrade and back, which tools/last-good-scripts-test's F1r-b runs).
 # The fixture writes them itself, and removes those stamps, so the check does
 # not depend on which quirks the previous image carried -- a guest that ran
 # the old quirks has no stamp -- and beside them a file of the owner's own,

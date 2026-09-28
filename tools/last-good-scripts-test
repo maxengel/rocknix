@@ -10316,6 +10316,74 @@ else
     check $? "#309 PL-024 (control): an autostart already finished on the first poll ends the wait at once, and the check passes" "#309 PL-024: an autostart finished on poll 1 read '${F1RA_OUT}', check '${F1RA_CHK}'"
 fi
 
+# F1r-b. The gpt seat's G2-F1-01: 091-retired-vm-fixes and 097-retired-rescue-
+#        masks stopped for good at their stamps, so a guest that went back to
+#        an earlier build -- whose quirks write every one of those files and
+#        the four masks again at every boot -- and then forward again kept
+#        them for good. After the stamp, a file whose bytes are exactly what
+#        a retired quirk wrote there is an earlier build's again and goes
+#        (anything else under those names stays somebody's), and the boot
+#        that finds one hands the masks back to 097, which takes them at the
+#        next boot. Both shipped versions of the old quirks are the
+#        downgrade: F1_PREV's, and 73b20caf86's, whose mount-points rule
+#        differs (8bb74015e6 changed it).
+# 091 hashes with sha256sum, an applet of the image's busybox, as the other
+# applets here are (the sandbox's /bbin, first on its PATH).
+[ -n "${BB}" ] && { printf '#!/bin/sh\n[ -x %s ] && exec %s sha256sum "$@"\nexec %s sha256sum "$@"\n' "${BB}" "${BB}" "${BB_HOST}" > "${TMP}/bbin/sha256sum"; chmod +x "${TMP}/bbin/sha256sum"; }
+f1_quirks "${F1_UNDER}" "${F1R}/quirks.now"
+f1_quirks "${F1_PREV}" "${F1R}/quirks.prev"
+f1_quirks 73b20caf86 "${F1R}/quirks.first"
+F1R_RETIRED="tmpfiles.d/10-generic-x64-journald.conf tmpfiles.d/20-x64-fd-improvements.conf tmpfiles.d/30-x64-mount-points.conf sysctl.d/10-generic-x64.conf modules-load.d/x64-virtual-modules.conf udev.rules.d/90-x64-virtual-devices.conf profile.d/091-generic-x64-services systemd/system/systemd-hostnamed.service.d/10-generic-x64.conf systemd/system/systemd-journald.service.d/10-generic-x64.conf systemd/system/dbus.service.d/10-generic-x64.conf systemd/system/smbd.service.d/10-generic-x64.conf systemd/system/nmbd.service.d/10-generic-x64.conf systemd/system/smbd.service.d/10-vm-config.conf systemd/system/nmbd.service.d/10-vm-config.conf systemd/system/weston.service.d/10-vm-config.conf systemd/system/dbus.service.d/20-vm-enhanced.conf"
+f1r_left() { local p; for p in ${F1R_RETIRED}; do { [ -e "$1/.config/${p}" ] || [ -L "$1/.config/${p}" ]; } && printf ' %s' "${p}"; done; }
+f1r_masks() { local u; for u in rescue.target emergency.target rescue.service emergency.service; do [ "$(readlink "$1/.config/system.d/${u}" 2>/dev/null)" = /dev/null ] && printf ' %s' "${u}"; done; }
+# The premise the gpt seat's G2-F1-02 is withdrawn on (control): the old
+# quirks own those paths outright -- an owner's edit to one of the files, or
+# a mask taken off by hand, is undone by the old build's next boot.
+F1RB="${F1R}/b-premise"; f1_storage "${F1RB}"
+f1_pass "${F1RB}" "${F1}/sys" "${F1R}/quirks.prev" "${F1R}/premise.j0"
+echo "# the owner's own rules" > "${F1RB}/.config/tmpfiles.d/20-x64-fd-improvements.conf"; rm -f "${F1RB}/.config/system.d/emergency.target"
+f1_pass "${F1RB}" "${F1}/sys" "${F1R}/quirks.prev" "${F1R}/premise.j1"
+[ "$(sha256sum < "${F1RB}/.config/tmpfiles.d/20-x64-fd-improvements.conf" | cut -c1-64)" = 96ab18a16991032a444fea138361bc36d71ec562f3857e7cdc7107a832e2451e ] && [ "$(f1r_masks "${F1RB}")" = " rescue.target emergency.target rescue.service emergency.service" ]
+check $? "G2-F1-02's premise (control): under the old quirks an owner's edit of 20-x64-fd-improvements.conf, and emergency.target unmasked by hand, are both undone at the next boot" "the old quirks' next boot left the owner's edit or the unmask: $(head -c 60 "${F1RB}/.config/tmpfiles.d/20-x64-fd-improvements.conf" | tr '\n' ' '); masks:$(f1r_masks "${F1RB}")"
+for F1R_V in prev first; do
+    F1RS="${F1R}/b-${F1R_V}"; f1_storage "${F1RS}"
+    f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.prev" "${F1R}/b.j0"     # the guest ran the old quirks
+    f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.now" "${F1R}/b.j1"      # updated: all of it taken back
+    f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.${F1R_V}" "${F1R}/b.j2" # a downgrade: written again
+    F1R_DOWN="$(f1r_left "${F1RS}" | wc -w) file(s),$(f1r_masks "${F1RS}")"
+    f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.now" "${F1R}/b.j3"      # and forward again
+    F1R_L1=$(f1r_left "${F1RS}")
+    f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.now" "${F1R}/b.j4"      # the boot after
+    F1R_L2=$(f1r_left "${F1RS}"); F1R_M2=$(f1r_masks "${F1RS}")
+    [ "${F1R_DOWN}" = "16 file(s), rescue.target emergency.target rescue.service emergency.service" ]; check $? "the downgrade to the ${F1R_V} old quirks writes the 16 files and the four masks again (the fixture holds what a guest holds)" "the downgrade wrote ${F1R_DOWN} -- the fixture proves nothing"
+    [ -z "${F1R_L1}" ] && grep -q 'earlier build' "${F1R}/b.j3"
+    check $? "G2-F1-01: after a downgrade to the ${F1R_V} old quirks and back, the first boot takes back every file they wrote again, and says so on the journal" "G2-F1-01: after a downgrade to the ${F1R_V} old quirks and back, still on /storage:$(echo "${F1R_L1}" | cut -c1-200); journal: '$(head -c 160 "${F1R}/b.j3" | tr '\n' ' ')'"
+    [ -z "${F1R_L2}" ] && [ -z "${F1R_M2}" ] && [ -e "${F1RS}/.cache/retired-rescue-masks" ] && [ -e "${F1RS}/.cache/retired-vm-fixes" ]
+    check $? "G2-F1-01: and by the boot after it the four masks are gone too, and both take-backs are stamped again" "G2-F1-01: after a downgrade to the ${F1R_V} old quirks and back, two boots later: files:${F1R_L2:- none}; masks:${F1R_M2:- none}; stamps: $(ls "${F1RS}/.cache" | tr '\n' ' ')"
+    f1_state "${F1RS}" > "${F1R}/b.once"; f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.now" "${F1R}/b.j5"
+    f1_state "${F1RS}" | cmp -s - "${F1R}/b.once" && [ ! -s "${F1R}/b.j5" ]
+    check $? "and a boot after that changes nothing and says nothing" "a boot after the second take-back changed /storage or spoke: $(f1_state "${F1RS}" | diff - "${F1R}/b.once" | tr '\n' ' ' | cut -c1-200) $(head -c 120 "${F1R}/b.j5")"
+done
+# After the stamp, a file of the owner's under a retired name -- other bytes
+# than any old quirk wrote -- is theirs, boot after boot (control: the same
+# on both trees).
+F1RS="${F1R}/b-owner"; f1_storage "${F1RS}"
+f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.prev" "${F1R}/o.j0"; f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.now" "${F1R}/o.j1"
+echo "# the owner's own rules" > "${F1RS}/.config/tmpfiles.d/20-x64-fd-improvements.conf"; ln -sfn /dev/null "${F1RS}/.config/system.d/rescue.target"
+f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.now" "${F1R}/o.j2"; f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.now" "${F1R}/o.j3"
+[ "$(cat "${F1RS}/.config/tmpfiles.d/20-x64-fd-improvements.conf" 2>/dev/null)" = "# the owner's own rules" ] && [ "$(f1r_masks "${F1RS}")" = " rescue.target" ] && [ ! -s "${F1R}/o.j2" ] && [ ! -s "${F1R}/o.j3" ]
+check $? "G2-F1-01 (control): after the take-back, an owner's file under a retired name and a mask of their own stay, silently, boot after boot" "an owner's file or mask was taken after the take-back: $(head -c 40 "${F1RS}/.config/tmpfiles.d/20-x64-fd-improvements.conf" 2>/dev/null || echo GONE); masks:$(f1r_masks "${F1RS}"); journal: $(head -c 120 "${F1R}/o.j2")"
+# The masks' stamp is handed back only when an earlier boot wrote it: a boot
+# on which 097 has just taken the masks and stamped keeps its stamp though
+# 091 finds the old files the same boot (097's stamp removed by hand, as its
+# header said to before this change).
+F1RS="${F1R}/b-same"; f1_storage "${F1RS}"
+f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.prev" "${F1R}/s.j0"; f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.now" "${F1R}/s.j1"
+f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.prev" "${F1R}/s.j2"; rm -f "${F1RS}/.cache/retired-rescue-masks"
+f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.now" "${F1R}/s.j3"
+[ -z "$(f1r_left "${F1RS}")" ] && [ -z "$(f1r_masks "${F1RS}")" ] && [ -e "${F1RS}/.cache/retired-rescue-masks" ]
+check $? "G2-F1-01: a boot that takes the masks and stamps, and finds the old files too, takes both and keeps the fresh stamp" "G2-F1-01: one boot with the masks' stamp removed and the old files back: files:$(f1r_left "${F1RS}" | cut -c1-120); masks:$(f1r_masks "${F1RS}"); masks' stamp $([ -e "${F1RS}/.cache/retired-rescue-masks" ] && echo kept || echo REMOVED)"
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi

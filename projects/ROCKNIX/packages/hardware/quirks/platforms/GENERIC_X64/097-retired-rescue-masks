@@ -13,10 +13,15 @@
 # never existed: /lib is the read-only image.) Only a mask -- a link to
 # /dev/null -- is removed; a unit of somebody's own under one of these names
 # is theirs. It runs until the four are gone, says on the journal what it
-# unmasked, and then stops for good (STAMP): a mask somebody makes afterwards
-# is theirs. (A downgrade to a build that still has the old quirk masks them
-# again, and they then stay; remove STAMP to take them back once more.)
+# unmasked, and then stops (STAMP): a mask somebody makes afterwards is
+# theirs. A guest that goes back to a build with the old quirk has them
+# masked again at every boot; on a QEMU guest, where that build's device
+# quirks ran too, 091-retired-vm-fixes knows it by their files coming back
+# and removes STAMP, so the four are taken back at the boot after. NOTE
+# tells it that STAMP was written this boot, and is not to be removed. (On
+# another hypervisor nothing tells: remove STAMP to take them back again.)
 STAMP=/storage/.cache/retired-rescue-masks
+NOTE=/run/retired-rescue-masks.stamped
 [ -e "${STAMP}" ] && exit 0
 D=/storage/.config/system.d
 masked() { [ -L "${D}/${1}" ] && [ "$(readlink "${D}/${1}")" = /dev/null ]; }
@@ -31,5 +36,5 @@ done
 for unit in rescue.target emergency.target rescue.service emergency.service; do
   masked "${unit}" && exit 0
 done
-mkdir -p "${STAMP%/*}" && echo "the rescue and emergency masks an earlier build set were taken back" > "${STAMP}"
+mkdir -p "${STAMP%/*}" && echo "the rescue and emergency masks an earlier build set were taken back" > "${STAMP}" && : > "${NOTE}"
 exit 0
