@@ -10290,7 +10290,7 @@ exec /shim/rclone "$@"
 EOS
 cat > "${SA2}/shim/stat" <<'EOS'
 #!/bin/bash
-[ -e /ctl/statcount ] && echo x >> /ctl/statcount
+[ -e /ctl/statcount ] && printf '%s\n' "${*:1:3}" | cut -c1-120 >> /ctl/statcount
 if [ -s /ctl/oldctime ]; then
     # A file whose name matches the ERE reads as changed at the epoch's
     # first second, in either shape a change time is asked for.
@@ -10718,6 +10718,36 @@ sa2_run "${MC}" cloud_migrate_layout --apply
 [ "${mc_killed}" -ne 0 ] && [ "${mc_mid}" = "/ROCKNIX/Saves /GAMES/Content " ] && [ "${RC}" -eq 0 ] \
     && [ "$(sed -n 's/^CONTENT_REMOTE="\(.*\)"$/\1/p' "${MCC}")" = "/ROCKNIX/Content" ] \
     && [ -f "${MC}/cloud/ROCKNIX/Content/ROMs/gb/A.gb" ] && [ -f "${MC}/cloud/ROCKNIX/Content/BIOS/bios.bin" ]; check $? "G2-A-02 (claude): killed at the content's copy (rc ${mc_killed}, pointers then: ${mc_mid}), the next run moves the content and repoints it (rc ${RC})" "G2-A-02 (claude): killed rc ${mc_killed}, pointers after the kill '${mc_mid}'; second run rc ${RC}; CONTENT_REMOTE '$(sed -n 's/^CONTENT_REMOTE="\(.*\)"$/\1/p' "${MCC}")'; cloud: $(cd "${MC}/cloud" && find . -type f | sort | tr '\n' ' '); out: $(sa_tail "${MC}" 3)"
+
+# A58. Lead G2-A-06 (seats/A-claude.md, Medium): the capture's commit lock
+#      -- which an exit capture waits five seconds for, twice -- was held
+#      through the stage's collection, and that walk ran one stat per seal:
+#      a stage of thousands on a slow card held the lock for seconds, and a
+#      game's exit capture behind a boot --full waited, re-ran and recorded
+#      nothing. The walk is one stat over the whole stage now, and one rm
+#      over what it collects; it stays under the lock, where a seal another
+#      capture is publishing is safe from it (PL-067). What it collects is
+#      unchanged: an unclaimed seal older than ten minutes goes, a fresh one
+#      and a claimed one stay.
+echo "    A58. G2-A-06 (claude): the stage's collection under the commit lock costs one stat, not one per seal"
+GC=$(sa_new g2a06); sa_script "${GC}" cloud_capture cloud_saves_root
+printf 'SAVESPATH="/storage/roms"\n' > "${GC}/storage/.config/cloud_sync.conf"
+GCS="${GC}/storage/.cache/cloud_sync/stage"; GCM="${GC}/storage/.cache/cloud_sync/manifest-QA-deadbeef01.json"
+gc_exit() { sa2_run "${GC}" cloud_capture --system gb --rom /storage/roms/gb/Game.gb --emulator retroarch --core gambatte --started 0 --exit 0; }
+rm -rf "${GC}/storage/roms"/* "${GC}/storage/.cache/cloud_sync"/*; mkdir -p "${GC}/storage/roms/gb"
+# Each save a different size, so each capture seals it whatever second it
+# lands in (a capture takes a same-size, same-second file as unchanged).
+echo "save one" > "${GC}/storage/roms/gb/Game.srm"; gc_exit
+: > "${GC}/ctl/statcount"; echo "save number two" > "${GC}/storage/roms/gb/Game.srm"; gc_exit; gc_small=$(wc -l < "${GC}/ctl/statcount")
+for n in $(seq 1 300); do printf 'unclaimed %s\n' "${n}" > "${GCS}/$(printf 'f%063d' "${n}")"; done
+printf 'an old unclaimed seal\n' > "${GCS}/$(printf 'o%063d' 1)"
+printf '%s\n' '/o0+1$' > "${GC}/ctl/oldctime"
+: > "${GC}/ctl/statcount"; echo "save number three, longer" > "${GC}/storage/roms/gb/Game.srm"; gc_exit; gc_large=$(wc -l < "${GC}/ctl/statcount")
+gc_calls=$(sort "${GC}/ctl/statcount" | uniq -c | sort -rn | head -3 | tr -s ' ' | tr '\n' '|')
+rm -f "${GC}/ctl/statcount" "${GC}/ctl/oldctime"
+gc_claimed=$(jq -r '.entries[] | .sha256 // empty' "${GCM}" 2>/dev/null | head -1)
+[ "${RC}" -eq 0 ] && [ $(( gc_large - gc_small )) -le 2 ]; check $? "G2-A-06 (claude): 301 more seals in the stage cost the commit $(( gc_large - gc_small )) more stat call(s), not one each (${gc_small} against ${gc_large}, rc ${RC})" "G2-A-06 (claude): ${gc_small} stat calls with the stage small, ${gc_large} with 301 more seals, rc ${RC}; the most frequent: ${gc_calls} -- the walk under the commit lock forks a stat per seal"
+[ ! -e "${GCS}/$(printf 'o%063d' 1)" ] && [ -f "${GCS}/$(printf 'f%063d' 300)" ] && [ -n "${gc_claimed}" ] && [ -f "${GCS}/${gc_claimed}" ]; check $? "G2-A-06 (claude): and it collects as before: the unclaimed seal older than ten minutes goes, a fresh one and a claimed one stay" "G2-A-06 (claude): old unclaimed $([ -e "${GCS}/$(printf 'o%063d' 1)" ] && echo KEPT || echo gone); fresh $([ -f "${GCS}/$(printf 'f%063d' 300)" ] && echo kept || echo COLLECTED); claimed ${gc_claimed:-none} $([ -n "${gc_claimed}" ] && [ -f "${GCS}/${gc_claimed}" ] && echo kept || echo MISSING)"
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi

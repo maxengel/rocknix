@@ -102,8 +102,10 @@
 # #307 PL-067): the check and the rename were two steps another capture
 # could land between, and one capture's GC could collect a seal another had
 # just placed and not yet published. The lock is waited for, briefly -- a
-# commit holds it for milliseconds -- and a run that cannot have it does not
-# commit (the audit of the fixes, G-A-04: the first cut went on under
+# commit holds it for the check, the rename, one listing of the stage and
+# the stamp (lead G2-A-06 of the audit of the fix round) -- and a run that
+# cannot have it does not commit (the audit of the fixes, G-A-04: the first
+# cut went on under
 # detection alone, which is the race the lock exists to close). It is
 # treated as a loss to another writer: an exit, --rescan, --retire or
 # --adopt re-runs itself once, and a second failure, or a --full, is
@@ -1610,17 +1612,32 @@ done < <("${JQ}" -r '.entries[] | select(.pub == null) | .sha256 // empty' "${MA
 # leave that capture's entry naming a copy that is gone. By its change time,
 # which the seal's rename sets -- its modification time is the save's own
 # (cp -p). The next capture's GC takes it if nothing claims it.
+#
+# One stat over the whole stage and one rm over what goes (the audit of
+# the fix round, lead G2-A-06): this runs under the commit lock, which an
+# exit capture waits for, and a stat per seal held it for seconds on a
+# stage of thousands on a slow card. The glob is the stage's own names --
+# no dot files, so no .tmp.* seal in the making -- and a seal's name is a
+# sha256, which holds no blank. A stage too big for one command line
+# (bash's 126) is walked in the batches find makes instead.
+stage_times() {
+    local out rc
+    out=$(stat -c '%Z %n' -- "${STAGE}"/* 2>/dev/null); rc=$?
+    [ "${rc}" -eq 126 ] \
+        && out=$(find "${STAGE}" -mindepth 1 -maxdepth 1 -type f ! -name '.*' -exec stat -c '%Z %n' {} + 2>/dev/null)
+    [ -n "${out}" ] && printf '%s\n' "${out}"
+}
 _now=$(date +%s)
-for _f in "${STAGE}"/*; do
-    [ -f "${_f}" ] || continue
+_gone=()
+while read -r _ct _f; do
     _n="${_f##*/}"
-    case "${_n}" in .tmp.*) continue ;; esac
+    [ -n "${_n}" ] || continue
     [ -n "${STAGE_REF[${_n}]}" ] && continue
-    _ct=$(stat -c %Z "${_f}" 2>/dev/null)
     case "${_ct}" in ''|*[!0-9]*) continue ;; esac
     [ $(( _now - _ct )) -lt 600 ] && continue
-    rm -f "${_f}" 2>/dev/null
-done
+    _gone+=("${_f}")
+done < <(stage_times)
+[ "${#_gone[@]}" -gt 0 ] && rm -f "${_gone[@]}" 2>/dev/null
 _kb="$(du -sk "${STAGE}" 2>/dev/null | cut -f1)"
 case "${_kb}" in ''|*[!0-9]*) _kb=0 ;; esac
 if [ $(( _kb * 1024 )) -gt "${STAGE_MAX_BYTES}" ]; then
