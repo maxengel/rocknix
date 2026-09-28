@@ -119,34 +119,65 @@ fi
 # the fix round, PL-002): this reader never sources the file, but a blank
 # is a space or a tab to both, so the tiers run with one reading of one
 # file -- a carriage return after a value used to pass here as a blank.
-conf_get() { # <KEY>: its value, quotes off; nothing when absent; exit 2 when unreadable
+conf_get() { # <KEY>: its value, quotes off; nothing when absent; exit 2 when unreadable, and why on stdout
     [ -f /storage/.config/cloud_sync.conf ] || return 0
     awk -v k="$1" '
-        { t = $0; gsub(/\t/, "", t); if (t ~ /[[:cntrl:]]/) cntrl = 1 }
+        { t = $0; gsub(/\t/, "", t); if (t ~ /[[:cntrl:]]/ && !cntrl) cntrl = NR }
         index($0, k "=") == 1 {
-            s = substr($0, length(k) + 2); v = ""; r = ""; ok = 1
+            s = substr($0, length(k) + 2); v = ""; r = ""; ok = 1; why = ""
             c = substr(s, 1, 1)
-            if (c == "\"" || c == "'"'"'") {
+            if (c == "\"") {
+                # Inside double quotes bash reads \" \\ \$ and \` as the one
+                # character each (PL-015), and so does this; an unescaped $
+                # or backtick is an expansion this reader does not make, and
+                # any other backslash is refused as conf_valid refuses it.
+                n = length(s); i = 2; closed = 0
+                while (i <= n) {
+                    d = substr(s, i, 1)
+                    if (d == "\"") { closed = 1; break }
+                    if (d == "\\") {
+                        e = substr(s, i + 1, 1)
+                        if (e == "\"" || e == "\\" || e == "$" || e == "`") { v = v e; i += 2; continue }
+                        ok = 0
+                        why = (e == "") ? "a value continued onto the next line, which this reader does not follow" \
+                                        : "a backslash inside double quotes that is not one of the escapes bash reads there"
+                        break
+                    }
+                    if (d == "$" || d == "`") { ok = 0; why = "a $ or a backtick inside double quotes"; break }
+                    v = v d; i++
+                }
+                if (ok && !closed) { ok = 0; why = "a double-quoted value that does not close on its line" }
+                if (ok) r = substr(s, i + 1)
+            } else if (c == "'"'"'") {
                 j = index(substr(s, 2), c)
-                if (j) { v = substr(s, 2, j - 1); r = substr(s, j + 2) } else ok = 0
+                if (j) { v = substr(s, 2, j - 1); r = substr(s, j + 2) } else { ok = 0; why = "a single-quoted value that does not close on its line" }
             } else {
                 match(s, /^[A-Za-z0-9_.\/:@%+,=-]*/); v = substr(s, 1, RLENGTH); r = substr(s, RLENGTH + 1)
             }
-            if (r !~ /^([ \t]+(#.*)?)?$/) ok = 0
-            if (c == "\"" && v ~ /[$`\\]/) ok = 0
-            if (!found) { found = 1; first = v; firstok = ok }
+            if (ok && r !~ /^([ \t]+(#.*)?)?$/) { ok = 0; why = "something after the value that is not a # comment" }
+            if (!found) { found = 1; first = v; firstok = ok; firstwhy = "line " NR ": " why }
         }
-        END { if (cntrl) exit 2; if (found && !firstok) exit 2; if (found) print first }
+        END {
+            if (cntrl) { print "line " cntrl ": a control character other than a tab"; exit 2 }
+            if (found && !firstok) { print firstwhy; exit 2 }
+            if (found) print first
+        }
     ' /storage/.config/cloud_sync.conf
 }
 if ! CONTENT_REMOTE=$(conf_get CONTENT_REMOTE); then
+    # On a refusal conf_get says why, for the log: the line and its shape,
+    # never the value (PL-015).
+    log_message "cloud_sync.conf was not read: ${CONTENT_REMOTE}"
     echo ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"
     echo "Your cloud sync settings couldn't be read. Set up cloud storage again under GAME SETTINGS > MANAGE CLOUD STORAGE."
     exit 1
 fi
 # The bound falls back to the shipped value below when this is empty; a
-# line it cannot read is that too.
-RCLONE_NET_OPTS=$(conf_get RCLONE_NET_OPTS) || RCLONE_NET_OPTS=""
+# line it cannot read is that too, and the log says so.
+if ! RCLONE_NET_OPTS=$(conf_get RCLONE_NET_OPTS); then
+    log_message "RCLONE_NET_OPTS was not read (${RCLONE_NET_OPTS}); the shipped bound stands in"
+    RCLONE_NET_OPTS=""
+fi
 case "${CONTENT_REMOTE}" in
     *[\$\`\\]*|*[[:cntrl:]]*)
         echo ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"

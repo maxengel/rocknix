@@ -10401,6 +10401,90 @@ for s in cloud_content_restore cloud_content_backup; do
         : > "${CC2}/ctl/argv"
     done
 done
+
+# A52. PL-015 (seats/A-claude.md G2-A-05, Medium): the grammar refused
+#      bash's own escapes inside double quotes, which the validator before
+#      it passed -- RCLONEOPTS="--exclude \"*.tmp\" --progress" was rc 1, so
+#      an upgraded device with such a hand edit read YOUR CLOUD SYNC SETTINGS
+#      COULDN'T BE READ on every run. \" \\ \$ and \` are taken now, each as
+#      the one character bash makes of it; a backslash before anything else
+#      is still refused, and a refusal names its line and its shape in the
+#      log (never the value). The content scripts read a double-quoted value
+#      by the same escapes. A folder value stays plain text (D-CLOUD-142):
+#      an escape in one is refused as a backslash in one always was.
+echo "    A52. PL-015: bash's escapes inside double quotes are accepted, and a refusal says why in the log"
+CQ="${TMP}/pl015"; mkdir -p "${CQ}"
+for s in cloud_backup cloud_restore cloud_sync_helper; do
+    src_of "${RCLONE_REL}/${s}" "${CQ}/${s}"
+    awk '/^conf_valid\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${CQ}/${s}" > "${CQ}/${s}.fn"
+done
+cq_file() { # <name> <line>...: a conf of the shipped head and these lines, as written
+    local n="$1"; shift
+    { printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/ROCKNIX/Saves"\n'; printf '%s\n' "$@"; } > "${CQ}/${n}"
+}
+cq_file good-quote 'RCLONEOPTS="--exclude \"*.tmp\" --progress"'
+cq_file good-dollar 'RCLONEOPTS="--exclude \$RECYCLE.BIN/** --progress"'
+cq_file good-backslash 'RCLONEOPTS="--exclude a\\b --progress"'
+cq_file good-backtick 'RCLONEOPTS="--exclude \`x\` --progress"'
+cq_file good-continued 'RCLONEOPTS="--progress \' '--exclude \"*.tmp\" \' '--log-file /var/log/cloud_sync.log"'
+# Still refused, and still running a command when sourced: an escape does
+# not open a door the grammar closed.
+cq_file run-after-backslash 'RCLONEOPTS="\\$(touch /ctl/pwned)"'
+cq_file run-after-quote 'RCLONEOPTS="\"$(touch /ctl/pwned)\""'
+cq_file run-closed 'RCLONEOPTS="a \\"; touch /ctl/pwned; : ""'
+# Still refused for their shape: a backslash bash would keep as it is, and
+# an escape in a folder value.
+cq_file shape-other 'RCLONEOPTS="--exclude a\qb --progress"'
+cq_file shape-folder 'SETTINGS_REMOTE="/ROCKNIX/\"Backups\""'
+cq_bad_inert=""
+for f in "${CQ}"/run-*; do
+    rm -f "${CQ}/pwned"; sed "s|/ctl/pwned|${CQ}/pwned|" "${f}" > "${CQ}/sourced"
+    (cd "${CQ}" && env -i PATH=/usr/bin:/bin bash -c ". '${CQ}/sourced'" >/dev/null 2>&1)
+    [ -e "${CQ}/pwned" ] || cq_bad_inert="${cq_bad_inert} ${f##*/run-}"
+done
+cq_good_bad=""
+for f in "${CQ}"/good-*; do
+    rm -f "${CQ}/pwned"
+    (cd "${CQ}" && env -i PATH=/usr/bin:/bin bash -c "set -e; . '${f}'" >/dev/null 2>&1) || cq_good_bad="${cq_good_bad} ${f##*/good-}"
+done
+[ -z "${cq_bad_inert}" ] && [ -z "${cq_good_bad}" ]; check $? "PL-015: the three refused escapes run their command when sourced, and the five accepted ones source cleanly (the fixtures are real)" "PL-015: inert when sourced:${cq_bad_inert:- none}; failed to source:${cq_good_bad:- none}"
+for s in cloud_backup cloud_restore cloud_sync_helper; do
+    cq_refused=""; cq_passed=""; cq_nowhy=""
+    for f in "${CQ}"/good-*; do
+        bash -c ". '${CQ}/${s}.fn'; conf_valid '${f}'" >/dev/null 2>&1 || cq_refused="${cq_refused} ${f##*/good-}"
+    done
+    for f in "${CQ}"/run-* "${CQ}"/shape-*; do
+        bash -c ". '${CQ}/${s}.fn'; conf_valid '${f}'" >/dev/null 2>&1 && cq_passed="${cq_passed} ${f##*/}"
+        why=$(bash -c ". '${CQ}/${s}.fn'; conf_valid '${f}'; printf '%s' \"\${CONF_WHY:-}\"" 2>/dev/null)
+        case "${why}" in "line 3: "?*) ;; *) cq_nowhy="${cq_nowhy} ${f##*/}" ;; esac
+    done
+    [ -s "${CQ}/${s}.fn" ] && [ -z "${cq_refused}" ]; check $? "PL-015: ${s}'s conf_valid accepts \\\" \\\\ \\\$ and \\\` inside double quotes, on one line or continued" "PL-015: ${s} refused:${cq_refused} -- a conf bash runs as text reads COULDN'T BE READ"
+    [ -s "${CQ}/${s}.fn" ] && [ -z "${cq_passed}" ]; check $? "PL-015: ${s}'s conf_valid still refuses an escape that closes the quote or opens a \$(, a backslash before anything else, and an escape in a folder value" "PL-015: ${s} passed:${cq_passed}"
+    [ -z "${cq_nowhy}" ]; check $? "PL-015: and ${s}'s refusal names the line and its shape (CONF_WHY)" "PL-015: ${s} gave no 'line 3: <shape>' for:${cq_nowhy}"
+done
+# End to end: the seat's line in a live conf, each saves script.
+CQE=$(sa_new pl015e); sa_script "${CQE}" cloud_backup cloud_restore cloud_saves_root
+mkdir -p "${CQE}/storage/roms/gb"; echo s > "${CQE}/storage/roms/gb/A.srm"
+for s in cloud_backup cloud_restore; do
+    sa2_conf "${CQE}"; sed -i 's|^RCLONEOPTS=.*|RCLONEOPTS="--progress --exclude \\"*.tmp\\" --log-file /var/log/cloud_sync.log --filter-from /storage/.config/cloud_sync-rules.txt"|' "${CQE}/storage/.config/cloud_sync.conf"
+    grep -qF -- '--exclude \"*.tmp\"' "${CQE}/storage/.config/cloud_sync.conf" || echo "    (PL-015 fixture: the sed did not write the escaped quotes)"
+    sa2_run "${CQE}" "${s}" --yes --saves-only
+    [ "${RC}" -eq 0 ] && ! grep -q "COULDN'T BE READ" "${CQE}/out"; check $? "PL-015: ${s} runs with RCLONEOPTS=\"--exclude \\\"*.tmp\\\" ...\" in its conf (rc ${RC})" "PL-015: ${s}: rc ${RC}; out: $(sa_tail "${CQE}")"
+done
+sa2_conf "${CQE}"; printf '%s\n' 'RCLONEOPTS="--progress --exclude a\qb"' >> "${CQE}/storage/.config/cloud_sync.conf"
+: > "${CQE}/log/cloud_sync.log"
+sa2_run "${CQE}" cloud_backup --yes --saves-only
+[ "${RC}" -eq 1 ] && grep -q 'line [0-9]*: .*backslash' "${CQE}/log/cloud_sync.log"; check $? "PL-015: a conf still refused ends the run as before, and the log names the line and the shape (rc ${RC})" "PL-015: rc ${RC}; log: $(grep -i 'cloud_sync.conf' "${CQE}/log/cloud_sync.log" | tail -2 | cut -c1-200 | tr '\n' '|')"
+# The content scripts read a double-quoted value by bash's escapes too: the
+# conf's own bound, not the shipped one it used to fall back to.
+CQC=$(sa_new pl015c); sa_script "${CQC}" cloud_content_backup
+sa2_conf "${CQC}"; sed -i '/^RCLONE_NET_OPTS=/d' "${CQC}/storage/.config/cloud_sync.conf"
+printf '%s\n' 'RCLONE_NET_OPTS="--contimeout 5s --timeout 7s --low-level-retries 2 --retries 1 --user-agent \"qa-agent\""' >> "${CQC}/storage/.config/cloud_sync.conf"
+mkdir -p "${CQC}/storage/.config/emulationstation" "${CQC}/storage/roms/nes"
+printf '<system><path>/storage/roms/nes</path></system>\n' > "${CQC}/storage/.config/emulationstation/es_systems.cfg"
+echo n > "${CQC}/storage/roms/nes/N.nes"
+sa2_run "${CQC}" cloud_content_backup nes
+grep -E '^copy ' "${CQC}/ctl/argv" | grep -q -- '--timeout 7s' && [ "${RC}" -eq 0 ]; check $? "PL-015: cloud_content_backup reads RCLONE_NET_OPTS with an escaped quote in it, and its copy carries --timeout 7s (rc ${RC})" "PL-015: rc ${RC}; the copy's bound: $(grep -E '^copy ' "${CQC}/ctl/argv" | grep -o -- '--timeout [0-9a-z]*' | head -1) -- the escaped quote read as the value's end and the shipped bound stood in"
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
