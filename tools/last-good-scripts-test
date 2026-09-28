@@ -3322,4 +3322,14 @@ else
     echo "    SKIP  PL-058's cases: section t did not run"
 fi
 
+# D4b. #308 1-raoffline claude F-RA-12 = gpt F-RA-19: raofflineproxy-refresh
+# stops after three failures in a row, as it says, not after three in all
+# (D4's driver: games 1, 3 and 5 failing, then 2, 3 and 4).
+if [ "${DT_OK}" -eq 1 ]; then
+grep -q '^PASS apart:' "${DD}/d4.out"; check $? "#308 claude F-RA-12 / gpt F-RA-19 refresh: three failures never two in a row -- every game tried (3 re-read, 3 failed)" "#308 F-RA-12/19 refresh: $(grep 'apart:' "${DD}/d4.out" || echo 'no verdict') -- three failures in all were read as three in a row"
+grep -q '^PASS row:' "${DD}/d4.out"; check $? "#308 claude F-RA-12 / gpt F-RA-19 refresh: three failures in a row stop the run (REPEATED_FAILURES)" "#308 F-RA-12/19 refresh: $(grep 'row:' "${DD}/d4.out" || echo 'no verdict')"
+else
+    echo "    SKIP  #308 F-RA-12/19's cases: section t did not run"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

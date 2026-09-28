@@ -168,6 +168,10 @@ def main() -> int:
     deadline = time.monotonic() + max(1.0, args.seconds)
     done = 0
     failed = 0
+    # Failures in a row, reset by a game that goes through: three unrelated
+    # failures across a long --all are not the server refusing, and the
+    # message says "in a row" (#308 F-RA-12, F-RA-19). failed stays the total.
+    in_a_row = 0
     for index, gid in enumerate(wanted, 1):
         if time.monotonic() > deadline:
             left = len(wanted) - done - failed
@@ -205,6 +209,7 @@ def main() -> int:
             # session from the unlocks row (build_unlocks_array).
             dropped = drop_startsession(storage, gid)
             done += 1
+            in_a_row = 0
             # It is documented as returning the title and returns the patch
             # body, so take the title out of it rather than printing a page
             # of JSON into the ctl's output.
@@ -220,8 +225,9 @@ def main() -> int:
             tell(f"refresh {index}|{len(wanted)}")
         except Exception as exc:
             failed += 1
+            in_a_row += 1
             note(f"game {gid}: {exc}")
-            if failed >= 3:
+            if in_a_row >= 3:
                 note("three failures in a row; stopping rather than hammering")
                 tell("why REPEATED_FAILURES")
                 tell(f"done {done}|{len(wanted) - done}")
