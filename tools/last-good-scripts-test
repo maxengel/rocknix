@@ -3295,8 +3295,11 @@ def run(args):
         rc = helper.main()
     return rc, buf.getvalue()
 st = Storage()
+# The client lists patch rows newest first (ORDER BY cachedAt DESC), so each
+# row gets its own time: game 1 the newest, the order 1..6 whatever the clock
+# does between inserts.
 for gid in range(1, 7):
-    st.upsert_cache(cache_keys.patch(gid, "qa"), '{"Success":true,"PatchData":{"ID":%d}}' % gid)
+    st.upsert_cache(cache_keys.patch(gid, "qa"), '{"Success":true,"PatchData":{"ID":%d}}' % gid, cached_at=1789400000000 - gid * 1000)
 st.upsert_cache(cache_keys.start_session(5, "qa"), '{"Success":true,"Unlocks":[1]}')
 st.close()
 # The drop fails: the store refuses the delete.
