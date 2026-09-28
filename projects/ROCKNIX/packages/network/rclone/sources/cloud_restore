@@ -1831,7 +1831,13 @@ restore_system_files() {
             newest="${mine}"
             log_message "Restoring this device's own newest settings backup (named for ${label}): ${newest}" "false"
         else
-            newest=$(printf '%s\n' "${listing}" | grep -v '^$' | sort | tail -1)
+            # By date, where a name carries one; an archive whose name has no
+            # date (ROCKNIX_BACKUP.zip, from before archives were dated) only
+            # when nothing dated is there. Sorted together, "R" outranks
+            # every "2" and the undated legacy archive read as the newest
+            # (#308 gpt F-CS-35).
+            newest=$(printf '%s\n' "${listing}" | grep -E '^[0-9]{4}_[0-9]{2}_[0-9]{2}-[0-9]{6}-' | sort | tail -1)
+            [ -n "${newest}" ] || newest=$(printf '%s\n' "${listing}" | grep -v '^$' | sort | tail -1)
             if [ -n "${newest}" ]; then
                 local made_by
                 # The label is what sits between the stamp and -ROCKNIX_; an

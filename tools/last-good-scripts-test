@@ -3835,4 +3835,19 @@ sa_run "${LS}" cloud_restore --yes --system-only
 ls_ls=$(grep '^ls ' "${LS}/ctl/argv" | head -1)
 [ -n "${ls_ls}" ] && echo "${ls_ls}" | grep -q -- '--low-level-retries 3' && ! echo "${ls_ls}" | grep -q -- '--low-level-retries 7'; check $? "cloud_restore's listing of the settings folder carries three low-level retries, not the transfer's (rc ${RC})" "ls call: ${ls_ls:-(none)}"
 
+# A21. #308 gpt F-CS-35: with no archive named for this device, the newest
+#      is chosen by its date, and an archive with no date in its name (the
+#      legacy ROCKNIX_BACKUP.zip) is taken only when nothing dated is there.
+echo "    A21. #308 gpt F-CS-35: an undated legacy archive does not outrank a dated one"
+UA=$(sa_new gcs35); sa_script "${UA}" cloud_restore cloud_saves_root
+cp "${LS}/storage/.config/cloud_sync.conf" "${LS}/storage/.config/cloud_sync-rules.txt" "${UA}/storage/.config/"
+mkdir -p "${UA}/cloud/ROCKNIX/Backups/QA-deadbeef01" "${UA}/storage/roms/backup"
+echo old > "${UA}/cloud/ROCKNIX/Backups/QA-deadbeef01/ROCKNIX_BACKUP.zip"
+echo new > "${UA}/cloud/ROCKNIX/Backups/QA-deadbeef01/2026_09_01-120000-Other-Handheld-ROCKNIX_SETTINGS.tar.gz"
+sa_run "${UA}" cloud_restore --yes --system-only
+[ -f "${UA}/storage/roms/backup/2026_09_01-120000-Other-Handheld-ROCKNIX_SETTINGS.tar.gz" ] && [ ! -e "${UA}/storage/roms/backup/ROCKNIX_BACKUP.zip" ]; check $? "the dated archive is restored, not the undated ROCKNIX_BACKUP.zip that sorts after it (rc ${RC})" "restored: $(ls "${UA}/storage/roms/backup" | tr '\n' ' ') -- lexical order put the undated name last (F-CS-35)"
+rm -f "${UA}/cloud/ROCKNIX/Backups/QA-deadbeef01/2026_09_01-120000-Other-Handheld-ROCKNIX_SETTINGS.tar.gz" "${UA}/storage/roms/backup"/*
+sa_run "${UA}" cloud_restore --yes --system-only
+[ -f "${UA}/storage/roms/backup/ROCKNIX_BACKUP.zip" ]; check $? "and with nothing dated there, the undated archive is still restored (rc ${RC})" "restored: $(ls "${UA}/storage/roms/backup" | tr '\n' ' ')"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
