@@ -335,7 +335,8 @@ glob_literal() {
 # Two shapes, the same two the pre-push guard knows (#307 PL-006):
 #
 #   A key and a value, in a text config file (.cfg, .conf, .ini, and the
-#   network's .nmconnection and .psk). The key word is matched in any case --
+#   network's .nmconnection and .psk) or a copy of one (.backup, .bak, or
+#   any <name>.cfg.<something>: a last-good record is a config too). The key word is matched in any case --
 #   Password=, TOKEN=, PrivateKey = and ClientSecret= were all passed by a
 #   pattern whose prefix class admitted no capital. It stays a whole part of
 #   the key: at the start, or after a "_", "." or "-" -- so "bypass",
@@ -365,7 +366,7 @@ credential_lines() {
         N=0
         case "${F}" in
             */lang/*|*/locale/*|*/translations/*) ;;
-            *.cfg|*.conf|*.ini|*.nmconnection|*.psk)
+            *.cfg|*.conf|*.ini|*.nmconnection|*.psk|*.backup|*.bak|*.cfg.*|*.conf.*|*.ini.*)
                 N=$(grep -ciE "${CREDENTIAL_KEYS}" "${F}" 2>/dev/null) ;;
         esac
         N=$(( ${N:-0} + $(grep -IcE "${CREDENTIAL_TOKENS}" "${F}" 2>/dev/null || true) ))
@@ -808,6 +809,28 @@ write_archive() {
             done < <(grep -F "${CANDIDATE}" "${FILELIST}" || true)
         done
         [ "${HELD}" -gt 0 ] && logger -t backuptool "held back ${HELD} file(s) under the offline RetroAchievements proxy's folder: its token cache and award queue never travel (#165)"
+        # The copies a writer keeps beside a file that is stripped or held
+        # back carry the same keys: chksysconfig's and the interface's
+        # last-good record (system.cfg.backup, es_settings.cfg.backup), a
+        # writer's temporary (.tmp), and a .bak or .old. The strips go by
+        # exact path, so a selection covering the folder carried the record
+        # whole -- the Wi-Fi key and the root password -- and the key scan
+        # read no .backup (#307, the audit of the fixes, claude G-B-01). They
+        # are held back: the record is rebuilt from the live file at the next
+        # boot and on the next write, so holding it back loses nothing.
+        HELD=0
+        for CANDIDATE in "${SYSCFG}" "${ESCFG}" "${RACFG}" "${RATOKENFILES[@]}" "${RATOKENSETTINGS[@]}" "${DEVICEONLY[@]}"
+        do
+            for SUFFIX in .backup .bak .tmp .old
+            do
+                if grep -qxF "${CANDIDATE}${SUFFIX}" "${FILELIST}"
+                then
+                    echo "${CANDIDATE}${SUFFIX}" >> "${SECRETLIST}"
+                    HELD=$((HELD + 1))
+                fi
+            done
+        done
+        [ "${HELD}" -gt 0 ] && logger -t backuptool "held back ${HELD} last-good record(s) or temporaries beside files that are stripped or held back"
     fi
 
     # grep -f with an EMPTY pattern file matches nothing under busybox and

@@ -3432,6 +3432,7 @@ chmod +x "${P7}/shim/mktemp"
 p7bt backup
 [ "${RC}" -eq 0 ] && grep -q '^mktemp -d /storage/.cache/backuptool-staging\.' "${P7S}/.p7-mktemp" && [ "$(grep -c -- '-d' "${P7S}/.p7-mktemp")" -eq 1 ]; check $? "#308 claude F-BR-09: a backup stages once, on the storage card (not in RAM), and makes no second copy to scan" "#308 F-BR-09: rc ${RC}; mktemp calls: $(tr '\n' '|' < "${P7S}/.p7-mktemp")"
 rm -f "${P7}/shim/mktemp"
+
 # == #308 4-backup-restore gpt F-BR-17: what a killed run left is cleared by the next
 p7reset '  /storage/.config/test/*'
 mkdir -p "${P7S}/roms/backup/archive" "${P7S}/.cache/backuptool-staging.p7dead"
@@ -3451,6 +3452,17 @@ p7bt backup; p7bt restore --no-restart
 cp "${P7U}/test/seed" "${P7S}/.config/test/seed"; printf 'LOCATIONS=(\n  /storage/.config/test/seed\n)\n' > "${P7S}/.config/backuptool.conf"; p7bt backup
 [ ! -s "${P7S}/.p7-sleeps" ]; check $? "#308 claude F-BR-19: with no terminal on stdout (the interface's pipe) neither the outcome nor a failure sleeps" "#308 F-BR-19: sleeps: $(tr '\n' '|' < "${P7S}/.p7-sleeps")"
 
+# == AUD claude G-B-01 (#307 audit of the fixes): a stripped file's last-good record and temporary travel no more than the file
+P7FAKE="QA$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
+p7reset '  /storage/.config/system/configs/*
+  /storage/.config/emulationstation/*'
+printf 'system.hostname=X\nwifi.key=%s\nroot.password=%s\n' "${P7FAKE}" "${P7FAKE}" > "${P7S}/.config/system/configs/system.cfg.backup"
+cp "${P7S}/.config/system/configs/system.cfg.backup" "${P7S}/.config/system/configs/system.cfg.tmp"
+printf '<?xml version="1.0"?>\n<config>\n<string name="ThemeSet" value="mine" />\n</config>\n' > "${P7S}/.config/emulationstation/es_settings.cfg"
+printf '<?xml version="1.0"?>\n<config>\n<string name="ScreenScraperPass" value="%s" />\n</config>\n' "${P7FAKE}" > "${P7S}/.config/emulationstation/es_settings.cfg.backup"
+p7bt backup
+[ "${RC}" -eq 0 ] && [ -n "$(p7arc)" ] && ! p7list | grep -qE '\.(backup|tmp)$' && ! tar -xzOf "$(p7arc | tail -1)" 2>/dev/null | grep -q "${P7FAKE}"; check $? "#307 audit G-B-01 (claude): system.cfg.backup, system.cfg.tmp and es_settings.cfg.backup -- the last-good records and a writer's temporary -- are held back like the files they copy, and the planted key is in no member" "#307 audit G-B-01: rc ${RC}; members: $(p7list | grep -E '\.(backup|tmp)$' | tr '\n' ' '); planted value in the archive: $(tar -xzOf "$(p7arc | tail -1)" 2>/dev/null | grep -c "${P7FAKE}")"
+p7sign app.cfg.backup "password = ${P7FAKE}"; check $? "#307 audit G-B-01 (claude): a .backup copy of another config is scanned like a config" "#307 audit G-B-01: rc ${RC}; why '$(p7why)'; archives: $(p7arc | wc -l) -- *.backup was not read"
 
 # y2. wifictl whole, against an nmcli that answers as the target's does
 # (probed on guest d for the psk, 2026-09-27): terse and get-values output
