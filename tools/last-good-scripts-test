@@ -3825,4 +3825,23 @@ sed -n '/^ARGUMENTS="\$@"$/,/^CORE=/p' "${P7U2}/runemu.sh" | sed '$d' > "${P7U2}
 p7pl=$(bash -c '. "$0"; printf "%s" "${PLATFORM}"' "${P7U2}/platform.sh" "/storage/roms/snes/Super Mario-Party.sfc" -Psnes --core=snes9x --emulator=retroarch --controllers="-p1index 0" --host --port 55435 --nick "My-Player" 2>/dev/null)
 [ "${p7pl}" = "snes" ]; check $? "#308 8-es-menus-and-core (E2): a launch carrying -Psnes and a later --nick 'My-Player' reads the platform snes" "#308 E2: the platform read '${p7pl}' -- the last -P in the joined line was the nick's"
 
+# == #308 10-packages-and-build claude F-PB-13: the disk under /storage is never an external candidate
+P7AM="${P7M}/automount"; rm -rf "${P7AM}"; mkdir -p "${P7AM}/sys/devices/block/sda/sda2" "${P7AM}/sys/class/block" "${P7AM}/sys/block"
+src_of projects/ROCKNIX/packages/rocknix/sources/scripts/automount "${P7AM}/automount"
+echo 41943040 > "${P7AM}/sys/devices/block/sda/size"; echo 2 > "${P7AM}/sys/devices/block/sda/sda2/partition"
+ln -s ../../devices/block/sda/sda2 "${P7AM}/sys/class/block/sda2"; ln -s ../devices/block/sda "${P7AM}/sys/block/sda"
+echo "/dev/sda2 /storage ext4 rw 0 0" > "${P7AM}/mounts"
+sed -n '/^function external_node_present() {/,/^}/p' "${P7AM}/automount" | sed "s#/sys/#${P7AM}/sys/#g; s#/proc/mounts#${P7AM}/mounts#g" > "${P7AM}/fn.sh"
+PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7AM}/fn.sh'; external_node_present"; p7rc=$?
+[ "${p7rc}" -eq 1 ]; check $? "#308 10-packages-and-build claude F-PB-13: /storage on /dev/sda2 and no other disk: no external card is present (rc 1)" "#308 F-PB-13: rc ${p7rc} -- sda2 was stripped to itself, and sda, the internal disk, counted as an external card"
+mkdir -p "${P7AM}/sys/devices/block/mmcblk1"; echo 62333952 > "${P7AM}/sys/devices/block/mmcblk1/size"; ln -s ../devices/block/mmcblk1 "${P7AM}/sys/block/mmcblk1"
+PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7AM}/fn.sh'; external_node_present"; p7rc=$?
+[ "${p7rc}" -eq 0 ]; check $? "#308 10-packages-and-build claude F-PB-13: and a 32 GB mmcblk1 beside it is one (rc 0)" "#308 F-PB-13: rc ${p7rc}"
+rm -rf "${P7AM}/sys"; mkdir -p "${P7AM}/sys/devices/block/mmcblk0/mmcblk0p2" "${P7AM}/sys/class/block" "${P7AM}/sys/block"
+echo 124735488 > "${P7AM}/sys/devices/block/mmcblk0/size"; echo 2 > "${P7AM}/sys/devices/block/mmcblk0/mmcblk0p2/partition"
+ln -s ../../devices/block/mmcblk0/mmcblk0p2 "${P7AM}/sys/class/block/mmcblk0p2"; ln -s ../devices/block/mmcblk0 "${P7AM}/sys/block/mmcblk0"
+echo "/dev/mmcblk0p2 /storage ext4 rw 0 0" > "${P7AM}/mounts"
+PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7AM}/fn.sh'; external_node_present"; p7rc=$?
+[ "${p7rc}" -eq 1 ]; check $? "#308 10-packages-and-build claude F-PB-13: a handheld's /storage on mmcblk0p2 still reads mmcblk0 as internal (rc 1)" "#308 F-PB-13: rc ${p7rc}"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

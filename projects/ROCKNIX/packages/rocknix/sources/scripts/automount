@@ -187,8 +187,20 @@ function external_node_present() {
   ### is not readable yet. Used to tell "card in, not probed yet" (worth
   ### waiting for) from "card removed" (do not delay boot). The internal
   ### card is the disk backing /storage and is never a candidate.
-  local internal dev name sz
-  internal=$(grep " /storage " /proc/mounts | awk '{print $1}' | sed -e 's#.*/##' -e 's#p[0-9]*$##')
+  ### The internal disk is the one the partition under /storage belongs to,
+  ### as sysfs says -- /sys/class/block/<part>/.. is its disk. Stripping a
+  ### "pN" suffix handled mmcblk0p2 and nvme0n1p2 but left sda2 as "sda2",
+  ### so on an sd-rooted device (AMD64) the root disk itself counted as an
+  ### external card and an absent card cost the full wait (#308 claude
+  ### F-PB-13). A /storage on a whole disk is that disk.
+  local internal dev name sz part
+  part=$(grep " /storage " /proc/mounts | awk '{print $1}' | sed -e 's#.*/##')
+  if [ -e "/sys/class/block/${part}/partition" ]
+  then
+    internal=$(basename "$(readlink -f "/sys/class/block/${part}/..")")
+  else
+    internal="${part}"
+  fi
   for dev in /sys/block/mmcblk[0-9] /sys/block/sd[a-z] /sys/block/nvme[0-9]n[0-9]
   do
     [ -e "${dev}" ] || continue
