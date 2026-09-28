@@ -3241,4 +3241,22 @@ printf 'name = probe\npass = QA-SECRET-PASS\n' > "${P7S}/.config/test/leaky.conf
 p7bt backup
 [ "${RC}" -ne 0 ] && [ "$(p7why)" = "A SIGN-IN WAS FOUND IN THE BACKUP" ] && [ "$(p7arc)" = "${p7first}" ] && ! tar -xzOf "${p7first}" 2>/dev/null | grep -q QA-SECRET && [ -z "$(ls "${P7S}/roms/backup"/*.partial 2>/dev/null)" ] && grep -q 'logger -t backuptool .*1 line' "${P7OUT}"; check $? "#307 PL-005: a pass = line in the selection ends the backup (rc ${RC}, why: $(p7why)); the last archive is the only one, unchanged, no partial left, the log counts one line" "#307 PL-005: rc ${RC}; why '$(p7why)'; archives: $(p7arc | xargs -n1 basename 2>/dev/null | tr '\n' ' '); secret in an archive: $(for a in $(p7arc); do tar -xzOf "$a" 2>/dev/null | grep -c QA-SECRET; done | tr '\n' ' ')"
 
+# == PL-006: the scan reads the key word in any case, and the shapes the push guard knows
+p7sign() { # <file under test/> <content>: a backup of a selection holding it; FAILs with the item named when it is not refused
+    p7reset '  /storage/.config/test/*'
+    mkdir -p "$(dirname "${P7S}/.config/test/$1")"; printf '%s\n' "$2" > "${P7S}/.config/test/$1"
+    p7bt backup
+    [ "${RC}" -ne 0 ] && [ "$(p7why)" = "A SIGN-IN WAS FOUND IN THE BACKUP" ] && [ -z "$(p7arc)" ]
+}
+p7sign app.ini 'Password=QA-LONG-LITERAL-VALUE-123'; check $? "#307 PL-006: Password=<long literal> in a custom location is caught" "#307 PL-006: rc ${RC}; why '$(p7why)'; archives: $(p7arc | wc -l) -- the capital P passed"
+p7sign wg.conf 'PrivateKey = QAQAQAQAQAQAQAQAQAQAQAQAQAQAQAQAQAQAQAQAQA='; check $? "#307 PL-006: a WireGuard PrivateKey line is caught" "#307 PL-006: rc ${RC}; why '$(p7why)'"
+p7sign api.cfg 'ClientSecret=QA-CLIENT-SECRET-0001'; check $? "#307 PL-006: a ClientSecret= line is caught" "#307 PL-006: rc ${RC}; why '$(p7why)'"
+p7sign id.txt "$(printf -- '-----BEGIN %s-----\nQAQA\n-----END %s-----' 'OPENSSH PRIVATE KEY' 'OPENSSH PRIVATE KEY')"; check $? "#307 PL-006: a private-key block in a .txt is caught (the push guard's shape)" "#307 PL-006: rc ${RC}; why '$(p7why)'"
+p7sign tok.json "$(printf '{"access_token": "%s", "expiry": 1}' 'ya29.QAQAQAQAQAQAQAQAQAQAQA')"; check $? "#307 PL-006: an OAuth access_token in a .json is caught (the push guard's shape)" "#307 PL-006: rc ${RC}; why '$(p7why)'"
+p7reset '  /storage/.config/test/*'
+mkdir -p "${P7S}/.config/test/lang"; printf 'Password = Пароль\nToken = Токен\n' > "${P7S}/.config/test/lang/ru_RU.ini"
+printf 'gmuhttp.DisableLocalPassword=yes\ninput_enable_hotkey = "nul"\ncore_info_savestate_bypass = "false"\ncheevos_password = ""\ndefault_open_gui_key=F12\n' > "${P7S}/.config/test/clean.cfg"
+p7bt backup
+[ "${RC}" -eq 0 ] && [ -n "$(p7arc)" ]; check $? "#307 PL-006: a translation catalogue under lang/ and keys that only end in key, pass or Password are not sign-ins: the backup completes (rc ${RC})" "#307 PL-006: rc ${RC}; why '$(p7why)'; log: $(grep -o 'logger -t backuptool [^|]*line[^|]*' "${P7OUT}" | head -1)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

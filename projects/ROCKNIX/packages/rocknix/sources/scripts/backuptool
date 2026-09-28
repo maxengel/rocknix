@@ -248,30 +248,47 @@ glob_literal() {
 # tier's chain (backuptool backup && cloud_backup --system-only) uploaded the
 # archive anyway; now a hit ends the run before the archive is named.
 #
-# Text config files only, anchored to a config-key shape. Translation
-# catalogues ship lines like 'Password = Пароль', and scanning every file
-# found nothing while warning on every backup, which would be worse than not
-# warning at all. The capitalised keys are the ones the standalone emulators'
-# cheevos_*.sh scripts write (Token, ApiToken, RA_Token, RA_Password); until
-# #169 the anchor was lower-case only. A bare-token file (.dat, .txt) has no
-# key shape to match; those are held back by name instead. The credential
-# word is a whole part of the key name -- after the start, a "_" or a "." --
-# and "key" alone is too common a word to be one: it counts bare, dotted
-# (wifi.key) or behind a credential word (stream_key, secret_access_key).
-# Until #221 a name that merely ended in "key" or "pass" counted, and every
-# shipped retroarch.cfg carries input_enable_hotkey (on some families
-# core_info_savestate_bypass too), so every clean backup warned -- which
-# teaches people to ignore the one that matters. A trailing digit counts
-# (rclone's password2).
+# Two shapes, the same two the pre-push guard knows (#307 PL-006):
+#
+#   A key and a value, in a text config file (.cfg, .conf, .ini, and the
+#   network's .nmconnection and .psk). The key word is matched in any case --
+#   Password=, TOKEN=, PrivateKey = and ClientSecret= were all passed by a
+#   pattern whose prefix class admitted no capital. It stays a whole part of
+#   the key: at the start, or after a "_", "." or "-" -- so "bypass",
+#   "input_enable_hotkey" and "DisableLocalPassword" are not credentials,
+#   which is the lesson of #221 (a clean backup that warns teaches people to
+#   ignore the one that matters). "key" alone counts bare, dotted (wifi.key)
+#   or inside a credential word (stream_key, secret_access_key). A trailing
+#   digit counts (rclone's password2); an empty value never does.
+#   Translation catalogues ship lines like 'Password = Пароль', so they are
+#   kept out by where they live (lang/, locale/, translations/), not by case,
+#   which is what the case-sensitive pattern had been protecting.
+#
+#   A fixed token format, in any text file: a private-key block, an OAuth
+#   access or refresh token, AWS, GitHub, Slack and OpenAI keys, ScreenScraper's
+#   devpassword=, RetroAchievements' &y= -- the SECRET_PATTERNS of
+#   .githooks/pre-push, whose last shape (an upper-case KEY/TOKEN/SECRET/
+#   PASSWORD= with a long literal) is here too.
+#
+# A bare-token file (.dat, .txt) has no key shape to match; those are held
+# back by name instead.
+CREDENTIAL_KEYS='^[[:space:]]*(([a-z0-9_.-]*[_.-])?(password|passwd|pass|passphrase|token|secret|apikey|api_key|privatekey|private_key|presharedkey|preshared_key|access_key|secret_key|stream_key|wifi_key|clientsecret|client_secret|apitoken|psk)|key|[a-z0-9_.-]*\.key)[0-9]*[[:space:]]*[=:][[:space:]]*"?[^"[:space:]]+'
+CREDENTIAL_TOKENS='devpassword=[A-Za-z0-9._%-]{4,}|[?&]y=[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY|"(access|refresh)_token" *: *"[A-Za-z0-9._-]{16,}|sk-[A-Za-z0-9_-]{24,}|(API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD)[A-Z_]* *[:=] *["'"'"']?[A-Za-z0-9+/=_-]{16,}'
 credential_lines() {
     local TREE="${1}" F N TOTAL=0 NAMES=""
     while IFS= read -r -d '' F
     do
-        N=$(grep -cE '^(([a-z_.]*[_.])?(password|passwd|pass|token|secret|apikey|api_key|stream_key|access_key|secret_key|private_key|wifi_key)[0-9]*|key|[a-z_.]*\.key|Token|ApiToken|RA_Token|RA_Password) *[=:] *"?[^"[:space:]]+' "${F}" 2>/dev/null)
-        [ "${N:-0}" -gt 0 ] 2>/dev/null || continue
+        N=0
+        case "${F}" in
+            */lang/*|*/locale/*|*/translations/*) ;;
+            *.cfg|*.conf|*.ini|*.nmconnection|*.psk)
+                N=$(grep -ciE "${CREDENTIAL_KEYS}" "${F}" 2>/dev/null) ;;
+        esac
+        N=$(( ${N:-0} + $(grep -IcE "${CREDENTIAL_TOKENS}" "${F}" 2>/dev/null || true) ))
+        [ "${N}" -gt 0 ] || continue
         TOTAL=$((TOTAL + N))
         NAMES="${NAMES:+${NAMES}, }${F#${TREE}/}"
-    done < <(find "${TREE}" -type f \( -name '*.cfg' -o -name '*.conf' -o -name '*.ini' \) -print0)
+    done < <(find "${TREE}" -type f -print0)
     [ "${TOTAL}" -gt 0 ] && logger -t backuptool "found ${TOTAL} line(s) that look like a password or key, in: ${NAMES}"
     echo "${TOTAL}"
 }
