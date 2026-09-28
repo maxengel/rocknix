@@ -60,6 +60,9 @@
 #            account -- id, title, icon, achievements, points, unlocked,
 #            unlockedPoints, pending -- from one read of sqlite: the page's
 #            whole offline summary without a request per game (fork #190).
+#            A game a launch cached (its achievementsets row, no patch row)
+#            is listed too, and unlocked and unlockedPoints are null when the
+#            game's unlock row is missing or cannot be read (#307 PL-057).
 #            Exit 1 with the toggle off, no account or no store; 3 when the
 #            store cannot be read.
 #            the proxy, from its cached sign-in: "score=<n> softcore=<n>" on
@@ -563,12 +566,18 @@ for aid, queued in db.execute("SELECT achievementId, queuedAt FROM pending_award
 # a link that had just gone). One JSON object a line, sorted by id:
 #   {"id":4902,"title":"Bobl","icon":"http://127.0.0.1:8080/Images/x.png",
 #    "achievements":12,"points":110,"unlocked":1,"unlockedPoints":5,"pending":1}
-# The core set (Flags 3, positive ids) as the interface reads a patch; a game
-# whose set is empty is not a cached game (audit #186 PL-26); unlocked counts
-# the store's unlocks and the casual awards still waiting, as the service's
-# own offline unlocks answer does; the icon carries the service's address as
-# the service would rewrite it. Exit 1 with the toggle off, no account set or
-# no store; the store that cannot be read is a cannot_tell.
+# A game is the account's patch row, or -- for a game a launch cached and
+# nothing else did -- its achievementsets row (RetroArch asks achievementsets,
+# not patch; #307 PL-057), read as the interface's game page reads one: the
+# set of Type core, else the first. The core set (Flags 3, positive ids) as
+# the interface reads a patch; a game whose set is empty is not a cached game
+# (audit #186 PL-26); unlocked counts the store's unlocks and the casual
+# awards still waiting, as the service's own offline unlocks answer does --
+# and when the store's unlock row for the game is missing or cannot be read,
+# unlocked and unlockedPoints are null: unknown, never 0 (#307 PL-057). The
+# icon carries the service's address as the service would rewrite it. Exit
+# 1 with the toggle off, no account set or no store; the store that cannot
+# be read is a cannot_tell (exit 2).
 do_summary() {
     if [ "$(as_flag "$(setting "${KEY}")")" != "1" ] || [ ! -e "${QUEUE}" ]; then
         return 1
@@ -591,14 +600,31 @@ def icon_url(text):
         path = urlsplit(text).path
         return base + path if path else ""
     return base + "/" + text
+def core_of(achievements):
+    return [a for a in (achievements or []) if isinstance(a, dict) and int(a.get("Flags") or 3) == 3 and int(a.get("ID") or 0) > 0]
+def set_achievements(data):
+    # OfflineAchievementsText::parseAchievementSets: the set of Type core, else the first.
+    if isinstance(data.get("Achievements"), list):
+        return data["Achievements"]
+    chosen = None
+    for one in data.get("Sets") or []:
+        if not isinstance(one, dict):
+            continue
+        if chosen is None:
+            chosen = one
+        if one.get("Type") == "core":
+            chosen = one
+            break
+    return (chosen or {}).get("Achievements") or []
 try:
     db = sqlite3.connect("file:%s?mode=ro" % store, uri=True, timeout=1.0)
-    patches = db.execute("SELECT cacheKey, responseBody FROM api_cache WHERE cacheKey LIKE ?", ("patch:%:" + user,)).fetchall()
+    patches = db.execute("SELECT cacheKey, responseBody FROM api_cache WHERE cacheKey LIKE ? ORDER BY cacheKey", ("patch:%:" + user,)).fetchall()
+    sets = db.execute("SELECT cacheKey, responseBody FROM api_cache WHERE cacheKey LIKE ? ORDER BY cacheKey", ("achievementsets:%:" + user,)).fetchall()
     unlock_rows = dict(db.execute("SELECT cacheKey, responseBody FROM api_cache WHERE cacheKey LIKE ?", ("unlocks:%:" + user + ":0",)).fetchall())
     pending = {int(aid) for (aid,) in db.execute("SELECT achievementId FROM pending_awards WHERE status = 'pending'")}
 except Exception:
     sys.exit(3)
-games = []
+found = {}   # id -> (title, icon, core set)
 for key, body in patches:
     parts = key.split(":")
     if len(parts) != 3 or parts[2] != user:
@@ -606,24 +632,43 @@ for key, body in patches:
     try:
         gid = int(parts[1])
         patch = (json.loads(body) or {}).get("PatchData") or {}
-        core = [a for a in (patch.get("Achievements") or []) if isinstance(a, dict) and int(a.get("Flags") or 3) == 3 and int(a.get("ID") or 0) > 0]
+        core = core_of(patch.get("Achievements"))
     except Exception:
         continue
+    found[gid] = (str(patch.get("Title") or ""), patch.get("ImageIcon"), core)
+for key, body in sets:
+    parts = key.split(":")
+    if len(parts) != 3 or parts[2] != user:
+        continue
+    try:
+        data = json.loads(body) or {}
+        gid = int(data.get("GameId") or 0)
+        core = core_of(set_achievements(data))
+    except Exception:
+        continue
+    if gid > 0 and core and not (gid in found and found[gid][2]):
+        found[gid] = (str(data.get("Title") or ""), data.get("ImageIconUrl") or data.get("ImageIcon"), core)
+games = []
+for gid, (title, icon, core) in found.items():
     if gid <= 0 or not core:
         continue
     points = {int(a["ID"]): int(a.get("Points") or 0) for a in core}
-    unlocked = set()
-    row = unlock_rows.get("unlocks:%d:%s:0" % (gid, user))   # the casual row (cache_keys.unlocks: a trailing 0)
-    if row:
-        try:
-            unlocked = {int(u) for u in (json.loads(row).get("UserUnlocks") or [])}
-        except Exception:
-            unlocked = set()
     queued = pending & set(points)
-    unlocked = (unlocked | queued) & set(points)
-    games.append({"id": gid, "title": str(patch.get("Title") or ""), "icon": icon_url(patch.get("ImageIcon")),
-                  "achievements": len(points), "points": sum(points.values()), "unlocked": len(unlocked),
-                  "unlockedPoints": sum(points[i] for i in unlocked), "pending": len(queued)})
+    unlocked = None   # unknown until the store's unlock row is read
+    row = unlock_rows.get("unlocks:%d:%s:0" % (gid, user))   # the casual row (cache_keys.unlocks: a trailing 0)
+    if row is not None:
+        try:
+            data = json.loads(row)
+            values = data.get("UserUnlocks") if isinstance(data, dict) and data.get("Success") is not False else None
+            if isinstance(values, list):
+                unlocked = ({int(u) for u in values} | queued) & set(points)
+        except Exception:
+            unlocked = None
+    games.append({"id": gid, "title": title, "icon": icon_url(icon),
+                  "achievements": len(points), "points": sum(points.values()),
+                  "unlocked": None if unlocked is None else len(unlocked),
+                  "unlockedPoints": None if unlocked is None else sum(points[i] for i in unlocked),
+                  "pending": len(queued)})
 for game in sorted(games, key=lambda g: g["id"]):
     print(json.dumps(game, separators=(",", ":"), ensure_ascii=False))
 PY_SUMMARY

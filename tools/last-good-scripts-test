@@ -3208,4 +3208,45 @@ else
     echo "    SKIP  PL-055's cases: section t did not run"
 fi
 
+# D3. #307 PL-057 (F-RA-04/05 gpt): the summary lists a game cached by a
+# launch alone -- an achievementsets row and no patch row -- from that row's
+# core set, once; and a game whose unlock row is missing or cannot be read
+# says its unlocks are unknown (null), never that nothing was earned.
+# (The store also holds the waiting awards 03b reads, and D18 runs the
+# ctl's other reads on a store the same client wrote.)
+if [ "${DT_OK}" -eq 1 ]; then
+TENV=(); printf "${DCFG_ON}" > "${TCFG}"
+treset; PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
+import json
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+core = lambda *pairs: [{"ID": i, "Title": f"a{i}", "Points": p, "Flags": 3} for i, p in pairs]
+# 201: a launch's rows only (RetroArch asked achievementsets, never patch).
+s.upsert_cache(cache_keys.achievementsets("aaaa0201", "qa"), json.dumps({"Success": True, "GameId": 201, "Title": "Sets Only", "ImageIconUrl": "https://media.retroachievements.org/Images/000201.png",
+    "Sets": [{"Type": "bonus", "Achievements": core((3901, 50))}, {"Type": "core", "Achievements": core((3001, 5), (3002, 10)) + [{"ID": 3003, "Points": 25, "Flags": 5}]}]}))
+s.upsert_cache(cache_keys.unlocks(201, "qa"), json.dumps({"Success": True, "UserUnlocks": [3001]}))
+# 202: a patch row whose unlock row is damaged; 203: a patch row with no unlock row.
+s.upsert_cache(cache_keys.patch(202, "qa"), json.dumps({"Success": True, "PatchData": {"ID": 202, "Title": "Bad Unlocks", "Achievements": core((3101, 5), (3102, 5))}}))
+s.upsert_cache(cache_keys.unlocks(202, "qa"), "{not json")
+s.upsert_cache(cache_keys.patch(203, "qa"), json.dumps({"Success": True, "PatchData": {"ID": 203, "Title": "No Unlocks", "Achievements": core((3201, 5))}}))
+# 204: another account's launch rows; 102: a patch row and a sets row, listed once.
+s.upsert_cache(cache_keys.achievementsets("dddd0204", "other"), json.dumps({"Success": True, "GameId": 204, "Title": "Theirs", "Sets": [{"Type": "core", "Achievements": core((3301, 5))}]}))
+s.upsert_cache(cache_keys.patch(102, "qa"), json.dumps({"Success": True, "PatchData": {"ID": 102, "Title": "Bee", "ImageIcon": "/Images/000102.png", "Achievements": core((1001, 5), (1002, 10))}}))
+s.upsert_cache(cache_keys.unlocks(102, "qa"), json.dumps({"Success": True, "UserUnlocks": [1001]}))
+s.upsert_cache(cache_keys.achievementsets("bbbb", "qa"), json.dumps({"Success": True, "GameId": 102, "Title": "Bee", "Sets": [{"Type": "core", "Achievements": core((1001, 5), (1002, 10))}]}))
+# Waiting awards: 1002 earned by another account on this device, 3002 by qa.
+now = 1789400000000
+s.upsert_pending_award({"achievementId": 1002, "queryString": "/dorequest.php?r=awardachievement&u=Other&a=1002&h=0", "requestBody": "", "userAgent": "ra", "queuedAt": now})
+s.upsert_pending_award({"achievementId": 3002, "queryString": "/dorequest.php", "requestBody": "r=awardachievement&u=QA&t=x&a=3002&h=0", "userAgent": "ra", "queuedAt": now + 1000})
+s.close()
+EOS
+tctl summary; cp "${OUT}" "${DD}/summary.out"
+grep -qx '{"id":201,"title":"Sets Only","icon":"http://127.0.0.1:8080/Images/000201.png","achievements":2,"points":15,"unlocked":2,"unlockedPoints":15,"pending":1}' "${DD}/summary.out"; check $? "PL-057 summary: a game cached by a launch alone (achievementsets row, no patch row) is listed from its core set -- 2 achievements, 15 points, both unlocked (one earned, one waiting to be sent)" "PL-057 summary: rc ${RC}; no line for game 201: $(tr '\n' '|' < "${DD}/summary.out" | cut -c1-400) -- the summary read patch rows only"
+grep -q '"id":202,.*"unlocked":null,"unlockedPoints":null' "${DD}/summary.out" && grep -q '"id":203,.*"unlocked":null,"unlockedPoints":null' "${DD}/summary.out"; check $? "PL-057 summary: a damaged unlock row (202) and a missing one (203) read unlocked null -- unknown, not none" "PL-057 summary: $(grep -E '"id":20[23],' "${DD}/summary.out" | tr '\n' '|' | cut -c1-300) -- an unreadable unlock row read as nothing earned"
+[ "$(grep -c '"id":102,' "${DD}/summary.out")" -eq 1 ] && ! grep -q '"id":204,' "${DD}/summary.out"; check $? "PL-057 summary: a game with both rows is listed once; another account's launch rows are not listed" "PL-057 summary: 102 x$(grep -c '"id":102,' "${DD}/summary.out"), 204 x$(grep -c '"id":204,' "${DD}/summary.out")"
+else
+    echo "    SKIP  PL-057's cases: section t did not run"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
