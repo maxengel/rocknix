@@ -46,8 +46,9 @@
 # next slice and the whole store comes round in a few runs. Reaching the end
 # clears the cursor and says so.
 #
-# The ceiling is time (--seconds, default 300). A run that leaves images
-# behind says how many and exits 1, the way a scan that could not finish does
+# The ceiling is time (--seconds, default 300). An image the server does not
+# have (404, 410) is recorded absent and is not left behind (see ABSENT_FILE).
+# A run that leaves images behind says how many and exits 1, the way a scan that could not finish does
 # (#186 PL-24): a partial pass is never reported as a complete one. Exit 3 is
 # every image there but a verify sweep that did not come round the store this
 # run -- the slice a run D-RA-024 designed, named apart from a failure because
@@ -93,6 +94,18 @@ ROW_PREFIXES = (
 
 # Where --verify left off, so each run takes the next slice (#213).
 CURSOR = image_cache.IMAGE_CACHE_DIR / "verify-cursor"
+
+# The images the image server said it does not have -- 404 or 410, which
+# download_static_image calls absent (patch 016) -- one "<epoch> <path>" a
+# line. A pass does not ask for them again and they are no failure of it: a
+# badge the server never had used to fail every scan for good (#307 PL-060's
+# follow-up). A timeout, a 5xx, a refused connection or a short read is not
+# recorded: it fails the pass and is asked for next time. An entry older than
+# ABSENT_RECHECK_SECONDS is asked for once more, so an image the server adds
+# later is not missed for ever -- one request a month for each.
+ABSENT_FILE = image_cache.IMAGE_CACHE_DIR / "absent"
+ABSENT_RECHECK_SECONDS = 30 * 24 * 3600
+IMAGE_ABSENT = getattr(image_cache, "IMAGE_ABSENT", "absent")
 
 # Smaller than any real badge: a PNG needs a signature, an IHDR and an IEND,
 # and the smallest one RetroAchievements serves is a few hundred bytes (of a
@@ -144,6 +157,32 @@ def write_cursor(value: str) -> None:
             CURSOR.unlink(missing_ok=True)
     except OSError as exc:
         note(f"the verify cursor could not be written: {exc}")
+
+
+def read_absent() -> dict[str, int]:
+    """{path: when it was found absent}, the entries not yet due a recheck."""
+    found: dict[str, int] = {}
+    try:
+        text = ABSENT_FILE.read_text(encoding="utf-8")
+    except OSError:
+        return found
+    now = int(time.time())
+    for line in text.splitlines():
+        stamp, _, path = line.partition(" ")
+        if stamp.isdigit() and path.startswith("/") and now - int(stamp) < ABSENT_RECHECK_SECONDS:
+            found[path] = int(stamp)
+    return found
+
+
+def write_absent(entries: dict[str, int]) -> None:
+    """The absent record, whole or not at all."""
+    try:
+        ABSENT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = ABSENT_FILE.with_name(ABSENT_FILE.name + ".tmp")
+        tmp.write_text("".join(f"{stamp} {path}\n" for path, stamp in sorted(entries.items())), encoding="utf-8")
+        os.replace(tmp, ABSENT_FILE)
+    except OSError as exc:
+        note(f"the absent record could not be written: {exc}")
 
 
 def tell(text: str) -> None:
@@ -315,7 +354,14 @@ def main() -> int:
         tell("why STORE_UNREADABLE")
         return 2
 
-    note(f"{rows} cached set row(s), {total_paths} image path(s), {len(missing)} missing")
+    absent = read_absent()
+    absent_before = dict(absent)
+    known_absent = [p for p in missing if p in absent]
+    if known_absent:
+        missing = [p for p in missing if p not in absent]
+        tell(f"note ABSENT {len(known_absent)}")
+    note(f"{rows} cached set row(s), {total_paths} image path(s), {len(missing)} missing"
+         f"{f', {len(known_absent)} the image server does not have (not asked for again)' if known_absent else ''}")
     tell(f"total {len(missing)}")
     if not missing:
         tell("note NOTHING_MISSING")
@@ -357,12 +403,18 @@ def main() -> int:
             for future in as_completed(futures, timeout=max(0.0, deadline - time.monotonic())):
                 path = futures[future]
                 done += 1
+                outcome = None
                 try:
-                    future.result()
+                    outcome = future.result()
                 except Exception as exc:  # download_static_image swallows its own
                     note(f"{path}: {exc}")
                 if image_cache.resolve_cached_static_asset(path) is not None:
                     fetched += 1
+                elif outcome == IMAGE_ABSENT:
+                    absent[path] = int(time.time())
+                    note(f"{path}: the image server does not have it (404 or 410); recorded absent, not asked for again")
+                elif outcome is not None:
+                    note(f"{path}: not cached ({outcome}); asked for again next pass")
                 if done % 25 == 0 or done == len(missing):
                     tell(f"image {done}|{len(missing)}")
                 if time.monotonic() > deadline:
@@ -379,9 +431,14 @@ def main() -> int:
     pool.shutdown(wait=False, cancel_futures=True)
     running = any(not future.done() for future in futures)
 
-    left = [p for p in missing if image_cache.resolve_cached_static_asset(p) is None]
+    if absent != absent_before:
+        write_absent(absent)
+    # Left behind: not there and not absent -- what the next pass asks for,
+    # and what makes this one a failure.
+    left = [p for p in missing if image_cache.resolve_cached_static_asset(p) is None and p not in absent]
+    newly_absent = len(absent) - len(absent_before)
     note(
-        f"fetched {fetched}, still missing {len(left)}"
+        f"fetched {fetched}, {newly_absent} absent, still missing {len(left)}"
         f"{' (stopped at the ceiling)' if stopped else ''}"
         f"{f'; {len(damaged_found)} were damaged and re-fetched' if damaged_found else ''}"
     )

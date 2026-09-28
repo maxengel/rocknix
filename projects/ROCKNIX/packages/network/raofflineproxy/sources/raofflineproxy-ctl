@@ -1642,7 +1642,11 @@ cancelled() {
 # R_IMAGES_WHY=SOME_IMAGES_NOT_SAVED for the caller to stamp, the games
 # still counted as cached. A verify slice that did not come round the store
 # (the helper's exit 3) is the sweep doing its work a slice a run, by design
-# (D-RA-024), and is no failure; every other exit is, a crash included.
+# (D-RA-024), and is no failure; every other exit is, a crash included. An
+# image the image server does not have (404, 410) is recorded absent by the
+# helper and is no failure either: SOME_IMAGES_NOT_SAVED means images that
+# did not come this time -- a timeout, a 5xx, a short read -- and are asked
+# for again (PL-060's follow-up).
 IMAGE_PASS_SECONDS="${RAOFFLINEPROXY_IMAGE_PASS_SECONDS:-300}"
 
 run_image_pass() {
@@ -2120,7 +2124,7 @@ case "${1:-}" in
     images)  do_images "${2:-}" ;;
     refresh) do_refresh "${2:-}" "${3:-}" ;;
     *)
-        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|pending-ids|account|flushed|scan|topup [--after-index]|index-offline|images [--verify]|refresh [--all|--game <id>]|listening [--wait <seconds>]|ready}" >&2
+        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|pending-ids|account|summary|flushed|scan|topup [--after-index]|index-offline|images [--verify]|refresh [--all|--game <id>]|listening [--wait <seconds>]|ready}" >&2
         exit 2
     ;;
 esac
