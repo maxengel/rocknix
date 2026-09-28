@@ -538,6 +538,11 @@ snapshot_members() { # <members file> <target> <newlist file>
         esac
         case "/${M}/" in */../*|*/./*) continue ;; esac
         LIVE="/${M}"
+        # Never extracted, so neither kept nor listed as created: a restore's
+        # own control files and the backups folder (RESTORE_CONTROL). Listed
+        # as created, the revert removed the copy it had just put back.
+        case "${LIVE}" in "${SETTINGS_BACKUPS}"/*) continue ;; esac
+        for C in "${RESTORE_CONTROL[@]}"; do [ "${LIVE}" = "${C}" ] && continue 2; done
         if [ -L "${LIVE}" ] || [ -f "${LIVE}" ]
         then
             printf '%s\n' "${M}" 2>/dev/null >> "${KEEP}" || { WHOLE=0; break; }
@@ -675,6 +680,24 @@ SEEDLIST="/storage/.config/.backuptool-seeds"
 # Where a backup is staged (see write_archive); a run killed part-way leaves
 # one behind, swept by the next run under the lock.
 STAGING_PREFIX="/storage/.cache/backuptool-staging."
+# The files a restore and the boot use to talk about a restore: the mark the
+# boot's revert reads (and its temporary), the revert's answer for the
+# interface, and the one-shot markers a finished restore leaves for the next
+# start. They are this device's state about its own run, never settings: a
+# backup never carries one, and a restore never takes one from an archive.
+# An archive that carried a stale .restore-in-progress -- an earlier broad
+# backup caught one -- wrote it over the fresh mark mid-extraction, and a
+# cut restore's boot then read the archived one (#307, the audit of the fix
+# round, PL-007). With them, the settings backups folder is never extracted
+# into: it holds the copy this restore just took.
+RESTORE_MARK="/storage/.config/.restore-in-progress"
+RESTORE_CONTROL=(
+    "${RESTORE_MARK}"
+    "${RESTORE_MARK}.tmp"
+    /storage/.config/.restore-reverted
+    /storage/.config/.restore-finish-pending
+    /storage/.config/.cloud-journey-pending
+)
 
 # Write one settings archive to TARGET, whole or not at all.
 #
@@ -799,10 +822,13 @@ write_archive() {
     # place, or the collection fails (return 2). An exclusion that could not
     # be applied left the unfiltered list in place, and a selection of
     # /storage/roms archived the password-keeping pre-restore copies it
-    # exists to keep out (gpt G-B-04).
-    local KEPTN DROPPED
-    if ! OWN="${OWN}/" STAGE="${STAGING_PREFIX}" CORES=/storage/.cache/log/cores/ EVID=/storage/.cache/log/evidence/ \
-           awk 'index($0, ENVIRON["OWN"]) == 1 || index($0, ENVIRON["STAGE"]) == 1 || index($0, ENVIRON["CORES"]) == 1 || index($0, ENVIRON["EVID"]) == 1 { next } { print }' \
+    # exists to keep out (gpt G-B-04). And a restore's own control files, by
+    # exact path (RESTORE_CONTROL; the audit of the fix round, PL-007).
+    local KEPTN DROPPED CTRL
+    CTRL=$(printf '%s\n' "${RESTORE_CONTROL[@]}")
+    if ! OWN="${OWN}/" STAGE="${STAGING_PREFIX}" CORES=/storage/.cache/log/cores/ EVID=/storage/.cache/log/evidence/ CTRL="${CTRL}" \
+           awk 'BEGIN { n = split(ENVIRON["CTRL"], c, "\n"); for (i = 1; i <= n; i++) if (c[i] != "") ctrl[c[i]] = 1 }
+                ($0 in ctrl) || index($0, ENVIRON["OWN"]) == 1 || index($0, ENVIRON["STAGE"]) == 1 || index($0, ENVIRON["CORES"]) == 1 || index($0, ENVIRON["EVID"]) == 1 { next } { print }' \
            "${FILELIST}" > "${FILELIST}.kept" \
        || ! KEPTN=$(wc -l < "${FILELIST}.kept") \
        || ! DROPPED=$(( $(wc -l < "${FILELIST}") - KEPTN )) \
@@ -812,7 +838,7 @@ write_archive() {
         rm -f "${FILELIST}" "${FILELIST}.kept" "${SECRETLIST}" "${SENDLIST}"
         return 2
     fi
-    [ "${DROPPED}" -gt 0 ] && logger -t backuptool "left out ${DROPPED} file(s) a backup never holds: another backup, a staging folder, a core dump or an evidence bundle"
+    [ "${DROPPED}" -gt 0 ] && logger -t backuptool "left out ${DROPPED} file(s) a backup never holds: another backup, a staging folder, a core dump, an evidence bundle or a restore's own marker"
 
     # Inside a configured location, what the image ships is not the player's
     # configuration and does not travel (#45). A stock device's archive was
@@ -1434,7 +1460,6 @@ case "${VERB}" in
         # then the write was unchecked and the extraction went on without
         # it). -T, so a folder in the mark's place is a failure, not a
         # destination the mark moves into.
-        RESTORE_MARK="/storage/.config/.restore-in-progress"
         if [ -n "${SNAPSHOT}" ] || [ -s "${NEWLIST}" ]
         then
             if ! { { printf '%s\n' "${SNAPSHOT}"; sed 's/^/+/' "${NEWLIST}"; } > "${RESTORE_MARK}.tmp" 2>/dev/null \
@@ -1469,6 +1494,15 @@ case "${VERB}" in
         then
             note "KEEPING ${#LINKS[@]} FILE(S) THE SYSTEM PROVIDES THAT THIS BACKUP WOULD HAVE REPLACED."
         fi
+        # What neither kind of archive ever writes, one list for both (the
+        # branches below say why each is here). The last three are the
+        # restore's own: its control files, the settings backups folder that
+        # holds the copy just taken, and that copy by name (RESTORE_CONTROL;
+        # #307, the audit of the fix round, PL-007).
+        SKIPS=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIR_PATTERNS[@]}" "${DEVICEONLY[@]#/}" "${SEEDLIST#/}" "${LINKS[@]}")
+        for C in "${RESTORE_CONTROL[@]}"; do SKIPS+=("$(glob_literal "${C#/}")"); done
+        SKIPS+=("$(glob_literal "${SETTINGS_BACKUPS#/}")/*")
+        [ -n "${SNAPSHOT}" ] && SKIPS+=("$(glob_literal "${SNAPSHOT#/}")")
         if [ "${ARCHIVE_KIND}" = "tar" ]
         then
             # What is skipped is the OS's: an archive written before #45 carries
@@ -1492,7 +1526,6 @@ case "${VERB}" in
             # made empty or short by a full /tmp excluded nothing, and
             # rclone.conf, the token files and the rest came off the archive
             # (#307, the audit of the fix round, PL-006).
-            SKIPS=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIR_PATTERNS[@]}" "${DEVICEONLY[@]#/}" "${SEEDLIST#/}" "${LINKS[@]}")
             SKIP=""
             if SKIP=$(tmp_file) && printf '%s\n' "${SKIPS[@]}" 2>/dev/null > "${SKIP}" \
                && [ "$(wc -l 2>/dev/null < "${SKIP}")" -eq "${#SKIPS[@]}" ] 2>/dev/null
@@ -1522,7 +1555,6 @@ case "${VERB}" in
             # PL-036 this branch split them on spaces, so "my link.cfg" was
             # tested as "my" and a live symlink with a space in its name was
             # not skipped -- the abort this list exists to prevent.
-            SKIPS=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIR_PATTERNS[@]}" "${DEVICEONLY[@]#/}" "${SEEDLIST#/}" "${LINKS[@]}")
             # -x is a mode switch: every argument after it is an exclusion,
             # so it goes last. busybox and Info-ZIP both take the patterns.
             to_log unzip -o "${BACKUPFILE}" -d / -x "${SKIPS[@]}" >/dev/null

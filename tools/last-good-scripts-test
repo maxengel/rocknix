@@ -10352,6 +10352,65 @@ p7reset '  /storage/.config/system/configs/system.cfg
 p7zmk ro 2 backup
 [ "${RC}" -ne 0 ] && [ -z "$(p7arc)" ] && [ "$(p7why)" = "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS" ] && grep -q 'held back could not be written whole' "${P7OUT}"; check $? "audit of the fix round PL-006: a backup whose held-back list cannot be written (system.cfg would go whole) is a collection that failed, said as one" "PL-006 (held back): rc ${RC}; archives $(p7arc | wc -l); why '$(p7why)'"
 
+# == PL-007: an archive never writes the restore's own mark or its copy
+# The clock stopped, so the copy's name is known; a tar that extracts for real
+# and is then cut keeps the mark and the copy as the extraction left them.
+cat > "${P7Z}/date" <<'EOS'
+#!/bin/bash
+case "$*" in
+    +%s) echo 1790000000 ;;
+    *+%Y_%m_%d-%H%M%S) echo 2026_09_21-140000 ;;
+    *) exec /p7bb/date "$@" ;;
+esac
+EOS
+chmod +x "${P7Z}/date"
+P7ZSNAP="storage/roms/backup/archive/2026_09_21-140000-PRE_RESTORE-ROCKNIX_SETTINGS.tar.gz"
+cat > "${P7Z}/cuttar" <<'EOS'
+#!/bin/bash
+if [ "$1" = "-xzf" ] && [[ "$2" != */archive/* ]] && [ "$3" = "-C" ] && [ "$4" = "/" ]; then
+    /p7bb/tar "$@"
+    cp /storage/.config/.restore-in-progress /storage/.p7-mark-after 2>/dev/null
+    cp /storage/roms/backup/archive/2026_09_21-140000-PRE_RESTORE-ROCKNIX_SETTINGS.tar.gz /storage/.p7-snap-after 2>/dev/null
+    echo "tar: write error: No space left on device" >&2; exit 1
+fi
+exec /p7bb/tar "$@"
+EOS
+cat > "${P7Z}/cutunzip" <<'EOS'
+#!/bin/bash
+if [ "$1" = "-o" ] && [ "$3" = "-d" ] && [ "$4" = "/" ]; then
+    /p7bb/unzip "$@"
+    cp /storage/.config/.restore-in-progress /storage/.p7-mark-after 2>/dev/null
+    cp /storage/roms/backup/archive/2026_09_21-140000-PRE_RESTORE-ROCKNIX_SETTINGS.tar.gz /storage/.p7-snap-after 2>/dev/null
+    echo "unzip: write error" >&2; exit 1
+fi
+exec /p7bb/unzip "$@"
+EOS
+chmod +x "${P7Z}/cuttar" "${P7Z}/cutunzip"
+p7zmark() { # the mark and the copy as the cut extraction left them, and what the revert said
+    local m s
+    m=$(head -n 1 "${P7S}/.p7-mark-after" 2>/dev/null)
+    s=$(tar -xzOf "${P7S}/.p7-snap-after" storage/.config/test/f1 2>/dev/null)
+    [ "${m}" = "/${P7ZSNAP}" ] && [ "${s}" = "LIVE" ] && [ "$(cat "${P7S}/.config/test/f1")" = "LIVE" ] && grep -q 'YOUR SETTINGS ARE UNCHANGED' "${P7OUT}"
+}
+p7zmarkstate() { echo "rc ${RC}; mark's first line after the extraction '$(head -n 1 "${P7S}/.p7-mark-after" 2>/dev/null)'; copy's f1 '$(tar -xzOf "${P7S}/.p7-snap-after" storage/.config/test/f1 2>/dev/null | head -c 40)'; f1 now '$(cat "${P7S}/.config/test/f1")'; screen: $(p7zscreen | tr '\n' '|' | cut -c1-160)"; }
+p7zclear; p7reset '  /storage/.config/test/*'
+echo LIVE > "${P7S}/.config/test/f1"
+p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/f1=ARCHIVE" "storage/.config/.restore-in-progress=/storage/roms/backup/archive/STALE-COPY.tar.gz" "${P7ZSNAP}=NOT A COPY"
+cp "${P7Z}/date" "${P7}/shim/date"; cp "${P7Z}/cuttar" "${P7}/shim/tar"
+p7bt restore --no-restart
+p7zmark; check $? "audit of the fix round PL-007: a tar archive carrying .restore-in-progress and a file at the copy's own path writes neither -- the fresh mark and the copy stand through the extraction, and the cut restore is undone" "PL-007 (tar): $(p7zmarkstate)"
+p7zclear; p7reset '  /storage/.config/test/*'
+echo LIVE > "${P7S}/.config/test/f1"
+p7zip 20260101000000-ROCKNIX_BACKUP.zip "storage/.config/test/f1=ARCHIVE" "storage/.config/.restore-in-progress=/storage/roms/backup/archive/STALE-COPY.tar.gz" "${P7ZSNAP}=NOT A COPY"
+cp "${P7Z}/date" "${P7}/shim/date"; cp "${P7Z}/cutunzip" "${P7}/shim/unzip"
+p7bt restore --no-restart
+p7zmark; check $? "audit of the fix round PL-007: so does a legacy zip" "PL-007 (zip): $(p7zmarkstate)"
+p7zclear; p7reset '  /storage/.config'
+printf '/storage/roms/backup/archive/old.tar.gz\n' > "${P7S}/.config/.restore-in-progress"; echo reverted > "${P7S}/.config/.restore-reverted"
+touch "${P7S}/.config/.restore-finish-pending" "${P7S}/.config/.cloud-journey-pending"
+p7bt backup
+[ "${RC}" -eq 0 ] && ! p7list | grep -qE '\.restore-in-progress|\.restore-reverted|\.restore-finish-pending|\.cloud-journey-pending'; check $? "audit of the fix round PL-007: and a backup of /storage/.config never carries the restore's mark or the other one-shot markers a restore leaves" "PL-007 (backup): rc ${RC}; archive holds: $(p7list | grep -E 'restore|journey' | tr '\n' ' ')"
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
