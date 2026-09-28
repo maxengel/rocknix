@@ -20,11 +20,12 @@
 
 . /etc/profile.d/001-functions
 
-# Passwords and keys an earlier build wrote into the cloud log, masked once
-# per device (the audit of the fix round, PL-014). Here, in the foreground,
-# because nothing else writes that log yet: the capture pass below does, and
-# EmulationStation starts only after every autostart script has run. After
-# the first boot it reads its record and returns.
+# Passwords and keys an earlier build wrote into the cloud log and the
+# interface's log, masked once per device (the audit of the fix round,
+# PL-014). Here, in the foreground, because nothing else writes those logs
+# yet: the capture pass below writes the cloud log, and EmulationStation
+# starts only after every autostart script has run. After the first boot it
+# reads its record and returns.
 [ -x /usr/bin/cloud_log_scrub ] && /usr/bin/cloud_log_scrub
 
 # The full capture pass (fork #21): re-hash every save the manifest already
