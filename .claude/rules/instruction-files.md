@@ -133,7 +133,7 @@ before writing a new rule; ten of twelve imported principles turned out to be.
 ## The fork's own tools, and which rule documents each
 
 Written because a tool nobody remembers is a tool nobody runs — and this
-estate now has thirty-six of them. One line each; the rule named is where the
+estate now has thirty-seven of them. One line each; the rule named is where the
 detail lives, so this stays an index rather than a second copy. `tools/` is
 otherwise upstream's, which is why the fork-only ones are enumerated by hand
 in `.githooks/pre-push` and in `fork-workflow.md`; **a new one is added to
@@ -169,6 +169,7 @@ both lists and to this table, or it is invisible.**
 | `font-stems` | how sharp a widget face renders at each pixel size: strokes, solid cores, mean stem, per px, on FreeType | `es-native-ui.md` |
 | `signin-memory` | what the cloud sign-in window costs in memory on a QA guest: the window's and WebKit's peak RSS while a page loads | `generic-x64-vm-testing.md` |
 | `vocabulary-check` | back up / backup, and the rest of the player vocabulary | `es-player-text.md` |
+| `forbidden-terms-check` | does a tree, or a set of lines, carry a word from the list kept outside every tree (D-WORKFLOW-061); the fork CI runs it | `fork-workflow.md` |
 | `register-check` | every decision ID once, every citation naming a real row | `decision-register.md` |
 | `lint-audit-artifacts` | the audit artifacts are well formed | `issue-tracking.md` |
 | `rules-check` | every rule file front-mattered per the standard, every file in this index, the counts in `CLAUDE.md` and `AGENTS.md` true, `AGENTS.md` within Codex's budget and naming every rule (D-WORKFLOW-045) | `instruction-files.md` |

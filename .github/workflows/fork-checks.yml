@@ -35,6 +35,10 @@ jobs:
         run: ./tools/register-check
       - name: the instruction files are what their index says
         run: ./tools/rules-check
+      - name: the tree carries no listed word (D-WORKFLOW-061; the list is the repository secret)
+        env:
+          FORBIDDEN_PATTERNS: ${{ secrets.FORBIDDEN_PATTERNS }}
+        run: ./tools/forbidden-terms-check
       - name: every open acceptance checkbox is agent-verifiable (D-QA-044)
         env:
           GH_TOKEN: ${{ github.token }}

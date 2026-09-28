@@ -1,0 +1,86 @@
+# guard-lib -- the scans shared by .githooks/pre-commit, commit-msg and
+# pre-push. Sourced, never run. The same file is carried in the
+# EmulationStation fork's .githooks/; change both together.
+#
+# Two lists. SECRET_PATTERNS lives beside this file (.githooks/secret-patterns;
+# SECRET_PATTERNS_FILE points a test elsewhere). FORBIDDEN_PATTERNS is a
+# wordlist the fork must not carry anywhere -- tree, commit messages, tracker
+# -- and it lives OUTSIDE every tree: ~/.config/rocknix/forbidden-terms
+# (FORBIDDEN_TERMS_FILE for a test), or FORBIDDEN_PATTERNS already in the
+# environment (the fork CI's repository secret). A list of words a tree must
+# not hold would itself hold them, so it is never copied into a tree, and a
+# refusal names the file and the line, never the word (2026-09-28).
+#
+# Everything here fails closed (audit of the fix round, PL-011: the first cut
+# piped each scan through `|| true`, and a pattern that did not compile let
+# every commit through): a list that cannot be read, a pattern that does not
+# compile, a grep that exits above 1, a diff or a message that cannot be read
+# -- each is a refusal, never an empty scan. A line is judged after its label
+# (a path, a commit: PL-026 -- a kernel patch named `...sk-...` was once
+# refused for its file name), and no path is exempt (PL-012: an audit packet
+# that carries a credential-shaped line is redacted in the packet, as its
+# seat outputs were).
+
+guard_here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+guard_tab=$'\t'
+
+# guard_load <hook>: SECRET_PATTERNS and FORBIDDEN_PATTERNS set and compiling,
+# or a line on stderr and 1.
+guard_load() {
+  local hook="$1" f p rc
+  f="${SECRET_PATTERNS_FILE:-${guard_here}/secret-patterns}"
+  SECRET_PATTERNS=''
+  [ -r "${f}" ] && . "${f}"
+  [ -n "${SECRET_PATTERNS:-}" ] || { echo "✖ ${hook}: no credential patterns (${f} missing or empty); nothing is scanned, so nothing is allowed" >&2; return 1; }
+  if [ -z "${FORBIDDEN_PATTERNS:-}" ]; then
+    f="${FORBIDDEN_TERMS_FILE:-${HOME}/.config/rocknix/forbidden-terms}"
+    [ -r "${f}" ] && . "${f}"
+    [ -n "${FORBIDDEN_PATTERNS:-}" ] || { echo "✖ ${hook}: no wordlist (${f} missing or empty, and FORBIDDEN_PATTERNS unset); nothing is scanned, so nothing is allowed" >&2; return 1; }
+  fi
+  for p in "${SECRET_PATTERNS}" "${FORBIDDEN_PATTERNS}"; do
+    printf '' | grep -E -e "${p}" >/dev/null 2>&1; rc=$?
+    [ "${rc}" -le 1 ] || { echo "✖ ${hook}: a pattern list does not compile (grep exited ${rc}); nothing is scanned, so nothing is allowed" >&2; return 1; }
+  done
+  return 0
+}
+
+# guard_added_lines: stdin is a unified diff (git diff -U0, or git log -p with
+# --format='commit %h'); stdout is one "<commit:><path>:<line>TAB<+added line>"
+# per added line, the line number the file's after the change. A label never
+# holds a tab, so a pattern can only match after it.
+guard_added_lines() {
+  awk -v t="${guard_tab}" '
+    /^commit [0-9a-f]+$/ { pre = $2 ":"; next }
+    /^\+\+\+ b\// { f = substr($0, 7); next }
+    /^\+\+\+ / { f = ""; next }
+    /^@@ / { match($0, /\+[0-9]+/); n = substr($0, RSTART + 1, RLENGTH - 1) + 0; next }
+    /^\+/ { if (f != "") print pre f ":" n t $0; n++; next }
+    /^-/ { next }
+    /^ / { n++ }'
+}
+
+# guard_numbered <label>: stdin is a file; stdout "<label>:<n>TAB<line>".
+guard_numbered() {
+  awk -v t="${guard_tab}" -v l="$1" '{ print l ":" NR t $0 }'
+}
+
+# guard_scan <hook> <file> <what> <-i|''> <patterns> <redact|where>: the text
+# after the label of every line of <file>, against the patterns. Returns 0
+# when nothing matched; 1 with the first hits on stderr (redact: the match
+# replaced by [REDACTED]; where: the label alone -- a listed word is never
+# printed); 1 with a note when grep could not run.
+guard_scan() {
+  local hook="$1" file="$2" what="$3" ci="$4" patterns="$5" show="$6" out rc
+  out="$(grep -a ${ci:+-i} -E -e "^([^${guard_tab}]*${guard_tab})+.*(${patterns})" "${file}" 2>&1)"; rc=$?
+  case "${rc}" in
+    1) return 0 ;;
+    0) echo "✖ ${hook}: ${what}:" >&2
+       if [ "${show}" = redact ]; then
+         printf '%s\n' "${out}" | sed -E "s/(${patterns})/[REDACTED]/Ig; s/${guard_tab}/: /" | head -5 | sed 's/^/    /' >&2
+       else
+         printf '%s\n' "${out}" | sed -E "s/${guard_tab}.*//" | head -5 | sed 's/^/    /' >&2
+       fi
+       return 1 ;;
+    *) echo "✖ ${hook}: the scan for ${what} could not run (grep exited ${rc}: ${out}); nothing was scanned, so nothing is allowed" >&2; return 1 ;;
+  esac
+}

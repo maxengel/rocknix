@@ -1,0 +1,19 @@
+#!/bin/bash
+# commit-msg: the message, against the same two lists as the tree. A message
+# is in history for good and is the one place pre-commit does not reach; the
+# push guard reads the messages of a range too, but a refusal here costs one
+# edit and there it costs a rewrite. Comment lines are dropped as git drops
+# them. Fails closed in .githooks/guard-lib (2026-09-28).
+set -uo pipefail
+. "$(dirname "$(readlink -f "$0")")/guard-lib" || exit 1
+guard_load commit-msg || exit 1
+lines="$(mktemp)" || { echo "✖ commit-msg: mktemp failed; refused" >&2; exit 1; }
+trap 'rm -f "${lines}"' EXIT
+if ! grep -v -a -E '^#' -- "${1:-/dev/null}" | guard_numbered message > "${lines}"; then
+  # grep -v exits 1 on an empty message, which git refuses on its own
+  [ -s "${lines}" ] || exit 0
+fi
+status=0
+guard_scan commit-msg "${lines}" "the commit message carries a credential-shaped line" '' "${SECRET_PATTERNS}" redact || status=1
+guard_scan commit-msg "${lines}" "the commit message carries a listed word (the wordlist outside the tree)" -i "${FORBIDDEN_PATTERNS}" where || status=1
+exit "${status}"

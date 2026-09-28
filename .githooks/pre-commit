@@ -1,28 +1,21 @@
 #!/bin/bash
-# pre-commit: refuse a commit that would ADD a credential-shaped line, so the
-# push guard never meets one in history. The same patterns as pre-push
-# (.githooks/secret-patterns); the check reads the index, not the working
-# tree, so what is refused is exactly what would be committed.
-#
-# Written 2026-09-28 (#307): eight fix streams committed in worktrees that
-# share this hooks path; one wrote three scanner fixtures as literals, the
-# push guard refused the whole range, and only a history rewrite -- which the
-# harness cannot run -- cleared it. A refusal at commit time costs the
-# committer one edit; at push time it costs a rewrite.
-#
-# One exemption, shared with pre-push: an audit packet under
-# docs/audits/<audit>/seats/*.diff is a verbatim copy of a range the guards
-# have already read line by line, so the copy is not read again.
-. "$(dirname "$(readlink -f "$0")")/secret-patterns"
-[ -n "${SECRET_PATTERNS:-}" ] || { echo "✖ $(basename "$0"): .githooks/secret-patterns is missing or empty; nothing is scanned, so nothing is allowed" >&2; exit 1; }
-hits="$(git diff --cached -U0 --no-color --diff-filter=ACMRT \
-  | awk '/^\+\+\+ b\//{f=substr($0,7); next} /^\+\+\+ /{next} /^\+/{print f ": " $0}' \
-  | grep -v -E '^docs/audits/[^/:]+/seats/[^/:]+\.diff: ' \
-  | grep -E "${SECRET_PATTERNS}" | sed -E "s/(${SECRET_PATTERNS})/[REDACTED]/g" | head -5 || true)"
-if [ -n "${hits}" ]; then
-  echo "✖ pre-commit: this commit would add a credential-shaped line:" >&2
-  echo "${hits}" | sed 's/^/    /' >&2
-  echo "  A placeholder belongs in <angle brackets>; a scanner's test fixture is built at run time (printf pieces), never written as a literal." >&2
+# pre-commit: refuse a commit that would ADD a credential-shaped line -- so
+# the push guard never meets one in history (2026-09-28, #307: a fixture
+# written as a literal cost a history rewrite) -- or a word from the wordlist
+# the fork must not carry (kept outside the tree; .githooks/guard-lib says
+# where). Reads the index, not the working tree, so what is refused is exactly
+# what would be committed. The scans are guard-lib's and fail closed there.
+set -uo pipefail
+. "$(dirname "$(readlink -f "$0")")/guard-lib" || exit 1
+guard_load pre-commit || exit 1
+added="$(mktemp)" || { echo "✖ pre-commit: mktemp failed; nothing was scanned, so nothing is allowed" >&2; exit 1; }
+trap 'rm -f "${added}"' EXIT
+if ! git diff --cached -U0 --no-color --diff-filter=ACMRT -- . ':!*.po' ':!*.pot' | guard_added_lines > "${added}"; then
+  echo "✖ pre-commit: could not read the index (git diff --cached failed); nothing was scanned, so nothing is allowed" >&2
   exit 1
 fi
-exit 0
+status=0
+guard_scan pre-commit "${added}" "this commit would add a credential-shaped line" '' "${SECRET_PATTERNS}" redact || status=1
+guard_scan pre-commit "${added}" "this commit would add a listed word (the wordlist outside the tree; the file and line above)" -i "${FORBIDDEN_PATTERNS}" where || status=1
+[ "${status}" -eq 0 ] || echo "  A placeholder belongs in <angle brackets>; a scanner's fixture is built at run time (printf pieces), never written as a literal; a listed word is reworded, never exempted." >&2
+exit "${status}"
