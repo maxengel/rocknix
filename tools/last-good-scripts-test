@@ -4471,14 +4471,17 @@ C1RO=1 c1 --use-content-root
 # system" -- ahead of the sentence.
 C1RO=1 c1 --set-saves-remote /Other/Saves
 [ "$(cat "${C1}/out")" = "Your cloud sync settings couldn't be saved." ]; check $? "a write that fails prints its one sentence and no shell diagnostic" "read-only /storage printed: '$(tr '\n' '|' < "${C1}/out" | cut -c1-200)' (G-C-07)"
-# G-C-03 (gpt) and G-C-06 (claude): cloud_setup reads the config as a
-# sourcing script would, minus the running: the LAST assignment of a key
-# wins, and a value may be double-quoted, single-quoted or bare with a
-# trailing comment. The first reader took the first line and only "...".
+# G-C-03 (gpt) and G-C-06 (claude): cloud_setup reads the config as the
+# scripts that run with it read it, minus the running: a value may be
+# double-quoted, single-quoted or bare with a trailing comment. The first
+# reader took only "...". Of a key assigned twice, the FIRST assignment
+# wins: that is what the duplicate cleanup keeps under every --yes run and
+# what the content scripts read; this check said the last until the audit
+# of the fix round reversed it (PL-021, CF2 below).
 cp "${ROOT}/${RCLONE_REL}/cloud_sync.conf" "${CONF1}"
 printf 'SAVES_REMOTE="/Mine/Saves"\n' >> "${CONF1}"
 c1 --info
-grep -qx 'SAVES_REMOTE=/Mine/Saves' "${C1}/out"; check $? "a key assigned twice reads as its last assignment, as the scripts that source the config read it" "SAVES_REMOTE assigned twice, --info said: $(grep '^SAVES_REMOTE=' "${C1}/out") (G-C-03)"
+grep -qx 'SAVES_REMOTE=/ROCKNIX/Saves' "${C1}/out"; check $? "a key assigned twice reads as its first assignment, the one the scripts run with after the duplicate cleanup (PL-021)" "SAVES_REMOTE assigned twice, --info said: $(grep '^SAVES_REMOTE=' "${C1}/out") (PL-021)"
 sed -i "s|^SAVES_REMOTE=.*|SAVES_REMOTE='/Q/Saves'|" "${CONF1}"
 c1 --info
 grep -qx 'SAVES_REMOTE=/Q/Saves' "${C1}/out"; check $? "a single-quoted value reads without its quotes" "SAVES_REMOTE='/Q/Saves', --info said: $(grep '^SAVES_REMOTE=' "${C1}/out") (G-C-03)"
@@ -10312,6 +10315,32 @@ for p in /Mine/.hidden/Saves /Mine/..x/Saves; do
     cf1 --set-saves-remote "${p}"
     [ "${RC}" -eq 0 ] && [ "$(cfconf)" = "SAVES_REMOTE=\"${p}\" SETTINGS_REMOTE=\"${p%/*}/Backups\" CONTENT_REMOTE=\"${p%/*}/Content\" " ]; check $? "PL-009 (a control): ${p} is a folder like any other, stored with its siblings beside it" "PL-009: ${p} was refused or stored wrong: rc ${RC}; config: $(cfconf); said: $(cfsaid)"
 done
+
+# CF2. PL-021: cloud_setup reads a key's FIRST assignment, the one the
+# duplicate cleanup keeps and the content scripts read. The config's
+# readers, each as it runs: cloud_setup whole (--info, --content-location,
+# --seed-folders, --check-syncpath) in CF1's sandbox; the saves scripts,
+# which run the duplicate cleanup under --yes and then source what it
+# leaves; and the content scripts' conf_get, lifted from
+# cloud_content_backup and pointed at the fixture.
+CF2="${CF}/2"; mkdir -p "${CF2}"
+cfget() { # <lifted conf_get file> <config> <key>: the value in GVAL, the rc in GRC (never in a subshell)
+    PATH="${TMP}/bbin:${PATH}" SYNC_CONF="$2" bash -c '. "$1"; conf_get "$2"' _ "$1" "$3" > "${CF2}/val"; GRC=$?
+    GVAL=$(cat "${CF2}/val")
+}
+sed -n '/^conf_get() {/,/^}/p' "${CF}/src/cloud_setup" > "${CF2}/setup_get.sh"
+cp "${CF}/src/cloud_sync.conf" "${CFCONF}"
+printf 'SAVES_REMOTE="/Second/Saves"\nCONTENT_REMOTE="/Second/Content"\n' >> "${CFCONF}"
+cp "${CFCONF}" "${CF2}/dup.conf"
+sed -n '/^conf_get() {/,/^}/p' "${CF}/src/cloud_content_backup" | sed "s#/storage/.config/cloud_sync.conf#${CF2}/dup.conf#g" > "${CF2}/content_get.sh"
+cf1 --info; cf_info=$(sed -n 's/^SAVES_REMOTE=//p' "${CF1}/out")
+cf1 --content-location; cf_loc=$(sed -n 's/^CONTENT_REMOTE=//p' "${CF1}/out")
+cp "${CF2}/dup.conf" "${CF2}/cleaned.conf"
+PATH="${TMP}/bbin:${PATH}" bash "${CF}/src/cloud_sync_cleanup_duplicates.sh" "${CF2}/cleaned.conf" >/dev/null 2>&1
+cf_run=$(bash -c 'source "$1" >/dev/null 2>&1; printf "%s|%s" "${SAVES_REMOTE}" "${CONTENT_REMOTE}"' _ "${CF2}/cleaned.conf")
+cfget "${CF2}/content_get.sh" /unused CONTENT_REMOTE; cf_content="${GVAL}"
+[ "${cf_info}" = "/ROCKNIX/Saves" ] && [ "${cf_run%%|*}" = "/ROCKNIX/Saves" ]; check $? "PL-021: with SAVES_REMOTE written twice, the hub's line (--info) names the folder the saves scripts use after the cleanup: ${cf_info}" "PL-021: --info names '${cf_info}', the saves scripts after the cleanup '${cf_run%%|*}' -- two readers of one file, two folders"
+[ "${cf_loc}" = "/ROCKNIX/Content" ] && [ "${cf_run#*|}" = "/ROCKNIX/Content" ] && [ "${cf_content}" = "/ROCKNIX/Content" ]; check $? "PL-021: and --content-location, the cleaned config and the content scripts agree on CONTENT_REMOTE: ${cf_loc}" "PL-021: CONTENT_REMOTE is '${cf_loc}' to --content-location, '${cf_run#*|}' after the cleanup, '${cf_content}' to the content scripts"
 
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3

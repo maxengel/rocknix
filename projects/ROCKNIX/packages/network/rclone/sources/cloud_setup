@@ -104,17 +104,21 @@ conf_set() {
 
 # One value from the config, read as text -- never by sourcing or eval, since
 # a value an earlier build wrote with $( ) in it would run (PL-051) -- but
-# otherwise as the scripts that do source it read it, so this and they never
-# disagree about a player's folder: the LAST assignment of the key wins, and
-# the value is double-quoted, single-quoted, or a bare word that a space or
-# a comment ends. The first cut took the first line and only "...", so a
-# config with a default and an override below it, or a single-quoted value,
-# read differently here and in the sync (audit of stream C: G-C-03 gpt,
-# G-C-06 claude). What a shell would expand inside double quotes is read
+# otherwise as the scripts that run with it read it, so this and they never
+# disagree about a player's folder. Of two assignments of a key, the FIRST:
+# every saves run the interface starts is --yes, which runs
+# cloud_sync_cleanup_duplicates.sh, which keeps the first and is what the
+# file becomes; the content scripts' conf_get reads the first too. This
+# read the last -- as `source` alone would -- so with a key written twice
+# the hub's line and --content-location named a folder the scripts stopped
+# using at their next run (the audit of the fix round, PL-021; the first
+# cut's G-C-03 gpt and G-C-06 claude had moved it from first to last). The
+# value is double-quoted, single-quoted, or a bare word that a space or a
+# comment ends. What a shell would expand inside double quotes is read
 # literally: running it is what this exists to avoid.
 conf_get() {
     local value
-    value="$(grep "^$1=" "${SYNC_CONF}" 2>/dev/null | tail -n 1)"
+    value="$(grep "^$1=" "${SYNC_CONF}" 2>/dev/null | head -n 1)"
     value="${value#*=}"
     case "${value}" in
         \"*) value="${value#\"}"; value="${value%%\"*}" ;;
