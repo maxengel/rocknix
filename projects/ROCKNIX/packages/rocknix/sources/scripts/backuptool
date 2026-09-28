@@ -330,16 +330,19 @@ credential_lines() {
     echo "${TOTAL}"
 }
 
-# Is this archive whole? tar lists every member or fails; busybox unzip has
-# no -t, so for a zip the listing is the test (a truncated zip has no central
-# directory to list) -- and the -t is tried first for an unzip that has it.
-# Until 2026-09-10 the zip check was `unzip -t` alone, which busybox answers
-# with its usage text and exit 1, so every legacy .zip on a device read as
-# damaged.
+# Is this archive whole? tar lists every member or fails. A zip is read
+# through, every member's bytes to nowhere (unzip -p), which checks each
+# member's CRC: busybox unzip has no -t, and the listing that stood in for it
+# reads only the central directory, so a zip whose directory was intact and
+# whose payload was not passed, and the restore found out part-way through
+# the live tree (#308, the gpt seat's F-BR-14; the -t that ran first could
+# not be told apart from "no -t here" either). Until 2026-09-10 the check was
+# `unzip -t` alone, which busybox answers with its usage text and exit 1, so
+# every legacy .zip on a device read as damaged.
 archive_ok() {
     case "${1}" in
         *.tar.gz) tar -tzf "${1}" >/dev/null 2>&1 ;;
-        *)        unzip -t "${1}" >/dev/null 2>&1 || unzip -l "${1}" >/dev/null 2>&1 ;;
+        *)        unzip -l "${1}" >/dev/null 2>&1 && unzip -p "${1}" >/dev/null 2>&1 ;;
     esac
 }
 
