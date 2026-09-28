@@ -3421,9 +3421,22 @@ if { [ "${OLD}" -eq 1 ] && ! git -C "${ROOT}" cat-file -e "${BASE_REF}:${F1_QREL
 else
 src_of "${F1_QREL}/${F1GS}" "${F1G}/q/092-retroarch-surface"
 F1VK=(); [ -d /usr/share/vulkan ] && F1VK=(--tmpfs /usr/share/vulkan)   # the host's ICDs are not the image's
-f1_surface() { # <storage> <sys> [icd]: one boot's run of the quirk
-    local etc="${F1G}/noicd"; [ "${3:-}" = icd ] && etc="${F1G}/icd"
-    bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${F1VK[@]}" "${F1BB[@]}" \
+# A sed that dies with the quirk right after it rewrites retroarch.cfg in
+# place: a boot cut short between the cfg and the record (the audit's
+# G-F1-04). Every other sed call passes through.
+mkdir -p "${F1G}/killsed"
+cat > "${F1G}/killsed/sed" <<'EOS'
+#!/bin/bash
+for a in "$@"; do last="$a"; done
+real() { if [ -x /lgst/busybox ]; then /lgst/busybox sed "$@"; else /usr/bin/sed "$@"; fi; }
+case " $* " in *" -i "*) if [ "${last##*/}" = retroarch.cfg ]; then real "$@"; rc=$?; kill -9 "${PPID}"; exit "${rc}"; fi ;; esac
+real "$@"
+EOS
+chmod +x "${F1G}/killsed/sed"
+f1_surface() { # <storage> <sys> [icd|kill]: one boot's run of the quirk
+    local etc="${F1G}/noicd" kill=(); [ "${3:-}" = icd ] && etc="${F1G}/icd"
+    [ "${3:-}" = kill ] && kill=(--ro-bind "${F1G}/killsed" /shim)
+    bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${F1VK[@]}" "${F1BB[@]}" "${kill[@]}" \
         --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
         --ro-bind "${etc}" /etc --bind "${1}" /storage --ro-bind "${2}" /sys --ro-bind "${F1G}/q" /q \
         --tmpfs /run --tmpfs /tmp --dev /dev --proc /proc --setenv PATH "${F1PATH}" \
@@ -3450,12 +3463,33 @@ f1_storage "${F1G}/c"; f1_surface "${F1G}/c" "${F1G}/s2"
 [ "$(f1_wh "${F1G}/c")" = 1280x800 ]; check $? "a disconnected DP-1 listing 1920x1080 first is passed over for the connected output's 1280x800 (#308 claude F-VM-10, gpt F-VM-09)" "with a disconnected DP-1 before the connected output: $(f1_wh "${F1G}/c")"
 f1_storage "${F1G}/i"; f1_surface "${F1G}/i" "${F1G}/si"
 [ "$(f1_wh "${F1G}/i")" = 1920x1080 ]; check $? "an interlaced 1920x1080i gives a height of 1080 (#308 claude F-VM-10)" "1920x1080i gave $(f1_wh "${F1G}/i")"
-# Already written: a guest the earlier builds' quirk sized at 1280x800 has
-# the values and no record. Its known footprint -- QEMU's 1280x800, or the
-# mode the guest has now -- is taken as the quirk's, and follows the mode;
-# an unrecorded value that is neither is somebody's.
+# Already written: a guest an earlier build's quirk sized has the values and
+# no record, and they cannot be told from a hand-set pair (the audit's
+# G-F1-02 on the gpt side, G-F1-03 on the claude side). Unrecorded values
+# are taken only when they are exactly the size this boot writes -- taking
+# them changes nothing now, and the record starts -- and anything else is
+# left as somebody's; setting the two values to 0 hands them back.
 f1_storage "${F1G}/o"; f1_set "${F1G}/o" 1280x800; f1_surface "${F1G}/o" "${F1G}/s640"
-[ "$(f1_wh "${F1G}/o")" = 640x480 ]; check $? "an earlier build's unrecorded 1280x800 follows a re-run at 640x480" "the earlier builds' 1280x800 stayed $(f1_wh "${F1G}/o") at 640x480"
+[ "$(f1_wh "${F1G}/o")" = 1280x800 ]; check $? "an unrecorded 1280x800 met at a 640x480 boot is left: it cannot be told from a hand-set pair (the audit's G-F1-02)" "an unrecorded 1280x800 became $(f1_wh "${F1G}/o") at 640x480"
+f1_storage "${F1G}/o2"; f1_set "${F1G}/o2" 1280x800; f1_surface "${F1G}/o2" "${F1G}/s1280"; f1_surface "${F1G}/o2" "${F1G}/s640"
+[ "$(f1_wh "${F1G}/o2")" = 640x480 ]; check $? "an unrecorded 1280x800 met at a 1280x800 boot is taken, and follows a later 640x480" "an unrecorded 1280x800 first met at 1280x800 stayed $(f1_wh "${F1G}/o2") at 640x480"
+# The shipped values follow with a record beside them: that is the cfg
+# after RESET RETROARCH CONFIG TO DEFAULT, which replaces retroarch.cfg and
+# leaves the record (factoryreset retroarch). A 640x480 or 0x0 surface on
+# another mode is the #263 scaling this quirk exists to end.
+f1_storage "${F1G}/r"; f1_surface "${F1G}/r" "${F1G}/s1280"; f1_set "${F1G}/r" 640x480; f1_surface "${F1G}/r" "${F1G}/s1280"
+[ "$(f1_wh "${F1G}/r")" = 1280x800 ]; check $? "the shipped 640x480 put back by a RetroArch reset, beside the record, follows the mode again" "after a reset to the shipped cfg: $(f1_wh "${F1G}/r") at 1280x800"
+# A boot cut short right after the cfg is rewritten leaves the next boot
+# still knowing the new size is its own (the audit's G-F1-04).
+f1_storage "${F1G}/k"; sed -i 's/^video_driver = .*/video_driver = "gl"/' "${F1G}/k/.config/retroarch/retroarch.cfg"
+f1_sys "${F1G}/s1024" "card0-Virtual-1:connected:1024x768,640x480"
+f1_surface "${F1G}/k" "${F1G}/s1280"; f1_surface "${F1G}/k" "${F1G}/s1024" kill; F1_K1=$(f1_wh "${F1G}/k")
+f1_surface "${F1G}/k" "${F1G}/s1280"
+[ "${F1_K1}" = 1024x768 ] && [ "$(f1_wh "${F1G}/k")" = 1280x800 ]; check $? "a boot killed right after it rewrote the cfg leaves the size its own: the next boot follows (the audit's G-F1-04)" "killed after the cfg write: ${F1_K1}; the next boot at 1280x800: $(f1_wh "${F1G}/k")"
+# The record's first form (a5a03bd9fa: video_fullscreen_x/y lines) is read.
+f1_storage "${F1G}/l"; f1_set "${F1G}/l" 1280x800
+printf '# 092-retroarch-surface (GENERIC_X64): the values it last wrote to retroarch.cfg\nvideo_fullscreen_x=1280\nvideo_fullscreen_y=800\n' > "${F1G}/l/.config/retroarch/.fullscreen-surface"
+f1_surface "${F1G}/l" "${F1G}/s640"; [ "$(f1_wh "${F1G}/l")" = 640x480 ]; check $? "a record in its first form (two lines, x and y) is read" "with a first-form record of 1280x800: $(f1_wh "${F1G}/l") at 640x480"
 f1_storage "${F1G}/p"; f1_set "${F1G}/p" 1024x768; f1_surface "${F1G}/p" "${F1G}/s640"
 [ "$(f1_wh "${F1G}/p")" = 1024x768 ]; check $? "and an unrecorded 1024x768 is left" "an unrecorded 1024x768 became $(f1_wh "${F1G}/p")"
 # A boot that changes nothing writes nothing: the cfg and the record keep
@@ -3468,6 +3502,11 @@ f1_storage "${F1G}/v"; f1_surface "${F1G}/v" "${F1G}/s1280"; F1_VD1=$(grep '^vid
 f1_storage "${F1G}/w"; f1_surface "${F1G}/w" "${F1G}/s1280" icd; F1_VD2=$(grep '^video_driver' "${F1G}/w/.config/retroarch/retroarch.cfg")
 [ "${F1_VD1}" = 'video_driver = "gl"' ] && [ "${F1_VD2}" = 'video_driver = "vulkan"' ]
 check $? "a cfg naming vulkan moves to gl on an image with no Vulkan ICD, and is left where one exists (#308 claude F-VM-11)" "no ICD: ${F1_VD1}; with an ICD: ${F1_VD2}"
+# An ICD a developer put in root's own loader directory counts too (the
+# audit's second seat, G-F1-03 (d)): root's home here is /storage.
+f1_storage "${F1G}/u"; mkdir -p "${F1G}/u/.local/share/vulkan/icd.d"; echo '{}' > "${F1G}/u/.local/share/vulkan/icd.d/mine_icd.json"
+f1_surface "${F1G}/u" "${F1G}/s1280"; F1_VD3=$(grep '^video_driver' "${F1G}/u/.config/retroarch/retroarch.cfg")
+[ "${F1_VD3}" = 'video_driver = "vulkan"' ]; check $? "an ICD under /storage/.local/share/vulkan/icd.d leaves vulkan alone" "with an ICD in root's own loader directory: ${F1_VD3}"
 fi
 F1RA=projects/ROCKNIX/packages/emulators/libretro/retroarch/sources/GENERIC_X64/retroarch.cfg
 src_of "${F1RA}" "${F1G}/retroarch.cfg"
