@@ -408,7 +408,7 @@ Common risky pairs are in [`references/phases.md` § Phase 3.5 interaction table
 ## Build-vs-adopt verification (Phase 3, step 3.5.5)
 
 Verifies the **adopt / extend / contribute-before-build** discipline (doctrine
-§1 pSpace-first; development-principles "Prefer adopt / extend / contribute
+§1 platform-first; development-principles "Prefer adopt / extend / contribute
 before building"). **Applies only if the repo maintains a build-vs-adopt
 register** — scaffold does not yet, so treat this as advisory until one exists.
 The phase-tier honor check (`mini-retro` scoped-audit, if present) verifies one

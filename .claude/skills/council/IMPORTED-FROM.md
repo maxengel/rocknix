@@ -10,7 +10,7 @@ Imported 2026-09-05 (fork issue #70, D-WORKFLOW-003) from the
 | `.claude/skills/council/**`, member agents, rules | `d51c09c9d60b332d57f3bbbaf364ba0c9efc3317` (2026-09-03, "limits audit + roster docs for the lifted limits") |
 | Facilitator, its library, the lint | `8a4ef909b2832174db43a85448ecb1f46358a0d1` (2026-09-03, "lift the limits that cost a Step 1") |
 
-The scaffold estate's copy (`7bcac00`, 2026-08-02) is older and lacks
+That estate's copy (`7bcac00`, 2026-08-02) is older and lacks
 `lint-council-run.ts`; do not refresh from it.
 
 ## Layout here, and the patches that follow from it

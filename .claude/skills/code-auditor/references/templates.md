@@ -185,8 +185,8 @@ punch_index:
   severity: Critical
   category: Acceptance Criteria Gap
   source_finding: AC-03
-  owner_area: pspace-api auth
-  where: services/pspace-api/src/lib/foo.ts:42
+  owner_area: example-api auth
+  where: services/example-api/src/lib/foo.ts:42
   acceptance: "<verifiable outcome>"
   outcome: open # open | resolved | deferred:#NNNN | withdrawn
   \`\`\`

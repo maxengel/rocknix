@@ -4,7 +4,7 @@ description: Save a structured snapshot of the current work session so another a
 license: Apache-2.0
 metadata:
   version: 1.2.0
-  origin: Converted from .github/prompts/stash-work.prompt.md (possibility-space). v1.2.0 (2026-06-13) adds the "Shed inherited `main` state on feature branches" rule — feature branches inherit `main`'s tracked `saved-session-state-main.md` at creation and never shed it, producing a guaranteed stale/conflicting copy (observed live — an inherited copy forced a stash to switch branches). The shed is scoped to the `main` file only; dormant foreign-branch files are left alone to avoid silently propagating deletions to `main` on merge.
+  origin: Converted from .github/prompts/stash-work.prompt.md (an external prompt library). v1.2.0 (2026-06-13) adds the "Shed inherited `main` state on feature branches" rule — feature branches inherit `main`'s tracked `saved-session-state-main.md` at creation and never shed it, producing a guaranteed stale/conflicting copy (observed live — an inherited copy forced a stash to switch branches). The shed is scoped to the `main` file only; dormant foreign-branch files are left alone to avoid silently propagating deletions to `main` on merge.
 ---
 
 # Session Stash

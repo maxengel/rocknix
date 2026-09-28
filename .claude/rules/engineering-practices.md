@@ -443,8 +443,7 @@ Afterwards, ask where it could have been caught earlier and add that guard.
 it reset the remote first and only ever tested a first upload. Eliminating the
 category is part of the fix, not follow-up work.
 
-(Adapted from `incident-response.instructions.md` in the scaffold estate —
-<https://forge.possibility.space/scaffold/scaffold>.)
+(Adapted from `incident-response.instructions.md` in an external instruction estate.)
 
 ## Never reboot, update, or power-cycle a device without asking
 

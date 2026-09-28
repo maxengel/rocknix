@@ -290,7 +290,7 @@ muscle memory as simulation.
 
 ### Output per finding
 
-> **Prior instance:** `services/pspace-api/src/a2a/capability-helpers.ts`
+> **Prior instance:** `services/example-api/src/a2a/capability-helpers.ts`
 > (commit `2f1a...`) implemented an in-memory lock with similar
 > Set-keyed-by-pair semantics.
 >

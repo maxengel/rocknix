@@ -635,8 +635,18 @@ async function withLedgerLock<T>(runDir: string, fn: () => Promise<T>): Promise<
 // ONE entry below. The dispatcher and all five members share this table.
 // ---------------------------------------------------------------------------
 
-const FOUNDRY_BASE = "https://pspace-ai-foundry.cognitiveservices.azure.com";
+// The Azure AI Foundry endpoint is configuration, not source: it names the
+// account it belongs to, and the tree names no organisation (fork #311). It is
+// read from AZURE_AI_FOUNDRY_BASE (~/.config/council/env) and a Foundry route
+// with none set refuses rather than calling an empty host.
+const FOUNDRY_BASE = (process.env.AZURE_AI_FOUNDRY_BASE ?? "").trim().replace(/\/+$/, "");
 const FOUNDRY_API_VERSION = "2024-08-01-preview";
+function foundryUrl(deployment: string): string {
+  if (!FOUNDRY_BASE) {
+    throw new Error("AZURE_AI_FOUNDRY_BASE is not set: the Foundry endpoint comes from ~/.config/council/env, never from source");
+  }
+  return `${FOUNDRY_BASE}/openai/deployments/${deployment}/chat/completions?api-version=${FOUNDRY_API_VERSION}`;
+}
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 const BEDROCK_MISTRAL_LARGE3_MODEL = "mistral.mistral-large-3-675b-instruct";
 const FACILITATOR_VERSION = "council-facilitator@1.2.0";
@@ -712,7 +722,7 @@ const MEMBERS: Record<MemberId, MemberRecipe> = {
     defaultMaxTokens: 16384,
     maxTokensCeiling: 32768,
     endpoint: () =>
-      `${FOUNDRY_BASE}/openai/deployments/gpt-5.5/chat/completions?api-version=${FOUNDRY_API_VERSION}`,
+      foundryUrl("gpt-5.5"),
     headers: () => ({
       "api-key": process.env.AZURE_AI_API_KEY ?? "",
       "Content-Type": "application/json",
@@ -793,7 +803,7 @@ const MEMBERS: Record<MemberId, MemberRecipe> = {
     defaultMaxTokens: 8192,
     maxTokensCeiling: 32768,
     endpoint: () =>
-      `${FOUNDRY_BASE}/openai/deployments/Kimi-K2.6/chat/completions?api-version=${FOUNDRY_API_VERSION}`,
+      foundryUrl("Kimi-K2.6"),
     headers: () => ({
       "api-key": process.env.AZURE_AI_API_KEY ?? "",
       "Content-Type": "application/json",
@@ -829,7 +839,7 @@ const MEMBERS: Record<MemberId, MemberRecipe> = {
     defaultMaxTokens: 8192,
     maxTokensCeiling: 32768,
     endpoint: () =>
-      `${FOUNDRY_BASE}/openai/deployments/Mistral-Large-3/chat/completions?api-version=${FOUNDRY_API_VERSION}`,
+      foundryUrl("Mistral-Large-3"),
     headers: () => ({
       "api-key": process.env.AZURE_AI_API_KEY ?? "",
       "Content-Type": "application/json",
@@ -869,8 +879,8 @@ const MISTRAL_OPENROUTER_RECIPE: MemberRecipe = {
   headers: () => ({
     Authorization: `Bearer ${process.env.OPENROUTER_API_KEY ?? ""}`,
     "Content-Type": "application/json",
-    "HTTP-Referer": "https://github.com/PossibilityTruthy/possibility-space",
-    "X-Title": "Possibility Council Facilitator",
+    "HTTP-Referer": "https://github.com/maxengel/rocknix",
+    "X-Title": "ROCKNIX Council Facilitator",
   }),
   buildBody: ({ userPrompt, systemPrompt, maxTokens, transport }) => {
     const messages: Array<Record<string, string>> = [];
@@ -1075,8 +1085,8 @@ function openRouterRecipe(id: MemberId, seat: OpenRouterSeat): MemberRecipe {
     headers: () => ({
       Authorization: `Bearer ${process.env.OPENROUTER_API_KEY ?? ""}`,
       "Content-Type": "application/json",
-      "HTTP-Referer": "https://github.com/PossibilityTruthy/possibility-space",
-      "X-Title": "Possibility Council Facilitator",
+      "HTTP-Referer": "https://github.com/maxengel/rocknix",
+      "X-Title": "ROCKNIX Council Facilitator",
     }),
     buildBody: ({ userPrompt, systemPrompt, maxTokens }) => {
       const messages: Array<Record<string, string>> = [];

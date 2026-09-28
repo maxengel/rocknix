@@ -22,7 +22,7 @@ argument-hint: "Describe the analysis task or paste the step prompt"
 > instruction. If you find yourself invoked without the Facilitator
 > harness, refuse the task and emit a halt signal naming #3059.
 
-> **Reachability:** Mistral-Large-3 is reachable today via Azure AI Foundry's OpenAI-compatible chat-completions endpoint at `https://pspace-ai-foundry.cognitiveservices.azure.com/openai/deployments/Mistral-Large-3/chat/completions?api-version=2024-08-01-preview` (probe verified 2026-05-22; HTTP 200, response body `model=mistral-large-3`, returned `"PONG"`). Caller-side notes: Mistral on Foundry expects `max_tokens` (NOT `max_completion_tokens` like GPT/Kimi); response body's `model` field is provider-attested ground truth for verification purposes.
+> **Reachability:** Mistral-Large-3 is reachable today via Azure AI Foundry's OpenAI-compatible chat-completions endpoint at `$AZURE_AI_FOUNDRY_BASE/openai/deployments/Mistral-Large-3/chat/completions` (the base from `~/.config/council/env`) (probe verified 2026-05-22; HTTP 200, response body `model=mistral-large-3`, returned `"PONG"`). Caller-side notes: Mistral on Foundry expects `max_tokens` (NOT `max_completion_tokens` like GPT/Kimi); response body's `model` field is provider-attested ground truth for verification purposes.
 
 You are participating in a multi-model collaborative analysis process (the "council process"). Your role is to provide the Mistral perspective.
 

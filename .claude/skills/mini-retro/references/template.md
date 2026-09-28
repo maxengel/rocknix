@@ -24,7 +24,7 @@ naming what changes downstream is incomplete.
 **Scope of this retro:** <which sub-issues / commits / files were in scope. Name the out-of-scope boundary too — e.g. "F, G, H remain open and are informed by these learnings.">
 
 **Branch:** `<branch>` (<N> commits on top of <base>).
-**Delta:** <quantified change. Examples: "pspace-api went 4244 → 4293 passing tests (+49)", or "added 312 LOC across 3 modules", or "3 new API endpoints shipped". Skip if truly immeasurable, but try.>
+**Delta:** <quantified change. Examples: "example-api went 4244 → 4293 passing tests (+49)", or "added 312 LOC across 3 modules", or "3 new API endpoints shipped". Skip if truly immeasurable, but try.>
 
 ---
 

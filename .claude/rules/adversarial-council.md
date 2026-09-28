@@ -7,7 +7,7 @@ paths:
 <!--
 PROVENANCE (owner-directed + adopted reference):
   owner decision: 2026-07-13 — rubber-duck is prohibited; adversarial work routes to council.
-  reference: PossibilityTruthy/possibility-space@6e09be974fba633996a4266e12c50cfcafe2cd23
+  reference: an external repository, commit 6e09be974fba633996a4266e12c50cfcafe2cd23
   sources:
     .claude/skills/council/references/member-roster.md
     .claude/skills/council/references/model-verification.md

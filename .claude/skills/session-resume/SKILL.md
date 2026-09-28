@@ -4,7 +4,7 @@ description: Resume work from a previously saved session-stash snapshot. Use whe
 license: Apache-2.0
 metadata:
   version: 1.2.0
-  origin: Converted from .github/prompts/resume-work.prompt.md (possibility-space). v1.2.0 (2026-06-13) — when the current branch is not `main`, the fallback file search ignores the inherited `saved-session-state-main.md`, which is branch-creation cruft (session-stash removes it on first stash there), not a real handoff for this branch.
+  origin: Converted from .github/prompts/resume-work.prompt.md (an external prompt library). v1.2.0 (2026-06-13) — when the current branch is not `main`, the fallback file search ignores the inherited `saved-session-state-main.md`, which is branch-creation cruft (session-stash removes it on first stash there), not a real handoff for this branch.
 ---
 
 # Session Resume

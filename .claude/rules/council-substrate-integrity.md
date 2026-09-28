@@ -12,8 +12,8 @@ paths:
 
 <!--
 PROVENANCE (#260 — adopted, not authored):
-  source: PossibilityTruthy/possibility-space .claude/rules/council-substrate-integrity.md
-  adopted: 2026-08-02 · transform: de-generated (pspace generates it from agent-instructions/;
+  source: an external repository, .claude/rules/council-substrate-integrity.md
+  adopted: 2026-08-02 · transform: de-generated (that estate generates it from agent-instructions/;
   scaffold authors it directly), agent paths .github/agents/ -> .claude/agents/ (the corpus
   agents category). No auto-sync: refresh = deliberate re-review.
 -->
@@ -34,7 +34,7 @@ the orchestrator may not have opened on the turn that matters.
 > **Adoption scope (scaffold, 2026-08-02 — #260):** rules 1–3 (Facilitator-only
 > invocation, forbidden paths, HALT on exit 3) bind EVERYWHERE the council skills
 > are seeded, unconditionally. Rules 4, 5, and 7 reference the pinned-verifier
-> lint stack (`lint-council-research-*.ts`, `verifier-pins.json`) which pspace
+> lint stack (`lint-council-research-*.ts`, `verifier-pins.json`) which that estate
 > carries and scaffolded estates do not yet — where that tooling is absent, the
 > orchestrator performs the same checks manually (verify each provenance record's
 > `facilitator_version` + served-model identity before advancing) and the lint

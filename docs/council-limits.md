@@ -50,5 +50,5 @@ These live in prompts the orchestrator writes and are choices, not defaults:
 
 ## Upstream
 
-possibility-space carries the same defaults this audit changed. Reconcile there once this repo has
+the external estate carries the same defaults this audit changed. Reconcile there once this repo has
 run a full council on the new settings.
