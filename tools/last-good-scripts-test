@@ -3361,4 +3361,11 @@ printf '%s\t%s\n' '^lsf .*qa:/GAMES/backup/ ' 1 > "${MG}/ctl/fail"
 sa_run "${MG}" cloud_migrate_layout --apply
 [ "$(mg_ptr SETTINGS_REMOTE)" = "/GAMES/backup" ] && [ -f "${MG}/cloud/GAMES/backup/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ "${RC}" -ne 0 ]; check $? "PL-027: one failed listing (the backups folder's) stops the run with that tier's pointer where it was (rc ${RC})" "SETTINGS_REMOTE now '$(mg_ptr SETTINGS_REMOTE)'; rc ${RC}; cloud: $(mg_tree)"
 
+# PL-025 (F-CS-08 gpt): the nested backups and content do not ride into Saves.
+mg_seed
+sa_run "${MG}" cloud_migrate_layout --apply
+[ -z "$(cd "${MG}/cloud" && find ROCKNIX/Saves -path '*/backup/*' -o -path 'ROCKNIX/Saves/Content/*' 2>/dev/null | head -1)" ]; check $? "PL-025: nothing lands under Saves/backup or Saves/Content (rc ${RC})" "under Saves: $(cd "${MG}/cloud" && find ROCKNIX/Saves -type f 2>/dev/null | tr '\n' ' ') -- the saves relocation copied the root unfiltered (F-CS-08)"
+[ -f "${MG}/cloud/ROCKNIX/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ -f "${MG}/cloud/ROCKNIX/Saves/savefiles/gb/A.srm" ] && [ -f "${MG}/cloud/ROCKNIX/Saves/gb/B.srm" ] && [ -f "${MG}/cloud/ROCKNIX/Content/ROMs/gb/A.gb" ] && [ -f "${MG}/cloud/ROCKNIX/Content/BIOS/bios.bin" ]; check $? "PL-025: each tier lands whole in its own folder: backups, saves, ROMs and BIOS" "cloud now: $(mg_tree)"
+[ "$(mg_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content" ] && [ "${RC}" -eq 0 ]; check $? "PL-025: and the three pointers follow them (rc ${RC})" "pointers '$(mg_ptrs)'; rc ${RC}; out: $(sa_tail "${MG}")"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

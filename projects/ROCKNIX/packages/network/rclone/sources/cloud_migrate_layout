@@ -119,10 +119,20 @@ has_entries() {
 # nested inside the saves folder, so a saves folder with nothing in it but
 # that subdirectory still lists an entry -- and reading that as "the saves are
 # here" would move the backups into the middle of the saves.
-has_files() {
-    local extra="$2"
-    list_or_stop "$1" --files-only -R \
-            --exclude 'backup/**' --exclude 'Backups/**' ${extra}
+#
+# The same exclusions are what the saves relocation carries (audit #307
+# PL-025): a test that looks past backup/ and Backups/ and a copy that then
+# moves them is how the original layout's settings archives landed in
+# Saves/backup/. Anchored at the folder's root, where the nested layout put
+# them; the caller adds the tiers nested deeper. Every argument is passed
+# as it is given -- the exclusion used to travel as one unquoted word
+# (${extra}), which the shell split and glob-expanded against the working
+# directory (#308 claude F-CS-23).
+SAVES_EXCLUDES=(--exclude '/backup/**' --exclude '/Backups/**')
+has_files() { # <path> [more lsf arguments...]
+    local path="$1"
+    shift
+    list_or_stop "${path}" --files-only -R "${SAVES_EXCLUDES[@]}" "$@"
     [ -n "${LISTING}" ]
 }
 
@@ -162,23 +172,33 @@ exists() {
 #
 # Pipelines are avoided on purpose: `rclone ... | tail` reports tail's status,
 # which is how a short backup once announced itself a success.
-relocate() {
+#
+# Any filter arguments after the third are the tier's own (PL-025): the
+# copy, the check and the removal all carry them, so a folder nested in the
+# source that belongs to another tier -- the original layout's backup/ and
+# Content/ inside the saves folder -- is neither moved with it nor deleted
+# with it. The removal is a filtered delete and then the empty folders,
+# rather than a purge, which would take the nested tiers too.
+relocate() { # <src> <dst> <what> [filter arguments...]
     local src="$1" dst="$2" what="$3" out
+    shift 3
+    local -a filt=("$@")
     say "Copying ${what}..."
-    if ! out=$(rclone copy "${src}" "${dst}" --create-empty-src-dirs=false 2>&1); then
+    if ! out=$(rclone copy "${src}" "${dst}" "${filt[@]}" --create-empty-src-dirs=false 2>&1); then
         printf '%s\n' "${out}" | tail -3
-        say "FAILED copying ${what}. Both folders are intact; nothing was removed."
+        say "Couldn't finish copying ${what}. Both folders are as they were; nothing was removed."
         return 1
     fi
     say "Verifying ${what}..."
-    out=$(rclone check "${src}" "${dst}" --one-way 2>&1)
+    out=$(rclone check "${src}" "${dst}" "${filt[@]}" --one-way 2>&1)
     if ! printf '%s\n' "${out}" | grep -q "0 differences found"; then
         printf '%s\n' "${out}" | grep -iE "differ|missing|error" | head -3
-        say "VERIFICATION FAILED for ${what}. Both folders are intact; the source was not removed."
+        say "The copy of ${what} didn't match, so the old folder was kept. Both folders are as they were."
         return 1
     fi
     say "Removing the old ${what} folder..."
-    rclone purge "${src}" >/dev/null 2>&1 || say "(could not remove the old folder; the copy is complete and verified)"
+    { rclone delete "${src}" "${filt[@]}" && rclone rmdirs "${src}"; } >/dev/null 2>&1 \
+        || say "(could not remove the old folder; the copy is complete and verified)"
     return 0
 }
 
@@ -328,11 +348,21 @@ main() {
     # "at the root" must not count the saves subfolder, or a recursive listing
     # finds the files inside it and concludes they were at the root all along
     # -- which would move the whole folder, backups included, into Saves.
-    if ! has_files "${remote}${saves}/" "--exclude saves/**" \
+    if ! has_files "${remote}${saves}/" --exclude '/saves/**' \
        && has_files "${remote}${saves}/saves/"; then
         saves_src="${saves%/}/saves"
         say "Saves are in ${remote}${saves_src}, not at the root."
     fi
+    # The other tiers nested inside the saves source ride with neither its
+    # presence test nor its move (PL-025): the settings folder of the
+    # original layout (/GAMES/backup) and the content folder derived beside
+    # the saves (/GAMES/Content) each move to a place of their own.
+    local nested
+    for nested in "${backups}" "${content}"; do
+        case "${nested%/}/" in
+            "${saves_src%/}/"?*) SAVES_EXCLUDES+=(--exclude "/${nested#"${saves_src%/}/"}/**") ;;
+        esac
+    done
 
     # Refuse to move onto something already there. A move into an existing
     # directory is done file by file, which is exactly the interruptible,
@@ -348,10 +378,10 @@ main() {
     [ "${blocked}" = "1" ] && return 4
 
     say "Would move, server-side, leaving anything else where it is:"
-    has_files "${remote}${saves_src}/" \
-        && say "  ${remote}${saves_src}  ->  ${remote}${NEW_SAVES}"
     has_entries "${remote}${backups}/" \
         && say "  ${remote}${backups}  ->  ${remote}${NEW_BACKUPS}"
+    has_files "${remote}${saves_src}/" \
+        && say "  ${remote}${saves_src}  ->  ${remote}${NEW_SAVES}"
 
     if [ "${mode}" != "--apply" ]; then
         say ""
@@ -360,18 +390,20 @@ main() {
     fi
 
     say ""
-    local moved_saves=0
-    if has_files "${remote}${saves_src}/"; then
-        if relocate "${remote}${saves_src}" "${remote}${NEW_SAVES}" "saves"; then
-            moved_saves=1
-        else
+    # The backups first (PL-025). In the original layout they sit inside the
+    # saves folder; moved first, they are out of it before the saves move
+    # looks, as well as excluded from it.
+    if has_entries "${remote}${backups}/"; then
+        if ! relocate "${remote}${backups}" "${remote}${NEW_BACKUPS}" "backups"; then
             say "Nothing else attempted."
             return 5
         fi
     fi
 
-    if has_entries "${remote}${backups}/"; then
-        relocate "${remote}${backups}" "${remote}${NEW_BACKUPS}" "backups" || return 5
+    local moved_saves=0
+    if has_files "${remote}${saves_src}/"; then
+        relocate "${remote}${saves_src}" "${remote}${NEW_SAVES}" "saves" "${SAVES_EXCLUDES[@]}" || return 5
+        moved_saves=1
     fi
 
     # Only once the data is where the config will point. A config updated
