@@ -406,13 +406,16 @@ if [ ! -d "${ROOT}" ]; then
     finish 1 "saves-root-missing"
 fi
 
-# The root-relative form of a --retire argument, or 1 for a path outside the
-# saves folder and 2 for one that is not plain (.., ., //).
+# The root-relative form of a --retire argument, or 1 for a path that is not
+# under the saves folder and 2 for one that is not plain (.., ., //). Only an
+# absolute path under the saves folder is one (audit #307 PL-052): a relative
+# argument used to pass unchanged, be recorded as a saves-folder path, and be
+# unlinked against whatever the working directory was.
 retire_rel() {
     local p="$1"
     case "${p}" in
         "${ROOT}/"*) p="${p#"${ROOT}/"}" ;;
-        /*) return 1 ;;
+        *) return 1 ;;
     esac
     case "/${p}/" in *"/../"*|*"/./"*|"//"*) return 2 ;; esac
     printf '%s' "${p}"
@@ -422,10 +425,12 @@ retire_rel() {
 # manifest is opened, so finish() knows what --unlink may remove however the
 # record goes -- D-CLOUD-133 keeps the deletion whatever the record said,
 # D-CLOUD-053 keeps every write of this script under the saves folder, and a
-# path that fails retire_rel is refused both the row (below) and the rm.
+# path that fails retire_rel is refused both the row (below) and the rm. What
+# --unlink removes is the saves folder's path rebuilt from the relative form,
+# never the argument as given (PL-052).
 if [ "${MODE}" = "retire" ]; then
     for _raw in "${RETIRE_PATHS[@]}"; do
-        retire_rel "${_raw}" >/dev/null && RETIRE_ACCEPTED+=("${_raw}")
+        _rel="$(retire_rel "${_raw}")" && RETIRE_ACCEPTED+=("${ROOT}/${_rel}")
     done
 fi
 
@@ -1330,7 +1335,7 @@ if [ "${MODE}" = "retire" ]; then
     for _raw in "${RETIRE_PATHS[@]}"; do
         _p="$(retire_rel "${_raw}")"
         case $? in
-            1)  log_warn "${_raw} is outside the saves folder ${ROOT}; not recorded"
+            1)  log_warn "${_raw} is not a path under the saves folder ${ROOT}; not recorded"
                 RC=1; REASON="retire-outside-root"
                 continue ;;
             2)  log_warn "${_raw} is not a plain path under ${ROOT}; not recorded"
