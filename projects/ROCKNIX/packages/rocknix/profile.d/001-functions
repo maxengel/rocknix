@@ -183,7 +183,12 @@ function wait_lock_say() {
 #   place, which fails when the lock exists -- so no waiter ever reads an
 #   empty lock that is really a holder between its open and its write, the
 #   window a noclobber create left (#307 PL-041). A shell without ln (a
-#   test's narrow PATH) falls back to that create.
+#   test's narrow PATH) falls back to that create. ln -T: a folder at the
+#   lock's path is a file that exists, not a place to link into -- plain
+#   ln made <lock>/<lock>.<pid> inside it and returned 0, so every
+#   contender "took" the lock at once (#307, the audit of the fix round,
+#   gpt G2-B-03); now the link fails, and the stale-lock reap below, which
+#   cannot remove a folder, gives up after five tries and says so.
 #
 #   Reaped once, under flock on <lock>.reap -- the lock the interface's
 #   reaper takes too -- by re-reading the holder and removing the file only
@@ -225,7 +230,7 @@ function wait_lock() {
     then
       if echo "$$" > "${J_CONF_LOCK}.$$" 2>/dev/null
       then
-        ln "${J_CONF_LOCK}.$$" "${J_CONF_LOCK}" 2>/dev/null && took=1
+        ln -T "${J_CONF_LOCK}.$$" "${J_CONF_LOCK}" 2>/dev/null && took=1
         rm -f "${J_CONF_LOCK}.$$"
       fi
     else
@@ -317,7 +322,7 @@ function wait_lock() {
       unreaped=$((unreaped + 1))
       if [ "${unreaped}" -ge 5 ]
       then
-        wait_lock_say "cannot remove stale lock ${J_CONF_LOCK} held by pid ${holder:-<none>} (its folder not writable); not waiting on it"
+        wait_lock_say "cannot remove stale lock ${J_CONF_LOCK} held by pid ${holder:-<none>} (its folder not writable, or a folder in its place); not waiting on it"
         return 1
       fi
       [ "${unreaped}" -gt 1 ] && sleep 1

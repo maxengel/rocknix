@@ -10542,6 +10542,17 @@ EOS
 p7zforeign restore --no-restart
 p7zforeignok; check $? "audit of the fix round PL-028: and so is one whose member walks out of storage/ through .." "PL-028 (..): $(p7zfstate)"
 
+# == G2-B-03 (gpt): a folder at the lock's path is not a lock anybody holds
+mkdir -p "${P7Z}/lnbb"
+if [ -n "${BB}" ]; then printf '#!/bin/sh\nexec %s ln "$@"\n' "${BB_HOST}" > "${P7Z}/lnbb/ln"; chmod +x "${P7Z}/lnbb/ln"; fi
+rm -rf "${P7F}/dirlock"; mkdir -p "${P7F}/dirlock/lock"
+sed "s|^J_CONF=.*|J_CONF=$(printf %q "${P7F}/cfg/system.cfg"); J_CONF_LOCK=$(printf %q "${P7F}/dirlock/lock")|" "${P7F}/f.sh" > "${P7F}/f-dir.sh"
+p7t0=$(date +%s)
+PATH="${P7Z}/lnbb:${TMP}/bbin:${PATH}" timeout 20 bash -c ". '${P7F}/f-dir.sh'; wait_lock" 2>"${P7F}/err"; p7rc=$?
+p7dt=$(( $(date +%s) - p7t0 ))
+[ "${p7rc}" -ne 0 ] && [ "${p7rc}" -ne 124 ] && [ "${p7dt}" -lt 15 ] && [ -z "$(ls -A "${P7F}/dirlock/lock")" ] && grep -q 'wait_lock' "${P7F}/err"; check $? "audit of the fix round G2-B-03 (gpt): with a folder at the lock's path, wait_lock takes nothing (rc ${p7rc}, ${p7dt}s), links nothing into the folder, and says why" "G2-B-03: rc ${p7rc} after ${p7dt}s; in the folder: $(ls -A "${P7F}/dirlock/lock" | tr '\n' ' ') -- ln linked the pid file inside it and every contender took the lock"
+rm -rf "${P7F}/dirlock"
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
