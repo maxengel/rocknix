@@ -1,52 +1,34 @@
 # Saved Session State
 
-> **Saved**: 2026-09-28T16:03:00Z
-> **Branch**: feature/conflict-resolution (the session worktree; the work is on `next`, pushed at d6f6f669ec)
-> **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution); EmulationStation fork at ~/Development/emulationstation-next.worktrees/qa-integration (`test/qa-integration` at 7d999fd15, pushed)
+> **Saved**: 2026-09-28T17:01:18Z
+> **Branch**: feature/conflict-resolution (the session worktree; the work is on `next`, pushed at 1850043378)
+> **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution); EmulationStation fork at ~/Development/emulationstation-next.worktrees/qa-integration (`test/qa-integration` at 83b5386f05, pushed; the distribution's ES pin is that commit, 17fe77bbab)
 
 ## Current Focus
 
-The #236 release-candidate round: the milestone-tier audit of the whole fix round (D-WORKFLOW-060, `docs/audits/2026_09_28-milestone-audit-of-the-fix-round/`) is in Phase 4.6/7. The blind second opinion is graded (PL-028, PL-029 added; 29 items); the refutation pass is running (rc to `/workspace/tmp/rocknix-session/so-refute.rc`, output `second-opinions/refutation-gpt.md`); eight Opus stream agents are fixing the punch list on `feature/pl-{a,b,c,d,f1,f2}` (from `next` f3d19dc8fb) and `feature/pl-e{1,2}` (from `test/qa-integration` 7d999fd15), reports to `/workspace/tmp/rocknix-session/streams2/<X>-report.md`. The maintainer's wordlist request (#312) is delivered except the CI secret and issue #260, which are theirs.
-
-## Completed This Session (since the 12:23 stash)
-
-- The wordlist (#312, D-WORKFLOW-061): 48 files reworded (d430818548); `.githooks/guard-lib` + `pre-commit`, `commit-msg`, `pre-push` in both repositories, fail closed, the list at `~/.config/rocknix/forbidden-terms` (never in a tree; 3e70ef9239, ES 7d999fd15); `tools/forbidden-terms-check` (0 hits both trees); `.githooks/hooks-test` PASS (27), ES `pre-push-test` PASS (21); `.github/workflows/fork-wordlist.yml` on every branch push (10bdc63d92; red until the maintainer sets the `FORBIDDEN_PATTERNS` secret -- the command is on #312). The Foundry endpoint moved to `~/.config/council/env` (`AZURE_AI_FOUNDRY_BASE`). The old issue #311 was deleted (its title carried the words); #312 replaces it; #260's body line 12 and one comment still carry them (reworded copies at `/workspace/tmp/rocknix-session/issue-260/`; the classifier refused the edit). History rewrite files for the maintainer: `~/.config/rocknix/replace-text`, `replace-message`.
-- The integrator's punch items on `next`: PL-011, PL-012, PL-026 (3e70ef9239), PL-012's gitignore half, PL-013, PL-023, PL-025, PL-027 (f3d19dc8fb). PL-023's proof: the committed harness `PASSED` rc 0 (`harness-pl023-normal.log`); the skip variant runs in the throwaway worktree `/workspace/repos/rocknix.worktrees/skip-proof` (remove with `tools/fork-worktree remove` when done).
-- The lint gains the carried-verdict check (d6f6f669ec, blindspot 68).
-- Audit docs: 04 § Second opinion (blind half), 05 with PL-028/PL-029, briefs under `streams/briefs/`, the running log through Phase 7's opening (cba6ae23f2).
+Phase 7 of the milestone-tier audit of the fix round (D-WORKFLOW-060, #313, 34 items): merging the eight Opus streams' branches one at a time with the harness gating each merge, recording every outcome in `05-punch-list.md` (table + YAML) and on #313, then chain 88 and the candidate call. 16 of 34 closed: the integrator's seven (PL-011/012/013/023/025/026/027), E1 (PL-010, PL-018), E2 (PL-019; PL-030 withdrawn at the source), F1 (PL-024), C (PL-009/014/021/032). Open: A (PL-001/002/004/015/034), B (PL-003/005/006/007/008/016/017/022/028), D (PL-031/033), F2 (PL-020), the integrator's PL-029 (the next cut's proofs).
 
 ## In Progress
 
-- The refutation pass (dispatched 15:45 UTC): grade it into 04 § Second opinion (command, provenance, served model, a table, net effect); finalize 05; `tools/lint-audit-artifacts` (the 29 open outcomes are expected until Phase 7).
-- The streams: on each report, read it against the acceptance, record the outcome in 05's Phase 7 table and YAML (Resolved `<sha>` / Deferred / Withdrawn with the evidence), merge the branch into `next` in the primary (`integrate-pl.sh` pattern: one at a time, the harness gating, no commit in the primary while a merge is staged), then the ES branches into `test/qa-integration`, bump the ES pin in `projects/ROCKNIX/packages/ui/emulationstation/package.mk`, run `tools/es-syntax-check` on touched .cpp, then chain 88 (x64 + H700 from one synced head), vm-qa, the proofs' scripts, PL-029's rehearsal, records, the candidate call on #236, the device yeses (the copy and the reboot each asked).
+- Streams A, B, D, F2 running (agents dispatched 15:53 UTC; reports to `/workspace/tmp/rocknix-session/streams2/<X>-report.md`); C's follow-up (extend `cloud_log_scrub` to `es_log*.txt`) running; B was sent PL-028 mid-run, R-01 for PL-022, the widening of PL-006, E1's cut-file lead and C's `key=`/`access_key_id` lead.
+- Merged into `next`: F1 (`e3394a893f`), C (`8840998047`, a harness conflict resolved by keeping both blocks, F1 first). Into `test/qa-integration`: E1 (`b8e0b382e`), E2 (`55a1f6b29`), E1's follow-up (`83b5386f05`). Each merge: verify the branch (commits with `Already written:` and the trailer, es-syntax-check / pkgcheck, the built test binaries run by the integrator), merge with `/workspace/tmp/rocknix-session/integrate-pl2.sh <x>` (detached; a harness conflict in `tools/last-good-scripts-test` is resolved by keeping both appended blocks before the verdict line), re-run `BASE_REF=f3d19dc8fb ./tools/last-good-scripts-test --old` in the stream's worktree to confirm the fail-before claim, then record.
 
 ## Next Steps
 
-1. When `so-refute.rc` exists: read `refutation-gpt.md`, grade, finalize 05, run the lint, create the Phase 6 issue (`audit`, `punch-list` labels, one checkbox per item, `--repo maxengel/rocknix`), back-link.
-2. When `harness-pl023-skip.rc` exists: expect `PASSED, N SKIPPED` rc 3; record in 05's PL-023 outcome; remove the skip-proof worktree.
-3. Stream reports as they land (order of arrival); PL-028 was sent to stream B mid-run.
-4. The maintainer's three commands: the CI secret, #260's two edits, the history rewrite (their call; costs in #312's body).
-
-## Key Files Modified
-
-| File | Change | Notes |
-| --- | --- | --- |
-| `.githooks/guard-lib`, `pre-commit`, `commit-msg`, `pre-push`, `hooks-test` | new/rewritten | fail closed; the wordlist outside the tree |
-| `tools/forbidden-terms-check` | new | tree or stdin; path:line only |
-| `.github/workflows/fork-wordlist.yml` | new | every branch push |
-| `tools/lint-audit-artifacts` | modified | carried-verdict check |
-| `tools/last-good-scripts-test`, `tools/vm-qa` | modified | PL-023, PL-025 |
-| `docs/audits/2026_09_28-milestone-audit-of-the-fix-round/*` | in progress | 04, 05, running log, briefs, second-opinions |
-| `docs/decision-register.md` | D-WORKFLOW-061 | |
+1. Each remaining report: verify, merge (A, B, D, F2 into `next`), fail-before re-run, record in 05 and tick #313, running-log line.
+2. When the last distribution branch is merged: `/workspace/tmp/rocknix-session/chain-88.sh` detached (sync, x64 run 88, H700 run 66, images kept, vm-qa 70, guest d, proof-298, proofs run 3, the upgrade rehearsal from `d39ccdfff3`); no commit to `next` between its sync and its last image.
+3. On the cut: PL-029's proofs (the rehearsal, the migration on a guest, the E1/E2 follow-ups' proofs, the runner's NOT RUN), the frames E2/F1/C ask for (the BIOS-alone page at 640x480; a downgrade and return; the socket refusal; STOP IT AND PLAY), records (RECORD.txt x2, the QA log row, the catalog), `tools/lint-audit-artifacts <folder> --issue 313` PASS, the candidate call on #236, the device yeses (copy, then reboot, each asked).
+4. The maintainer's own (asked on #312 and in chat): the CI secret `FORBIDDEN_PATTERNS`, #260's two edits, the history rewrite.
 
 ## Notes for Next Session
 
-- Never write the wordlist's words anywhere the fork carries; say "the wordlist". The permission classifier refuses `gh secret set` and edits of other issues' bodies; leave those to the maintainer.
-- The pre-commit refused its own comment once (a kernel patch name with an `sk-` tail): a comment is content too.
-- Concurrent harness runs share fixed `/tmp` paths; run PL-023-style proofs when the streams are quiet if a result looks flaky.
-- Read the rules from `/workspace/repos/rocknix/.claude/rules/` (next), not this worktree.
+- Never write the wordlist's words anywhere the fork carries; the list is `~/.config/rocknix/forbidden-terms`.
+- A commit is gated on a test's own rc, never on `test | grep | cut && git commit` (16:29 UTC's slip, friction log).
+- The harness reads by offset: never edit `tools/last-good-scripts-test` in the primary while a run of it is in flight; the `--old` re-runs go in the stream's worktree.
+- `es-syntax-check` needs the file's real path (`es-app/src/WifiText.cpp`, not es-core).
+- The harness's signal line reads `/proc/$$/status`; `$(awk … /proc/self/status)` reads awk's.
 
 ## Open Questions
 
-- The `awecelot` references (the maintainer's own e-mail in three RetroArch patch headers, the playbook name in `working-principles.md`): theirs to keep or drop.
-- Whether the ES fork gets the runner half too (the same workflow and secret on `maxengel/emulationstation-next`).
+- The `awecelot` references (theirs to keep or drop); the ES fork's runner half of the wordlist check (on their word).
+
