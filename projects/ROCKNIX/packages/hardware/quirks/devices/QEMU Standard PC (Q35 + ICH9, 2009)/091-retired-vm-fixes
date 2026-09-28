@@ -1,0 +1,35 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
+
+### Takes back what the retired QEMU quirks left in /storage.
+#
+# Until 2026-09 this directory held eleven more scripts (091 to 101) that
+# wrote systemd units, drop-ins, a D-Bus policy and a generator into /etc and
+# /usr. Those are the read-only image, so none of it ever existed on a guest;
+# the journal kept only the "Read-only file system" lines. What did land went
+# through the image's links into /storage, and some of it acts on every later
+# boot: three tmpfiles.d rules (one makes a regular file where D-Bus's socket
+# goes, one a directory where journald's does), a sysctl.d file (pid_max,
+# file-max), a modules-load.d list, a udev file under a name udev never
+# reads, and drop-ins under /storage/.config/systemd/system, which systemd
+# never reads either (its unit directory here is /storage/.config/system.d).
+# The scripts are gone; this removes their files, by name, so a guest that
+# ran them boots as a fresh one does. Nothing else in those directories is
+# touched -- whatever else is there is somebody's own.
+C=/storage/.config
+rm -f "${C}/tmpfiles.d/10-generic-x64-journald.conf" \
+      "${C}/tmpfiles.d/20-x64-fd-improvements.conf" \
+      "${C}/tmpfiles.d/30-x64-mount-points.conf" \
+      "${C}/sysctl.d/10-generic-x64.conf" \
+      "${C}/modules-load.d/x64-virtual-modules.conf" \
+      "${C}/udev.rules.d/90-x64-virtual-devices.conf" \
+      "${C}/profile.d/091-generic-x64-services"
+for unit in systemd-hostnamed systemd-journald dbus smbd nmbd weston; do
+  rm -f "${C}/systemd/system/${unit}.service.d/10-generic-x64.conf" \
+        "${C}/systemd/system/${unit}.service.d/10-vm-config.conf" \
+        "${C}/systemd/system/${unit}.service.d/20-vm-enhanced.conf"
+  rmdir "${C}/systemd/system/${unit}.service.d" 2>/dev/null
+done
+rmdir "${C}/systemd/system" "${C}/systemd" 2>/dev/null
+exit 0
