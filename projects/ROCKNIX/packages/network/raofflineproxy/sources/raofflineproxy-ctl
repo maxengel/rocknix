@@ -133,7 +133,8 @@
 #            a game runs it and says it the same way). The walk over an unindexed folder
 #            stops at the client's cap of files (rom_browser
 #            MAX_SCAN_ENTRIES), counted over the files not yet cached and
-#            begun where the last walk the cap cut stopped (scan-cursor), so
+#            begun where the last walk the cap cut stopped (scan-cursor,
+#            kept only by a run that worked through its jobs), so
 #            a second scan reaches what the first did not, past files that
 #            never cache too (#186 PL-17, #307 PL-059); a walk the cap cut
 #            says `note TRUNCATED` to the page and truncated=1 in the stamp.
@@ -178,7 +179,8 @@
 #            session and INDEX NEW GAMES AT STARTUP is on) and the topup
 #            --after-index that follows it (#308 F-RA-22).
 #   listening [--wait N]
-#            whether the proxy's port, 127.0.0.1:8080, is in LISTEN: exit 0
+#            whether something takes an IPv4 connection to 127.0.0.1:8080, the
+#            proxy's address -- a listener on it in LISTEN: exit 0
 #            when it is, 1 when not -- read from /proc/net/tcp and tcp6, no
 #            tool run. With --wait it looks N times a second apart. The
 #            unit's ExecStartPost, so the service is started when it can be
@@ -898,9 +900,12 @@ do_ready() {
 # which makes rcheevos give up achievements for the session. The unit's
 # ExecStartPost runs this, bounded, so "started" means "listening". The
 # socket table is read, not a tool's output (netstat is not a dependency
-# of anything here); 127.0.0.1, any address, ::1 and ::ffff:127.0.0.1 on
-# port 8080 (1F90) in state LISTEN (0A) count. RAOFFLINEPROXY_PROC_NET
-# stands in for /proc/net (the scripts suite's fixture).
+# of anything here); 127.0.0.1, 0.0.0.0 and ::ffff:127.0.0.1 on port 8080
+# (1F90) in state LISTEN (0A) count -- the listeners that take the IPv4
+# connection to 127.0.0.1:8080 the emulators are given. ::1 does not take
+# it, and :: may be IPv6-only, which the table does not say, so neither
+# counts (audit of the fixes, gpt G-D-02). RAOFFLINEPROXY_PROC_NET stands in
+# for /proc/net (the scripts suite's fixture).
 port_listening() {
     local F SL LOCAL REM ST REST
     for F in "${RAOFFLINEPROXY_PROC_NET:-/proc/net}/tcp" "${RAOFFLINEPROXY_PROC_NET:-/proc/net}/tcp6"; do
@@ -908,7 +913,7 @@ port_listening() {
         while read -r SL LOCAL REM ST REST; do
             [ "${ST}" = "0A" ] || continue
             case "${LOCAL}" in
-                0100007F:1F90|00000000:1F90|00000000000000000000000000000000:1F90|00000000000000000000000001000000:1F90|0000000000000000FFFF00000100007F:1F90) return 0 ;;
+                0100007F:1F90|00000000:1F90|0000000000000000FFFF00000100007F:1F90) return 0 ;;
             esac
         done < "${F}"
     done
@@ -935,29 +940,47 @@ do_listening() {
 }
 
 # The games ready for the signed-in account, one id a line into $1: those
-# with the account's patch and unlocks rows, read from the keys alone in one
-# read-only query. added= is how many ids a run adds to this set -- the
-# games that became ready for this player (fork #298's "games new to the
-# store"), counted from the store rather than from the run's cache
-# operations: a game the recently played pass cached for the first time is
-# one, a second dump of a game already ready is not (#308 F-RA-10, F-RA-15).
-# Exit non-zero when the store cannot be read.
+# with the account's unlocks row and an achievementsets row of the game --
+# the rows a launch reads (RetroArch asks achievementsets, not patch), so a
+# game a launch cached is ready before any patch row exists. The walk's
+# "already cached" (list_jobs whole_games) is the same rule (audit of the
+# fixes, claude G-D-08, gpt G-D-04). A sets row's GameId is read from the
+# first 512 characters, where the service writes it, and from the whole body
+# only when it is not there, so the store's bodies are not parsed whole at
+# every run. added= is how many ids a run adds to this set -- the games that
+# became ready for this player (fork #298's "games new to the store"),
+# counted from the store rather than from the run's cache operations (#308
+# F-RA-10, F-RA-15). Exit non-zero when the store cannot be read.
 ready_games_into() {
     : > "$1" || return 1
     [ -e "${QUEUE}" ] || return 0
     python3 -c '
-import sqlite3, sys
+import json, re, sqlite3, sys
 store, user = sys.argv[1], sys.argv[2].strip().lower()
 db = sqlite3.connect("file:%s?mode=ro" % store, uri=True, timeout=1.0)
-patch, unlocks = set(), set()
-for (key,) in db.execute("SELECT cacheKey FROM api_cache WHERE cacheKey LIKE ? OR cacheKey LIKE ?", ("patch:%", "unlocks:%")):
+game = re.compile(r"\"GameId\"\s*:\s*(\d+)")
+unlocks, sets = set(), set()
+for key, head in db.execute("SELECT cacheKey, substr(responseBody, 1, 512) FROM api_cache WHERE cacheKey LIKE ? OR cacheKey LIKE ?", ("unlocks:%", "achievementsets:%")).fetchall():
     parts = key.split(":")
-    if len(parts) == 3 and parts[0] == "patch" and parts[2] == user and parts[1].isdigit():
-        patch.add(int(parts[1]))
-    elif len(parts) == 4 and parts[0] == "unlocks" and parts[2] == user and parts[3] == "0" and parts[1].isdigit():
-        unlocks.add(int(parts[1]))
-for game in sorted(patch & unlocks):
-    print(game)
+    if parts[0] == "unlocks":
+        if len(parts) == 4 and parts[2] == user and parts[3] == "0" and parts[1].isdigit():
+            unlocks.add(int(parts[1]))
+        continue
+    if len(parts) != 3 or parts[2] != user:
+        continue
+    found = game.search(head or "")
+    if found:
+        sets.add(int(found.group(1)))
+        continue
+    try:
+        body = db.execute("SELECT responseBody FROM api_cache WHERE cacheKey = ?", (key,)).fetchone()[0]
+        gid = int((json.loads(body) or {}).get("GameId") or 0)
+    except Exception:
+        gid = 0
+    if gid > 0:
+        sets.add(gid)
+for g in sorted(unlocks & sets):
+    print(g)
 ' "${QUEUE}" "$(setting "${USER_KEY}")" > "$1" 2>/dev/null
 }
 
@@ -966,9 +989,15 @@ for game in sorted(patch & unlocks):
 # read, and the caller keeps its own count.
 games_made_ready() {
     [ -n "${1}" ] && [ -n "${2}" ] && [ -e "${1}" ] && [ -e "${2}" ] || return 1
-    local N
-    N="$(grep -vxF -f "$1" "$2" 2>/dev/null | grep -c .)"
-    case "${N}" in ''|*[!0-9]*) return 1 ;; esac
+    local NEWIDS RC N=0
+    # grep says 0 when it selected lines, 1 when none, 2 when it could not
+    # read: only the first two are an answer. A count taken after the pipe
+    # read a failed comparison as 0 new games (audit of the fixes, gpt
+    # G-D-05).
+    NEWIDS="$(grep -vxF -f "$1" "$2" 2>/dev/null)"
+    RC=$?
+    [ "${RC}" -le 1 ] || return 1
+    [ -n "${NEWIDS}" ] && N="$(printf '%s\n' "${NEWIDS}" | grep -c .)"
     echo "${N}"
 }
 
@@ -993,6 +1022,25 @@ write_stamp() {
     [ -n "${WHY}" ] && LINE="${LINE} why=${WHY}"
     mkdir -p "${PROXY_DIR}" || return 1
     printf '%s\n' "${LINE}" > "${SCAN_STAMP}.tmp" && mv -f "${SCAN_STAMP}.tmp" "${SCAN_STAMP}"
+}
+
+# The walk's proposed cursor (scan-cursor.next, from list_jobs) becomes the
+# cursor: a path to walk on from, or none when the walk came round. Kept
+# only after a run that worked through its jobs (audit of the fixes, claude
+# G-D-06), and read back once written, since the continuation the page
+# promises rests on it (gpt G-D-06). Exit 1 when it could not be kept.
+commit_cursor() {
+    local WANT
+    [ -f "${SCAN_CURSOR}.next" ] || return 1
+    WANT="$(cat "${SCAN_CURSOR}.next" 2>/dev/null)" || return 1
+    if [ -z "${WANT}" ]; then
+        rm -f "${SCAN_CURSOR}.next"
+        rm -f "${SCAN_CURSOR}" 2>/dev/null
+        [ ! -e "${SCAN_CURSOR}" ]
+        return
+    fi
+    [ ! -d "${SCAN_CURSOR}" ] && mv -f "${SCAN_CURSOR}.next" "${SCAN_CURSOR}" 2>/dev/null \
+        && [ "$(cat "${SCAN_CURSOR}" 2>/dev/null)" = "${WANT}" ]
 }
 
 # The account EmulationStation signed in with: a user name and either the
@@ -1145,11 +1193,11 @@ list_jobs() {
     local -a BOUND=()
     [ "${BUDGET}" -gt 0 ] && BOUND=(timeout "${BUDGET}")
     RA_SCAN_USER="$(setting "${USER_KEY}")" "${BOUND[@]}" python3 - "$1" "${2:-all}" "${ROMS_ROOT}" "${ES_DIR}" "${SCAN_SYSTEMS}" "${SCAN_CURSOR}" <<'PY'
-import json, os, sys
+import json, os, re, sqlite3, sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from raofflineproxy import cache_keys
-from raofflineproxy.config import load_config
+from raofflineproxy.config import DATABASE_FILE, load_config
 from raofflineproxy.rom_browser import (
     MAX_SCAN_ENTRIES, is_supported_browser_file, normalize_cached_rom_path,
 )
@@ -1310,25 +1358,48 @@ def is_cached(game_id, hash_value):
 
 # The ROMs this account's patch rows name (rom_browser.load_cached_rom_paths,
 # narrowed to the account), in the client's own two-component form -- where
-# the game is whole for this account: its unlocks row and an achievementsets
-# row of the game beside the patch row, as is_cached asks of an indexed
-# game. A patch row alone (a fetch that failed after the first write, or
+# the game is ready for this account (whole_games: its unlocks row and an
+# achievementsets row of the game), as is_cached asks of an indexed game. A patch row alone (a fetch that failed after the first write, or
 # rows an older client's eviction thinned) used to pass the ROM over for
 # ever; now it is a job again (#308 F-RA-14). The dump's own sets row cannot
 # be asked here -- an unindexed ROM's hash is what the job finds out.
 def whole_games():
+    """The games ready for this account -- the unlocks row and an
+    achievementsets row of the game, the rows a launch reads -- by the same
+    rule as the shell's ready_games_into (audit of the fixes, claude G-D-08,
+    gpt G-D-04). A sets row's GameId is read from its first 512 characters,
+    where the service writes it, and from the whole body only when it is not
+    there: every body parsed whole at every listing was tens of megabytes
+    on a large store."""
+    game = re.compile(r'"GameId"\s*:\s*(\d+)')
     unlocks, sets = set(), set()
-    for entry in storage.get_all_cache_by_prefix(cache_keys.PREFIX_UNLOCKS):
-        parts = str(entry.get("cacheKey") or "").split(":")
-        if len(parts) == 4 and parts[2] == user and parts[3] == "0" and parts[1].isdigit():
-            unlocks.add(int(parts[1]))
-    for entry in storage.get_all_cache_by_prefix(cache_keys.PREFIX_ACHIEVEMENTSETS):
-        if not str(entry.get("cacheKey") or "").endswith(":" + user):
+    try:
+        db = sqlite3.connect("file:%s?mode=ro" % DATABASE_FILE, uri=True, timeout=1.0)
+        rows = db.execute("SELECT cacheKey, substr(responseBody, 1, 512) FROM api_cache WHERE cacheKey LIKE ? OR cacheKey LIKE ?", ("unlocks:%", "achievementsets:%")).fetchall()
+    except Exception:
+        db = None
+        rows = [(e.get("cacheKey") or "", e.get("responseBody") or "") for prefix in (cache_keys.PREFIX_UNLOCKS, cache_keys.PREFIX_ACHIEVEMENTSETS) for e in storage.get_all_cache_by_prefix(prefix)]
+    for key, head in rows:
+        parts = str(key).split(":")
+        if parts[0] == "unlocks":
+            if len(parts) == 4 and parts[2] == user and parts[3] == "0" and parts[1].isdigit():
+                unlocks.add(int(parts[1]))
+            continue
+        if len(parts) != 3 or parts[2] != user:
+            continue
+        found = game.search(head or "")
+        if found:
+            sets.add(int(found.group(1)))
             continue
         try:
-            sets.add(int((json.loads(entry.get("responseBody") or "{}") or {}).get("GameId") or 0))
+            body = db.execute("SELECT responseBody FROM api_cache WHERE cacheKey = ?", (key,)).fetchone()[0] if db is not None else head
+            gid = int((json.loads(body) or {}).get("GameId") or 0)
         except Exception:
-            continue
+            gid = 0
+        if gid > 0:
+            sets.add(gid)
+    if db is not None:
+        db.close()
     return unlocks & sets
 
 
@@ -1394,19 +1465,29 @@ def read_cursor():
         return ""
 
 
-def write_cursor(value):
-    """The cursor, whole or not at all; gone when the walk came round."""
+def propose_cursor(value):
+    """The cursor this walk proposes -- the path of the last file it took,
+    or nothing when the walk came round -- written whole to
+    scan-cursor.next for the ctl to keep once the run has worked through its
+    jobs (commit_cursor): a run cancelled or stopped after its listing
+    leaves the cursor where it was, so the next scan takes the same slice
+    (audit of the fixes, claude G-D-06). False when it could not be written
+    -- and the ctl says so rather than promising a continuation it cannot
+    keep (gpt G-D-06)."""
     if cursor_file is None:
-        return
+        return True
+    proposal = cursor_file.with_name(cursor_file.name + ".next")
+    tmp = proposal.with_name(proposal.name + ".tmp")
     try:
-        if value:
-            tmp = cursor_file.with_name(cursor_file.name + ".tmp")
-            tmp.write_text(value + "\n", encoding="utf-8", errors="surrogateescape")
-            os.replace(tmp, cursor_file)
-        else:
-            cursor_file.unlink(missing_ok=True)
+        tmp.write_text(value + "\n" if value else "", encoding="utf-8", errors="surrogateescape")
+        os.replace(tmp, proposal)
+        return True
     except OSError:
-        pass
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        return False
 
 
 # The walk is a circle from a cursor (#307 PL-059). Cached files are passed
@@ -1414,14 +1495,16 @@ def write_cursor(value):
 # ROM RetroAchievements does not know is skipped, and stays uncached --
 # counted every run, so the first MAX_SCAN_ENTRIES such files held the front
 # of the walk for ever and the files past them were never reached. So a walk
-# the cap cuts leaves the path of the last file it took in scan-cursor, and
-# the next walk takes the files after it first, then comes round to the
+# the cap cuts proposes the path of the last file it took (scan-cursor.next),
+# the ctl keeps it as scan-cursor once the run has worked through its jobs,
+# and the next walk takes the files after it first, then comes round to the
 # start. A walk that fits under the cap removes the cursor; a cursor that
 # names a file the walk no longer meets (deleted, or its folder now indexed)
 # starts the circle from the top.
 walked = []
 walked_cached = 0
 truncated = 0
+cursor_saved = 1
 if mode == "all":
     cursor = read_cursor()
     passed = not cursor
@@ -1472,7 +1555,7 @@ if mode == "all":
     candidates = after + before
     walked = candidates[:MAX_SCAN_ENTRIES]
     truncated = 1 if len(candidates) > MAX_SCAN_ENTRIES else 0
-    write_cursor(str(walked[-1]) if truncated and walked else "")
+    cursor_saved = 1 if propose_cursor(str(walked[-1]) if truncated and walked else "") else 0
 
 hash_jobs = walked
 
@@ -1481,7 +1564,7 @@ lines += [f"H\t\t\t{p}\n" for p in by_history(hash_jobs)]
 out.write_text("".join(lines), encoding="utf-8")
 found = indexed_seen + len(walked) + walked_cached
 new = len(lines)
-print(f"found={found} new={new} cached={found - new} indexed={len(indexed_jobs)} hashing={len(hash_jobs)} truncated={truncated}")
+print(f"found={found} new={new} cached={found - new} indexed={len(indexed_jobs)} hashing={len(hash_jobs)} truncated={truncated} cursor_saved={cursor_saved}")
 PY
 }
 
@@ -1653,7 +1736,9 @@ run_image_pass() {
     local VERB="$1" SECONDS_LEFT="${2:-${IMAGE_PASS_SECONDS}}" MODE="${3:-}" RC=0
     R_IMAGES_WHY=""
     [ -x "${IMAGE_HELPER}" ] || { slog "${VERB}: no image helper at ${IMAGE_HELPER}"; return 0; }
-    [ "${SECONDS_LEFT}" -gt 10 ] 2>/dev/null || { slog "${VERB}: no time left for the image pass (${SECONDS_LEFT}s)"; return 0; }
+    # No time left is no pass: the images were not looked at, and the run
+    # does not say it finished (audit of the fixes, gpt G-D-01).
+    [ "${SECONDS_LEFT}" -gt 10 ] 2>/dev/null || { slog "${VERB}: no time left for the image pass (${SECONDS_LEFT}s); not run"; R_IMAGES_WHY=TOOK_TOO_LONG; return 0; }
     slog "${VERB}: image pass, up to ${SECONDS_LEFT}s${MODE:+ (${MODE})}"
     # In the background and waited for, as the jobs and the recently played
     # pass are: bash runs a trap only once the foreground command has
@@ -1661,7 +1746,12 @@ run_image_pass() {
     # and a stop from disable or STOP IT AND PLAY (TERM) waited for the whole
     # pass before the run could answer either (#307 PL-013, #308 F-RA-11).
     # wait returns the moment a trapped signal arrives, and CLIENT is what
-    # the EXIT trap ends.
+    # the EXIT trap ends. CLIENT is timeout, which puts itself and the
+    # helper in a process group of their own: the interface's SIGINT to the
+    # run's group reaches this script, not the helper, and the EXIT trap's
+    # kill of timeout is forwarded to the helper as SIGTERM -- the path the
+    # harness's D23 runs under GNU timeout (audit of the fixes, claude
+    # G-D-03).
     # Bounded at the process as well (#308 F-RA-10): the helper checks its
     # --seconds between one blocking call and the next, so it is given ten
     # seconds less than the pass has and timeout ends it at the pass's
@@ -1772,7 +1862,7 @@ do_scan() {
     local LIST
     LIST="$(mktemp /tmp/raofflineproxy-scan.XXXXXX)" || fail "cannot create the list"
     # Everything of the run's goes when the run does, however it ends.
-    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}" "${READY_BEFORE:-}" "${READY_AFTER:-}" "${RUNNING}" "${RUNNING}.tmp"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
+    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}" "${READY_BEFORE:-}" "${READY_AFTER:-}" "${SCAN_CURSOR}.next" "${RUNNING}" "${RUNNING}.tmp"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
 
     local COUNTS
     R_IMAGES_WHY=""
@@ -1804,6 +1894,7 @@ do_scan() {
     tell "total ${NEW}"
     if [ "${NEW}" -eq 0 ]; then
         tell "note NOTHING_NEW"
+        commit_cursor || slog "scan: an old cursor could not be removed; the next walk starts from the top all the same"
         # No game to cache, but the images of what is cached may still be
         # missing -- a pass the last run cut, a badge that did not come --
         # and pressing SCAN again is how a player asks for them (#307
@@ -1843,13 +1934,38 @@ do_scan() {
     # that is still missing one (#212): the same action, finished.
     # The scan has no deadline of its own (the top-up's TOPUP_TIMEOUT is the
     # one clock here), so the pass gets its own ceiling.
-    [ "${R_CACHED}" -gt 0 ] && run_image_pass scan "${IMAGE_PASS_SECONDS}"
+    # Whenever the run worked through its jobs -- cached one or not: a
+    # library with a ROM RetroAchievements does not know lists a job at
+    # every scan, and gating the pass on a cached game left such a scan
+    # COMPLETED over badges it never looked at (audit of the fixes, claude
+    # G-D-02 = gpt G-D-01). Not after a stop on a refused sign-in or a
+    # server that stopped answering.
+    [ "${R_STOPPED}" -eq 0 ] && run_image_pass scan "${IMAGE_PASS_SECONDS}"
     # The games' own why comes first; a pass that left images behind is the
     # run's why when the games went through (#307 PL-060).
     if [ -z "${WHY}" ] && [ -n "${R_IMAGES_WHY}" ]; then
         RC=1; WHY="${R_IMAGES_WHY}"
     fi
 
+    # The walk's cursor is kept once the run has worked through its jobs; a
+    # run stopped short leaves it where it was (claude G-D-06). A cut walk
+    # whose cursor could not be kept promises no continuation: the run could
+    # not finish, and neither the page nor the stamp says TRUNCATED (gpt
+    # G-D-06).
+    if [ "${R_DONE}" -eq 1 ] && [ "${R_STOPPED}" -eq 0 ]; then
+        if [ "${TRUNC}" -eq 1 ]; then
+            if [ "$(count_of "${COUNTS}" cursor_saved)" -ne 1 ] || ! commit_cursor; then
+                slog "scan: the walk's cursor could not be saved; the next scan would take the same slice"
+                TRUNC=0
+                [ -z "${WHY}" ] && { RC=1; WHY=SOMETHING_WENT_WRONG; }
+            fi
+        else
+            commit_cursor || slog "scan: an old cursor could not be removed; the next walk starts from the top all the same"
+        fi
+    elif [ "${TRUNC}" -eq 1 ]; then
+        slog "scan: the run stopped short of its jobs; the cursor stays where it was"
+    fi
+    rm -f "${SCAN_CURSOR}.next"
     [ "${R_LIMIT}" -eq 1 ] && tell "note LIMIT_REACHED"
     # Not every folder was walked: the page says so (GuiOfflineScan's
     # NOT EVERY FOLDER WAS LOOKED AT. SCAN AGAIN TO CONTINUE.) and the stamp
@@ -1875,9 +1991,19 @@ do_scan() {
 # gives them one; the interface runs that index when the link comes up, and
 # its topup --after-index caches them (#308 F-RA-22). Nothing else is
 # touched; exit 0.
+# index-pending holds a token -- when it was written and by which process --
+# so a top-up can tell the marker its listing was made for from a newer one
+# an index writes while it runs (audit of the fixes, gpt G-D-03). Whole or
+# not at all. A marker an earlier build left is an empty file, and reads as
+# one token like any other.
+write_index_pending() {
+    printf '%s %s %s\n' "$(date +%s)" "$$" "${RANDOM}" > "${INDEX_PENDING}.tmp" 2>/dev/null \
+        && mv -f "${INDEX_PENDING}.tmp" "${INDEX_PENDING}"
+}
+
 do_index_offline() {
     mkdir -p "${PROXY_DIR}" || fail "cannot create ${PROXY_DIR}"
-    touch "${INDEX_PENDING}" || fail "cannot write ${INDEX_PENDING}"
+    write_index_pending || fail "cannot write ${INDEX_PENDING}"
     slog "index ran offline: the hash library did not come (index-pending); the library is listed once at the link's return"
 }
 
@@ -1950,7 +2076,7 @@ do_topup() {
     if [ "${ONLINE}" -eq 0 ]; then
         slog "topup refused: offline by the proxy's probe (${TRY} probes); not counted as an attempt"
         if [ "${AFTER_INDEX}" -eq 1 ]; then
-            touch "${INDEX_PENDING}"
+            write_index_pending
             slog "topup: the index's games wait for the link (index-pending)"
         fi
         exit ${EX_UNAVAILABLE}
@@ -1968,7 +2094,8 @@ do_topup() {
     # cached -- the games added and indexed since the last run, and with a
     # library nobody scanned, as many as the deadline allows (the rest next
     # time). Nothing is hashed here.
-    local COUNTS LRC NEW=0 CACHED=0 SKIPPED=0 INDEXED=0 LIMIT=0 ERRORS=0 WHY="" LEFT ADDED=0 LISTED=0
+    local COUNTS LRC NEW=0 CACHED=0 SKIPPED=0 INDEXED=0 LIMIT=0 ERRORS=0 WHY="" LEFT ADDED=0 LISTED=0 LIST_WHY=""
+    local PENDING_SEEN=0 PENDING_TOKEN=""
     LEFT="$(time_left "${START}")"
     if [ "${LEFT}" -le 0 ]; then
         WHY=TOOK_TOO_LONG
@@ -1986,8 +2113,11 @@ do_topup() {
         # part-way (STOP IT AND PLAY, disable), a game whose fetch failed,
         # each left no marker and so no retry (#307 PL-055).
         if [ "${AFTER_INDEX}" -eq 0 ]; then
-            slog "topup at the link's return: an index ran offline (index-pending); the library listed once for it"
+            slog "topup at the link's return: an index ran offline (index-pending); the library listed once for it -- again after the half hour if this run does not finish"
         fi
+        # The marker this listing answers, as it reads now: one written
+        # after this moment is a newer promise, and stays (gpt G-D-03).
+        if [ -e "${INDEX_PENDING}" ]; then PENDING_SEEN=1; PENDING_TOKEN="$(cat "${INDEX_PENDING}" 2>/dev/null)"; fi
         COUNTS="$(list_jobs "${LIST}" indexed "${LEFT}" 2>>"${SCAN_LOG}")"
         LRC=$?
         if [ "${LRC}" -eq 0 ]; then
@@ -1998,7 +2128,12 @@ do_topup() {
             WHY=TOOK_TOO_LONG
             slog "topup${AI_NOTE}: the listing did not finish inside the deadline"
         else
+            # The recently played pass still runs -- it needs no index -- but
+            # a run a part of which failed is one that could not finish
+            # (D-UI-030): the why is kept for the stamp below (audit of the
+            # fixes, claude G-D-13; it read COMPLETED before).
             slog "topup${AI_NOTE}: the interface's index could not be read; the recently played pass runs alone"
+            LIST_WHY=LIBRARY_UNREADABLE
         fi
     fi
     if [ -z "${WHY}" ] && [ "${NEW}" -gt 0 ]; then
@@ -2029,8 +2164,12 @@ do_topup() {
     # over -- so whatever index-pending stood for is done; after-index runs
     # included, since their listing is the same (#307 PL-055).
     if [ "${LISTED}" -eq 1 ] && [ -z "${WHY}" ] && [ -e "${INDEX_PENDING}" ]; then
-        rm -f "${INDEX_PENDING}"
-        slog "topup: the pending index's listing and its games are handled; index-pending removed"
+        if [ "${PENDING_SEEN}" -eq 1 ] && [ "$(cat "${INDEX_PENDING}" 2>/dev/null)" = "${PENDING_TOKEN}" ]; then
+            rm -f "${INDEX_PENDING}"
+            slog "topup: the pending index's listing and its games are handled; index-pending removed"
+        else
+            slog "topup: an index left index-pending while this run was at its jobs; kept for the next run"
+        fi
     fi
 
     # Then the client's own recently-played pass for what the index missed
@@ -2070,6 +2209,9 @@ print(int(r.get("cached", 0)), int(r.get("skipped", 0)), 1 if r.get("limit_reach
         slog "topup: no time left for the recently played pass (${LEFT}s)"
     fi
 
+    # A listing that could not be read is the run's why when nothing later
+    # had one of its own.
+    [ -z "${WHY}" ] && [ -n "${LIST_WHY}" ] && WHY="${LIST_WHY}"
     local READY MADE
     READY="$(count_ready)"
     # added=: the games the two passes made ready for this account, from the

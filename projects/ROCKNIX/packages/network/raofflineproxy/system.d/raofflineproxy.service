@@ -14,9 +14,13 @@ After=network.target network-base.service rocknix-sysconfig.service
 # listening rather than refused: a refused connection makes rcheevos disable
 # achievements for the whole session.
 Before=emustation.service essway.service
-# Five starts in sixty seconds, then no more: in [Unit], where systemd has
-# read the start limit since 230 (#308 F-RA-20).
-StartLimitIntervalSec=60
+# Five starts, then no more: in [Unit], where systemd has read the start
+# limit since 230 (#308 F-RA-20). A failed start lasts the readiness wait
+# (ExecStartPost, 30 s) and RestartSec (5 s), so the interval has to hold
+# five of them -- at sixty seconds no more than two fit, the limit never
+# tripped, and a proxy that could never listen restarted for ever (audit of
+# the fixes, claude G-D-05). 5 x 35 = 175; three hundred leaves room.
+StartLimitIntervalSec=300
 StartLimitBurst=5
 
 [Service]

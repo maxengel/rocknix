@@ -6104,18 +6104,22 @@ dsince() { awk -v a="$1" -v b="$(dnow)" 'BEGIN{printf "%.2f", b - a}'; }
 # exit 1), "verify-left" (a verify slice left, no why, exit 3), "crash" (a
 # traceback and Python's exit 1, no protocol line), "cancel" (the
 # page's CANCEL: SIGINT to the ctl through the lock's pid, then a real 20 s),
-# "hang" (a real 20 s); every start is logged with its pid and a real time.
+# "group-cancel" (the interface's own CANCEL: SIGINT to the run's whole
+# process group, then a real 20 s), "hang" (a real 20 s); every start is
+# logged with its pid and a real time, and a SIGINT or SIGTERM it receives.
 dfake_images() {
     cat > "${T}/repo/raofflineproxy-cache-images" <<'EOS'
 #!/bin/bash
 echo $$ > /run/images.pid
 echo "start $(date +%s.%N) budget=${FAKE_BUDGET:-none} $*" >> /run/images-calls
 trap 'echo "term $(date +%s.%N)" >> /run/images-calls; exit 143' TERM
+trap 'echo "int $(date +%s.%N)" >> /run/images-calls' INT
 case "$(cat /run/images-mode 2>/dev/null || echo ok)" in
     fail) printf '>>> doing images\n>>> total 3\n>>> why SOME_IMAGES_NOT_SAVED\n>>> done 0|3\n'; exit 1 ;;
     verify-left) printf '>>> doing images\n>>> verified 10|40\n>>> note VERIFY_LEFT 30\n>>> total 0\n>>> note NOTHING_MISSING\n>>> done 0|0\n'; exit 3 ;;
     crash) printf '>>> doing images\n'; echo 'Traceback (most recent call last):' >&2; exit 1 ;;
     cancel) kill -INT "$(head -n 1 /var/run/raofflineproxy-scan.lock)"; i=0; while [ "$i" -lt 20 ]; do /bin/sleep 1; i=$((i+1)); done; echo "done $(date +%s.%N)" >> /run/images-calls; exit 0 ;;
+    group-cancel) kill -INT -- -"$(head -n 1 /var/run/raofflineproxy-scan.lock)"; i=0; while [ "$i" -lt 20 ]; do /bin/sleep 1; i=$((i+1)); done; echo "done $(date +%s.%N)" >> /run/images-calls; exit 0 ;;
     hang) i=0; while [ "$i" -lt 20 ]; do /bin/sleep 1; i=$((i+1)); done; echo "done $(date +%s.%N)" >> /run/images-calls; exit 0 ;;
 esac
 printf '>>> doing images\n>>> total 0\n>>> note NOTHING_MISSING\n>>> done 0|0\n'
@@ -6232,7 +6236,7 @@ dpending() { # the marker, the mark two hours old, no game played since
 }
 dpending; echo 1 > "${TR}/listing-fail"
 tctl topup; rm -f "${TR}/listing-fail"
-[ "${RC}" -eq 0 ] && grep -q "index could not be read" "${TLOG}" && [ -e "${TPD}/index-pending" ]; check $? "PL-055: a link-return listing for the marker that fails (rc 1) leaves index-pending (rc ${RC})" "PL-055: rc ${RC}; marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone); log: $(tr '\n' '|' < "${TLOG}" | cut -c1-240) -- the marker was consumed before the listing"
+[ "${RC}" -eq 1 ] && grep -q "index could not be read" "${TLOG}" && grep -q 'why=LIBRARY_UNREADABLE$' "${TSTAMP}" && grep -q '^smart budget=' "${TR}/probe.log" && [ -e "${TPD}/index-pending" ]; check $? "PL-055: a link-return listing for the marker that fails (rc 1) leaves index-pending; the run still does the recently played pass and ends COULDN'T FINISH, why LIBRARY_UNREADABLE (claude G-D-13) (rc ${RC})" "PL-055 / claude G-D-13: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null); marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone); log: $(tr '\n' '|' < "${TLOG}" | cut -c1-200) -- a listing that failed was stamped COMPLETED, or the marker went"
 dpending; echo 124 > "${TR}/listing-fail"
 tctl topup; rm -f "${TR}/listing-fail"
 [ "${RC}" -eq 1 ] && grep -q 'why=TOOK_TOO_LONG$' "${TSTAMP}" && [ -e "${TPD}/index-pending" ]; check $? "PL-055: a listing cut by the deadline (124): TOOK_TOO_LONG, index-pending kept" "PL-055: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null); marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone)"
@@ -6665,7 +6669,7 @@ fi
 # compatibility with a deprecation line in the journal).
 UNIT_REL=projects/ROCKNIX/packages/network/raofflineproxy/system.d/raofflineproxy.service
 src_of "${UNIT_REL}" "${DD}/raofflineproxy.service"
-awk '/^\[/{s=$0} s=="[Unit]" && /^StartLimitIntervalSec=60$/{a=1} s=="[Unit]" && /^StartLimitBurst=5$/{b=1} s=="[Service]" && /^StartLimit/{c=1} END{exit !(a && b && !c)}' "${DD}/raofflineproxy.service"; check $? "#308 claude F-RA-20 unit: StartLimitIntervalSec=60 and StartLimitBurst=5 in [Unit], nothing of the start limit in [Service]" "#308 claude F-RA-20 unit: $(grep -n 'StartLimit\|^\[' "${DD}/raofflineproxy.service" | tr '\n' '|')"
+awk '/^\[/{s=$0} s=="[Unit]" && /^StartLimitIntervalSec=[0-9]+$/{a=1} s=="[Unit]" && /^StartLimitBurst=5$/{b=1} s=="[Service]" && /^StartLimit/{c=1} END{exit !(a && b && !c)}' "${DD}/raofflineproxy.service"; check $? "#308 claude F-RA-20 unit: StartLimitIntervalSec and StartLimitBurst=5 in [Unit], nothing of the start limit in [Service] (the interval sized in D25)" "#308 claude F-RA-20 unit: $(grep -n 'StartLimit\|^\[' "${DD}/raofflineproxy.service" | tr '\n' '|')"
 
 # D12b. #308 1-raoffline gpt F-RA-26: the unit is started when the proxy is
 # listening, not when its process has forked. Type=simple made `systemctl
@@ -6689,9 +6693,10 @@ TENV=(--setenv RAOFFLINEPROXY_PROC_NET /storage/procnet)
 dproc 0100007F:1F90 ""; tctl listening; DL1=${RC}
 dproc 00000000:1F90 ""; tctl listening; DL2=${RC}
 dproc "" 00000000000000000000000001000000:1F90; tctl listening; DL3=${RC}
+dproc "" 0000000000000000FFFF00000100007F:1F90; tctl listening; DL6=${RC}
 dproc 0100007F:1F91 ""; tctl listening; DL4=${RC}
 printf '  sl  local_address rem_address   st\n   0: 0100007F:1F90 0100007F:9C40 01 00000000:00000000\n' > "${DPN}/tcp"; : > "${DPN}/tcp6"; tctl listening; DL5=${RC}
-[ "${DL1}" -eq 0 ] && [ "${DL2}" -eq 0 ] && [ "${DL3}" -eq 0 ] && [ "${DL4}" -eq 1 ] && [ "${DL5}" -eq 1 ]; check $? "#308 gpt F-RA-26 listening: 127.0.0.1:8080, 0.0.0.0:8080 and [::1]:8080 in LISTEN read as listening; another port, or 8080 only as a connection's end, do not" "#308 gpt F-RA-26 listening: rc ${DL1}/${DL2}/${DL3} (want 0/0/0), ${DL4}/${DL5} (want 1/1)"
+[ "${DL1}" -eq 0 ] && [ "${DL2}" -eq 0 ] && [ "${DL6}" -eq 0 ] && [ "${DL3}" -eq 1 ] && [ "${DL4}" -eq 1 ] && [ "${DL5}" -eq 1 ]; check $? "#308 gpt F-RA-26 listening: 127.0.0.1:8080, 0.0.0.0:8080 and ::ffff:127.0.0.1:8080 in LISTEN read as listening; [::1]:8080 does not -- it cannot take the IPv4 connection the emulators make (gpt G-D-02) -- nor another port, nor 8080 only as a connection's end" "#308 gpt F-RA-26 / G-D-02 listening: rc ${DL1}/${DL2}/${DL6} (want 0/0/0), ${DL3}/${DL4}/${DL5} (want 1/1/1)"
 dproc "" ""; : > "${TR}/sleep.log"
 tctl listening --wait 5
 [ "${RC}" -eq 1 ] && [ "$(grep -c . "${TR}/sleep.log")" -eq 4 ]; check $? "#308 gpt F-RA-26 listening --wait 5 with nothing listening: five looks a second apart, then exit 1" "#308 gpt F-RA-26: rc ${RC}; sleeps: $(tr '\n' ',' < "${TR}/sleep.log")"
@@ -6955,7 +6960,10 @@ dppini; dpp
 grep -qx 'AchievementsHost = 127.0.0.1:8080' "${DPS}/ppsspp.ini"; check $? "#308 claude F-EM-04 cheevos_ppsspp.sh: 127.0.0.1:8080 in LISTEN in the socket table routes PPSSPP to the proxy (no netstat)" "#308 claude F-EM-04: rc ${RC}; ppsspp.ini: $(grep AchievementsHost "${DPS}/ppsspp.ini"); log: $(cat "${DP}/storage/cheevos.log" 2>/dev/null | tr '\n' '|')"
 printf '  sl  local_address                         remote_address                        st\n   0: 00000000000000000000000001000000:1F90 00000000000000000000000000000000:0000 0A 00000000:00000000\n' > "${DP}/procnet/tcp6"; : > "${DP}/procnet/tcp"
 dppini; dpp
-grep -qx 'AchievementsHost = 127.0.0.1:8080' "${DPS}/ppsspp.ini"; check $? "#308 claude F-EM-04 cheevos_ppsspp.sh: [::1]:8080 in LISTEN (tcp6) counts too" "#308 claude F-EM-04: ppsspp.ini: $(grep AchievementsHost "${DPS}/ppsspp.ini")"
+grep -qx 'AchievementsHost = ' "${DPS}/ppsspp.ini" && grep -q 'nothing is listening on 127.0.0.1:8080' "${DP}/storage/cheevos.log"; check $? "gpt G-D-02 cheevos_ppsspp.sh: [::1]:8080 alone in LISTEN (tcp6) is not the IPv4 endpoint PPSSPP is pointed at -- launched direct" "gpt G-D-02: ppsspp.ini: $(grep AchievementsHost "${DPS}/ppsspp.ini") -- an IPv6-loopback listener read as 127.0.0.1:8080"
+printf '  sl  local_address                         remote_address                        st\n   0: 0000000000000000FFFF00000100007F:1F90 00000000000000000000000000000000:0000 0A 00000000:00000000\n' > "${DP}/procnet/tcp6"; : > "${DP}/procnet/tcp"
+dppini; dpp
+grep -qx 'AchievementsHost = 127.0.0.1:8080' "${DPS}/ppsspp.ini"; check $? "gpt G-D-02 cheevos_ppsspp.sh: ::ffff:127.0.0.1:8080 in LISTEN (tcp6, an IPv4-mapped socket) routes to the proxy" "gpt G-D-02: ppsspp.ini: $(grep AchievementsHost "${DPS}/ppsspp.ini")"
 printf '  sl  local_address rem_address   st\n   0: 0100007F:1F91 00000000:0000 0A 00000000:00000000\n' > "${DP}/procnet/tcp"; : > "${DP}/procnet/tcp6"
 dppini; dpp
 grep -qx 'AchievementsHost = ' "${DPS}/ppsspp.ini" && grep -q 'nothing is listening on 127.0.0.1:8080' "${DP}/storage/cheevos.log"; check $? "#308 claude F-EM-04 cheevos_ppsspp.sh: nothing on 8080 launches direct, and the log says nothing is listening" "#308 claude F-EM-04: ppsspp.ini: $(grep AchievementsHost "${DPS}/ppsspp.ini"); log: $(cat "${DP}/storage/cheevos.log" 2>/dev/null | tr '\n' '|')"
@@ -9044,5 +9052,297 @@ lg_t0=$(date +%s)
 PATH="${LG}/shim:${SA}/nbin:${PATH}" bash -c ". '${LG}/fns.sh'; log_message() { :; }; DELIBERATE_CEILING_SECONDS=3; CEILING_DIR_ROOT='${LG}'; RCLONE_CHILD=''; RCLONE_MOVED=0; bounded_rclone copy /a qa:/b" >/dev/null 2>&1
 lg_rc=$?; lg_dt=$(( $(date +%s) - lg_t0 ))
 [ "${lg_rc}" -eq 0 ] && [ "${lg_dt}" -ge 7 ]; check $? "a copy that lists for 8 s with the Listed count climbing is not ended by a 3 s stall ceiling (rc ${lg_rc}, ${lg_dt}s)" "rc ${lg_rc} after ${lg_dt}s -- the listing read as no progress and the run was ended as a stall (claude F-CS-13)"
+
+# D22. Audit of the fixes (2026_09_28, seats D): claude G-D-02 = gpt G-D-01.
+# The scan ran its image pass only when it had cached a game: a library with
+# one ROM RetroAchievements does not know lists a job at every scan, every
+# job skipped, and the scan stamped COMPLETED over badges it never looked at.
+# The pass now runs whenever the run worked through its jobs (not when it
+# stopped on a refused sign-in or a server that stopped answering). And a
+# top-up that reaches its image pass with ten seconds or less of its
+# deadline left says it did not get to it (TOOK_TOO_LONG), where it said
+# COMPLETED over images nobody checked.
+if [ "${DT_OK}" -eq 1 ]; then
+dfake_images; printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+treset; for _ in 1 2 3 4; do echo skip; done > "${TR}/helper-plan"; echo fail > "${TR}/images-mode"; rm -f "${TR}/images-calls"
+tctl scan
+[ "${RC}" -eq 1 ] && grep -qx '>>> why SOME_IMAGES_NOT_SAVED' "${OUT}" && grep -q '^start' "${TR}/images-calls" 2>/dev/null; check $? "gpt G-D-01 / claude G-D-02: a scan whose jobs were all skipped still runs the image pass, and its failure is the run's (rc 1, SOME_IMAGES_NOT_SAVED)" "G-D-01/02: rc ${RC}; image pass run: $(grep -c '^start' "${TR}/images-calls" 2>/dev/null || echo 0) time(s); out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-200) -- COMPLETED over images nobody looked at"
+treset; for _ in 1 2 3 4; do echo skip; done > "${TR}/helper-plan"; echo ok > "${TR}/images-mode"; rm -f "${TR}/images-calls"
+tctl scan
+[ "${RC}" -eq 0 ] && grep -q '^start' "${TR}/images-calls" 2>/dev/null; check $? "gpt G-D-01 / claude G-D-02: and with the pass fetching what was missing, that scan completes (rc 0)" "G-D-01/02: rc ${RC}; image pass run: $(grep -c '^start' "${TR}/images-calls" 2>/dev/null || echo 0)"
+# The top-up with seven seconds left at its image pass.
+treset; touch -d '2 hours ago' "${TMARK}"; printf 'ok\nslow 893\n' > "${TR}/helper-plan"; echo ok > "${TR}/images-mode"; rm -f "${TR}/images-calls"
+tctl topup --after-index
+[ "${RC}" -eq 1 ] && grep -q ' 1 topup cached=2 .*why=TOOK_TOO_LONG$' "${TSTAMP}" && [ ! -e "${TR}/images-calls" ]; check $? "gpt G-D-01: a top-up with seven seconds left at its image pass ends rc 1, why TOOK_TOO_LONG -- the images were not checked" "gpt G-D-01: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null); image pass: $(grep -c '^start' "${TR}/images-calls" 2>/dev/null || echo 0) -- a pass that never ran read as done"
+rm -f "${TR}/helper-plan" "${TR}/images-mode" "${TR}/images-calls"
+fi
+
+# D23. claude G-D-03: the shipped topology of a cancel during the image pass,
+# under the real timeout rather than the harness's shim. GNU timeout puts
+# itself and the helper in a process group of their own, so the interface's
+# SIGINT to the run's group reaches the ctl and not the helper; the ctl's INT
+# trap stamps CANCELLED, and its EXIT trap ends the helper by SIGTERM
+# through timeout. The run is started as the interface starts it -- a
+# session and a process group of its own (setsid) -- and the stand-in sends
+# the group SIGINT itself.
+# The image's timeout is GNU coreutils' (9.4); this host's `timeout` may be
+# another implementation (uutils), so GNU's is found by name.
+DGNU=""; for c in gnutimeout timeout; do command -v "${c}" >/dev/null && "${c}" --version 2>/dev/null | head -n 1 | grep -q 'GNU coreutils' && { DGNU="$(command -v "${c}")"; break; }; done
+if [ "${DT_OK}" -eq 1 ] && [ -n "${DGNU}" ]; then
+dfake_images; printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+mv "${T}/shim/timeout" "${T}/shim/timeout.shim"
+printf '#!/bin/sh\nexec %s "$@"\n' "${DGNU}" > "${T}/shim/timeout"; chmod +x "${T}/shim/timeout"
+treset; printf 'ok\n' > "${TR}/helper-plan"; echo group-cancel > "${TR}/images-mode"; rm -f "${TR}/images-calls" "${TR}/images.pid"
+DT0=$(dnow)
+RC=$( ( bwrap --die-with-parent --tmpfs / --tmpfs /usr "${USR_BINDS[@]}" "${TBB[@]}" \
+    --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+    --ro-bind /etc /etc --ro-bind "${T}/profile" /etc/profile \
+    --bind "${TS}" /storage --ro-bind "${T}/repo" /repo --ro-bind "${T}/shim" /shim --ro-bind "${CLIENT}" /client --ro-bind "${T}/pypath" /pypath \
+    --bind "${TR}" /run --tmpfs /var --bind "${T}/varrun" /var/run \
+    --dev /dev --proc /proc --tmpfs /tmp --setenv PYTHONPATH /client:/pypath \
+    setsid -w bash /repo/raofflineproxy-ctl scan > "${OUT}" 2> "${ERR}"; echo $? ) 2>/dev/null )
+DEND=$(dnow)
+mv -f "${T}/shim/timeout.shim" "${T}/shim/timeout"
+DI0="$(sed -n 's/^start \([0-9.]*\).*/\1/p' "${TR}/images-calls" 2>/dev/null | head -n 1)"
+IP="$(cat "${TR}/images.pid" 2>/dev/null)"; for _ in $(seq 1 30); do kill -0 "${IP:-1}" 2>/dev/null || break; sleep 0.1; done
+[ "${RC}" -eq 130 ] && grep -qx '>>> why CANCELLED' "${OUT}" && [ -n "${DI0}" ] && awk -v a="${DI0}" -v b="${DEND}" 'BEGIN{exit !(b - a < 3)}' && grep -q '^term ' "${TR}/images-calls" && ! grep -q '^int ' "${TR}/images-calls" && ! kill -0 "${IP:-1}" 2>/dev/null; check $? "claude G-D-03: under the real timeout the group's SIGINT reaches the ctl, not the helper; the run is CANCELLED (rc 130) $(awk -v a="${DI0:-0}" -v b="${DEND}" 'BEGIN{printf "%.2f", b - a}')s after the pass began and the helper is ended by SIGTERM through timeout" "claude G-D-03: rc ${RC}; the helper saw: $(tr '\n' ' ' < "${TR}/images-calls" 2>/dev/null | cut -c1-200); $(awk -v a="${DI0:-0}" -v b="${DEND}" 'BEGIN{printf "%.2f", b - a}')s; out: $(grep '^>>>' "${OUT}" | tail -n 2 | tr '\n' '|')"
+[ -n "${IP}" ] && kill -9 "${IP}" 2>/dev/null; rm -f "${TR}/images-mode" "${TR}/helper-plan"
+else
+    echo "    SKIP  claude G-D-03's case: needs section t and GNU coreutils' timeout on this machine"
+fi
+
+# D24. claude G-D-04: patch 016's classification against the real
+# fetch_static_asset and a real HTTP server on loopback -- 404, 410, a 301 to
+# a 404, a 503, a refused connection and a whole PNG -- not a stubbed
+# fetcher. And claude G-D-12: an image already in the cache is "cached" (the
+# function falls through its `if not target.exists()` to the one return).
+if [ "${DT_OK}" -eq 1 ]; then
+RAOFFLINEPROXY_CONFIG_DIR="${DD}/d24-cfg" PYTHONPATH="${CLIENT}" python3 - > "${DD}/d24.out" 2>&1 <<'EOS'
+import http.server, os, socket, struct, threading, zlib
+from pathlib import Path
+Path(os.environ["RAOFFLINEPROXY_CONFIG_DIR"]).mkdir(parents=True, exist_ok=True)
+from raofflineproxy import image_cache
+def _chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+PNG = b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)) + _chunk(b"IDAT", zlib.compress(b"\x00\xff\x00\x00")) + _chunk(b"IEND", b"")
+class Handler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_GET(self):
+        name = self.path.rsplit("/", 1)[-1]
+        if name == "ok.png":
+            self.send_response(200); self.send_header("Content-Length", str(len(PNG))); self.end_headers(); self.wfile.write(PNG); return
+        if name == "moved.png":
+            self.send_response(301); self.send_header("Location", "/Badge/gone404.png"); self.send_header("Content-Length", "0"); self.end_headers(); return
+        code = {"gone404.png": 404, "gone410.png": 410, "busy503.png": 503}.get(name, 404)
+        self.send_response(code); self.send_header("Content-Length", "0"); self.end_headers()
+server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+threading.Thread(target=server.serve_forever, daemon=True).start()
+base = f"http://127.0.0.1:{server.server_address[1]}"
+closed = socket.socket(); closed.bind(("127.0.0.1", 0)); dead = closed.getsockname()[1]; closed.close()
+got = {}
+for name in ("gone404", "gone410", "moved", "busy503", "ok"):
+    got[name] = image_cache.download_static_image(f"{base}/Badge/{name}.png", f"/Badge/d24-{name}.png", "ua")
+got["refused"] = image_cache.download_static_image(f"http://127.0.0.1:{dead}/Badge/refused.png", "/Badge/d24-refused.png", "ua")
+want = {"gone404": "absent", "gone410": "absent", "moved": "absent", "busy503": "transient", "ok": "cached", "refused": "transient"}
+print(("PASS" if got == want else "FAIL") + f" real: {got}")
+seeded = image_cache.STATIC_DIR / "Badge" / "d24-seeded.png"; seeded.parent.mkdir(parents=True, exist_ok=True); seeded.write_bytes(PNG)
+there = image_cache.download_static_image(f"http://127.0.0.1:{dead}/Badge/seeded.png", "/Badge/d24-seeded.png", "ua")
+print(("PASS" if there == "cached" else "FAIL") + f" there: an image already cached returned {there!r}")
+server.shutdown()
+EOS
+grep -q '^PASS real:' "${DD}/d24.out"; check $? "claude G-D-04: against a real HTTP server and the real fetcher, 404, 410 and a 301 to a 404 are absent; a 503 and a refused connection transient; a whole PNG cached" "claude G-D-04: $(grep 'real:' "${DD}/d24.out" || tail -3 "${DD}/d24.out" | tr '\n' '|')"
+grep -q '^PASS there:' "${DD}/d24.out"; check $? "claude G-D-12: an image already in the cache returns cached" "claude G-D-12: $(grep 'there:' "${DD}/d24.out" || tail -3 "${DD}/d24.out" | tr '\n' '|')"
+fi
+
+# D25. claude G-D-05: the start limit bounds a proxy that never listens. A
+# failed start now lasts the readiness wait plus RestartSec, so the limit's
+# interval has to hold StartLimitBurst of them, or five-in-sixty never trips
+# and the unit restarts for ever.
+DU="${DD}/raofflineproxy.service"
+DIV="$(awk -F= '/^StartLimitIntervalSec=/{print $2}' "${DU}")"; DBU="$(awk -F= '/^StartLimitBurst=/{print $2}' "${DU}")"
+DRS="$(awk -F= '/^RestartSec=/{print $2}' "${DU}")"; DWA="$(sed -n 's/^ExecStartPost=.* --wait \([0-9]*\)$/\1/p' "${DU}")"
+[ -n "${DIV}" ] && [ -n "${DBU}" ] && [ -n "${DRS}" ] && [ -n "${DWA}" ] && [ "${DIV%s}" -ge $(( DBU * (DWA + ${DRS%s}) )) ]; check $? "claude G-D-05: the start limit's interval (${DIV}s) holds its burst of failed starts (${DBU} x (wait ${DWA}s + RestartSec ${DRS}s) = $(( ${DBU:-0} * (${DWA:-0} + ${DRS:-0}) ))s)" "claude G-D-05: StartLimitIntervalSec=${DIV:-?} < StartLimitBurst=${DBU:-?} x (--wait ${DWA:-?} + RestartSec=${DRS:-?}) -- five in sixty never trips"
+
+# D26. claude G-D-06 and gpt G-D-06: the scan's cursor is the walk's promise
+# to continue, so it moves only when kept: the listing proposes it
+# (scan-cursor.next), and the run commits it once it has worked through its
+# jobs (the helper's DONE) -- a scan cancelled after its listing starts the
+# next one where it started -- and a cursor that could not be written is
+# said, not passed over: the run ends COULDN'T FINISH (SOMETHING_WENT_WRONG)
+# with no TRUNCATED promise, and the cursor that was there stays.
+if [ "${DT_OK}" -eq 1 ]; then
+dfake_images; printf "${DCFG_ON}" > "${TCFG}"
+dgbc() { rm -rf "${TS}/roms/gbc"; mkdir -p "${TS}/roms/gbc"; for i in $(seq -w 1 11); do printf 'GBC %s' "${i}" > "${TS}/roms/gbc/g${i}.gbc"; done; }
+treset; dgbc; TENV=(--setenv RA_TEST_SCAN_CAP 10)
+{ echo skip; echo cancel; } > "${TR}/helper-plan"; : > "${TR}/helper-jobs.log"
+tctl scan; grep '^H' "${TR}/helper-jobs.log" | sort > "${DD}/d26-1.jobs"
+for _ in $(seq 1 20); do echo skip; done > "${TR}/helper-plan"; : > "${TR}/helper-jobs.log"
+tctl scan; grep '^H' "${TR}/helper-jobs.log" | sort > "${DD}/d26-2.jobs"
+cmp -s "${DD}/d26-1.jobs" "${DD}/d26-2.jobs"; check $? "claude G-D-06: a scan cancelled after its listing does not move the cursor -- the next scan takes the same slice" "claude G-D-06: after a cancelled scan the next took $(sed 's|.*/||' "${DD}/d26-2.jobs" | tr '\n' ' ')against $(sed 's|.*/||' "${DD}/d26-1.jobs" | tr '\n' ' ')-- the cursor moved at the listing"
+# A cursor that cannot be written: scan-cursor is a directory.
+treset; dgbc; rm -rf "${TPD}/scan-cursor"; mkdir -p "${TPD}/scan-cursor"
+for _ in $(seq 1 20); do echo skip; done > "${TR}/helper-plan"
+tctl scan
+[ "${RC}" -eq 1 ] && grep -qx '>>> why SOMETHING_WENT_WRONG' "${OUT}" && ! grep -q 'note TRUNCATED' "${OUT}"; check $? "gpt G-D-06: a truncated walk whose cursor cannot be saved ends rc 1, why SOMETHING_WENT_WRONG, and promises no continuation (no note TRUNCATED)" "gpt G-D-06: rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | tail -c 200) -- a cursor write failure passed over"
+rm -rf "${TPD}/scan-cursor"
+# The proposal cannot be written: the cursor a previous scan kept stays.
+treset; dgbc; for _ in $(seq 1 20); do echo skip; done > "${TR}/helper-plan"
+tctl scan; DKEPT="$(cat "${TPD}/scan-cursor" 2>/dev/null)"
+rm -rf "${TPD}/scan-cursor.next"; mkdir -p "${TPD}/scan-cursor.next"
+tctl scan
+[ "${RC}" -eq 1 ] && [ -n "${DKEPT}" ] && [ "$(cat "${TPD}/scan-cursor" 2>/dev/null)" = "${DKEPT}" ]; check $? "gpt G-D-06: when the new cursor cannot be written the run ends rc 1 and the cursor the last scan kept stays (${DKEPT##*/})" "gpt G-D-06: rc ${RC}; cursor before '${DKEPT##*/}', after '$(cat "${TPD}/scan-cursor" 2>/dev/null | sed 's|.*/||')'"
+rm -rf "${TPD}/scan-cursor.next" "${TS}/roms/gbc"; TENV=(); rm -f "${TR}/helper-plan"
+fi
+
+# D27. claude G-D-07, a guard (the finding is refuted: EX_USAGE=64 is
+# defined in the ctl's sysexits block): `listening` with a wait that is not
+# a number is a usage error, exit 64, never 0.
+if [ "${DT_OK}" -eq 1 ]; then
+tctl listening --wait abc
+[ "${RC}" -eq 64 ] && grep -q '^usage: raofflineproxy-ctl listening' "${ERR}"; check $? "claude G-D-07: listening --wait abc -- usage on stderr, exit 64" "claude G-D-07: rc ${RC}; stderr: $(head -c 160 "${ERR}")"
+fi
+
+# D28. claude G-D-08, gpt G-D-04, gpt G-D-05: one definition of a game ready
+# for the account -- its unlocks row and an achievementsets row of the game,
+# the rows a launch reads -- behind both added= and the walk's "already
+# cached", read from the head of each sets row rather than a parse of every
+# body (a sets row whose GameId sits past the head still counts). A game a
+# launch cached (sets and unlocks, no patch) was ready before a top-up gave
+# it a patch row, so it is not "more". And the count of games made ready
+# fails closed: a comparison that could not be read is no count at all.
+if [ "${DT_OK}" -eq 1 ]; then
+printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+GLSIZE=$(stat -c %s "${TS}/roms/nes/gamelist.xml")
+printf '<?xml version="1.0"?>\n<gameList parentHash="%s">\n  <game><path>./g.nes</path><name>G</name><cheevosHash>aaaa0201</cheevosHash><cheevosId>201</cheevosId></game>\n</gameList>\n' "${GLSIZE}" > "${TS}/.config/emulationstation/recovery/nes/g.xml"
+treset; touch -d '2 hours ago' "${TMARK}"; PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
+import json
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+# 201: a launch's rows (another dump's sets, the unlocks), no patch row; the
+# Title is long, so GameId sits past the first 512 bytes of the body.
+s.upsert_cache(cache_keys.achievementsets("feed0201", "qa"), json.dumps({"Success": True, "Title": "T" * 800, "GameId": 201, "Sets": []}))
+s.upsert_cache(cache_keys.unlocks(201, "qa"), '{"Success":true,"UserUnlocks":[]}')
+s.close()
+EOS
+: > "${TR}/helper-jobs.log"
+tctl topup --after-index
+[ "${RC}" -eq 0 ] && grep -qP '^I\t201\taaaa0201\t' "${TR}/helper-jobs.log" && grep -q ' 0 topup cached=3 .* added=2$' "${TSTAMP}"; check $? "gpt G-D-04: a game a launch had already cached (sets and unlocks, no patch row) is cached by the index and not counted as added -- cached=3 added=2" "gpt G-D-04: rc ${RC}; jobs: $(tr '\t' ',' < "${TR}/helper-jobs.log" | tr '\n' '|' | cut -c1-200); stamp: $(cat "${TSTAMP}" 2>/dev/null)"
+rm -f "${TS}/.config/emulationstation/recovery/nes/g.xml"
+# The walk's "already cached" is the same rule: patch and unlocks without a
+# sets row is a job; with the long-titled sets row it is not.
+treset; PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
+import json
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+s.upsert_cache(cache_keys.patch(152, "qa"), '{"Success":true,"PatchData":{"ID":152}}', source_rom_path="/gb/h.gb")
+s.upsert_cache(cache_keys.unlocks(152, "qa"), '{"Success":true,"UserUnlocks":[]}')
+s.upsert_cache(cache_keys.patch(153, "qa"), '{"Success":true,"PatchData":{"ID":153}}', source_rom_path="/gb/i.gb")
+s.upsert_cache(cache_keys.unlocks(153, "qa"), '{"Success":true,"UserUnlocks":[]}')
+s.upsert_cache(cache_keys.achievementsets("iiii", "qa"), json.dumps({"Success": True, "Title": "T" * 800, "GameId": 153, "Sets": []}))
+s.close()
+EOS
+: > "${TR}/helper-jobs.log"; dfake_images
+tctl scan
+grep -qP '^H\t\t\t/storage/roms/gb/h.gb$' "${TR}/helper-jobs.log" && ! grep -q '/storage/roms/gb/i.gb$' "${TR}/helper-jobs.log"; check $? "claude G-D-08: the walk's rule is the same -- patch and unlocks with no sets row is a job; a sets row whose GameId lies past the head still makes the game whole" "claude G-D-08: jobs: $(tr '\t' ',' < "${TR}/helper-jobs.log" | tr '\n' '|' | cut -c1-200)"
+fi
+# games_made_ready, lifted from the ctl: a before file that cannot be read.
+src_of "${CTL_REL:-projects/ROCKNIX/packages/network/raofflineproxy/sources/raofflineproxy-ctl}" "${DD}/ctl-for-gmr"
+sed -n '/^games_made_ready() {/,/^}/p' "${DD}/ctl-for-gmr" > "${DD}/gmr.sh"
+mkdir -p "${DD}/gmr-dir"; printf '101\n102\n' > "${DD}/gmr-after"
+DGM="$(bash -c ". '${DD}/gmr.sh'; games_made_ready '${DD}/gmr-dir' '${DD}/gmr-after'"; echo "rc=$?")"
+[ -s "${DD}/gmr.sh" ] && [ "${DGM}" = "rc=1" ]; check $? "gpt G-D-05: games_made_ready with a before file that cannot be read prints nothing and fails, so the caller keeps its own count" "gpt G-D-05: it answered '$(printf '%s' "${DGM}" | tr '\n' ' ')' -- a failed comparison read as a count"
+
+# D29. gpt G-D-03: the top-up removes index-pending only if it is the
+# marker its listing was made for -- one an index writes while the run is at
+# its jobs is a newer promise, and it stays. claude G-D-10: the log says the
+# listing is repeated after the half hour when a run does not finish.
+if [ "${DT_OK}" -eq 1 ]; then
+printf "${DCFG_ON}" > "${TCFG}"; TENV=(--setenv RAOFFLINEPROXY_HISTORY /storage/.config/retroarch/content_history.lpl)
+treset; touch -d '3 hours ago' "${THISTORY}"; touch -d '2 hours ago' "${TMARK}"
+tctl index-offline; printf 'wait 3\nok\n' > "${TR}/helper-plan"; rm -f "${TR}/helper.pid" "${TR}/helper-times"
+dbg topup
+for _ in $(seq 1 100); do grep -q '^start' "${TR}/helper-times" 2>/dev/null && break; sleep 0.1; done
+tctl index-offline; DIO=${RC}
+for _ in $(seq 1 150); do [ -s "${DD}/bg.rc" ] && break; sleep 0.1; done; wait "${DBG}" 2>/dev/null
+[ "${DIO}" -eq 0 ] && [ "$(cat "${DD}/bg.rc" 2>/dev/null)" = "0" ] && [ -e "${TPD}/index-pending" ]; check $? "gpt G-D-03: a marker an index writes while a top-up is at its jobs outlives that top-up (it was not the one the run listed for)" "gpt G-D-03: the run exited $(cat "${DD}/bg.rc" 2>/dev/null); marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone) -- the older run acknowledged the newer notification"
+grep -q 'listed once for it.*again' "${TLOG}"; check $? "claude G-D-10: the log line says the marker's listing is repeated when a run does not finish" "claude G-D-10: $(grep 'listed once' "${TLOG}" | tail -n 1 | cut -c1-200)"
+rm -f "${TR}/helper-plan"; TENV=()
+fi
+
+# D30. claude G-D-11: the comment's claim that PPSSPP consumes
+# AchievementsHost, checked against the PPSSPP source the package pins, when
+# that source is on this machine (the sources cache, as section t finds the
+# client): the key is a ConfigSetting of [Achievements], and a non-empty
+# value is handed to rc_client_set_host; and the script names the pin
+# ppsspp-sa's package.mk pins. The launch through the proxy is the guest's.
+PPV="$(sed -n 's/^PKG_VERSION="\([0-9a-f]*\)".*/\1/p' "${ROOT}/projects/ROCKNIX/packages/emulators/standalone/ppsspp-sa/package.mk" | head -n 1)"
+PPSRC=""; for d in "${SOURCES_DIR:-}" /workspace/cache/rocknix-sources "${ROOT}/sources"; do [ -n "${d}" ] && [ -d "${d}/ppsspp-sa/ppsspp-sa-${PPV}/Core" ] && { PPSRC="${d}/ppsspp-sa/ppsspp-sa-${PPV}"; break; }; done
+grep -q "afbc66a3\|${PPV:0:8}" "${DD}/cheevos_ppsspp.sh" && grep -q "${PPV:0:8}" "${DD}/cheevos_ppsspp.sh"; check $? "claude G-D-11: cheevos_ppsspp.sh names the PPSSPP commit ppsspp-sa pins (${PPV:0:8}) where it cites the source" "claude G-D-11: the script's citation does not name the pin ${PPV:0:8}"
+if [ -n "${PPSRC}" ]; then
+    grep -q 'ConfigSetting("AchievementsHost", SETTING(g_Config, sAchievementsHost)' "${PPSRC}/Core/Config.cpp" && grep -q 'rc_client_set_host(g_rcClient, g_Config.sAchievementsHost.c_str())' "${PPSRC}/Core/RetroAchievements.cpp"; check $? "claude G-D-11: the pinned PPSSPP source reads AchievementsHost from [Achievements] and hands it to rc_client_set_host (${PPSRC##*/})" "claude G-D-11: the pinned PPSSPP source at ${PPSRC} does not read AchievementsHost as cited"
+else
+    echo "    SKIP  claude G-D-11's source check: PPSSPP ${PPV:0:10} is not in a sources cache on this machine"
+fi
+
+# D31. claude G-D-14: a badge answered 404 while a new set's images were
+# still reaching the image server is asked for again the next day, not a
+# month on -- a day's wait is one request a badge, and a new set's badges
+# land within it. An absent entry a day old or more is asked for once more;
+# one younger is not.
+if [ "${DT_OK}" -eq 1 ]; then
+python3 - "${DD}/raofflineproxy-cache-images" "${CLIENT}" "${DD}/d31" > "${DD}/d31.out" 2>&1 <<'EOS'
+import json, os, subprocess, sys, time
+from pathlib import Path
+helper, client, work = sys.argv[1], sys.argv[2], Path(sys.argv[3])
+cfg = work / "cfg"; site = work / "site"
+for d in (cfg, site): d.mkdir(parents=True, exist_ok=True)
+(site / "sitecustomize.py").write_text(
+    "import os, urllib.error\n"
+    "import raofflineproxy.auth as _auth\n"
+    "_auth.resolve_credentials = lambda *a, **k: {'user': 'qa', 'token': 't'}\n"
+    "import raofflineproxy.image_cache as _ic\n"
+    "def _fetch(url, headers, timeout=10.0, _redirects=3):\n"
+    "    with open(os.environ['D_CALLS'], 'a') as f: f.write(url.rsplit('/', 1)[-1] + '\\n')\n"
+    "    raise urllib.error.HTTPError(url, 404, 'Not Found', {}, None)\n"
+    "_ic.fetch_static_asset = _fetch\n")
+os.environ["RAOFFLINEPROXY_CONFIG_DIR"] = str(cfg)
+sys.path.insert(0, client)
+from raofflineproxy import cache_keys, image_cache
+from raofflineproxy.storage import Storage
+st = Storage()
+badges = [{"ID": 9400 + i, "Flags": 3, "BadgeURL": f"https://media.retroachievements.org/Badge/{9400 + i}.png"} for i in (1, 2)]
+st.upsert_cache(cache_keys.patch(3, "qa"), json.dumps({"Success": True, "PatchData": {"ID": 3, "Achievements": badges}}))
+st.close()
+now = int(time.time())
+image_cache.IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+(image_cache.IMAGE_CACHE_DIR / "absent").write_text(f"{now - 2 * 86400} /Badge/9401.png\n{now - 3600} /Badge/9402.png\n")
+calls = work / "calls"; calls.write_text("")
+env = dict(os.environ, PYTHONPATH=f"{site}:{client}", HOME=str(work), D_CALLS=str(calls))
+p = subprocess.run([sys.executable, helper, "--seconds", "20"], env=env, capture_output=True, text=True, timeout=60)
+asked = calls.read_text().split()
+print(("PASS" if "9401.png" in asked and "9402.png" not in asked and p.returncode == 0 else "FAIL") + f" recheck: asked {asked}, exit {p.returncode}")
+EOS
+grep -q '^PASS recheck:' "${DD}/d31.out"; check $? "claude G-D-14: an absent badge found two days ago is asked for again; one found an hour ago is not ($(sed -n 's/^PASS recheck: //p' "${DD}/d31.out"))" "claude G-D-14: $(grep 'recheck:' "${DD}/d31.out" || tail -3 "${DD}/d31.out" | tr '\n' '|') -- a 404 during a set's arrival silenced for a month"
+fi
+
+# D32. Stream F2's gpt G-F2-07 (a file of this stream's): cheevos_armsx2.sh's
+# rename of the rewritten secrets.ini sat inside the success branch unchecked,
+# so a rename that failed left the temp file beside secrets.ini and said
+# nothing. The rename is part of the checked operation now: when it fails
+# the temp goes, the log says the token was left as it was, and secrets.ini
+# is untouched. The rename is made to fail by mounting secrets.ini read-only
+# over itself (a rename onto a mount point fails), the folder writable.
+printf '[Achievements]\nToken = old\n' > "${DAI}/secrets.ini"; cp "${DAI}/secrets.ini" "${DA}/before"
+RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${DABB[@]}" \
+    --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+    --ro-bind /etc /etc --ro-bind "${DA}/profile" /etc/profile \
+    --bind "${DA}/storage" /storage --ro-bind "${DAI}/secrets.ini" /storage/.config/ARMSX2/inis/secrets.ini \
+    --ro-bind "${DA}/shim" /shim --ro-bind "${DA}/repo" /repo \
+    --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --dir /var/log \
+    bash -c 'bash /repo/cheevos_armsx2.sh; rc=$?; cat /var/log/cheevos.log > /storage/cheevos.log 2>/dev/null; exit $rc' > "${DA}/out" 2>&1; echo $? ) 2>/dev/null )
+DLEFT="$(ls "${DAI}" | /usr/bin/grep -c '^secrets\.ini\.tmp' || true)"
+[ "${DLEFT}" -eq 0 ] && cmp -s "${DA}/before" "${DAI}/secrets.ini" && /usr/bin/grep -q "could not be rewritten" "${DA}/storage/cheevos.log" 2>/dev/null; check $? "gpt G-F2-07 cheevos_armsx2.sh: a rename that fails leaves no temp file, secrets.ini as it was, and says so in the log" "gpt G-F2-07: rc ${RC}; temp files left: ${DLEFT}; secrets.ini: $(tr '\n' '|' < "${DAI}/secrets.ini"); log: $(tr '\n' '|' < "${DA}/storage/cheevos.log" 2>/dev/null | cut -c1-160) -- the failed rename was not handled"
+rm -f "${DAI}"/secrets.ini.tmp.* "${DA}/storage/cheevos.log"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
