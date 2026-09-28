@@ -4400,4 +4400,46 @@ kill "${cp_holder}" 2>/dev/null; wait "${cp_holder}" 2>/dev/null
 cp_exit
 [ "${RC}" -eq 0 ] && jq -e '.entries["gb/Game.srm"]' "${CPM}" >/dev/null 2>&1; check $? "and once the lock is free the next capture records what that one could not (rc ${RC})" "rc ${RC}; entries: $(jq -c '.entries | keys' "${CPM}" 2>/dev/null)"
 
+# A43. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-08 and
+#      seats/A-claude.md G-A-13, Medium/Low): the content scripts' progress
+#      was "a unit completed" -- so files a unit moved before its own
+#      failure did not count (a bare 69, SKIPPED, over a ROM that arrived),
+#      and a unit that moved nothing did (69 gaps, COULDN'T FINISH, over an
+#      untouched cloud). Progress is what rclone logged moving.
+echo "    A43. G-A-08 (gpt) / G-A-13 (claude): progress is files moved, not units completed"
+PG=$(sa_new ga08); sa_script "${PG}" cloud_content_restore cloud_content_backup
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/ROCKNIX/Content"\n' > "${PG}/storage/.config/cloud_sync.conf"
+mkdir -p "${PG}/storage/.config/emulationstation"
+printf '<system><path>/storage/roms/nes</path></system>\n<system><path>/storage/roms/gb</path></system>\n' > "${PG}/storage/.config/emulationstation/es_systems.cfg"
+pg_reset() {
+    rm -rf "${PG}/cloud"/* "${PG}/storage/roms"/* "${PG}/storage/.cache/cloud_sync"/last-* "${PG}/ctl/noroute" "${PG}/ctl/noping"
+    : > "${PG}/ctl/fail"; : > "${PG}/ctl/post"
+    mkdir -p "${PG}/cloud/ROCKNIX/Content/ROMs/nes" "${PG}/cloud/ROCKNIX/Content/ROMs/gb" "${PG}/storage/roms/nes" "${PG}/storage/roms/gb"
+}
+pg_stamp() { cut -d' ' -f2- "${PG}/storage/.cache/cloud_sync/last-content-$1" 2>/dev/null; }
+# A restore whose one unit lands its ROM and then loses the network in the
+# game-list pass.
+pg_reset
+echo n > "${PG}/cloud/ROCKNIX/Content/ROMs/nes/N.nes"; echo '<gameList/>' > "${PG}/cloud/ROCKNIX/Content/ROMs/nes/gamelist.xml"
+printf '%s\t%s\n' '^copy qa:/ROCKNIX/Content/ROMs/nes .*--progress' 'touch /ctl/noroute /ctl/noping' > "${PG}/ctl/post"
+printf '%s\t%s\n' '^copy .*--update' 5 > "${PG}/ctl/fail"
+sa_run "${PG}" cloud_content_restore --with-media nes
+[ "${RC}" -eq 69 ] && [ -f "${PG}/storage/roms/nes/N.nes" ] && pg_stamp restore | grep -q '^69 gaps .'; check $? "a restore whose unit landed its ROM and then lost the network in its game-list pass stamps '69 gaps', not a bare skip (rc ${RC}, stamp $(pg_stamp restore))" "rc ${RC}; N.nes $([ -f "${PG}/storage/roms/nes/N.nes" ] && echo arrived || echo missing); stamp '$(pg_stamp restore)'"
+# The same, backing up (the content backup's gaps stamp had no case).
+pg_reset
+echo n > "${PG}/storage/roms/nes/N.nes"; echo '<gameList/>' > "${PG}/storage/roms/nes/gamelist.xml"
+printf '%s\t%s\n' '^copy /storage/roms/nes .*--progress' 'touch /ctl/noroute /ctl/noping' > "${PG}/ctl/post"
+printf '%s\t%s\n' '^copy .*--update' 5 > "${PG}/ctl/fail"
+sa_run "${PG}" cloud_content_backup --with-media nes
+[ "${RC}" -eq 69 ] && [ -f "${PG}/cloud/ROCKNIX/Content/ROMs/nes/N.nes" ] && pg_stamp backup | grep -q '^69 gaps .'; check $? "a content backup that sent its ROM and then lost the network stamps '69 gaps' (rc ${RC}, stamp $(pg_stamp backup))" "rc ${RC}; N.nes in the cloud $([ -f "${PG}/cloud/ROCKNIX/Content/ROMs/nes/N.nes" ] && echo yes || echo no); stamp '$(pg_stamp backup)'"
+# A first unit with nothing to move, then the network gone: nothing was
+# touched, so the skip.
+pg_reset
+echo a > "${PG}/cloud/ROCKNIX/Content/ROMs/gb/A.gb"; cp -p "${PG}/cloud/ROCKNIX/Content/ROMs/gb/A.gb" "${PG}/storage/roms/gb/A.gb"
+echo n > "${PG}/cloud/ROCKNIX/Content/ROMs/nes/N.nes"
+printf '%s\t%s\n' '^copy qa:/ROCKNIX/Content/ROMs/gb .*--progress' 'touch /ctl/noroute /ctl/noping' > "${PG}/ctl/post"
+printf '%s\t%s\n' '^copy qa:/ROCKNIX/Content/ROMs/nes ' 1 > "${PG}/ctl/fail"
+sa_run "${PG}" cloud_content_restore gb nes
+[ "${RC}" -eq 69 ] && [ "$(pg_stamp restore)" = 69 ]; check $? "a restore whose first unit had nothing to move, then lost the network, is the skip: a bare 69 (rc ${RC}, stamp $(pg_stamp restore))" "rc ${RC}; stamp '$(pg_stamp restore)' -- a unit that moved nothing counted as progress"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

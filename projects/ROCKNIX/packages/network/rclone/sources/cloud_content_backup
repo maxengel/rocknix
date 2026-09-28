@@ -251,6 +251,20 @@ network_gone() {
 # SKIPPED means nothing was touched (#308 claude F-CS-24): once a unit has
 # completed, a run the network then ends stamps "69 gaps <why>", which the
 # rows read as COULDN'T FINISH; the exit stays 69.
+# Did this run's rclone move a file since <offset> into the log? Progress,
+# for the stamp stop_no_network writes, is what rclone logged moving --
+# "<path>: Copied (...)", "Moved (...)", "Deleted" -- not a unit that
+# completed (the audit of the fixes, G-A-08/G-A-13): files a unit moved
+# before its own failure did not count, and a unit that moved nothing did.
+# Every transfer here logs at INFO to LOG_FILE, and the transfer lock
+# keeps any other cloud script from writing it meanwhile.
+log_offset() { stat -c %s "${LOG_FILE}" 2>/dev/null || echo 0; }
+moved_since() { # <byte offset into LOG_FILE>
+    local now
+    now=$(stat -c %s "${LOG_FILE}" 2>/dev/null) || return 1
+    [ "${now}" -gt "$1" ] 2>/dev/null || return 1
+    tail -c +$(( $1 + 1 )) "${LOG_FILE}" 2>/dev/null | grep -qE ': (Copied|Moved) \(|: Deleted$'
+}
 PROGRESS_MADE=0
 stop_no_network() {
     local rc="$1" unit="$2"
@@ -633,6 +647,7 @@ for DIR in "${DIRS[@]}"; do
     # under directory markers it writes the marker the folder's parent then
     # lists (D-CLOUD-120). Its own failure is left to the copy to report.
     rclone mkdir "${TARGET}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null
+    UNIT_LOG0=$(log_offset)
     # The setup's note at a unit's root (BIOS/README.txt, cloud_setup
     # --seed-folders) is not content, and neither side counts it (#308 gpt
     # F-CS-30): it came down into /storage/roms/bios and read ever after as a
@@ -660,6 +675,8 @@ for DIR in "${DIRS[@]}"; do
         esac
     fi
 
+    # What moved in this unit, whatever its result (G-A-08/G-A-13).
+    moved_since "${UNIT_LOG0}" && PROGRESS_MADE=1
     if [ ${RC} -ne 0 ] && [ ${RC} -ne 9 ]; then
         # A failed unit says why: the network gone ends the run as 69 here,
         # anything else carries rclone's own code up as before.
@@ -670,7 +687,6 @@ for DIR in "${DIRS[@]}"; do
         STATUS=${RC}
     else
         echo "Backed up ${DIR:-everything}."
-        PROGRESS_MADE=1
     fi
 done
 

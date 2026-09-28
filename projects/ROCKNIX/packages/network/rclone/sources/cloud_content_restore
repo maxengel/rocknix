@@ -265,6 +265,20 @@ network_gone() {
 # "<epoch> 69 gaps YOU WENT OFFLINE PART-WAY THROUGH", which the rows read as
 # COULDN'T FINISH (CloudText::parseLastRun takes the token before the code).
 # The exit stays 69; the page reads a 69 after progress the same way.
+# Did this run's rclone move a file since <offset> into the log? Progress,
+# for the stamp stop_no_network writes, is what rclone logged moving --
+# "<path>: Copied (...)", "Moved (...)", "Deleted" -- not a unit that
+# completed (the audit of the fixes, G-A-08/G-A-13): files a unit moved
+# before its own failure did not count, and a unit that moved nothing did.
+# Every transfer here logs at INFO to LOG_FILE, and the transfer lock
+# keeps any other cloud script from writing it meanwhile.
+log_offset() { stat -c %s "${LOG_FILE}" 2>/dev/null || echo 0; }
+moved_since() { # <byte offset into LOG_FILE>
+    local now
+    now=$(stat -c %s "${LOG_FILE}" 2>/dev/null) || return 1
+    [ "${now}" -gt "$1" ] 2>/dev/null || return 1
+    tail -c +$(( $1 + 1 )) "${LOG_FILE}" 2>/dev/null | grep -qE ': (Copied|Moved) \(|: Deleted$'
+}
 PROGRESS_MADE=0
 stop_no_network() {
     local stamp="$1" rc="$2" doing="$3"
@@ -748,6 +762,8 @@ match_count() { # <sys>: adds what the log says went to the totals
         END { print n + 0 "|" b + 0 }' "${MATCH_LOG}" 2>/dev/null)
     IFS='|' read -r cfiles cbytes <<< "${counted:-0|0}"
     [ "${cfiles}" -gt 0 ] 2>/dev/null && PROGRESS_MADE=1
+    # A sync's copies down are progress too (G-A-08).
+    grep -qE ': (Copied|Moved) \(' "${MATCH_LOG}" 2>/dev/null && PROGRESS_MADE=1
     total_removed=$((total_removed + cfiles))
     total_bytes=$((total_bytes + cbytes))
     removed_detail="${removed_detail}${removed_detail:+,}$1:${cfiles}:${cbytes}"
@@ -1434,6 +1450,7 @@ for DIR in "${DIRS[@]}"; do
     # --seed-folders) is not content, and neither side counts it (#308 gpt
     # F-CS-30): it came down into /storage/roms/bios and read ever after as a
     # file this device has and the cloud does not.
+    UNIT_LOG0=$(log_offset)
     rclone copy "${SRC}" "${TARGET}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
         "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${MEDIA_EXCLUDES[@]}" \
         --exclude "gamelist.xml" --exclude "**/gamelist.xml" --exclude "/README.txt" \
@@ -1457,6 +1474,8 @@ for DIR in "${DIRS[@]}"; do
         esac
     fi
 
+    # What moved in this unit, whatever its result (G-A-08/G-A-13).
+    moved_since "${UNIT_LOG0}" && PROGRESS_MADE=1
     if [ ${RC} -ne 0 ] && [ ${RC} -ne 9 ]; then
         # A failed unit says why: the network gone ends the run as 69 here,
         # anything else carries rclone's own code up as before.
@@ -1467,7 +1486,6 @@ for DIR in "${DIRS[@]}"; do
         STATUS=${RC}
     else
         echo "Restored ${DIR:-everything}."
-        PROGRESS_MADE=1
     fi
 done
 
