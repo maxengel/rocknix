@@ -321,13 +321,16 @@ content_files() {
     #   only  -- game content alone: the scraper's folders and gamelist.xml
     # The game list is game content (D-CLOUD-049): the scraper writes it
     # beside the artwork, and a restored-then-scraped device must read as
-    # matching its cloud under ROMs alone.
+    # matching its cloud under ROMs alone. At any depth, as the transfers
+    # move it (the ROMs pass excludes "**/gamelist.xml", the game-list pass
+    # includes it): a list below a system's own folder was counted as a ROM
+    # (the audit of the fixes, G-A-10).
     local -a media=()
     local d
     case "${MEDIA_MODE:-roms}" in
         roms) for d in ${MEDIA_DIRS:-images videos manuals screenshots fanart boxart wheel mix maps media}; do media+=( ! -path "${dir%/}/${d}/*" ); done
-              media+=( ! -path "${dir%/}/gamelist.xml" ) ;;
-        only) media+=( "(" -path "${dir%/}/gamelist.xml" )
+              media+=( ! -name gamelist.xml ) ;;
+        only) media+=( "(" -name gamelist.xml )
               for d in ${MEDIA_DIRS:-images videos manuals screenshots fanart boxart wheel mix maps media}; do media+=( -o -path "${dir%/}/${d}/*" ); done
               media+=( ")" ) ;;
     esac

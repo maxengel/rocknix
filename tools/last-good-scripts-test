@@ -4357,4 +4357,30 @@ af_stamp=$(awk '{print $2}' "${AF}/storage/.cache/cloud_sync/last-content-restor
 af_run /ROCKNIX/Content /ROCKNIX/Content/nes '^never$'
 [ "${RC}" -eq 0 ] && [ -f "${AF}/storage/roms/nes/N.nes" ]; check $? "and with nothing failing the flat layout's nes comes down (rc ${RC})" "rc ${RC}; out: $(sa_tail "${AF}")"
 
+# A41. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-10,
+#      Medium): a game list below a system's own folder travels as game
+#      content -- the ROMs pass excludes "**/gamelist.xml", the game-list
+#      pass includes it -- and was counted as ROMs, on both sides, by the
+#      scan (cloud_content_filter's n == 2, content_files' root-only path).
+#      So after a ROMs-only restore the scan's cloud total carried a file
+#      the restore had rightly left in the cloud.
+echo "    A41. G-A-10 (gpt): a nested game list is game content in the count as in the transfer"
+NG=$(sa_new ga10); sa_script "${NG}" cloud_content_restore
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/ROCKNIX/Content"\n' > "${NG}/storage/.config/cloud_sync.conf"
+mkdir -p "${NG}/storage/.config/emulationstation" "${NG}/cloud/ROCKNIX/Content/ROMs/scummvm/title"
+printf '<system><path>/storage/roms/scummvm</path></system>\n' > "${NG}/storage/.config/emulationstation/es_systems.cfg"
+echo game-data > "${NG}/cloud/ROCKNIX/Content/ROMs/scummvm/title/game.dat"
+echo '<gameList><game><path>./x</path></game></gameList>' > "${NG}/cloud/ROCKNIX/Content/ROMs/scummvm/title/gamelist.xml"
+sa_run "${NG}" cloud_content_restore scummvm
+ng_rrc=${RC}
+sa_run "${NG}" cloud_content_restore --scan
+ng_row=$(grep '^scummvm|' "${NG}/out" | head -1)
+[ "${ng_rrc}" -eq 0 ] && [ ! -e "${NG}/storage/roms/scummvm/title/gamelist.xml" ] && [ -n "${ng_row}" ] \
+    && [ "$(printf '%s' "${ng_row}" | cut -d'|' -f2)" = "$(printf '%s' "${ng_row}" | cut -d'|' -f4)" ]; check $? "after a ROMs-only restore the scan counts the same ROMs on both sides: the nested game list is not in the cloud's ROMs total (restore rc ${ng_rrc})" "restore rc ${ng_rrc}; scan row '${ng_row}' (name|cloud|sup|device|...) -- the list below title/ was counted as a ROM"
+sa_run "${NG}" cloud_content_restore --media-only scummvm
+sa_run "${NG}" cloud_content_restore --scan --media-only
+ng_row=$(grep '^scummvm|' "${NG}/out" | head -1)
+[ -f "${NG}/storage/roms/scummvm/title/gamelist.xml" ] && [ -n "${ng_row}" ] && [ "$(printf '%s' "${ng_row}" | cut -d'|' -f2)" != 0 ] \
+    && [ "$(printf '%s' "${ng_row}" | cut -d'|' -f2)" = "$(printf '%s' "${ng_row}" | cut -d'|' -f4)" ]; check $? "and under game content alone the same list is counted, on both sides, once it has come down" "list on the device: $([ -f "${NG}/storage/roms/scummvm/title/gamelist.xml" ] && echo yes || echo no); scan row '${ng_row}'"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
