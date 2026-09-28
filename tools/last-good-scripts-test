@@ -3710,4 +3710,36 @@ RC=$( ( bwrap --die-with-parent --tmpfs / --tmpfs /usr "${P7USR[@]}" --ro-bind "
 chmod 755 "${P7R}/storage/.config/retroarch/stuck"
 [ "${RC}" -ne 0 ] && [ ! -e "${P7R}/storage/.config/retroarch/retroarch" ] && [ "$(tail -1 "${P7R}/out" | sed 's/\x1b\[[0-9;]*m//g')" = "THE DEFAULT SETTINGS COULDN'T BE PUT BACK." ]; check $? "#307 PL-044: a retroarch folder that cannot be removed ends the reset (rc ${RC}) with the sentence, and the defaults are not copied inside it" "#307 PL-044: rc ${RC}; nested copy: $([ -e "${P7R}/storage/.config/retroarch/retroarch" ] && echo yes || echo no); last line: '$(tail -1 "${P7R}/out")'"
 
+# == PL-046: a file the filter could not replace is not archived raw
+P7E="${P7M}/ev"; P7ES="${P7E}/storage"; mkdir -p "${P7ES}/.cache/log" "${P7ES}/.cache/cloud_sync" "${P7E}/repo" "${P7E}/shim" "${P7E}/etc"
+src_of projects/ROCKNIX/packages/rocknix/sources/scripts/rocknix-evidence "${P7E}/repo/rocknix-evidence"
+sed -n '/^function redact_credentials() {/,/^}/p' "${FN}" > "${P7E}/etc/001-functions"
+printf 'NAME="ROCKNIX"\nBUILD_ID=test\n' > "${P7E}/etc/os-release"
+for t in journalctl dmesg sysctl top; do printf '#!/bin/sh\necho "%s output"\n' "${t}" > "${P7E}/shim/${t}"; done
+printf '#!/bin/sh\nexit 0\n' > "${P7E}/shim/logger"
+# mv and rm that fail for exec.log's files when /run/p7-mv-fails and /run/p7-rm-fails exist.
+printf '#!/bin/bash\n[ -e /storage/.p7-mv-fails ] && case "$*" in *exec.log.redacting*) echo "mv: I/O error" >&2; exit 1 ;; esac\nexec /usr/bin/mv "$@"\n' > "${P7E}/shim/mv"
+printf '#!/bin/bash\n[ -e /storage/.p7-rm-fails ] && case "$*" in *"/logs/exec.log"*) echo "rm: I/O error" >&2; exit 1 ;; esac\nexec /usr/bin/rm "$@"\n' > "${P7E}/shim/rm"
+chmod +x "${P7E}/shim"/*
+p7ev() { # <verb>: rocknix-evidence whole; output in $P7E/out, rc in $RC
+    RC=$( ( bwrap --die-with-parent --tmpfs / --tmpfs /usr "${P7USR[@]}" \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        "${P7ETC[@]}" --ro-bind "${P7E}/etc/os-release" /etc/os-release --ro-bind "${P7E}/etc/001-functions" /etc/profile.d/001-functions \
+        --bind "${P7ES}" /storage --bind "${P7ES}/.cache/log" /var/log --ro-bind "${P7E}/repo" /repo --ro-bind "${P7E}/shim" /shim \
+        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /run --setenv PATH "/shim:/usr/bin:/bin" \
+        bash /repo/rocknix-evidence "$@" > "${P7E}/out" 2>&1; echo $? ) 2>/dev/null )
+}
+p7evreset() {
+    rm -rf "${P7ES}/.cache/log/evidence"; rm -f "${P7ES}"/.p7-*
+    printf 'runemu.sh: Executing /usr/bin/gopher64 --ra-password QA-EV-PLANT game.z64\n' > "${P7ES}/.cache/log/exec.log"
+}
+p7evarcs() { ls "${P7ES}/.cache/log/evidence"/*-evidence.tar.gz 2>/dev/null; }
+p7evreset; touch "${P7ES}/.p7-mv-fails"
+p7ev collect
+p7a=$(p7evarcs | head -1)
+[ -n "${p7a}" ] && ! tar -xzOf "${p7a}" 2>/dev/null | grep -q QA-EV-PLANT && tar -xzOf "${p7a}" --wildcards '*/summary.txt' 2>/dev/null | grep -q '1 left out'; check $? "#307 PL-046: exec.log, whose filtered copy could not be moved into place, is left out -- not archived raw -- and the summary counts it left out" "#307 PL-046: rc ${RC}; archive: ${p7a:-none}; plant in it: $(tar -xzOf "${p7a}" 2>/dev/null | grep -c QA-EV-PLANT); summary: $(tar -xzOf "${p7a}" --wildcards '*/summary.txt' 2>/dev/null | grep 'credential filter:' | tail -1)"
+p7evreset; touch "${P7ES}/.p7-mv-fails" "${P7ES}/.p7-rm-fails"
+p7ev collect
+[ "${RC}" -ne 0 ] && [ -z "$(p7evarcs)" ]; check $? "#307 PL-046: when the raw file can be neither replaced nor removed, no archive is written (rc ${RC})" "#307 PL-046: rc ${RC}; archives: $(p7evarcs | wc -l)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

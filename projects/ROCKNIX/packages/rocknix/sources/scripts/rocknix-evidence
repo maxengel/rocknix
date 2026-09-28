@@ -100,22 +100,39 @@ have_filter() {
 
 # Every regular file under a directory, through the filter, in place, its
 # mtime kept (when a log was last written is evidence). A file the filter
-# cannot rewrite is removed rather than left as it was, and named. sed passes
-# bytes it does not match through untouched, and the pstore dumps are kernel
-# text, so nothing here is damaged by the pass.
-FILTERED=0; LEFT_OUT=0
+# cannot rewrite -- or whose filtered copy cannot be moved into its place --
+# is removed rather than left as it was, and named. A file that can be
+# neither filtered nor removed is raw and still there: that ends the
+# collection before any archive is written (returns non-zero). Until #307
+# PL-046 the move's status was not read, the file was counted as filtered,
+# and the raw log was archived under a summary that said it had been
+# through the filter. sed passes bytes it does not match through untouched,
+# and the pstore dumps are kernel text, so nothing here is damaged by the
+# pass. The list is taken before the pass, so no .redacting file is walked.
+FILTERED=0; LEFT_OUT=0; RAW=0
 filter_tree() {
-  local f
+  local f list
+  list=$(mktemp) || return 1
+  find "$1" -type f -print0 > "${list}"
   while IFS= read -r -d '' f; do
     if redact_credentials < "${f}" > "${f}.redacting" 2>/dev/null; then
       touch -r "${f}" "${f}.redacting" 2>/dev/null
-      mv -f "${f}.redacting" "${f}"; FILTERED=$((FILTERED + 1))
+      if mv -f "${f}.redacting" "${f}" 2>/dev/null; then
+        FILTERED=$((FILTERED + 1))
+        continue
+      fi
+    fi
+    rm -f "${f}" "${f}.redacting" 2>/dev/null
+    if [ -e "${f}" ]; then
+      RAW=$((RAW + 1))
+      echo "Couldn't filter or remove ${f#${1}/}."
     else
-      rm -f "${f}" "${f}.redacting"; LEFT_OUT=$((LEFT_OUT + 1))
+      LEFT_OUT=$((LEFT_OUT + 1))
       echo "Left out ${f#${1}/}: the credential filter couldn't rewrite it."
     fi
-  done < <(find "$1" -type f -print0)
-  return 0
+  done < "${list}"
+  rm -f "${list}"
+  [ "${RAW}" -eq 0 ]
 }
 
 snapshot() {
@@ -181,7 +198,10 @@ collect() {
   # Last, over everything that landed above, whatever wrote it: the filter
   # is applied to the tree, not trusted of each writer. Then the count goes
   # into the summary -- our own words and numbers, nothing that needs the pass.
-  filter_tree "${dir}"
+  if ! filter_tree "${dir}"; then
+    echo "Nothing was archived: ${RAW} file(s) could be neither filtered nor removed. The pieces are in ${dir}."
+    exit 1
+  fi
   printf '\ncredential filter: %s file(s) rewritten, %s left out\n' "${FILTERED}" "${LEFT_OUT}" >> "${dir}/summary.txt"
 
   if tar -czf "${out}" -C "${EVIDENCE_DIR}" "$(basename "${dir}")" 2>/dev/null; then
