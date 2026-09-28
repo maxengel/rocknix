@@ -76,7 +76,9 @@ say "seed what the retired GENERIC_X64 quirks left in /storage (#307 PL-019)"
 # into /storage, and 097-disable-rescue-completely masked emergency.target
 # into /storage/.config/system.d; a guest that ran them keeps them across an
 # update. The new image's 091-retired-vm-fixes and 097-retired-rescue-masks
-# take them back by name, once per guest (their stamps under /storage/.cache).
+# take them back by name until their stamps under /storage/.cache are
+# written; after that, only a file with an old quirk's own bytes (a
+# downgrade and back, which tools/last-good-scripts-test's F1r-b runs).
 # The fixture writes them itself, and removes those stamps, so the check does
 # not depend on which quirks the previous image carried -- a guest that ran
 # the old quirks has no stamp -- and beside them a file of the owner's own,
@@ -106,9 +108,10 @@ BOOT0=$(ssha 'cat /proc/sys/kernel/random/boot_id' 2>/dev/null)
 ssha 'sync; reboot' >/dev/null 2>&1
 # Down, then up: the boot id changes when the new boot answers. Up to five
 # minutes for the update to unpack and the guest to come back.
-BID1=""; for i in $(seq 1 60); do
+# BOOT1 is the new boot's id, kept for the autostart wait below.
+BID1=""; BOOT1=""; for i in $(seq 1 60); do
   B=$(ssha 'cat /proc/sys/kernel/random/boot_id' 2>/dev/null)
-  if [ -n "$B" ] && [ "$B" != "$BOOT0" ]; then BID1=$(ssha 'grep ^BUILD_ID= /etc/os-release | cut -d\" -f2' 2>/dev/null); [ "${BID1:0:${#WANT}}" = "$WANT" ] && break; fi
+  if [ -n "$B" ] && [ "$B" != "$BOOT0" ]; then BID1=$(ssha 'grep ^BUILD_ID= /etc/os-release | cut -d\" -f2' 2>/dev/null); [ "${BID1:0:${#WANT}}" = "$WANT" ] && { BOOT1=$B; break; }; fi
   sleep 5
 done
 say "guest a back after $i polls"
@@ -124,12 +127,28 @@ check "cloud conf gained the new defaults, kept the old values" "$(ssha "grep -c
 check "backup archive kept" "$(ssha 'ls /storage/roms/backup/ 2>/dev/null | wc -l')" "$BK0"
 check "update queue empty" "$(ssha 'ls /storage/.update | wc -l')" "0"
 # The quirk pass runs from autostart, which may still be running when SSH
-# first answers: wait for its last line before reading what it removed.
+# first answers: wait for it to finish before reading what it removed. The
+# wait reads this boot's state of the unit, never /var/log/boot.log:
+# autostart appends to that file at every boot and /var/log is
+# /storage/.cache/log (var-log.mount), so the previous boot's "Autostart
+# complete" line is there before this boot's autostart has begun, and it
+# answered the first poll -- the check could not fail (audit of the fix
+# round PL-024). rocknix-autostart.service is a oneshot with RemainAfterExit:
+# "activating" while its script runs, "active" once it has exited 0, and
+# systemd holds no other boot's state. Each reading carries the guest's boot
+# id, and only the new boot's (BOOT1, above) counts.
 AUTOSTARTED=no
-for i in $(seq 1 30); do ssha 'grep -q "Autostart complete" /var/log/boot.log && echo done' | grep -q done && { AUTOSTARTED=yes; break; }; sleep 2; done
+for i in $(seq 1 30); do
+  AS=$(ssha 'echo "$(cat /proc/sys/kernel/random/boot_id) $(systemctl is-active rocknix-autostart.service)"' 2>/dev/null)
+  if [ -n "$BOOT1" ] && [ "$AS" = "$BOOT1 active" ]; then AUTOSTARTED=yes; break; fi
+  AUTOSTARTED="no (last read: ${AS:-no answer}; the new boot ${BOOT1:-was never seen})"
+  [ -n "$BOOT1" ] && [ "$AS" = "$BOOT1 failed" ] && break
+  sleep 2
+done
+echo "autostart after $i poll(s): $AUTOSTARTED" >> "$LOG"
 # A wait that ran out is not a reading: say so, rather than grade the
 # take-back on a quirk pass that may not have run yet.
-check "autostart finished before the take-back is read (its 'Autostart complete' line in /var/log/boot.log)" "$AUTOSTARTED" "yes"
+check "autostart finished before the take-back is read (rocknix-autostart.service active in the new boot)" "$AUTOSTARTED" "yes"
 check "retired quirk files taken back after the update (#307 PL-019)" "$(ssha "cd /storage && ls $RETIRED 2>/dev/null | wc -l; [ -L .config/system.d/emergency.target ] && echo masked || echo unmasked" | tr '\n' ' ')" "0 unmasked "
 check "and the owner's file beside them kept" "$(ssha 'cat /storage/.config/tmpfiles.d/50-rehearsal-owner.conf')" "# the owner's own (vm-upgrade-rehearsal)"
 check "RetroArch fullscreen size set by hand kept, driver moved to gl (#307 PL-034, #308 claude F-VM-11)" "$(ssha "grep -E '^(video_fullscreen_x|video_fullscreen_y|video_driver) = ' $RACFG | sort | tr '\n' ' '")" 'video_driver = "gl" video_fullscreen_x = "1024" video_fullscreen_y = "768" '

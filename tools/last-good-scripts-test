@@ -10230,6 +10230,222 @@ p7ck "head -c 100 /dev/zero" retroarch 9000 --setenv CORE_MAX_BYTES 1048576
 rm -f "${P7C}/shim/flock"
 printf '%s' "${P7NOTE}" | grep '^dump' | grep -q 'NOT KEPT' && [ ! -e "${P7C}/storage/.cache/log/cores/core.retroarch.9000.4242.gz" ]; check $? "#307 audit G-B-14 (gpt): when the cores folder cannot be locked the dump is not kept, and the note says why" "#307 audit G-B-14: note: $(printf '%s' "${P7NOTE}" | grep '^dump' | cut -c1-120); dump: $([ -e "${P7C}/storage/.cache/log/cores/core.retroarch.9000.4242.gz" ] && echo kept || echo none)"
 
+# ---- audit #307, stream F1 ---- (the audit of the fix round, D-WORKFLOW-060)
+# Stream F1's items from the milestone-tier audit of the fix round
+# (docs/audits/2026_09_28-milestone-audit-of-the-fix-round/): the punch item
+# PL-024 (#309) and the gpt seat's leads in F1's files, one section each,
+# every check naming its item. Every file under test is read through src_of
+# or f1_tree, so
+#     BASE_REF=f3d19dc8fb tools/last-good-scripts-test --old
+# grades the tree that audit read: every check below that names a fix FAILs
+# there, and the ones marked "control" PASS both ways (the premise a
+# withdrawal rests on, or a behaviour the fix must keep).
+echo "  F1r. The audit of the fix round, stream F1 (#309 PL-024; the gpt seat's G2-F1 leads): each check names its item"
+F1R="${TMP}/f1r"; mkdir -p "${F1R}"
+
+# F1r-a. #309 PL-024: tools/vm-upgrade-rehearsal waits for the new image's
+#        autostart before it reads what the quirk pass took back. It waited
+#        for "Autostart complete" in /var/log/boot.log, which autostart
+#        appends to at every boot (autostart:7,10) and which lives on
+#        /storage (var-log.mount), so the previous boot's line answered the
+#        first poll and the wait could not fail. The wait is run as it stands
+#        in the rehearsal -- its lines from AUTOSTARTED=no to its check --
+#        against a guest whose boot.log already holds the previous boot's
+#        line: ssha is the transport (each call one poll, run in a sandbox
+#        with the guest's /var, its boot id, and a systemctl answering for
+#        the autostart unit as systemd does in that boot), and sleep costs
+#        nothing. Autostart finishes on the poll the case names -- the unit
+#        reads active and the current boot's line is appended -- or never.
+F1RA="${F1R}/a"; mkdir -p "${F1RA}/shim"
+src_of tools/vm-upgrade-rehearsal "${F1RA}/rehearsal"
+sed -n '/^AUTOSTARTED=no/,/^check "autostart finished/p' "${F1RA}/rehearsal" > "${F1RA}/wait.sh"
+cat > "${F1RA}/shim/systemctl" <<'EOS'
+#!/bin/bash
+# rocknix-autostart.service as systemd has it in this boot (/guest/state):
+# activating while the oneshot's script runs, active once it has exited 0
+# (the unit has RemainAfterExit), failed.
+st=$(cat /guest/state)
+case "$*" in
+    "is-active rocknix-autostart.service"|"is-active rocknix-autostart") echo "${st}"; [ "${st}" = active ]; exit $? ;;
+    *) echo "systemctl (the harness's shim) does not know: $*" >&2; exit 1 ;;
+esac
+EOS
+chmod +x "${F1RA}/shim/systemctl"
+cat > "${F1RA}/run.sh" <<'EOS'
+# The rehearsal's wait, lifted, with its helpers stood in for.
+#   $1 the guest, $2 the boot id before the reboot, $3 the new boot's
+set -u
+G="$1"; BOOT0="$2"; BOOT1="$3"; LOG="${G}/rehearsal.log"; : > "${LOG}"; fail=0; i=0
+say() { echo "=== $*" >> "${LOG}"; }
+check() { if [ "$2" = "$3" ]; then echo "PASS $1"; else echo "FAIL $1: got '$2' want '$3'"; fail=1; fi; }
+sleep() { :; }
+ssha() {
+    local n fin; n=$(( $(cat "${G}/polls") + 1 )); echo "${n}" > "${G}/polls"; fin=$(cat "${G}/finish")
+    if [ "${fin}" != never ] && [ "${n}" -ge "${fin}" ] && [ "$(cat "${G}/state")" != active ]; then
+        echo active > "${G}/state"; echo "Mon Sep 28 16:00:0${n} UTC 2026: Autostart: Autostart complete..." >> "${G}/var/log/boot.log"
+    fi
+    bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --bind "${G}/var" /var --dir /proc/sys/kernel/random --ro-bind "${G}/boot_id" /proc/sys/kernel/random/boot_id \
+        --ro-bind "${G}/../shim" /shim --ro-bind "${G}" /guest --dev /dev --tmpfs /tmp --setenv PATH /shim:/usr/bin:/bin \
+        bash -c "$*"
+}
+. "${G}/../wait.sh"
+echo "polls=$(cat "${G}/polls") autostarted=${AUTOSTARTED}"
+EOS
+F1R_B0=0f1a0000-0000-4000-8000-00000000b007; F1R_B1=0f1a0000-0000-4000-8000-00000000b008
+f1ra() { # <case> <poll autostart finishes on|never> <boot id the guest reports>: one run of the wait; its last line in F1RA_OUT, its check line in F1RA_CHK
+    local g="${F1RA}/$1"; rm -rf "${g}"; mkdir -p "${g}/var/log"
+    printf '%s\n' "Sun Sep 27 21:04:10 UTC 2026: Autostart: Run /usr/lib/autostart/quirks/platforms/GENERIC_X64/092-retroarch-surface" \
+        "Sun Sep 27 21:04:12 UTC 2026: Autostart: Startup complete..." "Sun Sep 27 21:04:13 UTC 2026: Autostart: Autostart complete..." > "${g}/var/log/boot.log"
+    printf '%s\n' "$3" > "${g}/boot_id"; echo 0 > "${g}/polls"; echo "$2" > "${g}/finish"; echo activating > "${g}/state"
+    bash "${F1RA}/run.sh" "${g}" "${F1R_B0}" "${F1R_B1}" > "${g}/out" 2>&1
+    F1RA_OUT=$(tail -n 1 "${g}/out"); F1RA_CHK=$(grep -m1 -E '^(PASS|FAIL) autostart finished' "${g}/out" | cut -c1-200)
+}
+if [ ! -s "${F1RA}/wait.sh" ] || ! grep -q '^check "autostart finished' "${F1RA}/wait.sh"; then
+    check 1 "-" "#309 PL-024: the rehearsal has no autostart wait from AUTOSTARTED=no to its check -- nothing to grade"
+else
+    f1ra stale 4 "${F1R_B1}"
+    [ "${F1RA_OUT}" = "polls=4 autostarted=yes" ]; check $? "#309 PL-024: with the previous boot's 'Autostart complete' already in boot.log, the rehearsal waits until this boot's autostart has finished (poll 4 of 4)" "#309 PL-024: the wait ended on '${F1RA_OUT}' where autostart finished on poll 4 -- the previous boot's line answered it"
+    f1ra never never "${F1R_B1}"
+    case "${F1RA_OUT}" in "polls=30 autostarted="*) [ "${F1RA_OUT}" != "polls=30 autostarted=yes" ] ;; *) false ;; esac && case "${F1RA_CHK}" in FAIL*) true ;; *) false ;; esac
+    check $? "#309 PL-024: an autostart that never finishes runs the wait to its bound and the rehearsal's check FAILs, the stale line notwithstanding" "#309 PL-024: an autostart that never finished read '${F1RA_OUT}', check '${F1RA_CHK}' -- the check cannot fail"
+    f1ra oldboot 1 "${F1R_B0}"
+    case "${F1RA_OUT}" in *autostarted=yes) false ;; *) true ;; esac; check $? "#309 PL-024: a reading that carries the boot id from before the reboot does not end the wait" "#309 PL-024: a reading from boot ${F1R_B0} (the one before the reboot) ended the wait: '${F1RA_OUT}'"
+    f1ra ready 1 "${F1R_B1}"
+    [ "${F1RA_OUT}" = "polls=1 autostarted=yes" ] && case "${F1RA_CHK}" in PASS*) true ;; *) false ;; esac
+    check $? "#309 PL-024 (control): an autostart already finished on the first poll ends the wait at once, and the check passes" "#309 PL-024: an autostart finished on poll 1 read '${F1RA_OUT}', check '${F1RA_CHK}'"
+fi
+
+# F1r-b. The gpt seat's G2-F1-01: 091-retired-vm-fixes and 097-retired-rescue-
+#        masks stopped for good at their stamps, so a guest that went back to
+#        an earlier build -- whose quirks write every one of those files and
+#        the four masks again at every boot -- and then forward again kept
+#        them for good. After the stamp, a file whose bytes are exactly what
+#        a retired quirk wrote there is an earlier build's again and goes
+#        (anything else under those names stays somebody's), and the boot
+#        that finds one hands the masks back to 097, which takes them at the
+#        next boot. Both shipped versions of the old quirks are the
+#        downgrade: F1_PREV's, and 73b20caf86's, whose mount-points rule
+#        differs (8bb74015e6 changed it).
+# 091 hashes with sha256sum, an applet of the image's busybox, as the other
+# applets here are (the sandbox's /bbin, first on its PATH).
+[ -n "${BB}" ] && { printf '#!/bin/sh\n[ -x %s ] && exec %s sha256sum "$@"\nexec %s sha256sum "$@"\n' "${BB}" "${BB}" "${BB_HOST}" > "${TMP}/bbin/sha256sum"; chmod +x "${TMP}/bbin/sha256sum"; }
+f1_quirks "${F1_UNDER}" "${F1R}/quirks.now"
+f1_quirks "${F1_PREV}" "${F1R}/quirks.prev"
+f1_quirks 73b20caf86 "${F1R}/quirks.first"
+F1R_RETIRED="tmpfiles.d/10-generic-x64-journald.conf tmpfiles.d/20-x64-fd-improvements.conf tmpfiles.d/30-x64-mount-points.conf sysctl.d/10-generic-x64.conf modules-load.d/x64-virtual-modules.conf udev.rules.d/90-x64-virtual-devices.conf profile.d/091-generic-x64-services systemd/system/systemd-hostnamed.service.d/10-generic-x64.conf systemd/system/systemd-journald.service.d/10-generic-x64.conf systemd/system/dbus.service.d/10-generic-x64.conf systemd/system/smbd.service.d/10-generic-x64.conf systemd/system/nmbd.service.d/10-generic-x64.conf systemd/system/smbd.service.d/10-vm-config.conf systemd/system/nmbd.service.d/10-vm-config.conf systemd/system/weston.service.d/10-vm-config.conf systemd/system/dbus.service.d/20-vm-enhanced.conf"
+f1r_left() { local p; for p in ${F1R_RETIRED}; do { [ -e "$1/.config/${p}" ] || [ -L "$1/.config/${p}" ]; } && printf ' %s' "${p}"; done; }
+f1r_masks() { local u; for u in rescue.target emergency.target rescue.service emergency.service; do [ "$(readlink "$1/.config/system.d/${u}" 2>/dev/null)" = /dev/null ] && printf ' %s' "${u}"; done; }
+# The premise the gpt seat's G2-F1-02 is withdrawn on (control): the old
+# quirks own those paths outright -- an owner's edit to one of the files, or
+# a mask taken off by hand, is undone by the old build's next boot.
+F1RB="${F1R}/b-premise"; f1_storage "${F1RB}"
+f1_pass "${F1RB}" "${F1}/sys" "${F1R}/quirks.prev" "${F1R}/premise.j0"
+echo "# the owner's own rules" > "${F1RB}/.config/tmpfiles.d/20-x64-fd-improvements.conf"; rm -f "${F1RB}/.config/system.d/emergency.target"
+f1_pass "${F1RB}" "${F1}/sys" "${F1R}/quirks.prev" "${F1R}/premise.j1"
+[ "$(sha256sum < "${F1RB}/.config/tmpfiles.d/20-x64-fd-improvements.conf" | cut -c1-64)" = 96ab18a16991032a444fea138361bc36d71ec562f3857e7cdc7107a832e2451e ] && [ "$(f1r_masks "${F1RB}")" = " rescue.target emergency.target rescue.service emergency.service" ]
+check $? "G2-F1-02's premise (control): under the old quirks an owner's edit of 20-x64-fd-improvements.conf, and emergency.target unmasked by hand, are both undone at the next boot" "the old quirks' next boot left the owner's edit or the unmask: $(head -c 60 "${F1RB}/.config/tmpfiles.d/20-x64-fd-improvements.conf" | tr '\n' ' '); masks:$(f1r_masks "${F1RB}")"
+for F1R_V in prev first; do
+    F1RS="${F1R}/b-${F1R_V}"; f1_storage "${F1RS}"
+    f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.prev" "${F1R}/b.j0"     # the guest ran the old quirks
+    f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.now" "${F1R}/b.j1"      # updated: all of it taken back
+    f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.${F1R_V}" "${F1R}/b.j2" # a downgrade: written again
+    F1R_DOWN="$(f1r_left "${F1RS}" | wc -w) file(s),$(f1r_masks "${F1RS}")"
+    f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.now" "${F1R}/b.j3"      # and forward again
+    F1R_L1=$(f1r_left "${F1RS}")
+    f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.now" "${F1R}/b.j4"      # the boot after
+    F1R_L2=$(f1r_left "${F1RS}"); F1R_M2=$(f1r_masks "${F1RS}")
+    [ "${F1R_DOWN}" = "16 file(s), rescue.target emergency.target rescue.service emergency.service" ]; check $? "the downgrade to the ${F1R_V} old quirks writes the 16 files and the four masks again (the fixture holds what a guest holds)" "the downgrade wrote ${F1R_DOWN} -- the fixture proves nothing"
+    [ -z "${F1R_L1}" ] && grep -q 'earlier build' "${F1R}/b.j3"
+    check $? "G2-F1-01: after a downgrade to the ${F1R_V} old quirks and back, the first boot takes back every file they wrote again, and says so on the journal" "G2-F1-01: after a downgrade to the ${F1R_V} old quirks and back, still on /storage:$(echo "${F1R_L1}" | cut -c1-200); journal: '$(head -c 160 "${F1R}/b.j3" | tr '\n' ' ')'"
+    [ -z "${F1R_L2}" ] && [ -z "${F1R_M2}" ] && [ -e "${F1RS}/.cache/retired-rescue-masks" ] && [ -e "${F1RS}/.cache/retired-vm-fixes" ]
+    check $? "G2-F1-01: and by the boot after it the four masks are gone too, and both take-backs are stamped again" "G2-F1-01: after a downgrade to the ${F1R_V} old quirks and back, two boots later: files:${F1R_L2:- none}; masks:${F1R_M2:- none}; stamps: $(ls "${F1RS}/.cache" | tr '\n' ' ')"
+    f1_state "${F1RS}" > "${F1R}/b.once"; f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.now" "${F1R}/b.j5"
+    f1_state "${F1RS}" | cmp -s - "${F1R}/b.once" && [ ! -s "${F1R}/b.j5" ]
+    check $? "and a boot after that changes nothing and says nothing" "a boot after the second take-back changed /storage or spoke: $(f1_state "${F1RS}" | diff - "${F1R}/b.once" | tr '\n' ' ' | cut -c1-200) $(head -c 120 "${F1R}/b.j5")"
+done
+# After the stamp, a file of the owner's under a retired name -- other bytes
+# than any old quirk wrote -- is theirs, boot after boot (control: the same
+# on both trees).
+F1RS="${F1R}/b-owner"; f1_storage "${F1RS}"
+f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.prev" "${F1R}/o.j0"; f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.now" "${F1R}/o.j1"
+echo "# the owner's own rules" > "${F1RS}/.config/tmpfiles.d/20-x64-fd-improvements.conf"; ln -sfn /dev/null "${F1RS}/.config/system.d/rescue.target"
+f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.now" "${F1R}/o.j2"; f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.now" "${F1R}/o.j3"
+[ "$(cat "${F1RS}/.config/tmpfiles.d/20-x64-fd-improvements.conf" 2>/dev/null)" = "# the owner's own rules" ] && [ "$(f1r_masks "${F1RS}")" = " rescue.target" ] && [ ! -s "${F1R}/o.j2" ] && [ ! -s "${F1R}/o.j3" ]
+check $? "G2-F1-01 (control): after the take-back, an owner's file under a retired name and a mask of their own stay, silently, boot after boot" "an owner's file or mask was taken after the take-back: $(head -c 40 "${F1RS}/.config/tmpfiles.d/20-x64-fd-improvements.conf" 2>/dev/null || echo GONE); masks:$(f1r_masks "${F1RS}"); journal: $(head -c 120 "${F1R}/o.j2")"
+# The masks' stamp is handed back only when an earlier boot wrote it: a boot
+# on which 097 has just taken the masks and stamped keeps its stamp though
+# 091 finds the old files the same boot (097's stamp removed by hand, as its
+# header said to before this change).
+F1RS="${F1R}/b-same"; f1_storage "${F1RS}"
+f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.prev" "${F1R}/s.j0"; f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.now" "${F1R}/s.j1"
+f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.prev" "${F1R}/s.j2"; rm -f "${F1RS}/.cache/retired-rescue-masks"
+f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.now" "${F1R}/s.j3"
+[ -z "$(f1r_left "${F1RS}")" ] && [ -z "$(f1r_masks "${F1RS}")" ] && [ -e "${F1RS}/.cache/retired-rescue-masks" ]
+check $? "G2-F1-01: a boot that takes the masks and stamps, and finds the old files too, takes both and keeps the fresh stamp" "G2-F1-01: one boot with the masks' stamp removed and the old files back: files:$(f1r_left "${F1RS}" | cut -c1-120); masks:$(f1r_masks "${F1RS}"); masks' stamp $([ -e "${F1RS}/.cache/retired-rescue-masks" ] && echo kept || echo REMOVED)"
+
+# F1r-c. The gpt seat's G2-F1-03, the part that is a defect: 092-retroarch-
+#        surface says the shipped values are 640x480 or 0x0, and took each
+#        axis on its own -- 640x0 and 0x480, which no build ever wrote (the
+#        first version, eb131d112f, rewrote each axis only from 0|640 and
+#        0|480, into the mode's own size), followed the mode as its own. A
+#        guest that has booted once (so a record exists) is given each by
+#        hand; the shipped pairs still follow (control).
+if declare -F f1_surface >/dev/null; then
+    F1RC="${F1R}/c"; f1_storage "${F1RC}"; f1_surface "${F1RC}" "${F1G}/s1280"
+    f1_set "${F1RC}" 640x0; f1_surface "${F1RC}" "${F1G}/s1280"; F1R_C1=$(f1_wh "${F1RC}")
+    f1_set "${F1RC}" 0x480; f1_surface "${F1RC}" "${F1G}/s640"; F1R_C2=$(f1_wh "${F1RC}")
+    [ "${F1R_C1}" = 640x0 ] && [ "${F1R_C2}" = 0x480 ]
+    check $? "G2-F1-03: a hand-set 640x0 or 0x480 -- neither a shipped pair -- is left as somebody's" "G2-F1-03: a hand-set 640x0 became ${F1R_C1} at 1280x800, a hand-set 0x480 became ${F1R_C2} at 640x480"
+    f1_set "${F1RC}" 0x0; f1_surface "${F1RC}" "${F1G}/s1280"; F1R_C3=$(f1_wh "${F1RC}"); f1_set "${F1RC}" 640x480; f1_surface "${F1RC}" "${F1G}/s1280"
+    [ "${F1R_C3}" = 1280x800 ] && [ "$(f1_wh "${F1RC}")" = 1280x800 ]
+    check $? "G2-F1-03 (control): the shipped 0x0 and 640x480 still follow the mode, record or not" "the shipped 0x0 became ${F1R_C3} and 640x480 $(f1_wh "${F1RC}") at 1280x800"
+else
+    check 1 "-" "G2-F1-03: 092-retroarch-surface is not in the tree under test -- nothing to grade"
+fi
+
+# F1r-d. The gpt seat's G2-F1-04 (and the claude seat's): a start removed any
+#        socket at its monitor and serial paths, a live guest's included, and
+#        removed the monitor's before it had looked at the serial path. A
+#        socket that still answers a connection is held by a running QEMU
+#        and is refused (after a short grace, for one that is shutting
+#        down); every path is checked before any is removed.
+if [ -n "${F1_QIMG}" ]; then
+    f1r_listen() { # <socket> <stop file>: a running guest's socket -- bound and listening until the stop file appears, 60 s at most
+        python3 -c 'import os, socket, sys, time
+s = socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(8); s.settimeout(0.05); t = time.time()
+while not os.path.exists(sys.argv[2]) and time.time() - t < 60:
+    try:
+        c, _ = s.accept(); c.close()   # as QEMU does: take the connection; the prober hangs up
+    except socket.timeout:
+        pass' "$1" "$2" &
+        F1R_LPID=$!
+        for _ in $(seq 1 100); do [ -S "$1" ] && break; sleep 0.05; done
+    }
+    f1r_answers() { python3 -c 'import socket, sys
+s = socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect(sys.argv[1])' "$1" 2>/dev/null; }
+    rm -f "${F1V}/r-live.sock" "${F1V}/r-live.stop" "${F1V}/qemu.argv"
+    f1r_listen "${F1V}/r-live.sock" "${F1V}/r-live.stop"
+    f1r_answers "${F1V}/r-live.sock"; check $? "the fixture's live socket answers a connection before the start (the probe can see a live guest)" "the fixture's listener at ${F1V}/r-live.sock does not answer -- the case proves nothing"
+    f1_vm run --monitor "${F1V}/r-live.sock" --ovmf-vars "${F1V}/r-vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
+    [ "${F1_RC}" -ne 0 ] && [ -S "${F1V}/r-live.sock" ] && f1r_answers "${F1V}/r-live.sock" && [ ! -e "${F1V}/qemu.argv" ] && grep -q 'r-live.sock' "${F1V}/out"
+    check $? "G2-F1-04: a start refuses a socket a running guest still listens on, names it, and the guest keeps it" "G2-F1-04: run --monitor <a live guest's socket> (rc ${F1_RC}): the socket $([ -S "${F1V}/r-live.sock" ] && echo kept || echo REMOVED), $(f1r_answers "${F1V}/r-live.sock" && echo "still answers" || echo "no longer answers"), QEMU $([ -e "${F1V}/qemu.argv" ] && echo started || echo "not started"); $(head -c 160 "${F1V}/out")"
+    : > "${F1V}/r-live.stop"; wait "${F1R_LPID}" 2>/dev/null; rm -f "${F1V}/r-live.sock" "${F1V}/r-live.stop"
+    # A start refused at its serial path has removed nothing: the monitor
+    # path's stale socket is still there.
+    rm -f "${F1V}/r-mon.sock" "${F1V}/qemu.argv"; f1_sock "${F1V}/r-mon.sock"; echo "a file of somebody's" > "${F1V}/r-serial.txt"
+    f1_vm run --headless --monitor "${F1V}/r-mon.sock" --serial "${F1V}/r-serial.txt" --ovmf-vars "${F1V}/r-vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
+    [ "${F1_RC}" -ne 0 ] && [ -S "${F1V}/r-mon.sock" ] && [ "$(cat "${F1V}/r-serial.txt")" = "a file of somebody's" ] && [ ! -e "${F1V}/qemu.argv" ]
+    check $? "G2-F1-04: a start refused at its serial path removes nothing -- the monitor's stale socket is still there" "G2-F1-04: run --headless --monitor <stale socket> --serial <a file> (rc ${F1_RC}): the monitor socket $([ -S "${F1V}/r-mon.sock" ] && echo kept || echo REMOVED before the refusal), the file '$(cat "${F1V}/r-serial.txt" 2>/dev/null)'"
+    # control: a stale socket (nobody listening) is still cleared, and QEMU starts
+    rm -f "${F1V}/qemu.argv"
+    f1_vm run --monitor "${F1V}/r-mon.sock" --ovmf-vars "${F1V}/r-vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
+    [ "${F1_RC}" -eq 0 ] && [ ! -e "${F1V}/r-mon.sock" ] && [ -s "${F1V}/qemu.argv" ]
+    check $? "G2-F1-04 (control): a socket nobody listens on is still cleared, and QEMU starts" "run --monitor <a stale socket> (rc ${F1_RC}): the socket $([ -e "${F1V}/r-mon.sock" ] && echo LEFT || echo cleared), QEMU $([ -s "${F1V}/qemu.argv" ] && echo started || echo "NOT started"); $(head -c 160 "${F1V}/out")"
+    rm -f "${F1V}/r-mon.sock" "${F1V}/r-serial.txt" "${F1V}/r-vars.fd"
+fi
+
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
