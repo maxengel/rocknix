@@ -3769,4 +3769,22 @@ done
 src_of "${RCLONE_REL}/cloud_restore" "${TMP}/cloud_restore.a16"
 ! grep -q 'backup keeps it, where it only tidies the remote' "${TMP}/cloud_restore.a16"; check $? "cloud_restore's comment no longer says backup keeps --delete-excluded" "cloud_restore still says backup keeps it"
 
+# A17. #308 claude F-CS-11: the merge that puts a player's own rules first
+#      (so they take effect) must not wake rules that never did. Upstream's
+#      helper appended every non-default rule after the catch-all, where rclone
+#      never reached it; on the first merge of this build those are kept,
+#      commented out, below the defaults, once (a marker) -- a rule written
+#      after that is promoted as before.
+echo "    A17. #308 claude F-CS-11: a rule that sat below the catch-all stays inert across the upgrade"
+{ cat "${RH}/usrconfig/cloud_sync-rules.txt.defaults"; printf -- '+ /roms/**\n+ /**\n'; } > "${RRULES}"
+printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/ROCKNIX/Saves"\nBACKUPMETHOD="copy"\n' > "${RH}/storage/.config/cloud_sync.conf"
+rm -f "${RH}/storage/.config/.cloud_sync-rules-user-first-applied"
+rh_run
+! grep -qx -- '+ /roms/\*\*' "${RRULES}" && ! grep -qx -- '+ /\*\*' "${RRULES}" && grep -qx -- '# inert: + /roms/\*\*' "${RRULES}"; check $? "an upstream device's rules below the catch-all (+ /roms/**, + /**) are kept commented out, not promoted above the defaults" "active lines now: $(grep -xE -- '\+ /roms/\*\*|\+ /\*\*' "${RRULES}" | tr '\n' ' ')-- the ROMs would ride into the saves folder on the next sync (F-CS-11)"
+rh_run
+grep -qx -- '# inert: + /roms/\*\*' "${RRULES}" && ! grep -qx -- '+ /roms/\*\*' "${RRULES}"; check $? "and they stay that way on the next merge" "the kept line is gone or active after a second run: $(grep -n 'roms/\*\*' "${RRULES}" | tr '\n' ' ')"
+printf -- '+ /mine/**\n' >> "${RRULES}"
+rh_run
+[ "$(grep -n -x -- '+ /mine/\*\*' "${RRULES}" | cut -d: -f1)" -lt "$(grep -n -x -- '- /\*\*' "${RRULES}" | cut -d: -f1)" ] 2>/dev/null; check $? "a rule the player adds after the upgrade, at the end, is promoted above the catch-all as before" "+ /mine/** at line $(grep -n -x -- '+ /mine/\*\*' "${RRULES}" | cut -d: -f1), the catch-all at $(grep -n -x -- '- /\*\*' "${RRULES}" | cut -d: -f1)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

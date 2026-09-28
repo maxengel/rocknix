@@ -76,11 +76,36 @@ update_cloud_sync_rules() {
     # Collect the user's own rules - lines that are not in the defaults.
     # The -e flag ensures grep treats the entire line as a fixed pattern,
     # preventing misinterpretation of spaces and special characters in rules.
+    #
+    # Except the rules that never took effect (#308 claude F-CS-11). The
+    # helper this replaced -- upstream's, and every device's before this
+    # fork's merge -- appended each non-default rule AFTER the catch-all,
+    # where rclone never reached it; moving all of them to the top on the
+    # first merge woke whatever anybody had ever typed, working or not, with
+    # no word said: a `+ /roms/**` somebody tried once would send the ROM
+    # library into the saves folder on the next sync. So on the first merge
+    # this build makes (no marker yet), a rule found below the catch-all is
+    # kept as it was -- inert -- written after the defaults as a comment,
+    # "# inert: <rule>", and logged; that line is carried as it stands by
+    # every later merge. From then on a rule anywhere is the player's and
+    # goes first, as the merge intends.
+    local marker=/storage/.config/.cloud_sync-rules-user-first-applied first_merge=0 past_catch_all=0
+    [ -e "${marker}" ] || first_merge=1
     : > /tmp/cloud_sync-rules.user
+    : > /tmp/cloud_sync-rules.inert
     while IFS= read -r line; do
+      case "${line}" in
+        "# inert: "*) echo "${line#\# inert: }" >> /tmp/cloud_sync-rules.inert; continue ;;
+        "- /**") past_catch_all=1 ;;
+      esac
       if [[ "$line" != \#* ]] && [[ -n "$line" ]]; then
         if ! grep -Fxq -e "$line" /usr/config/cloud_sync-rules.txt.defaults; then
-          echo "$line" >> /tmp/cloud_sync-rules.user
+          if [ "${first_merge}" = 1 ] && [ "${past_catch_all}" = 1 ]; then
+            echo "$line" >> /tmp/cloud_sync-rules.inert
+            log_to_file "${log_file}" "rule '${line}' sat below the catch-all and never took effect; kept, commented out, as it was" "WARN"
+          else
+            echo "$line" >> /tmp/cloud_sync-rules.user
+          fi
         fi
       fi
     done < "${rules}"
@@ -118,15 +143,27 @@ update_cloud_sync_rules() {
       } >> "${rules}.new" || built=0
     fi
     [ "${built}" = 1 ] && { cat /usr/config/cloud_sync-rules.txt.defaults >> "${rules}.new" || built=0; }
-    rm -f /tmp/cloud_sync-rules.user
+    if [ "${built}" = 1 ] && [ -s /tmp/cloud_sync-rules.inert ]; then
+      {
+        echo
+        echo "# ----------------------------------------------------------------"
+        echo "# Rules that sat below the catch-all before this update, where they"
+        echo "# never took effect. Kept as they were: to use one, write it again"
+        echo "# at the top of this file."
+        echo "# ----------------------------------------------------------------"
+        sed 's/^/# inert: /' /tmp/cloud_sync-rules.inert
+      } >> "${rules}.new" || built=0
+    fi
+    rm -f /tmp/cloud_sync-rules.user /tmp/cloud_sync-rules.inert
     if [ "${built}" != 1 ] || ! rules_whole "${rules}.new"; then
       rm -f "${rules}.new"
       log_to_file "${log_file}" "the merged rules file was not whole (a write failed before its catch-all line); it was not installed and the rules file was left as it was" "WARN"
       return 1
     fi
 
-    # Replace the user's file with the merged version -- one rename.
-    mv -f "${rules}.new" "${rules}"
+    # Replace the user's file with the merged version -- one rename -- and
+    # mark the first merge done only once it has landed.
+    mv -f "${rules}.new" "${rules}" && touch "${marker}" 2>/dev/null
     
     log_to_file "${log_file}" "Updated cloud_sync-rules.txt with new defaults while preserving custom rules"
   else
