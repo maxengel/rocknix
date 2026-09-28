@@ -3011,4 +3011,54 @@ ckf() { # ckf <raw bytes> <exe> <CORE_MIN_FREE_KB>
 ckf 65536 retroarch $(( XFREE - 512 )); printf '%s' "${NOTE}" | grep '^dump' | grep -q 'NOT KEPT' && printf '%s' "${NOTE}" | grep '^dump' | grep -q 'plus the 1048576 byte cap'; check $? "with free space above the floor but under the floor plus the cap, the dump is refused and the note names both (audit #258, the seat's G-03; the old test admitted it)" "free ${XFREE} KB; note: $(printf '%s' "${NOTE}" | grep '^dump' | cut -c1-140)"
 ckf 65536 retroarch 1024;                printf '%s' "${NOTE}" | grep '^dump' | grep -q 'whole'; check $? "and with a floor the card clears by more than the cap, the same dump is kept" "note: $(printf '%s' "${NOTE}" | grep '^dump' | cut -c1-100)" "note: $(printf '%s' "${NOTE}" | grep '^dump')"
 
+# ---- audit #307, stream F2 ----
+# Stream F2's cases: the recipes, the RetroArch patches and the rotation-table
+# generators (#307 PL-002, PL-032, PL-043; #308's rows in those files). Every
+# case reads its files through src_of, so under
+#     BASE_REF=417dcd8610 tools/last-good-scripts-test --old
+# they grade the tree the audit read, and each FAILs there.
+F2="${TMP}/f2"; mkdir -p "${F2}"
+F2_LR=projects/ROCKNIX/packages/emulators/libretro
+
+# F2-1. A shared rotation generator is part of the stamp of every core whose
+# table it writes (#307 PL-002). calculate_stamp is config/functions' own; the
+# two package-cache lookups answer from a fixture tree holding the five
+# recipes and the two generators as the tree has them. Editing a generator
+# must move the stamp of each core that runs it -- that is what makes
+# scripts/build rebuild the core -- and leave the other family's alone.
+echo "  F2-1. a rotation generator is in the build stamp of every core whose table it writes (#307 PL-002)"
+FX="${F2}/stamp"; FXR="${FX}/root"; mkdir -p "${FXR}/${F2_LR}"
+for p in fbalpha2012-lr fbalpha2019-lr fbneo-lr mame2003-plus-lr mame2010-lr; do
+    mkdir -p "${FXR}/${F2_LR}/${p}"; src_of "${F2_LR}/${p}/package.mk" "${FXR}/${F2_LR}/${p}/package.mk"
+done
+for g in rotation-table-fba.py rotation-table-mame.py; do src_of "${F2_LR}/${g}" "${FXR}/${F2_LR}/${g}"; done
+src_of config/functions "${FX}/functions"
+awk '/^calculate_stamp\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${FX}/functions" > "${FX}/calculate_stamp.sh"
+f2_stamp() { # <package>: the stamp scripts/build compares, from the recipe as source_package loads it
+    ( set +u; cd "${FXR}" || exit 1
+      ROOT="${FXR}"; PROJECT_DIR="${FXR}/projects"; PROJECT=ROCKNIX; DEVICE=H700; ARCH=aarch64; TARGET_ARCH=aarch64; TARGET_FPU=neon-fp-armv8
+      get_pkg_directory() { echo "${FXR}/${F2_LR}/${1%:*}"; }
+      get_global_pkg_directory() { :; }
+      PKG_DIR="${FXR}/${F2_LR}/${1}"
+      . "${PKG_DIR}/package.mk" >/dev/null 2>&1
+      . "${FX}/calculate_stamp.sh"
+      calculate_stamp ) 2>/dev/null
+}
+declare -A F2_S0
+for p in fbalpha2012-lr fbalpha2019-lr fbneo-lr mame2003-plus-lr mame2010-lr; do F2_S0[${p}]="$(f2_stamp ${p})"; done
+echo "# an edit" >> "${FXR}/${F2_LR}/rotation-table-fba.py"
+for p in fbalpha2012-lr fbalpha2019-lr fbneo-lr; do
+    s="$(f2_stamp ${p})"; [ -n "${s}" ] && [ -n "${F2_S0[${p}]}" ] && [ "${s}" != "${F2_S0[${p}]}" ]
+    check $? "an edit to rotation-table-fba.py moves ${p}'s stamp, so scripts/build rebuilds it" "${p}'s stamp did not move when rotation-table-fba.py changed (${F2_S0[${p}]:0:12} -> ${s:0:12}): a warm root keeps the old table"
+done
+for p in mame2003-plus-lr mame2010-lr; do
+    s="$(f2_stamp ${p})"; [ -n "${s}" ] && [ "${s}" = "${F2_S0[${p}]}" ]
+    check $? "and leaves ${p}'s alone -- that core does not run it" "${p}'s stamp moved on an edit to the fba generator (${F2_S0[${p}]:0:12} -> ${s:0:12})"
+done
+echo "# an edit" >> "${FXR}/${F2_LR}/rotation-table-mame.py"
+for p in mame2003-plus-lr mame2010-lr; do
+    s="$(f2_stamp ${p})"; [ -n "${s}" ] && [ "${s}" != "${F2_S0[${p}]}" ]
+    check $? "an edit to rotation-table-mame.py moves ${p}'s stamp" "${p}'s stamp did not move when rotation-table-mame.py changed: a warm root keeps the old table"
+done
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

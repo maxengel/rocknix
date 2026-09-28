@@ -11,16 +11,19 @@ PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
 # (audit #258 PL-018): the interpreter the build's PATH finds, not whatever
 # the container happens to carry.
 PKG_DEPENDS_TARGET="toolchain Python3:host"
+# The rotation-table generator is shared with the other MAME-family cores and
+# sits one directory up, outside PKG_DIR, which is all calculate_stamp
+# hashes of the package itself; naming it here puts it in this package's
+# stamp, so an edit to it rebuilds the core and its table.
+PKG_NEED_UNPACK="$(dirname "$(get_pkg_directory ${PKG_NAME})")/rotation-table-mame.py"
 PKG_LONGDESC="MAME - Multiple Arcade Machine Emulator"
 
 # The generated table has to have found the drivers: a generator pointed at
 # the wrong directory writes an empty file and the build went green with it
 # (audit #258 PL-018). The five tables carried 853 to 2544 rows on 2026-09-24;
 # under 100 is a wrong path, not a smaller core. The generators live one
-# directory up, shared by the fba cores and by the mame cores, so a change
-# to one is a change to every table it writes -- and does not move this
-# package's stamp (calculate_stamp hashes PKG_DIR alone), so clean these
-# packages by hand after editing a generator.
+# directory up, shared by the fba cores and by the mame cores; the one this
+# core runs is in its stamp through PKG_NEED_UNPACK.
 rotation_table_check() {
   local table="${INSTALL}/usr/config/emulationstation/rotation/${1}.txt" rows
   rows=$(wc -l < "${table}")
