@@ -3742,4 +3742,11 @@ p7evreset; touch "${P7ES}/.p7-mv-fails" "${P7ES}/.p7-rm-fails"
 p7ev collect
 [ "${RC}" -ne 0 ] && [ -z "$(p7evarcs)" ]; check $? "#307 PL-046: when the raw file can be neither replaced nor removed, no archive is written (rc ${RC})" "#307 PL-046: rc ${RC}; archives: $(p7evarcs | wc -l)"
 
+# == PL-077 (evidence half): two collections in one second keep two archives
+p7evreset
+printf '#!/bin/bash\ncase "$*" in "+%%Y_%%m_%%d-%%H%%M%%S") echo 2026_09_21-140000 ;; *) exec /usr/bin/date "$@" ;; esac\n' > "${P7E}/shim/date"; chmod +x "${P7E}/shim/date"
+p7ev collect; p7rc1=${RC}; p7ev collect
+[ "${p7rc1}" -eq 0 ] && [ "${RC}" -eq 0 ] && [ "$(p7evarcs | wc -l)" -eq 2 ]; check $? "#307 PL-077 (evidence half): two collections in one second leave two archives" "#307 PL-077: rc ${p7rc1}/${RC}; archives: $(p7evarcs | xargs -rn1 basename | tr '\n' ' ')"
+rm -f "${P7E}/shim/date"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
