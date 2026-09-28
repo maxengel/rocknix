@@ -3019,7 +3019,11 @@ ckf 65536 retroarch 1024;                printf '%s' "${NOTE}" | grep '^dump' | 
 #
 #   C1. cloud_setup --set-saves-remote: a one-level saves folder is refused
 #       with the reason, where it would have nested the settings and content
-#       folders inside itself (PL-015); the siblings of a two-level one.
+#       folders inside itself (PL-015); the siblings of a two-level one. The
+#       config is written as text, not through a sed replacement: & and |
+#       round-trip, a name that would run when the config is sourced is
+#       refused, a write that fails says so, and --info reads the config
+#       without running it (PL-051).
 echo "  C. the cloud sign-in broker and setup (audit #307 stream C)"
 CS="${TMP}/C"; mkdir -p "${CS}/src"
 for rel in cloud_setup cloud_oauth cloud_remote cloud_device_id; do
@@ -3051,7 +3055,7 @@ c1() { # <args...>: cloud_setup in the sandbox; output to C1/out, rc in RC
     RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr \
         --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
         --ro-bind /etc /etc --ro-bind "${C1}/profile" /etc/profile "${CSBB[@]}" \
-        --ro-bind "${C1}/shim" /shim --ro-bind "${C1}/repo" /repo --bind "${C1}/storage" /storage \
+        --ro-bind "${C1}/shim" /shim --ro-bind "${C1}/repo" /repo --${C1RO:+ro-}bind "${C1}/storage" /storage \
         --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --dir /var/log \
         bash /repo/cloud_setup "$@" > "${C1}/out" 2>&1; echo $? ) 2>/dev/null )
 }
@@ -3066,5 +3070,36 @@ c1 --set-saves-remote Mine/Saves/
 [ "${RC}" -eq 0 ] && [ "$(conf1)" = 'SAVES_REMOTE="/Mine/Saves" SETTINGS_REMOTE="/Mine/Backups" CONTENT_REMOTE="/Mine/Content" ' ]; check $? "a two-level folder (Mine/Saves/) is stored with its settings and content folders beside it" "rc ${RC}; config: $(conf1); said: $(head -1 "${C1}/out")"
 c1 --set-saves-remote /a/b/Saves
 [ "${RC}" -eq 0 ] && [ "$(conf1)" = 'SAVES_REMOTE="/a/b/Saves" SETTINGS_REMOTE="/a/b/Backups" CONTENT_REMOTE="/a/b/Content" ' ]; check $? "and a deeper one (/a/b/Saves) likewise" "rc ${RC}; config: $(conf1)"
+
+# PL-051: the config is written as text. & and | used to reach sed's
+# replacement: & pasted the matched line into the value, | ended the
+# expression and the write failed while OK was printed.
+cp "${ROOT}/${RCLONE_REL}/cloud_sync.conf" "${CONF1}"
+c1 --set-saves-remote '/R&D/Saves'
+[ "${RC}" -eq 0 ] && [ "$(conf1)" = 'SAVES_REMOTE="/R&D/Saves" SETTINGS_REMOTE="/R&D/Backups" CONTENT_REMOTE="/R&D/Content" ' ]; check $? "a folder with & (/R&D/Saves) round-trips into the config" "rc ${RC}; config: $(conf1)-- & in a sed replacement is the matched text (PL-051)"
+diff <(grep -vE '^(SAVES|SETTINGS|CONTENT)_REMOTE=' "${ROOT}/${RCLONE_REL}/cloud_sync.conf") <(grep -vE '^(SAVES|SETTINGS|CONTENT)_REMOTE=' "${CONF1}") >/dev/null; check $? "and every other line of the config, the multi-line RCLONEOPTS included, is byte for byte as it was" "the write changed other lines: $(diff <(grep -vE '^(SAVES|SETTINGS|CONTENT)_REMOTE=' "${ROOT}/${RCLONE_REL}/cloud_sync.conf") <(grep -vE '^(SAVES|SETTINGS|CONTENT)_REMOTE=' "${CONF1}") | head -3 | tr '\n' ' ')"
+c1 --info
+grep -qx 'SAVES_REMOTE=/R&D/Saves' "${C1}/out"; check $? "and --info reads it back as typed" "--info said: $(grep '^SAVES_REMOTE=' "${C1}/out")"
+c1 --set-saves-remote '/a|b/Saves'
+[ "${RC}" -eq 0 ] && [ "$(conf1)" = 'SAVES_REMOTE="/a|b/Saves" SETTINGS_REMOTE="/a|b/Backups" CONTENT_REMOTE="/a|b/Content" ' ]; check $? "a folder with | (/a|b/Saves) round-trips too" "rc ${RC}; config: $(conf1); said: $(head -1 "${C1}/out")"
+cp "${CONF1}" "${C1}/conf.before"; rm -f "${C1}/storage/ran"
+c1 --set-saves-remote '/x$(touch /storage/ran)/Saves'
+[ "${RC}" -ne 0 ] && cmp -s "${CONF1}" "${C1}/conf.before" && grep -q "can't contain" "${C1}/out"; check $? "a name that would run as a command when the config is sourced is refused, config untouched: $(head -1 "${C1}/out")" "rc ${RC}; config: $(conf1); said: $(head -1 "${C1}/out")"
+c1 --info
+[ ! -e "${C1}/storage/ran" ]; check $? "and nothing ran" "a command in the folder name ran when --info sourced the config"
+# A config an earlier build wrote with such a value: --info reads it as text.
+sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE="/y$(touch /storage/ran)/Saves"|' "${CONF1}"
+c1 --info
+[ ! -e "${C1}/storage/ran" ] && grep -qF 'SAVES_REMOTE=/y$(touch /storage/ran)/Saves' "${C1}/out"; check $? "--info reads an already-written value as text and runs nothing in it" "ran: $([ -e "${C1}/storage/ran" ] && echo yes || echo no); --info said: $(grep '^SAVES_REMOTE=' "${C1}/out")"
+c1 --seed-folders
+[ ! -e "${C1}/storage/ran" ]; check $? "and so does --seed-folders, which used to eval the config's lines" "--seed-folders ran the command in an already-written SAVES_REMOTE (eval of the config)"
+rm -f "${C1}/storage/ran"
+cp "${ROOT}/${RCLONE_REL}/cloud_sync.conf" "${CONF1}"; cp "${CONF1}" "${C1}/conf.before"
+C1RO=1 c1 --set-saves-remote /Other/Saves
+[ "${RC}" -ne 0 ] && ! grep -q '^OK' "${C1}/out" && cmp -s "${CONF1}" "${C1}/conf.before"; check $? "a config that cannot be written is a failure, not OK (rc ${RC})" "read-only /storage: rc ${RC}; said '$(tr '\n' ' ' < "${C1}/out" | cut -c1-120)' -- the write failed and OK was printed (PL-051)"
+C1RO=1 c1 --use-content-root
+[ "${RC}" -ne 0 ] && ! grep -q '^OK' "${C1}/out"; check $? "and --use-content-root likewise (rc ${RC})" "read-only /storage: rc ${RC}; said '$(tr '\n' ' ' < "${C1}/out" | cut -c1-120)'"
+c1 --use-content-root
+[ "${RC}" -eq 0 ] && grep -qx 'CONTENT_REMOTE=""' "${CONF1}" && [ "$(grep -c '^CONTENT_REMOTE=' "${CONF1}")" -eq 1 ]; check $? "--use-content-root writes CONTENT_REMOTE=\"\" once" "rc ${RC}; $(grep '^CONTENT_REMOTE=' "${CONF1}" | tr '\n' ' ')"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

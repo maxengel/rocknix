@@ -44,6 +44,54 @@ log_message() {
     echo "[${timestamp}] [INFO] [${SCRIPT_NAME}] ${message}" >> ${LOG_FILE}
 }
 
+# The config is shell: every cloud script sources it. So a value is written
+# as text between double quotes, never through a sed replacement -- where &
+# is the matched line and | ends the expression, so "/R&D/Saves" became
+# garbage and "/a|b" failed the write while OK was printed (audit #307
+# PL-051) -- and a value that would mean something to a shell between double
+# quotes (" $ ` \) is refused where it is typed (saves_folder_problem).
+#
+# conf_set KEY VALUE [KEY VALUE ...] writes every pair in one pass, each
+# KEY= line replaced (every one, as the sed was) or appended, to a file
+# beside the config that is renamed over it: all the keys or none, and the
+# previous config intact when the write fails. The values reach awk through
+# the environment, so nothing in them is interpreted. Returns non-zero when
+# the config could not be written.
+conf_set() {
+    local tmp="${SYNC_CONF}.tmp.$$" src="${SYNC_CONF}" n=0
+    local -a pairs=()
+    [ -f "${src}" ] || src=/dev/null
+    while [ $# -ge 2 ]; do
+        n=$((n + 1)); pairs+=("CONF_K${n}=$1" "CONF_V${n}=$2"); shift 2
+    done
+    if env "${pairs[@]}" CONF_N="${n}" awk '
+        BEGIN {
+            n = ENVIRON["CONF_N"] + 0
+            for (i = 1; i <= n; i++) {
+                k[i] = ENVIRON["CONF_K" i]
+                line[i] = k[i] "=\"" ENVIRON["CONF_V" i] "\""
+            }
+        }
+        {
+            for (i = 1; i <= n; i++)
+                if (index($0, k[i] "=") == 1) { print line[i]; seen[i] = 1; next }
+            print
+        }
+        END { for (i = 1; i <= n; i++) if (!seen[i]) print line[i] }
+    ' "${src}" > "${tmp}" 2>/dev/null && mv -f "${tmp}" "${SYNC_CONF}" 2>/dev/null; then
+        return 0
+    fi
+    rm -f "${tmp}" 2>/dev/null
+    return 1
+}
+
+# One value from the config, read as text: the first KEY= line, one pair of
+# surrounding double quotes removed. Never by sourcing or eval -- a value an
+# earlier build wrote with $( ) in it would run (PL-051).
+conf_get() {
+    sed -n "s/^$1=//p" "${SYNC_CONF}" 2>/dev/null | head -1 | sed 's/^"\(.*\)"$/\1/'
+}
+
 # Wait for any confirm/cancel input: controller (evtest) or keyboard.
 wait_for_button() {
     local input_device=""
@@ -176,6 +224,14 @@ saves_folder_problem() {
         echo "Your cloud folder can't be empty."
         return 1
     fi
+    # The characters a shell reads inside double quotes, and control
+    # characters: the config is sourced (PL-051, conf_set).
+    case "${path}" in
+        *[\"\$\`\\]*|*[[:cntrl:]]*)
+            echo "Your cloud folder's name can't contain \", \$, \`, or \\."
+            return 1
+            ;;
+    esac
     case "${path#/}" in
         */*) ;;
         *)
@@ -278,7 +334,7 @@ case "$1" in
         echo "AUTH_PORT=$(auth_port_busy && echo busy || echo free)"
         # Both names for one value: EmulationStation reads SYNCPATH= until its
         # side of the vocabulary sweep (#73) lands; SAVES_REMOTE= is the name.
-        saves_remote="$(. "${SYNC_CONF}" 2>/dev/null; echo "${SAVES_REMOTE}")"
+        saves_remote="$(conf_get SAVES_REMOTE)"
         echo "SAVES_REMOTE=${saves_remote}"
         echo "SYNCPATH=${saves_remote}"
         echo "REMOTES=$(rclone listremotes 2>/dev/null | tr '\n' ' ')"
@@ -345,10 +401,10 @@ case "$1" in
     --use-content-root)
         # The safe resolution: point this device back at the root where its
         # content already is. Moves nothing, reversible, instant.
-        if grep -q '^CONTENT_REMOTE=' "${SYNC_CONF}"; then
-            sed -i 's|^CONTENT_REMOTE=.*|CONTENT_REMOTE=""|' "${SYNC_CONF}"
-        else
-            echo 'CONTENT_REMOTE=""' >> "${SYNC_CONF}"
+        if ! conf_set CONTENT_REMOTE ""; then
+            echo "ERROR the cloud sync settings could not be saved"
+            log_message "Content path NOT changed: ${SYNC_CONF} could not be written"
+            exit 1
         fi
         log_message "Content path set to the remote root by request"
         echo "OK content stays at the remote root"
@@ -412,16 +468,15 @@ case "$1" in
             exit 1
         fi
         SP_PARENT="$(dirname "${NEWPATH}")"
-        for key in SAVES_REMOTE SETTINGS_REMOTE CONTENT_REMOTE; do
-            value="${NEWPATH}"
-            [ "${key}" = "SETTINGS_REMOTE" ] && value="${SP_PARENT}/Backups"
-            [ "${key}" = "CONTENT_REMOTE" ] && value="${SP_PARENT}/Content"
-            if grep -q "^${key}=" "${SYNC_CONF}"; then
-                sed -i "s|^${key}=.*|${key}=\"${value}\"|" "${SYNC_CONF}"
-            else
-                echo "${key}=\"${value}\"" >> "${SYNC_CONF}"
-            fi
-        done
+        # All three or none (conf_set): a folder half-changed is a saves
+        # folder whose settings still go to the old place.
+        if ! conf_set SAVES_REMOTE "${NEWPATH}" \
+                      SETTINGS_REMOTE "${SP_PARENT}/Backups" \
+                      CONTENT_REMOTE "${SP_PARENT}/Content"; then
+            echo "The cloud sync settings could not be saved, so the folder was not changed."
+            log_message "Sync path NOT changed to ${NEWPATH}: ${SYNC_CONF} could not be written"
+            exit 1
+        fi
         log_message "Sync path changed to ${NEWPATH}"
         echo "OK ${NEWPATH}"
         exit 0
@@ -465,7 +520,11 @@ case "$1" in
         # layout seeded rather than ours.
         REMOTE=$(rclone listremotes 2>/dev/null | head -1)
         [ -z "${REMOTE}" ] && { echo "ERROR no remote"; exit 2; }
-        eval "$(grep -E '^(SAVES_REMOTE|SETTINGS_REMOTE|CONTENT_REMOTE)=' "${SYNC_CONF}" 2>/dev/null)"
+        # Read as text, never eval'd: the config is shell, and a value an
+        # earlier build wrote could carry a command (PL-051).
+        SAVES_REMOTE="$(conf_get SAVES_REMOTE)"
+        SETTINGS_REMOTE="$(conf_get SETTINGS_REMOTE)"
+        CONTENT_REMOTE="$(conf_get CONTENT_REMOTE)"
         SAVES="${SAVES_REMOTE:-/ROCKNIX/Saves}"
         BACKUPS="${SETTINGS_REMOTE:-/ROCKNIX/Backups}"
         CONTENT="${CONTENT_REMOTE:-/ROCKNIX/Content}"
