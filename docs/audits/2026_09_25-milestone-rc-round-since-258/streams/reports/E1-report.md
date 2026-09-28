@@ -128,3 +128,81 @@ Every commit carries the item or row ID, the test case, the FAIL and PASS lines,
 - A SystemConf reload (the Wi-Fi picker's join) drops pending changes. This was already true; refused saves now make it slightly more likely.
 - A process killed between creating its temporary and the rename leaves `<file>.tmp.<pid>.<n>` litter.
 - A mid-file EIO cannot be produced on this host, so the part-way read failure is unproven directly. It takes the same `read() < 0` branch as the two cases that are tested.
+
+---
+
+## Follow-up: the audit of the fixes (2026-09-28)
+
+**Merge.** `git merge test/qa-integration` fast-forwarded `feature/pl-e1` from e5cfa708e to 42f9e8851. It carries E2's three passes, the integrator's commits and `.githooks/pre-commit`. Baseline on the merged tree: es-unit-tests 163/1743, es-file-tests 12/3291, both passing.
+
+**Commits since the merge** (`git log --oneline 42f9e8851..HEAD`):
+```
+44d174436 tests/unit: readText's case fails a read part way through a file
+a299fc50f .githooks: a long scan says so; any-case URL; no patterns, no push
+b9b2e3ca1 AtomicFileUtil: the _WIN32 readText reads an empty file; it compiles
+162d2fedb tests/unit: PL-069's case holds ThreadedCloudSync, at this host's stack
+b036967fc StringUtil: a value quoted inside a quoted command is masked again
+33a904591 CloudText: cleanLine drops an escape by its grammar, not to a letter
+54d5699b2 ThreadedCloudSync: a stop restamps what its run wrote, by the file
+44705df2d SystemConf: a file cut short of its record loads the record; no leak
+800c818d3 SystemConf: a reload keeps the changes a refused save is holding
+5e390e128 AtomicFileUtil: the reap guard is bounded, and fails closed
+```
+Each commit has the finding ID, the case written first with its FAIL line, the PASS count, es-syntax-check, and an `Already written:` line. Where a case exercises a rule I moved into a pure function, the FAIL was seen against that function with the old behaviour kept (as in the first pass).
+
+### Claude seat (E1-claude.md)
+
+| ID | Outcome |
+|---|---|
+| G-E1-01 (Critical, "the join result is inverted") | **Withdrawn, refuted on the integrated tree.** E2's c0def453a made `int ApiSystem::joinWifiNetwork` (ApiSystem.h:282) return wifictl's exit code: 0 only when "joined", 1 for an exit 0 that printed no "joined" (ApiSystem.cpp:677-685). GuiWifi uses `GuiLoading<int>` and `code != 0` (GuiWifi.cpp:164-169). grep finds no other caller. Nothing else in my GuiWifi change assumes the old bool: `enableWifi` still returns bool and is read as bool (:214-215); `getSavedWifiNetworks` and `getCurrentWifiSsid` still return bool "answered" as `Answer` stores them; 6caac243c's join-by-profile goes through the same int path. |
+| G-E1-02 (cut live file wins over a whole .backup; the next save records it) | **Fixed** 44705df2d, with gpt G-E1-04. `chooseConfig` now loads the record when the live file is incomplete, is the start of the whole record, and is no newer than it. A hand edit made after the record (for example over the network share, with no final line end) stays the owner's. `saveUnderLock` reports whether the text it merged onto was whole; a save onto a cut file is written but not recorded. Before: `AtomicFileTests.cpp:809 ... CHECK( 0 == 2 )`, `:830 CHECK_FALSE( true )`. |
+| G-E1-03 (diff carries changes in neither plan nor report) | **Withdrawn.** These are four commits made on test/qa-integration after my first report, in E1's files; the audit's diff was the range restricted to those files. Each carries its own `Already written:` line: 8eb4c6821 (the restamp, #308 F-CS-05/F-CS-23), 13b16a77e (the regenerated emitter table and the new whys), cb32a0481 (scanWhy's words), 35f02d3d4 (the untrack and `.gitignore`). (b) does not drift: OfflineAchievements.cpp:255-257 and ProxyCards.cpp:167-169 now delegate to `CloudText::scanWhy`/`topUpWhy`. The substance of (a) is claude G-E1-04, fixed below. |
+| G-E1-04 (stale stop stamp taken as this run's when the clock is behind) | **Fixed** 54d5699b2, with gpt G-E1-06. The card now snapshots its command's script stamps at construction (`ThreadedCloudSync::readStamps`: text, inode, mtime; the scripts write each stamp to a new file and rename it). At the stop it restamps only a file written since, whatever its epoch. A stamp that already carries one of ES's tokens is never this run's. Before: `CloudTextTests.cpp:1490 ... .empty() ) is NOT correct!` and `:1498 values: CHECK( 0 == 1 )`. |
+| G-E1-05 (PL-069 test host-dependent, cannot fail) | **Fixed** 162d2fedb, with gpt G-E1-07. Thresholds now come from this host's default thread stack size (8192 KiB here). A new case reads ThreadedCloudSync.cpp/.h (comments stripped) and requires no `new std::thread`, no `std::thread*` member, and the `.detach()` start. Pointed at 7eae8ed91's files: `:771`, `:772`, `:773` FAIL. |
+| G-E1-06 (`_WIN32` readText reports an empty file as not read) | **Fixed** b9b2e3ca1. The Windows branch now uses C stdio with `ferror`. New test binary `es-file-tests-win32` compiles AtomicFileUtil.cpp with `_WIN32` defined for that one object. Before: `AtomicFileWin32Tests.cpp:53: CHECK( ok ) values: CHECK( false )`. The same check caught a Windows compile break I had introduced in 44705df2d (a `::stat` outside the guard: `error: aggregate '...::stat ls' has incomplete type`); now guarded. `g++ -D_WIN32 -Wall -fsyntax-only` is clean. |
+| G-E1-07 (cleanLine's escape handling swallows text) | **Fixed** 33a904591. Escapes are now dropped by the ECMA-48 grammar (CSI to its final byte, OSC to BEL or ESC-backslash, a two-byte escape, a lone ESC). Before: `:572 values: CHECK( itle>>> offer ... )`, `:573 itlehy IT WAS STOPPED`, `:574 id 12`, `:575 de`. |
+| G-E1-08 (first push scans whole history silently; case-sensitive URL) | **Fixed** a299fc50f. The hook counts the commits and says "reading the N commit(s) <remote> is not known to hold"; the ROCKNIX URL is matched in lower case. While testing a copy of the hook I found it **failed open with no `secret-patterns` beside it**: SECRET_PATTERNS was unset and every push passed. pre-push now refuses in that case and pre-commit says why. Against HEAD's hook: three FAILs (the progress line, the URL case, no pattern file). Now 15 ok, PASS. |
+| G-E1-09 (PL-068 gated at the button, not the write) | **Withdrawn, fixed by E2.** fa57923af and 5b6d2e638: the queued deletion waits out the transfer lock at the write, through the same `isFlockHeld` (SaveStateBookkeeper.cpp:57-90). COPY's copy runs at the press, right after the gate (GuiSaveState.cpp:513); only its manifest record is queued, and it waits the same way (:73). |
+| G-E1-10 (build-tests/es-unit-tests stays tracked) | **Withdrawn, fixed by the integrator.** 35f02d3d4 untracked it and ignores `build-tests/`; `git ls-files build-tests` prints nothing. |
+| F-CS-31 note (backuptool's two-sentence why) | **Refuted.** backuptool:1089 `why` prints "THIS DEVICE CAN'T RESTORE SETTINGS" alone; the long form at :1090 is `fail`'s console line. CloudText.cpp:398 pairs the protocol line. |
+| Coverage 5 (`CloudTransferJob::running()` under `sInstanceLock`) | **Checked, no inversion.** `running()` takes CloudTransferJob's own `sMutex` (CloudTransferJob.cpp:42-51). CloudTransferJob calls into ThreadedCloudSync only through `whyForCode` and `restampStoppedParts`, neither of which locks. |
+
+### GPT seat (E1-gpt.md)
+
+| ID | Outcome |
+|---|---|
+| G-E1-01 (reap flock blocks past the budget) | **Fixed** 5e390e128. The guard is tried with LOCK_NB every 5 ms until the acquire's deadline. Before: `AtomicFileTests.cpp:400 values: CHECK( -1 == 0 )` (the alarm killed an acquire still blocked); `:401 CHECK( 5000 < 3000 )`. |
+| G-E1-02 (guard failure reinstates the race) | **Fixed** 5e390e128. Without the guard nothing is removed (fail closed), and the budget ends the wait. B's `wait_lock` takes the same flock and fails closed the same way (next db0f669bf4). Before: `:421 values: CHECK( 1 == 0 )`; `:422` the stale lock had been removed and taken. |
+| G-E1-03 (a reload discards retained changes) | **Fixed** 800c818d3. `loadSystemConf(keepPending)` keeps each unsaved change whose key the file still holds as it was when the change was made, and drops one somebody wrote since (wifictl join's wifi.ssid). The rule is `pendingAfterReload`; GuiWifi's reload keeps pending changes. The default (nothing kept) stays for GuiMenu's reloads after a settings restore or factory reset, whose job is to drop them. Before: `:757 values: CHECK( 0 == 2 )`. |
+| G-E1-04 | **Fixed** 44705df2d (= claude G-E1-02). |
+| G-E1-05 (recovery from a private .tmp makes 0644 copies) | **Fixed** 44705df2d. The recovery's mode is now the permission bits every copy shares (live, .tmp and .backup ANDed). Before: `:850` and `:859 values: CHECK( 420 == 384 )`. |
+| G-E1-06 | **Fixed** 54d5699b2 (= claude G-E1-04). Before: `CloudTextTests.cpp:1469`/`:1470`: `"1789000000 130 cancelled"` was taken as this run's. |
+| G-E1-07 | **Fixed** 162d2fedb (= claude G-E1-05). |
+| PL-065 "holds in part" (the fixture failed on the first read) | **Fixture added** 44d174436. es-file-tests defines its own `read()` that fails part way. Against the base's readText: `base readText: ok=1 size=8191 failure reached=1` (the prefix returned as the whole file). At this tree: not read, "". |
+| Coverage 6 (`sh -c 'tool --password "front back"'`) | **Leak confirmed and fixed** b036967fc. The base 7eae8ed91 masked it; my own F-ES-09 rewrite (dcf7fa8c7) regressed it, and both inner-quoted forms went to the log unmasked. Inside a quoted string, the inner command's quotes now keep a word whole. Before: `MaskSecretsTests.cpp:187 values: CHECK( sh -c 'tool --password "front back"' == ... )`, and `:188`-`:190` likewise. |
+
+### Every suite's line, final
+- `es-unit-tests`: **167/167 cases, 1764 assertions, SUCCESS**
+- `es-file-tests`: **21/21 cases, 3346 assertions, SUCCESS** (tmpfs and the /workspace disk)
+- `es-file-tests-win32` (new): **2/2 cases, 14 assertions, SUCCESS**
+- `.githooks/pre-push-test`: **PASS** (15 ok)
+- E2's `tests/app-unit`, built out of tree in /workspace/tmp:
+  - app-unit-tests 16/106
+  - proxycards-tests 6/31
+  - bookkeeper-tests 4/15
+  - jobs-tests 4/21
+  - all SUCCESS
+- `tests/credential-quoting.py`: rc=0, "10 credential call site(s), 10 quoted, 0 bare"
+- `tools/es-syntax-check --tree <wt>` (build tree c0f4f4da0): **PASS**, 18 files OK:
+  - CloudText, ThreadedCloudSync, GuiWifi
+  - SystemConf, AtomicFileUtil, StringUtil, Settings
+  - and the users of the changed headers: CloudTransferJob, GuiCloudTransfer, GuiMenu, main, NetworkThread, ApiSystem, FileData, ProxyCards, SaveStateBookkeeper, GuiSaveState, AsyncNotificationComponent
+- `g++ -std=c++17 -D_WIN32 -Wall -fsyntax-only es-core/src/utils/AtomicFileUtil.cpp`: clean
+- Non-ASCII comment scan over every touched `.cpp`/`.h`: nothing
+- `tools/es-untranslated`: 595 fork strings, 595 with French, 0 without. `tools/vocabulary-check`: 156 judged, 0 wrong. `msgfmt --check` on fr: clean. No new player string in this follow-up.
+
+### For you
+1. **CloudTransferJob** (not E1's file) still calls the clock-based `restampStoppedParts(command, time_t, token)`. It now carries the token rule, but not the file-identity rule. The fix is to take `ThreadedCloudSync::readStamps(mCommand)` at the job's start and call the new overload with it.
+2. The G-E1-03 split is deliberate: GuiMenu's reloads after a restore or factory reset (:319, :4788) keep the default, which drops pending changes. If either should keep them, it passes `true`.
+3. `/tmp/.system.cfg.lock.reap` as a directory now makes settings saves refuse, where they used to go ahead unguarded. The log says the lock was not free.
+4. The VM proofs from the first report still stand: PL-024 live-lock, PL-068 walk, PL-069 VmSize, PL-072 frame, F-CS-14 slot 3, and the Wi-Fi frames. Add one for G-E1-03: have a save refused behind a held lock, join a network from the picker, free the lock, then save; the refused change lands and the joined network's keys are the join's.

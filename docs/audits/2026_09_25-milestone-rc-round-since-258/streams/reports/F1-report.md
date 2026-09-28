@@ -205,3 +205,94 @@ Three more commits on `feature/pl-f1`, on top of `6d036d2239`:
   - Other lines that say "the QEMU guest has no Vulkan" (`time-to-play:1001`, `emulator-exit-test:33`) are still true and were left alone.
 
 Nothing was pushed, and no guest was run.
+
+## Follow-up 2: the audit of the fixes (`docs/audits/2026_09_28-milestone-audit-of-the-fixes-307/seats/F1-gpt.md` and `F1-claude.md`)
+
+Four more commits on `feature/pl-f1`, on top of `85e4856b7e`:
+```
+4e0078cc44 GENERIC_X64: 095-cloud-ssh records first and takes no guessed command
+afe32f0afd GENERIC_X64: 092-retroarch-surface records before it writes
+9f2ed34919 generic-x64-vm: refuse a linked socket and a foreign vars store
+16ae2219ca quirks: the GENERIC_X64 take-backs remove exact names, once
+```
+
+**Test results**
+- `tools/last-good-scripts-test` on the branch head: **`PASSED`, rc 0, 447 PASS lines** (432 before this follow-up; 15 new or revised checks).
+- `BASE_REF=417dcd8610 ... --old`: `38 CHECK(S) FAILED`, all of them inside the F1 block (0 before it).
+- Each fix below was written test-first. The "before" lines were seen on the branch before its commit.
+
+The two seats number their findings independently. **gpt** refers to `F1-gpt.md` and **claude** to `F1-claude.md`.
+
+### GPT seat
+
+- **G-F1-01 (fixed, `9f2ed34919`): a `--monitor` symlink led to another guest's socket being removed.**
+  - Cause: the socket paths were resolved before the symlink check, so the check never saw the link.
+  - Fix: they are now made absolute without being resolved, and a symlink at a socket path is refused.
+  - Before: `run --monitor <a link to another socket> (rc 0): the other guest's socket REMOVED, QEMU started`. After: PASS.
+- **G-F1-02 (fixed with an explicit rule, `afe32f0afd`): RetroArch values without a record were attributed wrongly.**
+  - Values with no record are now taken only when they are exactly the size this boot writes. Anything else is left, because an earlier build's write cannot be told apart from a hand-set pair; setting both values to 0 hands them back.
+  - Before: `an unrecorded 1280x800 became 640x480 at 640x480`. After: left, and an unrecorded 1280x800 met at a 1280x800 boot is taken and then follows the mode.
+  - **Part (a), decided the other way on purpose:** the shipped 640x480 and 0x0 keep following even when a record exists. That is exactly what the cfg looks like after RESET RETROARCH CONFIG TO DEFAULT: `factoryreset:75` replaces `retroarch.cfg` and leaves the record next to it. Either value on another mode is the #263 scaling the quirk exists to end. A test case documents this.
+- **G-F1-03 (fixed, `4e0078cc44`): a tester's own loopback SSH command was overwritten or deleted.**
+  - With no record, the file is now taken only when it is exactly the command this boot writes.
+  - Before: `the tester's '-p 2222 root@127.0.0.1' became '...-p 10022...' with port 10022 and '(no file)' without`. After: PASS.
+  - Stated cost: an earlier build's unrecorded command, met on a different port or with no port at all, is left in place.
+- **G-F1-04 (fixed, `afe32f0afd` and `4e0078cc44`): a boot cut short between two writes stopped the automatic following for good.**
+  - Both quirks now record the old value and the new one before changing the file, read the change back, and only then record the new value alone.
+  - Proven by shims that kill the quirk right after the file is written.
+  - Before, surface: `killed after the cfg write: 1024x768; the next boot at 1280x800: 1024x768`. Before, SSH: `the next boot with no port: '...-p 10023...'`. After: PASS for both.
+  - A record in its first format (from `a5a03bd9fa`) is still read.
+- **G-F1-05 (fixed, `9f2ed34919`): an existing vars store from another firmware build was used as it was.**
+  - A vars store whose size differs from its template's is now refused, named, and kept; the error says to move it aside so the next start makes a new one. A store that matches is kept, since it holds the guest's UEFI settings.
+  - Before: `a 128 KiB store with a 528 KiB template: rc 0`. After: PASS.
+- **G-F1-06 (fixed, `9f2ed34919`): the UTM bundle ignored the caller's umask.**
+  - It now gets mode `0666 & ~umask`.
+  - Before: `under umask 077 (rc 0): mode 644`. After: 600.
+- **G-F1-07 (fixed, `4e0078cc44`): a six-digit fw_cfg port was cut to five digits.**
+  - A port is now 1 to 5 digits within 1-65535; anything else counts as no port.
+  - Before: `fw_cfg 100000 gave: ssh -L ... -p 10000 ...`. After: PASS.
+- **G-F1-08 (fixed, `9f2ed34919`): the "no leftover temporary" check could never fail.**
+  - The check now lists with `ls -A` and a pattern that starts with the dot. A planted `.partial` file shows the check can fail.
+  - A new case makes the archive write fail (the quick-start file is missing) and checks that nothing is published or left behind.
+- **G-F1-09 (fixed, `16ae2219ca`): the take-back removed paths no retired script ever wrote.**
+  - It now removes exactly the 16 paths the retired scripts wrote, where it used to try 3 names in each of 6 drop-in directories.
+  - Before: `an owner's file was taken: ... weston.service.d: No such file or directory`. After: the owner's `weston.service.d/10-generic-x64.conf` stays.
+- The seat's "not embedded" notes are the coordinator's and need no action here.
+
+### Claude seat
+
+- **G-F1-01 (withdrawn): "the follow-up claims are not in the packet".** The packet was cut before the follow-up landed. The commits are on the branch: `git show --stat 7c8ba04368` lists the three removed m8c files, `flycast-sa/.../emu.cfg` and `mupen64plus.cfg`. F1i and F1j are in the F1 block and pass in the 447.
+- **G-F1-02 (withdrawn): "fixes reach past the stream's declared ownership".**
+  - The emulator configs and the two tool comments were assigned to F1 by the coordinator's follow-up message.
+  - The VirtualBox `091-vbox-graphics` deletion is not F1's: it is `bccbf54cd4` on `feature/pl-f2`, and `git merge-base --is-ancestor bccbf54cd4 feature/pl-f1` is false. The packet's diff range picked it up from `next`.
+  - The mupen64plus merge risk is covered: my edit started from F2's `f72a5d1fdf` and changes one line.
+- **G-F1-03 (surface ownership, parts a-e):**
+  - (a) Decided as above: shipped values follow even when a record exists, stated in the script.
+  - (b) and (c) Fixed: values with no record are taken only when they equal this boot's size.
+  - (d) Fixed: the ICD probe also reads `/usr/local/share/vulkan/icd.d` and root's own loader directories under `/storage`. Before: `with an ICD in root's own loader directory: video_driver = "gl"`. The vulkan-to-gl rewrite still runs every boot, because vulkan cannot draw without an ICD.
+  - (e) Left as designed: a restored cfg from before the record existed stays as somebody's.
+- **G-F1-04: fixed**, the same finding as gpt G-F1-08.
+- **G-F1-05 (fixed, `16ae2219ca`): the take-back ran every boot, forever.**
+  - Each take-back now runs until its files are gone, says on the journal what it removed, and then stops for good (a stamp under `/storage/.cache`).
+  - Before: `the owner's emergency.target mask was removed by a later boot` and `the take-back boot's journal: ''`. After: PASS.
+  - Stated gap: a downgrade to a build with the old quirks writes the files again, and after that they stay. Removing the stamp takes them back once more.
+  - `tools/vm-upgrade-rehearsal`'s seed now also removes the stamps, so a rehearsal from an image that already has this fix still models a guest that ran the old quirks.
+- **G-F1-06: fixed**, the same finding as gpt G-F1-07.
+- **G-F1-07 (fixed, `16ae2219ca`): the second-boot check compared names, not bytes.** It now compares every file's bytes and every link's target, and the second boot must also say nothing on the journal.
+- **G-F1-08 (withdrawn, with the decision stated): the UTM Bridged-mode fix is documentation only.**
+  - The proposed mechanism would drop the loopback command when the guest's address is not on QEMU's user-network subnet (10.0.2.0/24).
+  - That address does not exist when the quirk runs: autostart runs before the network is up. Waiting for it in the background would add machinery to the boot path.
+  - The rule also depends on UTM's emulated mode handing out 10.0.2.x, which cannot be checked on this host (no UTM). If it doesn't, the shipped default mode breaks for every UTM tester.
+  - The README note stays as the answer for a developer tool (D-QA-053). The integrator may overturn this.
+- **G-F1-09 (fixed, `16ae2219ca`): the rehearsal's wait for autostart could run out silently.**
+  - The line the wait looks for exists: `autostart:95` writes `Autostart complete...` to `/var/log/boot.log`.
+  - A wait that runs out is now a FAIL of its own, before the take-back is read.
+  - `bash -n` only; the rehearsal was not run.
+
+### Already written, and what I could not do
+
+- **Already written:**
+  - Take-back: migrated, now exactly once per guest.
+  - Surface and SSH records: read both formats. The record's first format is still read, and an earlier build's unrecorded value is taken only when it is this boot's own.
+  - Launcher: no state on the host is inherited, and a mismatched vars store is left where it is, with the error.
+- **Not done:** no guest was run and nothing was pushed. The rehearsal changes are syntax-checked only.

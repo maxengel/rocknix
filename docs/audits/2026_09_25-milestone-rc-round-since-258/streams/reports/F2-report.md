@@ -180,3 +180,54 @@ Every commit title matches `^[a-zA-Z0-9_*./-]+:[[:space:]].+$` and is shorter th
 - **`tools/pkgcheck` given a path checks nothing and exits 0.** It matches only package names, through `find ... -path */${arg}/package.mk`. `./tools/pkgcheck projects/.../fbneo-lr` printed nothing while `./tools/pkgcheck fbneo-lr` printed a WARN. It is upstream's tool; the fix would be to fail when no recipe matched.
 - **Upstream's `0004-drm-resolution.patch` applies only with fuzz.** Upstream's file, outside the fork's lanes.
 - **Upstream's `sources/AMD64/retroarch.cfg:150` carries the same dead armhf key** as PL-076, and **upstream's SM8250 `mupen64plus.cfg`** has the Control1 splice.
+
+---
+
+## Follow-up: the audit of the fixes (`docs/audits/2026_09_28-milestone-audit-of-the-fixes-307/seats/F2-claude.md`, `F2-gpt.md`)
+
+All work is on `feature/pl-f2`, which now has five more commits on top of `96d3ce0a67`. The tree is clean. `git merge-tree --write-tree next feature/pl-f2` reports a clean merge (tree `55e6a19cc2`, no conflicts).
+
+```
+$ git log --oneline 96d3ce0a67..HEAD
+e0fc38736a last-good-scripts-test: F2-6 reads scripts/unpack's hook order
+9f1d126d24 mupen64plus-sa-core: repair a GENERIC_X64 guest's spliced Control1
+f53264dcb0 retroarch: 0018 decides Auto when the config loads; 0017 reads \ paths
+67cd0e6493 Makefile: an .env the recipe cannot remove stops the docker build
+d73b0499f8 libretro: generators skip #if 0 and strings; recipes die on their own
+```
+
+**Harness:** a full `./tools/last-good-scripts-test` run ends `PASSED`, with **437 PASS**, 0 FAIL and 0 SKIP (it was 429 before the follow-up). `tools/pkgcheck` reports nothing on the five rotation recipes or on `retroarch`. The launcher script passes `bash -n`.
+
+Both seats number their findings from G-F2-01, so the two G-F2-01s are different findings. Rows below say which seat.
+
+| seat / id | outcome |
+|---|---|
+| claude G-F2-01 (four sweep fixes with no hunk in the packet) | **Withdrawn: a gap in the packet, not in the delivery.** The coordinator has read the hunks on `next`. `git log --oneline 417dcd8610..next -- <gstreamer, ryzenadj, dmidecode, woff2, zip, the VirtualBox quirk>` lists `4403918793`, `4f2b1c0cfa`, `bccbf54cd4` and `25c6e7bb26`. |
+| claude G-F2-02 (0018 re-reads the append files at content load) | **Fixed** `f53264dcb0`. `config_load_file` hands `command.c` the `--appendconfig` list right after it appends the files (`command_record_append_config`). The answer is kept for content load and the runtime-log restore, so a file gone by then no longer reads as "no Auto". The last file that sets `state_slot` wins; an unreadable file says nothing. |
+| claude G-F2-03 (the `post_patch` hook is proved by calling it, not by the build calling it) | **Fixed** `e0fc38736a`. F2-6 now reads `scripts/unpack`'s own order: `post_unpack` at line 122, the patch loop's `patch -d "${PKG_BUILD}" -p1` at 196, `post_patch` at 201. |
+| claude G-F2-04 (the row floor fires only while the generator is the function's last line) | **Fixed** `d73b0499f8`: `\|\| die "..."` is on each of the five generator lines. **FAIL before:** `the generator failed and makeinstall_target returned without die in: fbalpha2012-lr fbalpha2019-lr fbneo-lr mame2003-plus-lr mame2010-lr`. |
+| claude G-F2-05 (`#if 0` blocks and C++14 digit separators) | **Fixed** `d73b0499f8`. Both generators now drop an `#if 0` body (nested conditionals included) and an `#if 1`'s other arms. Any other condition is read as live, and the header says so. A quote after a digit is no longer read as a character literal. **FAIL before:** `FBA fixture table: 'dead 2\|kept 1\|sep 1'`. |
+| claude G-F2-06 (two F2-4 checks are line-bound) | **Fixed** `f53264dcb0`. The calls are now read whole, with whitespace folded. The new check fires on a user-path `sharp = false` mutation (`user-path-regular-not-sharp`). On the audited tree it names eight defects, including the multi-line `RARCH_LOG` that carried "ROCKNIX". |
+| claude G-F2-07 (`video_driver` changed to `gl`) | **Withdrawn: not mine.** It is stream F1's `a5a03bd9fa`. `git log 417dcd8610..feature/pl-f2 -- .../retroarch/sources/` is empty. |
+| claude G-F2-08 (the Control1 fix is forward-only) | **Fixed** `9f1d126d24`. `start_mupen64plus.sh` removes exactly the six pasted lines from an existing copy, on `HW_DEVICE=GENERIC_X64` only. It writes a temporary file and moves it into place. SM8250's copy is left alone (upstream's device). **FAIL before:** `the repair changed: 'nothing' (start_mupen64plus.sh has no repair block)`. |
+| claude G-F2-09 (yabasanshiro-sa on AMD64) | **Withdrawn: parity with upstream, decided.** This is what F-EM-05 asked for. AMD64 builds what upstream's own cleanup (`28e750db32`) opened. The recipe's comment names the CMake issue for upstream. The fork builds no AMD64 image; its targets are in `device-builds.md` § Our devices. |
+| claude G-F2-10 (SKIP when the sources are missing) | **Fixed** in `f53264dcb0` (F2-4) and `e0fc38736a` (F2-6). A missing tarball, source or gcc is now a FAIL that names what did not run. With the cache pointed at a directory that does not exist, the block ends `2 CHECK(S) FAILED`. |
+| claude G-F2-11 (the doc block documents the wrong function) | **Fixed** `f53264dcb0`. The doc block sits back over `command_event_set_savestate_auto_index`, and the helper sits above it between ROCKNIX markers. F2-4 checks the adjacency. |
+| claude G-F2-12 (`/`-only separators) | **Fixed** `f53264dcb0`. `/` and `\` now read as one separator. F2-4 checks a `C:\RetroArch\assets\ozone\regular.ttf` path. **FAIL before:** `the face step answered 'none\|Inter UI Regular\|...'`. |
+| gpt G-F2-01 (an unchecked `rm` leaves a writable 0644 `.env`) | **Fixed** `67cd0e6493`. The recipe runs `rm -f .env && [ ! -e .env ] \|\| exit 1`, and the write runs under `set -C`. **FAIL before (F2-3b):** `unremovable .env: container started with '644\|F2_FORWARDED=yes\|'; rc 7`. |
+| gpt G-F2-02 (IPv6-only listener in `cheevos_ppsspp.sh`) | **Withdrawn: not my file.** `projects/ROCKNIX/packages/emulators/**/cheevos_*.sh` belongs to stream D. It goes to D and the integrator as found: `proxy_listening` matches `::1`, but the caller always uses `127.0.0.1:8080`. |
+| gpt G-F2-03 (a `GAME()` inside a string) | **Fixed** `d73b0499f8`. Macros are read from a copy with every string blanked. **FAIL before:** `MAME fixture table: 'after 2\|deadset 1\|liveset 1\|nested 3\|phantom 3'`. |
+| gpt G-F2-04 (Control1 has no repair path) | **Fixed**, the same change as claude G-F2-08. |
+| gpt G-F2-05 (F2-4 does not test behaviour) | **Fixed** `f53264dcb0`. The whole-call wiring check is the one in claude G-F2-06. 0018's helper block is now compiled with libretro-common's own config parser and run over ten append lists; the expected answer is `0100001111`. A helper that always answers true gives `1111111111`. |
+| gpt G-F2-06 (missing prerequisites SKIP silently) | **Fixed**, the same change as claude G-F2-10. |
+| gpt G-F2-07 (the ARMSX2 `mv` is outside its failure handler) | **Withdrawn: not my file.** `cheevos_armsx2.sh` belongs to stream D. It goes to D as found. |
+
+**What changes on devices, and what earlier builds wrote:**
+- The pinned cores' rotation tables are the same bytes as before: `diff` against the previous generators is 0 lines for each of the five.
+- 0018's behaviour is unchanged for both a launch's own Auto and a `-1` saved in the main config; only when the answer is taken has moved.
+- A GENERIC_X64 guest's spliced `mupen64plus.cfg` is repaired at its next N64 launch, with the player's other settings kept.
+- The regenerated 0017, 0018 and 0019 applied to a fresh tarball reproduce the edited stack byte for byte (`cmp`, seven files, `configuration.c` included).
+
+**PL-076** should now read **resolved by F1** (`9fd73da845`). `next`'s GENERIC_X64 profile has no `core_updater_buildbot_url` line: `grep -c` gives 0.
+
+**For the integrator, on a guest:** check that `proof-249-auto-slot.sh` passes with the new 0018, and that the `[State] Keeping the Auto slot ...` line appears. Then write `state_slot = "-1"` into `retroarch.cfg` and confirm a launch with no slot resets it. Finally, run an N64 launch on a guest that holds the spliced copy and confirm Control1's section in `/storage/.config/mupen64plus/mupen64plus.cfg` is repaired.
