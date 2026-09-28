@@ -167,7 +167,21 @@ verify() {
   # A writer's temporary a kill left beside the file (set_setting writes
   # system.cfg.tmp and renames it). The next write replaces it; the boot
   # sweeps it so it never sits there as a second file that looks like one.
-  rm -f "${CFG}.tmp"
+  #
+  # Except when it is the only good copy there is: the live file cut and no
+  # usable record beside it -- a device updated from before the record
+  # existed (#102), whose writer's last save never reached its rename. The
+  # interface's SystemConf reads such a whole .tmp when the live file is cut
+  # (#307 PL-064, stream E1), but this runs first at sysinit and deleted it,
+  # so the defaults were reseeded over a whole copy of the player's settings.
+  # A .tmp that is itself usable is put in place instead, and said.
+  if [ -e "${CFG}.tmp" ]; then
+    if ! valid "${CFG}" && ! valid "${BACKUP}" && valid "${CFG}.tmp" \
+       && mv -f "${CFG}.tmp" "${CFG}"; then
+      say "system.cfg was cut and had no good copy; the whole one a write left beside it (system.cfg.tmp) was put in place"
+    fi
+    rm -f "${CFG}.tmp"
+  fi
 
   if ! valid "${CFG}"; then
     if [ ! -e "${CFG}" ]; then

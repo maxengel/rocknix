@@ -3685,4 +3685,15 @@ rm -f "${P7K}/cfg/.restore-reverted"
 p7chk
 [ -e "${P7K}/cfg/.restore-in-progress" ] && [ ! -e "${P7K}/cfg/.restore-reverted" ] && grep -q 'not mounted yet' "${P7K}/err"; check $? "#307 PL-045 / #308 claude F-PB-11: a copy under the roms folder while that folder is not a mountpoint (its internal-card directory present) leaves the mark for the later check and says nothing" "#307 PL-045: mark: $([ -e "${P7K}/cfg/.restore-in-progress" ] && echo kept || echo removed); said: '$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)' -- the directory test read an unmounted card as a missing copy"
 
+# == #308 (stream E1's reading, PL-064's upgrade half): a whole .tmp beside a cut file with no record is the last good copy
+rm -f "${P7K}/cfg/.restore-in-progress" "${P7K}/cfg/.restore-reverted" "${P7K}/cfg/system/configs/system.cfg.backup"
+printf 'system.hostn' > "${P7K}/cfg/system/configs/system.cfg"
+printf 'system.hostname=MINE\na.b=1\n' > "${P7K}/cfg/system/configs/system.cfg.tmp"
+p7chk
+[ "$(tr '\n' '|' < "${P7K}/cfg/system/configs/system.cfg")" = "system.hostname=MINE|a.b=1|" ] && [ ! -e "${P7K}/cfg/system/configs/system.cfg.tmp" ] && grep -q 'system.cfg.tmp' "${P7K}/err"; check $? "#307 PL-064 (upgrade half, E1): a cut system.cfg with no .backup and a whole system.cfg.tmp beside it takes the .tmp at boot, and says so" "#307 PL-064: system.cfg '$(tr '\n' '|' < "${P7K}/cfg/system/configs/system.cfg")'; .tmp: $([ -e "${P7K}/cfg/system/configs/system.cfg.tmp" ] && echo left || echo gone) -- the whole copy was deleted and the defaults reseeded"
+printf 'system.hostname=REC\n' > "${P7K}/cfg/system/configs/system.cfg.backup"; printf 'system.hostn' > "${P7K}/cfg/system/configs/system.cfg"
+printf 'system.hostname=TMP\n' > "${P7K}/cfg/system/configs/system.cfg.tmp"
+p7chk
+[ "$(cat "${P7K}/cfg/system/configs/system.cfg")" = "system.hostname=REC" ] && [ ! -e "${P7K}/cfg/system/configs/system.cfg.tmp" ]; check $? "#307 PL-064 (upgrade half, E1): with a good .backup the record wins over a .tmp, which is swept" "#307 PL-064: system.cfg '$(cat "${P7K}/cfg/system/configs/system.cfg")'"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
