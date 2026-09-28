@@ -44,6 +44,69 @@ conf_value() {
     grep -m1 "^$1=" "${SYNC_CONF}" 2>/dev/null | cut -d'"' -f2
 }
 
+# One folder, one spelling (the audit of the fix round, PL-001). The guards
+# in main that decide whether a tier has already landed compared the conf's
+# raw string with /ROCKNIX/Saves, so SAVES_REMOTE="/ROCKNIX/Saves/" -- a
+# trailing slash, from a hand edit or an older setup -- read as the old
+# layout: --check offered the move, and --apply copied the saves onto
+# themselves (rclone's copy of a folder onto itself exits 0 and changes
+# nothing), checked them clean against themselves, and deleted every file
+# it had listed; the content folder went the same way. So a pointer is read
+# as the folder it names:
+#
+#   clean_path     runs of / as one, no "." component, no trailing /; a
+#                  leading / kept only if it had one, so the path handed to
+#                  rclone is the one the other scripts use; it fails on a
+#                  ".." component, which rclone resolves by rules of its
+#                  own, so main leaves such a layout alone;
+#   folder_key     that from the root, in one case when the cloud folds case
+#                  (Dropbox, OneDrive) or cannot say whether it does;
+#   same_folder    two keys equal;
+#   inside_folder  the first strictly under the second, and rel_inside the
+#                  part below, in the first one's own spelling.
+CASE_INSENSITIVE=1
+clean_path() { # <path>
+    local p="$1" lead="" out="" part
+    local -a parts=()
+    case "${p}" in /*) lead="/" ;; esac
+    IFS=/ read -r -a parts <<< "${p}"
+    for part in "${parts[@]}"; do
+        case "${part}" in
+            ""|.) ;;
+            ..) return 1 ;;
+            *) out="${out:+${out}/}${part}" ;;
+        esac
+    done
+    printf '%s%s' "${lead}" "${out}"
+}
+folder_abs() { # <cleaned path>: the same folder from the root, in its own spelling
+    printf '/%s' "${1#/}"
+}
+folder_key() { # <path>
+    local p
+    p=$(clean_path "$1") || p="$1"
+    p="/${p#/}"
+    [ "${CASE_INSENSITIVE}" = 1 ] && p="${p,,}"
+    printf '%s' "${p}"
+}
+same_folder() { # <path> <path>
+    [ "$(folder_key "$1")" = "$(folder_key "$2")" ]
+}
+inside_folder() { # <path> <path>: the first strictly under the second
+    local ka kb
+    ka=$(folder_key "$1"); kb=$(folder_key "$2")
+    [ "${ka}" != "${kb}" ] || return 1
+    [ "${kb}" = "/" ] && return 0
+    case "${ka}" in "${kb}"/*) return 0 ;; esac
+    return 1
+}
+rel_inside() { # <path> <path>: the part of the first below the second (inside_folder holds)
+    local a b
+    a=$(clean_path "$1") || a="$1"; b=$(clean_path "$2") || b="$2"
+    a=$(folder_abs "${a}"); b=$(folder_abs "${b}")
+    if [ "${b}" = "/" ]; then printf '%s' "${a#/}"; else printf '%s' "${a:$(( ${#b} + 1 ))}"; fi
+}
+
 # A listing's bound (#143): three low-level retries, the value every other
 # cloud script lists with.
 readonly -a RCLONE_LIST_OPTS=(--contimeout 15s --timeout 30s --low-level-retries 3 --retries 1)
@@ -248,6 +311,21 @@ relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
     local src="$1" dst="$2" what="$3" key="$4" out list
     shift 4
     local -a filt=("$@")
+    # One folder under two spellings is not a move (PL-001): copied onto
+    # itself it checks clean, and the delete after it removes every file
+    # it listed. Refused here whatever the caller compared.
+    if same_folder "${src#*:}" "${dst#*:}"; then
+        say "REFUSING: ${src} and ${dst} are the same folder, so nothing was copied or removed."
+        logger -t cloud_migrate_layout "relocate: ${src} and ${dst} are one folder; refused" 2>/dev/null
+        return 1
+    fi
+    # A destination inside the source -- a saves folder at /ROCKNIX moving
+    # to /ROCKNIX/Saves -- is never listed as the source's own: a run cut
+    # after its copy left part of it there, and the resume moved that copy
+    # into /ROCKNIX/Saves/Saves (PL-001, found with the spelling cases).
+    if inside_folder "${dst#*:}" "${src#*:}"; then
+        filt+=(--exclude "/$(rel_inside "${dst#*:}" "${src#*:}")/**")
+    fi
     list_or_stop "${src}" -R --files-only "${filt[@]}"
     if [ -z "${LISTING}" ]; then
         set_pointer "${key}" "${dst#*:}" || return 2
@@ -426,14 +504,36 @@ main() {
     # carries the listing bound like every other call here (audit of the
     # fixes, G-A-11/G-A-10); one that fails or times out reads as "no
     # hashes", the safe side.
-    if ! rclone backend features "${remote}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | tr -d ' \t\n' | grep -q '"Hashes":\["'; then
-        CHECK_OPTS=(--download)
-    fi
+    local features
+    features=$(rclone backend features "${remote}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | tr -d ' \t\n')
+    case "${features}" in *'"Hashes":["'*) ;; *) CHECK_OPTS=(--download) ;; esac
+    # And whether it keeps case apart (PL-001): only a cloud that says so
+    # holds /rocknix/saves and /ROCKNIX/Saves as two folders. One that folds
+    # case, or whose features cannot be read, holds them as one, and a
+    # pointer spelled either way is the new folder, so nothing moves -- the
+    # safe side, since the other side deletes a folder copied onto itself.
+    case "${features}" in *'"CaseInsensitive":false'*) CASE_INSENSITIVE=0 ;; *) CASE_INSENSITIVE=1 ;; esac
 
     saves=$(conf_value SAVES_REMOTE)
     backups=$(conf_value SETTINGS_REMOTE)
 
     content=$(conf_value CONTENT_REMOTE)
+
+    # Each pointer as the folder it names (PL-001): cleaned for the paths
+    # below and compared by folder_key, never as a string. A ".." cannot be
+    # read as one folder without the cloud's own rules -- rclone resolves
+    # /ROCKNIX/Old/../Saves to /ROCKNIX/Saves -- so a layout holding one is
+    # left exactly as it is.
+    local ptr cleaned
+    for ptr in saves backups content; do
+        if ! cleaned=$(clean_path "${!ptr}"); then
+            say "REFUSING: a folder in this device's cloud settings has .. in it, so it can't be told which folder it means. Nothing was changed."
+            [ "${mode}" = "--apply" ] && echo ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ"
+            logger -t cloud_migrate_layout "a pointer has a .. component; nothing done" 2>/dev/null
+            return 4
+        fi
+        printf -v "${ptr}" '%s' "${cleaned}"
+    done
 
     # A layout the owner chose is current too. CHANGE CLOUD FOLDER writes the
     # settings and content folders as SIBLINGS of the saves folder -- the
@@ -443,16 +543,17 @@ main() {
     # as current, so this check offered to move a deliberately chosen layout
     # back to the default one (#74). The nested first layout, backups INSIDE
     # the saves folder, is the only shape this tool exists to move.
-    local sib_parent="${saves%/*}"; [ -n "${sib_parent}" ] || sib_parent="${saves}"
-    if [ "${saves}" != "${NEW_SAVES}" ] && [ "${backups}" = "${sib_parent}/Backups" ]; then
-        case "${content}" in
-            "${sib_parent}/Content"|"")
-                say "Already on a sibling layout of your own (${saves}, ${backups}); nothing to move."
-                return 3 ;;
-        esac
+    local sabs sib_parent
+    sabs=$(folder_abs "${saves}")
+    sib_parent="${sabs%/*}"; [ -n "${sib_parent}" ] || sib_parent="${sabs}"
+    if ! same_folder "${saves}" "${NEW_SAVES}" && same_folder "${backups}" "${sib_parent}/Backups"; then
+        if [ -z "${content}" ] || same_folder "${content}" "${sib_parent}/Content"; then
+            say "Already on a sibling layout of your own (${saves}, ${backups}); nothing to move."
+            return 3
+        fi
     fi
 
-    if [ "${saves}" = "${NEW_SAVES}" ] && [ "${backups}" = "${NEW_BACKUPS}" ]; then
+    if same_folder "${saves}" "${NEW_SAVES}" && same_folder "${backups}" "${NEW_BACKUPS}"; then
         # Saves and backups are current, but a device migrated before
         # CONTENT_REMOTE was carried along is still pointing its ROMs at the old
         # namespace. Repair that here rather than making it a separate flow --
@@ -461,14 +562,15 @@ main() {
         # recomputed. The signature is enough: the helper always appends
         # "/Content", so a path shaped that way and not already the current
         # one is one of ours, left behind.
-        case "${content}" in
-            "${NEW_CONTENT}"|"") : ;;
-            */Content)
-                say "Saves and backups are current, but content still points at ${remote}${content}."
-                migrate_content "${remote}" "${content}"  "${mode}"
-                return $?
-            ;;
-        esac
+        if [ -n "${content}" ] && ! same_folder "${content}" "${NEW_CONTENT}"; then
+            case "${content}" in
+                */Content)
+                    say "Saves and backups are current, but content still points at ${remote}${content}."
+                    migrate_content "${remote}" "${content}"  "${mode}"
+                    return $?
+                ;;
+            esac
+        fi
         say "Already on the current layout (${NEW_SAVES}, ${NEW_BACKUPS})."
         return 3
     fi
@@ -496,9 +598,8 @@ main() {
     # case, a gap in the PL-025 commit).
     local -a root_nested=()
     for nested in "${backups}" "${content}"; do
-        case "${nested%/}/" in
-            "${saves%/}/"?*) root_nested+=(--exclude "/${nested#"${saves%/}/"}/**") ;;
-        esac
+        [ -n "${nested}" ] && inside_folder "${nested}" "${saves}" \
+            && root_nested+=(--exclude "/$(rel_inside "${nested}" "${saves}")/**")
     done
     if ! has_files "${remote}${saves}/" --exclude '/saves/**' "${root_nested[@]}" \
        && has_files "${remote}${saves}/saves/"; then
@@ -510,9 +611,8 @@ main() {
     # original layout (/GAMES/backup) and the content folder derived beside
     # the saves (/GAMES/Content) each move to a place of their own.
     for nested in "${backups}" "${content}"; do
-        case "${nested%/}/" in
-            "${saves_src%/}/"?*) SAVES_EXCLUDES+=(--exclude "/${nested#"${saves_src%/}/"}/**") ;;
-        esac
+        [ -n "${nested}" ] && inside_folder "${nested}" "${saves_src}" \
+            && SAVES_EXCLUDES+=(--exclude "/$(rel_inside "${nested}" "${saves_src}")/**")
     done
 
     # Refuse to move onto something already there. A move into an existing
@@ -528,13 +628,13 @@ main() {
     # the state an earlier build left when it was cut after its moves and
     # before its pointers.
     local blocked=0
-    if [ "${backups}" != "${NEW_BACKUPS}" ] && has_entries "${remote}${backups}/" \
+    if ! same_folder "${backups}" "${NEW_BACKUPS}" && has_entries "${remote}${backups}/" \
        && exists "${remote}${NEW_BACKUPS}" \
        && ! resumable "${remote}${backups}" "${remote}${NEW_BACKUPS}"; then
         say "REFUSING: ${remote}${NEW_BACKUPS} already exists."
         blocked=1
     fi
-    if [ "${saves}" != "${NEW_SAVES}" ] && has_files "${remote}${saves_src}/" \
+    if ! same_folder "${saves}" "${NEW_SAVES}" && has_files "${remote}${saves_src}/" \
        && exists "${remote}${NEW_SAVES}" \
        && ! resumable "${remote}${saves_src}" "${remote}${NEW_SAVES}"; then
         say "REFUSING: ${remote}${NEW_SAVES} already exists."
@@ -543,9 +643,9 @@ main() {
     [ "${blocked}" = "1" ] && return 4
 
     say "Would move, server-side, leaving anything else where it is:"
-    [ "${backups}" != "${NEW_BACKUPS}" ] && has_entries "${remote}${backups}/" \
+    ! same_folder "${backups}" "${NEW_BACKUPS}" && has_entries "${remote}${backups}/" \
         && say "  ${remote}${backups}  ->  ${remote}${NEW_BACKUPS}"
-    [ "${saves}" != "${NEW_SAVES}" ] && has_files "${remote}${saves_src}/" \
+    ! same_folder "${saves}" "${NEW_SAVES}" && has_files "${remote}${saves_src}/" \
         && say "  ${remote}${saves_src}  ->  ${remote}${NEW_SAVES}"
 
     if [ "${mode}" != "--apply" ]; then
@@ -562,7 +662,7 @@ main() {
     # config updated first, then a move that failed, is a device looking at
     # an empty folder and reporting that it has no saves. A tier with
     # nothing stored only has its pointer moved.
-    if [ "${backups}" != "${NEW_BACKUPS}" ]; then
+    if ! same_folder "${backups}" "${NEW_BACKUPS}"; then
         if has_entries "${remote}${backups}/"; then
             if ! relocate "${remote}${backups}" "${remote}${NEW_BACKUPS}" "backups" SETTINGS_REMOTE; then
                 say "Nothing else attempted."
@@ -574,7 +674,7 @@ main() {
     fi
 
     local moved_saves=0
-    if [ "${saves}" != "${NEW_SAVES}" ]; then
+    if ! same_folder "${saves}" "${NEW_SAVES}"; then
         if has_files "${remote}${saves_src}/"; then
             relocate "${remote}${saves_src}" "${remote}${NEW_SAVES}" "saves" SAVES_REMOTE "${SAVES_EXCLUDES[@]}" || return 5
             moved_saves=1
@@ -589,9 +689,13 @@ main() {
     # refused or failed used to be followed by "Done." and exit 0, so the
     # card said the tidy had completed while the ROMs stayed behind.
     local content_rc=0
-    if [ -n "${content}" ] && [ "${content}" = "$(derived_content "${saves}")" ]; then
+    # Compared as folders, and never onto itself (PL-001): a saves folder at
+    # /ROCKNIX derives /ROCKNIX/Content, the new folder itself, which the
+    # string compare sent through the move and so onto itself.
+    if [ -n "${content}" ] && ! same_folder "${content}" "${NEW_CONTENT}" \
+       && same_folder "${content}" "$(derived_content "$(folder_abs "${saves}")")"; then
         migrate_content "${remote}" "${content}" "${mode}" || content_rc=$?
-    elif [ -n "${content}" ] && [ "${content}" != "${NEW_CONTENT}" ]; then
+    elif [ -n "${content}" ] && ! same_folder "${content}" "${NEW_CONTENT}"; then
         say "Leaving CONTENT_REMOTE at ${content} -- it is not a path this migration set."
     fi
 

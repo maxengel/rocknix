@@ -1052,14 +1052,29 @@ MANAGED_RULES=/storage/.config/cloud_sync-rules.txt
 # Is this a cloud_sync.conf that can be run with? bash -n, and a grammar
 # nothing but assignments of text can pass. Every line is blank, a
 # comment, or KEY=value, where the value is
-#   - "double quoted": any text but a backtick, a backslash that is not
-#     the line's last character (the continuation RCLONEOPTS is written
-#     with), and a $ that is not a plain $NAME or ${NAME};
+#   - "double quoted": any text but a backtick, a $ that is not a plain
+#     $NAME or ${NAME}, and a backslash that is not the line's last
+#     character (the continuation RCLONEOPTS is written with) or one of
+#     bash's own escapes inside double quotes, \" \\ \$ and \`, each of
+#     which is the one character bash makes of it;
 #   - 'single quoted' on one line, with no $( or backtick in it;
 #   - or a bare word of letters, digits and . / : @ % + , = _ -;
 # and after it nothing, or blanks and a # comment. The shape check matters
 # because a torn line -- SAVES_REMOTE="/ROCK, cut mid-value -- can have its
 # quote closed by whatever is appended after it, and then parses.
+#
+# The escapes were refused until the audit of the fix round (PL-015): the
+# validator before this grammar passed them, so an upgraded device whose
+# hand-edited RCLONEOPTS read --exclude \"*.tmp\" was told its settings
+# could not be read on every run. A backslash before anything else is
+# still refused; bash would keep it, and nothing needs it.
+#
+# A blank is a space or a tab, and nothing else is: no line may carry a
+# control character but a tab (the audit of the fix round, PL-002). Bash
+# does not split a word on a carriage return, a vertical tab or a form
+# feed, so EXTRA="x"<CR>#$(cmd) is one word whose $(cmd) runs, and so is a
+# "comment" line <CR>#$(cmd) -- and this grammar read all three as blanks
+# ([ \t\r] after a value, [[:space:]] before a comment) and passed them.
 #
 # And nothing in it runs when it is sourced (audit #307 PL-051's script
 # half). The setup page writes the folder values from what a player typed
@@ -1075,11 +1090,16 @@ MANAGED_RULES=/storage/.config/cloud_sync-rules.txt
 # spells out, all passed and ran (the audit of the fixes, G-A-05). A
 # config that fails is not sourced: the caller falls back to the good
 # copy or refuses (YOUR CLOUD SYNC SETTINGS COULDN'T BE READ).
+#
+# CONF_WHY says why a file was refused -- "line N: <its shape>", never the
+# value -- for the caller's log (PL-015): a refusal that names nothing
+# leaves whoever reads the log to guess which line of a hand edit it was.
 conf_valid() {
-    [ -s "$1" ] || return 1
-    bash -n "$1" 2>/dev/null || return 1
-    awk '
-        function bad() { failed = 1; exit 1 }
+    CONF_WHY=""
+    if [ ! -s "$1" ]; then CONF_WHY="the file is missing or empty"; return 1; fi
+    if ! bash -n "$1" 2>/dev/null; then CONF_WHY="bash cannot parse it"; return 1; fi
+    CONF_WHY=$(awk '
+        function bad(why) { if (!failed) print "line " NR ": " why; failed = 1; exit 1 }
         # A double-quoted value from position i of s: the position after
         # its closing quote, or 0 when the line ends in a continuation.
         function dq(s, i,    n, c, d) {
@@ -1087,35 +1107,42 @@ conf_valid() {
             while (i <= n) {
                 c = substr(s, i, 1)
                 if (c == "\"") return i + 1
-                if (c == "`") bad()
-                if (c == "\\") { if (i == n) return 0; bad() }
+                if (c == "`") bad("a backtick inside double quotes")
+                if (c == "\\") {
+                    if (i == n) return 0
+                    d = substr(s, i + 1, 1)
+                    if (d == "\"" || d == "\\" || d == "$" || d == "`") { val = val c d; i += 2; continue }
+                    bad("a backslash inside double quotes that is not one of the escapes bash reads there")
+                }
                 if (c == "$") {
                     d = substr(s, i + 1)
                     if (match(d, /^[A-Za-z_][A-Za-z0-9_]*/) || match(d, /^\{[A-Za-z_][A-Za-z0-9_]*\}/)) {
                         val = val c substr(d, 1, RLENGTH); i += 1 + RLENGTH; continue
                     }
-                    bad()
+                    bad("a $ inside double quotes that is not a plain $NAME or ${NAME}")
                 }
                 val = val c; i++
             }
-            bad()
+            bad("a double-quoted value that runs on past the line without a backslash")
         }
         # After a value: nothing, or blanks and a comment.
-        function rest(s, i) { if (substr(s, i) !~ /^([ \t\r]+(#.*)?)?$/) bad() }
+        function rest(s, i) { if (substr(s, i) !~ /^([ \t]+(#.*)?)?$/) bad("something after the value that is not a # comment") }
         function whole() {
             if (key ~ /^(SAVESPATH|SETTINGS_BACKUPS|SAVES_REMOTE|SETTINGS_REMOTE|CONTENT_REMOTE)$/ \
-                && (val ~ /[$`\\]/ || val ~ /[[:cntrl:]]/ || lines > 1)) bad()
+                && (val ~ /[$`\\]/ || val ~ /[[:cntrl:]]/ || lines > 1)) bad("a folder value that is not plain text on one line")
         }
         {
             s = $0
+            t = s; gsub(/\t/, "", t)
+            if (t ~ /[[:cntrl:]]/) bad("a control character other than a tab")
             if (indq) {
                 lines++
                 j = dq(s, 1)
                 if (j == 0) next
                 indq = 0; rest(s, j); whole(); next
             }
-            if (s ~ /^[[:space:]]*(#|$)/) next
-            if (!match(s, /^[A-Za-z_][A-Za-z0-9_]*=/)) bad()
+            if (s ~ /^[ \t]*(#|$)/) next
+            if (!match(s, /^[A-Za-z_][A-Za-z0-9_]*=/)) bad("a line that is not KEY=value, a comment or blank")
             key = substr(s, 1, RLENGTH - 1); i = RLENGTH + 1; val = ""; lines = 1
             c = substr(s, i, 1)
             if (c == "\"") {
@@ -1125,17 +1152,20 @@ conf_valid() {
             }
             if (c == "'"'"'") {
                 j = index(substr(s, i + 1), "'"'"'")
-                if (!j) bad()
+                if (!j) bad("a single-quoted value that does not close on its line")
                 val = substr(s, i + 1, j - 1)
-                if (val ~ /\$\(|`/) bad()
+                if (val ~ /\$\(|`/) bad("a $( or a backtick inside single quotes")
                 rest(s, i + j + 1); whole(); next
             }
             match(substr(s, i), /^[A-Za-z0-9_.\/:@%+,=-]*/)
             val = substr(s, i, RLENGTH)
             rest(s, i + RLENGTH); whole()
         }
-        END { if (failed || indq) exit 1 }
-    ' "$1"
+        END {
+            if (failed) exit 1
+            if (indq) { print "line " NR ": a double-quoted value that never closes"; exit 1 }
+        }
+    ' "$1")
 }
 
 # Loads user configuration from cloud_sync.conf
@@ -1156,6 +1186,8 @@ load_config() {
     # (D-CLOUD-078, #105).
     local conf="/storage/.config/cloud_sync.conf"
     if ! conf_valid "${conf}"; then
+        # Which line, and what about it -- never the value (PL-015).
+        log_message "cloud_sync.conf is not run with: ${CONF_WHY}" "false" "WARN"
         if [ -f "${conf}.bak" ] && conf_valid "${conf}.bak"; then
             log_message "cloud_sync.conf does not parse; putting back the copy taken before this run's update" "false" "WARN"
             cp -f "${conf}.bak" "${conf}.tmp.$$" && mv -f "${conf}.tmp.$$" "${conf}"
@@ -1218,9 +1250,25 @@ load_config() {
             # G-A-14). A cleanup that fails, or leaves a file conf_valid
             # refuses, has the copy from before it put back, and the run goes
             # on with that: the last known good state (D-CLOUD-078).
+            #
+            # The copy is the last known good only once it is known to be
+            # whole (the audit of the fix round, PL-004): cp's status, a byte
+            # compare with the live file, and conf_valid on the copy itself.
+            # The put-back below used to take any copy that was merely not
+            # empty, so a cp that filled the card part-way left a prefix, the
+            # cleanup never ran, and the prefix replaced the untouched, valid
+            # file. A copy that is not whole is removed, no cleanup runs
+            # without one, and the run goes on with the file as it is -- it
+            # was checked and sourced above.
             local pre_cleanup="${conf_file}.pre-cleanup.$$"
-            if cp -f "${conf_file}" "${pre_cleanup}" 2>/dev/null \
-               && /usr/bin/cloud_sync_cleanup_duplicates.sh "$conf_file" \
+            if ! { cp -f "${conf_file}" "${pre_cleanup}" 2>/dev/null \
+                   && cmp -s "${conf_file}" "${pre_cleanup}" \
+                   && conf_valid "${pre_cleanup}"; }; then
+                rm -f "${pre_cleanup}"
+                log_message "the copy of cloud_sync.conf to keep before the duplicate cleanup could not be made whole; the cleanup was not run and the file is as it was" "false" "WARN"
+                log_message "Couldn't clean up the duplicate settings, so they were left as they were." "true" "WARN"
+                pause 2
+            elif /usr/bin/cloud_sync_cleanup_duplicates.sh "$conf_file" \
                && conf_valid "${conf_file}"; then
                 rm -f "${pre_cleanup}"
                 echo -e "\e[34m> Duplicates cleaned.\e[0m"
@@ -1228,8 +1276,8 @@ load_config() {
                 pause 2
                 # Reload config after cleanup
                 source "${conf_file}"
-            elif [ -s "${pre_cleanup}" ] && mv -f "${pre_cleanup}" "${conf_file}"; then
-                log_message "the duplicate cleanup failed or left cloud_sync.conf not whole; the copy from before it is back" "false" "WARN"
+            elif mv -f "${pre_cleanup}" "${conf_file}"; then
+                log_message "the duplicate cleanup failed or left cloud_sync.conf not whole (${CONF_WHY:-the cleanup itself failed}); the copy from before it is back" "false" "WARN"
                 log_message "Couldn't clean up the duplicate settings, so they were left as they were." "true" "WARN"
                 pause 2
             else

@@ -11818,6 +11818,567 @@ mkdir -p "${GE}/fba-S/src/burn/drv"
 out="$(f2b_table fba S)"
 [ "${out}" = 'afterq 2|brace 1|' ]; check $? "FBA: a }; inside a driver's title does not end the driver, and a '\"' character literal opens no string" "FBA strings fixture: table '${out}', expected 'afterq 2|brace 1|'"
 
+
+
+# ---- audit #307, stream A ----
+# The audit of the fix round (D-WORKFLOW-060;
+# docs/audits/2026_09_28-milestone-audit-of-the-fix-round): PL-001, PL-002,
+# PL-004, PL-015 and PL-034, and the seats' leads in the cloud scripts. The
+# sandbox is the block above's -- sa_new, sa_script, the image's rclone and
+# busybox -- and sa2_run is its sa_run with one more shim directory ahead of
+# /shim on PATH, whose stand-ins act only when the fixture's /ctl asks:
+#   cp     /ctl/cpcut ("<ERE over the destination><tab><bytes><tab><exit>"):
+#          write that many bytes of the source and exit so -- a card that
+#          fills part-way (exit 1), or a copy that says it worked (exit 0);
+#   rm     /ctl/rmfail ("<ERE>"): refuse to remove a matching path;
+#   rclone /ctl/ci: `backend features` describes a case-insensitive remote
+#          (Dropbox, OneDrive); every other call goes on to /shim/rclone;
+#   stat   counts its calls in /ctl/statcount when that file exists, and
+#          reads a change time of 1 for a name /ctl/oldctime ("<ERE>")
+#          matches -- a seal older than any spare.
+# A fixture that carries a control character is made by printf when the case
+# runs: the file at rest carries none. Written before each fix and seen to
+# FAIL on the scripts at f3d19dc8fb.
+echo "  A (the audit of the fix round): the cloud scripts, stream A"
+SA2="${TMP}/sa2"; mkdir -p "${SA2}/shim"
+cat > "${SA2}/shim/cp" <<'EOS'
+#!/bin/bash
+if [ -s /ctl/cpcut ]; then
+    IFS=$'\t' read -r pat bytes code < /ctl/cpcut
+    last="${!#}"
+    if [ "$#" -ge 2 ] && printf '%s' "${last}" | grep -qE -- "${pat}"; then
+        head -c "${bytes}" "${@: -2:1}" > "${last}"
+        [ "${code}" = 0 ] || echo "cp: write error: No space left on device" >&2
+        exit "${code}"
+    fi
+fi
+exec /nbin/cp "$@"
+EOS
+cat > "${SA2}/shim/rm" <<'EOS'
+#!/bin/bash
+if [ -s /ctl/rmfail ]; then
+    pat=$(head -1 /ctl/rmfail)
+    for a in "$@"; do
+        case "${a}" in -*) continue ;; esac
+        if printf '%s' "${a}" | grep -qE -- "${pat}"; then
+            echo "rm: can't remove '${a}': Read-only file system" >&2
+            exit 1
+        fi
+    done
+fi
+exec /nbin/rm "$@"
+EOS
+cat > "${SA2}/shim/rclone" <<'EOS'
+#!/bin/bash
+if [ -e /ctl/ci ] && [ "$1" = backend ] && [ "$2" = features ]; then
+    printf '%s\n' "$*" >> /ctl/argv
+    printf '{\n\t"Name": "qa",\n\t"Hashes": [\n\t\t"md5"\n\t],\n\t"Features": {\n\t\t"BucketBased": false,\n\t\t"CaseInsensitive": true\n\t}\n}\n'
+    exit 0
+fi
+exec /shim/rclone "$@"
+EOS
+cat > "${SA2}/shim/stat" <<'EOS'
+#!/bin/bash
+[ -e /ctl/statcount ] && printf '%s\n' "${*:1:3}" | cut -c1-120 >> /ctl/statcount
+if [ -s /ctl/oldctime ]; then
+    # A file whose name matches the ERE reads as changed at the epoch's
+    # first second, in either shape a change time is asked for.
+    pat=$(head -1 /ctl/oldctime)
+    one=""; [ "$#" -eq 3 ] && [ "$1" = -c ] && [ "$2" = %Z ] && one="$3"
+    out=$(/nbin/stat "$@"); rc=$?
+    printf '%s\n' "${out}" | awk -v pat="${pat}" -v one="${one}" '
+        one != "" { if (one ~ pat) print 1; else print; next }
+        { n = $0; sub(/^[0-9]+ /, "", n); if ($1 ~ /^[0-9]+$/ && n != $0 && n ~ pat) print "1 " n; else print }'
+    exit "${rc}"
+fi
+exec /nbin/stat "$@"
+EOS
+chmod +x "${SA2}/shim"/*
+sa2_run() { # sa_run, with /shim2 first on PATH (and in the profile the scripts source)
+    local d="$1" s="$2" t0; shift 2
+    t0=$(date +%s)
+    RC=$( ( cd "${d}/storage" && setsid -w timeout 180 bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr ${SA_EXTRA[@]+"${SA_EXTRA[@]}"} "${SA_BB[@]}" \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${SA2}/profile" /etc/profile \
+        --bind "${d}/storage" /storage --bind "${d}/cloud" /cloud --bind "${d}/ctl" /ctl \
+        --ro-bind "${SA2}/shim" /shim2 --ro-bind "${SA}/shim" /shim --ro-bind "${SA}/nbin" /nbin --ro-bind "${SA}/rclone.real" /sa/rclone.real \
+        --ro-bind "${d}/repo" /repo --bind "${d}/log" /var/log --bind "${d}/varrun" /var/run \
+        ${SA2_EXTRA[@]+"${SA2_EXTRA[@]}"} \
+        --dev /dev --proc /proc --tmpfs /tmp --chdir "${SA_CWD:-/storage}" \
+        --setenv PATH "/shim2:/shim:/nbin:/usr/bin:/bin" --setenv HOME /storage \
+        bash "/repo/${s}" "$@" > "${d}/out" 2>&1; echo $? ) 2>/dev/null )
+    DT=$(( $(date +%s) - t0 ))
+}
+# SA2_EXTRA: bwrap arguments after the fixture's binds -- a folder of it
+# mounted read-only, say; empty otherwise.
+SA2_EXTRA=()
+# The scripts source /etc/profile, which sets PATH: the block above's puts
+# /shim first, so this one keeps /shim2 ahead of it.
+printf 'export PATH=/shim2:/shim:/nbin:/usr/bin:/bin\nexport HOME=/storage\n' > "${SA2}/profile"
+# The conf the saves scripts run with here: the block above's, whole.
+sa2_conf() { # <fixture>
+    cat > "$1/storage/.config/cloud_sync.conf" <<'EOC'
+SAVESPATH="/storage/roms"
+SAVES_REMOTE="/ROCKNIX/Saves"
+SETTINGS_BACKUPS="/storage/roms/backup"
+SETTINGS_REMOTE="/ROCKNIX/Backups"
+CONTENT_REMOTE="/ROCKNIX/Content"
+BACKUPMETHOD="copy"
+RESTOREMETHOD="copy"
+BACKUPFILE_BACKUP_OPTION="no"
+BACKUPFILE_RESTORE_OPTION="no"
+RCLONEOPTS="--progress --log-file /var/log/cloud_sync.log --filter-from /storage/.config/cloud_sync-rules.txt"
+RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"
+LOG_LEVEL="INFO"
+EOC
+    printf -- '+ /**/*.srm\n- /**\n' > "$1/storage/.config/cloud_sync-rules.txt"
+}
+
+# A51. PL-002 (seats/A-gpt.md G2-A-01, High; siblings found working it):
+#      conf_valid read a carriage return as a blank, so EXTRA="x"<CR>#$(cmd)
+#      passed -- bash does not split on a CR, so the # is inside the word
+#      and $(cmd) runs when the file is sourced. The same hole was open on
+#      a comment line: the line-start test was [[:space:]], which takes CR,
+#      VT and FF, so <CR>#$(cmd), <VT>#$(cmd) and <FF># $(cmd) passed as
+#      comments and ran. Now a control character other than a tab anywhere
+#      in the file is refused. cloud_backup and cloud_restore gate their
+#      `source` on it; cloud_sync_helper gates its merge and its .bak (the
+#      file the other two source, and their fallback); the content scripts
+#      never source the file and parse it (conf_get), and refuse it the same
+#      way so the tiers run with one reading of one file.
+echo "    A51. PL-002: a control character but a tab anywhere in the conf is refused, by all five readers"
+CR2="${TMP}/pl002"; mkdir -p "${CR2}"
+for s in cloud_backup cloud_restore cloud_sync_helper; do
+    src_of "${RCLONE_REL}/${s}" "${CR2}/${s}"
+    awk '/^conf_valid\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${CR2}/${s}" > "${CR2}/${s}.fn"
+done
+cr_bad() { # <name> <printf format of the line>: a conf a control byte makes run a command
+    { printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/ROCKNIX/Saves"\n'; printf "$2\n"; } > "${CR2}/bad-$1"
+}
+cr_bad cr-after-value 'EXTRA="x"\r#$(touch /ctl/pwned)'
+cr_bad cr-comment '\r#$(touch /ctl/pwned)'
+cr_bad cr-comment-blank '\r# $(touch /ctl/pwned)'
+cr_bad vt-comment '\v#$(touch /ctl/pwned)'
+cr_bad ff-comment '\f# $(touch /ctl/pwned)'
+cr_bad bare-cr 'LOG_LEVEL=INFO\r#$(touch /ctl/pwned)'
+{ printf 'SAVESPATH="/storage/roms"\n'; printf 'LOG_LEVEL="INFO"\t# a tab before a comment\n'; } > "${CR2}/good-tab"
+cr_inert=""
+for f in "${CR2}"/bad-*; do
+    rm -f "${CR2}/pwned"; sed "s|/ctl/pwned|${CR2}/pwned|" "${f}" > "${CR2}/sourced"
+    (cd "${CR2}" && env -i PATH=/usr/bin:/bin bash -c ". '${CR2}/sourced'" >/dev/null 2>&1)
+    [ -e "${CR2}/pwned" ] || cr_inert="${cr_inert} ${f##*/bad-}"
+done
+[ -z "${cr_inert}" ]; check $? "PL-002: each of the six control-byte shapes, sourced, runs its command (the fixtures are real)" "inert when sourced:${cr_inert} -- a fixture that runs nothing proves nothing about the guard"
+for s in cloud_backup cloud_restore cloud_sync_helper; do
+    cr_pass=""
+    for f in "${CR2}"/bad-*; do
+        bash -c ". '${CR2}/${s}.fn'; conf_valid '${f}'" >/dev/null 2>&1 && cr_pass="${cr_pass} ${f##*/bad-}"
+    done
+    [ -s "${CR2}/${s}.fn" ] && [ -z "${cr_pass}" ]; check $? "PL-002: ${s}'s conf_valid refuses all six" "PL-002: ${s}'s conf_valid passed:${cr_pass:- (its conf_valid was not found)} -- sourcing those runs the command"
+    bash -c ". '${CR2}/${s}.fn'; conf_valid '${CR2}/good-tab'" >/dev/null 2>&1; check $? "PL-002: and ${s}'s still passes a tab before a comment" "PL-002: ${s}'s conf_valid refused a tab before a comment"
+done
+# End to end: the seat's line in a live conf, each saves script.
+CE2=$(sa_new pl002e); sa_script "${CE2}" cloud_backup cloud_restore cloud_saves_root
+mkdir -p "${CE2}/storage/roms/gb"; echo s > "${CE2}/storage/roms/gb/A.srm"
+for s in cloud_backup cloud_restore; do
+    sa2_conf "${CE2}"; printf 'EXTRA="x"\r#$(touch /ctl/pwned)\n' >> "${CE2}/storage/.config/cloud_sync.conf"; rm -f "${CE2}/ctl/pwned"
+    sa2_run "${CE2}" "${s}" --yes --saves-only
+    [ ! -e "${CE2}/ctl/pwned" ] && [ "${RC}" -eq 1 ] && grep -qx ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ" "${CE2}/out"; check $? "PL-002: ${s} with the seat's line in its conf runs nothing and refuses (rc ${RC})" "PL-002: ${s}: ran it: $([ -e "${CE2}/ctl/pwned" ] && echo YES || echo no); rc ${RC}; out: $(sa_tail "${CE2}")"
+done
+# The two content scripts parse the file and never source it; a control
+# byte anywhere in it is refused there too, with the saves scripts' words.
+CC2=$(sa_new pl002c); sa_script "${CC2}" cloud_content_backup cloud_content_restore
+for s in cloud_content_restore cloud_content_backup; do
+    for where in "its own" "another"; do
+        sa2_conf "${CC2}"
+        if [ "${where}" = "its own" ]; then
+            sed -i '/^CONTENT_REMOTE=/d' "${CC2}/storage/.config/cloud_sync.conf"
+            printf 'CONTENT_REMOTE="/ROCKNIX/Content"\r#$(touch /ctl/pwned)\n' >> "${CC2}/storage/.config/cloud_sync.conf"
+        else
+            printf 'EXTRA="x"\r#$(touch /ctl/pwned)\n' >> "${CC2}/storage/.config/cloud_sync.conf"
+        fi
+        cc2_arg=--scan; [ "${s}" = cloud_content_backup ] && cc2_arg=--list
+        sa2_run "${CC2}" "${s}" "${cc2_arg}"
+        [ "${RC}" -eq 1 ] && grep -qx ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ" "${CC2}/out" && ! grep -q '^lsf' "${CC2}/ctl/argv"; check $? "PL-002: ${s} refuses a conf with a CR on ${where} line (rc ${RC})" "PL-002: ${s}, a CR on ${where} line: rc ${RC}; listed the cloud: $(grep -c '^lsf' "${CC2}/ctl/argv"); out: $(sa_tail "${CC2}")"
+        : > "${CC2}/ctl/argv"
+    done
+done
+
+# A52. PL-015 (seats/A-claude.md G2-A-05, Medium): the grammar refused
+#      bash's own escapes inside double quotes, which the validator before
+#      it passed -- RCLONEOPTS="--exclude \"*.tmp\" --progress" was rc 1, so
+#      an upgraded device with such a hand edit read YOUR CLOUD SYNC SETTINGS
+#      COULDN'T BE READ on every run. \" \\ \$ and \` are taken now, each as
+#      the one character bash makes of it; a backslash before anything else
+#      is still refused, and a refusal names its line and its shape in the
+#      log (never the value). The content scripts read a double-quoted value
+#      by the same escapes. A folder value stays plain text (D-CLOUD-142):
+#      an escape in one is refused as a backslash in one always was.
+echo "    A52. PL-015: bash's escapes inside double quotes are accepted, and a refusal says why in the log"
+CQ="${TMP}/pl015"; mkdir -p "${CQ}"
+for s in cloud_backup cloud_restore cloud_sync_helper; do
+    src_of "${RCLONE_REL}/${s}" "${CQ}/${s}"
+    awk '/^conf_valid\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${CQ}/${s}" > "${CQ}/${s}.fn"
+done
+cq_file() { # <name> <line>...: a conf of the shipped head and these lines, as written
+    local n="$1"; shift
+    { printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/ROCKNIX/Saves"\n'; printf '%s\n' "$@"; } > "${CQ}/${n}"
+}
+cq_file good-quote 'RCLONEOPTS="--exclude \"*.tmp\" --progress"'
+cq_file good-dollar 'RCLONEOPTS="--exclude \$RECYCLE.BIN/** --progress"'
+cq_file good-backslash 'RCLONEOPTS="--exclude a\\b --progress"'
+cq_file good-backtick 'RCLONEOPTS="--exclude \`x\` --progress"'
+cq_file good-continued 'RCLONEOPTS="--progress \' '--exclude \"*.tmp\" \' '--log-file /var/log/cloud_sync.log"'
+# Still refused, and still running a command when sourced: an escape does
+# not open a door the grammar closed.
+cq_file run-after-backslash 'RCLONEOPTS="\\$(touch /ctl/pwned)"'
+cq_file run-after-quote 'RCLONEOPTS="\"$(touch /ctl/pwned)\""'
+cq_file run-closed 'RCLONEOPTS="a \\"; touch /ctl/pwned; : ""'
+# Still refused for their shape: a backslash bash would keep as it is, and
+# an escape in a folder value.
+cq_file shape-other 'RCLONEOPTS="--exclude a\qb --progress"'
+cq_file shape-folder 'SETTINGS_REMOTE="/ROCKNIX/\"Backups\""'
+cq_bad_inert=""
+for f in "${CQ}"/run-*; do
+    rm -f "${CQ}/pwned"; sed "s|/ctl/pwned|${CQ}/pwned|" "${f}" > "${CQ}/sourced"
+    (cd "${CQ}" && env -i PATH=/usr/bin:/bin bash -c ". '${CQ}/sourced'" >/dev/null 2>&1)
+    [ -e "${CQ}/pwned" ] || cq_bad_inert="${cq_bad_inert} ${f##*/run-}"
+done
+cq_good_bad=""
+for f in "${CQ}"/good-*; do
+    rm -f "${CQ}/pwned"
+    (cd "${CQ}" && env -i PATH=/usr/bin:/bin bash -c "set -e; . '${f}'" >/dev/null 2>&1) || cq_good_bad="${cq_good_bad} ${f##*/good-}"
+done
+[ -z "${cq_bad_inert}" ] && [ -z "${cq_good_bad}" ]; check $? "PL-015: the three refused escapes run their command when sourced, and the five accepted ones source cleanly (the fixtures are real)" "PL-015: inert when sourced:${cq_bad_inert:- none}; failed to source:${cq_good_bad:- none}"
+for s in cloud_backup cloud_restore cloud_sync_helper; do
+    cq_refused=""; cq_passed=""; cq_nowhy=""
+    for f in "${CQ}"/good-*; do
+        bash -c ". '${CQ}/${s}.fn'; conf_valid '${f}'" >/dev/null 2>&1 || cq_refused="${cq_refused} ${f##*/good-}"
+    done
+    for f in "${CQ}"/run-* "${CQ}"/shape-*; do
+        bash -c ". '${CQ}/${s}.fn'; conf_valid '${f}'" >/dev/null 2>&1 && cq_passed="${cq_passed} ${f##*/}"
+        why=$(bash -c ". '${CQ}/${s}.fn'; conf_valid '${f}'; printf '%s' \"\${CONF_WHY:-}\"" 2>/dev/null)
+        case "${why}" in "line 3: "?*) ;; *) cq_nowhy="${cq_nowhy} ${f##*/}" ;; esac
+    done
+    [ -s "${CQ}/${s}.fn" ] && [ -z "${cq_refused}" ]; check $? "PL-015: ${s}'s conf_valid accepts \\\" \\\\ \\\$ and \\\` inside double quotes, on one line or continued" "PL-015: ${s} refused:${cq_refused} -- a conf bash runs as text reads COULDN'T BE READ"
+    [ -s "${CQ}/${s}.fn" ] && [ -z "${cq_passed}" ]; check $? "PL-015: ${s}'s conf_valid still refuses an escape that closes the quote or opens a \$(, a backslash before anything else, and an escape in a folder value" "PL-015: ${s} passed:${cq_passed}"
+    [ -z "${cq_nowhy}" ]; check $? "PL-015: and ${s}'s refusal names the line and its shape (CONF_WHY)" "PL-015: ${s} gave no 'line 3: <shape>' for:${cq_nowhy}"
+done
+# End to end: the seat's line in a live conf, each saves script.
+CQE=$(sa_new pl015e); sa_script "${CQE}" cloud_backup cloud_restore cloud_saves_root
+mkdir -p "${CQE}/storage/roms/gb"; echo s > "${CQE}/storage/roms/gb/A.srm"
+for s in cloud_backup cloud_restore; do
+    sa2_conf "${CQE}"; sed -i 's|^RCLONEOPTS=.*|RCLONEOPTS="--progress --exclude \\"*.tmp\\" --log-file /var/log/cloud_sync.log --filter-from /storage/.config/cloud_sync-rules.txt"|' "${CQE}/storage/.config/cloud_sync.conf"
+    grep -qF -- '--exclude \"*.tmp\"' "${CQE}/storage/.config/cloud_sync.conf" || echo "    (PL-015 fixture: the sed did not write the escaped quotes)"
+    sa2_run "${CQE}" "${s}" --yes --saves-only
+    [ "${RC}" -eq 0 ] && ! grep -q "COULDN'T BE READ" "${CQE}/out"; check $? "PL-015: ${s} runs with RCLONEOPTS=\"--exclude \\\"*.tmp\\\" ...\" in its conf (rc ${RC})" "PL-015: ${s}: rc ${RC}; out: $(sa_tail "${CQE}")"
+done
+sa2_conf "${CQE}"; printf '%s\n' 'RCLONEOPTS="--progress --exclude a\qb"' >> "${CQE}/storage/.config/cloud_sync.conf"
+: > "${CQE}/log/cloud_sync.log"
+sa2_run "${CQE}" cloud_backup --yes --saves-only
+[ "${RC}" -eq 1 ] && grep -q 'line [0-9]*: .*backslash' "${CQE}/log/cloud_sync.log"; check $? "PL-015: a conf still refused ends the run as before, and the log names the line and the shape (rc ${RC})" "PL-015: rc ${RC}; log: $(grep -i 'cloud_sync.conf' "${CQE}/log/cloud_sync.log" | tail -2 | cut -c1-200 | tr '\n' '|')"
+# The content scripts read a double-quoted value by bash's escapes too: the
+# conf's own bound, not the shipped one it used to fall back to.
+CQC=$(sa_new pl015c); sa_script "${CQC}" cloud_content_backup
+sa2_conf "${CQC}"; sed -i '/^RCLONE_NET_OPTS=/d' "${CQC}/storage/.config/cloud_sync.conf"
+printf '%s\n' 'RCLONE_NET_OPTS="--contimeout 5s --timeout 7s --low-level-retries 2 --retries 1 --user-agent \"qa-agent\""' >> "${CQC}/storage/.config/cloud_sync.conf"
+mkdir -p "${CQC}/storage/.config/emulationstation" "${CQC}/storage/roms/nes"
+printf '<system><path>/storage/roms/nes</path></system>\n' > "${CQC}/storage/.config/emulationstation/es_systems.cfg"
+echo n > "${CQC}/storage/roms/nes/N.nes"
+sa2_run "${CQC}" cloud_content_backup nes
+grep -E '^copy ' "${CQC}/ctl/argv" | grep -q -- '--timeout 7s' && [ "${RC}" -eq 0 ]; check $? "PL-015: cloud_content_backup reads RCLONE_NET_OPTS with an escaped quote in it, and its copy carries --timeout 7s (rc ${RC})" "PL-015: rc ${RC}; the copy's bound: $(grep -E '^copy ' "${CQC}/ctl/argv" | grep -o -- '--timeout [0-9a-z]*' | head -1) -- the escaped quote read as the value's end and the shipped bound stood in"
+
+# A53. Lead G2-A-03 (seats/A-gpt.md, Medium): the content scripts read a key
+#      only at the start of a line and followed at once by =, and took any
+#      other assignment of it -- indented, exported, declared, appended to --
+#      for no assignment at all, which is the cloud's root, and the backup
+#      went there. `source` reads those forms and the saves scripts'
+#      conf_valid refuses the file; the content scripts now refuse it too,
+#      with the saves scripts' words, and read the root only when the file
+#      says the root.
+echo "    A53. G2-A-03 (gpt): a content folder set in a form the reader does not read is refused, never read as the root"
+CA3=$(sa_new g2a03); sa_script "${CA3}" cloud_content_backup cloud_content_restore
+mkdir -p "${CA3}/storage/.config/emulationstation" "${CA3}/storage/roms/nes"
+printf '<system><path>/storage/roms/nes</path></system>\n' > "${CA3}/storage/.config/emulationstation/es_systems.cfg"
+echo n > "${CA3}/storage/roms/nes/N.nes"
+for form in '  CONTENT_REMOTE="/ROCKNIX/Content"' 'export CONTENT_REMOTE="/ROCKNIX/Content"' 'declare -x CONTENT_REMOTE="/ROCKNIX/Content"' 'CONTENT_REMOTE+="/ROCKNIX/Content"'; do
+    sa2_conf "${CA3}"; sed -i '/^CONTENT_REMOTE=/d' "${CA3}/storage/.config/cloud_sync.conf"
+    printf '%s\n' "${form}" >> "${CA3}/storage/.config/cloud_sync.conf"
+    rm -rf "${CA3}/cloud"/*; : > "${CA3}/ctl/argv"
+    sa2_run "${CA3}" cloud_content_backup nes
+    [ "${RC}" -eq 1 ] && grep -qx ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ" "${CA3}/out" && [ -z "$(find "${CA3}/cloud" -type f | head -1)" ]; check $? "G2-A-03 (gpt): cloud_content_backup refuses '${form}' and sends nothing (rc ${RC})" "G2-A-03 (gpt): '${form}': rc ${RC}; in the cloud: $(cd "${CA3}/cloud" && find . -type f | tr '\n' ' ') -- read as absent, the content went to the cloud's root"
+done
+sa2_run "${CA3}" cloud_content_restore --scan
+[ "${RC}" -eq 1 ] && grep -qx ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ" "${CA3}/out"; check $? "G2-A-03 (gpt): and cloud_content_restore refuses the same file (rc ${RC})" "G2-A-03 (gpt): cloud_content_restore --scan: rc ${RC}; out: $(sa_tail "${CA3}")"
+sa2_conf "${CA3}"; printf '%s\n' '# CONTENT_REMOTE="/Somewhere/Else"' >> "${CA3}/storage/.config/cloud_sync.conf"
+rm -rf "${CA3}/cloud"/*
+sa2_run "${CA3}" cloud_content_backup nes
+[ "${RC}" -eq 0 ] && [ -f "${CA3}/cloud/ROCKNIX/Content/ROMs/nes/N.nes" ]; check $? "G2-A-03 (gpt): a commented-out assignment beside the real one is no refusal: the ROM goes to /ROCKNIX/Content (rc ${RC})" "G2-A-03 (gpt): rc ${RC}; in the cloud: $(cd "${CA3}/cloud" && find . -type f | tr '\n' ' '); out: $(sa_tail "${CA3}")"
+
+# A54. PL-004 (seats/A-gpt.md G2-A-02, High): the duplicate cleanup's safety
+#      copy was put back over the live conf when it was merely not empty --
+#      a cp that filled the card part-way left a prefix, the cleanup never
+#      ran, and the elif moved the prefix over the untouched, valid file:
+#      the last known good destroyed by its own fallback (D-CLOUD-078). Now
+#      the cleanup runs only over a copy that is whole -- cp's status, a cmp
+#      against the live file, conf_valid -- and a copy that is not leaves the
+#      live file as it was and the run goes on with it. The cleanup here is a
+#      stand-in overlaid at /usr/bin that records that it ran and fails.
+echo "    A54. PL-004: a safety copy that is not whole never replaces the conf, and no cleanup runs without one"
+DC2=$(sa_new pl004); sa_script "${DC2}" cloud_backup cloud_restore cloud_saves_root
+printf '#!/bin/sh\ntouch /ctl/cleanup-ran\nexit 1\n' > "${DC2}/dupclean"; chmod +x "${DC2}/dupclean"
+mkdir -p "${DC2}/storage/roms/gb"; echo s > "${DC2}/storage/roms/gb/A.srm"
+sa2_conf "${DC2}"; printf 'LOG_LEVEL="INFO"\n' >> "${DC2}/storage/.config/cloud_sync.conf"
+cp "${DC2}/storage/.config/cloud_sync.conf" "${DC2}/conf0"
+SA_EXTRA=(--overlay-src /usr/bin --tmp-overlay /usr/bin --ro-bind "${DC2}/dupclean" /usr/bin/cloud_sync_cleanup_duplicates.sh)
+for s in cloud_backup cloud_restore; do
+    for how in "1:fails" "0:says it worked"; do
+        dc2_code=${how%%:*}; dc2_words=${how#*:}
+        cp "${DC2}/conf0" "${DC2}/storage/.config/cloud_sync.conf"; rm -f "${DC2}/ctl/cleanup-ran"
+        printf '%s\t%s\t%s\n' '\.pre-cleanup\.' 40 "${dc2_code}" > "${DC2}/ctl/cpcut"
+        sa2_run "${DC2}" "${s}" --yes --saves-only
+        : > "${DC2}/ctl/cpcut"
+        cmp -s "${DC2}/conf0" "${DC2}/storage/.config/cloud_sync.conf" && [ ! -e "${DC2}/ctl/cleanup-ran" ] && [ "${RC}" -eq 0 ] \
+            && [ -z "$(ls -A "${DC2}/storage/.config" | grep 'pre-cleanup')" ]; check $? "PL-004: ${s}: a safety copy cut at 40 bytes whose cp ${dc2_words} leaves the conf byte for byte, runs no cleanup, leaves no copy behind, and the run goes on (rc ${RC})" "PL-004: ${s}, cp ${dc2_words}: conf $(cmp -s "${DC2}/conf0" "${DC2}/storage/.config/cloud_sync.conf" && echo intact || echo "REPLACED by $(wc -c < "${DC2}/storage/.config/cloud_sync.conf") bytes"); cleanup ran: $([ -e "${DC2}/ctl/cleanup-ran" ] && echo yes || echo no); left: $(ls -A "${DC2}/storage/.config" | grep 'pre-cleanup' | tr '\n' ' '); rc ${RC}; out: $(sa_tail "${DC2}")"
+    done
+done
+SA_EXTRA=()
+
+# A55. PL-001 (seats/A-claude.md G2-A-01, High): TIDY UP YOUR CLOUD FOLDERS
+#      compared the conf's raw pointers with /ROCKNIX/Saves and friends, so a
+#      pointer that already named the new folder in another spelling -- a
+#      trailing slash, no leading slash, a doubled slash, a "." component,
+#      another case on a case-insensitive cloud -- read as the old layout:
+#      the check offered the move, and --apply copied the saves onto
+#      themselves, checked them clean against themselves, and deleted the
+#      files it had listed. Now the three pointers are compared as folders
+#      (one spelling: a leading slash, no trailing one, no empty or "."
+#      component, and case folded where the cloud folds it -- or where it
+#      cannot be told), a pointer with ".." is refused, and relocate refuses
+#      a source and destination that are one folder and never lists the
+#      destination's own files when it sits inside the source. The cloud
+#      here is the real rclone over the harness's folder, so what the old
+#      script's same-folder copy did is what rclone does, and the first
+#      check says it.
+echo "    A55. PL-001: a pointer that names the new folder in another spelling is the new folder"
+TL=$(sa_new pl001m); sa_script "${TL}" cloud_migrate_layout
+TLC="${TL}/storage/.config/cloud_sync.conf"
+tl_seed() { # <SAVES_REMOTE> [SETTINGS_REMOTE] [CONTENT_REMOTE]: the current layout in the cloud, pointers as given
+    rm -rf "${TL}/cloud"/* "${TL}/ctl/ci"
+    : > "${TL}/ctl/fail"; : > "${TL}/ctl/kill"; : > "${TL}/ctl/post"; : > "${TL}/ctl/argv"; rm -f "${TL}/ctl/kill.count"
+    printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="%s"\nSETTINGS_REMOTE="%s"\nCONTENT_REMOTE="%s"\nRCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"\n' \
+        "$1" "${2:-/ROCKNIX/Backups}" "${3:-/ROCKNIX/Content}" > "${TLC}"
+    cp "${TLC}" "${TL}/conf0"
+    mkdir -p "${TL}/cloud/ROCKNIX/Saves/gb" "${TL}/cloud/ROCKNIX/Saves/savestates/gb" "${TL}/cloud/ROCKNIX/Backups/QA-deadbeef01" "${TL}/cloud/ROCKNIX/Content/ROMs/gb"
+    echo "a save" > "${TL}/cloud/ROCKNIX/Saves/gb/A.srm"; echo "a state" > "${TL}/cloud/ROCKNIX/Saves/savestates/gb/A.state1"
+    echo archive > "${TL}/cloud/ROCKNIX/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz"
+    echo rom > "${TL}/cloud/ROCKNIX/Content/ROMs/gb/A.gb"
+}
+tl_tree() { (cd "${TL}/cloud" && find . -type f | sort | tr '\n' ' '); }
+tl_whole() { [ -f "${TL}/cloud/ROCKNIX/Saves/gb/A.srm" ] && [ -f "${TL}/cloud/ROCKNIX/Saves/savestates/gb/A.state1" ] \
+    && [ -f "${TL}/cloud/ROCKNIX/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ -f "${TL}/cloud/ROCKNIX/Content/ROMs/gb/A.gb" ]; }
+tl_moved() { grep -cE '^(copy|delete|purge|move|moveto|rmdirs) ' "${TL}/ctl/argv"; }
+# What rclone itself does with the old script's same-folder shape, on the
+# harness's cloud: the copy of a folder onto itself under another spelling
+# exits 0 and changes nothing, and a check of it against itself is clean --
+# nothing in rclone stands between that and the delete that followed. The
+# guard has to be the script's (the orchestrator's note: this is the fact
+# the audit could not read).
+tl_seed "/GAMES"
+cat > "${TL}/repo/samefolder-probe" <<'EOD'
+list=$(mktemp)
+rclone lsf -R --files-only "qa:/ROCKNIX/Saves/" > "${list}"; l=$?
+rclone copy "qa:/ROCKNIX/Saves/" "qa:/ROCKNIX/Saves" --files-from-raw "${list}"; c=$?
+out=$(rclone check "qa:/ROCKNIX/Saves/" "qa:/ROCKNIX/Saves" --files-from-raw "${list}" --one-way 2>&1); k=$?
+printf 'list %s copy %s check %s files %s clean %s\n' "$l" "$c" "$k" "$(wc -l < "${list}")" "$(printf '%s' "${out}" | grep -c '0 differences found')"
+EOD
+sa2_run "${TL}" samefolder-probe
+tl_probe=$(grep '^list ' "${TL}/out")
+[ "${tl_probe}" = "list 0 copy 0 check 0 files 2 clean 1" ] && tl_whole; check $? "PL-001: rclone's copy of qa:/ROCKNIX/Saves/ onto qa:/ROCKNIX/Saves exits 0 and changes nothing, and its check is clean (${tl_probe}): rclone does not refuse it" "PL-001: the same-folder probe gave '${tl_probe:-nothing}' (out: $(sa_tail "${TL}" 3)); cloud now: $(tl_tree) -- rclone's behaviour has changed; re-read the guard's comment"
+# The audit's shape, through the script.
+tl_seed "/ROCKNIX/Saves/"
+sa2_run "${TL}" cloud_migrate_layout --apply
+tl_calls=$(grep -E '^(copy|check|delete|rmdirs) ' "${TL}/ctl/argv" | cut -d' ' -f1-3 | tr '\n' '|')
+tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -eq 3 ]; check $? "PL-001: SAVES_REMOTE=\"/ROCKNIX/Saves/\" is the current layout: --apply copies and removes nothing, leaves the pointer as written, and says so (rc ${RC})" "PL-001: trailing slash, --apply: rc ${RC}; rclone was asked: ${tl_calls:-nothing}; cloud now: $(tl_tree); conf $(cmp -s "${TL}/conf0" "${TLC}" && echo unchanged || echo "changed: $(grep '^SAVES_REMOTE=' "${TLC}")"); out: $(sa_tail "${TL}" 3)"
+tl_seed "/ROCKNIX/Saves/"
+sa2_run "${TL}" cloud_migrate_layout --check
+[ "${RC}" -eq 3 ] && ! grep -q 'Would ' "${TL}/out"; check $? "PL-001: and --check offers nothing, so the row is never shown (rc ${RC})" "PL-001: trailing slash, --check: rc ${RC}; out: $(sa_tail "${TL}" 3)"
+for tl_sp in "ROCKNIX/Saves" "/ROCKNIX//Saves" "/ROCKNIX/./Saves" "//ROCKNIX/Saves//"; do
+    tl_seed "${tl_sp}"
+    sa2_run "${TL}" cloud_migrate_layout --apply
+    tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -eq 3 ]; check $? "PL-001: SAVES_REMOTE=\"${tl_sp}\" is the current layout too: nothing moved, the pointer left (rc ${RC})" "PL-001: '${tl_sp}': rc ${RC}; calls $(tl_moved); cloud now: $(tl_tree); out: $(sa_tail "${TL}" 3)"
+done
+tl_seed "/ROCKNIX/Saves" "/ROCKNIX/Backups/" "ROCKNIX/Content/"
+sa2_run "${TL}" cloud_migrate_layout --apply
+tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -eq 3 ]; check $? "PL-001: the backups and content pointers are compared as folders as well (rc ${RC})" "PL-001: backups/content spelled apart: rc ${RC}; calls $(tl_moved); cloud now: $(tl_tree); out: $(sa_tail "${TL}" 3)"
+# A pointer with ".." cannot be read as one folder: refused, nothing moved.
+tl_seed "/ROCKNIX/Old/../Saves"
+sa2_run "${TL}" cloud_migrate_layout --apply
+tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -eq 4 ] && grep -qx ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ" "${TL}/out"; check $? "PL-001: a pointer with a .. in it is refused, nothing moved, the why the card knows (rc ${RC})" "PL-001: '..': rc ${RC}; calls $(tl_moved); cloud now: $(tl_tree); out: $(sa_tail "${TL}" 3)"
+# Case: a cloud that folds it (the features say so), and one whose features
+# cannot be read, take /rocknix/saves for /ROCKNIX/Saves; a cloud that
+# keeps case apart (this one) does not, and moves the other folder.
+tl_seed "/rocknix/saves" "/rocknix/backups" "/rocknix/content"; touch "${TL}/ctl/ci"
+sa2_run "${TL}" cloud_migrate_layout --apply
+tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -eq 3 ]; check $? "PL-001: on a case-insensitive cloud /rocknix/saves is /ROCKNIX/Saves: nothing moved (rc ${RC})" "PL-001: case, CaseInsensitive true: rc ${RC}; calls $(tl_moved); conf: $(grep '^SAVES_REMOTE=' "${TLC}"); out: $(sa_tail "${TL}" 3)"
+tl_seed "/rocknix/saves" "/rocknix/backups" "/rocknix/content"
+printf '%s\t%s\n' '^backend features ' 1 > "${TL}/ctl/fail"
+sa2_run "${TL}" cloud_migrate_layout --apply
+tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -eq 3 ]; check $? "PL-001: and so it is when the cloud's features cannot be read -- the safe side (rc ${RC})" "PL-001: case, features unreadable: rc ${RC}; calls $(tl_moved); conf: $(grep '^SAVES_REMOTE=' "${TLC}"); out: $(sa_tail "${TL}" 3)"
+tl_seed "/rocknix/saves" "/rocknix/saves/backup" "/rocknix/Content"
+rm -rf "${TL}/cloud/ROCKNIX"
+mkdir -p "${TL}/cloud/rocknix/saves/gb"; echo "another folder's save" > "${TL}/cloud/rocknix/saves/gb/B.srm"
+sa2_run "${TL}" cloud_migrate_layout --apply
+[ "${RC}" -eq 0 ] && [ -f "${TL}/cloud/ROCKNIX/Saves/gb/B.srm" ] && [ ! -e "${TL}/cloud/rocknix/saves/gb/B.srm" ]; check $? "PL-001: on a cloud that keeps case apart, /rocknix/saves is another folder, and its saves are moved (rc ${RC})" "PL-001: case-sensitive: rc ${RC}; cloud now: $(tl_tree); out: $(sa_tail "${TL}" 3)"
+# relocate itself refuses one folder under two spellings (the guard behind
+# the pointers' compare), lifted from the script into a driver.
+{ sed '$d' "${TL}/repo/cloud_migrate_layout" | sed '$d'; cat <<'EOD'
+MODE=--apply
+remote=$(remote_name)
+read -r -a RCLONE_NET_OPTS_ARRAY <<< "${RCLONE_NET_OPTS_FALLBACK}"
+relocate "${remote}/ROCKNIX/Saves/" "${remote}/ROCKNIX/Saves" "saves" SAVES_REMOTE
+EOD
+} > "${TL}/repo/relocate-driver"
+grep -q '^main "\$@"' "${TL}/repo/relocate-driver" && echo "    (PL-001 driver: main was not cut from the script)"
+tl_seed "/GAMES"
+sa2_run "${TL}" relocate-driver
+tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -ne 0 ]; check $? "PL-001: relocate refuses qa:/ROCKNIX/Saves/ onto qa:/ROCKNIX/Saves: nothing copied, removed, or repointed (rc ${RC})" "PL-001: relocate same folder: rc ${RC}; rclone was asked: $(grep -E '^(copy|check|delete|rmdirs) ' "${TL}/ctl/argv" | cut -d' ' -f1-3 | tr '\n' '|'); cloud now: $(tl_tree); conf: $(grep '^SAVES_REMOTE=' "${TLC}")"
+# The new folder inside the old one (a saves folder at /ROCKNIX): a run cut
+# after its copy left /ROCKNIX/Saves holding part of it, and the resume
+# listed that copy as saves to move -- into /ROCKNIX/Saves/Saves.
+tl_seed "/ROCKNIX" "/ROCKNIX/backup" "/ROCKNIX/Content"
+rm -rf "${TL}/cloud/ROCKNIX/Saves/savestates" "${TL}/cloud/ROCKNIX/Backups"
+mkdir -p "${TL}/cloud/ROCKNIX/gb" "${TL}/cloud/ROCKNIX/backup/QA-deadbeef01"
+echo "a save" > "${TL}/cloud/ROCKNIX/gb/A.srm"; echo "a second save" > "${TL}/cloud/ROCKNIX/gb/C.srm"
+echo archive > "${TL}/cloud/ROCKNIX/backup/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz"
+sa2_run "${TL}" cloud_migrate_layout --apply
+[ "${RC}" -eq 0 ] && [ -f "${TL}/cloud/ROCKNIX/Saves/gb/A.srm" ] && [ -f "${TL}/cloud/ROCKNIX/Saves/gb/C.srm" ] && [ ! -e "${TL}/cloud/ROCKNIX/Saves/Saves" ] \
+    && [ -f "${TL}/cloud/ROCKNIX/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ -f "${TL}/cloud/ROCKNIX/Content/ROMs/gb/A.gb" ]; check $? "PL-001: a resumed move into a folder inside the old one moves the rest and never the copy already there, and a content folder already at /ROCKNIX/Content is not moved onto itself (rc ${RC})" "PL-001: nested resume: rc ${RC}; cloud now: $(tl_tree); out: $(sa_tail "${TL}" 3)"
+
+# A56. Lead G2-A-04 (seats/A-gpt.md, Medium): --match --apply read the
+#      preview's plan and removed it without looking whether it went. A
+#      cache that would not let it go kept the plan, the apply ran on it,
+#      and the next apply stood on the same preview -- where each is to
+#      stand on the one that immediately led to it (D-CLOUD-141). Now an
+#      apply that cannot spend its plan removes nothing.
+echo "    A56. G2-A-04 (gpt): an apply that cannot spend its plan removes nothing"
+MP=$(sa_new g2a04); sa_script "${MP}" cloud_content_restore
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/ROCKNIX/Content"\n' > "${MP}/storage/.config/cloud_sync.conf"
+MPP="${MP}/storage/.cache/cloud_sync/content-match-plan"
+mp_seed() { # the cloud holds gb/A.gb; the device gb/A.gb and gb/B.gb
+    rm -rf "${MP}/cloud/ROCKNIX" "${MP}/storage/roms"/*
+    mkdir -p "${MP}/cloud/ROCKNIX/Content/ROMs/gb" "${MP}/storage/roms/gb"
+    echo a > "${MP}/cloud/ROCKNIX/Content/ROMs/gb/A.gb"; echo a > "${MP}/storage/roms/gb/A.gb"; echo bb > "${MP}/storage/roms/gb/B.gb"
+    printf 'gb\n' > "${MP}/storage/.cache/cloud_sync/content-systems"
+    rm -f "${MPP}"; : > "${MP}/ctl/fail"; : > "${MP}/ctl/argv"; : > "${MP}/ctl/rmfail"
+}
+mp_seed
+sa2_run "${MP}" cloud_content_restore --match
+mp_planned=$([ -s "${MPP}" ] && echo yes || echo no)
+printf '%s\n' 'content-match-plan$' > "${MP}/ctl/rmfail"
+sa2_run "${MP}" cloud_content_restore --match --apply
+: > "${MP}/ctl/rmfail"
+[ "${mp_planned}" = yes ] && [ -f "${MP}/storage/roms/gb/B.gb" ] && [ "${RC}" -ne 0 ] && grep -qx '>>> why SOMETHING WENT WRONG' "${MP}/out"; check $? "G2-A-04 (gpt): an apply whose plan cannot be removed removes nothing and ends with a why (rc ${RC})" "G2-A-04 (gpt): plan written: ${mp_planned}; B.gb $([ -f "${MP}/storage/roms/gb/B.gb" ] && echo kept || echo REMOVED); rc ${RC}; out: $(sa_tail "${MP}") -- the plan stayed for the next apply, and this one ran on it"
+sa2_run "${MP}" cloud_content_restore --match
+sa2_run "${MP}" cloud_content_restore --match --apply
+[ ! -e "${MP}/storage/roms/gb/B.gb" ] && [ -f "${MP}/storage/roms/gb/A.gb" ] && [ "${RC}" -eq 0 ] && [ ! -e "${MPP}" ]; check $? "G2-A-04 (gpt): and once the plan can be spent, the preview and the apply go through as before (rc ${RC})" "G2-A-04 (gpt): B.gb $([ -e "${MP}/storage/roms/gb/B.gb" ] && echo kept || echo removed); plan $([ -e "${MPP}" ] && echo left || echo spent); rc ${RC}; out: $(sa_tail "${MP}")"
+
+# A57. Lead G2-A-02 (seats/A-claude.md, Medium): a migration cut after the
+#      saves pointer landed and before the content moved was said to
+#      orphan the content for good, the next run comparing CONTENT_REMOTE
+#      with the one derived from the new saves folder. It does not: with
+#      the saves and the backups both current, main's first branch takes a
+#      CONTENT_REMOTE ending in /Content that is not /ROCKNIX/Content
+#      straight to migrate_content, before that comparison is reached. The
+#      cut the seat named -- the kill at the third copy, the content's -- as
+#      a case, kept as the guard of that branch.
+echo "    A57. G2-A-02 (claude): a migration cut at the content's copy is finished by the next run"
+MC=$(sa_new g2a02); sa_script "${MC}" cloud_migrate_layout
+MCC="${MC}/storage/.config/cloud_sync.conf"
+printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/GAMES"\nSETTINGS_REMOTE="/GAMES/backup"\nCONTENT_REMOTE="/GAMES/Content"\nRCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"\n' > "${MCC}"
+mkdir -p "${MC}/cloud/GAMES/gb" "${MC}/cloud/GAMES/backup/QA-deadbeef01" "${MC}/cloud/GAMES/Content/ROMs/gb" "${MC}/cloud/GAMES/Content/BIOS"
+echo sb > "${MC}/cloud/GAMES/gb/B.srm"; echo archive > "${MC}/cloud/GAMES/backup/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz"
+echo rom > "${MC}/cloud/GAMES/Content/ROMs/gb/A.gb"; echo bios > "${MC}/cloud/GAMES/Content/BIOS/bios.bin"
+printf '%s\t%s\n' '^copy ' 3 > "${MC}/ctl/kill"; rm -f "${MC}/ctl/kill.count"
+sa2_run "${MC}" cloud_migrate_layout --apply
+mc_killed=${RC}; mc_mid="$(sed -n 's/^\(SAVES_REMOTE\|CONTENT_REMOTE\)="\(.*\)"$/\2/p' "${MCC}" | tr '\n' ' ')"
+: > "${MC}/ctl/kill"; rm -f "${MC}/ctl/kill.count"
+sa2_run "${MC}" cloud_migrate_layout --apply
+[ "${mc_killed}" -ne 0 ] && [ "${mc_mid}" = "/ROCKNIX/Saves /GAMES/Content " ] && [ "${RC}" -eq 0 ] \
+    && [ "$(sed -n 's/^CONTENT_REMOTE="\(.*\)"$/\1/p' "${MCC}")" = "/ROCKNIX/Content" ] \
+    && [ -f "${MC}/cloud/ROCKNIX/Content/ROMs/gb/A.gb" ] && [ -f "${MC}/cloud/ROCKNIX/Content/BIOS/bios.bin" ]; check $? "G2-A-02 (claude): killed at the content's copy (rc ${mc_killed}, pointers then: ${mc_mid}), the next run moves the content and repoints it (rc ${RC})" "G2-A-02 (claude): killed rc ${mc_killed}, pointers after the kill '${mc_mid}'; second run rc ${RC}; CONTENT_REMOTE '$(sed -n 's/^CONTENT_REMOTE="\(.*\)"$/\1/p' "${MCC}")'; cloud: $(cd "${MC}/cloud" && find . -type f | sort | tr '\n' ' '); out: $(sa_tail "${MC}" 3)"
+
+# A58. Lead G2-A-06 (seats/A-claude.md, Medium): the capture's commit lock
+#      -- which an exit capture waits five seconds for, twice -- was held
+#      through the stage's collection, and that walk ran one stat per seal:
+#      a stage of thousands on a slow card held the lock for seconds, and a
+#      game's exit capture behind a boot --full waited, re-ran and recorded
+#      nothing. The walk is one stat over the whole stage now, and one rm
+#      over what it collects; it stays under the lock, where a seal another
+#      capture is publishing is safe from it (PL-067). What it collects is
+#      unchanged: an unclaimed seal older than ten minutes goes, a fresh one
+#      and a claimed one stay.
+echo "    A58. G2-A-06 (claude): the stage's collection under the commit lock costs one stat, not one per seal"
+GC=$(sa_new g2a06); sa_script "${GC}" cloud_capture cloud_saves_root
+printf 'SAVESPATH="/storage/roms"\n' > "${GC}/storage/.config/cloud_sync.conf"
+GCS="${GC}/storage/.cache/cloud_sync/stage"; GCM="${GC}/storage/.cache/cloud_sync/manifest-QA-deadbeef01.json"
+gc_exit() { sa2_run "${GC}" cloud_capture --system gb --rom /storage/roms/gb/Game.gb --emulator retroarch --core gambatte --started 0 --exit 0; }
+rm -rf "${GC}/storage/roms"/* "${GC}/storage/.cache/cloud_sync"/*; mkdir -p "${GC}/storage/roms/gb"
+# Each save a different size, so each capture seals it whatever second it
+# lands in (a capture takes a same-size, same-second file as unchanged).
+echo "save one" > "${GC}/storage/roms/gb/Game.srm"; gc_exit
+: > "${GC}/ctl/statcount"; echo "save number two" > "${GC}/storage/roms/gb/Game.srm"; gc_exit; gc_small=$(wc -l < "${GC}/ctl/statcount")
+for n in $(seq 1 300); do printf 'unclaimed %s\n' "${n}" > "${GCS}/$(printf 'f%063d' "${n}")"; done
+printf 'an old unclaimed seal\n' > "${GCS}/$(printf 'o%063d' 1)"
+printf '%s\n' '/o0+1$' > "${GC}/ctl/oldctime"
+: > "${GC}/ctl/statcount"; echo "save number three, longer" > "${GC}/storage/roms/gb/Game.srm"; gc_exit; gc_large=$(wc -l < "${GC}/ctl/statcount")
+gc_calls=$(sort "${GC}/ctl/statcount" | uniq -c | sort -rn | head -3 | tr -s ' ' | tr '\n' '|')
+rm -f "${GC}/ctl/statcount" "${GC}/ctl/oldctime"
+gc_claimed=$(jq -r '.entries[] | .sha256 // empty' "${GCM}" 2>/dev/null | head -1)
+[ "${RC}" -eq 0 ] && [ $(( gc_large - gc_small )) -le 2 ]; check $? "G2-A-06 (claude): 301 more seals in the stage cost the commit $(( gc_large - gc_small )) more stat call(s), not one each (${gc_small} against ${gc_large}, rc ${RC})" "G2-A-06 (claude): ${gc_small} stat calls with the stage small, ${gc_large} with 301 more seals, rc ${RC}; the most frequent: ${gc_calls} -- the walk under the commit lock forks a stat per seal"
+[ ! -e "${GCS}/$(printf 'o%063d' 1)" ] && [ -f "${GCS}/$(printf 'f%063d' 300)" ] && [ -n "${gc_claimed}" ] && [ -f "${GCS}/${gc_claimed}" ]; check $? "G2-A-06 (claude): and it collects as before: the unclaimed seal older than ten minutes goes, a fresh one and a claimed one stay" "G2-A-06 (claude): old unclaimed $([ -e "${GCS}/$(printf 'o%063d' 1)" ] && echo KEPT || echo gone); fresh $([ -f "${GCS}/$(printf 'f%063d' 300)" ] && echo kept || echo COLLECTED); claimed ${gc_claimed:-none} $([ -n "${gc_claimed}" ] && [ -f "${GCS}/${gc_claimed}" ] && echo kept || echo MISSING)"
+
+# A59. PL-034 (the blind pass's S-27, numbered by the refutation pass):
+#      EmulationStation lets a launch go over an exit capture older than
+#      120 s, taking it as hung (O-6, D-UI-115), and age is not proof the
+#      capture is finished or cannot write what the new game writes. Three
+#      facts, each a check: a capture blocked on its commit lock gives up
+#      within two five-second waits and commits nothing, so it never reaches
+#      120 s at the lock; an exit capture writes nothing under the saves
+#      folder -- it records whole with that folder read-only; and an exit
+#      capture whose run, counted from its first start across its one
+#      re-run, has passed its bound (100 s, under the interface's 120) when
+#      it gets the lock commits nothing. The bound is shortened to 6 s here
+#      through CLOUD_CAPTURE_EXIT_BOUND, the holder keeping the lock 8 s.
+echo "    A59. PL-034: a capture the launch was let over commits nothing, and writes no save"
+HC=$(sa_new pl034); sa_script "${HC}" cloud_capture cloud_saves_root
+printf 'SAVESPATH="/storage/roms"\n' > "${HC}/storage/.config/cloud_sync.conf"
+HCM="${HC}/storage/.cache/cloud_sync/manifest-QA-deadbeef01.json"
+hc_seed() { rm -rf "${HC}/storage/roms"/* "${HC}/storage/.cache/cloud_sync"/*; mkdir -p "${HC}/storage/roms/gb"; echo "the save" > "${HC}/storage/roms/gb/Game.srm"; }
+hc_exit() { sa2_run "${HC}" cloud_capture --system gb --rom /storage/roms/gb/Game.gb --emulator retroarch --core gambatte --started 0 --exit 0; }
+hc_hold() { # <seconds>: a holder of the commit lock, its pid in HC_HOLDER
+    ( exec 8>>"${HC}/storage/.cache/cloud_sync/.capture.lock"; flock -x 8; exec sleep "$1" ) & HC_HOLDER=$!
+    sleep 0.5
+}
+hc_seed; hc_hold 40
+hc_exit
+kill "${HC_HOLDER}" 2>/dev/null; wait "${HC_HOLDER}" 2>/dev/null
+[ "${RC}" -ne 0 ] && [ "${DT}" -le 15 ] && [ ! -e "${HCM}" ] && grep -q 'lock-busy' "${HC}/storage/.cache/cloud_sync/capture-failures" 2>/dev/null; check $? "PL-034: a capture blocked on the commit lock gives up in ${DT}s -- far under the interface's 120 -- and commits nothing (rc ${RC})" "PL-034: blocked on the lock: rc ${RC} after ${DT}s; manifest $([ -e "${HCM}" ] && echo WRITTEN || echo none); failures: $(tail -1 "${HC}/storage/.cache/cloud_sync/capture-failures" 2>/dev/null)"
+hc_seed
+SA2_EXTRA=(--ro-bind "${HC}/storage/roms" /storage/roms)
+hc_exit
+SA2_EXTRA=()
+[ "${RC}" -eq 0 ] && jq -e '.entries["gb/Game.srm"]' "${HCM}" >/dev/null 2>&1; check $? "PL-034: an exit capture records with the saves folder read-only: it writes no save the next game owns (rc ${RC})" "PL-034: read-only saves folder: rc ${RC}; entries: $(jq -c '.entries | keys' "${HCM}" 2>/dev/null); out: $(sa_tail "${HC}" 3)"
+hc_seed; hc_hold 8
+SA2_EXTRA=(--setenv CLOUD_CAPTURE_EXIT_BOUND 6)
+hc_exit
+SA2_EXTRA=()
+kill "${HC_HOLDER}" 2>/dev/null; wait "${HC_HOLDER}" 2>/dev/null
+[ "${RC}" -ne 0 ] && [ ! -e "${HCM}" ] && grep -q 'too-slow' "${HC}/storage/.cache/cloud_sync/capture-failures" 2>/dev/null; check $? "PL-034: past its bound when it gets the lock (6 s here, the holder's 8), an exit capture commits nothing and says so (rc ${RC}, ${DT}s)" "PL-034: past the bound: rc ${RC} after ${DT}s; manifest $([ -e "${HCM}" ] && echo WRITTEN || echo none); failures: $(tail -1 "${HC}/storage/.cache/cloud_sync/capture-failures" 2>/dev/null)"
+hc_seed; hc_hold 8
+hc_exit
+kill "${HC_HOLDER}" 2>/dev/null; wait "${HC_HOLDER}" 2>/dev/null
+[ "${RC}" -eq 0 ] && jq -e '.entries["gb/Game.srm"]' "${HCM}" >/dev/null 2>&1; check $? "PL-034: within its bound the same wait ends in a record, on the re-run (rc ${RC}, ${DT}s)" "PL-034: within the bound: rc ${RC} after ${DT}s; manifest $([ -e "${HCM}" ] && echo written || echo none); failures: $(tail -1 "${HC}/storage/.cache/cloud_sync/capture-failures" 2>/dev/null)"
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
