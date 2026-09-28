@@ -4420,4 +4420,23 @@ EOS
 grep -q '^PASS recheck:' "${DD}/d31.out"; check $? "claude G-D-14: an absent badge found two days ago is asked for again; one found an hour ago is not ($(sed -n 's/^PASS recheck: //p' "${DD}/d31.out"))" "claude G-D-14: $(grep 'recheck:' "${DD}/d31.out" || tail -3 "${DD}/d31.out" | tr '\n' '|') -- a 404 during a set's arrival silenced for a month"
 fi
 
+# D32. Stream F2's gpt G-F2-07 (a file of this stream's): cheevos_armsx2.sh's
+# rename of the rewritten secrets.ini sat inside the success branch unchecked,
+# so a rename that failed left the temp file beside secrets.ini and said
+# nothing. The rename is part of the checked operation now: when it fails
+# the temp goes, the log says the token was left as it was, and secrets.ini
+# is untouched. The rename is made to fail by mounting secrets.ini read-only
+# over itself (a rename onto a mount point fails), the folder writable.
+printf '[Achievements]\nToken = old\n' > "${DAI}/secrets.ini"; cp "${DAI}/secrets.ini" "${DA}/before"
+RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${DABB[@]}" \
+    --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+    --ro-bind /etc /etc --ro-bind "${DA}/profile" /etc/profile \
+    --bind "${DA}/storage" /storage --ro-bind "${DAI}/secrets.ini" /storage/.config/ARMSX2/inis/secrets.ini \
+    --ro-bind "${DA}/shim" /shim --ro-bind "${DA}/repo" /repo \
+    --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --dir /var/log \
+    bash -c 'bash /repo/cheevos_armsx2.sh; rc=$?; cat /var/log/cheevos.log > /storage/cheevos.log 2>/dev/null; exit $rc' > "${DA}/out" 2>&1; echo $? ) 2>/dev/null )
+DLEFT="$(ls "${DAI}" | /usr/bin/grep -c '^secrets\.ini\.tmp' || true)"
+[ "${DLEFT}" -eq 0 ] && cmp -s "${DA}/before" "${DAI}/secrets.ini" && /usr/bin/grep -q "could not be rewritten" "${DA}/storage/cheevos.log" 2>/dev/null; check $? "gpt G-F2-07 cheevos_armsx2.sh: a rename that fails leaves no temp file, secrets.ini as it was, and says so in the log" "gpt G-F2-07: rc ${RC}; temp files left: ${DLEFT}; secrets.ini: $(tr '\n' '|' < "${DAI}/secrets.ini"); log: $(tr '\n' '|' < "${DA}/storage/cheevos.log" 2>/dev/null | cut -c1-160) -- the failed rename was not handled"
+rm -f "${DAI}"/secrets.ini.tmp.* "${DA}/storage/cheevos.log"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

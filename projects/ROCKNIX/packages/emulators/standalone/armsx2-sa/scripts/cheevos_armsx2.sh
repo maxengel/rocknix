@@ -119,9 +119,13 @@ if ( umask 077; TOKEN="${token}" awk '
     }
     { print }
     END { if (!written) { print "[Achievements]"; print "Token = " ENVIRON["TOKEN"] } }
-' "${ARMSX2_TOKEN}" "${ARMSX2_TOKEN}" > "${ARMSX2_TOKEN_TMP}" ) && [ -s "${ARMSX2_TOKEN_TMP}" ]; then
-    mv -f "${ARMSX2_TOKEN_TMP}" "${ARMSX2_TOKEN}"
+' "${ARMSX2_TOKEN}" "${ARMSX2_TOKEN}" > "${ARMSX2_TOKEN_TMP}" ) && [ -s "${ARMSX2_TOKEN_TMP}" ] \
+    && mv -f "${ARMSX2_TOKEN_TMP}" "${ARMSX2_TOKEN}"; then
+    :
 else
+    # The rewrite, the check and the rename are one operation: whichever
+    # fails, the temp goes and secrets.ini is as it was (audit of the
+    # fixes, gpt G-F2-07: the rename sat outside this branch).
     rm -f "${ARMSX2_TOKEN_TMP}"
     echo "ARMSX2's secrets.ini could not be rewritten; its token was left as it was." >> ${LOG_FILE}
 fi
