@@ -93,7 +93,13 @@ with **no spaces before the colon** (`rclone - cloud-sync: …` and `SM8250 - li
 styles FAIL). Also enforced: title ≤ 72 chars, blank line between title and body, body
 lines ≤ 72 chars, and no merge commits in the PR.
 
-## Safety net: pre-push guard
+## Safety net: pre-push guard, and the pre-commit scan
+
+`.githooks/pre-commit` refuses a commit that would add a credential-shaped
+line, with the patterns both hooks read from `.githooks/secret-patterns`; it
+runs in every worktree because the hooks path is absolute (below). It exists
+because the push guard reads history, and a line that reaches history costs a
+rewrite to remove (2026-09-28, #307).
 
 `.githooks/pre-push` blocks pushing any `pr/*` branch that still differs from `upstream/next`
 in a personal path (e.g. you forgot to rebase). Enable it once per clone — the setting is

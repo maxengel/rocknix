@@ -1046,3 +1046,23 @@ an entry whose parenthesis names its seat, or sit under a seat heading --
 and was seen to fire on this folder before the entries were written (seven
 seat-and-number pairs, F-CS-02 (gpt) and F-PB-01 (claude) among them) and
 to pass after (93 pairs).
+
+## 67. A credential-shaped test fixture reached history before any guard read it (2026-09-28)
+
+Eight fix streams committed in worktrees; one wrote three scanner fixtures
+-- a private-key block, an OAuth token, a `devpassword=` -- as literals in
+`tools/last-good-scripts-test`, and the EmulationStation stream wrote its
+guard's own test with a `FAKE=` value. Nothing ran at commit time. The push
+guard, which reads every line every pushed commit adds, refused both
+branches hours later, when the tip had already been cleaned and only the
+history carried the lines; the harness could not run the rewrite, and the
+maintainer had to. The tell: a guard that fires at the last step and reads
+what earlier steps produced.
+
+**Guard:** `.githooks/pre-commit` in both repositories, with the push
+guard's own patterns from `.githooks/secret-patterns`; seen to refuse a
+staged `devpassword=` literal (rc 1) and to pass a clean index, in each
+repository, before this entry was written. The rule is
+`engineering-practices.md` § Guards must fail closed, the paragraph on
+scanner fixtures.
+

@@ -304,6 +304,19 @@ So:
 An assertion that cannot fail is not evidence. Ask what input would produce a
 FAIL; if you cannot name one, the check proves nothing.
 
+**A fixture for a secret scanner is built at run time, never written as a
+literal (2026-09-28, #307).** `tools/last-good-scripts-test`'s cases for the
+credential scan and the redaction feed values that look like a private key,
+an OAuth token and a `devpassword=`; three were committed as literals by a
+fix stream, the push guard read them in history, and the unpushed range had
+to be rewritten by the maintainer before `next` could move. So a fixture is
+assembled when the case runs -- `printf '%s' 'OPENSSH PRIVATE KEY'` into a
+format string, a value passed through `$(printf ...)` -- and the file at rest
+carries no line the guard would match. `.githooks/pre-commit` (both
+repositories) now refuses such a line at commit time with the same patterns
+the push guard uses (`.githooks/secret-patterns`, one definition); a
+refusal there costs one edit, at push time it costs a rewrite.
+
 **The positive is recorded where the guard is wired (audit #258, P-02).** A
 hook line, a CI step, a suite line or a `check` in a script is committed
 with a work-log line naming the constructed failure it was seen to catch,
