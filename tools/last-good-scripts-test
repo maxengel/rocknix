@@ -3811,4 +3811,18 @@ p7mid=$([ -e "${P7C}/storage/.cache/log/cores/core.emulationstation.8001.4242.tx
 wait "${P7A}" "${P7BK}" 2>/dev/null
 [ "${p7mid}" = "no" ] && [ -e "${P7C}/storage/.cache/log/cores/core.emulationstation.8001.4242.gz" ] && [ -e "${P7C}/storage/.cache/log/cores/core.retroarch.8000.4242.gz" ]; check $? "#308 10-packages-and-build gpt F-PB-21: a second crash's handler waits while the first is still writing, then keeps its own" "#308 F-PB-21: the second note existed mid-way through the first dump: ${p7mid}; left: $(ls "${P7C}/storage/.cache/log/cores" | tr '\n' ' ')"
 
+# == #308 10-packages-and-build gpt F-PB-17: save-state arguments come from their own arguments, never a ROM's name
+P7U2="${P7M}/runemu"; mkdir -p "${P7U2}"
+src_of "${RE_REL:-projects/ROCKNIX/packages/rocknix/sources/scripts/runemu.sh}" "${P7U2}/runemu.sh"
+sed -n '/^function parse_savestate_arguments() {/,/^}/p' "${P7U2}/runemu.sh" > "${P7U2}/parse.sh"
+P7ROM="/storage/roms/snes/Demo -state_slot 2 - Part.sfc"
+p7pa=$(bash -c '. "$0"; ARGUMENTS="$*"; parse_savestate_arguments "$@"; printf "S=%s A=%s F=%s" "${SNAPSHOT}" "${AUTOSAVE}" "${STATEFILE}"' "${P7U2}/parse.sh" "${P7ROM}" -Psnes --core=snes9x --emulator=retroarch --controllers="-p1index 0" -state_slot 7 2>/dev/null)
+p7pb=$(bash -c '. "$0"; ARGUMENTS="$*"; parse_savestate_arguments "$@"; printf "S=%s A=%s" "${SNAPSHOT}" "${AUTOSAVE}"' "${P7U2}/parse.sh" "/storage/roms/snes/Game -autosave 0 x.sfc" -Psnes --core=snes9x --emulator=retroarch --controllers="-p1index 0" -autosave 1 2>/dev/null)
+[ "${p7pa}" = "S=7 A= F=" ] && [ "${p7pb}" = "S= A=1" ]; check $? "#308 10-packages-and-build gpt F-PB-17: a ROM named 'Demo -state_slot 2 - Part' launched with -state_slot 7 reads slot 7, and 'Game -autosave 0 x' with -autosave 1 reads 1" "#308 F-PB-17: got '${p7pa}' and '${p7pb}' -- the first match in the joined line was the ROM's name"
+
+# == #308 8-es-menus-and-core claude (stream E2, the launch command): the platform is the -P argument, not the last -P anywhere
+sed -n '/^ARGUMENTS="\$@"$/,/^CORE=/p' "${P7U2}/runemu.sh" | sed '$d' > "${P7U2}/platform.sh"
+p7pl=$(bash -c '. "$0"; printf "%s" "${PLATFORM}"' "${P7U2}/platform.sh" "/storage/roms/snes/Super Mario-Party.sfc" -Psnes --core=snes9x --emulator=retroarch --controllers="-p1index 0" --host --port 55435 --nick "My-Player" 2>/dev/null)
+[ "${p7pl}" = "snes" ]; check $? "#308 8-es-menus-and-core (E2): a launch carrying -Psnes and a later --nick 'My-Player' reads the platform snes" "#308 E2: the platform read '${p7pl}' -- the last -P in the joined line was the nick's"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
