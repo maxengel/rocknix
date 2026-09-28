@@ -155,6 +155,16 @@ seeded from the `/usr/config/*.defaults` templates:
   `--delete-excluded` unconditionally (like the `--verbose` strip); `sync` restores keep
   mirror semantics *within* the allowlist but can never delete outside it. Preserve that
   strip in any refactor, and treat any restore-side `--delete-excluded` as a bug.
+  **Since the audit's fixes (2026-09-28, #307):** the shipped `RCLONEOPTS` no longer carries
+  `--delete-excluded` at all, and `cloud_backup` strips it as `cloud_restore` does, whatever
+  the file says -- the shipped conf's comment now says `copy` is the default (sends what
+  differs, deletes nothing, keeps what it replaces for one cycle in `<saves folder>-replaced`)
+  and that no menu offers `sync`. The nesting warning covers both the settings folder and
+  the content folder, always logs, and shows on screen on deliberate runs (it used to fire
+  only while the flag was present, which the strip removed a few lines earlier, so it never
+  fired: #308 F-CS-17). The prune of `<saves folder>-replaced` and of the settings
+  archives keeps the folder and archive this run wrote by name and prunes the rest by count
+  (D-CLOUD-141's sibling in `cloud_backup`, #307 PL-021).
 - **The two phases have different transfer roots, so filter rules do not carry
   between them.** Phase 1 runs from `SAVESPATH` (`/storage/roms`); phase 2 runs
   from `SETTINGS_BACKUPS` (`/storage/roms/backup`) to `SETTINGS_REMOTE`, and on
@@ -182,8 +192,12 @@ seeded from the `/usr/config/*.defaults` templates:
   syncs `SAVES_REMOTE` with `--delete-excluded` and the archive is an excluded file,
   so a nested path is deleted there. A full run hides this -- phase 2 re-uploads
   moments later -- but a `--saves-only` run (or `BACKUPFILE_BACKUP_OPTION="no"`)
-  deletes the archives and puts nothing back. `cloud_backup` now warns when the
-  two are nested and the method can actually delete.
+  deletes the archives and puts nothing back. `cloud_backup` warns when either the
+  settings folder or the content folder is nested in the saves folder; `cloud_setup`
+  refuses a one-level saves folder where it is typed and derives `<parent>/Backups` and
+  `<parent>/Content` beside a deeper one; `cloud_sync_helper` derives no content folder
+  for a top-level saves folder on an upgraded config (`CONTENT_REMOTE` is written empty,
+  the remote's root, for the owner to set) -- #307 PL-015, D-CLOUD-143's neighbours.
 
 - **Reachability means the remote, not the internet.** `check_internet` used to
   ping `google.com`, wrong in both directions: it fails for a self-hosted or LAN
@@ -695,3 +709,21 @@ So a card that wants to say which run it is in has to be told by the composition
 that runs both -- `main.cpp`'s startup command echoes `>>> doing receive` and
 `>>> doing send` before each half (D-UI-052), and `CloudText::phaseBar` maps the
 run's percentage into its half of the bar.
+
+## What the audit's fixes changed in the scripts' quiet behaviour (2026-09-28, #307/#308)
+
+- **`cloud_capture` keeps a set-aside manifest** (`manifest-<id>.json.corrupt-<epoch>`) until a
+  manifest that parses stands in its place (D-CLOUD-078 (2) then (3)); its commit runs under a
+  lock of its own (`/storage/.cache/cloud_sync/.capture.lock`, bounded at 5 s), never the
+  transfer lock, and the garbage collection spares any seal changed in the last ten minutes.
+- **`cloud_restore` walks the saves tree for partial files only when a transfer may have left
+  one**: a record `restore-tree-clean` under `/storage/.cache/cloud_sync` is removed as the
+  transfer starts and written back once it has ended and been swept if it needed to be; a clean
+  run after a clean run walks nothing. The first restore on this build sweeps once.
+- **The rules merge on an upgraded device keeps a rule that never took effect inert**: a
+  non-default rule found below the catch-all on the first merge this build makes (marker
+  `.cloud_sync-rules-user-first-applied`) is written after the defaults as `# inert: <rule>`
+  rather than woken; a rules file cut short is never installed, and the saves scripts refuse
+  one that lacks the anchored catch-all (#307 PL-020).
+- **`cloud_sync.conf` is never sourced with a command in it** (D-CLOUD-142); the content
+  scripts read their values as text.

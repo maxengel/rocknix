@@ -1024,3 +1024,25 @@ real proxy and the real RetroArch), and a shim that stands in for timing
 or a path is made to match the real one before it is trusted (proof-298's
 shim stamps after the real proxy's delay from this round). No tool reads
 a proof for its shims; the sentence in the criterion is the check.
+
+## 66. A verification pass keyed by finding number missed a Critical whose number the other seat had used (2026-09-28)
+
+The milestone audit's refutation pass (#307) read every Critical and
+High the two seats filed, and its bookkeeping listed which finding ids
+had a verification entry by counting mentions of the id. Two seats number
+their findings independently, so `F-CS-02` was the Claude seat's "`--all`
+restores ROMs and never BIOS" (High, verified) and the GPT seat's "content
+matching can delete N64 `.fla` saves" (Critical, never read): one mention,
+one tick, a Critical that fell through both #307 and #308. Stream A found
+it hours later because the file was its own, and fixed it (`ff2bdc65a6`).
+The same count also hid an unread High (the Claude seat's F-PB-01, the
+interface pinned to a personal repository) behind the GPT seat's F-PB-01
+(the redaction's unquoted values). The tell: two lists numbered by
+different authors, joined on the number.
+
+**Guard:** `tools/lint-audit-artifacts` counts verification entries by
+seat and number -- every Critical/High row of the findings index must have
+an entry whose parenthesis names its seat, or sit under a seat heading --
+and was seen to fire on this folder before the entries were written (seven
+seat-and-number pairs, F-CS-02 (gpt) and F-PB-01 (claude) among them) and
+to pass after (93 pairs).

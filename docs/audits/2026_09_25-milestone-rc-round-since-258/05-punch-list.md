@@ -1,7 +1,7 @@
 # Punch List — the whole feature drop, both repositories, against upstream
 **Generated:** 2026-09-28
 **Source Audit:** `docs/audits/2026_09_25-milestone-rc-round-since-258/04-analysis.md`
-**Total Items:** 80 (Critical: 1, High: 30, Medium: 43, Low: 6) -- PL-079 and PL-080 added 2026-09-28 from stream A's reading
+**Total Items:** 81 (Critical: 1, High: 31, Medium: 43, Low: 6) -- PL-079 and PL-080 added 2026-09-28 from stream A's reading, PL-081 from the lint's seat-keyed check
 ---
 
 ## Instructions for Executing Agent
@@ -660,6 +660,15 @@ Each item is one fix with its acceptance named; items are ordered by severity, t
 - **What:** The stall bound saw no bytes moving during a large listing and ended the run at the ceiling. Fixed by stream A (`fd6878278a`): a growing listing is progress towards the ceiling.
 - **Acceptance:** the scripts test's case A30: a listing that grows for longer than the stall bound completes (FAIL on the old tree: `rc 124 after 4s`)
 
+## PL-081: The interface is pinned to a personal repository and test branch
+- **Severity:** High
+- **Category:** Upstream fit
+- **Source Finding:** claude F-PB-01
+- **Owner area:** emulationstation package
+- **Where:** projects/ROCKNIX/packages/ui/emulationstation/package.mk:5-6
+- **What:** `PKG_VERSION` names a commit on `maxengel/emulationstation-next` at `test/qa-integration`, with no `PKG_SHA256`; the pinned tree carries fork-only files. Not a defect in the build: it is the fork's integration pin (D-WORKFLOW-012). Before the distribution PR is cut, the ES PR merges into ROCKNIX's master and the pin names that repository and commit; this item is the PR-prep pass's (#256).
+- **Acceptance:** the `pr/*` branch's `package.mk` names `ROCKNIX/emulationstation-next` and a commit on its master, with `PKG_SHA256` where the recipe's shape wants one; `tools/pkgcheck emulationstation` PASS
+
 ---
 
 ## Phase 7 resolution gate
@@ -748,6 +757,7 @@ Recorded per item as it is resolved: the outcome (resolved / deferred / rejected
 | PL-078 | Low | | |
 | PL-079 | High | | |
 | PL-080 | Medium | | |
+| PL-081 | High | | |
 
 ## Punch index
 
@@ -1392,5 +1402,13 @@ punch_index:
   owner_area: "cloud_backup"
   where: "cloud_backup (the automatic run's stall ceiling)"
   acceptance: "the scripts test's case A30: a listing that grows for longer than the stall bound completes (FAIL on the old tree: `rc 124 after 4s`)"
+  outcome: open
+- id: PL-081
+  severity: High
+  category: "Upstream fit"
+  source_finding: "claude F-PB-01"
+  owner_area: "emulationstation package"
+  where: "projects/ROCKNIX/packages/ui/emulationstation/package.mk:5-6"
+  acceptance: "the `pr/*` branch's `package.mk` names `ROCKNIX/emulationstation-next` and a commit on its master, with `PKG_SHA256` where the recipe's shape wants one; `tools/pkgcheck emulationstation` PASS"
   outcome: open
 ```
