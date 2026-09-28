@@ -10553,6 +10553,22 @@ p7dt=$(( $(date +%s) - p7t0 ))
 [ "${p7rc}" -ne 0 ] && [ "${p7rc}" -ne 124 ] && [ "${p7dt}" -lt 15 ] && [ -z "$(ls -A "${P7F}/dirlock/lock")" ] && grep -q 'wait_lock' "${P7F}/err"; check $? "audit of the fix round G2-B-03 (gpt): with a folder at the lock's path, wait_lock takes nothing (rc ${p7rc}, ${p7dt}s), links nothing into the folder, and says why" "G2-B-03: rc ${p7rc} after ${p7dt}s; in the folder: $(ls -A "${P7F}/dirlock/lock" | tr '\n' ' ') -- ln linked the pid file inside it and every contender took the lock"
 rm -rf "${P7F}/dirlock"
 
+# == G2-B-09 (gpt): the seed list is read whole, or the restore refuses
+p7zclear; p7reset '  /storage/.config/emulationstation/es_settings.cfg
+  /storage/.config/test/*'
+cp "${P7U}/emulationstation/es_settings.cfg" "${P7S}/.config/emulationstation/es_settings.cfg"
+p7bt backup
+echo EDITED > "${P7S}/.config/emulationstation/es_settings.cfg"
+cat > "${P7}/shim/tar" <<'EOS'
+#!/bin/bash
+# The seed list's read fails part-way: nothing of it reaches the reader.
+if [ "$1" = "-xzOf" ] && [ "$3" = "storage/.config/.backuptool-seeds" ]; then echo "tar: read error" >&2; exit 1; fi
+exec /p7bb/tar "$@"
+EOS
+chmod +x "${P7}/shim/tar"
+p7bt restore --no-restart; rm -f "${P7}/shim/tar"
+[ "${RC}" -ne 0 ] && [ "$(cat "${P7S}/.config/emulationstation/es_settings.cfg")" = "EDITED" ] && [ -n "$(p7why)" ] && ! p7zscreen | grep -q 'tar:'; check $? "audit of the fix round G2-B-09 (gpt): a seed list that cannot be read ends the restore before it writes -- never a restore that says it finished with the defaults not put back" "G2-B-09: rc ${RC}; es_settings.cfg '$(head -c 30 "${P7S}/.config/emulationstation/es_settings.cfg")'; why '$(p7why)'; screen: $(p7zscreen | tr '\n' '|' | cut -c1-160)"
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
