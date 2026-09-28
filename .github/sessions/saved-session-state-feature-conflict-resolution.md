@@ -1,34 +1,29 @@
 # Saved Session State
 
-> **Saved**: 2026-09-28T17:01:18Z
-> **Branch**: feature/conflict-resolution (the session worktree; the work is on `next`, pushed at 1850043378)
-> **Repo**: maxengel/rocknix (fork of ROCKNIX/distribution); EmulationStation fork at ~/Development/emulationstation-next.worktrees/qa-integration (`test/qa-integration` at 83b5386f05, pushed; the distribution's ES pin is that commit, 17fe77bbab)
+> **Saved**: 2026-09-28T18:42:00Z
+> **Branch**: feature/conflict-resolution (the session worktree; the work is on `next`, pushed at 8196071ff5, which is chain 88's BUILD_ID)
+> **Repo**: maxengel/rocknix; EmulationStation fork `test/qa-integration` at c15c698367 (the distribution's pin, three bumps today)
 
 ## Current Focus
 
-Phase 7 of the milestone-tier audit of the fix round (D-WORKFLOW-060, #313, 34 items): merging the eight Opus streams' branches one at a time with the harness gating each merge, recording every outcome in `05-punch-list.md` (table + YAML) and on #313, then chain 88 and the candidate call. 16 of 34 closed: the integrator's seven (PL-011/012/013/023/025/026/027), E1 (PL-010, PL-018), E2 (PL-019; PL-030 withdrawn at the source), F1 (PL-024), C (PL-009/014/021/032). Open: A (PL-001/002/004/015/034), B (PL-003/005/006/007/008/016/017/022/028), D (PL-031/033), F2 (PL-020), the integrator's PL-029 (the next cut's proofs).
-
-## In Progress
-
-- Streams A, B, D, F2 running (agents dispatched 15:53 UTC; reports to `/workspace/tmp/rocknix-session/streams2/<X>-report.md`); C's follow-up (extend `cloud_log_scrub` to `es_log*.txt`) running; B was sent PL-028 mid-run, R-01 for PL-022, the widening of PL-006, E1's cut-file lead and C's `key=`/`access_key_id` lead.
-- Merged into `next`: F1 (`e3394a893f`), C (`8840998047`, a harness conflict resolved by keeping both blocks, F1 first). Into `test/qa-integration`: E1 (`b8e0b382e`), E2 (`55a1f6b29`), E1's follow-up (`83b5386f05`). Each merge: verify the branch (commits with `Already written:` and the trailer, es-syntax-check / pkgcheck, the built test binaries run by the integrator), merge with `/workspace/tmp/rocknix-session/integrate-pl2.sh <x>` (detached; a harness conflict in `tools/last-good-scripts-test` is resolved by keeping both appended blocks before the verdict line), re-run `BASE_REF=f3d19dc8fb ./tools/last-good-scripts-test --old` in the stream's worktree to confirm the fail-before claim, then record.
+Phase 7 of the audit of the fix round (#313, 34 items) is merged and recorded: 33 of 34 resolved or withdrawn on `next`, PL-029 (the candidate's own proofs) open until the cut. Chain 88 started 18:40 UTC from `8196071ff5` (`/workspace/tmp/rocknix-session/chain-88.sh`, log `chain-88.log`, rc `chain-88.rc`): sync -> x64 run 88 -> H700 run 66 -> images kept under `/workspace/artifacts/rocknix-images/{x64,h700}-all-20260928-8196071ff5/` -> vm-qa run 70 -> guest d rebuilt -> proof-298 -> proofs-307 run 3 (`proofs-307/run3.md`) -> the upgrade rehearsal from `d39ccdfff3` (`rehearsal-88.log/.rc`). No commit to `next` between the chain's sync and the H700 image ("H700 done" in `chain-88.log`).
 
 ## Next Steps
 
-1. Each remaining report: verify, merge (A, B, D, F2 into `next`), fail-before re-run, record in 05 and tick #313, running-log line.
-2. When the last distribution branch is merged: `/workspace/tmp/rocknix-session/chain-88.sh` detached (sync, x64 run 88, H700 run 66, images kept, vm-qa 70, guest d, proof-298, proofs run 3, the upgrade rehearsal from `d39ccdfff3`); no commit to `next` between its sync and its last image.
-3. On the cut: PL-029's proofs (the rehearsal, the migration on a guest, the E1/E2 follow-ups' proofs, the runner's NOT RUN), the frames E2/F1/C ask for (the BIOS-alone page at 640x480; a downgrade and return; the socket refusal; STOP IT AND PLAY), records (RECORD.txt x2, the QA log row, the catalog), `tools/lint-audit-artifacts <folder> --issue 313` PASS, the candidate call on #236, the device yeses (copy, then reboot, each asked).
-4. The maintainer's own (asked on #312 and in chat): the CI secret `FORBIDDEN_PATTERNS`, #260's two edits, the history rewrite.
+1. When chain 88 ends: read every step's rc and log; vm-qa 70's report (fifteen suites, `frame-diff` boxes claimed or filed), proof-298, run3.md (expect PL-001's proofs unchanged, `E2-pl061` for PL-034, `F2-autoslot` for D-LAUNCH-007), the rehearsal (PL-024's fix seen: `is-active` on the image). Then PL-029's remaining proofs: the migration on a guest against the QA cloud, the E1/E2 follow-ups' proofs (the BIOS-alone page frame at 640x480, the 69-gaps card with the link cut mid exit sync, STOP IT AND PLAY, the downgrade-and-return two boots, the socket refusal, `wifictl join` on guest d, the cut `system.cfg` repaired at boot, a legacy zip with stored members), `tools/time-to-play` for `settings_base`'s two forks per shell settings write.
+2. Records: RECORD.txt x2, the QA log row, `tools/release-catalog`, `docs/cloud-sync-changelog.md`'s entry for the round (the change-log rule: written the day the change lands, claims checked against the build), the Phase 7 work-log entry, PL-029's outcome, `tools/lint-audit-artifacts <folder> --issue 313` PASS, #313 closed with the evidence, D-WORKFLOW-060's round retro (mini-retro).
+3. The candidate call on #236; the RG35XX SP's copy and reboot, each asked for by name (D-QA-011).
+4. The maintainer's own: the CI secret `FORBIDDEN_PATTERNS`, #260's two edits, the history rewrite.
 
 ## Notes for Next Session
 
+- The merge chain script is `merge-stream.sh <x> <base> <wait-rc>`; its busy check is `primary_harness_running` (a `|| pgrep | while read` always read busy). Kill a chain only by a pattern anchored at its argv start (`^/bin/bash /workspace/tmp/rocknix-session/merge-stream\.sh`); a plain literal elsewhere in the same command killed the tool shell once today.
+- B's `--old` runs need stdin closed (`< /dev/null`); both harness calls in the chain have it.
 - Never write the wordlist's words anywhere the fork carries; the list is `~/.config/rocknix/forbidden-terms`.
-- A commit is gated on a test's own rc, never on `test | grep | cut && git commit` (16:29 UTC's slip, friction log).
-- The harness reads by offset: never edit `tools/last-good-scripts-test` in the primary while a run of it is in flight; the `--old` re-runs go in the stream's worktree.
-- `es-syntax-check` needs the file's real path (`es-app/src/WifiText.cpp`, not es-core).
-- The harness's signal line reads `/proc/$$/status`; `$(awk … /proc/self/status)` reads awk's.
+- A commit is gated on a test's own rc, never through a pipe ending in a filter.
+- `date -u '+%Y-%m-%d %H:%M'` needs its quotes; twice today the friction line got an empty date.
 
 ## Open Questions
 
-- The `awecelot` references (theirs to keep or drop); the ES fork's runner half of the wordlist check (on their word).
+- The `awecelot` references; the ES fork's runner half of the wordlist check; whether guest d (5.9 GB) should be stopped for builds (the chain rebuilds it).
 
