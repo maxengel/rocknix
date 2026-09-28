@@ -4360,4 +4360,19 @@ grep -q 'listed once for it.*again' "${TLOG}"; check $? "claude G-D-10: the log 
 rm -f "${TR}/helper-plan"; TENV=()
 fi
 
+# D30. claude G-D-11: the comment's claim that PPSSPP consumes
+# AchievementsHost, checked against the PPSSPP source the package pins, when
+# that source is on this machine (the sources cache, as section t finds the
+# client): the key is a ConfigSetting of [Achievements], and a non-empty
+# value is handed to rc_client_set_host; and the script names the pin
+# ppsspp-sa's package.mk pins. The launch through the proxy is the guest's.
+PPV="$(sed -n 's/^PKG_VERSION="\([0-9a-f]*\)".*/\1/p' "${ROOT}/projects/ROCKNIX/packages/emulators/standalone/ppsspp-sa/package.mk" | head -n 1)"
+PPSRC=""; for d in "${SOURCES_DIR:-}" /workspace/cache/rocknix-sources "${ROOT}/sources"; do [ -n "${d}" ] && [ -d "${d}/ppsspp-sa/ppsspp-sa-${PPV}/Core" ] && { PPSRC="${d}/ppsspp-sa/ppsspp-sa-${PPV}"; break; }; done
+grep -q "afbc66a3\|${PPV:0:8}" "${DD}/cheevos_ppsspp.sh" && grep -q "${PPV:0:8}" "${DD}/cheevos_ppsspp.sh"; check $? "claude G-D-11: cheevos_ppsspp.sh names the PPSSPP commit ppsspp-sa pins (${PPV:0:8}) where it cites the source" "claude G-D-11: the script's citation does not name the pin ${PPV:0:8}"
+if [ -n "${PPSRC}" ]; then
+    grep -q 'ConfigSetting("AchievementsHost", SETTING(g_Config, sAchievementsHost)' "${PPSRC}/Core/Config.cpp" && grep -q 'rc_client_set_host(g_rcClient, g_Config.sAchievementsHost.c_str())' "${PPSRC}/Core/RetroAchievements.cpp"; check $? "claude G-D-11: the pinned PPSSPP source reads AchievementsHost from [Achievements] and hands it to rc_client_set_host (${PPSRC##*/})" "claude G-D-11: the pinned PPSSPP source at ${PPSRC} does not read AchievementsHost as cited"
+else
+    echo "    SKIP  claude G-D-11's source check: PPSSPP ${PPV:0:10} is not in a sources cache on this machine"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
