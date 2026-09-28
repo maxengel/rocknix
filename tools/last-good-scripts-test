@@ -3159,5 +3159,134 @@ check $? "the container is handed a fresh .env, mode 600, though a 0644 one was 
 printf '#!/bin/sh\necho PARTIAL=1\nexit 3\n' > "${MX}/scripts/get_env"; rm -f "${MX}/seen"
 f2_recipe; rc=$?
 [ ! -e "${MX}/seen" ] && [ ! -e "${MX}/.env" ] && [ "${rc}" -ne 0 ]; check $? "a get_env that fails starts no container and leaves no .env" "get_env failed: container $([ -e "${MX}/seen" ] && echo started || echo 'not started'); .env $([ -e "${MX}/.env" ] && echo left || echo gone); rc ${rc}"
+# F2-4. RetroArch's patch stack as the package applies it, over the pinned
+# tarball (#307 PL-032; #308 6-retroarch-widgets: claude F-RW-02/05/06/07/
+# 08/09/10, gpt F-RW-01/03/04). scripts/unpack applies patches/*.patch in
+# glob order with patch's default fuzz, then batteryplus/ (H700, RK3566,
+# S922X); the fork's own patches are held to fuzz 0 here, since a hunk that
+# applies only by fuzz is one a reviewer applying the series strictly gets
+# rejected (0017 needed a fuzz of 2 after 0016 was hand-edited to 13 px).
+# The patched tree is then compiled syntax-only with the host's gcc, the
+# widget font step is compiled on its own and asked which table each face
+# gets, and the claims the audit found false are read from the patched
+# source.
+echo "  F2-4. RetroArch's patches: the fork's apply at fuzz 0, the tree compiles, the sharp-size table follows the face that is drawn (#307 PL-032; #308 F-RW-02..10)"
+RA_REL=projects/ROCKNIX/packages/emulators/libretro/retroarch
+RA_PIN="$(sed -n 's/^PKG_VERSION="\([0-9a-f]*\)".*/\1/p' "${ROOT}/${RA_REL}/package.mk" | head -1)"
+RA_TAR=""
+for d in "${SOURCES_DIR:-}" /workspace/cache/rocknix-sources "${ROOT}/sources" "${ROOT}"/../*/sources; do
+    [ -n "${d}" ] && [ -f "${d}/retroarch/retroarch-${RA_PIN}.tar.gz" ] && { RA_TAR="${d}/retroarch/retroarch-${RA_PIN}.tar.gz"; break; }
+done
+if [ -z "${RA_TAR}" ]; then
+    echo "    SKIP  retroarch-${RA_PIN:-?}.tar.gz is not under SOURCES_DIR, /workspace/cache/rocknix-sources or a build worktree's sources/ -- F2-4 needs the pinned tree"
+else
+RX="${F2}/ra"; mkdir -p "${RX}/patches/batteryplus" "${RX}/src"
+if [ "${OLD}" -eq 1 ]; then
+    git -C "${ROOT}" ls-tree --name-only "${BASE_REF}" "${RA_REL}/patches/" "${RA_REL}/patches/batteryplus/" | grep '\.patch$' \
+      | while read -r f; do git -C "${ROOT}" show "${BASE_REF}:${f}" > "${RX}/patches/${f#${RA_REL}/patches/}"; done
+else
+    cp "${ROOT}/${RA_REL}"/patches/*.patch "${RX}/patches/"; cp "${ROOT}/${RA_REL}"/patches/batteryplus/*.patch "${RX}/patches/batteryplus/"
+fi
+tar -xzf "${RA_TAR}" -C "${RX}/src" --strip-components=1 --wildcards '*.h' '*.c' '*.cpp' '*/version.all' 2>/dev/null
+F2_FUZZ=""; F2_APPLY=0
+for p in "${RX}"/patches/*.patch "${RX}"/patches/batteryplus/*.patch; do
+    n="${p#${RX}/patches/}"
+    # The fork's (0011-video-thread-*, 0013 and up) are tried at fuzz 0 first
+    # and noted when that fails; every patch is then applied as the package
+    # applies it, so the checks below read the tree the build would.
+    case "${n}" in
+        0011-video-thread-*|001[3-9]-*|00[2-9][0-9]-*)
+            patch -d "${RX}/src" -p1 -N --fuzz=0 --dry-run -r - < "${p}" > "${RX}/fz.log" 2>&1 && ! grep -q 'with fuzz' "${RX}/fz.log" || F2_FUZZ+=" ${n}" ;;
+    esac
+    patch -d "${RX}/src" -p1 -N --no-backup-if-mismatch -r - < "${p}" > /dev/null 2>&1 || { F2_APPLY=1; F2_FUZZ+=" ${n}(FAILED)"; }
+done
+[ "${F2_APPLY}" -eq 0 ] && [ -z "${F2_FUZZ}" ]; check $? "every patch applies in the package's order, the fork's with no fuzz" "patches that needed fuzz or failed:${F2_FUZZ}"
+GW="${RX}/src/gfx/gfx_widgets.c"
+if command -v gcc > /dev/null; then
+    F2_CC=""
+    for c in gfx/gfx_widgets.c gfx/video_thread_wrapper.c command.c runtime_file.c; do
+        gcc -fsyntax-only -std=gnu99 -Werror=implicit-function-declaration -I"${RX}/src" -I"${RX}/src/libretro-common/include" -I"${RX}/src/deps" \
+            -DHAVE_GFX_WIDGETS -DHAVE_MENU -DHAVE_XMB -DHAVE_OZONE -DHAVE_THREADS -DHAVE_CHEEVOS -DHAVE_CONFIGFILE -DHAVE_NETWORKING -DRARCH_INTERNAL \
+            "${RX}/src/${c}" > "${RX}/cc.log" 2>&1 || F2_CC+=" ${c}: $(grep -m1 'error' "${RX}/cc.log" | cut -c1-160)"
+    done
+    [ -z "${F2_CC}" ]; check $? "the patched gfx_widgets.c, video_thread_wrapper.c, command.c and runtime_file.c compile (host gcc, -fsyntax-only)" "does not compile:${F2_CC}"
+else
+    echo "    SKIP  no gcc on this host: the patched tree was not compiled"
+fi
+# PL-032: which sharp-size table a face gets is decided by the face that is
+# drawn -- the resolved font file -- in both of gfx_widgets_layout's
+# branches, so video_font_path (set by every shipped profile) no longer means
+# "no table" by accident. The step is compiled alone and asked: the two
+# ozone faces get the tables measured for them, the shipped profile's
+# xmb/monochrome/font.ttf (M+ 1p) gets none -- measured the same way it has
+# no sharp size in reach (tools/font-stems: 29 % solid at 13 px, 63 % at 17,
+# 100 % only from 23), and D-UI-088 leaves an unmeasured face alone -- and a
+# 17.4 px banner in Inter UI Regular moves to 18 as D-UI-088 says.
+awk '/^\/\* ROCKNIX: sharp-size step begin \*\//{p=1} p{print} /^\/\* ROCKNIX: sharp-size step end \*\//{p=0}' "${GW}" > "${RX}/sharp.inc"
+cat > "${RX}/sharp_test.c" <<'EOC'
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
+#include "sharp.inc"
+static const char *face(const char *path)
+{
+   const gfx_widgets_sharp_face_t *f = gfx_widgets_sharp_face(path);
+   return f ? f->name : "none";
+}
+int main(void)
+{
+   const gfx_widgets_sharp_face_t *r = gfx_widgets_sharp_face("/usr/share/retroarch/assets/ozone/regular.ttf");
+   printf("%s|%s|%s|%s|%s|%.0f|%.1f\n",
+         face("/usr/share/retroarch/assets/ozone/regular.ttf"),
+         face("/usr/share/retroarch/assets/ozone/bold.ttf"),
+         face("/usr/share/retroarch-assets/xmb/monochrome/font.ttf"),
+         face(""), face(NULL),
+         r ? gfx_widgets_sharp_size(17.4f, r->sizes, r->n) : -1.0f,
+         r ? gfx_widgets_sharp_size(11.0f, r->sizes, r->n) : -1.0f);
+   return 0;
+}
+EOC
+if command -v gcc > /dev/null && [ -s "${RX}/sharp.inc" ] && gcc -std=gnu99 -o "${RX}/sharp_test" "${RX}/sharp_test.c" -I"${RX}" > "${RX}/sharp.log" 2>&1; then
+    F2_OUT="$("${RX}/sharp_test")"
+else
+    F2_OUT="(the sharp-size step is not marked out in gfx_widgets.c, or does not compile alone: $(grep -m1 error "${RX}/sharp.log" 2>/dev/null | cut -c1-120))"
+fi
+[ "${F2_OUT}" = "Inter UI Regular|Inter UI Bold|none|none|none|18|11.0" ]
+check $? "the table is the drawn face's: ozone/regular.ttf -> Inter UI Regular, ozone/bold.ttf -> Inter UI Bold, the shipped xmb/monochrome/font.ttf -> none; 17.4 px moves to 18, 11 stays (15 is past the band)" "the face step answered '${F2_OUT}' -- expected 'Inter UI Regular|Inter UI Bold|none|none|none|18|11.0'"
+# Both branches ask the drawn face; the message queue takes no table in
+# either (D-UI-098: 13 is drawn at 13); every face logs what it was drawn at.
+F2_BAD=""
+grep -q 'font_file == p_dispwidget->ozone_regular_font_path' "${GW}" && F2_BAD+=" the-pointer-comparison-is-still-there"
+grep -Eq 'gfx_widget_fonts\.regular,[^;]*font_path, BASE_FONT_SIZE, 9\.0f, NULL, 0\)' "${GW}" && F2_BAD+=" user-path-regular-passes-no-table"
+[ "$(grep -c 'MSG_QUEUE_FONT_SIZE, MSG_QUEUE_MIN_SIZE, false)' "${GW}")" -eq 2 ] || F2_BAD+=" msg_queue-not-explicitly-tableless-in-both-branches"
+grep -q 'RARCH_LOG("\[Widgets\] font %s: ' "${GW}" || F2_BAD+=" no-font-log-line"
+grep -q 'RARCH_LOG([^;]*ROCKNIX' "${GW}" && F2_BAD+=" a-log-string-carries-a-fork-issue-number"
+grep -q 'define MSG_QUEUE_MIN_SIZE  13\.0f' "${GW}" || F2_BAD+=" floor-not-13"
+[ -z "${F2_BAD}" ]; check $? "both branches ask the drawn face for its table, the message queue takes none (D-UI-098), each face's size is logged, and no log string carries a fork issue number" "gfx_widgets.c:${F2_BAD}"
+# 0016's and 0017's messages describe the code they carry (the floor is 13
+# since D-UI-098; the tables apply to the faces they were measured on).
+F2_BAD=""
+head -30 "${RX}/patches/0016-widgets-message-queue-floor.patch" | grep -q 'under 14 px\|queue gets 14' && F2_BAD+=" 0016-says-14"
+head -40 "${RX}/patches/0017-widgets-sharp-font-sizes.patch" | grep -q '14 -> 15\|The 14 px floor' && F2_BAD+=" 0017-says-14"
+head -40 "${RX}/patches/0017-widgets-sharp-font-sizes.patch" | grep -q 'video_font_path' || F2_BAD+=" 0017-silent-on-the-shipped-face"
+[ -z "${F2_BAD}" ]; check $? "0016's and 0017's messages describe the 13 px floor and the face the shipped profile draws" "patch messages:${F2_BAD}"
+# F-RW-07: a context reset with XMB configured lays out at the frame loop's
+# scale, as it already did for ozone (menu_driver_id reads UNKNOWN there).
+awk '/^static float gfx_widgets_get_scale_factor\(/,/^}/' "${GW}" | grep -q 'string_is_equal(settings->arrays.menu_driver, "xmb")'
+check $? "the widget scale's XMB test has the configured-name fallback the ozone test has" "gfx_widgets_get_scale_factor keys XMB on menu_driver_id alone, which reads UNKNOWN at a context reset"
+# F-RW-08 / gpt F-RW-04 / gpt F-RW-03: the placement is logged after the
+# divider is known, from the numbers the placement uses, and the messages on
+# screen are placed again once the layout has its new margin.
+awk '/^static void gfx_widgets_layout\(/,/^}/' "${GW}" > "${RX}/layout.c"
+L_DIV=$(grep -n 'divider_width_1px *= ' "${RX}/layout.c" | tail -1 | cut -d: -f1)
+L_LOG=$(grep -n 'msg_queue place' "${RX}/layout.c" | head -1 | cut -d: -f1)
+L_MOV=$(grep -n 'gfx_widgets_msg_queue_move(p_dispwidget)' "${RX}/layout.c" | head -1 | cut -d: -f1)
+[ -n "${L_DIV}" ] && [ -n "${L_LOG}" ] && [ "${L_LOG}" -gt "${L_DIV}" ] && sed -n "${L_LOG},\$p" "${RX}/layout.c" | grep -m1 -A6 'msg_queue place' | grep -q 'divider_width_1px'
+check $? "the placement line is written after the divider is set and from the divider the placement adds" "placement log at line ${L_LOG:-none} of gfx_widgets_layout, divider set at ${L_DIV:-none}; or its pitch is not the placement's"
+[ -n "${L_MOV}" ] && [ -n "${L_DIV}" ] && [ "${L_MOV}" -gt "${L_DIV}" ]; check $? "gfx_widgets_layout places the messages on screen again once the margin and divider are new" "no gfx_widgets_msg_queue_move after the layout's new metrics (a message pushed between the two passes kept the first pass's place)"
+fi
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
