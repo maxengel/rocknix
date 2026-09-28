@@ -1,0 +1,536 @@
+# Punch List — the whole fix round for #307/#308, before the candidate (D-WORKFLOW-060)
+**Generated:** 2026-09-28
+**Source Audit:** `docs/audits/2026_09_28-milestone-audit-of-the-fix-round/04-analysis.md`
+**Total Items:** 27 (Critical: 0, High: 14, Medium: 10, Low: 3). Every item is a defect this audit discovered, confirmed by the orchestrator against the source (`02-forward-audit.md` § Verification); the seats' remaining Mediums and Lows go to their streams as leads, listed at the end, and the first audit's carried items stay on #309.
+---
+
+## Instructions for Executing Agent
+
+The FIX-NOW set is every High and Medium here: each lands in its stream's files with a case seen to fail first, by the stream that owns them (their agents keep their context) or by the integrator for the hooks, the harness, the lint and the rules; then one more cut, vm-qa and the proofs' scripts on it, and the candidate is called from that cut. A fix that changes what is written says how it treats what earlier builds wrote (D-WORKFLOW-050). Nothing here reopens a design decision; the register rows stand.
+
+---
+
+## High Priority
+## PL-001: TIDY UP YOUR CLOUD FOLDERS deletes a tier copied onto itself when the pointer carries a trailing slash
+- **Severity:** High
+- **Category:** Data loss (a deletion before its precondition is read exactly)
+- **Source Finding:** G2-A-01 (claude, A)
+- **Owner area:** stream A, cloud_migrate_layout
+- **Where:** projects/ROCKNIX/packages/network/rclone/sources/cloud_migrate_layout lines 447, 455, 531, 537, 546, 548, 565, 577, 594; relocate()
+- **What:** the guards compare the conf's raw string with the constant; `SAVES_REMOTE="/ROCKNIX/Saves/"` is unequal, the tier is copied onto itself, verified clean, and its files deleted.
+- **Acceptance:** the three pointers are normalised (a leading slash, no trailing slash, no dot components) before every compare, and relocate refuses when src and dst name one folder; a harness case with the trailing-slash conf asserts nothing is copied or deleted and the pointer is left; run 2 of the proofs on the next cut unchanged
+
+## PL-002: conf_valid accepts an executable "comment" after a carriage return, in five copies
+- **Severity:** High
+- **Category:** Configuration executed (fail-open validation)
+- **Source Finding:** G2-A-01 (gpt, A); siblings from 3.6.5
+- **Owner area:** stream A, the cloud scripts
+- **Where:** cloud_backup:1043, cloud_restore:1104, cloud_sync_helper:247, cloud_content_backup:128, cloud_content_restore:131 (`rest()`)
+- **What:** the grammar's trailing-whitespace class includes `\r`; bash does not treat a CR as a separator, so `EXTRA="x"<CR>#$(cmd)` passes and runs cmd when sourced.
+- **Acceptance:** a CR anywhere in the file is refused by all five copies (the class loses `\r`, or the file is refused when it holds one); a case with the seat's line fails first and then passes in each script
+
+## PL-003: backuptool sources cloud_sync.conf to read the backups folder
+- **Severity:** High
+- **Category:** Configuration executed
+- **Source Finding:** G2-B-01 (gpt, B)
+- **Owner area:** stream B, backuptool
+- **Where:** projects/ROCKNIX/packages/rocknix/sources/scripts/backuptool:42
+- **What:** the reader is `. /storage/.config/cloud_sync.conf` in a subshell; the string is validated after the file has run.
+- **Acceptance:** the key is read as text (the first `SETTINGS_BACKUPS="..."` line, as the cleanup keeps it), never sourced; a case with a command in the conf shows nothing runs and the folder is read
+
+## PL-004: a failed safety copy is restored over the valid configuration
+- **Severity:** High
+- **Category:** Last-known-good destroyed by its own fallback
+- **Source Finding:** G2-A-02 (gpt, A)
+- **Owner area:** stream A, cloud_backup and cloud_restore
+- **Where:** cloud_backup:1170, cloud_restore:1231 (the `elif [ -s pre_cleanup ] && mv -f`)
+- **What:** the fallback restores the pre-cleanup copy on non-emptiness alone; a `cp` that failed part-way (a full card) leaves a truncated prefix that replaces the untouched valid file.
+- **Acceptance:** the copy is restored only when `cp` succeeded and `conf_valid` passes on the copy; a case that makes `cp` write a prefix and fail asserts the live file is byte-identical afterwards, in both scripts
+
+## PL-005: the redaction fast path lets a flag-form password through
+- **Severity:** High
+- **Category:** Credential in a log
+- **Source Finding:** G2-B-02 (gpt, B)
+- **Owner area:** stream B, 001-functions
+- **Where:** projects/ROCKNIX/packages/rocknix/profile.d/001-functions (`redact_credentials`, `passkey=`)
+- **What:** `redact_credentials 'launcher --pass qa-value'` prints the value: the argument-mode detector knows `pass` before `=`/`:` only, the sed path knows the flag form.
+- **Acceptance:** the fast-path trigger includes the flag form (`--?[A-Za-z0-9_.-]*pass` followed by whitespace); the two lines as cases, masked
+
+## PL-006: a failed snapshot worklist reads as "nothing to protect"
+- **Severity:** High
+- **Category:** Restore without its snapshot (guard fails open)
+- **Source Finding:** G2-B-04 (gpt, B); eight sibling mktemp sites
+- **Owner area:** stream B, backuptool
+- **Where:** backuptool snapshot_members (KEEP=$(mktemp), the appends, `return 4`); mktemp at 207, 473, 650-652, 758, 775, 1093
+- **What:** `mktemp` and every append to KEEP are unchecked; an empty worklist returns 4 whatever emptied it, and the restore extracts without a snapshot or marker.
+- **Acceptance:** one checked helper for every temporary file in backuptool; a failure returns a code the restore refuses (not 4); a case that makes mktemp fail asserts the restore refuses; a genuinely empty selection still returns 4
+
+## PL-007: an archive can overwrite the recovery marker that protects its own extraction
+- **Severity:** High
+- **Category:** Restore control file overwritten
+- **Source Finding:** G2-B-06 (gpt, B); adjacent: the snapshot path
+- **Owner area:** stream B, backuptool
+- **Where:** backuptool:1302 (RESTORE_MARK), the skip lists at 1355 and the unzip equivalent
+- **What:** the marker and the snapshot path are not excluded from extraction; an archive carrying `storage/.config/.restore-in-progress` overwrites the fresh marker, and the boot's revert reads the archived one.
+- **Acceptance:** the marker and the snapshot path are in every skip list and never listed by the backup; a case with an archive carrying both asserts the fresh marker and the snapshot survive extraction
+
+## PL-008: a quoted password beginning with whitespace passes the key scan
+- **Severity:** High
+- **Category:** Credential published
+- **Source Finding:** G2-B-07 (gpt, B)
+- **Owner area:** stream B, backuptool
+- **Where:** backuptool CREDENTIAL_KEYS
+- **What:** `password = " leading-text"` does not match (`"?[^"[:space:]]+` cannot consume the space after the quote); the file publishes.
+- **Acceptance:** the value class allows whitespace after the opening quote; the line as a case, refused
+
+## PL-009: a dot component walks past the saves-folder guard
+- **Severity:** High
+- **Category:** Tier separation bypassed
+- **Source Finding:** G2-C-04 (gpt, C)
+- **Owner area:** stream C, cloud_setup
+- **Where:** cloud_setup syncpath_problem
+- **What:** `/Mine/Backups/.` is accepted; dirname derives the siblings inside the saves folder.
+- **Acceptance:** any `.` or `..` or empty component is refused before the sibling check; the seat's path as a case, refused with the folder to use
+
+## PL-010: an escaped inner quote ends the masked range
+- **Severity:** High
+- **Category:** Credential in a log
+- **Source Finding:** G2-E-core-01 (gpt, E-core)
+- **Owner area:** stream E1, StringUtil::maskValueEnd
+- **Where:** es-core/src/utils/StringUtil.cpp maskValueEnd (the inner-quote branch before the escape)
+- **What:** under a single-quote-enclosing command, an inner `\"` closes the inner quote and the space after it ends the range: `sh -c 'tool --password "front\" back"'` leaves `back` unmasked.
+- **Acceptance:** inside an inner quote a backslash skips the next character in both enclosing modes; a doctest with the seat's line, masked whole; es-syntax-check
+
+## PL-011: the hooks pass a commit when their pattern is invalid or a stage fails
+- **Severity:** High
+- **Category:** A scanner that passes on its own error
+- **Source Finding:** G2-E-tests-01 (gpt) = G2-I-02 (gpt, I); siblings in the ES fork
+- **Owner area:** the integrator, .githooks in both repositories
+- **Where:** .githooks/pre-commit and pre-push (the `hits=$(... | head -5 || true)` pipelines) in the distribution and in the ES fork
+- **What:** run: a scratch repository with a staged credential line and `SECRET_PATTERNS='['` -- grep and sed print errors and the hook exits 0.
+- **Acceptance:** the pattern is validated once before use and each stage's status is read (`PIPESTATUS`), any status above grep's 1 refusing; the constructed failure is the hook's own test, in both repositories
+
+## PL-012: the audit-packet exemption stops the hooks reading a pushed path
+- **Severity:** High
+- **Category:** A scanner exemption keyed on a path
+- **Source Finding:** G2-I-01 (claude and gpt, I)
+- **Owner area:** the integrator, .githooks
+- **Where:** .githooks/pre-push:211,228; .githooks/pre-commit:20
+- **What:** a `.diff` under docs/audits/*/seats/ is never scanned, on a comment nothing checks; a packet built from unpushed branches, or a line appended to one, passes.
+- **Acceptance:** the exemption is removed from both hooks; packet `.diff` copies are no longer committed (a `.gitignore` line; the manifests' sha256 and the ranges are the record, a packet is regenerated from them); the hooks' test covers a credential-shaped line in such a file, refused
+
+## PL-013: the rule's log-redaction example preserves the secret
+- **Severity:** High
+- **Category:** A rule that leaks what it says it masks
+- **Source Finding:** G2-I-10 (gpt, I)
+- **Owner area:** the integrator, engineering-practices.md
+- **Where:** .claude/rules/engineering-practices.md:555
+- **What:** `\1***` reproduces the value captured in group 1.
+- **Acceptance:** the example closes its group at the delimiter (`((token|key|passw[a-z]*|psk|user)[=:])[^ ]*` -> `\1***`) and says a masking pattern is proven on a fake `key=SECRET` line first; `tools/rules-check` clean
+
+## PL-014: cloud passwords already written to the persistent cloud_sync.log stay on the card
+- **Severity:** High
+- **Category:** A credential at rest, unanswered by the fix
+- **Source Finding:** BS-1 (blindspots 10, 35, 62; C)
+- **Owner area:** stream C, the cloud scripts' startup
+- **Where:** the rclone package (cloud_sync_helper's startup, or the package's autostart); /var/log is a bind of /storage/.cache/log (D-SYS-001)
+- **What:** C stopped `cloud_remote` logging rclone's failure output with `pass=<password>` in it; the lines already written by earlier builds stay, and the log is trimmed only past 1 MiB.
+- **Acceptance:** the first run of the new scripts rewrites cloud_sync.log and its rotations with the password shapes masked, once, recorded by a stamp under /storage/.cache; a case over a planted line; the Already-written line names it
+
+## Medium Priority
+## PL-015: the new grammar refuses an escaped quote a hand-edited conf may carry
+- **Severity:** Medium
+- **Category:** Upgrade path (a working configuration refused)
+- **Source Finding:** G2-A-05 (claude, A)
+- **Owner area:** stream A, conf_valid (five copies)
+- **Where:** the same five copies as PL-002
+- **What:** ran: `RCLONEOPTS="--exclude \"*.tmp\" --progress"` -- rc 1; an upgraded device with such a conf reads YOUR CLOUD SYNC SETTINGS COULDN'T BE READ.
+- **Acceptance:** bash's own escapes inside double quotes (`\"`, `\\`, `\$`) are accepted by all five copies; the line as a case, accepted; a still-refused shape names why in the log
+
+## PL-016: the revert proceeds when the mount table cannot be read
+- **Severity:** Medium
+- **Category:** Guard fails open
+- **Source Finding:** G2-B-08 (gpt, B)
+- **Owner area:** stream B, chksysconfig
+- **Where:** chksysconfig:144-147
+- **What:** with /proc/mounts unreadable the fallback treats an existing parent folder as "not waiting".
+- **Acceptance:** an unreadable table waits (fails closed) with its say line; a case with PROC_MOUNTS pointing at a missing file asserts the revert is deferred and the mark kept
+
+## PL-017: the upstream-era move can replace an older archived ZIP of the same name
+- **Severity:** Medium
+- **Category:** Data loss (an archived backup overwritten)
+- **Source Finding:** G2-B-10 (gpt, B)
+- **Owner area:** stream B, backuptool
+- **Where:** backuptool:1479
+- **What:** `mv -f` into archive/upstream-era/ overwrites a same-named file.
+- **Acceptance:** a collision keeps both (`mv -n`, then a dated suffix); a case with two same-named zips asserts both survive
+
+## PL-018: the recovery fallback selects a backup that is usable but not whole
+- **Severity:** Medium
+- **Category:** Last-known-good (an incomplete record chosen)
+- **Source Finding:** G2-E-core-04 (gpt, E-core)
+- **Owner area:** stream E1, AtomicFileUtil
+- **Where:** es-core/src/utils/AtomicFileUtil.cpp:370 (`backupOk && isUsableKeyValues(backup)`; `backupWhole` at 308 unused there)
+- **What:** an incomplete backup can be loaded as the record.
+- **Acceptance:** the fallback requires `backupWhole`; an es-file-tests case with a cut backup and no usable live file asserts the defaults load and the cut backup is not recorded as last-known-good
+
+## PL-019: the BIOS-only path writes the selection unchecked and continues without a press
+- **Severity:** Medium
+- **Category:** Consent skipped; a write unchecked
+- **Source Finding:** G2-E-app-02 (claude) / G2-E-app-03 (gpt, E-app)
+- **Owner area:** stream E2, GuiMenu
+- **Where:** es-app/src/guis/GuiMenu.cpp:4211-4215
+- **What:** when nothing but BIOS is to move, `--set-systems bios` is written through executeScriptLegacy, its result discarded, and onDone() called at once.
+- **Acceptance:** the write's status is checked (a failure ends with its why) and the continuation is a press on the verb as on every other path; an app-unit case; a frame at 640x480 of the page with only BIOS to move
+
+## PL-020: the rotation generators read an `#elif 0` arm after `#if 0` as live
+- **Severity:** Medium
+- **Category:** Wrong table row from a dead branch
+- **Source Finding:** G2-F2-01 (gpt, F2)
+- **Owner area:** stream F2, the rotation generators
+- **Where:** projects/ROCKNIX/packages/emulators/libretro/rotation-table-{fba,mame}.py preprocess()
+- **What:** on `elif` the stack rule is `'gone' if top in ('one','gone') else 'live'`, so `#if 0 / #elif 0 / ... #endif` compiles its second arm.
+- **Acceptance:** an `#elif 0` arm is dead and an `#elif 1` arm after a dead `#if 0` is live, other conditions live as before; the generator's fixture gains the four shapes; the five tables regenerate with a 0-line diff or the changed rows named
+
+## PL-021: conf_get takes the last assignment where the cleanup keeps the first
+- **Severity:** Medium
+- **Category:** Two readers of one file
+- **Source Finding:** BS-2 (blindspots 12, 46; C x A)
+- **Owner area:** stream C, cloud_setup
+- **Where:** cloud_setup:117 (`tail -n 1`); cloud_sync_cleanup_duplicates.sh keeps the first
+- **What:** with a key written twice, the hub's line and `--content-location` name a different folder from the one the scripts use after the cleanup.
+- **Acceptance:** `conf_get` takes the first assignment; a case with a duplicated key asserts both readers agree
+
+## PL-022: busybox unzip passes a damaged stored ZIP member
+- **Severity:** Medium
+- **Category:** A check that cannot see a damaged stored member
+- **Source Finding:** BS-3 (blindspots 8, 43; B)
+- **Owner area:** stream B, backuptool
+- **Where:** backuptool's ZIP verification (the `unzip -t` / `unzip -p` comment)
+- **What:** measured on the image's busybox 1.36.1: a damaged stored member passes `unzip -t` and `unzip -p` (rc 0); a damaged deflated one fails (rc 1).
+- **Acceptance:** each member is verified against its listed CRC (`unzip -lv` and `cksum`), or a legacy ZIP with stored members is refused with its why; the measurement as the case, run with the image's busybox
+
+## PL-023: skipped checks are not counted in the verdict
+- **Severity:** Medium
+- **Category:** A harness that says PASSED over unrun checks
+- **Source Finding:** BS-4 (blindspot 39; D, C)
+- **Owner area:** the integrator, tools/last-good-scripts-test
+- **Where:** tools/last-good-scripts-test:10224
+- **What:** 23 D SKIP branches and one C branch print SKIP; the verdict line counts FAIL only (run 69 on the build host: 0 skipped, so the hazard is a host without the tarballs).
+- **Acceptance:** the summary reads `PASSED, N SKIPPED` and exits 3 when N > 0 and FAIL = 0 (vm-qa's run_suite reads 3 as SKIP); a run with a tarball hidden shows it
+
+## PL-024: the upgrade rehearsal waits on a persistent boot.log line the previous boot wrote
+- **Severity:** Medium
+- **Category:** A wait a stale line satisfies
+- **Source Finding:** BS-5 (blindspots 50, 55; F1)
+- **Owner area:** stream F1, tools/vm-upgrade-rehearsal
+- **Where:** tools/vm-upgrade-rehearsal:129-132; autostart appends to /var/log/boot.log; /var/log persists
+- **What:** the "Autostart complete" wait passes at once on the previous boot's line; the check cannot fail.
+- **Acceptance:** the wait reads the current boot (journalctl -b, or a line stamped with the boot id); a case with a stale line planted asserts the wait waits
+
+## Low Priority
+## PL-025: the harness under vm-qa runs with SIGPIPE ignored
+- **Severity:** Low
+- **Category:** Runner divergence
+- **Source Finding:** G2-I-04 (claude, I)
+- **Owner area:** the integrator, tools/vm-qa
+- **Where:** tools/vm-qa (the python exec wrapper)
+- **What:** Python ignores SIGPIPE at startup and execv keeps the disposition; by hand the harness has it default.
+- **Acceptance:** the wrapper resets SIGPIPE beside SIGINT; a check in the harness prints both dispositions
+
+## PL-026: pre-commit's grep runs over the path label as well as the content
+- **Severity:** Low
+- **Category:** A false refusal
+- **Source Finding:** G2-I-02 (claude) / G2-I-03 (gpt, I)
+- **Owner area:** the integrator, .githooks/pre-commit
+- **Where:** .githooks/pre-commit (the awk label)
+- **What:** a credential-shaped file name is refused as content (pre-push anchors past the path for this reason).
+- **Acceptance:** the grep is anchored past the label as pre-push's is; the hooks' test adds a file named like a key
+
+## PL-027: es-player-text.md lacks the two why sentences the integrator added
+- **Severity:** Low
+- **Category:** The rule behind the round
+- **Source Finding:** G2-A-04 (claude, A)
+- **Owner area:** the integrator, es-player-text.md
+- **Where:** .claude/rules/es-player-text.md (the why list)
+- **What:** the list stops at the #307 additions; CHECK WHAT WOULD CHANGE FIRST and YOUR CLOUD SYNC SETTINGS COULDN'T BE SAVED are in the card's table and not in the rule.
+- **Acceptance:** the two sentences in the list, with their scripts; rules-check clean
+
+## Leads for the streams (the seats' evidence; not gated here)
+
+Each stream reads its leads as it read the first audit's findings: fix with a case first, or withdraw with the line that refutes it, in its follow-up report. None blocks the candidate on the orchestrator's read; one that turns out to is added here.
+
+| Stream | Findings | In short |
+|---|---|---|
+| A | G2-A-02, G2-A-03, G2-A-06 (claude); G2-A-03, G2-A-04 (gpt) | a cut between the pointer write and the delete (#309 PL-002's subject); the card and the row disagreeing on a `69 gaps` run; the lock held through the sealing walk; other assignment forms read as absent; a plan-removal failure ignored |
+| B | G2-B-02 (claude); G2-B-03, G2-B-09, G2-B-11 (gpt) | a device whose roms folder is never a mount point waits for ever; `ln` into a directory at the lock path; the seed manifest's unchecked read; persistence failures of the SSID/key pair |
+| C | G2-C-01 (claude); G2-C-01, G2-C-02, G2-C-03 (gpt) | keystrokes before a focused field dropped and not resent; the reader's value forms; a backward status transition; the success path and a close without a new attempt |
+| D | G2-D-01 (claude); G2-D-01, G2-D-02, G2-D-03 (gpt) | the listener gate's `::` case; a GameId split at the 512-character prefix; a substituted count when games_made_ready fails; the token check and the marker's removal not one operation |
+| E1 | G2-E-core-01 (claude); G2-E-core-02, -03, -05, -06, -07 (gpt) | a quoted string ending at the first enclosing byte; recovery without the lock; only the first save over a cut base excluded; the mode on a failed restore; pending changes dropped on a failed load; a false conflict from confMap |
+| E2 | G2-E-app-01 (claude); G2-E-app-01, -02, -04, -05 (gpt) | runCopy without the lock; a namesake profile outranking the active one; the watcher hand-off; the hung rule as consent (accepted risk, D-UI-115); stopRun's cmdline test |
+| F1 | G2-F1-01..04 (gpt) | migrations that stop on a stamp alone; the first run deleting any file at a listed path; ownership records from a generated value; a socket node as proof |
+| F2 | G2-F2-02, G2-F2-03 (gpt) | provenance from the configuration parse; assertions on a directory entry |
+| the integrator | G2-I-05..09 (claude), G2-I-04..09 (gpt); the E-tests Mediums | the lint's bullet form, section boundary and seat attribution; the fixture's early return; the pattern file's load check; the ES test suites' oracles and doubles |
+
+## Pre-existing tracked scope (exempt from the Phase 7 gate)
+
+- #309: the fix audit's fourteen carried items (PL-002 there is G2-A-02's subject; PL-003 there is the picker's SSID column; PL-006 there is this audit).
+- #310: the launch/exit cycle's 10 MiB a game.
+- #42: the public rocknix.org page (`documentation-accuracy.md`'s gate).
+- D-UI-111, D-NET-012, D-NET-013: open in the register.
+
+## Phase 7 resolution gate
+
+Recorded per item as it is resolved: the outcome (resolved / deferred / rejected), the commit or issue, the evidence. Open until then.
+
+| Item | Severity | Outcome | Evidence |
+| --- | --- | --- | --- |
+| PL-001 | High | | |
+| PL-002 | High | | |
+| PL-003 | High | | |
+| PL-004 | High | | |
+| PL-005 | High | | |
+| PL-006 | High | | |
+| PL-007 | High | | |
+| PL-008 | High | | |
+| PL-009 | High | | |
+| PL-010 | High | | |
+| PL-011 | High | | |
+| PL-012 | High | | |
+| PL-013 | High | | |
+| PL-014 | High | | |
+| PL-015 | Medium | | |
+| PL-016 | Medium | | |
+| PL-017 | Medium | | |
+| PL-018 | Medium | | |
+| PL-019 | Medium | | |
+| PL-020 | Medium | | |
+| PL-021 | Medium | | |
+| PL-022 | Medium | | |
+| PL-023 | Medium | | |
+| PL-024 | Medium | | |
+| PL-025 | Low | | |
+| PL-026 | Low | | |
+| PL-027 | Low | | |
+
+## Punch index
+
+```yaml
+punch_index:
+- id: PL-001
+  severity: High
+  category: "Data loss (a deletion before its precondition is read exactly)"
+  source_finding: "G2-A-01 (claude, A)"
+  owner_area: "stream A, cloud_migrate_layout"
+  where: "projects/ROCKNIX/packages/network/rclone/sources/cloud_migrate_layout lines 447, 455, 531, 537, 546, 548, 565, 577, 594; relocate()"
+  acceptance: "the three pointers are normalised (a leading slash, no trailing slash, no dot components) before every compare, and relocate refuses when src and dst name one folder; a harness case with the trailing-slash conf asserts nothing is copied or deleted and the pointer is left; run 2 of the proofs on the next cut unchanged"
+  outcome: open
+- id: PL-002
+  severity: High
+  category: "Configuration executed (fail-open validation)"
+  source_finding: "G2-A-01 (gpt, A); siblings from 3.6.5"
+  owner_area: "stream A, the cloud scripts"
+  where: "cloud_backup:1043, cloud_restore:1104, cloud_sync_helper:247, cloud_content_backup:128, cloud_content_restore:131 (`rest()`)"
+  acceptance: "a CR anywhere in the file is refused by all five copies (the class loses `\r`, or the file is refused when it holds one); a case with the seat's line fails first and then passes in each script"
+  outcome: open
+- id: PL-003
+  severity: High
+  category: "Configuration executed"
+  source_finding: "G2-B-01 (gpt, B)"
+  owner_area: "stream B, backuptool"
+  where: "projects/ROCKNIX/packages/rocknix/sources/scripts/backuptool:42"
+  acceptance: "the key is read as text (the first `SETTINGS_BACKUPS='...'` line, as the cleanup keeps it), never sourced; a case with a command in the conf shows nothing runs and the folder is read"
+  outcome: open
+- id: PL-004
+  severity: High
+  category: "Last-known-good destroyed by its own fallback"
+  source_finding: "G2-A-02 (gpt, A)"
+  owner_area: "stream A, cloud_backup and cloud_restore"
+  where: "cloud_backup:1170, cloud_restore:1231 (the `elif [ -s pre_cleanup ] && mv -f`)"
+  acceptance: "the copy is restored only when `cp` succeeded and `conf_valid` passes on the copy; a case that makes `cp` write a prefix and fail asserts the live file is byte-identical afterwards, in both scripts"
+  outcome: open
+- id: PL-005
+  severity: High
+  category: "Credential in a log"
+  source_finding: "G2-B-02 (gpt, B)"
+  owner_area: "stream B, 001-functions"
+  where: "projects/ROCKNIX/packages/rocknix/profile.d/001-functions (`redact_credentials`, `passkey=`)"
+  acceptance: "the fast-path trigger includes the flag form (`--?[A-Za-z0-9_.-]*pass` followed by whitespace); the two lines as cases, masked"
+  outcome: open
+- id: PL-006
+  severity: High
+  category: "Restore without its snapshot (guard fails open)"
+  source_finding: "G2-B-04 (gpt, B); eight sibling mktemp sites"
+  owner_area: "stream B, backuptool"
+  where: "backuptool snapshot_members (KEEP=$(mktemp), the appends, `return 4`); mktemp at 207, 473, 650-652, 758, 775, 1093"
+  acceptance: "one checked helper for every temporary file in backuptool; a failure returns a code the restore refuses (not 4); a case that makes mktemp fail asserts the restore refuses; a genuinely empty selection still returns 4"
+  outcome: open
+- id: PL-007
+  severity: High
+  category: "Restore control file overwritten"
+  source_finding: "G2-B-06 (gpt, B); adjacent: the snapshot path"
+  owner_area: "stream B, backuptool"
+  where: "backuptool:1302 (RESTORE_MARK), the skip lists at 1355 and the unzip equivalent"
+  acceptance: "the marker and the snapshot path are in every skip list and never listed by the backup; a case with an archive carrying both asserts the fresh marker and the snapshot survive extraction"
+  outcome: open
+- id: PL-008
+  severity: High
+  category: "Credential published"
+  source_finding: "G2-B-07 (gpt, B)"
+  owner_area: "stream B, backuptool"
+  where: "backuptool CREDENTIAL_KEYS"
+  acceptance: "the value class allows whitespace after the opening quote; the line as a case, refused"
+  outcome: open
+- id: PL-009
+  severity: High
+  category: "Tier separation bypassed"
+  source_finding: "G2-C-04 (gpt, C)"
+  owner_area: "stream C, cloud_setup"
+  where: "cloud_setup syncpath_problem"
+  acceptance: "any `.` or `..` or empty component is refused before the sibling check; the seat's path as a case, refused with the folder to use"
+  outcome: open
+- id: PL-010
+  severity: High
+  category: "Credential in a log"
+  source_finding: "G2-E-core-01 (gpt, E-core)"
+  owner_area: "stream E1, StringUtil::maskValueEnd"
+  where: "es-core/src/utils/StringUtil.cpp maskValueEnd (the inner-quote branch before the escape)"
+  acceptance: "inside an inner quote a backslash skips the next character in both enclosing modes; a doctest with the seat's line, masked whole; es-syntax-check"
+  outcome: open
+- id: PL-011
+  severity: High
+  category: "A scanner that passes on its own error"
+  source_finding: "G2-E-tests-01 (gpt) = G2-I-02 (gpt, I); siblings in the ES fork"
+  owner_area: "the integrator, .githooks in both repositories"
+  where: ".githooks/pre-commit and pre-push (the `hits=$(... | head -5 || true)` pipelines) in the distribution and in the ES fork"
+  acceptance: "the pattern is validated once before use and each stage's status is read (`PIPESTATUS`), any status above grep's 1 refusing; the constructed failure is the hook's own test, in both repositories"
+  outcome: open
+- id: PL-012
+  severity: High
+  category: "A scanner exemption keyed on a path"
+  source_finding: "G2-I-01 (claude and gpt, I)"
+  owner_area: "the integrator, .githooks"
+  where: ".githooks/pre-push:211,228; .githooks/pre-commit:20"
+  acceptance: "the exemption is removed from both hooks; packet `.diff` copies are no longer committed (a `.gitignore` line; the manifests' sha256 and the ranges are the record, a packet is regenerated from them); the hooks' test covers a credential-shaped line in such a file, refused"
+  outcome: open
+- id: PL-013
+  severity: High
+  category: "A rule that leaks what it says it masks"
+  source_finding: "G2-I-10 (gpt, I)"
+  owner_area: "the integrator, engineering-practices.md"
+  where: ".claude/rules/engineering-practices.md:555"
+  acceptance: "the example closes its group at the delimiter (`((token|key|passw[a-z]*|psk|user)[=:])[^ ]*` -> `\1***`) and says a masking pattern is proven on a fake `key=SECRET` line first; `tools/rules-check` clean"
+  outcome: open
+- id: PL-014
+  severity: High
+  category: "A credential at rest, unanswered by the fix"
+  source_finding: "BS-1 (blindspots 10, 35, 62; C)"
+  owner_area: "stream C, the cloud scripts' startup"
+  where: "the rclone package (cloud_sync_helper's startup, or the package's autostart); /var/log is a bind of /storage/.cache/log (D-SYS-001)"
+  acceptance: "the first run of the new scripts rewrites cloud_sync.log and its rotations with the password shapes masked, once, recorded by a stamp under /storage/.cache; a case over a planted line; the Already-written line names it"
+  outcome: open
+- id: PL-015
+  severity: Medium
+  category: "Upgrade path (a working configuration refused)"
+  source_finding: "G2-A-05 (claude, A)"
+  owner_area: "stream A, conf_valid (five copies)"
+  where: "the same five copies as PL-002"
+  acceptance: "bash's own escapes inside double quotes (`\'`, `\\`, `\$`) are accepted by all five copies; the line as a case, accepted; a still-refused shape names why in the log"
+  outcome: open
+- id: PL-016
+  severity: Medium
+  category: "Guard fails open"
+  source_finding: "G2-B-08 (gpt, B)"
+  owner_area: "stream B, chksysconfig"
+  where: "chksysconfig:144-147"
+  acceptance: "an unreadable table waits (fails closed) with its say line; a case with PROC_MOUNTS pointing at a missing file asserts the revert is deferred and the mark kept"
+  outcome: open
+- id: PL-017
+  severity: Medium
+  category: "Data loss (an archived backup overwritten)"
+  source_finding: "G2-B-10 (gpt, B)"
+  owner_area: "stream B, backuptool"
+  where: "backuptool:1479"
+  acceptance: "a collision keeps both (`mv -n`, then a dated suffix); a case with two same-named zips asserts both survive"
+  outcome: open
+- id: PL-018
+  severity: Medium
+  category: "Last-known-good (an incomplete record chosen)"
+  source_finding: "G2-E-core-04 (gpt, E-core)"
+  owner_area: "stream E1, AtomicFileUtil"
+  where: "es-core/src/utils/AtomicFileUtil.cpp:370 (`backupOk && isUsableKeyValues(backup)`; `backupWhole` at 308 unused there)"
+  acceptance: "the fallback requires `backupWhole`; an es-file-tests case with a cut backup and no usable live file asserts the defaults load and the cut backup is not recorded as last-known-good"
+  outcome: open
+- id: PL-019
+  severity: Medium
+  category: "Consent skipped; a write unchecked"
+  source_finding: "G2-E-app-02 (claude) / G2-E-app-03 (gpt, E-app)"
+  owner_area: "stream E2, GuiMenu"
+  where: "es-app/src/guis/GuiMenu.cpp:4211-4215"
+  acceptance: "the write's status is checked (a failure ends with its why) and the continuation is a press on the verb as on every other path; an app-unit case; a frame at 640x480 of the page with only BIOS to move"
+  outcome: open
+- id: PL-020
+  severity: Medium
+  category: "Wrong table row from a dead branch"
+  source_finding: "G2-F2-01 (gpt, F2)"
+  owner_area: "stream F2, the rotation generators"
+  where: "projects/ROCKNIX/packages/emulators/libretro/rotation-table-{fba,mame}.py preprocess()"
+  acceptance: "an `#elif 0` arm is dead and an `#elif 1` arm after a dead `#if 0` is live, other conditions live as before; the generator's fixture gains the four shapes; the five tables regenerate with a 0-line diff or the changed rows named"
+  outcome: open
+- id: PL-021
+  severity: Medium
+  category: "Two readers of one file"
+  source_finding: "BS-2 (blindspots 12, 46; C x A)"
+  owner_area: "stream C, cloud_setup"
+  where: "cloud_setup:117 (`tail -n 1`); cloud_sync_cleanup_duplicates.sh keeps the first"
+  acceptance: "`conf_get` takes the first assignment; a case with a duplicated key asserts both readers agree"
+  outcome: open
+- id: PL-022
+  severity: Medium
+  category: "A check that cannot see a damaged stored member"
+  source_finding: "BS-3 (blindspots 8, 43; B)"
+  owner_area: "stream B, backuptool"
+  where: "backuptool's ZIP verification (the `unzip -t` / `unzip -p` comment)"
+  acceptance: "each member is verified against its listed CRC (`unzip -lv` and `cksum`), or a legacy ZIP with stored members is refused with its why; the measurement as the case, run with the image's busybox"
+  outcome: open
+- id: PL-023
+  severity: Medium
+  category: "A harness that says PASSED over unrun checks"
+  source_finding: "BS-4 (blindspot 39; D, C)"
+  owner_area: "the integrator, tools/last-good-scripts-test"
+  where: "tools/last-good-scripts-test:10224"
+  acceptance: "the summary reads `PASSED, N SKIPPED` and exits 3 when N > 0 and FAIL = 0 (vm-qa's run_suite reads 3 as SKIP); a run with a tarball hidden shows it"
+  outcome: open
+- id: PL-024
+  severity: Medium
+  category: "A wait a stale line satisfies"
+  source_finding: "BS-5 (blindspots 50, 55; F1)"
+  owner_area: "stream F1, tools/vm-upgrade-rehearsal"
+  where: "tools/vm-upgrade-rehearsal:129-132; autostart appends to /var/log/boot.log; /var/log persists"
+  acceptance: "the wait reads the current boot (journalctl -b, or a line stamped with the boot id); a case with a stale line planted asserts the wait waits"
+  outcome: open
+- id: PL-025
+  severity: Low
+  category: "Runner divergence"
+  source_finding: "G2-I-04 (claude, I)"
+  owner_area: "the integrator, tools/vm-qa"
+  where: "tools/vm-qa (the python exec wrapper)"
+  acceptance: "the wrapper resets SIGPIPE beside SIGINT; a check in the harness prints both dispositions"
+  outcome: open
+- id: PL-026
+  severity: Low
+  category: "A false refusal"
+  source_finding: "G2-I-02 (claude) / G2-I-03 (gpt, I)"
+  owner_area: "the integrator, .githooks/pre-commit"
+  where: ".githooks/pre-commit (the awk label)"
+  acceptance: "the grep is anchored past the label as pre-push's is; the hooks' test adds a file named like a key"
+  outcome: open
+- id: PL-027
+  severity: Low
+  category: "The rule behind the round"
+  source_finding: "G2-A-04 (claude, A)"
+  owner_area: "the integrator, es-player-text.md"
+  where: ".claude/rules/es-player-text.md (the why list)"
+  acceptance: "the two sentences in the list, with their scripts; rules-check clean"
+  outcome: open
+```
