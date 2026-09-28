@@ -3029,7 +3029,9 @@ ckf 65536 retroarch 1024;                printf '%s' "${NOTE}" | grep '^dump' | 
 #       a listing that fails writes nothing (PL-047); on a bucket, where a
 #       missing key lists as nothing, the READMEs are written (#308 claude
 #       F-RS-09). Every rclone call it and --content-location make carries
-#       the listing bound (#308 claude F-RS-13, gpt F-RS-19).
+#       the listing bound (#308 claude F-RS-13, gpt F-RS-19). An empty
+#       CONTENT_REMOTE is the cloud's root, as --use-content-root means it,
+#       not the default (#308 gpt F-RS-20).
 echo "  C. the cloud sign-in broker and setup (audit #307 stream C)"
 CS="${TMP}/C"; mkdir -p "${CS}/src"
 for rel in cloud_setup cloud_oauth cloud_remote cloud_device_id; do
@@ -3203,5 +3205,18 @@ c2reset path; c2 --seed-folders
 [ -s "${C2}/rec/argv" ] && [ -z "$(unbounded)" ]; check $? "every rclone call --seed-folders makes carries the listing bound ($(grep -cE '^(lsf|mkdir|copyto) ' "${C2}/rec/argv") calls)" "unbounded: $(unbounded | head -2 | tr '\n' '|')"
 rm -f "${C2}/rec/argv"; c2 --content-location
 [ -s "${C2}/rec/argv" ] && [ "$(grep -c '^lsf ' "${C2}/rec/argv")" -ge 2 ] && [ -z "$(unbounded)" ]; check $? "and so does every listing --content-location makes ($(grep -c '^lsf ' "${C2}/rec/argv") listings)" "unbounded: $(unbounded | head -2 | tr '\n' '|')"
+
+# #308 gpt F-RS-20: CONTENT_REMOTE="" is --use-content-root's "the root",
+# which the content scripts read as the root (ROOT="qa:"); seeding put
+# /ROCKNIX/Content in its place. ROMs/ and BIOS/ go at the root, and no
+# README is dropped into the top of somebody's cloud.
+c2reset path
+sed -i 's|^CONTENT_REMOTE=.*|CONTENT_REMOTE=""|' "${CONF2}"
+c2 --seed-folders
+[ -f "${C2}/cloud/ROMs/README.txt" ] && [ -f "${C2}/cloud/BIOS/README.txt" ] && [ ! -e "${C2}/cloud/ROCKNIX/Content" ] && [ ! -e "${C2}/cloud/README.txt" ] && grep -qx 'OK /ROMs' "${C2}/out" && grep -qx 'OK /BIOS' "${C2}/out"; check $? "an empty CONTENT_REMOTE seeds ROMs/ and BIOS/ at the cloud's root, with no README at the top" "READMEs: $(readmes); ROCKNIX/Content: $([ -e "${C2}/cloud/ROCKNIX/Content" ] && echo made || echo absent); said: $(grep -E '^(OK|MISSING) ' "${C2}/out" | tr '\n' ' ') (#308 gpt F-RS-20)"
+c2reset path
+sed -i '/^CONTENT_REMOTE=/d' "${CONF2}"
+c2 --seed-folders
+[ -f "${C2}/cloud/ROCKNIX/Content/ROMs/README.txt" ]; check $? "while a config with no CONTENT_REMOTE line at all still gets the default /ROCKNIX/Content" "READMEs: $(readmes)"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

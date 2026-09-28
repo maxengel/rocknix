@@ -530,11 +530,19 @@ case "$1" in
         CONTENT_REMOTE="$(conf_get CONTENT_REMOTE)"
         SAVES="${SAVES_REMOTE:-/ROCKNIX/Saves}"
         BACKUPS="${SETTINGS_REMOTE:-/ROCKNIX/Backups}"
-        CONTENT="${CONTENT_REMOTE:-/ROCKNIX/Content}"
+        # An empty CONTENT_REMOTE is not a missing one: it is
+        # --use-content-root's "the cloud's root", which is where the
+        # content scripts put ROMs/ and BIOS/ (ROOT="<remote>:"). Only a
+        # config with no such line gets the default (#308 gpt F-RS-20).
+        if grep -q '^CONTENT_REMOTE=' "${SYNC_CONF}" 2>/dev/null; then
+            CONTENT="${CONTENT_REMOTE%/}"
+        else
+            CONTENT="/ROCKNIX/Content"
+        fi
 
         for d in "${SAVES}" "${SAVES}/savefiles" "${SAVES}/savestates" \
                  "${SAVES}/screenshots" "${BACKUPS}" \
-                 "${CONTENT}" "${CONTENT}/ROMs" "${CONTENT}/BIOS"; do
+                 ${CONTENT:+"${CONTENT}"} "${CONTENT}/ROMs" "${CONTENT}/BIOS"; do
             # --s3-directory-markers writes a zero-byte object ending in "/",
             # which is how S3 itself represents a folder -- without it a
             # bucket remote silently keeps nothing, and mkdir still exits 0.
@@ -581,7 +589,10 @@ case "$1" in
             "" \
             "Written by the device. Nothing to put here by hand."
 
-        seed_note "${CONTENT}" \
+        # Not at the top of somebody's cloud: with content at the root, the
+        # ROMs and BIOS folders carry their own notes and the root keeps
+        # whatever the owner has there.
+        [ -n "${CONTENT}" ] && seed_note "${CONTENT}" \
             "Put your games and BIOS files here." \
             "" \
             "  ROMs/       one folder per system - snes, psx, n64, gba, ..." \
