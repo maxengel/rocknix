@@ -2832,7 +2832,7 @@ wctl saved
 wctl current
 [ "${RC}" -eq 2 ] && [ ! -s "${OUT}" ]; check $? "current with NetworkManager not answering: exit 2, not 'joined to none'" "rc ${RC}; printed: '$(uout)'"
 wctl forget "Home Wi-Fi"
-[ "${RC}" -eq 1 ] && [ ! -s "${OUT}" ] && [ ! -s "${U}/run/deleted" ]; check $? "forget with NetworkManager not answering: refused, nothing deleted" "rc ${RC}; printed: '$(uout)'; deleted: '$(tr '\n' '|' < "${U}/run/deleted")'"
+[ "${RC}" -eq 2 ] && [ ! -s "${OUT}" ] && [ ! -s "${U}/run/deleted" ]; check $? "forget with NetworkManager not answering: exit 2 (could not ask, as join and current say it; #308 F-WF-07), nothing deleted" "rc ${RC}; printed: '$(uout)'; deleted: '$(tr '\n' '|' < "${U}/run/deleted")'"
 
 echo
 # ---------------------------------------------------------------- u.
@@ -3568,5 +3568,19 @@ p7w join "B"
 p7wset 'Home|802-11-wireless|-|Home|home-key-1' 'Home profile|802-11-wireless|-|Home Wi-Fi|hw-key-1'
 p7w join "Home profile"
 [ "${RC}" -eq 0 ] && [ "$(p7wssid)" = "Home Wi-Fi" ] && [ "$(p7wkey)" = "hw-key-1" ]; check $? "#308 2-wifi claude F-WF-12 / gpt F-WF-03: joining the profile 'Home profile' (SSID 'Home Wi-Fi') writes wifi.ssid=Home Wi-Fi, which the settings-driven connect can find" "#308 F-WF-12: rc ${RC}; wifi.ssid '$(p7wssid)'"
+
+# == #308 2-wifi claude F-WF-01 / gpt F-WF-07: forgetting the network the settings name forgets it there too
+p7wset 'Home|802-11-wireless|wlan0|Home|home-key-1' 'Cafe|802-11-wireless|-|Cafe|cafe-key-1'
+printf 'wifi.ssid=Home\nwifi.key=home-key-1\nwifi.enabled=1\n' > "${P7W}/run/settings"
+p7w forget "Cafe"
+[ "${RC}" -eq 0 ] && [ "$(p7wssid)" = "Home" ] && [ "$(p7wkey)" = "home-key-1" ]; check $? "#308 2-wifi claude F-WF-01 / gpt F-WF-07: forgetting another network leaves wifi.ssid and wifi.key alone" "#308 F-WF-01: rc ${RC}; wifi.ssid '$(p7wssid)' wifi.key '$(p7wkey)'"
+p7w forget "Home"
+[ "${RC}" -eq 0 ] && [ "$(p7wssid)" = "<unset>" ] && [ "$(p7wkey)" = "<unset>" ] && grep -qx 'wifi.enabled=1' "${P7W}/run/settings"; check $? "#308 2-wifi claude F-WF-01 / gpt F-WF-07: forgetting the network wifi.ssid names removes wifi.ssid and wifi.key, so no settings-driven connect rebuilds it" "#308 F-WF-01: rc ${RC}; wifi.ssid '$(p7wssid)' wifi.key '$(p7wkey)' -- the forgotten network's name and key stayed for the next connect to use"
+
+# == #308 2-wifi claude F-WF-07: forget tells "could not ask" from "no such network"
+p7wset 'Home|802-11-wireless|wlan0|Home|home-key-1'
+touch "${P7W}/run/nm-down"
+p7w forget "Home"
+[ "${RC}" -eq 2 ] && [ ! -s "${P7W}/out" ]; check $? "#308 2-wifi claude F-WF-07: forget with NetworkManager not answering exits 2, as join and current do" "#308 F-WF-07: rc ${RC} (1 is 'not a remembered network')"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

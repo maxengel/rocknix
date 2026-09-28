@@ -20,8 +20,10 @@ NMCLI="$(command -v nmcli 2>/dev/null)"
 ###                               exit 2 when NetworkManager could not be asked
 ###     wifictl saved             the remembered networks, one per line: <name><TAB>active|saved
 ###     wifictl forget <name>     forget one: prints "forgotten", then "disconnected" on a
-###                               second line when it was the one in use; exit 1, nothing
-###                               printed, when it is not a remembered network or the delete failed
+###                               second line when it was the one in use, and clears wifi.ssid /
+###                               wifi.key when they name it; exit 1, nothing printed, when it is
+###                               not a remembered network or the delete failed; exit 2 when
+###                               NetworkManager could not be asked
 ###     wifictl join <name>       join a saved network with the key NetworkManager holds for it
 ###                               (the picker's press on a SAVED row): prints "joined" once its
 ###                               profile is active and moves wifi.ssid / wifi.key onto it; exit 1,
@@ -223,13 +225,29 @@ saved_wifi() {
 # nothing printed and exit 1, so a caller cannot read a refusal as done.
 # The name is matched whole, through the environment rather than awk -v,
 # which would read backslashes in it as escapes.
+#
+# NetworkManager not answering is exit 2, as for current and join: "could
+# not ask" is a different answer from "no such network" (#308 claude
+# F-WF-07). And a network forgotten here is forgotten in the settings too:
+# when wifi.ssid names it (by SSID, or by the profile name an older join
+# wrote), wifi.ssid and wifi.key are removed -- otherwise the paths that
+# connect from the settings (ENABLE WI-FI, the WI-FI KEY row, the restore
+# wizard) rebuilt the profile the player had just forgotten, with its key,
+# which also stayed in system.cfg and travelled in the settings backup
+# (#308 claude F-WF-01, gpt F-WF-07).
 forget_wifi() {
-  local name="${1}" rows state
+  local name="${1}" rows state ssid named
   [ -n "${name}" ] || return 1
-  rows=$(saved_wifi) || return 1
+  rows=$(saved_wifi) || return 2
   state=$(printf '%s\n' "${rows}" | NAME="${name}" awk -F'\t' '$1 == ENVIRON["NAME"] { print $2 }')
   [ -n "${state}" ] || return 1
+  ssid=$("${NMCLI}" --escape no -g 802-11-wireless.ssid connection show id "${name}" 2>/dev/null)
   "${NMCLI}" connection delete id "${name}" >/dev/null 2>&1 || return 1
+  named=$(get_setting wifi.ssid 2>/dev/null)
+  if [ -n "${named}" ] && { [ "${named}" = "${name}" ] || [ "${named}" = "${ssid}" ]; }; then
+    set_setting wifi.ssid default
+    set_setting wifi.key default
+  fi
   echo "forgotten"
   case "${state}" in *active*) echo "disconnected" ;; esac
   return 0
