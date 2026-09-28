@@ -298,7 +298,7 @@ the boot sync and the menu rows run, and each was paid for on 2026-09-05 by an
   exit hotkey's kill reported as 0 (D-LAUNCH-001) -- not the emulator's own
   code) and
   `capture-failures` (one line per degraded run, last 20 kept). They exist
-  because `/var/log` is tmpfs unless `debugging` is on (D-CLOUD-027): the log
+  because `/var/log` is a bind of `/storage/.cache/log` and persists across boots (D-SYS-001; it was tmpfs unless `debugging` was on before that row, which D-CLOUD-027 described -- stream C, 2026-09-28, found the old sentence here): the log
   line is gone at the next reboot, the stamp is not.
 
 Budget on an H700, measured: **starting rclone costs about a second** by
