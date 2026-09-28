@@ -3920,4 +3920,26 @@ fl_plan=$(grep '^n64|' "${FL}/out")
 sa_run "${FL}" cloud_content_restore --match --apply
 [ -f "${FL}/storage/roms/n64/Game.fla" ] && [ ! -e "${FL}/storage/roms/n64/Game.z64" ] && [ "${fl_plan}" = "n64|remove|1|4" ]; check $? "a match of n64 against a cloud without it plans the ROM alone (${fl_plan}) and leaves the .fla save (rc ${RC})" "plan '${fl_plan}'; Game.fla $([ -f "${FL}/storage/roms/n64/Game.fla" ] && echo kept || echo DELETED) -- a save the saves tier owns was removed as content (gpt F-CS-02)"
 
+# A26. #308 gpt F-CS-30: what --scan counts on each side is what a transfer
+#      moves. After a restore the scan must read the system as matching: a
+#      save folder at any depth (dc/shared/savefiles) is on neither side, the
+#      setup's note at a unit's root (BIOS/README.txt) is on neither side, and
+#      a README deeper in a game's folder is content on both.
+echo "    A26. #308 gpt F-CS-30: after a restore, the scan reads the same files on both sides"
+SC=$(sa_new gcs30); sa_script "${SC}" cloud_content_restore
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/ROCKNIX/Content"\n' > "${SC}/storage/.config/cloud_sync.conf"
+mkdir -p "${SC}/cloud/ROCKNIX/Content/ROMs/dc/shared/savefiles" "${SC}/cloud/ROCKNIX/Content/ROMs/scummvm/game" "${SC}/cloud/ROCKNIX/Content/BIOS" \
+    "${SC}/storage/.config/emulationstation"
+printf '<system><path>/storage/roms/dc</path></system>\n<system><path>/storage/roms/scummvm</path></system>\n' > "${SC}/storage/.config/emulationstation/es_systems.cfg"
+echo gdi > "${SC}/cloud/ROCKNIX/Content/ROMs/dc/game.gdi"; echo vmu > "${SC}/cloud/ROCKNIX/Content/ROMs/dc/shared/savefiles/card.dat"
+echo data > "${SC}/cloud/ROCKNIX/Content/ROMs/scummvm/game/game.dat"; echo readme > "${SC}/cloud/ROCKNIX/Content/ROMs/scummvm/game/README.txt"
+echo bios > "${SC}/cloud/ROCKNIX/Content/BIOS/dc_boot.bin"; echo "BIOS and firmware files." > "${SC}/cloud/ROCKNIX/Content/BIOS/README.txt"
+printf 'dc\nscummvm\n' > "${SC}/storage/.cache/cloud_sync/content-systems"
+mkdir -p "${SC}/storage/roms/dc/shared/savefiles"; echo "this device's own vmu" > "${SC}/storage/roms/dc/shared/savefiles/card.dat"
+sa_run "${SC}" cloud_content_restore --selected
+[ -f "${SC}/storage/roms/scummvm/game/README.txt" ] && [ ! -e "${SC}/storage/roms/bios/README.txt" ] && grep -qx "this device's own vmu" "${SC}/storage/roms/dc/shared/savefiles/card.dat"; check $? "the restore brings a game folder's README, leaves BIOS's setup note in the cloud, and never touches the device's own VMU save (rc ${RC})" "scummvm README $([ -f "${SC}/storage/roms/scummvm/game/README.txt" ] && echo here || echo missing), bios/README.txt $([ -e "${SC}/storage/roms/bios/README.txt" ] && echo RESTORED || echo left), card.dat '$(cat "${SC}/storage/roms/dc/shared/savefiles/card.dat")'"
+sa_run "${SC}" cloud_content_restore --scan
+sc_bad=$(awk -F'|' '($1 == "dc" || $1 == "scummvm" || $1 == "bios") && ($5 != 0 || $6 != 0) { print $1 ":" $5 "/" $6 }' "${SC}/out" | tr '\n' ' ')
+[ -z "${sc_bad}" ] && grep -q '^dc|' "${SC}/out" && grep -q '^bios|' "${SC}/out"; check $? "and --scan reads dc, scummvm and bios as matching their cloud copies (0 and 0 differing files)" "scan disagrees (system:cloud-only/here-only): ${sc_bad} -- the cloud-side count and the transfer describe different sets (F-CS-30); lines: $(grep -E '^(dc|scummvm|bios)\|' "${SC}/out" | tr '\n' ' ')"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

@@ -977,6 +977,7 @@ content_files() {
         ! -path '*/save/*' ! -path '*/memcards/*' \
         ! -path '*/shared/savefiles/*' ! -path '*/PPSSPP/*' \
         ! -path '*conflicted copy*' ! -name '*.sync-conflict-*' \
+        ! -path "${dir%/}/README.txt" \
         "${media[@]}" "$@" 2>/dev/null
 }
 # Local systems that hold content, for the union scan.
@@ -1016,6 +1017,16 @@ delta_of() {
 }
 # Drop from a cloud "size|path" listing what content_files drops locally, so
 # the two sides are counted by one rule.
+#
+# The same set content_files and the transfers describe (#308 gpt F-CS-30):
+# a save folder at any depth -- save/, memcards/, PPSSPP/ and dc's
+# shared/savefiles/, as the local find and the unanchored rclone excludes
+# have them -- and the setup's note at a unit's root (a README.txt directly
+# in a system's folder), which neither side carries. A README deeper in a
+# game's folder is that game's, and is content on both sides. This used to
+# look for save folders one level down only, missed shared/savefiles, and
+# dropped every README at any depth, so a restored system read as differing
+# from its own cloud copy.
 cloud_content_filter() {
     local dirs; dirs="^($(echo ${MEDIA_DIRS} | tr ' ' '|'))$"
     awk -F'|' -v dirs="${dirs}" -v mode="${MEDIA_MODE}" '
@@ -1026,8 +1037,11 @@ cloud_content_filter() {
           if (mode == "only" && !game) next
           if (f ~ /\.(srm|sav|fs|auto|eep|mpk|sra|fla|mcd|mcr)$/ || f ~ /\.state/ || f ~ /\.dsv/) next
           if ($2 ~ /conflicted copy/ || f ~ /\.sync-conflict-/) next
-          if (f == "README.txt") next
-          if (n > 2 && (seg[2] == "save" || seg[2] == "memcards" || seg[2] == "PPSSPP")) next
+          if (n == 2 && f == "README.txt") next
+          for (i = 2; i < n; i++) {
+              if (seg[i] == "save" || seg[i] == "memcards" || seg[i] == "PPSSPP") next
+              if (seg[i] == "shared" && i + 1 < n && seg[i + 1] == "savefiles") next
+          }
           print }'
 }
 # --with-media: include scraped game content (D-CLOUD-048). Off by default:
@@ -1092,7 +1106,7 @@ case "${1}" in
         # this device" under game content alone, RG35XX SP, 2026-09-06).
         if [ "${MEDIA_MODE}" != only ]; then
             rclone lsf -R --files-only --format "sp" --separator "|" "${ROOT}BIOS/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null \
-                | grep -v '|README\.txt$' | sed 's/|/|bios\//' >> "${TMP}/cloud"
+                | grep -v '^[0-9]*|README\.txt$' | sed 's/|/|bios\//' >> "${TMP}/cloud"
             bios_rc=${PIPESTATUS[0]}
             if [ "${bios_rc}" -ne 0 ] && [ "${bios_rc}" -ne 3 ] && absent_not_broken "${ROOT}BIOS/"; then
                 log_message "scan: BIOS is not there yet (rclone exit ${bios_rc}; its nearest listable parent lacks it)"
@@ -1352,9 +1366,13 @@ for DIR in "${DIRS[@]}"; do
     # before using it), and an unknown flag is a usage error that transfers
     # nothing. rclone pads the file name out to a guessed width; the reader
     # trims it, so the flag bought nothing worth a version check.
+    # The setup's note at a unit's root (BIOS/README.txt, cloud_setup
+    # --seed-folders) is not content, and neither side counts it (#308 gpt
+    # F-CS-30): it came down into /storage/roms/bios and read ever after as a
+    # file this device has and the cloud does not.
     rclone copy "${SRC}" "${TARGET}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
         "${SAVE_EXCLUDES[@]}" "${CONFLICT_EXCLUDES[@]}" "${MEDIA_EXCLUDES[@]}" \
-        --exclude "gamelist.xml" --exclude "**/gamelist.xml" \
+        --exclude "gamelist.xml" --exclude "**/gamelist.xml" --exclude "/README.txt" \
         --progress --stats 1s \
         --log-file "${LOG_FILE}" --log-level INFO
     RC=$?
