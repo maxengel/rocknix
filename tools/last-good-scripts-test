@@ -3862,4 +3862,27 @@ mkdir -p "${RT}/storage/roms/gb" "${RT}/cloud/gb"; echo "played here" > "${RT}/s
 sa_run "${RT}" cloud_backup --yes --saves-only
 [ "${RC}" -eq 0 ] && grep -qx "played here" "${RT}/cloud/gb/A.srm" && grep -q 'no replaced-saves folder' "${RT}/log/cloud_sync.log"; check $? "a backup to a saves folder at the root completes, replaces the cloud's copy, and logs that no replaced-saves folder is kept (rc ${RC})" "rc ${RC}; cloud A.srm: $(cat "${RT}/cloud/gb/A.srm"); out: $(sa_tail "${RT}"); log: $(grep -i 'overlap\|replaced' "${RT}/log/cloud_sync.log" | tail -2 | tr '\n' '|')"
 
+# A23. #308 gpt F-CS-20: cloud_saves_root's record is the #83 guard's memory;
+#      a write that did not land is a failure said as one, not a silent
+#      success that leaves the guard unarmed, and a transfer that failed
+#      records no card at all (only a run that moved the saves says which
+#      card they are on).
+echo "    A23. #308 gpt F-CS-20: the saves-root record is written by a good run, and a failed write says so"
+SR=$(sa_new gcs20); sa_script "${SR}" cloud_saves_root cloud_backup
+printf 'SAVESPATH="/storage/roms"\n' > "${SR}/storage/.config/cloud_sync.conf"
+mkdir -p "${SR}/storage/roms/gb"; chmod 555 "${SR}/storage/.cache/cloud_sync"
+sa_run "${SR}" cloud_saves_root record
+sr_rc=${RC}
+sa_run "${SR}" cloud_saves_root accept
+chmod 755 "${SR}/storage/.cache/cloud_sync"
+[ "${sr_rc}" -ne 0 ] && [ "${RC}" -ne 0 ] && [ ! -e "${SR}/storage/.cache/cloud_sync/saves-root" ]; check $? "record and accept whose write cannot land exit non-zero (record ${sr_rc}, accept ${RC})" "record ${sr_rc}, accept ${RC} -- both said 0 with nothing written, leaving the #83 guard unarmed"
+cp "${PR}/storage/.config/cloud_sync.conf" "${PR}/storage/.config/cloud_sync-rules.txt" "${SR}/storage/.config/"
+echo s > "${SR}/storage/roms/gb/A.srm"; rm -f "${SR}/storage/.cache/cloud_sync/saves-root"
+printf '%s\t%s\n' '^copy .* /storage/roms/ qa:' 7 > "${SR}/ctl/fail"
+sa_run "${SR}" cloud_backup --yes --saves-only
+: > "${SR}/ctl/fail"
+[ "${RC}" -ne 0 ] && [ ! -e "${SR}/storage/.cache/cloud_sync/saves-root" ]; check $? "a saves backup whose transfer failed (7) records no card (rc ${RC})" "saves-root after a failed transfer: $(cat "${SR}/storage/.cache/cloud_sync/saves-root" 2>/dev/null) -- a failed first run established the card as if it had succeeded"
+sa_run "${SR}" cloud_backup --yes --saves-only
+[ "${RC}" -eq 0 ] && [ -s "${SR}/storage/.cache/cloud_sync/saves-root" ]; check $? "and the next run that moves the saves records it (rc ${RC})" "saves-root: $(cat "${SR}/storage/.cache/cloud_sync/saves-root" 2>/dev/null)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

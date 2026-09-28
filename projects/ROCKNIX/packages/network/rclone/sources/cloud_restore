@@ -1616,10 +1616,18 @@ restore_game_saves() {
     # started on. A bind that landed mid-run means part of the run went to
     # the other card: a failed run, and not one to record. A good run
     # records the card, so the next transfer has something to compare.
+    #
+    # Only a transfer that completed is recorded (#308 gpt F-CS-20): a
+    # failed first run used to establish the card as if it had synced. A
+    # failed one is still compared, so a card that changed under it says so.
     local root_note=""
     if [ -x "${saves_root_tool}" ]; then
-        if ! root_note=$("${saves_root_tool}" record "${saves_root_id}"); then
-            RESTORE_STATUS=1
+        if [ $RESTORE_STATUS -eq 0 ] || [ $RESTORE_STATUS -eq 9 ]; then
+            if ! root_note=$("${saves_root_tool}" record "${saves_root_id}"); then
+                RESTORE_STATUS=1
+            fi
+        else
+            root_note=$("${saves_root_tool}" record "${saves_root_id}" --no-write) || true
         fi
     fi
 
