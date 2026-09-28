@@ -3134,6 +3134,65 @@ for p in fbalpha2012-lr fbalpha2019-lr fbneo-lr mame2003-plus-lr mame2010-lr; do
     grep -q 'rotation-table-[a-z]*\.py --min [0-9]' "${GX}/${p}.mk" || F2_BAD+=" ${p}:no-floor"
 done
 [ -z "${F2_BAD}" ]; check $? "the five recipes hand the generator its floor (--min) and carry no copy of the row check" "recipes:${F2_BAD}"
+# F2-2b. The audit of the fixes (#307 follow-up, docs/audits/2026_09_28-*):
+# what the generators still read as live -- a GAME() written inside a
+# string (gpt G-F2-03), code behind #if 0, a block comment whose opener sits
+# after a C++14 digit separator (claude G-F2-05) -- and whether the row
+# floor fails the build from wherever the generator's line sits in
+# makeinstall_target (claude G-F2-04): each recipe is run with a python3
+# that fails, and must reach die.
+echo "  F2-2b. the generators skip strings, #if 0 and a separator-hidden comment; each recipe dies on the generator's failure itself (#307 follow-up: claude G-F2-04/05, gpt G-F2-03)"
+mkdir -p "${GX}/fba2/src/burn/drv" "${GX}/mame2/src/drivers" "${GX}/failpy"
+cat > "${GX}/fba2/src/burn/drv/d_fixture2.cpp" <<'EOC'
+struct BurnDriver BurnDrvKept = {
+	"kept", NULL, NULL, NULL, "1984",
+	BDF_GAME_WORKING | BDF_ORIENTATION_VERTICAL, 2, 0, 0, 0,
+};
+static INT32 nSep = 1'000; /* the old count was 2'000,
+struct BurnDriver BurnDrvSep = {
+	"sep", NULL, NULL, NULL, "1984",
+	BDF_GAME_WORKING | BDF_ORIENTATION_VERTICAL, 2, 0, 0, 0,
+};
+*/
+#if 0
+struct BurnDriver BurnDrvDead = {
+	"dead", NULL, NULL, NULL, "1984",
+	BDF_GAME_WORKING | BDF_ORIENTATION_FLIPPED, 2, 0, 0, 0,
+};
+#endif
+EOC
+cat > "${GX}/mame2/src/drivers/fixture2.c" <<'EOC'
+static const char *note = "GAME(1990, phantom, 0, m, i, 0, ROT90)";
+#if 0
+GAME( 1983, deadset, 0, m, i, 0, ROT270, "M", "Dead set", 0 )
+#else
+GAME( 1983, liveset, 0, m, i, 0, ROT270, "M", "Live set", 0 )
+#endif
+#if 0 /* a comment on the directive */
+#if 1
+GAME( 1984, nested, 0, m, i, 0, ROT90, "M", "Nested in a dead block", 0 )
+#endif
+#endif
+GAME( 1985, after, 0, m, i, 0, ROT180, "M", "After", 0 )
+EOC
+F2_OUT="$(python3 "${GX}/rotation-table-fba.py" "${GX}/fba2" 2>/dev/null)"
+[ "${F2_OUT}" = "kept 1" ]; check $? "FBA: a driver inside #if 0, or inside a /* */ whose opener follows a digit separator (1'000), gives no row" "FBA fixture table: '$(printf '%s' "${F2_OUT}" | tr '\n' '|')' -- expected 'kept 1'"
+F2_OUT="$(python3 "${GX}/rotation-table-mame.py" "${GX}/mame2" src/drivers 2>/dev/null)"
+[ "${F2_OUT}" = "$(printf 'after 2\nliveset 1')" ]; check $? "MAME: a GAME() inside a string literal, or in an #if 0 block (nested #if included), gives no row; its #else does" "MAME fixture table: '$(printf '%s' "${F2_OUT}" | tr '\n' '|')' -- expected 'after 2|liveset 1'"
+printf '#!/bin/sh\nexit 1\n' > "${GX}/failpy/python3"; chmod +x "${GX}/failpy/python3"
+F2_BAD=""
+for p in fbalpha2012-lr fbalpha2019-lr fbneo-lr mame2003-plus-lr mame2010-lr; do
+    rm -f "${GX}/died"
+    ( set +u; PATH="${GX}/failpy:${PATH}"; INSTALL="${GX}/inst-${p}"; PKG_BUILD="${GX}/build-${p}"; PKG_DIR="${GX}/pkgdir"
+      ROOT="${ROOT}"; DEVICE=H700; ARCH=aarch64; TARGET_ARCH=aarch64
+      get_pkg_directory() { echo "${GX}/pkgdir"; }
+      die() { : > "${GX}/died"; exit 3; }
+      . "${GX}/${p}.mk" > /dev/null 2>&1
+      makeinstall_target > /dev/null 2>&1; true ) > /dev/null 2>&1
+    [ -e "${GX}/died" ] || F2_BAD+=" ${p}"
+done
+[ -z "${F2_BAD}" ]; check $? "a generator that fails (a python3 that exits 1) stops each of the five recipes through die, not through being the function's last line" "the generator failed and makeinstall_target returned without die in:${F2_BAD}"
+
 # F2-3. make docker-* writes .env in its recipe, owner-only over any older
 # copy, and removes it when the container is gone (#307 PL-043; #308
 # 10-packages claude F-PB-12). The docker-% recipe is taken out of the
