@@ -10230,6 +10230,76 @@ p7ck "head -c 100 /dev/zero" retroarch 9000 --setenv CORE_MAX_BYTES 1048576
 rm -f "${P7C}/shim/flock"
 printf '%s' "${P7NOTE}" | grep '^dump' | grep -q 'NOT KEPT' && [ ! -e "${P7C}/storage/.cache/log/cores/core.retroarch.9000.4242.gz" ]; check $? "#307 audit G-B-14 (gpt): when the cores folder cannot be locked the dump is not kept, and the note says why" "#307 audit G-B-14: note: $(printf '%s' "${P7NOTE}" | grep '^dump' | cut -c1-120); dump: $([ -e "${P7C}/storage/.cache/log/cores/core.retroarch.9000.4242.gz" ] && echo kept || echo none)"
 
+# ---- audit #307, stream F2 ----
+# Stream F2's second block: the audit of the fix round
+# (docs/audits/2026_09_28-milestone-audit-of-the-fix-round/), its PL-020 and
+# the leads G2-F2-02 and G2-F2-03 (gpt). The files are read through src_of,
+# so under
+#     BASE_REF=f3d19dc8fb tools/last-good-scripts-test --old
+# these cases grade the tree that audit read: every check FAILs there except
+# the ones each case names as its control.
+F2B="${TMP}/f2b"; mkdir -p "${F2B}"
+F2B_LR=projects/ROCKNIX/packages/emulators/libretro
+
+# F2-20. PL-020 (G2-F2-01, gpt): the generators read a literal #elif as the
+# compiler does. drop_dead knew a literal 0 or 1 only where it opened an
+# #if, so every #elif after an arm not yet taken read as live: an #elif 0
+# arm reached the table, and so did the #else after an #elif 1, where a
+# ROT0 or a flagless driver writes 0 over the #elif's turn and the row goes.
+# Four shapes, each in an FBA driver file and a MAME driver file:
+#   A  #if 0 / #elif 0 / #else   the #elif arm dead, the #else live
+#   B  #if 0 / #elif 1 / #else   the #elif arm live, the #else dead (the
+#                                seat's case)
+#   C  #if X / #elif 0 / #else   an #elif 0 dead after a condition the
+#                                build decides; the #if and #else arms live
+#   D  #if 0 / #elif X / #else   the control: an #elif the build decides is
+#                                read as live, and so is its #else, on the
+#                                base as well
+#   E  #if 1 / #elifdef X        C23's #elifdef is an arm too: after a taken
+#                                #if 1 it is never compiled (the old reader
+#                                did not know the word and kept the arm)
+echo "  F2-20. the generators read a literal #elif as the compiler does: #elif 0 never compiled, #elif 1 taken, any other #elif live (audit of the fix round PL-020)"
+GE="${F2B}/gen"
+src_of "${F2B_LR}/rotation-table-fba.py" "${F2B}/rotation-table-fba.py"
+src_of "${F2B_LR}/rotation-table-mame.py" "${F2B}/rotation-table-mame.py"
+f2b_fba() { # <name> [flags]: one BurnDriver in the shape the FBA cores write
+    printf 'struct BurnDriver BurnDrv%s = {\n\t"%s", NULL, NULL, NULL, "1984",\n\tBDF_GAME_WORKING%s, 2, 0, 0, 0,\n};\n' "$1" "$1" "${2:-}"
+}
+f2b_mame() { # <name> <ROT>: one GAME()
+    printf 'GAME( 1984, %s, 0, m, i, 0, %s, "M", "%s", 0 )\n' "$1" "$2" "$1"
+}
+F2B_V=" | BDF_ORIENTATION_VERTICAL"; F2B_F=" | BDF_ORIENTATION_FLIPPED"
+for s in A B C D E; do mkdir -p "${GE}/fba-${s}/src/burn/drv" "${GE}/mame-${s}/src/drivers"; done
+{ echo '#if 0'; echo '#elif 0'; f2b_fba adead "${F2B_V}"; echo '#else'; f2b_fba aelse "${F2B_F}"; echo '#endif'; } > "${GE}/fba-A/src/burn/drv/d_a.cpp"
+{ echo '#if 0'; echo '#elif 0'; f2b_mame adead ROT90; echo '#else'; f2b_mame aelse ROT180; echo '#endif'; } > "${GE}/mame-A/src/drivers/a.c"
+{ echo '#if 0'; echo '#elif 1'; f2b_fba bchoice "${F2B_V}"; echo '#else'; f2b_fba bchoice; echo '#endif'; } > "${GE}/fba-B/src/burn/drv/d_b.cpp"
+{ echo '#if 0'; echo '#elif 1'; f2b_mame bchoice ROT90; echo '#else'; f2b_mame bchoice ROT0; echo '#endif'; } > "${GE}/mame-B/src/drivers/b.c"
+{ echo '#if defined(FBNEO_DEBUG)'; f2b_fba cif "${F2B_V}"; echo '#elif 0'; f2b_fba cdead "${F2B_F}"; echo '#else'; f2b_fba celse "${F2B_V}${F2B_F}"; echo '#endif'; } > "${GE}/fba-C/src/burn/drv/d_c.cpp"
+{ echo '#if HAS_EXTRA'; f2b_mame cif ROT270; echo '#elif 0'; f2b_mame cdead ROT90; echo '#else'; f2b_mame celse ROT180; echo '#endif'; } > "${GE}/mame-C/src/drivers/c.c"
+{ echo '#if 0'; f2b_fba ddead "${F2B_V}"; echo '#elif defined(BUILD_X)'; f2b_fba delif "${F2B_F}"; echo '#else'; f2b_fba delse "${F2B_V}"; echo '#endif'; } > "${GE}/fba-D/src/burn/drv/d_d.cpp"
+{ echo '#if 0'; f2b_mame ddead ROT90; echo '#elif HAS_EXTRA'; f2b_mame delif ROT180; echo '#else'; f2b_mame delse ROT270; echo '#endif'; } > "${GE}/mame-D/src/drivers/d.c"
+{ echo '#if 1'; f2b_fba etaken "${F2B_V}"; echo '#elifdef FBNEO_DEBUG'; f2b_fba egone "${F2B_F}"; echo '#endif'; } > "${GE}/fba-E/src/burn/drv/d_e.cpp"
+{ echo '#if 1'; f2b_mame etaken ROT270; echo '#elifdef HAS_EXTRA'; f2b_mame egone ROT90; echo '#endif'; } > "${GE}/mame-E/src/drivers/e.c"
+f2b_table() { # <fba|mame> <shape>: the table for that fixture, rows joined by |
+    if [ "$1" = fba ]; then python3 "${F2B}/rotation-table-fba.py" "${GE}/fba-$2" 2>/dev/null
+    else python3 "${F2B}/rotation-table-mame.py" "${GE}/mame-$2" src/drivers 2>/dev/null; fi | tr '\n' '|'
+}
+declare -A F2B_WANT=( [fba-A]='aelse 2|' [mame-A]='aelse 2|' [fba-B]='bchoice 1|' [mame-B]='bchoice 3|'
+                      [fba-C]='celse 3|cif 1|' [mame-C]='celse 2|cif 1|' [fba-D]='delif 2|delse 1|' [mame-D]='delif 2|delse 1|'
+                      [fba-E]='etaken 1|' [mame-E]='etaken 1|' )
+declare -A F2B_SAYS=( [A]='#if 0 / #elif 0 / #else: the #elif arm gives no row, the #else does'
+                      [B]='#if 0 / #elif 1 / #else: the #elif arm is taken, its turn kept, the #else never read'
+                      [C]='#if X / #elif 0 / #else: the #elif 0 arm gives no row, the #if and #else arms do'
+                      [D]='#if 0 / #elif X / #else: an #elif the build decides is live, and its #else (the control)'
+                      [E]='#if 1 / #elifdef X: the #elifdef arm after a taken #if 1 gives no row' )
+for s in A B C D E; do
+    for g in fba mame; do
+        out="$(f2b_table "${g}" "${s}")"
+        [ "${out}" = "${F2B_WANT[${g}-${s}]}" ]
+        check $? "${g^^} ${F2B_SAYS[${s}]}" "${g^^} shape ${s} (${F2B_SAYS[${s}]%%:*}): table '${out}', expected '${F2B_WANT[${g}-${s}]}'"
+    done
+done
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi

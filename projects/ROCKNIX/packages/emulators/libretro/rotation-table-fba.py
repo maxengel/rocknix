@@ -14,13 +14,17 @@
 # and the count on stderr. With --min N it fails when fewer than N games
 # have a turn: a source root with no drivers under it is a wrong path, not
 # a smaller core. Only what the compiler reads counts: a driver or a flag
-# inside /* */, after // or in an #if 0 block is not read (other #if
-# conditions depend on the build's defines and are read as live), and a
-# flag is read from the driver's fields, never from the text of its strings.
+# inside /* */, after //, or in an arm the preprocessor never compiles (an
+# #if 0 or #elif 0, or an #elif or #else after an #if 1 or #elif 1 that was
+# taken) is not read -- any other condition depends on the build's defines
+# and is read as live -- and a flag is read from the driver's fields, never
+# from the text of its strings.
 import os, re, sys
 
 LEXEME = re.compile(r'//[^\n]*|/\*.*?(?:\*/|\Z)|"(?:\\.|[^"\\\n])*"|(?<![0-9])\'(?:\\.|[^\'\\\n])*\'', re.S)
 STRING = re.compile(r'"(?:\\.|[^"\\\n])*"')
+DIRECTIVE = re.compile(r'\s*#\s*(ifdef|ifndef|if|elifdef|elifndef|elif|else|endif)\b(.*)')
+KNOWN = {'0': 'no', '1': 'yes'}   # the only conditions read without the build's defines
 DRIVER = re.compile(r'struct\s+BurnDriver[D]?\s+BurnDrv\w+\s*=\s*\{(.*?)\};', re.S)
 
 
@@ -32,27 +36,36 @@ def strip_comments(text):
 
 
 def drop_dead(text):
-    """The source with what the preprocessor never compiles blanked: the
-    body of an #if 0 up to its #else, #elif or #endif, and an #if 1's #else
-    and #elif arms. Any other condition depends on the build's defines,
-    which are not known here, and is read as live."""
+    """The source with what the preprocessor never compiles blanked. A
+    literal 0 or 1 is known, in an #elif as in an #if: an arm whose
+    condition is 0 is blanked, and so is every #elif and #else arm after
+    one known to be taken (#if 1, or #elif 1 after arms known not to be).
+    Any other condition depends on the build's defines, which are not known
+    here, and its arm is read as live; an arm after it is blanked only when
+    its own condition is 0 or an arm between is known to be taken."""
     out = []
-    stack = []   # one per open #if: 'dead' or 'gone' while its current arm is not compiled
+    # one [arm, taken] pair per open #if, each 'yes', 'no' or 'maybe': is the
+    # current arm compiled, and has it or an arm before it been. A line is
+    # blanked while any open #if's current arm is 'no'.
+    stack = []
     for line in text.split('\n'):
-        d = re.match(r'\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b(.*)', line)
+        d = DIRECTIVE.match(line)
         if d:
             kind, rest = d.group(1), d.group(2).strip()
+            cond = KNOWN.get(rest, 'maybe') if kind in ('if', 'elif') else 'yes' if kind == 'else' else 'maybe'
             if kind in ('if', 'ifdef', 'ifndef'):
-                stack.append('dead' if kind == 'if' and rest == '0' else 'one' if kind == 'if' and rest == '1' else 'live')
-            elif kind == 'else' and stack:
-                stack[-1] = 'gone' if stack[-1] in ('one', 'gone') else 'live'
-            elif kind == 'elif' and stack:
-                stack[-1] = 'gone' if stack[-1] in ('one', 'gone') else 'live'
-            elif kind == 'endif' and stack:
-                stack.pop()
+                stack.append([cond, cond])
+            elif kind == 'endif':
+                if stack:
+                    stack.pop()
+            elif stack:   # #elif, #elifdef, #elifndef, #else
+                taken = stack[-1][1]
+                arm = 'no' if taken == 'yes' or cond == 'no' else cond if taken == 'no' else 'maybe'
+                taken = 'yes' if 'yes' in (taken, cond) else 'no' if taken == cond == 'no' else 'maybe'
+                stack[-1] = [arm, taken]
             out.append('')
             continue
-        out.append('' if 'dead' in stack or 'gone' in stack else line)
+        out.append('' if any(arm == 'no' for arm, _ in stack) else line)
     return '\n'.join(out)
 
 
