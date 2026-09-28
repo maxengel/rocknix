@@ -85,12 +85,31 @@ def state_path(name):
     return os.path.join(STATE_DIR, name)
 
 
-def write_state(**fields):
+# session.json is written by three threads of the serve (the collector, the
+# request handlers, the main thread) and read by other processes (`status`,
+# `info`, the interface). It was truncated and rewritten in place, and
+# read_state turns a half-written file into {} -- a status that read idle
+# for a moment while a sign-in was completing, and a merge that could write
+# that emptiness back (#308 claude F-RS-23, gpt F-RS-17). So: one writer at
+# a time within the process, and every write a whole file renamed over the
+# old one, which a reader in any process sees before or after, never during.
+_STATE_LOCK = threading.Lock()
+
+
+def _write_whole(data):
     os.makedirs(STATE_DIR, exist_ok=True)
-    existing = read_state()
-    existing.update(fields)
-    with open(state_path("session.json"), "w") as handle:
-        json.dump(existing, handle)
+    path = state_path("session.json")
+    tmp = "%s.%d.tmp" % (path, os.getpid())
+    with open(tmp, "w") as handle:
+        json.dump(data, handle)
+    os.replace(tmp, path)
+
+
+def write_state(**fields):
+    with _STATE_LOCK:
+        existing = read_state()
+        existing.update(fields)
+        _write_whole(existing)
 
 
 def reset_state(**fields):
@@ -112,8 +131,8 @@ def reset_state(**fields):
             os.unlink(state_path(name))
         except OSError:
             pass
-    with open(state_path("session.json"), "w") as handle:
-        json.dump(dict(fields), handle)
+    with _STATE_LOCK:
+        _write_whole(dict(fields))
 
 
 def read_state():

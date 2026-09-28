@@ -3683,6 +3683,41 @@ def grab_released_before_signed_in():
            "wait, on the signed-in marker, returns only once the pad is free (%d polls)" % len(polls),
            "wait returned %r after %d pad_is_free polls -- the marker branch skipped the loop (PL-018)" % (rc, len(polls)))
 EOPY
+# #308 claude F-RS-23, gpt F-RS-17: session.json is written whole.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+@test
+def state_writes_are_whole():
+    """#308 claude F-RS-23, gpt F-RS-17: a reader never sees a half-written
+    session.json."""
+    m, d = load("rs23b")
+
+    class SlowJson:
+        load = staticmethod(real_json.load)
+        loads = staticmethod(real_json.loads)
+        dumps = staticmethod(real_json.dumps)
+        JSONDecodeError = real_json.JSONDecodeError
+
+        @staticmethod
+        def dump(obj, handle, **kw):
+            text = real_json.dumps(obj)
+            handle.write(text[:6])
+            handle.flush()
+            time.sleep(0.4)
+            handle.write(text[6:])
+
+    m.write_state(status="waiting", pin="1234")
+    m.json = SlowJson
+    t = threading.Thread(target=lambda: m.write_state(status="signed-in"))
+    t.start()
+    time.sleep(0.15)
+    seen = m.read_state()
+    t.join(5)
+    after = m.read_state()
+    result(seen.get("status") == "waiting" and seen.get("pin") == "1234" and after.get("status") == "signed-in"
+           and after.get("pin") == "1234",
+           "a read during a write sees the whole previous state, and the write lands whole",
+           "read during the write: %r; after: %r -- session.json is truncated in place (#308 claude F-RS-23, gpt F-RS-17)" % (seen, after))
+EOPY
 # C3: new test groups go above this line
 cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
 if MODE == "drive":
