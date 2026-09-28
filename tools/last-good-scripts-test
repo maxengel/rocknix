@@ -3759,6 +3759,38 @@ def cursor_timeout_is_restored():
     if proc.poll() is None:
         proc.kill()
 EOPY
+# #308 gpt F-RS-16: a d-pad reported as a hat is found and bridged.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+@test
+def hat_dpad_is_found_and_bridged():
+    """#308 gpt F-RS-16 (claude F-RS-06): a d-pad reported as a hat."""
+    m, d = load("rs16")
+    m.SYS_INPUT = fake_sysfs(d, {304, 305, 307, 308, 310, 311, 314, 315}, {0, 1, 16, 17})
+    try:
+        node, codes = m.find_gamepad()
+    except OSError as exc:
+        node, codes = None, str(exc)
+    result(node == "/dev/input/event3",
+           "a pad whose d-pad is ABS_HAT0X/Y is found (%s)" % node,
+           "find_gamepad on a hat pad: %r -- no bridge, no exit from the handheld (#308 gpt F-RS-16)" % (node,))
+    import fcntl as real_fcntl
+    fifo, writer = pad_fifo(d)
+    m.fcntl = FakeFcntl(real_fcntl, "/nonexistent")
+    kb = FakeKeyboard()
+    bridge = m.GamepadBridge(kb, lambda: None, alive=lambda: True)
+    bridge.thread = threading.Thread(target=bridge._run, args=(fifo,), daemon=True)
+    bridge.thread.start()
+    for etype, code, value in ((EV_ABS, 17, -1), (EV_SYN, 0, 0), (EV_ABS, 17, 0), (EV_SYN, 0, 0),
+                               (EV_ABS, 16, 1), (EV_SYN, 0, 0), (EV_ABS, 16, 0), (EV_SYN, 0, 0),
+                               (EV_ABS, 17, 1), (EV_ABS, 16, -1), (EV_SYN, 0, 0), (EV_KEY, 305, 1)):
+        os.write(writer, event(etype, code, value))
+    wait_for(lambda: len(kb.pressed) >= 5, 3)
+    bridge.stop()
+    os.close(writer)
+    result(kb.pressed == ["up", "right", "down", "left", "enter"],
+           "and its hat presses reach the page as arrows (up, right, down, left), buttons as before",
+           "the bridge pressed %r for hat up, right, down+left and A" % kb.pressed)
+EOPY
 # C3: new test groups go above this line
 cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
 if MODE == "drive":

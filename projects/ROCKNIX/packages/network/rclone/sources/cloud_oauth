@@ -1252,6 +1252,16 @@ class RemoteKeyboard:
 BTN_SOUTH, BTN_EAST, BTN_NORTH, BTN_WEST = 304, 305, 307, 308
 BTN_TL, BTN_TR, BTN_SELECT, BTN_START, BTN_MODE = 310, 311, 314, 315, 316
 BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT = 544, 545, 546, 547
+# A d-pad is not always four buttons. HID and xpad-class pads report it as a
+# hat -- two axes that read -1, 0 or 1 -- and the bridge used to find only
+# pads with BTN_DPAD_UP and to drop every EV_ABS event, so on such a pad the
+# page could not be driven and Select+Start never reached it (#308 gpt
+# F-RS-16, claude F-RS-06).
+EV_ABS = 0x03
+ABS_HAT0X, ABS_HAT0Y = 0x10, 0x11
+HAT_KEYS = {(ABS_HAT0X, -1): "left", (ABS_HAT0X, 1): "right",
+            (ABS_HAT0Y, -1): "up", (ABS_HAT0Y, 1): "down"}
+SYS_INPUT = "/sys/class/input"
 
 # Arrows rather than Tab: WebKit's spatial navigation moves focus in the
 # direction pressed, which is what a d-pad means. Tab order on a login page
@@ -1307,22 +1317,36 @@ def find_gamepad():
     RG35XX SP has a Mode button and ES maps its hotkey to it, while smaller
     pads have no such button at all.
     """
-    for entry in sorted(os.listdir("/sys/class/input")):
+    try:
+        entries = sorted(os.listdir(SYS_INPUT))
+    except OSError:
+        return None, set()
+    for entry in entries:
         if not entry.startswith("event"):
             continue
-        caps = "/sys/class/input/%s/device/capabilities/key" % entry
-        try:
-            words = open(caps).read().split()
-        except OSError:
+        codes = _capabilities(entry, "key")
+        if codes is None:
             continue
-        codes = set()
-        for index, word in enumerate(reversed(words)):
-            value = int(word, 16)
-            codes |= {index * 64 + bit for bit in range(value.bit_length())
-                      if value >> bit & 1}
-        if BTN_SOUTH in codes and BTN_DPAD_UP in codes:
+        axes = _capabilities(entry, "abs") or set()
+        if BTN_SOUTH in codes and (BTN_DPAD_UP in codes or ABS_HAT0Y in axes):
             return "/dev/input/" + entry, codes
     return None, set()
+
+
+def _capabilities(entry, kind):
+    """The codes an input device reports for one event type, from sysfs's
+    bitmap (hex words, most significant first), or None when unreadable."""
+    try:
+        with open("%s/%s/device/capabilities/%s" % (SYS_INPUT, entry, kind)) as handle:
+            words = handle.read().split()
+    except (OSError, ValueError):
+        return None
+    codes = set()
+    for index, word in enumerate(reversed(words)):
+        value = int(word, 16)
+        codes |= {index * 64 + bit for bit in range(value.bit_length())
+                  if value >> bit & 1}
+    return codes
 
 
 def exit_hint():
@@ -1453,6 +1477,7 @@ class GamepadBridge:
 
         size = struct.calcsize("llHHi")
         held = set()
+        hat = {}
         try:
             while not self.stop_flag.is_set():
                 # The timeout is the watchdog's heartbeat, not a poll for
@@ -1470,6 +1495,15 @@ class GamepadBridge:
                 if len(data) < size:
                     continue
                 _, _, etype, code, value = struct.unpack("llHHi", data)
+                if etype == EV_ABS:
+                    # A hat moving off centre is the arrow's press; back to
+                    # centre, or on to the same side again, is nothing.
+                    name = HAT_KEYS.get((code, value))
+                    if name and hat.get(code) != value:
+                        self.keyboard.press(name)
+                    if code in (ABS_HAT0X, ABS_HAT0Y):
+                        hat[code] = value
+                    continue
                 if etype != EV_KEY:
                     continue
 
