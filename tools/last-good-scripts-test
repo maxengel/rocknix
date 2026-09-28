@@ -3143,6 +3143,12 @@ C1RO=1 c1 --set-saves-remote /Other/Saves
 [ "${RC}" -ne 0 ] && ! grep -q '^OK' "${C1}/out" && cmp -s "${CONF1}" "${C1}/conf.before"; check $? "a config that cannot be written is a failure, not OK (rc ${RC})" "read-only /storage: rc ${RC}; said '$(tr '\n' ' ' < "${C1}/out" | cut -c1-120)' -- the write failed and OK was printed (PL-051)"
 C1RO=1 c1 --use-content-root
 [ "${RC}" -ne 0 ] && ! grep -q '^OK' "${C1}/out"; check $? "and --use-content-root likewise (rc ${RC})" "read-only /storage: rc ${RC}; said '$(tr '\n' ' ' < "${C1}/out" | cut -c1-120)'"
+# G-C-07 (gpt): and says so in its own words only. The redirection that
+# failed came before the one that silenced stderr, so the shell printed its
+# own diagnostic -- a line number, the temp file's path, "Read-only file
+# system" -- ahead of the sentence.
+C1RO=1 c1 --set-saves-remote /Other/Saves
+[ "$(cat "${C1}/out")" = "The cloud sync settings could not be saved, so the folder was not changed." ]; check $? "a write that fails prints its one sentence and no shell diagnostic" "read-only /storage printed: '$(tr '\n' '|' < "${C1}/out" | cut -c1-200)' (G-C-07)"
 # G-C-04 (gpt, the audit of stream C): a config path that is a directory is
 # not a config. conf_set read it as absent and `mv -f` put the new file
 # INSIDE it, then said OK; the artifact is what says whether it worked.

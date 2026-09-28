@@ -71,7 +71,11 @@ conf_set() {
         n=$((n + 1)); pairs+=("CONF_K${n}=$1" "CONF_V${n}=$2")
         want+=("$1=\"$2\""); shift 2
     done
-    if env "${pairs[@]}" CONF_N="${n}" awk '
+    # Braced, and silenced as a whole: a redirection that fails opening the
+    # temp file happens before a `2>/dev/null` written after it, and the
+    # shell printed its own diagnostic -- a line number and the temp file's
+    # path -- ahead of the caller's sentence (G-C-07).
+    if { env "${pairs[@]}" CONF_N="${n}" awk '
         BEGIN {
             n = ENVIRON["CONF_N"] + 0
             for (i = 1; i <= n; i++) {
@@ -85,7 +89,7 @@ conf_set() {
             print
         }
         END { for (i = 1; i <= n; i++) if (!seen[i]) print line[i] }
-    ' "${src}" > "${tmp}" 2>/dev/null && mv -f "${tmp}" "${SYNC_CONF}" 2>/dev/null; then
+    ' "${src}" > "${tmp}" && mv -f "${tmp}" "${SYNC_CONF}"; } 2>/dev/null; then
         # Written is what the file says, not what mv returned: a regular
         # file at the path, holding every line asked for.
         [ -f "${SYNC_CONF}" ] || return 1
