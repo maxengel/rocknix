@@ -4063,6 +4063,73 @@ def taken_port_error_is_words():
     for p in procs_with("rclone authorize"):
         os.kill(p, signal.SIGKILL)
 EOPY
+# G-C-02 (gpt and claude): a collector writes the session's state only while
+# its attempt owns it.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+@test
+def a_replaced_attempt_does_not_fail_its_successor():
+    """G-C-02 (gpt seat): attempt A holds a token and is still creating its
+    remote when a restart replaces it; A's failure must not land on B."""
+    m, d = load("gc02a")
+    m.subprocess = FakeSP([
+        (["listremotes"], lambda a: completed(a, 0, "")),
+        (["config", "create"], lambda a: (time.sleep(0.8), completed(a, 1, "", "no"))[1]),
+    ])
+    m.reset_state(status="waiting", attempt="X")
+    a = m.Session("dropbox", "qa", 60)
+    a.attempt = "X"
+    a.proc = fake_authorize("printf 'Paste the following into your remote machine --->\\n{\"access_token\":\"t\"}\\n<---End paste\\n'")
+    t = threading.Thread(target=a._collect, daemon=True)
+    t.start()
+    time.sleep(0.3)
+    a.superseded = True                       # what SessionHolder.start does for B
+    m.write_state(status="waiting", provider="https://b.example/")
+    t.join(10)
+    st = m.read_state()
+    result(st.get("status") == "waiting" and not st.get("error"),
+           "a replaced attempt's failed remote creation leaves its successor's state alone",
+           "after A's create failed behind B the state reads %r -- A wrote its failure over the live attempt (G-C-02 gpt)" % st)
+
+
+@test
+def a_dying_serve_does_not_fail_the_next():
+    """G-C-02 (claude seat), across processes: the next serve has reset the
+    state for its own attempt; the last serve's collector, woken by its
+    rclone dying, must not mark the new one failed."""
+    m, d = load("gc02b")
+    m.reset_state(status="starting", attempt="NEW")
+    old = m.Session("dropbox", None, 60)
+    old.attempt = "OLD"
+    old.proc = fake_authorize("exit 1")
+    old._collect()
+    st = m.read_state()
+    result(st.get("status") == "starting" and not st.get("error"),
+           "a collector whose serve's attempt no longer owns the state writes nothing to it",
+           "the old serve's collector turned the new attempt's state into %r (G-C-02 claude)" % st)
+
+
+@test
+def teardown_is_not_a_failure():
+    """G-C-02 (claude seat): holder.end() -- cancel, the timeout, a signed-in
+    close -- kills rclone, which wakes the collector; that is the serve
+    ending, not the sign-in failing."""
+    m, d = load("gc02c")
+    m.reset_state(status="waiting", attempt="X")
+    holder = m.SessionHolder("dropbox", None, None, 60)
+    s = m.Session("dropbox", None, 60)
+    s.attempt = "X"
+    s.proc = subprocess.Popen(["sleep", "30"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    holder.session = s
+    t = threading.Thread(target=s._collect, daemon=True)
+    t.start()
+    time.sleep(0.2)
+    holder.end()
+    t.join(5)
+    st = m.read_state()
+    result(st.get("status") == "waiting" and not st.get("error"),
+           "the serve's own teardown, killing rclone, is not recorded as a failed sign-in",
+           "after holder.end() the state reads %r -- the teardown woke the collector into writing a failure (G-C-02 claude)" % st)
+EOPY
 # C3: new test groups go above this line
 cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
 if MODE == "drive":
