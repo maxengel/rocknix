@@ -13,8 +13,12 @@
 # LOCATIONS=(
 #   /storage/.config/retroarch/*
 #   /storage/roms/savestates/*
-#   /some/other/folder/file.name*
+#   "/storage/some other folder/file.name"*
 # )
+#
+# One location per line; quote one whose name has a space. Everything named
+# must be under /storage: the archive is written from there and put back
+# there, and a list naming anything else is refused rather than trimmed.
 
 # The folder the settings tier reads: cloud_backup uploads from
 # SETTINGS_BACKUPS in cloud_sync.conf, and this must write where that reads,
@@ -305,7 +309,8 @@ RATOKENDIRS=(
 #
 # Returns 0 when TARGET holds a verified archive; 2 when nothing could be
 # collected (an unreadable input, or nothing to collect); 3 when the archive
-# could not be written or did not list back. TARGET is untouched on 2 and 3.
+# could not be written or did not list back; 6 when the list names something
+# outside /storage. TARGET is untouched on every code but 0.
 write_archive() {
     local TARGET="${1}" STRIP="${2:-1}"
     local SYSCFG="/storage/.config/system/configs/system.cfg"
@@ -342,15 +347,30 @@ write_archive() {
     # (#307 PL-035; until then the exact-path membership tests missed it).
     # A location that is itself a symlink holds no file of its own -- find
     # never followed one -- so it is passed over as before.
-    local LOC CANON FIND_RC=0
+    #
+    # A location outside /storage refuses the whole list (return 6). The
+    # archive is written from the staging tree's storage/ and put back
+    # under /storage, so anything else was staged and then silently left
+    # out while the backup read as whole (#307 PL-038).
+    local LOC CANON FIND_RC=0 OUTSIDE=""
     for LOC in "${COMPRESSLOCATIONS[@]}"
     do
         [ -n "${LOC}" ] || continue
         [ -e "${LOC}" ] || [ -L "${LOC}" ] || continue
         [ -L "${LOC}" ] && continue
         CANON=$(readlink -f "${LOC}") && [ -n "${CANON}" ] || { FIND_RC=1; continue; }
+        case "${CANON}" in
+            /storage|/storage/*) ;;
+            *) OUTSIDE="${LOC}"; continue ;;
+        esac
         find "${CANON}" -type f >> "${FILELIST}" 2>/dev/null || FIND_RC=$?
     done
+    if [ -n "${OUTSIDE}" ]
+    then
+        logger -t backuptool "the backup list names ${OUTSIDE}, which is outside /storage; nothing written"
+        rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
+        return 6
+    fi
     if [ "${FIND_RC}" -ne 0 ]
     then
         logger -t backuptool "a location in the backup list could not be read (find exit ${FIND_RC}); nothing written"
@@ -893,6 +913,8 @@ case "${VERB}" in
             0) ;;
             2) why "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS"
                fail "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS. NOTHING WAS WRITTEN, AND YOUR LAST BACKUP IS UNCHANGED. TRY AGAIN." "collecting into staging failed" ;;
+            6) why "YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP CAN'T CARRY"
+               fail "YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP CAN'T CARRY, SO NOTHING WAS WRITTEN. YOUR LAST BACKUP IS UNCHANGED." "a location in /storage/.config/backuptool.conf is outside /storage" ;;
             *) why "THE BACKUP COULDN'T FINISH"
                fail "THE BACKUP COULDN'T FINISH. NOTHING WAS WRITTEN, AND YOUR LAST BACKUP IS UNCHANGED. TRY AGAIN." "writing or verifying ${BACKUPFILE} failed" ;;
         esac
