@@ -1123,22 +1123,31 @@ load_config() {
         log_message "Added --update from command line" "false"
     fi
 
-    # A SETTINGS_REMOTE inside SAVES_REMOTE is a data-loss trap. Phase 1 syncs
-    # SAVES_REMOTE and the archive is an excluded file, so --delete-excluded removes
-    # it. A full run hides that -- phase 2 re-uploads moments later -- but a run
-    # that skips the system phase (--saves-only, or BACKUPFILE_BACKUP_OPTION set
-    # to no) deletes the archives and puts nothing back. Only sync deletes, and
-    # --delete-excluded is a no-op for copy, so say nothing unless it can bite.
-    # Warn rather than refuse: the layout is the user's to choose, and archives
-    # may already be sitting there.
-    if [ "${BACKUPMETHOD}" == "sync" ] && [[ "${RCLONEOPTS}" == *"--delete-excluded"* ]]; then
-        case "${SETTINGS_REMOTE}/" in
-            "${SAVES_REMOTE%/}/"*)
-                log_message "SETTINGS_REMOTE=${SETTINGS_REMOTE} is inside SAVES_REMOTE=${SAVES_REMOTE}" "false" "WARN"
-                log_message "Your settings folder in the cloud sits inside your saves folder.\nA saves-only backup would delete the settings backups kept there.\nMove the settings folder alongside the saves folder, as it is by default." "true" "WARN"
+    # A settings or ROMs and BIOS folder inside SAVES_REMOTE. Each tier belongs
+    # beside the saves folder, not in it: a folder nested there rides with
+    # every tool that moves the saves folder whole (the layout migration moved
+    # the settings archives into Saves/backup/ that way, audit #307 PL-025),
+    # and the setup page no longer writes such a layout (PL-015, stream C). An
+    # earlier build derived /GAMES/Content inside a top-level /GAMES, and a
+    # config that says so is read as it stands and warned about, never
+    # rewritten -- the layout is the owner's, and TIDY UP YOUR CLOUD FOLDERS
+    # is what moves it. The warning used to cover the settings folder alone,
+    # and only while RCLONEOPTS carried --delete-excluded, which load_config
+    # strips above -- so it could never fire (#308 claude F-CS-17). Logged on
+    # every run; on the screen for a run somebody pressed, not the automatic
+    # syncs, where it would sit on every game-exit card.
+    local nested_key nested_val nested_what
+    for nested_key in SETTINGS_REMOTE CONTENT_REMOTE; do
+        nested_val="${!nested_key}"
+        [ -n "${nested_val}" ] && [ -n "${SAVES_REMOTE}" ] || continue
+        case "${nested_val%/}/" in
+            "${SAVES_REMOTE%/}/"?*)
+                log_message "${nested_key}=${nested_val} is inside SAVES_REMOTE=${SAVES_REMOTE}" "false" "WARN"
+                if [ "${nested_key}" = "SETTINGS_REMOTE" ]; then nested_what="settings folder"; else nested_what="ROMs and BIOS folder"; fi
+                [ "${AUTOMATIC}" -eq 1 ] || log_message "Your ${nested_what} in the cloud sits inside your saves folder. TIDY UP YOUR CLOUD FOLDERS in MANAGE CLOUD STORAGE moves it out." "true" "WARN"
                 ;;
         esac
-    fi
+    done
 
     log_message "Configuration loaded successfully" "false"
 }
