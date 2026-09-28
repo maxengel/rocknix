@@ -39,10 +39,21 @@ fail() {
     logger -t factoryreset "${1}${2:+ -- ${2}}"
 }
 
+# Remove a path and check it is gone, rather than trusting rm's status: with
+# -f a missing operand is not an error, and "it did not fail" is not the same
+# answer as "it is not there" (engineering-practices, guards fail closed).
+remove_checked() {
+    rm -rf "${1}"
+    [ ! -e "${1}" ]
+}
+
 # Put this build's copy of a config back where the player's copy was. The
 # source is checked before anything is removed, so the ordinary failure -- a
 # build that does not ship that emulator -- leaves the device untouched and
-# can say so.
+# can say so. The player's copy must be GONE before the copy: rm -rf's status
+# went unread, and a folder that would not go (an unremovable file in it)
+# stayed, so cp -rf put the defaults INSIDE it -- retroarch/retroarch -- and
+# the reset reported success over the old configuration (#307 PL-044).
 restore_default() {
     local src="${1}" dst="${2}"
 
@@ -52,7 +63,11 @@ restore_default() {
         return 1
     fi
 
-    rm -rf "${dst}"
+    if ! remove_checked "${dst}"
+    then
+        fail "THE DEFAULT SETTINGS COULDN'T BE PUT BACK." "${dst} could not be removed"
+        return 1
+    fi
     if ! cp -rf "${src}" "${dst}"
     then
         fail "THE DEFAULT SETTINGS COULDN'T BE PUT BACK." "cp ${src} -> ${dst} failed"
@@ -60,14 +75,6 @@ restore_default() {
     fi
 
     return 0
-}
-
-# Remove a path and check it is gone, rather than trusting rm's status: with
-# -f a missing operand is not an error, and "it did not fail" is not the same
-# answer as "it is not there" (engineering-practices, guards fail closed).
-remove_checked() {
-    rm -rf "${1}"
-    [ ! -e "${1}" ]
 }
 
 case "${VERB}" in
@@ -134,7 +141,13 @@ case "${VERB}" in
 
     restore_default /usr/config/PortMaster /storage/.config/PortMaster || exit 1
 
-    rm -rf /storage/roms/ports/PortMaster
+    # The same rule for the unpacked copy: a folder that would not go gets
+    # the new files mixed into the old.
+    if ! remove_checked /storage/roms/ports/PortMaster
+    then
+        fail "THE DEFAULT SETTINGS COULDN'T BE PUT BACK." "/storage/roms/ports/PortMaster could not be removed"
+        exit 1
+    fi
     # unzip creates the last directory of -d and no more, so a device whose
     # ports folder is not there fails at the extract -- silently, before #119.
     mkdir -p /storage/roms/ports

@@ -18,8 +18,12 @@ performance
 # $4 = Emulator
 
 ARGUMENTS="$@"
-PLATFORM="${ARGUMENTS##*-P}"  # read from -P onwards
-PLATFORM="${PLATFORM%% *}"  # until a space is found
+### The platform is the first -P<platform> argument after the ROM, taken
+### whole. ${ARGUMENTS##*-P} read from the LAST "-P" anywhere in the joined
+### line, so a netplay nick such as My-Player made the platform "layer"
+### (#308, stream E2's reading of the launch command).
+PLATFORM=""
+for ARG in "${@:2}"; do case "${ARG}" in -P?*) PLATFORM="${ARG#-P}"; break ;; esac; done
 CORE="${ARGUMENTS##*--core=}"  # read from --core= onwards
 CORE="${CORE%% *}"  # until a space is found
 EMULATOR="${ARGUMENTS##*--emulator=}"  # read from --emulator= onwards
@@ -193,38 +197,33 @@ function parse_savestate_arguments() {
   AUTOSAVE=""
   STATEFILE=""
 
-  if [[ "${ARGUMENTS}" == *" -state_slot "* ]] || \
-     [[ "${ARGUMENTS}" == *" -autosave "* ]] || \
-     [[ "${ARGUMENTS}" == *" -state_file "* ]]
+  ### Each value is the argument after its flag, from the argument list --
+  ### the shell already split it. The state file is a path, and ROM names
+  ### carry spaces, parentheses and " - " (Mario Tennis - Power Tour (USA,
+  ### Australia)), so it was always taken this way; the slot and the auto
+  ### save were cut out of the joined line, where the FIRST " -state_slot "
+  ### could be inside the ROM's own name ("Demo -state_slot 2 - Part.sfc")
+  ### and win over the real flag (#308, the gpt seat's F-PB-17).
+  local PREVIOUS="" ARGUMENT FLAGGED=0
+  for ARGUMENT in "$@"
+  do
+    case "${PREVIOUS}" in
+      -state_slot) SNAPSHOT="${ARGUMENT}" ;;
+      -autosave)   AUTOSAVE="${ARGUMENT}" ;;
+      -state_file) STATEFILE="${ARGUMENT}" ;;
+    esac
+    case "${ARGUMENT}" in
+      -state_slot|-autosave|-state_file) FLAGGED=1 ;;
+    esac
+    PREVIOUS="${ARGUMENT}"
+  done
+
+  if [ "${FLAGGED}" -eq 1 ]
   then
     ### The controllers value ends where the first of them begins.
     CONTROLLERCONFIG="${CONTROLLERCONFIG%% -state_slot *}"
     CONTROLLERCONFIG="${CONTROLLERCONFIG%% -autosave *}"
     CONTROLLERCONFIG="${CONTROLLERCONFIG%% -state_file *}"
-    if [[ "${ARGUMENTS}" == *" -state_slot "* ]]
-    then
-      SNAPSHOT="${ARGUMENTS#* -state_slot *}" # -state_slot x
-      SNAPSHOT="${SNAPSHOT%% -*}"
-    fi
-    if [[ "${ARGUMENTS}" == *" -autosave "* ]]
-    then
-      AUTOSAVE="${ARGUMENTS#* -autosave *}" # -autosave x
-      AUTOSAVE="${AUTOSAVE%% -*}"
-    fi
-    ### The state file is a path, and ROM names carry spaces, parentheses and
-    ### " - " (Mario Tennis - Power Tour (USA, Australia)), so it is taken whole
-    ### from the argument list -- the shell already split it -- never cut out
-    ### of the joined string.
-    local PREVIOUS=""
-    local ARGUMENT
-    for ARGUMENT in "$@"
-    do
-      if [ "${PREVIOUS}" = "-state_file" ]
-      then
-        STATEFILE="${ARGUMENT}"
-      fi
-      PREVIOUS="${ARGUMENT}"
-    done
   else
     CONTROLLERCONFIG="${CONTROLLERCONFIG%% --*}"  # until a -- is found
   fi
