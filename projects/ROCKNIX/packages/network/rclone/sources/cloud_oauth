@@ -882,6 +882,34 @@ info.</p>
     sent = v;
   }
 
+  // Every named key -- from the buttons below and from the phone's own
+  // keyboard alike -- goes through here, so the box and the handheld's field
+  // never part. The buttons used to post their key and nothing else: Back
+  // deleted on the handheld and left the box as it was, and every later
+  // keystroke was reckoned against a box one character off, so a password
+  // typed with one correction went across altered (audit #307 PL-017).
+  //
+  // The box holds what has been typed into the handheld's field since the
+  // focus last moved there. Back trims it, and with it empty still deletes
+  // on the handheld -- text that was there already. Enter submits the field,
+  // and Tab, the arrows and Close move away from it: what the box holds was
+  // for the field left behind, so it starts again. Page up and down only
+  // scroll.
+  function act(named) {
+    if (named === "backspace") {
+      if (box.value) {
+        box.value = box.value.slice(0, -1);
+        if (ready) deliver(box.value);
+      } else if (ready) {
+        send("key=backspace");
+      }
+      return;
+    }
+    if (!ready) return;
+    send("key=" + named);
+    if (named !== "f2" && named !== "f3") { box.value = ""; sent = ""; }
+  }
+
   // What you typed stays visible. Clearing the box after every keystroke made
   // a keyboard that looked broken -- you type and nothing appears anywhere
   // you can see.
@@ -892,14 +920,7 @@ info.</p>
     var named = {Enter: "enter", Backspace: "backspace", Tab: "tab"}[e.key];
     if (!named) return;
     e.preventDefault();
-    if (named === "backspace") {
-      box.value = box.value.slice(0, -1);
-      if (ready) deliver(box.value);
-      return;
-    }
-    if (!ready) return;
-    send("key=" + named);
-    if (named === "enter") { box.value = ""; sent = ""; }
+    act(named);
   });
 
   // Local only: the handheld has moved to another field and this box still
@@ -909,7 +930,7 @@ info.</p>
   });
 
   Array.prototype.forEach.call(document.querySelectorAll("[data-key]"), function (b) {
-    b.addEventListener("click", function () { send("key=" + b.dataset.key); });
+    b.addEventListener("click", function () { act(b.dataset.key); });
   });
 
   // Drag to move, tap to click. Deltas rather than absolute positions,

@@ -4133,6 +4133,53 @@ group(async function typedBeforeOpen() {
     "the waiting line reads " + JSON.stringify(waiting) + " -- there is no send button (PL-016)");
 });
 EOJS
+cat >> "${C4}/page_test.js" <<'EOJS'
+// ------------------------------------------------ #307 PL-017
+group(async function backButtonKeepsTheModel() {
+  const p = page("open a1");
+  await p.poll();
+  await p.type("abc");
+  await p.key("backspace");
+  const afterBack = p.box.value;
+  await p.type(p.box.value + "d");
+  const d = p.device();
+  result(d.field === "abd" && p.box.value === "abd",
+    "abc, the Back button, d: the field and the box both hold abd",
+    "abc, Back, d: the field holds " + JSON.stringify(d.field) + ", the box " + JSON.stringify(p.box.value) +
+    " (after Back the box read " + JSON.stringify(afterBack) + ") -- the button bypassed the box (PL-017)");
+  // Clear empties the box and leaves the field: Back then still deletes
+  // there, one character a press.
+  p.byId.clear.fire("click");
+  await p.settle();
+  await p.key("backspace");
+  result(p.device().field === "ab" && p.box.value === "",
+    "Back with the box empty still deletes on the handheld (" + JSON.stringify(p.device().field) + ")",
+    "after Clear, Back: the field holds " + JSON.stringify(p.device().field) + ", the box " + JSON.stringify(p.box.value));
+});
+
+group(async function namedKeysKeepTheModel() {
+  const p = page("open a1");
+  await p.poll();
+  await p.type("user");
+  await p.key("tab");
+  await p.type(p.box.value + "pw");
+  let d = p.device();
+  result(d.field === "pw" && p.box.value === "pw",
+    "user, the Tab button, pw: the next field and the box both hold pw",
+    "user, Tab, pw: the field holds " + JSON.stringify(d.field) + ", the box " + JSON.stringify(p.box.value) +
+    " -- the box kept the last field's text (PL-017)");
+  await p.key("enter");
+  result(p.box.value === "", "the Enter button empties the box, as the Enter key does",
+    "after the Enter button the box holds " + JSON.stringify(p.box.value));
+  await p.type("x");
+  await p.hardKey("Backspace");
+  await p.type(p.box.value + "y");
+  d = p.device();
+  result(d.field === "pwy" && p.box.value === "y",
+    "a Backspace from the phone's own keyboard goes through the same model",
+    "x, Backspace key, y: the field holds " + JSON.stringify(d.field) + ", the box " + JSON.stringify(p.box.value));
+});
+EOJS
 # C4: new page groups go above this line
 cat >> "${C4}/page_test.js" <<'EOJS'
 (async () => {
