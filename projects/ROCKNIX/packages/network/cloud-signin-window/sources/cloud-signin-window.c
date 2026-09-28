@@ -615,11 +615,17 @@ static void on_load_changed(WebKitWebView *view, WebKitLoadEvent event,
      * broken keyboard and cost a debugging session.
      *
      * Gives up after ten seconds so a page that genuinely has no field does
-     * not keep a timer alive for the life of the window. */
+     * not keep a timer alive for the life of the window.
+     *
+     * "Left alone" means anything but the body holding the focus. It used to
+     * mean only a text field, so a control the player had just reached -- a
+     * consent banner's Accept, with Y -- lost the focus to the first field
+     * the moment a script-rendered form appeared, and the next A submitted
+     * an empty form (#308 claude F-RS-17). */
     static const char *focus_first =
         "(function poll(n) {"
         "  var a = document.activeElement;"
-        "  if (a && ['INPUT','TEXTAREA'].indexOf(a.tagName) >= 0) return;"
+        "  if (a && a !== document.body && a !== document.documentElement) return;"
         "  var f = document.querySelector("
         "    'input[type=email],input[type=text],input[type=password],"
         "     input:not([type]),input[type=tel]');"

@@ -4324,4 +4324,49 @@ for f in cloud_oauth cloud_device_id cloud_remote cloud_setup; do
     [ "$(git -C "${ROOT}" ls-files -s -- "${RCLONE_REL}/${f}" | cut -c1-6)" = 100755 ] && [ -x "${ROOT}/${RCLONE_REL}/${f}" ]; check $? "${f} is committed executable" "${f} is committed as $(git -C "${ROOT}" ls-files -s -- "${RCLONE_REL}/${f}" | cut -c1-6) (#308 claude F-RS-21)"
 done
 
+# C8. cloud-signin-window.c. The scripts it runs in the page are C string
+# literals; they are pulled out as the compiler would join them and run by
+# node against a small document. The C around them is compiled only by the
+# image build (and syntax-checked with the image's toolchain by whoever
+# changes it).
+C8="${CS}/c8"; mkdir -p "${C8}"
+src_of projects/ROCKNIX/packages/network/cloud-signin-window/sources/cloud-signin-window.c "${C8}/window.c"
+cat > "${C8}/cstrings.py" <<'EOPY'
+# Print the C string a `static const char *NAME =` declaration builds from its
+# adjacent literals, in the file given -- the JavaScript the window runs.
+import re, sys
+src = open(sys.argv[1]).read()
+m = re.search(r"static const char \*%s =(.*?);\n" % re.escape(sys.argv[2]), src, re.S)
+if not m:
+    sys.exit("no %s in %s" % (sys.argv[2], sys.argv[1]))
+body = re.sub(r"/\*.*?\*/", "", m.group(1), flags=re.S)
+out = "".join(bytes(s, "utf-8").decode("unicode_escape") for s in re.findall(r'"((?:[^"\\]|\\.)*)"', body))
+sys.stdout.write(out)
+EOPY
+cstr() { python3 "${C8}/cstrings.py" "${C8}/window.c" "$1" 2>/dev/null; }
+# focus_first leaves the page alone when anything but the body holds the
+# focus: it returned early only for a text field, so a control the player
+# had just reached -- a consent banner's Accept -- lost the focus to the
+# first field the moment a script-rendered form appeared (#308 claude
+# F-RS-17). Three documents: a button focused, the body focused, a field
+# focused.
+cstr focus_first > "${C8}/focus_first.js"
+cat > "${C8}/focus_test.js" <<'EOJS'
+const fs = require("fs");
+const src = fs.readFileSync(process.argv[2], "utf8");
+function run(active) {
+  let focused = [];
+  const field = { tagName: "INPUT", offsetParent: {}, disabled: false, focus() { focused.push("field"); } };
+  const body = { tagName: "BODY" };
+  const document = { body, documentElement: { tagName: "HTML" },
+    activeElement: active === "body" ? body : active === "button" ? { tagName: "BUTTON" } : field,
+    querySelector: () => field };
+  new Function("document", "setTimeout", src)(document, () => {});
+  return focused.length;
+}
+console.log([run("button"), run("body"), run("field")].join(" "));
+EOJS
+C8F=$( [ -s "${C8}/focus_first.js" ] && command -v node >/dev/null && node "${C8}/focus_test.js" "${C8}/focus_first.js" 2>&1 )
+[ "${C8F}" = "0 1 0" ]; check $? "focus_first adopts a field only when the body holds the focus -- a button the player reached keeps it (${C8F})" "focus_first moved focus (button, body, field): '${C8F:-did not run: needs node}' -- a control the player had reached lost the focus to the first field (#308 claude F-RS-17)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
