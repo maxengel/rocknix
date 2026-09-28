@@ -103,7 +103,26 @@ _(each with its search trail)_
 
 ### 3.6.5 Audit-prescription verification
 
-_(for every Critical/High finding the seats return: the shape, its siblings and adjacents enumerated with a grep, each classified)_
+Every confirmed High distilled to its shape and grepped for that shape across the tree (the commands quoted), each occurrence classified:
+
+| Defect class (the High) | Grep | Site / Sibling / Adjacent | Verdict |
+| --- | --- | --- | --- |
+| A CR accepted as whitespace before a comment (G2-A-01 gpt) | `grep -n '\[ \\t\\r\]' projects/ROCKNIX/packages/network/rclone/sources/*` | Site `cloud_backup:1043`; Sibling `cloud_restore:1104`; Sibling `cloud_sync_helper:247`; **Adjacent `cloud_content_backup:128`, `cloud_content_restore:131`** (two copies the seat did not name) | FIX-NOW, all five |
+| A reader that sources `cloud_sync.conf` without the validator (G2-B-01) | `grep -rn '\. /storage/.config/cloud_sync.conf' projects/ROCKNIX/packages` | Site `backuptool:42`; no sibling | FIX-NOW |
+| A fallback that restores a copy on `-s` alone (G2-A-02) | `grep -rn 'elif \[ -s .*&& mv -f' .../rclone/sources .../rocknix/sources/scripts` | Site `cloud_backup:1170`; Sibling `cloud_restore:1231` | FIX-NOW, both |
+| A scan whose pipeline failure reads as no match (G2-E-tests-01 / G2-I-02) | `grep -n 'head -5 \|\| true' .githooks/* ~/Development/.../qa-integration/.githooks/*` | Site distribution `pre-commit`, `pre-push`; **Adjacent the ES fork's `pre-commit:16`, `pre-push:149`** (the same pipeline) | FIX-NOW, all four |
+| A path-keyed exemption from the scan (G2-I-01) | `grep -n 'seats/\*\.diff' .githooks/* (both repos)` | Site distribution `pre-push:211,228`, `pre-commit:20`; the ES fork has none | FIX-NOW |
+| A masking example that keeps the value (G2-I-10) | `grep -rn '\\1\*\*\*' .claude/rules docs` | Site `engineering-practices.md:555`; no sibling (the memory was corrected this morning) | FIX-NOW |
+| A raw string compare where a path compare was meant (G2-A-01 claude) | `grep -n '!= "/ROCKNIX' cloud_backup cloud_sync_helper cloud_setup` | Site `cloud_migrate_layout` (nine compares); no sibling elsewhere | FIX-NOW |
+| An unchecked `mktemp` feeding a guard (G2-B-04) | `grep -n '=\$(mktemp)$' backuptool` | Site `backuptool:473` (`KEEP`); **Siblings 207, 650, 651, 652, 758, 775, 1093** (`ERR`, `FILELIST`, `SECRETLIST`, `SENDLIST`, `REGENERABLE`, `KEPT`, `SEEDED`, `MEMBERLIST`) | FIX-NOW: one checked helper for all nine |
+| A control file the archive can overwrite (G2-B-06) | `grep -n RESTORE_MARK backuptool` against the skip lists | Site the marker; Adjacent the snapshot's own path (`SNAPSHOT`) -- a member of that name would overwrite the pre-restore copy | FIX-NOW, both |
+| A value regex that cannot consume a leading space inside quotes (G2-B-07) | the `CREDENTIAL_KEYS` line | Site only | FIX-NOW |
+| A fast-path detector narrower than the redactor (G2-B-02) | `passkey=` in `001-functions` | Site only | FIX-NOW |
+| A path validator that ignores `.`/`..` (G2-C-04) | `syncpath_problem` | Site only; Adjacent none (`cloud_migrate_layout` normalises `${1%/}` but never sees a typed path) | FIX-NOW |
+| An inner-quote test before the escape (G2-E-core-01) | `maskValueEnd` | Site only | FIX-NOW |
+| A credential in a persistent log (BS-1) | `cloud_sync.log`; `/var/log` bind | Site `cloud_remote`'s old line; Adjacent every other script that once logged rclone's stderr (`log_message` of `rclone` output in `cloud_backup`/`cloud_restore` before PL-074) -- the one-time scrub covers the file whatever wrote it | FIX-NOW (the scrub) |
+
+Verdict on the prescription check: **PARTIAL until the fixes land** -- every site is enumerated; the two content-script copies of the grammar and the ES fork's hooks were found by the grep and not by any seat.
 
 ### 3.7 Retrospective Summary
 
