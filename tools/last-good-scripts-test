@@ -10244,7 +10244,9 @@ printf '%s' "${P7NOTE}" | grep '^dump' | grep -q 'NOT KEPT' && [ ! -e "${P7C}/st
 #   rm     /ctl/rmfail ("<ERE>"): refuse to remove a matching path;
 #   rclone /ctl/ci: `backend features` describes a case-insensitive remote
 #          (Dropbox, OneDrive); every other call goes on to /shim/rclone;
-#   stat   counts its calls in /ctl/statcount when that file exists.
+#   stat   counts its calls in /ctl/statcount when that file exists, and
+#          reads a change time of 1 for a name /ctl/oldctime ("<ERE>")
+#          matches -- a seal older than any spare.
 # A fixture that carries a control character is made by printf when the case
 # runs: the file at rest carries none. Written before each fix and seen to
 # FAIL on the scripts at f3d19dc8fb.
@@ -10289,6 +10291,17 @@ EOS
 cat > "${SA2}/shim/stat" <<'EOS'
 #!/bin/bash
 [ -e /ctl/statcount ] && echo x >> /ctl/statcount
+if [ -s /ctl/oldctime ]; then
+    # A file whose name matches the ERE reads as changed at the epoch's
+    # first second, in either shape a change time is asked for.
+    pat=$(head -1 /ctl/oldctime)
+    one=""; [ "$#" -eq 3 ] && [ "$1" = -c ] && [ "$2" = %Z ] && one="$3"
+    out=$(/nbin/stat "$@"); rc=$?
+    printf '%s\n' "${out}" | awk -v pat="${pat}" -v one="${one}" '
+        one != "" { if (one ~ pat) print 1; else print; next }
+        { n = $0; sub(/^[0-9]+ /, "", n); if ($1 ~ /^[0-9]+$/ && n != $0 && n ~ pat) print "1 " n; else print }'
+    exit "${rc}"
+fi
 exec /nbin/stat "$@"
 EOS
 chmod +x "${SA2}/shim"/*
@@ -10680,6 +10693,31 @@ sa2_run "${MP}" cloud_content_restore --match --apply
 sa2_run "${MP}" cloud_content_restore --match
 sa2_run "${MP}" cloud_content_restore --match --apply
 [ ! -e "${MP}/storage/roms/gb/B.gb" ] && [ -f "${MP}/storage/roms/gb/A.gb" ] && [ "${RC}" -eq 0 ] && [ ! -e "${MPP}" ]; check $? "G2-A-04 (gpt): and once the plan can be spent, the preview and the apply go through as before (rc ${RC})" "G2-A-04 (gpt): B.gb $([ -e "${MP}/storage/roms/gb/B.gb" ] && echo kept || echo removed); plan $([ -e "${MPP}" ] && echo left || echo spent); rc ${RC}; out: $(sa_tail "${MP}")"
+
+# A57. Lead G2-A-02 (seats/A-claude.md, Medium): a migration cut after the
+#      saves pointer landed and before the content moved was said to
+#      orphan the content for good, the next run comparing CONTENT_REMOTE
+#      with the one derived from the new saves folder. It does not: with
+#      the saves and the backups both current, main's first branch takes a
+#      CONTENT_REMOTE ending in /Content that is not /ROCKNIX/Content
+#      straight to migrate_content, before that comparison is reached. The
+#      cut the seat named -- the kill at the third copy, the content's -- as
+#      a case, kept as the guard of that branch.
+echo "    A57. G2-A-02 (claude): a migration cut at the content's copy is finished by the next run"
+MC=$(sa_new g2a02); sa_script "${MC}" cloud_migrate_layout
+MCC="${MC}/storage/.config/cloud_sync.conf"
+printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/GAMES"\nSETTINGS_REMOTE="/GAMES/backup"\nCONTENT_REMOTE="/GAMES/Content"\nRCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"\n' > "${MCC}"
+mkdir -p "${MC}/cloud/GAMES/gb" "${MC}/cloud/GAMES/backup/QA-deadbeef01" "${MC}/cloud/GAMES/Content/ROMs/gb" "${MC}/cloud/GAMES/Content/BIOS"
+echo sb > "${MC}/cloud/GAMES/gb/B.srm"; echo archive > "${MC}/cloud/GAMES/backup/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz"
+echo rom > "${MC}/cloud/GAMES/Content/ROMs/gb/A.gb"; echo bios > "${MC}/cloud/GAMES/Content/BIOS/bios.bin"
+printf '%s\t%s\n' '^copy ' 3 > "${MC}/ctl/kill"; rm -f "${MC}/ctl/kill.count"
+sa2_run "${MC}" cloud_migrate_layout --apply
+mc_killed=${RC}; mc_mid="$(sed -n 's/^\(SAVES_REMOTE\|CONTENT_REMOTE\)="\(.*\)"$/\2/p' "${MCC}" | tr '\n' ' ')"
+: > "${MC}/ctl/kill"; rm -f "${MC}/ctl/kill.count"
+sa2_run "${MC}" cloud_migrate_layout --apply
+[ "${mc_killed}" -ne 0 ] && [ "${mc_mid}" = "/ROCKNIX/Saves /GAMES/Content " ] && [ "${RC}" -eq 0 ] \
+    && [ "$(sed -n 's/^CONTENT_REMOTE="\(.*\)"$/\1/p' "${MCC}")" = "/ROCKNIX/Content" ] \
+    && [ -f "${MC}/cloud/ROCKNIX/Content/ROMs/gb/A.gb" ] && [ -f "${MC}/cloud/ROCKNIX/Content/BIOS/bios.bin" ]; check $? "G2-A-02 (claude): killed at the content's copy (rc ${mc_killed}, pointers then: ${mc_mid}), the next run moves the content and repoints it (rc ${RC})" "G2-A-02 (claude): killed rc ${mc_killed}, pointers after the kill '${mc_mid}'; second run rc ${RC}; CONTENT_REMOTE '$(sed -n 's/^CONTENT_REMOTE="\(.*\)"$/\1/p' "${MCC}")'; cloud: $(cd "${MC}/cloud" && find . -type f | sort | tr '\n' ' '); out: $(sa_tail "${MC}" 3)"
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
