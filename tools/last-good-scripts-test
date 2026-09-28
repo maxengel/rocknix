@@ -3206,4 +3206,10 @@ p7bt restore --no-restart
 [ "${RC}" -ne 0 ] && [ "$(cat "${P7S}/.config/test/f1")" = "LIVE" ] && [ "$(p7why)" = "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS" ]; check $? "#307 PL-009: a copy that cannot be taken (an unreadable file) ends the restore before anything is written (rc ${RC})" "#307 PL-009: rc ${RC}; f1='$(cat "${P7S}/.config/test/f1")'; why: '$(p7why)' -- the failed copy read as an empty device and the restore went on with no way back"
 chmod 644 "${P7S}/.config/test/locked.cfg"
 
+# == #308 4-backup-restore claude F-BR-17: nothing to back up is its own answer
+p7reset '  /storage/.config/test/seed'
+cp "${P7U}/test/seed" "${P7S}/.config/test/seed"
+p7bt backup
+[ "${RC}" -ne 0 ] && [ -z "$(p7arc)" ] && [ "$(p7why)" = "THERE'S NOTHING TO BACK UP YET" ] && ! grep -q 'TRY AGAIN' "${P7OUT}"; check $? "#308 4-backup-restore claude F-BR-17: a selection that is all the image's own says there is nothing to back up yet, without TRY AGAIN (why: $(p7why))" "#308 F-BR-17: rc ${RC}; why '$(p7why)'; screen: $(p7screen)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

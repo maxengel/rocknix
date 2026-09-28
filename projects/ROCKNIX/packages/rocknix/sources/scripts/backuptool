@@ -939,7 +939,12 @@ case "${VERB}" in
         write_archive "${BACKUPFILE}" 1
         case $? in
             0) ;;
-            2|4) why "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS"
+            4) # Nothing to back up is not a failure to try again: every
+               # location was absent, empty, or the image's own, and a retry
+               # finds the same (#308 F-BR-17).
+               why "THERE'S NOTHING TO BACK UP YET"
+               fail "THERE'S NOTHING TO BACK UP YET. YOUR LAST BACKUP IS UNCHANGED." "every location was absent, empty, or identical to the image's own copy" ;;
+            2) why "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS"
                fail "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS. NOTHING WAS WRITTEN, AND YOUR LAST BACKUP IS UNCHANGED. TRY AGAIN." "collecting into staging failed" ;;
             6) why "YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP CAN'T CARRY"
                fail "YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP CAN'T CARRY, SO NOTHING WAS WRITTEN. YOUR LAST BACKUP IS UNCHANGED." "a location in /storage/.config/backuptool.conf is outside /storage" ;;
