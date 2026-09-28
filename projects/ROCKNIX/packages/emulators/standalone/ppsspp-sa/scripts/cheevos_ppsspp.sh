@@ -49,17 +49,48 @@ fi
 # achievements for the session. Empty otherwise, which is PPSSPP's default
 # host: this file travels in a settings backup, so a restored device with the
 # toggle off must find the line cleared, not pointing at a dead port.
+# PPSSPP reads the key from ppsspp.ini's [Achievements] (Core/Config.cpp:376
+# at the pinned v1.20.2, afbc66a3) and, when it is not empty, hands it to
+# rcheevos as the host (rc_client_set_host, Core/RetroAchievements.cpp:650-652)
+# -- "a custom host, only useful for debugging against non-prod RA
+# environments" in its own words, which is what the proxy is (#308 F-EM-07).
 # Routed only when hardcore READ as off ("0" -- raofflineproxy-ctl enable
 # writes the key), never when it read as nothing: an empty answer is a key
 # that could not be read as much as one that is unset, and the proxy
 # refuses hardcore awards, so unknown keeps the direct path (#186 PL-31).
+#
+# Whether the proxy is listening is read from the kernel's socket tables with
+# bash's own read, not from netstat, which nothing PPSSPP ships declares and
+# whose absence read as "nothing answers" (#308 F-EM-04): 127.0.0.1, any
+# address, ::1 or ::ffff:127.0.0.1 on port 8080 (1F90) in state LISTEN (0A).
+# 0 listening, 1 not, 2 when neither table could be read -- said apart in the
+# log, since "couldn't tell" is not "nothing there". RAOFFLINEPROXY_PROC_NET
+# stands in for /proc/net in the scripts suite, as it does for
+# raofflineproxy-ctl listening.
+proxy_listening() {
+  local proc="${RAOFFLINEPROXY_PROC_NET:-/proc/net}" f readable=0 sl addr rem st rest
+  for f in "${proc}/tcp" "${proc}/tcp6"; do
+    [ -r "${f}" ] || continue
+    readable=1
+    while read -r sl addr rem st rest; do
+      [ "${st}" = "0A" ] || continue
+      case "${addr}" in
+        0100007F:1F90|00000000:1F90|00000000000000000000000000000000:1F90|00000000000000000000000001000000:1F90|0000000000000000FFFF00000100007F:1F90) return 0 ;;
+      esac
+    done < "${f}"
+  done
+  [ "${readable}" -eq 1 ] && return 1
+  return 2
+}
+
 host=""
 if [ "$(get_setting "global.retroachievements.offlineproxy")" = 1 ] && [ "${hardcore_raw}" = "0" ]; then
-  if netstat -ltn 2>/dev/null | grep -q '127\.0\.0\.1:8080 '; then
-    host="127.0.0.1:8080"
-  else
-    echo "Offline RetroAchievements is on but nothing answers on 127.0.0.1:8080; launching direct." >> ${LOG_FILE}
-  fi
+  proxy_listening
+  case $? in
+    0) host="127.0.0.1:8080" ;;
+    1) echo "Offline RetroAchievements is on but nothing is listening on 127.0.0.1:8080; launching direct." >> ${LOG_FILE} ;;
+    *) echo "Offline RetroAchievements is on but this device couldn't tell whether the offline service is listening; launching direct." >> ${LOG_FILE} ;;
+  esac
 fi
 
 # Update emulator config with RetroAchievements settings

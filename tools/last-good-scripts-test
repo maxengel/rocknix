@@ -3862,4 +3862,48 @@ dasecrets '[Other]\nKey = 1\n[Achievements]\nToken = x\nFoo = bar\n[More]\nZ = 2
 rm -f "${DAI}/secrets.ini"; dar; dashape "no file" ""
 dasecrets '[Achievements]\nToken = old\n'; dar; dashape "the ordinary file" ""
 
+# D15. #308 9-emulators claude F-EM-04: cheevos_ppsspp.sh asks whether the
+# proxy is listening without netstat -- which no package of PPSSPP's declares,
+# and whose absence read as "nothing answers" -- by reading /proc/net/tcp and
+# tcp6 itself (bash and grep, both on the image), and says apart "nothing is
+# listening" and "couldn't tell". 0.0.0.0 and [::1] count as the loopback's.
+# Run whole, with the image's busybox for sed; the socket table is a fixture
+# (RAOFFLINEPROXY_PROC_NET, as for the ctl's `listening`).
+src_of "projects/ROCKNIX/packages/emulators/standalone/ppsspp-sa/scripts/cheevos_ppsspp.sh" "${DD}/cheevos_ppsspp.sh"
+DP="${DD}/ppsspp"; DPS="${DP}/storage/.config/ppsspp/PSP/SYSTEM"; mkdir -p "${DPS}" "${DP}/repo" "${DP}/shim" "${DP}/procnet"
+cp "${DD}/cheevos_ppsspp.sh" "${DP}/repo/cheevos_ppsspp.sh"
+cat > "${DP}/profile" <<PEOF
+export PATH=$([ -n "${BB}" ] && echo /shim:/bbin:/usr/bin:/bin || echo /shim:/usr/bin:/bin)
+get_setting() {
+    case "\$1" in
+        global.retroachievements) echo 1 ;;
+        global.retroachievements.username) echo player ;;
+        global.retroachievements.token) echo TOKEN ;;
+        global.retroachievements.hardcore) echo 0 ;;
+        global.retroachievements.offlineproxy) echo 1 ;;
+        *) echo "" ;;
+    esac
+}
+PEOF
+dpp() { # one launch's script against the fixture socket table; rc in $RC, the log in ${DP}/log
+    RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr $([ -n "${BB}" ] && echo "--ro-bind ${TMP}/bbin /bbin --ro-bind ${BB_HOST} ${BB}") \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${DP}/profile" /etc/profile \
+        --bind "${DP}/storage" /storage --ro-bind "${DP}/shim" /shim --ro-bind "${DP}/repo" /repo --ro-bind "${DP}/procnet" /procnet \
+        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --dir /var/log --setenv RAOFFLINEPROXY_PROC_NET "${1:-/procnet}" \
+        bash -c 'bash /repo/cheevos_ppsspp.sh; rc=$?; cat /var/log/cheevos.log > /storage/cheevos.log 2>/dev/null; exit $rc' > "${DP}/out" 2>&1; echo $? ) 2>/dev/null )
+}
+dppini() { printf '[General]\nX = 1\n[Achievements]\nAchievementsEnable = False\nAchievementsUserName = player\nAchievementsChallengeMode = False\nAchievementsHost = \n' > "${DPS}/ppsspp.ini"; rm -f "${DP}/storage/cheevos.log"; }
+printf '  sl  local_address rem_address   st\n   0: 0100007F:1F90 00000000:0000 0A 00000000:00000000\n' > "${DP}/procnet/tcp"; : > "${DP}/procnet/tcp6"
+dppini; dpp
+grep -qx 'AchievementsHost = 127.0.0.1:8080' "${DPS}/ppsspp.ini"; check $? "#308 claude F-EM-04 cheevos_ppsspp.sh: 127.0.0.1:8080 in LISTEN in the socket table routes PPSSPP to the proxy (no netstat)" "#308 claude F-EM-04: rc ${RC}; ppsspp.ini: $(grep AchievementsHost "${DPS}/ppsspp.ini"); log: $(cat "${DP}/storage/cheevos.log" 2>/dev/null | tr '\n' '|')"
+printf '  sl  local_address                         remote_address                        st\n   0: 00000000000000000000000001000000:1F90 00000000000000000000000000000000:0000 0A 00000000:00000000\n' > "${DP}/procnet/tcp6"; : > "${DP}/procnet/tcp"
+dppini; dpp
+grep -qx 'AchievementsHost = 127.0.0.1:8080' "${DPS}/ppsspp.ini"; check $? "#308 claude F-EM-04 cheevos_ppsspp.sh: [::1]:8080 in LISTEN (tcp6) counts too" "#308 claude F-EM-04: ppsspp.ini: $(grep AchievementsHost "${DPS}/ppsspp.ini")"
+printf '  sl  local_address rem_address   st\n   0: 0100007F:1F91 00000000:0000 0A 00000000:00000000\n' > "${DP}/procnet/tcp"; : > "${DP}/procnet/tcp6"
+dppini; dpp
+grep -qx 'AchievementsHost = ' "${DPS}/ppsspp.ini" && grep -q 'nothing is listening on 127.0.0.1:8080' "${DP}/storage/cheevos.log"; check $? "#308 claude F-EM-04 cheevos_ppsspp.sh: nothing on 8080 launches direct, and the log says nothing is listening" "#308 claude F-EM-04: ppsspp.ini: $(grep AchievementsHost "${DPS}/ppsspp.ini"); log: $(cat "${DP}/storage/cheevos.log" 2>/dev/null | tr '\n' '|')"
+dppini; dpp /nonexistent
+grep -qx 'AchievementsHost = ' "${DPS}/ppsspp.ini" && grep -q "couldn't tell whether" "${DP}/storage/cheevos.log" && ! grep -q 'nothing is listening' "${DP}/storage/cheevos.log"; check $? "#308 claude F-EM-04 cheevos_ppsspp.sh: a socket table it cannot read launches direct and says it couldn't tell -- not that nothing answers" "#308 claude F-EM-04: ppsspp.ini: $(grep AchievementsHost "${DPS}/ppsspp.ini"); log: $(cat "${DP}/storage/cheevos.log" 2>/dev/null | tr '\n' '|')"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
