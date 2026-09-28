@@ -55,9 +55,10 @@
 # exit 1 is also what Python gives a helper that dies of an exception, and the
 # ctl must not read a crash as the sweep working. Exit 2 is
 # a precondition this could not meet (no store, no account). Exit 130 is a
-# cancel -- SIGINT, the scan page's CANCEL, however the helper was started:
+# SIGINT -- the helper run by hand, or by a caller that signals its group:
 # the downloads not yet started are dropped and the process ends without
-# waiting for the ones in flight (#307 PL-013).
+# waiting for the ones in flight (#307 PL-013). Under the ctl a cancel ends
+# it by SIGTERM through timeout instead (see __main__).
 #
 # It prints the scan page's own protocol on stdout, so the same reader can
 # follow it: ">>> doing images", ">>> total <n>", ">>> image <i>|<n>",
@@ -474,11 +475,16 @@ def leave(code: int) -> None:
 
 
 if __name__ == "__main__":
-    # The ctl runs this in the background so its own INT and TERM traps fire
-    # the moment the signal comes (#307 PL-013), and a shell starts a
-    # background job with SIGINT ignored -- which Python keeps, so the page's
-    # CANCEL, a SIGINT to the whole process group, would not reach it. Taken
-    # back here: a cancel means the same however the helper was started.
+    # Under the ctl this runs beneath timeout, which puts it in a process
+    # group of its own: the scan page's CANCEL -- a SIGINT to the run's group
+    # -- reaches the ctl and not this process, and the ctl's EXIT trap ends
+    # it by SIGTERM through timeout (the default action, at once). The
+    # SIGINT handling here is for the helper started any other way: by hand,
+    # or by a caller that does signal its group. A shell starts a background
+    # job with SIGINT ignored, which Python keeps, so it is taken back; a
+    # KeyboardInterrupt then drops the queued downloads and leaves without
+    # the ones in flight (#307 PL-013; the shipped path is the harness's
+    # D23, under GNU timeout -- audit of the fixes, claude G-D-03).
     signal.signal(signal.SIGINT, signal.default_int_handler)
     try:
         code = main()

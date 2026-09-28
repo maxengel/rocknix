@@ -3048,18 +3048,22 @@ dsince() { awk -v a="$1" -v b="$(dnow)" 'BEGIN{printf "%.2f", b - a}'; }
 # exit 1), "verify-left" (a verify slice left, no why, exit 3), "crash" (a
 # traceback and Python's exit 1, no protocol line), "cancel" (the
 # page's CANCEL: SIGINT to the ctl through the lock's pid, then a real 20 s),
-# "hang" (a real 20 s); every start is logged with its pid and a real time.
+# "group-cancel" (the interface's own CANCEL: SIGINT to the run's whole
+# process group, then a real 20 s), "hang" (a real 20 s); every start is
+# logged with its pid and a real time, and a SIGINT or SIGTERM it receives.
 dfake_images() {
     cat > "${T}/repo/raofflineproxy-cache-images" <<'EOS'
 #!/bin/bash
 echo $$ > /run/images.pid
 echo "start $(date +%s.%N) budget=${FAKE_BUDGET:-none} $*" >> /run/images-calls
 trap 'echo "term $(date +%s.%N)" >> /run/images-calls; exit 143' TERM
+trap 'echo "int $(date +%s.%N)" >> /run/images-calls' INT
 case "$(cat /run/images-mode 2>/dev/null || echo ok)" in
     fail) printf '>>> doing images\n>>> total 3\n>>> why SOME_IMAGES_NOT_SAVED\n>>> done 0|3\n'; exit 1 ;;
     verify-left) printf '>>> doing images\n>>> verified 10|40\n>>> note VERIFY_LEFT 30\n>>> total 0\n>>> note NOTHING_MISSING\n>>> done 0|0\n'; exit 3 ;;
     crash) printf '>>> doing images\n'; echo 'Traceback (most recent call last):' >&2; exit 1 ;;
     cancel) kill -INT "$(head -n 1 /var/run/raofflineproxy-scan.lock)"; i=0; while [ "$i" -lt 20 ]; do /bin/sleep 1; i=$((i+1)); done; echo "done $(date +%s.%N)" >> /run/images-calls; exit 0 ;;
+    group-cancel) kill -INT -- -"$(head -n 1 /var/run/raofflineproxy-scan.lock)"; i=0; while [ "$i" -lt 20 ]; do /bin/sleep 1; i=$((i+1)); done; echo "done $(date +%s.%N)" >> /run/images-calls; exit 0 ;;
     hang) i=0; while [ "$i" -lt 20 ]; do /bin/sleep 1; i=$((i+1)); done; echo "done $(date +%s.%N)" >> /run/images-calls; exit 0 ;;
 esac
 printf '>>> doing images\n>>> total 0\n>>> note NOTHING_MISSING\n>>> done 0|0\n'
@@ -4138,5 +4142,39 @@ for h in raofflineproxy-ctl raofflineproxy-cache-indexed raofflineproxy-cache-im
     DMODES="${DMODES} ${h}=${m:-none}"
 done
 ! printf '%s' "${DMODES}" | grep -q '=\(100644\|none\)'; check $? "#308 claude F-RA-17: the four scripts under sources/ are mode 100755 in the tree" "#308 claude F-RA-17: modes:${DMODES}"
+
+# D23. claude G-D-03: the shipped topology of a cancel during the image pass,
+# under the real timeout rather than the harness's shim. GNU timeout puts
+# itself and the helper in a process group of their own, so the interface's
+# SIGINT to the run's group reaches the ctl and not the helper; the ctl's INT
+# trap stamps CANCELLED, and its EXIT trap ends the helper by SIGTERM
+# through timeout. The run is started as the interface starts it -- a
+# session and a process group of its own (setsid) -- and the stand-in sends
+# the group SIGINT itself.
+# The image's timeout is GNU coreutils' (9.4); this host's `timeout` may be
+# another implementation (uutils), so GNU's is found by name.
+DGNU=""; for c in gnutimeout timeout; do command -v "${c}" >/dev/null && "${c}" --version 2>/dev/null | head -n 1 | grep -q 'GNU coreutils' && { DGNU="$(command -v "${c}")"; break; }; done
+if [ "${DT_OK}" -eq 1 ] && [ -n "${DGNU}" ]; then
+dfake_images; printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+mv "${T}/shim/timeout" "${T}/shim/timeout.shim"
+printf '#!/bin/sh\nexec %s "$@"\n' "${DGNU}" > "${T}/shim/timeout"; chmod +x "${T}/shim/timeout"
+treset; printf 'ok\n' > "${TR}/helper-plan"; echo group-cancel > "${TR}/images-mode"; rm -f "${TR}/images-calls" "${TR}/images.pid"
+DT0=$(dnow)
+RC=$( ( bwrap --die-with-parent --tmpfs / --tmpfs /usr "${USR_BINDS[@]}" "${TBB[@]}" \
+    --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+    --ro-bind /etc /etc --ro-bind "${T}/profile" /etc/profile \
+    --bind "${TS}" /storage --ro-bind "${T}/repo" /repo --ro-bind "${T}/shim" /shim --ro-bind "${CLIENT}" /client --ro-bind "${T}/pypath" /pypath \
+    --bind "${TR}" /run --tmpfs /var --bind "${T}/varrun" /var/run \
+    --dev /dev --proc /proc --tmpfs /tmp --setenv PYTHONPATH /client:/pypath \
+    setsid -w bash /repo/raofflineproxy-ctl scan > "${OUT}" 2> "${ERR}"; echo $? ) 2>/dev/null )
+DEND=$(dnow)
+mv -f "${T}/shim/timeout.shim" "${T}/shim/timeout"
+DI0="$(sed -n 's/^start \([0-9.]*\).*/\1/p' "${TR}/images-calls" 2>/dev/null | head -n 1)"
+IP="$(cat "${TR}/images.pid" 2>/dev/null)"; for _ in $(seq 1 30); do kill -0 "${IP:-1}" 2>/dev/null || break; sleep 0.1; done
+[ "${RC}" -eq 130 ] && grep -qx '>>> why CANCELLED' "${OUT}" && [ -n "${DI0}" ] && awk -v a="${DI0}" -v b="${DEND}" 'BEGIN{exit !(b - a < 3)}' && grep -q '^term ' "${TR}/images-calls" && ! grep -q '^int ' "${TR}/images-calls" && ! kill -0 "${IP:-1}" 2>/dev/null; check $? "claude G-D-03: under the real timeout the group's SIGINT reaches the ctl, not the helper; the run is CANCELLED (rc 130) $(awk -v a="${DI0:-0}" -v b="${DEND}" 'BEGIN{printf "%.2f", b - a}')s after the pass began and the helper is ended by SIGTERM through timeout" "claude G-D-03: rc ${RC}; the helper saw: $(tr '\n' ' ' < "${TR}/images-calls" 2>/dev/null | cut -c1-200); $(awk -v a="${DI0:-0}" -v b="${DEND}" 'BEGIN{printf "%.2f", b - a}')s; out: $(grep '^>>>' "${OUT}" | tail -n 2 | tr '\n' '|')"
+[ -n "${IP}" ] && kill -9 "${IP}" 2>/dev/null; rm -f "${TR}/images-mode" "${TR}/helper-plan"
+else
+    echo "    SKIP  claude G-D-03's case: needs section t and GNU coreutils' timeout on this machine"
+fi
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

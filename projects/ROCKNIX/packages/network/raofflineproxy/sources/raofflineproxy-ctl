@@ -1661,7 +1661,12 @@ run_image_pass() {
     # and a stop from disable or STOP IT AND PLAY (TERM) waited for the whole
     # pass before the run could answer either (#307 PL-013, #308 F-RA-11).
     # wait returns the moment a trapped signal arrives, and CLIENT is what
-    # the EXIT trap ends.
+    # the EXIT trap ends. CLIENT is timeout, which puts itself and the
+    # helper in a process group of their own: the interface's SIGINT to the
+    # run's group reaches this script, not the helper, and the EXIT trap's
+    # kill of timeout is forwarded to the helper as SIGTERM -- the path the
+    # harness's D23 runs under GNU timeout (audit of the fixes, claude
+    # G-D-03).
     # Bounded at the process as well (#308 F-RA-10): the helper checks its
     # --seconds between one blocking call and the next, so it is given ten
     # seconds less than the pass has and timeout ends it at the pass's
