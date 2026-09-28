@@ -10384,6 +10384,98 @@ done <<'EOF'
 EOF
 [ -z "${cf_forms}" ]; check $? "gpt G2-C-01: cloud_setup and the content scripts read nine value forms alike, refusals included" "gpt G2-C-01: the readers disagree: ${cf_forms}"
 
+# CF3. cloud_log_scrub whole, in a sandbox over a fake /storage whose
+# .cache/log holds what earlier builds left there: cloud_remote's failure
+# lines with every argument the player typed in them (the build before
+# e2d45ec7ec), cloud_oauth's with rclone's words, a trim's leftover copy and
+# a rotated one, beside lines that must come through byte for byte. The
+# functions file is 001-functions' redact_credentials lifted as section r
+# lifts it, or a file without it. The planted values are built here, never
+# written as literals (the hooks' rule for scanner fixtures).
+CF3="${CF}/3"; mkdir -p "${CF3}/repo" "${CF3}/fn"
+[ -e "${CF}/src/cloud_log_scrub" ] && cp "${CF}/src/cloud_log_scrub" "${CF3}/repo/"
+sed -n '/^function redact_credentials() {/,/^}/p' "${FN}" > "${CF3}/fn/with"
+printf '# no credential filter here\n' > "${CF3}/fn/without"
+cf3() { # <functions file>: the scrub in its sandbox; output to CF3/out, rc in RC
+    RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --tmpfs /etc/profile.d --ro-bind "$1" /etc/profile.d/001-functions "${CFBB[@]}" \
+        --ro-bind "${CF3}/repo" /repo --bind "${CF3}/storage" /storage \
+        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --dir /var/log \
+        env PATH="${CFPATH}" bash /repo/cloud_log_scrub > "${CF3}/out" 2>&1; echo $? ) 2>/dev/null )
+}
+CFP="PLANT"; cfv() { printf '%s%s%s' "${CFP}" "$1" "$2"; }   # a planted value: PLANT<name><n>
+CFL="${CF3}/storage/.cache/log"
+cf3_plant() { # the log as an earlier build left it, and CF3/want as the scrub must leave it
+    rm -rf "${CF3}/storage" "${CF3}/want"; mkdir -p "${CFL}" "${CF3}/want"
+    local r="[2026-09-20 10:00:0" q='"'
+    {
+        printf '%s0] [INFO] [cloud_remote] creating remote qa (type webdav) with 3 option(s)\n' "${r}"
+        printf '%s1] [INFO] [cloud_remote] rclone config create qa webdav url=https://dav.example user=me pass=%s --non-interactive --obscure failed (1): Failed to create remote: bad option pass=%s\n' "${r}" "$(cfv pw 71)" "$(cfv pw 71)"
+        printf '%s2] [INFO] [cloud_remote] rclone config create qb b2 account=%s key=%s --non-interactive --obscure failed (1): Failed to create file system: 401 bad_auth_token\n' "${r}" "$(cfv acct 72)" "$(cfv b2key 73)"
+        printf '%s3] [INFO] [cloud_remote] rclone config create qs s3 provider=Minio access_key_id=%s secret_access_key=%s endpoint=http://10.0.2.2:9012 --non-interactive --obscure failed (1): SignatureDoesNotMatch\n' "${r}" "$(cfv akid 74)" "$(cfv sak 75)"
+        printf '%s4] [INFO] [cloud_oauth] could not finish the sign-in: Failed to create: bad token={%saccess_token%s:%s%s%s,%srefresh_token%s:%s%s%s,%sexpiry%s:%s2026-\n' "${r}" "${q}" "${q}" "${q}" "$(cfv at 76)" "${q}" "${q}" "${q}" "${q}" "$(cfv rt 77)" "${q}" "${q}" "${q}" "${q}"
+        printf '%s5] [INFO] [cloud_backup] Game saves: COMPLETED\n' "${r}"
+    } > "${CFL}/cloud_sync.log"
+    {
+        printf '%s0] [INFO] [cloud_remote] creating remote qa (type webdav) with 3 option(s)\n' "${r}"
+        printf '%s1] [INFO] [cloud_remote] rclone config create failed (1)\n' "${r}"
+        printf '%s2] [INFO] [cloud_remote] rclone config create failed (1)\n' "${r}"
+        printf '%s3] [INFO] [cloud_remote] rclone config create failed (1)\n' "${r}"
+        printf '%s4] [INFO] [cloud_oauth] could not finish the sign-in: <redacted>\n' "${r}"
+        printf '%s5] [INFO] [cloud_backup] Game saves: COMPLETED\n' "${r}"
+    } > "${CF3}/want/cloud_sync.log"
+    # Lines no earlier build wrote a credential into: through byte for byte.
+    local keep
+    keep=$(
+        printf '%s6] [INFO] [cloud_oauth] could not finish the sign-in: a remote called %sqa%s already exists\n' "${r}" "'" "'"
+        printf '%s7] [INFO] [cloud_oauth] could not finish the sign-in: The sign-in worked, but it couldn%st be saved on your handheld.\n' "${r}" "'"
+        printf '%s8] [INFO] [cloud_remote] rclone lsd failed (3)\n' "${r}"
+        printf '2026/09/20 10:00:09 INFO  : savefiles/Mario (USA).srm: Copied (new)\n'
+        printf '[2026-09-20 10:00:10] [INFO] [cloud_backup] the check passed: 3 files, 0 differences\n'
+        printf '[2026-09-20 10:00:11] [INFO] [cloud_oauth] typed 12 characters + enter\n'
+    )
+    printf '%s\n' "${keep}" >> "${CFL}/cloud_sync.log"; printf '%s\n' "${keep}" >> "${CF3}/want/cloud_sync.log"
+    # A trim cut off before its rename left this; a rotation ends mid-line.
+    printf '%s1] [INFO] [cloud_remote] rclone config create qa webdav pass=%s --non-interactive --obscure failed (1): bad\n' "${r}" "$(cfv pw 78)" > "${CFL}/cloud_sync.log.tmp"
+    printf '%s1] [INFO] [cloud_remote] rclone config create failed (1)\n' "${r}" > "${CF3}/want/cloud_sync.log.tmp"
+    printf '%s1] [INFO] [cloud_remote] rclone config create qa sftp host=nas pass=%s key_file_pass=%s' "${r}" "$(cfv pw 79)" "$(cfv kfp 80)" > "${CFL}/cloud_sync.log.1"
+    printf '%s1] [INFO] [cloud_remote] rclone config create qa sftp host=<redacted> pass=<redacted> key_file_pass=<redacted>' "${r}" > "${CF3}/want/cloud_sync.log.1"
+    # Not the cloud log: left alone.
+    printf 'boot line pass=%s\n' "$(cfv pw 81)" > "${CFL}/boot.log"; cp "${CFL}/boot.log" "${CF3}/want/boot.log"
+}
+cf3_left() { cat "${CFL}"/cloud_sync.log* 2>/dev/null | grep -o "${CFP}[a-z0-9]*" | sort -u | tr '\n' ' '; }
+cf3_same() { # every file under the log folder is what CF3/want says
+    local f bad=""
+    for f in "${CF3}"/want/*; do cmp -s "${f}" "${CFL}/${f##*/}" || bad="${bad}${f##*/} "; done
+    [ "$(ls -A "${CFL}" | sort | tr '\n' ' ')" = "$(ls -A "${CF3}/want" | sort | tr '\n' ' ')" ] || bad="${bad}[the folder holds: $(ls -A "${CFL}" | tr '\n' ' ')]"
+    printf '%s' "${bad}"
+}
+CFSTAMP="${CF3}/storage/.cache/cloud_sync/log-scrubbed"
+cf3_plant; cf3 "${CF3}/fn/with"
+cf_bad=$(cf3_same)
+[ "${RC}" -eq 0 ] && [ -z "$(cf3_left)" ]; check $? "PL-014: the scrub leaves no planted credential in cloud_sync.log, its trim leftover or its rotation (rc ${RC})" "PL-014: rc ${RC}; still in the cloud log: $(cf3_left); said: $(tr '\n' ' ' < "${CF3}/out" | cut -c1-160)"
+[ -z "${cf_bad}" ]; check $? "PL-014: an old cloud_remote line now reads as this build writes it (rclone config create failed (1)), rclone's words after cloud_oauth's are <redacted>, every other line is byte for byte as it was, and boot.log is untouched" "PL-014: files not as they should be: ${cf_bad:-none} -- $(diff "${CF3}/want/cloud_sync.log" "${CFL}/cloud_sync.log" 2>&1 | grep '^[<>]' | head -4 | cut -c1-140 | tr '\n' '|')"
+grep -qE '^scrubbed=[0-9]+ files=3 lines=[0-9]+$' "${CFSTAMP}" 2>/dev/null; check $? "PL-014: the stamp under /storage/.cache records it: $(cat "${CFSTAMP}" 2>/dev/null)" "PL-014: stamp: '$(cat "${CFSTAMP}" 2>/dev/null)' -- nothing records that the scrub ran"
+printf '[2026-09-21 09:00:00] [INFO] [cloud_remote] rclone config create qa webdav pass=%s failed (1): x\n' "$(cfv pw 82)" >> "${CFL}/cloud_sync.log"
+cp "${CFL}/cloud_sync.log" "${CF3}/after-first"
+cf3 "${CF3}/fn/with"
+[ "${RC}" -eq 0 ] && cmp -s "${CFL}/cloud_sync.log" "${CF3}/after-first"; check $? "PL-014: once: with the stamp there, a second run reads nothing and writes nothing" "PL-014: second run rc ${RC}; the log changed: $(diff "${CF3}/after-first" "${CFL}/cloud_sync.log" 2>&1 | head -3 | tr '\n' '|')"
+cf3_plant; cf3 "${CF3}/fn/without"
+cf_bad=$(cf3_same)
+[ "${RC}" -ne 0 ] && [ ! -e "${CFSTAMP}" ] && [ -n "${cf_bad}" ] && cmp -s "${CFL}/boot.log" "${CF3}/want/boot.log" && [ "$(cf3_left | wc -w)" -eq 10 ]; check $? "PL-014 (a control, the fix's own guard): without its credential filter it fails closed -- nothing rewritten, no stamp, so the next boot tries again (rc ${RC})" "PL-014: filter missing: rc ${RC}; stamp: $([ -e "${CFSTAMP}" ] && echo written || echo none); left: $(cf3_left)"
+rm -rf "${CF3}/storage"; mkdir -p "${CF3}/storage/.cache"
+cf3 "${CF3}/fn/with"
+[ "${RC}" -eq 0 ] && [ -s "${CFSTAMP}" ] && [ ! -e "${CFL}" ]; check $? "PL-014: a clean install -- no log folder -- is recorded as done and nothing is made" "PL-014: clean install: rc ${RC}; stamp: '$(cat "${CFSTAMP}" 2>/dev/null)'; log folder: $([ -e "${CFL}" ] && echo made || echo none)"
+# Installed, and run at boot before anything that writes the cloud log does.
+RCLONE_PKG="projects/ROCKNIX/packages/network/rclone"
+cf_pkg="${CF}/package.mk"; cf_auto="${CF}/102-cloud-saves"
+src_of "${RCLONE_PKG}/package.mk" "${cf_pkg}"; src_of "${RCLONE_PKG}/autostart/102-cloud-saves" "${cf_auto}"
+grep -qxF '  cp cloud_log_scrub ${INSTALL}/usr/bin/' "${cf_pkg}"; check $? "PL-014: the rclone package installs cloud_log_scrub" "PL-014: package.mk has no line installing cloud_log_scrub"
+cf_at=$(grep -n '/usr/bin/cloud_log_scrub' "${cf_auto}" | head -1 | cut -d: -f1)
+cf_cap=$(grep -n '/usr/bin/cloud_capture' "${cf_auto}" | head -1 | cut -d: -f1)
+[ -n "${cf_at}" ] && [ -n "${cf_cap}" ] && [ "${cf_at}" -lt "${cf_cap}" ] && ! sed -n "${cf_at}p" "${cf_auto}" | grep -qE '(^|[^&])&[[:space:]]*$'; check $? "PL-014: 102-cloud-saves runs it at boot, in the foreground, before the capture pass -- which writes the cloud log -- starts" "PL-014: 102-cloud-saves: the scrub at line '${cf_at}', the capture at line '${cf_cap}'"
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
