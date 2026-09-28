@@ -3362,7 +3362,7 @@ rm -f "${P7}/shim/tar"
 p7reset '  /storage/.config/test/*'
 echo old > "${P7S}/roms/backup/ARCHIVED_ROCKNIX_BACKUP-20-01-01_00_00_00.zip"
 p7bt backup
-[ "${RC}" -eq 0 ] && [ -z "$(ls "${P7S}/roms/backup"/ARCHIVED_*.zip 2>/dev/null)" ] && ls "${P7S}/roms/backup/archive"/*ARCHIVED_ROCKNIX_BACKUP-20-01-01_00_00_00.zip >/dev/null 2>&1; check $? "#308 claude F-BR-07: ARCHIVED_*.zip left at the root by the old code moves into archive/ under a dated name" "#308 F-BR-07: rc ${RC}; root: $(ls "${P7S}/roms/backup" | tr '\n' ' '); archive/: $(ls "${P7S}/roms/backup/archive" 2>/dev/null | tr '\n' ' ')"
+[ "${RC}" -eq 0 ] && [ -z "$(ls "${P7S}/roms/backup"/ARCHIVED_*.zip 2>/dev/null)" ] && ls "${P7S}/roms/backup/archive"/*/ARCHIVED_ROCKNIX_BACKUP-20-01-01_00_00_00.zip >/dev/null 2>&1; check $? "#308 claude F-BR-07: ARCHIVED_*.zip left at the root by the old code moves under archive/, where nothing uploads it" "#308 F-BR-07: rc ${RC}; root: $(ls "${P7S}/roms/backup" | tr '\n' ' '); archive/: $(ls "${P7S}/roms/backup/archive" 2>/dev/null | tr '\n' ' ')"
 
 # == #308 4-backup-restore claude F-BR-12 / gpt F-BR-20: the player's words, and no tool's
 p7reset '  /storage/.config/test/*'
@@ -3555,6 +3555,20 @@ echo dump | gzip > "${P7S}/.cache/log/cores/core.retroarch.1.2.gz"; echo note > 
 echo bundle > "${P7S}/.cache/log/evidence/2026_01_01-000000-device-evidence.tar.gz"; echo mine > "${P7S}/.cache/other.cfg"
 p7bt backup
 [ "${RC}" -eq 0 ] && p7list | grep -qx 'storage/.cache/other.cfg' && ! p7list | grep -qE '/log/(cores|evidence)/'; check $? "#307 audit G-B-12 (claude): LOCATIONS=(/storage/.cache) carries other.cfg and no core dump, note or evidence bundle" "#307 audit G-B-12: rc ${RC}; members: $(p7list | grep -E '/log/(cores|evidence)/' | tr '\n' ' ')"
+
+# == AUD claude G-B-11 (#307 audit of the fixes; gpt G-B-06): the upstream-era zips move first, and none is deleted
+p7reset '  /storage/.config/test/*'
+mkdir -p "${P7S}/roms/backup/archive"
+for i in 1 2 3; do cp /dev/null "${P7S}/roms/backup/archive/2026_0${i}_01-000000-ROCKNIX_SETTINGS.tar.gz"; done
+for i in 1 2 3 4; do echo "old ${i}" > "${P7S}/roms/backup/ARCHIVED_ROCKNIX_BACKUP-20-01-0${i}_00_00_00.zip"; done
+p7bt backup
+[ "${RC}" -eq 0 ] && [ -z "$(ls "${P7S}/roms/backup"/ARCHIVED_*.zip 2>/dev/null)" ] && [ "$(find "${P7S}/roms/backup/archive" -name 'ARCHIVED_*.zip' | wc -l)" -eq 4 ]; check $? "#307 audit G-B-11 (claude): four upstream-era zips leave the root and all four are kept -- the first backup after the update deletes none of them" "#307 audit G-B-11: rc ${RC}; kept: $(find "${P7S}/roms/backup/archive" -name 'ARCHIVED_*.zip' | wc -l) of 4; root: $(ls "${P7S}/roms/backup" | tr '\n' ' ')"
+p7reset '  /storage/.config/test/*'
+p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/f1=previous"
+echo old > "${P7S}/roms/backup/ARCHIVED_ROCKNIX_BACKUP-20-01-01_00_00_00.zip"
+mkdir -p "${P7S}/roms/backup/archive"; echo blocker > "${P7S}/roms/backup/archive/upstream-era"
+p7bt backup
+[ "${RC}" -ne 0 ] && [ "$(p7arc | xargs -rn1 basename)" = "2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz" ]; check $? "#307 audit G-B-06 (gpt): an upstream-era zip that cannot be moved off the root ends the backup before anything is written (rc ${RC}), so the chain uploads nothing" "#307 audit G-B-06: rc ${RC}; root archives: $(p7arc | xargs -rn1 basename | tr '\n' ' ') -- a new backup was made and the credential-era zip stayed where the upload reads"
 
 # y2. wifictl whole, against an nmcli that answers as the target's does
 # (probed on guest d for the psk, 2026-09-27): terse and get-values output
