@@ -395,3 +395,55 @@ ASCII comments: es-app/src 0; the 9 in es-core are upstream's (present in base b
   - the scraper run's help bar;
   - BIOS CHECK with no rows (no DETAILS).
 - Rules read for this pass: es-player-text.md (outcome vocabulary, register), player-language.md (brevity is not clipping), es-native-ui.md, es-code-traps.md (ASCII comments, pure text's home), engineering-practices.md (guards fail closed; before deleting a duplicate), and upgrade-and-install.md (the `Already written:` lines).
+
+## Follow-up 2 (2026-09-28, scripts at next 4476f90394)
+
+I added one commit on `feature/pl-e2`: **13b16a77e** `CloudText: the scripts' newer whys translated; emitter table regenerated`. I read the scripts from the merged head with `git show`, without changing `/workspace/repos/rocknix`. Nothing was built, started in a guest or pushed.
+
+**Changes:**
+
+- **The four sentences from stream A are now in `CloudText::whySentences`,** the table that `localizedWhy` reads. Every place that translates a why for the rows, the transfer page or the sync card goes through that one table:
+  - SOMETHING CHANGED SINCE YOU CHECKED
+  - COULDN'T RECORD WHICH CARD YOUR SAVES ARE ON
+  - THE NEW FOLDER ALREADY HAS FILES IN IT
+  - YOU WENT OFFLINE PART-WAY THROUGH
+- **The regenerated table found five more sentences,** added to backuptool (stream B) since f0f263b8cc, and I added them too. Without them the table's own check fails:
+  - THIS DEVICE CAN'T RESTORE SETTINGS
+  - A SETTINGS BACKUP OR RESTORE IS ALREADY RUNNING
+  - THERE'S NOTHING TO BACK UP YET
+  - A SIGN-IN WAS FOUND IN THE BACKUP
+  - YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP CAN'T CARRY
+- **French for all nine** is appended to the end of the catalogue.
+- **The offline stamp.** `parseLastRun` reads "69 gaps YOU WENT OFFLINE PART-WAY THROUGH" as COULDN'T FINISH with that sentence as its why. The row's gaps branch passes the why through `localizedWhy`, and uses the token's generic phrase only when a stamp carries no why. Per D-UI-023, the row's line shows only the outcome word. The sentence appears in the row's confirmation, after "LAST TIME IT COULDN'T FINISH:". Before this commit it was already the stamp's own sentence, but shown in English. It is now translated.
+- **The emitter table is regenerated** from the scripts at 4476f90394, with their line numbers:
+  - 32 `>>> why` sentences.
+  - `>>> unit everything` is gone. In its place are a per-system unit (`cloud_content_backup:572`, `cloud_content_restore:1363` and `:810`) and a BIOS unit (`:1363`).
+  - `>>> removed` and `>>> offer` point at their new lines.
+  - EmulationStation's own protocol lines are re-pointed as well. The first restore's tiers moved from main.cpp to JourneyTiers.h.
+
+**Test.** `es-unit-tests` CloudTextTests.cpp: the regenerated table, plus a new case, "the stamp's offline why reads as COULDN'T FINISH with its own sentence". Run against `whySentences` as it was, it failed 14 assertions in 3 cases:
+- `:692 isKnownWhy(p.text)` x8
+- `:703 sentences.size() >= 32`
+- `:728 isKnownWhy(r.why)`
+- `:736 isKnownWhy(why)` x4
+
+After the change: 160 of 160 cases pass, with 1706 assertions.
+
+**Suites on 13b16a77e:**
+```
+es-unit-tests:    test cases: 160 | 160 passed | 0 failed   assertions: 1706 | 1706 passed
+es-file-tests:    test cases:  12 |  12 passed | 0 failed   assertions: 3291 | 3291 passed
+app-unit-tests:   test cases:  16 |  16 passed | 0 failed   assertions:  106 |  106 passed
+proxycards-tests: test cases:   6 |   6 passed | 0 failed   assertions:   31 |   31 passed
+bookkeeper-tests: test cases:   4 |   4 passed | 0 failed   assertions:   15 |   15 passed
+jobs-tests:       test cases:   4 |   4 passed | 0 failed   assertions:   21 |   21 passed
+tests/*.py: all 10 rc 0 (credential-quoting 10 sites, 10 quoted, 0 bare)
+es-syntax-check: CloudText.cpp PASS (the only source touched; no header changed)
+es-untranslated: 594 fork string(s), 594 with French, 0 without
+vocabulary-check: 156 judged, 0 wrong
+msgfmt -c: clean
+```
+
+**Notes:**
+- **The Follow-up integrator note on claude F-CS-15 is resolved.** At 4476f90394, both of `cloud_content_backup`'s "Nothing to back up" branches record outcome 0 and exit 0.
+- **One gap not fixed (for the integrator):** the maintenance dialogs (`runMaintenanceCommand` in GuiMenu, used by the backuptool flows) show a script's why without translating it. That covers backuptool's new sentences too. These dialogs are neither the rows nor the transfer page. Fixing it means choosing between backuptool's longer English line and the translated short why, and that is a choice about the words players see. I left it.
