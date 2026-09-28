@@ -415,12 +415,34 @@ archive_ok() {
 }
 
 # An archive's members, one per line and each whole, for either kind. The zip
-# listing's name is everything from its fourth column on (#307 PL-036).
+# listing's name is everything from its fourth column on (#307 PL-036). Its
+# status is the lister's (pipefail for the zip's pipe): a listing that stops
+# part-way is a failure, never a shorter list -- the copy before a restore is
+# built from it, and a short list left files unprotected, an empty one read
+# as "nothing to protect" (#307, the audit of the fixes, gpt G-B-01).
 archive_members() {
     case "${1}" in
         *.tar.gz) tar -tzf "${1}" 2>/dev/null ;;
-        *)        unzip -l "${1}" 2>/dev/null | awk 'NF > 3 && $4 ~ /^storage\// { print substr($0, index($0, $4)) }' ;;
+        *)        ( set -o pipefail
+                    unzip -l "${1}" 2>/dev/null | awk 'NF > 3 && $4 ~ /^storage\// { print substr($0, index($0, $4)) }' ) ;;
     esac
+}
+
+# How many file members an archive lists, or nothing and 1 when it does not
+# list back whole: the count supplements tar's status, never replaces it (a
+# listing can print every name and then fail on a damaged tail; #307, the
+# audit of the fixes, gpt G-B-02).
+listed_files() {
+    local L N
+    L=$(mktemp) || return 1
+    if ! tar -tzf "${1}" > "${L}" 2>/dev/null
+    then
+        rm -f "${L}"
+        return 1
+    fi
+    N=$(grep -vc '/$' "${L}")
+    rm -f "${L}"
+    echo "${N}"
 }
 
 # The copy a restore takes before it writes anything, of exactly what it is
@@ -472,8 +494,8 @@ snapshot_members() { # <members file> <target> <newlist file>
         rm -f "${KEEP}" "${TARGET}.partial"
         return 2
     fi
-    LISTED=$(tar -tzf "${TARGET}.partial" 2>/dev/null | grep -vc '/$')
-    if [ "${LISTED}" -ne "$(wc -l < "${KEEP}")" ] || ! mv -f "${TARGET}.partial" "${TARGET}"
+    if ! LISTED=$(listed_files "${TARGET}.partial") \
+       || [ "${LISTED}" -ne "$(wc -l < "${KEEP}")" ] || ! mv -f "${TARGET}.partial" "${TARGET}"
     then
         rm -f "${KEEP}" "${TARGET}.partial"
         return 3
@@ -1056,10 +1078,9 @@ write_archive() {
         return 3
     fi
     rm -f "${MEMBERLIST}"
-    LISTED=$(tar -tzf "${TARGET}.partial" 2>/dev/null | grep -vc '/$')
-    if [ "${LISTED}" -ne "${STAGED}" ]
+    if ! LISTED=$(listed_files "${TARGET}.partial") || [ "${LISTED}" -ne "${STAGED}" ]
     then
-        logger -t backuptool "the archive lists ${LISTED} file(s) of the ${STAGED} staged; nothing written"
+        logger -t backuptool "the archive does not list back whole (${LISTED:-no listing} of the ${STAGED} staged); nothing written"
         rm -rf "${STAGING}"
         rm -f "${TARGET}.partial"
         return 3
@@ -1189,7 +1210,12 @@ case "${VERB}" in
             SNAPSHOT="${ARCHIVEFOLDER}/${BACKUP_STAMP}-PRE_RESTORE-${DEVICE_LABEL:+${DEVICE_LABEL}-}${OS_NAME}_SETTINGS.tar.gz"
         done
         MEMBERS=$(mktemp); NEWLIST=$(mktemp); SEEDS=$(mktemp)
-        archive_members "${BACKUPFILE}" > "${MEMBERS}"
+        if ! archive_members "${BACKUPFILE}" > "${MEMBERS}"
+        then
+            rm -f "${MEMBERS}" "${NEWLIST}" "${SEEDS}"
+            why "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED"
+            fail "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED. NOTHING WAS CHANGED. RESTORE SETTINGS FROM THE CLOUD AGAIN, OR BACK UP SETTINGS TO REPLACE IT." "${BACKUPFILE} did not list its members whole"
+        fi
         # The files the backup left out as the image's own (SEEDLIST), to
         # be put back to this image's copy after the extraction: a path under
         # /storage/.config that walks nowhere else, that this image ships,

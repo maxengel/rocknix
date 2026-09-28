@@ -3496,6 +3496,44 @@ p7bt backup
 [ "${RC}" -ne 0 ] && [ -z "$(p7arc)" ]; check $? "#307 audit G-B-03 (gpt) / G-B-10 (claude): a file the scan cannot read refuses the backup (rc ${RC})" "#307 audit G-B-03: rc ${RC}; archives $(p7arc | wc -l) -- the unread file was passed over"
 rm -f "${P7}/shim/grep"
 
+# == AUD gpt G-B-02 (#307 audit of the fixes): a listing that fails is a failed check, whatever it printed
+p7reset '  /storage/.config/test/*'
+cat > "${P7}/shim/tar" <<'EOS'
+#!/bin/bash
+# The check of a .partial lists every member and then fails, as a damaged tail would.
+if [ "$1" = "-tzf" ] && [[ "$2" == *.partial ]]; then /p7bb/tar "$@"; exit 1; fi
+exec /p7bb/tar "$@"
+EOS
+chmod +x "${P7}/shim/tar"
+p7bt backup
+[ "${RC}" -ne 0 ] && [ -z "$(p7arc)" ]; check $? "#307 audit G-B-02 (gpt): an archive whose listing prints every member and then fails is not named (rc ${RC})" "#307 audit G-B-02: rc ${RC}; archives $(p7arc | wc -l) -- the count matched and tar's failure was not read"
+p7reset '  /storage/.config/test/*'
+echo LIVE > "${P7S}/.config/test/f1"
+p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/f1=ARCHIVE"
+p7bt restore --no-restart
+[ "${RC}" -ne 0 ] && [ "$(cat "${P7S}/.config/test/f1")" = "LIVE" ] && [ "$(p7why)" = "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS" ]; check $? "#307 audit G-B-02 (gpt): a pre-restore copy whose listing fails ends the restore before anything is written" "#307 audit G-B-02: rc ${RC}; f1='$(cat "${P7S}/.config/test/f1")'; why '$(p7why)'"
+rm -f "${P7}/shim/tar"
+
+# == AUD gpt G-B-01 (#307 audit of the fixes): a member listing that fails is not "nothing to protect"
+p7reset '  /storage/.config/test/*'
+echo LIVE1 > "${P7S}/.config/test/f1"; echo LIVE2 > "${P7S}/.config/test/f2"
+p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/f1=ARCHIVE1" "storage/.config/test/f2=ARCHIVE2"
+rm -f "${P7S}/.p7-tzf"
+cat > "${P7}/shim/tar" <<'EOS'
+#!/bin/bash
+# The whole-archive check passes; the member listing that follows stops after
+# one name and fails.
+if [ "$1" = "-tzf" ] && [[ "$2" == */roms/backup/2026_01_01-* ]]; then
+    n=$(cat /storage/.p7-tzf 2>/dev/null || echo 0); echo $((n + 1)) > /storage/.p7-tzf
+    if [ "${n}" -ge 1 ]; then /p7bb/tar "$@" | head -1; exit 1; fi
+fi
+exec /p7bb/tar "$@"
+EOS
+chmod +x "${P7}/shim/tar"
+p7bt restore --no-restart
+[ "${RC}" -ne 0 ] && [ "$(cat "${P7S}/.config/test/f2")" = "LIVE2" ] && [ "$(cat "${P7S}/.config/test/f1")" = "LIVE1" ]; check $? "#307 audit G-B-01 (gpt): a member listing that fails after the archive checked whole ends the restore before anything is written (why: $(p7why))" "#307 audit G-B-01: rc ${RC}; f1='$(cat "${P7S}/.config/test/f1")' f2='$(cat "${P7S}/.config/test/f2")' -- the partial listing was taken as the whole"
+rm -f "${P7}/shim/tar" "${P7S}/.p7-tzf"
+
 # y2. wifictl whole, against an nmcli that answers as the target's does
 # (probed on guest d for the psk, 2026-09-27): terse and get-values output
 # escapes ':' and '\' unless --escape no; two wireless devices, each profile
