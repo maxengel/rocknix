@@ -10230,6 +10230,92 @@ p7ck "head -c 100 /dev/zero" retroarch 9000 --setenv CORE_MAX_BYTES 1048576
 rm -f "${P7C}/shim/flock"
 printf '%s' "${P7NOTE}" | grep '^dump' | grep -q 'NOT KEPT' && [ ! -e "${P7C}/storage/.cache/log/cores/core.retroarch.9000.4242.gz" ]; check $? "#307 audit G-B-14 (gpt): when the cores folder cannot be locked the dump is not kept, and the note says why" "#307 audit G-B-14: note: $(printf '%s' "${P7NOTE}" | grep '^dump' | cut -c1-120); dump: $([ -e "${P7C}/storage/.cache/log/cores/core.retroarch.9000.4242.gz" ] && echo kept || echo none)"
 
+# ---- audit #307, stream F1 ---- (the audit of the fix round, D-WORKFLOW-060)
+# Stream F1's items from the milestone-tier audit of the fix round
+# (docs/audits/2026_09_28-milestone-audit-of-the-fix-round/): the punch item
+# PL-024 (#309) and the gpt seat's leads in F1's files, one section each,
+# every check naming its item. Every file under test is read through src_of
+# or f1_tree, so
+#     BASE_REF=f3d19dc8fb tools/last-good-scripts-test --old
+# grades the tree that audit read: every check below that names a fix FAILs
+# there, and the ones marked "control" PASS both ways (the premise a
+# withdrawal rests on, or a behaviour the fix must keep).
+echo "  F1r. The audit of the fix round, stream F1 (#309 PL-024; the gpt seat's G2-F1 leads): each check names its item"
+F1R="${TMP}/f1r"; mkdir -p "${F1R}"
+
+# F1r-a. #309 PL-024: tools/vm-upgrade-rehearsal waits for the new image's
+#        autostart before it reads what the quirk pass took back. It waited
+#        for "Autostart complete" in /var/log/boot.log, which autostart
+#        appends to at every boot (autostart:7,10) and which lives on
+#        /storage (var-log.mount), so the previous boot's line answered the
+#        first poll and the wait could not fail. The wait is run as it stands
+#        in the rehearsal -- its lines from AUTOSTARTED=no to its check --
+#        against a guest whose boot.log already holds the previous boot's
+#        line: ssha is the transport (each call one poll, run in a sandbox
+#        with the guest's /var, its boot id, and a systemctl answering for
+#        the autostart unit as systemd does in that boot), and sleep costs
+#        nothing. Autostart finishes on the poll the case names -- the unit
+#        reads active and the current boot's line is appended -- or never.
+F1RA="${F1R}/a"; mkdir -p "${F1RA}/shim"
+src_of tools/vm-upgrade-rehearsal "${F1RA}/rehearsal"
+sed -n '/^AUTOSTARTED=no/,/^check "autostart finished/p' "${F1RA}/rehearsal" > "${F1RA}/wait.sh"
+cat > "${F1RA}/shim/systemctl" <<'EOS'
+#!/bin/bash
+# rocknix-autostart.service as systemd has it in this boot (/guest/state):
+# activating while the oneshot's script runs, active once it has exited 0
+# (the unit has RemainAfterExit), failed.
+st=$(cat /guest/state)
+case "$*" in
+    "is-active rocknix-autostart.service"|"is-active rocknix-autostart") echo "${st}"; [ "${st}" = active ]; exit $? ;;
+    *) echo "systemctl (the harness's shim) does not know: $*" >&2; exit 1 ;;
+esac
+EOS
+chmod +x "${F1RA}/shim/systemctl"
+cat > "${F1RA}/run.sh" <<'EOS'
+# The rehearsal's wait, lifted, with its helpers stood in for.
+#   $1 the guest, $2 the boot id before the reboot, $3 the new boot's
+set -u
+G="$1"; BOOT0="$2"; BOOT1="$3"; LOG="${G}/rehearsal.log"; : > "${LOG}"; fail=0; i=0
+say() { echo "=== $*" >> "${LOG}"; }
+check() { if [ "$2" = "$3" ]; then echo "PASS $1"; else echo "FAIL $1: got '$2' want '$3'"; fail=1; fi; }
+sleep() { :; }
+ssha() {
+    local n fin; n=$(( $(cat "${G}/polls") + 1 )); echo "${n}" > "${G}/polls"; fin=$(cat "${G}/finish")
+    if [ "${fin}" != never ] && [ "${n}" -ge "${fin}" ] && [ "$(cat "${G}/state")" != active ]; then
+        echo active > "${G}/state"; echo "Mon Sep 28 16:00:0${n} UTC 2026: Autostart: Autostart complete..." >> "${G}/var/log/boot.log"
+    fi
+    bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --bind "${G}/var" /var --dir /proc/sys/kernel/random --ro-bind "${G}/boot_id" /proc/sys/kernel/random/boot_id \
+        --ro-bind "${G}/../shim" /shim --ro-bind "${G}" /guest --dev /dev --tmpfs /tmp --setenv PATH /shim:/usr/bin:/bin \
+        bash -c "$*"
+}
+. "${G}/../wait.sh"
+echo "polls=$(cat "${G}/polls") autostarted=${AUTOSTARTED}"
+EOS
+F1R_B0=0f1a0000-0000-4000-8000-00000000b007; F1R_B1=0f1a0000-0000-4000-8000-00000000b008
+f1ra() { # <case> <poll autostart finishes on|never> <boot id the guest reports>: one run of the wait; its last line in F1RA_OUT, its check line in F1RA_CHK
+    local g="${F1RA}/$1"; rm -rf "${g}"; mkdir -p "${g}/var/log"
+    printf '%s\n' "Sun Sep 27 21:04:10 UTC 2026: Autostart: Run /usr/lib/autostart/quirks/platforms/GENERIC_X64/092-retroarch-surface" \
+        "Sun Sep 27 21:04:12 UTC 2026: Autostart: Startup complete..." "Sun Sep 27 21:04:13 UTC 2026: Autostart: Autostart complete..." > "${g}/var/log/boot.log"
+    printf '%s\n' "$3" > "${g}/boot_id"; echo 0 > "${g}/polls"; echo "$2" > "${g}/finish"; echo activating > "${g}/state"
+    bash "${F1RA}/run.sh" "${g}" "${F1R_B0}" "${F1R_B1}" > "${g}/out" 2>&1
+    F1RA_OUT=$(tail -n 1 "${g}/out"); F1RA_CHK=$(grep -m1 -E '^(PASS|FAIL) autostart finished' "${g}/out" | cut -c1-200)
+}
+if [ ! -s "${F1RA}/wait.sh" ] || ! grep -q '^check "autostart finished' "${F1RA}/wait.sh"; then
+    check 1 "-" "#309 PL-024: the rehearsal has no autostart wait from AUTOSTARTED=no to its check -- nothing to grade"
+else
+    f1ra stale 4 "${F1R_B1}"
+    [ "${F1RA_OUT}" = "polls=4 autostarted=yes" ]; check $? "#309 PL-024: with the previous boot's 'Autostart complete' already in boot.log, the rehearsal waits until this boot's autostart has finished (poll 4 of 4)" "#309 PL-024: the wait ended on '${F1RA_OUT}' where autostart finished on poll 4 -- the previous boot's line answered it"
+    f1ra never never "${F1R_B1}"
+    case "${F1RA_OUT}" in "polls=30 autostarted="*) [ "${F1RA_OUT}" != "polls=30 autostarted=yes" ] ;; *) false ;; esac && case "${F1RA_CHK}" in FAIL*) true ;; *) false ;; esac
+    check $? "#309 PL-024: an autostart that never finishes runs the wait to its bound and the rehearsal's check FAILs, the stale line notwithstanding" "#309 PL-024: an autostart that never finished read '${F1RA_OUT}', check '${F1RA_CHK}' -- the check cannot fail"
+    f1ra oldboot 1 "${F1R_B0}"
+    case "${F1RA_OUT}" in *autostarted=yes) false ;; *) true ;; esac; check $? "#309 PL-024: a reading that carries the boot id from before the reboot does not end the wait" "#309 PL-024: a reading from boot ${F1R_B0} (the one before the reboot) ended the wait: '${F1RA_OUT}'"
+    f1ra ready 1 "${F1R_B1}"
+    [ "${F1RA_OUT}" = "polls=1 autostarted=yes" ] && case "${F1RA_CHK}" in PASS*) true ;; *) false ;; esac
+    check $? "#309 PL-024 (control): an autostart already finished on the first poll ends the wait at once, and the check passes" "#309 PL-024: an autostart finished on poll 1 read '${F1RA_OUT}', check '${F1RA_CHK}'"
+fi
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
