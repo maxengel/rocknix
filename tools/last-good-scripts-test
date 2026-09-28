@@ -3476,4 +3476,18 @@ else
 fi
 [ -z "${F2_BAD}" ]; check $? "woff2 says its release date once, gst-plugins-base its appsink story once, cairo no GL backends, and no quirk file is empty" "${F2_BAD}"
 
+# F2-13. #308 4-backup-restore claude F-BR-10: packages/compress/zip, which
+# the fork restored on 2026-08-26 after upstream dropped it, is shadowed
+# since upstream reintroduced zip as projects/ROCKNIX/packages/compress/zip
+# (b289e35685): get_pkg_directory takes the project recipe, so the fork's
+# copy -- same steps, the same patch byte for byte -- is never built, only
+# hashed into zip's stamp. One recipe for zip, and it is the one built.
+echo "  F2-13. zip has one recipe, the one the build uses (#308 F-BR-10)"
+if [ "${OLD}" -eq 1 ]; then
+    F2_OUT="$(git -C "${ROOT}" ls-tree -r --name-only "${BASE_REF}" -- packages projects | grep -c '/zip/package\.mk$')"
+else
+    F2_OUT="$(cd "${ROOT}" && find packages projects -path '*/zip/package.mk' | wc -l)"
+fi
+[ "${F2_OUT}" -eq 1 ]; check $? "one zip recipe (projects/ROCKNIX/packages/compress/zip)" "${F2_OUT} zip recipes in the tree -- the generic copy is shadowed by the project one and never built"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
