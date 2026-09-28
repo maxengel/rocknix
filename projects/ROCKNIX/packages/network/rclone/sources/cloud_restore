@@ -1116,7 +1116,9 @@ load_config() {
     # Restore writes to local storage. The filter rules are an allowlist, so with
     # RESTOREMETHOD="sync" a --delete-excluded would delete everything local that
     # is not a save/state/screenshot (ROMs, BIOS, artwork). Strip it on restore;
-    # backup keeps it, where it only tidies the remote.
+    # cloud_backup strips it too (it deleted every other device's settings
+    # backups from a shared folder), and the shipped RCLONEOPTS no longer
+    # carries it (#308 claude F-CS-17).
     RCLONEOPTS=$(echo "${RCLONEOPTS}" | sed 's/--delete-excluded//g')
     log_message "After removing restore-unsafe delete flags: ${RCLONEOPTS}" "false"
     

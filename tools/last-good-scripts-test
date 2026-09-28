@@ -3756,4 +3756,17 @@ for pw_cmd in "cloud_content_backup gb" "cloud_content_restore --scan"; do
     [ ! -e "${PW}/ctl/pwned" ]; check $? "${pw_cmd%% *}: a command in CONTENT_REMOTE runs nothing (rc ${RC})" "ran it: YES -- the content script sourced the conf"
 done
 
+# A16. #308 claude F-CS-17 (its comment half; the dead warning went with
+#      PL-015) and gpt F-CS-37: the shipped configs say what the scripts do
+#      -- copy is the backup default, and --delete-excluded, which both
+#      saves scripts strip before every run, is not shipped as if it acted.
+echo "    A16. #308 claude F-CS-17 / gpt F-CS-37: the shipped configs describe the shipped behaviour"
+for cf in cloud_sync.conf cloud_sync.conf.defaults; do
+    src_of "${RCLONE_REL}/${cf}" "${TMP}/${cf}"
+    ! grep -q 'The default is "sync"' "${TMP}/${cf}"; check $? "${cf}: no comment calls sync the backup default" "${cf} still says: $(grep -m1 'The default is "sync"' "${TMP}/${cf}")"
+    ! awk '/^(DEFAULT_)?RCLONEOPTS=/{p=1} p{print} p&&!/\\$/{p=0}' "${TMP}/${cf}" | grep -q -- '--delete-excluded'; check $? "${cf}: RCLONEOPTS ships no --delete-excluded the scripts strip before every run" "${cf}'s RCLONEOPTS carries --delete-excluded"
+done
+src_of "${RCLONE_REL}/cloud_restore" "${TMP}/cloud_restore.a16"
+! grep -q 'backup keeps it, where it only tidies the remote' "${TMP}/cloud_restore.a16"; check $? "cloud_restore's comment no longer says backup keeps --delete-excluded" "cloud_restore still says backup keeps it"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
