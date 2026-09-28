@@ -3255,4 +3255,54 @@ rm -rf "${RB}/cloud/ROCKNIX/Saves" "${RB}/cloud/ROCKNIX/Saves-replaced"; mkdir -
 sa_run "${RB}" cloud_backup --yes --saves-only
 [ -e "${RB}/cloud/ROCKNIX/Saves/gb/A.srm" ] && [ ! -e "${RB}/cloud/ROCKNIX/Saves/gb/A.gb" ] && [ "${RC}" -eq 0 ]; check $? "with the catch-all in place the same backup sends the save and not the ROM (rc ${RC})" "A.srm $([ -e "${RB}/cloud/ROCKNIX/Saves/gb/A.srm" ] && echo sent || echo missing), A.gb $([ -e "${RB}/cloud/ROCKNIX/Saves/gb/A.gb" ] && echo SENT || echo not sent); rc ${RC}; out: $(sa_tail "${RB}")"
 
+# A4. PL-021 (#307, F-CS-06 gpt) with #308 claude F-CS-10: the replaced-saves
+#     root is shared by every device on the cloud and its folders are named
+#     by a clock; the run's own folder, and the archive it just uploaded, are
+#     pinned by name, and only the rest are pruned.
+echo "    A4. PL-021: pruning keeps the folder and the archive this run wrote, whatever other clocks say"
+PR=$(sa_new pl021); sa_script "${PR}" cloud_backup cloud_saves_root
+cat > "${PR}/storage/.config/cloud_sync.conf" <<'EOS'
+SAVESPATH="/storage/roms"
+SAVES_REMOTE="/ROCKNIX/Saves"
+SETTINGS_BACKUPS="/storage/roms/backup"
+SETTINGS_REMOTE="/ROCKNIX/Backups"
+BACKUPMETHOD="copy"
+RESTOREMETHOD="copy"
+BACKUPFILE_BACKUP_OPTION="yes"
+BACKUPFILE_RESTORE_OPTION="no"
+CLOUD_BACKUP_KEEP="3"
+RCLONEOPTS="--progress --log-file /var/log/cloud_sync.log --filter-from /storage/.config/cloud_sync-rules.txt"
+RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"
+LOG_LEVEL="INFO"
+EOS
+printf -- '+ /**/*.srm\n- /**\n' > "${PR}/storage/.config/cloud_sync-rules.txt"
+mkdir -p "${PR}/storage/roms/gb" "${PR}/cloud/ROCKNIX/Saves/gb" "${PR}/cloud/ROCKNIX/Saves-replaced/2099_01_01-000000/gb"
+echo "the save as played here" > "${PR}/storage/roms/gb/A.srm"; echo "the cloud's older copy" > "${PR}/cloud/ROCKNIX/Saves/gb/A.srm"
+echo "a device whose clock runs ahead" > "${PR}/cloud/ROCKNIX/Saves-replaced/2099_01_01-000000/gb/Z.srm"
+sa_run "${PR}" cloud_backup --yes --saves-only
+kept=$(grep -rlx "the cloud's older copy" "${PR}/cloud/ROCKNIX/Saves-replaced" 2>/dev/null | head -1)
+[ -n "${kept}" ] && [ "${RC}" -eq 0 ]; check $? "a future-dated sibling folder (2099) does not outrank the run's own: the copy this run replaced is still kept (rc ${RC})" "rc ${RC}; replaced root holds: $(cd "${PR}/cloud/ROCKNIX/Saves-replaced" 2>/dev/null && find . -type f | tr '\n' ' '); the run's own folder was pruned because 2099_... sorts after it (F-CS-06 gpt, F-CS-10 claude)"
+[ ! -e "${PR}/cloud/ROCKNIX/Saves-replaced/2099_01_01-000000" ]; check $? "and the other folder is the one pruned: one record at rest, this run's" "the 2099 folder is still there beside the run's own"
+# The settings archives: three of this device's, future-dated, then this
+# run's upload with CLOUD_BACKUP_KEEP=3.
+mkdir -p "${PR}/storage/roms/backup/x/storage/.config" "${PR}/cloud/ROCKNIX/Backups/QA-deadbeef01"
+echo cfg > "${PR}/storage/roms/backup/x/storage/.config/blob"
+tar -C "${PR}/storage/roms/backup/x" -czf "${PR}/storage/roms/backup/2026_09_28-120000-QA-ROCKNIX_SETTINGS.tar.gz" storage; rm -rf "${PR}/storage/roms/backup/x"
+for y in 2097 2098 2099; do echo old > "${PR}/cloud/ROCKNIX/Backups/QA-deadbeef01/${y}_01_01-000000-QA-ROCKNIX_SETTINGS.tar.gz"; done
+rm -f "${PR}/storage/.cache/cloud_sync/settings-backup.uploaded"
+sa_run "${PR}" cloud_backup --yes --system-only
+[ -f "${PR}/cloud/ROCKNIX/Backups/QA-deadbeef01/2026_09_28-120000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ "${RC}" -eq 0 ]; check $? "the archive this run uploaded survives the retention though three future-dated ones sort after it (rc ${RC})" "rc ${RC}; the folder holds: $(ls "${PR}/cloud/ROCKNIX/Backups/QA-deadbeef01" | tr '\n' ' ') -- the run's own upload was the one past CLOUD_BACKUP_KEEP (F-CS-06 gpt)"
+n_mine=$(ls "${PR}/cloud/ROCKNIX/Backups/QA-deadbeef01" | grep -c 'QA-ROCKNIX_SETTINGS')
+[ "${n_mine}" -eq 3 ]; check $? "and the kept history is still CLOUD_BACKUP_KEEP (3): the upload and the two newest others" "${n_mine} archive(s) kept: $(ls "${PR}/cloud/ROCKNIX/Backups/QA-deadbeef01" | tr '\n' ' ')"
+
+# The restore's own record, on this device: a folder from a clock that ran
+# ahead does not outrank the run's.
+mkdir -p "${PR}/storage/.cache/cloud_sync/replaced/2099_01_01-000000/gb"
+echo "an earlier run under a clock that ran ahead" > "${PR}/storage/.cache/cloud_sync/replaced/2099_01_01-000000/gb/Y.srm"
+echo "the cloud's newer copy" > "${PR}/cloud/ROCKNIX/Saves/gb/A.srm"; echo "the copy on this device" > "${PR}/storage/roms/gb/A.srm"
+sa_script "${PR}" cloud_restore
+sa_run "${PR}" cloud_restore --yes --saves-only
+kept=$(grep -rlx "the copy on this device" "${PR}/storage/.cache/cloud_sync/replaced" 2>/dev/null | head -1)
+[ -n "${kept}" ] && grep -qx "the cloud's newer copy" "${PR}/storage/roms/gb/A.srm" && [ "${RC}" -eq 0 ]; check $? "cloud_restore keeps the local copy it replaced though a future-dated folder sorts after its own (rc ${RC})" "rc ${RC}; replaced holds: $(cd "${PR}/storage/.cache/cloud_sync/replaced" 2>/dev/null && find . -type f | tr '\n' ' ') (F-CS-06 gpt, prune_replaced_local)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

@@ -1228,13 +1228,25 @@ execute_rclone_with_error_handling() {
     return $rclone_exit_code
 }
 
-# Keep only the newest stamp folder under the remote --backup-dir root. Names
-# are stamps, so sorting them is ordering them by age; the root not existing
-# (nothing replaced yet) lists nothing and nothing happens.
+# One record at rest under the remote --backup-dir root: the folder this run
+# wrote. It is named by this run and kept by that name, and every other
+# folder goes (D-CLOUD-078 (3)). The root is shared by every device on the
+# cloud and the names are stamps from each device's own clock, so name order
+# is not age: a folder from a device whose clock runs ahead, or from this
+# one before its clock was corrected, sorted after this run's, and "keep the
+# newest by name" purged the record this run had just written (audit #307
+# PL-021). When this run replaced nothing it wrote no folder, nothing is
+# superseded, and the newest by name is kept as before. The root not
+# existing, or not listing, removes nothing.
 prune_replaced_remote() {
-    local root="$1" d
-    rclone lsf --dirs-only "${root}/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null \
-        | tr -d '/' | grep . | sort -r | tail -n +2 | while read -r d; do
+    local root="$1" pinned="$2" names doomed d
+    names=$(rclone lsf --dirs-only "${root}/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | tr -d '/' | grep .)
+    if [ -n "${pinned}" ] && printf '%s\n' "${names}" | grep -qxF -- "${pinned}"; then
+        doomed=$(printf '%s\n' "${names}" | grep -vxF -- "${pinned}")
+    else
+        doomed=$(printf '%s\n' "${names}" | sort -r | tail -n +2)
+    fi
+    printf '%s\n' "${doomed}" | while read -r d; do
         [ -n "${d}" ] || continue
         log_message "removing replaced-saves folder ${root}/${d} (superseded)" "false"
         rclone purge "${root}/${d}" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>/dev/null \
@@ -1462,8 +1474,9 @@ backup_game_saves() {
     # is one record at rest (D-CLOUD-078 (3)). The folder is shared by every
     # device using the saves folder, so "one cycle" is one cycle of whichever
     # device ran last.
-    local replaced_root="${SAVES_REMOTE%/}-replaced"
-    all_opts+=("--backup-dir=${REMOTENAME}${replaced_root}/$(date +%Y_%m_%d-%H%M%S)")
+    local replaced_root="${SAVES_REMOTE%/}-replaced" replaced_stamp
+    replaced_stamp=$(date +%Y_%m_%d-%H%M%S)
+    all_opts+=("--backup-dir=${REMOTENAME}${replaced_root}/${replaced_stamp}")
     log_message "anything replaced (or, in sync mode, removed) in the cloud goes to ${replaced_root}" "false"
 
     # Check if the rclone version supports the terminal width flag
@@ -1507,7 +1520,7 @@ backup_game_saves() {
     # kept; older stamp folders go. Not on a --recent run: a remote round
     # trip the game-exit sync should not pay (the next full pass trims).
     if [ "${RECENT}" -eq 0 ] && { [ $BACKUP_STATUS -eq 0 ] || [ $BACKUP_STATUS -eq 9 ]; }; then
-        prune_replaced_remote "${REMOTENAME}${replaced_root}"
+        prune_replaced_remote "${REMOTENAME}${replaced_root}" "${replaced_stamp}"
     fi
 
     # RSYNCRMDIR: after a successful backup, remove orphaned empty directories on
@@ -1934,7 +1947,16 @@ MANIFEST
                 if [ "${total_n}" -gt "${mine_n}" ]; then
                     log_message "Leaving $((total_n - mine_n)) archive(s) not named for this device (${label}) alone in ${device_dest}" "false"
                 fi
-                printf '%s\n' "${mine}" | grep -v '^$' | tail -n +$((keep + 1)) | while read -r old_archive
+                # The archives this run uploaded are kept by name, whatever
+                # the others' names say: a date is the clock of the device
+                # that wrote it, and three archives stamped by a clock that
+                # ran ahead used to leave this run's upload as the one past
+                # the count (audit #307 PL-021). The rest are kept by count,
+                # newest name first, to CLOUD_BACKUP_KEEP in all.
+                local others left
+                others=$(printf '%s\n' "${mine}" | grep -v '^$' | grep -vxF -f <(printf '%s\n' "${uploaded_names[@]}"))
+                left=$(( keep - ${#uploaded_names[@]} )); [ "${left}" -ge 0 ] || left=0
+                printf '%s\n' "${others}" | grep -v '^$' | tail -n +$((left + 1)) | while read -r old_archive
                 do
                     [ -n "${old_archive}" ] || continue
                     log_message "Removing old cloud backup ${old_archive}" "false"

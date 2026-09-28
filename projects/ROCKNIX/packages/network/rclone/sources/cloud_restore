@@ -1279,11 +1279,24 @@ sweep_partials() {
     find "$1" -type f -name '*.????????.partial' -exec rm -f {} \; 2>/dev/null
 }
 
-# Keep only the newest stamp folder under a local --backup-dir root: the
-# replaced files of the run that just completed are the one record kept.
+# One record at rest under the local --backup-dir root: the folder this run
+# wrote, kept by the name this run gave it, every other one removed. Names
+# are stamps from this device's clock, which moves backwards when NTP
+# corrects it on a handheld with no RTC, so "the newest by name" could be an
+# older run's and the copies this run had just replaced were the ones removed
+# (audit #307 PL-021, the local half). With no folder of this run's --
+# nothing was replaced -- the newest by name is kept, as before.
 prune_replaced_local() {
-    local root="$1" d
+    local root="$1" pinned="$2" d
     [ -d "${root}" ] || return 0
+    if [ -n "${pinned}" ] && [ -d "${root}/${pinned}" ]; then
+        for d in "${root}"/*/; do
+            [ -d "${d}" ] || continue
+            [ "${d%/}" = "${root}/${pinned}" ] && continue
+            rm -rf "${d}"
+        done
+        return 0
+    fi
     ls -1d "${root}"/*/ 2>/dev/null | sort -r | tail -n +2 | while read -r d; do
         rm -rf "${d}"
     done
@@ -1502,8 +1515,9 @@ restore_game_saves() {
     # overlaps the destination and never enters a backup. One folder per
     # run; after a run that completed, every folder but the newest goes, so
     # there is one record at rest (D-CLOUD-078 (3)).
-    local replaced_root="/storage/.cache/cloud_sync/replaced"
-    all_opts+=("--backup-dir=${replaced_root}/$(date +%Y_%m_%d-%H%M%S)")
+    local replaced_root="/storage/.cache/cloud_sync/replaced" replaced_stamp
+    replaced_stamp=$(date +%Y_%m_%d-%H%M%S)
+    all_opts+=("--backup-dir=${replaced_root}/${replaced_stamp}")
 
     # Check if the rclone version supports the terminal width flag
     if rclone help | grep -q progress-terminal-width; then
@@ -1520,7 +1534,7 @@ restore_game_saves() {
     RESTORE_STATUS=$?
     sweep_partials "${SAVESPATH}"
     if [ $RESTORE_STATUS -eq 0 ] || [ $RESTORE_STATUS -eq 9 ]; then
-        prune_replaced_local "${replaced_root}"
+        prune_replaced_local "${replaced_root}" "${replaced_stamp}"
     fi
     # A failed transfer says why. The network gone ends the run as 69 here;
     # anything else falls through to report_rclone_error with rclone's code.
