@@ -3576,6 +3576,47 @@ printf 'BACKUPFOLDER="/storage/roms/mybackups"\n' > "${P7S}/.config/cloud_sync.c
 p7bt backup
 [ "${RC}" -eq 0 ] && [ -n "$(ls "${P7S}/roms/mybackups"/*.tar.gz 2>/dev/null)" ] && [ -z "$(p7arc)" ]; check $? "#307 audit G-B-02 (claude) / G-B-09 (gpt): an un-migrated conf with BACKUPFOLDER alone puts the backup in that folder, where the upload reads" "#307 audit G-B-02: rc ${RC}; mybackups: $(ls "${P7S}/roms/mybackups" 2>/dev/null | tr '\n' ' '); standard folder: $(p7arc | wc -l)"
 
+# == AUD gpt G-B-13 (#307 audit of the fixes): a sanitised copy whose mode cannot be kept is not archived as if it were
+p7reset '  /storage/.config/system/configs/system.cfg
+  /storage/.config/test/*'
+chmod 600 "${P7S}/.config/system/configs/system.cfg"
+cat > "${P7}/shim/chmod" <<'EOS'
+#!/bin/bash
+case "$*" in *backuptool-staging*) echo "chmod: operation not permitted" >&2; exit 1 ;; esac
+exec /p7bb/chmod "$@"
+EOS
+chmod +x "${P7}/shim/chmod"
+p7bt backup
+[ "${RC}" -ne 0 ] && [ -z "$(p7arc)" ]; check $? "#307 audit G-B-13 (gpt): a sanitised copy whose original mode cannot be given to it ends the backup (rc ${RC})" "#307 audit G-B-13: rc ${RC}; archives $(p7arc | wc -l); system.cfg in it: $(tar -tvzf "$(p7arc | tail -1)" 2>/dev/null | awk '/system.cfg$/{print $1}')"
+rm -f "${P7}/shim/chmod"
+
+# == AUD gpt G-B-16 (#307 audit of the fixes): no tool's own error reaches the screen, from the seed reset or a sanitiser
+p7reset '  /storage/.config/emulationstation/es_settings.cfg
+  /storage/.config/test/*'
+cp "${P7U}/emulationstation/es_settings.cfg" "${P7S}/.config/emulationstation/es_settings.cfg"
+p7bt backup
+echo EDITED > "${P7S}/.config/emulationstation/es_settings.cfg"
+cat > "${P7}/shim/cp" <<'EOS'
+#!/bin/bash
+case "$*" in *" /usr/config/"*) echo "cp: can't create '/storage/.config/emulationstation/es_settings.cfg': I/O error" >&2; exit 1 ;; esac
+exec /p7bb/cp "$@"
+EOS
+chmod +x "${P7}/shim/cp"
+p7bt restore --no-restart
+rm -f "${P7}/shim/cp"
+[ "${RC}" -ne 0 ] && ! grep -vE '^logger |^>>> ' "${P7OUT}" | grep -q '^cp:'; check $? "#307 audit G-B-16 (gpt): a seed reset that fails is undone and its cp error goes to the log, not the screen (rc ${RC})" "#307 audit G-B-16: rc ${RC}; the screen shows: $(grep -vE '^logger |^>>> ' "${P7OUT}" | grep '^cp:' | head -1)"
+p7reset '  /storage/.config/system/configs/system.cfg
+  /storage/.config/test/*'
+cat > "${P7}/shim/sed" <<'EOS'
+#!/bin/bash
+case "$*" in *'(key|password|token)=/d'*) head -1 "${@: -1}"; echo "sed: read error" >&2; exit 4 ;; esac
+exec /p7bb/sed "$@"
+EOS
+chmod +x "${P7}/shim/sed"
+p7bt backup
+rm -f "${P7}/shim/sed"
+[ "${RC}" -ne 0 ] && ! grep -vE '^logger |^>>> ' "${P7OUT}" | grep -q '^sed:'; check $? "#307 audit G-B-16 (gpt): a sanitiser's own error goes to the log, not the screen" "#307 audit G-B-16: the screen shows: $(grep -vE '^logger |^>>> ' "${P7OUT}" | grep '^sed:' | head -1)"
+
 # y2. wifictl whole, against an nmcli that answers as the target's does
 # (probed on guest d for the psk, 2026-09-27): terse and get-values output
 # escapes ':' and '\' unless --escape no; two wireless devices, each profile

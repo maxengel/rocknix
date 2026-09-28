@@ -311,10 +311,14 @@ fi
 # A sanitised copy is written new, by a redirection; give it the original's
 # mode and time, so the archive does not carry the staging's 0644 for a file
 # that was 0600 on the device (#308, the gpt seat's F-BR-16).
+# Its status is the three steps': a copy whose mode could not be kept is a
+# sanitiser that did not finish, not a success (#307, the audit of the fixes,
+# gpt G-B-13).
 keep_meta() {
-    chmod "$(stat -c %a "${1}" 2>/dev/null)" "${2}" 2>/dev/null
-    touch -r "${1}" "${2}" 2>/dev/null
-    return 0
+    local MODE
+    MODE=$(stat -c %a "${1}" 2>/dev/null) && [ -n "${MODE}" ] \
+        && chmod "${MODE}" "${2}" 2>/dev/null \
+        && touch -r "${1}" "${2}" 2>/dev/null
 }
 
 # A member name as a pattern that matches only itself: tar's -X and unzip's
@@ -963,9 +967,9 @@ write_archive() {
         if grep -qxF "${SYSCFG}" "${SECRETLIST}"
         then
             mkdir -p "${STAGING}/storage/.config/system/configs"
-            sed -E '/^[^#]*\.(key|password|token)=/d' "${SYSCFG}" \
+            to_log sed -E '/^[^#]*\.(key|password|token)=/d' "${SYSCFG}" \
                 > "${STAGING}/storage/.config/system/configs/system.cfg" || SANITISE_RC=1
-            keep_meta "${SYSCFG}" "${STAGING}/storage/.config/system/configs/system.cfg"
+            keep_meta "${SYSCFG}" "${STAGING}/storage/.config/system/configs/system.cfg" || SANITISE_RC=1
             SANITISED=$((SANITISED + 1))
         fi
 
@@ -980,10 +984,10 @@ write_archive() {
         then
             mkdir -p "${STAGING}/storage/.config/emulationstation"
             # grep's 1 is "no line survived" (an empty copy), not a failure.
-            grep -v -e 'name="ScreenScraperPass"' -e 'name="ScreenScraperDevPass"' -e 'name="IGDBSecret"' "${ESCFG}" \
+            to_log grep -v -e 'name="ScreenScraperPass"' -e 'name="ScreenScraperDevPass"' -e 'name="IGDBSecret"' "${ESCFG}" \
                 > "${STAGING}/storage/.config/emulationstation/es_settings.cfg"
             [ $? -le 1 ] || SANITISE_RC=1
-            keep_meta "${ESCFG}" "${STAGING}/storage/.config/emulationstation/es_settings.cfg"
+            keep_meta "${ESCFG}" "${STAGING}/storage/.config/emulationstation/es_settings.cfg" || SANITISE_RC=1
             SANITISED=$((SANITISED + 1))
         fi
 
@@ -996,9 +1000,9 @@ write_archive() {
         if grep -qxF "${RACFG}" "${SECRETLIST}"
         then
             mkdir -p "${STAGING}/storage/.config/retroarch"
-            sed -E 's/^([a-z_]*(password|token|stream_key)) = ".*"$/\1 = ""/' "${RACFG}" \
+            to_log sed -E 's/^([a-z_]*(password|token|stream_key)) = ".*"$/\1 = ""/' "${RACFG}" \
                 > "${STAGING}/storage/.config/retroarch/retroarch.cfg" || SANITISE_RC=1
-            keep_meta "${RACFG}" "${STAGING}/storage/.config/retroarch/retroarch.cfg"
+            keep_meta "${RACFG}" "${STAGING}/storage/.config/retroarch/retroarch.cfg" || SANITISE_RC=1
             SANITISED=$((SANITISED + 1))
         fi
 
@@ -1015,9 +1019,9 @@ write_archive() {
             if grep -qxF "${CANDIDATE}" "${SECRETLIST}"
             then
                 mkdir -p "${STAGING}${CANDIDATE%/*}"
-                sed -E 's/^([A-Za-z_]*(Token|Password)[[:space:]]*=[[:space:]]*).*$/\1/' "${CANDIDATE}" \
+                to_log sed -E 's/^([A-Za-z_]*(Token|Password)[[:space:]]*=[[:space:]]*).*$/\1/' "${CANDIDATE}" \
                     > "${STAGING}${CANDIDATE}" || SANITISE_RC=1
-                keep_meta "${CANDIDATE}" "${STAGING}${CANDIDATE}"
+                keep_meta "${CANDIDATE}" "${STAGING}${CANDIDATE}" || SANITISE_RC=1
                 BLANKED=$((BLANKED + 1))
             fi
         done
@@ -1376,7 +1380,7 @@ case "${VERB}" in
         then
             while IFS= read -r REL
             do
-                mkdir -p "$(dirname "/storage/.config/${REL}")" && cp -f "/usr/config/${REL}" "/storage/.config/${REL}" || { EXTRACT_RC=1; break; }
+                to_log mkdir -p "$(dirname "/storage/.config/${REL}")" && to_log cp -f "/usr/config/${REL}" "/storage/.config/${REL}" || { EXTRACT_RC=1; break; }
             done < "${SEEDS}"
             [ -s "${SEEDS}" ] && [ "${EXTRACT_RC}" -eq 0 ] && logger -t backuptool "put $(wc -l < "${SEEDS}") file(s) the backup held at their defaults back to this image's copies"
         fi
