@@ -3583,4 +3583,9 @@ touch "${P7W}/run/nm-down"
 p7w forget "Home"
 [ "${RC}" -eq 2 ] && [ ! -s "${P7W}/out" ]; check $? "#308 2-wifi claude F-WF-07: forget with NetworkManager not answering exits 2, as join and current do" "#308 F-WF-07: rc ${RC} (1 is 'not a remembered network')"
 
+# == #308 2-wifi claude F-WF-05: the scan's names are unescaped like the others
+p7wset 'Cafe: Guest|802-11-wireless|-|Cafe: Guest|k'
+p7w list
+grep -qxF 'Cafe: Guest' "${P7W}/out" && ! grep -qF 'Cafe\: Guest' "${P7W}/out"; check $? "#308 2-wifi claude F-WF-05: list prints 'Cafe: Guest' as current and saved do, not nmcli's escaped 'Cafe\\: Guest'" "#308 F-WF-05: list printed '$(tr '\n' '|' < "${P7W}/out")'"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
