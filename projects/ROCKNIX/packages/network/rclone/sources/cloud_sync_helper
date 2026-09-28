@@ -52,19 +52,6 @@ update_cloud_sync_rules() {
   
   # Check if user has a custom cloud_sync-rules.txt
   if [ -f "${rules}" ]; then
-    # Keep a copy of the user's rules before touching them -- but only of a
-    # file that is plainly whole: the allowlist ends in its catch-all
-    # "- /**", and a file cut before that line is not a rules file. Copying
-    # whatever was there put a truncated file over the last good copy on
-    # the very next run (D-CLOUD-078, #105). Written beside the copy and
-    # renamed, so the copy itself is never half-written either.
-    if rules_whole "${rules}"; then
-      cp -f "${rules}" "${rules}.bak.tmp" && mv -f "${rules}.bak.tmp" "${rules}.bak"
-    else
-      rm -f "${rules}.bak.tmp"
-      log_to_file "${log_file}" "rules file has no catch-all line; not taking a .bak from it" "WARN"
-    fi
-    
     # Check if defaults file exists
     if [ ! -f "/usr/config/cloud_sync-rules.txt.defaults" ]; then
       log_to_file "${log_file}" "Default rules file not found" "WARN"
@@ -161,6 +148,30 @@ update_cloud_sync_rules() {
       return 1
     fi
 
+    # A merge that changes nothing writes nothing (#308 claude F-CS-18): the
+    # helper runs before every sync, the one after each game included, and
+    # rewrote the rules file and its .bak every time -- flash writes and an
+    # mtime that changes for no reason, which the settings backup then
+    # carries as a change.
+    if cmp -s "${rules}.new" "${rules}"; then
+      rm -f "${rules}.new"
+      touch "${marker}" 2>/dev/null
+      return 0
+    fi
+
+    # Keep a copy of the user's rules before replacing them -- but only of a
+    # file that is plainly whole: the allowlist ends in its catch-all
+    # "- /**", and a file cut before that line is not a rules file. Copying
+    # whatever was there put a truncated file over the last good copy on
+    # the very next run (D-CLOUD-078, #105). Written beside the copy and
+    # renamed, so the copy itself is never half-written either.
+    if rules_whole "${rules}"; then
+      cp -f "${rules}" "${rules}.bak.tmp" && mv -f "${rules}.bak.tmp" "${rules}.bak"
+    else
+      rm -f "${rules}.bak.tmp"
+      log_to_file "${log_file}" "rules file has no catch-all line; not taking a .bak from it" "WARN"
+    fi
+
     # Replace the user's file with the merged version -- one rename -- and
     # mark the first merge done only once it has landed.
     mv -f "${rules}.new" "${rules}" && touch "${marker}" 2>/dev/null
@@ -243,15 +254,13 @@ update_cloud_sync_config() {
   
   # Check if user has a config file
   if [ -f "${conf}" ]; then
-    # Keep a copy of the user's config before touching it -- of a file that
-    # parses; a torn one must not replace the last good copy.
-    if conf_valid "${conf}"; then
-      cp -f "${conf}" "${conf}.bak.tmp" && mv -f "${conf}.bak.tmp" "${conf}.bak"
-    else
+    # Nothing is merged onto a config that does not parse: appending to a
+    # torn file can close its open quote and hand the callers a config that
+    # parses and means nothing. The callers fall back to the .bak, or refuse.
+    # The .bak itself is taken below, from this file, only when the merge
+    # changes it (#308 claude F-CS-18).
+    if ! conf_valid "${conf}"; then
       rm -f "${conf}.bak.tmp"
-      # And nothing is merged onto it: appending to a torn file can close
-      # its open quote and hand the callers a config that parses and means
-      # nothing. The callers fall back to the .bak, or refuse.
       log_to_file "${log_file}" "config is not whole; not taking a .bak from it and not updating it" "WARN"
       return 1
     fi
@@ -399,12 +408,22 @@ update_cloud_sync_config() {
     done < /usr/config/cloud_sync.conf.defaults
     
     # The merged copy replaces the live file only if it parses; otherwise the
-    # live file -- and the .bak beside it -- stay exactly as they were.
-    if conf_valid "${work}" && mv -f "${work}" "${conf}"; then
-      log_to_file "${log_file}" "Configuration file updated while preserving customizations"
-    else
+    # live file -- and the .bak beside it -- stay exactly as they were. And
+    # only if it differs (#308 claude F-CS-18): a run with nothing to add
+    # writes neither the conf nor its .bak. When it does replace it, the
+    # copy of the user's config -- a file that parses, checked above -- is
+    # taken first, whole or not at all.
+    if ! conf_valid "${work}"; then
       rm -f "${work}"
       log_to_file "${log_file}" "merged configuration does not parse; the config was left as it was" "WARN"
+    elif cmp -s "${work}" "${conf}"; then
+      rm -f "${work}"
+    elif cp -f "${conf}" "${conf}.bak.tmp" && mv -f "${conf}.bak.tmp" "${conf}.bak" \
+         && mv -f "${work}" "${conf}"; then
+      log_to_file "${log_file}" "Configuration file updated while preserving customizations"
+    else
+      rm -f "${work}" "${conf}.bak.tmp"
+      log_to_file "${log_file}" "the configuration could not be updated; the config was left as it was" "WARN"
     fi
   else
     # No existing config file, create one with defaults
@@ -449,7 +468,10 @@ main() {
   
   # Remove conflicting --verbose flags from existing user config to prevent parameter conflicts
   # This is needed for users upgrading from older versions where --verbose was used
-  if [ -f "/storage/.config/cloud_sync.conf" ]; then
+  # Only when there is one: sed -i rewrites the file whether or not it
+  # matched (#308 claude F-CS-18).
+  if [ -f "/storage/.config/cloud_sync.conf" ] \
+     && grep -qE -- '--verbose|-v ' /storage/.config/cloud_sync.conf; then
     log_to_file "${log_file}" "Removing conflicting --verbose flags from configuration"
     sed -i 's/--verbose//g' /storage/.config/cloud_sync.conf
     sed -i 's/-v / /g' /storage/.config/cloud_sync.conf

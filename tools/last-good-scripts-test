@@ -3787,4 +3787,22 @@ printf -- '+ /mine/**\n' >> "${RRULES}"
 rh_run
 [ "$(grep -n -x -- '+ /mine/\*\*' "${RRULES}" | cut -d: -f1)" -lt "$(grep -n -x -- '- /\*\*' "${RRULES}" | cut -d: -f1)" ] 2>/dev/null; check $? "a rule the player adds after the upgrade, at the end, is promoted above the catch-all as before" "+ /mine/** at line $(grep -n -x -- '+ /mine/\*\*' "${RRULES}" | cut -d: -f1), the catch-all at $(grep -n -x -- '- /\*\*' "${RRULES}" | cut -d: -f1)"
 
+# A18. #308 claude F-CS-18: the helper runs before every sync, the one after
+#      each game included; when nothing needs changing it writes nothing --
+#      no new conf, no new rules file, no .bak of either.
+echo "    A18. #308 claude F-CS-18: a helper run with nothing to change writes nothing"
+printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/ROCKNIX/Saves"\nBACKUPMETHOD="copy"\n' > "${RH}/storage/.config/cloud_sync.conf"
+printf -- '+ /mine/**\n- /**\n' > "${RRULES}"
+rh_run
+rm -f "${RH}/storage/.config/cloud_sync.conf.bak" "${RRULES}.bak"
+c0=$(stat -c '%i %Y %s' "${RH}/storage/.config/cloud_sync.conf"); r0=$(stat -c '%i %Y %s' "${RRULES}")
+sleep 1
+rh_run
+c1=$(stat -c '%i %Y %s' "${RH}/storage/.config/cloud_sync.conf"); r1=$(stat -c '%i %Y %s' "${RRULES}")
+[ "${c0}" = "${c1}" ] && [ "${r0}" = "${r1}" ] && [ ! -e "${RH}/storage/.config/cloud_sync.conf.bak" ] && [ ! -e "${RRULES}.bak" ] && grep -q 'Checking cloud sync rules file' "${RH}/out"; check $? "a second run over a settled config leaves the conf and the rules file untouched and takes no .bak (rc ${RC})" "conf ${c0} -> ${c1}; rules ${r0} -> ${r1}; .bak: $(ls "${RH}/storage/.config" | grep -c '\.bak$') -- every run rewrote them (F-CS-18)"
+printf 'NEWKEY_TEST="x"\n' >> "${RH}/storage/.config/cloud_sync.conf"
+sed -i '/^RSYNCRMDIR=/d' "${RH}/storage/.config/cloud_sync.conf"
+rh_run
+grep -q '^RSYNCRMDIR=' "${RH}/storage/.config/cloud_sync.conf" && [ -e "${RH}/storage/.config/cloud_sync.conf.bak" ]; check $? "a run that does add a missing key still takes its .bak first and adds it" "RSYNCRMDIR $(grep -c '^RSYNCRMDIR=' "${RH}/storage/.config/cloud_sync.conf") line(s); .bak $([ -e "${RH}/storage/.config/cloud_sync.conf.bak" ] && echo taken || echo missing)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
