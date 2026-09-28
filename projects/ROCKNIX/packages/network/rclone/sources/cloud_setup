@@ -259,6 +259,43 @@ syncpath_problem() {
             return 1
             ;;
     esac
+    # Every part of the path is a folder's name, and the checks below read
+    # the text. A part that is empty (//), . or .. names no folder of its
+    # own: /Mine/Backups/. is /Mine/Backups on a cloud that resolves it,
+    # while its siblings -- <parent>/Backups and <parent>/Content, made from
+    # the text by dirname -- came out as /Mine/Backups/Backups and
+    # /Mine/Backups/Content, inside it: the nesting the sibling check below
+    # exists to stop, walked past (the audit of the fix round, PL-009; gpt
+    # G2-C-04). Refused where it is typed, before any other check reads the
+    # text, with the folder the path would have meant.
+    case "${path}/" in
+        *//*|*/./*|*/../*)
+            local part canon="" try
+            local -a parts=()
+            IFS=/ read -r -a parts <<< "${path#/}"
+            for part in "${parts[@]}"; do
+                case "${part}" in
+                    ""|.) ;;
+                    ..) canon="${canon%/*}" ;;
+                    *) canon="${canon}/${part}" ;;
+                esac
+            done
+            if [ -z "${canon}" ]; then
+                echo "Your cloud folder can't be empty."
+                return 1
+            fi
+            # Offered only as a folder the checks below take: two levels
+            # at least, and not named like its own siblings.
+            try="${canon}"
+            case "${canon#/}" in */*) ;; *) try="${canon}/Saves" ;; esac
+            case "$(printf '%s' "${try##*/}" | tr 'A-Z' 'a-z')" in
+                backups|content) try="${try%/*}/Saves" ;;
+            esac
+            echo "Your cloud folder can't have an empty part, or a part called . or .., in its path."
+            echo "Try ${try}."
+            return 1
+            ;;
+    esac
     # Player-facing, these call it the cloud folder, which is what the
     # interface's row and its refusal dialog call it (G-C-03 claude).
     #

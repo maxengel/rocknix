@@ -10230,6 +10230,89 @@ p7ck "head -c 100 /dev/zero" retroarch 9000 --setenv CORE_MAX_BYTES 1048576
 rm -f "${P7C}/shim/flock"
 printf '%s' "${P7NOTE}" | grep '^dump' | grep -q 'NOT KEPT' && [ ! -e "${P7C}/storage/.cache/log/cores/core.retroarch.9000.4242.gz" ]; check $? "#307 audit G-B-14 (gpt): when the cores folder cannot be locked the dump is not kept, and the note says why" "#307 audit G-B-14: note: $(printf '%s' "${P7NOTE}" | grep '^dump' | cut -c1-120); dump: $([ -e "${P7C}/storage/.cache/log/cores/core.retroarch.9000.4242.gz" ] && echo kept || echo none)"
 
+# ---- audit #307, stream C ---- the audit of the fix round (D-WORKFLOW-060)
+# The fix round's own audit read stream C's first delivery; its findings in
+# stream C's files are graded here, a section each (CF1, CF2, ...), the item
+# named in every check. Each check was written before its fix and seen to
+# FAIL against the script it grades; one that passes on the old script too
+# says "(a control)" -- it fences the fix's own shape (a legitimate folder
+# still accepted, a success that owns the state still published) and is
+# not evidence the fix was needed. The FAIL lines are in the commits.
+echo "  CF. the audit of the fix round, stream C (D-WORKFLOW-060)"
+CF="${TMP}/CF"; mkdir -p "${CF}/src"
+# A file the tree may not have yet (cloud_log_scrub before PL-014) is absent
+# here, and the checks that need it fail; src_of would end the run.
+cf_src() { # <file in the rclone package>
+    if [ "${OLD}" -eq 1 ]; then
+        git -C "${ROOT}" cat-file -e "${BASE_REF}:${RCLONE_REL}/$1" 2>/dev/null || return 0
+    else
+        [ -e "${ROOT}/${RCLONE_REL}/$1" ] || return 0
+    fi
+    src_of "${RCLONE_REL}/$1" "${CF}/src/$1"
+}
+for f in cloud_setup cloud_oauth cloud_log_scrub cloud_content_backup cloud_sync_cleanup_duplicates.sh cloud_backup cloud_sync.conf; do cf_src "${f}"; done
+CFBB=(); CFPATH="/shim:/usr/bin:/bin"
+if [ -n "${BB}" ]; then CFBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB_HOST}" "${BB}"); CFPATH="/shim:/bbin:/usr/bin:/bin"; fi
+
+# cloud_setup whole inside bwrap for CF1 and CF2, as C1 runs it: a stub
+# profile, the shipped config as the device's, a shim rclone whose remote "qa:" is
+# path-based and empty, every call it gets written down.
+CF1="${CF}/1"; mkdir -p "${CF1}/shim" "${CF1}/repo" "${CF1}/storage/.config"
+cp "${CF}/src/cloud_setup" "${CF1}/repo/cloud_setup"
+printf 'export PATH=%s\n' "${CFPATH}" > "${CF1}/profile"
+printf '#!/bin/sh\nexit 0\n' > "${CF1}/shim/logger"
+cat > "${CF1}/shim/rclone" <<'EOR'
+#!/bin/sh
+echo "$*" >> /storage/rclone-calls
+case "$1" in
+  listremotes) [ -e /storage/no-remote ] || echo "qa:" ;;
+  lsd) echo 'ERROR : directory not found' >&2; exit 3 ;;
+  backend) printf '{\n\t"Features": {\n\t\t"BucketBased": false\n\t}\n}\n' ;;
+  *) exit 0 ;;
+esac
+EOR
+chmod +x "${CF1}/shim"/*
+CFCONF="${CF1}/storage/.config/cloud_sync.conf"
+cf1() { # <args...>: cloud_setup in the sandbox; output to CF1/out, rc in RC
+    RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${CF1}/profile" /etc/profile "${CFBB[@]}" \
+        --ro-bind "${CF1}/shim" /shim --ro-bind "${CF1}/repo" /repo --bind "${CF1}/storage" /storage \
+        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --dir /var/log \
+        bash /repo/cloud_setup "$@" > "${CF1}/out" 2>&1; echo $? ) 2>/dev/null )
+}
+cfconf() { grep -E '^(SAVES|SETTINGS|CONTENT)_REMOTE=' "${CFCONF}" | tr '\n' ' '; }
+cfsaid() { tr '\n' ' ' < "${CF1}/out" | cut -c1-180; }
+# CF1. PL-009 (gpt G2-C-04): a cloud folder with an empty, . or .. part is
+# refused before any check reads the text -- /Mine/Backups/. is
+# /Mine/Backups, whose siblings dirname put inside it -- with the folder the
+# path would have meant; a part that only starts with a dot is a folder.
+cp "${CF}/src/cloud_sync.conf" "${CF1}/conf.before"
+for remote in yes no; do
+    if [ "${remote}" = no ]; then : > "${CF1}/storage/no-remote"; else rm -f "${CF1}/storage/no-remote"; fi
+    cp "${CF1}/conf.before" "${CFCONF}"
+    cf1 --set-saves-remote /Mine/Backups/.
+    [ "${RC}" -ne 0 ] && cmp -s "${CFCONF}" "${CF1}/conf.before" && grep -qx 'Try /Mine/Saves.' "${CF1}/out"; check $? "PL-009: the seat's /Mine/Backups/. is refused (a remote configured: ${remote}), the config untouched, with the folder to use: $(head -1 "${CF1}/out")" "PL-009 (a remote configured: ${remote}): --set-saves-remote /Mine/Backups/. rc ${RC}; config: $(cfconf)-- the settings and content folders inside the saves folder; said: $(cfsaid)"
+done
+rm -f "${CF1}/storage/no-remote"
+cf1 --check-syncpath /Mine/Backups/.
+[ "${RC}" -ne 0 ] && grep -qx 'Try /Mine/Saves.' "${CF1}/out"; check $? "PL-009: --check-syncpath refuses it too, where the folder is typed" "PL-009: --check-syncpath /Mine/Backups/.: rc ${RC}; said: $(cfsaid)"
+for pair in '/Mine/./Saves|/Mine/Saves' '/Mine//Saves|/Mine/Saves' '/Mine/Saves/..|/Mine/Saves' '/a/b/../Content|/a/Saves'; do
+    p="${pair%%|*}"; want="${pair#*|}"
+    cp "${CF1}/conf.before" "${CFCONF}"
+    cf1 --set-saves-remote "${p}"
+    [ "${RC}" -ne 0 ] && cmp -s "${CFCONF}" "${CF1}/conf.before" && grep -qx "Try ${want}." "${CF1}/out"; check $? "PL-009: ${p} is refused, the folder offered ${want}" "PL-009: --set-saves-remote ${p}: rc ${RC}; config: $(cfconf); said: $(cfsaid)"
+done
+cp "${CF1}/conf.before" "${CFCONF}"
+cf1 --set-saves-remote /.
+[ "${RC}" -ne 0 ] && cmp -s "${CFCONF}" "${CF1}/conf.before" && grep -qx "Your cloud folder can't be empty." "${CF1}/out"; check $? "PL-009: /. names no folder at all, and is refused as empty" "PL-009: --set-saves-remote /.: rc ${RC}; config: $(cfconf); said: $(cfsaid)"
+# (a control) a part that only starts with a dot is a folder's name.
+for p in /Mine/.hidden/Saves /Mine/..x/Saves; do
+    cp "${CF1}/conf.before" "${CFCONF}"
+    cf1 --set-saves-remote "${p}"
+    [ "${RC}" -eq 0 ] && [ "$(cfconf)" = "SAVES_REMOTE=\"${p}\" SETTINGS_REMOTE=\"${p%/*}/Backups\" CONTENT_REMOTE=\"${p%/*}/Content\" " ]; check $? "PL-009 (a control): ${p} is a folder like any other, stored with its siblings beside it" "PL-009: ${p} was refused or stored wrong: rc ${RC}; config: $(cfconf); said: $(cfsaid)"
+done
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
