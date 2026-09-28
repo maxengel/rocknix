@@ -169,6 +169,12 @@
 #            after-index run leaves when its probe fails, so the next
 #            link-return topup lists the library once for those games
 #            (fork #299, D-UI-104). No probe; exit 0.
+#   listening [--wait N]
+#            whether the proxy's port, 127.0.0.1:8080, is in LISTEN: exit 0
+#            when it is, 1 when not -- read from /proc/net/tcp and tcp6, no
+#            tool run. With --wait it looks N times a second apart. The
+#            unit's ExecStartPost, so the service is started when it can be
+#            reached, not when its process has forked (#308 F-RA-26).
 #   ready    how many games are cached: the count in the client's own
 #            cached_game_ids.txt export (one id per line, rewritten on every
 #            cache change by the service and the client alike), on one line.
@@ -869,6 +875,50 @@ count_ready() {
 
 do_ready() {
     count_ready
+}
+
+# listening [--wait N] (#308 F-RA-26): the unit was Type=simple, so
+# `systemctl start` -- and with it enable, which routes the emulators to
+# the proxy once it returns, and the Before= that holds the interface --
+# returned the moment Python began importing, seconds before the port was
+# bound on a handheld; a launch in that window met a refused connection,
+# which makes rcheevos give up achievements for the session. The unit's
+# ExecStartPost runs this, bounded, so "started" means "listening". The
+# socket table is read, not a tool's output (netstat is not a dependency
+# of anything here); 127.0.0.1, any address, ::1 and ::ffff:127.0.0.1 on
+# port 8080 (1F90) in state LISTEN (0A) count. RAOFFLINEPROXY_PROC_NET
+# stands in for /proc/net (the scripts suite's fixture).
+port_listening() {
+    local F SL LOCAL REM ST REST
+    for F in "${RAOFFLINEPROXY_PROC_NET:-/proc/net}/tcp" "${RAOFFLINEPROXY_PROC_NET:-/proc/net}/tcp6"; do
+        [ -r "${F}" ] || continue
+        while read -r SL LOCAL REM ST REST; do
+            [ "${ST}" = "0A" ] || continue
+            case "${LOCAL}" in
+                0100007F:1F90|00000000:1F90|00000000000000000000000000000000:1F90|00000000000000000000000001000000:1F90|0000000000000000FFFF00000100007F:1F90) return 0 ;;
+            esac
+        done < "${F}"
+    done
+    return 1
+}
+
+do_listening() {
+    local TRIES=1 T=0
+    if [ -n "${1:-}" ]; then
+        if [ "${1}" != "--wait" ] || [ -z "${2:-}" ] || [ -n "${2//[0-9]/}" ]; then
+            echo "usage: raofflineproxy-ctl listening [--wait <seconds>]" >&2
+            exit ${EX_USAGE}
+        fi
+        TRIES="${2}"
+    fi
+    while :; do
+        T=$((T + 1))
+        port_listening && return 0
+        [ "${T}" -lt "${TRIES}" ] || break
+        sleep 1
+    done
+    say "listening: nothing is listening on 127.0.0.1:8080 after ${T} look(s)"
+    return 1
 }
 
 # The games ready for the signed-in account, one id a line into $1: those
@@ -2044,10 +2094,11 @@ case "${1:-}" in
     topup)   do_topup "${2:-}" ;;
     index-offline) do_index_offline ;;
     ready)   do_ready ;;
+    listening) do_listening "${2:-}" "${3:-}" ;;
     images)  do_images "${2:-}" ;;
     refresh) do_refresh "${2:-}" "${3:-}" ;;
     *)
-        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|pending-ids|account|flushed|scan|topup [--after-index]|index-offline|images [--verify]|refresh [--all|--game <id>]|ready}" >&2
+        echo "Usage: raofflineproxy-ctl {enable|disable|start|stop|status|pending|pending-ids|account|flushed|scan|topup [--after-index]|index-offline|images [--verify]|refresh [--all|--game <id>]|listening [--wait <seconds>]|ready}" >&2
         exit 2
     ;;
 esac

@@ -3548,4 +3548,41 @@ UNIT_REL=projects/ROCKNIX/packages/network/raofflineproxy/system.d/raofflineprox
 src_of "${UNIT_REL}" "${DD}/raofflineproxy.service"
 awk '/^\[/{s=$0} s=="[Unit]" && /^StartLimitIntervalSec=60$/{a=1} s=="[Unit]" && /^StartLimitBurst=5$/{b=1} s=="[Service]" && /^StartLimit/{c=1} END{exit !(a && b && !c)}' "${DD}/raofflineproxy.service"; check $? "#308 claude F-RA-20 unit: StartLimitIntervalSec=60 and StartLimitBurst=5 in [Unit], nothing of the start limit in [Service]" "#308 claude F-RA-20 unit: $(grep -n 'StartLimit\|^\[' "${DD}/raofflineproxy.service" | tr '\n' '|')"
 
+# D12b. #308 1-raoffline gpt F-RA-26: the unit is started when the proxy is
+# listening, not when its process has forked. Type=simple made `systemctl
+# start` (and so enable, which sets the routing toggle after it) and the
+# Before= on the interface return the moment Python began importing;
+# ExecStartPost now waits, bounded, for 127.0.0.1:8080 to be in LISTEN,
+# through the ctl's `listening` verb, which reads /proc/net/tcp{,6}
+# (RAOFFLINEPROXY_PROC_NET here) and runs no tool.
+UNIT_REL=projects/ROCKNIX/packages/network/raofflineproxy/system.d/raofflineproxy.service
+src_of "${UNIT_REL}" "${DD}/raofflineproxy.service"
+awk '/^\[/{s=$0} s=="[Service]" && /^ExecStartPost=\/usr\/bin\/raofflineproxy-ctl listening --wait [0-9]+$/{f=1} END{exit !f}' "${DD}/raofflineproxy.service"; check $? "#308 gpt F-RA-26 unit: ExecStartPost waits for the listener (raofflineproxy-ctl listening --wait N)" "#308 gpt F-RA-26 unit: no readiness wait: $(grep -n '^Type=\|^ExecStart' "${DD}/raofflineproxy.service" | tr '\n' '|')"
+if [ "${DT_OK}" -eq 1 ]; then
+DPN="${TS}/procnet"; mkdir -p "${DPN}"
+dproc() { # <tcp line or empty> <tcp6 line or empty>
+    printf '  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n%s' "${1:+   0: $1 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 1 1 0000000000000000 100 0 0 10 0
+}" > "${DPN}/tcp"
+    printf '  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n%s' "${2:+   0: $2 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 2 1 0000000000000000 100 0 0 10 0
+}" > "${DPN}/tcp6"
+}
+TENV=(--setenv RAOFFLINEPROXY_PROC_NET /storage/procnet)
+dproc 0100007F:1F90 ""; tctl listening; DL1=${RC}
+dproc 00000000:1F90 ""; tctl listening; DL2=${RC}
+dproc "" 00000000000000000000000001000000:1F90; tctl listening; DL3=${RC}
+dproc 0100007F:1F91 ""; tctl listening; DL4=${RC}
+printf '  sl  local_address rem_address   st\n   0: 0100007F:1F90 0100007F:9C40 01 00000000:00000000\n' > "${DPN}/tcp"; : > "${DPN}/tcp6"; tctl listening; DL5=${RC}
+[ "${DL1}" -eq 0 ] && [ "${DL2}" -eq 0 ] && [ "${DL3}" -eq 0 ] && [ "${DL4}" -eq 1 ] && [ "${DL5}" -eq 1 ]; check $? "#308 gpt F-RA-26 listening: 127.0.0.1:8080, 0.0.0.0:8080 and [::1]:8080 in LISTEN read as listening; another port, or 8080 only as a connection's end, do not" "#308 gpt F-RA-26 listening: rc ${DL1}/${DL2}/${DL3} (want 0/0/0), ${DL4}/${DL5} (want 1/1)"
+dproc "" ""; : > "${TR}/sleep.log"
+tctl listening --wait 5
+[ "${RC}" -eq 1 ] && [ "$(grep -c . "${TR}/sleep.log")" -eq 4 ]; check $? "#308 gpt F-RA-26 listening --wait 5 with nothing listening: five looks a second apart, then exit 1" "#308 gpt F-RA-26: rc ${RC}; sleeps: $(tr '\n' ',' < "${TR}/sleep.log")"
+rm -f "${TR}/fast-sleep"; dproc "" ""
+( sleep 1.5; dproc 0100007F:1F90 "" ) &
+DT0=$(dnow); tctl listening --wait 10; DTOOK=$(dsince "${DT0}"); wait
+[ "${RC}" -eq 0 ] && awk -v t="${DTOOK}" 'BEGIN{exit !(t < 5)}'; check $? "#308 gpt F-RA-26 listening --wait 10: the listener that appears after 1.5 s is seen, exit 0 after ${DTOOK}s" "#308 gpt F-RA-26: rc ${RC} after ${DTOOK}s"
+touch "${TR}/fast-sleep"; TENV=(); rm -rf "${DPN}"
+else
+    echo "    SKIP  #308 F-RA-26's listening cases: section t did not run"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
