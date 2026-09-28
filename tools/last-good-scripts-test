@@ -10512,6 +10512,35 @@ sa2_conf "${CA3}"; printf '%s\n' '# CONTENT_REMOTE="/Somewhere/Else"' >> "${CA3}
 rm -rf "${CA3}/cloud"/*
 sa2_run "${CA3}" cloud_content_backup nes
 [ "${RC}" -eq 0 ] && [ -f "${CA3}/cloud/ROCKNIX/Content/ROMs/nes/N.nes" ]; check $? "G2-A-03 (gpt): a commented-out assignment beside the real one is no refusal: the ROM goes to /ROCKNIX/Content (rc ${RC})" "G2-A-03 (gpt): rc ${RC}; in the cloud: $(cd "${CA3}/cloud" && find . -type f | tr '\n' ' '); out: $(sa_tail "${CA3}")"
+
+# A54. PL-004 (seats/A-gpt.md G2-A-02, High): the duplicate cleanup's safety
+#      copy was put back over the live conf when it was merely not empty --
+#      a cp that filled the card part-way left a prefix, the cleanup never
+#      ran, and the elif moved the prefix over the untouched, valid file:
+#      the last known good destroyed by its own fallback (D-CLOUD-078). Now
+#      the cleanup runs only over a copy that is whole -- cp's status, a cmp
+#      against the live file, conf_valid -- and a copy that is not leaves the
+#      live file as it was and the run goes on with it. The cleanup here is a
+#      stand-in overlaid at /usr/bin that records that it ran and fails.
+echo "    A54. PL-004: a safety copy that is not whole never replaces the conf, and no cleanup runs without one"
+DC2=$(sa_new pl004); sa_script "${DC2}" cloud_backup cloud_restore cloud_saves_root
+printf '#!/bin/sh\ntouch /ctl/cleanup-ran\nexit 1\n' > "${DC2}/dupclean"; chmod +x "${DC2}/dupclean"
+mkdir -p "${DC2}/storage/roms/gb"; echo s > "${DC2}/storage/roms/gb/A.srm"
+sa2_conf "${DC2}"; printf 'LOG_LEVEL="INFO"\n' >> "${DC2}/storage/.config/cloud_sync.conf"
+cp "${DC2}/storage/.config/cloud_sync.conf" "${DC2}/conf0"
+SA_EXTRA=(--overlay-src /usr/bin --tmp-overlay /usr/bin --ro-bind "${DC2}/dupclean" /usr/bin/cloud_sync_cleanup_duplicates.sh)
+for s in cloud_backup cloud_restore; do
+    for how in "1:fails" "0:says it worked"; do
+        dc2_code=${how%%:*}; dc2_words=${how#*:}
+        cp "${DC2}/conf0" "${DC2}/storage/.config/cloud_sync.conf"; rm -f "${DC2}/ctl/cleanup-ran"
+        printf '%s\t%s\t%s\n' '\.pre-cleanup\.' 40 "${dc2_code}" > "${DC2}/ctl/cpcut"
+        sa2_run "${DC2}" "${s}" --yes --saves-only
+        : > "${DC2}/ctl/cpcut"
+        cmp -s "${DC2}/conf0" "${DC2}/storage/.config/cloud_sync.conf" && [ ! -e "${DC2}/ctl/cleanup-ran" ] && [ "${RC}" -eq 0 ] \
+            && [ -z "$(ls -A "${DC2}/storage/.config" | grep 'pre-cleanup')" ]; check $? "PL-004: ${s}: a safety copy cut at 40 bytes whose cp ${dc2_words} leaves the conf byte for byte, runs no cleanup, leaves no copy behind, and the run goes on (rc ${RC})" "PL-004: ${s}, cp ${dc2_words}: conf $(cmp -s "${DC2}/conf0" "${DC2}/storage/.config/cloud_sync.conf" && echo intact || echo "REPLACED by $(wc -c < "${DC2}/storage/.config/cloud_sync.conf") bytes"); cleanup ran: $([ -e "${DC2}/ctl/cleanup-ran" ] && echo yes || echo no); left: $(ls -A "${DC2}/storage/.config" | grep 'pre-cleanup' | tr '\n' ' '); rc ${RC}; out: $(sa_tail "${DC2}")"
+    done
+done
+SA_EXTRA=()
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
