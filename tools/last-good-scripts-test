@@ -3225,7 +3225,7 @@ c2 --seed-folders
 # nothing outside it; sysfs, uinput and sway are patched per group, never
 # reached. `drive` runs cloud_oauth's own main() with those patches, for the
 # groups that need a serve as a process of its own.
-C3="${CS}/c3"; mkdir -p "${C3}/scratch"; cp "${CS}/src/cloud_oauth" "${C3}/cloud_oauth"
+C3="${CS}/c3"; mkdir -p "${C3}/scratch"; cp "${CS}/src/cloud_oauth" "${C3}/cloud_oauth"; cp "${CS}/src/cloud_remote" "${C3}/cloud_remote"
 cat > "${C3}/cloud_oauth_test.py" <<'EOPY'
 #!/usr/bin/env python3
 # cloud_oauth, graded in-process and as processes, inside a bwrap sandbox with
@@ -3560,6 +3560,67 @@ def taken_port_fails_cleanly():
            "port taken: rc %r, status %r, traceback %r, authorize left running %r (PL-050)" % (rc, st.get("status"), "Traceback" in err, left))
     for p in left:
         os.kill(p, signal.SIGKILL)
+EOPY
+# PL-074: none of rclone's words in cloud_sync.log or the state after a failed create.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+@test
+def rclone_text_stays_out_of_the_log():
+    """#307 PL-074: a failed create logs a fixed sentence, not rclone's stderr."""
+    m, d = load("pl074")
+    m.subprocess = FakeSP([
+        (["listremotes"], lambda a: completed(a, 0, "")),
+        (["config", "create"], lambda a: completed(a, 1, "", "Failed to create: bad token=SECRETVALUE9")),
+    ])
+    m.write_state(status="waiting")
+    s = m.Session("dropbox", "qa", 60)
+    s.proc = fake_authorize("printf 'Paste the following into your remote machine --->\\n{\"access_token\":\"t\"}\\n<---End paste\\n'")
+    s._collect()
+    text = log_text(m)
+    st = m.read_state()
+    ok = "SECRETVALUE9" not in text and "Failed to create" not in text and "could not" in text \
+        and "SECRETVALUE9" not in real_json.dumps(st) and st.get("status") == "failed"
+    result(ok, "a failed create logs a fixed sentence and carries none of rclone's words, in the log or the state (PL-074)",
+           "log: %r; state error: %r -- rclone's stderr reached cloud_sync.log (PL-074)"
+           % (text.strip().splitlines()[-1:] if text else "", st.get("error")))
+EOPY
+# PL-074's source finding in cloud_remote: a failed create logs no value it was given.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+def load_remote(tag="r"):
+    """cloud_remote, its rclone a shim answered by the files in the dir."""
+    path = os.path.join(os.path.dirname(REPO), "cloud_remote")
+    loader = importlib.machinery.SourceFileLoader("cloud_remote_" + tag, path)
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    m = importlib.util.module_from_spec(spec)
+    loader.exec_module(m)
+    d = tempfile.mkdtemp(dir=WORK, prefix=tag + ".")
+    m.LOG_FILE = os.path.join(d, "cloud_sync.log")
+    shim = os.path.join(d, "rclone")
+    with open(shim, "w") as h:
+        h.write('#!/bin/bash\n'
+                'd="$(dirname "$0")"; printf "%s\\n" "$*" >> "$d/argv"\n'
+                'case "$1 $2" in\n'
+                '  "config providers") echo \'[{"Name":"webdav","Options":[{"Name":"url"},{"Name":"pass","IsPassword":true}]}]\' ;;\n'
+                '  "listremotes "*) [ -e "$d/listremotes-fails" ] && { echo "Failed to load config file" >&2; exit 1; }; cat "$d/remotes" 2>/dev/null ;;\n'
+                '  "config create") echo "Failed to create remote: bad option pass=$(echo "$*" | sed -n "s/.*pass=\\([^ ]*\\).*/\\1/p")" >&2; exit 1 ;;\n'
+                '  *) exit 0 ;;\n'
+                'esac\n')
+    os.chmod(shim, 0o755)
+    m.RCLONE = shim
+    return m, d
+
+
+@test
+def remote_create_logs_no_secret():
+    """#307 PL-074's source finding (gpt F-RS-04), which the audit refuted for
+    cloud_oauth and which holds for cloud_remote: a failed create logged its
+    whole argv, key=value pairs and all."""
+    m, d = load_remote("rlog")
+    rc = m.main(["cloud_remote", "create", "qa", "webdav", "url=https://dav.example", "pass=SECRETPASS9"])
+    text = log_text(m)
+    result(rc != 0 and "SECRETPASS9" not in text and "creating remote qa" in text,
+           "a failed cloud_remote create logs no value it was given, and no rclone words carrying one (rc %d)" % rc,
+           "rc %r; cloud_sync.log: %r -- the password reached the log (gpt F-RS-04, PL-074)"
+           % (rc, [l for l in text.splitlines() if "SECRETPASS9" in l][:1] or text.splitlines()[-1:]))
 EOPY
 # C3: new test groups go above this line
 cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'

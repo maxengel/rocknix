@@ -93,8 +93,13 @@ def rclone(*args, check=True):
         capture_output=True, text=True,
     )
     if check and proc.returncode != 0:
-        log("rclone %s failed (%d): %s" % (
-            " ".join(args), proc.returncode, proc.stderr.strip()[:200]))
+        # The verb and the exit code -- never the arguments, never rclone's
+        # words. `config create` carries every key=value the player typed,
+        # passwords among them, and this line put them in cloud_sync.log in
+        # the clear whenever a create failed (audit #307, gpt F-RS-04: the
+        # finding the audit refuted for cloud_oauth holds here).
+        verb = " ".join(args[:2]) if args[:1] == ("config",) else (args[0] if args else "")
+        log("rclone %s failed (%d)" % (verb, proc.returncode))
     return proc.returncode, proc.stdout, proc.stderr
 
 

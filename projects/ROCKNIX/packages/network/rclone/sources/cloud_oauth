@@ -365,7 +365,14 @@ class Session:
              "token=%s" % self.token, "--non-interactive"],
             capture_output=True, text=True)
         if result.returncode != 0:
-            return False, result.stderr.strip()[:200] or "rclone rejected the token"
+            # A fixed sentence, and rclone's exit code in the log -- never its
+            # words. They went to cloud_sync.log as "could not finish the
+            # sign-in: <rclone's stderr>" and into the page, and an rclone
+            # that echoed a parameter would have put the token there (audit
+            # #307 PL-074).
+            log("rclone could not save the remote (exit %d)" % result.returncode)
+            return False, ("The sign-in worked, but it couldn't be saved on "
+                           "your handheld.")
 
         # Prove it before saying so. A token that parses is not a token that
         # works, and cloud_remote takes the same posture.
