@@ -140,6 +140,7 @@ status=0
 # documentation -- so every pattern demands a real-looking value; placeholders
 # in <angle brackets> never match.
 . "$(dirname "$(readlink -f "$0")")/secret-patterns"
+[ -n "${SECRET_PATTERNS:-}" ] || { echo "✖ $(basename "$0"): .githooks/secret-patterns is missing or empty; nothing is scanned, so nothing is allowed" >&2; exit 1; }
 
 # A relative hooksPath means pr/* pushes from a worktree run unguarded. We can
 # only say so from a push that did reach the hook, which is the point: say it
