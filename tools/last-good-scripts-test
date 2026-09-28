@@ -3855,7 +3855,11 @@ src_of "${CHK_REL}" "${P7K}/chksysconfig"
   printf 'logger() { echo "logger $*" >&2; }\nCONFIG_ROOT=%q; DEFAULT_ROOT=%q\nCFG_PATH="${CONFIG_ROOT}/system/configs"; CFG="${CFG_PATH}/system.cfg"; BACKUP="${CFG}.backup"\nrsync() { :; }\n' "${P7K}/cfg" "${P7K}/def"
 } > "${P7K}/fns.sh"
 printf 'system.hostname=DEFAULT\n' > "${P7K}/def/system/configs/system.cfg"
-p7chk() { EXTRACT_ROOT="${P7K}/root" ROMS_ROOT="${P7K}/roms" PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; verify" 2>"${P7K}/err"; }
+# mountpoint is the image's too (claude G-B-04 of the audit of the fixes):
+# chksysconfig's one new external command runs through the image's busybox.
+mkdir -p "${P7K}/bin"
+if [ -n "${BB_HOST}" ]; then printf '#!/bin/sh\nexec %s mountpoint "$@"\n' "${BB_HOST}" > "${P7K}/bin/mountpoint"; chmod +x "${P7K}/bin/mountpoint"; fi
+p7chk() { EXTRACT_ROOT="${P7K}/root" ROMS_ROOT="${P7K}/roms" PATH="${P7K}/bin:${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; verify" 2>"${P7K}/err"; }
 
 # == PL-045: a copy on a folder that is there but not mounted yet is not called missing
 mkdir -p "${P7K}/roms/backup/archive" "${P7K}/root"
@@ -4023,5 +4027,43 @@ ln -s ../../devices/block/mmcblk0/mmcblk0p2 "${P7AM}/sys/class/block/mmcblk0p2";
 echo "/dev/mmcblk0p2 /storage ext4 rw 0 0" > "${P7AM}/mounts"
 PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7AM}/fn.sh'; external_node_present"; p7rc=$?
 [ "${p7rc}" -eq 1 ]; check $? "#308 10-packages-and-build claude F-PB-13: a handheld's /storage on mmcblk0p2 still reads mmcblk0 as internal (rc 1)" "#308 F-PB-13: rc ${p7rc}"
+
+# == AUD chk (#307 audit of the fixes: claude G-B-06 and G-B-04, gpt G-B-05, G-B-08 and G-B-10): the boot's revert says what happened
+P7KR="${P7K}/root"
+p7mark() { # <snapshot or empty> <+paths...>: a fresh mark, a fresh said-file
+    local snap="$1"; shift; rm -f "${P7K}/cfg/.restore-reverted"
+    { printf '%s\n' "${snap}"; for p in "$@"; do printf '+%s\n' "$p"; done; } > "${P7K}/cfg/.restore-in-progress"
+}
+printf 'system.hostname=X\n' > "${P7K}/cfg/system/configs/system.cfg"; cp "${P7K}/cfg/system/configs/system.cfg" "${P7K}/cfg/system/configs/system.cfg.backup"
+mkdir -p "${P7KR}/storage/.config/locked" "${P7K}/snapsrc2/storage/.config/test"
+echo LIVE > "${P7K}/snapsrc2/storage/.config/test/y.cfg"; tar -czf "${P7K}/cfg/pre2.tar.gz" -C "${P7K}/snapsrc2" storage
+ln -sfn /nowhere "${P7KR}/storage/.config/locked/dangling.cfg"; chmod 555 "${P7KR}/storage/.config/locked"
+p7mark "${P7K}/cfg/pre2.tar.gz" /storage/.config/locked/dangling.cfg
+p7chk
+chmod 755 "${P7KR}/storage/.config/locked"
+[ "$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)" = "failed" ]; check $? "#307 audit G-B-06 (claude) / G-B-05 (gpt): a created file the boot cannot remove -- a dangling link in a read-only folder -- makes the revert say failed, not reverted" "#307 audit G-B-05: said '$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)' -- success was said over a file left behind"
+rm -f "${P7KR}/storage/.config/locked/dangling.cfg"
+mkdir -p "${P7KR}/storage/roms/backup"; echo CREATED > "${P7KR}/storage/roms/backup/new.cfg"
+p7mark "" /storage/roms/backup/new.cfg
+EXTRACT_ROOT="${P7KR}" ROMS_ROOT="${P7KR}/storage/roms" PATH="${P7K}/bin:${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; verify" 2>"${P7K}/err"
+[ -e "${P7K}/cfg/.restore-in-progress" ] && [ -e "${P7KR}/storage/roms/backup/new.cfg" ] && [ ! -e "${P7K}/cfg/.restore-reverted" ]; check $? "#307 audit G-B-08 (gpt): a mark with no copy whose created files are under the roms folder waits for its mount too" "#307 audit G-B-08: mark $([ -e "${P7K}/cfg/.restore-in-progress" ] && echo kept || echo removed); new.cfg $([ -e "${P7KR}/storage/roms/backup/new.cfg" ] && echo there || echo removed); said '$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)'"
+p7mark "" /storage/roms/backup/new.cfg
+bwrap --dev-bind / / --bind "${P7KR}/storage/roms" "${P7KR}/storage/roms" env EXTRACT_ROOT="${P7KR}" ROMS_ROOT="${P7KR}/storage/roms" PATH="${P7K}/bin:${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; verify" 2>"${P7K}/err"
+[ ! -e "${P7K}/cfg/.restore-in-progress" ] && [ ! -e "${P7KR}/storage/roms/backup/new.cfg" ] && [ "$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)" = "reverted" ]; check $? "#307 audit G-B-04 (claude): once the roms folder IS mounted -- a bind on the same filesystem, as on a one-card device -- the mark is consumed and the created file removed" "#307 audit G-B-04: mark $([ -e "${P7K}/cfg/.restore-in-progress" ] && echo kept || echo removed); said '$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)'; log: $(tr '\n' '|' < "${P7K}/err" | cut -c1-160)"
+mkdir -p "${P7KR}/storage/roms/backup/archive"; cp "${P7K}/cfg/pre2.tar.gz" "${P7KR}/storage/roms/backup/archive/pre3.tar.gz"; echo HALF > "${P7KR}/storage/.config/test/y.cfg" 2>/dev/null || { mkdir -p "${P7KR}/storage/.config/test"; echo HALF > "${P7KR}/storage/.config/test/y.cfg"; }
+p7mark "${P7KR}/storage/roms/backup/archive/pre3.tar.gz"
+bwrap --dev-bind / / --bind "${P7KR}/storage/roms" "${P7KR}/storage/roms" env EXTRACT_ROOT="${P7KR}" ROMS_ROOT="${P7KR}/storage/roms" PATH="${P7K}/bin:${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; verify" 2>"${P7K}/err"
+[ "$(cat "${P7KR}/storage/.config/test/y.cfg")" = "LIVE" ] && [ "$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)" = "reverted" ]; check $? "#307 audit G-B-04 (claude): a copy on a one-card device's roms folder -- mounted as a bind on the same filesystem -- is put back at the check after the mount" "#307 audit G-B-04: y.cfg '$(cat "${P7KR}/storage/.config/test/y.cfg")'; said '$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)'; mark $([ -e "${P7K}/cfg/.restore-in-progress" ] && echo kept || echo removed) -- the image's mountpoint cannot see a bind within one filesystem"
+rm -f "${P7K}/cfg/.restore-in-progress"
+echo CREATED > "${P7KR}/storage/roms/backup/new.cfg"; p7mark "" /storage/roms/backup/new.cfg
+EXTRACT_ROOT="${P7KR}" ROMS_ROOT="${P7KR}/storage/roms" PROC_MOUNTS=/nonexistent PATH="${P7K}/bin:${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; verify" 2>"${P7K}/err"
+[ ! -e "${P7K}/cfg/.restore-in-progress" ] && [ "$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)" = "reverted" ] && grep -q 'mount table cannot be read' "${P7K}/err"; check $? "#307 audit G-B-04 (claude): with no readable mount table the boot falls back to the folder test and says so, rather than waiting for ever" "#307 audit G-B-04: mark $([ -e "${P7K}/cfg/.restore-in-progress" ] && echo kept || echo removed); said '$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)'; log: $(tr '\n' '|' < "${P7K}/err" | cut -c1-160)"
+rm -f "${P7K}/cfg/.restore-in-progress" "${P7K}/cfg/.restore-reverted"
+printf 'system.hostn' > "${P7K}/cfg/system/configs/system.cfg"; rm -f "${P7K}/cfg/system/configs/system.cfg.backup"
+printf 'system.hostname=MINE\na.b=1\n' > "${P7K}/cfg/system/configs/system.cfg.tmp"
+mkdir -p "${P7K}/mvfail"; printf '#!/bin/bash\ncase "$*" in *system.cfg.tmp*) echo "mv: I/O error" >&2; exit 1 ;; esac\nexec /usr/bin/mv "$@"\n' > "${P7K}/mvfail/mv"; chmod +x "${P7K}/mvfail/mv"
+EXTRACT_ROOT="${P7KR}" ROMS_ROOT="${P7K}/roms" PATH="${P7K}/mvfail:${P7K}/bin:${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; verify" 2>"${P7K}/err"
+[ "$(tr '\n' '|' < "${P7K}/cfg/system/configs/system.cfg.tmp" 2>/dev/null)" = "system.hostname=MINE|a.b=1|" ]; check $? "#307 audit G-B-10 (gpt): when the whole .tmp cannot be moved into place it is kept, not deleted" "#307 audit G-B-10: .tmp $([ -e "${P7K}/cfg/system/configs/system.cfg.tmp" ] && echo kept || echo deleted) -- the only good copy was removed after its move failed"
+rm -f "${P7K}/cfg/system/configs/system.cfg.tmp"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
