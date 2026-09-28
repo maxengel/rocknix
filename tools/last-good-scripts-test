@@ -10541,6 +10541,117 @@ for s in cloud_backup cloud_restore; do
     done
 done
 SA_EXTRA=()
+
+# A55. PL-001 (seats/A-claude.md G2-A-01, High): TIDY UP YOUR CLOUD FOLDERS
+#      compared the conf's raw pointers with /ROCKNIX/Saves and friends, so a
+#      pointer that already named the new folder in another spelling -- a
+#      trailing slash, no leading slash, a doubled slash, a "." component,
+#      another case on a case-insensitive cloud -- read as the old layout:
+#      the check offered the move, and --apply copied the saves onto
+#      themselves, checked them clean against themselves, and deleted the
+#      files it had listed. Now the three pointers are compared as folders
+#      (one spelling: a leading slash, no trailing one, no empty or "."
+#      component, and case folded where the cloud folds it -- or where it
+#      cannot be told), a pointer with ".." is refused, and relocate refuses
+#      a source and destination that are one folder and never lists the
+#      destination's own files when it sits inside the source. The cloud
+#      here is the real rclone over the harness's folder, so what the old
+#      script's same-folder copy did is what rclone does, and the first
+#      check says it.
+echo "    A55. PL-001: a pointer that names the new folder in another spelling is the new folder"
+TL=$(sa_new pl001m); sa_script "${TL}" cloud_migrate_layout
+TLC="${TL}/storage/.config/cloud_sync.conf"
+tl_seed() { # <SAVES_REMOTE> [SETTINGS_REMOTE] [CONTENT_REMOTE]: the current layout in the cloud, pointers as given
+    rm -rf "${TL}/cloud"/* "${TL}/ctl/ci"
+    : > "${TL}/ctl/fail"; : > "${TL}/ctl/kill"; : > "${TL}/ctl/post"; : > "${TL}/ctl/argv"; rm -f "${TL}/ctl/kill.count"
+    printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="%s"\nSETTINGS_REMOTE="%s"\nCONTENT_REMOTE="%s"\nRCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"\n' \
+        "$1" "${2:-/ROCKNIX/Backups}" "${3:-/ROCKNIX/Content}" > "${TLC}"
+    cp "${TLC}" "${TL}/conf0"
+    mkdir -p "${TL}/cloud/ROCKNIX/Saves/gb" "${TL}/cloud/ROCKNIX/Saves/savestates/gb" "${TL}/cloud/ROCKNIX/Backups/QA-deadbeef01" "${TL}/cloud/ROCKNIX/Content/ROMs/gb"
+    echo "a save" > "${TL}/cloud/ROCKNIX/Saves/gb/A.srm"; echo "a state" > "${TL}/cloud/ROCKNIX/Saves/savestates/gb/A.state1"
+    echo archive > "${TL}/cloud/ROCKNIX/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz"
+    echo rom > "${TL}/cloud/ROCKNIX/Content/ROMs/gb/A.gb"
+}
+tl_tree() { (cd "${TL}/cloud" && find . -type f | sort | tr '\n' ' '); }
+tl_whole() { [ -f "${TL}/cloud/ROCKNIX/Saves/gb/A.srm" ] && [ -f "${TL}/cloud/ROCKNIX/Saves/savestates/gb/A.state1" ] \
+    && [ -f "${TL}/cloud/ROCKNIX/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ -f "${TL}/cloud/ROCKNIX/Content/ROMs/gb/A.gb" ]; }
+tl_moved() { grep -cE '^(copy|delete|purge|move|moveto|rmdirs) ' "${TL}/ctl/argv"; }
+# What rclone itself does with the old script's same-folder shape, on the
+# harness's cloud: the copy of a folder onto itself under another spelling
+# exits 0 and changes nothing, and a check of it against itself is clean --
+# nothing in rclone stands between that and the delete that followed. The
+# guard has to be the script's (the orchestrator's note: this is the fact
+# the audit could not read).
+tl_seed "/GAMES"
+cat > "${TL}/repo/samefolder-probe" <<'EOD'
+list=$(mktemp)
+rclone lsf -R --files-only "qa:/ROCKNIX/Saves/" > "${list}"; l=$?
+rclone copy "qa:/ROCKNIX/Saves/" "qa:/ROCKNIX/Saves" --files-from-raw "${list}"; c=$?
+out=$(rclone check "qa:/ROCKNIX/Saves/" "qa:/ROCKNIX/Saves" --files-from-raw "${list}" --one-way 2>&1); k=$?
+printf 'list %s copy %s check %s files %s clean %s\n' "$l" "$c" "$k" "$(wc -l < "${list}")" "$(printf '%s' "${out}" | grep -c '0 differences found')"
+EOD
+sa2_run "${TL}" samefolder-probe
+tl_probe=$(grep '^list ' "${TL}/out")
+[ "${tl_probe}" = "list 0 copy 0 check 0 files 2 clean 1" ] && tl_whole; check $? "PL-001: rclone's copy of qa:/ROCKNIX/Saves/ onto qa:/ROCKNIX/Saves exits 0 and changes nothing, and its check is clean (${tl_probe}): rclone does not refuse it" "PL-001: the same-folder probe gave '${tl_probe:-nothing}' (out: $(sa_tail "${TL}" 3)); cloud now: $(tl_tree) -- rclone's behaviour has changed; re-read the guard's comment"
+# The audit's shape, through the script.
+tl_seed "/ROCKNIX/Saves/"
+sa2_run "${TL}" cloud_migrate_layout --apply
+tl_calls=$(grep -E '^(copy|check|delete|rmdirs) ' "${TL}/ctl/argv" | cut -d' ' -f1-3 | tr '\n' '|')
+tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -eq 3 ]; check $? "PL-001: SAVES_REMOTE=\"/ROCKNIX/Saves/\" is the current layout: --apply copies and removes nothing, leaves the pointer as written, and says so (rc ${RC})" "PL-001: trailing slash, --apply: rc ${RC}; rclone was asked: ${tl_calls:-nothing}; cloud now: $(tl_tree); conf $(cmp -s "${TL}/conf0" "${TLC}" && echo unchanged || echo "changed: $(grep '^SAVES_REMOTE=' "${TLC}")"); out: $(sa_tail "${TL}" 3)"
+tl_seed "/ROCKNIX/Saves/"
+sa2_run "${TL}" cloud_migrate_layout --check
+[ "${RC}" -eq 3 ] && ! grep -q 'Would ' "${TL}/out"; check $? "PL-001: and --check offers nothing, so the row is never shown (rc ${RC})" "PL-001: trailing slash, --check: rc ${RC}; out: $(sa_tail "${TL}" 3)"
+for tl_sp in "ROCKNIX/Saves" "/ROCKNIX//Saves" "/ROCKNIX/./Saves" "//ROCKNIX/Saves//"; do
+    tl_seed "${tl_sp}"
+    sa2_run "${TL}" cloud_migrate_layout --apply
+    tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -eq 3 ]; check $? "PL-001: SAVES_REMOTE=\"${tl_sp}\" is the current layout too: nothing moved, the pointer left (rc ${RC})" "PL-001: '${tl_sp}': rc ${RC}; calls $(tl_moved); cloud now: $(tl_tree); out: $(sa_tail "${TL}" 3)"
+done
+tl_seed "/ROCKNIX/Saves" "/ROCKNIX/Backups/" "ROCKNIX/Content/"
+sa2_run "${TL}" cloud_migrate_layout --apply
+tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -eq 3 ]; check $? "PL-001: the backups and content pointers are compared as folders as well (rc ${RC})" "PL-001: backups/content spelled apart: rc ${RC}; calls $(tl_moved); cloud now: $(tl_tree); out: $(sa_tail "${TL}" 3)"
+# A pointer with ".." cannot be read as one folder: refused, nothing moved.
+tl_seed "/ROCKNIX/Old/../Saves"
+sa2_run "${TL}" cloud_migrate_layout --apply
+tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -eq 4 ] && grep -qx ">>> why YOUR CLOUD SYNC SETTINGS COULDN'T BE READ" "${TL}/out"; check $? "PL-001: a pointer with a .. in it is refused, nothing moved, the why the card knows (rc ${RC})" "PL-001: '..': rc ${RC}; calls $(tl_moved); cloud now: $(tl_tree); out: $(sa_tail "${TL}" 3)"
+# Case: a cloud that folds it (the features say so), and one whose features
+# cannot be read, take /rocknix/saves for /ROCKNIX/Saves; a cloud that
+# keeps case apart (this one) does not, and moves the other folder.
+tl_seed "/rocknix/saves" "/rocknix/backups" "/rocknix/content"; touch "${TL}/ctl/ci"
+sa2_run "${TL}" cloud_migrate_layout --apply
+tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -eq 3 ]; check $? "PL-001: on a case-insensitive cloud /rocknix/saves is /ROCKNIX/Saves: nothing moved (rc ${RC})" "PL-001: case, CaseInsensitive true: rc ${RC}; calls $(tl_moved); conf: $(grep '^SAVES_REMOTE=' "${TLC}"); out: $(sa_tail "${TL}" 3)"
+tl_seed "/rocknix/saves" "/rocknix/backups" "/rocknix/content"
+printf '%s\t%s\n' '^backend features ' 1 > "${TL}/ctl/fail"
+sa2_run "${TL}" cloud_migrate_layout --apply
+tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -eq 3 ]; check $? "PL-001: and so it is when the cloud's features cannot be read -- the safe side (rc ${RC})" "PL-001: case, features unreadable: rc ${RC}; calls $(tl_moved); conf: $(grep '^SAVES_REMOTE=' "${TLC}"); out: $(sa_tail "${TL}" 3)"
+tl_seed "/rocknix/saves" "/rocknix/saves/backup" "/rocknix/Content"
+rm -rf "${TL}/cloud/ROCKNIX"
+mkdir -p "${TL}/cloud/rocknix/saves/gb"; echo "another folder's save" > "${TL}/cloud/rocknix/saves/gb/B.srm"
+sa2_run "${TL}" cloud_migrate_layout --apply
+[ "${RC}" -eq 0 ] && [ -f "${TL}/cloud/ROCKNIX/Saves/gb/B.srm" ] && [ ! -e "${TL}/cloud/rocknix/saves/gb/B.srm" ]; check $? "PL-001: on a cloud that keeps case apart, /rocknix/saves is another folder, and its saves are moved (rc ${RC})" "PL-001: case-sensitive: rc ${RC}; cloud now: $(tl_tree); out: $(sa_tail "${TL}" 3)"
+# relocate itself refuses one folder under two spellings (the guard behind
+# the pointers' compare), lifted from the script into a driver.
+{ sed '$d' "${TL}/repo/cloud_migrate_layout" | sed '$d'; cat <<'EOD'
+MODE=--apply
+remote=$(remote_name)
+read -r -a RCLONE_NET_OPTS_ARRAY <<< "${RCLONE_NET_OPTS_FALLBACK}"
+relocate "${remote}/ROCKNIX/Saves/" "${remote}/ROCKNIX/Saves" "saves" SAVES_REMOTE
+EOD
+} > "${TL}/repo/relocate-driver"
+grep -q '^main "\$@"' "${TL}/repo/relocate-driver" && echo "    (PL-001 driver: main was not cut from the script)"
+tl_seed "/GAMES"
+sa2_run "${TL}" relocate-driver
+tl_whole && [ "$(tl_moved)" -eq 0 ] && cmp -s "${TL}/conf0" "${TLC}" && [ "${RC}" -ne 0 ]; check $? "PL-001: relocate refuses qa:/ROCKNIX/Saves/ onto qa:/ROCKNIX/Saves: nothing copied, removed, or repointed (rc ${RC})" "PL-001: relocate same folder: rc ${RC}; rclone was asked: $(grep -E '^(copy|check|delete|rmdirs) ' "${TL}/ctl/argv" | cut -d' ' -f1-3 | tr '\n' '|'); cloud now: $(tl_tree); conf: $(grep '^SAVES_REMOTE=' "${TLC}")"
+# The new folder inside the old one (a saves folder at /ROCKNIX): a run cut
+# after its copy left /ROCKNIX/Saves holding part of it, and the resume
+# listed that copy as saves to move -- into /ROCKNIX/Saves/Saves.
+tl_seed "/ROCKNIX" "/ROCKNIX/backup" "/ROCKNIX/Content"
+rm -rf "${TL}/cloud/ROCKNIX/Saves/savestates" "${TL}/cloud/ROCKNIX/Backups"
+mkdir -p "${TL}/cloud/ROCKNIX/gb" "${TL}/cloud/ROCKNIX/backup/QA-deadbeef01"
+echo "a save" > "${TL}/cloud/ROCKNIX/gb/A.srm"; echo "a second save" > "${TL}/cloud/ROCKNIX/gb/C.srm"
+echo archive > "${TL}/cloud/ROCKNIX/backup/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz"
+sa2_run "${TL}" cloud_migrate_layout --apply
+[ "${RC}" -eq 0 ] && [ -f "${TL}/cloud/ROCKNIX/Saves/gb/A.srm" ] && [ -f "${TL}/cloud/ROCKNIX/Saves/gb/C.srm" ] && [ ! -e "${TL}/cloud/ROCKNIX/Saves/Saves" ] \
+    && [ -f "${TL}/cloud/ROCKNIX/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ -f "${TL}/cloud/ROCKNIX/Content/ROMs/gb/A.gb" ]; check $? "PL-001: a resumed move into a folder inside the old one moves the rest and never the copy already there, and a content folder already at /ROCKNIX/Content is not moved onto itself (rc ${RC})" "PL-001: nested resume: rc ${RC}; cloud now: $(tl_tree); out: $(sa_tail "${TL}" 3)"
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
