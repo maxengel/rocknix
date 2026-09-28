@@ -729,10 +729,13 @@ def run_steps(dev, root, remote, args, settings, prev_paths):
     # And the run says so: its exit and its own last line are the settings
     # phase's outcome, not the skipped saves phase's (audit #307 PL-028,
     # whose 9-beside-a-failure case is tools/last-good-scripts-test A6).
-    last_sb = [l for l in out_sb.splitlines() if l.strip() and not l.startswith(">>> ") and not l.strip().startswith("=")]
-    failures += not check(rc_sb == 0 and bool(last_sb) and last_sb[-1].strip().endswith("Completed."),
+    # Read by the vocabulary gate's own reader (colour, protocol markers,
+    # rclone's lines and rules off), not a filter of its own (the audit of
+    # the fixes, claude G-A-04).
+    last_sb = last_player_line(out_sb)
+    failures += not check(rc_sb == 0 and last_sb == "Completed.",
                           "the settings backup exited 0 and ended on Completed.",
-                          f"the settings backup exited {rc_sb}, last line {last_sb[-1].strip() if last_sb else '(none)'!r}")
+                          f"the settings backup exited {rc_sb}, last line {last_sb or '(none)'!r}")
 
     # It must land under this device's own folder. A single shared filename is
     # what let the second device to run replace the first device's archive,
