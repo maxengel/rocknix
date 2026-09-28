@@ -10205,7 +10205,9 @@ bwrap --dev-bind / / --bind "${P7KR}/storage/roms" "${P7KR}/storage/roms" env EX
 rm -f "${P7K}/cfg/.restore-in-progress"
 echo CREATED > "${P7KR}/storage/roms/backup/new.cfg"; p7mark "" /storage/roms/backup/new.cfg
 EXTRACT_ROOT="${P7KR}" ROMS_ROOT="${P7KR}/storage/roms" PROC_MOUNTS=/nonexistent PATH="${P7K}/bin:${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; verify" 2>"${P7K}/err"
-[ ! -e "${P7K}/cfg/.restore-in-progress" ] && [ "$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)" = "reverted" ] && grep -q 'mount table cannot be read' "${P7K}/err"; check $? "#307 audit G-B-04 (claude): with no readable mount table the boot falls back to the folder test and says so, rather than waiting for ever" "#307 audit G-B-04: mark $([ -e "${P7K}/cfg/.restore-in-progress" ] && echo kept || echo removed); said '$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)'; log: $(tr '\n' '|' < "${P7K}/err" | cut -c1-160)"
+# The audit of the fix round's PL-016 reversed this case: an unreadable
+# table now waits (the folder test it fell back to is what PL-045 removed).
+[ -e "${P7K}/cfg/.restore-in-progress" ] && [ -e "${P7KR}/storage/roms/backup/new.cfg" ] && [ ! -e "${P7K}/cfg/.restore-reverted" ] && grep -q 'mount table cannot be read' "${P7K}/err"; check $? "#307 audit G-B-04 (claude), as the audit of the fix round's PL-016 has it: with no readable mount table the boot waits and says so -- it does not fall back to the folder test" "#307 audit G-B-04 / PL-016: mark $([ -e "${P7K}/cfg/.restore-in-progress" ] && echo kept || echo removed); said '$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)'; log: $(tr '\n' '|' < "${P7K}/err" | cut -c1-160)"
 rm -f "${P7K}/cfg/.restore-in-progress" "${P7K}/cfg/.restore-reverted"
 printf 'system.hostn' > "${P7K}/cfg/system/configs/system.cfg"; rm -f "${P7K}/cfg/system/configs/system.cfg.backup"
 printf 'system.hostname=MINE\na.b=1\n' > "${P7K}/cfg/system/configs/system.cfg.tmp"
@@ -10417,6 +10419,16 @@ p7reset '  /storage/.config/test/*'
 printf 'password = "   "\npassword = ""\n' > "${P7S}/.config/test/blank.ini"
 p7bt backup
 [ "${RC}" -eq 0 ] && [ -n "$(p7arc)" ]; check $? "audit of the fix round PL-008: and a quoted value of spaces alone is not a sign-in: the backup completes" "PL-008: rc ${RC}; why '$(p7why)'"
+
+# == PL-016: a mount table that cannot be read waits, it does not guess
+echo CREATED > "${P7KR}/storage/roms/backup/new.cfg"; p7mark "" /storage/roms/backup/new.cfg
+EXTRACT_ROOT="${P7KR}" ROMS_ROOT="${P7KR}/storage/roms" PROC_MOUNTS=/nonexistent PATH="${P7K}/bin:${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; verify" 2>"${P7K}/err"
+[ -e "${P7K}/cfg/.restore-in-progress" ] && [ -e "${P7KR}/storage/roms/backup/new.cfg" ] && [ ! -e "${P7K}/cfg/.restore-reverted" ] && grep -q 'mount table cannot be read' "${P7K}/err"; check $? "audit of the fix round PL-016: with the mount table unreadable, a mark whose files are under the roms folder is left for a later check, nothing removed, and the log says why" "PL-016: mark $([ -e "${P7K}/cfg/.restore-in-progress" ] && echo kept || echo removed); new.cfg $([ -e "${P7KR}/storage/roms/backup/new.cfg" ] && echo there || echo removed); said '$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)' -- an existing folder was taken for a mounted one"
+mkdir -p "${P7KR}/storage/roms/backup/archive"; cp "${P7K}/cfg/pre2.tar.gz" "${P7KR}/storage/roms/backup/archive/pre4.tar.gz"
+p7mark "${P7KR}/storage/roms/backup/archive/pre4.tar.gz"
+EXTRACT_ROOT="${P7KR}" ROMS_ROOT="${P7KR}/storage/roms" PROC_MOUNTS=/nonexistent PATH="${P7K}/bin:${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; verify" 2>"${P7K}/err"
+[ -e "${P7K}/cfg/.restore-in-progress" ] && [ ! -e "${P7K}/cfg/.restore-reverted" ] && grep -q 'mount table cannot be read' "${P7K}/err"; check $? "audit of the fix round PL-016: and a copy under the roms folder waits the same way" "PL-016 (copy): mark $([ -e "${P7K}/cfg/.restore-in-progress" ] && echo kept || echo removed); said '$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)'"
+rm -f "${P7K}/cfg/.restore-in-progress" "${P7K}/cfg/.restore-reverted" "${P7KR}/storage/roms/backup/new.cfg"
 
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3

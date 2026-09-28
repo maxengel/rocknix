@@ -127,23 +127,29 @@ finish_restore() {
   # one-card device /storage/roms is a bind of /storage/games-internal/roms
   # -- the same filesystem -- so it never reads as mounted there, and the
   # first cut of PL-045 would have deferred every revert for ever (found
-  # answering the audit of the fixes, claude G-B-04). A table that cannot be
-  # read falls back to the directory test and says so.
-  local roms="${ROMS_ROOT:-/storage/roms}" pending=0 mounted="" p
+  # answering the audit of the fixes, claude G-B-04).
+  #
+  # A table that cannot be read waits, and says so: it used to fall back to
+  # the directory test, the very test PL-045 removed -- an existing folder
+  # on the internal card read as the mounted one, the copy on the card not
+  # mounted yet read as missing, and the mark was consumed (#307, the audit
+  # of the fix round, PL-016). Waiting keeps the mark for a check that can
+  # read the table; guessing loses it.
+  local roms="${ROMS_ROOT:-/storage/roms}" pending=0 mounted="" p told=""
   if [ -r "${PROC_MOUNTS:-/proc/mounts}" ]; then
-    if awk -v m="${roms}" '$2 == m { f = 1 } END { exit !f }' "${PROC_MOUNTS:-/proc/mounts}" 2>/dev/null; then
-      mounted=1
-    else
-      mounted=0
-    fi
+    awk -v m="${roms}" '$2 == m { f = 1 } END { exit !f }' "${PROC_MOUNTS:-/proc/mounts}" 2>/dev/null
+    case $? in
+      0) mounted=1 ;;
+      1) mounted=0 ;;
+    esac
   fi
   under_roms() { # <path>: 0 when it waits for the roms mount
     case "${1}" in
       "${roms}"/*)
         if [ -z "${mounted}" ]; then
-          say "the mount table cannot be read; the roms folder's mount is judged by its folders instead"
-          [ -d "$(dirname "${1}")" ] || return 0
-          return 1
+          [ -n "${told}" ] || say "the mount table cannot be read, so whether the roms folder is mounted is not known; a restore's files there wait for a later check"
+          told=1
+          return 0
         fi
         [ "${mounted}" -eq 0 ] ;;
       *) return 1 ;;
