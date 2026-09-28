@@ -3900,4 +3900,24 @@ chmod 755 "${M}/storage/roms/gb/sub"
 gm_removed=$(sed -n 's/^>>> removed //p' "${M}/out" | tail -1)
 [ ! -e "${M}/storage/roms/gb/B.gb" ] && [ -e "${M}/storage/roms/gb/sub/C.gb" ] && [ "${gm_removed%%|*}" = 1 ] && [ "$(echo "${gm_removed}" | cut -d'|' -f2)" = 3 ]; check $? "one of the two could not be removed: >>> removed says 1 file, 3 bytes, not the plan's 2 (rc ${RC})" "removed line '${gm_removed}'; B.gb $([ -e "${M}/storage/roms/gb/B.gb" ] && echo kept || echo gone), sub/C.gb $([ -e "${M}/storage/roms/gb/sub/C.gb" ] && echo kept || echo gone) -- the totals were the plan's, counted before the delete ran (F-CS-26)"
 
+# A25. The seats' gpt F-CS-02 (Critical, in no stream's brief): the saves
+#      allowlist claims N64's .fla (+ /**/*.fla, #89), and the content tier
+#      must leave what the saves tier owns -- never upload it, never count
+#      it, and never let a match remove it.
+echo "    A25. gpt F-CS-02: an N64 .fla save is the saves tier's, never content's"
+FL=$(sa_new fla); sa_script "${FL}" cloud_content_backup cloud_content_restore
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/ROCKNIX/Content"\n' > "${FL}/storage/.config/cloud_sync.conf"
+mkdir -p "${FL}/storage/roms/n64" "${FL}/storage/.config/emulationstation" "${FL}/cloud/ROCKNIX/Content/ROMs/gb"
+printf '<system><path>/storage/roms/n64</path></system>\n' > "${FL}/storage/.config/emulationstation/es_systems.cfg"
+echo rom > "${FL}/storage/roms/n64/Game.z64"; echo "flash save" > "${FL}/storage/roms/n64/Game.fla"
+echo a > "${FL}/cloud/ROCKNIX/Content/ROMs/gb/A.gb"
+sa_run "${FL}" cloud_content_backup n64
+[ -f "${FL}/cloud/ROCKNIX/Content/ROMs/n64/Game.z64" ] && [ ! -e "${FL}/cloud/ROCKNIX/Content/ROMs/n64/Game.fla" ]; check $? "a content backup of n64 sends the ROM and not its .fla save (rc ${RC})" "in the cloud: $(ls "${FL}/cloud/ROCKNIX/Content/ROMs/n64" 2>/dev/null | tr '\n' ' ') -- .fla is missing from SAVE_EXCLUDES"
+rm -rf "${FL}/cloud/ROCKNIX/Content/ROMs/n64"
+printf 'n64\n' > "${FL}/storage/.cache/cloud_sync/content-systems"
+sa_run "${FL}" cloud_content_restore --match
+fl_plan=$(grep '^n64|' "${FL}/out")
+sa_run "${FL}" cloud_content_restore --match --apply
+[ -f "${FL}/storage/roms/n64/Game.fla" ] && [ ! -e "${FL}/storage/roms/n64/Game.z64" ] && [ "${fl_plan}" = "n64|remove|1|4" ]; check $? "a match of n64 against a cloud without it plans the ROM alone (${fl_plan}) and leaves the .fla save (rc ${RC})" "plan '${fl_plan}'; Game.fla $([ -f "${FL}/storage/roms/n64/Game.fla" ] && echo kept || echo DELETED) -- a save the saves tier owns was removed as content (gpt F-CS-02)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

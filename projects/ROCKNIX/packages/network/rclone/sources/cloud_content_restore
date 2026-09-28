@@ -469,11 +469,13 @@ sizes_under() {
 # The earlier allowlist fix (d77d4ea44d) covered directories another tier
 # owns. This is the same rule one level down, for files. Kept in step with
 # cloud_sync-rules.txt by hand -- there is no shared parser, and a pattern
-# added there must be added here.
+# added there must be added here. .fla was added there (#89, N64's flash
+# saves beside the ROM) and not here, so a content backup uploaded it and
+# a match removed it as content (the audit's gpt F-CS-02).
 SAVE_EXCLUDES=(
     --exclude "*.srm" --exclude "*.sav" --exclude "*.fs"
     --exclude "*.state*" --exclude "*.auto" --exclude "*.dsv*"
-    --exclude "*.eep" --exclude "*.mpk" --exclude "*.sra"
+    --exclude "*.eep" --exclude "*.mpk" --exclude "*.sra" --exclude "*.fla"
     --exclude "*.mcd" --exclude "*.mcr"
     --exclude "save/**" --exclude "memcards/**"
     --exclude "shared/savefiles/**" --exclude "PPSSPP/**"
@@ -971,7 +973,7 @@ content_files() {
     find "${dir}" -type f \
         ! -name '*.srm' ! -name '*.sav' ! -name '*.fs' ! -name '*.state*' \
         ! -name '*.auto' ! -name '*.dsv*' ! -name '*.eep' ! -name '*.mpk' \
-        ! -name '*.sra' ! -name '*.mcd' ! -name '*.mcr' \
+        ! -name '*.sra' ! -name '*.fla' ! -name '*.mcd' ! -name '*.mcr' \
         ! -path '*/save/*' ! -path '*/memcards/*' \
         ! -path '*/shared/savefiles/*' ! -path '*/PPSSPP/*' \
         ! -path '*conflicted copy*' ! -name '*.sync-conflict-*' \
@@ -1022,7 +1024,7 @@ cloud_content_filter() {
           game = (n > 2 && seg[2] ~ dirs) || (n == 2 && f == "gamelist.xml")
           if (mode == "roms" && game) next
           if (mode == "only" && !game) next
-          if (f ~ /\.(srm|sav|fs|auto|eep|mpk|sra|mcd|mcr)$/ || f ~ /\.state/ || f ~ /\.dsv/) next
+          if (f ~ /\.(srm|sav|fs|auto|eep|mpk|sra|fla|mcd|mcr)$/ || f ~ /\.state/ || f ~ /\.dsv/) next
           if ($2 ~ /conflicted copy/ || f ~ /\.sync-conflict-/) next
           if (f == "README.txt") next
           if (n > 2 && (seg[2] == "save" || seg[2] == "memcards" || seg[2] == "PPSSPP")) next
