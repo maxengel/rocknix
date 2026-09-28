@@ -3585,4 +3585,41 @@ else
     echo "    SKIP  #308 F-RA-26's listening cases: section t did not run"
 fi
 
+# D13a. #308 1-raoffline gpt F-RA-27 (patch 008): only a JSON true opts in to
+# the automatic log upload -- "false", 1 and "yes" do not -- on the patched
+# tree section t built.
+if [ "${DT_OK}" -eq 1 ]; then
+RAOFFLINEPROXY_CONFIG_DIR="${DD}/d13a-cfg" PYTHONPATH="${CLIENT}" python3 -  > "${DD}/d13a.out" 2>&1 <<'EOS'
+import json, os, socket, struct, sys, threading, time, zlib, importlib.machinery, importlib.util
+from pathlib import Path
+Path(os.environ["RAOFFLINEPROXY_CONFIG_DIR"]).mkdir(parents=True, exist_ok=True)
+def verdict(ok, name, detail=""):
+    print(("PASS " if ok else "FAIL ") + name + (f" -- {detail}" if detail and not ok else ""))
+from raofflineproxy import image_cache, network, proxy_service, storage_corruption
+# 008 / F-RA-27
+uploads = []
+saved = proxy_service.log_uploader.report_storage_corruption
+proxy_service.log_uploader.report_storage_corruption = lambda incident: uploads.append(incident) or "up-1"
+try:
+    got = {}
+    for label, value in (("string false", "false"), ("number 1", 1), ("string yes", "yes"), ("true", True)):
+        (Path(os.environ["RAOFFLINEPROXY_CONFIG_DIR"]) / "storage_corruption.json").write_text(json.dumps({"detected_at": 1, "quarantined_path": "x", "reason": "r", "size_bytes": 1, "lost_pending_awards": None, "reported": False, "upload_id": None, "notified": False}))
+        uploads.clear()
+        proxy_service.retry_storage_corruption_report({"upload_logs": value})
+        got[label] = len(uploads)
+    verdict(got == {"string false": 0, "number 1": 0, "string yes": 0, "true": 1}, "F-RA-27 upload opt-in: only a JSON true sends the report", f"uploads by value: {got}")
+finally:
+    proxy_service.log_uploader.report_storage_corruption = saved
+EOS
+grep -q '^\(PASS\|FAIL\) ' "${DD}/d13a.out"; check $? "stream D's d13a predicates ran ($(grep -c '^PASS' "${DD}/d13a.out") PASS / $(grep -c '^FAIL' "${DD}/d13a.out") FAIL)" "stream D's d13a predicates printed no verdicts: $(tail -5 "${DD}/d13a.out" | tr '\n' '|' | cut -c1-300)"
+while IFS= read -r line; do
+    case "${line}" in
+        PASS\ *) check 0 "#308 ${line#PASS }" "" ;;
+        FAIL\ *) check 1 "" "#308 ${line#FAIL }" ;;
+    esac
+done < "${DD}/d13a.out"
+else
+    echo "    SKIP  the d13a predicates: section t did not run"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
