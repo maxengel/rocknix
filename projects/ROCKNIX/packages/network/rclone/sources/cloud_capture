@@ -779,8 +779,14 @@ fi
 NOW="$(date -u +%FT%TZ)"
 _z="$(date +%z)"
 LOCAL_NOW="$(date +%FT%T)${_z:0:3}:${_z:3:2}"
+# Bounded, as cloud_net_ready bounds nmcli (#308 claude F-CS-20): a D-Bus
+# call timedated does not answer waits sd-bus's 25 s, and the exit capture
+# runs synchronously on the game-exit path. Two seconds, then "not synced"
+# -- the answer the entry already gives when it cannot tell. With KILL: this
+# script ignores SIGTERM (the trap at the top) and timedatectl inherits
+# that, so timeout's default signal would end nothing.
 SYNCED="false"
-[ "$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" = "yes" ] && SYNCED="true"
+[ "$(timeout -s KILL 2 timedatectl show -p NTPSynchronized --value 2>/dev/null)" = "yes" ] && SYNCED="true"
 
 DEVICE_LABEL=""
 [ -x "${DEVICE_ID_BIN}" ] && DEVICE_LABEL="$("${DEVICE_ID_BIN}" --label 2>/dev/null | tr -cd 'A-Za-z0-9_.-')"

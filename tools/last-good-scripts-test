@@ -3502,7 +3502,9 @@ cp_seed() {
     echo "the save" > "${CP}/storage/roms/gb/Game.srm"
     echo "state one" > "${CP}/storage/roms/savestates/gb/Game.state1"
 }
-printf '#!/bin/sh\n[ -e /ctl/slowclock ] && sleep 30\necho no\n' > "${SA}/shim/timedatectl"; chmod +x "${SA}/shim/timedatectl"
+# timedatectl as timedated leaves it when it does not answer: one process,
+# silent for 30 s (exec, so a bound that ends it ends the call).
+printf '#!/bin/sh\n[ -e /ctl/slowclock ] && exec sleep 30\necho no\n' > "${SA}/shim/timedatectl"; chmod +x "${SA}/shim/timedatectl"
 cp_exit() { sa_run "${CP}" cloud_capture --system gb --rom /storage/roms/gb/Game.gb --emulator retroarch --core gambatte --started 0 --exit 0; }
 # PL-052 (F-CS-04 gpt): a relative --retire argument is refused, and the
 # unlink acts on the saves folder's own path, never the working directory's.
@@ -3527,5 +3529,11 @@ echo "a seal another capture just placed" > "${CP}/storage/.cache/cloud_sync/sta
 echo "state one, rewritten" > "${CP}/storage/roms/savestates/gb/Game.state1"
 cp_exit
 [ -f "${CP}/storage/.cache/cloud_sync/stage/$(printf 'x%.0s' 1 | sha256sum | cut -c1-64)" ]; check $? "PL-067: a stage seal placed moments ago and not yet in the manifest survives another capture's GC" "the fresh seal was collected -- another capture's pending version (F-CS-14)"
+
+# #308 claude F-CS-20: the clock query on the game-exit path is bounded.
+cp_seed; touch "${CP}/ctl/slowclock"
+cp_exit
+rm -f "${CP}/ctl/slowclock"
+[ "${DT}" -lt 10 ] && [ "${RC}" -eq 0 ] && jq -e '.entries["gb/Game.srm"].clock_synced == false' "${CPM}" >/dev/null 2>&1; check $? "F-CS-20: a clock service that never answers holds the exit capture ${DT}s, not its 30, and the version records clock_synced false (rc ${RC})" "took ${DT}s, rc ${RC} -- timedatectl ran unbounded on the synchronous game-exit path"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
