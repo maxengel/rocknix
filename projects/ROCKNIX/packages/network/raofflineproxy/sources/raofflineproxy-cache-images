@@ -48,7 +48,11 @@
 #
 # The ceiling is time (--seconds, default 300). A run that leaves images
 # behind says how many and exits 1, the way a scan that could not finish does
-# (#186 PL-24): a partial pass is never reported as a complete one. Exit 2 is
+# (#186 PL-24): a partial pass is never reported as a complete one. Exit 3 is
+# every image there but a verify sweep that did not come round the store this
+# run -- the slice a run D-RA-024 designed, named apart from a failure because
+# exit 1 is also what Python gives a helper that dies of an exception, and the
+# ctl must not read a crash as the sweep working. Exit 2 is
 # a precondition this could not meet (no store, no account). Exit 130 is a
 # cancel -- SIGINT, the scan page's CANCEL, however the helper was started:
 # the downloads not yet started are dropped and the process ends without
@@ -315,7 +319,7 @@ def main() -> int:
     if not missing:
         tell("note NOTHING_MISSING")
         tell("done 0|0")
-        return 1 if verify_left else 0
+        return 3 if verify_left else 0
 
     deadline = budget_end
     fetched = 0
@@ -376,7 +380,9 @@ def main() -> int:
     if left:
         tell("why SOME_IMAGES_NOT_SAVED")
     tell(f"done {fetched}|{len(left)}")
-    return 1 if (left or verify_left) else 0
+    if left:
+        return 1
+    return 3 if verify_left else 0
 
 
 def leave(code: int) -> None:

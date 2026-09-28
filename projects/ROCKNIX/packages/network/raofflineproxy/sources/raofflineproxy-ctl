@@ -1628,12 +1628,12 @@ cancelled() {
 # -- the helper's `why` line, or an exit it gives no reason for -- leaves
 # R_IMAGES_WHY=SOME_IMAGES_NOT_SAVED for the caller to stamp, the games
 # still counted as cached. A verify slice that did not come round the store
-# (exit 1 with no why) is the sweep doing its work a slice a run, by design
-# (D-RA-024), and is no failure.
+# (the helper's exit 3) is the sweep doing its work a slice a run, by design
+# (D-RA-024), and is no failure; every other exit is, a crash included.
 IMAGE_PASS_SECONDS="${RAOFFLINEPROXY_IMAGE_PASS_SECONDS:-300}"
 
 run_image_pass() {
-    local VERB="$1" SECONDS_LEFT="${2:-${IMAGE_PASS_SECONDS}}" MODE="${3:-}" RC=0 WHY_LINE=""
+    local VERB="$1" SECONDS_LEFT="${2:-${IMAGE_PASS_SECONDS}}" MODE="${3:-}" RC=0
     R_IMAGES_WHY=""
     [ -x "${IMAGE_HELPER}" ] || { slog "${VERB}: no image helper at ${IMAGE_HELPER}"; return 0; }
     [ "${SECONDS_LEFT}" -gt 10 ] 2>/dev/null || { slog "${VERB}: no time left for the image pass (${SECONDS_LEFT}s)"; return 0; }
@@ -1645,25 +1645,18 @@ run_image_pass() {
     # pass before the run could answer either (#307 PL-013, #308 F-RA-11).
     # wait returns the moment a trapped signal arrives, and CLIENT is what
     # the EXIT trap ends.
-    # Its protocol lines go to a file of their own first, so the verdict can
-    # be read from them, then to the log. The EXIT traps remove the file.
-    IMAGES_OUT="$(mktemp /tmp/raofflineproxy-images.XXXXXX 2>/dev/null)" || IMAGES_OUT=""
     # shellcheck disable=SC2086 -- MODE is one flag or empty, on purpose
-    "${IMAGE_HELPER}" --seconds "${SECONDS_LEFT}" ${MODE} >"${IMAGES_OUT:-/dev/null}" 2>>"${SCAN_LOG}" &
+    "${IMAGE_HELPER}" --seconds "${SECONDS_LEFT}" ${MODE} >>"${SCAN_LOG}" 2>&1 &
     CLIENT=$!
     wait "${CLIENT}" || RC=$?
     unset CLIENT
-    if [ -n "${IMAGES_OUT}" ]; then
-        cat "${IMAGES_OUT}" >> "${SCAN_LOG}" 2>/dev/null
-        WHY_LINE="$(sed -n 's/^>>> why //p' "${IMAGES_OUT}" | tail -n 1)"
-        rm -f "${IMAGES_OUT}"
-    fi
-    # rc 1 with no why is a verify slice left; any other failure -- or a
-    # rc 1 whose lines could not be kept to read -- is images left behind.
-    if [ "${RC}" -ne 0 ] && { [ "${RC}" -ne 1 ] || [ -n "${WHY_LINE}" ] || [ -z "${IMAGES_OUT}" ]; }; then
-        R_IMAGES_WHY=SOME_IMAGES_NOT_SAVED
-    fi
-    IMAGES_OUT=""
+    # 0: every image there. 3: every image there, a verify slice left for
+    # the next pass. Anything else -- images left behind (1), no store or
+    # account (2), a helper that died -- is the pass not done.
+    case "${RC}" in
+        0|3) ;;
+        *) R_IMAGES_WHY=SOME_IMAGES_NOT_SAVED ;;
+    esac
     slog "${VERB}: image pass rc=${RC}${R_IMAGES_WHY:+ why=${R_IMAGES_WHY}}"
     return "${RC}"
 }
@@ -1750,7 +1743,7 @@ do_scan() {
     local LIST
     LIST="$(mktemp /tmp/raofflineproxy-scan.XXXXXX)" || fail "cannot create the list"
     # Everything of the run's goes when the run does, however it ends.
-    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}" "${IMAGES_OUT:-}" "${READY_BEFORE:-}" "${READY_AFTER:-}" "${RUNNING}" "${RUNNING}.tmp"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
+    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}" "${READY_BEFORE:-}" "${READY_AFTER:-}" "${RUNNING}" "${RUNNING}.tmp"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
 
     local COUNTS
     R_IMAGES_WHY=""
@@ -1933,7 +1926,7 @@ do_topup() {
 
     local LIST
     LIST="$(mktemp /tmp/raofflineproxy-topup.XXXXXX)" || fail "cannot create the list"
-    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}" "${SC_OUT:-}" "${IMAGES_OUT:-}" "${READY_BEFORE:-}" "${READY_AFTER:-}" "${RUNNING}" "${RUNNING}.tmp"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
+    trap 'rm -f "${LIST}" "${JOBS_FIFO:-}" "${SC_OUT:-}" "${READY_BEFORE:-}" "${READY_AFTER:-}" "${RUNNING}" "${RUNNING}.tmp"; [ -n "${CLIENT:-}" ] && kill "${CLIENT}" 2>/dev/null' EXIT
     mark_running
     # The games ready for this account before either pass, for added=.
     READY_BEFORE="$(mktemp /tmp/raofflineproxy-ready.XXXXXX 2>/dev/null)" && { ready_games_into "${READY_BEFORE}" || { rm -f "${READY_BEFORE}"; READY_BEFORE=""; }; }

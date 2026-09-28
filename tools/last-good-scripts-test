@@ -3045,7 +3045,8 @@ dnow() { date +%s.%N; }
 dsince() { awk -v a="$1" -v b="$(dnow)" 'BEGIN{printf "%.2f", b - a}'; }
 # A stand-in for raofflineproxy-cache-images beside the ctl, driven by
 # /run/images-mode: "ok" (exit 0), "fail" (the helper's own failure lines,
-# exit 1), "verify-left" (a verify slice left, no why, exit 1), "cancel" (the
+# exit 1), "verify-left" (a verify slice left, no why, exit 3), "crash" (a
+# traceback and Python's exit 1, no protocol line), "cancel" (the
 # page's CANCEL: SIGINT to the ctl through the lock's pid, then a real 20 s),
 # "hang" (a real 20 s); every start is logged with its pid and a real time.
 dfake_images() {
@@ -3056,7 +3057,8 @@ echo "start $(date +%s.%N) budget=${FAKE_BUDGET:-none} $*" >> /run/images-calls
 trap 'echo "term $(date +%s.%N)" >> /run/images-calls; exit 143' TERM
 case "$(cat /run/images-mode 2>/dev/null || echo ok)" in
     fail) printf '>>> doing images\n>>> total 3\n>>> why SOME_IMAGES_NOT_SAVED\n>>> done 0|3\n'; exit 1 ;;
-    verify-left) printf '>>> doing images\n>>> verified 10|40\n>>> note VERIFY_LEFT 30\n>>> total 0\n>>> note NOTHING_MISSING\n>>> done 0|0\n'; exit 1 ;;
+    verify-left) printf '>>> doing images\n>>> verified 10|40\n>>> note VERIFY_LEFT 30\n>>> total 0\n>>> note NOTHING_MISSING\n>>> done 0|0\n'; exit 3 ;;
+    crash) printf '>>> doing images\n'; echo 'Traceback (most recent call last):' >&2; exit 1 ;;
     cancel) kill -INT "$(head -n 1 /var/run/raofflineproxy-scan.lock)"; i=0; while [ "$i" -lt 20 ]; do /bin/sleep 1; i=$((i+1)); done; echo "done $(date +%s.%N)" >> /run/images-calls; exit 0 ;;
     hang) i=0; while [ "$i" -lt 20 ]; do /bin/sleep 1; i=$((i+1)); done; echo "done $(date +%s.%N)" >> /run/images-calls; exit 0 ;;
 esac
@@ -3365,7 +3367,7 @@ fi
 # working), so a pass that left images behind makes the run COULDN'T FINISH
 # with its why (SOME_IMAGES_NOT_SAVED, D-UI-030) -- and a scan with no new
 # game still runs it, so pressing SCAN again repairs what the last pass left.
-# A verify slice the pass did not finish (exit 1 with no why) is the sweep
+# A verify slice the pass did not finish (exit 3, since 06b) is the sweep
 # working through the store a slice a run, by design (D-RA-024), not a failure.
 if [ "${DT_OK}" -eq 1 ]; then
 dfake_images; printf "${DCFG_ON}" > "${TCFG}"; TENV=()
@@ -3384,10 +3386,68 @@ tctl topup --after-index
 [ "${RC}" -eq 1 ] && grep -q ' 1 topup cached=2 .*why=SOME_IMAGES_NOT_SAVED$' "${TSTAMP}"; check $? "PL-060: a top-up whose image pass left images behind ends rc 1, why SOME_IMAGES_NOT_SAVED" "PL-060: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null)"
 treset; touch -d '2 hours ago' "${TMARK}"; echo verify-left > "${TR}/images-mode"
 tctl topup --after-index
-[ "${RC}" -eq 0 ] && grep -q ' 0 topup cached=2 ' "${TSTAMP}" && ! grep -q 'why=' "${TSTAMP}"; check $? "PL-060: a top-up whose verify slice did not come round the store (exit 1, no why) finished (rc 0) -- the sweep takes several runs by design" "PL-060: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null)"
+[ "${RC}" -eq 0 ] && grep -q ' 0 topup cached=2 ' "${TSTAMP}" && ! grep -q 'why=' "${TSTAMP}"; check $? "PL-060: a top-up whose verify slice did not come round the store (the helper's exit 3) finished (rc 0) -- the sweep takes several runs by design" "PL-060: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null)"
 rm -f "${TR}/images-mode" "${TR}/images-calls"
 else
     echo "    SKIP  PL-060's cases: section t did not run"
+fi
+
+# D6b. Found while fixing PL-060: the image helper said "a verify slice is
+# left" with exit 1 and no why line -- and exit 1 with no why is also what
+# Python gives a helper that dies of an uncaught exception, so a crash
+# would have read as the sweep working and the run as COMPLETED. The helper
+# now says a verify slice left with exit 3 (D-RA-024's "exits non-zero"
+# still holds), and every other failure -- a crash included -- is images
+# left behind.
+if [ "${DT_OK}" -eq 1 ]; then
+dfake_images; printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+treset; touch -d '2 hours ago' "${TMARK}"; echo crash > "${TR}/images-mode"
+tctl topup --after-index
+[ "${RC}" -eq 1 ] && grep -q ' 1 topup cached=2 .*why=SOME_IMAGES_NOT_SAVED$' "${TSTAMP}"; check $? "a top-up whose image helper crashed (a traceback, exit 1, no protocol line) ends rc 1, why SOME_IMAGES_NOT_SAVED -- not read as a verify slice left" "rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null) -- a crash read as the sweep working"
+rm -f "${TR}/images-mode"
+else
+    echo "    SKIP  the verify exit cases: section t did not run"
+fi
+# The helper itself: a verify pass that stops at its half of the budget
+# with files left to verify and nothing missing exits 3, and says so.
+if [ "${DT_OK}" -eq 1 ]; then
+python3 - "${DD}/raofflineproxy-cache-images" "${CLIENT}" "${DD}/images" > "${DD}/d6b.out" 2>&1 <<'EOS'
+import os, subprocess, sys, time
+from pathlib import Path
+helper, client, work = sys.argv[1], sys.argv[2], Path(sys.argv[3])
+cfg = work / "cfg-verify"; cfg.mkdir(parents=True, exist_ok=True)
+site = work / "site-verify"; site.mkdir(exist_ok=True)
+# Every file present and whole, and verifying one takes a tenth of a second:
+# with --seconds 1 the verify half-budget ends long before the 40 are done.
+(site / "sitecustomize.py").write_text(
+    "import time\n"
+    "import raofflineproxy.auth as _auth\n"
+    "_auth.resolve_credentials = lambda *a, **k: {'user': 'qa', 'token': 't'}\n"
+    "import raofflineproxy.image_cache as _ic\n"
+    "_real = _ic.png_problem if hasattr(_ic, 'png_problem') else None\n"
+    "def _slow(payload):\n"
+    "    time.sleep(0.1)\n"
+    "    return None\n"
+    "_ic.png_problem = _slow\n")
+os.environ["RAOFFLINEPROXY_CONFIG_DIR"] = str(cfg)
+sys.path.insert(0, client)
+import json, struct, zlib
+from raofflineproxy import cache_keys, image_cache
+from raofflineproxy.storage import Storage
+st = Storage()
+badges = [{"ID": 6000 + i, "Flags": 3, "BadgeURL": f"https://media.retroachievements.org/Badge/{9200 + i}.png"} for i in range(40)]
+st.upsert_cache(cache_keys.patch(2, "qa"), json.dumps({"Success": True, "PatchData": {"ID": 2, "Achievements": badges}}))
+st.close()
+def _chunk(t, d): return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+PNG = b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)) + _chunk(b"IDAT", zlib.compress(b"\x00\xff\x00\x00" * 40)) + _chunk(b"IEND", b"")
+for i in range(40):
+    f = image_cache.STATIC_DIR / "Badge" / f"{9200 + i}.png"; f.parent.mkdir(parents=True, exist_ok=True); f.write_bytes(PNG)
+env = dict(os.environ, PYTHONPATH=f"{site}:{client}", HOME=str(work))
+p = subprocess.run([sys.executable, helper, "--seconds", "1", "--verify"], env=env, capture_output=True, text=True, timeout=60)
+out = p.stdout
+print(f"{'PASS' if p.returncode == 3 and '>>> note VERIFY_LEFT' in out and '>>> why' not in out else 'FAIL'} verify-left: exit {p.returncode}; {' | '.join(l for l in out.splitlines() if 'VERIFY' in l or 'why' in l)}")
+EOS
+grep -q '^PASS verify-left:' "${DD}/d6b.out"; check $? "cache-images: a verify pass that stops with files left to verify and nothing missing exits 3 with note VERIFY_LEFT, no why ($(sed -n 's/^PASS verify-left: //p' "${DD}/d6b.out"))" "cache-images: $(grep 'verify-left:' "${DD}/d6b.out" || tail -3 "${DD}/d6b.out" | tr '\n' '|')"
 fi
 
 # D7. #308 1-raoffline claude F-RA-06: the listing reads the systems the
