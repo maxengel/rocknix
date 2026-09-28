@@ -1305,9 +1305,22 @@ execute_rclone_with_error_handling() {
 # (#105). Only that exact shape is swept, so a file of the player's cannot
 # match. Called after each phase's transfer, whatever its result; this script
 # holds the cloud lock, so no other transfer is writing under the tree.
+#
+# Only when one may have been left, for the saves tree (#308 claude F-CS-08):
+# the sweep walked SAVESPATH -- /storage/roms, the whole ROM library, not
+# the allowlisted folders -- after every restore, the startup sync's
+# included, outside every rclone bound, and on a large library on a slow
+# card that is seconds of walking at boot. rclone renames on completion, so
+# a transfer that finished left none; what can have left one is a transfer
+# that failed, or one that never got to say it finished (a kill, a power
+# cut). PARTIALS_CLEAN is that saying: removed as the saves transfer
+# starts, written back once it has ended and been swept if it needed to
+# be. A run that finds it missing -- a cut run before it, or the first run
+# on a build that keeps it -- sweeps. One rm for many files (+, not \;).
+PARTIALS_CLEAN=/storage/.cache/cloud_sync/restore-tree-clean
 sweep_partials() {
     [ -d "$1" ] || return 0
-    find "$1" -type f -name '*.????????.partial' -exec rm -f {} \; 2>/dev/null
+    find "$1" -type f -name '*.????????.partial' -exec rm -f {} + 2>/dev/null
 }
 
 # One record at rest under the local --backup-dir root: the folder this run
@@ -1555,6 +1568,10 @@ restore_game_saves() {
         all_opts+=("--progress-terminal-width=80")
     fi
     
+    local tree_was_clean=0
+    [ -e "${PARTIALS_CLEAN}" ] && tree_was_clean=1
+    rm -f "${PARTIALS_CLEAN}" 2>/dev/null
+
     # Execute rclone with enhanced error handling
     execute_rclone_with_error_handling \
         "${RESTOREMETHOD}" \
@@ -1563,7 +1580,11 @@ restore_game_saves() {
         "${all_opts[@]}"
     
     RESTORE_STATUS=$?
-    sweep_partials "${SAVESPATH}"
+    if [ "${tree_was_clean}" -eq 0 ] || { [ $RESTORE_STATUS -ne 0 ] && [ $RESTORE_STATUS -ne 9 ]; }; then
+        sweep_partials "${SAVESPATH}"
+    fi
+    mkdir -p "$(dirname "${PARTIALS_CLEAN}")" 2>/dev/null
+    : > "${PARTIALS_CLEAN}" 2>/dev/null
     if [ $RESTORE_STATUS -eq 0 ] || [ $RESTORE_STATUS -eq 9 ]; then
         prune_replaced_local "${replaced_root}" "${replaced_stamp}"
     fi

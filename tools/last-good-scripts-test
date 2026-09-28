@@ -3660,4 +3660,25 @@ grep -q '^Settings backup: SKIPPED - SAVES ONLY' <(sed 's/\x1b\[[0-9;]*m//g' "${
 sa_run "${RP}" cloud_restore --yes --system-only
 grep -q '^Game saves: SKIPPED - SETTINGS ONLY' <(sed 's/\x1b\[[0-9;]*m//g' "${RP}/out"); check $? "and a --system-only run's saves line says SKIPPED - SETTINGS ONLY (rc ${RC})" "summary: $(grep -A3 'RESTORE SUMMARY' "${RP}/out" | tr '\n' '|')"
 
+# A13. #308 claude F-CS-08: rclone leaves <name>.<8>.partial only when a
+#      transfer is cut, so the restore walks the saves tree for them only
+#      when one may have been: its own transfer failed, or the last one
+#      never recorded that it finished (a kill, or the first run on a build
+#      that keeps the record). A clean run over a clean tree walks nothing.
+echo "    A13. #308 claude F-CS-08: the partial-file sweep runs only after a transfer that may have left one"
+SW=$(sa_new ccs08); sa_script "${SW}" cloud_restore cloud_saves_root
+cp "${RP}/storage/.config/cloud_sync.conf" "${RP}/storage/.config/cloud_sync-rules.txt" "${SW}/storage/.config/"
+mkdir -p "${SW}/cloud/ROCKNIX/Saves/gb" "${SW}/storage/roms/nes"; echo s > "${SW}/cloud/ROCKNIX/Saves/gb/A.srm"
+SWP="${SW}/storage/roms/nes/Game.nes.a1b2c3d4.partial"
+echo litter > "${SWP}"
+sa_run "${SW}" cloud_restore --yes --saves-only
+[ ! -e "${SWP}" ] && [ "${RC}" -eq 0 ]; check $? "the first run with no record that the last transfer finished sweeps the litter a cut one left (rc ${RC})" "the planted partial is still there after a run with no record (rc ${RC})"
+echo litter > "${SWP}"
+sa_run "${SW}" cloud_restore --yes --saves-only
+[ -e "${SWP}" ] && [ "${RC}" -eq 0 ]; check $? "a clean run after a clean run walks nothing: a partial planted between them is not looked for (rc ${RC})" "the partial was swept -- the whole saves tree, the ROM library, was walked after a transfer that completed (F-CS-08)"
+printf '%s\t%s\n' '^copy .* qa:/ROCKNIX/Saves/ /storage/roms/' 7 > "${SW}/ctl/fail"
+sa_run "${SW}" cloud_restore --yes --saves-only
+: > "${SW}/ctl/fail"
+[ ! -e "${SWP}" ] && [ "${RC}" -ne 0 ]; check $? "a transfer that failed is swept after (rc ${RC})" "the partial survived a failed transfer's sweep (rc ${RC})"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
