@@ -58,13 +58,24 @@ log_message() {
 # the environment, so nothing in them is interpreted. Returns non-zero when
 # the config could not be written.
 conf_set() {
-    local tmp="${SYNC_CONF}.tmp.$$" src="${SYNC_CONF}" n=0
-    local -a pairs=()
+    local tmp="${SYNC_CONF}.tmp.$$" src="${SYNC_CONF}" n=0 i
+    local -a pairs=() want=()
+    # Something at the config's path that is not a file is not a config this
+    # can write: read as "absent", `mv -f` then put the new file INSIDE a
+    # directory there and succeeded (audit of stream C, G-C-04).
+    if [ -e "${SYNC_CONF}" ] && [ ! -f "${SYNC_CONF}" ]; then
+        return 1
+    fi
     [ -f "${src}" ] || src=/dev/null
     while [ $# -ge 2 ]; do
-        n=$((n + 1)); pairs+=("CONF_K${n}=$1" "CONF_V${n}=$2"); shift 2
+        n=$((n + 1)); pairs+=("CONF_K${n}=$1" "CONF_V${n}=$2")
+        want+=("$1=\"$2\""); shift 2
     done
-    if env "${pairs[@]}" CONF_N="${n}" awk '
+    # Braced, and silenced as a whole: a redirection that fails opening the
+    # temp file happens before a `2>/dev/null` written after it, and the
+    # shell printed its own diagnostic -- a line number and the temp file's
+    # path -- ahead of the caller's sentence (G-C-07).
+    if { env "${pairs[@]}" CONF_N="${n}" awk '
         BEGIN {
             n = ENVIRON["CONF_N"] + 0
             for (i = 1; i <= n; i++) {
@@ -78,18 +89,39 @@ conf_set() {
             print
         }
         END { for (i = 1; i <= n; i++) if (!seen[i]) print line[i] }
-    ' "${src}" > "${tmp}" 2>/dev/null && mv -f "${tmp}" "${SYNC_CONF}" 2>/dev/null; then
+    ' "${src}" > "${tmp}" && mv -f "${tmp}" "${SYNC_CONF}"; } 2>/dev/null; then
+        # Written is what the file says, not what mv returned: a regular
+        # file at the path, holding every line asked for.
+        [ -f "${SYNC_CONF}" ] || return 1
+        for i in "${want[@]}"; do
+            grep -qFx -- "${i}" "${SYNC_CONF}" 2>/dev/null || return 1
+        done
         return 0
     fi
     rm -f "${tmp}" 2>/dev/null
     return 1
 }
 
-# One value from the config, read as text: the first KEY= line, one pair of
-# surrounding double quotes removed. Never by sourcing or eval -- a value an
-# earlier build wrote with $( ) in it would run (PL-051).
+# One value from the config, read as text -- never by sourcing or eval, since
+# a value an earlier build wrote with $( ) in it would run (PL-051) -- but
+# otherwise as the scripts that do source it read it, so this and they never
+# disagree about a player's folder: the LAST assignment of the key wins, and
+# the value is double-quoted, single-quoted, or a bare word that a space or
+# a comment ends. The first cut took the first line and only "...", so a
+# config with a default and an override below it, or a single-quoted value,
+# read differently here and in the sync (audit of stream C: G-C-03 gpt,
+# G-C-06 claude). What a shell would expand inside double quotes is read
+# literally: running it is what this exists to avoid.
 conf_get() {
-    sed -n "s/^$1=//p" "${SYNC_CONF}" 2>/dev/null | head -1 | sed 's/^"\(.*\)"$/\1/'
+    local value
+    value="$(grep "^$1=" "${SYNC_CONF}" 2>/dev/null | tail -n 1)"
+    value="${value#*=}"
+    case "${value}" in
+        \"*) value="${value#\"}"; value="${value%%\"*}" ;;
+        \'*) value="${value#\'}"; value="${value%%\'*}" ;;
+        *)   value="${value%%[[:space:]]*}" ;;
+    esac
+    printf '%s\n' "${value}"
 }
 
 # Wait for any confirm/cancel input: controller (evtest) or keyboard.
@@ -227,6 +259,9 @@ syncpath_problem() {
             return 1
             ;;
     esac
+    # Player-facing, these call it the cloud folder, which is what the
+    # interface's row and its refusal dialog call it (G-C-03 claude).
+    #
     # The saves folder has to sit inside another folder. Its settings
     # backups and games are kept beside it -- <parent>/Backups and
     # <parent>/Content -- and a saves folder at the top of the cloud has no
@@ -240,11 +275,26 @@ syncpath_problem() {
     case "${path#/}" in
         */*) ;;
         *)
-            echo "Your saves folder needs to sit inside another folder, so your settings backups and games can go beside it."
+            echo "Your cloud folder needs to sit inside another folder, so your settings backups and games can go beside it."
             echo "Try ${path}/Saves."
             return 1
             ;;
     esac
+    # And the three have to be three folders. The settings and content
+    # folders are <parent>/Backups and <parent>/Content, so a saves folder
+    # called Backups or Content is its own sibling: two tiers in one folder,
+    # and the saves sync walking the other tier's files (audit #307, G-C-01).
+    # Compared case-folded, because Dropbox and OneDrive fold case.
+    local parent="${path%/*}" folded
+    folded="$(printf '%s' "${path}" | tr 'A-Z' 'a-z')"
+    local sibling=""
+    [ "${folded}" = "$(printf '%s' "${parent}/Backups" | tr 'A-Z' 'a-z')" ] && sibling="your settings backups"
+    [ "${folded}" = "$(printf '%s' "${parent}/Content" | tr 'A-Z' 'a-z')" ] && sibling="your ROMs and BIOS"
+    if [ -n "${sibling}" ]; then
+        echo "Your cloud folder can't be called ${path##*/}: ${sibling} go in a folder of that name beside it."
+        echo "Try ${parent}/Saves."
+        return 1
+    fi
     [ -n "${remote}" ] || return 0
 
     # No provider rules are encoded here on purpose. rclone does not validate
@@ -362,7 +412,7 @@ case "$1" in
         # thing to do behind their back.
         REMOTE=$(rclone listremotes 2>/dev/null | head -1)
         [ -z "${REMOTE}" ] && { echo "STATE=no-remote"; exit 2; }
-        CP=$(grep -m1 '^CONTENT_REMOTE=' "${SYNC_CONF}" 2>/dev/null | cut -d'"' -f2)
+        CP="$(conf_get CONTENT_REMOTE)"
 
         # Only directories this device could actually have put there count as
         # ours. Anything else at the root is the owner's own business.
@@ -423,7 +473,7 @@ case "$1" in
         # Validate a candidate cloud folder without changing anything, so the
         # UI can refuse a bad one where it is typed rather than letting it
         # fail later inside a sync.
-        CAND="${2:-$(grep -m1 '^SAVES_REMOTE=' "${SYNC_CONF}" 2>/dev/null | cut -d'"' -f2)}"
+        CAND="${2:-$(conf_get SAVES_REMOTE)}"
         REMOTE=$(rclone listremotes 2>/dev/null | head -1)
         if [ -z "${REMOTE}" ]; then
             echo "No cloud remote configured."
@@ -472,7 +522,9 @@ case "$1" in
         if ! conf_set SAVES_REMOTE "${NEWPATH}" \
                       SETTINGS_REMOTE "${SP_PARENT}/Backups" \
                       CONTENT_REMOTE "${SP_PARENT}/Content"; then
-            echo "The cloud sync settings could not be saved, so the folder was not changed."
+            # Under the interface's "THE CLOUD FOLDER WAS NOT CHANGED": this line
+            # says why, and nothing the title already said (G-C-03 claude).
+            echo "Your cloud sync settings couldn't be saved."
             log_message "Sync path NOT changed to ${NEWPATH}: ${SYNC_CONF} could not be written"
             exit 1
         fi

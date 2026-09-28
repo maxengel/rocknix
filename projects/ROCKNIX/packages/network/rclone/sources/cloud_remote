@@ -278,10 +278,16 @@ def cmd_create(name, backend_type, settings):
             "remote '%s' already exists; not modifying it\n" % name)
         return 1
 
-    known = {t.get("Name") for t in load_providers()}
+    providers = load_providers()
+    known = {t.get("Name") for t in providers}
     if backend_type not in known:
         sys.stderr.write("unknown backend type: %s\n" % backend_type)
         return 1
+    # The values of this backend's password options, to be taken out of
+    # anything of rclone's this passes on (see below).
+    secret_names = {opt.get("Name") for t in providers if t.get("Name") == backend_type
+                    for opt in (t.get("Options") or []) if opt.get("IsPassword")}
+    secret_values = [value for key, value in settings if key in secret_names and value]
 
     args = ["config", "create", name, backend_type]
     for key, value in settings:
@@ -305,7 +311,14 @@ def cmd_create(name, backend_type, settings):
         % (name, backend_type, len(settings)))
     code, out, err = rclone(*args)
     if code != 0:
-        sys.stderr.write(err.strip() or "rclone config create failed\n")
+        # rclone's reason goes on to the interface, which shows it under THE
+        # CONNECTION COULDN'T BE SAVED so a mistyped key can be fixed -- with
+        # any password value it echoed taken out first (the audit of stream
+        # C, G-C-09: the log was cleaned in PL-074, this channel was not).
+        said = err.strip()
+        for value in secret_values:
+            said = said.replace(value, "<hidden>")
+        sys.stderr.write((said or "rclone config create failed") + "\n")
         return 2
 
     # rclone --non-interactive answers with a JSON blob when it still needs

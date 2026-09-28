@@ -44,10 +44,12 @@
 # own, and requires a PIN shown on the handheld -- so reaching it takes the
 # device in your hands, not merely a seat on the wifi.
 
+import contextlib
 import errno
 import fcntl
 import hashlib
 import http.server
+import itertools
 import json
 import os
 import re
@@ -95,7 +97,26 @@ def state_path(name):
 # that emptiness back (#308 claude F-RS-23, gpt F-RS-17). So: one writer at
 # a time within the process, and every write a whole file renamed over the
 # old one, which a reader in any process sees before or after, never during.
+#
+# And one writer across processes too: a serve being cancelled and the one
+# replacing it write the same file, so a read-modify-write holds an flock on
+# session.lock as well (the audit of stream C, G-C-02). flock is bound here,
+# not looked up through the fcntl module, so a test that stands in for the
+# module's ioctl leaves it alone.
 _STATE_LOCK = threading.Lock()
+_flock, _LOCK_EX = fcntl.flock, fcntl.LOCK_EX
+
+
+@contextlib.contextmanager
+def _state_locked():
+    with _STATE_LOCK:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        fd = os.open(state_path("session.lock"), os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            _flock(fd, _LOCK_EX)
+            yield
+        finally:
+            os.close(fd)
 
 
 def _write_whole(data):
@@ -108,10 +129,30 @@ def _write_whole(data):
 
 
 def write_state(**fields):
-    with _STATE_LOCK:
+    with _state_locked():
         existing = read_state()
         existing.update(fields)
         _write_whole(existing)
+
+
+def write_owned(attempt, **fields):
+    """write_state, if the state still belongs to this serve's attempt.
+
+    Each serve stamps the state with an attempt id of its own (cmd_serve's
+    reset_state). A collector from a serve that has since been replaced --
+    its rclone killed by the replacement, or dying as the old serve tears
+    down -- would otherwise write its failure over the new attempt's state,
+    and the merge kept that error beside the new attempt's "waiting" (G-C-02
+    claude). An attempt of None owns whatever is there: a Session made
+    outside a serve. Returns whether it wrote.
+    """
+    with _state_locked():
+        existing = read_state()
+        if attempt is not None and existing.get("attempt") != attempt:
+            return False
+        existing.update(fields)
+        _write_whole(existing)
+        return True
 
 
 def reset_state(**fields):
@@ -133,7 +174,7 @@ def reset_state(**fields):
             os.unlink(state_path(name))
         except OSError:
             pass
-    with _STATE_LOCK:
+    with _state_locked():
         _write_whole(dict(fields))
 
 
@@ -205,10 +246,14 @@ class Session:
         self.configured = False
         self._config_lock = threading.Lock()
         self._config_result = None
-        # Set by the holder when another attempt replaces this one, so this
-        # one's collector -- woken by the new attempt killing its rclone --
-        # does not report the new attempt failed.
+        # Set by the holder when this attempt stops speaking for the state:
+        # another attempt replaced it (whose start kills this one's rclone),
+        # or the serve is ending (holder.end kills it). Either way this
+        # one's collector is woken by a death it must not report as a
+        # failed sign-in (PL-050, G-C-02).
         self.superseded = False
+        # The serve's attempt id, which the state carries (write_owned).
+        self.attempt = None
         self.error = None
         # rclone's own last words. It exits fatally when the exchange fails,
         # and what it says -- "code doesn't exist or has expired" against
@@ -280,8 +325,14 @@ class Session:
         return True
 
     def _collect(self):
-        buffer = getattr(self, "early_output", "")
-        for line in self.proc.stdout:
+        # What start() read past the link comes first, through the same
+        # checks: a provider that refuses at once puts rclone's last words in
+        # that first read, and they went into the buffer without being looked
+        # at, so the failure said nothing of why (the audit of stream C,
+        # G-C-10).
+        buffer = ""
+        early = getattr(self, "early_output", "")
+        for line in itertools.chain(early.splitlines(True), self.proc.stdout):
             buffer += line
             if line.startswith("Error: ") or "Fatal error:" in line:
                 self.rclone_says = line.split("error: ")[-1].strip() or line.strip()
@@ -309,8 +360,11 @@ class Session:
                         log("post-sign-in step failed: %s" % exc)
             else:
                 log("could not finish the sign-in: %s" % detail)
-                if read_state().get("status") != "signed-in":
-                    write_state(status="failed", error=detail)
+                # Only while this attempt still speaks for the state: a
+                # restart may have replaced it while its remote was being
+                # created (G-C-02 gpt).
+                if not self.superseded:
+                    self._fail_owned(detail, ("starting", "waiting", "failed"))
         elif not self.token and not self.superseded:
             # rclone ended without a token: the provider refused, the
             # exchange failed, or it was killed. Nothing else is going to
@@ -318,9 +372,22 @@ class Session:
             # say so -- the status stayed "waiting" until the serve timed
             # out, and the interface's STILL WAITING told the player to
             # finish an attempt that was already dead (audit #307 PL-050).
-            if read_state().get("status") in ("starting", "waiting"):
+            if self._fail_owned(self.failure_reason(), ("starting", "waiting")):
                 log("the sign-in ended without a token")
-                write_state(status="failed", error=self.failure_reason())
+
+    def _fail_owned(self, error, from_status):
+        """Mark the attempt failed -- only while this serve's attempt owns
+        the state and the status is one of from_status, checked and written
+        under the state's lock."""
+        with _state_locked():
+            existing = read_state()
+            if self.attempt is not None and existing.get("attempt") != self.attempt:
+                return False
+            if existing.get("status") not in from_status:
+                return False
+            existing.update(status="failed", error=error)
+            _write_whole(existing)
+            return True
 
     def failure_reason(self):
         """Why the attempt died, in words a player can act on."""
@@ -436,7 +503,7 @@ class Session:
             return False, "signed in, but the remote did not respond"
 
         log("remote %s created for %s" % (name, self.backend))
-        write_state(status="signed-in", remote=name)
+        write_owned(self.attempt, status="signed-in", remote=name)
         return True, name
 
 
@@ -917,7 +984,7 @@ network you trust.</p>
     }
     if (!ready) return;
     send("key=" + named);
-    if (named !== "f2" && named !== "f3") { box.value = ""; sent = ""; warn.hidden = true; }
+    if (named !== "f2" && named !== "f3") { box.value = ""; sent = ""; dropped = []; warnSay(); }
   }
 
   // Only what the handheld can type goes in the box: printable ASCII,
@@ -925,14 +992,28 @@ network you trust.</p>
   // sent, dropped at the other end without a word, and left showing here
   // -- a credential altered in silence (#308 claude F-RS-16, gpt F-RS-13).
   // It is taken out of the box instead, and the page says which.
+  //
+  // The line names the characters only while Show is on. With the box
+  // masked it counts them: a password's characters written out under a
+  // box that hides them is the box's masking undone (G-C-05, the audit of
+  // stream C).
+  var dropped = [];
+  function warnSay() {
+    if (!dropped.length) { warn.hidden = true; return; }
+    var many = dropped.length > 1;
+    warn.textContent = box.type === "password"
+      ? "The handheld can't type " + (many ? dropped.length + " of the characters you entered"
+          : "one of the characters you entered") + ", so " + (many ? "they were" : "it was") + " left out."
+      : "The handheld can't type " + dropped.join(" ") + ", so "
+          + (many ? "they were" : "it was") + " left out.";
+    warn.hidden = false;
+  }
   function typable() {
     var v = box.value, kept = v.replace(/[^ -~]/g, "");
     if (kept === v) return;
-    var gone = v.replace(/[ -~]/g, "").split("");
-    warn.textContent = "The handheld can't type " + gone.join(" ") + ", so "
-      + (gone.length > 1 ? "they were" : "it was") + " left out.";
-    warn.hidden = false;
+    dropped = v.replace(/[ -~]/g, "").split("");
     box.value = kept;
+    warnSay();
   }
 
   // What you typed stays visible. Clearing the box after every keystroke made
@@ -958,12 +1039,13 @@ network you trust.</p>
     var hidden = box.type === "password";
     box.type = hidden ? "text" : "password";
     show.textContent = hidden ? "Hide" : "Show";
+    warnSay();
   });
 
   // Local only: the handheld has moved to another field and this box still
   // holds what went into the last one.
   document.getElementById("clear").addEventListener("click", function () {
-    box.value = ""; sent = ""; warn.hidden = true; box.focus();
+    box.value = ""; sent = ""; dropped = []; warnSay(); box.focus();
   });
 
   Array.prototype.forEach.call(document.querySelectorAll("[data-key]"), function (b) {
@@ -1665,6 +1747,8 @@ class SessionHolder:
         self.name = display_name(backend, label)
         self.timeout = timeout
         self.pin = "%04d" % secrets.randbelow(10000)
+        # Which serve the shared state belongs to (write_owned).
+        self.attempt = secrets.token_hex(6)
         self.pin_attempts = 0
         self.lock = threading.Lock()
         self.session = None
@@ -1680,6 +1764,7 @@ class SessionHolder:
         # there -- a sentence about a program the player has never heard of,
         # on a screen with no way out but a button combination.
         session.on_signed_in = self.signed_in
+        session.attempt = self.attempt
         # Before the new attempt kills the old one's rclone (Session.start),
         # so the old collector knows its end is not a failure to report.
         if self.session:
@@ -1741,7 +1826,15 @@ class SessionHolder:
         return True
 
     def end(self):
-        """Take everything this serve started down: the window, and rclone."""
+        """Take everything this serve started down: the window, and rclone.
+
+        The session is marked first: killing its rclone wakes its collector,
+        and a serve ending -- cancelled, timed out, finished -- is not a
+        sign-in that failed (G-C-02 claude). What the serve had to say about
+        how it ended it has already written.
+        """
+        if self.session:
+            self.session.superseded = True
         self.stop_browser()
         if self.session and self.session.proc \
                 and self.session.proc.poll() is None:
@@ -2013,7 +2106,7 @@ def make_handler(holder, shutdown):
             if fields.get("restart"):
                 ok, error = holder.start()
                 if ok:
-                    write_state(status="waiting",
+                    write_owned(holder.attempt, status="waiting",
                                 provider=holder.session.provider)
                     self._render('<div class=ok>Ready for another go. '
                                  'Sign in below.</div>')
@@ -2054,7 +2147,11 @@ def cmd_serve(backend, remote_name, label, port, timeout):
     # Nothing from the last attempt survives into this one -- including a
     # serve still holding the port.
     stop_other_serves()
-    reset_state(status="starting", backend=backend)
+    holder = SessionHolder(backend, remote_name, label, timeout)
+    # The state is this serve's from here, stamped with its attempt id; every
+    # write this serve makes afterwards is conditional on still owning it
+    # (write_owned, G-C-02).
+    reset_state(status="starting", backend=backend, attempt=holder.attempt)
 
     # SIGTERM is how `cancel` and the next serve end this one
     # (stop_other_serves). With no handler Python died on it at once: the
@@ -2068,7 +2165,6 @@ def cmd_serve(backend, remote_name, label, port, timeout):
         raise SystemExit(128 + signum)
     signal.signal(signal.SIGTERM, on_term)
 
-    holder = SessionHolder(backend, remote_name, label, timeout)
     try:
         return serve_with(holder, backend, port, timeout)
     finally:
@@ -2079,7 +2175,7 @@ def serve_with(holder, backend, port, timeout):
     ok, error = holder.start()
     if not ok:
         sys.stderr.write("%s\n" % error)
-        write_state(status="failed", error=error)
+        write_owned(holder.attempt, status="failed", error=error)
         return 2
 
     address = lan_address()
@@ -2089,9 +2185,12 @@ def serve_with(holder, backend, port, timeout):
     # proxy, which listens on 127.0.0.1:8080 -- a wildcard bind cannot share
     # a port with a socket on a specific address, so with offline
     # achievements on, every sign-in ended in EADDRINUSE. 127.0.0.1 is
-    # lan_address's answer when there is no route, and the one case that
-    # keeps the wildcard.
-    listen = "0.0.0.0" if address == "127.0.0.1" else address
+    # lan_address's answer when there is no route, and it is bound as it is:
+    # the wildcard it used to keep for that case listened on every
+    # interface while advertising loopback, which no phone can reach anyway
+    # (the audit of stream C, G-C-06). With no route there is no provider to
+    # sign in to either.
+    listen = address
     # A port something else holds used to end the serve with a traceback and
     # the status left at "starting", rclone's authorize still running, and
     # the interface waiting on a sign-in that could never be reached (audit
@@ -2109,12 +2208,16 @@ def serve_with(holder, backend, port, timeout):
             if exc.errno == errno.EADDRINUSE else "could not listen on port %d" % port
         log("sign-in could not start: %s (%s)" % (why, exc.strerror or exc))
         sys.stderr.write("%s\n" % why)
-        write_state(status="failed", error=why)
+        # The port and the errno stay in the log; the state carries words
+        # (G-C-03, the audit of stream C).
+        write_owned(holder.attempt, status="failed",
+                    error="Something else on this handheld is using the "
+                          "sign-in's connection. Restart it and try again.")
         return 2
 
     bare = "http://%s:%d" % (address, port)
     url = "%s/%s" % (bare, holder.pin)
-    write_state(status="waiting", backend=backend, url=url, address=bare,
+    write_owned(holder.attempt, status="waiting", backend=backend, url=url, address=bare,
                 provider=holder.session.provider, pin=holder.pin,
                 name=holder.name)
 
@@ -2175,7 +2278,7 @@ def serve_with(holder, backend, port, timeout):
     final = read_state().get("status")
     if final == "signed-in":
         return 0
-    write_state(status="failed", error="sign-in did not complete")
+    write_owned(holder.attempt, status="failed", error="sign-in did not complete")
     return 1
 
 
