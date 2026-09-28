@@ -3013,9 +3013,16 @@ ckf 65536 retroarch 1024;                printf '%s' "${NOTE}" | grep '^dump' | 
 
 # ---- audit #307, stream C ----
 # The cloud sign-in broker and setup (audit #307 stream C: PL-015..018,
-# PL-047..051, PL-074; the #308 sweep rows of packet 3-rclone-setup). Every
-# case below was written before its fix and seen to FAIL against the script
-# it grades; the commit that added it says which.
+# PL-047..051, PL-074; the #308 sweep rows of packet 3-rclone-setup; the
+# G-C findings of the audit of those fixes). Two kinds of check live here,
+# and the commit that added each says which it is: a case written before
+# its fix and seen to FAIL against the script it grades (the FAIL line is
+# in that commit), and a guard beside it that passes on the old script too
+# -- a control (a two-level folder still gets its siblings), a regression
+# fence for the fix's own shape, or the check an audit finding asked for
+# where the code already held. At 417dcd8610 the block's first cut read 54
+# FAIL and 25 PASS; the 25 are guards. A green guard is not evidence the
+# fix is needed; a red case is (the audit of stream C, claude G-C-04).
 #
 #   C1. cloud_setup --set-saves-remote: a one-level saves folder is refused
 #       with the reason, where it would have nested the settings and content
