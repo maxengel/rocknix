@@ -140,9 +140,11 @@ run_suite() {  # name, log, command...
 }
 # The scripts harness carries cancel checks that send SIGINT to a run; a
 # background job (this runner under setsid -f, or a harness waiter) has
-# SIGINT ignored at entry, which a child shell cannot undo. Python can:
+# SIGINT ignored at entry, which a child shell cannot undo. Python can --
+# and Python itself ignores SIGPIPE at startup, which execv keeps, so both
+# are reset (audit of the fix round PL-025); the harness prints what it got:
 # reset the disposition and exec the harness in its place (2026-09-28).
-case ",$ONLY," in *,scripts,*)    run_suite scripts    "$OUT/scripts.log"    python3 -c 'import os, signal, sys; signal.signal(signal.SIGINT, signal.SIG_DFL); os.execv(sys.argv[1], sys.argv[1:])' "$ROOT/tools/last-good-scripts-test" ;; esac
+case ",$ONLY," in *,scripts,*)    run_suite scripts    "$OUT/scripts.log"    python3 -c 'import os, signal, sys; signal.signal(signal.SIGINT, signal.SIG_DFL); signal.signal(signal.SIGPIPE, signal.SIG_DFL); os.execv(sys.argv[1], sys.argv[1:])' "$ROOT/tools/last-good-scripts-test" ;; esac
 # EmulationStation's page-lifetime check (#144): the wizard's page-replacement
 # callbacks compiled under AddressSanitizer against small doubles, on the
 # host, in seconds. It had not compiled for a day and nothing ran it, so

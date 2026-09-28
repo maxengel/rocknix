@@ -278,7 +278,10 @@ refused because the cloud no longer matches the preview), `COULDN'T RECORD WHICH
 CARD YOUR SAVES ARE ON`, `THE NEW FOLDER ALREADY HAS FILES IN IT` (the layout
 migration's refusal), the stamp why `YOU WENT OFFLINE PART-WAY THROUGH` (a run the
 network cut after files moved, stamped `69 gaps`), `SOME ACHIEVEMENT IMAGES
-COULDN'T BE SAVED` (the scan page adds `TRY THE SCAN AGAIN.`), and `backuptool`'s
+COULDN'T BE SAVED` (the scan page adds `TRY THE SCAN AGAIN.`), `CHECK WHAT WOULD
+CHANGE FIRST` (`cloud_content_restore`: a match applied without its preview),
+`YOUR CLOUD SYNC SETTINGS COULDN'T BE SAVED` (`cloud_migrate_layout`: a pointer
+that could not be written), and `backuptool`'s
 `A SIGN-IN WAS FOUND IN THE BACKUP`, `THERE'S NOTHING TO BACK UP YET`, `A SETTINGS
 BACKUP OR RESTORE IS ALREADY RUNNING`, `YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP
 CAN'T CARRY`, `THIS DEVICE CAN'T RESTORE SETTINGS. SOMETHING IT NEEDS IS MISSING FROM

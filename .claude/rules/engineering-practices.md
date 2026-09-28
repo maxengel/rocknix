@@ -551,8 +551,14 @@ question, and is said in the report.
   value and keep the line:
 
   ```bash
-  sed -E 's/((token|key|passw[a-z]*|psk|user)[=:][^ ]*)/\1***/Ig'
+  sed -E 's/((token|key|passw[a-z]*|psk|user)[=:])[^ ]*/\1***/Ig'
   ```
+
+  The group closes at the delimiter and the value sits outside it: the
+  example carried the value inside group 1 for two weeks (`\1***` printed it
+  back, audit of the fix round PL-013), so a masking pattern is proven on a
+  fake `key=SECRET` line first, and the proof is the absence of `SECRET` in
+  what comes out.
 
   and keep the dropping `grep -v` for config files and `get_setting` output,
   where the line itself is the secret.

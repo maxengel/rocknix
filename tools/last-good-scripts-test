@@ -263,6 +263,15 @@ command -v setsid >/dev/null || { echo "needs setsid" >&2; exit 2; }
 
 TMP="$(mktemp -d)"; trap 'rm -rf "${TMP}"' EXIT
 FAIL=0
+SKIPPED=0
+# skip <text>: a check that did not run is counted, never folded into PASSED
+# (audit of the fix round PL-023): the verdict says how many, and exits 3
+# when nothing failed but something was skipped -- vm-qa reads 3 as SKIP.
+skip() { SKIPPED=$((SKIPPED + 1)); echo "    SKIP  $*"; }
+# The signal dispositions this run inherited (PL-025): vm-qa's wrapper resets
+# SIGINT and SIGPIPE before exec; SigIgn bit 1 is SIGINT, bit 12 SIGPIPE.
+sigign="$(awk '/^SigIgn:/{print $2}' /proc/self/status)"
+echo "signals: SigIgn=${sigign} SIGINT ignored=$(( (16#${sigign} >> 1) & 1 )) SIGPIPE ignored=$(( (16#${sigign} >> 12) & 1 ))"
 check() { # <0|nonzero> ok-text bad-text
     if [ "$1" -eq 0 ]; then echo "    PASS  $2"; else echo "    FAIL  $3"; FAIL=$((FAIL + 1)); fi
 }
@@ -1909,7 +1918,7 @@ done
 if [ "${OLD}" -eq 1 ] && ! git -C "${ROOT}" cat-file -e "${BASE_REF}:${CTL_REL}" 2>/dev/null; then
     check 1 "" "raofflineproxy-ctl is absent at ${BASE_REF}: no scan to test"
 elif [ -z "${TARBALL}" ]; then
-    echo "    SKIP  the client's tarball raofflineproxy-${PIN:-?}.tar.gz is not under SOURCES_DIR, /workspace/cache/rocknix-sources or a build worktree's sources/ -- case t needs the pinned client to drive the ctl's listing against"
+    skip "the client's tarball raofflineproxy-${PIN:-?}.tar.gz is not under SOURCES_DIR, /workspace/cache/rocknix-sources or a build worktree's sources/ -- case t needs the pinned client to drive the ctl's listing against"
 else
 src_of "${CTL_REL}" "${T}/repo/raofflineproxy-ctl"
 # The archive's top directory is the project's name and the pin (a GitHub
@@ -5924,7 +5933,7 @@ for d in "${SOURCES_DIR:-}" /workspace/cache/rocknix-sources "${ROOT}/sources" "
     [ -n "${d}" ] && [ -f "${d}/webkitgtk/webkitgtk-${WKV}.tar.xz" ] && { WKT="${d}/webkitgtk/webkitgtk-${WKV}.tar.xz"; break; }
 done
 if [ -z "${WKT}" ]; then
-    echo "    SKIP  webkitgtk-${WKV}.tar.xz is not under SOURCES_DIR, /workspace/cache/rocknix-sources or a build worktree's sources/ -- the patches' dry run needs the release they apply to"
+    skip "webkitgtk-${WKV}.tar.xz is not under SOURCES_DIR, /workspace/cache/rocknix-sources or a build worktree's sources/ -- the patches' dry run needs the release they apply to"
 else
     WKD="${CS}/wk"; mkdir -p "${WKD}"
     wkfiles=$(sed -n 's|^+++ b/\([^[:space:]]*\).*|webkitgtk-'"${WKV}"'/\1|p' "${WKP}"/*.patch | sort -u)
@@ -6213,7 +6222,7 @@ wait "${DBG}" 2>/dev/null
 [ -n "${IP}" ] && kill -9 "${IP}" 2>/dev/null; touch "${TR}/fast-sleep"; rm -f "${TR}/images-mode" "${TR}/helper-plan"
 printf "${DCFG_ON}" > "${TCFG}"
 else
-    echo "    SKIP  PL-013's cases: section t did not run (the pinned client is not on this machine)"
+    skip "PL-013's cases: section t did not run (the pinned client is not on this machine)"
 fi
 
 # D2. #307 PL-055 (F-RA-02 gpt = F-RA-03 claude): index-pending, the promise
@@ -6267,7 +6276,7 @@ wait "${DBG}" 2>/dev/null
 [ "$(cat "${DD}/bg.rc" 2>/dev/null)" = "143" ] && [ -e "${TPD}/index-pending" ]; check $? "PL-055: a marker's run stopped part-way (TERM, exit 143) keeps index-pending" "PL-055: the run exited $(cat "${DD}/bg.rc" 2>/dev/null); marker: $([ -e "${TPD}/index-pending" ] && echo kept || echo gone)"
 [ -n "${DHP}" ] && kill -9 "${DHP}" 2>/dev/null; touch "${TR}/fast-sleep"; rm -f "${TR}/helper-plan"
 else
-    echo "    SKIP  PL-055's cases: section t did not run"
+    skip "PL-055's cases: section t did not run"
 fi
 
 # D3. #307 PL-057 (F-RA-04/05 gpt): the summary lists a game cached by a
@@ -6308,7 +6317,7 @@ grep -qx '{"id":201,"title":"Sets Only","icon":"http://127.0.0.1:8080/Images/000
 grep -q '"id":202,.*"unlocked":null,"unlockedPoints":null' "${DD}/summary.out" && grep -q '"id":203,.*"unlocked":null,"unlockedPoints":null' "${DD}/summary.out"; check $? "PL-057 summary: a damaged unlock row (202) and a missing one (203) read unlocked null -- unknown, not none" "PL-057 summary: $(grep -E '"id":20[23],' "${DD}/summary.out" | tr '\n' '|' | cut -c1-300) -- an unreadable unlock row read as nothing earned"
 [ "$(grep -c '"id":102,' "${DD}/summary.out")" -eq 1 ] && ! grep -q '"id":204,' "${DD}/summary.out"; check $? "PL-057 summary: a game with both rows is listed once; another account's launch rows are not listed" "PL-057 summary: 102 x$(grep -c '"id":102,' "${DD}/summary.out"), 204 x$(grep -c '"id":204,' "${DD}/summary.out")"
 else
-    echo "    SKIP  PL-057's cases: section t did not run"
+    skip "PL-057's cases: section t did not run"
 fi
 
 # D3b. #308 1-raoffline gpt F-RA-09: a waiting award is counted for the account
@@ -6323,7 +6332,7 @@ tctl pending-ids
 tctl pending
 [ "${RC}" -eq 0 ] && [ "$(cat "${OUT}")" = "2" ]; check $? "pending still counts every award the queue holds for sending (2): the service sends each with its own account" "pending: rc ${RC}; out: $(tr '\n' '|' < "${OUT}")"
 else
-    echo "    SKIP  #308 F-RA-09's cases: section t did not run"
+    skip "#308 F-RA-09's cases: section t did not run"
 fi
 
 # D4. #307 PL-058 (F-RA-06 gpt): raofflineproxy-refresh counts a game whose
@@ -6384,7 +6393,7 @@ print(("PASS" if ok else "FAIL") + f" row: rc {rc}; " + " | ".join(l for l in ou
 EOS
 grep -q '^PASS drop:' "${DD}/d4.out"; check $? "PL-058 refresh: a startsession row that could not be dropped makes the game failed -- re-read 0 game(s), 1 failed, exit 1" "PL-058 refresh: $(grep 'drop:' "${DD}/d4.out" || tail -3 "${DD}/d4.out" | tr '\n' '|') -- a failed drop was reported as a game re-read"
 else
-    echo "    SKIP  PL-058's cases: section t did not run"
+    skip "PL-058's cases: section t did not run"
 fi
 
 # D4b. #308 1-raoffline claude F-RA-12 = gpt F-RA-19: raofflineproxy-refresh
@@ -6394,7 +6403,7 @@ if [ "${DT_OK}" -eq 1 ]; then
 grep -q '^PASS apart:' "${DD}/d4.out"; check $? "#308 claude F-RA-12 / gpt F-RA-19 refresh: three failures never two in a row -- every game tried (3 re-read, 3 failed)" "#308 F-RA-12/19 refresh: $(grep 'apart:' "${DD}/d4.out" || echo 'no verdict') -- three failures in all were read as three in a row"
 grep -q '^PASS row:' "${DD}/d4.out"; check $? "#308 claude F-RA-12 / gpt F-RA-19 refresh: three failures in a row stop the run (REPEATED_FAILURES)" "#308 F-RA-12/19 refresh: $(grep 'row:' "${DD}/d4.out" || echo 'no verdict')"
 else
-    echo "    SKIP  #308 F-RA-12/19's cases: section t did not run"
+    skip "#308 F-RA-12/19's cases: section t did not run"
 fi
 
 # D5. #307 PL-059 (F-RA-07 gpt): the walk over unindexed folders keeps a
@@ -6422,7 +6431,7 @@ tctl scan
 [ "${RC}" -eq 0 ] && ! grep -q 'note TRUNCATED' "${OUT}" && ! grep -q 'truncated=1' "${TSTAMP}" && [ ! -e "${TPD}/scan-cursor" ]; check $? "PL-059: a walk that fits under the cap says nothing of truncation and leaves no cursor" "PL-059: rc ${RC}; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-160); stamp: $(cat "${TSTAMP}" 2>/dev/null); cursor: $(cat "${TPD}/scan-cursor" 2>/dev/null || echo none)"
 TENV=(); rm -rf "${TS}/roms/gbc"; rm -f "${TR}/helper-plan"
 else
-    echo "    SKIP  PL-059's cases: section t did not run"
+    skip "PL-059's cases: section t did not run"
 fi
 
 # D6. #307 PL-060 (F-RA-08 gpt): the image pass is part of the scan and the
@@ -6452,7 +6461,7 @@ tctl topup --after-index
 [ "${RC}" -eq 0 ] && grep -q ' 0 topup cached=2 ' "${TSTAMP}" && ! grep -q 'why=' "${TSTAMP}"; check $? "PL-060: a top-up whose verify slice did not come round the store (the helper's exit 3) finished (rc 0) -- the sweep takes several runs by design" "PL-060: rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null)"
 rm -f "${TR}/images-mode" "${TR}/images-calls"
 else
-    echo "    SKIP  PL-060's cases: section t did not run"
+    skip "PL-060's cases: section t did not run"
 fi
 
 # D6b. Found while fixing PL-060: the image helper said "a verify slice is
@@ -6469,7 +6478,7 @@ tctl topup --after-index
 [ "${RC}" -eq 1 ] && grep -q ' 1 topup cached=2 .*why=SOME_IMAGES_NOT_SAVED$' "${TSTAMP}"; check $? "a top-up whose image helper crashed (a traceback, exit 1, no protocol line) ends rc 1, why SOME_IMAGES_NOT_SAVED -- not read as a verify slice left" "rc ${RC}; stamp: $(cat "${TSTAMP}" 2>/dev/null) -- a crash read as the sweep working"
 rm -f "${TR}/images-mode"
 else
-    echo "    SKIP  the verify exit cases: section t did not run"
+    skip "the verify exit cases: section t did not run"
 fi
 # The helper itself: a verify pass that stops at its half of the budget
 # with files left to verify and nothing missing exits 3, and says so.
@@ -6545,7 +6554,7 @@ grep -qP '^I\t301\tssss\t/storage/roms/snes/x.sfc$' "${TR}/helper-jobs.log"; che
 grep -qP '^I\t302\tmmmm\t/storage/roms/nes2/m.gb$' "${TR}/helper-jobs.log"; check $? "#308 claude F-RA-06: a system whose <path> an es_systems_<name>.cfg moves is read at the new path" "#308 claude F-RA-06: jobs: $(tr '\t' ',' < "${TR}/helper-jobs.log" | tr '\n' '|' | cut -c1-240)"
 rm -f "${ESD}/es_systems_extra.cfg"; rm -rf "${TS}/roms/snes" "${TS}/roms/nes2"
 else
-    echo "    SKIP  #308 F-RA-06's cases: section t did not run"
+    skip "#308 F-RA-06's cases: section t did not run"
 fi
 
 # D8. #308 1-raoffline gpt F-RA-14: in an unindexed folder, a ROM is passed
@@ -6571,7 +6580,7 @@ EOS
 tctl scan
 grep -qP '^H\t\t\t/storage/roms/gb/h.gb$' "${TR}/helper-jobs.log" && ! grep -q '/storage/roms/gb/i.gb$' "${TR}/helper-jobs.log"; check $? "#308 gpt F-RA-14: a ROM whose game has a patch row and nothing else is a job again; one whose game is whole is passed over" "#308 gpt F-RA-14: jobs: $(tr '\t' ',' < "${TR}/helper-jobs.log" | tr '\n' '|' | cut -c1-240) -- a patch path alone read as a complete cache"
 else
-    echo "    SKIP  #308 F-RA-14's case: section t did not run"
+    skip "#308 F-RA-14's case: section t did not run"
 fi
 
 # D9. #308 1-raoffline claude F-RA-10 = gpt F-RA-15: added= is the games that
@@ -6611,7 +6620,7 @@ tctl topup --after-index
 [ "${RC}" -eq 0 ] && grep -qP '^I\t102\tgggg\t' "${TR}/helper-jobs.log" && grep -q ' 0 topup cached=3 .* added=2$' "${TSTAMP}"; check $? "#308 gpt F-RA-15: three games cached by the index, one a second dump of a game already ready -- added=2" "#308 gpt F-RA-15: rc ${RC}; jobs: $(tr '\t' ',' < "${TR}/helper-jobs.log" | tr '\n' '|' | cut -c1-200); stamp: $(cat "${TSTAMP}" 2>/dev/null) -- a cache operation was counted as a new game"
 rm -f "${TS}/.config/emulationstation/recovery/nes/g.xml"; TENV=()
 else
-    echo "    SKIP  #308 F-RA-10/15's cases: section t did not run"
+    skip "#308 F-RA-10/15's cases: section t did not run"
 fi
 
 # D10. #308 1-raoffline gpt F-RA-13: the link's return asks whether a game was
@@ -6634,7 +6643,7 @@ tctl topup
 [ "${RC}" -eq 0 ] && [ ! -s "${TR}/probe.log" ] && grep -q 'no game played since the last attempt' "${TLOG}"; check $? "#308 gpt F-RA-13: and with ppsspp.ini older than the mark, nothing played: skipped before the probe" "#308 gpt F-RA-13: rc ${RC}; probes: $(tr '\n' '|' < "${TR}/probe.log" | cut -c1-120)"
 rm -rf "${TS}/.config/ppsspp"; touch -d '3 hours ago' "${THISTORY}"
 else
-    echo "    SKIP  #308 F-RA-13's cases: section t did not run"
+    skip "#308 F-RA-13's cases: section t did not run"
 fi
 
 # D11. #308 1-raoffline gpt F-RA-18: disable verifies each step before it
@@ -6660,7 +6669,7 @@ ctl disable; rm -f "${P}/run/fail-set"
 [ "${RC}" -eq 1 ] && [ "$(pv global.retroachievements.offlineproxy)" = "1" ] && [ -e "${PMARK}" ] && ! grep -q 'systemctl stop' "${P}/run/systemctl.log" && [ "$(pv global.retroachievements.offlineproxy.hardcore_was)" = "1" ]; check $? "#308 gpt F-RA-18: a toggle that will not clear stops nothing -- the service, the marker and the record stay, exit 1" "#308 gpt F-RA-18: rc ${RC}; toggle '$(pv global.retroachievements.offlineproxy)'; marker $([ -e "${PMARK}" ] && echo kept || echo gone); systemctl: $(tr '\n' '|' < "${P}/run/systemctl.log")"
 ctl disable
 else
-    echo "    SKIP  #308 F-RA-18's cases: section p did not run"
+    skip "#308 F-RA-18's cases: section p did not run"
 fi
 
 # D12a. #308 1-raoffline claude F-RA-20: the unit's start limit sits in
@@ -6706,7 +6715,7 @@ DT0=$(dnow); tctl listening --wait 10; DTOOK=$(dsince "${DT0}"); wait
 [ "${RC}" -eq 0 ] && awk -v t="${DTOOK}" 'BEGIN{exit !(t < 5)}'; check $? "#308 gpt F-RA-26 listening --wait 10: the listener that appears after 1.5 s is seen, exit 0 after ${DTOOK}s" "#308 gpt F-RA-26: rc ${RC} after ${DTOOK}s"
 touch "${TR}/fast-sleep"; TENV=(); rm -rf "${DPN}"
 else
-    echo "    SKIP  #308 F-RA-26's listening cases: section t did not run"
+    skip "#308 F-RA-26's listening cases: section t did not run"
 fi
 
 # D13a. #308 1-raoffline gpt F-RA-27 (patch 008): only a JSON true opts in to
@@ -6743,7 +6752,7 @@ while IFS= read -r line; do
     esac
 done < "${DD}/d13a.out"
 else
-    echo "    SKIP  the d13a predicates: section t did not run"
+    skip "the d13a predicates: section t did not run"
 fi
 
 # D13b. #308 1-raoffline claude F-RA-13 (patch 013, cache-images): a PNG with
@@ -6792,7 +6801,7 @@ while IFS= read -r line; do
     esac
 done < "${DD}/d13b.out"
 else
-    echo "    SKIP  the d13b predicates: section t did not run"
+    skip "the d13b predicates: section t did not run"
 fi
 
 # D13c. #308 1-raoffline gpt F-RA-20 (patch 015): a host the bounded lookup
@@ -6871,7 +6880,7 @@ done < "${DD}/d13c.out"
 ( cd "${T}/patched" && PYTHONPATH=. RAOFFLINEPROXY_CONFIG_DIR="${DD}/unittest-cfg" python3 -m unittest linux.tests.test_linux_network > "${DD}/unittest.out" 2>&1 ); DUT=$?
 [ "${DUT}" -eq 0 ]; check $? "the patched client's tests/test_linux_network.py pass ($(tail -n 3 "${DD}/unittest.out" | grep -o 'Ran [0-9]* tests\?' || echo '?'))" "the client's network tests: rc ${DUT}: $(grep -E '^(FAIL|ERROR):' "${DD}/unittest.out" | head -3 | tr '\n' '|') $(tail -n 3 "${DD}/unittest.out" | tr '\n' '|')"
 else
-    echo "    SKIP  the d13c predicates: section t did not run"
+    skip "the d13c predicates: section t did not run"
 fi
 
 # D14. #308 9-emulators claude F-EM-03 = gpt F-EM-03, claude F-EM-09 = gpt
@@ -7024,7 +7033,7 @@ tctl refresh --all
 [ "${RC}" -eq 0 ] && grep -q '^budget=[0-9][0-9]* --seconds [0-9][0-9]* --all$' "${TR}/refresh-calls"; check $? "#308 gpt F-RA-10 ctl: the refresh verb's helper runs under a process bound ($(cat "${TR}/refresh-calls" 2>/dev/null))" "#308 gpt F-RA-10 ctl: refresh rc ${RC}: $(cat "${TR}/refresh-calls" 2>/dev/null) -- no bound but the helper's own"
 rm -f "${TR}/images-mode" "${TR}/images-calls" "${TR}/refresh-calls" "${TR}/helper-plan"
 else
-    echo "    SKIP  #308 F-RA-10's ctl cases: section t did not run"
+    skip "#308 F-RA-10's ctl cases: section t did not run"
 fi
 
 # D18. #308 1-raoffline claude F-RA-07: the ctl's own reads of the proxy's
@@ -7052,7 +7061,7 @@ src_of "${CTL_REL}" "${DD}/ctl-header"
 DPINHDR="$(sed -n '1,/^\. \/etc\/profile$/p' "${DD}/ctl-header" | grep -o 'package.mk pins ([0-9a-f]\{40\}' | head -n 1 | grep -o '[0-9a-f]\{40\}')"
 [ -n "${DPINHDR}" ] && [ "${DPINHDR}" = "${PIN}" ]; check $? "#308 claude F-RA-07 / gpt F-RA-28: the ctl's header names the pin package.mk pins (${PIN:0:10}) as the schema it was read against" "#308 F-RA-07/28: the header names '${DPINHDR:-nothing}', package.mk pins ${PIN}"
 else
-    echo "    SKIP  #308 F-RA-07's case: section t did not run"
+    skip "#308 F-RA-07's case: section t did not run"
 fi
 
 # D19. Follow-up to #307 PL-060 (the coordinator, 2026-09-28): a badge the
@@ -7149,7 +7158,7 @@ tctl scan
 [ "${RC}" -eq 0 ] && grep -qx '/Badge/9302.png' "${TR}/image-fetches" && grep -qx '/Badge/9304.png' "${TR}/image-fetches" && [ -s "${DSTATIC}/9302.png" ] && [ -s "${DSTATIC}/9304.png" ]; check $? "PL-060 follow-up: the next scan asks for the timed-out and the 503 badges again, and with the server answering, completes" "PL-060 follow-up: rc ${RC}; requested: $(tr '\n' ' ' < "${TR}/image-fetches")"
 rm -f "${TR}/image-plan" "${TR}/image-fetches"; dfake_images
 else
-    echo "    SKIP  the PL-060 follow-up's cases: section t did not run"
+    skip "the PL-060 follow-up's cases: section t did not run"
 fi
 
 # D20. #308 1-raoffline claude F-RA-17's part in this file: the usage line
@@ -9362,7 +9371,7 @@ IP="$(cat "${TR}/images.pid" 2>/dev/null)"; for _ in $(seq 1 30); do kill -0 "${
 [ "${RC}" -eq 130 ] && grep -qx '>>> why CANCELLED' "${OUT}" && [ -n "${DI0}" ] && awk -v a="${DI0}" -v b="${DEND}" 'BEGIN{exit !(b - a < 3)}' && grep -q '^term ' "${TR}/images-calls" && ! grep -q '^int ' "${TR}/images-calls" && ! kill -0 "${IP:-1}" 2>/dev/null; check $? "claude G-D-03: under the real timeout the group's SIGINT reaches the ctl, not the helper; the run is CANCELLED (rc 130) $(awk -v a="${DI0:-0}" -v b="${DEND}" 'BEGIN{printf "%.2f", b - a}')s after the pass began and the helper is ended by SIGTERM through timeout" "claude G-D-03: rc ${RC}; the helper saw: $(tr '\n' ' ' < "${TR}/images-calls" 2>/dev/null | cut -c1-200); $(awk -v a="${DI0:-0}" -v b="${DEND}" 'BEGIN{printf "%.2f", b - a}')s; out: $(grep '^>>>' "${OUT}" | tail -n 2 | tr '\n' '|')"
 [ -n "${IP}" ] && kill -9 "${IP}" 2>/dev/null; rm -f "${TR}/images-mode" "${TR}/helper-plan"
 else
-    echo "    SKIP  claude G-D-03's case: needs section t and GNU coreutils' timeout on this machine"
+    skip "claude G-D-03's case: needs section t and GNU coreutils' timeout on this machine"
 fi
 
 # D24. claude G-D-04: patch 016's classification against the real
@@ -9536,7 +9545,7 @@ grep -q "afbc66a3\|${PPV:0:8}" "${DD}/cheevos_ppsspp.sh" && grep -q "${PPV:0:8}"
 if [ -n "${PPSRC}" ]; then
     grep -q 'ConfigSetting("AchievementsHost", SETTING(g_Config, sAchievementsHost)' "${PPSRC}/Core/Config.cpp" && grep -q 'rc_client_set_host(g_rcClient, g_Config.sAchievementsHost.c_str())' "${PPSRC}/Core/RetroAchievements.cpp"; check $? "claude G-D-11: the pinned PPSSPP source reads AchievementsHost from [Achievements] and hands it to rc_client_set_host (${PPSRC##*/})" "claude G-D-11: the pinned PPSSPP source at ${PPSRC} does not read AchievementsHost as cited"
 else
-    echo "    SKIP  claude G-D-11's source check: PPSSPP ${PPV:0:10} is not in a sources cache on this machine"
+    skip "claude G-D-11's source check: PPSSPP ${PPV:0:10} is not in a sources cache on this machine"
 fi
 
 # D31. claude G-D-14: a badge answered 404 while a new set's images were
@@ -10221,4 +10230,6 @@ p7ck "head -c 100 /dev/zero" retroarch 9000 --setenv CORE_MAX_BYTES 1048576
 rm -f "${P7C}/shim/flock"
 printf '%s' "${P7NOTE}" | grep '^dump' | grep -q 'NOT KEPT' && [ ! -e "${P7C}/storage/.cache/log/cores/core.retroarch.9000.4242.gz" ]; check $? "#307 audit G-B-14 (gpt): when the cores folder cannot be locked the dump is not kept, and the note says why" "#307 audit G-B-14: note: $(printf '%s' "${P7NOTE}" | grep '^dump' | cut -c1-120); dump: $([ -e "${P7C}/storage/.cache/log/cores/core.retroarch.9000.4242.gz" ] && echo kept || echo none)"
 
-if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
+if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
+elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
+else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
