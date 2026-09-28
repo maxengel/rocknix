@@ -4445,10 +4445,13 @@ c1 --set-saves-remote '/x$(touch /storage/ran)/Saves'
 [ "${RC}" -ne 0 ] && cmp -s "${CONF1}" "${C1}/conf.before" && grep -q "can't contain" "${C1}/out"; check $? "a name that would run as a command when the config is sourced is refused, config untouched: $(head -1 "${C1}/out")" "rc ${RC}; config: $(conf1); said: $(head -1 "${C1}/out")"
 c1 --info
 [ ! -e "${C1}/storage/ran" ]; check $? "and nothing ran" "a command in the folder name ran when --info sourced the config"
-# A config an earlier build wrote with such a value: --info reads it as text.
+# A config an earlier build wrote with such a value: --info runs nothing in
+# it, and names no folder for it -- the sync refuses that config
+# (D-CLOUD-142), so it is not a folder anything uses; it used to be read out
+# as text (the audit of the fix round, gpt G2-C-01, CF2 below).
 sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE="/y$(touch /storage/ran)/Saves"|' "${CONF1}"
 c1 --info
-[ ! -e "${C1}/storage/ran" ] && grep -qF 'SAVES_REMOTE=/y$(touch /storage/ran)/Saves' "${C1}/out"; check $? "--info reads an already-written value as text and runs nothing in it" "ran: $([ -e "${C1}/storage/ran" ] && echo yes || echo no); --info said: $(grep '^SAVES_REMOTE=' "${C1}/out")"
+[ ! -e "${C1}/storage/ran" ] && grep -qx 'SAVES_REMOTE=' "${C1}/out"; check $? "--info runs nothing in an already-written value and names no folder for it" "ran: $([ -e "${C1}/storage/ran" ] && echo yes || echo no); --info said: $(grep '^SAVES_REMOTE=' "${C1}/out")"
 c1 --seed-folders
 [ ! -e "${C1}/storage/ran" ]; check $? "and so does --seed-folders, which used to eval the config's lines" "--seed-folders ran the command in an already-written SAVES_REMOTE (eval of the config)"
 # G-C-05 (claude): and every other reader of the config. A guard: no
@@ -10341,6 +10344,45 @@ cf_run=$(bash -c 'source "$1" >/dev/null 2>&1; printf "%s|%s" "${SAVES_REMOTE}" 
 cfget "${CF2}/content_get.sh" /unused CONTENT_REMOTE; cf_content="${GVAL}"
 [ "${cf_info}" = "/ROCKNIX/Saves" ] && [ "${cf_run%%|*}" = "/ROCKNIX/Saves" ]; check $? "PL-021: with SAVES_REMOTE written twice, the hub's line (--info) names the folder the saves scripts use after the cleanup: ${cf_info}" "PL-021: --info names '${cf_info}', the saves scripts after the cleanup '${cf_run%%|*}' -- two readers of one file, two folders"
 [ "${cf_loc}" = "/ROCKNIX/Content" ] && [ "${cf_run#*|}" = "/ROCKNIX/Content" ] && [ "${cf_content}" = "/ROCKNIX/Content" ]; check $? "PL-021: and --content-location, the cleaned config and the content scripts agree on CONTENT_REMOTE: ${cf_loc}" "PL-021: CONTENT_REMOTE is '${cf_loc}' to --content-location, '${cf_run#*|}' after the cleanup, '${cf_content}' to the content scripts"
+# CF2, gpt G2-C-01: a value in a form the scripts refuse. conf_valid
+# (cloud_backup's gate) refuses the file and the content scripts' reader
+# exits 2; cloud_setup read /Mine/'My as the folder.
+cp "${CF}/src/cloud_sync.conf" "${CFCONF}"
+sed -i "s|^SAVES_REMOTE=.*|SAVES_REMOTE=/Mine/'My Saves'|" "${CFCONF}"
+cp "${CFCONF}" "${CF2}/mixed.conf"
+sed -n '/^conf_valid() {/,/^}/p' "${CF}/src/cloud_backup" > "${CF2}/conf_valid.sh"
+PATH="${TMP}/bbin:${PATH}" bash -c '. "$1"; conf_valid "$2"' _ "${CF2}/conf_valid.sh" "${CF2}/mixed.conf" >/dev/null 2>&1; cf_valid=$?
+sed -n '/^conf_get() {/,/^}/p' "${CF}/src/cloud_content_backup" | sed "s#/storage/.config/cloud_sync.conf#${CF2}/mixed.conf#g" > "${CF2}/content_get_mixed.sh"
+cfget "${CF2}/content_get_mixed.sh" /unused SAVES_REMOTE; cf_crc=${GRC}
+[ "${cf_valid}" -ne 0 ] && [ "${cf_crc}" -eq 2 ]; check $? "gpt G2-C-01 (a control): the scripts' own readers refuse SAVES_REMOTE=/Mine/'My Saves' (conf_valid rc ${cf_valid}, the content reader rc ${cf_crc})" "gpt G2-C-01: the fixture is not the case: conf_valid rc ${cf_valid}, content reader rc ${cf_crc}"
+cf1 --info
+grep -qx 'SAVES_REMOTE=' "${CF1}/out"; check $? "gpt G2-C-01: --info names no folder for it, rather than /Mine/'My" "gpt G2-C-01: --info said $(grep '^SAVES_REMOTE=' "${CF1}/out") -- a folder no script would use"
+: > "${CF1}/storage/rclone-calls"
+cf1 --seed-folders
+[ "${RC}" -ne 0 ] && ! grep -q '^mkdir' "${CF1}/storage/rclone-calls" && ! grep -q '^OK ' "${CF1}/out"; check $? "gpt G2-C-01: --seed-folders writes nothing to the cloud on a folder it cannot read (rc ${RC}): $(head -1 "${CF1}/out")" "gpt G2-C-01: --seed-folders rc ${RC}; rclone mkdir calls: $(grep '^mkdir' "${CF1}/storage/rclone-calls" | head -2 | tr '\n' '|'); said: $(cfsaid)"
+cf1 --check-syncpath
+[ "${RC}" -ne 0 ] && grep -q "couldn't be read" "${CF1}/out"; check $? "gpt G2-C-01: --check-syncpath of the stored folder says the settings couldn't be read (rc ${RC})" "gpt G2-C-01: --check-syncpath rc ${RC}; said: $(cfsaid)"
+# And the two text readers agree form by form: the same value, or both
+# refuse (exit 2).
+cf_forms=""
+while IFS= read -r form; do
+    printf 'SAVES_REMOTE=%s\n' "${form}" > "${CF2}/form.conf"
+    sed -n '/^conf_get() {/,/^}/p' "${CF}/src/cloud_content_backup" | sed "s#/storage/.config/cloud_sync.conf#${CF2}/form.conf#g" > "${CF2}/content_get_form.sh"
+    cfget "${CF2}/setup_get.sh" "${CF2}/form.conf" SAVES_REMOTE; a="${GVAL}"; ra=${GRC}
+    cfget "${CF2}/content_get_form.sh" /unused SAVES_REMOTE; b="${GVAL}"; rb=${GRC}
+    [ "${ra}:${a}" = "${rb}:${b}" ] || cf_forms="${cf_forms}[${form} -- cloud_setup ${ra}:'${a}', the content scripts ${rb}:'${b}'] "
+done <<'EOF'
+"/A B/Saves"
+'/A B/Saves'
+/A/Saves
+/A/Saves   # a note
+"/A/Saves" # a note
+""
+"/A$HOME/Saves"
+/A/'B C'
+"/A/Saves"x
+EOF
+[ -z "${cf_forms}" ]; check $? "gpt G2-C-01: cloud_setup and the content scripts read nine value forms alike, refusals included" "gpt G2-C-01: the readers disagree: ${cf_forms}"
 
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
