@@ -7,15 +7,19 @@
  * resolves on whichever machine is running the browser. If that is the
  * player's phone, nothing is listening and they land on an error page they
  * have to copy an address out of. So the browser runs here instead, where
- * rclone's authorize listener actually is, and the player drives it from
- * their phone over VNC.
+ * rclone's authorize listener actually is, and the player drives it with the
+ * handheld's own buttons -- cloud_oauth turns them into keys -- or types into
+ * it from their phone, whose keystrokes arrive as a keyboard (cloud_oauth's
+ * RemoteKeyboard). Nothing is mirrored. (This said "over VNC", the design
+ * the keyboard replaced; #308 claude F-RS-14.)
  *
  * This is deliberately not a browser. There is no address bar, no tabs, no
  * downloads, and navigation is refused outside the provider's own host and
  * the loopback redirect -- a handheld should not become a way to browse the
  * web because we needed somebody to sign in to Dropbox.
  *
- *   cloud-signin-window <url> <allowed-host>
+ *   cloud-signin-window <url> <allowed-host> [--exit-hint TEXT]
+ *                       [--no-auto-keyboard]
  */
 
 #include <gtk/gtk.h>
@@ -378,8 +382,8 @@ static void on_probe(GObject *source, GAsyncResult *result, gpointer data)
     if (osk && text && g_str_has_prefix(text, "text:")) {
         const char *field = text + 5;
         /* Only on a change of field. Re-raising a keyboard the player just
-         * dismissed, every two seconds, would be worse than never raising
-         * it. */
+         * dismissed, every half second (probe_tick), would be worse than
+         * never raising it. */
         if (g_strcmp0(field, osk->last_field) != 0) {
             g_strlcpy(osk->last_field, field, sizeof(osk->last_field));
             /* Not for somebody who chose to type on their phone: they asked
@@ -455,9 +459,11 @@ static gboolean probe_tick(gpointer data)
         "  return 'text:' + t + '/' + ty + '/' + (a.id || a.name || '?');"
         "})();";
 
-    /* Nothing to ask while the keyboard is being driven -- and asking anyway
-     * is how this oscillates, since a page can report a different active
-     * element the moment the caret moves. */
+    /* Asked every half second, keyboard up or not. What keeps this from
+     * oscillating -- a page can report a different active element the
+     * moment the caret moves -- is on_probe acting only on a change of
+     * field, not a pause while the keyboard is driven (this said there was
+     * one; #308 claude F-RS-14). */
     webkit_web_view_evaluate_javascript(osk->view, script, -1,
                                         NULL, NULL, NULL, on_probe, osk);
     return G_SOURCE_CONTINUE;
@@ -477,8 +483,11 @@ static gboolean on_key(GtkWidget *widget, GdkEventKey *event, gpointer data)
     /* A way out, always. The handheld's buttons are not a keyboard -- sway
      * reports the gamepad as a tablet_pad -- so without something mapping
      * them, this window covers the screen, cannot be driven from the device
-     * and cannot be closed. cloud_oauth maps Start to Escape; this is what
-     * receives it. */
+     * and cannot be closed. Escape is what the phone's "Close page" sends,
+     * and a keyboard plugged in; the pad's Select + Start ends the window
+     * from cloud_oauth's side (GAMEPAD_QUIT -> stop_browser) and never
+     * arrives here. (This said cloud_oauth mapped Start to Escape; #308
+     * claude F-RS-14.) */
     if (event->keyval == GDK_KEY_Escape) {
         gtk_main_quit();
         return TRUE;

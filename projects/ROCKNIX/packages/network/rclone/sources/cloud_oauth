@@ -1448,14 +1448,14 @@ def _capabilities(entry, kind):
 
 
 def exit_hint():
-    """What to call the exit combination, on this handheld.
+    """What the page and the window call the exit combination: one string,
+    the same on every handheld. It reads nothing from the pad.
 
     Either Select or Mode holds it (GAMEPAD_HOLD), because which one a player
-    reaches for differs by device. What must not differ is the instruction:
-    naming a button the pad does not have is worse than naming none, and the
-    RG351M and RG353M have no Mode button while the RG35XX SP does -- where
-    Mode is what ES maps its own hotkey to, and what the maintainer's fingers
-    reach for.
+    reaches for differs by device -- the RG351M and RG353M have no Mode
+    button, the RG35XX SP does and ES maps its own hotkey to it. The words
+    name only the pair every handheld has (#308 claude F-RS-14: this said it
+    read the pad).
     """
     # One combination on screen, always. "MODE OR SELECT + START" read as
     # though Mode alone were a way out, and a help line that has to be parsed
@@ -1861,9 +1861,10 @@ def make_handler(holder, shutdown):
             self._send(PIN_PAGE % {
                 "style": STYLE,
                 "message": message,
-                # Carried back so a mistyped digit is corrected rather than
-                # re-entered, and so a link that already had a PIN on it does
-                # not present an empty box.
+                # Pre-fills the box. Every caller passes nothing: a wrong PIN
+                # is not echoed back, so a guess learns nothing from the page
+                # (#308 claude F-RS-14: this said a mistyped digit was
+                # carried back).
                 "pin": supplied,
             })
 
@@ -2317,8 +2318,8 @@ def main(argv):
         # script and a newer page still agree on something.
         state = read_state()
         state["on_device"] = "yes" if browser_stack_available() else "no"
-        # Read from the pad, not from a table: the page tells the player how
-        # to come back, and the button it names has to be one they have.
+        # The window's own words for the way back (exit_hint): Select and
+        # Start, which every handheld we ship for has and labels.
         state["exit_hint"] = exit_hint()
         for key in ("url", "address", "pin", "name", "provider", "status",
                     "on_device", "exit_hint"):

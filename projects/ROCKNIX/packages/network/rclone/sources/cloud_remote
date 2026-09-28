@@ -44,24 +44,14 @@ import sys
 RCLONE = "/usr/bin/rclone"
 LOG_FILE = "/var/log/cloud_sync.log"
 
-# OAuth backends we can complete on-device, and how.
-#   device_flow: RFC 8628 - handheld shows a URL and short code, polls for the
-#                token. Needs no listener at all.
-#   pkce_paste:  authorization code with PKCE and no redirect_uri; the provider
-#                displays the code for the player to hand back.
-# Everything else with a `token` option stays on the SSH wizard: we would be
-# guessing at its sign-in shape, and guessing wrong strands the player
-# mid-setup with no way back.
-# Every OAuth backend is drivable now. cloud_oauth wraps rclone's own
-# `authorize` machinery rather than reimplementing any provider's flow, so
-# there is nothing per-provider to support: whatever rclone can authorize,
-# the handheld can too. Probed against dropbox, drive, onedrive, box, pcloud
-# and yandex, each resolving to its own provider unchanged.
-#
-# This replaces an earlier split where three providers were "drivable" and
-# sixteen needed a computer. That distinction was about a design we did not
-# end up building.
-DRIVABLE_OAUTH = "all"
+# Every OAuth backend goes through cloud_oauth, which wraps rclone's own
+# `authorize` rather than reimplementing any provider's flow, so nothing here
+# is per-provider: the "oauth" tier is whatever rclone can authorize. (A
+# DRIVABLE_OAUTH constant and a table of device-flow and PKCE-paste backends
+# described a design that was not built; nothing read them, and they went in
+# #308, claude F-RS-14.) That a provider's authorize link resolves to the
+# provider was probed for dropbox, drive, onedrive, box, pcloud and yandex;
+# that its sign-in completes on the device is proved per provider.
 
 # rclone's backend list is not a list of cloud services. These wrap or
 # transform another remote, or are not remote at all, and offering them as
