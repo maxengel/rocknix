@@ -935,11 +935,20 @@ write_archive() {
 # (KILL3 on the VM, 2026-09-10: the previous archive, planted first, was the
 # one removed). A name with no date is from before names carried them and is
 # the oldest there is; it sorts last.
+#
+# The one path given, if any, is never a candidate: the pre-restore copy a
+# restore has just taken and is about to rely on. Named by the clock, it
+# sorted oldest whenever the clock read earlier than the archives already
+# there -- an RTC-less handheld after a reset, with archives pulled from the
+# cloud -- and was deleted before the extraction it existed to protect, while
+# the restore mark still named it (#308 claude F-BR-08, gpt F-BR-15).
 trim_archive() {
+    local KEEP="${1:-}"
     ls -1 "${ARCHIVEFOLDER}"/*_SETTINGS*.tar.gz "${ARCHIVEFOLDER}"/*PRE_RESTORE*.tar.gz \
           "${ARCHIVEFOLDER}"/*_BACKUP*.tar.gz "${ARCHIVEFOLDER}"/*_BACKUP*.zip \
           "${ARCHIVEFOLDER}"/ARCHIVED_*.zip 2>/dev/null \
         | awk '!seen[$0]++' \
+        | KEEP="${KEEP}" awk '$0 != ENVIRON["KEEP"]' \
         | awk -F/ '{ n = $NF; k = (n ~ /^[0-9][0-9][0-9][0-9]_/) ? n : "0000_" n; print k "\t" $0 }' \
         | sort -r | cut -f2- | tail -n +$((ARCHIVE_KEEP + 1)) | while read -r OLD
     do
@@ -1048,7 +1057,7 @@ case "${VERB}" in
         note "KEEPING A COPY OF YOUR CURRENT SETTINGS..." "${SNAPSHOT}"
         snapshot_members "${MEMBERS}" "${SNAPSHOT}" "${NEWLIST}"
         case $? in
-            0) trim_archive ;;
+            0) trim_archive "${SNAPSHOT}" ;;
             4) # Nothing the archive holds is on the device yet: a fresh
                # install. There is nothing to copy; the files the restore
                # would create are still listed, so a revert can remove
