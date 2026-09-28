@@ -137,7 +137,7 @@ saves 9 beside a settings failure, a relative retire argument, a game-list pass 
 
 93 entries in `02-forward-audit.md` § Verification, one per filed Critical/High (siblings merged where the
 fix is one). Counts: 1 Critical stands, 31 High stand, 1 High pending a fact, 46 to Medium, 7 refuted, dead
-or not applicable, 7 Low. Eight were settled on guest d (`7911c53bb4`): nmcli's escaping (F-WF-02), the quirk
+or not applicable, 7 Low. One refutation was overturned by the fix streams: F-RS-04 (credentials in the log) held in `cloud_remote`, the second creator the title covered and the reading did not open (corrected in § Verification; PL-074 fixed both creators). Eight were settled on guest d (`7911c53bb4`): nmcli's escaping (F-WF-02), the quirk
 scripts' `Read-only file system` (F-PB-02/03, F-VM-04/05), the bootloader directory's contents (F-VM-01/02c),
 the serial shell's state (F-VM-03c), the installed quirk set (F-VM-04c).
 
