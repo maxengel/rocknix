@@ -249,14 +249,26 @@ forget_wifi() {
 # network at the next boot and resume. A name that is not a saved wireless
 # network, or an activation that fails: nothing printed, exit 1. NetworkManager
 # not answering: exit 2, so a caller cannot read a silence as a refusal.
+# The profile active on this device's adapter, by name, unescaped. A
+# profile's ACTIVE in saved_wifi says it is up somewhere -- on any adapter.
+wifi_dev_connection() {
+  "${NMCLI}" -t -f GENERAL.CONNECTION device show "${WIFI_DEV}" 2>/dev/null | sed -n 's/^GENERAL\.CONNECTION://p' | nm_unescape
+}
+
 join_wifi() {
   local name="${1}" rows state psk
   [ -n "${name}" ] || return 1
   rows=$(saved_wifi) || return 2
   state=$(printf '%s\n' "${rows}" | NAME="${name}" awk -F'\t' '$1 == ENVIRON["NAME"] { print $2 }')
   [ -n "${state}" ] || return 1
-  if [ "${state}" != "active" ]; then
-    "${NMCLI}" -w 90 connection up id "${name}" >/dev/null 2>&1 || return 1
+  # Judged on the adapter the picker speaks for (WIFI_DEV, as current_wifi
+  # is): a profile already up on another adapter read as "active" and
+  # skipped the activation, and "joined" was said while this adapter stayed
+  # on another network (#307 PL-031). So the profile is brought up on
+  # WIFI_DEV by name, and joined is said only once WIFI_DEV reads it.
+  if [ "$(wifi_dev_connection)" != "${name}" ]; then
+    "${NMCLI}" -w 90 connection up id "${name}" ifname "${WIFI_DEV}" >/dev/null 2>&1 || return 1
+    [ "$(wifi_dev_connection)" = "${name}" ] || return 1
   fi
   # The key as NetworkManager holds it, byte for byte. -g is terse output,
   # which escapes ':' and '\' in a value -- ab:cd\ef12345 came back as
