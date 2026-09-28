@@ -60,7 +60,6 @@
 #            marks those achievements as earned and waiting to be sent. The
 #            same refusals as pending: toggle off or no store answers
 #            nothing with exit 1, a store that cannot be read exit 2.
-#   account  the signed-in account's points as RetroAchievements last told
 #   summary  one line of JSON per game the store holds for the signed-in
 #            account -- id, title, icon, achievements, points, unlocked,
 #            unlockedPoints, pending -- from one read of sqlite: the page's
@@ -68,8 +67,10 @@
 #            A game a launch cached (its achievementsets row, no patch row)
 #            is listed too, and unlocked and unlockedPoints are null when the
 #            game's unlock row is missing or cannot be read (#307 PL-057).
-#            Exit 1 with the toggle off, no account or no store; 3 when the
-#            store cannot be read.
+#            Exit 1 with the toggle off, no account or no store; 2 when the
+#            store cannot be read (the reader's 3, said through cannot_tell
+#            as every read here says it; #308 F-RA-28).
+#   account  the signed-in account's points as RetroAchievements last told
 #            the proxy, from its cached sign-in: "score=<n> softcore=<n>" on
 #            one line, exit 0; exit 1 when the toggle is off, nothing is
 #            cached for this account, or the cached sign-in carries no
@@ -167,8 +168,15 @@
 #            EmulationStation's index had games to identify and the hash
 #            library did not come: leaves index-pending, the marker the
 #            after-index run leaves when its probe fails, so the next
-#            link-return topup lists the library once for those games
-#            (fork #299, D-UI-104). No probe; exit 0.
+#            link-return topup lists the library once (fork #299, D-UI-104).
+#            No probe; exit 0. What that listing can find is the games the
+#            index did identify -- the case the after-index run's marker is
+#            for. The games this index could not identify have no
+#            cheevosId yet, so no listing finds them: what caches them is
+#            the interface running its index again when the link comes up
+#            (NetworkThread, while the hash library has not come this
+#            session and INDEX NEW GAMES AT STARTUP is on) and the topup
+#            --after-index that follows it (#308 F-RA-22).
 #   listening [--wait N]
 #            whether the proxy's port, 127.0.0.1:8080, is in LISTEN: exit 0
 #            when it is, 1 when not -- read from /proc/net/tcp and tcp6, no
@@ -224,17 +232,21 @@
 #
 # The store this reads -- read-only, through the service's own sqlite3
 # module, never written here -- is the client's schema at the commit
-# package.mk pins (4e9bab484e4d7be30b2dbc313aae94ca2f5f742a, storage.py
-# _initialize_sqlite; byte-identical to the previous pin 64d03d30's, checked
-# 2026-09-24 for audit #258 PL-009): pending_awards(achievementId, queuedAt,
-# status) for
-# pending and pending-ids; api_cache(cacheKey, responseBody, sourceRomPath,
-# cachedAt) for account and for the scan's "already cached" test, the keys
-# as cache_keys.py spells them (login2::<user>, patch:<id>:<user>,
-# unlocks:<id>:<user>:0, achievementsets:<hash>:<user>). The client carries
-# no schema version row (an upstream item, #186 PL-22); a schema it changes
-# shows here as cannot_tell (exit 2), never as a number.
-#
+# package.mk pins (c1bd3724d18e8c0ce67c3d62852e6eaf83e3a302, storage.py
+# _initialize_sqlite, read 2026-09-28 for audit #308 F-RA-07; the header
+# named 4e9bab48, two pins back, until then): pending_awards(id,
+# achievementId, queryString, requestBody, queuedAt, status) for pending,
+# pending-ids and summary; api_cache(cacheKey, responseBody, sourceRomPath,
+# cachedAt) for account, summary, the ready set behind added= and the
+# scan's "already cached" test, the keys as cache_keys.py spells them
+# (login2::<user>, patch:<id>:<user>, unlocks:<id>:<user>:0,
+# achievementsets:<hash>:<user>). The client carries no schema version row
+# (an upstream item, #186 PL-22); a schema it changes shows here as
+# cannot_tell (exit 2), never as a number -- and first in the scripts
+# suite, which runs these reads against a store the pinned client's own
+# Storage wrote and checks that this paragraph names the pin package.mk
+# pins, so a pin that moves makes somebody read the schema again.
+
 # Machine-facing. The last line of stdout after enable or disable is
 # hardcore=<0|1>, the setting as it stands afterwards; EmulationStation
 # reads it to keep its HARDCORE MODE row truthful. Everything else goes to
@@ -271,8 +283,9 @@ RUNNING="${PROXY_DIR}/running"
 TOPUP_MARK="${PROXY_DIR}/last-topup-attempt"
 # An index run that could not reach RetroAchievements (a game list updated
 # offline) leaves this, and the next link-return run lists the library
-# once for it, so the games added offline are cached when the device is
-# next online -- the promise the interface's toast makes (fork #299). It is
+# once for it, so the games an index identified while the device was
+# offline are cached when it is next online (fork #299; the games an index
+# could not identify are the interface's next index's, #308 F-RA-22). It is
 # removed only by a run whose listing and indexed pass both went through, so
 # a run that fails or is stopped part-way leaves it for the next (#307
 # PL-055).
@@ -596,10 +609,6 @@ for aid, queued, query, body in db.execute("SELECT achievementId, queuedAt, quer
     return 0
 }
 
-# The account's points from the proxy's cached sign-in (the login2 row of the
-# signed-in user, keyed by the user name in lower case as cache_keys.py
-# normalises it). The row carries the session token; the two numbers are
-# all that leaves this function.
 # summary: the page's whole offline summary in one read of the store (fork
 # #190: 247 saved games were 494 requests to the service, each tried
 # upstream first while the service still believed it was online -- hours on
@@ -728,6 +737,10 @@ PY_SUMMARY
     [ "${RC}" -eq 0 ] || cannot_tell "the proxy's store at ${QUEUE} could not be read"
 }
 
+# The account's points from the proxy's cached sign-in (the login2 row of the
+# signed-in user, keyed by the user name in lower case as cache_keys.py
+# normalises it). The row carries the session token; the two numbers are
+# all that leaves this function.
 do_account() {
     if [ "$(as_flag "$(setting "${KEY}")")" != "1" ] || [ ! -e "${QUEUE}" ]; then
         return 1
@@ -1697,9 +1710,12 @@ do_images() {
     exit "${RC}"
 }
 
-# refresh [--game <id>|--all]. The daily pass re-reads every cached game's
-# patch and unlocks within a day (patch 005), which covers the ordinary case.
-# This is for the player standing in front of the device who has just changed
+# refresh [--game <id>|--all]. The service's own pass re-reads, each online
+# hour while the proxy is idle, the cached games played in the last seven
+# days (upstream 59b167c, D-RA-029; patch 005 keeps only its exception
+# boundary), which covers the ordinary case -- not every cached game, and not
+# daily, as this said until #308 F-RA-28. This is for the player standing in
+# front of the device who has just changed
 # something on the site -- reset an achievement, earned one elsewhere -- and
 # wants it true here before going offline (#223).
 do_refresh() {
@@ -1849,8 +1865,12 @@ do_scan() {
 # (fork #299, D-UI-104). The marker the after-index run leaves when its
 # probe fails is written here without a probe, since the interface already
 # knows the library did not come: the next link-return topup lists the
-# library once for those games, inside the half hour or not, and clears
-# it. Nothing else is touched; exit 0.
+# library once, inside the half hour or not, and clears it once that
+# listing's games are handled. The games this index could not identify are
+# not among them -- they have no cheevosId until an index with the library
+# gives them one; the interface runs that index when the link comes up, and
+# its topup --after-index caches them (#308 F-RA-22). Nothing else is
+# touched; exit 0.
 do_index_offline() {
     mkdir -p "${PROXY_DIR}" || fail "cannot create ${PROXY_DIR}"
     touch "${INDEX_PENDING}" || fail "cannot write ${INDEX_PENDING}"

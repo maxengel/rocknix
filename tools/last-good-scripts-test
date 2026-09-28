@@ -3963,4 +3963,32 @@ else
     echo "    SKIP  #308 F-RA-10's ctl cases: section t did not run"
 fi
 
+# D18. #308 1-raoffline claude F-RA-07: the ctl's own reads of the proxy's
+# store -- pending, pending-ids, account and summary -- are run here against
+# a store the pinned client made (its Storage, at the commit package.mk
+# pins, patches applied), so a schema the client changes shows here as a
+# FAIL, not as cannot_tell on a device. The header names the pin it was last
+# read against, and D3 runs summary and pending-ids on the same kind of store.
+if [ "${DT_OK}" -eq 1 ]; then
+printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+treset; PYTHONPATH="${CLIENT}" RAOFFLINEPROXY_CONFIG_DIR="${TPD}" python3 - <<'EOS'
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+s = Storage()
+s.upsert_cache(cache_keys.login("qa"), '{"Success":true,"User":"QA","Token":"planted","Score":1234,"SoftcoreScore":56}')
+s.upsert_pending_award({"achievementId": 4242, "queryString": "/dorequest.php?r=awardachievement&u=QA&a=4242&h=0", "requestBody": "", "userAgent": "ra", "queuedAt": 1789400000000})
+s.close()
+EOS
+tctl pending; DPR=${RC}; DPO="$(cat "${OUT}")"
+tctl pending-ids; DIR=${RC}; DIO="$(cat "${OUT}")"
+tctl account; DAR=${RC}; DAO="$(cat "${OUT}")"
+tctl summary; DSR=${RC}
+[ "${DPR}" -eq 0 ] && [ "${DPO}" = "1" ] && [ "${DIR}" -eq 0 ] && [ "${DIO}" = "4242 1789400000" ] && [ "${DAR}" -eq 0 ] && [ "${DAO}" = "score=1234 softcore=56" ] && [ "${DSR}" -eq 0 ] && ! grep -q 'planted' "${OUT}"; check $? "#308 claude F-RA-07: pending, pending-ids, account and summary read a store the pinned client's Storage wrote (1 / 4242 1789400000 / score=1234 softcore=56 / exit 0), the token never printed" "#308 claude F-RA-07: pending rc ${DPR} '${DPO}'; pending-ids rc ${DIR} '${DIO}'; account rc ${DAR} '${DAO}'; summary rc ${DSR} -- the ctl's SQL no longer fits the client's schema"
+src_of "${CTL_REL}" "${DD}/ctl-header"
+DPINHDR="$(sed -n '1,/^\. \/etc\/profile$/p' "${DD}/ctl-header" | grep -o 'package.mk pins ([0-9a-f]\{40\}' | head -n 1 | grep -o '[0-9a-f]\{40\}')"
+[ -n "${DPINHDR}" ] && [ "${DPINHDR}" = "${PIN}" ]; check $? "#308 claude F-RA-07 / gpt F-RA-28: the ctl's header names the pin package.mk pins (${PIN:0:10}) as the schema it was read against" "#308 F-RA-07/28: the header names '${DPINHDR:-nothing}', package.mk pins ${PIN}"
+else
+    echo "    SKIP  #308 F-RA-07's case: section t did not run"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
