@@ -3259,4 +3259,33 @@ printf 'gmuhttp.DisableLocalPassword=yes\ninput_enable_hotkey = "nul"\ncore_info
 p7bt backup
 [ "${RC}" -eq 0 ] && [ -n "$(p7arc)" ]; check $? "#307 PL-006: a translation catalogue under lang/ and keys that only end in key, pass or Password are not sign-ins: the backup completes (rc ${RC})" "#307 PL-006: rc ${RC}; why '$(p7why)'; log: $(grep -o 'logger -t backuptool [^|]*line[^|]*' "${P7OUT}" | head -1)"
 
+# == PL-007: the copy taken before a restore covers the archive's members
+p7reset '  /storage/.config/test/*'
+mkdir -p "${P7S}/.config/other"; echo ORIGINAL > "${P7S}/.config/other/x.cfg"
+p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/f1=ARCHIVE" "storage/.config/other/x.cfg=FROM ARCHIVE" "storage/.config/other/new.cfg=NEW"
+p7failtar
+p7bt restore --no-restart
+[ "${RC}" -ne 0 ] && [ "$(cat "${P7S}/.config/other/x.cfg")" = "ORIGINAL" ] && [ "$(cat "${P7S}/.config/test/f1")" = "file1" ] && [ ! -e "${P7S}/.config/other/new.cfg" ] && grep -q 'YOUR SETTINGS ARE UNCHANGED' "${P7OUT}"; check $? "#307 PL-007: a restore cut part-way puts back a member outside the device's own list (other/x.cfg ORIGINAL), removes one it created (other/new.cfg), and says unchanged truthfully" "#307 PL-007: rc ${RC}; x.cfg='$(cat "${P7S}/.config/other/x.cfg")' f1='$(cat "${P7S}/.config/test/f1")' new.cfg: $([ -e "${P7S}/.config/other/new.cfg" ] && echo left || echo gone); screen: $(p7screen)"
+grep -qxF '+/storage/.config/other/new.cfg' "${P7S}/.p7-marker-seen" 2>/dev/null; check $? "#307 PL-007: and the mark the boot reads names the file the restore would create, for the boot's own revert" "#307 PL-007: the mark at extraction: '$(tr '\n' '|' < "${P7S}/.p7-marker-seen" 2>/dev/null)'"
+rm -f "${P7}/shim/tar"
+
+# The boot's half: chksysconfig verify, lifted as case a lifts it, reads the
+# mark's "+<path>" lines and removes those files as it puts the copy back --
+# with a copy, and with none (every member was new).
+P7C="${P7}/chk"; rm -rf "${P7C}"; mkdir -p "${P7C}/cfg/system/configs" "${P7C}/root/storage/.config/test" "${P7C}/snapsrc/storage/.config/test"
+src_of "${CHK_REL}" "${P7C}/chksysconfig"
+{ awk '/^[a-z_]+\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${P7C}/chksysconfig"
+  printf 'logger() { echo "logger $*" >&2; }\nCONFIG_ROOT=%q; DEFAULT_ROOT=%q\nCFG_PATH="${CONFIG_ROOT}/system/configs"; CFG="${CFG_PATH}/system.cfg"; BACKUP="${CFG}.backup"\n' "${P7C}/cfg" "${P7C}/def"
+} > "${P7C}/fns.sh"
+printf 'system.hostname=X\n' > "${P7C}/cfg/system/configs/system.cfg"; cp "${P7C}/cfg/system/configs/system.cfg" "${P7C}/cfg/system/configs/system.cfg.backup"
+echo LIVE > "${P7C}/snapsrc/storage/.config/test/x.cfg"; tar -czf "${P7C}/cfg/pre.tar.gz" -C "${P7C}/snapsrc" storage
+echo HALF > "${P7C}/root/storage/.config/test/x.cfg"; echo CREATED > "${P7C}/root/storage/.config/test/new cfg.cfg"
+printf '%s\n+/storage/.config/test/new cfg.cfg\n' "${P7C}/cfg/pre.tar.gz" > "${P7C}/cfg/.restore-in-progress"
+EXTRACT_ROOT="${P7C}/root" PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7C}/fns.sh'; verify" 2>/dev/null
+[ "$(cat "${P7C}/root/storage/.config/test/x.cfg")" = "LIVE" ] && [ ! -e "${P7C}/root/storage/.config/test/new cfg.cfg" ] && [ "$(cat "${P7C}/cfg/.restore-reverted" 2>/dev/null)" = "reverted" ] && [ ! -e "${P7C}/cfg/.restore-in-progress" ]; check $? "#307 PL-007: at boot, chksysconfig puts the copy back and removes the file the cut restore created ('new cfg.cfg')" "#307 PL-007: x.cfg='$(cat "${P7C}/root/storage/.config/test/x.cfg")'; new cfg.cfg: $([ -e "${P7C}/root/storage/.config/test/new cfg.cfg" ] && echo left || echo gone); said: '$(cat "${P7C}/cfg/.restore-reverted" 2>/dev/null)'"
+rm -f "${P7C}/cfg/.restore-reverted"; echo CREATED > "${P7C}/root/storage/.config/test/only-new.cfg"
+printf '\n+/storage/.config/test/only-new.cfg\n' > "${P7C}/cfg/.restore-in-progress"
+EXTRACT_ROOT="${P7C}/root" PATH="${TMP}/bbin:${PATH}" bash -c ". '${P7C}/fns.sh'; verify" 2>/dev/null
+[ ! -e "${P7C}/root/storage/.config/test/only-new.cfg" ] && [ "$(cat "${P7C}/cfg/.restore-reverted" 2>/dev/null)" = "reverted" ]; check $? "#307 PL-007: a mark with no copy (every member was new) still removes what the cut restore created, and says reverted" "#307 PL-007: only-new.cfg: $([ -e "${P7C}/root/storage/.config/test/only-new.cfg" ] && echo left || echo gone); said: '$(cat "${P7C}/cfg/.restore-reverted" 2>/dev/null)'"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

@@ -306,6 +306,94 @@ archive_ok() {
     esac
 }
 
+# An archive's members, one per line and each whole, for either kind. The zip
+# listing's name is everything from its fourth column on (#307 PL-036).
+archive_members() {
+    case "${1}" in
+        *.tar.gz) tar -tzf "${1}" 2>/dev/null ;;
+        *)        unzip -l "${1}" 2>/dev/null | awk 'NF > 3 && $4 ~ /^storage\// { print substr($0, index($0, $4)) }' ;;
+    esac
+}
+
+# The copy a restore takes before it writes anything, of exactly what it is
+# about to write over: every member of the incoming archive that exists on
+# this device now, whatever the device's own backup list says, kept whole
+# (passwords too -- it never leaves the device, and "as they were" has to mean
+# exactly that). Until #307 PL-007 the copy walked the device's LOCATIONS and
+# dropped the files identical to the image's, so an archive made under a
+# broader list, or holding a file this device still had at its shipped
+# default, overwrote files the copy did not hold -- and a failed restore said
+# the settings were unchanged.
+#
+# The members that do NOT exist here are the files the restore would create;
+# they go to NEWLIST, one absolute path per line, so a revert can remove them
+# as well as put the rest back. Returns 0 with the copy at TARGET; 4 when no
+# member exists on this device (nothing to copy; NEWLIST may still name
+# files); anything else when the copy could not be taken, which ends the
+# restore before it writes (#307 PL-009).
+snapshot_members() { # <members file> <target> <newlist file>
+    local MEMBERS="${1}" TARGET="${2}" NEWLIST="${3}" KEEP M LIVE LISTED
+    KEEP=$(mktemp)
+    : > "${NEWLIST}"
+    while IFS= read -r M
+    do
+        M="${M#./}"
+        case "${M}" in
+            storage/*/) continue ;;              # a folder: its files are members of their own
+            storage/*) ;;
+            *) continue ;;                       # nothing outside /storage is put back
+        esac
+        case "/${M}/" in */../*|*/./*) continue ;; esac
+        LIVE="/${M}"
+        if [ -L "${LIVE}" ] || [ -f "${LIVE}" ]
+        then
+            printf '%s\n' "${M}" >> "${KEEP}"
+        elif [ ! -e "${LIVE}" ]
+        then
+            printf '%s\n' "${LIVE}" >> "${NEWLIST}"
+        fi
+    done < "${MEMBERS}"
+    awk '!seen[$0]++' "${KEEP}" > "${KEEP}.unique" && mv -f "${KEEP}.unique" "${KEEP}"
+    if [ ! -s "${KEEP}" ]
+    then
+        rm -f "${KEEP}"
+        return 4
+    fi
+    if ! tar -czf "${TARGET}.partial" -C / -T "${KEEP}" 2>/dev/null
+    then
+        rm -f "${KEEP}" "${TARGET}.partial"
+        return 2
+    fi
+    LISTED=$(tar -tzf "${TARGET}.partial" 2>/dev/null | grep -vc '/$')
+    if [ "${LISTED}" -ne "$(wc -l < "${KEEP}")" ] || ! mv -f "${TARGET}.partial" "${TARGET}"
+    then
+        rm -f "${KEEP}" "${TARGET}.partial"
+        return 3
+    fi
+    rm -f "${KEEP}"
+    return 0
+}
+
+# Undo a restore that did not finish: the copy back over the tree, and every
+# file the restore created removed. Returns 0 only when both happened.
+revert_restore() {
+    local RC=0 P
+    if [ -n "${SNAPSHOT}" ]
+    then
+        tar -xzf "${SNAPSHOT}" -C / >/dev/null 2>&1 || RC=1
+    fi
+    while IFS= read -r P
+    do
+        [ -n "${P}" ] || continue
+        if [ -L "${P}" ] || [ -e "${P}" ]
+        then
+            rm -f "${P}" 2>/dev/null
+            [ -L "${P}" ] || [ -e "${P}" ] && RC=1
+        fi
+    done < "${NEWLIST}"
+    return ${RC}
+}
+
 # The standalone emulators' cheevos_*.sh scripts copy the RetroAchievements
 # token out of system.cfg into the emulator's own files at every launch, so
 # the token that write_archive deletes from the archived system.cfg would
@@ -843,45 +931,48 @@ case "${VERB}" in
             fail "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED. NOTHING WAS CHANGED. BACK UP SETTINGS AGAIN." "${BACKUPFILE} does not list"
         fi
 
-        # Before anything is written over the live tree, the tree as it is
-        # now goes into archive/ under the same shape as a backup, so a
+        # Before anything is written over the live tree, what the archive
+        # is about to replace goes into archive/ (snapshot_members), so a
         # restore that does not finish has something to go back to
         # (D-CLOUD-078: a failure reverts to the last known good state).
         # archive/ is never sent to the cloud and never scanned by
         # newest_backup, so the copy cannot be mistaken for a backup the
         # player made; it is trimmed with the rest of archive/ so the folder
-        # stays bounded. Passwords are kept in it (STRIP=0): it stays on the
-        # device, and "as they were" has to mean exactly that.
+        # stays bounded.
         mkdir -p "${ARCHIVEFOLDER}"
         SNAPSHOT="${ARCHIVEFOLDER}/${BACKUP_STAMP}-PRE_RESTORE-${DEVICE_LABEL:+${DEVICE_LABEL}-}${OS_NAME}_SETTINGS.tar.gz"
+        MEMBERS=$(mktemp); NEWLIST=$(mktemp)
+        archive_members "${BACKUPFILE}" > "${MEMBERS}"
         note "KEEPING A COPY OF YOUR CURRENT SETTINGS..." "${SNAPSHOT}"
-        write_archive "${SNAPSHOT}" 0
+        snapshot_members "${MEMBERS}" "${SNAPSHOT}" "${NEWLIST}"
         case $? in
             0) trim_archive ;;
-            4) # Nothing on the device to keep: a fresh install. There is
-               # nothing a failed restore could revert to and nothing it
-               # could damage, so go on without a copy. A copy that FAILED
-               # (2, 3) is not this: the tree is there and could not be
-               # kept, so the restore stops below before writing anything
-               # (#307 PL-009).
+            4) # Nothing the archive holds is on the device yet: a fresh
+               # install. There is nothing to copy; the files the restore
+               # would create are still listed, so a revert can remove
+               # them. A copy that FAILED (2, 3) is not this: the tree is
+               # there and could not be kept, so the restore stops before
+               # writing anything (#307 PL-009).
                SNAPSHOT=""
-               logger -t backuptool "no current settings to copy aside before the restore" ;;
+               logger -t backuptool "nothing on this device for the restore to replace; no copy needed" ;;
             *) why "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS"
-               fail "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS, SO NOTHING WAS CHANGED. TRY AGAIN." "write_archive ${SNAPSHOT} failed" ;;
+               fail "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS, SO NOTHING WAS CHANGED. TRY AGAIN." "the copy of what ${BACKUPFILE} would replace could not be written" ;;
         esac
 
         # From here until the tree is whole again, a power cut leaves it half
         # from the archive and half from before, with nothing running to
-        # notice. The marker names the copy taken above; chksysconfig verify
-        # reads it at the next boot, puts the copy back and tells
-        # EmulationStation to say so (D-CLOUD-078, KILL18). Removed below
-        # once the extract has finished, or once this script's own revert
-        # has put the copy back; left in place if that revert failed, so the
-        # boot tries again.
+        # notice. The marker names the copy taken above on its first line and
+        # each file the restore would create on a line of its own after it,
+        # "+<path>"; chksysconfig verify reads it at the next boot, puts the
+        # copy back, removes those files and tells EmulationStation to say so
+        # (D-CLOUD-078, KILL18). An image from before #307 PL-007 reads the
+        # first line alone, as it always did. Removed below once the extract
+        # has finished, or once this script's own revert has put the tree
+        # back; left in place if that revert failed, so the boot tries again.
         RESTORE_MARK="/storage/.config/.restore-in-progress"
-        if [ -n "${SNAPSHOT}" ]
+        if [ -n "${SNAPSHOT}" ] || [ -s "${NEWLIST}" ]
         then
-            printf '%s\n' "${SNAPSHOT}" > "${RESTORE_MARK}.tmp" && mv -f "${RESTORE_MARK}.tmp" "${RESTORE_MARK}"
+            { printf '%s\n' "${SNAPSHOT}"; sed 's/^/+/' "${NEWLIST}"; } > "${RESTORE_MARK}.tmp" && mv -f "${RESTORE_MARK}.tmp" "${RESTORE_MARK}"
         fi
 
         note "RESTORING SETTINGS..." "from ${BACKUPFILE}"
@@ -935,7 +1026,7 @@ case "${VERB}" in
                     SKIP+=("$(glob_literal "${ENTRY}")")
                     SKIPPED=$((SKIPPED + 1))
                 fi
-            done < <(unzip -l "${BACKUPFILE}" 2>/dev/null | awk 'NF > 3 && $4 ~ /^storage\// { print substr($0, index($0, $4)) }')
+            done < "${MEMBERS}"
             if [ "${SKIPPED}" -gt 0 ]
             then
                 note "KEEPING ${SKIPPED} FILE(S) THE SYSTEM PROVIDES THAT THIS OLDER BACKUP WOULD HAVE REPLACED."
@@ -947,21 +1038,22 @@ case "${VERB}" in
         if [ $? -ne 0 ]
         then
             # Half the archive may be in place. Put the copy taken above
-            # back over it, and say which state the device is in.
-            if [ -n "${SNAPSHOT}" ] && tar -xzf "${SNAPSHOT}" -C / >/dev/null 2>&1
+            # back over it, remove what the restore created, and say which
+            # state the device is in. "Unchanged" is said only when both
+            # happened: the copy covers every member the archive would have
+            # replaced, and the list every one it would have added.
+            if revert_restore
             then
-                rm -f "${RESTORE_MARK}"
+                N_NEW=$(wc -l < "${NEWLIST}")
+                rm -f "${RESTORE_MARK}" "${MEMBERS}" "${NEWLIST}"
                 why "THE RESTORE COULDN'T FINISH"
-                fail "THE RESTORE COULDN'T FINISH. DON'T WORRY - YOUR SETTINGS ARE UNCHANGED. TRY AGAIN." "extraction of ${BACKUPFILE} failed; ${SNAPSHOT} put back"
-            elif [ -n "${SNAPSHOT}" ]
-            then
-                why "THE RESTORE COULDN'T FINISH"
-                fail "THE RESTORE COULDN'T FINISH, AND SOME OF YOUR SETTINGS COULDN'T BE PUT BACK. TRY THE RESTORE AGAIN." "extraction of ${BACKUPFILE} failed and so did putting back ${SNAPSHOT}"
+                fail "THE RESTORE COULDN'T FINISH. DON'T WORRY - YOUR SETTINGS ARE UNCHANGED. TRY AGAIN." "extraction of ${BACKUPFILE} failed; ${SNAPSHOT:-no copy needed} put back and ${N_NEW} created file(s) removed"
             else
                 why "THE RESTORE COULDN'T FINISH"
-                fail "THE RESTORE COULDN'T FINISH. TRY AGAIN." "extraction of ${BACKUPFILE} failed; there was no previous state to put back"
+                fail "THE RESTORE COULDN'T FINISH, AND SOME OF YOUR SETTINGS COULDN'T BE PUT BACK. TRY THE RESTORE AGAIN." "extraction of ${BACKUPFILE} failed and so did putting back ${SNAPSHOT:-the files it created}"
             fi
         fi
+        rm -f "${MEMBERS}" "${NEWLIST}"
 
         # The tree is whole: the boot has nothing to put back.
         rm -f "${RESTORE_MARK}"
