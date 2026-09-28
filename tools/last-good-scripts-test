@@ -3011,4 +3011,121 @@ ckf() { # ckf <raw bytes> <exe> <CORE_MIN_FREE_KB>
 ckf 65536 retroarch $(( XFREE - 512 )); printf '%s' "${NOTE}" | grep '^dump' | grep -q 'NOT KEPT' && printf '%s' "${NOTE}" | grep '^dump' | grep -q 'plus the 1048576 byte cap'; check $? "with free space above the floor but under the floor plus the cap, the dump is refused and the note names both (audit #258, the seat's G-03; the old test admitted it)" "free ${XFREE} KB; note: $(printf '%s' "${NOTE}" | grep '^dump' | cut -c1-140)"
 ckf 65536 retroarch 1024;                printf '%s' "${NOTE}" | grep '^dump' | grep -q 'whole'; check $? "and with a floor the card clears by more than the cap, the same dump is kept" "note: $(printf '%s' "${NOTE}" | grep '^dump' | cut -c1-100)" "note: $(printf '%s' "${NOTE}" | grep '^dump')"
 
+# ---- audit #307, stream F1 ----
+# GENERIC_X64, the developers' QA device (D-QA-053): its boot quirks, its
+# serial shell, its launcher and its RetroArch surface. Every script here runs
+# the way the image runs it -- under bash, which is the image's /bin/sh, with
+# the image's busybox for the applets it has -- inside bwrap, against a /etc
+# built from the recipes' own links into /storage and a /usr that is the
+# read-only image it is on a guest. Under --old the scripts come from
+# BASE_REF; `BASE_REF=417dcd8610 tools/last-good-scripts-test --old` is the
+# tree before this stream, and every F1 check below that names a fix FAILs
+# against it.
+echo "  F1. GENERIC_X64, the developers' QA device (D-QA-053): the boot quirks write only what a guest keeps, the serial shell stays on a VM, the launcher's print verb touches nothing (#307 PL-019, PL-022, PL-023, PL-033, PL-034, PL-073; #308)"
+F1="${TMP}/f1"; mkdir -p "${F1}"
+F1_PREV=417dcd8610     # the tree before stream F1: what the earlier builds installed, and so wrote
+F1_QEMU="QEMU Standard PC (Q35 + ICH9, 2009)"
+F1_QREL=projects/ROCKNIX/packages/hardware/quirks
+# A directory's files: the working tree's, or BASE_REF's under --old, or a
+# named ref's (f1_tree_at) -- an absent directory copies nothing.
+f1_tree_at() { # <ref|""> <repo-relative dir> <destination>
+    mkdir -p "${3}"
+    if [ -n "${1}" ]; then
+        git -C "${ROOT}" ls-tree --name-only "${1}:${2}" 2>/dev/null | while IFS= read -r f; do
+            git -C "${ROOT}" show "${1}:${2}/${f}" > "${3}/${f}" || { echo "cannot read ${2}/${f} at ${1}" >&2; exit 2; }
+        done
+    elif [ -d "${ROOT}/${2}" ]; then
+        cp -a "${ROOT}/${2}/." "${3}/"
+    fi
+    chmod +x "${3}"/* 2>/dev/null; true
+}
+f1_tree() { if [ "${OLD}" -eq 1 ]; then f1_tree_at "${BASE_REF}" "$@"; else f1_tree_at "" "$@"; fi; }
+F1BB=(); F1PATH="/shim:/usr/bin:/bin"
+if [ -n "${BB}" ]; then F1BB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB_HOST}" "${BB}"); F1PATH="/shim:/bbin:/usr/bin:/bin"; fi
+# /etc as the image has it: read-only, with the links the systemd and kmod
+# recipes make into /storage (tmpfiles.d, sysctl.d, modules-load.d, the udev
+# rules, the *.conf.d of logind and friends), and no /etc/systemd/system --
+# the systemd recipe removes it and points systemd's own unit directory at
+# /storage/.config/system.d instead (its patch 0001).
+F1ETC="${F1}/etc"; mkdir -p "${F1ETC}/systemd/system.conf.d" "${F1ETC}/udev" "${F1ETC}/dbus-1/system.d"
+: > "${F1ETC}/systemd/journald.conf"; : > "${F1ETC}/systemd/system.conf"
+cat "${ROOT}/projects/ROCKNIX/packages/sysutils/systemd/package.mk" "${ROOT}/projects/ROCKNIX/packages/sysutils/kmod/package.mk" \
+    | sed -n 's#^ *ln -sf \(/storage/[^ ]*\) ${INSTALL}/etc/\([^ ]*\)$#\1 \2#p' > "${F1}/etc-links"
+while read -r tgt rel; do mkdir -p "$(dirname "${F1ETC}/${rel}")"; ln -sfn "${tgt}" "${F1ETC}/${rel}"; done < "${F1}/etc-links"
+[ -L "${F1ETC}/tmpfiles.d" ] && [ -L "${F1ETC}/sysctl.d" ] && [ -L "${F1ETC}/udev/rules.d" ] && [ -L "${F1ETC}/modules-load.d" ]
+check $? "the fixture's /etc carries the recipes' links into /storage ($(wc -l < "${F1}/etc-links") of them)" "the recipes' /etc links were not found; the fixture is not the image's /etc: $(tr '\n' ' ' < "${F1}/etc-links")"
+# The shims: systemctl as the patched systemd behaves -- mask and unmask
+# write a /dev/null link in /storage/.config/system.d, its unit directory --
+# and the tools a quirk may call that do nothing here.
+mkdir -p "${F1}/shim"
+cat > "${F1}/shim/systemctl" <<'EOS'
+#!/bin/bash
+case "$1" in
+    mask)   shift; for u in "$@"; do mkdir -p /storage/.config/system.d; ln -sfn /dev/null "/storage/.config/system.d/${u}"; done ;;
+    unmask) shift; for u in "$@"; do [ "$(readlink "/storage/.config/system.d/${u}")" = /dev/null ] && rm -f "/storage/.config/system.d/${u}"; done ;;
+esac
+exit 0
+EOS
+for t in systemd-detect-virt modprobe udevadm plymouth logger blockdev; do printf '#!/bin/sh\nexit 0\n' > "${F1}/shim/${t}"; done
+chmod +x "${F1}/shim"/*
+# /storage as a guest's first boot leaves it: the /usr/config directories the
+# links point into (each with its README), the shipped retroarch.cfg.
+f1_storage() { # <dir>: a fresh /storage
+    rm -rf "${1}"; mkdir -p "${1}/.config/profile.d" "${1}/.config/retroarch" "${1}/.cache"
+    for d in tmpfiles.d sysctl.d modules-load.d modprobe.d udev.rules.d hwdb.d system.d logind.conf.d resolved.conf.d sleep.conf.d timesyncd.conf.d; do
+        mkdir -p "${1}/.config/${d}"; echo "shipped" > "${1}/.config/${d}/README"
+    done
+    printf 'video_driver = "vulkan"\nvideo_fullscreen = "true"\nvideo_fullscreen_x = "640"\nvideo_fullscreen_y = "480"\n' > "${1}/.config/retroarch/retroarch.cfg"
+}
+# /sys: one connected virtio output at 1280x800 (QEMU's default), fw_cfg's
+# SSH port, the DMI names.
+f1_sys() { # <dir> [<connector>:<status>:<mode>[,<mode>...]]...
+    local d="${1}" c name st modes; shift
+    rm -rf "${d}"; mkdir -p "${d}/class/drm" "${d}/firmware/qemu_fw_cfg/by_name/opt/org.rocknix.cloud_ssh_port" "${d}/class/dmi/id"
+    printf '10022' > "${d}/firmware/qemu_fw_cfg/by_name/opt/org.rocknix.cloud_ssh_port/raw"
+    echo QEMU > "${d}/class/dmi/id/sys_vendor"; echo "Standard PC (Q35 + ICH9, 2009)" > "${d}/class/dmi/id/product_name"
+    [ $# -eq 0 ] && set -- "card0-Virtual-1:connected:1280x800,1024x768,640x480"
+    for c in "$@"; do
+        name="${c%%:*}"; c="${c#*:}"; st="${c%%:*}"; modes="${c#*:}"
+        mkdir -p "${d}/class/drm/${name}"
+        echo "${st}" > "${d}/class/drm/${name}/status"
+        if [ "${st}" = connected ]; then echo enabled; else echo disabled; fi > "${d}/class/drm/${name}/enabled"
+        echo "${modes}" | tr ',' '\n' > "${d}/class/drm/${name}/modes"
+    done
+}
+# One boot's quirk pass, as autostart runs it: the platform's scripts, then
+# the device's, each "${script}" 2>&1 >>boot.log -- so what a script says on
+# stderr is what the journal holds, and that is what lands in <journal>.
+f1_pass() { # <storage> <sys> <quirks dir> <journal>
+    ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${F1BB[@]}" \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 --symlink usr/sbin /sbin \
+        --ro-bind "${F1ETC}" /etc --bind "${1}" /storage --ro-bind "${2}" /sys --ro-bind "${3}" /quirks \
+        --ro-bind "${F1}/shim" /shim --tmpfs /run --tmpfs /tmp --tmpfs /var --dev /dev --proc /proc \
+        --setenv PATH "${F1PATH}" --setenv HOME /storage \
+        bash -c 'for s in /quirks/platforms/GENERIC_X64/* "/quirks/devices/QEMU Standard PC (Q35 + ICH9, 2009)"/*; do
+                     [ -f "${s}" ] && bash "${s}" 2>&1 >>/run/boot.log
+                 done; exit 0' ) > "${4}" 2>&1
+}
+f1_quirks() { # <ref|""> <destination>: the platform and QEMU device quirks a build installs
+    rm -rf "${2}"; mkdir -p "${2}/platforms" "${2}/devices"
+    f1_tree_at "${1}" "${F1_QREL}/platforms/GENERIC_X64" "${2}/platforms/GENERIC_X64"
+    f1_tree_at "${1}" "${F1_QREL}/devices/${F1_QEMU}" "${2}/devices/${F1_QEMU}"
+}
+f1_new_files() { # <storage> <reference listing> -> files and links under <storage> not in the listing
+    ( cd "${1}" && find . \( -type f -o -type l \) | LC_ALL=C sort ) | LC_ALL=C comm -13 "${2}" -
+}
+f1_storage "${F1}/fresh"; ( cd "${F1}/fresh" && find . \( -type f -o -type l \) | LC_ALL=C sort ) > "${F1}/fresh.list"
+f1_sys "${F1}/sys"
+F1_UNDER=""; [ "${OLD}" -eq 1 ] && F1_UNDER="${BASE_REF}"
+
+# F1c. #307 PL-022: no quirk tree outside the recipe that installs it. The
+#      only quirks recipe is projects/ROCKNIX/packages/hardware/quirks, so a
+#      packages/hardware/quirks/ with no package.mk is a tree nothing installs.
+F1_ORPHAN=""
+if [ "${OLD}" -eq 1 ]; then F1_ORPHAN=$(git -C "${ROOT}" ls-tree -r --name-only "${BASE_REF}" -- packages/hardware/quirks 2>/dev/null)
+else F1_ORPHAN=$(cd "${ROOT}" && git ls-files -- packages/hardware/quirks; [ -d packages/hardware/quirks ] && find packages/hardware/quirks -type f); fi
+F1_ORPHAN=$(echo "${F1_ORPHAN}" | sed '/^$/d' | grep -v '/package\.mk$' | sort -u)
+[ -z "${F1_ORPHAN}" ] || { [ "${OLD}" -eq 0 ] && [ -f "${ROOT}/packages/hardware/quirks/package.mk" ]; }
+check $? "no quirk tree outside the recipe that installs it (packages/hardware/quirks is empty)" "a quirk tree no recipe installs: $(echo "${F1_ORPHAN}" | wc -l) file(s), e.g. $(echo "${F1_ORPHAN}" | head -3 | tr '\n' ' ')"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
