@@ -471,6 +471,15 @@ RATOKENSETTINGS=(
 RATOKENDIRS=(
     /storage/.config/raofflineproxy/
 )
+# The same folders as restore patterns, each with its own wildcard. Written
+# inline as "${RATOKENDIRS[@]#/}"'*' the '*' joined the LAST element only, so
+# a second folder in the list would have left the first as a bare name --
+# which busybox unzip -x matches against nothing (busybox tar -X happens to
+# take a folder's subtree from its bare name; unzip does not, probed on the
+# image's binary), and that folder's token cache would come back from a zip
+# (#308 claude F-BR-13).
+RATOKENDIR_PATTERNS=()
+for D in "${RATOKENDIRS[@]}"; do RATOKENDIR_PATTERNS+=("${D#/}*"); done
 # This device's cloud sign-in and its name in the cloud: never in an archive,
 # never put back from one, whichever archive it is (#307 PL-010). rclone.conf
 # is live OAuth tokens (#52); cloud_device_id's record is the name this
@@ -1140,7 +1149,7 @@ case "${VERB}" in
             # member on the way past, and the archive is where the token
             # must not be.
             SKIP=$(mktemp)
-            printf '%s\n' 'storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIRS[@]#/}"'*' "${DEVICEONLY[@]#/}" "${SEEDLIST#/}" > "${SKIP}"
+            printf '%s\n' 'storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIR_PATTERNS[@]}" "${DEVICEONLY[@]#/}" "${SEEDLIST#/}" > "${SKIP}"
             to_log tar -xzf "${BACKUPFILE}" -C / -X "${SKIP}" >/dev/null
             EXTRACT_RC=$?; rm -f "${SKIP}"
         else
@@ -1157,7 +1166,7 @@ case "${VERB}" in
             # likely to carry them -- and until #151 PL-03 this branch skipped
             # neither, while D-CLOUD-008 said "from any archive". The token-only
             # files are skipped here too (#169), as in the tar branch.
-            SKIP=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIRS[@]#/}"'*' "${DEVICEONLY[@]#/}" "${SEEDLIST#/}")
+            SKIP=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIR_PATTERNS[@]}" "${DEVICEONLY[@]#/}" "${SEEDLIST#/}")
             SKIPPED=0
             # One member per line, each whole: the name is everything from
             # the fourth column on. Until #307 PL-036 this read $4 and split
