@@ -9,22 +9,49 @@
 # - only the port: UTM splits QEMU arguments on whitespace, so a full
 # command string cannot survive the trip). Assemble the command here and
 # publish it as the cloud-setup connection override; never leave a stale
-# override behind.
+# one of ours behind.
+#
+# The same file is the manual fallback the VM README documents: a tester
+# whose guest is reached some other way (a bridged or host-network UTM mode,
+# a forward of their own) writes the command that works into it. That one
+# is theirs. This quirk replaces or removes only the command it wrote
+# itself -- the one it recorded writing last (RECORD), or, with no record,
+# the one line an earlier build of it wrote -- and leaves anything else.
+# Delete the file to go back to the automatic command.
 
 FWCFG="/sys/firmware/qemu_fw_cfg/by_name/opt/org.rocknix.cloud_ssh_port/raw"
 TARGET="/storage/.config/cloud_setup_ssh"
+RECORD="/storage/.config/.cloud_setup_ssh.generated"
 
 PORT=""
 if [ -r "${FWCFG}" ]; then
-  PORT=$(tr -cd '0-9' < "${FWCFG}")
+  PORT=$(tr -cd '0-9' < "${FWCFG}" | head -c 5)
 fi
+
+ours() {
+  [ -e "${TARGET}" ] || return 0
+  if [ -f "${RECORD}" ]; then
+    [ "$(cat "${TARGET}")" = "$(cat "${RECORD}")" ]
+    return
+  fi
+  [ "$(wc -l < "${TARGET}")" -le 1 ] \
+    && grep -Eq '^ssh -L 53682:localhost:53682 -p [0-9]+ root@127\.0\.0\.1$' "${TARGET}"
+}
 
 if [ -n "${PORT}" ] && [ "${PORT}" -ge 1 ] && [ "${PORT}" -le 65535 ]; then
   # The -L tunnel carries rclone's provider sign-in page (guest port 53682)
   # to the browser of the machine running SSH - see rclone.org/remote_setup.
-  echo "ssh -L 53682:localhost:53682 -p ${PORT} root@127.0.0.1" > "${TARGET}"
-else
-  rm -f "${TARGET}"
+  CMD="ssh -L 53682:localhost:53682 -p ${PORT} root@127.0.0.1"
+  if ours; then
+    if [ "$(cat "${TARGET}" 2>/dev/null)" != "${CMD}" ]; then
+      echo "${CMD}" > "${TARGET}.new" && mv "${TARGET}.new" "${TARGET}"
+    fi
+    if [ "$(cat "${RECORD}" 2>/dev/null)" != "${CMD}" ]; then
+      echo "${CMD}" > "${RECORD}.new" && mv "${RECORD}.new" "${RECORD}"
+    fi
+  fi
+elif ours; then
+  rm -f "${TARGET}" "${RECORD}"
 fi
 
 # Retired override from the web-GUI era; clean up so no stale file lingers.

@@ -3421,4 +3421,42 @@ F1RA=projects/ROCKNIX/packages/emulators/libretro/retroarch/sources/GENERIC_X64/
 src_of "${F1RA}" "${F1G}/retroarch.cfg"
 [ "$(grep '^video_driver' "${F1G}/retroarch.cfg")" = 'video_driver = "gl"' ]; check $? "and the GENERIC_X64 profile ships gl, the driver a guest can draw with (#308 claude F-VM-11)" "the GENERIC_X64 profile ships $(grep '^video_driver' "${F1G}/retroarch.cfg")"
 
+# F1h. #308 claude F-VM-05 and gpt F-VM-10: 095-cloud-ssh writes the cloud
+#      setup screen's SSH command when fw_cfg carries the host's forwarded
+#      port, and removes the file when it does not. Both branches used to
+#      replace whatever was there, so the manual override the README tells a
+#      tester to write lasted until the next boot. Now the quirk replaces or
+#      removes only the command it wrote itself (recorded, or -- with no
+#      record -- the one line an earlier build wrote); anything else is
+#      somebody's and stays.
+F1H="${F1}/h"; mkdir -p "${F1H}/q"
+src_of "${F1_QREL}/platforms/GENERIC_X64/095-cloud-ssh" "${F1H}/q/095-cloud-ssh"
+f1_sys "${F1H}/p10022"; f1_sys "${F1H}/p10023"; printf '10023' > "${F1H}/p10023/firmware/qemu_fw_cfg/by_name/opt/org.rocknix.cloud_ssh_port/raw"
+f1_sys "${F1H}/none"; rm -rf "${F1H}/none/firmware/qemu_fw_cfg"
+f1_ssh() { # <storage> <sys>: one boot's run of the quirk
+    bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr "${F1BB[@]}" \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --bind "${1}" /storage --ro-bind "${2}" /sys --ro-bind "${F1H}/q" /q \
+        --tmpfs /run --tmpfs /tmp --dev /dev --proc /proc --setenv PATH "${F1PATH}" \
+        bash /q/095-cloud-ssh > "${F1H}/out" 2>&1
+}
+F1_GEN="ssh -L 53682:localhost:53682 -p 10022 root@127.0.0.1"; F1_HAND="ssh -p 2222 root@192.168.64.5"
+f1_ov() { cat "${1}/.config/cloud_setup_ssh" 2>/dev/null || echo "(no file)"; }
+f1_storage "${F1H}/a"; f1_ssh "${F1H}/a" "${F1H}/p10022"
+[ "$(f1_ov "${F1H}/a")" = "${F1_GEN}" ]; check $? "with the forwarded port on fw_cfg the guest gets the loopback command" "the override: $(f1_ov "${F1H}/a"); $(head -c 120 "${F1H}/out")"
+f1_ssh "${F1H}/a" "${F1H}/p10023"; F1_S1=$(f1_ov "${F1H}/a"); f1_ssh "${F1H}/a" "${F1H}/none"
+[ "${F1_S1}" = "${F1_GEN/10022/10023}" ] && [ "$(f1_ov "${F1H}/a")" = "(no file)" ]; check $? "and its own command follows the port, and goes when fw_cfg carries none" "port 10023: ${F1_S1}; no port: $(f1_ov "${F1H}/a")"
+f1_storage "${F1H}/b"; echo "${F1_HAND}" > "${F1H}/b/.config/cloud_setup_ssh"; f1_ssh "${F1H}/b" "${F1H}/p10022"; F1_S2=$(f1_ov "${F1H}/b"); f1_ssh "${F1H}/b" "${F1H}/none"
+[ "${F1_S2}" = "${F1_HAND}" ] && [ "$(f1_ov "${F1H}/b")" = "${F1_HAND}" ]
+check $? "a command written by hand survives a boot with the port on fw_cfg and one without (the README's manual fallback)" "the hand-written '${F1_HAND}' became '${F1_S2}' with the port and '$(f1_ov "${F1H}/b")' without"
+f1_storage "${F1H}/c"; f1_ssh "${F1H}/c" "${F1H}/p10022"; echo "${F1_HAND}" > "${F1H}/c/.config/cloud_setup_ssh"; f1_ssh "${F1H}/c" "${F1H}/p10022"
+[ "$(f1_ov "${F1H}/c")" = "${F1_HAND}" ]; check $? "and so does one written over the quirk's own command" "the quirk's command, then a hand edit: '$(f1_ov "${F1H}/c")' after a boot"
+# Already written: an earlier build's command, with no record, is the
+# quirk's -- it follows the port, and goes without one.
+f1_storage "${F1H}/d"; echo "${F1_GEN}" > "${F1H}/d/.config/cloud_setup_ssh"; f1_ssh "${F1H}/d" "${F1H}/p10023"; F1_S3=$(f1_ov "${F1H}/d")
+f1_storage "${F1H}/e"; echo "${F1_GEN}" > "${F1H}/e/.config/cloud_setup_ssh"; f1_ssh "${F1H}/e" "${F1H}/none"
+[ "${F1_S3}" = "${F1_GEN/10022/10023}" ] && [ "$(f1_ov "${F1H}/e")" = "(no file)" ]; check $? "an earlier build's unrecorded command follows the port and goes without one" "port 10023: ${F1_S3}; no port: $(f1_ov "${F1H}/e")"
+f1_storage "${F1H}/f"; f1_ssh "${F1H}/f" "${F1H}/p10022"; F1_F0=$(cd "${F1H}/f/.config" && ls -A | LC_ALL=C sort | xargs sha256sum 2>/dev/null); f1_ssh "${F1H}/f" "${F1H}/p10022"
+[ "${F1_F0}" = "$(cd "${F1H}/f/.config" && ls -A | LC_ALL=C sort | xargs sha256sum 2>/dev/null)" ] && [ ! -s "${F1H}/out" ]; check $? "a second boot on the same port changes nothing and says nothing" "a second boot changed /storage/.config or said: $(head -c 160 "${F1H}/out")"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

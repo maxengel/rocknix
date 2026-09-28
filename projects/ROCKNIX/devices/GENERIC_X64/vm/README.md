@@ -83,11 +83,18 @@ ssh -L 53682:localhost:53682 -p 10022 root@127.0.0.1
 
 The `-L` tunnel carries rclone's OAuth sign-in page (guest port 53682) to the
 browser of the machine running SSH, so the full `rclone config` auto flow
-works from the host. Bridged VMs omit the injection: the guest is on the LAN
-under its own address, and the screen correctly shows it.
+works from the host. A bundle generated for Bridged (and `--net bridged` on
+Linux) omits the injection: the guest is on the LAN under its own address,
+and the screen correctly shows it. The injection is fixed when the bundle is
+made, though: a bundle switched to Bridged, or to a vmnet host network, in
+UTM's settings keeps its two `-fw_cfg` entries under QEMU > Arguments, and
+the screen keeps showing the loopback command, which does not reach the
+guest there. Remove those two entries when you switch.
 
 Manual fallback: write a full SSH command into
-`/storage/.config/cloud_setup_ssh` in the guest.
+`/storage/.config/cloud_setup_ssh` in the guest (from the serial console).
+It is kept across boots: `095-cloud-ssh` replaces or removes only the
+command it wrote itself. Delete the file to go back to the automatic one.
 
 ### Troubleshooting: bridged mode hangs forever (UTM)
 
