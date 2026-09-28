@@ -47,7 +47,10 @@
 # The ceiling is time (--seconds, default 300). A run that leaves images
 # behind says how many and exits 1, the way a scan that could not finish does
 # (#186 PL-24): a partial pass is never reported as a complete one. Exit 2 is
-# a precondition this could not meet (no store, no account).
+# a precondition this could not meet (no store, no account). Exit 130 is a
+# cancel -- SIGINT, the scan page's CANCEL, however the helper was started:
+# the downloads not yet started are dropped and the process ends without
+# waiting for the ones in flight (#307 PL-013).
 #
 # It prints the scan page's own protocol on stdout, so the same reader can
 # follow it: ">>> doing images", ">>> total <n>", ">>> image <i>|<n>",
@@ -59,6 +62,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import signal
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -314,8 +319,15 @@ def main() -> int:
     stopped = False
 
     # The pool the proxy uses for its own images, four workers, so this asks
-    # RetroAchievements' media host no harder than a launch does.
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    # RetroAchievements' media host no harder than a launch does. Not a
+    # with-block: its exit is shutdown(wait=True), which runs every queued
+    # download to completion, so the page's CANCEL -- a KeyboardInterrupt
+    # here, from the SIGINT the interface sends the run's process group --
+    # waited for all of them, tens of thousands on a first scan, before the
+    # run could stop (#307 PL-013). A cancel drops what has not started and
+    # leaves at once (leave(), below).
+    pool = ThreadPoolExecutor(max_workers=4)
+    try:
         futures = {}
         for path in missing:
             # extract_image_path hands back the path with its leading slash
@@ -346,6 +358,10 @@ def main() -> int:
                 for pending in futures:
                     pending.cancel()
                 break
+    except KeyboardInterrupt:
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    pool.shutdown(wait=True)
 
     left = [p for p in missing if image_cache.resolve_cached_static_asset(p) is None]
     note(
@@ -359,5 +375,28 @@ def main() -> int:
     return 1 if (left or verify_left) else 0
 
 
+def leave(code: int) -> None:
+    """End the process now, without waiting for downloads still running on
+    the pool's threads. Each carries its own timeout, fetches into memory and
+    writes a temp name of its own only once the whole image has arrived and
+    passed patch 013's test, then renames it (patches 009, 013), so one cut
+    short leaves nothing the next pass does not fetch."""
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    # The ctl runs this in the background so its own INT and TERM traps fire
+    # the moment the signal comes (#307 PL-013), and a shell starts a
+    # background job with SIGINT ignored -- which Python keeps, so the page's
+    # CANCEL, a SIGINT to the whole process group, would not reach it. Taken
+    # back here: a cancel means the same however the helper was started.
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+    try:
+        code = main()
+    except KeyboardInterrupt:
+        note("cancelled: what was not fetched is the next pass's")
+        tell("why CANCELLED")
+        leave(130)
+    sys.exit(code)

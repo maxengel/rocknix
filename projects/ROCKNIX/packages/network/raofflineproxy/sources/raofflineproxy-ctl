@@ -1320,8 +1320,18 @@ run_image_pass() {
     [ -x "${IMAGE_HELPER}" ] || { slog "${VERB}: no image helper at ${IMAGE_HELPER}"; return 0; }
     [ "${SECONDS_LEFT}" -gt 10 ] 2>/dev/null || { slog "${VERB}: no time left for the image pass (${SECONDS_LEFT}s)"; return 0; }
     slog "${VERB}: image pass, up to ${SECONDS_LEFT}s${MODE:+ (${MODE})}"
+    # In the background and waited for, as the jobs and the recently played
+    # pass are: bash runs a trap only once the foreground command has
+    # returned, so with the helper in the foreground the page's CANCEL (INT)
+    # and a stop from disable or STOP IT AND PLAY (TERM) waited for the whole
+    # pass before the run could answer either (#307 PL-013, #308 F-RA-11).
+    # wait returns the moment a trapped signal arrives, and CLIENT is what
+    # the EXIT trap ends.
     # shellcheck disable=SC2086 -- MODE is one flag or empty, on purpose
-    "${IMAGE_HELPER}" --seconds "${SECONDS_LEFT}" ${MODE} >>"${SCAN_LOG}" 2>&1 || RC=$?
+    "${IMAGE_HELPER}" --seconds "${SECONDS_LEFT}" ${MODE} >>"${SCAN_LOG}" 2>&1 &
+    CLIENT=$!
+    wait "${CLIENT}" || RC=$?
+    unset CLIENT
     slog "${VERB}: image pass rc=${RC}"
     return "${RC}"
 }

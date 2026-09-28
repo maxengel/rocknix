@@ -3011,4 +3011,147 @@ ckf() { # ckf <raw bytes> <exe> <CORE_MIN_FREE_KB>
 ckf 65536 retroarch $(( XFREE - 512 )); printf '%s' "${NOTE}" | grep '^dump' | grep -q 'NOT KEPT' && printf '%s' "${NOTE}" | grep '^dump' | grep -q 'plus the 1048576 byte cap'; check $? "with free space above the floor but under the floor plus the cap, the dump is refused and the note names both (audit #258, the seat's G-03; the old test admitted it)" "free ${XFREE} KB; note: $(printf '%s' "${NOTE}" | grep '^dump' | cut -c1-140)"
 ckf 65536 retroarch 1024;                printf '%s' "${NOTE}" | grep '^dump' | grep -q 'whole'; check $? "and with a floor the card clears by more than the cap, the same dump is kept" "note: $(printf '%s' "${NOTE}" | grep '^dump' | cut -c1-100)" "note: $(printf '%s' "${NOTE}" | grep '^dump')"
 
+# ---- audit #307, stream D ----
+echo "  D. audit #307 stream D: the offline-achievements service -- the control script, its helpers, the client's patches, the unit and the emulators' cheevos scripts (#307 PL-013, 055, 057, 058, 059, 060; #308's sweep)"
+# Each fix below was written after its case, and each case was seen to FAIL
+# against the scripts from before it; to watch them fire again:
+#
+#     BASE_REF=417dcd8610 tools/last-good-scripts-test --old
+#
+# (417dcd8610 is next where stream D was cut.) The ctl's cases run in section
+# t's sandbox -- its client from the sources cache with the patches applied,
+# its shims, its virtual clock and fixture store -- and SKIP with it when the
+# pinned client's tarball is not on this machine. The helpers' cases load the
+# real helpers against the same patched client; the cheevos cases run the
+# scripts whole with the image's busybox, like section w.
+DD="${TMP}/stream-d"; mkdir -p "${DD}"
+DT_OK=0
+if declare -F tctl >/dev/null && [ -n "${CLIENT:-}" ] && [ -d "${CLIENT}/raofflineproxy" ]; then DT_OK=1; fi
+DCFG_ON='system.hostname=X\nglobal.retroachievements=1\nglobal.retroachievements.offlineproxy=1\nglobal.retroachievements.username=QA\nglobal.retroachievements.token=FIXTURETOKEN\n'
+# A run of the ctl in the background, as the interface starts one: stdout and
+# stderr to ${DD}/bg.out and bg.err, the exit code to bg.rc when it ends.
+dbg() { # <verb...>
+    rm -f "${DD}/bg.rc"
+    ( bwrap --die-with-parent --tmpfs / --tmpfs /usr "${USR_BINDS[@]}" "${TBB[@]}" \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${T}/profile" /etc/profile \
+        --bind "${TS}" /storage --ro-bind "${T}/repo" /repo --ro-bind "${T}/shim" /shim --ro-bind "${CLIENT}" /client --ro-bind "${T}/pypath" /pypath \
+        --bind "${TR}" /run --tmpfs /var --bind "${T}/varrun" /var/run \
+        --dev /dev --proc /proc --tmpfs /tmp --setenv PYTHONPATH /client:/pypath "${TENV[@]}" \
+        bash /repo/raofflineproxy-ctl "$@" > "${DD}/bg.out" 2> "${DD}/bg.err"; echo $? > "${DD}/bg.rc" ) &
+    DBG=$!
+}
+dnow() { date +%s.%N; }
+dsince() { awk -v a="$1" -v b="$(dnow)" 'BEGIN{printf "%.2f", b - a}'; }
+# A stand-in for raofflineproxy-cache-images beside the ctl, driven by
+# /run/images-mode: "ok" (exit 0), "fail" (the helper's own failure lines,
+# exit 1), "verify-left" (a verify slice left, no why, exit 1), "cancel" (the
+# page's CANCEL: SIGINT to the ctl through the lock's pid, then a real 20 s),
+# "hang" (a real 20 s); every start is logged with its pid and a real time.
+dfake_images() {
+    cat > "${T}/repo/raofflineproxy-cache-images" <<'EOS'
+#!/bin/bash
+echo $$ > /run/images.pid
+echo "start $(date +%s.%N) budget=${FAKE_BUDGET:-none} $*" >> /run/images-calls
+trap 'echo "term $(date +%s.%N)" >> /run/images-calls; exit 143' TERM
+case "$(cat /run/images-mode 2>/dev/null || echo ok)" in
+    fail) printf '>>> doing images\n>>> total 3\n>>> why SOME_IMAGES_NOT_SAVED\n>>> done 0|3\n'; exit 1 ;;
+    verify-left) printf '>>> doing images\n>>> verified 10|40\n>>> note VERIFY_LEFT 30\n>>> total 0\n>>> note NOTHING_MISSING\n>>> done 0|0\n'; exit 1 ;;
+    cancel) kill -INT "$(head -n 1 /var/run/raofflineproxy-scan.lock)"; i=0; while [ "$i" -lt 20 ]; do /bin/sleep 1; i=$((i+1)); done; echo "done $(date +%s.%N)" >> /run/images-calls; exit 0 ;;
+    hang) i=0; while [ "$i" -lt 20 ]; do /bin/sleep 1; i=$((i+1)); done; echo "done $(date +%s.%N)" >> /run/images-calls; exit 0 ;;
+esac
+printf '>>> doing images\n>>> total 0\n>>> note NOTHING_MISSING\n>>> done 0|0\n'
+exit 0
+EOS
+    chmod +x "${T}/repo/raofflineproxy-cache-images"
+}
+
+# D1. #307 PL-013 (F-RA-01, claude): the page's CANCEL during the image pass
+# ends the run inside two seconds. The helper: the interface signals the
+# whole process group, the helper gets KeyboardInterrupt inside as_completed,
+# and the pool's with-block used to wait for every queued download before the
+# process could exit. Driven here on the real raofflineproxy-cache-images,
+# against the patched client, with forty badges missing and each download a
+# one-second sleep behind four workers: SIGINT once four have started.
+# Also the helper started with SIGINT ignored (a shell's background job, as
+# the ctl now starts it).
+src_of "projects/ROCKNIX/packages/network/raofflineproxy/sources/raofflineproxy-cache-images" "${DD}/raofflineproxy-cache-images"
+if [ "${DT_OK}" -eq 1 ]; then
+python3 - "${DD}/raofflineproxy-cache-images" "${CLIENT}" "${DD}/images" > "${DD}/d1.out" 2>&1 <<'EOS'
+import os, signal, subprocess, sys, time
+from pathlib import Path
+helper, client, work = sys.argv[1], sys.argv[2], Path(sys.argv[3])
+cfg = work / "cfg"; site = work / "site"
+for d in (cfg, site): d.mkdir(parents=True, exist_ok=True)
+(site / "sitecustomize.py").write_text(
+    "import os, time\n"
+    "from pathlib import Path\n"
+    "import raofflineproxy.auth as _auth\n"
+    "_auth.resolve_credentials = lambda *a, **k: {'user': 'qa', 'token': 't'}\n"
+    "import raofflineproxy.image_cache as _ic\n"
+    "def _slow(url, path, ua, game_id=None):\n"
+    "    with open(os.environ['D_CALLS'], 'a') as f: f.write(path + '\\n')\n"
+    "    time.sleep(float(os.environ['D_EACH']))\n"
+    "_ic.download_static_image = _slow\n")
+os.environ["RAOFFLINEPROXY_CONFIG_DIR"] = str(cfg)
+sys.path.insert(0, client)
+from raofflineproxy import cache_keys
+from raofflineproxy.storage import Storage
+st = Storage()
+badges = [{"ID": 5000 + i, "Flags": 3, "BadgeURL": f"https://media.retroachievements.org/Badge/{9100 + i}.png"} for i in range(40)]
+import json
+st.upsert_cache(cache_keys.patch(1, "qa"), json.dumps({"Success": True, "PatchData": {"ID": 1, "Achievements": badges}}))
+st.close()
+def run(each, seconds, ignore_int, signal_after):
+    calls = work / "calls"; calls.write_text("")
+    env = dict(os.environ, PYTHONPATH=f"{site}:{client}", HOME=str(work), D_CALLS=str(calls), D_EACH=str(each))
+    pre = (lambda: signal.signal(signal.SIGINT, signal.SIG_IGN)) if ignore_int else None
+    p = subprocess.Popen([sys.executable, helper, "--seconds", str(seconds)], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, preexec_fn=pre)
+    t0 = time.monotonic()
+    if signal_after:
+        while time.monotonic() - t0 < 10 and len(calls.read_text().split()) < signal_after:
+            time.sleep(0.05)
+        t0 = time.monotonic(); p.send_signal(signal.SIGINT)
+    try:
+        out, _ = p.communicate(timeout=20)
+    except subprocess.TimeoutExpired:
+        p.kill(); out, _ = p.communicate()
+    return p.returncode, time.monotonic() - t0, len(calls.read_text().split()), out.decode(errors="replace")
+rc, took, started, out = run(1, 60, False, 4)
+print(f"{'PASS' if rc not in (0, None) and took < 2.0 and started <= 8 and '>>> why CANCELLED' in out else 'FAIL'} cancel: SIGINT with 4 of 40 downloads started -- exit {rc} after {took:.2f}s, {started} started")
+rc, took, started, out = run(1, 60, True, 4)
+print(f"{'PASS' if rc not in (0, None) and took < 2.0 and started <= 8 else 'FAIL'} ignored: SIGINT to a helper started with SIGINT ignored -- exit {rc} after {took:.2f}s, {started} started")
+EOS
+grep -q '^PASS cancel:' "${DD}/d1.out"; check $? "PL-013 cache-images: the CANCEL's SIGINT drops the queued downloads and the helper ends inside two seconds ($(sed -n 's/^PASS cancel: //p' "${DD}/d1.out"))" "PL-013 cache-images: $(grep 'cancel:' "${DD}/d1.out" || tail -3 "${DD}/d1.out" | tr '\n' '|') -- the pool drained its queue before the interrupt was honoured"
+grep -q '^PASS ignored:' "${DD}/d1.out"; check $? "PL-013 cache-images: started with SIGINT ignored (a background job), the group's SIGINT still ends it inside two seconds" "PL-013 cache-images: $(grep 'ignored:' "${DD}/d1.out" || echo 'no verdict') -- a background helper never heard the CANCEL"
+# The ctl's side: the image pass ran in the foreground, so the INT trap (and
+# disable's TERM, #308 gpt F-RA-11) waited for the helper to return. A scan
+# that cached its games reaches the image pass; the stand-in sends the
+# interface's SIGINT to the ctl and then works for a real 20 s.
+dfake_images
+printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+treset; printf 'ok\nok\n' > "${TR}/helper-plan"; echo cancel > "${TR}/images-mode"; rm -f "${TR}/images-calls" "${TR}/images.pid"
+DT0=$(dnow); tctl scan; DEND=$(dnow); DTOOK=$(awk -v a="${DT0}" -v b="${DEND}" 'BEGIN{printf "%.2f", b - a}')
+IP="$(cat "${TR}/images.pid" 2>/dev/null)"; for _ in $(seq 1 30); do kill -0 "${IP:-1}" 2>/dev/null || break; sleep 0.1; done
+[ "${RC}" -eq 130 ] && awk -v t="${DTOOK}" 'BEGIN{exit !(t < 12)}' && grep -qx '>>> why CANCELLED' "${OUT}" && grep -q ' 130 scan .*why=CANCELLED$' "${TSTAMP}" && ! grep -q '^done ' "${TR}/images-calls"; check $? "PL-013 ctl: CANCEL during a scan's image pass -- exit 130, why CANCELLED, stamped, the image helper ended (the whole scan ${DTOOK}s, jobs included)" "PL-013 ctl: rc ${RC} after ${DTOOK}s; out: $(grep '^>>>' "${OUT}" | tr '\n' '|' | cut -c1-160); stamp: $(cat "${TSTAMP}" 2>/dev/null); helper: $(tr '\n' ' ' < "${TR}/images-calls" 2>/dev/null) -- the INT trap waited for the foreground image pass"
+DI0="$(sed -n 's/^start \([0-9.]*\).*/\1/p' "${TR}/images-calls" 2>/dev/null | head -n 1)"
+[ -n "${DI0}" ] && [ -n "${DEND}" ] && awk -v a="${DI0}" -v b="${DEND}" 'BEGIN{exit !(b - a < 2)}'; check $? "PL-013 ctl: from the image pass's start to the run's exit: $(awk -v a="${DI0:-0}" -v b="${DEND:-0}" 'BEGIN{printf "%.2f", b - a}')s, inside two seconds" "PL-013 ctl: the image pass started at ${DI0:-?} and the run exited at ${DEND:-?} -- $(awk -v a="${DI0:-0}" -v b="${DEND:-0}" 'BEGIN{printf "%.2f", b - a}')s"
+! kill -0 "${IP:-1}" 2>/dev/null && flock -n "${T}/varrun/raofflineproxy-scan.lock" true; check $? "PL-013 ctl: the cancelled run's image helper (pid ${IP:-?}) is gone and the lock is free" "PL-013 ctl: image helper alive: $(kill -0 "${IP:-1}" 2>/dev/null && echo yes || echo no); lock free: $(flock -n "${T}/varrun/raofflineproxy-scan.lock" true && echo yes || echo no)"
+[ -n "${IP}" ] && kill -9 "${IP}" 2>/dev/null
+# #308 1-raoffline gpt F-RA-11: disable during a scan's image pass ends the
+# helper through the run's TERM trap within disable's own wait.
+treset; rm -f "${TR}/fast-sleep"; printf 'ok\n' > "${TR}/helper-plan"; echo hang > "${TR}/images-mode"; rm -f "${TR}/images-calls" "${TR}/images.pid"
+dbg scan
+for _ in $(seq 1 100); do [ -s "${TR}/images.pid" ] && break; sleep 0.1; done
+IP="$(cat "${TR}/images.pid" 2>/dev/null)"; sleep 0.3
+DT0=$(dnow); tctl disable; DRC=${RC}; DTOOK=$(dsince "${DT0}")
+GONE=0; for _ in $(seq 1 30); do kill -0 "${IP:-1}" 2>/dev/null || { GONE=1; break; }; sleep 0.1; done
+wait "${DBG}" 2>/dev/null
+[ "${DRC}" -eq 0 ] && [ -n "${IP}" ] && [ "${GONE}" -eq 1 ] && grep -q 'scan or top-up stopped' "${ERR}" && awk -v t="${DTOOK}" 'BEGIN{exit !(t < 5)}'; check $? "#308 gpt F-RA-11: disable during a scan's image pass -- the helper (pid ${IP:-?}) ended through the run's TERM trap, disable done in ${DTOOK}s (the scan exited $(cat "${DD}/bg.rc" 2>/dev/null))" "#308 gpt F-RA-11: disable rc ${DRC} after ${DTOOK}s; helper ${IP:-none} gone: ${GONE}; disable said: $(grep -i 'asking\|stop' "${ERR}" | tr '\n' '|' | cut -c1-200) -- the TERM waited for the foreground image pass"
+[ -n "${IP}" ] && kill -9 "${IP}" 2>/dev/null; touch "${TR}/fast-sleep"; rm -f "${TR}/images-mode" "${TR}/helper-plan"
+printf "${DCFG_ON}" > "${TCFG}"
+else
+    echo "    SKIP  PL-013's cases: section t did not run (the pinned client is not on this machine)"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
