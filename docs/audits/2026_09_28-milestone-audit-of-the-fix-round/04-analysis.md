@@ -1,0 +1,201 @@
+# Analysis — the whole fix round for #307/#308, audited before the candidate (D-WORKFLOW-060)
+
+**Auditor:** Code Auditor skill (orchestrator: Claude Fable 5.1; the seats `anthropic/claude-fable-5.1` at xhigh and `openai/gpt-6-astra` at max through the council Facilitator on OpenRouter, D-QA-048/049)
+**Date:** 2026-09-28 (opened 15:08 UTC)
+**Subject:** the distribution `417dcd8610..1b0d233657` and the EmulationStation fork `7eae8ed91..87b182fbe` -- the eight streams' first deliveries and follow-ups, and the integrator's own commits -- judged against #307's acceptance text, #308's rows and the first audit's 165 findings
+**Spec:** `01-research-notes.md`
+
+---
+
+## Executive summary
+
+**The round did what it set out to do, and the audit of the whole of it says the candidate is not ready as the tree stands: fourteen High defects, all small, all named with their fix, sit in the follow-ups and in the integrator's own guards.** Twenty seat calls over ten whole-branch packets returned 192 findings (Critical 0, High 16, Medium 71, Low 105). The orchestrator re-read every High against the source, running four of them: thirteen confirmed, one re-graded to Medium, two the same finding. A screen of the blindspot register against the round's diffs added five confirmed repeats, one of them High. The shape is one shape, in fourteen places: a guard added in the round that fails open on its own error -- a validator that accepts a carriage return before a comment (`conf_valid`, five copies), a safety copy restored on non-emptiness alone, a snapshot worklist whose failure reads as "nothing to protect", a credential scan with two holes (a flag-form password; a quoted value beginning with a space), a restore marker the archive can overwrite, a reader that still executes the configuration (`backuptool`), a tier guard a dot component walks past, a masking parser an escaped quote defeats, the hooks that pass a commit when their own pattern is invalid, and the exemption that stops them reading the audit's own packets. Plus one thing earlier builds left on the card that no fix answered: cloud passwords in a persistent log.
+
+**What holds.** The 81 punch items are implemented on the reports and both audits' seats (no item drew "does not hold" from any seat in either audit); 21 are proven on the VM on the exact candidate build (`1b0d233657`: vm-qa run 69 fifteen suites, proof-298, the streams' proofs run 2); 56 rest on the harness's 844 checks and the reports' FAIL-then-PASS lines with no VM proof named; PL-032 is partial on a font decision; PL-081 is the PR-prep pass's. The 165 first-audit findings are all answered; this audit's seats accepted 18 withdrawals and disputed three (the pid-only lock as a correctness closure -- held as accepted risk, D-INFRA-012; a stored folder's re-validation, Low). The seams between streams agree on the read (the outcome words and the card's table, the proxy's tokens, the settings lock, the join's answer type); one seam defect is confirmed (two readers of one configuration file disagree on a duplicated key).
+
+**What to do before the candidate.** The fourteen Highs and the six confirmed Mediums are the punch list's FIX-NOW set (`05-punch-list.md`), each with a case first; they touch five scripts, one C++ file, the two hooks in two repositories and one rule. The fixes go back to the streams that own the files (their agents keep their context) and to the integrator for the hooks and the lint; then one more cut, vm-qa and the proofs' scripts on it, and the candidate is called from that. The seats' Mediums that are leads go to the streams with the same instruction (read, fix with a case, or withdraw with the line); the test and lint gaps are the next round's. Nothing here changes the design decisions of the round; it changes their guards.
+
+## Acceptance-criteria scorecard
+
+81 items. "first delivery" is the fix audit's seats (opened after this audit's verdicts were written, Phase 2.5); "whole branch" is this audit's; the VM column is the streams' proofs' second run on `1b0d233657` where a script names the item; the orchestrator's column is the verdict that stands. Pass rate: 79 implemented (21 VM-proven, 56 on the harness and the reports, 2 the VM could not run), 1 partial, 1 not this round's. No item fails.
+
+| item | sev | stream | first delivery (fix audit: claude/gpt) | whole branch (this audit: claude/gpt) | VM run 2 on 1b0d233657 | orchestrator |
+|---|---|---|---|---|---|---|
+| PL-001 | Critical | A | holds / holds | holds / holds | PASS | implemented; proven on the VM |
+| PL-002 | High | F2 | holds / holds in part | holds / in part | - | implemented on the reports and the seats; no VM proof named |
+| PL-003 | High | B | holds / holds | cannot tell / in part | CANNOT RUN | implemented; the VM could not run it (see run 2) |
+| PL-004 | High | B | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-005 | High | B | holds / holds in part | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-006 | High | B | holds in part / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-007 | High | B | holds / holds in part | holds / in part | PASS | implemented; proven on the VM |
+| PL-008 | High | B | holds / holds in part | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-009 | High | B | holds / holds in part | holds / in part | - | implemented on the reports and the seats; no VM proof named |
+| PL-010 | High | B | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-011 | High | B | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-012 | High | A | holds / holds in part | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-013 | High | D | holds in part / holds in part | in part / in part | PASS | implemented; proven on the VM |
+| PL-014 | High | E2 | holds in part / holds in part | cannot tell / cannot tell/in part | PASS | implemented; proven on the VM |
+| PL-015 | High | C | A: holds; C: holds / A: holds; C: holds in part | holds/in part / cannot tell/in part | - | implemented on the reports and the seats; no VM proof named |
+| PL-016 | High | C | holds / holds in part | in part / in part | PASS | implemented; proven on the VM |
+| PL-017 | High | C | holds / holds | holds / holds | PASS | implemented; proven on the VM |
+| PL-018 | High | C | holds / holds in part | holds / in part | PASS | implemented; proven on the VM |
+| PL-019 | High | F1 | holds in part / holds in part | in part / in part | - | implemented on the reports and the seats; no VM proof named |
+| PL-020 | High | A | holds / holds | holds / holds | PASS | implemented; proven on the VM |
+| PL-021 | High | A | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-022 | High | F1 | holds / holds in part | cannot tell / in part | - | implemented on the reports and the seats; no VM proof named |
+| PL-023 | High | F1 | holds / holds in part | in part / in part | - | implemented on the reports and the seats; no VM proof named |
+| PL-024 | High | E1 | holds / holds in part | cannot tell/holds / cannot tell/in part | PASS | implemented; proven on the VM |
+| PL-025 | High | A | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-026 | High | A | holds / holds in part | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-027 | High | A | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-028 | High | A | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-029 | High | E2 | holds / holds in part | cannot tell / cannot tell/in part | PASS | implemented; proven on the VM |
+| PL-030 | High | A | A: holds; E2: holds / A: holds; E2: holds in part | cannot tell/holds/in part / cannot tell/in part | - | implemented on the reports and the seats; no VM proof named |
+| PL-031 | Medium | B | holds / holds | holds / holds | CANNOT RUN | implemented; the VM could not run it (see run 2) |
+| PL-032 | Medium | F2 | holds in part / holds in part | in part / in part | PASS | partial: the code and the patch stack fixed and the widget log lines proven; the frame half waits on D-UI-111 |
+| PL-033 | Medium | F1 | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-034 | Medium | F1 | holds in part / holds in part | in part / in part | PASS | implemented; proven on the VM |
+| PL-035 | Medium | B | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-036 | Medium | B | holds / holds in part | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-037 | Medium | B | holds / holds | holds / in part | - | implemented on the reports and the seats; no VM proof named |
+| PL-038 | Medium | B | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-039 | Medium | B | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-040 | Medium | B | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-041 | Medium | B | B: holds in part; E1: holds / B: holds in part; E1: holds in part | cannot tell/in part / cannot tell/in part | - | implemented on the reports and the seats; no VM proof named |
+| PL-042 | Medium | F1 | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-043 | Medium | F2 | holds / holds in part | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-044 | Medium | B | holds / holds | holds / in part | - | implemented on the reports and the seats; no VM proof named |
+| PL-045 | Medium | B | holds / holds in part | holds / in part | PASS | implemented; proven on the VM |
+| PL-046 | Medium | B | holds / holds in part | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-047 | Medium | C | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-048 | Medium | C | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-049 | Medium | C | holds / holds in part | holds / in part | PASS | implemented; proven on the VM |
+| PL-050 | Medium | C | holds / holds in part | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-051 | Medium | C | A: holds; C: holds / A: holds in part; C: holds in part | holds/in part / cannot tell/holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-052 | Medium | A | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-053 | Medium | A | holds / holds in part | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-054 | Medium | E2 | holds / holds | cannot tell/holds / cannot tell/in part | - | implemented on the reports and the seats; no VM proof named |
+| PL-055 | Medium | D | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-056 | Medium | E2 | holds / holds | cannot tell / cannot tell/in part | - | implemented on the reports and the seats; no VM proof named |
+| PL-057 | Medium | D | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-058 | Medium | D | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-059 | Medium | D | holds in part / holds in part | in part / in part | PASS | implemented; proven on the VM |
+| PL-060 | Medium | D | holds in part / holds in part | holds / holds | PASS | implemented; proven on the VM |
+| PL-061 | Medium | E2 | holds in part / holds in part | cannot tell/holds / cannot tell/in part | PASS | implemented; proven on the VM |
+| PL-062 | Medium | E2 | holds / holds | cannot tell/holds / cannot tell/in part | PASS | implemented; proven on the VM |
+| PL-063 | Medium | E1 | holds / holds | cannot tell/holds / cannot tell/in part | - | implemented on the reports and the seats; no VM proof named |
+| PL-064 | Medium | E1 | B: -; E1: holds in part / B: other (no verdict word); E1: holds in part | cannot tell/in part / cannot tell/in part | PASS | implemented; proven on the VM |
+| PL-065 | Medium | E1 | holds / holds in part | cannot tell/holds / cannot tell/in part | - | implemented on the reports and the seats; no VM proof named |
+| PL-066 | Medium | A | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-067 | Medium | A | holds / holds in part | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-068 | Medium | E1 | E1: holds in part; E2: holds / E1: holds in part; E2: holds in part | cannot tell/holds/in part / cannot tell/in part | PASS | implemented; proven on the VM |
+| PL-069 | Medium | E1 | holds / holds in part | cannot tell/holds / cannot tell/in part | - | implemented; the VM shows the launch cycle growth (#310), the sync leak gone |
+| PL-070 | Medium | A | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-071 | Medium | A | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-072 | Medium | E1 | holds / holds in part | in part / in part | PASS | implemented; proven on the VM |
+| PL-073 | Low | F1 | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-074 | Low | C | holds / holds | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-075 | Low | E1 | holds / holds | cannot tell/holds / cannot tell/holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-076 | Low | F1 | F1: -; F2: holds ("holds in the diff, credited elsewhere") / F1: other (no verdict word); F2: holds | cannot tell/holds / cannot tell/holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-077 | Low | B | holds / holds | holds / in part | - | implemented on the reports and the seats; no VM proof named |
+| PL-078 | Low | E1 | holds / holds | cannot tell / cannot tell | - | implemented on the reports and the seats; no VM proof named |
+| PL-079 | High | A | - / holds ("present"; a paragraph, not an index row) | holds / holds | - | implemented on the reports and the seats; no VM proof named |
+| PL-080 | Medium | A | - / holds ("present"; "A30 is a constructed progress-stream test, not a measurement") | holds / in part | - | implemented on the reports and the seats; no VM proof named |
+| PL-081 | High | - | - / - | holds / holds | - | the PR-prep pass (#256) |
+
+## Code-quality assessment
+
+**Strengths.** Every fix came with a case seen to fail first (844 harness checks, the ES unit suites at 1813 assertions, six new app suites); the outcome vocabulary is kept to the letter (`vocabulary-check` 0 wrong, French 599 of 599); the follow-ups answered 165 findings in a morning without a "not answered"; the register carries the round's decisions the same day (33 rows); the streams' reports say what they could not do.
+
+**Concerns.** One grammar in five hand-kept copies (and a sixth reader without it); guards whose own failure paths were not written (§ Risk); a fast path narrower than the slow path it guards (the redaction); two readers of one file with different rules; a fix that moved a check earlier and left its old fixture behind (the rehearsal's wait); a scanner exemption keyed on a path. **Complexity hotspots:** `backuptool` (+2612 lines net in the round, the restore's snapshot, marker, seed and rollback paths interleaved -- four of the seven B Highs sit there), `cloud_migrate_layout` (nine raw-string compares on three pointers), `AtomicFileUtil.cpp` (three recovery paths with three notions of "whole").
+
+## Cornerstone conformance
+
+MEDIUM (`03-retrospective.md` § 3.2, § 3.7). `engineering-practices.md` § Guards must fail closed: met by the first deliveries, broken in the follow-ups and the integrator's guards in fourteen places. `upgrade-and-install.md`: the Already-written answer is missing twice (BS-1, G2-A-05). The vocabulary and the ES rules: met. `packaging-and-patches.md`: `pkgcheck` rc 0 on all 21 recipes. `documentation-accuracy.md`: unmet and tracked (#42). The invariants: progress above recency untouched; no secrets in backups strengthened and still holed (G2-B-02, G2-B-07, BS-1); the allowlist filter honoured (G-A-O1); every change landing on state answered per stream, with the two gaps above.
+
+## Spec fidelity
+
+Divergences recorded, none silent (`03-retrospective.md` § 3.3): PL-034, F1's part (a), the match page's retry, PL-077's refusal in place of two archives, PL-076's owner. This audit's seats read 48 item-seat pairs weaker than the fix audit's -- packet scope for most (a split item's other half, the plan withheld), mechanism for the Mediums in `02-forward-audit.md` § The Mediums.
+
+## Missing artifacts
+
+The upgrade rehearsal on `1b0d233657` (its guard cannot fail, BS-5, and the QA pair was busy); a case for the CR hole in each of five copies; a case for each of the seven fail-open follow-ups; the public docs (#42); scripts for E1's follow-up proofs, three of E2's, the migration on a backend; a device fact for PL-018; the lint's coverage of this audit's ids (fixed while it ran). Search trails in `03-retrospective.md` § 3.6.
+
+## Risk assessment
+
+Ranked by what it costs a player if the candidate shipped as the tree stands (all confirmed; the fix for each is in `05-punch-list.md`):
+
+1. **Every save in the cloud deleted by TIDY UP YOUR CLOUD FOLDERS** when the saves pointer carries a trailing slash (G2-A-01 claude): the tier is copied onto itself, verified clean, and its files deleted. Needs a hand-edited or older conf; the outcome is total.
+2. **A command in `cloud_sync.conf` runs** through a one-byte hole in the validator (G2-A-01 gpt, five copies) or through `backuptool`, which never got the validator (G2-B-01).
+3. **A cloud password at rest on the card**, in `cloud_sync.log`, on any device that once had a failed remote create (BS-1); a flag-form password in a log (G2-B-02); a quoted password beginning with a space in a published backup (G2-B-07).
+4. **A restore without its snapshot or with its marker overwritten** (G2-B-04, G2-B-06): the rollback then cannot put the settings back, and may say it did.
+5. **The valid configuration replaced by a truncated copy** by the cleanup's own fallback on a full card (G2-A-02, two scripts).
+6. **A password fragment in the log** past the masking parser's escaped quote (G2-E-core-01).
+7. **The tier collision reopened** by `/Mine/Backups/.` (G2-C-04).
+8. **A credential reaching the fork's public history** because the hooks pass on their own error (G2-I-02, both repositories) or never read an audit packet (G2-I-01) -- the guard the round added against blindspot 67, holed twice.
+9. **The Mediums confirmed by read or run** (G2-A-05, G2-B-08, G2-B-10, G2-E-core-04, G2-E-app-02, G2-F2-01, BS-2..BS-5): each a wrong answer on a rare path, none a total loss.
+
+Not a risk to a player: the test, lint and process gaps (the Lows and the E-tests Mediums).
+
+## Coverage boundary
+
+- **Whole branches, both seats, no plan for A and B** (the packets' size); the follow-ups were read by two seats for the first time; the integrator's commits by two seats for the first time -- except `b31bf53771`, whose own diff is empty after the maintainer's history rewrite (its change lives in the streams' branches).
+- **The Highs were re-read and four were run; the Mediums were triaged and ten read**; the rest of the 71 and the 105 Lows go to the streams on the seats' evidence. That is the depth this audit affords; it is stated per finding in 02.
+- **The VM proved 21 items on the exact candidate build and could not run four** (no Wi-Fi adapter or hwsim in the guest kernel; the rehearsal takes the QA pair; no widget walk); several passes rest on named stand-ins and stay partial.
+- **No device fact** is claimed; the H700 twin is built and unstaged.
+- **The sweep rows** were spot-checked by the seats (five per packet), not re-verified one by one.
+- **What a reader should not conclude:** that 192 findings are 192 independent defects (the two seats overlap; the index is per seat); that "implemented" is "acceptance-complete" (56 items have no VM proof named); that the fixes' fixes are audited (they are not yet written); that the public documentation matches the build (#42).
+
+## Finding verification
+
+Phase 4.5 lives in `02-forward-audit.md` § Verification: every Critical and High re-read against the source with the artifact named, four run (the redaction fast path, the key regex, the dot path, the hook with an invalid pattern); results 13 confirmed, 1 re-graded (G2-B-05 to Medium), 2 the same (G2-E-tests-01 = G2-I-02), 0 refuted -- the seats' Highs were right. The blindspot screen's fifteen repeats: five survived (one High). The 21 orchestrator reads made before the seats' outputs were opened (O-1..O-21) stand; none of the seats' Highs contradicts them -- the seats found what those reads did not look for.
+
+## Second opinion
+
+_(Phase 4.6, two calls at milestone tier: the blind pass over the evidence packet with the verdicts withheld, dispatched 15:08 UTC; then the refutation pass over 02, 03, this document and the punch list; the grading table follows)_
+
+## Instruction File Recommendations
+
+### Coverage gaps (would-have-prevented)
+
+| Finding | Would have been caught by | Uncovered? |
+| --- | --- | --- |
+| G2-A-01 gpt, G2-A-02, G2-B-01, G2-B-04, G2-B-06, G2-B-08, G2-E-tests-01/G2-I-02 | `engineering-practices.md` § Guards must fail closed ("prove the guard fires"; "success reported over a no-op") | -- |
+| G2-B-02, G2-B-07, G2-E-core-01 | `engineering-practices.md` § Guards must fail closed ("construct the violation") -- a masking or scanning pattern proven on the shapes it must catch | -- |
+| G2-A-01 claude, G2-C-04 | (none: a path compared as a string, a path with dot components) | **YES** |
+| BS-1, G2-A-05 | `upgrade-and-install.md` § Fixing forward is not enough (what earlier builds already wrote) | -- |
+| BS-2 | (none: two readers of one file) | **YES** |
+| BS-4, BS-5 | `engineering-practices.md` § Guards must fail closed ("an assertion that cannot fail is not evidence") | -- |
+| G2-I-01 | `fork-workflow.md` § Safety net (the guard scans every pushed branch -- the exemption contradicts the rule that describes it) | -- |
+
+### Codification gaps (needs-new-rule)
+
+| Pattern | Instances | Recommendation |
+| --- | --- | --- |
+| P-01: a path compared or derived as a string (trailing slash, dot components, case) where a path was meant | G2-A-01 claude, G2-C-04, BS-2's sibling (a duplicated key read two ways) | **Extend** `rclone-cloud-sync.md` with "A pointer is normalised before it is compared" -- the three pointers' canonical form (leading slash, no trailing slash, no dot components, case as typed) and one reader for the file |
+| P-02: one grammar or one contract kept in several copies by hand | the five `conf_valid` copies, the four `.fla` lists, the two `pre_cleanup` fallbacks, the two repositories' hooks | **Extend** `engineering-practices.md` § Before deleting a duplicate with its converse: a rule copied into a second script is a rule that will be fixed in one -- a shared file, or a harness case that diffs the copies |
+| P-03: a guard's own failure path unwritten (mktemp, cp, find, grep, awk, a pipeline's producer) | G2-A-02, G2-B-04, G2-B-08, G2-B-09, G2-I-02, the eight mktemp siblings | **Extend** `engineering-practices.md` § Guards must fail closed with the checklist: every external command a guard depends on has a checked status, and the unchecked-`mktemp` shape is named |
+
+### Recommended action sequence
+
+1. The punch list's FIX-NOW items land by their streams with a case each; the integrator's (the hooks, the lint, the rule's mask) by the integrator.
+2. `rclone-cloud-sync.md` gains the pointer-normalisation paragraph (P-01) in the same change as G2-A-01's fix; `engineering-practices.md` gains P-02 and P-03 as short paragraphs under the sections named.
+3. The candidate is cut after vm-qa and the proofs' scripts pass on the new tree.
+
+## Quality self-check
+
+| Standard / section | Present | Note |
+| --- | --- | --- |
+| Executive summary | yes | |
+| Acceptance-criteria scorecard | yes | 81 rows from the two audits' verdict tables and the VM's run 2, by script |
+| Code-quality assessment | yes | |
+| Cornerstone conformance | yes | from 03 § 3.2 |
+| Spec fidelity | yes | from 03 § 3.3 |
+| Missing artifacts | yes | search trails in 03 § 3.6 |
+| Risk assessment | yes | confirmed findings only |
+| Coverage boundary | yes | |
+| Finding verification | yes | in 02 § Verification, summarised here |
+| Second opinion | pending the two calls | the section is filled before Phase 5's list is final |
+| Instruction File Recommendations | yes | milestone tier |
+| Traceability / evidence / reproducibility | yes | every confirmed finding names a file and a line or a command and its output; the seats' outputs and provenance are under `seats/` |
+| Complete (every stated criterion evaluated) | yes for #307's 81; #308's rows spot-checked (stated) | |
