@@ -70,12 +70,19 @@ pre_configure_target() {
   # gstreamer-mpegts and gstreamer-gl hard requirements of video: the
   # fork's gst-plugins-base builds GL and its gst-plugins-bad keeps the
   # mpegts library for exactly this (fork #228, D-WORKFLOW-038).
+  # ENABLE_MINIBROWSER is OFF: it built WebKit's MiniBrowser -- an address
+  # bar, tabs, anywhere on the web -- into /usr/libexec/webkit2gtk-4.1 on
+  # every image, beside a sign-in window whose whole design is that the
+  # device has no browser (audit #308, claude F-RS-04). Nothing runs it. In
+  # 2.54.0 the option's only use is Tools/PlatformGTK.cmake's
+  # add_subdirectory(MiniBrowser/gtk), so OFF drops one leaf target and
+  # changes nothing the library is built from.
   PKG_CMAKE_OPTS_TARGET="-DPORT=GTK \
                          -DUSE_GTK4=OFF \
                          -DUSE_SOUP2=OFF \
                          -DENABLE_WAYLAND_TARGET=ON \
                          -DENABLE_X11_TARGET=OFF \
-                         -DENABLE_MINIBROWSER=ON \
+                         -DENABLE_MINIBROWSER=OFF \
                          -DENABLE_INTROSPECTION=OFF \
                          -DENABLE_WEBDRIVER=OFF \
                          -DENABLE_DOCUMENTATION=OFF \

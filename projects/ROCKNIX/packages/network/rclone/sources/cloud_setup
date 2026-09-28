@@ -44,6 +44,54 @@ log_message() {
     echo "[${timestamp}] [INFO] [${SCRIPT_NAME}] ${message}" >> ${LOG_FILE}
 }
 
+# The config is shell: every cloud script sources it. So a value is written
+# as text between double quotes, never through a sed replacement -- where &
+# is the matched line and | ends the expression, so "/R&D/Saves" became
+# garbage and "/a|b" failed the write while OK was printed (audit #307
+# PL-051) -- and a value that would mean something to a shell between double
+# quotes (" $ ` \) is refused where it is typed (syncpath_problem).
+#
+# conf_set KEY VALUE [KEY VALUE ...] writes every pair in one pass, each
+# KEY= line replaced (every one, as the sed was) or appended, to a file
+# beside the config that is renamed over it: all the keys or none, and the
+# previous config intact when the write fails. The values reach awk through
+# the environment, so nothing in them is interpreted. Returns non-zero when
+# the config could not be written.
+conf_set() {
+    local tmp="${SYNC_CONF}.tmp.$$" src="${SYNC_CONF}" n=0
+    local -a pairs=()
+    [ -f "${src}" ] || src=/dev/null
+    while [ $# -ge 2 ]; do
+        n=$((n + 1)); pairs+=("CONF_K${n}=$1" "CONF_V${n}=$2"); shift 2
+    done
+    if env "${pairs[@]}" CONF_N="${n}" awk '
+        BEGIN {
+            n = ENVIRON["CONF_N"] + 0
+            for (i = 1; i <= n; i++) {
+                k[i] = ENVIRON["CONF_K" i]
+                line[i] = k[i] "=\"" ENVIRON["CONF_V" i] "\""
+            }
+        }
+        {
+            for (i = 1; i <= n; i++)
+                if (index($0, k[i] "=") == 1) { print line[i]; seen[i] = 1; next }
+            print
+        }
+        END { for (i = 1; i <= n; i++) if (!seen[i]) print line[i] }
+    ' "${src}" > "${tmp}" 2>/dev/null && mv -f "${tmp}" "${SYNC_CONF}" 2>/dev/null; then
+        return 0
+    fi
+    rm -f "${tmp}" 2>/dev/null
+    return 1
+}
+
+# One value from the config, read as text: the first KEY= line, one pair of
+# surrounding double quotes removed. Never by sourcing or eval -- a value an
+# earlier build wrote with $( ) in it would run (PL-051).
+conf_get() {
+    sed -n "s/^$1=//p" "${SYNC_CONF}" 2>/dev/null | head -1 | sed 's/^"\(.*\)"$/\1/'
+}
+
 # Wait for any confirm/cancel input: controller (evtest) or keyboard.
 wait_for_button() {
     local input_device=""
@@ -160,6 +208,8 @@ absent_not_broken() {
     return 1
 }
 
+# Callers pass the first remote; an empty one stops after the string checks,
+# which hold with no remote configured at all.
 syncpath_problem() {
     local path="$1" remote="$2" bucket probe
     path="/$(echo "${path}" | sed 's:^/*::; s:/*$::')"
@@ -168,6 +218,34 @@ syncpath_problem() {
         echo "Your cloud folder can't be empty."
         return 1
     fi
+    # The config is shell, sourced by every cloud script: the characters a
+    # shell reads inside double quotes, and control characters, are refused
+    # where the folder is typed (audit #307 PL-051, conf_set).
+    case "${path}" in
+        *[\"\$\`\\]*|*[[:cntrl:]]*)
+            echo "Your cloud folder's name can't contain \", \$, \`, or \\."
+            return 1
+            ;;
+    esac
+    # The saves folder has to sit inside another folder. Its settings
+    # backups and games are kept beside it -- <parent>/Backups and
+    # <parent>/Content -- and a saves folder at the top of the cloud has no
+    # parent to keep them in. The setter used to put them INSIDE it instead
+    # (/GAMES/Backups, /GAMES/Content): the nesting a mirror of the saves
+    # folder deletes, because to the saves allowlist every file in them is
+    # excluded (audit #307 PL-015, rclone-cloud-sync.md). So it is refused
+    # where it is typed, with the folder to use instead -- on a bucket remote
+    # that is the bucket and a folder in it, the shape the bucket message
+    # below asks for anyway.
+    case "${path#/}" in
+        */*) ;;
+        *)
+            echo "Your saves folder needs to sit inside another folder, so your settings backups and games can go beside it."
+            echo "Try ${path}/Saves."
+            return 1
+            ;;
+    esac
+    [ -n "${remote}" ] || return 0
 
     # No provider rules are encoded here on purpose. rclone does not validate
     # bucket names itself - it hands them to the provider and relays the
@@ -254,7 +332,7 @@ case "$1" in
         echo "AUTH_PORT=$(auth_port_busy && echo busy || echo free)"
         # Both names for one value: EmulationStation reads SYNCPATH= until its
         # side of the vocabulary sweep (#73) lands; SAVES_REMOTE= is the name.
-        saves_remote="$(. "${SYNC_CONF}" 2>/dev/null; echo "${SAVES_REMOTE}")"
+        saves_remote="$(conf_get SAVES_REMOTE)"
         echo "SAVES_REMOTE=${saves_remote}"
         echo "SYNCPATH=${saves_remote}"
         echo "REMOTES=$(rclone listremotes 2>/dev/null | tr '\n' ' ')"
@@ -290,10 +368,13 @@ case "$1" in
         # ours. Anything else at the root is the owner's own business.
         LOCAL=$(cloud_content_backup --list 2>/dev/null | tr '\n' ' ')
         AT_PATH=0; AT_ROOT=0; ROOT_DIRS=""
+        # Both listings carry the bound every listing here does (#308 claude
+        # F-RS-13): rclone's own defaults are three runs of ten retries,
+        # under a page waiting on the answer.
         if [ -n "${CP}" ]; then
-            AT_PATH=$(rclone lsf --dirs-only "${REMOTE}${CP#/}" 2>/dev/null | wc -l)
+            AT_PATH=$(rclone lsf --dirs-only "${REMOTE}${CP#/}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | wc -l)
         fi
-        for d in $(rclone lsf --dirs-only "${REMOTE}" 2>/dev/null | sed 's:/$::'); do
+        for d in $(rclone lsf --dirs-only "${REMOTE}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | sed 's:/$::'); do
             case " ${LOCAL} " in
                 *" ${d} "*) AT_ROOT=$((AT_ROOT + 1)); ROOT_DIRS="${ROOT_DIRS}${d} " ;;
             esac
@@ -321,10 +402,10 @@ case "$1" in
     --use-content-root)
         # The safe resolution: point this device back at the root where its
         # content already is. Moves nothing, reversible, instant.
-        if grep -q '^CONTENT_REMOTE=' "${SYNC_CONF}"; then
-            sed -i 's|^CONTENT_REMOTE=.*|CONTENT_REMOTE=""|' "${SYNC_CONF}"
-        else
-            echo 'CONTENT_REMOTE=""' >> "${SYNC_CONF}"
+        if ! conf_set CONTENT_REMOTE ""; then
+            echo "ERROR the cloud sync settings could not be saved"
+            log_message "Content path NOT changed: ${SYNC_CONF} could not be written"
+            exit 1
         fi
         log_message "Content path set to the remote root by request"
         echo "OK content stays at the remote root"
@@ -361,9 +442,11 @@ case "$1" in
         # This used to write SETTINGS_REMOTE="<saves>/backup", which is the
         # first-layout nesting cloud_migrate_layout exists to undo and the
         # trap cloud_backup warns about: a mirror of the saves folder can
-        # delete the archives kept beneath it. Same derivation as
-        # cloud_sync_helper uses for CONTENT_REMOTE: the saves folder's
-        # parent, or the folder itself when it sits at the root.
+        # delete the archives kept beneath it. The siblings are the saves
+        # folder's parent's: <parent>/Backups and <parent>/Content. A saves
+        # folder at the top of the cloud has no parent and is refused
+        # (syncpath_problem) -- it used to adopt the folder itself as the
+        # parent, which nested both inside it (audit #307 PL-015).
         NEWPATH="$2"
         if [ -z "${NEWPATH}" ]; then
             echo "ERROR empty path"
@@ -377,23 +460,22 @@ case "$1" in
         fi
         # Refuse a path this remote cannot use, rather than storing it and
         # letting the next sync fail with a provider error naming nothing the
-        # player recognises.
+        # player recognises. The string checks -- a parent for the siblings
+        # (PL-015), no shell characters (PL-051) -- hold with no remote.
         SP_REMOTE=$(rclone listremotes 2>/dev/null | head -1)
-        if [ -n "${SP_REMOTE}" ] && ! syncpath_problem "${NEWPATH}" "${SP_REMOTE}"; then
+        if ! syncpath_problem "${NEWPATH}" "${SP_REMOTE}"; then
             exit 1
         fi
         SP_PARENT="$(dirname "${NEWPATH}")"
-        [ "${SP_PARENT}" = "/" ] && SP_PARENT="${NEWPATH}"
-        for key in SAVES_REMOTE SETTINGS_REMOTE CONTENT_REMOTE; do
-            value="${NEWPATH}"
-            [ "${key}" = "SETTINGS_REMOTE" ] && value="${SP_PARENT}/Backups"
-            [ "${key}" = "CONTENT_REMOTE" ] && value="${SP_PARENT}/Content"
-            if grep -q "^${key}=" "${SYNC_CONF}"; then
-                sed -i "s|^${key}=.*|${key}=\"${value}\"|" "${SYNC_CONF}"
-            else
-                echo "${key}=\"${value}\"" >> "${SYNC_CONF}"
-            fi
-        done
+        # All three or none (conf_set): a folder half-changed is a saves
+        # folder whose settings still go to the old place.
+        if ! conf_set SAVES_REMOTE "${NEWPATH}" \
+                      SETTINGS_REMOTE "${SP_PARENT}/Backups" \
+                      CONTENT_REMOTE "${SP_PARENT}/Content"; then
+            echo "The cloud sync settings could not be saved, so the folder was not changed."
+            log_message "Sync path NOT changed to ${NEWPATH}: ${SYNC_CONF} could not be written"
+            exit 1
+        fi
         log_message "Sync path changed to ${NEWPATH}"
         echo "OK ${NEWPATH}"
         exit 0
@@ -437,28 +519,55 @@ case "$1" in
         # layout seeded rather than ours.
         REMOTE=$(rclone listremotes 2>/dev/null | head -1)
         [ -z "${REMOTE}" ] && { echo "ERROR no remote"; exit 2; }
-        eval "$(grep -E '^(SAVES_REMOTE|SETTINGS_REMOTE|CONTENT_REMOTE)=' "${SYNC_CONF}" 2>/dev/null)"
+        # Read as text, never eval'd: the config is shell, and a value an
+        # earlier build wrote could carry a command (PL-051).
+        SAVES_REMOTE="$(conf_get SAVES_REMOTE)"
+        SETTINGS_REMOTE="$(conf_get SETTINGS_REMOTE)"
+        CONTENT_REMOTE="$(conf_get CONTENT_REMOTE)"
         SAVES="${SAVES_REMOTE:-/ROCKNIX/Saves}"
         BACKUPS="${SETTINGS_REMOTE:-/ROCKNIX/Backups}"
-        CONTENT="${CONTENT_REMOTE:-/ROCKNIX/Content}"
+        # An empty CONTENT_REMOTE is not a missing one: it is
+        # --use-content-root's "the cloud's root", which is where the
+        # content scripts put ROMs/ and BIOS/ (ROOT="<remote>:"). Only a
+        # config with no such line gets the default (#308 gpt F-RS-20).
+        if grep -q '^CONTENT_REMOTE=' "${SYNC_CONF}" 2>/dev/null; then
+            CONTENT="${CONTENT_REMOTE%/}"
+        else
+            CONTENT="/ROCKNIX/Content"
+        fi
 
         for d in "${SAVES}" "${SAVES}/savefiles" "${SAVES}/savestates" \
                  "${SAVES}/screenshots" "${BACKUPS}" \
-                 "${CONTENT}" "${CONTENT}/ROMs" "${CONTENT}/BIOS"; do
+                 ${CONTENT:+"${CONTENT}"} "${CONTENT}/ROMs" "${CONTENT}/BIOS"; do
             # --s3-directory-markers writes a zero-byte object ending in "/",
             # which is how S3 itself represents a folder -- without it a
             # bucket remote silently keeps nothing, and mkdir still exits 0.
             # Ignored by path-based backends, so it costs nothing there.
-            rclone mkdir --s3-directory-markers "${REMOTE}${d}" 2>/dev/null
+            # Bounded like the listings (#308 claude F-RS-13, gpt F-RS-19):
+            # up to two dozen calls under one 90 s box in the interface.
+            rclone mkdir --s3-directory-markers "${REMOTE}${d}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null
         done
 
         seed_note() {
-            local dir="$1"; shift
-            # Never clobber a note the owner may have written themselves.
-            rclone lsf "${REMOTE}${dir}/README.txt" >/dev/null 2>&1 && return 0
-            local tmp; tmp=$(mktemp)
+            local dir="$1" listing tmp; shift
+            # Never clobber a note the owner may have written themselves, and
+            # never write on a guess. The folder's own listing says whether a
+            # README.txt is in it. Asking for the file by name could not: a
+            # listing that failed for any reason read as "absent" and the
+            # owner's note was replaced (audit #307 PL-047), and on a bucket
+            # a key that is not there lists as nothing with exit 0, which read
+            # as "present" -- so no README was ever written there (#308
+            # claude F-RS-09). A listing that fails writes nothing.
+            if ! listing=$(rclone lsf --files-only "${REMOTE}${dir}/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); then
+                log_message "Seeding: ${dir} could not be listed, so its README was not written"
+                return 1
+            fi
+            printf '%s\n' "${listing}" | grep -qFx -- 'README.txt' && return 0
+            tmp=$(mktemp) || return 1
             printf '%s\n' "$@" > "${tmp}"
-            rclone copyto "${tmp}" "${REMOTE}${dir}/README.txt" 2>/dev/null
+            # --ignore-existing: another device may have written one since
+            # the listing.
+            rclone copyto --ignore-existing "${tmp}" "${REMOTE}${dir}/README.txt" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null
             rm -f "${tmp}"
         }
 
@@ -476,7 +585,10 @@ case "$1" in
             "" \
             "Written by the device. Nothing to put here by hand."
 
-        seed_note "${CONTENT}" \
+        # Not at the top of somebody's cloud: with content at the root, the
+        # ROMs and BIOS folders carry their own notes and the root keeps
+        # whatever the owner has there.
+        [ -n "${CONTENT}" ] && seed_note "${CONTENT}" \
             "Put your games and BIOS files here." \
             "" \
             "  ROMs/       one folder per system - snes, psx, n64, gba, ..." \
@@ -504,8 +616,8 @@ case "$1" in
             # success for any path at all, so the MISSING branch could never
             # be reached -- the report would have been unconditionally OK,
             # which is the shape of an assertion that cannot fail.
-            if [ -n "$(rclone lsf "${REMOTE}${d}" 2>/dev/null | head -1)" ] \
-               || rclone lsf --dirs-only "${REMOTE}${d%/*}/" 2>/dev/null | grep -qx "${d##*/}/"; then
+            if [ -n "$(rclone lsf "${REMOTE}${d}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | head -1)" ] \
+               || rclone lsf --dirs-only "${REMOTE}${d%/*}/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | grep -qFx -- "${d##*/}/"; then
                 echo "OK ${d}"
             else
                 echo "MISSING ${d}"
