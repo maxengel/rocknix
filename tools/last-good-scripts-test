@@ -4113,4 +4113,11 @@ p7evreset; mkdir -p "${P7ES}/.cache/log/evidence/.collect.p7dead/x-evidence/logs
 p7ev collect
 [ "${RC}" -eq 0 ] && [ ! -e "${P7ES}/.cache/log/evidence/.collect.p7dead" ]; check $? "#307 audit G-B-15 (claude): a collection killed before its filter leaves pieces the next collection clears" "#307 audit G-B-15: rc ${RC}; left: $(ls -A "${P7ES}/.cache/log/evidence" | tr '\n' ' ')"
 
+# == AUD core (#307 audit of the fixes: gpt G-B-14): no lock, no dump
+rm -rf "${P7C}/storage/.cache"; mkdir -p "${P7C}/storage/.cache/log"
+printf '#!/bin/sh\necho "flock: cannot lock" >&2\nexit 1\n' > "${P7C}/shim/flock"; chmod +x "${P7C}/shim/flock"
+p7ck "head -c 100 /dev/zero" retroarch 9000 --setenv CORE_MAX_BYTES 1048576
+rm -f "${P7C}/shim/flock"
+printf '%s' "${P7NOTE}" | grep '^dump' | grep -q 'NOT KEPT' && [ ! -e "${P7C}/storage/.cache/log/cores/core.retroarch.9000.4242.gz" ]; check $? "#307 audit G-B-14 (gpt): when the cores folder cannot be locked the dump is not kept, and the note says why" "#307 audit G-B-14: note: $(printf '%s' "${P7NOTE}" | grep '^dump' | cut -c1-120); dump: $([ -e "${P7C}/storage/.cache/log/cores/core.retroarch.9000.4242.gz" ] && echo kept || echo none)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
