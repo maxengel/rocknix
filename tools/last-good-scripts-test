@@ -3404,4 +3404,44 @@ g="$(f2_source "${F2}/gliden64.mk" GENERIC_X64 x86_64)"; a="$(f2_source "${F2}/g
 [[ " ${a} " != *NOHQ* ]] && [[ " ${g} " == *" -DNOHQ=On"* ]] && [[ "${g}" != *"-DX=1-DNOHQ"* ]] && [[ "${h}" == *"NOHQ=On"* ]]
 check $? "AMD64 builds GLideNHQ, GENERIC_X64 passes ' -DNOHQ=On' as its own word, H700 keeps upstream's arm" "options: AMD64 '${a}', GENERIC_X64 '${g}', H700 '${h}'"
 
+# F2-10. #308 10-packages claude F-PB-09 and gpt F-PB-24: gst-plugins-bad's
+# override rebuilt the generic recipe's option string with a sed range that
+# ended at the first line ending in a quote, and both gstreamer overrides
+# kept the libraries and plugins WebKit needs with copies ending in
+# "|| true". The option string is the generic hook's own output, whatever
+# its formatting; a payload that is not there fails the package.
+echo "  F2-10. gst-plugins-bad takes the generic option string whole; both overrides fail on a missing payload WebKit needs (#308 F-PB-09, gpt F-PB-24)"
+GR="${F2}/gstroot"; mkdir -p "${GR}/packages/multimedia/gstreamer/gst-plugins-bad" "${GR}/${F2P}/multimedia/gstreamer/gst-plugins-bad" "${GR}/${F2P}/multimedia/gstreamer/gst-plugins-base" "${GR}/packages/multimedia/gstreamer/gst-plugins-base"
+src_of packages/multimedia/gstreamer/gst-plugins-bad/package.mk "${GR}/packages/multimedia/gstreamer/gst-plugins-bad/package.mk"
+src_of packages/multimedia/gstreamer/gst-plugins-base/package.mk "${GR}/packages/multimedia/gstreamer/gst-plugins-base/package.mk"
+src_of "${F2P}/multimedia/gstreamer/gst-plugins-bad/package.mk" "${GR}/${F2P}/multimedia/gstreamer/gst-plugins-bad/package.mk"
+src_of "${F2P}/multimedia/gstreamer/gst-plugins-base/package.mk" "${GR}/${F2P}/multimedia/gstreamer/gst-plugins-base/package.mk"
+F2_N="$(grep -o -- '-D[A-Za-z0-9_-]*=' "${GR}/packages/multimedia/gstreamer/gst-plugins-bad/package.mk" | wc -l)"
+# the generic recipe written the way upstream's gstreamer recipe writes the
+# same option: a quoted value that ends its line, which ended the sed range
+sed -i 's/-Dpackage-name=gst-plugins-bad \\$/-Dpackage-name="gst-plugins-bad"/' "${GR}/packages/multimedia/gstreamer/gst-plugins-bad/package.mk"
+F2_CALL='pre_configure_target >/dev/null 2>&1; echo "${PKG_MESON_OPTS_TARGET}"'
+F2_OUT="$(f2_source "${GR}/${F2P}/multimedia/gstreamer/gst-plugins-bad/package.mk" H700 aarch64 "${GR}")"
+n=$(printf '%s' "${F2_OUT}" | tr -s ' \t\n' '\n' | grep -c '^-D')
+[ "${n}" -eq "${F2_N}" ] && [[ "${F2_OUT}" == *"-Dmpegtsdemux=enabled"* ]] && [[ "${F2_OUT}" == *"-Dmpegtsmux=enabled"* ]] && [[ "${F2_OUT}" == *"-Ddoc=disabled"* ]]
+check $? "with a quoted value mid-string the override still passes all ${F2_N} options, the two mpegts ones enabled" "the override passed ${n} of ${F2_N} options (mpegtsdemux: $([[ "${F2_OUT}" == *mpegtsdemux=enabled* ]] && echo on || echo off); ends: '${F2_OUT: -30}')"
+GI="${F2}/gstinst"
+f2_gst() { # <package dir under the fixture> <files to create under INSTALL...>: the post_makeinstall_target's status and what it kept
+    rm -rf "${GI}"; mkdir -p "${GI}/inst/usr/lib/gstreamer-1.0" "${GI}/inst/usr/bin" "${GI}/b"
+    local pkg="$1"; shift; for f in "$@"; do : > "${GI}/inst/${f}"; done
+    F2_CALL="INSTALL='${GI}/inst'; PKG_BUILD='${GI}/b'; post_makeinstall_target; echo rc=\$?; cd '${GI}/inst' && find usr -type f | sort | tr '\n' ' '"
+    f2_source "${GR}/${F2P}/multimedia/gstreamer/${pkg}/package.mk" H700 aarch64 "${GR}"
+}
+F2_OUT="$(f2_gst gst-plugins-bad usr/lib/libgstcodecs-1.0.so.0)"
+[[ "${F2_OUT}" == DIE:* ]] || [[ "${F2_OUT}" == *"rc=3"* ]]; check $? "gst-plugins-bad without libgstmpegts-1.0 fails the package" "gst-plugins-bad with no libgstmpegts-1.0 in its install: '${F2_OUT:0:120}' -- the image would ship without it and WebKit fail at load"
+F2_OUT="$(f2_gst gst-plugins-bad usr/lib/libgstmpegts-1.0.so.0 usr/lib/libgstcodecs-1.0.so.0)"
+[[ "${F2_OUT}" == *"rc=0"* ]] && [[ "${F2_OUT}" == *"usr/lib/libgstmpegts-1.0.so.0 "* ]] && [[ "${F2_OUT}" != *libgstcodecs* ]]
+check $? "and with it keeps libgstmpegts-1.0 and nothing else" "gst-plugins-bad with libgstmpegts-1.0: '${F2_OUT:0:160}'"
+F2_BASE_LIBS="usr/lib/libgstapp-1.0.so.0 usr/lib/libgstaudio-1.0.so.0 usr/lib/libgstvideo-1.0.so.0 usr/lib/libgsttag-1.0.so.0 usr/lib/libgstpbutils-1.0.so.0 usr/lib/libgstallocators-1.0.so.0 usr/lib/libgstfft-1.0.so.0"
+F2_OUT="$(f2_gst gst-plugins-base ${F2_BASE_LIBS})"
+[[ "${F2_OUT}" == DIE:* ]] || [[ "${F2_OUT}" == *"rc=3"* ]]; check $? "gst-plugins-base without the appsink plugin (libgstapp.so) fails the package" "gst-plugins-base with no libgstapp.so plugin: '${F2_OUT:0:120}' -- WebKit segfaults a second after every page load without it"
+F2_OUT="$(f2_gst gst-plugins-base ${F2_BASE_LIBS} usr/lib/gstreamer-1.0/libgstapp.so usr/bin/gst-discoverer-1.0)"
+[[ "${F2_OUT}" == *"rc=0"* ]] && [[ "${F2_OUT}" == *"usr/lib/gstreamer-1.0/libgstapp.so"* ]] && [[ "${F2_OUT}" == *"usr/lib/libgstfft-1.0.so.0"* ]] && [[ "${F2_OUT}" != *usr/bin* ]]
+check $? "and with them keeps the libraries and plugins, and no tools" "gst-plugins-base with its payload: '${F2_OUT:0:200}'"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
