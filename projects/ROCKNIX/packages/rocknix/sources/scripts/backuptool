@@ -220,6 +220,13 @@ why() {
 # es_systems.cfg / es_features.cfg are OS-managed symlinks into /usr/config;
 # backing up their content and restoring it as regular files would freeze the
 # systems list at the backup-time version, so they are deliberately excluded.
+#
+# /storage/.cache/bluetooth/* was in upstream's list and is not in this one,
+# on purpose (747362fe36, #18): Bluetooth link keys are a credential for one
+# adapter and useless on another. A restore on the same device keeps its
+# pairings -- it never touches that folder -- and a new device pairs its
+# controllers again. A legacy zip that still holds them puts them back, as
+# it always did (#308 claude F-BR-16).
 DEFAULT=(
     /storage/.config/fancontrol.conf
     /storage/.config/backuptool.conf
@@ -556,7 +563,8 @@ STAGING_PREFIX="/storage/.cache/backuptool-staging."
 # the positive check that it is complete; only then renamed to TARGET. A
 # kill or a power cut at any point leaves TARGET as it was -- absent, or the
 # previous archive -- and at most a .partial beside it that nothing reads
-# (every glob here and in cloud_backup ends in .tar.gz). Until 2026-09-10
+# (every glob here ends in .tar.gz or .zip, and so does cloud_backup's
+# --include=/*.{zip,tar.gz}). Until 2026-09-10
 # the archive was written straight under its final dated name, so a cut
 # mid-tar left a truncated file that newest_backup picked as the newest and
 # cloud_backup sent to the cloud (D-CLOUD-078, #105).
@@ -584,12 +592,11 @@ write_archive() {
     # (es_systems.cfg and es_features.cfg point into /usr/config; the
     # ppsspp link runs the other way -- /usr/bin/assets points INTO
     # /storage/.config/ppsspp/assets -- so that one is not an example of
-    # this, though the rule holds; #45). zip -r follows them and stores
-    # their target's bytes; on restore
-    # busybox unzip then refuses to overwrite the still-present
-    # symlink ("exists but is not a regular file") and aborts the
-    # whole restore partway. Symlinks are the OS's to provide, not
-    # the backup's to carry.
+    # this, though the rule holds; #45). The zip-era backups followed
+    # them and stored their target's bytes, and on restore busybox unzip
+    # refused to overwrite the still-present symlink ("exists but is not
+    # a regular file") and aborted the whole restore partway. Symlinks
+    # are the OS's to provide, not the backup's to carry.
     FILELIST=$(mktemp)
     SECRETLIST=$(mktemp)
     SENDLIST=$(mktemp)
@@ -803,13 +810,13 @@ write_archive() {
         [ "${HELD}" -gt 0 ] && logger -t backuptool "held back ${HELD} file(s) under the offline RetroAchievements proxy's folder: its token cache and award queue never travel (#165)"
     fi
 
-    # busybox grep -f with an EMPTY pattern file matches nothing and prints
-    # nothing, where GNU grep prints every line. The device has busybox, so
-    # piping that into zip would hand it an empty list and fail the backup
-    # outright -- and only for someone whose custom LOCATIONS excluded all
-    # three credential files, which is exactly the case the membership check
-    # above exists to support. Skip the filter when there is nothing to hold
-    # back rather than relying on grep to agree across implementations.
+    # grep -f with an EMPTY pattern file matches nothing under busybox and
+    # everything under GNU grep, and an empty send list would then fail the
+    # backup outright -- and only for someone whose custom LOCATIONS
+    # excluded every credential file, which is exactly the case the
+    # membership check above exists to support. Skip the filter when there
+    # is nothing to hold back rather than relying on grep to agree across
+    # implementations.
     if [ -s "${SECRETLIST}" ]
     then
         grep -vxF -f "${SECRETLIST}" "${FILELIST}" > "${SENDLIST}"
@@ -1325,9 +1332,10 @@ case "${VERB}" in
         systemctl reboot
     ;;
     "backup")
-        # Guard the tool this whole path depends on. busybox provides unzip but
-        # not zip, so a missing package means backup dies with a bare
-        # "zip: not found" after the user has already chosen to back up.
+        # Guard the tools this whole path depends on, before anything is
+        # touched: a build that lost one (the zip-era tool died with a bare
+        # "zip: not found" after the player had chosen to back up) says so
+        # in the player's words instead.
         for TOOL in tar gzip flock
         do
             command -v "${TOOL}" >/dev/null 2>&1 || {
@@ -1380,10 +1388,11 @@ case "${VERB}" in
                fail "THE BACKUP COULDN'T FINISH. NOTHING WAS WRITTEN, AND YOUR LAST BACKUP IS UNCHANGED. TRY AGAIN." "writing or verifying ${BACKUPFILE} failed" ;;
         esac
 
-        # Now, and only now, rotate the previous archive into an archive
-        # folder that the cloud allowlist (backup/*.zip) does not match, and
-        # keep only the newest few. Each backup writes a new dated name, so
-        # this is only ever the previous one.
+        # Now, and only now, rotate the previous archive into archive/,
+        # which the settings upload does not reach -- cloud_backup sends
+        # --include=/*.{zip,tar.gz} at the ROOT of the backups folder only --
+        # and keep only the newest few. Each backup writes a new dated name,
+        # so this is only ever the previous one.
         if [ -n "${PREVIOUS}" ] && [ -f "${PREVIOUS}" ] && [ "${PREVIOUS}" != "${BACKUPFILE}" ]
         then
             mkdir -p "${ARCHIVEFOLDER}"
