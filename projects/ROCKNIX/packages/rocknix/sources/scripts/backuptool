@@ -358,22 +358,42 @@ glob_literal() {
 # A bare-token file (.dat, .txt) has no key shape to match; those are held
 # back by name instead.
 CREDENTIAL_KEYS='^[[:space:]]*(([a-z0-9_.-]*[_.-])?(password|passwd|pass|passphrase|token|secret|apikey|api_key|privatekey|private_key|presharedkey|preshared_key|access_key|secret_key|stream_key|wifi_key|clientsecret|client_secret|apitoken|psk)|key|[a-z0-9_.-]*\.key)[0-9]*[[:space:]]*[=:][[:space:]]*"?[^"[:space:]]+'
-CREDENTIAL_TOKENS='devpassword=[A-Za-z0-9._%-]{4,}|[?&]y=[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY|"(access|refresh)_token" *: *"[A-Za-z0-9._-]{16,}|sk-[A-Za-z0-9_-]{24,}|(API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD)[A-Z_]* *[:=] *["'"'"']?[A-Za-z0-9+/=_-]{16,}'
+CREDENTIAL_TOKENS='devpassword=[A-Za-z0-9._%-]{4,}|[?&]y=[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY|"(access|refresh)_token" *: *"[A-Za-z0-9._-]{16,}|(^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]{24,}|(API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD)[A-Z_]* *[:=] *["'"'"']?[A-Za-z0-9+/=_-]{16,}'
+#
+# "sk-" counts only at a word's start: unanchored, any kebab-case name with
+# 24 characters after an "sk-" -- a theme's "mask-controller-overlay-..."
+# asset -- refused every backup as a sign-in (#307, the audit of the fixes,
+# claude G-B-03). And a scan that cannot finish is not a clean scan: the
+# walk's status and each grep's are read (grep's 2 is an error, 1 only "no
+# match"), and a failure returns 1 with nothing on stdout, which the caller
+# turns into a refusal (gpt G-B-03, claude G-B-10). It prints the count only
+# when every file was read.
 credential_lines() {
-    local TREE="${1}" F N TOTAL=0 NAMES=""
+    local TREE="${1}" F N T RC TOTAL=0 NAMES="" LIST
+    LIST=$(mktemp) || return 1
+    if ! find "${TREE}" -type f -print0 > "${LIST}" 2>/dev/null
+    then
+        logger -t backuptool "the credential scan could not walk what it was to read"
+        rm -f "${LIST}"
+        return 1
+    fi
     while IFS= read -r -d '' F
     do
         N=0
         case "${F}" in
             */lang/*|*/locale/*|*/translations/*) ;;
             *.cfg|*.conf|*.ini|*.nmconnection|*.psk|*.backup|*.bak|*.cfg.*|*.conf.*|*.ini.*)
-                N=$(grep -ciE "${CREDENTIAL_KEYS}" "${F}" 2>/dev/null) ;;
+                N=$(grep -ciE "${CREDENTIAL_KEYS}" "${F}" 2>/dev/null); RC=$?
+                [ "${RC}" -le 1 ] && [ -n "${N}" ] || { logger -t backuptool "the credential scan could not read ${F#${TREE}/}"; rm -f "${LIST}"; return 1; } ;;
         esac
-        N=$(( ${N:-0} + $(grep -IcE "${CREDENTIAL_TOKENS}" "${F}" 2>/dev/null || true) ))
+        T=$(grep -IcE "${CREDENTIAL_TOKENS}" "${F}" 2>/dev/null); RC=$?
+        [ "${RC}" -le 1 ] && [ -n "${T}" ] || { logger -t backuptool "the credential scan could not read ${F#${TREE}/}"; rm -f "${LIST}"; return 1; }
+        N=$((N + T))
         [ "${N}" -gt 0 ] || continue
         TOTAL=$((TOTAL + N))
         NAMES="${NAMES:+${NAMES}, }${F#${TREE}/}"
-    done < <(find "${TREE}" -type f -print0)
+    done < "${LIST}"
+    rm -f "${LIST}"
     [ "${TOTAL}" -gt 0 ] && logger -t backuptool "found ${TOTAL} line(s) that look like a password or key, in: ${NAMES}"
     echo "${TOTAL}"
 }
@@ -1001,10 +1021,19 @@ write_archive() {
     # the check reads the staged tree -- exactly what the archive is made
     # from -- before the archive exists, so nothing credential-bearing is
     # ever written under a name an uploader matches (#307 PL-005).
-    if [ "${STRIP}" = "1" ] && [ "$(credential_lines "${STAGING}")" -gt 0 ]
+    if [ "${STRIP}" = "1" ]
     then
-        rm -rf "${STAGING}"
-        return 5
+        local LEAKS
+        if ! LEAKS=$(credential_lines "${STAGING}")
+        then
+            rm -rf "${STAGING}"
+            return 3
+        fi
+        if [ "${LEAKS}" -gt 0 ]
+        then
+            rm -rf "${STAGING}"
+            return 5
+        fi
     fi
 
     # Member names come out as storage/... exactly as the zip's did, so

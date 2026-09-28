@@ -3464,6 +3464,38 @@ p7bt backup
 [ "${RC}" -eq 0 ] && [ -n "$(p7arc)" ] && ! p7list | grep -qE '\.(backup|tmp)$' && ! tar -xzOf "$(p7arc | tail -1)" 2>/dev/null | grep -q "${P7FAKE}"; check $? "#307 audit G-B-01 (claude): system.cfg.backup, system.cfg.tmp and es_settings.cfg.backup -- the last-good records and a writer's temporary -- are held back like the files they copy, and the planted key is in no member" "#307 audit G-B-01: rc ${RC}; members: $(p7list | grep -E '\.(backup|tmp)$' | tr '\n' ' '); planted value in the archive: $(tar -xzOf "$(p7arc | tail -1)" 2>/dev/null | grep -c "${P7FAKE}")"
 p7sign app.cfg.backup "password = ${P7FAKE}"; check $? "#307 audit G-B-01 (claude): a .backup copy of another config is scanned like a config" "#307 audit G-B-01: rc ${RC}; why '$(p7why)'; archives: $(p7arc | wc -l) -- *.backup was not read"
 
+# == AUD claude G-B-03 (#307 audit of the fixes): a kebab-case name ending in "sk-" is not an OpenAI key
+p7reset '  /storage/.config/test/*'
+# Built from pieces: the push guard's own sk- is unanchored.
+printf '<image name="ma%s%s" />\n' 'sk-controller-overlay' '-shadow-large-v2' > "${P7S}/.config/test/theme.xml"
+p7bt backup
+[ "${RC}" -eq 0 ] && [ -n "$(p7arc)" ]; check $? "#307 audit G-B-03 (claude): a theme file naming a kebab-case asset with 24 characters after its sk- backs up; sk- counts only at a word's start" "#307 audit G-B-03: rc ${RC}; why '$(p7why)' -- the unanchored sk- refused a clean backup as a sign-in"
+
+# == AUD gpt G-B-03 (#307 audit of the fixes; claude G-B-10): a scan that cannot finish refuses the backup
+p7reset '  /storage/.config/test/*'
+cat > "${P7}/shim/find" <<'EOS'
+#!/bin/bash
+# The scan's walk of the staging tree fails part-way; every other find is the image's.
+case "$*" in *backuptool-staging*-print0*) echo "find: read error" >&2; exit 1 ;; esac
+exec /p7bb/find "$@"
+EOS
+chmod +x "${P7}/shim/find"
+p7bt backup
+[ "${RC}" -ne 0 ] && [ -z "$(p7arc)" ]; check $? "#307 audit G-B-03 (gpt) / G-B-10 (claude): a credential scan whose walk fails refuses the backup (rc ${RC}, nothing written)" "#307 audit G-B-03: rc ${RC}; archives $(p7arc | wc -l) -- the scan read nothing and called it clean"
+rm -f "${P7}/shim/find"
+p7reset '  /storage/.config/test/*'
+echo 'name = x' > "${P7S}/.config/test/noscan.cfg"
+cat > "${P7}/shim/grep" <<'EOS'
+#!/bin/bash
+# grep fails (exit 2) on one staged file; every other grep is the host's.
+for a in "$@"; do case "$a" in */noscan.cfg) case "$*" in *-ciE*|*-IcE*) echo "grep: read error" >&2; exit 2 ;; esac ;; esac; done
+exec /usr/bin/grep "$@"
+EOS
+chmod +x "${P7}/shim/grep"
+p7bt backup
+[ "${RC}" -ne 0 ] && [ -z "$(p7arc)" ]; check $? "#307 audit G-B-03 (gpt) / G-B-10 (claude): a file the scan cannot read refuses the backup (rc ${RC})" "#307 audit G-B-03: rc ${RC}; archives $(p7arc | wc -l) -- the unread file was passed over"
+rm -f "${P7}/shim/grep"
+
 # y2. wifictl whole, against an nmcli that answers as the target's does
 # (probed on guest d for the psk, 2026-09-27): terse and get-values output
 # escapes ':' and '\' unless --escape no; two wireless devices, each profile
