@@ -4283,4 +4283,12 @@ tctl scan
 rm -rf "${TPD}/scan-cursor.next" "${TS}/roms/gbc"; TENV=(); rm -f "${TR}/helper-plan"
 fi
 
+# D27. claude G-D-07, a guard (the finding is refuted: EX_USAGE=64 is
+# defined in the ctl's sysexits block): `listening` with a wait that is not
+# a number is a usage error, exit 64, never 0.
+if [ "${DT_OK}" -eq 1 ]; then
+tctl listening --wait abc
+[ "${RC}" -eq 64 ] && grep -q '^usage: raofflineproxy-ctl listening' "${ERR}"; check $? "claude G-D-07: listening --wait abc -- usage on stderr, exit 64" "claude G-D-07: rc ${RC}; stderr: $(head -c 160 "${ERR}")"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
