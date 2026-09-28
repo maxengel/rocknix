@@ -3413,17 +3413,18 @@ def state_of(d):
     except (OSError, ValueError):
         return {}
 
-def procs_named(name):
+def procs_with(text):
+    """Live processes whose command line, joined with spaces, holds text."""
     found = []
     for e in os.listdir("/proc"):
-        if not e.isdigit():
+        if not e.isdigit() or int(e) == os.getpid():
             continue
         try:
             with open("/proc/%s/cmdline" % e, "rb") as h:
-                argv = h.read().split(b"\0")
+                line = h.read().replace(b"\0", b" ").decode("utf-8", "replace")
         except OSError:
             continue
-        if argv and argv[0].decode("utf-8", "replace") == name and pid_alive(int(e)):
+        if text in line and pid_alive(int(e)):
             found.append(int(e))
     return found
 
@@ -3450,7 +3451,7 @@ def driver():
     with open(shim, "w") as h:
         h.write('#!/bin/bash\n'
                 'echo "Please go to http://127.0.0.1:53682/auth?state=abc123"\n'
-                'exec -a rclone-authorize-shim sleep 60\n')
+                'exec -a "$0 authorize" sleep 60\n')
     os.chmod(shim, 0o755)
     m.RCLONE = shim
     win = os.path.join(d, "cloud-signin-window")
@@ -3515,6 +3516,50 @@ def configured_only_after_verification():
     result(ok, "a verified remote is reported to both callers, configured True, status signed-in",
            "success path: submit %r collector %r configured %r status %r"
            % (got.get("submit"), got.get("collector"), s.configured, m.read_state().get("status")))
+EOPY
+# PL-050: an attempt that dies without a token reads failed; so does a serve whose port is taken.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+@test
+def collector_marks_a_dead_attempt_failed():
+    """#307 PL-050: rclone exits without a token; status must not stay waiting."""
+    m, d = load("pl050")
+    m.write_state(status="waiting", url="http://x/1234")
+    s = m.Session("dropbox", None, 60)
+    s.proc = fake_authorize("echo 'Error: failed to get token: oauth2: \"invalid_grant\"'; exit 1")
+    s._collect()
+    st = m.read_state()
+    result(st.get("status") == "failed" and st.get("error"),
+           "an authorize that exits without a token leaves status failed, with a reason (%s)" % st.get("error"),
+           "status after rclone died without a token: %r -- the on-device session stayed waiting (PL-050)" % st.get("status"))
+    m, d = load("pl050b")
+    m.write_state(status="waiting", url="http://x/1234")
+    s = m.Session("dropbox", None, 60)
+    s.superseded = True
+    s.proc = fake_authorize("exit 1")
+    s._collect()
+    result(m.read_state().get("status") == "waiting",
+           "a replaced attempt's collector does not mark the new attempt failed",
+           "a superseded session's collector wrote status %r over the attempt that replaced it" % m.read_state().get("status"))
+
+@test
+def taken_port_fails_cleanly():
+    """#307 PL-050 (claude F-RS-22): a serve whose port is taken."""
+    d = serve_dir("pl050p")
+    for p in procs_with("rclone authorize"):
+        os.kill(p, signal.SIGKILL)
+    blocker = socket.socket()
+    blocker.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    blocker.bind(("0.0.0.0", 8432))
+    blocker.listen()
+    rc, out, err = drive(d, "serve", "dropbox", "--port", "8432", "--timeout", "20")
+    st = state_of(d)
+    blocker.close()
+    left = procs_with("rclone authorize")
+    result(rc == 2 and st.get("status") == "failed" and st.get("error") and "Traceback" not in err and not left,
+           "a serve whose port is taken exits 2 with status failed and a reason, no traceback, no authorize left (%s)" % st.get("error"),
+           "port taken: rc %r, status %r, traceback %r, authorize left running %r (PL-050)" % (rc, st.get("status"), "Traceback" in err, left))
+    for p in left:
+        os.kill(p, signal.SIGKILL)
 EOPY
 # C3: new test groups go above this line
 cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'

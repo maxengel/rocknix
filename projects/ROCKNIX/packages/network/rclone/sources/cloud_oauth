@@ -44,6 +44,7 @@
 # own, and requires a PIN shown on the handheld -- so reaching it takes the
 # device in your hands, not merely a seat on the wifi.
 
+import errno
 import fcntl
 import hashlib
 import http.server
@@ -183,6 +184,10 @@ class Session:
         self.configured = False
         self._config_lock = threading.Lock()
         self._config_result = None
+        # Set by the holder when another attempt replaces this one, so this
+        # one's collector -- woken by the new attempt killing its rclone --
+        # does not report the new attempt failed.
+        self.superseded = False
         self.error = None
         # rclone's own last words. It exits fatally when the exchange fails,
         # and what it says -- "code doesn't exist or has expired" against
@@ -264,6 +269,16 @@ class Session:
                 log("could not finish the sign-in: %s" % detail)
                 if read_state().get("status") != "signed-in":
                     write_state(status="failed", error=detail)
+        elif not self.token and not self.superseded:
+            # rclone ended without a token: the provider refused, the
+            # exchange failed, or it was killed. Nothing else is going to
+            # finish this attempt, and the on-device path has no page to
+            # say so -- the status stayed "waiting" until the serve timed
+            # out, and the interface's STILL WAITING told the player to
+            # finish an attempt that was already dead (audit #307 PL-050).
+            if read_state().get("status") in ("starting", "waiting"):
+                log("the sign-in ended without a token")
+                write_state(status="failed", error=self.failure_reason())
 
     def failure_reason(self):
         """Why the attempt died, in words a player can act on."""
@@ -1497,6 +1512,10 @@ class SessionHolder:
         # there -- a sentence about a program the player has never heard of,
         # on a screen with no way out but a button combination.
         session.on_signed_in = self.signed_in
+        # Before the new attempt kills the old one's rclone (Session.start),
+        # so the old collector knows its end is not a failure to report.
+        if self.session:
+            self.session.superseded = True
         if not session.start():
             return False, session.error
         with self.lock:
@@ -1542,6 +1561,13 @@ class SessionHolder:
                                      alive=browser.is_running)
         self.gamepad.start()
         return True
+
+    def end(self):
+        """Take everything this serve started down: the window, and rclone."""
+        self.stop_browser()
+        if self.session and self.session.proc \
+                and self.session.proc.poll() is None:
+            self.session.proc.send_signal(signal.SIGTERM)
 
     def stop_browser(self):
         gamepad, self.gamepad = self.gamepad, None
@@ -1796,7 +1822,20 @@ def cmd_serve(backend, remote_name, label, port, timeout):
         return 2
 
     address = lan_address()
-    server = http.server.ThreadingHTTPServer(("0.0.0.0", port), None)
+    # A port something else holds used to end the serve with a traceback and
+    # the status left at "starting", rclone's authorize still running, and
+    # the interface waiting on a sign-in that could never be reached (audit
+    # #307 PL-050, claude F-RS-22).
+    try:
+        server = http.server.ThreadingHTTPServer(("0.0.0.0", port), None)
+    except OSError as exc:
+        why = "port %d is already in use on this device" % port \
+            if exc.errno == errno.EADDRINUSE else "could not listen on port %d" % port
+        log("sign-in could not start: %s (%s)" % (why, exc.strerror or exc))
+        sys.stderr.write("%s\n" % why)
+        write_state(status="failed", error=why)
+        holder.end()
+        return 2
 
     def shutdown():
         threading.Thread(target=server.shutdown, daemon=True).start()
@@ -1862,10 +1901,7 @@ def cmd_serve(backend, remote_name, label, port, timeout):
     finally:
         timer.cancel()
         server.server_close()
-        holder.stop_browser()
-        if holder.session and holder.session.proc \
-                and holder.session.proc.poll() is None:
-            holder.session.proc.send_signal(signal.SIGTERM)
+        holder.end()
 
     final = read_state().get("status")
     if final == "signed-in":
