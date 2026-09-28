@@ -3588,4 +3588,10 @@ p7wset 'Cafe: Guest|802-11-wireless|-|Cafe: Guest|k'
 p7w list
 grep -qxF 'Cafe: Guest' "${P7W}/out" && ! grep -qF 'Cafe\: Guest' "${P7W}/out"; check $? "#308 2-wifi claude F-WF-05: list prints 'Cafe: Guest' as current and saved do, not nmcli's escaped 'Cafe\\: Guest'" "#308 F-WF-05: list printed '$(tr '\n' '|' < "${P7W}/out")'"
 
+# == #308 2-wifi claude F-WF-06 / gpt F-WF-04: a name with a tab can be joined and forgotten
+p7wset "$(printf 'a\tb')|802-11-wireless|-|ab|tab-key-1"
+p7w join "$(printf 'a\tb')"; p7jrc=${RC}
+p7w forget "$(printf 'a\tb')"
+[ "${p7jrc}" -eq 0 ] && [ "${RC}" -eq 0 ] && [ ! -s "${P7W}/run/profiles" ]; check $? "#308 2-wifi claude F-WF-06 / gpt F-WF-04: a profile named 'a<TAB>b' -- which saved lists and the interface accepts -- joins and is forgotten" "#308 F-WF-06: join rc ${p7jrc}, forget rc ${RC}; profiles left: $(wc -l < "${P7W}/run/profiles")"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

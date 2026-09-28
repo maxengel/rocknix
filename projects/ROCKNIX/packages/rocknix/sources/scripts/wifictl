@@ -193,6 +193,17 @@ nm_unescape() {
   sed 's/\\\(.\)/\1/g'
 }
 
+# The state saved_wifi gives a remembered network, by its whole name: the
+# name is everything before the LAST tab (the state is after it), as the
+# interface's parser reads it. awk -F'\t' compared the part before the
+# FIRST tab, so a profile whose name holds a tab -- listed as SAVED and
+# accepted by the interface -- could be neither joined nor forgotten (#308
+# claude F-WF-06, gpt F-WF-04). The name crosses through the environment,
+# not awk -v, which would read backslashes in it as escapes.
+saved_state() { # <saved_wifi rows> <name>
+  printf '%s\n' "${1}" | NAME="${2}" awk '{ n = $0; sub(/\t[^\t]*$/, "", n); if (n == ENVIRON["NAME"]) { s = $0; sub(/^.*\t/, "", s); print s } }'
+}
+
 # The SSID the device is joined to now: the one access point NetworkManager
 # marks active, from the list it already holds (no rescan). Nothing and exit
 # 1 when the device is joined to none; exit 2 when NetworkManager could not
@@ -228,8 +239,7 @@ saved_wifi() {
 # remembered one in range). A name that is not a remembered wireless
 # network, a NetworkManager that cannot be asked, or a delete that fails:
 # nothing printed and exit 1, so a caller cannot read a refusal as done.
-# The name is matched whole, through the environment rather than awk -v,
-# which would read backslashes in it as escapes.
+# The name is matched whole (saved_state).
 #
 # NetworkManager not answering is exit 2, as for current and join: "could
 # not ask" is a different answer from "no such network" (#308 claude
@@ -244,7 +254,7 @@ forget_wifi() {
   local name="${1}" rows state ssid named
   [ -n "${name}" ] || return 1
   rows=$(saved_wifi) || return 2
-  state=$(printf '%s\n' "${rows}" | NAME="${name}" awk -F'\t' '$1 == ENVIRON["NAME"] { print $2 }')
+  state=$(saved_state "${rows}" "${name}")
   [ -n "${state}" ] || return 1
   ssid=$("${NMCLI}" --escape no -g 802-11-wireless.ssid connection show id "${name}" 2>/dev/null)
   "${NMCLI}" connection delete id "${name}" >/dev/null 2>&1 || return 1
@@ -282,7 +292,7 @@ join_wifi() {
   local name="${1}" rows state psk
   [ -n "${name}" ] || return 1
   rows=$(saved_wifi) || return 2
-  state=$(printf '%s\n' "${rows}" | NAME="${name}" awk -F'\t' '$1 == ENVIRON["NAME"] { print $2 }')
+  state=$(saved_state "${rows}" "${name}")
   [ -n "${state}" ] || return 1
   # Judged on the adapter the picker speaks for (WIFI_DEV, as current_wifi
   # is): a profile already up on another adapter read as "active" and
