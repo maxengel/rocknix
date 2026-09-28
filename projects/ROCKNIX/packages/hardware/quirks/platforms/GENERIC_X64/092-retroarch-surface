@@ -23,7 +23,10 @@
 #     the cfg after RESET RETROARCH CONFIG TO DEFAULT, which replaces
 #     retroarch.cfg and leaves RECORD, and either on another mode is the
 #     scaling this quirk exists to end -- so a hand-set 640x480 or 0x0
-#     follows the mode too;
+#     follows the mode too. The pair, never one axis: the first version
+#     rewrote each axis into the mode's own size, so 640x0 and 0x480 are
+#     somebody's (short of a boot cut between its two writes on a
+#     640-wide mode);
 #   - with no RECORD yet, exactly the size this boot writes: an earlier
 #     build's write for this mode, or a hand-set pair equal to it, and
 #     taking it changes nothing now.
@@ -90,7 +93,7 @@ record() {
 OURS=no
 if recorded "${SIZE}"; then
   OURS=yes
-elif { [ "${X}" = 0 ] || [ "${X}" = 640 ]; } && { [ "${Y}" = 0 ] || [ "${Y}" = 480 ]; }; then
+elif [ "${SIZE}" = 640x480 ] || [ "${SIZE}" = 0x0 ]; then
   OURS=yes
 elif [ ! -f "${RECORD}" ] && [ "${SIZE}" = "${WANT}" ]; then
   OURS=yes

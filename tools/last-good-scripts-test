@@ -10384,6 +10384,26 @@ f1_pass "${F1RS}" "${F1}/sys" "${F1R}/quirks.now" "${F1R}/s.j3"
 [ -z "$(f1r_left "${F1RS}")" ] && [ -z "$(f1r_masks "${F1RS}")" ] && [ -e "${F1RS}/.cache/retired-rescue-masks" ]
 check $? "G2-F1-01: a boot that takes the masks and stamps, and finds the old files too, takes both and keeps the fresh stamp" "G2-F1-01: one boot with the masks' stamp removed and the old files back: files:$(f1r_left "${F1RS}" | cut -c1-120); masks:$(f1r_masks "${F1RS}"); masks' stamp $([ -e "${F1RS}/.cache/retired-rescue-masks" ] && echo kept || echo REMOVED)"
 
+# F1r-c. The gpt seat's G2-F1-03, the part that is a defect: 092-retroarch-
+#        surface says the shipped values are 640x480 or 0x0, and took each
+#        axis on its own -- 640x0 and 0x480, which no build ever wrote (the
+#        first version, eb131d112f, rewrote each axis only from 0|640 and
+#        0|480, into the mode's own size), followed the mode as its own. A
+#        guest that has booted once (so a record exists) is given each by
+#        hand; the shipped pairs still follow (control).
+if declare -F f1_surface >/dev/null; then
+    F1RC="${F1R}/c"; f1_storage "${F1RC}"; f1_surface "${F1RC}" "${F1G}/s1280"
+    f1_set "${F1RC}" 640x0; f1_surface "${F1RC}" "${F1G}/s1280"; F1R_C1=$(f1_wh "${F1RC}")
+    f1_set "${F1RC}" 0x480; f1_surface "${F1RC}" "${F1G}/s640"; F1R_C2=$(f1_wh "${F1RC}")
+    [ "${F1R_C1}" = 640x0 ] && [ "${F1R_C2}" = 0x480 ]
+    check $? "G2-F1-03: a hand-set 640x0 or 0x480 -- neither a shipped pair -- is left as somebody's" "G2-F1-03: a hand-set 640x0 became ${F1R_C1} at 1280x800, a hand-set 0x480 became ${F1R_C2} at 640x480"
+    f1_set "${F1RC}" 0x0; f1_surface "${F1RC}" "${F1G}/s1280"; F1R_C3=$(f1_wh "${F1RC}"); f1_set "${F1RC}" 640x480; f1_surface "${F1RC}" "${F1G}/s1280"
+    [ "${F1R_C3}" = 1280x800 ] && [ "$(f1_wh "${F1RC}")" = 1280x800 ]
+    check $? "G2-F1-03 (control): the shipped 0x0 and 640x480 still follow the mode, record or not" "the shipped 0x0 became ${F1R_C3} and 640x480 $(f1_wh "${F1RC}") at 1280x800"
+else
+    check 1 "-" "G2-F1-03: 092-retroarch-surface is not in the tree under test -- nothing to grade"
+fi
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
