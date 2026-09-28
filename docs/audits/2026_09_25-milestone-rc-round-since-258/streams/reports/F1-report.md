@@ -163,3 +163,45 @@ Every commit has the `Co-Authored-By: Claude Opus 5.5` trailer (9 of 9), a `pack
 - **Two rows keep open parts that need an owner:** claude F-VM-08 and F-VM-16. They sit in three installed files: the `config/GENERIC_X64` files of mupen64plus-sa, flycast-sa and m8c (the m8c ones are inert on a VM). These are outside F1's list and F2 disclaims them. The exact lines are in the table above.
 - **Stale comments for the integrator's sweep (audit #258 P-01).** `tools/time-to-play:1057` and `tools/ra-offline-test:280` still say the image ships `video_driver = "vulkan"`. That is history now, and neither file is F1's.
 - **Rebuild costs for the integrator.** The change under `retroarch/sources/GENERIC_X64` rebuilds RetroArch. The quirks package rebuilds on its own. The options comment change rebuilds nothing, because device options are not hashed into package stamps.
+
+## Follow-up (after the merge at f0f263b8cc): the orphaned configs, PL-076 and the stale comments
+
+Three more commits on `feature/pl-f1`, on top of `6d036d2239`:
+```
+85e4856b7e tools: say the GENERIC_X64 profile ships gl now
+9fd73da845 retroarch: drop the x64 profile's dead armhf core-updater URL
+7c8ba04368 GENERIC_X64: emulator configs name no handheld's hardware
+```
+
+**Harness:** `tools/last-good-scripts-test` on the branch head reads `PASSED`, rc 0, with 432 PASS lines (4 new). `BASE_REF=417dcd8610 ... --old` reads `30 CHECK(S) FAILED`, all of them inside the F1 block. The new checks are F1i (the three configs) and F1j (PL-076).
+
+- **mupen64plus.cfg, claude F-VM-08: fixed in `7c8ba04368`.**
+  - My edit **starts from stream F2's `f72a5d1fdf` on `feature/pl-f2`** (`git show feature/pl-f2:<path>`), which moved Control1's mappings back into their section. My only change is the one line `name = "rg552_joypad"` becoming `name = ""`, so the two branches merge without a conflict.
+  - Why `""` is correct: the section is mode 2 (fully automatic). The pinned input-sdl source compares the stored name only in mode 1 (`src/config.c:438-439`), and writes `""` itself when it finds no pad (`:713`).
+  - FAIL before: `mupen64plus's Control1: name = "rg552_joypad"`. PASS after.
+- **mupen64plus.cfg, claude F-VM-16: withdrawn.** `start_mupen64plus.sh` passes `--set Video-General[ScreenWidth/ScreenHeight]` from `fbwidth`/`fbheight` on every launch (lines 94-110), so the stored 1280x960 is never used.
+- **flycast emu.cfg, claude F-VM-16: fixed in `7c8ba04368`.**
+  - `width = 1920` and `height = 1080` are removed; `fullscreen = yes` stays.
+  - The numbers never sized the fullscreen window. This build has USE_GLES off (per the build root's CMakeCache), so fullscreen is `SDL_WINDOW_FULLSCREEN_DESKTOP` (`core/sdl/sdl.cpp:836`), which takes the output's size.
+  - FAIL before: `flycast's [window]: height = 1080 width = 1920`. PASS after.
+- **m8c, claude F-VM-08: the finding's lines are real, and the files were dead. Fixed in `7c8ba04368`.**
+  - `M8C.sh` picks `/usr/config/m8c/${QUIRK_DEVICE}.ini`, and no x86_64 machine reports an Anbernic model, so the three Anbernic INIs (one file and two links) are removed. `config.ini` stays.
+  - FAIL before: `m8c's GENERIC_X64 config: Anbernic RG CubeXX.ini|Anbernic RG34XX.ini|Anbernic RG40XX H.ini|config.ini|`. PASS after.
+- **Already written for the three configs: nothing to migrate.** A guest may hold a copy of each under `/storage`:
+  - `/storage/.config/mupen64plus/mupen64plus.cfg` (copied once, when absent). Its stored name is ignored in mode 2, and the plugin rewrites it.
+  - `/storage/.config/flycast/emu.cfg` (copied once, with the folder). Flycast rewrites `[window]` from its own state on every exit (`sdl.cpp:993-998`).
+  - `/storage/.local/share/m8c/config.ini`. On an x86_64 machine it was always the shipped `config.ini`.
+- `tools/pkgcheck` returned rc 0 for mupen64plus-sa-core, flycast-sa and m8c.
+- **With this, the open parts of claude F-VM-08 and F-VM-16 are closed.** F-VM-08 is fixed (mupen64plus name, m8c); the rest of it is refuted, because Cemu, RPCS3, xemu, Dolphin and Supermodel are not in the SYSTEM. F-VM-16 is fixed (flycast), withdrawn for the mupen64plus video values (the launcher overrides them), and refuted for RPCS3 and Supermodel.
+- **PL-076: resolved in `9fd73da845`.**
+  - The line `core_updater_buildbot_url = "...armhf/latest/"` is deleted. The build root's RetroArch reads only `core_updater_buildbot_cores_url` (`""` here) and `core_updater_buildbot_assets_url` (`configuration.c:1683-1684`).
+  - FAIL before: `the GENERIC_X64 profile still carries core_updater_buildbot_url = ...`. PASS after.
+  - `tools/pkgcheck retroarch`: rc 0.
+  - Already written: nothing on a device changes. A guest's copy of `retroarch.cfg` is not rewritten, and RetroArch ignores the key there too.
+  - This supersedes the buildbot part of my F-RW-04 withdrawal for GENERIC_X64. The other 14 device profiles are unchanged.
+- **Stale comments: fixed in `85e4856b7e`, comments only.**
+  - `tools/ra-offline-test` (the old line 280) and `tools/time-to-play` (the old line 1057) now say that the profile ships gl since `a5a03bd9fa`, that `092-retroarch-surface` moves a cfg still on vulkan to gl while the image has no Vulkan driver, and why the swap stays.
+  - Checks: `bash -n` on ra-offline-test and a Python parse of time-to-play both pass. I removed the `__pycache__` that a `py_compile` left behind.
+  - Other lines that say "the QEMU guest has no Vulkan" (`time-to-play:1001`, `emulator-exit-test:33`) are still true and were left alone.
+
+Nothing was pushed, and no guest was run.
