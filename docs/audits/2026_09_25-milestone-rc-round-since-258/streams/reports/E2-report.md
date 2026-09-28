@@ -1,0 +1,262 @@
+# Stream E2 report: EmulationStation application (audit #307 / #308)
+
+**Branch:** `feature/pl-e2` in `/home/max/Development/emulationstation-next.worktrees/pl-e2`. Base `7eae8ed91` (the ROCKNIX pin). 39 commits, nothing pushed, working tree clean. The branch builds nothing and touches no device.
+
+The commit titles were rewritten once, locally, before this report, to meet the brief's `<package>: <text>` shape. Only the first line of each message changed, and the tree is identical to the pre-rewrite tip (`git diff 72cdc4ed3 HEAD` is empty). The hashes below are final.
+
+```
+git log --oneline 7eae8ed91..HEAD
+187ff9f1c FileData: no rotation record from a launch that did not run
+6c4b0b688 tests: cases for LaunchCommand.h, beside runemu.sh's own reading
+c48d8d469 SystemData: the link-up index retry at most once in ten minutes
+cc8c5ccb4 ThreadedHasher: an offline index counts nothing and toasts nothing
+5443b5301 AppWindow: workers stop posting once main() lets the window go
+fe8ed1551 GuiMenu: INCREMENTAL SAVE STATES cites the launcher that reads it
+111c9be66 GuiMenu: cloudSetupPresent's comment back above it
+9f02eeec0 GuiMenu: the hub rows dim with MultiLineMenuEntry::setDimmed
+52ba93160 GuiMenu: the content picker moves BIOS alone; an empty file counts
+bf8c6ce75 GuiMenu: the transfer form's switches let go of the rebuild
+98c7592c8 GuiMenu: the sync row and its confirmation read the same run
+731252c61 GuiMenu: cloud_remote create's output is masked in the log
+fa57923af SaveStateBookkeeper: a queued deletion waits out a cloud transfer
+0a470e5dc GuiMenu: CONNECTED says whether saves already sync
+a65103644 GuiMenu: the sign-in wait trusts the listener; leaving cancels it
+ca4133e3c ViewController: nothing from before is written after a reset
+275c4200f GuiMenu: a maintenance failure says the script's why
+39d5a9d6d GuiMenu: two cloud row descriptions back to one line
+e98bfda4b GuiMenu: one cloud_setup --info on the hub; a changed folder shows
+3b5b851ec GuiMenu: the restore page's passwords reach the disk
+ec943c803 GuiMenu: restore page Wi-Fi behind a spinner; LATER, FINISH true
+c053babb3 RetroAchievements: no FileData walk on the summary's worker thread
+19319821c RetroAchievements: offline, the summary does not ask for a web key
+5a7afc4ca GuiCloudTransfer: the player's own buttons, and a help bar for them
+53a444e91 TextFit: the long-job pages fit a line on characters, not bytes
+c2302ef25 ViewController: forget screenshot caches when the library changes
+bcbe0cf88 FileData: a deferred launch finds its save state again by file
+ab01c79b6 FileData: a capture failure is said even when the exit is superseded
+d96c8979e FileData: PLAY NOW's answer does not outlive its launch
+7b7f2f9ee OfflineAchievements: stop only the run that holds the lock
+0adda3f78 FileData: a launch waits for the last game's capture
+9b7b1d3a2 SystemData: a rescan keeps the FileData of files still on disk
+d75fb3866 GuiMenu: a cloud row greyed before setup runs once setup is done
+1209ac249 GuiMenu: the picked cloud folder names reach the shell quoted
+8fb12b185 JourneyTiers: the settings-first continuation runs what was ticked
+c6c7b24af ProxyCards: drop the send-showing flag nothing read
+bbfa1d43b ProxyCards: a stopped top-up says so; a why is this run's own
+8b6d47d46 ProxyCards: one top-up watcher, and a request that waits is kept
+1cf15dead ProxyCards: the account sentence needs the flush stamp
+```
+
+**Rules read this session:** everything under `.claude/rules/` from the session context, plus a line-by-line diff against `next` for the five that differ: `engineering-practices`, `upgrade-and-install` (D-WORKFLOW-050 "Already written"), `es-native-ui` (§ The cards at the link's return, D-UI-109), `es-player-text` and `es-code-traps`.
+
+**Decision rows cited:** D-UI-109, D-UI-093, D-UI-107, D-UI-022, D-UI-023, D-UI-028/030, D-UI-078, D-UI-095, D-INFRA-010 and D-WORKFLOW-050.
+
+## Test harness this stream added
+
+`es-app/tests/unit/**` is E1's, so this stream's cases live in two places:
+
+- **`tests/app-unit/`**: a CMake and doctest project built with the host compiler under AddressSanitizer and UBSan. It holds three binaries:
+  - `app-unit-tests`: the pure headers.
+  - `proxycards-tests`: the shipped `ProxyCards.cpp`, copied at configure time and compiled against doubles in `tests/app-unit/fakes/`.
+  - `bookkeeper-tests`: the shipped `SaveStateBookkeeper.cpp` against doubles, with a real flock held by a real process.
+- **`tests/*.py`**: scripts in the shape of `cloud-oauth-lifetime.py`. Each one extracts a shipped function from the source unchanged, compiles it against doubles and runs it.
+
+New header-only files: `AppWindow.h`, `FolderMerge.h`, `JourneyTiers.h`, `RunLock.h` and `TextFit.h`. No CMakeLists outside my list changed.
+
+## Punch items
+
+### PL-014: resolved, `9b7b1d3a2`
+
+- **Change:** the rescan no longer uses `clear()` + `populateFolder`. It reads the folder into a fresh tree and merges it (`FolderMerge::merge`):
+  - a file still on disk keeps its FileData, so the collections, the group folder and the hasher's queue stay valid;
+  - new entries move in and are indexed;
+  - vanished entries have their collection entries dropped (without `needsSave`) and the group folder's pointer removed, then they are deleted;
+  - the fresh tree's duplicates are deleted with the filter index set aside;
+  - the group's view is dropped and remade.
+- **Wait:** the rescan now waits while the index, the scraper or a game holds files.
+- **Test:** `app-unit-tests`, `FolderMergeTests.cpp`, three cases.
+  - FAIL against today's semantics: `CHECK( tree.deleted.count(h) == 0 ) is NOT correct!` three times, and `CHECK( find(live, "/r/b.nes") == b )`.
+  - PASS: 9 of 9 cases then, 52 assertions.
+- **Already written:** nothing inherited. The tree is memory, and the folder and custom collection files are only read.
+- **Integrator, on the VM:** the soak. Change a folder under a game list with a collection open, 200 iterations, no crash. The SystemData half (collections, group folder, index, views) has not been exercised against the real classes.
+
+### PL-029: resolved, `8fb12b185`
+
+- **Change:** the restore form writes the ticks on YES to `/storage/.cache/cloud_sync/journey-tiers` (`JourneyTiers.h`). That directory is not captured by the settings backup.
+  - `--then-cloud` is passed only when something besides settings is ticked, and the dialog without "ANYTHING ELSE" is used otherwise.
+  - `main()` builds the continuation from the record, and the prompt names the ticked tiers.
+  - A record with no marker is removed.
+- **Test:** `JourneyTiersTests.cpp`, six cases.
+  - FAIL (today's command, extracted unchanged): `CHECK_FALSE( has(cmd, "cloud_content_restore") ) is NOT correct!` with `rc=0 ; _t=0 ; { /usr/bin/cloud_content_restore --all ; } ...`.
+  - PASS: 30 assertions.
+- **Already written:** read both. A marker from an earlier build has no record, so it keeps the old continuation and the old prompt.
+- **Strings:** eight new, with French.
+- **Integrator, on the VM:** tick settings and saves, restore settings first, restart, answer YES. The journal must show no `cloud_content_restore`. The done page lists the tiers the continuation ran (SAVES); the settings tier reported on its own page before the restart.
+
+### PL-030: resolved (C++ half), `1209ac249`
+
+- **Change:** `cloudSetSystemsCommand` sends the joined names as one argument through `cloudShellQuote`.
+- **Test:** `tests/cloud-set-systems-quoting.py`.
+  - FAIL: 3 of 5, e.g. `FAIL ['a$(touch .../ran)b']: the name ran a command (ran was created)`.
+  - PASS: 5 of 5.
+- **Already written:** nothing inherited.
+- **Stream A's half:** the script's refusal of names outside `[A-Za-z0-9._-]`.
+
+### PL-054: resolved, `1cf15dead`
+
+- **Change:** the account sentence is said only when the flush stamp came. With an empty queue and no stamp the card reads COMPLETED alone, with token `completed`.
+- **Test:** `proxycards-tests`, "send card: an empty queue without the flush stamp says COMPLETED alone".
+  - FAIL: `CHECK( card->action.empty() )`, with action `WHAT YOU EARNED OFFLINE IS NOW ON YOUR ACCOUNT. | NOW ON YOUR ACCOUNT.`
+  - PASS.
+- **Already written:** nothing inherited; the card's words are not stored.
+
+### PL-056: resolved, `8b6d47d46`
+
+- **Change:** `topUp` records the request and starts a watcher only when `sTopUpRunning.exchange(true)` finds none running.
+  - A bare exchange would have dropped the index's `--after-index` run, the one that lists newly found games. So the single watcher runs the requests that arrive while it works, the index's first.
+  - A later run waits for a running game to end.
+- **Test:** "top-up: two requests, one watcher at a time, and the second still runs".
+  - FAIL: `CHECK( maxOpen.load() == 1 )` with `CHECK( 2 == 1 )`, plus a COULDN'T FINISH card.
+  - PASS: the ctl ran `[topup, topup --after-index]`.
+- **Already written:** nothing inherited.
+
+### PL-061: resolved, `0adda3f78`
+
+- **Change:** the exit marks the capture in flight by its generation. `captureGate` is first among the launch gates.
+  - It waits 300 ms on the interface thread, then up to 10 s behind RECORDING YOUR LAST GAME'S SAVES... (new string, with French).
+  - A launch that waited owns the exit sync.
+  - Past the bound the game starts anyway, and that capture is not waited for again.
+- **Test:** `tests/launch-capture-gate.py`.
+  - FAIL against a gate that never waits: five checks, e.g. `FAIL a slow capture: the launch waits behind the spinner`.
+  - PASS: nine checks.
+- **Already written:** nothing inherited.
+- **Integrator, on the VM:** relaunch inside a capture and read the journal order. "launch: waiting for the last game's saves to be recorded" or "... were recorded first" comes before the second "Attempting to launch game...".
+
+### PL-062: resolved, `d75fb3866`
+
+- **Change:** a gated row re-checks `rclone.conf` (uncached) at the press. Once it finds the cloud set up it runs, and stops drawing dim.
+  - This covers every page with gated rows.
+  - The transfer rows share one press handler, so a current run still opens its page.
+- **Test:** `tests/cloud-gated-row.py`.
+  - FAIL: `FAIL after setup: the press ran the row 0 times and pushed 1 page(s) -- dialog: NO CLOUD STORAGE IS SET UP ...` and `the row still draws dimmed`.
+  - PASS.
+- **Already written:** nothing inherited.
+- **Integrator:** the walk. Set up from a gated row, FINISH, and the row runs.
+
+### PL-068, E2's half (added by the coordinator): resolved, `fa57923af`
+
+- **Change:** the bookkeeper's queued deletion waits while `/var/run/cloud_sync.lock` is held. The check is my own `RunLock::held`, a shared flock taken for an instant.
+  - It polls twice a second and logs "waits" and "goes ahead".
+  - At exit it waits five seconds and then does not delete; the file stays.
+  - The lock path is a macro so the test can hold its own lock. The integrator may point the call at E1's `isFlockHeld` once merged.
+- **Test:** `bookkeeper-tests`, three cases.
+  - FAIL: `CHECK( fileExists(state) )` "the state was deleted under a transfer", also at exit.
+  - PASS: 3 of 3, 10 assertions.
+- **Already written:** nothing inherited.
+- **Integrator, on the VM:** hold the lock with `flock /var/run/cloud_sync.lock sleep 60`, queue a DELETE from the manager, and read the journal.
+
+## Sweep rows (#308): 70 rows
+
+Withdrawn rows marked "no stream" name files that appear in no stream's list: CloudTransferJob, CaptureRotation*, DisplayAspect*, NetworkThread, GuiScraperRun, GuiScraperStart, GuiBios, LaunchCommand.h, OfflineScanJob and `tests/credential-quoting.py`. Those rows are the integrator's.
+
+| # | packet / seat / id | verdict |
+|---|---|---|
+| 1 | 1-raoffline claude F-RA-05 | fixed `cc8c5ccb4`. `tests/hasher-offline-index.py` FAIL "got: INDEXING COMPLETED. UPDATE GAMELISTS TO APPLY CHANGES."; PASS 5 checks. It also closes the empty-queue race where the threads could delete the hasher before `start()` read it. |
+| 2 | 1-raoffline claude F-RA-08 | fixed `7b7f2f9ee`. `RunLockTests`: FAIL `CHECK( 3202022 == 0 )` (a live pid under an unheld lock); PASS. `stopRun` requires the lock held and `raofflineproxy-ctl` in the pid's cmdline. |
+| 3 | 1-raoffline claude F-RA-09 | fixed `bbfa1d43b`. Three cases FAIL then PASS: a stop for a game says SKIPPED - YOU STARTED A GAME; the why comes only from this run's stamp; SOME GAMES COULDN'T BE SAVED appears without the scan instruction (one new string, with French). |
+| 4 | 1-raoffline claude F-RA-14 | fixed `5a7afc4ca`. Retry on `BUTTON_OK`, no letters, help bar drawn by the page. No test (InputConfig and Window). |
+| 5 | 1-raoffline claude F-RA-15 | fixed `19319821c`. The offline branch drops the web-key check; the `proxyOffline` header is corrected. No test. |
+| 6 | 1-raoffline claude F-RA-16 | withdrawn, refuted: `es-untranslated: 564 fork string(s) in the source, 564 with French, 0 without`. |
+| 7 | 1-raoffline claude F-RA-17 | fixed for ProxyCards: `c6c7b24af` (`sSendShowing`) and `8b6d47d46` (`sTopUpRunning` now read, `TopUpEnd` gone). `(void) self` in OfflineScanJob.cpp: no stream. Scripts: stream D. |
+| 8 | 1-raoffline claude F-RA-18 | fixed `c053babb3`. The worker no longer walks FileData; the page constructor fills the console name. No test. |
+| 9 | 5-cloud claude F-CS-05 | withdrawn, not mine: CloudTransferJob.cpp (no stream), ThreadedCloudSync (E1). |
+| 10 | 5-cloud claude F-CS-07 | fixed `5a7afc4ca`. |
+| 11 | 5-cloud claude F-CS-15 | withdrawn, not mine: `cloud_content_backup` (A), CloudTransferJob (no stream). |
+| 12 | 5-cloud claude F-CS-26 | withdrawn, not mine: CloudTransferJob (no stream). |
+| 13 | 8-es claude F-ES-02 | fixed `ec943c803`. Wi-Fi via `networkApplyWifi`, with system.cfg written first. No test. |
+| 14 | 8-es claude F-ES-03 | fixed `e98bfda4b`. One `cloud_setup --info`; the unused name is dropped. |
+| 15 | 8-es claude F-ES-04 | duplicate of PL-030, `1209ac249`. |
+| 16 | 8-es claude F-ES-05 | withdrawn, not mine: GuiScraperRun.cpp (no stream). |
+| 17 | 8-es claude F-ES-06 | withdrawn, not mine: GuiBios.cpp (no stream). |
+| 18 | 8-es claude F-ES-07 | fixed `d96c8979e`. PLAY NOW is consumed at `launchGame` entry. No test. |
+| 19 | 8-es claude F-ES-08 | fixed in part, `187ff9f1c`: `recordAfterSession` is called only after exit 0, which covers both of the finding's failed-launch scenarios. The -1→0 fold and the log's age are in CaptureRotation (no stream). |
+| 20 | 8-es claude F-ES-09 | fixed `c48d8d469`. The link-up index retry runs at most once per 10 minutes. No test. |
+| 21 | 8-es claude F-ES-10 | fixed `ca4133e3c`. `ViewController::configurationReplaced()` stops `saveState` after a maintenance restart and after the settings-first restart. No test. |
+| 22 | 8-es claude F-ES-11 | fixed `bcbe0cf88`. The state is carried by file and re-found in `launchNow`. `tests/launch-deferred-state.py` FAIL "handed an object the refresh deleted"; PASS. |
+| 23 | 8-es claude F-ES-12 | fixed `ec943c803`. The LATER row appears only when the marker exists. |
+| 24 | 8-es claude F-ES-13 | fixed `275c4200f`. `maintenanceWhy`: `tests/maintenance-why.py` FAIL `got "tar: short read"`; PASS. It keeps backuptool's fuller fail sentence when that sentence carries the why. |
+| 25 | 8-es claude F-ES-14 | fixed `39d5a9d6d`, measured with FreeType on Roboto-Bold at 20 px/780 and 15 px/620. WITH MY PHONE (929/780) and CHANGE CLOUD FOLDER (path-dependent) were shortened; two new strings with French. CONNECT OR REPAIR (771/780) and WI-FI PASSWORD (732/780) fit and were left. |
+| 26 | 8-es claude F-ES-15 | fixed `c2302ef25`. `forgetScreenshots()` is called on a changed rescan and in `reloadAllGames`. No test. |
+| 27 | 8-es claude F-ES-16 | fixed `a65103644`. `sleep_for` replaces the shell `sleep`. |
+| 28 | 8-es claude F-ES-17 | withdrawn: D-INFRA-010 decided "The SSH setup page still shows the password in full ... masking it would defeat the page". The style guide could cite it as the exception (integrator's). |
+| 29 | 8-es claude F-ES-18 | fixed `fe8ed1551`. The comment now cites `setsettings.sh set_savestates`, where `0|2|false|none` means auto-index off, so `0` and `2` were one behaviour. |
+| 30 | 8-es claude F-ES-19 | withdrawn, refuted: nothing in either tree reads `clouddrive.mounted`; `rclonectl` was dropped in `e35e5e85b0` (#6). |
+| 31 | 8-es claude F-ES-20 | fixed `6c4b0b688`. `LaunchCommandTests.cpp`, 5 cases (header untouched). They found a runemu.sh divergence (see below). |
+| 32 | 8-es claude F-ES-21 | fixed `731252c61`. `maskSecrets` on the logged output. |
+| 33 | 8-es claude F-ES-22 | withdrawn, not mine: GuiScraperStart.cpp (no stream). |
+| 34 | 8-es claude F-ES-23 | withdrawn, refuted and not mine: GuiBios.cpp:28-30 hold raw UTF-8 `EF 81 98` / `EF 81 B1` / `EF 84 A7` (U+F058/F071/F127). |
+| 35 | 8-es claude F-ES-25 | fixed `9f02eeec0`. `CloudDimmableEntry` deleted. Behaviour diff: the same 0x50; the survivor applies the dim at once instead of on the next frame; nothing else. |
+| 36 | 8-es claude F-ES-26 | fixed `5443b5301`. `AppWindow::post` / `closing()` (lock held across the post). `AppWindowTests` FAIL `CHECK( w.postsAfterGone == 0 )`; PASS. Also applied to ProxyCards' workers. |
+| 37 | 8-es claude F-ES-27 | fixed `e98bfda4b`. The editor's success reopens the hub (push, then close). |
+| 38 | 8-es claude F-ES-28 | withdrawn, not mine: GuiBios.cpp (no stream). |
+| 39 | 8-es claude F-ES-29 | withdrawn, not mine: `es-app/tests/unit/README.md` (E1). |
+| 40 | 8-es claude F-ES-30 | withdrawn, refuted: `start()` calls `Process()` synchronously (ThreadedScraper.cpp:310), and it resets `sProgress` (:37) before the worker starts (:53) and before the page is pushed. |
+| 41 | 1-raoffline gpt F-RA-16 | duplicate of claude F-RA-08, `7b7f2f9ee`. |
+| 42 | 1-raoffline gpt F-RA-17 | fixed `bbfa1d43b`. |
+| 43 | 1-raoffline gpt F-RA-21 | **not fixed.** es-code-traps.md on `next` names it #300's follow-up ("not a one-line change"). The stall bound (ES `9202ebed5`) caps the freeze at about 40 s. Moving the fetch changes the hasher's lifecycle: `mInstance`, the lookup-day stamp, NO GAMES FIT and the exception answer. Row 20's back-off limits the repeats meanwhile. |
+| 44 | 1-raoffline gpt F-RA-22 | fixed `5a7afc4ca`. |
+| 45 | 1-raoffline gpt F-RA-23 | fixed `53a444e91`. `TextFitTests`: FAIL `CHECK( validUtf8(s) )` (14 checks); PASS. |
+| 46 | 1-raoffline gpt F-RA-25 | withdrawn, refuted by design: es-native-ui.md on `next`, § The cards at the link's return (D-UI-109), describes "the send card, and the top-up's card stacked under it". The top-up attaching during the send's outcome is that batch, so `sSendShowing` was dead (row 7). |
+| 47 | 5-cloud gpt F-CS-23 | withdrawn, not mine: CloudTransferJob (no stream). |
+| 48 | 5-cloud gpt F-CS-24 | withdrawn, not mine: CloudTransferJob (no stream). |
+| 49 | 5-cloud gpt F-CS-32 | fixed `53a444e91`. |
+| 50 | 5-cloud gpt F-CS-36 | fixed `5a7afc4ca`. |
+| 51 | 8a gpt F-ES-05 | fixed `ab01c79b6`. The capture-failure toast now comes before the generation check. No test. |
+| 52 | 8a gpt F-ES-06 | fixed `ec943c803`. The cloud-menu row passes `consumeMarker=true`; the history in `d676ceb6a` explains the old `false`. |
+| 53 | 8a gpt F-ES-07 | duplicate of claude F-ES-02, `ec943c803`. |
+| 54 | 8a gpt F-ES-08 | withdrawn, not mine: CaptureRotation (no stream). The call-site gate `187ff9f1c` covers only failed launches. |
+| 55 | 8a gpt F-ES-09 | fixed `c2302ef25`. |
+| 56 | 8a gpt F-ES-10 | fixed `52ba93160`. Rows count files that would move, whatever their size. BIOS alone moves with selection `bios`, because `--selected` refuses an empty selection before adding bios. No test. |
+| 57 | 8a gpt F-ES-11 | fixed `bf8c6ce75`. The switches' callbacks are cleared in `onFinalize`. No test. |
+| 58 | 8a gpt F-ES-12 | withdrawn, not mine: GuiScraperRun (no stream). |
+| 59 | 8a gpt F-ES-13 | withdrawn, not mine: GuiScraperRun (no stream). |
+| 60 | 8a gpt F-ES-14 | withdrawn, upstream fit for #256: WIN32 is never built for ROCKNIX and no Windows toolchain exists here, so a guarded path would be unproven. |
+| 61 | 8a gpt F-ES-15 | withdrawn, not mine: GuiScraperRun (no stream). |
+| 62 | 8a gpt F-ES-16 | fixed `98c7592c8`. `cloudLatestRun` is shared. `tests/cloud-sync-last-run.py` FAIL "explains an older run than the row shows"; PASS. |
+| 63 | 8a gpt F-ES-17 | fixed `a65103644`. `cloudOAuthOwnSession`. `tests/cloud-oauth-lifetime.py` against the old source: `FAIL phone: ... cancelled 0 times` on all four routes; PASS. |
+| 64 | 8a gpt F-ES-18 | fixed `a65103644`. `tests/cloud-oauth-await.py` FAIL "a listener that says it failed is not a started sign-in"; PASS. |
+| 65 | 8a gpt F-ES-19 | fixed `0a470e5dc`. The advice follows `cloudsaves.startup` and `cloudsaves.gameexit`; the false "ROMS AND BIOS ... NEVER INCLUDED" is gone. Three new strings, with French. |
+| 66 | 8a gpt F-ES-20 | withdrawn: D-INFRA-010 (duplicate of row 28). |
+| 67 | 8a gpt F-ES-21 | withdrawn, not mine: DisplayAspectText.cpp (no stream). |
+| 68 | 8a gpt F-ES-22 | withdrawn, not mine: GuiScraperStart (no stream). |
+| 69 | 8b gpt F-ES-10 | withdrawn, not mine: `tests/credential-quoting.py` (no stream). |
+| 70 | 8b gpt F-ES-13 | fixed in part, `5a7afc4ca` (the two pages' letters). GuiScraperRun's PRESS B TO CANCEL has no stream. The sign-in window's CHOOSE WITH A describes `cloud-signin-window.c`'s own binding (stream C). |
+
+## Found on the way (not punch or sweep)
+
+- **Fixed `3b5b851ec`:** the FINISH RESTORE PROCESS sub-pages (RetroAchievements, ScreenScraper, netplay) never wrote their passwords to disk. `addInputTextConfigRow` sets memory only, and `GuiSettings::save` writes nothing on a page with no save function. A restart lost them.
+- **For stream B:** `runemu.sh` reads the platform with `${ARGUMENTS##*-P}`. A netplay `--nick 'My-Player'` after `-Psnes` makes the launcher read `layer'`. The case is pinned in `LaunchCommandTests.cpp`.
+- **For stream A:** `cloud_content_restore --selected` could add bios before refusing an empty selection; the picker writes `bios` today as the workaround.
+- **Test trap, for the integrator (E1's area):** `build-tests/es-unit-tests` is a committed binary. After `git checkout` of it, its mtime is newer than its objects, so the next `cmake --build` does not relink and runs the old binary. Mine read 124 cases instead of 128. Remove the file before building.
+- **Rule conflict:** es-player-text.md § Outcome vocabulary, Recover, still says `TRY AGAIN (A)` beside `CLOSE (B)`. `5a7afc4ca` follows es-ui-style-guide.md (no letters, help bar drawn by the page). The player-text sentence wants rewording in the ROCKNIX repo.
+- **Not covered by the gate:** ThreadedCloudSync (E1), OfflineScanJob and CloudTransferJob still post from their own threads without `AppWindow::post`.
+- **Menu map:** no rows were added, moved or renamed, so `docs/es-menu-map.md` needs no change. The LATER row is now conditional, two row descriptions changed, and the CONNECTED prose changed. The style guide's quoted `RESTORE SETTINGS FIRST, THEN RESTART?` still ships.
+
+## Harness final lines
+
+- **es-syntax-check:** `PASS`. OK on FileData.cpp, GuiCloudTransfer.cpp, GuiMenu.cpp, GuiOfflineScan.cpp, GuiRetroAchievements.cpp, main.cpp, OfflineAchievements.cpp, ProxyCards.cpp, RetroAchievements.cpp, SaveStateBookkeeper.cpp, SystemData.cpp, ThreadedHasher.cpp, views/ViewController.cpp, and views/gamelist/ISimpleGameListView.cpp (a dependent of the changed FileData.h).
+- **E1's unit suite** (`es-app/tests/unit`, relinked in `build-tests`, then the committed binary restored): `test cases: 128 | 128 passed`, `assertions: 1360 | 1360 passed`. The case list is identical to the base commit's.
+- **tests/app-unit:**
+  - `app-unit-tests`: 21 cases, 119 assertions, SUCCESS.
+  - `proxycards-tests`: 6 cases, 31 assertions, SUCCESS.
+  - `bookkeeper-tests`: 3 cases, 10 assertions, SUCCESS.
+- **Scripts:** cloud-set-systems-quoting 5 of 5; cloud-gated-row, launch-capture-gate, launch-deferred-state, maintenance-why, cloud-oauth-await, cloud-sync-last-run and hasher-offline-index PASS; cloud-oauth-lifetime PASS on all four routes.
+- **Translations and vocabulary:** `es-untranslated: 564 fork string(s) in the source, 564 with French, 0 without`. `vocabulary-check: 146 string(s) ... 0 wrong`. `msgfmt -c` OK. French was appended at the end only.
+- **Comments and line endings:** the ASCII-comment grep over every changed `es-app` file prints nothing, and no CRLF was introduced.
+
+## Could not do
+
+- **gpt F-RA-21:** moving the hash-library fetch off the interface thread is #300's follow-up and a lifecycle change; row 20's back-off is in meanwhile.
+- **gpt F-ES-14:** no Windows toolchain to prove a WIN32 path.
+- **Files in no stream's list:** CloudTransferJob, CaptureRotation*, DisplayAspect*, NetworkThread, GuiScraperRun, GuiScraperStart, GuiBios, LaunchCommand.h, OfflineScanJob, `tests/credential-quoting.py`. The rows that live there are the integrator's (see the table).
+- **Unproven here, left for the integrator's VM steps** (each named in its commit): the PL-014 soak; the PL-029 journal; the PL-061 journal order; the PL-062 walk; PL-068 with a held lock; the frames at 640x480 for the long-job pages' help bar and the two shortened descriptions.
