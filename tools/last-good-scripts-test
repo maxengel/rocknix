@@ -3444,4 +3444,19 @@ F2_OUT="$(f2_gst gst-plugins-base ${F2_BASE_LIBS} usr/lib/gstreamer-1.0/libgstap
 [[ "${F2_OUT}" == *"rc=0"* ]] && [[ "${F2_OUT}" == *"usr/lib/gstreamer-1.0/libgstapp.so"* ]] && [[ "${F2_OUT}" == *"usr/lib/libgstfft-1.0.so.0"* ]] && [[ "${F2_OUT}" != *usr/bin* ]]
 check $? "and with them keeps the libraries and plugins, and no tools" "gst-plugins-base with its payload: '${F2_OUT:0:200}'"
 
+# F2-11. #308 10-packages claude F-PB-19: ryzenadj and dmidecode came from
+# upstream's AMD64 recipes (JELOS, 2023) and dropped that credit; ryzenadj's
+# cmake options carried literal single quotes. (Their consumer exists:
+# projects/ROCKNIX/packages/virtual/image/package.mk pulls both on x86_64.)
+echo "  F2-11. ryzenadj and dmidecode keep the JELOS credit of the recipes they came from; ryzenadj passes cmake no quote characters (#308 F-PB-19)"
+F2_BAD=""
+for p in ryzenadj dmidecode; do
+    src_of "packages/sysutils/${p}/package.mk" "${F2}/${p}.mk"
+    head -5 "${F2}/${p}.mk" | grep -q 'Copyright (C) 2023 JELOS' || F2_BAD+=" ${p}:no-JELOS-credit"
+    head -5 "${F2}/${p}.mk" | grep -q 'Copyright (C) 2025 ROCKNIX' && F2_BAD+=" ${p}:2025"
+done
+F2_CALL='echo "${PKG_CMAKE_OPTS_TARGET}"'
+[[ "$(f2_source "${F2}/ryzenadj.mk" GENERIC_X64 x86_64)" == *"'"* ]] && F2_BAD+=" ryzenadj:quoted-cmake-option"
+[ -z "${F2_BAD}" ]; check $? "both carry the JELOS line and a ROCKNIX line, and ryzenadj's -ludev reaches cmake as itself" "${F2_BAD}"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
