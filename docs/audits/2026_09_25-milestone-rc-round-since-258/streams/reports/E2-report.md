@@ -396,7 +396,7 @@ ASCII comments: es-app/src 0; the 9 in es-core are upstream's (present in base b
   - BIOS CHECK with no rows (no DETAILS).
 - Rules read for this pass: es-player-text.md (outcome vocabulary, register), player-language.md (brevity is not clipping), es-native-ui.md, es-code-traps.md (ASCII comments, pure text's home), engineering-practices.md (guards fail closed; before deleting a duplicate), and upgrade-and-install.md (the `Already written:` lines).
 
-## Follow-up 2 (2026-09-28, scripts at next 4476f90394)
+## Follow-up 2 (2026-09-28, scripts at next 396573aadf)
 
 I added one commit on `feature/pl-e2`: **13b16a77e** `CloudText: the scripts' newer whys translated; emitter table regenerated`. I read the scripts from the merged head with `git show`, without changing `/workspace/repos/rocknix`. Nothing was built, started in a guest or pushed.
 
@@ -415,7 +415,7 @@ I added one commit on `feature/pl-e2`: **13b16a77e** `CloudText: the scripts' ne
   - YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP CAN'T CARRY
 - **French for all nine** is appended to the end of the catalogue.
 - **The offline stamp.** `parseLastRun` reads "69 gaps YOU WENT OFFLINE PART-WAY THROUGH" as COULDN'T FINISH with that sentence as its why. The row's gaps branch passes the why through `localizedWhy`, and uses the token's generic phrase only when a stamp carries no why. Per D-UI-023, the row's line shows only the outcome word. The sentence appears in the row's confirmation, after "LAST TIME IT COULDN'T FINISH:". Before this commit it was already the stamp's own sentence, but shown in English. It is now translated.
-- **The emitter table is regenerated** from the scripts at 4476f90394, with their line numbers:
+- **The emitter table is regenerated** from the scripts at 396573aadf, with their line numbers:
   - 32 `>>> why` sentences.
   - `>>> unit everything` is gone. In its place are a per-system unit (`cloud_content_backup:572`, `cloud_content_restore:1363` and `:810`) and a BIOS unit (`:1363`).
   - `>>> removed` and `>>> offer` point at their new lines.
@@ -445,5 +445,5 @@ msgfmt -c: clean
 ```
 
 **Notes:**
-- **The Follow-up integrator note on claude F-CS-15 is resolved.** At 4476f90394, both of `cloud_content_backup`'s "Nothing to back up" branches record outcome 0 and exit 0.
+- **The Follow-up integrator note on claude F-CS-15 is resolved.** At 396573aadf, both of `cloud_content_backup`'s "Nothing to back up" branches record outcome 0 and exit 0.
 - **One gap not fixed (for the integrator):** the maintenance dialogs (`runMaintenanceCommand` in GuiMenu, used by the backuptool flows) show a script's why without translating it. That covers backuptool's new sentences too. These dialogs are neither the rows nor the transfer page. Fixing it means choosing between backuptool's longer English line and the translated short why, and that is a choice about the words players see. I left it.
