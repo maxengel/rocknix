@@ -204,7 +204,7 @@ _The blindspot screen's repeats (an agent's pre-screen of the 67 entries against
 
 ### BS-4 (blindspot 39; D, C) -- skipped checks count as PASSED
 **Screen's claim:** D adds 23 SKIP branches (a pinned tarball absent) and C one; the harness's verdict counts only FAILs.
-**Checked:** `tools/last-good-scripts-test:10224`: `if [ "${FAIL}" -eq 0 ]; then echo "PASSED"`; a SKIP is printed and not counted; vm-qa run 69's scripts.log carries the count printed above.
+**Checked:** `tools/last-good-scripts-test:10224`: `if [ "${FAIL}" -eq 0 ]; then echo "PASSED"`; a SKIP is printed and not counted; vm-qa run 69's scripts.log on the build host holds 0 SKIP lines (the pinned tarballs are there), so the hazard is a host without them, where the same run would read PASSED over 23 unrun checks.
 **Verdict:** **confirmed, Medium** -- a harness that says PASSED over unrun checks. Fix: the summary says `PASSED, N SKIPPED` and exits 3 when N > 0 and FAIL = 0, which vm-qa's `run_suite` already reads as SKIP; the block headers name what a skip needs.
 
 ### BS-5 (blindspots 50, 55; F1) -- the rehearsal's wait reads the previous boot's line
