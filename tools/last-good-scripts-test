@@ -3016,7 +3016,9 @@ ckf 65536 retroarch 1024;                printf '%s' "${NOTE}" | grep '^dump' | 
 # generators (#307 PL-002, PL-032, PL-043; #308's rows in those files). Every
 # case reads its files through src_of, so under
 #     BASE_REF=417dcd8610 tools/last-good-scripts-test --old
-# they grade the tree the audit read, and each FAILs there.
+# they grade the tree the audit read: 37 checks FAIL there, every case at
+# least once, and the six that PASS both ways are the controls (a stamp that
+# must not move, a payload that must be kept, the tree still compiling).
 F2="${TMP}/f2"; mkdir -p "${F2}"
 F2_LR=projects/ROCKNIX/packages/emulators/libretro
 
