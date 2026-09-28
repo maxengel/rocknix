@@ -4317,4 +4317,11 @@ else
     done
 fi
 
+# C7. The four scripts this stream owns are committed executable, as the
+# others the recipe installs are (#308 claude F-RS-21). The recipe's chmod
+# 0755 covers the image either way; the mode is what a reviewer reads.
+for f in cloud_oauth cloud_device_id cloud_remote cloud_setup; do
+    [ "$(git -C "${ROOT}" ls-files -s -- "${RCLONE_REL}/${f}" | cut -c1-6)" = 100755 ] && [ -x "${ROOT}/${RCLONE_REL}/${f}" ]; check $? "${f} is committed executable" "${f} is committed as $(git -C "${ROOT}" ls-files -s -- "${RCLONE_REL}/${f}" | cut -c1-6) (#308 claude F-RS-21)"
+done
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
