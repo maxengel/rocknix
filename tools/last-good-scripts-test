@@ -3094,7 +3094,13 @@ chmod +x "${SA}/shim"/*
 printf 'export PATH=/shim:/nbin:/usr/bin:/bin\nexport HOME=/storage\n' > "${SA}/profile"
 SA_BB=()
 if [ -n "${BB}" ]; then
-    for a in sed tr head wc cut awk tail tee mkfifo sleep flock stat md5sum find cmp mktemp unzip tar; do
+    # Every applet the image's /usr/bin links to busybox that these scripts
+    # call -- cp, mv, rm and the rest joined the list after the audit of the
+    # fixes (gpt coverage note 3: the sandbox ran the host's cp and mv).
+    # grep, sort and timeout are real binaries on the image, and the host's
+    # stand in for them.
+    for a in sed tr head wc cut awk tail tee mkfifo sleep flock stat md5sum find cmp mktemp unzip tar \
+             cp mv rm mkdir cat date ls readlink uniq basename dirname touch chmod ln xargs; do
         printf '#!/bin/sh\n[ -x %s ] && exec %s %s "$@"\nexec %s %s "$@"\n' "${BB}" "${BB}" "${a}" "${BB_HOST}" "${a}" > "${SA}/nbin/${a}"
         chmod +x "${SA}/nbin/${a}"
     done
