@@ -4528,4 +4528,30 @@ for dc_s in cloud_backup cloud_restore; do
 done
 SA_EXTRA=()
 
+# A48. Found while working G-A-14: cloud_sync_cleanup_duplicates.sh drops
+#      a repeated KEY= line and keeps the lines that continued it, so a
+#      repeated backslash-continued value (RCLONEOPTS is written that way)
+#      left its tail behind as bare lines -- a conf that no longer parses,
+#      which every run after then refused or fell back from.
+echo "    A48. the duplicate cleanup removes a repeated value whole, continuation and all"
+src_of "${RCLONE_REL}/cloud_sync_cleanup_duplicates.sh" "${DC}/cleanup-real"; chmod +x "${DC}/cleanup-real"
+sed '/^RCLONEOPTS=/d' "${DC}/conf0" > "${DC}/conf1"
+cat >> "${DC}/conf1" <<'EOS'
+RCLONEOPTS="--progress \
+--log-file /var/log/cloud_sync.log \
+--filter-from /storage/.config/cloud_sync-rules.txt"
+RCLONEOPTS="--progress \
+--bwlimit 1M \
+--filter-from /storage/.config/cloud_sync-rules.txt"
+EOS
+cp "${DC}/conf1" "${DC}/cleaned"
+PATH="${SA}/nbin:${PATH}" bash "${DC}/cleanup-real" "${DC}/cleaned" >/dev/null 2>&1
+bash -n "${DC}/cleaned" 2>/dev/null && [ "$(grep -c '^RCLONEOPTS=' "${DC}/cleaned")" -eq 1 ] && ! grep -q -- '--bwlimit' "${DC}/cleaned" && grep -q -- '--log-file /var/log/cloud_sync.log' "${DC}/cleaned"; check $? "a repeated three-line RCLONEOPTS is removed whole; the first stays whole and the file parses" "cleaned file: $(grep -A3 '^RCLONEOPTS=' "${DC}/cleaned" | tr '\n' '|'); bash -n: $(bash -n "${DC}/cleaned" 2>&1 | head -1)"
+# And end to end, the real cleanup overlaid where the image has it.
+SA_EXTRA=(--overlay-src /usr/bin --tmp-overlay /usr/bin --ro-bind "${DC}/cleanup-real" /usr/bin/cloud_sync_cleanup_duplicates.sh)
+cp "${DC}/conf1" "${DC}/storage/.config/cloud_sync.conf"
+sa_run "${DC}" cloud_backup --yes --saves-only
+SA_EXTRA=()
+[ "${RC}" -eq 0 ] && [ "$(grep -c '^RCLONEOPTS=' "${DC}/storage/.config/cloud_sync.conf")" -eq 1 ] && ! grep -q "Couldn't clean up" "${DC}/out" && bash -n "${DC}/storage/.config/cloud_sync.conf"; check $? "cloud_backup --yes with that conf cleans it and goes on (rc ${RC})" "rc ${RC}; RCLONEOPTS lines $(grep -c '^RCLONEOPTS=' "${DC}/storage/.config/cloud_sync.conf"); out: $(sa_tail "${DC}")"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
