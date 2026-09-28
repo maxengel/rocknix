@@ -3634,4 +3634,30 @@ rm -rf "${BS}/storage/roms"/* "${BS}/cloud/ROCKNIX/Content/BIOS"
 sa_run "${BS}" cloud_content_restore --selected
 [ "${RC}" -ne 0 ] && grep -q "haven't picked any systems" "${BS}/out"; check $? "with no system picked and no BIOS in the cloud there is still nothing to do, and it says so (rc ${RC})" "rc ${RC}; out: $(sa_tail "${BS}")"
 
+# A12. #308 claude F-CS-04: cloud_restore keeps cloud_backup's shape -- no
+#      console pauses under --yes, the remote read from rclone.conf, the
+#      reachability probe only where no phase makes its own, and a skipped
+#      phase's line says SKIPPED.
+echo "    A12. #308 claude F-CS-04: cloud_restore under --yes waits for nobody"
+RP=$(sa_new ccs04); sa_script "${RP}" cloud_restore cloud_saves_root
+cat > "${RP}/storage/.config/cloud_sync.conf" <<'EOS'
+SAVESPATH="/storage/roms"
+SAVES_REMOTE="/ROCKNIX/Saves"
+SETTINGS_BACKUPS="/storage/roms/backup"
+SETTINGS_REMOTE="/ROCKNIX/Backups"
+RESTOREMETHOD="copy"
+BACKUPFILE_RESTORE_OPTION="yes"
+RCLONEOPTS="--progress --log-file /var/log/cloud_sync.log --filter-from /storage/.config/cloud_sync-rules.txt"
+RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"
+LOG_LEVEL="INFO"
+EOS
+printf -- '+ /**/*.srm\n- /**\n' > "${RP}/storage/.config/cloud_sync-rules.txt"
+mkdir -p "${RP}/cloud/ROCKNIX/Saves/gb" "${RP}/storage/roms"; echo s > "${RP}/cloud/ROCKNIX/Saves/gb/A.srm"
+sa_run "${RP}" cloud_restore --yes --saves-only
+[ "${RC}" -eq 0 ] && [ "${DT}" -le 4 ]; check $? "a --yes --saves-only restore takes ${DT}s, not the seven of console pauses (rc ${RC})" "took ${DT}s (rc ${RC}) -- sleep 2, sleep 2 and sleep 3 ran with nobody reading"
+grep -q '^Settings backup: SKIPPED - SAVES ONLY' <(sed 's/\x1b\[[0-9;]*m//g' "${RP}/out"); check $? "its summary says the settings phase was skipped, not COMPLETED" "summary: $(grep -A3 'RESTORE SUMMARY' "${RP}/out" | tr '\n' '|')"
+! grep -q '^listremotes' "${RP}/ctl/argv"; check $? "the remote is read from rclone.conf (no rclone start for listremotes), and the saves phase is the reachability probe" "argv: $(grep -c '^listremotes' "${RP}/ctl/argv") listremotes call(s); first calls: $(head -3 "${RP}/ctl/argv" | cut -c1-60 | tr '\n' '|')"
+sa_run "${RP}" cloud_restore --yes --system-only
+grep -q '^Game saves: SKIPPED - SETTINGS ONLY' <(sed 's/\x1b\[[0-9;]*m//g' "${RP}/out"); check $? "and a --system-only run's saves line says SKIPPED - SETTINGS ONLY (rc ${RC})" "summary: $(grep -A3 'RESTORE SUMMARY' "${RP}/out" | tr '\n' '|')"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

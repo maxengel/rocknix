@@ -65,6 +65,11 @@ ASSUME_YES=0
 METHOD_OVERRIDE=""
 EXTRA_UPDATE=0
 SYSTEM_ONLY=0
+# A skipped phase's own summary word, where the exit code's would say
+# COMPLETED for work that was never run (#126 in cloud_backup; #308 claude
+# F-CS-04 here).
+SAVES_OUTCOME=""
+SETTINGS_OUTCOME=""
 # --automatic: this run is the startup sync or the sync after a game, not a
 # back up or restore somebody pressed (D-CLOUD-113). A player is waiting to
 # play, so the run is bounded the way #135 measured it should be (D-CLOUD-118):
@@ -323,6 +328,16 @@ rclone() {
     else
         bounded_rclone "$@"
     fi
+}
+
+# The pauses between sections give somebody reading the console time to see
+# each one before the next scrolls in. Under --yes nobody is reading -- the
+# output is a progress card or the transfer page -- and the restore still
+# slept seven seconds of them on every headless run, the startup sync's
+# restore half included, while cloud_backup had stopped (#308 claude
+# F-CS-04). The same function as cloud_backup's.
+pause() {
+    [ "${ASSUME_YES}" -eq 1 ] || sleep "$1"
 }
 
 # Logging function that supports different severity levels and optional console output
@@ -848,13 +863,29 @@ clean_exit() {
     exit ${exit_code}
 }
 
+# The configured remote, by the same rule as `rclone listremotes | head -1`
+# -- the first section name in sorted order -- read from the config file
+# rather than by starting rclone, which costs close to a second on a
+# handheld. rclone remains the fallback if the file yields nothing. The
+# same function as cloud_backup's (#308 claude F-CS-04).
+first_remote() {
+    local name
+    name=$(grep -o '^\[[^]]*\]' /storage/.config/rclone/rclone.conf 2>/dev/null \
+           | tr -d '[]' | sort | head -1)
+    if [ -n "${name}" ]; then
+        printf '%s:\n' "${name}"
+    else
+        rclone listremotes 2>/dev/null | head -1
+    fi
+}
+
 # Verifies rclone is properly configured before attempting operations
 # Exits with error if configuration file is missing
 check_rclone_config() {
     if [ ! -e "/storage/.config/rclone/rclone.conf" ]; then
         log_message "Your cloud storage isn't set up yet. Set it up under GAME SETTINGS > MANAGE CLOUD STORAGE first." "true" "ERROR"
         say_why "YOUR CLOUD STORAGE ISN'T SET UP YET"
-        sleep 3
+        pause 3
         clean_exit 1
     fi
 }
@@ -879,7 +910,7 @@ check_internet() {
     if ping -q -c1 -W 3 1.1.1.1 >/dev/null 2>&1 || ping -q -c1 -W 3 8.8.8.8 >/dev/null 2>&1; then
         log_message "Couldn't reach your cloud.\nYou may need to sign in again, then try again." "true" "ERROR"
         say_why "COULDN'T REACH YOUR CLOUD - CHECK YOUR SIGN-IN"
-        sleep 3
+        pause 3
         clean_exit 1
     fi
     # A route with nothing behind it -- Wi-Fi associated to an access point
@@ -891,7 +922,7 @@ check_internet() {
     # run yet, so no stamp, as for the other sentinel exits.
     log_message "You're not online right now.\nCheck your connection and try again." "true" "ERROR"
     log_message "skipped: no network -- the remote and the internet both unreachable before the run" "false"
-    sleep 3
+    pause 3
     exit "${EXIT_NO_NETWORK}"
 }
 
@@ -1046,13 +1077,13 @@ load_config() {
             /usr/bin/cloud_sync_cleanup_duplicates.sh "$conf_file"
             echo -e "\e[34m> Duplicates cleaned.\e[0m"
             echo ""
-            sleep 2
+            pause 2
             # Reload config after cleanup
             source /storage/.config/cloud_sync.conf
         else
             # User selected No or cancelled - skip cleanup
             echo -e "\e[34m> Skipped duplicate cleanup.\e[0m"
-            sleep 2
+            pause 2
         fi
 
     fi
@@ -1847,12 +1878,16 @@ restore_system_files() {
 main() {
     check_network_link
     check_rclone_config
-    check_internet
+    # restore_game_saves proves the remote reachable with the listing it
+    # needs anyway, and network_lost_during_run words a failure there; only
+    # the settings-only path has no such step of its own -- cloud_backup's
+    # shape (#308 claude F-CS-04), one remote round trip fewer per run.
+    [ "${SYSTEM_ONLY}" -eq 1 ] && check_internet
     load_config
     
     # Define locations for source and remote
     # Note: This assumes at least one remote is configured and the first one should be used
-    REMOTENAME=`rclone listremotes | head -1`
+    REMOTENAME=$(first_remote)
     
     # Begin main script operations with user-friendly header
     log_message "=> ${OS_NAME} CLOUD RESTORE\n"
@@ -1863,6 +1898,7 @@ main() {
     # anyway -- the opposite of what it says, over the top of local saves.
     if [ "${SYSTEM_ONLY}" -eq 1 ]; then
         log_message "Skipped game saves this time - settings only." "true"
+        SAVES_OUTCOME="SKIPPED - SETTINGS ONLY"
         RESTORE_STATUS=0
     else
         restore_game_saves
@@ -1870,12 +1906,13 @@ main() {
     fi
     
     # Add a pause for better visual separation between operations
-    sleep 2
+    pause 2
     
     # Execute Part 2: System restore
     # This restores settings backup files (zip files) if enabled in configuration
     if [ "${SAVES_ONLY}" -eq 1 ]; then
         log_message "Skipped settings this time - saves only." "true"
+        SETTINGS_OUTCOME="SKIPPED - SAVES ONLY"
         RESTORE_SYSTEM_STATUS=0
     else
         restore_system_files
@@ -1895,7 +1932,7 @@ main() {
     fi
     
     # Add a pause before summary
-    sleep 2
+    pause 2
     
     # Add a line break for better visual separation
     echo
@@ -1915,8 +1952,8 @@ main() {
     # Provide final summary of all operations
     log_message "====================================" "true"
     log_message "RESTORE SUMMARY:" "true"
-    log_message "Game saves: $(outcome_word $RESTORE_STATUS)" "true"
-    [ "${BACKUPFILE_RESTORE_OPTION}" == "yes" ] && log_message "Settings backup: $(outcome_word $RESTORE_SYSTEM_STATUS)" "true"
+    log_message "Game saves: ${SAVES_OUTCOME:-$(outcome_word $RESTORE_STATUS)}" "true"
+    [ "${BACKUPFILE_RESTORE_OPTION}" == "yes" ] && log_message "Settings backup: ${SETTINGS_OUTCOME:-$(outcome_word $RESTORE_SYSTEM_STATUS)}" "true"
     case "${overall}" in
         0|9) log_message "$(run_outcome_line "${overall}")" "true" ;;
         *)   log_message "$(run_outcome_line "${overall}")" "true" "ERROR" ;;
@@ -1925,7 +1962,7 @@ main() {
     log_message "====================================" "true"
     
     # Add a final pause before exiting
-    sleep 3
+    pause 3
     
     # Both phases decide the exit. It was the saves phase's alone -- "use the
     # game saves restore status as the overall exit code" -- so a settings
