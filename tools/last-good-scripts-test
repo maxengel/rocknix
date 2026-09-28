@@ -3556,4 +3556,27 @@ sa_run "${CP}" cloud_capture --adopt /storage/roms/savestates/gb/Game.state2 --f
 sa_run "${CP}" cloud_capture --adopt /storage/roms/savestates/nes/None.state1 --from /storage/roms/savestates/nes/None.state0 --system nes --rom /storage/roms/nes/None.nes
 [ "${RC}" -eq 3 ]; check $? "gpt F-CS-22: an adopt for a game with nothing on disk answers 3, not a member, rather than 0 (rc ${RC})" "rc ${RC} -- 0 read as recorded for a copy nothing recorded"
 
+# A9. PL-066 (#307, F-CS-11 gpt): the game list travels in a pass of its own
+#     (--update), and that pass's result is the unit's too: a game list that
+#     did not move is a unit that couldn't finish.
+echo "    A9. PL-066: a failed game-list pass is a unit that couldn't finish"
+GL=$(sa_new pl066); sa_script "${GL}" cloud_content_restore cloud_content_backup
+printf 'SAVESPATH="/storage/roms"\nCONTENT_REMOTE="/ROCKNIX/Content"\n' > "${GL}/storage/.config/cloud_sync.conf"
+mkdir -p "${GL}/cloud/ROCKNIX/Content/ROMs/nes/images" "${GL}/storage/roms/nes"
+echo n > "${GL}/cloud/ROCKNIX/Content/ROMs/nes/N.nes"; echo png > "${GL}/cloud/ROCKNIX/Content/ROMs/nes/images/N.png"
+echo '<gameList/>' > "${GL}/cloud/ROCKNIX/Content/ROMs/nes/gamelist.xml"
+printf '%s\t%s\n' '^copy .*--update' 5 > "${GL}/ctl/fail"
+sa_run "${GL}" cloud_content_restore --with-media nes
+gl_stamp=$(awk '{print $2}' "${GL}/storage/.cache/cloud_sync/last-content-restore" 2>/dev/null)
+[ "${RC}" -ne 0 ] && [ "${gl_stamp}" != 0 ] && grep -q '^>>> why ' "${GL}/out" && grep -q "^Couldn't finish restoring nes" "${GL}/out"; check $? "cloud_content_restore: the game-list pass failing (5) ends the unit Couldn't finish, exit ${RC}, stamp ${gl_stamp:-none}" "exit ${RC}, stamp '${gl_stamp:-none}'; out: $(sa_tail "${GL}") -- the game list's result was discarded with || true (F-CS-11)"
+[ -f "${GL}/storage/roms/nes/N.nes" ]; check $? "and the pass before it still moved the ROM" "the ROM did not come down -- the case would pass for the wrong reason"
+echo '<gameList><game/></gameList>' > "${GL}/storage/roms/nes/gamelist.xml"
+mkdir -p "${GL}/storage/.config/emulationstation"; printf '<system><path>/storage/roms/nes</path></system>\n' > "${GL}/storage/.config/emulationstation/es_systems.cfg"
+sa_run "${GL}" cloud_content_backup --with-media nes
+gl_stamp=$(awk '{print $2}' "${GL}/storage/.cache/cloud_sync/last-content-backup" 2>/dev/null)
+[ "${RC}" -ne 0 ] && [ "${gl_stamp}" != 0 ] && grep -q "^Couldn't finish backing up nes" "${GL}/out"; check $? "cloud_content_backup: the same, exit ${RC}, stamp ${gl_stamp:-none}" "exit ${RC}, stamp '${gl_stamp:-none}'; out: $(sa_tail "${GL}")"
+: > "${GL}/ctl/fail"
+sa_run "${GL}" cloud_content_backup --with-media nes
+[ "${RC}" -eq 0 ] && grep -q '^Backed up nes\.' "${GL}/out"; check $? "and with the pass working the same backup completes (rc ${RC})" "rc ${RC}; out: $(sa_tail "${GL}")"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

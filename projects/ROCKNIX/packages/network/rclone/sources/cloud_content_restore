@@ -1306,11 +1306,20 @@ for DIR in "${DIRS[@]}"; do
     RC=$?
 
     # The game list: newest wins, rather than whoever ran last. Game content
-    # only (D-CLOUD-049) -- under ROMs alone the file stays where it is.
-    [ "${MEDIA_MODE}" != roms ] && rclone copy "${SRC}" "${TARGET}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
-        "${GAMELIST_ONLY[@]}" --update \
-        --stats 0 \
-        --log-file "${LOG_FILE}" --log-level INFO || true
+    # only (D-CLOUD-049) -- under ROMs alone the file stays where it is. Its
+    # result is the unit's, by the same 0|9 rule (audit #307 PL-066): it
+    # was discarded with `|| true`, so a game list that did not move left a
+    # unit, a stamp and a page that said the unit had.
+    if [ "${MEDIA_MODE}" != roms ]; then
+        rclone copy "${SRC}" "${TARGET}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
+            "${GAMELIST_ONLY[@]}" --update \
+            --stats 0 \
+            --log-file "${LOG_FILE}" --log-level INFO
+        GL_RC=$?
+        case "${RC}" in
+            0|9) case "${GL_RC}" in 0|9) ;; *) RC=${GL_RC} ;; esac ;;
+        esac
+    fi
 
     if [ ${RC} -ne 0 ] && [ ${RC} -ne 9 ]; then
         # A failed unit says why: the network gone ends the run as 69 here,
