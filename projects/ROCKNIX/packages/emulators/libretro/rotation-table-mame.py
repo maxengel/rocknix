@@ -13,19 +13,48 @@
 # Prints "<romname> <turns>" for every game with a turn, sorted, and the
 # count on stderr. With --min N it fails when fewer than N games have a
 # turn: a drivers directory with no macros in it is a wrong path, not a
-# smaller core. Comments are not source -- a GAME() inside /* */ or after //
-# is not read -- and every live declaration counts, so a game declared
-# ROT0 has no turn whatever a commented-out line said.
+# smaller core. Only what the compiler reads counts: a GAME() inside /* */,
+# after //, inside a string or in an #if 0 block is not read (other
+# #if conditions depend on the build's defines and are read as live), and
+# every live declaration counts, so a game declared ROT0 has no turn
+# whatever a commented-out line said.
 import os, re, sys
 
-LEXEME = re.compile(r'//[^\n]*|/\*.*?(?:\*/|\Z)|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'', re.S)
+LEXEME = re.compile(r'//[^\n]*|/\*.*?(?:\*/|\Z)|"(?:\\.|[^"\\\n])*"|(?<![0-9])\'(?:\\.|[^\'\\\n])*\'', re.S)
+STRING = re.compile(r'"(?:\\.|[^"\\\n])*"')
 TURNS = {'ROT270': 1, 'ROT180': 2, 'ROT90': 3, 'ROT0': 0}
 
 
 def strip_comments(text):
     """The source with its comments blanked, literals kept (a block comment
-    keeps its newlines, so nothing after it moves line)."""
+    keeps its newlines, so nothing after it moves line). A quote after a
+    digit is a C++14 digit separator (1'000), not a character literal."""
     return LEXEME.sub(lambda m: (' ' + '\n' * m.group(0).count('\n')) if m.group(0)[0] == '/' else m.group(0), text)
+
+
+def drop_dead(text):
+    """The source with what the preprocessor never compiles blanked: the
+    body of an #if 0 up to its #else, #elif or #endif, and an #if 1's #else
+    and #elif arms. Any other condition depends on the build's defines,
+    which are not known here, and is read as live."""
+    out = []
+    stack = []   # one per open #if: 'dead' or 'gone' while its current arm is not compiled
+    for line in text.split('\n'):
+        d = re.match(r'\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b(.*)', line)
+        if d:
+            kind, rest = d.group(1), d.group(2).strip()
+            if kind in ('if', 'ifdef', 'ifndef'):
+                stack.append('dead' if kind == 'if' and rest == '0' else 'one' if kind == 'if' and rest == '1' else 'live')
+            elif kind == 'else' and stack:
+                stack[-1] = 'gone' if stack[-1] in ('one', 'gone') else 'live'
+            elif kind == 'elif' and stack:
+                stack[-1] = 'gone' if stack[-1] in ('one', 'gone') else 'live'
+            elif kind == 'endif' and stack:
+                stack.pop()
+            out.append('')
+            continue
+        out.append('' if 'dead' in stack or 'gone' in stack else line)
+    return '\n'.join(out)
 
 
 def main(argv):
@@ -42,7 +71,9 @@ def main(argv):
             if not (f.endswith('.c') or f.endswith('.cpp')):
                 continue
             with open(os.path.join(dirpath, f), errors='replace') as fh:
-                text = strip_comments(fh.read())
+                # strings blanked as well: a GAME( inside one is text, and a
+                # title's commas and parentheses do not split the macro
+                text = STRING.sub('""', drop_dead(strip_comments(fh.read())))
             # a macro spans lines: read to its closing parenthesis
             for m in re.finditer(r'\bGAME[A-Z]*\s*\(', text):
                 start = m.end(); depth = 1; i = start

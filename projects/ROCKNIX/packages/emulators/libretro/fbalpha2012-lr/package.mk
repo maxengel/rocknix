@@ -29,7 +29,9 @@ makeinstall_target() {
   # reads it from /usr/config/emulationstation/rotation/<core>.txt on the
   # system partition, so a device has the table of the core it runs as soon
   # as the build is installed. Every pinned core's table has over 800 rows:
-  # under 100 is a wrong source path, and --min fails the build on it.
+  # under 100 is a wrong source path: --min makes the generator fail on
+  # it, and its own || die stops the build wherever the line sits.
   mkdir -p ${INSTALL}/usr/config/emulationstation/rotation
-  python3 ${PKG_DIR}/../rotation-table-fba.py --min 100 ${PKG_BUILD}/svn-current/trunk > ${INSTALL}/usr/config/emulationstation/rotation/fbalpha2012.txt
+  python3 ${PKG_DIR}/../rotation-table-fba.py --min 100 ${PKG_BUILD}/svn-current/trunk > ${INSTALL}/usr/config/emulationstation/rotation/fbalpha2012.txt \
+    || die "rotation table fbalpha2012.txt: the generator failed or found under 100 games -- check the source path handed to it"
 }

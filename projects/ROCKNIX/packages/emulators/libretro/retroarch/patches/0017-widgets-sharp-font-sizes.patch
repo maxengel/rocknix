@@ -41,7 +41,7 @@ diff --git a/gfx/gfx_widgets.c b/gfx/gfx_widgets.c
  #include "font_driver.h"
  
  #ifdef HAVE_MENU
-@@ -54,6 +55,88 @@
+@@ -54,6 +55,102 @@
   * computed size is already larger (ROCKNIX fork, #251; 14 until #296). */
  #define MSG_QUEUE_MIN_SIZE  13.0f
  
@@ -89,6 +89,20 @@ diff --git a/gfx/gfx_widgets.c b/gfx/gfx_widgets.c
 +   { "ozone/bold.ttf",    "Inter UI Bold",    BOLD_SHARP_SIZES,    ARRAY_SIZE(BOLD_SHARP_SIZES)    },
 +};
 +
++/* Whether the tail of a path is a table's file, reading '/' and '\\' as
++ * the same separator: the paths are built with the platform's own. */
++static bool gfx_widgets_sharp_tail_is(const char *tail, const char *file)
++{
++   for (; *tail && *file; tail++, file++)
++   {
++      bool sep_t = (*tail == '/' || *tail == '\\');
++      bool sep_f = (*file == '/' || *file == '\\');
++      if (sep_t != sep_f || (!sep_t && *tail != *file))
++         return false;
++   }
++   return !*tail && !*file;
++}
++
 +/* The measured face a font file is, or NULL */
 +static const gfx_widgets_sharp_face_t *gfx_widgets_sharp_face(const char *font_path)
 +{
@@ -101,8 +115,8 @@ diff --git a/gfx/gfx_widgets.c b/gfx/gfx_widgets.c
 +      const char *file = gfx_widgets_sharp_faces[i].file;
 +      size_t      flen = strlen(file);
 +      if (     len > flen
-+            && font_path[len - flen - 1] == '/'
-+            && !strcmp(font_path + len - flen, file))
++            && (font_path[len - flen - 1] == '/' || font_path[len - flen - 1] == '\\')
++            && gfx_widgets_sharp_tail_is(font_path + len - flen, file))
 +         return &gfx_widgets_sharp_faces[i];
 +   }
 +   return NULL;
@@ -130,7 +144,7 @@ diff --git a/gfx/gfx_widgets.c b/gfx/gfx_widgets.c
  static dispgfx_widget_t dispwidget_st = {0}; /* uint64_t alignment */
  static uint64_t widget_icon_load_gen  = 0;
  
-@@ -895,15 +978,33 @@ static void gfx_widgets_font_init(
+@@ -895,15 +992,33 @@ static void gfx_widgets_font_init(
        dispgfx_widget_t *p_dispwidget,
        gfx_widget_font_data_t *font_data,
        bool is_threaded, char *font_path, float font_size,
@@ -166,7 +180,7 @@ diff --git a/gfx/gfx_widgets.c b/gfx/gfx_widgets.c
     /* Free existing font */
     if (font_data->font)
     {
-@@ -986,11 +1087,11 @@ static void gfx_widgets_layout(
+@@ -986,11 +1101,11 @@ static void gfx_widgets_layout(
        /* Create regular font */
        gfx_widgets_font_init(p_disp, p_dispwidget,
              &p_dispwidget->gfx_widget_fonts.regular,
@@ -180,7 +194,7 @@ diff --git a/gfx/gfx_widgets.c b/gfx/gfx_widgets.c
  
        /* Create msg_queue font */
        switch (*msg_hash_get_uint(MSG_HASH_USER_LANGUAGE))
-@@ -1010,22 +1111,28 @@ static void gfx_widgets_layout(
+@@ -1010,22 +1125,28 @@ static void gfx_widgets_layout(
              strlcpy(font_file, p_dispwidget->ozone_regular_font_path, sizeof(font_file));
              break;
        }
