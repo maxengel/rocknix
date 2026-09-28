@@ -2004,6 +2004,15 @@ def serve_with(holder, backend, port, timeout):
         return 2
 
     address = lan_address()
+    # Listen on the address the page is served at, not on every interface
+    # (#308 claude F-RS-18). A VPN or tethering interface no longer takes
+    # the keyboard; and the port is shared with the offline achievements
+    # proxy, which listens on 127.0.0.1:8080 -- a wildcard bind cannot share
+    # a port with a socket on a specific address, so with offline
+    # achievements on, every sign-in ended in EADDRINUSE. 127.0.0.1 is
+    # lan_address's answer when there is no route, and the one case that
+    # keeps the wildcard.
+    listen = "0.0.0.0" if address == "127.0.0.1" else address
     # A port something else holds used to end the serve with a traceback and
     # the status left at "starting", rclone's authorize still running, and
     # the interface waiting on a sign-in that could never be reached (audit
@@ -2015,7 +2024,7 @@ def serve_with(holder, backend, port, timeout):
             threading.Thread(target=server.shutdown, daemon=True).start()
 
     try:
-        server = make_server("0.0.0.0", port, holder, shutdown)
+        server = make_server(listen, port, holder, shutdown)
     except OSError as exc:
         why = "port %d is already in use on this device" % port \
             if exc.errno == errno.EADDRINUSE else "could not listen on port %d" % port

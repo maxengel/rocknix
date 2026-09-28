@@ -3878,6 +3878,53 @@ def requests_are_bounded():
            "no cap on concurrent connections (MAX_CONNECTIONS %r, refused %r) (#308 gpt F-RS-18)" % (cap, refused))
     server.shutdown()
 EOPY
+# #308 claude F-RS-18: the serve listens on the LAN address it advertises.
+cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
+@test
+def listens_on_the_lan_address():
+    """#308 claude F-RS-18: bind the address the page is served on."""
+    d = serve_dir("rs18c")
+    serve = drive(d, "serve", "dropbox", "--port", "8433", "--timeout", "60", lan="127.0.0.2", wait=False)
+    up = wait_for(lambda: state_of(d).get("status") == "waiting", 15)
+
+    def reach(addr):
+        try:
+            socket.create_connection((addr, 8433), timeout=2).close()
+            return True
+        except OSError:
+            return False
+    lan, other = reach("127.0.0.2"), reach("127.0.0.1")
+    drive(d, "cancel")
+    wait_for(lambda: serve.poll() is not None, 5)
+    if serve.poll() is None:
+        serve.kill()
+    result(up and lan and not other,
+           "the serve listens on the address it advertises (127.0.0.2) and nowhere else",
+           "advertised 127.0.0.2: reachable there %r, and on 127.0.0.1 %r -- it bound 0.0.0.0 (#308 claude F-RS-18)" % (lan, other))
+
+
+@test
+def coexists_with_the_offline_proxy():
+    """#308 claude F-RS-18, the consequence found while fixing it: the offline
+    RetroAchievements proxy listens on 127.0.0.1:8080, the serve's own default
+    port, and a wildcard bind cannot share a port with it."""
+    d = serve_dir("rs18p")
+    proxy = socket.socket()
+    proxy.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    proxy.bind(("127.0.0.1", 8434))
+    proxy.listen()
+    serve = drive(d, "serve", "dropbox", "--port", "8434", "--timeout", "60", lan="127.0.0.2", wait=False)
+    up = wait_for(lambda: state_of(d).get("status") in ("waiting", "failed"), 15)
+    st = state_of(d)
+    drive(d, "cancel")
+    wait_for(lambda: serve.poll() is not None, 5)
+    if serve.poll() is None:
+        serve.kill()
+    proxy.close()
+    result(up and st.get("status") == "waiting",
+           "with something on 127.0.0.1 of the same port (the offline achievements proxy's 127.0.0.1:8080), the serve still comes up on the LAN address",
+           "with 127.0.0.1:8434 held the serve reached %r (%s) -- a 0.0.0.0 bind cannot share a port with the proxy" % (st.get("status"), st.get("error")))
+EOPY
 # C3: new test groups go above this line
 cat >> "${C3}/cloud_oauth_test.py" <<'EOPY'
 if MODE == "drive":
