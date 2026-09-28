@@ -10411,6 +10411,13 @@ touch "${P7S}/.config/.restore-finish-pending" "${P7S}/.config/.cloud-journey-pe
 p7bt backup
 [ "${RC}" -eq 0 ] && ! p7list | grep -qE '\.restore-in-progress|\.restore-reverted|\.restore-finish-pending|\.cloud-journey-pending'; check $? "audit of the fix round PL-007: and a backup of /storage/.config never carries the restore's mark or the other one-shot markers a restore leaves" "PL-007 (backup): rc ${RC}; archive holds: $(p7list | grep -E 'restore|journey' | tr '\n' ' ')"
 
+# == PL-008: a quoted password that begins with a space is still a password
+p7sign odd.ini "$(printf '%s = " %s"' password leading-text)"; check $? "audit of the fix round PL-008: password = \" leading-text\" in a custom location is caught" "PL-008: rc ${RC}; why '$(p7why)'; archives: $(p7arc | wc -l) -- the value class could not take the space after the quote"
+p7reset '  /storage/.config/test/*'
+printf 'password = "   "\npassword = ""\n' > "${P7S}/.config/test/blank.ini"
+p7bt backup
+[ "${RC}" -eq 0 ] && [ -n "$(p7arc)" ]; check $? "audit of the fix round PL-008: and a quoted value of spaces alone is not a sign-in: the backup completes" "PL-008: rc ${RC}; why '$(p7why)'"
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
