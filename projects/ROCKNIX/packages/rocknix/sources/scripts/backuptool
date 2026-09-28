@@ -558,9 +558,20 @@ write_archive() {
     # The collector exits 1 on an unreadable input or an unwritable target
     # and the pipeline still reported 0, so a short archive was written and
     # announced as a success.
-    ( set -o pipefail
-      tar -cf - -T "${SENDLIST}" 2>/dev/null | tar -xf - -C "${STAGING}" 2>/dev/null )
-    if [ $? -ne 0 ]
+    #
+    # An empty send list is skipped, not piped: a selection of nothing but
+    # files that travel as sanitised copies (LOCATIONS=(system.cfg)) leaves
+    # it empty, and busybox tar writes no archive at all for an empty list,
+    # so the reader failed on "invalid tar magic" and a valid backup was
+    # refused as a failed collection (#308, the gpt seat's F-BR-19).
+    local COLLECT_RC=0
+    if [ -s "${SENDLIST}" ]
+    then
+        ( set -o pipefail
+          tar -cf - -T "${SENDLIST}" 2>/dev/null | tar -xf - -C "${STAGING}" 2>/dev/null )
+        COLLECT_RC=$?
+    fi
+    if [ "${COLLECT_RC}" -ne 0 ]
     then
         rm -rf "${STAGING}"
         rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"

@@ -3212,4 +3212,9 @@ cp "${P7U}/test/seed" "${P7S}/.config/test/seed"
 p7bt backup
 [ "${RC}" -ne 0 ] && [ -z "$(p7arc)" ] && [ "$(p7why)" = "THERE'S NOTHING TO BACK UP YET" ] && ! grep -q 'TRY AGAIN' "${P7OUT}"; check $? "#308 4-backup-restore claude F-BR-17: a selection that is all the image's own says there is nothing to back up yet, without TRY AGAIN (why: $(p7why))" "#308 F-BR-17: rc ${RC}; why '$(p7why)'; screen: $(p7screen)"
 
+# == #308 4-backup-restore gpt F-BR-19: a selection of only sanitised files is a backup
+p7reset '  /storage/.config/system/configs/system.cfg'
+p7bt backup
+[ "${RC}" -eq 0 ] && p7list | grep -qx 'storage/.config/system/configs/system.cfg' && ! tar -xzOf "$(p7arc | tail -1)" 2>/dev/null | grep -q SECRET; check $? "#308 4-backup-restore gpt F-BR-19: LOCATIONS=(system.cfg) alone writes an archive holding its sanitised copy (rc ${RC})" "#308 F-BR-19: rc ${RC}; why '$(p7why)'; archive: $(p7list | tr '\n' '|')"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
