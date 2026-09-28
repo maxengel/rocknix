@@ -3040,11 +3040,19 @@ ckf 65536 retroarch 1024;                printf '%s' "${NOTE}" | grep '^dump' | 
 # writer, the lock, the redaction), factoryreset, chksysconfig,
 # rocknix-evidence, rocknix-corekeep, runemu.sh and automount. Every case
 # names its item (#307 PL-NNN, or #308 <packet> <seat> <id>) and was seen to
-# FAIL against the script before its fix. The scripts run whole under bwrap
-# with the image's busybox standing in for every applet the device has
-# (tar, unzip, find, readlink, mktemp, flock, stat, mv, cp, ln, touch, chmod,
-# sed, awk, head, tail, wc, cut, tr, cmp, dirname, basename, mkdir, rm, date)
-# -- grep, sort and gzip are the device's GNU ones, the host's here.
+# FAIL against the script before its fix. Which tools each part runs under,
+# when the image's busybox is found (BB): backuptool (y1) whole under bwrap
+# with the image's tar, unzip, find, readlink, mktemp, flock, stat, mv, cp,
+# ln, touch, chmod, sed, awk, head, tail, wc, cut, tr, cmp, dirname,
+# basename, mkdir, rm and date; the evidence collector and the core keeper
+# (y4) whole under bwrap with the image's applets for every one they call,
+# which a check in y4 proves by asking each for its banner (the audit of the
+# fixes, gpt G-B-15: they ran on the host's until then); wifictl (y2), the
+# settings writer, lock and redaction (y3), chksysconfig's functions,
+# factoryreset and automount's disk test (y4) with the harness's bbin (sed,
+# mv, cp, tr, head, wc, cut, awk) first on PATH and the host's for the rest;
+# the runemu parsers are bash alone.
+# grep, sort and gzip are the device's GNU ones, the host's here.
 echo "  y. audit #307 / #308, stream B: backuptool, wifictl, the settings writer and lock, factoryreset, chksysconfig, rocknix-evidence, rocknix-corekeep, runemu and automount"
 P7="${TMP}/p7"; mkdir -p "${P7}"
 
@@ -3879,6 +3887,16 @@ P7="${P7:-${TMP}/p7}"; P7M="${P7}/misc"; mkdir -p "${P7M}"
 P7ETC=(--tmpfs /etc); for e in /etc/ld.so.cache /etc/alternatives /etc/passwd /etc/group /etc/localtime; do [ -e "${e}" ] && P7ETC+=(--ro-bind "${e}" "${e}"); done
 P7USR=(); for u in bin sbin lib lib64 libexec share; do [ -e "/usr/${u}" ] && P7USR+=(--ro-bind "/usr/${u}" "/usr/${u}"); done
 P7MBB=(); if [ -n "${BB}" ]; then P7MBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB_HOST}" "${BB}"); fi
+# The applets the evidence collector and the core keeper call that ARE
+# busybox applets on the device, the image's here (the audit of the fixes,
+# gpt G-B-15: these two ran on the host's tools); grep, sort and gzip are the
+# device's GNU ones, the host's.
+mkdir -p "${P7M}/bb"
+if [ -n "${BB}" ]; then
+    for a in find mktemp tar cp mv rm touch date cut tr sed head tail du ls awk flock ln cat mkdir basename dirname wc stat df uname chmod readlink; do
+        printf '#!/bin/sh\n[ -x %s ] && exec %s %s "$@"\nexec %s %s "$@"\n' "${BB}" "${BB}" "${a}" "${BB_HOST}" "${a}" > "${P7M}/bb/${a}"; chmod +x "${P7M}/bb/${a}"
+    done
+fi
 # chksysconfig's functions, lifted as a lifts them.
 P7K="${P7M}/chk"; mkdir -p "${P7K}/cfg/system/configs" "${P7K}/def/system/configs"
 src_of "${CHK_REL}" "${P7K}/chksysconfig"
@@ -3886,8 +3904,10 @@ src_of "${CHK_REL}" "${P7K}/chksysconfig"
   printf 'logger() { echo "logger $*" >&2; }\nCONFIG_ROOT=%q; DEFAULT_ROOT=%q\nCFG_PATH="${CONFIG_ROOT}/system/configs"; CFG="${CFG_PATH}/system.cfg"; BACKUP="${CFG}.backup"\nrsync() { :; }\n' "${P7K}/cfg" "${P7K}/def"
 } > "${P7K}/fns.sh"
 printf 'system.hostname=DEFAULT\n' > "${P7K}/def/system/configs/system.cfg"
-# mountpoint is the image's too (claude G-B-04 of the audit of the fixes):
-# chksysconfig's one new external command runs through the image's busybox.
+# mountpoint is the image's too, so the --old run judges PL-045's first cut
+# under the tool the device has (claude G-B-04 of the audit of the fixes:
+# busybox mountpoint compares st_dev and cannot see a bind on the same
+# filesystem); the fix reads the mount table with the image's awk (bbin).
 mkdir -p "${P7K}/bin"
 if [ -n "${BB_HOST}" ]; then printf '#!/bin/sh\nexec %s mountpoint "$@"\n' "${BB_HOST}" > "${P7K}/bin/mountpoint"; chmod +x "${P7K}/bin/mountpoint"; fi
 p7chk() { EXTRACT_ROOT="${P7K}/root" ROMS_ROOT="${P7K}/roms" PATH="${P7K}/bin:${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; verify" 2>"${P7K}/err"; }
@@ -3933,22 +3953,29 @@ printf 'NAME="ROCKNIX"\nBUILD_ID=test\n' > "${P7E}/etc/os-release"
 for t in journalctl dmesg sysctl top; do printf '#!/bin/sh\necho "%s output"\n' "${t}" > "${P7E}/shim/${t}"; done
 printf '#!/bin/sh\nexit 0\n' > "${P7E}/shim/logger"
 # mv and rm that fail for exec.log's files when /run/p7-mv-fails and /run/p7-rm-fails exist.
-printf '#!/bin/bash\n[ -e /storage/.p7-mv-fails ] && case "$*" in *exec.log.redacting*) echo "mv: I/O error" >&2; exit 1 ;; esac\nexec /usr/bin/mv "$@"\n' > "${P7E}/shim/mv"
-printf '#!/bin/bash\n[ -e /storage/.p7-rm-fails ] && case "$*" in *"/logs/exec.log"*) echo "rm: I/O error" >&2; exit 1 ;; esac\nexec /usr/bin/rm "$@"\n' > "${P7E}/shim/rm"
+printf '#!/bin/bash\n[ -e /storage/.p7-mv-fails ] && case "$*" in *exec.log.redacting*) echo "mv: I/O error" >&2; exit 1 ;; esac\n[ -x /p7mbb/mv ] && exec /p7mbb/mv "$@"\nexec /usr/bin/mv "$@"\n' > "${P7E}/shim/mv"
+printf '#!/bin/bash\n[ -e /storage/.p7-rm-fails ] && case "$*" in *"/logs/exec.log"*) echo "rm: I/O error" >&2; exit 1 ;; esac\n[ -x /p7mbb/rm ] && exec /p7mbb/rm "$@"\nexec /usr/bin/rm "$@"\n' > "${P7E}/shim/rm"
 chmod +x "${P7E}/shim"/*
 p7ev() { # <verb>: rocknix-evidence whole; output in $P7E/out, rc in $RC
     RC=$( ( bwrap --die-with-parent --tmpfs / --tmpfs /usr "${P7USR[@]}" \
         --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
         "${P7ETC[@]}" --ro-bind "${P7E}/etc/os-release" /etc/os-release --ro-bind "${P7E}/etc/001-functions" /etc/profile.d/001-functions \
         --bind "${P7ES}" /storage --bind "${P7ES}/.cache/log" /var/log --ro-bind "${P7E}/repo" /repo --ro-bind "${P7E}/shim" /shim \
-        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /run --setenv PATH "/shim:/usr/bin:/bin" \
-        bash /repo/rocknix-evidence "$@" > "${P7E}/out" 2>&1; echo $? ) 2>/dev/null )
+        --ro-bind "${P7M}/bb" /p7mbb "${P7MBB[@]}" \
+        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /run --setenv PATH "/shim:/p7mbb:/usr/bin:/bin" \
+        bash "/repo/${P7EVSCRIPT:-rocknix-evidence}" "$@" > "${P7E}/out" 2>&1; echo $? ) 2>/dev/null )
 }
 p7evreset() {
     rm -rf "${P7ES}/.cache/log/evidence"; rm -f "${P7ES}"/.p7-*
     printf 'runemu.sh: Executing /usr/bin/gopher64 --ra-password QA-EV-PLANT game.z64\n' > "${P7ES}/.cache/log/exec.log"
 }
 p7evarcs() { ls "${P7ES}/.cache/log/evidence"/*-evidence.tar.gz 2>/dev/null; }
+# The sandbox's find, tar, flock and date are the image's (gpt G-B-15).
+if [ -n "${BB}" ]; then
+    printf 'for a in find tar flock date mktemp; do if "$a" --help 2>&1 | head -1 | grep -q BusyBox; then echo "IMG:$a"; else echo "HOST:$a"; fi; done\n' > "${P7E}/repo/p7probe"
+    P7EVSCRIPT=p7probe p7ev
+    [ "$(grep -c '^IMG:' "${P7E}/out")" -eq 5 ]; check $? "#307 audit G-B-15 (gpt): the evidence collector runs under the image's find, tar, flock, date, and mktemp" "#307 audit G-B-15: $(tr '\n' ' ' < "${P7E}/out")"
+fi
 p7evreset; touch "${P7ES}/.p7-mv-fails"
 p7ev collect
 p7a=$(p7evarcs | head -1)
@@ -3959,7 +3986,7 @@ p7ev collect
 
 # == PL-077 (evidence half): two collections in one second keep two archives
 p7evreset
-printf '#!/bin/bash\ncase "$*" in "+%%Y_%%m_%%d-%%H%%M%%S") echo 2026_09_21-140000 ;; *) exec /usr/bin/date "$@" ;; esac\n' > "${P7E}/shim/date"; chmod +x "${P7E}/shim/date"
+printf '#!/bin/bash\ncase "$*" in "+%%Y_%%m_%%d-%%H%%M%%S") echo 2026_09_21-140000 ;; *) [ -x /p7mbb/date ] && exec /p7mbb/date "$@"; exec /usr/bin/date "$@" ;; esac\n' > "${P7E}/shim/date"; chmod +x "${P7E}/shim/date"
 p7ev collect; p7rc1=${RC}; p7ev collect
 [ "${p7rc1}" -eq 0 ] && [ "${RC}" -eq 0 ] && [ "$(p7evarcs | wc -l)" -eq 2 ]; check $? "#307 PL-077 (evidence half): two collections in one second leave two archives" "#307 PL-077: rc ${p7rc1}/${RC}; archives: $(p7evarcs | xargs -rn1 basename | tr '\n' ' ')"
 rm -f "${P7E}/shim/date"
@@ -3973,12 +4000,16 @@ p7ck() { # <stdin producer> <exe> <epoch> [env...]: the keeper under the image's
     local prod="$1" exe="$2" when="$3"; shift 3
     ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
         --ro-bind /etc /etc --bind "${P7C}/storage" /storage --ro-bind "${P7C}/shim" /shim --ro-bind "${P7C}/bb" /p7bb --ro-bind "${P7C}/repo" /repo "${P7MBB[@]}" \
-        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --setenv PATH /shim:/p7bb:/usr/bin:/bin "$@" \
+        --ro-bind "${P7M}/bb" /p7mbb --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --setenv PATH /shim:/p7bb:/p7mbb:/usr/bin:/bin "$@" \
         bash -c "${prod} | bash /repo/rocknix-corekeep ${exe} 4242 ${when} 11 '!usr!bin!${P7EXEPATH:-${exe}}'" ) > "${P7C}/out" 2>&1
     P7NOTE="$(cat "${P7C}"/storage/.cache/log/cores/core.*."${when}".4242.txt 2>/dev/null)"
 }
+if [ -n "${BB}" ]; then
+    p7ck 'for a in head flock find mkdir mv rm df date; do if "$a" --help 2>&1 | head -1 | grep -q BusyBox; then echo "IMG:$a" >&2; else echo "HOST:$a" >&2; fi; done' probe 1
+    [ "$(grep -c '^IMG:' "${P7C}/out")" -eq 8 ]; check $? "#307 audit G-B-15 (gpt): the core keeper runs under the image's head, flock, find, mkdir, mv, rm, df, and date" "#307 audit G-B-15: $(grep -E '^(IMG|HOST):' "${P7C}/out" | tr '\n' ' ')"
+fi
 rm -f "${P7C}/storage/.config/keep-core-dumps"
-p7consumed=$(python3 - "${P7C}" "$(printf '%q ' bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 --ro-bind /etc /etc --bind "${P7C}/storage" /storage --ro-bind "${P7C}/shim" /shim --ro-bind "${P7C}/repo" /repo --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --setenv PATH /shim:/usr/bin:/bin bash /repo/rocknix-corekeep retroarch 1 1 11 '!usr!bin!retroarch')" <<'EOS'
+p7consumed=$(python3 - "${P7C}" "$(printf '%q ' bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 --ro-bind /etc /etc --bind "${P7C}/storage" /storage --ro-bind "${P7C}/shim" /shim --ro-bind "${P7C}/repo" /repo "${P7MBB[@]}" --ro-bind "${P7M}/bb" /p7mbb --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --setenv PATH /shim:/p7mbb:/usr/bin:/bin bash /repo/rocknix-corekeep retroarch 1 1 11 '!usr!bin!retroarch')" <<'EOS'
 import subprocess, sys
 p = subprocess.Popen(sys.argv[2], shell=True, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 chunk = b"\0" * 65536; sent = 0
@@ -4103,6 +4134,7 @@ cat > "${P7E}/shim/find" <<'EOS'
 #!/bin/bash
 # The filter's walk fails part-way (a full /tmp); every other find is the real one.
 case "$*" in *-evidence*-print0*) echo "find: write error" >&2; exit 1 ;; esac
+[ -x /p7mbb/find ] && exec /p7mbb/find "$@"
 exec /usr/bin/find "$@"
 EOS
 chmod +x "${P7E}/shim/find"
