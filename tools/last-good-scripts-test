@@ -3646,7 +3646,7 @@ P7="${P7:-${TMP}/p7}"; P7W="${P7}/wifi"; mkdir -p "${P7W}/shim" "${P7W}/repo" "$
 src_of "${WIFICTL_REL}" "${P7W}/repo/wifictl"
 cat > "${P7W}/profile" <<'EOS'
 get_setting() { awk -v k="$1" 'index($0, k "=") == 1 { v = substr($0, length(k) + 2) } END { printf "%s", v }' /run/settings 2>/dev/null; }
-set_setting() { if [ "$2" = "default" ]; then awk -v k="$1" 'index($0, k "=") != 1' /run/settings > /run/settings.new; mv /run/settings.new /run/settings; else printf '%s=%s\n' "$1" "$2" >> /run/settings; fi; }
+set_setting() { [ -e /run/set-fails ] && return 1; if [ "$2" = "default" ]; then awk -v k="$1" 'index($0, k "=") != 1' /run/settings > /run/settings.new; mv /run/settings.new /run/settings; else printf '%s=%s\n' "$1" "$2" >> /run/settings; fi; }
 export PATH=/shim:/bbin:/usr/bin:/bin
 EOS
 cat > "${P7W}/shim/iwctl" <<'EOS'
@@ -3674,6 +3674,7 @@ case "${all}" in
     [ -n "$(field "${r}" 5)" ] && echo wpa-psk || echo ;;
   *"802-11-wireless.ssid connection show id "*)
     name="${all#*connection show id }"; r=$(row "${name}"); [ -n "${r}" ] || exit 10
+    [ -e /run/ssid-fails ] && { echo "Error: the SSID could not be read." >&2; exit 7; }
     esc "$(field "${r}" 4)"; echo ;;
   *"device show "*)
     dev="${all#*device show }"; dev="${dev%% *}"
@@ -3723,7 +3724,7 @@ p7w() { # <verb> [name]: wifictl whole; stdout to $P7W/out, rc in $RC
 p7wset() { # <profile rows, one per argument, fields separated by |>: the table, fresh settings and records
     printf '%s\n' "$@" > "${P7W}/run/profiles"
     : > "${P7W}/run/settings"; : > "${P7W}/run/up"; : > "${P7W}/run/deleted"; : > "${P7W}/run/calls"
-    rm -f "${P7W}/run/nm-down" "${P7W}/run/psk-fails" "${P7W}/run/up-fails"
+    rm -f "${P7W}/run/nm-down" "${P7W}/run/psk-fails" "${P7W}/run/up-fails" "${P7W}/run/set-fails" "${P7W}/run/ssid-fails"
 }
 p7wkey() { awk 'index($0, "wifi.key=") == 1 { v = substr($0, 10); n = 1 } END { if (n) printf "%s", v; else printf "<unset>" }' "${P7W}/run/settings"; }
 p7wssid() { awk 'index($0, "wifi.ssid=") == 1 { v = substr($0, 11); n = 1 } END { if (n) printf "%s", v; else printf "<unset>" }' "${P7W}/run/settings"; }
@@ -3773,6 +3774,26 @@ p7wset "$(printf 'a\tb')|802-11-wireless|-|ab|tab-key-1"
 p7w join "$(printf 'a\tb')"; p7jrc=${RC}
 p7w forget "$(printf 'a\tb')"
 [ "${p7jrc}" -eq 0 ] && [ "${RC}" -eq 0 ] && [ ! -s "${P7W}/run/profiles" ]; check $? "#308 2-wifi claude F-WF-06 / gpt F-WF-04: a profile named 'a<TAB>b' -- which saved lists and the interface accepts -- joins and is forgotten" "#308 F-WF-06: join rc ${p7jrc}, forget rc ${RC}; profiles left: $(wc -l < "${P7W}/run/profiles")"
+
+# == AUD gpt G-B-11 (#307 audit of the fixes): forget changes nothing unless it can change the settings too
+p7wset 'Home|802-11-wireless|wlan0|Home|home-key-1' 'Cafe|802-11-wireless|-|Cafe|cafe-key-1'
+printf 'wifi.ssid=Home\nwifi.key=home-key-1\n' > "${P7W}/run/settings"; touch "${P7W}/run/set-fails"
+p7w forget "Home"
+[ "${RC}" -ne 0 ] && [ ! -s "${P7W}/out" ] && grep -q '^Home|' "${P7W}/run/profiles" && [ "$(p7wssid)" = "Home" ] && [ "$(p7wkey)" = "home-key-1" ]; check $? "#307 audit G-B-11 (gpt): when the settings naming the network cannot be cleared, forget refuses before deleting the profile (rc ${RC})" "#307 audit G-B-11: rc ${RC}; printed '$(tr '\n' '|' < "${P7W}/out")'; profile Home: $(grep -c '^Home|' "${P7W}/run/profiles"); wifi.ssid '$(p7wssid)' -- forgotten was said and the settings kept the network"
+p7wset 'Home|802-11-wireless|wlan0|Home Wi-Fi|home-key-1'
+printf 'wifi.ssid=Home Wi-Fi\nwifi.key=home-key-1\n' > "${P7W}/run/settings"; touch "${P7W}/run/ssid-fails"
+p7w forget "Home"
+[ "${RC}" -eq 2 ] && grep -q '^Home|' "${P7W}/run/profiles" && [ "$(p7wssid)" = "Home Wi-Fi" ]; check $? "#307 audit G-B-11 (gpt): a profile whose SSID cannot be read is not forgotten on a guess (exit 2, nothing deleted)" "#307 audit G-B-11: rc ${RC}; profile: $(grep -c '^Home|' "${P7W}/run/profiles"); wifi.ssid '$(p7wssid)'"
+
+# == AUD saved-ssid (#307 audit of the fixes, stream E2's picker fix 6caac243c): saved --ssid gives each profile's SSID
+p7wset 'Home|802-11-wireless|wlan0|Home|k1' 'Home profile|802-11-wireless|-|Home Wi-Fi|k2' "$(printf 'a\tb')|802-11-wireless|-|$(printf 'x\ty')|k3" 'Wired|802-3-ethernet|-|-|-'
+p7w saved --ssid
+p7exp=$(printf 'Home\tHome\tactive\nHome profile\tHome Wi-Fi\tsaved\na\\tb\tx\\ty\tsaved')
+[ "${RC}" -eq 0 ] && [ "$(cat "${P7W}/out")" = "${p7exp}" ]; check $? "#307 audit (E2's picker): saved --ssid prints name<TAB>SSID<TAB>active|saved, a tab or backslash inside a field escaped as \\t / \\\\" "#307 audit saved --ssid: rc ${RC}; printed '$(tr '\t\n' '~|' < "${P7W}/out")'"
+p7w saved
+[ "${RC}" -eq 0 ] && [ "$(cat "${P7W}/out")" = "$(printf 'Home\tactive\nHome profile\tsaved\na\tb\tsaved')" ]; check $? "#307 audit (E2's picker): and saved without the flag is unchanged, for the interface's parser and join and forget" "#307 audit saved: printed '$(tr '\t\n' '~|' < "${P7W}/out")'"
+touch "${P7W}/run/ssid-fails"; p7w saved --ssid
+[ "${RC}" -eq 1 ] && [ ! -s "${P7W}/out" ]; check $? "#307 audit (E2's picker): an SSID that cannot be read makes saved --ssid print nothing and exit 1, never a list short of one" "#307 audit saved --ssid: rc ${RC}; printed '$(tr '\t\n' '~|' < "${P7W}/out")'"
 
 # y3. 001-functions: the settings writer, the lock and the redaction, lifted
 # as c and wait-lock-test lift them and run in a fresh bash against temp
