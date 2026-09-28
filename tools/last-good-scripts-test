@@ -4383,4 +4383,21 @@ ng_row=$(grep '^scummvm|' "${NG}/out" | head -1)
 [ -f "${NG}/storage/roms/scummvm/title/gamelist.xml" ] && [ -n "${ng_row}" ] && [ "$(printf '%s' "${ng_row}" | cut -d'|' -f2)" != 0 ] \
     && [ "$(printf '%s' "${ng_row}" | cut -d'|' -f2)" = "$(printf '%s' "${ng_row}" | cut -d'|' -f4)" ]; check $? "and under game content alone the same list is counted, on both sides, once it has come down" "list on the device: $([ -f "${NG}/storage/roms/scummvm/title/gamelist.xml" ] && echo yes || echo no); scan row '${ng_row}'"
 
+# A42. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-04,
+#      Medium): the capture's commit lock was waited for five seconds and
+#      then gone on without -- the check, the rename and the GC ran
+#      unlocked beside the capture that held it. A commit that cannot have
+#      the lock does not commit: an exit capture re-runs once, as it does
+#      when it loses to another writer, and then leaves it to the next run.
+echo "    A42. G-A-04 (gpt): a capture that cannot have the commit lock does not commit"
+cp_seed
+( exec 8>>"${CP}/storage/.cache/cloud_sync/.capture.lock"; flock -x 8; exec sleep 25 ) & cp_holder=$!
+sleep 0.5
+cp_exit
+cp_held=0; kill -0 "${cp_holder}" 2>/dev/null && cp_held=1
+kill "${cp_holder}" 2>/dev/null; wait "${cp_holder}" 2>/dev/null
+[ "${cp_held}" -eq 1 ] && [ "${RC}" -ne 0 ] && [ ! -e "${CPM}" ] && grep -q 'lock-busy' "${CP}/storage/.cache/cloud_sync/capture-failures" 2>/dev/null; check $? "an exit capture against a lock held past its waits commits nothing and records lock-busy (rc ${RC}, ${DT}s)" "holder alive at the end: ${cp_held}; rc ${RC}; manifest: $([ -e "${CPM}" ] && echo WRITTEN || echo none); failures: $(tail -1 "${CP}/storage/.cache/cloud_sync/capture-failures" 2>/dev/null) -- the commit went on unlocked after five seconds"
+cp_exit
+[ "${RC}" -eq 0 ] && jq -e '.entries["gb/Game.srm"]' "${CPM}" >/dev/null 2>&1; check $? "and once the lock is free the next capture records what that one could not (rc ${RC})" "rc ${RC}; entries: $(jq -c '.entries | keys' "${CPM}" 2>/dev/null)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

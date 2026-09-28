@@ -102,9 +102,14 @@
 # #307 PL-067): the check and the rename were two steps another capture
 # could land between, and one capture's GC could collect a seal another had
 # just placed and not yet published. The lock is waited for, briefly -- a
-# commit holds it for milliseconds -- and a run that cannot have it goes on
-# under detection alone, as every run did before. It is not the transfer
-# lock, which this script never takes.
+# commit holds it for milliseconds -- and a run that cannot have it does not
+# commit (the audit of the fixes, G-A-04: the first cut went on under
+# detection alone, which is the race the lock exists to close). It is
+# treated as a loss to another writer: an exit, --rescan, --retire or
+# --adopt re-runs itself once, and a second failure, or a --full, is
+# recorded as lock-busy and left to the next run; its stamp line is not
+# written either, since the stamp is a read-modify-rename under the same
+# lock. It is not the transfer lock, which this script never takes.
 
 CACHE="/storage/.cache/cloud_sync"
 STAGE="${CACHE}/stage"
@@ -200,23 +205,28 @@ RC=0
 REASON=""
 
 # The commit lock (PL-067, header). Up to five seconds in tenths -- busybox
-# flock has no -w -- and then the run goes on without it, logged. fd 8,
+# flock has no -w -- and then 1, and the caller does not commit (G-A-04);
+# LOCK_BUSY says so to finish, which then writes no stamp line rather than
+# wait a second time. fd 8,
 # append-opened, so taking it never truncates anything; released before the
 # re-run's exec, which would otherwise carry it into a process that then
 # waits on itself.
 CAPTURE_LOCK="${CACHE}/.capture.lock"
 LOCK_HELD=0
+LOCK_BUSY=0
 capture_lock() {
     local n=0
     [ "${LOCK_HELD}" = 1 ] && return 0
     mkdir -p "${CACHE}" 2>/dev/null
     # The group's redirection is the group's alone; exec's own (fd 8) stays.
-    { exec 8>>"${CAPTURE_LOCK}"; } 2>/dev/null || return 1
+    [ "${LOCK_BUSY}" = 1 ] && return 1
+    { exec 8>>"${CAPTURE_LOCK}"; } 2>/dev/null || { LOCK_BUSY=1; return 1; }
     while ! flock -n 8 2>/dev/null; do
         n=$(( n + 1 ))
         if [ "${n}" -ge 50 ]; then
             exec 8>&-
-            log_message "another capture has held ${CAPTURE_LOCK} for five seconds; going on under detection alone" "false" "WARN"
+            LOCK_BUSY=1
+            log_message "another capture has held ${CAPTURE_LOCK} for five seconds; this run does not commit" "false" "WARN"
             return 1
         fi
         sleep 0.1
@@ -250,16 +260,23 @@ finish() {
     # never grow past one line per mode. Assembled in a temp file in the same
     # directory and moved into place, so a reader never sees a torn stamp; a
     # one-line stamp from before this is simply its mode's line.
-    # Under the commit lock (PL-067): the stamp is a read-modify-rename too.
-    capture_lock
-    {
-        awk -v m="${mode}" 'NF >= 3 { f = $3; sub(/!.*$/, "", f); if (f != m) print }' \
-            "${CACHE}/last-capture" 2>/dev/null
-        printf '%s %s %s %s emu-exit=%s %s/%s\n' "${now}" "${rc}" "${mode}${CARD}" "${UNIT:--}" \
-            "${EXITCODE:-?}" "${emu:--}" "${core:--}"
-    } > "${CACHE}/.last-capture.$$" 2>/dev/null \
-        && mv -f "${CACHE}/.last-capture.$$" "${CACHE}/last-capture" 2>/dev/null \
-        || rm -f "${CACHE}/.last-capture.$$" 2>/dev/null
+    # Under the commit lock (PL-067): the stamp is a read-modify-rename too,
+    # and one written without it can drop another run's line (G-A-04). Not
+    # written only when another capture is known to hold the lock -- every
+    # way capture_lock fails sets LOCK_BUSY -- so a finish() lifted on its
+    # own (tools/cloud-capture-stamp-test) still writes its stamp.
+    if capture_lock || [ "${LOCK_BUSY:-0}" != 1 ]; then
+        {
+            awk -v m="${mode}" 'NF >= 3 { f = $3; sub(/!.*$/, "", f); if (f != m) print }' \
+                "${CACHE}/last-capture" 2>/dev/null
+            printf '%s %s %s %s emu-exit=%s %s/%s\n' "${now}" "${rc}" "${mode}${CARD}" "${UNIT:--}" \
+                "${EXITCODE:-?}" "${emu:--}" "${core:--}"
+        } > "${CACHE}/.last-capture.$$" 2>/dev/null \
+            && mv -f "${CACHE}/.last-capture.$$" "${CACHE}/last-capture" 2>/dev/null \
+            || rm -f "${CACHE}/.last-capture.$$" 2>/dev/null
+    else
+        log_message "the commit lock is busy; this run's stamp line (${mode}, rc ${rc}) was not written" "false" "WARN"
+    fi
     # A run that completed is the last known good state; the manifests moved
     # aside as unreadable before it (manifest-<id>.json.corrupt-<epoch>) are
     # the previous one and go (D-CLOUD-078) -- once a good manifest stands in
@@ -1536,8 +1553,19 @@ if [ ! -s "${TMP}" ] || ! "${JQ}" -e . "${TMP}" >/dev/null 2>&1; then
 fi
 
 # The check, the rename and the GC below are one step under the commit lock
-# (PL-067); detection still decides who wins.
-capture_lock
+# (PL-067); detection still decides who wins. A run that cannot have the
+# lock does not commit (G-A-04): it re-runs once, as a run that lost to
+# another writer does, and then is left to the next run.
+if ! capture_lock; then
+    rm -f "${TMP}" 2>/dev/null
+    if [ -z "${CLOUD_CAPTURE_RETRY}" ] && [ "${MODE}" != "full" ]; then
+        log_info "the commit lock is busy; re-running once"
+        cleanup
+        CLOUD_CAPTURE_RETRY=1 exec "$0" "${ORIG_ARGS[@]}"
+    fi
+    log_error "the commit lock stayed busy; this run was discarded, and the next run records what it would have"
+    finish 1 "lock-busy"
+fi
 if [ "$(stat -c '%i %Y' "${MANIFEST}" 2>/dev/null)" != "${LIVE0}" ]; then
     rm -f "${TMP}" 2>/dev/null
     if [ -z "${CLOUD_CAPTURE_RETRY}" ] && [ "${MODE}" != "full" ]; then
