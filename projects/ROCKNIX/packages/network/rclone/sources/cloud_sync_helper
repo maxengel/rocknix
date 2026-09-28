@@ -539,14 +539,18 @@ main() {
   # maintainer's baseline of five retries and one transfer at a time
   # (D-CLOUD-121) shipped the same day. Same shape as above: rewritten only
   # while it is still exactly the first-cut value, once, with a marker.
+  # Straight to today's value (#308 gpt F-CS-29): this runs after
+  # update_cloud_sync_config's 20 s -> 90 s step (D-CLOUD-137), which matches
+  # only the suffixed 20 s value, so writing the suffixed 20 s here left the
+  # first cut on 20 s until the helper's next run.
   if [ -f "/storage/.config/cloud_sync.conf" ] \
      && [ ! -f "/storage/.config/.cloud_sync-sync-net-opts-five-applied" ] \
      && grep -qF 'RCLONE_SYNC_NET_OPTS="--contimeout 5s --timeout 5s --retries 1 --max-duration 20s"' \
              /storage/.config/cloud_sync.conf; then
-    sed -i 's|^RCLONE_SYNC_NET_OPTS=.*|RCLONE_SYNC_NET_OPTS="--contimeout 5s --timeout 5s --retries 1 --max-duration 20s --low-level-retries 5 --transfers 1"|' \
+    sed -i 's|^RCLONE_SYNC_NET_OPTS=.*|RCLONE_SYNC_NET_OPTS="--contimeout 5s --timeout 5s --retries 1 --max-duration 90s --low-level-retries 5 --transfers 1"|' \
         /storage/.config/cloud_sync.conf
     touch /storage/.config/.cloud_sync-sync-net-opts-five-applied 2>/dev/null
-    log_to_file "${log_file}" "RCLONE_SYNC_NET_OPTS held the first-cut automatic bound; set to five low-level retries and one transfer at a time (D-CLOUD-121)"
+    log_to_file "${log_file}" "RCLONE_SYNC_NET_OPTS held the first-cut automatic bound; set to today's: five low-level retries, one transfer at a time, a 90 s ceiling (D-CLOUD-121, D-CLOUD-137)"
   fi
 
   return 0

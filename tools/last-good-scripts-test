@@ -3805,4 +3805,14 @@ sed -i '/^RSYNCRMDIR=/d' "${RH}/storage/.config/cloud_sync.conf"
 rh_run
 grep -q '^RSYNCRMDIR=' "${RH}/storage/.config/cloud_sync.conf" && [ -e "${RH}/storage/.config/cloud_sync.conf.bak" ]; check $? "a run that does add a missing key still takes its .bak first and adds it" "RSYNCRMDIR $(grep -c '^RSYNCRMDIR=' "${RH}/storage/.config/cloud_sync.conf") line(s); .bak $([ -e "${RH}/storage/.config/cloud_sync.conf.bak" ] && echo taken || echo missing)"
 
+# A19. #308 gpt F-CS-29: a config still on the automatic sync's first cut
+#      (no retry or transfer bound, a 20 s ceiling) reaches the current 90 s
+#      in one helper run, not two.
+echo "    A19. #308 gpt F-CS-29: the oldest automatic bound reaches today's in one run"
+printf 'SAVESPATH="/storage/roms"\nSAVES_REMOTE="/ROCKNIX/Saves"\nBACKUPMETHOD="copy"\nRCLONE_SYNC_NET_OPTS="--contimeout 5s --timeout 5s --retries 1 --max-duration 20s"\nSYNC_CEILING_SECONDS=20\n' > "${RH}/storage/.config/cloud_sync.conf"
+rm -f "${RH}/storage/.config/.cloud_sync-sync-net-opts-five-applied"
+rh_run
+[ "$(sed -n 's/^RCLONE_SYNC_NET_OPTS=//p' "${RH}/storage/.config/cloud_sync.conf")" = '"--contimeout 5s --timeout 5s --retries 1 --max-duration 90s --low-level-retries 5 --transfers 1"' ] \
+    && [ "$(sed -n 's/^SYNC_CEILING_SECONDS=//p' "${RH}/storage/.config/cloud_sync.conf")" = 90 ]; check $? "one helper run takes the first-cut bound to --max-duration 90s with five retries and one transfer, and the ceiling to 90" "after one run: $(grep -E '^(RCLONE_SYNC_NET_OPTS|SYNC_CEILING_SECONDS)=' "${RH}/storage/.config/cloud_sync.conf" | tr '\n' ' ') -- the older migration ran after the newer and wrote the intermediate 20 s"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
