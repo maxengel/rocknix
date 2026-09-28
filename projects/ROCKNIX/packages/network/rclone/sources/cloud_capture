@@ -618,6 +618,10 @@ case "${MODE}" in
         fi
         if [ "${#M_PATHS[@]}" -eq 0 ]; then
             log_debug "no members on disk for ${UNIT}"
+            # An adopt answers for the copy it was given: with no member of
+            # the unit on disk the copy is not one, and 0 would be read as
+            # "recorded" (#308 gpt F-CS-22; the code audit #258 PL-016 gave).
+            [ "${MODE}" = "adopt" ] && finish 3 "adopt-not-a-member"
             finish 0
         fi
         ;;
@@ -1345,7 +1349,13 @@ if [ "${MODE}" = "adopt" ]; then
     else
         finish 1 "seal-failed"
     fi
-    if [ -n "${E_SHA[${_srcrel}]}" ] && [ "${E_SHA[${_srcrel}]}" != "-" ] && [ "${E_SHA[${_srcrel}]}" = "${_dsha}" ]; then
+    # The source's version is inherited only from a source of this unit:
+    # the same bytes recorded for another game's state are that game's
+    # history, and copying its entry filed this copy under the other game's
+    # unit, system and ROM (#308 gpt F-CS-22). Otherwise the copy is a
+    # version of unknown provenance of this unit, below.
+    if [ -n "${E_SHA[${_srcrel}]}" ] && [ "${E_SHA[${_srcrel}]}" != "-" ] && [ "${E_SHA[${_srcrel}]}" = "${_dsha}" ] \
+        && [ "${E_UNIT[${_srcrel}]}" = "${UNIT}" ]; then
         op_copy "${_srcrel}" "${_dest}" "${_dsize}" "${_dmt}" "${M_KIND[${_dest}]}" "${M_SLOT[${_dest}]}" "${_dshot}"
         N_COPY=1
         log_info "${_dest} is a copy of ${_srcrel}: the same version, recorded at the new path"
@@ -1356,7 +1366,7 @@ if [ "${MODE}" = "adopt" ]; then
         [ -n "${_entry}" ] || { log_error "could not render the entry for ${_dest}; not recorded this run"; finish 1 "render-failed"; }
         op_put "${_dest}" "${_entry}"
         N_PUT=1
-        log_info "${_dest} was copied from ${_srcrel}, which has no recorded version with these bytes: recorded with unknown provenance"
+        log_info "${_dest} was copied from ${_srcrel}, which has no recorded version of this game with these bytes: recorded with unknown provenance"
     fi
 fi
 

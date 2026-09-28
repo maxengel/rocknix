@@ -3545,4 +3545,15 @@ sa_run "${CP}" cloud_capture --full
 cp_exit
 [ -s "${CPM}" ] && [ -z "$(ls "${CP}/storage/.cache/cloud_sync/" | grep -F 'manifest-QA-deadbeef01.json.corrupt-')" ]; check $? "and the next run that writes a good manifest removes it (rc ${RC})" "manifest: $([ -s "${CPM}" ] && echo written || echo missing); cache: $(ls "${CP}/storage/.cache/cloud_sync" | tr '\n' ' ')"
 
+# #308 gpt F-CS-22: --adopt inherits provenance only from a source of the
+# same unit, and a unit with nothing on disk is "not a member" (3), never 0.
+cp_seed
+echo "same bytes" > "${CP}/storage/roms/savestates/gb/Other.state1"
+sa_run "${CP}" cloud_capture --system gb --rom /storage/roms/gb/Other.gb --emulator retroarch --core gambatte --started 0 --exit 0
+cp "${CP}/storage/roms/savestates/gb/Other.state1" "${CP}/storage/roms/savestates/gb/Game.state2"
+sa_run "${CP}" cloud_capture --adopt /storage/roms/savestates/gb/Game.state2 --from /storage/roms/savestates/gb/Other.state1 --system gb --rom /storage/roms/gb/Game.gb
+[ "$(jq -r '.entries["savestates/gb/Game.state2"].unit' "${CPM}" 2>/dev/null)" = "gb:Game" ]; check $? "gpt F-CS-22: a copy adopted --from another game's state is filed under its own game, not the source's (rc ${RC})" "Game.state2's unit: $(jq -r '.entries["savestates/gb/Game.state2"].unit' "${CPM}" 2>/dev/null) -- the source's entry was inherited wholesale because the bytes matched"
+sa_run "${CP}" cloud_capture --adopt /storage/roms/savestates/nes/None.state1 --from /storage/roms/savestates/nes/None.state0 --system nes --rom /storage/roms/nes/None.nes
+[ "${RC}" -eq 3 ]; check $? "gpt F-CS-22: an adopt for a game with nothing on disk answers 3, not a member, rather than 0 (rc ${RC})" "rc ${RC} -- 0 read as recorded for a copy nothing recorded"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
