@@ -3459,4 +3459,21 @@ F2_CALL='echo "${PKG_CMAKE_OPTS_TARGET}"'
 [[ "$(f2_source "${F2}/ryzenadj.mk" GENERIC_X64 x86_64)" == *"'"* ]] && F2_BAD+=" ryzenadj:quoted-cmake-option"
 [ -z "${F2_BAD}" ]; check $? "both carry the JELOS line and a ROCKNIX line, and ryzenadj's -ludev reaches cmake as itself" "${F2_BAD}"
 
+# F2-12. #308 10-packages claude F-PB-21: a duplicated sentence (woff2), a
+# duplicated paragraph (gst-plugins-base), a stale claim (cairo's GL
+# backends; cairo 1.18 has none), and an empty, non-executable quirk file.
+echo "  F2-12. the recipes' comments say each thing once and only what is true; no empty quirk ships (#308 F-PB-21)"
+F2_BAD=""
+src_of packages/graphics/woff2/package.mk "${F2}/woff2.mk"
+[ "$(sed 's/^# *//' "${F2}/woff2.mk" | tr '\n' ' ' | grep -o 'has not tagged a release since 2020' | wc -l)" -le 1 ] || F2_BAD+=" woff2:twice"
+[ "$(grep -c 'segfaults' "${GR}/${F2P}/multimedia/gstreamer/gst-plugins-base/package.mk")" -le 1 ] || F2_BAD+=" gst-plugins-base:appsink-paragraph-twice"
+src_of "${F2P}/graphics/cairo/package.mk" "${F2}/cairo.mk"
+grep -q 'GL/GLES backends' "${F2}/cairo.mk" && F2_BAD+=" cairo:GL-backends"
+if [ "${OLD}" -eq 1 ]; then
+    git -C "${ROOT}" ls-tree -r -l "${BASE_REF}" -- "${F2P}/hardware/quirks/devices/" | awk '$4 == 0 {print $5}' | grep -q . && F2_BAD+=" an-empty-quirk"
+else
+    [ -n "$(find "${ROOT}/${F2P}/hardware/quirks/devices" -type f -empty 2>/dev/null)" ] && F2_BAD+=" an-empty-quirk"
+fi
+[ -z "${F2_BAD}" ]; check $? "woff2 says its release date once, gst-plugins-base its appsink story once, cairo no GL backends, and no quirk file is empty" "${F2_BAD}"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
