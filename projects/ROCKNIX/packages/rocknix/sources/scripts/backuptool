@@ -213,6 +213,13 @@ else
     COMPRESSLOCATIONS=("${DEFAULT[@]}")
 fi
 
+# A member name as a pattern that matches only itself: tar's -X and unzip's
+# -x read their arguments as globs, so a name holding [, ], * or ? would
+# match something else, or nothing.
+glob_literal() {
+    printf '%s' "${1}" | sed 's/[][*?]/[&]/g'
+}
+
 # Is this archive whole? tar lists every member or fails; busybox unzip has
 # no -t, so for a zip the listing is the test (a truncated zip has no central
 # directory to list) -- and the -t is tried first for an unzip that has it.
@@ -493,8 +500,11 @@ write_archive() {
     fi
 
     # How many sanitised copies were staged in place of a file held back,
-    # for the member count below.
-    local SANITISED=0
+    # for the member count below; and whether every one of them was written
+    # whole. A sanitiser that dies part-way (a read error, a full card)
+    # leaves a copy that exists and is short, which the count cannot see, so
+    # each one's status is read (#307 PL-036, the gpt seat's F-BR-06).
+    local SANITISED=0 SANITISE_RC=0
     if [ "${STRIP}" = "1" ]
     then
         # Wifi keys, the root password, and account passwords/tokens must
@@ -503,7 +513,7 @@ write_archive() {
         then
             mkdir -p "${STAGING}/storage/.config/system/configs"
             sed -E '/^[^#]*\.(key|password|token)=/d' "${SYSCFG}" \
-                > "${STAGING}/storage/.config/system/configs/system.cfg"
+                > "${STAGING}/storage/.config/system/configs/system.cfg" || SANITISE_RC=1
             SANITISED=$((SANITISED + 1))
         fi
 
@@ -517,8 +527,10 @@ write_archive() {
         if grep -qxF "${ESCFG}" "${SECRETLIST}"
         then
             mkdir -p "${STAGING}/storage/.config/emulationstation"
+            # grep's 1 is "no line survived" (an empty copy), not a failure.
             grep -v -e 'name="ScreenScraperPass"' -e 'name="ScreenScraperDevPass"' -e 'name="IGDBSecret"' "${ESCFG}" \
                 > "${STAGING}/storage/.config/emulationstation/es_settings.cfg"
+            [ $? -le 1 ] || SANITISE_RC=1
             SANITISED=$((SANITISED + 1))
         fi
 
@@ -532,7 +544,7 @@ write_archive() {
         then
             mkdir -p "${STAGING}/storage/.config/retroarch"
             sed -E 's/^([a-z_]*(password|token|stream_key)) = ".*"$/\1 = ""/' "${RACFG}" \
-                > "${STAGING}/storage/.config/retroarch/retroarch.cfg"
+                > "${STAGING}/storage/.config/retroarch/retroarch.cfg" || SANITISE_RC=1
             SANITISED=$((SANITISED + 1))
         fi
 
@@ -550,12 +562,19 @@ write_archive() {
             then
                 mkdir -p "${STAGING}${CANDIDATE%/*}"
                 sed -E 's/^([A-Za-z_]*(Token|Password)[[:space:]]*=[[:space:]]*).*$/\1/' "${CANDIDATE}" \
-                    > "${STAGING}${CANDIDATE}"
+                    > "${STAGING}${CANDIDATE}" || SANITISE_RC=1
                 BLANKED=$((BLANKED + 1))
             fi
         done
         [ "${BLANKED}" -gt 0 ] && logger -t backuptool "blanked the RetroAchievements token in ${BLANKED} emulator settings file(s) (#169)"
         SANITISED=$((SANITISED + BLANKED))
+    fi
+    if [ "${SANITISE_RC}" -ne 0 ]
+    then
+        logger -t backuptool "a sanitised copy could not be written whole; nothing written"
+        rm -rf "${STAGING}"
+        rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
+        return 2
     fi
 
     # The staged tree is counted against what it was handed: every file
@@ -755,14 +774,19 @@ case "${VERB}" in
             # files are skipped here too (#169), as in the tar branch.
             SKIP=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIRS[@]#/}"'*')
             SKIPPED=0
-            for ENTRY in $(unzip -l "${BACKUPFILE}" 2>/dev/null | awk 'NF>3 && $4 ~ /^storage\// {print $4}')
+            # One member per line, each whole: the name is everything from
+            # the fourth column on. Until #307 PL-036 this read $4 and split
+            # the result again, so "my link.cfg" was tested as "my" and a
+            # live symlink with a space in its name was not skipped -- the
+            # abort this branch exists to prevent.
+            while IFS= read -r ENTRY
             do
                 if [ -L "/${ENTRY}" ]
                 then
-                    SKIP+=("${ENTRY}")
+                    SKIP+=("$(glob_literal "${ENTRY}")")
                     SKIPPED=$((SKIPPED + 1))
                 fi
-            done
+            done < <(unzip -l "${BACKUPFILE}" 2>/dev/null | awk 'NF > 3 && $4 ~ /^storage\// { print substr($0, index($0, $4)) }')
             if [ "${SKIPPED}" -gt 0 ]
             then
                 note "KEEPING ${SKIPPED} FILE(S) THE SYSTEM PROVIDES THAT THIS OLDER BACKUP WOULD HAVE REPLACED."
