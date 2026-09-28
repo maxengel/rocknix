@@ -780,6 +780,10 @@ idle_timeout_seconds() {
 # what; this is the answer for a reader that takes the last line --
 # tools/cloud-round-trip's vocabulary gate does, and "Settings backup:
 # COMPLETED" was not a sentence it accepts (#153, D-CLOUD-126).
+# A saves folder at the cloud's root keeps no record of the cloud saves a
+# backup replaces (G-A-09); a run that completed says so after Completed.
+REPLACED_NOT_KEPT=0
+REPLACED_NOT_KEPT_LINE="Your saves folder is your cloud's top folder, so no replaced cloud saves are kept."
 run_outcome_line() {
     local rc="$1" why
     case "${rc}" in
@@ -788,6 +792,8 @@ run_outcome_line() {
             # said so where it was skipped (D-CLOUD-090).
             if [ "${SYSTEM_ONLY}" -eq 1 ] && [ "${SETTINGS_NOTHING_RAN}" -eq 1 ]; then
                 echo "Skipped: there's no settings backup on this device to send yet."
+            elif [ "${REPLACED_NOT_KEPT}" -eq 1 ]; then
+                echo "Completed. ${REPLACED_NOT_KEPT_LINE}"
             else
                 echo "Completed."
             fi ;;
@@ -1631,11 +1637,16 @@ backup_game_saves() {
     # destination, and rclone refuses the run outright ("destination and
     # parameter to --backup-dir mustn't overlap", exit 7) -- every saves
     # backup failed for such a config (#308 claude F-CS-25). The backup goes
-    # on without the one-cycle record, and the log says so.
+    # on without the one-cycle record -- rclone can keep none on that
+    # remote -- and the player is told so, on the console and in the run's
+    # outcome line (the audit of the fixes, G-A-09: it was said only in the
+    # log, which nobody is told the path of).
     case "${SAVES_REMOTE}" in
         ""|"/")
             replaced_root=""
+            REPLACED_NOT_KEPT=1
             log_message "the saves folder is the cloud's root: no replaced-saves folder is kept (it would sit inside the saves folder)" "false" "WARN"
+            log_message "${REPLACED_NOT_KEPT_LINE}" "true" "WARN"
             ;;
         *)
             replaced_stamp=$(date +%Y_%m_%d-%H%M%S)

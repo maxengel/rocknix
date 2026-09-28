@@ -4240,4 +4240,35 @@ sa_run "${M}" cloud_content_restore --match --apply
 [ "${m35_prc}" -eq 0 ] && [ "${RC}" -eq 0 ] && grep -qx '>>> unit gb|1|2' "${M}/out" && grep -qx '>>> unit ghost-never-a-system|2|2' "${M}/out" \
     && grep -q 'Nothing to remove from ghost-never-a-system' "${M}/out"; check $? "checked first, --match --apply announces both chosen systems as ITEM i OF 2 and says Nothing to remove for the one with nothing to do (preview rc ${m35_prc}, apply rc ${RC})" "preview rc ${m35_prc}, apply rc ${RC}; units: $(grep '^>>> unit' "${M}/out" | tr '\n' '|'); out: $(sa_tail "${M}")"
 
+# A36. The audit of the fixes (#307 follow-up 2; seats/A-gpt.md G-A-09,
+#      High): a saves folder at the cloud's root backs up with no record
+#      of what it replaced -- rclone refuses any --backup-dir there, since
+#      every folder of that remote is inside the destination (A22) -- and
+#      that was said only in the log. The player is told, on the console
+#      and in the run's outcome line; the register carries the exception.
+echo "    A36. G-A-09 (gpt): a backup that can keep no record of what it replaced says so where it is read"
+RX=$(sa_new ga09); sa_script "${RX}" cloud_backup cloud_saves_root
+cat > "${RX}/storage/.config/cloud_sync.conf" <<'EOS'
+SAVESPATH="/storage/roms"
+SAVES_REMOTE="/"
+SETTINGS_BACKUPS="/storage/roms/backup"
+SETTINGS_REMOTE="/Backups"
+BACKUPMETHOD="copy"
+RESTOREMETHOD="copy"
+BACKUPFILE_BACKUP_OPTION="no"
+RCLONEOPTS="--progress --log-file /var/log/cloud_sync.log --filter-from /storage/.config/cloud_sync-rules.txt"
+RCLONE_NET_OPTS="--contimeout 5s --timeout 10s --low-level-retries 2 --retries 1"
+LOG_LEVEL="INFO"
+EOS
+printf -- '+ /**/*.srm\n- /**\n' > "${RX}/storage/.config/cloud_sync-rules.txt"
+mkdir -p "${RX}/storage/roms/gb" "${RX}/cloud/gb"; echo "played here" > "${RX}/storage/roms/gb/A.srm"; echo "older" > "${RX}/cloud/gb/A.srm"
+ga09_line="Your saves folder is your cloud's top folder, so no replaced cloud saves are kept."
+sa_run "${RX}" cloud_backup --yes --saves-only
+[ "${RC}" -eq 0 ] && grep -qx "played here" "${RX}/cloud/gb/A.srm" && sed 's/\x1b\[[0-9;]*m//g' "${RX}/out" | grep -qxF "${ga09_line}"; check $? "a backup to a saves folder at the root says on the console that no replaced cloud saves are kept (rc ${RC})" "rc ${RC}; out: $(sa_tail "${RX}" 8) -- the loss of the one-cycle record was said only in the log"
+[ "$(sa_outcome "${RX}")" = "Completed. ${ga09_line}" ]; check $? "and its outcome line says it too: '$(sa_outcome "${RX}")'" "outcome line '$(sa_outcome "${RX}")'"
+sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE="/ROCKNIX/Saves"|' "${RX}/storage/.config/cloud_sync.conf"
+mkdir -p "${RX}/cloud/ROCKNIX/Saves/gb"; echo "older" > "${RX}/cloud/ROCKNIX/Saves/gb/A.srm"
+sa_run "${RX}" cloud_backup --yes --saves-only
+[ "${RC}" -eq 0 ] && [ "$(sa_outcome "${RX}")" = "Completed." ] && ! grep -qF "top folder" "${RX}/out"; check $? "a saves folder with a sibling keeps its record and says nothing of the kind (rc ${RC})" "rc ${RC}; outcome '$(sa_outcome "${RX}")'"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
