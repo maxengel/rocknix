@@ -271,3 +271,71 @@ One commit on `feature/pl-d`, on top of `66370fab6b`. The new pre-commit hook ra
 The mode check reads the git index, or `BASE_REF`'s tree under `--old`, so it also runs when section t is skipped.
 
 **Already written:** nothing on a device.
+
+## Follow-up 3 (the audit of the fixes, 2026-09-28: seats D-claude, D-gpt, and two F2-gpt findings in my files)
+
+Thirteen commits on `feature/pl-d`, on top of `156c2acffa`:
+
+```
+a78a72269f cheevos_armsx2.sh: a failed rename of secrets.ini is handled as a failure
+adf852a4b7 raofflineproxy, cheevos_ppsspp.sh: only a listener IPv4 can reach counts
+93d173e20f raofflineproxy-cache-images: an absent badge is asked for again next day
+8cdaf20b29 tools/last-good-scripts-test: F-EM-07's citation checked against PPSSPP
+d803743338 raofflineproxy-ctl: a top-up clears only the marker it listed for
+dfdc3a6891 raofflineproxy-ctl: one rule for a ready game, and a count that fails closed
+6dc15629d6 tools/last-good-scripts-test: listening's usage error is exit 64
+ebcbf19817 raofflineproxy-ctl: the scan cursor moves only when kept, and says so
+0c4be4d9ba raofflineproxy: the start limit holds five starts that never listen
+815f8184d5 tools/last-good-scripts-test: patch 016's classes against a real server
+81ec471c24 raofflineproxy-ctl: a scan runs its image pass whether or not it cached
+22960947e0 raofflineproxy-ctl: a top-up whose listing failed could not finish
+c723147a01 raofflineproxy: say how a cancel reaches the image pass, and test it
+```
+
+The new pre-commit hook passed on every commit.
+
+**Suite:** `tools/last-good-scripts-test` at `a78a72269f` ends `PASSED` with 493 PASS lines and 0 FAIL.
+- **Written first, seen to fail:** new cases D22–D32, plus rewrites of D2's first check, D12a, D12b and D15.
+  - At `156c2acffa` they gave `15 CHECK(S) FAILED`.
+  - The G-F2-07 case, written later, gave `1 CHECK(S) FAILED` at `adf852a4b7`.
+- **Against the base:** `BASE_REF=417dcd8610 --old` gives `86 CHECK(S) FAILED`, all 86 in block D and none in other sections.
+- **One flaky check that is not mine:** section x's `rocknix-corekeep` "floor plus the cap" check failed once in 14 runs. It depends on free space on the shared `/tmp`, which other streams' runs also use, and it passed on the rerun and in every other run.
+
+### Outcomes, finding by finding
+
+| Seat · finding | Outcome |
+| --- | --- |
+| D-claude G-D-01 (ARMSX2 rows "no hunk in the diff") | **Withdrawn, as you instructed.** This is a gap in the audit packet, not in my work: the rewrite is on `next` in `a7fa6ee786`, and you have read it. |
+| D-claude G-D-02 = D-gpt G-D-01 (a scan completes without doing the image work) | **Fixed** in `81ec471c24`. The scan now runs the image pass whenever its jobs were worked through, whether or not it cached a game. If the pass has 10 seconds or less left, the run ends `TOOK_TOO_LONG` instead of passing. Case D22. Before: a scan whose jobs were all skipped ran the pass 0 times and returned rc 0, and a top-up with 7 s left returned rc 0. After: rc 1 with `SOME_IMAGES_NOT_SAVED` while the pass fails and rc 0 once it fetches; the top-up returns rc 1 with `TOOK_TOO_LONG`. **Withdrawn sub-part:** gpt's "no helper beside the ctl" branch, because `package.mk`'s `makeinstall_target` installs the helper to `/usr/bin` with mode 0755, and section t's early cases run the ctl without it on purpose. |
+| D-claude G-D-03 (under real `timeout` the cancel works by SIGTERM forwarding; the comment was wrong and untested) | **Fixed** in `c723147a01`. The helper's and the ctl's comments now describe the shipped path. Case D23 runs that path: GNU coreutils' `timeout` (called by name as `gnutimeout`, because this host's `timeout` is uutils), the run in its own session via `setsid`, and SIGINT sent to the whole group. Result: rc 130 and `CANCELLED` 0.02 s after the pass began; the helper received SIGTERM and never saw the SIGINT. At base the same case took 20.08 s and the helper did see the SIGINT. |
+| D-claude G-D-04 (patch 016 tested only against a stubbed fetcher) | **Evidence case added** in `815f8184d5`; no code change was needed. D24 runs the real `fetch_static_asset` against an HTTP server on loopback: 404, 410 and a 301 to a 404 come back `absent`; a 503 and a refused connection `transient`; a whole PNG `cached`. |
+| D-claude G-D-05 (the start limit never trips) | **Fixed** in `0c4be4d9ba`: `StartLimitIntervalSec=300`, which holds five failed starts of about 35 s each (175 s). Case D25. Before: 60 < 175; after: 300 ≥ 175. |
+| D-claude G-D-06 (the cursor moves at listing time) + D-gpt G-D-06 (a failed cursor write is swallowed) | **Fixed** in `ebcbf19817`. The listing now only proposes the cursor (`scan-cursor.next`). The ctl keeps it, and reads it back, only after a run that worked through its jobs. A cut walk whose cursor could not be kept ends rc 1 with `SOMETHING_WENT_WRONG` and does not say TRUNCATED; the old cursor stays. Case D26. Before: a scan cancelled after its listing moved the next scan on to g09–g11, and an unwritable cursor gave rc 0 with `note TRUNCATED`. After: the same slice again after a cancel; rc 1 with no TRUNCATED; the old cursor (g08.gbc) kept. |
+| D-claude G-D-07 (`exit ${EX_USAGE}` may be undefined) | **Withdrawn, with a guard** in `6dc15629d6`. The constant is defined: `EX_USAGE=64` is in the ctl's sysexits block, line 306 at `156c2acffa`. Case D27: `listening --wait abc` exits 64. |
+| D-claude G-D-08 (two definitions of a "whole" game; every sets body parsed on every listing) + D-gpt G-D-04 (a game a launch cached counted as newly added) + D-gpt G-D-05 (a failed comparison read as zero) | **Fixed** in `dfdc3a6891`. One rule now defines a ready game: the account's unlocks row plus an achievementsets row of the game. The GameId is read from the first 512 characters, with the whole body parsed only as a fallback. `games_made_ready` now checks grep's own exit status. Case D28. Before: `added=3`, and the comparison answered "0" with rc 0. After: `added=2`, and nothing with rc 1. |
+| D-claude G-D-09 (`history_path` may be read as a playlist by another caller) | **Withdrawn.** It has one caller, `HIST="$(history_path)"` (raofflineproxy-ctl:1928 at `156c2acffa`), which uses the path only with `-e` and `-nt`. A PPSSPP settings visit counting as "a game played" is an accepted cost: one probe and one recently-played pass, which every link return paid before D-RA-035. |
+| D-claude G-D-10 (the log still says "listed once") | **Fixed** in `d803743338`. The line now adds "-- again after the half hour if this run does not finish"; the words section t's check reads are kept. Case D29. |
+| D-claude G-D-11 (F-EM-07 closed only by a comment) | **Evidence check added** in `8cdaf20b29`. D30 checks the pinned PPSSPP source when it is on the machine: `AchievementsHost` is a ConfigSetting and is handed to `rc_client_set_host`. It passes against `ppsspp-sa-afbc66a3`, and the script's comment must name that pin. **F-EM-07 is now "consumption proved at the source; the launch through the proxy is owed on the guest."** |
+| D-claude G-D-12 (`IMAGE_CACHED` documented for "there already") | **Withdrawn, with a case** in `815f8184d5`. An image already cached falls through to the function's single `return IMAGE_CACHED`; D24 pre-seeds a file and gets `cached`. |
+| D-claude G-D-13 (a top-up whose listing failed exits 0) | **Fixed** in `22960947e0`. It now ends rc 1 with `LIBRARY_UNREADABLE`, and the recently played pass still runs. D2's first check is rewritten. Before: rc 0; after: rc 1. |
+| D-claude G-D-14 (a 404 badge silenced for 30 days) | **Fixed** in `93d173e20f`: the recheck is now 1 day. Case D31. Before: an entry 2 days old was not asked for; after: it is, and one an hour old still is not. |
+| D-gpt G-D-02 = F2-gpt G-F2-02 (an IPv6-loopback listener read as 127.0.0.1) | **Fixed** in `adf852a4b7`, in both the ctl's `listening` and `cheevos_ppsspp.sh`. Only 127.0.0.1, 0.0.0.0 and ::ffff:127.0.0.1 on port 8080 now count. D12b and D15 are rewritten. Before: ::1 alone read as listening, and PPSSPP was routed to it. After: not listening, and PPSSPP launches direct. |
+| D-gpt G-D-03 (an older top-up clears a newer index marker) | **Fixed** in `d803743338`. The marker now holds a token (time, pid, a random number). A top-up removes it only if it still holds the token read at its own listing. Case D29. Before: the marker was gone; after: it is kept. |
+| F2-gpt G-F2-07 (ARMSX2's rename sits outside its failure handler) | **Fixed** in `a78a72269f`. The rename is now part of the checked operation. Case D32 mounts `secrets.ini` read-only over itself. Before: one temp file left and nothing logged. After: no temp file, `secrets.ini` unchanged, and "could not be rewritten" in the log. |
+
+**Already written** (from each commit): none of these fixes changes what devices already hold in a way that needs migrating.
+- An existing `scan-cursor`, an empty `index-pending`, an `absent` record in the old two-field format, and stamps already written are all read as before.
+- `ppsspp.ini` is rewritten at every launch.
+- A leftover `secrets.ini.tmp.<pid>` is inert.
+
+**Still owed by the integrator:**
+- **Proofs on the guest:** PL-013's frame series, PL-059's page frame, a PSP launch through the proxy, and boot-to-carousel timing with the unit's readiness wait.
+- **Decision-register rows:**
+  - the storm guard on the index marker;
+  - absent images, with the 1-day recheck;
+  - an image pass left with no time counting as `TOOK_TOO_LONG`;
+  - a failed listing counting as `LIBRARY_UNREADABLE`;
+  - the cursor being kept only after the run's jobs are done;
+  - the single rule for a ready game;
+  - only IPv4-reachable listeners counting as listening.
+- **Stream E2:** wording for `SOME_IMAGES_NOT_SAVED`, and showing a null `unlocked` as unknown.
