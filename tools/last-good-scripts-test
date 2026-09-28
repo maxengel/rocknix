@@ -3028,7 +3028,8 @@ ckf 65536 retroarch 1024;                printf '%s' "${NOTE}" | grep '^dump' | 
 #       bucket-shaped: an owner's README survives a listing that fails, and
 #       a listing that fails writes nothing (PL-047); on a bucket, where a
 #       missing key lists as nothing, the READMEs are written (#308 claude
-#       F-RS-09).
+#       F-RS-09). Every rclone call it and --content-location make carries
+#       the listing bound (#308 claude F-RS-13, gpt F-RS-19).
 echo "  C. the cloud sign-in broker and setup (audit #307 stream C)"
 CS="${TMP}/C"; mkdir -p "${CS}/src"
 for rel in cloud_setup cloud_oauth cloud_remote cloud_device_id; do
@@ -3193,5 +3194,14 @@ c2 --seed-folders
 echo "mine" > "${C2}/cloud/ROCKNIX/Saves/README.txt"
 c2 --seed-folders
 [ "$(cat "${C2}/cloud/ROCKNIX/Saves/README.txt")" = "mine" ]; check $? "and an owner's README in a bucket is left alone" "bucket: the owner's README now reads: $(head -1 "${C2}/cloud/ROCKNIX/Saves/README.txt")"
+
+# #308 claude F-RS-13, gpt F-RS-19: one run, three low-level retries, on every
+# call these two make -- not rclone's three runs of ten under the wizard's
+# spinner (the bound --check already carries, #273).
+unbounded() { awk '/^(lsf|lsd|mkdir|copyto) / && !(/--low-level-retries 3/ && /--retries 1/)' "${C2}/rec/argv"; }
+c2reset path; c2 --seed-folders
+[ -s "${C2}/rec/argv" ] && [ -z "$(unbounded)" ]; check $? "every rclone call --seed-folders makes carries the listing bound ($(grep -cE '^(lsf|mkdir|copyto) ' "${C2}/rec/argv") calls)" "unbounded: $(unbounded | head -2 | tr '\n' '|')"
+rm -f "${C2}/rec/argv"; c2 --content-location
+[ -s "${C2}/rec/argv" ] && [ "$(grep -c '^lsf ' "${C2}/rec/argv")" -ge 2 ] && [ -z "$(unbounded)" ]; check $? "and so does every listing --content-location makes ($(grep -c '^lsf ' "${C2}/rec/argv") listings)" "unbounded: $(unbounded | head -2 | tr '\n' '|')"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

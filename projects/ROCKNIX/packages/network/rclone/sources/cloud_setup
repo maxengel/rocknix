@@ -370,10 +370,13 @@ case "$1" in
         # ours. Anything else at the root is the owner's own business.
         LOCAL=$(cloud_content_backup --list 2>/dev/null | tr '\n' ' ')
         AT_PATH=0; AT_ROOT=0; ROOT_DIRS=""
+        # Both listings carry the bound every listing here does (#308 claude
+        # F-RS-13): rclone's own defaults are three runs of ten retries,
+        # under a page waiting on the answer.
         if [ -n "${CP}" ]; then
-            AT_PATH=$(rclone lsf --dirs-only "${REMOTE}${CP#/}" 2>/dev/null | wc -l)
+            AT_PATH=$(rclone lsf --dirs-only "${REMOTE}${CP#/}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | wc -l)
         fi
-        for d in $(rclone lsf --dirs-only "${REMOTE}" 2>/dev/null | sed 's:/$::'); do
+        for d in $(rclone lsf --dirs-only "${REMOTE}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | sed 's:/$::'); do
             case " ${LOCAL} " in
                 *" ${d} "*) AT_ROOT=$((AT_ROOT + 1)); ROOT_DIRS="${ROOT_DIRS}${d} " ;;
             esac
@@ -536,7 +539,9 @@ case "$1" in
             # which is how S3 itself represents a folder -- without it a
             # bucket remote silently keeps nothing, and mkdir still exits 0.
             # Ignored by path-based backends, so it costs nothing there.
-            rclone mkdir --s3-directory-markers "${REMOTE}${d}" 2>/dev/null
+            # Bounded like the listings (#308 claude F-RS-13, gpt F-RS-19):
+            # up to two dozen calls under one 90 s box in the interface.
+            rclone mkdir --s3-directory-markers "${REMOTE}${d}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null
         done
 
         seed_note() {
@@ -604,8 +609,8 @@ case "$1" in
             # success for any path at all, so the MISSING branch could never
             # be reached -- the report would have been unconditionally OK,
             # which is the shape of an assertion that cannot fail.
-            if [ -n "$(rclone lsf "${REMOTE}${d}" 2>/dev/null | head -1)" ] \
-               || rclone lsf --dirs-only "${REMOTE}${d%/*}/" 2>/dev/null | grep -qx "${d##*/}/"; then
+            if [ -n "$(rclone lsf "${REMOTE}${d}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | head -1)" ] \
+               || rclone lsf --dirs-only "${REMOTE}${d%/*}/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | grep -qFx -- "${d##*/}/"; then
                 echo "OK ${d}"
             else
                 echo "MISSING ${d}"
