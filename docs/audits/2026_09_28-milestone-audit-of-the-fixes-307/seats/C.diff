@@ -1,0 +1,1453 @@
+diff --git a/packages/web/webkitgtk/package.mk b/packages/web/webkitgtk/package.mk
+index 6c986fdf88..d2d51100cf 100644
+--- a/packages/web/webkitgtk/package.mk
++++ b/packages/web/webkitgtk/package.mk
+@@ -70,12 +70,19 @@ pre_configure_target() {
+   # gstreamer-mpegts and gstreamer-gl hard requirements of video: the
+   # fork's gst-plugins-base builds GL and its gst-plugins-bad keeps the
+   # mpegts library for exactly this (fork #228, D-WORKFLOW-038).
++  # ENABLE_MINIBROWSER is OFF: it built WebKit's MiniBrowser -- an address
++  # bar, tabs, anywhere on the web -- into /usr/libexec/webkit2gtk-4.1 on
++  # every image, beside a sign-in window whose whole design is that the
++  # device has no browser (audit #308, claude F-RS-04). Nothing runs it. In
++  # 2.54.0 the option's only use is Tools/PlatformGTK.cmake's
++  # add_subdirectory(MiniBrowser/gtk), so OFF drops one leaf target and
++  # changes nothing the library is built from.
+   PKG_CMAKE_OPTS_TARGET="-DPORT=GTK \
+                          -DUSE_GTK4=OFF \
+                          -DUSE_SOUP2=OFF \
+                          -DENABLE_WAYLAND_TARGET=ON \
+                          -DENABLE_X11_TARGET=OFF \
+-                         -DENABLE_MINIBROWSER=ON \
++                         -DENABLE_MINIBROWSER=OFF \
+                          -DENABLE_INTROSPECTION=OFF \
+                          -DENABLE_WEBDRIVER=OFF \
+                          -DENABLE_DOCUMENTATION=OFF \
+diff --git a/packages/web/webkitgtk/patches/webkitgtk-0001-DocumentLoader-include-EventLoop.patch b/packages/web/webkitgtk/patches/webkitgtk-0001-DocumentLoader-include-EventLoop.patch
+index 1533cd1c8e..8551678a0e 100644
+--- a/packages/web/webkitgtk/patches/webkitgtk-0001-DocumentLoader-include-EventLoop.patch
++++ b/packages/web/webkitgtk/patches/webkitgtk-0001-DocumentLoader-include-EventLoop.patch
+@@ -1,3 +1,16 @@
++WebCore: DocumentLoader.cpp includes EventLoop.h, whose type it uses
++
++DocumentLoader.cpp calls eventLoop().queueTask() and never includes
++EventLoop.h. Upstream builds get the declaration transitively, through
++whichever source shares its unified-source bundle; which sources land
++in a bundle depends on the feature flags, and ROCKNIX's option set
++(packages/web/webkitgtk/package.mk) is not upstream's, so here
++EventLoopTaskGroup is an incomplete type and WebCore stops compiling
++(first met on 2.52.6 with the fork's cross gcc, object 8230 of 9097;
++carried since, and applied on 2.54.0). Including what the file uses is
++the fix upstream would take; no WebKit bug for it is recorded in the
++fork yet (ROCKNIX fork, 2026-08-30).
++
+ --- a/Source/WebCore/loader/DocumentLoader.cpp
+ +++ b/Source/WebCore/loader/DocumentLoader.cpp
+ @@ -53,6 +53,7 @@
+diff --git a/projects/ROCKNIX/packages/network/cloud-signin-window/sources/cloud-signin-window.c b/projects/ROCKNIX/packages/network/cloud-signin-window/sources/cloud-signin-window.c
+index 3e79c0ef3a..97e08d8649 100644
+--- a/projects/ROCKNIX/packages/network/cloud-signin-window/sources/cloud-signin-window.c
++++ b/projects/ROCKNIX/packages/network/cloud-signin-window/sources/cloud-signin-window.c
+@@ -7,20 +7,25 @@
+  * resolves on whichever machine is running the browser. If that is the
+  * player's phone, nothing is listening and they land on an error page they
+  * have to copy an address out of. So the browser runs here instead, where
+- * rclone's authorize listener actually is, and the player drives it from
+- * their phone over VNC.
++ * rclone's authorize listener actually is, and the player drives it with the
++ * handheld's own buttons -- cloud_oauth turns them into keys -- or types into
++ * it from their phone, whose keystrokes arrive as a keyboard (cloud_oauth's
++ * RemoteKeyboard). Nothing is mirrored. (This said "over VNC", the design
++ * the keyboard replaced; #308 claude F-RS-14.)
+  *
+  * This is deliberately not a browser. There is no address bar, no tabs, no
+  * downloads, and navigation is refused outside the provider's own host and
+  * the loopback redirect -- a handheld should not become a way to browse the
+  * web because we needed somebody to sign in to Dropbox.
+  *
+- *   cloud-signin-window <url> <allowed-host>
++ *   cloud-signin-window <url> <allowed-host> [--exit-hint TEXT]
++ *                       [--no-auto-keyboard]
+  */
+ 
+ #include <gtk/gtk.h>
+ #include <webkit2/webkit2.h>
+ #include <string.h>
++#include <strings.h>
+ 
+ #define OSK_ROWS 4
+ #define OSK_COLS 11
+@@ -64,6 +69,7 @@ typedef struct {
+     GtkWidget *keys[OSK_ROWS + 1][OSK_COLS];   /* +1: the extras row */
+     int row, col;
+     gboolean shift;
++    gboolean symbols;
+     char last_field[256];
+ } Osk;
+ 
+@@ -76,7 +82,21 @@ static const char *OSK_LOWER[OSK_ROWS] = {
+ static const char *OSK_UPPER[OSK_ROWS] = {
+     "!@#$%^&*()", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM+?/",
+ };
+-static const char *OSK_EXTRAS[] = { "shift", "space", "@", "del", "enter", "hide" };
++/* The rest of printable ASCII. The two layouts above lacked
++ * = : ; ' " , < > [ ] { } \ | ` and ~, so a password holding any of them
++ * could not be typed on the handheld at all (#308 gpt F-RS-12). A third
++ * layout, reached from its own key, rather than a longer shift cycle: the
++ * letters stay one press from wherever you are. Each row is as long as the
++ * lower-case one, because the keys are built from that one and relabelled;
++ * the last row repeats the punctuation an address or a password reaches
++ * for most. */
++static const char *OSK_SYMBOLS[OSK_ROWS] = {
++    "!@#$%^&*()", "-_=+[]{}\\|", ";:'\",.<>/", "?~`.,-_@/:",
++};
++#define OSK_TO_SYMBOLS "#+="
++#define OSK_TO_LETTERS "abc"
++static const char *OSK_EXTRAS[] = { "shift", "space", "@", "del", "enter", "hide",
++                                    OSK_TO_SYMBOLS };
+ 
+ /* Sized for a four-inch screen held at arm's length, and dark because it sits
+  * under a page that is usually white -- a keyboard that flashes the screen
+@@ -183,8 +203,17 @@ static void osk_show(Osk *osk)
+ static void osk_press(Osk *osk, const char *label)
+ {
+     if (g_strcmp0(label, "hide") == 0)       { osk_hide(osk); return; }
+-    if (g_strcmp0(label, "shift") == 0)      { osk->shift = !osk->shift;
++    if (g_strcmp0(label, "shift") == 0)      { if (osk->symbols)
++                                                   osk->symbols = FALSE;
++                                               else
++                                                   osk->shift = !osk->shift;
+                                                osk_relabel(osk); return; }
++    if (g_strcmp0(label, OSK_TO_SYMBOLS) == 0
++        || g_strcmp0(label, OSK_TO_LETTERS) == 0) {
++        osk->symbols = !osk->symbols;
++        osk_relabel(osk);
++        return;
++    }
+     if (g_strcmp0(label, "space") == 0)      { osk_type(osk, GDK_KEY_space); return; }
+     if (g_strcmp0(label, "del") == 0)        { osk_type(osk, GDK_KEY_BackSpace); return; }
+     if (g_strcmp0(label, "enter") == 0)      { osk_type(osk, GDK_KEY_Return); return; }
+@@ -200,7 +229,8 @@ static void on_osk_clicked(GtkButton *button, gpointer data)
+ 
+ static void osk_relabel(Osk *osk)
+ {
+-    const char **rows = osk->shift ? OSK_UPPER : OSK_LOWER;
++    const char **rows = osk->symbols ? OSK_SYMBOLS
++                      : osk->shift ? OSK_UPPER : OSK_LOWER;
+     for (int r = 0; r < OSK_ROWS; r++)
+         for (int c = 0; c < OSK_COLS && osk->keys[r][c]; c++) {
+             const char *src = rows[r];
+@@ -209,6 +239,13 @@ static void osk_relabel(Osk *osk)
+             char label[2] = { src[c], 0 };
+             gtk_button_set_label(GTK_BUTTON(osk->keys[r][c]), label);
+         }
++    /* The layout key says where it goes: to the symbols, or back. */
++    for (int c = 0; c < OSK_COLS && osk->keys[OSK_ROWS][c]; c++) {
++        const char *now = gtk_button_get_label(GTK_BUTTON(osk->keys[OSK_ROWS][c]));
++        if (g_strcmp0(now, OSK_TO_SYMBOLS) == 0 || g_strcmp0(now, OSK_TO_LETTERS) == 0)
++            gtk_button_set_label(GTK_BUTTON(osk->keys[OSK_ROWS][c]),
++                                 osk->symbols ? OSK_TO_LETTERS : OSK_TO_SYMBOLS);
++    }
+ }
+ 
+ /* The selected key is drawn by us, not by GTK's focus ring, because nothing
+@@ -345,8 +382,8 @@ static void on_probe(GObject *source, GAsyncResult *result, gpointer data)
+     if (osk && text && g_str_has_prefix(text, "text:")) {
+         const char *field = text + 5;
+         /* Only on a change of field. Re-raising a keyboard the player just
+-         * dismissed, every two seconds, would be worse than never raising
+-         * it. */
++         * dismissed, every half second (probe_tick), would be worse than
++         * never raising it. */
+         if (g_strcmp0(field, osk->last_field) != 0) {
+             g_strlcpy(osk->last_field, field, sizeof(osk->last_field));
+             /* Not for somebody who chose to type on their phone: they asked
+@@ -422,9 +459,11 @@ static gboolean probe_tick(gpointer data)
+         "  return 'text:' + t + '/' + ty + '/' + (a.id || a.name || '?');"
+         "})();";
+ 
+-    /* Nothing to ask while the keyboard is being driven -- and asking anyway
+-     * is how this oscillates, since a page can report a different active
+-     * element the moment the caret moves. */
++    /* Asked every half second, keyboard up or not. What keeps this from
++     * oscillating -- a page can report a different active element the
++     * moment the caret moves -- is on_probe acting only on a change of
++     * field, not a pause while the keyboard is driven (this said there was
++     * one; #308 claude F-RS-14). */
+     webkit_web_view_evaluate_javascript(osk->view, script, -1,
+                                         NULL, NULL, NULL, on_probe, osk);
+     return G_SOURCE_CONTINUE;
+@@ -444,8 +483,11 @@ static gboolean on_key(GtkWidget *widget, GdkEventKey *event, gpointer data)
+     /* A way out, always. The handheld's buttons are not a keyboard -- sway
+      * reports the gamepad as a tablet_pad -- so without something mapping
+      * them, this window covers the screen, cannot be driven from the device
+-     * and cannot be closed. cloud_oauth maps Start to Escape; this is what
+-     * receives it. */
++     * and cannot be closed. Escape is what the phone's "Close page" sends,
++     * and a keyboard plugged in; the pad's Select + Start ends the window
++     * from cloud_oauth's side (GAMEPAD_QUIT -> stop_browser) and never
++     * arrives here. (This said cloud_oauth mapped Start to Escape; #308
++     * claude F-RS-14.) */
+     if (event->keyval == GDK_KEY_Escape) {
+         gtk_main_quit();
+         return TRUE;
+@@ -556,6 +598,25 @@ static gboolean on_key(GtkWidget *widget, GdkEventKey *event, gpointer data)
+     return FALSE;
+ }
+ 
++/* Whether an address goes in the page file. Not rclone's loopback redirect:
++ * http://127.0.0.1:53682/?state=...&code=... carries the OAuth code, a
++ * credential even once redeemed, and the file is read by another process
++ * and lives in /var/run with whatever mode the umask gives it (#308 claude
++ * F-RS-20). The phone loses nothing -- the window turns to "Finishing up"
++ * there. Plain C, host by host, so it can be tested without GTK. */
++static int page_worth_recording(const char *uri)
++{
++    const char *host = uri ? strstr(uri, "://") : NULL;
++    if (!host)
++        return 1;
++    host += 3;
++    size_t n = strcspn(host, ":/?#");
++    if (n == 9 && (strncmp(host, "127.0.0.1", 9) == 0
++                   || strncasecmp(host, "localhost", 9) == 0))
++        return 0;
++    return 1;
++}
++
+ /* WebKit only routes keys to the page when the WebView itself holds GTK
+  * focus. A window can be focused by the compositor -- sway reported
+  * focused=true -- while the widget inside it never took focus, which looks
+@@ -586,7 +647,7 @@ static void on_load_changed(WebKitWebView *view, WebKitLoadEvent event,
+      * which is already watching this directory. */
+     const char *page_file = g_getenv("CLOUD_SIGNIN_PAGE_FILE");
+     const char *uri = webkit_web_view_get_uri(view);
+-    if (page_file && uri) {
++    if (page_file && uri && page_worth_recording(uri)) {
+         GError *werr = NULL;
+         if (!g_file_set_contents(page_file, uri, -1, &werr)) {
+             if (werr) {
+@@ -615,11 +676,17 @@ static void on_load_changed(WebKitWebView *view, WebKitLoadEvent event,
+      * broken keyboard and cost a debugging session.
+      *
+      * Gives up after ten seconds so a page that genuinely has no field does
+-     * not keep a timer alive for the life of the window. */
++     * not keep a timer alive for the life of the window.
++     *
++     * "Left alone" means anything but the body holding the focus. It used to
++     * mean only a text field, so a control the player had just reached -- a
++     * consent banner's Accept, with Y -- lost the focus to the first field
++     * the moment a script-rendered form appeared, and the next A submitted
++     * an empty form (#308 claude F-RS-17). */
+     static const char *focus_first =
+         "(function poll(n) {"
+         "  var a = document.activeElement;"
+-        "  if (a && ['INPUT','TEXTAREA'].indexOf(a.tagName) >= 0) return;"
++        "  if (a && a !== document.body && a !== document.documentElement) return;"
+         "  var f = document.querySelector("
+         "    'input[type=email],input[type=text],input[type=password],"
+         "     input:not([type]),input[type=tel]');"
+diff --git a/projects/ROCKNIX/packages/network/rclone/sources/cloud_device_id b/projects/ROCKNIX/packages/network/rclone/sources/cloud_device_id
+old mode 100644
+new mode 100755
+index 9f310f294c..9411742d94
+--- a/projects/ROCKNIX/packages/network/rclone/sources/cloud_device_id
++++ b/projects/ROCKNIX/packages/network/rclone/sources/cloud_device_id
+@@ -292,11 +292,14 @@ write_id() {
+         || { rm -f "${ID_FILE}.tmp.$$" 2>/dev/null; return 1; }
+ }
+ 
+-# Append an id to the .previous file unless it is already there.
++# Append an id to the .previous file unless it is already there. Succeeds
++# only when the line is there afterwards: healing rests on it. Braced for the
++# reason write_id is.
+ remember_previous() {
+     mkdir -p "$(dirname "${PREVIOUS_FILE}")" 2>/dev/null
+     grep -qxF -- "${1}" "${PREVIOUS_FILE}" 2>/dev/null && return 0
+-    printf '%s\n' "${1}" >> "${PREVIOUS_FILE}" 2>/dev/null
++    { printf '%s\n' "${1}" >> "${PREVIOUS_FILE}"; } 2>/dev/null || return 1
++    grep -qxF -- "${1}" "${PREVIOUS_FILE}" 2>/dev/null
+ }
+ 
+ # A stored id ending in the poisoned hash was not derived from this hardware,
+@@ -316,7 +319,17 @@ heal_poisoned() {
+     seed=$(permanent_address) || return 1
+     healed="$(device_label)-$(hash_of "${seed}")"
+     [ "${healed}" != "${stored}" ] || return 1
+-    remember_previous "${stored}"
++    # The old id first, or no healing. .previous is where cloud_restore finds
++    # the folder the archives were written under, and previous_ids guesses
++    # only the two standard shapes -- a stored id with a prefix of its own
++    # (the file is the player's to edit) is recorded nowhere else. Healing
++    # went ahead when this failed, and that id was gone for good (#308 gpt
++    # F-RS-21). Not healing costs nothing that was working: the stored id is
++    # the one every backup so far went under, and the next run tries again.
++    if ! remember_previous "${stored}"; then
++        log_message "device id NOT healed: ${stored} could not be recorded in ${PREVIOUS_FILE}; keeping it until it can be" "WARN"
++        return 1
++    fi
+     if write_id "${healed}"; then
+         log_message "device id healed: ${stored} -> ${healed} (the stored hash was the shared constant $(poisoned_hash), #86; the old id is kept in ${PREVIOUS_FILE})"
+     else
+diff --git a/projects/ROCKNIX/packages/network/rclone/sources/cloud_oauth b/projects/ROCKNIX/packages/network/rclone/sources/cloud_oauth
+old mode 100644
+new mode 100755
+index 0748e47f7a..4f430d45d7
+--- a/projects/ROCKNIX/packages/network/rclone/sources/cloud_oauth
++++ b/projects/ROCKNIX/packages/network/rclone/sources/cloud_oauth
+@@ -44,6 +44,7 @@
+ # own, and requires a PIN shown on the handheld -- so reaching it takes the
+ # device in your hands, not merely a seat on the wifi.
+ 
++import errno
+ import fcntl
+ import hashlib
+ import http.server
+@@ -67,6 +68,8 @@ import urllib.request
+ STATE_DIR = "/var/run/cloud_oauth"
+ RCLONE = "/usr/bin/rclone"
+ LOCAL_AUTH = "http://127.0.0.1:53682"
++# How long `rclone authorize` has to print its local link.
++AUTHORIZE_WAIT = 20
+ LOG_FILE = "/var/log/cloud_sync.log"
+ 
+ 
+@@ -84,12 +87,31 @@ def state_path(name):
+     return os.path.join(STATE_DIR, name)
+ 
+ 
+-def write_state(**fields):
++# session.json is written by three threads of the serve (the collector, the
++# request handlers, the main thread) and read by other processes (`status`,
++# `info`, the interface). It was truncated and rewritten in place, and
++# read_state turns a half-written file into {} -- a status that read idle
++# for a moment while a sign-in was completing, and a merge that could write
++# that emptiness back (#308 claude F-RS-23, gpt F-RS-17). So: one writer at
++# a time within the process, and every write a whole file renamed over the
++# old one, which a reader in any process sees before or after, never during.
++_STATE_LOCK = threading.Lock()
++
++
++def _write_whole(data):
+     os.makedirs(STATE_DIR, exist_ok=True)
+-    existing = read_state()
+-    existing.update(fields)
+-    with open(state_path("session.json"), "w") as handle:
+-        json.dump(existing, handle)
++    path = state_path("session.json")
++    tmp = "%s.%d.tmp" % (path, os.getpid())
++    with open(tmp, "w") as handle:
++        json.dump(data, handle)
++    os.replace(tmp, path)
++
++
++def write_state(**fields):
++    with _STATE_LOCK:
++        existing = read_state()
++        existing.update(fields)
++        _write_whole(existing)
+ 
+ 
+ def reset_state(**fields):
+@@ -111,8 +133,8 @@ def reset_state(**fields):
+             os.unlink(state_path(name))
+         except OSError:
+             pass
+-    with open(state_path("session.json"), "w") as handle:
+-        json.dump(dict(fields), handle)
++    with _STATE_LOCK:
++        _write_whole(dict(fields))
+ 
+ 
+ def read_state():
+@@ -178,7 +200,15 @@ class Session:
+         # Set by the holder, so a sign-in that finishes on the device can
+         # close the window without this needing to know what a window is.
+         self.on_signed_in = None
++        # True once the remote exists and has answered -- never earlier (see
++        # _write_config).
+         self.configured = False
++        self._config_lock = threading.Lock()
++        self._config_result = None
++        # Set by the holder when another attempt replaces this one, so this
++        # one's collector -- woken by the new attempt killing its rclone --
++        # does not report the new attempt failed.
++        self.superseded = False
+         self.error = None
+         # rclone's own last words. It exits fatally when the exchange fails,
+         # and what it says -- "code doesn't exist or has expired" against
+@@ -202,18 +232,39 @@ class Session:
+             [RCLONE, "authorize", self.backend, "--auth-no-open-browser"],
+             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+ 
+-        deadline = time.time() + 20
++        # The wait for the link is bounded by the clock, not by rclone. It
++        # was a readline() under a deadline checked between lines, so an
++        # authorize that printed nothing held this -- and the interface's
++        # sign-in page -- for as long as it cared to (#308 gpt F-RS-19).
++        # Raw reads under select(), then: whatever arrived after the link
++        # goes to the collector with the rest.
++        deadline = time.time() + AUTHORIZE_WAIT
++        fd = self.proc.stdout.fileno()
++        pending = b""
+         local = None
+-        while time.time() < deadline:
+-            line = self.proc.stdout.readline()
+-            if not line:
++        while local is None:
++            left = deadline - time.time()
++            if left <= 0:
+                 break
+-            match = re.search(r"http://127\.0\.0\.1:53682/auth\?state=\S+", line)
+-            if match:
+-                local = match.group(0)
++            ready, _, _ = select.select([fd], [], [], left)
++            if not ready:
+                 break
++            chunk = os.read(fd, 4096)
++            if not chunk:
++                break
++            pending += chunk
++            match = re.search(rb"(http://127\.0\.0\.1:53682/auth\?state=\S+)\s", pending)
++            if match:
++                local = match.group(1).decode()
++        self.early_output = pending.decode("utf-8", "replace")
+         if not local:
+             self.error = "rclone did not offer a sign-in link"
++            if self.proc.poll() is None:
++                self.proc.terminate()
++                try:
++                    self.proc.wait(timeout=3)
++                except subprocess.TimeoutExpired:
++                    self.proc.kill()
+             return False
+ 
+         self.provider = provider_url(local)
+@@ -229,7 +280,7 @@ class Session:
+         return True
+ 
+     def _collect(self):
+-        buffer = ""
++        buffer = getattr(self, "early_output", "")
+         for line in self.proc.stdout:
+             buffer += line
+             if line.startswith("Error: ") or "Fatal error:" in line:
+@@ -260,6 +311,16 @@ class Session:
+                 log("could not finish the sign-in: %s" % detail)
+                 if read_state().get("status") != "signed-in":
+                     write_state(status="failed", error=detail)
++        elif not self.token and not self.superseded:
++            # rclone ended without a token: the provider refused, the
++            # exchange failed, or it was killed. Nothing else is going to
++            # finish this attempt, and the on-device path has no page to
++            # say so -- the status stayed "waiting" until the serve timed
++            # out, and the interface's STILL WAITING told the player to
++            # finish an attempt that was already dead (audit #307 PL-050).
++            if read_state().get("status") in ("starting", "waiting"):
++                log("the sign-in ended without a token")
++                write_state(status="failed", error=self.failure_reason())
+ 
+     def failure_reason(self):
+         """Why the attempt died, in words a player can act on."""
+@@ -318,16 +379,35 @@ class Session:
+         return False, "Timed out waiting for the provider."
+ 
+     def _write_config(self):
+-        # Guarded because two paths can reach it now -- the redirect landing
+-        # on rclone directly, and a code pasted back from a phone -- and the
+-        # second would be told the remote already exists.
+-        if self.configured:
+-            return True, self.remote_name or self.backend
+-        self.configured = True
++        """Create the remote, once per attempt, and say how it went.
++
++        Two paths can reach this -- the redirect landing on rclone directly
++        (the collector) and a code pasted back from a phone (submit) -- and
++        they can overlap. The first does the work; the second waits for it
++        and is handed the same answer. `configured` used to be set on the
++        way in, so a second caller was told "Connected" while the first was
++        still creating and checking the remote, and even when that then
++        failed (audit #307 PL-048). It is set now only from the result.
++        """
++        with self._config_lock:
++            if self._config_result is None:
++                self._config_result = self._create_remote()
++                self.configured = bool(self._config_result[0])
++            return self._config_result
++
++    def _create_remote(self):
+         name = self.remote_name or self.backend
+-        existing = subprocess.run([RCLONE, "listremotes"],
+-                                  capture_output=True, text=True).stdout
+-        if "%s:" % name in existing.split():
++        # Which remotes exist, or no create at all: a listing that failed
++        # read as "none of that name" and the create went ahead over
++        # whatever was there (#308 gpt F-RS-23).
++        listed = subprocess.run([RCLONE, "listremotes"],
++                                capture_output=True, text=True)
++        if listed.returncode != 0:
++            log("could not list the configured remotes (exit %d); not creating one"
++                % listed.returncode)
++            return False, ("The sign-in worked, but your handheld's cloud "
++                           "settings couldn't be read.")
++        if "%s:" % name in listed.stdout.split():
+             return False, "a remote called '%s' already exists" % name
+ 
+         result = subprocess.run(
+@@ -335,7 +415,14 @@ class Session:
+              "token=%s" % self.token, "--non-interactive"],
+             capture_output=True, text=True)
+         if result.returncode != 0:
+-            return False, result.stderr.strip()[:200] or "rclone rejected the token"
++            # A fixed sentence, and rclone's exit code in the log -- never its
++            # words. They went to cloud_sync.log as "could not finish the
++            # sign-in: <rclone's stderr>" and into the page, and an rclone
++            # that echoed a parameter would have put the token there (audit
++            # #307 PL-074).
++            log("rclone could not save the remote (exit %d)" % result.returncode)
++            return False, ("The sign-in worked, but it couldn't be saved on "
++                           "your handheld.")
+ 
+         # Prove it before saying so. A token that parses is not a token that
+         # works, and cloud_remote takes the same posture.
+@@ -611,6 +698,9 @@ class BrowserSession:
+         self.log_file = None
+         self.log_path = None
+         self.error = None
++        # Whether start() turned sway's pointer hiding off, so stop() knows
++        # to turn it back on whatever became of the window.
++        self.cursor_overridden = False
+ 
+     def is_running(self):
+         return self.proc is not None and self.proc.poll() is None
+@@ -621,8 +711,8 @@ class BrowserSession:
+             self.error = "no display session to show the sign-in page on"
+             return False
+ 
+-        os.makedirs("/var/run/cloud_oauth", exist_ok=True)
+-        self.log_path = "/var/run/cloud_oauth/window.log"
++        os.makedirs(STATE_DIR, exist_ok=True)
++        self.log_path = state_path("window.log")
+         # Kept rather than discarded: a window that fails to start otherwise
+         # looks exactly like one that started and was never asked for.
+         self.log_file = open(self.log_path, "w")
+@@ -646,6 +736,7 @@ class BrowserSession:
+         # Somebody may be about to drag a pointer at this page from their
+         # phone, and cannot aim what they cannot see.
+         BrowserSession._cursor_timeout(0)
++        self.cursor_overridden = True
+         log("sign-in window opened on %s for %s" % (display, self.host))
+         return True
+ 
+@@ -668,8 +759,14 @@ class BrowserSession:
+             log("could not set the cursor timeout: %s" % exc)
+ 
+     def stop(self):
+-        if self.proc and self.proc.poll() is None:
++        # Restored whenever start() set it -- also when the window has
++        # already gone by itself (Escape, a crash). It used to sit inside
++        # the still-running test, so a window that ended on its own left
++        # sway never hiding the pointer (#308 claude F-RS-19, gpt F-RS-25).
++        if self.cursor_overridden:
+             BrowserSession._cursor_timeout(1000)
++            self.cursor_overridden = False
++        if self.proc and self.proc.poll() is None:
+             self.proc.terminate()
+             try:
+                 self.proc.wait(timeout=5)
+@@ -713,13 +810,15 @@ REMOTE_PAGE = """<!doctype html><meta name=viewport content="width=device-width,
+ 
+ <div id=state class=note>Checking&hellip;</div>
+ 
+-<input id=kb placeholder="Type here" autocapitalize=off autocorrect=off
+-       spellcheck=false autofocus>
++<input id=kb type=password placeholder="Type here" autocapitalize=off
++       autocorrect=off spellcheck=false autofocus>
++<div id=warn class=err hidden></div>
+ <div class=keys>
+ <button type=button class=minor data-key=backspace>Back</button>
+ <button type=button class=minor data-key=tab>Tab</button>
+ <button type=button class=minor data-key=enter>Enter</button>
+ <button type=button class=minor id=clear>Clear</button>
++<button type=button class=minor id=show>Show</button>
+ </div>
+ 
+ 
+@@ -733,19 +832,27 @@ REMOTE_PAGE = """<!doctype html><meta name=viewport content="width=device-width,
+ <button type=button class=minor data-key=f2>Page up</button>
+ <button type=button class=minor data-key=f3>Page down</button>
+ </div>
++<!-- A way off the handheld's page that does not depend on its gamepad: a
++     pad the bridge cannot read (#308 gpt F-RS-16) leaves this, and the
++     window quits on Escape. -->
++<div class=keys>
++<button type=button class=minor data-key=escape>Close page</button>
++</div>
+ 
+ <h2>Pointer</h2>
+ <div class=pad id=pad>drag to move &middot; tap to click</div>
+ 
+ <p class=note>The sign-in page is on your handheld&rsquo;s screen, not here.
+ This types for it, so you can more easily retrieve and type your login
+-info.</p>
++info. What you type crosses your network unencrypted, so use this on a
++network you trust.</p>
+ </div>
+ 
+ <script>
+ (function () {
+   var pin = "%(pin)s";
+   var box = document.getElementById("kb");
++  var warn = document.getElementById("warn");
+   var state = document.getElementById("state");
+   var pad = document.getElementById("pad");
+ 
+@@ -785,34 +892,82 @@ info.</p>
+     sent = v;
+   }
+ 
++  // Every named key -- from the buttons below and from the phone's own
++  // keyboard alike -- goes through here, so the box and the handheld's field
++  // never part. The buttons used to post their key and nothing else: Back
++  // deleted on the handheld and left the box as it was, and every later
++  // keystroke was reckoned against a box one character off, so a password
++  // typed with one correction went across altered (audit #307 PL-017).
++  //
++  // The box holds what has been typed into the handheld's field since the
++  // focus last moved there. Back trims it, and with it empty still deletes
++  // on the handheld -- text that was there already. Enter submits the field,
++  // and Tab, the arrows and Close move away from it: what the box holds was
++  // for the field left behind, so it starts again. Page up and down only
++  // scroll.
++  function act(named) {
++    if (named === "backspace") {
++      if (box.value) {
++        box.value = box.value.slice(0, -1);
++        if (ready) deliver(box.value);
++      } else if (ready) {
++        send("key=backspace");
++      }
++      return;
++    }
++    if (!ready) return;
++    send("key=" + named);
++    if (named !== "f2" && named !== "f3") { box.value = ""; sent = ""; warn.hidden = true; }
++  }
++
++  // Only what the handheld can type goes in the box: printable ASCII,
++  // [ -~], the US layout cloud_oauth types with. Anything else used to be
++  // sent, dropped at the other end without a word, and left showing here
++  // -- a credential altered in silence (#308 claude F-RS-16, gpt F-RS-13).
++  // It is taken out of the box instead, and the page says which.
++  function typable() {
++    var v = box.value, kept = v.replace(/[^ -~]/g, "");
++    if (kept === v) return;
++    var gone = v.replace(/[ -~]/g, "").split("");
++    warn.textContent = "The handheld can't type " + gone.join(" ") + ", so "
++      + (gone.length > 1 ? "they were" : "it was") + " left out.";
++    warn.hidden = false;
++    box.value = kept;
++  }
++
+   // What you typed stays visible. Clearing the box after every keystroke made
+   // a keyboard that looked broken -- you type and nothing appears anywhere
+   // you can see.
+   box.addEventListener("input", function () {
++    typable();
+     if (ready) deliver(box.value);
+   });
+   box.addEventListener("keydown", function (e) {
+     var named = {Enter: "enter", Backspace: "backspace", Tab: "tab"}[e.key];
+     if (!named) return;
+     e.preventDefault();
+-    if (named === "backspace") {
+-      box.value = box.value.slice(0, -1);
+-      if (ready) deliver(box.value);
+-      return;
+-    }
+-    if (!ready) return;
+-    send("key=" + named);
+-    if (named === "enter") { box.value = ""; sent = ""; }
++    act(named);
++  });
++
++  // Masked, because what goes through this box is mostly a password, and
++  // it stayed readable on the phone's screen after it was sent (#308 gpt
++  // F-RS-14). Show reveals it for checking; it hides again on a second
++  // press.
++  var show = document.getElementById("show");
++  show.addEventListener("click", function () {
++    var hidden = box.type === "password";
++    box.type = hidden ? "text" : "password";
++    show.textContent = hidden ? "Hide" : "Show";
+   });
+ 
+   // Local only: the handheld has moved to another field and this box still
+   // holds what went into the last one.
+   document.getElementById("clear").addEventListener("click", function () {
+-    box.value = ""; sent = ""; box.focus();
++    box.value = ""; sent = ""; warn.hidden = true; box.focus();
+   });
+ 
+   Array.prototype.forEach.call(document.querySelectorAll("[data-key]"), function (b) {
+-    b.addEventListener("click", function () { send("key=" + b.dataset.key); });
++    b.addEventListener("click", function () { act(b.dataset.key); });
+   });
+ 
+   // Drag to move, tap to click. Deltas rather than absolute positions,
+@@ -901,13 +1056,22 @@ info.</p>
+         state.textContent = open
+           ? "Connected."
+           : "Not open yet -- choose CONTINUE on your handheld. You can type "
+-            + "or paste here meanwhile, then use the send button.";
++            + "or paste here meanwhile; it goes across when the page opens.";
+         // The box is never disabled. It was, until this said the handheld was
+         // ready -- so somebody who scanned the QR first, which is the order
+         // this flow asks for, could not type at all and saw nothing appear.
+         // Re-asserting disabled every two seconds also dismisses a phone
+         // keyboard in the middle of typing.
++        //
++        // And what was typed meanwhile goes across the moment it opens. The
++        // box only ever sent on an input event, so text typed while the page
++        // said "not open yet" -- the order this flow asks for -- was never
++        // delivered at all, and the next keystroke added only itself (audit
++        // #307 PL-016). The window opens on an empty field, so nothing has
++        // been sent to it yet: `sent` starts again from nothing.
++        var opened = open && !ready;
+         ready = open;
++        if (opened) { sent = ""; deliver(box.value); }
+       })
+       .catch(function () {})
+       .then(function () { setTimeout(poll, 2000); });
+@@ -1186,6 +1350,16 @@ class RemoteKeyboard:
+ BTN_SOUTH, BTN_EAST, BTN_NORTH, BTN_WEST = 304, 305, 307, 308
+ BTN_TL, BTN_TR, BTN_SELECT, BTN_START, BTN_MODE = 310, 311, 314, 315, 316
+ BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT = 544, 545, 546, 547
++# A d-pad is not always four buttons. HID and xpad-class pads report it as a
++# hat -- two axes that read -1, 0 or 1 -- and the bridge used to find only
++# pads with BTN_DPAD_UP and to drop every EV_ABS event, so on such a pad the
++# page could not be driven and Select+Start never reached it (#308 gpt
++# F-RS-16, claude F-RS-06).
++EV_ABS = 0x03
++ABS_HAT0X, ABS_HAT0Y = 0x10, 0x11
++HAT_KEYS = {(ABS_HAT0X, -1): "left", (ABS_HAT0X, 1): "right",
++            (ABS_HAT0Y, -1): "up", (ABS_HAT0Y, 1): "down"}
++SYS_INPUT = "/sys/class/input"
+ 
+ # Arrows rather than Tab: WebKit's spatial navigation moves focus in the
+ # direction pressed, which is what a d-pad means. Tab order on a login page
+@@ -1241,33 +1415,47 @@ def find_gamepad():
+     RG35XX SP has a Mode button and ES maps its hotkey to it, while smaller
+     pads have no such button at all.
+     """
+-    for entry in sorted(os.listdir("/sys/class/input")):
++    try:
++        entries = sorted(os.listdir(SYS_INPUT))
++    except OSError:
++        return None, set()
++    for entry in entries:
+         if not entry.startswith("event"):
+             continue
+-        caps = "/sys/class/input/%s/device/capabilities/key" % entry
+-        try:
+-            words = open(caps).read().split()
+-        except OSError:
++        codes = _capabilities(entry, "key")
++        if codes is None:
+             continue
+-        codes = set()
+-        for index, word in enumerate(reversed(words)):
+-            value = int(word, 16)
+-            codes |= {index * 64 + bit for bit in range(value.bit_length())
+-                      if value >> bit & 1}
+-        if BTN_SOUTH in codes and BTN_DPAD_UP in codes:
++        axes = _capabilities(entry, "abs") or set()
++        if BTN_SOUTH in codes and (BTN_DPAD_UP in codes or ABS_HAT0Y in axes):
+             return "/dev/input/" + entry, codes
+     return None, set()
+ 
+ 
++def _capabilities(entry, kind):
++    """The codes an input device reports for one event type, from sysfs's
++    bitmap (hex words, most significant first), or None when unreadable."""
++    try:
++        with open("%s/%s/device/capabilities/%s" % (SYS_INPUT, entry, kind)) as handle:
++            words = handle.read().split()
++    except (OSError, ValueError):
++        return None
++    codes = set()
++    for index, word in enumerate(reversed(words)):
++        value = int(word, 16)
++        codes |= {index * 64 + bit for bit in range(value.bit_length())
++                  if value >> bit & 1}
++    return codes
++
++
+ def exit_hint():
+-    """What to call the exit combination, on this handheld.
++    """What the page and the window call the exit combination: one string,
++    the same on every handheld. It reads nothing from the pad.
+ 
+     Either Select or Mode holds it (GAMEPAD_HOLD), because which one a player
+-    reaches for differs by device. What must not differ is the instruction:
+-    naming a button the pad does not have is worse than naming none, and the
+-    RG351M and RG353M have no Mode button while the RG35XX SP does -- where
+-    Mode is what ES maps its own hotkey to, and what the maintainer's fingers
+-    reach for.
++    reaches for differs by device -- the RG351M and RG353M have no Mode
++    button, the RG35XX SP does and ES maps its own hotkey to it. The words
++    name only the pair every handheld has (#308 claude F-RS-14: this said it
++    read the pad).
+     """
+     # One combination on screen, always. "MODE OR SELECT + START" read as
+     # though Mode alone were a way out, and a help line that has to be parsed
+@@ -1387,6 +1575,7 @@ class GamepadBridge:
+ 
+         size = struct.calcsize("llHHi")
+         held = set()
++        hat = {}
+         try:
+             while not self.stop_flag.is_set():
+                 # The timeout is the watchdog's heartbeat, not a poll for
+@@ -1404,6 +1593,15 @@ class GamepadBridge:
+                 if len(data) < size:
+                     continue
+                 _, _, etype, code, value = struct.unpack("llHHi", data)
++                if etype == EV_ABS:
++                    # A hat moving off centre is the arrow's press; back to
++                    # centre, or on to the same side again, is nothing.
++                    name = HAT_KEYS.get((code, value))
++                    if name and hat.get(code) != value:
++                        self.keyboard.press(name)
++                    if code in (ABS_HAT0X, ABS_HAT0Y):
++                        hat[code] = value
++                    continue
+                 if etype != EV_KEY:
+                     continue
+ 
+@@ -1482,6 +1680,10 @@ class SessionHolder:
+         # there -- a sentence about a program the player has never heard of,
+         # on a screen with no way out but a button combination.
+         session.on_signed_in = self.signed_in
++        # Before the new attempt kills the old one's rclone (Session.start),
++        # so the old collector knows its end is not a failure to report.
++        if self.session:
++            self.session.superseded = True
+         if not session.start():
+             return False, session.error
+         with self.lock:
+@@ -1499,7 +1701,17 @@ class SessionHolder:
+         reads as a crash rather than as progress. The window switches itself
+         to "Finishing up" when it sees this marker, and is closed once ES is
+         drawing again and asks for it.
++
++        The pad is handed back first, though, before the marker exists.
++        "Finishing up" takes no input, and `wait` returns on this marker --
++        after which EmulationStation re-opens the joystick, which it cannot
++        do while the bridge holds EVIOCGRAB (pad_is_free). The bridge used to
++        let go only when the window died, which is after that re-open (audit
++        #307 PL-018).
+         """
++        gamepad, self.gamepad = self.gamepad, None
++        if gamepad:
++            gamepad.stop()
+         os.makedirs(STATE_DIR, exist_ok=True)
+         try:
+             open(state_path("signed-in"), "w").close()
+@@ -1528,6 +1740,13 @@ class SessionHolder:
+         self.gamepad.start()
+         return True
+ 
++    def end(self):
++        """Take everything this serve started down: the window, and rclone."""
++        self.stop_browser()
++        if self.session and self.session.proc \
++                and self.session.proc.poll() is None:
++            self.session.proc.send_signal(signal.SIGTERM)
++
+     def stop_browser(self):
+         gamepad, self.gamepad = self.gamepad, None
+         if gamepad:
+@@ -1551,8 +1770,57 @@ class SessionHolder:
+         return secrets.compare_digest(str(pin), self.pin)
+ 
+ 
++# What an unauthenticated client on the LAN can make this spend before the
++# PIN is checked. The body was read whole, whatever Content-Length said, on
++# a thread per connection with no read deadline and no limit on threads --
++# memory and threads that WebKit, on a 1 GB handheld, needs more (#308 gpt
++# F-RS-18). The keyboard's largest request is a paste of a few hundred
++# bytes.
++MAX_BODY = 64 * 1024
++REQUEST_TIMEOUT = 15
++MAX_CONNECTIONS = 16
++
++
++class BoundedHTTPServer(http.server.ThreadingHTTPServer):
++    """ThreadingHTTPServer with a cap on connections handled at once: one
++    past the cap is closed on arrival rather than given a thread."""
++
++    daemon_threads = True
++
++    def __init__(self, *args, **kwargs):
++        self.slots = threading.BoundedSemaphore(MAX_CONNECTIONS)
++        super().__init__(*args, **kwargs)
++
++    def process_request(self, request, client_address):
++        if not self.slots.acquire(blocking=False):
++            self.shutdown_request(request)
++            return
++        try:
++            super().process_request(request, client_address)
++        except Exception:
++            self.slots.release()
++            raise
++
++    def process_request_thread(self, request, client_address):
++        try:
++            super().process_request_thread(request, client_address)
++        finally:
++            self.slots.release()
++
++
++def make_server(address, port, holder, shutdown):
++    """The listener, bound -- OSError when the address or port cannot be."""
++    server = BoundedHTTPServer((address, port), None)
++    server.RequestHandlerClass = make_handler(holder, shutdown)
++    return server
++
++
+ def make_handler(holder, shutdown):
+     class Handler(http.server.BaseHTTPRequestHandler):
++        # Applied to the socket by StreamRequestHandler.setup: a request
++        # that stalls -- mid-headers or mid-body -- is dropped at this.
++        timeout = REQUEST_TIMEOUT
++
+         def log_message(self, *args):
+             pass  # its default writes request lines to stderr
+ 
+@@ -1593,9 +1861,10 @@ def make_handler(holder, shutdown):
+             self._send(PIN_PAGE % {
+                 "style": STYLE,
+                 "message": message,
+-                # Carried back so a mistyped digit is corrected rather than
+-                # re-entered, and so a link that already had a PIN on it does
+-                # not present an empty box.
++                # Pre-fills the box. Every caller passes nothing: a wrong PIN
++                # is not echoed back, so a guess learns nothing from the page
++                # (#308 claude F-RS-14: this said a mistyped digit was
++                # carried back).
+                 "pin": supplied,
+             })
+ 
+@@ -1675,7 +1944,18 @@ def make_handler(holder, shutdown):
+             self._render()
+ 
+         def do_POST(self):
+-            length = int(self.headers.get("Content-Length", 0))
++            # Checked before a byte of the body is read.
++            try:
++                length = int(self.headers.get("Content-Length", 0))
++            except ValueError:
++                length = -1
++            if length < 0 or length > MAX_BODY:
++                self.send_response(413 if length > MAX_BODY else 400)
++                self.send_header("Content-Length", "0")
++                self.send_header("Connection", "close")
++                self.end_headers()
++                self.close_connection = True
++                return
+             fields = urllib.parse.parse_qs(
+                 self.rfile.read(length).decode("utf-8", "replace"))
+             if not self._gate(fields.get("pin", [""])[0] or self._supplied()):
+@@ -1724,7 +2004,10 @@ def make_handler(holder, shutdown):
+                 self.send_response(204)
+                 self.send_header("Content-Length", "0")
+                 self.end_headers()
+-                log("typed %d characters%s" % (sent, " + " + named if named else ""))
++                # Counts only: what was typed may be a password.
++                log("typed %d characters%s%s" % (
++                    sent, " + " + named if named else "",
++                    ", %d not on the keyboard" % (len(text) - sent) if len(text) > sent else ""))
+                 return
+ 
+             if fields.get("restart"):
+@@ -1773,7 +2056,26 @@ def cmd_serve(backend, remote_name, label, port, timeout):
+     stop_other_serves()
+     reset_state(status="starting", backend=backend)
+ 
++    # SIGTERM is how `cancel` and the next serve end this one
++    # (stop_other_serves). With no handler Python died on it at once: the
++    # teardown below never ran, and the fullscreen window -- a plain child
++    # with no death signal -- stayed on the screen with the gamepad bridge
++    # gone, nothing left on the device to drive it or close it (audit #307
++    # PL-049). Raising here unwinds through the finally instead; a second
++    # SIGTERM while the teardown runs is ignored so that it finishes.
++    def on_term(signum, frame):
++        signal.signal(signal.SIGTERM, signal.SIG_IGN)
++        raise SystemExit(128 + signum)
++    signal.signal(signal.SIGTERM, on_term)
++
+     holder = SessionHolder(backend, remote_name, label, timeout)
++    try:
++        return serve_with(holder, backend, port, timeout)
++    finally:
++        holder.end()
++
++
++def serve_with(holder, backend, port, timeout):
+     ok, error = holder.start()
+     if not ok:
+         sys.stderr.write("%s\n" % error)
+@@ -1781,12 +2083,34 @@ def cmd_serve(backend, remote_name, label, port, timeout):
+         return 2
+ 
+     address = lan_address()
+-    server = http.server.ThreadingHTTPServer(("0.0.0.0", port), None)
++    # Listen on the address the page is served at, not on every interface
++    # (#308 claude F-RS-18). A VPN or tethering interface no longer takes
++    # the keyboard; and the port is shared with the offline achievements
++    # proxy, which listens on 127.0.0.1:8080 -- a wildcard bind cannot share
++    # a port with a socket on a specific address, so with offline
++    # achievements on, every sign-in ended in EADDRINUSE. 127.0.0.1 is
++    # lan_address's answer when there is no route, and the one case that
++    # keeps the wildcard.
++    listen = "0.0.0.0" if address == "127.0.0.1" else address
++    # A port something else holds used to end the serve with a traceback and
++    # the status left at "starting", rclone's authorize still running, and
++    # the interface waiting on a sign-in that could never be reached (audit
++    # #307 PL-050, claude F-RS-22).
++    server = None
+ 
+     def shutdown():
+-        threading.Thread(target=server.shutdown, daemon=True).start()
++        if server is not None:
++            threading.Thread(target=server.shutdown, daemon=True).start()
+ 
+-    server.RequestHandlerClass = make_handler(holder, shutdown)
++    try:
++        server = make_server(listen, port, holder, shutdown)
++    except OSError as exc:
++        why = "port %d is already in use on this device" % port \
++            if exc.errno == errno.EADDRINUSE else "could not listen on port %d" % port
++        log("sign-in could not start: %s (%s)" % (why, exc.strerror or exc))
++        sys.stderr.write("%s\n" % why)
++        write_state(status="failed", error=why)
++        return 2
+ 
+     bare = "http://%s:%d" % (address, port)
+     url = "%s/%s" % (bare, holder.pin)
+@@ -1847,10 +2171,6 @@ def cmd_serve(backend, remote_name, label, port, timeout):
+     finally:
+         timer.cancel()
+         server.server_close()
+-        holder.stop_browser()
+-        if holder.session and holder.session.proc \
+-                and holder.session.proc.poll() is None:
+-            holder.session.proc.send_signal(signal.SIGTERM)
+ 
+     final = read_state().get("status")
+     if final == "signed-in":
+@@ -1928,12 +2248,13 @@ def main(argv):
+         # so a serve that died without tidying up cannot strand the caller.
+         deadline = time.time() + 1800
+         while time.time() < deadline and signin_window_running():
+-            # A finished sign-in releases the caller immediately: the window
+-            # stays up saying so while the caller rebuilds itself, and asks
+-            # for it to be closed afterwards. Waiting for the window to go
+-            # first is what produced a black screen.
++            # A finished sign-in releases the caller without waiting for the
++            # window: it stays up saying so while the caller rebuilds itself,
++            # and asks for it to be closed afterwards. Waiting for the window
++            # to go first is what produced a black screen. Not without the
++            # pad, though -- the settle below runs on this path too (PL-018).
+             if os.path.exists(state_path("signed-in")):
+-                return 0
++                break
+             time.sleep(0.3)
+ 
+         # And not a moment before the pad is handed back -- see pad_is_free.
+@@ -1980,6 +2301,9 @@ def main(argv):
+                     time.sleep(0.2)
+                 if not signin_window_running():
+                     break
++            # The serve that set the pointer's hide timeout to never is not
++            # there to set it back (#308 claude F-RS-19).
++            BrowserSession._cursor_timeout(1000)
+ 
+         settle = time.time() + 5
+         while time.time() < settle and not pad_is_free():
+@@ -1994,8 +2318,8 @@ def main(argv):
+         # script and a newer page still agree on something.
+         state = read_state()
+         state["on_device"] = "yes" if browser_stack_available() else "no"
+-        # Read from the pad, not from a table: the page tells the player how
+-        # to come back, and the button it names has to be one they have.
++        # The window's own words for the way back (exit_hint): Select and
++        # Start, which every handheld we ship for has and labels.
+         state["exit_hint"] = exit_hint()
+         for key in ("url", "address", "pin", "name", "provider", "status",
+                     "on_device", "exit_hint"):
+diff --git a/projects/ROCKNIX/packages/network/rclone/sources/cloud_remote b/projects/ROCKNIX/packages/network/rclone/sources/cloud_remote
+index 78e5420fc0..e7dadf59a9 100755
+--- a/projects/ROCKNIX/packages/network/rclone/sources/cloud_remote
++++ b/projects/ROCKNIX/packages/network/rclone/sources/cloud_remote
+@@ -44,24 +44,14 @@ import sys
+ RCLONE = "/usr/bin/rclone"
+ LOG_FILE = "/var/log/cloud_sync.log"
+ 
+-# OAuth backends we can complete on-device, and how.
+-#   device_flow: RFC 8628 - handheld shows a URL and short code, polls for the
+-#                token. Needs no listener at all.
+-#   pkce_paste:  authorization code with PKCE and no redirect_uri; the provider
+-#                displays the code for the player to hand back.
+-# Everything else with a `token` option stays on the SSH wizard: we would be
+-# guessing at its sign-in shape, and guessing wrong strands the player
+-# mid-setup with no way back.
+-# Every OAuth backend is drivable now. cloud_oauth wraps rclone's own
+-# `authorize` machinery rather than reimplementing any provider's flow, so
+-# there is nothing per-provider to support: whatever rclone can authorize,
+-# the handheld can too. Probed against dropbox, drive, onedrive, box, pcloud
+-# and yandex, each resolving to its own provider unchanged.
+-#
+-# This replaces an earlier split where three providers were "drivable" and
+-# sixteen needed a computer. That distinction was about a design we did not
+-# end up building.
+-DRIVABLE_OAUTH = "all"
++# Every OAuth backend goes through cloud_oauth, which wraps rclone's own
++# `authorize` rather than reimplementing any provider's flow, so nothing here
++# is per-provider: the "oauth" tier is whatever rclone can authorize. (A
++# DRIVABLE_OAUTH constant and a table of device-flow and PKCE-paste backends
++# described a design that was not built; nothing read them, and they went in
++# #308, claude F-RS-14.) That a provider's authorize link resolves to the
++# provider was probed for dropbox, drive, onedrive, box, pcloud and yandex;
++# that its sign-in completes on the device is proved per provider.
+ 
+ # rclone's backend list is not a list of cloud services. These wrap or
+ # transform another remote, or are not remote at all, and offering them as
+@@ -93,8 +83,13 @@ def rclone(*args, check=True):
+         capture_output=True, text=True,
+     )
+     if check and proc.returncode != 0:
+-        log("rclone %s failed (%d): %s" % (
+-            " ".join(args), proc.returncode, proc.stderr.strip()[:200]))
++        # The verb and the exit code -- never the arguments, never rclone's
++        # words. `config create` carries every key=value the player typed,
++        # passwords among them, and this line put them in cloud_sync.log in
++        # the clear whenever a create failed (audit #307, gpt F-RS-04: the
++        # finding the audit refuted for cloud_oauth holds here).
++        verb = " ".join(args[:2]) if args[:1] == ("config",) else (args[0] if args else "")
++        log("rclone %s failed (%d)" % (verb, proc.returncode))
+     return proc.returncode, proc.stdout, proc.stderr
+ 
+ 
+@@ -243,10 +238,13 @@ def cmd_choices(backend_type, field, subprovider=""):
+ 
+ 
+ def existing_remotes():
+-    """Configured remote names, without the trailing colon."""
++    """Configured remote names, without the trailing colon -- or None when
++    rclone could not say. A listing that failed used to read as "no remotes",
++    and cmd_create's refusal to touch an existing remote fell open exactly
++    when rclone could not be asked (#308 gpt F-RS-23)."""
+     code, out, _ = rclone("listremotes", check=False)
+     if code != 0:
+-        return []
++        return None
+     return [line.strip().rstrip(":") for line in out.splitlines() if line.strip()]
+ 
+ 
+@@ -271,7 +269,11 @@ def cmd_create(name, backend_type, settings):
+     match it; silently rewriting that is how someone loses access to their
+     own files (see fork issue #51).
+     """
+-    if name in existing_remotes():
++    existing = existing_remotes()
++    if existing is None:
++        sys.stderr.write("could not read the configured remotes; not creating one\n")
++        return 2
++    if name in existing:
+         sys.stderr.write(
+             "remote '%s' already exists; not modifying it\n" % name)
+         return 1
+diff --git a/projects/ROCKNIX/packages/network/rclone/sources/cloud_setup b/projects/ROCKNIX/packages/network/rclone/sources/cloud_setup
+index 2b6d021c93..17e4730301 100755
+--- a/projects/ROCKNIX/packages/network/rclone/sources/cloud_setup
++++ b/projects/ROCKNIX/packages/network/rclone/sources/cloud_setup
+@@ -44,6 +44,54 @@ log_message() {
+     echo "[${timestamp}] [INFO] [${SCRIPT_NAME}] ${message}" >> ${LOG_FILE}
+ }
+ 
++# The config is shell: every cloud script sources it. So a value is written
++# as text between double quotes, never through a sed replacement -- where &
++# is the matched line and | ends the expression, so "/R&D/Saves" became
++# garbage and "/a|b" failed the write while OK was printed (audit #307
++# PL-051) -- and a value that would mean something to a shell between double
++# quotes (" $ ` \) is refused where it is typed (syncpath_problem).
++#
++# conf_set KEY VALUE [KEY VALUE ...] writes every pair in one pass, each
++# KEY= line replaced (every one, as the sed was) or appended, to a file
++# beside the config that is renamed over it: all the keys or none, and the
++# previous config intact when the write fails. The values reach awk through
++# the environment, so nothing in them is interpreted. Returns non-zero when
++# the config could not be written.
++conf_set() {
++    local tmp="${SYNC_CONF}.tmp.$$" src="${SYNC_CONF}" n=0
++    local -a pairs=()
++    [ -f "${src}" ] || src=/dev/null
++    while [ $# -ge 2 ]; do
++        n=$((n + 1)); pairs+=("CONF_K${n}=$1" "CONF_V${n}=$2"); shift 2
++    done
++    if env "${pairs[@]}" CONF_N="${n}" awk '
++        BEGIN {
++            n = ENVIRON["CONF_N"] + 0
++            for (i = 1; i <= n; i++) {
++                k[i] = ENVIRON["CONF_K" i]
++                line[i] = k[i] "=\"" ENVIRON["CONF_V" i] "\""
++            }
++        }
++        {
++            for (i = 1; i <= n; i++)
++                if (index($0, k[i] "=") == 1) { print line[i]; seen[i] = 1; next }
++            print
++        }
++        END { for (i = 1; i <= n; i++) if (!seen[i]) print line[i] }
++    ' "${src}" > "${tmp}" 2>/dev/null && mv -f "${tmp}" "${SYNC_CONF}" 2>/dev/null; then
++        return 0
++    fi
++    rm -f "${tmp}" 2>/dev/null
++    return 1
++}
++
++# One value from the config, read as text: the first KEY= line, one pair of
++# surrounding double quotes removed. Never by sourcing or eval -- a value an
++# earlier build wrote with $( ) in it would run (PL-051).
++conf_get() {
++    sed -n "s/^$1=//p" "${SYNC_CONF}" 2>/dev/null | head -1 | sed 's/^"\(.*\)"$/\1/'
++}
++
+ # Wait for any confirm/cancel input: controller (evtest) or keyboard.
+ wait_for_button() {
+     local input_device=""
+@@ -160,6 +208,8 @@ absent_not_broken() {
+     return 1
+ }
+ 
++# Callers pass the first remote; an empty one stops after the string checks,
++# which hold with no remote configured at all.
+ syncpath_problem() {
+     local path="$1" remote="$2" bucket probe
+     path="/$(echo "${path}" | sed 's:^/*::; s:/*$::')"
+@@ -168,6 +218,34 @@ syncpath_problem() {
+         echo "Your cloud folder can't be empty."
+         return 1
+     fi
++    # The config is shell, sourced by every cloud script: the characters a
++    # shell reads inside double quotes, and control characters, are refused
++    # where the folder is typed (audit #307 PL-051, conf_set).
++    case "${path}" in
++        *[\"\$\`\\]*|*[[:cntrl:]]*)
++            echo "Your cloud folder's name can't contain \", \$, \`, or \\."
++            return 1
++            ;;
++    esac
++    # The saves folder has to sit inside another folder. Its settings
++    # backups and games are kept beside it -- <parent>/Backups and
++    # <parent>/Content -- and a saves folder at the top of the cloud has no
++    # parent to keep them in. The setter used to put them INSIDE it instead
++    # (/GAMES/Backups, /GAMES/Content): the nesting a mirror of the saves
++    # folder deletes, because to the saves allowlist every file in them is
++    # excluded (audit #307 PL-015, rclone-cloud-sync.md). So it is refused
++    # where it is typed, with the folder to use instead -- on a bucket remote
++    # that is the bucket and a folder in it, the shape the bucket message
++    # below asks for anyway.
++    case "${path#/}" in
++        */*) ;;
++        *)
++            echo "Your saves folder needs to sit inside another folder, so your settings backups and games can go beside it."
++            echo "Try ${path}/Saves."
++            return 1
++            ;;
++    esac
++    [ -n "${remote}" ] || return 0
+ 
+     # No provider rules are encoded here on purpose. rclone does not validate
+     # bucket names itself - it hands them to the provider and relays the
+@@ -254,7 +332,7 @@ case "$1" in
+         echo "AUTH_PORT=$(auth_port_busy && echo busy || echo free)"
+         # Both names for one value: EmulationStation reads SYNCPATH= until its
+         # side of the vocabulary sweep (#73) lands; SAVES_REMOTE= is the name.
+-        saves_remote="$(. "${SYNC_CONF}" 2>/dev/null; echo "${SAVES_REMOTE}")"
++        saves_remote="$(conf_get SAVES_REMOTE)"
+         echo "SAVES_REMOTE=${saves_remote}"
+         echo "SYNCPATH=${saves_remote}"
+         echo "REMOTES=$(rclone listremotes 2>/dev/null | tr '\n' ' ')"
+@@ -290,10 +368,13 @@ case "$1" in
+         # ours. Anything else at the root is the owner's own business.
+         LOCAL=$(cloud_content_backup --list 2>/dev/null | tr '\n' ' ')
+         AT_PATH=0; AT_ROOT=0; ROOT_DIRS=""
++        # Both listings carry the bound every listing here does (#308 claude
++        # F-RS-13): rclone's own defaults are three runs of ten retries,
++        # under a page waiting on the answer.
+         if [ -n "${CP}" ]; then
+-            AT_PATH=$(rclone lsf --dirs-only "${REMOTE}${CP#/}" 2>/dev/null | wc -l)
++            AT_PATH=$(rclone lsf --dirs-only "${REMOTE}${CP#/}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | wc -l)
+         fi
+-        for d in $(rclone lsf --dirs-only "${REMOTE}" 2>/dev/null | sed 's:/$::'); do
++        for d in $(rclone lsf --dirs-only "${REMOTE}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | sed 's:/$::'); do
+             case " ${LOCAL} " in
+                 *" ${d} "*) AT_ROOT=$((AT_ROOT + 1)); ROOT_DIRS="${ROOT_DIRS}${d} " ;;
+             esac
+@@ -321,10 +402,10 @@ case "$1" in
+     --use-content-root)
+         # The safe resolution: point this device back at the root where its
+         # content already is. Moves nothing, reversible, instant.
+-        if grep -q '^CONTENT_REMOTE=' "${SYNC_CONF}"; then
+-            sed -i 's|^CONTENT_REMOTE=.*|CONTENT_REMOTE=""|' "${SYNC_CONF}"
+-        else
+-            echo 'CONTENT_REMOTE=""' >> "${SYNC_CONF}"
++        if ! conf_set CONTENT_REMOTE ""; then
++            echo "ERROR the cloud sync settings could not be saved"
++            log_message "Content path NOT changed: ${SYNC_CONF} could not be written"
++            exit 1
+         fi
+         log_message "Content path set to the remote root by request"
+         echo "OK content stays at the remote root"
+@@ -361,9 +442,11 @@ case "$1" in
+         # This used to write SETTINGS_REMOTE="<saves>/backup", which is the
+         # first-layout nesting cloud_migrate_layout exists to undo and the
+         # trap cloud_backup warns about: a mirror of the saves folder can
+-        # delete the archives kept beneath it. Same derivation as
+-        # cloud_sync_helper uses for CONTENT_REMOTE: the saves folder's
+-        # parent, or the folder itself when it sits at the root.
++        # delete the archives kept beneath it. The siblings are the saves
++        # folder's parent's: <parent>/Backups and <parent>/Content. A saves
++        # folder at the top of the cloud has no parent and is refused
++        # (syncpath_problem) -- it used to adopt the folder itself as the
++        # parent, which nested both inside it (audit #307 PL-015).
+         NEWPATH="$2"
+         if [ -z "${NEWPATH}" ]; then
+             echo "ERROR empty path"
+@@ -377,23 +460,22 @@ case "$1" in
+         fi
+         # Refuse a path this remote cannot use, rather than storing it and
+         # letting the next sync fail with a provider error naming nothing the
+-        # player recognises.
++        # player recognises. The string checks -- a parent for the siblings
++        # (PL-015), no shell characters (PL-051) -- hold with no remote.
+         SP_REMOTE=$(rclone listremotes 2>/dev/null | head -1)
+-        if [ -n "${SP_REMOTE}" ] && ! syncpath_problem "${NEWPATH}" "${SP_REMOTE}"; then
++        if ! syncpath_problem "${NEWPATH}" "${SP_REMOTE}"; then
+             exit 1
+         fi
+         SP_PARENT="$(dirname "${NEWPATH}")"
+-        [ "${SP_PARENT}" = "/" ] && SP_PARENT="${NEWPATH}"
+-        for key in SAVES_REMOTE SETTINGS_REMOTE CONTENT_REMOTE; do
+-            value="${NEWPATH}"
+-            [ "${key}" = "SETTINGS_REMOTE" ] && value="${SP_PARENT}/Backups"
+-            [ "${key}" = "CONTENT_REMOTE" ] && value="${SP_PARENT}/Content"
+-            if grep -q "^${key}=" "${SYNC_CONF}"; then
+-                sed -i "s|^${key}=.*|${key}=\"${value}\"|" "${SYNC_CONF}"
+-            else
+-                echo "${key}=\"${value}\"" >> "${SYNC_CONF}"
+-            fi
+-        done
++        # All three or none (conf_set): a folder half-changed is a saves
++        # folder whose settings still go to the old place.
++        if ! conf_set SAVES_REMOTE "${NEWPATH}" \
++                      SETTINGS_REMOTE "${SP_PARENT}/Backups" \
++                      CONTENT_REMOTE "${SP_PARENT}/Content"; then
++            echo "The cloud sync settings could not be saved, so the folder was not changed."
++            log_message "Sync path NOT changed to ${NEWPATH}: ${SYNC_CONF} could not be written"
++            exit 1
++        fi
+         log_message "Sync path changed to ${NEWPATH}"
+         echo "OK ${NEWPATH}"
+         exit 0
+@@ -437,28 +519,55 @@ case "$1" in
+         # layout seeded rather than ours.
+         REMOTE=$(rclone listremotes 2>/dev/null | head -1)
+         [ -z "${REMOTE}" ] && { echo "ERROR no remote"; exit 2; }
+-        eval "$(grep -E '^(SAVES_REMOTE|SETTINGS_REMOTE|CONTENT_REMOTE)=' "${SYNC_CONF}" 2>/dev/null)"
++        # Read as text, never eval'd: the config is shell, and a value an
++        # earlier build wrote could carry a command (PL-051).
++        SAVES_REMOTE="$(conf_get SAVES_REMOTE)"
++        SETTINGS_REMOTE="$(conf_get SETTINGS_REMOTE)"
++        CONTENT_REMOTE="$(conf_get CONTENT_REMOTE)"
+         SAVES="${SAVES_REMOTE:-/ROCKNIX/Saves}"
+         BACKUPS="${SETTINGS_REMOTE:-/ROCKNIX/Backups}"
+-        CONTENT="${CONTENT_REMOTE:-/ROCKNIX/Content}"
++        # An empty CONTENT_REMOTE is not a missing one: it is
++        # --use-content-root's "the cloud's root", which is where the
++        # content scripts put ROMs/ and BIOS/ (ROOT="<remote>:"). Only a
++        # config with no such line gets the default (#308 gpt F-RS-20).
++        if grep -q '^CONTENT_REMOTE=' "${SYNC_CONF}" 2>/dev/null; then
++            CONTENT="${CONTENT_REMOTE%/}"
++        else
++            CONTENT="/ROCKNIX/Content"
++        fi
+ 
+         for d in "${SAVES}" "${SAVES}/savefiles" "${SAVES}/savestates" \
+                  "${SAVES}/screenshots" "${BACKUPS}" \
+-                 "${CONTENT}" "${CONTENT}/ROMs" "${CONTENT}/BIOS"; do
++                 ${CONTENT:+"${CONTENT}"} "${CONTENT}/ROMs" "${CONTENT}/BIOS"; do
+             # --s3-directory-markers writes a zero-byte object ending in "/",
+             # which is how S3 itself represents a folder -- without it a
+             # bucket remote silently keeps nothing, and mkdir still exits 0.
+             # Ignored by path-based backends, so it costs nothing there.
+-            rclone mkdir --s3-directory-markers "${REMOTE}${d}" 2>/dev/null
++            # Bounded like the listings (#308 claude F-RS-13, gpt F-RS-19):
++            # up to two dozen calls under one 90 s box in the interface.
++            rclone mkdir --s3-directory-markers "${REMOTE}${d}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null
+         done
+ 
+         seed_note() {
+-            local dir="$1"; shift
+-            # Never clobber a note the owner may have written themselves.
+-            rclone lsf "${REMOTE}${dir}/README.txt" >/dev/null 2>&1 && return 0
+-            local tmp; tmp=$(mktemp)
++            local dir="$1" listing tmp; shift
++            # Never clobber a note the owner may have written themselves, and
++            # never write on a guess. The folder's own listing says whether a
++            # README.txt is in it. Asking for the file by name could not: a
++            # listing that failed for any reason read as "absent" and the
++            # owner's note was replaced (audit #307 PL-047), and on a bucket
++            # a key that is not there lists as nothing with exit 0, which read
++            # as "present" -- so no README was ever written there (#308
++            # claude F-RS-09). A listing that fails writes nothing.
++            if ! listing=$(rclone lsf --files-only "${REMOTE}${dir}/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null); then
++                log_message "Seeding: ${dir} could not be listed, so its README was not written"
++                return 1
++            fi
++            printf '%s\n' "${listing}" | grep -qFx -- 'README.txt' && return 0
++            tmp=$(mktemp) || return 1
+             printf '%s\n' "$@" > "${tmp}"
+-            rclone copyto "${tmp}" "${REMOTE}${dir}/README.txt" 2>/dev/null
++            # --ignore-existing: another device may have written one since
++            # the listing.
++            rclone copyto --ignore-existing "${tmp}" "${REMOTE}${dir}/README.txt" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null
+             rm -f "${tmp}"
+         }
+ 
+@@ -476,7 +585,10 @@ case "$1" in
+             "" \
+             "Written by the device. Nothing to put here by hand."
+ 
+-        seed_note "${CONTENT}" \
++        # Not at the top of somebody's cloud: with content at the root, the
++        # ROMs and BIOS folders carry their own notes and the root keeps
++        # whatever the owner has there.
++        [ -n "${CONTENT}" ] && seed_note "${CONTENT}" \
+             "Put your games and BIOS files here." \
+             "" \
+             "  ROMs/       one folder per system - snes, psx, n64, gba, ..." \
+@@ -504,8 +616,8 @@ case "$1" in
+             # success for any path at all, so the MISSING branch could never
+             # be reached -- the report would have been unconditionally OK,
+             # which is the shape of an assertion that cannot fail.
+-            if [ -n "$(rclone lsf "${REMOTE}${d}" 2>/dev/null | head -1)" ] \
+-               || rclone lsf --dirs-only "${REMOTE}${d%/*}/" 2>/dev/null | grep -qx "${d##*/}/"; then
++            if [ -n "$(rclone lsf "${REMOTE}${d}" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | head -1)" ] \
++               || rclone lsf --dirs-only "${REMOTE}${d%/*}/" "${RCLONE_LIST_OPTS[@]}" 2>/dev/null | grep -qFx -- "${d##*/}/"; then
+                 echo "OK ${d}"
+             else
+                 echo "MISSING ${d}"

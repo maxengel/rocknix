@@ -1,0 +1,514 @@
+# ---- audit #307, stream F2 ----
+# Stream F2's cases: the recipes, the RetroArch patches and the rotation-table
+# generators (#307 PL-002, PL-032, PL-043; #308's rows in those files). Every
+# case reads its files through src_of, so under
+#     BASE_REF=417dcd8610 tools/last-good-scripts-test --old
+# they grade the tree the audit read: 37 checks FAIL there, every case at
+# least once, and the six that PASS both ways are the controls (a stamp that
+# must not move, a payload that must be kept, the tree still compiling).
+F2="${TMP}/f2"; mkdir -p "${F2}"
+F2_LR=projects/ROCKNIX/packages/emulators/libretro
+
+# F2-1. A shared rotation generator is part of the stamp of every core whose
+# table it writes (#307 PL-002). calculate_stamp is config/functions' own; the
+# two package-cache lookups answer from a fixture tree holding the five
+# recipes and the two generators as the tree has them. Editing a generator
+# must move the stamp of each core that runs it -- that is what makes
+# scripts/build rebuild the core -- and leave the other family's alone.
+echo "  F2-1. a rotation generator is in the build stamp of every core whose table it writes (#307 PL-002)"
+FX="${F2}/stamp"; FXR="${FX}/root"; mkdir -p "${FXR}/${F2_LR}"
+for p in fbalpha2012-lr fbalpha2019-lr fbneo-lr mame2003-plus-lr mame2010-lr; do
+    mkdir -p "${FXR}/${F2_LR}/${p}"; src_of "${F2_LR}/${p}/package.mk" "${FXR}/${F2_LR}/${p}/package.mk"
+done
+for g in rotation-table-fba.py rotation-table-mame.py; do src_of "${F2_LR}/${g}" "${FXR}/${F2_LR}/${g}"; done
+src_of config/functions "${FX}/functions"
+awk '/^calculate_stamp\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${FX}/functions" > "${FX}/calculate_stamp.sh"
+f2_stamp() { # <package>: the stamp scripts/build compares, from the recipe as source_package loads it
+    ( set +u; cd "${FXR}" || exit 1
+      ROOT="${FXR}"; PROJECT_DIR="${FXR}/projects"; PROJECT=ROCKNIX; DEVICE=H700; ARCH=aarch64; TARGET_ARCH=aarch64; TARGET_FPU=neon-fp-armv8
+      get_pkg_directory() { echo "${FXR}/${F2_LR}/${1%:*}"; }
+      get_global_pkg_directory() { :; }
+      PKG_DIR="${FXR}/${F2_LR}/${1}"
+      . "${PKG_DIR}/package.mk" >/dev/null 2>&1
+      . "${FX}/calculate_stamp.sh"
+      calculate_stamp ) 2>/dev/null
+}
+declare -A F2_S0
+for p in fbalpha2012-lr fbalpha2019-lr fbneo-lr mame2003-plus-lr mame2010-lr; do F2_S0[${p}]="$(f2_stamp ${p})"; done
+echo "# an edit" >> "${FXR}/${F2_LR}/rotation-table-fba.py"
+for p in fbalpha2012-lr fbalpha2019-lr fbneo-lr; do
+    s="$(f2_stamp ${p})"; [ -n "${s}" ] && [ -n "${F2_S0[${p}]}" ] && [ "${s}" != "${F2_S0[${p}]}" ]
+    check $? "an edit to rotation-table-fba.py moves ${p}'s stamp, so scripts/build rebuilds it" "${p}'s stamp did not move when rotation-table-fba.py changed (${F2_S0[${p}]:0:12} -> ${s:0:12}): a warm root keeps the old table"
+done
+for p in mame2003-plus-lr mame2010-lr; do
+    s="$(f2_stamp ${p})"; [ -n "${s}" ] && [ "${s}" = "${F2_S0[${p}]}" ]
+    check $? "and leaves ${p}'s alone -- that core does not run it" "${p}'s stamp moved on an edit to the fba generator (${F2_S0[${p}]:0:12} -> ${s:0:12})"
+done
+echo "# an edit" >> "${FXR}/${F2_LR}/rotation-table-mame.py"
+for p in mame2003-plus-lr mame2010-lr; do
+    s="$(f2_stamp ${p})"; [ -n "${s}" ] && [ "${s}" != "${F2_S0[${p}]}" ]
+    check $? "an edit to rotation-table-mame.py moves ${p}'s stamp" "${p}'s stamp did not move when rotation-table-mame.py changed: a warm root keeps the old table"
+done
+# F2-2. The rotation generators read only live source, carry their own row
+# floor, and say who they are (#308 9-emulators: gpt F-EM-04, claude F-EM-10,
+# F-EM-11, F-EM-12, gpt F-EM-06). Two fixture trees: an FBA driver file and a
+# MAME driver file, each holding live declarations beside commented-out ones
+# and strings that look like code. The pinned cores carry six such rows
+# (FBNeo, fbalpha2012 and fbalpha2019's sbdk, inside a /* */ block;
+# mame2003-plus's nrallyv, mame2010's dambust, kkgalax and mrkougr2, behind
+# //); the fixtures are those shapes.
+echo "  F2-2. the rotation generators read live source only, fail under their floor, and carry a licence header (#308 F-EM-04, F-EM-10, F-EM-11, F-EM-12)"
+GX="${F2}/gen"; mkdir -p "${GX}/fba/src/burn/drv/misc" "${GX}/mame/src/drivers" "${GX}/few/src/burn/drv"
+src_of "${F2_LR}/rotation-table-fba.py" "${GX}/rotation-table-fba.py"
+src_of "${F2_LR}/rotation-table-mame.py" "${GX}/rotation-table-mame.py"
+cat > "${GX}/fba/src/burn/drv/misc/d_fixture.cpp" <<'EOC'
+struct BurnDriver BurnDrvLive = {
+	"live", NULL, NULL, NULL, "1984",
+	"Live\0", NULL, "Maker", "Misc",
+	NULL, NULL, NULL, NULL,
+	BDF_GAME_WORKING | BDF_ORIENTATION_VERTICAL, 2, HARDWARE_MISC_PRE90S, GBF_MAZE, 0,
+};
+struct BurnDriver BurnDrvBoth = {
+	"both", NULL, NULL, NULL, "1984",
+	"Both\0", NULL, "Maker", "Misc",
+	BDF_GAME_WORKING | BDF_ORIENTATION_VERTICAL | BDF_ORIENTATION_FLIPPED, 2, 0, 0, 0,
+};
+/*
+struct BurnDriverD BurnDrvGhost = {
+	"ghost", NULL, NULL, NULL, "1984",
+	"Ghost\0", NULL, "Maker", "Misc",
+	BDF_GAME_WORKING | BDF_ORIENTATION_VERTICAL, 2, 0, 0, 0,
+};
+*/
+struct BurnDriver BurnDrvPlain = {
+	"plain", NULL, NULL, NULL, "1984",
+	"Plain\0", NULL, "Maker", "Misc",
+	BDF_GAME_WORKING, 2, 0, 0, 0, // BDF_ORIENTATION_FLIPPED was a guess
+};
+struct BurnDriver BurnDrvQuoted = {
+	"quoted", NULL, NULL, NULL, "1984",
+	"Quoted: not BDF_ORIENTATION_VERTICAL /* really\0", NULL, "Maker", "Misc",
+	BDF_GAME_WORKING, 2, 0, 0, 0,
+};
+EOC
+cat > "${GX}/mame/src/drivers/fixture.c" <<'EOC'
+/*GAME( 1990, demo,  0, m, i, 0, ROT90,  "M", "Demo (the old vertical set)", 0 )*/
+GAME( 1990, demo,  0, m, i, 0, ROT0,   "M", "Demo", 0 )
+//GAME( 1981, gone,  0, m, i, 0, ROT270, "M", "Gone", 0 )
+GAME( 1981, turn,  0, m, i, 0, ROT270, "M", "Turn // not a comment", 0 )
+GAMEX( 1982, flip, 0, m, i, 0, ROT90 | ORIENTATION_FLIP_X, "M", "Flip", 0 )
+EOC
+for n in one two; do printf 'struct BurnDriver BurnDrv%s = {\n\t"%s", NULL, NULL, NULL, "1984",\n\tBDF_GAME_WORKING | BDF_ORIENTATION_VERTICAL, 2, 0, 0, 0,\n};\n' "${n}" "${n}" >> "${GX}/few/src/burn/drv/d_few.cpp"; done
+F2_OUT="$(python3 "${GX}/rotation-table-fba.py" "${GX}/fba" 2>/dev/null)"
+[ "${F2_OUT}" = "$(printf 'both 3\nlive 1')" ]; check $? "FBA: live drivers only -- a driver inside /* */, a flag after //, a flag named in a string give no row" "FBA fixture table: '$(printf '%s' "${F2_OUT}" | tr '\n' '|')' -- expected 'both 3|live 1'"
+F2_OUT="$(python3 "${GX}/rotation-table-mame.py" "${GX}/mame" src/drivers 2>/dev/null)"
+[ "${F2_OUT}" = "turn 1" ]; check $? "MAME: a commented-out GAME() gives no row, a live ROT0 wins over a commented ROT90, and // inside a string is text" "MAME fixture table: '$(printf '%s' "${F2_OUT}" | tr '\n' '|')' -- expected 'turn 1'"
+python3 "${GX}/rotation-table-fba.py" --min 3 "${GX}/few" > "${GX}/few.txt" 2>/dev/null; rc=$?
+python3 "${GX}/rotation-table-fba.py" --min 2 "${GX}/few" > /dev/null 2>&1; rc2=$?
+[ "${rc}" -ne 0 ] && [ "${rc2}" -eq 0 ]; check $? "--min N fails a table under N rows (two rows, --min 3) and passes one at N" "--min 3 over two rows: rc ${rc}; --min 2: rc ${rc2} -- the floor has to live in the generator, not in five recipes"
+python3 "${GX}/rotation-table-mame.py" --min 2 "${GX}/mame" src/drivers > /dev/null 2>&1; rc=$?
+[ "${rc}" -ne 0 ]; check $? "and the MAME generator's --min fails its one-row fixture under 2" "rotation-table-mame.py --min 2 over one row: rc ${rc}"
+for g in fba mame; do
+    head -4 "${GX}/rotation-table-${g}.py" | grep -q '^# SPDX-License-Identifier: ' && head -4 "${GX}/rotation-table-${g}.py" | grep -q '^# Copyright (C) .*ROCKNIX'
+    check $? "rotation-table-${g}.py opens with an SPDX line and a copyright line" "rotation-table-${g}.py has no SPDX/copyright header in its first lines"
+done
+grep -q "^# rotation-table-fba.py " "${GX}/rotation-table-fba.py" && ! grep -q 'fbneo-rotation-table.py' "${GX}/rotation-table-fba.py" && ! grep -q '^macro = re.compile' "${GX}/rotation-table-mame.py"
+check $? "the usage lines name the files they are in, and the MAME generator compiles no regex it does not use" "a usage line names another file, or the unused 'macro' regex is still there"
+F2_BAD=""
+for p in fbalpha2012-lr fbalpha2019-lr fbneo-lr mame2003-plus-lr mame2010-lr; do
+    src_of "${F2_LR}/${p}/package.mk" "${GX}/${p}.mk"
+    grep -q '^rotation_table_check()' "${GX}/${p}.mk" && F2_BAD+=" ${p}:copy"
+    grep -q 'rotation-table-[a-z]*\.py --min [0-9]' "${GX}/${p}.mk" || F2_BAD+=" ${p}:no-floor"
+done
+[ -z "${F2_BAD}" ]; check $? "the five recipes hand the generator its floor (--min) and carry no copy of the row check" "recipes:${F2_BAD}"
+# F2-3. make docker-* writes .env in its recipe, owner-only over any older
+# copy, and removes it when the container is gone (#307 PL-043; #308
+# 10-packages claude F-PB-12). The docker-% recipe is taken out of the
+# Makefile and run as make would -- one /bin/sh -c per logical line, $$ as $,
+# every $(VAR) empty except $(DOCKER_CMD), a stub that records what the
+# container would have been handed -- in a directory holding a 0644 .env
+# left by an older tree and a get_env that prints one variable. No make and
+# no docker run; the recipe's own shell does the work.
+echo "  F2-3. make docker-* writes .env owner-only in its recipe, over an older 0644 copy, and removes it after (#307 PL-043)"
+MX="${F2}/mk"; mkdir -p "${MX}/scripts" "${MX}/bin"
+src_of Makefile "${MX}/Makefile"
+printf '#!/bin/sh\necho F2_FORWARDED=yes\n' > "${MX}/scripts/get_env"; chmod +x "${MX}/scripts/get_env"
+printf '#!/bin/sh\n{ stat -c %%a .env 2>/dev/null || echo absent; cat .env 2>/dev/null; } > "%s/seen"\nexit 7\n' "${MX}" > "${MX}/bin/docker"; chmod +x "${MX}/bin/docker"
+! grep -Eq '^docker-%:.*\$\(shell[^)]*>[[:space:]]*\.env' "${MX}/Makefile"
+check $? "no prerequisite list writes .env as make reads the file (it did for every target, native builds included)" "a docker-% prerequisite still runs \$(shell ... > .env) at parse time: $(grep -E '^docker-%:.*\.env' "${MX}/Makefile" | head -1)"
+awk '/^docker-%:[[:space:]]*$/{p=1; next} p&&/^\t/{print; next} p{exit}' "${MX}/Makefile" \
+  | sed -e 's/^\t@\{0,1\}//' | awk '{ if (sub(/\\$/, "")) { buf = buf $0 } else { print buf $0; buf = "" } }' \
+  | sed -e "s|\$(DOCKER_CMD)|${MX}/bin/docker|g" -e 's/\$([A-Z_]*)//g' -e 's/\$\$/$/g' > "${MX}/recipe.sh"
+f2_recipe() { ( cd "${MX}" && while IFS= read -r line; do /bin/sh -c "${line}" || exit $?; done < recipe.sh ) > /dev/null 2>&1; }
+printf 'STALE=1\n' > "${MX}/.env"; chmod 0644 "${MX}/.env"; rm -f "${MX}/seen"
+f2_recipe; rc=$?
+[ "$(head -1 "${MX}/seen" 2>/dev/null)" = "600" ] && grep -qx 'F2_FORWARDED=yes' "${MX}/seen" && ! grep -q STALE "${MX}/seen"
+check $? "the container is handed a fresh .env, mode 600, though a 0644 one was there before" "what the container got: '$(tr '\n' '|' < "${MX}/seen" 2>/dev/null)' -- expected mode 600 and this run's F2_FORWARDED=yes"
+[ ! -e "${MX}/.env" ] && [ "${rc}" -eq 7 ]; check $? "and .env is gone afterwards, the container's status the recipe's (7)" ".env after the recipe: $([ -e "${MX}/.env" ] && echo "present, mode $(stat -c %a "${MX}/.env")" || echo gone); rc ${rc}"
+printf '#!/bin/sh\necho PARTIAL=1\nexit 3\n' > "${MX}/scripts/get_env"; rm -f "${MX}/seen"
+f2_recipe; rc=$?
+[ ! -e "${MX}/seen" ] && [ ! -e "${MX}/.env" ] && [ "${rc}" -ne 0 ]; check $? "a get_env that fails starts no container and leaves no .env" "get_env failed: container $([ -e "${MX}/seen" ] && echo started || echo 'not started'); .env $([ -e "${MX}/.env" ] && echo left || echo gone); rc ${rc}"
+# F2-4. RetroArch's patch stack as the package applies it, over the pinned
+# tarball (#307 PL-032; #308 6-retroarch-widgets: claude F-RW-02/05/06/07/
+# 08/09/10, gpt F-RW-01/03/04). scripts/unpack applies patches/*.patch in
+# glob order with patch's default fuzz, then batteryplus/ (H700, RK3566,
+# S922X); the fork's own patches are held to fuzz 0 here, since a hunk that
+# applies only by fuzz is one a reviewer applying the series strictly gets
+# rejected (0017 needed a fuzz of 2 after 0016 was hand-edited to 13 px).
+# The patched tree is then compiled syntax-only with the host's gcc, the
+# widget font step is compiled on its own and asked which table each face
+# gets, and the claims the audit found false are read from the patched
+# source.
+echo "  F2-4. RetroArch's patches: the fork's apply at fuzz 0, the tree compiles, the sharp-size table follows the face that is drawn (#307 PL-032; #308 F-RW-02..10)"
+RA_REL=projects/ROCKNIX/packages/emulators/libretro/retroarch
+RA_PIN="$(sed -n 's/^PKG_VERSION="\([0-9a-f]*\)".*/\1/p' "${ROOT}/${RA_REL}/package.mk" | head -1)"
+RA_TAR=""
+for d in "${SOURCES_DIR:-}" /workspace/cache/rocknix-sources "${ROOT}/sources" "${ROOT}"/../*/sources; do
+    [ -n "${d}" ] && [ -f "${d}/retroarch/retroarch-${RA_PIN}.tar.gz" ] && { RA_TAR="${d}/retroarch/retroarch-${RA_PIN}.tar.gz"; break; }
+done
+if [ -z "${RA_TAR}" ]; then
+    echo "    SKIP  retroarch-${RA_PIN:-?}.tar.gz is not under SOURCES_DIR, /workspace/cache/rocknix-sources or a build worktree's sources/ -- F2-4 needs the pinned tree"
+else
+RX="${F2}/ra"; mkdir -p "${RX}/patches/batteryplus" "${RX}/src"
+if [ "${OLD}" -eq 1 ]; then
+    git -C "${ROOT}" ls-tree --name-only "${BASE_REF}" "${RA_REL}/patches/" "${RA_REL}/patches/batteryplus/" | grep '\.patch$' \
+      | while read -r f; do git -C "${ROOT}" show "${BASE_REF}:${f}" > "${RX}/patches/${f#${RA_REL}/patches/}"; done
+else
+    cp "${ROOT}/${RA_REL}"/patches/*.patch "${RX}/patches/"; cp "${ROOT}/${RA_REL}"/patches/batteryplus/*.patch "${RX}/patches/batteryplus/"
+fi
+tar -xzf "${RA_TAR}" -C "${RX}/src" --strip-components=1 --wildcards '*.h' '*.c' '*.cpp' '*/version.all' 2>/dev/null
+F2_FUZZ=""; F2_APPLY=0
+for p in "${RX}"/patches/*.patch "${RX}"/patches/batteryplus/*.patch; do
+    n="${p#${RX}/patches/}"
+    # The fork's (0011-video-thread-*, 0013 and up) are tried at fuzz 0 first
+    # and noted when that fails; every patch is then applied as the package
+    # applies it, so the checks below read the tree the build would.
+    case "${n}" in
+        0011-video-thread-*|001[3-9]-*|00[2-9][0-9]-*)
+            patch -d "${RX}/src" -p1 -N --fuzz=0 --dry-run -r - < "${p}" > "${RX}/fz.log" 2>&1 && ! grep -q 'with fuzz' "${RX}/fz.log" || F2_FUZZ+=" ${n}" ;;
+    esac
+    patch -d "${RX}/src" -p1 -N --no-backup-if-mismatch -r - < "${p}" > /dev/null 2>&1 || { F2_APPLY=1; F2_FUZZ+=" ${n}(FAILED)"; }
+done
+[ "${F2_APPLY}" -eq 0 ] && [ -z "${F2_FUZZ}" ]; check $? "every patch applies in the package's order, the fork's with no fuzz" "patches that needed fuzz or failed:${F2_FUZZ}"
+GW="${RX}/src/gfx/gfx_widgets.c"
+if command -v gcc > /dev/null; then
+    F2_CC=""
+    for c in gfx/gfx_widgets.c gfx/video_thread_wrapper.c command.c runtime_file.c; do
+        gcc -fsyntax-only -std=gnu99 -Werror=implicit-function-declaration -I"${RX}/src" -I"${RX}/src/libretro-common/include" -I"${RX}/src/deps" \
+            -DHAVE_GFX_WIDGETS -DHAVE_MENU -DHAVE_XMB -DHAVE_OZONE -DHAVE_THREADS -DHAVE_CHEEVOS -DHAVE_CONFIGFILE -DHAVE_NETWORKING -DRARCH_INTERNAL \
+            "${RX}/src/${c}" > "${RX}/cc.log" 2>&1 || F2_CC+=" ${c}: $(grep -m1 'error' "${RX}/cc.log" | cut -c1-160)"
+    done
+    [ -z "${F2_CC}" ]; check $? "the patched gfx_widgets.c, video_thread_wrapper.c, command.c and runtime_file.c compile (host gcc, -fsyntax-only)" "does not compile:${F2_CC}"
+else
+    echo "    SKIP  no gcc on this host: the patched tree was not compiled"
+fi
+# PL-032: which sharp-size table a face gets is decided by the face that is
+# drawn -- the resolved font file -- in both of gfx_widgets_layout's
+# branches, so video_font_path (set by every shipped profile) no longer means
+# "no table" by accident. The step is compiled alone and asked: the two
+# ozone faces get the tables measured for them, the shipped profile's
+# xmb/monochrome/font.ttf (M+ 1p) gets none -- measured the same way it has
+# no sharp size in reach (tools/font-stems: 29 % solid at 13 px, 63 % at 17,
+# 100 % only from 23), and D-UI-088 leaves an unmeasured face alone -- and a
+# 17.4 px banner in Inter UI Regular moves to 18 as D-UI-088 says.
+awk '/^\/\* ROCKNIX: sharp-size step begin \*\//{p=1} p{print} /^\/\* ROCKNIX: sharp-size step end \*\//{p=0}' "${GW}" > "${RX}/sharp.inc"
+cat > "${RX}/sharp_test.c" <<'EOC'
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
+#include "sharp.inc"
+static const char *face(const char *path)
+{
+   const gfx_widgets_sharp_face_t *f = gfx_widgets_sharp_face(path);
+   return f ? f->name : "none";
+}
+int main(void)
+{
+   const gfx_widgets_sharp_face_t *r = gfx_widgets_sharp_face("/usr/share/retroarch/assets/ozone/regular.ttf");
+   printf("%s|%s|%s|%s|%s|%.0f|%.1f\n",
+         face("/usr/share/retroarch/assets/ozone/regular.ttf"),
+         face("/usr/share/retroarch/assets/ozone/bold.ttf"),
+         face("/usr/share/retroarch-assets/xmb/monochrome/font.ttf"),
+         face(""), face(NULL),
+         r ? gfx_widgets_sharp_size(17.4f, r->sizes, r->n) : -1.0f,
+         r ? gfx_widgets_sharp_size(11.0f, r->sizes, r->n) : -1.0f);
+   return 0;
+}
+EOC
+if command -v gcc > /dev/null && [ -s "${RX}/sharp.inc" ] && gcc -std=gnu99 -o "${RX}/sharp_test" "${RX}/sharp_test.c" -I"${RX}" > "${RX}/sharp.log" 2>&1; then
+    F2_OUT="$("${RX}/sharp_test")"
+else
+    F2_OUT="(the sharp-size step is not marked out in gfx_widgets.c, or does not compile alone: $(grep -m1 error "${RX}/sharp.log" 2>/dev/null | cut -c1-120))"
+fi
+[ "${F2_OUT}" = "Inter UI Regular|Inter UI Bold|none|none|none|18|11.0" ]
+check $? "the table is the drawn face's: ozone/regular.ttf -> Inter UI Regular, ozone/bold.ttf -> Inter UI Bold, the shipped xmb/monochrome/font.ttf -> none; 17.4 px moves to 18, 11 stays (15 is past the band)" "the face step answered '${F2_OUT}' -- expected 'Inter UI Regular|Inter UI Bold|none|none|none|18|11.0'"
+# Both branches ask the drawn face; the message queue takes no table in
+# either (D-UI-098: 13 is drawn at 13); every face logs what it was drawn at.
+F2_BAD=""
+grep -q 'font_file == p_dispwidget->ozone_regular_font_path' "${GW}" && F2_BAD+=" the-pointer-comparison-is-still-there"
+grep -Eq 'gfx_widget_fonts\.regular,[^;]*font_path, BASE_FONT_SIZE, 9\.0f, NULL, 0\)' "${GW}" && F2_BAD+=" user-path-regular-passes-no-table"
+[ "$(grep -c 'MSG_QUEUE_FONT_SIZE, MSG_QUEUE_MIN_SIZE, false)' "${GW}")" -eq 2 ] || F2_BAD+=" msg_queue-not-explicitly-tableless-in-both-branches"
+grep -q 'RARCH_LOG("\[Widgets\] font %s: ' "${GW}" || F2_BAD+=" no-font-log-line"
+grep -q 'RARCH_LOG([^;]*ROCKNIX' "${GW}" && F2_BAD+=" a-log-string-carries-a-fork-issue-number"
+grep -q 'define MSG_QUEUE_MIN_SIZE  13\.0f' "${GW}" || F2_BAD+=" floor-not-13"
+[ -z "${F2_BAD}" ]; check $? "both branches ask the drawn face for its table, the message queue takes none (D-UI-098), each face's size is logged, and no log string carries a fork issue number" "gfx_widgets.c:${F2_BAD}"
+# 0016's and 0017's messages describe the code they carry (the floor is 13
+# since D-UI-098; the tables apply to the faces they were measured on).
+F2_BAD=""
+head -30 "${RX}/patches/0016-widgets-message-queue-floor.patch" | grep -q 'under 14 px\|queue gets 14' && F2_BAD+=" 0016-says-14"
+head -40 "${RX}/patches/0017-widgets-sharp-font-sizes.patch" | grep -q '14 -> 15\|The 14 px floor' && F2_BAD+=" 0017-says-14"
+head -40 "${RX}/patches/0017-widgets-sharp-font-sizes.patch" | grep -q 'video_font_path' || F2_BAD+=" 0017-silent-on-the-shipped-face"
+[ -z "${F2_BAD}" ]; check $? "0016's and 0017's messages describe the 13 px floor and the face the shipped profile draws" "patch messages:${F2_BAD}"
+# F-RW-07: a context reset with XMB configured lays out at the frame loop's
+# scale, as it already did for ozone (menu_driver_id reads UNKNOWN there).
+awk '/^static float gfx_widgets_get_scale_factor\(/,/^}/' "${GW}" | grep -q 'string_is_equal(settings->arrays.menu_driver, "xmb")'
+check $? "the widget scale's XMB test has the configured-name fallback the ozone test has" "gfx_widgets_get_scale_factor keys XMB on menu_driver_id alone, which reads UNKNOWN at a context reset"
+# F-RW-08 / gpt F-RW-04 / gpt F-RW-03: the placement is logged after the
+# divider is known, from the numbers the placement uses, and the messages on
+# screen are placed again once the layout has its new margin.
+awk '/^static void gfx_widgets_layout\(/,/^}/' "${GW}" > "${RX}/layout.c"
+L_DIV=$(grep -n 'divider_width_1px *= ' "${RX}/layout.c" | tail -1 | cut -d: -f1)
+L_LOG=$(grep -n 'msg_queue place' "${RX}/layout.c" | head -1 | cut -d: -f1)
+L_MOV=$(grep -n 'gfx_widgets_msg_queue_move(p_dispwidget)' "${RX}/layout.c" | head -1 | cut -d: -f1)
+[ -n "${L_DIV}" ] && [ -n "${L_LOG}" ] && [ "${L_LOG}" -gt "${L_DIV}" ] && sed -n "${L_LOG},\$p" "${RX}/layout.c" | grep -m1 -A6 'msg_queue place' | grep -q 'divider_width_1px'
+check $? "the placement line is written after the divider is set and from the divider the placement adds" "placement log at line ${L_LOG:-none} of gfx_widgets_layout, divider set at ${L_DIV:-none}; or its pitch is not the placement's"
+[ -n "${L_MOV}" ] && [ -n "${L_DIV}" ] && [ "${L_MOV}" -gt "${L_DIV}" ]; check $? "gfx_widgets_layout places the messages on screen again once the margin and divider are new" "no gfx_widgets_msg_queue_move after the layout's new metrics (a message pushed between the two passes kept the first pass's place)"
+# F-RW-05: a negative slot is kept only when this launch's append config
+# asked for it; one left in the main config is reset as upstream resets it.
+F2_BAD=""
+grep -q 'command_append_config_sets_auto_slot' "${RX}/src/command.h" || F2_BAD+=" no-helper-in-command.h"
+awk '/^void command_event_set_savestate_auto_index\(/,/^}/' "${RX}/src/command.c" | grep -q 'command_append_config_sets_auto_slot()' || F2_BAD+=" command.c-keys-on-the-sign-alone"
+grep -q 'command_append_config_sets_auto_slot()' "${RX}/src/runtime_file.c" || F2_BAD+=" runtime_file.c-keys-on-the-sign-alone"
+[ -z "${F2_BAD}" ]; check $? "0018 keeps Auto only when this launch's append config sets it -- a -1 saved into retroarch.cfg is reset as upstream does" "0018:${F2_BAD}"
+# F-RW-06 and F-RW-10: the headers say what was proved and where upstream is.
+grep -q 'Probe.state.auto' "${RX}/patches/0018-auto-slot-survives-content-load.patch"
+check $? "0018's message records the passing observation with both halves applied" "0018's message records two failures and no pass"
+grep -q 'libretro/RetroArch/pull/19518\|libretro/RetroArch#19518' "${RX}/patches/0011-video-thread-wrapper-serialise-posters.patch"
+check $? "0011's message names the upstream fix it stands in for (libretro/RetroArch#19518)" "0011's message does not say it is the 1.22.2 stand-in for libretro/RetroArch#19518"
+fi
+# F2-5..F2-13: #308's rows in the recipes, one case each. A recipe is
+# sourced as source_package sources it -- PKG_DIR set, ROOT the tree's root
+# (a fixture root where the case builds one) -- in a subshell with set +u,
+# and its hooks are called in the order scripts/unpack and scripts/build
+# call them; nothing is compiled, fetched or installed.
+f2_source() { # <recipe file> <DEVICE> <ARCH> [ROOT] -- then run "$F2_CALL" in the recipe's shell
+    ( set +u; DEVICE="$2"; ARCH="$3"; TARGET_ARCH="$3"; ROOT="${4:-${ROOT}}"; PKG_DIR="$(dirname "$1")"
+      OPENGL=mesa; OPENGLES=no; DISPLAYSERVER=wl; SYSROOT_PREFIX=/sysroot; TARGET_NAME=t; TARGET_PREFIX=t-
+      die() { echo "DIE: $*"; exit 3; }
+      safe_remove() { local p; for p in "$@"; do [ -e "${p}" ] || [ -L "${p}" ] && rm -r "${p}"; done; }
+      get_build_dir() { echo "/build/$1"; }
+      get_pkg_directory() { echo "${ROOT}/packages/${1}"; }
+      . "$1" >/dev/null 2>&1
+      eval "${F2_CALL}" )
+}
+F2P="projects/ROCKNIX/packages"
+
+# F2-5. #308 7-generic-x64-vm claude F-VM-09: GENERIC_X64's mupen64plus.cfg
+# carried an InputAutoCfg.ini block ("[Retroid Pocket Gamepad]", pasted from
+# SM8250's copy) inside [Input-SDL-Control1], so every Control1 mapping sat
+# in a section of its own. Each key of Control1 is read under Control1, once.
+echo "  F2-5. GENERIC_X64's mupen64plus.cfg: every Control1 mapping is in [Input-SDL-Control1], once (#308 F-VM-09)"
+M64="${F2}/mupen64plus.cfg"; src_of "${F2P}/emulators/standalone/mupen64plus-sa/mupen64plus-sa-core/config/GENERIC_X64/mupen64plus.cfg" "${M64}"
+F2_OUT="$(awk -F' *= *' '/^\[/{sec=$0; next} /^[A-Za-z]/{ if (sec=="[Input-SDL-Control1]") n[$1]++; if ($1=="X Axis" && !seen++) xsec=sec }
+    END { d=""; for (k in n) if (n[k]>1) d=d" "k"x"n[k]; print xsec "|" (("DPad R" in n) ? "dpad" : "no-dpad") "|" d }' "${M64}")"
+[ "${F2_OUT}" = "[Input-SDL-Control1]|dpad|" ]; check $? "Control1's DPad and axis mappings are read under [Input-SDL-Control1], each key once" "Control1 read as '${F2_OUT}' (section of the first X Axis | DPad R present | keys seen twice) -- a section header is spliced into it"
+
+# F2-6. #308 9-emulators claude F-EM-02: ppsspp-lr's strip of the
+# aarch64-only -mno-outline-atomics ran in post_unpack, before scripts/unpack
+# applies the patches (005 adds the flag), so it never found it. The recipe's
+# hooks and its patches are run in scripts/unpack's order over the pinned
+# source's files: x86_64 comes out without the flag, aarch64 with it.
+echo "  F2-6. ppsspp-lr: the x86_64 strip of -mno-outline-atomics runs after the patches that add it (#308 F-EM-02)"
+PP_PIN="$(sed -n 's/^PKG_VERSION="\([0-9a-f]*\)".*/\1/p' "${ROOT}/${F2P}/emulators/libretro/ppsspp-lr/package.mk" | head -1)"
+PP_SRC=""
+for d in "${SOURCES_DIR:-}" /workspace/cache/rocknix-sources "${ROOT}/sources" "${ROOT}"/../*/sources; do
+    [ -n "${d}" ] && [ -f "${d}/ppsspp-lr/ppsspp-lr-${PP_PIN}/CMakeLists.txt" ] && { PP_SRC="${d}/ppsspp-lr/ppsspp-lr-${PP_PIN}"; break; }
+done
+if [ -z "${PP_SRC}" ]; then
+    echo "    SKIP  the ppsspp-lr source ppsspp-lr-${PP_PIN:-?} is not under SOURCES_DIR, /workspace/cache/rocknix-sources or a build worktree's sources/"
+else
+PX="${F2}/ppsspp"; mkdir -p "${PX}/pkg/patches"
+src_of "${F2P}/emulators/libretro/ppsspp-lr/package.mk" "${PX}/pkg/package.mk"
+if [ "${OLD}" -eq 1 ]; then
+    git -C "${ROOT}" ls-tree --name-only "${BASE_REF}" "${F2P}/emulators/libretro/ppsspp-lr/patches/" | while read -r f; do git -C "${ROOT}" show "${BASE_REF}:${f}" > "${PX}/pkg/patches/${f##*/}"; done
+else
+    cp "${ROOT}/${F2P}"/emulators/libretro/ppsspp-lr/patches/*.patch "${PX}/pkg/patches/"
+fi
+for arch in x86_64 aarch64; do
+    B="${PX}/build-${arch}"; rm -rf "${B}"
+    for f in CMakeLists.txt Common/ArmCPUDetect.cpp Core/Util/PathUtil.cpp ffmpeg/linux_arm64.sh libretro/libretro_vulkan.cpp ext/glew/glew.c; do
+        mkdir -p "$(dirname "${B}/${f}")"; cp "${PP_SRC}/${f}" "${B}/${f}"
+    done
+    F2_CALL="PKG_BUILD='${B}'; declare -F post_unpack >/dev/null && post_unpack; for p in '${PX}'/pkg/patches/*.patch; do patch -d '${B}' -p1 -s --no-backup-if-mismatch < \"\${p}\" || exit 4; done; declare -F post_patch >/dev/null && post_patch; grep -c 'mno-outline-atomics' '${B}/CMakeLists.txt'"
+    eval "PP_${arch}=\"\$(f2_source '${PX}/pkg/package.mk' GENERIC_X64 ${arch} 2>/dev/null)\""
+done
+[ "${PP_x86_64}" = "0" ] && [ "${PP_aarch64}" = "1" ]; check $? "x86_64's CMakeLists.txt ends without the flag, aarch64's keeps it" "after unpack, patches and hooks: x86_64 has ${PP_x86_64:-?} add_compile_options(-mno-outline-atomics) line(s), aarch64 ${PP_aarch64:-?} -- the strip ran before the patch that adds it"
+fi
+
+# F2-7. #308 9-emulators claude F-EM-05: amiberry and yabasanshiro-sa were
+# restricted to aarch64 for every device to keep the fork's GENERIC_X64
+# build green, which also takes them off upstream's AMD64 images, where
+# upstream's cleanup (28e750db32) had opened them. The restriction is the
+# QA device's alone; AMD64 builds them as upstream does.
+echo "  F2-7. amiberry and yabasanshiro-sa stay off GENERIC_X64 without leaving upstream's AMD64 (#308 F-EM-05)"
+F2_BAD=""
+for p in amiberry yabasanshiro-sa; do
+    src_of "${F2P}/emulators/standalone/${p}/package.mk" "${F2}/${p}.mk"
+    F2_CALL='echo "${PKG_ARCH}"'
+    g="$(f2_source "${F2}/${p}.mk" GENERIC_X64 x86_64)"; a="$(f2_source "${F2}/${p}.mk" AMD64 x86_64)"; h="$(f2_source "${F2}/${p}.mk" H700 aarch64)"
+    # scripts/build: listcontains PKG_ARCH TARGET_ARCH || listcontains PKG_ARCH any || skip -- an empty PKG_ARCH builds everywhere
+    builds() { [ -z "$1" ] || [[ " $1 " == *" $2 "* ]] || [[ " $1 " == *" any "* ]]; }
+    builds "${g}" x86_64 && F2_BAD+=" ${p}:GENERIC_X64-builds"
+    builds "${a}" x86_64 || F2_BAD+=" ${p}:AMD64-skipped(PKG_ARCH=${a})"
+    builds "${h}" aarch64 || F2_BAD+=" ${p}:H700-skipped"
+done
+[ -z "${F2_BAD}" ]; check $? "GENERIC_X64 skips both, AMD64 and H700 build both" "${F2_BAD}"
+
+# F2-8. #308 9-emulators claude F-EM-08: mupen64plus-sa-audio-sdl declared
+# libsamplerate and speexdsp "for x86_64" on every architecture, but its
+# make line passes NO_SRC=1, so libsamplerate is never linked; speexdsp is
+# found by pkg-config on every architecture and declaring it only makes the
+# order certain. A library is declared when the build can use it.
+echo "  F2-8. mupen64plus-sa-audio-sdl declares no library its make line turns off (#308 F-EM-08)"
+src_of "${F2P}/emulators/standalone/mupen64plus-sa/mupen64plus-sa-audio-sdl/package.mk" "${F2}/audio-sdl.mk"
+F2_CALL='echo "${PKG_DEPENDS_TARGET}"; declare -f make_target'
+F2_OUT="$(f2_source "${F2}/audio-sdl.mk" H700 aarch64)"
+F2_BAD=""
+printf '%s' "${F2_OUT}" | head -1 | grep -qw libsamplerate && printf '%s' "${F2_OUT}" | grep -q 'NO_SRC=1' && F2_BAD+=" libsamplerate-declared-but-NO_SRC=1"
+printf '%s' "${F2_OUT}" | head -1 | grep -qw speexdsp || F2_BAD+=" speexdsp-not-declared"
+grep -q 'for x86_64' "${F2}/audio-sdl.mk" && F2_BAD+=" comment-says-x86_64-only"
+[ -z "${F2_BAD}" ]; check $? "libsamplerate is not declared (NO_SRC=1), speexdsp is, and the comment says why for every architecture" "audio-sdl:${F2_BAD}"
+
+# F2-9. #308 9-emulators claude F-EM-15 and gpt F-EM-02: GLideN64's x86_64
+# arm turned the hi-res texture module off for every x86_64 device (upstream's
+# AMD64 too) for a GCC 15 failure upstream's own post_unpack now fixes (the
+# <cstdint> include), and appended its option with no separator.
+echo "  F2-9. GLideN64 keeps hi-res textures on AMD64; GENERIC_X64's NOHQ is appended with a separator (#308 F-EM-15, gpt F-EM-02)"
+src_of "${F2P}/emulators/standalone/mupen64plus-sa/mupen64plus-sa-video-gliden64/package.mk" "${F2}/gliden64.mk"
+F2_CALL='PKG_MAKE_OPTS_TARGET="-DX=1"; configure_target >/dev/null 2>&1; echo "${PKG_MAKE_OPTS_TARGET}"'
+g="$(f2_source "${F2}/gliden64.mk" GENERIC_X64 x86_64)"; a="$(f2_source "${F2}/gliden64.mk" AMD64 x86_64)"; h="$(f2_source "${F2}/gliden64.mk" H700 aarch64)"
+[[ " ${a} " != *NOHQ* ]] && [[ " ${g} " == *" -DNOHQ=On"* ]] && [[ "${g}" != *"-DX=1-DNOHQ"* ]] && [[ "${h}" == *"NOHQ=On"* ]]
+check $? "AMD64 builds GLideNHQ, GENERIC_X64 passes ' -DNOHQ=On' as its own word, H700 keeps upstream's arm" "options: AMD64 '${a}', GENERIC_X64 '${g}', H700 '${h}'"
+
+# F2-10. #308 10-packages claude F-PB-09 and gpt F-PB-24: gst-plugins-bad's
+# override rebuilt the generic recipe's option string with a sed range that
+# ended at the first line ending in a quote, and both gstreamer overrides
+# kept the libraries and plugins WebKit needs with copies ending in
+# "|| true". The option string is the generic hook's own output, whatever
+# its formatting; a payload that is not there fails the package.
+echo "  F2-10. gst-plugins-bad takes the generic option string whole; both overrides fail on a missing payload WebKit needs (#308 F-PB-09, gpt F-PB-24)"
+GR="${F2}/gstroot"; mkdir -p "${GR}/packages/multimedia/gstreamer/gst-plugins-bad" "${GR}/${F2P}/multimedia/gstreamer/gst-plugins-bad" "${GR}/${F2P}/multimedia/gstreamer/gst-plugins-base" "${GR}/packages/multimedia/gstreamer/gst-plugins-base"
+src_of packages/multimedia/gstreamer/gst-plugins-bad/package.mk "${GR}/packages/multimedia/gstreamer/gst-plugins-bad/package.mk"
+src_of packages/multimedia/gstreamer/gst-plugins-base/package.mk "${GR}/packages/multimedia/gstreamer/gst-plugins-base/package.mk"
+src_of "${F2P}/multimedia/gstreamer/gst-plugins-bad/package.mk" "${GR}/${F2P}/multimedia/gstreamer/gst-plugins-bad/package.mk"
+src_of "${F2P}/multimedia/gstreamer/gst-plugins-base/package.mk" "${GR}/${F2P}/multimedia/gstreamer/gst-plugins-base/package.mk"
+F2_N="$(grep -o -- '-D[A-Za-z0-9_-]*=' "${GR}/packages/multimedia/gstreamer/gst-plugins-bad/package.mk" | wc -l)"
+# the generic recipe written the way upstream's gstreamer recipe writes the
+# same option: a quoted value that ends its line, which ended the sed range
+sed -i 's/-Dpackage-name=gst-plugins-bad \\$/-Dpackage-name="gst-plugins-bad"/' "${GR}/packages/multimedia/gstreamer/gst-plugins-bad/package.mk"
+F2_CALL='pre_configure_target >/dev/null 2>&1; echo "${PKG_MESON_OPTS_TARGET}"'
+F2_OUT="$(f2_source "${GR}/${F2P}/multimedia/gstreamer/gst-plugins-bad/package.mk" H700 aarch64 "${GR}")"
+n=$(printf '%s' "${F2_OUT}" | tr -s ' \t\n' '\n' | grep -c '^-D')
+[ "${n}" -eq "${F2_N}" ] && [[ "${F2_OUT}" == *"-Dmpegtsdemux=enabled"* ]] && [[ "${F2_OUT}" == *"-Dmpegtsmux=enabled"* ]] && [[ "${F2_OUT}" == *"-Ddoc=disabled"* ]]
+check $? "with a quoted value mid-string the override still passes all ${F2_N} options, the two mpegts ones enabled" "the override passed ${n} of ${F2_N} options (mpegtsdemux: $([[ "${F2_OUT}" == *mpegtsdemux=enabled* ]] && echo on || echo off); ends: '${F2_OUT: -30}')"
+GI="${F2}/gstinst"
+f2_gst() { # <package dir under the fixture> <files to create under INSTALL...>: the post_makeinstall_target's status and what it kept
+    rm -rf "${GI}"; mkdir -p "${GI}/inst/usr/lib/gstreamer-1.0" "${GI}/inst/usr/bin" "${GI}/b"
+    local pkg="$1"; shift; for f in "$@"; do : > "${GI}/inst/${f}"; done
+    F2_CALL="INSTALL='${GI}/inst'; PKG_BUILD='${GI}/b'; post_makeinstall_target; echo rc=\$?; cd '${GI}/inst' && find usr -type f | sort | tr '\n' ' '"
+    f2_source "${GR}/${F2P}/multimedia/gstreamer/${pkg}/package.mk" H700 aarch64 "${GR}"
+}
+F2_OUT="$(f2_gst gst-plugins-bad usr/lib/libgstcodecs-1.0.so.0)"
+[[ "${F2_OUT}" == DIE:* ]] || [[ "${F2_OUT}" == *"rc=3"* ]]; check $? "gst-plugins-bad without libgstmpegts-1.0 fails the package" "gst-plugins-bad with no libgstmpegts-1.0 in its install: '${F2_OUT:0:120}' -- the image would ship without it and WebKit fail at load"
+F2_OUT="$(f2_gst gst-plugins-bad usr/lib/libgstmpegts-1.0.so.0 usr/lib/libgstcodecs-1.0.so.0)"
+[[ "${F2_OUT}" == *"rc=0"* ]] && [[ "${F2_OUT}" == *"usr/lib/libgstmpegts-1.0.so.0 "* ]] && [[ "${F2_OUT}" != *libgstcodecs* ]]
+check $? "and with it keeps libgstmpegts-1.0 and nothing else" "gst-plugins-bad with libgstmpegts-1.0: '${F2_OUT:0:160}'"
+F2_BASE_LIBS="usr/lib/libgstapp-1.0.so.0 usr/lib/libgstaudio-1.0.so.0 usr/lib/libgstvideo-1.0.so.0 usr/lib/libgsttag-1.0.so.0 usr/lib/libgstpbutils-1.0.so.0 usr/lib/libgstallocators-1.0.so.0 usr/lib/libgstfft-1.0.so.0"
+F2_OUT="$(f2_gst gst-plugins-base ${F2_BASE_LIBS})"
+[[ "${F2_OUT}" == DIE:* ]] || [[ "${F2_OUT}" == *"rc=3"* ]]; check $? "gst-plugins-base without the appsink plugin (libgstapp.so) fails the package" "gst-plugins-base with no libgstapp.so plugin: '${F2_OUT:0:120}' -- WebKit segfaults a second after every page load without it"
+F2_OUT="$(f2_gst gst-plugins-base ${F2_BASE_LIBS} usr/lib/gstreamer-1.0/libgstapp.so usr/bin/gst-discoverer-1.0)"
+[[ "${F2_OUT}" == *"rc=0"* ]] && [[ "${F2_OUT}" == *"usr/lib/gstreamer-1.0/libgstapp.so"* ]] && [[ "${F2_OUT}" == *"usr/lib/libgstfft-1.0.so.0"* ]] && [[ "${F2_OUT}" != *usr/bin* ]]
+check $? "and with them keeps the libraries and plugins, and no tools" "gst-plugins-base with its payload: '${F2_OUT:0:200}'"
+
+# F2-11. #308 10-packages claude F-PB-19: ryzenadj and dmidecode came from
+# upstream's AMD64 recipes (JELOS, 2023) and dropped that credit; ryzenadj's
+# cmake options carried literal single quotes. (Their consumer exists:
+# projects/ROCKNIX/packages/virtual/image/package.mk pulls both on x86_64.)
+echo "  F2-11. ryzenadj and dmidecode keep the JELOS credit of the recipes they came from; ryzenadj passes cmake no quote characters (#308 F-PB-19)"
+F2_BAD=""
+for p in ryzenadj dmidecode; do
+    src_of "packages/sysutils/${p}/package.mk" "${F2}/${p}.mk"
+    head -5 "${F2}/${p}.mk" | grep -q 'Copyright (C) 2023 JELOS' || F2_BAD+=" ${p}:no-JELOS-credit"
+    head -5 "${F2}/${p}.mk" | grep -q 'Copyright (C) 2025 ROCKNIX' && F2_BAD+=" ${p}:2025"
+done
+F2_CALL='echo "${PKG_CMAKE_OPTS_TARGET}"'
+[[ "$(f2_source "${F2}/ryzenadj.mk" GENERIC_X64 x86_64)" == *"'"* ]] && F2_BAD+=" ryzenadj:quoted-cmake-option"
+[ -z "${F2_BAD}" ]; check $? "both carry the JELOS line and a ROCKNIX line, and ryzenadj's -ludev reaches cmake as itself" "${F2_BAD}"
+
+# F2-12. #308 10-packages claude F-PB-21: a duplicated sentence (woff2), a
+# duplicated paragraph (gst-plugins-base), a stale claim (cairo's GL
+# backends; cairo 1.18 has none), and an empty, non-executable quirk file.
+echo "  F2-12. the recipes' comments say each thing once and only what is true; no empty quirk ships (#308 F-PB-21)"
+F2_BAD=""
+src_of packages/graphics/woff2/package.mk "${F2}/woff2.mk"
+[ "$(sed 's/^# *//' "${F2}/woff2.mk" | tr '\n' ' ' | grep -o 'has not tagged a release since 2020' | wc -l)" -le 1 ] || F2_BAD+=" woff2:twice"
+[ "$(grep -c 'segfaults' "${GR}/${F2P}/multimedia/gstreamer/gst-plugins-base/package.mk")" -le 1 ] || F2_BAD+=" gst-plugins-base:appsink-paragraph-twice"
+src_of "${F2P}/graphics/cairo/package.mk" "${F2}/cairo.mk"
+grep -q 'GL/GLES backends' "${F2}/cairo.mk" && F2_BAD+=" cairo:GL-backends"
+if [ "${OLD}" -eq 1 ]; then
+    git -C "${ROOT}" ls-tree -r -l "${BASE_REF}" -- "${F2P}/hardware/quirks/devices/" | awk '$4 == 0 {print $5}' | grep -q . && F2_BAD+=" an-empty-quirk"
+else
+    [ -n "$(find "${ROOT}/${F2P}/hardware/quirks/devices" -type f -empty 2>/dev/null)" ] && F2_BAD+=" an-empty-quirk"
+fi
+[ -z "${F2_BAD}" ]; check $? "woff2 says its release date once, gst-plugins-base its appsink story once, cairo no GL backends, and no quirk file is empty" "${F2_BAD}"
+
+# F2-13. #308 4-backup-restore claude F-BR-10: packages/compress/zip, which
+# the fork restored on 2026-08-26 after upstream dropped it, is shadowed
+# since upstream reintroduced zip as projects/ROCKNIX/packages/compress/zip
+# (b289e35685): get_pkg_directory takes the project recipe, so the fork's
+# copy -- same steps, the same patch byte for byte -- is never built, only
+# hashed into zip's stamp. One recipe for zip, and it is the one built.
+echo "  F2-13. zip has one recipe, the one the build uses (#308 F-BR-10)"
+if [ "${OLD}" -eq 1 ]; then
+    F2_OUT="$(git -C "${ROOT}" ls-tree -r --name-only "${BASE_REF}" -- packages projects | grep -c '/zip/package\.mk$')"
+else
+    F2_OUT="$(cd "${ROOT}" && find packages projects -path '*/zip/package.mk' | wc -l)"
+fi
+[ "${F2_OUT}" -eq 1 ]; check $? "one zip recipe (projects/ROCKNIX/packages/compress/zip)" "${F2_OUT} zip recipes in the tree -- the generic copy is shadowed by the project one and never built"
+
+# F1i. #308 claude F-VM-08 and F-VM-16: the GENERIC_X64 emulator configs the
+#      image installs carried other devices' hardware. (Cemu, RPCS3, xemu,
+#      Dolphin and Supermodel, the rest the seats named, are not in the
+#      GENERIC_X64 SYSTEM at 7911c53bb4.)
+F1I="${F1}/i"; mkdir -p "${F1I}"; F1EMU=projects/ROCKNIX/packages/emulators/standalone
+# mupen64plus: [Input-SDL-Control1] named SM8250's pad. Under mode = 2
+# (fully automatic) input-sdl never looks the name up -- it compares it in
+# mode 1 only -- and writes "" itself when no pad is found, so "" is the
+# value the file means.
+src_of "${F1EMU}/mupen64plus-sa/mupen64plus-sa-core/config/GENERIC_X64/mupen64plus.cfg" "${F1I}/mupen64plus.cfg"
+F1_M64N=$(awk '/^\[/{s=$0} s=="[Input-SDL-Control1]" && /^name = /{print; exit}' "${F1I}/mupen64plus.cfg")
+[ "${F1_M64N}" = 'name = ""' ]; check $? "mupen64plus's Control1 names no handheld's pad: name = \"\", what mode 2 writes itself (#308 claude F-VM-08)" "mupen64plus's Control1: ${F1_M64N:-no name line}"
+# flycast: [window] carried a 1080p handheld's 1920x1080. On this build
+# (USE_GLES off) fullscreen is SDL's desktop fullscreen, which takes the
+# output's size, so the numbers only ever sized a window nobody opens; the
+# window keeps fullscreen and loses the handheld's size.
+src_of "${F1EMU}/flycast-sa/config/GENERIC_X64/emu.cfg" "${F1I}/emu.cfg"
+F1_FW=$(awk '/^\[/{s=$0} s=="[window]" && /^(width|height) = /' "${F1I}/emu.cfg" | tr '\n' ' ')
+[ -z "${F1_FW}" ] && awk '/^\[/{s=$0} s=="[window]" && $0=="fullscreen = yes"{f=1} END{exit !f}' "${F1I}/emu.cfg"
+check $? "flycast's [window] keeps fullscreen and carries no handheld's 1920x1080 (#308 claude F-VM-16)" "flycast's [window]: ${F1_FW:-no size}, fullscreen $(grep -c '^fullscreen = yes$' "${F1I}/emu.cfg")"
+# m8c: the Anbernic INIs are chosen by QUIRK_DEVICE (the model the device
+# reports), which no x86_64 machine reports; GENERIC_X64 ships config.ini.
+F1M8=projects/ROCKNIX/packages/apps/m8c/config/GENERIC_X64
+if [ "${OLD}" -eq 1 ]; then F1_M8=$(git -C "${ROOT}" ls-tree --name-only "${BASE_REF}:${F1M8}" 2>/dev/null | tr '\n' '|')
+else F1_M8=$(ls -1 "${ROOT}/${F1M8}" 2>/dev/null | tr '\n' '|'); fi
+[ "${F1_M8}" = "config.ini|" ]; check $? "m8c's GENERIC_X64 config is config.ini alone, no pad file for an Anbernic model (#308 claude F-VM-08)" "m8c's GENERIC_X64 config: ${F1_M8}"
+
+# F1j. #307 PL-076: the x64 RetroArch profile carried the armhf buildbot as
+#      core_updater_buildbot_url, a key the pinned RetroArch (1.22.2) does
+#      not read -- it reads core_updater_buildbot_cores_url, which the
+#      profile sets to "". The dead line goes.
+src_of "${F1RA:-projects/ROCKNIX/packages/emulators/libretro/retroarch/sources/GENERIC_X64/retroarch.cfg}" "${F1}/retroarch-076.cfg"
+! grep -q '^core_updater_buildbot_url' "${F1}/retroarch-076.cfg"; check $? "the GENERIC_X64 RetroArch profile carries no core_updater_buildbot_url, a key RetroArch does not read (#307 PL-076)" "the GENERIC_X64 profile still carries $(grep '^core_updater_buildbot_url' "${F1}/retroarch-076.cfg")"

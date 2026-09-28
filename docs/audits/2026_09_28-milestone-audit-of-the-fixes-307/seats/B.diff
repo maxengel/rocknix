@@ -1,0 +1,2171 @@
+diff --git a/projects/ROCKNIX/packages/rocknix/profile.d/001-functions b/projects/ROCKNIX/packages/rocknix/profile.d/001-functions
+index 0824b0d7e1..b996635958 100644
+--- a/projects/ROCKNIX/packages/rocknix/profile.d/001-functions
++++ b/projects/ROCKNIX/packages/rocknix/profile.d/001-functions
+@@ -45,10 +45,16 @@ function log() {
+ # parameters on a line about RetroAchievements (or from its proxy), after
+ # ?, & or a space -- a log line pastes them bare as often as it joins them
+ # (#186 PL-29); the pre-push guard's fixed
+-# token formats (devpassword=, &y=, AKIA, ghp_, github_pat_, xox., sk-, a
++# token formats (devpassword=, &y=, AKIA, ghp_, github_pat_, xox., sk- at a
++# word's start -- "disk-" and "task-" are not keys, and forked a sed for
++# nothing (#308 claude F-PB-18) -- a
+ # private-key block); setrootpass <value>; the password in a URL's
+ # user:password@. An empty value is left empty: whether a credential is set
+-# may be shown, only what it is may not. The word list is deliberately wide
++# may be shown, only what it is may not. An unquoted value runs to the next
++# space, quote, & or ; -- so a URL's next parameter survives -- and may
++# itself START with & or ; (root.password=&x): the class that stops at them
++# consumed nothing there and the whole value was kept (#307 PL-040). The
++# word list is deliberately wide
+ # (a value under a key merely named like a credential is hidden too): a
+ # hidden setting in a debug log costs a question, a shown password costs an
+ # account.
+@@ -58,12 +64,12 @@ function log() {
+ # in verbose mode and a fork for each would be felt on a handheld.
+ function redact_credentials() {
+   local words='passw|token|api_?key|secret|psk|wifi\.key|retroachievements\.key'
+-  local marks='(^|[?&[:space:]])[pty]=|AKIA|gh[pousr]_|github_pat_|xox[baprs]-|sk-|PRIVATE KEY|setrootpass|://[^/[:space:]@]+:[^/[:space:]@]+@'
++  local marks='(^|[?&[:space:]])[pty]=|AKIA|gh[pousr]_|github_pat_|xox[baprs]-|(^|[^A-Za-z0-9])sk-|PRIVATE KEY|setrootpass|://[^/[:space:]@]+:[^/[:space:]@]+@'
+   if [ $# -gt 0 ]; then
+     local line="$*" nocase=0
+     shopt -q nocasematch && nocase=1
+     shopt -s nocasematch
+-    if [[ "${line}" =~ (${words}|${marks}) ]]; then
++    if [[ "${line}" =~ (${words}|pass|${marks}) ]]; then
+       [ "${nocase}" -eq 1 ] || shopt -u nocasematch
+       printf '%s\n' "${line}" | redact_credentials
+     else
+@@ -72,11 +78,15 @@ function redact_credentials() {
+     fi
+     return
+   fi
+-  local key="[A-Za-z0-9_.-]*(${words})[A-Za-z0-9_.-]*"
++  # A key naming a credential word anywhere, or ENDING in "pass"
++  # (ScreenScraperPass, RA_Pass, rclone's pass): passw alone missed the
++  # batocera-style ...Pass spellings (#308 claude F-PB-18). "pass" only at
++  # the key's end, so "passed:" in a log line is not a key.
++  local key="([A-Za-z0-9_.-]*(${words})[A-Za-z0-9_.-]*|[A-Za-z0-9_.-]*pass)"
+   sed -E \
+     -e "s/(^|[^A-Za-z0-9_.-])(${key}\"?[[:space:]]*[=:][[:space:]]*)\"[^\"]+\"/\1\2\"<redacted>\"/Ig" \
+     -e "s/(^|[^A-Za-z0-9_.-])(${key}\"?[[:space:]]*[=:][[:space:]]*)'[^']+'/\1\2'<redacted>'/Ig" \
+-    -e "s/(^|[^A-Za-z0-9_.-])(${key}\"?[[:space:]]*[=:][[:space:]]*)[^[:space:]\"'&;]+/\1\2<redacted>/Ig" \
++    -e "s/(^|[^A-Za-z0-9_.-])(${key}\"?[[:space:]]*[=:][[:space:]]*)([&;]*[^[:space:]\"'&;]+|[&;]+)/\1\2<redacted>/Ig" \
+     -e "s/(^|[[:space:]])(--?${key})[[:space:]]+(\"[^\"]+\"|'[^']+'|[^[:space:]\"']+)/\1\2 <redacted>/Ig" \
+     -e "s/^(.*\"[^\"]*(${words})[^\"]*\".*\] \().*\)[[:space:]]*\$/\1<redacted>)/I" \
+     -e '/[Rr]etro[Aa]chievements|raofflineproxy|dorequest|127\.0\.0\.1:8080/s/(^|[?&[:space:]])([pty]=)[^&[:space:]"'"'"']+/\1\2<redacted>/g' \
+@@ -154,11 +164,50 @@ function wait_lock_say() {
+   fi
+ }
+ 
++# The settings lock: a file holding its holder's pid, shared with the
++# interface's PidLock (es-core AtomicFileUtil) on the same path.
++#
++#   Taken born with the pid: written to <lock>.<pid> and hard-linked into
++#   place, which fails when the lock exists -- so no waiter ever reads an
++#   empty lock that is really a holder between its open and its write, the
++#   window a noclobber create left (#307 PL-041). A shell without ln (a
++#   test's narrow PATH) falls back to that create.
++#
++#   Reaped once, under flock on <lock>.reap -- the lock the interface's
++#   reaper takes too -- by re-reading the holder and removing the file only
++#   if it still names the same holder and that holder is still not alive.
++#   Two waiters that read the same stale pid used to re-read and remove in
++#   two steps each, so the slower one removed the faster one's fresh lock
++#   and both held it (#307 PL-041, #308 claude F-PB-08); under the reap lock
++#   the second finds the lock changed and leaves it. Without flock (a
++#   narrow PATH), the reap runs unguarded, as before.
++#
++#   Given up on, not spun on, when it cannot be created at all: a create
++#   that fails with nothing at the path is retried at once once (released
++#   in between) and then each second, and after five such misses -- a lock
++#   folder that is missing, a read-only /tmp -- wait_lock says so and
++#   returns 1, where it used to retry with no sleep for ever and hold a
++#   core at 100% (#308 claude F-PB-06). A live holder is still waited on
++#   for as long as it lives.
++#
++# The pid-reuse half of F-PB-08 does not arise: J_CONF_LOCK is on /tmp, a
++# tmpfs, so no lock outlives the boot that wrote it.
+ function wait_lock() {
+-  local holder current waited_on="" held_for=0
++  local holder waited_on="" held_for=0 misses=0 took reaped
+   while true
+   do
+-    if (set -o noclobber; echo "$$" > "${J_CONF_LOCK}") 2>/dev/null
++    took=""
++    if command -v ln >/dev/null 2>&1
++    then
++      if echo "$$" > "${J_CONF_LOCK}.$$" 2>/dev/null
++      then
++        ln "${J_CONF_LOCK}.$$" "${J_CONF_LOCK}" 2>/dev/null && took=1
++        rm -f "${J_CONF_LOCK}.$$"
++      fi
++    else
++      (set -o noclobber; echo "$$" > "${J_CONF_LOCK}") 2>/dev/null && took=1
++    fi
++    if [ -n "${took}" ]
+     then
+       # Save the exit status before anything else runs: 'exit $?' after rm
+       # re-exited with rm's 0, so every script that ever took this lock (runemu.sh
+@@ -166,24 +215,38 @@ function wait_lock() {
+       # holds -- callers rm it themselves, the trap outlives them, and another
+       # process may own the file by the time this one exits.
+       trap 'rc=$?; [ "$(cat "${J_CONF_LOCK}" 2>/dev/null)" = "$$" ] && rm -f "${J_CONF_LOCK}"; exit "${rc}"' INT TERM EXIT
+-      break
++      return 0
+     fi
+ 
+-    # The create failed, so the file is there and names its holder -- or named
+-    # one. A holder that ends normally releases it through the trap above; one
+-    # that is SIGKILLed, OOM-killed or dies with its terminal cannot, and until
++    # The create failed with nothing there: released in between (try again
++    # at once, the first time), or the lock cannot be made at all.
++    if [ ! -e "${J_CONF_LOCK}" ]
++    then
++      misses=$((misses + 1))
++      if [ "${misses}" -ge 5 ]
++      then
++        wait_lock_say "cannot create ${J_CONF_LOCK} (its folder missing or not writable); not waiting on it"
++        return 1
++      fi
++      [ "${misses}" -gt 1 ] && sleep 1
++      continue
++    fi
++    misses=0
++
++    # The file is there and names its holder -- or named one. A holder that
++    # ends normally releases it through the trap above; one that is
++    # SIGKILLed, OOM-killed or dies with its terminal cannot, and until
+     # 2026-09-09 nothing read the pid in the file, so a stale lock stalled
+     # every get_setting and set_setting on the device until reboot (4 min 43 s
+     # for one set_setting on the VM, #98). Read the holder and ask the kernel.
+-    [ -e "${J_CONF_LOCK}" ] || continue   # released since the create failed: try again at once
+     holder=""
+     read -r holder 2>/dev/null < "${J_CONF_LOCK}"
+     case "${holder}" in
+       ''|*[!0-9]*)
+-        # Empty, or not a pid: nobody can be holding it. (An empty file is also
+-        # what a holder's own create looks like between open and write, for a
+-        # few microseconds; the re-read below is what stands between that and a
+-        # theft.)
++        # Empty, or not a pid: nobody can be holding it. An empty file can
++        # still be a noclobber create between its open and its write (the
++        # fallback above, or an older writer), so give it a moment first.
++        [ -n "${holder}" ] || sleep 0.2 2>/dev/null || sleep 1
+         ;;
+       *)
+         if kill -0 "${holder}" 2>/dev/null
+@@ -208,18 +271,18 @@ function wait_lock() {
+         ;;
+     esac
+ 
+-    # Stale. Remove it only if it still says what was read above: between that
+-    # read and this rm the holder may have released it and another shell taken
+-    # it, and an unconditional rm would steal the newcomer's lock. Re-reading
+-    # just before the rm shrinks that window to a few instructions; it does not
+-    # close it. Then retry at once -- there is nothing to wait for.
+-    current=""
+-    read -r current 2>/dev/null < "${J_CONF_LOCK}"
+-    if [ -e "${J_CONF_LOCK}" ] && [ "${current}" = "${holder}" ]
+-    then
+-      rm -f "${J_CONF_LOCK}"
+-      wait_lock_say "removed stale lock ${J_CONF_LOCK} held by pid ${holder:-<none>}"
+-    fi
++    # Stale. Reap it once, under the reap lock, only if it still names the
++    # holder read above and that holder is still gone; then try again.
++    reaped=$( {
++        if command -v flock >/dev/null 2>&1; then flock -x 9 || exit 0; fi
++        now=""
++        [ -e "${J_CONF_LOCK}" ] || exit 0
++        read -r now 2>/dev/null < "${J_CONF_LOCK}"
++        [ "${now}" = "${holder}" ] || exit 0
++        case "${now}" in ''|*[!0-9]*) ;; *) kill -0 "${now}" 2>/dev/null && exit 0 ;; esac
++        rm -f "${J_CONF_LOCK}" && echo removed
++      } 9>"${J_CONF_LOCK}.reap" 2>/dev/null )
++    [ "${reaped}" = "removed" ] && wait_lock_say "removed stale lock ${J_CONF_LOCK} held by pid ${holder:-<none>}"
+   done
+ }
+ 
+@@ -237,18 +300,31 @@ function wait_lock() {
+ # 2026-09-10). The key is matched literally (a dot in it is a dot), and the
+ # value crosses through the environment, so `/`, `&`, `\` and spaces are
+ # nobody's to interpret.
++#
++# Returns 0 only when the new file is in place: the awk and the rename both
++# succeeded. The failure branch used to end in the rm of the temporary, so
++# the function's status was the rm's -- 0 -- and a write that never landed
++# (a full card, a read-only folder) was reported to every caller as done
++# (#307 PL-011).
+ function write_setting_line() {
+   if K="${1}" V="${2}" awk 'BEGIN { k = ENVIRON["K"]; v = ENVIRON["V"] }
+                             index($0, k "=") != 1 { print }
+-                            END { print k "=" v }' "${J_CONF}" > "${J_CONF}.tmp" 2>/dev/null
++                            END { print k "=" v }' "${J_CONF}" > "${J_CONF}.tmp" 2>/dev/null \
++     && mv -f "${J_CONF}.tmp" "${J_CONF}"
+   then
+-    mv -f "${J_CONF}.tmp" "${J_CONF}"
+-  else
+-    rm -f "${J_CONF}.tmp"
++    return 0
+   fi
++  rm -f "${J_CONF}.tmp"
++  return 1
+ }
++#
++# Any other key's line is removed by the same literal match the writer uses:
++# `sed -i "/^${1}=/d"` read the key as a pattern, so deleting foo.bar also
++# removed foo_bar and fooXbar (#308, the gpt seat's F-PB-16) -- and through
++# one temporary and one rename, with the status returned, as the writer.
+ function del_setting() {
+-  wait_lock
++  local rc=0
++  wait_lock || return 1
+   if [[ "${1}" =~ ^[[:alnum:]] ]]
+   then
+     if [ "${1}" = "system.hostname" ]
+@@ -262,16 +338,24 @@ function del_setting() {
+       # already reads empty as the shipped default and gives the unit its
+       # own name at the next boot (D-NET-002, D-NET-009). The sentinel
+       # itself is not loosened.
+-      write_setting_line "${1}" ""
++      write_setting_line "${1}" "" || rc=1
+     else
+-      sed -i "/^${1}=/d" "${J_CONF}"
++      if K="${1}" awk 'index($0, ENVIRON["K"] "=") != 1' "${J_CONF}" > "${J_CONF}.tmp" 2>/dev/null \
++         && mv -f "${J_CONF}.tmp" "${J_CONF}"
++      then
++        :
++      else
++        rm -f "${J_CONF}.tmp"
++        rc=1
++      fi
+     fi
+   fi
+   rm -f "${J_CONF_LOCK}"
++  return ${rc}
+ }
+ 
+ function sort_settings() {
+-  wait_lock
++  wait_lock || return 1
+   # The sorted copy replaces the live file only when it is plainly a config:
+   # non-empty and still carrying the hostname line every image writes. An
+   # unreadable source (EIO, a card on its way out) gives grep nothing, and
+@@ -332,10 +416,13 @@ function set_setting() {
+       # Removes the line -- or, for system.hostname, empties it: see there.
+       del_setting "${1}"
+     else
+-      # One write under one lock hold (write_setting_line says why).
+-      wait_lock
+-      write_setting_line "${1}" "${2}"
++      # One write under one lock hold (write_setting_line says why), and the
++      # write's own status returned past the lock's release (#307 PL-011).
++      local rc
++      wait_lock || return 1
++      write_setting_line "${1}" "${2}"; rc=$?
+       rm -f "${J_CONF_LOCK}"
++      return ${rc}
+     fi
+   fi
+ }
+diff --git a/projects/ROCKNIX/packages/rocknix/sources/scripts/automount b/projects/ROCKNIX/packages/rocknix/sources/scripts/automount
+index 1cb4eba0a7..9b8ed125d9 100755
+--- a/projects/ROCKNIX/packages/rocknix/sources/scripts/automount
++++ b/projects/ROCKNIX/packages/rocknix/sources/scripts/automount
+@@ -187,8 +187,20 @@ function external_node_present() {
+   ### is not readable yet. Used to tell "card in, not probed yet" (worth
+   ### waiting for) from "card removed" (do not delay boot). The internal
+   ### card is the disk backing /storage and is never a candidate.
+-  local internal dev name sz
+-  internal=$(grep " /storage " /proc/mounts | awk '{print $1}' | sed -e 's#.*/##' -e 's#p[0-9]*$##')
++  ### The internal disk is the one the partition under /storage belongs to,
++  ### as sysfs says -- /sys/class/block/<part>/.. is its disk. Stripping a
++  ### "pN" suffix handled mmcblk0p2 and nvme0n1p2 but left sda2 as "sda2",
++  ### so on an sd-rooted device (AMD64) the root disk itself counted as an
++  ### external card and an absent card cost the full wait (#308 claude
++  ### F-PB-13). A /storage on a whole disk is that disk.
++  local internal dev name sz part
++  part=$(grep " /storage " /proc/mounts | awk '{print $1}' | sed -e 's#.*/##')
++  if [ -e "/sys/class/block/${part}/partition" ]
++  then
++    internal=$(basename "$(readlink -f "/sys/class/block/${part}/..")")
++  else
++    internal="${part}"
++  fi
+   for dev in /sys/block/mmcblk[0-9] /sys/block/sd[a-z] /sys/block/nvme[0-9]n[0-9]
+   do
+     [ -e "${dev}" ] || continue
+diff --git a/projects/ROCKNIX/packages/rocknix/sources/scripts/backuptool b/projects/ROCKNIX/packages/rocknix/sources/scripts/backuptool
+index d7b7eada5e..f2832b8e98 100755
+--- a/projects/ROCKNIX/packages/rocknix/sources/scripts/backuptool
++++ b/projects/ROCKNIX/packages/rocknix/sources/scripts/backuptool
+@@ -13,8 +13,12 @@
+ # LOCATIONS=(
+ #   /storage/.config/retroarch/*
+ #   /storage/roms/savestates/*
+-#   /some/other/folder/file.name*
++#   "/storage/some other folder/file.name"*
+ # )
++#
++# One location per line; quote one whose name has a space. Everything named
++# must be under /storage: the archive is written from there and put back
++# there, and a list naming anything else is refused rather than trimmed.
+ 
+ # The folder the settings tier reads: cloud_backup uploads from
+ # SETTINGS_BACKUPS in cloud_sync.conf, and this must write where that reads,
+@@ -22,11 +26,22 @@
+ # archives into one folder and uploads from another. Found by the round-trip
+ # harness on 2026-09-06 (Gate 0, #35): the value was a constant here.
+ # BACKUPFOLDER is the name an un-migrated conf still carries (D-UI-022).
++#
++# Read the way cloud_backup reads it -- the file sourced, in a subshell so
++# nothing else it sets leaks here -- so a value written with a reference
++# ("${CONTENTPATH}/backup") means the same folder to both. The sed that read
++# it before took the text literally, and mkdir made a folder called
++# ${CONTENTPATH} under the working directory (#308 claude F-BR-18). The
++# result must be a folder under /storage; anything else is logged and the
++# standard folder used.
+ SETTINGS_BACKUPS="/storage/roms/backup"
+ if [ -f /storage/.config/cloud_sync.conf ]; then
+-    _configured=$(sed -n 's/^SETTINGS_BACKUPS="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' /storage/.config/cloud_sync.conf | head -1)
+-    [ -z "${_configured}" ] && _configured=$(sed -n 's/^BACKUPFOLDER="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' /storage/.config/cloud_sync.conf | head -1)
+-    [ -n "${_configured}" ] && SETTINGS_BACKUPS="${_configured}"
++    _configured=$( . /storage/.config/cloud_sync.conf >/dev/null 2>&1; printf '%s' "${SETTINGS_BACKUPS:-${BACKUPFOLDER:-}}" )
++    case "${_configured}" in
++        "") ;;
++        /storage/*) SETTINGS_BACKUPS="${_configured%/}" ;;
++        *) logger -t backuptool "SETTINGS_BACKUPS in cloud_sync.conf reads '${_configured}', not a folder under /storage; ${SETTINGS_BACKUPS} used" ;;
++    esac
+     unset _configured
+ fi
+ ARCHIVEFOLDER="${SETTINGS_BACKUPS}/archive"
+@@ -42,7 +57,16 @@ ARCHIVEFOLDER="${SETTINGS_BACKUPS}/archive"
+ # the archive holds emulator and interface settings and nothing else, and
+ # calling it a system backup had people expecting their saves to be in it.
+ # Every reader below still accepts the three earlier names.
+-BACKUP_STAMP="$(date +%Y_%m_%d-%H%M%S)"
++#
++# The stamp is kept as a count of seconds too, so a name already taken -- a
++# second run in the same second -- moves on to the next second's name rather
++# than overwriting the first run's archive (#307 PL-077). stamp_at falls back
++# to the clock as it reads now if the date applet cannot convert.
++stamp_at() {
++    date -d "@${1}" +%Y_%m_%d-%H%M%S 2>/dev/null || date +%Y_%m_%d-%H%M%S
++}
++STAMP_EPOCH="$(date +%s)"
++BACKUP_STAMP="$(stamp_at "${STAMP_EPOCH}")"
+ # The device's name sits between the stamp and -${OS_NAME}_SETTINGS.
+ #
+ # Every device used to write <stamp>-ROCKNIX_SETTINGS.tar.gz, so two
+@@ -124,10 +148,16 @@ mkdir -p "${SETTINGS_BACKUPS}"
+ # the system log only. Until 2026-09-10 these printed "Restore reported
+ # errors. Check 'logger' output" and paths under /storage to a 3.5-inch
+ # screen.
++#
++# The pauses are for a person reading a console (the fullscreen console flows
++# run on a terminal); the interface reads this through a pipe and has its own
++# outcome to show, so nothing waits there (#308 claude F-BR-19: the transfer
++# page and the maintenance dialog were held three to five seconds with
++# nothing to read).
+ fail() {
+     echo -e "\e[31m${1}\e[0m"
+     logger -t backuptool "${1}${2:+ -- ${2}}"
+-    sleep 5
++    if [ -t 1 ]; then sleep 5; fi
+     exit 1
+ }
+ 
+@@ -136,6 +166,48 @@ note() {
+     logger -t backuptool "${1}${2:+ -- ${2}}"
+ }
+ 
++# One backup or restore at a time (#307 PL-077, #308 claude F-BR-15). The
++# console flow and the interface's chains can each start one, and two runs
++# shared the stamp, the .partial name and the startup sweep of .partials: one
++# run removed the other's file in flight, or two renames clobbered each
++# other. A lock on the settings backups folder itself -- an flock on a
++# descriptor opened on the directory, so there is no lock file to leave
++# behind or to upload -- held until this process exits. A second run does not
++# wait: it says so and ends.
++take_lock() {
++    # The braces keep the 2>/dev/null to this one exec: on exec itself it
++    # would redirect the whole script's stderr for the rest of the run.
++    { exec 9<"${SETTINGS_BACKUPS}"; } 2>/dev/null && flock -n 9
++}
++
++# What a run killed part-way left behind, cleared by the next run under the
++# lock -- where it cannot be another run's file in flight: the backup's
++# .partial at the root, a pre-restore copy's .partial in archive/ (which
++# neither the old sweep nor the trim ever matched, so repeated cut restores
++# grew archive/ without bound), and a staging folder. A run that is only
++# interrupted (INT, TERM) removes its own staging folder on the way out
++# (#308, the gpt seat's F-BR-17).
++sweep_leftovers() {
++    rm -f "${SETTINGS_BACKUPS}"/*.tar.gz.partial "${ARCHIVEFOLDER}"/*.tar.gz.partial 2>/dev/null
++    rm -rf "${STAGING_PREFIX}"* 2>/dev/null
++    return 0
++}
++trap '[ -n "${STAGING:-}" ] && rm -rf "${STAGING}"' EXIT
++
++# A tool's own words go to the log, never to the screen: a failing tar printed
++# "tar: can't open 'storage/.config/...'" on the console flow, a tool's name
++# and a path, above the sentence written for the player (#308 claude
++# F-BR-12(e), gpt F-BR-20). Runs the command with its stderr kept aside,
++# logs what it said, and returns its status.
++to_log() {
++    local ERR RC
++    ERR=$(mktemp)
++    "$@" 2> "${ERR}"; RC=$?
++    [ -s "${ERR}" ] && logger -t backuptool "${1}: $(tr '\n' ' ' < "${ERR}" | cut -c1-500)"
++    rm -f "${ERR}"
++    return ${RC}
++}
++
+ # The one protocol line the transfer page and the sync card read for why a
+ # run did not finish (D-UI-028): upper case, the player's words. This tool's
+ # output is discarded in EmulationStation's chains today and shown verbatim
+@@ -148,6 +220,13 @@ why() {
+ # es_systems.cfg / es_features.cfg are OS-managed symlinks into /usr/config;
+ # backing up their content and restoring it as regular files would freeze the
+ # systems list at the backup-time version, so they are deliberately excluded.
++#
++# /storage/.cache/bluetooth/* was in upstream's list and is not in this one,
++# on purpose (747362fe36, #18): Bluetooth link keys are a credential for one
++# adapter and useless on another. A restore on the same device keeps its
++# pairings -- it never touches that folder -- and a new device pairs its
++# controllers again. A legacy zip that still holds them puts them back, as
++# it always did (#308 claude F-BR-16).
+ DEFAULT=(
+     /storage/.config/fancontrol.conf
+     /storage/.config/backuptool.conf
+@@ -161,7 +240,6 @@ DEFAULT=(
+     ${ESPATH}/scripts/*
+     ${ESPATH}/themesettings/*
+     ${ESPATH}/collections/*
+-    $(find ${ESPATH}/themes/* -type d -maxdepth 0 -not -path "*es-theme-art-book-next" -not -path "*system-theme" 2>/dev/null)
+     # Player-supplied presentation assets. Not ROMs and not BIOS, so content
+     # sync does not carry them; not saves either. They were in no tier at all
+     # until this line, which is the kind of gap that is only discovered when
+@@ -185,35 +263,224 @@ DEFAULT=(
+     /storage/.config/modules/*
+     /storage/.config/scummvm/games/*
+ )
++# The player's own theme folders, not the two the image ships. One line per
++# folder, so a name with a space in it stays one location: this was a command
++# substitution inside the list above, which split "My Theme" into two paths
++# that do not exist (#307 PL-004).
++while IFS= read -r THEME
++do
++    DEFAULT+=("${THEME}")
++done < <(find "${ESPATH}"/themes/* -maxdepth 0 -type d -not -path "*es-theme-art-book-next" -not -path "*system-theme" 2>/dev/null)
+ 
++# Every copy of a location list is quoted: "${LOCATIONS[@]}", never
++# ${LOCATIONS[@]}. Unquoted, each element was split again on spaces, so a
++# custom collection called "custom-Best Games.cfg" or a folder called
++# "my games" became two paths that do not exist, find's error went to
++# /dev/null, and the backup was announced whole without them (#307 PL-004).
+ if [ -e "/storage/.config/backuptool.conf" ]
+ then
+     if source /storage/.config/backuptool.conf
+     then
+-        COMPRESSLOCATIONS=(${LOCATIONS[@]})
++        COMPRESSLOCATIONS=("${LOCATIONS[@]}")
++        # A list that is empty once sourced -- LOCATIONS=(), or a file that
++        # never sets it -- is the standard one, said as such. Until #307
++        # PL-035 it reached find as no locations at all, and find walked the
++        # working directory.
++        NAMED=0
++        for LOC in "${COMPRESSLOCATIONS[@]}"; do [ -n "${LOC}" ] && NAMED=1; done
++        if [ "${NAMED}" -eq 0 ]
++        then
++            WARN="YOUR OWN BACKUP LIST IS EMPTY, SO THE STANDARD ONE WAS USED."
++            echo "${WARN}"
++            logger -t backuptool "${WARN} -- /storage/.config/backuptool.conf sets no locations"
++            COMPRESSLOCATIONS=("${DEFAULT[@]}")
++        fi
+     else
+         WARN="YOUR OWN BACKUP LIST COULDN'T BE READ, SO THE STANDARD ONE WAS USED."
+         echo "${WARN}"
+         logger -t backuptool "${WARN} -- /storage/.config/backuptool.conf failed to source"
+-        COMPRESSLOCATIONS=(${DEFAULT[@]})
++        COMPRESSLOCATIONS=("${DEFAULT[@]}")
+     fi
+ else
+-    COMPRESSLOCATIONS=(${DEFAULT[@]})
++    COMPRESSLOCATIONS=("${DEFAULT[@]}")
+ fi
+ 
+-# Is this archive whole? tar lists every member or fails; busybox unzip has
+-# no -t, so for a zip the listing is the test (a truncated zip has no central
+-# directory to list) -- and the -t is tried first for an unzip that has it.
+-# Until 2026-09-10 the zip check was `unzip -t` alone, which busybox answers
+-# with its usage text and exit 1, so every legacy .zip on a device read as
+-# damaged.
++# A sanitised copy is written new, by a redirection; give it the original's
++# mode and time, so the archive does not carry the staging's 0644 for a file
++# that was 0600 on the device (#308, the gpt seat's F-BR-16).
++keep_meta() {
++    chmod "$(stat -c %a "${1}" 2>/dev/null)" "${2}" 2>/dev/null
++    touch -r "${1}" "${2}" 2>/dev/null
++    return 0
++}
++
++# A member name as a pattern that matches only itself: tar's -X and unzip's
++# -x read their arguments as globs, so a name holding [, ], * or ? would
++# match something else, or nothing.
++glob_literal() {
++    printf '%s' "${1}" | sed 's/[][*?]/[&]/g'
++}
++
++# The last line of defence (#52, #169, #221; #307 PL-005): the archive can be
++# synced to the cloud, so none is kept that carries a populated credential.
++# This reads the tree that is about to be archived -- every staged file, after
++# the strips -- rather than trusting the strips, so a newly-added config file
++# with secrets is caught the first time it is backed up instead of silently
++# leaking. It prints how many lines look like one, and names the files in the
++# log. Until #307 PL-005 it read the archive after it had been renamed into
++# place, printed a warning and let the run end in success, so the settings
++# tier's chain (backuptool backup && cloud_backup --system-only) uploaded the
++# archive anyway; now a hit ends the run before the archive is named.
++#
++# Two shapes, the same two the pre-push guard knows (#307 PL-006):
++#
++#   A key and a value, in a text config file (.cfg, .conf, .ini, and the
++#   network's .nmconnection and .psk). The key word is matched in any case --
++#   Password=, TOKEN=, PrivateKey = and ClientSecret= were all passed by a
++#   pattern whose prefix class admitted no capital. It stays a whole part of
++#   the key: at the start, or after a "_", "." or "-" -- so "bypass",
++#   "input_enable_hotkey" and "DisableLocalPassword" are not credentials,
++#   which is the lesson of #221 (a clean backup that warns teaches people to
++#   ignore the one that matters). "key" alone counts bare, dotted (wifi.key)
++#   or inside a credential word (stream_key, secret_access_key). A trailing
++#   digit counts (rclone's password2); an empty value never does.
++#   Translation catalogues ship lines like 'Password = Пароль', so they are
++#   kept out by where they live (lang/, locale/, translations/), not by case,
++#   which is what the case-sensitive pattern had been protecting.
++#
++#   A fixed token format, in any text file: a private-key block, an OAuth
++#   access or refresh token, AWS, GitHub, Slack and OpenAI keys, ScreenScraper's
++#   devpassword=, RetroAchievements' &y= -- the SECRET_PATTERNS of
++#   .githooks/pre-push, whose last shape (an upper-case KEY/TOKEN/SECRET/
++#   PASSWORD= with a long literal) is here too.
++#
++# A bare-token file (.dat, .txt) has no key shape to match; those are held
++# back by name instead.
++CREDENTIAL_KEYS='^[[:space:]]*(([a-z0-9_.-]*[_.-])?(password|passwd|pass|passphrase|token|secret|apikey|api_key|privatekey|private_key|presharedkey|preshared_key|access_key|secret_key|stream_key|wifi_key|clientsecret|client_secret|apitoken|psk)|key|[a-z0-9_.-]*\.key)[0-9]*[[:space:]]*[=:][[:space:]]*"?[^"[:space:]]+'
++CREDENTIAL_TOKENS='devpassword=[A-Za-z0-9._%-]{4,}|[?&]y=[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY|"(access|refresh)_token" *: *"[A-Za-z0-9._-]{16,}|sk-[A-Za-z0-9_-]{24,}|(API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD)[A-Z_]* *[:=] *["'"'"']?[A-Za-z0-9+/=_-]{16,}'
++credential_lines() {
++    local TREE="${1}" F N TOTAL=0 NAMES=""
++    while IFS= read -r -d '' F
++    do
++        N=0
++        case "${F}" in
++            */lang/*|*/locale/*|*/translations/*) ;;
++            *.cfg|*.conf|*.ini|*.nmconnection|*.psk)
++                N=$(grep -ciE "${CREDENTIAL_KEYS}" "${F}" 2>/dev/null) ;;
++        esac
++        N=$(( ${N:-0} + $(grep -IcE "${CREDENTIAL_TOKENS}" "${F}" 2>/dev/null || true) ))
++        [ "${N}" -gt 0 ] || continue
++        TOTAL=$((TOTAL + N))
++        NAMES="${NAMES:+${NAMES}, }${F#${TREE}/}"
++    done < <(find "${TREE}" -type f -print0)
++    [ "${TOTAL}" -gt 0 ] && logger -t backuptool "found ${TOTAL} line(s) that look like a password or key, in: ${NAMES}"
++    echo "${TOTAL}"
++}
++
++# Is this archive whole? tar lists every member or fails. A zip is read
++# through, every member's bytes to nowhere (unzip -p), which checks each
++# member's CRC: busybox unzip has no -t, and the listing that stood in for it
++# reads only the central directory, so a zip whose directory was intact and
++# whose payload was not passed, and the restore found out part-way through
++# the live tree (#308, the gpt seat's F-BR-14; the -t that ran first could
++# not be told apart from "no -t here" either). Until 2026-09-10 the check was
++# `unzip -t` alone, which busybox answers with its usage text and exit 1, so
++# every legacy .zip on a device read as damaged.
+ archive_ok() {
+     case "${1}" in
+         *.tar.gz) tar -tzf "${1}" >/dev/null 2>&1 ;;
+-        *)        unzip -t "${1}" >/dev/null 2>&1 || unzip -l "${1}" >/dev/null 2>&1 ;;
++        *)        unzip -l "${1}" >/dev/null 2>&1 && unzip -p "${1}" >/dev/null 2>&1 ;;
+     esac
+ }
+ 
++# An archive's members, one per line and each whole, for either kind. The zip
++# listing's name is everything from its fourth column on (#307 PL-036).
++archive_members() {
++    case "${1}" in
++        *.tar.gz) tar -tzf "${1}" 2>/dev/null ;;
++        *)        unzip -l "${1}" 2>/dev/null | awk 'NF > 3 && $4 ~ /^storage\// { print substr($0, index($0, $4)) }' ;;
++    esac
++}
++
++# The copy a restore takes before it writes anything, of exactly what it is
++# about to write over: every member of the incoming archive that exists on
++# this device now, whatever the device's own backup list says, kept whole
++# (passwords too -- it never leaves the device, and "as they were" has to mean
++# exactly that). Until #307 PL-007 the copy walked the device's LOCATIONS and
++# dropped the files identical to the image's, so an archive made under a
++# broader list, or holding a file this device still had at its shipped
++# default, overwrote files the copy did not hold -- and a failed restore said
++# the settings were unchanged.
++#
++# The members that do NOT exist here are the files the restore would create;
++# they go to NEWLIST, one absolute path per line, so a revert can remove them
++# as well as put the rest back. Returns 0 with the copy at TARGET; 4 when no
++# member exists on this device (nothing to copy; NEWLIST may still name
++# files); anything else when the copy could not be taken, which ends the
++# restore before it writes (#307 PL-009).
++snapshot_members() { # <members file> <target> <newlist file>
++    local MEMBERS="${1}" TARGET="${2}" NEWLIST="${3}" KEEP M LIVE LISTED
++    KEEP=$(mktemp)
++    : > "${NEWLIST}"
++    while IFS= read -r M
++    do
++        M="${M#./}"
++        case "${M}" in
++            storage/*/) continue ;;              # a folder: its files are members of their own
++            storage/*) ;;
++            *) continue ;;                       # nothing outside /storage is put back
++        esac
++        case "/${M}/" in */../*|*/./*) continue ;; esac
++        LIVE="/${M}"
++        if [ -L "${LIVE}" ] || [ -f "${LIVE}" ]
++        then
++            printf '%s\n' "${M}" >> "${KEEP}"
++        elif [ ! -e "${LIVE}" ]
++        then
++            printf '%s\n' "${LIVE}" >> "${NEWLIST}"
++        fi
++    done < "${MEMBERS}"
++    awk '!seen[$0]++' "${KEEP}" > "${KEEP}.unique" && mv -f "${KEEP}.unique" "${KEEP}"
++    if [ ! -s "${KEEP}" ]
++    then
++        rm -f "${KEEP}"
++        return 4
++    fi
++    if ! tar -czf "${TARGET}.partial" -C / -T "${KEEP}" 2>/dev/null
++    then
++        rm -f "${KEEP}" "${TARGET}.partial"
++        return 2
++    fi
++    LISTED=$(tar -tzf "${TARGET}.partial" 2>/dev/null | grep -vc '/$')
++    if [ "${LISTED}" -ne "$(wc -l < "${KEEP}")" ] || ! mv -f "${TARGET}.partial" "${TARGET}"
++    then
++        rm -f "${KEEP}" "${TARGET}.partial"
++        return 3
++    fi
++    rm -f "${KEEP}"
++    return 0
++}
++
++# Undo a restore that did not finish: the copy back over the tree, and every
++# file the restore created removed. Returns 0 only when both happened.
++revert_restore() {
++    local RC=0 P
++    if [ -n "${SNAPSHOT}" ]
++    then
++        tar -xzf "${SNAPSHOT}" -C / >/dev/null 2>&1 || RC=1
++    fi
++    while IFS= read -r P
++    do
++        [ -n "${P}" ] || continue
++        if [ -L "${P}" ] || [ -e "${P}" ]
++        then
++            rm -f "${P}" 2>/dev/null
++            [ -L "${P}" ] || [ -e "${P}" ] && RC=1
++        fi
++    done < "${NEWLIST}"
++    return ${RC}
++}
++
+ # The standalone emulators' cheevos_*.sh scripts copy the RetroAchievements
+ # token out of system.cfg into the emulator's own files at every launch, so
+ # the token that write_archive deletes from the archived system.cfg would
+@@ -254,6 +521,41 @@ RATOKENSETTINGS=(
+ RATOKENDIRS=(
+     /storage/.config/raofflineproxy/
+ )
++# The same folders as restore patterns, each with its own wildcard. Written
++# inline as "${RATOKENDIRS[@]#/}"'*' the '*' joined the LAST element only, so
++# a second folder in the list would have left the first as a bare name --
++# which busybox unzip -x matches against nothing (busybox tar -X happens to
++# take a folder's subtree from its bare name; unzip does not, probed on the
++# image's binary), and that folder's token cache would come back from a zip
++# (#308 claude F-BR-13).
++RATOKENDIR_PATTERNS=()
++for D in "${RATOKENDIRS[@]}"; do RATOKENDIR_PATTERNS+=("${D#/}*"); done
++# This device's cloud sign-in and its name in the cloud: never in an archive,
++# never put back from one, whichever archive it is (#307 PL-010). rclone.conf
++# is live OAuth tokens (#52); cloud_device_id's record is the name this
++# device's backups live under, and a restore that put another device's over
++# it made two devices one identity in the cloud (cloud_device_id's own
++# header: "a restore cannot clone one device's identity onto another. Keep
++# it that way."). Held back at backup time -- rclone.conf already was, the
++# id files now are too -- and skipped on restore, which neither branch did:
++# an archive from before the hold-back, or from another device, put its
++# rclone.conf over this one's and the restore reported success.
++DEVICEONLY=(
++    /storage/.config/rclone/rclone.conf
++    /storage/.config/cloud_sync-device-id
++    /storage/.config/cloud_sync-device-id.previous
++)
++# The files a backup left out as identical to the image's own (#45), by
++# their path under /storage/.config, one per line, as a member of the
++# archive. A restore puts each one back to this image's copy: the backup
++# said "this file was at its default", and a restore that left an edit made
++# since then in place was not the settings the backup held (#307 PL-037).
++# Never extracted onto the device itself; an image from before the change
++# extracts it as an inert file, and a backup never collects one.
++SEEDLIST="/storage/.config/.backuptool-seeds"
++# Where a backup is staged (see write_archive); a run killed part-way leaves
++# one behind, swept by the next run under the lock.
++STAGING_PREFIX="/storage/.cache/backuptool-staging."
+ 
+ # Write one settings archive to TARGET, whole or not at all.
+ #
+@@ -261,7 +563,8 @@ RATOKENDIRS=(
+ # the positive check that it is complete; only then renamed to TARGET. A
+ # kill or a power cut at any point leaves TARGET as it was -- absent, or the
+ # previous archive -- and at most a .partial beside it that nothing reads
+-# (every glob here and in cloud_backup ends in .tar.gz). Until 2026-09-10
++# (every glob here ends in .tar.gz or .zip, and so does cloud_backup's
++# --include=/*.{zip,tar.gz}). Until 2026-09-10
+ # the archive was written straight under its final dated name, so a cut
+ # mid-tar left a truncated file that newest_backup picked as the newest and
+ # cloud_backup sent to the cloud (D-CLOUD-078, #105).
+@@ -271,9 +574,12 @@ RATOKENDIRS=(
+ # pre-restore snapshot passes 0: it never leaves the device, and putting it
+ # back must give the player exactly the settings they had, passwords too.
+ #
+-# Returns 0 when TARGET holds a verified archive; 2 when nothing could be
+-# collected (an unreadable input, or nothing to collect); 3 when the archive
+-# could not be written or did not list back. TARGET is untouched on 2 and 3.
++# Returns 0 when TARGET holds a verified archive; 2 when the collection
++# failed (an unreadable input, a copy that did not finish); 3 when the
++# archive could not be written or did not list back; 4 when there was
++# nothing to collect; 5 when a backup (STRIP=1) holds what looks like a
++# password or key; 6 when the list names something outside /storage.
++# TARGET is untouched on every code but 0.
+ write_archive() {
+     local TARGET="${1}" STRIP="${2:-1}"
+     local SYSCFG="/storage/.config/system/configs/system.cfg"
+@@ -286,16 +592,86 @@ write_archive() {
+     # (es_systems.cfg and es_features.cfg point into /usr/config; the
+     # ppsspp link runs the other way -- /usr/bin/assets points INTO
+     # /storage/.config/ppsspp/assets -- so that one is not an example of
+-    # this, though the rule holds; #45). zip -r follows them and stores
+-    # their target's bytes; on restore
+-    # busybox unzip then refuses to overwrite the still-present
+-    # symlink ("exists but is not a regular file") and aborts the
+-    # whole restore partway. Symlinks are the OS's to provide, not
+-    # the backup's to carry.
++    # this, though the rule holds; #45). The zip-era backups followed
++    # them and stored their target's bytes, and on restore busybox unzip
++    # refused to overwrite the still-present symlink ("exists but is not
++    # a regular file") and aborted the whole restore partway. Symlinks
++    # are the OS's to provide, not the backup's to carry.
+     FILELIST=$(mktemp)
+     SECRETLIST=$(mktemp)
+     SENDLIST=$(mktemp)
+-    find ${COMPRESSLOCATIONS[@]} -type f 2>/dev/null > "${FILELIST}"
++    # One location at a time, each passed whole. A location that is not on
++    # this device is nothing to collect -- the standard list names folders
++    # only some devices have, and a glob that matched nothing stays literal.
++    # A location that is there and cannot be walked (a folder find cannot
++    # read) is a failed collection, not a smaller one: find's status was
++    # never read, its error went to /dev/null, and the archive was written
++    # short and announced as a success (#307 PL-004).
++    #
++    # Each location is walked by its canonical path (readlink -f), so the
++    # file list names every file the one way the checks below compare
++    # against: "/storage/./.config/system/configs/system.cfg" is
++    # system.cfg, and its Wi-Fi key is stripped like the plain spelling's
++    # (#307 PL-035; until then the exact-path membership tests missed it).
++    # A location that is itself a symlink holds no file of its own -- find
++    # never followed one -- so it is passed over as before.
++    #
++    # A location outside /storage refuses the whole list (return 6). The
++    # archive is written from the staging tree's storage/ and put back
++    # under /storage, so anything else was staged and then silently left
++    # out while the backup read as whole (#307 PL-038).
++    #
++    # The settings backups folder is never collected, whatever the list
++    # says: it holds the previous archives and the pre-restore copies,
++    # which keep every password (STRIP=0), and a custom list such as
++    # /storage/roms or /storage swept them into an archive bound for the
++    # cloud, where the scan below reads no .tar.gz (#307 PL-008). A
++    # location inside it is passed over, and files under it are taken out
++    # of a location that contains it.
++    local LOC CANON FIND_RC=0 OUTSIDE="" OWN
++    OWN=$(readlink -f "${SETTINGS_BACKUPS}" 2>/dev/null)
++    [ -n "${OWN}" ] || OWN="${SETTINGS_BACKUPS}"
++    for LOC in "${COMPRESSLOCATIONS[@]}"
++    do
++        [ -n "${LOC}" ] || continue
++        [ -e "${LOC}" ] || [ -L "${LOC}" ] || continue
++        [ -L "${LOC}" ] && continue
++        CANON=$(readlink -f "${LOC}") && [ -n "${CANON}" ] || { FIND_RC=1; continue; }
++        case "${CANON}" in
++            /storage|/storage/*) ;;
++            *) OUTSIDE="${LOC}"; continue ;;
++        esac
++        case "${CANON}" in
++            "${OWN}"|"${OWN}"/*) continue ;;
++        esac
++        find "${CANON}" -type f >> "${FILELIST}" 2>/dev/null || FIND_RC=$?
++    done
++    if [ -n "${OUTSIDE}" ]
++    then
++        logger -t backuptool "the backup list names ${OUTSIDE}, which is outside /storage; nothing written"
++        rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
++        return 6
++    fi
++    if [ "${FIND_RC}" -ne 0 ]
++    then
++        logger -t backuptool "a location in the backup list could not be read (find exit ${FIND_RC}); nothing written"
++        rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
++        return 2
++    fi
++    # Overlapping locations (a folder and a file inside it) list a file
++    # twice; the archive holds it once, and the counts below compare like
++    # with like.
++    awk '!seen[$0]++' "${FILELIST}" > "${FILELIST}.unique" && mv -f "${FILELIST}.unique" "${FILELIST}"
++    # A staging folder is never collected either (a run killed part-way
++    # leaves one; a selection of /storage would find it).
++    STAGE="${STAGING_PREFIX}" awk 'index($0, ENVIRON["STAGE"]) != 1' "${FILELIST}" > "${FILELIST}.stage" && mv -f "${FILELIST}.stage" "${FILELIST}"
++    local OWNED
++    OWNED=$(OWN="${OWN}/" awk 'index($0, ENVIRON["OWN"]) == 1' "${FILELIST}" | wc -l)
++    if [ "${OWNED}" -gt 0 ]
++    then
++        OWN="${OWN}/" awk 'index($0, ENVIRON["OWN"]) != 1' "${FILELIST}" > "${FILELIST}.own" && mv -f "${FILELIST}.own" "${FILELIST}"
++        logger -t backuptool "left out ${OWNED} file(s) under the settings backups folder: a backup never holds another backup"
++    fi
+ 
+     # Inside a configured location, what the image ships is not the player's
+     # configuration and does not travel (#45). A stock device's archive was
+@@ -332,15 +708,17 @@ write_archive() {
+         rm -f "${FILELIST}" "${FILELIST}.pruned" "${SECRETLIST}" "${SENDLIST}"
+         return 2
+     fi
+-    KEPT=$(mktemp); PRUNED=0
++    KEPT=$(mktemp); PRUNED=0; SEEDED=$(mktemp)
+     while IFS= read -r F
+     do
++        [ "${F}" = "${SEEDLIST}" ] && continue
+         case "${F}" in
+             /storage/.config/*)
+                 REL="${F#/storage/.config/}"
+                 if [ -f "/usr/config/${REL}" ] && cmp -s "/usr/config/${REL}" "${F}"
+                 then
+                     PRUNED=$((PRUNED + 1))
++                    printf '%s\n' "${REL}" >> "${SEEDED}"
+                     continue
+                 fi
+                 ;;
+@@ -353,9 +731,13 @@ write_archive() {
+ 
+     if [ ! -s "${FILELIST}" ]
+     then
+-        # busybox tar given an empty list writes nothing readable.
+-        rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
+-        return 2
++        # Nothing to collect -- every location absent, empty, or the
++        # image's own -- is its own answer (4), never the 2 a failed
++        # collection gives: a restore reads 4 as "nothing on this device to
++        # keep" and goes on, and it read a FAILED copy the same way until
++        # #307 PL-009, extracting over a tree it had no copy of.
++        rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}" "${SEEDED}"
++        return 4
+     fi
+ 
+     # Only hold back what this backup was actually going to contain. A user
+@@ -382,6 +764,15 @@ write_archive() {
+         then
+             logger -t backuptool "rclone.conf held back from the archive: cloud tokens never travel in a backup (#52)"
+         fi
++        for CANDIDATE in "${DEVICEONLY[@]}"
++        do
++            [ "${CANDIDATE}" = "${RCLONECFG}" ] && continue
++            if grep -qxF "${CANDIDATE}" "${FILELIST}"
++            then
++                echo "${CANDIDATE}" >> "${SECRETLIST}"
++                logger -t backuptool "${CANDIDATE##*/} held back from the archive: a device's cloud name never travels (#307 PL-010)"
++            fi
++        done
+         # The emulators' copies of the RetroAchievements token (#169; the
+         # lists above write_archive). The token-only files are held back
+         # outright, and the count goes to the log the way the pruned seeds'
+@@ -419,13 +810,13 @@ write_archive() {
+         [ "${HELD}" -gt 0 ] && logger -t backuptool "held back ${HELD} file(s) under the offline RetroAchievements proxy's folder: its token cache and award queue never travel (#165)"
+     fi
+ 
+-    # busybox grep -f with an EMPTY pattern file matches nothing and prints
+-    # nothing, where GNU grep prints every line. The device has busybox, so
+-    # piping that into zip would hand it an empty list and fail the backup
+-    # outright -- and only for someone whose custom LOCATIONS excluded all
+-    # three credential files, which is exactly the case the membership check
+-    # above exists to support. Skip the filter when there is nothing to hold
+-    # back rather than relying on grep to agree across implementations.
++    # grep -f with an EMPTY pattern file matches nothing under busybox and
++    # everything under GNU grep, and an empty send list would then fail the
++    # backup outright -- and only for someone whose custom LOCATIONS
++    # excluded every credential file, which is exactly the case the
++    # membership check above exists to support. Skip the filter when there
++    # is nothing to hold back rather than relying on grep to agree across
++    # implementations.
+     if [ -s "${SECRETLIST}" ]
+     then
+         grep -vxF -f "${SECRETLIST}" "${FILELIST}" > "${SENDLIST}"
+@@ -441,22 +832,48 @@ write_archive() {
+     # anyway: the sanitized file is the only version that ever exists in
+     # the tree being archived, so there is no ordering in which a real
+     # credential is written and later overwritten.
+-    STAGING=$(mktemp -d)
++    #
++    # On the storage card, not in /tmp: /tmp is RAM on the device, and the
++    # standard list now carries whole bezel and theme folders, so a large
++    # selection staged there could exhaust the memory of a 1 GB handheld
++    # mid-backup (#308 claude F-BR-09). /storage is the internal card's own
++    # filesystem, which keeps file modes -- the backups folder can be on a
++    # FAT games card, which does not. There is one copy: the scan reads
++    # the staged tree itself (PL-005) rather than a second extraction.
++    mkdir -p "${STAGING_PREFIX%/*}"
++    STAGING=$(mktemp -d "${STAGING_PREFIX}XXXXXX") || { rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}" "${SEEDED}"; return 2; }
+     # pipefail, in a subshell so it does not leak into the rest of the
+     # script: a pipeline's status is its LAST command's, so without this
+     # the guard tested the extracting tar and ignored the collecting one.
+     # The collector exits 1 on an unreadable input or an unwritable target
+     # and the pipeline still reported 0, so a short archive was written and
+     # announced as a success.
+-    ( set -o pipefail
+-      tar -cf - -T "${SENDLIST}" 2>/dev/null | tar -xf - -C "${STAGING}" 2>/dev/null )
+-    if [ $? -ne 0 ]
++    #
++    # An empty send list is skipped, not piped: a selection of nothing but
++    # files that travel as sanitised copies (LOCATIONS=(system.cfg)) leaves
++    # it empty, and busybox tar writes no archive at all for an empty list,
++    # so the reader failed on "invalid tar magic" and a valid backup was
++    # refused as a failed collection (#308, the gpt seat's F-BR-19).
++    local COLLECT_RC=0
++    if [ -s "${SENDLIST}" ]
++    then
++        ( set -o pipefail
++          tar -cf - -T "${SENDLIST}" 2>/dev/null | tar -xf - -C "${STAGING}" 2>/dev/null )
++        COLLECT_RC=$?
++    fi
++    if [ "${COLLECT_RC}" -ne 0 ]
+     then
+         rm -rf "${STAGING}"
+         rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
+         return 2
+     fi
+ 
++    # How many sanitised copies were staged in place of a file held back,
++    # for the member count below; and whether every one of them was written
++    # whole. A sanitiser that dies part-way (a read error, a full card)
++    # leaves a copy that exists and is short, which the count cannot see, so
++    # each one's status is read (#307 PL-036, the gpt seat's F-BR-06).
++    local SANITISED=0 SANITISE_RC=0
+     if [ "${STRIP}" = "1" ]
+     then
+         # Wifi keys, the root password, and account passwords/tokens must
+@@ -465,7 +882,9 @@ write_archive() {
+         then
+             mkdir -p "${STAGING}/storage/.config/system/configs"
+             sed -E '/^[^#]*\.(key|password|token)=/d' "${SYSCFG}" \
+-                > "${STAGING}/storage/.config/system/configs/system.cfg"
++                > "${STAGING}/storage/.config/system/configs/system.cfg" || SANITISE_RC=1
++            keep_meta "${SYSCFG}" "${STAGING}/storage/.config/system/configs/system.cfg"
++            SANITISED=$((SANITISED + 1))
+         fi
+ 
+         # es_settings.cfg holds the ScreenScraper account password and, on
+@@ -478,8 +897,12 @@ write_archive() {
+         if grep -qxF "${ESCFG}" "${SECRETLIST}"
+         then
+             mkdir -p "${STAGING}/storage/.config/emulationstation"
++            # grep's 1 is "no line survived" (an empty copy), not a failure.
+             grep -v -e 'name="ScreenScraperPass"' -e 'name="ScreenScraperDevPass"' -e 'name="IGDBSecret"' "${ESCFG}" \
+                 > "${STAGING}/storage/.config/emulationstation/es_settings.cfg"
++            [ $? -le 1 ] || SANITISE_RC=1
++            keep_meta "${ESCFG}" "${STAGING}/storage/.config/emulationstation/es_settings.cfg"
++            SANITISED=$((SANITISED + 1))
+         fi
+ 
+         # retroarch.cfg carries its own credentials when RetroArch's own UI
+@@ -492,7 +915,9 @@ write_archive() {
+         then
+             mkdir -p "${STAGING}/storage/.config/retroarch"
+             sed -E 's/^([a-z_]*(password|token|stream_key)) = ".*"$/\1 = ""/' "${RACFG}" \
+-                > "${STAGING}/storage/.config/retroarch/retroarch.cfg"
++                > "${STAGING}/storage/.config/retroarch/retroarch.cfg" || SANITISE_RC=1
++            keep_meta "${RACFG}" "${STAGING}/storage/.config/retroarch/retroarch.cfg"
++            SANITISED=$((SANITISED + 1))
+         fi
+ 
+         # The standalone emulators' settings files carry the token as a
+@@ -509,21 +934,80 @@ write_archive() {
+             then
+                 mkdir -p "${STAGING}${CANDIDATE%/*}"
+                 sed -E 's/^([A-Za-z_]*(Token|Password)[[:space:]]*=[[:space:]]*).*$/\1/' "${CANDIDATE}" \
+-                    > "${STAGING}${CANDIDATE}"
++                    > "${STAGING}${CANDIDATE}" || SANITISE_RC=1
++                keep_meta "${CANDIDATE}" "${STAGING}${CANDIDATE}"
+                 BLANKED=$((BLANKED + 1))
+             fi
+         done
+         [ "${BLANKED}" -gt 0 ] && logger -t backuptool "blanked the RetroAchievements token in ${BLANKED} emulator settings file(s) (#169)"
++        SANITISED=$((SANITISED + BLANKED))
++    fi
++    # The list of what was left out as the image's own, for a backup that
++    # can be restored somewhere else (STRIP=1): see SEEDLIST.
++    if [ "${STRIP}" = "1" ] && [ -s "${SEEDED}" ]
++    then
++        mkdir -p "${STAGING}${SEEDLIST%/*}"
++        cp "${SEEDED}" "${STAGING}${SEEDLIST}" || SANITISE_RC=1
++        SANITISED=$((SANITISED + 1))
++    fi
++    rm -f "${SEEDED}"
++    if [ "${SANITISE_RC}" -ne 0 ]
++    then
++        logger -t backuptool "a sanitised copy could not be written whole; nothing written"
++        rm -rf "${STAGING}"
++        rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
++        return 2
+     fi
++
++    # The staged tree is counted against what it was handed: every file
++    # the collector was given, plus each sanitised copy. A collector that
++    # leaves a file out and exits 0 is caught here rather than trusted
++    # (#307 PL-004); the archive is then counted against the tree.
++    local SENT STAGED LISTED
++    SENT=$(wc -l < "${SENDLIST}")
++    STAGED=$(find "${STAGING}" -type f | wc -l)
+     rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
++    if [ "${STAGED}" -ne $((SENT + SANITISED)) ]
++    then
++        logger -t backuptool "the staged copy holds ${STAGED} file(s) where $((SENT + SANITISED)) were collected; nothing written"
++        rm -rf "${STAGING}"
++        return 2
++    fi
++
++    # A backup that may leave the device carries no sign-in (return 5), and
++    # the check reads the staged tree -- exactly what the archive is made
++    # from -- before the archive exists, so nothing credential-bearing is
++    # ever written under a name an uploader matches (#307 PL-005).
++    if [ "${STRIP}" = "1" ] && [ "$(credential_lines "${STAGING}")" -gt 0 ]
++    then
++        rm -rf "${STAGING}"
++        return 5
++    fi
+ 
+     # Member names come out as storage/... exactly as the zip's did, so
+     # anything reading the archive sees the same shape. To .partial first;
+     # the name every reader looks for is given only to an archive that has
+-    # listed back whole.
+-    if ! tar -czf "${TARGET}.partial" -C "${STAGING}" storage \
+-       || ! tar -tzf "${TARGET}.partial" >/dev/null 2>&1
++    # listed back whole -- every staged file, counted, not only a listing
++    # that ends without an error.
++    #
++    # Files only, named from a list: the folders in the staging tree were
++    # made by the collecting tar and by mkdir, not copied, and archiving
++    # them put their modes into the archive for a restore to impose on the
++    # device's own folders (#308, the gpt seat's F-BR-16).
++    local MEMBERLIST
++    MEMBERLIST=$(mktemp)
++    ( cd "${STAGING}" && find storage -type f ) > "${MEMBERLIST}"
++    if ! to_log tar -czf "${TARGET}.partial" -C "${STAGING}" -T "${MEMBERLIST}"
++    then
++        rm -rf "${STAGING}"
++        rm -f "${TARGET}.partial" "${MEMBERLIST}"
++        return 3
++    fi
++    rm -f "${MEMBERLIST}"
++    LISTED=$(tar -tzf "${TARGET}.partial" 2>/dev/null | grep -vc '/$')
++    if [ "${LISTED}" -ne "${STAGED}" ]
+     then
++        logger -t backuptool "the archive lists ${LISTED} file(s) of the ${STAGED} staged; nothing written"
+         rm -rf "${STAGING}"
+         rm -f "${TARGET}.partial"
+         return 3
+@@ -552,11 +1036,20 @@ write_archive() {
+ # (KILL3 on the VM, 2026-09-10: the previous archive, planted first, was the
+ # one removed). A name with no date is from before names carried them and is
+ # the oldest there is; it sorts last.
++#
++# The one path given, if any, is never a candidate: the pre-restore copy a
++# restore has just taken and is about to rely on. Named by the clock, it
++# sorted oldest whenever the clock read earlier than the archives already
++# there -- an RTC-less handheld after a reset, with archives pulled from the
++# cloud -- and was deleted before the extraction it existed to protect, while
++# the restore mark still named it (#308 claude F-BR-08, gpt F-BR-15).
+ trim_archive() {
++    local KEEP="${1:-}"
+     ls -1 "${ARCHIVEFOLDER}"/*_SETTINGS*.tar.gz "${ARCHIVEFOLDER}"/*PRE_RESTORE*.tar.gz \
+           "${ARCHIVEFOLDER}"/*_BACKUP*.tar.gz "${ARCHIVEFOLDER}"/*_BACKUP*.zip \
+           "${ARCHIVEFOLDER}"/ARCHIVED_*.zip 2>/dev/null \
+         | awk '!seen[$0]++' \
++        | KEEP="${KEEP}" awk '$0 != ENVIRON["KEEP"]' \
+         | awk -F/ '{ n = $NF; k = (n ~ /^[0-9][0-9][0-9][0-9]_/) ? n : "0000_" n; print k "\t" $0 }' \
+         | sort -r | cut -f2- | tail -n +$((ARCHIVE_KEEP + 1)) | while read -r OLD
+     do
+@@ -592,6 +1085,16 @@ done
+ 
+ case "${VERB}" in
+     "restore")
++        command -v flock >/dev/null 2>&1 || {
++            why "THIS DEVICE CAN'T RESTORE SETTINGS"
++            fail "THIS DEVICE CAN'T RESTORE SETTINGS. SOMETHING IT NEEDS IS MISSING FROM THIS BUILD." "'flock' is not on PATH"
++        }
++        if ! take_lock
++        then
++            why "A SETTINGS BACKUP OR RESTORE IS ALREADY RUNNING"
++            fail "A SETTINGS BACKUP OR RESTORE IS ALREADY RUNNING. WAIT FOR IT TO FINISH, THEN TRY AGAIN." "another run holds the lock on ${SETTINGS_BACKUPS}"
++        fi
++        sweep_leftovers
+         BACKUPFILE="$(newest_backup)"
+         if [ -z "${BACKUPFILE}" ] || [ ! -f "${BACKUPFILE}" ]
+         then
+@@ -611,54 +1114,124 @@ case "${VERB}" in
+         if ! archive_ok "${BACKUPFILE}"
+         then
+             why "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED"
+-            fail "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED. NOTHING WAS CHANGED. BACK UP SETTINGS AGAIN." "${BACKUPFILE} does not list"
++            # The newest archive may have come down from the cloud (the
++            # fresh-device journey), where backing up again neither mends it
++            # nor helps; either way a good copy has to replace it (#308
++            # claude F-BR-12(f)).
++            fail "THIS DEVICE'S SETTINGS BACKUP IS DAMAGED. NOTHING WAS CHANGED. RESTORE SETTINGS FROM THE CLOUD AGAIN, OR BACK UP SETTINGS TO REPLACE IT." "${BACKUPFILE} does not list"
+         fi
+ 
+-        # Before anything is written over the live tree, the tree as it is
+-        # now goes into archive/ under the same shape as a backup, so a
++        # Before anything is written over the live tree, what the archive
++        # is about to replace goes into archive/ (snapshot_members), so a
+         # restore that does not finish has something to go back to
+         # (D-CLOUD-078: a failure reverts to the last known good state).
+         # archive/ is never sent to the cloud and never scanned by
+         # newest_backup, so the copy cannot be mistaken for a backup the
+         # player made; it is trimmed with the rest of archive/ so the folder
+-        # stays bounded. Passwords are kept in it (STRIP=0): it stays on the
+-        # device, and "as they were" has to mean exactly that.
++        # stays bounded.
+         mkdir -p "${ARCHIVEFOLDER}"
+         SNAPSHOT="${ARCHIVEFOLDER}/${BACKUP_STAMP}-PRE_RESTORE-${DEVICE_LABEL:+${DEVICE_LABEL}-}${OS_NAME}_SETTINGS.tar.gz"
++        while [ -e "${SNAPSHOT}" ]
++        do
++            STAMP_EPOCH=$((STAMP_EPOCH + 1)); BACKUP_STAMP="$(stamp_at "${STAMP_EPOCH}")"
++            SNAPSHOT="${ARCHIVEFOLDER}/${BACKUP_STAMP}-PRE_RESTORE-${DEVICE_LABEL:+${DEVICE_LABEL}-}${OS_NAME}_SETTINGS.tar.gz"
++        done
++        MEMBERS=$(mktemp); NEWLIST=$(mktemp); SEEDS=$(mktemp)
++        archive_members "${BACKUPFILE}" > "${MEMBERS}"
++        # The files the backup left out as the image's own (SEEDLIST), to
++        # be put back to this image's copy after the extraction: a path under
++        # /storage/.config that walks nowhere else, that this image ships,
++        # that is not a symlink here, and that no skip rule below keeps on
++        # the device. Their targets join the members the copy covers.
++        if grep -qxF "${SEEDLIST#/}" "${MEMBERS}"
++        then
++            case "${ARCHIVE_KIND}" in
++                tar) tar -xzOf "${BACKUPFILE}" "${SEEDLIST#/}" 2>/dev/null ;;
++                *)   unzip -p "${BACKUPFILE}" "${SEEDLIST#/}" 2>/dev/null ;;
++            esac | while IFS= read -r REL
++            do
++                case "${REL}" in ''|/*|*..*) continue ;; esac
++                case "/storage/.config/${REL}" in
++                    /storage/.config/ppsspp/assets/*|/storage/.config/ppsspp/PSP/SYSTEM/CACHE/*) continue ;;
++                esac
++                for CANDIDATE in "${DEVICEONLY[@]}" "${RATOKENFILES[@]}"; do [ "/storage/.config/${REL}" = "${CANDIDATE}" ] && continue 2; done
++                for CANDIDATE in "${RATOKENDIRS[@]}"; do case "/storage/.config/${REL}" in "${CANDIDATE}"*) continue 2 ;; esac; done
++                [ -f "/usr/config/${REL}" ] && [ ! -L "/storage/.config/${REL}" ] && printf '%s\n' "${REL}"
++            done > "${SEEDS}"
++            sed 's|^|storage/.config/|' "${SEEDS}" >> "${MEMBERS}"
++        fi
+         note "KEEPING A COPY OF YOUR CURRENT SETTINGS..." "${SNAPSHOT}"
+-        write_archive "${SNAPSHOT}" 0
++        snapshot_members "${MEMBERS}" "${SNAPSHOT}" "${NEWLIST}"
+         case $? in
+-            0) trim_archive ;;
+-            2) # Nothing on the device to keep: a fresh install, or nothing
+-               # readable. There is nothing a failed restore could revert to
+-               # and nothing it could damage, so go on without a copy.
++            0) trim_archive "${SNAPSHOT}" ;;
++            4) # Nothing the archive holds is on the device yet: a fresh
++               # install. There is nothing to copy; the files the restore
++               # would create are still listed, so a revert can remove
++               # them. A copy that FAILED (2, 3) is not this: the tree is
++               # there and could not be kept, so the restore stops before
++               # writing anything (#307 PL-009).
+                SNAPSHOT=""
+-               logger -t backuptool "no current settings to copy aside before the restore" ;;
++               logger -t backuptool "nothing on this device for the restore to replace; no copy needed" ;;
+             *) why "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS"
+-               fail "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS, SO NOTHING WAS CHANGED. TRY AGAIN." "write_archive ${SNAPSHOT} failed" ;;
++               fail "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS, SO NOTHING WAS CHANGED. TRY AGAIN." "the copy of what ${BACKUPFILE} would replace could not be written" ;;
+         esac
+ 
+         # From here until the tree is whole again, a power cut leaves it half
+         # from the archive and half from before, with nothing running to
+-        # notice. The marker names the copy taken above; chksysconfig verify
+-        # reads it at the next boot, puts the copy back and tells
+-        # EmulationStation to say so (D-CLOUD-078, KILL18). Removed below
+-        # once the extract has finished, or once this script's own revert
+-        # has put the copy back; left in place if that revert failed, so the
+-        # boot tries again.
++        # notice. The marker names the copy taken above on its first line and
++        # each file the restore would create on a line of its own after it,
++        # "+<path>"; chksysconfig verify reads it at the next boot, puts the
++        # copy back, removes those files and tells EmulationStation to say so
++        # (D-CLOUD-078, KILL18). An image from before #307 PL-007 reads the
++        # first line alone, as it always did. Removed below once the extract
++        # has finished, or once this script's own revert has put the tree
++        # back; left in place if that revert failed, so the boot tries again.
++        #
++        # The mark is a precondition of the extraction, read back before the
++        # first file is written: a mark that could not be written means a
++        # power cut would leave the tree half restored with nothing to put
++        # it back, so the restore stops here instead (#307 PL-039; until
++        # then the write was unchecked and the extraction went on without
++        # it). -T, so a folder in the mark's place is a failure, not a
++        # destination the mark moves into.
+         RESTORE_MARK="/storage/.config/.restore-in-progress"
+-        if [ -n "${SNAPSHOT}" ]
++        if [ -n "${SNAPSHOT}" ] || [ -s "${NEWLIST}" ]
+         then
+-            printf '%s\n' "${SNAPSHOT}" > "${RESTORE_MARK}.tmp" && mv -f "${RESTORE_MARK}.tmp" "${RESTORE_MARK}"
++            if ! { { printf '%s\n' "${SNAPSHOT}"; sed 's/^/+/' "${NEWLIST}"; } > "${RESTORE_MARK}.tmp" 2>/dev/null \
++                   && mv -fT "${RESTORE_MARK}.tmp" "${RESTORE_MARK}" 2>/dev/null \
++                   && [ "$(head -n 1 "${RESTORE_MARK}" 2>/dev/null)" = "${SNAPSHOT}" ] \
++                   && [ "$(wc -l < "${RESTORE_MARK}")" -eq $(( 1 + $(wc -l < "${NEWLIST}") )) ]; }
++            then
++                rm -f "${RESTORE_MARK}.tmp" "${MEMBERS}" "${NEWLIST}" 2>/dev/null
++                why "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS"
++                fail "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS, SO NOTHING WAS CHANGED. TRY AGAIN." "the restore mark ${RESTORE_MARK} could not be written"
++            fi
+         fi
+ 
+         note "RESTORING SETTINGS..." "from ${BACKUPFILE}"
++        # A member whose path is a symlink here is the OS's to provide
++        # (es_systems.cfg and es_features.cfg point into /usr/config), in
++        # either kind of archive. Backups hold regular files only, so an
++        # archive member at such a path is a flattened copy -- from a zip
++        # written before backups skipped symlinks, or a tar from a device
++        # where the link had been flattened -- and extracting it would freeze
++        # that file at the archive's version. busybox unzip refuses and
++        # aborts the whole restore; tar replaced the link without a word,
++        # which is why the tar branch had no such list until #308 (the gpt
++        # seat's F-BR-13). Skipped by exact name (glob_literal) in both.
++        LINKS=()
++        while IFS= read -r ENTRY
++        do
++            ENTRY="${ENTRY#./}"
++            [ -L "/${ENTRY}" ] && LINKS+=("$(glob_literal "${ENTRY}")")
++        done < "${MEMBERS}"
++        if [ "${#LINKS[@]}" -gt 0 ]
++        then
++            note "KEEPING ${#LINKS[@]} FILE(S) THE SYSTEM PROVIDES THAT THIS BACKUP WOULD HAVE REPLACED."
++        fi
+         if [ "${ARCHIVE_KIND}" = "tar" ]
+         then
+-            # No symlink skip-list here, and none needed: tar replaces a
+-            # symlink with whatever the archive holds instead of refusing and
+-            # aborting, and what the archive holds is the symlink itself. What
+-            # IS skipped is the OS's: an archive written before #45 carries
++            # What is skipped is the OS's: an archive written before #45 carries
+             # PPSSPP's assets and shader cache, and extracting them over a
+             # newer image's would put an older emulator's program data under a
+             # newer emulator (upgrade-and-install: fixing what is written does
+@@ -666,15 +1239,17 @@ case "${VERB}" in
+             # only a RetroAchievements token, which every archive written
+             # before #169 carries: a token from before is not put on this
+             # device, and the emulator writes a current one from system.cfg
+-            # at its next start. That is all a restore strips. The settings
++            # at its next start. Beside those, this device's cloud sign-in
++            # and name (DEVICEONLY), the seed list (SEEDLIST) and the live
++            # symlinks above are never extracted. The settings
+             # files' token lines an older archive still carries are left to
+             # the emulator, which rewrites them at launch; tar cannot edit a
+             # member on the way past, and the archive is where the token
+             # must not be.
+             SKIP=$(mktemp)
+-            printf '%s\n' 'storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIRS[@]#/}"'*' > "${SKIP}"
+-            tar -xzf "${BACKUPFILE}" -C / -X "${SKIP}" >/dev/null
+-            RC_TAR=$?; rm -f "${SKIP}"; (exit ${RC_TAR})
++            printf '%s\n' 'storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIR_PATTERNS[@]}" "${DEVICEONLY[@]#/}" "${SEEDLIST#/}" "${LINKS[@]}" > "${SKIP}"
++            to_log tar -xzf "${BACKUPFILE}" -C / -X "${SKIP}" >/dev/null
++            EXTRACT_RC=$?; rm -f "${SKIP}"
+         else
+             # Archives written before backups switched to regular files only
+             # hold the *contents* of symlinked paths. Extracting one of those
+@@ -689,42 +1264,47 @@ case "${VERB}" in
+             # likely to carry them -- and until #151 PL-03 this branch skipped
+             # neither, while D-CLOUD-008 said "from any archive". The token-only
+             # files are skipped here too (#169), as in the tar branch.
+-            SKIP=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIRS[@]#/}"'*')
+-            SKIPPED=0
+-            for ENTRY in $(unzip -l "${BACKUPFILE}" 2>/dev/null | awk 'NF>3 && $4 ~ /^storage\// {print $4}')
+-            do
+-                if [ -L "/${ENTRY}" ]
+-                then
+-                    SKIP+=("${ENTRY}")
+-                    SKIPPED=$((SKIPPED + 1))
+-                fi
+-            done
+-            if [ "${SKIPPED}" -gt 0 ]
+-            then
+-                note "KEEPING ${SKIPPED} FILE(S) THE SYSTEM PROVIDES THAT THIS OLDER BACKUP WOULD HAVE REPLACED."
+-            fi
++            # The member names are read whole (archive_members): until #307
++            # PL-036 this branch split them on spaces, so "my link.cfg" was
++            # tested as "my" and a live symlink with a space in its name was
++            # not skipped -- the abort this list exists to prevent.
++            SKIP=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIR_PATTERNS[@]}" "${DEVICEONLY[@]#/}" "${SEEDLIST#/}" "${LINKS[@]}")
+             # -x is a mode switch: every argument after it is an exclusion,
+             # so it goes last. busybox and Info-ZIP both take the patterns.
+-            unzip -o "${BACKUPFILE}" -d / -x "${SKIP[@]}" >/dev/null
++            to_log unzip -o "${BACKUPFILE}" -d / -x "${SKIP[@]}" >/dev/null
++            EXTRACT_RC=$?
+         fi
+-        if [ $? -ne 0 ]
++        # Then each file the backup held at its default goes back to this
++        # image's copy (SEEDLIST). A copy that fails is a restore that did
++        # not finish, and is undone with the rest.
++        if [ "${EXTRACT_RC}" -eq 0 ]
++        then
++            while IFS= read -r REL
++            do
++                mkdir -p "$(dirname "/storage/.config/${REL}")" && cp -f "/usr/config/${REL}" "/storage/.config/${REL}" || { EXTRACT_RC=1; break; }
++            done < "${SEEDS}"
++            [ -s "${SEEDS}" ] && [ "${EXTRACT_RC}" -eq 0 ] && logger -t backuptool "put $(wc -l < "${SEEDS}") file(s) the backup held at their defaults back to this image's copies"
++        fi
++        rm -f "${SEEDS}"
++        if [ "${EXTRACT_RC}" -ne 0 ]
+         then
+             # Half the archive may be in place. Put the copy taken above
+-            # back over it, and say which state the device is in.
+-            if [ -n "${SNAPSHOT}" ] && tar -xzf "${SNAPSHOT}" -C / >/dev/null 2>&1
+-            then
+-                rm -f "${RESTORE_MARK}"
+-                why "THE RESTORE COULDN'T FINISH"
+-                fail "THE RESTORE COULDN'T FINISH. DON'T WORRY - YOUR SETTINGS ARE UNCHANGED. TRY AGAIN." "extraction of ${BACKUPFILE} failed; ${SNAPSHOT} put back"
+-            elif [ -n "${SNAPSHOT}" ]
++            # back over it, remove what the restore created, and say which
++            # state the device is in. "Unchanged" is said only when both
++            # happened: the copy covers every member the archive would have
++            # replaced, and the list every one it would have added.
++            if revert_restore
+             then
++                N_NEW=$(wc -l < "${NEWLIST}")
++                rm -f "${RESTORE_MARK}" "${MEMBERS}" "${NEWLIST}"
+                 why "THE RESTORE COULDN'T FINISH"
+-                fail "THE RESTORE COULDN'T FINISH, AND SOME OF YOUR SETTINGS COULDN'T BE PUT BACK. TRY THE RESTORE AGAIN." "extraction of ${BACKUPFILE} failed and so did putting back ${SNAPSHOT}"
++                fail "THE RESTORE COULDN'T FINISH. DON'T WORRY - YOUR SETTINGS ARE UNCHANGED. TRY AGAIN." "extraction of ${BACKUPFILE} failed; ${SNAPSHOT:-no copy needed} put back and ${N_NEW} created file(s) removed"
+             else
+                 why "THE RESTORE COULDN'T FINISH"
+-                fail "THE RESTORE COULDN'T FINISH. TRY AGAIN." "extraction of ${BACKUPFILE} failed; there was no previous state to put back"
++                fail "THE RESTORE COULDN'T FINISH, AND SOME OF YOUR SETTINGS COULDN'T BE PUT BACK. TRY THE RESTORE AGAIN." "extraction of ${BACKUPFILE} failed and so did putting back ${SNAPSHOT:-the files it created}"
+             fi
+         fi
++        rm -f "${MEMBERS}" "${NEWLIST}"
+ 
+         # The tree is whole: the boot has nothing to put back.
+         rm -f "${RESTORE_MARK}"
+@@ -752,20 +1332,33 @@ case "${VERB}" in
+         systemctl reboot
+     ;;
+     "backup")
+-        # Guard the tool this whole path depends on. busybox provides unzip but
+-        # not zip, so a missing package means backup dies with a bare
+-        # "zip: not found" after the user has already chosen to back up.
+-        for TOOL in tar gzip
++        # Guard the tools this whole path depends on, before anything is
++        # touched: a build that lost one (the zip-era tool died with a bare
++        # "zip: not found" after the player had chosen to back up) says so
++        # in the player's words instead.
++        for TOOL in tar gzip flock
+         do
+             command -v "${TOOL}" >/dev/null 2>&1 || {
+                 why "THIS DEVICE CAN'T MAKE A SETTINGS BACKUP"
+                 fail "THIS DEVICE CAN'T MAKE A SETTINGS BACKUP. SOMETHING IT NEEDS IS MISSING FROM THIS BUILD." "'${TOOL}' is not on PATH"
+             }
+         done
++        if ! take_lock
++        then
++            why "A SETTINGS BACKUP OR RESTORE IS ALREADY RUNNING"
++            fail "A SETTINGS BACKUP OR RESTORE IS ALREADY RUNNING. WAIT FOR IT TO FINISH, THEN TRY AGAIN." "another run holds the lock on ${SETTINGS_BACKUPS}"
++        fi
+ 
+         # A .partial left by a run that was killed mid-write is not a backup
+         # and nothing reads it; clear it so it does not sit there for ever.
+-        rm -f "${SETTINGS_BACKUPS}"/*.tar.gz.partial 2>/dev/null
++        sweep_leftovers
++
++        # A name already taken moves on a second (see STAMP_EPOCH).
++        while [ -e "${BACKUPFILE}" ]
++        do
++            STAMP_EPOCH=$((STAMP_EPOCH + 1)); BACKUP_STAMP="$(stamp_at "${STAMP_EPOCH}")"
++            BACKUPFILE="${SETTINGS_BACKUPS}/${BACKUP_STAMP}-${DEVICE_LABEL:+${DEVICE_LABEL}-}${OS_NAME}_SETTINGS.tar.gz"
++        done
+ 
+         # The archive at the root right now, named before the new one exists
+         # so that newest_backup cannot return the new one. It stays exactly
+@@ -780,16 +1373,26 @@ case "${VERB}" in
+         write_archive "${BACKUPFILE}" 1
+         case $? in
+             0) ;;
++            4) # Nothing to back up is not a failure to try again: every
++               # location was absent, empty, or the image's own, and a retry
++               # finds the same (#308 F-BR-17).
++               why "THERE'S NOTHING TO BACK UP YET"
++               fail "THERE'S NOTHING TO BACK UP YET. YOUR LAST BACKUP IS UNCHANGED." "every location was absent, empty, or identical to the image's own copy" ;;
+             2) why "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS"
+                fail "THE BACKUP COULDN'T FINISH WHILE GATHERING YOUR SETTINGS. NOTHING WAS WRITTEN, AND YOUR LAST BACKUP IS UNCHANGED. TRY AGAIN." "collecting into staging failed" ;;
++            5) why "A SIGN-IN WAS FOUND IN THE BACKUP"
++               fail "A SIGN-IN WAS FOUND IN THE BACKUP, SO IT WASN'T KEPT. YOUR LAST BACKUP IS UNCHANGED." "a staged file holds a line shaped like a credential (the log names it); nothing written" ;;
++            6) why "YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP CAN'T CARRY"
++               fail "YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP CAN'T CARRY, SO NOTHING WAS WRITTEN. YOUR LAST BACKUP IS UNCHANGED." "a location in /storage/.config/backuptool.conf is outside /storage" ;;
+             *) why "THE BACKUP COULDN'T FINISH"
+                fail "THE BACKUP COULDN'T FINISH. NOTHING WAS WRITTEN, AND YOUR LAST BACKUP IS UNCHANGED. TRY AGAIN." "writing or verifying ${BACKUPFILE} failed" ;;
+         esac
+ 
+-        # Now, and only now, rotate the previous archive into an archive
+-        # folder that the cloud allowlist (backup/*.zip) does not match, and
+-        # keep only the newest few. Each backup writes a new dated name, so
+-        # this is only ever the previous one.
++        # Now, and only now, rotate the previous archive into archive/,
++        # which the settings upload does not reach -- cloud_backup sends
++        # --include=/*.{zip,tar.gz} at the ROOT of the backups folder only --
++        # and keep only the newest few. Each backup writes a new dated name,
++        # so this is only ever the previous one.
+         if [ -n "${PREVIOUS}" ] && [ -f "${PREVIOUS}" ] && [ "${PREVIOUS}" != "${BACKUPFILE}" ]
+         then
+             mkdir -p "${ARCHIVEFOLDER}"
+@@ -808,65 +1411,29 @@ case "${VERB}" in
+             trim_archive
+         fi
+ 
+-        # Last line of defence: the archive can be synced to the cloud, so
+-        # never ship one carrying a populated credential. This greps what
+-        # actually landed in the archive rather than trusting the strips above,
+-        # so a newly-added config file with secrets is caught the first
+-        # time it is backed up instead of silently leaking.
+-        # Text config members only, case-sensitive, anchored to a config-key
+-        # shape. Translation catalogues ship lines like 'Password = Пароль',
+-        # and scanning every member found nothing while warning on every
+-        # backup, which would be worse than not warning at all.
+-        # busybox tar has no wildcard member selection, so the members are
+-        # listed first and the text ones named explicitly. Same restriction as
+-        # before, for the same reason: -O concatenates members without
+-        # separators, so binary blobs run into the next file's first line and
+-        # defeat the anchor.
+-        SCANLIST=$(tar -tzf "${BACKUPFILE}" 2>/dev/null | grep -E '\.(cfg|conf|ini)$' || true)
+-        if [ -n "${SCANLIST}" ]
+-        then
+-            # Extract once and scan the files, rather than expanding the
+-            # member list into tar's arguments: unquoted, a member name
+-            # containing a space split into two names that do not exist, tar
+-            # errored into /dev/null, and those members went unscanned -- a
+-            # credential check failing open.
+-            # The capitalised keys are the ones the standalone emulators'
+-            # cheevos_*.sh scripts write (Token, ApiToken, RA_Token,
+-            # RA_Password); until #169 the anchor was lower-case only, so
+-            # the token travelled in every backup of a device that had run
+-            # PPSSPP with RetroAchievements on and this line never spoke.
+-            # Named, not matched case-insensitively, so a catalogue's
+-            # `Password = ...` stays out. A bare-token file (.dat, .txt) has
+-            # no key shape to match; those are held back by name instead.
+-            # The credential word is a whole part of the key name -- after
+-            # the start, a "_" or a "." -- and "key" alone is too common a
+-            # word to be one: it counts bare, dotted (wifi.key) or behind a
+-            # credential word (stream_key, secret_access_key). Until #221 a
+-            # name that merely ended in "key" or "pass" counted, and every
+-            # shipped retroarch.cfg carries input_enable_hotkey (on some
+-            # families core_info_savestate_bypass too), so every clean backup
+-            # warned -- which teaches people to ignore the one that matters.
+-            # A trailing digit counts (rclone's password2).
+-            SCANDIR=$(mktemp -d)
+-            tar -xzf "${BACKUPFILE}" -C "${SCANDIR}" 2>/dev/null
+-            LEAKS=$(find "${SCANDIR}" -type f \( -name '*.cfg' -o -name '*.conf' -o -name '*.ini' \) \
+-                -exec grep -hE '^(([a-z_.]*[_.])?(password|passwd|pass|token|secret|apikey|api_key|stream_key|access_key|secret_key|private_key|wifi_key)[0-9]*|key|[a-z_.]*\.key|Token|ApiToken|RA_Token|RA_Password) *[=:] *"?[^"[:space:]]+' {} + 2>/dev/null \
+-                | wc -l)
+-            rm -rf "${SCANDIR}"
+-        else
+-            LEAKS=0
+-        fi
+-        if [ "${LEAKS}" -gt 0 ] 2>/dev/null
+-        then
+-            WARN="${LEAKS} LINE(S) IN THIS BACKUP LOOK LIKE PASSWORDS OR KEYS. CHECK IT BEFORE SHARING IT OR SENDING IT TO THE CLOUD."
+-            echo -e "\e[33m${WARN}\e[0m"
+-            logger -t backuptool "${WARN} -- ${BACKUPFILE}"
+-        fi
++        # The archives upstream's backuptool rotated -- before this fork's
++        # first rewrite of it (747362fe36, 2026-07-25) -- went to the ROOT of
++        # the backups folder as ARCHIVED_<OS>_BACKUP-<yy-mm-dd_H_M_S>.zip,
++        # where no reader here looks and cloud_backup's --include=/*.zip
++        # uploads every one on every settings backup: the whole config tree
++        # of that era, keys and all. They move into archive/ under the date
++        # they were written, where the trim bounds them with the rest and
++        # nothing uploads them (#308 claude F-BR-07). Idempotent; a move cut
++        # part-way leaves the file in one place or the other.
++        for OLD in "${SETTINGS_BACKUPS}"/ARCHIVED_*.zip
++        do
++            [ -f "${OLD}" ] || continue
++            mkdir -p "${ARCHIVEFOLDER}"
++            mv "${OLD}" "${ARCHIVEFOLDER}/$(date -r "${OLD}" +%Y_%m_%d-%H%M%S 2>/dev/null || stamp_at "${STAMP_EPOCH}")-$(basename "${OLD}")" \
++                && logger -t backuptool "moved $(basename "${OLD}") from the backups folder's root into archive/: nothing uploads it there"
++            ROTATED_OLD=1
++        done
++        [ -n "${ROTATED_OLD:-}" ] && trim_archive
+ 
+         sync
+         note "SETTINGS BACKED UP TO THIS DEVICE." "${BACKUPFILE}"
+-        note "COPY IT SOMEWHERE SAFE, OR BACK UP TO THE CLOUD UNDER GAME SETTINGS > MANAGE CLOUD STORAGE."
+-        sleep 3
++        note "COPY IT SOMEWHERE SAFE, OR BACK UP SETTINGS TO THE CLOUD UNDER GAME SETTINGS > MANAGE CLOUD STORAGE."
++        if [ -t 1 ]; then sleep 3; fi
+     ;;
+     *)
+         echo "Usage: backuptool {backup|restore [--then-cloud] [--no-restart]}" >&2
+diff --git a/projects/ROCKNIX/packages/rocknix/sources/scripts/chksysconfig b/projects/ROCKNIX/packages/rocknix/sources/scripts/chksysconfig
+index 4a636975d2..924d81b3e0 100755
+--- a/projects/ROCKNIX/packages/rocknix/sources/scripts/chksysconfig
++++ b/projects/ROCKNIX/packages/rocknix/sources/scripts/chksysconfig
+@@ -106,17 +106,51 @@ finish_restore() {
+   # The copy lives under the settings backups folder, which is on
+   # /storage/roms -- a bind mount rocknix-automount makes at about 2.5 s,
+   # after the sysinit verify has run at 1.7 s (D-CLOUD-080). A copy whose
+-  # folder is not there yet is not missing, it is not mounted yet: leave the
+-  # marker for the verify the autostart chain runs once the mounts are up
+-  # (001-setup), and say nothing. Only a folder that is there without the
++  # folder is not mounted yet is not missing: leave the marker for the
++  # verify the autostart chain runs once the mounts are up (001-setup), and
++  # say nothing. "Mounted" is asked of the mount, not of the directory:
++  # automount always mounts /storage/roms (a bind of games-internal or
++  # games-external, or the overlay), and before it does the path is the
++  # internal card's own directory, which on a device that once used it
++  # already holds roms/backup/archive -- so the directory test passed, the
++  # copy read as missing and the marker was consumed while the copy sat on
++  # the card not mounted yet (#307 PL-045, #308 claude F-PB-11). A copy
++  # elsewhere keeps the directory test. Only a mounted folder without the
+   # copy in it, or a copy that does not list, is a failure to report.
+-  if [ -n "${snap}" ] && [ ! -d "$(dirname "${snap}")" ]; then
++  local roms="${ROMS_ROOT:-/storage/roms}" pending=0
++  if [ -n "${snap}" ]; then
++    case "${snap}" in
++      "${roms}"/*) mountpoint -q "${roms}" 2>/dev/null || pending=1 ;;
++      *) [ -d "$(dirname "${snap}")" ] || pending=1 ;;
++    esac
++  fi
++  if [ "${pending}" -eq 1 ]; then
+     say "a settings restore was cut off; the copy taken before it (${snap}) is on a folder not mounted yet, so it goes back at the next check this boot"
+     return 0
+   fi
+-  if [ -n "${snap}" ] && [ -f "${snap}" ] && tar -tzf "${snap}" >/dev/null 2>&1 \
+-     && tar -xzf "${snap}" -C "${EXTRACT_ROOT:-/}" >/dev/null 2>&1; then
+-    say "a settings restore was cut off; the copy taken before it was put back (${snap})"
++  # The lines after the first name, as "+<path>", the files the restore
++  # would create (backuptool, #307 PL-007): they did not exist before it, so
++  # putting the tree back means removing them too. Only paths under
++  # /storage, and none that walks out of it. A marker from an image before
++  # that change has one line and none of these.
++  local created=0 bad=0 p
++  while IFS= read -r p; do
++    case "${p}" in +/storage/*) ;; *) continue ;; esac
++    p="${p#+}"
++    case "${p}/" in */../*) continue ;; esac
++    created=$((created + 1))
++  done < <(tail -n +2 "${mark}" 2>/dev/null)
++  if { [ -z "${snap}" ] && [ "${created}" -gt 0 ]; } || \
++     { [ -n "${snap}" ] && [ -f "${snap}" ] && tar -tzf "${snap}" >/dev/null 2>&1 \
++       && tar -xzf "${snap}" -C "${EXTRACT_ROOT:-/}" >/dev/null 2>&1; }; then
++    while IFS= read -r p; do
++      case "${p}" in +/storage/*) ;; *) continue ;; esac
++      p="${p#+}"
++      case "${p}/" in */../*) continue ;; esac
++      rm -f "${EXTRACT_ROOT%/}${p}" 2>/dev/null
++      [ -e "${EXTRACT_ROOT%/}${p}" ] && bad=$((bad + 1))
++    done < <(tail -n +2 "${mark}" 2>/dev/null)
++    say "a settings restore was cut off; the copy taken before it was put back (${snap:-none needed}) and ${created} file(s) it created removed ($((created - bad)) gone)"
+     echo reverted > "${said}"
+   else
+     say "a settings restore was cut off and the copy taken before it is missing or damaged (${snap:-none}); the tree is as the restore left it"
+@@ -133,7 +167,21 @@ verify() {
+   # A writer's temporary a kill left beside the file (set_setting writes
+   # system.cfg.tmp and renames it). The next write replaces it; the boot
+   # sweeps it so it never sits there as a second file that looks like one.
+-  rm -f "${CFG}.tmp"
++  #
++  # Except when it is the only good copy there is: the live file cut and no
++  # usable record beside it -- a device updated from before the record
++  # existed (#102), whose writer's last save never reached its rename. The
++  # interface's SystemConf reads such a whole .tmp when the live file is cut
++  # (#307 PL-064, stream E1), but this runs first at sysinit and deleted it,
++  # so the defaults were reseeded over a whole copy of the player's settings.
++  # A .tmp that is itself usable is put in place instead, and said.
++  if [ -e "${CFG}.tmp" ]; then
++    if ! valid "${CFG}" && ! valid "${BACKUP}" && valid "${CFG}.tmp" \
++       && mv -f "${CFG}.tmp" "${CFG}"; then
++      say "system.cfg was cut and had no good copy; the whole one a write left beside it (system.cfg.tmp) was put in place"
++    fi
++    rm -f "${CFG}.tmp"
++  fi
+ 
+   if ! valid "${CFG}"; then
+     if [ ! -e "${CFG}" ]; then
+diff --git a/projects/ROCKNIX/packages/rocknix/sources/scripts/factoryreset b/projects/ROCKNIX/packages/rocknix/sources/scripts/factoryreset
+index 5e7150eda5..feb70788c9 100755
+--- a/projects/ROCKNIX/packages/rocknix/sources/scripts/factoryreset
++++ b/projects/ROCKNIX/packages/rocknix/sources/scripts/factoryreset
+@@ -39,10 +39,21 @@ fail() {
+     logger -t factoryreset "${1}${2:+ -- ${2}}"
+ }
+ 
++# Remove a path and check it is gone, rather than trusting rm's status: with
++# -f a missing operand is not an error, and "it did not fail" is not the same
++# answer as "it is not there" (engineering-practices, guards fail closed).
++remove_checked() {
++    rm -rf "${1}"
++    [ ! -e "${1}" ]
++}
++
+ # Put this build's copy of a config back where the player's copy was. The
+ # source is checked before anything is removed, so the ordinary failure -- a
+ # build that does not ship that emulator -- leaves the device untouched and
+-# can say so.
++# can say so. The player's copy must be GONE before the copy: rm -rf's status
++# went unread, and a folder that would not go (an unremovable file in it)
++# stayed, so cp -rf put the defaults INSIDE it -- retroarch/retroarch -- and
++# the reset reported success over the old configuration (#307 PL-044).
+ restore_default() {
+     local src="${1}" dst="${2}"
+ 
+@@ -52,7 +63,11 @@ restore_default() {
+         return 1
+     fi
+ 
+-    rm -rf "${dst}"
++    if ! remove_checked "${dst}"
++    then
++        fail "THE DEFAULT SETTINGS COULDN'T BE PUT BACK." "${dst} could not be removed"
++        return 1
++    fi
+     if ! cp -rf "${src}" "${dst}"
+     then
+         fail "THE DEFAULT SETTINGS COULDN'T BE PUT BACK." "cp ${src} -> ${dst} failed"
+@@ -62,14 +77,6 @@ restore_default() {
+     return 0
+ }
+ 
+-# Remove a path and check it is gone, rather than trusting rm's status: with
+-# -f a missing operand is not an error, and "it did not fail" is not the same
+-# answer as "it is not there" (engineering-practices, guards fail closed).
+-remove_checked() {
+-    rm -rf "${1}"
+-    [ ! -e "${1}" ]
+-}
+-
+ case "${VERB}" in
+   "retroarch")
+     restore_default /usr/config/retroarch/retroarch.cfg /storage/.config/retroarch/retroarch.cfg || exit 1
+@@ -134,7 +141,13 @@ case "${VERB}" in
+ 
+     restore_default /usr/config/PortMaster /storage/.config/PortMaster || exit 1
+ 
+-    rm -rf /storage/roms/ports/PortMaster
++    # The same rule for the unpacked copy: a folder that would not go gets
++    # the new files mixed into the old.
++    if ! remove_checked /storage/roms/ports/PortMaster
++    then
++        fail "THE DEFAULT SETTINGS COULDN'T BE PUT BACK." "/storage/roms/ports/PortMaster could not be removed"
++        exit 1
++    fi
+     # unzip creates the last directory of -d and no more, so a device whose
+     # ports folder is not there fails at the extract -- silently, before #119.
+     mkdir -p /storage/roms/ports
+diff --git a/projects/ROCKNIX/packages/rocknix/sources/scripts/rocknix-corekeep b/projects/ROCKNIX/packages/rocknix/sources/scripts/rocknix-corekeep
+index ab93047d46..d6d742b484 100755
+--- a/projects/ROCKNIX/packages/rocknix/sources/scripts/rocknix-corekeep
++++ b/projects/ROCKNIX/packages/rocknix/sources/scripts/rocknix-corekeep
+@@ -32,7 +32,8 @@
+ #   * It is bounded. A dump is streamed through gzip and cut off at
+ #     CORE_MAX_BYTES of the raw dump (head -c before gzip, so the cap is the
+ #     dump's size, not the archive's); the note says it was cut. The ring
+-#     keeps CORE_KEEP newest pairs and deletes the rest, oldest first.
++#     keeps the CORE_KEEP newest crashes, by the time in their names, notes
++#     and dumps together, and deletes the rest, oldest first.
+ #   * It refuses rather than fills the card. Under CORE_MIN_FREE_KB free it
+ #     writes only the note, saying so. A player who cannot save their game
+ #     because a crash dump filled the disk has been failed twice.
+@@ -112,9 +113,13 @@ case "${1:-}" in
+ esac
+ 
+ # The kernel is the only other caller, and it passes no such flag. Without the
+-# marker the dump is read and dropped: the kernel needs the pipe consumed.
++# marker nothing is read: the handler exits, the kernel's next write to the
++# pipe fails and it abandons the dump (core_pipe_limit is 0 here, so it does
++# not wait on the helper either). This read the whole dump to /dev/null "for
++# the kernel", which it does not need -- an 800 MB interface core cost
++# seconds of a 1 GB handheld's memory bandwidth before the crashed process
++# could be restarted (#308 claude F-PB-16).
+ if [ ! -f "${CORE_MARKER}" ]; then
+-    cat > /dev/null 2>&1
+     exit 0
+ fi
+ 
+@@ -126,10 +131,20 @@ EXEPATH="${5:-}"
+ 
+ # A name that cannot escape the directory: the kernel gives %e from the
+ # process, and a process can be named almost anything.
++#
++# The interface's cap follows its path (%E, "!usr!bin!emulationstation"), not
++# its name: %e is the task's comm, which the kernel cuts to 15 characters, so
++# it arrives as "emulationstatio" and never matched the case below -- the
++# interface's dumps were cut at the 256 MB default (#308, the gpt seat's
++# F-PB-20, found again by stream F2). The cut name is taken too, for a
++# kernel that passes no path.
+ if [ -z "${CORE_MAX_BYTES}" ]; then
+-    case "${EXE}" in
++    case "${EXEPATH##*!}" in
+         emulationstation) CORE_MAX_BYTES="${CORE_MAX_BYTES_INTERFACE}" ;;
+-        *)                CORE_MAX_BYTES="${CORE_MAX_BYTES_DEFAULT}" ;;
++        *) case "${EXE}" in
++               emulationstatio|emulationstation) CORE_MAX_BYTES="${CORE_MAX_BYTES_INTERFACE}" ;;
++               *) CORE_MAX_BYTES="${CORE_MAX_BYTES_DEFAULT}" ;;
++           esac ;;
+     esac
+ fi
+ SAFE=$(printf '%s' "${EXE}" | tr -c 'A-Za-z0-9._-' '_' | cut -c1-40)
+@@ -139,6 +154,27 @@ BASE="${CORE_DIR}/core.${SAFE}.${WHEN}.${PID}"
+ mkdir -p "${CORE_DIR}" 2>/dev/null || exit 0
+ chmod 0700 "${CORE_DIR}" 2>/dev/null
+ 
++# One crash at a time, from the space check through the prune: two handlers
++# that each saw room for one dump could together fill the card, the floor
++# notwithstanding (#308, the gpt seat's F-PB-21). An flock on the folder
++# itself; a second handler waits (the kernel holds its dump in the pipe
++# meanwhile), and a device without flock is not refused a dump for it.
++exec 8<"${CORE_DIR}" && { command -v flock >/dev/null 2>&1 && flock 8; }
++
++# The ring: the newest CORE_KEEP crashes stay, by the time in their names --
++# core.<exe>.<epoch>.<pid>.txt, read from the right because the name may
++# hold dots -- counting every crash that left a note, dump or not. Sorted by
++# name it went by executable first, so a new "emulationstation" dump sorted
++# ahead of three older "retroarch" ones and was the one deleted; and the
++# notes of dumps refused for space were never counted, so they grew without
++# bound (#308, the gpt seat's F-PB-15). Run on every way out.
++prune_ring() {
++    ls -1 "${CORE_DIR}"/core.*.txt 2>/dev/null \
++        | awk -F. '{ print $(NF-2) "\t" $0 }' | sort -rn | cut -f2- \
++        | awk -v k="${CORE_KEEP}" 'NR > k' \
++        | while IFS= read -r OLD; do rm -f "${OLD}" "${OLD%.txt}.gz"; done
++}
++
+ note() { printf '%s\n' "$*" >> "${BASE}.txt"; }
+ 
+ umask 077
+@@ -162,6 +198,7 @@ NEED_KB=$(( CORE_MIN_FREE_KB + CORE_MAX_BYTES / 1024 ))
+ if [ "${FREE_KB}" -lt "${NEED_KB}" ]; then
+     note "dump         NOT KEPT -- only ${FREE_KB} KB free, under the ${NEED_KB} KB needed (the ${CORE_MIN_FREE_KB} KB floor plus the ${CORE_MAX_BYTES} byte cap)"
+     logger -t rocknix-corekeep "${EXE} died on signal ${SIG}; dump discarded, ${FREE_KB} KB free"
++    prune_ring
+     exit 0
+ fi
+ 
+@@ -169,7 +206,14 @@ fi
+ # so the kernel's writer sees the pipe close and the rest is dropped -- which
+ # is the intent: a truncated dump still usually carries the stack, and an
+ # unbounded one can be the size of RAM.
+-if head -c "${CORE_MAX_BYTES}" | gzip -1 > "${BASE}.gz" 2>/dev/null; then
++#
++# One byte past the cap is asked for, so whole or cut is read off the count
++# alone: more than the cap arrived only if the process offered more. The
++# second head that used to ask "is there one more byte?" asked a stream the
++# first had already read ahead of -- busybox head -c reads a buffer, not the
++# count -- so a dump up to a few KB over the cap read back as whole (#308
++# claude F-PB-16). A cut dump keeps the cap plus that one byte.
++if head -c "$(( CORE_MAX_BYTES + 1 ))" | gzip -1 > "${BASE}.gz" 2>/dev/null; then
+     SIZE=$(stat -c%s "${BASE}.gz" 2>/dev/null || echo 0)
+     # Whole or cut is decided by the raw count gzip records, never by the
+     # compressed size: a cut dump of zeros compresses to nothing and used to
+@@ -177,11 +221,8 @@ if head -c "${CORE_MAX_BYTES}" | gzip -1 > "${BASE}.gz" 2>/dev/null; then
+     # process offered more than was kept.
+     RAW=$(gzip -l "${BASE}.gz" 2>/dev/null | awk 'NR==2{print $2}')
+     case "${RAW}" in ''|*[!0-9]*) RAW=0 ;; esac
+-    # A dump of exactly the cap's size is whole, not cut: head stopped at the
+-    # cap either way, so one more byte is asked of the stream -- present, the
+-    # process offered more; absent, the cap was the size (the seat's G-06).
+-    MORE=$(head -c 1 2>/dev/null | wc -c)
+-    if [ "${RAW}" -ge "${CORE_MAX_BYTES}" ] && [ "${MORE:-0}" -ge 1 ]; then
++    # A dump of exactly the cap's size is whole, not cut (the seat's G-06).
++    if [ "${RAW}" -gt "${CORE_MAX_BYTES}" ]; then
+         note "dump         ${BASE}.gz (CUT at the cap: ${RAW} raw bytes kept of more, ${SIZE} compressed; cap ${CORE_MAX_BYTES})"
+     else
+         note "dump         ${BASE}.gz (whole: ${RAW} raw bytes, ${SIZE} compressed)"
+@@ -194,9 +235,5 @@ fi
+ 
+ note "credentials  a core is process memory: assume it holds tokens and keys. 0600, never collected, never uploaded."
+ 
+-# The ring: newest CORE_KEEP pairs stay. Sorted by name, which sorts by the
+-# epoch in it, so the oldest go first.
+-ls -1 "${CORE_DIR}"/core.*.gz 2>/dev/null | sort | head -n -"${CORE_KEEP}" | while IFS= read -r OLD; do
+-    rm -f "${OLD}" "${OLD%.gz}.txt"
+-done
++prune_ring
+ exit 0
+diff --git a/projects/ROCKNIX/packages/rocknix/sources/scripts/rocknix-evidence b/projects/ROCKNIX/packages/rocknix/sources/scripts/rocknix-evidence
+index b386fc21cd..b88a934766 100755
+--- a/projects/ROCKNIX/packages/rocknix/sources/scripts/rocknix-evidence
++++ b/projects/ROCKNIX/packages/rocknix/sources/scripts/rocknix-evidence
+@@ -100,22 +100,39 @@ have_filter() {
+ 
+ # Every regular file under a directory, through the filter, in place, its
+ # mtime kept (when a log was last written is evidence). A file the filter
+-# cannot rewrite is removed rather than left as it was, and named. sed passes
+-# bytes it does not match through untouched, and the pstore dumps are kernel
+-# text, so nothing here is damaged by the pass.
+-FILTERED=0; LEFT_OUT=0
++# cannot rewrite -- or whose filtered copy cannot be moved into its place --
++# is removed rather than left as it was, and named. A file that can be
++# neither filtered nor removed is raw and still there: that ends the
++# collection before any archive is written (returns non-zero). Until #307
++# PL-046 the move's status was not read, the file was counted as filtered,
++# and the raw log was archived under a summary that said it had been
++# through the filter. sed passes bytes it does not match through untouched,
++# and the pstore dumps are kernel text, so nothing here is damaged by the
++# pass. The list is taken before the pass, so no .redacting file is walked.
++FILTERED=0; LEFT_OUT=0; RAW=0
+ filter_tree() {
+-  local f
++  local f list
++  list=$(mktemp) || return 1
++  find "$1" -type f -print0 > "${list}"
+   while IFS= read -r -d '' f; do
+     if redact_credentials < "${f}" > "${f}.redacting" 2>/dev/null; then
+       touch -r "${f}" "${f}.redacting" 2>/dev/null
+-      mv -f "${f}.redacting" "${f}"; FILTERED=$((FILTERED + 1))
++      if mv -f "${f}.redacting" "${f}" 2>/dev/null; then
++        FILTERED=$((FILTERED + 1))
++        continue
++      fi
++    fi
++    rm -f "${f}" "${f}.redacting" 2>/dev/null
++    if [ -e "${f}" ]; then
++      RAW=$((RAW + 1))
++      echo "Couldn't filter or remove ${f#${1}/}."
+     else
+-      rm -f "${f}" "${f}.redacting"; LEFT_OUT=$((LEFT_OUT + 1))
++      LEFT_OUT=$((LEFT_OUT + 1))
+       echo "Left out ${f#${1}/}: the credential filter couldn't rewrite it."
+     fi
+-  done < <(find "$1" -type f -print0)
+-  return 0
++  done < "${list}"
++  rm -f "${list}"
++  [ "${RAW}" -eq 0 ]
+ }
+ 
+ snapshot() {
+@@ -141,9 +158,16 @@ collect() {
+     exit 1
+   fi
+   mkdir -p "${EVIDENCE_DIR}" || { echo "Couldn't write to ${EVIDENCE_DIR}."; exit 1; }
+-  local stamp label dir out
++  local stamp label name stage dir tmp out n
+   stamp=$(date '+%Y_%m_%d-%H%M%S'); label=$(device_label)
+-  dir="${EVIDENCE_DIR}/${stamp}-${label}-evidence"; out="${dir}.tar.gz"
++  name="${stamp}-${label}-evidence"
++  # A staging folder of this run's own, and an archive name nobody has yet:
++  # two collections in the same second shared one folder and one name, so
++  # one could copy a raw log into the tree the other had just filtered and
++  # was archiving, and the second archive replaced the first (#307 PL-077,
++  # the gpt seat's F-PB-03).
++  stage=$(mktemp -d "${EVIDENCE_DIR}/.collect.XXXXXX") || { echo "Couldn't write to ${EVIDENCE_DIR}."; exit 1; }
++  dir="${stage}/${name}"
+   mkdir -p "${dir}/pstore" "${dir}/snapshots" "${dir}/logs" "${dir}/stamps"
+ 
+   {
+@@ -181,16 +205,32 @@ collect() {
+   # Last, over everything that landed above, whatever wrote it: the filter
+   # is applied to the tree, not trusted of each writer. Then the count goes
+   # into the summary -- our own words and numbers, nothing that needs the pass.
+-  filter_tree "${dir}"
++  if ! filter_tree "${dir}"; then
++    echo "Nothing was archived: ${RAW} file(s) could be neither filtered nor removed. The pieces are in ${dir}."
++    exit 1
++  fi
+   printf '\ncredential filter: %s file(s) rewritten, %s left out\n' "${FILTERED}" "${LEFT_OUT}" >> "${dir}/summary.txt"
+ 
+-  if tar -czf "${out}" -C "${EVIDENCE_DIR}" "$(basename "${dir}")" 2>/dev/null; then
+-    rm -rf "${dir}"
++  # Written inside the staging folder, then linked to the first free name
++  # (ln fails when the name exists): <stamp>-<label>-evidence.tar.gz, or
++  # <stamp>-<label>-2-evidence.tar.gz and on for a second in the same
++  # second -- every name still ends in -evidence.tar.gz.
++  tmp="${stage}/out.tar.gz"; out=""
++  if tar -czf "${tmp}" -C "${stage}" "${name}" 2>/dev/null; then
++    n=1; out="${EVIDENCE_DIR}/${name}.tar.gz"
++    while ! ln "${tmp}" "${out}" 2>/dev/null; do
++      n=$((n + 1))
++      [ "${n}" -le 50 ] || { out=""; break; }
++      out="${EVIDENCE_DIR}/${stamp}-${label}-${n}-evidence.tar.gz"
++    done
++  fi
++  if [ -n "${out}" ]; then
++    rm -rf "${stage}"
+     echo "Evidence collected: ${out} ($(du -h "${out}" | cut -f1))"
+     echo "Every file in it has been through the credential filter (${FILTERED} rewritten, ${LEFT_OUT} left out)."
+     echo "Start with summary.txt, then journal-previous-boot.txt and pstore/."
+   else
+-    rm -f "${out}"
++    rm -f "${tmp}"
+     echo "Couldn't write the archive; the pieces are in ${dir}."
+     exit 1
+   fi
+diff --git a/projects/ROCKNIX/packages/rocknix/sources/scripts/runemu.sh b/projects/ROCKNIX/packages/rocknix/sources/scripts/runemu.sh
+index 92664f2a94..63b39af1fc 100755
+--- a/projects/ROCKNIX/packages/rocknix/sources/scripts/runemu.sh
++++ b/projects/ROCKNIX/packages/rocknix/sources/scripts/runemu.sh
+@@ -18,8 +18,12 @@ performance
+ # $4 = Emulator
+ 
+ ARGUMENTS="$@"
+-PLATFORM="${ARGUMENTS##*-P}"  # read from -P onwards
+-PLATFORM="${PLATFORM%% *}"  # until a space is found
++### The platform is the first -P<platform> argument after the ROM, taken
++### whole. ${ARGUMENTS##*-P} read from the LAST "-P" anywhere in the joined
++### line, so a netplay nick such as My-Player made the platform "layer"
++### (#308, stream E2's reading of the launch command).
++PLATFORM=""
++for ARG in "${@:2}"; do case "${ARG}" in -P?*) PLATFORM="${ARG#-P}"; break ;; esac; done
+ CORE="${ARGUMENTS##*--core=}"  # read from --core= onwards
+ CORE="${CORE%% *}"  # until a space is found
+ EMULATOR="${ARGUMENTS##*--emulator=}"  # read from --emulator= onwards
+@@ -193,38 +197,33 @@ function parse_savestate_arguments() {
+   AUTOSAVE=""
+   STATEFILE=""
+ 
+-  if [[ "${ARGUMENTS}" == *" -state_slot "* ]] || \
+-     [[ "${ARGUMENTS}" == *" -autosave "* ]] || \
+-     [[ "${ARGUMENTS}" == *" -state_file "* ]]
++  ### Each value is the argument after its flag, from the argument list --
++  ### the shell already split it. The state file is a path, and ROM names
++  ### carry spaces, parentheses and " - " (Mario Tennis - Power Tour (USA,
++  ### Australia)), so it was always taken this way; the slot and the auto
++  ### save were cut out of the joined line, where the FIRST " -state_slot "
++  ### could be inside the ROM's own name ("Demo -state_slot 2 - Part.sfc")
++  ### and win over the real flag (#308, the gpt seat's F-PB-17).
++  local PREVIOUS="" ARGUMENT FLAGGED=0
++  for ARGUMENT in "$@"
++  do
++    case "${PREVIOUS}" in
++      -state_slot) SNAPSHOT="${ARGUMENT}" ;;
++      -autosave)   AUTOSAVE="${ARGUMENT}" ;;
++      -state_file) STATEFILE="${ARGUMENT}" ;;
++    esac
++    case "${ARGUMENT}" in
++      -state_slot|-autosave|-state_file) FLAGGED=1 ;;
++    esac
++    PREVIOUS="${ARGUMENT}"
++  done
++
++  if [ "${FLAGGED}" -eq 1 ]
+   then
+     ### The controllers value ends where the first of them begins.
+     CONTROLLERCONFIG="${CONTROLLERCONFIG%% -state_slot *}"
+     CONTROLLERCONFIG="${CONTROLLERCONFIG%% -autosave *}"
+     CONTROLLERCONFIG="${CONTROLLERCONFIG%% -state_file *}"
+-    if [[ "${ARGUMENTS}" == *" -state_slot "* ]]
+-    then
+-      SNAPSHOT="${ARGUMENTS#* -state_slot *}" # -state_slot x
+-      SNAPSHOT="${SNAPSHOT%% -*}"
+-    fi
+-    if [[ "${ARGUMENTS}" == *" -autosave "* ]]
+-    then
+-      AUTOSAVE="${ARGUMENTS#* -autosave *}" # -autosave x
+-      AUTOSAVE="${AUTOSAVE%% -*}"
+-    fi
+-    ### The state file is a path, and ROM names carry spaces, parentheses and
+-    ### " - " (Mario Tennis - Power Tour (USA, Australia)), so it is taken whole
+-    ### from the argument list -- the shell already split it -- never cut out
+-    ### of the joined string.
+-    local PREVIOUS=""
+-    local ARGUMENT
+-    for ARGUMENT in "$@"
+-    do
+-      if [ "${PREVIOUS}" = "-state_file" ]
+-      then
+-        STATEFILE="${ARGUMENT}"
+-      fi
+-      PREVIOUS="${ARGUMENT}"
+-    done
+   else
+     CONTROLLERCONFIG="${CONTROLLERCONFIG%% --*}"  # until a -- is found
+   fi
+diff --git a/projects/ROCKNIX/packages/rocknix/sources/scripts/wifictl b/projects/ROCKNIX/packages/rocknix/sources/scripts/wifictl
+index 1c4d4acae9..9db00fed7e 100755
+--- a/projects/ROCKNIX/packages/rocknix/sources/scripts/wifictl
++++ b/projects/ROCKNIX/packages/rocknix/sources/scripts/wifictl
+@@ -20,8 +20,10 @@ NMCLI="$(command -v nmcli 2>/dev/null)"
+ ###                               exit 2 when NetworkManager could not be asked
+ ###     wifictl saved             the remembered networks, one per line: <name><TAB>active|saved
+ ###     wifictl forget <name>     forget one: prints "forgotten", then "disconnected" on a
+-###                               second line when it was the one in use; exit 1, nothing
+-###                               printed, when it is not a remembered network or the delete failed
++###                               second line when it was the one in use, and clears wifi.ssid /
++###                               wifi.key when they name it; exit 1, nothing printed, when it is
++###                               not a remembered network or the delete failed; exit 2 when
++###                               NetworkManager could not be asked
+ ###     wifictl join <name>       join a saved network with the key NetworkManager holds for it
+ ###                               (the picker's press on a SAVED row): prints "joined" once its
+ ###                               profile is active and moves wifi.ssid / wifi.key onto it; exit 1,
+@@ -63,12 +65,17 @@ wait_for_wifi() {
+   [ -n "${COUNTRY}" ] && iw reg set "${COUNTRY}"
+ }
+ 
+-# lists all wifi networks
++# lists all wifi networks, each name as the network has it: terse output
++# escapes ':' and '\', so "Cafe: Guest" arrived as "Cafe\: Guest" from here
++# and as "Cafe: Guest" from current and saved, and the picker -- which
++# compares names exactly -- showed the network twice and tried to connect
++# to the escaped name (#308 claude F-WF-05). nm_unescape is defined below;
++# this runs after the whole file is read.
+ list_wifi() {
+   wait_for_wifi
+   "${NMCLI}" -w 15 dev wifi rescan ifname "${WIFI_DEV}" 2>/dev/null
+   sleep 1
+-  "${NMCLI}" -t -f SSID dev wifi list ifname "${WIFI_DEV}" 2>/dev/null | sed '/^$/d' | sort -u
++  "${NMCLI}" -t -f SSID dev wifi list ifname "${WIFI_DEV}" 2>/dev/null | nm_unescape | sed '/^$/d' | sort -u
+ }
+ 
+ connect_wifi() {
+@@ -186,6 +193,17 @@ nm_unescape() {
+   sed 's/\\\(.\)/\1/g'
+ }
+ 
++# The state saved_wifi gives a remembered network, by its whole name: the
++# name is everything before the LAST tab (the state is after it), as the
++# interface's parser reads it. awk -F'\t' compared the part before the
++# FIRST tab, so a profile whose name holds a tab -- listed as SAVED and
++# accepted by the interface -- could be neither joined nor forgotten (#308
++# claude F-WF-06, gpt F-WF-04). The name crosses through the environment,
++# not awk -v, which would read backslashes in it as escapes.
++saved_state() { # <saved_wifi rows> <name>
++  printf '%s\n' "${1}" | NAME="${2}" awk '{ n = $0; sub(/\t[^\t]*$/, "", n); if (n == ENVIRON["NAME"]) { s = $0; sub(/^.*\t/, "", s); print s } }'
++}
++
+ # The SSID the device is joined to now: the one access point NetworkManager
+ # marks active, from the list it already holds (no rescan). Nothing and exit
+ # 1 when the device is joined to none; exit 2 when NetworkManager could not
+@@ -221,15 +239,30 @@ saved_wifi() {
+ # remembered one in range). A name that is not a remembered wireless
+ # network, a NetworkManager that cannot be asked, or a delete that fails:
+ # nothing printed and exit 1, so a caller cannot read a refusal as done.
+-# The name is matched whole, through the environment rather than awk -v,
+-# which would read backslashes in it as escapes.
++# The name is matched whole (saved_state).
++#
++# NetworkManager not answering is exit 2, as for current and join: "could
++# not ask" is a different answer from "no such network" (#308 claude
++# F-WF-07). And a network forgotten here is forgotten in the settings too:
++# when wifi.ssid names it (by SSID, or by the profile name an older join
++# wrote), wifi.ssid and wifi.key are removed -- otherwise the paths that
++# connect from the settings (ENABLE WI-FI, the WI-FI KEY row, the restore
++# wizard) rebuilt the profile the player had just forgotten, with its key,
++# which also stayed in system.cfg and travelled in the settings backup
++# (#308 claude F-WF-01, gpt F-WF-07).
+ forget_wifi() {
+-  local name="${1}" rows state
++  local name="${1}" rows state ssid named
+   [ -n "${name}" ] || return 1
+-  rows=$(saved_wifi) || return 1
+-  state=$(printf '%s\n' "${rows}" | NAME="${name}" awk -F'\t' '$1 == ENVIRON["NAME"] { print $2 }')
++  rows=$(saved_wifi) || return 2
++  state=$(saved_state "${rows}" "${name}")
+   [ -n "${state}" ] || return 1
++  ssid=$("${NMCLI}" --escape no -g 802-11-wireless.ssid connection show id "${name}" 2>/dev/null)
+   "${NMCLI}" connection delete id "${name}" >/dev/null 2>&1 || return 1
++  named=$(get_setting wifi.ssid 2>/dev/null)
++  if [ -n "${named}" ] && { [ "${named}" = "${name}" ] || [ "${named}" = "${ssid}" ]; }; then
++    set_setting wifi.ssid default
++    set_setting wifi.key default
++  fi
+   echo "forgotten"
+   case "${state}" in *active*) echo "disconnected" ;; esac
+   return 0
+@@ -237,7 +270,8 @@ forget_wifi() {
+ 
+ # Join a saved network by its profile, with the key NetworkManager holds --
+ # the picker's press on a network the device has joined before (fork #191;
+-# the maintainer's paradigm of 2026-09-15: the WI-FI SSID row is the network
++# the maintainer's paradigm of 2026-09-15: the WI-FI NETWORK row -- WI-FI SSID
++# until D-UI-071 renamed it -- is the network
+ # you are on, the list behind it is what is in range, a saved one joins with
+ # a press). `connect` would have deleted the profile and rebuilt it from the
+ # WI-FI KEY setting, which holds the last key typed, for some other network.
+@@ -249,18 +283,59 @@ forget_wifi() {
+ # network at the next boot and resume. A name that is not a saved wireless
+ # network, or an activation that fails: nothing printed, exit 1. NetworkManager
+ # not answering: exit 2, so a caller cannot read a silence as a refusal.
++# The profile active on this device's adapter, by name, unescaped. A
++# profile's ACTIVE in saved_wifi says it is up somewhere -- on any adapter.
++wifi_dev_connection() {
++  "${NMCLI}" -t -f GENERAL.CONNECTION device show "${WIFI_DEV}" 2>/dev/null | sed -n 's/^GENERAL\.CONNECTION://p' | nm_unescape
++}
++
+ join_wifi() {
+   local name="${1}" rows state psk
+   [ -n "${name}" ] || return 1
+   rows=$(saved_wifi) || return 2
+-  state=$(printf '%s\n' "${rows}" | NAME="${name}" awk -F'\t' '$1 == ENVIRON["NAME"] { print $2 }')
++  state=$(saved_state "${rows}" "${name}")
+   [ -n "${state}" ] || return 1
+-  if [ "${state}" != "active" ]; then
+-    "${NMCLI}" -w 90 connection up id "${name}" >/dev/null 2>&1 || return 1
++  # Judged on the adapter the picker speaks for (WIFI_DEV, as current_wifi
++  # is): a profile already up on another adapter read as "active" and
++  # skipped the activation, and "joined" was said while this adapter stayed
++  # on another network (#307 PL-031). So the profile is brought up on
++  # WIFI_DEV by name, and joined is said only once WIFI_DEV reads it.
++  if [ "$(wifi_dev_connection)" != "${name}" ]; then
++    "${NMCLI}" -w 90 connection up id "${name}" ifname "${WIFI_DEV}" >/dev/null 2>&1 || return 1
++    [ "$(wifi_dev_connection)" = "${name}" ] || return 1
++  fi
++  # The key as NetworkManager holds it, byte for byte. -g is terse output,
++  # which escapes ':' and '\' in a value -- ab:cd\ef12345 came back as
++  # ab\:cd\\ef12345 on the target's nmcli (guest d, 2026-09-27) and that was
++  # stored as wifi.key -- so --escape no (#307 PL-003). Its status is read
++  # before anything is written: a read that failed is not an open network,
++  # and writing its empty answer over wifi.key cleared the key of a network
++  # the device is on (#308 claude F-WF-02). An empty key is written only
++  # when the profile has no key management -- an open network; a keyed one
++  # whose key did not come back leaves the settings as they were. Either
++  # way the device is joined, and says so.
++  #
++  # And wifi.ssid is the network's SSID, not the profile's name: the two
++  # differ for a renamed profile or one NetworkManager deduplicated ("Home
++  # 1"), and connect -- which the settings-driven paths run -- looks the
++  # SSID up in the scan, where a profile's name is not found (#308 claude
++  # F-WF-12, gpt F-WF-03).
++  local keyed ssid
++  if psk=$("${NMCLI}" --escape no -s -g 802-11-wireless-security.psk connection show id "${name}" 2>/dev/null) \
++     && ssid=$("${NMCLI}" --escape no -g 802-11-wireless.ssid connection show id "${name}" 2>/dev/null) \
++     && [ -n "${ssid}" ]; then
++    if [ -z "${psk}" ]; then
++      keyed=$("${NMCLI}" --escape no -g 802-11-wireless-security.key-mgmt connection show id "${name}" 2>/dev/null) || keyed="unread"
++    fi
++    if [ -z "${psk}" ] && [ -n "${keyed}" ]; then
++      logger -t wifictl "joined ${name}; its key did not come back from NetworkManager, so the Wi-Fi settings were left as they were" 2>/dev/null
++    else
++      set_setting wifi.ssid "${ssid}"
++      set_setting wifi.key "${psk}"
++    fi
++  else
++    logger -t wifictl "joined ${name}; its key or SSID could not be read from NetworkManager, so the Wi-Fi settings were left as they were" 2>/dev/null
+   fi
+-  psk=$("${NMCLI}" -s -g 802-11-wireless-security.psk connection show id "${name}" 2>/dev/null)
+-  set_setting wifi.ssid "${name}"
+-  set_setting wifi.key "${psk}"
+   pin_wifi
+   echo "joined"
+   return 0
