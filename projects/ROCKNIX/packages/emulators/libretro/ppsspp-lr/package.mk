@@ -59,18 +59,17 @@ PKG_CMAKE_OPTS_TARGET+=" -DUSE_SYSTEM_FFMPEG=ON \
                          -DHEADLESS=OFF \
                          -DUSE_DISCORD=OFF"
 
-post_unpack() {
-  # Patches 005/006 inject the aarch64-only -mno-outline-atomics; strip it on
-  # x86_64.
-  #
-  # Moved here from file scope during the 2026-09-04 upstream merge. PKG_BUILD
-  # does not exist until the package loads, so at file scope this expanded to
-  # nothing and edited /CMakeLists.txt -- it had never once done its job. The
-  # late-binding rule in packages/readme.md exists for exactly this.
+post_patch() {
+  # Patch 005 adds the aarch64-only -mno-outline-atomics to CMakeLists.txt
+  # for every architecture; strip it on x86_64. This has to run after the
+  # patches: scripts/unpack runs post_unpack before it applies them, so a
+  # strip there finds nothing to strip (and at file scope PKG_BUILD is empty).
   if [ "${TARGET_ARCH}" = "x86_64" ]; then
     sed -i '/add_compile_options(-mno-outline-atomics)/d' ${PKG_BUILD}/CMakeLists.txt
   fi
+}
 
+post_unpack() {
   # fix cross compiling
   find ${PKG_BUILD} -name flags.make -exec sed -i "s:isystem :I:g" \{} \;
   find ${PKG_BUILD} -name build.ninja -exec sed -i "s:isystem :I:g" \{} \;

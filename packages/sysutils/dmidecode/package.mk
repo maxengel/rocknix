@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
-# Copyright (C) 2025 ROCKNIX (https://github.com/ROCKNIX)
+# Copyright (C) 2023 JELOS (https://github.com/JustEnoughLinuxOS)
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="dmidecode"
 PKG_VERSION="3.7"

@@ -26,6 +26,11 @@ blocked on it cannot deadlock against the thread it waits for, and a
 thread cannot re-enter it while blocked in wait_reply. Every marshalled
 entry point in 1.22.2 goes through video_thread_send_and_wait_user_to_thread.
 
+Upstream: RetroArch master closes the same hole with a re-entrant poster
+slot, https://github.com/libretro/RetroArch/pull/19518 (report #19517),
+merged 2026-09-08 as d1fcc5fd364d. The pinned 1.22.2 predates it; this
+patch is its stand-in, to be dropped when PKG_VERSION carries that commit.
+
 --- a/gfx/video_thread_wrapper.h	2026-09-08 04:27:17.741913066 +0000
 +++ b/gfx/video_thread_wrapper.h	2026-09-08 04:27:17.749330632 +0000
 @@ -173,6 +173,15 @@

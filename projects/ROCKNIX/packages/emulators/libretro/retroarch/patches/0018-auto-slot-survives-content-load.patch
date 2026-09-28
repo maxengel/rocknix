@@ -1,9 +1,10 @@
-command, runtime_file: a configured Auto save slot survives content load
+command, runtime_file: a launch's Auto save slot survives content load
 
 ROCKNIX's launcher writes state_slot = "-1" -- RetroArch's Auto slot,
-the .state.auto file -- for a game started from its auto save, so that
-the load-state hotkey reloads the state the player launched with (fork
-#249). Two things replaced it before the game's first frame:
+the .state.auto file -- into a launch's append config for a game started
+from its auto save, so that the load-state hotkey reloads the state the
+player launched with. Two things replaced it before the game's first
+frame:
 
 - command_event_set_savestate_auto_index() ran at every content load
   and set the slot to the highest numbered one it could find (0 when
@@ -19,54 +20,118 @@ exist -- "[State] Loading state ".../mspacman.state", 0 bytes. / Failed
 to load state" on an RG35XX SP, 2026-09-25, after a launch whose append
 config carried state_slot = "-1"; and again on the QA guest with the
 first half alone patched (2026-09-26), where the log's remembered 0 was
-the second half.
+the second half. With both halves, on the QA guest (image a8175c6193,
+2026-09-26): no found_last_state_slot line, and the load-state key --
+sent through the guest's monitor, not a pad -- loaded Probe.state.auto.
 
-A configured negative slot is left alone by both; a numbered slot is
-scanned, reset or restored as before. RetroArch already treats a negative
-slot as the auto file in every other path (the quick menu shows it as
-Auto), so nothing else changes.
+Both leave the slot alone only when this launch's append config sets it
+negative (command_append_config_sets_auto_slot reads the --appendconfig
+files as RetroArch loads them, the last one winning), and say so in the
+log. A -1 that reached the main config instead -- a configuration saved
+while Auto was selected -- is not this launch's request: it is scanned,
+reset or restored over as upstream does, so a launch that asks for no
+slot behaves as it always has.
 
+diff --git a/command.c b/command.c
 --- a/command.c
 +++ b/command.c
-@@ -1913,6 +1913,15 @@
+@@ -1909,10 +1909,57 @@ int command_event_get_next_savestate_auto_index(settings_t *settings)
+  * @param settings The usual RetroArch settings ptr.
+  * @return \c The most recent savestate slot.
+  */
++/* ROCKNIX: whether this launch's append config (--appendconfig, where the
++ * launcher writes one launch's settings) sets state_slot to a negative --
++ * RetroArch's Auto slot, the .state.auto file. A later file in the list
++ * wins, as it does when the list is loaded. A negative that reached the
++ * main config instead (a configuration saved while Auto was selected) is
++ * not this launch's request and does not count. */
++bool command_append_config_sets_auto_slot(void)
++{
++   char tmp[PATH_MAX_LENGTH];
++   char *ptr    = NULL;
++   bool is_auto = false;
++
++   if (path_is_empty(RARCH_PATH_CONFIG_APPEND))
++      return false;
++
++   strlcpy(tmp, path_get(RARCH_PATH_CONFIG_APPEND), sizeof(tmp));
++   for (ptr = tmp; ptr && *ptr; )
++   {
++      char *delim         = strchr(ptr, '|');
++      config_file_t *conf = NULL;
++      int slot            = 0;
++
++      if (delim)
++         *delim = '\0';
++      if (*ptr && (conf = config_file_new_from_path_to_string(ptr)))
++      {
++         if (config_get_int(conf, "state_slot", &slot))
++            is_auto = (slot < 0);
++         config_file_free(conf);
++      }
++      ptr = delim ? delim + 1 : NULL;
++   }
++   return is_auto;
++}
++
+ void command_event_set_savestate_auto_index(settings_t *settings)
  {
     unsigned max_idx          = 0;
     bool savestate_auto_index = settings->bools.savestate_auto_index;
-+   /* A negative slot is Auto, the .state.auto file, and it was configured
-+    * on purpose: ROCKNIX's launcher sets state_slot = -1 for a game started
-+    * from its auto save, so that the load-state hotkey reloads the state
-+    * the player launched with. Resetting it here to 0, or to the last
-+    * numbered slot, sent that hotkey to a slot 0 file that does not exist
-+    * (fork #249). A configured Auto is left alone; a numbered slot is
-+    * scanned or reset as before. */
-+   if (settings->ints.state_slot < 0)
++   /* ROCKNIX: the launcher sets state_slot = -1 in this launch's append
++    * config for a game started from its auto save, so that the load-state
++    * hotkey reloads the state the player launched with; resetting it here
++    * to 0, or to the last numbered slot, sent that hotkey to a slot 0 file
++    * that does not exist. That Auto is left alone. Any other slot -- a
++    * numbered one, or a -1 saved into the main config -- is scanned or
++    * reset as upstream does. */
++   if (settings->ints.state_slot < 0 && command_append_config_sets_auto_slot())
++   {
++      RARCH_LOG("[State] Keeping the Auto slot this launch's configuration asks for.\n");
 +      return;
++   }
     if (savestate_auto_index)
     {
        command_scan_states(
+diff --git a/command.h b/command.h
+--- a/command.h
++++ b/command.h
+@@ -400,6 +400,9 @@ bool command_event_load_auto_state(void);
+ void command_event_set_savestate_auto_index(
+       settings_t *settings);
+ 
++/* ROCKNIX: whether this launch's append config sets the Auto slot */
++bool command_append_config_sets_auto_slot(void);
++
+ int command_event_get_next_savestate_auto_index(
+       settings_t *settings);
+ 
+diff --git a/runtime_file.c b/runtime_file.c
 --- a/runtime_file.c
 +++ b/runtime_file.c
-@@ -37,6 +37,7 @@
+@@ -37,6 +37,8 @@
  #include "file_path_special.h"
  #include "paths.h"
  #include "runloop.h"
 +#include "configuration.h"
++#include "command.h"
  #include "core_info.h"
  #include "verbosity.h"
  #include "msg_hash.h"
-@@ -290,7 +291,15 @@
+@@ -290,7 +292,16 @@ parsed:
           && state_slot < 1000)
     {
        runloop_state_t *runloop_st  = runloop_state_get_ptr();
 -      runloop_st->entry_state_slot = state_slot;
-+      /* The log remembers the slot the game was last left on, and restoring
-+       * it here overrode a state_slot = -1 (Auto) configured for THIS launch:
-+       * ROCKNIX's launcher sets Auto for a game started from its auto save
-+       * so that the load-state hotkey reloads that save (fork #249), and the
-+       * remembered 0 sent the hotkey to a slot 0 file that does not exist.
-+       * A configured Auto is kept; otherwise the log's slot is restored as
-+       * before. */
-+      if (config_get_ptr()->ints.state_slot >= 0)
++      /* ROCKNIX: the log remembers the slot the game was last left on, and
++       * restoring it here overrode the state_slot = -1 (Auto) the launcher
++       * sets in this launch's append config for a game started from its
++       * auto save, so the load-state hotkey went to a slot 0 file that does
++       * not exist. That Auto is kept; otherwise -- a numbered slot, or a -1
++       * saved into the main config -- the log's slot is restored as
++       * upstream does. */
++      if (     config_get_ptr()->ints.state_slot >= 0
++            || !command_append_config_sets_auto_slot())
 +         runloop_st->entry_state_slot = state_slot;
     }
  

@@ -7,23 +7,42 @@
 # away. webkitgtk 2.54 links gstreamer-mpegts -- the library, not the
 # demuxer plugin -- as a hard requirement of the video it cannot build
 # without (fork #228, D-WORKFLOW-038), so this override turns the mpegts
-# pieces on and keeps their library, and nothing else changes: the option
-# string is upstream's with the two mpegts lines flipped, read out of the
-# generic recipe because it builds the string inside pre_configure_target
-# and there is no hook to chain onto.
+# pieces on and keeps their library, and nothing else changes.
+#
+# The option string is upstream's own: the generic recipe builds it inside
+# pre_configure_target, so that function is kept under another name and
+# called first, and only the two mpegts options are flipped in what it
+# produced. Reading the string out of the recipe's text instead (as this
+# override once did) broke on a quoted value ending a line. If either flip
+# finds nothing to flip, the generic string has changed shape and the
+# package stops rather than configuring without the library WebKit needs.
+eval "gst_plugins_bad_generic_$(declare -f pre_configure_target)"
+
 pre_configure_target() {
-  PKG_MESON_OPTS_TARGET="$(sed -n '/PKG_MESON_OPTS_TARGET="/,/"$/p' ${ROOT}/packages/multimedia/gstreamer/gst-plugins-bad/package.mk \
-    | sed -e 's/^ *PKG_MESON_OPTS_TARGET="//' -e 's/"$//' -e 's/\\$//' \
-    | sed -e 's/-Dmpegtsdemux=disabled/-Dmpegtsdemux=enabled/' -e 's/-Dmpegtsmux=disabled/-Dmpegtsmux=enabled/' \
-    | tr '\n' ' ')"
+  gst_plugins_bad_generic_pre_configure_target
+  PKG_MESON_OPTS_TARGET="${PKG_MESON_OPTS_TARGET/-Dmpegtsdemux=disabled/-Dmpegtsdemux=enabled}"
+  PKG_MESON_OPTS_TARGET="${PKG_MESON_OPTS_TARGET/-Dmpegtsmux=disabled/-Dmpegtsmux=enabled}"
+  case "${PKG_MESON_OPTS_TARGET}" in
+    *-Dmpegtsdemux=enabled*) ;;
+    *) die "gst-plugins-bad: the generic option string has no -Dmpegtsdemux to enable" ;;
+  esac
+  case "${PKG_MESON_OPTS_TARGET}" in
+    *-Dmpegtsmux=enabled*) ;;
+    *) die "gst-plugins-bad: the generic option string has no -Dmpegtsmux to enable" ;;
+  esac
 }
 
 post_makeinstall_target() {
+  # Only libgstmpegts-1.0 is kept, and it has to be there: WebKit cannot
+  # start without it, so its absence fails the package here rather than
+  # the sign-in window at load.
   local keep="${PKG_BUILD}/.rocknix-keep"
+  compgen -G "${INSTALL}/usr/lib/libgstmpegts-1.0.so*" > /dev/null \
+    || die "gst-plugins-bad: libgstmpegts-1.0 was not built -- WebKit needs it"
   rm -rf "${keep}" && mkdir -p "${keep}/lib"
-  cp -a ${INSTALL}/usr/lib/libgstmpegts-1.0.so* "${keep}/lib"/ 2>/dev/null || true
+  cp -a ${INSTALL}/usr/lib/libgstmpegts-1.0.so* "${keep}/lib"/
   safe_remove ${INSTALL}
   mkdir -p ${INSTALL}/usr/lib
-  cp -a "${keep}/lib"/. ${INSTALL}/usr/lib/ 2>/dev/null || true
+  cp -a "${keep}/lib"/. ${INSTALL}/usr/lib/
   rm -rf "${keep}"
 }

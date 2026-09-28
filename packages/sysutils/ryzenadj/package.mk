@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
-# Copyright (C) 2025 ROCKNIX (https://github.com/ROCKNIX)
+# Copyright (C) 2023 JELOS (https://github.com/JustEnoughLinuxOS)
+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="ryzenadj"
 PKG_VERSION="0.19.0"
@@ -14,6 +15,6 @@ PKG_SHORTDESC="ryzenadj: Adjust power management settings for Ryzen APUs"
 PKG_LONGDESC="ryzenadj: Tool for adjusting power management settings for Ryzen Mobile Processors, including TDP, temperature limits, and performance profiles."
 PKG_TOOLCHAIN="cmake"
 
-PKG_CMAKE_OPTS_TARGET="-DCMAKE_BUILD_TYPE=Release
-                       -DBUILD_SHARED_LIBS=OFF
-                       -DCMAKE_EXE_LINKER_FLAGS='-ludev'"
+PKG_CMAKE_OPTS_TARGET="-DCMAKE_BUILD_TYPE=Release \
+                       -DBUILD_SHARED_LIBS=OFF \
+                       -DCMAKE_EXE_LINKER_FLAGS=-ludev"
