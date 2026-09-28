@@ -10430,6 +10430,22 @@ EXTRACT_ROOT="${P7KR}" ROMS_ROOT="${P7KR}/storage/roms" PROC_MOUNTS=/nonexistent
 [ -e "${P7K}/cfg/.restore-in-progress" ] && [ ! -e "${P7K}/cfg/.restore-reverted" ] && grep -q 'mount table cannot be read' "${P7K}/err"; check $? "audit of the fix round PL-016: and a copy under the roms folder waits the same way" "PL-016 (copy): mark $([ -e "${P7K}/cfg/.restore-in-progress" ] && echo kept || echo removed); said '$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)'"
 rm -f "${P7K}/cfg/.restore-in-progress" "${P7K}/cfg/.restore-reverted" "${P7KR}/storage/roms/backup/new.cfg"
 
+# == G2-B-02 (claude): a restore made while the roms folder was not a mount is undone without waiting for one
+p7zclear; p7reset '  /storage/.config/test/*'
+p7tar 2026_01_01-000000-ROCKNIX_SETTINGS.tar.gz "storage/.config/test/f1=ARCHIVE"
+p7failtar; p7bt restore --no-restart; rm -f "${P7}/shim/tar"
+grep -qx 'roms-mounted=no' "${P7S}/.p7-marker-seen" 2>/dev/null; check $? "audit of the fix round G2-B-02 (claude): the mark records whether the roms folder was a mount when the restore ran (here it was not: roms-mounted=no)" "G2-B-02: the mark at extraction: '$(tr '\n' '|' < "${P7S}/.p7-marker-seen" 2>/dev/null)'"
+mkdir -p "${P7KR}/storage/roms/backup/archive" "${P7KR}/storage/.config/test"; cp "${P7K}/cfg/pre2.tar.gz" "${P7KR}/storage/roms/backup/archive/pre5.tar.gz"
+echo HALF > "${P7KR}/storage/.config/test/y.cfg"; echo CREATED > "${P7KR}/storage/roms/backup/new2.cfg"
+rm -f "${P7K}/cfg/.restore-reverted"; printf '%s\n+/storage/roms/backup/new2.cfg\nroms-mounted=no\n' "${P7KR}/storage/roms/backup/archive/pre5.tar.gz" > "${P7K}/cfg/.restore-in-progress"
+EXTRACT_ROOT="${P7KR}" ROMS_ROOT="${P7KR}/storage/roms" PATH="${P7K}/bin:${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; verify" 2>"${P7K}/err"
+[ "$(cat "${P7KR}/storage/.config/test/y.cfg")" = "LIVE" ] && [ ! -e "${P7KR}/storage/roms/backup/new2.cfg" ] && [ "$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)" = "reverted" ] && [ ! -e "${P7K}/cfg/.restore-in-progress" ]; check $? "audit of the fix round G2-B-02 (claude): a mark saying the roms folder was not a mount is acted on by its folders, though that folder is not a mount now -- it never waits for a mount that was never there" "G2-B-02: y.cfg '$(cat "${P7KR}/storage/.config/test/y.cfg")'; new2.cfg $([ -e "${P7KR}/storage/roms/backup/new2.cfg" ] && echo there || echo removed); said '$(cat "${P7K}/cfg/.restore-reverted" 2>/dev/null)'; mark $([ -e "${P7K}/cfg/.restore-in-progress" ] && echo kept || echo removed)"
+echo HALF > "${P7KR}/storage/.config/test/y.cfg"; rm -f "${P7K}/cfg/.restore-reverted"
+printf '%s\nroms-mounted=yes\n' "${P7KR}/storage/roms/backup/archive/pre5.tar.gz" > "${P7K}/cfg/.restore-in-progress"
+EXTRACT_ROOT="${P7KR}" ROMS_ROOT="${P7KR}/storage/roms" PATH="${P7K}/bin:${TMP}/bbin:${PATH}" bash -c ". '${P7K}/fns.sh'; verify" 2>"${P7K}/err"
+[ -e "${P7K}/cfg/.restore-in-progress" ] && [ "$(cat "${P7KR}/storage/.config/test/y.cfg")" = "HALF" ] && [ ! -e "${P7K}/cfg/.restore-reverted" ]; check $? "audit of the fix round G2-B-02 (claude): and one saying it was a mount still waits for the mount" "G2-B-02 (mounted): mark $([ -e "${P7K}/cfg/.restore-in-progress" ] && echo kept || echo removed); y.cfg '$(cat "${P7KR}/storage/.config/test/y.cfg")'"
+rm -f "${P7K}/cfg/.restore-in-progress" "${P7K}/cfg/.restore-reverted"
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi

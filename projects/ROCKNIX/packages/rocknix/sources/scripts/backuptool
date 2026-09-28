@@ -1463,12 +1463,31 @@ case "${VERB}" in
         # then the write was unchecked and the extraction went on without
         # it). -T, so a folder in the mark's place is a failure, not a
         # destination the mark moves into.
+        #
+        # Its last line says whether /storage/roms was a mount when this
+        # restore ran: roms-mounted=yes, no, or unknown (a table this run
+        # could not read). The boot waits for that mount before acting on a
+        # copy or a created file under it -- right when the copy went onto a
+        # card that is mounted later, and for ever when the folder was never
+        # a mount, which is where this restore wrote them: a device whose
+        # automount did not mount it (#307, the audit of the fix round,
+        # claude G2-B-02). A boot from before this change ignores the line.
+        ROMS_MOUNTED=unknown
+        if [ -r /proc/mounts ]
+        then
+            awk '$2 == "/storage/roms" { f = 1 } END { exit !f }' /proc/mounts 2>/dev/null
+            case $? in
+                0) ROMS_MOUNTED=yes ;;
+                1) ROMS_MOUNTED=no ;;
+            esac
+        fi
         if [ -n "${SNAPSHOT}" ] || [ -s "${NEWLIST}" ]
         then
-            if ! { { printf '%s\n' "${SNAPSHOT}"; sed 's/^/+/' "${NEWLIST}"; } > "${RESTORE_MARK}.tmp" 2>/dev/null \
+            if ! { { printf '%s\n' "${SNAPSHOT}"; sed 's/^/+/' "${NEWLIST}"; printf 'roms-mounted=%s\n' "${ROMS_MOUNTED}"; } > "${RESTORE_MARK}.tmp" 2>/dev/null \
                    && mv -fT "${RESTORE_MARK}.tmp" "${RESTORE_MARK}" 2>/dev/null \
                    && [ "$(head -n 1 "${RESTORE_MARK}" 2>/dev/null)" = "${SNAPSHOT}" ] \
-                   && [ "$(wc -l < "${RESTORE_MARK}")" -eq $(( 1 + $(wc -l < "${NEWLIST}") )) ]; }
+                   && [ "$(tail -n 1 "${RESTORE_MARK}" 2>/dev/null)" = "roms-mounted=${ROMS_MOUNTED}" ] \
+                   && [ "$(wc -l < "${RESTORE_MARK}")" -eq $(( 2 + $(wc -l < "${NEWLIST}") )) ] 2>/dev/null; }
             then
                 rm -f "${RESTORE_MARK}.tmp" "${MEMBERS}" "${NEWLIST}" 2>/dev/null
                 why "COULDN'T KEEP A COPY OF YOUR CURRENT SETTINGS"

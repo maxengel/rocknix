@@ -135,7 +135,16 @@ finish_restore() {
   # mounted yet read as missing, and the mark was consumed (#307, the audit
   # of the fix round, PL-016). Waiting keeps the mark for a check that can
   # read the table; guessing loses it.
-  local roms="${ROMS_ROOT:-/storage/roms}" pending=0 mounted="" p told=""
+  #
+  # Unless the restore said the roms folder was not a mount when it ran
+  # (backuptool's last line, roms-mounted=no): then its copy and the files
+  # it made are in the folder itself, not on a card a mount will bring, and
+  # waiting for a mount was waiting for ever on a device whose automount
+  # never made one (#307, the audit of the fix round, claude G2-B-02). Such
+  # a mark is judged by its folders, as a copy anywhere else is. A mark
+  # without the line (an older backuptool) or with "unknown" waits as above.
+  local roms="${ROMS_ROOT:-/storage/roms}" pending=0 mounted="" p told="" was
+  was=$(sed -n 's/^roms-mounted=//p' "${mark}" 2>/dev/null | head -n 1)
   if [ -r "${PROC_MOUNTS:-/proc/mounts}" ]; then
     awk -v m="${roms}" '$2 == m { f = 1 } END { exit !f }' "${PROC_MOUNTS:-/proc/mounts}" 2>/dev/null
     case $? in
@@ -144,6 +153,7 @@ finish_restore() {
     esac
   fi
   under_roms() { # <path>: 0 when it waits for the roms mount
+    [ "${was}" = "no" ] && return 1
     case "${1}" in
       "${roms}"/*)
         if [ -z "${mounted}" ]; then
@@ -156,8 +166,9 @@ finish_restore() {
     esac
   }
   if [ -n "${snap}" ]; then
-    case "${snap}" in
-      "${roms}"/*) under_roms "${snap}" && pending=1 ;;
+    case "${was}:${snap}" in
+      no:*) [ -d "$(dirname "${snap}")" ] || pending=1 ;;
+      *:"${roms}"/*) under_roms "${snap}" && pending=1 ;;
       *) [ -d "$(dirname "${snap}")" ] || pending=1 ;;
     esac
   fi
