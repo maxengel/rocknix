@@ -3378,4 +3378,19 @@ for p in amiberry yabasanshiro-sa; do
 done
 [ -z "${F2_BAD}" ]; check $? "GENERIC_X64 skips both, AMD64 and H700 build both" "${F2_BAD}"
 
+# F2-8. #308 9-emulators claude F-EM-08: mupen64plus-sa-audio-sdl declared
+# libsamplerate and speexdsp "for x86_64" on every architecture, but its
+# make line passes NO_SRC=1, so libsamplerate is never linked; speexdsp is
+# found by pkg-config on every architecture and declaring it only makes the
+# order certain. A library is declared when the build can use it.
+echo "  F2-8. mupen64plus-sa-audio-sdl declares no library its make line turns off (#308 F-EM-08)"
+src_of "${F2P}/emulators/standalone/mupen64plus-sa/mupen64plus-sa-audio-sdl/package.mk" "${F2}/audio-sdl.mk"
+F2_CALL='echo "${PKG_DEPENDS_TARGET}"; declare -f make_target'
+F2_OUT="$(f2_source "${F2}/audio-sdl.mk" H700 aarch64)"
+F2_BAD=""
+printf '%s' "${F2_OUT}" | head -1 | grep -qw libsamplerate && printf '%s' "${F2_OUT}" | grep -q 'NO_SRC=1' && F2_BAD+=" libsamplerate-declared-but-NO_SRC=1"
+printf '%s' "${F2_OUT}" | head -1 | grep -qw speexdsp || F2_BAD+=" speexdsp-not-declared"
+grep -q 'for x86_64' "${F2}/audio-sdl.mk" && F2_BAD+=" comment-says-x86_64-only"
+[ -z "${F2_BAD}" ]; check $? "libsamplerate is not declared (NO_SRC=1), speexdsp is, and the comment says why for every architecture" "audio-sdl:${F2_BAD}"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
