@@ -645,13 +645,39 @@ record_last_run() {
     write_stamp "/storage/.cache/cloud_sync/last-${name}" "$(date +%s) ${exit_code}${why}"
 }
 
-# Is this settings archive whole? tar lists every member or fails. busybox
-# unzip has no -t, so for a zip the listing is the test (a truncated zip has
-# no central directory to list); -t is tried first for an unzip that has it.
+# Is this settings archive whole? tar lists every member or fails. For a zip,
+# an unzip that can test its members is asked to, and its "no" stands (audit
+# #307 PL-070): the check was `unzip -t || unzip -l`, so a zip whose central
+# directory lists but whose member's bytes are damaged failed -t and then
+# passed -l, and was sent as this device's newest. The image's busybox unzip
+# has -t: it inflates every member, so a damaged compressed stream fails it
+# (it checks no CRC, so a STORED member's bytes are beyond it -- measured on
+# 1.36.1; the settings archives are tar.gz now, and older zips deflated).
+# Only an unzip that does not know the option falls back to a listing,
+# which still catches a zip cut short (no central directory to list).
+# Whether it knows the option is asked once: one that does not says so
+# before it opens anything.
+UNZIP_CAN_TEST=""
+unzip_can_test() {
+    if [ -z "${UNZIP_CAN_TEST}" ]; then
+        if unzip -t /nonexistent-cloud-backup-probe.zip 2>&1 \
+            | grep -qiE 'invalid option|unrecognized option|illegal option|unknown option'; then
+            UNZIP_CAN_TEST=0
+        else
+            UNZIP_CAN_TEST=1
+        fi
+    fi
+    [ "${UNZIP_CAN_TEST}" = 1 ]
+}
 archive_whole() {
     case "${1}" in
         *.tar.gz) tar -tzf "${1}" >/dev/null 2>&1 ;;
-        *)        unzip -t "${1}" >/dev/null 2>&1 || unzip -l "${1}" >/dev/null 2>&1 ;;
+        *)
+            if unzip_can_test; then
+                unzip -t "${1}" >/dev/null 2>&1
+            else
+                unzip -l "${1}" >/dev/null 2>&1
+            fi ;;
     esac
 }
 
@@ -1767,7 +1793,7 @@ backup_system_files() {
             # uploaded as this device's newest and counted toward the kept
             # history, and the restore side then refused it with nothing to
             # fall back to (D-CLOUD-078, #105). tar lists every member or
-            # fails; busybox unzip has no -t, so a zip is listed instead.
+            # fails; a zip is tested member by member (archive_whole).
             if ! archive_whole "${archive}"; then
                 log_message "The settings archive ${base} does not list; not sending it" "false" "ERROR"
                 log_message "This device's settings backup is damaged, so it wasn't sent. Back up settings again." "true" "ERROR"

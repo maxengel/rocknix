@@ -3579,4 +3579,35 @@ gl_stamp=$(awk '{print $2}' "${GL}/storage/.cache/cloud_sync/last-content-backup
 sa_run "${GL}" cloud_content_backup --with-media nes
 [ "${RC}" -eq 0 ] && grep -q '^Backed up nes\.' "${GL}/out"; check $? "and with the pass working the same backup completes (rc ${RC})" "rc ${RC}; out: $(sa_tail "${GL}")"
 
+# A10. PL-070 (#307, F-CS-17 gpt): an unzip that can test an archive's
+#      members is asked to, and its "no" stands; a listing that succeeds is
+#      not an integrity test. Under the image's busybox unzip, which has -t.
+echo "    A10. PL-070: a zip whose member is damaged is not a whole archive"
+UZ="${TMP}/pl070"; mkdir -p "${UZ}"
+src_of "${RCLONE_REL}/cloud_backup" "${UZ}/cloud_backup"
+awk '/^(archive_whole|unzip_can_test)\(\) *\{/{p=1} p{print} p&&/^\}/{p=0}' "${UZ}/cloud_backup" > "${UZ}/fns.sh"
+# A deflated member, as Info-ZIP writes them, with a byte of its compressed
+# stream flipped: the central directory is whole, the member is not. (A
+# STORED member whose bytes alone are damaged is a case busybox's unzip
+# cannot see at all -- its -t checks no CRC, measured on 1.36.1 -- and is
+# not what a settings archive holds.)
+python3 - "${UZ}" <<'EOP'
+import sys, zipfile, os
+d = sys.argv[1]
+name = "storage/.config/blob"
+data = bytes(range(256)) * 64
+for fname, damage in (("whole.zip", False), ("damaged.zip", True)):
+    p = os.path.join(d, fname)
+    with zipfile.ZipFile(p, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        z.writestr(name, data)
+    if damage:
+        b = bytearray(open(p, "rb").read())
+        b[30 + len(name) + 40] ^= 0x55    # inside the member's compressed stream, past its local header
+        open(p, "wb").write(bytes(b))
+EOP
+uz() { PATH="${SA}/nbin:${PATH}" bash -c ". '${UZ}/fns.sh'; archive_whole '$1'" >/dev/null 2>&1; }
+PATH="${SA}/nbin:${PATH}" unzip -l "${UZ}/damaged.zip" >/dev/null 2>&1; check $? "the damaged zip still lists (its central directory is whole), so the case is the one the finding names" "the damaged zip does not even list; the case proves nothing about -t"
+uz "${UZ}/whole.zip"; check $? "a whole zip is whole" "a whole zip was refused"
+! uz "${UZ}/damaged.zip"; check $? "a zip whose member's bytes are damaged is not whole: the failed -t stands" "the damaged zip passed: unzip -t failed and unzip -l listed it (F-CS-17)"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
