@@ -1,0 +1,155 @@
+{
+  "artifact_path": "docs/audits/2026_09_28-milestone-audit-of-the-fixes-307/seats/B-claude.md",
+  "output_file_sha256": "744d55789cf8884d1c811e887e8c81edfeef3d15b49e36cb090a63a4307c3356",
+  "source_file_paths": [
+    "docs/audits/2026_09_28-milestone-audit-of-the-fixes-307/seats/B.diff",
+    "docs/audits/2026_09_28-milestone-audit-of-the-fixes-307/seats/B.harness.txt",
+    "docs/audits/2026_09_28-milestone-audit-of-the-fixes-307/seats/B.plan.md",
+    "docs/audits/2026_09_28-milestone-audit-of-the-fixes-307/seats/B.report.md",
+    ".claude/rules/engineering-practices.md",
+    ".claude/rules/upgrade-and-install.md",
+    ".claude/rules/packaging-and-patches.md",
+    ".claude/rules/es-player-text.md"
+  ],
+  "source_file_hashes": [
+    "ff93e2eb0be81284ddfc2a55046714964b0d35a21b97123f73f38f941f234cd9",
+    "864318fea93c963da4bee809ed00e842572da117ae2571f39489714889799b9f",
+    "ae55a7b1e51f40a0253859915d191ef93d5825f0fb63778ec0a7ec2f9d526fff",
+    "012187faf38cffce61b43c3012129058062e2270ccc4ee2437d40edce91b1e27",
+    "d6f88a6f4cd9c61b0e6ef728625c6a1cec9dc6f58e1db578cf0987f10f870c1a",
+    "de4a683f9a36f9100e6fd98be11ad84d736f370374c40f74c445a2b81eca1995",
+    "2a44db10f4f179198b9366239eabe0900e1701145beced181536eb18bcbc0746",
+    "554225c68e627a3bde8969a77f177aea14f5bcd85b0bcc740631d402a5f1f7a7"
+  ],
+  "source_file_commits": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "read_timestamps": [
+    "2026-09-28T04:20:24Z",
+    "2026-09-28T04:20:24Z",
+    "2026-09-28T04:20:24Z",
+    "2026-09-28T04:20:24Z",
+    "2026-09-28T04:20:24Z",
+    "2026-09-28T04:20:24Z",
+    "2026-09-28T04:20:24Z",
+    "2026-09-28T04:20:24Z"
+  ],
+  "facilitator_version": "council-facilitator@1.2.0",
+  "prev_verdict_sha256": null,
+  "member": "claude",
+  "declared_model": "anthropic/claude-fable-5.1 (OpenRouter, effort=xhigh)",
+  "substrate": "openrouter",
+  "transport": "buffered",
+  "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+  "request": {
+    "started_at": "2026-09-28T04:24:00.308Z",
+    "system_prompt_sha256": null,
+    "user_prompt_sha256": "dcd5d2ada2f63a24bcfb3c668602a26b9aa31efb7fc6dfc78777e06dcf1cc42d"
+  },
+  "attempts": [
+    {
+      "attempt": 1,
+      "started_at": "2026-09-28T04:24:00.308Z",
+      "duration_ms": 1009460,
+      "max_tokens": 128000,
+      "transport": "buffered",
+      "http_status": 200,
+      "outcome": "success",
+      "outcome_reason": null,
+      "model_field": "anthropic/claude-fable-5.1",
+      "finish_reason": null,
+      "content_length": 31498,
+      "tokens": {
+        "prompt": 159464,
+        "completion": 80841,
+        "total": 240305,
+        "reasoning": 66841
+      },
+      "model_identity_source": "provider_response",
+      "content_sha256": "744d55789cf8884d1c811e887e8c81edfeef3d15b49e36cb090a63a4307c3356",
+      "usage": {
+        "prompt_tokens": 159464,
+        "completion_tokens": 80841,
+        "total_tokens": 240305,
+        "cost": 5.63669,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 5.63669,
+          "upstream_inference_prompt_cost": 1.59464,
+          "upstream_inference_completions_cost": 4.04205
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 66841,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "response_headers": {
+        "content-type": "application/json"
+      },
+      "response_body_sha256": "e84907fde2331b48cecd69b333691c545ad2e7771345433e2b325667683e7bcf"
+    }
+  ],
+  "final": {
+    "outcome": "success",
+    "assurance_tier": "local_capture_provider_attested",
+    "total_duration_ms": 1009462,
+    "retries_used": 0,
+    "file_artifact_sha256": "744d55789cf8884d1c811e887e8c81edfeef3d15b49e36cb090a63a4307c3356",
+    "usage": {
+      "prompt_tokens": 159464,
+      "completion_tokens": 80841,
+      "total_tokens": 240305,
+      "cost": 5.63669,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 5.63669,
+        "upstream_inference_prompt_cost": 1.59464,
+        "upstream_inference_completions_cost": 4.04205
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 66841,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "tokens": {
+      "prompt": 159464,
+      "completion": 80841,
+      "total": 240305,
+      "reasoning": 66841
+    },
+    "verification": {
+      "result": "PASS",
+      "match_kind": "semantic",
+      "declared": "anthropic/claude-fable-5.1 (OpenRouter, effort=xhigh)",
+      "observed": "anthropic/claude-fable-5.1",
+      "model_identity_source": "provider_response"
+    },
+    "effort_verification": {
+      "result": "PASS",
+      "declared": "xhigh",
+      "evidence": "reasoning_tokens",
+      "observed_reasoning_tokens": 66841
+    }
+  }
+}

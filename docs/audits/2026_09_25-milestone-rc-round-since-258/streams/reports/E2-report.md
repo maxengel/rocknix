@@ -396,7 +396,7 @@ ASCII comments: es-app/src 0; the 9 in es-core are upstream's (present in base b
   - BIOS CHECK with no rows (no DETAILS).
 - Rules read for this pass: es-player-text.md (outcome vocabulary, register), player-language.md (brevity is not clipping), es-native-ui.md, es-code-traps.md (ASCII comments, pure text's home), engineering-practices.md (guards fail closed; before deleting a duplicate), and upgrade-and-install.md (the `Already written:` lines).
 
-## Follow-up 2 (2026-09-28, scripts at next 396573aadf)
+## Follow-up 2 (2026-09-28, scripts at next 4476f90394)
 
 I added one commit on `feature/pl-e2`: **13b16a77e** `CloudText: the scripts' newer whys translated; emitter table regenerated`. I read the scripts from the merged head with `git show`, without changing `/workspace/repos/rocknix`. Nothing was built, started in a guest or pushed.
 
@@ -415,7 +415,7 @@ I added one commit on `feature/pl-e2`: **13b16a77e** `CloudText: the scripts' ne
   - YOUR OWN BACKUP LIST NAMES A FOLDER A BACKUP CAN'T CARRY
 - **French for all nine** is appended to the end of the catalogue.
 - **The offline stamp.** `parseLastRun` reads "69 gaps YOU WENT OFFLINE PART-WAY THROUGH" as COULDN'T FINISH with that sentence as its why. The row's gaps branch passes the why through `localizedWhy`, and uses the token's generic phrase only when a stamp carries no why. Per D-UI-023, the row's line shows only the outcome word. The sentence appears in the row's confirmation, after "LAST TIME IT COULDN'T FINISH:". Before this commit it was already the stamp's own sentence, but shown in English. It is now translated.
-- **The emitter table is regenerated** from the scripts at 396573aadf, with their line numbers:
+- **The emitter table is regenerated** from the scripts at 4476f90394, with their line numbers:
   - 32 `>>> why` sentences.
   - `>>> unit everything` is gone. In its place are a per-system unit (`cloud_content_backup:572`, `cloud_content_restore:1363` and `:810`) and a BIOS unit (`:1363`).
   - `>>> removed` and `>>> offer` point at their new lines.
@@ -445,5 +445,77 @@ msgfmt -c: clean
 ```
 
 **Notes:**
-- **The Follow-up integrator note on claude F-CS-15 is resolved.** At 396573aadf, both of `cloud_content_backup`'s "Nothing to back up" branches record outcome 0 and exit 0.
+- **The Follow-up integrator note on claude F-CS-15 is resolved.** At 4476f90394, both of `cloud_content_backup`'s "Nothing to back up" branches record outcome 0 and exit 0.
 - **One gap not fixed (for the integrator):** the maintenance dialogs (`runMaintenanceCommand` in GuiMenu, used by the backuptool flows) show a script's why without translating it. That covers backuptool's new sentences too. These dialogs are neither the rows nor the transfer page. Fixing it means choosing between backuptool's longer English line and the translated short why, and that is a choice about the words players see. I left it.
+
+## Follow-up 3 (2026-09-28)
+
+I fast-forwarded `feature/pl-e2` to `test/qa-integration` b4f3b762a, which brings in the `.githooks/pre-commit` credential scan. That hook ran on each of the three commits below and passed them. Nothing was built, run on a guest, or pushed.
+
+| Commit | Finding | Test first seen to FAIL |
+| --- | --- | --- |
+| 6caac243c | GuiWifi: the network you're on joins by its profile, not its SSID | WifiTextTests.cpp:246, 247, 248, 254, 262 (5 assertions) |
+| 4a0c77fa0 | GuiCloudTransfer: a match says what it removed and where to start again | CloudTextTests.cpp:1502, 1503, 1507 (x2), 1509 |
+| 42f9e8851 | GuiRetroAchievementsSettings: a page close no longer waits on a sign-in | CheevosRetryTests.cpp:100, 101, 106 |
+
+### 1. claude F-WF-12 / gpt F-WF-03, the picker's half: fixed in 6caac243c
+
+`wifictl` uses two different names for a network:
+- `current` and `list` report the SSID.
+- `saved` and `join` use the profile's name, which need not match the SSID (a renamed profile, or NetworkManager's "Home 1").
+
+The problem was the connected row. It is the SSID, and pressing it, or typing that name under INPUT MANUALLY, passed the SSID to `wifictl join`. When the profile had a different name, the join refused. The player then read "COULDN'T CONNECT TO HOME" with advice to forget and rejoin the network they were already on.
+
+What changed:
+- The connected row now carries a `PickerRow::profile`: the profile named like its SSID if there is one, otherwise the only profile that is up.
+  - If two profiles are up and neither matches (a second adapter; `saved`'s ACTIVE flag covers any adapter, while `current` is this device's), the picker does not guess. It joins by the row's name, as before.
+- GuiWifi hands `WifiText::joinName` / `manualJoinName` to the join, and keeps the row's own name for everything the player reads.
+- "Could not ask" stays separate from "none" (E1's e5cfa708e). When the saved list could not be read, no profile is claimed.
+
+**Still open (script side, for the integrator):** a scanned SSID whose profile has a different name and is not currently up still can't be marked SAVED. `wifictl saved` prints profile names only, not their SSIDs, and the finding's fix needs it to print both.
+
+### 2. gpt F-CS-26, the page's half: fixed in 4a0c77fa0
+
+Stream A's 258b5eca38 made `>>> removed` count rclone's actual deletions, so the done page's "REMOVED N FILES FROM THIS DEVICE" line is now true.
+
+- **Line 5, the in-place note:** it said "N FILES WERE REMOVED FROM THIS DEVICE. YOUR CLOUD STILL HAS THEM." A match removes only what the cloud does *not* have (D-CLOUD-023), so the second sentence was the opposite of the truth. It now gives the count only (`CloudText::matchRemovedNote`, with the plural built from a format string).
+- **The retry:** a match's apply uses up its preview's plan (PL-001), so the same command run again is always refused with "SOMETHING CHANGED SINCE YOU CHECKED".
+  - The done page no longer offers TRY AGAIN for a match, on either the help bar or the OK button (`GuiCloudTransfer::retries`).
+  - Line 7 instead points to the row that checks again: `TRY AGAIN: MATCH THIS DEVICE TO THE CLOUD` (`CloudText::matchRecovery`). This follows the card's existing TRY AGAIN: <row> shape.
+- **French:** added for the three new strings. At 15 px on the page's 499 px line they measure 290–367 px.
+
+**For the integrator:** `es-player-text.md`'s Outcome vocabulary still says two things this change contradicts:
+- the match's in-place sentence ends "YOUR CLOUD STILL HAS THEM";
+- the page offers TRY AGAIN for every run that didn't complete.
+
+That rule file is in the distribution repo.
+
+### 3. claude F-RA-19: fixed in 42f9e8851
+
+The problem: the settings page's save runs on the interface thread. It signed in whenever the switch was on and there was no token. Offline the token stays empty, so every close of the page made a request the screen had to wait for.
+
+The seat's suggested fix (skip the sign-in when the device has no address) doesn't cover its own failure scenario: a hotspot with a route and no DNS does have an address. So the save now decides by who the sign-in is for (`CheevosRetry::saveSignIn`):
+- **Nothing changed and no token:** this belongs to the background token check (`CheckCheevosTokenComponent` in NetworkThread, which runs on the watchers' thread and retries when the network comes up; I confirmed this in `check()`). The page asks it to run now through the new `NetworkThread::checkCheevosTokenSoon`, which makes the same reset the link-up does, and does not wait.
+- **The player changed something and there is an address:** it signs in on the page, as before, and they are told the result.
+- **The same change with no address:** no request is made. The old token is cleared, the existing "couldn't reach" message is shown straight away, and the background check is asked to run so it retries at link-up.
+- The check is asked for only after the switch has been written. Otherwise a switch that had just been turned on would read as off, and the check would do nothing and never retry.
+
+No new strings. **VM step for the integrator:** with the link down, open and close RETROACHIEVEMENTS SETTINGS. The journal should say "the token check is asked to sign in". Bring the link up, and the token should arrive.
+
+### Suites on 42f9e8851
+
+```
+es-unit-tests:    test cases: 163 | 163 passed | 0 failed   assertions: 1743 | 1743 passed
+es-file-tests:    test cases:  12 |  12 passed | 0 failed   assertions: 3291 | 3291 passed
+app-unit-tests:   test cases:  16 |  16 passed | 0 failed   assertions:  106 |  106 passed
+proxycards-tests: test cases:   6 |   6 passed | 0 failed   assertions:   31 |   31 passed
+bookkeeper-tests: test cases:   4 |   4 passed | 0 failed   assertions:   15 |   15 passed
+jobs-tests:       test cases:   4 |   4 passed | 0 failed   assertions:   21 |   21 passed
+tests/*.py: all 10 rc 0 (credential-quoting 10 sites, 10 quoted, 0 bare)
+es-syntax-check PASS: WifiText.cpp, GuiWifi.cpp, GuiMenu.cpp, ApiSystem.cpp; CloudText.cpp,
+  GuiCloudTransfer.cpp, FileData.cpp, main.cpp; GuiRetroAchievementsSettings.cpp,
+  NetworkThread.cpp, CheevosRetry.cpp (each file touched, and every includer of a changed header)
+es-untranslated: 595 fork string(s), 595 with French, 0 without
+vocabulary-check: 156 judged, 0 wrong
+msgfmt -c: clean
+```
