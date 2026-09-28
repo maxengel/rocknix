@@ -3143,6 +3143,9 @@ f1_quirks "${F1_PREV}" "${F1}/quirks.prev"
 f1_storage "${F1}/b"
 echo "mine" > "${F1}/b/.config/tmpfiles.d/50-mine.conf"; echo "mine" > "${F1}/b/.config/sysctl.d/99-mine.conf"
 echo "mine" > "${F1}/b/.config/modules-load.d/mine.conf"; ln -s /dev/null "${F1}/b/.config/system.d/mine.service"
+# and one under a drop-in directory the retired writers used, with a name
+# none of them wrote (weston got 10-vm-config.conf, never 10-generic-x64.conf)
+mkdir -p "${F1}/b/.config/systemd/system/weston.service.d"; echo "mine" > "${F1}/b/.config/systemd/system/weston.service.d/10-generic-x64.conf"
 ( cd "${F1}/b" && find . \( -type f -o -type l \) | LC_ALL=C sort ) > "${F1}/b.before"
 f1_pass "${F1}/b" "${F1}/sys" "${F1}/quirks.prev" "${F1}/b.prev.journal"
 F1_WROTE=$(f1_new_files "${F1}/b" "${F1}/b.before" | grep -vE '^\./\.config/(profile\.d/(001-device_config|090-ui_service|091-ui_shader)|cloud_setup_ssh)$')
@@ -3151,13 +3154,22 @@ f1_pass "${F1}/b" "${F1}/sys" "${F1}/quirks.now" "${F1}/b.now.journal"
 F1_LEFT=""; while IFS= read -r f; do [ -e "${F1}/b/${f}" ] || [ -L "${F1}/b/${f}" ] && F1_LEFT="${F1_LEFT} ${f}"; done <<< "${F1_WROTE}"
 [ -z "${F1_LEFT}" ]; check $? "one boot of the tree under test takes back every one of them" "still on /storage after a boot: $(echo "${F1_LEFT}" | cut -c1-300)"
 F1_MINE=0
-for f in tmpfiles.d/50-mine.conf sysctl.d/99-mine.conf modules-load.d/mine.conf; do [ "$(cat "${F1}/b/.config/${f}" 2>/dev/null)" = mine ] || F1_MINE=1; done
+for f in tmpfiles.d/50-mine.conf sysctl.d/99-mine.conf modules-load.d/mine.conf systemd/system/weston.service.d/10-generic-x64.conf; do [ "$(cat "${F1}/b/.config/${f}" 2>/dev/null)" = mine ] || F1_MINE=1; done
 [ "$(readlink "${F1}/b/.config/system.d/mine.service")" = /dev/null ] || F1_MINE=1
-check ${F1_MINE} "and the owner's own files beside them stay, a mask of their own included" "an owner's file was taken: $(ls "${F1}/b/.config/tmpfiles.d" "${F1}/b/.config/sysctl.d" "${F1}/b/.config/modules-load.d" "${F1}/b/.config/system.d" 2>&1 | tr '\n' ' ')"
-( cd "${F1}/b" && find . \( -type f -o -type l \) | LC_ALL=C sort ) > "${F1}/b.once"
+check ${F1_MINE} "and the owner's own files beside them stay, a mask of their own and a drop-in under a name no retired quirk wrote included (the audit's G-F1-09)" "an owner's file was taken: $(ls "${F1}/b/.config/tmpfiles.d" "${F1}/b/.config/sysctl.d" "${F1}/b/.config/modules-load.d" "${F1}/b/.config/system.d" "${F1}/b/.config/systemd/system/weston.service.d" 2>&1 | tr '\n' ' ')"
+grep -q 'retired' "${F1}/b.now.journal"; check $? "and the boot that takes them back says so on the journal" "the take-back boot's journal: '$(head -c 160 "${F1}/b.now.journal")'"
+# Content, not names (the audit's second seat, G-F1-07): every file's bytes
+# and every link's target, before and after a second boot.
+f1_state() { ( cd "${1}" && find . \( -type f -o -type l \) | LC_ALL=C sort | while IFS= read -r f; do if [ -L "${f}" ]; then echo "${f} -> $(readlink "${f}")"; else echo "${f} $(sha256sum < "${f}" | cut -c1-16)"; fi; done ); }
+f1_state "${F1}/b" > "${F1}/b.once"
 f1_pass "${F1}/b" "${F1}/sys" "${F1}/quirks.now" "${F1}/b.twice.journal"
-( cd "${F1}/b" && find . \( -type f -o -type l \) | LC_ALL=C sort ) | cmp -s - "${F1}/b.once"
-check $? "and a second boot changes nothing" "a second boot changed /storage: $(( cd "${F1}/b" && find . \( -type f -o -type l \) | LC_ALL=C sort ) | diff - "${F1}/b.once" | tr '\n' ' ' | cut -c1-200)"
+f1_state "${F1}/b" | cmp -s - "${F1}/b.once" && [ ! -s "${F1}/b.twice.journal" ]
+check $? "and a second boot changes no file's bytes and says nothing" "a second boot changed /storage or spoke: $(f1_state "${F1}/b" | diff - "${F1}/b.once" | tr '\n' ' ' | cut -c1-200) $(head -c 120 "${F1}/b.twice.journal")"
+# The take-back is once (the audit's second seat, G-F1-05): a mask the owner
+# makes afterwards under one of the four names is theirs, and stays.
+ln -sfn /dev/null "${F1}/b/.config/system.d/emergency.target"
+f1_pass "${F1}/b" "${F1}/sys" "${F1}/quirks.now" "${F1}/b.third.journal"
+[ "$(readlink "${F1}/b/.config/system.d/emergency.target")" = /dev/null ]; check $? "a mask of emergency.target the owner makes after the take-back survives the next boot" "the owner's emergency.target mask was removed by a later boot"
 
 # F1c. #307 PL-022: no quirk tree outside the recipe that installs it. The
 #      only quirks recipe is projects/ROCKNIX/packages/hardware/quirks, so a

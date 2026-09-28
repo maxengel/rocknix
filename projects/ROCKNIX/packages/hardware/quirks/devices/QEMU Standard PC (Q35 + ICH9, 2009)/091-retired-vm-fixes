@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0
 # Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 
-### Takes back what the retired QEMU quirks left in /storage.
+### Takes back, once, what the retired QEMU quirks left in /storage.
 #
 # Until 2026-09 this directory held eleven more scripts (091 to 101) that
 # wrote systemd units, drop-ins, a D-Bus policy and a generator into /etc and
@@ -14,22 +14,46 @@
 # file-max), a modules-load.d list, a udev file under a name udev never
 # reads, and drop-ins under /storage/.config/systemd/system, which systemd
 # never reads either (its unit directory here is /storage/.config/system.d).
-# The scripts are gone; this removes their files, by name, so a guest that
-# ran them boots as a fresh one does. Nothing else in those directories is
-# touched -- whatever else is there is somebody's own.
+#
+# The list below is exactly the paths those scripts wrote -- 091-systemd-fixes
+# and 092-vm-service-fixes for the drop-ins, the others through /etc -- and
+# nothing else in those directories is touched. It runs until they are all
+# gone, says on the journal what it removed, and then stops for good
+# (STAMP): a file somebody puts under one of these names afterwards is
+# theirs. (A downgrade to a build that still has the old quirks writes them
+# again, and they then stay; remove STAMP to take them back once more.)
+STAMP=/storage/.cache/retired-vm-fixes
+[ -e "${STAMP}" ] && exit 0
 C=/storage/.config
-rm -f "${C}/tmpfiles.d/10-generic-x64-journald.conf" \
-      "${C}/tmpfiles.d/20-x64-fd-improvements.conf" \
-      "${C}/tmpfiles.d/30-x64-mount-points.conf" \
-      "${C}/sysctl.d/10-generic-x64.conf" \
-      "${C}/modules-load.d/x64-virtual-modules.conf" \
-      "${C}/udev.rules.d/90-x64-virtual-devices.conf" \
-      "${C}/profile.d/091-generic-x64-services"
+set -- tmpfiles.d/10-generic-x64-journald.conf \
+       tmpfiles.d/20-x64-fd-improvements.conf \
+       tmpfiles.d/30-x64-mount-points.conf \
+       sysctl.d/10-generic-x64.conf \
+       modules-load.d/x64-virtual-modules.conf \
+       udev.rules.d/90-x64-virtual-devices.conf \
+       profile.d/091-generic-x64-services \
+       systemd/system/systemd-hostnamed.service.d/10-generic-x64.conf \
+       systemd/system/systemd-journald.service.d/10-generic-x64.conf \
+       systemd/system/dbus.service.d/10-generic-x64.conf \
+       systemd/system/smbd.service.d/10-generic-x64.conf \
+       systemd/system/nmbd.service.d/10-generic-x64.conf \
+       systemd/system/smbd.service.d/10-vm-config.conf \
+       systemd/system/nmbd.service.d/10-vm-config.conf \
+       systemd/system/weston.service.d/10-vm-config.conf \
+       systemd/system/dbus.service.d/20-vm-enhanced.conf
+GONE=""
+for f in "$@"; do
+  [ -e "${C}/${f}" ] || continue
+  rm -f "${C}/${f}"
+  [ -e "${C}/${f}" ] || GONE="${GONE} ${f}"
+done
 for unit in systemd-hostnamed systemd-journald dbus smbd nmbd weston; do
-  rm -f "${C}/systemd/system/${unit}.service.d/10-generic-x64.conf" \
-        "${C}/systemd/system/${unit}.service.d/10-vm-config.conf" \
-        "${C}/systemd/system/${unit}.service.d/20-vm-enhanced.conf"
   rmdir "${C}/systemd/system/${unit}.service.d" 2>/dev/null
 done
 rmdir "${C}/systemd/system" "${C}/systemd" 2>/dev/null
+[ -n "${GONE}" ] && echo "091-retired-vm-fixes: removed what the retired QEMU quirks left in ${C}:${GONE}" >&2
+for f in "$@"; do
+  [ -e "${C}/${f}" ] && exit 0
+done
+mkdir -p "${STAMP%/*}" && echo "the files the retired QEMU quirks left in ${C} were taken back" > "${STAMP}"
 exit 0
