@@ -449,6 +449,14 @@ DEVICEONLY=(
     /storage/.config/cloud_sync-device-id
     /storage/.config/cloud_sync-device-id.previous
 )
+# The files a backup left out as identical to the image's own (#45), by
+# their path under /storage/.config, one per line, as a member of the
+# archive. A restore puts each one back to this image's copy: the backup
+# said "this file was at its default", and a restore that left an edit made
+# since then in place was not the settings the backup held (#307 PL-037).
+# Never extracted onto the device itself; an image from before the change
+# extracts it as an inert file, and a backup never collects one.
+SEEDLIST="/storage/.config/.backuptool-seeds"
 
 # Write one settings archive to TARGET, whole or not at all.
 #
@@ -598,15 +606,17 @@ write_archive() {
         rm -f "${FILELIST}" "${FILELIST}.pruned" "${SECRETLIST}" "${SENDLIST}"
         return 2
     fi
-    KEPT=$(mktemp); PRUNED=0
+    KEPT=$(mktemp); PRUNED=0; SEEDED=$(mktemp)
     while IFS= read -r F
     do
+        [ "${F}" = "${SEEDLIST}" ] && continue
         case "${F}" in
             /storage/.config/*)
                 REL="${F#/storage/.config/}"
                 if [ -f "/usr/config/${REL}" ] && cmp -s "/usr/config/${REL}" "${F}"
                 then
                     PRUNED=$((PRUNED + 1))
+                    printf '%s\n' "${REL}" >> "${SEEDED}"
                     continue
                 fi
                 ;;
@@ -624,7 +634,7 @@ write_archive() {
         # collection gives: a restore reads 4 as "nothing on this device to
         # keep" and goes on, and it read a FAILED copy the same way until
         # #307 PL-009, extracting over a tree it had no copy of.
-        rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}"
+        rm -f "${FILELIST}" "${SECRETLIST}" "${SENDLIST}" "${SEEDED}"
         return 4
     fi
 
@@ -817,6 +827,15 @@ write_archive() {
         [ "${BLANKED}" -gt 0 ] && logger -t backuptool "blanked the RetroAchievements token in ${BLANKED} emulator settings file(s) (#169)"
         SANITISED=$((SANITISED + BLANKED))
     fi
+    # The list of what was left out as the image's own, for a backup that
+    # can be restored somewhere else (STRIP=1): see SEEDLIST.
+    if [ "${STRIP}" = "1" ] && [ -s "${SEEDED}" ]
+    then
+        mkdir -p "${STAGING}${SEEDLIST%/*}"
+        cp "${SEEDED}" "${STAGING}${SEEDLIST}" || SANITISE_RC=1
+        SANITISED=$((SANITISED + 1))
+    fi
+    rm -f "${SEEDED}"
     if [ "${SANITISE_RC}" -ne 0 ]
     then
         logger -t backuptool "a sanitised copy could not be written whole; nothing written"
@@ -965,8 +984,30 @@ case "${VERB}" in
         # stays bounded.
         mkdir -p "${ARCHIVEFOLDER}"
         SNAPSHOT="${ARCHIVEFOLDER}/${BACKUP_STAMP}-PRE_RESTORE-${DEVICE_LABEL:+${DEVICE_LABEL}-}${OS_NAME}_SETTINGS.tar.gz"
-        MEMBERS=$(mktemp); NEWLIST=$(mktemp)
+        MEMBERS=$(mktemp); NEWLIST=$(mktemp); SEEDS=$(mktemp)
         archive_members "${BACKUPFILE}" > "${MEMBERS}"
+        # The files the backup left out as the image's own (SEEDLIST), to
+        # be put back to this image's copy after the extraction: a path under
+        # /storage/.config that walks nowhere else, that this image ships,
+        # that is not a symlink here, and that no skip rule below keeps on
+        # the device. Their targets join the members the copy covers.
+        if grep -qxF "${SEEDLIST#/}" "${MEMBERS}"
+        then
+            case "${ARCHIVE_KIND}" in
+                tar) tar -xzOf "${BACKUPFILE}" "${SEEDLIST#/}" 2>/dev/null ;;
+                *)   unzip -p "${BACKUPFILE}" "${SEEDLIST#/}" 2>/dev/null ;;
+            esac | while IFS= read -r REL
+            do
+                case "${REL}" in ''|/*|*..*) continue ;; esac
+                case "/storage/.config/${REL}" in
+                    /storage/.config/ppsspp/assets/*|/storage/.config/ppsspp/PSP/SYSTEM/CACHE/*) continue ;;
+                esac
+                for CANDIDATE in "${DEVICEONLY[@]}" "${RATOKENFILES[@]}"; do [ "/storage/.config/${REL}" = "${CANDIDATE}" ] && continue 2; done
+                for CANDIDATE in "${RATOKENDIRS[@]}"; do case "/storage/.config/${REL}" in "${CANDIDATE}"*) continue 2 ;; esac; done
+                [ -f "/usr/config/${REL}" ] && [ ! -L "/storage/.config/${REL}" ] && printf '%s\n' "${REL}"
+            done > "${SEEDS}"
+            sed 's|^|storage/.config/|' "${SEEDS}" >> "${MEMBERS}"
+        fi
         note "KEEPING A COPY OF YOUR CURRENT SETTINGS..." "${SNAPSHOT}"
         snapshot_members "${MEMBERS}" "${SNAPSHOT}" "${NEWLIST}"
         case $? in
@@ -1035,9 +1076,9 @@ case "${VERB}" in
             # member on the way past, and the archive is where the token
             # must not be.
             SKIP=$(mktemp)
-            printf '%s\n' 'storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIRS[@]#/}"'*' "${DEVICEONLY[@]#/}" > "${SKIP}"
+            printf '%s\n' 'storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIRS[@]#/}"'*' "${DEVICEONLY[@]#/}" "${SEEDLIST#/}" > "${SKIP}"
             tar -xzf "${BACKUPFILE}" -C / -X "${SKIP}" >/dev/null
-            RC_TAR=$?; rm -f "${SKIP}"; (exit ${RC_TAR})
+            EXTRACT_RC=$?; rm -f "${SKIP}"
         else
             # Archives written before backups switched to regular files only
             # hold the *contents* of symlinked paths. Extracting one of those
@@ -1052,7 +1093,7 @@ case "${VERB}" in
             # likely to carry them -- and until #151 PL-03 this branch skipped
             # neither, while D-CLOUD-008 said "from any archive". The token-only
             # files are skipped here too (#169), as in the tar branch.
-            SKIP=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIRS[@]#/}"'*' "${DEVICEONLY[@]#/}")
+            SKIP=('storage/.config/ppsspp/assets/*' 'storage/.config/ppsspp/PSP/SYSTEM/CACHE/*' "${RATOKENFILES[@]#/}" "${RATOKENDIRS[@]#/}"'*' "${DEVICEONLY[@]#/}" "${SEEDLIST#/}")
             SKIPPED=0
             # One member per line, each whole: the name is everything from
             # the fourth column on. Until #307 PL-036 this read $4 and split
@@ -1074,8 +1115,21 @@ case "${VERB}" in
             # -x is a mode switch: every argument after it is an exclusion,
             # so it goes last. busybox and Info-ZIP both take the patterns.
             unzip -o "${BACKUPFILE}" -d / -x "${SKIP[@]}" >/dev/null
+            EXTRACT_RC=$?
         fi
-        if [ $? -ne 0 ]
+        # Then each file the backup held at its default goes back to this
+        # image's copy (SEEDLIST). A copy that fails is a restore that did
+        # not finish, and is undone with the rest.
+        if [ "${EXTRACT_RC}" -eq 0 ]
+        then
+            while IFS= read -r REL
+            do
+                mkdir -p "$(dirname "/storage/.config/${REL}")" && cp -f "/usr/config/${REL}" "/storage/.config/${REL}" || { EXTRACT_RC=1; break; }
+            done < "${SEEDS}"
+            [ -s "${SEEDS}" ] && [ "${EXTRACT_RC}" -eq 0 ] && logger -t backuptool "put $(wc -l < "${SEEDS}") file(s) the backup held at their defaults back to this image's copies"
+        fi
+        rm -f "${SEEDS}"
+        if [ "${EXTRACT_RC}" -ne 0 ]
         then
             # Half the archive may be in place. Put the copy taken above
             # back over it, remove what the restore created, and say which

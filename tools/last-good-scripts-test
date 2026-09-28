@@ -3310,4 +3310,14 @@ echo this-device > "${P7S}/.config/cloud_sync-device-id"
 p7bt backup
 [ "${RC}" -eq 0 ] && ! p7list | grep -q 'cloud_sync-device-id'; check $? "#307 PL-010: and a backup of /storage/.config does not carry the device id" "#307 PL-010: rc ${RC}; archive: $(p7list | grep device-id)"
 
+# == PL-037: a file left out as the image's own is reset on restore
+p7reset '  /storage/.config/emulationstation/es_settings.cfg
+  /storage/.config/test/*'
+cp "${P7U}/emulationstation/es_settings.cfg" "${P7S}/.config/emulationstation/es_settings.cfg"
+p7bt backup
+echo EDITED > "${P7S}/.config/emulationstation/es_settings.cfg"
+p7bt restore --no-restart
+[ "${RC}" -eq 0 ] && cmp -s "${P7U}/emulationstation/es_settings.cfg" "${P7S}/.config/emulationstation/es_settings.cfg"; check $? "#307 PL-037: es_settings.cfg, left out of the backup as the image's own, is reset to it by the restore" "#307 PL-037: rc ${RC}; es_settings.cfg after the restore: '$(head -c 80 "${P7S}/.config/emulationstation/es_settings.cfg")'"
+[ ! -e "${P7S}/.config/.backuptool-seeds" ]; check $? "#307 PL-037: and the list of such files is not left on the device" "#307 PL-037: .backuptool-seeds left in /storage/.config"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
