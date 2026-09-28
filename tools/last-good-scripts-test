@@ -3137,6 +3137,14 @@ c1 --info
 [ ! -e "${C1}/storage/ran" ] && grep -qF 'SAVES_REMOTE=/y$(touch /storage/ran)/Saves' "${C1}/out"; check $? "--info reads an already-written value as text and runs nothing in it" "ran: $([ -e "${C1}/storage/ran" ] && echo yes || echo no); --info said: $(grep '^SAVES_REMOTE=' "${C1}/out")"
 c1 --seed-folders
 [ ! -e "${C1}/storage/ran" ]; check $? "and so does --seed-folders, which used to eval the config's lines" "--seed-folders ran the command in an already-written SAVES_REMOTE (eval of the config)"
+# G-C-05 (claude): and every other reader of the config. A guard: no
+# cloud_setup subcommand sources or evals it (grep: only /etc/profile is
+# sourced), so these pass on the tree the audit read as well.
+sed -i 's|^CONTENT_REMOTE=.*|CONTENT_REMOTE="/z$(touch /storage/ran)/Content"|' "${CONF1}"
+for sub in --content-location --check-syncpath --use-content-root; do
+    rm -f "${C1}/storage/ran"; c1 "${sub}"
+    [ ! -e "${C1}/storage/ran" ]; check $? "and ${sub} runs nothing an already-written value holds" "${sub} ran a command held in the config (G-C-05)"
+done
 rm -f "${C1}/storage/ran"
 cp "${ROOT}/${RCLONE_REL}/cloud_sync.conf" "${CONF1}"; cp "${CONF1}" "${C1}/conf.before"
 C1RO=1 c1 --set-saves-remote /Other/Saves
