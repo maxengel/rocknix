@@ -3983,4 +3983,176 @@ done < "${C3}/out"
 C3N=$(sed -n 's/^END //p' "${C3}/out")
 [ -n "${C3N}" ]; check $? "the cloud_oauth groups ran to the end (${C3N} groups, python3 in a sandbox of its own)" "the cloud_oauth groups did not finish -- a check that did not run has not passed: $(tail -3 "${C3}/err" 2>/dev/null | tr '\n' '|')"
 
+# C4. The phone keyboard page's own script, run by node against a small DOM:
+# the page is rendered from cloud_oauth as a serve renders it, and what the
+# handheld's field would hold is rebuilt from the requests the page made, in
+# order, typed the way cloud_oauth types them. node is the host's; the page
+# runs in a phone's browser, not on the device, so there is no busybox
+# question here. Without node the groups cannot run, and that is a FAIL.
+C4="${CS}/c4"; mkdir -p "${C4}"
+cat > "${C4}/render.py" <<'EOPY'
+# Render cloud_oauth's phone keyboard page as a serve would.
+import importlib.machinery, importlib.util, sys
+loader = importlib.machinery.SourceFileLoader("cloud_oauth_page", sys.argv[1])
+spec = importlib.util.spec_from_loader(loader.name, loader)
+m = importlib.util.module_from_spec(spec)
+loader.exec_module(m)
+sys.stdout.write(m.REMOTE_PAGE % {"style": m.STYLE, "name": "Dropbox", "pin": "1234"})
+EOPY
+cat > "${C4}/page_test.js" <<'EOJS'
+// The phone keyboard page's own script, run against a small DOM: what the box
+// shows is compared with what the handheld's field holds, where the field is
+// rebuilt from the requests the page made, in order, the way cloud_oauth
+// types them (printable ASCII only: KEYMAP is a US layout).
+//
+//   node page_test.js <rendered page.html>     P/F lines, then END
+"use strict";
+const fs = require("fs");
+const vm = require("vm");
+
+const html = fs.readFileSync(process.argv[2], "utf8");
+const script = html.split("<script>").pop().split("</script>")[0];
+let failed = 0, groups = 0;
+function result(ok, good, bad) {
+  console.log(ok ? "P " + good : "F " + bad);
+}
+
+function attrs(text) {
+  const out = {};
+  const re = /([\w-]+)(?:=("[^"]*"|'[^']*'|[^\s>]+))?/g;
+  let m;
+  while ((m = re.exec(text))) {
+    let v = m[2] === undefined ? "" : m[2];
+    if (v[0] === '"' || v[0] === "'") v = v.slice(1, -1);
+    out[m[1].toLowerCase()] = v;
+  }
+  return out;
+}
+
+function page(probeText) {
+  const byId = {}, keys = [], posts = [], timers = [];
+  let probe = probeText;
+  function el(tag, a) {
+    const e = {
+      tagName: tag.toUpperCase(), id: a.id || "", type: a.type || "",
+      className: a.class || "", hidden: "hidden" in a, value: "", textContent: "",
+      dataset: {}, listeners: {},
+      classList: { add() {}, remove() {} },
+      addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
+      fire(ev, extra) {
+        const e2 = Object.assign({ preventDefault() {}, touches: null, clientX: 0, clientY: 0 }, extra || {});
+        (this.listeners[ev] || []).forEach((fn) => fn(e2));
+      },
+      focus() {}, setAttribute(k, v) { this[k] = v; }, getAttribute(k) { return this[k]; },
+    };
+    if (a["data-key"] !== undefined) e.dataset.key = a["data-key"];
+    return e;
+  }
+  const tagRe = /<(input|button|div|span|p)\b([^>]*)>/gi;
+  let m;
+  while ((m = tagRe.exec(html))) {
+    const a = attrs(m[2]);
+    const e = el(m[1], a);
+    if (a.id) byId[a.id] = e;
+    if (a["data-key"] !== undefined) keys.push(e);
+  }
+  const document = {
+    getElementById: (id) => byId[id] || null,
+    querySelectorAll: (sel) => (sel === "[data-key]" ? keys : []),
+    querySelector: () => null,
+  };
+  const sandbox = {
+    document,
+    window: { addEventListener() {} },
+    setTimeout: (fn, ms) => timers.push(fn),
+    fetch: (url, opts) => {
+      if (opts && opts.method === "POST") {
+        posts.push(opts.body);
+        return Promise.resolve({ text: () => Promise.resolve("") });
+      }
+      return Promise.resolve({ text: () => Promise.resolve(probe) });
+    },
+    Promise, URLSearchParams, encodeURIComponent, decodeURIComponent, Math, Array, String, Object, JSON, RegExp,
+  };
+  vm.runInNewContext(script, sandbox);
+  return {
+    byId, keys, posts,
+    box: byId.kb,
+    setProbe(t) { probe = t; },
+    async settle() { for (let i = 0; i < 50; i++) await new Promise((r) => setImmediate(r)); },
+    async poll() { const run = timers.splice(0); run.forEach((fn) => fn()); await this.settle(); },
+    async type(v) { this.box.value = v; this.box.fire("input"); await this.settle(); },
+    async key(name) {
+      const b = keys.find((k) => k.dataset.key === name);
+      if (!b) throw new Error("no " + name + " button on the page");
+      b.fire("click"); await this.settle();
+    },
+    async hardKey(key) { this.box.fire("keydown", { key }); await this.settle(); },
+    device() {
+      const fields = [""]; let cur = 0, closed = false;
+      for (const body of posts) {
+        const q = new URLSearchParams(body);
+        if (q.has("type")) for (const ch of q.get("type")) if (ch >= " " && ch <= "~") fields[cur] += ch;
+        const k = q.get("key");
+        if (k === "backspace") fields[cur] = fields[cur].slice(0, -1);
+        if (k === "tab" || k === "up" || k === "down") { cur += 1; fields[cur] = fields[cur] || ""; }
+        if (k === "escape") closed = true;
+      }
+      return { field: fields[cur], closed };
+    },
+  };
+}
+
+const groupsList = [];
+function group(fn) { groupsList.push(fn); }
+
+EOJS
+cat >> "${C4}/page_test.js" <<'EOJS'
+// ------------------------------------------------ #307 PL-016
+group(async function typedBeforeOpen() {
+  const p = page("waiting");
+  await p.poll();
+  await p.type("me@example.com");
+  const before = p.posts.length;
+  p.setProbe("open a1b2c3d4");
+  await p.poll();
+  const d = p.device();
+  result(before === 0 && d.field === "me@example.com" && p.box.value === "me@example.com",
+    "text typed on the phone before the window opened reaches the field when it opens (" + JSON.stringify(d.field) + ")",
+    "typed before the window opened: the field holds " + JSON.stringify(d.field) + " while the box shows " +
+    JSON.stringify(p.box.value) + " -- nothing was sent on the way to ready (PL-016)");
+  await p.type("me@example.com!");
+  result(p.device().field === "me@example.com!", "and what is typed after it follows as usual",
+    "after the flush the field holds " + JSON.stringify(p.device().field));
+  const state = p.byId.state ? p.byId.state.textContent : "";
+  p.setProbe("waiting");
+  await p.poll();
+  const waiting = p.byId.state ? p.byId.state.textContent : "";
+  result(!/send button/i.test(waiting) && waiting.length > 0,
+    "the waiting line names no button that is not there: " + JSON.stringify(waiting),
+    "the waiting line reads " + JSON.stringify(waiting) + " -- there is no send button (PL-016)");
+});
+EOJS
+# C4: new page groups go above this line
+cat >> "${C4}/page_test.js" <<'EOJS'
+(async () => {
+  for (const g of groupsList) {
+    try { await g(); groups += 1; } catch (e) { result(false, "", g.name + " threw " + e.message); }
+  }
+  console.log("END " + groups);
+})();
+EOJS
+: > "${C4}/out"
+if command -v node >/dev/null && python3 "${C4}/render.py" "${CS}/src/cloud_oauth" > "${C4}/page.html" 2> "${C4}/err"; then
+    node "${C4}/page_test.js" "${C4}/page.html" > "${C4}/out" 2>> "${C4}/err"
+fi
+while IFS= read -r line; do
+    case "${line}" in
+        "P "*) check 0 "${line#P }" "" ;;
+        "F "*) check 1 "" "${line#F }" ;;
+    esac
+done < "${C4}/out"
+C4N=$(sed -n 's/^END //p' "${C4}/out")
+[ -n "${C4N}" ]; check $? "the phone page groups ran to the end (${C4N} groups, node $(node --version 2>/dev/null))" "the phone page groups did not run -- they need node and python3 on this machine: $(tail -2 "${C4}/err" 2>/dev/null | tr '\n' '|')"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

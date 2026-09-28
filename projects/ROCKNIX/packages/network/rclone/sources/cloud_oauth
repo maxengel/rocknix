@@ -998,13 +998,22 @@ info.</p>
         state.textContent = open
           ? "Connected."
           : "Not open yet -- choose CONTINUE on your handheld. You can type "
-            + "or paste here meanwhile, then use the send button.";
+            + "or paste here meanwhile; it goes across when the page opens.";
         // The box is never disabled. It was, until this said the handheld was
         // ready -- so somebody who scanned the QR first, which is the order
         // this flow asks for, could not type at all and saw nothing appear.
         // Re-asserting disabled every two seconds also dismisses a phone
         // keyboard in the middle of typing.
+        //
+        // And what was typed meanwhile goes across the moment it opens. The
+        // box only ever sent on an input event, so text typed while the page
+        // said "not open yet" -- the order this flow asks for -- was never
+        // delivered at all, and the next keystroke added only itself (audit
+        // #307 PL-016). The window opens on an empty field, so nothing has
+        // been sent to it yet: `sent` starts again from nothing.
+        var opened = open && !ready;
         ready = open;
+        if (opened) { sent = ""; deliver(box.value); }
       })
       .catch(function () {})
       .then(function () { setTimeout(poll, 2000); });
