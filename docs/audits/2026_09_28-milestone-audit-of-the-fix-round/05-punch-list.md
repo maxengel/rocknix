@@ -380,9 +380,9 @@ Recorded per item as it is resolved: the outcome (resolved / deferred / rejected
 | PL-028 | Medium | | |
 | PL-029 | Medium | | |
 | PL-030 | Medium | Withdrawn | refuted from the source (E2, checked by the integrator): the COPY's only write to the saves tree is `copyToSlot` at the press (`GuiSaveState.cpp:516`) behind `savesTreeBusy` (`:499`, `:33`); the queued record (`:524`) is `cloud_capture --adopt`, which writes only under `/storage/.cache/cloud_sync` (`cloud_capture:674` MANIFEST, `:115` STAGE) under `capture_lock` (`:1559`); its only saves-folder write is `--retire --unlink`, the DELETE's; no transfer script reads the manifests or the stage (`grep -n "manifest-\|cloud_capture\|/stage\|\.capture"` over the five cloud scripts: 0 lines). Adding DELETE's guard would drop a copy's record whenever a transfer holds the lock. The false `TransferLock` comment goes to E1 |
-| PL-031 | Medium | | |
+| PL-031 | Medium | Resolved | the script side `3bc003dde8` (merged `a566bcc2df`): `added=` in the scan/top-up stamp is the measured count, `0` when nothing was cached, the word `unknown` when the store could not be read, the cache-count fallback gone; harness case D34: 4 FAIL before (`stamp: … 0 topup cached=3 … added=3 -- a failed measurement replaced by the cache count`), 4 PASS after (`added=unknown`); the interface side ES `6d8bdab4e` (pin `2b377f0fbe`): `parseScanStamp` reads `unknown` as its own answer and the top-up card says how many games are ready, never a count it cannot know -- es-unit-tests `CHECK( -1 == -2 )` before, 1825/1825 after; proxycards-tests `5 MORE GAMES ARE READY. == 14 GAMES ARE READY.` before, 67/67 after; the integrator ran both binaries and the harness on the merged tree (`PASSED`, 1077 PASS, 17:12 UTC); already written: an old stamp with a number reads as that number, one with none as before |
 | PL-032 | Medium | Resolved | Resolved `f945f4182a` (merged `8840998047`) -- each attempt has its own id; `write_owned` takes `owner=` and `from_status=`: `waiting` only from `starting`, `signed-in` only from `starting`/`waiting` by the current attempt, the closing `failed` only from those; a refused success deletes the remote it made and writes no marker; `holder.end()` waits up to 45 s for a collector still saving (D-CLOUD-150); case CF4: 7 FAIL before (`a dead attempt republished as waiting`; `after A finished behind B: … marker True, A's remote removed False`), 7 PASS after plus a control; already written: the state lives in `/var/run`, nothing persists; the integrator: the harness on the merged tree `PASSED` (1065 PASS, 16:59 UTC), and at `f3d19dc8fb` in `pl-c` `40 CHECK(S) FAILED`, all C's |
-| PL-033 | Medium | | |
+| PL-033 | Medium | Withdrawn | on the source, with a guard (`759b65b5c5`, merged `a566bcc2df`): the pinned client listens on IPv4 only -- `proxy_service.py:267` keeps socketserver's `AF_INET` (line 208 unpatched), `boot.py:32` and `:58` make `AF_INET` sockets, `config.py:367` defaults `proxy_host` to `127.0.0.1` and nothing sets it -- so leaving `::` out of the listener checks never turns the shipped proxy away; harness case D36 runs the pinned client's `run-service` in a network namespace (bwrap `--unshare-net`) and asks both listener checks of the real socket (`ctl=1 ppsspp=1 looks=2; tcp 0100007F:1F90`), so a pin that moves the listener to `::` fails the suite rather than the unit at every boot; the constructed failure read `ctl=0 ppsspp=0 looks=31; tcp6 …:1F90` |
 | PL-034 | Medium | | |
 
 ## Punch index
@@ -612,7 +612,7 @@ punch_index:
   owner_area: 'stream D, raofflineproxy-ctl'
   where: 'raofflineproxy-ctl ~1917 and ~2220 (`ADDED`/`MADE` inside `&&` chains)'
   acceptance: 'with the comparison forced to fail after nonzero cache operations, the published count is refused or reported unknown, never substituted; a harness case (section t) or a source-backed refutation naming the line'
-  outcome: open
+  outcome: resolved
 - id: PL-032
   severity: 'Medium (verification-first)'
   category: 'Lifecycle (a terminal state reopened)'
@@ -628,7 +628,7 @@ punch_index:
   owner_area: 'stream D, raofflineproxy'
   where: 'the listener gate''s `::` case (O-15)'
   acceptance: 'the line where the shipped proxy is bound IPv4-only is named and the item closes on it; or the predicate reads a dual-stack listener as reachable, with a case'
-  outcome: open
+  outcome: withdrawn
 - id: PL-034
   severity: 'Medium (verification-first)'
   category: 'Safety evidence (age is not termination)'
