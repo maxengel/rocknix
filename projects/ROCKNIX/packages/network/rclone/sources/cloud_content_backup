@@ -113,9 +113,16 @@ fi
 # lines for one key, the first: every saves run EmulationStation starts is
 # --yes, which runs cloud_sync_cleanup_duplicates.sh, which keeps the first,
 # so that is the value the saves scripts run with and the file is left with.
+#
+# And a file with a control character but a tab anywhere in it is
+# unreadable here as it is to the saves scripts' conf_valid (the audit of
+# the fix round, PL-002): this reader never sources the file, but a blank
+# is a space or a tab to both, so the tiers run with one reading of one
+# file -- a carriage return after a value used to pass here as a blank.
 conf_get() { # <KEY>: its value, quotes off; nothing when absent; exit 2 when unreadable
     [ -f /storage/.config/cloud_sync.conf ] || return 0
     awk -v k="$1" '
+        { t = $0; gsub(/\t/, "", t); if (t ~ /[[:cntrl:]]/) cntrl = 1 }
         index($0, k "=") == 1 {
             s = substr($0, length(k) + 2); v = ""; r = ""; ok = 1
             c = substr(s, 1, 1)
@@ -125,11 +132,11 @@ conf_get() { # <KEY>: its value, quotes off; nothing when absent; exit 2 when un
             } else {
                 match(s, /^[A-Za-z0-9_.\/:@%+,=-]*/); v = substr(s, 1, RLENGTH); r = substr(s, RLENGTH + 1)
             }
-            if (r !~ /^([ \t\r]+(#.*)?)?$/) ok = 0
+            if (r !~ /^([ \t]+(#.*)?)?$/) ok = 0
             if (c == "\"" && v ~ /[$`\\]/) ok = 0
             if (!found) { found = 1; first = v; firstok = ok }
         }
-        END { if (found && !firstok) exit 2; if (found) print first }
+        END { if (cntrl) exit 2; if (found && !firstok) exit 2; if (found) print first }
     ' /storage/.config/cloud_sync.conf
 }
 if ! CONTENT_REMOTE=$(conf_get CONTENT_REMOTE); then

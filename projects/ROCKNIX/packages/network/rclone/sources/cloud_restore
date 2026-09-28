@@ -1061,6 +1061,13 @@ MANAGED_RULES=/storage/.config/cloud_sync-rules.txt
 # because a torn line -- SAVES_REMOTE="/ROCK, cut mid-value -- can have its
 # quote closed by whatever is appended after it, and then parses.
 #
+# A blank is a space or a tab, and nothing else is: no line may carry a
+# control character but a tab (the audit of the fix round, PL-002). Bash
+# does not split a word on a carriage return, a vertical tab or a form
+# feed, so EXTRA="x"<CR>#$(cmd) is one word whose $(cmd) runs, and so is a
+# "comment" line <CR>#$(cmd) -- and this grammar read all three as blanks
+# ([ \t\r] after a value, [[:space:]] before a comment) and passed them.
+#
 # And nothing in it runs when it is sourced (audit #307 PL-051's script
 # half). The setup page writes the folder values from what a player typed
 # or picked, and an earlier build wrote one that held "$(...)" as it
@@ -1101,20 +1108,22 @@ conf_valid() {
             bad()
         }
         # After a value: nothing, or blanks and a comment.
-        function rest(s, i) { if (substr(s, i) !~ /^([ \t\r]+(#.*)?)?$/) bad() }
+        function rest(s, i) { if (substr(s, i) !~ /^([ \t]+(#.*)?)?$/) bad() }
         function whole() {
             if (key ~ /^(SAVESPATH|SETTINGS_BACKUPS|SAVES_REMOTE|SETTINGS_REMOTE|CONTENT_REMOTE)$/ \
                 && (val ~ /[$`\\]/ || val ~ /[[:cntrl:]]/ || lines > 1)) bad()
         }
         {
             s = $0
+            t = s; gsub(/\t/, "", t)
+            if (t ~ /[[:cntrl:]]/) bad()
             if (indq) {
                 lines++
                 j = dq(s, 1)
                 if (j == 0) next
                 indq = 0; rest(s, j); whole(); next
             }
-            if (s ~ /^[[:space:]]*(#|$)/) next
+            if (s ~ /^[ \t]*(#|$)/) next
             if (!match(s, /^[A-Za-z_][A-Za-z0-9_]*=/)) bad()
             key = substr(s, 1, RLENGTH - 1); i = RLENGTH + 1; val = ""; lines = 1
             c = substr(s, i, 1)
