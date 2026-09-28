@@ -173,15 +173,24 @@ exists() {
 # Pipelines are avoided on purpose: `rclone ... | tail` reports tail's status,
 # which is how a short backup once announced itself a success.
 #
-# Any filter arguments after the third are the tier's own (PL-025): the
+# The tier's pointer is written the moment its copy is verified, before its
+# source is removed (audit #307 PL-026). Both pointers used to be written
+# after both moves, so a run that moved the saves and was cut before the
+# end left SAVES_REMOTE at the emptied folder -- a device syncing to a
+# folder with nothing in it -- and the next run, finding the new folder
+# already there, refused it. Now a cut run leaves each tier either where it
+# was (not yet verified) or where it went (pointer written), and the next
+# run moves only what has not landed.
+#
+# Any filter arguments after the fourth are the tier's own (PL-025): the
 # copy, the check and the removal all carry them, so a folder nested in the
 # source that belongs to another tier -- the original layout's backup/ and
 # Content/ inside the saves folder -- is neither moved with it nor deleted
 # with it. The removal is a filtered delete and then the empty folders,
 # rather than a purge, which would take the nested tiers too.
-relocate() { # <src> <dst> <what> [filter arguments...]
-    local src="$1" dst="$2" what="$3" out
-    shift 3
+relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
+    local src="$1" dst="$2" what="$3" key="$4" out
+    shift 4
     local -a filt=("$@")
     say "Copying ${what}..."
     if ! out=$(rclone copy "${src}" "${dst}" "${filt[@]}" --create-empty-src-dirs=false 2>&1); then
@@ -196,10 +205,22 @@ relocate() { # <src> <dst> <what> [filter arguments...]
         say "The copy of ${what} didn't match, so the old folder was kept. Both folders are as they were."
         return 1
     fi
+    set_pointer "${key}" "${dst#*:}"
     say "Removing the old ${what} folder..."
     { rclone delete "${src}" "${filt[@]}" && rclone rmdirs "${src}"; } >/dev/null 2>&1 \
         || say "(could not remove the old folder; the copy is complete and verified)"
     return 0
+}
+
+# Point a key of the conf at a tier's new folder: the line rewritten in
+# place, or added when the conf has none.
+set_pointer() { # <key> <remote path>
+    if grep -q "^$1=" "${SYNC_CONF}" 2>/dev/null; then
+        sed -i "s|^$1=.*|$1=\"$2\"|" "${SYNC_CONF}"
+    else
+        printf '%s="%s"\n' "$1" "$2" >> "${SYNC_CONF}"
+    fi
+    say "Now using ${2} for ${1}."
 }
 
 # Is an existing destination a partial copy of this source, and nothing else?
@@ -252,10 +273,12 @@ migrate_content() {
             say "Nothing has been changed. Run with --apply to do it."
             return 0
         fi
-        if ! relocate "${remote}${content}" "${remote}${NEW_CONTENT}" "content"; then
+        if ! relocate "${remote}${content}" "${remote}${NEW_CONTENT}" "content" CONTENT_REMOTE; then
             say "The config is unchanged."
             return 5
         fi
+        say "Content is now at ${remote}${NEW_CONTENT}."
+        return 0
     else
         say "Nothing is stored at ${remote}${content}, so only the setting changes."
         if [ "${mode}" != "--apply" ]; then
@@ -264,7 +287,7 @@ migrate_content() {
         fi
     fi
 
-    sed -i "s|^CONTENT_REMOTE=.*|CONTENT_REMOTE=\"${NEW_CONTENT}\"|" "${SYNC_CONF}"
+    set_pointer CONTENT_REMOTE "${NEW_CONTENT}"
     say "Content is now at ${remote}${NEW_CONTENT}."
     return 0
 }
@@ -368,19 +391,33 @@ main() {
     # directory is done file by file, which is exactly the interruptible,
     # half-migrated state worth avoiding -- and it could merge two devices'
     # libraries without anyone asking for that.
+    #
+    # Each tier is judged against its own source (PL-026): the backups
+    # destination used to be compared with the saves source, so a copy of
+    # the backups cut half-way could never be resumed. A tier whose pointer
+    # already names the new folder has landed, and is left alone; one whose
+    # source holds nothing has nothing to merge, and only its pointer moves --
+    # the state an earlier build left when it was cut after its moves and
+    # before its pointers.
     local blocked=0
-    for dest in "${NEW_SAVES}" "${NEW_BACKUPS}"; do
-        if exists "${remote}${dest}" && ! resumable "${remote}${saves_src}" "${remote}${dest}"; then
-            say "REFUSING: ${remote}${dest} already exists."
-            blocked=1
-        fi
-    done
+    if [ "${backups}" != "${NEW_BACKUPS}" ] && has_entries "${remote}${backups}/" \
+       && exists "${remote}${NEW_BACKUPS}" \
+       && ! resumable "${remote}${backups}" "${remote}${NEW_BACKUPS}"; then
+        say "REFUSING: ${remote}${NEW_BACKUPS} already exists."
+        blocked=1
+    fi
+    if [ "${saves}" != "${NEW_SAVES}" ] && has_files "${remote}${saves_src}/" \
+       && exists "${remote}${NEW_SAVES}" \
+       && ! resumable "${remote}${saves_src}" "${remote}${NEW_SAVES}"; then
+        say "REFUSING: ${remote}${NEW_SAVES} already exists."
+        blocked=1
+    fi
     [ "${blocked}" = "1" ] && return 4
 
     say "Would move, server-side, leaving anything else where it is:"
-    has_entries "${remote}${backups}/" \
+    [ "${backups}" != "${NEW_BACKUPS}" ] && has_entries "${remote}${backups}/" \
         && say "  ${remote}${backups}  ->  ${remote}${NEW_BACKUPS}"
-    has_files "${remote}${saves_src}/" \
+    [ "${saves}" != "${NEW_SAVES}" ] && has_files "${remote}${saves_src}/" \
         && say "  ${remote}${saves_src}  ->  ${remote}${NEW_SAVES}"
 
     if [ "${mode}" != "--apply" ]; then
@@ -392,26 +429,31 @@ main() {
     say ""
     # The backups first (PL-025). In the original layout they sit inside the
     # saves folder; moved first, they are out of it before the saves move
-    # looks, as well as excluded from it.
-    if has_entries "${remote}${backups}/"; then
-        if ! relocate "${remote}${backups}" "${remote}${NEW_BACKUPS}" "backups"; then
-            say "Nothing else attempted."
-            return 5
+    # looks, as well as excluded from it. Each pointer is written as its
+    # tier lands (PL-026), only once the data is where it will point: a
+    # config updated first, then a move that failed, is a device looking at
+    # an empty folder and reporting that it has no saves. A tier with
+    # nothing stored only has its pointer moved.
+    if [ "${backups}" != "${NEW_BACKUPS}" ]; then
+        if has_entries "${remote}${backups}/"; then
+            if ! relocate "${remote}${backups}" "${remote}${NEW_BACKUPS}" "backups" SETTINGS_REMOTE; then
+                say "Nothing else attempted."
+                return 5
+            fi
+        else
+            set_pointer SETTINGS_REMOTE "${NEW_BACKUPS}"
         fi
     fi
 
     local moved_saves=0
-    if has_files "${remote}${saves_src}/"; then
-        relocate "${remote}${saves_src}" "${remote}${NEW_SAVES}" "saves" "${SAVES_EXCLUDES[@]}" || return 5
-        moved_saves=1
+    if [ "${saves}" != "${NEW_SAVES}" ]; then
+        if has_files "${remote}${saves_src}/"; then
+            relocate "${remote}${saves_src}" "${remote}${NEW_SAVES}" "saves" SAVES_REMOTE "${SAVES_EXCLUDES[@]}" || return 5
+            moved_saves=1
+        else
+            set_pointer SAVES_REMOTE "${NEW_SAVES}"
+        fi
     fi
-
-    # Only once the data is where the config will point. A config updated
-    # first, then a move that failed, is a device looking at an empty folder
-    # and reporting that it has no saves.
-    say "Updating ${SYNC_CONF}..."
-    sed -i "s|^SAVES_REMOTE=.*|SAVES_REMOTE=\"${NEW_SAVES}\"|" "${SYNC_CONF}"
-    sed -i "s|^SETTINGS_REMOTE=.*|SETTINGS_REMOTE=\"${NEW_BACKUPS}\"|" "${SYNC_CONF}"
 
     # ROMs move with the saves they belong to, when the pointer is one we
     # derived. A CONTENT_REMOTE the owner set themselves is theirs, and stays.

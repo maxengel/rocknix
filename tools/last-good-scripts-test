@@ -3368,4 +3368,23 @@ sa_run "${MG}" cloud_migrate_layout --apply
 [ -f "${MG}/cloud/ROCKNIX/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ] && [ -f "${MG}/cloud/ROCKNIX/Saves/savefiles/gb/A.srm" ] && [ -f "${MG}/cloud/ROCKNIX/Saves/gb/B.srm" ] && [ -f "${MG}/cloud/ROCKNIX/Content/ROMs/gb/A.gb" ] && [ -f "${MG}/cloud/ROCKNIX/Content/BIOS/bios.bin" ]; check $? "PL-025: each tier lands whole in its own folder: backups, saves, ROMs and BIOS" "cloud now: $(mg_tree)"
 [ "$(mg_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content" ] && [ "${RC}" -eq 0 ]; check $? "PL-025: and the three pointers follow them (rc ${RC})" "pointers '$(mg_ptrs)'; rc ${RC}; out: $(sa_tail "${MG}")"
 
+# PL-026 (F-CS-09 gpt): killed between the two moves, the next run finishes.
+mg_seed
+printf '%s\t%s\n' '^copy ' 2 > "${MG}/ctl/kill"
+sa_run "${MG}" cloud_migrate_layout --apply
+killed_rc=${RC}
+: > "${MG}/ctl/kill"; rm -f "${MG}/ctl/kill.count"
+sa_run "${MG}" cloud_migrate_layout --apply
+[ "${killed_rc}" -ne 0 ] && [ "${RC}" -eq 0 ] && [ "$(mg_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content" ] \
+    && [ -f "${MG}/cloud/ROCKNIX/Saves/gb/B.srm" ] && [ -f "${MG}/cloud/ROCKNIX/Backups/QA-deadbeef01/2026_09_01-000000-QA-ROCKNIX_SETTINGS.tar.gz" ]; check $? "PL-026: a migration killed at its second move (rc ${killed_rc}) is finished by the next run (rc ${RC})" "second run rc ${RC}; pointers '$(mg_ptrs)'; out: $(sa_tail "${MG}"); cloud: $(mg_tree) -- the moved tier's pointer was not written, or the resume check compared the wrong source (F-CS-09)"
+
+# The state an earlier build left when it was cut after its moves and
+# before its pointers: the files in the new folders, the old ones emptied,
+# the pointers where they were. The next run moves only the pointers.
+mg_seed
+mkdir -p "${MG}/cloud/ROCKNIX"; mv "${MG}/cloud/GAMES/backup" "${MG}/cloud/ROCKNIX/Backups"
+mkdir -p "${MG}/cloud/ROCKNIX/Saves"; mv "${MG}/cloud/GAMES/savefiles" "${MG}/cloud/GAMES/gb" "${MG}/cloud/ROCKNIX/Saves/"
+sa_run "${MG}" cloud_migrate_layout --apply
+[ "${RC}" -eq 0 ] && [ "$(mg_ptrs)" = "/ROCKNIX/Saves /ROCKNIX/Backups /ROCKNIX/Content" ] && [ -f "${MG}/cloud/ROCKNIX/Content/ROMs/gb/A.gb" ]; check $? "PL-026: a device an earlier build left moved but not repointed is repointed, and its content moved, by the next run (rc ${RC})" "rc ${RC}; pointers '$(mg_ptrs)'; out: $(sa_tail "${MG}")"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi
