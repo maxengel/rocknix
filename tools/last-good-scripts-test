@@ -3032,6 +3032,25 @@ ckf 65536 retroarch 1024;                printf '%s' "${NOTE}" | grep '^dump' | 
 #       the listing bound (#308 claude F-RS-13, gpt F-RS-19). An empty
 #       CONTENT_REMOTE is the cloud's root, as --use-content-root means it,
 #       not the default (#308 gpt F-RS-20).
+#   C3. cloud_oauth (and cloud_remote), as Python groups in a sandbox with its
+#       own pid and network namespaces: configured only after the remote
+#       answers (PL-048); a dead attempt and a taken port read failed
+#       (PL-050); none of rclone's words or a create's arguments in the log
+#       (PL-074, and cloud_remote's argv); cancel's SIGTERM closes the window
+#       (PL-049); the pad is released before the signed-in marker (PL-018);
+#       session.json written whole; the pointer's hide timeout restored; hat
+#       d-pads; the authorize wait bounded; request, stall and connection
+#       bounds; the LAN bind, beside the offline achievements proxy's
+#       127.0.0.1:8080; a failed remote listing stops a create (#308).
+#   C4. the phone keyboard page's script under node: text typed before the
+#       window opens goes across (PL-016); every named key through one model
+#       (PL-017); untypable characters named; the box masked; a Close page
+#       key (#308).
+#   C5. cloud_device_id heals only once the old id is recorded (#308).
+#   C6. webkitgtk: no MiniBrowser; each patch described and applying (#308).
+#   C7. the owned scripts committed executable (#308).
+#   C8. cloud-signin-window.c: focus_first, the page file, the on-screen
+#       keyboard's reach (#308).
 echo "  C. the cloud sign-in broker and setup (audit #307 stream C)"
 CS="${TMP}/C"; mkdir -p "${CS}/src"
 for rel in cloud_setup cloud_oauth cloud_remote cloud_device_id; do
