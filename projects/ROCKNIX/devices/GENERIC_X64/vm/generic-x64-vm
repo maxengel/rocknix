@@ -10,10 +10,12 @@ import plistlib
 import re
 import shlex
 import shutil
+import socket
 import stat
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 import zipfile
 from pathlib import Path
@@ -141,7 +143,7 @@ def run_paths(args):
     """The files a start makes or replaces: the OVMF vars store, the monitor
     socket, and the serial socket with --headless (None otherwise). The
     socket paths are made absolute but not resolved: a symlink there must
-    be seen as one (claim_socket_path), not followed to whatever it names."""
+    be seen as one (stale_socket), not followed to whatever it names."""
     disk = Path(args.disk).resolve()
     vars_path = (
         Path(args.ovmf_vars).resolve()
@@ -152,31 +154,65 @@ def run_paths(args):
     return vars_path, Path(os.path.abspath(args.monitor)), serial
 
 
-def claim_socket_path(path):
-    """Make way for QEMU to bind a unix socket at path: a stale socket there is
-    removed; anything else -- a disk image given as --monitor, a symlink -- is
-    refused, never deleted."""
+# How long a socket that still answers may take to stop: a guest's QEMU sent
+# SIGTERM a moment ago (vm-pair's down, then up) is let finish closing.
+SOCKET_GRACE_SECONDS = 5.0
+
+
+def socket_answers(path):
+    """Whether something still listens on the unix socket at path -- a running
+    QEMU's monitor or serial console. Only a refused connection says nobody
+    does; a connection, a timeout, a socket of another type or no permission
+    to ask all read as held, so a check that cannot tell refuses."""
+    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    probe.settimeout(1.0)
+    try:
+        probe.connect(os.fspath(path))
+    except (ConnectionRefusedError, FileNotFoundError):
+        return False
+    except OSError:
+        return True
+    finally:
+        probe.close()
+    return True
+
+
+def stale_socket(path):
+    """Whether a start may clear path for a socket QEMU binds: True for a
+    socket nobody listens on (a previous QEMU's), False for nothing there.
+    A symlink, a file that is not a socket -- a disk image given as
+    --monitor -- or a socket a running guest still listens on is refused
+    (ValueError) and left as it is."""
     try:
         mode = os.lstat(path).st_mode
     except FileNotFoundError:
-        return
+        return False
     if stat.S_ISLNK(mode):
         raise ValueError(f"{path} is a symlink; refusing to remove what it points at")
     if not stat.S_ISSOCK(mode):
         raise ValueError(f"{path} exists and is not a socket; refusing to remove it")
-    path.unlink()
+    deadline = time.monotonic() + SOCKET_GRACE_SECONDS
+    while socket_answers(path):
+        if time.monotonic() >= deadline:
+            raise ValueError(
+                f"{path} is a socket a running guest still listens on; stop that "
+                "guest, or give this one another --monitor/--serial"
+            )
+        time.sleep(0.25)
+    return True
 
 
 def prepare_run(profile, args):
     """What a start does before QEMU runs, and only a start: the vars store
     made from its template if the guest has none yet, and the socket paths
-    cleared of a previous QEMU's sockets. qemu-args never calls this -- it
-    prints, and touches nothing."""
+    cleared of a previous QEMU's sockets. Every socket path is checked before
+    any is cleared, so a start refused at one has removed nothing. qemu-args
+    never calls this -- it prints, and touches nothing."""
     vars_path, monitor, serial = run_paths(args)
     _, vars_template = find_ovmf_pair(args.ovmf_code, args.ovmf_vars_template)
-    for sock in (monitor, serial):
-        if sock is not None:
-            claim_socket_path(sock)
+    stale = [sock for sock in (monitor, serial) if sock is not None and stale_socket(sock)]
+    for sock in stale:
+        sock.unlink(missing_ok=True)
     if not vars_path.exists():
         shutil.copyfile(vars_template, vars_path)
 

@@ -10404,6 +10404,48 @@ else
     check 1 "-" "G2-F1-03: 092-retroarch-surface is not in the tree under test -- nothing to grade"
 fi
 
+# F1r-d. The gpt seat's G2-F1-04 (and the claude seat's): a start removed any
+#        socket at its monitor and serial paths, a live guest's included, and
+#        removed the monitor's before it had looked at the serial path. A
+#        socket that still answers a connection is held by a running QEMU
+#        and is refused (after a short grace, for one that is shutting
+#        down); every path is checked before any is removed.
+if [ -n "${F1_QIMG}" ]; then
+    f1r_listen() { # <socket> <stop file>: a running guest's socket -- bound and listening until the stop file appears, 60 s at most
+        python3 -c 'import os, socket, sys, time
+s = socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(8); s.settimeout(0.05); t = time.time()
+while not os.path.exists(sys.argv[2]) and time.time() - t < 60:
+    try:
+        c, _ = s.accept(); c.close()   # as QEMU does: take the connection; the prober hangs up
+    except socket.timeout:
+        pass' "$1" "$2" &
+        F1R_LPID=$!
+        for _ in $(seq 1 100); do [ -S "$1" ] && break; sleep 0.05; done
+    }
+    f1r_answers() { python3 -c 'import socket, sys
+s = socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect(sys.argv[1])' "$1" 2>/dev/null; }
+    rm -f "${F1V}/r-live.sock" "${F1V}/r-live.stop" "${F1V}/qemu.argv"
+    f1r_listen "${F1V}/r-live.sock" "${F1V}/r-live.stop"
+    f1r_answers "${F1V}/r-live.sock"; check $? "the fixture's live socket answers a connection before the start (the probe can see a live guest)" "the fixture's listener at ${F1V}/r-live.sock does not answer -- the case proves nothing"
+    f1_vm run --monitor "${F1V}/r-live.sock" --ovmf-vars "${F1V}/r-vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
+    [ "${F1_RC}" -ne 0 ] && [ -S "${F1V}/r-live.sock" ] && f1r_answers "${F1V}/r-live.sock" && [ ! -e "${F1V}/qemu.argv" ] && grep -q 'r-live.sock' "${F1V}/out"
+    check $? "G2-F1-04: a start refuses a socket a running guest still listens on, names it, and the guest keeps it" "G2-F1-04: run --monitor <a live guest's socket> (rc ${F1_RC}): the socket $([ -S "${F1V}/r-live.sock" ] && echo kept || echo REMOVED), $(f1r_answers "${F1V}/r-live.sock" && echo "still answers" || echo "no longer answers"), QEMU $([ -e "${F1V}/qemu.argv" ] && echo started || echo "not started"); $(head -c 160 "${F1V}/out")"
+    : > "${F1V}/r-live.stop"; wait "${F1R_LPID}" 2>/dev/null; rm -f "${F1V}/r-live.sock" "${F1V}/r-live.stop"
+    # A start refused at its serial path has removed nothing: the monitor
+    # path's stale socket is still there.
+    rm -f "${F1V}/r-mon.sock" "${F1V}/qemu.argv"; f1_sock "${F1V}/r-mon.sock"; echo "a file of somebody's" > "${F1V}/r-serial.txt"
+    f1_vm run --headless --monitor "${F1V}/r-mon.sock" --serial "${F1V}/r-serial.txt" --ovmf-vars "${F1V}/r-vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
+    [ "${F1_RC}" -ne 0 ] && [ -S "${F1V}/r-mon.sock" ] && [ "$(cat "${F1V}/r-serial.txt")" = "a file of somebody's" ] && [ ! -e "${F1V}/qemu.argv" ]
+    check $? "G2-F1-04: a start refused at its serial path removes nothing -- the monitor's stale socket is still there" "G2-F1-04: run --headless --monitor <stale socket> --serial <a file> (rc ${F1_RC}): the monitor socket $([ -S "${F1V}/r-mon.sock" ] && echo kept || echo REMOVED before the refusal), the file '$(cat "${F1V}/r-serial.txt" 2>/dev/null)'"
+    # control: a stale socket (nobody listening) is still cleared, and QEMU starts
+    rm -f "${F1V}/qemu.argv"
+    f1_vm run --monitor "${F1V}/r-mon.sock" --ovmf-vars "${F1V}/r-vars.fd" "${F1_OVMF[@]}" "${F1V}/disk.qcow2"
+    [ "${F1_RC}" -eq 0 ] && [ ! -e "${F1V}/r-mon.sock" ] && [ -s "${F1V}/qemu.argv" ]
+    check $? "G2-F1-04 (control): a socket nobody listens on is still cleared, and QEMU starts" "run --monitor <a stale socket> (rc ${F1_RC}): the socket $([ -e "${F1V}/r-mon.sock" ] && echo LEFT || echo cleared), QEMU $([ -s "${F1V}/qemu.argv" ] && echo started || echo "NOT started"); $(head -c 160 "${F1V}/out")"
+    rm -f "${F1V}/r-mon.sock" "${F1V}/r-serial.txt" "${F1V}/r-vars.fd"
+fi
+
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
