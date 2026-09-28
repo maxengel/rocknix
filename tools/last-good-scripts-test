@@ -3491,4 +3491,27 @@ else
     echo "    SKIP  #308 F-RA-10/15's cases: section t did not run"
 fi
 
+# D10. #308 1-raoffline gpt F-RA-13: the link's return asks whether a game was
+# played since the last attempt (D-RA-035), and a game played in PPSSPP is a
+# game played -- the pass it gates reads PPSSPP's recent list as well as
+# RetroArch's history (the client's load_content_history_paths), and PPSSPP
+# is the toggle's other emulator (D-RA-002). So ppsspp.ini, which PPSSPP
+# writes at every exit and cheevos_ppsspp.sh at every launch, is read beside
+# RetroArch's two history files, the newest winning.
+if [ "${DT_OK}" -eq 1 ]; then
+printf "${DCFG_ON}" > "${TCFG}"; TENV=()
+DPINI="${TS}/.config/ppsspp/PSP/SYSTEM/ppsspp.ini"
+treset; rm -f "${THISTORY}" "${TS}/playlists/builtin/content_history.lpl"; mkdir -p "$(dirname "${DPINI}")"
+printf '[Recent]\nFileName0 = /storage/roms/psp/x.iso\n' > "${DPINI}"
+touch -d '2 hours ago' "${TMARK}"; touch "${DPINI}"; : > "${TR}/probe.log"
+tctl topup
+[ "${RC}" -eq 0 ] && grep -q '^smart budget=' "${TR}/probe.log"; check $? "#308 gpt F-RA-13: a game played in PPSSPP since the mark (ppsspp.ini newer, no RetroArch history) makes the link's return run the recently played pass (rc ${RC})" "#308 gpt F-RA-13: rc ${RC}; probes: $(tr '\n' '|' < "${TR}/probe.log" | cut -c1-120); log: $(tail -n 1 "${TLOG}" | cut -c1-200) -- PPSSPP's play was invisible to the question"
+touch -d '3 hours ago' "${DPINI}"; : > "${TR}/probe.log"; touch -d '2 hours ago' "${TMARK}"
+tctl topup
+[ "${RC}" -eq 0 ] && [ ! -s "${TR}/probe.log" ] && grep -q 'no game played since the last attempt' "${TLOG}"; check $? "#308 gpt F-RA-13: and with ppsspp.ini older than the mark, nothing played: skipped before the probe" "#308 gpt F-RA-13: rc ${RC}; probes: $(tr '\n' '|' < "${TR}/probe.log" | cut -c1-120)"
+rm -rf "${TS}/.config/ppsspp"; touch -d '3 hours ago' "${THISTORY}"
+else
+    echo "    SKIP  #308 F-RA-13's cases: section t did not run"
+fi
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

@@ -823,8 +823,13 @@ slog() {
 # and which the RG35XX SP never had (fork #306: the check read "no game
 # played" at every link for a day). Both are read from retroarch.cfg (~ is
 # /storage) and the newest file wins; a missing file loses to one that
-# exists. RAOFFLINEPROXY_HISTORY overrides both (the scripts suite's
-# fixture).
+# exists. PPSSPP's ppsspp.ini is read beside them: it is the toggle's other
+# emulator (D-RA-002), the recently played pass reads its [Recent] list as
+# well as RetroArch's history (the client's load_content_history_paths), and
+# the file is written at every PPSSPP launch (cheevos_ppsspp.sh) and exit, so
+# a game played in PPSSPP alone is a game played (#308 F-RA-13).
+# RAOFFLINEPROXY_HISTORY overrides them all (the scripts suite's fixture).
+PPSSPP_INI=/storage/.config/ppsspp/PSP/SYSTEM/ppsspp.ini
 history_path() {
     local CFG=/storage/.config/retroarch/retroarch.cfg P D BUILTIN NEWEST=""
     if [ -n "${RAOFFLINEPROXY_HISTORY:-}" ]; then
@@ -837,7 +842,7 @@ history_path() {
     D="$(sed -n 's/^playlist_directory = "\(.*\)"$/\1/p' "${CFG}" 2>/dev/null | head -n 1)"
     case "${D}" in "~/"*) D="/storage/${D#\~/}" ;; esac
     BUILTIN="${D:-/storage/playlists}/builtin/content_history.lpl"
-    for F in "${BUILTIN}" "${P}"; do
+    for F in "${BUILTIN}" "${P}" "${PPSSPP_INI}"; do
         [ -e "${F}" ] || continue
         if [ -z "${NEWEST}" ] || [ "${F}" -nt "${NEWEST}" ]; then NEWEST="${F}"; fi
     done
