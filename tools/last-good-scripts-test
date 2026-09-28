@@ -3400,4 +3400,28 @@ printf '%s\t%s\n' '^copy qa:/GAMES/Content ' 5 > "${MG}/ctl/fail"
 sa_run "${MG}" cloud_migrate_layout --apply
 [ "${RC}" -ne 0 ] && [ "$(mg_ptr CONTENT_REMOTE)" = "/GAMES/Content" ]; check $? "PL-071: a content move that fails ends the run non-zero, with CONTENT_REMOTE where it was (rc ${RC})" "rc ${RC}; CONTENT_REMOTE '$(mg_ptr CONTENT_REMOTE)'; out: $(sa_tail "${MG}") -- main said Done. over migrate_content's failure (F-CS-18)"
 
+# #308 claude F-CS-23: bounded calls, the transfer lock, a content check on
+# a hashless remote, and the exclusion pattern reaching rclone unexpanded.
+mg_seed
+sa_run "${MG}" cloud_migrate_layout --apply
+unbounded=$(grep -vE '^(listremotes|backend features|version)' "${MG}/ctl/argv" | grep -v -- '--low-level-retries' | head -2)
+[ -z "${unbounded}" ] && [ -s "${MG}/ctl/argv" ]; check $? "F-CS-23: every rclone call the migration makes against the cloud carries a bound" "unbounded: ${unbounded:-none} (rclone's defaults: ten low-level retries, three runs)"
+mg_seed
+# The holder execs its sleep, so the pid killed below is the one holding
+# the lock, and no child of it outlives the case with the descriptor.
+( exec 9>"${MG}/varrun/cloud_sync.lock"; flock -x 9; exec sleep 30 ) & mg_holder=$!
+sleep 0.5
+sa_run "${MG}" cloud_migrate_layout --apply
+kill "${mg_holder}" 2>/dev/null; wait "${mg_holder}" 2>/dev/null
+[ "${RC}" -eq 75 ] && [ "$(mg_ptrs)" = "/GAMES /GAMES/backup /GAMES/Content" ]; check $? "F-CS-23: --apply while another cloud transfer holds the lock is skipped (75), nothing moved (rc ${RC})" "rc ${RC}; pointers '$(mg_ptrs)' -- the migration ran beside another writer"
+mg_seed; touch "${MG}/ctl/nohash"
+sa_run "${MG}" cloud_migrate_layout --apply
+grep '^check ' "${MG}/ctl/argv" | grep -q . && ! grep '^check ' "${MG}/ctl/argv" | grep -qv -- '--download'; check $? "F-CS-23: on a remote with no hashes every verification compares content (--download), not sizes" "check calls: $(grep '^check ' "${MG}/ctl/argv" | cut -c1-90 | tr '\n' '|')"
+mg_seed
+rm -rf "${MG}/cloud/GAMES/savefiles" "${MG}/cloud/GAMES/gb"
+mkdir -p "${MG}/cloud/GAMES/saves/savefiles/gb"; echo sa > "${MG}/cloud/GAMES/saves/savefiles/gb/A.srm"
+mkdir -p "${MG}/storage/cwd/saves"; : > "${MG}/storage/cwd/saves/x"
+SA_CWD=/storage/cwd sa_run "${MG}" cloud_migrate_layout --apply
+[ -f "${MG}/cloud/ROCKNIX/Saves/savefiles/gb/A.srm" ] && [ ! -e "${MG}/cloud/ROCKNIX/Saves/saves" ]; check $? "F-CS-23: with a saves/ folder in the working directory the saves subfolder is still found and moved as the saves (rc ${RC})" "under Saves: $(cd "${MG}/cloud" && find ROCKNIX/Saves -type f 2>/dev/null | tr '\n' ' ') -- an unquoted --exclude saves/** was expanded by the shell"
+
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

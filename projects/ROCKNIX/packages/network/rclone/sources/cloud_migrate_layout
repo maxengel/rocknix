@@ -47,6 +47,39 @@ conf_value() {
 # A listing's bound (#143): three low-level retries, the value every other
 # cloud script lists with.
 readonly -a RCLONE_LIST_OPTS=(--contimeout 15s --timeout 30s --low-level-retries 3 --retries 1)
+# Every other call's (#308 claude F-CS-23): RCLONE_NET_OPTS from the conf,
+# or the shipped value when the conf has none -- the bound the transfers
+# carry everywhere else, where this script ran on rclone's own defaults
+# (a 60 s connect, a 5 min idle, ten low-level retries, three runs: the
+# behaviour #101 removed from every other script). Set in main.
+RCLONE_NET_OPTS_FALLBACK="--contimeout 15s --timeout 30s --low-level-retries 10 --retries 1"
+RCLONE_NET_OPTS_ARRAY=()
+# What a verification compares by: size and hash where the remote keeps
+# hashes, the bytes themselves where it keeps none (WebDAV, SFTP, SMB,
+# FTP), where `rclone check` would otherwise compare sizes alone. Set in
+# main from `rclone backend features`; a remote whose features cannot be
+# read is checked by content too.
+CHECK_OPTS=()
+
+# One cloud transfer at a time (F-CS-23): the lock every other cloud script
+# takes, for --apply only -- the check reads and writes nothing, as the
+# match preview does. Without it a startup or game-exit sync could write
+# into the folder this was moving. The same descriptor discipline as the
+# others: the body runs with fd 9 closed, so nothing it starts holds the
+# lock. Exit 75 is the skip EmulationStation names.
+CLOUD_SYNC_LOCK=/var/run/cloud_sync.lock
+take_cloud_lock() {
+    local tries=0
+    exec 9>"${CLOUD_SYNC_LOCK}"
+    while ! flock -n 9; do
+        if [ "${tries}" -ge 4 ]; then
+            echo "Skipped: another cloud sync is already running. Try again when it's done."
+            exit 75
+        fi
+        tries=$((tries + 1))
+        sleep 0.25
+    done
+}
 
 # A cloud that did not answer is not an empty cloud (audit #307 PL-027).
 # Every presence test here used to be `[ -n "$(rclone lsf ... 2>/dev/null |
@@ -207,14 +240,14 @@ relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
     list=$(mktemp /tmp/cloud_migrate_layout.XXXXXX) || { say "Couldn't make a working file on this device; nothing was moved."; return 1; }
     printf '%s\n' "${LISTING}" > "${list}"
     say "Copying ${what}..."
-    if ! out=$(rclone copy "${src}" "${dst}" --files-from-raw "${list}" --create-empty-src-dirs=false 2>&1); then
+    if ! out=$(rclone copy "${src}" "${dst}" --files-from-raw "${list}" --create-empty-src-dirs=false "${RCLONE_NET_OPTS_ARRAY[@]}" 2>&1); then
         printf '%s\n' "${out}" | tail -3
         say "Couldn't finish copying ${what}. Both folders are as they were; nothing was removed."
         rm -f "${list}"
         return 1
     fi
     say "Verifying ${what}..."
-    out=$(rclone check "${src}" "${dst}" --files-from-raw "${list}" --one-way 2>&1)
+    out=$(rclone check "${src}" "${dst}" --files-from-raw "${list}" --one-way "${CHECK_OPTS[@]}" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>&1)
     if ! printf '%s\n' "${out}" | grep -q "0 differences found"; then
         printf '%s\n' "${out}" | grep -iE "differ|missing|error" | head -3
         say "The copy of ${what} didn't match, so the old folder was kept. Both folders are as they were."
@@ -223,7 +256,8 @@ relocate() { # <src> <dst> <what> <pointer key> [filter arguments...]
     fi
     set_pointer "${key}" "${dst#*:}"
     say "Removing the old ${what} folder..."
-    { rclone delete "${src}" --files-from-raw "${list}" && rclone rmdirs "${src}"; } >/dev/null 2>&1 \
+    { rclone delete "${src}" --files-from-raw "${list}" "${RCLONE_NET_OPTS_ARRAY[@]}" \
+        && rclone rmdirs "${src}" "${RCLONE_NET_OPTS_ARRAY[@]}"; } >/dev/null 2>&1 \
         || say "(could not remove the old folder; the copy is complete and verified)"
     rm -f "${list}"
     return 0
@@ -251,7 +285,7 @@ set_pointer() { # <key> <remote path>
 # refusal stands.
 resumable() {
     local src="$1" dst="$2" out
-    out=$(rclone check "${dst}" "${src}" --one-way 2>&1)
+    out=$(rclone check "${dst}" "${src}" --one-way "${CHECK_OPTS[@]}" "${RCLONE_NET_OPTS_ARRAY[@]}" 2>&1)
     printf '%s\n' "${out}" | grep -q "0 differences found"
 }
 
@@ -330,6 +364,14 @@ main() {
     rclone lsd "${remote}" "${RCLONE_LIST_OPTS[@]}" >/dev/null 2>&1; probe_rc=$?
     [ "${probe_rc}" -eq 0 ] || unreadable "${remote}" "${probe_rc}"
 
+    local net_opts
+    net_opts=$(conf_value RCLONE_NET_OPTS | tr -s ' ' | sed 's/^ //; s/ $//')
+    [ -n "${net_opts}" ] || net_opts="${RCLONE_NET_OPTS_FALLBACK}"
+    read -r -a RCLONE_NET_OPTS_ARRAY <<< "${net_opts}"
+    if ! rclone backend features "${remote}" 2>/dev/null | tr -d ' \t\n' | grep -q '"Hashes":\["'; then
+        CHECK_OPTS=(--download)
+    fi
+
     saves=$(conf_value SAVES_REMOTE)
     backups=$(conf_value SETTINGS_REMOTE)
 
@@ -386,11 +428,21 @@ main() {
     # folder itself; a device whose owner has already tidied them into a
     # subfolder is the more useful case to handle, since that is what somebody
     # does after losing files to a mirror.
-    local saves_src="${saves}"
+    local saves_src="${saves}" nested
     # "at the root" must not count the saves subfolder, or a recursive listing
     # finds the files inside it and concludes they were at the root all along
-    # -- which would move the whole folder, backups included, into Saves.
-    if ! has_files "${remote}${saves}/" --exclude '/saves/**' \
+    # -- which would move the whole folder, backups included, into Saves. Nor
+    # the other tiers nested in it: the content folder derived beside the
+    # saves (/GAMES/Content) holds files, and read as "saves at the root" it
+    # sent a tidied saves/ subfolder into Saves/saves/ (found by F-CS-23's
+    # case, a gap in the PL-025 commit).
+    local -a root_nested=()
+    for nested in "${backups}" "${content}"; do
+        case "${nested%/}/" in
+            "${saves%/}/"?*) root_nested+=(--exclude "/${nested#"${saves%/}/"}/**") ;;
+        esac
+    done
+    if ! has_files "${remote}${saves}/" --exclude '/saves/**' "${root_nested[@]}" \
        && has_files "${remote}${saves}/saves/"; then
         saves_src="${saves%/}/saves"
         say "Saves are in ${remote}${saves_src}, not at the root."
@@ -399,7 +451,6 @@ main() {
     # presence test nor its move (PL-025): the settings folder of the
     # original layout (/GAMES/backup) and the content folder derived beside
     # the saves (/GAMES/Content) each move to a place of their own.
-    local nested
     for nested in "${backups}" "${content}"; do
         case "${nested%/}/" in
             "${saves_src%/}/"?*) SAVES_EXCLUDES+=(--exclude "/${nested#"${saves_src%/}/"}/**") ;;
@@ -496,4 +547,5 @@ main() {
     return 0
 }
 
-main "$@"
+[ "${1:-}" = "--apply" ] && take_cloud_lock
+main "$@" 9>&-
