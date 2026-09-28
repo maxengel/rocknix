@@ -49,7 +49,7 @@ log_message() {
 # is the matched line and | ends the expression, so "/R&D/Saves" became
 # garbage and "/a|b" failed the write while OK was printed (audit #307
 # PL-051) -- and a value that would mean something to a shell between double
-# quotes (" $ ` \) is refused where it is typed (saves_folder_problem).
+# quotes (" $ ` \) is refused where it is typed (syncpath_problem).
 #
 # conf_set KEY VALUE [KEY VALUE ...] writes every pair in one pass, each
 # KEY= line replaced (every one, as the sed was) or appended, to a file
@@ -208,30 +208,35 @@ absent_not_broken() {
     return 1
 }
 
-# The saves folder has to sit inside another folder. Its settings backups
-# and games are kept beside it -- <parent>/Backups and <parent>/Content -- and
-# a saves folder at the top of the cloud has no parent to keep them in. The
-# setter used to put them INSIDE it instead (/GAMES/Backups, /GAMES/Content):
-# the nesting a mirror of the saves folder deletes, because to the saves
-# allowlist every file in them is excluded (audit #307 PL-015,
-# rclone-cloud-sync.md). So it is refused where it is typed, with the folder
-# to use instead -- on a bucket remote that is the bucket and a folder in it,
-# which is the shape the bucket message below asks for anyway. Plain string
-# checks, no rclone: they hold with no remote configured at all.
-saves_folder_problem() {
-    local path="/$(echo "$1" | sed 's:^/*::; s:/*$::')"
+# Callers pass the first remote; an empty one stops after the string checks,
+# which hold with no remote configured at all.
+syncpath_problem() {
+    local path="$1" remote="$2" bucket probe
+    path="/$(echo "${path}" | sed 's:^/*::; s:/*$::')"
+
     if [ "${path}" = "/" ]; then
         echo "Your cloud folder can't be empty."
         return 1
     fi
-    # The characters a shell reads inside double quotes, and control
-    # characters: the config is sourced (PL-051, conf_set).
+    # The config is shell, sourced by every cloud script: the characters a
+    # shell reads inside double quotes, and control characters, are refused
+    # where the folder is typed (audit #307 PL-051, conf_set).
     case "${path}" in
         *[\"\$\`\\]*|*[[:cntrl:]]*)
             echo "Your cloud folder's name can't contain \", \$, \`, or \\."
             return 1
             ;;
     esac
+    # The saves folder has to sit inside another folder. Its settings
+    # backups and games are kept beside it -- <parent>/Backups and
+    # <parent>/Content -- and a saves folder at the top of the cloud has no
+    # parent to keep them in. The setter used to put them INSIDE it instead
+    # (/GAMES/Backups, /GAMES/Content): the nesting a mirror of the saves
+    # folder deletes, because to the saves allowlist every file in them is
+    # excluded (audit #307 PL-015, rclone-cloud-sync.md). So it is refused
+    # where it is typed, with the folder to use instead -- on a bucket remote
+    # that is the bucket and a folder in it, the shape the bucket message
+    # below asks for anyway.
     case "${path#/}" in
         */*) ;;
         *)
@@ -240,14 +245,7 @@ saves_folder_problem() {
             return 1
             ;;
     esac
-    return 0
-}
-
-syncpath_problem() {
-    local path="$1" remote="$2" bucket probe
-    path="/$(echo "${path}" | sed 's:^/*::; s:/*$::')"
-
-    saves_folder_problem "${path}" || return 1
+    [ -n "${remote}" ] || return 0
 
     # No provider rules are encoded here on purpose. rclone does not validate
     # bucket names itself - it hands them to the provider and relays the
@@ -447,7 +445,7 @@ case "$1" in
         # delete the archives kept beneath it. The siblings are the saves
         # folder's parent's: <parent>/Backups and <parent>/Content. A saves
         # folder at the top of the cloud has no parent and is refused
-        # (saves_folder_problem) -- it used to adopt the folder itself as the
+        # (syncpath_problem) -- it used to adopt the folder itself as the
         # parent, which nested both inside it (audit #307 PL-015).
         NEWPATH="$2"
         if [ -z "${NEWPATH}" ]; then
@@ -460,14 +458,12 @@ case "$1" in
             echo "ERROR root path not allowed"
             exit 1
         fi
-        # Whatever the remote, a saves folder needs a parent for its
-        # siblings (PL-015) -- checked before, and without, the remote.
-        saves_folder_problem "${NEWPATH}" || exit 1
         # Refuse a path this remote cannot use, rather than storing it and
         # letting the next sync fail with a provider error naming nothing the
-        # player recognises.
+        # player recognises. The string checks -- a parent for the siblings
+        # (PL-015), no shell characters (PL-051) -- hold with no remote.
         SP_REMOTE=$(rclone listremotes 2>/dev/null | head -1)
-        if [ -n "${SP_REMOTE}" ] && ! syncpath_problem "${NEWPATH}" "${SP_REMOTE}"; then
+        if ! syncpath_problem "${NEWPATH}" "${SP_REMOTE}"; then
             exit 1
         fi
         SP_PARENT="$(dirname "${NEWPATH}")"
