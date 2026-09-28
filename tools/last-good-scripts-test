@@ -3063,6 +3063,15 @@ if [ -s /ctl/kill ]; then
         [ "${n}" -eq "${nth}" ] && kill -9 -- "-$(cut -d' ' -f5 /proc/self/stat)"
     done < /ctl/kill
 fi
+if [ -s /ctl/hang ]; then
+    # /ctl/hang ("<ERE><tab><seconds>"): a call that sits silent, as a cloud
+    # that accepts and never answers leaves it -- one process, so whatever
+    # bound ends the call ends it.
+    while IFS=$'\t' read -r pat secs; do
+        [ -n "${pat}" ] || continue
+        printf '%s' "$*" | grep -qE -- "${pat}" && exec sleep "${secs}"
+    done < /ctl/hang
+fi
 if [ -e /ctl/nohash ] && [ "$1" = backend ] && [ "$2" = features ]; then
     printf '{\n\t"Name": "qa",\n\t"Hashes": [],\n\t"Features": {\n\t\t"BucketBased": false\n\t}\n}\n'
     exit 0
@@ -3099,7 +3108,7 @@ sa_new() { # <name>: a fresh fixture directory; its path on stdout
     rm -rf "${d}"; mkdir -p "${d}"/storage/.config/rclone "${d}"/storage/.cache/cloud_sync "${d}"/storage/roms \
         "${d}"/cloud "${d}"/ctl "${d}"/log "${d}"/varrun "${d}"/repo
     printf '[qa]\ntype = alias\nremote = /cloud\n' > "${d}/storage/.config/rclone/rclone.conf"
-    : > "${d}/ctl/argv"; : > "${d}/ctl/fail"; : > "${d}/ctl/kill"; : > "${d}/ctl/post"
+    : > "${d}/ctl/argv"; : > "${d}/ctl/fail"; : > "${d}/ctl/kill"; : > "${d}/ctl/post"; : > "${d}/ctl/hang"
     printf '#!/bin/sh\ncase "$1" in --label) echo QA ;; --previous|--legacy) ;; *) echo QA-deadbeef01 ;; esac\n' > "${d}/repo/cloud_device_id"
     chmod +x "${d}/repo/cloud_device_id"
     printf '%s' "${d}"
@@ -3997,5 +4006,26 @@ sa_run "${OF}" cloud_content_restore gb
 of_stamp=$(cut -d' ' -f2- "${OF}/storage/.cache/cloud_sync/last-content-restore" 2>/dev/null)
 [ "${RC}" -eq 69 ] && [ "${of_stamp}" = 69 ]; check $? "while a run the network ends before any unit completed is still the skip: a bare 69 (rc ${RC}, stamp ${of_stamp:-none})" "rc ${RC}; stamp '${of_stamp:-none}'"
 rm -f "${OF}/ctl/noroute" "${OF}/ctl/noping"; : > "${OF}/ctl/fail"
+
+# A29. #308 gpt F-CS-34 (fixed in part -- see the report): an automatic
+#      run's ceiling covers every call it makes. The reachability probe of a
+#      --system-only run is made after the deadline is set, not before; and
+#      once the deadline has passed, a call is not made at all (124), where
+#      each one used to be given another second and three to die in.
+echo "    A29. #308 gpt F-CS-34: the automatic ceiling covers the probe, and nothing runs past it"
+CE=$(sa_new gcs34); sa_script "${CE}" cloud_backup cloud_saves_root
+cp "${PR}/storage/.config/cloud_sync.conf" "${PR}/storage/.config/cloud_sync-rules.txt" "${CE}/storage/.config/"
+printf 'SYNC_CEILING_SECONDS=3\nRCLONE_SYNC_NET_OPTS="--contimeout 5s --timeout 5s --retries 1 --max-duration 90s --low-level-retries 5 --transfers 1"\n' >> "${CE}/storage/.config/cloud_sync.conf"
+mkdir -p "${CE}/storage/roms/gb"; echo s > "${CE}/storage/roms/gb/A.srm"
+printf '%s\t%s\n' '^lsd qa: ' 30 > "${CE}/ctl/hang"
+sa_run "${CE}" cloud_backup --yes --automatic --system-only
+[ "${DT}" -le 12 ] && [ "${RC}" -ne 0 ]; check $? "an automatic --system-only run whose reachability probe hangs ends at the conf's 3 s ceiling (${DT}s, rc ${RC})" "took ${DT}s (rc ${RC}) -- the probe ran before load_config set the deadline, bounded only by its own 20 s timeout or the hang"
+: > "${CE}/ctl/hang"; : > "${CE}/ctl/argv"
+printf '%s\t%s\n' '^copy ' 10 > "${CE}/ctl/hang"
+sa_run "${CE}" cloud_backup --yes --automatic --saves-only
+: > "${CE}/ctl/hang"
+ce_after=$(awk '/^copy /{c=1; next} c' "${CE}/ctl/argv" | grep -c .)
+[ "${RC}" -ne 0 ] && [ "${ce_after}" -eq 0 ]; check $? "after the ceiling ends the saves copy, no further rclone call is started (${ce_after} after it, rc ${RC}, ${DT}s)" "${ce_after} call(s) after the copy the ceiling ended: $(awk '/^copy /{c=1; next} c' "${CE}/ctl/argv" | cut -c1-50 | tr '\n' '|') -- each was given a second more"
+grep -qx ">>> why THE CLOUD TOOK TOO LONG - IT'LL TRY AGAIN NEXT TIME" "${CE}/out"; check $? "and the why is the ceiling's own, not a probe's guess at the network" "why: $(grep '^>>> why' "${CE}/out" | head -1)"
 
 if [ "${FAIL}" -eq 0 ]; then echo "PASSED"; exit 0; else echo "${FAIL} CHECK(S) FAILED"; exit 1; fi

@@ -324,7 +324,15 @@ rclone() {
     if [ "${AUTOMATIC}" -eq 1 ]; then
         if [ "${SYNC_DEADLINE}" -gt 0 ]; then
             local left=$(( SYNC_DEADLINE - $(date +%s) ))
-            [ "${left}" -ge 1 ] || left=1
+            # Past the ceiling nothing more is started (#308 gpt F-CS-34): each
+            # call used to be given a second more and three to die in, so a
+            # run that met its ceiling went on for as many seconds again as it
+            # had calls left -- the probe that words the failure, the tidy.
+            # The call's answer is the ceiling's own, 124.
+            if [ "${left}" -lt 1 ]; then
+                log_message "rclone $1 not started: the automatic ceiling had passed" "false"
+                return 124
+            fi
             command timeout -k 3 "${left}" rclone "$@" "${RCLONE_SYNC_NET_OPTS_ARRAY[@]}"
         else
             command rclone "$@"
@@ -968,6 +976,14 @@ network_lost_during_run() {
         log_message "the network went away during ${what} (rclone exit ${rc}): no default route now" "false" "ERROR"
         log_message "Couldn't finish: lost the network during ${what}. Try again when you're online." "true" "ERROR"
         clean_exit "${EXIT_NO_NETWORK}"
+    fi
+    # An automatic run its ceiling ended (124, or rclone's own 10 for
+    # --max-duration) has no time left to probe with -- the wrapper starts
+    # nothing past the deadline (#308 gpt F-CS-34) -- and the true answer is
+    # the ceiling's: why_for says THE CLOUD TOOK TOO LONG.
+    if [ "${AUTOMATIC}" -eq 1 ] && { [ "${rc}" = 124 ] || [ "${rc}" = 10 ]; }; then
+        log_message "${what} was ended by the automatic ceiling (rclone exit ${rc}); reporting that" "false"
+        return 0
     fi
     if rclone lsd "${REMOTENAME}" "${RCLONE_PROBE_OPTS[@]}" >/dev/null 2>&1; then
         log_message "${what} failed (rclone exit ${rc}) but ${REMOTENAME} answers now; reporting rclone's own result" "false"
@@ -1948,12 +1964,13 @@ restore_system_files() {
 main() {
     check_network_link
     check_rclone_config
+    load_config
     # restore_game_saves proves the remote reachable with the listing it
     # needs anyway, and network_lost_during_run words a failure there; only
     # the settings-only path has no such step of its own -- cloud_backup's
-    # shape (#308 claude F-CS-04), one remote round trip fewer per run.
+    # shape (#308 claude F-CS-04), one remote round trip fewer per run. After
+    # load_config, which sets an automatic run's deadline (#308 gpt F-CS-34).
     [ "${SYSTEM_ONLY}" -eq 1 ] && check_internet
-    load_config
     
     # Define locations for source and remote
     # Note: This assumes at least one remote is configured and the first one should be used
