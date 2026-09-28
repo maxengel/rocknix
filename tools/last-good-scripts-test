@@ -4445,10 +4445,13 @@ c1 --set-saves-remote '/x$(touch /storage/ran)/Saves'
 [ "${RC}" -ne 0 ] && cmp -s "${CONF1}" "${C1}/conf.before" && grep -q "can't contain" "${C1}/out"; check $? "a name that would run as a command when the config is sourced is refused, config untouched: $(head -1 "${C1}/out")" "rc ${RC}; config: $(conf1); said: $(head -1 "${C1}/out")"
 c1 --info
 [ ! -e "${C1}/storage/ran" ]; check $? "and nothing ran" "a command in the folder name ran when --info sourced the config"
-# A config an earlier build wrote with such a value: --info reads it as text.
+# A config an earlier build wrote with such a value: --info runs nothing in
+# it, and names no folder for it -- the sync refuses that config
+# (D-CLOUD-142), so it is not a folder anything uses; it used to be read out
+# as text (the audit of the fix round, gpt G2-C-01, CF2 below).
 sed -i 's|^SAVES_REMOTE=.*|SAVES_REMOTE="/y$(touch /storage/ran)/Saves"|' "${CONF1}"
 c1 --info
-[ ! -e "${C1}/storage/ran" ] && grep -qF 'SAVES_REMOTE=/y$(touch /storage/ran)/Saves' "${C1}/out"; check $? "--info reads an already-written value as text and runs nothing in it" "ran: $([ -e "${C1}/storage/ran" ] && echo yes || echo no); --info said: $(grep '^SAVES_REMOTE=' "${C1}/out")"
+[ ! -e "${C1}/storage/ran" ] && grep -qx 'SAVES_REMOTE=' "${C1}/out"; check $? "--info runs nothing in an already-written value and names no folder for it" "ran: $([ -e "${C1}/storage/ran" ] && echo yes || echo no); --info said: $(grep '^SAVES_REMOTE=' "${C1}/out")"
 c1 --seed-folders
 [ ! -e "${C1}/storage/ran" ]; check $? "and so does --seed-folders, which used to eval the config's lines" "--seed-folders ran the command in an already-written SAVES_REMOTE (eval of the config)"
 # G-C-05 (claude): and every other reader of the config. A guard: no
@@ -4471,14 +4474,17 @@ C1RO=1 c1 --use-content-root
 # system" -- ahead of the sentence.
 C1RO=1 c1 --set-saves-remote /Other/Saves
 [ "$(cat "${C1}/out")" = "Your cloud sync settings couldn't be saved." ]; check $? "a write that fails prints its one sentence and no shell diagnostic" "read-only /storage printed: '$(tr '\n' '|' < "${C1}/out" | cut -c1-200)' (G-C-07)"
-# G-C-03 (gpt) and G-C-06 (claude): cloud_setup reads the config as a
-# sourcing script would, minus the running: the LAST assignment of a key
-# wins, and a value may be double-quoted, single-quoted or bare with a
-# trailing comment. The first reader took the first line and only "...".
+# G-C-03 (gpt) and G-C-06 (claude): cloud_setup reads the config as the
+# scripts that run with it read it, minus the running: a value may be
+# double-quoted, single-quoted or bare with a trailing comment. The first
+# reader took only "...". Of a key assigned twice, the FIRST assignment
+# wins: that is what the duplicate cleanup keeps under every --yes run and
+# what the content scripts read; this check said the last until the audit
+# of the fix round reversed it (PL-021, CF2 below).
 cp "${ROOT}/${RCLONE_REL}/cloud_sync.conf" "${CONF1}"
 printf 'SAVES_REMOTE="/Mine/Saves"\n' >> "${CONF1}"
 c1 --info
-grep -qx 'SAVES_REMOTE=/Mine/Saves' "${C1}/out"; check $? "a key assigned twice reads as its last assignment, as the scripts that source the config read it" "SAVES_REMOTE assigned twice, --info said: $(grep '^SAVES_REMOTE=' "${C1}/out") (G-C-03)"
+grep -qx 'SAVES_REMOTE=/ROCKNIX/Saves' "${C1}/out"; check $? "a key assigned twice reads as its first assignment, the one the scripts run with after the duplicate cleanup (PL-021)" "SAVES_REMOTE assigned twice, --info said: $(grep '^SAVES_REMOTE=' "${C1}/out") (PL-021)"
 sed -i "s|^SAVES_REMOTE=.*|SAVES_REMOTE='/Q/Saves'|" "${CONF1}"
 c1 --info
 grep -qx 'SAVES_REMOTE=/Q/Saves' "${C1}/out"; check $? "a single-quoted value reads without its quotes" "SAVES_REMOTE='/Q/Saves', --info said: $(grep '^SAVES_REMOTE=' "${C1}/out") (G-C-03)"
@@ -10445,6 +10451,804 @@ s = socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect(sys.argv[1])' "$1"
     rm -f "${F1V}/r-mon.sock" "${F1V}/r-serial.txt" "${F1V}/r-vars.fd"
 fi
 
+
+# ---- audit #307, stream C ---- the audit of the fix round (D-WORKFLOW-060)
+# The fix round's own audit read stream C's first delivery; its findings in
+# stream C's files are graded here, a section each (CF1, CF2, ...), the item
+# named in every check. Each check was written before its fix and seen to
+# FAIL against the script it grades; one that passes on the old script too
+# says "(a control)" -- it fences the fix's own shape (a legitimate folder
+# still accepted, a success that owns the state still published) and is
+# not evidence the fix was needed. The FAIL lines are in the commits.
+echo "  CF. the audit of the fix round, stream C (D-WORKFLOW-060)"
+CF="${TMP}/CF"; mkdir -p "${CF}/src"
+# A file the tree may not have yet (cloud_log_scrub before PL-014) is absent
+# here, and the checks that need it fail; src_of would end the run.
+cf_src() { # <file in the rclone package>
+    if [ "${OLD}" -eq 1 ]; then
+        git -C "${ROOT}" cat-file -e "${BASE_REF}:${RCLONE_REL}/$1" 2>/dev/null || return 0
+    else
+        [ -e "${ROOT}/${RCLONE_REL}/$1" ] || return 0
+    fi
+    src_of "${RCLONE_REL}/$1" "${CF}/src/$1"
+}
+for f in cloud_setup cloud_oauth cloud_log_scrub cloud_content_backup cloud_sync_cleanup_duplicates.sh cloud_backup cloud_sync.conf; do cf_src "${f}"; done
+CFBB=(); CFPATH="/shim:/usr/bin:/bin"
+if [ -n "${BB}" ]; then CFBB=(--ro-bind "${TMP}/bbin" /bbin --ro-bind "${BB_HOST}" "${BB}"); CFPATH="/shim:/bbin:/usr/bin:/bin"; fi
+
+# cloud_setup whole inside bwrap for CF1 and CF2, as C1 runs it: a stub
+# profile, the shipped config as the device's, a shim rclone whose remote "qa:" is
+# path-based and empty, every call it gets written down.
+CF1="${CF}/1"; mkdir -p "${CF1}/shim" "${CF1}/repo" "${CF1}/storage/.config"
+cp "${CF}/src/cloud_setup" "${CF1}/repo/cloud_setup"
+printf 'export PATH=%s\n' "${CFPATH}" > "${CF1}/profile"
+printf '#!/bin/sh\nexit 0\n' > "${CF1}/shim/logger"
+cat > "${CF1}/shim/rclone" <<'EOR'
+#!/bin/sh
+echo "$*" >> /storage/rclone-calls
+case "$1" in
+  listremotes) [ -e /storage/no-remote ] || echo "qa:" ;;
+  lsd) echo 'ERROR : directory not found' >&2; exit 3 ;;
+  backend) printf '{\n\t"Features": {\n\t\t"BucketBased": false\n\t}\n}\n' ;;
+  *) exit 0 ;;
+esac
+EOR
+chmod +x "${CF1}/shim"/*
+CFCONF="${CF1}/storage/.config/cloud_sync.conf"
+cf1() { # <args...>: cloud_setup in the sandbox; output to CF1/out, rc in RC
+    RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --ro-bind "${CF1}/profile" /etc/profile "${CFBB[@]}" \
+        --ro-bind "${CF1}/shim" /shim --ro-bind "${CF1}/repo" /repo --bind "${CF1}/storage" /storage \
+        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --dir /var/log \
+        bash /repo/cloud_setup "$@" > "${CF1}/out" 2>&1; echo $? ) 2>/dev/null )
+}
+cfconf() { grep -E '^(SAVES|SETTINGS|CONTENT)_REMOTE=' "${CFCONF}" | tr '\n' ' '; }
+cfsaid() { tr '\n' ' ' < "${CF1}/out" | cut -c1-180; }
+# CF1. PL-009 (gpt G2-C-04): a cloud folder with an empty, . or .. part is
+# refused before any check reads the text -- /Mine/Backups/. is
+# /Mine/Backups, whose siblings dirname put inside it -- with the folder the
+# path would have meant; a part that only starts with a dot is a folder.
+cp "${CF}/src/cloud_sync.conf" "${CF1}/conf.before"
+for remote in yes no; do
+    if [ "${remote}" = no ]; then : > "${CF1}/storage/no-remote"; else rm -f "${CF1}/storage/no-remote"; fi
+    cp "${CF1}/conf.before" "${CFCONF}"
+    cf1 --set-saves-remote /Mine/Backups/.
+    [ "${RC}" -ne 0 ] && cmp -s "${CFCONF}" "${CF1}/conf.before" && grep -qx 'Try /Mine/Saves.' "${CF1}/out"; check $? "PL-009: the seat's /Mine/Backups/. is refused (a remote configured: ${remote}), the config untouched, with the folder to use: $(head -1 "${CF1}/out")" "PL-009 (a remote configured: ${remote}): --set-saves-remote /Mine/Backups/. rc ${RC}; config: $(cfconf)-- the settings and content folders inside the saves folder; said: $(cfsaid)"
+done
+rm -f "${CF1}/storage/no-remote"
+cf1 --check-syncpath /Mine/Backups/.
+[ "${RC}" -ne 0 ] && grep -qx 'Try /Mine/Saves.' "${CF1}/out"; check $? "PL-009: --check-syncpath refuses it too, where the folder is typed" "PL-009: --check-syncpath /Mine/Backups/.: rc ${RC}; said: $(cfsaid)"
+for pair in '/Mine/./Saves|/Mine/Saves' '/Mine//Saves|/Mine/Saves' '/Mine/Saves/..|/Mine/Saves' '/a/b/../Content|/a/Saves'; do
+    p="${pair%%|*}"; want="${pair#*|}"
+    cp "${CF1}/conf.before" "${CFCONF}"
+    cf1 --set-saves-remote "${p}"
+    [ "${RC}" -ne 0 ] && cmp -s "${CFCONF}" "${CF1}/conf.before" && grep -qx "Try ${want}." "${CF1}/out"; check $? "PL-009: ${p} is refused, the folder offered ${want}" "PL-009: --set-saves-remote ${p}: rc ${RC}; config: $(cfconf); said: $(cfsaid)"
+done
+cp "${CF1}/conf.before" "${CFCONF}"
+cf1 --set-saves-remote /.
+[ "${RC}" -ne 0 ] && cmp -s "${CFCONF}" "${CF1}/conf.before" && grep -qx "Your cloud folder can't be empty." "${CF1}/out"; check $? "PL-009: /. names no folder at all, and is refused as empty" "PL-009: --set-saves-remote /.: rc ${RC}; config: $(cfconf); said: $(cfsaid)"
+# (a control) a part that only starts with a dot is a folder's name.
+for p in /Mine/.hidden/Saves /Mine/..x/Saves; do
+    cp "${CF1}/conf.before" "${CFCONF}"
+    cf1 --set-saves-remote "${p}"
+    [ "${RC}" -eq 0 ] && [ "$(cfconf)" = "SAVES_REMOTE=\"${p}\" SETTINGS_REMOTE=\"${p%/*}/Backups\" CONTENT_REMOTE=\"${p%/*}/Content\" " ]; check $? "PL-009 (a control): ${p} is a folder like any other, stored with its siblings beside it" "PL-009: ${p} was refused or stored wrong: rc ${RC}; config: $(cfconf); said: $(cfsaid)"
+done
+
+# CF2. PL-021: cloud_setup reads a key's FIRST assignment, the one the
+# duplicate cleanup keeps and the content scripts read. The config's
+# readers, each as it runs: cloud_setup whole (--info, --content-location,
+# --seed-folders, --check-syncpath) in CF1's sandbox; the saves scripts,
+# which run the duplicate cleanup under --yes and then source what it
+# leaves; and the content scripts' conf_get, lifted from
+# cloud_content_backup and pointed at the fixture.
+CF2="${CF}/2"; mkdir -p "${CF2}"
+cfget() { # <lifted conf_get file> <config> <key>: the value in GVAL, the rc in GRC (never in a subshell)
+    PATH="${TMP}/bbin:${PATH}" SYNC_CONF="$2" bash -c '. "$1"; conf_get "$2"' _ "$1" "$3" > "${CF2}/val"; GRC=$?
+    GVAL=$(cat "${CF2}/val")
+}
+sed -n '/^conf_get() {/,/^}/p' "${CF}/src/cloud_setup" > "${CF2}/setup_get.sh"
+cp "${CF}/src/cloud_sync.conf" "${CFCONF}"
+printf 'SAVES_REMOTE="/Second/Saves"\nCONTENT_REMOTE="/Second/Content"\n' >> "${CFCONF}"
+cp "${CFCONF}" "${CF2}/dup.conf"
+sed -n '/^conf_get() {/,/^}/p' "${CF}/src/cloud_content_backup" | sed "s#/storage/.config/cloud_sync.conf#${CF2}/dup.conf#g" > "${CF2}/content_get.sh"
+cf1 --info; cf_info=$(sed -n 's/^SAVES_REMOTE=//p' "${CF1}/out")
+cf1 --content-location; cf_loc=$(sed -n 's/^CONTENT_REMOTE=//p' "${CF1}/out")
+cp "${CF2}/dup.conf" "${CF2}/cleaned.conf"
+PATH="${TMP}/bbin:${PATH}" bash "${CF}/src/cloud_sync_cleanup_duplicates.sh" "${CF2}/cleaned.conf" >/dev/null 2>&1
+cf_run=$(bash -c 'source "$1" >/dev/null 2>&1; printf "%s|%s" "${SAVES_REMOTE}" "${CONTENT_REMOTE}"' _ "${CF2}/cleaned.conf")
+cfget "${CF2}/content_get.sh" /unused CONTENT_REMOTE; cf_content="${GVAL}"
+[ "${cf_info}" = "/ROCKNIX/Saves" ] && [ "${cf_run%%|*}" = "/ROCKNIX/Saves" ]; check $? "PL-021: with SAVES_REMOTE written twice, the hub's line (--info) names the folder the saves scripts use after the cleanup: ${cf_info}" "PL-021: --info names '${cf_info}', the saves scripts after the cleanup '${cf_run%%|*}' -- two readers of one file, two folders"
+[ "${cf_loc}" = "/ROCKNIX/Content" ] && [ "${cf_run#*|}" = "/ROCKNIX/Content" ] && [ "${cf_content}" = "/ROCKNIX/Content" ]; check $? "PL-021: and --content-location, the cleaned config and the content scripts agree on CONTENT_REMOTE: ${cf_loc}" "PL-021: CONTENT_REMOTE is '${cf_loc}' to --content-location, '${cf_run#*|}' after the cleanup, '${cf_content}' to the content scripts"
+# CF2, gpt G2-C-01: a value in a form the scripts refuse. conf_valid
+# (cloud_backup's gate) refuses the file and the content scripts' reader
+# exits 2; cloud_setup read /Mine/'My as the folder.
+cp "${CF}/src/cloud_sync.conf" "${CFCONF}"
+sed -i "s|^SAVES_REMOTE=.*|SAVES_REMOTE=/Mine/'My Saves'|" "${CFCONF}"
+cp "${CFCONF}" "${CF2}/mixed.conf"
+sed -n '/^conf_valid() {/,/^}/p' "${CF}/src/cloud_backup" > "${CF2}/conf_valid.sh"
+PATH="${TMP}/bbin:${PATH}" bash -c '. "$1"; conf_valid "$2"' _ "${CF2}/conf_valid.sh" "${CF2}/mixed.conf" >/dev/null 2>&1; cf_valid=$?
+sed -n '/^conf_get() {/,/^}/p' "${CF}/src/cloud_content_backup" | sed "s#/storage/.config/cloud_sync.conf#${CF2}/mixed.conf#g" > "${CF2}/content_get_mixed.sh"
+cfget "${CF2}/content_get_mixed.sh" /unused SAVES_REMOTE; cf_crc=${GRC}
+[ "${cf_valid}" -ne 0 ] && [ "${cf_crc}" -eq 2 ]; check $? "gpt G2-C-01 (a control): the scripts' own readers refuse SAVES_REMOTE=/Mine/'My Saves' (conf_valid rc ${cf_valid}, the content reader rc ${cf_crc})" "gpt G2-C-01: the fixture is not the case: conf_valid rc ${cf_valid}, content reader rc ${cf_crc}"
+cf1 --info
+grep -qx 'SAVES_REMOTE=' "${CF1}/out"; check $? "gpt G2-C-01: --info names no folder for it, rather than /Mine/'My" "gpt G2-C-01: --info said $(grep '^SAVES_REMOTE=' "${CF1}/out") -- a folder no script would use"
+: > "${CF1}/storage/rclone-calls"
+cf1 --seed-folders
+[ "${RC}" -ne 0 ] && ! grep -q '^mkdir' "${CF1}/storage/rclone-calls" && ! grep -q '^OK ' "${CF1}/out"; check $? "gpt G2-C-01: --seed-folders writes nothing to the cloud on a folder it cannot read (rc ${RC}): $(head -1 "${CF1}/out")" "gpt G2-C-01: --seed-folders rc ${RC}; rclone mkdir calls: $(grep '^mkdir' "${CF1}/storage/rclone-calls" | head -2 | tr '\n' '|'); said: $(cfsaid)"
+cf1 --check-syncpath
+[ "${RC}" -ne 0 ] && grep -q "couldn't be read" "${CF1}/out"; check $? "gpt G2-C-01: --check-syncpath of the stored folder says the settings couldn't be read (rc ${RC})" "gpt G2-C-01: --check-syncpath rc ${RC}; said: $(cfsaid)"
+# And the two text readers agree form by form: the same value, or both
+# refuse (exit 2).
+cf_forms=""
+while IFS= read -r form; do
+    printf 'SAVES_REMOTE=%s\n' "${form}" > "${CF2}/form.conf"
+    sed -n '/^conf_get() {/,/^}/p' "${CF}/src/cloud_content_backup" | sed "s#/storage/.config/cloud_sync.conf#${CF2}/form.conf#g" > "${CF2}/content_get_form.sh"
+    cfget "${CF2}/setup_get.sh" "${CF2}/form.conf" SAVES_REMOTE; a="${GVAL}"; ra=${GRC}
+    cfget "${CF2}/content_get_form.sh" /unused SAVES_REMOTE; b="${GVAL}"; rb=${GRC}
+    [ "${ra}:${a}" = "${rb}:${b}" ] || cf_forms="${cf_forms}[${form} -- cloud_setup ${ra}:'${a}', the content scripts ${rb}:'${b}'] "
+done <<'EOF'
+"/A B/Saves"
+'/A B/Saves'
+/A/Saves
+/A/Saves   # a note
+"/A/Saves" # a note
+""
+"/A$HOME/Saves"
+/A/'B C'
+"/A/Saves"x
+EOF
+[ -z "${cf_forms}" ]; check $? "gpt G2-C-01: cloud_setup and the content scripts read nine value forms alike, refusals included" "gpt G2-C-01: the readers disagree: ${cf_forms}"
+
+# CF3. cloud_log_scrub whole, in a sandbox over a fake /storage whose
+# .cache/log holds what earlier builds left there: cloud_remote's failure
+# lines with every argument the player typed in them (the build before
+# e2d45ec7ec), cloud_oauth's with rclone's words, a trim's leftover copy and
+# a rotated one, beside lines that must come through byte for byte. The
+# functions file is 001-functions' redact_credentials lifted as section r
+# lifts it, or a file without it. The planted values are built here, never
+# written as literals (the hooks' rule for scanner fixtures).
+CF3="${CF}/3"; mkdir -p "${CF3}/repo" "${CF3}/fn"
+[ -e "${CF}/src/cloud_log_scrub" ] && cp "${CF}/src/cloud_log_scrub" "${CF3}/repo/"
+sed -n '/^function redact_credentials() {/,/^}/p' "${FN}" > "${CF3}/fn/with"
+printf '# no credential filter here\n' > "${CF3}/fn/without"
+cf3() { # <functions file>: the scrub in its sandbox; output to CF3/out, rc in RC
+    RC=$( ( bwrap --die-with-parent --tmpfs / --ro-bind /usr /usr \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --ro-bind /etc /etc --tmpfs /etc/profile.d --ro-bind "$1" /etc/profile.d/001-functions "${CFBB[@]}" \
+        --ro-bind "${CF3}/repo" /repo --bind "${CF3}/storage" /storage \
+        --dev /dev --proc /proc --tmpfs /tmp --tmpfs /var --dir /var/log \
+        env PATH="${CFPATH}" bash /repo/cloud_log_scrub > "${CF3}/out" 2>&1; echo $? ) 2>/dev/null )
+}
+CFP="PLANT"; cfv() { printf '%s%s%s' "${CFP}" "$1" "$2"; }   # a planted value: PLANT<name><n>
+CFL="${CF3}/storage/.cache/log"
+cf3_plant() { # the log as an earlier build left it, and CF3/want as the scrub must leave it
+    rm -rf "${CF3}/storage" "${CF3}/want"; mkdir -p "${CFL}" "${CF3}/want"
+    local r="[2026-09-20 10:00:0" q='"'
+    {
+        printf '%s0] [INFO] [cloud_remote] creating remote qa (type webdav) with 3 option(s)\n' "${r}"
+        printf '%s1] [INFO] [cloud_remote] rclone config create qa webdav url=https://dav.example user=me pass=%s --non-interactive --obscure failed (1): Failed to create remote: bad option pass=%s\n' "${r}" "$(cfv pw 71)" "$(cfv pw 71)"
+        printf '%s2] [INFO] [cloud_remote] rclone config create qb b2 account=%s key=%s --non-interactive --obscure failed (1): Failed to create file system: 401 bad_auth_token\n' "${r}" "$(cfv acct 72)" "$(cfv b2key 73)"
+        printf '%s3] [INFO] [cloud_remote] rclone config create qs s3 provider=Minio access_key_id=%s secret_access_key=%s endpoint=http://10.0.2.2:9012 --non-interactive --obscure failed (1): SignatureDoesNotMatch\n' "${r}" "$(cfv akid 74)" "$(cfv sak 75)"
+        printf '%s4] [INFO] [cloud_oauth] could not finish the sign-in: Failed to create: bad token={%saccess_token%s:%s%s%s,%srefresh_token%s:%s%s%s,%sexpiry%s:%s2026-\n' "${r}" "${q}" "${q}" "${q}" "$(cfv at 76)" "${q}" "${q}" "${q}" "${q}" "$(cfv rt 77)" "${q}" "${q}" "${q}" "${q}"
+        printf '%s5] [INFO] [cloud_backup] Game saves: COMPLETED\n' "${r}"
+    } > "${CFL}/cloud_sync.log"
+    {
+        printf '%s0] [INFO] [cloud_remote] creating remote qa (type webdav) with 3 option(s)\n' "${r}"
+        printf '%s1] [INFO] [cloud_remote] rclone config create failed (1)\n' "${r}"
+        printf '%s2] [INFO] [cloud_remote] rclone config create failed (1)\n' "${r}"
+        printf '%s3] [INFO] [cloud_remote] rclone config create failed (1)\n' "${r}"
+        printf '%s4] [INFO] [cloud_oauth] could not finish the sign-in: <redacted>\n' "${r}"
+        printf '%s5] [INFO] [cloud_backup] Game saves: COMPLETED\n' "${r}"
+    } > "${CF3}/want/cloud_sync.log"
+    # Lines no earlier build wrote a credential into: through byte for byte.
+    local keep
+    keep=$(
+        printf '%s6] [INFO] [cloud_oauth] could not finish the sign-in: a remote called %sqa%s already exists\n' "${r}" "'" "'"
+        printf '%s7] [INFO] [cloud_oauth] could not finish the sign-in: The sign-in worked, but it couldn%st be saved on your handheld.\n' "${r}" "'"
+        printf '%s8] [INFO] [cloud_remote] rclone lsd failed (3)\n' "${r}"
+        printf '2026/09/20 10:00:09 INFO  : savefiles/Mario (USA).srm: Copied (new)\n'
+        printf '[2026-09-20 10:00:10] [INFO] [cloud_backup] the check passed: 3 files, 0 differences\n'
+        printf '[2026-09-20 10:00:11] [INFO] [cloud_oauth] typed 12 characters + enter\n'
+    )
+    printf '%s\n' "${keep}" >> "${CFL}/cloud_sync.log"; printf '%s\n' "${keep}" >> "${CF3}/want/cloud_sync.log"
+    # A trim cut off before its rename left this; a rotation ends mid-line.
+    printf '%s1] [INFO] [cloud_remote] rclone config create qa webdav pass=%s --non-interactive --obscure failed (1): bad\n' "${r}" "$(cfv pw 78)" > "${CFL}/cloud_sync.log.tmp"
+    printf '%s1] [INFO] [cloud_remote] rclone config create failed (1)\n' "${r}" > "${CF3}/want/cloud_sync.log.tmp"
+    printf '%s1] [INFO] [cloud_remote] rclone config create qa sftp host=nas pass=%s key_file_pass=%s' "${r}" "$(cfv pw 79)" "$(cfv kfp 80)" > "${CFL}/cloud_sync.log.1"
+    printf '%s1] [INFO] [cloud_remote] rclone config create qa sftp host=<redacted> pass=<redacted> key_file_pass=<redacted>' "${r}" > "${CF3}/want/cloud_sync.log.1"
+    # Not the cloud log: left alone.
+    printf 'boot line pass=%s\n' "$(cfv pw 81)" > "${CFL}/boot.log"; cp "${CFL}/boot.log" "${CF3}/want/boot.log"
+}
+cf3_left() { cat "${CFL}"/cloud_sync.log* 2>/dev/null | grep -o "${CFP}[a-z0-9]*" | sort -u | tr '\n' ' '; }
+cf3_same() { # every file under the log folder is what CF3/want says
+    local f bad=""
+    for f in "${CF3}"/want/*; do cmp -s "${f}" "${CFL}/${f##*/}" || bad="${bad}${f##*/} "; done
+    [ "$(ls -A "${CFL}" | sort | tr '\n' ' ')" = "$(ls -A "${CF3}/want" | sort | tr '\n' ' ')" ] || bad="${bad}[the folder holds: $(ls -A "${CFL}" | tr '\n' ' ')]"
+    printf '%s' "${bad}"
+}
+CFSTAMP="${CF3}/storage/.cache/cloud_sync/log-scrubbed"
+cf3_plant; cf3 "${CF3}/fn/with"
+cf_bad=$(cf3_same)
+[ "${RC}" -eq 0 ] && [ -z "$(cf3_left)" ]; check $? "PL-014: the scrub leaves no planted credential in cloud_sync.log, its trim leftover or its rotation (rc ${RC})" "PL-014: rc ${RC}; still in the cloud log: $(cf3_left); said: $(tr '\n' ' ' < "${CF3}/out" | cut -c1-160)"
+[ -z "${cf_bad}" ]; check $? "PL-014: an old cloud_remote line now reads as this build writes it (rclone config create failed (1)), rclone's words after cloud_oauth's are <redacted>, every other line is byte for byte as it was, and boot.log is untouched" "PL-014: files not as they should be: ${cf_bad:-none} -- $(diff "${CF3}/want/cloud_sync.log" "${CFL}/cloud_sync.log" 2>&1 | grep '^[<>]' | head -4 | cut -c1-140 | tr '\n' '|')"
+grep -qE '^scrubbed=[0-9]+ files=3 lines=[0-9]+$' "${CFSTAMP}" 2>/dev/null; check $? "PL-014: the stamp under /storage/.cache records it: $(cat "${CFSTAMP}" 2>/dev/null)" "PL-014: stamp: '$(cat "${CFSTAMP}" 2>/dev/null)' -- nothing records that the scrub ran"
+printf '[2026-09-21 09:00:00] [INFO] [cloud_remote] rclone config create qa webdav pass=%s failed (1): x\n' "$(cfv pw 82)" >> "${CFL}/cloud_sync.log"
+cp "${CFL}/cloud_sync.log" "${CF3}/after-first"
+cf3 "${CF3}/fn/with"
+[ "${RC}" -eq 0 ] && cmp -s "${CFL}/cloud_sync.log" "${CF3}/after-first"; check $? "PL-014: once: with the stamp there, a second run reads nothing and writes nothing" "PL-014: second run rc ${RC}; the log changed: $(diff "${CF3}/after-first" "${CFL}/cloud_sync.log" 2>&1 | head -3 | tr '\n' '|')"
+cf3_plant; cf3 "${CF3}/fn/without"
+cf_bad=$(cf3_same)
+[ "${RC}" -ne 0 ] && [ ! -e "${CFSTAMP}" ] && [ -n "${cf_bad}" ] && cmp -s "${CFL}/boot.log" "${CF3}/want/boot.log" && [ "$(cf3_left | wc -w)" -eq 10 ]; check $? "PL-014 (a control, the fix's own guard): without its credential filter it fails closed -- nothing rewritten, no stamp, so the next boot tries again (rc ${RC})" "PL-014: filter missing: rc ${RC}; stamp: $([ -e "${CFSTAMP}" ] && echo written || echo none); left: $(cf3_left)"
+rm -rf "${CF3}/storage"; mkdir -p "${CF3}/storage/.cache"
+cf3 "${CF3}/fn/with"
+[ "${RC}" -eq 0 ] && [ -s "${CFSTAMP}" ] && [ ! -e "${CFL}" ]; check $? "PL-014: a clean install -- no log folder -- is recorded as done and nothing is made" "PL-014: clean install: rc ${RC}; stamp: '$(cat "${CFSTAMP}" 2>/dev/null)'; log folder: $([ -e "${CFL}" ] && echo made || echo none)"
+# Installed, and run at boot before anything that writes the cloud log does.
+RCLONE_PKG="projects/ROCKNIX/packages/network/rclone"
+cf_pkg="${CF}/package.mk"; cf_auto="${CF}/102-cloud-saves"
+src_of "${RCLONE_PKG}/package.mk" "${cf_pkg}"; src_of "${RCLONE_PKG}/autostart/102-cloud-saves" "${cf_auto}"
+grep -qxF '  cp cloud_log_scrub ${INSTALL}/usr/bin/' "${cf_pkg}"; check $? "PL-014: the rclone package installs cloud_log_scrub" "PL-014: package.mk has no line installing cloud_log_scrub"
+cf_at=$(grep -n '/usr/bin/cloud_log_scrub' "${cf_auto}" | head -1 | cut -d: -f1)
+cf_cap=$(grep -n '/usr/bin/cloud_capture' "${cf_auto}" | head -1 | cut -d: -f1)
+[ -n "${cf_at}" ] && [ -n "${cf_cap}" ] && [ "${cf_at}" -lt "${cf_cap}" ] && ! sed -n "${cf_at}p" "${cf_auto}" | grep -qE '(^|[^&])&[[:space:]]*$'; check $? "PL-014: 102-cloud-saves runs it at boot, in the foreground, before the capture pass -- which writes the cloud log -- starts" "PL-014: 102-cloud-saves: the scrub at line '${cf_at}', the capture at line '${cf_cap}'"
+
+# CF4. PL-032 (gpt G2-C-02, G2-C-03; the blind pass's S-25; claude G2-C-03,
+# G2-C-04): the sign-in's state only moves forward, and the marker and the
+# remote go with it. cloud_oauth in-process, in a sandbox with its own pid
+# and network namespaces as C3's groups run (the script's pkill and its
+# binds reach nothing outside it). Each group prints P or F lines.
+CF4="${CF}/4"; mkdir -p "${CF4}/scratch"
+[ -e "${CF}/src/cloud_oauth" ] && cp "${CF}/src/cloud_oauth" "${CF4}/cloud_oauth"
+cat > "${CF4}/cf_oauth_test.py" <<'EOPY'
+#!/usr/bin/env python3
+#   cf_oauth_test.py <cloud_oauth> <workdir>     P/F lines, then END <groups>
+import http.client
+import importlib.machinery
+import importlib.util
+import os
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import types
+
+REPO, WORK = sys.argv[1], sys.argv[2]
+TESTS = []
+
+
+def test(fn):
+    TESTS.append(fn)
+    return fn
+
+
+def load(tag):
+    loader = importlib.machinery.SourceFileLoader("cf_oauth_" + tag, REPO)
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    m = importlib.util.module_from_spec(spec)
+    loader.exec_module(m)
+    d = tempfile.mkdtemp(dir=WORK, prefix=tag + ".")
+    m.STATE_DIR = os.path.join(d, "state")
+    os.makedirs(m.STATE_DIR)
+    m.LOG_FILE = os.path.join(d, "cloud_sync.log")
+    m.UINPUT = "/nonexistent/uinput"
+    m.provider_url = lambda local: "https://www.dropbox.com/oauth2/authorize?state=abc"
+    m.lan_address = lambda: "127.0.0.1"
+    m.browser_stack_available = lambda: False
+    m.find_gamepad = lambda *a, **k: (None, set())
+    return m, d
+
+
+def result(ok, good, bad):
+    print(("P " + good) if ok else ("F " + bad), flush=True)
+
+
+def completed(args, rc, out="", err=""):
+    return subprocess.CompletedProcess(args, rc, out, err)
+
+
+class FakeSP:
+    """subprocess, with run() answered by a table: (argv prefix) -> callable."""
+    PIPE, STDOUT, DEVNULL = subprocess.PIPE, subprocess.STDOUT, subprocess.DEVNULL
+    TimeoutExpired, SubprocessError = subprocess.TimeoutExpired, subprocess.SubprocessError
+    CompletedProcess = subprocess.CompletedProcess
+    Popen = subprocess.Popen
+
+    def __init__(self, answers):
+        self.answers = answers
+        self.calls = []
+
+    def run(self, args, **kw):
+        self.calls.append(list(args))
+        for prefix, answer in self.answers:
+            if list(args[1:1 + len(prefix)]) == list(prefix):
+                return answer(args)
+        return completed(args, 0)
+
+
+def wait_for(pred, seconds, step=0.05):
+    end = time.time() + seconds
+    while time.time() < end:
+        if pred():
+            return True
+        time.sleep(step)
+    return pred()
+
+
+def fake_authorize(script):
+    return subprocess.Popen(["sh", "-c", script], stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True)
+
+
+TOKEN_OUT = ("printf 'Paste the following into your remote machine --->\\n"
+             "{\"access_token\":\"t\"}\\n<---End paste\\n'")
+
+
+def rclone_shim(d, body):
+    """An rclone whose authorize runs body (bash); its name kept, so the
+    script's pkill -f 'rclone authorize' finds it as it finds the real one."""
+    path = os.path.join(d, "rclone")
+    with open(path, "w") as h:
+        h.write("#!/bin/bash\nD=%s\n%s\n" % (d, body))
+    os.chmod(path, 0o755)
+    return path
+
+
+LINK = 'printf "Please go to http://127.0.0.1:53682/auth?state=abc\\n"'
+
+
+def start_server(m, holder):
+    server = m.make_server("127.0.0.1", 0, holder, lambda: None)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, server.server_address[1]
+
+
+def request(port, method, path, body=None):
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+    headers = {"Content-Type": "application/x-www-form-urlencoded"} if body is not None else {}
+    c.request(method, path, body=body, headers=headers)
+    r = c.getresponse()
+    text = r.read().decode("utf-8", "replace")
+    c.close()
+    return r.status, text
+
+
+def collector_waits(m):
+    """holder.start() returns once the new attempt's collector has finished --
+    the interleaving in which its rclone died before the caller wrote."""
+    finished = set()
+    real_collect = m.Session._collect
+
+    def collect(self):
+        try:
+            real_collect(self)
+        finally:
+            finished.add(id(self))
+    m.Session._collect = collect
+    real_start = m.SessionHolder.start
+
+    def start(self):
+        out = real_start(self)
+        if out[0]:
+            wait_for(lambda: id(self.session) in finished, 8)
+        return out
+    m.SessionHolder.start = start
+EOPY
+# PL-032: the sign-in's state only moves forward, and the marker and the remote go with it.
+cat >> "${CF4}/cf_oauth_test.py" <<'EOPY'
+@test
+def a_dead_attempt_is_not_published_as_waiting():
+    """gpt G2-C-02: authorize prints its link and dies at once; its collector
+    records failed while the serve is still binding, and the serve's own
+    waiting write used to land on top of it."""
+    m, d = load("pl032a")
+    m.RCLONE = rclone_shim(d, LINK + "\nexit 1")
+    holder = m.SessionHolder("dropbox", None, None, 4)
+    m.reset_state(status="starting", backend="dropbox", attempt=holder.attempt)
+    published = threading.Event()
+    real_make = m.make_server
+
+    def make(listen, port, h, shutdown):
+        wait_for(lambda: m.read_state().get("status") == "failed", 8)
+        server = real_make("127.0.0.1", 0, h, shutdown)
+        published.set()
+        return server
+    m.make_server = make
+    got = {}
+    t = threading.Thread(target=lambda: got.__setitem__("rc", m.serve_with(holder, "dropbox", 0, 4)), daemon=True)
+    t.start()
+    published.wait(12)
+    time.sleep(0.5)
+    seen = m.read_state().get("status")
+    t.join(12)
+    holder.end()
+    result(seen == "failed" and got.get("rc") == 2,
+           "PL-032 (gpt G2-C-02): a serve whose attempt died while it bound its port leaves the state failed and ends (rc 2), not waiting on a dead attempt",
+           "the state read %r while the serve listened (rc %r) -- a dead attempt republished as waiting (PL-032, gpt G2-C-02)" % (seen, got.get("rc")))
+
+
+@test
+def a_restart_that_dies_at_once_says_so():
+    """gpt G2-C-02, the restart half: the phone's Start a new sign-in, and the
+    new attempt dies before the handler writes waiting."""
+    m, d = load("pl032b")
+    m.RCLONE = rclone_shim(d, LINK + "\nexit 1")
+    collector_waits(m)
+    holder = m.SessionHolder("dropbox", None, None, 60)
+    m.reset_state(status="starting", backend="dropbox", attempt=holder.attempt)
+    holder.start()                              # the first attempt dies: failed
+    server, port = start_server(m, holder)
+    status, page = request(port, "POST", "/" + holder.pin, "restart=1&pin=" + holder.pin)
+    server.shutdown()
+    st = m.read_state()
+    holder.end()
+    result(st.get("status") == "failed" and "Ready for another go" not in page,
+           "PL-032 (gpt G2-C-02): a restarted attempt that dies at once reads failed, and the phone is not told it is ready",
+           "after a restart whose rclone died at once the state reads %r and the phone %s (PL-032, gpt G2-C-02)"
+           % (st.get("status"), "was told Ready for another go" if "Ready for another go" in page else "was not told"))
+
+
+@test
+def a_restart_with_no_link_reads_failed():
+    """claude G2-C-04: the restart's rclone offers no link; the old attempt's
+    rclone has been killed; nothing wrote failed, so the handheld read waiting."""
+    m, d = load("pl032c")
+    m.RCLONE = rclone_shim(d, '[ -e "$D/nolink" ] && exit 1\n' + LINK + '\nexec -a "$0 authorize" sleep 30')
+    holder = m.SessionHolder("dropbox", None, None, 60)
+    m.reset_state(status="starting", backend="dropbox", attempt=holder.attempt)
+    ok, _ = holder.start()
+    m.write_owned(holder.attempt, status="waiting")      # as the serve publishes it
+    open(os.path.join(d, "nolink"), "w").close()
+    server, port = start_server(m, holder)
+    status, page = request(port, "POST", "/" + holder.pin, "restart=1&pin=" + holder.pin)
+    server.shutdown()
+    st = m.read_state()
+    holder.end()
+    result(ok and st.get("status") == "failed",
+           "PL-032 (claude G2-C-04): a restart whose rclone offers no link reads failed, not waiting with nothing left to finish it",
+           "first start %r; after a restart with no link the state reads %r (PL-032, claude G2-C-04)" % (ok, st.get("status")))
+
+
+def late_success(tag, close):
+    """Attempt A has its token and is creating its remote; close() ends it
+    another way meanwhile. Returns (state, marker there, remote deleted)."""
+    m, d = load(tag)
+    sp = FakeSP([
+        (["listremotes"], lambda a: completed(a, 0, "")),
+        (["config", "create"], lambda a: (time.sleep(0.8), completed(a, 0))[1]),
+        (["lsd"], lambda a: completed(a, 0)),
+        (["config", "delete"], lambda a: completed(a, 0)),
+    ])
+    m.subprocess = sp
+    holder = m.SessionHolder("dropbox", "qa", None, 60)
+    m.reset_state(status="waiting", attempt=holder.attempt, session="gA")
+    s = m.Session("dropbox", "qa", 60)
+    s.attempt, s.gen, s.on_signed_in = holder.attempt, "gA", holder.signed_in
+    holder.session = s
+    s.proc = fake_authorize(TOKEN_OUT)
+    t = threading.Thread(target=s._collect, daemon=True)
+    t.start()
+    time.sleep(0.3)                             # the create is under way
+    close(m, holder, s)
+    t.join(10)
+    deleted = any(c[1:3] == ["config", "delete"] for c in sp.calls)
+    return m.read_state(), os.path.exists(m.state_path("signed-in")), deleted
+
+
+def restarted(m, holder, s):
+    s.superseded = True                         # what SessionHolder.start does for B
+    m.write_state(status="starting", session="gB")
+
+
+def timed_out(m, holder, s):
+    m.write_state(status="failed", error="sign-in did not complete")   # the serve's last write
+    s.superseded = True                         # holder.end()
+
+
+def cancelled(m, holder, s):
+    s.superseded = True                         # the serve's SIGTERM, holder.end()
+    m.reset_state(status="idle")                # cloud_oauth cancel
+
+
+@test
+def a_replaced_attempt_does_not_sign_in_its_successor():
+    """gpt G2-C-03 (claude G2-C-03): A succeeds after a restart replaced it."""
+    st, marker, deleted = late_success("pl032d", restarted)
+    result(st.get("status") == "starting" and st.get("session") == "gB" and not marker and deleted,
+           "PL-032 (gpt G2-C-03, claude G2-C-03): a replaced attempt that finishes late leaves its successor's state, writes no signed-in marker, and takes its remote away again",
+           "after A finished behind B: state %r, marker %r, A's remote removed %r -- A signed in B's attempt (PL-032, gpt G2-C-03)" % (st, marker, deleted))
+
+
+@test
+def a_closed_attempt_is_not_reopened():
+    """The blind pass's S-25: the serve ended the attempt (its timeout's
+    failed; a cancel's idle) as the collection finished."""
+    for name, close, want in (("timed out", timed_out, "failed"), ("cancelled", cancelled, "idle")):
+        st, marker, deleted = late_success("pl032e" + name[0], close)
+        result(st.get("status") == want and not marker and deleted,
+               "PL-032 (S-25): an attempt %s while its remote was being made stays %s: no signed-in marker, and the remote it made is taken away again" % (name, want),
+               "an attempt %s behind its collector: state %r, marker %r, remote removed %r -- a closed state reopened, or a remote left that no screen reported (PL-032, S-25)" % (name, st.get("status"), marker, deleted))
+
+
+@test
+def an_attempt_that_owns_the_state_still_signs_in():
+    """(a control) the same success with nothing closed or replaced."""
+    st, marker, deleted = late_success("pl032f", lambda m, holder, s: None)
+    result(st.get("status") == "signed-in" and st.get("remote") == "qa" and marker and not deleted,
+           "PL-032 (a control): a success that still owns the state is published: signed-in, the marker written, the remote kept",
+           "a success that owned the state: state %r, marker %r, remote removed %r" % (st, marker, deleted))
+
+
+@test
+def the_serves_last_write_never_turns_a_sign_in_back():
+    """PL-032: the serve's closing failed is written only from starting or
+    waiting -- a sign-in that landed first stands."""
+    m, d = load("pl032g")
+    m.reset_state(status="signed-in", attempt="X", remote="qa")
+    try:
+        wrote = m.write_owned("X", from_status=("starting", "waiting"), status="failed", error="sign-in did not complete")
+    except TypeError as exc:
+        wrote = "TypeError: %s" % exc
+    st = m.read_state()
+    result(wrote is False and st.get("status") == "signed-in",
+           "PL-032: the serve's closing write, which may move only from starting or waiting, leaves a signed-in as it is",
+           "write_owned from starting/waiting over signed-in: returned %r, state %r (PL-032)" % (wrote, st))
+EOPY
+# CF5's serve half, claude G2-C-01: the probe says open once a field has had the caret.
+cat >> "${CF4}/cf_oauth_test.py" <<'EOPY'
+@test
+def the_probe_waits_for_a_field():
+    """claude G2-C-01: the phone's probe said open the moment the window's
+    process existed; the page loads, and focus_first places the caret,
+    seconds later."""
+    m, d = load("g2c01a")
+    holder = m.SessionHolder("dropbox", None, None, 60)
+    holder.browser = object()                   # the window's process is up
+    server, port = start_server(m, holder)
+    with open(m.state_path("page"), "w") as h:
+        h.write("https://www.dropbox.com/login")
+    _, before = request(port, "GET", "/%s?probe=1" % holder.pin)
+    with open(m.state_path("field"), "w") as h:
+        h.write("INPUT/email/login_email")
+    _, after = request(port, "GET", "/%s?probe=1" % holder.pin)
+    holder.browser = None
+    _, gone = request(port, "GET", "/%s?probe=1" % holder.pin)
+    server.shutdown()
+    b, a = before.split(), after.split()
+    result(b[:1] == ["loading"] and a[:1] == ["open"] and b[1:] == a[1:] and len(a) == 2 and gone == "waiting",
+           "claude G2-C-01: the probe says loading while no field has had the caret, open (with the page's token) once one has, waiting with no window",
+           "probe answers: before a field %r, after %r, no window %r -- open before anything can be typed into (claude G2-C-01)" % (before, after, gone))
+
+
+@test
+def the_window_is_told_where_to_say_so():
+    """claude G2-C-01: the window records the caret in a file the serve
+    names; a file a previous window left says nothing about this one, and a
+    reset clears it with the other markers."""
+    m, d = load("g2c01b")
+    seen = {}
+
+    class Proc:
+        def __init__(self, args, env=None, **kw):
+            seen["env"] = env or {}
+
+        def poll(self):
+            return None
+    m.subprocess = types.SimpleNamespace(Popen=Proc, STDOUT=subprocess.STDOUT, PIPE=subprocess.PIPE,
+                                         run=subprocess.run, DEVNULL=subprocess.DEVNULL)
+    m.running_session = lambda: (d, "wayland-1")
+    m.BrowserSession._cursor_timeout = staticmethod(lambda ms: None)
+    field = m.state_path("field")
+    open(field, "w").close()
+    b = m.BrowserSession("https://www.dropbox.com/oauth2/authorize?state=abc", "dropbox.com")
+    ok = b.start()
+    stale_gone = not os.path.exists(field)
+    open(field, "w").close()
+    m.reset_state(status="idle")
+    result(ok and seen.get("env", {}).get("CLOUD_SIGNIN_FIELD_FILE") == field and stale_gone and not os.path.exists(field),
+           "claude G2-C-01: the window is given CLOUD_SIGNIN_FIELD_FILE, a stale one is removed before it starts, and a reset clears it",
+           "window env CLOUD_SIGNIN_FIELD_FILE=%r (want %r); stale file removed %r; after reset_state %r (claude G2-C-01)"
+           % (seen.get("env", {}).get("CLOUD_SIGNIN_FIELD_FILE"), field, stale_gone, os.path.exists(field)))
+EOPY
+cat >> "${CF4}/cf_oauth_test.py" <<'EOPY'
+for fn in TESTS:
+    try:
+        fn()
+    except Exception as exc:
+        import traceback
+        result(False, "", "%s raised %s: %s" % (fn.__name__, type(exc).__name__,
+                                               traceback.format_exc().strip().splitlines()[-3:]))
+print("END %d" % len(TESTS), flush=True)
+EOPY
+: > "${CF4}/out"; : > "${CF4}/err"
+if [ -e "${CF4}/cloud_oauth" ] && command -v python3 >/dev/null; then
+    ( timeout 300 bwrap --unshare-pid --unshare-net --die-with-parent --tmpfs / --ro-bind /usr /usr \
+        --symlink usr/bin /bin --symlink usr/lib /lib --symlink usr/lib64 /lib64 --ro-bind /etc /etc \
+        --dev /dev --proc /proc --tmpfs /tmp --bind "${CF4}" /work \
+        python3 /work/cf_oauth_test.py /work/cloud_oauth /work/scratch ) > "${CF4}/out" 2> "${CF4}/err"
+fi
+while IFS= read -r line; do
+    case "${line}" in
+        "P "*) check 0 "${line#P }" "" ;;
+        "F "*) check 1 "" "${line#F }" ;;
+    esac
+done < "${CF4}/out"
+CF4N=$(sed -n 's/^END //p' "${CF4}/out")
+[ -n "${CF4N}" ]; check $? "the audit of the fix round's cloud_oauth groups ran to the end (${CF4N} groups)" "the audit of the fix round's cloud_oauth groups did not finish -- a check that did not run has not passed: $(tail -3 "${CF4}/err" 2>/dev/null | tr '\n' '|')"
+
+# CF5. The page half and the window half of claude G2-C-01.
+#
+# The page's own script under node, as C4 runs it, against a handheld that
+# behaves like one: a keystroke that arrives while no field on its page has
+# the caret goes nowhere, and a new page starts with an empty field. The
+# probe answers what the serve now answers -- waiting, loading <page> (the
+# window is up, nothing has the caret yet), open <page>.
+CF5="${CF}/5"; mkdir -p "${CF5}"
+cat > "${CF5}/render.py" <<'EOPY'
+import importlib.machinery, importlib.util, sys
+loader = importlib.machinery.SourceFileLoader("cloud_oauth_page", sys.argv[1])
+spec = importlib.util.spec_from_loader(loader.name, loader)
+m = importlib.util.module_from_spec(spec)
+loader.exec_module(m)
+sys.stdout.write(m.REMOTE_PAGE % {"style": m.STYLE, "name": "Dropbox", "pin": "1234"})
+EOPY
+cat > "${CF5}/page_test.js" <<'EOJS'
+"use strict";
+const fs = require("fs");
+const vm = require("vm");
+const html = fs.readFileSync(process.argv[2], "utf8");
+const script = html.split("<script>").pop().split("</script>")[0];
+function result(ok, good, bad) { console.log(ok ? "P " + good : "F " + bad); }
+function attrs(text) {
+  const out = {}; const re = /([\w-]+)(?:=("[^"]*"|'[^']*'|[^\s>]+))?/g; let m;
+  while ((m = re.exec(text))) {
+    let v = m[2] === undefined ? "" : m[2];
+    if (v[0] === '"' || v[0] === "'") v = v.slice(1, -1);
+    out[m[1].toLowerCase()] = v;
+  }
+  return out;
+}
+// The handheld: `page` is what its window shows, `caret` whether a field on
+// it has the caret. Each request the phone makes is stamped with both as it
+// arrives; the field is rebuilt from them.
+function phone() {
+  const byId = {}, keys = [], posts = [], timers = [];
+  const hh = { probe: "waiting", page: "", caret: false };
+  function el(tag, a) {
+    const e = {
+      tagName: tag.toUpperCase(), id: a.id || "", type: a.type || "", className: a.class || "",
+      hidden: "hidden" in a, value: "", textContent: "", dataset: {}, listeners: {},
+      classList: { add() {}, remove() {} },
+      addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
+      fire(ev, extra) {
+        const e2 = Object.assign({ preventDefault() {}, touches: null, clientX: 0, clientY: 0 }, extra || {});
+        (this.listeners[ev] || []).forEach((fn) => fn(e2));
+      },
+      focus() {}, setAttribute(k, v) { this[k] = v; }, getAttribute(k) { return this[k]; },
+    };
+    if (a["data-key"] !== undefined) e.dataset.key = a["data-key"];
+    return e;
+  }
+  const tagRe = /<(input|button|div|span|p)\b([^>]*)>/gi; let m;
+  while ((m = tagRe.exec(html))) {
+    const a = attrs(m[2]); const e = el(m[1], a);
+    if (a.id) byId[a.id] = e;
+    if (a["data-key"] !== undefined) keys.push(e);
+  }
+  const sandbox = {
+    document: {
+      getElementById: (id) => byId[id] || null,
+      querySelectorAll: (sel) => (sel === "[data-key]" ? keys : []),
+      querySelector: () => null,
+    },
+    window: { addEventListener() {} },
+    setTimeout: (fn) => timers.push(fn),
+    fetch: (url, opts) => {
+      if (opts && opts.method === "POST") {
+        posts.push({ body: opts.body, page: hh.page, caret: hh.caret });
+        return Promise.resolve({ text: () => Promise.resolve("") });
+      }
+      return Promise.resolve({ text: () => Promise.resolve(hh.probe) });
+    },
+    Promise, URLSearchParams, encodeURIComponent, decodeURIComponent, Math, Array, String, Object, JSON, RegExp,
+  };
+  vm.runInNewContext(script, sandbox);
+  const box = byId.kb;
+  return {
+    posts, box,
+    async settle() { for (let i = 0; i < 50; i++) await new Promise((r) => setImmediate(r)); },
+    // The handheld moves on, then the phone's next poll hears of it.
+    async now(probe, page, caret) { hh.probe = probe; hh.page = page; hh.caret = caret; const run = timers.splice(0); run.forEach((fn) => fn()); await this.settle(); },
+    async add(t) { box.value += t; box.fire("input"); await this.settle(); },
+    async key(name) { keys.find((k) => k.dataset.key === name).fire("click"); await this.settle(); },
+    named() { return posts.map((p) => new URLSearchParams(p.body).get("key")).filter(Boolean); },
+    field(page) {
+      let f = "";
+      for (const p of posts) {
+        if (p.page !== page) continue;
+        const q = new URLSearchParams(p.body);
+        if (q.has("type") && p.caret) f += q.get("type");
+        if (q.get("key") === "backspace" && p.caret) f = f.slice(0, -1);
+      }
+      return f;
+    },
+  };
+}
+(async () => {
+  let n = 0;
+  // (a control) typed before the window, held through the page's load,
+  // sent once the field has the caret -- as the old page did once the
+  // serve's probe told it the truth.
+  n++; {
+    const p = phone();
+    await p.now("waiting", "", false);
+    await p.add("me@ex");
+    await p.now("loading A", "A", false);
+    const early = p.posts.length;
+    await p.now("open A", "A", true);
+    result(early === 0 && p.field("A") === "me@ex",
+      "claude G2-C-01 (a control): text typed before the window opens is held while its page loads and lands in the field once it has the caret",
+      "sent while loading: " + early + " request(s); field on A: '" + p.field("A") + "'");
+  }
+  // The phone's named keys drive the handheld while nothing has the caret:
+  // Tab is how a player reaches a field focus_first did not find.
+  n++; {
+    const p = phone();
+    await p.now("loading A", "A", false);
+    await p.key("tab");
+    await p.key("down");
+    const k = p.named();
+    result(k.indexOf("tab") >= 0 && k.indexOf("down") >= 0,
+      "claude G2-C-01: the phone's Tab and arrows reach the handheld while its page has nothing with the caret",
+      "keys posted while the page loaded: " + JSON.stringify(k) + " -- the phone's keys dead until a field had the caret (claude G2-C-01)");
+  }
+  // The provider moves on: what is typed while the next page loads is for
+  // that page's field, and goes to it once it has the caret.
+  n++; {
+    const p = phone();
+    await p.now("open A", "A", true);
+    await p.add("abc");
+    await p.now("loading B", "B", false);
+    await p.add("xyz");
+    const held = p.posts.filter((q) => q.page === "B" && q.body.indexOf("type=") === 0).length;
+    await p.now("open B", "B", true);
+    result(p.field("A") === "abc" && held === 0 && p.field("B") === "xyz",
+      "claude G2-C-01: typed while the next page loads, held, then into that page's field once it has the caret (A 'abc', B 'xyz')",
+      "field A '" + p.field("A") + "', typed into B before its caret: " + held + ", field B '" + p.field("B") + "' -- what was typed for the new page lost (claude G2-C-01)");
+  }
+  console.log("END " + n);
+})().catch((e) => { console.log("F the page groups threw: " + e); console.log("END 0"); });
+EOJS
+: > "${CF5}/out"
+if [ -e "${CF}/src/cloud_oauth" ] && command -v node >/dev/null && command -v python3 >/dev/null; then
+    python3 "${CF5}/render.py" "${CF}/src/cloud_oauth" > "${CF5}/page.html" 2> "${CF5}/err" \
+        && timeout 60 node "${CF5}/page_test.js" "${CF5}/page.html" > "${CF5}/out" 2>> "${CF5}/err"
+fi
+while IFS= read -r line; do
+    case "${line}" in
+        "P "*) check 0 "${line#P }" "" ;;
+        "F "*) check 1 "" "${line#F }" ;;
+    esac
+done < "${CF5}/out"
+CF5N=$(sed -n 's/^END //p' "${CF5}/out")
+[ "${CF5N:-0}" -gt 0 ]; check $? "the phone page's groups ran to the end (${CF5N} groups, node)" "the phone page's groups did not run -- no node, or they threw: $(tail -3 "${CF5}/err" 2>/dev/null | tr '\n' '|')"
+
+# The window half, read from its source: a field with the caret is recorded
+# in CLOUD_SIGNIN_FIELD_FILE, once per page, from the probe that sees it;
+# each new page's load removes the record before it writes the page's name.
+# The window is C that only the image build compiles, so this reads what it
+# does.
+CFW="${CF}/cloud-signin-window.c"
+src_of projects/ROCKNIX/packages/network/cloud-signin-window/sources/cloud-signin-window.c "${CFW}"
+cf_fn() { awk -v f="$1" 'index($0, f) == 1 {p = 1} p {print} p && /^}/ {exit}' "${CFW}"; }
+cf_probe=$(cf_fn 'static void on_probe(')
+cf_load=$(cf_fn 'static void on_load_changed(')
+cf_text=$(printf '%s\n' "${cf_probe}" | awk '/g_str_has_prefix\(text, "text:"\)/ {p = 1} p {print} /} else if \(osk\)/ {exit}')
+printf '%s\n' "${cf_text}" | grep -q 'CLOUD_SIGNIN_FIELD_FILE' && printf '%s\n' "${cf_text}" | grep -q 'g_file_set_contents' \
+    && printf '%s\n' "${cf_text}" | grep -q 'field_recorded'; check $? "claude G2-C-01: the window records a field with the caret in CLOUD_SIGNIN_FIELD_FILE, from the probe's text: answer, once per page" "claude G2-C-01: on_probe's text: branch writes no field record"
+cf_rm=$(printf '%s\n' "${cf_load}" | grep -n 'g_remove\|g_unlink' | head -1 | cut -d: -f1)
+cf_pg=$(printf '%s\n' "${cf_load}" | grep -n 'g_file_set_contents(page_file' | head -1 | cut -d: -f1)
+[ -n "${cf_rm}" ] && [ -n "${cf_pg}" ] && [ "${cf_rm}" -lt "${cf_pg}" ] && printf '%s\n' "${cf_load}" | grep -q 'field_recorded = FALSE'; check $? "claude G2-C-01: every new page's load removes the record, and forgets it was made, before it writes the page's name" "claude G2-C-01: on_load_changed: the record's removal at line '${cf_rm}', the page file at '${cf_pg}'"
 
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3

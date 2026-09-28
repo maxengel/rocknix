@@ -15,9 +15,17 @@
 # headless copy here would only race the visible one for the transfer lock
 # and report SKIPPED into /dev/null. So this file no longer syncs anything.
 #
-# What it still does is the full capture pass, below.
+# What it still does is the full capture pass, below -- and, once per
+# device, the cloud log's scrub before it.
 
 . /etc/profile.d/001-functions
+
+# Passwords and keys an earlier build wrote into the cloud log, masked once
+# per device (the audit of the fix round, PL-014). Here, in the foreground,
+# because nothing else writes that log yet: the capture pass below does, and
+# EmulationStation starts only after every autostart script has run. After
+# the first boot it reads its record and returns.
+[ -x /usr/bin/cloud_log_scrub ] && /usr/bin/cloud_log_scrub
 
 # The full capture pass (fork #21): re-hash every save the manifest already
 # claims, so an edit from a shell, a session EmulationStation itself aborted,

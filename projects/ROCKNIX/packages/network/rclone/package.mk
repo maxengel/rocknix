@@ -72,6 +72,10 @@ makeinstall_target() {
   cp cloud_sync_cleanup_duplicates.sh ${INSTALL}/usr/bin/
   cp cloud_saves_root ${INSTALL}/usr/bin/
   cp cloud_capture ${INSTALL}/usr/bin/
+  # cloud_log_scrub: once per device, masks the credentials earlier builds
+  # wrote into cloud_sync.log (the audit of the fix round, PL-014); run at
+  # boot by autostart/102-cloud-saves.
+  cp cloud_log_scrub ${INSTALL}/usr/bin/
   # cloud_net_ready: what EmulationStation's startup sync asks before it runs
   # the restore/backup pair -- is the network up, and has it stayed up (#103).
   cp cloud_net_ready ${INSTALL}/usr/bin/
