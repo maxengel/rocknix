@@ -17,8 +17,10 @@
 # inside /* */, after //, or in an arm the preprocessor never compiles (an
 # #if 0 or #elif 0, or an #elif or #else after an #if 1 or #elif 1 that was
 # taken) is not read -- any other condition depends on the build's defines
-# and is read as live -- and a flag is read from the driver's fields, never
-# from the text of its strings.
+# and is read as live -- and a driver's end and its flags are read outside
+# its strings, never from their text. A BurnDriverD (a debug build's driver,
+# left out of a release core's driver list) is read like any other, so its
+# row names a game the release core does not offer.
 import os, re, sys
 
 LEXEME = re.compile(r'//[^\n]*|/\*.*?(?:\*/|\Z)|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'|(?<!\w)\.?[0-9](?:[eEpP][+-]|\'\w|[\w.])*', re.S)
@@ -35,6 +37,13 @@ def strip_comments(text):
     C++14 digit separator (1'000, 0xFF'00), not a character literal; any
     other quote opens one."""
     return LEXEME.sub(lambda m: (' ' + '\n' * m.group(0).count('\n')) if m.group(0)[0] == '/' else m.group(0), text)
+
+
+def blank_strings(text):
+    """The text with the inside of every string literal blanked and every
+    offset kept. Read with the same lexer, so the quote in a character
+    literal ('"') opens no string. Run after strip_comments."""
+    return LEXEME.sub(lambda m: ('"' + ' ' * (len(m.group(0)) - 2) + '"') if m.group(0)[0] == '"' else m.group(0), text)
 
 
 def drop_dead(text):
@@ -85,12 +94,15 @@ def main(argv):
                 continue
             with open(os.path.join(dirpath, f), errors='replace') as fh:
                 text = drop_dead(strip_comments(fh.read()))
-            for m in DRIVER.finditer(text):
-                body = m.group(1)
-                name = STRING.search(body)
+            # a driver ends at the first }; outside its strings (a }; in a
+            # title is text): matched in the blanked text, its name read
+            # from the source at the same offsets
+            blanked = blank_strings(text)
+            for m in DRIVER.finditer(blanked):
+                name = STRING.search(text, m.start(1), m.end(1))
                 if not name:
                     continue
-                fields = STRING.sub('""', body)
+                fields = blanked[m.start(1):m.end(1)]
                 vertical = re.search(r'\bBDF_ORIENTATION_VERTICAL\b', fields) is not None
                 flipped = re.search(r'\bBDF_ORIENTATION_FLIPPED\b', fields) is not None
                 turns = 3 if (vertical and flipped) else 1 if vertical else 2 if flipped else 0

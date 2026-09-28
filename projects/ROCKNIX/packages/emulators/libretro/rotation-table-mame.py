@@ -22,7 +22,6 @@
 import os, re, sys
 
 LEXEME = re.compile(r'//[^\n]*|/\*.*?(?:\*/|\Z)|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'|(?<!\w)\.?[0-9](?:[eEpP][+-]|\'\w|[\w.])*', re.S)
-STRING = re.compile(r'"(?:\\.|[^"\\\n])*"')
 DIRECTIVE = re.compile(r'\s*#\s*(ifdef|ifndef|if|elifdef|elifndef|elif|else|endif)\b(.*)')
 KNOWN = {'0': 'no', '1': 'yes'}   # the only conditions read without the build's defines
 TURNS = {'ROT270': 1, 'ROT180': 2, 'ROT90': 3, 'ROT0': 0}
@@ -35,6 +34,13 @@ def strip_comments(text):
     C++14 digit separator (1'000, 0xFF'00), not a character literal; any
     other quote opens one."""
     return LEXEME.sub(lambda m: (' ' + '\n' * m.group(0).count('\n')) if m.group(0)[0] == '/' else m.group(0), text)
+
+
+def blank_strings(text):
+    """The text with the inside of every string literal blanked and every
+    offset kept. Read with the same lexer, so the quote in a character
+    literal ('"') opens no string. Run after strip_comments."""
+    return LEXEME.sub(lambda m: ('"' + ' ' * (len(m.group(0)) - 2) + '"') if m.group(0)[0] == '"' else m.group(0), text)
 
 
 def drop_dead(text):
@@ -87,7 +93,7 @@ def main(argv):
             with open(os.path.join(dirpath, f), errors='replace') as fh:
                 # strings blanked as well: a GAME( inside one is text, and a
                 # title's commas and parentheses do not split the macro
-                text = STRING.sub('""', drop_dead(strip_comments(fh.read())))
+                text = blank_strings(drop_dead(strip_comments(fh.read())))
             # a macro spans lines: read to its closing parenthesis
             for m in re.finditer(r'\bGAME[A-Z]*\s*\(', text):
                 start = m.end(); depth = 1; i = start

@@ -10509,6 +10509,22 @@ out="$(f2b_table fba H)"
 out="$(f2b_table mame H)"
 [ "${out}" = 'hkept 1|' ]; check $? "MAME: a GAME() inside a /* */ opened after 0xAB'CD gives no row" "MAME hex-separator fixture: table '${out}', expected 'hkept 1|'"
 
+# F2-24. claude G2-F2-10 (a Low the audit left unrouted, in the same
+# generator): the FBA generator looked for a driver's closing }; in text
+# whose strings were intact, so a }; inside a title cut the driver short
+# before its flags, and the driver lost its row; the MAME generator already
+# blanked strings first. Both now blank the inside of every string -- with
+# the lexer, so a '"' character literal opens none -- and the FBA one reads
+# the driver's name and fields from the source at the same offsets.
+echo "  F2-24. the FBA generator finds a driver's end outside its strings (claude G2-F2-10)"
+mkdir -p "${GE}/fba-S/src/burn/drv"
+{ printf 'struct BurnDriver BurnDrvBrace = {\n\t"brace", NULL, NULL, NULL, "1984",\n\t"Brace };\\0", NULL, "Maker", "Misc",\n\tBDF_GAME_WORKING%s, 2, 0, 0, 0,\n};\n' "${F2B_V}"
+  # the literal and the next driver on one line, as a string opened at the
+  # literal's quote would run to the driver's name and swallow its opening
+  printf "static const char Keys[] = { '\"', 0 }; %s\n" "$(f2b_fba afterq "${F2B_F}" | tr '\n' ' ')"; } > "${GE}/fba-S/src/burn/drv/d_s.cpp"
+out="$(f2b_table fba S)"
+[ "${out}" = 'afterq 2|brace 1|' ]; check $? "FBA: a }; inside a driver's title does not end the driver, and a '\"' character literal opens no string" "FBA strings fixture: table '${out}', expected 'afterq 2|brace 1|'"
+
 if [ "${FAIL}" -eq 0 ] && [ "${SKIPPED}" -eq 0 ]; then echo "PASSED"; exit 0
 elif [ "${FAIL}" -eq 0 ]; then echo "PASSED, ${SKIPPED} SKIPPED -- a check that did not run has not passed"; exit 3
 else echo "${FAIL} CHECK(S) FAILED, ${SKIPPED} SKIPPED"; exit 1; fi
