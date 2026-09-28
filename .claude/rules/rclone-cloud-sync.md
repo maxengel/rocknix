@@ -48,8 +48,10 @@ gamesave sync flows; if it ever belongs anywhere, it's the settings backup/resto
 
 **Console-first (hard rule, 2026-07-25):** ROCKNIX is a handheld gaming OS. Product
 surfaces — UI labels, dialogs, script output, on-device help, public docs — must assume a
-player holding the handheld with, at most, a phone as the companion device. There is no
-browser on the device; never instruct users to "open a link" on it. QEMU/VMs are a QA
+player holding the handheld with, at most, a phone as the companion device. The only
+browser on the device is the cloud sign-in window `cloud_oauth` opens for a provider's
+page (since #228, 2026-09), and nothing else may send a player to a link on the device;
+never instruct users to "open a link" on it. QEMU/VMs are a QA
 vehicle only: no product-facing text may mention QEMU, VMs, port forwards, or emulator
 setups (that guidance belongs in dev docs/release notes). A computer may be referenced
 only where technically unavoidable (e.g. rclone's OAuth `authorize` step).

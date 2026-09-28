@@ -218,7 +218,7 @@ flowchart TD
     CONN -.->|refused| ERR4[COULDN'T CONNECT TO name. CHECK THE KEY AND TRY AGAIN.]
     NET --> MN[MANAGE SAVED NETWORKS]
     MN --> PAGE{{MANAGE SAVED NETWORKS}}
-    PAGE --> ROWS[SAVED NETWORKS: one row per profile, the name as NetworkManager has it;<br/>IN USE beside the one the device is on; NO SAVED NETWORKS when there are none]
+    PAGE --> ROWS[SAVED NETWORKS: one row per profile, the name as NetworkManager has it;<br/>CONNECTED beside the one the device is on (was IN USE until #308 F-WF-11: the picker, the toast and the forget dialog all say connected); NO SAVED NETWORKS when there are none]
     ROWS -->|A| ASK[FORGET name?<br/>YOU'RE CONNECTED TO IT NOW, SO YOU'LL BE DISCONNECTED. -- when in use<br/>THIS DEVICE WON'T JOIN IT AGAIN ON ITS OWN.<br/>YES . NO]
     ASK -->|YES| DONE[page rebuilt from NetworkManager; toast: name : FORGOTTEN<br/>or name : FORGOTTEN, AND YOU'RE DISCONNECTED]
     ASK -.->|delete refused| ERR[COULDN'T FORGET name. TRY AGAIN.]

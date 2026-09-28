@@ -291,7 +291,7 @@ THAT MOVED ARE ON BOTH SIDES. THE REST ARE AS THEY WERE.` / `YOUR SAVES ARE AS
 THEY WERE.`; match `N FILES WERE REMOVED FROM THIS DEVICE. YOUR CLOUD STILL HAS
 THEM.` / `NOTHING WAS REMOVED.`
 
-**Recover**: the page offers `TRY AGAIN` (A) beside `CLOSE` (B) on line 7 when
+**Recover**: the page offers `TRY AGAIN` (the confirm button, south) beside `CLOSE` (the back button, east; buttons by position, never by letter -- `es-ui-style-guide.md` § Interaction rules) on line 7 when
 the run did not complete, re-running the same command; the card's action line
 names the row (`TRY AGAIN: GAME SETTINGS > BACK UP SAVES TO THE CLOUD`), or for
 an automatic sync when it runs again (`IT RUNS AGAIN WHEN YOU EXIT A GAME`);
@@ -303,6 +303,6 @@ drop the in-place clause first.
 ## Anti-patterns (observed, avoid)
 
 - Developer/QA concepts in product text: no QEMU/VM/port-forward mentions, no
-  "open this link on the device" (there is no browser). Console-first: player +
+  "open this link on the device" (the sign-in window is the only browser, and it opens only a provider's sign-in page). Console-first: player +
   handheld + phone companion is the only assumed environment.
 - Dialog text promising behavior the backend doesn't do (pre-P1 backup dialogs).
